@@ -1,0 +1,16 @@
+[package]
+name = "ffx-script"
+description = "Disassembler and assembler for FFX's event and battle scripts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+
+[dev-dependencies]
+ffx-vbf.workspace = true
+
+[lints]
+workspace = true

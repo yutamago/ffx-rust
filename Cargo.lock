@@ -279,6 +279,7 @@ dependencies = [
  "clap",
  "ffx-kernel",
  "ffx-monster",
+ "ffx-script",
  "ffx-text",
  "ffx-vbf",
  "rayon",
@@ -337,6 +338,14 @@ dependencies = [
  "goblin",
  "thiserror",
  "unicorn-engine",
+]
+
+[[package]]
+name = "ffx-script"
+version = "0.1.0"
+dependencies = [
+ "ffx-vbf",
+ "thiserror",
 ]
 
 [[package]]

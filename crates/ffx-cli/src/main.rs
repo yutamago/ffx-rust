@@ -8,6 +8,7 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use ffx_kernel::{Schema, Table};
 use ffx_monster::MonsterFile;
+use ffx_script::{Container, Natives, disassemble_annotated};
 use ffx_text::{Charset, Language};
 use ffx_vbf::{Archive, Entry};
 use rayon::prelude::*;
@@ -30,6 +31,140 @@ enum Command {
     /// Export and import monster stats and rewards (battle/mon/_mNNN/mNNN.bin).
     #[command(subcommand)]
     Monster(MonsterCommand),
+    /// Disassemble and assemble event and monster AI scripts.
+    #[command(subcommand)]
+    Script(ScriptCommand),
+}
+
+#[derive(Subcommand)]
+enum ScriptCommand {
+    /// List the files that contain scripts.
+    List {
+        #[command(flatten)]
+        game: GameArgs,
+        /// Only paths containing this text.
+        #[arg(default_value = "")]
+        filter: String,
+    },
+    /// Disassemble a script: an archive path (`.../znkd0900.ebp`) or a monster (`m001`).
+    Disasm {
+        #[command(flatten)]
+        game: GameArgs,
+        file: String,
+        /// Output file; stdout if omitted.
+        #[arg(short, long)]
+        out: Option<PathBuf>,
+    },
+    /// Assemble edited text onto the original script and write the file.
+    Asm {
+        #[command(flatten)]
+        game: GameArgs,
+        file: String,
+        /// The edited disassembly.
+        source: PathBuf,
+        /// Write the file here.
+        #[arg(short, long, conflicts_with = "mod_dir")]
+        out: Option<PathBuf>,
+        /// Write the file into a mod folder, at its path inside the archive.
+        #[arg(long)]
+        mod_dir: Option<PathBuf>,
+    },
+}
+
+/// Our recovered names, for annotating native function calls.
+const SYMBOLS: &str = include_str!("../../../symbols/ffx.sym");
+
+fn symbol_names() -> std::collections::HashMap<u32, &'static str> {
+    SYMBOLS
+        .lines()
+        .filter_map(|l| {
+            let mut w = l.split('#').next()?.split_whitespace();
+            let addr = u32::from_str_radix(w.next()?.trim_start_matches("0x"), 16).ok()?;
+            let _kind = w.next()?;
+            Some((addr, w.next()?))
+        })
+        .collect()
+}
+
+/// Turns `m001` into the monster's archive path; other names are paths.
+fn script_path(file: &str) -> String {
+    file.strip_prefix('m')
+        .and_then(|n| n.parse::<u16>().ok())
+        .map_or_else(|| file.to_string(), ffx_monster::archive_path)
+}
+
+fn script(cmd: ScriptCommand) -> Result<()> {
+    match cmd {
+        ScriptCommand::List { game, filter } => {
+            let game = Game::open(&game)?;
+            let mut paths: Vec<&str> = game
+                .archive
+                .entries()
+                .iter()
+                .map(|e| e.path.as_str())
+                .filter(|p| {
+                    p.ends_with(".ebp") || (p.contains("/battle/mon/_m") && p.ends_with(".bin"))
+                })
+                .filter(|p| p.contains(&filter))
+                .collect();
+            paths.sort_unstable();
+            let mut out = std::io::stdout().lock();
+            for p in paths {
+                writeln!(out, "{p}")?;
+            }
+        }
+        ScriptCommand::Disasm { game, file, out } => {
+            let args = game;
+            let game = Game::open(&args)?;
+            let path = script_path(&file);
+            let container = Container::parse(read_file(&game.archive, &path)?)?;
+            let names = symbol_names();
+            let natives = std::fs::read(args.game_dir.join("FFX.exe"))
+                .ok()
+                .and_then(Natives::from_exe);
+            let annotate = |id: u16| {
+                let handler = natives.as_ref()?.handler(id)?;
+                Some(match names.get(&handler) {
+                    Some(name) => format!("{name} 0x{handler:08x}"),
+                    None => format!("0x{handler:08x}"),
+                })
+            };
+            let text = format!(
+                "; {path}\n{}",
+                disassemble_annotated(&container.script, &annotate)?
+            );
+            match out {
+                Some(p) => std::fs::write(p, text)?,
+                None => std::io::stdout().lock().write_all(text.as_bytes())?,
+            }
+        }
+        ScriptCommand::Asm {
+            game,
+            file,
+            source,
+            out,
+            mod_dir,
+        } => {
+            let game = Game::open(&game)?;
+            let path = script_path(&file);
+            let container = Container::parse(read_file(&game.archive, &path)?)?;
+            let text = std::fs::read_to_string(&source)
+                .with_context(|| format!("reading {}", source.display()))?;
+            let rebuilt =
+                container.replace_script(&ffx_script::assemble(&container.script, &text)?)?;
+            let dest = match (out, mod_dir) {
+                (Some(p), _) => p,
+                (None, Some(dir)) => dir.join(safe_relative(&path)?),
+                (None, None) => bail!("pass --out <file> or --mod-dir <dir>"),
+            };
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&dest, rebuilt.bytes())?;
+            eprintln!("wrote {}", dest.display());
+        }
+    }
+    Ok(())
 }
 
 #[derive(Subcommand)]
@@ -144,6 +279,7 @@ fn run(cli: Cli) -> Result<()> {
         Command::Vbf(cmd) => vbf(cmd),
         Command::Kernel(cmd) => kernel(cmd),
         Command::Monster(cmd) => monster(cmd),
+        Command::Script(cmd) => script(cmd),
     }
 }
 

@@ -13,6 +13,7 @@ ffx-core = { path = "crates/ffx-core" }
 ffx-hook = { path = "crates/ffx-hook" }
 ffx-kernel = { path = "crates/ffx-kernel" }
 ffx-monster = { path = "crates/ffx-monster" }
+ffx-script = { path = "crates/ffx-script" }
 ffx-text = { path = "crates/ffx-text" }
 ffx-vbf = { path = "crates/ffx-vbf" }
 anyhow = "1.0.104"
@@ -35,3 +36,5 @@ pedantic = { level = "warn", priority = -1 }
 module_name_repetitions = "allow"
 missing_panics_doc = "allow"
 single_match_else = "allow"
+# Archive paths are lowercase by construction.
+case_sensitive_file_extension_comparisons = "allow"

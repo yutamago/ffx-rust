@@ -66,9 +66,30 @@
 0x00790a50 function MonMagic1_FindRecord
 0x00790a90 function Command_FindRecord        # id & 0xfff in g_KernelCommand
 0x00797410 function Mon_FindHandler           # lookup in monster file section 1
+0x00797a40 function Script_Register           # (manager, name, script): queue a script in a script manager (8 slots, 0x54 bytes each)
 0x007990d0 function Battle_GiveRewards        # gil, AP, two drop slots, overkill drops, bribe (spoils section 4)
 0x0079b4f0 function Mon_InitActor             # copies the stat record (section 2) into the battle actor
+0x007a5360 function Native_SetActorProperty   # func 0x70ab: pops value, property, actor; calls 0x007b4b70
 0x007ab870 function Kernel_FindRecord         # (id, table, &strings) -> record; defines the container (docs/formats/kernel.md)
+0x007b2dc0 function Battle_GetActorProperty   # switch over ~340 actor properties
+0x007b4b70 function Battle_SetActorProperty   # switch over ~320 actor properties
+0x008641e0 function Script_Run                # the bytecode interpreter (docs/formats/script.md)
+0x0086536c label    g_ScriptOpcodeCases       # opcode -> case index byte table of Script_Run
+0x00869d60 function Script_Fetch              # opcode << 24 | u16 operand when the high bit is set
+0x0086a830 function Script_GetWorker          # worker index -> worker object (0xb58/0x558/0x5b8 sizes)
+0x0086d6d0 function Script_InitNatives        # registers the native function tables per group
+0x0086de50 function Script_PopFloat
+0x0086df00 function Script_PopInt
+0x0086dfb0 function Script_StoreVar           # mode bit 0x80: pop an array index too; bit 1: store mode
+0x0086e160 function Script_PushVarRef         # address of an array element (element size from the type nibble)
+0x0086e3c0 function Script_PushFloat
+0x0086e3f0 function Script_PushInt
+0x0086e440 function Script_PushVar
+0x008726f0 function Script_Jump               # pc = code start + labels[index]
+0x00877730 function Script_PollNative         # slot 1; no handler = done
+0x008777a0 function Script_CallNative         # slot 0 (start) of the native table entry
+0x008777f0 function Script_FinishNative       # slot 2 (float) or 3 (int) result, pushed
+0x00877880 function Script_SetNativeTable     # (group, table)
 0x008c6920 function Cmd_HealAmount            # formula +0x28: 6 = power*50, 7 = (stat+power)/2*power, 8 = maxHP*power/16; power +0x2a
 0x00cc9698 label    g_BasePath
 0x00cc9c48 label    g_FileSys
@@ -84,5 +105,6 @@
 0x0112ca6c label    g_KernelMonster1
 0x0112ca70 label    g_KernelMonster2
 0x0112ca74 label    g_KernelMonster3
+0x01328558 label    g_NativeTables            # per-group native function tables
 0x022fb504 label    g_Settings
 0x02310c40 label    g_CdLib                   # function table of the PS2 CD-library emulation
