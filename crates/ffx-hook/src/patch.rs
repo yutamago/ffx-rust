@@ -1,12 +1,15 @@
 //! Writing the patches.
 
 use std::ffi::c_void;
+use std::sync::atomic::Ordering;
 
 use windows_sys::Win32::System::Diagnostics::Debug::FlushInstructionCache;
-use windows_sys::Win32::System::Memory::{PAGE_EXECUTE_READWRITE, VirtualProtect};
+use windows_sys::Win32::System::Memory::{
+    MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE, VirtualAlloc, VirtualProtect,
+};
 use windows_sys::Win32::System::Threading::GetCurrentProcess;
 
-use crate::{Hook, IMAGE_BASE, Outcome, SIZE_OF_IMAGE, TIME_DATE_STAMP, WrongBuild};
+use crate::{GAME_BASE, Hook, IMAGE_BASE, Outcome, SIZE_OF_IMAGE, TIME_DATE_STAMP, WrongBuild};
 
 /// Checks that the PE image at `base` is the supported `FFX.exe` build.
 ///
@@ -35,7 +38,8 @@ pub unsafe fn check_build(base: usize) -> Result<(), WrongBuild> {
     }
 }
 
-/// Installs every hook not named in `disabled` into the module at `base`.
+/// Installs every hook not named in `disabled` into the module at `base`,
+/// and remembers `base` for [`crate::rebase`].
 ///
 /// # Errors
 /// Refuses to patch anything if the module is not the supported build.
@@ -50,6 +54,7 @@ pub unsafe fn install(
 ) -> Result<Vec<(&'static str, Outcome)>, WrongBuild> {
     // SAFETY: forwarded from the caller.
     unsafe { check_build(base)? };
+    GAME_BASE.store(base, Ordering::Release);
     Ok(hooks
         .iter()
         .map(|hook| {
@@ -65,14 +70,51 @@ pub unsafe fn install(
         .collect())
 }
 
+/// Builds `stolen bytes; jmp site + len` in fresh executable memory.
+unsafe fn trampoline(site: usize, stolen: &[u8]) -> Option<usize> {
+    // SAFETY: plain allocation call.
+    let mem = unsafe {
+        VirtualAlloc(
+            std::ptr::null(),
+            stolen.len() + 5,
+            MEM_COMMIT | MEM_RESERVE,
+            PAGE_EXECUTE_READWRITE,
+        )
+    };
+    if mem.is_null() {
+        return None;
+    }
+    let tramp = mem as usize;
+    let back = (site + stolen.len()).wrapping_sub(tramp + stolen.len() + 5) as u32;
+    // SAFETY: `mem` is writable for `stolen.len() + 5` bytes.
+    unsafe {
+        let p = mem.cast::<u8>();
+        stolen.as_ptr().copy_to_nonoverlapping(p, stolen.len());
+        p.add(stolen.len()).write(0xe9);
+        let back = back.to_le_bytes();
+        back.as_ptr()
+            .copy_to_nonoverlapping(p.add(stolen.len() + 1), 4);
+    }
+    Some(tramp)
+}
+
 unsafe fn patch(base: usize, hook: &Hook) -> Outcome {
     let site = base + (hook.address - IMAGE_BASE) as usize;
     let site_ptr = site as *mut u8;
-    let mut current = [0u8; 5];
+    let len = hook.prologue.len();
     // SAFETY: the site is inside the mapped, readable image.
-    unsafe { site_ptr.copy_to_nonoverlapping(current.as_mut_ptr(), 5) };
+    let current = unsafe { std::slice::from_raw_parts(site_ptr, len) }.to_vec();
     if current != hook.prologue {
         return Outcome::PrologueMismatch(current);
+    }
+
+    if let Some(slot) = hook.original {
+        // SAFETY: the prologue was just verified; hooks with an `original`
+        // list only position-independent instructions there.
+        match unsafe { trampoline(site, hook.prologue) } {
+            Some(t) => slot.store(t, Ordering::Release),
+            None => return Outcome::ProtectFailed,
+        }
     }
 
     let rel = hook.replacement.wrapping_sub(site + 5) as u32;

@@ -4,16 +4,21 @@
 # Keep sorted by address. Names: Module_Verb or Class_Method; globals g_Name.
 
 # --- file system / VBF archives ---
+0x00401880 function Settings_Construct        # GameSetting.ini path at +0x430; field 0 = language index
+0x00401cb0 function Settings_Load             # reads Documents\Square Enix\...\GameSetting.ini (Language=jp|en|fr|de|it|es|kr|ch)
 0x00405e20 function zlib_uncompress           # zlib 1.2.x uncompress(dst, &dst_len, src, src_len), cdecl; replaced by ffx-hook
 0x00406000 function zlib_inflateInit_         # called first by zlib_uncompress; stream ptr in ECX
 0x00406230 function zlib_inflate              # called with Z_FINISH by zlib_uncompress
 0x004078b0 function zlib_inflateEnd
+0x00607bc0 function File_Construct            # File = [handle (-1 unused), archive entry (0 = loose file)]
 0x00607c40 function Str_Utf8ToWide            # (src, dst, dst_end) -> chars written
 0x00607d30 function FileSys_GetBasePath       # returns g_BasePath
 0x00607d40 function FileSys_SetBasePath       # Game_InitFileSystem passes "../../.."
 0x00607d50 function Path_ToLowerAscii         # in place, A-Z only (signed char compare), cdecl, returns end of string; replaced by ffx-hook
+0x00607d80 function File_Close                # releases the entry, or SetEndOfFile + CloseHandle on the loose handle
+0x00607dc0 function File_GetSize              # entry size, or GetFileSizeEx on the loose handle
 0x00607e00 function File_Probe                # normalizes backslash -> / and case, FileSys_Exists, else CreateFileW + SetEndOfFile on the loose file
-0x00607f40 function File_FindEntry            # wrapper that calls FileSys_FindEntry
+0x00607f40 function File_Open                 # thiscall(File*, path, mode, 3 unused), ret 0x14: archive first, else CreateFileW; hooked for mods
 0x0061aa90 function FileSys_Read              # wrapper that calls FileSys_ReadSync
 0x0061acc0 function VbfStream_Open            # fopen(path, "rb") for one of 15 reader streams
 0x0061b590 function FileSys_CreateSingleton   # allocates the 0x44-byte FileSys into g_FileSys
@@ -36,11 +41,16 @@
 0x0061df10 function Vbf_FindEntry
 0x00623470 function Steam_Init                # RestartAppIfNecessary(0), SteamAPI_Init; sets g_SteamReady on success, result ignored by caller
 0x0062ee50 function Game_Main                 # WinMain body called from the CRT entry; returns the process exit code
+0x0062fa30 function Ps2File_Open              # host0:/ffx/... -> /ffx_ps2/ffx/..., then the PC file layer
+0x006410e0 function Lang_Get                  # 0 jp, 1 us, 2 fr, 3 sp, 4 de, 5 it, 9 kr, 10 ch
 0x00645f50 function Text_ToUtf8               # FFX text -> UTF-8; defines the byte grammar (docs/formats/text.md)
 0x006460a0 function Text_DecodeCharCjk        # character code -> UTF-8 via the jp/kr/ch table
 0x006461f0 function Text_DecodeCharWestern    # character code -> UTF-8 via ffxsjistbl_us.bin
 0x00646920 function Text_LoadCharset          # loads ffx_encoding/ffxsjistbl_<lang>.bin into g_CharsetCjk/g_CharsetWestern
 0x006795b0 function Game_InitFileSystem       # mounts data\FFX_Data.vbf, shows MessageBoxW on failure
+0x00679730 function PcFile_Open               # allocates a File and calls File_Construct/File_Open; MessageBoxW on failure
+0x006db070 function LangManager_Get
+0x006db090 function LangManager_FromSettings  # settings language index -> game language id
 0x00781d40 function Kernel_LoadTables         # loads command, ply_rom, a_ability, item, monmagic1/2, ... into globals
 0x00782df0 function Kernel_LoadFile           # (name, buffer) reads new_<lang>pc/battle/kernel/<name>.bin whole
 0x007906a0 function Item_BuildLists           # sorts items by command flags bit 0x2 / 0x400
@@ -55,8 +65,10 @@
 0x00cc9cf5 label    g_SteamReady              # guards every other Steam call (achievements, RunCallbacks)
 0x00ccb95c label    g_CharsetCjk
 0x00ccb960 label    g_CharsetWestern
+0x00cded58 label    g_LangManager
 0x0112a92c label    g_KernelCommand
 0x0112a930 label    g_KernelMonMagic1
 0x0112a938 label    g_KernelPlyRom
 0x0112a940 label    g_KernelItem
 0x0112a944 label    g_KernelAAbility
+0x022fb504 label    g_Settings

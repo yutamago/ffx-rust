@@ -33,12 +33,38 @@ Results go to `ffx-hook.log` next to `FFX.exe`. Set
 `FFX_HOOK_DISABLE=zlib_uncompress,Path_ToLowerAscii` (any subset) to keep
 those originals, which is useful for A/B comparisons.
 
+## Mods
+
+`File_Open` (`0x00607f40`) is the only way the game opens archive files.
+It normalizes the path, asks the archives, and if they lack the file opens
+it from disk with `CreateFileW`; the size, read and close methods then use
+that handle. The `File_Open` hook adds one step in front: for a read open of
+a path that a mod provides, it opens the mod's file read-only and returns,
+so the game's own loose-file code reads it. Everything else goes to the
+original through a trampoline.
+
+```text
+<game folder>/mods/<mod name>/<archive path>
+<game folder>/mods/test-potion/ffx_ps2/ffx/master/new_uspc/battle/kernel/item.bin
+```
+
+Mods load in name order; a later mod's file replaces an earlier one's, and
+the log says so. The file must be opened read-only: `File_Close` calls
+`SetEndOfFile`, which would truncate a writable mod file.
+
+`ffx kernel import <table> <edits.toml> --mod-dir <game folder>/mods/<mod>`
+writes a table straight into a mod. Verified in the game: with the
+`test-potion` mod, the item table in game memory (read with
+`tools/frida/peek.py 0x0112a940 0x4100 --deref`) has item 0 named
+"Mega Potion" with power 20.
+
 ## Replaced so far
 
 | Function | Address | Checked by |
 |---|---|---|
 | `zlib_uncompress` | `0x00405e20` | 1,500 synthetic streams (fit, spare room, too small, truncated, flipped bit; all result codes) and every compressed block in `metamenu.vbf` |
 | `Path_ToLowerAscii` | `0x00607d50` | NULL, empty, all 255 byte values, 2,000 random strings; output bytes and return value |
+| `File_Open` | `0x00607f40` | Wrapped, not replaced: mod lookup, then the original through a trampoline; trampoline checked by the smoke test, mod loading in the game |
 
 ## Adding a replacement
 
@@ -92,7 +118,13 @@ without Steam:
 ```bash
 tools/run-game.sh             # builds and installs the hooks as DINPUT8.dll, then starts FFX.exe
 tools/run-game.sh --no-hooks  # unmodified game
+tools/run-game.sh --lang de   # language: en (default), jp, fr, de, it, es, kr, ch
 ```
+
+The language comes from `Documents\Square Enix\FINAL FANTASY X&X-2 HD
+Remaster\GameSetting.ini` (`Settings_Load`, `0x00401cb0`), which the Steam
+launcher normally writes. Without it the game creates the file with
+`Language=jp`, so the script sets the `Language=` line on every launch.
 
 Then check `ffx-hook.log` in the game folder: every hook should say
 `Installed`.

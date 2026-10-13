@@ -14,8 +14,9 @@ data, and never will: binaries, archives and extracted files stay out of git.
 | Kernel tables (`ffx-kernel`) | All 26 tables × 8 languages read, written and round-tripped through TOML byte for byte; items/commands partly named |
 | Text (`ffx-text`) | Encoding fully decoded for all 8 languages; all 92,224 kernel strings round-trip |
 | `ffx` CLI | `vbf list/cat/extract`, `kernel tables/export/import` |
-| Function replacement | `dinput8.dll` proxy patches 2 functions (`zlib_uncompress`, `Path_ToLowerAscii`); parity with the originals verified under emulation and on Windows; not yet run in the game |
-| Symbol map (`symbols/ffx.sym`) | 33 names: file system, archive and zlib code |
+| Function replacement | `dinput8.dll` proxy patches 2 functions (`zlib_uncompress`, `Path_ToLowerAscii`) with parity-tested Rust; runs in the game |
+| Mods | `mods/<mod>/<archive path>` replaces archive files in the running game (verified with an edited item table) |
+| Symbol map (`symbols/ffx.sym`) | file system, archive, zlib, text, kernel and settings code |
 
 ## Layout
 
@@ -54,7 +55,18 @@ cargo test --release -p ffx-vbf --test game_data -- --ignored   # all of FFX_Dat
 cargo test --release -p ffx-oracle            # Rust vs. original machine code (needs FFX_GAME_DIR)
 ```
 
-Replacing game functions: see [docs/hooking.md](docs/hooking.md).
+## Playing and modding
+
+```bash
+tools/run-game.sh                 # FFX.exe on Windows, English, with hooks and mods (no Steam needed)
+tools/run-game.sh --no-hooks      # the original game
+
+# Make a mod: export a table, edit it, import it into a mod folder
+cargo run --release -p ffx-cli -- kernel export item -o item.toml
+cargo run --release -p ffx-cli -- kernel import item item.toml --mod-dir "$FFX_GAME_DIR/mods/my-mod"
+```
+
+Replacing game functions and how mods load: [docs/hooking.md](docs/hooking.md).
 
 ## Reverse engineering setup
 

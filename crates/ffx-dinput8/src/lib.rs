@@ -4,7 +4,9 @@
 //! installs the `ffx-hook` patches, and `DirectInput8Create` forwards to the
 //! real `dinput8.dll` in the system directory.
 //!
-//! Activity is logged to `ffx-hook.log` next to `FFX.exe`. Set
+//! It also loads loose-file mods from `mods/<mod>/<archive path>` next to
+//! `FFX.exe` (see `ffx_hook::mods`). Activity is logged to `ffx-hook.log`
+//! next to `FFX.exe`. Set
 //! `FFX_HOOK_DISABLE` to a comma-separated list of hook names to leave
 //! those originals in place.
 
@@ -13,7 +15,8 @@
 #![allow(clippy::cast_possible_truncation)]
 
 use std::ffi::c_void;
-use std::io::Write;
+
+use ffx_hook::log::log;
 use std::sync::OnceLock;
 
 use windows_sys::Win32::Foundation::{HINSTANCE, TRUE};
@@ -34,20 +37,6 @@ type DirectInput8CreateFn = unsafe extern "system" fn(
     *mut *mut c_void,
     *mut c_void,
 ) -> HRESULT;
-
-fn log(line: &str) {
-    let path = std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join("ffx-hook.log")));
-    if let Some(path) = path
-        && let Ok(mut file) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
-    {
-        let _ = writeln!(file, "{line}");
-    }
-}
 
 /// # Safety
 /// Called by the Windows loader.
@@ -74,6 +63,12 @@ unsafe fn install_hooks(base: usize) {
         "ffx-hook {} loaded, FFX.exe at {base:#010x}",
         env!("CARGO_PKG_VERSION")
     ));
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(std::path::Path::to_path_buf))
+    {
+        ffx_hook::mods::load(&dir);
+    }
     let disabled = std::env::var("FFX_HOOK_DISABLE").unwrap_or_default();
     let disabled: Vec<&str> = disabled
         .split(',')

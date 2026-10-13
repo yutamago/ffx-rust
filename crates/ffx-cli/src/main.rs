@@ -31,7 +31,7 @@ enum Command {
 /// Where the game is and which language to use.
 #[derive(clap::Args)]
 struct GameArgs {
-    /// Game folder (contains FFX.exe); defaults to $FFX_GAME_DIR.
+    /// Game folder (contains FFX.exe); defaults to `$FFX_GAME_DIR`.
     #[arg(long, env = "FFX_GAME_DIR")]
     game_dir: PathBuf,
     /// Language: en, jp, fr, sp, de, it, kr, ch.

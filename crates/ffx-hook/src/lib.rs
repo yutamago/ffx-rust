@@ -2,13 +2,16 @@
 //! reimplementations from `ffx-core`.
 //!
 //! Each [`Hook`] overwrites the first five bytes of an original function
-//! with `jmp rel32` to an `extern "C"` shim. The original is never called
-//! again, so no trampoline is needed. Before patching, the module is checked
-//! against the exact build these addresses come from, and every patch site
-//! must still hold its expected prologue.
+//! with `jmp rel32` to a Rust shim. A hook that still needs the original
+//! (for example to fall back to it) gets a trampoline: the stolen prologue
+//! instructions followed by a jump back past them. Before patching, the
+//! module is checked against the exact build these addresses come from, and
+//! every patch site must still hold its expected prologue.
 
 // The patching code only runs on 32-bit x86, where `usize` is `u32`.
 #![cfg_attr(target_arch = "x86", allow(clippy::cast_possible_truncation))]
+
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Preferred image base of `FFX.exe`. ASLR is enabled, so addresses are
 /// rebased onto the module's real base at install time.
@@ -19,6 +22,15 @@ pub const TIME_DATE_STAMP: u32 = 0x6aa2_219c;
 /// PE `SizeOfImage` of the supported build.
 pub const SIZE_OF_IMAGE: u32 = 0x0237_d000;
 
+/// Base address of the patched `FFX.exe`, set by `install`.
+pub static GAME_BASE: AtomicUsize = AtomicUsize::new(0);
+
+/// Turns an `FFX.exe` address into its address in the running process.
+#[must_use]
+pub fn rebase(address: u32) -> usize {
+    GAME_BASE.load(Ordering::Acquire) + (address - IMAGE_BASE) as usize
+}
+
 /// One function replacement.
 #[derive(Debug, Clone, Copy)]
 pub struct Hook {
@@ -26,10 +38,15 @@ pub struct Hook {
     pub name: &'static str,
     /// Address in `FFX.exe`, relative to [`IMAGE_BASE`].
     pub address: u32,
-    /// The original first five bytes, checked before patching.
-    pub prologue: [u8; 5],
+    /// The original first bytes, checked before patching: at least five.
+    /// With [`Hook::original`], exactly the whole, position-independent
+    /// instructions copied into the trampoline.
+    pub prologue: &'static [u8],
     /// Address of the replacement.
     pub replacement: usize,
+    /// Receives the trampoline address, for replacements that call the
+    /// original.
+    pub original: Option<&'static AtomicUsize>,
 }
 
 /// The module is not the `FFX.exe` build the hook table was made for.
@@ -52,17 +69,20 @@ impl std::fmt::Display for WrongBuild {
 impl std::error::Error for WrongBuild {}
 
 /// What happened to one hook.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
     Installed,
     /// Turned off through `FFX_HOOK_DISABLE`.
     Disabled,
     /// The site did not hold the expected bytes, so it was left alone.
-    PrologueMismatch([u8; 5]),
-    /// `VirtualProtect` refused to make the site writable.
+    PrologueMismatch(Vec<u8>),
+    /// `VirtualProtect` or `VirtualAlloc` failed.
     ProtectFailed,
 }
 
+pub mod log;
+#[cfg(all(windows, target_arch = "x86"))]
+pub mod mods;
 #[cfg(all(windows, target_arch = "x86"))]
 mod patch;
 #[cfg(all(windows, target_arch = "x86"))]
@@ -74,19 +94,29 @@ pub use patch::{check_build, install};
 /// The hook table.
 #[cfg(all(windows, target_arch = "x86"))]
 #[must_use]
-pub fn hooks() -> [Hook; 2] {
+pub fn hooks() -> [Hook; 3] {
     [
         Hook {
             name: "zlib_uncompress",
             address: 0x0040_5e20,
-            prologue: [0x55, 0x8b, 0xec, 0x83, 0xe4],
+            prologue: &[0x55, 0x8b, 0xec, 0x83, 0xe4],
             replacement: replacements::zlib_uncompress as *const () as usize,
+            original: None,
         },
         Hook {
             name: "Path_ToLowerAscii",
             address: 0x0060_7d50,
-            prologue: [0x55, 0x8b, 0xec, 0x8b, 0x45],
+            prologue: &[0x55, 0x8b, 0xec, 0x8b, 0x45],
             replacement: replacements::path_to_lower_ascii as *const () as usize,
+            original: None,
+        },
+        Hook {
+            name: "File_Open",
+            address: 0x0060_7f40,
+            // push ebp; mov ebp, esp; sub esp, 8
+            prologue: &[0x55, 0x8b, 0xec, 0x83, 0xec, 0x08],
+            replacement: mods::file_open as *const () as usize,
+            original: Some(&mods::FILE_OPEN_ORIGINAL),
         },
     ]
 }
