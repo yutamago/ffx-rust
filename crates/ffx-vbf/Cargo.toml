@@ -1,0 +1,15 @@
+[package]
+name = "ffx-vbf"
+description = "Reader for the VBF (\"SRYK\") archives used by the FFX/X-2 HD Remaster"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+flate2.workspace = true
+md-5.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

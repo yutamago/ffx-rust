@@ -1,0 +1,36 @@
+# FFX.exe symbol map: the source of truth for names we have recovered.
+# Target: FFX.exe sha256 0537b2a1047f3266e73495cd4e35f63f0777f4231d417699f979954686da686d
+# Format: <address> <function|label> <name> [# comment]
+# Keep sorted by address. Names: Module_Verb or Class_Method; globals g_Name.
+
+# --- file system / VBF archives ---
+0x00405e20 function zlib_uncompress           # uncompress(dst, &dst_len, src, src_len); statically linked zlib
+0x00607c40 function Str_Utf8ToWide            # (src, dst, dst_end) -> chars written
+0x00607d30 function FileSys_GetBasePath       # returns g_BasePath
+0x00607d40 function FileSys_SetBasePath       # Game_InitFileSystem passes "../../.."
+0x00607d50 function Path_ToLowerAscii         # in place, A-Z only
+0x00607e00 function File_Probe                # normalizes backslash -> / and case, FileSys_Exists, else CreateFileW + SetEndOfFile on the loose file
+0x00607f40 function File_FindEntry            # wrapper that calls FileSys_FindEntry
+0x0061aa90 function FileSys_Read              # wrapper that calls FileSys_ReadSync
+0x0061acc0 function VbfStream_Open            # fopen(path, "rb") for one of 15 reader streams
+0x0061b590 function FileSys_CreateSingleton   # allocates the 0x44-byte FileSys into g_FileSys
+0x0061b7e0 function FileSys_NewReadRequest    # finds the first block and its file offset for a read at a 64-bit position
+0x0061b8d0 function ReadRequest_ReadBlocks    # freads the stored blocks; stored size 0 means 0x10000
+0x0061ba80 function ReadRequest_Inflate       # raw blocks are memcpy'd, others go through zlib_uncompress; error text id 0x7836
+0x0061bdb0 function FileSys_Get               # returns g_FileSys
+0x0061be40 function FileSys_Exists            # MD5 of the path (root prefix skipped), asks each mounted archive
+0x0061bf10 function FileSys_FindEntry         # like FileSys_Exists but returns the entry
+0x0061bfe0 function FileSys_ReadSync          # NewReadRequest + ReadBlocks + Inflate
+0x0061c150 function FileSys_MountVbf          # this=FileSys; mounts an archive into the first free of 5 slots at +0x10
+0x0061c3a0 function FileSys_SetRootPath       # this=FileSys; copies path to +0x40, length to +0x3c
+0x0061d140 function Vbf_MapLookup             # digest -> map node; entry pointer at node+0x20
+0x0061d460 function Vbf_Construct             # this=Vbf (0x60 bytes); hash map of entries + critical section at +0x44
+0x0061d670 function Vbf_Destruct
+0x0061d6e0 function Md5Digest_Less            # 128-bit compare used to verify the header digest
+0x0061dac0 function Vbf_Open                  # reads SRYK header, verifies MD5 trailer, builds block tables and entry map
+0x0061de30 function Vbf_InsertEntry           # inserts (name MD5 -> entry*) into the entry map
+0x0061dec0 function Vbf_Contains
+0x0061df10 function Vbf_FindEntry
+0x006795b0 function Game_InitFileSystem       # mounts data\FFX_Data.vbf, shows MessageBoxW on failure
+0x00cc9698 label    g_BasePath
+0x00cc9c48 label    g_FileSys

@@ -1,0 +1,7 @@
+/target
+# Never commit game data: binaries, archives, or anything extracted from them.
+*.vbf
+*.exe
+*.dll
+/extracted/
+/game/
