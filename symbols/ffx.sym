@@ -4,11 +4,14 @@
 # Keep sorted by address. Names: Module_Verb or Class_Method; globals g_Name.
 
 # --- file system / VBF archives ---
-0x00405e20 function zlib_uncompress           # uncompress(dst, &dst_len, src, src_len); statically linked zlib
+0x00405e20 function zlib_uncompress           # zlib 1.2.x uncompress(dst, &dst_len, src, src_len), cdecl; replaced by ffx-hook
+0x00406000 function zlib_inflateInit_         # called first by zlib_uncompress; stream ptr in ECX
+0x00406230 function zlib_inflate              # called with Z_FINISH by zlib_uncompress
+0x004078b0 function zlib_inflateEnd
 0x00607c40 function Str_Utf8ToWide            # (src, dst, dst_end) -> chars written
 0x00607d30 function FileSys_GetBasePath       # returns g_BasePath
 0x00607d40 function FileSys_SetBasePath       # Game_InitFileSystem passes "../../.."
-0x00607d50 function Path_ToLowerAscii         # in place, A-Z only
+0x00607d50 function Path_ToLowerAscii         # in place, A-Z only (signed char compare), cdecl, returns end of string; replaced by ffx-hook
 0x00607e00 function File_Probe                # normalizes backslash -> / and case, FileSys_Exists, else CreateFileW + SetEndOfFile on the loose file
 0x00607f40 function File_FindEntry            # wrapper that calls FileSys_FindEntry
 0x0061aa90 function FileSys_Read              # wrapper that calls FileSys_ReadSync

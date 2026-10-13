@@ -9,13 +9,19 @@ license = "MIT OR Apache-2.0"
 rust-version = "1.90"
 
 [workspace.dependencies]
+ffx-core = { path = "crates/ffx-core" }
+ffx-hook = { path = "crates/ffx-hook" }
 ffx-vbf = { path = "crates/ffx-vbf" }
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
 flate2 = "1.1.10"
+goblin = { version = "0.10.7", default-features = false, features = ["pe32", "std"] }
 md-5 = "0.11.0"
+miniz_oxide = "0.9.1"
 rayon = "1.12.0"
 thiserror = "2.0.21"
+unicorn-engine = { version = "2.1.5", default-features = false, features = ["arch_x86"] }
+windows-sys = "0.61.2"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

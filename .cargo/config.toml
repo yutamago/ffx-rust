@@ -1,0 +1,8 @@
+[env]
+# unicorn-engine-sys declares an old cmake minimum that cmake 4 rejects.
+CMAKE_POLICY_VERSION_MINIMUM = "3.5"
+
+[target.i686-pc-windows-msvc]
+# Link the CRT statically so dinput8.dll needs no VC++ redistributable.
+# LNK4099: the static CRT ships without its PDBs.
+rustflags = ["-C", "target-feature=+crt-static", "-C", "link-arg=/IGNORE:4099"]

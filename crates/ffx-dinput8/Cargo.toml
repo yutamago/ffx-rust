@@ -1,0 +1,26 @@
+[package]
+name = "ffx-dinput8"
+description = "dinput8.dll proxy that loads ffx-hook into FFX.exe"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "dinput8"
+crate-type = ["cdylib"]
+
+[dependencies]
+ffx-hook.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_System_LibraryLoader",
+    "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
+] }
+
+[lints]
+workspace = true

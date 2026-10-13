@@ -165,49 +165,85 @@ impl Archive {
         self.by_digest.get(digest).map(|&i| &self.entries[i])
     }
 
+    /// The stored blocks of a file, in order.
+    ///
+    /// # Errors
+    /// Fails if the entry points outside the block table.
+    pub fn blocks(&self, entry: &Entry) -> Result<Vec<Block>> {
+        let mut blocks = Vec::new();
+        let mut offset = entry.offset;
+        for i in 0..entry.block_count() {
+            let index = usize::try_from(u64::from(entry.first_block) + i)
+                .map_err(|_| Error::Malformed("block index overflow"))?;
+            let size = usize::try_from((entry.size - i * BLOCK_SIZE as u64).min(BLOCK_SIZE as u64))
+                .expect("at most BLOCK_SIZE");
+            let stored = match self.block_sizes.get(index) {
+                Some(0) => BLOCK_SIZE,
+                Some(&n) => usize::from(n),
+                None => return Err(Error::Malformed("block index outside the block table")),
+            };
+            blocks.push(Block {
+                index,
+                offset,
+                stored,
+                size,
+            });
+            offset += stored as u64;
+        }
+        Ok(blocks)
+    }
+
     /// Reads and decompresses a whole file.
     ///
     /// # Errors
     /// Fails on I/O errors, corrupt zlib data, or a size mismatch.
     pub fn read(&self, entry: &Entry) -> Result<Vec<u8>> {
         let mut out = Vec::with_capacity(usize::try_from(entry.size).unwrap_or(0));
-        let mut stored = vec![0u8; BLOCK_SIZE];
-        let mut offset = entry.offset;
-        for i in 0..entry.block_count() {
-            let block = usize::try_from(u64::from(entry.first_block) + i)
-                .map_err(|_| Error::Malformed("block index overflow"))?;
-            let expected =
-                usize::try_from((entry.size - i * BLOCK_SIZE as u64).min(BLOCK_SIZE as u64))
-                    .expect("at most BLOCK_SIZE");
-            let stored_len = match self.block_sizes.get(block) {
-                Some(0) => BLOCK_SIZE,
-                Some(&n) => usize::from(n),
-                None => return Err(Error::Malformed("block index outside the block table")),
-            };
-            let buf = &mut stored[..stored_len];
-            read_exact_at(&self.file, buf, offset)?;
-            offset += stored_len as u64;
-
-            if stored_len == expected {
-                out.extend_from_slice(buf);
-            } else {
-                let before = out.len();
-                let mut decoder = flate2::read::ZlibDecoder::new(&buf[..]);
-                io::copy(&mut decoder, &mut out).map_err(|source| Error::Decompress {
+        let mut buf = vec![0u8; BLOCK_SIZE];
+        for block in self.blocks(entry)? {
+            let stored = &mut buf[..block.stored];
+            read_exact_at(&self.file, stored, block.offset)?;
+            if !block.is_compressed() {
+                out.extend_from_slice(stored);
+                continue;
+            }
+            let before = out.len();
+            let mut decoder = flate2::read::ZlibDecoder::new(&stored[..]);
+            io::copy(&mut decoder, &mut out).map_err(|source| Error::Decompress {
+                path: entry.path.clone(),
+                block: block.index,
+                source,
+            })?;
+            if out.len() - before != block.size {
+                return Err(Error::SizeMismatch {
                     path: entry.path.clone(),
-                    block,
-                    source,
-                })?;
-                if out.len() - before != expected {
-                    return Err(Error::SizeMismatch {
-                        path: entry.path.clone(),
-                        expected: expected as u64,
-                        actual: (out.len() - before) as u64,
-                    });
-                }
+                    expected: block.size as u64,
+                    actual: (out.len() - before) as u64,
+                });
             }
         }
         Ok(out)
+    }
+}
+
+/// One 64 KiB block of a file, as stored in the archive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Block {
+    /// Index in the archive's block-size table.
+    pub index: usize,
+    /// Absolute file offset of the stored bytes.
+    pub offset: u64,
+    /// Stored length.
+    pub stored: usize,
+    /// Length once decompressed.
+    pub size: usize,
+}
+
+impl Block {
+    /// Whether the block is a zlib stream; raw blocks have equal sizes.
+    #[must_use]
+    pub fn is_compressed(&self) -> bool {
+        self.stored != self.size
     }
 }
 

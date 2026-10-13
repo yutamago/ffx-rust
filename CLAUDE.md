@@ -14,6 +14,9 @@ Rust reimplementation of Final Fantasy X (Steam HD Remaster), recovered from
   the evidence in the comment). REA sessions lose names on close; reapply
   them with `tools/sym2json.py` → `set_addresses_names`.
 - Format docs in `docs/formats/` cite the FFX.exe functions they come from.
+- A function replacement needs a parity test in `ffx-oracle` against the
+  original machine code before it goes into the hook table
+  (`docs/hooking.md`).
 
 ## Environment
 
@@ -34,4 +37,7 @@ cargo clippy --all-targets      # pedantic lints, keep it clean
 cargo fmt
 FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test
 FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test --release -p ffx-vbf --test game_data -- --ignored
+FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test --release -p ffx-oracle   # parity with the original
+tools/build-hook.sh                                                        # 32-bit dinput8.dll
+target/i686-pc-windows-msvc/release/examples/hook-smoke.exe "$(wslpath -w ~/steam-games/FFX-X2-HD/FFX.exe)"
 ```

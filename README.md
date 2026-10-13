@@ -12,16 +12,22 @@ data, and never will: binaries, archives and extracted files stay out of git.
 |---|---|
 | VBF archive reader (`ffx-vbf`) | Done. Reads every file in `FFX_Data.vbf` |
 | `ffx` CLI | `vbf list`, `vbf cat`, `vbf extract` |
-| Symbol map (`symbols/ffx.sym`) | 30 names: file system and archive code |
+| Function replacement | `dinput8.dll` proxy patches 2 functions (`zlib_uncompress`, `Path_ToLowerAscii`); parity with the originals verified under emulation and on Windows; not yet run in the game |
+| Symbol map (`symbols/ffx.sym`) | 33 names: file system, archive and zlib code |
 
 ## Layout
 
 ```text
-crates/ffx-vbf    VBF archive reader
-crates/ffx-cli    the `ffx` command-line tool
-symbols/ffx.sym   recovered names for FFX.exe, the source of truth
-docs/formats      file format descriptions, with the evidence behind them
-tools/ghidra      headless Ghidra scripts (apply symbols, dump decompiled code)
+crates/ffx-core     Rust reimplementations of FFX.exe functions
+crates/ffx-oracle   runs original FFX.exe functions in an emulator, for parity tests
+crates/ffx-hook     patches FFX.exe functions to jump into ffx-core
+crates/ffx-dinput8  dinput8.dll proxy that loads ffx-hook into the game
+crates/ffx-vbf      VBF archive reader
+crates/ffx-cli      the `ffx` command-line tool
+symbols/ffx.sym     recovered names for FFX.exe, the source of truth
+docs/formats        file format descriptions, with the evidence behind them
+tools/ghidra        headless Ghidra scripts (apply symbols, dump decompiled code)
+tools/build-hook.sh builds the 32-bit dinput8.dll
 ```
 
 ## Usage
@@ -39,7 +45,10 @@ cargo run --release -p ffx-cli -- vbf extract "$FFX_GAME_DIR/data/FFX_Data.vbf" 
 ```bash
 cargo test                                    # synthetic archives; metamenu.vbf if FFX_GAME_DIR is set
 cargo test --release -p ffx-vbf --test game_data -- --ignored   # all of FFX_Data.vbf (~20 GB)
+cargo test --release -p ffx-oracle            # Rust vs. original machine code (needs FFX_GAME_DIR)
 ```
+
+Replacing game functions: see [docs/hooking.md](docs/hooking.md).
 
 ## Reverse engineering setup
 

@@ -1,0 +1,96 @@
+# Replacing FFX.exe functions with Rust
+
+The rebuild proceeds one function at a time. Each replacement is written in
+Rust, checked against the original machine code, and then patched into the
+running game in place of the original. Once enough of the game is replaced,
+`FFX.exe` is no longer needed.
+
+## Pieces
+
+| Crate | Role |
+|---|---|
+| `ffx-core` | The reimplementations, as safe, platform-independent Rust |
+| `ffx-oracle` | Runs the original functions from `FFX.exe` in a Unicorn x86 emulator, so tests can compare them with `ffx-core` on Linux |
+| `ffx-hook` | The hook table, the patcher, and `extern "C"` shims with the originals' exact signatures |
+| `ffx-dinput8` | `dinput8.dll` proxy that loads `ffx-hook` into the game |
+
+## How a hook works
+
+`FFX.exe` imports `DINPUT8.dll!DirectInput8Create`, and Windows looks for
+DLLs in the game folder first. Our `dinput8.dll` is therefore loaded before
+any game code runs. Its `DllMain`:
+
+1. checks the main module's PE `TimeDateStamp` and `SizeOfImage` against the
+   supported build, and patches nothing if they differ;
+2. rebases each hook address onto the module's real base (ASLR is on);
+3. checks that each site still holds the original first five bytes;
+4. overwrites them with `jmp rel32` to the Rust shim.
+
+The original is never called again, so no trampoline is needed.
+`DirectInput8Create` itself forwards to the system `dinput8.dll`.
+
+Results go to `ffx-hook.log` next to `FFX.exe`. Set
+`FFX_HOOK_DISABLE=zlib_uncompress,Path_ToLowerAscii` (any subset) to keep
+those originals, which is useful for A/B comparisons.
+
+## Replaced so far
+
+| Function | Address | Checked by |
+|---|---|---|
+| `zlib_uncompress` | `0x00405e20` | 1,500 synthetic streams (fit, spare room, too small, truncated, flipped bit; all result codes) and every compressed block in `metamenu.vbf` |
+| `Path_ToLowerAscii` | `0x00607d50` | NULL, empty, all 255 byte values, 2,000 random strings; output bytes and return value |
+
+## Adding a replacement
+
+1. Understand the original: decompile it, then read its assembly for the
+   calling convention, return value and side effects. Record the name in
+   `symbols/ffx.sym`.
+2. Write it in `ffx-core`, with unit tests.
+3. Add a parity test in `crates/ffx-oracle/tests/parity.rs` that runs both on
+   many inputs, including edge cases and invalid ones, and asserts that
+   every interesting outcome actually occurred.
+4. Add a shim to `crates/ffx-hook/src/replacements.rs` with the original's
+   exact signature, and an entry to `hooks()` with the first five bytes of
+   the original.
+5. Build and run the Windows smoke test, then try it in the game.
+
+Only functions whose callers can be satisfied through their signature are
+safe to replace this way. A function that the game expects to touch global
+state must touch the same state in Rust.
+
+## Building
+
+```bash
+tools/build-hook.sh
+```
+
+This cross-compiles with `cargo xwin` for `i686-pc-windows-msvc`
+(`XWIN_ARCH=x86`), with the CRT linked statically, so the DLL imports only
+system libraries. `tools/shims/lld-link` routes linking to rustc's own
+`rust-lld`, because Ubuntu's `lld-link` 18 cannot parse the `EXPORTAS`
+directive rustc emits for 32-bit stdcall exports.
+
+## Testing
+
+```bash
+# Parity against the original machine code (Linux)
+FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test --release -p ffx-oracle
+
+# Patch the real FFX.exe on Windows, without starting the game
+target/i686-pc-windows-msvc/release/examples/hook-smoke.exe "$(wslpath -w ~/steam-games/FFX-X2-HD/FFX.exe)"
+```
+
+The smoke test maps `FFX.exe` with `DONT_RESOLVE_DLL_REFERENCES` (no game
+code runs), installs the hooks, and calls the original addresses, which now
+run Rust.
+
+## In the game
+
+Not yet tried; it needs the game on Windows and the Steam client running.
+
+1. Put the game folder on a Windows drive (FFX.exe, the DLLs and `data/`).
+2. Copy `target/i686-pc-windows-msvc/release/dinput8.dll` next to `FFX.exe`.
+3. Start Steam, then the game, and load a save.
+4. Check `ffx-hook.log`: every hook should say `Installed`.
+
+To remove it, delete `dinput8.dll`.

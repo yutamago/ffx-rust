@@ -1,0 +1,21 @@
+[package]
+name = "ffx-oracle"
+description = "Runs original FFX.exe functions in an x86 emulator to check Rust reimplementations against them"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+goblin.workspace = true
+thiserror.workspace = true
+unicorn-engine.workspace = true
+
+[dev-dependencies]
+ffx-core.workspace = true
+ffx-vbf.workspace = true
+flate2.workspace = true
+
+[lints]
+workspace = true
