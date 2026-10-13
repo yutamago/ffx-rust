@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 ffx-kernel.workspace = true
+ffx-monster.workspace = true
 ffx-text.workspace = true
 ffx-vbf.workspace = true
 anyhow.workspace = true

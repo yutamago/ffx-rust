@@ -86,6 +86,83 @@ const COMMAND_FIELDS: &[Field] = &[
     },
 ];
 
+/// Monster stats. The same 128-byte record appears in the kernel
+/// `monster1`–`3` tables and in sections 2 and 6 of each monster file; the
+/// battle copies section 2 into the enemy actor (`Mon_InitActor`,
+/// `0x0079b4f0`; see `docs/formats/monster.md`).
+pub const MONSTER_FIELDS: &[Field] = &[
+    Field {
+        name: "hp",
+        offset: 0x14,
+        kind: Kind::U32,
+        doc: "max HP; actor +0x594/+0x59c",
+    },
+    Field {
+        name: "mp",
+        offset: 0x18,
+        kind: Kind::U32,
+        doc: "max MP; actor +0x598/+0x5a0",
+    },
+    Field {
+        name: "overkill",
+        offset: 0x1c,
+        kind: Kind::U32,
+        doc: "damage needed for an overkill; actor +0x5a4",
+    },
+    Field {
+        name: "strength",
+        offset: 0x20,
+        kind: Kind::U8,
+        doc: "actor +0x5a8; attacker stat of physical damage (Dmg_Calc 0x00789bf0)",
+    },
+    Field {
+        name: "defense",
+        offset: 0x21,
+        kind: Kind::U8,
+        doc: "actor +0x5a9; target stat of physical damage (Dmg_Calc)",
+    },
+    Field {
+        name: "magic",
+        offset: 0x22,
+        kind: Kind::U8,
+        doc: "actor +0x5aa; attacker stat of magic damage (Dmg_Calc)",
+    },
+    Field {
+        name: "magic_defense",
+        offset: 0x23,
+        kind: Kind::U8,
+        doc: "actor +0x5ab; target stat of magic damage (Dmg_Calc)",
+    },
+    Field {
+        name: "stat_24",
+        offset: 0x24,
+        kind: Kind::U8,
+        doc: "actor +0x5ac, clamped 1..255",
+    },
+    Field {
+        name: "stat_25",
+        offset: 0x25,
+        kind: Kind::U8,
+        doc: "actor +0x5ad, clamped 1..255",
+    },
+    Field {
+        name: "stat_26",
+        offset: 0x26,
+        kind: Kind::U8,
+        doc: "actor +0x5ae, clamped 0..255",
+    },
+    Field {
+        name: "stat_27",
+        offset: 0x27,
+        kind: Kind::U8,
+        doc: "actor +0x5af, clamped 1..255",
+    },
+];
+
+/// Kernel monster text: 0 → actor +0x50 (name), 1 → +0x90, 3 → +0x190
+/// (`Mon_LoadText`, `0x00783680`).
+const MONSTER_STRINGS: &[&str] = &["name", "text_1", "text_2", "scan", "text_4"];
+
 const NAME_HELP: &[&str] = &["name", "text_1", "description", "text_3"];
 const FOUR: &[&str] = &["text_0", "text_1", "text_2", "text_3"];
 const TWO: &[&str] = &["text_0", "text_1"];
@@ -179,20 +256,20 @@ pub const SCHEMAS: &[Schema] = &[
     Schema {
         file: "monster1",
         record_size: 128,
-        strings: &["name", "text_1", "scan", "text_3", "text_4"],
-        fields: &[],
+        strings: MONSTER_STRINGS,
+        fields: MONSTER_FIELDS,
     },
     Schema {
         file: "monster2",
         record_size: 128,
-        strings: &["name", "text_1", "scan", "text_3", "text_4"],
-        fields: &[],
+        strings: MONSTER_STRINGS,
+        fields: MONSTER_FIELDS,
     },
     Schema {
         file: "monster3",
         record_size: 128,
-        strings: &["name", "text_1", "scan", "text_3", "text_4"],
-        fields: &[],
+        strings: MONSTER_STRINGS,
+        fields: MONSTER_FIELDS,
     },
     Schema {
         file: "name_txt",

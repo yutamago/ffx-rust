@@ -12,8 +12,9 @@ data, and never will: binaries, archives and extracted files stay out of git.
 |---|---|
 | VBF archive reader (`ffx-vbf`) | Done. Reads every file in `FFX_Data.vbf` |
 | Kernel tables (`ffx-kernel`) | All 26 tables × 8 languages read, written and round-tripped through TOML byte for byte; items/commands partly named |
+| Monsters (`ffx-monster`) | All 361 monster files: stats (HP, MP, strength, defense, magic, magic defense, …) and rewards (gil, AP, drops, steal, bribe) editable via TOML; byte-exact round trip |
 | Text (`ffx-text`) | Encoding fully decoded for all 8 languages; all 92,224 kernel strings round-trip |
-| `ffx` CLI | `vbf list/cat/extract`, `kernel tables/export/import` |
+| `ffx` CLI | `vbf list/cat/extract`, `kernel tables/export/import`, `monster list/export/import` |
 | Function replacement | `dinput8.dll` proxy patches 2 functions (`zlib_uncompress`, `Path_ToLowerAscii`) with parity-tested Rust; runs in the game |
 | Mods | `mods/<mod>/<archive path>` replaces archive files in the running game (verified with an edited item table) |
 | Symbol map (`symbols/ffx.sym`) | file system, archive, zlib, text, kernel and settings code |
@@ -27,6 +28,7 @@ crates/ffx-hook     patches FFX.exe functions to jump into ffx-core
 crates/ffx-dinput8  dinput8.dll proxy that loads ffx-hook into the game
 crates/ffx-vbf      VBF archive reader
 crates/ffx-kernel   battle kernel tables: reader, writer, TOML export/import
+crates/ffx-monster  monster files: stats and rewards
 crates/ffx-text     in-game text encoding
 crates/ffx-cli      the `ffx` command-line tool
 symbols/ffx.sym     recovered names for FFX.exe, the source of truth

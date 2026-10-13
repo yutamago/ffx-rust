@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use ffx_kernel::{Schema, Table};
+use ffx_monster::MonsterFile;
 use ffx_text::{Charset, Language};
 use ffx_vbf::{Archive, Entry};
 use rayon::prelude::*;
@@ -26,6 +27,41 @@ enum Command {
     /// Export and import the battle kernel tables (items, commands, monsters, ...).
     #[command(subcommand)]
     Kernel(KernelCommand),
+    /// Export and import monster stats and rewards (battle/mon/_mNNN/mNNN.bin).
+    #[command(subcommand)]
+    Monster(MonsterCommand),
+}
+
+#[derive(Subcommand)]
+enum MonsterCommand {
+    /// List monster IDs with their names and HP.
+    List {
+        #[command(flatten)]
+        game: GameArgs,
+    },
+    /// Export one monster's stats and rewards as TOML.
+    Export {
+        #[command(flatten)]
+        game: GameArgs,
+        id: u16,
+        /// Output file; stdout if omitted.
+        #[arg(short, long)]
+        out: Option<PathBuf>,
+    },
+    /// Apply TOML onto the original monster file and write the result.
+    Import {
+        #[command(flatten)]
+        game: GameArgs,
+        id: u16,
+        /// TOML with `[stats]` and/or `[spoils]` edits.
+        toml: PathBuf,
+        /// Write the file here.
+        #[arg(short, long, conflicts_with = "mod_dir")]
+        out: Option<PathBuf>,
+        /// Write the file into a mod folder, at its path inside the archive.
+        #[arg(long)]
+        mod_dir: Option<PathBuf>,
+    },
 }
 
 /// Where the game is and which language to use.
@@ -92,9 +128,22 @@ enum VbfCommand {
 }
 
 fn main() -> Result<()> {
-    match Cli::parse().command {
+    let result = run(Cli::parse());
+    // Piping into `head` closes stdout early; that is not an error.
+    if let Err(e) = &result
+        && e.downcast_ref::<std::io::Error>()
+            .is_some_and(|e| e.kind() == std::io::ErrorKind::BrokenPipe)
+    {
+        return Ok(());
+    }
+    result
+}
+
+fn run(cli: Cli) -> Result<()> {
+    match cli.command {
         Command::Vbf(cmd) => vbf(cmd),
         Command::Kernel(cmd) => kernel(cmd),
+        Command::Monster(cmd) => monster(cmd),
     }
 }
 
@@ -122,6 +171,71 @@ impl Game {
     fn kernel_path(&self, table: &str) -> String {
         format!("{}{table}.bin", self.language.kernel_dir())
     }
+}
+
+fn monster(cmd: MonsterCommand) -> Result<()> {
+    match cmd {
+        MonsterCommand::List { game } => {
+            let game = Game::open(&game)?;
+            let tables: Vec<Table> = ["monster1", "monster2", "monster3"]
+                .iter()
+                .map(|t| {
+                    Ok(Table::parse(&read_file(
+                        &game.archive,
+                        &game.kernel_path(t),
+                    )?)?)
+                })
+                .collect::<Result<_>>()?;
+            let mut out = std::io::stdout().lock();
+            for table in &tables {
+                for id in table.ids() {
+                    if game.archive.find(&ffx_monster::archive_path(id)).is_none() {
+                        continue;
+                    }
+                    let name = game.charset.decode(table.string(id, 0).unwrap_or_default());
+                    let hp = table.record(id).map_or(0, |r| {
+                        u32::from_le_bytes(r[0x14..0x18].try_into().expect("4 bytes"))
+                    });
+                    writeln!(out, "{id:3}  {hp:>9} HP  {name}")?;
+                }
+            }
+        }
+        MonsterCommand::Export { game, id, out } => {
+            let game = Game::open(&game)?;
+            let file =
+                MonsterFile::parse(read_file(&game.archive, &ffx_monster::archive_path(id))?)?;
+            let text = format!("# battle/mon/_m{id:03}/m{id:03}.bin\n\n{}", file.export()?);
+            match out {
+                Some(path) => std::fs::write(path, text)?,
+                None => std::io::stdout().lock().write_all(text.as_bytes())?,
+            }
+        }
+        MonsterCommand::Import {
+            game,
+            id,
+            toml,
+            out,
+            mod_dir,
+        } => {
+            let game = Game::open(&game)?;
+            let archive_path = ffx_monster::archive_path(id);
+            let mut file = MonsterFile::parse(read_file(&game.archive, &archive_path)?)?;
+            let edits = std::fs::read_to_string(&toml)
+                .with_context(|| format!("reading {}", toml.display()))?;
+            file.import(&edits)?;
+            let dest = match (out, mod_dir) {
+                (Some(path), _) => path,
+                (None, Some(dir)) => dir.join(safe_relative(&archive_path)?),
+                (None, None) => bail!("pass --out <file> or --mod-dir <dir>"),
+            };
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&dest, file.bytes())?;
+            eprintln!("wrote {}", dest.display());
+        }
+    }
+    Ok(())
 }
 
 fn read_file(archive: &Archive, path: &str) -> Result<Vec<u8>> {

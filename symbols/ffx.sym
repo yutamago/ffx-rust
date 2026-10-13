@@ -51,13 +51,23 @@
 0x00679730 function PcFile_Open               # allocates a File and calls File_Construct/File_Open; MessageBoxW on failure
 0x006db070 function LangManager_Get
 0x006db090 function LangManager_FromSettings  # settings language index -> game language id
+0x0076b970 function Cd_QueueRead              # libmscd.c emulation: queue a read of a PS2 file by number; slot 0 of g_CdLib
 0x00781d40 function Kernel_LoadTables         # loads command, ply_rom, a_ability, item, monmagic1/2, ... into globals
 0x00782df0 function Kernel_LoadFile           # (name, buffer) reads new_<lang>pc/battle/kernel/<name>.bin whole
+0x00783680 function Mon_LoadText              # kernel monster name/texts -> actor +0x50/+0x90/+0x190, then requests mon_data
+0x00783b00 function Mon_AttachData            # monster file sections -> actor +0xf78 (script), +0xf7c, +0xf80 (stats), +0xf84
+0x00784070 function Mon_LoadAll               # sprintf m%03d for each of 8 enemy slots
+0x00784260 function Mon_GetName               # kernel monster record string 0
+0x00789bf0 function Dmg_Calc                  # physical: str(+0x5a8)^3 vs def(+0x5a9); magic: mag(+0x5aa) vs mdef(+0x5ab)
+0x0078b760 function Battle_Steal              # steal chance spoils+0x0a, items +0x24/+0x26, counts +0x28/+0x29
 0x007906a0 function Item_BuildLists           # sorts items by command flags bit 0x2 / 0x400
 0x00790970 function Ability_FindRecord        # id & 0xfff in g_KernelAAbility
 0x007909f0 function Item_FindRecord           # id & 0xfff in g_KernelItem
 0x00790a50 function MonMagic1_FindRecord
 0x00790a90 function Command_FindRecord        # id & 0xfff in g_KernelCommand
+0x00797410 function Mon_FindHandler           # lookup in monster file section 1
+0x007990d0 function Battle_GiveRewards        # gil, AP, two drop slots, overkill drops, bribe (spoils section 4)
+0x0079b4f0 function Mon_InitActor             # copies the stat record (section 2) into the battle actor
 0x007ab870 function Kernel_FindRecord         # (id, table, &strings) -> record; defines the container (docs/formats/kernel.md)
 0x008c6920 function Cmd_HealAmount            # formula +0x28: 6 = power*50, 7 = (stat+power)/2*power, 8 = maxHP*power/16; power +0x2a
 0x00cc9698 label    g_BasePath
@@ -71,4 +81,8 @@
 0x0112a938 label    g_KernelPlyRom
 0x0112a940 label    g_KernelItem
 0x0112a944 label    g_KernelAAbility
+0x0112ca6c label    g_KernelMonster1
+0x0112ca70 label    g_KernelMonster2
+0x0112ca74 label    g_KernelMonster3
 0x022fb504 label    g_Settings
+0x02310c40 label    g_CdLib                   # function table of the PS2 CD-library emulation

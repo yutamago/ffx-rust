@@ -12,6 +12,7 @@ rust-version = "1.90"
 ffx-core = { path = "crates/ffx-core" }
 ffx-hook = { path = "crates/ffx-hook" }
 ffx-kernel = { path = "crates/ffx-kernel" }
+ffx-monster = { path = "crates/ffx-monster" }
 ffx-text = { path = "crates/ffx-text" }
 ffx-vbf = { path = "crates/ffx-vbf" }
 anyhow = "1.0.104"

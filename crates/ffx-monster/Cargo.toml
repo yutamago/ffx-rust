@@ -1,0 +1,18 @@
+[package]
+name = "ffx-monster"
+description = "Reader, writer and TOML export for FFX's monster files (battle/mon/_mNNN/mNNN.bin)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ffx-kernel.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+ffx-vbf.workspace = true
+
+[lints]
+workspace = true

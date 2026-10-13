@@ -8,6 +8,7 @@
 //! The format is described in `docs/formats/kernel.md`.
 
 mod export;
+pub mod record;
 pub mod schema;
 mod table;
 

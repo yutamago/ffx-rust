@@ -278,6 +278,7 @@ dependencies = [
  "anyhow",
  "clap",
  "ffx-kernel",
+ "ffx-monster",
  "ffx-text",
  "ffx-vbf",
  "rayon",
@@ -311,6 +312,16 @@ name = "ffx-kernel"
 version = "0.1.0"
 dependencies = [
  "ffx-text",
+ "ffx-vbf",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
+name = "ffx-monster"
+version = "0.1.0"
+dependencies = [
+ "ffx-kernel",
  "ffx-vbf",
  "thiserror",
  "toml",
