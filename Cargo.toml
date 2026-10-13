@@ -11,6 +11,8 @@ rust-version = "1.90"
 [workspace.dependencies]
 ffx-core = { path = "crates/ffx-core" }
 ffx-hook = { path = "crates/ffx-hook" }
+ffx-kernel = { path = "crates/ffx-kernel" }
+ffx-text = { path = "crates/ffx-text" }
 ffx-vbf = { path = "crates/ffx-vbf" }
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
@@ -20,6 +22,7 @@ md-5 = "0.11.0"
 miniz_oxide = "0.9.1"
 rayon = "1.12.0"
 thiserror = "2.0.21"
+toml = { version = "1.1.8", features = ["preserve_order"] }
 unicorn-engine = { version = "2.1.5", default-features = false, features = ["arch_x86"] }
 windows-sys = "0.61.2"
 
@@ -30,3 +33,4 @@ unsafe_op_in_unsafe_fn = "deny"
 pedantic = { level = "warn", priority = -1 }
 module_name_repetitions = "allow"
 missing_panics_doc = "allow"
+single_match_else = "allow"

@@ -11,7 +11,9 @@ data, and never will: binaries, archives and extracted files stay out of git.
 | Part | State |
 |---|---|
 | VBF archive reader (`ffx-vbf`) | Done. Reads every file in `FFX_Data.vbf` |
-| `ffx` CLI | `vbf list`, `vbf cat`, `vbf extract` |
+| Kernel tables (`ffx-kernel`) | All 26 tables × 8 languages read, written and round-tripped through TOML byte for byte; items/commands partly named |
+| Text (`ffx-text`) | Encoding fully decoded for all 8 languages; all 92,224 kernel strings round-trip |
+| `ffx` CLI | `vbf list/cat/extract`, `kernel tables/export/import` |
 | Function replacement | `dinput8.dll` proxy patches 2 functions (`zlib_uncompress`, `Path_ToLowerAscii`); parity with the originals verified under emulation and on Windows; not yet run in the game |
 | Symbol map (`symbols/ffx.sym`) | 33 names: file system, archive and zlib code |
 
@@ -23,6 +25,8 @@ crates/ffx-oracle   runs original FFX.exe functions in an emulator, for parity t
 crates/ffx-hook     patches FFX.exe functions to jump into ffx-core
 crates/ffx-dinput8  dinput8.dll proxy that loads ffx-hook into the game
 crates/ffx-vbf      VBF archive reader
+crates/ffx-kernel   battle kernel tables: reader, writer, TOML export/import
+crates/ffx-text     in-game text encoding
 crates/ffx-cli      the `ffx` command-line tool
 symbols/ffx.sym     recovered names for FFX.exe, the source of truth
 docs/formats        file format descriptions, with the evidence behind them
@@ -38,6 +42,8 @@ export FFX_GAME_DIR=~/steam-games/FFX-X2-HD     # the folder containing FFX.exe
 cargo run --release -p ffx-cli -- vbf list "$FFX_GAME_DIR/data/FFX_Data.vbf" | head
 cargo run --release -p ffx-cli -- vbf extract "$FFX_GAME_DIR/data/FFX_Data.vbf" \
     --out extracted --prefix ffx_ps2/ffx/master/new_uspc/battle/kernel/
+
+cargo run --release -p ffx-cli -- kernel export item -o item.toml   # items as editable TOML
 ```
 
 ## Tests

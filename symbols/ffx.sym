@@ -36,7 +36,27 @@
 0x0061df10 function Vbf_FindEntry
 0x00623470 function Steam_Init                # RestartAppIfNecessary(0), SteamAPI_Init; sets g_SteamReady on success, result ignored by caller
 0x0062ee50 function Game_Main                 # WinMain body called from the CRT entry; returns the process exit code
+0x00645f50 function Text_ToUtf8               # FFX text -> UTF-8; defines the byte grammar (docs/formats/text.md)
+0x006460a0 function Text_DecodeCharCjk        # character code -> UTF-8 via the jp/kr/ch table
+0x006461f0 function Text_DecodeCharWestern    # character code -> UTF-8 via ffxsjistbl_us.bin
+0x00646920 function Text_LoadCharset          # loads ffx_encoding/ffxsjistbl_<lang>.bin into g_CharsetCjk/g_CharsetWestern
 0x006795b0 function Game_InitFileSystem       # mounts data\FFX_Data.vbf, shows MessageBoxW on failure
+0x00781d40 function Kernel_LoadTables         # loads command, ply_rom, a_ability, item, monmagic1/2, ... into globals
+0x00782df0 function Kernel_LoadFile           # (name, buffer) reads new_<lang>pc/battle/kernel/<name>.bin whole
+0x007906a0 function Item_BuildLists           # sorts items by command flags bit 0x2 / 0x400
+0x00790970 function Ability_FindRecord        # id & 0xfff in g_KernelAAbility
+0x007909f0 function Item_FindRecord           # id & 0xfff in g_KernelItem
+0x00790a50 function MonMagic1_FindRecord
+0x00790a90 function Command_FindRecord        # id & 0xfff in g_KernelCommand
+0x007ab870 function Kernel_FindRecord         # (id, table, &strings) -> record; defines the container (docs/formats/kernel.md)
+0x008c6920 function Cmd_HealAmount            # formula +0x28: 6 = power*50, 7 = (stat+power)/2*power, 8 = maxHP*power/16; power +0x2a
 0x00cc9698 label    g_BasePath
 0x00cc9c48 label    g_FileSys
 0x00cc9cf5 label    g_SteamReady              # guards every other Steam call (achievements, RunCallbacks)
+0x00ccb95c label    g_CharsetCjk
+0x00ccb960 label    g_CharsetWestern
+0x0112a92c label    g_KernelCommand
+0x0112a930 label    g_KernelMonMagic1
+0x0112a938 label    g_KernelPlyRom
+0x0112a940 label    g_KernelItem
+0x0112a944 label    g_KernelAAbility

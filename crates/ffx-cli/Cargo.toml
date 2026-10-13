@@ -11,9 +11,11 @@ name = "ffx"
 path = "src/main.rs"
 
 [dependencies]
+ffx-kernel.workspace = true
+ffx-text.workspace = true
 ffx-vbf.workspace = true
 anyhow.workspace = true
-clap.workspace = true
+clap = { workspace = true, features = ["env"] }
 rayon.workspace = true
 
 [lints]
