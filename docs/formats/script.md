@@ -50,8 +50,8 @@ With `a` pushed first and `b` on top:
 
 | | `==` | `!=` | `>` | `>=` | `<` | `<=` |
 |---|---|---|---|---|---|---|
-| signed | `06` | `07` | `0a` | `0b` | `0e` | `0f` |
-| unsigned | | | `08` | `09` | `0c` | `0d` |
+| signed | `06` | `07` | `0a` | `0e` | `0b` | `0f` |
+| unsigned | | | `08` | `0c` | `09` | `0d` |
 
 Floats use the same opcodes.
 
