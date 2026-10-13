@@ -7,6 +7,7 @@
 #   default     builds and installs the ffx-hook proxy as DINPUT8.dll
 #   --no-hooks  removes it and runs the unmodified game
 #   --lang      game language (default en)
+#   --log-opens log every file the game reads to ffx-hook.log
 #
 # The language lives in Documents\Square Enix\FINAL FANTASY X&X-2 HD
 # Remaster\GameSetting.ini, which the Steam launcher normally writes; the game
@@ -20,6 +21,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --no-hooks) hooks=0 ;;
         --lang) lang="$2"; shift ;;
+        --log-opens) export FFX_HOOK_LOG_OPENS=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HOOK_LOG_OPENS" ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
     esac
     shift

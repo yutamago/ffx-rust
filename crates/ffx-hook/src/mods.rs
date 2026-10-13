@@ -18,7 +18,7 @@ use std::ffi::{CStr, c_char};
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
 use windows_sys::Win32::Storage::FileSystem::{
@@ -36,6 +36,9 @@ const G_FILE_SYS: u32 = 0x00cc_9c48;
 
 /// Archive path (normalized) → mod file, as a NUL-terminated wide string.
 static INDEX: OnceLock<HashMap<String, Vec<u16>>> = OnceLock::new();
+
+/// Set by `FFX_HOOK_LOG_OPENS=1`: log every file the game reads.
+static LOG_OPENS: AtomicBool = AtomicBool::new(false);
 
 /// Normalizes a path the way `File_Open` does: `\` → `/`, ASCII lowercase.
 fn normalize(path: &[u8]) -> String {
@@ -107,6 +110,10 @@ pub fn load(game_dir: &Path) {
         root.display()
     ));
     let _ = INDEX.set(index);
+    if std::env::var_os("FFX_HOOK_LOG_OPENS").is_some_and(|v| v == "1") {
+        LOG_OPENS.store(true, Ordering::Relaxed);
+        log("  mods: logging every file the game opens");
+    }
 }
 
 type FileOpenFn = unsafe extern "thiscall" fn(*mut usize, *const c_char, u32, u32, u32, u32) -> u32;
@@ -137,7 +144,8 @@ pub unsafe extern "thiscall" fn file_open(
 }
 
 unsafe fn open_mod(file: *mut usize, path: *const c_char) -> bool {
-    let Some(index) = INDEX.get().filter(|i| !i.is_empty()) else {
+    let logging = LOG_OPENS.load(Ordering::Relaxed);
+    let Some(index) = INDEX.get().filter(|i| logging || !i.is_empty()) else {
         return false;
     };
     // SAFETY: `g_FileSys` is a pointer-sized global in the patched image.
@@ -153,6 +161,9 @@ unsafe fn open_mod(file: *mut usize, path: *const c_char) -> bool {
         return false;
     };
     let Some(wide) = index.get(key) else {
+        if logging {
+            log(&format!("  open: {key}"));
+        }
         return false;
     };
     // SAFETY: `wide` is NUL-terminated.
