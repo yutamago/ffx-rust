@@ -5,3 +5,5 @@
 *.dll
 /extracted/
 /game/
+# Local exports of game data (ffx kernel/monster/script); never commit.
+/exports/
