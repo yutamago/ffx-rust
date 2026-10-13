@@ -34,6 +34,9 @@
 0x0061de30 function Vbf_InsertEntry           # inserts (name MD5 -> entry*) into the entry map
 0x0061dec0 function Vbf_Contains
 0x0061df10 function Vbf_FindEntry
+0x00623470 function Steam_Init                # RestartAppIfNecessary(0), SteamAPI_Init; sets g_SteamReady on success, result ignored by caller
+0x0062ee50 function Game_Main                 # WinMain body called from the CRT entry; returns the process exit code
 0x006795b0 function Game_InitFileSystem       # mounts data\FFX_Data.vbf, shows MessageBoxW on failure
 0x00cc9698 label    g_BasePath
 0x00cc9c48 label    g_FileSys
+0x00cc9cf5 label    g_SteamReady              # guards every other Steam call (achievements, RunCallbacks)

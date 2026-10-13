@@ -86,11 +86,29 @@ run Rust.
 
 ## In the game
 
-Not yet tried; it needs the game on Windows and the Steam client running.
+The game runs on Windows straight from its folder on the WSL filesystem,
+without Steam:
 
-1. Put the game folder on a Windows drive (FFX.exe, the DLLs and `data/`).
-2. Copy `target/i686-pc-windows-msvc/release/dinput8.dll` next to `FFX.exe`.
-3. Start Steam, then the game, and load a save.
-4. Check `ffx-hook.log`: every hook should say `Installed`.
+```bash
+tools/run-game.sh             # builds and installs the hooks as DINPUT8.dll, then starts FFX.exe
+tools/run-game.sh --no-hooks  # unmodified game
+```
 
-To remove it, delete `dinput8.dll`.
+Then check `ffx-hook.log` in the game folder: every hook should say
+`Installed`.
+
+No Steam patch is needed. `SteamAPI_RestartAppIfNecessary(0)` returns false,
+`SteamAPI_Init()` fails, and the game carries on with Steam features
+(achievements, callbacks) off; they are all guarded by the "Steam
+initialized" flag at `0x00cc9cf5` set in `Steam_Init` (`0x00623470`).
+
+The script handles two quirks of running from the WSL filesystem:
+
+- Windows only loads images that have the Linux execute bit.
+- The filesystem is case-sensitive, and `FFX.exe` imports `MSVCR110.dll`,
+  `MSVCP110.dll` and `DINPUT8.dll` in upper case. The script adds uppercase
+  hard links for the two runtime DLLs and installs our proxy as `DINPUT8.dll`.
+  With the wrong case, Windows reports the DLL as missing.
+
+`tools/frida/trace-startup.py` spawns the game under frida-server and logs
+Steam API calls and a backtrace at exit, which is how the above was found.

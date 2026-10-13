@@ -39,5 +39,6 @@ FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test
 FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test --release -p ffx-vbf --test game_data -- --ignored
 FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test --release -p ffx-oracle   # parity with the original
 tools/build-hook.sh                                                        # 32-bit dinput8.dll
+tools/run-game.sh [--no-hooks]                                             # start FFX.exe on Windows, no Steam needed
 target/i686-pc-windows-msvc/release/examples/hook-smoke.exe "$(wslpath -w ~/steam-games/FFX-X2-HD/FFX.exe)"
 ```
