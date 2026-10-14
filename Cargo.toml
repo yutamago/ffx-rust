@@ -13,6 +13,7 @@ ffx-core = { path = "crates/ffx-core" }
 ffx-hook = { path = "crates/ffx-hook" }
 ffx-kernel = { path = "crates/ffx-kernel" }
 ffx-monster = { path = "crates/ffx-monster" }
+ffx-motion = { path = "crates/ffx-motion" }
 ffx-phyre = { path = "crates/ffx-phyre" }
 ffx-script = { path = "crates/ffx-script" }
 ffx-text = { path = "crates/ffx-text" }

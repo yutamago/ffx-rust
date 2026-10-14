@@ -16,11 +16,12 @@ data, and never will: binaries, archives and extracted files stay out of git.
 | Scripts (`ffx-script`) | Bytecode interpreter decoded; all 758 event and monster AI scripts (17.3M instructions) disassemble and reassemble byte for byte; edits that grow code are relocated; native calls resolved to their FFX.exe handlers |
 | Textures (`ffx-phyre`) | All 44,364 PC textures to upright DDS and back, byte for byte (DXT1/3/5, ARGB8, L8, cube maps) |
 | Models and maps (`ffx-phyre`) | All 1,266 meshes to valid glTF with node hierarchy, instances, skins and embedded base color textures. Vertex streams and materials come from the decoded pointer and array fixups, which match the original unpackers. |
+| Motions (`ffx-motion`) | PS2 skeletons and all 3,156 motion groups (21,165 clips): decoded, rebuilt byte for byte, editable as JSON; exported as glTF animations on the remastered models (857 `chr/` models validate) |
 | Text (`ffx-text`) | Encoding fully decoded for all 8 languages; all 92,224 kernel strings round-trip |
-| `ffx` CLI | `vbf list/cat/extract/pack`, `kernel tables/export/import`, `monster list/export/import`, `script list/disasm/asm`, `texture export/import`, `model export`, `phyre dump` |
+| `ffx` CLI | `vbf list/cat/extract/pack`, `kernel tables/export/import`, `monster list/export/import`, `script list/disasm/asm`, `texture export/import`, `model export` (with animations), `motion export/import`, `phyre dump` |
 | Function replacement | `dinput8.dll` proxy patches 2 functions (`zlib_uncompress`, `Path_ToLowerAscii`) with parity-tested Rust; runs in the game |
 | Mods | `mods/<mod>/<archive path>` replaces archive files in the running game (verified with an edited item table) |
-| Symbol map (`symbols/ffx.sym`) | file system, archive, zlib, text, kernel and settings code |
+| Symbol map (`symbols/ffx.sym`) | file system, archive, zlib, text, kernel, settings, PhyreEngine fixups and motion code |
 
 ## Layout
 
@@ -34,6 +35,7 @@ crates/ffx-kernel   battle kernel tables: reader, writer, TOML export/import
 crates/ffx-monster  monster files: stats and rewards
 crates/ffx-script   script disassembler and assembler
 crates/ffx-phyre    PhyreEngine clusters: textures to and from DDS, models to glTF
+crates/ffx-motion   PS2 skeletons and motion groups: reader, writer, JSON
 crates/ffx-text     in-game text encoding
 crates/ffx-cli      the `ffx` command-line tool
 symbols/ffx.sym     recovered names for FFX.exe, the source of truth

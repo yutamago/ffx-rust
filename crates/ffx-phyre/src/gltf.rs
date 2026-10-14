@@ -7,14 +7,34 @@
 //!   images.
 //!
 //! - skins: the skeleton's hierarchy matrices are the `PNode`s of the same
-//!   names, the skeleton matrices their inverse bind matrices.
-//!
-//! Animations are not exported yet.
+//!   names, the skeleton matrices their inverse bind matrices;
+//! - animations the caller supplies, as sampled node transforms (the
+//!   remaster plays the PS2 motions, which are not in the cluster).
 
 use serde_json::{Value, json};
 
 use crate::material::MaterialTexture;
 use crate::model::{Model, Segment};
+
+/// One node's sampled transforms in an [`Animation`]; empty paths are
+/// not animated.
+#[derive(Debug, Clone, Default)]
+pub struct Track {
+    /// Name of the `PNode` it animates.
+    pub node: String,
+    pub translation: Vec<[f32; 3]>,
+    /// Quaternions `[x, y, z, w]`.
+    pub rotation: Vec<[f32; 4]>,
+    pub scale: Vec<[f32; 3]>,
+}
+
+/// An animation: tracks sampled at a fixed rate from time 0.
+#[derive(Debug, Clone, Default)]
+pub struct Animation {
+    pub name: String,
+    pub fps: f32,
+    pub tracks: Vec<Track>,
+}
 
 /// Bytes being collected into the binary chunk, with their buffer views.
 #[derive(Default)]
@@ -256,6 +276,91 @@ fn transform(m: &[f32; 16]) -> serde_json::Map<String, Value> {
     out
 }
 
+/// The keys, or only the first when they never change.
+#[allow(clippy::float_cmp)] // the same samples, bit for bit
+fn held<const N: usize>(keys: &[[f32; N]]) -> &[[f32; N]] {
+    if keys.windows(2).all(|w| w[0] == w[1]) {
+        &keys[..1]
+    } else {
+        keys
+    }
+}
+
+/// An animation's samplers and channels over the glTF `nodes`.
+#[allow(clippy::cast_precision_loss)] // frame numbers
+fn animation(bin: &mut Bin, a: &Animation, nodes: &[Value]) -> Option<Value> {
+    let frames = a
+        .tracks
+        .iter()
+        .map(|t| t.translation.len().max(t.rotation.len()).max(t.scale.len()))
+        .max()
+        .filter(|&n| n > 0 && a.fps > 0.0)?;
+    let times: Vec<[f32; 1]> = (0..frames).map(|f| [f as f32 / a.fps]).collect();
+    let mut time_accessors = std::collections::HashMap::new();
+    let mut time_accessor = |bin: &mut Bin, n: usize| {
+        *time_accessors.entry(n).or_insert_with(|| {
+            bin.accessor(
+                &floats(&times[..n]),
+                None,
+                json!({"componentType": FLOAT, "count": n, "type": "SCALAR",
+                       "min": [0.0], "max": [times[n - 1][0]]}),
+            )
+        })
+    };
+    let mut samplers = Vec::new();
+    let mut channels = Vec::new();
+    for t in &a.tracks {
+        let Some(node) = nodes
+            .iter()
+            .position(|n| n["name"] == t.node.as_str() && n.get("matrix").is_none())
+        else {
+            continue;
+        };
+        let mut add = |bin: &mut Bin, path: &str, bytes: Vec<u8>, n: usize, kind: &str| {
+            let input = time_accessor(bin, n);
+            let output = bin.accessor(
+                &bytes,
+                None,
+                json!({"componentType": FLOAT, "count": n, "type": kind}),
+            );
+            samplers.push(json!({"input": input, "output": output, "interpolation": "LINEAR"}));
+            channels.push(
+                json!({"sampler": samplers.len() - 1, "target": {"node": node, "path": path}}),
+            );
+        };
+        if !t.translation.is_empty() {
+            let v = held(&t.translation);
+            add(bin, "translation", floats(v), v.len(), "VEC3");
+        }
+        if !t.rotation.is_empty() {
+            // Unit quaternions on the same hemisphere as their predecessor,
+            // so that interpolation takes the short way.
+            let mut prev = [0.0, 0.0, 0.0, 1.0];
+            let rotation: Vec<[f32; 4]> = t
+                .rotation
+                .iter()
+                .map(|q| {
+                    let len = q.iter().map(|v| v * v).sum::<f32>().sqrt();
+                    let mut q = if len > 1e-6 { q.map(|v| v / len) } else { prev };
+                    if q.iter().zip(&prev).map(|(a, b)| a * b).sum::<f32>() < 0.0 {
+                        q = q.map(|v| -v);
+                    }
+                    prev = q;
+                    q
+                })
+                .collect();
+            let v = held(&rotation);
+            add(bin, "rotation", floats(v), v.len(), "VEC4");
+        }
+        if !t.scale.is_empty() {
+            let v = held(&t.scale);
+            add(bin, "scale", floats(v), v.len(), "VEC3");
+        }
+    }
+    (!channels.is_empty())
+        .then(|| json!({"name": a.name, "samplers": samplers, "channels": channels}))
+}
+
 fn add_child(nodes: &mut [Value], parent: usize, child: usize) {
     if nodes[parent].get("children").is_none() {
         nodes[parent]["children"] = json!([]);
@@ -270,20 +375,22 @@ impl Model {
     /// Writes the model as binary glTF, as stored and without textures.
     #[must_use]
     pub fn to_glb(&self) -> Vec<u8> {
-        self.to_glb_with(false, |_| None)
+        self.to_glb_with(false, |_| None, &[])
     }
 
     /// Writes the model as binary glTF. `y_down` turns the model upright
     /// for models stored with Y down (the characters, which came from
     /// the PS2 data; the remastered maps are Y up). `image` supplies a PNG
     /// for a material's base color texture; materials without one get a
-    /// plain color.
+    /// plain color. Tracks of `animations` for nodes the model lacks (or
+    /// that keep a sheared matrix) are left out.
     #[must_use]
     #[allow(clippy::too_many_lines)] // one glTF document, section by section
     pub fn to_glb_with(
         &self,
         y_down: bool,
         mut image: impl FnMut(&MaterialTexture) -> Option<Vec<u8>>,
+        animations: &[Animation],
     ) -> Vec<u8> {
         let mut bin = Bin::default();
         let primitives: Vec<Option<Value>> = self
@@ -430,6 +537,11 @@ impl Model {
             add_child(&mut nodes, parent, last);
         }
 
+        let gltf_animations: Vec<Value> = animations
+            .iter()
+            .filter_map(|a| animation(&mut bin, a, &nodes))
+            .collect();
+
         while !bin.data.len().is_multiple_of(4) {
             bin.data.push(0);
         }
@@ -445,6 +557,9 @@ impl Model {
         });
         if !skins.is_empty() {
             doc["skins"] = json!(skins);
+        }
+        if !gltf_animations.is_empty() {
+            doc["animations"] = json!(gltf_animations);
         }
         if !materials.is_empty() {
             doc["materials"] = json!(materials);

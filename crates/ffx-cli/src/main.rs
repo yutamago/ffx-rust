@@ -44,6 +44,110 @@ enum Command {
     /// Inspect `PhyreEngine` clusters.
     #[command(subcommand)]
     Phyre(PhyreCommand),
+    /// Export and import motion groups (`*.mgrp`) as JSON.
+    #[command(subcommand)]
+    Motion(MotionCommand),
+}
+
+#[derive(Subcommand)]
+enum MotionCommand {
+    /// Export a motion group as JSON (every clip's per-frame keys).
+    Export {
+        #[command(flatten)]
+        game: GameArgs,
+        /// Archive path, e.g. `ffx_ps2/ffx/master/jppc/chr/pc/c001/mot/resident1.mgrp`.
+        path: String,
+        /// Output file; stdout if omitted.
+        #[arg(short, long)]
+        out: Option<PathBuf>,
+    },
+    /// Write a motion group from (edited) JSON.
+    Import {
+        /// JSON from `ffx motion export`.
+        json: PathBuf,
+        /// Write the file here.
+        #[arg(short, long, conflicts_with = "mod_dir")]
+        out: Option<PathBuf>,
+        /// Write the file into a mod folder at this archive path.
+        #[arg(long, requires = "path")]
+        mod_dir: Option<PathBuf>,
+        /// Archive path for `--mod-dir`.
+        #[arg(long)]
+        path: Option<String>,
+    },
+}
+
+/// Indented JSON with arrays of plain values (keys, marks, events) on one
+/// line.
+fn json_lines(v: &serde_json::Value, indent: usize, out: &mut String) {
+    use serde_json::Value;
+    let pad = |n: usize| "  ".repeat(n);
+    match v {
+        Value::Array(items) if items.iter().all(|i| !i.is_array() && !i.is_object()) => {
+            out.push_str(&serde_json::to_string(v).expect("JSON"));
+        }
+        Value::Array(items) => {
+            out.push_str("[\n");
+            for (k, item) in items.iter().enumerate() {
+                out.push_str(&pad(indent + 1));
+                json_lines(item, indent + 1, out);
+                out.push_str(if k + 1 < items.len() { ",\n" } else { "\n" });
+            }
+            out.push_str(&pad(indent));
+            out.push(']');
+        }
+        Value::Object(map) => {
+            out.push_str("{\n");
+            for (k, (key, item)) in map.iter().enumerate() {
+                out.push_str(&pad(indent + 1));
+                out.push_str(&serde_json::to_string(key).expect("JSON"));
+                out.push_str(": ");
+                json_lines(item, indent + 1, out);
+                out.push_str(if k + 1 < map.len() { ",\n" } else { "\n" });
+            }
+            out.push_str(&pad(indent));
+            out.push('}');
+        }
+        _ => out.push_str(&serde_json::to_string(v).expect("JSON")),
+    }
+}
+
+fn motion(cmd: MotionCommand) -> Result<()> {
+    match cmd {
+        MotionCommand::Export { game, path, out } => {
+            let game = Game::open(&game)?;
+            let group = ffx_motion::MotionGroup::parse(&read_file(&game.archive, &path)?)
+                .with_context(|| path.clone())?;
+            let mut text = String::new();
+            json_lines(&group.to_json(), 0, &mut text);
+            text.push('\n');
+            match out {
+                Some(file) => std::fs::write(file, text)?,
+                None => std::io::stdout().lock().write_all(text.as_bytes())?,
+            }
+        }
+        MotionCommand::Import {
+            json,
+            out,
+            mod_dir,
+            path,
+        } => {
+            let text = std::fs::read_to_string(&json)
+                .with_context(|| format!("reading {}", json.display()))?;
+            let group = ffx_motion::MotionGroup::from_json(&serde_json::from_str(&text)?)?;
+            let dest = match (out, mod_dir, path) {
+                (Some(file), _, _) => file,
+                (None, Some(dir), Some(path)) => dir.join(safe_relative(&path)?),
+                _ => bail!("pass --out <file> or --mod-dir <dir> --path <archive path>"),
+            };
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&dest, group.write()?)?;
+            eprintln!("wrote {}", dest.display());
+        }
+    }
+    Ok(())
 }
 
 #[derive(Subcommand)]
@@ -202,11 +306,150 @@ enum ModelCommand {
         /// Output directory (archive paths are kept, `.dae.phyre` → `.glb`).
         #[arg(short, long)]
         out: PathBuf,
+        /// Leave out the character's own motions (`chr/…/mot/*.mgrp`).
+        #[arg(long)]
+        no_motions: bool,
+        /// More motion groups to take the character's clips from (archive
+        /// paths, e.g. an event's `event/obj/…/*.mgrp`).
+        #[arg(long = "motions")]
+        motion_groups: Vec<String>,
     },
 }
 
+/// The clips of a character's sequences in a motion group as glTF
+/// animations, named `<group>/<clip>` with the motions that play them.
+fn clip_animations(
+    group: &ffx_motion::MotionGroup,
+    stem: &str,
+    character: u16,
+) -> Vec<ffx_phyre::Animation> {
+    let mut out = Vec::new();
+    for seq in group.sequences.iter().filter(|s| s.character == character) {
+        for (k, entry) in seq.clips.iter().enumerate() {
+            let clip = &entry.clip;
+            // Motions whose script starts by playing this clip (opcode 1).
+            let mut motions: Vec<String> = seq
+                .motions
+                .iter()
+                .filter(|m| {
+                    m.script.first() == Some(&1)
+                        && m.script
+                            .get(1..3)
+                            .map(|b| usize::from(u16::from_le_bytes([b[0], b[1]])))
+                            == Some(k)
+                })
+                .map(|m| format!("{:04x}", m.number))
+                .collect();
+            motions.dedup();
+            let mut name = format!("{stem}/{k}");
+            if !motions.is_empty() {
+                write!(name, " ({})", motions.join(" ")).expect("string");
+            }
+            let tracks = (0..clip.bones())
+                .map(|bone| {
+                    let mut track = ffx_phyre::Track {
+                        node: format!("SkeletonNode_{bone}"),
+                        ..Default::default()
+                    };
+                    for f in 0..usize::from(clip.frames) {
+                        let (t, r, s) = ffx_motion::trs(clip.bone_at(bone, f));
+                        track.translation.push(t);
+                        track.rotation.push(r);
+                        track.scale.push(s);
+                    }
+                    track
+                })
+                .collect();
+            out.push(ffx_phyre::Animation {
+                name,
+                fps: f32::from(clip.rate) / 256.0,
+                tracks,
+            });
+        }
+    }
+    out
+}
+
+/// The motion groups to export with a model: its own (for `chr/` models)
+/// and the extra ones asked for.
+fn model_animations(
+    archive: &Archive,
+    model_path: &str,
+    own: bool,
+    extra: &[String],
+) -> Result<Vec<ffx_phyre::Animation>> {
+    // ffx_data/gamedata/ps3data/chr/pc/c001/mdl/d3d11/c001.dae.phyre
+    let Some(rest) = model_path.split("/ps3data/chr/").nth(1) else {
+        return Ok(Vec::new());
+    };
+    let mut parts = rest.split('/');
+    let (Some(kind), Some(name)) = (parts.next(), parts.next()) else {
+        return Ok(Vec::new());
+    };
+    let Some(character) = ffx_motion::character_id(name) else {
+        return Ok(Vec::new());
+    };
+    let resident = |kind: &str, name: &str| -> Vec<String> {
+        (0..4)
+            .map(|r| format!("ffx_ps2/ffx/master/jppc/chr/{kind}/{name}/mot/resident{r}.mgrp"))
+            .collect()
+    };
+    let mut groups: Vec<(String, u16)> = Vec::new();
+    if own {
+        groups.extend(resident(kind, name).into_iter().map(|g| (g, character)));
+    }
+    groups.extend(extra.iter().map(|g| (g.clone(), character)));
+    let mut out = Vec::new();
+    let load = |groups: &[(String, u16)], out: &mut Vec<ffx_phyre::Animation>| -> Result<()> {
+        for (path, character) in groups {
+            let Some(entry) = archive.find(path) else {
+                continue;
+            };
+            let group = ffx_motion::MotionGroup::parse(&archive.read(entry)?)
+                .with_context(|| path.clone())?;
+            let stem = path
+                .rsplit('/')
+                .next()
+                .unwrap_or(path)
+                .trim_end_matches(".mgrp");
+            out.extend(clip_animations(&group, stem, *character));
+        }
+        Ok(())
+    };
+    load(&groups, &mut out)?;
+    if own && out.is_empty() {
+        // Monsters that share a skeleton use the motions of the one their
+        // .chr names.
+        let chr = format!("ffx_ps2/ffx/master/jppc/chr/{kind}/{name}/mdl/{name}.chr");
+        if let Some(entry) = archive.find(&chr) {
+            let bytes = archive.read(entry)?;
+            for other in ffx_motion::referenced_characters(&bytes, character) {
+                let Some(dir) = ffx_motion::character_dir(other) else {
+                    continue;
+                };
+                let (kind, name) = dir.split_once('/').expect("kind/name");
+                let groups: Vec<(String, u16)> = resident(kind, name)
+                    .into_iter()
+                    .map(|g| (g, other))
+                    .collect();
+                load(&groups, &mut out)?;
+                if !out.is_empty() {
+                    break;
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
 fn model(cmd: ModelCommand) -> Result<()> {
-    let ModelCommand::Export { game, prefix, out } = cmd;
+    let ModelCommand::Export {
+        game,
+        prefix,
+        out,
+        no_motions,
+        motion_groups,
+    } = cmd;
     let game = Game::open(&game)?;
     let entries: Vec<&Entry> = game
         .archive
@@ -231,16 +474,23 @@ fn model(cmd: ModelCommand) -> Result<()> {
                     std::collections::HashMap::new();
                 // Characters, monsters, weapons… (`chr/`) are stored Y down.
                 let y_down = entry.path.contains("/ps3data/chr/");
-                let glb = model.to_glb_with(y_down, |t| {
-                    pngs.entry(t.archive_path())
-                        .or_insert_with_key(|path| {
-                            let entry = game.archive.find(path)?;
-                            let texture =
-                                ffx_phyre::Texture::parse(game.archive.read(entry).ok()?).ok()?;
-                            Some(texture.to_png())
-                        })
-                        .clone()
-                });
+                let animations =
+                    model_animations(&game.archive, &entry.path, !no_motions, &motion_groups)?;
+                let glb = model.to_glb_with(
+                    y_down,
+                    |t| {
+                        pngs.entry(t.archive_path())
+                            .or_insert_with_key(|path| {
+                                let entry = game.archive.find(path)?;
+                                let texture =
+                                    ffx_phyre::Texture::parse(game.archive.read(entry).ok()?)
+                                        .ok()?;
+                                Some(texture.to_png())
+                            })
+                            .clone()
+                    },
+                    &animations,
+                );
                 std::fs::write(&dest, glb)?;
                 exported.fetch_add(1, Ordering::Relaxed);
             }
@@ -611,6 +861,7 @@ fn run(cli: Cli) -> Result<()> {
         Command::Texture(cmd) => texture(cmd),
         Command::Model(cmd) => model(cmd),
         Command::Phyre(cmd) => phyre(cmd),
+        Command::Motion(cmd) => motion(cmd),
     }
 }
 

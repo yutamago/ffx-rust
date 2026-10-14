@@ -1,0 +1,17 @@
+[package]
+name = "ffx-motion"
+description = "Reader and writer for FFX's PS2 skeletons (.chr) and motion groups (.mgrp)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+ffx-vbf.workspace = true
+
+[lints]
+workspace = true

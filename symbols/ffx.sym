@@ -98,6 +98,34 @@
 0x007ab870 function Kernel_FindRecord         # (id, table, &strings) -> record; defines the container (docs/formats/kernel.md)
 0x007b2dc0 function Battle_GetActorProperty   # switch over ~340 actor properties
 0x007b4b70 function Battle_SetActorProperty   # switch over ~320 actor properties
+0x008277f0 function SG_InitBones              # allocs "%s:Elem" (0x160/bone) and "%s:Fcv" (0x18c/bone); bind pose from the .chr bone table (20 bytes: parent, rot centideg, trans /1000, scale >>12)
+0x00829c90 function Chr_KindDir               # kind (0-6 or its letter) -> chr folder name
+0x00829e10 function Chr_KindLetter            # id >> 12 -> 'c','m','n','s','w','f','k'
+0x0082a4c0 function SG_LoadResidentGroup      # reads "[%s:resident%d.mgrp]" for a character
+0x0082a640 function Chr_TableIndex           # finds id & 0xfff in the kind's .tbl
+0x00836c90 function SG_AddMotionGroup         # registers a .mgrp (50 slots, "nb mgrp err"), relocates it, adds its sequences
+0x00836d30 function SG_AddSequence            # 0x14-byte sequence -> 0x13009a08 table ("SG:AddMseq")
+0x00836f70 function SG_RelocateGroup          # offsets -> pointers; header +0 holds the load address
+0x00836fc0 function SG_RelocateSequence       # motion (+0x0c) and clip (+0x10) tables, 16 bytes each, pointer words +8/+0xc
+0x008377c0 function SG_SeqFrame               # runs SG_SeqStep until a wait ("SG:SeqFrame", "seq err")
+0x00837900 function SG_SeqStep                # motion script opcodes 0-6 ("unknown motion sequence code %x"); 1 = play clip (clip, loops, start mark, end mark)
+0x00837ac0 function SG_SetMotion              # (actor, character << 16 | number): finds the motion in the character's sequences
+0x00837d00 function SG_PlaySlotMotion         # per-slot motion tables of the character definition
+0x00838060 function Chr_IdName                # "%s:%c%03d"
+0x00838220 function ReadU16Unaligned          # p[1] << 8 | p[0]
+0x00838280 function SG_ApplyBone              # channel floats -> bone: rotation * 2 pi, translation * scale * 4096
+0x00838750 function SG_ApplyRawClip           # uncompressed clips: per bone 9 channels x frames i16
+0x00838c90 function SG_UpdateMotion           # per-frame motion update of an actor
+0x00838f70 function SG_ApplyBones             # scale = character def +0x38 * 0.001; calls SG_ApplyBone per bone
+0x008393c0 function SG_SampleChannels         # steps the key streams to the frame, interpolates (angles wrap at 1 turn)
+0x008394d0 function SG_StepChannels           # key stream decoder: 7-bit delta, 14-bit delta (0xc0), repeat (0x80 | n)
+0x008398f0 function SG_RewindChannels         # restarts every key stream
+0x00839980 function SG_SetClip                # clip header, 2-bit channel types (0 zero, 1 one, 2 constant, 3 stream), nine per bone
+0x00839b80 function SG_StartClip             # (actor, clip, loops, start, end)
+0x00839dd0 function Fixed12_ToFloat           # v / 4096
+0x00839e00 function Fixed8_ToFloat            # v / 256
+0x00839e30 function Angle12_Lerp              # 12-bit angle interpolation the short way
+0x00839e80 function AngleTurn_Lerp            # the same on floats in turns
 0x008641e0 function Script_Run                # the bytecode interpreter (docs/formats/script.md)
 0x0086536c label    g_ScriptOpcodeCases       # opcode -> case index byte table of Script_Run
 0x00869d60 function Script_Fetch              # opcode << 24 | u16 operand when the high bit is set

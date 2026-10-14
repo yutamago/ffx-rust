@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 ffx-kernel.workspace = true
 ffx-monster.workspace = true
+ffx-motion.workspace = true
 ffx-phyre.workspace = true
 ffx-script.workspace = true
 ffx-text.workspace = true
@@ -20,6 +21,7 @@ ffx-vbf.workspace = true
 anyhow.workspace = true
 clap = { workspace = true, features = ["env"] }
 rayon.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

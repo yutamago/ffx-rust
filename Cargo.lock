@@ -279,11 +279,13 @@ dependencies = [
  "clap",
  "ffx-kernel",
  "ffx-monster",
+ "ffx-motion",
  "ffx-phyre",
  "ffx-script",
  "ffx-text",
  "ffx-vbf",
  "rayon",
+ "serde_json",
 ]
 
 [[package]]
@@ -327,6 +329,15 @@ dependencies = [
  "ffx-vbf",
  "thiserror",
  "toml",
+]
+
+[[package]]
+name = "ffx-motion"
+version = "0.1.0"
+dependencies = [
+ "ffx-vbf",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
