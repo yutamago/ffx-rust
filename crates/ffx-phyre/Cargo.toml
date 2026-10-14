@@ -1,0 +1,16 @@
+[package]
+name = "ffx-phyre"
+description = "PhyreEngine cluster files of the FFX/X-2 HD Remaster: textures to and from DDS"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+
+[dev-dependencies]
+ffx-vbf.workspace = true
+
+[lints]
+workspace = true

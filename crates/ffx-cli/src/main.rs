@@ -34,6 +34,104 @@ enum Command {
     /// Disassemble and assemble event and monster AI scripts.
     #[command(subcommand)]
     Script(ScriptCommand),
+    /// Convert textures (`*.dds.phyre`) to DDS and back.
+    #[command(subcommand)]
+    Texture(TextureCommand),
+}
+
+#[derive(Subcommand)]
+enum TextureCommand {
+    /// Export textures whose archive path starts with a prefix as DDS files.
+    Export {
+        #[command(flatten)]
+        game: GameArgs,
+        /// Archive path prefix, or one full path.
+        prefix: String,
+        /// Output directory (archive paths are kept, `.phyre` dropped).
+        #[arg(short, long)]
+        out: PathBuf,
+    },
+    /// Replace a texture's pixels with a DDS of the same format and size.
+    Import {
+        #[command(flatten)]
+        game: GameArgs,
+        /// Archive path of the texture.
+        path: String,
+        /// The edited DDS file.
+        dds: PathBuf,
+        /// Write the texture here.
+        #[arg(short, long, conflicts_with = "mod_dir")]
+        out: Option<PathBuf>,
+        /// Write the texture into a mod folder, at its path inside the archive.
+        #[arg(long)]
+        mod_dir: Option<PathBuf>,
+    },
+}
+
+fn texture(cmd: TextureCommand) -> Result<()> {
+    match cmd {
+        TextureCommand::Export { game, prefix, out } => {
+            let game = Game::open(&game)?;
+            let entries: Vec<&Entry> = game
+                .archive
+                .entries()
+                .iter()
+                .filter(|e| {
+                    e.path.starts_with(&prefix) && e.path.ends_with(".dds.phyre") && e.size > 0
+                })
+                .collect();
+            if entries.is_empty() {
+                bail!("no textures start with {prefix:?}");
+            }
+            let skipped = AtomicU64::new(0);
+            entries.par_iter().try_for_each(|entry| -> Result<()> {
+                let texture = match ffx_phyre::Texture::parse(game.archive.read(entry)?) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        eprintln!("skipping {}: {e}", entry.path);
+                        skipped.fetch_add(1, Ordering::Relaxed);
+                        return Ok(());
+                    }
+                };
+                let rel = safe_relative(entry.path.strip_suffix(".phyre").unwrap_or(&entry.path))?;
+                let dest = out.join(rel);
+                if let Some(parent) = dest.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&dest, texture.to_dds())?;
+                Ok(())
+            })?;
+            eprintln!(
+                "exported {} textures to {}",
+                entries.len() - usize::try_from(skipped.into_inner()).unwrap_or(0),
+                out.display()
+            );
+        }
+        TextureCommand::Import {
+            game,
+            path,
+            dds,
+            out,
+            mod_dir,
+        } => {
+            let game = Game::open(&game)?;
+            let texture = ffx_phyre::Texture::parse(read_file(&game.archive, &path)?)?;
+            let edited = texture.with_dds(
+                &std::fs::read(&dds).with_context(|| format!("reading {}", dds.display()))?,
+            )?;
+            let dest = match (out, mod_dir) {
+                (Some(p), _) => p,
+                (None, Some(dir)) => dir.join(safe_relative(&path)?),
+                (None, None) => bail!("pass --out <file> or --mod-dir <dir>"),
+            };
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&dest, edited.bytes())?;
+            eprintln!("wrote {}", dest.display());
+        }
+    }
+    Ok(())
 }
 
 #[derive(Subcommand)]
@@ -292,6 +390,7 @@ fn run(cli: Cli) -> Result<()> {
         Command::Kernel(cmd) => kernel(cmd),
         Command::Monster(cmd) => monster(cmd),
         Command::Script(cmd) => script(cmd),
+        Command::Texture(cmd) => texture(cmd),
     }
 }
 
