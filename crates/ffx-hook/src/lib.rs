@@ -80,6 +80,10 @@ pub enum Outcome {
     ProtectFailed,
 }
 
+#[cfg(all(windows, target_arch = "x86"))]
+pub mod harness;
+#[cfg(all(windows, target_arch = "x86"))]
+mod iat;
 pub mod log;
 #[cfg(all(windows, target_arch = "x86"))]
 pub mod mods;
@@ -94,7 +98,7 @@ pub use patch::{check_build, install};
 /// The hook table.
 #[cfg(all(windows, target_arch = "x86"))]
 #[must_use]
-pub fn hooks() -> [Hook; 3] {
+pub fn hooks() -> [Hook; 4] {
     [
         Hook {
             name: "zlib_uncompress",
@@ -117,6 +121,15 @@ pub fn hooks() -> [Hook; 3] {
             prologue: &[0x55, 0x8b, 0xec, 0x83, 0xec, 0x08],
             replacement: mods::file_open as *const () as usize,
             original: Some(&mods::FILE_OPEN_ORIGINAL),
+        },
+        Hook {
+            name: "Input_UpdatePad",
+            address: 0x0063_2a30,
+            // push ebp; mov ebp, esp; push -1 (the next push has a relocated
+            // immediate, so it is not copied)
+            prologue: &[0x55, 0x8b, 0xec, 0x6a, 0xff],
+            replacement: harness::update_pad as *const () as usize,
+            original: Some(&harness::UPDATE_PAD_ORIGINAL),
         },
     ]
 }

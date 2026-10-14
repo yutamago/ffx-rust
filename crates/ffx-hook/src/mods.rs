@@ -144,8 +144,9 @@ pub unsafe extern "thiscall" fn file_open(
 }
 
 unsafe fn open_mod(file: *mut usize, path: *const c_char) -> bool {
+    let harness = crate::harness::ENABLED.load(Ordering::Relaxed);
     let logging = LOG_OPENS.load(Ordering::Relaxed);
-    let Some(index) = INDEX.get().filter(|i| logging || !i.is_empty()) else {
+    let Some(index) = INDEX.get().filter(|i| logging || harness || !i.is_empty()) else {
         return false;
     };
     // SAFETY: `g_FileSys` is a pointer-sized global in the patched image.
@@ -161,6 +162,7 @@ unsafe fn open_mod(file: *mut usize, path: *const c_char) -> bool {
         return false;
     };
     let Some(wide) = index.get(key) else {
+        crate::harness::event(format!("open {key}"));
         if logging {
             log(&format!("  open: {key}"));
         }
@@ -191,5 +193,6 @@ unsafe fn open_mod(file: *mut usize, path: *const c_char) -> bool {
         *file.add(1) = 0;
     }
     log(&format!("  mods: {key}"));
+    crate::harness::event(format!("mod {key}"));
     true
 }

@@ -75,7 +75,7 @@ cargo run --release -p ffx-cli -- kernel export item -o item.toml
 cargo run --release -p ffx-cli -- kernel import item item.toml --mod-dir "$FFX_GAME_DIR/mods/my-mod"
 ```
 
-Replacing game functions and how mods load: [docs/hooking.md](docs/hooking.md).
+Replacing game functions and how mods load: [docs/hooking.md](docs/hooking.md). Driving the running game from tests: [docs/harness.md](docs/harness.md).
 
 ## Reverse engineering setup
 

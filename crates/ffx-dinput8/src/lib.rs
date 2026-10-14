@@ -69,6 +69,8 @@ unsafe fn install_hooks(base: usize) {
     {
         ffx_hook::mods::load(&dir);
     }
+    // SAFETY: forwarded from the caller.
+    unsafe { ffx_hook::harness::install(base) };
     let disabled = std::env::var("FFX_HOOK_DISABLE").unwrap_or_default();
     let disabled: Vec<&str> = disabled
         .split(',')
@@ -125,9 +127,14 @@ pub unsafe extern "system" fn DirectInput8Create(
     out: *mut *mut c_void,
     outer: *mut c_void,
 ) -> HRESULT {
-    match real_direct_input8_create() {
-        // SAFETY: forwarded unchanged.
-        Some(real) => unsafe { real(instance, version, riid, out, outer) },
-        None => E_FAIL,
+    let Some(real) = real_direct_input8_create() else {
+        return E_FAIL;
+    };
+    // SAFETY: forwarded unchanged.
+    let hr = unsafe { real(instance, version, riid, out, outer) };
+    if hr >= 0 && !out.is_null() {
+        // SAFETY: on success `*out` is the new IDirectInput8 object.
+        unsafe { ffx_hook::harness::wrap_direct_input(*out) };
     }
+    hr
 }

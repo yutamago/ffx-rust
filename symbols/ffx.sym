@@ -66,8 +66,16 @@
 0x0061dec0 function Vbf_Contains
 0x0061df10 function Vbf_FindEntry
 0x00623470 function Steam_Init                # RestartAppIfNecessary(0), SteamAPI_Init; sets g_SteamReady on success, result ignored by caller
+0x00623fa0 function Input_AddKeyboard          # CreateDevice, keyboard data format, SetCooperativeLevel(6: non-exclusive, foreground), Acquire
+0x006240e0 function Input_AddPadDevice         # DirectInput enumeration callback for game controllers: XInput device ("Creating new XInput Device") for XInput-capable ones, else DirectInput
+0x00624350 function Input_InitDirectInput      # DirectInput8Create, then EnumDevices(all, attached only, 0x00623330)
+0x00629d50 function Input_KeyHeld              # thiscall(devices, binding, device): binding >= 28 is Phyre key binding-28 in the keyboard state
+0x0062d5c0 function Keyboard_Update            # GetDeviceState(256); Phyre key i is down when scan code table[i] (0x00c30e90) is
+0x0062dba0 function PadXInput_Update           # XInputGetState for the device's user index
 0x0062ee50 function Game_Main                 # WinMain body called from the CRT entry; returns the process exit code
 0x0062fa30 function Ps2File_Open              # host0:/ffx/... -> /ffx_ps2/ffx/..., then the PC file layer
+0x006315c0 function Input_BuildPadMap          # pairs each key binding (settings +0x60) with its PS2 pad bit
+0x00632a30 function Input_UpdatePad            # fastcall(input 0x00ccb170): ORs the bits of held bindings into the pad word (+0), previous at +4
 0x006410e0 function Lang_Get                  # 0 jp, 1 us, 2 fr, 3 sp, 4 de, 5 it, 9 kr, 10 ch
 0x00645f50 function Text_ToUtf8               # FFX text -> UTF-8; defines the byte grammar (docs/formats/text.md)
 0x006460a0 function Text_DecodeCharCjk        # character code -> UTF-8 via the jp/kr/ch table

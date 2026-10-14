@@ -1,0 +1,851 @@
+//! Test harness: lets a test drive the running game over TCP.
+//!
+//! Enabled by `FFX_HARNESS=<port>` (listening on `127.0.0.1`). It then:
+//!
+//! - ORs the buttons the test holds into the game's PS2 pad word, right
+//!   after `Input_UpdatePad` (`0x00632a30`) has built it from the bound keys
+//!   and pads;
+//! - patches the swap chain's `Present` (from `D3D11CreateDeviceAndSwapChain`)
+//!   to count frames and run commands on the game thread, between frames;
+//! - adds keys the test holds to the `DirectInput` keyboard
+//!   (`GetDeviceState`), for the PC-only menus that read keys directly;
+//! - with `FFX_HARNESS_BACKGROUND=1`, shows the window without activating
+//!   it and makes the keyboard a background device, so the game neither
+//!   takes the focus nor stops reading input without it.
+//!
+//! One command per line, one reply line per command (`ok …` or `err …`).
+//! Addresses are `FFX.exe` addresses (rebased like the hooks) unless noted.
+//!
+//! | Command | Reply |
+//! |---|---|
+//! | `ping` | `ok pong` |
+//! | `frame` | `ok <frames presented>` |
+//! | `stats` | `ok frame <n> pad_reads <n> key_polls <n>` |
+//! | `wait <n>` | after `n` more frames |
+//! | `read <addr> <len>` | `ok <hex>` |
+//! | `readp <addr> <offset> <len>` | reads at `*addr + offset` |
+//! | `readabs <addr> <len>` | reads a process address |
+//! | `write <addr> <hex>` | `ok` |
+//! | `pad [buttons]` | holds PS2 buttons, none to release |
+//! | `press <buttons> <frames> [gap]` | holds buttons, releases, waits `gap` frames (default as long) |
+//!
+//! Buttons are names joined by `+` (`cross`, `circle`, `square`,
+//! `triangle`, `up`, `down`, `left`, `right`, `start`, `select`, `l1`,
+//! `r1`, `l2`, `r2`, `l3`, `r3`) or a hex mask (`0x4000`).
+//!
+//! | Command | Reply |
+//! |---|---|
+//! | `keys [dik…]` | holds DirectInput keys (hex scan codes), none to release |
+//! | `key <dik[,dik…]> <frames> [gap]` | holds keys, releases, waits `gap` frames |
+//! | `call <addr> [args…]` | `ok <eax>`: a cdecl call on the game thread |
+//! | `shot <windows path>` | saves the back buffer as a 32-bit BMP |
+//! | `events` | `ok <n>` then `n` lines: files opened since the last call |
+//! | `quit` | ends the process |
+
+use std::collections::VecDeque;
+use std::ffi::c_void;
+use std::io::{BufRead, BufReader, Write};
+use std::net::TcpListener;
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use std::sync::mpsc::{Sender, channel};
+use std::sync::{Mutex, OnceLock};
+
+use crate::log::log;
+
+/// Set when the harness is on.
+pub static ENABLED: AtomicBool = AtomicBool::new(false);
+static FRAME: AtomicU32 = AtomicU32::new(0);
+static CREATE_DEVICE_AND_SWAP_CHAIN: AtomicUsize = AtomicUsize::new(0);
+static SHOW_WINDOW: AtomicUsize = AtomicUsize::new(0);
+static PRESENT: AtomicUsize = AtomicUsize::new(0);
+static BACKGROUND: AtomicBool = AtomicBool::new(false);
+
+/// PS2 buttons held by the test.
+static BUTTONS: AtomicU32 = AtomicU32::new(0);
+/// Pad updates seen, for `stats`.
+static PAD_READS: AtomicU32 = AtomicU32::new(0);
+/// Trampoline to the original `Input_UpdatePad`.
+pub static UPDATE_PAD_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
+
+/// Wraps `Input_UpdatePad` (`0x00632a30`, `fastcall(input)`): after it
+/// stores the pad word at `input + 0` (the previous one at `+4`), adds the
+/// held buttons.
+///
+/// # Safety
+/// Called by the game with its input object.
+pub unsafe extern "fastcall" fn update_pad(input: *mut u32) {
+    // SAFETY: the trampoline runs the original with the same argument.
+    unsafe {
+        let original: unsafe extern "fastcall" fn(*mut u32) =
+            std::mem::transmute(UPDATE_PAD_ORIGINAL.load(Ordering::Acquire));
+        original(input);
+    }
+    if ENABLED.load(Ordering::Relaxed) && !input.is_null() {
+        PAD_READS.fetch_add(1, Ordering::Relaxed);
+        let held = BUTTONS.load(Ordering::Acquire);
+        // SAFETY: the pad word is the input object's first field.
+        unsafe { *input |= held };
+    }
+}
+
+/// A PS2 button mask from names joined by `+`, or a hex mask.
+fn parse_buttons(s: &str) -> Result<u32, String> {
+    if s.starts_with("0x") {
+        return parse_u32(s);
+    }
+    s.split('+').try_fold(0, |mask, name| {
+        let bit = match name {
+            "select" => 0x1,
+            "l3" => 0x2,
+            "r3" => 0x4,
+            "start" => 0x8,
+            "up" => 0x10,
+            "right" => 0x20,
+            "down" => 0x40,
+            "left" => 0x80,
+            "l2" => 0x100,
+            "r2" => 0x200,
+            "l1" => 0x400,
+            "r1" => 0x800,
+            "triangle" => 0x1000,
+            "circle" => 0x2000,
+            "cross" => 0x4000,
+            "square" => 0x8000,
+            other => return Err(format!("unknown button {other:?}")),
+        };
+        Ok(mask | bit)
+    })
+}
+
+/// `DirectInput` keys held by the test, by scan code.
+static KEYS: Mutex<[bool; 256]> = Mutex::new([false; 256]);
+static CREATE_DEVICE: AtomicUsize = AtomicUsize::new(0);
+static GET_DEVICE_STATE: AtomicUsize = AtomicUsize::new(0);
+static SET_COOPERATIVE_LEVEL: AtomicUsize = AtomicUsize::new(0);
+/// `GetDeviceState` calls for the keyboard, for `stats`.
+static KEY_POLLS: AtomicU32 = AtomicU32::new(0);
+
+fn set_keys(codes: &[u8]) {
+    if let Ok(mut keys) = KEYS.lock() {
+        *keys = [false; 256];
+        for &c in codes {
+            keys[usize::from(c)] = true;
+        }
+    }
+}
+
+/// Wraps the game's `IDirectInput8`: devices it creates get the harness's
+/// `GetDeviceState` and `SetCooperativeLevel`.
+///
+/// # Safety
+/// `direct_input` must be a live `IDirectInput8` object.
+pub unsafe fn wrap_direct_input(direct_input: *mut c_void) {
+    if !ENABLED.load(Ordering::Acquire) || CREATE_DEVICE.load(Ordering::Acquire) != 0 {
+        return;
+    }
+    // SAFETY: a COM object starts with its vtable; CreateDevice is entry 3.
+    if let Some(o) = unsafe {
+        crate::iat::patch_vtable(
+            *direct_input.cast::<*mut usize>(),
+            3,
+            create_device as *const () as usize,
+        )
+    } {
+        CREATE_DEVICE.store(o, Ordering::Release);
+        log("  harness: IDirectInput8::CreateDevice hooked");
+    }
+}
+
+/// `IDirectInput8::CreateDevice`: patches the device vtable once.
+unsafe extern "system" fn create_device(
+    this: *mut c_void,
+    guid: *const c_void,
+    device: *mut *mut c_void,
+    outer: *mut c_void,
+) -> i32 {
+    // SAFETY: the original from the vtable, same arguments.
+    let hr = unsafe {
+        let original: unsafe extern "system" fn(
+            *mut c_void,
+            *const c_void,
+            *mut *mut c_void,
+            *mut c_void,
+        ) -> i32 = std::mem::transmute(CREATE_DEVICE.load(Ordering::Acquire));
+        original(this, guid, device, outer)
+    };
+    if hr >= 0 && !device.is_null() && GET_DEVICE_STATE.load(Ordering::Acquire) == 0 {
+        // SAFETY: on success `*device` is a live IDirectInputDevice8, whose
+        // vtable has GetDeviceState at 9 and SetCooperativeLevel at 13.
+        unsafe {
+            let vtable = *(*device).cast::<*mut usize>();
+            if let Some(o) =
+                crate::iat::patch_vtable(vtable, 9, get_device_state as *const () as usize)
+            {
+                GET_DEVICE_STATE.store(o, Ordering::Release);
+            }
+            if let Some(o) =
+                crate::iat::patch_vtable(vtable, 13, set_cooperative_level as *const () as usize)
+            {
+                SET_COOPERATIVE_LEVEL.store(o, Ordering::Release);
+            }
+        }
+        log("  harness: IDirectInputDevice8 hooked");
+    }
+    hr
+}
+
+/// `SetCooperativeLevel`: background and non-exclusive in background mode.
+unsafe extern "system" fn set_cooperative_level(
+    this: *mut c_void,
+    window: *mut c_void,
+    mut flags: u32,
+) -> i32 {
+    const DISCL_NONEXCLUSIVE: u32 = 2;
+    const DISCL_FOREGROUND: u32 = 4;
+    const DISCL_BACKGROUND: u32 = 8;
+    if BACKGROUND.load(Ordering::Relaxed) && flags & DISCL_FOREGROUND != 0 {
+        flags = (flags & !(DISCL_FOREGROUND | 1)) | DISCL_BACKGROUND | DISCL_NONEXCLUSIVE;
+    }
+    // SAFETY: the original from the vtable.
+    unsafe {
+        let original: unsafe extern "system" fn(*mut c_void, *mut c_void, u32) -> i32 =
+            std::mem::transmute(SET_COOPERATIVE_LEVEL.load(Ordering::Acquire));
+        original(this, window, flags)
+    }
+}
+
+/// `GetDeviceState`: the keyboard (256 bytes) gets the held keys added; a
+/// keyboard that is not acquired reads as all keys up instead of failing.
+unsafe extern "system" fn get_device_state(this: *mut c_void, size: u32, data: *mut u8) -> i32 {
+    // SAFETY: the original from the vtable, same arguments.
+    let mut hr = unsafe {
+        let original: unsafe extern "system" fn(*mut c_void, u32, *mut u8) -> i32 =
+            std::mem::transmute(GET_DEVICE_STATE.load(Ordering::Acquire));
+        original(this, size, data)
+    };
+    if size == 256 && !data.is_null() {
+        KEY_POLLS.fetch_add(1, Ordering::Relaxed);
+        // SAFETY: the caller's buffer holds `size` bytes.
+        let state = unsafe { std::slice::from_raw_parts_mut(data, 256) };
+        if hr < 0 {
+            state.fill(0);
+            hr = 0;
+        }
+        if let Ok(keys) = KEYS.lock() {
+            for (s, &k) in state.iter_mut().zip(keys.iter()) {
+                if k {
+                    *s = 0x80;
+                }
+            }
+        }
+    }
+    hr
+}
+
+/// Work for the game thread.
+enum Job {
+    /// Reply at this frame.
+    WaitUntil(u32),
+    /// Release the pad at this frame, then wait until the second.
+    Release(u32, u32),
+    Call(usize, Vec<u32>),
+    Shot(String),
+}
+
+static JOBS: Mutex<VecDeque<(Job, Sender<String>)>> = Mutex::new(VecDeque::new());
+static EVENTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// Records an event for the `events` command.
+pub fn event(line: String) {
+    if ENABLED.load(Ordering::Relaxed)
+        && let Ok(mut e) = EVENTS.lock()
+    {
+        e.push(line);
+    }
+}
+
+/// Replaces `ShowWindow`: shows without activating in background mode.
+unsafe extern "system" fn show_window(window: *mut c_void, mut cmd: i32) -> i32 {
+    const SW_SHOWNOACTIVATE: i32 = 4;
+    const SW_SHOWMINNOACTIVE: i32 = 7;
+    if BACKGROUND.load(Ordering::Relaxed) && cmd != 0 {
+        cmd = if cmd == 2 || cmd == 6 || cmd == 7 {
+            SW_SHOWMINNOACTIVE
+        } else {
+            SW_SHOWNOACTIVATE
+        };
+    }
+    let original: unsafe extern "system" fn(*mut c_void, i32) -> i32 =
+        // SAFETY: the address came from the import table.
+        unsafe { std::mem::transmute(SHOW_WINDOW.load(Ordering::Acquire)) };
+    // SAFETY: same arguments as the game's call.
+    unsafe { original(window, cmd) }
+}
+
+type CreateDeviceAndSwapChainFn = unsafe extern "system" fn(
+    *mut c_void,
+    u32,
+    *mut c_void,
+    u32,
+    *const u32,
+    u32,
+    u32,
+    *const c_void,
+    *mut *mut c_void,
+    *mut *mut c_void,
+    *mut u32,
+    *mut *mut c_void,
+) -> i32;
+
+/// Replaces `D3D11CreateDeviceAndSwapChain`: patches `Present` of the new
+/// swap chain's vtable.
+#[allow(clippy::too_many_arguments)] // the D3D11 signature
+unsafe extern "system" fn create_device_and_swap_chain(
+    adapter: *mut c_void,
+    driver: u32,
+    software: *mut c_void,
+    flags: u32,
+    levels: *const u32,
+    level_count: u32,
+    sdk: u32,
+    desc: *const c_void,
+    swap_chain: *mut *mut c_void,
+    device: *mut *mut c_void,
+    level: *mut u32,
+    context: *mut *mut c_void,
+) -> i32 {
+    // SAFETY: the address came from the import table.
+    let original: CreateDeviceAndSwapChainFn =
+        unsafe { std::mem::transmute(CREATE_DEVICE_AND_SWAP_CHAIN.load(Ordering::Acquire)) };
+    // SAFETY: forwarded unchanged.
+    let hr = unsafe {
+        original(
+            adapter,
+            driver,
+            software,
+            flags,
+            levels,
+            level_count,
+            sdk,
+            desc,
+            swap_chain,
+            device,
+            level,
+            context,
+        )
+    };
+    if hr >= 0
+        && !swap_chain.is_null()
+        // SAFETY: on success the swap chain pointer was written.
+        && let Some(sc) = Some(unsafe { *swap_chain }).filter(|p| !p.is_null())
+        && PRESENT.load(Ordering::Acquire) == 0
+    {
+        // SAFETY: a COM object starts with its vtable; Present is entry 8.
+        let original = unsafe {
+            crate::iat::patch_vtable(*sc.cast::<*mut usize>(), 8, present as *const () as usize)
+        };
+        if let Some(o) = original {
+            PRESENT.store(o, Ordering::Release);
+            log("  harness: Present hooked");
+        }
+    }
+    log(&format!(
+        "  harness: D3D11CreateDeviceAndSwapChain -> {hr:#x}"
+    ));
+    hr
+}
+
+/// Replaces `IDXGISwapChain::Present`: runs due jobs, then presents.
+unsafe extern "system" fn present(swap_chain: *mut c_void, interval: u32, flags: u32) -> i32 {
+    let frame = FRAME.fetch_add(1, Ordering::AcqRel) + 1;
+    let due: Vec<(Job, Sender<String>)> = JOBS.lock().map_or_else(
+        |_| Vec::new(),
+        |mut jobs| {
+            let mut keep = VecDeque::new();
+            let mut due = Vec::new();
+            while let Some(job) = jobs.pop_front() {
+                let ready = match job.0 {
+                    Job::WaitUntil(f) | Job::Release(f, _) => frame >= f,
+                    Job::Call(..) | Job::Shot(_) => true,
+                };
+                if ready {
+                    due.push(job);
+                } else {
+                    keep.push_back(job);
+                }
+            }
+            *jobs = keep;
+            due
+        },
+    );
+    for (job, reply) in due {
+        match job {
+            Job::WaitUntil(_) => {
+                let _ = reply.send(format!("ok {frame}"));
+            }
+            Job::Release(_, then) => {
+                BUTTONS.store(0, Ordering::Release);
+                set_keys(&[]);
+                if let Ok(mut jobs) = JOBS.lock() {
+                    jobs.push_back((Job::WaitUntil(then), reply));
+                }
+            }
+            Job::Call(address, args) => {
+                // SAFETY: the test asked for this call, on the game thread.
+                let eax = unsafe { call(address, &args) };
+                let _ = reply.send(format!("ok {eax:#x}"));
+            }
+            Job::Shot(path) => {
+                // SAFETY: the swap chain is live inside its own Present.
+                let r = unsafe { screenshot(swap_chain, &path) };
+                let _ = reply
+                    .send(r.map_or_else(|e| format!("err {e}"), |(w, h)| format!("ok {w} {h}")));
+            }
+        }
+    }
+    // SAFETY: the address came from the vtable.
+    let original: unsafe extern "system" fn(*mut c_void, u32, u32) -> i32 =
+        unsafe { std::mem::transmute(PRESENT.load(Ordering::Acquire)) };
+    // SAFETY: forwarded unchanged.
+    unsafe { original(swap_chain, interval, flags) }
+}
+
+/// A cdecl call with up to eight `u32` arguments.
+unsafe fn call(address: usize, args: &[u32]) -> u32 {
+    type F0 = unsafe extern "C" fn() -> u32;
+    type F8 = unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32) -> u32;
+    let a = |i: usize| args.get(i).copied().unwrap_or(0);
+    // SAFETY: cdecl callers clean the stack, so passing extra zero arguments
+    // to a function that takes fewer is harmless.
+    unsafe {
+        if args.is_empty() {
+            std::mem::transmute::<usize, F0>(address)()
+        } else {
+            std::mem::transmute::<usize, F8>(address)(
+                a(0),
+                a(1),
+                a(2),
+                a(3),
+                a(4),
+                a(5),
+                a(6),
+                a(7),
+            )
+        }
+    }
+}
+
+/// Calls COM method `index` of `object`.
+macro_rules! com {
+    ($object:expr, $index:expr, $ty:ty $(, $arg:expr)*) => {{
+        let object: *mut c_void = $object;
+        let vtable = *(object as *const *const usize);
+        let f: $ty = std::mem::transmute(*vtable.add($index));
+        f(object $(, $arg)*)
+    }};
+}
+
+/// Copies the swap chain's back buffer to a BMP file.
+#[allow(clippy::too_many_lines)] // one COM sequence
+unsafe fn screenshot(swap_chain: *mut c_void, path: &str) -> Result<(u32, u32), String> {
+    const IID_TEXTURE2D: [u8; 16] = [
+        0xf2, 0xaa, 0x15, 0x6f, 0x08, 0xd2, 0x89, 0x4e, 0x9a, 0xb4, 0x48, 0x95, 0x35, 0xd3, 0x4f,
+        0x9c,
+    ];
+    // SAFETY: COM calls on live D3D11 objects, with the documented vtable
+    // slots (IDXGISwapChain::GetBuffer 9; ID3D11DeviceChild::GetDevice 3;
+    // ID3D11Texture2D::GetDesc 10; ID3D11Device::CreateTexture2D 5,
+    // GetImmediateContext 40; ID3D11DeviceContext::Map 14, Unmap 15,
+    // CopyResource 47; IUnknown::Release 2).
+    unsafe {
+        let mut back: *mut c_void = std::ptr::null_mut();
+        let hr = com!(
+            swap_chain,
+            9,
+            unsafe extern "system" fn(*mut c_void, u32, *const u8, *mut *mut c_void) -> i32,
+            0,
+            IID_TEXTURE2D.as_ptr(),
+            &raw mut back
+        );
+        if hr < 0 || back.is_null() {
+            return Err(format!("GetBuffer {hr:#x}"));
+        }
+        let mut desc = [0u32; 11];
+        com!(
+            back,
+            10,
+            unsafe extern "system" fn(*mut c_void, *mut u32),
+            desc.as_mut_ptr()
+        );
+        let mut device: *mut c_void = std::ptr::null_mut();
+        com!(
+            back,
+            3,
+            unsafe extern "system" fn(*mut c_void, *mut *mut c_void),
+            &raw mut device
+        );
+        let mut context: *mut c_void = std::ptr::null_mut();
+        com!(
+            device,
+            40,
+            unsafe extern "system" fn(*mut c_void, *mut *mut c_void),
+            &raw mut context
+        );
+        let (width, height, format, samples) = (desc[0], desc[1], desc[4], desc[5]);
+        let release = |o: *mut c_void| {
+            if !o.is_null() {
+                com!(o, 2, unsafe extern "system" fn(*mut c_void) -> u32);
+            }
+        };
+        let done = |r: Result<(u32, u32), String>| {
+            release(context);
+            release(device);
+            release(back);
+            r
+        };
+        if samples != 1 {
+            return done(Err(format!("multisampled back buffer ({samples})")));
+        }
+        // A staging copy the CPU can read.
+        let mut staging_desc = desc;
+        staging_desc[2] = 1; // mip levels
+        staging_desc[3] = 1; // array size
+        staging_desc[7] = 3; // D3D11_USAGE_STAGING
+        staging_desc[8] = 0; // no bind flags
+        staging_desc[9] = 0x2_0000; // D3D11_CPU_ACCESS_READ
+        staging_desc[10] = 0;
+        let mut staging: *mut c_void = std::ptr::null_mut();
+        let hr = com!(
+            device,
+            5,
+            unsafe extern "system" fn(
+                *mut c_void,
+                *const u32,
+                *const c_void,
+                *mut *mut c_void,
+            ) -> i32,
+            staging_desc.as_ptr(),
+            std::ptr::null(),
+            &raw mut staging
+        );
+        if hr < 0 {
+            return done(Err(format!("CreateTexture2D {hr:#x}")));
+        }
+        com!(
+            context,
+            47,
+            unsafe extern "system" fn(*mut c_void, *mut c_void, *mut c_void),
+            staging,
+            back
+        );
+        let mut mapped = [0usize; 3]; // pData, RowPitch, DepthPitch
+        let hr = com!(
+            context,
+            14,
+            unsafe extern "system" fn(*mut c_void, *mut c_void, u32, u32, u32, *mut usize) -> i32,
+            staging,
+            0,
+            1,
+            0,
+            mapped.as_mut_ptr()
+        );
+        if hr < 0 {
+            release(staging);
+            return done(Err(format!("Map {hr:#x}")));
+        }
+        // R8G8B8A8 (28, 29) or B8G8R8A8 (87, 91).
+        let swap = matches!(format, 28 | 29);
+        let known = swap || matches!(format, 87 | 91);
+        let (data, pitch) = (mapped[0] as *const u8, mapped[1]);
+        let mut bmp = Vec::with_capacity(54 + 4 * (width * height) as usize);
+        let image = 4 * width * height;
+        bmp.extend(b"BM");
+        bmp.extend((54 + image).to_le_bytes());
+        bmp.extend([0u8; 4]);
+        bmp.extend(54u32.to_le_bytes());
+        bmp.extend(40u32.to_le_bytes());
+        bmp.extend(width.to_le_bytes());
+        bmp.extend(height.to_le_bytes()); // bottom-up rows
+        bmp.extend(1u16.to_le_bytes());
+        bmp.extend(32u16.to_le_bytes());
+        bmp.extend([0u8; 4]);
+        bmp.extend(image.to_le_bytes());
+        bmp.extend([0u8; 16]);
+        for y in (0..height as usize).rev() {
+            let row = std::slice::from_raw_parts(data.add(y * pitch), 4 * width as usize);
+            for px in row.as_chunks::<4>().0 {
+                if swap {
+                    bmp.extend([px[2], px[1], px[0], 255]);
+                } else {
+                    bmp.extend([px[0], px[1], px[2], 255]);
+                }
+            }
+        }
+        com!(
+            context,
+            15,
+            unsafe extern "system" fn(*mut c_void, *mut c_void, u32),
+            staging,
+            0
+        );
+        release(staging);
+        if !known {
+            return done(Err(format!("back buffer format {format}")));
+        }
+        done(
+            std::fs::write(path, bmp)
+                .map(|()| (width, height))
+                .map_err(|e| e.to_string()),
+        )
+    }
+}
+
+fn parse_u32(s: &str) -> Result<u32, String> {
+    let t = s.trim_start_matches("0x");
+    if s.starts_with("0x") {
+        u32::from_str_radix(t, 16)
+    } else {
+        t.parse()
+    }
+    .map_err(|e| format!("{s}: {e}"))
+}
+
+/// A scan code, hex with or without `0x`.
+fn parse_u8(s: &str) -> Result<u8, String> {
+    u8::from_str_radix(s.trim_start_matches("0x"), 16).map_err(|e| format!("{s}: {e}"))
+}
+
+fn hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    bytes.iter().fold(String::new(), |mut s, b| {
+        let _ = write!(s, "{b:02x}");
+        s
+    })
+}
+
+/// Reads process memory, failing instead of faulting on unmapped pages.
+fn read_memory(address: usize, len: usize) -> Result<Vec<u8>, String> {
+    use windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory;
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+    let mut out = vec![0u8; len];
+    let mut read = 0;
+    // SAFETY: ReadProcessMemory validates the source range itself.
+    let ok = unsafe {
+        ReadProcessMemory(
+            GetCurrentProcess(),
+            address as *const c_void,
+            out.as_mut_ptr().cast(),
+            len,
+            &raw mut read,
+        )
+    };
+    if ok == 0 || read != len {
+        return Err(format!("cannot read {len} bytes at {address:#x}"));
+    }
+    Ok(out)
+}
+
+/// Runs a job on the game thread and waits for its reply.
+fn on_game_thread(job: Job) -> String {
+    if PRESENT.load(Ordering::Acquire) == 0 {
+        return "err the game has not presented a frame yet".into();
+    }
+    let (tx, rx) = channel();
+    if let Ok(mut jobs) = JOBS.lock() {
+        jobs.push_back((job, tx));
+    }
+    rx.recv().unwrap_or_else(|_| "err no reply".into())
+}
+
+#[allow(clippy::too_many_lines)] // one arm per command
+fn command(line: &str) -> Result<String, String> {
+    let words: Vec<&str> = line.split_whitespace().collect();
+    let arg = |i: usize| {
+        words
+            .get(i)
+            .copied()
+            .ok_or_else(|| format!("{}: missing argument {i}", words[0]))
+    };
+    let now = || FRAME.load(Ordering::Acquire);
+    Ok(match words.first().copied().unwrap_or("") {
+        "ping" => "ok pong".into(),
+        "frame" => format!("ok {}", now()),
+        "stats" => format!(
+            "ok frame {} pad_reads {} key_polls {}",
+            now(),
+            PAD_READS.load(Ordering::Relaxed),
+            KEY_POLLS.load(Ordering::Relaxed)
+        ),
+        "keys" => {
+            let codes = words[1..]
+                .iter()
+                .map(|w| parse_u8(w))
+                .collect::<Result<Vec<_>, _>>()?;
+            set_keys(&codes);
+            "ok".into()
+        }
+        "key" => {
+            let codes = arg(1)?
+                .split(',')
+                .map(parse_u8)
+                .collect::<Result<Vec<_>, _>>()?;
+            let hold = parse_u32(arg(2)?)?;
+            let gap = words.get(3).map_or(Ok(hold), |w| parse_u32(w))?;
+            set_keys(&codes);
+            let release = now() + hold;
+            on_game_thread(Job::Release(release, release + gap))
+        }
+        "wait" => on_game_thread(Job::WaitUntil(now() + parse_u32(arg(1)?)?)),
+        "read" => {
+            let at = crate::rebase(parse_u32(arg(1)?)?);
+            format!(
+                "ok {}",
+                hex(&read_memory(at, parse_u32(arg(2)?)? as usize)?)
+            )
+        }
+        "readabs" => {
+            let at = parse_u32(arg(1)?)? as usize;
+            format!(
+                "ok {}",
+                hex(&read_memory(at, parse_u32(arg(2)?)? as usize)?)
+            )
+        }
+        "readp" => {
+            let ptr = read_memory(crate::rebase(parse_u32(arg(1)?)?), 4)?;
+            let base = u32::from_le_bytes(ptr.try_into().expect("4 bytes")) as usize;
+            let at = base + parse_u32(arg(2)?)? as usize;
+            format!(
+                "ok {}",
+                hex(&read_memory(at, parse_u32(arg(3)?)? as usize)?)
+            )
+        }
+        "write" => {
+            let at = crate::rebase(parse_u32(arg(1)?)?);
+            let text = arg(2)?;
+            let bytes = (0..text.len() / 2)
+                .map(|i| u8::from_str_radix(&text[2 * i..2 * i + 2], 16).map_err(|e| e.to_string()))
+                .collect::<Result<Vec<u8>, String>>()?;
+            read_memory(at, bytes.len())?;
+            // SAFETY: the range was just read successfully; the test owns
+            // the consequences of the write.
+            unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), at as *mut u8, bytes.len()) };
+            "ok".into()
+        }
+        "pad" => {
+            let buttons = words.get(1).map_or(Ok(0), |w| parse_buttons(w))?;
+            BUTTONS.store(buttons, Ordering::Release);
+            "ok".into()
+        }
+        "press" => {
+            let buttons = parse_buttons(arg(1)?)?;
+            let hold = parse_u32(arg(2)?)?;
+            let gap = words.get(3).map_or(Ok(hold), |w| parse_u32(w))?;
+            BUTTONS.store(buttons, Ordering::Release);
+            let release = now() + hold;
+            on_game_thread(Job::Release(release, release + gap))
+        }
+        "call" => {
+            let address = crate::rebase(parse_u32(arg(1)?)?);
+            let args = words[2..]
+                .iter()
+                .map(|w| parse_u32(w))
+                .collect::<Result<Vec<_>, _>>()?;
+            if args.len() > 8 {
+                return Err("at most 8 arguments".into());
+            }
+            on_game_thread(Job::Call(address, args))
+        }
+        "shot" => on_game_thread(Job::Shot(words[1..].join(" "))),
+        "events" => {
+            let events = EVENTS
+                .lock()
+                .map(|mut e| std::mem::take(&mut *e))
+                .unwrap_or_default();
+            let mut out = format!("ok {}", events.len());
+            for e in events {
+                out.push('\n');
+                out.push_str(&e);
+            }
+            out
+        }
+        "quit" => {
+            log("  harness: quit");
+            std::process::exit(0);
+        }
+        other => return Err(format!("unknown command {other:?}")),
+    })
+}
+
+fn serve(port: u16) {
+    let listener = match TcpListener::bind(("127.0.0.1", port)) {
+        Ok(l) => l,
+        Err(e) => {
+            log(&format!("  harness: cannot listen on port {port}: {e}"));
+            return;
+        }
+    };
+    log(&format!("  harness: listening on 127.0.0.1:{port}"));
+    for stream in listener.incoming().flatten() {
+        let Ok(mut out) = stream.try_clone() else {
+            continue;
+        };
+        for line in BufReader::new(stream).lines() {
+            let Ok(line) = line else { break };
+            if line.trim().is_empty() {
+                continue;
+            }
+            let reply = command(&line).unwrap_or_else(|e| format!("err {e}"));
+            if writeln!(out, "{reply}").is_err() {
+                break;
+            }
+        }
+    }
+}
+
+/// Turns the harness on when `FFX_HARNESS` names a port.
+///
+/// # Safety
+/// `module` must be the main module, before other threads run game code.
+pub unsafe fn install(module: usize) {
+    static ONCE: OnceLock<()> = OnceLock::new();
+    let Some(port) = std::env::var("FFX_HARNESS")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+    else {
+        return;
+    };
+    if ONCE.set(()).is_err() {
+        return;
+    }
+    ENABLED.store(true, Ordering::Release);
+    BACKGROUND.store(
+        std::env::var("FFX_HARNESS_BACKGROUND").is_ok_and(|v| v == "1"),
+        Ordering::Release,
+    );
+    // SAFETY: forwarded from the caller.
+    unsafe {
+        for (dll, function, replacement, slot) in [
+            (
+                "d3d11.dll",
+                "D3D11CreateDeviceAndSwapChain",
+                create_device_and_swap_chain as *const () as usize,
+                &CREATE_DEVICE_AND_SWAP_CHAIN,
+            ),
+            (
+                "USER32.dll",
+                "ShowWindow",
+                show_window as *const () as usize,
+                &SHOW_WINDOW,
+            ),
+        ] {
+            match crate::iat::patch(module, dll, function, replacement) {
+                Some(original) => {
+                    slot.store(original, Ordering::Release);
+                    log(&format!("  harness: {function} patched"));
+                }
+                None => log(&format!("  harness: {function} not imported")),
+            }
+        }
+    }
+    std::thread::spawn(move || serve(port));
+}
