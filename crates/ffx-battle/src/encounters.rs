@@ -15,7 +15,7 @@
 //!
 //! A block (`Enc_FieldGroups`, `0x0079d170`) is `u8` formation count
 //! (wrapping), `u8` group count, then the groups (`Enc_Group`,
-//! `0x0079d210`): `u8` formation count `n`, `u16` music, `u8` encounter
+//! `0x0079d210`): `u8` formation count `n`, `u16` battle map, `u8` encounter
 //! rate, `u8` weight total, then `n` × (`u8` formation id, `u8` weights).
 //! The low nibble of the weights is the default weight; `Enc_ResetWeights`
 //! (`0x007828a0`) copies it into the high nibble, the weight `Enc_Check`
@@ -60,9 +60,10 @@ impl Field {
 /// region of a map.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Group {
-    /// The battle music: track `& 0x3ff`; `0x400` set for battle music,
-    /// clear to keep the field music (the debug overlay's `BM`/`FM`).
-    pub music: u16,
+    /// Where the battle takes place (`0x0112c254`): map `& 0x3ff`, loaded
+    /// unless it is the current map (`0x00783e20`, `0x00908600`); `0x400`
+    /// set marks a battle map (the debug overlay's `BM`, else `FM`).
+    pub battle_map: u16,
     /// Encounter rate: 0 for no random encounters.
     pub rate: u8,
     pub formations: Vec<Formation>,
@@ -199,7 +200,7 @@ impl EncounterTable {
             blocks.push(u8::try_from(block.len()).expect("at most 255 groups"));
             for g in block {
                 blocks.push(u8::try_from(g.formations.len()).expect("at most 255 formations"));
-                blocks.extend(g.music.to_le_bytes());
+                blocks.extend(g.battle_map.to_le_bytes());
                 blocks.push(g.rate);
                 let total: u32 = g.formations.iter().map(|f| u32::from(f.weight)).sum();
                 blocks.push(u8::try_from(total).expect("weights checked on import"));
@@ -395,8 +396,8 @@ const HELP: &str = "\
 # Battle fields and their encounter groups.
 # A group's formations are [id, weight]: id names the formation file
 # <field>_<id> (battle/btl/), weight (0-15) its share of the group's
-# random encounters. rate 0 means no random encounters. music: track & 0x3ff,
-# + 0x400 for battle music. A field's number of formations cannot change.
+# random encounters. rate 0 means no random encounters. battle_map: the map
+# the battle takes place on (& 0x3ff; + 0x400 for a battle map). A field's number of formations cannot change.
 # A third number in a formation, if present, is its current weight.
 
 ";
@@ -436,7 +437,7 @@ fn parse_block(blocks: &[u8], at: usize) -> Result<Vec<Group>> {
             return Err(Error::Malformed("group weight total"));
         }
         groups.push(Group {
-            music: u16::from_le_bytes([head[1], head[2]]),
+            battle_map: u16::from_le_bytes([head[1], head[2]]),
             rate: head[3],
             formations,
         });
@@ -451,7 +452,7 @@ fn parse_block(blocks: &[u8], at: usize) -> Result<Vec<Group>> {
 
 fn group_toml(g: &Group) -> Value {
     let mut t = Table::new();
-    t.insert("music".into(), i64::from(g.music).into());
+    t.insert("battle_map".into(), i64::from(g.battle_map).into());
     t.insert("rate".into(), i64::from(g.rate).into());
     let formations = g
         .formations
@@ -473,7 +474,7 @@ fn group_from_toml(v: &Value, what: &str) -> Result<Group> {
         .as_table()
         .ok_or_else(|| Error::Value(format!("{what}: expected a table")))?;
     for key in t.keys() {
-        if !["music", "rate", "formations"].contains(&key.as_str()) {
+        if !["battle_map", "rate", "formations"].contains(&key.as_str()) {
             return Err(Error::Value(format!("{what} `{key}`: unknown key")));
         }
     }
@@ -512,7 +513,7 @@ fn group_from_toml(v: &Value, what: &str) -> Result<Group> {
         )));
     }
     Ok(Group {
-        music: int(get("music")?, &format!("{what} `music`"))?,
+        battle_map: int(get("battle_map")?, &format!("{what} `battle_map`"))?,
         rate: int(get("rate")?, &format!("{what} `rate`"))?,
         formations,
     })

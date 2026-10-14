@@ -47,7 +47,7 @@ wraps: `zzzz00` has 255), `u8` group count, then the groups.
 | Offset | Type | Meaning |
 |---|---|---|
 | `0x00` | `u8` | Formation count *n* |
-| `0x01` | `u16` | Music, `0x0112c254` (`Battle_Load`): track `& 0x3ff`; `0x400` set for battle music, clear to keep the field music (the debug overlay prints `BM`/`FM`) |
+| `0x01` | `u16` | Battle map, `0x0112c254` (`Battle_Load`): the battle happens on map `& 0x3ff`, loaded unless it is the current map (`Battle_InitSections` compares it with `SaveData +4`; `0x00908600` requests the load); `0x400` set marks a battle map (`0x009083a0`; the debug overlay prints `BM`, else `FM`). For battles without random encounters it is often the field's own map number |
 | `0x03` | `u8` | Encounter rate; 0 = no random encounters (`Enc_Check`, `0x00780d10`) |
 | `0x04` | `u8` | Weight total |
 | `0x05` | (`u8`, `u8`) × *n* | Formation id, weights |

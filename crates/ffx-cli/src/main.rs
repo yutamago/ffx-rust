@@ -1325,8 +1325,8 @@ fn battle_list(game: &Game) -> Result<()> {
         for (g, group) in table.blocks[field.block].iter().enumerate() {
             writeln!(
                 out,
-                "   group {g}: rate {}, music {:#05x}",
-                group.rate, group.music
+                "   group {g}: rate {}, battle map {:#05x}",
+                group.rate, group.battle_map
             )?;
             for (f, formation) in group.formations.iter().enumerate() {
                 let name = table.formation_file(i, g, f).expect("formation exists");

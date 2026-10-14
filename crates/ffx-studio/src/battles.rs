@@ -1,4 +1,4 @@
-//! The encounter editor: battle fields, their groups (rate, music,
+//! The encounter editor: battle fields, their groups (rate, battle map,
 //! formation weights) and each formation's monsters.
 
 use std::path::Path;
@@ -107,7 +107,7 @@ pub fn field(game: &Game, overlay: Option<&Path>, index: u64) -> Result<Value> {
                     })
                 })
                 .collect();
-            json!({"index": g, "rate": group.rate, "music": group.music, "formations": formations})
+            json!({"index": g, "rate": group.rate, "battle_map": group.battle_map, "formations": formations})
         })
         .collect();
     let shared: Vec<String> = t
@@ -127,7 +127,7 @@ pub fn field(game: &Game, overlay: Option<&Path>, index: u64) -> Result<Value> {
     }))
 }
 
-/// Changes a group: `{field, group, rate, music, weights: [..]}`.
+/// Changes a group: `{field, group, rate, battle_map, weights: [..]}`.
 pub fn save_group(game: &Game, mod_dir: &Path, args: &Value) -> Result<Value> {
     let overlay = Some(mod_dir);
     let mut t = table(game, overlay)?;
@@ -138,8 +138,8 @@ pub fn save_group(game: &Game, mod_dir: &Path, args: &Value) -> Result<Value> {
     if let Some(rate) = args.get("rate").and_then(Value::as_u64) {
         group.rate = u8::try_from(rate).context("rate is 0-255")?;
     }
-    if let Some(music) = args.get("music").and_then(Value::as_u64) {
-        group.music = u16::try_from(music).context("music")?;
+    if let Some(map) = args.get("battle_map").and_then(Value::as_u64) {
+        group.battle_map = u16::try_from(map).context("battle_map")?;
     }
     if let Some(weights) = args.get("weights").and_then(Value::as_array) {
         if weights.len() != group.formations.len() {

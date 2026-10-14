@@ -2,7 +2,7 @@
 //!
 //! - [`EncounterTable`] reads `ffx_ps2/ffx/master/jppc/battle/kernel/btl.bin`,
 //!   the battle fields with their encounter groups (random encounter rate,
-//!   music, formations and their weights).
+//!   battle map, formations and their weights).
 //! - [`FormationFile`] reads `ffx_ps2/ffx/master/jppc/battle/btl/<name>/<name>.bin`,
 //!   one battle: its script, the monsters in its eight slots and a few
 //!   flags.

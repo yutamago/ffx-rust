@@ -148,7 +148,7 @@
 0x0079d170 function Enc_FieldGroups            # field index -> its encounter block: u8 formation total, u8 group count, groups (*0x0112a9cc + field +2)
 0x0079d190 function Enc_Field                  # field index (clamped) -> 14-byte entry: i16 map, i16 block offset, i16 first formation, char[8] name
 0x0079d1c0 function Enc_FieldIndex             # map number -> index in the battle field table *0x0112a9c8 (count 0x0112a9d0, 14-byte entries)
-0x0079d210 function Enc_Group                  # (field, group) -> group: u8 n, u16 music, u8 rate, u8 weight total, n x (u8 formation id, u8 weights)
+0x0079d210 function Enc_Group                  # (field, group) -> group: u8 n, u16 battle map (& 0x3ff map, 0x400 battle map), u8 rate, u8 weight total, n x (u8 formation id, u8 weights)
 0x0079d250 function Enc_InitTable              # btl.bin (0x0112a9c4): fields at +4 -> 0x0112a9c8, count (end-start)/14 -> 0x0112a9d0, blocks at +8 -> 0x0112a9cc
 0x007a2a20 function Native_ActorQueueMotion      # 0x7016: args (motion) -> 0; self actor: clears motion state (0x007ab6c0) and sets +0x3f2 = motion; 0x007aa160 plays it next frame through 0x007ab360 (255 = none, idle); used after 0x7007/0x7008
 0x007a35a0 function Native_ActorPlayMotion       # 0x7007: args (motion; bit 0x8000 = no blend) -> length in frames << 8 / speed; plays a motion on the script's battle actor (0x007a8fc0, 0x00837d00)
