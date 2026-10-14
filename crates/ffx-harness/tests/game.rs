@@ -279,3 +279,48 @@ fn an_edited_motion_group_loads_in_the_game() {
     assert_eq!(ffx_motion::MotionGroup::parse(&modded).unwrap(), group);
     first_scene_with("zz-harness-motion", MOTIONS, &modded);
 }
+
+/// The user's own settings and saves, by path.
+fn user_game_files() -> Vec<(PathBuf, Vec<u8>)> {
+    let root = ffx_harness::user_documents()
+        .unwrap()
+        .join("Square Enix/FINAL FANTASY X&X-2 HD Remaster");
+    let mut out = Vec::new();
+    let mut dirs = vec![root];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                dirs.push(path);
+            } else {
+                let bytes = std::fs::read(&path).unwrap();
+                out.push((path, bytes));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+#[test]
+#[ignore = "starts FFX.exe on the Windows desktop"]
+fn a_save_loads_from_the_sandbox_and_the_users_files_stay_untouched() {
+    let before = user_game_files();
+    let mut game = Game::launch(&Options::default()).unwrap();
+    // Entry 1: the first manual save (entry 0 is the autosave).
+    let event = ffx_harness::screens::load_save(&mut game, 1).unwrap();
+    assert!(event.ends_with(".ebp"), "{event}");
+    let frames = game.frame().unwrap();
+    game.wait(300).unwrap();
+    assert!(game.frame().unwrap() >= frames + 300);
+    let shot = game.screenshot().unwrap();
+    let file = std::env::temp_dir().join("ffx-harness/loaded-save.png");
+    shot.save_png(&file).unwrap();
+    eprintln!("{event}; screenshot: {}", file.display());
+    game.quit().unwrap();
+    assert_eq!(
+        user_game_files(),
+        before,
+        "the user's settings and saves are unchanged"
+    );
+}

@@ -9,6 +9,9 @@
 //!   to count frames and run commands on the game thread, between frames;
 //! - adds keys the test holds to the `DirectInput` keyboard
 //!   (`GetDeviceState`), for the PC-only menus that read keys directly;
+//! - with `FFX_HARNESS_HOME=<Windows folder>`, answers the game's question
+//!   for the Documents folder (`SHGetFolderPathW`, `CSIDL_PERSONAL`) with
+//!   that folder, so settings and saves (autosaves too) stay in a sandbox;
 //! - with `FFX_HARNESS_BACKGROUND=1`, shows the window without activating
 //!   it and makes the keyboard a background device, so the game neither
 //!   takes the focus nor stops reading input without it; the real devices
@@ -60,6 +63,9 @@ static FRAME: AtomicU32 = AtomicU32::new(0);
 static CREATE_DEVICE_AND_SWAP_CHAIN: AtomicUsize = AtomicUsize::new(0);
 static SHOW_WINDOW: AtomicUsize = AtomicUsize::new(0);
 static XINPUT_GET_STATE: AtomicUsize = AtomicUsize::new(0);
+static SH_GET_FOLDER_PATH: AtomicUsize = AtomicUsize::new(0);
+/// The sandbox Documents folder, NUL-terminated UTF-16.
+static HOME: OnceLock<Vec<u16>> = OnceLock::new();
 static PRESENT: AtomicUsize = AtomicUsize::new(0);
 static BACKGROUND: AtomicBool = AtomicBool::new(false);
 
@@ -310,6 +316,37 @@ pub fn event(line: String) {
 unsafe extern "system" fn xinput_get_state(_user: u32, _state: *mut c_void) -> u32 {
     const ERROR_DEVICE_NOT_CONNECTED: u32 = 1167;
     ERROR_DEVICE_NOT_CONNECTED
+}
+
+/// Replaces `SHGetFolderPathW`: the Documents folder is the sandbox.
+unsafe extern "system" fn sh_get_folder_path(
+    window: *mut c_void,
+    csidl: i32,
+    token: *mut c_void,
+    flags: u32,
+    out: *mut u16,
+) -> i32 {
+    const CSIDL_PERSONAL: i32 = 5;
+    if csidl & 0xff == CSIDL_PERSONAL
+        && !out.is_null()
+        && let Some(home) = HOME.get()
+    {
+        // SAFETY: the caller passes a MAX_PATH buffer; the home path is
+        // checked to fit when it is set.
+        unsafe { std::ptr::copy_nonoverlapping(home.as_ptr(), out, home.len()) };
+        return 0;
+    }
+    // SAFETY: the original from the import table, same arguments.
+    unsafe {
+        let original: unsafe extern "system" fn(
+            *mut c_void,
+            i32,
+            *mut c_void,
+            u32,
+            *mut u16,
+        ) -> i32 = std::mem::transmute(SH_GET_FOLDER_PATH.load(Ordering::Acquire));
+        original(window, csidl, token, flags, out)
+    }
 }
 
 /// Replaces `ShowWindow`: shows without activating in background mode.
@@ -870,6 +907,20 @@ pub unsafe fn install(module: usize) {
         std::env::var("FFX_HARNESS_BACKGROUND").is_ok_and(|v| v == "1"),
         Ordering::Release,
     );
+    if let Ok(home) = std::env::var("FFX_HARNESS_HOME") {
+        let wide: Vec<u16> = home
+            .trim_end_matches('\\')
+            .encode_utf16()
+            .chain([0])
+            .collect();
+        // MAX_PATH, with room for the game's own subfolders.
+        if wide.len() < 160 {
+            log(&format!("  harness: Documents folder is {home}"));
+            let _ = HOME.set(wide);
+        } else {
+            log("  harness: FFX_HARNESS_HOME is too long; ignored");
+        }
+    }
     // SAFETY: forwarded from the caller.
     unsafe {
         for (dll, function, replacement, slot) in [
@@ -887,6 +938,14 @@ pub unsafe fn install(module: usize) {
             ),
         ]
         .into_iter()
+        .chain(HOME.get().map(|_| {
+            (
+                "SHELL32.dll",
+                "SHGetFolderPathW",
+                sh_get_folder_path as *const () as usize,
+                &SH_GET_FOLDER_PATH,
+            )
+        }))
         .chain(BACKGROUND.load(Ordering::Relaxed).then_some((
             "XINPUT9_1_0.dll",
             "XInputGetState",

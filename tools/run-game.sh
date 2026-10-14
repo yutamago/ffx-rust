@@ -10,6 +10,7 @@
 #   --log-opens log every file the game reads to ffx-hook.log
 #   --harness P test harness on 127.0.0.1:P (see crates/ffx-hook/src/harness.rs)
 #   --background show the window without taking the focus
+#   --home DIR  the game's Documents folder (settings, saves) is DIR (harness only)
 #
 # The language lives in Documents\Square Enix\FINAL FANTASY X&X-2 HD
 # Remaster\GameSetting.ini, which the Steam launcher normally writes; the game
@@ -26,13 +27,21 @@ while [[ $# -gt 0 ]]; do
         --log-opens) export FFX_HOOK_LOG_OPENS=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HOOK_LOG_OPENS" ;;
         --harness) export FFX_HARNESS="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS"; shift ;;
         --background) export FFX_HARNESS_BACKGROUND=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_BACKGROUND" ;;
+        --home) home="$2"; shift ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
     esac
     shift
 done
 case "$lang" in jp|en|fr|de|it|es|kr|ch) ;; *) echo "unknown language $lang" >&2; exit 2 ;; esac
 
-docs="$(wslpath "$(powershell.exe -NoProfile -Command '[Environment]::GetFolderPath("MyDocuments")' | tr -d '\r')")"
+if [[ -n "${home:-}" ]]; then
+    mkdir -p "$home"
+    export FFX_HARNESS_HOME="$(wslpath -w "$home")"
+    export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_HOME"
+    docs="$home"
+else
+    docs="$(wslpath "$(powershell.exe -NoProfile -Command '[Environment]::GetFolderPath("MyDocuments")' | tr -d '\r')")"
+fi
 settings="$docs/Square Enix/FINAL FANTASY X&X-2 HD Remaster/GameSetting.ini"
 if [[ -f "$settings" ]]; then
     sed -i "s/^Language=.*/Language=$lang/" "$settings"

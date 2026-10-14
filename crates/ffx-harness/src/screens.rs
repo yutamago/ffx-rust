@@ -90,3 +90,33 @@ pub fn first_scene(game: &mut Game) -> Result<String> {
     }
     game.wait_for_open("znkd0600.ebp", 30, 1200)
 }
+
+/// The save list: a pale blue-violet screen with the "Select save data"
+/// help bar.
+#[must_use]
+pub fn is_save_list(shot: &Image) -> bool {
+    let [r, g, b] = shot.mean(200, 400, 880, 250);
+    b > 120.0 && r > 70.0 && b > r + 20.0 && b > g + 20.0
+}
+
+/// From boot into the game from save entry `entry` of the load list (0 is
+/// the first; with an autosave, it is entry 0 and the manual saves follow).
+/// The saves are the sandbox copies (`Options::home`). Returns the event
+/// script the save starts in.
+///
+/// # Errors
+/// Fails when a screen or the event does not appear.
+pub fn load_save(game: &mut Game, entry: u32) -> Result<String> {
+    to_title(game)?;
+    // The title's cursor starts on Load; the Flash menus read keys.
+    game.command("key 1c 3 30")?;
+    wait_for(game, is_save_list, 30, 20)?;
+    for _ in 0..entry {
+        game.command("key d0 3 20")?;
+    }
+    game.events()?;
+    // Pick the entry, then Yes.
+    game.command("key 1c 3 40")?;
+    game.command("key 1c 3 40")?;
+    game.wait_for_open(".ebp", 30, 1200)
+}

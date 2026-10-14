@@ -21,6 +21,7 @@ tools/harness.py quit
 | Focus | `ShowWindow` | Background mode shows the window without activating it |
 | Isolation | `GetDeviceState`, `XInputGetState` | In background mode the real keyboard, mouse and pads are ignored: background devices would otherwise see what the user types elsewhere |
 | Events | `File_Open` | Every file the game opens, and which came from a mod |
+| Sandbox | `SHGetFolderPathW` | With `--home DIR`, the Documents folder is `DIR`: the game reads and writes `GameSetting.ini` and its saves (autosaves too) there. `ffx-harness` makes `DIR` a fresh copy of the user's `Square Enix/FINAL FANTASY X&X-2 HD Remaster` before each launch, so tests can load the user's saves and never change them |
 
 XInput is not used: the game creates XInput devices only for controllers
 found while enumerating DirectInput devices at start-up
@@ -70,6 +71,9 @@ with `key` (arrows `c8`/`d0`/`cb`/`cd`, Enter `1c`, Esc `01`).
 - Title: Up arrow, Enter starts a new game; the Sphere Grid choice takes
   `press down` and `press circle` (confirm), then the Soundtrack choice
   (Arranged or Original).
+- Load: the title's cursor starts on Load; the save list and its Yes/No
+  are Flash screens (Enter, arrows). Slot 1 of the user's saves starts on
+  the salvage ship deck (`cdsp0000`), in the field: the D-pad turns Tidus.
 - `examples/mod_probe.rs` plays into the first scene with any mod file and
   reports whether the game read it and survived; it found that grown PS2
   files were cut at their original size (`docs/hooking.md`).
@@ -92,6 +96,7 @@ FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test --release -p ffx-harness --test 
 | `new_game_reaches_the_sphere_grid_choice` | the opening skipped with Start (B, a 3-frame tap), New Game by keys, the Sphere Grid cursor moved by the pad | 30 s |
 | `a_grown_event_script_runs_in_the_game` | `znkd0600.ebp` with `pushimm 0x1234; popv v1` in front of worker 0's first entry (the worker grows and moves): the global byte at `0xa3c` is `0x34` (0 without the mod), and the scene keeps running | 45 s |
 | `a_resized_model_loads_in_the_game` | Tidus's `c001.dae.phyre`, 30 % wider and with segment 0 doubled (resized buffers), is read from the mod and the scene runs 10 s | 40 s |
+| `a_save_loads_from_the_sandbox_and_the_users_files_stay_untouched` | title → Load → slot 1 (the first manual save; entry 0 is the autosave, taken mid-cutscene) → Yes; the save's event starts, the game runs, and the user's files are byte for byte unchanged | 35 s |
 | `an_edited_motion_group_loads_in_the_game` | Tidus's `resident0.mgrp`, root bone turned a quarter, is read from the mod and the scene runs 10 s | 40 s |
 
 The first scene of a new game is `screens::first_scene`: New Game,

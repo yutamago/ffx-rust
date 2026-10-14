@@ -44,6 +44,12 @@ pub struct Options {
     pub background: bool,
     /// How long to wait for the harness to answer.
     pub startup: Duration,
+    /// The game's Documents folder: settings and saves are read and
+    /// written there, never in the user's own. `None` uses the real one.
+    pub home: Option<PathBuf>,
+    /// Copy the user's settings and saves into `home` before each launch
+    /// (a fresh copy, so every run starts from the same saves).
+    pub copy_user_data: bool,
 }
 
 impl Default for Options {
@@ -56,6 +62,8 @@ impl Default for Options {
                 .unwrap_or(27100),
             background: true,
             startup: Duration::from_secs(90),
+            home: Some(std::env::temp_dir().join("ffx-harness/home")),
+            copy_user_data: true,
         }
     }
 }
@@ -187,6 +195,59 @@ impl Drop for Game {
     }
 }
 
+/// The game's folder under Documents.
+const GAME_DOCUMENTS: &str = "Square Enix/FINAL FANTASY X&X-2 HD Remaster";
+
+/// The user's Documents folder, as a WSL path.
+///
+/// # Errors
+/// Fails when Windows cannot be asked.
+pub fn user_documents() -> Result<PathBuf> {
+    let out = Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "[Environment]::GetFolderPath('MyDocuments')",
+        ])
+        .output()?;
+    let windows = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    let out = Command::new("wslpath").arg(&windows).output()?;
+    if !out.status.success() || windows.is_empty() {
+        return Err(Error::Launch("cannot find the Documents folder".into()));
+    }
+    Ok(PathBuf::from(String::from_utf8_lossy(&out.stdout).trim()))
+}
+
+fn copy_tree(from: &Path, to: &Path) -> Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_tree(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
+}
+
+/// Empties the sandbox Documents folder and copies the user's game folder
+/// (settings and saves) into it. The user's own files are only read.
+fn prepare_home(home: &Path, copy: bool) -> Result<()> {
+    if home.exists() {
+        std::fs::remove_dir_all(home)?;
+    }
+    std::fs::create_dir_all(home)?;
+    if copy {
+        let source = user_documents()?.join(GAME_DOCUMENTS);
+        if source.is_dir() {
+            copy_tree(&source, &home.join(GAME_DOCUMENTS))?;
+        }
+    }
+    Ok(())
+}
+
 /// A WSL path as Windows sees it.
 fn windows_path(path: &Path) -> Result<String> {
     let out = Command::new("wslpath").arg("-w").arg(path).output()?;
@@ -219,6 +280,10 @@ impl Game {
         }
         let mut cmd = Command::new(options.repo.join("tools/run-game.sh"));
         cmd.arg("--harness").arg(options.port.to_string());
+        if let Some(home) = &options.home {
+            prepare_home(home, options.copy_user_data)?;
+            cmd.arg("--home").arg(home);
+        }
         if options.background {
             cmd.arg("--background");
         }
