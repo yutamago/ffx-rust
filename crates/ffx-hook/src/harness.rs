@@ -15,9 +15,10 @@
 //! - with `FFX_HARNESS_SEED=<n>`, seeds the random number generators with
 //!   `n` instead of the clock (`Rng_ClockSeed`, `0x00798950`), so runs repeat;
 //! - with `FFX_HARNESS_FAST=1`, runs frames back to back: the main loop's
-//!   frame-limiter `Sleep` (`0x0062f3bb`) returns at once and adds its time
-//!   to the game's clock (`Time_Now`, `0x0042fd80`), so the game still sees
-//!   59.94 frames a second;
+//!   frame-limiter `Sleep` (`0x0062f3bb`) and the start-up loop's 33 ms
+//!   `Time_Sleep` (`0x0066b345`, the logos) return at once and add their
+//!   time to the game's clock (`Time_Now`, `0x0042fd80`), so the game still
+//!   sees its usual frame rate;
 //! - with `FFX_HARNESS_BACKGROUND=1`, shows the window without activating
 //!   it and makes the keyboard a background device, so the game neither
 //!   takes the focus nor stops reading input without it; the real devices
@@ -69,11 +70,15 @@ static FRAME: AtomicU32 = AtomicU32::new(0);
 static CREATE_DEVICE_AND_SWAP_CHAIN: AtomicUsize = AtomicUsize::new(0);
 static SHOW_WINDOW: AtomicUsize = AtomicUsize::new(0);
 static XINPUT_GET_STATE: AtomicUsize = AtomicUsize::new(0);
+static MESSAGE_BOX_A: AtomicUsize = AtomicUsize::new(0);
+static MESSAGE_BOX_W: AtomicUsize = AtomicUsize::new(0);
 static SH_GET_FOLDER_PATH: AtomicUsize = AtomicUsize::new(0);
 /// The sandbox Documents folder, NUL-terminated UTF-16.
 static HOME: OnceLock<Vec<u16>> = OnceLock::new();
 static PRESENT: AtomicUsize = AtomicUsize::new(0);
 static BACKGROUND: AtomicBool = AtomicBool::new(false);
+/// Fast mode: no frame limiter, no vsync.
+static FAST: AtomicBool = AtomicBool::new(false);
 
 /// PS2 buttons held by the test.
 static BUTTONS: AtomicU32 = AtomicU32::new(0);
@@ -220,6 +225,81 @@ unsafe extern "system" fn fast_sleep(ms: u32) {
             Err(b) => bits = b,
         }
     }
+}
+
+static SLEEP_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
+static SLEEP_LOG: Mutex<Vec<(usize, u32, u32)>> = Mutex::new(Vec::new());
+
+/// Diagnostic `Sleep` (`FFX_HARNESS_TRACE_SLEEP=1`): logs callers.
+#[allow(clippy::cast_possible_truncation)]
+unsafe extern "system" fn traced_sleep(ms: u32) {
+    let mut frames = [std::ptr::null_mut::<c_void>(); 6];
+    // SAFETY: a buffer of four frame slots.
+    let n = unsafe {
+        windows_sys::Win32::System::Diagnostics::Debug::RtlCaptureStackBackTrace(
+            1,
+            6,
+            frames.as_mut_ptr(),
+            std::ptr::null_mut(),
+        )
+    };
+    let base = crate::GAME_BASE.load(Ordering::Relaxed);
+    // The first return address inside FFX.exe.
+    // The second return address inside FFX.exe (the first is the game's
+    // Sleep wrapper).
+    let caller = frames[..usize::from(n)]
+        .iter()
+        .map(|f| *f as usize)
+        .filter(|&a| a >= base && a < base + crate::SIZE_OF_IMAGE as usize)
+        .nth(1)
+        .unwrap_or(0);
+    if let Ok(mut log) = SLEEP_LOG.lock()
+        && log.len() < 4000
+    {
+        log.push((caller, ms, FRAME.load(Ordering::Relaxed)));
+    }
+    // SAFETY: the original from the import table.
+    unsafe {
+        let f: unsafe extern "system" fn(u32) =
+            std::mem::transmute(SLEEP_ORIGINAL.load(Ordering::Acquire));
+        f(ms);
+    }
+}
+
+/// The start-up loop's `Time_Sleep(33)` (`cdecl`) in fast mode.
+unsafe extern "C" fn fast_sleep_cdecl(ms: u32) {
+    // SAFETY: same work as the stdcall version.
+    unsafe { fast_sleep(ms) };
+}
+
+/// Points the start-up loop's `call Time_Sleep` (`0x0066b345`, in
+/// `Boot_Step` `0x0066b2e0`: 33 ms a frame during the logos) at
+/// `fast_sleep_cdecl`.
+///
+/// # Safety
+/// `module` is the main module; the loop does not run yet.
+unsafe fn patch_boot_limiter(module: usize) -> bool {
+    use windows_sys::Win32::System::Memory::{PAGE_EXECUTE_READWRITE, VirtualProtect};
+    let site = (module + (0x0066_b345 - crate::IMAGE_BASE as usize)) as *mut u8;
+    let time_sleep = module + (0x006f_2d20 - crate::IMAGE_BASE as usize);
+    // SAFETY: inside the mapped image; checked to be `e8 <rel32 Time_Sleep>`.
+    unsafe {
+        let current = std::slice::from_raw_parts(site, 5);
+        let rel = i32::from_le_bytes(current[1..5].try_into().expect("4 bytes"));
+        if current[0] != 0xe8 || (site as usize + 5).wrapping_add_signed(rel as isize) != time_sleep
+        {
+            return false;
+        }
+        let mut old = 0;
+        if VirtualProtect(site.cast(), 5, PAGE_EXECUTE_READWRITE, &raw mut old) == 0 {
+            return false;
+        }
+        let target = fast_sleep_cdecl as *const () as usize;
+        let rel = (target.wrapping_sub(site as usize + 5) as u32).to_le_bytes();
+        site.add(1).copy_from_nonoverlapping(rel.as_ptr(), 4);
+        VirtualProtect(site.cast(), 5, old, &raw mut old);
+    }
+    true
 }
 
 /// Points the main loop's `call [Sleep]` (`0x0062f3bb`) at `fast_sleep`.
@@ -445,6 +525,57 @@ unsafe extern "system" fn sh_get_folder_path(
     }
 }
 
+/// Replaces `MessageBoxA` in background mode: logs the text and answers
+/// OK, so no dialog appears on the user's desktop.
+unsafe extern "system" fn message_box_a(
+    _w: *mut c_void,
+    text: *const u8,
+    caption: *const u8,
+    _t: u32,
+) -> i32 {
+    let s = |p: *const u8| {
+        if p.is_null() {
+            String::new()
+        } else {
+            // SAFETY: NUL-terminated, from the caller.
+            unsafe { std::ffi::CStr::from_ptr(p.cast()) }
+                .to_string_lossy()
+                .into_owned()
+        }
+    };
+    log(&format!(
+        "  harness: message box suppressed: [{}] {}",
+        s(caption),
+        s(text)
+    ));
+    event(format!("messagebox {}", s(text)));
+    1 // IDOK
+}
+
+/// Replaces `MessageBoxW` in background mode, like [`message_box_a`].
+unsafe extern "system" fn message_box_w(
+    _w: *mut c_void,
+    text: *const u16,
+    caption: *const u16,
+    _t: u32,
+) -> i32 {
+    let s = |p: *const u16| {
+        if p.is_null() {
+            return String::new();
+        }
+        // SAFETY: NUL-terminated, from the caller.
+        let len = (0..4096).take_while(|&i| unsafe { *p.add(i) } != 0).count();
+        String::from_utf16_lossy(unsafe { std::slice::from_raw_parts(p, len) })
+    };
+    log(&format!(
+        "  harness: message box suppressed: [{}] {}",
+        s(caption),
+        s(text)
+    ));
+    event(format!("messagebox {}", s(text)));
+    1 // IDOK
+}
+
 /// Replaces `ShowWindow`: shows without activating in background mode.
 unsafe extern "system" fn show_window(window: *mut c_void, mut cmd: i32) -> i32 {
     const SW_SHOWNOACTIVATE: i32 = 4;
@@ -587,7 +718,13 @@ unsafe extern "system" fn present(swap_chain: *mut c_void, interval: u32, flags:
     // SAFETY: the address came from the vtable.
     let original: unsafe extern "system" fn(*mut c_void, u32, u32) -> i32 =
         unsafe { std::mem::transmute(PRESENT.load(Ordering::Acquire)) };
-    // SAFETY: forwarded unchanged.
+    // Fast mode presents without waiting for the vertical blank.
+    let interval = if FAST.load(Ordering::Relaxed) {
+        0
+    } else {
+        interval
+    };
+    // SAFETY: forwarded, the sync interval perhaps lowered.
     unsafe { original(swap_chain, interval, flags) }
 }
 
@@ -949,9 +1086,40 @@ fn command(line: &str) -> Result<String, String> {
             }
             out
         }
+        "sleeps" => {
+            let log = SLEEP_LOG
+                .lock()
+                .map(|mut l| std::mem::take(&mut *l))
+                .unwrap_or_default();
+            let base = crate::GAME_BASE.load(Ordering::Acquire);
+            let mut counts: std::collections::BTreeMap<(usize, u32), (u32, u32, u32)> =
+                std::collections::BTreeMap::new();
+            for (caller, ms, frame) in log {
+                let e = counts
+                    .entry((caller.wrapping_sub(base) + crate::IMAGE_BASE as usize, ms))
+                    .or_insert((0, frame, frame));
+                e.0 += 1;
+                e.2 = frame;
+            }
+            let mut out = String::from("ok");
+            for ((c, ms), (n, f0, f1)) in counts {
+                use std::fmt::Write as _;
+                let _ = write!(out, " {c:#x}:{ms}ms x{n} frames {f0}-{f1};");
+            }
+            out
+        }
         "quit" => {
             log("  harness: quit");
-            std::process::exit(0);
+            // Not process::exit: running the game's shutdown from this
+            // thread can deadlock against its own threads.
+            // SAFETY: ends this process at once.
+            unsafe {
+                windows_sys::Win32::System::Threading::TerminateProcess(
+                    windows_sys::Win32::System::Threading::GetCurrentProcess(),
+                    0,
+                );
+            }
+            "ok".into()
         }
         other => return Err(format!("unknown command {other:?}")),
     })
@@ -987,6 +1155,7 @@ fn serve(port: u16) {
 ///
 /// # Safety
 /// `module` must be the main module, before other threads run game code.
+#[allow(clippy::too_many_lines)] // one patch after the other
 pub unsafe fn install(module: usize) {
     static ONCE: OnceLock<()> = OnceLock::new();
     let Some(port) = std::env::var("FFX_HARNESS")
@@ -1004,8 +1173,9 @@ pub unsafe fn install(module: usize) {
         Ordering::Release,
     );
     if std::env::var("FFX_HARNESS_FAST").is_ok_and(|v| v == "1") {
+        FAST.store(true, Ordering::Release);
         // SAFETY: forwarded from the caller.
-        let patched = unsafe { patch_frame_limiter(module) };
+        let patched = unsafe { patch_frame_limiter(module) && patch_boot_limiter(module) };
         log(&format!(
             "  harness: fast mode {}",
             if patched {
@@ -1060,6 +1230,24 @@ pub unsafe fn install(module: usize) {
                 &SH_GET_FOLDER_PATH,
             )
         }))
+        .chain(std::env::var("FFX_HARNESS_TRACE_SLEEP").is_ok().then_some((
+            "KERNEL32.dll",
+            "Sleep",
+            traced_sleep as *const () as usize,
+            &SLEEP_ORIGINAL,
+        )))
+        .chain(BACKGROUND.load(Ordering::Relaxed).then_some((
+            "USER32.dll",
+            "MessageBoxA",
+            message_box_a as *const () as usize,
+            &MESSAGE_BOX_A,
+        )))
+        .chain(BACKGROUND.load(Ordering::Relaxed).then_some((
+            "USER32.dll",
+            "MessageBoxW",
+            message_box_w as *const () as usize,
+            &MESSAGE_BOX_W,
+        )))
         .chain(BACKGROUND.load(Ordering::Relaxed).then_some((
             "XINPUT9_1_0.dll",
             "XInputGetState",

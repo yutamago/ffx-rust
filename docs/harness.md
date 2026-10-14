@@ -20,6 +20,7 @@ tools/harness.py quit
 | Keys | `IDirectInput8::CreateDevice` → device `GetDeviceState` / `SetCooperativeLevel` | The PC menus (Esc) read keys directly. The keyboard is made a background device, and an unacquired one reads as all keys up |
 | Focus | `ShowWindow` | Background mode shows the window without activating it |
 | Isolation | `GetDeviceState`, `XInputGetState` | In background mode the real keyboard, mouse and pads are ignored: background devices would otherwise see what the user types elsewhere |
+| Dialogs | `MessageBoxA`, `MessageBoxW` | In background mode a game dialog is logged (`ffx-hook.log`, and an event `messagebox <text>`) and answered OK instead of appearing on the user's desktop |
 | Events | `File_Open` | Every file the game opens, and which came from a mod |
 | Randomness | `Rng_ClockSeed` (`0x00798950`), wrapped | `Rng_Seed` (`0x00798890`) seeds the global generator (`0x00c42200`) and the 68 at `0x01135ee0` from the system time (`GetSystemTime` bytes XORed, plus 1). With `--seed N` it gets `N`; `ffx-harness` uses seed 1 unless a test says otherwise |
 | Speed | `Time_Now` (`0x0042fd80`), wrapped; the main loop's `call [Sleep]` (`0x0062f3bb`) | The main loop (`Game_Main`, `0x0062ee50`) runs a frame (`0x0062e340`) once `DAT_00c30e88` × 1/59.94 s have passed on `Time_Now`, and sleeps away the rest. With `--fast` that one `Sleep` returns at once and adds its time to the clock: frames run back to back (461 a second instead of 30–60) while the game still sees one frame interval per frame. `ffx-harness` uses it by default |
@@ -87,6 +88,16 @@ with `key` (arrows `c8`/`d0`/`cb`/`cd`, Enter `1c`, Esc `01`).
 - `examples/mod_probe.rs` plays into the first scene with any mod file and
   reports whether the game read it and survived; it found that grown PS2
   files were cut at their original size (`docs/hooking.md`).
+
+## One game at a time
+
+`Game_Main` (`0x0062ee50`) takes the named mutex
+`9B8F7468-6DE0-4C5A-9209-89D363F8FCC9`; when it already exists the game
+shows "Same program is already running." and ends. `tools/run-game.sh`
+therefore refuses to start while any `FFX.exe` is listed. `quit` ends the
+process with `TerminateProcess`: running the game's own shutdown from the
+harness thread once deadlocked, and that process, stuck while exiting,
+kept the mutex (and the harness port) until it finally went away.
 
 ## Tests
 

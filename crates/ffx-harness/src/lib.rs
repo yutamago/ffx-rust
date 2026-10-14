@@ -277,7 +277,13 @@ impl Game {
     pub fn launch(options: &Options) -> Result<Self> {
         // A game that is still shutting down frees the port within seconds.
         let deadline = Instant::now() + Duration::from_secs(15);
-        while Self::connect(options.port).is_ok_and(|mut g| g.command("ping").is_ok()) {
+        while Self::connect(options.port).is_ok_and(|mut g| {
+            g.stream
+                .get_mut()
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .is_ok()
+                && g.command("ping").is_ok()
+        }) {
             if Instant::now() > deadline {
                 return Err(Error::Launch(format!(
                     "a game already answers on port {}; quit it first",

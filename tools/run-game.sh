@@ -68,6 +68,15 @@ else
     echo "hooks installed; log: $game/ffx-hook.log"
 fi
 
+# Only one game at a time: the game refuses a second one with a dialog
+# (mutex 9B8F7468-...). A process stuck while exiting still holds that mutex,
+# so any listed FFX.exe counts.
+running="$(powershell.exe -NoProfile -Command '@(Get-Process FFX -ErrorAction SilentlyContinue).Count' | tr -d '\r')"
+if [[ "$running" != "0" ]]; then
+    echo "FFX.exe is already running (or stuck exiting); not starting another" >&2
+    exit 1
+fi
+
 cd "$game"
 ./FFX.exe > /dev/null 2>&1 &
 echo "FFX.exe started (language $lang, pid $!)"
