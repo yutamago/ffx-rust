@@ -54,6 +54,15 @@ the log says so. `tools/run-game.sh --log-opens` (environment
 path a mod would use. The file must be opened read-only: `File_Close` calls
 `SetEndOfFile`, which would truncate a writable mod file.
 
+Files of the PS2 game (`ffx_ps2/…`) are also sized by the PS2 file layer,
+from its own tables: `Cd_FileSize` (`0x0076c320`, sectors from
+`cdrom.mdg`) and `CdFileSize_PC` (`0x00a428a0`, `sizetbl.bin`), and buffers
+and reads use that size. A mod file that grew would be cut at the original
+size: a motion group 8 bytes larger lost the end of its sequence table and
+crashed the game. Both functions are wrapped: for a PS2 file number whose
+path (`Cd_FileName`, `0x00a42830`, `host0:/ffx/…` → `ffx_ps2/ffx/…`) a mod
+provides, they return the mod file's size rounded up to 16 bytes.
+
 `ffx kernel import <table> <edits.toml> --mod-dir <game folder>/mods/<mod>`
 writes a table straight into a mod. Verified in the game: with the
 `test-potion` mod, the item table in game memory (read with
@@ -67,6 +76,8 @@ writes a table straight into a mod. Verified in the game: with the
 | `zlib_uncompress` | `0x00405e20` | 1,500 synthetic streams (fit, spare room, too small, truncated, flipped bit; all result codes) and every compressed block in `metamenu.vbf` |
 | `Path_ToLowerAscii` | `0x00607d50` | NULL, empty, all 255 byte values, 2,000 random strings; output bytes and return value |
 | `File_Open` | `0x00607f40` | Wrapped, not replaced: mod lookup, then the original through a trampoline; trampoline checked by the smoke test, mod loading in the game |
+| `Cd_FileSize`, `CdFileSize_PC` | `0x0076c320`, `0x00a428a0` | Wrapped: mod files report their own size; in the game by `an_edited_motion_group_loads_in_the_game` |
+| `Input_KeyHeld` | `0x00629d50` | Wrapped for the test harness (`docs/harness.md`) |
 
 ## Adding a replacement
 

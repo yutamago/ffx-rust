@@ -36,6 +36,8 @@ const G_FILE_SYS: u32 = 0x00cc_9c48;
 
 /// Archive path (normalized) → mod file, as a NUL-terminated wide string.
 static INDEX: OnceLock<HashMap<String, Vec<u16>>> = OnceLock::new();
+/// Archive path (normalized) → mod file size.
+static SIZES: OnceLock<HashMap<String, u64>> = OnceLock::new();
 
 /// Set by `FFX_HOOK_LOG_OPENS=1`: log every file the game reads.
 static LOG_OPENS: AtomicBool = AtomicBool::new(false);
@@ -73,6 +75,7 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
 pub fn load(game_dir: &Path) {
     let root = game_dir.join("mods");
     let mut index = HashMap::new();
+    let mut sizes = HashMap::new();
     let mut mods: Vec<PathBuf> = std::fs::read_dir(&root)
         .map(|r| {
             r.flatten()
@@ -91,6 +94,7 @@ pub fn load(game_dir: &Path) {
             };
             let key = normalize(rel.to_string_lossy().as_bytes());
             let wide: Vec<u16> = file.as_os_str().encode_wide().chain([0]).collect();
+            sizes.insert(key.clone(), std::fs::metadata(file).map_or(0, |m| m.len()));
             if index.insert(key.clone(), wide).is_some() {
                 log(&format!(
                     "  mods: {} overrides an earlier mod's {key}",
@@ -110,6 +114,7 @@ pub fn load(game_dir: &Path) {
         root.display()
     ));
     let _ = INDEX.set(index);
+    let _ = SIZES.set(sizes);
     if std::env::var_os("FFX_HOOK_LOG_OPENS").is_some_and(|v| v == "1") {
         LOG_OPENS.store(true, Ordering::Relaxed);
         log("  mods: logging every file the game opens");
@@ -195,4 +200,74 @@ unsafe fn open_mod(file: *mut usize, path: *const c_char) -> bool {
     log(&format!("  mods: {key}"));
     crate::harness::event(format!("mod {key}"));
     true
+}
+
+/// Trampolines to the original PS2 file size functions.
+pub static CD_FILE_SIZE_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
+pub static CD_FILE_SIZE_PC_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
+
+/// `Cd_FileName` (`0x00a42830`, `cdecl(number)`): the path of a PS2 file
+/// of the current module, `host0:/ffx/master/…`.
+const CD_FILE_NAME: u32 = 0x00a4_2830;
+
+/// The size of the mod file standing in for PS2 file `number`, rounded up
+/// to 16 bytes like `CdFileSize_PC`. The PS2 file layer sizes buffers and
+/// reads from its own tables (`cdrom.mdg` sectors, `sizetbl.bin`), so
+/// without this a mod file that grew would be cut at the original size.
+fn mod_size(number: i32) -> Option<u32> {
+    type NameFn = unsafe extern "C" fn(i32) -> *const c_char;
+    let sizes = SIZES.get().filter(|s| !s.is_empty())?;
+    // SAFETY: the game's own lookup, called where the game calls the size
+    // functions (same module state); it returns a static string or NULL.
+    let name = unsafe {
+        let f: NameFn = std::mem::transmute(crate::rebase(CD_FILE_NAME));
+        f(number)
+    };
+    if name.is_null() {
+        return None;
+    }
+    // SAFETY: NUL-terminated.
+    let path = normalize(unsafe { CStr::from_ptr(name) }.to_bytes());
+    let rest = path
+        .strip_prefix("host0:")
+        .or_else(|| path.strip_prefix("cdrom0:"))?;
+    let key = format!("ffx_ps2/{}", rest.trim_start_matches('/'));
+    let size = *sizes.get(&key)?;
+    let rounded = u32::try_from(size.next_multiple_of(16)).ok()?;
+    log(&format!("  mods: size of {key}: {rounded}"));
+    Some(rounded)
+}
+
+/// Wraps `Cd_FileSize` (`0x0076c320`, `cdecl(number)`), the sector-table
+/// size: a mod file reports its own size.
+///
+/// # Safety
+/// Called by the game.
+#[must_use]
+pub unsafe extern "C" fn cd_file_size(number: i32) -> u32 {
+    mod_size(number).unwrap_or_else(|| {
+        // SAFETY: the trampoline runs the original.
+        unsafe {
+            let f: unsafe extern "C" fn(i32) -> u32 =
+                std::mem::transmute(CD_FILE_SIZE_ORIGINAL.load(Ordering::Acquire));
+            f(number)
+        }
+    })
+}
+
+/// Wraps `CdFileSize_PC` (`0x00a428a0`, `cdecl(number)`), the size table
+/// lookup: a mod file reports its own size.
+///
+/// # Safety
+/// Called by the game.
+#[must_use]
+pub unsafe extern "C" fn cd_file_size_pc(number: i32) -> u32 {
+    mod_size(number).unwrap_or_else(|| {
+        // SAFETY: the trampoline runs the original.
+        unsafe {
+            let f: unsafe extern "C" fn(i32) -> u32 =
+                std::mem::transmute(CD_FILE_SIZE_PC_ORIGINAL.load(Ordering::Acquire));
+            f(number)
+        }
+    })
 }

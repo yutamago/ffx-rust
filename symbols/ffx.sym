@@ -86,6 +86,7 @@
 0x006db070 function LangManager_Get
 0x006db090 function LangManager_FromSettings  # settings language index -> game language id
 0x0076b970 function Cd_QueueRead              # libmscd.c emulation: queue a read of a PS2 file by number; slot 0 of g_CdLib
+0x0076c320 function Cd_FileSize                # cdecl(number): size of a PS2 file from the sector table (cdrom.mdg); wrapped so mod files report their size
 0x00781d40 function Kernel_LoadTables         # loads command, ply_rom, a_ability, item, monmagic1/2, ... into globals
 0x00782df0 function Kernel_LoadFile           # (name, buffer) reads new_<lang>pc/battle/kernel/<name>.bin whole
 0x00783680 function Mon_LoadText              # kernel monster name/texts -> actor +0x50/+0x90/+0x190, then requests mon_data
@@ -139,6 +140,7 @@
 0x0086536c label    g_ScriptOpcodeCases       # opcode -> case index byte table of Script_Run
 0x00869d60 function Script_Fetch              # opcode << 24 | u16 operand when the high bit is set
 0x0086a830 function Script_GetWorker          # worker index -> worker object (0xb58/0x558/0x5b8 sizes)
+0x0086c2e0 function Script_VarAddress          # (worker, location word): storage = bits 25-27 (0 globals at *(*0x01326b28+0x2c), 1 at +0x30, 2-6 script/worker data) + offset
 0x0086d6d0 function Script_InitNatives        # registers the native function tables per group
 0x0086de50 function Script_PopFloat
 0x0086df00 function Script_PopInt
@@ -153,6 +155,8 @@
 0x008777f0 function Script_FinishNative       # slot 2 (float) or 3 (int) result, pushed
 0x00877880 function Script_SetNativeTable     # (group, table)
 0x008c6920 function Cmd_HealAmount            # formula +0x28: 6 = power*50, 7 = (stat+power)/2*power, 8 = maxHP*power/16; power +0x2a
+0x00a42830 function Cd_FileName                # cdecl(number) -> "host0:/ffx/master/..." path of a PS2 file of the current module
+0x00a428a0 function CdFileSize_PC              # cdecl(number): size from sizetbl.bin, or the real file for some modules ("CDfileSize_PC: MISSING?")
 0x00cc9698 label    g_BasePath
 0x00cc9c48 label    g_FileSys
 0x00cc9cf5 label    g_SteamReady              # guards every other Steam call (achievements, RunCallbacks)

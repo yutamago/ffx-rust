@@ -47,6 +47,11 @@ pub struct Hook {
     /// Receives the trampoline address, for replacements that call the
     /// original.
     pub original: Option<&'static AtomicUsize>,
+    /// Bytes to copy into the trampoline when more than the prologue: whole
+    /// instructions whose only image-dependent part is an absolute operand
+    /// (copied from the relocated, live code, so still correct). 0 = the
+    /// prologue.
+    pub steal: usize,
 }
 
 /// The module is not the `FFX.exe` build the hook table was made for.
@@ -98,7 +103,7 @@ pub use patch::{check_build, install};
 /// The hook table.
 #[cfg(all(windows, target_arch = "x86"))]
 #[must_use]
-pub fn hooks() -> [Hook; 4] {
+pub fn hooks() -> [Hook; 6] {
     [
         Hook {
             name: "zlib_uncompress",
@@ -106,6 +111,7 @@ pub fn hooks() -> [Hook; 4] {
             prologue: &[0x55, 0x8b, 0xec, 0x83, 0xe4],
             replacement: replacements::zlib_uncompress as *const () as usize,
             original: None,
+            steal: 0,
         },
         Hook {
             name: "Path_ToLowerAscii",
@@ -113,6 +119,7 @@ pub fn hooks() -> [Hook; 4] {
             prologue: &[0x55, 0x8b, 0xec, 0x8b, 0x45],
             replacement: replacements::path_to_lower_ascii as *const () as usize,
             original: None,
+            steal: 0,
         },
         Hook {
             name: "File_Open",
@@ -121,6 +128,7 @@ pub fn hooks() -> [Hook; 4] {
             prologue: &[0x55, 0x8b, 0xec, 0x83, 0xec, 0x08],
             replacement: mods::file_open as *const () as usize,
             original: Some(&mods::FILE_OPEN_ORIGINAL),
+            steal: 0,
         },
         Hook {
             name: "Input_KeyHeld",
@@ -129,6 +137,26 @@ pub fn hooks() -> [Hook; 4] {
             prologue: &[0x55, 0x8b, 0xec, 0x8b, 0x81, 0xb8, 0x02, 0x00, 0x00],
             replacement: harness::key_held as *const () as usize,
             original: Some(&harness::KEY_HELD_ORIGINAL),
+            steal: 0,
+        },
+        Hook {
+            name: "Cd_FileSize",
+            address: 0x0076_c320,
+            // push ebp; mov ebp, esp; push ecx; then mov eax, [abs32]
+            // (relocated, so only its opcode is checked; 9 bytes are copied)
+            prologue: &[0x55, 0x8b, 0xec, 0x51, 0xa1],
+            replacement: mods::cd_file_size as *const () as usize,
+            original: Some(&mods::CD_FILE_SIZE_ORIGINAL),
+            steal: 9,
+        },
+        Hook {
+            name: "CdFileSize_PC",
+            address: 0x00a4_28a0,
+            // push ebp; mov ebp, esp; push ebx; push edi
+            prologue: &[0x55, 0x8b, 0xec, 0x53, 0x57],
+            replacement: mods::cd_file_size_pc as *const () as usize,
+            original: Some(&mods::CD_FILE_SIZE_PC_ORIGINAL),
+            steal: 0,
         },
     ]
 }

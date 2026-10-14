@@ -12,6 +12,9 @@ thiserror.workspace = true
 
 [dev-dependencies]
 ffx-kernel.workspace = true
+ffx-motion.workspace = true
+ffx-phyre.workspace = true
+ffx-script.workspace = true
 ffx-vbf.workspace = true
 
 [lints]

@@ -68,7 +68,11 @@ with `key` (arrows `c8`/`d0`/`cb`/`cd`, Enter `1c`, Esc `01`).
   frames later; `examples/skip_probe.rs`). Inputs are taps of a few frames:
   menus repeat a held direction.
 - Title: Up arrow, Enter starts a new game; the Sphere Grid choice takes
-  `press down` and `press circle` (confirm).
+  `press down` and `press circle` (confirm), then the Soundtrack choice
+  (Arranged or Original).
+- `examples/mod_probe.rs` plays into the first scene with any mod file and
+  reports whether the game read it and survived; it found that grown PS2
+  files were cut at their original size (`docs/hooking.md`).
 
 ## Tests
 
@@ -86,6 +90,15 @@ FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test --release -p ffx-harness --test 
 | `runs_in_the_background_and_takes_input` | frames advance, the keyboard is read without focus, the pad word holds exactly the held button, 1280×720 screenshots | 10 s |
 | `a_kernel_mod_reaches_game_memory` | a mod's `item.bin` (Potion power 4 → 77) is what `g_KernelItem` points at | 6 s |
 | `new_game_reaches_the_sphere_grid_choice` | the opening skipped with Start (B, a 3-frame tap), New Game by keys, the Sphere Grid cursor moved by the pad | 30 s |
+| `a_grown_event_script_runs_in_the_game` | `znkd0600.ebp` with `pushimm 0x1234; popv v1` in front of worker 0's first entry (the worker grows and moves): the global byte at `0xa3c` is `0x34` (0 without the mod), and the scene keeps running | 45 s |
+| `a_resized_model_loads_in_the_game` | Tidus's `c001.dae.phyre`, 30 % wider and with segment 0 doubled (resized buffers), is read from the mod and the scene runs 10 s | 40 s |
+| `an_edited_motion_group_loads_in_the_game` | Tidus's `resident0.mgrp`, root bone turned a quarter, is read from the mod and the scene runs 10 s | 40 s |
+
+The first scene of a new game is `screens::first_scene`: New Game,
+Standard Sphere Grid, Yes, Arranged soundtrack, then event `znkd0600` (the
+Zanarkand ruins), which loads Tidus (`c001`) and his resident motions.
+Script globals (storage 0, `Script_VarAddress` `0x0086c2e0`) are at
+`*(*0x01326b28 + 0x2c) + offset`.
 
 Screens are recognised by mean colours of fixed rectangles; a failing
 check saves its screenshot to `<temp>/ffx-harness/`.

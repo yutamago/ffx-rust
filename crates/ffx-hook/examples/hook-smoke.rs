@@ -167,6 +167,7 @@ mod windows {
             prologue: &[0x55, 0x8b, 0xec, 0x8b, 0x45, 0x08],
             replacement: slashes_wrapper as *const () as usize,
             original: Some(&SLASHES_ORIGINAL),
+            steal: 0,
         };
         // SAFETY: as above.
         let installed = unsafe { ffx_hook::install(base, &[wrapper], &[]) }.unwrap_or_default();

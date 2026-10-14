@@ -75,3 +75,18 @@ pub fn new_game(game: &mut Game) -> Result<Image> {
     game.command("key 1c 3 20")?;
     wait_for(game, is_sphere_grid_choice, 30, 20)
 }
+
+/// From boot into the first scene of a new game (event `znkd0600`, the
+/// Zanarkand ruins): Standard Sphere Grid, Yes, Arranged soundtrack.
+/// Returns the event script's open event.
+///
+/// # Errors
+/// Fails when a screen or the event does not appear.
+pub fn first_scene(game: &mut Game) -> Result<String> {
+    new_game(game)?;
+    game.events()?;
+    for _ in 0..4 {
+        game.command("press circle 3 40")?;
+    }
+    game.wait_for_open("znkd0600.ebp", 30, 1200)
+}

@@ -109,9 +109,13 @@ unsafe fn patch(base: usize, hook: &Hook) -> Outcome {
     }
 
     if let Some(slot) = hook.original {
+        // The live bytes: relocated absolute operands are already right.
+        let steal = hook.steal.max(len);
         // SAFETY: the prologue was just verified; hooks with an `original`
-        // list only position-independent instructions there.
-        match unsafe { trampoline(site, hook.prologue) } {
+        // copy only whole instructions without relative operands.
+        let live = unsafe { std::slice::from_raw_parts(site_ptr, steal) }.to_vec();
+        // SAFETY: as above.
+        match unsafe { trampoline(site, &live) } {
             Some(t) => slot.store(t, Ordering::Release),
             None => return Outcome::ProtectFailed,
         }

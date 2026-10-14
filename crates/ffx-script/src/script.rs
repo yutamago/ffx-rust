@@ -252,6 +252,22 @@ impl Script {
             .map(u32::cast_signed)
     }
 
+    /// Variable `i` of a worker: its location word (type in bits 28–31,
+    /// storage in bits 25–27, offset in bits 0–23; `Script_VarAddress`,
+    /// `0x0086c2e0`) and array length.
+    #[must_use]
+    pub fn variable(&self, worker: usize, i: u16) -> Option<(u32, u16)> {
+        let h = self.workers.get(worker)?.header;
+        if i >= u16_at(&self.bytes, h + 2).ok()? {
+            return None;
+        }
+        let at = u32_at(&self.bytes, h + 0x14).ok()? as usize + 8 * usize::from(i);
+        Some((
+            u32_at(&self.bytes, at).ok()?,
+            u16_at(&self.bytes, at + 4).ok()?,
+        ))
+    }
+
     /// Float constant `i` of a worker.
     #[must_use]
     pub fn float_const(&self, worker: usize, i: u16) -> Option<f32> {

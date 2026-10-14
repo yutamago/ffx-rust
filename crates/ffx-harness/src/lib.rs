@@ -178,6 +178,7 @@ pub struct Game {
     stream: BufReader<TcpStream>,
     shot_dir: PathBuf,
     owned: bool,
+    log: Vec<String>,
 }
 
 impl Drop for Game {
@@ -259,6 +260,7 @@ impl Game {
             stream: BufReader::new(stream),
             shot_dir,
             owned: false,
+            log: Vec::new(),
         })
     }
 
@@ -325,6 +327,14 @@ impl Game {
         hex(&self.command(&format!("read {address:#x} {len}"))?)
     }
 
+    /// Reads `len` bytes at a process address.
+    ///
+    /// # Errors
+    /// See [`Game::command`].
+    pub fn read_abs(&mut self, address: u32, len: usize) -> Result<Vec<u8>> {
+        hex(&self.command(&format!("readabs {address:#x} {len}"))?)
+    }
+
     /// Reads `len` bytes at `*pointer + offset`.
     ///
     /// # Errors
@@ -349,7 +359,14 @@ impl Game {
             self.stream.read_line(&mut line)?;
             out.push(line.trim_end().to_owned());
         }
+        self.log.extend(out.iter().cloned());
         Ok(out)
+    }
+
+    /// Every event read so far, by any call.
+    #[must_use]
+    pub fn opened(&self) -> &[String] {
+        &self.log
     }
 
     /// Waits until the game opens a file whose path contains `needle`,

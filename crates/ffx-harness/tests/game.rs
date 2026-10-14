@@ -129,3 +129,153 @@ fn new_game_reaches_the_sphere_grid_choice() {
     }
     game.quit().unwrap();
 }
+
+/// Writes `bytes` as a mod file at `path` in `mods/<name>`, runs `test`,
+/// and removes the mod again.
+fn with_mod<T>(
+    name: &str,
+    path: &str,
+    bytes: &[u8],
+    test: impl FnOnce() -> T + std::panic::UnwindSafe,
+) -> T {
+    let dir = game_dir().join("mods").join(name);
+    let file = dir.join(path);
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, bytes).unwrap();
+    let result = std::panic::catch_unwind(test);
+    std::fs::remove_dir_all(&dir).unwrap();
+    result.unwrap()
+}
+
+#[test]
+#[ignore = "starts FFX.exe on the Windows desktop"]
+fn a_grown_event_script_runs_in_the_game() {
+    const EVENT: &str = "ffx_ps2/ffx/master/jppc/event/obj/zn/znkd0600/znkd0600.ebp";
+    let archive = ffx_vbf::Archive::open(game_dir().join("data/FFX_Data.vbf")).unwrap();
+    let original = archive.read(archive.find(EVENT).unwrap()).unwrap();
+    let container = ffx_script::Container::parse(original.clone()).unwrap();
+    // Worker 0's first entry runs when the event starts. Two instructions
+    // in front of it grow the worker past its range, so its code moves to
+    // the end of the block. v1 is a byte in the global area at 0xa3c.
+    let (location, _) = container.script.variable(0, 1).unwrap();
+    assert_eq!((location >> 25) & 7, 0, "v1 is a global");
+    let offset = location & 0xff_ffff;
+    let text = ffx_script::disassemble(&container.script).unwrap();
+    let edited = text.replacen(
+        "worker 0 type 1\ne0:\n",
+        "worker 0 type 1\ne0:\n    pushimm 4660\n    popv v1\n",
+        1,
+    );
+    assert_ne!(edited, text);
+    let script = ffx_script::assemble(&container.script, &edited).unwrap();
+    assert!(
+        script.workers()[0].range != container.script.workers()[0].range,
+        "the edit grows worker 0"
+    );
+    let modded = container.replace_script(&script).unwrap().bytes().to_vec();
+
+    let value = with_mod("zz-harness-script", EVENT, &modded, move || {
+        let mut game = Game::launch(&Options::default()).unwrap();
+        let opened = ffx_harness::screens::first_scene(&mut game).unwrap();
+        assert!(
+            opened.starts_with("mod "),
+            "the event came from the mod: {opened}"
+        );
+        game.wait(120).unwrap();
+        // Global variables: *(*0x01326b28 + 0x2c) + offset.
+        let base = u32::from_le_bytes(
+            game.read_through(0x0132_6b28, 0x2c, 4)
+                .unwrap()
+                .try_into()
+                .unwrap(),
+        );
+        let value = game.read_abs(base + offset, 1).unwrap()[0];
+        let frames = game.frame().unwrap();
+        game.wait(300).unwrap();
+        assert!(
+            game.frame().unwrap() >= frames + 300,
+            "the game keeps running"
+        );
+        game.quit().unwrap();
+        value
+    });
+    assert_eq!(value, 0x34, "pushimm 0x1234; popv v1 (a byte)");
+}
+
+/// Plays into the first scene with a mod file in place and checks that the
+/// game read it and keeps running for ten seconds. Saves a screenshot.
+fn first_scene_with(name: &str, path: &'static str, bytes: &[u8]) {
+    with_mod(name, path, bytes, move || {
+        let mut game = Game::launch(&Options::default()).unwrap();
+        ffx_harness::screens::first_scene(&mut game).unwrap();
+        let frames = game.frame().unwrap();
+        game.wait(600).unwrap();
+        game.events().unwrap();
+        let wanted = format!("mod {path}");
+        assert!(
+            game.opened().contains(&wanted),
+            "the game did not read {path} from the mod"
+        );
+        assert!(
+            game.frame().unwrap() >= frames + 600,
+            "the game keeps running"
+        );
+        let shot = game.screenshot().unwrap();
+        let file = std::env::temp_dir()
+            .join("ffx-harness")
+            .join(format!("{name}.png"));
+        shot.save_png(&file).unwrap();
+        eprintln!("screenshot: {}", file.display());
+        game.quit().unwrap();
+    });
+}
+
+#[test]
+#[ignore = "starts FFX.exe on the Windows desktop"]
+fn a_resized_model_loads_in_the_game() {
+    const MODEL: &str = "ffx_data/gamedata/ps3data/chr/pc/c001/mdl/d3d11/c001.dae.phyre";
+    let archive = ffx_vbf::Archive::open(game_dir().join("data/FFX_Data.vbf")).unwrap();
+    let original = archive.read(archive.find(MODEL).unwrap()).unwrap();
+    let mut model = ffx_phyre::Model::parse(&original).unwrap();
+    // Every vertex 30 % wider; segment 0 twice over (a resized buffer).
+    for seg in &mut model.segments {
+        for p in &mut seg.positions {
+            p[0] *= 1.3;
+        }
+    }
+    let seg = &mut model.segments[0];
+    let n = u16::try_from(seg.positions.len()).unwrap();
+    seg.positions.extend_from_within(..);
+    seg.normals.extend_from_within(..);
+    seg.uvs.extend_from_within(..);
+    seg.colors.extend_from_within(..);
+    seg.joints.extend_from_within(..);
+    seg.weights.extend_from_within(..);
+    let more: Vec<u16> = seg.indices.iter().map(|i| i + n).collect();
+    seg.indices.extend(more);
+    let modded = model.write(&original).unwrap();
+    assert!(modded.len() > original.len());
+    first_scene_with("zz-harness-model", MODEL, &modded);
+}
+
+#[test]
+#[ignore = "starts FFX.exe on the Windows desktop"]
+fn an_edited_motion_group_loads_in_the_game() {
+    const MOTIONS: &str = "ffx_ps2/ffx/master/jppc/chr/pc/c001/mot/resident0.mgrp";
+    let archive = ffx_vbf::Archive::open(game_dir().join("data/FFX_Data.vbf")).unwrap();
+    let original = archive.read(archive.find(MOTIONS).unwrap()).unwrap();
+    let mut group = ffx_motion::MotionGroup::parse(&original).unwrap();
+    // Every clip turns Tidus's root bone a quarter turn about y.
+    for clip in group.sequences.iter_mut().flat_map(|s| &mut s.clips) {
+        let ry = &mut clip.clip.channels[1];
+        *ry = match std::mem::replace(ry, ffx_motion::Channel::Zero) {
+            ffx_motion::Channel::Keys(k) => {
+                ffx_motion::Channel::Keys(k.into_iter().map(|v| v + 1024).collect())
+            }
+            other => ffx_motion::Channel::Constant(other.at(0) + 1024),
+        };
+    }
+    let modded = group.write().unwrap();
+    assert_eq!(ffx_motion::MotionGroup::parse(&modded).unwrap(), group);
+    first_scene_with("zz-harness-motion", MOTIONS, &modded);
+}
