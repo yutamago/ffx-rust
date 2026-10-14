@@ -103,7 +103,7 @@ pub use patch::{check_build, install};
 /// The hook table.
 #[cfg(all(windows, target_arch = "x86"))]
 #[must_use]
-pub fn hooks() -> [Hook; 7] {
+pub fn hooks() -> [Hook; 8] {
     [
         Hook {
             name: "zlib_uncompress",
@@ -138,6 +138,16 @@ pub fn hooks() -> [Hook; 7] {
             replacement: harness::key_held as *const () as usize,
             original: Some(&harness::KEY_HELD_ORIGINAL),
             steal: 0,
+        },
+        Hook {
+            name: "Time_Now",
+            address: 0x0042_fd80,
+            // push ebp; mov ebp, esp; then mov eax, [abs32] (relocated: only
+            // its opcode is checked; 8 bytes are copied)
+            prologue: &[0x55, 0x8b, 0xec, 0xa1],
+            replacement: harness::time_now as *const () as usize,
+            original: Some(&harness::TIME_NOW_ORIGINAL),
+            steal: 8,
         },
         Hook {
             name: "Rng_ClockSeed",

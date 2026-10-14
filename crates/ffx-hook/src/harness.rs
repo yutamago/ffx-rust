@@ -14,6 +14,10 @@
 //!   that folder, so settings and saves (autosaves too) stay in a sandbox;
 //! - with `FFX_HARNESS_SEED=<n>`, seeds the random number generators with
 //!   `n` instead of the clock (`Rng_ClockSeed`, `0x00798950`), so runs repeat;
+//! - with `FFX_HARNESS_FAST=1`, runs frames back to back: the main loop's
+//!   frame-limiter `Sleep` (`0x0062f3bb`) returns at once and adds its time
+//!   to the game's clock (`Time_Now`, `0x0042fd80`), so the game still sees
+//!   59.94 frames a second;
 //! - with `FFX_HARNESS_BACKGROUND=1`, shows the window without activating
 //!   it and makes the keyboard a background device, so the game neither
 //!   takes the focus nor stops reading input without it; the real devices
@@ -181,6 +185,70 @@ pub unsafe extern "C" fn clock_seed() -> u32 {
             std::mem::transmute(CLOCK_SEED_ORIGINAL.load(Ordering::Acquire));
         original()
     }
+}
+
+/// Trampoline to the original `Time_Now`.
+pub static TIME_NOW_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
+/// Seconds the frame limiter skipped, as `f64` bits.
+static SKIPPED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// The limiter's replacement `Sleep`, called through this pointer by the
+/// patched `call [ptr]` at `0x0062f3bb`.
+static FAST_SLEEP: unsafe extern "system" fn(u32) = fast_sleep;
+
+/// Wraps `Time_Now` (`0x0042fd80`, seconds): adds the skipped time.
+///
+/// # Safety
+/// Called by the game.
+#[must_use]
+pub unsafe extern "C" fn time_now() -> f64 {
+    // SAFETY: the trampoline runs the original, which returns in st(0).
+    let now = unsafe {
+        let original: unsafe extern "C" fn() -> f64 =
+            std::mem::transmute(TIME_NOW_ORIGINAL.load(Ordering::Acquire));
+        original()
+    };
+    now + f64::from_bits(SKIPPED.load(Ordering::Acquire))
+}
+
+/// The frame limiter's `Sleep(ms)` in fast mode: no wait, the clock moves.
+unsafe extern "system" fn fast_sleep(ms: u32) {
+    let mut bits = SKIPPED.load(Ordering::Acquire);
+    loop {
+        let next = (f64::from_bits(bits) + f64::from(ms) / 1000.0).to_bits();
+        match SKIPPED.compare_exchange(bits, next, Ordering::AcqRel, Ordering::Acquire) {
+            Ok(_) => break,
+            Err(b) => bits = b,
+        }
+    }
+}
+
+/// Points the main loop's `call [Sleep]` (`0x0062f3bb`) at `fast_sleep`.
+///
+/// # Safety
+/// `module` is the main module; no thread runs the main loop yet.
+unsafe fn patch_frame_limiter(module: usize) -> bool {
+    use windows_sys::Win32::System::Memory::{PAGE_EXECUTE_READWRITE, VirtualProtect};
+    let site = (module + (0x0062_f3bb - crate::IMAGE_BASE as usize)) as *mut u8;
+    let iat_sleep = module + (0x00b0_c100 - crate::IMAGE_BASE as usize);
+    // SAFETY: inside the mapped image; checked to be `ff 15 <&Sleep>`.
+    unsafe {
+        let current = std::slice::from_raw_parts(site, 6);
+        if current[..2] != [0xff, 0x15]
+            || u32::from_le_bytes(current[2..6].try_into().expect("4 bytes")) as usize != iat_sleep
+        {
+            return false;
+        }
+        let mut old = 0;
+        if VirtualProtect(site.cast(), 6, PAGE_EXECUTE_READWRITE, &raw mut old) == 0 {
+            return false;
+        }
+        let ptr = u32::try_from(&raw const FAST_SLEEP as usize)
+            .expect("32-bit")
+            .to_le_bytes();
+        site.add(2).copy_from_nonoverlapping(ptr.as_ptr(), 4);
+        VirtualProtect(site.cast(), 6, old, &raw mut old);
+    }
+    true
 }
 
 /// `DirectInput` keys held by the test, by scan code.
@@ -935,6 +1003,18 @@ pub unsafe fn install(module: usize) {
         std::env::var("FFX_HARNESS_BACKGROUND").is_ok_and(|v| v == "1"),
         Ordering::Release,
     );
+    if std::env::var("FFX_HARNESS_FAST").is_ok_and(|v| v == "1") {
+        // SAFETY: forwarded from the caller.
+        let patched = unsafe { patch_frame_limiter(module) };
+        log(&format!(
+            "  harness: fast mode {}",
+            if patched {
+                "on"
+            } else {
+                "not available (unexpected code)"
+            }
+        ));
+    }
     if let Some(seed) = std::env::var("FFX_HARNESS_SEED")
         .ok()
         .and_then(|s| s.parse().ok())

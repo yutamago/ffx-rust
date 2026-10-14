@@ -53,6 +53,9 @@ pub struct Options {
     /// Seed of the random number generators (instead of the clock), so
     /// encounters, battles and drops repeat. `None` keeps the clock.
     pub seed: Option<u32>,
+    /// Run frames back to back (no frame limiter; game time still advances
+    /// a frame interval per frame).
+    pub fast: bool,
 }
 
 impl Default for Options {
@@ -68,6 +71,7 @@ impl Default for Options {
             home: Some(std::env::temp_dir().join("ffx-harness/home")),
             copy_user_data: true,
             seed: Some(1),
+            fast: true,
         }
     }
 }
@@ -284,6 +288,9 @@ impl Game {
         }
         let mut cmd = Command::new(options.repo.join("tools/run-game.sh"));
         cmd.arg("--harness").arg(options.port.to_string());
+        if options.fast {
+            cmd.arg("--fast");
+        }
         if let Some(seed) = options.seed {
             cmd.arg("--seed").arg(seed.to_string());
         }

@@ -22,6 +22,7 @@ tools/harness.py quit
 | Isolation | `GetDeviceState`, `XInputGetState` | In background mode the real keyboard, mouse and pads are ignored: background devices would otherwise see what the user types elsewhere |
 | Events | `File_Open` | Every file the game opens, and which came from a mod |
 | Randomness | `Rng_ClockSeed` (`0x00798950`), wrapped | `Rng_Seed` (`0x00798890`) seeds the global generator (`0x00c42200`) and the 68 at `0x01135ee0` from the system time (`GetSystemTime` bytes XORed, plus 1). With `--seed N` it gets `N`; `ffx-harness` uses seed 1 unless a test says otherwise |
+| Speed | `Time_Now` (`0x0042fd80`), wrapped; the main loop's `call [Sleep]` (`0x0062f3bb`) | The main loop (`0x0062ee50`) runs a frame (`0x0062e340`) once `DAT_00c30e88` × 1/59.94 s have passed on `Time_Now`, and sleeps away the rest. With `--fast` that one `Sleep` returns at once and adds its time to the clock: frames run back to back (461 a second instead of 30–60) while the game still sees one frame interval per frame. `ffx-harness` uses it by default |
 | Sandbox | `SHGetFolderPathW` | With `--home DIR`, the Documents folder is `DIR`: the game reads and writes `GameSetting.ini` and its saves (autosaves too) there. `ffx-harness` makes `DIR` a fresh copy of the user's `Square Enix/FINAL FANTASY X&X-2 HD Remaster` before each launch, so tests can load the user's saves and never change them |
 
 XInput is not used: the game creates XInput devices only for controllers
@@ -106,6 +107,9 @@ Standard Sphere Grid, Yes, Arranged soundtrack, then event `znkd0600` (the
 Zanarkand ruins), which loads Tidus (`c001`) and his resident motions.
 Script globals (storage 0, `Script_VarAddress` `0x0086c2e0`) are at
 `*(*0x01326b28 + 0x2c) + offset`.
+
+With fast mode the whole suite takes about 2.5 minutes, most of it start-up
+and loading.
 
 Screens are recognised by mean colours of fixed rectangles; a failing
 check saves its screenshot to `<temp>/ffx-harness/`.
