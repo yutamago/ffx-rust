@@ -11,7 +11,14 @@ use serde_json::{Value, json};
 use crate::game::{Game, write_mod_file};
 
 /// Fields only advanced mode shows.
-const ADVANCED: [&str; 6] = ["flags", "crit_flags", "in_use", "name", "model", "equipped_by"];
+const ADVANCED: [&str; 6] = [
+    "flags",
+    "crit_flags",
+    "in_use",
+    "name",
+    "model",
+    "equipped_by",
+];
 
 /// Human labels for field keys.
 fn label(key: &str) -> String {

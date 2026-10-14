@@ -265,66 +265,79 @@ fn user_game_files() -> Vec<(PathBuf, Vec<u8>)> {
 fn start_up_input_and_kernel_mod() {
     let modded = kernel_mod();
     let files = [(ITEM, modded.clone())];
-    with_mods("zz-harness-start-up", &files, move || {
-        let mut game = Game::launch(&Options::default()).unwrap();
-        // The keyboard is read without the focus.
-        let start = game.frame().unwrap();
-        game.wait(120).unwrap();
-        assert!(game.frame().unwrap() >= start + 120);
-        let stats = game.command("stats").unwrap();
-        let polls: u32 = stats
-            .split_whitespace()
-            .skip_while(|w| *w != "key_polls")
-            .nth(1)
-            .and_then(|n| n.parse().ok())
-            .unwrap_or(0);
-        assert!(
-            polls > 60,
-            "the keyboard is not read in the background: {stats}"
-        );
-
-        // g_KernelItem (0x0112a940) points at the mod's item table.
-        game.wait_for_open(&format!("mod {ITEM}"), 30, 1200)
-            .unwrap();
-        let memory = game.read_through(0x0112_a940, 0, modded.len()).unwrap();
-        assert_eq!(memory, modded, "the game holds the mod's item table");
-
-        // New Game to the Sphere Grid choice, a PS2 menu.
-        if let Err(e) = ffx_harness::screens::new_game(&mut game) {
-            fail(&mut game, "new-game", &e.to_string());
-        }
-        if !is_sphere_grid_choice(&game.screenshot().unwrap()) {
-            fail(
-                &mut game,
-                "sphere-grid",
-                "no Sphere Grid choice after New Game",
+    // A switched-off mod (mod.toml `enabled = false`) that would otherwise
+    // win: it sorts after the other and gives the Potion power 99.
+    let mut off = ffx_kernel::Table::parse(&original(ITEM)).unwrap();
+    off.record_mut(0).unwrap()[0x2a] = 99;
+    let off_files = [
+        ("mod.toml", b"name = \"off\"\nenabled = false\n".to_vec()),
+        (ITEM, off.to_bytes().unwrap()),
+    ];
+    with_mods("zz-harness-start-up-off", &off_files, || {
+        with_mods("zz-harness-start-up", &files, move || {
+            let mut game = Game::launch(&Options::default()).unwrap();
+            // The keyboard is read without the focus.
+            let start = game.frame().unwrap();
+            game.wait(120).unwrap();
+            assert!(game.frame().unwrap() >= start + 120);
+            let stats = game.command("stats").unwrap();
+            let polls: u32 = stats
+                .split_whitespace()
+                .skip_while(|w| *w != "key_polls")
+                .nth(1)
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(0);
+            assert!(
+                polls > 60,
+                "the keyboard is not read in the background: {stats}"
             );
-        }
-        // Down moves the cursor from Standard to Expert.
-        game.wait(30).unwrap();
-        let before = game.screenshot().unwrap();
-        assert_eq!((before.width, before.height), (1280, 720));
-        game.command("press down 3 20").unwrap();
-        game.wait(10).unwrap();
-        let after = game.screenshot().unwrap();
-        let (standard, expert) = (398, 427);
-        if !(cursor_at(&before, standard) > cursor_at(&before, expert) + 60.0
-            && cursor_at(&after, expert) > cursor_at(&after, standard) + 60.0)
-        {
-            fail(
-                &mut game,
-                "cursor",
-                "Down did not move the cursor to Expert",
+
+            // g_KernelItem (0x0112a940) points at the mod's item table.
+            game.wait_for_open(&format!("mod {ITEM}"), 30, 1200)
+                .unwrap();
+            let memory = game.read_through(0x0112_a940, 0, modded.len()).unwrap();
+            assert_eq!(
+                memory, modded,
+                "the game holds the mod's item table, not the switched-off mod's"
             );
-        }
-        // The pad word holds exactly the held button (Circle confirms, so
-        // this comes last).
-        game.command("pad circle").unwrap();
-        game.wait(3).unwrap();
-        let word = u32_le(game.read(0x00cc_b170, 4).unwrap());
-        game.command("pad").unwrap();
-        assert_eq!(word, 0x20, "pad word {word:#x}");
-        game.quit().unwrap();
+
+            // New Game to the Sphere Grid choice, a PS2 menu.
+            if let Err(e) = ffx_harness::screens::new_game(&mut game) {
+                fail(&mut game, "new-game", &e.to_string());
+            }
+            if !is_sphere_grid_choice(&game.screenshot().unwrap()) {
+                fail(
+                    &mut game,
+                    "sphere-grid",
+                    "no Sphere Grid choice after New Game",
+                );
+            }
+            // Down moves the cursor from Standard to Expert.
+            game.wait(30).unwrap();
+            let before = game.screenshot().unwrap();
+            assert_eq!((before.width, before.height), (1280, 720));
+            game.command("press down 3 20").unwrap();
+            game.wait(10).unwrap();
+            let after = game.screenshot().unwrap();
+            let (standard, expert) = (398, 427);
+            if !(cursor_at(&before, standard) > cursor_at(&before, expert) + 60.0
+                && cursor_at(&after, expert) > cursor_at(&after, standard) + 60.0)
+            {
+                fail(
+                    &mut game,
+                    "cursor",
+                    "Down did not move the cursor to Expert",
+                );
+            }
+            // The pad word holds exactly the held button (Circle confirms, so
+            // this comes last).
+            game.command("pad circle").unwrap();
+            game.wait(3).unwrap();
+            let word = u32_le(game.read(0x00cc_b170, 4).unwrap());
+            game.command("pad").unwrap();
+            assert_eq!(word, 0x20, "pad word {word:#x}");
+            game.quit().unwrap();
+        });
     });
 }
 
