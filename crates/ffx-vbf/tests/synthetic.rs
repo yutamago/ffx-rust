@@ -146,3 +146,40 @@ fn rejects_tampered_header() {
     ));
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn pack_reproduces_and_edits() {
+    let files = vec![
+        ("data/small.txt", b"hello vbf".to_vec()),
+        ("data/empty.bin", Vec::new()),
+        ("data/zeros.bin", vec![0u8; BLOCK_SIZE * 2 + 3]),
+        ("data/noise.bin", noise(BLOCK_SIZE + 9, 3)),
+    ];
+    let original = build(&files);
+    let path = write_temp("pack-base", &original);
+    let base = Archive::open(&path).unwrap();
+
+    let mut same = Vec::new();
+    let stats = ffx_vbf::pack(&base, &std::collections::BTreeMap::new(), &mut same).unwrap();
+    assert_eq!(same, original, "packing without changes is the identity");
+    assert_eq!((stats.files, stats.replaced, stats.added), (4, 0, 0));
+
+    let mut changes = std::collections::BTreeMap::new();
+    changes.insert(
+        "DATA\\Small.TXT".to_string(),
+        b"changed and longer than before".to_vec(),
+    );
+    changes.insert("data/new.bin".to_string(), noise(BLOCK_SIZE * 3, 5));
+    let mut edited = Vec::new();
+    let stats = ffx_vbf::pack(&base, &changes, &mut edited).unwrap();
+    assert_eq!((stats.files, stats.replaced, stats.added), (5, 1, 1));
+    let out = write_temp("pack-edited", &edited);
+    let archive = Archive::open(&out).unwrap();
+    let read = |p: &str| archive.read(archive.find(p).unwrap()).unwrap();
+    assert_eq!(read("data/small.txt"), b"changed and longer than before");
+    assert_eq!(read("data/new.bin"), noise(BLOCK_SIZE * 3, 5));
+    assert_eq!(read("data/zeros.bin"), vec![0u8; BLOCK_SIZE * 2 + 3]);
+    assert_eq!(read("data/noise.bin"), noise(BLOCK_SIZE + 9, 3));
+    std::fs::remove_file(path).unwrap();
+    std::fs::remove_file(out).unwrap();
+}

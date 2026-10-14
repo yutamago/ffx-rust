@@ -74,12 +74,35 @@ prefix is up to the caller.
 `Vbf_Open` reads the last 16 bytes of the file, MD5s the header with
 CryptoAPI (`CALG_MD5`) and refuses the archive unless the two match.
 
+## Writing
+
+`ffx_vbf::pack` (`ffx vbf pack <base.vbf> --mod <dir> … -o <out.vbf>`)
+rebuilds an archive from a base plus changed and added files. Each `--mod`
+folder mirrors archive paths; later folders win.
+
+- Unchanged files keep their stored blocks, copied verbatim. File data in
+  the shipped archives is contiguous and in block order, so packing without
+  changes reproduces the base exactly.
+- Changed and added files are cut into 64 KiB blocks and zlib-compressed
+  where that is smaller; otherwise stored raw.
+- New entries go after the existing ones, their paths at the end of the
+  path table. Record field `0x04`, which the game does not read, follows the
+  base's convention (the first-block index in `metamenu.vbf`, the shared
+  constant in the big archives).
+- The header's MD5 is recomputed for the trailer, which is all `Vbf_Open`
+  checks.
+
+For development, the loose-file mod folder (`docs/hooking.md`) is quicker:
+no 20 GB rewrite.
+
 ## Verification
 
 - `cargo test -p ffx-vbf` builds archives in memory and round-trips them.
 - With `FFX_GAME_DIR` set, it also reads all 150 files in `metamenu.vbf`.
 - `cargo test --release -p ffx-vbf --test game_data -- --ignored` decompresses
-  all 71,979 files in `FFX_Data.vbf` and checks every size.
+  all 71,979 files in `FFX_Data.vbf` and checks every size, and repacks it
+  without changes: the result has the original's MD5 (about 70 s).
+- Without `--ignored`, `metamenu.vbf` is repacked and compared.
 
 ## Open questions
 

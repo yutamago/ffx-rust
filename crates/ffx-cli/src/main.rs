@@ -250,6 +250,18 @@ enum VbfCommand {
     List { archive: PathBuf },
     /// Print one file to stdout.
     Cat { archive: PathBuf, path: String },
+    /// Write a new archive: the base with files replaced or added from mod
+    /// folders (each mirroring archive paths; later folders win).
+    Pack {
+        /// The original archive.
+        base: PathBuf,
+        /// Mod folder(s) whose files replace or add archive files.
+        #[arg(long = "mod", required = true)]
+        mods: Vec<PathBuf>,
+        /// The new archive; must differ from the base.
+        #[arg(short, long)]
+        out: PathBuf,
+    },
     /// Extract files whose path starts with an optional prefix.
     Extract {
         archive: PathBuf,
@@ -482,6 +494,36 @@ fn vbf(cmd: VbfCommand) -> Result<()> {
                 .with_context(|| format!("{path}: not in archive"))?;
             std::io::stdout().lock().write_all(&archive.read(entry)?)?;
         }
+        VbfCommand::Pack { base, mods, out } => {
+            if out.canonicalize().ok() == base.canonicalize().ok() {
+                bail!("refusing to overwrite the base archive");
+            }
+            let archive = open(&base)?;
+            let mut changes = std::collections::BTreeMap::new();
+            for dir in &mods {
+                let mut files = Vec::new();
+                collect_files(dir, &mut files)?;
+                for file in files {
+                    let rel = file.strip_prefix(dir).expect("under dir");
+                    let key = rel.to_string_lossy().replace('\\', "/");
+                    changes.insert(key, std::fs::read(&file)?);
+                }
+            }
+            let tmp = out.with_extension("vbf.partial");
+            let mut writer = std::io::BufWriter::new(std::fs::File::create(&tmp)?);
+            let stats = ffx_vbf::pack(&archive, &changes, &mut writer)?;
+            writer.flush()?;
+            drop(writer);
+            std::fs::rename(&tmp, &out)?;
+            eprintln!(
+                "wrote {}: {} files ({} replaced, {} added), {} bytes",
+                out.display(),
+                stats.files,
+                stats.replaced,
+                stats.added,
+                stats.bytes
+            );
+        }
         VbfCommand::Extract {
             archive,
             out,
@@ -513,6 +555,18 @@ fn vbf(cmd: VbfCommand) -> Result<()> {
                 selected.len(),
                 bytes.into_inner()
             );
+        }
+    }
+    Ok(())
+}
+
+fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in std::fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
+        let path = entry?.path();
+        if path.is_dir() {
+            collect_files(&path, out)?;
+        } else {
+            out.push(path);
         }
     }
     Ok(())

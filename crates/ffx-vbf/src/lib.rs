@@ -17,8 +17,10 @@ use std::path::Path;
 use md5::{Digest, Md5};
 
 mod format;
+mod pack;
 
 pub use format::{BLOCK_SIZE, MAGIC};
+pub use pack::{PackStats, pack};
 
 /// An MD5 digest, used both for the header checksum and for path lookup.
 pub type Md5Digest = [u8; 16];
@@ -73,6 +75,8 @@ pub struct Entry {
     /// Absolute file offset of the file's first block. Meaningless for empty
     /// files, which carry junk here.
     pub offset: u64,
+    /// Offset of the path in the path table.
+    pub path_offset: u64,
 }
 
 impl Entry {
@@ -92,6 +96,10 @@ pub struct Archive {
     /// Stored size of every block; `0` means a raw 64 KiB block.
     block_sizes: Vec<u16>,
     by_digest: HashMap<Md5Digest, usize>,
+    /// The header word at `0x0c` (zero in every shipped archive).
+    reserved: u32,
+    /// The raw path table.
+    path_table: Vec<u8>,
 }
 
 impl Archive {
@@ -142,6 +150,8 @@ impl Archive {
             entries: parsed.entries,
             block_sizes: parsed.block_sizes,
             by_digest,
+            reserved: parsed.reserved,
+            path_table: parsed.path_table,
         })
     }
 

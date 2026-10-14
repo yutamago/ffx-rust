@@ -63,3 +63,58 @@ fn reads_every_file_in_ffx_data() {
     assert_eq!(archive.entries().len(), 71_979);
     check_all(&archive);
 }
+
+fn md5_of(path: &std::path::Path) -> [u8; 16] {
+    use md5::{Digest, Md5};
+    use std::io::Read;
+    let mut f = std::fs::File::open(path).unwrap();
+    let mut h = Md5::new();
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        let n = f.read(&mut buf).unwrap();
+        if n == 0 {
+            break h.finalize().into();
+        }
+        h.update(&buf[..n]);
+    }
+}
+
+/// An `io::Write` that only hashes.
+struct HashWriter(md5::Md5);
+
+impl std::io::Write for HashWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        md5::Digest::update(&mut self.0, buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn repack_is_identity(name: &str) {
+    let Some(path) = archive_path(name) else {
+        return;
+    };
+    let archive = Archive::open(&path).unwrap();
+    let mut out = HashWriter(md5::Digest::new());
+    ffx_vbf::pack(&archive, &std::collections::BTreeMap::new(), &mut out).unwrap();
+    let packed: [u8; 16] = md5::Digest::finalize(out.0).into();
+    assert_eq!(
+        packed,
+        md5_of(&path),
+        "{name}: repacking without changes must reproduce it"
+    );
+}
+
+#[test]
+fn repacking_metamenu_reproduces_it() {
+    repack_is_identity("metamenu.vbf");
+}
+
+/// Streams all ~20 GB of `FFX_Data.vbf` twice; run with `--ignored`.
+#[test]
+#[ignore = "reads the whole 20 GB archive twice"]
+fn repacking_ffx_data_reproduces_it() {
+    repack_is_identity("FFX_Data.vbf");
+}

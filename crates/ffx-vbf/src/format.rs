@@ -31,6 +31,8 @@ const RECORD_LEN: usize = 32;
 pub(crate) struct Header {
     pub entries: Vec<Entry>,
     pub block_sizes: Vec<u16>,
+    pub reserved: u32,
+    pub path_table: Vec<u8>,
 }
 
 pub(crate) fn parse_header(header: &[u8]) -> Result<Header> {
@@ -72,6 +74,7 @@ pub(crate) fn parse_header(header: &[u8]) -> Result<Header> {
             unknown_04: r.u32(rec + 0x04)?,
             size: r.u64(rec + 0x08)?,
             offset: r.u64(rec + 0x10)?,
+            path_offset: r.u64(rec + 0x18)?,
         };
         block_count = block_count.max(u64::from(entry.first_block) + entry.block_count());
         entries.push(entry);
@@ -90,6 +93,8 @@ pub(crate) fn parse_header(header: &[u8]) -> Result<Header> {
     Ok(Header {
         entries,
         block_sizes,
+        reserved: r.u32(0x0c)?,
+        path_table: paths.to_vec(),
     })
 }
 
