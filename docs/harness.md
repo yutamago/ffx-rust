@@ -50,9 +50,10 @@ with `key` (arrows `c8`/`d0`/`cb`/`cd`, Enter `1c`, Esc `01`).
 - Esc opens the PC menu; the arrows move its cursor and X closes it.
 - The opening (campfire, credits) is the title event's attract scene; it
   runs about 4,800 frames, then the title menu (Load selected) appears. The
-  title event opens `titl00` when the opening starts. Pressing Circle,
-  Cross, Start, Triangle, Square, Select, Enter, Space or Backspace during
-  it does not skip it (`examples/skip_probe.rs`).
+  title event opens `titl00` when the opening starts. Holding B (scan code
+  `30`) for a second skips it (title after about 250 frames); short taps,
+  and the PS2 buttons Circle, Cross, Start, Triangle, Square and Select,
+  do not (`examples/skip_probe.rs`).
 - Title: Up arrow, Enter starts a new game; then the Sphere Grid choice
   takes `press down`, `press cross`.
 
@@ -71,7 +72,7 @@ FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test --release -p ffx-harness --test 
 |---|---|---|
 | `runs_in_the_background_and_takes_input` | frames advance, the keyboard is read without focus, the pad word holds exactly the held button, 1280×720 screenshots | 10 s |
 | `a_kernel_mod_reaches_game_memory` | a mod's `item.bin` (Potion power 4 → 77) is what `g_KernelItem` points at | 6 s |
-| `new_game_reaches_the_sphere_grid_choice` | title menu after the opening, New Game by keys, the Sphere Grid cursor moved by the pad | about 2 min (the opening is not skipped) |
+| `new_game_reaches_the_sphere_grid_choice` | the opening skipped with B, New Game by keys, the Sphere Grid cursor moved by the pad | 30 s |
 
 Screens are recognised by mean colours of fixed rectangles; a failing
 check saves its screenshot to `<temp>/ffx-harness/`.

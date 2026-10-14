@@ -379,6 +379,11 @@ impl Game {
         Image::from_bmp(&std::fs::read(&path)?)
     }
 
+    /// Disconnects and leaves the game running.
+    pub fn detach(mut self) {
+        self.owned = false;
+    }
+
     /// Ends the game (also when it was only connected to).
     ///
     /// # Errors

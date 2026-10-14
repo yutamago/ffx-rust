@@ -46,12 +46,25 @@ pub fn wait_for(
     Err(Error::Harness("the screen did not appear".into()))
 }
 
-/// From boot to the title menu: waits out the logos and the opening.
+/// Scan code of B, which skips the opening when held.
+pub const KEY_SKIP: u8 = 0x30;
+
+/// From boot to the title menu: waits for the opening (the title event
+/// opens `titl00` when it starts), then holds B for a second every two
+/// seconds until the title shows.
 ///
 /// # Errors
-/// Fails when the title does not appear within about two minutes.
+/// Fails when the title does not appear.
 pub fn to_title(game: &mut Game) -> Result<Image> {
-    wait_for(game, is_title, 60, 120)
+    game.wait_for_open("titl00", 30, 3000)?;
+    for _ in 0..30 {
+        let shot = game.screenshot()?;
+        if is_title(&shot) {
+            return Ok(shot);
+        }
+        game.key(&[KEY_SKIP], 60)?;
+    }
+    wait_for(game, is_title, 60, 60)
 }
 
 /// From boot to the Sphere Grid choice of a new game.

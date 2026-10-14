@@ -11,14 +11,18 @@ fn main() -> ffx_harness::Result<()> {
         game.wait_for_open("titl00", 30, 3000)?;
         game.wait(120)?;
         let start = game.frame()?;
-        for _ in 0..3 {
+        // Hold it for a second every two seconds until the title shows.
+        let mut title = Err(ffx_harness::Error::Harness("no title".into()));
+        for _ in 0..25 {
             match candidate.strip_prefix("key:") {
-                Some(code) => game.key(&[u8::from_str_radix(code, 16).expect("hex")], 8)?,
-                None => game.press(&candidate, 8)?,
+                Some(code) => game.key(&[u8::from_str_radix(code, 16).expect("hex")], 60)?,
+                None => game.press(&candidate, 60)?,
             }
-            game.wait(30)?;
+            if screens::is_title(&game.screenshot()?) {
+                title = Ok(());
+                break;
+            }
         }
-        let title = screens::wait_for(&mut game, screens::is_title, 30, 50);
         let frames = game.frame()? - start;
         println!(
             "{candidate}: {}",
