@@ -6,7 +6,9 @@ fn main() {
     let mut seen: BTreeMap<(String, String, i64, &str), usize> = BTreeMap::new();
     for path in std::env::args().skip(1) {
         let bytes = std::fs::read(&path).unwrap();
-        let Ok(c) = ffx_phyre::cluster::Cluster::parse(&bytes) else { continue };
+        let Ok(c) = ffx_phyre::cluster::Cluster::parse(&bytes) else {
+            continue;
+        };
         let (Ok(pointers), Ok(arrays)) = (c.pointer_fixups(&bytes), c.array_fixups(&bytes)) else {
             continue;
         };
