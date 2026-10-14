@@ -1,0 +1,749 @@
+//! The live link to the external renderer (`ffx-render live`).
+//!
+//! With `FFX_RENDERER` set, the hook starts the renderer and shares two
+//! rings with it (`ffx_gfx::ring`): game → renderer carries the scene
+//! stream, renderer → game the finished images. Each frame the scene
+//! draws (the ones into the colour and normal targets with depth, before
+//! the glow, effect and menu passes) are sent with everything they use;
+//! objects go once, textures and buffers again when written since. When
+//! the game moves on from the scene targets, the hook waits for the
+//! renderer's colour, normal and depth images and draws them over the
+//! game's own in one full-screen pass, then the game carries on with its
+//! effects and menus on top.
+//!
+//! `FFX_RENDERER=1` uses `ffx-render.exe` next to the game; another value
+//! is the renderer's path.
+
+use std::collections::HashMap;
+use std::ffi::c_void;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+
+use ffx_gfx::ring::Ring;
+use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE, WAIT_TIMEOUT};
+use windows_sys::Win32::System::Memory::{
+    CreateFileMappingW, FILE_MAP_ALL_ACCESS, MapViewOfFile, PAGE_READWRITE,
+};
+use windows_sys::Win32::System::Threading::{
+    CREATE_NO_WINDOW, CreateProcessW, GetCurrentProcessId, PROCESS_INFORMATION, STARTUPINFOW,
+    WaitForSingleObject,
+};
+
+use super::{Draw, State, capture, device_original, real_method, vt};
+use crate::log::log;
+
+type Ptr = *mut c_void;
+
+static ON: AtomicBool = AtomicBool::new(false);
+static SENT_FRAMES: AtomicU32 = AtomicU32::new(0);
+static IMAGES: AtomicU32 = AtomicU32::new(0);
+static MISSES: AtomicU32 = AtomicU32::new(0);
+
+/// Frames sent, images composited, frames without an image.
+pub fn stats() -> (u32, u32, u32) {
+    (
+        SENT_FRAMES.load(Ordering::Relaxed),
+        IMAGES.load(Ordering::Relaxed),
+        MISSES.load(Ordering::Relaxed),
+    )
+}
+
+/// Bytes of the game → renderer ring.
+pub const TO_RENDERER: usize = 256 << 20;
+/// Bytes of the renderer → game ring.
+pub const TO_GAME: usize = 64 << 20;
+
+/// Whether the live link is up.
+pub fn on() -> bool {
+    ON.load(Ordering::Acquire)
+}
+
+/// The scene targets: colour, normal, depth.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Scene {
+    color: usize,
+    normal: usize,
+    depth: usize,
+}
+
+struct Composite {
+    width: u32,
+    height: u32,
+    textures: [Ptr; 3],
+    views: [Ptr; 3],
+    vs: Ptr,
+    ps: Ptr,
+    depth_state: Ptr,
+    blend: Ptr,
+    raster: Ptr,
+}
+
+struct Link {
+    to_renderer: Ring,
+    to_game: Ring,
+    process: HANDLE,
+    /// What the renderer has: id → version.
+    sent: HashMap<usize, u32>,
+    /// This frame's commands for the renderer.
+    cmds: Vec<ffx_gfx::Cmd>,
+    clears: Vec<ffx_gfx::Cmd>,
+    scene: Option<Scene>,
+    frame: u32,
+    composite: Option<Composite>,
+    /// Frames the renderer did not answer in time.
+    misses: u32,
+    alive: bool,
+}
+
+// SAFETY: the raw pointers are D3D objects used on the render thread only.
+unsafe impl Send for Link {}
+
+static LINK: Mutex<Option<Link>> = Mutex::new(None);
+
+fn wide(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain([0]).collect()
+}
+
+/// Starts the renderer when `FFX_RENDERER` is set. Called once the device
+/// exists.
+pub fn start() {
+    let Ok(setting) = std::env::var("FFX_RENDERER") else {
+        return;
+    };
+    if setting.is_empty() || setting == "0" {
+        return;
+    }
+    let exe = if setting == "1" {
+        std::env::current_exe()
+            .ok()
+            .and_then(|e| e.parent().map(|d| d.join("ffx-render.exe")))
+            .map(|p| p.display().to_string())
+            .unwrap_or_default()
+    } else {
+        setting
+    };
+    // SAFETY: plain Win32 calls; the mapping lives as long as the process.
+    unsafe {
+        let pid = GetCurrentProcessId();
+        let name = format!("Local\\ffx-gfx-{pid}");
+        let size = TO_RENDERER + TO_GAME;
+        let mapping = CreateFileMappingW(
+            INVALID_HANDLE_VALUE,
+            std::ptr::null(),
+            PAGE_READWRITE,
+            0,
+            size as u32,
+            wide(&name).as_ptr(),
+        );
+        if mapping.is_null() {
+            log("  live: CreateFileMapping failed");
+            return;
+        }
+        let view = MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, size);
+        if view.Value.is_null() {
+            log("  live: MapViewOfFile failed");
+            return;
+        }
+        let base = view.Value.cast::<u8>();
+        let to_renderer = Ring::create(base, TO_RENDERER);
+        let to_game = Ring::create(base.add(TO_RENDERER), TO_GAME);
+        let mut command = wide(&format!("\"{exe}\" live {name} {pid}"));
+        let startup = STARTUPINFOW {
+            cb: size_of::<STARTUPINFOW>() as u32,
+            ..std::mem::zeroed()
+        };
+        let mut info: PROCESS_INFORMATION = std::mem::zeroed();
+        let ok = CreateProcessW(
+            std::ptr::null(),
+            command.as_mut_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+            CREATE_NO_WINDOW,
+            std::ptr::null(),
+            std::ptr::null(),
+            &raw const startup,
+            &raw mut info,
+        );
+        if ok == 0 {
+            log(&format!("  live: cannot start {exe}"));
+            return;
+        }
+        CloseHandle(info.hThread);
+        log(&format!(
+            "  live: renderer {exe} started (pid {})",
+            info.dwProcessId
+        ));
+        if let Ok(mut l) = LINK.lock() {
+            *l = Some(Link {
+                to_renderer,
+                to_game,
+                process: info.hProcess,
+                sent: HashMap::new(),
+                cmds: Vec::new(),
+                clears: Vec::new(),
+                scene: None,
+                frame: 0,
+                composite: None,
+                misses: 0,
+                alive: true,
+            });
+        }
+        ON.store(true, Ordering::Release);
+    }
+}
+
+impl Link {
+    fn send(&mut self, msg: &ffx_gfx::Msg) {
+        if !self.alive {
+            return;
+        }
+        let mut bytes = Vec::new();
+        msg.write(&mut bytes);
+        let process = self.process;
+        let mut alive = true;
+        self.to_renderer.write(&bytes, || {
+            // SAFETY: our process handle.
+            if unsafe { WaitForSingleObject(process, 1) } != WAIT_TIMEOUT {
+                alive = false;
+            }
+        });
+        if !alive {
+            log("  live: the renderer is gone");
+            self.alive = false;
+        }
+    }
+
+    /// Sends what `id` refers to, if the renderer lacks it or it changed.
+    fn sync(&mut self, s: &State, id: usize) {
+        let version = s
+            .textures
+            .get(&id)
+            .map(|t| t.version)
+            .or_else(|| s.buffers.get(&id).map(|b| b.version))
+            .unwrap_or(0);
+        if self.sent.get(&id) == Some(&version) {
+            return;
+        }
+        if let Some(v) = s.views.get(&id) {
+            self.sync(s, v.resource);
+            if !self.sent.contains_key(&id)
+                && let Some(m) = capture::view_msg(s, id)
+            {
+                self.send(&m);
+                self.sent.insert(id, 0);
+            }
+            return;
+        }
+        if let Some(m) = capture::object_msg(s, id) {
+            self.send(&m);
+            self.sent.insert(id, version);
+        }
+    }
+}
+
+/// A draw went to the context: scene draws are recorded for the renderer.
+pub fn draw(s: &mut State, d: Draw) {
+    let b = &s.bound;
+    // Scene draws: colour and normal targets with depth, nothing else.
+    if b.rtv[0] == 0 || b.rtv[1] == 0 || b.rtv[2] != 0 || b.dsv == 0 {
+        return;
+    }
+    let scene = Scene {
+        color: b.rtv[0],
+        normal: b.rtv[1],
+        depth: b.dsv,
+    };
+    let streamed = capture::stream_draw(s, d);
+    let Ok(mut guard) = LINK.lock() else { return };
+    let Some(link) = guard.as_mut() else { return };
+    if !link.alive {
+        return;
+    }
+    if link.scene.is_some_and(|sc| sc != scene) {
+        // Another set of scene targets: the renderer handles one.
+        return;
+    }
+    link.scene = Some(scene);
+    let reborn = std::mem::take(&mut s.reborn);
+    for id in reborn {
+        link.sent.remove(&id);
+    }
+    for id in capture::draw_objects(&streamed).collect::<Vec<_>>() {
+        link.sync(s, id);
+    }
+    link.cmds.push(ffx_gfx::Cmd::Draw(Box::new(streamed)));
+}
+
+/// A clear went to the context: kept in case it is for scene targets.
+pub fn clear(cmd: ffx_gfx::Cmd) {
+    if let Ok(mut guard) = LINK.lock()
+        && let Some(link) = guard.as_mut()
+    {
+        link.clears.push(cmd);
+    }
+}
+
+/// The game binds other targets: if it leaves the scene, the frame goes to
+/// the renderer and its image over the game's.
+pub fn targets(s: &mut State, rtv: [usize; 8], dsv: usize) {
+    let Ok(mut guard) = LINK.lock() else { return };
+    let Some(link) = guard.as_mut() else { return };
+    let Some(scene) = link.scene else { return };
+    if link.cmds.is_empty()
+        || (rtv[0] == scene.color && rtv[1] == scene.normal && dsv == scene.depth)
+    {
+        return;
+    }
+    finish(link, s, scene);
+}
+
+/// At Present: a scene left unfinished is finished now.
+pub fn present(s: &mut State) {
+    let Ok(mut guard) = LINK.lock() else { return };
+    let Some(link) = guard.as_mut() else { return };
+    if let Some(scene) = link.scene
+        && !link.cmds.is_empty()
+    {
+        finish(link, s, scene);
+    }
+    link.clears.clear();
+    link.scene = None;
+}
+
+fn finish(link: &mut Link, s: &mut State, scene: Scene) {
+    link.frame += 1;
+    let mut cmds = Vec::new();
+    // The scene targets' clears first, then the draws.
+    for c in link.clears.drain(..) {
+        let view = match &c {
+            ffx_gfx::Cmd::ClearTarget { view, .. } | ffx_gfx::Cmd::ClearDepth { view, .. } => {
+                *view as usize
+            }
+            _ => 0,
+        };
+        if view == scene.color || view == scene.normal || view == scene.depth {
+            cmds.push(c);
+        }
+    }
+    for v in [scene.color, scene.normal, scene.depth] {
+        link.sync(s, v);
+    }
+    cmds.append(&mut link.cmds);
+    let (w, h) = s
+        .views
+        .get(&scene.color)
+        .and_then(|v| s.textures.get(&v.resource))
+        .map_or((0, 0), |t| (t.desc[0], t.desc[1]));
+    link.send(&ffx_gfx::Msg::Frame(ffx_gfx::Frame {
+        number: link.frame,
+        width: w,
+        height: h,
+        cmds,
+    }));
+    SENT_FRAMES.fetch_add(1, Ordering::Relaxed);
+    if !link.alive || w == 0 {
+        return;
+    }
+    // The renderer's answer: frame, width, height, then colour, normal
+    // (RGBA8) and depth (f32), rows packed.
+    let frame = link.frame;
+    let Some((rw, rh, data)) = receive(link, frame) else {
+        link.misses += 1;
+        MISSES.fetch_add(1, Ordering::Relaxed);
+        if link.misses % 60 == 1 {
+            log(&format!(
+                "  live: no image for frame {frame} ({} missed)",
+                link.misses
+            ));
+        }
+        return;
+    };
+    if (rw, rh) != (w, h) {
+        return;
+    }
+    IMAGES.fetch_add(1, Ordering::Relaxed);
+    // SAFETY: on the render thread; the game's device and context.
+    unsafe { composite(link, s, scene, w, h, &data) };
+}
+
+/// Reads answers until the one for `frame` (older ones are dropped).
+fn receive(link: &mut Link, frame: u32) -> Option<(u32, u32, Vec<u8>)> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1500);
+    let process = link.process;
+    loop {
+        let mut head = [0u8; 12];
+        let ok = link.to_game.read(&mut head, || {
+            if std::time::Instant::now() > deadline {
+                return false;
+            }
+            // SAFETY: our process handle.
+            unsafe {
+                WaitForSingleObject(process, 0) == WAIT_TIMEOUT && {
+                    std::thread::yield_now();
+                    true
+                }
+            }
+        });
+        if !ok {
+            return None;
+        }
+        let number = u32::from_le_bytes(head[0..4].try_into().expect("4"));
+        let w = u32::from_le_bytes(head[4..8].try_into().expect("4"));
+        let h = u32::from_le_bytes(head[8..12].try_into().expect("4"));
+        let mut data = vec![0u8; (w * h * 12) as usize];
+        // The body follows its header at once.
+        if !link.to_game.read(&mut data, || {
+            std::thread::yield_now();
+            true
+        }) {
+            return None;
+        }
+        if number == frame {
+            return Some((w, h, data));
+        }
+    }
+}
+
+const COMPOSITE_HLSL: &str = r"
+Texture2D<float4> C : register(t0);
+Texture2D<float4> N : register(t1);
+Texture2D<float> Z : register(t2);
+struct Out { float4 c : SV_Target0; float4 n : SV_Target1; float d : SV_Depth; };
+float4 vs(uint id : SV_VertexID) : SV_Position {
+    float2 uv = float2((id << 1) & 2, id & 2);
+    return float4(uv * float2(2, -2) + float2(-1, 1), 0, 1);
+}
+Out ps(float4 p : SV_Position) {
+    int3 i = int3(p.xy, 0);
+    Out o;
+    o.c = C.Load(i);
+    o.n = N.Load(i);
+    o.d = Z.Load(i);
+    return o;
+}
+";
+
+/// Compiles HLSL with the system's `d3dcompiler_47.dll`.
+unsafe fn compile(entry: &str, target: &str) -> Option<Vec<u8>> {
+    use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
+    type Compile = unsafe extern "system" fn(
+        *const u8,
+        usize,
+        *const u8,
+        *const c_void,
+        *const c_void,
+        *const u8,
+        *const u8,
+        u32,
+        u32,
+        *mut Ptr,
+        *mut Ptr,
+    ) -> i32;
+    // SAFETY: the documented D3DCompile signature; ID3DBlob is IUnknown
+    // plus GetBufferPointer (3) and GetBufferSize (4).
+    unsafe {
+        let lib = LoadLibraryA(c"d3dcompiler_47.dll".as_ptr().cast());
+        let f: Compile = std::mem::transmute(GetProcAddress(lib, c"D3DCompile".as_ptr().cast())?);
+        let entry = format!("{entry}\0");
+        let target = format!("{target}\0");
+        let mut code: Ptr = std::ptr::null_mut();
+        let mut errors: Ptr = std::ptr::null_mut();
+        let hr = f(
+            COMPOSITE_HLSL.as_ptr(),
+            COMPOSITE_HLSL.len(),
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            entry.as_ptr(),
+            target.as_ptr(),
+            0,
+            0,
+            &raw mut code,
+            &raw mut errors,
+        );
+        if hr < 0 || code.is_null() {
+            log(&format!("  live: D3DCompile {entry} failed {hr:#x}"));
+            return None;
+        }
+        let ptr: unsafe extern "system" fn(Ptr) -> *const u8 =
+            std::mem::transmute(*(*(code as *const *const usize)).add(3));
+        let len: unsafe extern "system" fn(Ptr) -> usize =
+            std::mem::transmute(*(*(code as *const *const usize)).add(4));
+        let bytes = std::slice::from_raw_parts(ptr(code), len(code)).to_vec();
+        super::com!(code, vt::RELEASE, unsafe extern "system" fn(Ptr) -> u32);
+        Some(bytes)
+    }
+}
+
+/// The composite pass's objects, for a `width` × `height` frame.
+unsafe fn make_composite(width: u32, height: u32) -> Option<Composite> {
+    let device = super::DEVICE.load(Ordering::Acquire) as Ptr;
+    // SAFETY: the game's device, original methods.
+    unsafe {
+        let vs_code = compile("vs", "vs_4_0")?;
+        let ps_code = compile("ps", "ps_4_0")?;
+        type CreateShader = unsafe extern "system" fn(Ptr, *const u8, usize, Ptr, *mut Ptr) -> i32;
+        let create_vs: CreateShader =
+            std::mem::transmute(device_original(device, vt::device::CREATE_VERTEX_SHADER));
+        let create_ps: CreateShader =
+            std::mem::transmute(device_original(device, vt::device::CREATE_PIXEL_SHADER));
+        let mut vs: Ptr = std::ptr::null_mut();
+        let mut ps: Ptr = std::ptr::null_mut();
+        if create_vs(
+            device,
+            vs_code.as_ptr(),
+            vs_code.len(),
+            std::ptr::null_mut(),
+            &raw mut vs,
+        ) < 0
+            || create_ps(
+                device,
+                ps_code.as_ptr(),
+                ps_code.len(),
+                std::ptr::null_mut(),
+                &raw mut ps,
+            ) < 0
+        {
+            return None;
+        }
+        type CreateTex = unsafe extern "system" fn(Ptr, *const u32, *const c_void, *mut Ptr) -> i32;
+        type CreateSrv = unsafe extern "system" fn(Ptr, Ptr, *const u32, *mut Ptr) -> i32;
+        let create_tex: CreateTex =
+            std::mem::transmute(device_original(device, vt::device::CREATE_TEXTURE_2D));
+        let create_srv: CreateSrv = std::mem::transmute(device_original(
+            device,
+            vt::device::CREATE_SHADER_RESOURCE_VIEW,
+        ));
+        let mut textures = [std::ptr::null_mut(); 3];
+        let mut views = [std::ptr::null_mut(); 3];
+        for (i, format) in [28u32, 28, 41].into_iter().enumerate() {
+            // Default usage, shader resource.
+            let desc = [width, height, 1, 1, format, 1, 0, 0, 0x8, 0, 0];
+            if create_tex(
+                device,
+                desc.as_ptr(),
+                std::ptr::null(),
+                &raw mut textures[i],
+            ) < 0
+                || create_srv(device, textures[i], std::ptr::null(), &raw mut views[i]) < 0
+            {
+                return None;
+            }
+        }
+        type CreateState = unsafe extern "system" fn(Ptr, *const u8, *mut Ptr) -> i32;
+        let mut depth_desc = [0u8; 52];
+        let put = |d: &mut [u8], at: usize, v: u32| d[at..at + 4].copy_from_slice(&v.to_le_bytes());
+        put(&mut depth_desc, 0, 1); // depth on
+        put(&mut depth_desc, 4, 1); // write all
+        put(&mut depth_desc, 8, 8); // always
+        let mut depth_state: Ptr = std::ptr::null_mut();
+        let create_depth: CreateState = std::mem::transmute(device_original(
+            device,
+            vt::device::CREATE_DEPTH_STENCIL_STATE,
+        ));
+        create_depth(device, depth_desc.as_ptr(), &raw mut depth_state);
+        let mut blend_desc = [0u8; 8 + 8 * 32];
+        for i in 0..8 {
+            let at = 8 + 32 * i;
+            put(&mut blend_desc, at + 4, 2); // one
+            put(&mut blend_desc, at + 8, 1); // zero
+            put(&mut blend_desc, at + 12, 1); // add
+            put(&mut blend_desc, at + 16, 2);
+            put(&mut blend_desc, at + 20, 1);
+            put(&mut blend_desc, at + 24, 1);
+            blend_desc[at + 28] = 0xf;
+        }
+        let mut blend: Ptr = std::ptr::null_mut();
+        let create_blend: CreateState =
+            std::mem::transmute(device_original(device, vt::device::CREATE_BLEND_STATE));
+        create_blend(device, blend_desc.as_ptr(), &raw mut blend);
+        let mut raster_desc = [0u8; 40];
+        put(&mut raster_desc, 0, 3); // solid
+        put(&mut raster_desc, 4, 1); // no culling
+        put(&mut raster_desc, 24, 1); // depth clip
+        let mut raster: Ptr = std::ptr::null_mut();
+        let create_raster: CreateState =
+            std::mem::transmute(device_original(device, vt::device::CREATE_RASTERIZER_STATE));
+        create_raster(device, raster_desc.as_ptr(), &raw mut raster);
+        Some(Composite {
+            width,
+            height,
+            textures,
+            views,
+            vs,
+            ps,
+            depth_state,
+            blend,
+            raster,
+        })
+    }
+}
+
+/// Draws the renderer's images into the scene targets, then puts the
+/// game's bindings back.
+unsafe fn composite(link: &mut Link, s: &State, scene: Scene, w: u32, h: u32, data: &[u8]) {
+    let ctx = super::CONTEXT.load(Ordering::Acquire) as Ptr;
+    if link
+        .composite
+        .as_ref()
+        .is_none_or(|c| (c.width, c.height) != (w, h))
+    {
+        // SAFETY: forwarded.
+        link.composite = unsafe { make_composite(w, h) };
+    }
+    let Some(c) = &link.composite else { return };
+    let plane = (w * h * 4) as usize;
+    macro_rules! call {
+        ($slot:expr, $ty:ty $(, $arg:expr)*) => {{
+            let f: $ty = std::mem::transmute(real_method(ctx, $slot));
+            f(ctx $(, $arg)*)
+        }};
+    }
+    use vt::context as k;
+    // SAFETY: the real immediate context on the render thread; every
+    // binding changed here is restored from the tracked state after.
+    unsafe {
+        for i in 0..3 {
+            call!(
+                k::UPDATE_SUBRESOURCE,
+                unsafe extern "system" fn(Ptr, Ptr, u32, *const u32, *const u8, u32, u32),
+                c.textures[i],
+                0,
+                std::ptr::null(),
+                data[i * plane..].as_ptr(),
+                w * 4,
+                0
+            );
+        }
+        let rtvs = [scene.color, scene.normal];
+        call!(
+            k::OM_SET_RENDER_TARGETS,
+            unsafe extern "system" fn(Ptr, u32, *const usize, Ptr),
+            2,
+            rtvs.as_ptr(),
+            scene.depth as Ptr
+        );
+        let vp = [0.0f32, 0.0, w as f32, h as f32, 0.0, 1.0];
+        call!(
+            k::RS_SET_VIEWPORTS,
+            unsafe extern "system" fn(Ptr, u32, *const f32),
+            1,
+            vp.as_ptr()
+        );
+        call!(
+            k::RS_SET_STATE,
+            unsafe extern "system" fn(Ptr, Ptr),
+            c.raster
+        );
+        call!(
+            k::OM_SET_BLEND_STATE,
+            unsafe extern "system" fn(Ptr, Ptr, *const f32, u32),
+            c.blend,
+            std::ptr::null(),
+            u32::MAX
+        );
+        call!(
+            k::OM_SET_DEPTH_STENCIL_STATE,
+            unsafe extern "system" fn(Ptr, Ptr, u32),
+            c.depth_state,
+            0
+        );
+        call!(
+            k::IA_SET_INPUT_LAYOUT,
+            unsafe extern "system" fn(Ptr, Ptr),
+            std::ptr::null_mut()
+        );
+        call!(
+            k::IA_SET_PRIMITIVE_TOPOLOGY,
+            unsafe extern "system" fn(Ptr, u32),
+            4
+        );
+        call!(
+            k::VS_SET_SHADER,
+            unsafe extern "system" fn(Ptr, Ptr, *const Ptr, u32),
+            c.vs,
+            std::ptr::null(),
+            0
+        );
+        call!(
+            k::PS_SET_SHADER,
+            unsafe extern "system" fn(Ptr, Ptr, *const Ptr, u32),
+            c.ps,
+            std::ptr::null(),
+            0
+        );
+        call!(
+            k::PS_SET_SHADER_RESOURCES,
+            unsafe extern "system" fn(Ptr, u32, u32, *const Ptr),
+            0,
+            3,
+            c.views.as_ptr()
+        );
+        call!(k::DRAW, unsafe extern "system" fn(Ptr, u32, u32), 3, 0);
+        // Put the game's bindings back.
+        let b = &s.bound;
+        call!(
+            k::RS_SET_VIEWPORTS,
+            unsafe extern "system" fn(Ptr, u32, *const f32),
+            1,
+            b.viewport.as_ptr()
+        );
+        call!(
+            k::RS_SET_STATE,
+            unsafe extern "system" fn(Ptr, Ptr),
+            b.raster as Ptr
+        );
+        call!(
+            k::OM_SET_BLEND_STATE,
+            unsafe extern "system" fn(Ptr, Ptr, *const f32, u32),
+            b.blend as Ptr,
+            b.blend_factor.as_ptr(),
+            b.sample_mask
+        );
+        call!(
+            k::OM_SET_DEPTH_STENCIL_STATE,
+            unsafe extern "system" fn(Ptr, Ptr, u32),
+            b.depth as Ptr,
+            b.stencil_ref
+        );
+        call!(
+            k::IA_SET_INPUT_LAYOUT,
+            unsafe extern "system" fn(Ptr, Ptr),
+            b.layout as Ptr
+        );
+        call!(
+            k::IA_SET_PRIMITIVE_TOPOLOGY,
+            unsafe extern "system" fn(Ptr, u32),
+            b.topology
+        );
+        call!(
+            k::VS_SET_SHADER,
+            unsafe extern "system" fn(Ptr, Ptr, *const Ptr, u32),
+            b.vs as Ptr,
+            std::ptr::null(),
+            0
+        );
+        call!(
+            k::PS_SET_SHADER,
+            unsafe extern "system" fn(Ptr, Ptr, *const Ptr, u32),
+            b.ps as Ptr,
+            std::ptr::null(),
+            0
+        );
+        call!(
+            k::PS_SET_SHADER_RESOURCES,
+            unsafe extern "system" fn(Ptr, u32, u32, *const usize),
+            0,
+            3,
+            b.ps_srv.as_ptr()
+        );
+        call!(
+            k::OM_SET_RENDER_TARGETS,
+            unsafe extern "system" fn(Ptr, u32, *const usize, Ptr),
+            8,
+            b.rtv.as_ptr(),
+            b.dsv as Ptr
+        );
+    }
+}

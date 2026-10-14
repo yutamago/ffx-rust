@@ -11,6 +11,12 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("replay") => replay(&args[1..]),
+        #[cfg(windows)]
+        Some("live") => {
+            let name = args.get(1).context("mapping name")?;
+            let pid = args.get(2).context("game pid")?.parse()?;
+            ffx_render::live::run(name, pid)
+        }
         _ => bail!("usage: ffx-render replay <capture.ffxgfx> <out dir> [--until N] [--target ID]"),
     }
 }

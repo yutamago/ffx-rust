@@ -40,7 +40,7 @@ pub fn encode(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
     chunk(&mut out, *b"IHDR", &ihdr);
     chunk(
         &mut out,
-        b"IDAT",
+        *b"IDAT",
         &miniz_oxide::deflate::compress_to_vec_zlib(&raw, 6),
     );
     chunk(&mut out, *b"IEND", &[]);

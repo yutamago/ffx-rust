@@ -150,7 +150,7 @@ fn slots(list: &[usize]) -> Vec<(u8, u32)> {
 
 /// The scene-stream form of a draw, with the constant buffer windows the
 /// shaders see.
-fn stream_draw(s: &State, d: Draw) -> ffx_gfx::Draw {
+pub(super) fn stream_draw(s: &State, d: Draw) -> ffx_gfx::Draw {
     let b = &s.bound;
     let cbs = |list: &[usize], ranges: &[(u32, u32)]| -> Vec<(u8, Vec<u8>)> {
         list.iter()
@@ -270,25 +270,7 @@ pub fn draw(s: &mut State, d: Draw) {
                 data,
             });
         }
-        let d = &streamed;
-        for id in [
-            d.layout, d.vs, d.ps, d.index.0, d.blend, d.depth, d.raster, d.dsv,
-        ]
-        .into_iter()
-        .chain(d.vertex.iter().map(|v| v.1))
-        .chain(
-            d.vs_srv
-                .iter()
-                .chain(&d.ps_srv)
-                .chain(&d.vs_samplers)
-                .chain(&d.ps_samplers)
-                .chain(&d.rtv)
-                .map(|v| v.1),
-        ) {
-            if id != 0 {
-                c.objects.insert(id as usize);
-            }
-        }
+        c.objects.extend(draw_objects(&streamed));
         c.cmds.push(ffx_gfx::Cmd::Draw(Box::new(streamed)));
     }
     let b = s.bound.clone();
@@ -808,8 +790,111 @@ unsafe fn read_texture_all(
 
 /// The capture as a scene stream: every object the frame used (textures
 /// and buffers read back now), then the frame.
-fn snapshot(s: &State, c: &mut Capture) -> Vec<u8> {
+/// The scene-stream message describing object `id` (contents read back
+/// from the GPU for textures and static buffers), or `None` when the
+/// layer does not know it (or it is a view: see [`view_msg`]).
+pub(super) fn object_msg(s: &State, id: usize) -> Option<ffx_gfx::Msg> {
     use ffx_gfx::Msg;
+    if let Some(sh) = s.shaders.get(&id) {
+        return matches!(sh.kind, 'v' | 'p').then(|| Msg::Shader {
+            id: id as u32,
+            kind: sh.kind as u8,
+            bytecode: sh.bytecode.to_vec(),
+        });
+    }
+    if let Some(l) = s.layouts.get(&id) {
+        return Some(Msg::Layout {
+            id: id as u32,
+            elements: l
+                .elements
+                .iter()
+                .map(|e| ffx_gfx::Element {
+                    semantic: e.semantic.clone(),
+                    index: e.index,
+                    format: e.format,
+                    slot: e.slot,
+                    offset: e.offset,
+                    per_instance: e.per_instance,
+                    step: e.step,
+                })
+                .collect(),
+        });
+    }
+    if let Some((kind, desc)) = s.states.get(&id) {
+        let kind = match kind {
+            'b' => ffx_gfx::StateKind::Blend,
+            'd' => ffx_gfx::StateKind::Depth,
+            'r' => ffx_gfx::StateKind::Raster,
+            _ => ffx_gfx::StateKind::Sampler,
+        };
+        return Some(Msg::State {
+            id: id as u32,
+            kind,
+            desc: desc.clone(),
+        });
+    }
+    if let Some(t) = s.textures.get(&id) {
+        // SAFETY: on the render thread.
+        let subresources = unsafe { read_texture_all(id, &t.desc) }.unwrap_or_default();
+        return Some(Msg::Texture {
+            id: id as u32,
+            desc: t.desc,
+            subresources,
+        });
+    }
+    if let Some(b) = s.buffers.get(&id) {
+        let data = if b.desc[1] == 2 {
+            b.shadow.clone().unwrap_or_default()
+        } else {
+            // SAFETY: on the render thread.
+            unsafe { read_buffer(id, b.desc[0]) }.unwrap_or_default()
+        };
+        return Some(Msg::Buffer {
+            id: id as u32,
+            desc: b.desc,
+            data,
+        });
+    }
+    None
+}
+
+/// The message for view `id`.
+pub(super) fn view_msg(s: &State, id: usize) -> Option<ffx_gfx::Msg> {
+    let v = s.views.get(&id)?;
+    let kind = match v.kind {
+        ViewKind::ShaderResource => ffx_gfx::ViewKind::ShaderResource,
+        ViewKind::RenderTarget => ffx_gfx::ViewKind::RenderTarget,
+        ViewKind::DepthStencil => ffx_gfx::ViewKind::DepthStencil,
+    };
+    Some(ffx_gfx::Msg::View {
+        id: id as u32,
+        kind,
+        resource: v.resource as u32,
+        desc: v.desc,
+    })
+}
+
+/// The ids a draw refers to (views included, not their resources).
+pub(super) fn draw_objects(d: &ffx_gfx::Draw) -> impl Iterator<Item = usize> + '_ {
+    [
+        d.layout, d.vs, d.ps, d.index.0, d.blend, d.depth, d.raster, d.dsv,
+    ]
+    .into_iter()
+    .chain(d.vertex.iter().map(|v| v.1))
+    .chain(
+        d.vs_srv
+            .iter()
+            .chain(&d.ps_srv)
+            .chain(&d.vs_samplers)
+            .chain(&d.ps_samplers)
+            .chain(&d.rtv)
+            .map(|v| v.1),
+    )
+    .filter(|&id| id != 0)
+    .map(|id| id as usize)
+}
+
+fn snapshot(s: &State, c: &mut Capture) -> Vec<u8> {
     let mut out = ffx_gfx::CAPTURE_MAGIC.to_vec();
     // Views pull in their resources.
     let mut objects = c.objects.clone();
@@ -818,87 +903,13 @@ fn snapshot(s: &State, c: &mut Capture) -> Vec<u8> {
             objects.insert(v.resource);
         }
     }
-    let mut msgs = Vec::new();
-    for &id in &objects {
-        if let Some(sh) = s.shaders.get(&id) {
-            if matches!(sh.kind, 'v' | 'p') {
-                msgs.push(Msg::Shader {
-                    id: id as u32,
-                    kind: sh.kind as u8,
-                    bytecode: sh.bytecode.to_vec(),
-                });
-            }
-        } else if let Some(l) = s.layouts.get(&id) {
-            msgs.push(Msg::Layout {
-                id: id as u32,
-                elements: l
-                    .elements
-                    .iter()
-                    .map(|e| ffx_gfx::Element {
-                        semantic: e.semantic.clone(),
-                        index: e.index,
-                        format: e.format,
-                        slot: e.slot,
-                        offset: e.offset,
-                        per_instance: e.per_instance,
-                        step: e.step,
-                    })
-                    .collect(),
-            });
-        } else if let Some((kind, desc)) = s.states.get(&id) {
-            let kind = match kind {
-                'b' => ffx_gfx::StateKind::Blend,
-                'd' => ffx_gfx::StateKind::Depth,
-                'r' => ffx_gfx::StateKind::Raster,
-                _ => ffx_gfx::StateKind::Sampler,
-            };
-            msgs.push(Msg::State {
-                id: id as u32,
-                kind,
-                desc: desc.clone(),
-            });
-        } else if let Some(t) = s.textures.get(&id) {
-            // SAFETY: on the render thread, inside Present.
-            let subresources = unsafe { read_texture_all(id, &t.desc) }.unwrap_or_default();
-            msgs.push(Msg::Texture {
-                id: id as u32,
-                desc: t.desc,
-                subresources,
-            });
-        } else if let Some(b) = s.buffers.get(&id) {
-            let data = if b.desc[1] == 2 {
-                b.shadow.clone().unwrap_or_default()
-            } else {
-                // SAFETY: on the render thread.
-                unsafe { read_buffer(id, b.desc[0]) }.unwrap_or_default()
-            };
-            msgs.push(Msg::Buffer {
-                id: id as u32,
-                desc: b.desc,
-                data,
-            });
-        }
-    }
+    let mut msgs: Vec<ffx_gfx::Msg> = objects.iter().filter_map(|&id| object_msg(s, id)).collect();
     // Views after their resources.
-    for &id in &objects {
-        if let Some(v) = s.views.get(&id) {
-            let kind = match v.kind {
-                ViewKind::ShaderResource => ffx_gfx::ViewKind::ShaderResource,
-                ViewKind::RenderTarget => ffx_gfx::ViewKind::RenderTarget,
-                ViewKind::DepthStencil => ffx_gfx::ViewKind::DepthStencil,
-            };
-            msgs.push(Msg::View {
-                id: id as u32,
-                kind,
-                resource: v.resource as u32,
-                desc: v.desc,
-            });
-        }
-    }
+    msgs.extend(objects.iter().filter_map(|&id| view_msg(s, id)));
     for m in &msgs {
         m.write(&mut out);
     }
-    Msg::Frame(ffx_gfx::Frame {
+    ffx_gfx::Msg::Frame(ffx_gfx::Frame {
         number: 0,
         width: s.bound.viewport[2] as u32,
         height: s.bound.viewport[3] as u32,

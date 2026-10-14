@@ -550,6 +550,7 @@ dependencies = [
  "miniz_oxide",
  "pollster",
  "wgpu",
+ "windows-sys",
 ]
 
 [[package]]

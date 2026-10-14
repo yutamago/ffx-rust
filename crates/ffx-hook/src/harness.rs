@@ -1079,7 +1079,10 @@ fn command(line: &str) -> Result<String, String> {
         "gfxcapture" => crate::gfx::capture(&words[1..].join(" ")),
         "gfxstats" => {
             let (frames, draws) = crate::gfx::stats();
-            format!("ok frames {frames} draws {draws}")
+            let (sent, images, misses) = crate::gfx::live::stats();
+            format!(
+                "ok frames {frames} draws {draws} live sent {sent} images {images} misses {misses}"
+            )
         }
         "events" => {
             let events = EVENTS

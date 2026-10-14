@@ -11,6 +11,7 @@
 #![allow(clippy::items_after_statements)]
 
 mod capture;
+pub mod live;
 mod proxy;
 pub mod vt;
 
@@ -240,6 +241,9 @@ pub const BIND_CONSTANT: u32 = 0x4;
 pub struct Texture {
     /// `D3D11_TEXTURE2D_DESC`.
     pub desc: [u32; 11],
+    /// Bumped on every write the layer sees (updates, maps, copies, use as
+    /// a render target).
+    pub version: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -331,14 +335,33 @@ pub struct State {
     /// Mapped resources: resource → (subresource, data pointer).
     mapped: HashMap<usize, (u32, usize)>,
     pub capture: Option<capture::Capture>,
+    /// Addresses a new object took over since the live link last looked.
+    pub reborn: Vec<usize>,
 }
 
 static STATE: OnceLock<Mutex<State>> = OnceLock::new();
 
 impl State {
+    /// Marks a texture (or buffer) as written.
+    pub fn touch(&mut self, id: usize) {
+        if let Some(t) = self.textures.get_mut(&id) {
+            t.version = t.version.wrapping_add(1);
+        } else if let Some(b) = self.buffers.get_mut(&id) {
+            b.version = b.version.wrapping_add(1);
+        }
+    }
+
+    /// Marks the resource behind a view as written.
+    pub fn touch_view(&mut self, view: usize) {
+        if let Some(r) = self.views.get(&view).map(|v| v.resource) {
+            self.touch(r);
+        }
+    }
+
     /// Drops what was known about `id`: a new object at a freed address
     /// may be of another kind.
     fn forget(&mut self, id: usize) {
+        self.reborn.push(id);
         self.buffers.remove(&id);
         self.textures.remove(&id);
         self.views.remove(&id);
@@ -371,7 +394,8 @@ pub fn hash(bytes: &[u8]) -> u64 {
 /// # Safety
 /// `module` must be the main module, before other threads run game code.
 pub unsafe fn install(module: usize) {
-    if std::env::var("FFX_GFX").map_or(true, |v| v.is_empty() || v == "0") {
+    let wanted = |v: &str| std::env::var(v).is_ok_and(|v| !v.is_empty() && v != "0");
+    if !wanted("FFX_GFX") && !wanted("FFX_RENDERER") {
         return;
     }
     // SAFETY: forwarded from the caller.
@@ -542,6 +566,7 @@ unsafe extern "system" fn create_device_and_swap_chain(
         adopt(dev, ctx);
         hook_context(proxy::vtable());
         *context = proxy::wrap(ctx);
+        live::start();
         if !swap_chain.is_null() && !(*swap_chain).is_null() {
             let vtable = *(*swap_chain).cast::<*mut usize>();
             if let Some(o) =
@@ -866,6 +891,7 @@ unsafe extern "system" fn create_texture_2d(
                     *out as usize,
                     Texture {
                         desc: std::ptr::read_unaligned(desc.cast()),
+                        version: 0,
                     },
                 );
             }
@@ -1403,6 +1429,13 @@ fn on_draw(d: Draw) {
     if s.capture.is_some() {
         capture::draw(&mut s, d);
     }
+    if live::on() {
+        live::draw(&mut s, d);
+    }
+    let (rtv, dsv) = (s.bound.rtv, s.bound.dsv);
+    for v in rtv.into_iter().chain([dsv]).filter(|&v| v != 0) {
+        s.touch_view(v);
+    }
 }
 
 unsafe extern "system" fn draw_indexed(this: Ptr, count: u32, start: u32, base: i32) {
@@ -1507,7 +1540,9 @@ unsafe extern "system" fn map(
         // read-backs).
         if hr >= 0 && !out.is_null() && kind != 1 {
             let mut s = state();
-            if s.buffers.contains_key(&(resource as usize)) {
+            if s.buffers.contains_key(&(resource as usize))
+                || s.textures.contains_key(&(resource as usize))
+            {
                 s.mapped.insert(resource as usize, (sub, *out));
             }
         }
@@ -1519,7 +1554,10 @@ unsafe extern "system" fn unmap(this: Ptr, resource: Ptr, sub: u32) {
     {
         let mut s = state();
         if let Some((_, data)) = s.mapped.remove(&(resource as usize)) {
-            let capturing = s.capture.is_some();
+            let capturing = s.capture.is_some() || live::on();
+            if let Some(t) = s.textures.get_mut(&(resource as usize)) {
+                t.version = t.version.wrapping_add(1);
+            }
             if let Some(b) = s.buffers.get_mut(&(resource as usize)) {
                 b.version = b.version.wrapping_add(1);
                 let width = b.desc[0] as usize;
@@ -1651,6 +1689,9 @@ unsafe extern "system" fn om_set_render_targets(this: Ptr, n: u32, rtvs: *const 
         if s.capture.is_some() {
             capture::render_targets(&mut s, list, dsv as usize);
         }
+        if live::on() {
+            live::targets(&mut s, list, dsv as usize);
+        }
         s.bound.rtv = list;
         s.bound.dsv = dsv as usize;
     }
@@ -1772,13 +1813,17 @@ unsafe extern "system" fn copy_subresource_region(
     src_sub: u32,
     region: *const u32,
 ) {
-    capture::note(
-        &mut state(),
-        &format!(
-            "copy_region {:#x}[{dst_sub}] @{x},{y},{z} <- {:#x}[{src_sub}]",
-            dst as usize, src as usize
-        ),
-    );
+    {
+        let mut s = state();
+        s.touch(dst as usize);
+        capture::note(
+            &mut s,
+            &format!(
+                "copy_region {:#x}[{dst_sub}] @{x},{y},{z} <- {:#x}[{src_sub}]",
+                dst as usize, src as usize
+            ),
+        );
+    }
     type F = unsafe extern "system" fn(Ptr, Ptr, u32, u32, u32, u32, Ptr, u32, *const u32);
     // SAFETY: the original, same arguments.
     unsafe {
@@ -1789,10 +1834,14 @@ unsafe extern "system" fn copy_subresource_region(
 }
 
 unsafe extern "system" fn copy_resource(this: Ptr, dst: Ptr, src: Ptr) {
-    capture::note(
-        &mut state(),
-        &format!("copy {:#x} <- {:#x}", dst as usize, src as usize),
-    );
+    {
+        let mut s = state();
+        s.touch(dst as usize);
+        capture::note(
+            &mut s,
+            &format!("copy {:#x} <- {:#x}", dst as usize, src as usize),
+        );
+    }
     type F = unsafe extern "system" fn(Ptr, Ptr, Ptr);
     // SAFETY: the original, same arguments.
     unsafe {
@@ -1824,11 +1873,14 @@ fn note_update(dst: Ptr, sub: u32, region: *const u32, data: *const u8) {
                     .copy_from_slice(unsafe { std::slice::from_raw_parts(data, to - from) });
             }
         }
-    } else if capturing {
-        capture::note(
-            &mut s,
-            &format!("update_texture {:#x}[{sub}]", dst as usize),
-        );
+    } else {
+        s.touch(dst as usize);
+        if capturing {
+            capture::note(
+                &mut s,
+                &format!("update_texture {:#x}[{sub}]", dst as usize),
+            );
+        }
     }
 }
 
@@ -1885,13 +1937,17 @@ unsafe extern "system" fn copy_subresource_region1(
     region: *const u32,
     flags: u32,
 ) {
-    capture::note(
-        &mut state(),
-        &format!(
-            "copy_region1 {:#x}[{dst_sub}] <- {:#x}[{src_sub}]",
-            dst as usize, src as usize
-        ),
-    );
+    {
+        let mut s = state();
+        s.touch(dst as usize);
+        capture::note(
+            &mut s,
+            &format!(
+                "copy_region1 {:#x}[{dst_sub}] <- {:#x}[{src_sub}]",
+                dst as usize, src as usize
+            ),
+        );
+    }
     type F = unsafe extern "system" fn(Ptr, Ptr, u32, u32, u32, u32, Ptr, u32, *const u32, u32);
     // SAFETY: the original, same arguments.
     unsafe {
@@ -1908,6 +1964,12 @@ unsafe extern "system" fn clear_rtv(this: Ptr, rtv: Ptr, color: *const f32) {
         let mut s = state();
         capture::note(&mut s, &format!("clear_rtv {:#x} {c:?}", rtv as usize));
         capture::clear_target(&mut s, rtv as usize, c);
+        if live::on() {
+            live::clear(ffx_gfx::Cmd::ClearTarget {
+                view: rtv as u32,
+                color: c,
+            });
+        }
     }
     type F = unsafe extern "system" fn(Ptr, Ptr, *const f32);
     // SAFETY: the original, same arguments.
@@ -1929,6 +1991,14 @@ unsafe extern "system" fn clear_dsv(this: Ptr, dsv: Ptr, flags: u32, depth: f32,
             ),
         );
         capture::clear_depth(&mut s, dsv as usize, flags, depth, stencil);
+        if live::on() {
+            live::clear(ffx_gfx::Cmd::ClearDepth {
+                view: dsv as u32,
+                flags,
+                depth,
+                stencil,
+            });
+        }
     }
     type F = unsafe extern "system" fn(Ptr, Ptr, u32, f32, u8);
     // SAFETY: the original, same arguments.
@@ -1980,6 +2050,9 @@ unsafe extern "system" fn present(swap_chain: Ptr, interval: u32, flags: u32) ->
     FRAME.fetch_add(1, Ordering::AcqRel);
     LAST_DRAWS.store(DRAWS.swap(0, Ordering::AcqRel), Ordering::Release);
     rehook();
+    if live::on() {
+        live::present(&mut state());
+    }
     // SAFETY: on the game thread, inside Present.
     unsafe { capture::on_present(swap_chain) };
     type F = unsafe extern "system" fn(Ptr, u32, u32) -> i32;

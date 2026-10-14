@@ -44,7 +44,9 @@ pub fn texture_format(dxgi: u32, depth: bool) -> Option<TextureFormat> {
         40 => F::Depth32Float,
         42 => F::R32Uint,
         43 => F::R32Sint,
-        44..=47 => F::Depth24PlusStencil8,
+        // D24S8 as 32-bit float depth: the renderer reads depth back, which
+        // wgpu only allows for float depth.
+        44..=47 => F::Depth32FloatStencil8,
         49 | 48 => F::Rg8Unorm,
         50 => F::Rg8Uint,
         51 => F::Rg8Snorm,

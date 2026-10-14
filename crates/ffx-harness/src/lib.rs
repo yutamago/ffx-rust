@@ -59,6 +59,8 @@ pub struct Options {
     /// `FFX_GFX` for the graphics layer (`1`: tracking and captures; see
     /// `ffx-hook`'s `gfx`), or `None` for off.
     pub gfx: Option<String>,
+    /// Run the external renderer (`--renderer`).
+    pub renderer: bool,
 }
 
 impl Default for Options {
@@ -76,6 +78,7 @@ impl Default for Options {
             seed: Some(1),
             fast: true,
             gfx: std::env::var("FFX_GFX").ok().filter(|v| !v.is_empty()),
+            renderer: std::env::var("FFX_RENDERER").is_ok_and(|v| v == "1"),
         }
     }
 }
@@ -313,6 +316,9 @@ impl Game {
         }
         if let Some(gfx) = &options.gfx {
             cmd.env("FFX_GFX", gfx).arg("--gfx");
+        }
+        if options.renderer {
+            cmd.arg("--renderer");
         }
         let status = cmd.status()?;
         if !status.success() {

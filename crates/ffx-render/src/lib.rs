@@ -14,6 +14,8 @@
 )]
 
 pub mod formats;
+#[cfg(windows)]
+pub mod live;
 pub mod png;
 mod replay;
 
@@ -338,6 +340,75 @@ impl Renderer {
             row_pitch,
             data,
         );
+    }
+
+    /// Reads the scene targets back in one go: colour and normal as RGBA8,
+    /// then depth as f32, rows packed.
+    ///
+    /// # Errors
+    /// When a target is unknown or of another format.
+    pub fn read_scene(&self, color: Id, normal: Id, depth: Id) -> Result<(u32, u32, Vec<u8>)> {
+        let get = |id: Id| {
+            self.textures
+                .get(&id)
+                .ok_or_else(|| anyhow!("no texture {id:#x}"))
+        };
+        let (c, n, z) = (get(color)?, get(normal)?, get(depth)?);
+        let (w, h) = (c.desc[0], c.desc[1]);
+        let pitch = (w * 4).next_multiple_of(256);
+        let plane = u64::from(pitch * h);
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("scene read-back"),
+            size: plane * 3,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut enc = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        for (i, (t, aspect)) in [
+            (c, wgpu::TextureAspect::All),
+            (n, wgpu::TextureAspect::All),
+            (z, wgpu::TextureAspect::DepthOnly),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            enc.copy_texture_to_buffer(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &t.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect,
+                },
+                wgpu::TexelCopyBufferInfo {
+                    buffer: &buffer,
+                    layout: wgpu::TexelCopyBufferLayout {
+                        offset: plane * i as u64,
+                        bytes_per_row: Some(pitch),
+                        rows_per_image: Some(h),
+                    },
+                },
+                wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+        self.queue.submit([enc.finish()]);
+        let slice = buffer.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        self.device.poll(wgpu::PollType::wait_indefinitely())?;
+        let data = slice.get_mapped_range().map_err(|e| anyhow!("{e:?}"))?;
+        let mut out = Vec::with_capacity((w * h * 12) as usize);
+        for i in 0..3 {
+            for y in 0..h as usize {
+                let at = plane as usize * i + y * pitch as usize;
+                out.extend_from_slice(&data[at..at + 4 * w as usize]);
+            }
+        }
+        Ok((w, h, out))
     }
 
     /// Reads level `mip` of a texture back as raw blocks, rows packed.
