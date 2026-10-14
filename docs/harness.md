@@ -121,7 +121,7 @@ tools/game-tests.sh HEAD~3     # compare with another commit
 |---|---|---|
 | `start_up_input_and_kernel_mod` | the keyboard is read without focus; a mod's `item.bin` (Potion power 77) is what `g_KernelItem` points at; New Game to the Sphere Grid choice, where Down moves the cursor and the pad word holds exactly Circle | `ffx-kernel`, `ffx-text` |
 | `first_scene_with_script_model_and_motion_mods` | into `znkd0600` with three mods: the event script grown by `pushimm 0x1234; popv v1` (its byte global at `0xa3c` reads `0x34`), Tidus's model 30 % wider with a segment doubled, his motions turned; both read from the mod, the scene runs 10 s | `ffx-script`, `ffx-phyre`, `ffx-motion` |
-| `save_and_battle_with_monster_mod` | slot 1 of the sandboxed saves, then a battle started directly (field 3, `cdsp00_00`) where an enemy (m068) has the mod's 12345 HP; the user's own settings and saves are byte for byte unchanged | `ffx-monster` |
+| `save_and_battle_with_monster_and_formation_mods` | slot 1 of the sandboxed saves with three mods: the encounter table's salvage ship group (rate 61, weights 3 and 1) is what the game holds once the map is entered (current weights copied into the high nibbles); a battle started directly (field 3, `cdsp00_00`) has the modded formation's monsters (m068, m070, m070), and m068 the mod's 12345 HP; the user's own settings and saves are byte for byte unchanged | `ffx-monster`, `ffx-battle` |
 | `random_generators_repeat_with_a_seed` | three save loads: seed 1 twice gives identical generators, seed 2 others | — |
 
 Changes to the hook, the harness, `ffx-core`, `ffx-vbf`, the launcher or

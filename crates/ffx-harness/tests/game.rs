@@ -155,6 +155,31 @@ fn monster_mod() -> (String, Vec<u8>) {
     (path, monster.bytes().to_vec())
 }
 
+/// The salvage ship's first formation (`cdsp00_00`: m068, m069) with
+/// m068, m070, m070.
+fn formation_mod() -> (String, Vec<u8>) {
+    let path = ffx_battle::formation_path("cdsp00_00");
+    let mut file = ffx_battle::FormationFile::parse(original(&path)).unwrap();
+    file.import("[formation]\nmonsters = [\"m068\", \"m070\", \"m070\"]\n")
+        .unwrap();
+    (path, file.bytes().to_vec())
+}
+
+/// The encounter table with the salvage ship's group (field 3, cdsp00) at
+/// rate 61 and weights 3 and 1 instead of 60, 1 and 1. Also returns where
+/// the group starts among the blocks.
+fn encounter_mod() -> (Vec<u8>, u32) {
+    let mut table =
+        ffx_battle::EncounterTable::parse(&original(ffx_battle::ENCOUNTER_TABLE)).unwrap();
+    let block = table.fields[3].block;
+    let group = &mut table.blocks[block][0];
+    assert_eq!((group.rate, group.formations.len()), (60, 2));
+    group.rate = 61;
+    group.formations[0].weight = 3;
+    let at = u32::try_from(table.block_offset(block) + 2).unwrap();
+    (table.write(), at)
+}
+
 /// The user's own settings and saves, by path.
 fn user_game_files() -> Vec<(PathBuf, Vec<u8>)> {
     let root = ffx_harness::user_documents()
@@ -300,32 +325,64 @@ fn first_scene_with_script_model_and_motion_mods() {
 /// monster mod; the user's own files stay byte for byte the same.
 #[test]
 #[ignore = "starts FFX.exe on the Windows desktop"]
-fn save_and_battle_with_monster_mod() {
+fn save_and_battle_with_monster_and_formation_mods() {
     let before = user_game_files();
-    let (path, modded) = monster_mod();
-    let files = [(path.as_str(), modded)];
-    let max_hp = with_mods("zz-harness-save", &files, || {
+    let (monster_path, monster) = monster_mod();
+    let (formation_path, formation) = formation_mod();
+    let (encounters, group_at) = encounter_mod();
+    let files = [
+        (monster_path.as_str(), monster),
+        (formation_path.as_str(), formation),
+        (ffx_battle::ENCOUNTER_TABLE, encounters),
+    ];
+    let (group, ids, max_hp) = with_mods("zz-harness-save", &files, || {
         let mut game = Game::launch(&Options::default()).unwrap();
         // Entry 1: the first manual save (entry 0 is the autosave).
         let event = ffx_harness::screens::load_save(&mut game, 1).unwrap();
         assert!(event.ends_with(".ebp"), "{event}");
         game.wait(120).unwrap();
+        // The game's copy of the encounter table (*0x0112a9cc: the blocks).
+        let group = game.read_through(0x0112_a9cc, group_at, 9).unwrap();
         // The salvage ship's first formation: field 3 (cdsp00), group 0,
-        // formation 0, with m068.
+        // formation 0.
         let formation = ffx_harness::screens::start_battle(&mut game, 3, 0, 0).unwrap();
         assert!(formation.contains("cdsp00_00"), "{formation}");
         game.wait(300).unwrap();
-        // Max HP (+0x594) of every actor; the enemies follow the party.
-        let hp: Vec<u32> = (0..0x1f)
-            .map(|i| u32_le(ffx_harness::screens::actor(&mut game, i, 0x594, 4).unwrap()))
+        // Monster id (+0x0e) and max HP (+0x594) of every actor; the enemies
+        // follow the party.
+        let actors = |game: &mut Game, offset, len| -> Vec<Vec<u8>> {
+            (0..0x1f)
+                .map(|i| ffx_harness::screens::actor(game, i, offset, len).unwrap())
+                .collect()
+        };
+        let ids: Vec<u16> = actors(&mut game, 0x0e, 2)
+            .into_iter()
+            .map(|b| u16::from_le_bytes(b.try_into().unwrap()))
+            .collect();
+        let hp: Vec<u32> = actors(&mut game, 0x594, 4)
+            .into_iter()
+            .map(u32_le)
             .collect();
         game.screenshot()
             .unwrap()
             .save_png(&screenshot_path("battle"))
             .unwrap();
         game.quit().unwrap();
-        hp
+        (group, ids, hp)
     });
+    // n, music, rate, total, then (id, weights): entering the map copied
+    // the default weights (low nibble) into the current ones (high nibble).
+    assert_eq!(
+        group,
+        [2, 0x02, 0x04, 61, 4, 0, 0x33, 1, 0x11],
+        "the encounter group in memory"
+    );
+    let monsters: Vec<u16> = ids.iter().copied().filter(|id| id >> 12 == 1).collect();
+    assert_eq!(
+        monsters,
+        [0x1044, 0x1046, 0x1046],
+        "the formation's monsters: {ids:x?}"
+    );
     assert!(
         max_hp.contains(&12345),
         "no actor with the mod's HP: {max_hp:?}"

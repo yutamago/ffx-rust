@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
+use ffx_battle::{EncounterTable, FormationFile};
 use ffx_kernel::{Schema, Table};
 use ffx_monster::MonsterFile;
 use ffx_script::{Container, Natives, disassemble_annotated};
@@ -32,6 +33,9 @@ enum Command {
     /// Export and import monster stats and rewards (battle/mon/_mNNN/mNNN.bin).
     #[command(subcommand)]
     Monster(MonsterCommand),
+    /// Export and import encounters (battle/kernel/btl.bin) and battle formations (battle/btl/*).
+    #[command(subcommand)]
+    Battle(BattleCommand),
     /// Disassemble and assemble event and monster AI scripts.
     #[command(subcommand)]
     Script(ScriptCommand),
@@ -827,6 +831,40 @@ enum MonsterCommand {
     },
 }
 
+#[derive(Subcommand)]
+enum BattleCommand {
+    /// List the battle fields, their encounter groups and each formation's monsters.
+    List {
+        #[command(flatten)]
+        game: GameArgs,
+    },
+    /// Export the encounter table (`encounters`) or a formation (`cdsp00_00`) as TOML.
+    Export {
+        #[command(flatten)]
+        game: GameArgs,
+        /// `encounters` or a formation name.
+        what: String,
+        /// Output file; stdout if omitted.
+        #[arg(short, long)]
+        out: Option<PathBuf>,
+    },
+    /// Apply TOML onto the original encounter table or formation and write the result.
+    Import {
+        #[command(flatten)]
+        game: GameArgs,
+        /// `encounters` or a formation name.
+        what: String,
+        /// TOML from `ffx battle export`, edited.
+        toml: PathBuf,
+        /// Write the file here.
+        #[arg(short, long, conflicts_with = "mod_dir")]
+        out: Option<PathBuf>,
+        /// Write the file into a mod folder, at its path inside the archive.
+        #[arg(long)]
+        mod_dir: Option<PathBuf>,
+    },
+}
+
 /// Where the game is and which language to use.
 #[derive(clap::Args)]
 struct GameArgs {
@@ -919,6 +957,7 @@ fn run(cli: Cli) -> Result<()> {
         Command::Vbf(cmd) => vbf(cmd),
         Command::Kernel(cmd) => kernel(cmd),
         Command::Monster(cmd) => monster(cmd),
+        Command::Battle(cmd) => battle(cmd),
         Command::Script(cmd) => script(cmd),
         Command::Texture(cmd) => texture(cmd),
         Command::Model(cmd) => model(cmd),
@@ -1012,6 +1051,144 @@ fn monster(cmd: MonsterCommand) -> Result<()> {
                 std::fs::create_dir_all(parent)?;
             }
             std::fs::write(&dest, file.bytes())?;
+            eprintln!("wrote {}", dest.display());
+        }
+    }
+    Ok(())
+}
+
+/// The archive path of `encounters` or a formation name.
+fn battle_path(what: &str) -> Result<String> {
+    if what == "encounters" {
+        return Ok(ffx_battle::ENCOUNTER_TABLE.into());
+    }
+    if what.is_empty() || !what.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+        bail!("{what:?}: expected `encounters` or a formation name like `cdsp00_00`");
+    }
+    Ok(ffx_battle::formation_path(what))
+}
+
+/// `ffx battle list`: fields, groups, formation files and their monsters.
+fn battle_list(game: &Game) -> Result<()> {
+    let table = EncounterTable::parse(&read_file(&game.archive, ffx_battle::ENCOUNTER_TABLE)?)?;
+    let names: Vec<Table> = ["monster1", "monster2", "monster3"]
+        .iter()
+        .map(|t| {
+            Ok(Table::parse(&read_file(
+                &game.archive,
+                &game.kernel_path(t),
+            )?)?)
+        })
+        .collect::<Result<_>>()?;
+    let monster = |id: u16| {
+        let name = names
+            .iter()
+            .find_map(|t| t.string(id & 0xfff, 0))
+            .map(|s| game.charset.decode(s))
+            .unwrap_or_default();
+        format!("m{:03} {name}", id & 0xfff)
+    };
+    let mut out = std::io::stdout().lock();
+    for (i, field) in table.fields.iter().enumerate() {
+        let first = table.first_formation(field.block);
+        writeln!(
+            out,
+            "{i:2} {} (map {}), formations from {first}",
+            field.name(),
+            field.map
+        )?;
+        if let Some(owner) = table.fields[..i].iter().find(|f| f.block == field.block) {
+            writeln!(out, "     same groups as {}", owner.name())?;
+            continue;
+        }
+        for (g, group) in table.blocks[field.block].iter().enumerate() {
+            writeln!(
+                out,
+                "   group {g}: rate {}, music {:#05x}",
+                group.rate, group.music
+            )?;
+            for (f, formation) in group.formations.iter().enumerate() {
+                let name = table.formation_file(i, g, f).expect("formation exists");
+                let monsters = game
+                    .archive
+                    .find(&ffx_battle::formation_path(&name))
+                    .map(|e| game.archive.read(e))
+                    .transpose()?
+                    .and_then(|b| FormationFile::parse(b).ok()?.monsters())
+                    .map(|m| {
+                        m.iter()
+                            .flatten()
+                            .map(|&id| monster(id))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    })
+                    .unwrap_or_default();
+                writeln!(
+                    out,
+                    "     {name}  weight {:2}  {monsters}",
+                    formation.weight
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn battle(cmd: BattleCommand) -> Result<()> {
+    match cmd {
+        BattleCommand::List { game } => battle_list(&Game::open(&game)?)?,
+        BattleCommand::Export { game, what, out } => {
+            let game = Game::open(&game)?;
+            let path = battle_path(&what)?;
+            let bytes = read_file(&game.archive, &path)?;
+            let body = if what == "encounters" {
+                EncounterTable::parse(&bytes)?.export()?
+            } else {
+                let text = FormationFile::parse(bytes)?.export()?;
+                if text.is_empty() {
+                    bail!("{what}: this file has no formation section");
+                }
+                text
+            };
+            let text = format!(
+                "# {}\n\n{body}",
+                path.trim_start_matches("ffx_ps2/ffx/master/jppc/")
+            );
+            match out {
+                Some(path) => std::fs::write(path, text)?,
+                None => std::io::stdout().lock().write_all(text.as_bytes())?,
+            }
+        }
+        BattleCommand::Import {
+            game,
+            what,
+            toml,
+            out,
+            mod_dir,
+        } => {
+            let game = Game::open(&game)?;
+            let archive_path = battle_path(&what)?;
+            let original = read_file(&game.archive, &archive_path)?;
+            let edits = std::fs::read_to_string(&toml)
+                .with_context(|| format!("reading {}", toml.display()))?;
+            let bytes = if what == "encounters" {
+                let mut table = EncounterTable::parse(&original)?;
+                table.import(&edits)?;
+                table.write()
+            } else {
+                let mut file = FormationFile::parse(original)?;
+                file.import(&edits)?;
+                file.bytes().to_vec()
+            };
+            let dest = match (out, mod_dir) {
+                (Some(path), _) => path,
+                (None, Some(dir)) => dir.join(safe_relative(&archive_path)?),
+                (None, None) => bail!("pass --out <file> or --mod-dir <dir>"),
+            };
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&dest, bytes)?;
             eprintln!("wrote {}", dest.display());
         }
     }

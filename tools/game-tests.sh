@@ -24,7 +24,7 @@ done
 # Each test and the paths that concern it.
 start_up=start_up_input_and_kernel_mod
 first_scene=first_scene_with_script_model_and_motion_mods
-save=save_and_battle_with_monster_mod
+save=save_and_battle_with_monster_and_formation_mods
 seed=random_generators_repeat_with_a_seed
 everything="$start_up $first_scene $save $seed"
 
@@ -37,7 +37,7 @@ tests_for() {
             echo "$everything" ;;
         crates/ffx-kernel/*|crates/ffx-text/*) echo "$start_up" ;;
         crates/ffx-script/*|crates/ffx-phyre/*|crates/ffx-motion/*) echo "$first_scene" ;;
-        crates/ffx-monster/*) echo "$save" ;;
+        crates/ffx-monster/*|crates/ffx-battle/*) echo "$save" ;;
         *) ;;
     esac
 }

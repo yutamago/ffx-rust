@@ -93,10 +93,16 @@
 0x00780d10 function Enc_Check                  # random encounter roll; on a hit writes field 0x0112c256, group 0x0112c258, formation 0x0112c259, raises 0x0112a8e2
 0x00780ff0 function Enc_Reset                  # cdecl(full): resets the encounter step counters
 0x00781020 function Battle_Load                # (mode, field, group, formation): loads btl/<field>_<nn> and sets the battle up
+0x00781550 function Battle_RequestFile        # (mode, index): reads PS2 file index of category 0xe (battle/btl/<field>_<nn>/<field>_<nn>.bin), index from Enc_FormationIndex
 0x00781d40 function Kernel_LoadTables         # loads command, ply_rom, a_ability, item, monmagic1/2, ... into globals
+0x007821e0 function Battle_IsUnderwater        # returns 0x0112c9ce, formation byte 3 (set only in underwater fields: cdsp00, bjyt02, genk09, bsil03, mtgz07, stbv00 ...)
+0x007827f0 function Enc_FindFormation          # (field map<<16 | formation id) -> its 2-byte entry in the encounter groups; outputs field, group, position
+0x007828a0 function Enc_ResetWeights           # (map, keep): entry byte 1 = default weight (low nibble) copied to the current weight (high nibble) unless keep; group +4 = sum of current weights
 0x00782df0 function Kernel_LoadFile           # (name, buffer) reads new_<lang>pc/battle/kernel/<name>.bin whole
 0x00783680 function Mon_LoadText              # kernel monster name/texts -> actor +0x50/+0x90/+0x190, then requests mon_data
 0x00783b00 function Mon_AttachData            # monster file sections -> actor +0xf78 (script), +0xf7c, +0xf80 (stats), +0xf84
+0x00783d80 function Battle_LoadFootData        # (n): formation byte 2 selects the footstep sound bank ("foot_data")
+0x00783e20 function Battle_InitSections        # formation file sections: 0 script 0x0112a9ac, 1 0x0112a9b4, 2 formation 0x0112a9c0, 3 positions 0x0112a9b0 (0x20-byte records)
 0x00784070 function Mon_LoadAll               # sprintf m%03d for each of 8 enemy slots
 0x00784260 function Mon_GetName               # kernel monster record string 0
 0x00789bf0 function Dmg_Calc                  # physical: str(+0x5a8)^3 vs def(+0x5a9); magic: mag(+0x5aa) vs mdef(+0x5ab)
@@ -116,7 +122,13 @@
 0x007989a0 function Rng_Global                 # seed = seed * 0x5d588b65 + 0x3c35, rotated by 16; returns 31 bits
 0x007990d0 function Battle_GiveRewards        # gil, AP, two drop slots, overkill drops, bribe (spoils section 4)
 0x0079b4f0 function Mon_InitActor             # copies the stat record (section 2) into the battle actor
+0x0079c110 function Battle_SetUpActors         # monster slot i (actor via 0x00795aa0) gets id = formation +0x0c + 2i (0xffff: empty)
+0x0079d0e0 function Enc_FormationIndex         # (field, &group, &formation) -> field.first + sum of earlier groups' counts + formation, clamped
+0x0079d170 function Enc_FieldGroups            # field index -> its encounter block: u8 formation total, u8 group count, groups (*0x0112a9cc + field +2)
+0x0079d190 function Enc_Field                  # field index (clamped) -> 14-byte entry: i16 map, i16 block offset, i16 first formation, char[8] name
 0x0079d1c0 function Enc_FieldIndex             # map number -> index in the battle field table *0x0112a9c8 (count 0x0112a9d0, 14-byte entries)
+0x0079d210 function Enc_Group                  # (field, group) -> group: u8 n, u16 music, u8 rate, u8 weight total, n x (u8 formation id, u8 weights)
+0x0079d250 function Enc_InitTable              # btl.bin (0x0112a9c4): fields at +4 -> 0x0112a9c8, count (end-start)/14 -> 0x0112a9d0, blocks at +8 -> 0x0112a9cc
 0x007a5360 function Native_SetActorProperty   # func 0x70ab: pops value, property, actor; calls 0x007b4b70
 0x007ab870 function Kernel_FindRecord         # (id, table, &strings) -> record; defines the container (docs/formats/kernel.md)
 0x007b2dc0 function Battle_GetActorProperty   # switch over ~340 actor properties

@@ -13,15 +13,16 @@ data, and never will: binaries, archives and extracted files stay out of git.
 | VBF archives (`ffx-vbf`) | Reads every file; writes archives (`ffx vbf pack`): repacking `FFX_Data.vbf` unchanged reproduces it byte for byte |
 | Kernel tables (`ffx-kernel`) | All 26 tables × 8 languages read, written and round-tripped through TOML byte for byte; items/commands partly named |
 | Monsters (`ffx-monster`) | All 361 monster files: stats (HP, MP, strength, defense, magic, magic defense, …) and rewards (gil, AP, drops, steal, bribe) editable via TOML; byte-exact round trip |
+| Battles (`ffx-battle`) | The encounter table (96 battle fields: encounter rate, music, formations and their weights) and all 863 formation files (monster slots, flags) editable via TOML; byte-exact round trip; `ffx battle list` shows every field's formations with their monsters |
 | Scripts (`ffx-script`) | Bytecode interpreter decoded; all 758 event and monster AI scripts (17.3M instructions) disassemble and reassemble byte for byte; edits that grow code are relocated; native calls resolved to their FFX.exe handlers |
 | Textures (`ffx-phyre`) | All 44,364 PC textures to upright DDS and back, byte for byte (DXT1/3/5, ARGB8, L8, cube maps) |
 | Models and maps (`ffx-phyre`) | All 1,266 meshes to valid glTF with node hierarchy, instances, skins, embedded base color textures and animations; edited glTF geometry written back (vertex and triangle counts may change), unchanged models byte for byte. Vertex streams and materials come from the decoded pointer and array fixups, which match the original unpackers. |
 | Motions (`ffx-motion`) | PS2 skeletons and all 3,156 motion groups (21,165 clips): decoded, rebuilt byte for byte, editable as JSON; exported as glTF animations on the remastered models (857 `chr/` models validate) |
 | Text (`ffx-text`) | Encoding fully decoded for all 8 languages; all 92,224 kernel strings round-trip |
-| `ffx` CLI | `vbf list/cat/extract/pack`, `kernel tables/export/import`, `monster list/export/import`, `script list/disasm/asm`, `texture export/import`, `model export/import`, `motion export/import`, `phyre dump` |
+| `ffx` CLI | `vbf list/cat/extract/pack`, `kernel tables/export/import`, `monster list/export/import`, `battle list/export/import`, `script list/disasm/asm`, `texture export/import`, `model export/import`, `motion export/import`, `phyre dump` |
 | Function replacement | `dinput8.dll` proxy patches 2 functions (`zlib_uncompress`, `Path_ToLowerAscii`) with parity-tested Rust; runs in the game |
 | Mods | `mods/<mod>/<archive path>` replaces archive files in the running game, also files that grew (the PS2 file layer's sizes are hooked) |
-| In-game tests (`ffx-harness`) | The game runs in the background under a TCP harness (buttons, keys, memory, screenshots, file events); tests play into the first scene with an edited event script (grown and relocated; its write read back from memory), a resized model and edited motions, start a battle to check a monster mod, and check a kernel mod in memory; saves and settings are sandboxed, randomness seeded, frames run back to back |
+| In-game tests (`ffx-harness`) | The game runs in the background under a TCP harness (buttons, keys, memory, screenshots, file events); tests play into the first scene with an edited event script (grown and relocated; its write read back from memory), a resized model and edited motions, start a battle to check monster, formation and encounter-table mods, and check a kernel mod in memory; saves and settings are sandboxed, randomness seeded, frames run back to back |
 | Symbol map (`symbols/ffx.sym`) | file system, archive, zlib, text, kernel, settings, PhyreEngine fixups and motion code |
 
 ## Layout
@@ -35,6 +36,7 @@ crates/ffx-dinput8  dinput8.dll proxy that loads ffx-hook into the game
 crates/ffx-vbf      VBF archive reader
 crates/ffx-kernel   battle kernel tables: reader, writer, TOML export/import
 crates/ffx-monster  monster files: stats and rewards
+crates/ffx-battle   encounter table and battle formations
 crates/ffx-script   script disassembler and assembler
 crates/ffx-phyre    PhyreEngine clusters: textures to and from DDS, models to glTF
 crates/ffx-motion   PS2 skeletons and motion groups: reader, writer, JSON
