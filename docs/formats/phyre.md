@@ -323,12 +323,48 @@ buffers. Tidus rewritten this way plays the opening as usual.
   stored, so geometry bound to it alone lands elsewhere; use the joints
   that skinned segments use.
 
-Checked in game: a copy of Tidus's body as a 14th segment stands beside
-him and moves with his animation; bound rigidly to his head joint through
-a new skeleton matrix, it follows his head. The first-scene game test
-loads such a model every run.
+- **A new glTF material** (an index past the model's) on a new primitive
+  becomes a new material: a copy of the template segment's `PMaterial`
+  with its own copy of the `PParameterBuffer`. Each buffer is a list of
+  its own; the copy goes after the last one, the lists after it move up
+  one, and its header class entry (the buffers' entries come last in the
+  header class tables, one count per buffer: its tweakable parameter
+  definitions) is copied after the last. The material joins the mesh's
+  material set (`m_defaultMaterials`, a pointer array), and the segment's
+  `m_materialIndex` selects it. Textures come from the glTF material's
+  `extras.ffx_textures` (sampler → import id): a texture the cluster does
+  not import yet gets a `PAssetReferenceImport` (a copy of the one it
+  replaces, with the new `m_id`) and a new two-byte user fixup.
+- **New textures must be in the character's asset list**,
+  `chr/…/<name>/<name>.ahwin32` (see below); `ffx model import --mod-dir`
+  writes the updated list next to the model.
 
-New materials and new joints in the hierarchy are not written yet.
+Every list's data (objects and arrays) is a multiple of 4 bytes; the
+writer pads array data to keep it so. A new import's id of odd length,
+unpadded, crashed the game: the loader lays the lists out back to back.
+
+Checked in game: a copy of Tidus's body as a 14th segment stands beside
+him and moves with his animation; bound rigidly to his head through a new
+skeleton matrix it follows his head; with a new material on Yuna's texture
+it wears her colours. The first-scene game test loads that model (and the
+asset list naming the texture) every run.
+
+New joints in the hierarchy are not written.
+
+### Character asset lists
+
+`Chr_LoadAssets` (`0x0082a1c0`) reads
+`ffx_data/gamedata/ps3data/chr/<kind>/<name>/<name>.ahwin32`, a generated C
+header (CRLF lines). Its D3D11 section lists the files to load, in order:
+the textures, the model and the shaders; `const Phyre::PUInt32 <name> = n`
+lines give the index of named files and `g_fileNamesCount` the count. A
+model's imports resolve against loaded assets. A model importing Yuna's
+texture with the texture added to Tidus's list shows it on the new
+material (checked in the opening); without the entry the opening still
+runs, but Yuna's own list loads that texture there, so that says nothing
+about scenes without her. `ffx model import` therefore adds new textures
+to the list: `ffx_phyre::assets::add_files` puts new entries first and
+raises the count and the named indices.
 
 ## Textures (`*.dds.phyre`)
 
@@ -415,8 +451,7 @@ records must be identical.
   array fixup; whether the loader writes over the matrix element needs a
   look at a running game.
 - What the remaining material parameters do in the shaders.
-- New materials (a new `PParameterBuffer` list with its header class
-  entry, and for a new texture a `PAssetReferenceImport`) and new
-  hierarchy joints.
+- New hierarchy joints (`PNode`s); new texture clusters (a new texture is
+  made by copying one of the same size and format and importing pixels).
 - Shaders (`*.fx.phyre`) and the other cluster kinds.
 - Changing a texture's size or format.

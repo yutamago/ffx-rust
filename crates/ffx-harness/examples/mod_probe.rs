@@ -1,7 +1,8 @@
 //! Plays into the first scene with one mod file in place and reports
 //! whether the game read it and survived ten seconds:
 //! `mod_probe <archive path> <local file> [screenshot dir]`; with a
-//! directory, a screenshot every 30 frames goes there.
+//! directory, a screenshot every 30 frames goes there. `FFX_PROBE_EXTRA`
+//! adds more mod files: `archive path=local file;…`.
 fn main() -> ffx_harness::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let (path, local) = (&args[1], &args[2]);
@@ -10,6 +11,16 @@ fn main() -> ffx_harness::Result<()> {
     let file = dir.join(path);
     std::fs::create_dir_all(file.parent().expect("parent"))?;
     std::fs::copy(local, &file)?;
+    for pair in std::env::var("FFX_PROBE_EXTRA")
+        .unwrap_or_default()
+        .split(';')
+    {
+        if let Some((archive, local)) = pair.split_once('=') {
+            let file = dir.join(archive);
+            std::fs::create_dir_all(file.parent().expect("parent"))?;
+            std::fs::copy(local, &file)?;
+        }
+    }
     let result = (|| -> ffx_harness::Result<String> {
         let mut game = ffx_harness::Game::launch(&ffx_harness::Options::default())?;
         ffx_harness::screens::first_scene(&mut game)?;

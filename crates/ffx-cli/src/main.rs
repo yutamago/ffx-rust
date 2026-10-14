@@ -353,8 +353,10 @@ fn model_import(
     let original = read_file(&game.archive, path)?;
     let before = ffx_phyre::Model::parse(&original).with_context(|| path.to_owned())?;
     let edited = std::fs::read(glb).with_context(|| format!("reading {}", glb.display()))?;
-    let (bytes, segments) = ffx_phyre::import_into_cluster(&original, &edited)?;
-    let model = ffx_phyre::Model::parse(&bytes)?;
+    let imported = ffx_phyre::import_into_cluster(&original, &edited)?;
+    let (bytes, segments) = (&imported.bytes, &imported.segments);
+    let model = ffx_phyre::Model::parse(bytes)?;
+    let mod_dir_used = mod_dir.clone();
     let dest = match (out, mod_dir) {
         (Some(file), _) => file,
         (None, Some(dir)) => dir.join(safe_relative(path)?),
@@ -363,7 +365,43 @@ fn model_import(
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(&dest, &bytes)?;
+    std::fs::write(&dest, bytes)?;
+    // New textures must be in the character's asset list (`<name>.ahwin32`
+    // two folders up from `mdl/d3d11/<name>.dae.phyre`).
+    if !imported.new_textures.is_empty() {
+        let entries: Vec<String> = imported
+            .new_textures
+            .iter()
+            .map(|t| ffx_phyre::assets::texture_entry(t))
+            .collect();
+        let list_path = path
+            .rsplit_once("/mdl/")
+            .map(|(dir, file)| {
+                let name = file
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or(file)
+                    .trim_end_matches(".dae.phyre");
+                format!("{dir}/{name}.ahwin32")
+            })
+            .filter(|p| game.archive.find(p).is_some());
+        match (list_path, &mod_dir_used) {
+            (Some(list_path), Some(dir)) => {
+                let list =
+                    ffx_phyre::assets::add_files(&read_file(&game.archive, &list_path)?, &entries)?;
+                let to = dir.join(safe_relative(&list_path)?);
+                if let Some(parent) = to.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&to, list)?;
+                eprintln!("new textures added to the asset list {}", to.display());
+            }
+            _ => eprintln!(
+                "new textures the character's asset list (.ahwin32) must name: {}",
+                entries.join(", ")
+            ),
+        }
+    }
     let added = model.segments.len() - before.segments.len();
     eprintln!(
         "{} of {} segments from {}{}; wrote {} ({})",
@@ -376,7 +414,7 @@ fn model_import(
         },
         glb.display(),
         dest.display(),
-        if bytes == original {
+        if *bytes == original {
             "unchanged"
         } else {
             "changed"

@@ -72,6 +72,8 @@ const ITEM: &str = "ffx_ps2/ffx/master/new_uspc/battle/kernel/item.bin";
 const EVENT: &str = "ffx_ps2/ffx/master/jppc/event/obj/zn/znkd0600/znkd0600.ebp";
 const MESSAGES: &str = "ffx_ps2/ffx/master/new_uspc/event/obj_ps3/zn/znkd0600/znkd0600.bin";
 const MODEL: &str = "ffx_data/gamedata/ps3data/chr/pc/c001/mdl/d3d11/c001.dae.phyre";
+const ASSETS: &str = "ffx_data/gamedata/ps3data/chr/pc/c001/c001.ahwin32";
+const YUNA_TEXTURE: &str = "PS3Data/chr/pc/c002/tex/c002.dds";
 const MOTIONS: &str = "ffx_ps2/ffx/master/jppc/chr/pc/c001/mot/resident0.mgrp";
 
 /// The item table with item 0 (Potion) at power 77 instead of 4.
@@ -106,8 +108,8 @@ fn script_mod() -> (Vec<u8>, u32) {
 }
 
 /// Tidus 30 % wider, with segment 0 twice over (a resized buffer) and a
-/// new segment beside him on a new skeleton matrix (new objects, fixups
-/// re-encoded).
+/// new segment beside him on a new skeleton matrix and a new material with
+/// Yuna's texture (new objects and lists, fixups re-encoded).
 fn model_mod() -> Vec<u8> {
     let shipped = original(MODEL);
     // A new segment: a copy of the body (segment 5) bound rigidly to the
@@ -118,6 +120,13 @@ fn model_mod() -> Vec<u8> {
     let matrix = edit.add_skeleton_matrix(5, 35, &head).unwrap();
     let new = edit.add_segment(5).unwrap();
     edit.set_palette(new, &[(35, matrix)]).unwrap();
+    // Its own material, a copy of the body's with Yuna's texture.
+    let (material, index) = edit
+        .add_material(edit.segment_material(new).unwrap(), new)
+        .unwrap();
+    edit.set_texture(material, "TextureSampler", YUNA_TEXTURE)
+        .unwrap();
+    edit.set_segment_material(new, index).unwrap();
     let original = edit.write().unwrap();
     let mut model = ffx_phyre::Model::parse(&original).unwrap();
     assert_eq!(model.segments.len(), 14);
@@ -145,6 +154,15 @@ fn model_mod() -> Vec<u8> {
     let modded = model.write(&original).unwrap();
     assert!(modded.len() > shipped.len());
     modded
+}
+
+/// Tidus's asset list with Yuna's texture, which the model mod imports.
+fn assets_mod() -> Vec<u8> {
+    ffx_phyre::assets::add_files(
+        &original(ASSETS),
+        &[ffx_phyre::assets::texture_entry(YUNA_TEXTURE)],
+    )
+    .unwrap()
 }
 
 /// Tidus's resident motions with the root bone turned a quarter turn about
@@ -323,6 +341,7 @@ fn first_scene_with_script_model_and_motion_mods() {
         (EVENT, script),
         (MESSAGES, messages.clone()),
         (MODEL, model_mod()),
+        (ASSETS, assets_mod()),
         (MOTIONS, motion_mod()),
     ];
     with_mods("zz-harness-first-scene", &files, move || {
@@ -351,7 +370,7 @@ fn first_scene_with_script_model_and_motion_mods() {
             "the scene keeps running"
         );
         game.events().unwrap();
-        for path in [MESSAGES, MODEL, MOTIONS] {
+        for path in [MESSAGES, MODEL, ASSETS, MOTIONS] {
             let wanted = format!("mod {path}");
             assert!(
                 game.opened().contains(&wanted),

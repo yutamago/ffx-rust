@@ -78,6 +78,7 @@
 0x0062fa30 function Ps2File_Open              # host0:/ffx/... -> /ffx_ps2/ffx/..., then the PC file layer
 0x006315c0 function Input_BuildPadMap          # pairs each key binding (settings +0x60) with its PS2 pad bit
 0x00632a30 function Input_UpdatePad            # fastcall(input 0x00ccb170): ORs the bits of held bindings into the pad word (+0), previous at +4
+0x0063d140 function Chr_LoadAssetList          # (path, chr id): loads the files of an asset list (.ahwin32) through 0x006642f0; "VIRTUOS Error!!!!! Can't find character data: %s."
 0x006410e0 function Lang_Get                  # 0 jp, 1 us, 2 fr, 3 sp, 4 de, 5 it, 9 kr, 10 ch
 0x00645f50 function Text_ToUtf8               # FFX text -> UTF-8; defines the byte grammar (docs/formats/text.md)
 0x006460a0 function Text_DecodeCharCjk        # character code -> UTF-8 via the jp/kr/ch table
@@ -230,6 +231,7 @@
 0x00829e10 function Chr_KindLetter            # id >> 12 -> 'c','m','n','s','w','f','k'
 0x00829ef0 function Chr_LoadData                 # (chr id): queues "[%s:%s]CHRDATA" (prints "SG:RomRead:%s %x")
 0x0082a040 function Chr_IsLoaded                 # (chr id): ChrData_State(1, id); error "CH Data Read Sync" / "%s does not read.(can't sync)"
+0x0082a1c0 function Chr_LoadAssets             # (chr path, ...): "Load Character: %s", builds /FFX_Data/GameData/PS3Data/chr/.../<name>.ahwin32 and loads its D3D11 file list
 0x0082a4c0 function SG_LoadResidentGroup      # reads "[%s:resident%d.mgrp]" for a character
 0x0082a640 function Chr_TableIndex           # finds id & 0xfff in the kind's .tbl
 0x0082afe0 function Chr_SetAutoMotion            # (chr, slot, motion): chr +0x75c[slot]; -1 = default table 0x00c49680

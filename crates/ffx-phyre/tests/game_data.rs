@@ -310,7 +310,45 @@ fn clusters_rewrite_through_cluster_edit() {
             .unwrap_or_else(|e| panic!("{}: {e}", entry.path));
         let again = ffx_phyre::edit::ClusterEdit::parse(&written)
             .unwrap_or_else(|e| panic!("{}: rewritten: {e}", entry.path));
+        for (a, b) in again.lists.iter().zip(&edit.lists) {
+            assert_eq!(a.objects, b.objects, "{} objects", entry.path);
+            assert_eq!(a.arrays, b.arrays, "{} arrays {} {} objs {}", entry.path, a.arrays.len(), b.arrays.len(), a.objects.len());
+            assert_eq!(a.pointer_fixups, b.pointer_fixups, "{} pointers", entry.path);
+            assert_eq!(a.array_fixups, b.array_fixups, "{} array fixups", entry.path);
+            assert_eq!(a.pointer_array_fixups, b.pointer_array_fixups, "{}", entry.path);
+        }
         assert_eq!(again.lists, edit.lists, "{}", entry.path);
+        assert_eq!(again.user_records, edit.user_records, "{}", entry.path);
+        assert_eq!(
+            again.header_class_fixups, edit.header_class_fixups,
+            "{}",
+            entry.path
+        );
+        // Header classes come in list order; the parameter buffer lists'
+        // are the last ones, each counting the buffer's tweakable
+        // parameter definitions.
+        let buffers: Vec<&ffx_phyre::edit::EditList> = edit
+            .lists
+            .iter()
+            .filter(|l| edit.cluster.classes[l.class].name == "PParameterBuffer")
+            .collect();
+        if is_model {
+            let before = edit
+                .header_class_counts
+                .len()
+                .checked_sub(buffers.len())
+                .unwrap_or_else(|| panic!("{}: fewer header classes than buffers", entry.path));
+            for (l, &n) in buffers.iter().zip(&edit.header_class_counts[before..]) {
+                let defs = u32::from_le_bytes(l.objects[8..12].try_into().unwrap());
+                assert_eq!((l.count(), defs), (1, n), "{}", entry.path);
+            }
+        }
+        assert_eq!(
+            edit.header_class_counts.iter().sum::<u32>() as usize,
+            edit.header_class_fixups.len(),
+            "{}",
+            entry.path
+        );
         assert_eq!(again.buffers, edit.buffers, "{}", entry.path);
         if is_model && let Ok(model) = ffx_phyre::Model::parse(&bytes) {
             let back = ffx_phyre::Model::parse(&written).unwrap();
@@ -512,12 +550,21 @@ fn new_segments_and_joints_import() {
     new_prim["attributes"]["POSITION"] = serde_json::json!(a_pos);
     new_prim["attributes"]["JOINTS_0"] = serde_json::json!(a_joints);
     new_prim.as_object_mut().unwrap().remove("extras");
+    // A new glTF material: the head's, with Yuna's texture.
+    let materials = glb.json["materials"].as_array_mut().unwrap();
+    let mut material = materials[new_prim["material"].as_u64().unwrap() as usize].clone();
+    material["extras"]["ffx_textures"]["TextureSampler"] =
+        serde_json::json!("PS3Data/chr/pc/c002/tex/c002.dds");
+    materials.push(material);
+    new_prim["material"] = serde_json::json!(materials.len() - 1);
     glb.json["meshes"][mi]["primitives"]
         .as_array_mut()
         .unwrap()
         .push(new_prim);
 
-    let (bytes, done) = ffx_phyre::import_into_cluster(&original, &glb.bytes()).unwrap();
+    let imported = ffx_phyre::import_into_cluster(&original, &glb.bytes()).unwrap();
+    assert_eq!(imported.new_textures, ["PS3Data/chr/pc/c002/tex/c002.dds"]);
+    let (bytes, done) = (imported.bytes, imported.segments);
     let result = ffx_phyre::Model::parse(&bytes).unwrap();
     assert_eq!(result.segments.len(), model.segments.len() + 1);
     let new = done
@@ -533,6 +580,21 @@ fn new_segments_and_joints_import() {
     );
     assert_eq!(s.bones.len(), 1);
     assert_eq!(s.bones[0].hierarchy, unbound);
+    let material = &result.materials[s.material.unwrap()];
+    assert!(
+        material
+            .textures
+            .iter()
+            .any(|t| t.sampler == "TextureSampler" && t.path.ends_with("c002.dds")),
+        "{:?}",
+        material.textures
+    );
+    assert_eq!(
+        result.segments[0]
+            .material
+            .map(|m| &result.materials[m].textures),
+        head.material.map(|m| &model.materials[m].textures)
+    );
     let skel = &result.skeletons[0];
     assert_eq!(skel.inverse_bind.len(), skeleton.inverse_bind.len() + 1);
     assert_eq!(

@@ -40,6 +40,9 @@ pub struct EditList {
     pub pointer_fixups: Vec<PointerFixup>,
     pub array_fixups: Vec<ArrayFixup>,
     pub pointer_array_fixups: Vec<ArrayFixup>,
+    /// Whether the list's data was a multiple of 4 bytes; writing keeps
+    /// it so (shader clusters have lists that are not).
+    aligned: bool,
 }
 
 impl EditList {
@@ -77,9 +80,15 @@ pub struct ClusterEdit {
     /// Header and namespace bytes; header words are rewritten.
     head: Vec<u8>,
     pub lists: Vec<EditList>,
-    /// User fixup data, user fixup records, header class counts and
-    /// header class fixups, as stored.
-    tail: Vec<u8>,
+    /// The user fixup data (strings and two-byte asset indices).
+    pub user_data: Vec<u8>,
+    /// User fixups: (type, length, offset into [`ClusterEdit::user_data`]).
+    pub user_records: Vec<[u32; 3]>,
+    /// One count per `PParameterBuffer` list, in list order: its entries
+    /// in [`ClusterEdit::header_class_fixups`].
+    pub header_class_counts: Vec<u32>,
+    /// `(0, offset, 0, size)` per parameter of those buffers.
+    pub header_class_fixups: Vec<[u32; 4]>,
     /// Everything after the packed fixups (texture pixels; index then
     /// vertex buffer).
     pub buffers: Vec<u8>,
@@ -150,6 +159,7 @@ impl ClusterEdit {
                 pointer_fixups: pf,
                 array_fixups: af,
                 pointer_array_fixups: flat.by_ref().take(pa_counts[i].0 as usize).collect(),
+                aligned: (l.objects_size + l.arrays_size).is_multiple_of(4),
             });
         }
         let data_end =
@@ -161,7 +171,41 @@ impl ClusterEdit {
         Ok(Self {
             head: bytes[..lists_at].to_vec(),
             lists,
-            tail: bytes[data_end..cluster.fixups_offset].to_vec(),
+            user_data: bytes[data_end..data_end + h.user_fixup_data_size as usize].to_vec(),
+            user_records: (0..h.user_fixup_count as usize)
+                .map(|i| {
+                    let at = data_end + h.user_fixup_data_size as usize + 12 * i;
+                    Ok([
+                        u32_at(bytes, at)?,
+                        u32_at(bytes, at + 4)?,
+                        u32_at(bytes, at + 8)?,
+                    ])
+                })
+                .collect::<Result<_>>()?,
+            header_class_counts: {
+                let at =
+                    data_end + h.user_fixup_data_size as usize + 12 * h.user_fixup_count as usize;
+                (0..h.header_class_count as usize)
+                    .map(|i| u32_at(bytes, at + 4 * i))
+                    .collect::<Result<_>>()?
+            },
+            header_class_fixups: {
+                let at = data_end
+                    + h.user_fixup_data_size as usize
+                    + 12 * h.user_fixup_count as usize
+                    + 4 * h.header_class_count as usize;
+                (0..h.header_class_fixup_count as usize)
+                    .map(|i| {
+                        let o = at + 16 * i;
+                        Ok([
+                            u32_at(bytes, o)?,
+                            u32_at(bytes, o + 4)?,
+                            u32_at(bytes, o + 8)?,
+                            u32_at(bytes, o + 12)?,
+                        ])
+                    })
+                    .collect::<Result<_>>()?
+            },
             buffers: bytes
                 .get(buffers_at..)
                 .ok_or(Error::Malformed("buffers outside the file"))?
@@ -239,21 +283,52 @@ impl ClusterEdit {
         let mut out = self.head.clone();
         let mut data = Vec::new();
         for l in &self.lists {
+            // Model lists' data is a multiple of 4 bytes (the loader lays
+            // the lists out back to back; a string of odd length misaligned
+            // every list after it and crashed the game).
+            let mut arrays = l.arrays.clone();
+            if l.aligned {
+                arrays.resize(
+                    (l.objects.len() + arrays.len()).next_multiple_of(4) - l.objects.len(),
+                    0,
+                );
+            }
             let mut header = l.header;
             put(&mut header, 4, l.count() as usize)?;
-            put(&mut header, 8, l.objects.len() + l.arrays.len())?;
+            put(&mut header, 8, l.objects.len() + arrays.len())?;
             put(&mut header, 0xc, l.objects.len())?;
-            put(&mut header, 0x10, l.arrays.len())?;
+            put(&mut header, 0x10, arrays.len())?;
+            // The elements of the list's pointer arrays.
+            put(
+                &mut header,
+                0x14,
+                l.pointer_array_fixups.iter().map(|f| f.0[2] as usize).sum(),
+            )?;
             put(&mut header, 0x18, l.array_fixups.len())?;
             put(&mut header, 0x1c, l.pointer_fixups.len())?;
             put(&mut header, 0x20, l.pointer_array_fixups.len())?;
             out.extend_from_slice(&header);
             data.extend_from_slice(&l.objects);
-            data.extend_from_slice(&l.arrays);
+            data.extend_from_slice(&arrays);
         }
         let total_data = data.len();
         out.extend(data);
-        out.extend_from_slice(&self.tail);
+        out.extend_from_slice(&self.user_data);
+        for r in self
+            .user_records
+            .iter()
+            .map(|r| &r[..])
+            .chain(std::iter::once(&self.header_class_counts[..]))
+        {
+            for v in r {
+                out.extend(v.to_le_bytes());
+            }
+        }
+        for f in &self.header_class_fixups {
+            for v in f {
+                out.extend(v.to_le_bytes());
+            }
+        }
 
         let counts: Vec<u32> = self.lists.iter().map(EditList::count).collect();
         let pa: Vec<(&[ArrayFixup], u32)> = self
@@ -281,6 +356,7 @@ impl ClusterEdit {
         );
         let sum = |f: &dyn Fn(&EditList) -> usize| self.lists.iter().map(f).sum::<usize>();
         let words = [
+            (4, self.lists.len()),
             (5, aa.len()),
             (6, sum(&|l| l.array_fixups.len())),
             (7, pp.len()),
@@ -292,7 +368,11 @@ impl ClusterEdit {
                 11,
                 sum(&|l| l.pointer_array_fixups.iter().map(|f| f.0[2] as usize).sum()),
             ),
+            (12, self.user_records.len()),
+            (13, self.user_data.len()),
             (14, total_data),
+            (15, self.header_class_counts.len()),
+            (16, self.header_class_fixups.len()),
         ];
         for (w, v) in words {
             put(&mut out, 4 * w, v)?;
@@ -490,7 +570,7 @@ impl ClusterEdit {
 impl ClusterEdit {
     /// The mesh whose segment range holds `segment`: (mesh index, its
     /// `m_meshSegments` fixup).
-    fn mesh_of(&self, segment: u32) -> Result<(u32, usize)> {
+    pub(crate) fn mesh_of(&self, segment: u32) -> Result<(u32, usize)> {
         let (segs, meshes) = (self.list_named("PMeshSegment")?, self.list_named("PMesh")?);
         let array = self.offset_of(meshes, "m_meshSegments")?;
         (0..self.lists[meshes].count())
@@ -580,6 +660,303 @@ impl ClusterEdit {
             self.add_u32(meshes, mesh, field, 1);
         }
         u16::try_from(index.expect("set above")).map_err(|_| Error::Unsupported("skeleton".into()))
+    }
+}
+
+impl ClusterEdit {
+    /// Inserts a list before list `at`; fixups pointing into lists from
+    /// `at` on follow them.
+    fn insert_list(&mut self, at: usize, list: EditList) {
+        for l in &mut self.lists {
+            for f in &mut l.pointer_fixups {
+                if f.user_fixup().is_none() && f.0[3] as usize >= at {
+                    f.0[3] += 1;
+                }
+            }
+        }
+        let mut list = list;
+        for f in &mut list.pointer_fixups {
+            if f.user_fixup().is_none() && f.0[3] as usize >= at {
+                f.0[3] += 1;
+            }
+        }
+        self.lists.insert(at, list);
+    }
+
+    /// A NUL-terminated string in a list's array data.
+    fn array_string(&self, list: usize, at: u32) -> String {
+        let tail = self.lists[list]
+            .arrays
+            .get(at as usize..)
+            .unwrap_or_default();
+        let end = tail.iter().position(|&b| b == 0).unwrap_or(tail.len());
+        String::from_utf8_lossy(&tail[..end]).into_owned()
+    }
+
+    /// The array fixup of object `obj` in `list` at byte `offset`.
+    fn array_at(&self, list: usize, obj: u32, offset: u32) -> Option<usize> {
+        self.lists[list].array_fixups.iter().position(|f| {
+            f.object() == obj && field_offset(&self.cluster, f.member()) == Some(offset)
+        })
+    }
+
+    /// Adds a material to the mesh holding `segment`: a copy of `PMaterial`
+    /// `material` with its own copy of the parameter buffer (a new list,
+    /// after the other buffers, with its header class entry), appended to
+    /// the mesh's material set. Returns the new `PMaterial` index and its
+    /// index in the set (the value for `PMeshSegment.m_materialIndex`).
+    ///
+    /// # Errors
+    /// Fails on clusters without materials or a material without a buffer.
+    pub fn add_material(&mut self, material: u32, segment: u32) -> Result<(u32, u32)> {
+        let materials = self.list_named("PMaterial")?;
+        let meshes = self.list_named("PMesh")?;
+        let field = self.offset_of(materials, "m_parameterBuffer")?;
+        let k = self
+            .pointer_at(materials, material, field)
+            .ok_or(Error::Unsupported(
+                "material without a parameter buffer".into(),
+            ))?;
+        let buffer = self.lists[materials].pointer_fixups[k].target_list() as usize;
+        // The new buffer list goes after the last buffer list, its header
+        // class entry after the last buffer's (they come last, in list order).
+        let buffers: Vec<usize> = (0..self.lists.len())
+            .filter(|&i| self.cluster.classes[self.lists[i].class].name == "PParameterBuffer")
+            .collect();
+        let rank = buffers
+            .iter()
+            .position(|&b| b == buffer)
+            .expect("a buffer list");
+        let before = self
+            .header_class_counts
+            .len()
+            .checked_sub(buffers.len())
+            .ok_or(Error::Unsupported(
+                "header classes do not match the buffers".into(),
+            ))?;
+        let first: usize = self.header_class_counts[..before + rank]
+            .iter()
+            .map(|&n| n as usize)
+            .sum();
+        let n = self.header_class_counts[before + rank];
+        let entries = self.header_class_fixups[first..first + n as usize].to_vec();
+        self.header_class_counts.push(n);
+        self.header_class_fixups.extend(entries);
+        let at = buffers.last().expect("a buffer list") + 1;
+        let copy = self.lists[buffer].clone();
+        self.insert_list(at, copy);
+        let (materials, meshes) = (
+            if materials >= at {
+                materials + 1
+            } else {
+                materials
+            },
+            if meshes >= at { meshes + 1 } else { meshes },
+        );
+        let new = self.copy_objects(materials, material, 1);
+        let k = self
+            .pointer_at(materials, new, field)
+            .expect("copied with the material");
+        self.lists[materials].pointer_fixups[k].0[2] = 0;
+        self.lists[materials].pointer_fixups[k].0[3] = u32::try_from(at).expect("list index");
+        // The mesh's material set: a pointer array (count, then pointers).
+        let (mesh, _) = self.mesh_of(segment)?;
+        let set = self.offset_of(meshes, "m_defaultMaterials")?;
+        let pa = self.lists[meshes]
+            .pointer_array_fixups
+            .iter()
+            .position(|f| {
+                f.object() == mesh && field_offset(&self.cluster, f.member()) == Some(set + 4)
+            })
+            .ok_or(Error::Unsupported("mesh without a material set".into()))?;
+        let index = self.lists[meshes].pointer_array_fixups[pa].0[2];
+        self.lists[meshes].pointer_array_fixups[pa].0[2] += 1;
+        let template = *self.lists[meshes]
+            .pointer_fixups
+            .iter()
+            .find(|f| {
+                f.object() == mesh && field_offset(&self.cluster, f.member()) == Some(set + 4)
+            })
+            .ok_or(Error::Unsupported("empty material set".into()))?;
+        let mut element = template;
+        element.0[2] = new;
+        element.0[3] = u32::try_from(materials).expect("list index");
+        element.0[5] = index;
+        self.lists[meshes].pointer_fixups.push(element);
+        self.add_u32(meshes, mesh, set, 1);
+        Ok((new, index))
+    }
+
+    /// Points sampler `sampler` (`TextureSampler` is the base color) of
+    /// `PMaterial` `material` at texture `import` (an import id such as
+    /// `PS3Data/chr/mon/m009/tex/m009.dds`, stored in the archive as
+    /// `ffx_data/gamedata/ps3data/chr/mon/m009/tex/d3d11/m009.dds.phyre`),
+    /// adding the import if the cluster has none for it.
+    ///
+    /// # Errors
+    /// Fails if the material has no such sampler.
+    pub fn set_texture(&mut self, material: u32, sampler: &str, import: &str) -> Result<()> {
+        let (buffer, slot, old) = self.sampler(material, sampler)?;
+        // The import: an existing one, else a copy of the current one.
+        let index = match self.import_index(import)? {
+            Some(i) => i,
+            None => {
+                let [_, _, off] = self.user_records[old as usize];
+                let current = u16::from_be_bytes([
+                    self.user_data[off as usize],
+                    self.user_data[off as usize + 1],
+                ]);
+                self.add_import(u32::from(current), import)?
+            }
+        };
+        self.point_sampler(buffer, slot, old, index)
+    }
+
+    /// The `PAssetReferenceImport` with id `import`, if there is one.
+    ///
+    /// # Errors
+    /// Fails on clusters without imports.
+    pub fn import_index(&self, import: &str) -> Result<Option<u32>> {
+        let imports = self.list_named("PAssetReferenceImport")?;
+        let id_field = self.offset_of(imports, "m_id")?;
+        Ok((0..self.lists[imports].count()).find(|&i| {
+            self.array_at(imports, i, id_field).is_some_and(|a| {
+                self.array_string(imports, self.lists[imports].array_fixups[a].0[3]) == import
+            })
+        }))
+    }
+
+    /// Adds a `PAssetReferenceImport` like import `like` (same target type)
+    /// with id `import`; returns its index.
+    ///
+    /// # Errors
+    /// Fails on clusters without imports.
+    pub fn add_import(&mut self, like: u32, import: &str) -> Result<u32> {
+        let imports = self.list_named("PAssetReferenceImport")?;
+        let id_field = self.offset_of(imports, "m_id")?;
+        let i = self.copy_objects(imports, like, 1);
+        let l = &mut self.lists[imports];
+        let at = u32::try_from(l.arrays.len()).expect("array data");
+        l.arrays.extend_from_slice(import.as_bytes());
+        l.arrays.push(0);
+        let a = self
+            .array_at(imports, i, id_field)
+            .ok_or(Error::Unsupported("import without an id".into()))?;
+        self.lists[imports].array_fixups[a].0[3] = at;
+        Ok(i)
+    }
+
+    /// Points sampler `sampler` of `PMaterial` `material` at import `index`.
+    ///
+    /// # Errors
+    /// Fails if the material has no such sampler.
+    pub fn set_texture_import(&mut self, material: u32, sampler: &str, index: u32) -> Result<()> {
+        let (buffer, slot, old) = self.sampler(material, sampler)?;
+        self.point_sampler(buffer, slot, old, index)
+    }
+
+    /// A material's sampler: (its buffer list, the texture reference's
+    /// pointer fixup, the user fixup it uses).
+    fn sampler(&self, material: u32, sampler: &str) -> Result<(usize, usize, u32)> {
+        let materials = self.list_named("PMaterial")?;
+        let field = self.offset_of(materials, "m_parameterBuffer")?;
+        let k = self
+            .pointer_at(materials, material, field)
+            .ok_or(Error::Unsupported(
+                "material without a parameter buffer".into(),
+            ))?;
+        let buffer = self.lists[materials].pointer_fixups[k].target_list() as usize;
+        let defs_field = self.offset_of(buffer, "m_tweakableShaderParameterDefinitions")?;
+        let k = self
+            .pointer_at(buffer, 0, defs_field + 4)
+            .ok_or(Error::Unsupported("buffer without definitions".into()))?;
+        let defs = self.lists[buffer].pointer_fixups[k];
+        let dl = defs.target_list() as usize;
+        let (o_name, o_type, o_loc) = (
+            self.offset_of(dl, "m_name")?,
+            self.offset_of(dl, "m_parameterType")? as usize,
+            self.offset_of(dl, "m_bufferLoc")? as usize,
+        );
+        let def = (defs.target()..defs.target() + defs.count())
+            .find(|&d| {
+                self.lists[dl].object(d)[o_type] == 0x42
+                    && self.array_at(dl, d, o_name).is_some_and(|a| {
+                        self.array_string(dl, self.lists[dl].array_fixups[a].0[3]) == sampler
+                    })
+            })
+            .ok_or_else(|| Error::Unsupported(format!("material has no sampler {sampler}")))?;
+        let loc = u32::from_le_bytes(
+            self.lists[dl].object(def)[o_loc..o_loc + 4]
+                .try_into()
+                .expect("4 bytes"),
+        ) & 0xffff;
+        let slot = self
+            .pointer_at(buffer, 0, 8 + loc + 4)
+            .ok_or(Error::Unsupported(
+                "sampler without a texture reference".into(),
+            ))?;
+        let old =
+            self.lists[buffer].pointer_fixups[slot]
+                .user_fixup()
+                .ok_or(Error::Unsupported(
+                    "sampler texture is not a user fixup".into(),
+                ))?;
+        Ok((buffer, slot, old))
+    }
+
+    /// Points a sampler's texture reference (pointer fixup `slot` of
+    /// `buffer`, now using user fixup `old`) at import `index`.
+    fn point_sampler(&mut self, buffer: usize, slot: usize, old: u32, index: u32) -> Result<()> {
+        let index = u16::try_from(index).map_err(|_| Error::Unsupported("imports".into()))?;
+        let at = u32::try_from(self.user_data.len()).expect("user data");
+        self.user_data.extend_from_slice(&index.to_be_bytes());
+        let kind = self.user_records[old as usize][0];
+        self.user_records.push([kind, 2, at]);
+        let record = u32::try_from(self.user_records.len() - 1).expect("user fixups");
+        self.lists[buffer].pointer_fixups[slot].0[6] = record;
+        Ok(())
+    }
+}
+
+impl ClusterEdit {
+    /// The `PMaterial` segment `segment` draws with: element
+    /// `m_materialIndex` of its mesh's material set.
+    ///
+    /// # Errors
+    /// Fails on segments outside a mesh or an index outside the set.
+    pub fn segment_material(&self, segment: u32) -> Result<u32> {
+        let segs = self.list_named("PMeshSegment")?;
+        let meshes = self.list_named("PMesh")?;
+        let o = self.offset_of(segs, "m_materialIndex")? as usize;
+        let index = u32::from_le_bytes(
+            self.lists[segs].object(segment)[o..o + 4]
+                .try_into()
+                .expect("4 bytes"),
+        );
+        let (mesh, _) = self.mesh_of(segment)?;
+        let set = self.offset_of(meshes, "m_defaultMaterials")?;
+        self.lists[meshes]
+            .pointer_fixups
+            .iter()
+            .find(|f| {
+                f.object() == mesh
+                    && field_offset(&self.cluster, f.member()) == Some(set + 4)
+                    && f.count() == index
+            })
+            .map(PointerFixup::target)
+            .ok_or(Error::Unsupported("material index outside the set".into()))
+    }
+
+    /// Sets segment `segment`'s `m_materialIndex` (an index into its mesh's
+    /// material set, as [`ClusterEdit::add_material`] returns).
+    ///
+    /// # Errors
+    /// Fails on clusters without segments.
+    pub fn set_segment_material(&mut self, segment: u32, index: u32) -> Result<()> {
+        let segs = self.list_named("PMeshSegment")?;
+        let o = self.offset_of(segs, "m_materialIndex")? as usize;
+        self.lists[segs].object_mut(segment)[o..o + 4].copy_from_slice(&index.to_le_bytes());
+        Ok(())
     }
 }
 

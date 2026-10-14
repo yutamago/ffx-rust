@@ -443,6 +443,20 @@ fn used_joints(
     Ok(used)
 }
 
+/// What [`import_into_cluster`] made.
+#[derive(Debug, Clone)]
+pub struct Imported {
+    /// The new cluster.
+    pub bytes: Vec<u8>,
+    /// The segments written (new ones included).
+    pub segments: Vec<usize>,
+    /// Texture import ids the cluster did not have before. The game finds
+    /// a character's textures through its asset list
+    /// (`chr/…/<name>.ahwin32`, see [`crate::assets::add_files`]), which
+    /// must name them.
+    pub new_textures: Vec<String>,
+}
+
 /// Puts a glTF's geometry into a model cluster: [`Model::import_glb`] for
 /// the segments it names, plus what that cannot do in place. Primitives
 /// without a segment become new segments, copies of a segment of the same
@@ -450,13 +464,15 @@ fn used_joints(
 /// primitive's geometry. Segments weighted to joints outside their bone
 /// palette get a larger palette, and joints their mesh has no skeleton
 /// matrix for get one: the inverse of the joint node's world matrix.
-/// Returns the new cluster and the segments written.
+/// A new primitive whose glTF material is not one of the model's gets a
+/// new material: a copy of its template's, with the textures the glTF
+/// material lists in `extras.ffx_textures` (sampler → import id).
 ///
 /// # Errors
 /// Fails like [`Model::import_glb`], and on primitives of a glTF mesh
 /// none of whose primitives names a segment.
 #[allow(clippy::too_many_lines)] // the plan, then the structural edits
-pub fn import_into_cluster(original: &[u8], glb: &[u8]) -> Result<(Vec<u8>, Vec<usize>)> {
+pub fn import_into_cluster(original: &[u8], glb: &[u8]) -> Result<Imported> {
     let model = Model::parse(original)?;
     let (json, bin) = chunks(glb)?;
     let doc = Doc { json, bin };
@@ -552,8 +568,12 @@ pub fn import_into_cluster(original: &[u8], glb: &[u8]) -> Result<(Vec<u8>, Vec<
     }
     if new_prims.is_empty() && palettes.is_empty() {
         let mut model = model;
-        let done = model.import_glb(glb)?;
-        return Ok((model.write(original)?, done));
+        let segments = model.import_glb(glb)?;
+        return Ok(Imported {
+            bytes: model.write(original)?,
+            segments,
+            new_textures: Vec::new(),
+        });
     }
 
     // Skeleton matrices for joints without one, per mesh (by a segment of it).
@@ -617,6 +637,9 @@ pub fn import_into_cluster(original: &[u8], glb: &[u8]) -> Result<(Vec<u8>, Vec<
             .iter()
             .fold(s, |s, &n| if s >= n { s + 1 } else { s })
     };
+    let glb_materials = doc.json["materials"].as_array().unwrap_or(&empty);
+    let mut made: HashMap<(u32, usize), u32> = HashMap::new();
+    let mut new_textures = Vec::new();
     for ((mi, pi), template, used) in &new_prims {
         let t = renumber(&shifts, *template);
         let new = edit.add_segment(u32::try_from(t).expect("segment"))? as usize;
@@ -633,9 +656,48 @@ pub fn import_into_cluster(original: &[u8], glb: &[u8]) -> Result<(Vec<u8>, Vec<
             )?;
         }
         added.insert((*mi, *pi), new);
+        // A glTF material that is not one of the model's: a new material.
+        let prim = &doc.json["meshes"][*mi]["primitives"][*pi];
+        if let Some(gm) = index(&prim["material"]).filter(|&m| m >= model.materials.len()) {
+            let segment = u32::try_from(new).expect("segment");
+            let mesh = edit.mesh_of(segment)?.0;
+            let set_index = if let Some(&i) = made.get(&(mesh, gm)) {
+                i
+            } else {
+                let base = edit.segment_material(segment)?;
+                let (material, i) = edit.add_material(base, segment)?;
+                let old = model.segments[*template]
+                    .material
+                    .map(|m| &model.materials[m].textures[..])
+                    .unwrap_or_default();
+                if let Some(textures) = glb_materials
+                    .get(gm)
+                    .and_then(|m| m["extras"]["ffx_textures"].as_object())
+                {
+                    for (sampler, id) in textures {
+                        let Some(id) = id.as_str() else { continue };
+                        if old.iter().any(|t| &t.sampler == sampler && t.path == id) {
+                            continue;
+                        }
+                        if edit.import_index(id)?.is_none() && !new_textures.iter().any(|t| t == id)
+                        {
+                            new_textures.push(id.to_owned());
+                        }
+                        edit.set_texture(material, sampler, id)?;
+                    }
+                }
+                made.insert((mesh, gm), i);
+                i
+            };
+            edit.set_segment_material(segment, set_index)?;
+        }
     }
     let grown = edit.write()?;
     let mut model = Model::parse(&grown)?;
-    let done = model.import_glb_with(glb, &|s| renumber(&shifts, s), &added)?;
-    Ok((model.write(&grown)?, done))
+    let segments = model.import_glb_with(glb, &|s| renumber(&shifts, s), &added)?;
+    Ok(Imported {
+        bytes: model.write(&grown)?,
+        segments,
+        new_textures,
+    })
 }
