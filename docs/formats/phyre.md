@@ -240,7 +240,39 @@ ffx phyre dump ffx_data/gamedata/ps3data/chr/mon/m009/mdl/d3d11/m009.dae.phyre -
 ```
 
 The export embeds each base color texture as PNG, decoding only the top
-mip level and turning it upright.
+mip level and turning it upright. Character models also get their PS2
+motions as animations (`docs/formats/motion.md`).
+
+### Writing models back
+
+The index and vertex buffers end the file, so a segment may change its
+vertex and triangle counts: `Model::write` rebuilds both buffers and
+updates the fields that describe them:
+
+| Object | Fields |
+|---|---|
+| `PDataBlock` | `m_elementCount`, `m_offsetInVertexBuffer`, `m_dataSize` (stride × count) |
+| `PIndexDataBlock` (in `PMeshSegment`) | `m_minimumIndex`, `m_maximumIndex`, `m_elementCount`, `m_offsetInIndexBuffer` (4-byte aligned per segment), `m_dataSize` |
+| Header | words 18 and 19 (index and vertex buffer sizes) |
+
+Blocks keep their order in the vertex buffer, back to back; segments keep
+theirs in the index buffer. Tangents and binormals are recomputed from the
+UVs when a segment's vertex count changes. Materials, bone palettes,
+skeletons and bounds are kept as they are, so new geometry must use the
+segment's existing bones.
+
+`ffx model import` reads the geometry from an exported `.glb`. Every
+primitive carries `extras.ffx_segment` and every mesh
+`extras.ffx_segments`, so edits made in another tool find their segment
+(the joints by name, through the skin). Values the edit did not change
+keep their stored bytes.
+
+```bash
+ffx model export ffx_data/gamedata/ps3data/chr/mon/m002/mdl/d3d11/m002.dae.phyre -o models/
+# … edit models/…/m002.glb …
+ffx model import ffx_data/gamedata/ps3data/chr/mon/m002/mdl/d3d11/m002.dae.phyre \
+    models/ffx_data/gamedata/ps3data/chr/mon/m002/mdl/d3d11/m002.glb --mod-dir mods/my-mod
+```
 
 ## Textures (`*.dds.phyre`)
 
@@ -304,6 +336,12 @@ All 1,266 exported `.glb` files pass the Khronos glTF validator
 (2.0.0-dev.3.10) without errors or warnings. Rotating a joint of Tidus in
 three.js deforms the mesh around it.
 
+Writing every model back unchanged, directly and through its exported
+`.glb`, reproduces the file byte for byte. Every tenth model is also
+written with its first segment doubled and its last cut to one triangle,
+and reads back with exactly those vertices and triangles. A `.glb` welded
+by `gltf-transform` (m002: 5,934 → 1,565 vertices) imports and validates.
+
 `cargo test -p ffx-oracle` unpacks the pointer and array fixups of 2,233
 clusters, all models plus every 50th other cluster. It runs both the Rust
 port and the original `0x60db20` / `0x60dac0` under emulation, and the
@@ -313,8 +351,7 @@ records must be identical.
 
 - `PNode.m_name` is at +0x50 in the namespace, but its array fixup says
   +0x4c. Names are taken from the node's only array fixup.
-- Animations (`*.anim.phyre` or similar), not looked at yet.
 - Material parameters beyond the base color texture.
-- Writing models back.
+- New segments, materials or bones (only existing segments are written).
 - Shaders (`*.fx.phyre`) and the other cluster kinds.
 - Changing a texture's size or format.

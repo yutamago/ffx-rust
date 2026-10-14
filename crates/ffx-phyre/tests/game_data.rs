@@ -59,6 +59,7 @@ fn models_parse_or_are_refused() {
     let mut samplers: BTreeMap<String, usize> = BTreeMap::new();
     let mut missing: Vec<String> = Vec::new();
     let mut reasons: BTreeMap<String, usize> = BTreeMap::new();
+    let mut not_rewritten: Vec<String> = Vec::new();
     for entry in archive
         .entries()
         .iter()
@@ -87,6 +88,22 @@ fn models_parse_or_are_refused() {
                 }
                 let glb = model.to_glb();
                 assert_eq!(&glb[..4], b"glTF");
+                let mut imported = model.clone();
+                let read = imported
+                    .import_glb(&glb)
+                    .unwrap_or_else(|e| panic!("{}: {e}", entry.path));
+                assert!(!read.is_empty(), "{}: no segments read back", entry.path);
+                match imported.write(&bytes) {
+                    Ok(w) if w == bytes => {}
+                    Ok(w) => not_rewritten.push(format!(
+                        "{}: differs at {:?} (sizes {} / {})",
+                        entry.path,
+                        w.iter().zip(&bytes).position(|(a, b)| a != b),
+                        w.len(),
+                        bytes.len()
+                    )),
+                    Err(e) => not_rewritten.push(format!("{}: {e}", entry.path)),
+                }
                 ok += 1;
             }
             Err(Error::Unsupported(why)) => {
@@ -112,6 +129,12 @@ fn models_parse_or_are_refused() {
         "texture paths not in the archive: {missing:?}"
     );
     assert_eq!((ok, refused, other), (1266, 48, 0), "{reasons:#?}");
+    assert!(
+        not_rewritten.is_empty(),
+        "{} models not written back unchanged: {:#?}",
+        not_rewritten.len(),
+        &not_rewritten[..not_rewritten.len().min(10)]
+    );
 }
 
 /// Column-major 4×4 product `a * b`.
@@ -195,4 +218,63 @@ fn skeleton_matrices_invert_the_bind_pose() {
     // bind pose; everywhere else the skeleton matrices invert it.
     assert_eq!(unnamed, 0);
     assert!(good > 48_000 && bad * 50 < good, "{good} good, {bad} bad");
+}
+
+#[test]
+fn grown_and_shrunk_segments_read_back() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let archive = Archive::open(PathBuf::from(dir).join("data/FFX_Data.vbf")).unwrap();
+    let mut checked = 0;
+    for entry in archive
+        .entries()
+        .iter()
+        .filter(|e| e.path.ends_with(".dae.phyre") && e.size > 0)
+        .step_by(10)
+    {
+        let bytes = archive.read(entry).unwrap();
+        let Ok(mut model) = ffx_phyre::Model::parse(&bytes) else {
+            continue;
+        };
+        // Segment 0 twice over (a second copy of every vertex and triangle);
+        // the last segment cut to its first triangle.
+        let seg = &mut model.segments[0];
+        let n = seg.positions.len();
+        if 2 * n > 0x1_0000 {
+            continue;
+        }
+        let n16 = u16::try_from(n).unwrap();
+        for list in [&mut seg.normals, &mut seg.positions] {
+            list.extend_from_within(..);
+        }
+        seg.uvs.extend_from_within(..);
+        seg.colors.extend_from_within(..);
+        seg.joints.extend_from_within(..);
+        seg.weights.extend_from_within(..);
+        let more: Vec<u16> = seg.indices.iter().map(|i| i + n16).collect();
+        seg.indices.extend(more);
+        let last = model.segments.len() - 1;
+        if last > 0 {
+            let seg = &mut model.segments[last];
+            seg.indices.truncate(3);
+        }
+        let written = model
+            .write(&bytes)
+            .unwrap_or_else(|e| panic!("{}: {e}", entry.path));
+        let back =
+            ffx_phyre::Model::parse(&written).unwrap_or_else(|e| panic!("{}: {e}", entry.path));
+        for (a, b) in model.segments.iter().zip(&back.segments) {
+            assert_eq!(a.positions, b.positions, "{}", entry.path);
+            assert_eq!(a.normals, b.normals, "{}", entry.path);
+            assert_eq!(a.uvs, b.uvs, "{}", entry.path);
+            assert_eq!(a.joints, b.joints, "{}", entry.path);
+            assert_eq!(a.weights, b.weights, "{}", entry.path);
+            assert_eq!(a.indices, b.indices, "{}", entry.path);
+        }
+        checked += 1;
+    }
+    eprintln!("{checked} models edited and read back");
+    assert!(checked > 100);
 }

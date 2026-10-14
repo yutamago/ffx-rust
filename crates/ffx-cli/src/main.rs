@@ -314,6 +314,59 @@ enum ModelCommand {
         #[arg(long = "motions")]
         motion_groups: Vec<String>,
     },
+    /// Put edited geometry from a `.glb` (made by `model export`) back into
+    /// the model: vertices and triangles may change in number.
+    Import {
+        #[command(flatten)]
+        game: GameArgs,
+        /// Archive path of the model (`….dae.phyre`).
+        path: String,
+        /// The edited `.glb`.
+        glb: PathBuf,
+        /// Write the cluster here.
+        #[arg(short, long, conflicts_with = "mod_dir")]
+        out: Option<PathBuf>,
+        /// Write the cluster into a mod folder, at its archive path.
+        #[arg(long)]
+        mod_dir: Option<PathBuf>,
+    },
+}
+
+fn model_import(
+    game: &GameArgs,
+    path: &str,
+    glb: &Path,
+    out: Option<PathBuf>,
+    mod_dir: Option<PathBuf>,
+) -> Result<()> {
+    let game = Game::open(game)?;
+    let original = read_file(&game.archive, path)?;
+    let mut model = ffx_phyre::Model::parse(&original).with_context(|| path.to_owned())?;
+    let edited = std::fs::read(glb).with_context(|| format!("reading {}", glb.display()))?;
+    let segments = model.import_glb(&edited)?;
+    let bytes = model.write(&original)?;
+    let dest = match (out, mod_dir) {
+        (Some(file), _) => file,
+        (None, Some(dir)) => dir.join(safe_relative(path)?),
+        (None, None) => bail!("pass --out <file> or --mod-dir <dir>"),
+    };
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&dest, &bytes)?;
+    eprintln!(
+        "{} of {} segments from {}; wrote {} ({})",
+        segments.len(),
+        model.segments.len(),
+        glb.display(),
+        dest.display(),
+        if bytes == original {
+            "unchanged"
+        } else {
+            "changed"
+        }
+    );
+    Ok(())
 }
 
 /// The clips of a character's sequences in a motion group as glTF
@@ -443,13 +496,22 @@ fn model_animations(
 }
 
 fn model(cmd: ModelCommand) -> Result<()> {
-    let ModelCommand::Export {
-        game,
-        prefix,
-        out,
-        no_motions,
-        motion_groups,
-    } = cmd;
+    let (game, prefix, out, no_motions, motion_groups) = match cmd {
+        ModelCommand::Export {
+            game,
+            prefix,
+            out,
+            no_motions,
+            motion_groups,
+        } => (game, prefix, out, no_motions, motion_groups),
+        ModelCommand::Import {
+            game,
+            path,
+            glb,
+            out,
+            mod_dir,
+        } => return model_import(&game, &path, &glb, out, mod_dir),
+    };
     let game = Game::open(&game)?;
     let entries: Vec<&Entry> = game
         .archive

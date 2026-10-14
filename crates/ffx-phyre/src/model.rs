@@ -53,6 +53,55 @@ pub struct Model {
     pub instances: Vec<Instance>,
     /// One per `PMesh`, possibly empty.
     pub skeletons: Vec<Skeleton>,
+    /// Where the segments' data sits in the file, for [`Model::write`].
+    pub(crate) layout: Layout,
+}
+
+/// One vertex stream of a data block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StreamLoc {
+    pub semantic: String,
+    pub data_type: u8,
+    /// Offset within the stride.
+    pub offset: usize,
+}
+
+/// A `PDataBlock`: one segment's vertices for some streams.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BlockLoc {
+    /// File offset of the object.
+    pub object: usize,
+    pub stride: usize,
+    pub count: usize,
+    /// Offset in the vertex buffer.
+    pub offset: usize,
+    pub streams: Vec<StreamLoc>,
+}
+
+/// A segment's data blocks and index block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SegmentLoc {
+    /// File offset of the embedded `PIndexDataBlock`.
+    pub index_block: usize,
+    /// Offset of its indices in the index buffer.
+    pub index_offset: usize,
+    pub blocks: std::ops::Range<usize>,
+}
+
+/// The layout of a model's buffers and the fields describing them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Layout {
+    pub blocks: Vec<BlockLoc>,
+    pub segments: Vec<SegmentLoc>,
+    /// File offsets of the index and vertex buffers.
+    pub index_buffer: usize,
+    pub vertex_buffer: usize,
+    pub file_len: usize,
+    /// `PIndexDataBlock` member offsets: minimum, maximum, element count,
+    /// buffer offset, data size.
+    pub index_fields: [usize; 5],
+    /// `PDataBlock` member offsets: element count, buffer offset, data size.
+    pub block_fields: [usize; 3],
 }
 
 pub(crate) fn u32_at(b: &[u8], o: usize) -> Result<u32> {
@@ -192,6 +241,14 @@ impl Model {
             need("PIndexDataBlock", "m_type")?,
             need("PIndexDataBlock", "m_offsetInIndexBuffer")?,
         );
+        let index_fields = [
+            need("PIndexDataBlock", "m_minimumIndex")?,
+            need("PIndexDataBlock", "m_maximumIndex")?,
+            o_index_count,
+            o_index_offset,
+            need("PIndexDataBlock", "m_dataSize")?,
+        ];
+        let block_fields = [o_count, o_vb, need("PDataBlock", "m_dataSize")?];
 
         let vertex_buffer = bytes
             .len()
@@ -261,6 +318,36 @@ impl Model {
             })
         };
 
+        let mut layout = Layout {
+            index_buffer,
+            vertex_buffer,
+            file_len: bytes.len(),
+            index_fields,
+            block_fields,
+            ..Layout::default()
+        };
+        for block in 0..blocks.count {
+            let o = blocks.object(block);
+            let mut locs = Vec::new();
+            if let Some((k0, kn)) = block_streams.get(block as usize).copied().flatten() {
+                for k in k0..k0 + kn {
+                    let s = stream(block as usize, k)?;
+                    locs.push(StreamLoc {
+                        semantic: s.semantic.to_owned(),
+                        data_type: s.data_type,
+                        offset: s.at - vertex_buffer - u32_at(bytes, o + o_vb)? as usize,
+                    });
+                }
+            }
+            layout.blocks.push(BlockLoc {
+                object: o,
+                stride: u32_at(bytes, o + o_stride)? as usize,
+                count: u32_at(bytes, o + o_count)? as usize,
+                offset: u32_at(bytes, o + o_vb)? as usize,
+                streams: locs,
+            });
+        }
+
         let mut segments = Vec::new();
         for i in 0..segments_list.count {
             let o = segments_list.object(i);
@@ -296,6 +383,14 @@ impl Model {
             };
             let (first, n) = segment_blocks[i as usize]
                 .ok_or(Error::Malformed("mesh segment without vertex data"))?;
+            if first + n > layout.blocks.len() {
+                return Err(Error::Malformed("vertex data outside the block list"));
+            }
+            layout.segments.push(SegmentLoc {
+                index_block: ix,
+                index_offset: u32_at(bytes, ix + o_index_offset)? as usize,
+                blocks: first..first + n,
+            });
             let mut vertices = None;
             for block in first..first + n {
                 let (k0, kn) = block_streams
@@ -332,6 +427,7 @@ impl Model {
             nodes: scene.nodes,
             instances: scene.instances,
             skeletons: scene.skeletons,
+            layout,
         })
     }
 }

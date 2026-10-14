@@ -14,9 +14,11 @@ mod decode;
 pub mod fixup;
 mod flip;
 mod gltf;
+mod import;
 mod material;
 mod model;
 mod texture;
+mod write;
 
 pub use dds::{Dds, DdsError};
 pub use decode::png;

@@ -13,7 +13,7 @@
 
 use serde_json::{Value, json};
 
-use crate::material::MaterialTexture;
+use crate::material::{Bone, MaterialTexture};
 use crate::model::{Model, Segment};
 
 /// One node's sampled transforms in an [`Animation`]; empty paths are
@@ -106,18 +106,7 @@ fn primitive(bin: &mut Bin, seg: &Segment) -> Option<Value> {
     attributes.insert("POSITION".into(), json!(position));
     if seg.normals.len() == count {
         // glTF wants unit normals; a few stored ones are zero or unnormalized.
-        let unit: Vec<[f32; 3]> = seg
-            .normals
-            .iter()
-            .map(|n| {
-                let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
-                if len > 1e-6 && len.is_finite() {
-                    n.map(|v| v / len)
-                } else {
-                    [0.0, 0.0, 1.0]
-                }
-            })
-            .collect();
+        let unit: Vec<[f32; 3]> = seg.normals.iter().map(|&n| export_normal(n)).collect();
         let n = bin.accessor(
             &floats(&unit),
             ARRAY_BUFFER,
@@ -128,7 +117,7 @@ fn primitive(bin: &mut Bin, seg: &Segment) -> Option<Value> {
     if seg.uvs.len() == count {
         // Stored with v up, matching the bottom-first textures; glTF has v
         // down, matching the upright export.
-        let flipped: Vec<[f32; 2]> = seg.uvs.iter().map(|&[u, v]| [u, 1.0 - v]).collect();
+        let flipped: Vec<[f32; 2]> = seg.uvs.iter().map(|&uv| export_uv(uv)).collect();
         let t = bin.accessor(
             &floats(&flipped),
             ARRAY_BUFFER,
@@ -154,6 +143,44 @@ fn primitive(bin: &mut Bin, seg: &Segment) -> Option<Value> {
     Some(json!({"attributes": attributes, "indices": idx, "mode": 4}))
 }
 
+/// A normal as exported: unit length (a few stored ones are zero or
+/// unnormalized).
+pub(crate) fn export_normal(n: [f32; 3]) -> [f32; 3] {
+    let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+    if len > 1e-6 && len.is_finite() {
+        n.map(|v| v / len)
+    } else {
+        [0.0, 0.0, 1.0]
+    }
+}
+
+/// Texture coordinates as exported: stored with v up, matching the
+/// bottom-first textures; glTF has v down, matching the upright export.
+pub(crate) fn export_uv([u, v]: [f32; 2]) -> [f32; 2] {
+    [u, 1.0 - v]
+}
+
+/// One vertex's skinning as exported: palette indices mapped to skeleton
+/// hierarchy indices (0 where the weight is 0), weights normalized.
+pub(crate) fn export_skin(j: [u8; 4], w: [f32; 4], bones: &[Bone]) -> ([u16; 4], [f32; 4]) {
+    let mut w = w;
+    let mut joints = [0u16; 4];
+    for k in 0..4 {
+        let bone = bones.get(usize::from(j[k]));
+        if bone.is_none() || !w[k].is_finite() || w[k] < 0.0 {
+            w[k] = 0.0;
+        }
+        joints[k] = bone.filter(|_| w[k] > 0.0).map_or(0, |b| b.hierarchy);
+    }
+    let sum: f32 = w.iter().sum();
+    let w = if sum > 0.0 {
+        w.map(|x| x / sum)
+    } else {
+        [1.0, 0.0, 0.0, 0.0]
+    };
+    (joints, w)
+}
+
 /// `JOINTS_0` (palette indices mapped to skeleton hierarchy indices) and
 /// `WEIGHTS_0` (normalized) of a skinned segment.
 fn skin_attributes(bin: &mut Bin, seg: &Segment) -> Option<(usize, usize)> {
@@ -163,22 +190,9 @@ fn skin_attributes(bin: &mut Bin, seg: &Segment) -> Option<(usize, usize)> {
     }
     let mut joints = Vec::with_capacity(count * 8);
     let mut weights = Vec::with_capacity(count * 16);
-    for (j, w) in seg.joints.iter().zip(&seg.weights) {
-        let mut w = *w;
-        for k in 0..4 {
-            let bone = seg.bones.get(usize::from(j[k]));
-            if bone.is_none() || !w[k].is_finite() || w[k] < 0.0 {
-                w[k] = 0.0;
-            }
-            let joint = bone.filter(|_| w[k] > 0.0).map_or(0, |b| b.hierarchy);
-            joints.extend(joint.to_le_bytes());
-        }
-        let sum: f32 = w.iter().sum();
-        if sum > 0.0 {
-            w = w.map(|x| x / sum);
-        } else {
-            w = [1.0, 0.0, 0.0, 0.0];
-        }
+    for (&j, &w) in seg.joints.iter().zip(&seg.weights) {
+        let (j, w) = export_skin(j, w, &seg.bones);
+        joints.extend(j.iter().flat_map(|x| x.to_le_bytes()));
         weights.extend(w.iter().flat_map(|f| f.to_le_bytes()));
     }
     let j = bin.accessor(
@@ -415,12 +429,17 @@ impl Model {
             }
             materials.push(material);
         }
+        // Each primitive names its segment, for `Model::import_glb`.
         let with_material = |s: usize, material: Option<usize>| {
             let mut p = primitives.get(s)?.clone()?;
             if let Some(m) = material {
                 p["material"] = json!(m);
             }
+            p["extras"] = json!({"ffx_segment": s});
             Some(p)
+        };
+        let segment_list = |prims: &[Value]| -> Value {
+            json!({"ffx_segments": prims.iter().map(|p| p["extras"]["ffx_segment"].clone()).collect::<Vec<_>>()})
         };
 
         // Node 0 turns Y-down models upright with a half turn about X (a
@@ -452,7 +471,7 @@ impl Model {
                 .enumerate()
                 .filter_map(|(i, s)| with_material(i, s.material))
                 .collect();
-            meshes.push(json!({"primitives": prims}));
+            meshes.push(json!({"extras": segment_list(&prims), "primitives": prims}));
             nodes.push(json!({"name": "mesh", "mesh": 0}));
             let last = nodes.len() - 1;
             add_child(&mut nodes, 0, last);
@@ -496,7 +515,9 @@ impl Model {
             if prims.is_empty() {
                 continue;
             }
-            meshes.push(json!({"name": inst.name, "primitives": prims}));
+            meshes.push(
+                json!({"name": inst.name, "extras": segment_list(&prims), "primitives": prims}),
+            );
             nodes.push(json!({"name": inst.name, "mesh": meshes.len() - 1}));
             if let (true, Some(joints), Some(sk)) = (
                 skinned,
