@@ -10,8 +10,11 @@
 //! segment's bone palette. Values equal to what the export wrote keep
 //! their stored form, so an unedited glTF changes nothing.
 
+use std::collections::HashMap;
+
 use serde_json::Value;
 
+use crate::edit::ClusterEdit;
 use crate::gltf::{export_normal, export_skin, export_uv};
 use crate::model::{Model, Segment};
 use crate::{Error, Result};
@@ -144,8 +147,20 @@ impl Model {
     /// # Errors
     /// Fails on glTF this exporter did not make, missing attributes the
     /// cluster stores, or joints outside a segment's bone palette.
-    #[allow(clippy::too_many_lines)] // one pass over meshes and attributes
     pub fn import_glb(&mut self, glb: &[u8]) -> Result<Vec<usize>> {
+        self.import_glb_with(glb, &|s| s, &HashMap::new())
+    }
+
+    /// [`Model::import_glb`] for a model whose segments were renumbered:
+    /// `renumber` maps the glTF's segment numbers to this model's, and
+    /// `added` gives untagged primitives (glTF mesh, primitive) a segment.
+    #[allow(clippy::too_many_lines)] // one pass over meshes and attributes
+    fn import_glb_with(
+        &mut self,
+        glb: &[u8],
+        renumber: &dyn Fn(usize) -> usize,
+        added: &HashMap<(usize, usize), usize>,
+    ) -> Result<Vec<usize>> {
         let (json, bin) = chunks(glb)?;
         let doc = Doc { json, bin };
         let empty = Vec::new();
@@ -183,7 +198,11 @@ impl Model {
                         .get(p_index)?
                         .as_u64()
                 });
-                let Some(s) = segment.and_then(|s| usize::try_from(s).ok()) else {
+                let Some(s) = segment
+                    .and_then(|s| usize::try_from(s).ok())
+                    .map(renumber)
+                    .or_else(|| added.get(&(mesh_index, p_index)).copied())
+                else {
                     continue;
                 };
                 if done.contains(&s) {
@@ -338,4 +357,285 @@ impl Model {
         done.sort_unstable();
         Ok(done)
     }
+}
+
+/// Column-major 4×4 product `a · b`.
+fn mul(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
+    let mut m = [0f32; 16];
+    for c in 0..4 {
+        for r in 0..4 {
+            m[c * 4 + r] = (0..4).map(|k| a[k * 4 + r] * b[c * 4 + k]).sum();
+        }
+    }
+    m
+}
+
+/// Inverse of a column-major 4×4 matrix (cofactor expansion).
+#[allow(clippy::many_single_char_names)]
+fn invert(m: &[f32; 16]) -> Option<[f32; 16]> {
+    let m: Vec<f64> = m.iter().map(|&x| f64::from(x)).collect();
+    let mut inv = [0f64; 16];
+    let idx = |c: usize, r: usize| c * 4 + r;
+    for c in 0..4 {
+        for r in 0..4 {
+            // Minor of element (row c, column r) of the transpose = cofactor.
+            let mut sub = [0f64; 9];
+            let mut k = 0;
+            for cc in (0..4).filter(|&x| x != r) {
+                for rr in (0..4).filter(|&x| x != c) {
+                    sub[k] = m[idx(cc, rr)];
+                    k += 1;
+                }
+            }
+            let det3 = sub[0] * (sub[4] * sub[8] - sub[5] * sub[7])
+                - sub[3] * (sub[1] * sub[8] - sub[2] * sub[7])
+                + sub[6] * (sub[1] * sub[5] - sub[2] * sub[4]);
+            let sign = if (r + c) % 2 == 0 { 1.0 } else { -1.0 };
+            inv[idx(c, r)] = sign * det3;
+        }
+    }
+    let det: f64 = (0..4).map(|k| m[idx(k, 0)] * inv[idx(0, k)]).sum();
+    if det.abs() < 1e-12 {
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation)]
+    Some(inv.map(|x| (x / det) as f32))
+}
+
+/// Joints a primitive is weighted to, as hierarchy indices of `names`.
+fn used_joints(
+    doc: &Doc,
+    prim: &Value,
+    skin: Option<&Vec<String>>,
+    names: &[String],
+) -> Result<Vec<u16>> {
+    let attrs = &prim["attributes"];
+    let (Some(skin), false, false) = (
+        skin,
+        attrs["JOINTS_0"].is_null(),
+        attrs["WEIGHTS_0"].is_null(),
+    ) else {
+        return Ok(Vec::new());
+    };
+    let joints: Vec<[f32; 4]> = doc.floats(&attrs["JOINTS_0"])?;
+    let weights: Vec<[f32; 4]> = doc.floats(&attrs["WEIGHTS_0"])?;
+    let mut used = Vec::new();
+    for (j, w) in joints.iter().zip(&weights) {
+        for k in 0..4 {
+            if w[k] <= 0.0 {
+                continue;
+            }
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let name = skin
+                .get(j[k] as usize)
+                .ok_or_else(|| bad("joint outside the skin"))?;
+            let h = names
+                .iter()
+                .position(|x| x == name)
+                .ok_or_else(|| bad(format!("joint {name} is not in the skeleton")))?;
+            let h = u16::try_from(h).map_err(|_| bad("skeleton over 65,536 joints"))?;
+            if !used.contains(&h) {
+                used.push(h);
+            }
+        }
+    }
+    used.sort_unstable();
+    Ok(used)
+}
+
+/// Puts a glTF's geometry into a model cluster: [`Model::import_glb`] for
+/// the segments it names, plus what that cannot do in place. Primitives
+/// without a segment become new segments, copies of a segment of the same
+/// instance with the same material (else its first) that take the
+/// primitive's geometry. Segments weighted to joints outside their bone
+/// palette get a larger palette, and joints their mesh has no skeleton
+/// matrix for get one: the inverse of the joint node's world matrix.
+/// Returns the new cluster and the segments written.
+///
+/// # Errors
+/// Fails like [`Model::import_glb`], and on primitives of a glTF mesh
+/// none of whose primitives names a segment.
+#[allow(clippy::too_many_lines)] // the plan, then the structural edits
+pub fn import_into_cluster(original: &[u8], glb: &[u8]) -> Result<(Vec<u8>, Vec<usize>)> {
+    let model = Model::parse(original)?;
+    let (json, bin) = chunks(glb)?;
+    let doc = Doc { json, bin };
+    let empty = Vec::new();
+    let nodes = doc.json["nodes"].as_array().unwrap_or(&empty);
+    // Plan: new primitives with their template, palettes to grow.
+    let mut new_prims: Vec<((usize, usize), usize, Vec<u16>)> = Vec::new();
+    let mut palettes: Vec<(usize, Vec<u16>)> = Vec::new();
+    for (mi, mesh) in doc.json["meshes"]
+        .as_array()
+        .unwrap_or(&empty)
+        .iter()
+        .enumerate()
+    {
+        let prims = mesh["primitives"].as_array().unwrap_or(&empty);
+        let listed = mesh["extras"]["ffx_segments"].as_array();
+        let tag = |pi: usize, prim: &Value| {
+            prim["extras"]["ffx_segment"]
+                .as_u64()
+                .or_else(|| listed.filter(|l| l.len() == prims.len())?.get(pi)?.as_u64())
+                .and_then(|s| usize::try_from(s).ok())
+                .filter(|&s| s < model.segments.len())
+        };
+        let skin: Option<Vec<String>> = nodes
+            .iter()
+            .find(|n| n["mesh"].as_u64() == Some(mi as u64) && n.get("skin").is_some())
+            .and_then(|n| doc.json["skins"][index(&n["skin"])?]["joints"].as_array())
+            .map(|joints| {
+                joints
+                    .iter()
+                    .map(|j| {
+                        j.as_u64()
+                            .and_then(|j| nodes.get(usize::try_from(j).ok()?))
+                            .and_then(|n| n["name"].as_str())
+                            .unwrap_or_default()
+                            .to_owned()
+                    })
+                    .collect()
+            });
+        let tagged: Vec<usize> = prims
+            .iter()
+            .enumerate()
+            .filter_map(|(pi, p)| tag(pi, p))
+            .collect();
+        for (pi, prim) in prims.iter().enumerate() {
+            let target = tag(pi, prim);
+            let instance = model.instances.iter().find(|i| {
+                i.segments
+                    .iter()
+                    .any(|&(s, _)| target.map_or_else(|| tagged.contains(&s), |t| t == s))
+            });
+            let names = instance
+                .and_then(|i| i.skeleton)
+                .and_then(|k| model.skeletons.get(k))
+                .map_or(&[][..], |k| &k.names[..]);
+            let used = used_joints(&doc, prim, skin.as_ref(), names)?;
+            match target {
+                Some(s) => {
+                    let palette: Vec<u16> = model.segments[s]
+                        .bones
+                        .iter()
+                        .map(|b| b.hierarchy)
+                        .collect();
+                    if used.iter().any(|h| !palette.contains(h)) {
+                        let mut grown = palette;
+                        grown.extend(
+                            used.iter()
+                                .filter(|h| !grown.contains(h))
+                                .copied()
+                                .collect::<Vec<_>>(),
+                        );
+                        palettes.push((s, grown));
+                    }
+                }
+                None => {
+                    let instance = instance.ok_or_else(|| {
+                        bad(format!(
+                            "mesh {mi} primitive {pi}: no primitive of its mesh names a segment to place it with"
+                        ))
+                    })?;
+                    let material = index(&prim["material"]);
+                    let template = instance
+                        .segments
+                        .iter()
+                        .find(|&&(_, m)| m.is_some() && m == material)
+                        .or_else(|| instance.segments.first())
+                        .ok_or_else(|| bad("an instance without segments"))?
+                        .0;
+                    new_prims.push(((mi, pi), template, used));
+                }
+            }
+        }
+    }
+    if new_prims.is_empty() && palettes.is_empty() {
+        let mut model = model;
+        let done = model.import_glb(glb)?;
+        return Ok((model.write(original)?, done));
+    }
+
+    // Skeleton matrices for joints without one, per mesh (by a segment of it).
+    let mut edit = ClusterEdit::parse(original)?;
+    let skeleton_of = |s: usize| {
+        model
+            .instances
+            .iter()
+            .find(|i| i.segments.iter().any(|&(x, _)| x == s))
+            .and_then(|i| i.skeleton)
+    };
+    let mut known: HashMap<(usize, u16), u16> = HashMap::new();
+    for (s, seg) in model.segments.iter().enumerate() {
+        if let Some(k) = skeleton_of(s) {
+            for b in &seg.bones {
+                known.insert((k, b.hierarchy), b.skeleton);
+            }
+        }
+    }
+    let world = |name: &str| -> Option<[f32; 16]> {
+        let mut i = model.nodes.iter().position(|n| n.name == name)?;
+        let mut m = model.nodes[i].local;
+        while let Some(p) = model.nodes[i].parent {
+            m = mul(&model.nodes[p].local, &m);
+            i = p;
+        }
+        Some(m)
+    };
+    let wanted: Vec<(usize, Vec<u16>)> = palettes
+        .iter()
+        .cloned()
+        .chain(new_prims.iter().map(|(_, t, used)| (*t, used.clone())))
+        .collect();
+    for (s, joints) in &wanted {
+        let k = skeleton_of(*s).ok_or_else(|| bad(format!("segment {s} has no skeleton")))?;
+        for &h in joints {
+            if known.contains_key(&(k, h)) {
+                continue;
+            }
+            let name = &model.skeletons[k].names[usize::from(h)];
+            let inverse = world(name)
+                .and_then(|w| invert(&w))
+                .ok_or_else(|| bad(format!("joint {name}: no node to bind to")))?;
+            let index =
+                edit.add_skeleton_matrix(u32::try_from(*s).expect("segment"), h, &inverse)?;
+            known.insert((k, h), index);
+        }
+    }
+    let palette = |s: usize, joints: &[u16]| -> Vec<(u16, u16)> {
+        let k = skeleton_of(s).expect("checked above");
+        joints.iter().map(|&h| (h, known[&(k, h)])).collect()
+    };
+    for (s, joints) in &palettes {
+        edit.set_palette(u32::try_from(*s).expect("segment"), &palette(*s, joints))?;
+    }
+    // New segments; each shifts the segment numbers after it.
+    let mut shifts: Vec<usize> = Vec::new();
+    let mut added = HashMap::new();
+    let renumber = |shifts: &[usize], s: usize| {
+        shifts
+            .iter()
+            .fold(s, |s, &n| if s >= n { s + 1 } else { s })
+    };
+    for ((mi, pi), template, used) in &new_prims {
+        let t = renumber(&shifts, *template);
+        let new = edit.add_segment(u32::try_from(t).expect("segment"))? as usize;
+        for v in added.values_mut() {
+            if *v >= new {
+                *v += 1;
+            }
+        }
+        shifts.push(new);
+        if !used.is_empty() {
+            edit.set_palette(
+                u32::try_from(new).expect("segment"),
+                &palette(*template, used),
+            )?;
+        }
+        added.insert((*mi, *pi), new);
+    }
+    let grown = edit.write()?;
+    let mut model = Model::parse(&grown)?;
+    let done = model.import_glb_with(glb, &|s| renumber(&shifts, s), &added)?;
+    Ok((model.write(&grown)?, done))
 }

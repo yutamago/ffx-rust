@@ -278,3 +278,282 @@ fn grown_and_shrunk_segments_read_back() {
     eprintln!("{checked} models edited and read back");
     assert!(checked > 100);
 }
+
+/// Every model, and every 20th other cluster, rewritten through
+/// `ClusterEdit` (fixups re-encoded) unpacks to the same objects, arrays,
+/// fixups and buffers, and models parse to the same geometry.
+#[test]
+fn clusters_rewrite_through_cluster_edit() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let archive = Archive::open(PathBuf::from(dir).join("data/FFX_Data.vbf")).unwrap();
+    let (mut models, mut others, mut skipped) = (0, 0, 0);
+    for (k, entry) in archive
+        .entries()
+        .iter()
+        .filter(|e| e.path.ends_with(".phyre") && e.size > 0)
+        .enumerate()
+    {
+        let is_model = entry.path.ends_with(".dae.phyre");
+        if !is_model && k % 20 != 0 {
+            continue;
+        }
+        let bytes = archive.read(entry).unwrap();
+        let Ok(edit) = ffx_phyre::edit::ClusterEdit::parse(&bytes) else {
+            skipped += 1;
+            continue;
+        };
+        let written = edit
+            .write()
+            .unwrap_or_else(|e| panic!("{}: {e}", entry.path));
+        let again = ffx_phyre::edit::ClusterEdit::parse(&written)
+            .unwrap_or_else(|e| panic!("{}: rewritten: {e}", entry.path));
+        assert_eq!(again.lists, edit.lists, "{}", entry.path);
+        assert_eq!(again.buffers, edit.buffers, "{}", entry.path);
+        if is_model && let Ok(model) = ffx_phyre::Model::parse(&bytes) {
+            let back = ffx_phyre::Model::parse(&written).unwrap();
+            assert_eq!(back.segments, model.segments, "{}", entry.path);
+            models += 1;
+        } else {
+            others += 1;
+        }
+    }
+    eprintln!("{models} models and {others} other clusters rewritten, {skipped} not parsed");
+}
+
+/// A `.glb` split into its JSON and binary chunk, and put back together.
+struct Glb {
+    json: serde_json::Value,
+    bin: Vec<u8>,
+}
+
+impl Glb {
+    fn parse(glb: &[u8]) -> Self {
+        let word = |o: usize| u32::from_le_bytes(glb[o..o + 4].try_into().unwrap()) as usize;
+        let json_len = word(12);
+        let json = serde_json::from_slice(&glb[20..20 + json_len]).unwrap();
+        let at = 20 + json_len;
+        let bin = glb[at + 8..at + 8 + word(at)].to_vec();
+        Self { json, bin }
+    }
+
+    /// Appends data with an accessor; returns the accessor index.
+    fn accessor(&mut self, data: &[u8], count: usize, ty: &str, component: u32) -> usize {
+        while !self.bin.len().is_multiple_of(4) {
+            self.bin.push(0);
+        }
+        let views = self.json["bufferViews"].as_array_mut().unwrap();
+        views.push(serde_json::json!({"buffer": 0, "byteOffset": self.bin.len(), "byteLength": data.len()}));
+        let view = views.len() - 1;
+        self.bin.extend_from_slice(data);
+        let accessors = self.json["accessors"].as_array_mut().unwrap();
+        let mut a = serde_json::json!({"bufferView": view, "count": count, "type": ty, "componentType": component});
+        if ty == "VEC3" && component == 5126 {
+            // glTF wants bounds on positions.
+            let f: Vec<f32> = data
+                .chunks(4)
+                .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+                .collect();
+            let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
+            for v in f.chunks(3) {
+                for k in 0..3 {
+                    lo[k] = lo[k].min(v[k]);
+                    hi[k] = hi[k].max(v[k]);
+                }
+            }
+            a["min"] = serde_json::json!(lo);
+            a["max"] = serde_json::json!(hi);
+        }
+        accessors.push(a);
+        accessors.len() - 1
+    }
+
+    fn bytes(&self) -> Vec<u8> {
+        let mut json = serde_json::to_vec(&self.json).unwrap();
+        while !json.len().is_multiple_of(4) {
+            json.push(b' ');
+        }
+        self.json["buffers"][0]["byteLength"].as_u64().unwrap();
+        let mut j = self.json.clone();
+        j["buffers"][0]["byteLength"] = serde_json::json!(self.bin.len());
+        json = serde_json::to_vec(&j).unwrap();
+        while !json.len().is_multiple_of(4) {
+            json.push(b' ');
+        }
+        let mut out = b"glTF".to_vec();
+        out.extend(2u32.to_le_bytes());
+        out.extend(
+            u32::try_from(12 + 8 + json.len() + 8 + self.bin.len())
+                .unwrap()
+                .to_le_bytes(),
+        );
+        out.extend(u32::try_from(json.len()).unwrap().to_le_bytes());
+        out.extend(b"JSON");
+        out.extend(json);
+        out.extend(u32::try_from(self.bin.len()).unwrap().to_le_bytes());
+        out.extend(b"BIN\0");
+        out.extend(&self.bin);
+        out
+    }
+}
+
+/// Tidus with what a modeling tool adds: a new primitive (his head, moved
+/// and weighted to a joint his mesh has no skeleton matrix for), and his
+/// head segment weighted to a joint outside its one-bone palette.
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)] // one scenario, small indices
+fn new_segments_and_joints_import() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let archive = Archive::open(PathBuf::from(dir).join("data/FFX_Data.vbf")).unwrap();
+    let path = "ffx_data/gamedata/ps3data/chr/pc/c001/mdl/d3d11/c001.dae.phyre";
+    let original = archive.read(archive.find(path).unwrap()).unwrap();
+    let model = ffx_phyre::Model::parse(&original).unwrap();
+    let skeleton = &model.skeletons[0];
+    // Joints by skeleton matrix: a hierarchy joint no palette uses.
+    let used: Vec<u16> = model
+        .segments
+        .iter()
+        .flat_map(|s| s.bones.iter().map(|b| b.hierarchy))
+        .collect();
+    let unbound = (0..skeleton.names.len())
+        .map(|h| u16::try_from(h).unwrap())
+        .find(|h| {
+            !used.contains(h)
+                && model
+                    .nodes
+                    .iter()
+                    .any(|n| n.name == skeleton.names[usize::from(*h)])
+        })
+        .expect("an unbound joint");
+    let head = &model.segments[0];
+    let other = model.segments[5].bones[3].hierarchy;
+    assert!(!head.bones.iter().any(|b| b.hierarchy == other));
+
+    let mut glb = Glb::parse(&model.to_glb());
+    let (mi, pi) = glb.json["meshes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+        .find_map(|(mi, m)| {
+            m["primitives"]
+                .as_array()?
+                .iter()
+                .position(|p| p["extras"]["ffx_segment"] == 0)
+                .map(|pi| (mi, pi))
+        })
+        .unwrap();
+    // The skin's joint numbers of the two joints.
+    let node_of = |name: &str| {
+        glb.json["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|n| n["name"] == name)
+            .unwrap()
+    };
+    let skin = glb.json["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["mesh"] == mi && n.get("skin").is_some())
+        .and_then(|n| n["skin"].as_u64())
+        .unwrap() as usize;
+    let joint = |h: u16| {
+        let node = node_of(&skeleton.names[usize::from(h)]);
+        glb.json["skins"][skin]["joints"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|j| j == node)
+            .unwrap()
+    };
+    let (j_other, j_unbound) = (joint(other), joint(unbound));
+    let n = head.positions.len();
+    let weights: Vec<u8> = (0..n)
+        .flat_map(|_| [1f32, 0.0, 0.0, 0.0])
+        .flat_map(f32::to_le_bytes)
+        .collect();
+    let joints_to = |j: usize| -> Vec<u8> {
+        (0..n)
+            .flat_map(|_| [u8::try_from(j).unwrap(), 0, 0, 0])
+            .collect()
+    };
+    // Head: its first vertex now follows `other`.
+    let mut head_joints = joints_to(joint(head.bones[0].hierarchy));
+    head_joints[0] = u8::try_from(j_other).unwrap();
+    let a_joints = glb.accessor(&head_joints, n, "VEC4", 5121);
+    let a_weights = glb.accessor(&weights, n, "VEC4", 5126);
+    let prim = &mut glb.json["meshes"][mi]["primitives"][pi];
+    prim["attributes"]["JOINTS_0"] = serde_json::json!(a_joints);
+    prim["attributes"]["WEIGHTS_0"] = serde_json::json!(a_weights);
+    let mut new_prim = prim.clone();
+    // The new primitive: the head moved by (4, 0, 0) in glTF space, on `unbound`.
+    let positions = new_prim["attributes"]["POSITION"].as_u64().unwrap() as usize;
+    let view = &glb.json["bufferViews"][glb.json["accessors"][positions]["bufferView"]
+        .as_u64()
+        .unwrap() as usize];
+    let at = view["byteOffset"].as_u64().unwrap_or(0) as usize;
+    let moved: Vec<u8> = glb.bin[at..at + 12 * n]
+        .chunks(4)
+        .enumerate()
+        .flat_map(|(i, b)| {
+            let v = f32::from_le_bytes(b.try_into().unwrap()) + if i % 3 == 0 { 4.0 } else { 0.0 };
+            v.to_le_bytes()
+        })
+        .collect();
+    let a_pos = glb.accessor(&moved, n, "VEC3", 5126);
+    let a_joints = glb.accessor(&joints_to(j_unbound), n, "VEC4", 5121);
+    new_prim["attributes"]["POSITION"] = serde_json::json!(a_pos);
+    new_prim["attributes"]["JOINTS_0"] = serde_json::json!(a_joints);
+    new_prim.as_object_mut().unwrap().remove("extras");
+    glb.json["meshes"][mi]["primitives"]
+        .as_array_mut()
+        .unwrap()
+        .push(new_prim);
+
+    let (bytes, done) = ffx_phyre::import_into_cluster(&original, &glb.bytes()).unwrap();
+    let result = ffx_phyre::Model::parse(&bytes).unwrap();
+    assert_eq!(result.segments.len(), model.segments.len() + 1);
+    let new = done
+        .iter()
+        .copied()
+        .find(|&s| s == 13)
+        .expect("new segment 13 written");
+    let s = &result.segments[new];
+    assert_eq!(s.positions.len(), n);
+    assert!(
+        (s.positions[0][0] - head.positions[0][0]).abs() > 3.0,
+        "moved"
+    );
+    assert_eq!(s.bones.len(), 1);
+    assert_eq!(s.bones[0].hierarchy, unbound);
+    let skel = &result.skeletons[0];
+    assert_eq!(skel.inverse_bind.len(), skeleton.inverse_bind.len() + 1);
+    assert_eq!(
+        usize::from(s.bones[0].skeleton),
+        skeleton.inverse_bind.len()
+    );
+    // The head kept its geometry and gained `other` in its palette.
+    let h = &result.segments[0];
+    assert_eq!(h.positions, head.positions);
+    assert!(h.bones.iter().any(|b| b.hierarchy == other));
+    assert_eq!(h.bones[0], head.bones[0]);
+    // Everything else is as it was.
+    for k in 1..13 {
+        assert_eq!(
+            result.segments[k].positions, model.segments[k].positions,
+            "segment {k}"
+        );
+    }
+    eprintln!(
+        "new segment {new}, joint {} bound as skeleton matrix {}",
+        skeleton.names[usize::from(unbound)],
+        s.bones[0].skeleton
+    );
+}

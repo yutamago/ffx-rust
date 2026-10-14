@@ -105,10 +105,28 @@ fn script_mod() -> (Vec<u8>, u32) {
     (bytes, location & 0xff_ffff)
 }
 
-/// Tidus 30 % wider, with segment 0 twice over (a resized buffer).
+/// Tidus 30 % wider, with segment 0 twice over (a resized buffer) and a
+/// new segment beside him on a new skeleton matrix (new objects, fixups
+/// re-encoded).
 fn model_mod() -> Vec<u8> {
-    let original = original(MODEL);
+    let shipped = original(MODEL);
+    // A new segment: a copy of the body (segment 5) bound rigidly to the
+    // head joint (hierarchy 35) through a new skeleton matrix, a copy of
+    // the head's (skeleton matrix 1).
+    let head = ffx_phyre::Model::parse(&shipped).unwrap().skeletons[0].inverse_bind[1];
+    let mut edit = ffx_phyre::edit::ClusterEdit::parse(&shipped).unwrap();
+    let matrix = edit.add_skeleton_matrix(5, 35, &head).unwrap();
+    let new = edit.add_segment(5).unwrap();
+    edit.set_palette(new, &[(35, matrix)]).unwrap();
+    let original = edit.write().unwrap();
     let mut model = ffx_phyre::Model::parse(&original).unwrap();
+    assert_eq!(model.segments.len(), 14);
+    let copy = &mut model.segments[new as usize];
+    copy.joints.fill([0; 4]);
+    copy.weights.fill([1.0, 0.0, 0.0, 0.0]);
+    for p in &mut copy.positions {
+        p[0] += 8.0;
+    }
     for seg in &mut model.segments {
         for p in &mut seg.positions {
             p[0] *= 1.3;
@@ -125,7 +143,7 @@ fn model_mod() -> Vec<u8> {
     let more: Vec<u16> = seg.indices.iter().map(|i| i + n).collect();
     seg.indices.extend(more);
     let modded = model.write(&original).unwrap();
-    assert!(modded.len() > original.len());
+    assert!(modded.len() > shipped.len());
     modded
 }
 

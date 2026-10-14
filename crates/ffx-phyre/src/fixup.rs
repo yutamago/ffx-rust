@@ -433,3 +433,91 @@ impl Cluster {
             .collect())
     }
 }
+
+fn put_leb(out: &mut Vec<u8>, mut v: u32) {
+    loop {
+        let b = (v & 0x7f) as u8;
+        v >>= 7;
+        if v == 0 {
+            out.push(b);
+            return;
+        }
+        out.push(b | 0x80);
+    }
+}
+
+/// Packs one list's records as mode-5 groups (explicit records), one group
+/// per run of records with the same field. The engine reads these like any
+/// other group; the shipped files use the compact modes where they fit.
+fn pack_list(out: &mut Vec<u8>, kind: Kind, records: &[[u32; 7]], objects: u32) -> Result<()> {
+    let mut i = 0;
+    while i < records.len() {
+        let member = records[i][0];
+        let run = records[i..].iter().take_while(|r| r[0] == member).count();
+        out.push(5);
+        put_leb(out, member.rotate_left(1));
+        put_leb(
+            out,
+            u32::try_from(run).map_err(|_| Error::Unsupported("fixup run".into()))?,
+        );
+        for rec in &records[i..i + run] {
+            if objects != 1 {
+                put_leb(out, rec[1]);
+            } else if rec[1] != 0 {
+                return Err(Error::Unsupported("fixup on a missing object".into()));
+            }
+            match kind {
+                Kind::Array => {
+                    put_leb(out, rec[2]);
+                    put_leb(out, rec[3]);
+                }
+                Kind::Pointer => {
+                    let user = rec[6].wrapping_add(1);
+                    put_leb(out, user);
+                    if user == 0 {
+                        put_leb(out, rec[2]);
+                        put_leb(out, rec[3]);
+                        put_leb(out, rec[4]);
+                    } else if rec[2..5] != [0, 0, 0] {
+                        return Err(Error::Unsupported(
+                            "user fixup pointer with a target".into(),
+                        ));
+                    }
+                    put_leb(out, rec[5]);
+                }
+            }
+        }
+        i += run;
+    }
+    Ok(())
+}
+
+/// Packs pointer fixups, one slice per instance list with that list's
+/// object count, for [`unpack_pointer_fixups`] (and the game) to read back.
+///
+/// # Errors
+/// Fails on records the encoding cannot express.
+pub fn pack_pointer_fixups(lists: &[(&[PointerFixup], u32)]) -> Result<Vec<u8>> {
+    let mut out = Vec::new();
+    for &(records, objects) in lists {
+        let recs: Vec<[u32; 7]> = records.iter().map(|r| r.0).collect();
+        pack_list(&mut out, Kind::Pointer, &recs, objects)?;
+    }
+    Ok(out)
+}
+
+/// Packs array (or pointer-array) fixups, like [`pack_pointer_fixups`].
+///
+/// # Errors
+/// Fails on records the encoding cannot express.
+pub fn pack_array_fixups(lists: &[(&[ArrayFixup], u32)]) -> Result<Vec<u8>> {
+    let mut out = Vec::new();
+    for &(records, objects) in lists {
+        let recs: Vec<[u32; 7]> = records
+            .iter()
+            .map(|r| [r.0[0], r.0[1], r.0[2], r.0[3], 0, 0, 0])
+            .collect();
+        pack_list(&mut out, Kind::Array, &recs, objects)?;
+    }
+    Ok(out)
+}

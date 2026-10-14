@@ -323,7 +323,9 @@ enum ModelCommand {
         motion_groups: Vec<String>,
     },
     /// Put edited geometry from a `.glb` (made by `model export`) back into
-    /// the model: vertices and triangles may change in number.
+    /// the model: vertices and triangles may change in number, primitives
+    /// the export did not make become new segments, and vertices may be
+    /// weighted to any joint of the skeleton.
     Import {
         #[command(flatten)]
         game: GameArgs,
@@ -349,10 +351,10 @@ fn model_import(
 ) -> Result<()> {
     let game = Game::open(game)?;
     let original = read_file(&game.archive, path)?;
-    let mut model = ffx_phyre::Model::parse(&original).with_context(|| path.to_owned())?;
+    let before = ffx_phyre::Model::parse(&original).with_context(|| path.to_owned())?;
     let edited = std::fs::read(glb).with_context(|| format!("reading {}", glb.display()))?;
-    let segments = model.import_glb(&edited)?;
-    let bytes = model.write(&original)?;
+    let (bytes, segments) = ffx_phyre::import_into_cluster(&original, &edited)?;
+    let model = ffx_phyre::Model::parse(&bytes)?;
     let dest = match (out, mod_dir) {
         (Some(file), _) => file,
         (None, Some(dir)) => dir.join(safe_relative(path)?),
@@ -362,10 +364,16 @@ fn model_import(
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(&dest, &bytes)?;
+    let added = model.segments.len() - before.segments.len();
     eprintln!(
-        "{} of {} segments from {}; wrote {} ({})",
+        "{} of {} segments from {}{}; wrote {} ({})",
         segments.len(),
         model.segments.len(),
+        if added > 0 {
+            format!(" ({added} new)")
+        } else {
+            String::new()
+        },
         glb.display(),
         dest.display(),
         if bytes == original {

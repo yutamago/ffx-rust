@@ -30,6 +30,9 @@ fn main() {
     for (i, l) in c.lists.iter().enumerate() {
         let at = lists_at + 0x24 * i;
         let total = u32::from_le_bytes(bytes[at + 8..at + 12].try_into().unwrap());
-        println!("list {i} {} count {} total {total} objs {} arrays {}", c.classes[l.class].name, l.count, l.objects_size, l.arrays_size);
+        println!(
+            "list {i} {} count {} total {total} objs {} arrays {}",
+            c.classes[l.class].name, l.count, l.objects_size, l.arrays_size
+        );
     }
 }

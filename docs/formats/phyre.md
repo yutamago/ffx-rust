@@ -276,9 +276,8 @@ updates the fields that describe them:
 
 Blocks keep their order in the vertex buffer, back to back; segments keep
 theirs in the index buffer. Tangents and binormals are recomputed from the
-UVs when a segment's vertex count changes. Materials, bone palettes,
-skeletons and bounds are kept as they are, so new geometry must use the
-segment's existing bones.
+UVs when a segment's vertex count changes. Materials and bounds are kept as they are;
+new segments, palettes and skeleton matrices are below.
 
 `ffx model import` reads the geometry from an exported `.glb`. Every
 primitive carries `extras.ffx_segment` and every mesh
@@ -292,6 +291,44 @@ ffx model export ffx_data/gamedata/ps3data/chr/mon/m002/mdl/d3d11/m002.dae.phyre
 ffx model import ffx_data/gamedata/ps3data/chr/mon/m002/mdl/d3d11/m002.dae.phyre \
     models/ffx_data/gamedata/ps3data/chr/mon/m002/mdl/d3d11/m002.glb --mod-dir mods/my-mod
 ```
+
+### New segments and joints
+
+`ffx model import` also takes what an editor adds. It goes through
+`ClusterEdit` (`crates/ffx-phyre/src/edit.rs`), which takes the cluster
+apart into objects per list, array data, decoded fixups and buffers, and
+writes it back with every count and size recomputed. The fixups are packed
+as explicit records (group mode 5): about 0.6 % larger than the shipped
+packing, but the game reads them the same. All 1,266 models and every 20th
+other cluster rewrite and read back with identical objects, fixups and
+buffers. Tidus rewritten this way plays the opening as usual.
+
+- **A primitive without `ffx_segment`** becomes a new segment. It is a copy
+  of a segment of the same instance with the same glTF material (else its
+  first): the `PMeshSegment`, its `PSkinBoneRemap` palette, its eight
+  `PDataBlock`s and their `PVertexStream`s (with the streams' user
+  fixups). It is inserted after the mesh's last segment, so the mesh's
+  `m_meshSegments` range and count grow by one, and every
+  `PMeshInstance` of the mesh gets a `PMeshInstanceSegmentContext` in its
+  `m_segmentContext` range. Insertions shift the object indices of every
+  fixup that points past them.
+- **Vertices weighted to joints outside a segment's palette** get them
+  appended to a new palette (new `PSkinBoneRemap`s; existing entries keep
+  their numbers).
+- **Joints the mesh has no skeleton matrix for** get one: the inverse of
+  the joint node's world matrix (the product of the `m_localMatrix`es up
+  the parents), appended to `m_skeletonMatrices` with a
+  `PSkeletonJointBounds` entry naming the joint (`m_hierarchyMatrixIndex`).
+  The root joint (`SkeletonNode_0`) is posed differently in game than
+  stored, so geometry bound to it alone lands elsewhere; use the joints
+  that skinned segments use.
+
+Checked in game: a copy of Tidus's body as a 14th segment stands beside
+him and moves with his animation; bound rigidly to his head joint through
+a new skeleton matrix, it follows his head. The first-scene game test
+loads such a model every run.
+
+New materials and new joints in the hierarchy are not written yet.
 
 ## Textures (`*.dds.phyre`)
 
@@ -378,6 +415,8 @@ records must be identical.
   array fixup; whether the loader writes over the matrix element needs a
   look at a running game.
 - What the remaining material parameters do in the shaders.
-- New segments, materials or bones (only existing segments are written).
+- New materials (a new `PParameterBuffer` list with its header class
+  entry, and for a new texture a `PAssetReferenceImport`) and new
+  hierarchy joints.
 - Shaders (`*.fx.phyre`) and the other cluster kinds.
 - Changing a texture's size or format.
