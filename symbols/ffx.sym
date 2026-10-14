@@ -88,6 +88,13 @@
 0x006db070 function LangManager_Get
 0x006db090 function LangManager_FromSettings  # settings language index -> game language id
 0x006f0330 function Save_InitFolder            # Documents (SHGetFolderPathW CSIDL_PERSONAL) + Square Enix\FINAL FANTASY X&X-2 HD Remaster\FINAL FANTASY X\
+0x006fa300 function Fmod_PushCommand             # thiscall(mgr; cmd, a, b, c): queues an FMOD command (ring of 0x96 x 0x14 at 0x00ce8458, "Too many fmod commands at the same time!!"); dispatched through table 0x00c3a368 (0x1a music stop?, 0x27 music start, 0x28 music read, 0x33 sfx start)
+0x0070d890 function FmodSfx_Start                # thiscall(sfx; seq, volume, pan): "FmodSfx::start: Fail to start sequence(%d)"; volume/127 -> 0..1, pan/127*2-1 -> -1..1 (0x0070f310)
+0x00729570 function Fp_Hide                      # (id): sets bit 0x10 in the FP (field effect) state entry (0x00d30260 + i*0x4c); the "FP Disp Status" dump (0x00729060) prints it as Disp OFF
+0x007295b0 function Fp_Show                      # (id): clears bit 0x10 of the FP state entry (Disp ON in the 0x00729060 dump)
+0x00729660 function Fp_End                       # (id): sets entry +0x1d = 1; the 0x00729060 dump shows Stat END
+0x00729700 function Fp_Restart                   # (id): counter = 0, +0x1d = 0 (Stat RUN from the start)
+0x00729810 function Fp_RestartMode2              # ?(id): counter = 0, +0x1d = 2 (shown as END; probably play once and stop)
 0x0076b970 function Cd_QueueRead              # libmscd.c emulation: queue a read of a PS2 file by number; slot 0 of g_CdLib
 0x0076c320 function Cd_FileSize                # cdecl(number): size of a PS2 file from the sector table (cdrom.mdg); wrapped so mod files report their size
 0x00780d10 function Enc_Check                  # random encounter roll; on a hit writes field 0x0112c256, group 0x0112c258, formation 0x0112c259, raises 0x0112a8e2
@@ -98,6 +105,7 @@
 0x007821e0 function Battle_IsUnderwater        # returns 0x0112c9ce, formation byte 3 (set only in underwater fields: cdsp00, bjyt02, genk09, bsil03, mtgz07, stbv00 ...)
 0x007827f0 function Enc_FindFormation          # (field map<<16 | formation id) -> its 2-byte entry in the encounter groups; outputs field, group, position
 0x007828a0 function Enc_ResetWeights           # (map, keep): entry byte 1 = default weight (low nibble) copied to the current weight (high nibble) unless keep; group +4 = sum of current weights
+0x00782970 function Battle_GetBattleId           # *0x0112a9f0 << 16 | *0x0112a9fc while in battle (0x0112a8e0), else 0; ?field index << 16 | formation (battle scripts compare it to e.g. 0x2050000)
 0x00782df0 function Kernel_LoadFile           # (name, buffer) reads new_<lang>pc/battle/kernel/<name>.bin whole
 0x00783680 function Mon_LoadText              # kernel monster name/texts -> actor +0x50/+0x90/+0x190, then requests mon_data
 0x00783b00 function Mon_AttachData            # monster file sections -> actor +0xf78 (script), +0xf7c, +0xf80 (stats), +0xf84
@@ -105,6 +113,10 @@
 0x00783e20 function Battle_InitSections        # formation file sections: 0 script 0x0112a9ac, 1 0x0112a9b4, 2 formation 0x0112a9c0, 3 positions 0x0112a9b0 (0x20-byte records)
 0x00784070 function Mon_LoadAll               # sprintf m%03d for each of 8 enemy slots
 0x00784260 function Mon_GetName               # kernel monster record string 0
+0x00784d00 function Party_SwapIn                 # (chr or 0xff, slot): puts chr in party slot (0-2 front, 3-19 reserve, table 0x011307e8), the slot's old occupant takes chr's old place; refuses locked chars (0x01132088 bit 2)
+0x00785240 function SaveData_Get                 # returns &g_SaveData (0x0112ca90); +0xc = entrance index (0x0088d670), +0x11/+0x12 = map fade type/frames
+0x00785330 function Party_GetChar                # (i < 0x12) -> 0x94-byte character record at 0x0113205c + i*0x94 (+0x1c/+0x20 cur HP/MP?, +0x24/+0x28 max HP/MP?)
+0x007869b0 function Party_SetMember              # (chr, on): on=1 sets bits 0/4 of 0x01132088[chr*0x94] and adds chr to the party list 0x00785270(0) (20 slots); on=0 removes it
 0x00786b00 function SaveData_Clear             # new game: clears g_SaveData, reads menu, party, weapon (wep_data -> inventory 0x01130f2c, 200 x 22 bytes) and ply_save
 0x00789bf0 function Dmg_Calc                  # physical: str(+0x5a8)^3 vs def(+0x5a9); magic: mag(+0x5aa) vs mdef(+0x5ab)
 0x0078b760 function Battle_Steal              # steal chance spoils+0x0a, items +0x24/+0x26, counts +0x28/+0x29
@@ -115,14 +127,18 @@
 0x00790a90 function Command_FindRecord        # id & 0xfff in g_KernelCommand
 0x00790c10 function Battle_Update              # per frame; outside battle, a raised request flag 0x0112a8e2 starts Battle_Load
 0x00794020 function Battle_Actor               # index -> actor: < 0x1f at *0x011334d4 + i*0xf90, < 0x5d at *0x0113446c + (i-0x1f)*0x390
+0x00794330 function Battle_SelectActors          # (self, selector, ...) -> bitmask of the 31 actors; selector 0x1xxx = actors with that id (+0xe), negative values = special sets (-26 self target +0xdc4, -25 ... )
+0x007947f0 function Battle_FirstSelectedActor    # (self, selector, a, b) -> lowest actor index in Battle_SelectActors' mask, -1 if none
 0x00797410 function Mon_FindHandler           # lookup in monster file section 1
 0x00797a40 function Script_Register           # (manager, name, script): queue a script in a script manager (8 slots, 0x54 bytes each)
+0x00797bc0 function Battle_RunEvent              # ?(slot, actor, handler id, handler2, ...): queues handlers (0x00797b70, Mon_FindHandler) and starts them through 0x00797d50; used by 0x703f with a finish flag out-param
 0x00798890 function Rng_Seed                   # cdecl(n): seeds 0x00c42200/04 from Rng_ClockSeed * (n + 1), then fills the 68 generators
 0x007988f0 function Rng_Next                   # cdecl(index): one of the 68 generators at 0x01135ee0 (multiplier table 0x00c42208, xor 0x00c42318)
 0x00798950 function Rng_ClockSeed              # XOR of the GetSystemTime bytes + 1; wrapped by the harness (FFX_HARNESS_SEED)
 0x007989a0 function Rng_Global                 # seed = seed * 0x5d588b65 + 0x3c35, rotated by 16; returns 31 bits
 0x007990d0 function Battle_GiveRewards        # gil, AP, two drop slots, overkill drops, bribe (spoils section 4)
 0x00799420 function Treasure_Give              # (takara index, rewards): kind 0 gil x100, 2 item, 5 equipment from buki_get, 10 key item
+0x0079aef0 function Battle_IsMonsterIndex        # (i) -> (i & 0xff) - 0x14 < 8: actor slots 0x14-0x1b are the monsters
 0x0079b4f0 function Mon_InitActor             # copies the stat record (section 2) into the battle actor
 0x0079bb50 function Battle_CheckEquipment      # equipment checks per character (weapon/armor in inventory, flag 0x02 skipped)
 0x0079c110 function Battle_SetUpActors         # monster slot i (actor via 0x00795aa0) gets id = formation +0x0c + 2i (0xffff: empty)
@@ -133,22 +149,108 @@
 0x0079d1c0 function Enc_FieldIndex             # map number -> index in the battle field table *0x0112a9c8 (count 0x0112a9d0, 14-byte entries)
 0x0079d210 function Enc_Group                  # (field, group) -> group: u8 n, u16 music, u8 rate, u8 weight total, n x (u8 formation id, u8 weights)
 0x0079d250 function Enc_InitTable              # btl.bin (0x0112a9c4): fields at +4 -> 0x0112a9c8, count (end-start)/14 -> 0x0112a9d0, blocks at +8 -> 0x0112a9cc
+0x007a2a20 function Native_ActorQueueMotion      # 0x7016: args (motion) -> 0; self actor: clears motion state (0x007ab6c0) and sets +0x3f2 = motion; 0x007aa160 plays it next frame through 0x007ab360 (255 = none, idle); used after 0x7007/0x7008
+0x007a35a0 function Native_ActorPlayMotion       # 0x7007: args (motion; bit 0x8000 = no blend) -> length in frames << 8 / speed; plays a motion on the script's battle actor (0x007a8fc0, 0x00837d00)
+0x007a3980 function Native_ActorWaitMotion       # 0x7008 (poll): waits until the self actor's motion ends (0x007a8c50/0x008392c0); returns 5 when done or no actor; used right after 0x7007
+0x007a39d0 function Native_BtlSetFlagBded        # 0x7001: args (flag) -> 0; byte 0x0112bded = flag & 1 (cleared at battle load 0x00781020); ?meaning; every battle script's worker 1 entry 0 calls it with 0
+0x007a44b0 function Native_BtlUseCommand         # 0x700b: args (target selector, command id e.g. 0x3048/0x4008) -> 1 if queued; if the self actor can act (0x007b24a0), resolves the targets (Battle_SelectActors) and queues the command (0x007ac9c0)
+0x007a4550 function Native_BtlIsUnderwater       # 0x7005: () -> (signed char)0x0112c9ce, the formation's underwater byte (see Battle_IsUnderwater); not in the Ghidra dump, a two-instruction function
+0x007a4910 function Native_DebugPrint            # 0x7015: args (value) -> 0; prints "***** %d : %x : c%02d *****" with the value and the actor index
+0x007a4d50 function Native_GetActorProperty      # 0x700f: args (actor selector, property) -> value; Battle_GetActorProperty(self, property, selector), averaged over the selected actors
+0x007a4e90 function Native_BtlGetBattleId        # 0x7024: () -> Battle_GetBattleId (0x00782970; a jmp thunk); scripts compare it to constants like 0x2050000
+0x007a4ea0 function Native_GetSelfProperty       # 0x70aa: args (property) -> value; Battle_GetActorProperty(self, property, -13 = self)
+0x007a50c0 function Native_SetActorsProperty     # 0x7018: args (actor selector, property, value) -> 0; Battle_SetActorProperty(self, property, selector, value); hack for battle 0xd40000 props 0x54/0xed
+0x007a51e0 function Native_ActorSetFlag36        # 0x705d: args (a, b; both ignored) -> self index; self actor +0x36 = 1; ?0x00797080 then calls 0x007fb290 on the model the next time the actor is shown
 0x007a5360 function Native_SetActorProperty   # func 0x70ab: pops value, property, actor; calls 0x007b4b70
+0x007a5930 function Native_SetSelfFloatProperty  # 0x70b2: args (property 0-9, float value) -> 0; 0x007b4a90 sets self actor float fields (+0x4bc..; 9 also sets the model's +0x4e4 through 0x0082b880)
+0x007a5af0 function Native_BtlSelectTarget       # 0x7010: args (selector, property, unused, mode) -> chosen actor index; keeps actors with property 4 and 0x52, filters by the property (mode 0 any, 1 highest, 2 lowest, |0x80 zero), ties random (Rng 4); sets the self's target mask (+0xdc0, 0x00796430)
+0x007a5df0 function Native_BtlRunEvent           # 0x703f (start): args (slot 1-based, event handler id e.g. 28) ; runs the handler via Battle_RunEvent(slot-1, 0xff, id, ...), finish flag -> result
+0x007a5ec0 function Native_BtlRunEvent_Poll      # 0x703f (poll): 0x007a8700: returns 5 once the flag set by the start handler is 0, else 1
+0x007a6170 function Native_BtlFindActor          # 0x7069: args (selector, property, unused, mode) -> actor index; like 0x7010 without the filters and without setting targets (Battle_FilterActors, Rng 7); used as (-14, 92, 0, 0)
+0x007a6870 function Native_BtlCountActorsInBoth  # 0x701e: args (selector a, selector b) -> number of actors in both masks (Battle_SelectActors)
+0x007a6a80 function Native_ActorGetId            # 0x7021: args (selector) -> id (+0xe, the ushort that 0x1xxx selectors match) of the first selected actor, -1 if none
+0x007a6b40 function Native_ActorGetSlotRef       # 0x70a1: args (selector) -> monster: actor +0xc byte; party: -6 - position in party list 0x0112c895 (18 entries); 0xff if none; ?meaning
+0x007a7340 function Native_BtlSetPadOrientation  # 0x7099: args (n) -> 0; 0x0112c9cd = n & 3; 0x0089d390 uses it to rotate the d-pad bits (0x1000/0x2000/0x4000/0x8000) for cursor movement; set with each camera shot
+0x007a76e0 function Native_BtlGetTurnActor       # 0x708d: () -> (signed char)0x0112c9e2, the actor whose turn last started (set with 0x0112c9df/e0 in the turn code ~0x00792350); ?exact meaning
+0x007a8fc0 function Battle_ScriptPlayMotion      # (ctx, ..., motion, flag): plays a motion on the script's actor (0x00837d00), returns the length in frames << 8 / speed; core of 0x7007
 0x007ab870 function Kernel_FindRecord         # (id, table, &strings) -> record; defines the container (docs/formats/kernel.md)
 0x007abbd0 function Equip_Get                  # (id): 0xb000 + i -> battle spoils slot (0x02310dde), else inventory slot i (< 200) at 0x01130f2c
 0x007abc60 function Equip_CountOwned           # counts in-use slots without flag 0x02; out: free slots
 0x007abca0 function Equip_RebuildWearers       # equipment +6 = wearer, from ply_save +0x2d/+0x2e
+0x007ac9c0 function Battle_QueueCommand          # (actor, command, target mask, ...): adds a command to the 4-entry queue at 0x01136a80 for the current actor; "TARGET ERROR CHR" when no target is valid
+0x007acd40 function Battle_FilterActors          # (self, selector, property, unused, rng, mode, resolved, &pick): actors whose property is nonzero (mode|0x80: zero); mode 1 highest, 2 lowest; random pick via Rng_Next(rng)
+0x007b24a0 function Battle_ActorCanAct           # ?(actor, ...) -> 1 unless +0xdce, status bits 0x300/0x400/0x800 at +0x606, +0x608 or +0x617 bit 1 block it
 0x007b2dc0 function Battle_GetActorProperty   # switch over ~340 actor properties
+0x007b4a90 function Battle_SetActorFloatProperty # (actor, property 0-9, float): writes actor dwords 0x12f-0x139
 0x007b4b70 function Battle_SetActorProperty   # switch over ~320 actor properties
+0x007b7f70 function Native_CamFocusTimeLinear    # 0x602e: args (frames) -> 0; linear transition time for the battle camera's focus point (half 0, 0x007bde50 type 1); paired with 0x6010 (eye half)
+0x007b8130 function Native_CamFocusTimeEase      # 0x6032: args (accel, hold, decel frames, curve) -> 0; eased transition for the focus (half 0, 0x007bd860 type 2: total = sum); e.g. (20, 10, 20, 0)
+0x007b8210 function Native_CamFocusCut           # 0x6034: () -> cam; drops the focus half's transition and applies the target now (0x007bed60(cam, 0)); 0x6016 is the eye version
+0x007b8270 function Native_CamFocusWait          # 0x6038 (poll): waits until the focus half's transition ends (0x007bdd20(cam, 0) == 0 -> 5); 0x601a is the eye version ("CameraWaitStart!")
+0x007b8710 function Native_CamEyeOrbitScaled     # 0x6040: args (actor a, actor b, height, yaw deg, pitch deg, distance) -> cam; 0x007badb0(half 1, mode 1): eye = mean of actors + height * actor height + orbit at distance/100 * actor size
+0x007b8730 function Native_CamFocusOrbitScaled   # 0x6041: same as 0x6040 for the focus point (half 0, mode 1); most common shot setup, e.g. (-2, -1, 49, 0, 0, -70)
+0x007b8750 function Native_CamEyeOrbit           # 0x6044: same as 0x6040 with mode 2: distance/10 + actor size (absolute); eye half; e.g. (-2, -1, 30, -160, 0, 150)
+0x007b8770 function Native_CamFocusOrbit         # 0x6045: same as 0x6044 for the focus point (half 0, mode 2)
+0x007b88b0 function Native_CamSetDepthMaskMode   # ?0x607e: args (flags; <0 keeps the old value | 2) -> cam; camera +0xcac; Battle cam update passes it to 0x0082cb60 (full-screen Z mask enable)
+0x007b8920 function Native_CamSetDepthMask       # ?0x607f: args (plane 0/1, z) -> cam; camera +0xcb0/+0xcb4 -> 0x0082ce20 -> full-screen Z rectangle (0x0082bb90, 0x006430f0 z/16.77M) that hides geometry beyond z
+0x007b89a0 function Native_BtlRandom             # 0x6080: args (n) -> Rng_Next(0xe + (n & 1)); battle 0x92 special case with 0x012fb7e0 forces a result; scripts use it with mod
+0x007b8ea0 function Native_CamSuspend            # 0x6000: args (worker) -> camera handle; marks that worker's camera channel suspended (Cam_SetChannelSuspended 0x007c0010, flag 1); worker via Script_GetWorker, handle at worker +0x3c (allocated on demand by Cam_GetHandle 0x007ba780)
+0x007b8f30 function Native_CamResume             # 0x6001: args (worker) -> camera handle; same as 0x6000 with flag 0 (0x007c0010); scripts push a worker index (e.g. 2)
+0x007b9010 function Native_CamSetRoll            # 0x603a: args (degrees) -> cam; 0x007bfa80 stores radians in the camera's +0xc94 (eye half's roll channel)
+0x007b90b0 function Native_CamSetScreenDepth     # 0x603b: args (depth e.g. 404, 624, 1024) -> cam; debug string "MsCameraSetScrDpt"; 0x007bfbd0 (projection distance, i.e. zoom/FOV)
+0x007b9220 function Native_CamSetPos             # 0x6002: args (x, y, z) floats -> 0; sets the camera eye position (side 1) via Cam_SetPos 0x007bf940; side 1 = "cam", side 0 = "ref" per the debug dump "ref%s\ncam%s" in 0x007d2430; a few hard-coded per-map fixes
+0x007b9260 function Native_CamGetPos             # 0x6003: args (&x, &y, &z) variable refs -> 0; stores the eye position (side 1) through Script_VarAddress into three script vars (Cam_GetPos 0x007bd420)
+0x007b92e0 function Native_CamSetPolar           # 0x6004: args (theta deg, phi deg, len) -> 0; sets the eye (side 1) in polar form around its reference, degrees * pi/180 (Cam_SetPolar 0x007bf700; "theta,phi,len" in the camera dump)
+0x007b96c0 function Native_CamMove               # 0x6010: args (frames) -> 0; starts the eye (side 1) moving to its set position over n frames, linear (Cam_StartMove 0x007bde50, mode 0)
+0x007b9940 function Native_CamMoveEased          # 0x6014: args (accel frames, hold frames, decel frames, curve?) -> 0; eye move, total = a+b+c frames, type 2 (Cam_StartMoveEased 0x007bd860, mode 0); scripts push e.g. 20,30,20,0
+0x007b9980 function Native_CamMoveEased1         # 0x6015: like 0x6014 but mode byte 1 (side +1); ?mode 1 = relative/continuous move
+0x007b9b40 function Native_CamMoveFinish         # 0x6016: no args -> camera handle; stops the eye's interpolation and applies the target position now (Cam_FinishMove 0x007bed60, side 1)
+0x007b9be0 function Native_CamWait               # 0x601a (poll slot only): no args; done (5) once the eye stops moving (Cam_IsMoving 0x007bdd20 == 0); strings "CameraWaitStart!", "CameraWaitExec: Frame = %d!"
+0x007b9d00 function Native_CamRefSetPos          # 0x6020: args (x, y, z) -> 0; sets the camera reference/look-at point (side 0), same body as 0x6002 with side 0 (0x007bb6a0)
+0x007b9e30 function Native_CamPathAddEye         # 0x6049: () -> cam; 0x007baac0(cam, 1): appends the eye's yaw/pitch/distance and roll to path list 1 (0x01136b60, max 32), used by the path move 0x007ba020 (>= 3 points)
+0x007b9f40 function Native_CamPathAddFocus       # 0x604b: () -> cam; 0x007baac0(cam, 0): appends the focus point to path list 0
+0x007b9fe0 function Native_CamRefSetTarget       # 0x6027: args (target, bone?, y offset) -> 0; ref (side 0) follow mode 3: +0xc = target, +0xe = bone, offset (0,y,0) (0x007beeb0); scripts push (0, -1, y); ?target/bone meaning
+0x007ba1d0 function Native_CamRefAddLineArea     # 0x6029: args (x1, z1, x2, z2, r) floats -> 0; adds a segment constraint (max 5, count at side +0xc4) to the ref (0x007bf0b0 stores dir, origin, -dot, |dir|^2, r); ?keeps the ref within r of the segment
+0x007ba2d0 function Native_CamRefAddCircleArea   # 0x602b: args (x, z, r) -> 0; adds a circle constraint (type 3) to the ref's list (0x007bf1f0); ?keeps the ref inside/around the circle
+0x007ba2f0 function Native_CamRefClearAreas      # 0x602d: no args -> camera handle; clears the ref's constraint count (byte 0x01137634 + side/channel, 0x007bed10)
+0x007ba780 function Cam_GetHandle                # (type 5, which 0-3, camera < 3): cached camera channel handle (owner<<24 | type<<16 | slot<<8 | camera), allocates via 0x007bd110
+0x007bd110 function Cam_AllocChannel             # (owner, camera, type): finds/allocates one of 4 channels of a camera (0xda0 bytes each, table 0x011381a8)
+0x007bd420 function Cam_GetPos                   # (camera, side, &x, &y, &z): side position at camera +0x50
+0x007bd860 function Cam_StartMoveEased           # (handle, side, mode, accel, hold, decel, curve): type-2 interpolation on x/y/z (and roll/scrdpt for side 1)
+0x007bdd20 function Cam_IsMoving                 # (handle, side) -> bits: 1 interpolating, 2 busy, 4 mode 0xe
+0x007bde50 function Cam_StartMove                # (handle, side, mode, frames, type): starts per-axis interpolation counters
+0x007bed60 function Cam_FinishMove               # (handle, side): zeros the counters and applies the target position (Cam_SetPos)
+0x007bf700 function Cam_SetPolar                 # (handle, side, theta, phi, len) radians: absolute polar position, mode 2
+0x007bf7f0 function Cam_AddPolar                 # (handle, side, dtheta, dphi, dlen): relative polar position, mode 7
+0x007bf940 function Cam_SetPos                   # (handle, side, &xyz): absolute position; applied now if the channel is active
+0x007c0010 function Cam_SetChannelSuspended      # (handle, on): sets the suspended byte of the matching channel slots
+0x00821750 function Menu_Request                 # (menu id): g_012fbc38 = id, result 0x012fbc3c = -1; 0x40100000/0x40200000 handled separately
 0x008277f0 function SG_InitBones              # allocs "%s:Elem" (0x160/bone) and "%s:Fcv" (0x18c/bone); bind pose from the .chr bone table (20 bytes: parent, rot centideg, trans /1000, scale >>12)
 0x00829c90 function Chr_KindDir               # kind (0-6 or its letter) -> chr folder name
 0x00829e10 function Chr_KindLetter            # id >> 12 -> 'c','m','n','s','w','f','k'
+0x00829ef0 function Chr_LoadData                 # (chr id): queues "[%s:%s]CHRDATA" (prints "SG:RomRead:%s %x")
+0x0082a040 function Chr_IsLoaded                 # (chr id): ChrData_State(1, id); error "CH Data Read Sync" / "%s does not read.(can't sync)"
 0x0082a4c0 function SG_LoadResidentGroup      # reads "[%s:resident%d.mgrp]" for a character
 0x0082a640 function Chr_TableIndex           # finds id & 0xfff in the kind's .tbl
+0x0082afe0 function Chr_SetAutoMotion            # (chr, slot, motion): chr +0x75c[slot]; -1 = default table 0x00c49680
+0x0082b080 function Chr_ReleaseMotion            # (chr): +0x730 = 1, scripted motion flag +0x736 = 0, +0x728 = 0; called before every play
+0x0082ba30 function Chr_SetHideFlags             # (chr, on, mask) -> old: chr +0x180 hide bits (1 Ev, 2 Eff, 8 Disp, 0x10 Blt, 0x20 Z per the "Hide : %x" debug text)
+0x0082c0c0 function Screen_UpdateFades           # per frame: 5 fade slots (0x01300708 + i*0x10, mode byte, rgb, i16 counter at +4) -> fullscreen quad 0x00639240(r,g,b,a); mode 2 a=n/total (fade in), 3 a rising and held (fade out)
+0x0082cdc0 function Screen_StartFade             # (frames, in, white?): slot 4 (flag 0x10): mode 2 (in) or 3 (out), +2 if third arg; counter 0x0130074c = frames
+0x0082db50 function Angle_Wrap                   # float radians wrapped into [-pi, pi]
+0x00832550 function Chr_RequestBoneUpdateAll     # Chr_RequestBoneUpdate for every active chr in g_ChrArray
+0x00833a70 function Chr_FindAttachPoint          # (model, point id, &bone, &offset): searches the chr def +0x6c list (16-byte entries, id & 0x3fff) -> bone index and scaled offset
+0x00835710 function Chr_RequestBoneUpdate        # (chr): sets +0x194 bit 3 (one budgeted bone update in 0x00832110) unless bit 0 is set
+0x00836520 function Light_Set                    # (light 0-3, r, g, b, pitch deg, yaw deg): color /255 (0x00836310) and direction from the two angles (0x00836430)
+0x00836870 function Chr_LoadSystemMgrp           # (chr id, n): resident motion group via SG_LoadResidentGroup, then SG_AddMotionGroup
 0x00836c90 function SG_AddMotionGroup         # registers a .mgrp (50 slots, "nb mgrp err"), relocates it, adds its sequences
 0x00836d30 function SG_AddSequence            # 0x14-byte sequence -> 0x13009a08 table ("SG:AddMseq")
 0x00836f70 function SG_RelocateGroup          # offsets -> pointers; header +0 holds the load address
 0x00836fc0 function SG_RelocateSequence       # motion (+0x0c) and clip (+0x10) tables, 16 bytes each, pointer words +8/+0xc
+0x00837350 function Chr_PlayMotionMarks          # (chr, motion, -, loops, start mark, end mark): marks index the motion's mark table; SG_StartClip, +0x736 = 1
+0x008373e0 function Chr_PlayMotion               # (chr, motion, -, loops, start frame, end frame): raw frames (<< 8) to SG_StartClip, +0x736 = 1
+0x008374c0 function Chr_PlayMotionInclEnd        # like Chr_PlayMotion, end frame + 1 unless loops == 1
+0x008375f0 function Chr_LoadMotionGroup          # ?(n): if resource (1, n) not cached (0x00836f10, table 0x013011e0), requests it and waits through g_CdLib slot 2
 0x008377c0 function SG_SeqFrame               # runs SG_SeqStep until a wait ("SG:SeqFrame", "seq err")
 0x00837900 function SG_SeqStep                # motion script opcodes 0-6 ("unknown motion sequence code %x"); 1 = play clip (clip, loops, start mark, end mark)
 0x00837ac0 function SG_SetMotion              # (actor, character << 16 | number): finds the motion in the character's sequences
@@ -168,14 +270,166 @@
 0x00839e00 function Fixed8_ToFloat            # v / 256
 0x00839e30 function Angle12_Lerp              # 12-bit angle interpolation the short way
 0x00839e80 function AngleTurn_Lerp            # the same on floats in turns
+0x0083ffe0 function ChrData_State                # (kind, id): 2 = not registered, else whether loaded (table 0x01302f98)
+0x00855c70 function Native_MsgSetValue           # 0x009e: args (window, slot, type, value) -> window; sets inline text variable `slot` of a message window: byte +0 of g_MsgVars[window*32+slot] = type (0x008b8960), int +4 = value (0x008b8980); text code 0x12 reads them (0x008b6660 area: type 0 raw ptr, 0x13-0x23 and 0x2b-0x32 number formatting, '3'-'7' item/key-item names); scripts push e.g. (5, 0, 0, v48) right before 0x006a
+0x00855f10 function Native_MoveSetFrames         # 0x001c: args (elapsed, frames); current move slot (worker+0x5b8+slot*0x4c, slot = worker+0x32) +0x08 = elapsed, +0x0c = frame count; timed modes 5/6/7/9 finish when +0x0c < +0x08 (0x00870540); scripts "pushimm 0; pushimm 4/19"
+0x008560d0 function Native_TurnSetFrames         # 0x001d: args (elapsed, frames); turn slot (pointer at slot+0x48, struct worker+0x864+slot*0x44) +0x08 = elapsed, +0x0c = frames (<=0 -> 1); scripts "pushfc 0.0; pushimm 90" before 0x0029/0x0019
+0x00856460 function Native_SetTouchRange         # 0x0085: args (float r) -> 1; worker transform (0x0086c2b0) +0x48 = r, sets dirty bit ctx+0x36 |= 1; debug panel labels +0x48 "TCR:" (0x0087ace0, table 0x00c539c8); shared init worker pushes 10.0
+0x00856630 function Native_AlwaysTrue019c        # 0x019c () -> 1; no pops, constant 1 (PS2 check stubbed on PC?); scripts use it inside conditions ("pushimm 32; and; land; func 0x019c; land")
+0x008566b0 function Native_ControlEnable         # 0x005d: no args -> 1; FUN_00871ab0: type-1 party workers (+0x40 != -1, flag 0x200) get flag 0x20, player worker's model goes to FUN_0082dad0, context byte 0 |= 2
+0x008567c0 function Native_ControlDisable        # 0x005e: no args -> 0; FUN_008719e0: clears flag 0x20 and the speed (pos+0x0c) of type-1 workers, FUN_0082dad0(0), context byte 0 &= ~2
+0x00856920 function Native_SetPartyControllable  # 0x0060: args (on) -> flag; worker+0x34 bit 0x200 (FUN_008712a0), then FUN_0086a0e0 refreshes control; 0x200 = can be the player, cannot be talked to (0x00866980); 0x0042 sets it for party index 0
+0x00856a00 function Native_MacroDicText          # 0x013f (dict, entry) -> text pointer; MacroDic_Section(dict) u16 offset table, entry*2 + variant (0x0113079c bit 3); scripts push 26, v173[x]
+0x00856ad0 function Native_FieldSetFlag08        # 0x0241 (on) -> on != 0; sets/clears bit 3 of field state +0x210 (*0x01326b28, 0x01325db0); ?no static reader found
+0x00856c30 function Native_MoveStart             # 0x0018: args (slotMask, mode, param); current move slot: +0x00 = param, +0x02 = mode (low 7 bits: 1 walk, 2 walk at speed, 5/6/7/9 timed, 9 jump arc), slots in mask (bit 0x20 = all) share it (FUN_00870440); arrive radius 0 adds 0x800; scripts "0, 0xc001, 0" then 0x001a
+0x00856e20 function Native_GetWorkerPos          # 0x00a3: args (worker, &x, &y, &z) -> 0; each & is a variable location word resolved by Script_VarAddress; Script_GetWorkerPos 0x0086a2f0 writes the position (midpoint of the two endpoints for worker types 2/5)
+0x00857180 function Native_SetTalkRange          # 0x0061: args (range: float, truncated); pos block (FUN_0086c2b0) +0x40; talk check 0x00866980: dist <= ctx+0x1f0 + range; usually 13.0
+0x008572e0 function Native_SetRadius44           # 0x0062: args (r: float, truncated); pos block +0x44, ?collision/push radius (consumer not found); usually 6.0, set next to 0x0061/0x0063
+0x00857400 function Native_Random                # 0x00a6: args (n) -> (Rng_Next(2) & 0xffff) * max(n,1) >> 16, so 0..n-1; scripts use `pushimm 7; func 0x00a6; popv`
+0x008574f0 function Native_SetTalkAngle          # 0x0063: args (radians); pos block +0x3c; talk check passes it to FUN_0088b780 with the player yaw; usually 1.047 (60 degrees)
+0x00857520 function Native_TurnStart             # 0x0019: args (slotMask, mode, param); turn struct +0x00 = param, +0x02 = mode (low 5 bits: 2 timed turn, 3 ...), FUN_00871030/FUN_00871090 spread it to the slots in mask; scripts "0, 0xd002, 0" / "0, 0x1003, 0" then 0x001b
+0x00857680 function Native_Random16              # 0x00a9: args () -> Rng_Next(2) & 0xffff (Ghidra misses this function; checked in the disassembly); scripts follow it with `pushimm 5; mod`
+0x008577c0 function Native_SetTYZAngle           # 0x008d: args (float a) -> -; transform +0x4c = a, dirty bit; debug label "TYZ:" (0x0087ae00); init pushes 1.0471976 (60 deg), same as 0x0063 (+0x3c, "TZX:"); ? vertical angle of the talk/touch area
+0x00857870 function Native_MsgSetText            # 0x0064: args (window, msg); window (FUN_0086be90) +0x08/+0x0c = Msg_Text(msg), +0x16 = Msg_Flags(msg); g 0x01325ac0 = msg
+0x008579a0 function Native_MoveWait              # 0x001a poll: no args; done (5) when current move slot mode (+0x02 & 0x7f) is 0
+0x00857b30 function Native_TurnWait              # 0x001b poll: no args; done (5) when the turn struct mode (+0x02 & 0x1f) is 0
+0x00857c40 function Native_MinimapSetCorner      # 0x00f3 (corner) -> corner; minimap 0x0193bf80 position: 0 top-left (0x50,0x40), 1 top-right (0x1b0,0x40), 2 bottom-left, 3 bottom-right, 4 centre (0x0091d930)
+0x00857da0 function Native_MoveSetSpeed          # 0x0016: args (speed) -> speed; current move slot +0x10 (move mode 2 step = speed, 0x00869xxx); usually 16.0
+0x00857f40 function Native_SetMoveSpeed          # 0x006c: args (float v) -> v; 0x0086f350 sets move block +0x10 for all 9 levels (0x5c8 + i*0x4c); debug label "SVR:" (0x0087a730); 0x0086d300 resets it to 0; init pushes 16.0, the player 34.0
+0x00858020 function Native_SetArriveRadiusAll    # 0x002d: args (radius) -> radius; move slot +0x38 of all 9 slots (FUN_0086f0d0); move ends when XZ dist to target <= radius (FUN_008634b0/0x0088b730); default 1.0
+0x008580c0 function Native_MsgSetPos             # 0x0065: args (window, x, y, anchor); window +0x00 = x, +0x02 = y, +0x1c = anchor (FUN_008af850 places by it); x/y patched for maps 0x17/0xab/0xd4 (*0x012fbc40); scripts "0, 256, 224, 4"
+0x008581c0 function Native_MapChange             # 0x0011: args (map, entrance); FUN_0086ff40(map, entrance, 1) -> 0x0088ea60 writes them to the game state (0x00785240: +0 map, +2 previous, +0xc entrance); scripts "pushimm 263; pushimm 0" before end
+0x00858360 function Native_MsgSetStyle           # 0x0066: args (window, style) -> window; window +0x20 byte, passed to 0x00906e60 (window object +4) when shown (0x00858b50); ?frame/style; scripts mostly 0/1
+0x008583b0 function Native_MinimapSetMarker      # 0x0148 (marker, worker) -> value; worker +0xbc = marker | 0x80000000 (0 = default), +0xb4 = -10000.0; read by Minimap_GetWorkerMarker 0x0086b740 for the field minimap 0x0091da80
+0x00858460 function Native_MapJump               # 0x010b (map, entrance) -> 0; 0x0086ff40 -> 0x0088ea60: game state 0x0112ca90 +0 = map, +2 = previous map, +0xc = entrance; scripts push (263, 0) then end
+0x008584d0 function Native_MsgSetFlags           # 0x009d: args (window, flags) -> window; Msg_Window(window)+0x18 = flags; 0x006a ORs it with +0x28 into 0x008b8bb0 (low nibble = style, bits 0x400/0x1000/0x2000/0x4000/0x8000); usual values 12290, 8194, 0
+0x008587a0 function Native_GetYawToMoveTarget    # 0x001f: no args -> float; FUN_0088b430 atan2 in XZ from position to current move slot target (+0x28/+0x30); scripts feed it to 0x0028
+0x00858970 function Native_AngleToPoint          # 0x00f4 float (x, y, z) -> atan2 angle from the worker's x/z (0x0086c2b0) to (x, z), y ignored (0x0088b430)
+0x00858b50 function Native_MsgOpen               # 0x006a: args (window, mode) -> window; window state +0x14 = 1 (opening); Msg_ClampChoices(win, mode) gives the flags in +0x1d (bit 2 = choice, uses Msg_Flags choice count); sets up and shows the text box (0x008ada30, 0x00906d90, 0x008b0000, position 0x008af850/0x008afa90, 0x008ade10); mode is 0 (32825 calls), 2 (211) or 66
+0x00858d30 function Native_GetPitchToMoveTarget  # 0x0020: no args -> float; second result of FUN_0088b4d0 (vertical angle to the move target); scripts feed it to 0x0029
+0x00858e50 function Native_MusicLoad             # 0x0102 start (music) -> result slot; poll 0x00859040, int 0x00859250
+0x00859040 function Native_MusicLoad_Poll        # 0x0102 poll: done (5) once the sound request count 0x012fb808 <= 1
+0x00859060 function Native_MsgClose              # 0x006b: args (window) -> window; Msg_CloseWindow 0x008640f0 (state 3 = closing unless already 0/3)
+0x00859250 function Native_MusicLoad_Result      # 0x0102 int: Music_Load(music) 0x00886960 -> music; FMOD cmd 0x28 = FmodMusic::read (0x00709080, ids < 0xb6)
+0x00859410 function Native_FootstepHookEnable    # 0x0151 (material) -> 1; sets bit n of 0x0132ff2c: footstep sound on ground material n (Snd_KickFoot 0x008866b0) goes to a script request (0x00876950) instead of the SE; ?
+0x00859590 function Native_SetMapFadeType        # 0x00bc: args (t) -> t; g_SaveData+0x11 = t; at the map change 0x0086ff40 picks 0x0082cbc0 (t=0) or 0x0082cbe0 (t=1) fade; scripts push it right before map jump 0x010b
+0x00859640 function Native_TurnSetYaw            # 0x0028: args (yaw) -> wrapped yaw; turn struct +0x20 = wrap(yaw), +0x2c = wrap(current yaw pos+0x34 - yaw) (FUN_0088bc20)
+0x008596b0 function Native_SetMapFadeFrames      # 0x00bb: args (n) -> n; g_SaveData+0x12 = n; 0x0086ff40 passes it to 0x0088eb50 (frame counters 0x01330850/54) and to the fade; scripts push 0 or 15 before 0x010b
+0x008596d0 function Native_MusicPlay             # 0x0104 (music) -> 1; Music_Play 0x00886a20 (FMOD cmd 0x27 start, volume 0x7f), current music 0x01327130 = id; id 0x25 sets 0x01325b40
+0x00859880 function Native_TurnSetPitch          # 0x0029: args (angle) -> wrapped angle; turn struct +0x24 = wrap(angle), +0x30 = wrap(pos+0x30 - angle); ?pitch, paired with 0x0020
+0x00859d70 function Native_MusicWaitLoaded       # 0x0105 start: empty (poll 0x00859df0 returns 5, int 0x00859ee0 returns 1); PS2 wait stubbed on PC; scripts call it right after 0x0102
+0x00859ee0 function Native_MusicWaitLoaded_Result # 0x0105 int: returns 1
+0x0085a2a0 function Native_TurnSetSpeed          # 0x002e: args (rad/frame); turn struct +0x10 (FUN_00871580), the turn step (0x00869xxx; +0x14 when flag 0x200); default pi/64; scripts 0.1047
+0x0085a480 function Native_SetTurnSpeed          # 0x00e3 float (radians per frame?): worker thread slot (ctx +0x32) record +0x14 (worker +0x878 + slot*0x44), default pi/64; scripts push 0.1745 (10 deg)
+0x0085a4e0 function Native_SetTurnMotions        # 0x00c5: args (m0, m1, m2, m3) -> 0; ctx+0xae0..0xaec = the four motion ids in push order (e.g. 69735/69736/69733/69734 = 0x1106x); indexed by 0x00c6's kind
+0x0085a5c0 function Native_TurnSetSpeed2         # 0x002f: args (rad/frame); turn struct +0x18 (FUN_00871560); default pi/64; ?second-axis or in-motion turn speed; scripts 0.1745
+0x0085a670 function Native_GetTurnKind           # 0x00c6: args () -> bit0 = remaining turn angle (turn block +0x2c at ctx+0x890+level*0x44) > 0, bit1 = |angle| beyond the threshold g_01327124 (degrees, via 0x00873ad0); used as `func 0x00c6; popi3; pushi3; func 0x00c7; func_facc 0x5000`
+0x0085ab80 function Native_SetMoveParam3C        # 0x006d: args (float a) -> a; move block +0x3c for all 9 levels (0x0086f1c0); 0x0086d300 default pi; init pushes 0.1309 (7.5 deg); ? angle limit used while moving
+0x0085abb0 function Native_GetTurnMotion         # 0x00c7: args (kind) -> ctx+0xae0[kind], the motion set by 0x00c5
+0x0085abd0 function Native_MsgWaitEx             # 0x0084 start: args (window, x) -> -; window clamped to 0..7, saved with x (x is always 1 in the scripts) in the call state; window +0x1d |= 0x10; end slot 0x0085b6d0
+0x0085acd0 function Native_SetMoveParam40        # 0x006e: args (float a) -> a; move block +0x40 for all 9 levels (0x0086f170); default pi; init 0.1309; ? second angle limit
+0x0085ad00 function Native_GetTurnFrames         # 0x00c8: args (kind, small, large) -> int frames; d = |Angle_Wrap(turn target yaw (ctx+0x884+level*0x44) - transform yaw +0x34)|; kind&2: clamp(1-(1-d/pi)*1.2) * large, else clamp(d/(pi/2)) * small; scripts push (i3, 15, 30)
+0x0085ae90 function Native_MsgWaitEx_Poll        # 0x0084 poll (also run by 0x007c): done (1) once window state +0x14 is 0 or 4; in state 2, if the text box state (0x008b7ca0) is 3 and bit 4 of *g_ScriptState is set, closes the window and clears the bit
+0x0085af20 function Native_SetTurnParam10        # 0x006f: args (float a) -> a; turn block +0x10 for all 9 levels (0x0086f2b0, 0x874 + i*0x44); default pi/64 (0x0086d300); init 0.314; ? turn speed
+0x0085b030 function Native_SetTurnSpeedAll       # 0x00e4 float (speed) -> speed; same field for all 9 slots (0x0086f300); sibling 0x006f sets +0x10 (0x0086f2b0)
+0x0085b230 function Native_SetTurnParam18        # 0x0070: args (float a) -> a; turn block +0x18 (0x0086f260); default pi/64; init 0.1745
+0x0085b480 function Native_SetTurnParam1C        # 0x0071: args (float a) -> a; turn block +0x1c (0x0086f210); default pi/64; init 0.1745
+0x0085b620 function Native_WorkerStopMove        # 0x0077: args (worker) -> 0; Script_StopMove(Script_GetWorker(w), -1); scripts push `pushimm -1; func 0x0033` (own index)
+0x0085b6d0 function Native_MsgWaitEx_End         # 0x0084 int result: pushes the saved window, pops it again and Msg_CloseWindow's it; returns 0
+0x0085b700 function Native_PartyAdd              # 0x00ca: args (chr) -> chr; Party_SetMember(chr, 1); chr 6 when save +0xbec (0x0112d67c) == 0x43d also goes to slot 3 (0x00784d00(6,3)); chr 15 sets 0x01325ac8 = 3
+0x0085b7c0 function Native_MsgWait               # 0x007c start: args (window) -> -; pushes a 0 and pops it as the second argument, then the same as Native_MsgWaitEx; 10966 calls, after 0x006a
+0x0085b950 function Native_WorkerStopTurn        # 0x0078: args (worker) -> 0; Script_StopTurn(Script_GetWorker(w), -1)
+0x0085b980 function Native_MsgWait_Poll          # 0x007c poll: tail call to Native_MsgWaitEx_Poll
+0x0085b9b0 function Native_WorkerSetFlag0200     # 0x0116 (worker) -> worker; worker +0x36: clears 0x400, sets 0x200; ?meaning
+0x0085ba50 function Native_GetWorkerId           # 0x0033: args (worker, -1 = self) -> u16 worker+0x2e (worker id, the same id 0x0043 writes to ctx+10); pushed -1 in 27060 of 27417 calls
+0x0085ba80 function Native_MsgWait_End           # 0x007c int result: closes the saved window (Msg_CloseWindow); returns 0
+0x0085bb80 function Native_GetWorkerX            # 0x0038: args (worker) -> float x of Script_GetWorker(worker)'s position (FUN_0086c2b0 +0)
+0x0085bd40 function Native_GetWorkerY            # 0x0039: args (worker) -> float y (+4)
+0x0085bdc0 function Native_SetMoveMOT            # 0x0074: args (n) -> n; 0x0086f080 sets the u16 move block +4 for all 9 levels; default 90 (0x0086d300); debug label "MOT:" (0x0087a8b0, next to "MNW:" +6); the init worker pushes 60 twice; ? motion/frame count
+0x0085bdf0 function Native_PartySwapIn           # 0x00e7 (slot, chr; -1 = none) -> chr; Party_SwapIn 0x00784d00
+0x0085bf10 function Native_GetWorkerZ            # 0x003a: args (worker) -> float z (+8)
+0x0085c060 function Native_EnableTrigger         # 0x0034: args (kind); worker+0xab |= 1 << kind; bits gate the worker's event entries (0x00876xxx; bit 0 = talk, 0x00866980); default 0xf7 for type 1, 0xff types 2/3/5/6
+0x0085c130 function Native_LineExtend            # 0x007a: args (float a, float b) -> 1/0; only worker types 2/5 (two endpoints at transform +0 and +0x30): p0 moves back a units and p1 forward b units along the line; sets dirty bit; scripts push (10, 10)
+0x0085c280 function Native_DisableTrigger        # 0x0035: args (kind) -> 0; worker+0xab &= ~(1 << kind)
+0x0085c2d0 function Native_SetMapMarkerPos       # 0x016e (x, y) -> 1; game state 0x0112ca90 +0xb4/+0xb6 (u16); menu 0x008e2b60 draws "scene30" at (x/2, y/2-16) when nonzero; ?world map location marker
+0x0085c320 function Native_SetTriggerMode        # 0x007f: args (m) -> 1/0; worker types 2/3/5/6 only; bits 13-14 of the worker word ctx+0x34 = m; debug draw (0x0087d820 area) colours mode 0/1/2 and draws nonzero modes only when debugging; scripts push 1 (567) or 2 (22); ? disables the trigger
+0x0085c370 function Native_SpriteShow            # 0x011b (slot 0-127, data var) -> slot; sprite table 0x01327148 (0x1c each): active, alpha 0xff, color 0x80808080, data = Script_VarAddress(var)
+0x0085c3b0 function Native_BitFlagSet            # 0x0210 (bit) -> bit; sets bit in the 1024-bit array 0x0113085c (game state +0x3dcc) via 0x008701f0; clear = 0x0085c810, test = 0x0086b9e0; nagi0700 only
+0x0085c420 function Native_WaitForever           # 0x005f poll: returns 0 forever (never done), parks the entry until it is interrupted; 14636 calls in 1555 scripts
+0x0085c4c0 function Native_SpriteHide            # 0x011c (slot) -> slot; sprite +0 = 0 (slot < 0 clears slot 0) (0x008747f0)
+0x0085c4e0 function Native_WaitFrames_0000       # 0x0000: args (frames) -> frames; start slot stores the count in *result (40 instead of 10 when 0x00782970()==0x610000 && *0x00c64ca0==0x290, a one-off timing patch); scripts: "pushimm 1; func 0x0000"
+0x0085c5b0 function Native_StopMoveAllLevels     # 0x00d1: args () -> 0; Script_StopMove(own worker (ctx+0x2e), level) for levels 0-8
+0x0085c680 function Native_CharRestoreHp         # 0x0171 (chr) -> HP; Party_GetChar(chr): +0x1c = max(+0x1c, +0x24), clears +0x3d; ?HP fields
+0x0085c6b0 function Native_WaitFrames_Poll_0000  # 0x0000 poll: count -= 1 per frame (or -= FUN_00645d90() elapsed frames when *0x0112a008 && FUN_0076efc0()); done when count < 1
+0x0085c760 function Native_SpriteSetColor        # 0x0129 (slot, c0, c2, c1) -> slot; bytes +0x10/+0x12/+0x11 clamped 0-255; drawn as R,G,B (+0x10,+0x11,+0x12), so the push order is r, b, g
+0x0085c7b0 function Native_GetEntranceX          # 0x0080: args () -> float; Event_GetEntrance()+0xc; the script start passes 0x80/0x81/0x82 to set-pos 0x0013
+0x0085c860 function Native_CharRestoreMp         # 0x0172 (chr) -> ...; Party_GetChar(chr): +0x20 = max(+0x20, +0x28); returns +0x1c after filling (bug?); ?MP fields
+0x0085c8f0 function Native_GetEntranceY          # 0x0081: args () -> float; Event_GetEntrance()+0x10
+0x0085c9a0 function Native_SetPlayer             # 0x0043: no args -> own id; FUN_0086f6a0: ctx+0x0a = worker id, ctx+0x218/0x228 = its position; follows 0x0001/0x0042 in party workers
+0x0085ca00 function Worker_Detach                # (worker, [pops dispose]): frees worker+0xaa attachment (1 model 0x008722f0 "TK:ChN_DataDispose", 2 0x007ba9c0, 4/5 0x0086f4c0); +0xaa = 0, +0xa8 = 0
+0x0085cb20 function Native_GetEntranceZ          # 0x0082: args () -> float; Event_GetEntrance()+0x14
+0x0085cb40 function Native_SetPartyIndex         # 0x0042: args (index, -1 = NPC) -> index; worker+0x40 = index (model +0x18c via FUN_00872160), flag 0x200 = (index == 0), +0xaf = index<8 ? index : 15, g 0x0132ffa0[index] = worker id
+0x0085cc50 function Native_SpriteSetPos          # 0x011f (slot, x, y) -> slot; i16 +4/+6 (0x00874b30); one language/map special case remaps (0x10e, 0xd5) -> (0x122, 0xd5)
+0x0085cce0 function Native_GetEntranceYaw        # 0x0083: args () -> float; Event_GetEntrance()+8; the script start feeds it to 0x0095 (Native_SetYaw)
+0x0085cd00 function Native_VoiceStandby          # 0x00d5 start: args (voice id) -> -; keeps the id in 0x01325af0, delay 0x01325ad0 = 0x0067a9d0(id, 1); prints "VoiceStandbyInit!"; ids like 208556482
+0x0085cdc0 function Native_WorkerDetach          # 0x0005: no args; pushes 0, FUN_0085ca00 releases the attachment (+0xaa: 1 model, 2 ?camera 0x007ba9c0, 4/5 0x0086f4c0) without disposing data
+0x0085cde0 function Native_SpriteSetScale        # 0x0120 (slot, sx, sy floats, 1.0 = normal) -> slot; i16 +8/+0xa = s * 256 (0x00874a80)
+0x0085ce30 function Native_ChrGetAttachBone      # 0x0213 (point id) -> bone index of the attachment point on the worker's own model, 0 if none (Chr_FindAttachPoint 0x00833a70)
+0x0085cec0 function Native_VoiceStandby_Poll     # 0x00d5 poll: counts the delay down, then waits for 0x0076f060; returns 5 when done; "VoiceStandbyExec: Frames = %d!" (Ghidra misses this function)
+0x0085d000 function Native_SetModel              # 0x0001: args (chr id) -> 0; releases the old one, loads the model (FUN_00872210 -> 0x00825650), worker+0x9c = model, +0xa8 = id, +0xaa = 1, placed at the worker position (FUN_00870b20); ids 1-7 party, 0x5002 NPCs
+0x0085d360 function Native_VoiceStandby_End      # 0x00d5 int result: "VoiceStandbyResult!"; Voice_Prepare(id) 0x00887570 unless one is already prepared (0x0132ff1c)
+0x0085d3c0 function Native_ChrLoadAlias          # 0x0134 (chr id): tail call to Native_ChrLoad 0x0085d000
+0x0085d410 function Native_LineGetCrossSide      # 0x008b: args () -> side or -1; 0x008632b0 (types 5/6: per-actor table at worker[0xb9]) else bits 1-2 of ctx+0x36, which the line-crossing code (0x00860000.c ~6720/6955) sets to 2 or 0 for the side crossed; 3 -> -1; used in e2 of type-5 workers; ? which side the player crossed from
+0x0085d6b0 function Native_VoiceStart            # 0x00d6 start: args () -> -; "VoiceStartInit!"; delay 0x01325ad8 = 0x0067a9d0(id, 2); wait count from g_ScriptState+0x214 or 0x00885d20
+0x0085d9b0 function Native_PadPressed            # 0x0046: no args -> u16 buttons pressed this frame (g 0x013270d0 = pad +6 = (prev^cur)&cur), remapped by FUN_00888c40; scripts "& 32"
+0x0085d9d0 function Native_VoiceStart_Poll       # 0x00d6 poll: "VoiceStartExec: Frames = %d!"; waits out the delay, the stream (0x0081d710 bit 0x10000, 0x0076f060) and the count; returns 5
+0x0085de10 function Native_MsgIsReady            # 0x008f: args (window) -> 1 if window state is 0 or 4, or 2 with the text box state (0x008b7ca0) 3; else 0
+0x0085de80 function Native_VoiceStart_End        # 0x00d6 int result: "VoiceStartResult!"; Voice_Play(0x00873b80(), 0x00873b90()) at 0x00887690; resets 0x01325ae4 (Ghidra misses this function)
+0x0085e090 function Native_VoiceStop             # 0x00d7: args () -> 0; unless 0x012fb8a0 == 1, Voice_Stop 0x00887780 (clears 0x0132ff1c, 0x0067a7a0) (Ghidra misses this function)
+0x0085e1d0 function Native_VoiceIsPlaying        # 0x00d8: args () -> 1 while the voice plays (countdown 0x01325ae0/e4 or 0x008864b0), else 0; "VoiceStatusStart!" / "VoiceStatusExec: Frame = %d!"; scripts loop `func 0x00d8; popa_jz` after 0x00d6
+0x0085e290 function Native_MusicFadeOut          # 0x0188 (frames) -> frames; <1 stops current music now, else fades it (0x00886af0); then plays the queued music 0x00c526d0 (id | volume << 8) if any
+0x0085e4a0 function Native_SoundWait_Poll        # 0x00d9 poll only: voice-sync countdown (0x01325aec/0x01325ae8, "VoiceSyncStart!", "VoiceSyncExec: Frame = %d!") else done when no sound request is pending (0x008864b0)
+0x0085e920 function Native_AttachCamera          # 0x0002: args (kind 0-3, slot 0-2, unused) -> 0; ?camera controller FUN_007ba780 (0x01136f88.. tables, 0x007bd110), kind 0 -> 1 for the player worker; +0xaa = 2, kind 1 sets +0x36 0x10; scripts "1, 0, 0" at e0
+0x0085f040 function Native_SetArriveRadius       # 0x0017: args (radius) -> radius; current move slot +0x38 (FUN_00870d10), the radius 0x002d sets for all slots; 0 adds 0x800 in 0x0018
+0x0085f170 function Native_SetYaw                # 0x0095: args (float a) -> a; Script_StopTurn(self), a = Angle_Wrap(a) into transform +0x20 (movement heading, read by 0x008629c0) and +0x34 (model rot Y); updates the model (0x0082b1b0/0x0082b520) or 0x0086f4c0
+0x0085f310 function Native_SfxPlay               # 0x00df (sfx) -> sfx; Sfx_PlayDefault 0x00886e80: pan 0x3f, volume 0x7f
+0x0085f370 function Native_TriggerSetLine        # 0x0054: args (x1, y1, z1, x2, y2, z2) -> 1; worker types 2/5 only: pos block +0..8 = point 1, +0x30..0x38 = point 2, +0x1c = -1.0, sets active flag 0x80 (+0x34) and dirty (+0x36 |= 1)
+0x0085f460 function Native_SetPitch              # 0x0096: args (float a) -> a; Script_StopTurn(self), Angle_Wrap(a) into transform +0x24 (second heading angle in 0x008629c0) and +0x30 (model rot X); ? pitch
+0x0085f5a0 function Native_GetOwnWorkerType      # 0x0076: args () -> Script_GetWorkerType(ctx+0x2e); the first call in the shared init worker's e0 (`func 0x0076; popb`)
+0x0085fa80 function Native_MsgGetState           # 0x0097: args (window) -> u16 Msg_Window(w)+0x14 (0 closed, 1 opening, 2 open, 3 closing, 4 ?); scripts loop until it is 2
+0x0085faa0 function Native_SetPos_0013           # 0x0013: args (x, y, z) -> 0; FUN_00870b20: worker position, model (FUN_0082b480) or ?camera (FUN_007bf940); for the player also ctx+0x218
+0x0085fbf0 function Native_TriggerSetActive      # 0x0056: args (on) -> 1 (0 for other types); worker types 2/3/5/6: +0x34 bit 0x80 = on, +0x36 |= 1
+0x0085fd20 function Native_WaitFrames_01d1       # 0x01d1 start (frames) -> result slot
+0x0085fea0 function Native_SetPos_0126           # 0x0126 (x, y, z floats) -> 0; Worker_SetPos 0x00870b20 (also moves the model, and the player record if this is the player)
+0x0085ff30 function Native_SfxPlayEx             # 0x00fd (sfx, pan, volume 0-127) -> sfx; Sfx_Play 0x00886e50 -> FMOD cmd 0x33 (FmodSfx_Start)
+0x0085ff70 function Native_WaitFrames_Poll_01d1  # 0x01d1 poll: counts down, done at < 1, or immediately when 0x0133c913 is set (?skip)
+0x008600c0 function Native_TriggerSetActive2     # 0x005c: same code as 0x0056 at its own address (+0x34 bit 0x80); used in entries e8/e9 as on/off pairs
+0x008602a0 function Native_MsgShowWait           # 0x013b start (window, message, choice a?, choice b?, x, y, anchor) -> 0x008607a0 mode 2: position (+0, +2, +0x1c), Msg_Text, +0x1e/+0x1f, opens; scripts push (2, 49, 0, 1, 256, 224, 4)
+0x008602f0 function Native_MoveSetTarget         # 0x0015: args (x, y, z) -> 0; FUN_0086f780: current move slot +0x28..0x30 = target, +0x1c..0x24 = current position as start
+0x008603d0 function Native_MsgShowWait_Poll      # 0x013b poll: tail call to 0x00859c50: waits on window state +0x14 (0 or 4 done; 2 = choice made) and stores the chosen option
+0x008603e0 function Native_TriggerSetPoint       # 0x0057: args (x, y, z) -> 1; worker types 3/6 only: position = point, +0x34 |= 0x80, +0x36 |= 1
+0x00860760 function Native_MsgShowWait_Result    # 0x013b int: tail call to 0x0085a6f0 -> chosen option (-1 none)
+0x00862800 function Fp_BindToWorker              # (worker, fp id, bone): records the id in the worker's 4 FP slots (+0xb18) and attaches the effect to the worker's model (0x0072a530) or other object kinds (0x0072a590/0x0072a5e0)
+0x008632b0 function Script_LineActorSide         # (worker, key): types 5/6 only; status byte of the worker[0xb9] entry matching the actor id; 3 or not found -> -1
+0x00863e10 function Script_StopMove              # (worker, level or -1 = current): levels sharing that level's move block get their own block at ctx+0x5b8+i*0x4c with flags +2 = 0, keeping its fields; also stops turning if flag 0x4000
+0x00863fe0 function Script_StopTurn              # (worker, level): the same for the turn block (ctx+0x864+i*0x44, pointer at level block +0x48)
+0x008640f0 function Msg_CloseWindow              # (window): clamps 0..7; if state +0x14 is not 0 or 3, sets 3 and calls 0x008ab8f0
 0x008641e0 function Script_Run                # the bytecode interpreter (docs/formats/script.md)
 0x0086536c label    g_ScriptOpcodeCases       # opcode -> case index byte table of Script_Run
 0x00869d60 function Script_Fetch              # opcode << 24 | u16 operand when the high bit is set
+0x0086a2f0 function Script_GetWorkerPos          # (worker, &x, &y, &z): transform position; types 2/5 give the midpoint of +0 and +0x30
+0x0086a7b0 function Script_GetWorkerType         # (index) -> type byte of the worker header, or 7 if the index is out of range
 0x0086a830 function Script_GetWorker          # worker index -> worker object (0xb58/0x558/0x5b8 sizes)
+0x0086ae50 function Script_WorkerCamSlot         # (worker) -> worker + 0x3c (camera handle cache of group 6 natives)
+0x0086ae80 function Script_WorkerChr             # (worker) -> field character object (worker + 0x9c); used by every chr native of group 5
+0x0086b740 function Minimap_GetWorkerMarker      # (index, &out): worker marker from the script's tag table (+0x2c -> +0x18) or worker +0xbc override; flags 0x800, 0x2000, icon >> 4; used by 0x0091da80 and the debug list 0x00881be0
 0x0086ba90 function Msg_TextAlt                # (i): entry i's alternate text (+4) in the event's message table (script context +0x34); offset 0 falls back to the .ebp's own table (0x023cbd60)
+0x0086be90 function Msg_Window                   # (i): message window i (<0 or >7 clamped), 0x2c bytes at 0x01326d70 + (i + *0x01326b82*8)*0x2c
 0x0086bf10 function Msg_Flags                  # (i): entry i's flags (+2); high byte = choice count; kept at message window +0x16 (0x008607a0)
 0x0086bf30 function Msg_Text                   # (i): entry i's text (+0) in the event's message table; offset 0 falls back to the .ebp's section 1
 0x0086bf70 function Msg_Get                    # (i, alternate, table): like Msg_Text/Msg_TextAlt; table 1 = script context +0x38 (.ebp section 5)
+0x0086bfe0 function Event_GetEntrance            # (ctx) -> 0x20-byte entrance record (current entrance index * 0x20 into the event table at ctx+4); 0x01325b50 when there is none
+0x0086c2b0 function Worker_PosBlock              # (worker): type 4 -> null, types 5/6 -> worker+0x284, else worker+0x558 (x,y,z +0; +0x30 pitch?, +0x34 yaw; +0x3c talk angle, +0x40 talk range)
 0x0086c2e0 function Script_VarAddress          # (worker, location word): storage = bits 25-27 (0 globals at *(*0x01326b28+0x2c), 1 at +0x30, 2-6 script/worker data) + offset
 0x0086d6d0 function Script_InitNatives        # registers the native function tables per group
 0x0086de50 function Script_PopFloat
@@ -185,6 +439,13 @@
 0x0086e3c0 function Script_PushFloat
 0x0086e3f0 function Script_PushInt
 0x0086e440 function Script_PushVar
+0x0086f6a0 function Event_SetPlayer              # (worker id): ctx+0x0a = id; copies its position to ctx+0x218 and +0x228
+0x0086ff40 function Event_ChangeMap              # (map, entrance, flag): drops control, 0x0088ea60, ctx byte 0 &= 0x7f, ctx+0x210 |= 2, fade (FUN_0088eb50)
+0x00870b20 function Worker_SetPos                # (worker, x, y, z, snap): position + model/?camera; player worker updates ctx+0x218/0x228
+0x00871210 function Msg_ClampChoices             # (window, mode): with mode bit 2, clamps the choice cursors +0x1e/+0x1f/+0x22/+0x23 to the counts in Msg_Flags (window +0x16); drops bit 2 (no choices) / bit 0x40; returns the flags
+0x008719e0 function Event_DisableControl         # see Native_ControlDisable
+0x00871ab0 function Event_EnableControl          # see Native_ControlEnable
+0x00872650 function Script_WorkerLevel           # (worker, level) -> 0x4c-byte level block at ctx+0x12c+level*0x4c (types 5/6: 2 levels); +0x44 move block ptr, +0x48 turn block ptr
 0x008726f0 function Script_Jump               # pc = code start + labels[index]
 0x00872ef0 function Event_Load                 # (event): reads the .ebp, its localized message table (Msg_LoadFile) and .ftc, starts its scripts
 0x00875510 function Event_InitScripts          # (..., messages, messages2, ...): script context +0x34 = messages, +0x38 = section 5 (or messages)
@@ -192,26 +453,119 @@
 0x008777a0 function Script_CallNative         # slot 0 (start) of the native table entry
 0x008777f0 function Script_FinishNative       # slot 2 (float) or 3 (int) result, pushed
 0x00877880 function Script_SetNativeTable     # (group, table)
+0x00877b70 function Native_MathSqrt              # 0x1006 float (x) -> sqrt(x)
+0x00886960 function Music_Load                   # (music < 0x100): waits pending requests, FMOD cmd 0x28 (FmodMusic::read) + IOP request 0x15
+0x00886a20 function Music_Play                   # (music < 0x100): FMOD cmd 0x27 (FmodMusic start, 0x007096f0), volume 0x7f (0x00886ab0)
+0x00886ab0 function Music_SetVolume              # (music, volume): volume table 0x013300e0
+0x00886af0 function Music_FadeOut                # (music, frames)
+0x00886e50 function Sfx_Play                     # (sfx, pan, volume): FMOD cmd 0x33 via 0x0081e4e0
+0x00886e80 function Sfx_PlayDefault              # (sfx): Sfx_Play(sfx, 0x3f, 0x7f)
+0x00887570 function Voice_Prepare                # (id): 0x0067a720 (sound command 0x10), sets 0x0132ff1c = 1
+0x00887690 function Voice_Play                   # (a, b): sound command 0xf via 0x0067a770; clears 0x0132ff1c
+0x00887780 function Voice_Stop                   # 0x00887b50(0) + 0x0067a7a0 (sound command 10)
+0x00888c40 function Pad_MapButtons               # (a, b, buttons): remaps button bits through the config table 0x01330488
+0x0088b430 function Math_Atan2XZ                 # (x0, z0, x1, z1) -> angle with axis special cases
+0x0088b4d0 function Math_YawPitchTo              # (*yaw, *pitch, from xyz, to xyz)
+0x0088b730 function Math_InRadius                # (r, dx, dy, dz) -> dx^2+dy^2+dz^2 <= r^2
+0x0088bc20 function Math_WrapAngle               # wraps to [-pi, pi]
 0x0088cac0 function Msg_LoadFile               # (name): new_<lang>pc/event/obj_ps3/<xx>/<name>.bin, battle/btl/<name>/<name>.bin (name with _), battle/kernel (monster*), menu/*.dcp (macro*)
+0x0088d670 function Map_GetEntranceIndex         # byte g_SaveData+0xc
+0x0088ea60 function Map_RequestChange            # (map, entrance): game state (0x00785240) +0 = map, +2 = previous, +0xc = entrance; map < 0 = return to the saved map
+0x008b70a0 function MacroDic_Section             # (n, table) -> *(macrodic table + (n - 19) * 4)
+0x008b85c0 function MacroDic_Load                # Msg_LoadFile("macrodic"): 16 section offsets -> pointers in g_MacroDic
 0x008c6920 function Cmd_HealAmount            # formula +0x28: 6 = power*50, 7 = (stat+power)/2*power, 8 = maxHP*power/16; power +0x2a
+0x0091b070 function Native_FpBind                # 0x8009: args (fp id, bone) -> 1; Fp_BindToWorker(worker, id, bone); bone often from func 0x0213
+0x0091b0a0 function Native_FpBindPos             # 0x800a: args (fp id, x, y, z) -> 1; debug "**** mpfpbindpos id:%d pos:%f,%f,%f"; 0x00862920 sets the bound effect's offset (0x0072a630)
+0x0091b130 function Native_FpUnbind              # 0x800b: args (fp id; <= 0 = all) -> 1; 0x008628a0 clears the worker's FP slots (0x0072a120)
+0x0091b1a0 function Native_MapPartShow           # 0x800f: args (part index) -> 1; language override through 0x006412b0, then 0x0091a830 clears bit 0 of the 0xc0-byte map part entry and enables it (0x00644120(i, 1))
+0x0091b1e0 function Native_MapPartHide           # 0x8010: args (part index) -> 1; 0x0091a7c0 sets bit 0 and disables the part (0x00644120(i, 0))
+0x0091c530 function Native_FieldSetMaskBit       # 0x8000: args (bit, on) -> bit; 0x0088eba0 sets/clears the bit in 0x018ded0c (default -9/-1, saved by Script init 0x00865dc0); ?meaning; map 0x188 forces bit 14 on
+0x0091c670 function Native_FpRun                 # 0x8002: args (fp id, restart) -> restart; restart != 0: Fp_Restart (run from start), 0: Fp_End
+0x0091c740 function Native_FpShow                # 0x800d: args (fp id, show) -> show; show != 0: Fp_Show, 0: Fp_Hide
+0x0091c7a0 function Native_FpRunMode2            # ?0x8003: args (fp id) -> 1; Fp_RestartMode2 (state 2)
+0x0091c810 function Native_BltzSetObjModels      # ?0x8067: args (worker a, worker b, mode, unused) -> 1; Blitzball only (bltz000x); first map object of type 0x20008 gets both workers' models (+0x9c via 0x0086b3a0) and mode (0x00922ef0)
 0x00a42830 function Cd_FileName                # cdecl(number) -> "host0:/ffx/master/..." path of a PS2 file of the current module
 0x00a428a0 function CdFileSize_PC              # cdecl(number): size from sizetbl.bin, or the real file for some modules ("CDfileSize_PC: MISSING?")
+0x00a77b30 function Native_FootSetMaterial       # 0x403b (index, material) -> 0; footstep material table 0x01301af8[set 0x01301b00 * 4 + index] = material (read by 0x0083d7e0)
+0x00a77c30 function Native_SetControlAngle       # 0x4040 float (degrees) -> 0; stick-direction offset 0x01300780 = wrap(deg) + current input angle 0x013007a0 (0x0082d950), used by the player movement code 0x0082d5xx; scripts push 19, -160
+0x00a77d80 function Native_FadeIn                # 0x4004 (frames) -> 0; Screen_StartFade(frames, 1, 0): black overlay alpha n/total -> 0
+0x00a77da0 function Native_FadeOut               # 0x4005 (frames) -> 0; Screen_StartFade(frames, 0, 0): to black and held
+0x00a77e00 function Native_MotionBlur            # 0x400a (strength, 0 = off) -> 0; 0x0082bee0: MotionBlur "BlendWeight" = n / 128 (0x00643730/0x00643750)
+0x00a77ee0 function Native_FadeWait              # 0x400d start: empty
+0x00a77ef0 function Native_FadeWait_Poll         # 0x400d poll: done when fade slot 4's counter 0x0130074c is 0 (only fade in ends; follows 0x4004 in 633 of 685 calls)
+0x00a78030 function Native_LightSet              # 0x4013 (light, r, g, b, pitch deg, yaw deg) -> 0; Light_Set 0x00836520
+0x00a78210 function Native_MenuOpen              # 0x401d start (menu id): "%d:sgMenu Init", Menu_Request 0x00821750, frame counter 0x022fb4d4 = 1
+0x00a78270 function Native_MenuOpen_Poll         # 0x401d poll: "%d:sgMenu Exec", waits one frame (0x022fb4d4)
+0x00a782a0 function Native_MenuOpen_Result       # 0x401d int: "%d:sgMenu Result = %d" -> 0x012fbc3c
+0x00a78750 function Native_ChrGetMotionFrame     # 0x5051: no args -> current motion frame (chr +0x740, 8.8 fixed; the "frame=" of the CHRINFO debug view)
+0x00a78770 function Native_ChrSetMotion_5000     # 0x5000 (motion) -> 0; SG_SetMotion(worker model +0x9c, motion)
+0x00a787d0 function Native_ChrWaitMotion_5003    # 0x5003 start: no-op (reads the model)
+0x00a788a0 function Native_ChrWaitMotion_Poll_5003 # 0x5003 poll: done (5) when model +0x736 is 0 (?motion playing flag)
+0x00a78940 function Native_ChrReleaseMotion      # 0x5005: no args -> 0; Chr_ReleaseMotion: ends the scripted motion so the automatic stand/walk/run motions (0x75c table, 0x00835d30) take over
+0x00a78ac0 function Native_ChrHide               # 0x5008: args (hide 0/1) -> 0; sets/clears the "Ev" hide bit (chr +0x180 bit 0, Chr_SetHideFlags); map 0x21e8 forces 0 for model 0x108a
+0x00a78af0 function Native_ChrSetBoneUpdate      # 0x5057: args (worker, on) -> previous; chr +0x194 bit 0 of another worker's chr (0x00835750); ?bit 0 = recompute the skeleton every frame (0x00832110)
+0x00a78b30 function Native_ChrSetPushWeight      # 0x5009: args (weight float) -> previous; chr +0x500, weighs how far each chr is pushed when two collide (0x0083ecd0); <0 special (scripts push -1)
+0x00a78cb0 function Native_ChrSetGroundFollow    # 0x500e: args (on) -> 0; on clears chr +0x194 bit 0x80 (stick to ground, height clamped to +0x16c); off = free 3D movement, normal reset to (0,-1,0) (0x0082aa70)
+0x00a78d70 function Native_ChrSetNextMotionBlend # 0x505c: args (frames; -1 = 0, 0 = 1) -> 0; chr +0x73c "nexthokan" (interpolation frames, CHRINFO debug text)
+0x00a78da0 function Native_ChrSetBodyHit         # 0x500f: args (on) -> 0; on clears chr +0x194 bit 8 ("bodyhit=" = !bit 8 in the CHRINFO debug text), 0 disables chr collision (0x0082a9f0)
+0x00a78dd0 function Native_ChrGetMotion          # 0x505d: no args -> current motion id (chr +0x72c, "Motion : %x" in CHRINFO)
+0x00a79130 function Native_ChrSetGroundMode      # 0x5017: args (mode) -> 0; chr +0x182: 0 clamp to ground, 1 snap to ground, 2 float/bob (water) (height update in 0x00832f..)
+0x00a79270 function Native_ChrPlayMotion         # 0x501a: args (motion, unused, loops, start frame, end frame; -1 = end) -> 0; Native_PlayMotionCommon mode 1 (Chr_PlayMotion); scripts push e.g. (0x1109e, 0, 1, 0, 20)
+0x00a792d0 function Native_ChrSetMotion_501b     # 0x501b: args (motion) -> 0; SG_SetMotion on the worker's chr
+0x00a79370 function Native_ChrWaitMotion_501e    # 0x501e start slot: empty (ret)
+0x00a793c0 function Native_ChrWaitMotion_Poll_501e # 0x501e poll: no args; done (5) when the scripted motion has ended (chr +0x736 == 0); counts frames in 0x022fb4d8 when 0x012fb80c == 1
+0x00a794b0 function Native_ChrReleaseMotion2     # 0x5020: same body as 0x5005 (Chr_ReleaseMotion)
+0x00a79510 function Native_ChrSetMotionSpeed     # 0x5021: args (speed, 8.8 fixed, 256 = 1x) -> 0; chr +0x750, multiplies the clip speed +0x754 in the frame step (0x00836f..: speed * [0x750] >> 8)
+0x00a79550 function Native_ChrSetMotionSeqLevel  # 0x5022: args (n) -> 0; chr +0x737, compared by motion sequence opcode 6 (SG_SeqStep, branch when operand <= n); ?meaning; scripts push 0/1
+0x00a795d0 function Native_WaitCdIdle            # 0x5068 (poll slot only): no args; done when the CD-library sync (g_CdLib +8, 0x0076c490, mode 1) returns 0; scripts use it right after 0x504e
+0x00a79670 function Native_ChrSetAutoMotion      # 0x5025: args (slot, motion; -1 = default) -> 0; Chr_SetAutoMotion, chr +0x75c[slot]: the motions used for stand/walk/run when no scripted motion plays
+0x00a79800 function Native_ChrLoad               # 0x504e: args (chr id) -> 0; Chr_LoadData, starts reading the character's CHRDATA
+0x00a79820 function Native_ChrLoadSystemMgrp     # 0x5010 start: args (chr id, n), saved in the call state; prints "chReadSystemMGRP %04x %x start"
+0x00a79970 function Native_ChrLoadSystemMgrp_Poll # 0x5010 poll: returns 5 immediately
+0x00a79980 function Native_ChrLoadSystemMgrp_Result # 0x5010 int result: prints "chReadSystemMGRP %04x %x fin", calls Chr_LoadSystemMgrp(chr id, n); -> 0
+0x00a799b0 function Native_ChrLoadMotionGroup    # 0x5001 start (n) -> result slot; poll 0x00a79a10 returns 5
+0x00a79a20 function Native_ChrLoadMotionGroup_Result # 0x5001 int: Chr_LoadMotionGroup(n) 0x008375f0 -> 0; ?
+0x00a79af0 function Native_ChrSetDistanceCull    # 0x502a: args (on) -> previous; chr +0x194 bit 11: hide past clip Z (+0x174) or off screen ("Z"/"Disp" hide bits, 0x0082e2..)
+0x00a79c50 function Native_ChrAttach             # 0x502d: args (worker, point) -> 0; attaches the chr to another worker's chr at attach point id (+0x19c, 0x00833a70 looks up the model's point table); worker -1 detaches
+0x00a79e60 function Native_ChrPlayDefaultMotion  # 0x5032: no args -> 0; SG_PlaySlotMotion(chr, chr +0x185, 0)
+0x00a79ea0 function Native_ChrFadeAlpha          # 0x5033: args (alpha float, frames) -> 0; shade alpha at chr +0x354 ("shadeRGBA" in CHRINFO): target + frames, frames 0 = immediate (0x0082b990); scripts push (0, 60)
+0x00a79f40 function Native_ChrSetMotionBlend     # 0x5034: args (frames) -> 0; chr +0x73a, copied to "hokan" (+0x752) when the next clip starts (SG_StartClip); 0 marks dirty (+0x820 |= 4)
+0x00a7a210 function Native_ChrSetTalking         # 0x507e: args (worker, on) -> 0; chr +0x4d4 of another worker's chr turns on random rotation of bone 13 (0x00834..); ?mouth flapping while a voice line plays (used around 0x00d5 calls)
+0x00a7a340 function Native_ChrSetHitRadiusScale  # 0x5039: args (scale float; <= 0 = model default +0x1c4->+0x1c) -> previous; chr +0x4e4, collision radius +0x4e8 = mean bbox width * scale; scripts push 6.0, 8.0
+0x00a7a610 function Native_ChrSetMotion2         # 0x5040: same body as 0x501b (SG_SetMotion)
+0x00a7a6a0 function Native_ChrRefreshAllBones    # 0x5087: no args -> 0; Chr_RequestBoneUpdateAll; ?one-time skeleton refresh of every chr
+0x00a7a780 function Native_ChrPlayMotion2        # 0x5042: same body as 0x501a (Native_PlayMotionCommon mode 1)
+0x00a7aae0 function Native_PlayMotionCommon      # (ctx, args, mode, other worker): pops end, start, loops, unused, motion (+ worker); mode 0/1/2 -> Chr_PlayMotionMarks/Chr_PlayMotion/Chr_PlayMotionInclEnd; per-map hacks set chr +0x870
 0x00cc9698 label    g_BasePath
 0x00cc9c48 label    g_FileSys
 0x00cc9cf5 label    g_SteamReady              # guards every other Steam call (achievements, RunCallbacks)
 0x00ccb95c label    g_CharsetCjk
 0x00ccb960 label    g_CharsetWestern
 0x00cded58 label    g_LangManager
+0x00d2c258 label    g_FpData                     # current field's FP (effect) table: u16 count at +4, 0x50-byte entries with the id at +0x64; runtime state at 0x00d2c260 (0x80 each) and 0x00d30260 (0x4c each)
 0x0112a92c label    g_KernelCommand
 0x0112a930 label    g_KernelMonMagic1
 0x0112a938 label    g_KernelPlyRom
 0x0112a940 label    g_KernelItem
 0x0112a944 label    g_KernelAAbility
+0x0112c9cd label    g_BtlPadOrientation          # 0-3, set by 0x7099; read by 0x00780ce0 for the d-pad remap
+0x0112c9e2 label    g_BtlTurnActor               # ?actor index copied from 0x0112c9df when a turn starts; read by 0x708d
 0x0112ca6c label    g_KernelMonster1
 0x0112ca70 label    g_KernelMonster2
 0x0112ca74 label    g_KernelMonster3
+0x0112ca90 label    g_SaveData                   # 0x68c0-byte block copied from/to the save (0x00870000.c:7810, 0x008d0000.c:6884); +0 current map
 0x01130f2c label    g_Equipment                # 200 x 22-byte equipment slots (docs/formats/kernel.md)
 0x0113205c label    g_PlySave                  # ply_save records, 0x94 bytes each; +0x2d weapon slot, +0x2e armor slot
+0x01137540 label    g_Cameras                    # ?3 cameras x 0xda0: two sides of 0x61c each (0 = ref, 1 = cam), channels of 0x130 at +0xc0, channel table at 0x011381a8
+0x01326b28 label    g_ScriptContext              # event/script context pointer (FUN_0086aff0): +0x0a player worker, +0x0c worker count, +0x218 player position, +0x1e4/0x1f0 talk state
+0x01326d70 label    g_MsgWindows                 # 2 banks x 8 message windows, 0x2c bytes: +0x14 state, +0x16 Msg_Flags, +0x18 display flags, +0x1d mode flags
+0x013270d0 label    g_PadPressed                 # buttons newly pressed this frame, OR over pads (0x00871d70)
+0x01327148 label    g_EventSprites               # 128 x 0x1c: +0 active, +1 alpha, +4/+6 x/y, +8/+0xa scale*256, +0xc frame, +0x10 rgb, +0x14 data; drawn by 0x00874420
 0x01328558 label    g_NativeTables            # per-group native function tables
+0x0132ffa0 label    g_PartyWorkers               # [16] worker id per party index (0x0042, FUN_00885fd0)
+0x01869ab0 label    g_MsgVars                    # per window 32 pointers to text variable records {u8 default type, u8 type, i32 value}; text code 0x12
+0x01869eb0 label    g_MacroDic                   # macrodic section pointer table (MacroDic_Load)
 0x022fb504 label    g_Settings
 0x02310c40 label    g_CdLib                   # function table of the PS2 CD-library emulation
+0x023c44e0 label    g_ChrCount                   # number of field characters in g_ChrArray
+0x023c44e4 label    g_ChrArray                   # field characters, 0x880 bytes each (byte +2 = active)

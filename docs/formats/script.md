@@ -67,6 +67,25 @@ address (and name, when `symbols/ffx.sym` has one); for example
 `0x70ab` → `0x007a5360`, which sets a battle actor property
 (`0x007b4b70`).
 
+`ffx script natives` lists every native the shipped scripts call (event
+scripts, monster AI and battle scripts), with its call count, the number
+of scripts calling it, its four handler slots and its name. The 226 most
+used natives, by calls and by scripts, are named in `symbols/ffx.sym`
+(`Native_*`, with arguments in push order and the evidence), which covers
+97 % of the 3.1 million calls. By group:
+
+| Group | Area | Examples |
+|---|---|---|
+| 0 | workers, movement, triggers, messages, sound, party | `Native_MsgSetText` (`0x0064`: window, message), `Native_MsgOpen` (`0x006a`), `Native_MsgWait` (`0x007c`), `Native_MoveStart` (`0x0018`), `Native_SetPos_0013`, `Native_MapJump` (`0x010b`: map, entrance), `Native_WaitFrames_0000`, `Native_SpriteShow` (`0x011b`) |
+| 1 | maths | `Native_MathSqrt` (`0x1006`) |
+| 4 | screen | `Native_FadeIn` (`0x4004`), `Native_FadeOut` (`0x4005`), `Native_LightSet` (`0x4013`), `Native_MenuOpen` (`0x401d`) |
+| 5 | field characters | `Native_ChrPlayMotion` (`0x501a`), `Native_ChrWaitMotion_501e`, `Native_ChrHide` (`0x5008`), `Native_ChrSetMotionBlend` (`0x5034`) |
+| 6 | camera | `Native_CamSetPos` (`0x6002`), `Native_CamMove` (`0x6010`), `Native_CamSetScreenDepth` (`0x603b`) |
+| 7 | battle | `Native_BtlUseCommand` (`0x700b`: targets, command), `Native_GetActorProperty` (`0x700f`), `Native_SetActorsProperty` (`0x7018`), `Native_ActorPlayMotion` (`0x7007`) |
+| 8 | field effects, map parts | `Native_FpRun` (`0x8002`), `Native_FpBind` (`0x8009`), `Native_MapPartShow` (`0x800f`) |
+
+Names marked `?` in their comments are inferred, not traced end to end.
+
 ## Script block
 
 All offsets are relative to the block start (`B`). Code offsets in tables
