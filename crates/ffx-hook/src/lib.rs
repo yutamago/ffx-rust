@@ -123,13 +123,12 @@ pub fn hooks() -> [Hook; 4] {
             original: Some(&mods::FILE_OPEN_ORIGINAL),
         },
         Hook {
-            name: "Input_UpdatePad",
-            address: 0x0063_2a30,
-            // push ebp; mov ebp, esp; push -1 (the next push has a relocated
-            // immediate, so it is not copied)
-            prologue: &[0x55, 0x8b, 0xec, 0x6a, 0xff],
-            replacement: harness::update_pad as *const () as usize,
-            original: Some(&harness::UPDATE_PAD_ORIGINAL),
+            name: "Input_KeyHeld",
+            address: 0x0062_9d50,
+            // push ebp; mov ebp, esp; mov eax, [ecx + 0x2b8]
+            prologue: &[0x55, 0x8b, 0xec, 0x8b, 0x81, 0xb8, 0x02, 0x00, 0x00],
+            replacement: harness::key_held as *const () as usize,
+            original: Some(&harness::KEY_HELD_ORIGINAL),
         },
     ]
 }

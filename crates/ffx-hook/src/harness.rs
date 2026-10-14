@@ -2,9 +2,9 @@
 //!
 //! Enabled by `FFX_HARNESS=<port>` (listening on `127.0.0.1`). It then:
 //!
-//! - ORs the buttons the test holds into the game's PS2 pad word, right
-//!   after `Input_UpdatePad` (`0x00632a30`) has built it from the bound keys
-//!   and pads;
+//! - makes the keys bound to the PS2 buttons the test holds read as held
+//!   (`Input_KeyHeld`, `0x00629d50`), so the game and its Flash menus see
+//!   the buttons as if pressed on the keyboard;
 //! - patches the swap chain's `Present` (from `D3D11CreateDeviceAndSwapChain`)
 //!   to count frames and run commands on the game thread, between frames;
 //! - adds keys the test holds to the `DirectInput` keyboard
@@ -62,29 +62,57 @@ static BACKGROUND: AtomicBool = AtomicBool::new(false);
 
 /// PS2 buttons held by the test.
 static BUTTONS: AtomicU32 = AtomicU32::new(0);
-/// Pad updates seen, for `stats`.
+/// Bindings reported held for the test, for `stats`.
 static PAD_READS: AtomicU32 = AtomicU32::new(0);
-/// Trampoline to the original `Input_UpdatePad`.
-pub static UPDATE_PAD_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
+/// Trampoline to the original `Input_KeyHeld`.
+pub static KEY_HELD_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
+/// The game's input object (`0x00ccb170`): its `+0x9c` counts the
+/// (binding, pad bit) pairs at `*(+0xa4)`.
+const INPUT: u32 = 0x00cc_b170;
 
-/// Wraps `Input_UpdatePad` (`0x00632a30`, `fastcall(input)`): after it
-/// stores the pad word at `input + 0` (the previous one at `+4`), adds the
-/// held buttons.
+/// Wraps `Input_KeyHeld` (`0x00629d50`, `thiscall(devices, binding,
+/// device)`): for each pad bit the test holds, the first keyboard binding
+/// (≥ 28) paired with it reads as held, as if its key were pressed. `Input_UpdatePad` (`0x00632a30`) asks this for every
+/// binding when it builds the pad word, for the game and for the Flash
+/// menus alike.
 ///
 /// # Safety
-/// Called by the game with its input object.
-pub unsafe extern "fastcall" fn update_pad(input: *mut u32) {
-    // SAFETY: the trampoline runs the original with the same argument.
-    unsafe {
-        let original: unsafe extern "fastcall" fn(*mut u32) =
-            std::mem::transmute(UPDATE_PAD_ORIGINAL.load(Ordering::Acquire));
-        original(input);
+/// Called by the game.
+pub unsafe extern "thiscall" fn key_held(devices: *mut c_void, binding: u32, device: u32) -> u32 {
+    // SAFETY: the trampoline runs the original with the same arguments.
+    let held = unsafe {
+        let original: unsafe extern "thiscall" fn(*mut c_void, u32, u32) -> u32 =
+            std::mem::transmute(KEY_HELD_ORIGINAL.load(Ordering::Acquire));
+        original(devices, binding, device)
+    };
+    let buttons = BUTTONS.load(Ordering::Acquire);
+    if buttons == 0 || device != 0 || !ENABLED.load(Ordering::Relaxed) {
+        return held;
     }
-    if ENABLED.load(Ordering::Relaxed) && !input.is_null() {
+    let input = crate::rebase(INPUT);
+    // SAFETY: the input object is a static of the game; its pair array is
+    // set up before the first pad update.
+    let bound = unsafe {
+        let count = *((input + 0x9c) as *const u32) as usize;
+        let pairs = *((input + 0xa4) as *const *const [u32; 2]);
+        // For each held button, the first keyboard binding paired with it:
+        // the key a player would press.
+        !pairs.is_null()
+            && binding >= 28
+            && (0..32).any(|bit| {
+                let bit = 1u32 << bit;
+                buttons & bit != 0
+                    && (0..count.min(256))
+                        .map(|k| *pairs.add(k))
+                        .find(|&[b, pair_bit]| b >= 28 && pair_bit == bit)
+                        .is_some_and(|[b, _]| b == binding)
+            })
+    };
+    if bound {
         PAD_READS.fetch_add(1, Ordering::Relaxed);
-        let held = BUTTONS.load(Ordering::Acquire);
-        // SAFETY: the pad word is the input object's first field.
-        unsafe { *input |= held };
+        (held & !0xff) | 1
+    } else {
+        held
     }
 }
 

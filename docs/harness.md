@@ -16,7 +16,7 @@ tools/harness.py quit
 | Piece | Hook | Why |
 |---|---|---|
 | Frames | `IDXGISwapChain::Present` (vtable of the swap chain from `D3D11CreateDeviceAndSwapChain`, patched in the import table) | Counts frames; commands that touch game state or the GPU (`call`, `shot`, waits) run here, on the game thread, between frames |
-| Buttons | `Input_UpdatePad` (`0x00632a30`), wrapped with a trampoline | It builds the PS2 pad word at `0x00ccb170` (previous frame at `+4`, sticks at `+0x8c`) from the bound keys and pads; the held buttons are ORed in after it |
+| Buttons | `Input_KeyHeld` (`0x00629d50`), wrapped with a trampoline | `Input_UpdatePad` (`0x00632a30`) builds the PS2 pad word at `0x00ccb170` (previous frame at `+4`) by asking it about every binding. For each held button the first keyboard binding paired with it reads as held, so the game sees the same as a key press: exactly that button's bit |
 | Keys | `IDirectInput8::CreateDevice` → device `GetDeviceState` / `SetCooperativeLevel` | The PC menus (Esc) read keys directly. The keyboard is made a background device, and an unacquired one reads as all keys up |
 | Focus | `ShowWindow` | Background mode shows the window without activating it |
 | Events | `File_Open` | Every file the game opens, and which came from a mod |
@@ -35,10 +35,20 @@ arrows; scan codes at `0x00c30e90`). By the defaults, bindings 0–13 are
 Triangle, Cross, Square, Circle, Right, Down, Up, Left, R3, Select, Start,
 L3, R1, L2 on the keyboard and 14–27 the same on a pad.
 
+## Two kinds of input
+
+The game proper (field, battle, the PS2 menus) reads the PS2 pad word:
+drive it with `press`/`pad` and button names. The Flash (Iggy) screens,
+the title menu and the PC menu (Esc), read raw keys instead: drive them
+with `key` (arrows `c8`/`d0`/`cb`/`cd`, Enter `1c`, Esc `01`).
+
 ## Observed
 
 - Frames keep coming and input keeps working with the window in the
   background; screenshots are 1280×720 BGRA.
 - Esc opens the PC menu; the arrows move its cursor and X closes it.
-- The opening scene (campfire, credits) did not skip on Cross, Circle,
-  Start or Triangle.
+- The opening (campfire, credits) is the title event's attract scene; it
+  runs about 4,800 frames, then the title menu (Load selected) appears. The
+  title event opens `titl00` when the opening starts.
+- Title: Up arrow, Enter starts a new game; then the Sphere Grid choice
+  takes `press down`, `press cross`.
