@@ -10,7 +10,8 @@
 
 use std::path::PathBuf;
 
-use ffx_harness::{Game, Image, Options};
+use ffx_harness::screens::{cursor_at, is_sphere_grid_choice};
+use ffx_harness::{Game, Options};
 
 fn game_dir() -> PathBuf {
     PathBuf::from(std::env::var_os("FFX_GAME_DIR").expect("FFX_GAME_DIR"))
@@ -25,25 +26,6 @@ fn fail(game: &mut Game, name: &str, why: &str) -> ! {
         let _ = shot.save_png(&path);
     }
     panic!("{why} (screenshot: {})", path.display());
-}
-
-/// The title menu: its "New Game" bar is blue, and the opening scene
-/// behind it is gone.
-fn is_title(shot: &Image) -> bool {
-    let [r, g, b] = shot.mean(830, 365, 400, 30);
-    b > 90.0 && b > r + 40.0 && b > g + 10.0
-}
-
-/// The Sphere Grid choice: black around a purple box.
-fn is_sphere_grid_choice(shot: &Image) -> bool {
-    let [r, g, b] = shot.mean(460, 330, 360, 120);
-    let corner = shot.mean(0, 600, 300, 100);
-    corner.iter().all(|&c| c < 10.0) && b > 60.0 && r > 30.0 && b > g + 20.0
-}
-
-/// Brightness of the cursor area left of a Sphere Grid option.
-fn cursor_at(shot: &Image, y: usize) -> f32 {
-    shot.mean(476, y, 50, 24).iter().sum()
 }
 
 #[test]
@@ -117,28 +99,10 @@ fn a_kernel_mod_reaches_game_memory() {
 #[ignore = "starts FFX.exe on the Windows desktop and plays the opening"]
 fn new_game_reaches_the_sphere_grid_choice() {
     let mut game = Game::launch(&Options::default()).unwrap();
-    // The title menu follows the opening scene (about 4,800 frames).
-    let mut shot = game.screenshot().unwrap();
-    for _ in 0..90 {
-        if is_title(&shot) {
-            break;
-        }
-        game.wait(120).unwrap();
-        shot = game.screenshot().unwrap();
+    if let Err(e) = ffx_harness::screens::new_game(&mut game) {
+        fail(&mut game, "new-game", &e.to_string());
     }
-    if !is_title(&shot) {
-        fail(&mut game, "title", "no title menu");
-    }
-    // The Flash title menu reads keys: Up to New Game, Enter.
-    game.key(&[0xc8], 6).unwrap();
-    game.key(&[0x1c], 6).unwrap();
-    for _ in 0..20 {
-        game.wait(30).unwrap();
-        shot = game.screenshot().unwrap();
-        if is_sphere_grid_choice(&shot) {
-            break;
-        }
-    }
+    let shot = game.screenshot().unwrap();
     if !is_sphere_grid_choice(&shot) {
         fail(
             &mut game,
@@ -152,7 +116,7 @@ fn new_game_reaches_the_sphere_grid_choice() {
     game.press("down", 6).unwrap();
     game.wait(10).unwrap();
     let after = game.screenshot().unwrap();
-    let (standard, expert) = (398 - 12, 427 - 12);
+    let (standard, expert) = (398, 427);
     if !(cursor_at(&before, standard) > cursor_at(&before, expert) + 60.0
         && cursor_at(&after, expert) > cursor_at(&after, standard) + 60.0)
     {

@@ -12,6 +12,8 @@
 //! # Ok::<(), ffx_harness::Error>(())
 //! ```
 
+pub mod screens;
+
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};

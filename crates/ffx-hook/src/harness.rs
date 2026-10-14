@@ -11,7 +11,8 @@
 //!   (`GetDeviceState`), for the PC-only menus that read keys directly;
 //! - with `FFX_HARNESS_BACKGROUND=1`, shows the window without activating
 //!   it and makes the keyboard a background device, so the game neither
-//!   takes the focus nor stops reading input without it.
+//!   takes the focus nor stops reading input without it; the real devices
+//!   are then ignored, so typing in other windows does not reach the game.
 //!
 //! One command per line, one reply line per command (`ok …` or `err …`).
 //! Addresses are `FFX.exe` addresses (rebased like the hooks) unless noted.
@@ -57,6 +58,7 @@ pub static ENABLED: AtomicBool = AtomicBool::new(false);
 static FRAME: AtomicU32 = AtomicU32::new(0);
 static CREATE_DEVICE_AND_SWAP_CHAIN: AtomicUsize = AtomicUsize::new(0);
 static SHOW_WINDOW: AtomicUsize = AtomicUsize::new(0);
+static XINPUT_GET_STATE: AtomicUsize = AtomicUsize::new(0);
 static PRESENT: AtomicUsize = AtomicUsize::new(0);
 static BACKGROUND: AtomicBool = AtomicBool::new(false);
 
@@ -251,11 +253,20 @@ unsafe extern "system" fn get_device_state(this: *mut c_void, size: u32, data: *
             std::mem::transmute(GET_DEVICE_STATE.load(Ordering::Acquire));
         original(this, size, data)
     };
+    // In background mode the devices are background devices, so they would
+    // report what the user types into other windows: their real state is
+    // dropped and only the test's keys count.
+    let isolate = BACKGROUND.load(Ordering::Relaxed);
+    if isolate && !data.is_null() && size != 256 {
+        // SAFETY: the caller's buffer holds `size` bytes.
+        unsafe { std::ptr::write_bytes(data, 0, size as usize) };
+        hr = 0;
+    }
     if size == 256 && !data.is_null() {
         KEY_POLLS.fetch_add(1, Ordering::Relaxed);
         // SAFETY: the caller's buffer holds `size` bytes.
         let state = unsafe { std::slice::from_raw_parts_mut(data, 256) };
-        if hr < 0 {
+        if hr < 0 || isolate {
             state.fill(0);
             hr = 0;
         }
@@ -290,6 +301,13 @@ pub fn event(line: String) {
     {
         e.push(line);
     }
+}
+
+/// Replaces `XInputGetState` in background mode: no controller, so a real
+/// one does not reach the game.
+unsafe extern "system" fn xinput_get_state(_user: u32, _state: *mut c_void) -> u32 {
+    const ERROR_DEVICE_NOT_CONNECTED: u32 = 1167;
+    ERROR_DEVICE_NOT_CONNECTED
 }
 
 /// Replaces `ShowWindow`: shows without activating in background mode.
@@ -865,7 +883,14 @@ pub unsafe fn install(module: usize) {
                 show_window as *const () as usize,
                 &SHOW_WINDOW,
             ),
-        ] {
+        ]
+        .into_iter()
+        .chain(BACKGROUND.load(Ordering::Relaxed).then_some((
+            "XINPUT9_1_0.dll",
+            "XInputGetState",
+            xinput_get_state as *const () as usize,
+            &XINPUT_GET_STATE,
+        ))) {
             match crate::iat::patch(module, dll, function, replacement) {
                 Some(original) => {
                     slot.store(original, Ordering::Release);

@@ -19,6 +19,7 @@ tools/harness.py quit
 | Buttons | `Input_KeyHeld` (`0x00629d50`), wrapped with a trampoline | `Input_UpdatePad` (`0x00632a30`) builds the PS2 pad word at `0x00ccb170` (previous frame at `+4`) by asking it about every binding. For each held button the first keyboard binding paired with it reads as held, so the game sees the same as a key press: exactly that button's bit |
 | Keys | `IDirectInput8::CreateDevice` → device `GetDeviceState` / `SetCooperativeLevel` | The PC menus (Esc) read keys directly. The keyboard is made a background device, and an unacquired one reads as all keys up |
 | Focus | `ShowWindow` | Background mode shows the window without activating it |
+| Isolation | `GetDeviceState`, `XInputGetState` | In background mode the real keyboard, mouse and pads are ignored: background devices would otherwise see what the user types elsewhere |
 | Events | `File_Open` | Every file the game opens, and which came from a mod |
 
 XInput is not used: the game creates XInput devices only for controllers
@@ -49,7 +50,9 @@ with `key` (arrows `c8`/`d0`/`cb`/`cd`, Enter `1c`, Esc `01`).
 - Esc opens the PC menu; the arrows move its cursor and X closes it.
 - The opening (campfire, credits) is the title event's attract scene; it
   runs about 4,800 frames, then the title menu (Load selected) appears. The
-  title event opens `titl00` when the opening starts.
+  title event opens `titl00` when the opening starts. Pressing Circle,
+  Cross, Start, Triangle, Square, Select, Enter, Space or Backspace during
+  it does not skip it (`examples/skip_probe.rs`).
 - Title: Up arrow, Enter starts a new game; then the Sphere Grid choice
   takes `press down`, `press cross`.
 
@@ -68,7 +71,7 @@ FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test --release -p ffx-harness --test 
 |---|---|---|
 | `runs_in_the_background_and_takes_input` | frames advance, the keyboard is read without focus, the pad word holds exactly the held button, 1280×720 screenshots | 10 s |
 | `a_kernel_mod_reaches_game_memory` | a mod's `item.bin` (Potion power 4 → 77) is what `g_KernelItem` points at | 6 s |
-| `new_game_reaches_the_sphere_grid_choice` | title menu after the opening, New Game by keys, the Sphere Grid cursor moved by the pad | 70 s |
+| `new_game_reaches_the_sphere_grid_choice` | title menu after the opening, New Game by keys, the Sphere Grid cursor moved by the pad | about 2 min (the opening is not skipped) |
 
 Screens are recognised by mean colours of fixed rectangles; a failing
 check saves its screenshot to `<temp>/ffx-harness/`.
