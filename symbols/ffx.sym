@@ -90,6 +90,9 @@
 0x006f0330 function Save_InitFolder            # Documents (SHGetFolderPathW CSIDL_PERSONAL) + Square Enix\FINAL FANTASY X&X-2 HD Remaster\FINAL FANTASY X\
 0x0076b970 function Cd_QueueRead              # libmscd.c emulation: queue a read of a PS2 file by number; slot 0 of g_CdLib
 0x0076c320 function Cd_FileSize                # cdecl(number): size of a PS2 file from the sector table (cdrom.mdg); wrapped so mod files report their size
+0x00780d10 function Enc_Check                  # random encounter roll; on a hit writes field 0x0112c256, group 0x0112c258, formation 0x0112c259, raises 0x0112a8e2
+0x00780ff0 function Enc_Reset                  # cdecl(full): resets the encounter step counters
+0x00781020 function Battle_Load                # (mode, field, group, formation): loads btl/<field>_<nn> and sets the battle up
 0x00781d40 function Kernel_LoadTables         # loads command, ply_rom, a_ability, item, monmagic1/2, ... into globals
 0x00782df0 function Kernel_LoadFile           # (name, buffer) reads new_<lang>pc/battle/kernel/<name>.bin whole
 0x00783680 function Mon_LoadText              # kernel monster name/texts -> actor +0x50/+0x90/+0x190, then requests mon_data
@@ -103,6 +106,8 @@
 0x007909f0 function Item_FindRecord           # id & 0xfff in g_KernelItem
 0x00790a50 function MonMagic1_FindRecord
 0x00790a90 function Command_FindRecord        # id & 0xfff in g_KernelCommand
+0x00790c10 function Battle_Update              # per frame; outside battle, a raised request flag 0x0112a8e2 starts Battle_Load
+0x00794020 function Battle_Actor               # index -> actor: < 0x1f at *0x011334d4 + i*0xf90, < 0x5d at *0x0113446c + (i-0x1f)*0x390
 0x00797410 function Mon_FindHandler           # lookup in monster file section 1
 0x00797a40 function Script_Register           # (manager, name, script): queue a script in a script manager (8 slots, 0x54 bytes each)
 0x00798890 function Rng_Seed                   # cdecl(n): seeds 0x00c42200/04 from Rng_ClockSeed * (n + 1), then fills the 68 generators
@@ -111,6 +116,7 @@
 0x007989a0 function Rng_Global                 # seed = seed * 0x5d588b65 + 0x3c35, rotated by 16; returns 31 bits
 0x007990d0 function Battle_GiveRewards        # gil, AP, two drop slots, overkill drops, bribe (spoils section 4)
 0x0079b4f0 function Mon_InitActor             # copies the stat record (section 2) into the battle actor
+0x0079d1c0 function Enc_FieldIndex             # map number -> index in the battle field table *0x0112a9c8 (count 0x0112a9d0, 14-byte entries)
 0x007a5360 function Native_SetActorProperty   # func 0x70ab: pops value, property, actor; calls 0x007b4b70
 0x007ab870 function Kernel_FindRecord         # (id, table, &strings) -> record; defines the container (docs/formats/kernel.md)
 0x007b2dc0 function Battle_GetActorProperty   # switch over ~340 actor properties

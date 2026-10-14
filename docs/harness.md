@@ -76,6 +76,14 @@ with `key` (arrows `c8`/`d0`/`cb`/`cd`, Enter `1c`, Esc `01`).
 - Load: the title's cursor starts on Load; the save list and its Yes/No
   are Flash screens (Enter, arrows). Slot 1 of the user's saves starts on
   the salvage ship deck (`cdsp0000`), in the field: the D-pad turns Tidus.
+- Battles start from the field without walking into one:
+  `screens::start_battle(field, group, formation)` writes the request a
+  random encounter makes (`Enc_Check`, `0x00780d10`) and raises its flag;
+  `Battle_Update` (`0x00790c10`) loads it on the next frame. The field table
+  (`*0x0112a9c8`, count `0x0112a9d0`, 14-byte entries: map number, group
+  offset, first formation, name) lists all 96 battle fields; entry 3 is
+  `cdsp00`. Actors are `*0x011334d4 + index × 0xf90`; a monster's max HP is
+  at `+0x594`, its HP at `+0x5d0`.
 - `examples/mod_probe.rs` plays into the first scene with any mod file and
   reports whether the game read it and survived; it found that grown PS2
   files were cut at their original size (`docs/hooking.md`).
@@ -100,6 +108,7 @@ FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test --release -p ffx-harness --test 
 | `a_resized_model_loads_in_the_game` | Tidus's `c001.dae.phyre`, 30 % wider and with segment 0 doubled (resized buffers), is read from the mod and the scene runs 10 s | 40 s |
 | `a_save_loads_from_the_sandbox_and_the_users_files_stay_untouched` | title → Load → slot 1 (the first manual save; entry 0 is the autosave, taken mid-cutscene) → Yes; the save's event starts, the game runs, and the user's files are byte for byte unchanged | 35 s |
 | `the_random_generators_repeat_with_a_seed` | three save loads: seed 1 twice gives identical generators, seed 2 others | 90 s |
+| `a_monster_mod_reaches_the_battle` | m068 with 12345 HP (`ffx monster import`): from the save, a battle is started directly (`screens::start_battle`, field 3 `cdsp00`, formation `cdsp00_00`), and an enemy actor has max HP 12345 (50 without the mod) | 20 s |
 | `an_edited_motion_group_loads_in_the_game` | Tidus's `resident0.mgrp`, root bone turned a quarter, is read from the mod and the scene runs 10 s | 40 s |
 
 The first scene of a new game is `screens::first_scene`: New Game,

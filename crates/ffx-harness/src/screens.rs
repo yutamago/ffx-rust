@@ -120,3 +120,40 @@ pub fn load_save(game: &mut Game, entry: u32) -> Result<String> {
     game.command("key 1c 3 40")?;
     game.wait_for_open(".ebp", 30, 1200)
 }
+
+/// Starts a battle from the field, the way a random encounter does
+/// (`Enc_Check`, `0x00780d10`): the battle field (an index into the field
+/// table at `*0x0112a9c8`, 14 bytes an entry with the map name at +6), the
+/// encounter group and the formation in it go to `0x0112c256`, `…58` and
+/// `…59`; the encounter counters are reset (`0x00780ff0`) and the request
+/// flag `0x0112a8e2` is raised. `Battle_Update` (`0x00790c10`) then loads
+/// the battle on the next frame. Waits until the formation's file opens.
+///
+/// # Errors
+/// Fails when the battle does not load.
+pub fn start_battle(game: &mut Game, field: u16, group: u8, formation: u8) -> Result<String> {
+    game.events()?;
+    game.command(&format!(
+        "write 0x112c256 {:02x}{:02x}",
+        field & 0xff,
+        field >> 8
+    ))?;
+    game.command(&format!("write 0x112c258 {group:02x}{formation:02x}"))?;
+    game.command("call 0x780ff0 1")?;
+    game.command("write 0x112a8e2 01")?;
+    game.wait_for_open("battle/btl/", 10, 600)
+}
+
+/// The battle actor `index` (`Battle_Actor`, `0x00794020`): actors below
+/// 0x1f are `0xf90` bytes from `*0x011334d4`.
+///
+/// # Errors
+/// See [`Game::read_abs`].
+pub fn actor(game: &mut Game, index: u32, offset: u32, len: usize) -> Result<Vec<u8>> {
+    let base = u32::from_le_bytes(
+        game.read(0x0113_34d4, 4)?
+            .try_into()
+            .map_err(|_| Error::Harness("pointer".into()))?,
+    );
+    game.read_abs(base + index * 0xf90 + offset, len)
+}

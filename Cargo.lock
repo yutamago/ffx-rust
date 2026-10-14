@@ -308,6 +308,7 @@ name = "ffx-harness"
 version = "0.1.0"
 dependencies = [
  "ffx-kernel",
+ "ffx-monster",
  "ffx-motion",
  "ffx-phyre",
  "ffx-script",

@@ -347,3 +347,42 @@ fn the_random_generators_repeat_with_a_seed() {
     assert_eq!(a, b, "the same seed gives the same generators");
     assert_ne!(a, c, "another seed gives other generators");
 }
+
+#[test]
+#[ignore = "starts FFX.exe on the Windows desktop"]
+fn a_monster_mod_reaches_the_battle() {
+    // The salvage ship's first formation (field 3, cdsp00; group 0,
+    // formation 0) has m068. Its HP becomes 12345.
+    let path = ffx_monster::archive_path(68);
+    let archive = ffx_vbf::Archive::open(game_dir().join("data/FFX_Data.vbf")).unwrap();
+    let mut monster =
+        ffx_monster::MonsterFile::parse(archive.read(archive.find(&path).unwrap()).unwrap())
+            .unwrap();
+    monster.import("[stats]\nhp = 12345\n").unwrap();
+    let modded = monster.bytes().to_vec();
+    let path: &'static str = Box::leak(path.into_boxed_str());
+    let max_hp = with_mod("zz-harness-monster", path, &modded, move || {
+        let mut game = Game::launch(&Options::default()).unwrap();
+        ffx_harness::screens::load_save(&mut game, 1).unwrap();
+        game.wait(120).unwrap();
+        let formation = ffx_harness::screens::start_battle(&mut game, 3, 0, 0).unwrap();
+        assert!(formation.contains("cdsp00_00"), "{formation}");
+        game.wait(300).unwrap();
+        // Max HP (+0x594) of every actor; the enemies follow the party.
+        let hp: Vec<u32> = (0..0x1f)
+            .map(|i| {
+                let b = ffx_harness::screens::actor(&mut game, i, 0x594, 4).unwrap();
+                u32::from_le_bytes(b.try_into().unwrap())
+            })
+            .collect();
+        let shot = game.screenshot().unwrap();
+        shot.save_png(&std::env::temp_dir().join("ffx-harness/monster-battle.png"))
+            .unwrap();
+        game.quit().unwrap();
+        hp
+    });
+    assert!(
+        max_hp.contains(&12345),
+        "no actor with the mod's HP: {max_hp:?}"
+    );
+}
