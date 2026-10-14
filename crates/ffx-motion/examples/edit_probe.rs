@@ -9,7 +9,9 @@ fn main() {
         let ry = &mut clip.clip.channels[1];
         match (args[3].as_str(), &mut *ry) {
             ("keys", Channel::Keys(k)) => {
-                k.iter_mut().for_each(|v| *v += 1024);
+                for v in k.iter_mut() {
+                    *v += 1024;
+                }
                 changed += 1;
             }
             ("zero", Channel::Zero) => {
