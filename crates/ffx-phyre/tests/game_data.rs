@@ -312,10 +312,30 @@ fn clusters_rewrite_through_cluster_edit() {
             .unwrap_or_else(|e| panic!("{}: rewritten: {e}", entry.path));
         for (a, b) in again.lists.iter().zip(&edit.lists) {
             assert_eq!(a.objects, b.objects, "{} objects", entry.path);
-            assert_eq!(a.arrays, b.arrays, "{} arrays {} {} objs {}", entry.path, a.arrays.len(), b.arrays.len(), a.objects.len());
-            assert_eq!(a.pointer_fixups, b.pointer_fixups, "{} pointers", entry.path);
-            assert_eq!(a.array_fixups, b.array_fixups, "{} array fixups", entry.path);
-            assert_eq!(a.pointer_array_fixups, b.pointer_array_fixups, "{}", entry.path);
+            assert_eq!(
+                a.arrays,
+                b.arrays,
+                "{} arrays {} {} objs {}",
+                entry.path,
+                a.arrays.len(),
+                b.arrays.len(),
+                a.objects.len()
+            );
+            assert_eq!(
+                a.pointer_fixups, b.pointer_fixups,
+                "{} pointers",
+                entry.path
+            );
+            assert_eq!(
+                a.array_fixups, b.array_fixups,
+                "{} array fixups",
+                entry.path
+            );
+            assert_eq!(
+                a.pointer_array_fixups, b.pointer_array_fixups,
+                "{}",
+                entry.path
+            );
         }
         assert_eq!(again.lists, edit.lists, "{}", entry.path);
         assert_eq!(again.user_records, edit.user_records, "{}", entry.path);

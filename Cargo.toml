@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+exclude = ["app"]
 
 [workspace.package]
 version = "0.1.0"
@@ -18,6 +19,7 @@ ffx-monster = { path = "crates/ffx-monster" }
 ffx-motion = { path = "crates/ffx-motion" }
 ffx-phyre = { path = "crates/ffx-phyre" }
 ffx-script = { path = "crates/ffx-script" }
+ffx-studio = { path = "crates/ffx-studio" }
 ffx-text = { path = "crates/ffx-text" }
 ffx-vbf = { path = "crates/ffx-vbf" }
 anyhow = "1.0.104"
@@ -27,6 +29,7 @@ goblin = { version = "0.10.7", default-features = false, features = ["pe32", "st
 md-5 = "0.11.0"
 miniz_oxide = "0.9.1"
 rayon = "1.12.0"
+serde = { version = "1", features = ["derive"] }
 serde_json = "1.0.154"
 thiserror = "2.0.21"
 toml = { version = "1.1.8", features = ["preserve_order"] }

@@ -49,7 +49,9 @@ original through a trampoline.
 ```
 
 Mods load in name order; a later mod's file replaces an earlier one's, and
-the log says so. `tools/run-game.sh --log-opens` (environment
+the log says so. A mod folder may hold a `mod.toml` (name, description,
+`enabled`); with `enabled = false` the mod is skipped. The desktop app
+writes it. `tools/run-game.sh --log-opens` (environment
 `FFX_HOOK_LOG_OPENS=1`) also logs every file the game reads, as the archive
 path a mod would use. The file must be opened read-only: `File_Close` calls
 `SetEndOfFile`, which would truncate a writable mod file.

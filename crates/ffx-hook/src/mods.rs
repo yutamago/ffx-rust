@@ -70,6 +70,18 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// Whether a mod folder is switched on: its `mod.toml` (written by the
+/// desktop app; optional) does not say `enabled = false`.
+fn enabled(dir: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(dir.join("mod.toml")) else {
+        return true;
+    };
+    !text.lines().any(|l| {
+        let l: String = l.chars().filter(|c| !c.is_whitespace()).collect();
+        l == "enabled=false"
+    })
+}
+
 /// Indexes `<game dir>/mods/<mod>/…`. Mods are applied in name order, so a
 /// later mod's file replaces an earlier one's. Call once, before game code runs.
 pub fn load(game_dir: &Path) {
@@ -80,7 +92,7 @@ pub fn load(game_dir: &Path) {
         .map(|r| {
             r.flatten()
                 .map(|e| e.path())
-                .filter(|p| p.is_dir())
+                .filter(|p| p.is_dir() && enabled(p))
                 .collect()
         })
         .unwrap_or_default();
