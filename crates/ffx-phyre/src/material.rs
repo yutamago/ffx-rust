@@ -223,6 +223,71 @@ impl Resolver<'_> {
             .ok_or_else(|| Error::Unsupported(format!("no {class}.{member}")))
     }
 
+    /// A segment's bone palette (`m_skinBones` → `PSkinBoneRemap`s).
+    fn bones(&self, segments: usize, s: u32) -> Result<Vec<Bone>> {
+        let Some(f) = self
+            .pointers_of(segments, s, "PMeshSegment", "m_skinBones", 4)
+            .next()
+        else {
+            return Ok(Vec::new());
+        };
+        let list = self
+            .c
+            .lists
+            .get(f.target_list() as usize)
+            .ok_or(Error::Malformed("bone list"))?;
+        let (o_h, o_s) = (
+            self.need("PSkinBoneRemap", "m_hierarchyMatrixIndex")? as usize,
+            self.need("PSkinBoneRemap", "m_skeletonMatrixIndex")? as usize,
+        );
+        let u16_at = |o: usize| {
+            self.bytes
+                .get(o..o + 2)
+                .map(|b| u16::from_le_bytes([b[0], b[1]]))
+                .ok_or(Error::Malformed("truncated bone"))
+        };
+        (f.target()..f.target() + f.count())
+            .map(|b| {
+                let at = list.object(b);
+                Ok(Bone {
+                    hierarchy: u16_at(at + o_h)?,
+                    skeleton: u16_at(at + o_s)?,
+                })
+            })
+            .collect()
+    }
+
+    /// A mesh's matrix names and skeleton matrices.
+    fn skeleton(&self, meshes: usize, m: u32) -> Result<Skeleton> {
+        let mut skeleton = Skeleton::default();
+        if let Some(f) = self
+            .pointers_of(meshes, m, "PMesh", "m_skeletonMatrices", 4)
+            .next()
+        {
+            let list = self
+                .c
+                .lists
+                .get(f.target_list() as usize)
+                .ok_or(Error::Malformed("matrix list"))?;
+            for k in f.target()..f.target() + f.count() {
+                skeleton.inverse_bind.push(self.matrix(list.object(k))?);
+            }
+        }
+        if let Some(f) = self
+            .pointers_of(meshes, m, "PMesh", "m_matrixNames", 4)
+            .next()
+        {
+            let list = f.target_list() as usize;
+            for k in f.target()..f.target() + f.count() {
+                skeleton.names.push(
+                    self.array_string(list, k, "PString", "m_buffer")
+                        .unwrap_or_default(),
+                );
+            }
+        }
+        Ok(skeleton)
+    }
+
     fn matrix(&self, at: usize) -> Result<[f32; 16]> {
         let mut m = [0f32; 16];
         for (k, v) in m.iter_mut().enumerate() {
@@ -293,7 +358,11 @@ impl Resolver<'_> {
         };
 
         scene.segment_materials = vec![None; c.lists[segments].count as usize];
+        scene.segment_bones = (0..c.lists[segments].count)
+            .map(|s| self.bones(segments, s))
+            .collect::<Result<_>>()?;
         for m in 0..c.lists[meshes].count {
+            scene.skeletons.push(self.skeleton(meshes, m)?);
             let set = material_set(&mut scene, meshes, m, o_default)?;
             for (s, material) in mesh_segments(m, &set)? {
                 if let Some(slot) = scene.segment_materials.get_mut(s) {
@@ -355,6 +424,12 @@ impl Resolver<'_> {
                         .unwrap_or_default(),
                     node: world.and_then(|w| node_worlds.iter().position(|&n| n == Some(w))),
                     segments: mesh_segments(mesh.target(), &set)?,
+                    skeleton: Some(mesh.target() as usize).filter(|&m| {
+                        scene
+                            .skeletons
+                            .get(m)
+                            .is_some_and(|s| !s.inverse_bind.is_empty())
+                    }),
                 });
             }
         }
@@ -381,12 +456,36 @@ pub struct Instance {
     /// Its mesh's segments (indices into [`crate::Model::segments`]), each
     /// with the material the instance's material set gives it.
     pub segments: Vec<(usize, Option<usize>)>,
+    /// Its mesh's skeleton, an index into [`crate::Model::skeletons`].
+    pub skeleton: Option<usize>,
+}
+
+/// A mesh's skeleton: the matrices its segments are skinned to.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Skeleton {
+    /// Hierarchy matrix names (`PMesh.m_matrixNames`); they name `PNode`s.
+    pub names: Vec<String>,
+    /// Skeleton matrices (`PMesh.m_skeletonMatrices`), column-major: the
+    /// inverse bind matrices of the skinned joints.
+    pub inverse_bind: Vec<[f32; 16]>,
+}
+
+/// One entry of a segment's bone palette (`PSkinBoneRemap`): a
+/// `SkinIndices` value `i` selects `bones[i]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Bone {
+    /// Index into [`Skeleton::names`].
+    pub hierarchy: u16,
+    /// Index into [`Skeleton::inverse_bind`].
+    pub skeleton: u16,
 }
 
 #[derive(Debug, Default)]
 pub(crate) struct Scene {
     pub materials: Vec<Material>,
     pub segment_materials: Vec<Option<usize>>,
+    pub segment_bones: Vec<Vec<Bone>>,
+    pub skeletons: Vec<Skeleton>,
     pub nodes: Vec<Node>,
     pub instances: Vec<Instance>,
 }

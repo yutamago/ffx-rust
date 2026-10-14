@@ -15,7 +15,7 @@ data, and never will: binaries, archives and extracted files stay out of git.
 | Monsters (`ffx-monster`) | All 361 monster files: stats (HP, MP, strength, defense, magic, magic defense, …) and rewards (gil, AP, drops, steal, bribe) editable via TOML; byte-exact round trip |
 | Scripts (`ffx-script`) | Bytecode interpreter decoded; all 758 event and monster AI scripts (17.3M instructions) disassemble and reassemble byte for byte; edits that grow code are relocated; native calls resolved to their FFX.exe handlers |
 | Textures (`ffx-phyre`) | All 44,364 PC textures to upright DDS and back, byte for byte (DXT1/3/5, ARGB8, L8, cube maps) |
-| Models and maps (`ffx-phyre`) | All 1,266 meshes to glTF with node hierarchy, instances and embedded base color textures. Vertex streams and materials come from the decoded pointer and array fixups, which match the original unpackers. |
+| Models and maps (`ffx-phyre`) | All 1,266 meshes to valid glTF with node hierarchy, instances, skins and embedded base color textures. Vertex streams and materials come from the decoded pointer and array fixups, which match the original unpackers. |
 | Text (`ffx-text`) | Encoding fully decoded for all 8 languages; all 92,224 kernel strings round-trip |
 | `ffx` CLI | `vbf list/cat/extract/pack`, `kernel tables/export/import`, `monster list/export/import`, `script list/disasm/asm`, `texture export/import`, `model export`, `phyre dump` |
 | Function replacement | `dinput8.dll` proxy patches 2 functions (`zlib_uncompress`, `Path_ToLowerAscii`) with parity-tested Rust; runs in the game |

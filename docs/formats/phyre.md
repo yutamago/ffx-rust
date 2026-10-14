@@ -200,6 +200,30 @@ Base color is `TextureSampler`. The other samplers seen are `AnimSampler`,
 `EnvironmentMapSampler`, `NormalMapSampler`, `NormalMap2Sampler`,
 `EmissionMapSampler`, `SpecularMapSampler` and `TextureSampler1`.
 
+### Skins
+
+| Class | Fields used |
+|---|---|
+| `PMesh` | `m_matrixNames` (array of `PString`, the hierarchy matrices: they name `PNode`s), `m_skeletonMatrices` (array of `PMatrix4`), `m_matrixParents`, `m_defaultPose` |
+| `PMeshSegment` | `m_skinBones` +8 (array of `PSkinBoneRemap`, the segment's bone palette) |
+| `PSkinBoneRemap` | `m_hierarchyMatrixIndex` +0, `m_skeletonMatrixIndex` +2 (`u16` each) |
+
+A vertex's `SkinIndices` select entries of its segment's palette. Each
+entry names a hierarchy matrix (the joint node) and a skeleton matrix.
+The skeleton matrix is the joint's inverse bind matrix: multiplied by the
+node's world matrix (the product of `m_localMatrix` up the parents) it
+gives the identity. That holds for 48,831 of the 49,543 bones of the
+`chr/` models. The others belong to a few models whose stored node pose
+is not the bind pose (e.g. the summon `s016`).
+
+The glTF export:
+
+- makes one skin per skinned instance, with the hierarchy matrices as
+  joints;
+- maps `JOINTS_0` from palette entries to hierarchy indices;
+- normalizes the weights;
+- writes the skeleton matrices as inverse bind matrices.
+
 ### Orientation
 
 Character models (`chr/`: party, monsters, NPCs, weapons, summons) are
@@ -276,6 +300,10 @@ The glTF files were checked in three.js, with textures:
 - an airship scene (`swin02`);
 - Luca (`luca01`).
 
+All 1,266 exported `.glb` files pass the Khronos glTF validator
+(2.0.0-dev.3.10) without errors or warnings. Rotating a joint of Tidus in
+three.js deforms the mesh around it.
+
 `cargo test -p ffx-oracle` unpacks the pointer and array fixups of 2,233
 clusters, all models plus every 50th other cluster. It runs both the Rust
 port and the original `0x60db20` / `0x60dac0` under emulation, and the
@@ -285,9 +313,7 @@ records must be identical.
 
 - `PNode.m_name` is at +0x50 in the namespace, but its array fixup says
   +0x4c. Names are taken from the node's only array fixup.
-- Skinning: `PMesh.m_skeletonMatrices`, `m_matrixParents`,
-  `PSkinBoneRemap`, and `SkinIndices`, which are not exported yet.
-  Animations.
+- Animations (`*.anim.phyre` or similar), not looked at yet.
 - Material parameters beyond the base color texture.
 - Writing models back.
 - Shaders (`*.fx.phyre`) and the other cluster kinds.

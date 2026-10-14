@@ -113,3 +113,86 @@ fn models_parse_or_are_refused() {
     );
     assert_eq!((ok, refused, other), (1266, 48, 0), "{reasons:#?}");
 }
+
+/// Column-major 4×4 product `a * b`.
+fn mul(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
+    std::array::from_fn(|i| {
+        let (col, row) = (i / 4, i % 4);
+        (0..4).map(|k| a[k * 4 + row] * b[col * 4 + k]).sum()
+    })
+}
+
+/// World matrix of node `i`: its local matrix times its parents'.
+fn resolve(
+    i: usize,
+    nodes: &[ffx_phyre::Node],
+    world: &mut [Option<[f32; 16]>],
+    depth: usize,
+) -> [f32; 16] {
+    if let Some(w) = world[i] {
+        return w;
+    }
+    let local = nodes[i].local;
+    let w = match nodes[i].parent.filter(|&p| p < nodes.len() && depth < 512) {
+        Some(p) => mul(&resolve(p, nodes, world, depth + 1), &local),
+        None => local,
+    };
+    world[i] = Some(w);
+    w
+}
+
+/// Skeleton matrices are the inverse bind matrices: times the world matrix
+/// of the node a bone names, they give the identity.
+#[test]
+fn skeleton_matrices_invert_the_bind_pose() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let archive = Archive::open(PathBuf::from(dir).join("data/FFX_Data.vbf")).unwrap();
+    let (mut good, mut bad, mut unnamed) = (0usize, 0usize, 0usize);
+    let mut worst: Vec<(f32, String)> = Vec::new();
+    for entry in archive
+        .entries()
+        .iter()
+        .filter(|e| e.path.contains("/chr/") && e.path.ends_with(".dae.phyre") && e.size > 0)
+    {
+        let Ok(model) = ffx_phyre::Model::parse(&archive.read(entry).unwrap()) else {
+            continue;
+        };
+        // World matrices of the nodes.
+        let mut world: Vec<Option<[f32; 16]>> = vec![None; model.nodes.len()];
+        for inst in &model.instances {
+            let Some(sk) = inst.skeleton.map(|s| &model.skeletons[s]) else {
+                continue;
+            };
+            for &(s, _) in &inst.segments {
+                for b in &model.segments[s].bones {
+                    let name = &sk.names[b.hierarchy as usize];
+                    let Some(n) = model.nodes.iter().position(|n| &n.name == name) else {
+                        unnamed += 1;
+                        continue;
+                    };
+                    let w = resolve(n, &model.nodes, &mut world, 0);
+                    let p = mul(&sk.inverse_bind[b.skeleton as usize], &w);
+                    let err = (0..16)
+                        .map(|i| (p[i] - if i % 5 == 0 { 1.0 } else { 0.0 }).abs())
+                        .fold(0f32, f32::max);
+                    if err < 1e-2 {
+                        good += 1;
+                    } else {
+                        bad += 1;
+                        if worst.len() < 5 {
+                            worst.push((err, format!("{} {name}", entry.path)));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("bind check: {good} good, {bad} bad, {unnamed} unnamed; worst: {worst:?}");
+    // A few models (e.g. the summon s016) store a node pose that is not the
+    // bind pose; everywhere else the skeleton matrices invert it.
+    assert_eq!(unnamed, 0);
+    assert!(good > 48_000 && bad * 50 < good, "{good} good, {bad} bad");
+}

@@ -20,7 +20,7 @@ mod texture;
 
 pub use dds::{Dds, DdsError};
 pub use decode::png;
-pub use material::{Instance, Material, MaterialTexture, Node};
+pub use material::{Bone, Instance, Material, MaterialTexture, Node, Skeleton};
 pub use model::{Model, Segment};
 pub use texture::{Format, Kind, Texture};
 
@@ -30,7 +30,7 @@ pub enum Error {
     NotPhyre([u8; 4]),
     #[error("malformed cluster: {0}")]
     Malformed(&'static str),
-    #[error("unsupported texture: {0}")]
+    #[error("unsupported: {0}")]
     Unsupported(String),
     #[error("DDS: {0}")]
     Dds(#[from] DdsError),

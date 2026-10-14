@@ -6,7 +6,10 @@
 //! - materials with their base color texture, when the caller supplies the
 //!   images.
 //!
-//! Skeletons and animations are not exported yet.
+//! - skins: the skeleton's hierarchy matrices are the `PNode`s of the same
+//!   names, the skeleton matrices their inverse bind matrices.
+//!
+//! Animations are not exported yet.
 
 use serde_json::{Value, json};
 
@@ -37,8 +40,8 @@ impl Bin {
     }
 
     /// Adds an accessor over freshly appended bytes; returns its index.
-    fn accessor(&mut self, bytes: &[u8], target: u32, accessor: Value) -> usize {
-        let view = self.view(bytes, Some(target));
+    fn accessor(&mut self, bytes: &[u8], target: impl Into<Option<u32>>, accessor: Value) -> usize {
+        let view = self.view(bytes, target.into());
         let mut accessor = accessor;
         accessor["bufferView"] = json!(view);
         self.accessors.push(accessor);
@@ -59,9 +62,13 @@ fn floats<const N: usize>(v: &[[f32; N]]) -> Vec<u8> {
     v.iter().flatten().flat_map(|f| f.to_le_bytes()).collect()
 }
 
-/// The accessors of one segment, as a primitive without a material.
-fn primitive(bin: &mut Bin, seg: &Segment) -> Value {
+/// The accessors of one segment, as a primitive without a material; none
+/// for empty segments.
+fn primitive(bin: &mut Bin, seg: &Segment) -> Option<Value> {
     let count = seg.positions.len();
+    if count == 0 || seg.indices.is_empty() {
+        return None;
+    }
     let mut min = [f32::INFINITY; 3];
     let mut max = [f32::NEG_INFINITY; 3];
     for p in &seg.positions {
@@ -78,8 +85,21 @@ fn primitive(bin: &mut Bin, seg: &Segment) -> Value {
     );
     attributes.insert("POSITION".into(), json!(position));
     if seg.normals.len() == count {
+        // glTF wants unit normals; a few stored ones are zero or unnormalized.
+        let unit: Vec<[f32; 3]> = seg
+            .normals
+            .iter()
+            .map(|n| {
+                let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+                if len > 1e-6 && len.is_finite() {
+                    n.map(|v| v / len)
+                } else {
+                    [0.0, 0.0, 1.0]
+                }
+            })
+            .collect();
         let n = bin.accessor(
-            &floats(&seg.normals),
+            &floats(&unit),
             ARRAY_BUFFER,
             json!({"componentType": FLOAT, "count": count, "type": "VEC3"}),
         );
@@ -111,7 +131,129 @@ fn primitive(bin: &mut Bin, seg: &Segment) -> Value {
         ELEMENT_ARRAY_BUFFER,
         json!({"componentType": UNSIGNED_SHORT, "count": seg.indices.len(), "type": "SCALAR"}),
     );
-    json!({"attributes": attributes, "indices": idx, "mode": 4})
+    Some(json!({"attributes": attributes, "indices": idx, "mode": 4}))
+}
+
+/// `JOINTS_0` (palette indices mapped to skeleton hierarchy indices) and
+/// `WEIGHTS_0` (normalized) of a skinned segment.
+fn skin_attributes(bin: &mut Bin, seg: &Segment) -> Option<(usize, usize)> {
+    let count = seg.positions.len();
+    if seg.bones.is_empty() || seg.joints.len() != count || seg.weights.len() != count {
+        return None;
+    }
+    let mut joints = Vec::with_capacity(count * 8);
+    let mut weights = Vec::with_capacity(count * 16);
+    for (j, w) in seg.joints.iter().zip(&seg.weights) {
+        let mut w = *w;
+        for k in 0..4 {
+            let bone = seg.bones.get(usize::from(j[k]));
+            if bone.is_none() || !w[k].is_finite() || w[k] < 0.0 {
+                w[k] = 0.0;
+            }
+            let joint = bone.filter(|_| w[k] > 0.0).map_or(0, |b| b.hierarchy);
+            joints.extend(joint.to_le_bytes());
+        }
+        let sum: f32 = w.iter().sum();
+        if sum > 0.0 {
+            w = w.map(|x| x / sum);
+        } else {
+            w = [1.0, 0.0, 0.0, 0.0];
+        }
+        weights.extend(w.iter().flat_map(|f| f.to_le_bytes()));
+    }
+    let j = bin.accessor(
+        &joints,
+        ARRAY_BUFFER,
+        json!({"componentType": UNSIGNED_SHORT, "count": count, "type": "VEC4"}),
+    );
+    let w = bin.accessor(
+        &weights,
+        ARRAY_BUFFER,
+        json!({"componentType": FLOAT, "count": count, "type": "VEC4"}),
+    );
+    Some((j, w))
+}
+
+/// A node's transform as glTF TRS properties, or its matrix when it has
+/// shear. Zero-scale nodes (hidden parts) are only valid as TRS.
+#[allow(clippy::many_single_char_names, clippy::float_cmp)] // matrix columns x, y, z; an affine bottom row is exactly 0 0 0 1
+fn transform(m: &[f32; 16]) -> serde_json::Map<String, Value> {
+    let mut out = serde_json::Map::new();
+    if *m == IDENTITY {
+        return out;
+    }
+    let col = |c: usize| [m[4 * c], m[4 * c + 1], m[4 * c + 2]];
+    let dot = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let (x, y, z) = (col(0), col(1), col(2));
+    let mut scale = [dot(x, x).sqrt(), dot(y, y).sqrt(), dot(z, z).sqrt()];
+    let cross = [
+        x[1] * y[2] - x[2] * y[1],
+        x[2] * y[0] - x[0] * y[2],
+        x[0] * y[1] - x[1] * y[0],
+    ];
+    if dot(cross, z) < 0.0 {
+        scale[0] = -scale[0];
+    }
+    let bottom = [m[3], m[7], m[11], m[15]];
+    let mut rotation = [0.0, 0.0, 0.0, 1.0];
+    if scale.iter().all(|s| s.abs() > 1e-6) {
+        let unit = |c: [f32; 3], s: f32| c.map(|v| v / s);
+        let (x, y, z) = (unit(x, scale[0]), unit(y, scale[1]), unit(z, scale[2]));
+        let tolerance = 1e-3;
+        if dot(x, y).abs() > tolerance
+            || dot(x, z).abs() > tolerance
+            || dot(y, z).abs() > tolerance
+            || bottom != [0.0, 0.0, 0.0, 1.0]
+        {
+            out.insert("matrix".into(), json!(m));
+            return out;
+        }
+        // Rotation matrix (columns x, y, z) to a quaternion.
+        let (m00, m11, m22) = (x[0], y[1], z[2]);
+        let trace = m00 + m11 + m22;
+        let q = if trace > 0.0 {
+            let s = (trace + 1.0).sqrt() * 2.0;
+            [
+                (y[2] - z[1]) / s,
+                (z[0] - x[2]) / s,
+                (x[1] - y[0]) / s,
+                s / 4.0,
+            ]
+        } else if m00 > m11 && m00 > m22 {
+            let s = (1.0 + m00 - m11 - m22).sqrt() * 2.0;
+            [
+                s / 4.0,
+                (y[0] + x[1]) / s,
+                (z[0] + x[2]) / s,
+                (y[2] - z[1]) / s,
+            ]
+        } else if m11 > m22 {
+            let s = (1.0 + m11 - m00 - m22).sqrt() * 2.0;
+            [
+                (y[0] + x[1]) / s,
+                s / 4.0,
+                (z[1] + y[2]) / s,
+                (z[0] - x[2]) / s,
+            ]
+        } else {
+            let s = (1.0 + m22 - m00 - m11).sqrt() * 2.0;
+            [
+                (z[0] + x[2]) / s,
+                (z[1] + y[2]) / s,
+                s / 4.0,
+                (x[1] - y[0]) / s,
+            ]
+        };
+        let len = q.iter().map(|v| v * v).sum::<f32>().sqrt();
+        rotation = q.map(|v| v / len);
+    } else if bottom != [0.0, 0.0, 0.0, 1.0] {
+        out.insert("matrix".into(), json!(m));
+        return out;
+    }
+    out.insert("translation".into(), json!([m[12], m[13], m[14]]));
+    out.insert("rotation".into(), json!(rotation));
+    out.insert("scale".into(), json!(scale));
+    out
 }
 
 fn add_child(nodes: &mut [Value], parent: usize, child: usize) {
@@ -144,7 +286,7 @@ impl Model {
         mut image: impl FnMut(&MaterialTexture) -> Option<Vec<u8>>,
     ) -> Vec<u8> {
         let mut bin = Bin::default();
-        let primitives: Vec<Value> = self
+        let primitives: Vec<Option<Value>> = self
             .segments
             .iter()
             .map(|s| primitive(&mut bin, s))
@@ -167,11 +309,11 @@ impl Model {
             materials.push(material);
         }
         let with_material = |s: usize, material: Option<usize>| {
-            let mut p = primitives[s].clone();
+            let mut p = primitives.get(s)?.clone()?;
             if let Some(m) = material {
                 p["material"] = json!(m);
             }
-            p
+            Some(p)
         };
 
         // Node 0 turns Y-down models upright with a half turn about X (a
@@ -182,8 +324,8 @@ impl Model {
         }
         for n in &self.nodes {
             let mut node = json!({"name": n.name});
-            if n.local != IDENTITY {
-                node["matrix"] = json!(n.local);
+            for (k, v) in transform(&n.local) {
+                node[k] = v;
             }
             nodes.push(node);
         }
@@ -196,30 +338,90 @@ impl Model {
         }
 
         let mut meshes = Vec::new();
-        if self.instances.is_empty() {
+        if self.instances.is_empty() && primitives.iter().any(Option::is_some) {
             let prims: Vec<Value> = self
                 .segments
                 .iter()
                 .enumerate()
-                .map(|(i, s)| with_material(i, s.material))
+                .filter_map(|(i, s)| with_material(i, s.material))
                 .collect();
             meshes.push(json!({"primitives": prims}));
             nodes.push(json!({"name": "mesh", "mesh": 0}));
             let last = nodes.len() - 1;
             add_child(&mut nodes, 0, last);
         }
+        let mut skins = Vec::new();
+        let mut scene_roots = vec![0];
+        let mut skin_accessors: Vec<Option<Option<(usize, usize)>>> =
+            vec![None; self.segments.len()];
         for inst in &self.instances {
-            let prims: Vec<Value> = inst
-                .segments
-                .iter()
-                .filter(|&&(s, _)| s < primitives.len())
-                .map(|&(s, m)| with_material(s, m))
-                .collect();
+            // The skeleton's joints as glTF nodes, found by name.
+            let joints: Option<Vec<usize>> = inst
+                .skeleton
+                .and_then(|k| self.skeletons.get(k))
+                .and_then(|sk| {
+                    sk.names
+                        .iter()
+                        .map(|name| {
+                            self.nodes
+                                .iter()
+                                .position(|n| &n.name == name)
+                                .map(|n| n + 1)
+                        })
+                        .collect()
+                });
+            let mut skinned = false;
+            let mut prims = Vec::new();
+            for &(s, m) in inst.segments.iter().filter(|&&(s, _)| s < primitives.len()) {
+                let Some(mut p) = with_material(s, m) else {
+                    continue;
+                };
+                if joints.is_some()
+                    && let Some((j, w)) = *skin_accessors[s]
+                        .get_or_insert_with(|| skin_attributes(&mut bin, &self.segments[s]))
+                {
+                    p["attributes"]["JOINTS_0"] = json!(j);
+                    p["attributes"]["WEIGHTS_0"] = json!(w);
+                    skinned = true;
+                }
+                prims.push(p);
+            }
             if prims.is_empty() {
                 continue;
             }
             meshes.push(json!({"name": inst.name, "primitives": prims}));
             nodes.push(json!({"name": inst.name, "mesh": meshes.len() - 1}));
+            if let (true, Some(joints), Some(sk)) = (
+                skinned,
+                joints,
+                inst.skeleton.and_then(|k| self.skeletons.get(k)),
+            ) {
+                // Inverse bind matrices per joint, from the bone palettes;
+                // joints no vertex uses keep the identity.
+                let mut ibm = vec![IDENTITY; joints.len()];
+                for &(s, _) in &inst.segments {
+                    for b in self.segments.get(s).map_or(&[][..], |seg| &seg.bones) {
+                        if let (Some(slot), Some(m)) = (
+                            ibm.get_mut(usize::from(b.hierarchy)),
+                            sk.inverse_bind.get(usize::from(b.skeleton)),
+                        ) {
+                            *slot = *m;
+                        }
+                    }
+                }
+                let bytes: Vec<u8> = ibm.iter().flatten().flat_map(|f| f.to_le_bytes()).collect();
+                let acc = bin.accessor(
+                    &bytes,
+                    None,
+                    json!({"componentType": FLOAT, "count": ibm.len(), "type": "MAT4"}),
+                );
+                skins.push(json!({"joints": joints, "inverseBindMatrices": acc}));
+                let last = nodes.len() - 1;
+                nodes[last]["skin"] = json!(skins.len() - 1);
+                // Skinned meshes ignore their node's transform: a scene root.
+                scene_roots.push(last);
+                continue;
+            }
             let parent = inst
                 .node
                 .filter(|&n| n < self.nodes.len())
@@ -234,13 +436,16 @@ impl Model {
         let mut doc = json!({
             "asset": {"version": "2.0", "generator": "ffx-decomp ffx-phyre"},
             "scene": 0,
-            "scenes": [{"nodes": [0]}],
+            "scenes": [{"nodes": scene_roots}],
             "nodes": nodes,
             "meshes": meshes,
             "buffers": [{"byteLength": bin.data.len()}],
             "bufferViews": bin.views,
             "accessors": bin.accessors,
         });
+        if !skins.is_empty() {
+            doc["skins"] = json!(skins);
+        }
         if !materials.is_empty() {
             doc["materials"] = json!(materials);
         }

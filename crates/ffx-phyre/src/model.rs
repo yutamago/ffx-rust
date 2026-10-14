@@ -20,7 +20,7 @@
 //! - Each stream's `m_renderDataType` names a `PRenderDataType` user fixup.
 
 use crate::cluster::Cluster;
-use crate::material::{Instance, Material, Node, Resolver};
+use crate::material::{Bone, Instance, Material, Node, Resolver, Skeleton};
 use crate::{Error, Result};
 
 /// One mesh segment: a triangle list with its vertex attributes.
@@ -35,9 +35,12 @@ pub struct Segment {
     /// Vertex colors, when present, as RGBA bytes (float colors are
     /// clamped to 0–1 and scaled).
     pub colors: Vec<[u8; 4]>,
+    /// `SkinIndices`: indices into [`Segment::bones`].
     pub joints: Vec<[u8; 4]>,
     pub weights: Vec<[f32; 4]>,
     pub indices: Vec<u16>,
+    /// The bone palette the joints index.
+    pub bones: Vec<Bone>,
 }
 
 /// A parsed model.
@@ -48,6 +51,8 @@ pub struct Model {
     pub nodes: Vec<Node>,
     /// Placed meshes; when empty, every segment is shown once.
     pub instances: Vec<Instance>,
+    /// One per `PMesh`, possibly empty.
+    pub skeletons: Vec<Skeleton>,
 }
 
 pub(crate) fn u32_at(b: &[u8], o: usize) -> Result<u32> {
@@ -281,6 +286,11 @@ impl Model {
                 .collect();
             let mut seg = Segment {
                 material: scene.segment_materials.get(i as usize).copied().flatten(),
+                bones: scene
+                    .segment_bones
+                    .get(i as usize)
+                    .cloned()
+                    .unwrap_or_default(),
                 indices,
                 ..Segment::default()
             };
@@ -321,6 +331,7 @@ impl Model {
             materials: scene.materials,
             nodes: scene.nodes,
             instances: scene.instances,
+            skeletons: scene.skeletons,
         })
     }
 }
