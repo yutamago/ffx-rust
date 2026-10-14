@@ -10,6 +10,7 @@
 0x00406000 function zlib_inflateInit_         # called first by zlib_uncompress; stream ptr in ECX
 0x00406230 function zlib_inflate              # called with Z_FINISH by zlib_uncompress
 0x004078b0 function zlib_inflateEnd
+0x0042fd80 function Time_Now                   # seconds (GetSystemTimePreciseAsFileTime, or QueryPerformanceCounter); wrapped by the harness (fast mode)
 0x0047d5f0 function Class_FindMemberByOffset  # (class, &object, byte offset, &element): resolves a fixup's byte-offset field, adjusting by the runtime class's base offsets
 0x00505450 function PNode_RegisterClass       # registers PNode members: m_next 0, m_parent 4, m_firstChild 8, m_worldMatrix 0xc, m_localMatrix 0x10, m_name 0x50
 0x00579310 function PCluster_Analyze          # prints "Analyzing cluster '%s'" and every table size; names the header words (array/pointer/pointer-array fixup sizes and counts, header class counts and fixups)
@@ -72,7 +73,8 @@
 0x00629d50 function Input_KeyHeld              # thiscall(devices, binding, device): binding >= 28 is Phyre key binding-28 in the keyboard state
 0x0062d5c0 function Keyboard_Update            # GetDeviceState(256); Phyre key i is down when scan code table[i] (0x00c30e90) is
 0x0062dba0 function PadXInput_Update           # XInputGetState for the device's user index
-0x0062ee50 function Game_Main                 # WinMain body called from the CRT entry; returns the process exit code
+0x0062e340 function App_Frame                  # one frame: update and render (called by Game_Main's loop)
+0x0062ee50 function Game_Main                 # WinMain body called from the CRT entry; returns the process exit code. Its loop is the frame limiter: a frame (App_Frame) each DAT_00c30e88 x 1/59.94 s of Time_Now, Sleep in between (0x0062f3bb)
 0x0062fa30 function Ps2File_Open              # host0:/ffx/... -> /ffx_ps2/ffx/..., then the PC file layer
 0x006315c0 function Input_BuildPadMap          # pairs each key binding (settings +0x60) with its PS2 pad bit
 0x00632a30 function Input_UpdatePad            # fastcall(input 0x00ccb170): ORs the bits of held bindings into the pad word (+0), previous at +4
