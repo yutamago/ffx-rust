@@ -52,3 +52,23 @@ with `key` (arrows `c8`/`d0`/`cb`/`cd`, Enter `1c`, Esc `01`).
   title event opens `titl00` when the opening starts.
 - Title: Up arrow, Enter starts a new game; then the Sphere Grid choice
   takes `press down`, `press cross`.
+
+## Tests
+
+`crates/ffx-harness` launches the game (`Game::launch`, background mode)
+and wraps the commands; a launched game is ended when the `Game` is
+dropped, so a failing test does not leave it running. The game tests are
+ignored by default because they open a window on the Windows desktop:
+
+```bash
+FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test --release -p ffx-harness --test game -- --ignored --test-threads 1
+```
+
+| Test | Checks | Time |
+|---|---|---|
+| `runs_in_the_background_and_takes_input` | frames advance, the keyboard is read without focus, the pad word holds exactly the held button, 1280×720 screenshots | 10 s |
+| `a_kernel_mod_reaches_game_memory` | a mod's `item.bin` (Potion power 4 → 77) is what `g_KernelItem` points at | 6 s |
+| `new_game_reaches_the_sphere_grid_choice` | title menu after the opening, New Game by keys, the Sphere Grid cursor moved by the pad | 70 s |
+
+Screens are recognised by mean colours of fixed rectangles; a failing
+check saves its screenshot to `<temp>/ffx-harness/`.

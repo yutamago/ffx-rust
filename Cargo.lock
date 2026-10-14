@@ -304,6 +304,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffx-harness"
+version = "0.1.0"
+dependencies = [
+ "ffx-kernel",
+ "ffx-vbf",
+ "thiserror",
+]
+
+[[package]]
 name = "ffx-hook"
 version = "0.1.0"
 dependencies = [

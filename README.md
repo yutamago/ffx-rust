@@ -21,6 +21,7 @@ data, and never will: binaries, archives and extracted files stay out of git.
 | `ffx` CLI | `vbf list/cat/extract/pack`, `kernel tables/export/import`, `monster list/export/import`, `script list/disasm/asm`, `texture export/import`, `model export/import`, `motion export/import`, `phyre dump` |
 | Function replacement | `dinput8.dll` proxy patches 2 functions (`zlib_uncompress`, `Path_ToLowerAscii`) with parity-tested Rust; runs in the game |
 | Mods | `mods/<mod>/<archive path>` replaces archive files in the running game (verified with an edited item table) |
+| In-game tests (`ffx-harness`) | The game runs in the background under a TCP harness (buttons, keys, memory, screenshots, file events); tests check a kernel mod in memory and play from boot to the first PS2 menu |
 | Symbol map (`symbols/ffx.sym`) | file system, archive, zlib, text, kernel, settings, PhyreEngine fixups and motion code |
 
 ## Layout
@@ -28,7 +29,8 @@ data, and never will: binaries, archives and extracted files stay out of git.
 ```text
 crates/ffx-core     Rust reimplementations of FFX.exe functions
 crates/ffx-oracle   runs original FFX.exe functions in an emulator, for parity tests
-crates/ffx-hook     patches FFX.exe functions to jump into ffx-core
+crates/ffx-hook     patches FFX.exe functions to jump into ffx-core; test harness
+crates/ffx-harness  launches and drives the game from tests
 crates/ffx-dinput8  dinput8.dll proxy that loads ffx-hook into the game
 crates/ffx-vbf      VBF archive reader
 crates/ffx-kernel   battle kernel tables: reader, writer, TOML export/import

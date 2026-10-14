@@ -10,6 +10,7 @@ rust-version = "1.90"
 
 [workspace.dependencies]
 ffx-core = { path = "crates/ffx-core" }
+ffx-harness = { path = "crates/ffx-harness" }
 ffx-hook = { path = "crates/ffx-hook" }
 ffx-kernel = { path = "crates/ffx-kernel" }
 ffx-monster = { path = "crates/ffx-monster" }
