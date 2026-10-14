@@ -11,6 +11,7 @@
 0x00406230 function zlib_inflate              # called with Z_FINISH by zlib_uncompress
 0x004078b0 function zlib_inflateEnd
 0x0047d5f0 function Class_FindMemberByOffset  # (class, &object, byte offset, &element): resolves a fixup's byte-offset field, adjusting by the runtime class's base offsets
+0x00505450 function PNode_RegisterClass       # registers PNode members: m_next 0, m_parent 4, m_firstChild 8, m_worldMatrix 0xc, m_localMatrix 0x10, m_name 0x50
 0x00579310 function PCluster_Analyze          # prints "Analyzing cluster '%s'" and every table size; names the header words (array/pointer/pointer-array fixup sizes and counts, header class counts and fixups)
 0x0057a280 function Fixup_FindMember          # thiscall(cache; member index or -1, &object, byte offset, ...): member index < namespace member count -> member table entry, else Class_FindMemberByOffset (cached)
 0x0057a6b0 function Cluster_ApplyPointerFixups # unpacks with Cluster_UnpackPointerFixups, then writes each pointer: target list data + index * size + word 4, or a user fixup when word 6 < user fixup count

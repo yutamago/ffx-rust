@@ -368,8 +368,15 @@ records must be identical.
 
 ## Open questions
 
-- `PNode.m_name` is at +0x50 in the namespace, but its array fixup says
-  +0x4c. Names are taken from the node's only array fixup.
+- `PNode.m_name` is at +0x50 in the namespace and in FFX.exe's own
+  registration of the class (`PNode_RegisterClass`, `0x00505450`:
+  `m_next` 0, `m_parent` 4, `m_firstChild` 8, `m_worldMatrix` 0xc,
+  `m_localMatrix` 0x10, `m_name` 0x50), but every one of its array fixups
+  (5,761 in a sample of 80 clusters) says +0x4c: the last float of
+  `m_localMatrix`. All other byte-offset fixups are at the member (strings)
+  or its pointer word (+4, arrays). Names are taken from the node's only
+  array fixup; whether the loader writes over the matrix element needs a
+  look at a running game.
 - What the remaining material parameters do in the shaders.
 - New segments, materials or bones (only existing segments are written).
 - Shaders (`*.fx.phyre`) and the other cluster kinds.
