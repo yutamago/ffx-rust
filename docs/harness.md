@@ -104,32 +104,29 @@ kept the mutex (and the harness port) until it finally went away.
 `crates/ffx-harness` launches the game (`Game::launch`, background mode)
 and wraps the commands; a launched game is ended when the `Game` is
 dropped, so a failing test does not leave it running. The game tests are
-ignored by default because they open a window on the Windows desktop:
+ignored by default because they open a window on the Windows desktop.
+Starting and loading cost more than the checks, so each test shares one
+launch between several checks, and `tools/game-tests.sh` runs only the
+tests the changed files concern (since the merge base with `origin/main`,
+plus uncommitted and untracked files):
 
 ```bash
-FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test --release -p ffx-harness --test game -- --ignored --test-threads 1
+tools/game-tests.sh --list     # which tests, and the file that selected each
+tools/game-tests.sh            # run them
+tools/game-tests.sh --all      # all four (about 2.7 minutes)
+tools/game-tests.sh HEAD~3     # compare with another commit
 ```
 
-| Test | Checks | Time |
+| Test | Checks | Selected by changes to |
 |---|---|---|
-| `runs_in_the_background_and_takes_input` | frames advance, the keyboard is read without focus, the pad word holds exactly the held button, 1280×720 screenshots | 10 s |
-| `a_kernel_mod_reaches_game_memory` | a mod's `item.bin` (Potion power 4 → 77) is what `g_KernelItem` points at | 6 s |
-| `new_game_reaches_the_sphere_grid_choice` | the opening skipped with Start (B, a 3-frame tap), New Game by keys, the Sphere Grid cursor moved by the pad | 30 s |
-| `a_grown_event_script_runs_in_the_game` | `znkd0600.ebp` with `pushimm 0x1234; popv v1` in front of worker 0's first entry (the worker grows and moves): the global byte at `0xa3c` is `0x34` (0 without the mod), and the scene keeps running | 45 s |
-| `a_resized_model_loads_in_the_game` | Tidus's `c001.dae.phyre`, 30 % wider and with segment 0 doubled (resized buffers), is read from the mod and the scene runs 10 s | 40 s |
-| `a_save_loads_from_the_sandbox_and_the_users_files_stay_untouched` | title → Load → slot 1 (the first manual save; entry 0 is the autosave, taken mid-cutscene) → Yes; the save's event starts, the game runs, and the user's files are byte for byte unchanged | 35 s |
-| `the_random_generators_repeat_with_a_seed` | three save loads: seed 1 twice gives identical generators, seed 2 others | 90 s |
-| `a_monster_mod_reaches_the_battle` | m068 with 12345 HP (`ffx monster import`): from the save, a battle is started directly (`screens::start_battle`, field 3 `cdsp00`, formation `cdsp00_00`), and an enemy actor has max HP 12345 (50 without the mod) | 20 s |
-| `an_edited_motion_group_loads_in_the_game` | Tidus's `resident0.mgrp`, root bone turned a quarter, is read from the mod and the scene runs 10 s | 40 s |
+| `start_up_input_and_kernel_mod` | the keyboard is read without focus; a mod's `item.bin` (Potion power 77) is what `g_KernelItem` points at; New Game to the Sphere Grid choice, where Down moves the cursor and the pad word holds exactly Circle | `ffx-kernel`, `ffx-text` |
+| `first_scene_with_script_model_and_motion_mods` | into `znkd0600` with three mods: the event script grown by `pushimm 0x1234; popv v1` (its byte global at `0xa3c` reads `0x34`), Tidus's model 30 % wider with a segment doubled, his motions turned; both read from the mod, the scene runs 10 s | `ffx-script`, `ffx-phyre`, `ffx-motion` |
+| `save_and_battle_with_monster_mod` | slot 1 of the sandboxed saves, then a battle started directly (field 3, `cdsp00_00`) where an enemy (m068) has the mod's 12345 HP; the user's own settings and saves are byte for byte unchanged | `ffx-monster` |
+| `random_generators_repeat_with_a_seed` | three save loads: seed 1 twice gives identical generators, seed 2 others | — |
 
-The first scene of a new game is `screens::first_scene`: New Game,
-Standard Sphere Grid, Yes, Arranged soundtrack, then event `znkd0600` (the
-Zanarkand ruins), which loads Tidus (`c001`) and his resident motions.
-Script globals (storage 0, `Script_VarAddress` `0x0086c2e0`) are at
-`*(*0x01326b28 + 0x2c) + offset`.
-
-With fast mode the whole suite takes about 2.5 minutes, most of it start-up
-and loading.
+Changes to the hook, the harness, `ffx-core`, `ffx-vbf`, the launcher or
+the workspace select all four; other changes (docs, the CLI, symbols)
+none.
 
 Screens are recognised by mean colours of fixed rectangles; a failing
 check saves its screenshot to `<temp>/ffx-harness/`.
