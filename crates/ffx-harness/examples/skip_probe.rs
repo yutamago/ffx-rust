@@ -1,5 +1,5 @@
 //! Which input skips the opening? For each candidate (PS2 buttons, or
-//! `key:<scan code>`), boots the game, presses it during the opening, and
+//! `key:<scan code>`, optionally `@<frames held>`), boots the game, presses it during the opening, and
 //! prints how many frames the title menu took.
 //!
 //! `cargo run --release -p ffx-harness --example skip_probe -- circle start key:1c`
@@ -14,10 +14,13 @@ fn main() -> ffx_harness::Result<()> {
         // Hold it for a second every two seconds until the title shows.
         let mut title = Err(ffx_harness::Error::Harness("no title".into()));
         for _ in 0..25 {
-            match candidate.strip_prefix("key:") {
-                Some(code) => game.key(&[u8::from_str_radix(code, 16).expect("hex")], 60)?,
-                None => game.press(&candidate, 60)?,
+            let (input, hold) = candidate.split_once('@').unwrap_or((&candidate, "60"));
+            let hold: u32 = hold.parse().expect("frames");
+            match input.strip_prefix("key:") {
+                Some(code) => game.key(&[u8::from_str_radix(code, 16).expect("hex")], hold)?,
+                None => game.press(input, hold)?,
             }
+            game.wait(60)?;
             if screens::is_title(&game.screenshot()?) {
                 title = Ok(());
                 break;

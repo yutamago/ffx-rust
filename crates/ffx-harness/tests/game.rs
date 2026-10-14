@@ -48,17 +48,18 @@ fn runs_in_the_background_and_takes_input() {
     );
     // Once the game reads the pad (after the logos), the pad word holds
     // exactly the held button.
-    game.command("pad cross").unwrap();
     let mut word = 0;
     for _ in 0..30 {
         game.wait(30).unwrap();
+        game.command("pad circle").unwrap();
+        game.wait(2).unwrap();
         word = u32::from_le_bytes(game.read(0x00cc_b170, 4).unwrap().try_into().unwrap());
+        game.command("pad").unwrap();
         if word != 0 {
             break;
         }
     }
-    game.command("pad").unwrap();
-    assert_eq!(word, 0x4000, "pad word {word:#x}");
+    assert_eq!(word, 0x20, "pad word {word:#x}");
     let shot = game.screenshot().unwrap();
     assert_eq!((shot.width, shot.height), (1280, 720));
     game.quit().unwrap();
@@ -113,7 +114,7 @@ fn new_game_reaches_the_sphere_grid_choice() {
     // A PS2 menu: the pad moves the cursor from Standard to Expert.
     game.wait(30).unwrap();
     let before = game.screenshot().unwrap();
-    game.press("down", 6).unwrap();
+    game.command("press down 3 20").unwrap();
     game.wait(10).unwrap();
     let after = game.screenshot().unwrap();
     let (standard, expert) = (398, 427);

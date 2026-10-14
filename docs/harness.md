@@ -32,9 +32,22 @@ found while enumerating DirectInput devices at start-up
 (`GameSetting.ini` `ffxKeyBinding`, defaults at `0x00c8a538`) with a pad
 bit; `Input_KeyHeld` (`0x00629d50`) treats a binding ≥ 28 as Phyre key
 `binding − 28` (keys 0–25 A–Z, 26–35 digits, 36 Esc, 49 Enter, 63–66
-arrows; scan codes at `0x00c30e90`). By the defaults, bindings 0–13 are
-Triangle, Cross, Square, Circle, Right, Down, Up, Left, R3, Select, Start,
-L3, R1, L2 on the keyboard and 14–27 the same on a pad.
+arrows; scan codes at `0x00c30e90`); smaller ones are pad buttons.
+
+The pad word is the PS2 pad data with its two bytes swapped:
+
+| Bit | Button | Default key |
+|---|---|---|
+| `0x1` / `0x2` / `0x4` / `0x8` | L2 / R2 / L1 / R1 | PgUp / PgDn / S / D |
+| `0x10` | Triangle (menu) | V |
+| `0x20` | Circle (confirm: the Japanese layout) | C, Enter |
+| `0x40` | Cross (cancel) | X, Backspace |
+| `0x80` | Square | Z |
+| `0x100` / `0x800` | Select / Start | N / B |
+| `0x1000` … `0x8000` | Up, Right, Down, Left | arrows |
+
+Read back from the pad word with the keys held; Esc gives `0x1` too but
+opens the PC menu.
 
 ## Two kinds of input
 
@@ -50,12 +63,12 @@ with `key` (arrows `c8`/`d0`/`cb`/`cd`, Enter `1c`, Esc `01`).
 - Esc opens the PC menu; the arrows move its cursor and X closes it.
 - The opening (campfire, credits) is the title event's attract scene; it
   runs about 4,800 frames, then the title menu (Load selected) appears. The
-  title event opens `titl00` when the opening starts. Holding B (scan code
-  `30`) for a second skips it (title after about 250 frames); short taps,
-  and the PS2 buttons Circle, Cross, Start, Triangle, Square and Select,
-  do not (`examples/skip_probe.rs`).
-- Title: Up arrow, Enter starts a new game; then the Sphere Grid choice
-  takes `press down`, `press cross`.
+  title event opens `titl00` when the opening starts. Start (B) skips it, even
+  as a 2-frame tap, once the opening is a few seconds in (title about 280
+  frames later; `examples/skip_probe.rs`). Inputs are taps of a few frames:
+  menus repeat a held direction.
+- Title: Up arrow, Enter starts a new game; the Sphere Grid choice takes
+  `press down` and `press circle` (confirm).
 
 ## Tests
 
@@ -72,7 +85,7 @@ FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test --release -p ffx-harness --test 
 |---|---|---|
 | `runs_in_the_background_and_takes_input` | frames advance, the keyboard is read without focus, the pad word holds exactly the held button, 1280×720 screenshots | 10 s |
 | `a_kernel_mod_reaches_game_memory` | a mod's `item.bin` (Potion power 4 → 77) is what `g_KernelItem` points at | 6 s |
-| `new_game_reaches_the_sphere_grid_choice` | the opening skipped with B, New Game by keys, the Sphere Grid cursor moved by the pad | 30 s |
+| `new_game_reaches_the_sphere_grid_choice` | the opening skipped with Start (B, a 3-frame tap), New Game by keys, the Sphere Grid cursor moved by the pad | 30 s |
 
 Screens are recognised by mean colours of fixed rectangles; a failing
 check saves its screenshot to `<temp>/ffx-harness/`.

@@ -32,7 +32,8 @@
 //!
 //! Buttons are names joined by `+` (`cross`, `circle`, `square`,
 //! `triangle`, `up`, `down`, `left`, `right`, `start`, `select`, `l1`,
-//! `r1`, `l2`, `r2`, `l3`, `r3`) or a hex mask (`0x4000`).
+//! `r1`, `l2`, `r2`, `l3`, `r3`) or a hex mask (`0x20`). The pad word is the PS2 pad data with its two
+//! bytes swapped: Circle `0x20`, Cross `0x40`, Start `0x800`, Up `0x1000`.
 //!
 //! | Command | Reply |
 //! |---|---|
@@ -125,22 +126,23 @@ fn parse_buttons(s: &str) -> Result<u32, String> {
     }
     s.split('+').try_fold(0, |mask, name| {
         let bit = match name {
-            "select" => 0x1,
-            "l3" => 0x2,
-            "r3" => 0x4,
-            "start" => 0x8,
-            "up" => 0x10,
-            "right" => 0x20,
-            "down" => 0x40,
-            "left" => 0x80,
-            "l2" => 0x100,
-            "r2" => 0x200,
-            "l1" => 0x400,
-            "r1" => 0x800,
-            "triangle" => 0x1000,
-            "circle" => 0x2000,
-            "cross" => 0x4000,
-            "square" => 0x8000,
+            // The PS2 pad data bytes, swapped: data[3] low, data[2] high.
+            "l2" => 0x1,
+            "r2" => 0x2,
+            "l1" => 0x4,
+            "r1" => 0x8,
+            "triangle" => 0x10,
+            "circle" => 0x20,
+            "cross" => 0x40,
+            "square" => 0x80,
+            "select" => 0x100,
+            "l3" => 0x200,
+            "r3" => 0x400,
+            "start" => 0x800,
+            "up" => 0x1000,
+            "right" => 0x2000,
+            "down" => 0x4000,
+            "left" => 0x8000,
             other => return Err(format!("unknown button {other:?}")),
         };
         Ok(mask | bit)

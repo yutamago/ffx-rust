@@ -227,8 +227,10 @@ impl Game {
         }
         let start = Instant::now();
         loop {
+            // Ready once the first frame is presented (the frame hook runs
+            // the commands that touch the game).
             if let Ok(mut game) = Self::connect(options.port)
-                && game.command("ping").is_ok()
+                && game.frame().is_ok_and(|f| f > 0)
             {
                 game.owned = true;
                 return Ok(game);

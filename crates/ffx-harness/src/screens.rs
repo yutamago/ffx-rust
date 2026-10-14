@@ -46,23 +46,20 @@ pub fn wait_for(
     Err(Error::Harness("the screen did not appear".into()))
 }
 
-/// Scan code of B, which skips the opening when held.
-pub const KEY_SKIP: u8 = 0x30;
-
 /// From boot to the title menu: waits for the opening (the title event
-/// opens `titl00` when it starts), then holds B for a second every two
-/// seconds until the title shows.
+/// opens `titl00` when it starts), then taps Start (B) every second until
+/// the title shows. Taps are a few frames: menus repeat held directions.
 ///
 /// # Errors
 /// Fails when the title does not appear.
 pub fn to_title(game: &mut Game) -> Result<Image> {
     game.wait_for_open("titl00", 30, 3000)?;
-    for _ in 0..30 {
+    for _ in 0..40 {
         let shot = game.screenshot()?;
         if is_title(&shot) {
             return Ok(shot);
         }
-        game.key(&[KEY_SKIP], 60)?;
+        game.command("press start 3 60")?;
     }
     wait_for(game, is_title, 60, 60)
 }
@@ -74,7 +71,7 @@ pub fn to_title(game: &mut Game) -> Result<Image> {
 pub fn new_game(game: &mut Game) -> Result<Image> {
     to_title(game)?;
     // The Flash title menu reads keys: Up to New Game, Enter.
-    game.key(&[0xc8], 6)?;
-    game.key(&[0x1c], 6)?;
+    game.command("key c8 3 20")?;
+    game.command("key 1c 3 20")?;
     wait_for(game, is_sphere_grid_choice, 30, 20)
 }
