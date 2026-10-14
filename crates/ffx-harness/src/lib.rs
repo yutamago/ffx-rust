@@ -50,6 +50,9 @@ pub struct Options {
     /// Copy the user's settings and saves into `home` before each launch
     /// (a fresh copy, so every run starts from the same saves).
     pub copy_user_data: bool,
+    /// Seed of the random number generators (instead of the clock), so
+    /// encounters, battles and drops repeat. `None` keeps the clock.
+    pub seed: Option<u32>,
 }
 
 impl Default for Options {
@@ -64,6 +67,7 @@ impl Default for Options {
             startup: Duration::from_secs(90),
             home: Some(std::env::temp_dir().join("ffx-harness/home")),
             copy_user_data: true,
+            seed: Some(1),
         }
     }
 }
@@ -280,6 +284,9 @@ impl Game {
         }
         let mut cmd = Command::new(options.repo.join("tools/run-game.sh"));
         cmd.arg("--harness").arg(options.port.to_string());
+        if let Some(seed) = options.seed {
+            cmd.arg("--seed").arg(seed.to_string());
+        }
         if let Some(home) = &options.home {
             prepare_home(home, options.copy_user_data)?;
             cmd.arg("--home").arg(home);

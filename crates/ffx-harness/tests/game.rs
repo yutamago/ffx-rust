@@ -324,3 +324,26 @@ fn a_save_loads_from_the_sandbox_and_the_users_files_stay_untouched() {
         "the user's settings and saves are unchanged"
     );
 }
+
+#[test]
+#[ignore = "starts FFX.exe on the Windows desktop three times"]
+fn the_random_generators_repeat_with_a_seed() {
+    // The 68 generators at 0x01135ee0 and the global one at 0x00c42200,
+    // once the save has loaded.
+    let state = |seed: u32| {
+        let options = Options {
+            seed: Some(seed),
+            ..Options::default()
+        };
+        let mut game = Game::launch(&options).unwrap();
+        ffx_harness::screens::load_save(&mut game, 1).unwrap();
+        game.wait(120).unwrap();
+        let mut state = game.read(0x0113_5ee0, 68 * 4).unwrap();
+        state.extend(game.read(0x00c4_2200, 4).unwrap());
+        game.quit().unwrap();
+        state
+    };
+    let (a, b, c) = (state(1), state(1), state(2));
+    assert_eq!(a, b, "the same seed gives the same generators");
+    assert_ne!(a, c, "another seed gives other generators");
+}

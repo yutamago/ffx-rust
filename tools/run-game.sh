@@ -11,6 +11,7 @@
 #   --harness P test harness on 127.0.0.1:P (see crates/ffx-hook/src/harness.rs)
 #   --background show the window without taking the focus
 #   --home DIR  the game's Documents folder (settings, saves) is DIR (harness only)
+#   --seed N    seed the random number generators with N instead of the clock
 #
 # The language lives in Documents\Square Enix\FINAL FANTASY X&X-2 HD
 # Remaster\GameSetting.ini, which the Steam launcher normally writes; the game
@@ -28,6 +29,7 @@ while [[ $# -gt 0 ]]; do
         --harness) export FFX_HARNESS="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS"; shift ;;
         --background) export FFX_HARNESS_BACKGROUND=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_BACKGROUND" ;;
         --home) home="$2"; shift ;;
+        --seed) export FFX_HARNESS_SEED="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_SEED"; shift ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
     esac
     shift

@@ -12,6 +12,8 @@
 //! - with `FFX_HARNESS_HOME=<Windows folder>`, answers the game's question
 //!   for the Documents folder (`SHGetFolderPathW`, `CSIDL_PERSONAL`) with
 //!   that folder, so settings and saves (autosaves too) stay in a sandbox;
+//! - with `FFX_HARNESS_SEED=<n>`, seeds the random number generators with
+//!   `n` instead of the clock (`Rng_ClockSeed`, `0x00798950`), so runs repeat;
 //! - with `FFX_HARNESS_BACKGROUND=1`, shows the window without activating
 //!   it and makes the keyboard a background device, so the game neither
 //!   takes the focus nor stops reading input without it; the real devices
@@ -153,6 +155,32 @@ fn parse_buttons(s: &str) -> Result<u32, String> {
         };
         Ok(mask | bit)
     })
+}
+
+/// Trampoline to the original `Rng_ClockSeed`.
+pub static CLOCK_SEED_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
+/// The fixed seed, when `FFX_HARNESS_SEED` is set.
+static SEED: OnceLock<u32> = OnceLock::new();
+
+/// Wraps `Rng_ClockSeed` (`0x00798950`): the XOR of the system time's bytes
+/// plus 1, which `Rng_Seed` (`0x00798890`) turns into the seeds of the
+/// global generator and the 68 generators at `0x01135ee0`. With
+/// `FFX_HARNESS_SEED` it returns that value instead.
+///
+/// # Safety
+/// Called by the game.
+#[must_use]
+pub unsafe extern "C" fn clock_seed() -> u32 {
+    if let Some(&seed) = SEED.get() {
+        log(&format!("  harness: random seed {seed}"));
+        return seed;
+    }
+    // SAFETY: the trampoline runs the original.
+    unsafe {
+        let original: unsafe extern "C" fn() -> u32 =
+            std::mem::transmute(CLOCK_SEED_ORIGINAL.load(Ordering::Acquire));
+        original()
+    }
 }
 
 /// `DirectInput` keys held by the test, by scan code.
@@ -907,6 +935,12 @@ pub unsafe fn install(module: usize) {
         std::env::var("FFX_HARNESS_BACKGROUND").is_ok_and(|v| v == "1"),
         Ordering::Release,
     );
+    if let Some(seed) = std::env::var("FFX_HARNESS_SEED")
+        .ok()
+        .and_then(|s| s.parse().ok())
+    {
+        let _ = SEED.set(seed);
+    }
     if let Ok(home) = std::env::var("FFX_HARNESS_HOME") {
         let wide: Vec<u16> = home
             .trim_end_matches('\\')

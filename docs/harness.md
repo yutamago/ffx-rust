@@ -21,6 +21,7 @@ tools/harness.py quit
 | Focus | `ShowWindow` | Background mode shows the window without activating it |
 | Isolation | `GetDeviceState`, `XInputGetState` | In background mode the real keyboard, mouse and pads are ignored: background devices would otherwise see what the user types elsewhere |
 | Events | `File_Open` | Every file the game opens, and which came from a mod |
+| Randomness | `Rng_ClockSeed` (`0x00798950`), wrapped | `Rng_Seed` (`0x00798890`) seeds the global generator (`0x00c42200`) and the 68 at `0x01135ee0` from the system time (`GetSystemTime` bytes XORed, plus 1). With `--seed N` it gets `N`; `ffx-harness` uses seed 1 unless a test says otherwise |
 | Sandbox | `SHGetFolderPathW` | With `--home DIR`, the Documents folder is `DIR`: the game reads and writes `GameSetting.ini` and its saves (autosaves too) there. `ffx-harness` makes `DIR` a fresh copy of the user's `Square Enix/FINAL FANTASY X&X-2 HD Remaster` before each launch, so tests can load the user's saves and never change them |
 
 XInput is not used: the game creates XInput devices only for controllers
@@ -97,6 +98,7 @@ FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test --release -p ffx-harness --test 
 | `a_grown_event_script_runs_in_the_game` | `znkd0600.ebp` with `pushimm 0x1234; popv v1` in front of worker 0's first entry (the worker grows and moves): the global byte at `0xa3c` is `0x34` (0 without the mod), and the scene keeps running | 45 s |
 | `a_resized_model_loads_in_the_game` | Tidus's `c001.dae.phyre`, 30 % wider and with segment 0 doubled (resized buffers), is read from the mod and the scene runs 10 s | 40 s |
 | `a_save_loads_from_the_sandbox_and_the_users_files_stay_untouched` | title → Load → slot 1 (the first manual save; entry 0 is the autosave, taken mid-cutscene) → Yes; the save's event starts, the game runs, and the user's files are byte for byte unchanged | 35 s |
+| `the_random_generators_repeat_with_a_seed` | three save loads: seed 1 twice gives identical generators, seed 2 others | 90 s |
 | `an_edited_motion_group_loads_in_the_game` | Tidus's `resident0.mgrp`, root bone turned a quarter, is read from the mod and the scene runs 10 s | 40 s |
 
 The first scene of a new game is `screens::first_scene`: New Game,

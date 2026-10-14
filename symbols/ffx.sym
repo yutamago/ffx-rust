@@ -85,6 +85,7 @@
 0x00679730 function PcFile_Open               # allocates a File and calls File_Construct/File_Open; MessageBoxW on failure
 0x006db070 function LangManager_Get
 0x006db090 function LangManager_FromSettings  # settings language index -> game language id
+0x006f0330 function Save_InitFolder            # Documents (SHGetFolderPathW CSIDL_PERSONAL) + Square Enix\FINAL FANTASY X&X-2 HD Remaster\FINAL FANTASY X\
 0x0076b970 function Cd_QueueRead              # libmscd.c emulation: queue a read of a PS2 file by number; slot 0 of g_CdLib
 0x0076c320 function Cd_FileSize                # cdecl(number): size of a PS2 file from the sector table (cdrom.mdg); wrapped so mod files report their size
 0x00781d40 function Kernel_LoadTables         # loads command, ply_rom, a_ability, item, monmagic1/2, ... into globals
@@ -102,6 +103,10 @@
 0x00790a90 function Command_FindRecord        # id & 0xfff in g_KernelCommand
 0x00797410 function Mon_FindHandler           # lookup in monster file section 1
 0x00797a40 function Script_Register           # (manager, name, script): queue a script in a script manager (8 slots, 0x54 bytes each)
+0x00798890 function Rng_Seed                   # cdecl(n): seeds 0x00c42200/04 from Rng_ClockSeed * (n + 1), then fills the 68 generators
+0x007988f0 function Rng_Next                   # cdecl(index): one of the 68 generators at 0x01135ee0 (multiplier table 0x00c42208, xor 0x00c42318)
+0x00798950 function Rng_ClockSeed              # XOR of the GetSystemTime bytes + 1; wrapped by the harness (FFX_HARNESS_SEED)
+0x007989a0 function Rng_Global                 # seed = seed * 0x5d588b65 + 0x3c35, rotated by 16; returns 31 bits
 0x007990d0 function Battle_GiveRewards        # gil, AP, two drop slots, overkill drops, bribe (spoils section 4)
 0x0079b4f0 function Mon_InitActor             # copies the stat record (section 2) into the battle actor
 0x007a5360 function Native_SetActorProperty   # func 0x70ab: pops value, property, actor; calls 0x007b4b70
