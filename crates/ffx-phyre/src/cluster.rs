@@ -52,6 +52,8 @@ pub struct InstanceList {
     pub count: u32,
     pub objects_size: u32,
     pub arrays_size: u32,
+    /// Number of array fixups in this list's objects.
+    pub array_fixups: u32,
     /// Number of pointer fixups in this list's objects.
     pub pointer_fixups: u32,
     /// File offset of the first object; arrays follow the objects.
@@ -83,7 +85,10 @@ impl InstanceList {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UserFixup {
     pub type_index: u32,
+    /// The data up to the first NUL, for string fixups.
     pub text: String,
+    /// The raw data (asset import references are two bytes).
+    pub data: Vec<u8>,
 }
 
 /// A parsed cluster.
@@ -192,6 +197,7 @@ impl Cluster {
                 count: u32_at(bytes, at + 4)?,
                 objects_size: u32_at(bytes, at + 12)?,
                 arrays_size: u32_at(bytes, at + 16)?,
+                array_fixups: u32_at(bytes, at + 0x18)?,
                 pointer_fixups: u32_at(bytes, at + 0x1c)?,
                 offset,
             };
@@ -221,6 +227,7 @@ impl Cluster {
                 Ok(UserFixup {
                     type_index,
                     text: String::from_utf8_lossy(&raw[..end]).into_owned(),
+                    data: raw.to_vec(),
                 })
             })
             .collect::<Result<Vec<_>>>()?;
@@ -248,6 +255,29 @@ impl Cluster {
             }
             c = self.classes[c].base?;
         }
+    }
+
+    /// The class a member type index refers to (indices past the plain
+    /// types are 1-based classes).
+    #[must_use]
+    pub fn type_index_class(&self, type_index: u32) -> Option<usize> {
+        (type_index as usize)
+            .checked_sub(self.types.len() + 1)
+            .filter(|&i| i < self.classes.len())
+    }
+
+    /// A member by its index in the namespace's member table (members are
+    /// numbered across all classes, in class order). Returns the class too.
+    #[must_use]
+    pub fn member_by_index(&self, index: u32) -> Option<(usize, &Member)> {
+        let mut i = index as usize;
+        for (k, c) in self.classes.iter().enumerate() {
+            if i < c.members.len() {
+                return Some((k, &c.members[i]));
+            }
+            i -= c.members.len();
+        }
+        None
     }
 
     /// The first instance list of a class, by name.

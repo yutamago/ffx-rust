@@ -26,8 +26,10 @@ use crate::{Error, Result};
 pub struct PointerFixup(pub [u32; 7]);
 
 impl PointerFixup {
-    /// Bit 31 set: the byte offset of the pointer within the object.
-    /// Otherwise a non-pointer field (user fixups such as enum strings).
+    /// The field: with bit 31 set, the byte offset of the pointer within
+    /// the object (used for fields inside embedded members). Otherwise the
+    /// member's index in the namespace ([`Cluster::member_by_index`]); the
+    /// loader looks it up in the same way (`0x57a280`).
     #[must_use]
     pub fn member(&self) -> u32 {
         self.0[0]
@@ -46,6 +48,11 @@ impl PointerFixup {
     #[must_use]
     pub fn target_list(&self) -> u32 {
         self.0[3]
+    }
+    /// Byte offset added to the target object's address.
+    #[must_use]
+    pub fn target_offset(&self) -> u32 {
+        self.0[4]
     }
     /// The number of consecutive targets (array pointers).
     #[must_use]
@@ -99,9 +106,16 @@ impl Reader<'_> {
         }
     }
 
-    /// The per-record values a group's flags leave out of its template
-    /// (`0x60e730`).
-    fn rest(&mut self, rec: &mut [u32; 7], flags: u32) -> Result<()> {
+    /// The per-record values a group's flags leave out of its template:
+    /// `Fixup_ReadRecord` (`0x60e730`) for pointers, `0x60ae50` for arrays.
+    fn rest(&mut self, kind: Kind, rec: &mut [u32; 7], flags: u32) -> Result<()> {
+        if kind == Kind::Array {
+            if flags & 8 == 0 {
+                rec[2] = self.leb()?;
+            }
+            rec[3] = self.leb()?;
+            return Ok(());
+        }
         let mut targets = true;
         if flags & 0x10 == 0 {
             let user = self.leb()?;
@@ -124,8 +138,18 @@ impl Reader<'_> {
     }
 }
 
+/// The two record formats sharing the group encoding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    /// 28-byte records (`Fixup_UnpackList`, `0x60a750`).
+    Pointer,
+    /// 16-byte records (`Fixup_UnpackArrayList`, `0x60a340`).
+    Array,
+}
+
 /// How the objects of a run are chosen; shared by group modes and the
-/// kinds of mode-1 subgroups.
+/// kinds of mode-1 subgroups. The array variants (`0x60ca10`, `0x60ce70`,
+/// `0x60cc20`, `0x60cac0`, `0x60d000`) differ only in the record size.
 fn run(
     r: &mut Reader,
     kind: u8,
@@ -173,7 +197,7 @@ fn run(
             let mask = r.at;
             r.at += mask_len;
             if r.at > r.bytes.len() {
-                return Err(Error::Malformed("truncated pointer fixups"));
+                return Err(Error::Malformed("truncated fixups"));
             }
             for i in 0..objects {
                 if r.bytes[mask + (i / 8) as usize] & (1 << (i % 8)) != 0 {
@@ -192,14 +216,15 @@ fn run(
             }
             Ok(n)
         }
-        _ => Err(Error::Malformed("unknown pointer fixup group")),
+        _ => Err(Error::Malformed("unknown fixup group")),
     }
 }
 
-/// Unpacks one list's records (`0x60a750`).
+/// Unpacks one list's records.
 fn unpack_list(
     r: &mut Reader,
-    out: &mut Vec<PointerFixup>,
+    kind: Kind,
+    out: &mut Vec<[u32; 7]>,
     count: u32,
     objects: u32,
 ) -> Result<()> {
@@ -211,23 +236,31 @@ fn unpack_list(
         if objects == 1 {
             flags |= 2;
         }
-        let mut template = [0, 0, 0, 0, 0, 0, u32::MAX];
+        let mut template = [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            if kind == Kind::Pointer { u32::MAX } else { 0 },
+        ];
         template[0] = r.leb()?.rotate_right(1);
-        if flags & 0x20 != 0 {
+        if kind == Kind::Pointer && flags & 0x20 != 0 {
             template[3] = r.leb()?;
         }
-        let push = |out: &mut Vec<PointerFixup>, t: [u32; 7], i: u32| {
+        let push = |out: &mut Vec<[u32; 7]>, t: [u32; 7], i: u32| {
             let mut rec = t;
             rec[1] = i;
-            out.push(PointerFixup(rec));
+            out.push(rec);
         };
         match mode {
             0 | 4 | 6 => {
                 run(r, mode, objects, |r, i| {
                     let mut rec = template;
                     rec[1] = i;
-                    r.rest(&mut rec, flags)?;
-                    out.push(PointerFixup(rec));
+                    r.rest(kind, &mut rec, flags)?;
+                    out.push(rec);
                     Ok(())
                 })?;
             }
@@ -239,36 +272,21 @@ fn unpack_list(
                     Ok(())
                 })?;
                 for rec in &mut out[start..] {
-                    r.rest(&mut rec.0, flags)?;
+                    r.rest(kind, rec, flags)?;
                 }
             }
+            // Subgroups: a kind byte, the values shared by the subgroup,
+            // then its objects.
             1 => {
                 let mut t = template;
                 let group_end = out.len() + objects as usize;
                 while out.len() < group_end {
-                    let kind = r.byte()?;
-                    let mut targets = true;
-                    if flags & 0x10 == 0 {
-                        let user = r.leb()?;
-                        t[6] = user.wrapping_sub(1);
-                        targets = user == 0;
+                    let sub = r.byte()?;
+                    r.rest(kind, &mut t, flags)?;
+                    if !matches!(sub, 2 | 3 | 4 | 6) {
+                        return Err(Error::Malformed("unknown fixup subgroup"));
                     }
-                    if targets {
-                        t[2] = r.leb()?;
-                        if flags & 0x20 == 0 {
-                            t[3] = r.leb()?;
-                        }
-                        if flags & 0x40 == 0 {
-                            t[4] = r.leb()?;
-                        }
-                    }
-                    if flags & 8 == 0 {
-                        t[5] = r.leb()?;
-                    }
-                    if !matches!(kind, 2 | 3 | 4 | 6) {
-                        return Err(Error::Malformed("unknown pointer fixup subgroup"));
-                    }
-                    run(r, kind, objects, |_, i| {
+                    run(r, sub, objects, |_, i| {
                         push(out, t, i);
                         Ok(())
                     })?;
@@ -284,22 +302,35 @@ fn unpack_list(
                     if flags & 2 == 0 {
                         rec[1] = r.leb()?;
                     }
-                    r.rest(&mut rec, flags)?;
-                    out.push(PointerFixup(rec));
+                    r.rest(kind, &mut rec, flags)?;
+                    out.push(rec);
                 }
             }
-            _ => return Err(Error::Malformed("unknown pointer fixup group")),
+            _ => return Err(Error::Malformed("unknown fixup group")),
         }
     }
     if out.len() != end {
-        return Err(Error::Malformed("pointer fixup group overruns its list"));
+        return Err(Error::Malformed("fixup group overruns its list"));
     }
     Ok(())
 }
 
+fn unpack(packed: &[u8], kind: Kind, lists: &[(u32, u32)]) -> Result<(Vec<[u32; 7]>, usize)> {
+    let mut r = Reader {
+        bytes: packed,
+        at: 0,
+    };
+    let mut out = Vec::new();
+    for &(count, objects) in lists {
+        unpack_list(&mut r, kind, &mut out, count, objects)?;
+    }
+    Ok((out, r.at))
+}
+
 /// Unpacks the packed pointer fixups of `lists` (pairs of fixup count and
-/// object count, one per instance list). Returns the records in list order
-/// and the number of bytes read.
+/// object count, one per instance list), like `Cluster_UnpackPointerFixups`
+/// (`0x60db20`). Returns the records in list order and the number of bytes
+/// read.
 ///
 /// # Errors
 /// Fails on truncated data and unknown group modes.
@@ -307,15 +338,44 @@ pub fn unpack_pointer_fixups(
     packed: &[u8],
     lists: &[(u32, u32)],
 ) -> Result<(Vec<PointerFixup>, usize)> {
-    let mut r = Reader {
-        bytes: packed,
-        at: 0,
-    };
-    let mut out = Vec::new();
-    for &(count, objects) in lists {
-        unpack_list(&mut r, &mut out, count, objects)?;
+    let (recs, used) = unpack(packed, Kind::Pointer, lists)?;
+    Ok((recs.into_iter().map(PointerFixup).collect(), used))
+}
+
+/// One unpacked array fixup (the engine's 16-byte record).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ArrayFixup(pub [u32; 4]);
+
+impl ArrayFixup {
+    /// The field, as in [`PointerFixup::member`].
+    #[must_use]
+    pub fn member(&self) -> u32 {
+        self.0[0]
     }
-    Ok((out, r.at))
+    /// The object holding the array, as an index into its list.
+    #[must_use]
+    pub fn object(&self) -> u32 {
+        self.0[1]
+    }
+}
+
+/// Unpacks packed array (or pointer-array) fixups, like
+/// `Cluster_UnpackArrayFixups` (`0x60dac0`). `lists` pairs each list's
+/// array (or pointer-array) fixup count with its object count.
+///
+/// # Errors
+/// Fails on truncated data and unknown group modes.
+pub fn unpack_array_fixups(
+    packed: &[u8],
+    lists: &[(u32, u32)],
+) -> Result<(Vec<ArrayFixup>, usize)> {
+    let (recs, used) = unpack(packed, Kind::Array, lists)?;
+    Ok((
+        recs.into_iter()
+            .map(|r| ArrayFixup([r[0], r[1], r[2], r[3]]))
+            .collect(),
+        used,
+    ))
 }
 
 impl Cluster {
@@ -337,6 +397,34 @@ impl Cluster {
         let (flat, used) = unpack_pointer_fixups(packed, &lists)?;
         if used != packed.len() || flat.len() != h.pointer_fixup_count as usize {
             return Err(Error::Malformed("pointer fixups do not add up"));
+        }
+        let mut flat = flat.into_iter();
+        Ok(lists
+            .iter()
+            .map(|&(n, _)| flat.by_ref().take(n as usize).collect())
+            .collect())
+    }
+
+    /// The array fixups, grouped by instance list.
+    ///
+    /// # Errors
+    /// Fails on truncated or malformed fixup data.
+    pub fn array_fixups(&self, bytes: &[u8]) -> Result<Vec<Vec<ArrayFixup>>> {
+        let h = &self.header;
+        let at = self.fixups_offset
+            + h.pointer_array_fixup_size as usize
+            + h.pointer_fixup_size as usize;
+        let packed = bytes
+            .get(at..at + h.array_fixup_size as usize)
+            .ok_or(Error::Malformed("array fixups outside the file"))?;
+        let lists: Vec<(u32, u32)> = self
+            .lists
+            .iter()
+            .map(|l| (l.array_fixups, l.count))
+            .collect();
+        let (flat, used) = unpack_array_fixups(packed, &lists)?;
+        if used != packed.len() || flat.len() != h.array_fixup_count as usize {
+            return Err(Error::Malformed("array fixups do not add up"));
         }
         let mut flat = flat.into_iter();
         Ok(lists

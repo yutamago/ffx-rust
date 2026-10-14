@@ -1,12 +1,13 @@
 [package]
 name = "ffx-phyre"
-description = "PhyreEngine cluster files of the FFX/X-2 HD Remaster: textures to and from DDS"
+description = "PhyreEngine cluster files of the FFX/X-2 HD Remaster: textures to and from DDS, models to glTF"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+flate2.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 

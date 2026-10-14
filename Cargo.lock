@@ -347,6 +347,7 @@ name = "ffx-phyre"
 version = "0.1.0"
 dependencies = [
  "ffx-vbf",
+ "flate2",
  "serde_json",
  "thiserror",
 ]

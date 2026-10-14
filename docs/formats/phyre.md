@@ -88,12 +88,12 @@ record unpacks to seven `u32`s:
 
 | Word | Meaning |
 |---|---|
-| 0 | `0x80000000` \| byte offset of the pointer in the object (else a non-pointer field) |
+| 0 | The field: `0x80000000` \| byte offset (used for fields inside embedded members), else the member's index in the namespace member table. The loader resolves both forms through `0x57a280`. |
 | 1 | Object index in its list |
 | 2 | First target object |
 | 3 | Target instance list |
-| 4 | Unknown (always 0 so far) |
-| 5 | Number of targets (array pointers) |
+| 4 | Byte offset added to the target (e.g. `+0x30`, a `PMesh`'s embedded `PMaterialSet`) |
+| 5 | Number of targets for array pointers; element index for pointer arrays |
 | 6 | User fixup index, or `0xffffffff` |
 
 Records come in groups. A group starts with a byte: the mode is in bits
@@ -116,6 +116,23 @@ Each record's remaining words come from `Fixup_ReadRecord` (`0x60e730`).
 It reads word 6 + 1 unless flag `0x10` is set; zero means a pointer.
 For a pointer it then reads words 2, 3 (skipped by `0x20`) and 4 (skipped
 by `0x40`). Last it reads word 5, unless flag `0x08` is set.
+
+## Array fixups
+
+Arrays (strings, matrix arrays, …) live in each list's array data. The
+array fixups say where. `Cluster_UnpackArrayFixups` (`0x60dac0`) calls
+`Fixup_UnpackArrayList` (`0x60a340`) per list, with the list header's
+`+0x18` count. Pointer-array fixups use the same function with the `+0x20`
+count.
+
+The group encoding is the same as for pointers, with 16-byte records:
+word 0 (the field), word 1 (the object), word 2 (read unless flag `0x08`)
+and word 3. Word 3 is the byte offset of the array in its list's array
+data. The run helpers are copies of the pointer ones for 16-byte records
+(`0x60ca10`, `0x60ce70`, `0x60cc20`, `0x60cac0`, `0x60d000`).
+
+For example, a `PString`'s characters are at array data + word 3, NUL
+terminated.
 
 ## Models (`*.dae.phyre`)
 
@@ -149,12 +166,57 @@ streams by order is wrong for about a fifth of the models.
 | `SkinWeights` | float4 |
 | `SkinIndices` | four bytes |
 
-Coordinates are Y-down, so the glTF export turns the root node half a
-turn about X. Map models are already in world space, sky shells included.
+### Scene
+
+- **Nodes.** `PNode` objects (`m_parent`, `m_name`, and `m_localMatrix`, a
+  column-major 4×4) form the hierarchy.
+- **Instances.** A `PMeshInstance` places a `PMesh` (`m_mesh`) with a
+  material set (`m_materialSet`, a pointer to an embedded `PMaterialSet`,
+  normally the mesh's own `m_defaultMaterials`). The instance is attached
+  to the node that shares its `PWorldMatrix`: `m_localToWorldMatrix` and
+  `PNode.m_worldMatrix` point to the same object. The world matrices
+  themselves are zero in the file and computed at load time.
+- **Uninstanced meshes.** A map can contain meshes that no instance uses
+  (copies for dynamic modifiers). Exporting every segment would draw
+  those twice, so the export follows the instances.
+
+### Materials
+
+1. `PMesh.m_defaultMaterials` is a pointer array of `PMaterial`. Fixup
+   word 5 is the element, and `m_materialIndex` selects it.
+2. `PMaterial.m_parameterBuffer` points to a `PParameterBuffer`, each in
+   its own instance list.
+3. `m_tweakableShaderParameterDefinitions` points to its
+   `PShaderParameterDefinition`s. A definition has a name, a
+   `m_parameterType` (`0x42` sampler, `0x47` sampler state, `0x40`
+   constant) and a `m_bufferLoc` (size << 16 | offset).
+4. A sampler's texture is a user fixup at buffer object + 8 + offset + 4.
+   Its data is two bytes: a big-endian index into the
+   `PAssetReferenceImport` list. That import's `m_id` is the path, for
+   example `PS3Data/chr/mon/m009/tex/m009.dds`, stored in the archive as
+   `ffx_data/gamedata/ps3data/chr/mon/m009/tex/d3d11/m009.dds.phyre`.
+
+Base color is `TextureSampler`. The other samplers seen are `AnimSampler`,
+`EnvironmentMapSampler`, `NormalMapSampler`, `NormalMap2Sampler`,
+`EmissionMapSampler`, `SpecularMapSampler` and `TextureSampler1`.
+
+### Orientation
+
+Character models (`chr/`: party, monsters, NPCs, weapons, summons) are
+stored Y down: they came from the PS2 data. Their source scenes carry
+Maya cameras (`persp`, `top`, `front`), with `top` at +Y, so the authoring
+scene was Y up and the characters sit in it upside down. The remastered
+maps (`map/`, `btlmap/`) are Y up. Nothing in a file says which kind it
+is. `ffx model export` decides by path and turns `chr/` models upright
+with a half turn about X; a rotation keeps the triangle winding.
 
 ```bash
 ffx model export ffx_data/gamedata/ps3data/chr/mon/m009/ -o models/
+ffx phyre dump ffx_data/gamedata/ps3data/chr/mon/m009/mdl/d3d11/m009.dae.phyre --class PMaterial
 ```
+
+The export embeds each base color texture as PNG, decoding only the top
+mip level and turning it upright.
 
 ## Textures (`*.dds.phyre`)
 
@@ -200,20 +262,33 @@ the original file byte for byte. Samples of each format were rendered to
 PNG and checked by eye (menu art, the keyboard icon sheet, the logo).
 
 The same test exports all 1,266 models that have meshes, about 9.5 million
-triangles. The other 48 `.dae.phyre` files have no `PMeshSegment`. A
-monster, a playable character and a battle map were rendered and checked
-by eye.
+triangles. The other 48 `.dae.phyre` files have no `PMeshSegment`.
 
-`cargo test -p ffx-oracle` unpacks the pointer fixups of 2,233 clusters
-with both the Rust port and the original `0x60db20`, run under emulation.
-The records must be identical (all models, plus every 50th other cluster).
+For textures, 36,993 of the 39,497 segments have a default material, and
+36,443 of them have a base color texture. All 22,792 texture references
+resolve to files in the archive.
+
+The glTF files were checked in three.js, with textures:
+
+- Tidus (`c001`);
+- a monster (`m009`);
+- the Bikanel desert battle map (`bika00_a`);
+- an airship scene (`swin02`);
+- Luca (`luca01`).
+
+`cargo test -p ffx-oracle` unpacks the pointer and array fixups of 2,233
+clusters, all models plus every 50th other cluster. It runs both the Rust
+port and the original `0x60db20` / `0x60dac0` under emulation, and the
+records must be identical.
 
 ## Open questions
 
-- Array and pointer-array fixups (decoded by the same family of functions,
-  not needed yet).
-- Skeletons (`PMesh.m_skeletonMatrices`, `m_matrixParents`), materials
-  and their textures, animations.
+- `PNode.m_name` is at +0x50 in the namespace, but its array fixup says
+  +0x4c. Names are taken from the node's only array fixup.
+- Skinning: `PMesh.m_skeletonMatrices`, `m_matrixParents`,
+  `PSkinBoneRemap`, and `SkinIndices`, which are not exported yet.
+  Animations.
+- Material parameters beyond the base color texture.
 - Writing models back.
 - Shaders (`*.fx.phyre`) and the other cluster kinds.
 - Changing a texture's size or format.

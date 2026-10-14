@@ -190,23 +190,31 @@ fn zlib_uncompress_matches_original_on_game_blocks() {
 }
 
 const UNPACK_POINTER_FIXUPS: u32 = 0x0060_db20;
+const UNPACK_ARRAY_FIXUPS: u32 = 0x0060_dac0;
 
-/// The original pointer fixup unpacker on one cluster: `(fixup count,
-/// object count)` per list in, flat 28-byte records out.
-fn original_pointer_fixups(
+/// An original fixup unpacker on one cluster: `(fixup count, object count)`
+/// per list in, flat records of `N` words out (7: pointer fixups, 4: array
+/// fixups).
+fn original_fixups<const N: usize>(
     o: &mut Oracle,
     packed: &[u8],
     lists: &[(u32, u32)],
-) -> (Vec<[u32; 7]>, usize) {
+) -> (Vec<[u32; N]>, usize) {
     o.reset_heap();
     let total: usize = lists.iter().map(|&(n, _)| n as usize).sum();
-    // The unpacker reads the counts from 0x24-byte instance list headers.
+    // The unpackers read the counts from 0x24-byte instance list headers:
+    // array fixups at +0x18, pointer fixups at +0x1c.
+    let (at, func) = if N == 4 {
+        (0x18, UNPACK_ARRAY_FIXUPS)
+    } else {
+        (0x1c, UNPACK_POINTER_FIXUPS)
+    };
     let mut headers = vec![0u8; 0x24 * lists.len()];
     for (h, &(n, objects)) in headers.chunks_mut(0x24).zip(lists) {
         h[4..8].copy_from_slice(&objects.to_le_bytes());
-        h[0x1c..0x20].copy_from_slice(&n.to_le_bytes());
+        h[at..at + 4].copy_from_slice(&n.to_le_bytes());
     }
-    let out = o.alloc(28 * total).unwrap();
+    let out = o.alloc(4 * N * total).unwrap();
     let dest = o
         .alloc_bytes(&[[0; 4], out.to_le_bytes()].concat())
         .unwrap();
@@ -217,12 +225,13 @@ fn original_pointer_fixups(
     let src = o
         .alloc_bytes(&[count.to_le_bytes(), hdrs.to_le_bytes()].concat())
         .unwrap();
-    o.call_cdecl(UNPACK_POINTER_FIXUPS, &[dest, cursor, src])
-        .unwrap();
+    // The array unpacker's fourth argument (0) selects array, not
+    // pointer-array, counts; the pointer unpacker ignores it.
+    o.call_cdecl(func, &[dest, cursor, src, 0]).unwrap();
     let end = u32::from_le_bytes(o.read(cursor, 4).unwrap().try_into().unwrap());
-    let recs = o.read(out, 28 * total).unwrap();
+    let recs = o.read(out, 4 * N * total).unwrap();
     let recs = recs
-        .chunks(28)
+        .chunks(4 * N)
         .map(|r| {
             std::array::from_fn(|k| u32::from_le_bytes(r[4 * k..4 * k + 4].try_into().unwrap()))
         })
@@ -231,7 +240,7 @@ fn original_pointer_fixups(
 }
 
 #[test]
-fn pointer_fixups_unpack_like_original() {
+fn pointer_and_array_fixups_unpack_like_original() {
     let Some(dir) = game_dir() else { return };
     let mut o = Oracle::load(dir.join("FFX.exe")).unwrap();
     let archive = ffx_vbf::Archive::open(dir.join("data/FFX_Data.vbf")).unwrap();
@@ -260,12 +269,26 @@ fn pointer_fixups_unpack_like_original() {
             .collect();
         let (ours, used) = ffx_phyre::fixup::unpack_pointer_fixups(packed, &lists)
             .unwrap_or_else(|e| panic!("{}: {e}", entry.path));
-        let (theirs, their_used) = original_pointer_fixups(&mut o, packed, &lists);
+        let (theirs, their_used) = original_fixups::<7>(&mut o, packed, &lists);
+        assert_eq!(used, their_used, "{}", entry.path);
+        assert_eq!(used, packed.len(), "{}", entry.path);
+        assert!(ours.iter().map(|f| f.0).eq(theirs), "{}", entry.path);
+
+        let at = at + h.pointer_fixup_size as usize;
+        let packed = &bytes[at..at + h.array_fixup_size as usize];
+        let lists: Vec<(u32, u32)> = cluster
+            .lists
+            .iter()
+            .map(|l| (l.array_fixups, l.count))
+            .collect();
+        let (ours, used) = ffx_phyre::fixup::unpack_array_fixups(packed, &lists)
+            .unwrap_or_else(|e| panic!("{}: {e}", entry.path));
+        let (theirs, their_used) = original_fixups::<4>(&mut o, packed, &lists);
         assert_eq!(used, their_used, "{}", entry.path);
         assert_eq!(used, packed.len(), "{}", entry.path);
         assert!(ours.iter().map(|f| f.0).eq(theirs), "{}", entry.path);
         checked += 1;
     }
-    eprintln!("{checked} clusters unpack their pointer fixups like the original");
+    eprintln!("{checked} clusters unpack their pointer and array fixups like the original");
     assert!(checked > 1500, "{checked}");
 }

@@ -20,12 +20,14 @@
 //! - Each stream's `m_renderDataType` names a `PRenderDataType` user fixup.
 
 use crate::cluster::Cluster;
+use crate::material::{Instance, Material, Node, Resolver};
 use crate::{Error, Result};
 
 /// One mesh segment: a triangle list with its vertex attributes.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Segment {
-    pub material: u32,
+    /// Index into [`Model::materials`].
+    pub material: Option<usize>,
     pub positions: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
     /// First texture coordinate set, as stored (OpenGL convention: v up).
@@ -42,9 +44,13 @@ pub struct Segment {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Model {
     pub segments: Vec<Segment>,
+    pub materials: Vec<Material>,
+    pub nodes: Vec<Node>,
+    /// Placed meshes; when empty, every segment is shown once.
+    pub instances: Vec<Instance>,
 }
 
-fn u32_at(b: &[u8], o: usize) -> Result<u32> {
+pub(crate) fn u32_at(b: &[u8], o: usize) -> Result<u32> {
     b.get(o..o + 4)
         .map(|s| u32::from_le_bytes(s.try_into().expect("4 bytes")))
         .ok_or(Error::Malformed("truncated model"))
@@ -171,8 +177,7 @@ impl Model {
             need("PVertexStream", "m_offset")?,
             need("PVertexStream", "m_type")?,
         );
-        let (o_material, o_prim, o_index, o_vertex_data) = (
-            need("PMeshSegment", "m_materialIndex")?,
+        let (o_prim, o_index, o_vertex_data) = (
             need("PMeshSegment", "m_primitiveType")?,
             need("PMeshSegment", "m_indexData")?,
             need("PMeshSegment", "m_vertexData")?,
@@ -193,6 +198,14 @@ impl Model {
 
         // Array pointers of each list: object → (first target, count).
         let fixups = c.pointer_fixups(bytes)?;
+        let arrays = c.array_fixups(bytes)?;
+        let scene = Resolver {
+            c: &c,
+            bytes,
+            pointers: &fixups,
+            arrays: &arrays,
+        }
+        .scene()?;
         let targets = |list: usize, member: usize, target_list: usize| {
             let mut map = vec![None; c.lists[list].count as usize];
             for f in &fixups[list] {
@@ -267,7 +280,7 @@ impl Model {
                 .map(|&b| u16::from_le_bytes(b))
                 .collect();
             let mut seg = Segment {
-                material: u32_at(bytes, o + o_material)?,
+                material: scene.segment_materials.get(i as usize).copied().flatten(),
                 indices,
                 ..Segment::default()
             };
@@ -303,6 +316,11 @@ impl Model {
             }
             segments.push(seg);
         }
-        Ok(Self { segments })
+        Ok(Self {
+            segments,
+            materials: scene.materials,
+            nodes: scene.nodes,
+            instances: scene.instances,
+        })
     }
 }

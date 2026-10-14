@@ -55,6 +55,9 @@ fn models_parse_or_are_refused() {
     let archive = Archive::open(PathBuf::from(dir).join("data/FFX_Data.vbf")).unwrap();
     let (mut ok, mut refused, mut other) = (0, 0, 0);
     let mut triangles = 0usize;
+    let (mut segments, mut with_material, mut with_base_color) = (0, 0, 0);
+    let mut samplers: BTreeMap<String, usize> = BTreeMap::new();
+    let mut missing: Vec<String> = Vec::new();
     let mut reasons: BTreeMap<String, usize> = BTreeMap::new();
     for entry in archive
         .entries()
@@ -71,6 +74,16 @@ fn models_parse_or_are_refused() {
                         entry.path
                     );
                     triangles += s.indices.len() / 3;
+                    segments += 1;
+                    let material = s.material.map(|m| &model.materials[m]);
+                    with_material += usize::from(material.is_some());
+                    with_base_color += usize::from(material.and_then(|m| m.base_color()).is_some());
+                }
+                for t in model.materials.iter().flat_map(|m| &m.textures) {
+                    *samplers.entry(t.sampler.clone()).or_default() += 1;
+                    if archive.find(&t.archive_path()).is_none() {
+                        missing.push(format!("{} -> {}", entry.path, t.path));
+                    }
                 }
                 let glb = model.to_glb();
                 assert_eq!(&glb[..4], b"glTF");
@@ -90,5 +103,13 @@ fn models_parse_or_are_refused() {
         "models: {ok} exported ({triangles} triangles), {refused} refused, {other} not models"
     );
     eprintln!("refused: {reasons:#?}");
+    eprintln!(
+        "segments: {segments}, with a material {with_material}, with a base color texture {with_base_color}"
+    );
+    eprintln!("samplers: {samplers:?}");
+    assert!(
+        missing.is_empty(),
+        "texture paths not in the archive: {missing:?}"
+    );
     assert_eq!((ok, refused, other), (1266, 48, 0), "{reasons:#?}");
 }

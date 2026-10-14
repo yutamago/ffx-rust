@@ -1,5 +1,6 @@
 //! `ffx`: command-line tools for FFX game data.
 
+use std::fmt::Write as _;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -40,6 +41,154 @@ enum Command {
     /// Export models (`*.dae.phyre`) as glTF.
     #[command(subcommand)]
     Model(ModelCommand),
+    /// Inspect `PhyreEngine` clusters.
+    #[command(subcommand)]
+    Phyre(PhyreCommand),
+}
+
+#[derive(Subcommand)]
+enum PhyreCommand {
+    /// Print a cluster's objects: plain fields, pointers and user fixups.
+    Dump {
+        #[command(flatten)]
+        game: GameArgs,
+        /// Archive path of the cluster.
+        path: String,
+        /// Only lists of this class.
+        #[arg(long)]
+        class: Option<String>,
+    },
+}
+
+#[allow(clippy::too_many_lines)] // one listing: fields, arrays, pointers
+fn phyre(cmd: PhyreCommand) -> Result<()> {
+    let PhyreCommand::Dump { game, path, class } = cmd;
+    let game = Game::open(&game)?;
+    let entry = game
+        .archive
+        .find(&path)
+        .with_context(|| format!("{path} is not in the archive"))?;
+    let bytes = game.archive.read(entry)?;
+    let c = ffx_phyre::cluster::Cluster::parse(&bytes)?;
+    let fixups = c.pointer_fixups(&bytes)?;
+    let arrays = c.array_fixups(&bytes)?;
+    let field_name = |member: u32| {
+        if member & 0x8000_0000 == 0 {
+            c.member_by_index(member).map_or_else(
+                || format!("member {member}"),
+                |(k, m)| format!("{}.{}", c.classes[k].name, m.name),
+            )
+        } else {
+            format!("+{:#05x}", member & 0x7fff_ffff)
+        }
+    };
+    let mut out = String::new();
+    for (li, list) in c.lists.iter().enumerate() {
+        let name = &c.classes[list.class].name;
+        if class.as_ref().is_some_and(|want| want != name) {
+            continue;
+        }
+        writeln!(
+            out,
+            "list {li}: {} × {name} ({} bytes each)",
+            list.count,
+            list.object_size()
+        )?;
+        // Members of the class and its bases, by offset.
+        let mut members = Vec::new();
+        let mut k = Some(list.class);
+        while let Some(i) = k {
+            members.extend(c.classes[i].members.iter());
+            k = c.classes[i].base;
+        }
+        members.sort_by_key(|m| m.offset);
+        for obj in 0..list.count {
+            let at = list.object(obj);
+            writeln!(out, "  #{obj}")?;
+            for m in &members {
+                let ty = c
+                    .types
+                    .get(m.type_index as usize)
+                    .map_or("", String::as_str);
+                let raw = bytes
+                    .get(at + m.offset as usize..at + (m.offset + m.size) as usize)
+                    .unwrap_or(&[]);
+                let value = match (ty, raw.len()) {
+                    ("float", 4) => format!("{}", f32::from_le_bytes(raw.try_into()?)),
+                    (_, 4) => format!("{:#x}", u32::from_le_bytes(raw.try_into()?)),
+                    (_, 2) => format!("{:#x}", u16::from_le_bytes(raw.try_into()?)),
+                    (_, 1) => format!("{:#x}", raw[0]),
+                    _ => raw
+                        .iter()
+                        .map(|b| format!("{b:02x}"))
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                };
+                let ty = if ty.is_empty() {
+                    c.type_index_class(m.type_index)
+                        .map_or("?", |i| c.classes[i].name.as_str())
+                } else {
+                    ty
+                };
+                writeln!(
+                    out,
+                    "    +{:#05x} {:<28} {:<24} {value}",
+                    m.offset, m.name, ty
+                )?;
+            }
+            for f in arrays[li].iter().filter(|f| f.object() == obj) {
+                let at = list.arrays().start + f.0[3] as usize;
+                let tail = bytes.get(at..list.arrays().end).unwrap_or(&[]);
+                let text = tail.split(|&b| b == 0).next().unwrap_or(&[]);
+                let shown = if !text.is_empty()
+                    && text.iter().all(|b| b.is_ascii_graphic() || *b == b' ')
+                {
+                    format!(" {:?}", String::from_utf8_lossy(text))
+                } else {
+                    String::new()
+                };
+                writeln!(
+                    out,
+                    "    {} array at {:#x}{shown}",
+                    field_name(f.member()),
+                    f.0[3]
+                )?;
+            }
+            for f in fixups[li].iter().filter(|f| f.object() == obj) {
+                let field = field_name(f.member());
+                if let Some(u) = f.user_fixup() {
+                    let text = c
+                        .user_fixups
+                        .get(u as usize)
+                        .map_or("?", |u| u.text.as_str());
+                    writeln!(out, "    {field} = {text:?}")?;
+                } else {
+                    let target = c
+                        .lists
+                        .get(f.target_list() as usize)
+                        .map_or("?", |l| c.classes[l.class].name.as_str());
+                    writeln!(
+                        out,
+                        "    {field} -> list {} ({target}) #{}{}{}",
+                        f.target_list(),
+                        f.target(),
+                        if f.target_offset() > 0 {
+                            format!(" +{:#x}", f.target_offset())
+                        } else {
+                            String::new()
+                        },
+                        if f.count() > 1 {
+                            format!(" ×{}", f.count())
+                        } else {
+                            String::new()
+                        }
+                    )?;
+                }
+            }
+        }
+    }
+    print!("{out}");
+    Ok(())
 }
 
 #[derive(Subcommand)]
@@ -77,7 +226,22 @@ fn model(cmd: ModelCommand) -> Result<()> {
                 if let Some(parent) = dest.parent() {
                     std::fs::create_dir_all(parent)?;
                 }
-                std::fs::write(&dest, model.to_glb())?;
+                // Embed each base color texture as PNG, decoded once per model.
+                let mut pngs: std::collections::HashMap<String, Option<Vec<u8>>> =
+                    std::collections::HashMap::new();
+                // Characters, monsters, weapons… (`chr/`) are stored Y down.
+                let y_down = entry.path.contains("/ps3data/chr/");
+                let glb = model.to_glb_with(y_down, |t| {
+                    pngs.entry(t.archive_path())
+                        .or_insert_with_key(|path| {
+                            let entry = game.archive.find(path)?;
+                            let texture =
+                                ffx_phyre::Texture::parse(game.archive.read(entry).ok()?).ok()?;
+                            Some(texture.to_png())
+                        })
+                        .clone()
+                });
+                std::fs::write(&dest, glb)?;
                 exported.fetch_add(1, Ordering::Relaxed);
             }
             Err(e) => eprintln!("skipping {}: {e}", entry.path),
@@ -446,6 +610,7 @@ fn run(cli: Cli) -> Result<()> {
         Command::Script(cmd) => script(cmd),
         Command::Texture(cmd) => texture(cmd),
         Command::Model(cmd) => model(cmd),
+        Command::Phyre(cmd) => phyre(cmd),
     }
 }
 

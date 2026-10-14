@@ -10,7 +10,11 @@
 0x00406000 function zlib_inflateInit_         # called first by zlib_uncompress; stream ptr in ECX
 0x00406230 function zlib_inflate              # called with Z_FINISH by zlib_uncompress
 0x004078b0 function zlib_inflateEnd
+0x0047d5f0 function Class_FindMemberByOffset  # (class, &object, byte offset, &element): resolves a fixup's byte-offset field, adjusting by the runtime class's base offsets
 0x00579310 function PCluster_Analyze          # prints "Analyzing cluster '%s'" and every table size; names the header words (array/pointer/pointer-array fixup sizes and counts, header class counts and fixups)
+0x0057a280 function Fixup_FindMember          # thiscall(cache; member index or -1, &object, byte offset, ...): member index < namespace member count -> member table entry, else Class_FindMemberByOffset (cached)
+0x0057a6b0 function Cluster_ApplyPointerFixups # unpacks with Cluster_UnpackPointerFixups, then writes each pointer: target list data + index * size + word 4, or a user fixup when word 6 < user fixup count
+0x0057acd0 function Cluster_ApplyPointerArrayFixups # Cluster_UnpackArrayFixups(..., 1), then points each pointer array at its storage ("Pointer array fixup refers to array ...")
 0x00607bc0 function File_Construct            # File = [handle (-1 unused), archive entry (0 = loose file)]
 0x00607c40 function Str_Utf8ToWide            # (src, dst, dst_end) -> chars written
 0x00607d30 function FileSys_GetBasePath       # returns g_BasePath
@@ -20,15 +24,24 @@
 0x00607dc0 function File_GetSize              # entry size, or GetFileSizeEx on the loose handle
 0x00607e00 function File_Probe                # normalizes backslash -> / and case, FileSys_Exists, else CreateFileW + SetEndOfFile on the loose file
 0x00607f40 function File_Open                 # thiscall(File*, path, mode, 3 unused), ret 0x14: archive first, else CreateFileW; hooked for mods
+0x0060a340 function Fixup_UnpackArrayList     # (cursor*, out, count, objects): array fixup groups, 16-byte records; same modes as Fixup_UnpackList
 0x0060a750 function Fixup_UnpackList          # (cursor*, out, fixup count, object count): one list's packed pointer fixup groups, modes 0-6; ported in ffx-phyre fixup.rs
 0x0060ac00 function Fixup_ReadLeb128          # (cursor*) -> u32, 7 bits per byte, high bit = more
+0x0060ae30 function Fixup_SetArrayObject      # (record, index): record[1] = index
 0x0060ae40 function Fixup_SetObject           # (record, index): record[1] = index
+0x0060ae50 function Fixup_SetArrayObjectAndRead # (record, index, cursor*, flags): record[1] = index; record[2] unless 0x08; record[3]
 0x0060ae90 function Fixup_SetObjectAndRead    # (record, index, cursor*, flags): record[1] = index, then Fixup_ReadRecord
+0x0060ca10 function Fixup_RunAll16            # Fixup_RunAll for 16-byte records
 0x0060ca70 function Fixup_RunAll              # thiscall({flags, objects}, callback, template, cursor*, out*): every object
+0x0060cac0 function Fixup_RunBitmask16        # Fixup_RunBitmask for 16-byte records
 0x0060cb70 function Fixup_RunBitmask          # bitmask of ceil(objects/8) bytes, skipped before the records are read
+0x0060cc20 function Fixup_RunExcept16         # Fixup_RunExcept for 16-byte records
 0x0060cd50 function Fixup_RunExcept           # count, then excluded indices (byte if objects < 256, else LEB128); returns the count
+0x0060ce70 function Fixup_RunListed16         # Fixup_RunListed for 16-byte records
 0x0060cf40 function Fixup_RunListed           # count, then included indices; returns the count
+0x0060d000 function Fixup_RunArithmetic16     # Fixup_RunArithmetic for 16-byte records
 0x0060d080 function Fixup_RunArithmetic       # start, step, count (LEB128)
+0x0060dac0 function Cluster_UnpackArrayFixups # (out {_, records}, cursor*, lists, pointer_arrays): Fixup_UnpackArrayList per list with header +0x18 (arrays) or +0x20 (pointer arrays)
 0x0060db20 function Cluster_UnpackPointerFixups # (out {_, records}, cursor*, lists {count, headers}): 28-byte records; Fixup_UnpackList per list (header +0x1c fixups, +4 objects)
 0x0060e730 function Fixup_ReadRecord          # thiscall(record; cursor*, flags): word 6 (+1, unless 0x10; nonzero = user fixup), 2, 3 (unless 0x20), 4 (unless 0x40), 5 (unless 0x08)
 0x0061aa90 function FileSys_Read              # wrapper that calls FileSys_ReadSync

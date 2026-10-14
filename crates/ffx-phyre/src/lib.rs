@@ -10,13 +10,17 @@
 
 pub mod cluster;
 mod dds;
+mod decode;
 pub mod fixup;
 mod flip;
 mod gltf;
+mod material;
 mod model;
 mod texture;
 
 pub use dds::{Dds, DdsError};
+pub use decode::png;
+pub use material::{Instance, Material, MaterialTexture, Node};
 pub use model::{Model, Segment};
 pub use texture::{Format, Kind, Texture};
 
@@ -43,6 +47,7 @@ pub struct Header {
     pub platform: [u8; 4],
     pub instance_list_count: u32,
     pub array_fixup_size: u32,
+    pub array_fixup_count: u32,
     pub pointer_fixup_size: u32,
     pub pointer_fixup_count: u32,
     pub pointer_array_fixup_size: u32,
@@ -91,6 +96,7 @@ impl Header {
             platform: words[3].to_le_bytes(),
             instance_list_count: words[4],
             array_fixup_size: words[5],
+            array_fixup_count: words[6],
             pointer_fixup_size: words[7],
             pointer_fixup_count: words[8],
             pointer_array_fixup_size: words[9],
