@@ -71,6 +71,9 @@ unsafe fn install_hooks(base: usize) {
     }
     // SAFETY: forwarded from the caller.
     unsafe { ffx_hook::harness::install(base) };
+    // After the harness: its device hook is then the one this one calls.
+    // SAFETY: forwarded from the caller.
+    unsafe { ffx_hook::gfx::install(base) };
     let disabled = std::env::var("FFX_HOOK_DISABLE").unwrap_or_default();
     let disabled: Vec<&str> = disabled
         .split(',')

@@ -52,6 +52,8 @@
 //! | `call <addr> [args…]` | `ok <eax>`: a cdecl call on the game thread |
 //! | `shot <windows path>` | saves the back buffer as a 32-bit BMP |
 //! | `events` | `ok <n>` then `n` lines: files opened since the last call |
+//! | `gfxcapture <windows dir>` | `ok <n> draws`: the next frame's D3D11 calls (`gfx`, needs `FFX_GFX=1`) |
+//! | `gfxstats` | `ok frames <n> draws <n>`: draws in the last frame |
 //! | `quit` | ends the process |
 
 use std::collections::VecDeque;
@@ -1074,6 +1076,11 @@ fn command(line: &str) -> Result<String, String> {
             on_game_thread(Job::Call(address, args))
         }
         "shot" => on_game_thread(Job::Shot(words[1..].join(" "))),
+        "gfxcapture" => crate::gfx::capture(&words[1..].join(" ")),
+        "gfxstats" => {
+            let (frames, draws) = crate::gfx::stats();
+            format!("ok frames {frames} draws {draws}")
+        }
         "events" => {
             let events = EVENTS
                 .lock()

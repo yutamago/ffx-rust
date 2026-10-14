@@ -56,6 +56,9 @@ pub struct Options {
     /// Run frames back to back (no frame limiter; game time still advances
     /// a frame interval per frame).
     pub fast: bool,
+    /// `FFX_GFX` for the graphics layer (`1`: tracking and captures; see
+    /// `ffx-hook`'s `gfx`), or `None` for off.
+    pub gfx: Option<String>,
 }
 
 impl Default for Options {
@@ -72,6 +75,7 @@ impl Default for Options {
             copy_user_data: true,
             seed: Some(1),
             fast: true,
+            gfx: std::env::var("FFX_GFX").ok().filter(|v| !v.is_empty()),
         }
     }
 }
@@ -306,6 +310,9 @@ impl Game {
         }
         if options.background {
             cmd.arg("--background");
+        }
+        if let Some(gfx) = &options.gfx {
+            cmd.env("FFX_GFX", gfx).arg("--gfx");
         }
         let status = cmd.status()?;
         if !status.success() {

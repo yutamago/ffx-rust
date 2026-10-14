@@ -12,6 +12,7 @@
 #   --background show the window without taking the focus
 #   --home DIR  the game's Documents folder (settings, saves) is DIR (harness only)
 #   --seed N    seed the random number generators with N instead of the clock
+#   --gfx       graphics layer on (FFX_GFX; crates/ffx-hook/src/gfx)
 #   --fast      no frame limiter: frames back to back, game time still 1/60 s each
 #
 # The language lives in Documents\Square Enix\FINAL FANTASY X&X-2 HD
@@ -31,6 +32,7 @@ while [[ $# -gt 0 ]]; do
         --background) export FFX_HARNESS_BACKGROUND=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_BACKGROUND" ;;
         --home) home="$2"; shift ;;
         --fast) export FFX_HARNESS_FAST=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_FAST" ;;
+        --gfx) export FFX_GFX="${FFX_GFX:-1}"; export WSLENV="${WSLENV:+$WSLENV:}FFX_GFX" ;;
         --seed) export FFX_HARNESS_SEED="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_SEED"; shift ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
     esac
