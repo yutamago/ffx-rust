@@ -1,0 +1,20 @@
+[package]
+name = "ffx-dxbc"
+description = "Direct3D shader bytecode containers and their reflection (RDEF, signatures)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_System_LibraryLoader"] }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+ffx-vbf.workspace = true
+naga = { version = "30.0.1", features = ["wgsl-in"] }

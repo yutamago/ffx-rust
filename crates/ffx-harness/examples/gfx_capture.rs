@@ -39,6 +39,15 @@ fn main() -> ffx_harness::Result<()> {
     println!("in {event}");
     game.wait(240)?;
     capture(&mut game, &out.join("field"))?;
+    // FFX_CAPTURE_MORE=n: n more field captures, 15 frames apart.
+    let more: u32 = std::env::var("FFX_CAPTURE_MORE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    for i in 0..more {
+        game.wait(15)?;
+        capture(&mut game, &out.join(format!("field{}", i + 2)))?;
+    }
     if battle {
         ffx_harness::screens::start_battle(&mut game, 0, 0, 0)?;
         game.wait(400)?;
