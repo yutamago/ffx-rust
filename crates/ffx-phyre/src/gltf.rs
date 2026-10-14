@@ -13,7 +13,7 @@
 
 use serde_json::{Value, json};
 
-use crate::material::{Bone, MaterialTexture};
+use crate::material::{Bone, Material, MaterialTexture};
 use crate::model::{Model, Segment};
 
 /// One node's sampled transforms in an [`Animation`]; empty paths are
@@ -84,7 +84,7 @@ fn floats<const N: usize>(v: &[[f32; N]]) -> Vec<u8> {
 
 /// The accessors of one segment, as a primitive without a material; none
 /// for empty segments.
-fn primitive(bin: &mut Bin, seg: &Segment) -> Option<Value> {
+fn primitive(bin: &mut Bin, seg: &Segment, with_tangents: bool) -> Option<Value> {
     let count = seg.positions.len();
     if count == 0 || seg.indices.is_empty() {
         return None;
@@ -113,6 +113,41 @@ fn primitive(bin: &mut Bin, seg: &Segment) -> Option<Value> {
             json!({"componentType": FLOAT, "count": count, "type": "VEC3"}),
         );
         attributes.insert("NORMAL".into(), json!(n));
+    }
+    if with_tangents && seg.tangents.len() == count && seg.normals.len() == count {
+        // glTF tangents: unit xyz, w the bitangent's side (cross(n, t) · w
+        // points along +v; the export flips v, hence the minus).
+        let tangents: Vec<[f32; 4]> = (0..count)
+            .map(|i| {
+                let (n, t) = (export_normal(seg.normals[i]), seg.tangents[i]);
+                let t = {
+                    let d = n[0] * t[0] + n[1] * t[1] + n[2] * t[2];
+                    let t = [t[0] - n[0] * d, t[1] - n[1] * d, t[2] - n[2] * d];
+                    let len = (t[0] * t[0] + t[1] * t[1] + t[2] * t[2]).sqrt();
+                    if len > 1e-6 && len.is_finite() {
+                        t.map(|v| v / len)
+                    } else if n[0].abs() < 0.9 {
+                        export_normal([0.0, -n[2], n[1]])
+                    } else {
+                        export_normal([-n[2], 0.0, n[0]])
+                    }
+                };
+                let b = seg.binormals.get(i).copied().unwrap_or([0.0; 3]);
+                let c = [
+                    n[1] * t[2] - n[2] * t[1],
+                    n[2] * t[0] - n[0] * t[2],
+                    n[0] * t[1] - n[1] * t[0],
+                ];
+                let side = c[0] * b[0] + c[1] * b[1] + c[2] * b[2];
+                [t[0], t[1], t[2], if side < 0.0 { 1.0 } else { -1.0 }]
+            })
+            .collect();
+        let acc = bin.accessor(
+            &floats(&tangents),
+            ARRAY_BUFFER,
+            json!({"componentType": FLOAT, "count": count, "type": "VEC4"}),
+        );
+        attributes.insert("TANGENT".into(), json!(acc));
     }
     if seg.uvs.len() == count {
         // Stored with v up, matching the bottom-first textures; glTF has v
@@ -300,6 +335,75 @@ fn held<const N: usize>(keys: &[[f32; N]]) -> &[[f32; N]] {
     }
 }
 
+/// A glTF material from a Phyre one:
+///
+/// - `TextureSampler` → base color texture, `MaterialColour` → base color
+///   factor;
+/// - `AlphaThreshold` (when in 0–1) → alpha mask cutoff;
+/// - `NormalMapSampler` → normal texture;
+/// - `EmissionMapSampler` → emissive texture, `MaterialEmissiveness` →
+///   emissive factor.
+///
+/// All parameter values are kept in `extras.ffx_parameters`.
+fn material(
+    bin: &mut Bin,
+    m: &Material,
+    texture: &mut impl FnMut(&mut Bin, &MaterialTexture) -> Option<usize>,
+) -> Value {
+    let mut out = json!({"pbrMetallicRoughness": {"metallicFactor": 0.0, "roughnessFactor": 1.0}});
+    if let Some(t) = m.base_color() {
+        out["name"] = json!(t.path);
+        if let Some(i) = texture(bin, t) {
+            out["pbrMetallicRoughness"]["baseColorTexture"] = json!({"index": i});
+        }
+    }
+    if let Some(c) = m.parameter("MaterialColour").filter(|c| c.len() == 4) {
+        let c: Vec<f32> = c.iter().map(|v| v.clamp(0.0, 1.0)).collect();
+        if c != [1.0; 4] {
+            out["pbrMetallicRoughness"]["baseColorFactor"] = json!(c);
+        }
+    }
+    if let Some(&[t]) = m.parameter("AlphaThreshold")
+        && t > 0.0
+        && t <= 1.0
+    {
+        out["alphaMode"] = json!("MASK");
+        out["alphaCutoff"] = json!(t);
+    }
+    if let Some(i) = m.texture("NormalMapSampler").and_then(|t| texture(bin, t)) {
+        out["normalTexture"] = json!({"index": i});
+    }
+    let emissive = m
+        .parameter("MaterialEmissiveness")
+        .filter(|e| e.len() >= 3)
+        .map(|e| [e[0], e[1], e[2]].map(|v| v.clamp(0.0, 1.0)));
+    if let Some(i) = m
+        .texture("EmissionMapSampler")
+        .and_then(|t| texture(bin, t))
+    {
+        out["emissiveTexture"] = json!({"index": i});
+        out["emissiveFactor"] = json!(
+            emissive
+                .filter(|e| e.iter().any(|&v| v > 0.0))
+                .unwrap_or([1.0; 3])
+        );
+    } else if let Some(e) = emissive.filter(|e| e.iter().any(|&v| v > 0.0)) {
+        out["emissiveFactor"] = json!(e);
+    }
+    let parameters: serde_json::Map<String, Value> = m
+        .parameters
+        .iter()
+        .map(|p| (p.name.clone(), json!(p.values)))
+        .collect();
+    let samplers: serde_json::Map<String, Value> = m
+        .textures
+        .iter()
+        .map(|t| (t.sampler.clone(), json!(t.path)))
+        .collect();
+    out["extras"] = json!({"ffx_parameters": parameters, "ffx_textures": samplers});
+    out
+}
+
 /// An animation's samplers and channels over the glTF `nodes`.
 #[allow(clippy::cast_precision_loss)] // frame numbers
 fn animation(bin: &mut Bin, a: &Animation, nodes: &[Value]) -> Option<Value> {
@@ -407,27 +511,41 @@ impl Model {
         animations: &[Animation],
     ) -> Vec<u8> {
         let mut bin = Bin::default();
+        // Tangents for segments drawn with a normal map.
+        let normal_mapped = |m: Option<usize>| {
+            m.and_then(|m| self.materials.get(m))
+                .is_some_and(|m| m.texture("NormalMapSampler").is_some())
+        };
         let primitives: Vec<Option<Value>> = self
             .segments
             .iter()
-            .map(|s| primitive(&mut bin, s))
+            .enumerate()
+            .map(|(i, s)| {
+                let tangents = normal_mapped(s.material)
+                    || self.instances.iter().any(|inst| {
+                        inst.segments
+                            .iter()
+                            .any(|&(x, m)| x == i && normal_mapped(m))
+                    });
+                primitive(&mut bin, s, tangents)
+            })
             .collect();
 
         let mut images = Vec::new();
         let mut materials = Vec::new();
+        // Images by texture path, each embedded once.
+        let mut image_index: std::collections::HashMap<String, Option<usize>> =
+            std::collections::HashMap::new();
+        let mut texture_of = |bin: &mut Bin, t: &MaterialTexture| -> Option<usize> {
+            *image_index.entry(t.path.clone()).or_insert_with(|| {
+                let png = image(t)?;
+                let view = bin.view(&png, None);
+                images.push(json!({"bufferView": view, "mimeType": "image/png"}));
+                Some(images.len() - 1)
+            })
+        };
         for m in &self.materials {
-            let mut material =
-                json!({"pbrMetallicRoughness": {"metallicFactor": 0.0, "roughnessFactor": 1.0}});
-            if let Some(texture) = m.base_color() {
-                material["name"] = json!(texture.path);
-                if let Some(png) = image(texture) {
-                    let view = bin.view(&png, None);
-                    images.push(json!({"bufferView": view, "mimeType": "image/png"}));
-                    material["pbrMetallicRoughness"]["baseColorTexture"] =
-                        json!({"index": images.len() - 1});
-                }
-            }
-            materials.push(material);
+            materials.push(material(&mut bin, m, &mut texture_of));
         }
         // Each primitive names its segment, for `Model::import_glb`.
         let with_material = |s: usize, material: Option<usize>| {

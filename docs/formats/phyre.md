@@ -200,6 +200,25 @@ Base color is `TextureSampler`. The other samplers seen are `AnimSampler`,
 `EnvironmentMapSampler`, `NormalMapSampler`, `NormalMap2Sampler`,
 `EmissionMapSampler`, `SpecularMapSampler` and `TextureSampler1`.
 
+5. A constant's values (`f32`s, `size` bytes) are at buffer object +
+   offset, without the samplers' 8. With that base, `MaterialColour` is
+   (1, 1, 1, 1) and `AlphaThreshold` 0.5 on Tidus; 8 bytes on, every
+   float4 straddles two parameters.
+
+`m_dataType` is 0 float, 1 float2, 2 float3, 3 float4, 0x31 float4x4.
+Every material has `MaterialColour`, `MaterialDiffuse`,
+`MaterialEmissiveness`, `AlphaThreshold`, `clrScaleFactor`,
+`globalColorMask` and `fgEff`. Characters add lighting terms
+(`CharacterAmbientLight`, `CharacterShadeColor`, `ffxshade`, …); maps add
+`hsv_scale`, `YIQshift`, `YIQscale` and light matrices.
+
+The glTF export maps `MaterialColour` to the base color factor,
+`AlphaThreshold` (when 0–1) to an alpha mask cutoff, `NormalMapSampler` to
+the normal texture (with `TANGENT` from the stored tangents and
+binormals), and `EmissionMapSampler` and `MaterialEmissiveness` to
+emission. It keeps every parameter and sampler in the material's
+`extras`.
+
 ### Skins
 
 | Class | Fields used |
@@ -351,7 +370,7 @@ records must be identical.
 
 - `PNode.m_name` is at +0x50 in the namespace, but its array fixup says
   +0x4c. Names are taken from the node's only array fixup.
-- Material parameters beyond the base color texture.
+- What the remaining material parameters do in the shaders.
 - New segments, materials or bones (only existing segments are written).
 - Shaders (`*.fx.phyre`) and the other cluster kinds.
 - Changing a texture's size or format.

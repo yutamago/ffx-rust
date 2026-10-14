@@ -38,6 +38,10 @@ pub struct Segment {
     /// `SkinIndices`: indices into [`Segment::bones`].
     pub joints: Vec<[u8; 4]>,
     pub weights: Vec<[f32; 4]>,
+    /// Tangents and binormals, as stored (read only: [`Model::write`] keeps
+    /// them, or recomputes them for resized segments).
+    pub tangents: Vec<[f32; 3]>,
+    pub binormals: Vec<[f32; 3]>,
     pub indices: Vec<u16>,
     /// The bone palette the joints index.
     pub bones: Vec<Bone>,
@@ -169,6 +173,8 @@ impl Stream<'_> {
             }
             ("SkinIndices", BYTE4) => seg.joints = bytes4(bytes, at, stride, count)?,
             ("SkinWeights", FLOAT4) => seg.weights = f32s(bytes, at, stride, count)?,
+            ("Tangent", FLOAT3) => seg.tangents = f32s(bytes, at, stride, count)?,
+            ("Binormal", FLOAT3) => seg.binormals = f32s(bytes, at, stride, count)?,
             ("Vertex" | "Normal" | "ST" | "Color" | "SkinIndices" | "SkinWeights", _) => {
                 return Err(Error::Unsupported(format!(
                     "{} stream of type {:#x}",

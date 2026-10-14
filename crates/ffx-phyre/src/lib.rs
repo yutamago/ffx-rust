@@ -23,7 +23,7 @@ mod write;
 pub use dds::{Dds, DdsError};
 pub use decode::png;
 pub use gltf::{Animation, Track};
-pub use material::{Bone, Instance, Material, MaterialTexture, Node, Skeleton};
+pub use material::{Bone, Instance, Material, MaterialTexture, Node, Parameter, Skeleton};
 pub use model::{Model, Segment};
 pub use texture::{Format, Kind, Texture};
 

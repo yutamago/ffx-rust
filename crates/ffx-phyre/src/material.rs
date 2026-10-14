@@ -42,10 +42,21 @@ impl MaterialTexture {
     }
 }
 
-/// A material: for now, the textures it samples.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// A shader parameter value of a material (`m_parameterType` 0x40).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Parameter {
+    /// E.g. `MaterialColour`, `AlphaThreshold`.
+    pub name: String,
+    /// `m_dataType`: 0 float, 1 float2, 2 float3, 3 float4, 0x31 float4x4.
+    pub data_type: u8,
+    pub values: Vec<f32>,
+}
+
+/// A material: the textures it samples and its parameter values.
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Material {
     pub textures: Vec<MaterialTexture>,
+    pub parameters: Vec<Parameter>,
 }
 
 impl Material {
@@ -54,7 +65,24 @@ impl Material {
     pub fn base_color(&self) -> Option<&MaterialTexture> {
         self.textures.iter().find(|t| t.sampler == "TextureSampler")
     }
+
+    /// A texture by sampler name.
+    #[must_use]
+    pub fn texture(&self, sampler: &str) -> Option<&MaterialTexture> {
+        self.textures.iter().find(|t| t.sampler == sampler)
+    }
+
+    /// A parameter's values by name.
+    #[must_use]
+    pub fn parameter(&self, name: &str) -> Option<&[f32]> {
+        self.parameters
+            .iter()
+            .find(|p| p.name == name)
+            .map(|p| p.values.as_slice())
+    }
 }
+
+const VALUE: u8 = 0x40;
 
 const SAMPLER: u8 = 0x42;
 
@@ -168,10 +196,36 @@ impl Resolver<'_> {
                     Error::Unsupported(format!("no PShaderParameterDefinition.{member}"))
                 })
         };
-        let (o_type, o_loc) = (need("m_parameterType")?, need("m_bufferLoc")?);
+        let (o_type, o_loc, o_data_type) = (
+            need("m_parameterType")?,
+            need("m_bufferLoc")?,
+            need("m_dataType")?,
+        );
+        // Values sit at their buffer location from the object's start (samplers
+        // 8 bytes further, see below).
+        let buffer_at = c.lists[bl].object(bo);
         let mut textures = Vec::new();
+        let mut parameters = Vec::new();
         for d in d0..d0 + dn {
             let at = def_list.object(d);
+            if self.bytes.get(at + o_type) == Some(&VALUE) {
+                let loc = crate::model::u32_at(self.bytes, at + o_loc)? as usize;
+                let (offset, size) = (loc & 0xffff, loc >> 16);
+                let values = (0..size / 4)
+                    .map(|k| {
+                        crate::model::u32_at(self.bytes, buffer_at + offset + 4 * k)
+                            .map(f32::from_bits)
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                parameters.push(Parameter {
+                    name: self
+                        .array_string(dl, d, "PShaderParameterDefinition", "m_name")
+                        .unwrap_or_default(),
+                    data_type: self.bytes.get(at + o_data_type).copied().unwrap_or(0),
+                    values,
+                });
+                continue;
+            }
             if self.bytes.get(at + o_type) != Some(&SAMPLER) {
                 continue;
             }
@@ -202,7 +256,10 @@ impl Resolver<'_> {
                 .unwrap_or_default();
             textures.push(MaterialTexture { sampler, path });
         }
-        Ok(Material { textures })
+        Ok(Material {
+            textures,
+            parameters,
+        })
     }
 
     /// The pointer fixups of `list`/`obj` for the field at a byte offset.
