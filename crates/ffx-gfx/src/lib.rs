@@ -109,10 +109,22 @@ pub struct Draw {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Cmd {
     Draw(Box<Draw>),
-    ClearTarget { view: Id, color: [f32; 4] },
-    ClearDepth { view: Id, flags: u32, depth: f32, stencil: u8 },
+    ClearTarget {
+        view: Id,
+        color: [f32; 4],
+    },
+    ClearDepth {
+        view: Id,
+        flags: u32,
+        depth: f32,
+        stencil: u8,
+    },
     /// New contents for part of a buffer (dynamic vertex data).
-    UpdateBuffer { id: Id, offset: u32, data: Vec<u8> },
+    UpdateBuffer {
+        id: Id,
+        offset: u32,
+        data: Vec<u8>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -125,16 +137,51 @@ pub struct Frame {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Msg {
-    Buffer { id: Id, desc: BufferDesc, data: Vec<u8> },
-    Texture { id: Id, desc: TextureDesc, subresources: Vec<Subresource> },
-    View { id: Id, kind: ViewKind, resource: Id, desc: Option<[u32; 6]> },
+    Buffer {
+        id: Id,
+        desc: BufferDesc,
+        data: Vec<u8>,
+    },
+    Texture {
+        id: Id,
+        desc: TextureDesc,
+        subresources: Vec<Subresource>,
+    },
+    View {
+        id: Id,
+        kind: ViewKind,
+        resource: Id,
+        desc: Option<[u32; 6]>,
+    },
     /// `kind`: `v`ertex or `p`ixel (others are not sent).
-    Shader { id: Id, kind: u8, bytecode: Vec<u8> },
-    Layout { id: Id, elements: Vec<Element> },
-    State { id: Id, kind: StateKind, desc: Vec<u8> },
-    UpdateBuffer { id: Id, offset: u32, data: Vec<u8> },
-    UpdateTexture { id: Id, subresource: u32, row_pitch: u32, data: Vec<u8> },
-    Release { id: Id },
+    Shader {
+        id: Id,
+        kind: u8,
+        bytecode: Vec<u8>,
+    },
+    Layout {
+        id: Id,
+        elements: Vec<Element>,
+    },
+    State {
+        id: Id,
+        kind: StateKind,
+        desc: Vec<u8>,
+    },
+    UpdateBuffer {
+        id: Id,
+        offset: u32,
+        data: Vec<u8>,
+    },
+    UpdateTexture {
+        id: Id,
+        subresource: u32,
+        row_pitch: u32,
+        data: Vec<u8>,
+    },
+    Release {
+        id: Id,
+    },
     Frame(Frame),
 }
 
@@ -280,7 +327,13 @@ impl Draw {
         w.u8(self.kind as u8);
         w.u32s(&[self.count, self.instances, self.start]);
         w.i32(self.base);
-        w.u32s(&[self.first_instance, self.topology, self.layout, self.vs, self.ps]);
+        w.u32s(&[
+            self.first_instance,
+            self.topology,
+            self.layout,
+            self.vs,
+            self.ps,
+        ]);
         w.len_of(&self.vertex);
         for &(s, id, stride, offset) in &self.vertex {
             w.u8(s);
@@ -432,7 +485,14 @@ impl Msg {
                 w.len_of(elements);
                 for e in elements {
                     w.str(&e.semantic);
-                    w.u32s(&[e.index, e.format, e.slot, e.offset, u32::from(e.per_instance), e.step]);
+                    w.u32s(&[
+                        e.index,
+                        e.format,
+                        e.slot,
+                        e.offset,
+                        u32::from(e.per_instance),
+                        e.step,
+                    ]);
                 }
                 LAYOUT
             }

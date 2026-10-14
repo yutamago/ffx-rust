@@ -335,6 +335,19 @@ pub struct State {
 
 static STATE: OnceLock<Mutex<State>> = OnceLock::new();
 
+impl State {
+    /// Drops what was known about `id`: a new object at a freed address
+    /// may be of another kind.
+    fn forget(&mut self, id: usize) {
+        self.buffers.remove(&id);
+        self.textures.remove(&id);
+        self.views.remove(&id);
+        self.shaders.remove(&id);
+        self.layouts.remove(&id);
+        self.states.remove(&id);
+    }
+}
+
 pub fn state() -> MutexGuard<'static, State> {
     STATE
         .get_or_init(|| Mutex::new(State::default()))
@@ -817,14 +830,18 @@ unsafe extern "system" fn create_buffer(
                     std::slice::from_raw_parts(*data as *const u8, d[0] as usize).to_vec()
                 }
             });
-            state().buffers.insert(
-                *out as usize,
-                Buffer {
-                    desc: d,
-                    shadow,
-                    version: 0,
-                },
-            );
+            {
+                let mut st = state();
+                st.forget(*out as usize);
+                st.buffers.insert(
+                    *out as usize,
+                    Buffer {
+                        desc: d,
+                        shadow,
+                        version: 0,
+                    },
+                );
+            }
         }
         hr
     }
@@ -842,12 +859,16 @@ unsafe extern "system" fn create_texture_2d(
         let f: F = std::mem::transmute(device_original(this, vt::device::CREATE_TEXTURE_2D));
         let hr = f(this, desc, data, out);
         if hr >= 0 && !out.is_null() && !(*out).is_null() && !desc.is_null() {
-            state().textures.insert(
-                *out as usize,
-                Texture {
-                    desc: std::ptr::read_unaligned(desc.cast()),
-                },
-            );
+            {
+                let mut st = state();
+                st.forget(*out as usize);
+                st.textures.insert(
+                    *out as usize,
+                    Texture {
+                        desc: std::ptr::read_unaligned(desc.cast()),
+                    },
+                );
+            }
         }
         hr
     }
@@ -870,20 +891,25 @@ unsafe fn create_view(
         if hr >= 0 && !out.is_null() && !(*out).is_null() {
             let desc = (!desc.is_null()).then(|| {
                 let mut d = [0u32; 6];
-                // A depth-stencil view description is format, dimension,
-                // flags, then the union: five u32s.
-                let n = if kind == ViewKind::DepthStencil { 5 } else { 6 };
+                // A render target view description is format, dimension,
+                // then a union of three: five u32s. Shader resource and
+                // depth-stencil views have six.
+                let n = if kind == ViewKind::RenderTarget { 5 } else { 6 };
                 std::ptr::copy_nonoverlapping(desc, d.as_mut_ptr(), n);
                 d
             });
-            state().views.insert(
-                *out as usize,
-                View {
-                    kind,
-                    resource: resource as usize,
-                    desc,
-                },
-            );
+            {
+                let mut st = state();
+                st.forget(*out as usize);
+                st.views.insert(
+                    *out as usize,
+                    View {
+                        kind,
+                        resource: resource as usize,
+                        desc,
+                    },
+                );
+            }
         }
         hr
     }
@@ -971,13 +997,17 @@ unsafe extern "system" fn create_input_layout(
             } else {
                 hash(std::slice::from_raw_parts(signature, signature_len))
             };
-            state().layouts.insert(
-                *out as usize,
-                Layout {
-                    elements: list,
-                    signature: sig,
-                },
-            );
+            {
+                let mut st = state();
+                st.forget(*out as usize);
+                st.layouts.insert(
+                    *out as usize,
+                    Layout {
+                        elements: list,
+                        signature: sig,
+                    },
+                );
+            }
         }
         hr
     }
@@ -1000,14 +1030,18 @@ unsafe fn create_shader(
         if hr >= 0 && !out.is_null() && !(*out).is_null() && !code.is_null() {
             let bytes: Arc<[u8]> = std::slice::from_raw_parts(code, len).into();
             let h = hash(&bytes);
-            state().shaders.insert(
-                *out as usize,
-                Shader {
-                    kind,
-                    bytecode: bytes,
-                    hash: h,
-                },
-            );
+            {
+                let mut st = state();
+                st.forget(*out as usize);
+                st.shaders.insert(
+                    *out as usize,
+                    Shader {
+                        kind,
+                        bytecode: bytes,
+                        hash: h,
+                    },
+                );
+            }
         }
         hr
     }
@@ -1112,7 +1146,11 @@ unsafe fn create_state(
         let hr = f(this, desc, out);
         if hr >= 0 && !out.is_null() && !(*out).is_null() && !desc.is_null() {
             let bytes = std::slice::from_raw_parts(desc, size).to_vec();
-            state().states.insert(*out as usize, (kind, bytes));
+            {
+                let mut st = state();
+                st.forget(*out as usize);
+                st.states.insert(*out as usize, (kind, bytes));
+            }
         }
         hr
     }
@@ -1375,6 +1413,7 @@ unsafe extern "system" fn draw_indexed(this: Ptr, count: u32, start: u32, base: 
         let (this, f) = forward(this, vt::context::DRAW_INDEXED);
         let f: F = std::mem::transmute(f);
         f(this, count, start, base);
+        capture::after_draw(&mut state());
     }
 }
 
@@ -1386,6 +1425,7 @@ unsafe extern "system" fn draw(this: Ptr, count: u32, start: u32) {
         let (this, f) = forward(this, vt::context::DRAW);
         let f: F = std::mem::transmute(f);
         f(this, count, start);
+        capture::after_draw(&mut state());
     }
 }
 
@@ -1410,6 +1450,7 @@ unsafe extern "system" fn draw_indexed_instanced(
         let (this, f) = forward(this, vt::context::DRAW_INDEXED_INSTANCED);
         let f: F = std::mem::transmute(f);
         f(this, count, instances, start, base, first);
+        capture::after_draw(&mut state());
     }
 }
 
@@ -1432,6 +1473,7 @@ unsafe extern "system" fn draw_instanced(
         let (this, f) = forward(this, vt::context::DRAW_INSTANCED);
         let f: F = std::mem::transmute(f);
         f(this, count, instances, start, first);
+        capture::after_draw(&mut state());
     }
 }
 
@@ -1863,10 +1905,9 @@ unsafe extern "system" fn clear_rtv(this: Ptr, rtv: Ptr, color: *const f32) {
     if !color.is_null() {
         // SAFETY: four floats.
         let c: [f32; 4] = unsafe { std::ptr::read_unaligned(color.cast()) };
-        capture::note(
-            &mut state(),
-            &format!("clear_rtv {:#x} {c:?}", rtv as usize),
-        );
+        let mut s = state();
+        capture::note(&mut s, &format!("clear_rtv {:#x} {c:?}", rtv as usize));
+        capture::clear_target(&mut s, rtv as usize, c);
     }
     type F = unsafe extern "system" fn(Ptr, Ptr, *const f32);
     // SAFETY: the original, same arguments.
@@ -1878,13 +1919,17 @@ unsafe extern "system" fn clear_rtv(this: Ptr, rtv: Ptr, color: *const f32) {
 }
 
 unsafe extern "system" fn clear_dsv(this: Ptr, dsv: Ptr, flags: u32, depth: f32, stencil: u8) {
-    capture::note(
-        &mut state(),
-        &format!(
-            "clear_dsv {:#x} flags {flags} depth {depth} stencil {stencil}",
-            dsv as usize
-        ),
-    );
+    {
+        let mut s = state();
+        capture::note(
+            &mut s,
+            &format!(
+                "clear_dsv {:#x} flags {flags} depth {depth} stencil {stencil}",
+                dsv as usize
+            ),
+        );
+        capture::clear_depth(&mut s, dsv as usize, flags, depth, stencil);
+    }
     type F = unsafe extern "system" fn(Ptr, Ptr, u32, f32, u8);
     // SAFETY: the original, same arguments.
     unsafe {

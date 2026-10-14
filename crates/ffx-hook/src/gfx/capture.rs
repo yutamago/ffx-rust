@@ -28,17 +28,65 @@ pub struct Capture {
     rt_dumps: u32,
     draws_since_rt: u32,
     reply: Option<Sender<String>>,
+    /// The frame as scene-stream commands, and what they refer to.
+    cmds: Vec<ffx_gfx::Cmd>,
+    objects: BTreeSet<usize>,
+    sent_versions: std::collections::HashMap<usize, u32>,
 }
 
 static PENDING: Mutex<Option<(PathBuf, Sender<String>)>> = Mutex::new(None);
+static DRAW_RANGE: Mutex<Option<(u32, u32)>> = Mutex::new(None);
+
+/// After a draw: saves render target 0 when the draw is in the asked range.
+pub fn after_draw(s: &mut State) {
+    let Some(c) = &s.capture else { return };
+    let n = c.draws;
+    let Some((a, b)) = DRAW_RANGE.lock().ok().and_then(|r| *r) else {
+        return;
+    };
+    if n < a || n > b {
+        return;
+    }
+    let Some(res) = s.views.get(&s.bound.rtv[0]).map(|v| v.resource) else {
+        return;
+    };
+    // SAFETY: on the render thread, inside a context call.
+    if let Ok(t) = unsafe { read_texture(res) }
+        && let Some(c) = &mut s.capture
+    {
+        let name = format!("rt/draw_{n:04}");
+        let _ = std::fs::write(c.dir.join(format!("{name}.raw")), &t.data);
+        c.lines.push(format!(
+            "dump {name} {}x{} format {} pitch {} rows {}",
+            t.width, t.height, t.format, t.pitch, t.rows
+        ));
+    }
+}
 
 /// Captures the next whole frame into `dir` (a Windows path); returns the
 /// harness reply once it is written.
-pub fn request(dir: &str) -> String {
+pub fn request(args: &str) -> String {
     if !super::ENABLED.load(std::sync::atomic::Ordering::Acquire) {
         return "err the graphics layer is off (FFX_GFX=1)".into();
     }
-    let dir = PathBuf::from(dir);
+    // `<dir> [first last]`: also save render target 0 after each draw in
+    // first..=last.
+    let words: Vec<&str> = args.split_whitespace().collect();
+    let range = match words.as_slice() {
+        [.., a, b] if a.parse::<u32>().is_ok() && b.parse::<u32>().is_ok() => {
+            Some((a.parse().unwrap_or(0), b.parse().unwrap_or(0)))
+        }
+        _ => None,
+    };
+    let dir_words = if range.is_some() {
+        &words[..words.len() - 2]
+    } else {
+        &words[..]
+    };
+    if let Ok(mut r) = DRAW_RANGE.lock() {
+        *r = range;
+    }
+    let dir = PathBuf::from(dir_words.join(" "));
     for sub in ["", "shaders", "tex", "buf", "rt", "cb"] {
         if let Err(e) = std::fs::create_dir_all(dir.join(sub)) {
             return format!("err {e}");
@@ -68,8 +116,181 @@ fn list(slots: &[usize]) -> String {
     out
 }
 
+/// Records a render target clear.
+pub fn clear_target(s: &mut State, view: usize, color: [f32; 4]) {
+    if let Some(c) = &mut s.capture {
+        c.objects.insert(view);
+        c.cmds.push(ffx_gfx::Cmd::ClearTarget {
+            view: view as u32,
+            color,
+        });
+    }
+}
+
+/// Records a depth-stencil clear.
+pub fn clear_depth(s: &mut State, view: usize, flags: u32, depth: f32, stencil: u8) {
+    if let Some(c) = &mut s.capture {
+        c.objects.insert(view);
+        c.cmds.push(ffx_gfx::Cmd::ClearDepth {
+            view: view as u32,
+            flags,
+            depth,
+            stencil,
+        });
+    }
+}
+
+fn slots(list: &[usize]) -> Vec<(u8, u32)> {
+    list.iter()
+        .enumerate()
+        .filter(|(_, p)| **p != 0)
+        .map(|(i, p)| (i as u8, *p as u32))
+        .collect()
+}
+
+/// The scene-stream form of a draw, with the constant buffer windows the
+/// shaders see.
+fn stream_draw(s: &State, d: Draw) -> ffx_gfx::Draw {
+    let b = &s.bound;
+    let cbs = |list: &[usize], ranges: &[(u32, u32)]| -> Vec<(u8, Vec<u8>)> {
+        list.iter()
+            .enumerate()
+            .filter(|(_, p)| **p != 0)
+            .map(|(i, p)| {
+                let data = s
+                    .buffers
+                    .get(p)
+                    .and_then(|x| x.shadow.as_ref())
+                    .map_or_else(Vec::new, |sh| {
+                        let (first, count) = ranges[i];
+                        if count == 0 {
+                            sh.clone()
+                        } else {
+                            let from = (first as usize * 16).min(sh.len());
+                            let to = (from + count as usize * 16).min(sh.len());
+                            sh[from..to].to_vec()
+                        }
+                    });
+                (i as u8, data)
+            })
+            .collect()
+    };
+    let (kind, count, instances, start, base, first) = match d {
+        Draw::Indexed { count, start, base } => {
+            (ffx_gfx::DrawKind::Indexed, count, 1, start, base, 0)
+        }
+        Draw::Plain { count, start } => (ffx_gfx::DrawKind::Plain, count, 1, start, 0, 0),
+        Draw::IndexedInstanced {
+            count,
+            instances,
+            start,
+            base,
+            first,
+        } => (
+            ffx_gfx::DrawKind::IndexedInstanced,
+            count,
+            instances,
+            start,
+            base,
+            first,
+        ),
+        Draw::Instanced {
+            count,
+            instances,
+            start,
+            first,
+        } => (
+            ffx_gfx::DrawKind::Instanced,
+            count,
+            instances,
+            start,
+            0,
+            first,
+        ),
+    };
+    ffx_gfx::Draw {
+        kind,
+        count,
+        instances,
+        start,
+        base,
+        first_instance: first,
+        topology: b.topology,
+        layout: b.layout as u32,
+        vs: b.vs as u32,
+        ps: b.ps as u32,
+        vertex: b
+            .vertex
+            .iter()
+            .enumerate()
+            .filter(|(_, v)| v.0 != 0)
+            .map(|(i, v)| (i as u8, v.0 as u32, v.1, v.2))
+            .collect(),
+        index: (b.index.0 as u32, b.index.1, b.index.2),
+        vs_cb: cbs(&b.vs_cb, &b.vs_cb_range),
+        ps_cb: cbs(&b.ps_cb, &b.ps_cb_range),
+        vs_srv: slots(&b.vs_srv),
+        ps_srv: slots(&b.ps_srv),
+        vs_samplers: slots(&b.vs_sampler),
+        ps_samplers: slots(&b.ps_sampler),
+        blend: b.blend as u32,
+        blend_factor: b.blend_factor,
+        sample_mask: b.sample_mask,
+        depth: b.depth as u32,
+        stencil_ref: b.stencil_ref,
+        raster: b.raster as u32,
+        viewport: b.viewport,
+        scissor: b.scissor,
+        rtv: slots(&b.rtv),
+        dsv: b.dsv as u32,
+    }
+}
+
 /// Records one draw.
 pub fn draw(s: &mut State, d: Draw) {
+    let streamed = stream_draw(s, d);
+    let mut updates = Vec::new();
+    for &(_, id, _, _) in &streamed.vertex {
+        if let Some(buf) = s.buffers.get(&(id as usize))
+            && buf.desc[1] == 2
+            && let Some(sh) = &buf.shadow
+            && s.capture
+                .as_ref()
+                .is_some_and(|c| c.sent_versions.get(&(id as usize)) != Some(&buf.version))
+        {
+            updates.push((id as usize, buf.version, sh.clone()));
+        }
+    }
+    if let Some(c) = &mut s.capture {
+        for (id, version, data) in updates {
+            c.sent_versions.insert(id, version);
+            c.cmds.push(ffx_gfx::Cmd::UpdateBuffer {
+                id: id as u32,
+                offset: 0,
+                data,
+            });
+        }
+        let d = &streamed;
+        for id in [
+            d.layout, d.vs, d.ps, d.index.0, d.blend, d.depth, d.raster, d.dsv,
+        ]
+        .into_iter()
+        .chain(d.vertex.iter().map(|v| v.1))
+        .chain(
+            d.vs_srv
+                .iter()
+                .chain(&d.ps_srv)
+                .chain(&d.vs_samplers)
+                .chain(&d.ps_samplers)
+                .chain(&d.rtv)
+                .map(|v| v.1),
+        ) {
+            if id != 0 {
+                c.objects.insert(id as usize);
+            }
+        }
+        c.cmds.push(ffx_gfx::Cmd::Draw(Box::new(streamed)));
+    }
     let b = s.bound.clone();
     let shader = |p: usize| {
         s.shaders
@@ -399,6 +620,9 @@ pub unsafe fn on_present(swap_chain: Ptr) {
             rt_dumps: 0,
             draws_since_rt: 0,
             reply: Some(tx),
+            cmds: Vec::new(),
+            objects: BTreeSet::new(),
+            sent_versions: std::collections::HashMap::new(),
         });
     }
 }
@@ -508,8 +732,178 @@ fn finish(s: &State, mut c: Capture) -> (String, Option<Sender<String>>) {
         }
     }
     let _ = std::fs::write(c.dir.join("objects.txt"), objects);
+    let stream = snapshot(s, &mut c);
+    let _ = std::fs::write(c.dir.join("capture.ffxgfx"), stream);
     let mut text = c.lines.join("\n");
     text.push('\n');
     let _ = std::fs::write(c.dir.join("frame.txt"), text);
     (format!("ok {} draws", c.draws), c.reply.take())
+}
+
+/// All subresources of a 2D texture, through a staging copy.
+unsafe fn read_texture_all(
+    resource: usize,
+    desc: &[u32; 11],
+) -> Result<Vec<ffx_gfx::Subresource>, String> {
+    let device = super::DEVICE.load(std::sync::atomic::Ordering::Acquire) as Ptr;
+    let context = super::CONTEXT.load(std::sync::atomic::Ordering::Acquire) as Ptr;
+    if desc[5] != 1 {
+        return Err("multisampled".into());
+    }
+    // SAFETY: as in `read_texture`.
+    unsafe {
+        let mut sd = *desc;
+        sd[7] = 3;
+        sd[8] = 0;
+        sd[9] = 0x2_0000;
+        sd[10] &= 0x4; // keep only TEXTURECUBE
+        let mut staging: Ptr = std::ptr::null_mut();
+        type Create = unsafe extern "system" fn(Ptr, *const u32, *const c_void, *mut Ptr) -> i32;
+        let create: Create =
+            std::mem::transmute(device_original(device, vt::device::CREATE_TEXTURE_2D));
+        let hr = create(device, sd.as_ptr(), std::ptr::null(), &raw mut staging);
+        if hr < 0 {
+            return Err(format!("CreateTexture2D {hr:#x}"));
+        }
+        type Copy = unsafe extern "system" fn(Ptr, Ptr, Ptr);
+        let copy: Copy = std::mem::transmute(real_method(context, vt::context::COPY_RESOURCE));
+        copy(context, staging, resource as Ptr);
+        type Map = unsafe extern "system" fn(Ptr, Ptr, u32, u32, u32, *mut usize) -> i32;
+        type Unmap = unsafe extern "system" fn(Ptr, Ptr, u32);
+        let map: Map = std::mem::transmute(real_method(context, vt::context::MAP));
+        let unmap: Unmap = std::mem::transmute(real_method(context, vt::context::UNMAP));
+        let (mips, slices) = (desc[2].max(1), desc[3].max(1));
+        let mut out = Vec::new();
+        let mut result = Ok(());
+        'all: for slice in 0..slices {
+            for mip in 0..mips {
+                let sub = mip + slice * mips;
+                let mut mapped = [0usize; 3];
+                let hr = map(context, staging, sub, 1, 0, mapped.as_mut_ptr());
+                if hr < 0 {
+                    result = Err(format!("Map {hr:#x}"));
+                    break 'all;
+                }
+                let h = (desc[1] >> mip).max(1);
+                let rows = if block_compressed(desc[4]) {
+                    h.div_ceil(4)
+                } else {
+                    h
+                };
+                let pitch = mapped[1] as u32;
+                let data =
+                    std::slice::from_raw_parts(mapped[0] as *const u8, (pitch * rows) as usize)
+                        .to_vec();
+                unmap(context, staging, sub);
+                out.push(ffx_gfx::Subresource {
+                    row_pitch: pitch,
+                    data,
+                });
+            }
+        }
+        super::com!(staging, vt::RELEASE, unsafe extern "system" fn(Ptr) -> u32);
+        result.map(|()| out)
+    }
+}
+
+/// The capture as a scene stream: every object the frame used (textures
+/// and buffers read back now), then the frame.
+fn snapshot(s: &State, c: &mut Capture) -> Vec<u8> {
+    use ffx_gfx::Msg;
+    let mut out = ffx_gfx::CAPTURE_MAGIC.to_vec();
+    // Views pull in their resources.
+    let mut objects = c.objects.clone();
+    for id in &c.objects {
+        if let Some(v) = s.views.get(id) {
+            objects.insert(v.resource);
+        }
+    }
+    let mut msgs = Vec::new();
+    for &id in &objects {
+        if let Some(sh) = s.shaders.get(&id) {
+            if matches!(sh.kind, 'v' | 'p') {
+                msgs.push(Msg::Shader {
+                    id: id as u32,
+                    kind: sh.kind as u8,
+                    bytecode: sh.bytecode.to_vec(),
+                });
+            }
+        } else if let Some(l) = s.layouts.get(&id) {
+            msgs.push(Msg::Layout {
+                id: id as u32,
+                elements: l
+                    .elements
+                    .iter()
+                    .map(|e| ffx_gfx::Element {
+                        semantic: e.semantic.clone(),
+                        index: e.index,
+                        format: e.format,
+                        slot: e.slot,
+                        offset: e.offset,
+                        per_instance: e.per_instance,
+                        step: e.step,
+                    })
+                    .collect(),
+            });
+        } else if let Some((kind, desc)) = s.states.get(&id) {
+            let kind = match kind {
+                'b' => ffx_gfx::StateKind::Blend,
+                'd' => ffx_gfx::StateKind::Depth,
+                'r' => ffx_gfx::StateKind::Raster,
+                _ => ffx_gfx::StateKind::Sampler,
+            };
+            msgs.push(Msg::State {
+                id: id as u32,
+                kind,
+                desc: desc.clone(),
+            });
+        } else if let Some(t) = s.textures.get(&id) {
+            // SAFETY: on the render thread, inside Present.
+            let subresources = unsafe { read_texture_all(id, &t.desc) }.unwrap_or_default();
+            msgs.push(Msg::Texture {
+                id: id as u32,
+                desc: t.desc,
+                subresources,
+            });
+        } else if let Some(b) = s.buffers.get(&id) {
+            let data = if b.desc[1] == 2 {
+                b.shadow.clone().unwrap_or_default()
+            } else {
+                // SAFETY: on the render thread.
+                unsafe { read_buffer(id, b.desc[0]) }.unwrap_or_default()
+            };
+            msgs.push(Msg::Buffer {
+                id: id as u32,
+                desc: b.desc,
+                data,
+            });
+        }
+    }
+    // Views after their resources.
+    for &id in &objects {
+        if let Some(v) = s.views.get(&id) {
+            let kind = match v.kind {
+                ViewKind::ShaderResource => ffx_gfx::ViewKind::ShaderResource,
+                ViewKind::RenderTarget => ffx_gfx::ViewKind::RenderTarget,
+                ViewKind::DepthStencil => ffx_gfx::ViewKind::DepthStencil,
+            };
+            msgs.push(Msg::View {
+                id: id as u32,
+                kind,
+                resource: v.resource as u32,
+                desc: v.desc,
+            });
+        }
+    }
+    for m in &msgs {
+        m.write(&mut out);
+    }
+    Msg::Frame(ffx_gfx::Frame {
+        number: 0,
+        width: s.bound.viewport[2] as u32,
+        height: s.bound.viewport[3] as u32,
+        cmds: std::mem::take(&mut c.cmds),
+    })
+    .write(&mut out);
+    out
 }

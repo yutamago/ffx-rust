@@ -1,0 +1,18 @@
+[package]
+name = "ffx-render"
+description = "The external renderer: draws the game's scene with wgpu from the scene stream"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ffx-dxbc.workspace = true
+ffx-gfx.workspace = true
+anyhow.workspace = true
+miniz_oxide.workspace = true
+pollster = "0.4"
+wgpu = "30.0.1"
+
+[lints]
+workspace = true

@@ -140,7 +140,7 @@ pub struct VertexInput {
     pub ty: Ty,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TextureKind {
     Float,
     Uint,

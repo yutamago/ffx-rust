@@ -20,7 +20,9 @@ fn windows_path(p: &Path) -> String {
 fn capture(game: &mut ffx_harness::Game, dir: &Path) -> ffx_harness::Result<()> {
     std::fs::create_dir_all(dir)?;
     game.screenshot()?.save_png(&dir.join("shot.png"))?;
-    let reply = game.command(&format!("gfxcapture {}", windows_path(dir)))?;
+    // FFX_CAPTURE_DRAWS="first last": render target 0 after each of those.
+    let range = std::env::var("FFX_CAPTURE_DRAWS").unwrap_or_default();
+    let reply = game.command(&format!("gfxcapture {} {range}", windows_path(dir)))?;
     println!("{}: {reply}", dir.display());
     Ok(())
 }

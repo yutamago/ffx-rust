@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 ffx-core.workspace = true
+ffx-gfx.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [
