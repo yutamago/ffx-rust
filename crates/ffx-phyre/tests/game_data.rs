@@ -45,3 +45,50 @@ fn every_texture_round_trips_through_dds() {
     assert_eq!(big_endian, 30);
     eprintln!("{total} textures round-tripped through DDS: {kinds:?}");
 }
+
+#[test]
+fn models_parse_or_are_refused() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let archive = Archive::open(PathBuf::from(dir).join("data/FFX_Data.vbf")).unwrap();
+    let (mut ok, mut refused, mut other) = (0, 0, 0);
+    let mut triangles = 0usize;
+    let mut reasons: BTreeMap<String, usize> = BTreeMap::new();
+    for entry in archive
+        .entries()
+        .iter()
+        .filter(|e| e.path.ends_with(".dae.phyre") && e.size > 0)
+    {
+        let bytes = archive.read(entry).unwrap();
+        match ffx_phyre::Model::parse(&bytes) {
+            Ok(model) => {
+                for s in &model.segments {
+                    assert!(
+                        s.positions.iter().flatten().all(|f| f.is_finite()),
+                        "{}",
+                        entry.path
+                    );
+                    triangles += s.indices.len() / 3;
+                }
+                let glb = model.to_glb();
+                assert_eq!(&glb[..4], b"glTF");
+                ok += 1;
+            }
+            Err(Error::Unsupported(why)) => {
+                refused += 1;
+                *reasons.entry(why).or_default() += 1;
+            }
+            Err(e) => {
+                other += 1;
+                *reasons.entry(format!("{e}")).or_default() += 1;
+            }
+        }
+    }
+    eprintln!(
+        "models: {ok} exported ({triangles} triangles), {refused} refused, {other} not models"
+    );
+    eprintln!("refused: {reasons:#?}");
+    assert_eq!((ok, refused, other), (1266, 48, 0), "{reasons:#?}");
+}

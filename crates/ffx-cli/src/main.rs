@@ -37,6 +37,60 @@ enum Command {
     /// Convert textures (`*.dds.phyre`) to DDS and back.
     #[command(subcommand)]
     Texture(TextureCommand),
+    /// Export models (`*.dae.phyre`) as glTF.
+    #[command(subcommand)]
+    Model(ModelCommand),
+}
+
+#[derive(Subcommand)]
+enum ModelCommand {
+    /// Export models whose archive path starts with a prefix as `.glb`.
+    Export {
+        #[command(flatten)]
+        game: GameArgs,
+        /// Archive path prefix, or one full path.
+        prefix: String,
+        /// Output directory (archive paths are kept, `.dae.phyre` → `.glb`).
+        #[arg(short, long)]
+        out: PathBuf,
+    },
+}
+
+fn model(cmd: ModelCommand) -> Result<()> {
+    let ModelCommand::Export { game, prefix, out } = cmd;
+    let game = Game::open(&game)?;
+    let entries: Vec<&Entry> = game
+        .archive
+        .entries()
+        .iter()
+        .filter(|e| e.path.starts_with(&prefix) && e.path.ends_with(".dae.phyre") && e.size > 0)
+        .collect();
+    if entries.is_empty() {
+        bail!("no models start with {prefix:?}");
+    }
+    let exported = AtomicU64::new(0);
+    entries.par_iter().try_for_each(|entry| -> Result<()> {
+        match ffx_phyre::Model::parse(&game.archive.read(entry)?) {
+            Ok(model) => {
+                let rel = safe_relative(&entry.path.replace(".dae.phyre", ".glb"))?;
+                let dest = out.join(rel);
+                if let Some(parent) = dest.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&dest, model.to_glb())?;
+                exported.fetch_add(1, Ordering::Relaxed);
+            }
+            Err(e) => eprintln!("skipping {}: {e}", entry.path),
+        }
+        Ok(())
+    })?;
+    eprintln!(
+        "exported {} of {} models to {}",
+        exported.into_inner(),
+        entries.len(),
+        out.display()
+    );
+    Ok(())
 }
 
 #[derive(Subcommand)]
@@ -391,6 +445,7 @@ fn run(cli: Cli) -> Result<()> {
         Command::Monster(cmd) => monster(cmd),
         Command::Script(cmd) => script(cmd),
         Command::Texture(cmd) => texture(cmd),
+        Command::Model(cmd) => model(cmd),
     }
 }
 

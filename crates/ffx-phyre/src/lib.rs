@@ -8,11 +8,16 @@
 //! themselves and checked against all 44,364 shipped textures; see
 //! `docs/formats/phyre.md`.
 
+pub mod cluster;
 mod dds;
+pub mod fixup;
 mod flip;
+mod gltf;
+mod model;
 mod texture;
 
 pub use dds::{Dds, DdsError};
+pub use model::{Model, Segment};
 pub use texture::{Format, Kind, Texture};
 
 #[derive(Debug, thiserror::Error)]
@@ -39,10 +44,19 @@ pub struct Header {
     pub instance_list_count: u32,
     pub array_fixup_size: u32,
     pub pointer_fixup_size: u32,
+    pub pointer_fixup_count: u32,
     pub pointer_array_fixup_size: u32,
     pub user_fixup_count: u32,
     pub user_fixup_data_size: u32,
     pub total_data_size: u32,
+    /// Word 15: header class counts (`u32` each) after the user fixups.
+    pub header_class_count: u32,
+    /// Word 16: header class fixups (16 bytes each) after those.
+    pub header_class_fixup_count: u32,
+    /// Word 18: size of the index buffer at the end of the file (models).
+    pub index_buffer_size: u32,
+    /// Word 19: size of the vertex buffer at the end of the file (models).
+    pub vertex_buffer_size: u32,
     /// Word 20: for 2D textures, the size of the top mip level.
     pub max_texture_buffer_size: u32,
 }
@@ -78,10 +92,15 @@ impl Header {
             instance_list_count: words[4],
             array_fixup_size: words[5],
             pointer_fixup_size: words[7],
+            pointer_fixup_count: words[8],
             pointer_array_fixup_size: words[9],
             user_fixup_count: words[12],
             user_fixup_data_size: words[13],
             total_data_size: words[14],
+            header_class_count: words[15],
+            header_class_fixup_count: words[16],
+            index_buffer_size: words[18],
+            vertex_buffer_size: words[19],
             max_texture_buffer_size: words[20],
         })
     }

@@ -188,3 +188,84 @@ fn zlib_uncompress_matches_original_on_game_blocks() {
     }
     assert!(blocks > 100, "only {blocks} compressed blocks found");
 }
+
+const UNPACK_POINTER_FIXUPS: u32 = 0x0060_db20;
+
+/// The original pointer fixup unpacker on one cluster: `(fixup count,
+/// object count)` per list in, flat 28-byte records out.
+fn original_pointer_fixups(
+    o: &mut Oracle,
+    packed: &[u8],
+    lists: &[(u32, u32)],
+) -> (Vec<[u32; 7]>, usize) {
+    o.reset_heap();
+    let total: usize = lists.iter().map(|&(n, _)| n as usize).sum();
+    // The unpacker reads the counts from 0x24-byte instance list headers.
+    let mut headers = vec![0u8; 0x24 * lists.len()];
+    for (h, &(n, objects)) in headers.chunks_mut(0x24).zip(lists) {
+        h[4..8].copy_from_slice(&objects.to_le_bytes());
+        h[0x1c..0x20].copy_from_slice(&n.to_le_bytes());
+    }
+    let out = o.alloc(28 * total).unwrap();
+    let dest = o
+        .alloc_bytes(&[[0; 4], out.to_le_bytes()].concat())
+        .unwrap();
+    let data = o.alloc_bytes(packed).unwrap();
+    let cursor = o.alloc_bytes(&data.to_le_bytes()).unwrap();
+    let hdrs = o.alloc_bytes(&headers).unwrap();
+    let count = u32::try_from(lists.len()).unwrap();
+    let src = o
+        .alloc_bytes(&[count.to_le_bytes(), hdrs.to_le_bytes()].concat())
+        .unwrap();
+    o.call_cdecl(UNPACK_POINTER_FIXUPS, &[dest, cursor, src])
+        .unwrap();
+    let end = u32::from_le_bytes(o.read(cursor, 4).unwrap().try_into().unwrap());
+    let recs = o.read(out, 28 * total).unwrap();
+    let recs = recs
+        .chunks(28)
+        .map(|r| {
+            std::array::from_fn(|k| u32::from_le_bytes(r[4 * k..4 * k + 4].try_into().unwrap()))
+        })
+        .collect();
+    (recs, (end - data) as usize)
+}
+
+#[test]
+fn pointer_fixups_unpack_like_original() {
+    let Some(dir) = game_dir() else { return };
+    let mut o = Oracle::load(dir.join("FFX.exe")).unwrap();
+    let archive = ffx_vbf::Archive::open(dir.join("data/FFX_Data.vbf")).unwrap();
+    let mut checked = 0;
+    // Models, maps and a spread of other clusters.
+    for (n, entry) in archive
+        .entries()
+        .iter()
+        .filter(|e| e.path.ends_with(".phyre") && e.size > 0)
+        .enumerate()
+    {
+        if !entry.path.ends_with(".dae.phyre") && n % 50 != 0 {
+            continue;
+        }
+        let bytes = archive.read(entry).unwrap();
+        let Ok(cluster) = ffx_phyre::cluster::Cluster::parse(&bytes) else {
+            continue;
+        };
+        let h = &cluster.header;
+        let at = cluster.fixups_offset + h.pointer_array_fixup_size as usize;
+        let packed = &bytes[at..at + h.pointer_fixup_size as usize];
+        let lists: Vec<(u32, u32)> = cluster
+            .lists
+            .iter()
+            .map(|l| (l.pointer_fixups, l.count))
+            .collect();
+        let (ours, used) = ffx_phyre::fixup::unpack_pointer_fixups(packed, &lists)
+            .unwrap_or_else(|e| panic!("{}: {e}", entry.path));
+        let (theirs, their_used) = original_pointer_fixups(&mut o, packed, &lists);
+        assert_eq!(used, their_used, "{}", entry.path);
+        assert_eq!(used, packed.len(), "{}", entry.path);
+        assert!(ours.iter().map(|f| f.0).eq(theirs), "{}", entry.path);
+        checked += 1;
+    }
+    eprintln!("{checked} clusters unpack their pointer fixups like the original");
+    assert!(checked > 1500, "{checked}");
+}
