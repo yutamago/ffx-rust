@@ -109,6 +109,28 @@ impl Studio {
     /// Fails on unknown commands, bad arguments and failed operations.
     #[allow(clippy::too_many_lines)] // the command table
     pub fn call(&mut self, cmd: &str, args: &Value) -> Result<Value> {
+        // Uploaded files (`data`, base64, with a `name`) become a file on
+        // disk the command reads as `file`.
+        let uploaded;
+        let args = if let Some(data) = args.get("data").and_then(Value::as_str) {
+            let name = args
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("upload.bin");
+            let name = std::path::Path::new(name)
+                .file_name()
+                .map_or_else(|| "upload.bin".into(), |n| n.to_string_lossy().into_owned());
+            let dir = std::env::temp_dir().join("ffx-studio-uploads");
+            std::fs::create_dir_all(&dir)?;
+            let file = dir.join(name);
+            std::fs::write(&file, files::base64(data)?)?;
+            let mut a = args.clone();
+            a["file"] = json!(file.to_string_lossy());
+            uploaded = a;
+            &uploaded
+        } else {
+            args
+        };
         match cmd {
             "status" => Ok(self.status()),
             "set_game_dir" => {

@@ -10,6 +10,9 @@ use serde_json::{Value, json};
 
 use crate::game::{Game, write_mod_file};
 
+/// Fields only advanced mode shows.
+const ADVANCED: [&str; 6] = ["flags", "crit_flags", "in_use", "name", "model", "equipped_by"];
+
 /// Human labels for field keys.
 fn label(key: &str) -> String {
     let mut s = key.replace('_', " ");
@@ -251,7 +254,8 @@ pub fn record(game: &Game, overlay: Option<&Path>, table: &str, id: u64) -> Resu
     for f in schema.fields {
         fields.push(json!({
             "key": f.name, "label": label(f.name), "doc": f.doc,
-            "editor": editor(table, f.name, f.kind), "advanced": false,
+            "editor": editor(table, f.name, f.kind),
+            "advanced": ADVANCED.contains(&f.name),
         }));
     }
     // Bytes no field names: advanced, as hex.

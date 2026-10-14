@@ -20,6 +20,7 @@ data, and never will: binaries, archives and extracted files stay out of git.
 | Models and maps (`ffx-phyre`) | All 1,266 meshes to valid glTF with node hierarchy, instances, skins, embedded base color textures and animations; edited glTF geometry written back (vertex and triangle counts may change), unchanged models byte for byte; new primitives become new segments, with new materials and textures, and vertices may be weighted to any joint (palettes and skeleton matrices grow); checked in game. Vertex streams and materials come from the decoded pointer and array fixups, which match the original unpackers. |
 | Motions (`ffx-motion`) | PS2 skeletons and all 3,156 motion groups (21,165 clips): decoded, rebuilt byte for byte, editable as JSON; exported as glTF animations on the remastered models (857 `chr/` models validate) |
 | Text (`ffx-text`) | Encoding fully decoded for all 8 languages; all 92,224 kernel strings round-trip |
+| Desktop app (FFX Studio, `app/`) | Windows launcher and editors in one window (Tauri + Svelte): Play with or without mods, mods on/off, and editors for items, abilities, equipment, treasure, monsters, encounters, dialogue, models and textures; advanced mode adds scripts, game files and every raw field. Logic in `crates/ffx-studio` with a game-data test of every editor |
 | `ffx` CLI | `vbf list/cat/extract/pack`, `kernel tables/export/import`, `monster list/export/import`, `battle list/export/import`, `text export/import`, `script list/disasm/asm`, `texture export/import`, `model export/import`, `motion export/import`, `phyre dump` |
 | Function replacement | `dinput8.dll` proxy patches 2 functions (`zlib_uncompress`, `Path_ToLowerAscii`) with parity-tested Rust; runs in the game |
 | Mods | `mods/<mod>/<archive path>` replaces archive files in the running game, also files that grew (the PS2 file layer's sizes are hooked) |
@@ -43,6 +44,8 @@ crates/ffx-phyre    PhyreEngine clusters: textures to and from DDS, models to gl
 crates/ffx-motion   PS2 skeletons and motion groups: reader, writer, JSON
 crates/ffx-text     in-game text encoding
 crates/ffx-cli      the `ffx` command-line tool
+crates/ffx-studio   the desktop app's logic: game, mods, editors, launcher
+app/                the desktop app: Svelte UI and Tauri window (tools/build-app.sh)
 symbols/ffx.sym     recovered names for FFX.exe, the source of truth
 docs/formats        file format descriptions, with the evidence behind them
 tools/ghidra        headless Ghidra scripts (apply symbols, dump decompiled code)

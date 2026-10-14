@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Ubuntu ships the resource compiler as llvm-rc-18 (tauri-winres needs llvm-rc).
+exec llvm-rc-18 "$@"

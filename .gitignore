@@ -8,3 +8,8 @@
 # Local exports of game data (ffx kernel/monster/script); never commit.
 /exports/
 /.playwright-mcp/
+# The desktop app's build outputs.
+/app/ui/node_modules/
+/app/ui/dist/
+/app/src-tauri/target/
+/app/src-tauri/gen/
