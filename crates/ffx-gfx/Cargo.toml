@@ -1,0 +1,10 @@
+[package]
+name = "ffx-gfx"
+description = "The scene stream between the game's Direct3D 11 device and the external renderer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true

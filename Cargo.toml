@@ -13,6 +13,7 @@ rust-version = "1.90"
 ffx-battle = { path = "crates/ffx-battle" }
 ffx-core = { path = "crates/ffx-core" }
 ffx-dxbc = { path = "crates/ffx-dxbc" }
+ffx-gfx = { path = "crates/ffx-gfx" }
 ffx-harness = { path = "crates/ffx-harness" }
 ffx-hook = { path = "crates/ffx-hook" }
 ffx-kernel = { path = "crates/ffx-kernel" }
