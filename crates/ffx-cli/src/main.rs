@@ -11,6 +11,7 @@ use ffx_battle::{EncounterTable, FormationFile};
 use ffx_kernel::{Schema, Table};
 use ffx_monster::MonsterFile;
 use ffx_script::{Container, Natives, disassemble_annotated};
+use ffx_text::messages::MessageTable;
 use ffx_text::{Charset, Language};
 use ffx_vbf::{Archive, Entry};
 use rayon::prelude::*;
@@ -36,6 +37,9 @@ enum Command {
     /// Export and import encounters (battle/kernel/btl.bin) and battle formations (battle/btl/*).
     #[command(subcommand)]
     Battle(BattleCommand),
+    /// Export and import dialogue: an event's (`cdsp0000`) or a battle's (`cdsp00_00`) messages.
+    #[command(subcommand)]
+    Text(TextCommand),
     /// Disassemble and assemble event and monster AI scripts.
     #[command(subcommand)]
     Script(ScriptCommand),
@@ -687,6 +691,15 @@ enum ScriptCommand {
         #[arg(short, long)]
         out: Option<PathBuf>,
     },
+    /// List the native functions the shipped scripts call: ID, calls,
+    /// scripts that call it, handler and its name in `symbols/ffx.sym`.
+    Natives {
+        #[command(flatten)]
+        game: GameArgs,
+        /// Only IDs called at least this often.
+        #[arg(long, default_value_t = 1)]
+        min_calls: u64,
+    },
     /// Assemble edited text onto the original script and write the file.
     Asm {
         #[command(flatten)]
@@ -723,6 +736,80 @@ fn script_path(file: &str) -> String {
     file.strip_prefix('m')
         .and_then(|n| n.parse::<u16>().ok())
         .map_or_else(|| file.to_string(), ffx_monster::archive_path)
+}
+
+/// `ffx script natives`: every native the shipped scripts call, by calls.
+fn script_natives(args: &GameArgs, min_calls: u64) -> Result<()> {
+    let game = Game::open(args)?;
+    let natives = Natives::from_exe(std::fs::read(args.game_dir.join("FFX.exe"))?)
+        .context("FFX.exe is not a PE32 image")?;
+    let names = symbol_names();
+    let scripts: Vec<&Entry> = game
+        .archive
+        .entries()
+        .iter()
+        .filter(|e| {
+            let p = &e.path;
+            p.ends_with(".ebp")
+                || ((p.contains("/jppc/battle/mon/_m") || p.contains("/jppc/battle/btl/"))
+                    && p.ends_with(".bin"))
+        })
+        .collect();
+    // id -> (calls, scripts)
+    let counts = scripts
+        .par_iter()
+        .map(|e| -> Result<std::collections::HashMap<u16, u64>> {
+            let mut counts = std::collections::HashMap::new();
+            let Ok(container) = Container::parse(game.archive.read(e)?) else {
+                return Ok(counts);
+            };
+            let script = &container.script;
+            for worker in script.workers() {
+                for instr in script.decode(worker.range.clone())? {
+                    let op = &ffx_script::opcode::OPCODES[usize::from(instr.opcode)];
+                    if op.operand == ffx_script::opcode::Operand::Func
+                        && let Some(id) = instr.operand
+                    {
+                        *counts.entry(id).or_default() += 1;
+                    }
+                }
+            }
+            Ok(counts)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let mut total: std::collections::BTreeMap<u16, (u64, u64)> = std::collections::BTreeMap::new();
+    for file in &counts {
+        for (&id, &n) in file {
+            let t = total.entry(id).or_default();
+            t.0 += n;
+            t.1 += 1;
+        }
+    }
+    let mut rows: Vec<_> = total
+        .into_iter()
+        .filter(|(_, (n, _))| *n >= min_calls)
+        .collect();
+    rows.sort_by(|a, b| b.1.0.cmp(&a.1.0).then(a.0.cmp(&b.0)));
+    let mut out = std::io::stdout().lock();
+    writeln!(
+        out,
+        "id      calls  scripts  handler     name  (slots: start poll float int)"
+    )?;
+    let hex = |h: Option<u32>| h.map_or_else(|| "-".to_string(), |h| format!("0x{h:08x}"));
+    for (id, (calls, files)) in rows {
+        let handler = natives.handler(id);
+        let name = handler.and_then(|h| names.get(&h).copied()).unwrap_or("-");
+        let slots = natives
+            .slots(id)
+            .map(|s| s.map(hex).join(" "))
+            .unwrap_or_default();
+        writeln!(
+            out,
+            "0x{id:04x} {calls:7} {files:8}  {}  {name}  ({slots})",
+            hex(handler)
+        )?;
+    }
+    Ok(())
 }
 
 fn script(cmd: ScriptCommand) -> Result<()> {
@@ -770,6 +857,7 @@ fn script(cmd: ScriptCommand) -> Result<()> {
                 None => std::io::stdout().lock().write_all(text.as_bytes())?,
             }
         }
+        ScriptCommand::Natives { game, min_calls } => script_natives(&game, min_calls)?,
         ScriptCommand::Asm {
             game,
             file,
@@ -821,6 +909,35 @@ enum MonsterCommand {
         game: GameArgs,
         id: u16,
         /// TOML with `[stats]` and/or `[spoils]` edits.
+        toml: PathBuf,
+        /// Write the file here.
+        #[arg(short, long, conflicts_with = "mod_dir")]
+        out: Option<PathBuf>,
+        /// Write the file into a mod folder, at its path inside the archive.
+        #[arg(long)]
+        mod_dir: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum TextCommand {
+    /// Export an event's or a battle's messages as TOML, in `--lang`.
+    Export {
+        #[command(flatten)]
+        game: GameArgs,
+        /// An event (`cdsp0000`) or a battle (`cdsp00_00`).
+        name: String,
+        /// Output file; stdout if omitted.
+        #[arg(short, long)]
+        out: Option<PathBuf>,
+    },
+    /// Apply TOML onto the original messages and write the file.
+    Import {
+        #[command(flatten)]
+        game: GameArgs,
+        /// An event (`cdsp0000`) or a battle (`cdsp00_00`).
+        name: String,
+        /// TOML from `ffx text export`, edited; only the listed messages change.
         toml: PathBuf,
         /// Write the file here.
         #[arg(short, long, conflicts_with = "mod_dir")]
@@ -958,6 +1075,7 @@ fn run(cli: Cli) -> Result<()> {
         Command::Kernel(cmd) => kernel(cmd),
         Command::Monster(cmd) => monster(cmd),
         Command::Battle(cmd) => battle(cmd),
+        Command::Text(cmd) => text(cmd),
         Command::Script(cmd) => script(cmd),
         Command::Texture(cmd) => texture(cmd),
         Command::Model(cmd) => model(cmd),
@@ -1051,6 +1169,63 @@ fn monster(cmd: MonsterCommand) -> Result<()> {
                 std::fs::create_dir_all(parent)?;
             }
             std::fs::write(&dest, file.bytes())?;
+            eprintln!("wrote {}", dest.display());
+        }
+    }
+    Ok(())
+}
+
+/// The archive path of an event's (`cdsp0000`) or a battle's (`cdsp00_00`)
+/// messages; like `Msg_LoadFile`, a name with `_` is a battle.
+fn messages_path(game: &Game, name: &str) -> Result<String> {
+    if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+        bail!("{name:?}: expected an event like `cdsp0000` or a battle like `cdsp00_00`");
+    }
+    Ok(if name.contains('_') {
+        game.language.battle_messages_path(name)
+    } else {
+        game.language.event_messages_path(name)
+    })
+}
+
+fn text(cmd: TextCommand) -> Result<()> {
+    match cmd {
+        TextCommand::Export { game, name, out } => {
+            let game = Game::open(&game)?;
+            let path = messages_path(&game, &name)?;
+            let table = MessageTable::parse(&read_file(&game.archive, &path)?)?;
+            let text = format!(
+                "# {path}\n# Messages in order; `index` is what the event's script shows. \
+                 A message without `text` uses the original (Japanese) one.\n\n{}",
+                table.export(&game.charset)?
+            );
+            match out {
+                Some(path) => std::fs::write(path, text)?,
+                None => std::io::stdout().lock().write_all(text.as_bytes())?,
+            }
+        }
+        TextCommand::Import {
+            game,
+            name,
+            toml,
+            out,
+            mod_dir,
+        } => {
+            let game = Game::open(&game)?;
+            let archive_path = messages_path(&game, &name)?;
+            let mut table = MessageTable::parse(&read_file(&game.archive, &archive_path)?)?;
+            let edits = std::fs::read_to_string(&toml)
+                .with_context(|| format!("reading {}", toml.display()))?;
+            table.import(&edits, &game.charset)?;
+            let dest = match (out, mod_dir) {
+                (Some(path), _) => path,
+                (None, Some(dir)) => dir.join(safe_relative(&archive_path)?),
+                (None, None) => bail!("pass --out <file> or --mod-dir <dir>"),
+            };
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&dest, table.write()?)?;
             eprintln!("wrote {}", dest.display());
         }
     }
@@ -1210,7 +1385,7 @@ fn schema(table: &str) -> Result<&'static Schema> {
 fn kernel(cmd: KernelCommand) -> Result<()> {
     match cmd {
         KernelCommand::Tables => {
-            for s in ffx_kernel::SCHEMAS {
+            for s in ffx_kernel::SCHEMAS.iter().chain(ffx_kernel::SHARED_SCHEMAS) {
                 let fields: Vec<&str> = s
                     .strings
                     .iter()
@@ -1218,9 +1393,14 @@ fn kernel(cmd: KernelCommand) -> Result<()> {
                     .chain(s.fields.iter().map(|f| f.name))
                     .collect();
                 println!(
-                    "{:<12} {:>4} bytes  {}",
+                    "{:<12} {:>4} bytes  {}{}",
                     s.file,
                     s.record_size,
+                    if s.is_shared() {
+                        "(all languages) "
+                    } else {
+                        ""
+                    },
                     fields.join(", ")
                 );
             }
@@ -1233,19 +1413,18 @@ fn kernel(cmd: KernelCommand) -> Result<()> {
         } => {
             let game = Game::open(&game)?;
             let export_one = |schema: &Schema| -> Result<String> {
-                let table =
-                    Table::parse(&read_file(&game.archive, &game.kernel_path(schema.file))?)?;
+                let table = Table::parse(&read_file(&game.archive, &schema.path(game.language))?)?;
                 Ok(ffx_kernel::export(&table, schema, &game.charset)?)
             };
             if all {
                 let dir = out.context("--all needs --out <directory>")?;
                 std::fs::create_dir_all(&dir)?;
-                for s in ffx_kernel::SCHEMAS {
+                for s in ffx_kernel::SCHEMAS.iter().chain(ffx_kernel::SHARED_SCHEMAS) {
                     std::fs::write(dir.join(format!("{}.toml", s.file)), export_one(s)?)?;
                 }
                 eprintln!(
                     "exported {} tables to {}",
-                    ffx_kernel::SCHEMAS.len(),
+                    ffx_kernel::SCHEMAS.len() + ffx_kernel::SHARED_SCHEMAS.len(),
                     dir.display()
                 );
             } else {
@@ -1265,7 +1444,7 @@ fn kernel(cmd: KernelCommand) -> Result<()> {
         } => {
             let game = Game::open(&game)?;
             let schema = schema(&table)?;
-            let archive_path = game.kernel_path(schema.file);
+            let archive_path = schema.path(game.language);
             let mut parsed = Table::parse(&read_file(&game.archive, &archive_path)?)?;
             let edits = std::fs::read_to_string(&toml)
                 .with_context(|| format!("reading {}", toml.display()))?;

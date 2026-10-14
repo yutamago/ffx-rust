@@ -35,6 +35,8 @@
 use std::collections::HashMap;
 use std::fmt::Write;
 
+pub mod messages;
+
 /// A language the game ships text for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Language {
@@ -104,6 +106,27 @@ impl Language {
     #[must_use]
     pub fn kernel_dir(self) -> String {
         format!("ffx_ps2/ffx/master/new_{}pc/battle/kernel/", self.code())
+    }
+
+    /// Archive path of event `event`'s dialogue (`cdsp0000`): the folder is
+    /// named after its first two letters (`Msg_LoadFile`, `0x0088cac0`).
+    /// The `obj_psv` copies beside these are the Vita's.
+    #[must_use]
+    pub fn event_messages_path(self, event: &str) -> String {
+        let area = event.get(..2).unwrap_or(event);
+        format!(
+            "ffx_ps2/ffx/master/new_{}pc/event/obj_ps3/{area}/{event}/{event}.bin",
+            self.code()
+        )
+    }
+
+    /// Archive path of battle `name`'s texts (`cdsp00_00`).
+    #[must_use]
+    pub fn battle_messages_path(self, name: &str) -> String {
+        format!(
+            "ffx_ps2/ffx/master/new_{}pc/battle/btl/{name}/{name}.bin",
+            self.code()
+        )
     }
 }
 

@@ -323,6 +323,7 @@ dependencies = [
  "ffx-motion",
  "ffx-phyre",
  "ffx-script",
+ "ffx-text",
  "ffx-vbf",
  "thiserror",
 ]
@@ -399,7 +400,9 @@ dependencies = [
 name = "ffx-text"
 version = "0.1.0"
 dependencies = [
+ "ffx-vbf",
  "thiserror",
+ "toml",
 ]
 
 [[package]]

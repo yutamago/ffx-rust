@@ -72,6 +72,80 @@ fn every_table_round_trips_in_every_language() {
     eprintln!("{tables} tables, {strings} strings round-tripped");
 }
 
+/// The tables shared by all languages round-trip, and their data fit what
+/// the field names say.
+#[test]
+fn shared_tables_round_trip_and_fit_their_fields() {
+    let Some(archive) = archive() else { return };
+    let language = Language::English;
+    let charset =
+        Charset::from_table(&read(&archive, &language.charset_path()).unwrap(), language).unwrap();
+    for schema in ffx_kernel::SHARED_SCHEMAS {
+        let path = schema.path(language);
+        let original = read(&archive, &path).unwrap_or_else(|| panic!("{path} missing"));
+        let table = Table::parse(&original).unwrap();
+        let toml = export(&table, schema, &charset).unwrap();
+        let mut reimported = table.clone();
+        import(&mut reimported, schema, &charset, &toml).unwrap();
+        assert_eq!(
+            reimported.to_bytes().unwrap(),
+            original,
+            "{path}: TOML round trip"
+        );
+    }
+    let field = |schema: &Schema, record: &[u8], name: &str| -> u32 {
+        let f = schema.fields.iter().find(|f| f.name == name).unwrap();
+        record[f.offset..f.offset + f.kind.len()]
+            .iter()
+            .rev()
+            .fold(0, |v, &b| v << 8 | u32::from(b))
+    };
+    let table = |name: &str| {
+        let schema = Schema::by_file(name).unwrap();
+        (
+            schema,
+            Table::parse(&read(&archive, &schema.path(language)).unwrap()).unwrap(),
+        )
+    };
+    // Equipment: a ply_save character (0-17), weapon or armor, abilities 0x8000 + n or empty.
+    for name in ["weapon", "shop_arms", "buki_get"] {
+        let (schema, t) = table(name);
+        for id in t.ids() {
+            let r = t.record(id).unwrap();
+            if name != "buki_get" && field(schema, r, "in_use") == 0 {
+                continue;
+            }
+            assert!(field(schema, r, "character") < 18, "{name} #{id}");
+            assert!(field(schema, r, "armor") < 2, "{name} #{id}");
+            for a in ["ability_1", "ability_2", "ability_3", "ability_4"] {
+                let v = field(schema, r, a);
+                assert!(
+                    v == 0 || v == 0xff || v >> 12 == 8,
+                    "{name} #{id} {a} {v:#x}"
+                );
+            }
+        }
+    }
+    // Treasure: kinds 0, 2, 5, 10; equipment points into buki_get, items
+    // and key items carry their kind's ID prefix.
+    let (schema, takara) = table("takara");
+    let (_, buki) = table("buki_get");
+    for id in takara.ids() {
+        let r = takara.record(id).unwrap();
+        let item = field(schema, r, "item");
+        match field(schema, r, "kind") {
+            0 => {}
+            2 => assert_eq!(item >> 12, 2, "takara #{id}"),
+            5 => assert!(
+                buki.record(u16::try_from(item).unwrap()).is_some(),
+                "takara #{id}"
+            ),
+            10 => assert_eq!(item >> 12, 0xa, "takara #{id}"),
+            k => panic!("takara #{id}: kind {k}"),
+        }
+    }
+}
+
 #[test]
 fn edits_land_where_the_game_reads_them() {
     let Some(archive) = archive() else { return };

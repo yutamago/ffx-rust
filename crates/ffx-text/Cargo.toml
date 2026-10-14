@@ -8,6 +8,10 @@ rust-version.workspace = true
 
 [dependencies]
 thiserror.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+ffx-vbf.workspace = true
 
 [lints]
 workspace = true

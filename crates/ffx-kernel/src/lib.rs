@@ -13,7 +13,7 @@ pub mod schema;
 mod table;
 
 pub use export::{export, import};
-pub use schema::{Field, Kind, SCHEMAS, Schema};
+pub use schema::{Field, Kind, SCHEMAS, SHARED_SCHEMAS, Schema};
 pub use table::{Segment, StringRef, Table};
 
 #[derive(Debug, thiserror::Error)]

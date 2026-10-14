@@ -105,6 +105,7 @@
 0x00783e20 function Battle_InitSections        # formation file sections: 0 script 0x0112a9ac, 1 0x0112a9b4, 2 formation 0x0112a9c0, 3 positions 0x0112a9b0 (0x20-byte records)
 0x00784070 function Mon_LoadAll               # sprintf m%03d for each of 8 enemy slots
 0x00784260 function Mon_GetName               # kernel monster record string 0
+0x00786b00 function SaveData_Clear             # new game: clears g_SaveData, reads menu, party, weapon (wep_data -> inventory 0x01130f2c, 200 x 22 bytes) and ply_save
 0x00789bf0 function Dmg_Calc                  # physical: str(+0x5a8)^3 vs def(+0x5a9); magic: mag(+0x5aa) vs mdef(+0x5ab)
 0x0078b760 function Battle_Steal              # steal chance spoils+0x0a, items +0x24/+0x26, counts +0x28/+0x29
 0x007906a0 function Item_BuildLists           # sorts items by command flags bit 0x2 / 0x400
@@ -121,8 +122,11 @@
 0x00798950 function Rng_ClockSeed              # XOR of the GetSystemTime bytes + 1; wrapped by the harness (FFX_HARNESS_SEED)
 0x007989a0 function Rng_Global                 # seed = seed * 0x5d588b65 + 0x3c35, rotated by 16; returns 31 bits
 0x007990d0 function Battle_GiveRewards        # gil, AP, two drop slots, overkill drops, bribe (spoils section 4)
+0x00799420 function Treasure_Give              # (takara index, rewards): kind 0 gil x100, 2 item, 5 equipment from buki_get, 10 key item
 0x0079b4f0 function Mon_InitActor             # copies the stat record (section 2) into the battle actor
+0x0079bb50 function Battle_CheckEquipment      # equipment checks per character (weapon/armor in inventory, flag 0x02 skipped)
 0x0079c110 function Battle_SetUpActors         # monster slot i (actor via 0x00795aa0) gets id = formation +0x0c + 2i (0xffff: empty)
+0x0079c5f0 function Battle_InitPartyActor      # party actor from ply_save and equipment: weapon formula/power -> +0x5c1/+0x5c7, crit -> +0x5d8, a_ability records applied
 0x0079d0e0 function Enc_FormationIndex         # (field, &group, &formation) -> field.first + sum of earlier groups' counts + formation, clamped
 0x0079d170 function Enc_FieldGroups            # field index -> its encounter block: u8 formation total, u8 group count, groups (*0x0112a9cc + field +2)
 0x0079d190 function Enc_Field                  # field index (clamped) -> 14-byte entry: i16 map, i16 block offset, i16 first formation, char[8] name
@@ -131,6 +135,9 @@
 0x0079d250 function Enc_InitTable              # btl.bin (0x0112a9c4): fields at +4 -> 0x0112a9c8, count (end-start)/14 -> 0x0112a9d0, blocks at +8 -> 0x0112a9cc
 0x007a5360 function Native_SetActorProperty   # func 0x70ab: pops value, property, actor; calls 0x007b4b70
 0x007ab870 function Kernel_FindRecord         # (id, table, &strings) -> record; defines the container (docs/formats/kernel.md)
+0x007abbd0 function Equip_Get                  # (id): 0xb000 + i -> battle spoils slot (0x02310dde), else inventory slot i (< 200) at 0x01130f2c
+0x007abc60 function Equip_CountOwned           # counts in-use slots without flag 0x02; out: free slots
+0x007abca0 function Equip_RebuildWearers       # equipment +6 = wearer, from ply_save +0x2d/+0x2e
 0x007b2dc0 function Battle_GetActorProperty   # switch over ~340 actor properties
 0x007b4b70 function Battle_SetActorProperty   # switch over ~320 actor properties
 0x008277f0 function SG_InitBones              # allocs "%s:Elem" (0x160/bone) and "%s:Fcv" (0x18c/bone); bind pose from the .chr bone table (20 bytes: parent, rot centideg, trans /1000, scale >>12)
@@ -165,6 +172,10 @@
 0x0086536c label    g_ScriptOpcodeCases       # opcode -> case index byte table of Script_Run
 0x00869d60 function Script_Fetch              # opcode << 24 | u16 operand when the high bit is set
 0x0086a830 function Script_GetWorker          # worker index -> worker object (0xb58/0x558/0x5b8 sizes)
+0x0086ba90 function Msg_TextAlt                # (i): entry i's alternate text (+4) in the event's message table (script context +0x34); offset 0 falls back to the .ebp's own table (0x023cbd60)
+0x0086bf10 function Msg_Flags                  # (i): entry i's flags (+2); high byte = choice count; kept at message window +0x16 (0x008607a0)
+0x0086bf30 function Msg_Text                   # (i): entry i's text (+0) in the event's message table; offset 0 falls back to the .ebp's section 1
+0x0086bf70 function Msg_Get                    # (i, alternate, table): like Msg_Text/Msg_TextAlt; table 1 = script context +0x38 (.ebp section 5)
 0x0086c2e0 function Script_VarAddress          # (worker, location word): storage = bits 25-27 (0 globals at *(*0x01326b28+0x2c), 1 at +0x30, 2-6 script/worker data) + offset
 0x0086d6d0 function Script_InitNatives        # registers the native function tables per group
 0x0086de50 function Script_PopFloat
@@ -175,10 +186,13 @@
 0x0086e3f0 function Script_PushInt
 0x0086e440 function Script_PushVar
 0x008726f0 function Script_Jump               # pc = code start + labels[index]
+0x00872ef0 function Event_Load                 # (event): reads the .ebp, its localized message table (Msg_LoadFile) and .ftc, starts its scripts
+0x00875510 function Event_InitScripts          # (..., messages, messages2, ...): script context +0x34 = messages, +0x38 = section 5 (or messages)
 0x00877730 function Script_PollNative         # slot 1; no handler = done
 0x008777a0 function Script_CallNative         # slot 0 (start) of the native table entry
 0x008777f0 function Script_FinishNative       # slot 2 (float) or 3 (int) result, pushed
 0x00877880 function Script_SetNativeTable     # (group, table)
+0x0088cac0 function Msg_LoadFile               # (name): new_<lang>pc/event/obj_ps3/<xx>/<name>.bin, battle/btl/<name>/<name>.bin (name with _), battle/kernel (monster*), menu/*.dcp (macro*)
 0x008c6920 function Cmd_HealAmount            # formula +0x28: 6 = power*50, 7 = (stat+power)/2*power, 8 = maxHP*power/16; power +0x2a
 0x00a42830 function Cd_FileName                # cdecl(number) -> "host0:/ffx/master/..." path of a PS2 file of the current module
 0x00a428a0 function CdFileSize_PC              # cdecl(number): size from sizetbl.bin, or the real file for some modules ("CDfileSize_PC: MISSING?")
@@ -196,6 +210,8 @@
 0x0112ca6c label    g_KernelMonster1
 0x0112ca70 label    g_KernelMonster2
 0x0112ca74 label    g_KernelMonster3
+0x01130f2c label    g_Equipment                # 200 x 22-byte equipment slots (docs/formats/kernel.md)
+0x0113205c label    g_PlySave                  # ply_save records, 0x94 bytes each; +0x2d weapon slot, +0x2e armor slot
 0x01328558 label    g_NativeTables            # per-group native function tables
 0x022fb504 label    g_Settings
 0x02310c40 label    g_CdLib                   # function table of the PS2 CD-library emulation

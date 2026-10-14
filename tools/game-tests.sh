@@ -35,7 +35,8 @@ tests_for() {
         |crates/ffx-vbf/*|tools/run-game.sh|tools/build-hook.sh|tools/shims/*\
         |tools/game-tests.sh|Cargo.toml|Cargo.lock)
             echo "$everything" ;;
-        crates/ffx-kernel/*|crates/ffx-text/*) echo "$start_up" ;;
+        crates/ffx-kernel/*) echo "$start_up $save" ;;
+        crates/ffx-text/*) echo "$start_up $first_scene" ;;
         crates/ffx-script/*|crates/ffx-phyre/*|crates/ffx-motion/*) echo "$first_scene" ;;
         crates/ffx-monster/*|crates/ffx-battle/*) echo "$save" ;;
         *) ;;

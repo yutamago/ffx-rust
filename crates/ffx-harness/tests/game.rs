@@ -70,6 +70,7 @@ fn u32_le(bytes: Vec<u8>) -> u32 {
 
 const ITEM: &str = "ffx_ps2/ffx/master/new_uspc/battle/kernel/item.bin";
 const EVENT: &str = "ffx_ps2/ffx/master/jppc/event/obj/zn/znkd0600/znkd0600.ebp";
+const MESSAGES: &str = "ffx_ps2/ffx/master/new_uspc/event/obj_ps3/zn/znkd0600/znkd0600.bin";
 const MODEL: &str = "ffx_data/gamedata/ps3data/chr/pc/c001/mdl/d3d11/c001.dae.phyre";
 const MOTIONS: &str = "ffx_ps2/ffx/master/jppc/chr/pc/c001/mot/resident0.mgrp";
 
@@ -144,6 +145,23 @@ fn motion_mod() -> Vec<u8> {
     let modded = group.write().unwrap();
     assert_eq!(ffx_motion::MotionGroup::parse(&modded).unwrap(), group);
     modded
+}
+
+/// The first scene's English dialogue with its first line ("Listen to my
+/// story.") changed.
+fn messages_mod() -> Vec<u8> {
+    let archive = archive();
+    let read = |path: &str| archive.read(archive.find(path).unwrap()).unwrap();
+    let language = ffx_text::Language::English;
+    let charset = ffx_text::Charset::from_table(&read(&language.charset_path()), language).unwrap();
+    let mut table = ffx_text::messages::MessageTable::parse(&read(MESSAGES)).unwrap();
+    table
+        .import(
+            "[[message]]\nindex = 0\ntext = \"\"\"\n\n{0e:40}Listen to my modded story.{0e:41}\"\"\"\n",
+            &charset,
+        )
+        .unwrap();
+    table.write().unwrap()
 }
 
 /// Monster m068 (in the salvage ship's first formation) with 12345 HP
@@ -282,8 +300,10 @@ fn start_up_input_and_kernel_mod() {
 #[ignore = "starts FFX.exe on the Windows desktop"]
 fn first_scene_with_script_model_and_motion_mods() {
     let (script, offset) = script_mod();
+    let messages = messages_mod();
     let files = [
         (EVENT, script),
+        (MESSAGES, messages.clone()),
         (MODEL, model_mod()),
         (MOTIONS, motion_mod()),
     ];
@@ -299,6 +319,13 @@ fn first_scene_with_script_model_and_motion_mods() {
         let base = u32_le(game.read_through(0x0132_6b28, 0x2c, 4).unwrap());
         let value = game.read_abs(base + offset, 1).unwrap()[0];
         assert_eq!(value, 0x34, "pushimm 0x1234; popv v1 (a byte)");
+        // The event's message table: *(*0x01326b28 + 0x34).
+        let table = u32_le(game.read_through(0x0132_6b28, 0x34, 4).unwrap());
+        assert_eq!(
+            game.read_abs(table, messages.len()).unwrap(),
+            messages,
+            "the dialogue came from the mod"
+        );
         let frames = game.frame().unwrap();
         game.wait(600).unwrap();
         assert!(
@@ -306,7 +333,7 @@ fn first_scene_with_script_model_and_motion_mods() {
             "the scene keeps running"
         );
         game.events().unwrap();
-        for path in [MODEL, MOTIONS] {
+        for path in [MESSAGES, MODEL, MOTIONS] {
             let wanted = format!("mod {path}");
             assert!(
                 game.opened().contains(&wanted),
@@ -363,6 +390,35 @@ fn save_and_battle_with_monster_and_formation_mods() {
             .into_iter()
             .map(u32_le)
             .collect();
+        // The kernel's equipment layout (weapon.bin, shop_arms.bin) in the
+        // inventory: what Tidus (0) and Rikku (6) wear sets their battle
+        // actors' weapon formula, power and crit bonus.
+        for character in [0u32, 6] {
+            let worn = game.read(0x0113_205c + character * 0x94 + 0x2d, 2).unwrap();
+            let slot = |game: &mut Game, i: u8| {
+                game.read(0x0113_0f2c + u32::from(i) * 0x16, 0x16).unwrap()
+            };
+            let (weapon, armor) = (slot(&mut game, worn[0]), slot(&mut game, worn[1]));
+            for (eq, armor_flag) in [(&weapon, 0), (&armor, 1)] {
+                assert_eq!(
+                    (eq[2] != 0, u32::from(eq[4]), eq[5], u32::from(eq[6])),
+                    (true, character, armor_flag, character),
+                    "character {character}: in use, character, armor, equipped_by of {eq:02x?}"
+                );
+            }
+            let actor = |game: &mut Game, offset| {
+                ffx_harness::screens::actor(game, character, offset, 1).unwrap()[0]
+            };
+            assert_eq!(
+                (
+                    actor(&mut game, 0x5c1),
+                    actor(&mut game, 0x5c7),
+                    actor(&mut game, 0x5d8)
+                ),
+                (weapon[8], weapon[9], weapon[10] + armor[10]),
+                "character {character}: actor formula, power, crit bonus from {weapon:02x?} {armor:02x?}"
+            );
+        }
         game.screenshot()
             .unwrap()
             .save_png(&screenshot_path("battle"))
