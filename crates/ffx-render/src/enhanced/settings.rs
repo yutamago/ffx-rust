@@ -55,6 +55,15 @@ pub struct Settings {
     /// Filter radius, in shadow texels.
     pub shadow_softness: f32,
     pub fog: bool,
+    /// Light probes: characters take their indirect light from the
+    /// scenery around them (its baked light, seen from where they stand).
+    pub probes: bool,
+    pub probe_strength: f32,
+    /// How much the probe light replaces the characters' ambient.
+    pub probe_mix: f32,
+    /// Skin scattering: light bleeding red past the terminator and into
+    /// shadow edges on what looks like skin.
+    pub skin: f32,
     /// The enhanced water (reflections, refraction, light); off: the
     /// game's.
     pub water: bool,
@@ -96,7 +105,7 @@ pub struct Settings {
     pub ao_on_baked: f32,
     /// Show one input of the lighting instead of the image: 0 none,
     /// 1 shadow, 2 occlusion, 3 normal, 4 albedo, 5 baked light,
-    /// 6 shadow cascades.
+    /// 6 shadow cascades, 7 skin, 8 probe light.
     pub debug_view: u8,
     /// Keep the game's blob shadows (redundant with real shadows).
     pub fake_shadows: bool,
@@ -135,6 +144,10 @@ impl Default for Settings {
             shadow_extent: 50.0,
             shadow_softness: 2.0,
             fog: true,
+            probes: true,
+            probe_strength: 1.0,
+            probe_mix: 0.7,
+            skin: 0.5,
             water: true,
             water_reflection: 1.0,
             water_refraction: 0.04,

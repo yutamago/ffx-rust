@@ -622,6 +622,10 @@ fn panel(
                     slider(ui, "key light on scenery", &mut s.scenery_key, 0.0..=1.0);
                     slider(ui, "scenery specular", &mut s.scenery_specular, 0.0..=2.0);
                     slider(ui, "character ambient", &mut s.character_ambient, 0.0..=4.0);
+                    ui.checkbox(&mut s.probes, "Characters lit by the scenery around them");
+                    slider(ui, "probe light", &mut s.probe_strength, 0.0..=3.0);
+                    slider(ui, "probe share", &mut s.probe_mix, 0.0..=1.0);
+                    slider(ui, "skin scattering", &mut s.skin, 0.0..=1.0);
                     slider(
                         ui,
                         "character falloff (soft–physical)",
@@ -724,6 +728,8 @@ fn panel(
                         (4, "albedo"),
                         (5, "baked light"),
                         (6, "cascades"),
+                        (7, "skin"),
+                        (8, "probe light"),
                     ] {
                         ui.selectable_value(&mut s.debug_view, v, name);
                     }

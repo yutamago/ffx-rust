@@ -29,6 +29,13 @@ const RESOLVE_WGSL: &str = include_str!("resolve.wgsl");
 const RESOLVE_SIZE: usize = 16 + 64;
 const VOLUMETRIC_WGSL: &str = include_str!("volumetric.wgsl");
 const WATER_WGSL: &str = include_str!("water.wgsl");
+const PROBE_WGSL: &str = include_str!("probe.wgsl");
+/// Light probes: at most this many per frame, each a cube of faces this
+/// size.
+const MAX_PROBES: usize = 2;
+const PROBE_FACE: u32 = 32;
+const PROBE_INFO_SIZE: usize = 64 * 6 * MAX_PROBES + 16 * MAX_PROBES + 32;
+const PROBES_SIZE: usize = 16 + 16 * MAX_PROBES + 16 * 9 * MAX_PROBES;
 const WATER_SIZE: usize = 64 + 16 * 4;
 const WATER_SCENE_SIZE: usize = 16 * 12 + 16 * 9;
 /// Vertex inputs the water shader reads, by location.
@@ -172,6 +179,20 @@ struct Item {
     uniform: Vec<u8>,
     bones: Option<Vec<u8>>,
     albedo: Option<(Id, Id)>,
+    /// A character's centre (for its light probe); scenery has none.
+    centre: Option<[f32; 3]>,
+}
+
+/// The light probes' G-buffer layers (six per probe) and the buffer of
+/// their spherical harmonics.
+struct ProbeTargets {
+    /// Per layer: albedo, normal, baked light, depth.
+    layers: Vec<[wgpu::TextureView; 4]>,
+    /// The layers as arrays, for the projection pass: albedo, baked, depth.
+    arrays: [wgpu::TextureView; 3],
+    buffer: wgpu::Buffer,
+    pipeline: wgpu::ComputePipeline,
+    layout: wgpu::BindGroupLayout,
 }
 
 #[derive(Clone, Copy)]
@@ -209,6 +230,7 @@ pub struct Enhanced {
     item_layout: wgpu::BindGroupLayout,
     gbuffer_layout: wgpu::PipelineLayout,
     lighting: (wgpu::RenderPipeline, wgpu::BindGroupLayout),
+    probes: ProbeTargets,
     /// Water: its layouts, pipeline layout and pipelines by geometry.
     water_layouts: (
         wgpu::BindGroupLayout,
@@ -390,7 +412,7 @@ const UNFILTERED: wgpu::TextureSampleType = wgpu::TextureSampleType::Float { fil
 /// (64).
 const ITEM_SIZE: usize = 208;
 const CAMERA_SIZE: usize = 64 * 3 + 32;
-const LIGHT_SIZE: usize = 64 + 16 * 12 + 16 * 15;
+const LIGHT_SIZE: usize = 64 + 16 * 12 + 16 * 16;
 const POST_SIZE: usize = 16 + 64 + 16;
 
 fn attachment(
@@ -420,6 +442,162 @@ fn put4(out: &mut Vec<u8>, v: [f32; 4]) {
     for x in v {
         out.extend_from_slice(&x.to_le_bytes());
     }
+}
+
+/// The light probes' layers, buffer and projection pass.
+fn probe_targets(device: &wgpu::Device) -> ProbeTargets {
+    let count = 6 * MAX_PROBES as u32;
+    let make = |format: wgpu::TextureFormat, label: &str| {
+        device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(label),
+            size: wgpu::Extent3d {
+                width: PROBE_FACE,
+                height: PROBE_FACE,
+                depth_or_array_layers: count,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        })
+    };
+    let textures = [
+        make(wgpu::TextureFormat::Rgba8UnormSrgb, "probe albedo"),
+        make(wgpu::TextureFormat::Rgba16Float, "probe normal"),
+        make(wgpu::TextureFormat::Rgba16Float, "probe baked"),
+        make(wgpu::TextureFormat::Depth32Float, "probe depth"),
+    ];
+    let layer = |t: &wgpu::Texture, l: u32| {
+        t.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            base_array_layer: l,
+            array_layer_count: Some(1),
+            ..Default::default()
+        })
+    };
+    let layers = (0..count)
+        .map(|l| {
+            [
+                layer(&textures[0], l),
+                layer(&textures[1], l),
+                layer(&textures[2], l),
+                layer(&textures[3], l),
+            ]
+        })
+        .collect();
+    let array = |t: &wgpu::Texture| {
+        t.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        })
+    };
+    let arrays = [
+        array(&textures[0]),
+        array(&textures[2]),
+        array(&textures[3]),
+    ];
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("probes"),
+        size: PROBES_SIZE as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let array_tex = |sample_type| wgpu::BindingType::Texture {
+        sample_type,
+        view_dimension: wgpu::TextureViewDimension::D2Array,
+        multisampled: false,
+    };
+    let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("probe"),
+        entries: &layout_entries(
+            &[
+                (0, uniform(PROBE_INFO_SIZE as u64)),
+                (1, array_tex(UNFILTERED)),
+                (2, array_tex(UNFILTERED)),
+                (3, array_tex(wgpu::TextureSampleType::Depth)),
+                (
+                    4,
+                    wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(PROBES_SIZE as u64),
+                    },
+                ),
+            ],
+            wgpu::ShaderStages::COMPUTE,
+        ),
+    });
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("probe"),
+        source: wgpu::ShaderSource::Wgsl(PROBE_WGSL.into()),
+    });
+    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("probe"),
+        layout: Some(
+            &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("probe"),
+                bind_group_layouts: &[Some(&layout)],
+                immediate_size: 0,
+            }),
+        ),
+        module: &module,
+        entry_point: Some("main"),
+        compilation_options: wgpu::PipelineCompilationOptions::default(),
+        cache: None,
+    });
+    ProbeTargets {
+        layers,
+        arrays,
+        buffer,
+        pipeline,
+        layout,
+    }
+}
+
+/// The six faces of a light probe at `centre`: view-projections with the
+/// handedness and conventions of the game's camera (so culling agrees).
+fn probe_faces(centre: [f32; 3], view: &math::Mat, proj: &math::Mat) -> Vec<math::Mat> {
+    let det = math::dot(
+        [view[0][0], view[0][1], view[0][2]],
+        math::cross(
+            [view[1][0], view[1][1], view[1][2]],
+            [view[2][0], view[2][1], view[2][2]],
+        ),
+    );
+    let w = proj[3][2].signum();
+    let k = det.signum() * w;
+    let (near, far) = (0.5f32, 3000.0f32);
+    let p = [
+        [proj[0][0].signum(), 0.0, 0.0, 0.0],
+        [0.0, proj[1][1].signum(), 0.0, 0.0],
+        [0.0, 0.0, w * far / (far - near), -far * near / (far - near)],
+        [0.0, 0.0, w, 0.0],
+    ];
+    let faces: [([f32; 3], [f32; 3]); 6] = [
+        ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        ([-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        ([0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),
+        ([0.0, -1.0, 0.0], [0.0, 0.0, 1.0]),
+        ([0.0, 0.0, 1.0], [0.0, 1.0, 0.0]),
+        ([0.0, 0.0, -1.0], [0.0, 1.0, 0.0]),
+    ];
+    faces
+        .iter()
+        .map(|&(f, u)| {
+            let c = math::cross(u, f);
+            let r = [c[0] * k, c[1] * k, c[2] * k];
+            let z = [f[0] * w, f[1] * w, f[2] * w];
+            let v = [
+                [r[0], r[1], r[2], -math::dot(r, centre)],
+                [u[0], u[1], u[2], -math::dot(u, centre)],
+                [z[0], z[1], z[2], -math::dot(z, centre)],
+                [0.0, 0.0, 0.0, 1.0],
+            ];
+            math::mul(&p, &v)
+        })
+        .collect()
 }
 
 /// A one-pixel cube map, for water without an environment map.
@@ -543,6 +721,14 @@ impl Enhanced {
                         wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
                     ),
                     (7, tex(UNFILTERED)),
+                    (
+                        8,
+                        wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: wgpu::BufferSize::new(PROBES_SIZE as u64),
+                        },
+                    ),
                 ],
                 S::FRAGMENT,
             ),
@@ -743,6 +929,7 @@ impl Enhanced {
             volumetric,
             water_layouts: (water_layout, water_scene_layout, water_pipeline_layout),
             water_pipelines: HashMap::new(),
+            probes: probe_targets(device),
             frame_count: 0,
             materials: HashMap::new(),
             flat_material: one_pixel(device, queue, [128, 128, 179, 255]),
@@ -1686,6 +1873,30 @@ impl Enhanced {
                 .map_or(0, |x| x.1);
             (view, samp)
         });
+        let centre = (family == Family::Character).then(|| {
+            let world = vs.rows(vcb, "World").unwrap_or_else(math::identity);
+            let mut at = [world[0][3], world[1][3], world[2][3]];
+            if let Some(b) = &bones_data {
+                // The mean of the bones' positions.
+                let f = |o: usize| f32::from_le_bytes(b[o..o + 4].try_into().expect("4 bytes"));
+                let mut sum = [0.0f32; 3];
+                let mut n = 0.0f32;
+                for bone in 0..b.len() / 64 {
+                    let o = bone * 64;
+                    if f(o).abs() + f(o + 4).abs() + f(o + 8).abs() < 1e-4 {
+                        continue;
+                    }
+                    for (r, s) in sum.iter_mut().enumerate() {
+                        *s += f(o + r * 16 + 12);
+                    }
+                    n += 1.0;
+                }
+                if n > 0.0 {
+                    at = sum.map(|s| s / n);
+                }
+            }
+            at
+        });
         debug_assert_eq!(u.len(), ITEM_SIZE, "item uniform layout");
         Some(Item {
             key,
@@ -1695,6 +1906,7 @@ impl Enhanced {
             uniform: u,
             bones: bones_data,
             albedo,
+            centre,
         })
     }
 
@@ -2063,8 +2275,86 @@ impl Enhanced {
             &mut light,
             [splits[0], splits[1], splits[2], f32::from(s.debug_view)],
         );
+        put4(
+            &mut light,
+            [
+                s.probe_strength,
+                s.probe_mix,
+                s.skin,
+                if s.probes { 1.0 } else { 0.0 },
+            ],
+        );
         assert_eq!(light.len(), LIGHT_SIZE, "light uniform layout");
         let light_at = alloc(&light, LIGHT_SIZE);
+        // Light probes at the characters nearest the camera (one per group
+        // of characters standing together).
+        let mut groups: Vec<([f32; 3], f32)> = Vec::new();
+        if s.probes {
+            for c in items.iter().filter_map(|i| i.centre) {
+                match groups.iter_mut().find(|g| {
+                    let m = g.0.map(|x| x / g.1);
+                    (0..3).map(|k| (m[k] - c[k]).powi(2)).sum::<f32>() < 30.0 * 30.0
+                }) {
+                    Some(g) => {
+                        for k in 0..3 {
+                            g.0[k] += c[k];
+                        }
+                        g.1 += 1.0;
+                    }
+                    None => groups.push((c, 1.0)),
+                }
+            }
+        }
+        let mut centres: Vec<[f32; 3]> = groups.iter().map(|g| g.0.map(|x| x / g.1)).collect();
+        let dist = |c: &[f32; 3]| (0..3).map(|k| (c[k] - eye[k]).powi(2)).sum::<f32>();
+        centres.sort_by(|a, b| dist(a).total_cmp(&dist(b)));
+        centres.truncate(MAX_PROBES);
+        let mut info = Vec::new();
+        let mut face_at = Vec::new();
+        for slot in 0..MAX_PROBES {
+            let faces = centres.get(slot).map_or_else(
+                || vec![math::identity(); 6],
+                |c| probe_faces(*c, &view, &proj),
+            );
+            for f in &faces {
+                put_rows(&mut info, &math::transpose(&math::invert(f)));
+                if slot < centres.len() {
+                    let mut c = Vec::new();
+                    put_rows(&mut c, f);
+                    put_rows(&mut c, &math::identity());
+                    put_rows(&mut c, &math::transpose(&math::invert(f)));
+                    let e = centres[slot];
+                    put4(&mut c, [e[0], e[1], e[2], 1.0]);
+                    put4(
+                        &mut c,
+                        [
+                            time,
+                            s.normal_strength,
+                            if s.material_maps { 1.0 } else { 0.0 },
+                            s.roughness,
+                        ],
+                    );
+                    face_at.push(alloc(&c, CAMERA_SIZE));
+                }
+            }
+        }
+        for slot in 0..MAX_PROBES {
+            let c = centres.get(slot).copied().unwrap_or([0.0; 3]);
+            put4(&mut info, [c[0], c[1], c[2], 1.0]);
+        }
+        put4(
+            &mut info,
+            [sky.0[0] * sky.1, sky.0[1] * sky.1, sky.0[2] * sky.1, 0.0],
+        );
+        put4(
+            &mut info,
+            [centres.len() as f32, s.baked_light, PROBE_FACE as f32, 0.0],
+        );
+        assert_eq!(info.len(), PROBE_INFO_SIZE, "probe info uniform layout");
+        let info_at = alloc(&info, PROBE_INFO_SIZE);
+        let mut count = Vec::new();
+        put4(&mut count, [centres.len() as f32, 0.0, 0.0, 0.0]);
+        queue.write_buffer(&self.probes.buffer, 0, &count);
         let ao_at: Vec<u64> = [[0.0f32, 0.0], [1.0, 0.0], [0.0, 1.0]]
             .iter()
             .map(|dir| {
@@ -2470,6 +2760,76 @@ impl Enhanced {
                 record(&mut rp, i);
             }
         }
+        // Light probes: the scenery around each, then its harmonics.
+        if !centres.is_empty() {
+            for (layer, at) in self.probes.layers.iter().zip(&face_at) {
+                let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: None,
+                    layout: &self.camera_layout,
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: binding(*at, CAMERA_SIZE),
+                    }],
+                });
+                let clear = |v| attachment(v, wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT));
+                let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("probe"),
+                    color_attachments: &[clear(&layer[0]), clear(&layer[1]), clear(&layer[2])],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &layer[3],
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                rp.set_bind_group(0, &group, &[]);
+                for (p, _, igroup, i) in &prepared {
+                    if i.centre.is_none() {
+                        rp.set_pipeline(p);
+                        rp.set_bind_group(1, igroup, &[]);
+                        record(&mut rp, i);
+                    }
+                }
+            }
+            let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &self.probes.layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: binding(info_at, PROBE_INFO_SIZE),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&self.probes.arrays[0]),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&self.probes.arrays[1]),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(&self.probes.arrays[2]),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: self.probes.buffer.as_entire_binding(),
+                    },
+                ],
+            });
+            let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("probe harmonics"),
+                timestamp_writes: None,
+            });
+            cp.set_pipeline(&self.probes.pipeline);
+            cp.set_bind_group(0, &group, &[]);
+            cp.dispatch_workgroups(centres.len() as u32, 1, 1);
+        }
         // Ambient occlusion, then its blur across and down.
         if self.settings.ao {
             let passes: [(
@@ -2559,6 +2919,10 @@ impl Enhanced {
                         } else {
                             &self.white
                         }),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 8,
+                        resource: self.probes.buffer.as_entire_binding(),
                     },
                 ],
             });
