@@ -45,7 +45,7 @@ fn passes() {
 
 #[test]
 fn gbuffer_variants() {
-    for bits in 0..32u32 {
+    for bits in 0..64u32 {
         let v = Variant {
             skinned: bits & 1 != 0,
             cloth: bits & 3 == 3,
@@ -54,6 +54,7 @@ fn gbuffer_variants() {
             alpha_test: bits & 16 != 0,
             shadow: false,
             edge: false,
+            seal: bits & 32 != 0,
         };
         let present: Vec<u32> = (0..7).collect();
         validate(&format!("gbuffer {v:?}"), &gbuffer_source(v, &present));

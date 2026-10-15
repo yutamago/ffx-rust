@@ -84,10 +84,16 @@ Passes, in order:
    Material maps (normal, roughness, cavity) come from a pack or are made
    from the colour texture. Motion comes from each draw's World and bones
    last frame: draws are matched across frames by their shaders, buffers
-   and range.
+   and range. Scenery meshes that do not quite meet leave pinholes along
+   their edges, which the jitter of TAA and FSR moves about (a dotted
+   dark line; the game's own samples happen to miss them): with "Close
+   gaps between scenery meshes" the scenery's triangles are drawn again
+   as lines, 0.2% further away, which fill only those (in the G-buffer
+   and in the full-size depth).
 4. **Light probes**: up to two per frame at the characters; the scenery
    around each, drawn into a small cube, becomes nine spherical
-   harmonics.
+   harmonics, eased over 0.3 s (a probe that stays in place), so that a
+   flash in its small faces (sparkling water) does not flicker the light.
 5. **Ambient occlusion** (screen space, blurred).
 6. **Lighting** (linear HDR), by the scene's lights (its *rig*,
    `rig.rs`, below). Scenery keeps the original light (the game's
@@ -207,13 +213,18 @@ normals, albedo, baked light, cascades, skin, probe light).
 ## Minimap
 
 The renderer draws its own field minimap (`minimap.rs`; overlay section
-"Minimap": on/off, size, range, opacity) in place of the game's: round, top
-right, always centred on the player, turned so that where the camera looks
-is up; the walkable area in light grey on a dark disc, the player as an
-arrow of the character's facing. Markers keep the game's shape and colour;
-beyond the edge they sit on the rim and fade in as the player comes nearer
-(from 1.5 radii beyond it); the destination marker always shows on the rim,
-exits show as bars. The renderer's answer carries flag 512; the hook then
+"Minimap": on/off, size, range, opacity) in place of the game's: round, at
+the top right of the game's 16:9 picture (not on the bars of a wider
+screen) and beside the editor's panel, under the overlay's windows; always
+centred on the player, turned so that where the camera looks is up. It
+takes the game's look on a small CRT screen: a dark green panel, a light
+green grid fixed to the world (four cells to the edge), the walkable area
+in steel blue with a glowing edge, the player as a yellow arrow of the
+character's facing in a magenta ring; scanlines, a slow refresh band,
+darker toward the rim, a sheen on the glass. Markers keep the game's shape
+and colour; beyond the edge they sit on the rim line and fade in as the
+player comes nearer (from 1.5 radii beyond it); the destination marker
+always shows on the rim, exits show as bars. The renderer's answer carries flag 512; the hook then
 wraps `Guide_Update` (`0x0091da80`): it keeps the fade (`Guide_FadeStep`),
 the fog of war (`Guide_RevealFog`) and the blink counter, turns the game's
 mesh and fog passes off, and sends `Msg::Minimap` before each frame: the
@@ -228,16 +239,28 @@ overlay image over the frame).
 ## Free camera
 
 "Free camera" in the overlay (`freecam.rs`) starts where the game's view
-is: right-drag looks, W/A/S/D move, Q/E go down and up, Shift is faster,
-the wheel sets the speed, a middle drag pans, "zoom" narrows or widens the
-game's field of view. The overlay keeps the keyboard meanwhile. The
-renderer's answer carries it (flag 64: eye and look-at in game space, the
-field of view, the roll); the hook wraps `Cam_Update` (`0x007bc110`): right
-before, the game's own override camera (`Cam_OverrideSet`) holds it, and
-after, the view and field of view go to the game's renderer as
-`Cam_Apply` would send them (`Render_SetFov`, `Render_SetView`), which the
-override's branch skips. The game then draws and culls for it; what lies
-outside the map's camera views may be unfinished. Off: the override ends.
+is, orbiting the point the game's camera looks at, and is driven as
+Blender's viewport: middle-drag orbits (turntable), Shift+middle pans
+(the pivot follows the pointer), Ctrl+middle (up and down) and the wheel
+zoom, Ctrl/Shift+wheel pan across and up; number pad 1, 3, 7 front, right,
+top (Ctrl: the opposite), 2/4/6/8 orbit by 15°, 9 turns round, +/− zoom,
+. centres on the selected point or spot light. Shift+` (the key left of 1:
+VK_OEM_3 or VK_OEM_5) walks as Blender's walk navigation: the mouse looks,
+W/A/S/D or the arrows move, Q/E down and up, Shift runs (×5), Alt slows,
+the wheel or +/− sets the speed (2.5 m/s to start); left click or Enter
+keeps the view, right click or Esc goes back. While walking the renderer
+holds the pointer (flag 1024: the hook keeps it at the window's centre,
+hidden, and sends `Input::Motion`). The screen's right comes from the
+game's view matrix (render space's handedness). "zoom" narrows or widens
+the game's field of view. The overlay keeps the keyboard meanwhile (Alt
+keys too, but Alt+F4). The renderer's answer carries it (flag 64: eye and
+look-at in game space, the field of view, the roll); the hook wraps
+`Cam_Update` (`0x007bc110`): right before, the game's own override camera
+(`Cam_OverrideSet`) holds it, and after, the view and field of view go to
+the game's renderer as `Cam_Apply` would send them (`Render_SetFov`,
+`Render_SetView`), which the override's branch skips. The game then draws
+and culls for it; what lies outside the map's camera views may be
+unfinished. Off: the override ends.
 
 ## Sequence editor
 

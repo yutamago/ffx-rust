@@ -156,6 +156,9 @@ pub enum Input {
     Key { vk: u32, pressed: bool },
     /// A typed character.
     Char(u32),
+    /// The pointer moved by (x, y) window pixels while the renderer holds
+    /// it (reply flag 1024: it stays at the window's centre, hidden).
+    Motion(f32, f32),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -639,6 +642,11 @@ impl Msg {
                             w.u8(5);
                             w.u32(c);
                         }
+                        Input::Motion(x, y) => {
+                            w.u8(6);
+                            w.f32(x);
+                            w.f32(y);
+                        }
                     }
                 }
                 INPUT
@@ -839,6 +847,7 @@ impl Msg {
                             pressed: r.u8()? != 0,
                         },
                         5 => Input::Char(r.u32()?),
+                        6 => Input::Motion(r.f32()?, r.f32()?),
                         _ => return Err(DecodeError("input")),
                     });
                 }
@@ -1113,6 +1122,7 @@ mod tests {
                         pressed: false,
                     },
                     Input::Char(0x41),
+                    Input::Motion(-2.0, 7.0),
                 ],
             },
             Msg::World {

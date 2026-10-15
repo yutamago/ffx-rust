@@ -50,6 +50,9 @@ static PAUSED: AtomicBool = AtomicBool::new(false);
 /// The renderer's layer (the overlay's image) shows though the overlay's
 /// panels are hidden: its HUD (the minimap).
 static LAYER: AtomicBool = AtomicBool::new(false);
+/// The renderer holds the pointer (its free camera's walk mode): kept at
+/// the window's centre, hidden, its moves sent as `Input::Motion`.
+static HOLD_POINTER: AtomicBool = AtomicBool::new(false);
 /// The renderer's free camera (eye, look-at in game space, projection
 /// distance, roll), put into the game's override camera at Present; and
 /// whether the override is ours to turn off.
@@ -387,7 +390,15 @@ unsafe extern "system" fn window_proc(
             let y = f32::from((((lparam >> 16) & 0xffff) as u16).cast_signed());
             client_to_screen(hwnd, x, y)
         };
+        let held = HOLD_POINTER.load(Ordering::Acquire);
         let taken = match msg {
+            0x200 if held => {
+                // SAFETY: the game's window, on its thread.
+                if let Some((dx, dy)) = unsafe { recentre(hwnd) } {
+                    push_input(ffx_gfx::Input::Motion(dx, dy));
+                }
+                true
+            }
             0x200 => {
                 let (x, y) = point();
                 push_input(ffx_gfx::Input::Move(x, y));
@@ -421,14 +432,29 @@ unsafe extern "system" fn window_proc(
                 });
                 overlay_takes_keys()
             }
+            // With Alt (Alt+F4 still closes the game).
+            0x104 | 0x105 if wparam != 0x73 => {
+                push_input(ffx_gfx::Input::Key {
+                    vk: wparam as u32,
+                    pressed: msg == 0x104,
+                });
+                overlay_takes_keys()
+            }
             0x102 => {
                 push_input(ffx_gfx::Input::Char(wparam as u32));
                 overlay_takes_keys()
             }
-            // WM_SETCURSOR: an arrow over the client area.
+            // WM_SETCURSOR: an arrow over the client area (none while
+            // the renderer holds the pointer).
             0x20 => {
                 // SAFETY: plain cursor calls on the window's thread.
-                unsafe { SetCursor(LoadCursorW(std::ptr::null_mut(), IDC_ARROW)) };
+                unsafe {
+                    SetCursor(if held {
+                        std::ptr::null_mut()
+                    } else {
+                        LoadCursorW(std::ptr::null_mut(), IDC_ARROW)
+                    });
+                };
                 true
             }
             _ => false,
@@ -446,6 +472,44 @@ unsafe extern "system" fn window_proc(
 }
 
 /// Client coordinates to back buffer pixels.
+/// The held pointer: how far it is from the window's centre (in the
+/// renderer's screen pixels), and back to the centre.
+#[allow(clippy::cast_precision_loss)] // window sizes, far below 2^24
+unsafe fn recentre(hwnd: *mut c_void) -> Option<(f32, f32)> {
+    use windows_sys::Win32::Foundation::{POINT, RECT};
+    use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetClientRect, GetCursorPos, SetCursorPos};
+    let mut r = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    let mut at = POINT { x: 0, y: 0 };
+    // SAFETY: the game's window; plain cursor calls.
+    unsafe {
+        GetClientRect(hwnd, &raw mut r);
+        let mut centre = POINT {
+            x: (r.right - r.left) / 2,
+            y: (r.bottom - r.top) / 2,
+        };
+        ClientToScreen(hwnd, &raw mut centre);
+        GetCursorPos(&raw mut at);
+        let (dx, dy) = (at.x - centre.x, at.y - centre.y);
+        if dx == 0 && dy == 0 {
+            // The move that putting it back made.
+            return None;
+        }
+        SetCursorPos(centre.x, centre.y);
+        let (cw, ch) = (
+            (r.right - r.left).max(1) as f32,
+            (r.bottom - r.top).max(1) as f32,
+        );
+        let (sw, sh) = SCREEN.lock().map_or((cw, ch), |s| (s.0 as f32, s.1 as f32));
+        Some((dx as f32 * sw / cw, dy as f32 * sh / ch))
+    }
+}
+
 #[allow(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
@@ -837,6 +901,7 @@ impl Link {
             self.alive = false;
             // The game's own minimap again.
             crate::minimap::REPLACE.store(false, Ordering::Release);
+            HOLD_POINTER.store(false, Ordering::Release);
         }
     }
 
@@ -1528,6 +1593,7 @@ fn receive(link: &mut Link, frame: u32) -> Option<Reply> {
             OVERLAY_KEYS.store(flags & 16 != 0, Ordering::Release);
             PAUSED.store(flags & 128 != 0, Ordering::Release);
             LAYER.store(flags & 256 != 0, Ordering::Release);
+            HOLD_POINTER.store(flags & 1024 != 0, Ordering::Release);
             crate::minimap::REPLACE.store(flags & 512 != 0, Ordering::Release);
             WANT_EFFECTS.store(flags & 32 != 0, Ordering::Relaxed);
             return Some(Reply {
@@ -1881,19 +1947,21 @@ unsafe fn restore(ctx: Ptr, s: &State) {
             std::ptr::null(),
             0
         );
-        call!(
-            k::PS_SET_SHADER_RESOURCES,
-            unsafe extern "system" fn(Ptr, u32, u32, *const usize),
-            0,
-            3,
-            b.ps_srv.as_ptr()
-        );
+        // The targets first: Direct3D 11 refuses a shader view of a
+        // texture bound as a target, so the game's views go back after.
         call!(
             k::OM_SET_RENDER_TARGETS,
             unsafe extern "system" fn(Ptr, u32, *const usize, Ptr),
             8,
             b.rtv.as_ptr(),
             b.dsv as Ptr
+        );
+        call!(
+            k::PS_SET_SHADER_RESOURCES,
+            unsafe extern "system" fn(Ptr, u32, u32, *const usize),
+            0,
+            3,
+            b.ps_srv.as_ptr()
         );
     }
 }
@@ -2241,19 +2309,21 @@ unsafe fn composite(link: &mut Link, s: &State, scene: Scene, w: u32, h: u32, so
             std::ptr::null(),
             0
         );
-        call!(
-            k::PS_SET_SHADER_RESOURCES,
-            unsafe extern "system" fn(Ptr, u32, u32, *const usize),
-            0,
-            3,
-            b.ps_srv.as_ptr()
-        );
+        // The targets first: Direct3D 11 refuses a shader view of a
+        // texture bound as a target, so the game's views go back after.
         call!(
             k::OM_SET_RENDER_TARGETS,
             unsafe extern "system" fn(Ptr, u32, *const usize, Ptr),
             8,
             b.rtv.as_ptr(),
             b.dsv as Ptr
+        );
+        call!(
+            k::PS_SET_SHADER_RESOURCES,
+            unsafe extern "system" fn(Ptr, u32, u32, *const usize),
+            0,
+            3,
+            b.ps_srv.as_ptr()
         );
     }
 }

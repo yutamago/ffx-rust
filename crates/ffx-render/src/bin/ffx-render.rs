@@ -219,8 +219,8 @@ fn replay(args: &[String]) -> Result<()> {
     }
     if let Some(e) = &mut e {
         println!(
-            "enhanced: {} items, {} draws with the game's shaders; cascades and probe faces: {} culled, {} drawn",
-            e.last_items, e.last_other, e.culled.0, e.culled.1
+            "enhanced: {} items ({} water), {} draws with the game's shaders; cascades and probe faces: {} culled, {} drawn",
+            e.last_items, e.last_waters, e.last_other, e.culled.0, e.culled.1
         );
         r.device.poll(wgpu::PollType::wait_indefinitely())?;
         if let Some(t) = e.timer.as_mut() {

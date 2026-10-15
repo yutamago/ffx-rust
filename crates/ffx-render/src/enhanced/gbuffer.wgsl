@@ -2,7 +2,8 @@
 // characters with their own geometry, textures and transforms, written
 // as albedo, normal and baked light for the lighting pass. Variants are
 // chosen by the Rust side, which defines the constants below:
-//   SKINNED, CLOTH, HAS_COLOR, HAS_UV, ALPHA_TEST, SHADOW (depth only).
+//   SKINNED, CLOTH, HAS_COLOR, HAS_UV, ALPHA_TEST, SHADOW (depth only),
+//   SEAL (the edges as lines, to fill gaps between meshes).
 
 struct Camera {
     // Rows, as the game's constant buffers hold them (dp4 with each).
@@ -111,7 +112,12 @@ fn vs(v: VsIn) -> VsOut {
     }
     out.now_clip = clip(cam.now_view_proj, world);
     out.prev_clip = clip(cam.prev_view_proj, prev);
-    let wp = vec4<f32>(world, 1.0);
+    var wp = vec4<f32>(world, 1.0);
+    if (SEAL) {
+        // Sealing lines sit 0.2% further than their surface: they lose to
+        // it and to anything as near, and fill only the gaps.
+        wp = vec4<f32>(world + (world - cam.eye.xyz) * 0.002, 1.0);
+    }
     out.clip = vec4<f32>(dot(cam.view_proj[0], wp), dot(cam.view_proj[1], wp), dot(cam.view_proj[2], wp), dot(cam.view_proj[3], wp));
     out.nrm = nrm;
     out.world = world;

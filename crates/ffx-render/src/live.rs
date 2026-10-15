@@ -314,17 +314,37 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
         // its field of view fitted to the game's once the game draws for it.
         if std::mem::take(&mut overlay.freecam.start_asked) {
             // Where the game's view is (as the renderer drew it last).
+            // It orbits the point the game's camera looks at (else one
+            // ahead).
             let eye = enhanced.view_eye;
             let f = enhanced.view_forward;
-            let look_at = [
-                eye[0] + f[0] * 100.0,
-                eye[1] + f[1] * 100.0,
-                eye[2] + f[2] * 100.0,
-            ];
-            overlay.freecam.start(eye, look_at, enhanced.proj_scale);
+            let look_at = r
+                .world
+                .camera
+                .map(|c| c.1)
+                .filter(|l| {
+                    let d = [l[0] - eye[0], l[1] - eye[1], l[2] - eye[2]];
+                    d[0] * f[0] + d[1] * f[1] + d[2] * f[2] > 1.0
+                })
+                .unwrap_or([
+                    eye[0] + f[0] * 100.0,
+                    eye[1] + f[1] * 100.0,
+                    eye[2] + f[2] * 100.0,
+                ]);
+            overlay
+                .freecam
+                .start(eye, look_at, enhanced.view_right, enhanced.proj_scale);
             log(&format!("free camera from {eye:?} looking along {f:?}"));
         }
+        if std::mem::take(&mut overlay.freecam.focus_asked)
+            && let Some(p) = overlay.editor.selected_point(&r.world.scene)
+        {
+            overlay.freecam.focus(p);
+        }
         if overlay.freecam.on {
+            if screen.1 > 0 {
+                overlay.freecam.screen_height = screen.1 as f32;
+            }
             overlay.freecam.update(frame_time.as_secs_f32());
             overlay.freecam.frames += 1;
             // Focus where it looks (not on the game's look-at point).
@@ -550,7 +570,8 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             | if overlay.freecam.on { 64 } else { 0 }
             | if paused { 128 } else { 0 }
             | if layer { 256 } else { 0 }
-            | if enhanced.settings.minimap { 512 } else { 0 };
+            | if enhanced.settings.minimap { 512 } else { 0 }
+            | if overlay.freecam.walking() { 1024 } else { 0 };
         out.extend_from_slice(&flags.to_le_bytes());
         out.extend_from_slice(&data);
         if let Some((x, y, w, h, pixels)) = &overlay_image {
@@ -567,6 +588,12 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             }
         }
         to_game.write(&out, std::thread::yield_now);
+        if frames.is_multiple_of(600) {
+            log(&format!(
+                "frame {}: {} enhanced items, {} water",
+                frame.number, enhanced.last_items, enhanced.last_waters
+            ));
+        }
         if frames.is_multiple_of(120) {
             log(&format!(
                 "frame {}: received+parsed {t_parsed:?}, draw {t_draw:?}, handed over {t_handoff:?}, total {:?}, idle before {idle:?}",

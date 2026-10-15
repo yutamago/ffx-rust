@@ -1,9 +1,10 @@
 //! The renderer's field minimap, in place of the game's (the hook sends
 //! its state: `Msg::Minimap`): round, always centred on the player, turned
-//! so that where the camera looks is up; the walkable area of the map's
-//! mesh in light grey on a dark disc, the player as an arrow of his
-//! facing, the game's markers as icons; markers beyond its edge sit on
-//! the rim, fading in as they come nearer.
+//! so that where the camera looks is up; in the game's colours on a small
+//! CRT screen: the walkable area of the map's mesh over a grid fixed to
+//! the world, the player as an arrow of the character's facing, the
+//! game's markers as icons; markers beyond its edge sit on the rim,
+//! fading in as they come nearer.
 
 use ffx_gfx::{MapMarker, MapMesh, Minimap};
 
@@ -152,18 +153,46 @@ fn inside(a: [f32; 2], b: [f32; 2], r: f32) -> Option<([f32; 2], [f32; 2])> {
     })
 }
 
-/// Where a marker shows: inside the map at its place (fully), beyond the
-/// edge on the rim, fading out over 1.5 times the map's radius. `p` is
-/// in pixels from the centre; returns the place and the opacity.
+/// Where a marker shows: within `inner` of the centre at its place;
+/// further out on the rim (at `rim`), fading out over 1.5 times the map's
+/// radius beyond it. `p` is in pixels from the centre; returns the place
+/// and the opacity.
 #[must_use]
-pub fn place(p: [f32; 2], rim: f32, radius: f32) -> ([f32; 2], f32) {
+pub fn place(p: [f32; 2], inner: f32, rim: f32, radius: f32) -> ([f32; 2], f32) {
     let d = (p[0] * p[0] + p[1] * p[1]).sqrt();
-    if d <= rim {
+    if d <= inner {
         return (p, 1.0);
     }
-    let fade = (1.0 - (d - rim) / (radius * 1.5)).clamp(0.0, 1.0);
+    let fade = (1.0 - (d - rim).max(0.0) / (radius * 1.5)).clamp(0.0, 1.0);
     let s = rim / d;
     ([p[0] * s, p[1] * s], fade * fade * (3.0 - 2.0 * fade))
+}
+
+/// The game's minimap colours (its dark green panel, light green grid,
+/// steel blue walkable area, yellow player in a magenta ring).
+mod colours {
+    pub const PANEL: [u8; 3] = [8, 30, 22];
+    pub const GRID: [u8; 3] = [92, 150, 110];
+    pub const GROUND: [u8; 3] = [64, 100, 138];
+    pub const EDGE: [u8; 3] = [150, 190, 222];
+    pub const RIM: [u8; 3] = [110, 172, 132];
+    pub const PLAYER: [u8; 3] = [226, 214, 72];
+    pub const RING: [u8; 3] = [232, 92, 232];
+}
+
+/// A full-screen rect's part that the game's 16:9 picture covers (its
+/// bars left and right on wider screens, above and below on narrower).
+#[must_use]
+pub fn picture(screen: egui::Rect) -> egui::Rect {
+    let (w, h) = (screen.width(), screen.height());
+    let aspect = 16.0 / 9.0;
+    if w > h * aspect * 1.01 {
+        egui::Rect::from_center_size(screen.center(), egui::vec2(h * aspect, h))
+    } else if w < h * aspect * 0.99 {
+        egui::Rect::from_center_size(screen.center(), egui::vec2(w, w / aspect))
+    } else {
+        screen
+    }
 }
 
 impl Map {
@@ -187,16 +216,19 @@ impl Map {
         self.state.as_ref().is_some_and(|s| s.shown > 0.0) && self.ground.is_some()
     }
 
-    /// Draws it in `screen` (points; top right), the camera looking along
-    /// `axes.0` with screen right `axes.1` (render space).
-    #[allow(clippy::too_many_lines)] // the disc, the ground, the markers, the player
+    /// Draws it at the top right of `area` (points; `height`: the
+    /// picture's, which sets its size), the camera looking along `axes.0`
+    /// with screen right `axes.1` (render space).
+    #[allow(clippy::too_many_lines)] // the panel, grid, ground, markers, player, screen
     pub fn draw(
         &mut self,
         painter: &egui::Painter,
-        screen: egui::Rect,
+        area: egui::Rect,
+        height: f32,
         axes: ([f32; 3], [f32; 3]),
         style: Style,
     ) {
+        use colours::{EDGE, GRID, GROUND, PANEL, PLAYER, RIM, RING};
         self.tick = self.tick.wrapping_add(1);
         let (Some(state), Some(ground)) = (&self.state, &self.ground) else {
             return;
@@ -205,12 +237,12 @@ impl Map {
         if alpha <= 0.0 {
             return;
         }
-        let radius = (screen.height() * style.size * 0.5).max(20.0);
-        let margin = screen.height() * 0.035;
-        let centre = egui::pos2(
-            screen.right() - margin - radius,
-            screen.top() + margin + radius,
-        );
+        let radius = (height * style.size * 0.5).max(20.0);
+        let margin = height * 0.04;
+        if area.width() < 2.0 * (radius + margin) || area.height() < 2.0 * (radius + margin) {
+            return;
+        }
+        let centre = egui::pos2(area.right() - margin - radius, area.top() + margin + radius);
         // Camera forward on the ground is up, its right is right.
         let flat = |v: [f32; 3], or: [f32; 2]| {
             let l = (v[0] * v[0] + v[2] * v[2]).sqrt();
@@ -219,7 +251,8 @@ impl Map {
         let f = flat(axes.0, [0.0, 1.0]);
         let right = flat(axes.1, [f[1], -f[0]]);
         let me = on_ground(state.player);
-        let scale = radius / style.range.max(1.0);
+        let range = style.range.max(1.0);
+        let scale = radius / range;
         let to_px = |p: [f32; 2]| -> [f32; 2] {
             let d = [p[0] - me[0], p[1] - me[1]];
             [
@@ -228,23 +261,44 @@ impl Map {
             ]
         };
         let at = |p: [f32; 2]| centre + egui::vec2(p[0], p[1]);
-        let a = |v: f32| (v * alpha * 255.0).round().clamp(0.0, 255.0) as u8;
-        // The disc.
-        painter.circle_filled(
-            centre,
-            radius,
-            egui::Color32::from_rgba_unmultiplied(18, 20, 24, a(0.78)),
-        );
-        // The ground, cut to the disc.
-        let n = 64;
+        let rgba = |c: [u8; 3], o: f32| {
+            egui::Color32::from_rgba_unmultiplied(
+                c[0],
+                c[1],
+                c[2],
+                (o * alpha * 255.0).round().clamp(0.0, 255.0) as u8,
+            )
+        };
         let edge = radius - 1.5;
+        // The panel.
+        painter.circle_filled(centre, radius, rgba(PANEL, 0.74));
+        // The grid, fixed to the world (finer than the game's: four cells
+        // to the edge).
+        let cell = range / 4.0;
+        let grid = egui::Stroke::new(1.0, rgba(GRID, 0.28));
+        for axis in 0..2 {
+            let first = ((me[axis] - range * 1.5) / cell).floor() as i32;
+            for k in first..first + 13 {
+                let v = k as f32 * cell;
+                let (a, b) = if axis == 0 {
+                    ([v, me[1] - range * 2.0], [v, me[1] + range * 2.0])
+                } else {
+                    ([me[0] - range * 2.0, v], [me[0] + range * 2.0, v])
+                };
+                if let Some((p, q)) = inside(to_px(a), to_px(b), edge) {
+                    painter.line_segment([at(p), at(q)], grid);
+                }
+            }
+        }
+        // The walkable area, cut to the disc.
+        let n = 64;
         let circle: Vec<[f32; 2]> = (0..n)
             .map(|k| {
                 let t = k as f32 / n as f32 * std::f32::consts::TAU;
                 [edge * t.cos(), edge * t.sin()]
             })
             .collect();
-        let fill = egui::Color32::from_rgba_unmultiplied(196, 198, 204, a(0.7));
+        let fill = rgba(GROUND, 0.66);
         let mut mesh = egui::Mesh::default();
         for t in &ground.triangles {
             let mut tri = t.map(&to_px);
@@ -272,38 +326,87 @@ impl Map {
             }
         }
         painter.add(egui::Shape::mesh(mesh));
-        let line = egui::Stroke::new(
-            1.2,
-            egui::Color32::from_rgba_unmultiplied(235, 236, 240, a(0.8)),
-        );
+        // Its edge, with a phosphor glow.
+        let glow = egui::Stroke::new(3.0, rgba(EDGE, 0.16));
+        let line = egui::Stroke::new(1.0, rgba(EDGE, 0.85));
         for e in &ground.outline {
             if let Some((p, q)) = inside(to_px(e[0]), to_px(e[1]), edge) {
+                painter.line_segment([at(p), at(q)], glow);
                 painter.line_segment([at(p), at(q)], line);
             }
         }
+        // The screen: scanlines, a slow refresh band, darker toward the
+        // rim, a sheen on the glass.
+        let lines = egui::Stroke::new(1.0, egui::Color32::from_black_alpha((alpha * 70.0) as u8));
+        let mut y = -radius + 1.0;
+        while y < radius {
+            let half = (radius * radius - y * y).max(0.0).sqrt();
+            painter.line_segment(
+                [centre + egui::vec2(-half, y), centre + egui::vec2(half, y)],
+                lines,
+            );
+            y += 3.0;
+        }
+        let band_at = (self.tick % 240) as f32 / 240.0 * 2.6 - 1.3;
+        for k in 0..6 {
+            let y = (band_at * radius) + k as f32 * 2.0;
+            if y.abs() < radius {
+                let half = (radius * radius - y * y).sqrt();
+                let o = 0.035 * (1.0 - (k as f32 - 2.5).abs() / 3.0);
+                painter.line_segment(
+                    [centre + egui::vec2(-half, y), centre + egui::vec2(half, y)],
+                    egui::Stroke::new(2.0, rgba(GRID, o)),
+                );
+            }
+        }
+        for k in 0..5 {
+            let r = radius - 1.0 - k as f32 * 2.0;
+            let o = 0.16 - k as f32 * 0.03;
+            painter.circle_stroke(
+                centre,
+                r,
+                egui::Stroke::new(
+                    2.0,
+                    egui::Color32::from_black_alpha((alpha * o * 255.0) as u8),
+                ),
+            );
+        }
+        let sheen: Vec<egui::Pos2> = (0..=16)
+            .map(|k| {
+                let t = std::f32::consts::PI * (1.05 + 0.4 * k as f32 / 16.0);
+                centre + egui::vec2(t.cos(), t.sin()) * (radius - 5.0)
+            })
+            .collect();
+        painter.add(egui::Shape::line(
+            sheen,
+            egui::Stroke::new(2.0, egui::Color32::from_white_alpha((alpha * 22.0) as u8)),
+        ));
         // The rim.
         painter.circle_stroke(
             centre,
-            radius,
-            egui::Stroke::new(
-                2.0,
-                egui::Color32::from_rgba_unmultiplied(225, 228, 235, a(0.85)),
-            ),
+            radius + 1.0,
+            egui::Stroke::new(1.0, egui::Color32::from_black_alpha((alpha * 160.0) as u8)),
         );
-        // The markers.
-        let rim = radius - 9.0;
+        painter.circle_stroke(centre, radius, egui::Stroke::new(2.0, rgba(RIM, 0.9)));
+        // The markers: inside, at their place; beyond, on the rim.
+        let icon = (radius * 0.075).max(4.0);
         let blink_on = (self.tick / 15).is_multiple_of(2);
+        let player = state.markers.iter().find(|k| k.flags & 0x800 != 0);
         for k in &state.markers {
-            if k.flags & 0x800 != 0 {
+            if k.flags & 0x800 != 0 || k.flags & 0x1000 != 0 && !blink_on {
                 continue;
             }
-            if k.flags & 0x1000 != 0 && !blink_on {
-                continue;
-            }
-            marker(painter, k, &to_px, &at, (rim, radius), alpha);
+            marker(
+                painter,
+                k,
+                &to_px,
+                &at,
+                (radius - icon, radius, icon),
+                alpha,
+            );
         }
-        // The player: an arrow of his facing (game yaw: from +x toward +z;
-        // render space has x negated).
+        // The player: an arrow of the character's facing (game yaw: from
+        // +x toward +z; render space has x negated), in a ring.
         let facing = [-state.yaw.cos(), state.yaw.sin()];
         let dir = [
             facing[0] * right[0] + facing[1] * right[1],
@@ -311,30 +414,25 @@ impl Map {
         ];
         let dir = egui::vec2(dir[0], dir[1]).normalized();
         let side = egui::vec2(-dir.y, dir.x);
-        let s = radius * 0.09;
-        let tip = centre + dir * s * 1.3;
-        let back = centre - dir * s * 0.8;
-        let pts = [
-            tip,
-            back + side * s * 0.9,
-            centre - dir * s * 0.35,
-            back - side * s * 0.9,
-        ];
+        let s = radius * 0.1;
+        painter.circle_stroke(centre, s * 1.45, egui::Stroke::new(3.0, rgba(RING, 0.18)));
+        painter.circle_stroke(centre, s * 1.45, egui::Stroke::new(1.2, rgba(RING, 0.95)));
+        let colour = player.map_or(PLAYER, |k| {
+            k.color.map(|c| (c * 255.0).clamp(0.0, 255.0) as u8)[..3]
+                .try_into()
+                .unwrap_or(PLAYER)
+        });
+        let tip = centre + dir * s * 1.1;
+        let back = centre - dir * s * 0.75;
         painter.add(egui::Shape::convex_polygon(
-            vec![pts[0], pts[1], pts[2]],
-            egui::Color32::from_rgba_unmultiplied(255, 255, 255, a(1.0)),
-            egui::Stroke::new(
-                1.0,
-                egui::Color32::from_rgba_unmultiplied(30, 30, 34, a(0.9)),
-            ),
-        ));
-        painter.add(egui::Shape::convex_polygon(
-            vec![pts[0], pts[2], pts[3]],
-            egui::Color32::from_rgba_unmultiplied(235, 235, 240, a(1.0)),
-            egui::Stroke::new(
-                1.0,
-                egui::Color32::from_rgba_unmultiplied(30, 30, 34, a(0.9)),
-            ),
+            vec![
+                tip,
+                back + side * s * 0.8,
+                centre - dir * s * 0.3,
+                back - side * s * 0.8,
+            ],
+            rgba(colour, 1.0),
+            egui::Stroke::new(1.0, egui::Color32::from_black_alpha((alpha * 200.0) as u8)),
         ));
     }
 }
@@ -347,7 +445,7 @@ fn marker(
     k: &MapMarker,
     to_px: &dyn Fn([f32; 2]) -> [f32; 2],
     at: &dyn Fn([f32; 2]) -> egui::Pos2,
-    (rim, radius): (f32, f32),
+    (inner, rim, s): (f32, f32, f32),
     alpha: f32,
 ) {
     let c = k.color;
@@ -359,33 +457,31 @@ fn marker(
             (o * alpha * 255.0).clamp(0.0, 255.0) as u8,
         )
     };
-    let dark =
-        |o: f32| egui::Color32::from_rgba_unmultiplied(20, 20, 24, (o * alpha * 230.0) as u8);
+    let dark = |o: f32| egui::Color32::from_rgba_unmultiplied(6, 18, 12, (o * alpha * 230.0) as u8);
     let p = to_px(on_ground(k.pos));
     // Exits: the line where it is on the map.
     if let Some(l) = k.line {
         let (a, b) = (to_px([-l[0], l[1]]), to_px([-l[2], l[3]]));
-        if let Some((p0, p1)) = inside(a, b, rim) {
-            painter.line_segment([at(p0), at(p1)], egui::Stroke::new(4.0, colour(0.95)));
+        if let Some((p0, p1)) = inside(a, b, inner) {
+            painter.line_segment([at(p0), at(p1)], egui::Stroke::new(3.0, colour(0.95)));
             return;
         }
     }
     let (q, o) = if k.flags & 0x2000 != 0 {
         // The destination: on the rim whenever it is away.
         let d = (p[0] * p[0] + p[1] * p[1]).sqrt().max(1e-3);
-        if d <= rim {
+        if d <= inner {
             (p, 1.0)
         } else {
             ([p[0] * rim / d, p[1] * rim / d], 1.0)
         }
     } else {
-        place(p, rim, radius)
+        place(p, inner, rim, rim)
     };
     if o <= 0.01 {
         return;
     }
     let pos = at(q);
-    let s = radius * 0.055;
     let on_rim = (q[0] * q[0] + q[1] * q[1]).sqrt() >= rim - 0.5;
     if k.line.is_some() || on_rim && k.flags & 0x2000 != 0 {
         // An arrow pointing out, toward it.
@@ -415,8 +511,8 @@ fn marker(
         ));
     } else if k.flags & 0x100 != 0 {
         painter.rect(
-            egui::Rect::from_center_size(pos, egui::vec2(s * 1.5, s * 1.5)),
-            2.0,
+            egui::Rect::from_center_size(pos, egui::vec2(s * 1.4, s * 1.4)),
+            1.0,
             colour(o),
             egui::Stroke::new(1.0, dark(o)),
             egui::StrokeKind::Outside,
@@ -445,12 +541,20 @@ mod tests {
 
     #[test]
     fn markers_fade_onto_the_rim() {
-        let (p, o) = place([10.0, 0.0], 50.0, 60.0);
+        let (p, o) = place([10.0, 0.0], 50.0, 60.0, 60.0);
         assert_eq!((p, o), ([10.0, 0.0], 1.0));
-        let (p, o) = place([0.0, 95.0], 50.0, 60.0);
-        assert!((p[1] - 50.0).abs() < 1e-4 && o > 0.0 && o < 1.0);
-        let (_, o) = place([0.0, 500.0], 50.0, 60.0);
+        // Just inside the rim: on it, fully.
+        let (p, o) = place([0.0, 55.0], 50.0, 60.0, 60.0);
+        assert!((p[1] - 60.0).abs() < 1e-4 && (o - 1.0).abs() < 1e-6);
+        let (p, o) = place([0.0, 95.0], 50.0, 60.0, 60.0);
+        assert!((p[1] - 60.0).abs() < 1e-4 && o > 0.0 && o < 1.0);
+        let (_, o) = place([0.0, 500.0], 50.0, 60.0, 60.0);
         assert!(o.abs() < 1e-6);
+        let wide = picture(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(3440.0, 1440.0),
+        ));
+        assert!((wide.width() - 2560.0).abs() < 0.5 && (wide.left() - 440.0).abs() < 0.5);
         // A square cut by a smaller square: the smaller one's area.
         let a = [[-2.0, -2.0], [2.0, -2.0], [2.0, 2.0], [-2.0, 2.0]];
         let b = [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
