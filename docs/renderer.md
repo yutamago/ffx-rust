@@ -89,7 +89,14 @@ Passes, in order:
    dark line; the game's own samples happen to miss them): with "Close
    gaps between scenery meshes" the scenery's triangles are drawn again
    as lines, 0.2% further away, which fill only those (in the G-buffer
-   and in the full-size depth).
+   and in the full-size depth). The back of a two-sided draw (hair
+   cards, cloth) turns its normal toward the camera (against the
+   triangle's own, from screen derivatives). Skin-coloured texels take the
+   skin material except on cut-out textures (hair: by the texture's mean
+   alpha, its smallest mip). Scenery wholly beyond 2500 units, or a sky
+   dome over the camera wider than twice that, keeps the game's shading
+   (the parts of a sky the enhanced passes cannot draw do too: no line
+   where the two meet).
 4. **Light probes**: up to two per frame at the characters; the scenery
    around each, drawn into a small cube, becomes nine spherical
    harmonics, eased over 0.3 s (a probe that stays in place), so that a
@@ -268,14 +275,16 @@ The editor's Sequence tab (`sequence.rs`) records real-time cutscenes and
 keys their depth of field. Record keeps the frames the game sends from
 then on (compressed with LZ4, about 0.2 MB a frame; two minutes at most,
 a new scene ends it) and their cameras; Stop makes a sequence of the scene
-with that take. Pause game uses the game's own pause (`g_PauseOn`: the
+with that take; only frames while the game plays are kept. Pause game uses the game's own pause (`g_PauseOn`: the
 world stops, rendering goes on; its "PAUSE" text is hidden, the
 renderer's answer carries flag 128; Resume starts the pause's fade-out as
 Start does). Paused, the take's frame at the timeline's cursor is drawn
 (with the current settings and the keys' depth of field) and shown over
 the whole screen; it plays, steps and jumps. Keys set the focus distance
 (world units; "pick" takes it from a click in the picture), strength and
-radius at a frame; between keys they ease from one to the next.
+radius at a frame; between keys they ease from one to the next, and
+their depth of field applies at once (not eased by "focus speed"). The
+timeline shows the keys as ticks where the cursor stands on their frames.
 `sequences.toml` beside the renderer keeps each sequence's camera path
 and keys (takes last the session: they draw with the game's objects of
 the moment). In play, a scene's camera is matched to its sequences'

@@ -117,6 +117,23 @@ const TAA_SIZE: usize = 64 + 64 + 32;
 /// Ids of the effect light's own target in the renderer's mirror (above
 /// any 32-bit process's user addresses, which the game's ids are).
 const EFFECT_IDS: Id = 0xfff0_0000;
+/// Scenery wholly further than this from the camera keeps the game's own
+/// shading (`lighting.wgsl` fades to it from 1500 to 2500 units).
+const FAR_FALLBACK: f32 = 2500.0;
+
+/// Whether the box `b` (min xyz, max xyz) lies beyond the far fallback
+/// seen from `eye`: wholly further away, or a sky dome round it (over it
+/// on the ground, wider than twice the distance).
+fn beyond(b: &cull::Aabb, eye: [f32; 3]) -> bool {
+    let nearest = (0..3)
+        .map(|k| (b[k] - eye[k]).max(eye[k] - b[k + 3]).max(0.0).powi(2))
+        .sum::<f32>()
+        .sqrt();
+    let over = (b[0]..=b[3]).contains(&eye[0]) && (b[2]..=b[5]).contains(&eye[2]);
+    let dome = over && b[3] - b[0] > 2.0 * FAR_FALLBACK && b[5] - b[2] > 2.0 * FAR_FALLBACK;
+    nearest > FAR_FALLBACK || dome
+}
+
 /// Light probes: at most this many per frame, each a cube of faces this
 /// size.
 const MAX_PROBES: usize = 2;
@@ -3002,6 +3019,14 @@ impl Enhanced {
                     } else {
                         None
                     };
+                    // Wholly beyond the far fallback (the sky dome, distant
+                    // backdrops): the game's own shading, as the parts of
+                    // it the enhanced passes cannot draw have (else a line
+                    // where the two meet).
+                    let item = item.filter(|i| {
+                        i.centre.is_some()
+                            || self.bounds.world(r, i).is_none_or(|b| !beyond(&b, eye))
+                    });
                     match item {
                         Some(i) => items.push(i),
                         None => rest.push(c.clone()),
@@ -4629,6 +4654,9 @@ impl Enhanced {
             dof_strength: k.strength,
             dof_radius: k.radius,
             dof_follow_camera: k.focus <= 0.0 && self.settings.dof_follow_camera,
+            // At once: the keys ease from one to the next themselves (and a
+            // paused frame is drawn once).
+            dof_speed: 1.0,
             ..self.settings.clone()
         });
         let fx = self.post.run(

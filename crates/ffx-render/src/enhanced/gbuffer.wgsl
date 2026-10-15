@@ -180,11 +180,30 @@ fn fs(in: VsOut) -> GOut {
             discard;
         }
     }
+    // The back of a two-sided draw (hair cards, cloth) turns its normal
+    // round: the normal faces away from the triangle seen (its geometric
+    // normal, toward the camera).
     var n = normalize(in.nrm);
+    var g = cross(dpdx(in.world), dpdy(in.world));
+    if (dot(g, cam.eye.xyz - in.world) < 0.0) {
+        g = -g;
+    }
+    if (dot(n, g) < 0.0) {
+        n = -n;
+    }
     var rough = cam.misc.w;
     var cavity = 1.0;
-    // Skin (by its colour) has its own roughness and less surface detail.
-    let skin = skin_weight(c.rgb * item.scale.rgb) * item.look.y;
+    // Skin (by its colour) has its own roughness and less surface detail;
+    // not on cut-out textures (hair: blond is skin-coloured), told by the
+    // smallest mip, the texture's mean alpha.
+    var skin = skin_weight(c.rgb * item.scale.rgb) * item.look.y;
+    if (HAS_UV) {
+        let levels = textureNumLevels(albedo_tex);
+        if (levels > 3u) {
+            let mean = textureSampleLevel(albedo_tex, albedo_samp, vec2<f32>(0.5), f32(levels - 1u)).a;
+            skin = skin * smoothstep(0.85, 0.97, mean);
+        }
+    }
     let detail = item.extra.x * mix(1.0, item.look.w, skin);
     if (HAS_UV) {
         let m = textureSample(material_tex, albedo_samp, in.uv);

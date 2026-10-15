@@ -353,6 +353,7 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     let spec = brdf(n, v, l, rough, f0) * light.mix.z * gloss_scale;
     let hemi = mix(light.ground.rgb, light.sky.rgb, n.y * 0.5 + 0.5) * light.sky.w;
     var color: vec3<f32>;
+    let far = select(smoothstep(FAR_START, FAR_END, distance(p, light.eye.xyz)), 0.0, character);
     if (!character) {
         // Scenery: its baked light is the lighting (the artists' light,
         // local lights included). The key light only adds its shadows:
@@ -386,7 +387,6 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
         color = albedo * (base + direct + ambient * ao) + gloss * lit_by;
         // Far away (the sky dome, distant land) nothing of ours reaches:
         // the game's own colours, its texture times its painted light.
-        let far = smoothstep(FAR_START, FAR_END, distance(p, light.eye.xyz));
         color = mix(color, albedo_rough.rgb * baked, far);
     } else {
         // Characters: lit like the game lights them, key and fill light
@@ -406,7 +406,9 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
         }
         color = albedo * (indirect * ao + direct) + light.sun_color.rgb * light.sun.w * nl * shadow * spec * light.channels.y * light.channels.w;
     }
-    let local = local_lights(p, n, v, albedo, rough, character, in.pos.xy, f0, gloss_scale) * ao;
+    // The other lights fade out far away too (else their n·l shades the
+    // sky dome's flat bands apart: a line where they meet).
+    let local = local_lights(p, n, v, albedo, rough, character, in.pos.xy, f0, gloss_scale) * ao * (1.0 - far);
     // Emission: the surface's own light.
     color = color + local + albedo_rough.rgb * mat.b * 8.0;
     let debug = i32(light.splits.w);

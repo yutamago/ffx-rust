@@ -827,29 +827,8 @@ impl Editor {
                 self.playing = false;
             }
         }
-        let mut c = self.cursor;
         let marks: Vec<u32> = self.seq.list[k].keys.iter().map(|k| k.frame).collect();
-        let r = ui.add(
-            egui::Slider::new(&mut c, 0..=frames - 1)
-                .text("frame")
-                .clamping(egui::SliderClamping::Always),
-        );
-        // Keyframes as ticks under the slider.
-        let rail = r.rect;
-        let painter = ui.painter();
-        let width = (rail.width() - 60.0).max(1.0);
-        for m in &marks {
-            let x = rail.left() + width * (*m as f32 / (frames - 1).max(1) as f32);
-            painter.line_segment(
-                [
-                    egui::pos2(x, rail.bottom()),
-                    egui::pos2(x, rail.bottom() + 5.0),
-                ],
-                egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 200, 60)),
-            );
-        }
-        ui.add_space(6.0);
-        self.cursor = c;
+        self.cursor = timeline(ui, self.cursor, frames, &marks);
         // The keys.
         ui.horizontal(|ui| {
             ui.strong("Depth of field keys");
@@ -1369,4 +1348,52 @@ fn details(ui: &mut egui::Ui, l: &mut SceneLight, io: &Io) {
                 });
             }
         });
+}
+
+/// The sequence's timeline: frames along a track, the keys as ticks and
+/// the cursor as a handle at the same places (click or drag to move it).
+/// Returns the cursor.
+fn timeline(ui: &mut egui::Ui, cursor: usize, frames: usize, keys: &[u32]) -> usize {
+    let last = frames.saturating_sub(1).max(1) as f32;
+    let width = ui.available_width().max(120.0);
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(width, 34.0), egui::Sense::click_and_drag());
+    let track = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + 8.0, rect.top() + 10.0),
+        egui::pos2(rect.right() - 8.0, rect.top() + 16.0),
+    );
+    let x_of = |f: f32| track.left() + track.width() * (f / last).clamp(0.0, 1.0);
+    let mut cursor = cursor.min(frames.saturating_sub(1));
+    if let Some(p) = response.interact_pointer_pos()
+        && (response.dragged() || response.clicked())
+    {
+        cursor = (((p.x - track.left()) / track.width()).clamp(0.0, 1.0) * last).round() as usize;
+    }
+    let painter = ui.painter();
+    let visuals = ui.visuals();
+    painter.rect_filled(track, 3.0, visuals.widgets.inactive.bg_fill);
+    for &k in keys {
+        let x = x_of(k as f32);
+        painter.line_segment(
+            [
+                egui::pos2(x, track.top() - 4.0),
+                egui::pos2(x, track.bottom() + 8.0),
+            ],
+            egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 200, 60)),
+        );
+    }
+    let x = x_of(cursor as f32);
+    painter.circle_filled(
+        egui::pos2(x, track.center().y),
+        6.0,
+        visuals.selection.bg_fill,
+    );
+    painter.text(
+        egui::pos2(rect.left() + 8.0, rect.bottom()),
+        egui::Align2::LEFT_BOTTOM,
+        format!("frame {cursor} of {}", frames.saturating_sub(1)),
+        egui::FontId::proportional(12.0),
+        visuals.text_color(),
+    );
+    cursor
 }

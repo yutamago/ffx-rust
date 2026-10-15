@@ -354,13 +354,14 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
         // the recorded frame at its cursor is drawn (with its keys) and
         // shown over the screen; in play, a sequence the camera follows
         // sets the depth of field.
-        if targets.is_some() {
+        let paused = overlay.visible && overlay.editor.paused;
+        // Only what plays (paused, the game sends the same frame on).
+        if targets.is_some() && !paused {
             overlay
                 .editor
                 .seq
                 .frame(&r.world.scene, &frame, r.world.camera);
         }
-        let paused = overlay.visible && overlay.editor.paused;
         let mut preview = None;
         if paused
             && overlay.editor.preview
