@@ -116,6 +116,21 @@ fn list(slots: &[usize]) -> String {
     out
 }
 
+/// Records a texture copy.
+pub fn copy(s: &mut State, dst: usize, src: usize) {
+    if !(s.textures.contains_key(&dst) && s.textures.contains_key(&src)) {
+        return;
+    }
+    if let Some(c) = &mut s.capture {
+        c.objects.insert(dst);
+        c.objects.insert(src);
+        c.cmds.push(ffx_gfx::Cmd::CopyTexture {
+            dst: dst as u32,
+            src: src as u32,
+        });
+    }
+}
+
 /// Records a render target clear.
 pub fn clear_target(s: &mut State, view: usize, color: [f32; 4]) {
     if let Some(c) = &mut s.capture {

@@ -125,6 +125,12 @@ pub enum Cmd {
         offset: u32,
         data: Vec<u8>,
     },
+    /// The game copied one texture into another (a copy of the scene
+    /// colour for water and distortion): the renderer copies its own.
+    CopyTexture {
+        dst: Id,
+        src: Id,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -615,6 +621,10 @@ impl Msg {
                             w.u32s(&[*id, *offset]);
                             w.blob(data);
                         }
+                        Cmd::CopyTexture { dst, src } => {
+                            w.u8(4);
+                            w.u32s(&[*dst, *src]);
+                        }
                     }
                 }
                 FRAME
@@ -776,6 +786,10 @@ impl Msg {
                             id: r.u32()?,
                             offset: r.u32()?,
                             data: r.blob()?,
+                        },
+                        4 => Cmd::CopyTexture {
+                            dst: r.u32()?,
+                            src: r.u32()?,
                         },
                         _ => return Err(DecodeError("command")),
                     });

@@ -261,6 +261,10 @@ enum Pass {
         depth: Option<Id>,
         draws: Vec<Prepared>,
     },
+    Copy {
+        dst: Id,
+        src: Id,
+    },
 }
 
 impl Renderer {
@@ -812,6 +816,10 @@ impl Renderer {
                     // would all land before any of this frame's draws.
                     sent.insert(*id, (*offset, data.clone()));
                 }
+                Cmd::CopyTexture { dst, src } => passes.push(Pass::Copy {
+                    dst: *dst,
+                    src: *src,
+                }),
                 Cmd::ClearTarget { view, color } => {
                     if !self.views.contains_key(view) {
                         continue;
@@ -979,6 +987,28 @@ impl Renderer {
         let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         for pass in &passes {
             match pass {
+                Pass::Copy { dst, src } => {
+                    let (Some(d), Some(sr)) = (self.textures.get(dst), self.textures.get(src))
+                    else {
+                        continue;
+                    };
+                    let compatible = d.format.remove_srgb_suffix()
+                        == sr.format.remove_srgb_suffix()
+                        && d.desc[0] == sr.desc[0]
+                        && d.desc[1] == sr.desc[1]
+                        && d.desc[5] == sr.desc[5];
+                    if compatible {
+                        enc.copy_texture_to_texture(
+                            sr.texture.as_image_copy(),
+                            d.texture.as_image_copy(),
+                            wgpu::Extent3d {
+                                width: d.desc[0],
+                                height: d.desc[1],
+                                depth_or_array_layers: 1,
+                            },
+                        );
+                    }
+                }
                 Pass::Clear { view, color, depth } => {
                     let Some(v) = self.texture_view(*view, false) else {
                         continue;

@@ -266,6 +266,12 @@ struct Link {
     overlay_pass: Option<OverlayPass>,
     /// Whether the renderer answered this frame already.
     answered: bool,
+    /// Skip the game's own scene draws (the renderer's replace them).
+    skip: bool,
+    /// Frames answered in a row, for turning skipping back on.
+    streak: u32,
+    /// Textures the renderer makes itself (copies): sent without data.
+    made: std::collections::HashSet<usize>,
     /// Contents of the index buffers the renderer has, for finding the
     /// vertices a draw reads from a streamed vertex buffer.
     indices: HashMap<usize, Vec<u8>>,
@@ -370,6 +376,9 @@ pub fn start() {
                 overlay: None,
                 overlay_pass: None,
                 answered: false,
+                skip: std::env::var("FFX_RENDERER_SKIP").map_or(true, |v| v != "0"),
+                streak: 0,
+                made: std::collections::HashSet::new(),
                 alive: true,
             });
         }
@@ -401,6 +410,19 @@ impl Link {
     /// Sends what `id` refers to, if the renderer lacks it or it changed.
     /// Streamed buffers go once; draws carry the bytes they read.
     fn sync(&mut self, s: &State, id: usize) {
+        if self.made.contains(&id) {
+            if !self.sent.contains_key(&id)
+                && let Some(t) = s.textures.get(&id)
+            {
+                self.send(&ffx_gfx::Msg::Texture {
+                    id: id as u32,
+                    desc: t.desc,
+                    subresources: Vec::new(),
+                });
+                self.sent.insert(id, 0);
+            }
+            return;
+        }
         if streamed(s, id) {
             if !self.sent.contains_key(&id)
                 && let Some(b) = s.buffers.get(&id)
@@ -594,11 +616,11 @@ fn draw_updates(link: &Link, s: &State, d: &ffx_gfx::Draw) -> Vec<ffx_gfx::Cmd> 
 }
 
 /// A draw went to the context: scene draws are recorded for the renderer.
-pub fn draw(s: &mut State, d: Draw) {
+pub fn draw(s: &mut State, d: Draw) -> bool {
     let b = &s.bound;
     // Scene draws: colour and normal targets with depth, nothing else.
     if b.rtv[0] == 0 || b.rtv[1] == 0 || b.rtv[2] != 0 || b.dsv == 0 {
-        return;
+        return false;
     }
     let scene = Scene {
         color: b.rtv[0],
@@ -606,14 +628,18 @@ pub fn draw(s: &mut State, d: Draw) {
         depth: b.dsv,
     };
     let streamed = capture::stream_draw(s, d);
-    let Ok(mut guard) = LINK.lock() else { return };
-    let Some(link) = guard.as_mut() else { return };
+    let Ok(mut guard) = LINK.lock() else {
+        return false;
+    };
+    let Some(link) = guard.as_mut() else {
+        return false;
+    };
     if !link.alive {
-        return;
+        return false;
     }
     if link.scene.is_some_and(|sc| sc != scene) {
         // Another set of scene targets: the renderer handles one.
-        return;
+        return false;
     }
     link.scene = Some(scene);
     let reborn = std::mem::take(&mut s.reborn);
@@ -626,6 +652,30 @@ pub fn draw(s: &mut State, d: Draw) {
     let updates = draw_updates(link, s, &streamed);
     link.cmds.extend(updates);
     link.cmds.push(ffx_gfx::Cmd::Draw(Box::new(streamed)));
+    // The game need not draw what the renderer draws (unless it has been
+    // missing frames: then the game's own image stands in).
+    link.skip
+}
+
+/// A texture copy during the scene (the scene colour for water): the
+/// renderer makes its own; the copy is then the renderer's, not data to
+/// read back.
+pub fn copy(s: &mut State, dst: usize, src: usize) {
+    if !(s.textures.contains_key(&dst) && s.textures.contains_key(&src)) {
+        return;
+    }
+    let Ok(mut guard) = LINK.lock() else { return };
+    let Some(link) = guard.as_mut() else { return };
+    if link.scene.is_none() || !link.alive {
+        return;
+    }
+    link.made.insert(dst);
+    link.sync(s, src);
+    link.sync(s, dst);
+    link.cmds.push(ffx_gfx::Cmd::CopyTexture {
+        dst: dst as u32,
+        src: src as u32,
+    });
 }
 
 /// A clear went to the context: kept in case it is for scene targets.
@@ -738,6 +788,18 @@ fn finish(link: &mut Link, s: &mut State, scene: Scene) {
     let received = receive(link, frame);
     let t_wait = t0.elapsed();
     link.answered = received.is_some();
+    if received.is_some() {
+        link.streak += 1;
+        if link.streak >= 30
+            && !link.skip
+            && std::env::var("FFX_RENDERER_SKIP").map_or(true, |v| v != "0")
+        {
+            link.skip = true;
+        }
+    } else {
+        link.streak = 0;
+        link.skip = false;
+    }
     let Some(reply) = received else {
         link.misses += 1;
         MISSES.fetch_add(1, Ordering::Relaxed);

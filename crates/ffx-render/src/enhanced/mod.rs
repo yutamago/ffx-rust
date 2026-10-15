@@ -1277,6 +1277,8 @@ impl Enhanced {
                     rest.push(c.clone());
                 }
                 Cmd::ClearTarget { .. } | Cmd::ClearDepth { .. } => {}
+                // Copies run with the game's draws, after the enhanced scene.
+                Cmd::CopyTexture { .. } => rest.push(c.clone()),
                 Cmd::Draw(d) => {
                     let family = self.family(r, d);
                     if family == Family::Character

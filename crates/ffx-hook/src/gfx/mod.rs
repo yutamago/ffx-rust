@@ -1447,27 +1447,33 @@ pub enum Draw {
     },
 }
 
-fn on_draw(d: Draw) {
+/// Records a draw; true when the game's own draw is to be skipped (the
+/// live renderer draws it).
+fn on_draw(d: Draw) -> bool {
     let t = std::time::Instant::now();
-    on_draw_inner(d);
+    let skip = on_draw_inner(d);
     SPENT[0].fetch_add(t.elapsed().as_micros() as u32, Ordering::Relaxed);
+    skip
 }
 
-fn on_draw_inner(d: Draw) {
+fn on_draw_inner(d: Draw) -> bool {
     DRAWS.fetch_add(1, Ordering::Relaxed);
     let mut s = state();
     if s.capture.is_some() {
         capture::draw(&mut s, d);
     }
     if live::on() {
-        live::draw(&mut s, d);
+        return live::draw(&mut s, d);
     }
+    false
     // Drawing into a texture does not count as a write the renderer needs
     // to see again: it draws the scene targets itself.
 }
 
 unsafe extern "system" fn draw_indexed(this: Ptr, count: u32, start: u32, base: i32) {
-    on_draw(Draw::Indexed { count, start, base });
+    if on_draw(Draw::Indexed { count, start, base }) {
+        return;
+    }
     type F = unsafe extern "system" fn(Ptr, u32, u32, i32);
     // SAFETY: the original, same arguments.
     unsafe {
@@ -1479,7 +1485,9 @@ unsafe extern "system" fn draw_indexed(this: Ptr, count: u32, start: u32, base: 
 }
 
 unsafe extern "system" fn draw(this: Ptr, count: u32, start: u32) {
-    on_draw(Draw::Plain { count, start });
+    if on_draw(Draw::Plain { count, start }) {
+        return;
+    }
     type F = unsafe extern "system" fn(Ptr, u32, u32);
     // SAFETY: the original, same arguments.
     unsafe {
@@ -1498,13 +1506,16 @@ unsafe extern "system" fn draw_indexed_instanced(
     base: i32,
     first: u32,
 ) {
-    on_draw(Draw::IndexedInstanced {
+    let skip = on_draw(Draw::IndexedInstanced {
         count,
         instances,
         start,
         base,
         first,
     });
+    if skip {
+        return;
+    }
     type F = unsafe extern "system" fn(Ptr, u32, u32, u32, i32, u32);
     // SAFETY: the original, same arguments.
     unsafe {
@@ -1522,12 +1533,15 @@ unsafe extern "system" fn draw_instanced(
     start: u32,
     first: u32,
 ) {
-    on_draw(Draw::Instanced {
+    let skip = on_draw(Draw::Instanced {
         count,
         instances,
         start,
         first,
     });
+    if skip {
+        return;
+    }
     type F = unsafe extern "system" fn(Ptr, u32, u32, u32, u32);
     // SAFETY: the original, same arguments.
     unsafe {
@@ -1902,6 +1916,10 @@ unsafe extern "system" fn copy_resource(this: Ptr, dst: Ptr, src: Ptr) {
             &mut s,
             &format!("copy {:#x} <- {:#x}", dst as usize, src as usize),
         );
+        capture::copy(&mut s, dst as usize, src as usize);
+        if live::on() {
+            live::copy(&mut s, dst as usize, src as usize);
+        }
     }
     type F = unsafe extern "system" fn(Ptr, Ptr, Ptr);
     // SAFETY: the original, same arguments.
