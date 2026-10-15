@@ -11,7 +11,7 @@ struct Light {
     // xyz: direction the light travels, w: intensity
     sun: vec4<f32>,
     // rgb: key light colour, w: how much the key light lights scenery
-    // directly (where its baked light is turned down)
+    // directly (the dynamic share times the sun on scenery)
     sun_color: vec4<f32>,
     // rgb: sky ambient, w: strength
     sky: vec4<f32>,
@@ -27,12 +27,14 @@ struct Light {
     // x: shadow map texel size, y: filter radius (texels), z: bias, w: ao strength
     shadow_params: vec4<f32>,
     // x: width, y: height, z: strength of the shadows only the cascades
-    // have (characters') on scenery, when rays are on
+    // have (characters') on scenery, when rays are on, w: share of
+    // scenery's light that is dynamic (1 - baked light)
     screen: vec4<f32>,
     // The view matrix's third row: view-space depth, as the game's fog
     // uses.
     view_z: vec4<f32>,
-    // xyz: direction the fill light travels, w: intensity; colour
+    // xyz: direction the fill light travels, w: intensity; colour, w:
+    // the bounce on dynamically lit scenery
     fill: vec4<f32>,
     fill_color: vec4<f32>,
     // x: how much the key light reshapes scenery's baked light (0: not
@@ -305,11 +307,20 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
         // As far as the baked light is turned down, the key light lights
         // the scenery in its place, with its real shadows (the two never
         // add up).
-        let dynamic = light.sun_color.w;
-        let direct = light.sun_color.rgb * light.sun.w * nl * shadow * dynamic;
+        let dynamic = light.screen.w;
+        let direct = light.sun_color.rgb * light.sun.w * nl * shadow * light.sun_color.w;
         let gloss = spec * light.sun_color.rgb * light.sun.w * shadow * nl * light.scenery.y;
-        let lit_by = mix(min(dot(baked, vec3<f32>(0.33)) * 2.0, 1.0), 1.0, dynamic);
-        color = albedo * (base + direct + hemi * ao * light.ground.w) + gloss * lit_by;
+        // Highlights where the baked light is bright, and as far as the
+        // key light lights the scenery itself.
+        let lit_by = min(min(dot(baked, vec3<f32>(0.33)) * 2.0, 1.0) + light.sun_color.w, 1.0);
+        // Dynamic light bounces too: what the scenery around sends back,
+        // from the probes (one bounce of the art's light), else the sky.
+        var bounce = hemi;
+        if (light.gi.w > 0.5 && probes.count.x > 0.5) {
+            bounce = probe_light(p, n) * light.gi.x;
+        }
+        let ambient = hemi * light.ground.w + bounce * dynamic * light.fill_color.w;
+        color = albedo * (base + direct + ambient * ao) + gloss * lit_by;
         // Far away (the sky dome, distant land) nothing of ours reaches:
         // the game's own colours, its texture times its painted light.
         let far = smoothstep(FAR_START, FAR_END, distance(p, light.eye.xyz));

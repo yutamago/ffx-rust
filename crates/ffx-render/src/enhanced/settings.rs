@@ -42,6 +42,12 @@ pub struct Settings {
     pub scenery_sky: f32,
     /// Specular highlights on scenery from the key light.
     pub scenery_specular: f32,
+    /// Where the baked light is turned down: how strongly the key light
+    /// lights the scenery (1: as it lights the characters).
+    pub scenery_sun: f32,
+    /// There too: the light the surroundings bounce onto it (from the
+    /// probes).
+    pub scenery_bounce: f32,
     /// Characters' light falloff: 0 the game's soft wrap, 1 physical.
     pub character_falloff: f32,
     /// Scale of the characters' ambient light (they have no baked light).
@@ -211,6 +217,8 @@ impl Default for Settings {
             scenery_key: 0.4,
             scenery_sky: 0.2,
             scenery_specular: 0.5,
+            scenery_sun: 1.0,
+            scenery_bounce: 1.0,
             character_falloff: 0.3,
             character_ambient: 2.0,
             material_maps: true,

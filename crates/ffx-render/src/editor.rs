@@ -50,6 +50,8 @@ struct Import {
 /// What the editor sees of the renderer and asks of it, each frame.
 pub struct Io<'a> {
     pub scene: &'a str,
+    /// The settings profiles' names.
+    pub profiles: &'a [String],
     pub camera: Option<([f32; 3], [f32; 3])>,
     /// The lights found in glows (before the editor's changes).
     pub glows: &'a [Light],
@@ -339,6 +341,32 @@ impl Editor {
         let scope = self.scope;
         let scene = io.scene.to_owned();
         let look_at = io.camera.map(|c| c.1);
+        let target = Self::target(&mut self.edits, scope, &scene);
+        ui.horizontal(|ui| {
+            ui.label("Settings profile");
+            let none = match scope {
+                Scope::Scene => "none of its own",
+                Scope::Global => "the one chosen by hand",
+            };
+            let shown = if target.profile.is_empty() {
+                none.to_owned()
+            } else {
+                target.profile.clone()
+            };
+            egui::ComboBox::from_id_salt("scene profile")
+                .selected_text(shown)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut target.profile, String::new(), none);
+                    for n in io.profiles {
+                        ui.selectable_value(&mut target.profile, n.clone(), n);
+                    }
+                });
+        })
+        .response
+        .on_hover_text(match scope {
+            Scope::Scene => "Entering this scene switches to this profile",
+            Scope::Global => "Scenes without a profile of their own switch to this one",
+        });
         egui::CollapsingHeader::new("Sun (the key light)")
             .default_open(true)
             .show(ui, |ui| {

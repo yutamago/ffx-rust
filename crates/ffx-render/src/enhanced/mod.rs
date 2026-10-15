@@ -3053,7 +3053,7 @@ impl Enhanced {
                 sun_color[0],
                 sun_color[1],
                 sun_color[2],
-                1.0 - s.baked_light.clamp(0.0, 1.0),
+                (1.0 - s.baked_light.clamp(0.0, 1.0)) * s.scenery_sun.max(0.0),
             ],
         );
         put4(&mut light, [sky.0[0], sky.0[1], sky.0[2], sky.1]);
@@ -3105,12 +3105,15 @@ impl Enhanced {
                 internal.0 as f32,
                 internal.1 as f32,
                 s.character_shadows,
-                0.0,
+                1.0 - s.baked_light.clamp(0.0, 1.0),
             ],
         );
         put4(&mut light, view[2]);
         put4(&mut light, [fill.0[0], fill.0[1], fill.0[2], fill.2]);
-        put4(&mut light, [fill.1[0], fill.1[1], fill.1[2], 0.0]);
+        put4(
+            &mut light,
+            [fill.1[0], fill.1[1], fill.1[2], s.scenery_bounce.max(0.0)],
+        );
         put4(
             &mut light,
             [
@@ -3207,7 +3210,14 @@ impl Enhanced {
         );
         put4(
             &mut info,
-            [centres.len() as f32, s.baked_light, PROBE_FACE as f32, 0.0],
+            // The scenery as the art lights it (what it sends back), also
+            // where the baked light is turned down for dynamic light.
+            [
+                centres.len() as f32,
+                s.baked_light.max(1.0),
+                PROBE_FACE as f32,
+                0.0,
+            ],
         );
         assert_eq!(info.len(), PROBE_INFO_SIZE, "probe info uniform layout");
         let info_at = alloc(&info, PROBE_INFO_SIZE);

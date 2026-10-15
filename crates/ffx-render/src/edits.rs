@@ -19,6 +19,10 @@ use crate::enhanced::materials::Material;
 pub struct SceneEdits {
     /// A name the user gives the scene.
     pub label: String,
+    /// The settings profile to use here (empty: none of its own); for
+    /// all scenes: the one for scenes without their own (empty: the
+    /// profile chosen by hand).
+    pub profile: String,
     pub sun: Sun,
     pub lights: Vec<Light>,
     pub glows: Vec<GlowEdit>,
@@ -30,6 +34,7 @@ impl SceneEdits {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.sun.is_empty()
+            && self.profile.is_empty()
             && self.lights.is_empty()
             && self.glows.is_empty()
             && self.materials.is_empty()
@@ -163,6 +168,17 @@ impl Edits {
         }
     }
 
+    /// The profile `scene` asks for (its own, else the one for all
+    /// scenes).
+    #[must_use]
+    pub fn profile_for(&self, scene: &str) -> Option<&str> {
+        self.scenes
+            .get(scene)
+            .map(|s| s.profile.as_str())
+            .filter(|p| !p.is_empty())
+            .or_else(|| Some(self.global.profile.as_str()).filter(|p| !p.is_empty()))
+    }
+
     /// What the renderer uses in `scene`.
     #[must_use]
     pub fn effective(&self, scene: &str) -> Effective {
@@ -226,6 +242,11 @@ mod tests {
         assert_eq!(e.sun.scale, Some(0.5));
         assert!(e.materials.contains_key(&7));
         assert_eq!(ours.effective("other").lights.len(), 1);
+        assert_eq!(ours.profile_for("cdsp0000"), None);
+        ours.global.profile = "Day".into();
+        ours.scene_mut("cdsp0000").profile = "Night".into();
+        assert_eq!(ours.profile_for("cdsp0000"), Some("Night"));
+        assert_eq!(ours.profile_for("bsil0000"), Some("Day"));
 
         let mut theirs = ours.clone();
         theirs.scene_mut("cdsp0000").sun.scale = Some(1.5);

@@ -694,6 +694,16 @@ impl Overlay {
     }
 
     fn act(&mut self, a: Action, s: &mut Settings) {
+        // A profile picked by hand: scenes without their own go back to it.
+        let picks = matches!(
+            a,
+            Action::Switch(_)
+                | Action::New
+                | Action::Duplicate
+                | Action::Rename(_)
+                | Action::Delete
+                | Action::Paste
+        );
         let p = &mut self.profiles;
         let result = match a {
             Action::Save => p.save(s).map(|()| format!("saved \"{}\"", p.active)),
@@ -731,6 +741,9 @@ impl Overlay {
                 None => Err("nothing on the clipboard".into()),
             },
         };
+        if picks && result.is_ok() {
+            p.chose();
+        }
         self.message = result.unwrap_or_else(|e| format!("failed: {e}"));
     }
 }
@@ -1061,6 +1074,13 @@ fn settings_ui(ui: &mut egui::Ui, e: &mut Ed) {
         );
         slider(ui, f!(e.scenery_sky), "sky light on scenery", 0.0..=2.0);
         slider(ui, f!(e.scenery_specular), "scenery specular", 0.0..=2.0);
+        slider(ui, f!(e.scenery_sun), "sun on scenery (dynamic)", 0.0..=2.0);
+        slider(
+            ui,
+            f!(e.scenery_bounce),
+            "bounce on scenery (dynamic)",
+            0.0..=2.0,
+        );
         slider(ui, f!(e.character_ambient), "character ambient", 0.0..=4.0);
         check(
             ui,

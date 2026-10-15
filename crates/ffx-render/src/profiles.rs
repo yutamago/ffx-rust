@@ -2,6 +2,10 @@
 //! renderer, the active one's name in `profiles/active`. The active
 //! settings also stay in `ffx-render.toml` (what the renderer reads at
 //! start and watches for edits); "Save" writes both.
+//!
+//! A scene can ask for a profile (the editor's `profile`): entering it
+//! switches to that one, and scenes that ask for none go back to the
+//! profile chosen by hand (`profiles/chosen`).
 
 use std::path::{Path, PathBuf};
 
@@ -20,6 +24,12 @@ pub struct Profiles {
     pub active: String,
     /// The active profile as saved: what a setting resets to.
     pub saved: Settings,
+    /// The profile chosen by hand: where scenes without their own go.
+    pub chosen: String,
+    /// The scene and profile last followed (to switch once per change).
+    followed: Option<(String, String)>,
+    /// A choice by hand stands until the scene or what it asks changes.
+    hold: bool,
 }
 
 /// A profile name made safe as a file name.
@@ -57,6 +67,9 @@ impl Profiles {
             names: Vec::new(),
             active: String::new(),
             saved: current.clone(),
+            chosen: String::new(),
+            followed: None,
+            hold: false,
         };
         p.scan();
         let active = std::fs::read_to_string(p.dir.join("active"))
@@ -76,7 +89,52 @@ impl Profiles {
             p.names[0].clone()
         };
         p.stamp = p.file_stamp();
+        let chosen = std::fs::read_to_string(p.dir.join("chosen"))
+            .map(|s| s.trim().to_owned())
+            .unwrap_or_default();
+        p.chosen = if p.names.contains(&chosen) {
+            chosen
+        } else {
+            p.active.clone()
+        };
         p
+    }
+
+    /// The active profile is now the user's choice (switched, made,
+    /// renamed by hand).
+    pub fn chose(&mut self) {
+        self.chosen.clone_from(&self.active);
+        let _ = std::fs::write(self.dir.join("chosen"), &self.chosen);
+        self.followed = None;
+        self.hold = true;
+    }
+
+    /// Follows the scene: switches to the profile it asks for (`want`),
+    /// or back to the chosen one, once per change of either. Unsaved
+    /// changes are kept (no switch). What happened, if anything.
+    pub fn follow(&mut self, scene: &str, want: Option<&str>, s: &mut Settings) -> Option<String> {
+        let target = want
+            .filter(|w| self.names.iter().any(|n| n == w))
+            .unwrap_or(&self.chosen)
+            .to_owned();
+        let key = (scene.to_owned(), target.clone());
+        if self.followed.as_ref() == Some(&key) {
+            return None;
+        }
+        self.followed = Some(key);
+        if std::mem::take(&mut self.hold) || target == self.active || target.is_empty() {
+            return None;
+        }
+        if *s != self.saved {
+            return Some(format!(
+                "this scene uses \"{target}\"; unsaved changes: stayed on \"{}\"",
+                self.active
+            ));
+        }
+        Some(match self.switch(&target, s) {
+            Ok(()) => format!("scene profile \"{target}\""),
+            Err(e) => format!("failed: {e}"),
+        })
     }
 
     fn path(&self, name: &str) -> PathBuf {
@@ -268,8 +326,21 @@ mod tests {
         assert!((s.exposure - 3.0).abs() < 1e-6);
         p.delete(&mut s).unwrap();
         assert_eq!(p.names, ["Default", "Night"]);
+        // Scenes that ask for a profile.
+        p.chose();
+        assert!(p.follow("bsil0000", None, &mut s).is_none());
+        assert!(p.follow("cdsp0000", Some("Night"), &mut s).is_some());
+        assert_eq!(p.active, "Night");
+        assert!((s.exposure - 3.0).abs() < 1e-6);
+        assert!(p.follow("cdsp0000", Some("Night"), &mut s).is_none());
+        assert!(p.follow("bsil0000", Some("Gone"), &mut s).is_some());
+        assert_eq!(p.active, "Default");
+        s.exposure = 5.0;
+        assert!(p.follow("cdsp0000", Some("Night"), &mut s).is_some());
+        assert_eq!(p.active, "Default");
         let again = Profiles::new(&file, &Settings::default());
         assert_eq!(again.active, "Default");
+        assert_eq!(again.chosen, "Default");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

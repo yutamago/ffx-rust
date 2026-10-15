@@ -1,4 +1,5 @@
-//! `overlay_probe <out dir> <step>...`: loads save 1 with the renderer and
+//! `overlay_probe <out dir> <step>...`: loads save 1 (`FFX_PROBE_SAVE`: another)
+//! with the renderer and
 //! runs the steps, to try the overlay. Steps: `shot:<name>` (a PNG in the
 //! out dir), `wait:<frames>`, `click:<x>,<y>` (a left click in the
 //! overlay, back buffer pixels), `overlay` (F10), `editor` (F11),
@@ -25,7 +26,12 @@ fn main() -> ffx_harness::Result<()> {
     let toml_path = game_dir.join("ffx-render.toml");
     let original = std::fs::read_to_string(&toml_path).ok();
     let mut game = ffx_harness::Game::launch(&options)?;
-    println!("in {}", ffx_harness::screens::load_save(&mut game, 1)?);
+    // FFX_PROBE_SAVE: another save entry (default 1, the first manual).
+    let entry = std::env::var("FFX_PROBE_SAVE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+    println!("in {}", ffx_harness::screens::load_save(&mut game, entry)?);
     game.wait(240)?;
     for step in args {
         let (what, arg) = step.split_once(':').unwrap_or((step.as_str(), ""));

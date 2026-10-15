@@ -87,9 +87,11 @@ Passes, in order:
 5. **Ambient occlusion** (screen space, blurred).
 6. **Lighting** (linear HDR). Scenery keeps its baked light as the base
    (the game's art), reshaped by the key light and its shadow; as far as
-   `baked_light` is turned down, the key light lights the scenery directly
-   in its place, with its real shadows (0: dynamic light only, the sky
-   light on top); beyond 1500–2500 units (the sky dome, distant land)
+   `baked_light` is turned down, dynamic light takes its place, never on
+   top of it: the key light with its real shadows (`scenery_sun`) and
+   the light the surroundings bounce (`scenery_bounce`, from the probes,
+   which always see the scenery as the art lights it), the sky light on
+   top (0: dynamic light only); beyond 1500–2500 units (the sky dome, distant land)
    scenery keeps the game's own colours, its texture times its painted
    light, whatever the settings; characters
    get the map's key and fill light with the game's soft wrap, light from
@@ -166,6 +168,11 @@ Settings live in profiles: `profiles/<name>.toml` next to
 `ffx-render.exe`, the active one's name in `profiles/active`; the first
 start makes "Default" from `ffx-render.toml`. The active settings are also
 in `ffx-render.toml` (edits to that file apply within half a second).
+A scene can ask for a profile (the editor's Light tab, "Settings
+profile"; for all scenes: the one for scenes without their own): entering
+it switches to that profile, and scenes that ask for none go back to the
+profile last chosen by hand (`profiles/chosen`). Unsaved changes are
+kept: then the profile stays and the overlay says so.
 "Save" writes the active profile, "Revert" goes back to it, and a setting
 that differs from it has a ↺ button that resets just that one. Profiles
 can be made (factory defaults), duplicated, renamed and deleted; "Copy"

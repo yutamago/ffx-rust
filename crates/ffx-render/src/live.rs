@@ -249,6 +249,20 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
         if frames.is_multiple_of(30) && overlay.profiles.poll(&mut enhanced.settings) {
             log(&format!("settings: {:?}", enhanced.settings));
         }
+        // The profile the scene asks for.
+        let asked = overlay
+            .editor
+            .edits
+            .profile_for(&r.world.scene)
+            .map(str::to_owned);
+        if let Some(m) =
+            overlay
+                .profiles
+                .follow(&r.world.scene, asked.as_deref(), &mut enhanced.settings)
+        {
+            log(&format!("{}: {m}", r.world.scene));
+            overlay.message = m;
+        }
         // The editor's changes for this scene.
         if overlay.editor.changed(&r.world.scene) {
             let e = overlay.editor.edits.effective(&r.world.scene);
@@ -312,8 +326,10 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             let glows: Vec<crate::enhanced::lights::Light> =
                 enhanced.glow.lights().cloned().collect();
             let scene = r.world.scene.clone();
+            let profiles = overlay.profiles.names.clone();
             let mut io = crate::editor::Io {
                 scene: &scene,
+                profiles: &profiles,
                 camera: r.world.camera,
                 glows: &glows,
                 picked,
