@@ -261,6 +261,23 @@ fn prepare_home(home: &Path, copy: bool) -> Result<()> {
             copy_tree(&source, &home.join(GAME_DOCUMENTS))?;
         }
     }
+    test_display(&home.join(GAME_DOCUMENTS).join("GameSetting.ini"))
+}
+
+/// Tests run in a 1280x720 window whatever the user plays at: screenshots
+/// keep one size and the desktop stays usable.
+fn test_display(settings: &Path) -> Result<()> {
+    let old = std::fs::read_to_string(settings).unwrap_or_else(|_| "Language=en\n".into());
+    let mut out = String::new();
+    for line in old.lines() {
+        if !line.starts_with("Resolution=") && !line.starts_with("ScreenMode=") {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out.push_str("Resolution=1280*720\nScreenMode=SM_WINDOW\n");
+    std::fs::create_dir_all(settings.parent().unwrap_or(settings))?;
+    std::fs::write(settings, out)?;
     Ok(())
 }
 
