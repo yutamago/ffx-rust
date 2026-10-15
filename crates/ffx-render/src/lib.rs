@@ -13,6 +13,8 @@
     clippy::items_after_statements
 )]
 
+pub mod enhanced;
+pub mod families;
 pub mod formats;
 #[cfg(windows)]
 pub mod live;
@@ -252,6 +254,13 @@ impl Renderer {
         if bind & 0x60 != 0 && !format.is_compressed() {
             usage |= wgpu::TextureUsages::RENDER_ATTACHMENT;
         }
+        // An sRGB view too, for sampling colours in linear space.
+        let srgb = format.add_srgb_suffix();
+        let view_formats: &[wgpu::TextureFormat] = if srgb == format {
+            &[]
+        } else {
+            std::slice::from_ref(&srgb)
+        };
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: None,
             size,
@@ -260,7 +269,7 @@ impl Renderer {
             dimension: wgpu::TextureDimension::D2,
             format,
             usage,
-            view_formats: &[],
+            view_formats,
         });
         if desc[5] <= 1 && !format.is_depth_stencil_format() {
             for (i, s) in subresources.iter().enumerate() {

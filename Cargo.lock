@@ -547,8 +547,11 @@ dependencies = [
  "anyhow",
  "ffx-dxbc",
  "ffx-gfx",
+ "ffx-vbf",
  "miniz_oxide",
  "pollster",
+ "serde",
+ "toml",
  "wgpu",
  "windows-sys",
 ]

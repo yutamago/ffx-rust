@@ -9,7 +9,10 @@ rust-version.workspace = true
 [dependencies]
 ffx-dxbc.workspace = true
 ffx-gfx.workspace = true
+ffx-vbf.workspace = true
 anyhow.workspace = true
+serde.workspace = true
+toml.workspace = true
 miniz_oxide.workspace = true
 pollster = "0.4"
 wgpu = "30.0.1"

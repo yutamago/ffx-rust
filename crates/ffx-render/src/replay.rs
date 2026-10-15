@@ -132,7 +132,7 @@ fn group_layout(
 }
 
 /// `format` cut down to `room` bytes (0: no limit), keeping its type.
-fn shrink(format: wgpu::VertexFormat, room: u32) -> wgpu::VertexFormat {
+pub(crate) fn shrink_format(format: wgpu::VertexFormat, room: u32) -> wgpu::VertexFormat {
     use wgpu::VertexFormat as V;
     if room == 0 || format.size() <= u64::from(room) {
         return format;
@@ -168,7 +168,7 @@ enum Source {
 }
 
 /// The bytes the frame sent for a buffer, as seen from `offset` on.
-fn sent_bytes(sent: &HashMap<Id, (u32, Vec<u8>)>, id: Id, offset: u32) -> Option<&[u8]> {
+pub(crate) fn sent_bytes(sent: &HashMap<Id, (u32, Vec<u8>)>, id: Id, offset: u32) -> Option<&[u8]> {
     let (at, data) = sent.get(&id)?;
     let skip = offset.checked_sub(*at)? as usize;
     data.get(skip..)
@@ -251,15 +251,27 @@ impl Renderer {
         linked
     }
 
-    fn state(&self, id: Id, kind: StateKind) -> Option<&[u8]> {
+    pub(crate) fn state(&self, id: Id, kind: StateKind) -> Option<&[u8]> {
         self.states
             .get(&id)
             .filter(|(k, _)| *k == kind)
             .map(|(_, d)| d.as_slice())
     }
 
+    /// Whether the view's texture can be drawn into.
+    fn can_target(&self, view: Id) -> bool {
+        self.views
+            .get(&view)
+            .and_then(|v| self.textures.get(&v.resource))
+            .is_some_and(|t| {
+                t.texture
+                    .usage()
+                    .contains(wgpu::TextureUsages::RENDER_ATTACHMENT)
+            })
+    }
+
     /// The format and sample count behind a render target or depth view.
-    fn target_format(&self, view: Id) -> Option<(wgpu::TextureFormat, u32)> {
+    pub(crate) fn target_format(&self, view: Id) -> Option<(wgpu::TextureFormat, u32)> {
         let v = self.views.get(&view)?;
         let t = self.textures.get(&v.resource)?;
         Some((t.format, t.desc[5].max(1)))
@@ -352,7 +364,7 @@ impl Renderer {
             // D3D lets an element run past the stride (reading into the
             // next vertex); wgpu does not: keep the components that fit.
             let stride = strides.get(e.slot as usize).copied().unwrap_or(0);
-            let format = shrink(*format, stride.saturating_sub(*offset));
+            let format = shrink_format(*format, stride.saturating_sub(*offset));
             entry.2.push(wgpu::VertexAttribute {
                 format,
                 offset: u64::from(*offset),
@@ -469,7 +481,11 @@ impl Renderer {
         result
     }
 
-    fn texture_view(&mut self, view: Id, depth_aspect: bool) -> Option<Arc<wgpu::TextureView>> {
+    pub(crate) fn texture_view(
+        &mut self,
+        view: Id,
+        depth_aspect: bool,
+    ) -> Option<Arc<wgpu::TextureView>> {
         if let Some(v) = self.cache.views.get(&(view, depth_aspect)) {
             return Some(v.clone());
         }
@@ -586,7 +602,7 @@ impl Renderer {
         view
     }
 
-    fn sampler(&mut self, id: Id, comparison: bool) -> Arc<wgpu::Sampler> {
+    pub(crate) fn sampler(&mut self, id: Id, comparison: bool) -> Arc<wgpu::Sampler> {
         if let Some(s) = self.cache.samplers.get(&(id, comparison)) {
             return s.clone();
         }
@@ -757,7 +773,9 @@ impl Renderer {
                         continue;
                     }
                     // Every target must be one of ours.
-                    if d.rtv.iter().any(|r| self.target_format(r.1).is_none())
+                    if d.rtv.iter().any(|r| !self.can_target(r.1))
+                        || (d.dsv != 0 && !self.can_target(d.dsv))
+                        || d.rtv.iter().any(|r| self.target_format(r.1).is_none())
                         || (d.dsv != 0 && self.target_format(d.dsv).is_none())
                         || d.rtv.is_empty() && d.dsv == 0
                     {

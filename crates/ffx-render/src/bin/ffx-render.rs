@@ -21,6 +21,19 @@ fn main() -> Result<()> {
     }
 }
 
+/// Settings with `key=value` overrides (TOML values).
+fn settings(sets: &[String]) -> ffx_render::enhanced::Settings {
+    let mut text = String::new();
+    for s in sets {
+        text.push_str(s);
+        text.push('\n');
+    }
+    toml::from_str(&text).unwrap_or_else(|e| {
+        eprintln!("bad --set: {e}");
+        ffx_render::enhanced::Settings::default()
+    })
+}
+
 fn parse_id(s: &str) -> Result<u32> {
     let s = s.trim_start_matches("0x");
     u32::from_str_radix(s, 16).context("hex id")
@@ -31,11 +44,23 @@ fn replay(args: &[String]) -> Result<()> {
     let out = PathBuf::from(args.get(1).context("out dir")?);
     let mut filter = ffx_render::Filter::default();
     let mut dump = Vec::new();
+    let mut enhanced = false;
+    let mut game: Option<PathBuf> = None;
+    let mut sets: Vec<String> = Vec::new();
     let mut i = 2;
     while i < args.len() {
         match args[i].as_str() {
             "--until" => {
                 filter.until = Some(args.get(i + 1).context("N")?.parse()?);
+                i += 1;
+            }
+            "--enhanced" => enhanced = true,
+            "--game" => {
+                game = Some(PathBuf::from(args.get(i + 1).context("DIR")?));
+                i += 1;
+            }
+            "--set" => {
+                sets.push(args.get(i + 1).context("key=value")?.clone());
                 i += 1;
             }
             "--dump-tex" => {
@@ -58,6 +83,16 @@ fn replay(args: &[String]) -> Result<()> {
         .context("not a capture file")?;
     let msgs = ffx_gfx::read_all(body)?;
     let mut r = ffx_render::Renderer::new()?;
+    let mut e = enhanced.then(|| {
+        let dir = game.clone().or_else(ffx_render::families::game_dir);
+        let cache = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.join("ffx-render-shaders.tsv")))
+            .unwrap_or_else(|| PathBuf::from("ffx-render-shaders.tsv"));
+        let families = ffx_render::families::Families::load(dir.as_deref(), &cache);
+        println!("{} shaders with families", families.len());
+        ffx_render::enhanced::Enhanced::new(&r.device, &r.queue, families, settings(&sets))
+    });
     let mut targets = BTreeSet::new();
     let start = std::time::Instant::now();
     for m in msgs {
@@ -70,7 +105,15 @@ fn replay(args: &[String]) -> Result<()> {
                 }
             }
         }
-        r.apply(m, &filter)?;
+        match (&mut e, m) {
+            (Some(e), ffx_gfx::Msg::Frame(f)) => e.render_until(&mut r, &f, filter.until)?,
+            (_, m) => r.apply(m, &filter)?,
+        }
+    }
+    if let Some(e) = &e {
+        for (n, c) in &e.notes {
+            println!("note: {c} x {n}");
+        }
     }
     println!("drawn in {:?}", start.elapsed());
     std::fs::create_dir_all(&out)?;
