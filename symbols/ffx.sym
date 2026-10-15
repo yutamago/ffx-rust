@@ -88,6 +88,8 @@
 0x00646920 function Text_LoadCharset          # loads ffx_encoding/ffxsjistbl_<lang>.bin into g_CharsetCjk/g_CharsetWestern
 0x006795b0 function Game_InitFileSystem       # mounts data\FFX_Data.vbf, shows MessageBoxW on failure
 0x00679730 function PcFile_Open               # allocates a File and calls File_Construct/File_Open; MessageBoxW on failure
+0x0067c620 function MapPart_InitLangOverrides    # (this): the map part override table at +0x2c00: two entries of 10 ints, map 0xcbc (titl00, title) parts by language 0,13,7,11,9,5 (+9/10: 13,3) and map 0x199f (titl02, logos) 2,0,6,8,7,5 (+9/10: 2,2); by game language id 0 jp, 1 en, 2 fr, 3 es, 4 de, 5 it, 9 kr, 10 ch
+0x0067fb30 function MapPart_LangOverride         # (this, language id, map id) -> part or -1: when the current map has an entry, Native_MapPartShow shows that language's part instead of the one asked for; "Warning: uncorrect LanguageType"
 0x006db070 function LangManager_Get
 0x006db090 function LangManager_FromSettings  # settings language index -> game language id
 0x006f0330 function Save_InitFolder            # Documents (SHGetFolderPathW CSIDL_PERSONAL) + Square Enix\FINAL FANTASY X&X-2 HD Remaster\FINAL FANTASY X\
@@ -310,6 +312,7 @@
 0x00858020 function Native_SetArriveRadiusAll    # 0x002d: args (radius) -> radius; move slot +0x38 of all 9 slots (FUN_0086f0d0); move ends when XZ dist to target <= radius (FUN_008634b0/0x0088b730); default 1.0
 0x008580c0 function Native_MsgSetPos             # 0x0065: args (window, x, y, anchor); window +0x00 = x, +0x02 = y, +0x1c = anchor (FUN_008af850 places by it); x/y patched for maps 0x17/0xab/0xd4 (*0x012fbc40); scripts "0, 256, 224, 4"
 0x008581c0 function Native_MapChange             # 0x0011: args (map, entrance); FUN_0086ff40(map, entrance, 1) -> 0x0088ea60 writes them to the game state (0x00785240: +0 map, +2 previous, +0xc entrance); scripts "pushimm 263; pushimm 0" before end
+0x00858210 function Native_LangGroupNotJpAsia    # 0x0253 () -> 0 when the language group (LangManager +0) is 0 (jp) or 3 (kr, ch), 4; else 1; memochek picks its logo parts by it
 0x00858360 function Native_MsgSetStyle           # 0x0066: args (window, style) -> window; window +0x20 byte, passed to 0x00906e60 (window object +4) when shown (0x00858b50); ?frame/style; scripts mostly 0/1
 0x008583b0 function Native_MinimapSetMarker      # 0x0148 (marker, worker) -> value; worker +0xbc = marker | 0x80000000 (0 = default), +0xb4 = -10000.0; read by Minimap_GetWorkerMarker 0x0086b740 for the field minimap 0x0091da80
 0x00858460 function Native_MapJump               # 0x010b (map, entrance) -> 0; 0x0086ff40 -> 0x0088ea60: game state 0x0112ca90 +0 = map, +2 = previous map, +0xc = entrance; scripts push (263, 0) then end

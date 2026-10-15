@@ -6,7 +6,7 @@
 # Usage: tools/run-game.sh [--no-hooks] [--lang en|jp|fr|de|it|es|kr|ch]
 #   default     builds and installs the ffx-hook proxy as DINPUT8.dll
 #   --no-hooks  removes it and runs the unmodified game
-#   --lang      game language (default en)
+#   --lang      game language (default en, or $FFX_LANG)
 #   --log-opens log every file the game reads to ffx-hook.log
 #   --harness P test harness on 127.0.0.1:P (see crates/ffx-hook/src/harness.rs)
 #   --background show the window without taking the focus
@@ -23,7 +23,7 @@ set -euo pipefail
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 game="${FFX_GAME_DIR:-$HOME/steam-games/FFX-X2-HD}"
 hooks=1
-lang=en
+lang="${FFX_LANG:-en}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --no-hooks) hooks=0 ;;
