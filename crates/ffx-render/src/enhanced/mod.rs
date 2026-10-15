@@ -3765,6 +3765,7 @@ impl Enhanced {
                 view_proj: unjittered,
                 prev_view_proj,
                 frame: self.frame_count,
+                look_at: r.world.camera.map(|(_, target)| target),
             },
         );
         let hdr = match self.post.image() {

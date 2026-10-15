@@ -98,6 +98,8 @@ pub mod mods;
 mod patch;
 #[cfg(all(windows, target_arch = "x86"))]
 pub mod replacements;
+#[cfg(all(windows, target_arch = "x86"))]
+pub mod world;
 
 #[cfg(all(windows, target_arch = "x86"))]
 pub use patch::{check_build, install};

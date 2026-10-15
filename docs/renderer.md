@@ -87,8 +87,15 @@ Passes, in order:
    with absorption, and the game's opacity.
 8. **Volumetric light**: the key light through the cascades, half
    resolution.
-9. **Camera effects** (each optional): depth of field (focus at the
-   centre of the screen, eased over a few frames), motion blur (along the
+9. **Camera effects** (each optional): depth of field (focus on what the
+   game's camera looks at, its look-at point from `g_Camera` sent in the
+   `World` message, which in the field follows the player at chest
+   height, refined to the surface around it nearest its depth; else at
+   the centre of the screen; eased over a few frames; a gather in two
+   layers: what is at or behind a pixel blurs no farther than the pixel
+   itself, what is nearer and more blurred spreads over it with the share
+   of the pixel its circle covers, the reach found from per-tile maxima
+   of the near blur), motion blur (along the
    motion vectors; the camera's motion where the G-buffer drew nothing),
    bloom (six half-size levels, added back up).
 10. **Tone mapping** (the game's curve, ACES or AgX-like).

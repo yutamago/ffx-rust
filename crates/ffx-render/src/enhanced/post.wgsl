@@ -1,5 +1,6 @@
 // Camera effects on the HDR image, before tone mapping: depth of field
-// (focus found at the centre of the screen), motion blur (along the
+// (focus on what the camera looks at, or the centre of the screen),
+// motion blur (along the
 // G-buffer's motion vectors, the camera's motion elsewhere) and bloom (a
 // chain of ever smaller images, added back up).
 
@@ -17,6 +18,9 @@ struct Post {
     // x: bloom threshold, y: its soft knee, z: the radius of the upsampling
     // filter (texels)
     bloom: vec4<f32>,
+    // The camera's look-at point: xy NDC, z view depth, w 1 when on screen
+    // (else the focus is at the centre of the screen).
+    focus_at: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> post: Post;
@@ -26,6 +30,11 @@ struct Post {
 @group(0) @binding(4) var samp: sampler;
 // The focus distance in x (the focus pass keeps it).
 @group(0) @binding(5) var<storage, read> focus: vec4<f32>;
+// Depth of field: per 16x16 tile, the largest blur radius (pixels) of what
+// lies nearer than the focus.
+@group(0) @binding(6) var tile_tex: texture_2d<f32>;
+
+const TILE: i32 = 16;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -62,39 +71,96 @@ fn coc(d: f32) -> f32 {
     return clamp(post.dof.x * abs(1.0 - f / max(d, 0.01)), 0.0, 1.0);
 }
 
-// A disc gather over each pixel's own circle of confusion. Samples nearer
-// than the pixel count only as far as their own blur reaches, so sharp
-// things in front keep their edges.
+// The blur radius in pixels of the pixel at `q`, and its view depth.
+fn coc_at(q: vec2<i32>, size: vec2<f32>) -> vec2<f32> {
+    let d = view_depth(vec2<f32>(q) + 0.5, size, textureLoad(depth_tex, q, 0));
+    return vec2<f32>(coc(d) * post.dof.y, d);
+}
+
+// One tile's largest near blur: what is nearer than the focus spreads over
+// what is behind it, so the gather must reach that far.
+@fragment
+fn fs_dof_tiles(in: VsOut) -> @location(0) vec4<f32> {
+    let size = vec2<f32>(textureDimensions(depth_tex));
+    let imax = vec2<i32>(size) - 1;
+    let base = vec2<i32>(in.pos.xy) * TILE;
+    var near = 0.0;
+    for (var y = 0; y < TILE; y = y + 1) {
+        for (var x = 0; x < TILE; x = x + 1) {
+            let c = coc_at(min(base + vec2<i32>(x, y), imax), size);
+            if (c.y < focus.x) {
+                near = max(near, c.x);
+            }
+        }
+    }
+    return vec4<f32>(near, 0.0, 0.0, 1.0);
+}
+
+// A gather in two layers. The background layer: samples at the pixel's
+// depth or behind it, each only as far as its own blur reaches (and no
+// farther than this pixel's, so a sharp thing keeps its edges). The
+// foreground layer: nearer samples whose blur reaches this pixel, with
+// how much of the pixel they cover (their light spread over their own
+// circle), so a blurred thing in front fades out over what is behind it
+// instead of ending at its outline.
 @fragment
 fn fs_dof(in: VsOut) -> @location(0) vec4<f32> {
     let size = vec2<f32>(textureDimensions(src_tex));
     let px = vec2<i32>(in.pos.xy);
     let centre = textureLoad(src_tex, px, 0);
-    let d0 = view_depth(in.pos.xy, size, textureLoad(depth_tex, px, 0));
-    let r0 = coc(d0) * post.dof.y;
-    if (r0 < 0.5) {
+    let c0 = coc_at(px, size);
+    let r0 = c0.x;
+    let d0 = c0.y;
+    // The widest near blur around: the tiles within reach.
+    let tiles = vec2<i32>(textureDimensions(tile_tex)) - 1;
+    let tile = px / TILE;
+    let k = i32(ceil(post.dof.y / f32(TILE)));
+    var reach = r0;
+    for (var y = -k; y <= k; y = y + 1) {
+        for (var x = -k; x <= k; x = x + 1) {
+            let t = clamp(tile + vec2<i32>(x, y), vec2<i32>(0), tiles);
+            reach = max(reach, textureLoad(tile_tex, t, 0).r);
+        }
+    }
+    if (reach < 0.5) {
         return centre;
     }
     let imax = vec2<i32>(size) - 1;
     let spin = hash(in.pos.xy) * 6.2831853;
-    var sum = centre.rgb;
-    var weight = 1.0;
-    let n = 32;
+    var back = centre.rgb;
+    var back_w = 1.0;
+    var front = vec3<f32>(0.0);
+    var front_w = 0.0;
+    var cover = 0.0;
+    let n = 48;
+    // Each sample stands for this much of the disc.
+    let share = reach * reach / f32(n);
     for (var i = 0; i < n; i = i + 1) {
         // Golden-angle spiral, evenly over the disc.
         let t = (f32(i) + 0.5) / f32(n);
         let a = f32(i) * 2.3999632 + spin;
-        let o = vec2<f32>(cos(a), sin(a)) * sqrt(t) * r0;
+        let o = vec2<f32>(cos(a), sin(a)) * sqrt(t) * reach;
+        let dist = length(o);
         let q = clamp(vec2<i32>(in.pos.xy + o), vec2<i32>(0), imax);
-        let d = view_depth(vec2<f32>(q) + 0.5, size, textureLoad(depth_tex, q, 0));
-        var w = 1.0;
-        if (d < d0) {
-            w = clamp(coc(d) * post.dof.y - length(o) + 1.0, 0.0, 1.0);
+        let cs = coc_at(q, size);
+        let c = textureLoad(src_tex, q, 0).rgb;
+        if (cs.y < d0 * 0.97 && cs.x > r0) {
+            let w = clamp(cs.x - dist + 1.0, 0.0, 1.0);
+            front = front + c * w;
+            front_w = front_w + w;
+            cover = cover + w * share / max(cs.x * cs.x, 1.0);
+        } else {
+            let w = clamp(min(cs.x, r0) - dist + 1.0, 0.0, 1.0);
+            back = back + c * w;
+            back_w = back_w + w;
         }
-        sum = sum + textureLoad(src_tex, q, 0).rgb * w;
-        weight = weight + w;
     }
-    return vec4<f32>(sum / weight, centre.a);
+    let b = back / back_w;
+    if (front_w <= 0.0) {
+        return vec4<f32>(b, centre.a);
+    }
+    let alpha = clamp(cover, 0.0, 1.0);
+    return vec4<f32>(mix(b, front / front_w, alpha), centre.a);
 }
 
 // ---- Motion blur ----

@@ -135,9 +135,12 @@ pub struct Settings {
     pub dof_strength: f32,
     /// The largest blur radius, in pixels of a 1080-line image.
     pub dof_radius: f32,
-    /// Focus distance in world units; 0: what is at the centre of the
-    /// screen.
+    /// Focus distance in world units; 0: automatic.
     pub dof_focus: f32,
+    /// Automatic focus on what the game's camera looks at (the player in
+    /// the field, whoever a scene frames); off, or when it is off screen:
+    /// what is at the centre of the screen.
+    pub dof_follow_camera: bool,
     /// How fast the focus follows (share per frame).
     pub dof_speed: f32,
     /// Motion blur along how things move on screen.
@@ -239,6 +242,7 @@ impl Default for Settings {
             dof_strength: 0.5,
             dof_radius: 8.0,
             dof_focus: 0.0,
+            dof_follow_camera: true,
             dof_speed: 0.1,
             motion_blur: false,
             motion_blur_shutter: 0.5,

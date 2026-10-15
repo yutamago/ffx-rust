@@ -180,9 +180,10 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
         frames += 1;
         if frames == 1 || frames.is_multiple_of(600) {
             log(&format!(
-                "frame {} ({} commands)",
+                "frame {} ({} commands), {:?}",
                 frame.number,
-                frame.cmds.len()
+                frame.cmds.len(),
+                r.world
             ));
             for (f, n) in r.failures() {
                 log(&format!("  {n} x {f}"));

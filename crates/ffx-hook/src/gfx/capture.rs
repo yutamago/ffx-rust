@@ -928,6 +928,7 @@ fn snapshot(s: &State, c: &mut Capture) -> Vec<u8> {
     for m in &msgs {
         m.write(&mut out);
     }
+    crate::world::msg().write(&mut out);
     ffx_gfx::Msg::Frame(ffx_gfx::Frame {
         number: 0,
         width: s.bound.viewport[2] as u32,

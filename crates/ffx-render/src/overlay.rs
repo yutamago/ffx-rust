@@ -1118,6 +1118,11 @@ fn settings_ui(ui: &mut egui::Ui, e: &mut Ed) {
                 "focus distance (0: automatic)",
                 0.0..=500.0,
             );
+            check(
+                ui,
+                f!(e.dof_follow_camera),
+                "Automatic: on what the camera looks at (else the centre)",
+            );
             slider(ui, f!(e.dof_speed), "focus speed", 0.01..=1.0);
         }
         ui.separator();

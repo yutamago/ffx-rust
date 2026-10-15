@@ -213,6 +213,14 @@ pub enum Msg {
         height: u32,
         events: Vec<Input>,
     },
+    /// What the game is showing, sent before each frame: the scene (the
+    /// event file of the map, e.g. `cdsp0000`; empty before the first)
+    /// and the camera's eye and look-at point in world space, when the
+    /// game has a camera.
+    World {
+        scene: String,
+        camera: Option<([f32; 3], [f32; 3])>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -326,6 +334,7 @@ const UPDATE_TEXTURE: u32 = 8;
 const RELEASE: u32 = 9;
 const FRAME: u32 = 10;
 const INPUT: u32 = 11;
+const WORLD: u32 = 12;
 
 fn slots_u8(w: &mut Writer, v: &[(u8, Id)]) {
     w.len_of(v);
@@ -589,6 +598,19 @@ impl Msg {
                 }
                 INPUT
             }
+            Self::World { scene, camera } => {
+                w.str(scene);
+                match camera {
+                    Some((eye, target)) => {
+                        w.u8(1);
+                        for v in eye.iter().chain(target) {
+                            w.f32(*v);
+                        }
+                    }
+                    None => w.u8(0),
+                }
+                WORLD
+            }
             Self::Frame(f) => {
                 w.u32s(&[f.number, f.width, f.height]);
                 w.len_of(&f.cmds);
@@ -765,6 +787,19 @@ impl Msg {
                     events,
                 }
             }
+            WORLD => {
+                let scene = r.str()?;
+                let camera = if r.u8()? == 0 {
+                    None
+                } else {
+                    let mut v = [0.0f32; 6];
+                    for x in &mut v {
+                        *x = r.f32()?;
+                    }
+                    Some(([v[0], v[1], v[2]], [v[3], v[4], v[5]]))
+                };
+                Self::World { scene, camera }
+            }
             FRAME => {
                 let [number, width, height] = r.u32s()?;
                 let n = r.u32()?;
@@ -899,6 +934,14 @@ mod tests {
                     },
                     Input::Char(0x41),
                 ],
+            },
+            Msg::World {
+                scene: "cdsp0000".into(),
+                camera: Some(([1.0, 2.0, 3.0], [4.0, 5.0, 6.0])),
+            },
+            Msg::World {
+                scene: String::new(),
+                camera: None,
             },
             Msg::Frame(Frame {
                 number: 3,

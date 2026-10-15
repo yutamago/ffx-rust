@@ -78,6 +78,17 @@ pub struct Renderer {
     cache: replay::Cache,
     /// Messages that did not apply (unknown formats, …), for reports.
     pub warnings: Vec<String>,
+    /// The scene and camera of the frames to come (`Msg::World`).
+    pub world: World,
+}
+
+/// What the game is showing.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct World {
+    /// The map's event file (e.g. `cdsp0000`); empty when unknown.
+    pub scene: String,
+    /// The camera's eye and look-at point (world space).
+    pub camera: Option<([f32; 3], [f32; 3])>,
 }
 
 impl Renderer {
@@ -143,6 +154,7 @@ impl Renderer {
             states: HashMap::new(),
             cache: replay::Cache::default(),
             warnings: Vec::new(),
+            world: World::default(),
         })
     }
 
@@ -205,6 +217,7 @@ impl Renderer {
             Msg::Frame(frame) => self.draw_frame(&frame, filter)?,
             // Overlay input is the live loop's.
             Msg::Input { .. } => {}
+            Msg::World { scene, camera } => self.world = World { scene, camera },
         }
         Ok(())
     }

@@ -147,6 +147,10 @@ pub unsafe extern "thiscall" fn file_open(
     a4: u32,
     a5: u32,
 ) -> u32 {
+    if !path.is_null() {
+        // SAFETY: NUL-terminated, from the caller.
+        crate::world::opened(unsafe { CStr::from_ptr(path) }.to_bytes());
+    }
     // Only read opens (mode byte != 0) can be served from a mod.
     // SAFETY: the game passes a valid File and a NUL-terminated path or NULL.
     if mode & 0xff != 0 && !path.is_null() && unsafe { open_mod(file, path) } {

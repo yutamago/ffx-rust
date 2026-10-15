@@ -569,5 +569,6 @@
 0x01869eb0 label    g_MacroDic                   # macrodic section pointer table (MacroDic_Load)
 0x022fb504 label    g_Settings
 0x02310c40 label    g_CdLib                   # function table of the PS2 CD-library emulation
+0x02311430 label    g_Camera                     # pointer to the active camera channel (FUN_007bd470 reads its sides): +0x50 look-at point (ref, side 0) xyz, +0x66c eye (side 1) xyz; live: the look-at follows the player at chest height on the S.S. Winno deck
 0x023c44e0 label    g_ChrCount                   # number of field characters in g_ChrArray
 0x023c44e4 label    g_ChrArray                   # field characters, 0x880 bytes each (byte +2 = active)

@@ -960,6 +960,7 @@ fn finish(link: &mut Link, s: &mut State, scene: Scene) {
     }
     cmds.append(&mut link.cmds);
     send_input(link);
+    link.send(&crate::world::msg());
     let (w, h) = s
         .views
         .get(&scene.color)
