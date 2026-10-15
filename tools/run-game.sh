@@ -72,6 +72,11 @@ else
     if [[ -n "${renderer:-}" ]]; then
         "$repo/tools/build-renderer.sh" >/dev/null
         install -m 755 "$repo/target/x86_64-pc-windows-msvc/release/ffx-render.exe" "$game/ffx-render.exe"
+        for dll in dxcompiler.dll dxil.dll; do
+            if [[ -f "$repo/target/x86_64-pc-windows-msvc/release/$dll" ]]; then
+                install -m 755 "$repo/target/x86_64-pc-windows-msvc/release/$dll" "$game/$dll"
+            fi
+        done
     fi
     echo "hooks installed; log: $game/ffx-hook.log"
 fi
