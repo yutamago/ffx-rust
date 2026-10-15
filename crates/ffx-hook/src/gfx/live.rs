@@ -67,6 +67,26 @@ static WNDPROC: AtomicUsize = AtomicUsize::new(0);
 /// The back buffer's size.
 static SCREEN: Mutex<(u32, u32)> = Mutex::new((0, 0));
 
+/// Captures the next frame (as the harness's `gfxcapture` does) into
+/// `captures/<seconds since 1970>` beside the game, on a thread of its own:
+/// the capture is written by the render thread.
+fn capture_now() {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let Some(dir) = std::env::current_exe().ok().and_then(|p| {
+        p.parent()
+            .map(|d| d.join("captures").join(secs.to_string()))
+    }) else {
+        return;
+    };
+    log(&format!("  live: capturing a frame into {}", dir.display()));
+    std::thread::spawn(move || {
+        let reply = crate::gfx::capture(&dir.to_string_lossy());
+        log(&format!("  live: capture {}: {reply}", dir.display()));
+    });
+}
+
 /// Shows or hides the overlay, as F10 does (for the test harness).
 pub fn toggle_overlay() -> bool {
     let now = !OVERLAY.load(Ordering::Acquire);
@@ -139,7 +159,11 @@ pub unsafe fn set_window(hwnd: usize, width: u32, height: u32) {
     ));
 }
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // LPARAM packs two signed 16-bit coordinates
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::too_many_lines
+)] // LPARAM packs two signed 16-bit coordinates; one switch over the messages
 unsafe extern "system" fn window_proc(
     hwnd: *mut c_void,
     msg: u32,
@@ -151,8 +175,21 @@ unsafe extern "system" fn window_proc(
     };
     const F10: usize = 0x79;
     const F11: usize = 0x7a;
+    const F12: usize = 0x7b;
     let visible = OVERLAY.load(Ordering::Acquire);
     match msg {
+        // Ctrl+F12: the next frame captured into `captures/` beside the
+        // game (for a look at what the renderer got wrong there).
+        0x100 | 0x104
+            if wparam == F12
+            // SAFETY: a plain key state query.
+                && unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::GetKeyState(0x11) } < 0 =>
+        {
+            if lparam & (1 << 30) == 0 {
+                capture_now();
+            }
+            return 0;
+        }
         // F11: the editor (and the overlay with it, if hidden).
         0x100 | 0x104 if wparam == F11 => {
             if lparam & (1 << 30) == 0 {

@@ -248,6 +248,10 @@ target/x86_64-pc-windows-msvc/release/ffx-render.exe replay <dir>/capture.ffxgfx
     --enhanced [--until N] [--settings ffx-render.toml] [--set key=value] [--materials DIR]
 ```
 
+In the game, Ctrl+F12 captures the next frame the same way into
+`captures/<seconds since 1970>` beside the game (a few hundred MB), for a
+look at a frame that shows something wrong.
+
 `replay` without `--enhanced` draws the captured frame with the game's
 shaders only; it matches the original within rounding.
 
