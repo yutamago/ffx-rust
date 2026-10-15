@@ -1062,6 +1062,14 @@ fn settings_ui(ui: &mut egui::Ui, e: &mut Ed) {
         slider(ui, f!(e.skin), "skin scattering", 0.0..=1.0);
         slider(
             ui,
+            f!(e.skin_materials),
+            "skin found by colour (faces)",
+            0.0..=1.0,
+        );
+        slider(ui, f!(e.skin_roughness), "skin roughness", 0.05..=1.0);
+        slider(ui, f!(e.skin_detail), "surface detail on skin", 0.0..=1.0);
+        slider(
+            ui,
             f!(e.character_falloff),
             "character falloff (soft–physical)",
             0.0..=1.0,
@@ -1228,6 +1236,7 @@ fn settings_ui(ui: &mut egui::Ui, e: &mut Ed) {
                     (7, "skin"),
                     (8, "probe light"),
                     (9, "local lights"),
+                    (10, "material"),
                 ] {
                     ui.selectable_value(v, n, name);
                 }
