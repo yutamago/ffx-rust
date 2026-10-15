@@ -41,13 +41,14 @@ fn shot(game: &mut ffx_harness::Game, out: &Path, name: &str) -> ffx_harness::Re
 }
 
 /// The frame with the original look, then enhanced (the renderer reloads
-/// its settings within 30 frames; TAA settles over a few more).
+/// its settings within 30 frames; TAA settles in a few more). Short, so a
+/// moving camera moves little.
 fn both(game: &mut ffx_harness::Game, out: &Path, name: &str) -> ffx_harness::Result<()> {
     set_enhanced(false)?;
-    game.wait(90)?;
+    game.wait(40)?;
     shot(game, out, &format!("{name}-original"))?;
     set_enhanced(true)?;
-    game.wait(90)?;
+    game.wait(40)?;
     shot(game, out, &format!("{name}-enhanced"))
 }
 

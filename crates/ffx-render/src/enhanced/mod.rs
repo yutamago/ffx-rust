@@ -2434,6 +2434,8 @@ impl Enhanced {
                 }
             }
         }
+        self.last_items = items.len() + waters.len();
+        self.last_other = rest.iter().filter(|c| matches!(c, Cmd::Draw(_))).count();
         // Uniforms: camera, shadow camera, then items.
         let align =
             u64::from(device.limits().min_uniform_buffer_offset_alignment).max(256) as usize;
