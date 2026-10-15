@@ -71,7 +71,11 @@ shaders, translated to WGSL, in the game's order.
 Passes, in order:
 
 1. **Shadow cascades**: three, each a box around its slice of the view,
-   snapped to whole texels.
+   snapped to whole texels. The game culls for its camera only: each
+   cascade (and probe face) draws just the draws inside it, by their
+   bounds from the vertices their indices use (static vertex and index
+   data stay on the CPU; skinned draws are never culled;
+   `FFX_RENDER_NO_CULL=1` turns it off).
 2. **Ray tracing structures** (where the GPU has ray queries): the opaque,
    unskinned scenery as bottom-level structures (kept while their buffers
    are), all of them in a top-level structure each frame.

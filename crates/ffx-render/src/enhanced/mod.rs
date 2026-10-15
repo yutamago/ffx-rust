@@ -7,6 +7,7 @@
 //! (water, painted backdrops, transparent effects, unknown shaders) go
 //! through the game's own shaders afterwards, as in the original path.
 
+mod cull;
 #[cfg(windows)]
 pub mod fsr;
 pub mod glow;
@@ -572,6 +573,11 @@ pub struct Enhanced {
     /// GPU time per pass (where the GPU can tell), made on the first
     /// frame.
     pub timer: Option<timer::Timer>,
+    /// Draws' bounds, for culling the shadow cascades and probe faces.
+    bounds: cull::Bounds,
+    /// Draws culled in the last frame's cascades and probe faces, and
+    /// drawn.
+    pub culled: (usize, usize),
     timer_tried: bool,
     replacements: HashMap<String, Option<wgpu::TextureView>>,
     /// Where to write each generated material map and its colour texture
@@ -1564,6 +1570,8 @@ impl Enhanced {
             material_dir: None,
             texture_dir: None,
             timer: None,
+            bounds: cull::Bounds::default(),
+            culled: (0, 0),
             timer_tried: false,
             #[cfg(windows)]
             fsr: None,
@@ -3247,6 +3255,7 @@ impl Enhanced {
         centres.truncate(MAX_PROBES);
         let mut info = Vec::new();
         let mut face_at = Vec::new();
+        let mut face_vps = Vec::new();
         for slot in 0..MAX_PROBES {
             let faces = centres.get(slot).map_or_else(
                 || vec![math::identity(); 6],
@@ -3271,6 +3280,7 @@ impl Enhanced {
                         ],
                     );
                     face_at.push(alloc(&c, CAMERA_SIZE));
+                    face_vps.push(*f);
                 }
             }
         }
@@ -3704,6 +3714,11 @@ impl Enhanced {
         // Ray tracing: the scenery's draws into bottom-level structures
         // (kept while their buffers are), all of them into this frame's top
         // level.
+        let bounds: Vec<Option<cull::Aabb>> = prepared
+            .iter()
+            .map(|(_, _, _, i, _)| self.bounds.world(r, i))
+            .collect();
+        let mut culled = (0usize, 0usize);
         let mut traced = vec![false; prepared.len()];
         let mut instances: Vec<(BlasKey, Option<usize>, [f32; 12])> = Vec::new();
         // New structures: the structure, its size, vertex source, first
@@ -3937,6 +3952,11 @@ impl Enhanced {
                     if rest_only && traced[k] {
                         continue;
                     }
+                    if bounds[k].is_some_and(|b| cull::outside(&cascades[n % 3], &b, false)) {
+                        culled.0 += 1;
+                        continue;
+                    }
+                    culled.1 += 1;
                     if let Some(sp) = sp {
                         rp.set_pipeline(sp);
                         rp.set_bind_group(1, igroup, &[]);
@@ -4016,7 +4036,7 @@ impl Enhanced {
         }
         // Light probes: the scenery around each, then its harmonics.
         if !centres.is_empty() {
-            for (layer, at) in self.probes.layers.iter().zip(&face_at) {
+            for ((layer, at), face_vp) in self.probes.layers.iter().zip(&face_at).zip(&face_vps) {
                 let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: None,
                     layout: &self.camera_layout,
@@ -4049,8 +4069,13 @@ impl Enhanced {
                     multiview_mask: None,
                 });
                 rp.set_bind_group(0, &group, &[]);
-                for (p, _, igroup, i, _) in &prepared {
+                for (k, (p, _, igroup, i, _)) in prepared.iter().enumerate() {
+                    if bounds[k].is_some_and(|b| cull::outside(face_vp, &b, true)) {
+                        culled.0 += 1;
+                        continue;
+                    }
                     if i.centre.is_none() {
+                        culled.1 += 1;
                         rp.set_pipeline(p);
                         rp.set_bind_group(1, igroup, &[]);
                         record(&mut rp, i);
@@ -4091,6 +4116,7 @@ impl Enhanced {
             cp.set_bind_group(0, &group, &[]);
             cp.dispatch_workgroups(centres.len() as u32, 1, 1);
         }
+        self.culled = culled;
         mark!("probes");
         // Ambient occlusion, then its blur across and down.
         if self.settings.ao {

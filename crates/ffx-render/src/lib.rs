@@ -67,9 +67,13 @@ pub struct View {
 pub struct Buffer {
     pub buffer: wgpu::Buffer,
     pub desc: ffx_gfx::BufferDesc,
-    /// The contents, for constant buffers drawn from (none for vertex and
-    /// index data, which lives on the GPU).
+    /// The contents, for constant buffers drawn from, index data (which
+    /// vertices a draw uses) and static vertex data (a draw's bounds);
+    /// dynamic vertex data lives on the GPU only.
     pub data: Vec<u8>,
+    /// Changes with every write, across all buffers (what is known of
+    /// the contents is known for this generation).
+    pub generation: u64,
 }
 
 pub struct Shader {
@@ -86,6 +90,8 @@ pub struct Renderer {
     pub textures: HashMap<Id, Texture>,
     pub views: HashMap<Id, View>,
     pub buffers: HashMap<Id, Buffer>,
+    /// The last buffer generation handed out.
+    generations: u64,
     pub shaders: HashMap<Id, Shader>,
     pub layouts: HashMap<Id, Vec<ffx_gfx::Element>>,
     pub states: HashMap<Id, (StateKind, Vec<u8>)>,
@@ -174,6 +180,7 @@ impl Renderer {
             textures: HashMap::new(),
             views: HashMap::new(),
             buffers: HashMap::new(),
+            generations: 0,
             shaders: HashMap::new(),
             layouts: HashMap::new(),
             states: HashMap::new(),
@@ -270,9 +277,10 @@ impl Renderer {
                 | rays,
             mapped_at_creation: false,
         });
-        // Constant and index data stay on the CPU too: draws read windows
-        // of the first, and the second tells which vertices a draw uses.
-        let keep = desc[2] & 0x6 != 0;
+        // Constant, index and static vertex data stay on the CPU too: draws
+        // read windows of the first, the second tells which vertices a draw
+        // uses, the third where they are.
+        let keep = desc[2] & 0x6 != 0 || (desc[2] & 0x1 != 0 && desc[1] != 2);
         let mut kept = Vec::new();
         if !data.is_empty() {
             let mut padded = data.to_vec();
@@ -282,21 +290,30 @@ impl Renderer {
                 kept = data.to_vec();
             }
         }
+        let generation = self.next_generation();
         self.buffers.insert(
             id,
             Buffer {
                 buffer,
                 desc,
                 data: kept,
+                generation,
             },
         );
     }
 
+    fn next_generation(&mut self) -> u64 {
+        self.generations += 1;
+        self.generations
+    }
+
     fn update_buffer(&mut self, id: Id, offset: u32, data: &[u8]) {
+        let generation = self.next_generation();
         let Some(b) = self.buffers.get_mut(&id) else {
             return;
         };
-        if b.desc[2] & 0x6 != 0 {
+        b.generation = generation;
+        if b.desc[2] & 0x6 != 0 || (b.desc[2] & 0x1 != 0 && b.desc[1] != 2) {
             let end = offset as usize + data.len();
             if b.data.len() < end {
                 b.data.resize(end, 0);
