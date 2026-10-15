@@ -201,6 +201,8 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     let baked = baked_fog.rgb;
     let ao = mix(1.0, textureLoad(ao_tex, px, 0).r, light.shadow_params.w);
     let n = normalize(nm.xyz);
+    // The material is the whole part of w (half the game's alpha the rest).
+    let character = nm.w >= 0.75;
     let p = world_position(in.pos.xy, depth);
     let v = normalize(light.eye.xyz - p);
     let l = -normalize(light.sun.xyz);
@@ -213,7 +215,7 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     // No ray where the cascades already have shadow, nor for scenery
     // facing away from the key light (characters' soft wrap lights past
     // the terminator).
-    if (traced_on && cascade > 0.0 && (nm.w > 0.5 || nl > 0.0)) {
+    if (traced_on && cascade > 0.0 && (character || nl > 0.0)) {
         traced = rt_shadow(p, n, l, in.pos.xy, light.rt.y, light.rt.z);
     }
     let shadow = min(cascade, traced);
@@ -221,7 +223,7 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     let spec = ggx(n, v, l, rough, 0.04) * light.mix.z;
     let hemi = mix(light.ground.rgb, light.sky.rgb, n.y * 0.5 + 0.5) * light.sky.w;
     var color: vec3<f32>;
-    if (nm.w < 0.5) {
+    if (!character) {
         // Scenery: its baked light is the lighting (the artists' light,
         // local lights included). The key light only adds its shadows:
         // darker where it is blocked, on the sides that face it (the far
@@ -270,7 +272,7 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     } else if (debug == 5) {
         return vec4<f32>(baked, 1.0);
     } else if (debug == 7) {
-        return vec4<f32>(vec3<f32>(skin_weight(albedo) * nm.w), 1.0);
+        return vec4<f32>(vec3<f32>(skin_weight(albedo) * f32(character)), 1.0);
     } else if (debug == 8) {
         if (probes.count.x > 0.5) {
             return vec4<f32>(probe_light(p, n), 1.0);

@@ -7,6 +7,8 @@ struct Resolve {
     params: vec4<f32>,
     // Rows of the view matrix, for the game's view-space normals.
     view: array<vec4<f32>, 4>,
+    // x: the scene's clear alpha (where nothing was drawn)
+    clear: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> res: Resolve;
@@ -142,9 +144,15 @@ fn fs(in: VsOut) -> Out {
         c = sample(uv);
     }
     var out: Out;
-    out.color = vec4<f32>(c, 1.0);
     let ipx = vec2<i32>(floor(in.pos.xy * scale));
-    let n = textureLoad(normal_tex, ipx, 0).xyz;
+    let nm = textureLoad(normal_tex, ipx, 0);
+    let n = nm.xyz;
+    // The game's alpha: its glow passes read it.
+    var alpha = res.clear.x;
+    if (textureLoad(depth_tex, ipx, 0) < 1.0) {
+        alpha = (nm.w - select(0.0, 1.0, nm.w >= 0.75)) * 2.0;
+    }
+    out.color = vec4<f32>(c, alpha);
     let vn = vec3<f32>(dot(res.view[0].xyz, n), dot(res.view[1].xyz, n), dot(res.view[2].xyz, n));
     out.normal = vec4<f32>(normalize(vn), 1.0);
     out.depth = textureLoad(depth_tex, ipx, 0);

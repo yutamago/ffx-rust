@@ -140,7 +140,10 @@ fn fs(in: VsOut) -> GOut {
     }
     var out: GOut;
     out.albedo = vec4<f32>(c.rgb * item.scale.rgb * cavity, rough);
-    out.normal = vec4<f32>(n, item.params.w);
+    // w: the material (0 scenery, 1 character) plus half the game's
+    // alpha (its glow passes read the scene's alpha).
+    // (The game's: colour alpha × vertex alpha, 0.5 as full.)
+    out.normal = vec4<f32>(n, item.params.w + 0.5 * clamp(c.a * in.col.a * 2.0, 0.0, 1.0));
     // The game's vertex colours are light in gamma space, with 0.5 as full.
     out.baked = vec4<f32>(pow(max(in.col.rgb * 2.0, vec3<f32>(0.0)), vec3<f32>(2.2)), item.ambient.w);
     return out;

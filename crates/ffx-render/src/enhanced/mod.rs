@@ -26,7 +26,7 @@ const OUTPUT_WGSL: &str = include_str!("output.wgsl");
 const AO_WGSL: &str = include_str!("ao.wgsl");
 const MATERIAL_WGSL: &str = include_str!("material.wgsl");
 const RESOLVE_WGSL: &str = include_str!("resolve.wgsl");
-const RESOLVE_SIZE: usize = 16 + 64;
+const RESOLVE_SIZE: usize = 16 + 64 + 16;
 const VOLUMETRIC_WGSL: &str = include_str!("volumetric.wgsl");
 const WATER_WGSL: &str = include_str!("water.wgsl");
 const PROBE_WGSL: &str = include_str!("probe.wgsl");
@@ -2863,6 +2863,16 @@ impl Enhanced {
             ],
         );
         put_rows(&mut resolve, &view);
+        // The scene colour's clear alpha, for the pixels nothing covers.
+        let clear_alpha = frame
+            .cmds
+            .iter()
+            .find_map(|c| match c {
+                Cmd::ClearTarget { view, color } if *view == color_view => Some(color[3]),
+                _ => None,
+            })
+            .unwrap_or(0.0);
+        put4(&mut resolve, [clear_alpha, 0.0, 0.0, 0.0]);
         assert_eq!(resolve.len(), RESOLVE_SIZE, "resolve uniform layout");
         let resolve_at = alloc(&resolve, RESOLVE_SIZE);
         // TAA: history is good when the image size is the same and the
