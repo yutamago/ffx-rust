@@ -10,7 +10,7 @@ fn main() -> ffx_harness::Result<()> {
     let shots: u32 = args.next().map_or(3, |e| e.parse().expect("shots"));
     std::fs::create_dir_all(&out)?;
     let options = ffx_harness::Options {
-        renderer: true,
+        renderer: std::env::var("FFX_PROBE_NO_RENDERER").is_err(),
         ..ffx_harness::Options::default()
     };
     let mut game = ffx_harness::Game::launch(&options)?;
@@ -20,7 +20,13 @@ fn main() -> ffx_harness::Result<()> {
         game.screenshot()?
             .save_png(&out.join(format!("shot{i}.png")))?;
         println!("{}", game.command("gfxstats")?);
+        let start = std::time::Instant::now();
         game.wait(gap)?;
+        let secs = start.elapsed().as_secs_f64();
+        println!(
+            "{gap} frames in {secs:.2} s: {:.0} frames/s",
+            f64::from(gap) / secs
+        );
     }
     game.quit()
 }

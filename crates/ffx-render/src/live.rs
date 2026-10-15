@@ -75,11 +75,14 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
     log("device ready");
     let mut frames = 0u32;
     let filter = Filter::default();
+    let mut idle_from = std::time::Instant::now();
     loop {
         let mut head = [0u8; 8];
         if !to_renderer.read(&mut head, wait) {
             return Ok(());
         }
+        let t_head = std::time::Instant::now();
+        let idle = t_head - idle_from;
         let tag = u32::from_le_bytes(head[0..4].try_into().expect("4"));
         let len = u32::from_le_bytes(head[4..8].try_into().expect("4")) as usize;
         let mut payload = vec![0u8; len];
@@ -95,6 +98,7 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
         };
         let ffx_gfx::Msg::Frame(frame) = msg else {
             r.apply(msg, &filter)?;
+            idle_from = std::time::Instant::now();
             continue;
         };
         let targets = frame.cmds.iter().find_map(|c| match c {
@@ -114,7 +118,11 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
                 log(&format!("  {n} x {f}"));
             }
         }
-        if let Err(e) = r.draw_frame(&frame, &filter) {
+        let t0 = std::time::Instant::now();
+        let t_parsed = t0 - t_head;
+        let drawn = r.draw_frame(&frame, &filter);
+        let t_draw = t0.elapsed();
+        if let Err(e) = drawn {
             log(&format!("frame {}: {e}", frame.number));
         }
         let Some((c, n, z)) = targets else { continue };
@@ -122,7 +130,10 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
         let (Some(c), Some(n), Some(z)) = (resource(c), resource(n), resource(z)) else {
             continue;
         };
-        match r.read_scene(c, n, z) {
+        let t1 = std::time::Instant::now();
+        let scene = r.read_scene(c, n, z);
+        let t_read = t1.elapsed();
+        match scene {
             Ok((w, h, mut data)) => {
                 // FFX_RENDER_TEST=invert: the colour inverted, to see
                 // whose image is on screen.
@@ -139,8 +150,16 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
                 out.extend_from_slice(&h.to_le_bytes());
                 out.extend_from_slice(&data);
                 to_game.write(&out, || std::thread::yield_now());
+                if frames % 120 == 0 {
+                    log(&format!(
+                        "frame {}: received+parsed {t_parsed:?}, draw {t_draw:?}, read back {t_read:?}, total {:?}, idle before {idle:?}",
+                        frame.number,
+                        t_head.elapsed()
+                    ));
+                }
             }
             Err(e) => log(&format!("frame {}: {e}", frame.number)),
         }
+        idle_from = std::time::Instant::now();
     }
 }

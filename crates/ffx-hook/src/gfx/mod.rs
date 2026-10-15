@@ -40,6 +40,9 @@ static CREATE_DEVICE: AtomicUsize = AtomicUsize::new(0);
 pub(crate) static DEVICE: AtomicUsize = AtomicUsize::new(0);
 pub(crate) static CONTEXT: AtomicUsize = AtomicUsize::new(0);
 static FRAME: AtomicU32 = AtomicU32::new(0);
+/// Microseconds spent in the layer's own work since the last report:
+/// [draw hooks, unmap copies, update copies].
+pub(crate) static SPENT: [AtomicU32; 3] = [const { AtomicU32::new(0) }; 3];
 static DRAWS: AtomicU32 = AtomicU32::new(0);
 static LAST_DRAWS: AtomicU32 = AtomicU32::new(0);
 
@@ -231,6 +234,11 @@ pub struct Buffer {
     pub shadow: Option<Vec<u8>>,
     /// Bumped on every write the layer sees.
     pub version: u32,
+    /// A scene draw for the live renderer reads it: keep its contents.
+    pub wanted: bool,
+    /// Where the last write map put it (dynamic buffers keep that memory
+    /// mapped; the live link reads the bytes a draw uses from there).
+    pub mapped_ptr: usize,
 }
 
 pub const BIND_VERTEX: u32 = 0x1;
@@ -241,8 +249,7 @@ pub const BIND_CONSTANT: u32 = 0x4;
 pub struct Texture {
     /// `D3D11_TEXTURE2D_DESC`.
     pub desc: [u32; 11],
-    /// Bumped on every write the layer sees (updates, maps, copies, use as
-    /// a render target).
+    /// Bumped on every write from the CPU or a copy the layer sees.
     pub version: u32,
 }
 
@@ -849,11 +856,16 @@ unsafe extern "system" fn create_buffer(
         if hr >= 0 && !out.is_null() && !(*out).is_null() && !desc.is_null() {
             let d: [u32; 6] = std::ptr::read_unaligned(desc.cast());
             let shadow = (d[2] & BIND_CONSTANT != 0).then(|| {
-                if data.is_null() || *data == 0 {
+                let mut v = if data.is_null() || *data == 0 {
                     vec![0; d[0] as usize]
                 } else {
                     std::slice::from_raw_parts(*data as *const u8, d[0] as usize).to_vec()
-                }
+                };
+                // Room past the end: the game's writes into a mapped
+                // constant buffer may run over its size (harmless in the
+                // driver's page-sized mapping).
+                v.reserve_exact(4096);
+                v
             });
             {
                 let mut st = state();
@@ -864,6 +876,8 @@ unsafe extern "system" fn create_buffer(
                         desc: d,
                         shadow,
                         version: 0,
+                        wanted: false,
+                        mapped_ptr: 0,
                     },
                 );
             }
@@ -1424,6 +1438,12 @@ pub enum Draw {
 }
 
 fn on_draw(d: Draw) {
+    let t = std::time::Instant::now();
+    on_draw_inner(d);
+    SPENT[0].fetch_add(t.elapsed().as_micros() as u32, Ordering::Relaxed);
+}
+
+fn on_draw_inner(d: Draw) {
     DRAWS.fetch_add(1, Ordering::Relaxed);
     let mut s = state();
     if s.capture.is_some() {
@@ -1432,10 +1452,8 @@ fn on_draw(d: Draw) {
     if live::on() {
         live::draw(&mut s, d);
     }
-    let (rtv, dsv) = (s.bound.rtv, s.bound.dsv);
-    for v in rtv.into_iter().chain([dsv]).filter(|&v| v != 0) {
-        s.touch_view(v);
-    }
+    // Drawing into a texture does not count as a write the renderer needs
+    // to see again: it draws the scene targets itself.
 }
 
 unsafe extern "system" fn draw_indexed(this: Ptr, count: u32, start: u32, base: i32) {
@@ -1540,9 +1558,20 @@ unsafe extern "system" fn map(
         // read-backs).
         if hr >= 0 && !out.is_null() && kind != 1 {
             let mut s = state();
-            if s.buffers.contains_key(&(resource as usize))
-                || s.textures.contains_key(&(resource as usize))
-            {
+            if let Some(b) = s.buffers.get_mut(&(resource as usize)) {
+                b.mapped_ptr = *out;
+                let real = *out;
+                // Constant buffers: the game writes into the layer's copy
+                // (cached memory, cheap to read), which goes to the
+                // driver's memory at Unmap.
+                if let Some(sh) = b.shadow.as_mut()
+                    && b.desc[2] & BIND_CONSTANT != 0
+                    && redirect()
+                {
+                    *out = sh.as_mut_ptr() as usize;
+                }
+                s.mapped.insert(resource as usize, (sub, real));
+            } else if s.textures.contains_key(&(resource as usize)) {
                 s.mapped.insert(resource as usize, (sub, *out));
             }
         }
@@ -1551,20 +1580,41 @@ unsafe extern "system" fn map(
 }
 
 unsafe extern "system" fn unmap(this: Ptr, resource: Ptr, sub: u32) {
+    let t = std::time::Instant::now();
     {
         let mut s = state();
         if let Some((_, data)) = s.mapped.remove(&(resource as usize)) {
-            let capturing = s.capture.is_some() || live::on();
+            let capturing = s.capture.is_some();
             if let Some(t) = s.textures.get_mut(&(resource as usize)) {
                 t.version = t.version.wrapping_add(1);
             }
             if let Some(b) = s.buffers.get_mut(&(resource as usize)) {
                 b.version = b.version.wrapping_add(1);
                 let width = b.desc[0] as usize;
-                if b.shadow.is_some() || (capturing && b.desc[2] & (BIND_VERTEX | BIND_INDEX) != 0)
-                {
-                    // SAFETY: the mapped buffer is `width` bytes long and
-                    // still mapped until the original Unmap below.
+                let constant = b.desc[2] & BIND_CONSTANT != 0;
+                let geometry = b.desc[2] & (BIND_VERTEX | BIND_INDEX) != 0;
+                if constant && !redirect() {
+                    // SAFETY: as below.
+                    let bytes = unsafe { std::slice::from_raw_parts(data as *const u8, width) };
+                    if let Some(sh) = &mut b.shadow {
+                        sh.copy_from_slice(bytes);
+                    }
+                } else if constant {
+                    if let Some(sh) = &b.shadow {
+                        // SAFETY: the driver's mapping is `width` bytes and
+                        // still mapped until the original Unmap below.
+                        unsafe {
+                            std::ptr::copy_nonoverlapping(
+                                sh.as_ptr(),
+                                data as *mut u8,
+                                width.min(sh.len()),
+                            );
+                        }
+                    }
+                } else if capturing && geometry {
+                    // Captures read the whole buffer (slow: write-combined
+                    // memory), for study only.
+                    // SAFETY: as above.
                     let bytes = unsafe { std::slice::from_raw_parts(data as *const u8, width) };
                     match &mut b.shadow {
                         Some(sh) => sh.copy_from_slice(bytes),
@@ -1574,6 +1624,7 @@ unsafe extern "system" fn unmap(this: Ptr, resource: Ptr, sub: u32) {
             }
         }
     }
+    SPENT[1].fetch_add(t.elapsed().as_micros() as u32, Ordering::Relaxed);
     type F = unsafe extern "system" fn(Ptr, Ptr, u32);
     // SAFETY: the original, same arguments.
     unsafe {
@@ -1864,8 +1915,12 @@ fn note_update(dst: Ptr, sub: u32, region: *const u32, data: *const u8) {
             unsafe { (*region as usize, *region.add(3) as usize) }
         };
         if !data.is_null() && from < to && to <= width {
-            if b.shadow.is_none() && capturing {
-                b.shadow = Some(vec![0; width]);
+            let geometry = b.desc[2] & (BIND_VERTEX | BIND_INDEX) != 0;
+            if b.shadow.is_none() && (capturing || (live::on() && geometry)) {
+                // The rest of the buffer as it is now, once.
+                // SAFETY: on the render thread, inside a context call.
+                let now = unsafe { capture::read_buffer(dst as usize, b.desc[0]) };
+                b.shadow = Some(now.unwrap_or_else(|_| vec![0; width]));
             }
             if let Some(sh) = &mut b.shadow {
                 // SAFETY: the caller passes `to - from` bytes.
@@ -2056,11 +2111,42 @@ unsafe extern "system" fn present(swap_chain: Ptr, interval: u32, flags: u32) ->
     // SAFETY: on the game thread, inside Present.
     unsafe { capture::on_present(swap_chain) };
     type F = unsafe extern "system" fn(Ptr, u32, u32) -> i32;
+    let t = std::time::Instant::now();
     // SAFETY: the original, same arguments.
-    unsafe {
+    let hr = unsafe {
         let f: F = std::mem::transmute(PRESENT_ORIGINAL.load(Ordering::Acquire));
         f(swap_chain, interval, flags)
+    };
+    if live::on() {
+        static LAST: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+        let frame = FRAME.load(Ordering::Relaxed);
+        if let Ok(mut last) = LAST.lock() {
+            if frame % 120 == 0
+                && let Some(l) = *last
+            {
+                let spent: Vec<u32> = SPENT
+                    .iter()
+                    .map(|a| a.swap(0, Ordering::Relaxed) / 120)
+                    .collect();
+                log(&format!(
+                    "  gfx: frame {frame}: present took {:?} (interval {interval}), {:?} since the last; per frame: draws {} us, unmaps {} us",
+                    t.elapsed(),
+                    l.elapsed(),
+                    spent[0],
+                    spent[1]
+                ));
+            }
+            *last = Some(std::time::Instant::now());
+        }
     }
+    hr
+}
+
+/// Whether constant buffer maps go to the layer's copy (`FFX_GFX_REDIRECT=0`
+/// turns it off, for finding problems).
+fn redirect() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var("FFX_GFX_REDIRECT").map_or(true, |v| v != "0"))
 }
 
 /// Frames presented and draws in the last one.

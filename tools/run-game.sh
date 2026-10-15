@@ -33,8 +33,8 @@ while [[ $# -gt 0 ]]; do
         --background) export FFX_HARNESS_BACKGROUND=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_BACKGROUND" ;;
         --home) home="$2"; shift ;;
         --fast) export FFX_HARNESS_FAST=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_FAST" ;;
-        --renderer) export FFX_RENDERER=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_RENDERER:FFX_RENDER_TEST"; renderer=1 ;;
-        --gfx) export FFX_GFX="${FFX_GFX:-1}"; export WSLENV="${WSLENV:+$WSLENV:}FFX_GFX" ;;
+        --renderer) export FFX_RENDERER=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_RENDERER:FFX_RENDER_TEST:FFX_GFX_REDIRECT"; renderer=1 ;;
+        --gfx) export FFX_GFX="${FFX_GFX:-1}"; export WSLENV="${WSLENV:+$WSLENV:}FFX_GFX:FFX_GFX_REDIRECT" ;;
         --seed) export FFX_HARNESS_SEED="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_SEED"; shift ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
     esac

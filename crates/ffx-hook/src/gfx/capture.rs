@@ -512,7 +512,7 @@ unsafe fn read_texture(resource: usize) -> Result<Readback, String> {
 }
 
 /// A buffer's contents, through a staging copy.
-unsafe fn read_buffer(resource: usize, width: u32) -> Result<Vec<u8>, String> {
+pub(super) unsafe fn read_buffer(resource: usize, width: u32) -> Result<Vec<u8>, String> {
     let device = super::DEVICE.load(std::sync::atomic::Ordering::Acquire) as Ptr;
     let context = super::CONTEXT.load(std::sync::atomic::Ordering::Acquire) as Ptr;
     // SAFETY: as in `read_texture`.

@@ -154,6 +154,24 @@ struct Prepared {
     groups: [wgpu::BindGroup; 2],
     draw: Box<Draw>,
     scissor: bool,
+    /// Where each vertex slot and the index buffer read from: offsets in
+    /// the frame's arena for buffers the frame sent bytes of.
+    vertex: Vec<(u8, Source)>,
+    index: Option<Source>,
+}
+
+/// A buffer binding: one of the mirrored buffers, or the frame's arena.
+#[derive(Clone, Copy)]
+enum Source {
+    Buffer(Id, u64),
+    Arena(u64),
+}
+
+/// The bytes the frame sent for a buffer, as seen from `offset` on.
+fn sent_bytes(sent: &HashMap<Id, (u32, Vec<u8>)>, id: Id, offset: u32) -> Option<&[u8]> {
+    let (at, data) = sent.get(&id)?;
+    let skip = offset.checked_sub(*at)? as usize;
+    data.get(skip..)
 }
 
 /// Consecutive commands on the same targets.
@@ -688,13 +706,21 @@ impl Renderer {
             Arc<Linked>,
             Arc<wgpu::RenderPipeline>,
             HashMap<(usize, u8), (u64, u64)>,
+            Vec<(u8, Source)>,
+            Option<Source>,
         );
         let mut pending: Vec<Pending> = Vec::new();
         let mut draws_seen = 0usize;
+        let mut sent: HashMap<Id, (u32, Vec<u8>)> = HashMap::new();
+        let mut geom: Vec<u8> = Vec::new();
         let align = u64::from(self.device.limits().min_uniform_buffer_offset_alignment).max(16);
         for cmd in &frame.cmds {
             match cmd {
-                Cmd::UpdateBuffer { id, offset, data } => self.update_buffer(*id, *offset, data),
+                Cmd::UpdateBuffer { id, offset, data } => {
+                    // Kept for the draws that follow: the queue's writes
+                    // would all land before any of this frame's draws.
+                    sent.insert(*id, (*offset, data.clone()));
+                }
                 Cmd::ClearTarget { view, color } => {
                     if !self.views.contains_key(view) {
                         continue;
@@ -776,7 +802,40 @@ impl Renderer {
                             draws: Vec::new(),
                         });
                     }
-                    pending.push((passes.len() - 1, d.clone(), linked, pipeline, offsets));
+                    let mut put = |bytes: &[u8], align: usize| {
+                        let at = geom.len().next_multiple_of(align);
+                        geom.resize(at, 0);
+                        geom.extend_from_slice(bytes);
+                        at as u64
+                    };
+                    let vertex: Vec<(u8, Source)> = d
+                        .vertex
+                        .iter()
+                        .map(|&(slot, id, _, offset)| {
+                            let src = match sent_bytes(&sent, id, offset) {
+                                Some(bytes) => Source::Arena(put(bytes, 4)),
+                                None => Source::Buffer(id, u64::from(offset)),
+                            };
+                            (slot, src)
+                        })
+                        .collect();
+                    let index = matches!(
+                        d.kind,
+                        ffx_gfx::DrawKind::Indexed | ffx_gfx::DrawKind::IndexedInstanced
+                    )
+                    .then(|| match sent_bytes(&sent, d.index.0, d.index.2) {
+                        Some(bytes) => Source::Arena(put(bytes, 4)),
+                        None => Source::Buffer(d.index.0, u64::from(d.index.2)),
+                    });
+                    pending.push((
+                        passes.len() - 1,
+                        d.clone(),
+                        linked,
+                        pipeline,
+                        offsets,
+                        vertex,
+                        index,
+                    ));
                 }
             }
         }
@@ -791,7 +850,19 @@ impl Renderer {
             self.queue.write_buffer(&arena, 0, &uniform);
         }
         // Bind groups, in draw order, into their passes.
-        for (pass, d, linked, pipeline, offsets) in pending {
+        let geometry = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("frame geometry"),
+            size: (geom.len() as u64).max(4).next_multiple_of(4),
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::INDEX
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        if !geom.is_empty() {
+            geom.resize(geom.len().next_multiple_of(4), 0);
+            self.queue.write_buffer(&geometry, 0, &geom);
+        }
+        for (pass, d, linked, pipeline, offsets, vertex, index) in pending {
             let g0 = self.bind_group(&linked, 0, &d, &arena, &offsets);
             let g1 = self.bind_group(&linked, 1, &d, &arena, &offsets);
             let scissor = formats::raster(self.state(d.raster, StateKind::Raster)).3;
@@ -801,6 +872,8 @@ impl Renderer {
                     groups: [g0, g1],
                     draw: d,
                     scissor,
+                    vertex,
+                    index,
                 });
             }
         }
@@ -967,35 +1040,44 @@ impl Renderer {
                         });
                         rp.set_stencil_reference(d.stencil_ref);
                         let mut ok = true;
-                        for &(slot, id, _, offset) in &d.vertex {
-                            match self.buffers.get(&id) {
-                                Some(b) if u64::from(offset) < b.buffer.size() => {
-                                    rp.set_vertex_buffer(
-                                        u32::from(slot),
-                                        b.buffer.slice(u64::from(offset)..),
-                                    );
+                        for &(slot, src) in &p.vertex {
+                            match src {
+                                Source::Arena(at) => {
+                                    rp.set_vertex_buffer(u32::from(slot), geometry.slice(at..));
                                 }
-                                _ => ok = false,
+                                Source::Buffer(id, offset) => match self.buffers.get(&id) {
+                                    Some(b) if offset < b.buffer.size() => {
+                                        rp.set_vertex_buffer(
+                                            u32::from(slot),
+                                            b.buffer.slice(offset..),
+                                        );
+                                    }
+                                    _ => ok = false,
+                                },
                             }
                         }
                         if !ok {
                             continue;
                         }
                         let instances = d.first_instance..d.first_instance + d.instances.max(1);
-                        match d.kind {
-                            ffx_gfx::DrawKind::Indexed | ffx_gfx::DrawKind::IndexedInstanced => {
-                                let Some(b) = self.buffers.get(&d.index.0) else {
-                                    continue;
-                                };
-                                let format = if d.index.1 == 42 {
-                                    wgpu::IndexFormat::Uint32
-                                } else {
-                                    wgpu::IndexFormat::Uint16
-                                };
-                                rp.set_index_buffer(b.buffer.slice(u64::from(d.index.2)..), format);
+                        let format = if d.index.1 == 42 {
+                            wgpu::IndexFormat::Uint32
+                        } else {
+                            wgpu::IndexFormat::Uint16
+                        };
+                        match p.index {
+                            Some(Source::Arena(at)) => {
+                                rp.set_index_buffer(geometry.slice(at..), format);
                                 rp.draw_indexed(d.start..d.start + d.count, d.base, instances);
                             }
-                            _ => rp.draw(d.start..d.start + d.count, instances),
+                            Some(Source::Buffer(id, offset)) => {
+                                let Some(b) = self.buffers.get(&id) else {
+                                    continue;
+                                };
+                                rp.set_index_buffer(b.buffer.slice(offset..), format);
+                                rp.draw_indexed(d.start..d.start + d.count, d.base, instances);
+                            }
+                            None => rp.draw(d.start..d.start + d.count, instances),
                         }
                     }
                 }

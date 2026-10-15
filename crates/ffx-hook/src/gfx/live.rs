@@ -92,6 +92,11 @@ struct Link {
     composite: Option<Composite>,
     /// Frames the renderer did not answer in time.
     misses: u32,
+    /// Contents of the index buffers the renderer has, for finding the
+    /// vertices a draw reads from a streamed vertex buffer.
+    indices: HashMap<usize, Vec<u8>>,
+    /// Objects (re)sent since the last report: (kind, bytes, time).
+    resent: HashMap<&'static str, (u32, usize, std::time::Duration)>,
     alive: bool,
 }
 
@@ -186,6 +191,8 @@ pub fn start() {
                 frame: 0,
                 composite: None,
                 misses: 0,
+                resent: HashMap::new(),
+                indices: HashMap::new(),
                 alive: true,
             });
         }
@@ -215,7 +222,22 @@ impl Link {
     }
 
     /// Sends what `id` refers to, if the renderer lacks it or it changed.
+    /// Streamed buffers go once; draws carry the bytes they read.
     fn sync(&mut self, s: &State, id: usize) {
+        if streamed(s, id) {
+            if !self.sent.contains_key(&id)
+                && let Some(b) = s.buffers.get(&id)
+            {
+                // The buffer itself; draws bring its bytes.
+                self.send(&ffx_gfx::Msg::Buffer {
+                    id: id as u32,
+                    desc: b.desc,
+                    data: Vec::new(),
+                });
+                self.sent.insert(id, 0);
+            }
+            return;
+        }
         let version = s
             .textures
             .get(&id)
@@ -235,11 +257,163 @@ impl Link {
             }
             return;
         }
+        let t = std::time::Instant::now();
         if let Some(m) = capture::object_msg(s, id) {
+            let (kind, bytes) = match &m {
+                ffx_gfx::Msg::Texture { subresources, .. } => {
+                    ("texture", subresources.iter().map(|x| x.data.len()).sum())
+                }
+                ffx_gfx::Msg::Buffer { data, .. } => ("buffer", data.len()),
+                _ => ("other", 0),
+            };
+            if let ffx_gfx::Msg::Buffer { desc, data, .. } = &m
+                && desc[2] & super::BIND_INDEX != 0
+            {
+                self.indices.insert(id, data.clone());
+            }
             self.send(&m);
+            let e = self.resent.entry(kind).or_default();
+            e.0 += 1;
+            e.1 += bytes;
+            e.2 += t.elapsed();
             self.sent.insert(id, version);
         }
     }
+}
+
+/// Vertex and index buffers the game writes as it goes (dynamic ones, and
+/// default ones it updates): each draw sends the part it reads.
+fn streamed(s: &State, id: usize) -> bool {
+    s.buffers.get(&id).is_some_and(|b| {
+        b.desc[2] & (super::BIND_VERTEX | super::BIND_INDEX) != 0
+            && (b.desc[1] == 2 || b.shadow.is_some())
+    })
+}
+
+/// Bytes `from..to` of a streamed buffer: from the layer's copy, or for a
+/// dynamic buffer from its mapped memory (read safely: only the bytes a
+/// draw uses, write-combined memory is slow to read).
+fn bytes(s: &State, id: usize, from: usize, to: usize) -> Option<Vec<u8>> {
+    let b = s.buffers.get(&id)?;
+    let to = to.min(b.desc[0] as usize);
+    if from >= to {
+        return None;
+    }
+    if let Some(sh) = &b.shadow {
+        return sh.get(from..to).map(<[u8]>::to_vec);
+    }
+    if b.mapped_ptr == 0 {
+        return None;
+    }
+    read_memory(b.mapped_ptr + from, to - from)
+}
+
+fn read_memory(address: usize, len: usize) -> Option<Vec<u8>> {
+    use windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory;
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+    let mut out = vec![0u8; len];
+    let mut read = 0;
+    // SAFETY: ReadProcessMemory validates the source range itself.
+    let ok = unsafe {
+        ReadProcessMemory(
+            GetCurrentProcess(),
+            address as *const c_void,
+            out.as_mut_ptr().cast(),
+            len,
+            &raw mut read,
+        )
+    };
+    (ok != 0 && read == len).then_some(out)
+}
+
+/// The smallest and largest index `count` indices from `start` use.
+fn index_range(
+    data: &[u8],
+    format: u32,
+    offset: u32,
+    start: u32,
+    count: u32,
+) -> Option<(u32, u32)> {
+    let size = if format == 42 { 4 } else { 2 };
+    let from = offset as usize + start as usize * size;
+    let bytes = data.get(from..from + count as usize * size)?;
+    let mut lo = u32::MAX;
+    let mut hi = 0;
+    for c in bytes.chunks_exact(size) {
+        let i = if size == 4 {
+            u32::from_le_bytes([c[0], c[1], c[2], c[3]])
+        } else {
+            u32::from(u16::from_le_bytes([c[0], c[1]]))
+        };
+        lo = lo.min(i);
+        hi = hi.max(i);
+    }
+    (lo <= hi).then_some((lo, hi))
+}
+
+/// The bytes of streamed buffers this draw reads, as updates to send
+/// before it: from each binding's offset to the last byte used.
+fn draw_updates(link: &Link, s: &State, d: &ffx_gfx::Draw) -> Vec<ffx_gfx::Cmd> {
+    use ffx_gfx::DrawKind as K;
+    let mut out = Vec::new();
+    let indexed = matches!(d.kind, K::Indexed | K::IndexedInstanced);
+    let (ib, ifmt, ioff) = d.index;
+    let isize = if ifmt == 42 { 4 } else { 2 };
+    let index_end = ioff as usize + (d.start + d.count) as usize * isize;
+    // The indices: sent when streamed, and needed to find the vertices.
+    let index_bytes = if indexed && streamed(s, ib as usize) {
+        let b = bytes(s, ib as usize, ioff as usize, index_end);
+        if let Some(b) = &b {
+            out.push(ffx_gfx::Cmd::UpdateBuffer {
+                id: ib,
+                offset: ioff,
+                data: b.clone(),
+            });
+        }
+        b.map(|b| (b, 0u32))
+    } else {
+        link.indices.get(&(ib as usize)).map(|b| (b.clone(), ioff))
+    };
+    let vertices = if indexed {
+        index_bytes
+            .as_ref()
+            .and_then(|(data, off)| index_range(data, ifmt, *off, d.start, d.count))
+            .map(|(lo, hi)| (lo.cast_signed() + d.base, hi.cast_signed() + d.base))
+    } else {
+        Some((d.start.cast_signed(), (d.start + d.count).cast_signed() - 1))
+    };
+    let per_instance: Vec<u32> = s
+        .layouts
+        .get(&(d.layout as usize))
+        .map(|l| {
+            l.elements
+                .iter()
+                .filter(|e| e.per_instance)
+                .map(|e| e.slot)
+                .collect()
+        })
+        .unwrap_or_default();
+    for &(slot, vb, stride, offset) in &d.vertex {
+        if !streamed(s, vb as usize) {
+            continue;
+        }
+        let last = if per_instance.contains(&u32::from(slot)) {
+            (d.first_instance + d.instances.max(1)) as usize
+        } else if let Some((_, hi)) = vertices {
+            hi.max(0) as usize + 1
+        } else {
+            continue;
+        };
+        let end = offset as usize + last * stride.max(1) as usize;
+        if let Some(data) = bytes(s, vb as usize, offset as usize, end) {
+            out.push(ffx_gfx::Cmd::UpdateBuffer {
+                id: vb,
+                offset,
+                data,
+            });
+        }
+    }
+    out
 }
 
 /// A draw went to the context: scene draws are recorded for the renderer.
@@ -272,6 +446,8 @@ pub fn draw(s: &mut State, d: Draw) {
     for id in capture::draw_objects(&streamed).collect::<Vec<_>>() {
         link.sync(s, id);
     }
+    let updates = draw_updates(link, s, &streamed);
+    link.cmds.extend(updates);
     link.cmds.push(ffx_gfx::Cmd::Draw(Box::new(streamed)));
 }
 
@@ -312,6 +488,7 @@ pub fn present(s: &mut State) {
 }
 
 fn finish(link: &mut Link, s: &mut State, scene: Scene) {
+    let t0 = std::time::Instant::now();
     link.frame += 1;
     let mut cmds = Vec::new();
     // The scene targets' clears first, then the draws.
@@ -348,7 +525,10 @@ fn finish(link: &mut Link, s: &mut State, scene: Scene) {
     // The renderer's answer: frame, width, height, then colour, normal
     // (RGBA8) and depth (f32), rows packed.
     let frame = link.frame;
-    let Some((rw, rh, data)) = receive(link, frame) else {
+    let t_send = t0.elapsed();
+    let received = receive(link, frame);
+    let t_wait = t0.elapsed();
+    let Some((rw, rh, data)) = received else {
         link.misses += 1;
         MISSES.fetch_add(1, Ordering::Relaxed);
         if link.misses % 60 == 1 {
@@ -365,6 +545,17 @@ fn finish(link: &mut Link, s: &mut State, scene: Scene) {
     IMAGES.fetch_add(1, Ordering::Relaxed);
     // SAFETY: on the render thread; the game's device and context.
     unsafe { composite(link, s, scene, w, h, &data) };
+    if frame % 120 == 0 {
+        for (kind, (n, bytes, time)) in link.resent.drain() {
+            log(&format!(
+                "  live: sent {n} {kind}s, {bytes} bytes, in {time:?} (last 120 frames)"
+            ));
+        }
+        log(&format!(
+            "  live: frame {frame}: sent {t_send:?}, image at {t_wait:?}, composited at {:?}",
+            t0.elapsed()
+        ));
+    }
 }
 
 /// Reads answers until the one for `frame` (older ones are dropped).

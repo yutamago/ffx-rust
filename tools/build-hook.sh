@@ -4,7 +4,7 @@
 set -euo pipefail
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 export PATH="$repo/tools/shims:$PATH"
-export XWIN_ARCH=x86
+export XWIN_ARCH=x86,x86_64
 cd "$repo"
 cargo xwin build --release --target i686-pc-windows-msvc -p ffx-dinput8 -p ffx-hook --lib --examples "$@"
 echo "built: $repo/target/i686-pc-windows-msvc/release/dinput8.dll"
