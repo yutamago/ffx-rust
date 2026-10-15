@@ -219,7 +219,8 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     if (scene.fog_range.w > 0.5) {
         let d = view_depth(in.world);
         let f = min(pow(clamp((d - scene.fog_range.x) / (scene.fog_range.y - scene.fog_range.x + 0.01), 0.0, 1.0), scene.fog_range.z), scene.fog.w);
-        color = mix(color, scene.fog.rgb, f);
+        let g = mix(pow(max(color, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.2)), pow(scene.fog.rgb, vec3<f32>(1.0 / 2.2)), f);
+        color = pow(g, vec3<f32>(2.2));
     }
     if (water.misc.x > 0.5) {
         // Where the game's water is faint (seen from under it, say), so is

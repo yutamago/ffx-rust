@@ -13,6 +13,8 @@ struct Light {
     sun_color: vec4<f32>,
     // rgb: sky ambient, w: strength
     sky: vec4<f32>,
+    // rgb: ground colour, w: how much sky light scenery gets on top of its
+    // baked light (which has the map's ambient already)
     ground: vec4<f32>,
     // rgb: fog colour (linear), w: limit
     fog: vec4<f32>,
@@ -22,7 +24,8 @@ struct Light {
     mix: vec4<f32>,
     // x: shadow map texel size, y: filter radius (texels), z: bias, w: ao strength
     shadow_params: vec4<f32>,
-    // x: width, y: height
+    // x: width, y: height, z: strength of the shadows only the cascades
+    // have (characters') on scenery, when rays are on
     screen: vec4<f32>,
     // The view matrix's third row: view-space depth, as the game's fog
     // uses.
@@ -202,27 +205,39 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     let v = normalize(light.eye.xyz - p);
     let l = -normalize(light.sun.xyz);
     let nl = max(dot(n, l), 0.0);
-    var shadow = shadow_factor(p, n);
+    // With rays, the cascades hold only what rays do not see (characters,
+    // cut-out surfaces): two shadows, of different strength on scenery.
+    let cascade = shadow_factor(p, n);
+    let traced_on = light.rt.x > 0.5 && light.mix.w > 0.5;
+    var traced = 1.0;
     // No ray where the cascades already have shadow, nor for scenery
     // facing away from the key light (characters' soft wrap lights past
     // the terminator).
-    if (light.rt.x > 0.5 && light.mix.w > 0.5 && shadow > 0.0 && (nm.w > 0.5 || nl > 0.0)) {
-        shadow = min(shadow, rt_shadow(p, n, l, in.pos.xy, light.rt.y, light.rt.z));
+    if (traced_on && cascade > 0.0 && (nm.w > 0.5 || nl > 0.0)) {
+        traced = rt_shadow(p, n, l, in.pos.xy, light.rt.y, light.rt.z);
     }
+    let shadow = min(cascade, traced);
     let rough = select(light.mix.y, albedo_rough.a, albedo_rough.a > 0.01);
     let spec = ggx(n, v, l, rough, 0.04) * light.mix.z;
     let hemi = mix(light.ground.rgb, light.sky.rgb, n.y * 0.5 + 0.5) * light.sky.w;
     var color: vec3<f32>;
     if (nm.w < 0.5) {
-        // Scenery: its baked light is the lighting (local lights included);
-        // the key light only reshapes it, darker in its shadow and away
-        // from it, brighter facing it, about the same on average.
-        let facing = shadow * nl;
-        let shape = mix(1.0, facing * 2.0, light.scenery.x);
+        // Scenery: its baked light is the lighting (the artists' light,
+        // local lights included). The key light only adds its shadows:
+        // darker where it is blocked, on the sides that face it (the far
+        // sides are dark in the baked light already). Its direction need
+        // not match the baked light's, so it never brightens.
+        // Shadows of characters (and what else only the cascades have)
+        // ground them: stronger than the scenery's own.
+        let facing = smoothstep(0.0, 0.2, nl);
+        var shape = mix(1.0, mix(1.0, shadow, facing), light.scenery.x);
+        if (traced_on) {
+            shape = mix(1.0, mix(1.0, traced, facing), light.scenery.x)
+                * mix(1.0, mix(1.0, cascade, facing), light.screen.z);
+        }
         let base = baked * light.mix.x * max(shape, 0.0) * mix(1.0, ao, light.scenery.z);
         let gloss = spec * light.sun_color.rgb * light.sun.w * shadow * nl * light.scenery.y;
-        color = albedo * (base + hemi * ao) + gloss * min(dot(baked, vec3<f32>(0.33)) * 2.0, 1.0);
-        color = albedo * hemi * (ao - 1.0) + color;
+        color = albedo * (base + hemi * ao * light.ground.w) + gloss * min(dot(baked, vec3<f32>(0.33)) * 2.0, 1.0);
     } else {
         // Characters: lit like the game lights them, key and fill light
         // with real shadows, ambient as sky.
@@ -271,7 +286,10 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
         let d = abs(dot(light.view_z, vec4<f32>(p, 1.0)));
         let t = clamp((d - light.fog_range.x) / (light.fog_range.y - light.fog_range.x + 0.01), 0.0, 1.0);
         let f = min(pow(t, light.fog_range.z), light.fog.w) * baked_fog.a;
-        color = mix(color, light.fog.rgb, f);
+        // The game blends its fog in gamma space: so do we (in linear it
+        // lifts the dark parts).
+        let g = mix(pow(max(color, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.2)), pow(light.fog.rgb, vec3<f32>(1.0 / 2.2)), f);
+        color = pow(g, vec3<f32>(2.2));
     }
     return vec4<f32>(color, 1.0);
 }

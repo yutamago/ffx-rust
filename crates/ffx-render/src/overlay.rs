@@ -625,6 +625,7 @@ fn panel(
                     }
                     slider(ui, "baked light", &mut s.baked_light, 0.0..=2.0);
                     slider(ui, "key light on scenery", &mut s.scenery_key, 0.0..=1.0);
+                    slider(ui, "sky light on scenery", &mut s.scenery_sky, 0.0..=2.0);
                     slider(ui, "scenery specular", &mut s.scenery_specular, 0.0..=2.0);
                     slider(ui, "character ambient", &mut s.character_ambient, 0.0..=4.0);
                     ui.checkbox(&mut s.probes, "Characters lit by the scenery around them");
@@ -653,6 +654,7 @@ fn panel(
                 );
                 slider(ui, "sun size (softness)", &mut s.sun_size, 0.0..=0.08);
                 slider(ui, "ray distance", &mut s.ray_distance, 10.0..=1000.0);
+                slider(ui, "character shadows", &mut s.character_shadows, 0.0..=1.0);
                 ui.checkbox(&mut s.shadows, "Real shadows");
                 ui.checkbox(&mut s.fake_shadows, "The game's blob shadows too");
                 let mut size = s.shadow_size as f32;

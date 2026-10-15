@@ -2575,7 +2575,12 @@ impl Enhanced {
         put4(&mut light, [sky.0[0], sky.0[1], sky.0[2], sky.1]);
         put4(
             &mut light,
-            [s.ground_color[0], s.ground_color[1], s.ground_color[2], 0.0],
+            [
+                s.ground_color[0],
+                s.ground_color[1],
+                s.ground_color[2],
+                s.scenery_sky,
+            ],
         );
         let fog_lin = fog_color.map(|c| (c * 2.0).max(0.0).powf(2.2));
         put4(
@@ -2610,7 +2615,15 @@ impl Enhanced {
                 if s.ao { 1.0 } else { 0.0 },
             ],
         );
-        put4(&mut light, [internal.0 as f32, internal.1 as f32, 0.0, 0.0]);
+        put4(
+            &mut light,
+            [
+                internal.0 as f32,
+                internal.1 as f32,
+                s.character_shadows,
+                0.0,
+            ],
+        );
         put4(&mut light, view[2]);
         put4(&mut light, [fill.0[0], fill.0[1], fill.0[2], fill.2]);
         put4(&mut light, [fill.1[0], fill.1[1], fill.1[2], 0.0]);

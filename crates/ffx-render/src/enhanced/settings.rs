@@ -35,6 +35,9 @@ pub struct Settings {
     /// How much the key light reshapes scenery's baked light (shadows,
     /// facing), 0–1.
     pub scenery_key: f32,
+    /// Sky light on scenery, on top of its baked light (characters always
+    /// get it).
+    pub scenery_sky: f32,
     /// Specular highlights on scenery from the key light.
     pub scenery_specular: f32,
     /// Characters' light falloff: 0 the game's soft wrap, 1 physical.
@@ -65,6 +68,9 @@ pub struct Settings {
     /// How far a shadow ray looks for scenery in the way (world units; a
     /// character is about 20 tall).
     pub ray_distance: f32,
+    /// With traced shadows: how dark the shadows of characters (and of
+    /// cut-out surfaces) are on scenery.
+    pub character_shadows: f32,
     /// Light probes: characters take their indirect light from the
     /// scenery around them (its baked light, seen from where they stand).
     pub probes: bool,
@@ -145,7 +151,8 @@ impl Default for Settings {
             sky_intensity: 0.0,
             ground_color: [0.3, 0.27, 0.25],
             baked_light: 1.0,
-            scenery_key: 0.6,
+            scenery_key: 0.4,
+            scenery_sky: 0.2,
             scenery_specular: 0.5,
             character_falloff: 0.3,
             character_ambient: 2.0,
@@ -162,6 +169,7 @@ impl Default for Settings {
             ray_traced_shadows: true,
             sun_size: 0.012,
             ray_distance: 150.0,
+            character_shadows: 0.8,
             probes: true,
             probe_strength: 1.0,
             probe_mix: 0.7,
@@ -178,7 +186,7 @@ impl Default for Settings {
             fog_density: 0.0015,
             fog_anisotropy: 0.6,
             volumetric_strength: 0.05,
-            haze: 0.3,
+            haze: 0.05,
             volumetric_steps: 24,
             volumetric_distance: 300.0,
             render_scale: 1.0,
