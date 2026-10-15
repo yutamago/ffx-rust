@@ -301,8 +301,11 @@ and green the tangent-space normal, blue roughness, alpha cavity) replaces
 the map made from that texture. To start a pack, export the generated
 ones: `FFX_RENDER_EXPORT_MATERIALS=<dir>` in the game, or
 `ffx-render replay ... --export-materials <dir>`. Upscaled texture mods
-that replace the game's files work as they are: the renderer draws
-whatever the game loads.
+that replace the game's files work as they are (loose files under
+`mods/<mod name>/<archive path>`, see `docs/hooking.md`): the renderer
+draws whatever the game loads. Material maps made from colour textures
+are at most 2048 texels across (from the texture's mip of that size), so
+4K and 8K textures do not cost hundreds of MB each.
 
 ## Tools
 

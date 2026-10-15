@@ -794,6 +794,8 @@ const UNFILTERED: wgpu::TextureSampleType = wgpu::TextureSampleType::Float { fil
 const ITEM_BASE: usize = 240;
 const ITEM_SIZE: usize = ITEM_BASE + 64;
 const CAMERA_SIZE: usize = 64 * 5 + 32;
+/// The largest material map made from a colour texture, texels across.
+const MATERIAL_MAX: u32 = 2048;
 const LIGHT_SIZE: usize = 64 + 16 * 12 + 16 * 17;
 const POST_SIZE: usize = 16 + 64 + 16;
 
@@ -2093,13 +2095,23 @@ impl Enhanced {
             .filter(|_| t.hash != 0)
             .and_then(|d| std::fs::read(d.join(format!("{:016x}.png", t.hash))).ok())
             .and_then(|b| crate::png::decode(&b));
-        let (w, h) = pack
-            .as_ref()
-            .map_or((t.desc[0].max(1), t.desc[1].max(1)), |p| (p.0, p.1));
+        // Made maps are at most MATERIAL_MAX across (upscaled 4K and 8K
+        // textures would cost hundreds of MB each), from the colour
+        // texture's mip of that size where it has one.
+        let shift = if pack.is_some() {
+            0
+        } else {
+            let wide = t.desc[0].max(t.desc[1]).max(1);
+            (32 - (wide / MATERIAL_MAX).max(1).leading_zeros() - 1).min(t.desc[2].max(1) - 1)
+        };
+        let (w, h) = pack.as_ref().map_or(
+            ((t.desc[0] >> shift).max(1), (t.desc[1] >> shift).max(1)),
+            |p| (p.0, p.1),
+        );
         let mips = if pack.is_some() {
             32 - w.max(h).leading_zeros()
         } else {
-            t.desc[2].max(1).min(32 - w.max(h).leading_zeros())
+            (t.desc[2].max(1) - shift).min(32 - w.max(h).leading_zeros())
         };
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("material"),
@@ -2151,7 +2163,11 @@ impl Enhanced {
             put4(
                 &mut u,
                 [
-                    if level == 0 { 0.0 } else { (level - 1) as f32 },
+                    if level == 0 {
+                        shift as f32
+                    } else {
+                        (level - 1) as f32
+                    },
                     0.0,
                     0.0,
                     0.0,
