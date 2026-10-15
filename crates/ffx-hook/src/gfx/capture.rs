@@ -600,6 +600,15 @@ pub unsafe fn on_present(swap_chain: Ptr) {
         }
         if let Some(c) = s.capture.take() {
             let reply = finish(&s, c);
+            // The copies of dynamic vertex and index buffers were for the
+            // capture: kept, they would stand for the buffers from now on
+            // (the live link reads a copy before the mapped memory) and
+            // freeze what they draw.
+            for b in s.buffers.values_mut() {
+                if b.desc[1] == 2 && b.desc[2] & (super::BIND_VERTEX | super::BIND_INDEX) != 0 {
+                    b.shadow = None;
+                }
+            }
             drop(s);
             let (msg, tx) = reply;
             if let Some(tx) = tx {

@@ -50,6 +50,9 @@ static PAUSED: AtomicBool = AtomicBool::new(false);
 /// The renderer's layer (the overlay's image) shows though the overlay's
 /// panels are hidden: its HUD (the minimap).
 static LAYER: AtomicBool = AtomicBool::new(false);
+/// The renderer holds the pointer (its free camera's walk mode): kept at
+/// the window's centre, hidden, its moves sent as `Input::Motion`.
+static HOLD_POINTER: AtomicBool = AtomicBool::new(false);
 /// The renderer's free camera (eye, look-at in game space, projection
 /// distance, roll), put into the game's override camera at Present; and
 /// whether the override is ours to turn off.
@@ -387,7 +390,15 @@ unsafe extern "system" fn window_proc(
             let y = f32::from((((lparam >> 16) & 0xffff) as u16).cast_signed());
             client_to_screen(hwnd, x, y)
         };
+        let held = HOLD_POINTER.load(Ordering::Acquire);
         let taken = match msg {
+            0x200 if held => {
+                // SAFETY: the game's window, on its thread.
+                if let Some((dx, dy)) = unsafe { recentre(hwnd) } {
+                    push_input(ffx_gfx::Input::Motion(dx, dy));
+                }
+                true
+            }
             0x200 => {
                 let (x, y) = point();
                 push_input(ffx_gfx::Input::Move(x, y));
@@ -421,14 +432,29 @@ unsafe extern "system" fn window_proc(
                 });
                 overlay_takes_keys()
             }
+            // With Alt (Alt+F4 still closes the game).
+            0x104 | 0x105 if wparam != 0x73 => {
+                push_input(ffx_gfx::Input::Key {
+                    vk: wparam as u32,
+                    pressed: msg == 0x104,
+                });
+                overlay_takes_keys()
+            }
             0x102 => {
                 push_input(ffx_gfx::Input::Char(wparam as u32));
                 overlay_takes_keys()
             }
-            // WM_SETCURSOR: an arrow over the client area.
+            // WM_SETCURSOR: an arrow over the client area (none while
+            // the renderer holds the pointer).
             0x20 => {
                 // SAFETY: plain cursor calls on the window's thread.
-                unsafe { SetCursor(LoadCursorW(std::ptr::null_mut(), IDC_ARROW)) };
+                unsafe {
+                    SetCursor(if held {
+                        std::ptr::null_mut()
+                    } else {
+                        LoadCursorW(std::ptr::null_mut(), IDC_ARROW)
+                    });
+                };
                 true
             }
             _ => false,
@@ -446,6 +472,44 @@ unsafe extern "system" fn window_proc(
 }
 
 /// Client coordinates to back buffer pixels.
+/// The held pointer: how far it is from the window's centre (in the
+/// renderer's screen pixels), and back to the centre.
+#[allow(clippy::cast_precision_loss)] // window sizes, far below 2^24
+unsafe fn recentre(hwnd: *mut c_void) -> Option<(f32, f32)> {
+    use windows_sys::Win32::Foundation::{POINT, RECT};
+    use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetClientRect, GetCursorPos, SetCursorPos};
+    let mut r = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    let mut at = POINT { x: 0, y: 0 };
+    // SAFETY: the game's window; plain cursor calls.
+    unsafe {
+        GetClientRect(hwnd, &raw mut r);
+        let mut centre = POINT {
+            x: (r.right - r.left) / 2,
+            y: (r.bottom - r.top) / 2,
+        };
+        ClientToScreen(hwnd, &raw mut centre);
+        GetCursorPos(&raw mut at);
+        let (dx, dy) = (at.x - centre.x, at.y - centre.y);
+        if dx == 0 && dy == 0 {
+            // The move that putting it back made.
+            return None;
+        }
+        SetCursorPos(centre.x, centre.y);
+        let (cw, ch) = (
+            (r.right - r.left).max(1) as f32,
+            (r.bottom - r.top).max(1) as f32,
+        );
+        let (sw, sh) = SCREEN.lock().map_or((cw, ch), |s| (s.0 as f32, s.1 as f32));
+        Some((dx as f32 * sw / cw, dy as f32 * sh / ch))
+    }
+}
+
 #[allow(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
@@ -703,7 +767,174 @@ struct Link {
     indices: HashMap<usize, Vec<u8>>,
     /// Objects (re)sent since the last report: (kind, bytes, time).
     resent: HashMap<&'static str, (u32, usize, std::time::Duration)>,
+    /// Water drawn after the scene (see [`Water`]).
+    water: Water,
     alive: bool,
+}
+
+/// Water the game draws after leaving the scene: it copies the scene's
+/// colour with a draw (for refraction), then draws the water back into the
+/// scene (bsil0000's lagoon). Seen in a frame, the copy (its pixel shader
+/// and target) is learnt; in the frames after, leaving the scene waits
+/// for the next draw: that copy, passes on the scene's depth and the water
+/// over the scene stay in the frame (the renderer's water pass draws it),
+/// anything else finishes the frame first (as leaving does without).
+#[derive(Default)]
+struct Water {
+    /// The copy before water, as learnt: pixel shader hash, target.
+    learned: Option<(u64, usize)>,
+    /// This frame: a copy of the finished scene seen (then water over the
+    /// scene teaches it).
+    seen: Option<(u64, usize)>,
+    /// The game left the scene and the frame waits for its next draw.
+    leaving: bool,
+    /// The copy came: the water follows.
+    held: bool,
+    /// Something was drawn over the scene since.
+    drew: bool,
+}
+
+/// The game's water pixel shaders (by their bytecode hash), from the
+/// renderer's shader list beside the game (`ffx-render-shaders.tsv`).
+fn water_shaders() -> &'static std::collections::HashSet<u64> {
+    static SET: std::sync::OnceLock<std::collections::HashSet<u64>> = std::sync::OnceLock::new();
+    SET.get_or_init(|| {
+        let path = std::env::current_exe()
+            .ok()
+            .and_then(|e| e.parent().map(|d| d.join("ffx-render-shaders.tsv")));
+        let text = path
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .unwrap_or_default();
+        text.lines()
+            .filter_map(|l| {
+                let (hash, name) = l.split_once('\t')?;
+                name.starts_with("phyrewatershader")
+                    .then(|| u64::from_str_radix(hash.trim(), 16).ok())
+                    .flatten()
+            })
+            .collect()
+    })
+}
+
+/// Whether the bound pixel shader reads the scene's colour.
+fn reads_scene(s: &State, scene: Scene) -> bool {
+    let colour = s.views.get(&scene.color).map(|v| v.resource);
+    colour.is_some()
+        && s.bound
+            .ps_srv
+            .iter()
+            .any(|&v| v != 0 && s.views.get(&v).map(|x| x.resource) == colour)
+}
+
+impl Link {
+    /// A draw for the renderer, in this frame.
+    fn record(&mut self, s: &mut State, d: Draw) {
+        let streamed = capture::stream_draw(s, d);
+        let reborn = std::mem::take(&mut s.reborn);
+        for id in reborn {
+            self.sent.remove(&id);
+        }
+        for id in capture::draw_objects(&streamed).collect::<Vec<_>>() {
+            self.sync(s, id);
+        }
+        let updates = draw_updates(self, s, &streamed);
+        self.cmds.extend(updates);
+        self.cmds.push(ffx_gfx::Cmd::Draw(Box::new(streamed)));
+    }
+
+    /// The frame waited for water and something else came: it is
+    /// finished now.
+    fn finish_left(&mut self, s: &mut State) {
+        if !std::mem::take(&mut self.water.leaving) {
+            return;
+        }
+        if std::mem::take(&mut self.water.held) && !self.water.drew {
+            // The copy came without water after it: forgotten.
+            self.water.learned = None;
+        }
+        self.water.drew = false;
+        if let Some(scene) = self.scene
+            && !self.cmds.is_empty()
+        {
+            finish(self, s, scene);
+        }
+    }
+}
+
+/// A draw while the frame waits for water (see [`Water`]): `Some` (skip
+/// the game's) when it stays in the frame.
+fn held_draw(s: &mut State, d: Draw) -> Option<bool> {
+    let mut guard = LINK.lock().ok()?;
+    let link = guard.as_mut()?;
+    if !link.water.leaving || !link.alive {
+        return None;
+    }
+    let scene = link.scene?;
+    let b = &s.bound;
+    let ps = s.shaders.get(&b.ps).map_or(0, |x| x.hash);
+    let copy = b.rtv[0] != scene.color && reads_scene(s, scene);
+    let over = b.rtv[0] == scene.color && b.dsv == scene.depth;
+    let keep = if !link.water.held {
+        (copy && link.water.learned == Some((ps, b.rtv[0]))).then(|| {
+            link.water.held = true;
+            false
+        })
+    } else if over {
+        if !link.water.drew && link.frame.is_multiple_of(300) {
+            log(&format!("  live: frame {}: water kept in the frame", link.frame));
+        }
+        link.water.drew = true;
+        Some(link.skip)
+    } else if !link.water.drew && (copy || b.dsv == scene.depth) {
+        // Before the water: its other passes (the water's mask).
+        Some(false)
+    } else {
+        None
+    };
+    match keep {
+        Some(skip) => {
+            link.record(s, d);
+            Some(skip)
+        }
+        None => {
+            link.finish_left(s);
+            None
+        }
+    }
+}
+
+/// Learns water drawn after the scene (see [`Water`]).
+fn learn(s: &State) {
+    let Ok(mut guard) = LINK.lock() else { return };
+    let Some(link) = guard.as_mut() else { return };
+    let Some(after) = link.after else { return };
+    if link.water.learned.is_some() {
+        return;
+    }
+    let b = &s.bound;
+    let ps = s.shaders.get(&b.ps).map_or(0, |x| x.hash);
+    if b.rtv[0] != after.color && reads_scene(s, after) {
+        link.water.seen = Some((ps, b.rtv[0]));
+    } else if let Some(seen) = link.water.seen
+        && b.rtv[0] == after.color
+        && b.dsv == after.depth
+        && water_shaders().contains(&ps)
+    {
+        link.water.learned = Some(seen);
+        log(&format!(
+            "  live: water after the scene (copy by pixel shader {:016x}): kept in the frame from now",
+            seen.0
+        ));
+    }
+}
+
+/// Before a dispatch: a frame waiting for water is finished.
+pub fn dispatch(s: &mut State) {
+    if let Ok(mut guard) = LINK.lock()
+        && let Some(link) = guard.as_mut()
+    {
+        link.finish_left(s);
+    }
 }
 
 // SAFETY: the raw pointers are D3D objects used on the render thread only.
@@ -810,6 +1041,7 @@ pub fn start() {
                 skip: std::env::var("FFX_RENDERER_SKIP").map_or(true, |v| v != "0"),
                 streak: 0,
                 made: std::collections::HashSet::new(),
+                water: Water::default(),
                 alive: true,
             });
         }
@@ -837,6 +1069,7 @@ impl Link {
             self.alive = false;
             // The game's own minimap again.
             crate::minimap::REPLACE.store(false, Ordering::Release);
+            HOLD_POINTER.store(false, Ordering::Release);
         }
     }
 
@@ -1073,6 +1306,7 @@ fn glows(s: &State) -> bool {
 /// scene's colour against its depth is kept for the renderer (the game
 /// still draws it).
 fn effect(s: &mut State, d: Draw) {
+    learn(s);
     let b = &s.bound;
     if b.rtv[1] != 0 || b.dsv == 0 || !WANT_EFFECTS.load(Ordering::Relaxed) || !glows(s) {
         return;
@@ -1101,6 +1335,9 @@ fn effect(s: &mut State, d: Draw) {
 
 /// A draw went to the context: scene draws are recorded for the renderer.
 pub fn draw(s: &mut State, d: Draw) -> bool {
+    if let Some(skip) = held_draw(s, d) {
+        return skip;
+    }
     let b = &s.bound;
     // Scene draws: colour and normal targets with depth, nothing else.
     if b.rtv[0] == 0 || b.rtv[1] == 0 || b.rtv[2] != 0 || b.dsv == 0 {
@@ -1178,9 +1415,19 @@ pub fn targets(s: &mut State, rtv: [usize; 8], dsv: usize) {
     let Ok(mut guard) = LINK.lock() else { return };
     let Some(link) = guard.as_mut() else { return };
     let Some(scene) = link.scene else { return };
-    if link.cmds.is_empty()
-        || (rtv[0] == scene.color && rtv[1] == scene.normal && dsv == scene.depth)
-    {
+    if rtv[0] == scene.color && rtv[1] == scene.normal && dsv == scene.depth {
+        // Back in the scene (after water, too).
+        link.water.leaving = false;
+        link.water.held = false;
+        link.water.drew = false;
+        return;
+    }
+    if link.cmds.is_empty() || link.water.leaving {
+        return;
+    }
+    if link.water.learned.is_some() {
+        // Water may follow: the next draw tells.
+        link.water.leaving = true;
         return;
     }
     finish(link, s, scene);
@@ -1194,11 +1441,13 @@ pub fn targets(s: &mut State, rtv: [usize; 8], dsv: usize) {
 pub unsafe fn present(s: &mut State, swap_chain: Ptr) {
     let Ok(mut guard) = LINK.lock() else { return };
     let Some(link) = guard.as_mut() else { return };
+    link.finish_left(s);
     if let Some(scene) = link.scene
         && !link.cmds.is_empty()
     {
         finish(link, s, scene);
     }
+    link.water.seen = None;
     if !link.effects.is_empty() && link.alive {
         let cmds = std::mem::take(&mut link.effects);
         link.send(&ffx_gfx::Msg::Effects(ffx_gfx::Frame {
@@ -1528,6 +1777,7 @@ fn receive(link: &mut Link, frame: u32) -> Option<Reply> {
             OVERLAY_KEYS.store(flags & 16 != 0, Ordering::Release);
             PAUSED.store(flags & 128 != 0, Ordering::Release);
             LAYER.store(flags & 256 != 0, Ordering::Release);
+            HOLD_POINTER.store(flags & 1024 != 0, Ordering::Release);
             crate::minimap::REPLACE.store(flags & 512 != 0, Ordering::Release);
             WANT_EFFECTS.store(flags & 32 != 0, Ordering::Relaxed);
             return Some(Reply {
@@ -1881,19 +2131,22 @@ unsafe fn restore(ctx: Ptr, s: &State) {
             std::ptr::null(),
             0
         );
-        call!(
-            k::PS_SET_SHADER_RESOURCES,
-            unsafe extern "system" fn(Ptr, u32, u32, *const usize),
-            0,
-            3,
-            b.ps_srv.as_ptr()
-        );
+        // The targets first: a view of the scene's colour can only go
+        // back to the shader once that is no longer a target (the game's
+        // own draw may read it, when a frame finishes at a draw).
         call!(
             k::OM_SET_RENDER_TARGETS,
             unsafe extern "system" fn(Ptr, u32, *const usize, Ptr),
             8,
             b.rtv.as_ptr(),
             b.dsv as Ptr
+        );
+        call!(
+            k::PS_SET_SHADER_RESOURCES,
+            unsafe extern "system" fn(Ptr, u32, u32, *const usize),
+            0,
+            3,
+            b.ps_srv.as_ptr()
         );
     }
 }
@@ -2241,19 +2494,22 @@ unsafe fn composite(link: &mut Link, s: &State, scene: Scene, w: u32, h: u32, so
             std::ptr::null(),
             0
         );
-        call!(
-            k::PS_SET_SHADER_RESOURCES,
-            unsafe extern "system" fn(Ptr, u32, u32, *const usize),
-            0,
-            3,
-            b.ps_srv.as_ptr()
-        );
+        // The targets first: a view of the scene's colour can only go
+        // back to the shader once that is no longer a target (the game's
+        // own draw may read it, when a frame finishes at a draw).
         call!(
             k::OM_SET_RENDER_TARGETS,
             unsafe extern "system" fn(Ptr, u32, *const usize, Ptr),
             8,
             b.rtv.as_ptr(),
             b.dsv as Ptr
+        );
+        call!(
+            k::PS_SET_SHADER_RESOURCES,
+            unsafe extern "system" fn(Ptr, u32, u32, *const usize),
+            0,
+            3,
+            b.ps_srv.as_ptr()
         );
     }
 }

@@ -11,7 +11,8 @@ struct Info {
     pos: array<vec4<f32>, 2>,
     // rgb: sky radiance
     sky: vec4<f32>,
-    // x: probe count, y: baked light weight, z: face size
+    // x: probe count, y: baked light weight, z: face size, w: the new
+    // harmonics' share (the rest is the last ones', for the same place)
     params: vec4<f32>,
 };
 
@@ -93,8 +94,15 @@ fn main(@builtin(local_invocation_index) lid: u32, @builtin(workgroup_id) wid: v
         }
         // Normalise to the whole sphere (4π).
         let norm = 12.566371 / max(t[9].x, 1e-6);
+        // Eased from the last ones where the probe stayed.
+        let last = probes.pos[probe];
+        var share = 1.0;
+        if (last.w > 0.5 && distance(last.xyz, centre) < 8.0) {
+            share = clamp(info.params.w, 0.0, 1.0);
+        }
         for (var k = 0u; k < 9u; k = k + 1u) {
-            probes.sh[probe * 9u + k] = vec4<f32>(t[k] * norm, 0.0);
+            let old = probes.sh[probe * 9u + k].xyz;
+            probes.sh[probe * 9u + k] = vec4<f32>(mix(old, t[k] * norm, share), 0.0);
         }
         probes.pos[probe] = vec4<f32>(centre, 1.0);
     }

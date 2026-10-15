@@ -1597,6 +1597,9 @@ unsafe extern "system" fn draw_instanced(
 
 unsafe extern "system" fn dispatch(this: Ptr, x: u32, y: u32, z: u32) {
     capture::note(&mut state(), &format!("dispatch {x} {y} {z}"));
+    if live::on() {
+        live::dispatch(&mut state());
+    }
     type F = unsafe extern "system" fn(Ptr, u32, u32, u32);
     // SAFETY: the original, same arguments.
     unsafe {

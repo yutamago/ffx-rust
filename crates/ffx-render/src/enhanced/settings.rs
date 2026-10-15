@@ -151,6 +151,10 @@ pub struct Settings {
     /// frames into each new one (a PS2-era trail behind anything that
     /// moves). Off: each frame stands alone.
     pub afterimage: bool,
+    /// Closes the pinholes between scenery meshes that do not quite meet
+    /// (a dotted dark line along their edges): the edges again as lines,
+    /// just behind.
+    pub seal_gaps: bool,
     /// The renderer's minimap in place of the game's: round, centred on
     /// the player, turned with the camera (`minimap.rs`).
     pub minimap: bool,
@@ -233,8 +237,9 @@ impl Default for Settings {
             ao_strength: 1.0,
             fake_shadows: false,
             afterimage: false,
+            seal_gaps: true,
             minimap: true,
-            minimap_size: 0.24,
+            minimap_size: 0.18,
             minimap_range: 120.0,
             minimap_opacity: 1.0,
             debug_view: 0,

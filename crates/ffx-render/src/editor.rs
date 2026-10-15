@@ -163,6 +163,15 @@ fn optional<T: Clone>(
 }
 
 impl Editor {
+    /// Where the selected light is (point and spot lights), for the free
+    /// camera to centre on.
+    #[must_use]
+    pub fn selected_point(&self, scene: &str) -> Option<[f32; 3]> {
+        use crate::enhanced::rig::LightType;
+        let l = self.edits.rig_for(scene).lights.get(self.light?)?;
+        matches!(l.kind, LightType::Point | LightType::Spot).then_some(l.position)
+    }
+
     /// The editor of `edits.toml` beside `exe_dir`'s renderer.
     #[must_use]
     pub fn new(exe_dir: &std::path::Path) -> Self {

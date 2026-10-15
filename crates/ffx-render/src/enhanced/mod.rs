@@ -248,6 +248,10 @@ struct Variant {
     /// Depth and draw id only, at the game's resolution (the depth handed
     /// back and the editor's outline).
     edge: bool,
+    /// The triangles' edges as lines, a little behind the surface: they
+    /// fill the pinholes left between meshes that do not quite meet
+    /// (which the jitter of TAA and FSR moves about, a dotted dark line).
+    seal: bool,
 }
 
 /// A vertex buffer slot: stride (or slot), step per instance, attributes
@@ -569,6 +573,8 @@ pub struct Enhanced {
     #[cfg_attr(not(windows), allow(dead_code))]
     fsr_motion: Option<((u32, u32), wgpu::Texture, wgpu::TextureView)>,
     last_render: Option<std::time::Instant>,
+    /// When the probes were last made (they ease toward each frame's).
+    probe_clock: Option<std::time::Instant>,
     /// Images the editor puts in place of textures (`Material::texture`).
     pub texture_dir: Option<std::path::PathBuf>,
     /// GPU time per pass (where the GPU can tell), made on the first
@@ -640,6 +646,8 @@ pub struct Enhanced {
     pub map_lights: Option<rig::Game>,
     /// Draws in the last frame: enhanced, and with the game's shaders.
     pub last_items: usize,
+    /// Of them, water drawn by the water pass.
+    pub last_waters: usize,
     pub last_other: usize,
 }
 
@@ -861,8 +869,8 @@ fn put4(out: &mut Vec<u8>, v: [f32; 4]) {
 /// `present` (`INPUTS` locations).
 fn gbuffer_source(v: Variant, present: &[u32]) -> String {
     let consts = format!(
-        "diagnostic(off, derivative_uniformity);\nconst SKINNED: bool = {};\nconst CLOTH: bool = {};\nconst HAS_COLOR: bool = {};\nconst HAS_UV: bool = {};\nconst ALPHA_TEST: bool = {};\n",
-        v.skinned, v.cloth, v.color, v.uv, v.alpha_test
+        "diagnostic(off, derivative_uniformity);\nconst SKINNED: bool = {};\nconst CLOTH: bool = {};\nconst HAS_COLOR: bool = {};\nconst HAS_UV: bool = {};\nconst ALPHA_TEST: bool = {};\nconst SEAL: bool = {};\n",
+        v.skinned, v.cloth, v.color, v.uv, v.alpha_test, v.seal
     );
     let decl = [
         ("pos", "vec3<f32>", "vec3<f32>(0.0)"),
@@ -1601,6 +1609,7 @@ impl Enhanced {
             effect: None,
             effect_generation: 0,
             frame_count: 0,
+            probe_clock: None,
             materials: HashMap::new(),
             material_dir: None,
             texture_dir: None,
@@ -1638,6 +1647,7 @@ impl Enhanced {
             notes: HashMap::new(),
             map_lights: None,
             last_items: 0,
+            last_waters: 0,
             last_other: 0,
         }
     }
@@ -1783,6 +1793,8 @@ impl Enhanced {
                 "shadow"
             } else if v.edge {
                 "edge"
+            } else if v.seal {
+                "seal"
             } else {
                 "gbuffer"
             }),
@@ -1796,7 +1808,12 @@ impl Enhanced {
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 front_face: key.front,
-                cull_mode: if v.shadow { None } else { key.cull },
+                cull_mode: if v.shadow || v.seal { None } else { key.cull },
+                polygon_mode: if v.seal {
+                    wgpu::PolygonMode::Line
+                } else {
+                    wgpu::PolygonMode::Fill
+                },
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
@@ -2604,6 +2621,7 @@ impl Enhanced {
             alpha_test: ps.used.contains("AlphaThreshold"),
             shadow: false,
             edge: false,
+            seal: false,
         };
         if !variant.cloth {
             // Without the cloth path, COLOR1 is not read.
@@ -2992,6 +3010,7 @@ impl Enhanced {
             }
         }
         self.last_items = items.len() + waters.len();
+        self.last_waters = waters.len();
         self.last_other = rest.iter().filter(|c| matches!(c, Cmd::Draw(_))).count();
         // Uniforms: camera, shadow camera, then items.
         let align =
@@ -3401,13 +3420,19 @@ impl Enhanced {
             &mut info,
             // The scenery as the art lights it (what it sends back), also
             // where the baked light is turned down for dynamic light.
+            // w: the new probes' share (they ease over 0.3 s, so a
+            // flash in their small faces, sparkling water, does not
+            // flicker the light).
             [
                 centres.len() as f32,
                 original[0].max(1.0),
                 PROBE_FACE as f32,
-                0.0,
+                self.probe_clock.map_or(1.0, |t| {
+                    1.0 - (-t.elapsed().as_secs_f32().min(1.0) / 0.3).exp()
+                }),
             ],
         );
+        self.probe_clock = Some(std::time::Instant::now());
         assert_eq!(info.len(), PROBE_INFO_SIZE, "probe info uniform layout");
         let info_at = alloc(&info, PROBE_INFO_SIZE);
         let mut count = Vec::new();
@@ -3661,12 +3686,45 @@ impl Enhanced {
                 })
             })
             .collect();
-        // Per-item bind groups and pipelines.
+        // Per-item bind groups and pipelines; the scenery's sealing lines
+        // (pipeline, index in `prepared`).
         let mut prepared = Vec::new();
+        let mut sealing = Vec::new();
+        let mut edge_sealing = Vec::new();
         for (i, (u, b, pb)) in items.iter().zip(&item_at) {
             let Some(pipe) = self.pipeline(&device, &i.key) else {
                 continue;
             };
+            let v = i.key.variant;
+            if self.settings.seal_gaps
+                && i.centre.is_none()
+                && !v.skinned
+                && let Some(p) = self.pipeline(
+                    &device,
+                    &GKey {
+                        variant: Variant { seal: true, ..v },
+                        ..i.key.clone()
+                    },
+                )
+            {
+                sealing.push((p, prepared.len()));
+                // And in the depth handed back to the game.
+                if edge_on
+                    && let Some(p) = self.pipeline(
+                        &device,
+                        &GKey {
+                            variant: Variant {
+                                seal: true,
+                                edge: true,
+                                ..v
+                            },
+                            ..i.key.clone()
+                        },
+                    )
+                {
+                    edge_sealing.push((p, prepared.len()));
+                }
+            }
             let shadow_key = GKey {
                 variant: Variant {
                     shadow: true,
@@ -4156,6 +4214,12 @@ impl Enhanced {
                 rp.set_bind_group(1, group, &[]);
                 record(&mut rp, i);
             }
+            for (p, k) in &sealing {
+                let (_, _, group, i, _) = &prepared[*k];
+                rp.set_pipeline(p);
+                rp.set_bind_group(1, group, &[]);
+                record(&mut rp, i);
+            }
         }
         mark!("g-buffer");
         if edge_on {
@@ -4188,6 +4252,12 @@ impl Enhanced {
                     rp.set_bind_group(1, group, &[]);
                     record(&mut rp, i);
                 }
+            }
+            for (p, k) in &edge_sealing {
+                let (_, _, group, i, _) = &prepared[*k];
+                rp.set_pipeline(p);
+                rp.set_bind_group(1, group, &[]);
+                record(&mut rp, i);
             }
             drop(rp);
             mark!("full-size depth");

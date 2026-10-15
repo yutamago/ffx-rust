@@ -749,6 +749,8 @@ impl Overlay {
                         self.events.push(egui::Event::Text(ch.to_string()));
                     }
                 }
+                // The held pointer's moves are the free camera's.
+                Input::Motion(..) => {}
             }
         }
     }
@@ -854,17 +856,19 @@ impl Overlay {
         });
         let out = self.ctx.run_ui(input, |ui| {
             let ctx = ui.ctx().clone();
-            // The HUD: the minimap (under the panels).
-            if let Some(style) = style
-                && !scene_shown
-            {
-                let hud = ctx.layer_painter(egui::LayerId::new(
-                    egui::Order::Background,
-                    egui::Id::new("hud"),
-                ));
-                map.draw(&hud, ctx.content_rect(), axes, style);
-            }
+            // The HUD: the minimap, in the game's picture (not on the bars
+            // of a wider screen) and beside the panels, under the windows.
+            let picture = crate::minimap::picture(ctx.content_rect());
+            let mut hud = |ui: &egui::Ui| {
+                if let Some(style) = style
+                    && !scene_shown
+                {
+                    let area = ui.available_rect_before_wrap().intersect(picture);
+                    map.draw(ui.painter(), area, picture.height(), axes, style);
+                }
+            };
             if !panels {
+                hud(ui);
                 return;
             }
             if scene_shown {
@@ -896,6 +900,7 @@ impl Overlay {
                 &mut editor.open,
                 free,
             );
+            hud(ui);
         });
         // The free camera takes the keys (W, A, S, D, Q, E) from the game.
         self.wants_keys = panels
@@ -1259,9 +1264,14 @@ fn panel(
                 if ui
                     .toggle_value(&mut on, "Free camera")
                     .on_hover_text(
-                        "Right-drag looks, W/A/S/D move, Q/E down and up, Shift faster, \
-                         the wheel sets the speed, middle-drag pans. The game gets no keys \
-                         meanwhile; it draws for this camera.",
+                        "As Blender's viewport: middle-drag orbits, Shift+middle pans, \
+                         Ctrl+middle and the wheel zoom, Ctrl/Shift+wheel pan; number pad \
+                         1/3/7 front, right, top (Ctrl: opposite), 2/4/6/8 orbit, 9 turns \
+                         round, +/- zoom, . centres on the selected light. Shift+` (the key \
+                         left of 1) walks: the mouse looks, W/A/S/D move, Q/E down and up, \
+                         Shift runs, Alt slows, the wheel sets the speed; left click or \
+                         Enter keeps the view, right click or Esc goes back. The game gets \
+                         no keys meanwhile; it draws for this camera.",
                     )
                     .changed()
                 {
@@ -1274,7 +1284,11 @@ fn panel(
             });
             if free.on {
                 ui.horizontal(|ui| {
-                    ui.label(format!("speed {:.0}/s", free.speed));
+                    if free.walking() {
+                        ui.label(format!("walking {:.1} m/s", free.speed * 1.75 / 20.0));
+                    } else {
+                        ui.label("Shift+` walks");
+                    }
                     ui.add(
                         egui::Slider::new(&mut free.zoom, 0.25..=4.0)
                             .logarithmic(true)
@@ -1410,6 +1424,11 @@ fn settings_ui(ui: &mut egui::Ui, e: &mut Ed) {
             ui,
             f!(e.afterimage),
             "The game's afterimage (a trail behind what moves)",
+        );
+        check(
+            ui,
+            f!(e.seal_gaps),
+            "Close gaps between scenery meshes (dotted dark lines)",
         );
     });
     egui::CollapsingHeader::new("Anti-aliasing").show(ui, |ui| {
