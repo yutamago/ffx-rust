@@ -437,7 +437,8 @@ unsafe extern "system" fn set_cooperative_level(
 }
 
 /// `GetDeviceState`: the keyboard (256 bytes) gets the held keys added; a
-/// keyboard that is not acquired reads as all keys up instead of failing.
+/// keyboard that is not acquired reads as all keys up instead of failing
+/// (in the harness only).
 unsafe extern "system" fn get_device_state(this: *mut c_void, size: u32, data: *mut u8) -> i32 {
     // SAFETY: the original from the vtable, same arguments.
     let mut hr = unsafe {
@@ -455,6 +456,12 @@ unsafe extern "system" fn get_device_state(this: *mut c_void, size: u32, data: *
         hr = 0;
     }
     if size == 256 && !data.is_null() {
+        // Outside the harness (the renderer's overlay only) the failure
+        // stands: it is how the game knows to acquire the keyboard again
+        // after the window was in the background.
+        if hr < 0 && !ENABLED.load(Ordering::Relaxed) {
+            return hr;
+        }
         KEY_POLLS.fetch_add(1, Ordering::Relaxed);
         // SAFETY: the caller's buffer holds `size` bytes.
         let state = unsafe { std::slice::from_raw_parts_mut(data, 256) };
