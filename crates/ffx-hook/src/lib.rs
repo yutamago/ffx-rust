@@ -107,7 +107,7 @@ pub use patch::{check_build, install};
 /// The hook table.
 #[cfg(all(windows, target_arch = "x86"))]
 #[must_use]
-pub fn hooks() -> [Hook; 8] {
+pub fn hooks() -> [Hook; 9] {
     [
         Hook {
             name: "zlib_uncompress",
@@ -160,6 +160,15 @@ pub fn hooks() -> [Hook; 8] {
             prologue: &[0x55, 0x8b, 0xec, 0x83, 0xec, 0x08],
             replacement: harness::clock_seed as *const () as usize,
             original: Some(&harness::CLOCK_SEED_ORIGINAL),
+            steal: 0,
+        },
+        Hook {
+            name: "Cam_Update",
+            address: 0x007b_c110,
+            // push ebp; mov ebp, esp; sub esp, 0x20
+            prologue: &[0x55, 0x8b, 0xec, 0x83, 0xec, 0x20],
+            replacement: gfx::live::cam_update as *const () as usize,
+            original: Some(&gfx::live::CAM_UPDATE_ORIGINAL),
             steal: 0,
         },
         Hook {

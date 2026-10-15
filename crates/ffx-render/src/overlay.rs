@@ -603,6 +603,7 @@ enum Action {
     Paste,
 }
 
+#[allow(clippy::struct_excessive_bools)] // independent states of the panel
 pub struct Overlay {
     ctx: egui::Context,
     painter: Painter,
@@ -625,6 +626,8 @@ pub struct Overlay {
     /// same in between and need not be sent).
     stats_shown: Option<Stats>,
     pub editor: crate::editor::Editor,
+    /// The free camera.
+    pub freecam: crate::freecam::FreeCam,
     /// Whether the picked texture's preview is registered.
     preview: bool,
 }
@@ -654,6 +657,7 @@ impl Overlay {
             editor: crate::editor::Editor::new(
                 file.parent().unwrap_or_else(|| std::path::Path::new(".")),
             ),
+            freecam: crate::freecam::FreeCam::default(),
             preview: false,
         }
     }
@@ -666,7 +670,11 @@ impl Overlay {
 
     /// Takes the game window's input.
     pub fn feed(&mut self, events: &[Input]) {
+        let free = !self.ctx.is_pointer_over_egui();
         for e in events {
+            if self.freecam.on {
+                self.freecam.feed(e, free);
+            }
             match *e {
                 Input::Toggle => {
                     self.visible = !self.visible;
@@ -796,6 +804,7 @@ impl Overlay {
         let edit = &mut self.edit;
         let saved = &self.profiles.saved;
         let editor = &mut self.editor;
+        let free = &mut self.freecam;
         io.preview = self.preview;
         let out = self.ctx.run_ui(input, |ui| {
             let ctx = ui.ctx().clone();
@@ -818,9 +827,13 @@ impl Overlay {
                 edit,
                 &mut actions,
                 &mut editor.open,
+                free,
             );
         });
-        self.wants_keys = self.ctx.egui_wants_keyboard_input() || self.ctx.is_pointer_over_egui();
+        // The free camera takes the keys (W, A, S, D, Q, E) from the game.
+        self.wants_keys = self.ctx.egui_wants_keyboard_input()
+            || self.ctx.is_pointer_over_egui()
+            || self.freecam.on;
         for a in actions {
             self.act(a, settings);
         }
@@ -1131,6 +1144,7 @@ fn panel(
     edit: &mut ProfileEdit,
     actions: &mut Vec<Action>,
     editor: &mut bool,
+    free: &mut crate::freecam::FreeCam,
 ) {
     egui::Window::new("FFX Renderer")
         .default_pos(egui::pos2(16.0, 16.0))
@@ -1173,7 +1187,33 @@ fn panel(
             ui.horizontal(|ui| {
                 ui.label("F10 hides the overlay.");
                 ui.toggle_value(editor, "Editor (F11)");
+                let mut on = free.on;
+                if ui
+                    .toggle_value(&mut on, "Free camera")
+                    .on_hover_text(
+                        "Right-drag looks, W/A/S/D move, Q/E down and up, Shift faster, \
+                         the wheel sets the speed, middle-drag pans. The game gets no keys \
+                         meanwhile; it draws for this camera.",
+                    )
+                    .changed()
+                {
+                    if on {
+                        free.start_asked = true;
+                    } else {
+                        free.on = false;
+                    }
+                }
             });
+            if free.on {
+                ui.horizontal(|ui| {
+                    ui.label(format!("speed {:.0}/s", free.speed));
+                    ui.add(
+                        egui::Slider::new(&mut free.zoom, 0.25..=4.0)
+                            .logarithmic(true)
+                            .text("zoom"),
+                    );
+                });
+            }
             ui.label("Keys reach the game unless the pointer is over a panel.");
             ui.separator();
             profile_row(ui, e, head, edit, actions);

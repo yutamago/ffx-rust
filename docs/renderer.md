@@ -204,6 +204,20 @@ game's own drawing and the wait for the screen are not in it.
 Debug views show one input of the lighting (shadow, occlusion,
 normals, albedo, baked light, cascades, skin, probe light).
 
+## Free camera
+
+"Free camera" in the overlay (`freecam.rs`) starts where the game's view
+is: right-drag looks, W/A/S/D move, Q/E go down and up, Shift is faster,
+the wheel sets the speed, a middle drag pans, "zoom" narrows or widens the
+game's field of view. The overlay keeps the keyboard meanwhile. The
+renderer's answer carries it (flag 64: eye and look-at in game space, the
+field of view, the roll); the hook wraps `Cam_Update` (`0x007bc110`): right
+before, the game's own override camera (`Cam_OverrideSet`) holds it, and
+after, the view and field of view go to the game's renderer as
+`Cam_Apply` would send them (`Render_SetFov`, `Render_SetView`), which the
+override's branch skips. The game then draws and culls for it; what lies
+outside the map's camera views may be unfinished. Off: the override ends.
+
 ## Materials
 
 The G-buffer has, besides albedo (roughness in alpha), normal, baked

@@ -57,6 +57,7 @@
 //! | `overlay` | shows or hides the live renderer's overlay (as F10): `ok <shown>` |
 //! | `overlayclick <x> <y>` | a left click in the overlay, in back buffer pixels |
 //! | `overlaymouse <x> <y> [down\|up]` | moves the overlay's pointer there, pressing or releasing the left button |
+//! | `overlaykey <vk hex> down\|up` | a key for the overlay (Windows virtual-key code) |
 //! | `editor` | opens or closes the renderer's editor (as F11; shows the overlay) |
 //! | `quit` | ends the process |
 
@@ -1096,6 +1097,12 @@ fn command(line: &str) -> Result<String, String> {
         "overlay" => format!("ok {}", crate::gfx::live::toggle_overlay()),
         "editor" => {
             crate::gfx::live::toggle_editor();
+            "ok".into()
+        }
+        "overlaykey" => {
+            let vk = u32::from_str_radix(arg(1)?.trim_start_matches("0x"), 16)
+                .map_err(|e| format!("{e}"))?;
+            crate::gfx::live::overlay_key(vk, arg(2)? == "down");
             "ok".into()
         }
         "overlaymouse" => {

@@ -78,6 +78,8 @@
 0x0062fa30 function Ps2File_Open              # host0:/ffx/... -> /ffx_ps2/ffx/..., then the PC file layer
 0x006315c0 function Input_BuildPadMap          # pairs each key binding (settings +0x60) with its PS2 pad bit
 0x00632a30 function Input_UpdatePad            # fastcall(input 0x00ccb170): ORs the bits of held bindings into the pad word (+0), previous at +4
+0x006395e0 function Render_SetFov                # cdecl(float* radians): the camera's field of view for the renderer (Cam_Apply: 2 atan of the screen depth's ratio)
+0x00639860 function Render_SetView               # cdecl(view matrix*): the camera's view for the renderer; Cam_Apply passes 0x02311440
 0x0063d140 function Chr_LoadAssetList          # (path, chr id): loads the files of an asset list (.ahwin32) through 0x006642f0; "VIRTUOS Error!!!!! Can't find character data: %s."
 0x006410e0 function Lang_Get                  # 0 jp, 1 us, 2 fr, 3 sp, 4 de, 5 it, 9 kr, 10 ch
 0x00645f50 function Text_ToUtf8               # FFX text -> UTF-8; defines the byte grammar (docs/formats/text.md)
@@ -215,6 +217,11 @@
 0x007ba2d0 function Native_CamRefAddCircleArea   # 0x602b: args (x, z, r) -> 0; adds a circle constraint (type 3) to the ref's list (0x007bf1f0); ?keeps the ref inside/around the circle
 0x007ba2f0 function Native_CamRefClearAreas      # 0x602d: no args -> camera handle; clears the ref's constraint count (byte 0x01137634 + side/channel, 0x007bed10)
 0x007ba780 function Cam_GetHandle                # (type 5, which 0-3, camera < 3): cached camera channel handle (owner<<24 | type<<16 | slot<<8 | camera), allocates via 0x007bd110
+0x007bba70 function Cam_OverrideReset            # resets the override camera: look-at/eye/up (0x01136fd8/fc8/fe8) to defaults, roll 0, screen depth 0x02311428 = 1024.0, off (0x0231142c = 0)
+0x007bbb00 function Cam_OverrideOff              # 0x0231142c = 0: the camera update builds the view from the active channel again
+0x007bbb10 function Cam_OverrideSet              # (look-at vec4*, eye vec4*, screen depth, roll): override on (0x0231142c = 1); the camera update (0x007bc9xx, FUN_007c1be0 into 0x02311440) then uses these instead of g_Camera's sides
+0x007bc110 function Cam_Update                   # cdecl(camera 0-2) -> 1 when camera > 2: per frame, picks the active channel (g_Camera), moves it, builds the view matrix 0x02311440 with FUN_007c1be0 from the channel's eye (+0x65c) and look-at (+0x40), or from the override camera when g_CamOverrideOn
+0x007bc980 function Cam_Apply                    # cdecl(camera): field of view from the camera's screen depth (448 / (2 d), atan) into the renderer, then Render_SetView(0x02311440); Cam_Update calls it only for channel cameras, not the override
 0x007bd110 function Cam_AllocChannel             # (owner, camera, type): finds/allocates one of 4 channels of a camera (0xda0 bytes each, table 0x011381a8)
 0x007bd420 function Cam_GetPos                   # (camera, side, &x, &y, &z): side position at camera +0x50
 0x007bd860 function Cam_StartMoveEased           # (handle, side, mode, accel, hold, decel, curve): type-2 interpolation on x/y/z (and roll/scrdpt for side 1)
@@ -558,6 +565,10 @@
 0x0112ca90 label    g_SaveData                   # 0x68c0-byte block copied from/to the save (0x00870000.c:7810, 0x008d0000.c:6884); +0 current map
 0x01130f2c label    g_Equipment                # 200 x 22-byte equipment slots (docs/formats/kernel.md)
 0x0113205c label    g_PlySave                  # ply_save records, 0x94 bytes each; +0x2d weapon slot, +0x2e armor slot
+0x01136fc4 label    g_CamOverrideRoll            # override camera roll (Cam_OverrideSet param 4)
+0x01136fc8 label    g_CamOverrideEye             # override camera eye, vec4 (game space)
+0x01136fd8 label    g_CamOverrideLookAt          # override camera look-at, vec4 (game space)
+0x01136fe8 label    g_CamOverrideUp              # override camera up vector, vec4 (reset to (0,-1,0)-ish: 0x01136fec = -1.0)
 0x01137540 label    g_Cameras                    # ?3 cameras x 0xda0: two sides of 0x61c each (0 = ref, 1 = cam), channels of 0x130 at +0xc0, channel table at 0x011381a8
 0x01326b28 label    g_ScriptContext              # event/script context pointer (FUN_0086aff0): +0x0a player worker, +0x0c worker count, +0x218 player position, +0x1e4/0x1f0 talk state
 0x01326d70 label    g_MsgWindows                 # 2 banks x 8 message windows, 0x2c bytes: +0x14 state, +0x16 Msg_Flags, +0x18 display flags, +0x1d mode flags
@@ -569,6 +580,8 @@
 0x01869eb0 label    g_MacroDic                   # macrodic section pointer table (MacroDic_Load)
 0x022fb504 label    g_Settings
 0x02310c40 label    g_CdLib                   # function table of the PS2 CD-library emulation
+0x02311428 label    g_CamOverrideScreenDepth     # override projection distance (default 1024.0; Native_CamSetScreenDepth's units)
+0x0231142c label    g_CamOverrideOn              # nonzero: the view comes from the override camera (Cam_OverrideSet), else from the active channel
 0x02311430 label    g_Camera                     # pointer to the active camera channel (FUN_007bd470 reads its sides): +0x50 look-at point (ref, side 0) xyz, +0x66c eye (side 1) xyz; live: the look-at follows the player at chest height on the S.S. Winno deck
 0x023c44e0 label    g_ChrCount                   # number of field characters in g_ChrArray
 0x023c44e4 label    g_ChrArray                   # field characters, 0x880 bytes each (byte +2 = active)

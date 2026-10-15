@@ -45,6 +45,11 @@ static OVERLAY_KEYS: AtomicBool = AtomicBool::new(false);
 static WANT_EFFECTS: AtomicBool = AtomicBool::new(false);
 /// The renderer's settings turn the game's afterimage off.
 static NO_AFTERIMAGE: AtomicBool = AtomicBool::new(false);
+/// The renderer's free camera (eye, look-at in game space, projection
+/// distance, roll), put into the game's override camera at Present; and
+/// whether the override is ours to turn off.
+static FREE_CAMERA: Mutex<Option<[f32; 8]>> = Mutex::new(None);
+static FREE_CAMERA_SET: AtomicBool = AtomicBool::new(false);
 /// The pixel shader of the game's afterimage pass (by its bytecode hash):
 /// the scene, times a colour whose alpha is the new frame's share
 /// (0.8 on the S.S. Winno), blended into a history image that the next
@@ -66,6 +71,95 @@ static WINDOW: AtomicUsize = AtomicUsize::new(0);
 static WNDPROC: AtomicUsize = AtomicUsize::new(0);
 /// The back buffer's size.
 static SCREEN: Mutex<(u32, u32)> = Mutex::new((0, 0));
+
+/// The trampoline to the original `Cam_Update` (`0x007bc110`).
+pub static CAM_UPDATE_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
+
+/// Wraps `Cam_Update` (`0x007bc110`, `cdecl(camera)`, which builds the view
+/// matrix): while the renderer has a free camera, the game's override
+/// camera (`Cam_OverrideSet`) holds it right before, whatever the scene's
+/// camera scripts set since; and after, the view goes to the renderer as
+/// the channel's would (`Cam_Apply`, which the override's branch skips,
+/// calls `Render_SetFov` and `Render_SetView`): the field of view the
+/// renderer asks for (the game's, zoomed).
+///
+/// # Safety
+/// Called by the game.
+pub unsafe extern "C" fn cam_update(camera: i32) -> u32 {
+    const VIEW: u32 = 0x0231_1440;
+    const RENDER_SET_VIEW: u32 = 0x0063_9860;
+    const RENDER_SET_FOV: u32 = 0x0063_95e0;
+    let free = FREE_CAMERA.lock().ok().and_then(|f| *f);
+    if let Some(c) = &free {
+        // SAFETY: on the game's thread, before its camera update reads them.
+        unsafe { put_free_camera(c) };
+    }
+    // SAFETY: the trampoline runs the original with the same argument.
+    let out = unsafe {
+        let original: unsafe extern "C" fn(i32) -> u32 =
+            std::mem::transmute(CAM_UPDATE_ORIGINAL.load(Ordering::Acquire));
+        original(camera)
+    };
+    if let Some(c) = free {
+        // SAFETY: the game's functions and its view matrix global, as
+        // `Cam_Apply` (0x007bc980) calls them.
+        unsafe {
+            let set_fov: unsafe extern "C" fn(*const f32) =
+                std::mem::transmute(crate::rebase(RENDER_SET_FOV));
+            set_fov(&raw const c[6]);
+            let set_view: unsafe extern "C" fn(usize) =
+                std::mem::transmute(crate::rebase(RENDER_SET_VIEW));
+            set_view(crate::rebase(VIEW));
+        }
+    }
+    out
+}
+
+const OVERRIDE_ON: u32 = 0x0231_142c;
+
+/// The free camera into the game's override camera globals (in its image,
+/// rebased).
+///
+/// # Safety
+/// On the game's thread, between its frames or right before its camera
+/// update.
+unsafe fn put_free_camera(c: &[f32; 8]) {
+    const EYE: u32 = 0x0113_6fc8;
+    const LOOK_AT: u32 = 0x0113_6fd8;
+    const ROLL: u32 = 0x0113_6fc4;
+    let at = |a: u32| crate::rebase(a) as *mut f32;
+    // SAFETY: the game's camera globals.
+    unsafe {
+        for k in 0..3 {
+            std::ptr::write_volatile(at(EYE).add(k), c[k]);
+            std::ptr::write_volatile(at(LOOK_AT).add(k), c[3 + k]);
+        }
+        std::ptr::write_volatile(at(ROLL), c[7]);
+        std::ptr::write_volatile(crate::rebase(OVERRIDE_ON) as *mut u32, 1);
+    }
+}
+
+/// At Present: the free camera's start and end (the override turned off
+/// once when it ends).
+fn free_camera() {
+    let free = FREE_CAMERA.lock().ok().and_then(|f| *f);
+    match free {
+        Some(c) => {
+            // SAFETY: at Present, on the game's thread.
+            unsafe { put_free_camera(&c) };
+            if !FREE_CAMERA_SET.swap(true, Ordering::Relaxed) {
+                log(&format!("  live: free camera on at {:?}", &c[..3]));
+            }
+        }
+        None => {
+            if FREE_CAMERA_SET.swap(false, Ordering::Relaxed) {
+                // SAFETY: the game's flag, on its thread.
+                unsafe { std::ptr::write_volatile(crate::rebase(OVERRIDE_ON) as *mut u32, 0) };
+                log("  live: free camera off");
+            }
+        }
+    }
+}
 
 /// Captures the next frame (as the harness's `gfxcapture` does) into
 /// `captures/<seconds since 1970>` beside the game, on a thread of its own:
@@ -128,6 +222,12 @@ pub fn mouse(x: f32, y: f32, button: Option<bool>) {
     if let Some(pressed) = button {
         push_input(ffx_gfx::Input::Button { button: 0, pressed });
     }
+}
+
+/// A key for the overlay (Windows virtual-key code; for the test
+/// harness).
+pub fn overlay_key(vk: u32, pressed: bool) {
+    push_input(ffx_gfx::Input::Key { vk, pressed });
 }
 
 /// Whether the overlay is showing.
@@ -1076,6 +1176,7 @@ pub unsafe fn present(s: &mut State, swap_chain: Ptr) {
         }
         link.overlay = None;
     }
+    free_camera();
     if OVERLAY.load(Ordering::Acquire)
         && let Some(mut image) = link.overlay.take()
     {
@@ -1345,6 +1446,23 @@ fn receive(link: &mut Link, frame: u32) -> Option<Reply> {
                 *image = OverlayImage::new(screen);
             }
             image.put(area, &pixels);
+        }
+        let mut free = None;
+        if flags & 64 != 0 {
+            let mut at = [0u8; 32];
+            if !link.to_game.read(&mut at, &mut wait) {
+                return None;
+            }
+            let v: Vec<f32> = at
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|b| f32::from_le_bytes(*b))
+                .collect();
+            free = Some([v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]]);
+        }
+        if let Ok(mut f) = FREE_CAMERA.lock() {
+            *f = free;
         }
         if number == frame {
             OVERLAY_KEYS.store(flags & 16 != 0, Ordering::Release);

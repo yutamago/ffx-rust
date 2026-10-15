@@ -583,6 +583,11 @@ pub struct Enhanced {
     /// Draws culled in the last frame's cascades and probe faces, and
     /// drawn.
     pub culled: (usize, usize),
+    /// The game's projection's vertical scale this frame (its field of
+    /// view), and the camera: eye and where it looks (render space).
+    pub proj_scale: f32,
+    pub view_eye: [f32; 3],
+    pub view_forward: [f32; 3],
     timer_tried: bool,
     replacements: HashMap<String, Option<wgpu::TextureView>>,
     /// Where to write each generated material map and its colour texture
@@ -1594,6 +1599,9 @@ impl Enhanced {
             cubes: None,
             kept_key: None,
             culled: (0, 0),
+            proj_scale: 0.0,
+            view_eye: [0.0; 3],
+            view_forward: [0.0, 0.0, 1.0],
             timer_tried: false,
             #[cfg(windows)]
             fsr: None,
@@ -3028,6 +3036,13 @@ impl Enhanced {
         let shadow_size = self.settings.shadow_size.clamp(256, 8192) as f32;
         // Tangents of the half field of view, from the projection.
         let proj = math::mul(&view_proj, &math::invert(&view));
+        self.proj_scale = proj[1][1];
+        self.view_eye = eye;
+        // The view's third row is its forward axis (+z ahead, as the
+        // projection has it when its w row is +z).
+        let ahead = if proj[3][2] < 0.0 { -1.0 } else { 1.0 };
+        self.view_forward =
+            math::normalize([view[2][0] * ahead, view[2][1] * ahead, view[2][2] * ahead]);
         let (tx, ty) = (
             1.0 / proj[0][0].abs().max(1e-3),
             1.0 / proj[1][1].abs().max(1e-3),

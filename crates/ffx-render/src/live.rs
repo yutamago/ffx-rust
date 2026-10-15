@@ -271,6 +271,26 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             enhanced.material_edits = e.materials;
             enhanced.reload_replacements();
         }
+        // The free camera: started at the game's, moved by the input, and
+        // its field of view fitted to the game's once the game draws for it.
+        if std::mem::take(&mut overlay.freecam.start_asked) {
+            // Where the game's view is (as the renderer drew it last).
+            let eye = enhanced.view_eye;
+            let f = enhanced.view_forward;
+            let look_at = [
+                eye[0] + f[0] * 100.0,
+                eye[1] + f[1] * 100.0,
+                eye[2] + f[2] * 100.0,
+            ];
+            overlay.freecam.start(eye, look_at, enhanced.proj_scale);
+            log(&format!("free camera from {eye:?} looking along {f:?}"));
+        }
+        if overlay.freecam.on {
+            overlay.freecam.update(frame_time.as_secs_f32());
+            overlay.freecam.frames += 1;
+            // Focus where it looks (not on the game's look-at point).
+            r.world.camera = None;
+        }
         let t0 = std::time::Instant::now();
         let t_parsed = t0 - t_head;
         if targets.is_some()
@@ -370,9 +390,10 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
         // Answer: frame, scene size, flags (1: overlay follows, 2: the scene
         // is in shared textures, 4: with a fence, 8: the game's afterimage
         // off, 16: the overlay takes the keyboard, 32: send the glowing
-        // effects drawn after the scene), the scene's colour, normal and depth (or the shared
-        // generation and set), then the screen's size, the part of the
-        // overlay that changed (x, y, width, height) and its pixels.
+        // effects drawn after the scene, 64: a free camera follows), the scene's colour,
+        // normal and depth (or the shared generation and set), then the
+        // screen's size, the part of the overlay that changed (x, y, width,
+        // height) and its pixels, then the free camera (8 floats).
         let (w, h, mut data) = match shared {
             Some(s) => {
                 let mut d = s.generation.to_le_bytes().to_vec();
@@ -416,7 +437,8 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
                 32
             } else {
                 0
-            };
+            }
+            | if overlay.freecam.on { 64 } else { 0 };
         out.extend_from_slice(&flags.to_le_bytes());
         out.extend_from_slice(&data);
         if let Some((x, y, w, h, pixels)) = &overlay_image {
@@ -424,6 +446,13 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
                 out.extend_from_slice(&v.to_le_bytes());
             }
             out.extend_from_slice(pixels);
+        }
+        // The free camera for the game's override camera: eye and look-at
+        // (game space), vertical field of view, roll.
+        if overlay.freecam.on {
+            for v in overlay.freecam.game() {
+                out.extend_from_slice(&v.to_le_bytes());
+            }
         }
         to_game.write(&out, std::thread::yield_now);
         if frames.is_multiple_of(120) {

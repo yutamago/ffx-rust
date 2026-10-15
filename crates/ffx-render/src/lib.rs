@@ -19,6 +19,7 @@ pub mod edits;
 pub mod enhanced;
 pub mod families;
 pub mod formats;
+pub mod freecam;
 pub mod gizmo;
 #[cfg(windows)]
 pub mod live;
