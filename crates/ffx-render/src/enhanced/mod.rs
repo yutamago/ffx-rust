@@ -283,6 +283,13 @@ pub struct Enhanced {
     ),
     /// Generated material maps by colour texture: (version, view).
     materials: HashMap<Id, (u32, wgpu::TextureView)>,
+    /// Material packs: `<hash>.png` per colour texture (rg normal, b
+    /// roughness, a cavity), used instead of the generated maps.
+    pub material_dir: Option<std::path::PathBuf>,
+    /// Where to write each generated material map and its colour texture
+    /// (`<hash>.png`, `<hash>_albedo.png`), for editing into a pack.
+    pub export_dir: Option<std::path::PathBuf>,
+    exported: std::collections::HashSet<u64>,
     flat_material: wgpu::TextureView,
     /// Ambient occlusion and its blur, and their layout.
     ao: (
@@ -998,6 +1005,9 @@ impl Enhanced {
             effect_generation: 0,
             frame_count: 0,
             materials: HashMap::new(),
+            material_dir: None,
+            export_dir: None,
+            exported: std::collections::HashSet::new(),
             flat_material: one_pixel(device, queue, [128, 128, 179, 255]),
             output: None,
             targets: None,
@@ -1356,8 +1366,21 @@ impl Enhanced {
             return None;
         }
         let device = &r.device;
-        let (w, h) = (t.desc[0].max(1), t.desc[1].max(1));
-        let mips = t.desc[2].max(1).min(32 - w.max(h).leading_zeros());
+        // A pack's map for this texture, if there is one.
+        let pack = self
+            .material_dir
+            .as_ref()
+            .filter(|_| t.hash != 0)
+            .and_then(|d| std::fs::read(d.join(format!("{:016x}.png", t.hash))).ok())
+            .and_then(|b| crate::png::decode(&b));
+        let (w, h) = pack
+            .as_ref()
+            .map_or((t.desc[0].max(1), t.desc[1].max(1)), |p| (p.0, p.1));
+        let mips = if pack.is_some() {
+            32 - w.max(h).leading_zeros()
+        } else {
+            t.desc[2].max(1).min(32 - w.max(h).leading_zeros())
+        };
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("material"),
             size: wgpu::Extent3d {
@@ -1369,9 +1392,28 @@ impl Enhanced {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
+        if let Some((pw, ph, pixels)) = &pack {
+            r.queue.write_texture(
+                texture.as_image_copy(),
+                pixels,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(pw * 4),
+                    rows_per_image: Some(*ph),
+                },
+                wgpu::Extent3d {
+                    width: *pw,
+                    height: *ph,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
         let s = &self.settings;
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("material"),
@@ -1382,7 +1424,8 @@ impl Enhanced {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        for level in 0..mips {
+        let first = u32::from(pack.is_some());
+        for level in first..mips {
             let mut u = Vec::new();
             put4(&mut u, [2.0, s.roughness, 0.25, 0.0]);
             put4(
@@ -1451,6 +1494,25 @@ impl Enhanced {
             rp.draw(0..3, 0..1);
         }
         r.queue.submit([enc.finish()]);
+        if let Some(dir) = &self.export_dir
+            && pack.is_none()
+            && t.hash != 0
+            && self.exported.insert(t.hash)
+        {
+            let name = format!("{:016x}", t.hash);
+            if let Ok(m) = r.read_texture(&texture, w, h) {
+                let _ = std::fs::write(
+                    dir.join(format!("{name}.png")),
+                    crate::png::encode(w, h, &m),
+                );
+            }
+            if let Ok((aw, ah, a)) = r.read_rgba(resource) {
+                let _ = std::fs::write(
+                    dir.join(format!("{name}_albedo.png")),
+                    crate::png::encode(aw, ah, &a),
+                );
+            }
+        }
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         self.materials.insert(resource, (version, view.clone()));
         Some(view)

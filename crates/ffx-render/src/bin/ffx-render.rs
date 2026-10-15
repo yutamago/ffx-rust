@@ -1,6 +1,7 @@
-//! `ffx-render replay <capture.ffxgfx> <out dir> [--until N] [--target ID]`:
-//! draws a captured frame and writes every 8-bit colour render target it
-//! drew into as `<out dir>/<view id>.png`.
+//! `ffx-render replay <capture.ffxgfx> <out dir> [--until N] [--target ID]
+//! [--enhanced] [--game DIR] [--set key=value] [--materials DIR]
+//! [--export-materials DIR]`: draws a captured frame and writes every
+//! 8-bit colour render target it drew into as `<out dir>/<view id>.png`.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -47,6 +48,8 @@ fn replay(args: &[String]) -> Result<()> {
     let mut enhanced = false;
     let mut game: Option<PathBuf> = None;
     let mut sets: Vec<String> = Vec::new();
+    let mut materials: Option<PathBuf> = None;
+    let mut export: Option<PathBuf> = None;
     let mut i = 2;
     while i < args.len() {
         match args[i].as_str() {
@@ -57,6 +60,16 @@ fn replay(args: &[String]) -> Result<()> {
             "--enhanced" => enhanced = true,
             "--game" => {
                 game = Some(PathBuf::from(args.get(i + 1).context("DIR")?));
+                i += 1;
+            }
+            "--materials" => {
+                materials = Some(PathBuf::from(args.get(i + 1).context("DIR")?));
+                i += 1;
+            }
+            "--export-materials" => {
+                let dir = PathBuf::from(args.get(i + 1).context("DIR")?);
+                std::fs::create_dir_all(&dir)?;
+                export = Some(dir);
                 i += 1;
             }
             "--set" => {
@@ -91,7 +104,11 @@ fn replay(args: &[String]) -> Result<()> {
             .unwrap_or_else(|| PathBuf::from("ffx-render-shaders.tsv"));
         let families = ffx_render::families::Families::load(dir.as_deref(), &cache);
         println!("{} shaders with families", families.len());
-        ffx_render::enhanced::Enhanced::new(&r.device, &r.queue, families, settings(&sets))
+        let mut e =
+            ffx_render::enhanced::Enhanced::new(&r.device, &r.queue, families, settings(&sets));
+        e.material_dir = materials.clone();
+        e.export_dir = export.clone();
+        e
     });
     let mut targets = BTreeSet::new();
     let start = std::time::Instant::now();

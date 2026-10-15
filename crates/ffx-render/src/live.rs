@@ -108,6 +108,13 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
         families,
         load_settings(&settings_path),
     );
+    // Material packs next to the renderer; FFX_RENDER_EXPORT_MATERIALS=DIR
+    // writes the generated maps there.
+    let materials = exe_dir.join("materials");
+    enhanced.material_dir = materials.is_dir().then_some(materials);
+    enhanced.export_dir = std::env::var_os("FFX_RENDER_EXPORT_MATERIALS")
+        .map(std::path::PathBuf::from)
+        .filter(|d| std::fs::create_dir_all(d).is_ok());
     let filter = Filter::default();
     let mut idle_from = std::time::Instant::now();
     let mut overlay = crate::overlay::Overlay::new(&r.device);

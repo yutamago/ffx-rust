@@ -34,6 +34,9 @@ pub use replay::Filter;
 
 /// A mirrored texture.
 pub struct Texture {
+    /// FNV-1a of the top level's bytes as the game created it (0 without
+    /// data): the key of material packs.
+    pub hash: u64,
     pub texture: wgpu::Texture,
     pub desc: ffx_gfx::TextureDesc,
     pub format: wgpu::TextureFormat,
@@ -301,11 +304,62 @@ impl Renderer {
         self.textures.insert(
             id,
             Texture {
+                hash: subresources.first().map_or(0, |s| fnv(&s.data)),
                 texture,
                 desc,
                 format,
             },
         );
+    }
+
+    /// Reads `texture` (RGBA8, level 0, `width` × `height`) back.
+    ///
+    /// # Errors
+    /// When the GPU fails.
+    pub fn read_texture(
+        &self,
+        texture: &wgpu::Texture,
+        width: u32,
+        height: u32,
+    ) -> Result<Vec<u8>> {
+        let pitch = (width * 4).next_multiple_of(256);
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("read-back"),
+            size: u64::from(pitch * height),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut enc = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        enc.copy_texture_to_buffer(
+            texture.as_image_copy(),
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(pitch),
+                    rows_per_image: Some(height),
+                },
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit([enc.finish()]);
+        let slice = buffer.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        self.device.poll(wgpu::PollType::wait_indefinitely())?;
+        let data = slice.get_mapped_range().map_err(|e| anyhow!("{e:?}"))?;
+        let mut out = Vec::with_capacity((width * height * 4) as usize);
+        for y in 0..height as usize {
+            out.extend_from_slice(
+                &data[y * pitch as usize..y * pitch as usize + 4 * width as usize],
+            );
+        }
+        Ok(out)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -564,4 +618,12 @@ impl Renderer {
         }
         Ok((w, h, out))
     }
+}
+
+/// FNV-1a, 64 bits.
+#[must_use]
+pub fn fnv(data: &[u8]) -> u64 {
+    data.iter().fold(0xcbf2_9ce4_8422_2325, |h, &b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    })
 }
