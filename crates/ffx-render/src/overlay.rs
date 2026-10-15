@@ -590,63 +590,61 @@ fn panel(
             ui.label("F10 hides this panel.");
             ui.separator();
             ui.checkbox(&mut s.enabled, "Enhanced lighting (off: the original look)");
-            egui::CollapsingHeader::new("Light")
-                .default_open(true)
-                .show(ui, |ui| {
-                    ui.checkbox(&mut s.map_lights, "Use the map's own lights");
-                    if s.map_lights {
-                        slider(ui, "key light", &mut s.key_scale, 0.0..=3.0);
-                        slider(ui, "fill light", &mut s.fill_scale, 0.0..=2.0);
-                        slider(ui, "sky light", &mut s.sky_scale, 0.0..=3.0);
-                    } else {
-                        slider(ui, "sun", &mut s.sun_intensity, 0.0..=10.0);
-                        color3(ui, "sun colour", &mut s.sun_color);
-                        ui.horizontal(|ui| {
-                            ui.label("sun direction");
-                            ui.add(
-                                egui::DragValue::new(&mut s.sun_direction[0])
-                                    .speed(0.01)
-                                    .range(-1.0..=1.0),
-                            );
-                            ui.add(
-                                egui::DragValue::new(&mut s.sun_direction[1])
-                                    .speed(0.01)
-                                    .range(-1.0..=1.0),
-                            );
-                            ui.add(
-                                egui::DragValue::new(&mut s.sun_direction[2])
-                                    .speed(0.01)
-                                    .range(-1.0..=1.0),
-                            );
-                        });
-                        slider(ui, "sky", &mut s.sky_intensity, 0.0..=5.0);
-                        color3(ui, "sky colour", &mut s.sky_color);
-                        color3(ui, "ground colour", &mut s.ground_color);
-                    }
-                    slider(ui, "baked light", &mut s.baked_light, 0.0..=2.0);
-                    slider(ui, "key light on scenery", &mut s.scenery_key, 0.0..=1.0);
-                    slider(ui, "sky light on scenery", &mut s.scenery_sky, 0.0..=2.0);
-                    slider(ui, "scenery specular", &mut s.scenery_specular, 0.0..=2.0);
-                    slider(ui, "character ambient", &mut s.character_ambient, 0.0..=4.0);
-                    ui.checkbox(&mut s.probes, "Characters lit by the scenery around them");
-                    slider(ui, "probe light", &mut s.probe_strength, 0.0..=3.0);
-                    slider(ui, "probe share", &mut s.probe_mix, 0.0..=1.0);
-                    slider(ui, "skin scattering", &mut s.skin, 0.0..=1.0);
-                    slider(
-                        ui,
-                        "character falloff (soft–physical)",
-                        &mut s.character_falloff,
-                        0.0..=1.0,
-                    );
-                    ui.checkbox(
-                        &mut s.material_maps,
-                        "Surface detail from the textures (normal, roughness)",
-                    );
-                    slider(ui, "surface detail", &mut s.normal_strength, 0.0..=4.0);
-                    slider(ui, "on characters", &mut s.character_detail, 0.0..=2.0);
-                    slider(ui, "roughness", &mut s.roughness, 0.05..=1.0);
-                    slider(ui, "specular", &mut s.specular, 0.0..=2.0);
-                });
+            egui::CollapsingHeader::new("Light").show(ui, |ui| {
+                ui.checkbox(&mut s.map_lights, "Use the map's own lights");
+                if s.map_lights {
+                    slider(ui, "key light", &mut s.key_scale, 0.0..=3.0);
+                    slider(ui, "fill light", &mut s.fill_scale, 0.0..=2.0);
+                    slider(ui, "sky light", &mut s.sky_scale, 0.0..=3.0);
+                } else {
+                    slider(ui, "sun", &mut s.sun_intensity, 0.0..=10.0);
+                    color3(ui, "sun colour", &mut s.sun_color);
+                    ui.horizontal(|ui| {
+                        ui.label("sun direction");
+                        ui.add(
+                            egui::DragValue::new(&mut s.sun_direction[0])
+                                .speed(0.01)
+                                .range(-1.0..=1.0),
+                        );
+                        ui.add(
+                            egui::DragValue::new(&mut s.sun_direction[1])
+                                .speed(0.01)
+                                .range(-1.0..=1.0),
+                        );
+                        ui.add(
+                            egui::DragValue::new(&mut s.sun_direction[2])
+                                .speed(0.01)
+                                .range(-1.0..=1.0),
+                        );
+                    });
+                    slider(ui, "sky", &mut s.sky_intensity, 0.0..=5.0);
+                    color3(ui, "sky colour", &mut s.sky_color);
+                    color3(ui, "ground colour", &mut s.ground_color);
+                }
+                slider(ui, "baked light", &mut s.baked_light, 0.0..=2.0);
+                slider(ui, "key light on scenery", &mut s.scenery_key, 0.0..=1.0);
+                slider(ui, "sky light on scenery", &mut s.scenery_sky, 0.0..=2.0);
+                slider(ui, "scenery specular", &mut s.scenery_specular, 0.0..=2.0);
+                slider(ui, "character ambient", &mut s.character_ambient, 0.0..=4.0);
+                ui.checkbox(&mut s.probes, "Characters lit by the scenery around them");
+                slider(ui, "probe light", &mut s.probe_strength, 0.0..=3.0);
+                slider(ui, "probe share", &mut s.probe_mix, 0.0..=1.0);
+                slider(ui, "skin scattering", &mut s.skin, 0.0..=1.0);
+                slider(
+                    ui,
+                    "character falloff (soft–physical)",
+                    &mut s.character_falloff,
+                    0.0..=1.0,
+                );
+                ui.checkbox(
+                    &mut s.material_maps,
+                    "Surface detail from the textures (normal, roughness)",
+                );
+                slider(ui, "surface detail", &mut s.normal_strength, 0.0..=4.0);
+                slider(ui, "on characters", &mut s.character_detail, 0.0..=2.0);
+                slider(ui, "roughness", &mut s.roughness, 0.05..=1.0);
+                slider(ui, "specular", &mut s.specular, 0.0..=2.0);
+            });
             egui::CollapsingHeader::new("Shadows").show(ui, |ui| {
                 ui.checkbox(
                     &mut s.ray_traced_shadows,
@@ -727,20 +725,70 @@ fn panel(
                 slider(ui, "saturation", &mut s.saturation, 0.0..=2.0);
                 slider(ui, "contrast", &mut s.contrast, 0.5..=1.5);
                 ui.checkbox(&mut s.fog, "The game's fog");
+                ui.checkbox(
+                    &mut s.afterimage,
+                    "The game's afterimage (a trail behind what moves)",
+                );
+            });
+            egui::CollapsingHeader::new("Anti-aliasing").show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label("anti-aliasing");
+                    ui.label("method");
                     ui.selectable_value(&mut s.antialiasing, 0, "off");
                     ui.selectable_value(&mut s.antialiasing, 1, "FXAA");
-                    ui.selectable_value(&mut s.antialiasing, 2, "temporal");
+                    ui.selectable_value(&mut s.antialiasing, 2, "temporal (TAA)");
                 });
                 if s.antialiasing == 2 {
-                    slider(ui, "new frame weight", &mut s.taa_blend, 0.02..=0.5);
+                    slider(
+                        ui,
+                        "new frame weight (lower: smoother)",
+                        &mut s.taa_blend,
+                        0.02..=0.5,
+                    );
+                    slider(
+                        ui,
+                        "history tolerance (lower: less ghosting)",
+                        &mut s.taa_clamp,
+                        0.5..=3.0,
+                    );
                 }
+                slider(ui, "sharpening", &mut s.sharpen, 0.0..=1.5);
                 ui.add(
                     egui::Slider::new(&mut s.render_scale, 0.5..=2.0)
                         .step_by(0.25)
                         .text("render scale (above 1: supersampling)"),
                 );
+            });
+            egui::CollapsingHeader::new("Camera effects").show(ui, |ui| {
+                ui.checkbox(&mut s.bloom, "Bloom");
+                if s.bloom {
+                    slider(ui, "strength", &mut s.bloom_strength, 0.0..=2.0);
+                    slider(ui, "threshold", &mut s.bloom_threshold, 0.0..=4.0);
+                    slider(ui, "soft start", &mut s.bloom_knee, 0.0..=2.0);
+                    slider(ui, "spread", &mut s.bloom_radius, 0.5..=3.0);
+                }
+                ui.separator();
+                ui.checkbox(&mut s.depth_of_field, "Depth of field");
+                if s.depth_of_field {
+                    slider(ui, "blur", &mut s.dof_strength, 0.0..=2.0);
+                    slider(ui, "largest blur (px)", &mut s.dof_radius, 1.0..=24.0);
+                    ui.add(
+                        egui::Slider::new(&mut s.dof_focus, 0.0..=500.0)
+                            .text("focus distance (0: screen centre)"),
+                    );
+                    slider(ui, "focus speed", &mut s.dof_speed, 0.01..=1.0);
+                }
+                ui.separator();
+                ui.checkbox(&mut s.motion_blur, "Motion blur");
+                if s.motion_blur {
+                    slider(ui, "shutter", &mut s.motion_blur_shutter, 0.0..=1.0);
+                    slider(
+                        ui,
+                        "longest blur (px)",
+                        &mut s.motion_blur_length,
+                        4.0..=96.0,
+                    );
+                    ui.checkbox(&mut s.motion_blur_camera, "From camera motion too");
+                }
             });
             egui::CollapsingHeader::new("Debug").show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {

@@ -13,6 +13,10 @@ struct Camera {
     // x: GlobalTime, y: normal map strength, z: material maps on,
     // w: roughness scale
     misc: vec4<f32>,
+    // Rows of this frame's view-projection without the TAA jitter, and of
+    // last frame's (for motion vectors).
+    now_view_proj: array<vec4<f32>, 4>,
+    prev_view_proj: array<vec4<f32>, 4>,
 };
 
 struct Item {
@@ -29,6 +33,8 @@ struct Item {
     scale: vec4<f32>,
     // x: surface detail strength for this draw
     extra: vec4<f32>,
+    // Last frame's World of the same draw (this frame's when it is new).
+    prev_world: array<vec4<f32>, 4>,
 };
 
 @group(0) @binding(0) var<uniform> cam: Camera;
@@ -38,6 +44,8 @@ struct Item {
 @group(1) @binding(3) var albedo_samp: sampler;
 // Generated material: rg normal, b roughness, a cavity.
 @group(1) @binding(4) var material_tex: texture_2d<f32>;
+// Last frame's bones of the same draw.
+@group(1) @binding(5) var<uniform> prev_bones: array<vec4<f32>, 320>;
 
 // VsIn and its accessors a_pos(v) … a_cloth(v) are generated per variant
 // (only the attributes the draw has).
@@ -48,7 +56,15 @@ struct VsOut {
     @location(1) col: vec4<f32>,
     @location(2) uv: vec2<f32>,
     @location(3) world: vec3<f32>,
+    // Unjittered clip positions now and last frame.
+    @location(4) now_clip: vec4<f32>,
+    @location(5) prev_clip: vec4<f32>,
 };
+
+fn clip(m: array<vec4<f32>, 4>, p: vec3<f32>) -> vec4<f32> {
+    let wp = vec4<f32>(p, 1.0);
+    return vec4<f32>(dot(m[0], wp), dot(m[1], wp), dot(m[2], wp), dot(m[3], wp));
+}
 
 fn rows3(r0: vec4<f32>, r1: vec4<f32>, r2: vec4<f32>, p: vec4<f32>) -> vec3<f32> {
     return vec3<f32>(dot(r0, p), dot(r1, p), dot(r2, p));
@@ -59,26 +75,35 @@ fn vs(v: VsIn) -> VsOut {
     var out: VsOut;
     let p = vec4<f32>(a_pos(v), 1.0);
     var world: vec3<f32>;
+    var prev: vec3<f32>;
     var nrm: vec3<f32>;
     if (SKINNED) {
         world = vec3<f32>(0.0);
+        prev = vec3<f32>(0.0);
         nrm = vec3<f32>(0.0);
         for (var k = 0u; k < 4u; k = k + 1u) {
             let b = a_bi(v)[k] * 4u;
             let w = a_bw(v)[k];
             world = world + w * rows3(bones[b], bones[b + 1u], bones[b + 2u], p);
+            prev = prev + w * rows3(prev_bones[b], prev_bones[b + 1u], prev_bones[b + 2u], p);
             nrm = nrm + w * vec3<f32>(dot(bones[b].xyz, a_nrm(v)), dot(bones[b + 1u].xyz, a_nrm(v)), dot(bones[b + 2u].xyz, a_nrm(v)));
         }
         if (CLOTH) {
-            // Simulated cloth vertices come in COLOR1, in cloth space.
+            // Simulated cloth vertices come in COLOR1, in cloth space; last
+            // frame's are not known, so they move as the skin under them.
             let t = min(dot(a_cloth(v).xyz, a_cloth(v).xyz) * 10000.0, 1.0);
             let c = rows3(item.cloth[0], item.cloth[1], item.cloth[2], vec4<f32>(a_cloth(v).xyz, 1.0));
+            let moved = prev - world;
             world = mix(world, c, t);
+            prev = world + moved;
         }
     } else {
         world = rows3(item.world[0], item.world[1], item.world[2], p);
+        prev = rows3(item.prev_world[0], item.prev_world[1], item.prev_world[2], p);
         nrm = vec3<f32>(dot(item.world[0].xyz, a_nrm(v)), dot(item.world[1].xyz, a_nrm(v)), dot(item.world[2].xyz, a_nrm(v)));
     }
+    out.now_clip = clip(cam.now_view_proj, world);
+    out.prev_clip = clip(cam.prev_view_proj, prev);
     let wp = vec4<f32>(world, 1.0);
     out.clip = vec4<f32>(dot(cam.view_proj[0], wp), dot(cam.view_proj[1], wp), dot(cam.view_proj[2], wp), dot(cam.view_proj[3], wp));
     out.nrm = nrm;
@@ -100,7 +125,15 @@ struct GOut {
     @location(0) albedo: vec4<f32>,
     @location(1) normal: vec4<f32>,
     @location(2) baked: vec4<f32>,
+    // rg: where this point was last frame minus where it is (uv), b: its
+    // view depth then, a: 1 (no motion where nothing was drawn).
+    @location(3) motion: vec4<f32>,
 };
+
+fn screen_uv(c: vec4<f32>) -> vec2<f32> {
+    let n = c.xy / c.w;
+    return vec2<f32>(n.x * 0.5 + 0.5, 0.5 - n.y * 0.5);
+}
 
 @fragment
 fn fs(in: VsOut) -> GOut {
@@ -146,6 +179,7 @@ fn fs(in: VsOut) -> GOut {
     out.normal = vec4<f32>(n, item.params.w + 0.5 * clamp(c.a * in.col.a * 2.0, 0.0, 1.0));
     // The game's vertex colours are light in gamma space, with 0.5 as full.
     out.baked = vec4<f32>(pow(max(in.col.rgb * 2.0, vec3<f32>(0.0)), vec3<f32>(2.2)), item.ambient.w);
+    out.motion = vec4<f32>(screen_uv(in.prev_clip) - screen_uv(in.now_clip), in.prev_clip.w, 1.0);
     return out;
 }
 

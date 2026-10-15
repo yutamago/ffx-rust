@@ -2,7 +2,9 @@
 // each frame; this pass finds where each pixel was last frame (by its
 // depth and last frame's camera), takes the history there, keeps it within
 // the colours around the pixel now (so moving things do not smear), and
-// blends a little of the new frame in.
+// blends a little of the new frame in. The history's alpha is each pixel's
+// view depth: history from another depth (something that has moved away,
+// or that hid this point last frame) is dropped.
 
 struct Taa {
     // Both without the jitter: a still camera finds each pixel where it
@@ -12,6 +14,9 @@ struct Taa {
     prev_view_proj: array<vec4<f32>, 4>,
     // x: weight of the new frame, y: history valid, zw: size
     params: vec4<f32>,
+    // x: how far history may stray from the colours now (standard
+    // deviations)
+    clamp: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> taa: Taa;
@@ -19,6 +24,9 @@ struct Taa {
 @group(0) @binding(2) var history_tex: texture_2d<f32>;
 @group(0) @binding(3) var depth_tex: texture_depth_2d;
 @group(0) @binding(4) var samp: sampler;
+// The G-buffer's motion vectors: rg where the point was last frame minus
+// where it is (uv), b its view depth then, a 1 where they were written.
+@group(0) @binding(5) var motion_tex: texture_2d<f32>;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -69,13 +77,37 @@ fn history(uv: vec2<f32>, size: vec2<f32>) -> vec3<f32> {
     return max(sum / weight, vec3<f32>(0.0));
 }
 
+// The view depth (clip w) of the point at `ndc` with depth `z`: the
+// inverse view-projection gives the point divided by its w.
+fn view_depth(ndc: vec2<f32>, z: f32) -> f32 {
+    let h = taa.inv_view_proj * vec4<f32>(ndc, z, 1.0);
+    // Kept within half-float range (the history holds it).
+    return min(1.0 / max(abs(h.w), 1e-8), 60000.0);
+}
+
+// Whether last frame's history near `prev` (uv) saw a point at depth `w`:
+// the best match of the four texels around it, within a tenth.
+fn same_depth(prev: vec2<f32>, size: vec2<f32>, w: f32) -> bool {
+    let base = vec2<i32>(floor(prev * size - 0.5));
+    let imax = vec2<i32>(size) - 1;
+    var best = 1e9;
+    for (var k = 0; k < 4; k = k + 1) {
+        let q = clamp(base + vec2<i32>(k & 1, k >> 1u), vec2<i32>(0), imax);
+        best = min(best, abs(textureLoad(history_tex, q, 0).a - w));
+    }
+    return best <= 0.1 * w + 0.05;
+}
+
 @fragment
 fn fs(in: VsOut) -> @location(0) vec4<f32> {
     let size = taa.params.zw;
     let px = vec2<i32>(in.pos.xy);
     let cur = textureLoad(current_tex, px, 0).rgb;
+    let uv = in.pos.xy / size;
+    let ndc = vec2<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+    let own = view_depth(ndc, textureLoad(depth_tex, px, 0));
     if (taa.params.y < 0.5) {
-        return vec4<f32>(cur, 1.0);
+        return vec4<f32>(cur, own);
     }
     // The colours around this pixel now; the nearest depth among them
     // (edges keep the foreground's motion).
@@ -84,6 +116,7 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     var mean = vec3<f32>(0.0);
     var sq = vec3<f32>(0.0);
     var depth = 1.0;
+    var near = px;
     let imax = vec2<i32>(size) - 1;
     for (var y = -1; y <= 1; y = y + 1) {
         for (var x = -1; x <= 1; x = x + 1) {
@@ -93,22 +126,35 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
             hi = max(hi, c);
             mean = mean + c;
             sq = sq + c * c;
-            depth = min(depth, textureLoad(depth_tex, q, 0));
+            let d = textureLoad(depth_tex, q, 0);
+            if (d < depth) {
+                depth = d;
+                near = q;
+            }
         }
     }
     mean = mean / 9.0;
     let sigma = sqrt(max(sq / 9.0 - mean * mean, vec3<f32>(0.0)));
-    lo = max(lo, mean - sigma * 1.25);
-    hi = min(hi, mean + sigma * 1.25);
-    // Where this point was last frame.
-    let uv = in.pos.xy / size;
-    let ndc = vec2<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
-    let h = taa.inv_view_proj * vec4<f32>(ndc, depth, 1.0);
-    let w = vec4<f32>(h.xyz / h.w, 1.0);
-    let pc = vec4<f32>(dot(taa.prev_view_proj[0], w), dot(taa.prev_view_proj[1], w), dot(taa.prev_view_proj[2], w), dot(taa.prev_view_proj[3], w));
-    let prev = vec2<f32>(pc.x / pc.w * 0.5 + 0.5, 0.5 - pc.y / pc.w * 0.5);
-    if (any(prev < vec2<f32>(0.0)) || any(prev > vec2<f32>(1.0)) || pc.w <= 0.0) {
-        return vec4<f32>(cur, 1.0);
+    lo = max(lo, mean - sigma * taa.clamp.x);
+    hi = min(hi, mean + sigma * taa.clamp.x);
+    // Where this point was last frame, and its depth then: by its motion
+    // where the G-buffer drew it (moving things move with it), else by
+    // depth and the camera alone.
+    var prev: vec2<f32>;
+    var then: f32;
+    let m = textureLoad(motion_tex, near, 0);
+    if (m.a > 0.5) {
+        prev = uv + m.xy;
+        then = m.z;
+    } else {
+        let h = taa.inv_view_proj * vec4<f32>(ndc, depth, 1.0);
+        let w = vec4<f32>(h.xyz / h.w, 1.0);
+        let pc = vec4<f32>(dot(taa.prev_view_proj[0], w), dot(taa.prev_view_proj[1], w), dot(taa.prev_view_proj[2], w), dot(taa.prev_view_proj[3], w));
+        prev = vec2<f32>(pc.x / pc.w * 0.5 + 0.5, 0.5 - pc.y / pc.w * 0.5);
+        then = pc.w;
+    }
+    if (any(prev < vec2<f32>(0.0)) || any(prev > vec2<f32>(1.0)) || then <= 0.0 || !same_depth(prev, size, min(then, 60000.0))) {
+        return vec4<f32>(cur, own);
     }
     let hist = ycocg(history(prev, size));
     let clamped = clamp(hist, lo, hi);
@@ -116,5 +162,5 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     let motion = length((prev - uv) * size);
     let alpha = clamp(taa.params.x + motion * 0.02, taa.params.x, 0.5);
     let out = mix(rgb(clamped), cur, alpha);
-    return vec4<f32>(out, 1.0);
+    return vec4<f32>(out, own);
 }

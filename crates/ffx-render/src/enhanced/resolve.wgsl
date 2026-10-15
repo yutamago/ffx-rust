@@ -7,7 +7,7 @@ struct Resolve {
     params: vec4<f32>,
     // Rows of the view matrix, for the game's view-space normals.
     view: array<vec4<f32>, 4>,
-    // x: the scene's clear alpha (where nothing was drawn)
+    // x: the scene's clear alpha (where nothing was drawn), y: sharpening
     clear: vec4<f32>,
 };
 
@@ -142,6 +142,18 @@ fn fs(in: VsOut) -> Out {
             + sample(uv + vec2<f32>(-0.25, 0.25) * t * scale) + sample(uv + vec2<f32>(0.25, 0.25) * t * scale)) * 0.25;
     } else {
         c = sample(uv);
+    }
+    if (res.clear.y > 0.0) {
+        // Sharpening: away from the four neighbours (a rendered pixel
+        // away), kept within their range so edges do not ring.
+        let t = 1.0 / src;
+        let n = sample(uv + vec2<f32>(0.0, -t.y));
+        let s = sample(uv + vec2<f32>(0.0, t.y));
+        let e = sample(uv + vec2<f32>(t.x, 0.0));
+        let w = sample(uv + vec2<f32>(-t.x, 0.0));
+        let lo = min(min(min(n, s), min(e, w)), c);
+        let hi = max(max(max(n, s), max(e, w)), c);
+        c = clamp(c + (c - (n + s + e + w) * 0.25) * res.clear.y, lo, hi);
     }
     var out: Out;
     let ipx = vec2<i32>(floor(in.pos.xy * scale));

@@ -1470,6 +1470,41 @@ fn on_draw_inner(d: Draw) -> bool {
     // to see again: it draws the scene targets itself.
 }
 
+/// For the game's afterimage pass when it is turned off: no blending for
+/// this draw. Returns the blend state to put back.
+fn unblended(this: Ptr) -> Option<(usize, [f32; 4], u32)> {
+    let (blend, factor, mask) = {
+        let s = state();
+        if !live::afterimage_off(&s) {
+            return None;
+        }
+        (s.bound.blend, s.bound.blend_factor, s.bound.sample_mask)
+    };
+    // SAFETY: the context's own method; a null state is the default (no
+    // blending).
+    unsafe { set_blend(this, 0, &factor, mask) };
+    Some((blend, factor, mask))
+}
+
+/// Puts back what `unblended` changed.
+fn reblend(this: Ptr, saved: Option<(usize, [f32; 4], u32)>) {
+    if let Some((blend, factor, mask)) = saved {
+        // SAFETY: the game's own state, as it set it.
+        unsafe { set_blend(this, blend, &factor, mask) };
+    }
+}
+
+/// `OMSetBlendState` past the hook (the game's view of what is bound stays).
+unsafe fn set_blend(this: Ptr, blend: usize, factor: &[f32; 4], mask: u32) {
+    type F = unsafe extern "system" fn(Ptr, Ptr, *const f32, u32);
+    // SAFETY: the original method, its documented arguments.
+    unsafe {
+        let (this, f) = forward(this, vt::context::OM_SET_BLEND_STATE);
+        let f: F = std::mem::transmute(f);
+        f(this, blend as Ptr, factor.as_ptr(), mask);
+    }
+}
+
 unsafe extern "system" fn draw_indexed(this: Ptr, count: u32, start: u32, base: i32) {
     if on_draw(Draw::Indexed { count, start, base }) {
         return;
@@ -1479,7 +1514,9 @@ unsafe extern "system" fn draw_indexed(this: Ptr, count: u32, start: u32, base: 
     unsafe {
         let (this, f) = forward(this, vt::context::DRAW_INDEXED);
         let f: F = std::mem::transmute(f);
+        let saved = unblended(this);
         f(this, count, start, base);
+        reblend(this, saved);
         capture::after_draw(&mut state());
     }
 }
@@ -1493,7 +1530,9 @@ unsafe extern "system" fn draw(this: Ptr, count: u32, start: u32) {
     unsafe {
         let (this, f) = forward(this, vt::context::DRAW);
         let f: F = std::mem::transmute(f);
+        let saved = unblended(this);
         f(this, count, start);
+        reblend(this, saved);
         capture::after_draw(&mut state());
     }
 }
@@ -1521,7 +1560,9 @@ unsafe extern "system" fn draw_indexed_instanced(
     unsafe {
         let (this, f) = forward(this, vt::context::DRAW_INDEXED_INSTANCED);
         let f: F = std::mem::transmute(f);
+        let saved = unblended(this);
         f(this, count, instances, start, base, first);
+        reblend(this, saved);
         capture::after_draw(&mut state());
     }
 }
@@ -1547,7 +1588,9 @@ unsafe extern "system" fn draw_instanced(
     unsafe {
         let (this, f) = forward(this, vt::context::DRAW_INSTANCED);
         let f: F = std::mem::transmute(f);
+        let saved = unblended(this);
         f(this, count, instances, start, first);
+        reblend(this, saved);
         capture::after_draw(&mut state());
     }
 }

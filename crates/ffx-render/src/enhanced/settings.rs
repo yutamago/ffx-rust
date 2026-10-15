@@ -116,6 +116,38 @@ pub struct Settings {
     pub antialiasing: u8,
     /// TAA: the weight of each new frame (lower: smoother, more ghosting).
     pub taa_blend: f32,
+    /// TAA: how far history may differ from the colours around a pixel
+    /// now, in standard deviations (lower: less ghosting, more shimmer).
+    pub taa_clamp: f32,
+    /// Sharpening of the final image (TAA and upscaling soften it).
+    pub sharpen: f32,
+    /// Bloom: light from bright areas spreading over the image.
+    pub bloom: bool,
+    pub bloom_strength: f32,
+    /// Brightness (before exposure) where bloom starts, and the width of
+    /// the soft start.
+    pub bloom_threshold: f32,
+    pub bloom_knee: f32,
+    /// Spread of each level's filter (texels).
+    pub bloom_radius: f32,
+    /// Depth of field: what is nearer or farther than the focus blurs.
+    pub depth_of_field: bool,
+    pub dof_strength: f32,
+    /// The largest blur radius, in pixels of a 1080-line image.
+    pub dof_radius: f32,
+    /// Focus distance in world units; 0: what is at the centre of the
+    /// screen.
+    pub dof_focus: f32,
+    /// How fast the focus follows (share per frame).
+    pub dof_speed: f32,
+    /// Motion blur along how things move on screen.
+    pub motion_blur: bool,
+    /// The shutter: the share of a frame's motion the blur covers.
+    pub motion_blur_shutter: f32,
+    /// The longest blur, in pixels of a 1080-line image.
+    pub motion_blur_length: f32,
+    /// Blur from the camera's own motion too (off: only moving things).
+    pub motion_blur_camera: bool,
     /// Screen-space ambient occlusion.
     pub ao: bool,
     /// Its radius in world units (a character is about 20 tall).
@@ -130,6 +162,10 @@ pub struct Settings {
     pub debug_view: u8,
     /// Keep the game's blob shadows (redundant with real shadows).
     pub fake_shadows: bool,
+    /// The game's afterimage: on many maps it blends a fifth of the last
+    /// frames into each new one (a PS2-era trail behind anything that
+    /// moves). Off: each frame stands alone.
+    pub afterimage: bool,
 }
 
 impl Default for Settings {
@@ -192,11 +228,28 @@ impl Default for Settings {
             render_scale: 1.0,
             antialiasing: 2,
             taa_blend: 0.1,
+            taa_clamp: 1.25,
+            sharpen: 0.25,
+            bloom: true,
+            bloom_strength: 0.3,
+            bloom_threshold: 1.0,
+            bloom_knee: 0.5,
+            bloom_radius: 1.0,
+            depth_of_field: false,
+            dof_strength: 0.5,
+            dof_radius: 8.0,
+            dof_focus: 0.0,
+            dof_speed: 0.1,
+            motion_blur: false,
+            motion_blur_shutter: 0.5,
+            motion_blur_length: 32.0,
+            motion_blur_camera: true,
             ao: true,
             ao_radius: 4.0,
             ao_strength: 1.0,
             ao_on_baked: 0.6,
             fake_shadows: false,
+            afterimage: false,
             debug_view: 0,
         }
     }

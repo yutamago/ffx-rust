@@ -37,6 +37,23 @@ type Ptr = *mut c_void;
 static ON: AtomicBool = AtomicBool::new(false);
 /// The overlay is showing (F10): the game's keyboard reads as released.
 static OVERLAY: AtomicBool = AtomicBool::new(false);
+/// The renderer's settings turn the game's afterimage off.
+static NO_AFTERIMAGE: AtomicBool = AtomicBool::new(false);
+/// The pixel shader of the game's afterimage pass (by its bytecode hash):
+/// the scene, times a colour whose alpha is the new frame's share
+/// (0.8 on the S.S. Winno), blended into a history image that the next
+/// draw lays over the scene.
+const AFTERIMAGE_PS: u64 = 0xe928_905e_3163_6cf1;
+
+/// Whether the draw about to happen is the afterimage's blend into its
+/// history, and the renderer's settings want each frame to stand alone:
+/// then it goes without blending (the history is just this frame).
+pub fn afterimage_off(s: &State) -> bool {
+    on() && NO_AFTERIMAGE.load(Ordering::Relaxed)
+        && s.shaders
+            .get(&s.bound.ps)
+            .is_some_and(|sh| sh.hash == AFTERIMAGE_PS)
+}
 /// Window input for the overlay, sent with the next frame.
 static INPUT: Mutex<Vec<ffx_gfx::Input>> = Mutex::new(Vec::new());
 static WINDOW: AtomicUsize = AtomicUsize::new(0);
@@ -976,6 +993,7 @@ fn finish(link: &mut Link, s: &mut State, scene: Scene) {
         return;
     };
     link.overlay = reply.overlay;
+    NO_AFTERIMAGE.store(reply.no_afterimage, Ordering::Relaxed);
     let data = reply.scene;
     if (reply.width, reply.height) != (w, h) {
         return;
@@ -1061,6 +1079,8 @@ struct Reply {
     /// here and the value that means written).
     shared: Option<SharedAt>,
     overlay: Option<(u32, u32, Vec<u8>)>,
+    /// The renderer's settings turn the game's afterimage off.
+    no_afterimage: bool,
 }
 
 /// Where the renderer's image is.
@@ -1160,6 +1180,7 @@ fn receive(link: &mut Link, frame: u32) -> Option<Reply> {
                 scene,
                 shared,
                 overlay,
+                no_afterimage: flags & 8 != 0,
             });
         }
     }

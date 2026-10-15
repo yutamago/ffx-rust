@@ -277,9 +277,9 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             overlay.message = "defaults (not saved)".into();
         }
         // Answer: frame, scene size, flags (1: overlay follows, 2: the scene
-        // is in shared textures), the scene's colour, normal and depth (or
-        // the shared generation and set), then the overlay's size and
-        // pixels.
+        // is in shared textures, 4: with a fence, 8: the game's afterimage
+        // off), the scene's colour, normal and depth (or the shared
+        // generation and set), then the overlay's size and pixels.
         let (w, h, mut data) = match shared {
             Some(s) => {
                 let mut d = s.generation.to_le_bytes().to_vec();
@@ -312,7 +312,8 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
                 4
             } else {
                 0
-            };
+            }
+            | if enhanced.settings.afterimage { 0 } else { 8 };
         out.extend_from_slice(&flags.to_le_bytes());
         out.extend_from_slice(&data);
         if let Some(img) = &overlay_image {

@@ -18,6 +18,9 @@ pollster = "0.4"
 egui = "0.36.2"
 wgpu = "30.0.1"
 
+[dev-dependencies]
+naga = { version = "30.0.1", features = ["wgsl-in"] }
+
 [lints]
 workspace = true
 

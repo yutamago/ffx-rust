@@ -8,7 +8,10 @@
 //! through the game's own shaders afterwards, as in the original path.
 
 pub mod math;
+mod post;
 mod settings;
+#[cfg(test)]
+mod shader_tests;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -85,7 +88,7 @@ type FreshBlas = (
 /// vertex, stride, vertex count, index buffer id, first index, index count,
 /// 32-bit indices.
 type BlasKey = (Id, u32, u32, u32, Id, u32, u32, bool);
-const TAA_SIZE: usize = 64 + 64 + 16;
+const TAA_SIZE: usize = 64 + 64 + 32;
 /// Ids of the effect light's own target in the renderer's mirror (above
 /// any 32-bit process's user addresses, which the game's ids are).
 const EFFECT_IDS: Id = 0xfff0_0000;
@@ -245,6 +248,8 @@ struct Item {
     albedo: Option<(Id, Id)>,
     /// A character's centre (for its light probe); scenery has none.
     centre: Option<[f32; 3]>,
+    /// What it draws (shaders, buffers, range): finds it again next frame.
+    motion: u64,
 }
 
 /// The effect light's targets and passes, for one scene image size and
@@ -270,6 +275,8 @@ struct ProbeTargets {
     layers: Vec<[wgpu::TextureView; 4]>,
     /// The layers as arrays, for the projection pass: albedo, baked, depth.
     arrays: [wgpu::TextureView; 3],
+    /// Where the G-buffer pipelines write motion (not read for probes).
+    motion: wgpu::TextureView,
     buffer: wgpu::Buffer,
     pipeline: wgpu::ComputePipeline,
     layout: wgpu::BindGroupLayout,
@@ -287,6 +294,8 @@ struct Targets {
     albedo: wgpu::TextureView,
     normal: wgpu::TextureView,
     baked: wgpu::TextureView,
+    /// Motion vectors (see `gbuffer.wgsl`).
+    motion: wgpu::TextureView,
     depth: wgpu::TextureView,
     hdr: wgpu::TextureView,
     ao: [wgpu::TextureView; 2],
@@ -335,10 +344,17 @@ pub struct Enhanced {
     /// Tone mapping into the intermediate image, and its layout.
     tone: (wgpu::RenderPipeline, wgpu::BindGroupLayout),
     taa: (wgpu::RenderPipeline, wgpu::BindGroupLayout),
+    /// Depth of field, motion blur, bloom.
+    post: post::Post,
+    /// Last frame's view-projection without jitter and eye (motion
+    /// vectors).
+    last_view_proj: Option<(math::Mat, [f32; 3])>,
     /// Last frame's camera (view-projection, eye) and image size, and
     /// which history it wrote.
     taa_last: Option<(math::Mat, [f32; 3], (u32, u32))>,
     taa_index: usize,
+    /// Per draw (`Item::motion`): last frame's World rows and bones.
+    motion: HashMap<u64, (Vec<u8>, Option<Vec<u8>>)>,
     /// Material map generation (first level, then each smaller one).
     material_gen: (
         wgpu::RenderPipeline,
@@ -517,10 +533,11 @@ fn tex(sample_type: wgpu::TextureSampleType) -> wgpu::BindingType {
 const FLOAT: wgpu::TextureSampleType = wgpu::TextureSampleType::Float { filterable: true };
 const UNFILTERED: wgpu::TextureSampleType = wgpu::TextureSampleType::Float { filterable: false };
 
-/// Item uniform: world (64), cloth (64), colour, params, ambient, scale
-/// (64).
-const ITEM_SIZE: usize = 208;
-const CAMERA_SIZE: usize = 64 * 3 + 32;
+/// Item uniform as `item()` makes it: world (64), cloth (64), colour,
+/// params, ambient, scale, extra (80); the frame adds last frame's World.
+const ITEM_BASE: usize = 208;
+const ITEM_SIZE: usize = ITEM_BASE + 64;
+const CAMERA_SIZE: usize = 64 * 5 + 32;
 const LIGHT_SIZE: usize = 64 + 16 * 12 + 16 * 17;
 const POST_SIZE: usize = 16 + 64 + 16;
 
@@ -579,6 +596,52 @@ fn put4(out: &mut Vec<u8>, v: [f32; 4]) {
     }
 }
 
+/// The G-buffer shader of a variant, for a draw with the attributes at
+/// `present` (`INPUTS` locations).
+fn gbuffer_source(v: Variant, present: &[u32]) -> String {
+    let consts = format!(
+        "diagnostic(off, derivative_uniformity);\nconst SKINNED: bool = {};\nconst CLOTH: bool = {};\nconst HAS_COLOR: bool = {};\nconst HAS_UV: bool = {};\nconst ALPHA_TEST: bool = {};\n",
+        v.skinned, v.cloth, v.color, v.uv, v.alpha_test
+    );
+    let decl = [
+        ("pos", "vec3<f32>", "vec3<f32>(0.0)"),
+        ("nrm", "vec3<f32>", "vec3<f32>(0.0, 1.0, 0.0)"),
+        ("col", "vec4<f32>", "vec4<f32>(0.5)"),
+        ("uv", "vec2<f32>", "vec2<f32>(0.0)"),
+        ("bi", "vec4<u32>", "vec4<u32>(0u)"),
+        ("bw", "vec4<f32>", "vec4<f32>(1.0, 0.0, 0.0, 0.0)"),
+        ("cloth", "vec4<f32>", "vec4<f32>(0.0)"),
+    ];
+    let (vsin, access) = vertex_input(&decl, present);
+    format!("{consts}{vsin}{access}{GBUFFER_WGSL}")
+}
+
+/// The water shader for a draw with the attributes at `present`.
+fn water_source(present: &[u32]) -> String {
+    let decl = [
+        ("pos", "vec3<f32>", "vec3<f32>(0.0)"),
+        ("nrm", "vec3<f32>", "vec3<f32>(0.0, 1.0, 0.0)"),
+        ("col", "vec4<f32>", "vec4<f32>(0.5)"),
+        ("uv0", "vec2<f32>", "vec2<f32>(0.0)"),
+        ("uv1", "vec2<f32>", "vec2<f32>(0.0)"),
+        ("uv2", "vec2<f32>", "vec2<f32>(0.0)"),
+        ("uv3", "vec2<f32>", "vec2<f32>(0.0)"),
+        ("tan", "vec3<f32>", "vec3<f32>(1.0, 0.0, 0.0)"),
+    ];
+    let (vsin, access) = vertex_input(&decl, present);
+    format!("{vsin}{access}{WATER_WGSL}")
+}
+
+/// A draw's identity across frames: its shaders, buffers and range.
+fn motion_key(d: &Draw) -> u64 {
+    let words = [d.vs, d.ps, d.index.0, d.index.2, d.start, d.count]
+        .into_iter()
+        .chain([d.base.cast_unsigned(), d.first_instance])
+        .chain(d.vertex.iter().flat_map(|v| [v.1, v.3]));
+    let bytes: Vec<u8> = words.flat_map(u32::to_le_bytes).collect();
+    crate::fnv(&bytes)
+}
+
 /// The light probes' layers, buffer and projection pass.
 #[allow(clippy::too_many_lines)] // the targets, the views, the pass
 fn probe_targets(device: &wgpu::Device) -> ProbeTargets {
@@ -623,6 +686,13 @@ fn probe_targets(device: &wgpu::Device) -> ProbeTargets {
             ]
         })
         .collect();
+    let motion = make(wgpu::TextureFormat::Rgba16Float, "probe motion").create_view(
+        &wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            array_layer_count: Some(1),
+            ..Default::default()
+        },
+    );
     let array = |t: &wgpu::Texture| {
         t.create_view(&wgpu::TextureViewDescriptor {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
@@ -686,6 +756,7 @@ fn probe_targets(device: &wgpu::Device) -> ProbeTargets {
     ProbeTargets {
         layers,
         arrays,
+        motion,
         buffer,
         pipeline,
         layout,
@@ -920,6 +991,7 @@ impl Enhanced {
                         wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     ),
                     (4, tex(FLOAT)),
+                    (5, uniform(5120)),
                 ],
                 S::VERTEX_FRAGMENT,
             ),
@@ -1063,6 +1135,7 @@ impl Enhanced {
                         4,
                         wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     ),
+                    (5, tex(UNFILTERED)),
                 ],
                 S::FRAGMENT,
             ),
@@ -1206,8 +1279,11 @@ impl Enhanced {
             blas_cache: HashMap::new(),
             tlas: None,
             taa,
+            post: post::Post::new(device),
+            last_view_proj: None,
             taa_last: None,
             taa_index: 0,
+            motion: HashMap::new(),
             effect: None,
             effect_generation: 0,
             frame_count: 0,
@@ -1295,31 +1371,15 @@ impl Enhanced {
             return p.clone();
         }
         let v = key.variant;
-        let consts = format!(
-            "diagnostic(off, derivative_uniformity);\nconst SKINNED: bool = {};\nconst CLOTH: bool = {};\nconst HAS_COLOR: bool = {};\nconst HAS_UV: bool = {};\nconst ALPHA_TEST: bool = {};\n",
-            v.skinned, v.cloth, v.color, v.uv, v.alpha_test
-        );
         // The vertex input struct: the attributes the draw has.
         let present: Vec<u32> = key
             .buffers
             .iter()
             .flat_map(|b| b.2.iter().map(|a| a.0))
             .collect();
-        let decl = [
-            ("pos", "vec3<f32>", "vec3<f32>(0.0)"),
-            ("nrm", "vec3<f32>", "vec3<f32>(0.0, 1.0, 0.0)"),
-            ("col", "vec4<f32>", "vec4<f32>(0.5)"),
-            ("uv", "vec2<f32>", "vec2<f32>(0.0)"),
-            ("bi", "vec4<u32>", "vec4<u32>(0u)"),
-            ("bw", "vec4<f32>", "vec4<f32>(1.0, 0.0, 0.0, 0.0)"),
-            ("cloth", "vec4<f32>", "vec4<f32>(0.0)"),
-        ];
-        let (vsin, access) = vertex_input(&decl, &present);
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("gbuffer"),
-            source: wgpu::ShaderSource::Wgsl(
-                format!("{consts}{vsin}{access}{GBUFFER_WGSL}").into(),
-            ),
+            source: wgpu::ShaderSource::Wgsl(gbuffer_source(v, &present).into()),
         });
         let attrs: Vec<Vec<wgpu::VertexAttribute>> = key
             .buffers
@@ -1353,6 +1413,11 @@ impl Enhanced {
         let gtargets = [
             Some(wgpu::ColorTargetState {
                 format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
+            Some(wgpu::ColorTargetState {
+                format: wgpu::TextureFormat::Rgba16Float,
                 blend: None,
                 write_mask: wgpu::ColorWrites::ALL,
             }),
@@ -1472,6 +1537,7 @@ impl Enhanced {
             albedo: make(wgpu::TextureFormat::Rgba8UnormSrgb, "albedo"),
             normal: make(wgpu::TextureFormat::Rgba16Float, "normal"),
             baked: make(wgpu::TextureFormat::Rgba16Float, "baked"),
+            motion: make(wgpu::TextureFormat::Rgba16Float, "motion"),
             depth: depth_texture.1,
             hdr: hdr_texture.1,
             ao: [
@@ -1736,20 +1802,9 @@ impl Enhanced {
             .iter()
             .flat_map(|b| b.2.iter().map(|a| a.0))
             .collect();
-        let decl = [
-            ("pos", "vec3<f32>", "vec3<f32>(0.0)"),
-            ("nrm", "vec3<f32>", "vec3<f32>(0.0, 1.0, 0.0)"),
-            ("col", "vec4<f32>", "vec4<f32>(0.5)"),
-            ("uv0", "vec2<f32>", "vec2<f32>(0.0)"),
-            ("uv1", "vec2<f32>", "vec2<f32>(0.0)"),
-            ("uv2", "vec2<f32>", "vec2<f32>(0.0)"),
-            ("uv3", "vec2<f32>", "vec2<f32>(0.0)"),
-            ("tan", "vec3<f32>", "vec3<f32>(1.0, 0.0, 0.0)"),
-        ];
-        let (vsin, access) = vertex_input(&decl, &present);
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("water"),
-            source: wgpu::ShaderSource::Wgsl(format!("{vsin}{access}{WATER_WGSL}").into()),
+            source: wgpu::ShaderSource::Wgsl(water_source(&present).into()),
         });
         let attrs: Vec<Vec<wgpu::VertexAttribute>> = key
             .buffers
@@ -2124,7 +2179,7 @@ impl Enhanced {
             _ => None,
         };
         // The uniform.
-        let mut u = Vec::with_capacity(ITEM_SIZE);
+        let mut u = Vec::with_capacity(ITEM_BASE);
         put_rows(
             &mut u,
             &vs.rows(vcb, "World").unwrap_or_else(math::identity),
@@ -2225,7 +2280,7 @@ impl Enhanced {
             }
             at
         });
-        debug_assert_eq!(u.len(), ITEM_SIZE, "item uniform layout");
+        debug_assert_eq!(u.len(), ITEM_BASE, "item uniform layout");
         Some(Item {
             key,
             vertex,
@@ -2235,6 +2290,7 @@ impl Enhanced {
             bones: bones_data,
             albedo,
             centre,
+            motion: motion_key(d),
         })
     }
 
@@ -2466,6 +2522,16 @@ impl Enhanced {
                 self.settings.roughness,
             ],
         );
+        // After a camera cut nothing moved: the image did not come from the
+        // last one.
+        let prev_view_proj = match self.last_view_proj.replace((unjittered, eye)) {
+            Some((vp, e)) if (0..3).map(|k| (e[k] - eye[k]).powi(2)).sum::<f32>() < 40.0 * 40.0 => {
+                vp
+            }
+            _ => unjittered,
+        };
+        put_rows(&mut cam, &unjittered);
+        put_rows(&mut cam, &prev_view_proj);
         assert_eq!(cam.len(), CAMERA_SIZE, "camera uniform layout");
         let cam_at = alloc(&cam, CAMERA_SIZE);
         // The key light: the map's, or the settings'.
@@ -2555,12 +2621,30 @@ impl Enhanced {
             .collect();
         let shadow_cam = Vec::<u8>::new();
         let _ = shadow_cam;
+        // Each draw's transforms last frame, for its motion vectors: draws
+        // are matched by what they draw (the same mesh drawn twice in a
+        // frame by its turn).
+        let mut motion = HashMap::with_capacity(items.len());
         let mut item_at = Vec::with_capacity(items.len());
         for i in &items {
-            let u = alloc(&i.uniform, ITEM_SIZE);
+            let mut key = i.motion;
+            while motion.contains_key(&key) {
+                key = key.wrapping_mul(0x0100_0000_01b3).wrapping_add(1);
+            }
+            let world = i.uniform[..64].to_vec();
+            let (prev_world, prev_bones) = match self.motion.get(&key) {
+                Some((w, b)) => (w.as_slice(), b.as_ref()),
+                None => (world.as_slice(), None),
+            };
+            let mut u = i.uniform.clone();
+            u.extend_from_slice(prev_world);
+            let at = alloc(&u, ITEM_SIZE);
             let b = i.bones.as_ref().map(|b| alloc(b, 5120));
-            item_at.push((u, b));
+            let pb = prev_bones.map(|b| alloc(b, 5120));
+            item_at.push((at, b, pb));
+            motion.insert(key, (world, i.bones.clone()));
         }
+        self.motion = motion;
         let zero_bones = alloc(&[0u8; 16], 5120);
         let s = &self.settings;
         let mut light = Vec::new();
@@ -2764,7 +2848,16 @@ impl Enhanced {
         put_rows(&mut post, &view);
         put4(
             &mut post,
-            [0.0, if s.volumetrics { 1.0 } else { 0.0 }, 0.0, 0.0],
+            [
+                if s.bloom {
+                    s.bloom_strength / post::LEVELS as f32
+                } else {
+                    0.0
+                },
+                if s.volumetrics { 1.0 } else { 0.0 },
+                0.0,
+                0.0,
+            ],
         );
         assert_eq!(post.len(), POST_SIZE, "post uniform layout");
         let post_at = alloc(&post, POST_SIZE);
@@ -2874,7 +2967,10 @@ impl Enhanced {
                 _ => None,
             })
             .unwrap_or(0.0);
-        put4(&mut resolve, [clear_alpha, 0.0, 0.0, 0.0]);
+        put4(
+            &mut resolve,
+            [clear_alpha, s.sharpen.clamp(0.0, 2.0), 0.0, 0.0],
+        );
         assert_eq!(resolve.len(), RESOLVE_SIZE, "resolve uniform layout");
         let resolve_at = alloc(&resolve, RESOLVE_SIZE);
         // TAA: history is good when the image size is the same and the
@@ -2895,6 +2991,7 @@ impl Enhanced {
                 internal.1 as f32,
             ],
         );
+        put4(&mut ta, [s.taa_clamp.clamp(0.25, 4.0), 0.0, 0.0, 0.0]);
         assert_eq!(ta.len(), TAA_SIZE, "taa uniform layout");
         let taa_at = alloc(&ta, TAA_SIZE);
         let (taa_read, taa_write) = (self.taa_index, 1 - self.taa_index);
@@ -2959,7 +3056,7 @@ impl Enhanced {
             .collect();
         // Per-item bind groups and pipelines.
         let mut prepared = Vec::new();
-        for (i, (u, b)) in items.iter().zip(&item_at) {
+        for (i, (u, b, pb)) in items.iter().zip(&item_at) {
             let Some(pipe) = self.pipeline(&device, &i.key) else {
                 continue;
             };
@@ -3016,6 +3113,10 @@ impl Enhanced {
                     wgpu::BindGroupEntry {
                         binding: 4,
                         resource: wgpu::BindingResource::TextureView(&material),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: binding(pb.or(*b).unwrap_or(zero_bones), 5120),
                     },
                 ],
             });
@@ -3316,7 +3417,12 @@ impl Enhanced {
             let clear = |v| attachment(v, wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT));
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("gbuffer"),
-                color_attachments: &[clear(&t.albedo), clear(&t.normal), clear(&t.baked)],
+                color_attachments: &[
+                    clear(&t.albedo),
+                    clear(&t.normal),
+                    clear(&t.baked),
+                    clear(&t.motion),
+                ],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &t.depth,
                     depth_ops: Some(wgpu::Operations {
@@ -3351,7 +3457,12 @@ impl Enhanced {
                 let clear = |v| attachment(v, wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT));
                 let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("probe"),
-                    color_attachments: &[clear(&layer[0]), clear(&layer[1]), clear(&layer[2])],
+                    color_attachments: &[
+                        clear(&layer[0]),
+                        clear(&layer[1]),
+                        clear(&layer[2]),
+                        clear(&self.probes.motion),
+                    ],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                         view: &layer[3],
                         depth_ops: Some(wgpu::Operations {
@@ -3640,6 +3751,30 @@ impl Enhanced {
             rp.set_bind_group(0, &group, &[]);
             rp.draw(0..3, 0..1);
         }
+        // Depth of field, motion blur, bloom.
+        let fx = self.post.run(
+            &device,
+            &queue,
+            &mut enc,
+            &self.settings,
+            &post::Inputs {
+                hdr: &t.hdr,
+                depth: &t.depth,
+                motion: &t.motion,
+                size: internal,
+                view_proj: unjittered,
+                prev_view_proj,
+                frame: self.frame_count,
+            },
+        );
+        let hdr = match self.post.image() {
+            Some(v) if fx.moved => v.clone(),
+            _ => t.hdr.clone(),
+        };
+        let bloom = match self.post.bloom() {
+            Some(v) if fx.bloom.is_some() => v.clone(),
+            _ => self.black.clone(),
+        };
         // Tone mapping into the intermediate image.
         {
             let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -3652,7 +3787,7 @@ impl Enhanced {
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::TextureView(&t.hdr),
+                        resource: wgpu::BindingResource::TextureView(&hdr),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
@@ -3664,7 +3799,7 @@ impl Enhanced {
                     },
                     wgpu::BindGroupEntry {
                         binding: 4,
-                        resource: wgpu::BindingResource::TextureView(&self.black),
+                        resource: wgpu::BindingResource::TextureView(&bloom),
                     },
                     wgpu::BindGroupEntry {
                         binding: 5,
@@ -3712,6 +3847,10 @@ impl Enhanced {
                     wgpu::BindGroupEntry {
                         binding: 4,
                         resource: wgpu::BindingResource::Sampler(&self.linear),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::TextureView(&t.motion),
                     },
                 ],
             });

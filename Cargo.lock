@@ -660,6 +660,7 @@ dependencies = [
  "ffx-gfx",
  "ffx-vbf",
  "miniz_oxide",
+ "naga",
  "pollster",
  "serde",
  "toml",

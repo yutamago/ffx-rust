@@ -67,9 +67,11 @@ Passes, in order:
    unskinned scenery as bottom-level structures (kept while their buffers
    are), all of them in a top-level structure each frame.
 3. **G-buffer**: albedo (roughness in alpha), world normal and material,
-   the game's baked vertex light and fog weight. Material maps (normal,
-   roughness, cavity) come from a pack or are made from the colour
-   texture.
+   the game's baked vertex light and fog weight, and motion vectors.
+   Material maps (normal, roughness, cavity) come from a pack or are made
+   from the colour texture. Motion comes from each draw's World and bones
+   last frame: draws are matched across frames by their shaders, buffers
+   and range.
 4. **Light probes**: up to two per frame at the characters; the scenery
    around each, drawn into a small cube, becomes nine spherical
    harmonics.
@@ -85,14 +87,27 @@ Passes, in order:
    with absorption, and the game's opacity.
 8. **Volumetric light**: the key light through the cascades, half
    resolution.
-9. **Tone mapping** (the game's curve, ACES or AgX-like).
-10. **TAA** (sub-pixel jitter, reprojection by depth) or FXAA.
-11. **Resolve** into the game's targets at the game's size (the enhanced
-    passes run at `render_scale`).
-12. **Effect light**: the game's additive effect draws (fire, magic) drawn
+9. **Camera effects** (each optional): depth of field (focus at the
+   centre of the screen, eased over a few frames), motion blur (along the
+   motion vectors; the camera's motion where the G-buffer drew nothing),
+   bloom (six half-size levels, added back up).
+10. **Tone mapping** (the game's curve, ACES or AgX-like).
+11. **TAA** (sub-pixel jitter; history found by the motion vectors, by
+    depth and the camera elsewhere; history from another depth, or
+    outside the colours around the pixel now, is dropped) or FXAA.
+12. **Resolve** into the game's targets at the game's size (the enhanced
+    passes run at `render_scale`), with sharpening.
+13. **Effect light**: the game's additive effect draws (fire, magic) drawn
     once more onto black, blurred wide, light the surfaces around them.
 
-Then the game's own draws for the rest of the frame.
+Then the game's own draws for the rest of the frame. On many maps these
+include the game's afterimage: the scene times a colour whose alpha is
+the new frame's share (0.8 on the S.S. Winno) is blended into a history
+image (pixel shader `e928905e31636cf1`), which the next draw lays over the
+scene, so whatever moves leaves a faint trail. With `afterimage = false`
+(the default) the renderer's answer tells the hook to draw that blend
+without blending, so the history is the frame itself; the game's later
+use of it (fades, distortion) is unchanged.
 
 ## Settings and the overlay
 
