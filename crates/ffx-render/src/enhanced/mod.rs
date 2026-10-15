@@ -40,7 +40,7 @@ const MAX_PROBES: usize = 2;
 const PROBE_FACE: u32 = 32;
 const PROBE_INFO_SIZE: usize = 64 * 6 * MAX_PROBES + 16 * MAX_PROBES + 32;
 const PROBES_SIZE: usize = 16 + 16 * MAX_PROBES + 16 * 9 * MAX_PROBES;
-const WATER_SIZE: usize = 64 + 16 * 4;
+const WATER_SIZE: usize = 64 + 16 * 5;
 const WATER_SCENE_SIZE: usize = 16 * 12 + 16 * 9;
 /// Vertex inputs the water shader reads, by location.
 const WATER_INPUTS: [&str; 8] = [
@@ -1656,6 +1656,10 @@ impl Enhanced {
             .floats(pcb, "MultiTexBlendFactor", 1)
             .map_or(0.5, |v| v[0]);
         put4(&mut u, [spec[0], spec[1], spec[2], blend]);
+        let blended = formats::blend(r.state(d.blend, StateKind::Blend), 0)
+            .0
+            .is_some();
+        put4(&mut u, [if blended { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0]);
         let view = |name: &str| -> Id {
             ps.texture_slots
                 .get(name)
@@ -1674,6 +1678,7 @@ impl Enhanced {
             .get("TextureSamplerState")
             .and_then(|s| d.ps_samplers.iter().find(|x| u32::from(x.0) == *s))
             .map_or(0, |x| x.1);
+        assert_eq!(u.len(), WATER_SIZE, "water uniform layout");
         Some(WaterItem {
             key,
             vertex,

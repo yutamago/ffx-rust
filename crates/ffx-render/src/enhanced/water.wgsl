@@ -22,6 +22,8 @@ struct Water {
     color: vec4<f32>,
     // rgb: the game's specular colour, w: colour texture blend
     specular: vec4<f32>,
+    // x: the game blends its water with what is behind (by its alpha)
+    misc: vec4<f32>,
 };
 
 struct Scene {
@@ -178,7 +180,11 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     let env = textureSample(cube, samp, r).rgb;
     // The game's water colour: its two colour textures and material colour
     // tint the cube map, as do the vertex colours.
-    let tint = (textureSample(tex0, samp, in.uv_tex.xy).rgb + textureSample(tex1, samp, in.uv_tex.zw).rgb) * water.specular.w * water.color.rgb;
+    let c0 = textureSample(tex0, samp, in.uv_tex.xy);
+    let c1 = textureSample(tex1, samp, in.uv_tex.zw);
+    let tint = (c0.rgb + c1.rgb) * water.specular.w * water.color.rgb;
+    // The game's own opacity of its water.
+    let alpha = clamp((c0.a + 1.0 + c1.a) * water.specular.w * water.color.a * in.col.a, 0.0, 1.0);
     let surface = max(tint * env * in.col.rgb, vec3<f32>(0.0));
     let env_lin = pow(surface, vec3<f32>(2.2)) * scene.params.w;
     let hit = ssr(in.world, r);
@@ -214,6 +220,12 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
         let d = view_depth(in.world);
         let f = min(pow(clamp((d - scene.fog_range.x) / (scene.fog_range.y - scene.fog_range.x + 0.01), 0.0, 1.0), scene.fog_range.z), scene.fog.w);
         color = mix(color, scene.fog.rgb, f);
+    }
+    if (water.misc.x > 0.5) {
+        // Where the game's water is faint (seen from under it, say), so is
+        // this.
+        let clear = textureSampleLevel(hdr_tex, linear_samp, here.xy, 0.0).rgb;
+        color = mix(clear, color, alpha);
     }
     return vec4<f32>(color, 1.0);
 }
