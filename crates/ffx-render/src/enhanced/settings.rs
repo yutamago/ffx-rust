@@ -96,8 +96,10 @@ pub struct Settings {
     /// The enhanced passes' resolution relative to the game's (above 1:
     /// supersampling).
     pub render_scale: f32,
-    /// 0 off, 1 FXAA.
+    /// 0 off, 1 FXAA, 2 temporal (TAA).
     pub antialiasing: u8,
+    /// TAA: the weight of each new frame (lower: smoother, more ghosting).
+    pub taa_blend: f32,
     /// Screen-space ambient occlusion.
     pub ao: bool,
     /// Its radius in world units (a character is about 20 tall).
@@ -167,7 +169,8 @@ impl Default for Settings {
             volumetric_steps: 24,
             volumetric_distance: 300.0,
             render_scale: 1.0,
-            antialiasing: 1,
+            antialiasing: 2,
+            taa_blend: 0.1,
             ao: true,
             ao_radius: 4.0,
             ao_strength: 1.0,

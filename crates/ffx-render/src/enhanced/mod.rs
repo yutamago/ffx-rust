@@ -31,6 +31,8 @@ const VOLUMETRIC_WGSL: &str = include_str!("volumetric.wgsl");
 const WATER_WGSL: &str = include_str!("water.wgsl");
 const PROBE_WGSL: &str = include_str!("probe.wgsl");
 const EFFECT_WGSL: &str = include_str!("effect.wgsl");
+const TAA_WGSL: &str = include_str!("taa.wgsl");
+const TAA_SIZE: usize = 64 + 64 + 16;
 /// Ids of the effect light's own target in the renderer's mirror (above
 /// any 32-bit process's user addresses, which the game's ids are).
 const EFFECT_IDS: Id = 0xfff0_0000;
@@ -231,6 +233,8 @@ struct Targets {
     hdr: wgpu::TextureView,
     ao: [wgpu::TextureView; 2],
     ldr: wgpu::TextureView,
+    /// TAA's history, in turn written and read.
+    history: [wgpu::TextureView; 2],
     /// The HDR image and depth as textures (for copies), and their copies
     /// the water reads.
     hdr_texture: wgpu::Texture,
@@ -266,6 +270,11 @@ pub struct Enhanced {
     frame_count: u32,
     /// Tone mapping into the intermediate image, and its layout.
     tone: (wgpu::RenderPipeline, wgpu::BindGroupLayout),
+    taa: (wgpu::RenderPipeline, wgpu::BindGroupLayout),
+    /// Last frame's camera (view-projection, eye) and image size, and
+    /// which history it wrote.
+    taa_last: Option<(math::Mat, [f32; 3], (u32, u32))>,
+    taa_index: usize,
     /// Material map generation (first level, then each smaller one).
     material_gen: (
         wgpu::RenderPipeline,
@@ -831,6 +840,36 @@ impl Enhanced {
             fullscreen(device, &tone_layout, OUTPUT_WGSL, &rgba8, None),
             tone_layout,
         );
+        let taa_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("taa"),
+            entries: &layout_entries(
+                &[
+                    (0, uniform(TAA_SIZE as u64)),
+                    (1, tex(UNFILTERED)),
+                    (2, tex(FLOAT)),
+                    (3, tex(wgpu::TextureSampleType::Depth)),
+                    (
+                        4,
+                        wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    ),
+                ],
+                S::FRAGMENT,
+            ),
+        });
+        let taa = (
+            fullscreen(
+                device,
+                &taa_layout,
+                TAA_WGSL,
+                &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Rgba16Float,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                None,
+            ),
+            taa_layout,
+        );
         let vol_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("volumetric"),
             entries: &layout_entries(
@@ -952,6 +991,9 @@ impl Enhanced {
             water_layouts: (water_layout, water_scene_layout, water_pipeline_layout),
             water_pipelines: HashMap::new(),
             probes: probe_targets(device),
+            taa,
+            taa_last: None,
+            taa_index: 0,
             effect: None,
             effect_generation: 0,
             frame_count: 0,
@@ -1233,6 +1275,10 @@ impl Enhanced {
                 make(wgpu::TextureFormat::R8Unorm, "ao blur"),
             ],
             ldr: make(wgpu::TextureFormat::Rgba8Unorm, "ldr"),
+            history: [
+                make(wgpu::TextureFormat::Rgba16Float, "taa history"),
+                make(wgpu::TextureFormat::Rgba16Float, "taa history"),
+            ],
             hdr_texture: hdr_texture.0,
             depth_texture: depth_texture.0,
             hdr_copy: plain(wgpu::TextureFormat::Rgba16Float, "hdr copy"),
@@ -2030,16 +2076,39 @@ impl Enhanced {
             self.note("no camera".into());
             return r.draw_frame(frame, &Filter::default());
         };
-        self.note(format!("frame: camera at {eye:?}"));
-        let device = r.device.clone();
-        let queue = r.queue.clone();
-        // The enhanced passes run at the render scale; the resolve brings
-        // the image to the game's size.
+        // TAA: a sub-pixel jitter of the camera each frame (Halton 2, 3).
+        let taa = self.settings.antialiasing == 2;
         let scale = self.settings.render_scale.clamp(0.5, 3.0);
         let internal = (
             ((size.0 as f32 * scale).round() as u32).max(1),
             ((size.1 as f32 * scale).round() as u32).max(1),
         );
+        let unjittered = view_proj;
+        let view_proj = if taa {
+            let halton = |mut i: u32, base: u32| {
+                let (mut f, mut r) = (1.0f32, 0.0f32);
+                while i > 0 {
+                    f /= base as f32;
+                    r += f * (i % base) as f32;
+                    i /= base;
+                }
+                r
+            };
+            let k = self.frame_count % 8 + 1;
+            let jx = (halton(k, 2) - 0.5) * 2.0 / internal.0 as f32;
+            let jy = (halton(k, 3) - 0.5) * 2.0 / internal.1 as f32;
+            let mut j = math::identity();
+            j[0][3] = jx;
+            j[1][3] = jy;
+            math::mul(&j, &view_proj)
+        } else {
+            view_proj
+        };
+        self.note(format!("frame: camera at {eye:?}"));
+        let device = r.device.clone();
+        let queue = r.queue.clone();
+        // The enhanced passes run at the render scale; the resolve brings
+        // the image to the game's size.
         self.targets(&device, internal);
         // Split the frame: enhanced items, and the rest for the game's
         // shaders (kept in order).
@@ -2519,6 +2588,33 @@ impl Enhanced {
         put_rows(&mut resolve, &view);
         assert_eq!(resolve.len(), RESOLVE_SIZE, "resolve uniform layout");
         let resolve_at = alloc(&resolve, RESOLVE_SIZE);
+        // TAA: history is good when the image size is the same and the
+        // camera did not cut.
+        let history_ok = taa
+            && self.taa_last.is_some_and(|(_, e, sz)| {
+                sz == internal && (0..3).map(|k| (e[k] - eye[k]).powi(2)).sum::<f32>() < 40.0 * 40.0
+            });
+        let mut ta = Vec::new();
+        put_rows(&mut ta, &math::transpose(&math::invert(&unjittered)));
+        put_rows(&mut ta, &self.taa_last.map_or(unjittered, |(vp, _, _)| vp));
+        put4(
+            &mut ta,
+            [
+                s.taa_blend.clamp(0.02, 1.0),
+                if history_ok { 1.0 } else { 0.0 },
+                internal.0 as f32,
+                internal.1 as f32,
+            ],
+        );
+        assert_eq!(ta.len(), TAA_SIZE, "taa uniform layout");
+        let taa_at = alloc(&ta, TAA_SIZE);
+        let (taa_read, taa_write) = (self.taa_index, 1 - self.taa_index);
+        if taa {
+            self.taa_index = taa_write;
+            self.taa_last = Some((unjittered, eye, internal));
+        } else {
+            self.taa_last = None;
+        }
         let ubuf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("enhanced uniforms"),
             size: (arena.len() as u64).max(256).next_multiple_of(4),
@@ -3130,6 +3226,49 @@ impl Enhanced {
             rp.set_bind_group(0, &group, &[]);
             rp.draw(0..3, 0..1);
         }
+        if taa {
+            let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &self.taa.1,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: binding(taa_at, TAA_SIZE),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&t.ldr),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&t.history[taa_read]),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(&t.depth),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::Sampler(&self.linear),
+                    },
+                ],
+            });
+            let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("taa"),
+                color_attachments: &[attachment(
+                    &t.history[taa_write],
+                    wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                )],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            rp.set_pipeline(&self.taa.0);
+            rp.set_bind_group(0, &group, &[]);
+            rp.draw(0..3, 0..1);
+        }
+        let resolved = if taa { &t.history[taa_write] } else { &t.ldr };
         // Resolve into the game's scene targets.
         let (Some(cv), Some(nv), Some(dv)) = (
             r.texture_view(color_view, false),
@@ -3204,7 +3343,7 @@ impl Enhanced {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&t.ldr),
+                    resource: wgpu::BindingResource::TextureView(resolved),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,

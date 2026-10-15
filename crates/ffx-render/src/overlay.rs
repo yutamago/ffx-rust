@@ -718,7 +718,11 @@ fn panel(
                     ui.label("anti-aliasing");
                     ui.selectable_value(&mut s.antialiasing, 0, "off");
                     ui.selectable_value(&mut s.antialiasing, 1, "FXAA");
+                    ui.selectable_value(&mut s.antialiasing, 2, "temporal");
                 });
+                if s.antialiasing == 2 {
+                    slider(ui, "new frame weight", &mut s.taa_blend, 0.02..=0.5);
+                }
                 ui.add(
                     egui::Slider::new(&mut s.render_scale, 0.5..=2.0)
                         .step_by(0.25)
