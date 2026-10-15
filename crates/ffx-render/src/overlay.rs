@@ -622,6 +622,12 @@ fn panel(
                     slider(ui, "key light on scenery", &mut s.scenery_key, 0.0..=1.0);
                     slider(ui, "scenery specular", &mut s.scenery_specular, 0.0..=2.0);
                     slider(ui, "character ambient", &mut s.character_ambient, 0.0..=4.0);
+                    slider(
+                        ui,
+                        "character falloff (soft–physical)",
+                        &mut s.character_falloff,
+                        0.0..=1.0,
+                    );
                     slider(ui, "roughness", &mut s.roughness, 0.05..=1.0);
                     slider(ui, "specular", &mut s.specular, 0.0..=2.0);
                 });
@@ -637,6 +643,12 @@ fn panel(
                 s.shadow_size = size as u32;
                 slider(ui, "area (units)", &mut s.shadow_extent, 10.0..=400.0);
                 slider(ui, "softness", &mut s.shadow_softness, 0.0..=8.0);
+            });
+            egui::CollapsingHeader::new("Ambient occlusion").show(ui, |ui| {
+                ui.checkbox(&mut s.ao, "On");
+                slider(ui, "radius", &mut s.ao_radius, 0.5..=20.0);
+                slider(ui, "strength", &mut s.ao_strength, 0.0..=2.0);
+                slider(ui, "on baked light", &mut s.ao_on_baked, 0.0..=1.0);
             });
             egui::CollapsingHeader::new("Image").show(ui, |ui| {
                 ui.horizontal(|ui| {

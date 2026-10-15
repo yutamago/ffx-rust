@@ -31,7 +31,9 @@ struct Light {
     fill: vec4<f32>,
     fill_color: vec4<f32>,
     // x: how much the key light reshapes scenery's baked light (0: not
-    // at all, 1: fully by its shadow and facing), y: scenery specular
+    // at all, 1: fully by its shadow and facing), y: scenery specular,
+    // z: ambient occlusion on baked light, w: characters' falloff (0: the
+    // game's soft wrap, 1: physical)
     scenery: vec4<f32>,
 };
 
@@ -133,18 +135,20 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
         // from it, brighter facing it, about the same on average.
         let facing = shadow * nl;
         let shape = mix(1.0, facing * 2.0, light.scenery.x);
-        let base = baked * light.mix.x * max(shape, 0.0);
+        let base = baked * light.mix.x * max(shape, 0.0) * mix(1.0, ao, light.scenery.z);
         let gloss = spec * light.sun_color.rgb * light.sun.w * shadow * nl * light.scenery.y;
         color = albedo * (base + hemi * ao) + gloss * min(dot(baked, vec3<f32>(0.33)) * 2.0, 1.0);
         color = albedo * hemi * (ao - 1.0) + color;
     } else {
         // Characters: lit like the game lights them, key and fill light
         // with real shadows, ambient as sky.
-        let direct = light.sun_color.rgb * light.sun.w * nl * shadow;
+        // The game's soft wrap ((n·l)/2 + 1/2)², with real shadow.
+        let wrap = pow(dot(n, l) * 0.5 + 0.5, 2.0);
+        let direct = light.sun_color.rgb * light.sun.w * mix(wrap, nl, light.scenery.w) * mix(1.0, shadow, 0.85);
         let lf = -normalize(light.fill.xyz);
-        let fill = light.fill_color.rgb * light.fill.w * max(dot(n, lf), 0.0);
+        let fill = light.fill_color.rgb * light.fill.w * pow(dot(n, lf) * 0.5 + 0.5, 2.0);
         let indirect = baked * light.mix.x + hemi;
-        color = albedo * (indirect * ao + direct + fill) + direct * spec;
+        color = albedo * (indirect * ao + direct + fill) + light.sun_color.rgb * light.sun.w * nl * shadow * spec;
     }
     // The game's fog, by distance from the eye.
     if (light.fog_range.w > 0.5) {

@@ -36,6 +36,8 @@ pub struct Settings {
     pub scenery_key: f32,
     /// Specular highlights on scenery from the key light.
     pub scenery_specular: f32,
+    /// Characters' light falloff: 0 the game's soft wrap, 1 physical.
+    pub character_falloff: f32,
     /// Scale of the characters' ambient light (they have no baked light).
     pub character_ambient: f32,
     pub roughness: f32,
@@ -47,6 +49,14 @@ pub struct Settings {
     /// Filter radius, in shadow texels.
     pub shadow_softness: f32,
     pub fog: bool,
+    /// Screen-space ambient occlusion.
+    pub ao: bool,
+    /// Its radius in world units (a character is about 20 tall).
+    pub ao_radius: f32,
+    pub ao_strength: f32,
+    /// How much of it darkens scenery's baked light (which has coarse
+    /// occlusion of its own).
+    pub ao_on_baked: f32,
     /// Keep the game's blob shadows (redundant with real shadows).
     pub fake_shadows: bool,
 }
@@ -55,12 +65,12 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             enabled: true,
-            exposure: 1.15,
+            exposure: 1.3,
             tone_curve: 1,
             saturation: 1.0,
             contrast: 1.0,
             map_lights: true,
-            key_scale: 0.35,
+            key_scale: 0.6,
             fill_scale: 0.2,
             sky_scale: 0.3,
             sun_direction: [-0.35, -0.85, 0.4],
@@ -72,6 +82,7 @@ impl Default for Settings {
             baked_light: 1.0,
             scenery_key: 0.6,
             scenery_specular: 0.5,
+            character_falloff: 0.3,
             character_ambient: 2.0,
             roughness: 0.7,
             specular: 0.5,
@@ -80,6 +91,10 @@ impl Default for Settings {
             shadow_extent: 60.0,
             shadow_softness: 2.0,
             fog: true,
+            ao: true,
+            ao_radius: 4.0,
+            ao_strength: 1.0,
+            ao_on_baked: 0.6,
             fake_shadows: false,
         }
     }

@@ -23,6 +23,8 @@ pub use settings::Settings;
 const GBUFFER_WGSL: &str = include_str!("gbuffer.wgsl");
 const LIGHTING_WGSL: &str = include_str!("lighting.wgsl");
 const OUTPUT_WGSL: &str = include_str!("output.wgsl");
+const AO_WGSL: &str = include_str!("ao.wgsl");
+const AO_SIZE: usize = 64 * 2 + 32;
 
 /// Variables of one shader's first constant buffer: name → (offset, size),
 /// and struct members as `struct.member`.
@@ -154,6 +156,7 @@ struct Targets {
     baked: wgpu::TextureView,
     depth: wgpu::TextureView,
     hdr: wgpu::TextureView,
+    ao: [wgpu::TextureView; 2],
 }
 
 pub struct Enhanced {
@@ -165,6 +168,12 @@ pub struct Enhanced {
     item_layout: wgpu::BindGroupLayout,
     gbuffer_layout: wgpu::PipelineLayout,
     lighting: (wgpu::RenderPipeline, wgpu::BindGroupLayout),
+    /// Ambient occlusion and its blur, and their layout.
+    ao: (
+        wgpu::RenderPipeline,
+        wgpu::RenderPipeline,
+        wgpu::BindGroupLayout,
+    ),
     output: Option<(
         wgpu::RenderPipeline,
         wgpu::BindGroupLayout,
@@ -231,6 +240,45 @@ fn fullscreen(
         fragment: Some(wgpu::FragmentState {
             module: &module,
             entry_point: Some("fs"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
+fn fullscreen_entry(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    source: &str,
+    entry: &str,
+    targets: &[Option<wgpu::ColorTargetState>],
+) -> wgpu::RenderPipeline {
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: None,
+        source: wgpu::ShaderSource::Wgsl(source.into()),
+    });
+    let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: None,
+        bind_group_layouts: &[Some(layout)],
+        immediate_size: 0,
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(entry),
+        layout: Some(&pl),
+        vertex: wgpu::VertexState {
+            module: &module,
+            entry_point: Some("vs"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            buffers: &[],
+        },
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        fragment: Some(wgpu::FragmentState {
+            module: &module,
+            entry_point: Some(entry),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             targets,
         }),
@@ -404,6 +452,25 @@ impl Enhanced {
             })],
             None,
         );
+        let ao_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("ao"),
+            entries: &layout_entries(
+                &[
+                    (0, uniform(AO_SIZE as u64)),
+                    (1, tex(wgpu::TextureSampleType::Depth)),
+                    (2, tex(UNFILTERED)),
+                    (3, tex(UNFILTERED)),
+                ],
+                S::FRAGMENT,
+            ),
+        });
+        let r8 = [Some(wgpu::ColorTargetState {
+            format: wgpu::TextureFormat::R8Unorm,
+            blend: None,
+            write_mask: wgpu::ColorWrites::ALL,
+        })];
+        let ao_pass = fullscreen(device, &ao_layout, AO_WGSL, &r8, None);
+        let ao_blur = fullscreen_entry(device, &ao_layout, AO_WGSL, "fs_blur", &r8);
         let linear = device.create_sampler(&wgpu::SamplerDescriptor {
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
@@ -426,6 +493,7 @@ impl Enhanced {
             item_layout,
             gbuffer_layout,
             lighting: (lighting, lighting_layout),
+            ao: (ao_pass, ao_blur, ao_layout),
             output: None,
             targets: None,
             shadow: None,
@@ -671,6 +739,10 @@ impl Enhanced {
             baked: make(wgpu::TextureFormat::Rgba16Float, "baked"),
             depth: make(wgpu::TextureFormat::Depth32Float, "depth"),
             hdr: make(wgpu::TextureFormat::Rgba16Float, "hdr"),
+            ao: [
+                make(wgpu::TextureFormat::R8Unorm, "ao"),
+                make(wgpu::TextureFormat::R8Unorm, "ao blur"),
+            ],
         });
     }
 
@@ -1197,8 +1269,30 @@ impl Enhanced {
         put4(&mut light, view[2]);
         put4(&mut light, [fill.0[0], fill.0[1], fill.0[2], fill.2]);
         put4(&mut light, [fill.1[0], fill.1[1], fill.1[2], 0.0]);
-        put4(&mut light, [s.scenery_key, s.scenery_specular, 0.0, 0.0]);
+        put4(
+            &mut light,
+            [
+                s.scenery_key,
+                s.scenery_specular,
+                s.ao_on_baked,
+                s.character_falloff,
+            ],
+        );
         let light_at = alloc(&light, LIGHT_SIZE);
+        let ao_at: Vec<u64> = [[0.0f32, 0.0], [1.0, 0.0], [0.0, 1.0]]
+            .iter()
+            .map(|dir| {
+                let mut a = Vec::new();
+                put_rows(&mut a, &math::transpose(&inv_vp));
+                put_rows(&mut a, &view_proj);
+                put4(
+                    &mut a,
+                    [s.ao_radius, s.ao_strength, size.0 as f32, size.1 as f32],
+                );
+                put4(&mut a, [dir[0], dir[1], 0.0, 0.0]);
+                alloc(&a, AO_SIZE)
+            })
+            .collect();
         let mut post = Vec::new();
         put4(
             &mut post,
@@ -1402,6 +1496,54 @@ impl Enhanced {
                 record(&mut rp, i);
             }
         }
+        // Ambient occlusion, then its blur across and down.
+        if self.settings.ao {
+            let passes: [(
+                &wgpu::RenderPipeline,
+                u64,
+                &wgpu::TextureView,
+                &wgpu::TextureView,
+            ); 3] = [
+                (&self.ao.0, ao_at[0], &self.white, &t.ao[0]),
+                (&self.ao.1, ao_at[1], &t.ao[0], &t.ao[1]),
+                (&self.ao.1, ao_at[2], &t.ao[1], &t.ao[0]),
+            ];
+            for (pipeline, at, src, dst) in passes {
+                let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: None,
+                    layout: &self.ao.2,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: binding(at, AO_SIZE),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(&t.depth),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::TextureView(&t.normal),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: wgpu::BindingResource::TextureView(src),
+                        },
+                    ],
+                });
+                let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("ao"),
+                    color_attachments: &[attachment(dst, wgpu::LoadOp::Clear(wgpu::Color::WHITE))],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                rp.set_pipeline(pipeline);
+                rp.set_bind_group(0, &group, &[]);
+                rp.draw(0..3, 0..1);
+            }
+        }
         // Lighting.
         {
             let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1438,7 +1580,11 @@ impl Enhanced {
                     },
                     wgpu::BindGroupEntry {
                         binding: 7,
-                        resource: wgpu::BindingResource::TextureView(&self.white),
+                        resource: wgpu::BindingResource::TextureView(if self.settings.ao {
+                            &t.ao[0]
+                        } else {
+                            &self.white
+                        }),
                     },
                 ],
             });
