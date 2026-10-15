@@ -650,6 +650,18 @@ fn panel(
                 slider(ui, "area (units)", &mut s.shadow_extent, 10.0..=400.0);
                 slider(ui, "softness", &mut s.shadow_softness, 0.0..=8.0);
             });
+            egui::CollapsingHeader::new("Water").show(ui, |ui| {
+                ui.checkbox(&mut s.water, "Enhanced water");
+                slider(ui, "reflection", &mut s.water_reflection, 0.0..=2.0);
+                slider(ui, "refraction", &mut s.water_refraction, 0.0..=0.2);
+                ui.add(
+                    egui::Slider::new(&mut s.water_absorption, 0.0..=0.3)
+                        .logarithmic(true)
+                        .text("absorption"),
+                );
+                slider(ui, "environment", &mut s.water_environment, 0.0..=2.0);
+                color3(ui, "deep colour", &mut s.water_deep);
+            });
             egui::CollapsingHeader::new("Volumetric light").show(ui, |ui| {
                 ui.checkbox(&mut s.volumetrics, "Light shafts");
                 ui.add(

@@ -55,6 +55,18 @@ pub struct Settings {
     /// Filter radius, in shadow texels.
     pub shadow_softness: f32,
     pub fog: bool,
+    /// The enhanced water (reflections, refraction, light); off: the
+    /// game's.
+    pub water: bool,
+    pub water_reflection: f32,
+    /// How much the surface bends what lies under it.
+    pub water_refraction: f32,
+    /// Absorption per world unit of depth.
+    pub water_absorption: f32,
+    /// Brightness of the game's environment map in reflections.
+    pub water_environment: f32,
+    /// The colour of deep water (multiplied by the game's water colour).
+    pub water_deep: [f32; 3],
     /// Volumetric light: shafts of the key light through the air.
     pub volumetrics: bool,
     /// Extinction per world unit (a character is about 20 tall).
@@ -123,6 +135,12 @@ impl Default for Settings {
             shadow_extent: 50.0,
             shadow_softness: 2.0,
             fog: true,
+            water: true,
+            water_reflection: 1.0,
+            water_refraction: 0.04,
+            water_absorption: 0.03,
+            water_environment: 1.0,
+            water_deep: [0.02, 0.05, 0.07],
             volumetrics: true,
             fog_density: 0.0015,
             fog_anisotropy: 0.6,

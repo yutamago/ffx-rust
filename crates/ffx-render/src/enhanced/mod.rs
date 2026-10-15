@@ -28,6 +28,33 @@ const MATERIAL_WGSL: &str = include_str!("material.wgsl");
 const RESOLVE_WGSL: &str = include_str!("resolve.wgsl");
 const RESOLVE_SIZE: usize = 16 + 64;
 const VOLUMETRIC_WGSL: &str = include_str!("volumetric.wgsl");
+const WATER_WGSL: &str = include_str!("water.wgsl");
+const WATER_SIZE: usize = 64 + 16 * 4;
+const WATER_SCENE_SIZE: usize = 16 * 12 + 16 * 9;
+/// Vertex inputs the water shader reads, by location.
+const WATER_INPUTS: [&str; 8] = [
+    "POSITION0",
+    "NORMAL0",
+    "COLOR0",
+    "TEXCOORD0",
+    "TEXCOORD4",
+    "TEXCOORD6",
+    "TEXCOORD7",
+    "TANGENT0",
+];
+
+/// A water draw for the enhanced water pass.
+struct WaterItem {
+    key: GKey,
+    vertex: Vec<Source>,
+    index: Option<(Source, wgpu::IndexFormat)>,
+    draw: Box<Draw>,
+    uniform: Vec<u8>,
+    /// Views: colour 0, colour 1, normal 0, normal 1, cube; and the
+    /// sampler.
+    views: [Id; 5],
+    sampler: Id,
+}
 const VOL_SIZE: usize = 64 + 16 * 12 + 16 * 8;
 const AO_SIZE: usize = 64 * 2 + 32;
 
@@ -163,6 +190,12 @@ struct Targets {
     hdr: wgpu::TextureView,
     ao: [wgpu::TextureView; 2],
     ldr: wgpu::TextureView,
+    /// The HDR image and depth as textures (for copies), and their copies
+    /// the water reads.
+    hdr_texture: wgpu::Texture,
+    depth_texture: wgpu::Texture,
+    hdr_copy: (wgpu::Texture, wgpu::TextureView),
+    depth_copy: (wgpu::Texture, wgpu::TextureView),
     /// Volumetric light, half size.
     vol: wgpu::TextureView,
 }
@@ -176,6 +209,13 @@ pub struct Enhanced {
     item_layout: wgpu::BindGroupLayout,
     gbuffer_layout: wgpu::PipelineLayout,
     lighting: (wgpu::RenderPipeline, wgpu::BindGroupLayout),
+    /// Water: its layouts, pipeline layout and pipelines by geometry.
+    water_layouts: (
+        wgpu::BindGroupLayout,
+        wgpu::BindGroupLayout,
+        wgpu::PipelineLayout,
+    ),
+    water_pipelines: HashMap<GKey, Option<Arc<wgpu::RenderPipeline>>>,
     /// Volumetric light and its layout.
     volumetric: (wgpu::RenderPipeline, wgpu::BindGroupLayout),
     /// Frames drawn (for per-frame noise).
@@ -208,6 +248,7 @@ pub struct Enhanced {
     shadow: Option<(u32, wgpu::TextureView, Vec<wgpu::TextureView>)>,
     white: wgpu::TextureView,
     black: wgpu::TextureView,
+    cube: wgpu::TextureView,
     linear: wgpu::Sampler,
     compare: wgpu::Sampler,
     /// Problems seen (once each), for the log.
@@ -379,6 +420,39 @@ fn put4(out: &mut Vec<u8>, v: [f32; 4]) {
     for x in v {
         out.extend_from_slice(&x.to_le_bytes());
     }
+}
+
+/// A one-pixel cube map, for water without an environment map.
+fn one_cube(device: &wgpu::Device, queue: &wgpu::Queue, rgba: [u8; 4]) -> wgpu::TextureView {
+    let size = wgpu::Extent3d {
+        width: 1,
+        height: 1,
+        depth_or_array_layers: 6,
+    };
+    let t = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("cube fallback"),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        t.as_image_copy(),
+        &rgba.repeat(6),
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(4),
+            rows_per_image: Some(1),
+        },
+        size,
+    );
+    t.create_view(&wgpu::TextureViewDescriptor {
+        dimension: Some(wgpu::TextureViewDimension::Cube),
+        ..Default::default()
+    })
 }
 
 fn one_pixel(device: &wgpu::Device, queue: &wgpu::Queue, rgba: [u8; 4]) -> wgpu::TextureView {
@@ -580,6 +654,67 @@ impl Enhanced {
             fullscreen(device, &vol_layout, VOLUMETRIC_WGSL, &rgba16, None),
             vol_layout,
         );
+        let cube_tex = wgpu::BindingType::Texture {
+            sample_type: FLOAT,
+            view_dimension: wgpu::TextureViewDimension::Cube,
+            multisampled: false,
+        };
+        let water_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("water"),
+            entries: &layout_entries(
+                &[
+                    (0, uniform(WATER_SIZE as u64)),
+                    (1, tex(FLOAT)),
+                    (2, tex(FLOAT)),
+                    (3, tex(FLOAT)),
+                    (4, tex(FLOAT)),
+                    (5, cube_tex),
+                    (
+                        6,
+                        wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    ),
+                ],
+                S::VERTEX_FRAGMENT,
+            ),
+        });
+        let water_scene_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("water scene"),
+                entries: &layout_entries(
+                    &[
+                        (0, uniform(WATER_SCENE_SIZE as u64)),
+                        (1, tex(FLOAT)),
+                        (2, tex(wgpu::TextureSampleType::Depth)),
+                        (
+                            3,
+                            wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Depth,
+                                view_dimension: wgpu::TextureViewDimension::D2Array,
+                                multisampled: false,
+                            },
+                        ),
+                        (
+                            4,
+                            wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                        ),
+                        (
+                            5,
+                            wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        ),
+                    ],
+                    S::FRAGMENT,
+                ),
+            });
+        let water_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("water"),
+                bind_group_layouts: &[
+                    Some(&camera_layout),
+                    Some(&water_layout),
+                    Some(&water_scene_layout),
+                ],
+                immediate_size: 0,
+            });
         let linear = device.create_sampler(&wgpu::SamplerDescriptor {
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
@@ -606,6 +741,8 @@ impl Enhanced {
             material_gen,
             tone,
             volumetric,
+            water_layouts: (water_layout, water_scene_layout, water_pipeline_layout),
+            water_pipelines: HashMap::new(),
             frame_count: 0,
             materials: HashMap::new(),
             flat_material: one_pixel(device, queue, [128, 128, 179, 255]),
@@ -614,6 +751,7 @@ impl Enhanced {
             shadow: None,
             white: one_pixel(device, queue, [255; 4]),
             black: one_pixel(device, queue, [0, 0, 0, 255]),
+            cube: one_cube(device, queue, [40, 48, 56, 255]),
             linear,
             compare,
             notes: HashMap::new(),
@@ -842,23 +980,52 @@ impl Enhanced {
                     dimension: wgpu::TextureDimension::D2,
                     format,
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                        | wgpu::TextureUsages::TEXTURE_BINDING,
+                        | wgpu::TextureUsages::TEXTURE_BINDING
+                        | wgpu::TextureUsages::COPY_SRC
+                        | wgpu::TextureUsages::COPY_DST,
                     view_formats: &[],
                 })
                 .create_view(&wgpu::TextureViewDescriptor::default())
         };
+        let plain = |format: wgpu::TextureFormat, label: &str| {
+            let t = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some(label),
+                size: wgpu::Extent3d {
+                    width: size.0,
+                    height: size.1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::COPY_SRC
+                    | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let v = t.create_view(&wgpu::TextureViewDescriptor::default());
+            (t, v)
+        };
+        let hdr_texture = plain(wgpu::TextureFormat::Rgba16Float, "hdr");
+        let depth_texture = plain(wgpu::TextureFormat::Depth32Float, "depth");
         self.targets = Some(Targets {
             size,
             albedo: make(wgpu::TextureFormat::Rgba8UnormSrgb, "albedo"),
             normal: make(wgpu::TextureFormat::Rgba16Float, "normal"),
             baked: make(wgpu::TextureFormat::Rgba16Float, "baked"),
-            depth: make(wgpu::TextureFormat::Depth32Float, "depth"),
-            hdr: make(wgpu::TextureFormat::Rgba16Float, "hdr"),
+            depth: depth_texture.1,
+            hdr: hdr_texture.1,
             ao: [
                 make(wgpu::TextureFormat::R8Unorm, "ao"),
                 make(wgpu::TextureFormat::R8Unorm, "ao blur"),
             ],
             ldr: make(wgpu::TextureFormat::Rgba8Unorm, "ldr"),
+            hdr_texture: hdr_texture.0,
+            depth_texture: depth_texture.0,
+            hdr_copy: plain(wgpu::TextureFormat::Rgba16Float, "hdr copy"),
+            depth_copy: plain(wgpu::TextureFormat::Depth32Float, "depth copy"),
             vol: device
                 .create_texture(&wgpu::TextureDescriptor {
                     label: Some("volumetric"),
@@ -1030,6 +1197,281 @@ impl Enhanced {
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         self.materials.insert(resource, (version, view.clone()));
         Some(view)
+    }
+
+    /// The water pipeline for a geometry layout.
+    fn water_pipeline(
+        &mut self,
+        device: &wgpu::Device,
+        key: &GKey,
+    ) -> Option<Arc<wgpu::RenderPipeline>> {
+        if let Some(p) = self.water_pipelines.get(key) {
+            return p.clone();
+        }
+        let present: Vec<u32> = key
+            .buffers
+            .iter()
+            .flat_map(|b| b.2.iter().map(|a| a.0))
+            .collect();
+        let decl = [
+            ("pos", "vec3<f32>", "vec3<f32>(0.0)"),
+            ("nrm", "vec3<f32>", "vec3<f32>(0.0, 1.0, 0.0)"),
+            ("col", "vec4<f32>", "vec4<f32>(0.5)"),
+            ("uv0", "vec2<f32>", "vec2<f32>(0.0)"),
+            ("uv1", "vec2<f32>", "vec2<f32>(0.0)"),
+            ("uv2", "vec2<f32>", "vec2<f32>(0.0)"),
+            ("uv3", "vec2<f32>", "vec2<f32>(0.0)"),
+            ("tan", "vec3<f32>", "vec3<f32>(1.0, 0.0, 0.0)"),
+        ];
+        let mut vsin = String::from("struct VsIn {\n    @builtin(vertex_index) vid: u32,\n");
+        let mut access = String::new();
+        for (loc, (name, ty, default)) in decl.iter().enumerate() {
+            if present.contains(&(loc as u32)) {
+                vsin.push_str(&format!("    @location({loc}) {name}: {ty},\n"));
+                access.push_str(&format!(
+                    "fn a_{name}(v: VsIn) -> {ty} {{ return v.{name}; }}\n"
+                ));
+            } else {
+                access.push_str(&format!(
+                    "fn a_{name}(v: VsIn) -> {ty} {{ return {default}; }}\n"
+                ));
+            }
+        }
+        vsin.push_str("};\n");
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("water"),
+            source: wgpu::ShaderSource::Wgsl(format!("{vsin}{access}{WATER_WGSL}").into()),
+        });
+        let attrs: Vec<Vec<wgpu::VertexAttribute>> = key
+            .buffers
+            .iter()
+            .map(|(_, _, a)| {
+                a.iter()
+                    .map(|&(location, format, offset)| wgpu::VertexAttribute {
+                        format,
+                        offset,
+                        shader_location: location,
+                    })
+                    .collect()
+            })
+            .collect();
+        let buffers: Vec<Option<wgpu::VertexBufferLayout>> = key
+            .buffers
+            .iter()
+            .zip(&attrs)
+            .map(|((stride, inst, _), a)| {
+                Some(wgpu::VertexBufferLayout {
+                    array_stride: u64::from(*stride),
+                    step_mode: if *inst {
+                        wgpu::VertexStepMode::Instance
+                    } else {
+                        wgpu::VertexStepMode::Vertex
+                    },
+                    attributes: a,
+                })
+            })
+            .collect();
+        let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("water"),
+            layout: Some(&self.water_layouts.2),
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: Some("vs"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                buffers: &buffers,
+            },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                front_face: key.front,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &module,
+                entry_point: Some("fs"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Rgba16Float,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+        let result = match pollster::block_on(scope.pop()) {
+            Some(e) => {
+                self.note(format!("water pipeline: {e}"));
+                None
+            }
+            None => Some(Arc::new(pipeline)),
+        };
+        self.water_pipelines.insert(key.clone(), result.clone());
+        result
+    }
+
+    /// Builds the enhanced water of a water draw.
+    fn water_item(
+        &mut self,
+        r: &Renderer,
+        d: &Draw,
+        time: f32,
+        mut sources: impl FnMut(Id, u32) -> Option<Source>,
+    ) -> Option<WaterItem> {
+        if d.topology != 4 {
+            return None;
+        }
+        let vs = self.reflect(r, d.vs)?;
+        let ps = self.reflect(r, d.ps)?;
+        let vcb = d
+            .vs_cb
+            .iter()
+            .find(|c| c.0 == 0)
+            .map_or(&[][..], |c| &c.1[..]);
+        let pcb = d
+            .ps_cb
+            .iter()
+            .find(|c| c.0 == 0)
+            .map_or(&[][..], |c| &c.1[..]);
+        let elements = r.layouts.get(&d.layout)?.clone();
+        let mut per_slot: Vec<(u32, bool, Vec<(u32, wgpu::VertexFormat, u64)>)> = Vec::new();
+        let mut offsets = [0u32; 8];
+        let mut have_pos = false;
+        for e in &elements {
+            let name = format!("{}{}", e.semantic.to_ascii_uppercase(), e.index);
+            let slot = e.slot.min(7) as usize;
+            let offset = if e.offset == u32::MAX {
+                offsets[slot]
+            } else {
+                e.offset
+            };
+            let Some(format) = formats::vertex_format(e.format) else {
+                continue;
+            };
+            offsets[slot] = offset + format.size() as u32;
+            let Some(location) = WATER_INPUTS.iter().position(|i| *i == name) else {
+                continue;
+            };
+            if !vs.inputs.contains(&name) {
+                continue;
+            }
+            have_pos |= location == 0;
+            let stride = d
+                .vertex
+                .iter()
+                .find(|v| u32::from(v.0) == e.slot)
+                .map_or(0, |v| v.2);
+            let format = crate::replay::shrink_format(format, stride.saturating_sub(offset));
+            let entry = match per_slot.iter_mut().position(|p| p.0 == e.slot) {
+                Some(i) => &mut per_slot[i],
+                None => {
+                    per_slot.push((e.slot, e.per_instance, Vec::new()));
+                    per_slot.last_mut().expect("pushed")
+                }
+            };
+            entry.2.push((location as u32, format, u64::from(offset)));
+        }
+        if !have_pos {
+            return None;
+        }
+        per_slot.sort_by_key(|p| p.0);
+        let (_, front, _, _) = formats::raster(r.state(d.raster, StateKind::Raster));
+        let key = GKey {
+            variant: Variant::default(),
+            buffers: per_slot
+                .iter()
+                .map(|(s, i, a)| {
+                    (
+                        d.vertex
+                            .iter()
+                            .find(|v| u32::from(v.0) == *s)
+                            .map_or(0, |v| v.2),
+                        *i,
+                        a.clone(),
+                    )
+                })
+                .collect(),
+            cull: None,
+            front,
+        };
+        let vertex: Vec<Source> = per_slot
+            .iter()
+            .map(|(s, _, _)| {
+                let v = d.vertex.iter().find(|v| u32::from(v.0) == *s)?;
+                sources(v.1, v.3)
+            })
+            .collect::<Option<_>>()?;
+        let index = match d.kind {
+            ffx_gfx::DrawKind::Indexed | ffx_gfx::DrawKind::IndexedInstanced => Some((
+                sources(d.index.0, d.index.2)?,
+                if d.index.1 == 42 {
+                    wgpu::IndexFormat::Uint32
+                } else {
+                    wgpu::IndexFormat::Uint16
+                },
+            )),
+            _ => None,
+        };
+        let f = |name: &str| vs.floats(vcb, name, 1).map_or(0.0, |v| v[0]);
+        let scroll = |x: &str, y: &str| [(f(x) * time).fract(), (f(y) * time).fract()];
+        let t0 = scroll("ScrollSpeed_tex0_X", "ScrollSpeed_tex0_Y");
+        let t1 = scroll("ScrollSpeed_tex1_X", "ScrollSpeed_tex1_Y");
+        let n0 = scroll("ScrollSpeed_nml1_X", "ScrollSpeed_nml1_Y");
+        let n1 = scroll("ScrollSpeed_nml2_X", "ScrollSpeed_nml2_Y");
+        let mut u = Vec::with_capacity(WATER_SIZE);
+        put_rows(
+            &mut u,
+            &vs.rows(vcb, "World").unwrap_or_else(math::identity),
+        );
+        put4(&mut u, [t0[0], t0[1], t1[0], t1[1]]);
+        put4(&mut u, [n0[0], n0[1], n1[0], n1[1]]);
+        let color = ps
+            .floats(pcb, "MaterialColour", 4)
+            .unwrap_or_else(|| vec![1.0; 4]);
+        put4(&mut u, [color[0], color[1], color[2], color[3]]);
+        let spec = ps
+            .floats(pcb, "SpecularColor", 3)
+            .unwrap_or_else(|| vec![1.0; 3]);
+        let blend = ps
+            .floats(pcb, "MultiTexBlendFactor", 1)
+            .map_or(0.5, |v| v[0]);
+        put4(&mut u, [spec[0], spec[1], spec[2], blend]);
+        let view = |name: &str| -> Id {
+            ps.texture_slots
+                .get(name)
+                .and_then(|t| d.ps_srv.iter().find(|x| u32::from(x.0) == *t))
+                .map_or(0, |x| x.1)
+        };
+        let views = [
+            view("TextureSampler"),
+            view("TextureSampler1"),
+            view("NormalMapSampler"),
+            view("NormalMap2Sampler"),
+            view("CubeMapSampler"),
+        ];
+        let sampler = ps
+            .sampler_slots
+            .get("TextureSamplerState")
+            .and_then(|s| d.ps_samplers.iter().find(|x| u32::from(x.0) == *s))
+            .map_or(0, |x| x.1);
+        Some(WaterItem {
+            key,
+            vertex,
+            index,
+            draw: Box::new(d.clone()),
+            uniform: u,
+            views,
+            sampler,
+        })
     }
 
     /// Builds the G-buffer item of a draw, or `None` when the enhanced
@@ -1363,6 +1805,7 @@ impl Enhanced {
         let mut sent: HashMap<Id, (u32, Vec<u8>)> = HashMap::new();
         let mut geom: Vec<u8> = Vec::new();
         let mut items = Vec::new();
+        let mut waters = Vec::new();
         let mut rest = Vec::new();
         for c in &frame.cmds {
             match c {
@@ -1406,7 +1849,17 @@ impl Enhanced {
                                 }
                             })
                         };
-                        self.item(r, d, family, time, sources)
+                        if family == Family::Water {
+                            if self.settings.water
+                                && let Some(w) = self.water_item(r, d, time, sources)
+                            {
+                                waters.push(w);
+                                continue;
+                            }
+                            None
+                        } else {
+                            self.item(r, d, family, time, sources)
+                        }
                     } else {
                         None
                     };
@@ -1691,6 +2144,49 @@ impl Enhanced {
         put4(&mut vol, [splits[0], splits[1], splits[2], 0.0]);
         assert_eq!(vol.len(), VOL_SIZE, "volumetric uniform layout");
         let vol_at = alloc(&vol, VOL_SIZE);
+        let mut ws = Vec::new();
+        for c in &cascades {
+            put_rows(&mut ws, c);
+        }
+        put4(&mut ws, [sun_dir[0], sun_dir[1], sun_dir[2], sun_intensity]);
+        put4(&mut ws, [sun_color[0], sun_color[1], sun_color[2], 0.0]);
+        put4(&mut ws, [fog_lin[0], fog_lin[1], fog_lin[2], fog_params[3]]);
+        put4(
+            &mut ws,
+            [
+                fog_params[0],
+                fog_params[1],
+                fog_params[2],
+                if s.fog { 1.0 } else { 0.0 },
+            ],
+        );
+        put4(&mut ws, view[2]);
+        put4(&mut ws, [splits[0], splits[1], splits[2], 0.0]);
+        put4(
+            &mut ws,
+            [
+                s.water_reflection,
+                s.water_refraction,
+                s.water_absorption,
+                s.water_environment,
+            ],
+        );
+        put4(
+            &mut ws,
+            [
+                s.water_deep[0],
+                s.water_deep[1],
+                s.water_deep[2],
+                if s.shadows { 1.0 } else { 0.0 },
+            ],
+        );
+        put4(&mut ws, [internal.0 as f32, internal.1 as f32, 0.0, 0.0]);
+        assert_eq!(ws.len(), WATER_SCENE_SIZE, "water scene uniform layout");
+        let water_scene_at = alloc(&ws, WATER_SCENE_SIZE);
+        let water_at: Vec<u64> = waters
+            .iter()
+            .map(|w| alloc(&w.uniform, WATER_SIZE))
+            .collect();
         let mut resolve = Vec::new();
         put4(
             &mut resolve,
@@ -1816,14 +2312,81 @@ impl Enhanced {
             });
             prepared.push((pipe, shadow_pipe, group, i));
         }
+        let mut water_prepared = Vec::new();
+        for (w, at) in waters.iter().zip(&water_at) {
+            let Some(pipe) = self.water_pipeline(&device, &w.key) else {
+                continue;
+            };
+            let flat = |r: &mut Renderer, id: Id| -> wgpu::TextureView {
+                r.texture_view(id, false)
+                    .map_or_else(|| self.white.clone(), |v| (*v).clone())
+            };
+            let views = [
+                flat(r, w.views[0]),
+                flat(r, w.views[1]),
+                flat(r, w.views[2]),
+                flat(r, w.views[3]),
+            ];
+            let is_cube = r
+                .views
+                .get(&w.views[4])
+                .and_then(|v| v.desc)
+                .is_some_and(|d| d[1] == 9);
+            let cube = if is_cube {
+                r.texture_view(w.views[4], false)
+                    .map_or_else(|| self.cube.clone(), |v| (*v).clone())
+            } else {
+                self.cube.clone()
+            };
+            let samp = r.sampler(w.sampler, false);
+            let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &self.water_layouts.0,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: binding(*at, WATER_SIZE),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&views[0]),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&views[1]),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(&views[2]),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(&views[3]),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::TextureView(&cube),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 6,
+                        resource: wgpu::BindingResource::Sampler(&samp),
+                    },
+                ],
+            });
+            water_prepared.push((pipe, group, w));
+        }
         let (shadow_view, shadow_layers) = self.shadow_map(&device);
         let t = self.targets.as_ref().expect("made above");
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("enhanced"),
         });
         let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let record = |rp: &mut wgpu::RenderPass, i: &Item| -> bool {
-            for (slot, src) in i.vertex.iter().enumerate() {
+        let record_parts = |rp: &mut wgpu::RenderPass,
+                            vertex: &[Source],
+                            index: Option<(Source, wgpu::IndexFormat)>,
+                            d: &Draw|
+         -> bool {
+            for (slot, src) in vertex.iter().enumerate() {
                 match *src {
                     Source::Arena(at) => rp.set_vertex_buffer(slot as u32, gbuf.slice(at..)),
                     Source::Buffer(id, off) => match r.buffers.get(&id) {
@@ -1834,9 +2397,8 @@ impl Enhanced {
                     },
                 }
             }
-            let d = &i.draw;
             let instances = d.first_instance..d.first_instance + d.instances.max(1);
-            match i.index {
+            match index {
                 Some((src, format)) => {
                     match src {
                         Source::Arena(at) => rp.set_index_buffer(gbuf.slice(at..), format),
@@ -1850,6 +2412,9 @@ impl Enhanced {
                 None => rp.draw(d.start..d.start + d.count, instances),
             }
             true
+        };
+        let record = |rp: &mut wgpu::RenderPass, i: &Item| -> bool {
+            record_parts(rp, &i.vertex, i.index, &i.draw)
         };
         // Shadow cascades.
         if self.settings.shadows {
@@ -2016,6 +2581,77 @@ impl Enhanced {
             rp.set_pipeline(&self.lighting.0);
             rp.set_bind_group(0, &group, &[]);
             rp.draw(0..3, 0..1);
+        }
+        // Water, over the lit scene: it reads copies of the image and depth.
+        if !water_prepared.is_empty() {
+            let extent = wgpu::Extent3d {
+                width: internal.0,
+                height: internal.1,
+                depth_or_array_layers: 1,
+            };
+            enc.copy_texture_to_texture(
+                t.hdr_texture.as_image_copy(),
+                t.hdr_copy.0.as_image_copy(),
+                extent,
+            );
+            enc.copy_texture_to_texture(
+                t.depth_texture.as_image_copy(),
+                t.depth_copy.0.as_image_copy(),
+                extent,
+            );
+            let scene_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &self.water_layouts.1,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: binding(water_scene_at, WATER_SCENE_SIZE),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&t.hdr_copy.1),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&t.depth_copy.1),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(&shadow_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::Sampler(&self.compare),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::Sampler(&self.linear),
+                    },
+                ],
+            });
+            let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("water"),
+                color_attachments: &[attachment(&t.hdr, wgpu::LoadOp::Load)],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &t.depth,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            rp.set_viewport(0.0, 0.0, internal.0 as f32, internal.1 as f32, 0.0, 1.0);
+            rp.set_bind_group(0, &cam_group, &[]);
+            rp.set_bind_group(2, &scene_group, &[]);
+            for (pipe, group, w) in &water_prepared {
+                rp.set_pipeline(pipe);
+                rp.set_bind_group(1, group, &[]);
+                record_parts(&mut rp, &w.vertex, w.index, &w.draw);
+            }
         }
         // Volumetric light.
         if self.settings.volumetrics {
