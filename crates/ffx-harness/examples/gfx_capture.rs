@@ -30,7 +30,32 @@ fn capture(game: &mut ffx_harness::Game, dir: &Path) -> ffx_harness::Result<()> 
 fn main() -> ffx_harness::Result<()> {
     let mut args = std::env::args().skip(1);
     let out = std::path::PathBuf::from(args.next().expect("out dir"));
-    let entry = args.next().map_or(1, |e| e.parse().expect("entry"));
+    let first = args.next();
+    // `boot <frames>`: the opening, that many frames after start-up.
+    if first.as_deref() == Some("boot") {
+        // Seconds after start-up, comma-separated: a capture at each (the
+        // boot screens and the opening run in real time).
+        let marks: Vec<u64> = args
+            .next()
+            .unwrap_or_else(|| "40".into())
+            .split(',')
+            .map(|f| f.parse().expect("seconds"))
+            .collect();
+        let start = std::time::Instant::now();
+        let options = ffx_harness::Options {
+            gfx: Some("1".into()),
+            ..ffx_harness::Options::default()
+        };
+        let mut game = ffx_harness::Game::launch(&options)?;
+        for m in marks {
+            while start.elapsed().as_secs() < m {
+                game.wait(30)?;
+            }
+            capture(&mut game, &out.join(format!("boot{m}s")))?;
+        }
+        return game.quit();
+    }
+    let entry = first.map_or(1, |e| e.parse().expect("entry"));
     let battle = args.next().is_some_and(|a| a == "battle");
     let options = ffx_harness::Options {
         gfx: Some("1".into()),

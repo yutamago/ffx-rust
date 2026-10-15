@@ -619,6 +619,8 @@ fn panel(
                         color3(ui, "ground colour", &mut s.ground_color);
                     }
                     slider(ui, "baked light", &mut s.baked_light, 0.0..=2.0);
+                    slider(ui, "key light on scenery", &mut s.scenery_key, 0.0..=1.0);
+                    slider(ui, "scenery specular", &mut s.scenery_specular, 0.0..=2.0);
                     slider(ui, "character ambient", &mut s.character_ambient, 0.0..=4.0);
                     slider(ui, "roughness", &mut s.roughness, 0.05..=1.0);
                     slider(ui, "specular", &mut s.specular, 0.0..=2.0);

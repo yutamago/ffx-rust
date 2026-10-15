@@ -187,13 +187,15 @@ impl Renderer {
                 | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let constant = desc[2] & 0x4 != 0;
+        // Constant and index data stay on the CPU too: draws read windows
+        // of the first, and the second tells which vertices a draw uses.
+        let keep = desc[2] & 0x6 != 0;
         let mut kept = Vec::new();
         if !data.is_empty() {
             let mut padded = data.to_vec();
             padded.resize(size as usize, 0);
             self.queue.write_buffer(&buffer, 0, &padded);
-            if constant {
+            if keep {
                 kept = data.to_vec();
             }
         }
@@ -211,7 +213,7 @@ impl Renderer {
         let Some(b) = self.buffers.get_mut(&id) else {
             return;
         };
-        if b.desc[2] & 0x4 != 0 {
+        if b.desc[2] & 0x6 != 0 {
             let end = offset as usize + data.len();
             if b.data.len() < end {
                 b.data.resize(end, 0);

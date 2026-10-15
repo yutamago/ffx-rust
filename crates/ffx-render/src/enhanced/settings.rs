@@ -31,6 +31,11 @@ pub struct Settings {
     pub ground_color: [f32; 3],
     /// Weight of the game's baked vertex light (the indirect term).
     pub baked_light: f32,
+    /// How much the key light reshapes scenery's baked light (shadows,
+    /// facing), 0–1.
+    pub scenery_key: f32,
+    /// Specular highlights on scenery from the key light.
+    pub scenery_specular: f32,
     /// Scale of the characters' ambient light (they have no baked light).
     pub character_ambient: f32,
     pub roughness: f32,
@@ -57,14 +62,16 @@ impl Default for Settings {
             map_lights: true,
             key_scale: 0.35,
             fill_scale: 0.2,
-            sky_scale: 0.6,
+            sky_scale: 0.3,
             sun_direction: [-0.35, -0.85, 0.4],
             sun_intensity: 0.0,
             sun_color: [1.0, 0.95, 0.85],
             sky_color: [0.6, 0.7, 0.9],
             sky_intensity: 0.0,
             ground_color: [0.3, 0.27, 0.25],
-            baked_light: 0.75,
+            baked_light: 1.0,
+            scenery_key: 0.6,
+            scenery_specular: 0.5,
             character_ambient: 2.0,
             roughness: 0.7,
             specular: 0.5,

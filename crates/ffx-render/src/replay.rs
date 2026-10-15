@@ -167,6 +167,81 @@ enum Source {
     Arena(u64),
 }
 
+/// The smallest and largest index of `count` indices from `start`.
+fn index_bounds(
+    data: &[u8],
+    format: u32,
+    offset: usize,
+    start: u32,
+    count: u32,
+) -> Option<(u32, u32)> {
+    let size = if format == 42 { 4 } else { 2 };
+    let from = offset + start as usize * size;
+    let bytes = data.get(from..from + count as usize * size)?;
+    let mut lo = u32::MAX;
+    let mut hi = 0;
+    for c in bytes.chunks_exact(size) {
+        let i = if size == 4 {
+            u32::from_le_bytes([c[0], c[1], c[2], c[3]])
+        } else {
+            u32::from(u16::from_le_bytes([c[0], c[1]]))
+        };
+        lo = lo.min(i);
+        hi = hi.max(i);
+    }
+    (lo <= hi).then_some((lo, hi))
+}
+
+/// The bytes a draw reads from vertex slot `slot` of a buffer the frame
+/// sent bytes of: from the binding's offset to its last vertex.
+pub(crate) fn draw_vertex_bytes<'a>(
+    r: &'a Renderer,
+    sent: &'a HashMap<Id, (u32, Vec<u8>)>,
+    d: &Draw,
+    slot: u8,
+) -> Option<&'a [u8]> {
+    let &(_, id, stride, offset) = d.vertex.iter().find(|v| v.0 == slot)?;
+    let bytes = sent_bytes(sent, id, offset)?;
+    let indexed = matches!(
+        d.kind,
+        ffx_gfx::DrawKind::Indexed | ffx_gfx::DrawKind::IndexedInstanced
+    );
+    let per_instance = r.layouts.get(&d.layout).is_some_and(|l| {
+        l.iter()
+            .any(|e| e.per_instance && e.slot == u32::from(slot))
+    });
+    let last = if per_instance {
+        Some(u64::from(d.first_instance + d.instances.max(1)))
+    } else if indexed {
+        let (ib, fmt, ioff) = d.index;
+        let bounds = match sent_bytes(sent, ib, ioff) {
+            Some(data) => index_bounds(data, fmt, 0, d.start, d.count),
+            None => r
+                .buffers
+                .get(&ib)
+                .and_then(|b| index_bounds(&b.data, fmt, ioff as usize, d.start, d.count)),
+        };
+        bounds.map(|(_, hi)| (i64::from(hi) + i64::from(d.base)).max(0) as u64 + 1)
+    } else {
+        Some(u64::from(d.start + d.count))
+    };
+    let end = last
+        .map_or(bytes.len(), |n| (n * u64::from(stride.max(1))) as usize)
+        .min(bytes.len());
+    bytes.get(..end)
+}
+
+/// The bytes a draw reads from an index buffer the frame sent bytes of.
+pub(crate) fn draw_index_bytes<'a>(
+    sent: &'a HashMap<Id, (u32, Vec<u8>)>,
+    d: &Draw,
+) -> Option<&'a [u8]> {
+    let (ib, fmt, ioff) = d.index;
+    let bytes = sent_bytes(sent, ib, ioff)?;
+    let size = if fmt == 42 { 4 } else { 2 };
+    bytes.get(..((d.start + d.count) as usize * size).min(bytes.len()))
+}
+
 /// The bytes the frame sent for a buffer, as seen from `offset` on.
 pub(crate) fn sent_bytes(sent: &HashMap<Id, (u32, Vec<u8>)>, id: Id, offset: u32) -> Option<&[u8]> {
     let (at, data) = sent.get(&id)?;
@@ -830,7 +905,7 @@ impl Renderer {
                         .vertex
                         .iter()
                         .map(|&(slot, id, _, offset)| {
-                            let src = match sent_bytes(&sent, id, offset) {
+                            let src = match draw_vertex_bytes(self, &sent, d, slot) {
                                 Some(bytes) => Source::Arena(put(bytes, 4)),
                                 None => Source::Buffer(id, u64::from(offset)),
                             };

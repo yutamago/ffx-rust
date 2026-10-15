@@ -30,6 +30,9 @@ struct Light {
     // xyz: direction the fill light travels, w: intensity; colour
     fill: vec4<f32>,
     fill_color: vec4<f32>,
+    // x: how much the key light reshapes scenery's baked light (0: not
+    // at all, 1: fully by its shadow and facing), y: scenery specular
+    scenery: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> light: Light;
@@ -111,7 +114,8 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     }
     let albedo = textureLoad(albedo_tex, px, 0).rgb;
     let nm = textureLoad(normal_tex, px, 0);
-    let baked = textureLoad(baked_tex, px, 0).rgb;
+    let baked_fog = textureLoad(baked_tex, px, 0);
+    let baked = baked_fog.rgb;
     let ao = mix(1.0, textureLoad(ao_tex, px, 0).r, light.shadow_params.w);
     let n = normalize(nm.xyz);
     let p = world_position(in.pos.xy, depth);
@@ -120,18 +124,33 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     let nl = max(dot(n, l), 0.0);
     let shadow = shadow_factor(p, n);
     let rough = light.mix.y;
-    let direct = light.sun_color.rgb * light.sun.w * nl * shadow;
     let spec = ggx(n, v, l, rough, 0.04) * light.mix.z;
-    let lf = -normalize(light.fill.xyz);
-    let fill = light.fill_color.rgb * light.fill.w * max(dot(n, lf), 0.0);
     let hemi = mix(light.ground.rgb, light.sky.rgb, n.y * 0.5 + 0.5) * light.sky.w;
-    let indirect = baked * light.mix.x + hemi;
-    var color = albedo * (indirect * ao + direct + fill) + direct * spec;
+    var color: vec3<f32>;
+    if (nm.w < 0.5) {
+        // Scenery: its baked light is the lighting (local lights included);
+        // the key light only reshapes it, darker in its shadow and away
+        // from it, brighter facing it, about the same on average.
+        let facing = shadow * nl;
+        let shape = mix(1.0, facing * 2.0, light.scenery.x);
+        let base = baked * light.mix.x * max(shape, 0.0);
+        let gloss = spec * light.sun_color.rgb * light.sun.w * shadow * nl * light.scenery.y;
+        color = albedo * (base + hemi * ao) + gloss * min(dot(baked, vec3<f32>(0.33)) * 2.0, 1.0);
+        color = albedo * hemi * (ao - 1.0) + color;
+    } else {
+        // Characters: lit like the game lights them, key and fill light
+        // with real shadows, ambient as sky.
+        let direct = light.sun_color.rgb * light.sun.w * nl * shadow;
+        let lf = -normalize(light.fill.xyz);
+        let fill = light.fill_color.rgb * light.fill.w * max(dot(n, lf), 0.0);
+        let indirect = baked * light.mix.x + hemi;
+        color = albedo * (indirect * ao + direct + fill) + direct * spec;
+    }
     // The game's fog, by distance from the eye.
     if (light.fog_range.w > 0.5) {
         let d = abs(dot(light.view_z, vec4<f32>(p, 1.0)));
         let t = clamp((d - light.fog_range.x) / (light.fog_range.y - light.fog_range.x + 0.01), 0.0, 1.0);
-        let f = min(pow(t, light.fog_range.z), light.fog.w);
+        let f = min(pow(t, light.fog_range.z), light.fog.w) * baked_fog.a;
         color = mix(color, light.fog.rgb, f);
     }
     return vec4<f32>(color, 1.0);

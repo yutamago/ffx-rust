@@ -21,8 +21,11 @@ struct Item {
     // x: alpha threshold, yz: texture coordinate offset, w: material
     // (0 scenery, 1 character, 2 emissive)
     params: vec4<f32>,
-    // rgb: light to use for "baked" when there are no vertex colours
+    // rgb: light to use for "baked" when there are no vertex colours;
+    // w: how much fog the draw takes (the game's fgEff × clrScaleFactor)
     ambient: vec4<f32>,
+    // The game's clrScaleFactor: a final colour multiplier.
+    scale: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> cam: Camera;
@@ -106,10 +109,10 @@ fn fs(in: VsOut) -> GOut {
         }
     }
     var out: GOut;
-    out.albedo = vec4<f32>(c.rgb, 1.0);
+    out.albedo = vec4<f32>(c.rgb * item.scale.rgb, 1.0);
     out.normal = vec4<f32>(normalize(in.nrm), item.params.w);
     // The game's vertex colours are light in gamma space, with 0.5 as full.
-    out.baked = vec4<f32>(pow(max(in.col.rgb * 2.0, vec3<f32>(0.0)), vec3<f32>(2.2)), 1.0);
+    out.baked = vec4<f32>(pow(max(in.col.rgb * 2.0, vec3<f32>(0.0)), vec3<f32>(2.2)), item.ambient.w);
     return out;
 }
 

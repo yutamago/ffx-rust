@@ -273,10 +273,11 @@ fn tex(sample_type: wgpu::TextureSampleType) -> wgpu::BindingType {
 const FLOAT: wgpu::TextureSampleType = wgpu::TextureSampleType::Float { filterable: true };
 const UNFILTERED: wgpu::TextureSampleType = wgpu::TextureSampleType::Float { filterable: false };
 
-/// Item uniform: world (64), cloth (64), colour, params, ambient (48).
-const ITEM_SIZE: usize = 176;
+/// Item uniform: world (64), cloth (64), colour, params, ambient, scale
+/// (64).
+const ITEM_SIZE: usize = 192;
 const CAMERA_SIZE: usize = 64 * 3 + 32;
-const LIGHT_SIZE: usize = 64 * 2 + 16 * 15;
+const LIGHT_SIZE: usize = 64 * 2 + 16 * 16;
 const POST_SIZE: usize = 16 + 64 + 16;
 
 fn attachment(
@@ -873,7 +874,13 @@ impl Enhanced {
         } else {
             ambient
         };
-        put4(&mut u, [ambient[0], ambient[1], ambient[2], 0.0]);
+        let fg = ps.floats(pcb, "fgEff", 3).unwrap_or_else(|| vec![1.0; 3]);
+        let scale = ps
+            .floats(pcb, "clrScaleFactor", 4)
+            .unwrap_or_else(|| vec![1.0; 4]);
+        let fog = (fg[0] + fg[1] + fg[2]) / 3.0 * (scale[0] + scale[1] + scale[2]) / 3.0;
+        put4(&mut u, [ambient[0], ambient[1], ambient[2], fog]);
+        put4(&mut u, [scale[0], scale[1], scale[2], scale[3]]);
         let bones_data = variant.skinned.then(|| {
             let (off, _) = vs.vars["BoneTransforms"];
             let mut b = vcb
@@ -1038,20 +1045,20 @@ impl Enhanced {
                             geom.extend_from_slice(bytes);
                             at as u64
                         };
-                        let mut cache: HashMap<(Id, u32), Source> = HashMap::new();
                         let sources = |id: Id, offset: u32| -> Option<Source> {
-                            if let Some(s) = cache.get(&(id, offset)) {
-                                return Some(*s);
-                            }
-                            let s = match crate::replay::sent_bytes(&sent, id, offset) {
+                            let bytes = if id == d.index.0 && offset == d.index.2 {
+                                crate::replay::draw_index_bytes(&sent, d)
+                            } else {
+                                let slot = d.vertex.iter().find(|v| v.1 == id && v.3 == offset)?.0;
+                                crate::replay::draw_vertex_bytes(r, &sent, d, slot)
+                            };
+                            Some(match bytes {
                                 Some(b) => Source::Arena(put(b)),
                                 None => {
                                     r.buffers.get(&id)?;
                                     Source::Buffer(id, u64::from(offset))
                                 }
-                            };
-                            cache.insert((id, offset), s);
-                            Some(s)
+                            })
                         };
                         self.item(r, d, family, time, sources)
                     } else {
@@ -1190,6 +1197,7 @@ impl Enhanced {
         put4(&mut light, view[2]);
         put4(&mut light, [fill.0[0], fill.0[1], fill.0[2], fill.2]);
         put4(&mut light, [fill.1[0], fill.1[1], fill.1[2], 0.0]);
+        put4(&mut light, [s.scenery_key, s.scenery_specular, 0.0, 0.0]);
         let light_at = alloc(&light, LIGHT_SIZE);
         let mut post = Vec::new();
         put4(
