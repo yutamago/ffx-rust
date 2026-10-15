@@ -139,7 +139,8 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     if (depth >= 1.0) {
         return vec4<f32>(0.0);
     }
-    let albedo = textureLoad(albedo_tex, px, 0).rgb;
+    let albedo_rough = textureLoad(albedo_tex, px, 0);
+    let albedo = albedo_rough.rgb;
     let nm = textureLoad(normal_tex, px, 0);
     let baked_fog = textureLoad(baked_tex, px, 0);
     let baked = baked_fog.rgb;
@@ -150,7 +151,7 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     let l = -normalize(light.sun.xyz);
     let nl = max(dot(n, l), 0.0);
     let shadow = shadow_factor(p, n);
-    let rough = light.mix.y;
+    let rough = select(light.mix.y, albedo_rough.a, albedo_rough.a > 0.01);
     let spec = ggx(n, v, l, rough, 0.04) * light.mix.z;
     let hemi = mix(light.ground.rgb, light.sky.rgb, n.y * 0.5 + 0.5) * light.sky.w;
     var color: vec3<f32>;

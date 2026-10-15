@@ -40,6 +40,11 @@ pub struct Settings {
     pub character_falloff: f32,
     /// Scale of the characters' ambient light (they have no baked light).
     pub character_ambient: f32,
+    /// Normal and roughness maps made from the colour textures.
+    pub material_maps: bool,
+    pub normal_strength: f32,
+    /// The same for characters (their textures have painted shading).
+    pub character_detail: f32,
     pub roughness: f32,
     pub specular: f32,
     pub shadows: bool,
@@ -89,6 +94,9 @@ impl Default for Settings {
             scenery_specular: 0.5,
             character_falloff: 0.3,
             character_ambient: 2.0,
+            material_maps: true,
+            normal_strength: 1.0,
+            character_detail: 0.3,
             roughness: 0.7,
             specular: 0.5,
             shadows: true,

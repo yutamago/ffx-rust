@@ -24,6 +24,7 @@ const GBUFFER_WGSL: &str = include_str!("gbuffer.wgsl");
 const LIGHTING_WGSL: &str = include_str!("lighting.wgsl");
 const OUTPUT_WGSL: &str = include_str!("output.wgsl");
 const AO_WGSL: &str = include_str!("ao.wgsl");
+const MATERIAL_WGSL: &str = include_str!("material.wgsl");
 const AO_SIZE: usize = 64 * 2 + 32;
 
 /// Variables of one shader's first constant buffer: name → (offset, size),
@@ -168,6 +169,15 @@ pub struct Enhanced {
     item_layout: wgpu::BindGroupLayout,
     gbuffer_layout: wgpu::PipelineLayout,
     lighting: (wgpu::RenderPipeline, wgpu::BindGroupLayout),
+    /// Material map generation (first level, then each smaller one).
+    material_gen: (
+        wgpu::RenderPipeline,
+        wgpu::RenderPipeline,
+        wgpu::BindGroupLayout,
+    ),
+    /// Generated material maps by colour texture: (version, view).
+    materials: HashMap<Id, (u32, wgpu::TextureView)>,
+    flat_material: wgpu::TextureView,
     /// Ambient occlusion and its blur, and their layout.
     ao: (
         wgpu::RenderPipeline,
@@ -324,7 +334,7 @@ const UNFILTERED: wgpu::TextureSampleType = wgpu::TextureSampleType::Float { fil
 
 /// Item uniform: world (64), cloth (64), colour, params, ambient, scale
 /// (64).
-const ITEM_SIZE: usize = 192;
+const ITEM_SIZE: usize = 208;
 const CAMERA_SIZE: usize = 64 * 3 + 32;
 const LIGHT_SIZE: usize = 64 + 16 * 12 + 16 * 15;
 const POST_SIZE: usize = 16 + 64 + 16;
@@ -414,6 +424,7 @@ impl Enhanced {
                         3,
                         wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     ),
+                    (4, tex(FLOAT)),
                 ],
                 S::VERTEX_FRAGMENT,
             ),
@@ -479,6 +490,30 @@ impl Enhanced {
         })];
         let ao_pass = fullscreen(device, &ao_layout, AO_WGSL, &r8, None);
         let ao_blur = fullscreen_entry(device, &ao_layout, AO_WGSL, "fs_blur", &r8);
+        let gen_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("material"),
+            entries: &layout_entries(
+                &[
+                    (0, uniform(32)),
+                    (1, tex(FLOAT)),
+                    (
+                        2,
+                        wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    ),
+                ],
+                S::FRAGMENT,
+            ),
+        });
+        let rgba8 = [Some(wgpu::ColorTargetState {
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            blend: None,
+            write_mask: wgpu::ColorWrites::ALL,
+        })];
+        let material_gen = (
+            fullscreen_entry(device, &gen_layout, MATERIAL_WGSL, "fs", &rgba8),
+            fullscreen_entry(device, &gen_layout, MATERIAL_WGSL, "fs_down", &rgba8),
+            gen_layout,
+        );
         let linear = device.create_sampler(&wgpu::SamplerDescriptor {
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
@@ -502,6 +537,9 @@ impl Enhanced {
             gbuffer_layout,
             lighting: (lighting, lighting_layout),
             ao: (ao_pass, ao_blur, ao_layout),
+            material_gen,
+            materials: HashMap::new(),
+            flat_material: one_pixel(device, queue, [128, 128, 179, 255]),
             output: None,
             targets: None,
             shadow: None,
@@ -793,6 +831,120 @@ impl Enhanced {
         (array, layers)
     }
 
+    /// The material map of colour texture `resource` (made on first use,
+    /// again when the texture changes).
+    fn material(&mut self, r: &Renderer, resource: Id) -> Option<wgpu::TextureView> {
+        let t = r.textures.get(&resource)?;
+        let version = t.desc[7];
+        if let Some((v, view)) = self.materials.get(&resource)
+            && *v == version
+        {
+            return Some(view.clone());
+        }
+        if t.format.is_depth_stencil_format() || t.desc[5] > 1 {
+            return None;
+        }
+        let device = &r.device;
+        let (w, h) = (t.desc[0].max(1), t.desc[1].max(1));
+        let mips = t.desc[2].max(1).min(32 - w.max(h).leading_zeros());
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("material"),
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: mips,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let s = &self.settings;
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("material"),
+        });
+        let ubuf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: 256 * u64::from(mips),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        for level in 0..mips {
+            let mut u = Vec::new();
+            put4(&mut u, [2.0, s.roughness, 0.25, 0.0]);
+            put4(
+                &mut u,
+                [
+                    if level == 0 { 0.0 } else { (level - 1) as f32 },
+                    0.0,
+                    0.0,
+                    0.0,
+                ],
+            );
+            r.queue.write_buffer(&ubuf, 256 * u64::from(level), &u);
+            let source = if level == 0 {
+                t.texture.create_view(&wgpu::TextureViewDescriptor {
+                    format: Some(t.format.add_srgb_suffix()),
+                    ..Default::default()
+                })
+            } else {
+                texture.create_view(&wgpu::TextureViewDescriptor {
+                    base_mip_level: level - 1,
+                    mip_level_count: Some(1),
+                    ..Default::default()
+                })
+            };
+            let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &self.material_gen.2,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                            buffer: &ubuf,
+                            offset: 256 * u64::from(level),
+                            size: wgpu::BufferSize::new(32),
+                        }),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&source),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(&self.linear),
+                    },
+                ],
+            });
+            let target = texture.create_view(&wgpu::TextureViewDescriptor {
+                base_mip_level: level,
+                mip_level_count: Some(1),
+                ..Default::default()
+            });
+            let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("material"),
+                color_attachments: &[attachment(&target, wgpu::LoadOp::Clear(wgpu::Color::BLACK))],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            rp.set_pipeline(if level == 0 {
+                &self.material_gen.0
+            } else {
+                &self.material_gen.1
+            });
+            rp.set_bind_group(0, &group, &[]);
+            rp.draw(0..3, 0..1);
+        }
+        r.queue.submit([enc.finish()]);
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        self.materials.insert(resource, (version, view.clone()));
+        Some(view)
+    }
+
     /// Builds the G-buffer item of a draw, or `None` when the enhanced
     /// passes cannot draw it (it then goes through the game's shader).
     #[allow(clippy::too_many_lines)]
@@ -972,6 +1124,12 @@ impl Enhanced {
         let fog = (fg[0] + fg[1] + fg[2]) / 3.0 * (scale[0] + scale[1] + scale[2]) / 3.0;
         put4(&mut u, [ambient[0], ambient[1], ambient[2], fog]);
         put4(&mut u, [scale[0], scale[1], scale[2], scale[3]]);
+        let detail = if family == Family::Character {
+            self.settings.character_detail
+        } else {
+            1.0
+        };
+        put4(&mut u, [detail, 0.0, 0.0, 0.0]);
         let bones_data = variant.skinned.then(|| {
             let (off, _) = vs.vars["BoneTransforms"];
             let mut b = vcb
@@ -1180,7 +1338,19 @@ impl Enhanced {
         put_rows(&mut cam, &view);
         put_rows(&mut cam, &math::transpose(&inv_vp));
         put4(&mut cam, [eye[0], eye[1], eye[2], 1.0]);
-        put4(&mut cam, [time, 0.0, 0.0, 0.0]);
+        put4(
+            &mut cam,
+            [
+                time,
+                self.settings.normal_strength,
+                if self.settings.material_maps {
+                    1.0
+                } else {
+                    0.0
+                },
+                self.settings.roughness,
+            ],
+        );
         assert_eq!(cam.len(), CAMERA_SIZE, "camera uniform layout");
         let cam_at = alloc(&cam, CAMERA_SIZE);
         // The key light: the map's, or the settings'.
@@ -1436,6 +1606,11 @@ impl Enhanced {
                 ..i.key.clone()
             };
             let shadow_pipe = self.pipeline(&device, &shadow_key);
+            let material = i
+                .albedo
+                .and_then(|(v, _)| r.views.get(&v).map(|vv| vv.resource))
+                .and_then(|res| self.material(r, res))
+                .unwrap_or_else(|| self.flat_material.clone());
             let (view, samp) = match i.albedo {
                 Some((v, s)) => {
                     let view = r
@@ -1472,6 +1647,10 @@ impl Enhanced {
                     wgpu::BindGroupEntry {
                         binding: 3,
                         resource: wgpu::BindingResource::Sampler(&samp),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(&material),
                     },
                 ],
             });

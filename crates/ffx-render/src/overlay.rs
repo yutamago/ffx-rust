@@ -628,6 +628,12 @@ fn panel(
                         &mut s.character_falloff,
                         0.0..=1.0,
                     );
+                    ui.checkbox(
+                        &mut s.material_maps,
+                        "Surface detail from the textures (normal, roughness)",
+                    );
+                    slider(ui, "surface detail", &mut s.normal_strength, 0.0..=4.0);
+                    slider(ui, "on characters", &mut s.character_detail, 0.0..=2.0);
                     slider(ui, "roughness", &mut s.roughness, 0.05..=1.0);
                     slider(ui, "specular", &mut s.specular, 0.0..=2.0);
                 });
