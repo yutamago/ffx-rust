@@ -156,7 +156,7 @@ pub(crate) const CONTEXT_IIDS: [Guid; 5] = [
     ),
 ];
 /// `ID3D11Device` to `ID3D11Device5`.
-const DEVICE_IIDS: [Guid; 6] = [
+pub(crate) const DEVICE_IIDS: [Guid; 6] = [
     guid(
         0xdb6f_6ddb,
         0xac77,

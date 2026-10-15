@@ -21,6 +21,8 @@ pub mod live;
 pub mod overlay;
 pub mod png;
 mod replay;
+#[cfg(windows)]
+pub mod share;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -58,6 +60,8 @@ pub struct Shader {
 
 /// The renderer's device and its copy of the game's objects.
 pub struct Renderer {
+    /// The adapter and backend in use.
+    pub adapter: String,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub textures: HashMap<Id, Texture>,
@@ -77,8 +81,16 @@ impl Renderer {
     /// # Errors
     /// When there is no adapter or device with the needed features.
     pub fn new() -> Result<Self> {
+        // Direct3D 12 on Windows (its textures can be shared with the
+        // game's device); `FFX_RENDER_BACKEND=vulkan` picks Vulkan.
+        let backends = match std::env::var("FFX_RENDER_BACKEND").as_deref() {
+            Ok("vulkan") => wgpu::Backends::VULKAN,
+            Ok("dx12") => wgpu::Backends::DX12,
+            _ if cfg!(windows) => wgpu::Backends::DX12,
+            _ => wgpu::Backends::PRIMARY,
+        };
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY,
+            backends,
             ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
@@ -86,6 +98,8 @@ impl Renderer {
             ..Default::default()
         }))
         .context("no GPU adapter")?;
+        let info = adapter.get_info();
+        let adapter_name = format!("{} ({:?})", info.name, info.backend);
         let wanted = wgpu::Features::TEXTURE_COMPRESSION_BC
             | wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER
             | wgpu::Features::FLOAT32_FILTERABLE
@@ -101,6 +115,7 @@ impl Renderer {
         }))
         .context("no GPU device")?;
         Ok(Self {
+            adapter: adapter_name,
             device,
             queue,
             textures: HashMap::new(),

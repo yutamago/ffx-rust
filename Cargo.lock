@@ -664,6 +664,7 @@ dependencies = [
  "serde",
  "toml",
  "wgpu",
+ "windows",
  "windows-sys",
 ]
 

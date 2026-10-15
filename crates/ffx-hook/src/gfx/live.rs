@@ -247,6 +247,100 @@ struct Composite {
     raster: Ptr,
 }
 
+/// The renderer's shared scene images, opened on the game's device: per
+/// set, the textures and their views (colour, normal, depth).
+struct SharedImages {
+    generation: u32,
+    sets: [Option<([Ptr; 3], [Ptr; 3])>; 3],
+}
+
+impl SharedImages {
+    /// Releases everything opened.
+    unsafe fn release(&mut self) {
+        for (textures, views) in self.sets.iter_mut().filter_map(Option::take) {
+            for p in views.into_iter().chain(textures) {
+                // SAFETY: references this holds.
+                unsafe { release(p) };
+            }
+        }
+    }
+}
+
+/// `IUnknown::Release`.
+unsafe fn release(object: Ptr) {
+    if object.is_null() {
+        return;
+    }
+    // SAFETY: a live COM object.
+    unsafe {
+        let f: unsafe extern "system" fn(Ptr) -> u32 = std::mem::transmute(real_method(object, 2));
+        f(object);
+    }
+}
+
+/// Opens set `set` of generation `generation` of the renderer's shared
+/// images: textures and shader resource views.
+unsafe fn open_shared(generation: u32, set: u32) -> Option<([Ptr; 3], [Ptr; 3])> {
+    const IID_TEXTURE2D: [u8; 16] = [
+        0xf2, 0xaa, 0x15, 0x6f, 0x08, 0xd2, 0x89, 0x4e, 0x9a, 0xb4, 0x48, 0x95, 0x35, 0xd3, 0x4f,
+        0x9c,
+    ];
+    let device = super::DEVICE.load(Ordering::Acquire) as Ptr;
+    let pid = std::process::id();
+    // SAFETY: the game's device; ID3D11Device1 from QueryInterface.
+    unsafe {
+        type Query = unsafe extern "system" fn(Ptr, *const u8, *mut Ptr) -> i32;
+        let query: Query = std::mem::transmute(real_method(device, 0));
+        let mut device1: Ptr = std::ptr::null_mut();
+        if query(device, super::DEVICE_IIDS[1].as_ptr(), &raw mut device1) < 0 {
+            return None;
+        }
+        // ID3D11Device1::OpenSharedResourceByName.
+        type Open = unsafe extern "system" fn(Ptr, *const u16, u32, *const u8, *mut Ptr) -> i32;
+        let open: Open = std::mem::transmute(real_method(device1, 49));
+        type CreateSrv = unsafe extern "system" fn(Ptr, Ptr, *const u32, *mut Ptr) -> i32;
+        let create_srv: CreateSrv = std::mem::transmute(device_original(
+            device,
+            vt::device::CREATE_SHADER_RESOURCE_VIEW,
+        ));
+        let mut textures = [std::ptr::null_mut(); 3];
+        let mut views = [std::ptr::null_mut(); 3];
+        let mut ok = true;
+        for plane in 0..3 {
+            let name = wide(&format!("Local\\ffx-gfx-{pid}-{generation}-{set}-{plane}"));
+            // DXGI_SHARED_RESOURCE_READ
+            if open(
+                device1,
+                name.as_ptr(),
+                0x8000_0000,
+                IID_TEXTURE2D.as_ptr(),
+                &raw mut textures[plane],
+            ) < 0
+                || create_srv(
+                    device,
+                    textures[plane],
+                    std::ptr::null(),
+                    &raw mut views[plane],
+                ) < 0
+            {
+                ok = false;
+                break;
+            }
+        }
+        release(device1);
+        if !ok {
+            log(&format!(
+                "  live: cannot open shared images {generation}/{set}"
+            ));
+            for p in views.into_iter().chain(textures) {
+                release(p);
+            }
+            return None;
+        }
+        Some((textures, views))
+    }
+}
+
 struct Link {
     to_renderer: Ring,
     to_game: Ring,
@@ -259,6 +353,7 @@ struct Link {
     scene: Option<Scene>,
     frame: u32,
     composite: Option<Composite>,
+    shared: Option<SharedImages>,
     /// Frames the renderer did not answer in time.
     misses: u32,
     /// The overlay image to lay over this frame at Present.
@@ -370,6 +465,7 @@ pub fn start() {
                 scene: None,
                 frame: 0,
                 composite: None,
+                shared: None,
                 misses: 0,
                 resent: HashMap::new(),
                 indices: HashMap::new(),
@@ -816,9 +912,40 @@ fn finish(link: &mut Link, s: &mut State, scene: Scene) {
     if (reply.width, reply.height) != (w, h) {
         return;
     }
+    let source = match reply.shared {
+        Some((generation, set)) => {
+            if link
+                .shared
+                .as_ref()
+                .is_none_or(|x| x.generation != generation)
+            {
+                if let Some(mut old) = link.shared.take() {
+                    // SAFETY: on the render thread.
+                    unsafe { old.release() };
+                }
+                link.shared = Some(SharedImages {
+                    generation,
+                    sets: [None, None, None],
+                });
+            }
+            let Some(images) = link.shared.as_mut() else {
+                return;
+            };
+            let slot = &mut images.sets[set as usize % 3];
+            if slot.is_none() {
+                // SAFETY: on the render thread, the game's device.
+                *slot = unsafe { open_shared(generation, set) };
+            }
+            match slot {
+                Some((_, views)) => Source::Shared(*views),
+                None => return,
+            }
+        }
+        None => Source::Pixels(&data),
+    };
     IMAGES.fetch_add(1, Ordering::Relaxed);
     // SAFETY: on the render thread; the game's device and context.
-    unsafe { composite(link, s, scene, w, h, &data) };
+    unsafe { composite(link, s, scene, w, h, source) };
     if frame % 120 == 0 {
         for (kind, (n, bytes, time)) in link.resent.drain() {
             log(&format!(
@@ -836,9 +963,19 @@ fn finish(link: &mut Link, s: &mut State, scene: Scene) {
 struct Reply {
     width: u32,
     height: u32,
-    /// Colour and normal (RGBA8) then depth (f32), rows packed.
+    /// Colour and normal (RGBA8) then depth (f32), rows packed; empty
+    /// when the image is in shared textures.
     scene: Vec<u8>,
+    /// The shared textures' generation and set.
+    shared: Option<(u32, u32)>,
     overlay: Option<(u32, u32, Vec<u8>)>,
+}
+
+/// Where the renderer's image is.
+enum Source<'a> {
+    Pixels(&'a [u8]),
+    /// Shader resource views of shared colour, normal and depth.
+    Shared([Ptr; 3]),
 }
 
 /// Sends the window input gathered since the last frame.
@@ -881,9 +1018,22 @@ fn receive(link: &mut Link, frame: u32) -> Option<Reply> {
         }
         let word = |i: usize| u32::from_le_bytes(head[4 * i..4 * i + 4].try_into().expect("4"));
         let (number, w, h, flags) = (word(0), word(1), word(2), word(3));
-        let mut scene = vec![0u8; (w * h * 12) as usize];
-        if !link.to_game.read(&mut scene, &mut wait) {
-            return None;
+        let mut shared = None;
+        let mut scene = Vec::new();
+        if flags & 2 != 0 {
+            let mut at = [0u8; 8];
+            if !link.to_game.read(&mut at, &mut wait) {
+                return None;
+            }
+            shared = Some((
+                u32::from_le_bytes(at[0..4].try_into().expect("4")),
+                u32::from_le_bytes(at[4..8].try_into().expect("4")),
+            ));
+        } else {
+            scene = vec![0u8; (w * h * 12) as usize];
+            if !link.to_game.read(&mut scene, &mut wait) {
+                return None;
+            }
         }
         let mut overlay = None;
         if flags & 1 != 0 {
@@ -904,6 +1054,7 @@ fn receive(link: &mut Link, frame: u32) -> Option<Reply> {
                 width: w,
                 height: h,
                 scene,
+                shared,
                 overlay,
             });
         }
@@ -1402,7 +1553,7 @@ unsafe fn make_composite(width: u32, height: u32) -> Option<Composite> {
 
 /// Draws the renderer's images into the scene targets, then puts the
 /// game's bindings back.
-unsafe fn composite(link: &mut Link, s: &State, scene: Scene, w: u32, h: u32, data: &[u8]) {
+unsafe fn composite(link: &mut Link, s: &State, scene: Scene, w: u32, h: u32, source: Source) {
     let ctx = super::CONTEXT.load(Ordering::Acquire) as Ptr;
     if link
         .composite
@@ -1424,18 +1575,24 @@ unsafe fn composite(link: &mut Link, s: &State, scene: Scene, w: u32, h: u32, da
     // SAFETY: the real immediate context on the render thread; every
     // binding changed here is restored from the tracked state after.
     unsafe {
-        for i in 0..3 {
-            call!(
-                k::UPDATE_SUBRESOURCE,
-                unsafe extern "system" fn(Ptr, Ptr, u32, *const u32, *const u8, u32, u32),
-                c.textures[i],
-                0,
-                std::ptr::null(),
-                data[i * plane..].as_ptr(),
-                w * 4,
-                0
-            );
-        }
+        let views = match source {
+            Source::Pixels(data) => {
+                for i in 0..3 {
+                    call!(
+                        k::UPDATE_SUBRESOURCE,
+                        unsafe extern "system" fn(Ptr, Ptr, u32, *const u32, *const u8, u32, u32),
+                        c.textures[i],
+                        0,
+                        std::ptr::null(),
+                        data[i * plane..].as_ptr(),
+                        w * 4,
+                        0
+                    );
+                }
+                c.views
+            }
+            Source::Shared(views) => views,
+        };
         let rtvs = [scene.color, scene.normal];
         call!(
             k::OM_SET_RENDER_TARGETS,
@@ -1498,7 +1655,7 @@ unsafe fn composite(link: &mut Link, s: &State, scene: Scene, w: u32, h: u32, da
             unsafe extern "system" fn(Ptr, u32, u32, *const Ptr),
             0,
             3,
-            c.views.as_ptr()
+            views.as_ptr()
         );
         call!(k::DRAW, unsafe extern "system" fn(Ptr, u32, u32), 3, 0);
         // Put the game's bindings back.

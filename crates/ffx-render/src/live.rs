@@ -89,7 +89,7 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             return Err(e).context("renderer");
         }
     };
-    log("device ready");
+    log(&format!("device ready: {}", r.adapter));
     let mut frames = 0u32;
     let exe_dir = std::env::current_exe()
         .ok()
@@ -112,6 +112,18 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
     let mut idle_from = std::time::Instant::now();
     let mut overlay = crate::overlay::Overlay::new(&r.device);
     let mut screen = (0u32, 0u32);
+    // The scene image goes back through shared textures where it can.
+    let mut share = if std::env::var("FFX_GFX_SHARE").is_ok_and(|v| v == "0") {
+        None
+    } else {
+        match crate::share::Share::new(&r.device, pid) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                log(&format!("no shared textures: {e:#}"));
+                None
+            }
+        }
+    };
     let mut last_frame = std::time::Instant::now();
     let mut frame_time = std::time::Duration::ZERO;
     loop {
@@ -195,18 +207,29 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
         let t_draw = t0.elapsed();
         let resource = |v: ffx_gfx::Id| r.views.get(&v).map(|v| v.resource);
         let t1 = std::time::Instant::now();
-        let scene = match targets {
-            Some((c, n, z)) => match (resource(c), resource(n), resource(z)) {
-                (Some(c), Some(n), Some(z)) => match r.read_scene(c, n, z) {
-                    Ok(x) => Some(x),
-                    Err(e) => {
-                        log(&format!("frame {}: {e}", frame.number));
-                        None
-                    }
-                },
-                _ => None,
+        let ids = targets.and_then(|(c, n, z)| Some((resource(c)?, resource(n)?, resource(z)?)));
+        let mut shared = None;
+        if let (Some(s), Some((c, n, z))) = (share.as_mut(), ids) {
+            match s.write(&r, c, n, z) {
+                Ok(x) => shared = Some(x),
+                Err(e) => {
+                    log(&format!(
+                        "frame {}: shared textures: {e:#}; reading back",
+                        frame.number
+                    ));
+                    share = None;
+                }
+            }
+        }
+        let scene = match (ids, shared) {
+            (Some((c, n, z)), None) => match r.read_scene(c, n, z) {
+                Ok(x) => Some(x),
+                Err(e) => {
+                    log(&format!("frame {}: {e}", frame.number));
+                    None
+                }
             },
-            None => None,
+            _ => None,
         };
         let t_read = t1.elapsed();
         // The overlay, over the whole window.
@@ -245,10 +268,22 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             enhanced.settings = crate::enhanced::Settings::default();
             overlay.message = "defaults (not saved)".into();
         }
-        // Answer: frame, scene size, flags (1: overlay follows), the scene's
-        // colour, normal and depth, then the overlay's size and pixels.
-        let (w, h, mut data) = scene.unwrap_or((0, 0, Vec::new()));
-        if std::env::var("FFX_RENDER_TEST").is_ok_and(|v| v == "invert") && w > 0 {
+        // Answer: frame, scene size, flags (1: overlay follows, 2: the scene
+        // is in shared textures), the scene's colour, normal and depth (or
+        // the shared generation and set), then the overlay's size and
+        // pixels.
+        let (w, h, mut data) = match shared {
+            Some(s) => {
+                let mut d = s.generation.to_le_bytes().to_vec();
+                d.extend_from_slice(&s.set.to_le_bytes());
+                (s.width, s.height, d)
+            }
+            None => scene.unwrap_or((0, 0, Vec::new())),
+        };
+        if std::env::var("FFX_RENDER_TEST").is_ok_and(|v| v == "invert")
+            && w > 0
+            && shared.is_none()
+        {
             for px in data[..(w * h * 4) as usize].as_chunks_mut::<4>().0 {
                 px[0] = 255 - px[0];
                 px[1] = 255 - px[1];
@@ -259,7 +294,8 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
         out.extend_from_slice(&frame.number.to_le_bytes());
         out.extend_from_slice(&w.to_le_bytes());
         out.extend_from_slice(&h.to_le_bytes());
-        out.extend_from_slice(&u32::from(overlay_image.is_some()).to_le_bytes());
+        let flags = u32::from(overlay_image.is_some()) | if shared.is_some() { 2 } else { 0 };
+        out.extend_from_slice(&flags.to_le_bytes());
         out.extend_from_slice(&data);
         if let Some(img) = &overlay_image {
             out.extend_from_slice(&screen.0.to_le_bytes());

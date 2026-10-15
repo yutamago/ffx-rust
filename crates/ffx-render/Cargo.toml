@@ -27,3 +27,10 @@ windows-sys = { workspace = true, features = [
     "Win32_System_Memory",
     "Win32_System_Threading",
 ] }
+# The same version as wgpu-hal's, for its Direct3D 12 objects.
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D12",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Security",
+] }
