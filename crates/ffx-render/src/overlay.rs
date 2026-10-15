@@ -1028,6 +1028,12 @@ fn settings_ui(ui: &mut egui::Ui, e: &mut Ed) {
             "Fire and magic light their surroundings",
         );
         slider(ui, f!(e.effect_light_strength), "strength", 0.0..=10.0);
+        check(
+            ui,
+            f!(e.glow_lights),
+            "Glowing things (save spheres, lamps) are lights",
+        );
+        slider(ui, f!(e.glow_strength), "their brightness", 0.0..=5.0);
     });
     egui::CollapsingHeader::new("Water").show(ui, |ui| {
         check(ui, f!(e.water), "Enhanced water");
@@ -1151,6 +1157,7 @@ fn settings_ui(ui: &mut egui::Ui, e: &mut Ed) {
                     (6, "cascades"),
                     (7, "skin"),
                     (8, "probe light"),
+                    (9, "local lights"),
                 ] {
                     ui.selectable_value(v, n, name);
                 }

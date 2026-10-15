@@ -221,6 +221,10 @@ pub enum Msg {
         scene: String,
         camera: Option<([f32; 3], [f32; 3])>,
     },
+    /// The glowing effects the game drew over the scene after the frame
+    /// went to the renderer (additive draws into the scene colour against
+    /// its depth), sent at Present: the renderer finds lights in them.
+    Effects(Frame),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -335,6 +339,7 @@ const RELEASE: u32 = 9;
 const FRAME: u32 = 10;
 const INPUT: u32 = 11;
 const WORLD: u32 = 12;
+const EFFECTS: u32 = 13;
 
 fn slots_u8(w: &mut Writer, v: &[(u8, Id)]) {
     w.len_of(v);
@@ -612,44 +617,12 @@ impl Msg {
                 WORLD
             }
             Self::Frame(f) => {
-                w.u32s(&[f.number, f.width, f.height]);
-                w.len_of(&f.cmds);
-                for c in &f.cmds {
-                    match c {
-                        Cmd::Draw(d) => {
-                            w.u8(0);
-                            d.write(&mut w);
-                        }
-                        Cmd::ClearTarget { view, color } => {
-                            w.u8(1);
-                            w.u32(*view);
-                            for v in color {
-                                w.f32(*v);
-                            }
-                        }
-                        Cmd::ClearDepth {
-                            view,
-                            flags,
-                            depth,
-                            stencil,
-                        } => {
-                            w.u8(2);
-                            w.u32s(&[*view, *flags]);
-                            w.f32(*depth);
-                            w.u8(*stencil);
-                        }
-                        Cmd::UpdateBuffer { id, offset, data } => {
-                            w.u8(3);
-                            w.u32s(&[*id, *offset]);
-                            w.blob(data);
-                        }
-                        Cmd::CopyTexture { dst, src } => {
-                            w.u8(4);
-                            w.u32s(&[*dst, *src]);
-                        }
-                    }
-                }
+                write_frame(&mut w, f);
                 FRAME
+            }
+            Self::Effects(f) => {
+                write_frame(&mut w, f);
+                EFFECTS
             }
         };
         out.extend_from_slice(&tag.to_le_bytes());
@@ -800,45 +773,88 @@ impl Msg {
                 };
                 Self::World { scene, camera }
             }
-            FRAME => {
-                let [number, width, height] = r.u32s()?;
-                let n = r.u32()?;
-                let mut cmds = Vec::with_capacity(n as usize);
-                for _ in 0..n {
-                    cmds.push(match r.u8()? {
-                        0 => Cmd::Draw(Box::new(Draw::read(&mut r)?)),
-                        1 => Cmd::ClearTarget {
-                            view: r.u32()?,
-                            color: [r.f32()?, r.f32()?, r.f32()?, r.f32()?],
-                        },
-                        2 => Cmd::ClearDepth {
-                            view: r.u32()?,
-                            flags: r.u32()?,
-                            depth: r.f32()?,
-                            stencil: r.u8()?,
-                        },
-                        3 => Cmd::UpdateBuffer {
-                            id: r.u32()?,
-                            offset: r.u32()?,
-                            data: r.blob()?,
-                        },
-                        4 => Cmd::CopyTexture {
-                            dst: r.u32()?,
-                            src: r.u32()?,
-                        },
-                        _ => return Err(DecodeError("command")),
-                    });
-                }
-                Self::Frame(Frame {
-                    number,
-                    width,
-                    height,
-                    cmds,
-                })
-            }
+            FRAME => Self::Frame(read_frame(&mut r)?),
+            EFFECTS => Self::Effects(read_frame(&mut r)?),
             _ => return Err(DecodeError("tag")),
         })
     }
+}
+
+fn write_frame(w: &mut Writer, f: &Frame) {
+    w.u32s(&[f.number, f.width, f.height]);
+    w.len_of(&f.cmds);
+    for c in &f.cmds {
+        match c {
+            Cmd::Draw(d) => {
+                w.u8(0);
+                d.write(w);
+            }
+            Cmd::ClearTarget { view, color } => {
+                w.u8(1);
+                w.u32(*view);
+                for v in color {
+                    w.f32(*v);
+                }
+            }
+            Cmd::ClearDepth {
+                view,
+                flags,
+                depth,
+                stencil,
+            } => {
+                w.u8(2);
+                w.u32s(&[*view, *flags]);
+                w.f32(*depth);
+                w.u8(*stencil);
+            }
+            Cmd::UpdateBuffer { id, offset, data } => {
+                w.u8(3);
+                w.u32s(&[*id, *offset]);
+                w.blob(data);
+            }
+            Cmd::CopyTexture { dst, src } => {
+                w.u8(4);
+                w.u32s(&[*dst, *src]);
+            }
+        }
+    }
+}
+
+fn read_frame(r: &mut Reader) -> Result<Frame, DecodeError> {
+    let [number, width, height] = r.u32s()?;
+    let n = r.u32()?;
+    let mut cmds = Vec::with_capacity(n as usize);
+    for _ in 0..n {
+        cmds.push(match r.u8()? {
+            0 => Cmd::Draw(Box::new(Draw::read(r)?)),
+            1 => Cmd::ClearTarget {
+                view: r.u32()?,
+                color: [r.f32()?, r.f32()?, r.f32()?, r.f32()?],
+            },
+            2 => Cmd::ClearDepth {
+                view: r.u32()?,
+                flags: r.u32()?,
+                depth: r.f32()?,
+                stencil: r.u8()?,
+            },
+            3 => Cmd::UpdateBuffer {
+                id: r.u32()?,
+                offset: r.u32()?,
+                data: r.blob()?,
+            },
+            4 => Cmd::CopyTexture {
+                dst: r.u32()?,
+                src: r.u32()?,
+            },
+            _ => return Err(DecodeError("command")),
+        });
+    }
+    Ok(Frame {
+        number,
+        width,
+        height,
+        cmds,
+    })
 }
 
 /// Splits a stream into messages.
@@ -868,6 +884,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(clippy::too_many_lines)] // one of each message
     fn messages_round_trip() {
         let draw = Draw {
             kind: DrawKind::Indexed,
@@ -943,6 +960,16 @@ mod tests {
                 scene: String::new(),
                 camera: None,
             },
+            Msg::Effects(Frame {
+                number: 4,
+                width: 1280,
+                height: 720,
+                cmds: vec![Cmd::UpdateBuffer {
+                    id: 3,
+                    offset: 8,
+                    data: vec![1, 2, 3],
+                }],
+            }),
             Msg::Frame(Frame {
                 number: 3,
                 width: 1280,

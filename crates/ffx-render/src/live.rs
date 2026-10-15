@@ -132,6 +132,7 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
         }
     };
     let mut last_frame = std::time::Instant::now();
+    let mut effect_msgs = 0u32;
     let mut frame_time = std::time::Duration::ZERO;
     loop {
         let mut head = [0u8; 8];
@@ -155,6 +156,26 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
         };
         let frame = match msg {
             ffx_gfx::Msg::Frame(frame) => frame,
+            ffx_gfx::Msg::Effects(effects) => {
+                effect_msgs += 1;
+                if effect_msgs % 600 == 1 {
+                    let draws = effects
+                        .cmds
+                        .iter()
+                        .filter(|c| matches!(c, ffx_gfx::Cmd::Draw(_)))
+                        .count();
+                    log(&format!(
+                        "effects {}: {} commands, {draws} draws",
+                        effects.number,
+                        effects.cmds.len()
+                    ));
+                }
+                if let Err(e) = enhanced.effects(&mut r, &effects) {
+                    log(&format!("effects {}: {e}", effects.number));
+                }
+                idle_from = std::time::Instant::now();
+                continue;
+            }
             ffx_gfx::Msg::Input {
                 width,
                 height,
@@ -185,6 +206,28 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
                 frame.cmds.len(),
                 r.world
             ));
+            log(&format!("  glow: {}", enhanced.glow.report));
+            for w in r.warnings.drain(..) {
+                log(&format!("  warning: {w}"));
+            }
+            // FFX_RENDER_GLOW_DUMP=DIR: the glow targets as PNGs.
+            if let Some(dir) = std::env::var_os("FFX_RENDER_GLOW_DUMP") {
+                let dir = std::path::PathBuf::from(dir);
+                for (k, id) in enhanced.glow.target_ids().into_iter().enumerate() {
+                    if let Ok((w, h, rgba)) = r.read_rgba(id) {
+                        let _ = std::fs::write(
+                            dir.join(format!("glow_{}_{k}.png", frame.number)),
+                            crate::png::encode(w, h, &rgba),
+                        );
+                    }
+                }
+            }
+            for f in &enhanced.glow.found {
+                log(&format!(
+                    "  glow light at {:?}, colour {:?}, intensity {:.2}, range {:.0}",
+                    f.light.position, f.light.color, f.light.intensity, f.light.range
+                ));
+            }
             for (f, n) in r.failures() {
                 log(&format!("  {n} x {f}"));
             }
@@ -253,7 +296,8 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
         };
         // Answer: frame, scene size, flags (1: overlay follows, 2: the scene
         // is in shared textures, 4: with a fence, 8: the game's afterimage
-        // off, 16: the overlay takes the keyboard), the scene's colour, normal and depth (or the shared
+        // off, 16: the overlay takes the keyboard, 32: send the glowing
+        // effects drawn after the scene), the scene's colour, normal and depth (or the shared
         // generation and set), then the overlay's size and pixels.
         let (w, h, mut data) = match shared {
             Some(s) => {
@@ -291,6 +335,11 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             | if enhanced.settings.afterimage { 0 } else { 8 }
             | if overlay_image.is_some() && overlay.wants_keys {
                 16
+            } else {
+                0
+            }
+            | if enhanced.settings.enabled && enhanced.settings.glow_lights {
+                32
             } else {
                 0
             };

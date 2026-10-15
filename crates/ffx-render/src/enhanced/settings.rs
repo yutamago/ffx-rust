@@ -83,6 +83,10 @@ pub struct Settings {
     /// Light from the game's effects (fire, magic) on what is around them.
     pub effect_light: bool,
     pub effect_light_strength: f32,
+    /// Point lights where the game's effects glow over the scene (save
+    /// spheres, lamps), found automatically.
+    pub glow_lights: bool,
+    pub glow_strength: f32,
     /// The enhanced water (reflections, refraction, light); off: the
     /// game's.
     pub water: bool,
@@ -215,6 +219,8 @@ impl Default for Settings {
             skin: 0.5,
             effect_light: true,
             effect_light_strength: 4.0,
+            glow_lights: true,
+            glow_strength: 1.0,
             water: true,
             water_reflection: 1.0,
             water_refraction: 0.04,

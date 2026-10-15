@@ -30,6 +30,7 @@ fn passes() {
         ("volumetric", VOLUMETRIC_WGSL),
         ("post", super::post::POST_WGSL),
         ("focus", super::post::FOCUS_WGSL),
+        ("glow", super::glow::GLOW_WGSL),
     ] {
         validate(name, source);
     }

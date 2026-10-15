@@ -50,6 +50,23 @@ struct Light {
     rt: vec4<f32>,
 };
 
+// A point or spot light (`lights.rs`).
+struct LocalLight {
+    // xyz: position, w: range (the light ends there, smoothly)
+    pos: vec4<f32>,
+    // rgb: colour × brightness (at 1 unit), w: 1 spot, 0 point
+    color: vec4<f32>,
+    // xyz: where a spot shines, w: cos of half its outer cone
+    dir: vec4<f32>,
+    // x: cos of half the inner cone, y: traced shadows, z: specular share
+    extra: vec4<f32>,
+};
+
+struct Lights {
+    count: vec4<f32>,
+    items: array<LocalLight, 64>,
+};
+
 struct Probes {
     count: vec4<f32>,
     pos: array<vec4<f32>, 2>,
@@ -65,6 +82,7 @@ struct Probes {
 @group(0) @binding(6) var shadow_samp: sampler_comparison;
 @group(0) @binding(7) var ao_tex: texture_2d<f32>;
 @group(0) @binding(8) var<storage, read> probes: Probes;
+@group(0) @binding(10) var<storage, read> lights: Lights;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -187,6 +205,44 @@ fn skin_weight(albedo: vec3<f32>) -> f32 {
         * smoothstep(5.0, 12.0, hue) * (1.0 - smoothstep(30.0, 38.0, hue));
 }
 
+// The light of the local lights at `p`: diffuse (soft wrap on characters,
+// as their key light) and highlights; shadows by rays where wanted.
+fn local_lights(p: vec3<f32>, n: vec3<f32>, v: vec3<f32>, albedo: vec3<f32>, rough: f32, character: bool, px: vec2<f32>) -> vec3<f32> {
+    var sum = vec3<f32>(0.0);
+    let count = u32(lights.count.x);
+    for (var i = 0u; i < count; i = i + 1u) {
+        let lt = lights.items[i];
+        let to = lt.pos.xyz - p;
+        let d2 = max(dot(to, to), 1e-4);
+        let d = sqrt(d2);
+        let x = d / max(lt.pos.w, 1e-3);
+        if (x >= 1.0) {
+            continue;
+        }
+        let l = to / d;
+        let window = pow(clamp(1.0 - x * x * x * x, 0.0, 1.0), 2.0);
+        // A source a couple of units across: no blow-out right next to it.
+        var amount = window / (d2 + 4.0);
+        if (lt.color.w > 0.5) {
+            amount = amount * smoothstep(lt.dir.w, lt.extra.x, dot(-l, normalize(lt.dir.xyz)));
+        }
+        let nl = max(dot(n, l), 0.0);
+        var shape = nl;
+        if (character) {
+            shape = mix(pow(dot(n, l) * 0.5 + 0.5, 2.0), nl, light.scenery.w);
+        }
+        if (amount * shape <= 1e-6) {
+            continue;
+        }
+        if (lt.extra.y > 0.5) {
+            amount = amount * rt_visible(p + n * 0.15, l, d - 0.5, px);
+        }
+        let radiance = lt.color.rgb * amount;
+        sum = sum + albedo * radiance * shape + radiance * nl * ggx(n, v, l, rough, 0.04) * lt.extra.z;
+    }
+    return sum;
+}
+
 @fragment
 fn fs(in: VsOut) -> @location(0) vec4<f32> {
     let px = vec2<i32>(in.pos.xy);
@@ -260,6 +316,8 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
         }
         color = albedo * (indirect * ao + direct + fill) + light.sun_color.rgb * light.sun.w * nl * shadow * spec;
     }
+    let local = local_lights(p, n, v, albedo, rough, character, in.pos.xy) * ao;
+    color = color + local;
     let debug = i32(light.splits.w);
     if (debug == 1) {
         return vec4<f32>(vec3<f32>(shadow * nl), 1.0);
@@ -278,6 +336,8 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
             return vec4<f32>(probe_light(p, n), 1.0);
         }
         return vec4<f32>(0.0);
+    } else if (debug == 9) {
+        return vec4<f32>(local, 1.0);
     } else if (debug == 6) {
         let dz = abs(dot(light.view_z, vec4<f32>(p, 1.0)));
         let c = select(select(select(vec3<f32>(1.0), vec3<f32>(0.2, 0.2, 1.0), dz < light.splits.z), vec3<f32>(0.2, 1.0, 0.2), dz < light.splits.y), vec3<f32>(1.0, 0.2, 0.2), dz < light.splits.x);

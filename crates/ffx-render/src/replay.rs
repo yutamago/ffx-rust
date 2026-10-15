@@ -196,7 +196,7 @@ fn index_bounds(
 /// sent bytes of: from the binding's offset to its last vertex.
 pub(crate) fn draw_vertex_bytes<'a>(
     r: &'a Renderer,
-    sent: &'a HashMap<Id, (u32, Vec<u8>)>,
+    sent: &'a Sent,
     d: &Draw,
     slot: u8,
 ) -> Option<&'a [u8]> {
@@ -232,21 +232,29 @@ pub(crate) fn draw_vertex_bytes<'a>(
 }
 
 /// The bytes a draw reads from an index buffer the frame sent bytes of.
-pub(crate) fn draw_index_bytes<'a>(
-    sent: &'a HashMap<Id, (u32, Vec<u8>)>,
-    d: &Draw,
-) -> Option<&'a [u8]> {
+pub(crate) fn draw_index_bytes<'a>(sent: &'a Sent, d: &Draw) -> Option<&'a [u8]> {
     let (ib, fmt, ioff) = d.index;
     let bytes = sent_bytes(sent, ib, ioff)?;
     let size = if fmt == 42 { 4 } else { 2 };
     bytes.get(..((d.start + d.count) as usize * size).min(bytes.len()))
 }
 
-/// The bytes the frame sent for a buffer, as seen from `offset` on.
-pub(crate) fn sent_bytes(sent: &HashMap<Id, (u32, Vec<u8>)>, id: Id, offset: u32) -> Option<&[u8]> {
-    let (at, data) = sent.get(&id)?;
-    let skip = offset.checked_sub(*at)? as usize;
-    data.get(skip..)
+/// What a frame sent of each buffer so far: (offset, bytes), oldest
+/// first (a ring buffer gets several ranges, one per stream of a draw).
+pub(crate) type Sent = HashMap<Id, Vec<(u32, Vec<u8>)>>;
+
+/// Notes bytes the frame sent.
+pub(crate) fn note_sent(sent: &mut Sent, id: Id, offset: u32, data: &[u8]) {
+    sent.entry(id).or_default().push((offset, data.to_vec()));
+}
+
+/// The bytes the frame sent for a buffer, as seen from `offset` on (the
+/// newest range that holds it).
+pub(crate) fn sent_bytes(sent: &Sent, id: Id, offset: u32) -> Option<&[u8]> {
+    sent.get(&id)?.iter().rev().find_map(|(at, data)| {
+        let skip = offset.checked_sub(*at)? as usize;
+        (skip < data.len()).then(|| &data[skip..])
+    })
 }
 
 /// Consecutive commands on the same targets.
@@ -806,7 +814,7 @@ impl Renderer {
         );
         let mut pending: Vec<Pending> = Vec::new();
         let mut draws_seen = 0usize;
-        let mut sent: HashMap<Id, (u32, Vec<u8>)> = HashMap::new();
+        let mut sent = Sent::new();
         let mut geom: Vec<u8> = Vec::new();
         let align = u64::from(self.device.limits().min_uniform_buffer_offset_alignment).max(16);
         for cmd in &frame.cmds {
@@ -814,7 +822,7 @@ impl Renderer {
                 Cmd::UpdateBuffer { id, offset, data } => {
                     // Kept for the draws that follow: the queue's writes
                     // would all land before any of this frame's draws.
-                    sent.insert(*id, (*offset, data.clone()));
+                    note_sent(&mut sent, *id, *offset, data);
                 }
                 Cmd::CopyTexture { dst, src } => passes.push(Pass::Copy {
                     dst: *dst,

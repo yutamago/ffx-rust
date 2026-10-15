@@ -40,6 +40,9 @@ static OVERLAY: AtomicBool = AtomicBool::new(false);
 /// The overlay takes the keyboard (a text field has focus, or the pointer
 /// is over a panel): the game's keyboard reads as released.
 static OVERLAY_KEYS: AtomicBool = AtomicBool::new(false);
+/// The renderer wants the glowing effects drawn after the scene (it makes
+/// lights of them).
+static WANT_EFFECTS: AtomicBool = AtomicBool::new(false);
 /// The renderer's settings turn the game's afterimage off.
 static NO_AFTERIMAGE: AtomicBool = AtomicBool::new(false);
 /// The pixel shader of the game's afterimage pass (by its bytecode hash):
@@ -446,6 +449,10 @@ struct Link {
     cmds: Vec<ffx_gfx::Cmd>,
     clears: Vec<ffx_gfx::Cmd>,
     scene: Option<Scene>,
+    /// The scene sent this frame, and the glowing effects the game has
+    /// drawn over it since (for the renderer at Present).
+    after: Option<Scene>,
+    effects: Vec<ffx_gfx::Cmd>,
     frame: u32,
     composite: Option<Composite>,
     shared: Option<SharedImages>,
@@ -559,6 +566,8 @@ pub fn start() {
                 cmds: Vec::new(),
                 clears: Vec::new(),
                 scene: None,
+                after: None,
+                effects: Vec::new(),
                 frame: 0,
                 composite: None,
                 shared: None,
@@ -808,11 +817,63 @@ fn draw_updates(link: &Link, s: &State, d: &ffx_gfx::Draw) -> Vec<ffx_gfx::Cmd> 
     out
 }
 
+/// Whether the bound state draws something glowing in the world: blending
+/// on, with the source or the destination taken whole (additive, or
+/// premultiplied glow), and tested against the scene's depth (what is not
+/// is drawn over everything: the map, menus).
+fn glows(s: &State) -> bool {
+    const ONE: u32 = 2;
+    let word = |b: &[u8], i: usize| {
+        b.get(i..i + 4)
+            .map_or(0, |w| u32::from_le_bytes(w.try_into().expect("4")))
+    };
+    // No state is the default: depth tested.
+    let tested = s.bound.depth == 0
+        || s.states
+            .get(&s.bound.depth)
+            .is_some_and(|(_, d)| word(d, 0) != 0);
+    tested
+        && s.states
+            .get(&s.bound.blend)
+            .is_some_and(|(_, b)| word(b, 8) != 0 && (word(b, 12) == ONE || word(b, 16) == ONE))
+}
+
+/// A draw after the scene went to the renderer: a glowing effect over the
+/// scene's colour against its depth is kept for the renderer (the game
+/// still draws it).
+fn effect(s: &mut State, d: Draw) {
+    let b = &s.bound;
+    if b.rtv[1] != 0 || b.dsv == 0 || !WANT_EFFECTS.load(Ordering::Relaxed) || !glows(s) {
+        return;
+    }
+    let Ok(mut guard) = LINK.lock() else { return };
+    let Some(link) = guard.as_mut() else { return };
+    if !link.alive
+        || !link
+            .after
+            .is_some_and(|sc| sc.color == b.rtv[0] && sc.depth == b.dsv)
+    {
+        return;
+    }
+    let streamed = capture::stream_draw(s, d);
+    let reborn = std::mem::take(&mut s.reborn);
+    for id in reborn {
+        link.sent.remove(&id);
+    }
+    for id in capture::draw_objects(&streamed).collect::<Vec<_>>() {
+        link.sync(s, id);
+    }
+    let updates = draw_updates(link, s, &streamed);
+    link.effects.extend(updates);
+    link.effects.push(ffx_gfx::Cmd::Draw(Box::new(streamed)));
+}
+
 /// A draw went to the context: scene draws are recorded for the renderer.
 pub fn draw(s: &mut State, d: Draw) -> bool {
     let b = &s.bound;
     // Scene draws: colour and normal targets with depth, nothing else.
     if b.rtv[0] == 0 || b.rtv[1] == 0 || b.rtv[2] != 0 || b.dsv == 0 {
+        effect(s, d);
         return false;
     }
     let scene = Scene {
@@ -907,6 +968,16 @@ pub unsafe fn present(s: &mut State, swap_chain: Ptr) {
     {
         finish(link, s, scene);
     }
+    if !link.effects.is_empty() && link.alive {
+        let cmds = std::mem::take(&mut link.effects);
+        link.send(&ffx_gfx::Msg::Effects(ffx_gfx::Frame {
+            number: link.frame,
+            width: 0,
+            height: 0,
+            cmds,
+        }));
+    }
+    link.after = None;
     if OVERLAY.load(Ordering::Acquire) && !link.answered && link.alive {
         // No scene this frame: ask for the overlay alone.
         link.frame += 1;
@@ -941,6 +1012,8 @@ pub unsafe fn present(s: &mut State, swap_chain: Ptr) {
 #[allow(clippy::too_many_lines)] // send, answer, composite, report
 fn finish(link: &mut Link, s: &mut State, scene: Scene) {
     let t0 = std::time::Instant::now();
+    link.after = Some(scene);
+    link.effects.clear();
     link.frame += 1;
     let mut cmds = Vec::new();
     // The scene targets' clears first, then the draws.
@@ -1189,6 +1262,7 @@ fn receive(link: &mut Link, frame: u32) -> Option<Reply> {
         }
         if number == frame {
             OVERLAY_KEYS.store(flags & 16 != 0, Ordering::Release);
+            WANT_EFFECTS.store(flags & 32 != 0, Ordering::Relaxed);
             return Some(Reply {
                 width: w,
                 height: h,

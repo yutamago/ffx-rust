@@ -47,6 +47,9 @@ fn replay(args: &[String]) -> Result<()> {
     let mut filter = ffx_render::Filter::default();
     let mut dump = Vec::new();
     let mut enhanced = false;
+    // Lights from the frame's glowing effects (found as live, then the
+    // frame drawn again with them).
+    let mut glow = false;
     let mut game: Option<PathBuf> = None;
     let mut sets: Vec<String> = Vec::new();
     let mut materials: Option<PathBuf> = None;
@@ -59,6 +62,7 @@ fn replay(args: &[String]) -> Result<()> {
                 i += 1;
             }
             "--enhanced" => enhanced = true,
+            "--glow" => glow = true,
             "--game" => {
                 game = Some(PathBuf::from(args.get(i + 1).context("DIR")?));
                 i += 1;
@@ -124,8 +128,34 @@ fn replay(args: &[String]) -> Result<()> {
                 }
             }
         }
+        if let ffx_gfx::Msg::World { scene, camera } = &m {
+            println!("world: {scene:?}, camera {camera:?}");
+        }
         match (&mut e, m) {
-            (Some(e), ffx_gfx::Msg::Frame(f)) => e.render_until(&mut r, &f, filter.until)?,
+            (Some(e), ffx_gfx::Msg::Frame(f)) => {
+                e.render_until(&mut r, &f, filter.until)?;
+                if glow {
+                    let fx = ffx_render::enhanced::Enhanced::glowing_effects(&r, &f);
+                    println!("glowing effects: {} commands", fx.cmds.len());
+                    e.effects(&mut r, &fx)?;
+                    r.device.poll(wgpu::PollType::wait_indefinitely())?;
+                    e.effects(&mut r, &fx)?;
+                    println!("glow: {}", e.glow.report);
+                    for g in &e.glow.found {
+                        println!("  light {:?}", g.light);
+                    }
+                    e.render_until(&mut r, &f, filter.until)?;
+                    for (k, id) in e.glow.target_ids().into_iter().enumerate() {
+                        if let Ok((w, h, rgba)) = r.read_rgba(id) {
+                            std::fs::create_dir_all(&out)?;
+                            std::fs::write(
+                                out.join(format!("glow_{k}.png")),
+                                ffx_render::png::encode(w, h, &rgba),
+                            )?;
+                        }
+                    }
+                }
+            }
             (_, m) => r.apply(m, &filter)?,
         }
     }

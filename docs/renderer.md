@@ -35,6 +35,15 @@ view-space normal) with a depth buffer. Once the renderer answers frames
 reliably the game skips those draws (`FFX_RENDERER_SKIP=0` keeps them);
 after a missed answer it draws them again.
 
+Before each frame goes a `World` message: the scene (the name of the last
+event file the game opened, e.g. `cdsp0000` on the S.S. Winno deck) and
+the camera's eye and look-at point from `g_Camera`. At Present, when the
+renderer asks for them (answer flag 32), an `Effects` message carries the
+glowing effects the game drew after the scene went out: draws into the
+scene colour against its depth, depth-tested, blending with the source or
+the destination whole (save spheres, lamps, light beams). The game still
+draws those itself.
+
 ## The image handed back
 
 The renderer runs on Direct3D 12 (`FFX_RENDER_BACKEND=vulkan` for
@@ -81,7 +90,11 @@ Passes, in order:
    get the map's key and fill light with the game's soft wrap, light from
    the probes, and skin scattering on skin-coloured parts. Shadows are
    ray-traced from the scenery where possible, from the cascades
-   otherwise.
+   otherwise. Local lights add to both: point and spot lights
+   (`lights.rs`, up to 64, brightness given at 10 units and falling with
+   the square of the distance over a source two units across, ending
+   smoothly at their range), from the editor and from the glows, with
+   ray-traced shadows where rays are on.
 7. **Water**: the game's water draws, with its two normal maps, its cube
    map tinted as the game tints it, screen-space reflection, refraction
    with absorption, and the game's opacity.
@@ -106,6 +119,16 @@ Passes, in order:
     passes run at `render_scale`), with sharpening.
 13. **Effect light**: the game's additive effect draws (fire, magic) drawn
     once more onto black, blurred wide, light the surfaces around them.
+
+**Glow lights** (`glow.rs`): the `Effects` of a frame are drawn again
+alone, against the scene's depth and for their own nearest depth;
+`glow.wgsl` sums per 32×32 tile the light, its position and the world
+area its pixels cover. A frame later the tiles are read back, tiles within
+12 units become one point light (its colour the glow's, its brightness by
+light × area, so it does not depend on distance), and lights found again
+within 15 units ease toward the new figures. A light stays while the
+scene lasts, off screen too; where it should show and no glow is found,
+it fades. A new scene forgets them.
 
 Then the game's own draws for the rest of the frame. On many maps these
 include the game's afterimage: the scene times a colour whose alpha is

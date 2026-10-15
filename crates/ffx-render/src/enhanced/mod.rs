@@ -7,6 +7,8 @@
 //! (water, painted backdrops, transparent effects, unknown shaders) go
 //! through the game's own shaders afterwards, as in the original path.
 
+pub mod glow;
+pub mod lights;
 pub mod math;
 mod post;
 mod settings;
@@ -57,9 +59,25 @@ fn rt_shadow(p: vec3<f32>, n: vec3<f32>, l: vec3<f32>, px: vec2<f32>, size: f32,
     }
     return 1.0;
 }
+// Whether nothing of the scenery is within `far` of `o` along `dir`.
+fn rt_visible(o: vec3<f32>, dir: vec3<f32>, far: f32, px: vec2<f32>) -> f32 {
+    if (far <= 0.05) {
+        return 1.0;
+    }
+    var rq: ray_query;
+    rayQueryInitialize(&rq, scene_as, RayDesc(RAY_FLAG_TERMINATE_ON_FIRST_HIT, 0xffu, 0.02, far, o, dir));
+    rayQueryProceed(&rq);
+    if (rayQueryGetCommittedIntersection(&rq).kind != RAY_QUERY_INTERSECTION_NONE) {
+        return 0.0;
+    }
+    return 1.0;
+}
 ";
 /// … and without.
 const NO_RT_WGSL: &str = "fn rt_shadow(p: vec3<f32>, n: vec3<f32>, l: vec3<f32>, px: vec2<f32>, size: f32, frame: f32) -> f32 {
+    return 1.0;
+}
+fn rt_visible(o: vec3<f32>, dir: vec3<f32>, far: f32, px: vec2<f32>) -> f32 {
     return 1.0;
 }
 ";
@@ -322,6 +340,12 @@ pub struct Enhanced {
     gbuffer_layout: wgpu::PipelineLayout,
     lighting: (wgpu::RenderPipeline, wgpu::BindGroupLayout),
     probes: ProbeTargets,
+    /// The local lights of this frame (`lights::pack`).
+    light_buffer: wgpu::Buffer,
+    /// Local lights from the editor (scene and global), this frame.
+    pub lights: Vec<lights::Light>,
+    /// Lights found in the game's glowing effects.
+    pub glow: glow::Glow,
     /// The device traces rays; the scenery's structures by draw.
     rt: bool,
     blas_cache: HashMap<BlasKey, CachedBlas>,
@@ -1039,6 +1063,14 @@ impl Enhanced {
                         vertex_return: false,
                     },
                 )))
+                .chain([(
+                    10,
+                    wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(lights::SIZE as u64),
+                    },
+                )])
                 .collect::<Vec<_>>(),
                 S::FRAGMENT,
             ),
@@ -1275,6 +1307,14 @@ impl Enhanced {
             water_layouts: (water_layout, water_scene_layout, water_pipeline_layout),
             water_pipelines: HashMap::new(),
             probes: probe_targets(device),
+            light_buffer: device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("local lights"),
+                size: lights::SIZE as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }),
+            lights: Vec::new(),
+            glow: glow::Glow::new(device),
             rt,
             blas_cache: HashMap::new(),
             tlas: None,
@@ -2422,7 +2462,7 @@ impl Enhanced {
         self.targets(&device, internal);
         // Split the frame: enhanced items, and the rest for the game's
         // shaders (kept in order).
-        let mut sent: HashMap<Id, (u32, Vec<u8>)> = HashMap::new();
+        let mut sent = crate::replay::Sent::new();
         let mut geom: Vec<u8> = Vec::new();
         let mut items = Vec::new();
         let mut waters = Vec::new();
@@ -2430,7 +2470,7 @@ impl Enhanced {
         for c in &frame.cmds {
             match c {
                 Cmd::UpdateBuffer { id, offset, data } => {
-                    sent.insert(*id, (*offset, data.clone()));
+                    crate::replay::note_sent(&mut sent, *id, *offset, data);
                     rest.push(c.clone());
                 }
                 Cmd::ClearTarget { .. } | Cmd::ClearDepth { .. } => {}
@@ -3568,6 +3608,17 @@ impl Enhanced {
         }
         // Lighting.
         {
+            let glows = self.settings.glow_lights;
+            queue.write_buffer(
+                &self.light_buffer,
+                0,
+                &lights::pack(
+                    self.lights
+                        .iter()
+                        .chain(self.glow.lights().filter(|_| glows)),
+                    traced_on,
+                ),
+            );
             let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: None,
                 layout: &self.lighting.1,
@@ -3622,6 +3673,10 @@ impl Enhanced {
                     binding: 9,
                     resource: wgpu::BindingResource::AccelerationStructure(tl),
                 }))
+                .chain([wgpu::BindGroupEntry {
+                    binding: 10,
+                    resource: self.light_buffer.as_entire_binding(),
+                }])
                 .collect::<Vec<_>>(),
             });
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -4002,6 +4057,67 @@ impl Enhanced {
             self.effect_light(r, &rest, color_view)?;
         }
         r.draw_frame(&rest, &Filter::default())
+    }
+
+    /// The glowing effects the game drew over the last frame
+    /// (`Msg::Effects`): lights are found in them.
+    ///
+    /// # Errors
+    /// When they cannot be drawn.
+    pub fn effects(&mut self, r: &mut Renderer, frame: &Frame) -> Result<()> {
+        self.glow.scene(&r.world.scene);
+        let _ = r.device.poll(wgpu::PollType::Poll);
+        let Some((view_proj, _)) = self.last_view_proj else {
+            return Ok(());
+        };
+        if !(self.settings.enabled && self.settings.glow_lights) {
+            return Ok(());
+        }
+        self.glow
+            .effects(r, frame, &view_proj, self.settings.glow_strength)
+    }
+
+    /// The glowing effects of a captured frame, as the hook picks them
+    /// live (`Msg::Effects`): after the scene, into its colour against its
+    /// depth, adding light (for replays).
+    #[must_use]
+    pub fn glowing_effects(r: &Renderer, frame: &Frame) -> Frame {
+        let scene = frame.cmds.iter().find_map(|c| match c {
+            Cmd::Draw(d) if d.rtv.len() >= 2 && d.dsv != 0 => Some((d.rtv[0].1, d.dsv)),
+            _ => None,
+        });
+        let mut cmds = Vec::new();
+        let mut after = false;
+        for c in &frame.cmds {
+            match c {
+                Cmd::UpdateBuffer { .. } if after => cmds.push(c.clone()),
+                Cmd::Draw(d) => {
+                    if d.rtv.len() >= 2 {
+                        continue;
+                    }
+                    after = true;
+                    let glows = formats::blend(r.state(d.blend, StateKind::Blend), 0)
+                        .0
+                        .is_some_and(|b| {
+                            b.color.dst_factor == wgpu::BlendFactor::One
+                                || b.color.src_factor == wgpu::BlendFactor::One
+                        });
+                    let tested = r
+                        .state(d.depth, StateKind::Depth)
+                        .is_none_or(|b| b.get(..4).is_some_and(|w| w != [0; 4]));
+                    if Some((d.rtv.first().map_or(0, |x| x.1), d.dsv)) == scene && glows && tested {
+                        cmds.push(c.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        Frame {
+            number: frame.number,
+            width: frame.width,
+            height: frame.height,
+            cmds,
+        }
     }
 
     /// Whether a draw adds light: blended with the target, adding.
