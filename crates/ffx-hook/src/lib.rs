@@ -93,6 +93,8 @@ pub mod harness;
 mod iat;
 pub mod log;
 #[cfg(all(windows, target_arch = "x86"))]
+pub mod minimap;
+#[cfg(all(windows, target_arch = "x86"))]
 pub mod mods;
 #[cfg(all(windows, target_arch = "x86"))]
 mod patch;
@@ -107,7 +109,7 @@ pub use patch::{check_build, install};
 /// The hook table.
 #[cfg(all(windows, target_arch = "x86"))]
 #[must_use]
-pub fn hooks() -> [Hook; 9] {
+pub fn hooks() -> [Hook; 10] {
     [
         Hook {
             name: "zlib_uncompress",
@@ -169,6 +171,15 @@ pub fn hooks() -> [Hook; 9] {
             prologue: &[0x55, 0x8b, 0xec, 0x83, 0xec, 0x20],
             replacement: gfx::live::cam_update as *const () as usize,
             original: Some(&gfx::live::CAM_UPDATE_ORIGINAL),
+            steal: 0,
+        },
+        Hook {
+            name: "Guide_Update",
+            address: 0x0091_da80,
+            // push ebx; mov ebx, esp; sub esp, 8
+            prologue: &[0x53, 0x8b, 0xdc, 0x83, 0xec, 0x08],
+            replacement: minimap::guide_update as *const () as usize,
+            original: Some(&minimap::ORIGINAL),
             steal: 0,
         },
         Hook {

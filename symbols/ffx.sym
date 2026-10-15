@@ -433,6 +433,7 @@
 0x0086a830 function Script_GetWorker          # worker index -> worker object (0xb58/0x558/0x5b8 sizes)
 0x0086ae50 function Script_WorkerCamSlot         # (worker) -> worker + 0x3c (camera handle cache of group 6 natives)
 0x0086ae80 function Script_WorkerChr             # (worker) -> field character object (worker + 0x9c); used by every chr native of group 5
+0x0086b710 function Minimap_MarkerCount          # () -> count of field minimap markers Minimap_GetWorkerMarker reads; Guide_Update loops over them
 0x0086b740 function Minimap_GetWorkerMarker      # (index, &out): worker marker from the script's tag table (+0x2c -> +0x18) or worker +0xbc override; flags 0x800, 0x2000, icon >> 4; used by 0x0091da80 and the debug list 0x00881be0
 0x0086ba90 function Msg_TextAlt                # (i): entry i's alternate text (+4) in the event's message table (script context +0x34); offset 0 falls back to the .ebp's own table (0x023cbd60)
 0x0086be90 function Msg_Window                   # (i): message window i (<0 or >7 clamped), 0x2c bytes at 0x01326d70 + (i + *0x01326b82*8)*0x2c
@@ -487,6 +488,7 @@
 0x008b70a0 function MacroDic_Section             # (n, table) -> *(macrodic table + (n - 19) * 4)
 0x008b85c0 function MacroDic_Load                # Msg_LoadFile("macrodic"): 16 section offsets -> pointers in g_MacroDic
 0x008c6920 function Cmd_HealAmount            # formula +0x28: 6 = power*50, 7 = (stat+power)/2*power, 8 = maxHP*power/16; power +0x2a
+0x00919d00 function Guide_Frame                  # per field frame: Guide_Update(*(0x0193bf80 + 4), show), the guide object of the minimap (Native_MinimapSetCorner)
 0x0091b070 function Native_FpBind                # 0x8009: args (fp id, bone) -> 1; Fp_BindToWorker(worker, id, bone); bone often from func 0x0213
 0x0091b0a0 function Native_FpBindPos             # 0x800a: args (fp id, x, y, z) -> 1; debug "**** mpfpbindpos id:%d pos:%f,%f,%f"; 0x00862920 sets the bound effect's offset (0x0072a630)
 0x0091b130 function Native_FpUnbind              # 0x800b: args (fp id; <= 0 = all) -> 1; 0x008628a0 clears the worker's FP slots (0x0072a120)
@@ -497,6 +499,11 @@
 0x0091c740 function Native_FpShow                # 0x800d: args (fp id, show) -> show; show != 0: Fp_Show, 0: Fp_Hide
 0x0091c7a0 function Native_FpRunMode2            # ?0x8003: args (fp id) -> 1; Fp_RestartMode2 (state 2)
 0x0091c810 function Native_BltzSetObjModels      # ?0x8067: args (worker a, worker b, mode, unused) -> 1; Blitzball only (bltz000x); first map object of type 0x20008 gets both workers' models (+0x9c via 0x0086b3a0) and mode (0x00922ef0)
+0x0091d280 function Guide_FadeStep               # (show): steps the minimap's fade g_GuideFade toward shown (128) or hidden (0)
+0x0091d3a0 function Guide_FadeOff                # (): minimap hidden at once (g_GuideFade = 0); Guide_Update when g_GuideFlags bit 0 is clear
+0x0091d460 function Guide_MeshObject             # (guide) -> the minimap mesh object: guide +0 (the map's own, MAP1 chunk 0xb), else guide +8 (made from the walkmesh)
+0x0091da80 function Guide_Update                 # cdecl (guide, show): the field minimap: fade (Guide_FadeStep), markers (Minimap_GetWorkerMarker; flags 0xf palette, 0x100 square, 0x200 triangle, 0x20000 diamond, 0x10000 exit line, 0x400 ring, 0x1000 blink, 0x800 player, 0x2000 destination), fog of war (Guide_RevealFog when guide +0x70), blink counter guide +0x74, mesh drawn by 0x00928020; nothing when g_GuideEnabled is 0
+0x0091f420 function Guide_RevealFog              # (guide, x, z): clears the fog of war around the player (four maps, g_SaveData + 0x350c)
 0x00a42830 function Cd_FileName                # cdecl(number) -> "host0:/ffx/master/..." path of a PS2 file of the current module
 0x00a428a0 function CdFileSize_PC              # cdecl(number): size from sizetbl.bin, or the real file for some modules ("CDfileSize_PC: MISSING?")
 0x00a77b30 function Native_FootSetMaterial       # 0x403b (index, material) -> 0; footstep material table 0x01301af8[set 0x01301b00 * 4 + index] = material (read by 0x0083d7e0)
@@ -549,6 +556,10 @@
 0x00a7a6a0 function Native_ChrRefreshAllBones    # 0x5087: no args -> 0; Chr_RequestBoneUpdateAll; ?one-time skeleton refresh of every chr
 0x00a7a780 function Native_ChrPlayMotion2        # 0x5042: same body as 0x501a (Native_PlayMotionCommon mode 1)
 0x00a7aae0 function Native_PlayMotionCommon      # (ctx, args, mode, other worker): pops end, start, loops, unused, motion (+ worker); mode 0/1/2 -> Chr_PlayMotionMarks/Chr_PlayMotion/Chr_PlayMotionInclEnd; per-map hacks set chr +0x870
+0x00c5e350 label    g_GuideFlags                 # bit 0: the minimap may show (clear: Guide_FadeOff)
+0x00c5e370 label    g_GuideMarkerPalette         # 16 RGBA of floats (128 = 1), by marker flags & 0xf
+0x00c5e478 label    g_GuideEnabled               # 0: Guide_Update returns at once
+0x00c5e790 label    g_GuidePacketStrides         # bytes per primitive of the minimap mesh's packet types 0-7 (0x14 0x1c 0x20 0x28 0x18 0x20 0x28 0x30); type 0: triangles, vertex indices at +0xc
 0x00cc9698 label    g_BasePath
 0x00cc9c48 label    g_FileSys
 0x00cc9cf5 label    g_SteamReady              # guards every other Steam call (achievements, RunCallbacks)
@@ -586,6 +597,7 @@
 0x0134084c label    g_PauseEntered               # 1 once Pause_Enter ran
 0x01869ab0 label    g_MsgVars                    # per window 32 pointers to text variable records {u8 default type, u8 type, i32 value}; text code 0x12
 0x01869eb0 label    g_MacroDic                   # macrodic section pointer table (MacroDic_Load)
+0x0193bf78 label    g_GuideFade                  # the minimap's alpha, 0..128 (Guide_FadeStep)
 0x022fb504 label    g_Settings
 0x02310c40 label    g_CdLib                   # function table of the PS2 CD-library emulation
 0x02311428 label    g_CamOverrideScreenDepth     # override projection distance (default 1024.0; Native_CamSetScreenDepth's units)

@@ -23,6 +23,7 @@ pub mod freecam;
 pub mod gizmo;
 #[cfg(windows)]
 pub mod live;
+pub mod minimap;
 pub mod overlay;
 pub mod png;
 pub mod profiles;
@@ -252,7 +253,7 @@ impl Renderer {
             Msg::Frame(frame) => self.draw_frame(&frame, filter)?,
             // Overlay input is the live loop's, glowing effects the enhanced
             // renderer's (lights).
-            Msg::Input { .. } | Msg::Effects(_) => {}
+            Msg::Input { .. } | Msg::Effects(_) | Msg::Minimap(_) => {}
             Msg::World { scene, camera } => self.world = World { scene, camera },
         }
         Ok(())

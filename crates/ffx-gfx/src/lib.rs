@@ -225,6 +225,45 @@ pub enum Msg {
     /// went to the renderer (additive draws into the scene colour against
     /// its depth), sent at Present: the renderer finds lights in them.
     Effects(Frame),
+    /// The game's field minimap as its update left it this frame (the
+    /// hook draws none of it when the renderer draws its own).
+    Minimap(Minimap),
+}
+
+/// The field minimap's state, in the game's space (ground x/z, y down).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Minimap {
+    /// Its fade, 0 (hidden) to 1.
+    pub shown: f32,
+    pub player: [f32; 3],
+    /// Radians, from +x toward +z.
+    pub yaw: f32,
+    pub markers: Vec<MapMarker>,
+    /// The map's mesh, when it changed since the last message.
+    pub mesh: Option<MapMesh>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct MapMarker {
+    /// The game's marker flags (`Minimap_GetWorkerMarker`): colour, shape,
+    /// player, edge pointer, line.
+    pub flags: u32,
+    /// Its colour (the game's palette for the flags' colour index), 0–1.
+    pub color: [f32; 4],
+    pub pos: [f32; 3],
+    /// A line marker's ends (x, z, x, z): exits and triggers.
+    pub line: Option<[f32; 4]>,
+}
+
+/// The guide map's mesh: vertices (i16 x, y, z), triangles, and the
+/// matrix that takes vertices to the world (as the game stores it, 16
+/// floats).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct MapMesh {
+    pub id: u32,
+    pub matrix: [f32; 16],
+    pub vertices: Vec<[i16; 3]>,
+    pub triangles: Vec<[u16; 3]>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -340,6 +379,7 @@ const FRAME: u32 = 10;
 const INPUT: u32 = 11;
 const WORLD: u32 = 12;
 const EFFECTS: u32 = 13;
+const MINIMAP: u32 = 14;
 
 fn slots_u8(w: &mut Writer, v: &[(u8, Id)]) {
     w.len_of(v);
@@ -624,6 +664,54 @@ impl Msg {
                 write_frame(&mut w, f);
                 EFFECTS
             }
+            Self::Minimap(m) => {
+                w.f32(m.shown);
+                for v in m.player {
+                    w.f32(v);
+                }
+                w.f32(m.yaw);
+                w.len_of(&m.markers);
+                for k in &m.markers {
+                    w.u32(k.flags);
+                    for v in k.color.iter().chain(&k.pos) {
+                        w.f32(*v);
+                    }
+                    match k.line {
+                        Some(l) => {
+                            w.u8(1);
+                            for v in l {
+                                w.f32(v);
+                            }
+                        }
+                        None => w.u8(0),
+                    }
+                }
+                match &m.mesh {
+                    Some(mesh) => {
+                        w.u8(1);
+                        w.u32(mesh.id);
+                        for v in mesh.matrix {
+                            w.f32(v);
+                        }
+                        let vb: Vec<u8> = mesh
+                            .vertices
+                            .iter()
+                            .flatten()
+                            .flat_map(|v| v.to_le_bytes())
+                            .collect();
+                        w.blob(&vb);
+                        let tb: Vec<u8> = mesh
+                            .triangles
+                            .iter()
+                            .flatten()
+                            .flat_map(|v| v.to_le_bytes())
+                            .collect();
+                        w.blob(&tb);
+                    }
+                    None => w.u8(0),
+                }
+                MINIMAP
+            }
         };
         out.extend_from_slice(&tag.to_le_bytes());
         out.extend_from_slice(
@@ -775,6 +863,65 @@ impl Msg {
             }
             FRAME => Self::Frame(read_frame(&mut r)?),
             EFFECTS => Self::Effects(read_frame(&mut r)?),
+            MINIMAP => {
+                let shown = r.f32()?;
+                let player = [r.f32()?, r.f32()?, r.f32()?];
+                let yaw = r.f32()?;
+                let n = r.u32()? as usize;
+                let mut markers = Vec::with_capacity(n.min(4096));
+                for _ in 0..n {
+                    let flags = r.u32()?;
+                    let color = [r.f32()?, r.f32()?, r.f32()?, r.f32()?];
+                    let pos = [r.f32()?, r.f32()?, r.f32()?];
+                    let line = if r.u8()? == 0 {
+                        None
+                    } else {
+                        Some([r.f32()?, r.f32()?, r.f32()?, r.f32()?])
+                    };
+                    markers.push(MapMarker {
+                        flags,
+                        color,
+                        pos,
+                        line,
+                    });
+                }
+                let mesh = if r.u8()? == 0 {
+                    None
+                } else {
+                    let id = r.u32()?;
+                    let mut matrix = [0.0f32; 16];
+                    for v in &mut matrix {
+                        *v = r.f32()?;
+                    }
+                    let vb = r.blob()?;
+                    let tb = r.blob()?;
+                    let vertices = vb
+                        .as_chunks::<6>()
+                        .0
+                        .iter()
+                        .map(|c| [0, 2, 4].map(|o| i16::from_le_bytes([c[o], c[o + 1]])))
+                        .collect();
+                    let triangles = tb
+                        .as_chunks::<6>()
+                        .0
+                        .iter()
+                        .map(|c| [0, 2, 4].map(|o| u16::from_le_bytes([c[o], c[o + 1]])))
+                        .collect();
+                    Some(MapMesh {
+                        id,
+                        matrix,
+                        vertices,
+                        triangles,
+                    })
+                };
+                Self::Minimap(Minimap {
+                    shown,
+                    player,
+                    yaw,
+                    markers,
+                    mesh,
+                })
+            }
             _ => return Err(DecodeError("tag")),
         })
     }
@@ -976,6 +1123,31 @@ mod tests {
                 scene: String::new(),
                 camera: None,
             },
+            Msg::Minimap(Minimap {
+                shown: 0.5,
+                player: [1.0, 2.0, 3.0],
+                yaw: 0.25,
+                markers: vec![
+                    MapMarker {
+                        flags: 0x800,
+                        color: [1.0, 1.0, 0.5, 1.0],
+                        pos: [1.0, 0.0, 2.0],
+                        line: None,
+                    },
+                    MapMarker {
+                        flags: 0x10003,
+                        color: [0.0, 0.5, 1.0, 1.0],
+                        pos: [4.0, 0.0, 5.0],
+                        line: Some([1.0, 2.0, 3.0, 4.0]),
+                    },
+                ],
+                mesh: Some(MapMesh {
+                    id: 7,
+                    matrix: [1.0; 16],
+                    vertices: vec![[1, -2, 3], [4, 5, -6]],
+                    triangles: vec![[0, 1, 0]],
+                }),
+            }),
             Msg::Effects(Frame {
                 number: 4,
                 width: 1280,

@@ -22,6 +22,7 @@ pub fn log(line: &str) {
 /// vectored exception handler that notes faults (access violations,
 /// illegal instructions, stack overflows, fail-fast) with where they
 /// happened, then lets the game's own handling go on.
+#[cfg(windows)]
 pub fn install_diagnostics() {
     use windows_sys::Win32::System::Diagnostics::Debug::AddVectoredExceptionHandler;
     std::panic::set_hook(Box::new(|info| {
@@ -31,6 +32,7 @@ pub fn install_diagnostics() {
     unsafe { AddVectoredExceptionHandler(1, Some(fault)) };
 }
 
+#[cfg(windows)]
 unsafe extern "system" fn fault(
     info: *mut windows_sys::Win32::System::Diagnostics::Debug::EXCEPTION_POINTERS,
 ) -> i32 {
@@ -55,6 +57,7 @@ unsafe extern "system" fn fault(
 }
 
 /// The module holding `at`, and the offset in it.
+#[cfg(windows)]
 fn module_at(at: usize) -> String {
     use windows_sys::Win32::System::LibraryLoader::{
         GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,

@@ -635,6 +635,12 @@ pub struct Overlay {
     pub editor: crate::editor::Editor,
     /// The free camera.
     pub freecam: crate::freecam::FreeCam,
+    /// The minimap (the HUD, shown with the panels hidden too), and where
+    /// the camera looks (render space).
+    pub map: crate::minimap::Map,
+    /// Where the camera looks and its screen right (render space).
+    pub forward: [f32; 3],
+    pub right: [f32; 3],
     /// The sequence editor's picture of a recorded frame is registered
     /// (drawn under everything).
     scene_shown: bool,
@@ -668,6 +674,9 @@ impl Overlay {
                 file.parent().unwrap_or_else(|| std::path::Path::new(".")),
             ),
             freecam: crate::freecam::FreeCam::default(),
+            map: crate::minimap::Map::default(),
+            forward: [0.0, 0.0, 1.0],
+            right: [1.0, 0.0, 0.0],
             scene_shown: false,
             preview: false,
         }
@@ -762,12 +771,18 @@ impl Overlay {
 
     /// The overlay is hidden: the game drops its image, so all of it goes
     /// when it shows again.
+    /// The panels are hidden: the overlay cannot resume the game, so it
+    /// goes on.
     pub fn hidden(&mut self) {
-        self.painter.dirty = true;
-        self.painter.pending = None;
-        // Hidden, the overlay cannot resume the game: it goes on.
         self.editor.paused = false;
         self.editor.playing = false;
+    }
+
+    /// The layer (panels and HUD) is off: the game drops its image, so
+    /// all of it goes when it shows again.
+    pub fn layer_off(&mut self) {
+        self.painter.dirty = true;
+        self.painter.pending = None;
     }
 
     /// Runs the panel over a `size` screen; returns the part of the image
@@ -775,6 +790,7 @@ impl Overlay {
     ///
     /// # Errors
     /// When painting fails.
+    #[allow(clippy::too_many_lines)] // the input, the HUD, the panels, the painting
     pub fn frame(
         &mut self,
         device: &wgpu::Device,
@@ -828,8 +844,29 @@ impl Overlay {
         let free = &mut self.freecam;
         io.preview = self.preview;
         let scene_shown = self.scene_shown;
+        let panels = self.visible;
+        let map = &mut self.map;
+        let axes = (self.forward, self.right);
+        let style = settings.minimap.then_some(crate::minimap::Style {
+            size: settings.minimap_size,
+            range: settings.minimap_range,
+            opacity: settings.minimap_opacity,
+        });
         let out = self.ctx.run_ui(input, |ui| {
             let ctx = ui.ctx().clone();
+            // The HUD: the minimap (under the panels).
+            if let Some(style) = style
+                && !scene_shown
+            {
+                let hud = ctx.layer_painter(egui::LayerId::new(
+                    egui::Order::Background,
+                    egui::Id::new("hud"),
+                ));
+                map.draw(&hud, ctx.content_rect(), axes, style);
+            }
+            if !panels {
+                return;
+            }
             if scene_shown {
                 ctx.layer_painter(egui::LayerId::background()).image(
                     SCENE,
@@ -861,9 +898,10 @@ impl Overlay {
             );
         });
         // The free camera takes the keys (W, A, S, D, Q, E) from the game.
-        self.wants_keys = self.ctx.egui_wants_keyboard_input()
-            || self.ctx.is_pointer_over_egui()
-            || self.freecam.on;
+        self.wants_keys = panels
+            && (self.ctx.egui_wants_keyboard_input()
+                || self.ctx.is_pointer_over_egui()
+                || self.freecam.on);
         for a in actions {
             self.act(a, settings);
         }
@@ -1463,6 +1501,16 @@ fn settings_ui(ui: &mut egui::Ui, e: &mut Ed) {
             );
             check(ui, f!(e.motion_blur_camera), "From camera motion too");
         }
+    });
+    egui::CollapsingHeader::new("Minimap").show(ui, |ui| {
+        check(
+            ui,
+            f!(e.minimap),
+            "The renderer's minimap (off: the game's)",
+        );
+        slider(ui, f!(e.minimap_size), "size", 0.1..=0.5);
+        slider(ui, f!(e.minimap_range), "range (world units)", 40.0..=800.0);
+        slider(ui, f!(e.minimap_opacity), "opacity", 0.1..=1.0);
     });
     egui::CollapsingHeader::new("Debug").show(ui, |ui| {
         row(ui, f!(e.debug_view), |ui, v| {

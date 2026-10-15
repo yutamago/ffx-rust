@@ -47,6 +47,9 @@ static WANT_EFFECTS: AtomicBool = AtomicBool::new(false);
 static NO_AFTERIMAGE: AtomicBool = AtomicBool::new(false);
 /// The renderer has the game paused (its sequence editor; `game_pause`).
 static PAUSED: AtomicBool = AtomicBool::new(false);
+/// The renderer's layer (the overlay's image) shows though the overlay's
+/// panels are hidden: its HUD (the minimap).
+static LAYER: AtomicBool = AtomicBool::new(false);
 /// The renderer's free camera (eye, look-at in game space, projection
 /// distance, roll), put into the game's override camera at Present; and
 /// whether the override is ours to turn off.
@@ -832,6 +835,8 @@ impl Link {
         if !alive {
             log("  live: the renderer is gone");
             self.alive = false;
+            // The game's own minimap again.
+            crate::minimap::REPLACE.store(false, Ordering::Release);
         }
     }
 
@@ -1222,11 +1227,13 @@ pub unsafe fn present(s: &mut State, swap_chain: Ptr) {
         if pending {
             send_input(link);
         }
-        link.overlay = None;
+        if !LAYER.load(Ordering::Acquire) {
+            link.overlay = None;
+        }
     }
     free_camera();
     game_pause();
-    if OVERLAY.load(Ordering::Acquire)
+    if (OVERLAY.load(Ordering::Acquire) || LAYER.load(Ordering::Acquire))
         && let Some(mut image) = link.overlay.take()
     {
         // SAFETY: forwarded from the caller.
@@ -1263,6 +1270,9 @@ fn finish(link: &mut Link, s: &mut State, scene: Scene) {
     cmds.append(&mut link.cmds);
     send_input(link);
     link.send(&crate::world::msg());
+    if let Some(m) = crate::minimap::msg() {
+        link.send(&m);
+    }
     let (w, h) = s
         .views
         .get(&scene.color)
@@ -1422,6 +1432,7 @@ fn send_input(link: &mut Link) {
 }
 
 /// Reads answers until the one for `frame` (older ones are dropped).
+#[allow(clippy::too_many_lines)] // the answer, part by part
 fn receive(link: &mut Link, frame: u32) -> Option<Reply> {
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1500);
     let process = link.process;
@@ -1516,6 +1527,8 @@ fn receive(link: &mut Link, frame: u32) -> Option<Reply> {
         if number == frame {
             OVERLAY_KEYS.store(flags & 16 != 0, Ordering::Release);
             PAUSED.store(flags & 128 != 0, Ordering::Release);
+            LAYER.store(flags & 256 != 0, Ordering::Release);
+            crate::minimap::REPLACE.store(flags & 512 != 0, Ordering::Release);
             WANT_EFFECTS.store(flags & 32 != 0, Ordering::Relaxed);
             return Some(Reply {
                 width: w,

@@ -151,6 +151,15 @@ pub struct Settings {
     /// frames into each new one (a PS2-era trail behind anything that
     /// moves). Off: each frame stands alone.
     pub afterimage: bool,
+    /// The renderer's minimap in place of the game's: round, centred on
+    /// the player, turned with the camera (`minimap.rs`).
+    pub minimap: bool,
+    /// Its diameter, a share of the screen's height.
+    pub minimap_size: f32,
+    /// World units from its centre to its edge (a character is about 20
+    /// tall).
+    pub minimap_range: f32,
+    pub minimap_opacity: f32,
 }
 
 impl Default for Settings {
@@ -224,6 +233,10 @@ impl Default for Settings {
             ao_strength: 1.0,
             fake_shadows: false,
             afterimage: false,
+            minimap: true,
+            minimap_size: 0.24,
+            minimap_range: 120.0,
+            minimap_opacity: 1.0,
             debug_view: 0,
         }
     }

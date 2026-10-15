@@ -961,7 +961,12 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 /// Reads process memory, failing instead of faulting on unmapped pages.
-fn read_memory(address: usize, len: usize) -> Result<Vec<u8>, String> {
+/// `len` bytes of this process at `address` (an error where they are not
+/// readable).
+///
+/// # Errors
+/// When the memory cannot be read.
+pub fn read_memory(address: usize, len: usize) -> Result<Vec<u8>, String> {
     use windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory;
     use windows_sys::Win32::System::Threading::GetCurrentProcess;
     let mut out = vec![0u8; len];

@@ -588,6 +588,9 @@ pub struct Enhanced {
     pub proj_scale: f32,
     pub view_eye: [f32; 3],
     pub view_forward: [f32; 3],
+    /// Screen right in the world (the view's first row, by the
+    /// projection's sign).
+    pub view_right: [f32; 3],
     /// The depth of field a sequence's keyframes set (in play where the
     /// camera follows a recorded path, or in the sequence editor).
     pub dof_override: Option<crate::sequence::Key>,
@@ -1609,6 +1612,7 @@ impl Enhanced {
             proj_scale: 0.0,
             view_eye: [0.0; 3],
             view_forward: [0.0, 0.0, 1.0],
+            view_right: [1.0, 0.0, 0.0],
             dof_override: None,
             last_color_view: None,
             timer_tried: false,
@@ -3067,6 +3071,12 @@ impl Enhanced {
         let ahead = if proj[3][2] < 0.0 { -1.0 } else { 1.0 };
         self.view_forward =
             math::normalize([view[2][0] * ahead, view[2][1] * ahead, view[2][2] * ahead]);
+        let across = if proj[0][0] < 0.0 { -1.0 } else { 1.0 };
+        self.view_right = math::normalize([
+            view[0][0] * across,
+            view[0][1] * across,
+            view[0][2] * across,
+        ]);
         let (tx, ty) = (
             1.0 / proj[0][0].abs().max(1e-3),
             1.0 / proj[1][1].abs().max(1e-3),

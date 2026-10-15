@@ -148,6 +148,8 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
     // What the sequence editor's picture shows (sequence, frame, keys,
     // settings).
     let mut last_preview: Option<Shown> = None;
+    // Whether the layer (overlay or HUD) showed last frame.
+    let mut layer_was = false;
     loop {
         let mut head = [0u8; 8];
         if !to_renderer.read(&mut head, wait) {
@@ -187,6 +189,31 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
                 if let Err(e) = enhanced.effects(&mut r, &effects) {
                     log(&format!("effects {}: {e}", effects.number));
                 }
+                idle_from = std::time::Instant::now();
+                continue;
+            }
+            ffx_gfx::Msg::Minimap(m) => {
+                if frames.is_multiple_of(600) {
+                    let kinds: Vec<String> = m
+                        .markers
+                        .iter()
+                        .map(|k| {
+                            format!(
+                                "{:#x}@({:.0},{:.0}) rgba {:.2?}",
+                                k.flags, k.pos[0], k.pos[2], k.color
+                            )
+                        })
+                        .collect();
+                    log(&format!(
+                        "minimap: shown {:.2}, player ({:.0}, {:.0}) yaw {:.2}, markers {}",
+                        m.shown,
+                        m.player[0],
+                        m.player[2],
+                        m.yaw,
+                        kinds.join(" ")
+                    ));
+                }
+                overlay.map.update(m);
                 idle_from = std::time::Instant::now();
                 continue;
             }
@@ -400,8 +427,20 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             enhanced.selected = None;
             overlay.hidden();
         }
+        // The layer: the panels, or the HUD (the minimap) alone.
+        if screen.0 == 0 && frame.width > 0 {
+            screen = (frame.width, frame.height);
+        }
+        let hud = enhanced.settings.minimap && overlay.map.shown();
+        let layer = (overlay.visible || hud) && screen.0 > 0;
+        if !layer && layer_was {
+            overlay.layer_off();
+        }
+        layer_was = layer;
+        overlay.forward = enhanced.view_forward;
+        overlay.right = enhanced.view_right;
         // The overlay, over the whole window.
-        let overlay_image = if overlay.visible && screen.0 > 0 {
+        let overlay_image = if layer {
             let stats = crate::overlay::Stats {
                 frame_ms: frame_time.as_secs_f32() * 1000.0,
                 draw_ms: t_draw.as_secs_f32() * 1000.0,
@@ -509,7 +548,9 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
                 0
             }
             | if overlay.freecam.on { 64 } else { 0 }
-            | if paused { 128 } else { 0 };
+            | if paused { 128 } else { 0 }
+            | if layer { 256 } else { 0 }
+            | if enhanced.settings.minimap { 512 } else { 0 };
         out.extend_from_slice(&flags.to_le_bytes());
         out.extend_from_slice(&data);
         if let Some((x, y, w, h, pixels)) = &overlay_image {

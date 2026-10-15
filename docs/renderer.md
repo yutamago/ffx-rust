@@ -204,6 +204,27 @@ game's own drawing and the wait for the screen are not in it.
 Debug views show one input of the lighting (shadow, occlusion,
 normals, albedo, baked light, cascades, skin, probe light).
 
+## Minimap
+
+The renderer draws its own field minimap (`minimap.rs`; overlay section
+"Minimap": on/off, size, range, opacity) in place of the game's: round, top
+right, always centred on the player, turned so that where the camera looks
+is up; the walkable area in light grey on a dark disc, the player as an
+arrow of the character's facing. Markers keep the game's shape and colour;
+beyond the edge they sit on the rim and fade in as the player comes nearer
+(from 1.5 radii beyond it); the destination marker always shows on the rim,
+exits show as bars. The renderer's answer carries flag 512; the hook then
+wraps `Guide_Update` (`0x0091da80`): it keeps the fade (`Guide_FadeStep`),
+the fog of war (`Guide_RevealFog`) and the blink counter, turns the game's
+mesh and fog passes off, and sends `Msg::Minimap` before each frame: the
+fade (`g_GuideFade`), the markers from `Minimap_GetWorkerMarker`
+(`0x0086b740`, colours from `g_GuideMarkerPalette`), the player among them
+(flag 0x800: position, yaw), and the mesh (`Guide_MeshObject`: matrix at
++0xc0, i16 vertices and type 0 triangle packets, `g_GuidePacketStrides`)
+when it changes. Maps the game shows fixed in place scroll too. The HUD
+shows with the overlay's panels hidden (flag 256: the hook lays the
+overlay image over the frame).
+
 ## Free camera
 
 "Free camera" in the overlay (`freecam.rs`) starts where the game's view
