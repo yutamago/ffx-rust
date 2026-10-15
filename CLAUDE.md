@@ -41,6 +41,8 @@ FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test --release -p ffx-oracle   # pari
 tools/build-hook.sh                                                        # 32-bit dinput8.dll
 tools/game-tests.sh [--list|--all]                                         # in-game tests for what changed (docs/harness.md)
 tools/run-game.sh [--no-hooks] [--lang en]                                 # start FFX.exe on Windows, no Steam needed
+tools/run-game.sh --renderer                                               # with the external renderer (docs/renderer.md)
+tools/build-renderer.sh                                                    # 64-bit ffx-render.exe
 uv run --with frida==17.23.2 tools/frida/peek.py <addr> <len> [--deref]     # read the running game's memory
 target/i686-pc-windows-msvc/release/examples/hook-smoke.exe "$(wslpath -w ~/steam-games/FFX-X2-HD/FFX.exe)"
 ```
