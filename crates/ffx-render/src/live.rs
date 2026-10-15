@@ -54,6 +54,7 @@ fn load_settings(path: &std::path::Path) -> crate::enhanced::Settings {
 ///
 /// # Errors
 /// When the mapping cannot be opened or the device made.
+#[allow(clippy::too_many_lines)] // the loop: a message, the frame, the answer
 pub fn run(name: &str, pid: u32) -> Result<()> {
     let wide: Vec<u16> = name.encode_utf16().chain([0]).collect();
     // SAFETY: plain Win32 calls; the view lives as long as this process.
@@ -178,7 +179,7 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             _ => None,
         });
         frames += 1;
-        if frames == 1 || frames % 600 == 0 {
+        if frames == 1 || frames.is_multiple_of(600) {
             log(&format!(
                 "frame {} ({} commands)",
                 frame.number,
@@ -194,7 +195,7 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             }
         }
         // Settings edits apply at once.
-        if frames % 30 == 0 {
+        if frames.is_multiple_of(30) {
             let stamp = std::fs::metadata(&settings_path)
                 .and_then(|m| m.modified())
                 .ok();
@@ -206,10 +207,10 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
         }
         let t0 = std::time::Instant::now();
         let t_parsed = t0 - t_head;
-        if targets.is_some() {
-            if let Err(e) = enhanced.render(&mut r, &frame) {
-                log(&format!("frame {}: {e}", frame.number));
-            }
+        if targets.is_some()
+            && let Err(e) = enhanced.render(&mut r, &frame)
+        {
+            log(&format!("frame {}: {e}", frame.number));
         }
         let t_draw = t0.elapsed();
         let resource = |v: ffx_gfx::Id| r.views.get(&v).map(|v| v.resource);
@@ -238,7 +239,7 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             },
             _ => None,
         };
-        let t_read = t1.elapsed();
+        let t_handoff = t1.elapsed();
         // The overlay, over the whole window.
         let overlay_image = if overlay.visible && screen.0 > 0 {
             let stats = crate::overlay::Stats {
@@ -319,10 +320,10 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             out.extend_from_slice(&screen.1.to_le_bytes());
             out.extend_from_slice(img);
         }
-        to_game.write(&out, || std::thread::yield_now());
-        if frames % 120 == 0 {
+        to_game.write(&out, std::thread::yield_now);
+        if frames.is_multiple_of(120) {
             log(&format!(
-                "frame {}: received+parsed {t_parsed:?}, draw {t_draw:?}, read back {t_read:?}, total {:?}, idle before {idle:?}",
+                "frame {}: received+parsed {t_parsed:?}, draw {t_draw:?}, handed over {t_handoff:?}, total {:?}, idle before {idle:?}",
                 frame.number,
                 t_head.elapsed()
             ));

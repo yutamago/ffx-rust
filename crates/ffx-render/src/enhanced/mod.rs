@@ -69,6 +69,18 @@ struct CachedBlas {
     blas: wgpu::Blas,
 }
 
+/// A structure made this frame, to build: the structure, its size, the
+/// vertex source, first vertex and stride, the index source and first
+/// index.
+type FreshBlas = (
+    wgpu::Blas,
+    wgpu::BlasTriangleGeometrySizeDescriptor,
+    Source,
+    u32,
+    u32,
+    Option<(Source, u32)>,
+);
+
 /// What a bottom-level structure is built from: vertex buffer id, first
 /// vertex, stride, vertex count, index buffer id, first index, index count,
 /// 32-bit indices.
@@ -161,7 +173,7 @@ impl Reflect {
         Some(out)
     }
 
-    fn floats<'a>(&self, cb: &'a [u8], name: &str, n: usize) -> Option<Vec<f32>> {
+    fn floats(&self, cb: &[u8], name: &str, n: usize) -> Option<Vec<f32>> {
         let (off, _) = *self.vars.get(name)?;
         let bytes = cb.get(off as usize..off as usize + 4 * n)?;
         Some(
@@ -197,6 +209,7 @@ const INPUTS: [&str; 7] = [
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[allow(clippy::struct_excessive_bools)] // independent shader switches
 struct Variant {
     skinned: bool,
     cloth: bool,
@@ -206,12 +219,16 @@ struct Variant {
     shadow: bool,
 }
 
+/// A vertex buffer slot: stride (or slot), step per instance, attributes
+/// (location, format, offset).
+type SlotLayout = (u32, bool, Vec<(u32, wgpu::VertexFormat, u64)>);
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct GKey {
     variant: Variant,
     /// Per slot: stride, step per instance, attributes (location, format,
     /// offset).
-    buffers: Vec<(u32, bool, Vec<(u32, wgpu::VertexFormat, u64)>)>,
+    buffers: Vec<SlotLayout>,
     cull: Option<wgpu::Face>,
     front: wgpu::FrontFace,
 }
@@ -507,6 +524,32 @@ const CAMERA_SIZE: usize = 64 * 3 + 32;
 const LIGHT_SIZE: usize = 64 + 16 * 12 + 16 * 17;
 const POST_SIZE: usize = 16 + 64 + 16;
 
+/// The `VsIn` struct of a generated shader (the inputs `present`, by
+/// location in `decl`) and its accessors `a_<name>`, which give the
+/// declared default for inputs the draw lacks.
+fn vertex_input(decl: &[(&str, &str, &str)], present: &[u32]) -> (String, String) {
+    use std::fmt::Write as _;
+    let mut vsin = String::from("struct VsIn {\n    @builtin(vertex_index) vid: u32,\n");
+    let mut access = String::new();
+    for (loc, (name, ty, default)) in decl.iter().enumerate() {
+        if present.contains(&(loc as u32)) {
+            let _ = writeln!(vsin, "    @location({loc}) {name}: {ty},");
+            let _ = writeln!(
+                access,
+                "fn a_{name}(v: VsIn) -> {ty} {{ return v.{name}; }}"
+            );
+        } else {
+            let _ = writeln!(
+                access,
+                "fn a_{name}(v: VsIn) -> {ty} {{ return {default}; }}"
+            );
+        }
+    }
+    vsin.push_str("};\n");
+    (vsin, access)
+}
+
+#[allow(clippy::unnecessary_wraps)] // the colour attachment lists take options
 fn attachment(
     view: &wgpu::TextureView,
     load: wgpu::LoadOp<wgpu::Color>,
@@ -537,6 +580,7 @@ fn put4(out: &mut Vec<u8>, v: [f32; 4]) {
 }
 
 /// The light probes' layers, buffer and projection pass.
+#[allow(clippy::too_many_lines)] // the targets, the views, the pass
 fn probe_targets(device: &wgpu::Device) -> ProbeTargets {
     let count = 6 * MAX_PROBES as u32;
     let make = |format: wgpu::TextureFormat, label: &str| {
@@ -720,7 +764,7 @@ fn blas_input(
                 .any(|&(loc, f, off)| loc == 0 && f == wgpu::VertexFormat::Float32x3 && off == 0)
     })?;
     let stride = i.key.buffers[slot].0;
-    if stride < 12 || stride % 4 != 0 {
+    if stride < 12 || !stride.is_multiple_of(4) {
         return None;
     }
     let src = *i.vertex.get(slot)?;
@@ -849,6 +893,7 @@ fn one_pixel(device: &wgpu::Device, queue: &wgpu::Queue, rgba: [u8; 4]) -> wgpu:
 
 impl Enhanced {
     #[must_use]
+    #[allow(clippy::too_many_lines)] // every pass's layout and pipeline
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -1244,6 +1289,7 @@ impl Enhanced {
         }
     }
 
+    #[allow(clippy::too_many_lines)] // one pipeline description
     fn pipeline(&mut self, device: &wgpu::Device, key: &GKey) -> Option<Arc<wgpu::RenderPipeline>> {
         if let Some(p) = self.pipelines.get(key) {
             return p.clone();
@@ -1268,21 +1314,7 @@ impl Enhanced {
             ("bw", "vec4<f32>", "vec4<f32>(1.0, 0.0, 0.0, 0.0)"),
             ("cloth", "vec4<f32>", "vec4<f32>(0.0)"),
         ];
-        let mut vsin = String::from("struct VsIn {\n    @builtin(vertex_index) vid: u32,\n");
-        let mut access = String::new();
-        for (loc, (name, ty, default)) in decl.iter().enumerate() {
-            if present.contains(&(loc as u32)) {
-                vsin.push_str(&format!("    @location({loc}) {name}: {ty},\n"));
-                access.push_str(&format!(
-                    "fn a_{name}(v: VsIn) -> {ty} {{ return v.{name}; }}\n"
-                ));
-            } else {
-                access.push_str(&format!(
-                    "fn a_{name}(v: VsIn) -> {ty} {{ return {default}; }}\n"
-                ));
-            }
-        }
-        vsin.push_str("};\n");
+        let (vsin, access) = vertex_input(&decl, &present);
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("gbuffer"),
             source: wgpu::ShaderSource::Wgsl(
@@ -1524,6 +1556,7 @@ impl Enhanced {
 
     /// The material map of colour texture `resource` (made on first use,
     /// again when the texture changes).
+    #[allow(clippy::too_many_lines)] // the pack or the generator, the mips, the export
     fn material(&mut self, r: &Renderer, resource: Id) -> Option<wgpu::TextureView> {
         let t = r.textures.get(&resource)?;
         let version = t.desc[7];
@@ -1689,6 +1722,7 @@ impl Enhanced {
     }
 
     /// The water pipeline for a geometry layout.
+    #[allow(clippy::too_many_lines)] // one pipeline description
     fn water_pipeline(
         &mut self,
         device: &wgpu::Device,
@@ -1712,21 +1746,7 @@ impl Enhanced {
             ("uv3", "vec2<f32>", "vec2<f32>(0.0)"),
             ("tan", "vec3<f32>", "vec3<f32>(1.0, 0.0, 0.0)"),
         ];
-        let mut vsin = String::from("struct VsIn {\n    @builtin(vertex_index) vid: u32,\n");
-        let mut access = String::new();
-        for (loc, (name, ty, default)) in decl.iter().enumerate() {
-            if present.contains(&(loc as u32)) {
-                vsin.push_str(&format!("    @location({loc}) {name}: {ty},\n"));
-                access.push_str(&format!(
-                    "fn a_{name}(v: VsIn) -> {ty} {{ return v.{name}; }}\n"
-                ));
-            } else {
-                access.push_str(&format!(
-                    "fn a_{name}(v: VsIn) -> {ty} {{ return {default}; }}\n"
-                ));
-            }
-        }
-        vsin.push_str("};\n");
+        let (vsin, access) = vertex_input(&decl, &present);
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("water"),
             source: wgpu::ShaderSource::Wgsl(format!("{vsin}{access}{WATER_WGSL}").into()),
@@ -1809,6 +1829,7 @@ impl Enhanced {
     }
 
     /// Builds the enhanced water of a water draw.
+    #[allow(clippy::too_many_lines)] // one walk through the draw's inputs
     fn water_item(
         &mut self,
         r: &Renderer,
@@ -1832,7 +1853,7 @@ impl Enhanced {
             .find(|c| c.0 == 0)
             .map_or(&[][..], |c| &c.1[..]);
         let elements = r.layouts.get(&d.layout)?.clone();
-        let mut per_slot: Vec<(u32, bool, Vec<(u32, wgpu::VertexFormat, u64)>)> = Vec::new();
+        let mut per_slot: Vec<SlotLayout> = Vec::new();
         let mut offsets = [0u32; 8];
         let mut have_pos = false;
         for e in &elements {
@@ -2007,7 +2028,7 @@ impl Enhanced {
             .map_or(&[][..], |c| &c.1[..]);
         let elements = r.layouts.get(&d.layout)?.clone();
         // Attributes by semantic.
-        let mut per_slot: Vec<(u32, bool, Vec<(u32, wgpu::VertexFormat, u64)>)> = Vec::new();
+        let mut per_slot: Vec<SlotLayout> = Vec::new();
         let mut have = [false; 7];
         let mut offsets = [0u32; 8];
         for e in &elements {
@@ -2230,6 +2251,7 @@ impl Enhanced {
     ///
     /// # Errors
     /// When the GPU reports an error.
+    #[allow(clippy::too_many_lines)] // the frame's passes, in order
     pub fn render_until(
         &mut self,
         r: &mut Renderer,
@@ -2483,7 +2505,7 @@ impl Enhanced {
         let mut cascades = Vec::new();
         let mut from = 0.0f32;
         for &to in &splits {
-            let mid = (from + to) * 0.5;
+            let mid = f32::midpoint(from, to);
             let center = [
                 eye[0] + forward[0] * mid,
                 eye[1] + forward[1] * mid,
@@ -2636,8 +2658,8 @@ impl Enhanced {
                     (0..3).map(|k| (m[k] - c[k]).powi(2)).sum::<f32>() < 30.0 * 30.0
                 }) {
                     Some(g) => {
-                        for k in 0..3 {
-                            g.0[k] += c[k];
+                        for (sum, x) in g.0.iter_mut().zip(c) {
+                            *sum += x;
                         }
                         g.1 += 1.0;
                     }
@@ -3043,14 +3065,9 @@ impl Enhanced {
         // level.
         let mut traced = vec![false; prepared.len()];
         let mut instances: Vec<(BlasKey, Option<usize>, [f32; 12])> = Vec::new();
-        let mut fresh: Vec<(
-            wgpu::Blas,
-            wgpu::BlasTriangleGeometrySizeDescriptor,
-            Source,
-            u32,
-            u32,
-            Option<(Source, u32)>,
-        )> = Vec::new();
+        // New structures: the structure, its size, vertex source, first
+        // vertex, stride, index source and first index.
+        let mut fresh: Vec<FreshBlas> = Vec::new();
         if traced_on {
             for (k, (_, _, _, i)) in prepared.iter().enumerate() {
                 let Some(found) = blas_input(r, i, gbuf.size()) else {
@@ -3210,7 +3227,7 @@ impl Enhanced {
                     Source::Arena(at) => rp.set_vertex_buffer(slot as u32, gbuf.slice(at..)),
                     Source::Buffer(id, off) => match r.buffers.get(&id) {
                         Some(b) if off < b.buffer.size() => {
-                            rp.set_vertex_buffer(slot as u32, b.buffer.slice(off..))
+                            rp.set_vertex_buffer(slot as u32, b.buffer.slice(off..));
                         }
                         _ => return false,
                     },
@@ -3833,6 +3850,7 @@ impl Enhanced {
 
     /// Light from the frame's effects onto the scene image, before the
     /// effects themselves are drawn over it.
+    #[allow(clippy::too_many_lines)] // targets, the effects' draws, then four passes
     fn effect_light(&mut self, r: &mut Renderer, rest: &Frame, color_view: Id) -> Result<()> {
         let emissive: Vec<&Draw> = rest
             .cmds
@@ -3980,7 +3998,7 @@ impl Enhanced {
         for c in &rest.cmds {
             match c {
                 Cmd::UpdateBuffer { .. } => cmds.push(c.clone()),
-                Cmd::Draw(d) if emissive.iter().any(|x| std::ptr::eq(*x, &**d)) => {
+                Cmd::Draw(d) if emissive.iter().any(|x| std::ptr::eq(*x, &raw const **d)) => {
                     let mut d = d.clone();
                     d.rtv = vec![(0, e.ids.1)];
                     cmds.push(Cmd::Draw(d));

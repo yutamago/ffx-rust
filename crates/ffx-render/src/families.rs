@@ -5,6 +5,7 @@
 //! a few seconds.
 
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 /// What the enhanced renderer does with a draw.
@@ -104,7 +105,7 @@ impl Families {
                 for (_, blob) in ffx_dxbc::find_all(&bytes) {
                     let h = ffx_dxbc::hash(blob);
                     if map.insert(h, Family::from_cluster(name)).is_none() {
-                        lines.push_str(&format!("{h:016x}\t{name}\n"));
+                        let _ = writeln!(lines, "{h:016x}\t{name}");
                     }
                 }
             }

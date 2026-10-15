@@ -7,7 +7,7 @@
 //! (planes: 0 colour, 1 normal, 2 depth); a new generation when the size
 //! changes. A shared fence, its handle duplicated into the game, tells the
 //! game's GPU when a set is written: the renderer does not wait for its
-//! GPU before answering (FFX_GFX_FENCE=0: it does, as without a fence).
+//! GPU before answering (`FFX_GFX_FENCE=0`: it does, as without a fence).
 
 use anyhow::{Context, Result, anyhow};
 use ffx_gfx::Id;
@@ -72,7 +72,7 @@ pub struct Shared {
 /// The shared fence: ours, its handle in the game, the last value
 /// signalled.
 struct Fence {
-    fence: ID3D12Fence,
+    raw: ID3D12Fence,
     remote: u32,
     value: u64,
 }
@@ -268,10 +268,12 @@ impl Share {
     }
 
     /// Draws the scene targets (colour, normal and depth texture ids in
-    /// the mirror) into the next shared set and waits for the GPU.
+    /// the mirror) into the next shared set; signals the fence, or without
+    /// one waits for the GPU.
     ///
     /// # Errors
     /// When the textures cannot be made or the GPU fails.
+    #[allow(clippy::too_many_lines)] // the views, the pass, the hand-over
     pub fn write(&mut self, r: &Renderer, color: Id, normal: Id, depth: Id) -> Result<Shared> {
         let get = |id: Id| {
             r.textures
@@ -351,13 +353,13 @@ impl Share {
                 let signalled = unsafe {
                     r.queue
                         .as_hal::<wgpu::hal::api::Dx12>()
-                        .map(|q| q.as_raw().Signal(&f.fence, f.value))
+                        .map(|q| q.as_raw().Signal(&f.raw, f.value))
                 };
                 match signalled {
                     Some(Ok(())) => {
                         // Never more than two frames ahead of the GPU.
                         // SAFETY: our fence.
-                        let done = unsafe { f.fence.GetCompletedValue() };
+                        let done = unsafe { f.raw.GetCompletedValue() };
                         if f.value > done + 2 {
                             r.device.poll(wgpu::PollType::wait_indefinitely())?;
                         } else {
@@ -417,7 +419,7 @@ fn make_fence(device: &wgpu::Device, pid: u32) -> Result<Fence> {
         let _ = CloseHandle(handle);
         let remote = result.context("duplicating the fence handle")?;
         Ok(Fence {
-            fence,
+            raw: fence,
             remote: u32::try_from(remote.0 as usize).context("handle size")?,
             value: 0,
         })

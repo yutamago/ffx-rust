@@ -111,7 +111,7 @@ pub fn decode(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
                 0 => 0,
                 1 => a,
                 2 => b,
-                3 => ((u16::from(a) + u16::from(b)) / 2) as u8,
+                3 => a.midpoint(b),
                 4 => {
                     let p = i16::from(a) + i16::from(b) - i16::from(c);
                     let (pa, pb, pc) = (
@@ -136,7 +136,7 @@ pub fn decode(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
         return Some((width, height, pixels));
     }
     let mut rgba = Vec::with_capacity(width as usize * height as usize * 4);
-    for px in pixels.chunks_exact(3) {
+    for px in pixels.as_chunks::<3>().0 {
         rgba.extend_from_slice(px);
         rgba.push(255);
     }

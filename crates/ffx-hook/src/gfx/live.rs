@@ -91,12 +91,13 @@ pub unsafe fn set_window(hwnd: usize, width: u32, height: u32) {
     // SAFETY: replacing the window procedure of the game's window; the old
     // one is kept and called for everything the overlay does not take.
     let old = unsafe { SetWindowLongW(hwnd as _, GWL_WNDPROC, window_proc as *const () as i32) };
-    WNDPROC.store(old as u32 as usize, Ordering::Release);
+    WNDPROC.store(old.cast_unsigned() as usize, Ordering::Release);
     log(&format!(
         "  live: window {hwnd:#x} subclassed for the overlay (F10)"
     ));
 }
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // LPARAM packs two signed 16-bit coordinates
 unsafe extern "system" fn window_proc(
     hwnd: *mut c_void,
     msg: u32,
@@ -125,8 +126,8 @@ unsafe extern "system" fn window_proc(
     }
     if visible {
         let point = || {
-            let x = f32::from((lparam & 0xffff) as u16 as i16);
-            let y = f32::from(((lparam >> 16) & 0xffff) as u16 as i16);
+            let x = f32::from(((lparam & 0xffff) as u16).cast_signed());
+            let y = f32::from((((lparam >> 16) & 0xffff) as u16).cast_signed());
             client_to_screen(hwnd, x, y)
         };
         let taken = match msg {
@@ -150,7 +151,7 @@ unsafe extern "system" fn window_proc(
                 true
             }
             0x20a => {
-                let delta = f32::from(((wparam >> 16) & 0xffff) as u16 as i16) / 120.0;
+                let delta = f32::from((((wparam >> 16) & 0xffff) as u16).cast_signed()) / 120.0;
                 push_input(ffx_gfx::Input::Wheel(delta));
                 true
             }
@@ -174,7 +175,7 @@ unsafe extern "system" fn window_proc(
             _ => false,
         };
         if taken {
-            return if msg == 0x20 { 1 } else { 0 };
+            return isize::from(msg == 0x20);
         }
     }
     // SAFETY: the window's original procedure.
@@ -186,6 +187,11 @@ unsafe extern "system" fn window_proc(
 }
 
 /// Client coordinates to back buffer pixels.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)] // window sizes, far below 2^24
 fn client_to_screen(hwnd: *mut c_void, x: f32, y: f32) -> (f32, f32) {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::UI::WindowsAndMessaging::GetClientRect;
@@ -756,7 +762,7 @@ fn draw_updates(link: &Link, s: &State, d: &ffx_gfx::Draw) -> Vec<ffx_gfx::Cmd> 
         let last = if per_instance.contains(&u32::from(slot)) {
             (d.first_instance + d.instances.max(1)) as usize
         } else if let Some((_, hi)) = vertices {
-            hi.max(0) as usize + 1
+            usize::try_from(hi.max(0)).unwrap_or(0) + 1
         } else {
             continue;
         };
@@ -902,6 +908,7 @@ pub unsafe fn present(s: &mut State, swap_chain: Ptr) {
     link.scene = None;
 }
 
+#[allow(clippy::too_many_lines)] // send, answer, composite, report
 fn finish(link: &mut Link, s: &mut State, scene: Scene) {
     let t0 = std::time::Instant::now();
     link.frame += 1;
@@ -1025,8 +1032,8 @@ fn finish(link: &mut Link, s: &mut State, scene: Scene) {
     };
     IMAGES.fetch_add(1, Ordering::Relaxed);
     // SAFETY: on the render thread; the game's device and context.
-    unsafe { composite(link, s, scene, w, h, source) };
-    if frame % 120 == 0 {
+    unsafe { composite(link, s, scene, w, h, &source) };
+    if frame.is_multiple_of(120) {
         for (kind, (n, bytes, time)) in link.resent.drain() {
             log(&format!(
                 "  live: sent {n} {kind}s, {bytes} bytes, in {time:?} (last 120 frames)"
@@ -1039,6 +1046,10 @@ fn finish(link: &mut Link, s: &mut State, scene: Scene) {
     }
 }
 
+/// Where a shared image is: generation, set, and the fence (its handle here
+/// and the value that means written).
+type SharedAt = (u32, u32, Option<(u32, u64)>);
+
 /// The renderer's answer to a frame.
 struct Reply {
     width: u32,
@@ -1048,7 +1059,7 @@ struct Reply {
     scene: Vec<u8>,
     /// The shared textures' generation and set, and the fence (its handle
     /// here and the value that means written).
-    shared: Option<(u32, u32, Option<(u32, u64)>)>,
+    shared: Option<SharedAt>,
     overlay: Option<(u32, u32, Vec<u8>)>,
 }
 
@@ -1176,6 +1187,11 @@ float4 ps(float4 p : SV_Position) : SV_Target0 {
 ";
 
 /// Draws the overlay (premultiplied RGBA8) over the back buffer.
+#[allow(
+    clippy::too_many_lines,
+    clippy::many_single_char_names,
+    clippy::cast_precision_loss
+)] // one pass set up, drawn and undone
 unsafe fn draw_overlay(link: &mut Link, s: &State, swap_chain: Ptr, w: u32, h: u32, pixels: &[u8]) {
     const IID_TEXTURE2D: [u8; 16] = [
         0xf2, 0xaa, 0x15, 0x6f, 0x08, 0xd2, 0x89, 0x4e, 0x9a, 0xb4, 0x48, 0x95, 0x35, 0xd3, 0x4f,
@@ -1548,20 +1564,20 @@ unsafe fn make_composite(width: u32, height: u32) -> Option<Composite> {
         let vs_code = compile("vs", "vs_4_0")?;
         let ps_code = compile("ps", "ps_4_0")?;
         type CreateShader = unsafe extern "system" fn(Ptr, *const u8, usize, Ptr, *mut Ptr) -> i32;
-        let create_vs: CreateShader =
+        let new_vertex_shader: CreateShader =
             std::mem::transmute(device_original(device, vt::device::CREATE_VERTEX_SHADER));
-        let create_ps: CreateShader =
+        let new_pixel_shader: CreateShader =
             std::mem::transmute(device_original(device, vt::device::CREATE_PIXEL_SHADER));
         let mut vs: Ptr = std::ptr::null_mut();
         let mut ps: Ptr = std::ptr::null_mut();
-        if create_vs(
+        if new_vertex_shader(
             device,
             vs_code.as_ptr(),
             vs_code.len(),
             std::ptr::null_mut(),
             &raw mut vs,
         ) < 0
-            || create_ps(
+            || new_pixel_shader(
                 device,
                 ps_code.as_ptr(),
                 ps_code.len(),
@@ -1646,7 +1662,12 @@ unsafe fn make_composite(width: u32, height: u32) -> Option<Composite> {
 
 /// Draws the renderer's images into the scene targets, then puts the
 /// game's bindings back.
-unsafe fn composite(link: &mut Link, s: &State, scene: Scene, w: u32, h: u32, source: Source) {
+#[allow(
+    clippy::too_many_lines,
+    clippy::many_single_char_names,
+    clippy::cast_precision_loss
+)] // one pass set up, drawn and undone
+unsafe fn composite(link: &mut Link, s: &State, scene: Scene, w: u32, h: u32, source: &Source) {
     let ctx = super::CONTEXT.load(Ordering::Acquire) as Ptr;
     if link
         .composite
@@ -1684,7 +1705,7 @@ unsafe fn composite(link: &mut Link, s: &State, scene: Scene, w: u32, h: u32, so
                 }
                 c.views
             }
-            Source::Shared(views) => views,
+            Source::Shared(views) => *views,
         };
         let rtvs = [scene.color, scene.normal];
         call!(

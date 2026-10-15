@@ -2150,7 +2150,7 @@ unsafe extern "system" fn present(swap_chain: Ptr, interval: u32, flags: u32) ->
         static LAST: Mutex<Option<std::time::Instant>> = Mutex::new(None);
         let frame = FRAME.load(Ordering::Relaxed);
         if let Ok(mut last) = LAST.lock() {
-            if frame % 120 == 0
+            if frame.is_multiple_of(120)
                 && let Some(l) = *last
             {
                 let spent: Vec<u32> = SPENT

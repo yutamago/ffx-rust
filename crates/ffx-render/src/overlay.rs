@@ -56,6 +56,7 @@ struct Painter {
 }
 
 impl Painter {
+    #[allow(clippy::too_many_lines)] // one pipeline description
     fn new(device: &wgpu::Device) -> Self {
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("overlay"),
@@ -170,7 +171,11 @@ impl Painter {
     ) {
         let egui::ImageData::Color(image) = &delta.image;
         let [w, h] = image.size;
-        let pixels: Vec<u8> = image.pixels.iter().flat_map(|c| c.to_array()).collect();
+        let pixels: Vec<u8> = image
+            .pixels
+            .iter()
+            .flat_map(egui::Color32::to_array)
+            .collect();
         let size = wgpu::Extent3d {
             width: w as u32,
             height: h as u32,
@@ -296,7 +301,7 @@ impl Painter {
         let ibytes: Vec<u8> = indices.iter().flat_map(|i| i.to_le_bytes()).collect();
         queue.write_buffer(&ibuf, 0, &ibytes);
         let points = (size.0 as f32 / ppp, size.1 as f32 / ppp);
-        let ubuf = device.create_buffer(&wgpu::BufferDescriptor {
+        let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size: 16,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
@@ -306,13 +311,13 @@ impl Painter {
         for f in [points.0, points.1, 0.0, 0.0] {
             u.extend_from_slice(&f32::to_le_bytes(f));
         }
-        queue.write_buffer(&ubuf, 0, &u);
+        queue.write_buffer(&uniforms, 0, &u);
         let screen = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &self.screen_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: ubuf.as_entire_binding(),
+                resource: uniforms.as_entire_binding(),
             }],
         });
         let pitch = (size.0 * 4).next_multiple_of(256);

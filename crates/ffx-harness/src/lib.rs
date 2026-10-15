@@ -36,6 +36,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 /// How to start the game.
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)] // independent launch switches
 pub struct Options {
     /// The repository (for `tools/run-game.sh`).
     pub repo: PathBuf,

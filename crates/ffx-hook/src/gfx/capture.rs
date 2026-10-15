@@ -38,6 +38,7 @@ static PENDING: Mutex<Option<(PathBuf, Sender<String>)>> = Mutex::new(None);
 static DRAW_RANGE: Mutex<Option<(u32, u32)>> = Mutex::new(None);
 
 /// After a draw: saves render target 0 when the draw is in the asked range.
+#[allow(clippy::many_single_char_names)] // the draw range a..b, the capture, its count
 pub fn after_draw(s: &mut State) {
     let Some(c) = &s.capture else { return };
     let n = c.draws;
@@ -262,6 +263,7 @@ pub(super) fn stream_draw(s: &State, d: Draw) -> ffx_gfx::Draw {
 }
 
 /// Records one draw.
+#[allow(clippy::too_many_lines)] // one draw: its state, objects and text
 pub fn draw(s: &mut State, d: Draw) {
     let streamed = stream_draw(s, d);
     let mut updates = Vec::new();
@@ -625,6 +627,7 @@ pub unsafe fn on_present(swap_chain: Ptr) {
 }
 
 /// Writes the frame log, the objects it used, and their contents.
+#[allow(clippy::too_many_lines)] // the report, the snapshot, the files
 fn finish(s: &State, mut c: Capture) -> (String, Option<Sender<String>>) {
     let mut objects = String::new();
     let mut resources = BTreeSet::new();
@@ -909,6 +912,7 @@ pub(super) fn draw_objects(d: &ffx_gfx::Draw) -> impl Iterator<Item = usize> + '
     .map(|id| id as usize)
 }
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // viewport sizes
 fn snapshot(s: &State, c: &mut Capture) -> Vec<u8> {
     let mut out = ffx_gfx::CAPTURE_MAGIC.to_vec();
     // Views pull in their resources.

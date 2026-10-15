@@ -40,6 +40,7 @@ fn parse_id(s: &str) -> Result<u32> {
     u32::from_str_radix(s, 16).context("hex id")
 }
 
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // the options, then one replay
 fn replay(args: &[String]) -> Result<()> {
     let capture = PathBuf::from(args.first().context("capture file")?);
     let out = PathBuf::from(args.get(1).context("out dir")?);
@@ -107,8 +108,8 @@ fn replay(args: &[String]) -> Result<()> {
         println!("{} shaders with families", families.len());
         let mut e =
             ffx_render::enhanced::Enhanced::new(&r.device, &r.queue, families, settings(&sets));
-        e.material_dir = materials.clone();
-        e.export_dir = export.clone();
+        e.material_dir.clone_from(&materials);
+        e.export_dir.clone_from(&export);
         e
     });
     let mut targets = BTreeSet::new();

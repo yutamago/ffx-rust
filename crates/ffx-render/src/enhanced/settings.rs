@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+#[allow(clippy::struct_excessive_bools)] // independent switches of the overlay
 pub struct Settings {
     /// Draw scenery and characters the enhanced way (off: the game's own
     /// shaders, as in the original).
