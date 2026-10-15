@@ -254,6 +254,65 @@ struct SharedImages {
     sets: [Option<([Ptr; 3], [Ptr; 3])>; 3],
 }
 
+/// The renderer's shared fence, opened on the game's device: its handle
+/// here and the `ID3D11Fence`.
+struct SharedFence {
+    handle: u32,
+    fence: Ptr,
+}
+
+/// Opens the renderer's fence (`ID3D11Device5::OpenSharedFence`).
+unsafe fn open_fence(handle: u32) -> Option<Ptr> {
+    const IID_FENCE: [u8; 16] = super::guid(
+        0xaffd_e9d1,
+        0x1df7,
+        0x4bb7,
+        [0x8a, 0x34, 0x0f, 0x46, 0x25, 0x1d, 0xab, 0x80],
+    );
+    let device = super::DEVICE.load(Ordering::Acquire) as Ptr;
+    // SAFETY: the game's device; ID3D11Device5 from QueryInterface.
+    unsafe {
+        type Query = unsafe extern "system" fn(Ptr, *const u8, *mut Ptr) -> i32;
+        let query: Query = std::mem::transmute(real_method(device, 0));
+        let mut device5: Ptr = std::ptr::null_mut();
+        if query(device, super::DEVICE_IIDS[5].as_ptr(), &raw mut device5) < 0 {
+            log("  live: no ID3D11Device5 for the shared fence");
+            return None;
+        }
+        type Open = unsafe extern "system" fn(Ptr, usize, *const u8, *mut Ptr) -> i32;
+        let open: Open = std::mem::transmute(real_method(device5, 67));
+        let mut fence: Ptr = std::ptr::null_mut();
+        let hr = open(device5, handle as usize, IID_FENCE.as_ptr(), &raw mut fence);
+        release(device5);
+        if hr < 0 {
+            log(&format!("  live: cannot open the shared fence ({hr:#x})"));
+            return None;
+        }
+        Some(fence)
+    }
+}
+
+/// Makes the game's GPU wait until `fence` reaches `value`
+/// (`ID3D11DeviceContext4::Wait`).
+unsafe fn gpu_wait(fence: Ptr, value: u64) -> bool {
+    let ctx = super::CONTEXT.load(Ordering::Acquire) as Ptr;
+    // SAFETY: the game's immediate context; ID3D11DeviceContext4 from
+    // QueryInterface.
+    unsafe {
+        type Query = unsafe extern "system" fn(Ptr, *const u8, *mut Ptr) -> i32;
+        let query: Query = std::mem::transmute(real_method(ctx, 0));
+        let mut ctx4: Ptr = std::ptr::null_mut();
+        if query(ctx, super::CONTEXT_IIDS[4].as_ptr(), &raw mut ctx4) < 0 {
+            return false;
+        }
+        type Wait = unsafe extern "system" fn(Ptr, Ptr, u64) -> i32;
+        let wait: Wait = std::mem::transmute(real_method(ctx4, 148));
+        let hr = wait(ctx4, fence, value);
+        release(ctx4);
+        hr >= 0
+    }
+}
+
 impl SharedImages {
     /// Releases everything opened.
     unsafe fn release(&mut self) {
@@ -354,6 +413,7 @@ struct Link {
     frame: u32,
     composite: Option<Composite>,
     shared: Option<SharedImages>,
+    fence: Option<SharedFence>,
     /// Frames the renderer did not answer in time.
     misses: u32,
     /// The overlay image to lay over this frame at Present.
@@ -466,6 +526,7 @@ pub fn start() {
                 frame: 0,
                 composite: None,
                 shared: None,
+                fence: None,
                 misses: 0,
                 resent: HashMap::new(),
                 indices: HashMap::new(),
@@ -912,8 +973,27 @@ fn finish(link: &mut Link, s: &mut State, scene: Scene) {
     if (reply.width, reply.height) != (w, h) {
         return;
     }
+    if let Some((_, _, Some((handle, value)))) = reply.shared {
+        if link.fence.as_ref().is_none_or(|f| f.handle != handle) {
+            if let Some(old) = link.fence.take() {
+                // SAFETY: our reference.
+                unsafe { release(old.fence) };
+            }
+            // SAFETY: on the render thread, the game's device.
+            link.fence = unsafe { open_fence(handle) }.map(|fence| SharedFence { handle, fence });
+        }
+        // The renderer may still be drawing the image: the GPU waits.
+        // SAFETY: on the render thread, the game's context.
+        let waited = link
+            .fence
+            .as_ref()
+            .is_some_and(|f| unsafe { gpu_wait(f.fence, value) });
+        if !waited {
+            return;
+        }
+    }
     let source = match reply.shared {
-        Some((generation, set)) => {
+        Some((generation, set, _)) => {
             if link
                 .shared
                 .as_ref()
@@ -966,8 +1046,9 @@ struct Reply {
     /// Colour and normal (RGBA8) then depth (f32), rows packed; empty
     /// when the image is in shared textures.
     scene: Vec<u8>,
-    /// The shared textures' generation and set.
-    shared: Option<(u32, u32)>,
+    /// The shared textures' generation and set, and the fence (its handle
+    /// here and the value that means written).
+    shared: Option<(u32, u32, Option<(u32, u64)>)>,
     overlay: Option<(u32, u32, Vec<u8>)>,
 }
 
@@ -1025,9 +1106,21 @@ fn receive(link: &mut Link, frame: u32) -> Option<Reply> {
             if !link.to_game.read(&mut at, &mut wait) {
                 return None;
             }
+            let mut fence = None;
+            if flags & 4 != 0 {
+                let mut f = [0u8; 12];
+                if !link.to_game.read(&mut f, &mut wait) {
+                    return None;
+                }
+                fence = Some((
+                    u32::from_le_bytes(f[0..4].try_into().expect("4")),
+                    u64::from_le_bytes(f[4..12].try_into().expect("8")),
+                ));
+            }
             shared = Some((
                 u32::from_le_bytes(at[0..4].try_into().expect("4")),
                 u32::from_le_bytes(at[4..8].try_into().expect("4")),
+                fence,
             ));
         } else {
             scene = vec![0u8; (w * h * 12) as usize];

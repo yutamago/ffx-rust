@@ -5,20 +5,25 @@
 //! device. Three sets in turn, so the game's GPU can still read one while
 //! the next is written. Names: `Local\ffx-gfx-<game pid>-<generation>-<set>-<plane>`
 //! (planes: 0 colour, 1 normal, 2 depth); a new generation when the size
-//! changes.
+//! changes. A shared fence, its handle duplicated into the game, tells the
+//! game's GPU when a set is written: the renderer does not wait for its
+//! GPU before answering (FFX_GFX_FENCE=0: it does, as without a fence).
 
 use anyhow::{Context, Result, anyhow};
 use ffx_gfx::Id;
-use windows::Win32::Foundation::{CloseHandle, GENERIC_ALL, HANDLE};
+use windows::Win32::Foundation::{
+    CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, GENERIC_ALL, HANDLE,
+};
 use windows::Win32::Graphics::Direct3D12::{
-    D3D12_HEAP_FLAG_SHARED, D3D12_HEAP_PROPERTIES, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_DESC,
-    D3D12_RESOURCE_DIMENSION_TEXTURE2D, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
-    D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS, D3D12_RESOURCE_STATE_COMMON,
-    D3D12_TEXTURE_LAYOUT_UNKNOWN, ID3D12Resource,
+    D3D12_FENCE_FLAG_SHARED, D3D12_HEAP_FLAG_SHARED, D3D12_HEAP_PROPERTIES,
+    D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_DESC, D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+    D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS,
+    D3D12_RESOURCE_STATE_COMMON, D3D12_TEXTURE_LAYOUT_UNKNOWN, ID3D12Fence, ID3D12Resource,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R32_FLOAT, DXGI_SAMPLE_DESC,
 };
+use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcess, PROCESS_DUP_HANDLE};
 use windows::core::PCWSTR;
 
 use crate::Renderer;
@@ -60,10 +65,21 @@ pub struct Shared {
     pub height: u32,
     pub generation: u32,
     pub set: u32,
+    /// The fence's handle in the game and the value that means written.
+    pub fence: Option<(u32, u64)>,
+}
+
+/// The shared fence: ours, its handle in the game, the last value
+/// signalled.
+struct Fence {
+    fence: ID3D12Fence,
+    remote: u32,
+    value: u64,
 }
 
 pub struct Share {
     pid: u32,
+    fence: Option<Fence>,
     generation: u32,
     size: (u32, u32),
     /// Per set: colour, normal, depth.
@@ -152,8 +168,20 @@ impl Share {
             multiview_mask: None,
             cache: None,
         });
+        let fence = if std::env::var("FFX_GFX_FENCE").is_ok_and(|v| v == "0") {
+            None
+        } else {
+            match make_fence(device, pid) {
+                Ok(f) => Some(f),
+                Err(e) => {
+                    crate::live::log(&format!("no shared fence: {e:#}"));
+                    None
+                }
+            }
+        };
         Ok(Self {
             pid,
+            fence,
             generation: 0,
             size: (0, 0),
             sets: Vec::new(),
@@ -315,13 +343,83 @@ impl Share {
             rp.draw(0..3, 0..1);
         }
         r.queue.submit([enc.finish()]);
-        // The game reads the textures once told: they must be written.
-        r.device.poll(wgpu::PollType::wait_indefinitely())?;
+        let fence = match &mut self.fence {
+            Some(f) => {
+                // The game's GPU waits for this value before reading.
+                f.value += 1;
+                // SAFETY: wgpu's Direct3D 12 queue, after its submission.
+                let signalled = unsafe {
+                    r.queue
+                        .as_hal::<wgpu::hal::api::Dx12>()
+                        .map(|q| q.as_raw().Signal(&f.fence, f.value))
+                };
+                match signalled {
+                    Some(Ok(())) => {
+                        // Never more than two frames ahead of the GPU.
+                        // SAFETY: our fence.
+                        let done = unsafe { f.fence.GetCompletedValue() };
+                        if f.value > done + 2 {
+                            r.device.poll(wgpu::PollType::wait_indefinitely())?;
+                        } else {
+                            r.device.poll(wgpu::PollType::Poll)?;
+                        }
+                        Some((f.remote, f.value))
+                    }
+                    _ => {
+                        r.device.poll(wgpu::PollType::wait_indefinitely())?;
+                        None
+                    }
+                }
+            }
+            None => {
+                // The game reads the textures once told: they must be written.
+                r.device.poll(wgpu::PollType::wait_indefinitely())?;
+                None
+            }
+        };
         Ok(Shared {
             width: size.0,
             height: size.1,
             generation: self.generation,
             set,
+            fence,
+        })
+    }
+}
+
+/// A shared fence on `device`, with its handle duplicated into the game.
+fn make_fence(device: &wgpu::Device, pid: u32) -> Result<Fence> {
+    // SAFETY: the device is Direct3D 12 (checked by the caller).
+    let hal = unsafe { device.as_hal::<wgpu::hal::api::Dx12>() }
+        .ok_or_else(|| anyhow!("not a Direct3D 12 device"))?;
+    let raw = hal.raw_device().clone();
+    drop(hal);
+    // SAFETY: plain Direct3D 12 and Win32 calls; the handles are closed
+    // here, the game's copy is the game's.
+    unsafe {
+        let fence: ID3D12Fence = raw.CreateFence(0, D3D12_FENCE_FLAG_SHARED)?;
+        let handle = raw.CreateSharedHandle(&fence, None, GENERIC_ALL.0, PCWSTR::null())?;
+        let game = OpenProcess(PROCESS_DUP_HANDLE, false, pid);
+        let result = game.and_then(|game| {
+            let mut remote = HANDLE::default();
+            let r = DuplicateHandle(
+                GetCurrentProcess(),
+                handle,
+                game,
+                &raw mut remote,
+                0,
+                false,
+                DUPLICATE_SAME_ACCESS,
+            );
+            let _ = CloseHandle(game);
+            r.map(|()| remote)
+        });
+        let _ = CloseHandle(handle);
+        let remote = result.context("duplicating the fence handle")?;
+        Ok(Fence {
+            fence,
+            remote: u32::try_from(remote.0 as usize).context("handle size")?,
+            value: 0,
         })
     }
 }

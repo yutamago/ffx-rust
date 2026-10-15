@@ -203,9 +203,10 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     let l = -normalize(light.sun.xyz);
     let nl = max(dot(n, l), 0.0);
     var shadow = shadow_factor(p, n);
-    // Scenery facing away from the key light needs no ray (characters'
-    // soft wrap lights past the terminator).
-    if (light.rt.x > 0.5 && light.mix.w > 0.5 && (nm.w > 0.5 || nl > 0.0)) {
+    // No ray where the cascades already have shadow, nor for scenery
+    // facing away from the key light (characters' soft wrap lights past
+    // the terminator).
+    if (light.rt.x > 0.5 && light.mix.w > 0.5 && shadow > 0.0 && (nm.w > 0.5 || nl > 0.0)) {
         shadow = min(shadow, rt_shadow(p, n, l, in.pos.xy, light.rt.y, light.rt.z));
     }
     let rough = select(light.mix.y, albedo_rough.a, albedo_rough.a > 0.01);

@@ -283,6 +283,10 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             Some(s) => {
                 let mut d = s.generation.to_le_bytes().to_vec();
                 d.extend_from_slice(&s.set.to_le_bytes());
+                if let Some((handle, value)) = s.fence {
+                    d.extend_from_slice(&handle.to_le_bytes());
+                    d.extend_from_slice(&value.to_le_bytes());
+                }
                 (s.width, s.height, d)
             }
             None => scene.unwrap_or((0, 0, Vec::new())),
@@ -301,7 +305,13 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
         out.extend_from_slice(&frame.number.to_le_bytes());
         out.extend_from_slice(&w.to_le_bytes());
         out.extend_from_slice(&h.to_le_bytes());
-        let flags = u32::from(overlay_image.is_some()) | if shared.is_some() { 2 } else { 0 };
+        let flags = u32::from(overlay_image.is_some())
+            | if shared.is_some() { 2 } else { 0 }
+            | if shared.is_some_and(|s| s.fence.is_some()) {
+                4
+            } else {
+                0
+            };
         out.extend_from_slice(&flags.to_le_bytes());
         out.extend_from_slice(&data);
         if let Some(img) = &overlay_image {

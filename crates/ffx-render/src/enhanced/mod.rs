@@ -299,6 +299,9 @@ pub struct Enhanced {
     /// The device traces rays; the scenery's structures by draw.
     rt: bool,
     blas_cache: HashMap<BlasKey, CachedBlas>,
+    /// The top-level structure, rebuilt each frame, remade when it needs
+    /// more room.
+    tlas: Option<(u32, wgpu::Tlas)>,
     effect: Option<EffectLight>,
     effect_generation: u32,
     /// Water: its layouts, pipeline layout and pipelines by geometry.
@@ -1156,6 +1159,7 @@ impl Enhanced {
             probes: probe_targets(device),
             rt,
             blas_cache: HashMap::new(),
+            tlas: None,
             taa,
             taa_last: None,
             taa_index: 0,
@@ -3097,7 +3101,21 @@ impl Enhanced {
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("enhanced"),
         });
-        let tlas = self.rt.then(|| {
+        let needed = (instances.len() as u32).max(1);
+        if self.rt && self.tlas.as_ref().is_none_or(|t| t.0 < needed) {
+            let capacity = needed.next_power_of_two().max(64);
+            self.tlas = Some((
+                capacity,
+                device.create_tlas(&wgpu::CreateTlasDescriptor {
+                    label: Some("scene"),
+                    max_instances: capacity,
+                    flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
+                    update_mode: wgpu::AccelerationStructureUpdateMode::Build,
+                }),
+            ));
+        }
+        let mut tlas_slot = self.tlas.take();
+        let tlas = tlas_slot.as_mut().map(|(capacity, tlas)| {
             let buffer_of = |s: Source| match s {
                 Source::Buffer(id, _) => r.buffers.get(&id).map(|b| &b.buffer),
                 Source::Arena(_) => Some(&gbuf),
@@ -3125,12 +3143,11 @@ impl Enhanced {
                     })
                 })
                 .collect();
-            let mut tlas = device.create_tlas(&wgpu::CreateTlasDescriptor {
-                label: Some("scene"),
-                max_instances: (instances.len() as u32).max(1),
-                flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
-                update_mode: wgpu::AccelerationStructureUpdateMode::Build,
-            });
+            if let Some(all) = tlas.get_mut_slice(0..*capacity as usize) {
+                for slot in all {
+                    *slot = None;
+                }
+            }
             for (n, (key, made, transform)) in instances.iter().enumerate() {
                 let blas = match made {
                     Some(m) => &fresh[*m].0,
@@ -3140,8 +3157,8 @@ impl Enhanced {
                     *slot = Some(wgpu::TlasInstance::new(blas, *transform, 0, 0xff));
                 }
             }
-            enc.build_acceleration_structures(entries.iter(), std::iter::once(&tlas));
-            tlas
+            enc.build_acceleration_structures(entries.iter(), std::iter::once(&*tlas));
+            &*tlas
         });
         // Keep the new static structures for later frames.
         for (key, made, _) in &instances {
@@ -3788,6 +3805,7 @@ impl Enhanced {
             rp.draw(0..3, 0..1);
         }
         queue.submit([enc.finish()]);
+        self.tlas = tlas_slot;
         if let Some(e) = pollster::block_on(scope.pop()) {
             self.note(format!("enhanced frame: {e}"));
         }

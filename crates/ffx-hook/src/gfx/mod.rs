@@ -111,7 +111,7 @@ fn claim(tables: &'static [Table], vtable: usize) -> Option<&'static Table> {
 
 type Guid = [u8; 16];
 
-const fn guid(d1: u32, d2: u16, d3: u16, d4: [u8; 8]) -> Guid {
+pub(crate) const fn guid(d1: u32, d2: u16, d3: u16, d4: [u8; 8]) -> Guid {
     let a = d1.to_le_bytes();
     let b = d2.to_le_bytes();
     let c = d3.to_le_bytes();
