@@ -55,6 +55,15 @@ pub struct Settings {
     /// Filter radius, in shadow texels.
     pub shadow_softness: f32,
     pub fog: bool,
+    /// Ray-traced shadows of the key light from the scenery (where the GPU
+    /// can trace rays); characters and cut-out surfaces keep the cascades.
+    pub ray_traced_shadows: bool,
+    /// The key light's angular radius (radians): the softness of traced
+    /// shadows (TAA smooths the noise).
+    pub sun_size: f32,
+    /// How far a shadow ray looks for scenery in the way (world units; a
+    /// character is about 20 tall).
+    pub ray_distance: f32,
     /// Light probes: characters take their indirect light from the
     /// scenery around them (its baked light, seen from where they stand).
     pub probes: bool,
@@ -149,6 +158,9 @@ impl Default for Settings {
             shadow_extent: 50.0,
             shadow_softness: 2.0,
             fog: true,
+            ray_traced_shadows: true,
+            sun_size: 0.012,
+            ray_distance: 150.0,
             probes: true,
             probe_strength: 1.0,
             probe_mix: 0.7,

@@ -96,6 +96,7 @@ fn replay(args: &[String]) -> Result<()> {
         .context("not a capture file")?;
     let msgs = ffx_gfx::read_all(body)?;
     let mut r = ffx_render::Renderer::new()?;
+    println!("{}", r.adapter);
     let mut e = enhanced.then(|| {
         let dir = game.clone().or_else(ffx_render::families::game_dir);
         let cache = std::env::current_exe()

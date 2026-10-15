@@ -102,18 +102,30 @@ impl Renderer {
         }))
         .context("no GPU adapter")?;
         let info = adapter.get_info();
-        let adapter_name = format!("{} ({:?})", info.name, info.backend);
+        let ray_query = adapter
+            .features()
+            .contains(wgpu::Features::EXPERIMENTAL_RAY_QUERY);
+        let adapter_name = format!(
+            "{} ({:?}{})",
+            info.name,
+            info.backend,
+            if ray_query { ", ray queries" } else { "" }
+        );
         let wanted = wgpu::Features::TEXTURE_COMPRESSION_BC
             | wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER
             | wgpu::Features::FLOAT32_FILTERABLE
             | wgpu::Features::DUAL_SOURCE_BLENDING
-            | wgpu::Features::DEPTH32FLOAT_STENCIL8;
+            | wgpu::Features::DEPTH32FLOAT_STENCIL8
+            | wgpu::Features::EXPERIMENTAL_RAY_QUERY;
         let features = adapter.features() & wanted;
         let limits = adapter.limits();
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("ffx-render"),
             required_features: features,
             required_limits: limits,
+            // SAFETY: ray queries are the one experimental feature asked
+            // for; the enhanced renderer uses them only where available.
+            experimental_features: unsafe { wgpu::ExperimentalFeatures::enabled() },
             ..Default::default()
         }))
         .context("no GPU device")?;
@@ -197,12 +209,24 @@ impl Renderer {
 
     fn create_buffer(&mut self, id: Id, desc: ffx_gfx::BufferDesc, data: &[u8]) {
         let size = u64::from(desc[0].max(4)).next_multiple_of(4);
+        // Geometry for ray tracing too, where the device can.
+        let rays = if self
+            .device
+            .features()
+            .contains(wgpu::Features::EXPERIMENTAL_RAY_QUERY)
+            && desc[2] & 0x3 != 0
+        {
+            wgpu::BufferUsages::BLAS_INPUT
+        } else {
+            wgpu::BufferUsages::empty()
+        };
         let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size,
             usage: wgpu::BufferUsages::VERTEX
                 | wgpu::BufferUsages::INDEX
-                | wgpu::BufferUsages::COPY_DST,
+                | wgpu::BufferUsages::COPY_DST
+                | rays,
             mapped_at_creation: false,
         });
         // Constant and index data stay on the CPU too: draws read windows

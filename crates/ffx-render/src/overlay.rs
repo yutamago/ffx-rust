@@ -642,6 +642,12 @@ fn panel(
                     slider(ui, "specular", &mut s.specular, 0.0..=2.0);
                 });
             egui::CollapsingHeader::new("Shadows").show(ui, |ui| {
+                ui.checkbox(
+                    &mut s.ray_traced_shadows,
+                    "Ray-traced from the scenery (if the GPU can)",
+                );
+                slider(ui, "sun size (softness)", &mut s.sun_size, 0.0..=0.08);
+                slider(ui, "ray distance", &mut s.ray_distance, 10.0..=1000.0);
                 ui.checkbox(&mut s.shadows, "Real shadows");
                 ui.checkbox(&mut s.fake_shadows, "The game's blob shadows too");
                 let mut size = s.shadow_size as f32;

@@ -42,6 +42,9 @@ struct Light {
     // x: probe light strength, y: how much it replaces the characters'
     // ambient, z: skin scattering, w: probes on
     gi: vec4<f32>,
+    // x: ray-traced shadows on, y: the key light's angular radius,
+    // z: frame (for the noise), w: how far rays look for occluders
+    rt: vec4<f32>,
 };
 
 struct Probes {
@@ -199,7 +202,12 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     let v = normalize(light.eye.xyz - p);
     let l = -normalize(light.sun.xyz);
     let nl = max(dot(n, l), 0.0);
-    let shadow = shadow_factor(p, n);
+    var shadow = shadow_factor(p, n);
+    // Scenery facing away from the key light needs no ray (characters'
+    // soft wrap lights past the terminator).
+    if (light.rt.x > 0.5 && light.mix.w > 0.5 && (nm.w > 0.5 || nl > 0.0)) {
+        shadow = min(shadow, rt_shadow(p, n, l, in.pos.xy, light.rt.y, light.rt.z));
+    }
     let rough = select(light.mix.y, albedo_rough.a, albedo_rough.a > 0.01);
     let spec = ggx(n, v, l, rough, 0.04) * light.mix.z;
     let hemi = mix(light.ground.rgb, light.sky.rgb, n.y * 0.5 + 0.5) * light.sky.w;

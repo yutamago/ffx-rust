@@ -32,6 +32,47 @@ const WATER_WGSL: &str = include_str!("water.wgsl");
 const PROBE_WGSL: &str = include_str!("probe.wgsl");
 const EFFECT_WGSL: &str = include_str!("effect.wgsl");
 const TAA_WGSL: &str = include_str!("taa.wgsl");
+/// The lighting pass's ray-traced shadow, for devices with ray queries …
+const RT_SHADOW_WGSL: &str = "enable wgpu_ray_query;
+@group(0) @binding(9) var scene_as: acceleration_structure;
+// A ray toward a point of the key light's disc (different per pixel and
+// frame: TAA averages the soft edge); 0 where scenery is in the way.
+fn rt_shadow(p: vec3<f32>, n: vec3<f32>, l: vec3<f32>, px: vec2<f32>, size: f32, frame: f32) -> f32 {
+    let h1 = fract(sin(dot(px + frame * 7.13, vec2<f32>(12.9898, 78.233))) * 43758.5453);
+    let h2 = fract(sin(dot(px + frame * 3.71, vec2<f32>(39.3468, 11.135))) * 24634.6345);
+    let t = normalize(cross(l, select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(l.y) > 0.9)));
+    let b = cross(l, t);
+    let r = sqrt(h1) * size;
+    let a = h2 * 6.2831853;
+    let dir = normalize(l + (t * cos(a) + b * sin(a)) * r);
+    var rq: ray_query;
+    rayQueryInitialize(&rq, scene_as, RayDesc(RAY_FLAG_TERMINATE_ON_FIRST_HIT, 0xffu, 0.02, light.rt.w, p + n * 0.15 + l * 0.05, dir));
+    rayQueryProceed(&rq);
+    let hit = rayQueryGetCommittedIntersection(&rq);
+    if (hit.kind != RAY_QUERY_INTERSECTION_NONE) {
+        return 0.0;
+    }
+    return 1.0;
+}
+";
+/// … and without.
+const NO_RT_WGSL: &str = "fn rt_shadow(p: vec3<f32>, n: vec3<f32>, l: vec3<f32>, px: vec2<f32>, size: f32, frame: f32) -> f32 {
+    return 1.0;
+}
+";
+
+/// A cached bottom-level structure: the buffers it was built from (to
+/// notice when an id is reused) and the structure.
+struct CachedBlas {
+    vertex: wgpu::Buffer,
+    index: Option<wgpu::Buffer>,
+    blas: wgpu::Blas,
+}
+
+/// What a bottom-level structure is built from: vertex buffer id, first
+/// vertex, stride, vertex count, index buffer id, first index, index count,
+/// 32-bit indices.
+type BlasKey = (Id, u32, u32, u32, Id, u32, u32, bool);
 const TAA_SIZE: usize = 64 + 64 + 16;
 /// Ids of the effect light's own target in the renderer's mirror (above
 /// any 32-bit process's user addresses, which the game's ids are).
@@ -255,6 +296,9 @@ pub struct Enhanced {
     gbuffer_layout: wgpu::PipelineLayout,
     lighting: (wgpu::RenderPipeline, wgpu::BindGroupLayout),
     probes: ProbeTargets,
+    /// The device traces rays; the scenery's structures by draw.
+    rt: bool,
+    blas_cache: HashMap<BlasKey, CachedBlas>,
     effect: Option<EffectLight>,
     effect_generation: u32,
     /// Water: its layouts, pipeline layout and pipelines by geometry.
@@ -305,7 +349,14 @@ pub struct Enhanced {
     )>,
     targets: Option<Targets>,
     /// Shadow cascades: size, the array for sampling, one view per layer.
-    shadow: Option<(u32, wgpu::TextureView, Vec<wgpu::TextureView>)>,
+    /// Size; the cascades with every caster and with those rays do not
+    /// cover; the six layers (three each).
+    shadow: Option<(
+        u32,
+        wgpu::TextureView,
+        wgpu::TextureView,
+        Vec<wgpu::TextureView>,
+    )>,
     white: wgpu::TextureView,
     black: wgpu::TextureView,
     cube: wgpu::TextureView,
@@ -450,7 +501,7 @@ const UNFILTERED: wgpu::TextureSampleType = wgpu::TextureSampleType::Float { fil
 /// (64).
 const ITEM_SIZE: usize = 208;
 const CAMERA_SIZE: usize = 64 * 3 + 32;
-const LIGHT_SIZE: usize = 64 + 16 * 12 + 16 * 16;
+const LIGHT_SIZE: usize = 64 + 16 * 12 + 16 * 17;
 const POST_SIZE: usize = 16 + 64 + 16;
 
 fn attachment(
@@ -638,6 +689,96 @@ fn probe_faces(centre: [f32; 3], view: &math::Mat, proj: &math::Mat) -> Vec<math
         .collect()
 }
 
+/// What a scenery draw's bottom-level structure is built from: the key,
+/// the vertex source, first vertex and stride, the index source and first
+/// index, and the vertex count; `None` for draws rays cannot use (skinned,
+/// cut out, instanced, positions not first in their vertex as three
+/// floats, offsets not whole vertices).
+#[allow(clippy::type_complexity)]
+fn blas_input(
+    r: &Renderer,
+    i: &Item,
+    arena: u64,
+) -> Option<(BlasKey, Source, u32, u32, Option<(Source, u32)>, u32)> {
+    let v = i.key.variant;
+    if v.skinned
+        || v.cloth
+        || v.alpha_test
+        || i.centre.is_some()
+        || i.draw.topology != 4
+        || i.draw.instances > 1
+    {
+        return None;
+    }
+    let slot = i.key.buffers.iter().position(|(_, inst, attrs)| {
+        !inst
+            && attrs
+                .iter()
+                .any(|&(loc, f, off)| loc == 0 && f == wgpu::VertexFormat::Float32x3 && off == 0)
+    })?;
+    let stride = i.key.buffers[slot].0;
+    if stride < 12 || stride % 4 != 0 {
+        return None;
+    }
+    let src = *i.vertex.get(slot)?;
+    let (id, at, size) = match src {
+        Source::Buffer(id, off) => (id, off, r.buffers.get(&id)?.buffer.size()),
+        Source::Arena(at) => (Id::MAX, at, arena),
+    };
+    if at % u64::from(stride) != 0 {
+        return None;
+    }
+    let base = u32::try_from(at / u64::from(stride)).ok()?;
+    let d = &i.draw;
+    match i.index {
+        Some((isrc, format)) => {
+            let isize = if format == wgpu::IndexFormat::Uint32 {
+                4
+            } else {
+                2
+            };
+            let (iid, ioff) = match isrc {
+                Source::Buffer(id, off) => (id, off),
+                Source::Arena(at) => (Id::MAX, at),
+            };
+            if ioff % isize != 0 || d.base < 0 {
+                return None;
+            }
+            let first_index = u32::try_from(ioff / isize).ok()? + d.start;
+            let first_vertex = base + d.base as u32;
+            let vertex_count =
+                u32::try_from((size / u64::from(stride)).saturating_sub(u64::from(first_vertex)))
+                    .ok()?;
+            if vertex_count == 0 {
+                return None;
+            }
+            let key = (
+                id,
+                first_vertex,
+                stride,
+                vertex_count,
+                iid,
+                first_index,
+                d.count,
+                isize == 4,
+            );
+            Some((
+                key,
+                src,
+                first_vertex,
+                stride,
+                Some((isrc, first_index)),
+                vertex_count,
+            ))
+        }
+        None => {
+            let first_vertex = base + d.start;
+            let key = (id, first_vertex, stride, d.count, Id::MAX, 0, 0, false);
+            Some((key, src, first_vertex, stride, None, d.count))
+        }
+    }
+}
+
 /// A one-pixel cube map, for water without an environment map.
 fn one_cube(device: &wgpu::Device, queue: &wgpu::Queue, rgba: [u8; 4]) -> wgpu::TextureView {
     let size = wgpu::Extent3d {
@@ -712,6 +853,9 @@ impl Enhanced {
         settings: Settings,
     ) -> Self {
         use wgpu::ShaderStages as S;
+        let rt = device
+            .features()
+            .contains(wgpu::Features::EXPERIMENTAL_RAY_QUERY);
         let camera_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("camera"),
             entries: &layout_entries(&[(0, uniform(CAMERA_SIZE as u64))], S::VERTEX_FRAGMENT),
@@ -767,14 +911,26 @@ impl Enhanced {
                             min_binding_size: wgpu::BufferSize::new(PROBES_SIZE as u64),
                         },
                     ),
-                ],
+                ]
+                .into_iter()
+                .chain(rt.then_some((
+                    9,
+                    wgpu::BindingType::AccelerationStructure {
+                        vertex_return: false,
+                    },
+                )))
+                .collect::<Vec<_>>(),
                 S::FRAGMENT,
             ),
         });
+        let lighting_source = format!(
+            "{}{LIGHTING_WGSL}",
+            if rt { RT_SHADOW_WGSL } else { NO_RT_WGSL }
+        );
         let lighting = fullscreen(
             device,
             &lighting_layout,
-            LIGHTING_WGSL,
+            &lighting_source,
             &[Some(wgpu::ColorTargetState {
                 format: wgpu::TextureFormat::Rgba16Float,
                 blend: None,
@@ -998,6 +1154,8 @@ impl Enhanced {
             water_layouts: (water_layout, water_scene_layout, water_pipeline_layout),
             water_pipelines: HashMap::new(),
             probes: probe_targets(device),
+            rt,
+            blas_cache: HashMap::new(),
             taa,
             taa_last: None,
             taa_index: 0,
@@ -1313,19 +1471,22 @@ impl Enhanced {
         });
     }
 
-    fn shadow_map(&mut self, device: &wgpu::Device) -> (wgpu::TextureView, Vec<wgpu::TextureView>) {
+    fn shadow_map(
+        &mut self,
+        device: &wgpu::Device,
+    ) -> (wgpu::TextureView, wgpu::TextureView, Vec<wgpu::TextureView>) {
         let size = self.settings.shadow_size.clamp(256, 8192);
-        if let Some((s, a, l)) = &self.shadow
+        if let Some((s, a, b, l)) = &self.shadow
             && *s == size
         {
-            return (a.clone(), l.clone());
+            return (a.clone(), b.clone(), l.clone());
         }
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("shadow"),
             size: wgpu::Extent3d {
                 width: size,
                 height: size,
-                depth_or_array_layers: 3,
+                depth_or_array_layers: 6,
             },
             mip_level_count: 1,
             sample_count: 1,
@@ -1334,11 +1495,16 @@ impl Enhanced {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
-        let array = texture.create_view(&wgpu::TextureViewDescriptor {
-            dimension: Some(wgpu::TextureViewDimension::D2Array),
-            ..Default::default()
-        });
-        let layers: Vec<wgpu::TextureView> = (0..3)
+        let array = |base| {
+            texture.create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(wgpu::TextureViewDimension::D2Array),
+                base_array_layer: base,
+                array_layer_count: Some(3),
+                ..Default::default()
+            })
+        };
+        let (all, rest) = (array(0), array(3));
+        let layers: Vec<wgpu::TextureView> = (0..6)
             .map(|l| {
                 texture.create_view(&wgpu::TextureViewDescriptor {
                     dimension: Some(wgpu::TextureViewDimension::D2),
@@ -1348,8 +1514,8 @@ impl Enhanced {
                 })
             })
             .collect();
-        self.shadow = Some((size, array.clone(), layers.clone()));
-        (array, layers)
+        self.shadow = Some((size, all.clone(), rest.clone(), layers.clone()));
+        (all, rest, layers)
     }
 
     /// The material map of colour texture `resource` (made on first use,
@@ -2444,6 +2610,16 @@ impl Enhanced {
                 if s.probes { 1.0 } else { 0.0 },
             ],
         );
+        let traced_on = self.rt && s.ray_traced_shadows && s.shadows;
+        put4(
+            &mut light,
+            [
+                if traced_on { 1.0 } else { 0.0 },
+                s.sun_size.max(0.0),
+                (self.frame_count % 64) as f32,
+                s.ray_distance.max(1.0),
+            ],
+        );
         assert_eq!(light.len(), LIGHT_SIZE, "light uniform layout");
         let light_at = alloc(&light, LIGHT_SIZE);
         // Light probes at the characters nearest the camera (one per group
@@ -2690,7 +2866,12 @@ impl Enhanced {
             size: (geom.len() as u64).max(4).next_multiple_of(4),
             usage: wgpu::BufferUsages::VERTEX
                 | wgpu::BufferUsages::INDEX
-                | wgpu::BufferUsages::COPY_DST,
+                | wgpu::BufferUsages::COPY_DST
+                | if self.rt {
+                    wgpu::BufferUsages::BLAS_INPUT
+                } else {
+                    wgpu::BufferUsages::empty()
+                },
             mapped_at_creation: false,
         });
         geom.resize(geom.len().next_multiple_of(4), 0);
@@ -2852,11 +3033,155 @@ impl Enhanced {
             });
             water_prepared.push((pipe, group, w));
         }
-        let (shadow_view, shadow_layers) = self.shadow_map(&device);
+        let (shadow_view, shadow_rest, shadow_layers) = self.shadow_map(&device);
+        // Ray tracing: the scenery's draws into bottom-level structures
+        // (kept while their buffers are), all of them into this frame's top
+        // level.
+        let mut traced = vec![false; prepared.len()];
+        let mut instances: Vec<(BlasKey, Option<usize>, [f32; 12])> = Vec::new();
+        let mut fresh: Vec<(
+            wgpu::Blas,
+            wgpu::BlasTriangleGeometrySizeDescriptor,
+            Source,
+            u32,
+            u32,
+            Option<(Source, u32)>,
+        )> = Vec::new();
+        if traced_on {
+            for (k, (_, _, _, i)) in prepared.iter().enumerate() {
+                let Some(found) = blas_input(r, i, gbuf.size()) else {
+                    continue;
+                };
+                let (key, vsrc, first_vertex, stride, isrc, vertex_count) = found;
+                let mut transform = [0.0f32; 12];
+                for (n, v) in transform.iter_mut().enumerate() {
+                    *v = f32::from_le_bytes(i.uniform[n * 4..n * 4 + 4].try_into().expect("4"));
+                }
+                let current = |s: Source| match s {
+                    Source::Buffer(id, _) => r.buffers.get(&id).map(|b| b.buffer.clone()),
+                    Source::Arena(_) => None,
+                };
+                let cached = matches!(vsrc, Source::Buffer(..))
+                    && isrc.is_none_or(|(s, _)| matches!(s, Source::Buffer(..)))
+                    && self.blas_cache.get(&key).is_some_and(|c| {
+                        current(vsrc).as_ref() == Some(&c.vertex)
+                            && isrc.and_then(|(s, _)| current(s)) == c.index
+                    });
+                traced[k] = true;
+                if cached {
+                    instances.push((key, None, transform));
+                    continue;
+                }
+                let size = wgpu::BlasTriangleGeometrySizeDescriptor {
+                    vertex_format: wgpu::VertexFormat::Float32x3,
+                    vertex_count,
+                    index_format: i.index.map(|(_, f)| f),
+                    index_count: i.index.map(|_| i.draw.count),
+                    flags: wgpu::AccelerationStructureGeometryFlags::OPAQUE,
+                };
+                let blas = device.create_blas(
+                    &wgpu::CreateBlasDescriptor {
+                        label: Some("scenery"),
+                        flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
+                        update_mode: wgpu::AccelerationStructureUpdateMode::Build,
+                    },
+                    wgpu::BlasGeometrySizeDescriptors::Triangles {
+                        descriptors: vec![size.clone()],
+                    },
+                );
+                instances.push((key, Some(fresh.len()), transform));
+                fresh.push((blas, size, vsrc, first_vertex, stride, isrc));
+            }
+        }
         let t = self.targets.as_ref().expect("made above");
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("enhanced"),
         });
+        let tlas = self.rt.then(|| {
+            let buffer_of = |s: Source| match s {
+                Source::Buffer(id, _) => r.buffers.get(&id).map(|b| &b.buffer),
+                Source::Arena(_) => Some(&gbuf),
+            };
+            let entries: Vec<wgpu::BlasBuildEntry> = fresh
+                .iter()
+                .filter_map(|(blas, size, vsrc, first_vertex, stride, isrc)| {
+                    Some(wgpu::BlasBuildEntry {
+                        blas,
+                        geometry: wgpu::BlasGeometries::TriangleGeometries(vec![
+                            wgpu::BlasTriangleGeometry {
+                                size,
+                                vertex_buffer: buffer_of(*vsrc)?,
+                                first_vertex: *first_vertex,
+                                vertex_stride: u64::from(*stride),
+                                index_buffer: match isrc {
+                                    Some((s, _)) => Some(buffer_of(*s)?),
+                                    None => None,
+                                },
+                                first_index: isrc.map(|(_, f)| f),
+                                transform_buffer: None,
+                                transform_buffer_offset: None,
+                            },
+                        ]),
+                    })
+                })
+                .collect();
+            let mut tlas = device.create_tlas(&wgpu::CreateTlasDescriptor {
+                label: Some("scene"),
+                max_instances: (instances.len() as u32).max(1),
+                flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
+                update_mode: wgpu::AccelerationStructureUpdateMode::Build,
+            });
+            for (n, (key, made, transform)) in instances.iter().enumerate() {
+                let blas = match made {
+                    Some(m) => &fresh[*m].0,
+                    None => &self.blas_cache[key].blas,
+                };
+                if let Some(slot) = tlas.get_mut_single(n) {
+                    *slot = Some(wgpu::TlasInstance::new(blas, *transform, 0, 0xff));
+                }
+            }
+            enc.build_acceleration_structures(entries.iter(), std::iter::once(&tlas));
+            tlas
+        });
+        // Keep the new static structures for later frames.
+        for (key, made, _) in &instances {
+            let Some(m) = made else { continue };
+            let (blas, _, vsrc, _, _, isrc) = &fresh[*m];
+            let get = |s: &Source| match s {
+                Source::Buffer(id, _) => r.buffers.get(id).map(|b| b.buffer.clone()),
+                Source::Arena(_) => None,
+            };
+            if let Some(vertex) = get(vsrc)
+                && isrc.as_ref().is_none_or(|(s, _)| get(s).is_some())
+            {
+                self.blas_cache.insert(
+                    *key,
+                    CachedBlas {
+                        vertex,
+                        index: isrc.as_ref().and_then(|(s, _)| get(s)),
+                        blas: blas.clone(),
+                    },
+                );
+            }
+        }
+        if self.blas_cache.len() > 4096 {
+            self.blas_cache.clear();
+        }
+        if !fresh.is_empty() {
+            let tris: u64 = fresh
+                .iter()
+                .map(|f| u64::from(f.1.index_count.unwrap_or(f.1.vertex_count)) / 3)
+                .sum();
+            let verts: u64 = fresh.iter().map(|f| u64::from(f.1.vertex_count)).sum();
+            *self
+                .notes
+                .entry(format!(
+                    "rays: {} new structures ({tris} triangles, {verts} vertices), {} instances",
+                    fresh.len(),
+                    instances.len()
+                ))
+                .or_default() += 1;
+        }
         let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let record_parts = |rp: &mut wgpu::RenderPass,
                             vertex: &[Source],
@@ -2895,7 +3220,10 @@ impl Enhanced {
         };
         // Shadow cascades.
         if self.settings.shadows {
-            for (layer, group) in shadow_layers.iter().zip(&shadow_groups) {
+            let sets = if traced_on { 6 } else { 3 };
+            for (n, layer) in shadow_layers.iter().enumerate().take(sets) {
+                let group = &shadow_groups[n % 3];
+                let rest_only = n >= 3;
                 let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("shadow"),
                     color_attachments: &[],
@@ -2912,7 +3240,10 @@ impl Enhanced {
                     multiview_mask: None,
                 });
                 rp.set_bind_group(0, group, &[]);
-                for (_, sp, igroup, i) in &prepared {
+                for (k, (_, sp, igroup, i)) in prepared.iter().enumerate() {
+                    if rest_only && traced[k] {
+                        continue;
+                    }
                     if let Some(sp) = sp {
                         rp.set_pipeline(sp);
                         rp.set_bind_group(1, igroup, &[]);
@@ -3093,7 +3424,11 @@ impl Enhanced {
                     },
                     wgpu::BindGroupEntry {
                         binding: 5,
-                        resource: wgpu::BindingResource::TextureView(&shadow_view),
+                        resource: wgpu::BindingResource::TextureView(if traced_on {
+                            &shadow_rest
+                        } else {
+                            &shadow_view
+                        }),
                     },
                     wgpu::BindGroupEntry {
                         binding: 6,
@@ -3111,7 +3446,13 @@ impl Enhanced {
                         binding: 8,
                         resource: self.probes.buffer.as_entire_binding(),
                     },
-                ],
+                ]
+                .into_iter()
+                .chain(tlas.as_ref().map(|tl| wgpu::BindGroupEntry {
+                    binding: 9,
+                    resource: wgpu::BindingResource::AccelerationStructure(tl),
+                }))
+                .collect::<Vec<_>>(),
             });
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("lighting"),
