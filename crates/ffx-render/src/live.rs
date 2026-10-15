@@ -33,6 +33,23 @@ pub fn log(line: &str) {
     }
 }
 
+/// `ffx-render.toml`, or the defaults (written there when missing).
+fn load_settings(path: &std::path::Path) -> crate::enhanced::Settings {
+    match std::fs::read_to_string(path) {
+        Ok(text) => toml::from_str(&text).unwrap_or_else(|e| {
+            log(&format!("{}: {e}", path.display()));
+            crate::enhanced::Settings::default()
+        }),
+        Err(_) => {
+            let s = crate::enhanced::Settings::default();
+            if let Ok(text) = toml::to_string_pretty(&s) {
+                let _ = std::fs::write(path, text);
+            }
+            s
+        }
+    }
+}
+
 /// Runs until the game exits.
 ///
 /// # Errors
@@ -74,6 +91,23 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
     };
     log("device ready");
     let mut frames = 0u32;
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(std::path::Path::to_path_buf))
+        .unwrap_or_default();
+    let families = crate::families::Families::load(
+        crate::families::game_dir().as_deref(),
+        &exe_dir.join("ffx-render-shaders.tsv"),
+    );
+    log(&format!("{} shaders with families", families.len()));
+    let settings_path = exe_dir.join("ffx-render.toml");
+    let mut settings_stamp = None;
+    let mut enhanced = crate::enhanced::Enhanced::new(
+        &r.device,
+        &r.queue,
+        families,
+        load_settings(&settings_path),
+    );
     let filter = Filter::default();
     let mut idle_from = std::time::Instant::now();
     loop {
@@ -117,10 +151,26 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             for (f, n) in r.failures() {
                 log(&format!("  {n} x {f}"));
             }
+            for (f, n) in &enhanced.notes {
+                if !f.starts_with("frame:") && !f.contains(" items, ") {
+                    log(&format!("  enhanced: {n} x {f}"));
+                }
+            }
+        }
+        // Settings edits apply at once.
+        if frames % 30 == 0 {
+            let stamp = std::fs::metadata(&settings_path)
+                .and_then(|m| m.modified())
+                .ok();
+            if stamp != settings_stamp {
+                settings_stamp = stamp;
+                enhanced.settings = load_settings(&settings_path);
+                log(&format!("settings: {:?}", enhanced.settings));
+            }
         }
         let t0 = std::time::Instant::now();
         let t_parsed = t0 - t_head;
-        let drawn = r.draw_frame(&frame, &filter);
+        let drawn = enhanced.render(&mut r, &frame);
         let t_draw = t0.elapsed();
         if let Err(e) = drawn {
             log(&format!("frame {}: {e}", frame.number));

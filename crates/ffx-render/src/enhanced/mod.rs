@@ -138,7 +138,6 @@ struct Item {
     uniform: Vec<u8>,
     bones: Option<Vec<u8>>,
     albedo: Option<(Id, Id)>,
-    family: Family,
 }
 
 #[derive(Clone, Copy)]
@@ -180,6 +179,22 @@ pub struct Enhanced {
     compare: wgpu::Sampler,
     /// Problems seen (once each), for the log.
     pub notes: HashMap<String, usize>,
+    /// The map's lights as last seen in a character draw.
+    map_lights: Option<MapLights>,
+}
+
+/// The game's per-map character lighting, in linear terms: key and fill
+/// direction (the way the light travels) and colour, and ambient.
+#[derive(Debug, Clone, Copy)]
+struct MapLights {
+    key: ([f32; 3], [f32; 3]),
+    fill: ([f32; 3], [f32; 3]),
+    ambient: [f32; 3],
+}
+
+/// The game's light values are gamma-space, with 0.5 as full.
+fn linear(c: [f32; 3]) -> [f32; 3] {
+    c.map(|x| (x * 2.0).max(0.0).powf(2.2))
 }
 
 fn fullscreen(
@@ -258,7 +273,7 @@ const UNFILTERED: wgpu::TextureSampleType = wgpu::TextureSampleType::Float { fil
 /// Item uniform: world (64), cloth (64), colour, params, ambient (48).
 const ITEM_SIZE: usize = 176;
 const CAMERA_SIZE: usize = 64 * 3 + 32;
-const LIGHT_SIZE: usize = 64 * 2 + 16 * 12;
+const LIGHT_SIZE: usize = 64 * 2 + 16 * 15;
 const POST_SIZE: usize = 16 + 64 + 16;
 
 fn attachment(
@@ -415,7 +430,40 @@ impl Enhanced {
             linear,
             compare,
             notes: HashMap::new(),
+            map_lights: None,
         }
+    }
+
+    /// Reads the map's lights from a character draw's pixel shader
+    /// (`Light0`, `Light1`: direction towards the light, then colour;
+    /// ambient from the scene).
+    fn read_map_lights(&mut self, r: &Renderer, d: &Draw) -> Option<MapLights> {
+        let ps = self.reflect(r, d.ps)?;
+        let cb = &d.ps_cb.iter().find(|c| c.0 == 0)?.1;
+        let light = |name: &str| -> Option<([f32; 3], [f32; 3])> {
+            let (off, _) = *ps.vars.get(name)?;
+            let f = |at: u32| {
+                cb.get(at as usize..at as usize + 12).map(|b| {
+                    let v: Vec<f32> = b
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .map(|x| f32::from_le_bytes(*x))
+                        .collect();
+                    [v[0], v[1], v[2]]
+                })
+            };
+            let dir = f(off)?;
+            let color = f(off + 16)?;
+            Some(([-dir[0], -dir[1], -dir[2]], linear(color)))
+        };
+        let key = light("Light0")?;
+        let fill = light("Light1").unwrap_or(([0.0, -1.0, 0.0], [0.0; 3]));
+        let ambient = ps
+            .floats(cb, "CharacterAmbientLight", 3)
+            .or_else(|| ps.floats(cb, "scene.GlobalAmbientColor", 3))
+            .map_or([0.1; 3], |a| linear([a[0], a[1], a[2]]));
+        Some(MapLights { key, fill, ambient })
     }
 
     fn note(&mut self, what: String) {
@@ -856,7 +904,6 @@ impl Enhanced {
             uniform: u,
             bones: bones_data,
             albedo,
-            family,
         })
     }
 
@@ -970,6 +1017,11 @@ impl Enhanced {
                 Cmd::ClearTarget { .. } | Cmd::ClearDepth { .. } => {}
                 Cmd::Draw(d) => {
                     let family = self.family(r, d);
+                    if family == Family::Character
+                        && let Some(m) = self.read_map_lights(r, d)
+                    {
+                        self.map_lights = Some(m);
+                    }
                     if family == Family::FakeShadow && !self.settings.fake_shadows {
                         continue;
                     }
@@ -1026,8 +1078,29 @@ impl Enhanced {
         put4(&mut cam, [eye[0], eye[1], eye[2], 1.0]);
         put4(&mut cam, [time, 0.0, 0.0, 0.0]);
         let cam_at = alloc(&cam, CAMERA_SIZE);
-        // The key light and its shadow box around the view.
-        let sun_dir = math::normalize(self.settings.sun_direction);
+        // The key light: the map's, or the settings'.
+        let (sun_dir, sun_color, sun_intensity, fill, sky) =
+            match (self.settings.map_lights, self.map_lights) {
+                (true, Some(m)) => (
+                    math::normalize(m.key.0),
+                    m.key.1,
+                    self.settings.key_scale,
+                    (
+                        math::normalize(m.fill.0),
+                        m.fill.1,
+                        self.settings.fill_scale,
+                    ),
+                    (m.ambient, self.settings.sky_scale),
+                ),
+                _ => (
+                    math::normalize(self.settings.sun_direction),
+                    self.settings.sun_color,
+                    self.settings.sun_intensity,
+                    ([0.0, -1.0, 0.0], [0.0; 3], 0.0),
+                    (self.settings.sky_color, self.settings.sky_intensity),
+                ),
+            };
+        // Its shadow box around the view.
         let forward = math::normalize([view[2][0], view[2][1], view[2][2]]);
         let extent = self.settings.shadow_extent;
         let center = [
@@ -1067,21 +1140,10 @@ impl Enhanced {
         put4(&mut light, [eye[0], eye[1], eye[2], 1.0]);
         put4(
             &mut light,
-            [sun_dir[0], sun_dir[1], sun_dir[2], s.sun_intensity],
+            [sun_dir[0], sun_dir[1], sun_dir[2], sun_intensity],
         );
-        put4(
-            &mut light,
-            [s.sun_color[0], s.sun_color[1], s.sun_color[2], 0.0],
-        );
-        put4(
-            &mut light,
-            [
-                s.sky_color[0],
-                s.sky_color[1],
-                s.sky_color[2],
-                s.sky_intensity,
-            ],
-        );
+        put4(&mut light, [sun_color[0], sun_color[1], sun_color[2], 0.0]);
+        put4(&mut light, [sky.0[0], sky.0[1], sky.0[2], sky.1]);
         put4(
             &mut light,
             [s.ground_color[0], s.ground_color[1], s.ground_color[2], 0.0],
@@ -1121,6 +1183,8 @@ impl Enhanced {
         );
         put4(&mut light, [size.0 as f32, size.1 as f32, 0.0, 0.0]);
         put4(&mut light, view[2]);
+        put4(&mut light, [fill.0[0], fill.0[1], fill.0[2], fill.2]);
+        put4(&mut light, [fill.1[0], fill.1[1], fill.1[2], 0.0]);
         let light_at = alloc(&light, LIGHT_SIZE);
         let mut post = Vec::new();
         put4(

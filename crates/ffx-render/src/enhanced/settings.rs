@@ -15,6 +15,13 @@ pub struct Settings {
     pub tone_curve: u8,
     pub saturation: f32,
     pub contrast: f32,
+    /// Take the key, fill and sky light from the map's character lights
+    /// (the game's own per-map lighting); off: the values below.
+    pub map_lights: bool,
+    /// Scale of the map's key light, fill light and ambient (sky).
+    pub key_scale: f32,
+    pub fill_scale: f32,
+    pub sky_scale: f32,
     /// The direction the key light travels (world space).
     pub sun_direction: [f32; 3],
     pub sun_intensity: f32,
@@ -43,17 +50,21 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             enabled: true,
-            exposure: 1.0,
-            tone_curve: 0,
+            exposure: 1.15,
+            tone_curve: 1,
             saturation: 1.0,
             contrast: 1.0,
+            map_lights: true,
+            key_scale: 0.35,
+            fill_scale: 0.2,
+            sky_scale: 0.6,
             sun_direction: [-0.35, -0.85, 0.4],
             sun_intensity: 0.0,
             sun_color: [1.0, 0.95, 0.85],
             sky_color: [0.6, 0.7, 0.9],
             sky_intensity: 0.0,
             ground_color: [0.3, 0.27, 0.25],
-            baked_light: 1.0,
+            baked_light: 0.75,
             character_ambient: 2.0,
             roughness: 0.7,
             specular: 0.5,
@@ -62,7 +73,7 @@ impl Default for Settings {
             shadow_extent: 60.0,
             shadow_softness: 2.0,
             fog: true,
-            fake_shadows: true,
+            fake_shadows: false,
         }
     }
 }

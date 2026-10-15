@@ -27,6 +27,9 @@ struct Light {
     // The view matrix's third row: view-space depth, as the game's fog
     // uses.
     view_z: vec4<f32>,
+    // xyz: direction the fill light travels, w: intensity; colour
+    fill: vec4<f32>,
+    fill_color: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> light: Light;
@@ -119,9 +122,11 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     let rough = light.mix.y;
     let direct = light.sun_color.rgb * light.sun.w * nl * shadow;
     let spec = ggx(n, v, l, rough, 0.04) * light.mix.z;
+    let lf = -normalize(light.fill.xyz);
+    let fill = light.fill_color.rgb * light.fill.w * max(dot(n, lf), 0.0);
     let hemi = mix(light.ground.rgb, light.sky.rgb, n.y * 0.5 + 0.5) * light.sky.w;
     let indirect = baked * light.mix.x + hemi;
-    var color = albedo * (indirect * ao + direct) + direct * spec;
+    var color = albedo * (indirect * ao + direct + fill) + direct * spec;
     // The game's fog, by distance from the eye.
     if (light.fog_range.w > 0.5) {
         let d = abs(dot(light.view_z, vec4<f32>(p, 1.0)));
