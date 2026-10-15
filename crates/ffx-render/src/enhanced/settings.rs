@@ -30,7 +30,9 @@ pub struct Settings {
     pub sky_color: [f32; 3],
     pub sky_intensity: f32,
     pub ground_color: [f32; 3],
-    /// Weight of the game's baked vertex light (the indirect term).
+    /// Weight of the game's baked vertex light: the artists' light on
+    /// scenery (and indirect light on characters). Below 1 the key light
+    /// lights the scenery directly in its place (0: dynamic light only).
     pub baked_light: f32,
     /// How much the key light reshapes scenery's baked light (shadows,
     /// facing), 0–1.

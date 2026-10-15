@@ -86,7 +86,12 @@ Passes, in order:
    harmonics.
 5. **Ambient occlusion** (screen space, blurred).
 6. **Lighting** (linear HDR). Scenery keeps its baked light as the base
-   (the game's art), reshaped by the key light and its shadow; characters
+   (the game's art), reshaped by the key light and its shadow; as far as
+   `baked_light` is turned down, the key light lights the scenery directly
+   in its place, with its real shadows (0: dynamic light only, the sky
+   light on top); beyond 1500–2500 units (the sky dome, distant land)
+   scenery keeps the game's own colours, its texture times its painted
+   light, whatever the settings; characters
    get the map's key and fill light with the game's soft wrap, light from
    the probes, and skin scattering on skin-coloured parts. Shadows are
    ray-traced from the scenery where possible, from the cascades
@@ -219,7 +224,7 @@ tools/run-game.sh --renderer                  # the game with the renderer
 FFX_PROBE_BATTLE=1 cargo run --release -p ffx-harness --example live_probe -- <out> 1 120 3
 cargo run --release -p ffx-harness --example gfx_capture -- <dir>          # capture a frame
 target/x86_64-pc-windows-msvc/release/ffx-render.exe replay <dir>/capture.ffxgfx <out> \
-    --enhanced [--until N] [--set key=value] [--materials DIR]
+    --enhanced [--until N] [--settings ffx-render.toml] [--set key=value] [--materials DIR]
 ```
 
 `replay` without `--enhanced` draws the captured frame with the game's

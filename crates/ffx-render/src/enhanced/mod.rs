@@ -3047,7 +3047,15 @@ impl Enhanced {
             &mut light,
             [sun_dir[0], sun_dir[1], sun_dir[2], sun_intensity],
         );
-        put4(&mut light, [sun_color[0], sun_color[1], sun_color[2], 0.0]);
+        put4(
+            &mut light,
+            [
+                sun_color[0],
+                sun_color[1],
+                sun_color[2],
+                1.0 - s.baked_light.clamp(0.0, 1.0),
+            ],
+        );
         put4(&mut light, [sky.0[0], sky.0[1], sky.0[2], sky.1]);
         put4(
             &mut light,

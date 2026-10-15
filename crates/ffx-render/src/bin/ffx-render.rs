@@ -1,5 +1,5 @@
 //! `ffx-render replay <capture.ffxgfx> <out dir> [--until N] [--target ID]
-//! [--enhanced] [--game DIR] [--set key=value] [--materials DIR]
+//! [--enhanced] [--game DIR] [--settings FILE] [--set key=value] [--materials DIR]
 //! [--export-materials DIR]`: draws a captured frame and writes every
 //! 8-bit colour render target it drew into as `<out dir>/<view id>.png`.
 
@@ -23,14 +23,23 @@ fn main() -> Result<()> {
 }
 
 /// Settings with `key=value` overrides (TOML values).
-fn settings(sets: &[String]) -> ffx_render::enhanced::Settings {
-    let mut text = String::new();
+/// The settings of a settings file (`--settings`), then each `--set` over
+/// them.
+fn settings(file: Option<&str>, sets: &[String]) -> ffx_render::enhanced::Settings {
+    let mut table: toml::Table = file.map_or_else(toml::Table::new, |t| {
+        toml::from_str(t).unwrap_or_else(|e| {
+            eprintln!("bad --settings: {e}");
+            toml::Table::new()
+        })
+    });
     for s in sets {
-        text.push_str(s);
-        text.push('\n');
+        match toml::from_str::<toml::Table>(s) {
+            Ok(t) => table.extend(t),
+            Err(e) => eprintln!("bad --set {s}: {e}"),
+        }
     }
-    toml::from_str(&text).unwrap_or_else(|e| {
-        eprintln!("bad --set: {e}");
+    toml::Value::Table(table).try_into().unwrap_or_else(|e| {
+        eprintln!("bad settings: {e}");
         ffx_render::enhanced::Settings::default()
     })
 }
@@ -54,6 +63,7 @@ fn replay(args: &[String]) -> Result<()> {
     let mut pick: Option<(f32, f32)> = None;
     let mut game: Option<PathBuf> = None;
     let mut sets: Vec<String> = Vec::new();
+    let mut file: Option<String> = None;
     let mut materials: Option<PathBuf> = None;
     let mut export: Option<PathBuf> = None;
     let mut i = 2;
@@ -83,6 +93,11 @@ fn replay(args: &[String]) -> Result<()> {
                 let dir = PathBuf::from(args.get(i + 1).context("DIR")?);
                 std::fs::create_dir_all(&dir)?;
                 export = Some(dir);
+                i += 1;
+            }
+            "--settings" => {
+                let f = args.get(i + 1).context("FILE")?;
+                file = Some(std::fs::read_to_string(f).with_context(|| f.clone())?);
                 i += 1;
             }
             "--set" => {
@@ -118,8 +133,12 @@ fn replay(args: &[String]) -> Result<()> {
             .unwrap_or_else(|| PathBuf::from("ffx-render-shaders.tsv"));
         let families = ffx_render::families::Families::load(dir.as_deref(), &cache);
         println!("{} shaders with families", families.len());
-        let mut e =
-            ffx_render::enhanced::Enhanced::new(&r.device, &r.queue, families, settings(&sets));
+        let mut e = ffx_render::enhanced::Enhanced::new(
+            &r.device,
+            &r.queue,
+            families,
+            settings(file.as_deref(), &sets),
+        );
         e.material_dir.clone_from(&materials);
         e.fsr_dir = std::env::current_exe()
             .ok()
@@ -175,6 +194,10 @@ fn replay(args: &[String]) -> Result<()> {
         }
     }
     if let Some(e) = &e {
+        println!(
+            "enhanced: {} items, {} draws with the game's shaders",
+            e.last_items, e.last_other
+        );
         for (n, c) in &e.notes {
             println!("note: {c} x {n}");
         }

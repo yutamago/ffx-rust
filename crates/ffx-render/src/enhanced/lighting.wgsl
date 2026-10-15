@@ -10,6 +10,8 @@ struct Light {
     eye: vec4<f32>,
     // xyz: direction the light travels, w: intensity
     sun: vec4<f32>,
+    // rgb: key light colour, w: how much the key light lights scenery
+    // directly (where its baked light is turned down)
     sun_color: vec4<f32>,
     // rgb: sky ambient, w: strength
     sky: vec4<f32>,
@@ -49,6 +51,11 @@ struct Light {
     // z: frame (for the noise), w: how far rays look for occluders
     rt: vec4<f32>,
 };
+
+// Scenery beyond these distances (world units; a character is about 20
+// tall) keeps the game's look.
+const FAR_START: f32 = 1500.0;
+const FAR_END: f32 = 2500.0;
 
 // A point or spot light (`lights.rs`).
 struct LocalLight {
@@ -295,8 +302,18 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
                 * mix(1.0, mix(1.0, cascade, facing), light.screen.z);
         }
         let base = baked * light.mix.x * max(shape, 0.0) * mix(1.0, ao, light.scenery.z);
+        // As far as the baked light is turned down, the key light lights
+        // the scenery in its place, with its real shadows (the two never
+        // add up).
+        let dynamic = light.sun_color.w;
+        let direct = light.sun_color.rgb * light.sun.w * nl * shadow * dynamic;
         let gloss = spec * light.sun_color.rgb * light.sun.w * shadow * nl * light.scenery.y;
-        color = albedo * (base + hemi * ao * light.ground.w) + gloss * min(dot(baked, vec3<f32>(0.33)) * 2.0, 1.0);
+        let lit_by = mix(min(dot(baked, vec3<f32>(0.33)) * 2.0, 1.0), 1.0, dynamic);
+        color = albedo * (base + direct + hemi * ao * light.ground.w) + gloss * lit_by;
+        // Far away (the sky dome, distant land) nothing of ours reaches:
+        // the game's own colours, its texture times its painted light.
+        let far = smoothstep(FAR_START, FAR_END, distance(p, light.eye.xyz));
+        color = mix(color, albedo_rough.rgb * baked, far);
     } else {
         // Characters: lit like the game lights them, key and fill light
         // with real shadows, ambient as sky.

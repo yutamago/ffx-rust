@@ -1047,8 +1047,18 @@ fn settings_ui(ui: &mut egui::Ui, e: &mut Ed) {
             color3(ui, f!(e.sky_color), "sky colour");
             color3(ui, f!(e.ground_color), "ground colour");
         }
-        slider(ui, f!(e.baked_light), "baked light", 0.0..=2.0);
-        slider(ui, f!(e.scenery_key), "key light on scenery", 0.0..=1.0);
+        slider(
+            ui,
+            f!(e.baked_light),
+            "baked light (0: dynamic only)",
+            0.0..=2.0,
+        );
+        slider(
+            ui,
+            f!(e.scenery_key),
+            "key shadows on baked light",
+            0.0..=1.0,
+        );
         slider(ui, f!(e.scenery_sky), "sky light on scenery", 0.0..=2.0);
         slider(ui, f!(e.scenery_specular), "scenery specular", 0.0..=2.0);
         slider(ui, f!(e.character_ambient), "character ambient", 0.0..=4.0);
