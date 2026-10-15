@@ -49,6 +49,13 @@ pub struct Light {
     /// How strongly it lights scenery and characters.
     pub scenery: f32,
     pub characters: f32,
+    /// Static: its shadows from a cube map of the scenery made once (not
+    /// rays every frame); characters cast none.
+    #[serde(skip)]
+    pub static_shadows: bool,
+    /// The cube map it has this frame, if any.
+    #[serde(skip)]
+    pub cube: Option<u32>,
 }
 
 impl Default for Light {
@@ -68,6 +75,8 @@ impl Default for Light {
             specular: 1.0,
             scenery: 1.0,
             characters: 1.0,
+            static_shadows: false,
+            cube: None,
         }
     }
 }
@@ -191,13 +200,14 @@ pub fn pack<'a>(lights: impl Iterator<Item = &'a Light>, rays: bool) -> Vec<u8> 
             [d[0], d[1], d[2], outer],
             [
                 inner,
-                if l.shadows && rays && !directional {
+                if l.shadows && rays && !directional && l.cube.is_none() && !l.static_shadows {
                     1.0
                 } else {
                     0.0
                 },
                 l.specular,
-                0.0,
+                // The cube map's number + 1 (0: none).
+                l.cube.map_or(0.0, |c| (c + 1) as f32),
             ],
             [l.scenery, l.characters, 0.0, 0.0],
         ] {

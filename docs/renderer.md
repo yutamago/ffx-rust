@@ -103,7 +103,14 @@ Passes, in order:
    lights falling with the square of the distance over a source two units
    across, ending smoothly at their radius, and unshadowed directional
    lights) come from the rig and from the glows, with ray-traced shadows
-   where rays are on.
+   where rays are on. Static lights keep their shadows (`statics.rs`): a
+   static point or spot light (at most 8) has six depth faces of the
+   scenery within its reach, made again only when the light or that
+   scenery changes (two lights a frame at most), sampled in place of rays;
+   a static key light keeps the scenery's cascades while they and the
+   scenery stay the same (the second set, drawn every frame, has what
+   moves). As in Unreal, what moves casts no shadow from a static point
+   or spot light.
 7. **Water**: the game's water draws, with its two normal maps, its cube
    map tinted as the game tints it, screen-space reflection, refraction
    with absorption, and the game's opacity.

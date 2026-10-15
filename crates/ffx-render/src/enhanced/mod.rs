@@ -19,6 +19,7 @@ pub mod rig;
 mod settings;
 #[cfg(test)]
 mod shader_tests;
+mod statics;
 pub mod timer;
 
 use std::collections::HashMap;
@@ -575,6 +576,10 @@ pub struct Enhanced {
     pub timer: Option<timer::Timer>,
     /// Draws' bounds, for culling the shadow cascades and probe faces.
     bounds: cull::Bounds,
+    /// Static lights' shadows (made on first need), and what a static key
+    /// light's kept cascades were made of.
+    cubes: Option<statics::Cubes>,
+    kept_key: Option<u64>,
     /// Draws culled in the last frame's cascades and probe faces, and
     /// drawn.
     pub culled: (usize, usize),
@@ -1295,6 +1300,30 @@ impl Enhanced {
                         },
                     ),
                     (11, tex(UNFILTERED)),
+                    (
+                        12,
+                        wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Depth,
+                            view_dimension: wgpu::TextureViewDimension::D2Array,
+                            multisampled: false,
+                        },
+                    ),
+                    (
+                        13,
+                        wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Depth,
+                            view_dimension: wgpu::TextureViewDimension::D2Array,
+                            multisampled: false,
+                        },
+                    ),
+                    (
+                        14,
+                        wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: wgpu::BufferSize::new(statics::ROWS_SIZE as u64),
+                        },
+                    ),
                 ])
                 .collect::<Vec<_>>(),
                 S::FRAGMENT,
@@ -1562,6 +1591,8 @@ impl Enhanced {
             texture_dir: None,
             timer: None,
             bounds: cull::Bounds::default(),
+            cubes: None,
+            kept_key: None,
             culled: (0, 0),
             timer_tried: false,
             #[cfg(windows)]
@@ -2983,7 +3014,7 @@ impl Enhanced {
             alloc(&c, CAMERA_SIZE)
         };
         // The scene's lights, with the game's.
-        let res = self.rig.resolve(self.map_lights.as_ref());
+        let mut res = self.rig.resolve(self.map_lights.as_ref());
         let sun_dir = res.key.direction;
         let sun_color = res.key.light;
         let sky = res.sky;
@@ -3051,8 +3082,87 @@ impl Enhanced {
                 alloc(&c, CAMERA_SIZE)
             })
             .collect();
-        let shadow_cam = Vec::<u8>::new();
-        let _ = shadow_cam;
+        // Static lights: what their kept shadows are made of (the light,
+        // and the draws that do not move: scenery with bounds), and which
+        // to make again this frame.
+        use std::hash::{Hash, Hasher};
+        let item_bounds: Vec<Option<cull::Aabb>> =
+            items.iter().map(|i| self.bounds.world(r, i)).collect();
+        let fixed = |i: &Item, b: &Option<cull::Aabb>| {
+            i.centre.is_none() && !i.key.variant.skinned && b.is_some()
+        };
+        let key_static = res.key.static_shadows && self.settings.shadows;
+        let key_hash = {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            self.settings.shadow_size.hash(&mut h);
+            for c in &cascades {
+                for v in c.iter().flatten() {
+                    v.to_bits().hash(&mut h);
+                }
+            }
+            for (i, b) in items.iter().zip(&item_bounds) {
+                if fixed(i, b) {
+                    i.motion.hash(&mut h);
+                }
+            }
+            h.finish()
+        };
+        let key_bake = key_static && self.kept_key != Some(key_hash);
+        if self.cubes.is_none() {
+            self.cubes = Some(statics::Cubes::new(&device));
+        }
+        let mut cube_rows = vec![0u8; statics::ROWS_SIZE];
+        // (cube, faces, what it is made of, the faces' camera uniforms).
+        let mut cube_jobs: Vec<(usize, [math::Mat; 6], u64, Vec<u64>)> = Vec::new();
+        let mut slot = 0usize;
+        for l in &mut res.locals {
+            if !l.static_shadows
+                || !l.shadows
+                || l.kind == lights::Kind::Directional
+                || slot >= statics::MAX
+            {
+                continue;
+            }
+            l.cube = Some(slot as u32);
+            let faces = statics::faces(l.position, l.range);
+            let mut rows = Vec::with_capacity(6 * 64);
+            for f in &faces {
+                put_rows(&mut rows, f);
+            }
+            cube_rows[slot * 6 * 64..(slot + 1) * 6 * 64].copy_from_slice(&rows);
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            for v in l.position.iter().chain(std::iter::once(&l.range)) {
+                v.to_bits().hash(&mut h);
+            }
+            for (i, b) in items.iter().zip(&item_bounds) {
+                if fixed(i, b) && b.is_some_and(|b| statics::touches(&b, l.position, l.range)) {
+                    i.motion.hash(&mut h);
+                }
+            }
+            let made = h.finish();
+            let cubes = self.cubes.as_ref().expect("made above");
+            if cubes.made[slot] != Some(made) && cube_jobs.len() < statics::PER_FRAME {
+                let cams = faces
+                    .iter()
+                    .map(|f| {
+                        let mut c = Vec::new();
+                        put_rows(&mut c, f);
+                        put_rows(&mut c, &math::identity());
+                        put_rows(&mut c, &math::identity());
+                        put4(&mut c, [l.position[0], l.position[1], l.position[2], 1.0]);
+                        put4(&mut c, [time, 0.0, 0.0, 0.0]);
+                        alloc(&c, CAMERA_SIZE)
+                    })
+                    .collect();
+                cube_jobs.push((slot, faces, made, cams));
+            }
+            slot += 1;
+        }
+        queue.write_buffer(
+            &self.cubes.as_ref().expect("made above").rows,
+            0,
+            &cube_rows,
+        );
         // Each draw's transforms last frame, for its motion vectors: draws
         // are matched by what they draw (the same mesh drawn twice in a
         // frame by its turn).
@@ -3146,7 +3256,10 @@ impl Enhanced {
             &mut light,
             [original[1], res.key.characters, sky.3, res.key.specular],
         );
-        put4(&mut light, [0.0; 4]);
+        put4(
+            &mut light,
+            [if key_static { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0],
+        );
         put4(
             &mut light,
             [original[2], original[4], original[3], s.character_falloff],
@@ -3168,7 +3281,7 @@ impl Enhanced {
         put4(
             &mut light,
             [
-                if traced_on { 1.0 } else { 0.0 },
+                if traced_on && !key_static { 1.0 } else { 0.0 },
                 res.key.angle,
                 (self.frame_count % 64) as f32,
                 s.ray_distance.max(1.0),
@@ -3867,9 +3980,16 @@ impl Enhanced {
         };
         mark!("rays");
         // Shadow cascades.
+        let key_rays = traced_on && !key_static;
         if self.settings.shadows {
-            let sets = if traced_on { 6 } else { 3 };
+            // Two sets where the scenery's shadows come from elsewhere
+            // (rays, or the kept cascades of a static key light): the
+            // second has what they do not (what moves).
+            let sets = if key_rays || key_static { 6 } else { 3 };
             for (n, layer) in shadow_layers.iter().enumerate().take(sets) {
+                if n < 3 && key_static && !key_bake {
+                    continue;
+                }
                 let group = &shadow_groups[n % 3];
                 let rest_only = n >= 3;
                 let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -3889,7 +4009,11 @@ impl Enhanced {
                 });
                 rp.set_bind_group(0, group, &[]);
                 for (k, (_, sp, igroup, i, _)) in prepared.iter().enumerate() {
-                    if rest_only && traced[k] {
+                    if key_static {
+                        if (n < 3) != fixed(i, &bounds[k]) {
+                            continue;
+                        }
+                    } else if rest_only && traced[k] {
                         continue;
                     }
                     if bounds[k].is_some_and(|b| cull::outside(&cascades[n % 3], &b, false)) {
@@ -3904,6 +4028,51 @@ impl Enhanced {
                     }
                 }
             }
+        }
+        self.kept_key = key_static.then_some(key_hash);
+        // Static lights' shadows that changed: their six faces of the
+        // scenery that does not move.
+        let cubes = self.cubes.as_mut().expect("made above");
+        for (slot, faces, made, cams) in &cube_jobs {
+            for (f, (vp, at)) in faces.iter().zip(cams).enumerate() {
+                let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: None,
+                    layout: &self.camera_layout,
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: binding(*at, CAMERA_SIZE),
+                    }],
+                });
+                let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("static light shadow"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &cubes.layers[slot * 6 + f],
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                rp.set_bind_group(0, &group, &[]);
+                for (k, (_, sp, igroup, i, _)) in prepared.iter().enumerate() {
+                    if !fixed(i, &bounds[k])
+                        || bounds[k].is_some_and(|b| cull::outside(vp, &b, true))
+                    {
+                        continue;
+                    }
+                    if let Some(sp) = sp {
+                        rp.set_pipeline(sp);
+                        rp.set_bind_group(1, igroup, &[]);
+                        record(&mut rp, i);
+                    }
+                }
+            }
+            cubes.made[*slot] = Some(*made);
         }
         mark!("shadows");
         // G-buffer.
@@ -4151,7 +4320,7 @@ impl Enhanced {
                     },
                     wgpu::BindGroupEntry {
                         binding: 5,
-                        resource: wgpu::BindingResource::TextureView(if traced_on {
+                        resource: wgpu::BindingResource::TextureView(if key_rays || key_static {
                             &shadow_rest
                         } else {
                             &shadow_view
@@ -4187,6 +4356,18 @@ impl Enhanced {
                     wgpu::BindGroupEntry {
                         binding: 11,
                         resource: wgpu::BindingResource::TextureView(&t.material),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 12,
+                        resource: wgpu::BindingResource::TextureView(&shadow_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 13,
+                        resource: wgpu::BindingResource::TextureView(&cubes.array),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 14,
+                        resource: cubes.rows.as_entire_binding(),
                     },
                 ])
                 .collect::<Vec<_>>(),

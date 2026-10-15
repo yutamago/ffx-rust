@@ -458,6 +458,8 @@ impl Rig {
                         specular: l.specular,
                         scenery: l.scenery,
                         characters: l.characters,
+                        static_shadows: l.mobility == Mobility::Static,
+                        cube: None,
                     });
                 }
             }

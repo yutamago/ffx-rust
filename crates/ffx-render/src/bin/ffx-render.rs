@@ -1,5 +1,5 @@
 //! `ffx-render replay <capture.ffxgfx> <out dir> [--until N] [--target ID]
-//! [--enhanced] [--game DIR] [--settings FILE] [--set key=value] [--pick x,y [--outline]] [--materials DIR]
+//! [--enhanced] [--game DIR] [--settings FILE] [--edits FILE] [--set key=value] [--pick x,y [--outline]] [--materials DIR]
 //! [--export-materials DIR]`: draws a captured frame and writes every
 //! 8-bit colour render target it drew into as `<out dir>/<view id>.png`.
 
@@ -66,6 +66,8 @@ fn replay(args: &[String]) -> Result<()> {
     let mut game: Option<PathBuf> = None;
     let mut sets: Vec<String> = Vec::new();
     let mut file: Option<String> = None;
+    // An editor's edits file: the captured scene's lights and materials.
+    let mut edits: Option<ffx_render::edits::Edits> = None;
     let mut materials: Option<PathBuf> = None;
     let mut export: Option<PathBuf> = None;
     let mut i = 2;
@@ -96,6 +98,15 @@ fn replay(args: &[String]) -> Result<()> {
                 let dir = PathBuf::from(args.get(i + 1).context("DIR")?);
                 std::fs::create_dir_all(&dir)?;
                 export = Some(dir);
+                i += 1;
+            }
+            "--edits" => {
+                let f = PathBuf::from(args.get(i + 1).context("FILE")?);
+                let (loaded, err) = ffx_render::edits::Edits::load(&f);
+                if let Some(e) = err {
+                    bail!("{e}");
+                }
+                edits = Some(loaded);
                 i += 1;
             }
             "--settings" => {
@@ -163,6 +174,12 @@ fn replay(args: &[String]) -> Result<()> {
         }
         if let ffx_gfx::Msg::World { scene, camera } = &m {
             println!("world: {scene:?}, camera {camera:?}");
+            if let (Some(e), Some(ed)) = (e.as_mut(), edits.as_ref()) {
+                let eff = ed.effective(scene);
+                e.rig = eff.rig;
+                e.glow_edits = eff.glows;
+                e.material_edits = eff.materials;
+            }
         }
         match (&mut e, m) {
             (Some(e), ffx_gfx::Msg::Frame(f)) => {

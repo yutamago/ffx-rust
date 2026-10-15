@@ -37,6 +37,8 @@ struct Light {
     // On characters: x: the original light, y: the key light, z: the
     // sky light; w: the key light's specular
     channels: vec4<f32>,
+    // x: the key light is static (its scenery's cascades are kept, in
+    // `static_tex`; `shadow_tex` has only what moves)
     spare: vec4<f32>,
     // x: how much the key light's shadows darken the original light on
     // scenery (0: not at all, 1: fully by its shadow and facing), y: the
@@ -99,6 +101,43 @@ struct Probes {
 @group(0) @binding(10) var<storage, read> lights: Lights;
 // r: metallic, g: specular / 2, b: emission / 8, a: skin (`gbuffer.wgsl`).
 @group(0) @binding(11) var material_tex: texture_2d<f32>;
+// A static key light's cascades of the scenery.
+@group(0) @binding(12) var static_tex: texture_depth_2d_array;
+// Static point and spot lights' shadows: six faces each, and the faces'
+// view-projections (rows).
+@group(0) @binding(13) var cube_tex: texture_depth_2d_array;
+@group(0) @binding(14) var<storage, read> cube_faces: CubeFaces;
+
+struct CubeFaces {
+    rows: array<vec4<f32>, 192>,
+};
+
+// The shadow of a static light (cube `c`, at `lp`) at `p`.
+fn cube_shadow(c: u32, p: vec3<f32>, lp: vec3<f32>) -> f32 {
+    let v = p - lp;
+    let a = abs(v);
+    var f = 0u;
+    if (a.x >= a.y && a.x >= a.z) {
+        f = select(1u, 0u, v.x > 0.0);
+    } else if (a.y >= a.z) {
+        f = select(3u, 2u, v.y > 0.0);
+    } else {
+        f = select(5u, 4u, v.z > 0.0);
+    }
+    let layer = c * 6u + f;
+    let wp = vec4<f32>(p, 1.0);
+    let b = layer * 4u;
+    let h = vec4<f32>(dot(cube_faces.rows[b], wp), dot(cube_faces.rows[b + 1u], wp), dot(cube_faces.rows[b + 2u], wp), dot(cube_faces.rows[b + 3u], wp));
+    let s = h.xyz / h.w;
+    let uv = vec2<f32>(s.x * 0.5 + 0.5, 0.5 - s.y * 0.5);
+    let t = 1.5 / f32(textureDimensions(cube_tex).x);
+    var sum = 0.0;
+    for (var i = 0; i < 4; i = i + 1) {
+        let o = vec2<f32>(select(-t, t, (i & 1) == 1), select(-t, t, (i & 2) == 2));
+        sum = sum + textureSampleCompareLevel(cube_tex, shadow_samp, clamp(uv + o, vec2<f32>(0.0), vec2<f32>(1.0)), layer, s.z);
+    }
+    return sum / 4.0;
+}
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -120,7 +159,7 @@ fn world_position(px: vec2<f32>, depth: f32) -> vec3<f32> {
     return h.xyz / h.w;
 }
 
-fn shadow_factor(p: vec3<f32>, n: vec3<f32>) -> f32 {
+fn shadow_factor(cascades: texture_depth_2d_array, p: vec3<f32>, n: vec3<f32>) -> f32 {
     if (light.mix.w < 0.5) {
         return 1.0;
     }
@@ -158,7 +197,7 @@ fn shadow_factor(p: vec3<f32>, n: vec3<f32>) -> f32 {
     let rot = mat2x2<f32>(cos(a), sin(a), -sin(a), cos(a));
     var sum = 0.0;
     for (var i = 0; i < 12; i = i + 1) {
-        sum = sum + textureSampleCompareLevel(shadow_tex, shadow_samp, uv + rot * taps[i] * r, c, s.z);
+        sum = sum + textureSampleCompareLevel(cascades, shadow_samp, uv + rot * taps[i] * r, c, s.z);
     }
     var f = sum / 12.0;
     // Fade out the last cascade's far edge.
@@ -257,7 +296,9 @@ fn local_lights(p: vec3<f32>, n: vec3<f32>, v: vec3<f32>, albedo: vec3<f32>, rou
         if (amount * shape <= 1e-6) {
             continue;
         }
-        if (lt.extra.y > 0.5) {
+        if (lt.extra.w > 0.5) {
+            amount = amount * cube_shadow(u32(lt.extra.w) - 1u, p + n * 0.3, lt.pos.xyz);
+        } else if (lt.extra.y > 0.5) {
             amount = amount * rt_visible(p + n * 0.15, l, d - 0.5, px);
         }
         let radiance = lt.color.rgb * amount;
@@ -293,14 +334,19 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     let nl = max(dot(n, l), 0.0);
     // With rays, the cascades hold only what rays do not see (characters,
     // cut-out surfaces): two shadows, of different strength on scenery.
-    let cascade = shadow_factor(p, n);
+    let cascade = shadow_factor(shadow_tex, p, n);
     let traced_on = light.rt.x > 0.5 && light.mix.w > 0.5;
+    // A static key light: the scenery's shadows from its kept cascades,
+    // as rays would give them (the cascades then have only what moves).
+    let kept = light.spare.x > 0.5 && light.mix.w > 0.5;
     var traced = 1.0;
     // No ray where the cascades already have shadow, nor for scenery
     // facing away from the key light (characters' soft wrap lights past
     // the terminator).
     if (traced_on && cascade > 0.0 && (character || nl > 0.0)) {
         traced = rt_shadow(p, n, l, in.pos.xy, light.rt.y, light.rt.z);
+    } else if (kept) {
+        traced = shadow_factor(static_tex, p, n);
     }
     let shadow = min(cascade, traced);
     let rough = select(light.mix.y, albedo_rough.a, albedo_rough.a > 0.01);
@@ -317,7 +363,7 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
         // ground them: stronger than the scenery's own.
         let facing = smoothstep(0.0, 0.2, nl);
         var shape = mix(1.0, mix(1.0, shadow, facing), light.scenery.x);
-        if (traced_on) {
+        if (traced_on || kept) {
             shape = mix(1.0, mix(1.0, traced, facing), light.scenery.x)
                 * mix(1.0, mix(1.0, cascade, facing), light.screen.z);
         }
