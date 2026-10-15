@@ -25,6 +25,8 @@ const LIGHTING_WGSL: &str = include_str!("lighting.wgsl");
 const OUTPUT_WGSL: &str = include_str!("output.wgsl");
 const AO_WGSL: &str = include_str!("ao.wgsl");
 const MATERIAL_WGSL: &str = include_str!("material.wgsl");
+const RESOLVE_WGSL: &str = include_str!("resolve.wgsl");
+const RESOLVE_SIZE: usize = 16 + 64;
 const AO_SIZE: usize = 64 * 2 + 32;
 
 /// Variables of one shader's first constant buffer: name → (offset, size),
@@ -158,6 +160,7 @@ struct Targets {
     depth: wgpu::TextureView,
     hdr: wgpu::TextureView,
     ao: [wgpu::TextureView; 2],
+    ldr: wgpu::TextureView,
 }
 
 pub struct Enhanced {
@@ -169,6 +172,8 @@ pub struct Enhanced {
     item_layout: wgpu::BindGroupLayout,
     gbuffer_layout: wgpu::PipelineLayout,
     lighting: (wgpu::RenderPipeline, wgpu::BindGroupLayout),
+    /// Tone mapping into the intermediate image, and its layout.
+    tone: (wgpu::RenderPipeline, wgpu::BindGroupLayout),
     /// Material map generation (first level, then each smaller one).
     material_gen: (
         wgpu::RenderPipeline,
@@ -514,6 +519,27 @@ impl Enhanced {
             fullscreen_entry(device, &gen_layout, MATERIAL_WGSL, "fs_down", &rgba8),
             gen_layout,
         );
+        let tone_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("tone"),
+            entries: &layout_entries(
+                &[
+                    (0, uniform(POST_SIZE as u64)),
+                    (1, tex(UNFILTERED)),
+                    (2, tex(UNFILTERED)),
+                    (3, tex(wgpu::TextureSampleType::Depth)),
+                    (4, tex(FLOAT)),
+                    (
+                        5,
+                        wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    ),
+                ],
+                S::FRAGMENT,
+            ),
+        });
+        let tone = (
+            fullscreen(device, &tone_layout, OUTPUT_WGSL, &rgba8, None),
+            tone_layout,
+        );
         let linear = device.create_sampler(&wgpu::SamplerDescriptor {
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
@@ -538,6 +564,7 @@ impl Enhanced {
             lighting: (lighting, lighting_layout),
             ao: (ao_pass, ao_blur, ao_layout),
             material_gen,
+            tone,
             materials: HashMap::new(),
             flat_material: one_pixel(device, queue, [128, 128, 179, 255]),
             output: None,
@@ -789,6 +816,7 @@ impl Enhanced {
                 make(wgpu::TextureFormat::R8Unorm, "ao"),
                 make(wgpu::TextureFormat::R8Unorm, "ao blur"),
             ],
+            ldr: make(wgpu::TextureFormat::Rgba8Unorm, "ldr"),
         });
     }
 
@@ -1263,7 +1291,14 @@ impl Enhanced {
         self.note(format!("frame: camera at {eye:?}"));
         let device = r.device.clone();
         let queue = r.queue.clone();
-        self.targets(&device, size);
+        // The enhanced passes run at the render scale; the resolve brings
+        // the image to the game's size.
+        let scale = self.settings.render_scale.clamp(0.5, 3.0);
+        let internal = (
+            ((size.0 as f32 * scale).round() as u32).max(1),
+            ((size.1 as f32 * scale).round() as u32).max(1),
+        );
+        self.targets(&device, internal);
         // Split the frame: enhanced items, and the rest for the game's
         // shaders (kept in order).
         let mut sent: HashMap<Id, (u32, Vec<u8>)> = HashMap::new();
@@ -1499,7 +1534,7 @@ impl Enhanced {
                 if s.ao { 1.0 } else { 0.0 },
             ],
         );
-        put4(&mut light, [size.0 as f32, size.1 as f32, 0.0, 0.0]);
+        put4(&mut light, [internal.0 as f32, internal.1 as f32, 0.0, 0.0]);
         put4(&mut light, view[2]);
         put4(&mut light, [fill.0[0], fill.0[1], fill.0[2], fill.2]);
         put4(&mut light, [fill.1[0], fill.1[1], fill.1[2], 0.0]);
@@ -1526,7 +1561,12 @@ impl Enhanced {
                 put_rows(&mut a, &view_proj);
                 put4(
                     &mut a,
-                    [s.ao_radius, s.ao_strength, size.0 as f32, size.1 as f32],
+                    [
+                        s.ao_radius,
+                        s.ao_strength,
+                        internal.0 as f32,
+                        internal.1 as f32,
+                    ],
                 );
                 put4(&mut a, [dir[0], dir[1], 0.0, 0.0]);
                 alloc(&a, AO_SIZE)
@@ -1546,6 +1586,19 @@ impl Enhanced {
         put4(&mut post, [0.0, 0.0, 0.0, 0.0]);
         assert_eq!(post.len(), POST_SIZE, "post uniform layout");
         let post_at = alloc(&post, POST_SIZE);
+        let mut resolve = Vec::new();
+        put4(
+            &mut resolve,
+            [
+                scale,
+                if s.antialiasing == 1 { 1.0 } else { 0.0 },
+                size.0 as f32,
+                size.1 as f32,
+            ],
+        );
+        put_rows(&mut resolve, &view);
+        assert_eq!(resolve.len(), RESOLVE_SIZE, "resolve uniform layout");
+        let resolve_at = alloc(&resolve, RESOLVE_SIZE);
         let ubuf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("enhanced uniforms"),
             size: (arena.len() as u64).max(256).next_multiple_of(4),
@@ -1739,7 +1792,7 @@ impl Enhanced {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            rp.set_viewport(0.0, 0.0, size.0 as f32, size.1 as f32, 0.0, 1.0);
+            rp.set_viewport(0.0, 0.0, internal.0 as f32, internal.1 as f32, 0.0, 1.0);
             rp.set_bind_group(0, &cam_group, &[]);
             for (p, _, group, i) in &prepared {
                 rp.set_pipeline(p);
@@ -1859,7 +1912,51 @@ impl Enhanced {
             rp.set_bind_group(0, &group, &[]);
             rp.draw(0..3, 0..1);
         }
-        // Output into the game's scene targets.
+        // Tone mapping into the intermediate image.
+        {
+            let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &self.tone.1,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: binding(post_at, POST_SIZE),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&t.hdr),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&t.normal),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(&t.depth),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(&self.black),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::Sampler(&self.linear),
+                    },
+                ],
+            });
+            let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("tone"),
+                color_attachments: &[attachment(&t.ldr, wgpu::LoadOp::Clear(wgpu::Color::BLACK))],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            rp.set_pipeline(&self.tone.0);
+            rp.set_bind_group(0, &group, &[]);
+            rp.draw(0..3, 0..1);
+        }
+        // Resolve into the game's scene targets.
         let (Some(cv), Some(nv), Some(dv)) = (
             r.texture_view(color_view, false),
             r.texture_view(normal_view, false),
@@ -1882,18 +1979,17 @@ impl Enhanced {
             .is_none_or(|o| o.2 != formats_now || o.3 != depth_format)
         {
             let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("output"),
+                label: Some("resolve"),
                 entries: &layout_entries(
                     &[
-                        (0, uniform(POST_SIZE as u64)),
-                        (1, tex(UNFILTERED)),
-                        (2, tex(UNFILTERED)),
-                        (3, tex(wgpu::TextureSampleType::Depth)),
-                        (4, tex(FLOAT)),
+                        (0, uniform(RESOLVE_SIZE as u64)),
+                        (1, tex(FLOAT)),
                         (
-                            5,
+                            2,
                             wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                         ),
+                        (3, tex(UNFILTERED)),
+                        (4, tex(wgpu::TextureSampleType::Depth)),
                     ],
                     wgpu::ShaderStages::FRAGMENT,
                 ),
@@ -1911,7 +2007,7 @@ impl Enhanced {
             let pipeline = fullscreen(
                 &device,
                 &layout,
-                OUTPUT_WGSL,
+                RESOLVE_WGSL,
                 &targets,
                 Some(wgpu::DepthStencilState {
                     format: depth_format,
@@ -1930,27 +2026,23 @@ impl Enhanced {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: binding(post_at, POST_SIZE),
+                    resource: binding(resolve_at, RESOLVE_SIZE),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&t.hdr),
+                    resource: wgpu::BindingResource::TextureView(&t.ldr),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&t.normal),
+                    resource: wgpu::BindingResource::Sampler(&self.linear),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&t.depth),
+                    resource: wgpu::BindingResource::TextureView(&t.normal),
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
-                    resource: wgpu::BindingResource::TextureView(&self.black),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: wgpu::BindingResource::Sampler(&self.linear),
+                    resource: wgpu::BindingResource::TextureView(&t.depth),
                 },
             ],
         });
@@ -1958,7 +2050,7 @@ impl Enhanced {
             let att = |v| attachment(v, wgpu::LoadOp::Load);
             let has_stencil = depth_format.has_stencil_aspect();
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("output"),
+                label: Some("resolve"),
                 color_attachments: &[att(&cv), att(&nv)],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &dv,

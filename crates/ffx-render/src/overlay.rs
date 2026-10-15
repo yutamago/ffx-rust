@@ -667,6 +667,16 @@ fn panel(
                 slider(ui, "saturation", &mut s.saturation, 0.0..=2.0);
                 slider(ui, "contrast", &mut s.contrast, 0.5..=1.5);
                 ui.checkbox(&mut s.fog, "The game's fog");
+                ui.horizontal(|ui| {
+                    ui.label("anti-aliasing");
+                    ui.selectable_value(&mut s.antialiasing, 0, "off");
+                    ui.selectable_value(&mut s.antialiasing, 1, "FXAA");
+                });
+                ui.add(
+                    egui::Slider::new(&mut s.render_scale, 0.5..=2.0)
+                        .step_by(0.25)
+                        .text("render scale (above 1: supersampling)"),
+                );
             });
             egui::CollapsingHeader::new("Debug").show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {

@@ -1,7 +1,5 @@
-// Final pass of the enhanced renderer: HDR to the game's 8-bit colour
-// target with the chosen tone curve and grade, the game's normal encoding
-// to its second target, and depth to its depth buffer (the game's effects
-// and HDAO use them).
+// Tone mapping: HDR to 8-bit display colour with the chosen curve and
+// grade, at the render scale (resolve.wgsl brings it to the game).
 
 struct Post {
     // x: exposure (multiplier), y: tone curve (0 game, 1 ACES, 2 AgX-like),
@@ -67,8 +65,6 @@ fn to_display(x: vec3<f32>) -> vec3<f32> {
 
 struct Out {
     @location(0) color: vec4<f32>,
-    @location(1) normal: vec4<f32>,
-    @builtin(frag_depth) depth: f32,
 };
 
 @fragment
@@ -92,9 +88,5 @@ fn fs(in: VsOut) -> Out {
     c = clamp((c - 0.5) * post.tone.w + 0.5, vec3<f32>(0.0), vec3<f32>(1.0));
     var out: Out;
     out.color = vec4<f32>(c, 1.0);
-    let n = textureLoad(normal_tex, px, 0).xyz;
-    let vn = vec3<f32>(dot(post.view[0].xyz, n), dot(post.view[1].xyz, n), dot(post.view[2].xyz, n));
-    out.normal = vec4<f32>(normalize(vn), 1.0);
-    out.depth = textureLoad(depth_tex, px, 0);
     return out;
 }

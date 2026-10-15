@@ -76,7 +76,7 @@ fn main() -> ffx_harness::Result<()> {
         capture(&mut game, &out.join(format!("field{}", i + 2)))?;
     }
     if battle {
-        ffx_harness::screens::start_battle(&mut game, 0, 0, 0)?;
+        ffx_harness::screens::start_battle(&mut game, 3, 0, 0)?;
         game.wait(400)?;
         capture(&mut game, &out.join("battle"))?;
     }

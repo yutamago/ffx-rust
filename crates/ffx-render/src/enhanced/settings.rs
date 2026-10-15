@@ -55,6 +55,11 @@ pub struct Settings {
     /// Filter radius, in shadow texels.
     pub shadow_softness: f32,
     pub fog: bool,
+    /// The enhanced passes' resolution relative to the game's (above 1:
+    /// supersampling).
+    pub render_scale: f32,
+    /// 0 off, 1 FXAA.
+    pub antialiasing: u8,
     /// Screen-space ambient occlusion.
     pub ao: bool,
     /// Its radius in world units (a character is about 20 tall).
@@ -104,6 +109,8 @@ impl Default for Settings {
             shadow_extent: 50.0,
             shadow_softness: 2.0,
             fog: true,
+            render_scale: 1.0,
+            antialiasing: 1,
             ao: true,
             ao_radius: 4.0,
             ao_strength: 1.0,

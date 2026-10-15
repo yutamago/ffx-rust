@@ -16,6 +16,14 @@ fn main() -> ffx_harness::Result<()> {
     let mut game = ffx_harness::Game::launch(&options)?;
     println!("in {}", ffx_harness::screens::load_save(&mut game, entry)?);
     game.wait(240)?;
+    // FFX_PROBE_BATTLE=1: start the first battle of field 3 (cdsp00).
+    if std::env::var("FFX_PROBE_BATTLE").is_ok_and(|v| v == "1") {
+        println!(
+            "{}",
+            ffx_harness::screens::start_battle(&mut game, 3, 0, 0)?
+        );
+        game.wait(400)?;
+    }
     for i in 0..shots {
         game.screenshot()?
             .save_png(&out.join(format!("shot{i}.png")))?;
