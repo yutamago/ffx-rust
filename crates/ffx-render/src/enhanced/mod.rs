@@ -7,6 +7,8 @@
 //! (water, painted backdrops, transparent effects, unknown shaders) go
 //! through the game's own shaders afterwards, as in the original path.
 
+#[cfg(windows)]
+pub mod fsr;
 pub mod glow;
 pub mod lights;
 pub mod materials;
@@ -466,6 +468,8 @@ struct Targets {
     hdr: wgpu::TextureView,
     ao: [wgpu::TextureView; 2],
     ldr: wgpu::TextureView,
+    #[cfg_attr(not(windows), allow(dead_code))] // FSR's input
+    ldr_texture: wgpu::Texture,
     /// TAA's history, in turn written and read.
     history: [wgpu::TextureView; 2],
     /// The HDR image and depth as textures (for copies), and their copies
@@ -549,6 +553,16 @@ pub struct Enhanced {
     /// Material packs: `<hash>.png` per colour texture (rg normal, b
     /// roughness, a cavity), used instead of the generated maps.
     pub material_dir: Option<std::path::PathBuf>,
+    /// AMD FSR 3 (antialiasing 3), loaded on first use from `fsr_dir`.
+    #[cfg(windows)]
+    fsr: Option<fsr::Fsr>,
+    #[cfg_attr(not(windows), allow(dead_code))]
+    fsr_tried: bool,
+    pub fsr_dir: Option<std::path::PathBuf>,
+    /// FSR's motion input (`Rg16Float` at the render size).
+    #[cfg_attr(not(windows), allow(dead_code))]
+    fsr_motion: Option<((u32, u32), wgpu::Texture, wgpu::TextureView)>,
+    last_render: Option<std::time::Instant>,
     /// Images the editor puts in place of textures (`Material::texture`).
     pub texture_dir: Option<std::path::PathBuf>,
     replacements: HashMap<String, Option<wgpu::TextureView>>,
@@ -1507,6 +1521,12 @@ impl Enhanced {
             materials: HashMap::new(),
             material_dir: None,
             texture_dir: None,
+            #[cfg(windows)]
+            fsr: None,
+            fsr_tried: false,
+            fsr_dir: None,
+            fsr_motion: None,
+            last_render: None,
             replacements: HashMap::new(),
             export_dir: None,
             exported: std::collections::HashSet::new(),
@@ -1761,6 +1781,7 @@ impl Enhanced {
         };
         let hdr_texture = plain(wgpu::TextureFormat::Rgba16Float, "hdr");
         let id_texture = plain(wgpu::TextureFormat::R32Uint, "draw ids");
+        let ldr_texture = plain(wgpu::TextureFormat::Rgba8Unorm, "ldr");
         let depth_texture = plain(wgpu::TextureFormat::Depth32Float, "depth");
         self.targets = Some(Targets {
             size,
@@ -1777,7 +1798,8 @@ impl Enhanced {
                 make(wgpu::TextureFormat::R8Unorm, "ao"),
                 make(wgpu::TextureFormat::R8Unorm, "ao blur"),
             ],
-            ldr: make(wgpu::TextureFormat::Rgba8Unorm, "ldr"),
+            ldr: ldr_texture.1,
+            ldr_texture: ldr_texture.0,
             history: [
                 make(wgpu::TextureFormat::Rgba16Float, "taa history"),
                 make(wgpu::TextureFormat::Rgba16Float, "taa history"),
@@ -2730,14 +2752,26 @@ impl Enhanced {
             return r.draw_frame(frame, &Filter::default());
         };
         // TAA: a sub-pixel jitter of the camera each frame (Halton 2, 3).
-        let taa = self.settings.antialiasing == 2;
-        let scale = self.settings.render_scale.clamp(0.5, 3.0);
+        // FSR: its own jitter, and the render size its mode asks.
+        let fsr_on = self.settings.antialiasing == 3 && self.fsr_ready(&r.device);
+        let taa = self.settings.antialiasing == 2 || (self.settings.antialiasing == 3 && !fsr_on);
+        let scale = if fsr_on {
+            1.0 / [1.0, 1.5, 1.7, 2.0, 3.0][usize::from(self.settings.fsr_mode.min(4))]
+        } else {
+            self.settings.render_scale.clamp(0.5, 3.0)
+        };
         let internal = (
             ((size.0 as f32 * scale).round() as u32).max(1),
             ((size.1 as f32 * scale).round() as u32).max(1),
         );
+        let fsr_jitter = self.fsr_jitter(fsr_on, internal, size);
         let unjittered = view_proj;
-        let view_proj = if taa {
+        let view_proj = if let Some((ox, oy)) = fsr_jitter {
+            let mut j = math::identity();
+            j[0][3] = 2.0 * ox / internal.0 as f32;
+            j[1][3] = -2.0 * oy / internal.1 as f32;
+            math::mul(&j, &view_proj)
+        } else if taa {
             let halton = |mut i: u32, base: u32| {
                 let (mut f, mut r) = (1.0f32, 0.0f32);
                 while i > 0 {
@@ -2867,11 +2901,15 @@ impl Enhanced {
         );
         // After a camera cut nothing moved: the image did not come from the
         // last one.
+        let mut camera_cut = false;
         let prev_view_proj = match self.last_view_proj.replace((unjittered, eye)) {
             Some((vp, e)) if (0..3).map(|k| (e[k] - eye[k]).powi(2)).sum::<f32>() < 40.0 * 40.0 => {
                 vp
             }
-            _ => unjittered,
+            _ => {
+                camera_cut = true;
+                unjittered
+            }
         };
         put_rows(&mut cam, &unjittered);
         put_rows(&mut cam, &prev_view_proj);
@@ -4265,7 +4303,107 @@ impl Enhanced {
             rp.set_bind_group(0, &group, &[]);
             rp.draw(0..3, 0..1);
         }
-        let resolved = if taa { &t.history[taa_write] } else { &t.ldr };
+        // FSR: the motion everywhere, then its own command list between
+        // this frame's two submissions.
+        #[cfg(windows)]
+        let fsr_view = match (fsr_on, self.fsr.as_mut()) {
+            (true, Some(fsr)) => {
+                if self.fsr_motion.as_ref().is_none_or(|m| m.0 != internal) {
+                    let texture = device.create_texture(&wgpu::TextureDescriptor {
+                        label: Some("fsr motion"),
+                        size: wgpu::Extent3d {
+                            width: internal.0,
+                            height: internal.1,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format: wgpu::TextureFormat::Rg16Float,
+                        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                            | wgpu::TextureUsages::TEXTURE_BINDING,
+                        view_formats: &[],
+                    });
+                    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                    self.fsr_motion = Some((internal, texture, view));
+                }
+                let (_, motion_texture, motion_view) = self.fsr_motion.as_ref().expect("made");
+                self.post.full_motion(
+                    &device,
+                    &mut enc,
+                    &post::Inputs {
+                        hdr: &t.hdr,
+                        depth: &t.depth,
+                        motion: &t.motion,
+                        size: internal,
+                        view_proj: unjittered,
+                        prev_view_proj,
+                        frame: self.frame_count,
+                        look_at: None,
+                    },
+                    motion_view,
+                );
+                let proj = math::mul(&unjittered, &math::invert(&view));
+                let (a, b) = (proj[2][2], proj[2][3]);
+                let (near, far) = if proj[3][2] < 0.0 {
+                    (b / a, b / (1.0 + a))
+                } else {
+                    (-b / a, b / (1.0 - a))
+                };
+                let (near, far) = (
+                    near.abs().clamp(0.01, 1000.0),
+                    far.abs().max(near.abs() + 1.0),
+                );
+                let now = std::time::Instant::now();
+                let frame_ms = self
+                    .last_render
+                    .map_or(16.7, |t| (now - t).as_secs_f32() * 1000.0);
+                let inputs = fsr::Inputs {
+                    color: &t.ldr_texture,
+                    depth: &t.depth_texture,
+                    motion: motion_texture,
+                    render: internal,
+                    display: size,
+                    jitter: fsr_jitter.unwrap_or((0.0, 0.0)),
+                    frame_ms,
+                    reset: camera_cut,
+                    near,
+                    far,
+                    fov_y: 2.0 * (1.0 / proj[1][1].abs().max(1e-3)).atan(),
+                    sharpness: self.settings.fsr_sharpness,
+                };
+                fsr.prepare(&device, &mut enc, &inputs);
+                queue.submit([std::mem::replace(
+                    &mut enc,
+                    device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("after fsr"),
+                    }),
+                )
+                .finish()]);
+                match fsr.dispatch(&device, &queue, &inputs) {
+                    Ok(v) => Some(v),
+                    Err(e) => {
+                        self.notes
+                            .entry(format!("FSR: {e}"))
+                            .and_modify(|n| *n += 1)
+                            .or_insert(1);
+                        None
+                    }
+                }
+            }
+            _ => None,
+        };
+        #[cfg(not(windows))]
+        let fsr_view: Option<wgpu::TextureView> = {
+            let _ = camera_cut;
+            None
+        };
+        self.last_render = Some(std::time::Instant::now());
+        let resolved = match &fsr_view {
+            Some(v) => v,
+            None if taa => &t.history[taa_write],
+            None => &t.ldr,
+        };
         // Resolve into the game's scene targets.
         let (Some(cv), Some(nv), Some(dv)) = (
             r.texture_view(color_view, false),
@@ -4407,6 +4545,45 @@ impl Enhanced {
             self.effect_light(r, &rest, color_view)?;
         }
         r.draw_frame(&rest, &Filter::default())
+    }
+
+    /// Whether FSR can run (loaded on first ask; why not is noted once).
+    #[cfg_attr(not(windows), allow(clippy::unused_self))] // FSR is Windows-only
+    fn fsr_ready(&mut self, device: &wgpu::Device) -> bool {
+        #[cfg(windows)]
+        {
+            if !self.fsr_tried {
+                self.fsr_tried = true;
+                let dir = self.fsr_dir.clone().unwrap_or_default();
+                match fsr::Fsr::new(device, &dir) {
+                    Ok(f) => self.fsr = Some(f),
+                    Err(e) => self.note(format!("no FSR: {e:#}")),
+                }
+            }
+            self.fsr.is_some()
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = device;
+            false
+        }
+    }
+
+    /// FSR's jitter for this frame (render pixels), when it runs.
+    #[cfg_attr(not(windows), allow(clippy::unused_self))] // FSR is Windows-only
+    fn fsr_jitter(&self, on: bool, render: (u32, u32), display: (u32, u32)) -> Option<(f32, f32)> {
+        #[cfg(windows)]
+        {
+            self.fsr
+                .as_ref()
+                .filter(|_| on)
+                .map(|f| f.jitter(render, display, self.frame_count))
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = (on, render, display);
+            None
+        }
     }
 
     /// The glowing effects the game drew over the last frame

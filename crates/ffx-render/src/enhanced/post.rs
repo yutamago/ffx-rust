@@ -57,6 +57,8 @@ pub(super) struct Post {
     dof: wgpu::RenderPipeline,
     dof_tiles: wgpu::RenderPipeline,
     motion: wgpu::RenderPipeline,
+    #[cfg_attr(not(windows), allow(dead_code))]
+    full_motion: wgpu::RenderPipeline,
     down_first: wgpu::RenderPipeline,
     down: wgpu::RenderPipeline,
     up: wgpu::RenderPipeline,
@@ -185,6 +187,17 @@ impl Post {
             dof: fullscreen_entry(device, &layout, POST_WGSL, "fs_dof", &plain),
             dof_tiles: fullscreen_entry(device, &layout, POST_WGSL, "fs_dof_tiles", &tile_target),
             motion: fullscreen_entry(device, &layout, POST_WGSL, "fs_motion", &plain),
+            full_motion: fullscreen_entry(
+                device,
+                &layout,
+                POST_WGSL,
+                "fs_full_motion",
+                &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Rg16Float,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            ),
             down_first: fullscreen_entry(device, &layout, POST_WGSL, "fs_down_first", &plain),
             down: fullscreen_entry(device, &layout, POST_WGSL, "fs_down", &plain),
             up: fullscreen_entry(device, &layout, POST_WGSL, "fs_up", &add),
@@ -401,6 +414,31 @@ impl Post {
             out.moved = true;
         }
         out
+    }
+
+    #[cfg_attr(not(windows), allow(dead_code))] // for FSR
+    /// The motion everywhere (the camera's where the G-buffer drew
+    /// nothing) into `dst` (`Rg16Float`, UV units), for FSR; after `run`
+    /// (its uniform).
+    pub fn full_motion(
+        &self,
+        device: &wgpu::Device,
+        enc: &mut wgpu::CommandEncoder,
+        i: &Inputs,
+        dst: &wgpu::TextureView,
+    ) {
+        let group = self.group(device, i.hdr, None, i);
+        let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("full motion"),
+            color_attachments: &[attachment(dst, wgpu::LoadOp::Clear(wgpu::Color::BLACK))],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        rp.set_pipeline(&self.full_motion);
+        rp.set_bind_group(0, &group, &[]);
+        rp.draw(0..3, 0..1);
     }
 
     /// The image the effects wrote, when `Output::moved`.

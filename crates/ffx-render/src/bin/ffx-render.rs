@@ -121,6 +121,9 @@ fn replay(args: &[String]) -> Result<()> {
         let mut e =
             ffx_render::enhanced::Enhanced::new(&r.device, &r.queue, families, settings(&sets));
         e.material_dir.clone_from(&materials);
+        e.fsr_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(std::path::Path::to_path_buf));
         e.export_dir.clone_from(&export);
         e
     });

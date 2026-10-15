@@ -1158,7 +1158,12 @@ fn settings_ui(ui: &mut egui::Ui, e: &mut Ed) {
             ui,
             f!(e.antialiasing),
             "method",
-            &[(0, "off"), (1, "FXAA"), (2, "temporal (TAA)")],
+            &[
+                (0, "off"),
+                (1, "FXAA"),
+                (2, "temporal (TAA)"),
+                (3, "AMD FSR 3"),
+            ],
         );
         if e.s.antialiasing == 2 {
             slider(
@@ -1174,7 +1179,23 @@ fn settings_ui(ui: &mut egui::Ui, e: &mut Ed) {
                 0.5..=3.0,
             );
         }
+        if e.s.antialiasing == 3 {
+            choice(
+                ui,
+                f!(e.fsr_mode),
+                "FSR",
+                &[
+                    (0, "native"),
+                    (1, "quality"),
+                    (2, "balanced"),
+                    (3, "performance"),
+                    (4, "ultra perf."),
+                ],
+            );
+            slider(ui, f!(e.fsr_sharpness), "FSR sharpening", 0.0..=1.0);
+        }
         slider(ui, f!(e.sharpen), "sharpening", 0.0..=1.5);
+        // FSR sets the render size by its mode.
         row(ui, f!(e.render_scale), |ui, v| {
             ui.add(
                 egui::Slider::new(v, 0.5..=2.0)

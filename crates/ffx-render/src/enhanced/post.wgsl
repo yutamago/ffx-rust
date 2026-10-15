@@ -192,6 +192,19 @@ fn motion_at(q: vec2<i32>, size: vec2<f32>) -> vec2<f32> {
     return v * post.blur.x;
 }
 
+// The motion FSR reads: the G-buffer's where it drew, the camera's
+// elsewhere (UV units, to where the point was last frame).
+@fragment
+fn fs_full_motion(in: VsOut) -> @location(0) vec4<f32> {
+    let size = vec2<f32>(textureDimensions(depth_tex));
+    let q = vec2<i32>(in.pos.xy);
+    let m = textureLoad(motion_tex, q, 0);
+    if (m.a > 0.5) {
+        return vec4<f32>(m.xy, 0.0, 1.0);
+    }
+    return vec4<f32>(camera_motion(in.pos.xy, size, textureLoad(depth_tex, q, 0)) / size, 0.0, 1.0);
+}
+
 @fragment
 fn fs_motion(in: VsOut) -> @location(0) vec4<f32> {
     let size = vec2<f32>(textureDimensions(src_tex));

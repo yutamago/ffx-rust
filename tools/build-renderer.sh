@@ -15,4 +15,13 @@ dxc="${FFX_DXC_DIR:-$HOME/tools/dxc}/bin/x64"
 if [[ -f "$dxc/dxcompiler.dll" ]]; then
     install -m 755 "$dxc/dxcompiler.dll" "$dxc/dxil.dll" "$out/"
 fi
+# AMD FidelityFX (FSR 3, MIT licence): the SDK's signed DLLs from
+# FFX_SDK_DIR (github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK, v2.0.0:
+# Kits/FidelityFX/signedbin) go next to the renderer, with the licence.
+ffx="${FFX_SDK_DIR:-$HOME/tools/ffx-sdk}"
+if [[ -f "$ffx/Kits/FidelityFX/signedbin/amd_fidelityfx_loader_dx12.dll" ]]; then
+    install -m 755 "$ffx/Kits/FidelityFX/signedbin/amd_fidelityfx_loader_dx12.dll" \
+        "$ffx/Kits/FidelityFX/signedbin/amd_fidelityfx_upscaler_dx12.dll" "$out/"
+    install -m 644 "$ffx/docs/license.md" "$out/LICENSE-FidelityFX.txt"
+fi
 echo "built: $out/ffx-render.exe"

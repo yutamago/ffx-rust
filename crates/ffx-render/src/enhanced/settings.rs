@@ -122,8 +122,14 @@ pub struct Settings {
     /// The enhanced passes' resolution relative to the game's (above 1:
     /// supersampling).
     pub render_scale: f32,
-    /// 0 off, 1 FXAA, 2 temporal (TAA).
+    /// 0 off, 1 FXAA, 2 temporal (TAA), 3 AMD FSR 3 (temporal upscaling;
+    /// TAA where it cannot run).
     pub antialiasing: u8,
+    /// FSR: 0 native (antialiasing only), 1 quality (1.5× up), 2 balanced
+    /// (1.7×), 3 performance (2×), 4 ultra performance (3×).
+    pub fsr_mode: u8,
+    /// FSR's own sharpening, 0–1.
+    pub fsr_sharpness: f32,
     /// TAA: the weight of each new frame (lower: smoother, more ghosting).
     pub taa_blend: f32,
     /// TAA: how far history may differ from the colours around a pixel
@@ -245,6 +251,8 @@ impl Default for Settings {
             volumetric_distance: 300.0,
             render_scale: 1.0,
             antialiasing: 2,
+            fsr_mode: 1,
+            fsr_sharpness: 0.3,
             taa_blend: 0.1,
             taa_clamp: 1.25,
             sharpen: 0.25,

@@ -115,6 +115,15 @@ Passes, in order:
 11. **TAA** (sub-pixel jitter; history found by the motion vectors, by
     depth and the camera elsewhere; history from another depth, or
     outside the colours around the pixel now, is dropped) or FXAA.
+    Or AMD FSR 3 (`antialiasing = 3`, `enhanced/fsr.rs`): the passes run
+    at the size its mode asks (native, or 1.5, 1.7, 2 or 3 times smaller)
+    with FSR's jitter sequence; the tone-mapped image, the depth and the
+    motion (the camera's where the G-buffer drew nothing) go to AMD's
+    upscaler through the FidelityFX API, recorded in a Direct3D 12
+    command list of its own on wgpu's queue between the frame's two
+    submissions (wgpu puts the textures in the states the dispatch names
+    first); its output at the game's size is resolved. Without its DLLs,
+    or off Direct3D 12, TAA stands in.
 12. **Resolve** into the game's targets at the game's size (the enhanced
     passes run at `render_scale`), with sharpening.
 13. **Effect light**: the game's additive effect draws (fire, magic) drawn
@@ -221,3 +230,9 @@ FXC (shorter stalls when a new area loads). `tools/build-renderer.sh`
 copies `dxcompiler.dll` and `dxil.dll` next to the renderer when the
 [DirectXShaderCompiler release](https://github.com/microsoft/DirectXShaderCompiler/releases)
 is unpacked in `FFX_DXC_DIR` (default `~/tools/dxc`).
+
+FSR's DLLs (`amd_fidelityfx_loader_dx12.dll`,
+`amd_fidelityfx_upscaler_dx12.dll`, signed, from the FidelityFX SDK v2.0.0
+`Kits/FidelityFX/signedbin`, MIT licence) go next to the renderer with
+`LICENSE-FidelityFX.txt` when the SDK is in `FFX_SDK_DIR` (default
+`~/tools/ffx-sdk`); they are not in the repository.

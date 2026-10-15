@@ -113,6 +113,7 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
     let materials = exe_dir.join("materials");
     enhanced.material_dir = materials.is_dir().then_some(materials);
     enhanced.texture_dir = Some(exe_dir.join("textures"));
+    enhanced.fsr_dir = Some(exe_dir.clone());
     enhanced.export_dir = std::env::var_os("FFX_RENDER_EXPORT_MATERIALS")
         .map(std::path::PathBuf::from)
         .filter(|d| std::fs::create_dir_all(d).is_ok());
@@ -213,6 +214,9 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             }
             for e in crate::take_gpu_errors() {
                 log(&format!("  GPU error: {e}"));
+            }
+            for m in crate::enhanced::fsr::messages() {
+                log(&format!("  FSR: {m}"));
             }
             // FFX_RENDER_GLOW_DUMP=DIR: the glow targets as PNGs.
             if let Some(dir) = std::env::var_os("FFX_RENDER_GLOW_DUMP") {
