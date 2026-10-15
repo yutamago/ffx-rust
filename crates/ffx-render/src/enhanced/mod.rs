@@ -15,6 +15,7 @@ pub mod lights;
 pub mod materials;
 pub mod math;
 mod post;
+pub mod rig;
 mod settings;
 #[cfg(test)]
 mod shader_tests;
@@ -499,10 +500,9 @@ pub struct Enhanced {
     probes: ProbeTargets,
     /// The local lights of this frame (`lights::pack`).
     light_buffer: wgpu::Buffer,
-    /// Local lights from the editor (scene and global), this frame.
-    pub lights: Vec<lights::Light>,
-    /// The editor's changes to the key light and to the glow lights.
-    pub sun: lights::Sun,
+    /// The scene's lights (the editor's rig for it, or the default one).
+    pub rig: rig::Rig,
+    /// The editor's changes to the glow lights.
     pub glow_edits: Vec<lights::GlowEdit>,
     /// Materials from the editor, by colour texture hash.
     pub material_edits: HashMap<u64, materials::Material>,
@@ -618,19 +618,11 @@ pub struct Enhanced {
     /// Problems seen (once each), for the log.
     pub notes: HashMap<String, usize>,
     /// The map's lights as last seen in a character draw.
-    map_lights: Option<MapLights>,
+    /// The game's own lights this frame (the map's character lights).
+    pub map_lights: Option<rig::Game>,
     /// Draws in the last frame: enhanced, and with the game's shaders.
     pub last_items: usize,
     pub last_other: usize,
-}
-
-/// The game's per-map character lighting, in linear terms: key and fill
-/// direction (the way the light travels) and colour, and ambient.
-#[derive(Debug, Clone, Copy)]
-struct MapLights {
-    key: ([f32; 3], [f32; 3]),
-    fill: ([f32; 3], [f32; 3]),
-    ambient: [f32; 3],
 }
 
 /// The game's light values are gamma-space, with 0.5 as full.
@@ -1546,8 +1538,7 @@ impl Enhanced {
                 usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             }),
-            lights: Vec::new(),
-            sun: lights::Sun::default(),
+            rig: rig::Rig::default(),
             glow_edits: Vec::new(),
             material_edits: HashMap::new(),
             selected: None,
@@ -1602,7 +1593,7 @@ impl Enhanced {
     /// Reads the map's lights from a character draw's pixel shader
     /// (`Light0`, `Light1`: direction towards the light, then colour;
     /// ambient from the scene).
-    fn read_map_lights(&mut self, r: &Renderer, d: &Draw) -> Option<MapLights> {
+    fn read_map_lights(&mut self, r: &Renderer, d: &Draw) -> Option<rig::Game> {
         let ps = self.reflect(r, d.ps)?;
         let cb = &d.ps_cb.iter().find(|c| c.0 == 0)?.1;
         let light = |name: &str| -> Option<([f32; 3], [f32; 3])> {
@@ -1628,7 +1619,7 @@ impl Enhanced {
             .floats(cb, "CharacterAmbientLight", 3)
             .or_else(|| ps.floats(cb, "scene.GlobalAmbientColor", 3))
             .map_or([0.1; 3], |a| linear([a[0], a[1], a[2]]));
-        Some(MapLights { key, fill, ambient })
+        Some(rig::Game { key, fill, ambient })
     }
 
     fn note(&mut self, what: String) {
@@ -2625,12 +2616,6 @@ impl Enhanced {
         let ambient = vs
             .floats(vcb, "CharacterAmbientLight", 3)
             .map_or([0.5, 0.5, 0.5], |a| [a[0], a[1], a[2]]);
-        let ambient = if family == Family::Character {
-            let s = self.settings.character_ambient;
-            [ambient[0] * s, ambient[1] * s, ambient[2] * s]
-        } else {
-            ambient
-        };
         let fg = ps.floats(pcb, "fgEff", 3).unwrap_or_else(|| vec![1.0; 3]);
         let scale = ps
             .floats(pcb, "clrScaleFactor", 4)
@@ -2997,32 +2982,12 @@ impl Enhanced {
             c.extend_from_slice(&cam[c.len()..]);
             alloc(&c, CAMERA_SIZE)
         };
-        // The key light: the map's, or the settings'.
-        let (sun_dir, sun_color, sun_intensity, fill, sky) =
-            match (self.settings.map_lights, self.map_lights) {
-                (true, Some(m)) => (
-                    math::normalize(m.key.0),
-                    m.key.1,
-                    self.settings.key_scale,
-                    (
-                        math::normalize(m.fill.0),
-                        m.fill.1,
-                        self.settings.fill_scale,
-                    ),
-                    (m.ambient, self.settings.sky_scale),
-                ),
-                _ => (
-                    math::normalize(self.settings.sun_direction),
-                    self.settings.sun_color,
-                    self.settings.sun_intensity,
-                    ([0.0, -1.0, 0.0], [0.0; 3], 0.0),
-                    (self.settings.sky_color, self.settings.sky_intensity),
-                ),
-            };
-        // The editor's sun.
-        let sun_dir = self.sun.direction.map_or(sun_dir, math::normalize);
-        let sun_color = self.sun.color.unwrap_or(sun_color);
-        let sun_intensity = sun_intensity * self.sun.scale.unwrap_or(1.0);
+        // The scene's lights, with the game's.
+        let res = self.rig.resolve(self.map_lights.as_ref());
+        let sun_dir = res.key.direction;
+        let sun_color = res.key.light;
+        let sky = res.sky;
+        let original = res.original;
         // Three shadow cascades along the view, each a box around a sphere
         // holding its slice of the view (stable as the camera turns),
         // snapped to whole texels (stable as it moves).
@@ -3125,29 +3090,13 @@ impl Enhanced {
             put_rows(&mut light, c);
         }
         put4(&mut light, [eye[0], eye[1], eye[2], 1.0]);
+        put4(&mut light, [sun_dir[0], sun_dir[1], sun_dir[2], 1.0]);
         put4(
             &mut light,
-            [sun_dir[0], sun_dir[1], sun_dir[2], sun_intensity],
+            [sun_color[0], sun_color[1], sun_color[2], res.key.scenery],
         );
-        put4(
-            &mut light,
-            [
-                sun_color[0],
-                sun_color[1],
-                sun_color[2],
-                (1.0 - s.baked_light.clamp(0.0, 1.0)) * s.scenery_sun.max(0.0),
-            ],
-        );
-        put4(&mut light, [sky.0[0], sky.0[1], sky.0[2], sky.1]);
-        put4(
-            &mut light,
-            [
-                s.ground_color[0],
-                s.ground_color[1],
-                s.ground_color[2],
-                s.scenery_sky,
-            ],
-        );
+        put4(&mut light, [sky.0[0], sky.0[1], sky.0[2], 1.0]);
+        put4(&mut light, [sky.1[0], sky.1[1], sky.1[2], sky.2]);
         let fog_lin = fog_color.map(|c| (c * 2.0).max(0.0).powf(2.2));
         put4(
             &mut light,
@@ -3165,7 +3114,7 @@ impl Enhanced {
         put4(
             &mut light,
             [
-                s.baked_light,
+                original[0],
                 s.roughness,
                 s.specular,
                 if s.shadows { 1.0 } else { 0.0 },
@@ -3187,23 +3136,20 @@ impl Enhanced {
                 internal.0 as f32,
                 internal.1 as f32,
                 s.character_shadows,
-                1.0 - s.baked_light.clamp(0.0, 1.0),
+                // Bounce from the probes as far as the painted light is
+                // turned down on scenery.
+                original[5] * (1.0 - original[0].clamp(0.0, 1.0)),
             ],
         );
         put4(&mut light, view[2]);
-        put4(&mut light, [fill.0[0], fill.0[1], fill.0[2], fill.2]);
         put4(
             &mut light,
-            [fill.1[0], fill.1[1], fill.1[2], s.scenery_bounce.max(0.0)],
+            [original[1], res.key.characters, sky.3, res.key.specular],
         );
+        put4(&mut light, [0.0; 4]);
         put4(
             &mut light,
-            [
-                s.scenery_key,
-                s.scenery_specular,
-                s.ao_on_baked,
-                s.character_falloff,
-            ],
+            [original[2], original[4], original[3], s.character_falloff],
         );
         put4(
             &mut light,
@@ -3212,7 +3158,7 @@ impl Enhanced {
         put4(
             &mut light,
             [
-                s.probe_strength,
+                original[5],
                 s.probe_mix,
                 s.skin,
                 if s.probes { 1.0 } else { 0.0 },
@@ -3223,7 +3169,7 @@ impl Enhanced {
             &mut light,
             [
                 if traced_on { 1.0 } else { 0.0 },
-                s.sun_size.max(0.0),
+                res.key.angle,
                 (self.frame_count % 64) as f32,
                 s.ray_distance.max(1.0),
             ],
@@ -3288,17 +3234,14 @@ impl Enhanced {
             let c = centres.get(slot).copied().unwrap_or([0.0; 3]);
             put4(&mut info, [c[0], c[1], c[2], 1.0]);
         }
-        put4(
-            &mut info,
-            [sky.0[0] * sky.1, sky.0[1] * sky.1, sky.0[2] * sky.1, 0.0],
-        );
+        put4(&mut info, [sky.0[0], sky.0[1], sky.0[2], 0.0]);
         put4(
             &mut info,
             // The scenery as the art lights it (what it sends back), also
             // where the baked light is turned down for dynamic light.
             [
                 centres.len() as f32,
-                s.baked_light.max(1.0),
+                original[0].max(1.0),
                 PROBE_FACE as f32,
                 0.0,
             ],
@@ -3331,7 +3274,7 @@ impl Enhanced {
         put4(
             &mut post,
             [
-                s.exposure,
+                res.exposure,
                 f32::from(s.tone_curve),
                 s.saturation,
                 s.contrast,
@@ -3366,7 +3309,7 @@ impl Enhanced {
                 sun_dir[0],
                 sun_dir[1],
                 sun_dir[2],
-                sun_intensity * s.volumetric_strength,
+                res.key.volumetric * s.volumetric_strength,
             ],
         );
         put4(&mut vol, [sun_color[0], sun_color[1], sun_color[2], 0.0]);
@@ -3388,10 +3331,7 @@ impl Enhanced {
                 (self.frame_count % 64) as f32,
             ],
         );
-        put4(
-            &mut vol,
-            [sky.0[0] * sky.1, sky.0[1] * sky.1, sky.0[2] * sky.1, 0.0],
-        );
+        put4(&mut vol, [sky.0[0], sky.0[1], sky.0[2], 0.0]);
         put4(&mut vol, view[2]);
         put4(&mut vol, [splits[0], splits[1], splits[2], 0.0]);
         assert_eq!(vol.len(), VOL_SIZE, "volumetric uniform layout");
@@ -3400,7 +3340,7 @@ impl Enhanced {
         for c in &cascades {
             put_rows(&mut ws, c);
         }
-        put4(&mut ws, [sun_dir[0], sun_dir[1], sun_dir[2], sun_intensity]);
+        put4(&mut ws, [sun_dir[0], sun_dir[1], sun_dir[2], 1.0]);
         put4(&mut ws, [sun_color[0], sun_color[1], sun_color[2], 0.0]);
         put4(&mut ws, [fog_lin[0], fog_lin[1], fog_lin[2], fog_params[3]]);
         put4(
@@ -4183,7 +4123,7 @@ impl Enhanced {
             queue.write_buffer(
                 &self.light_buffer,
                 0,
-                &lights::pack(self.lights.iter().chain(&glows), traced_on),
+                &lights::pack(res.locals.iter().chain(&glows), traced_on),
             );
             let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: None,

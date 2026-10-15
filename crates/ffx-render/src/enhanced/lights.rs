@@ -1,17 +1,17 @@
-//! Local lights: point and spot lights in world space, from the editor
-//! (per scene and for all scenes) and found automatically where the
-//! game's effects glow. The lighting pass loops over them (`lights` in
-//! `lighting.wgsl`).
+//! The lights the lighting pass loops over (`lights` in `lighting.wgsl`),
+//! in its units: point and spot lights in world space and unshadowed
+//! directional lights, from the scene's rig (`rig.rs`) and found
+//! automatically where the game's effects glow.
 
 use serde::{Deserialize, Serialize};
 
 /// At most this many lights reach the lighting pass in a frame.
 pub const MAX: usize = 64;
-/// The GPU list: a count, then per light four vectors.
-pub const SIZE: usize = 16 + MAX * 64;
+/// The GPU list: a count, then per light five vectors.
+pub const SIZE: usize = 16 + MAX * 80;
 /// How far a light's brightness is given for, in world units (a character
 /// is about 20 tall): `intensity` is its brightness there.
-const REFERENCE: f32 = 10.0;
+pub const REFERENCE: f32 = 10.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -19,6 +19,8 @@ pub enum Kind {
     #[default]
     Point,
     Spot,
+    /// Parallel light (`direction`; position and range unused).
+    Directional,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -44,6 +46,9 @@ pub struct Light {
     pub shadows: bool,
     /// The share of highlights it makes (0: diffuse only).
     pub specular: f32,
+    /// How strongly it lights scenery and characters.
+    pub scenery: f32,
+    pub characters: f32,
 }
 
 impl Default for Light {
@@ -61,6 +66,8 @@ impl Default for Light {
             outer: 45.0,
             shadows: true,
             specular: 1.0,
+            scenery: 1.0,
+            characters: 1.0,
         }
     }
 }
@@ -147,15 +154,26 @@ pub fn glow_edit(edits: &[GlowEdit], p: [f32; 3]) -> Option<&GlowEdit> {
 /// `lighting.wgsl`); at most [`MAX`]. Shadows only with `rays`.
 #[must_use]
 pub fn pack<'a>(lights: impl Iterator<Item = &'a Light>, rays: bool) -> Vec<u8> {
-    let mut items = Vec::with_capacity(MAX * 64);
+    let mut items = Vec::with_capacity(MAX * 80);
     let mut n = 0u32;
     for l in lights.filter(|l| l.enabled && l.intensity > 0.0 && l.range > 0.0) {
         if n as usize == MAX {
             break;
         }
         n += 1;
-        let scale = l.intensity * REFERENCE * REFERENCE;
-        let spot = l.kind == Kind::Spot;
+        let directional = l.kind == Kind::Directional;
+        // Directional light is its colour; the others are given at
+        // REFERENCE units away.
+        let scale = if directional {
+            l.intensity
+        } else {
+            l.intensity * REFERENCE * REFERENCE
+        };
+        let kind = match l.kind {
+            Kind::Point => 0.0,
+            Kind::Spot => 1.0,
+            Kind::Directional => 2.0,
+        };
         let d = super::math::normalize(l.direction);
         let outer = (l.outer.clamp(1.0, 179.0) * 0.5).to_radians().cos();
         let inner = (l.inner.clamp(0.0, l.outer.clamp(1.0, 179.0)) * 0.5)
@@ -168,15 +186,20 @@ pub fn pack<'a>(lights: impl Iterator<Item = &'a Light>, rays: bool) -> Vec<u8> 
                 l.color[0] * scale,
                 l.color[1] * scale,
                 l.color[2] * scale,
-                if spot { 1.0 } else { 0.0 },
+                kind,
             ],
             [d[0], d[1], d[2], outer],
             [
                 inner,
-                if l.shadows && rays { 1.0 } else { 0.0 },
+                if l.shadows && rays && !directional {
+                    1.0
+                } else {
+                    0.0
+                },
                 l.specular,
                 0.0,
             ],
+            [l.scenery, l.characters, 0.0, 0.0],
         ] {
             for x in v {
                 items.extend_from_slice(&x.to_le_bytes());

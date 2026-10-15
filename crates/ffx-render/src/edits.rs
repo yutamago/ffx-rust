@@ -1,7 +1,8 @@
 //! The editor's changes to the game's look: for all scenes and per scene
-//! (a scene is a map, by the event file the game opened for it). A
-//! scene's changes go on top of the general ones: its lights add to
-//! theirs, its sun and materials replace theirs where it sets them.
+//! (a scene is a map, by the event file the game opened for it). A scene
+//! with lights of its own (a rig) uses those, the others the default rig
+//! (the general part's, else the built-in one); its materials and glow
+//! changes go on top of the general ones.
 //!
 //! The working set is `edits.toml` next to the renderer; `edits/*.toml`
 //! are files to share, and taking one in shows which scenes it changes.
@@ -11,8 +12,9 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::enhanced::lights::{GlowEdit, Light, Sun};
+use crate::enhanced::lights::GlowEdit;
 use crate::enhanced::materials::Material;
+use crate::enhanced::rig::Rig;
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -23,8 +25,8 @@ pub struct SceneEdits {
     /// all scenes: the one for scenes without their own (empty: the
     /// profile chosen by hand).
     pub profile: String,
-    pub sun: Sun,
-    pub lights: Vec<Light>,
+    /// Its lights (for all scenes: the default rig); none: the default.
+    pub rig: Option<Rig>,
     pub glows: Vec<GlowEdit>,
     /// By colour texture hash (16 hex digits).
     pub materials: BTreeMap<String, Material>,
@@ -33,9 +35,8 @@ pub struct SceneEdits {
 impl SceneEdits {
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.sun.is_empty()
+        self.rig.is_none()
             && self.profile.is_empty()
-            && self.lights.is_empty()
             && self.glows.is_empty()
             && self.materials.is_empty()
     }
@@ -83,8 +84,7 @@ pub enum Status {
 /// What the renderer uses for one scene.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Effective {
-    pub lights: Vec<Light>,
-    pub sun: Sun,
+    pub rig: Rig,
     pub glows: Vec<GlowEdit>,
     pub materials: std::collections::HashMap<u64, Material>,
 }
@@ -102,15 +102,21 @@ impl Edits {
         }
     }
 
+    /// Without the scenes that have no changes.
+    #[must_use]
+    pub fn trimmed(&self) -> Self {
+        let mut out = self.clone();
+        out.scenes
+            .retain(|_, s| !s.is_empty() || !s.label.is_empty());
+        out
+    }
+
     /// Writes the changes to `path` (scenes without any are left out).
     ///
     /// # Errors
     /// When the file cannot be written.
     pub fn save(&self, path: &Path) -> Result<(), String> {
-        let mut out = self.clone();
-        out.scenes
-            .retain(|_, s| !s.is_empty() || !s.label.is_empty());
-        let text = toml::to_string_pretty(&out).map_err(|e| e.to_string())?;
+        let text = toml::to_string_pretty(&self.trimmed()).map_err(|e| e.to_string())?;
         if let Some(dir) = path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
@@ -183,10 +189,9 @@ impl Edits {
     #[must_use]
     pub fn effective(&self, scene: &str) -> Effective {
         let local = self.scenes.get(scene);
-        let mut lights = self.global.lights.clone();
+        let rig = self.rig_for(scene).clone();
         let mut glows: Vec<GlowEdit> = Vec::new();
         let mut materials = std::collections::HashMap::new();
-        let mut sun = self.global.sun.clone();
         for (k, m) in &self.global.materials {
             if let Ok(h) = u64::from_str_radix(k, 16) {
                 materials.insert(h, m.clone());
@@ -194,7 +199,6 @@ impl Edits {
         }
         glows.extend(self.global.glows.iter().cloned());
         if let Some(l) = local {
-            lights.extend(l.lights.iter().cloned());
             // A scene's glow edits come first: they win where both match.
             glows.splice(0..0, l.glows.iter().cloned());
             for (k, m) in &l.materials {
@@ -202,22 +206,31 @@ impl Edits {
                     materials.insert(h, m.clone());
                 }
             }
-            if l.sun.direction.is_some() {
-                sun.direction = l.sun.direction;
-            }
-            if l.sun.color.is_some() {
-                sun.color = l.sun.color;
-            }
-            if l.sun.scale.is_some() {
-                sun.scale = l.sun.scale;
-            }
         }
         Effective {
-            lights,
-            sun,
+            rig,
             glows,
             materials,
         }
+    }
+
+    /// The default rig: the general part's, else the built-in one.
+    #[must_use]
+    pub fn default_rig(&self) -> &Rig {
+        static BUILT_IN: std::sync::OnceLock<Rig> = std::sync::OnceLock::new();
+        self.global
+            .rig
+            .as_ref()
+            .unwrap_or_else(|| BUILT_IN.get_or_init(Rig::default))
+    }
+
+    /// The rig `scene` uses: its own, else the default.
+    #[must_use]
+    pub fn rig_for(&self, scene: &str) -> &Rig {
+        self.scenes
+            .get(scene)
+            .and_then(|s| s.rig.as_ref())
+            .unwrap_or_else(|| self.default_rig())
     }
 }
 
@@ -227,21 +240,20 @@ mod tests {
 
     #[test]
     fn scenes_go_on_top_and_files_compare() {
+        use crate::enhanced::rig::{LightType, SceneLight};
         let mut ours = Edits::default();
-        ours.global.lights.push(Light::default());
-        ours.global.sun.scale = Some(2.0);
-        ours.global.materials.insert(key(7), Material::default());
-        let deck = ours.scene_mut("cdsp0000");
-        deck.lights.push(Light {
-            name: "lamp".into(),
-            ..Light::default()
+        ours.global.rig = Some(Rig {
+            exposure: 11.0,
+            ..Rig::default()
         });
-        deck.sun.scale = Some(0.5);
+        ours.global.materials.insert(key(7), Material::default());
+        let mut own = Rig::default();
+        own.lights.push(SceneLight::new(LightType::Point));
+        ours.scene_mut("cdsp0000").rig = Some(own);
         let e = ours.effective("cdsp0000");
-        assert_eq!(e.lights.len(), 2);
-        assert_eq!(e.sun.scale, Some(0.5));
+        assert_eq!(e.rig.lights.len(), 5);
         assert!(e.materials.contains_key(&7));
-        assert_eq!(ours.effective("other").lights.len(), 1);
+        assert!((ours.effective("other").rig.exposure - 11.0).abs() < 1e-6);
         assert_eq!(ours.profile_for("cdsp0000"), None);
         ours.global.profile = "Day".into();
         ours.scene_mut("cdsp0000").profile = "Night".into();
@@ -249,8 +261,8 @@ mod tests {
         assert_eq!(ours.profile_for("bsil0000"), Some("Day"));
 
         let mut theirs = ours.clone();
-        theirs.scene_mut("cdsp0000").sun.scale = Some(1.5);
-        theirs.scene_mut("bika00").lights.push(Light::default());
+        theirs.scene_mut("cdsp0000").rig = Some(Rig::default());
+        theirs.scene_mut("bika00").rig = Some(Rig::default());
         let c = theirs.compare(&ours);
         assert!(c.is_empty() || c.iter().all(|(_, s)| *s != Status::New));
         let c = ours.compare(&theirs);
@@ -264,7 +276,10 @@ mod tests {
         );
         ours.take(&theirs, &[Part::Scene("bika00".into())]);
         assert!(ours.scenes.contains_key("bika00"));
-        assert_eq!(ours.scenes["cdsp0000"].sun.scale, Some(0.5));
+        assert_eq!(
+            ours.scenes["cdsp0000"].rig.as_ref().map(|r| r.lights.len()),
+            Some(5)
+        );
 
         let dir = std::env::temp_dir().join(format!("ffx-edits-{}", std::process::id()));
         let path = dir.join("edits.toml");

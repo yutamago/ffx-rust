@@ -1205,53 +1205,13 @@ fn settings_ui(ui: &mut egui::Ui, e: &mut Ed) {
         f!(e.enabled),
         "Enhanced lighting (off: the original look)",
     );
-    egui::CollapsingHeader::new("Light").show(ui, |ui| {
-        check(ui, f!(e.map_lights), "Use the map's own lights");
-        if e.s.map_lights {
-            slider(ui, f!(e.key_scale), "key light", 0.0..=3.0);
-            slider(ui, f!(e.fill_scale), "fill light", 0.0..=2.0);
-            slider(ui, f!(e.sky_scale), "sky light", 0.0..=3.0);
-        } else {
-            slider(ui, f!(e.sun_intensity), "sun", 0.0..=10.0);
-            color3(ui, f!(e.sun_color), "sun colour");
-            row(ui, f!(e.sun_direction), |ui, d| {
-                ui.label("sun direction");
-                for x in d.iter_mut() {
-                    ui.add(egui::DragValue::new(x).speed(0.01).range(-1.0..=1.0));
-                }
-            });
-            slider(ui, f!(e.sky_intensity), "sky", 0.0..=5.0);
-            color3(ui, f!(e.sky_color), "sky colour");
-            color3(ui, f!(e.ground_color), "ground colour");
-        }
-        slider(
-            ui,
-            f!(e.baked_light),
-            "baked light (0: dynamic only)",
-            0.0..=2.0,
-        );
-        slider(
-            ui,
-            f!(e.scenery_key),
-            "key shadows on baked light",
-            0.0..=1.0,
-        );
-        slider(ui, f!(e.scenery_sky), "sky light on scenery", 0.0..=2.0);
-        slider(ui, f!(e.scenery_specular), "scenery specular", 0.0..=2.0);
-        slider(ui, f!(e.scenery_sun), "sun on scenery (dynamic)", 0.0..=2.0);
-        slider(
-            ui,
-            f!(e.scenery_bounce),
-            "bounce on scenery (dynamic)",
-            0.0..=2.0,
-        );
-        slider(ui, f!(e.character_ambient), "character ambient", 0.0..=4.0);
+    ui.label("Lights and exposure are in the editor (F11), per scene.");
+    egui::CollapsingHeader::new("Characters").show(ui, |ui| {
         check(
             ui,
             f!(e.probes),
             "Light probes: characters, and the bounce on dynamic scenery",
         );
-        slider(ui, f!(e.probe_strength), "probe light", 0.0..=3.0);
         slider(ui, f!(e.probe_mix), "probe share", 0.0..=1.0);
         slider(ui, f!(e.skin), "skin scattering", 0.0..=1.0);
         slider(
@@ -1284,7 +1244,6 @@ fn settings_ui(ui: &mut egui::Ui, e: &mut Ed) {
             f!(e.ray_traced_shadows),
             "Ray-traced from the scenery (if the GPU can)",
         );
-        slider(ui, f!(e.sun_size), "sun size (softness)", 0.0..=0.08);
         slider(ui, f!(e.ray_distance), "ray distance", 10.0..=1000.0);
         slider(ui, f!(e.character_shadows), "character shadows", 0.0..=1.0);
         check(ui, f!(e.shadows), "Real shadows");
@@ -1328,7 +1287,6 @@ fn settings_ui(ui: &mut egui::Ui, e: &mut Ed) {
         check(ui, f!(e.ao), "On");
         slider(ui, f!(e.ao_radius), "radius", 0.5..=20.0);
         slider(ui, f!(e.ao_strength), "strength", 0.0..=2.0);
-        slider(ui, f!(e.ao_on_baked), "on baked light", 0.0..=1.0);
     });
     egui::CollapsingHeader::new("Image").show(ui, |ui| {
         choice(
@@ -1337,7 +1295,6 @@ fn settings_ui(ui: &mut egui::Ui, e: &mut Ed) {
             "tone curve",
             &[(0, "game"), (1, "ACES"), (2, "filmic")],
         );
-        slider(ui, f!(e.exposure), "exposure", 0.1..=4.0);
         slider(ui, f!(e.saturation), "saturation", 0.0..=2.0);
         slider(ui, f!(e.contrast), "contrast", 0.5..=1.5);
         check(ui, f!(e.fog), "The game's fog");

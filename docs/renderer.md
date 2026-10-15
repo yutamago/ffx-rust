@@ -89,23 +89,21 @@ Passes, in order:
    around each, drawn into a small cube, becomes nine spherical
    harmonics.
 5. **Ambient occlusion** (screen space, blurred).
-6. **Lighting** (linear HDR). Scenery keeps its baked light as the base
-   (the game's art), reshaped by the key light and its shadow; as far as
-   `baked_light` is turned down, dynamic light takes its place, never on
-   top of it: the key light with its real shadows (`scenery_sun`) and
-   the light the surroundings bounce (`scenery_bounce`, from the probes,
-   which always see the scenery as the art lights it), the sky light on
-   top (0: dynamic light only); beyond 1500–2500 units (the sky dome, distant land)
-   scenery keeps the game's own colours, its texture times its painted
-   light, whatever the settings; characters
-   get the map's key and fill light with the game's soft wrap, light from
-   the probes, and skin scattering on skin-coloured parts. Shadows are
-   ray-traced from the scenery where possible, from the cascades
-   otherwise. Local lights add to both: point and spot lights
-   (`lights.rs`, up to 64, brightness given at 10 units and falling with
-   the square of the distance over a source two units across, ending
-   smoothly at their range), from the editor and from the glows, with
-   ray-traced shadows where rays are on.
+6. **Lighting** (linear HDR), by the scene's lights (its *rig*,
+   `rig.rs`, below). Scenery keeps the original light (the game's
+   painted light) as far as the rig has it, its shadows from the key
+   light; dynamic lights light it as far as their "affects scenery" goes,
+   with the light the surroundings bounce (from the probes, which see the
+   art) where the original light is turned down. Beyond 1500–2500 units
+   (the sky dome, distant land) scenery keeps the game's own colours,
+   whatever the lights. Characters get their lights with the game's soft
+   wrap, light from the probes, and skin scattering on skin-coloured
+   parts. Shadows are ray-traced from the scenery where possible, from the
+   cascades otherwise. Other lights (`lights.rs`, up to 64: point and spot
+   lights falling with the square of the distance over a source two units
+   across, ending smoothly at their radius, and unshadowed directional
+   lights) come from the rig and from the glows, with ray-traced shadows
+   where rays are on.
 7. **Water**: the game's water draws, with its two normal maps, its cube
    map tinted as the game tints it, screen-space reflection, refraction
    with absorption, and the game's opacity.
@@ -219,16 +217,34 @@ texture (`Material::texture`, mip levels made on load).
 ## The editor
 
 F11 (or "Editor" in the panel) opens a sidebar: changes for this scene or
-for all scenes (`edits.rs`; a scene's go on top of the general ones),
-kept in `edits.toml` next to `ffx-render.exe`. Light: the sun (direction,
-colour, brightness over the map's), point and spot lights (placed by a
-click in the scene: the pick reads the draw id and the depth around the
-pixel for the surface and its facing), and the lights found in glows
-(off, brighter or dimmer, or made into a light of one's own). Materials:
-a click picks a texture (its draws outlined, a preview shown), whose
-material is then set. Files: save, revert, export to `edits/<name>.toml`,
-and take in a file, which lists each scene it changes as new, differing
-or the same, to tick the ones to take.
+for all scenes (`edits.rs`), kept in `edits.toml` next to
+`ffx-render.exe`.
+
+Light: the scene's settings profile, then its lights. Every scene without
+lights of its own uses the default lights ("all scenes"); "Give it its
+own" copies them for the scene, "Back to the default" drops its own. A
+rig has an exposure (EV100: higher is darker; 12 shows the game's light
+as the game does) and a list of lights, each with Unreal-like properties
+in physical units: the original light (a multiple of the game's painted
+light, with its key shadows, occlusion and highlights, and the bounce it
+gives through the probes), sky light (nits, upper and lower colour),
+directional lights (lux; the first with shadows is the key light:
+cascades, ray-traced shadows, light shafts; source angle), point and spot
+lights (candela; source radius, attenuation radius, cone angles; placed by
+a click in the scene: the pick reads the draw id and the depth around the
+pixel for the surface and its facing); colour or temperature (kelvin);
+how strongly each lights scenery and characters; specular; static or
+dynamic. The default lights are the game's: the original light and the
+map's key, fill and ambient light, which follow the game's direction and
+colour (at the game's brightness 1 the intensity is what is shown) until
+told not to. World units: 20 to the height of a character, about 1.75 m.
+Then the lights found in glows (off, brighter or dimmer, or made into a
+light of one's own).
+
+Materials: a click picks a texture (its draws outlined, a preview shown),
+whose material is then set. Files: save, revert, export to
+`edits/<name>.toml`, and take in a file, which lists each scene it changes
+as new, differing or the same, to tick the ones to take.
 
 ## Material packs
 

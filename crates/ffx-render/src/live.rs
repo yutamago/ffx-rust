@@ -266,8 +266,7 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
         // The editor's changes for this scene.
         if overlay.editor.changed(&r.world.scene) {
             let e = overlay.editor.edits.effective(&r.world.scene);
-            enhanced.lights = e.lights;
-            enhanced.sun = e.sun;
+            enhanced.rig = e.rig;
             enhanced.glow_edits = e.glows;
             enhanced.material_edits = e.materials;
             enhanced.reload_replacements();
@@ -336,6 +335,7 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             let profiles = overlay.profiles.names.clone();
             let mut io = crate::editor::Io {
                 scene: &scene,
+                game: enhanced.map_lights,
                 profiles: &profiles,
                 camera: r.world.camera,
                 glows: &glows,

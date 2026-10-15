@@ -1,5 +1,6 @@
 //! The editor: a sidebar of the overlay (F11) that changes the look per
-//! scene or for all scenes — the sun, point and spot lights, the lights
+//! scene or for all scenes — the scene's lights as a list with each
+//! light's properties (the default rig, or a scene's own), the lights
 //! found in glows, materials and textures (picked by clicking in the
 //! scene) — and keeps the changes in files (`edits.rs`).
 
@@ -7,8 +8,9 @@ use std::path::PathBuf;
 
 use crate::edits::{Edits, Part, SceneEdits, Status};
 use crate::enhanced::Picked;
-use crate::enhanced::lights::{GlowEdit, Kind as LightKind, Light, Sun};
+use crate::enhanced::lights::{GlowEdit, Light};
 use crate::enhanced::materials::{Kind as MaterialKind, Material};
+use crate::enhanced::rig::{self, GameLight, LightType, Mobility, Rig, SceneLight};
 
 /// The egui texture the picked texture's preview is drawn with.
 pub const PREVIEW: egui::TextureId = egui::TextureId::User(1);
@@ -35,8 +37,8 @@ enum Mode {
     /// Picks the texture there.
     #[default]
     Select,
-    /// Puts a new light there.
-    Place(LightKind),
+    /// Puts a new light there (point or spot).
+    Place(LightType),
 }
 
 /// A file being taken in: its changes and, per part, how it stands and
@@ -50,6 +52,8 @@ struct Import {
 /// What the editor sees of the renderer and asks of it, each frame.
 pub struct Io<'a> {
     pub scene: &'a str,
+    /// The game's own lights this frame (what lights that follow it get).
+    pub game: Option<rig::Game>,
     /// The settings profiles' names.
     pub profiles: &'a [String],
     pub camera: Option<([f32; 3], [f32; 3])>,
@@ -117,17 +121,6 @@ fn angles(d: [f32; 3]) -> (f32, f32) {
 fn direction(azimuth: f32, elevation: f32) -> [f32; 3] {
     let (a, e) = (azimuth.to_radians(), elevation.to_radians());
     [a.sin() * e.cos(), e.sin(), a.cos() * e.cos()]
-}
-
-/// A direction as two sliders.
-fn direction_ui(ui: &mut egui::Ui, d: &mut [f32; 3]) {
-    let (mut az, mut el) = angles(*d);
-    let before = (az, el);
-    ui.add(egui::Slider::new(&mut az, -180.0..=180.0).text("turn (°)"));
-    ui.add(egui::Slider::new(&mut el, -90.0..=90.0).text("up/down (°)"));
-    if (az, el) != before {
-        *d = direction(az, el);
-    }
 }
 
 /// An optional value: a box turns it on (from `default`), the widget sets
@@ -243,7 +236,7 @@ impl Editor {
                     {
                         self.files = files_in(&self.dir, "toml");
                     }
-                    let dirty = self.edits != self.saved;
+                    let dirty = self.edits.trimmed() != self.saved.trimmed();
                     if ui
                         .add_enabled(dirty, egui::Button::new("Save"))
                         .on_hover_text("Write the changes to edits.toml")
@@ -287,29 +280,25 @@ impl Editor {
                     return;
                 }
                 let n = p.normal;
-                let away = if kind == LightKind::Spot { 25.0 } else { 6.0 };
-                let light = Light {
-                    name: format!(
-                        "{} {}",
-                        if kind == LightKind::Spot {
-                            "Spot"
-                        } else {
-                            "Light"
-                        },
-                        self.scope_lights(io.scene).len() + 1
-                    ),
-                    kind,
+                let away = if kind == LightType::Spot { 25.0 } else { 6.0 };
+                let Some(rig) = Self::rig_mut(&mut self.edits, self.scope, io.scene) else {
+                    self.message =
+                        "this scene uses the default lights: give it its own first".into();
+                    return;
+                };
+                let count = rig.lights.iter().filter(|l| l.kind == kind).count();
+                let light = SceneLight {
+                    name: format!("{} {}", kind.name(), count + 1),
                     position: [
                         p.position[0] + n[0] * away,
                         p.position[1] + n[1] * away,
                         p.position[2] + n[2] * away,
                     ],
                     direction: n.map(|v| -v),
-                    ..Light::default()
+                    ..SceneLight::new(kind)
                 };
-                let lights = &mut Self::target(&mut self.edits, self.scope, io.scene).lights;
-                lights.push(light);
-                self.light = Some(lights.len() - 1);
+                rig.lights.push(light);
+                self.light = Some(rig.lights.len() - 1);
                 self.message = "light added".into();
             }
             Mode::Select => {
@@ -329,19 +318,18 @@ impl Editor {
         }
     }
 
-    fn scope_lights(&self, scene: &str) -> &[Light] {
-        match self.scope {
-            Scope::Global => &self.edits.global.lights,
-            Scope::Scene => self.edits.scenes.get(scene).map_or(&[], |s| &s.lights),
+    /// The rig changes go to: the default (made from the built-in one when
+    /// missing), or the scene's own (none while it uses the default).
+    fn rig_mut<'a>(edits: &'a mut Edits, scope: Scope, scene: &str) -> Option<&'a mut Rig> {
+        match scope {
+            Scope::Global => Some(edits.global.rig.get_or_insert_with(Rig::default)),
+            Scope::Scene => edits.scenes.get_mut(scene).and_then(|s| s.rig.as_mut()),
         }
     }
 
-    #[allow(clippy::too_many_lines)] // the sun, the lights, the glows
-    fn light_ui(&mut self, ui: &mut egui::Ui, io: &mut Io) {
+    fn profile_ui(&mut self, ui: &mut egui::Ui, io: &Io) {
         let scope = self.scope;
-        let scene = io.scene.to_owned();
-        let look_at = io.camera.map(|c| c.1);
-        let target = Self::target(&mut self.edits, scope, &scene);
+        let target = Self::target(&mut self.edits, scope, io.scene);
         ui.horizontal(|ui| {
             ui.label("Settings profile");
             let none = match scope {
@@ -367,134 +355,157 @@ impl Editor {
             Scope::Scene => "Entering this scene switches to this profile",
             Scope::Global => "Scenes without a profile of their own switch to this one",
         });
-        egui::CollapsingHeader::new("Sun (the key light)")
-            .default_open(true)
-            .show(ui, |ui| {
-                let sun: &mut Sun = &mut Self::target(&mut self.edits, scope, &scene).sun;
-                optional(
-                    ui,
-                    &mut sun.direction,
-                    "direction",
-                    [-0.35, -0.85, 0.4],
-                    |ui, d| {
-                        ui.vertical(|ui| direction_ui(ui, d));
-                    },
-                );
-                optional(ui, &mut sun.color, "colour", [1.0, 0.95, 0.85], |ui, c| {
-                    ui.color_edit_button_rgb(c);
-                });
-                optional(ui, &mut sun.scale, "brightness ×", 1.0, |ui, s| {
-                    ui.add(egui::Slider::new(s, 0.0..=4.0));
-                });
-            });
-        egui::CollapsingHeader::new("Lights")
-            .default_open(true)
-            .show(ui, |ui| {
+    }
+
+    #[allow(clippy::too_many_lines)] // the rig's header, list and the glows
+    fn light_ui(&mut self, ui: &mut egui::Ui, io: &mut Io) {
+        self.profile_ui(ui, io);
+        let scope = self.scope;
+        let scene = io.scene.to_owned();
+        ui.separator();
+        // Which lights: the default rig, or the scene's own.
+        let own = self
+            .edits
+            .scenes
+            .get(&scene)
+            .is_some_and(|s| s.rig.is_some());
+        match scope {
+            Scope::Global => {
+                ui.label("The default lights: every scene without lights of its own.");
+            }
+            Scope::Scene if own => {
                 ui.horizontal(|ui| {
+                    ui.label("This scene has lights of its own.");
                     if ui
-                        .button("Add point light")
-                        .on_hover_text("Then click where it goes")
+                        .button("Back to the default")
+                        .on_hover_text("Its own lights are deleted")
                         .clicked()
                     {
-                        self.mode = Mode::Place(LightKind::Point);
-                        self.message = "click in the scene where the light goes".into();
-                    }
-                    if ui
-                        .button("Add spot light")
-                        .on_hover_text("Then click what it lights")
-                        .clicked()
-                    {
-                        self.mode = Mode::Place(LightKind::Spot);
-                        self.message = "click what the spot light shines on".into();
+                        self.edits.scene_mut(&scene).rig = None;
+                        self.light = None;
                     }
                 });
-                let lights = &mut Self::target(&mut self.edits, scope, &scene).lights;
-                let mut remove = None;
-                let mut copy = None;
-                for (k, l) in lights.iter_mut().enumerate() {
-                    ui.horizontal(|ui| {
-                        ui.checkbox(&mut l.enabled, "");
-                        let text = format!(
-                            "{} ({})",
-                            l.name,
-                            if l.kind == LightKind::Spot {
-                                "spot"
-                            } else {
-                                "point"
-                            }
-                        );
-                        if ui.selectable_label(self.light == Some(k), text).clicked() {
-                            self.light = (self.light != Some(k)).then_some(k);
-                        }
-                    });
-                    if self.light != Some(k) {
-                        continue;
+            }
+            Scope::Scene => {
+                ui.horizontal(|ui| {
+                    ui.label("This scene uses the default lights.");
+                    if ui
+                        .button("Give it its own")
+                        .on_hover_text("A copy of the default lights to change for this scene")
+                        .clicked()
+                    {
+                        let copy = self.edits.default_rig().clone();
+                        self.edits.scene_mut(&scene).rig = Some(copy);
                     }
-                    ui.indent(k, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.label("name");
-                            ui.text_edit_singleline(&mut l.name);
-                        });
-                        ui.horizontal(|ui| {
-                            ui.selectable_value(&mut l.kind, LightKind::Point, "point");
-                            ui.selectable_value(&mut l.kind, LightKind::Spot, "spot");
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("position");
-                            for v in &mut l.position {
-                                ui.add(egui::DragValue::new(v).speed(0.5));
-                            }
-                        });
-                        if let Some(t) = look_at
-                            && ui.button("To what the camera looks at").clicked()
-                        {
-                            l.position = [t[0], t[1] + 8.0, t[2]];
-                        }
-                        ui.horizontal(|ui| {
-                            ui.label("colour");
-                            ui.color_edit_button_rgb(&mut l.color);
-                        });
-                        ui.add(
-                            egui::Slider::new(&mut l.intensity, 0.0..=20.0)
-                                .logarithmic(true)
-                                .text("brightness"),
-                        );
-                        ui.add(egui::Slider::new(&mut l.range, 5.0..=500.0).text("range"));
-                        if l.kind == LightKind::Spot {
-                            direction_ui(ui, &mut l.direction);
-                            ui.add(egui::Slider::new(&mut l.outer, 5.0..=170.0).text("cone (°)"));
-                            l.inner = l.inner.min(l.outer);
-                            ui.add(
-                                egui::Slider::new(&mut l.inner, 0.0..=l.outer).text("full in (°)"),
-                            );
-                        }
-                        ui.checkbox(&mut l.shadows, "Shadows (ray traced)");
-                        ui.add(egui::Slider::new(&mut l.specular, 0.0..=2.0).text("highlights"));
-                        ui.horizontal(|ui| {
-                            if ui.button("Duplicate").clicked() {
-                                copy = Some(k);
-                            }
-                            if ui.button("Delete").clicked() {
-                                remove = Some(k);
-                            }
-                        });
-                    });
-                }
-                if let Some(k) = copy {
-                    let mut l = lights[k].clone();
-                    l.name.push_str(" copy");
-                    l.position[0] += 5.0;
-                    lights.push(l);
-                    self.light = Some(lights.len() - 1);
-                }
-                if let Some(k) = remove {
-                    lights.remove(k);
-                    self.light = None;
-                }
-                if lights.is_empty() {
-                    ui.label("No lights here yet.");
-                }
+                });
+            }
+        }
+        let editable = scope == Scope::Global || own;
+        let mut shown = self.edits.rig_for(&scene).clone();
+        let before = shown.clone();
+        let mut place = None;
+        ui.add_enabled_ui(editable, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Exposure");
+                ui.add(
+                    egui::DragValue::new(&mut shown.exposure)
+                        .speed(0.05)
+                        .range(-6.0..=20.0)
+                        .suffix(" EV100"),
+                )
+                .on_hover_text(
+                    "Higher is darker: bright day 14–15, overcast 12, interiors 7–9, night 2–4",
+                );
             });
+            ui.horizontal(|ui| {
+                ui.strong("Lights");
+                ui.menu_button("+ Add", |ui| {
+                    for kind in LightType::ALL {
+                        let placed = matches!(kind, LightType::Point | LightType::Spot);
+                        let text = if placed {
+                            format!("{} (click where it goes)", kind.name())
+                        } else {
+                            kind.name().to_owned()
+                        };
+                        if ui.button(text).clicked() {
+                            if placed {
+                                place = Some(kind);
+                            } else {
+                                shown.lights.push(SceneLight::new(kind));
+                                self.light = Some(shown.lights.len() - 1);
+                            }
+                            ui.close();
+                        }
+                    }
+                });
+            });
+            let mut remove = None;
+            let mut copy = None;
+            for (k, l) in shown.lights.iter_mut().enumerate() {
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut l.enabled, "");
+                    let mut text = format!("{}  ·  {}", l.name, l.kind.name());
+                    if l.game != GameLight::None {
+                        text.push_str("  · game");
+                    }
+                    if l.mobility == Mobility::Static {
+                        text.push_str("  · static");
+                    }
+                    if ui.selectable_label(self.light == Some(k), text).clicked() {
+                        self.light = (self.light != Some(k)).then_some(k);
+                    }
+                });
+                if self.light != Some(k) {
+                    continue;
+                }
+                ui.indent(k, |ui| {
+                    details(ui, l, io);
+                    ui.horizontal(|ui| {
+                        if ui.button("Duplicate").clicked() {
+                            copy = Some(k);
+                        }
+                        if ui.button("Delete").clicked() {
+                            remove = Some(k);
+                        }
+                    });
+                });
+            }
+            if let Some(k) = copy {
+                let mut l = shown.lights[k].clone();
+                l.name.push_str(" copy");
+                l.position[0] += 5.0;
+                shown.lights.push(l);
+                self.light = Some(shown.lights.len() - 1);
+            }
+            if let Some(k) = remove {
+                shown.lights.remove(k);
+                self.light = None;
+            }
+            if shown.lights.is_empty() {
+                ui.label("No lights: the scene is dark.");
+            }
+        });
+        if let Some(kind) = place {
+            self.mode = Mode::Place(kind);
+            self.message = if kind == LightType::Spot {
+                "click what the spot light shines on".into()
+            } else {
+                "click in the scene where the light goes".into()
+            };
+        }
+        if editable
+            && shown != before
+            && let Some(rig) = Self::rig_mut(&mut self.edits, scope, &scene)
+        {
+            *rig = shown;
+        }
+        ui.separator();
+        self.glow_ui(ui, io);
+    }
+
+    fn glow_ui(&mut self, ui: &mut egui::Ui, io: &Io) {
+        let scope = self.scope;
+        let scene = io.scene.to_owned();
         egui::CollapsingHeader::new("Glows (found lights)").show(ui, |ui| {
             if io.glows.is_empty() {
                 ui.label("No glowing effects seen in this scene.");
@@ -518,7 +529,7 @@ impl Editor {
                             .changed();
                         if ui
                             .button("Make editable")
-                            .on_hover_text("A light of your own in its place")
+                            .on_hover_text("A light of your own in its place (in this scene's or the default lights)")
                             .clicked()
                         {
                             asked = Some((k, false, b, true));
@@ -548,11 +559,27 @@ impl Editor {
                 target.glows[i].enabled = on;
                 target.glows[i].brightness = b;
                 if adopt {
-                    let mut l = g;
-                    l.enabled = true;
-                    l.intensity *= b;
-                    target.lights.push(l);
-                    self.light = Some(target.lights.len() - 1);
+                    match Self::rig_mut(&mut self.edits, scope, &scene) {
+                        Some(rig) => {
+                            rig.lights.push(SceneLight {
+                                name: g.name.clone(),
+                                position: g.position,
+                                color: g.color,
+                                intensity: rig::candela_for(
+                                    g.intensity * b,
+                                    crate::enhanced::lights::REFERENCE,
+                                ),
+                                attenuation_radius: g.range,
+                                cast_shadows: g.shadows,
+                                ..SceneLight::new(LightType::Point)
+                            });
+                            self.light = Some(rig.lights.len() - 1);
+                        }
+                        None => {
+                            self.message =
+                                "this scene uses the default lights: give it its own first".into();
+                        }
+                    }
                 }
             }
         });
@@ -790,4 +817,219 @@ impl Editor {
     pub fn picking(&self) -> bool {
         self.open
     }
+}
+
+/// One row of the details grid.
+fn prop(ui: &mut egui::Ui, label: &str, hint: &str, add: impl FnOnce(&mut egui::Ui)) {
+    let r = ui.label(label);
+    if !hint.is_empty() {
+        r.on_hover_text(hint);
+    }
+    ui.horizontal(add);
+    ui.end_row();
+}
+
+fn drag(
+    ui: &mut egui::Ui,
+    v: &mut f32,
+    speed: f64,
+    range: std::ops::RangeInclusive<f32>,
+    suffix: &str,
+) {
+    ui.add(
+        egui::DragValue::new(v)
+            .speed(speed)
+            .range(range)
+            .suffix(suffix),
+    );
+}
+
+/// A light's properties, as Unreal's details panel lays them out.
+#[allow(clippy::too_many_lines)] // one row per property
+fn details(ui: &mut egui::Ui, l: &mut SceneLight, io: &Io) {
+    let kind = l.kind;
+    let local = matches!(kind, LightType::Point | LightType::Spot);
+    let aimed = matches!(kind, LightType::Directional | LightType::Spot);
+    let followed = match (l.game, io.game) {
+        (GameLight::Key, Some(g)) => Some(g.key),
+        (GameLight::Fill, Some(g)) => Some(g.fill),
+        (GameLight::Ambient, Some(g)) => Some(([0.0, -1.0, 0.0], g.ambient)),
+        _ => None,
+    };
+    egui::Grid::new("light details")
+        .num_columns(2)
+        .spacing([12.0, 4.0])
+        .striped(true)
+        .show(ui, |ui| {
+            prop(ui, "Name", "", |ui| {
+                ui.add(egui::TextEdit::singleline(&mut l.name).desired_width(170.0));
+            });
+            prop(
+                ui,
+                "Mobility",
+                "Static: its shadows are made once and kept until it changes (cheap). Dynamic: worked out every frame.",
+                |ui| {
+                    ui.selectable_value(&mut l.mobility, Mobility::Static, "Static");
+                    ui.selectable_value(&mut l.mobility, Mobility::Dynamic, "Dynamic");
+                },
+            );
+            if l.game != GameLight::None {
+                let what = match l.game {
+                    GameLight::Key => "key light",
+                    GameLight::Fill => "fill light",
+                    _ => "ambient light",
+                };
+                prop(
+                    ui,
+                    "Follows the game",
+                    "The map's own light for characters; what is ticked comes from the game every frame",
+                    |ui| {
+                        ui.label(what);
+                        if aimed {
+                            ui.checkbox(&mut l.follow_direction, "direction");
+                        }
+                        ui.checkbox(&mut l.follow_color, "colour");
+                    },
+                );
+                if let Some((_, [r, g, b])) = followed {
+                    prop(ui, "Game's colour", "Linear, with its brightness", |ui| {
+                        ui.label(format!("{r:.2}, {g:.2}, {b:.2}"));
+                    });
+                }
+            }
+            if local {
+                prop(ui, "Location", "World units (a character is about 20 tall)", |ui| {
+                    for v in &mut l.position {
+                        ui.add(egui::DragValue::new(v).speed(0.5));
+                    }
+                });
+                if let Some((_, t)) = io.camera {
+                    prop(ui, "", "", |ui| {
+                        if ui.button("To what the camera looks at").clicked() {
+                            l.position = [t[0], t[1] + 8.0, t[2]];
+                        }
+                    });
+                }
+            }
+            if aimed {
+                let fixed = followed.is_some() && l.follow_direction;
+                prop(ui, "Rotation", "Pitch (down is negative) and yaw, degrees", |ui| {
+                    ui.add_enabled_ui(!fixed, |ui| {
+                        let (mut yaw, mut pitch) = angles(l.direction);
+                        let before = (yaw, pitch);
+                        ui.label("pitch");
+                        ui.add(egui::DragValue::new(&mut pitch).speed(0.5).range(-90.0..=90.0).suffix("°"));
+                        ui.label("yaw");
+                        ui.add(egui::DragValue::new(&mut yaw).speed(0.5).range(-180.0..=180.0).suffix("°"));
+                        if (yaw, pitch) != before {
+                            l.direction = direction(yaw, pitch);
+                        }
+                    });
+                });
+            }
+            let unit = format!(" {}", kind.unit());
+            let hint = match kind {
+                LightType::Original => "A multiple of the game's painted light",
+                LightType::Sky => "Luminance of the sky, cd/m²",
+                LightType::Directional if followed.is_some() && l.follow_color => {
+                    "Illuminance at the game's brightness 1 (the game's light scales it)"
+                }
+                LightType::Directional => "Illuminance on a surface facing it (sun 30000–100000, overcast 1000–10000, moon 0.1–1)",
+                _ => "Luminous intensity, candela (a 60 W bulb is about 70)",
+            };
+            prop(ui, "Intensity", hint, |ui| {
+                let speed = f64::from(l.intensity.abs() * 0.01 + 0.01);
+                drag(ui, &mut l.intensity, speed, 0.0..=1.0e7, &unit);
+            });
+            let tinted = followed.is_some() && l.follow_color;
+            prop(ui, if kind == LightType::Sky { "Upper Color" } else { "Light Color" }, "", |ui| {
+                ui.add_enabled_ui(!tinted && !l.use_temperature, |ui| {
+                    ui.color_edit_button_rgb(&mut l.color);
+                });
+            });
+            if kind == LightType::Sky {
+                prop(ui, "Lower Color", "Light from below (the ground)", |ui| {
+                    ui.color_edit_button_rgb(&mut l.lower_color);
+                });
+            }
+            if kind != LightType::Original {
+                prop(ui, "Use Temperature", "", |ui| {
+                    ui.add_enabled_ui(!tinted, |ui| {
+                        ui.checkbox(&mut l.use_temperature, "");
+                        ui.add_enabled_ui(l.use_temperature, |ui| {
+                            drag(ui, &mut l.temperature, 10.0, 1000.0..=40000.0, " K");
+                        });
+                    });
+                });
+            }
+            match kind {
+                LightType::Directional => prop(
+                    ui,
+                    "Source Angle",
+                    "How large the light looks, degrees (the sun 0.5): softer shadow edges",
+                    |ui| drag(ui, &mut l.source, 0.01, 0.0..=10.0, "°"),
+                ),
+                LightType::Point | LightType::Spot => {
+                    prop(ui, "Source Radius", "World units", |ui| {
+                        drag(ui, &mut l.source, 0.05, 0.0..=50.0, "");
+                    });
+                    prop(ui, "Attenuation Radius", "Where its light ends, world units", |ui| {
+                        drag(ui, &mut l.attenuation_radius, 0.5, 1.0..=5000.0, "");
+                    });
+                }
+                _ => {}
+            }
+            if kind == LightType::Spot {
+                prop(ui, "Inner Cone Angle", "Full light inside, degrees", |ui| {
+                    drag(ui, &mut l.inner_cone, 0.2, 0.0..=89.0, "°");
+                });
+                prop(ui, "Outer Cone Angle", "No light outside, degrees", |ui| {
+                    drag(ui, &mut l.outer_cone, 0.2, 1.0..=89.0, "°");
+                });
+                l.inner_cone = l.inner_cone.min(l.outer_cone);
+            }
+            if matches!(kind, LightType::Directional | LightType::Point | LightType::Spot) {
+                let hint = if kind == LightType::Directional {
+                    "The first directional light with shadows is the key light: shadow cascades, ray-traced shadows, light shafts"
+                } else {
+                    "Ray-traced from the scenery, where the GPU traces rays"
+                };
+                prop(ui, "Cast Shadows", hint, |ui| {
+                    ui.checkbox(&mut l.cast_shadows, "");
+                });
+            }
+            prop(ui, "Affects Scenery", "Times its light on scenery (0: none)", |ui| {
+                drag(ui, &mut l.scenery, 0.01, 0.0..=4.0, " ×");
+            });
+            prop(ui, "Affects Characters", "Times its light on characters (0: none)", |ui| {
+                drag(ui, &mut l.characters, 0.01, 0.0..=4.0, " ×");
+            });
+            if kind != LightType::Original && kind != LightType::Sky {
+                prop(ui, "Specular Scale", "Its highlights", |ui| {
+                    drag(ui, &mut l.specular, 0.01, 0.0..=4.0, "");
+                });
+            }
+            if kind == LightType::Directional {
+                prop(ui, "Volumetric Scattering", "Light shafts in the air (the key light)", |ui| {
+                    drag(ui, &mut l.volumetric, 0.01, 0.0..=10.0, "");
+                });
+            }
+            if kind == LightType::Original {
+                prop(
+                    ui,
+                    "Indirect Intensity",
+                    "Its light bounced from the surroundings (light probes): on characters, and on scenery as far as Affects Scenery is below 1",
+                    |ui| drag(ui, &mut l.indirect, 0.01, 0.0..=4.0, ""),
+                );
+                prop(ui, "Key Shadows", "How much the key light's shadows darken it on scenery", |ui| {
+                    drag(ui, &mut l.key_shadows, 0.01, 0.0..=1.0, "");
+                });
+                prop(ui, "Ambient Occlusion", "Screen-space occlusion on it", |ui| {
+                    drag(ui, &mut l.occlusion, 0.01, 0.0..=1.0, "");
+                });
+                prop(ui, "Key Highlights", "The key light's highlights on scenery where it is bright", |ui| {
+                    drag(ui, &mut l.highlights, 0.01, 0.0..=4.0, "");
+                });
+            }
+        });
 }

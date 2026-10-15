@@ -307,23 +307,23 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("ffx-render.toml");
         let mut s = Settings {
-            exposure: 2.0,
+            contrast: 2.0,
             ..Settings::default()
         };
         let mut p = Profiles::new(&file, &s);
         assert_eq!(p.names, ["Default"]);
         assert_eq!(p.active, "Default");
-        s.exposure = 3.0;
+        s.contrast = 3.0;
         p.create("Bright/er", &s).unwrap();
         assert_eq!(p.active, "Brighter");
         p.rename("Night").unwrap();
         assert_eq!(p.names, ["Default", "Night"]);
         let shared = p.share_text();
         p.switch("Default", &mut s).unwrap();
-        assert!((s.exposure - 2.0).abs() < 1e-6);
+        assert!((s.contrast - 2.0).abs() < 1e-6);
         let name = p.import(&shared, &mut s).unwrap();
         assert_eq!(name, "Night 2");
-        assert!((s.exposure - 3.0).abs() < 1e-6);
+        assert!((s.contrast - 3.0).abs() < 1e-6);
         p.delete(&mut s).unwrap();
         assert_eq!(p.names, ["Default", "Night"]);
         // Scenes that ask for a profile.
@@ -331,11 +331,11 @@ mod tests {
         assert!(p.follow("bsil0000", None, &mut s).is_none());
         assert!(p.follow("cdsp0000", Some("Night"), &mut s).is_some());
         assert_eq!(p.active, "Night");
-        assert!((s.exposure - 3.0).abs() < 1e-6);
+        assert!((s.contrast - 3.0).abs() < 1e-6);
         assert!(p.follow("cdsp0000", Some("Night"), &mut s).is_none());
         assert!(p.follow("bsil0000", Some("Gone"), &mut s).is_some());
         assert_eq!(p.active, "Default");
-        s.exposure = 5.0;
+        s.contrast = 5.0;
         assert!(p.follow("cdsp0000", Some("Night"), &mut s).is_some());
         assert_eq!(p.active, "Default");
         let again = Profiles::new(&file, &Settings::default());

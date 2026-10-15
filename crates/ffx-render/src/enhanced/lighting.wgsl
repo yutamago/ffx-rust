@@ -1,46 +1,47 @@
 // Lighting pass of the enhanced renderer: physically based shading of
-// the G-buffer in linear HDR. The game's baked vertex light stays as the
-// indirect term (its art direction); a key light with soft shadows and
-// sky light are added; the game's fog applies on top.
+// the G-buffer in linear HDR, by the scene's rig (`rig.rs`): the game's
+// painted light (the original light), the shadowed directional light (the
+// key), the sky light and the other lights, each with its strength on
+// scenery and on characters; the game's fog applies on top.
 
 struct Light {
     inv_view_proj: mat4x4<f32>,
     // Rows of the three shadow cascades' view-projections.
     shadow: array<vec4<f32>, 12>,
     eye: vec4<f32>,
-    // xyz: direction the light travels, w: intensity
+    // The key light: xyz: direction it travels, w: 1
     sun: vec4<f32>,
-    // rgb: key light colour, w: how much the key light lights scenery
-    // directly (the dynamic share times the sun on scenery)
+    // rgb: its light, w: on scenery
     sun_color: vec4<f32>,
-    // rgb: sky ambient, w: strength
+    // The sky light: rgb: from above, w: 1
     sky: vec4<f32>,
-    // rgb: ground colour, w: how much sky light scenery gets on top of its
-    // baked light (which has the map's ambient already)
+    // rgb: from below, w: on scenery
     ground: vec4<f32>,
     // rgb: fog colour (linear), w: limit
     fog: vec4<f32>,
     // x: near, y: far, z: curve, w: on
     fog_range: vec4<f32>,
-    // x: baked light weight, y: roughness, z: specular, w: shadow on
+    // x: the original light on scenery, y: roughness, z: specular, w:
+    // shadow on
     mix: vec4<f32>,
     // x: shadow map texel size, y: filter radius (texels), z: bias, w: ao strength
     shadow_params: vec4<f32>,
     // x: width, y: height, z: strength of the shadows only the cascades
-    // have (characters') on scenery, when rays are on, w: share of
-    // scenery's light that is dynamic (1 - baked light)
+    // have (characters') on scenery, when rays are on, w: light bounced
+    // onto scenery from the probes (as far as its original light is
+    // turned down)
     screen: vec4<f32>,
     // The view matrix's third row: view-space depth, as the game's fog
     // uses.
     view_z: vec4<f32>,
-    // xyz: direction the fill light travels, w: intensity; colour, w:
-    // the bounce on dynamically lit scenery
-    fill: vec4<f32>,
-    fill_color: vec4<f32>,
-    // x: how much the key light reshapes scenery's baked light (0: not
-    // at all, 1: fully by its shadow and facing), y: scenery specular,
-    // z: ambient occlusion on baked light, w: characters' falloff (0: the
-    // game's soft wrap, 1: physical)
+    // On characters: x: the original light, y: the key light, z: the
+    // sky light; w: the key light's specular
+    channels: vec4<f32>,
+    spare: vec4<f32>,
+    // x: how much the key light's shadows darken the original light on
+    // scenery (0: not at all, 1: fully by its shadow and facing), y: the
+    // key light's highlights on it, z: ambient occlusion on it, w:
+    // characters' falloff (0: the game's soft wrap, 1: physical)
     scenery: vec4<f32>,
     // View distances where cascades 0, 1 and 2 end; w: debug view (0
     // none, 1 shadow, 2 occlusion, 3 normal, 4 albedo, 5 baked light,
@@ -59,16 +60,20 @@ struct Light {
 const FAR_START: f32 = 1500.0;
 const FAR_END: f32 = 2500.0;
 
-// A point or spot light (`lights.rs`).
+// A point, spot or (unshadowed) directional light (`lights.rs`).
 struct LocalLight {
     // xyz: position, w: range (the light ends there, smoothly)
     pos: vec4<f32>,
-    // rgb: colour × brightness (at 1 unit), w: 1 spot, 0 point
+    // rgb: colour × brightness (at 1 unit; directional: its light), w: 0
+    // point, 1 spot, 2 directional
     color: vec4<f32>,
-    // xyz: where a spot shines, w: cos of half its outer cone
+    // xyz: where a spot or directional light shines, w: cos of half the
+    // outer cone
     dir: vec4<f32>,
     // x: cos of half the inner cone, y: traced shadows, z: specular share
     extra: vec4<f32>,
+    // x: on scenery, y: on characters
+    reach: vec4<f32>,
 };
 
 struct Lights {
@@ -217,19 +222,32 @@ fn local_lights(p: vec3<f32>, n: vec3<f32>, v: vec3<f32>, albedo: vec3<f32>, rou
     let count = u32(lights.count.x);
     for (var i = 0u; i < count; i = i + 1u) {
         let lt = lights.items[i];
-        let to = lt.pos.xyz - p;
-        let d2 = max(dot(to, to), 1e-4);
-        let d = sqrt(d2);
-        let x = d / max(lt.pos.w, 1e-3);
-        if (x >= 1.0) {
+        let reach = select(lt.reach.x, lt.reach.y, character);
+        if (reach <= 0.0) {
             continue;
         }
-        let l = to / d;
-        let window = pow(clamp(1.0 - x * x * x * x, 0.0, 1.0), 2.0);
-        // A source a couple of units across: no blow-out right next to it.
-        var amount = window / (d2 + 4.0);
-        if (lt.color.w > 0.5) {
-            amount = amount * smoothstep(lt.dir.w, lt.extra.x, dot(-l, normalize(lt.dir.xyz)));
+        var l: vec3<f32>;
+        var amount: f32;
+        var d = 1e4;
+        if (lt.color.w > 1.5) {
+            // Directional: the same everywhere.
+            l = -normalize(lt.dir.xyz);
+            amount = reach;
+        } else {
+            let to = lt.pos.xyz - p;
+            let d2 = max(dot(to, to), 1e-4);
+            d = sqrt(d2);
+            let x = d / max(lt.pos.w, 1e-3);
+            if (x >= 1.0) {
+                continue;
+            }
+            l = to / d;
+            let window = pow(clamp(1.0 - x * x * x * x, 0.0, 1.0), 2.0);
+            // A source a couple of units across: no blow-out right next to it.
+            amount = window / (d2 + 4.0) * reach;
+            if (lt.color.w > 0.5) {
+                amount = amount * smoothstep(lt.dir.w, lt.extra.x, dot(-l, normalize(lt.dir.xyz)));
+            }
         }
         let nl = max(dot(n, l), 0.0);
         var shape = nl;
@@ -307,19 +325,18 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
         // As far as the baked light is turned down, the key light lights
         // the scenery in its place, with its real shadows (the two never
         // add up).
-        let dynamic = light.screen.w;
         let direct = light.sun_color.rgb * light.sun.w * nl * shadow * light.sun_color.w;
-        let gloss = spec * light.sun_color.rgb * light.sun.w * shadow * nl * light.scenery.y;
-        // Highlights where the baked light is bright, and as far as the
+        let gloss = spec * light.sun_color.rgb * light.sun.w * shadow * nl * light.channels.w;
+        // Highlights where the painted light is bright, and as far as the
         // key light lights the scenery itself.
-        let lit_by = min(min(dot(baked, vec3<f32>(0.33)) * 2.0, 1.0) + light.sun_color.w, 1.0);
+        let lit_by = min(min(dot(baked, vec3<f32>(0.33)) * 2.0, 1.0) * light.scenery.y + light.sun_color.w, 1.0);
         // Dynamic light bounces too: what the scenery around sends back,
         // from the probes (one bounce of the art's light), else the sky.
         var bounce = hemi;
         if (light.gi.w > 0.5 && probes.count.x > 0.5) {
             bounce = probe_light(p, n) * light.gi.x;
         }
-        let ambient = hemi * light.ground.w + bounce * dynamic * light.fill_color.w;
+        let ambient = hemi * light.ground.w + bounce * light.screen.w;
         color = albedo * (base + direct + ambient * ao) + gloss * lit_by;
         // Far away (the sky dome, distant land) nothing of ours reaches:
         // the game's own colours, its texture times its painted light.
@@ -336,14 +353,12 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
         let soften = vec3<f32>(1.0) - skin * vec3<f32>(0.55, 0.15, 0.0);
         let shape = pow(vec3<f32>(max(mix(wrap, nl, light.scenery.w), 0.0)), soften);
         let shadowed = pow(vec3<f32>(mix(1.0, shadow, 0.85)), soften);
-        let direct = light.sun_color.rgb * light.sun.w * shape * shadowed;
-        let lf = -normalize(light.fill.xyz);
-        let fill = light.fill_color.rgb * light.fill.w * pow(vec3<f32>(dot(n, lf) * 0.5 + 0.5), 2.0 * soften);
-        var indirect = baked * light.mix.x + hemi;
+        let direct = light.sun_color.rgb * light.sun.w * shape * shadowed * light.channels.y;
+        var indirect = baked * light.channels.x + hemi * light.channels.z;
         if (light.gi.w > 0.5 && probes.count.x > 0.5) {
             indirect = mix(indirect, probe_light(p, n) * light.gi.x, light.gi.y);
         }
-        color = albedo * (indirect * ao + direct + fill) + light.sun_color.rgb * light.sun.w * nl * shadow * spec;
+        color = albedo * (indirect * ao + direct) + light.sun_color.rgb * light.sun.w * nl * shadow * spec * light.channels.y * light.channels.w;
     }
     let local = local_lights(p, n, v, albedo, rough, character, in.pos.xy, f0, gloss_scale) * ao;
     // Emission: the surface's own light.

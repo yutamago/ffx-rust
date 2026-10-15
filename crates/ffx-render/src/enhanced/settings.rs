@@ -10,48 +10,12 @@ pub struct Settings {
     /// Draw scenery and characters the enhanced way (off: the game's own
     /// shaders, as in the original).
     pub enabled: bool,
-    /// Multiplier before the tone curve.
-    pub exposure: f32,
     /// 0: the game's curve, 1: ACES, 2: filmic (AgX-like).
     pub tone_curve: u8,
     pub saturation: f32,
     pub contrast: f32,
-    /// Take the key, fill and sky light from the map's character lights
-    /// (the game's own per-map lighting); off: the values below.
-    pub map_lights: bool,
-    /// Scale of the map's key light, fill light and ambient (sky).
-    pub key_scale: f32,
-    pub fill_scale: f32,
-    pub sky_scale: f32,
-    /// The direction the key light travels (world space).
-    pub sun_direction: [f32; 3],
-    pub sun_intensity: f32,
-    pub sun_color: [f32; 3],
-    pub sky_color: [f32; 3],
-    pub sky_intensity: f32,
-    pub ground_color: [f32; 3],
-    /// Weight of the game's baked vertex light: the artists' light on
-    /// scenery (and indirect light on characters). Below 1 the key light
-    /// lights the scenery directly in its place (0: dynamic light only).
-    pub baked_light: f32,
-    /// How much the key light reshapes scenery's baked light (shadows,
-    /// facing), 0–1.
-    pub scenery_key: f32,
-    /// Sky light on scenery, on top of its baked light (characters always
-    /// get it).
-    pub scenery_sky: f32,
-    /// Specular highlights on scenery from the key light.
-    pub scenery_specular: f32,
-    /// Where the baked light is turned down: how strongly the key light
-    /// lights the scenery (1: as it lights the characters).
-    pub scenery_sun: f32,
-    /// There too: the light the surroundings bounce onto it (from the
-    /// probes).
-    pub scenery_bounce: f32,
     /// Characters' light falloff: 0 the game's soft wrap, 1 physical.
     pub character_falloff: f32,
-    /// Scale of the characters' ambient light (they have no baked light).
-    pub character_ambient: f32,
     /// Normal and roughness maps made from the colour textures.
     pub material_maps: bool,
     pub normal_strength: f32,
@@ -70,9 +34,6 @@ pub struct Settings {
     /// Ray-traced shadows of the key light from the scenery (where the GPU
     /// can trace rays); characters and cut-out surfaces keep the cascades.
     pub ray_traced_shadows: bool,
-    /// The key light's angular radius (radians): the softness of traced
-    /// shadows (TAA smooths the noise).
-    pub sun_size: f32,
     /// How far a shadow ray looks for scenery in the way (world units; a
     /// character is about 20 tall).
     pub ray_distance: f32,
@@ -83,7 +44,6 @@ pub struct Settings {
     /// scenery around them (its baked light, seen from where they stand),
     /// and so does scenery lit dynamically (`baked_light` below 1).
     pub probes: bool,
-    pub probe_strength: f32,
     /// How much the probe light replaces the characters' ambient.
     pub probe_mix: f32,
     /// Skin scattering: light bleeding red past the terminator and into
@@ -181,9 +141,6 @@ pub struct Settings {
     /// Its radius in world units (a character is about 20 tall).
     pub ao_radius: f32,
     pub ao_strength: f32,
-    /// How much of it darkens scenery's baked light (which has coarse
-    /// occlusion of its own).
-    pub ao_on_baked: f32,
     /// Show one input of the lighting instead of the image: 0 none,
     /// 1 shadow, 2 occlusion, 3 normal, 4 albedo, 5 baked light,
     /// 6 shadow cascades, 7 skin, 8 probe light.
@@ -200,28 +157,10 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             enabled: true,
-            exposure: 1.3,
             tone_curve: 1,
             saturation: 1.0,
             contrast: 1.0,
-            map_lights: true,
-            key_scale: 0.6,
-            fill_scale: 0.2,
-            sky_scale: 0.3,
-            sun_direction: [-0.35, -0.85, 0.4],
-            sun_intensity: 0.0,
-            sun_color: [1.0, 0.95, 0.85],
-            sky_color: [0.6, 0.7, 0.9],
-            sky_intensity: 0.0,
-            ground_color: [0.3, 0.27, 0.25],
-            baked_light: 1.0,
-            scenery_key: 0.4,
-            scenery_sky: 0.2,
-            scenery_specular: 0.5,
-            scenery_sun: 1.0,
-            scenery_bounce: 1.0,
             character_falloff: 0.3,
-            character_ambient: 2.0,
             material_maps: true,
             normal_strength: 1.0,
             character_detail: 0.3,
@@ -233,11 +172,9 @@ impl Default for Settings {
             shadow_softness: 2.0,
             fog: true,
             ray_traced_shadows: true,
-            sun_size: 0.012,
             ray_distance: 150.0,
             character_shadows: 0.8,
             probes: true,
-            probe_strength: 1.0,
             probe_mix: 0.7,
             skin: 0.5,
             skin_materials: 1.0,
@@ -285,7 +222,6 @@ impl Default for Settings {
             ao: true,
             ao_radius: 4.0,
             ao_strength: 1.0,
-            ao_on_baked: 0.6,
             fake_shadows: false,
             afterimage: false,
             debug_view: 0,
