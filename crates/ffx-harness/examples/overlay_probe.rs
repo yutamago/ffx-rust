@@ -1,7 +1,8 @@
 //! `overlay_probe <out dir> <step>...`: loads save 1 with the renderer and
 //! runs the steps, to try the overlay. Steps: `shot:<name>` (a PNG in the
 //! out dir), `wait:<frames>`, `click:<x>,<y>` (a left click in the
-//! overlay, back buffer pixels), `overlay` (F10), `cmd:<harness command>`,
+//! overlay, back buffer pixels), `overlay` (F10), `editor` (F11),
+//! `cmd:<harness command>`,
 //! `set:<key>=<value>` (a line of `ffx-render.toml` in the game folder,
 //! which the renderer rereads; the file is put back at the end).
 use std::path::PathBuf;
@@ -40,6 +41,10 @@ fn main() -> ffx_harness::Result<()> {
             }
             "overlay" => {
                 println!("{}", game.command("overlay")?);
+                game.wait(10)?;
+            }
+            "editor" => {
+                println!("{}", game.command("editor")?);
                 game.wait(10)?;
             }
             "cmd" => println!("{}", game.command(arg)?),

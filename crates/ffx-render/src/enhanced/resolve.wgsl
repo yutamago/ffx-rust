@@ -7,7 +7,8 @@ struct Resolve {
     params: vec4<f32>,
     // Rows of the view matrix, for the game's view-space normals.
     view: array<vec4<f32>, 4>,
-    // x: the scene's clear alpha (where nothing was drawn), y: sharpening
+    // x: the scene's clear alpha (where nothing was drawn), y: sharpening,
+    // z: the editor highlights draws (outlined, by the ids' top bit)
     clear: vec4<f32>,
 };
 
@@ -16,6 +17,12 @@ struct Resolve {
 @group(0) @binding(2) var ldr_samp: sampler;
 @group(0) @binding(3) var normal_tex: texture_2d<f32>;
 @group(0) @binding(4) var depth_tex: texture_depth_2d;
+@group(0) @binding(5) var id_tex: texture_2d<u32>;
+
+fn highlighted(q: vec2<i32>) -> bool {
+    let size = vec2<i32>(textureDimensions(id_tex));
+    return (textureLoad(id_tex, clamp(q, vec2<i32>(0), size - 1), 0).r & 0x80000000u) != 0u;
+}
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -157,6 +164,18 @@ fn fs(in: VsOut) -> Out {
     }
     var out: Out;
     let ipx = vec2<i32>(floor(in.pos.xy * scale));
+    if (res.clear.z > 0.5) {
+        // What the editor picked: tinted, with an outline two pixels wide.
+        let on = highlighted(ipx);
+        let r = i32(max(scale * 2.0, 1.0));
+        let edge = on != highlighted(ipx + vec2<i32>(r, 0)) || on != highlighted(ipx - vec2<i32>(r, 0))
+            || on != highlighted(ipx + vec2<i32>(0, r)) || on != highlighted(ipx - vec2<i32>(0, r));
+        if (edge) {
+            c = vec3<f32>(1.0, 0.8, 0.2);
+        } else if (on) {
+            c = mix(c, vec3<f32>(1.0, 0.8, 0.2), 0.12);
+        }
+    }
     let nm = textureLoad(normal_tex, ipx, 0);
     let n = nm.xyz;
     // The game's alpha: its glow passes read it.

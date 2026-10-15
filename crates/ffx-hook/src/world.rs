@@ -27,13 +27,17 @@ pub fn opened(path: &[u8]) {
     }
 }
 
+/// A point of the camera channel, in the renderer's world space: the
+/// game's field space with x and y negated, as its view matrix has it (on
+/// the S.S. Winno deck the channel's eye is (-73.02, -26.47, -6.02) and
+/// the view matrix's (73.02, 27.12, -6.02)).
 fn read3(at: usize) -> Option<[f32; 3]> {
     // SAFETY: inside the camera channel table of the game's image (a
     // static block), read as plain floats.
     let v = unsafe { [0, 4, 8].map(|o| std::ptr::read_unaligned((at + o) as *const f32)) };
     v.iter()
         .all(|x| x.is_finite() && x.abs() < 1e7)
-        .then_some(v)
+        .then_some([-v[0], -v[1], v[2]])
 }
 
 /// The message for the renderer.

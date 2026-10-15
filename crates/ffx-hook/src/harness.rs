@@ -56,6 +56,7 @@
 //! | `gfxstats` | `ok frames <n> draws <n>`: draws in the last frame |
 //! | `overlay` | shows or hides the live renderer's overlay (as F10): `ok <shown>` |
 //! | `overlayclick <x> <y>` | a left click in the overlay, in back buffer pixels |
+//! | `editor` | opens or closes the renderer's editor (as F11; shows the overlay) |
 //! | `quit` | ends the process |
 
 use std::collections::VecDeque;
@@ -1092,6 +1093,10 @@ fn command(line: &str) -> Result<String, String> {
         "shot" => on_game_thread(Job::Shot(words[1..].join(" "))),
         "gfxcapture" => crate::gfx::capture(&words[1..].join(" ")),
         "overlay" => format!("ok {}", crate::gfx::live::toggle_overlay()),
+        "editor" => {
+            crate::gfx::live::toggle_editor();
+            "ok".into()
+        }
         "overlayclick" => {
             let x: f32 = arg(1)?.parse().map_err(|e| format!("{e}"))?;
             let y: f32 = arg(2)?.parse().map_err(|e| format!("{e}"))?;

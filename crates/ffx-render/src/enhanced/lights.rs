@@ -65,6 +65,84 @@ impl Default for Light {
     }
 }
 
+/// The key light (the sun) as the editor changes it: what is set replaces
+/// the map's (or the settings').
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Sun {
+    /// The direction the light travels (world space; y up).
+    pub direction: Option<[f32; 3]>,
+    pub color: Option<[f32; 3]>,
+    /// Times the brightness it has.
+    pub scale: Option<f32>,
+}
+
+impl Sun {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+/// A light found in the glows, as the editor changes it: matched by where
+/// it is.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GlowEdit {
+    pub position: [f32; 3],
+    pub enabled: bool,
+    /// Times the brightness it is found with.
+    pub brightness: f32,
+    pub color: Option<[f32; 3]>,
+    pub shadows: Option<bool>,
+}
+
+impl Default for GlowEdit {
+    fn default() -> Self {
+        Self {
+            position: [0.0; 3],
+            enabled: true,
+            brightness: 1.0,
+            color: None,
+            shadows: None,
+        }
+    }
+}
+
+/// How near a glow light must be to an edit's position to take it.
+pub const GLOW_MATCH: f32 = 15.0;
+
+impl GlowEdit {
+    /// `l` (a glow light) as this edit changes it.
+    #[must_use]
+    pub fn apply(&self, l: &Light) -> Light {
+        let mut out = l.clone();
+        out.enabled = self.enabled;
+        out.intensity *= self.brightness;
+        if let Some(c) = self.color {
+            out.color = c;
+        }
+        if let Some(s) = self.shadows {
+            out.shadows = s;
+        }
+        out
+    }
+}
+
+/// The edit for a glow light at `p`, if one is near.
+#[must_use]
+pub fn glow_edit(edits: &[GlowEdit], p: [f32; 3]) -> Option<&GlowEdit> {
+    edits
+        .iter()
+        .map(|e| {
+            let d = (0..3).map(|i| (e.position[i] - p[i]).powi(2)).sum::<f32>();
+            (e, d)
+        })
+        .filter(|(_, d)| *d < GLOW_MATCH * GLOW_MATCH)
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(e, _)| e)
+}
+
 /// The lights as the lighting pass reads them (`Lights` in
 /// `lighting.wgsl`); at most [`MAX`]. Shadows only with `rays`.
 #[must_use]

@@ -31,8 +31,15 @@ struct Item {
     ambient: vec4<f32>,
     // The game's clrScaleFactor: a final colour multiplier.
     scale: vec4<f32>,
-    // x: surface detail strength for this draw
+    // x: surface detail strength for this draw, y: roughness (below 0:
+    // from the material map), z: metallic, w: specular scale
     extra: vec4<f32>,
+    // x: emission, y: skin detection (0–1: how much skin-coloured pixels
+    // take the skin material), z: skin roughness, w: surface detail on skin
+    look: vec4<f32>,
+    // rgb: tint (multiplies the colour), w: the draw's id + 1 (picking),
+    // plus 2^23 when the editor highlights it
+    tint: vec4<f32>,
     // Last frame's World of the same draw (this frame's when it is new).
     prev_world: array<vec4<f32>, 4>,
 };
@@ -128,7 +135,27 @@ struct GOut {
     // rg: where this point was last frame minus where it is (uv), b: its
     // view depth then, a: 1 (no motion where nothing was drawn).
     @location(3) motion: vec4<f32>,
+    // r: metallic, g: specular / 2, b: emission / 8, a: skin
+    @location(4) material: vec4<f32>,
+    // The draw's id + 1 (0: nothing), for picking in the editor; the top
+    // bit: highlighted.
+    @location(5) id: u32,
 };
+
+// How much a colour looks like skin: red over green over blue, moderately
+// saturated, not too dark, hue between red and orange.
+fn skin_weight(albedo: vec3<f32>) -> f32 {
+    let c = sqrt(max(albedo, vec3<f32>(0.0)));
+    let hi = max(c.r, max(c.g, c.b));
+    let lo = min(c.r, min(c.g, c.b));
+    let sat = (hi - lo) / max(hi, 1e-3);
+    if (c.r < c.g || c.g < c.b) {
+        return 0.0;
+    }
+    let hue = 60.0 * (c.g - c.b) / max(hi - lo, 1e-3);
+    return smoothstep(0.12, 0.22, sat) * (1.0 - smoothstep(0.6, 0.75, sat)) * smoothstep(0.15, 0.3, hi)
+        * smoothstep(5.0, 12.0, hue) * (1.0 - smoothstep(30.0, 38.0, hue));
+}
 
 fn screen_uv(c: vec4<f32>) -> vec2<f32> {
     let n = c.xy / c.w;
@@ -141,6 +168,7 @@ fn fs(in: VsOut) -> GOut {
     if (HAS_UV) {
         c = c * textureSample(albedo_tex, albedo_samp, in.uv);
     }
+    c = vec4<f32>(c.rgb * item.tint.rgb, c.a);
     if (ALPHA_TEST) {
         if (c.a < item.params.x) {
             discard;
@@ -149,6 +177,9 @@ fn fs(in: VsOut) -> GOut {
     var n = normalize(in.nrm);
     var rough = cam.misc.w;
     var cavity = 1.0;
+    // Skin (by its colour) has its own roughness and less surface detail.
+    let skin = skin_weight(c.rgb * item.scale.rgb) * item.look.y;
+    let detail = item.extra.x * mix(1.0, item.look.w, skin);
     if (HAS_UV) {
         let m = textureSample(material_tex, albedo_samp, in.uv);
         if (cam.misc.z > 0.5) {
@@ -162,7 +193,7 @@ fn fs(in: VsOut) -> GOut {
             let t = p2 * du1.x + p1 * du2.x;
             let b = p2 * du1.y + p1 * du2.y;
             let inv = inverseSqrt(max(max(dot(t, t), dot(b, b)), 1e-20));
-            let nt = vec3<f32>((m.xy * 2.0 - 1.0) * cam.misc.y * item.extra.x, 1.0);
+            let nt = vec3<f32>((m.xy * 2.0 - 1.0) * cam.misc.y * detail, 1.0);
             let pn = normalize(t * inv * nt.x + b * inv * nt.y + n * nt.z);
             if (all(pn == pn)) {
                 n = pn;
@@ -171,8 +202,15 @@ fn fs(in: VsOut) -> GOut {
             cavity = m.w;
         }
     }
+    if (item.extra.y >= 0.0) {
+        rough = item.extra.y;
+    }
+    rough = clamp(mix(rough, item.look.z, skin), 0.05, 1.0);
     var out: GOut;
     out.albedo = vec4<f32>(c.rgb * item.scale.rgb * cavity, rough);
+    out.material = vec4<f32>(item.extra.z, clamp(item.extra.w * 0.5, 0.0, 1.0), clamp(item.look.x / 8.0, 0.0, 1.0), skin);
+    let raw = u32(item.tint.w);
+    out.id = (raw & 0x7fffffu) | select(0u, 0x80000000u, raw >= 0x800000u);
     // w: the material (0 scenery, 1 character) plus half the game's
     // alpha (its glow passes read the scene's alpha).
     // (The game's: colour alpha × vertex alpha, 0.5 as full.)

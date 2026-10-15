@@ -50,6 +50,8 @@ fn replay(args: &[String]) -> Result<()> {
     // Lights from the frame's glowing effects (found as live, then the
     // frame drawn again with them).
     let mut glow = false;
+    // A pick as the editor makes it (0–1 of the screen), after the frame.
+    let mut pick: Option<(f32, f32)> = None;
     let mut game: Option<PathBuf> = None;
     let mut sets: Vec<String> = Vec::new();
     let mut materials: Option<PathBuf> = None;
@@ -63,6 +65,12 @@ fn replay(args: &[String]) -> Result<()> {
             }
             "--enhanced" => enhanced = true,
             "--glow" => glow = true,
+            "--pick" => {
+                let v = args.get(i + 1).context("x,y")?;
+                let (x, y) = v.split_once(',').context("x,y")?;
+                pick = Some((x.parse()?, y.parse()?));
+                i += 1;
+            }
             "--game" => {
                 game = Some(PathBuf::from(args.get(i + 1).context("DIR")?));
                 i += 1;
@@ -133,7 +141,11 @@ fn replay(args: &[String]) -> Result<()> {
         }
         match (&mut e, m) {
             (Some(e), ffx_gfx::Msg::Frame(f)) => {
+                e.pick = pick;
                 e.render_until(&mut r, &f, filter.until)?;
+                if pick.is_some() {
+                    println!("picked: {:?}", e.picked);
+                }
                 if glow {
                     let fx = ffx_render::enhanced::Enhanced::glowing_effects(&r, &f);
                     println!("glowing effects: {} commands", fx.cmds.len());
@@ -191,6 +203,9 @@ fn replay(args: &[String]) -> Result<()> {
     }
     for w in &r.warnings {
         println!("warning: {w}");
+    }
+    for e in ffx_render::take_gpu_errors() {
+        println!("GPU error: {e}");
     }
     Ok(())
 }

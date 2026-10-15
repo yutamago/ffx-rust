@@ -76,6 +76,18 @@ pub fn toggle_overlay() -> bool {
     now
 }
 
+/// Opens or closes the editor, as F11 does (for the test harness).
+pub fn toggle_editor() {
+    if !OVERLAY.swap(true, Ordering::AcqRel) {
+        OVERLAY_KEYS.store(false, Ordering::Release);
+        push_input(ffx_gfx::Input::Toggle);
+    }
+    push_input(ffx_gfx::Input::Key {
+        vk: 0x7a,
+        pressed: true,
+    });
+}
+
 /// A click at back buffer pixel (x, y), for the test harness.
 pub fn click(x: f32, y: f32) {
     push_input(ffx_gfx::Input::Move(x, y));
@@ -138,8 +150,27 @@ unsafe extern "system" fn window_proc(
         CallWindowProcW, IDC_ARROW, LoadCursorW, SetCursor, ShowCursor,
     };
     const F10: usize = 0x79;
+    const F11: usize = 0x7a;
     let visible = OVERLAY.load(Ordering::Acquire);
     match msg {
+        // F11: the editor (and the overlay with it, if hidden).
+        0x100 | 0x104 if wparam == F11 => {
+            if lparam & (1 << 30) == 0 {
+                if !visible {
+                    OVERLAY.store(true, Ordering::Release);
+                    OVERLAY_KEYS.store(false, Ordering::Release);
+                    push_input(ffx_gfx::Input::Toggle);
+                    // SAFETY: on the window's thread.
+                    unsafe { ShowCursor(1) };
+                }
+                push_input(ffx_gfx::Input::Key {
+                    vk: F11 as u32,
+                    pressed: true,
+                });
+            }
+            return 0;
+        }
+        0x101 | 0x105 if wparam == F11 => return 0,
         // WM_KEYDOWN, WM_SYSKEYDOWN with F10: show or hide.
         0x100 | 0x104 if wparam == F10 => {
             if lparam & (1 << 30) == 0 {

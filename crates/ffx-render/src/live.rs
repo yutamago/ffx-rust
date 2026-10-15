@@ -112,6 +112,7 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
     // writes the generated maps there.
     let materials = exe_dir.join("materials");
     enhanced.material_dir = materials.is_dir().then_some(materials);
+    enhanced.texture_dir = Some(exe_dir.join("textures"));
     enhanced.export_dir = std::env::var_os("FFX_RENDER_EXPORT_MATERIALS")
         .map(std::path::PathBuf::from)
         .filter(|d| std::fs::create_dir_all(d).is_ok());
@@ -210,6 +211,9 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             for w in r.warnings.drain(..) {
                 log(&format!("  warning: {w}"));
             }
+            for e in crate::take_gpu_errors() {
+                log(&format!("  GPU error: {e}"));
+            }
             // FFX_RENDER_GLOW_DUMP=DIR: the glow targets as PNGs.
             if let Some(dir) = std::env::var_os("FFX_RENDER_GLOW_DUMP") {
                 let dir = std::path::PathBuf::from(dir);
@@ -240,6 +244,15 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
         // Edits of the settings file apply at once.
         if frames.is_multiple_of(30) && overlay.profiles.poll(&mut enhanced.settings) {
             log(&format!("settings: {:?}", enhanced.settings));
+        }
+        // The editor's changes for this scene.
+        if overlay.editor.changed(&r.world.scene) {
+            let e = overlay.editor.edits.effective(&r.world.scene);
+            enhanced.lights = e.lights;
+            enhanced.sun = e.sun;
+            enhanced.glow_edits = e.glows;
+            enhanced.material_edits = e.materials;
+            enhanced.reload_replacements();
         }
         let t0 = std::time::Instant::now();
         let t_parsed = t0 - t_head;
@@ -276,6 +289,9 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             _ => None,
         };
         let t_handoff = t1.elapsed();
+        if !overlay.visible {
+            enhanced.selected = None;
+        }
         // The overlay, over the whole window.
         let overlay_image = if overlay.visible && screen.0 > 0 {
             let stats = crate::overlay::Stats {
@@ -284,13 +300,42 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
                 enhanced_items: enhanced.last_items,
                 other_draws: enhanced.last_other,
             };
-            match overlay.frame(&r.device, &r.queue, screen, &mut enhanced.settings, stats) {
+            let picked = enhanced.picked.take();
+            if let Some(p) = &picked {
+                let view = p.view.and_then(|v| r.texture_view(v, false));
+                overlay.set_preview(&r.device, view.as_deref());
+            }
+            let glows: Vec<crate::enhanced::lights::Light> =
+                enhanced.glow.lights().cloned().collect();
+            let scene = r.world.scene.clone();
+            let mut io = crate::editor::Io {
+                scene: &scene,
+                camera: r.world.camera,
+                glows: &glows,
+                picked,
+                pick: None,
+                selected: enhanced.selected,
+                preview: false,
+            };
+            let img = match overlay.frame(
+                &r.device,
+                &r.queue,
+                screen,
+                &mut enhanced.settings,
+                stats,
+                &mut io,
+            ) {
                 Ok(img) => Some(img),
                 Err(e) => {
                     log(&format!("overlay: {e}"));
                     None
                 }
+            };
+            if io.pick.is_some() {
+                enhanced.pick = io.pick;
             }
+            enhanced.selected = io.selected;
+            img
         } else {
             None
         };

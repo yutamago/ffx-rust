@@ -160,6 +160,37 @@ puts the saved profile on the clipboard as TOML under a
 text. Debug views show one input of the lighting (shadow, occlusion,
 normals, albedo, baked light, cascades, skin, probe light).
 
+## Materials
+
+The G-buffer has, besides albedo (roughness in alpha), normal, baked
+light and motion, a material image (metallic, specular, emission, skin)
+and the id of the draw at each pixel (for picking; its top bit marks what
+the editor highlights, which the resolve outlines). A draw's material
+comes from its colour texture (by the hash material packs use): the
+editor's `Material` for it, else automatic: the generated material map,
+and on characters skin found by its colour (one atlas holds a
+character's face and clothes), which takes `skin_roughness` and
+`skin_detail` (a share of the surface detail) by `skin_materials`.
+Kinds (skin, hair, cloth, leather, metal, stone, wood, glossy, glowing)
+give starting values; every value can be set on its own. Metals lose
+their diffuse light and reflect their colour; emission adds the
+surface's colour as light. An image in `textures/` can stand in for a
+texture (`Material::texture`, mip levels made on load).
+
+## The editor
+
+F11 (or "Editor" in the panel) opens a sidebar: changes for this scene or
+for all scenes (`edits.rs`; a scene's go on top of the general ones),
+kept in `edits.toml` next to `ffx-render.exe`. Light: the sun (direction,
+colour, brightness over the map's), point and spot lights (placed by a
+click in the scene: the pick reads the draw id and the depth around the
+pixel for the surface and its facing), and the lights found in glows
+(off, brighter or dimmer, or made into a light of one's own). Materials:
+a click picks a texture (its draws outlined, a preview shown), whose
+material is then set. Files: save, revert, export to `edits/<name>.toml`,
+and take in a file, which lists each scene it changes as new, differing
+or the same, to tick the ones to take.
+
 ## Material packs
 
 Each texture is known by the FNV-1a hash of its top level as the game

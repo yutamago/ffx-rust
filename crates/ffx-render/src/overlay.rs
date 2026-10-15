@@ -53,7 +53,8 @@ struct Painter {
     screen_layout: wgpu::BindGroupLayout,
     texture_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
-    textures: HashMap<egui::TextureId, (wgpu::Texture, wgpu::BindGroup)>,
+    /// egui's textures (and ours, without a texture to write: previews).
+    textures: HashMap<egui::TextureId, (Option<wgpu::Texture>, wgpu::BindGroup)>,
     target: Option<((u32, u32), wgpu::Texture, wgpu::TextureView)>,
 }
 
@@ -164,6 +165,34 @@ impl Painter {
         }
     }
 
+    /// Shows `view` as egui texture `id` (or drops it).
+    fn set_view(
+        &mut self,
+        device: &wgpu::Device,
+        id: egui::TextureId,
+        view: Option<&wgpu::TextureView>,
+    ) {
+        let Some(view) = view else {
+            self.textures.remove(&id);
+            return;
+        };
+        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &self.texture_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        });
+        self.textures.insert(id, (None, group));
+    }
+
     fn set_texture(
         &mut self,
         device: &wgpu::Device,
@@ -215,11 +244,11 @@ impl Painter {
                         },
                     ],
                 });
-                self.textures.insert(id, (texture, group));
+                self.textures.insert(id, (Some(texture), group));
                 wgpu::Origin3d::ZERO
             }
         };
-        if let Some((texture, _)) = self.textures.get(&id) {
+        if let Some((Some(texture), _)) = self.textures.get(&id) {
             queue.write_texture(
                 wgpu::TexelCopyTextureInfo {
                     texture,
@@ -460,6 +489,9 @@ pub struct Overlay {
     times_from: std::time::Instant,
     /// Frames per second, mean and longest frame time (ms) shown.
     shown: (f32, f32, f32),
+    pub editor: crate::editor::Editor,
+    /// Whether the picked texture's preview is registered.
+    preview: bool,
 }
 
 impl Overlay {
@@ -483,7 +515,17 @@ impl Overlay {
             times: Vec::new(),
             times_from: std::time::Instant::now(),
             shown: (0.0, 0.0, 0.0),
+            editor: crate::editor::Editor::new(
+                file.parent().unwrap_or_else(|| std::path::Path::new(".")),
+            ),
+            preview: false,
         }
+    }
+
+    /// The preview of the texture the editor picked.
+    pub fn set_preview(&mut self, device: &wgpu::Device, view: Option<&wgpu::TextureView>) {
+        self.preview = view.is_some();
+        self.painter.set_view(device, crate::editor::PREVIEW, view);
     }
 
     /// Takes the game window's input.
@@ -514,6 +556,12 @@ impl Overlay {
                     phase: egui::TouchPhase::Move,
                     modifiers: egui::Modifiers::NONE,
                 }),
+                // F11: the editor.
+                Input::Key { vk: 0x7a, pressed } => {
+                    if pressed {
+                        self.editor.open = !self.editor.open;
+                    }
+                }
                 Input::Key { vk, pressed } => {
                     if let Some(k) = key(vk) {
                         self.events.push(egui::Event::Key {
@@ -560,6 +608,7 @@ impl Overlay {
         size: (u32, u32),
         settings: &mut Settings,
         stats: Stats,
+        io: &mut crate::editor::Io,
     ) -> Result<Vec<u8>> {
         let ppp = (size.1 as f32 / 720.0).max(1.0);
         let points = egui::vec2(size.0 as f32 / ppp, size.1 as f32 / ppp);
@@ -600,13 +649,29 @@ impl Overlay {
         };
         let edit = &mut self.edit;
         let saved = &self.profiles.saved;
+        let editor = &mut self.editor;
+        io.preview = self.preview;
         let out = self.ctx.run_ui(input, |ui| {
+            let ctx = ui.ctx().clone();
+            // A click on the scene (not on a panel) is the editor's.
+            let over = ctx.is_pointer_over_egui();
+            let click = ctx
+                .input(|i| {
+                    i.pointer
+                        .primary_clicked()
+                        .then(|| i.pointer.interact_pos())
+                        .flatten()
+                })
+                .filter(|_| !over && editor.picking())
+                .map(|p| (p.x / points.x, p.y / points.y));
+            editor.ui(ui, io, click);
             panel(
-                ui.ctx(),
+                &ctx,
                 &mut Ed { s: settings, saved },
                 &head,
                 edit,
                 &mut actions,
+                &mut editor.open,
             );
         });
         self.wants_keys = self.ctx.egui_wants_keyboard_input() || self.ctx.is_pointer_over_egui();
@@ -906,6 +971,7 @@ fn panel(
     head: &Head,
     edit: &mut ProfileEdit,
     actions: &mut Vec<Action>,
+    editor: &mut bool,
 ) {
     egui::Window::new("FFX Renderer")
         .default_pos(egui::pos2(16.0, 16.0))
@@ -927,7 +993,11 @@ fn panel(
                 ))
                 .monospace(),
             );
-            ui.label("F10 hides this panel. Keys reach the game unless the pointer is over it.");
+            ui.horizontal(|ui| {
+                ui.label("F10 hides the overlay.");
+                ui.toggle_value(editor, "Editor (F11)");
+            });
+            ui.label("Keys reach the game unless the pointer is over a panel.");
             ui.separator();
             profile_row(ui, e, head, edit, actions);
             ui.separator();

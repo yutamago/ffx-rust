@@ -83,6 +83,8 @@ struct Probes {
 @group(0) @binding(7) var ao_tex: texture_2d<f32>;
 @group(0) @binding(8) var<storage, read> probes: Probes;
 @group(0) @binding(10) var<storage, read> lights: Lights;
+// r: metallic, g: specular / 2, b: emission / 8, a: skin (`gbuffer.wgsl`).
+@group(0) @binding(11) var material_tex: texture_2d<f32>;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -166,6 +168,15 @@ fn ggx(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, rough: f32, f0: f32) -> f32 {
     return d * g * f / (4.0 * nv * nl);
 }
 
+// The same with a coloured reflectance (metals reflect their colour).
+fn brdf(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, rough: f32, f0: vec3<f32>) -> vec3<f32> {
+    let h = normalize(v + l);
+    let fh = pow(1.0 - max(dot(h, v), 0.0), 5.0);
+    let f = f0 + (vec3<f32>(1.0) - f0) * fh;
+    // ggx with f0 = 1 is the rest of the term.
+    return ggx(n, v, l, rough, 1.0) * f;
+}
+
 // Irradiance / π from the nearest probe's spherical harmonics.
 fn probe_light(p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     var best = 0u;
@@ -190,24 +201,9 @@ fn probe_light(p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     return max(e, vec3<f32>(0.0));
 }
 
-// How much a colour looks like skin: red over green over blue, moderately
-// saturated, not too dark, hue between red and orange.
-fn skin_weight(albedo: vec3<f32>) -> f32 {
-    let c = sqrt(max(albedo, vec3<f32>(0.0)));
-    let hi = max(c.r, max(c.g, c.b));
-    let lo = min(c.r, min(c.g, c.b));
-    let sat = (hi - lo) / max(hi, 1e-3);
-    if (c.r < c.g || c.g < c.b) {
-        return 0.0;
-    }
-    let hue = 60.0 * (c.g - c.b) / max(hi - lo, 1e-3);
-    return smoothstep(0.12, 0.22, sat) * (1.0 - smoothstep(0.6, 0.75, sat)) * smoothstep(0.15, 0.3, hi)
-        * smoothstep(5.0, 12.0, hue) * (1.0 - smoothstep(30.0, 38.0, hue));
-}
-
 // The light of the local lights at `p`: diffuse (soft wrap on characters,
 // as their key light) and highlights; shadows by rays where wanted.
-fn local_lights(p: vec3<f32>, n: vec3<f32>, v: vec3<f32>, albedo: vec3<f32>, rough: f32, character: bool, px: vec2<f32>) -> vec3<f32> {
+fn local_lights(p: vec3<f32>, n: vec3<f32>, v: vec3<f32>, albedo: vec3<f32>, rough: f32, character: bool, px: vec2<f32>, f0: vec3<f32>, gloss: f32) -> vec3<f32> {
     var sum = vec3<f32>(0.0);
     let count = u32(lights.count.x);
     for (var i = 0u; i < count; i = i + 1u) {
@@ -238,7 +234,7 @@ fn local_lights(p: vec3<f32>, n: vec3<f32>, v: vec3<f32>, albedo: vec3<f32>, rou
             amount = amount * rt_visible(p + n * 0.15, l, d - 0.5, px);
         }
         let radiance = lt.color.rgb * amount;
-        sum = sum + albedo * radiance * shape + radiance * nl * ggx(n, v, l, rough, 0.04) * lt.extra.z;
+        sum = sum + albedo * radiance * shape + radiance * nl * brdf(n, v, l, rough, f0) * lt.extra.z * gloss;
     }
     return sum;
 }
@@ -251,7 +247,12 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
         return vec4<f32>(0.0);
     }
     let albedo_rough = textureLoad(albedo_tex, px, 0);
-    let albedo = albedo_rough.rgb;
+    let mat = textureLoad(material_tex, px, 0);
+    let metal = mat.r;
+    let gloss_scale = mat.g * 2.0;
+    // Metals have no diffuse light: their colour is in their reflection.
+    let albedo = albedo_rough.rgb * (1.0 - metal);
+    let f0 = mix(vec3<f32>(0.04), albedo_rough.rgb, metal);
     let nm = textureLoad(normal_tex, px, 0);
     let baked_fog = textureLoad(baked_tex, px, 0);
     let baked = baked_fog.rgb;
@@ -276,7 +277,7 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     }
     let shadow = min(cascade, traced);
     let rough = select(light.mix.y, albedo_rough.a, albedo_rough.a > 0.01);
-    let spec = ggx(n, v, l, rough, 0.04) * light.mix.z;
+    let spec = brdf(n, v, l, rough, f0) * light.mix.z * gloss_scale;
     let hemi = mix(light.ground.rgb, light.sky.rgb, n.y * 0.5 + 0.5) * light.sky.w;
     var color: vec3<f32>;
     if (!character) {
@@ -303,7 +304,7 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
         let wrap = pow(dot(n, l) * 0.5 + 0.5, 2.0);
         // Skin scatters red light past the terminator and into the edge
         // of shadows: per channel, the falloff and shadow soften.
-        let skin = skin_weight(albedo) * light.gi.z;
+        let skin = mat.a * light.gi.z;
         let soften = vec3<f32>(1.0) - skin * vec3<f32>(0.55, 0.15, 0.0);
         let shape = pow(vec3<f32>(max(mix(wrap, nl, light.scenery.w), 0.0)), soften);
         let shadowed = pow(vec3<f32>(mix(1.0, shadow, 0.85)), soften);
@@ -316,8 +317,9 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
         }
         color = albedo * (indirect * ao + direct + fill) + light.sun_color.rgb * light.sun.w * nl * shadow * spec;
     }
-    let local = local_lights(p, n, v, albedo, rough, character, in.pos.xy) * ao;
-    color = color + local;
+    let local = local_lights(p, n, v, albedo, rough, character, in.pos.xy, f0, gloss_scale) * ao;
+    // Emission: the surface's own light.
+    color = color + local + albedo_rough.rgb * mat.b * 8.0;
     let debug = i32(light.splits.w);
     if (debug == 1) {
         return vec4<f32>(vec3<f32>(shadow * nl), 1.0);
@@ -330,7 +332,7 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     } else if (debug == 5) {
         return vec4<f32>(baked, 1.0);
     } else if (debug == 7) {
-        return vec4<f32>(vec3<f32>(skin_weight(albedo) * f32(character)), 1.0);
+        return vec4<f32>(vec3<f32>(mat.a * f32(character)), 1.0);
     } else if (debug == 8) {
         if (probes.count.x > 0.5) {
             return vec4<f32>(probe_light(p, n), 1.0);
@@ -338,6 +340,8 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
         return vec4<f32>(0.0);
     } else if (debug == 9) {
         return vec4<f32>(local, 1.0);
+    } else if (debug == 10) {
+        return vec4<f32>(mat.rgb, 1.0);
     } else if (debug == 6) {
         let dz = abs(dot(light.view_z, vec4<f32>(p, 1.0)));
         let c = select(select(select(vec3<f32>(1.0), vec3<f32>(0.2, 0.2, 1.0), dz < light.splits.z), vec3<f32>(0.2, 1.0, 0.2), dz < light.splits.y), vec3<f32>(1.0, 0.2, 0.2), dz < light.splits.x);

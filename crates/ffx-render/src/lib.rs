@@ -14,6 +14,8 @@
 )]
 
 pub mod clipboard;
+pub mod editor;
+pub mod edits;
 pub mod enhanced;
 pub mod families;
 pub mod formats;
@@ -33,6 +35,18 @@ use anyhow::{Context, Result, anyhow};
 use ffx_gfx::{Id, Msg, StateKind, ViewKind};
 
 pub use replay::Filter;
+
+/// GPU errors no scope caught, for the log (`take_gpu_errors`).
+static GPU_ERRORS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// The GPU errors since the last call.
+#[must_use]
+pub fn take_gpu_errors() -> Vec<String> {
+    GPU_ERRORS
+        .lock()
+        .map(|mut v| std::mem::take(&mut *v))
+        .unwrap_or_default()
+}
 
 /// A mirrored texture.
 pub struct Texture {
@@ -142,6 +156,15 @@ impl Renderer {
             ..Default::default()
         }))
         .context("no GPU device")?;
+        // A validation error must not end the renderer (the game would lose
+        // its image): it is kept for the log.
+        device.on_uncaptured_error(std::sync::Arc::new(|e| {
+            if let Ok(mut v) = GPU_ERRORS.lock()
+                && v.len() < 64
+            {
+                v.push(e.to_string());
+            }
+        }));
         Ok(Self {
             adapter: adapter_name,
             device,

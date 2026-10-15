@@ -215,8 +215,8 @@ pub enum Msg {
     },
     /// What the game is showing, sent before each frame: the scene (the
     /// event file of the map, e.g. `cdsp0000`; empty before the first)
-    /// and the camera's eye and look-at point in world space, when the
-    /// game has a camera.
+    /// and the camera's eye and look-at point in the renderer's world space
+    /// (the view matrix's), when the game has a camera.
     World {
         scene: String,
         camera: Option<([f32; 3], [f32; 3])>,

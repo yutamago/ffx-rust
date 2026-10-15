@@ -9,6 +9,7 @@
 
 pub mod glow;
 pub mod lights;
+pub mod materials;
 pub mod math;
 mod post;
 mod settings;
@@ -254,6 +255,143 @@ struct GKey {
     front: wgpu::FrontFace,
 }
 
+/// What a pick in the editor found.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Picked {
+    /// The draw's colour texture hash (0: none): its material's key.
+    pub texture: u64,
+    /// Its colour texture's view, for a preview.
+    pub view: Option<Id>,
+    pub character: bool,
+    /// The surface point under the pick (world space), and the way it
+    /// faces.
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
+    /// Nothing enhanced was there (sky, backdrop).
+    pub empty: bool,
+}
+
+/// Reads what the G-buffer has at `at` (0–1 of the screen): which draw,
+/// and the surface there (from the depth around it). Waits for the GPU (a
+/// click in the editor, not every frame).
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)] // the frame's pieces it reads; two copies and the surface
+fn pick_at(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    t: &Targets,
+    size: (u32, u32),
+    at: (f32, f32),
+    items: &[Item],
+    inv_vp: &math::Mat,
+    r: &Renderer,
+) -> Option<Picked> {
+    let px = (
+        ((at.0 * size.0 as f32) as u32).clamp(1, size.0.saturating_sub(2)),
+        ((at.1 * size.1 as f32) as u32).clamp(1, size.1.saturating_sub(2)),
+    );
+    // Depth copies must be whole: the id texel, then all the depth.
+    let pitch = (size.0 * 4).next_multiple_of(256);
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("pick"),
+        size: 256 + u64::from(pitch) * u64::from(size.1),
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+    enc.copy_texture_to_buffer(
+        wgpu::TexelCopyTextureInfo {
+            texture: &t.id_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d {
+                x: px.0,
+                y: px.1,
+                z: 0,
+            },
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyBufferInfo {
+            buffer: &buffer,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(1),
+            },
+        },
+        wgpu::Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+    );
+    enc.copy_texture_to_buffer(
+        wgpu::TexelCopyTextureInfo {
+            texture: &t.depth_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::DepthOnly,
+        },
+        wgpu::TexelCopyBufferInfo {
+            buffer: &buffer,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 256,
+                bytes_per_row: Some(pitch),
+                rows_per_image: Some(size.1),
+            },
+        },
+        wgpu::Extent3d {
+            width: size.0,
+            height: size.1,
+            depth_or_array_layers: 1,
+        },
+    );
+    queue.submit([enc.finish()]);
+    let slice = buffer.slice(..);
+    slice.map_async(wgpu::MapMode::Read, |_| {});
+    device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
+    let data = slice.get_mapped_range().ok()?;
+    let word = |o: usize| u32::from_le_bytes(data[o..o + 4].try_into().expect("4"));
+    let id = word(0) & 0x7fff_ffff;
+    // The 3×3 pixels around it.
+    let depth = |x: usize, y: usize| {
+        let (qx, qy) = (px.0 as usize + x - 1, px.1 as usize + y - 1);
+        f32::from_bits(word(256 + qy * pitch as usize + qx * 4))
+    };
+    let point = |dx: f32, dy: f32, z: f32| {
+        let ndc = [
+            (px.0 as f32 + 0.5 + dx) / size.0 as f32 * 2.0 - 1.0,
+            1.0 - (px.1 as f32 + 0.5 + dy) / size.1 as f32 * 2.0,
+        ];
+        let h: [f32; 4] = std::array::from_fn(|k| {
+            inv_vp[k][0] * ndc[0] + inv_vp[k][1] * ndc[1] + inv_vp[k][2] * z + inv_vp[k][3]
+        });
+        [h[0] / h[3], h[1] / h[3], h[2] / h[3]]
+    };
+    let z = depth(1, 1);
+    let p = point(0.0, 0.0, z);
+    let sub = |a: [f32; 3], b: [f32; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    let mut normal = math::normalize(math::cross(
+        sub(point(1.0, 0.0, depth(2, 1)), point(-1.0, 0.0, depth(0, 1))),
+        sub(point(0.0, 1.0, depth(1, 2)), point(0.0, -1.0, depth(1, 0))),
+    ));
+    // Facing the camera.
+    let eye = point(0.0, 0.0, 0.0);
+    if math::dot(normal, sub(eye, p)) < 0.0 {
+        normal = normal.map(|v| -v);
+    }
+    let item = (id > 0).then(|| items.get(id as usize - 1)).flatten();
+    let view = item
+        .and_then(|i| i.albedo.map(|a| a.0))
+        .filter(|v| r.views.contains_key(v));
+    Some(Picked {
+        texture: item.map_or(0, |i| i.texture),
+        view,
+        character: item.is_some_and(|i| i.centre.is_some()),
+        position: p,
+        normal,
+        empty: z >= 1.0 || item.is_none(),
+    })
+}
+
 /// One draw for the enhanced passes.
 struct Item {
     key: GKey,
@@ -268,6 +406,8 @@ struct Item {
     centre: Option<[f32; 3]>,
     /// What it draws (shaders, buffers, range): finds it again next frame.
     motion: u64,
+    /// Its colour texture's hash (0: none): the key of its material.
+    texture: u64,
 }
 
 /// The effect light's targets and passes, for one scene image size and
@@ -293,8 +433,11 @@ struct ProbeTargets {
     layers: Vec<[wgpu::TextureView; 4]>,
     /// The layers as arrays, for the projection pass: albedo, baked, depth.
     arrays: [wgpu::TextureView; 3],
-    /// Where the G-buffer pipelines write motion (not read for probes).
+    /// Where the G-buffer pipelines write motion, material and ids (not
+    /// read for probes).
     motion: wgpu::TextureView,
+    material: wgpu::TextureView,
+    id: wgpu::TextureView,
     buffer: wgpu::Buffer,
     pipeline: wgpu::ComputePipeline,
     layout: wgpu::BindGroupLayout,
@@ -314,6 +457,11 @@ struct Targets {
     baked: wgpu::TextureView,
     /// Motion vectors (see `gbuffer.wgsl`).
     motion: wgpu::TextureView,
+    /// Metallic, specular, emission, skin.
+    material: wgpu::TextureView,
+    /// Which draw is at each pixel (its id + 1), for the editor's picking.
+    id: wgpu::TextureView,
+    id_texture: wgpu::Texture,
     depth: wgpu::TextureView,
     hdr: wgpu::TextureView,
     ao: [wgpu::TextureView; 2],
@@ -344,6 +492,17 @@ pub struct Enhanced {
     light_buffer: wgpu::Buffer,
     /// Local lights from the editor (scene and global), this frame.
     pub lights: Vec<lights::Light>,
+    /// The editor's changes to the key light and to the glow lights.
+    pub sun: lights::Sun,
+    pub glow_edits: Vec<lights::GlowEdit>,
+    /// Materials from the editor, by colour texture hash.
+    pub material_edits: HashMap<u64, materials::Material>,
+    /// The texture the editor has picked: its draws are outlined.
+    pub selected: Option<u64>,
+    /// A pick the editor asks for: where on the screen (0–1).
+    pub pick: Option<(f32, f32)>,
+    /// What the last pick found.
+    pub picked: Option<Picked>,
     /// Lights found in the game's glowing effects.
     pub glow: glow::Glow,
     /// The device traces rays; the scenery's structures by draw.
@@ -390,6 +549,9 @@ pub struct Enhanced {
     /// Material packs: `<hash>.png` per colour texture (rg normal, b
     /// roughness, a cavity), used instead of the generated maps.
     pub material_dir: Option<std::path::PathBuf>,
+    /// Images the editor puts in place of textures (`Material::texture`).
+    pub texture_dir: Option<std::path::PathBuf>,
+    replacements: HashMap<String, Option<wgpu::TextureView>>,
     /// Where to write each generated material map and its colour texture
     /// (`<hash>.png`, `<hash>_albedo.png`), for editing into a pack.
     pub export_dir: Option<std::path::PathBuf>,
@@ -558,8 +720,9 @@ const FLOAT: wgpu::TextureSampleType = wgpu::TextureSampleType::Float { filterab
 const UNFILTERED: wgpu::TextureSampleType = wgpu::TextureSampleType::Float { filterable: false };
 
 /// Item uniform as `item()` makes it: world (64), cloth (64), colour,
-/// params, ambient, scale, extra (80); the frame adds last frame's World.
-const ITEM_BASE: usize = 208;
+/// params, ambient, scale, extra, look, tint (112); the frame adds last
+/// frame's World.
+const ITEM_BASE: usize = 240;
 const ITEM_SIZE: usize = ITEM_BASE + 64;
 const CAMERA_SIZE: usize = 64 * 5 + 32;
 const LIGHT_SIZE: usize = 64 + 16 * 12 + 16 * 17;
@@ -710,13 +873,16 @@ fn probe_targets(device: &wgpu::Device) -> ProbeTargets {
             ]
         })
         .collect();
-    let motion = make(wgpu::TextureFormat::Rgba16Float, "probe motion").create_view(
-        &wgpu::TextureViewDescriptor {
+    let scratch = |format, label| {
+        make(format, label).create_view(&wgpu::TextureViewDescriptor {
             dimension: Some(wgpu::TextureViewDimension::D2),
             array_layer_count: Some(1),
             ..Default::default()
-        },
-    );
+        })
+    };
+    let motion = scratch(wgpu::TextureFormat::Rgba16Float, "probe motion");
+    let material = scratch(wgpu::TextureFormat::Rgba8Unorm, "probe material");
+    let id = scratch(wgpu::TextureFormat::R32Uint, "probe ids");
     let array = |t: &wgpu::Texture| {
         t.create_view(&wgpu::TextureViewDescriptor {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
@@ -781,6 +947,8 @@ fn probe_targets(device: &wgpu::Device) -> ProbeTargets {
         layers,
         arrays,
         motion,
+        material,
+        id,
         buffer,
         pipeline,
         layout,
@@ -1063,14 +1231,17 @@ impl Enhanced {
                         vertex_return: false,
                     },
                 )))
-                .chain([(
-                    10,
-                    wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(lights::SIZE as u64),
-                    },
-                )])
+                .chain([
+                    (
+                        10,
+                        wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: wgpu::BufferSize::new(lights::SIZE as u64),
+                        },
+                    ),
+                    (11, tex(UNFILTERED)),
+                ])
                 .collect::<Vec<_>>(),
                 S::FRAGMENT,
             ),
@@ -1314,6 +1485,12 @@ impl Enhanced {
                 mapped_at_creation: false,
             }),
             lights: Vec::new(),
+            sun: lights::Sun::default(),
+            glow_edits: Vec::new(),
+            material_edits: HashMap::new(),
+            selected: None,
+            pick: None,
+            picked: None,
             glow: glow::Glow::new(device),
             rt,
             blas_cache: HashMap::new(),
@@ -1329,6 +1506,8 @@ impl Enhanced {
             frame_count: 0,
             materials: HashMap::new(),
             material_dir: None,
+            texture_dir: None,
+            replacements: HashMap::new(),
             export_dir: None,
             exported: std::collections::HashSet::new(),
             flat_material: one_pixel(device, queue, [128, 128, 179, 255]),
@@ -1471,6 +1650,16 @@ impl Enhanced {
                 blend: None,
                 write_mask: wgpu::ColorWrites::ALL,
             }),
+            Some(wgpu::ColorTargetState {
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
+            Some(wgpu::ColorTargetState {
+                format: wgpu::TextureFormat::R32Uint,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
         ];
         let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -1571,6 +1760,7 @@ impl Enhanced {
             (t, v)
         };
         let hdr_texture = plain(wgpu::TextureFormat::Rgba16Float, "hdr");
+        let id_texture = plain(wgpu::TextureFormat::R32Uint, "draw ids");
         let depth_texture = plain(wgpu::TextureFormat::Depth32Float, "depth");
         self.targets = Some(Targets {
             size,
@@ -1578,6 +1768,9 @@ impl Enhanced {
             normal: make(wgpu::TextureFormat::Rgba16Float, "normal"),
             baked: make(wgpu::TextureFormat::Rgba16Float, "baked"),
             motion: make(wgpu::TextureFormat::Rgba16Float, "motion"),
+            material: make(wgpu::TextureFormat::Rgba8Unorm, "material"),
+            id: id_texture.1,
+            id_texture: id_texture.0,
             depth: depth_texture.1,
             hdr: hdr_texture.1,
             ao: [
@@ -1662,6 +1855,94 @@ impl Enhanced {
 
     /// The material map of colour texture `resource` (made on first use,
     /// again when the texture changes).
+    /// An image from the `textures` folder (PNG), with mip levels, as a
+    /// draw's colour texture; `None` when it cannot be read (noted once).
+    fn replacement(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        file: &str,
+    ) -> Option<wgpu::TextureView> {
+        if let Some(v) = self.replacements.get(file) {
+            return v.clone();
+        }
+        let path = self.texture_dir.as_ref()?.join(file);
+        let image = std::fs::read(&path)
+            .ok()
+            .and_then(|b| crate::png::decode(&b));
+        let view = image.map(|(w, h, rgba)| {
+            let mips = 32 - w.max(h).leading_zeros();
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("replacement"),
+                size: wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: mips,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let (mut lw, mut lh, mut level) = (w, h, rgba);
+            for mip in 0..mips {
+                queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &texture,
+                        mip_level: mip,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    &level,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(lw * 4),
+                        rows_per_image: Some(lh),
+                    },
+                    wgpu::Extent3d {
+                        width: lw,
+                        height: lh,
+                        depth_or_array_layers: 1,
+                    },
+                );
+                // The next level: each pixel the mean of the 2×2 under it.
+                let (nw, nh) = ((lw / 2).max(1), (lh / 2).max(1));
+                let mut next = vec![0u8; (nw * nh * 4) as usize];
+                for y in 0..nh {
+                    for x in 0..nw {
+                        for c in 0..4 {
+                            let at = |px: u32, py: u32| {
+                                u32::from(
+                                    level
+                                        [((py.min(lh - 1) * lw + px.min(lw - 1)) * 4 + c) as usize],
+                                )
+                            };
+                            let sum = at(2 * x, 2 * y)
+                                + at(2 * x + 1, 2 * y)
+                                + at(2 * x, 2 * y + 1)
+                                + at(2 * x + 1, 2 * y + 1);
+                            next[((y * nw + x) * 4 + c) as usize] = (sum / 4) as u8;
+                        }
+                    }
+                }
+                (lw, lh, level) = (nw, nh, next);
+            }
+            texture.create_view(&wgpu::TextureViewDescriptor::default())
+        });
+        if view.is_none() {
+            self.note(format!("replacement {} unreadable", path.display()));
+        }
+        self.replacements.insert(file.to_owned(), view.clone());
+        view
+    }
+
+    /// Forgets loaded replacement images (the files may have changed).
+    pub fn reload_replacements(&mut self) {
+        self.replacements.clear();
+    }
+
     #[allow(clippy::too_many_lines)] // the pack or the generator, the mips, the export
     fn material(&mut self, r: &Renderer, resource: Id) -> Option<wgpu::TextureView> {
         let t = r.textures.get(&resource)?;
@@ -2268,7 +2549,28 @@ impl Enhanced {
         } else {
             1.0
         };
-        put4(&mut u, [detail, 0.0, 0.0, 0.0]);
+        let texture = variant
+            .uv
+            .then(|| ps.texture_slots["TextureSampler"])
+            .and_then(|t| d.ps_srv.iter().find(|x| u32::from(x.0) == t))
+            .and_then(|x| r.views.get(&x.1))
+            .and_then(|v| r.textures.get(&v.resource))
+            .map_or(0, |t| t.hash);
+        let m = materials::resolve(
+            self.material_edits.get(&texture),
+            family == Family::Character,
+            &self.settings,
+        );
+        put4(
+            &mut u,
+            [detail * m.detail, m.roughness, m.metallic, m.specular],
+        );
+        put4(
+            &mut u,
+            [m.emission, m.skin, m.skin_roughness, m.skin_detail],
+        );
+        // w: the draw's id, set when the frame is put together.
+        put4(&mut u, [m.tint[0], m.tint[1], m.tint[2], 0.0]);
         let bones_data = variant.skinned.then(|| {
             let (off, _) = vs.vars["BoneTransforms"];
             let mut b = vcb
@@ -2331,6 +2633,7 @@ impl Enhanced {
             albedo,
             centre,
             motion: motion_key(d),
+            texture,
         })
     }
 
@@ -2596,6 +2899,10 @@ impl Enhanced {
                     (self.settings.sky_color, self.settings.sky_intensity),
                 ),
             };
+        // The editor's sun.
+        let sun_dir = self.sun.direction.map_or(sun_dir, math::normalize);
+        let sun_color = self.sun.color.unwrap_or(sun_color);
+        let sun_intensity = sun_intensity * self.sun.scale.unwrap_or(1.0);
         // Three shadow cascades along the view, each a box around a sphere
         // holding its slice of the view (stable as the camera turns),
         // snapped to whole texels (stable as it moves).
@@ -2677,6 +2984,11 @@ impl Enhanced {
                 None => (world.as_slice(), None),
             };
             let mut u = i.uniform.clone();
+            // The id for picking: the item's place in the frame, + 1; the
+            // editor's pick is highlighted.
+            let lit = self.selected.is_some_and(|s| s == i.texture && s != 0);
+            let id = (item_at.len() + 1 + if lit { 1 << 23 } else { 0 }) as f32;
+            u[ITEM_BASE - 4..ITEM_BASE].copy_from_slice(&id.to_le_bytes());
             u.extend_from_slice(prev_world);
             let at = alloc(&u, ITEM_SIZE);
             let b = i.bones.as_ref().map(|b| alloc(b, 5120));
@@ -3009,7 +3321,12 @@ impl Enhanced {
             .unwrap_or(0.0);
         put4(
             &mut resolve,
-            [clear_alpha, s.sharpen.clamp(0.0, 2.0), 0.0, 0.0],
+            [
+                clear_alpha,
+                s.sharpen.clamp(0.0, 2.0),
+                if self.selected.is_some() { 1.0 } else { 0.0 },
+                0.0,
+            ],
         );
         assert_eq!(resolve.len(), RESOLVE_SIZE, "resolve uniform layout");
         let resolve_at = alloc(&resolve, RESOLVE_SIZE);
@@ -3130,6 +3447,14 @@ impl Enhanced {
                 None => (None, r.sampler(0, false)),
             };
             let view = view.unwrap_or_else(|| self.white.clone());
+            // The editor's image in place of the texture.
+            let image = self
+                .material_edits
+                .get(&i.texture)
+                .and_then(|m| m.texture.clone());
+            let view = image
+                .and_then(|f| self.replacement(&device, &queue, &f))
+                .unwrap_or(view);
             let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: None,
                 layout: &self.item_layout,
@@ -3462,6 +3787,8 @@ impl Enhanced {
                     clear(&t.normal),
                     clear(&t.baked),
                     clear(&t.motion),
+                    clear(&t.material),
+                    clear(&t.id),
                 ],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &t.depth,
@@ -3502,6 +3829,8 @@ impl Enhanced {
                         clear(&layer[1]),
                         clear(&layer[2]),
                         clear(&self.probes.motion),
+                        clear(&self.probes.material),
+                        clear(&self.probes.id),
                     ],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                         view: &layer[3],
@@ -3608,16 +3937,21 @@ impl Enhanced {
         }
         // Lighting.
         {
-            let glows = self.settings.glow_lights;
+            let glows: Vec<lights::Light> = if self.settings.glow_lights {
+                self.glow
+                    .lights()
+                    .map(|l| {
+                        lights::glow_edit(&self.glow_edits, l.position)
+                            .map_or_else(|| l.clone(), |e| e.apply(l))
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
             queue.write_buffer(
                 &self.light_buffer,
                 0,
-                &lights::pack(
-                    self.lights
-                        .iter()
-                        .chain(self.glow.lights().filter(|_| glows)),
-                    traced_on,
-                ),
+                &lights::pack(self.lights.iter().chain(&glows), traced_on),
             );
             let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: None,
@@ -3673,10 +4007,16 @@ impl Enhanced {
                     binding: 9,
                     resource: wgpu::BindingResource::AccelerationStructure(tl),
                 }))
-                .chain([wgpu::BindGroupEntry {
-                    binding: 10,
-                    resource: self.light_buffer.as_entire_binding(),
-                }])
+                .chain([
+                    wgpu::BindGroupEntry {
+                        binding: 10,
+                        resource: self.light_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 11,
+                        resource: wgpu::BindingResource::TextureView(&t.material),
+                    },
+                ])
                 .collect::<Vec<_>>(),
             });
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -3960,6 +4300,7 @@ impl Enhanced {
                         ),
                         (3, tex(UNFILTERED)),
                         (4, tex(wgpu::TextureSampleType::Depth)),
+                        (5, tex(wgpu::TextureSampleType::Uint)),
                     ],
                     wgpu::ShaderStages::FRAGMENT,
                 ),
@@ -4014,6 +4355,10 @@ impl Enhanced {
                     binding: 4,
                     resource: wgpu::BindingResource::TextureView(&t.depth),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(&t.id),
+                },
             ],
         });
         {
@@ -4045,6 +4390,11 @@ impl Enhanced {
         self.tlas = tlas_slot;
         if let Some(e) = pollster::block_on(scope.pop()) {
             self.note(format!("enhanced frame: {e}"));
+        }
+        if let Some(at) = self.pick.take()
+            && let Some(t) = self.targets.as_ref()
+        {
+            self.picked = pick_at(&device, &queue, t, internal, at, &items, &inv_vp, r);
         }
         // Everything else with the game's shaders, on top.
         let rest = Frame {

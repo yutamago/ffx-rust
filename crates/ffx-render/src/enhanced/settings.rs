@@ -80,6 +80,12 @@ pub struct Settings {
     /// Skin scattering: light bleeding red past the terminator and into
     /// shadow edges on what looks like skin.
     pub skin: f32,
+    /// How much skin-coloured parts of characters take the skin material
+    /// below (0: the same as the rest of the texture).
+    pub skin_materials: f32,
+    pub skin_roughness: f32,
+    /// Surface detail on skin, as a share of the characters' detail.
+    pub skin_detail: f32,
     /// Light from the game's effects (fire, magic) on what is around them.
     pub effect_light: bool,
     pub effect_light_strength: f32,
@@ -217,6 +223,9 @@ impl Default for Settings {
             probe_strength: 1.0,
             probe_mix: 0.7,
             skin: 0.5,
+            skin_materials: 1.0,
+            skin_roughness: 0.5,
+            skin_detail: 0.3,
             effect_light: true,
             effect_light_strength: 4.0,
             glow_lights: true,
