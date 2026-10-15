@@ -54,6 +54,8 @@
 //! | `events` | `ok <n>` then `n` lines: files opened since the last call |
 //! | `gfxcapture <windows dir>` | `ok <n> draws`: the next frame's D3D11 calls (`gfx`, needs `FFX_GFX=1`) |
 //! | `gfxstats` | `ok frames <n> draws <n>`: draws in the last frame |
+//! | `overlay` | shows or hides the live renderer's overlay (as F10): `ok <shown>` |
+//! | `overlayclick <x> <y>` | a left click in the overlay, in back buffer pixels |
 //! | `quit` | ends the process |
 
 use std::collections::VecDeque;
@@ -356,7 +358,11 @@ fn set_keys(codes: &[u8]) {
 /// # Safety
 /// `direct_input` must be a live `IDirectInput8` object.
 pub unsafe fn wrap_direct_input(direct_input: *mut c_void) {
-    if !ENABLED.load(Ordering::Acquire) || CREATE_DEVICE.load(Ordering::Acquire) != 0 {
+    // The harness's keys, and the overlay of the live renderer, which must
+    // keep the game from seeing what is typed into it.
+    let renderer = std::env::var("FFX_RENDERER").is_ok_and(|v| !v.is_empty() && v != "0");
+    if !(ENABLED.load(Ordering::Acquire) || renderer) || CREATE_DEVICE.load(Ordering::Acquire) != 0
+    {
         return;
     }
     // SAFETY: a COM object starts with its vtable; CreateDevice is entry 3.
@@ -442,7 +448,7 @@ unsafe extern "system" fn get_device_state(this: *mut c_void, size: u32, data: *
     // In background mode the devices are background devices, so they would
     // report what the user types into other windows: their real state is
     // dropped and only the test's keys count.
-    let isolate = BACKGROUND.load(Ordering::Relaxed);
+    let isolate = BACKGROUND.load(Ordering::Relaxed) || crate::gfx::live::overlay_visible();
     if isolate && !data.is_null() && size != 256 {
         // SAFETY: the caller's buffer holds `size` bytes.
         unsafe { std::ptr::write_bytes(data, 0, size as usize) };
@@ -1077,6 +1083,13 @@ fn command(line: &str) -> Result<String, String> {
         }
         "shot" => on_game_thread(Job::Shot(words[1..].join(" "))),
         "gfxcapture" => crate::gfx::capture(&words[1..].join(" ")),
+        "overlay" => format!("ok {}", crate::gfx::live::toggle_overlay()),
+        "overlayclick" => {
+            let x: f32 = arg(1)?.parse().map_err(|e| format!("{e}"))?;
+            let y: f32 = arg(2)?.parse().map_err(|e| format!("{e}"))?;
+            crate::gfx::live::click(x, y);
+            "ok".into()
+        }
         "gfxstats" => {
             let (frames, draws) = crate::gfx::stats();
             let (sent, images, misses) = crate::gfx::live::stats();

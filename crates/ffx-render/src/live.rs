@@ -110,6 +110,10 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
     );
     let filter = Filter::default();
     let mut idle_from = std::time::Instant::now();
+    let mut overlay = crate::overlay::Overlay::new(&r.device);
+    let mut screen = (0u32, 0u32);
+    let mut last_frame = std::time::Instant::now();
+    let mut frame_time = std::time::Duration::ZERO;
     loop {
         let mut head = [0u8; 8];
         if !to_renderer.read(&mut head, wait) {
@@ -130,10 +134,23 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
                 return Err(e.into());
             }
         };
-        let ffx_gfx::Msg::Frame(frame) = msg else {
-            r.apply(msg, &filter)?;
-            idle_from = std::time::Instant::now();
-            continue;
+        let frame = match msg {
+            ffx_gfx::Msg::Frame(frame) => frame,
+            ffx_gfx::Msg::Input {
+                width,
+                height,
+                events,
+            } => {
+                overlay.feed(&events);
+                screen = (width, height);
+                idle_from = std::time::Instant::now();
+                continue;
+            }
+            msg => {
+                r.apply(msg, &filter)?;
+                idle_from = std::time::Instant::now();
+                continue;
+            }
         };
         let targets = frame.cmds.iter().find_map(|c| match c {
             ffx_gfx::Cmd::Draw(d) if d.rtv.len() >= 2 && d.dsv != 0 => {
@@ -170,46 +187,95 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
         }
         let t0 = std::time::Instant::now();
         let t_parsed = t0 - t_head;
-        let drawn = enhanced.render(&mut r, &frame);
-        let t_draw = t0.elapsed();
-        if let Err(e) = drawn {
-            log(&format!("frame {}: {e}", frame.number));
+        if targets.is_some() {
+            if let Err(e) = enhanced.render(&mut r, &frame) {
+                log(&format!("frame {}: {e}", frame.number));
+            }
         }
-        let Some((c, n, z)) = targets else { continue };
+        let t_draw = t0.elapsed();
         let resource = |v: ffx_gfx::Id| r.views.get(&v).map(|v| v.resource);
-        let (Some(c), Some(n), Some(z)) = (resource(c), resource(n), resource(z)) else {
-            continue;
-        };
         let t1 = std::time::Instant::now();
-        let scene = r.read_scene(c, n, z);
-        let t_read = t1.elapsed();
-        match scene {
-            Ok((w, h, mut data)) => {
-                // FFX_RENDER_TEST=invert: the colour inverted, to see
-                // whose image is on screen.
-                if std::env::var("FFX_RENDER_TEST").is_ok_and(|v| v == "invert") {
-                    for px in data[..(w * h * 4) as usize].as_chunks_mut::<4>().0 {
-                        px[0] = 255 - px[0];
-                        px[1] = 255 - px[1];
-                        px[2] = 255 - px[2];
+        let scene = match targets {
+            Some((c, n, z)) => match (resource(c), resource(n), resource(z)) {
+                (Some(c), Some(n), Some(z)) => match r.read_scene(c, n, z) {
+                    Ok(x) => Some(x),
+                    Err(e) => {
+                        log(&format!("frame {}: {e}", frame.number));
+                        None
                     }
-                }
-                let mut out = Vec::with_capacity(12 + data.len());
-                out.extend_from_slice(&frame.number.to_le_bytes());
-                out.extend_from_slice(&w.to_le_bytes());
-                out.extend_from_slice(&h.to_le_bytes());
-                out.extend_from_slice(&data);
-                to_game.write(&out, || std::thread::yield_now());
-                if frames % 120 == 0 {
-                    log(&format!(
-                        "frame {}: received+parsed {t_parsed:?}, draw {t_draw:?}, read back {t_read:?}, total {:?}, idle before {idle:?}",
-                        frame.number,
-                        t_head.elapsed()
-                    ));
+                },
+                _ => None,
+            },
+            None => None,
+        };
+        let t_read = t1.elapsed();
+        // The overlay, over the whole window.
+        let overlay_image = if overlay.visible && screen.0 > 0 {
+            let stats = crate::overlay::Stats {
+                frame_ms: frame_time.as_secs_f32() * 1000.0,
+                draw_ms: t_draw.as_secs_f32() * 1000.0,
+                enhanced_items: enhanced.last_items,
+                other_draws: enhanced.last_other,
+            };
+            match overlay.frame(&r.device, &r.queue, screen, &mut enhanced.settings, stats) {
+                Ok(img) => Some(img),
+                Err(e) => {
+                    log(&format!("overlay: {e}"));
+                    None
                 }
             }
-            Err(e) => log(&format!("frame {}: {e}", frame.number)),
+        } else {
+            None
+        };
+        if overlay.save {
+            overlay.save = false;
+            overlay.message = match toml::to_string_pretty(&enhanced.settings) {
+                Ok(text) => match std::fs::write(&settings_path, text) {
+                    Ok(()) => "saved".into(),
+                    Err(e) => format!("not saved: {e}"),
+                },
+                Err(e) => format!("not saved: {e}"),
+            };
+            settings_stamp = std::fs::metadata(&settings_path)
+                .and_then(|m| m.modified())
+                .ok();
         }
+        if overlay.reset {
+            overlay.reset = false;
+            enhanced.settings = crate::enhanced::Settings::default();
+            overlay.message = "defaults (not saved)".into();
+        }
+        // Answer: frame, scene size, flags (1: overlay follows), the scene's
+        // colour, normal and depth, then the overlay's size and pixels.
+        let (w, h, mut data) = scene.unwrap_or((0, 0, Vec::new()));
+        if std::env::var("FFX_RENDER_TEST").is_ok_and(|v| v == "invert") && w > 0 {
+            for px in data[..(w * h * 4) as usize].as_chunks_mut::<4>().0 {
+                px[0] = 255 - px[0];
+                px[1] = 255 - px[1];
+                px[2] = 255 - px[2];
+            }
+        }
+        let mut out = Vec::with_capacity(16 + data.len());
+        out.extend_from_slice(&frame.number.to_le_bytes());
+        out.extend_from_slice(&w.to_le_bytes());
+        out.extend_from_slice(&h.to_le_bytes());
+        out.extend_from_slice(&u32::from(overlay_image.is_some()).to_le_bytes());
+        out.extend_from_slice(&data);
+        if let Some(img) = &overlay_image {
+            out.extend_from_slice(&screen.0.to_le_bytes());
+            out.extend_from_slice(&screen.1.to_le_bytes());
+            out.extend_from_slice(img);
+        }
+        to_game.write(&out, || std::thread::yield_now());
+        if frames % 120 == 0 {
+            log(&format!(
+                "frame {}: received+parsed {t_parsed:?}, draw {t_draw:?}, read back {t_read:?}, total {:?}, idle before {idle:?}",
+                frame.number,
+                t_head.elapsed()
+            ));
+        }
+        frame_time = last_frame.elapsed();
+        last_frame = std::time::Instant::now();
         idle_from = std::time::Instant::now();
     }
 }

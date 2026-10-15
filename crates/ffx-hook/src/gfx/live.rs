@@ -17,7 +17,7 @@
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
 use ffx_gfx::ring::Ring;
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE, WAIT_TIMEOUT};
@@ -35,6 +35,175 @@ use crate::log::log;
 type Ptr = *mut c_void;
 
 static ON: AtomicBool = AtomicBool::new(false);
+/// The overlay is showing (F10): the game's keyboard reads as released.
+static OVERLAY: AtomicBool = AtomicBool::new(false);
+/// Window input for the overlay, sent with the next frame.
+static INPUT: Mutex<Vec<ffx_gfx::Input>> = Mutex::new(Vec::new());
+static WINDOW: AtomicUsize = AtomicUsize::new(0);
+static WNDPROC: AtomicUsize = AtomicUsize::new(0);
+/// The back buffer's size.
+static SCREEN: Mutex<(u32, u32)> = Mutex::new((0, 0));
+
+/// Shows or hides the overlay, as F10 does (for the test harness).
+pub fn toggle_overlay() -> bool {
+    let now = !OVERLAY.load(Ordering::Acquire);
+    OVERLAY.store(now, Ordering::Release);
+    push_input(ffx_gfx::Input::Toggle);
+    now
+}
+
+/// A click at back buffer pixel (x, y), for the test harness.
+pub fn click(x: f32, y: f32) {
+    push_input(ffx_gfx::Input::Move(x, y));
+    push_input(ffx_gfx::Input::Button {
+        button: 0,
+        pressed: true,
+    });
+    push_input(ffx_gfx::Input::Button {
+        button: 0,
+        pressed: false,
+    });
+}
+
+/// Whether the overlay is showing.
+pub fn overlay_visible() -> bool {
+    OVERLAY.load(Ordering::Acquire)
+}
+
+fn push_input(e: ffx_gfx::Input) {
+    if let Ok(mut q) = INPUT.lock() {
+        q.push(e);
+    }
+}
+
+/// The game window: subclassed for the overlay's hotkey and input.
+///
+/// # Safety
+/// `hwnd` must be the game's window, on its own thread's message loop.
+pub unsafe fn set_window(hwnd: usize, width: u32, height: u32) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GWL_WNDPROC, SetWindowLongW};
+    if let Ok(mut s) = SCREEN.lock() {
+        *s = (width, height);
+    }
+    if hwnd == 0 || WINDOW.swap(hwnd, Ordering::AcqRel) != 0 {
+        return;
+    }
+    // SAFETY: replacing the window procedure of the game's window; the old
+    // one is kept and called for everything the overlay does not take.
+    let old = unsafe { SetWindowLongW(hwnd as _, GWL_WNDPROC, window_proc as *const () as i32) };
+    WNDPROC.store(old as u32 as usize, Ordering::Release);
+    log(&format!(
+        "  live: window {hwnd:#x} subclassed for the overlay (F10)"
+    ));
+}
+
+unsafe extern "system" fn window_proc(
+    hwnd: *mut c_void,
+    msg: u32,
+    wparam: usize,
+    lparam: isize,
+) -> isize {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CallWindowProcW, IDC_ARROW, LoadCursorW, SetCursor, ShowCursor,
+    };
+    const F10: usize = 0x79;
+    let visible = OVERLAY.load(Ordering::Acquire);
+    match msg {
+        // WM_KEYDOWN, WM_SYSKEYDOWN with F10: show or hide.
+        0x100 | 0x104 if wparam == F10 => {
+            if lparam & (1 << 30) == 0 {
+                let now = !visible;
+                OVERLAY.store(now, Ordering::Release);
+                push_input(ffx_gfx::Input::Toggle);
+                // SAFETY: on the window's thread.
+                unsafe { ShowCursor(i32::from(now)) };
+            }
+            return 0;
+        }
+        0x101 | 0x105 if wparam == F10 => return 0,
+        _ => {}
+    }
+    if visible {
+        let point = || {
+            let x = f32::from((lparam & 0xffff) as u16 as i16);
+            let y = f32::from(((lparam >> 16) & 0xffff) as u16 as i16);
+            client_to_screen(hwnd, x, y)
+        };
+        let taken = match msg {
+            0x200 => {
+                let (x, y) = point();
+                push_input(ffx_gfx::Input::Move(x, y));
+                true
+            }
+            0x201 | 0x202 | 0x204 | 0x205 | 0x207 | 0x208 => {
+                let (x, y) = point();
+                push_input(ffx_gfx::Input::Move(x, y));
+                let button = match msg {
+                    0x204 | 0x205 => 1,
+                    0x207 | 0x208 => 2,
+                    _ => 0,
+                };
+                push_input(ffx_gfx::Input::Button {
+                    button,
+                    pressed: matches!(msg, 0x201 | 0x204 | 0x207),
+                });
+                true
+            }
+            0x20a => {
+                let delta = f32::from(((wparam >> 16) & 0xffff) as u16 as i16) / 120.0;
+                push_input(ffx_gfx::Input::Wheel(delta));
+                true
+            }
+            0x100 | 0x101 => {
+                push_input(ffx_gfx::Input::Key {
+                    vk: wparam as u32,
+                    pressed: msg == 0x100,
+                });
+                true
+            }
+            0x102 => {
+                push_input(ffx_gfx::Input::Char(wparam as u32));
+                true
+            }
+            // WM_SETCURSOR: an arrow over the client area.
+            0x20 => {
+                // SAFETY: plain cursor calls on the window's thread.
+                unsafe { SetCursor(LoadCursorW(std::ptr::null_mut(), IDC_ARROW)) };
+                true
+            }
+            _ => false,
+        };
+        if taken {
+            return if msg == 0x20 { 1 } else { 0 };
+        }
+    }
+    // SAFETY: the window's original procedure.
+    unsafe {
+        let old: windows_sys::Win32::UI::WindowsAndMessaging::WNDPROC =
+            std::mem::transmute(WNDPROC.load(Ordering::Acquire));
+        CallWindowProcW(old, hwnd, msg, wparam, lparam)
+    }
+}
+
+/// Client coordinates to back buffer pixels.
+fn client_to_screen(hwnd: *mut c_void, x: f32, y: f32) -> (f32, f32) {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetClientRect;
+    let mut r = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    // SAFETY: the game's window.
+    unsafe { GetClientRect(hwnd, &raw mut r) };
+    let (cw, ch) = (
+        (r.right - r.left).max(1) as f32,
+        (r.bottom - r.top).max(1) as f32,
+    );
+    let (sw, sh) = SCREEN.lock().map_or((cw as u32, ch as u32), |s| *s);
+    (x * sw as f32 / cw, y * sh as f32 / ch)
+}
 static SENT_FRAMES: AtomicU32 = AtomicU32::new(0);
 static IMAGES: AtomicU32 = AtomicU32::new(0);
 static MISSES: AtomicU32 = AtomicU32::new(0);
@@ -92,6 +261,11 @@ struct Link {
     composite: Option<Composite>,
     /// Frames the renderer did not answer in time.
     misses: u32,
+    /// The overlay image to lay over this frame at Present.
+    overlay: Option<(u32, u32, Vec<u8>)>,
+    overlay_pass: Option<OverlayPass>,
+    /// Whether the renderer answered this frame already.
+    answered: bool,
     /// Contents of the index buffers the renderer has, for finding the
     /// vertices a draw reads from a streamed vertex buffer.
     indices: HashMap<usize, Vec<u8>>,
@@ -193,6 +367,9 @@ pub fn start() {
                 misses: 0,
                 resent: HashMap::new(),
                 indices: HashMap::new(),
+                overlay: None,
+                overlay_pass: None,
+                answered: false,
                 alive: true,
             });
         }
@@ -474,8 +651,12 @@ pub fn targets(s: &mut State, rtv: [usize; 8], dsv: usize) {
     finish(link, s, scene);
 }
 
-/// At Present: a scene left unfinished is finished now.
-pub fn present(s: &mut State) {
+/// At Present: a scene left unfinished is finished now, and the overlay
+/// (if showing) goes over the frame.
+///
+/// # Safety
+/// On the render thread, inside Present of `swap_chain`.
+pub unsafe fn present(s: &mut State, swap_chain: Ptr) {
     let Ok(mut guard) = LINK.lock() else { return };
     let Some(link) = guard.as_mut() else { return };
     if let Some(scene) = link.scene
@@ -483,6 +664,33 @@ pub fn present(s: &mut State) {
     {
         finish(link, s, scene);
     }
+    if OVERLAY.load(Ordering::Acquire) && !link.answered && link.alive {
+        // No scene this frame: ask for the overlay alone.
+        link.frame += 1;
+        send_input(link);
+        link.send(&ffx_gfx::Msg::Frame(ffx_gfx::Frame {
+            number: link.frame,
+            width: 0,
+            height: 0,
+            cmds: Vec::new(),
+        }));
+        let frame = link.frame;
+        link.overlay = receive(link, frame).and_then(|r| r.overlay);
+    } else if !OVERLAY.load(Ordering::Acquire) {
+        // Input (the toggle) still goes out.
+        let pending = INPUT.lock().is_ok_and(|q| !q.is_empty());
+        if pending {
+            send_input(link);
+        }
+        link.overlay = None;
+    }
+    if let Some((w, h, pixels)) = link.overlay.take()
+        && OVERLAY.load(Ordering::Acquire)
+    {
+        // SAFETY: forwarded from the caller.
+        unsafe { draw_overlay(link, s, swap_chain, w, h, &pixels) };
+    }
+    link.answered = false;
     link.clears.clear();
     link.scene = None;
 }
@@ -507,6 +715,7 @@ fn finish(link: &mut Link, s: &mut State, scene: Scene) {
         link.sync(s, v);
     }
     cmds.append(&mut link.cmds);
+    send_input(link);
     let (w, h) = s
         .views
         .get(&scene.color)
@@ -528,7 +737,8 @@ fn finish(link: &mut Link, s: &mut State, scene: Scene) {
     let t_send = t0.elapsed();
     let received = receive(link, frame);
     let t_wait = t0.elapsed();
-    let Some((rw, rh, data)) = received else {
+    link.answered = received.is_some();
+    let Some(reply) = received else {
         link.misses += 1;
         MISSES.fetch_add(1, Ordering::Relaxed);
         if link.misses % 60 == 1 {
@@ -539,7 +749,9 @@ fn finish(link: &mut Link, s: &mut State, scene: Scene) {
         }
         return;
     };
-    if (rw, rh) != (w, h) {
+    link.overlay = reply.overlay;
+    let data = reply.scene;
+    if (reply.width, reply.height) != (w, h) {
         return;
     }
     IMAGES.fetch_add(1, Ordering::Relaxed);
@@ -558,41 +770,390 @@ fn finish(link: &mut Link, s: &mut State, scene: Scene) {
     }
 }
 
+/// The renderer's answer to a frame.
+struct Reply {
+    width: u32,
+    height: u32,
+    /// Colour and normal (RGBA8) then depth (f32), rows packed.
+    scene: Vec<u8>,
+    overlay: Option<(u32, u32, Vec<u8>)>,
+}
+
+/// Sends the window input gathered since the last frame.
+fn send_input(link: &mut Link) {
+    let events = INPUT
+        .lock()
+        .map(|mut q| std::mem::take(&mut *q))
+        .unwrap_or_default();
+    if events.is_empty() && !OVERLAY.load(Ordering::Acquire) {
+        return;
+    }
+    let (width, height) = SCREEN.lock().map_or((0, 0), |s| *s);
+    link.send(&ffx_gfx::Msg::Input {
+        width,
+        height,
+        events,
+    });
+}
+
 /// Reads answers until the one for `frame` (older ones are dropped).
-fn receive(link: &mut Link, frame: u32) -> Option<(u32, u32, Vec<u8>)> {
+fn receive(link: &mut Link, frame: u32) -> Option<Reply> {
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1500);
     let process = link.process;
+    let mut wait = || {
+        if std::time::Instant::now() > deadline {
+            return false;
+        }
+        // SAFETY: our process handle.
+        unsafe {
+            WaitForSingleObject(process, 0) == WAIT_TIMEOUT && {
+                std::thread::yield_now();
+                true
+            }
+        }
+    };
     loop {
-        let mut head = [0u8; 12];
-        let ok = link.to_game.read(&mut head, || {
-            if std::time::Instant::now() > deadline {
-                return false;
-            }
-            // SAFETY: our process handle.
-            unsafe {
-                WaitForSingleObject(process, 0) == WAIT_TIMEOUT && {
-                    std::thread::yield_now();
-                    true
-                }
-            }
-        });
-        if !ok {
+        let mut head = [0u8; 16];
+        if !link.to_game.read(&mut head, &mut wait) {
             return None;
         }
-        let number = u32::from_le_bytes(head[0..4].try_into().expect("4"));
-        let w = u32::from_le_bytes(head[4..8].try_into().expect("4"));
-        let h = u32::from_le_bytes(head[8..12].try_into().expect("4"));
-        let mut data = vec![0u8; (w * h * 12) as usize];
-        // The body follows its header at once.
-        if !link.to_game.read(&mut data, || {
-            std::thread::yield_now();
-            true
-        }) {
+        let word = |i: usize| u32::from_le_bytes(head[4 * i..4 * i + 4].try_into().expect("4"));
+        let (number, w, h, flags) = (word(0), word(1), word(2), word(3));
+        let mut scene = vec![0u8; (w * h * 12) as usize];
+        if !link.to_game.read(&mut scene, &mut wait) {
             return None;
+        }
+        let mut overlay = None;
+        if flags & 1 != 0 {
+            let mut size = [0u8; 8];
+            if !link.to_game.read(&mut size, &mut wait) {
+                return None;
+            }
+            let ow = u32::from_le_bytes(size[0..4].try_into().expect("4"));
+            let oh = u32::from_le_bytes(size[4..8].try_into().expect("4"));
+            let mut pixels = vec![0u8; (ow * oh * 4) as usize];
+            if !link.to_game.read(&mut pixels, &mut wait) {
+                return None;
+            }
+            overlay = Some((ow, oh, pixels));
         }
         if number == frame {
-            return Some((w, h, data));
+            return Some(Reply {
+                width: w,
+                height: h,
+                scene,
+                overlay,
+            });
         }
+    }
+}
+
+struct OverlayPass {
+    size: (u32, u32),
+    texture: Ptr,
+    view: Ptr,
+    ps: Ptr,
+    blend: Ptr,
+    /// The back buffer it last drew on, and a view of it.
+    target: (usize, Ptr),
+}
+
+const OVERLAY_HLSL: &str = r"
+Texture2D O : register(t0);
+float4 vs(uint id : SV_VertexID) : SV_Position {
+    float2 uv = float2((id << 1) & 2, id & 2);
+    return float4(uv * float2(2, -2) + float2(-1, 1), 0, 1);
+}
+float4 ps(float4 p : SV_Position) : SV_Target0 {
+    return O.Load(int3(p.xy, 0));
+}
+";
+
+/// Draws the overlay (premultiplied RGBA8) over the back buffer.
+unsafe fn draw_overlay(link: &mut Link, s: &State, swap_chain: Ptr, w: u32, h: u32, pixels: &[u8]) {
+    const IID_TEXTURE2D: [u8; 16] = [
+        0xf2, 0xaa, 0x15, 0x6f, 0x08, 0xd2, 0x89, 0x4e, 0x9a, 0xb4, 0x48, 0x95, 0x35, 0xd3, 0x4f,
+        0x9c,
+    ];
+    let device = super::DEVICE.load(Ordering::Acquire) as Ptr;
+    let ctx = super::CONTEXT.load(Ordering::Acquire) as Ptr;
+    // SAFETY: the game's device, context and swap chain, original methods.
+    unsafe {
+        if link.overlay_pass.as_ref().is_none_or(|o| o.size != (w, h)) {
+            let Some(vs) = link.composite.as_ref().map(|c| c.vs).or_else(|| {
+                let code = compile_source(OVERLAY_HLSL, "vs", "vs_4_0")?;
+                type CreateShader =
+                    unsafe extern "system" fn(Ptr, *const u8, usize, Ptr, *mut Ptr) -> i32;
+                let f: CreateShader =
+                    std::mem::transmute(device_original(device, vt::device::CREATE_VERTEX_SHADER));
+                let mut vs: Ptr = std::ptr::null_mut();
+                (f(
+                    device,
+                    code.as_ptr(),
+                    code.len(),
+                    std::ptr::null_mut(),
+                    &raw mut vs,
+                ) >= 0)
+                    .then_some(vs)
+            }) else {
+                return;
+            };
+            let _ = vs;
+            let Some(ps_code) = compile_source(OVERLAY_HLSL, "ps", "ps_4_0") else {
+                return;
+            };
+            type CreateShader =
+                unsafe extern "system" fn(Ptr, *const u8, usize, Ptr, *mut Ptr) -> i32;
+            let create_ps: CreateShader =
+                std::mem::transmute(device_original(device, vt::device::CREATE_PIXEL_SHADER));
+            let mut ps: Ptr = std::ptr::null_mut();
+            if create_ps(
+                device,
+                ps_code.as_ptr(),
+                ps_code.len(),
+                std::ptr::null_mut(),
+                &raw mut ps,
+            ) < 0
+            {
+                return;
+            }
+            type CreateTex =
+                unsafe extern "system" fn(Ptr, *const u32, *const c_void, *mut Ptr) -> i32;
+            type CreateSrv = unsafe extern "system" fn(Ptr, Ptr, *const u32, *mut Ptr) -> i32;
+            let create_tex: CreateTex =
+                std::mem::transmute(device_original(device, vt::device::CREATE_TEXTURE_2D));
+            let create_srv: CreateSrv = std::mem::transmute(device_original(
+                device,
+                vt::device::CREATE_SHADER_RESOURCE_VIEW,
+            ));
+            let desc = [w, h, 1, 1, 28, 1, 0, 0, 0x8, 0, 0];
+            let mut texture: Ptr = std::ptr::null_mut();
+            let mut view: Ptr = std::ptr::null_mut();
+            if create_tex(device, desc.as_ptr(), std::ptr::null(), &raw mut texture) < 0
+                || create_srv(device, texture, std::ptr::null(), &raw mut view) < 0
+            {
+                return;
+            }
+            let put =
+                |d: &mut [u8], at: usize, v: u32| d[at..at + 4].copy_from_slice(&v.to_le_bytes());
+            let mut blend_desc = [0u8; 8 + 8 * 32];
+            for i in 0..8 {
+                let at = 8 + 32 * i;
+                put(&mut blend_desc, at, u32::from(i == 0)); // blend on target 0
+                put(&mut blend_desc, at + 4, 2); // one
+                put(&mut blend_desc, at + 8, 6); // inverse source alpha
+                put(&mut blend_desc, at + 12, 1);
+                put(&mut blend_desc, at + 16, 2);
+                put(&mut blend_desc, at + 20, 6);
+                put(&mut blend_desc, at + 24, 1);
+                blend_desc[at + 28] = 0xf;
+            }
+            type CreateState = unsafe extern "system" fn(Ptr, *const u8, *mut Ptr) -> i32;
+            let create_blend: CreateState =
+                std::mem::transmute(device_original(device, vt::device::CREATE_BLEND_STATE));
+            let mut blend: Ptr = std::ptr::null_mut();
+            create_blend(device, blend_desc.as_ptr(), &raw mut blend);
+            link.overlay_pass = Some(OverlayPass {
+                size: (w, h),
+                texture,
+                view,
+                ps,
+                blend,
+                target: (0, std::ptr::null_mut()),
+            });
+        }
+        if link.composite.is_none() {
+            let (sw, sh) = SCREEN.lock().map_or((w, h), |x| *x);
+            link.composite = make_composite(sw, sh);
+        }
+        let (Some(o), Some(c)) = (link.overlay_pass.as_mut(), link.composite.as_ref()) else {
+            return;
+        };
+        // The back buffer and a view of it.
+        let mut back: Ptr = std::ptr::null_mut();
+        if super::com!(
+            swap_chain,
+            vt::GET_BUFFER,
+            unsafe extern "system" fn(Ptr, u32, *const u8, *mut Ptr) -> i32,
+            0,
+            IID_TEXTURE2D.as_ptr(),
+            &raw mut back
+        ) < 0
+        {
+            return;
+        }
+        if o.target.0 != back as usize {
+            type CreateRtv = unsafe extern "system" fn(Ptr, Ptr, *const u32, *mut Ptr) -> i32;
+            let create_rtv: CreateRtv = std::mem::transmute(device_original(
+                device,
+                vt::device::CREATE_RENDER_TARGET_VIEW,
+            ));
+            let mut rtv: Ptr = std::ptr::null_mut();
+            create_rtv(device, back, std::ptr::null(), &raw mut rtv);
+            o.target = (back as usize, rtv);
+        }
+        super::com!(back, vt::RELEASE, unsafe extern "system" fn(Ptr) -> u32);
+        macro_rules! call {
+            ($slot:expr, $ty:ty $(, $arg:expr)*) => {{
+                let f: $ty = std::mem::transmute(real_method(ctx, $slot));
+                f(ctx $(, $arg)*)
+            }};
+        }
+        use vt::context as k;
+        call!(
+            k::UPDATE_SUBRESOURCE,
+            unsafe extern "system" fn(Ptr, Ptr, u32, *const u32, *const u8, u32, u32),
+            o.texture,
+            0,
+            std::ptr::null(),
+            pixels.as_ptr(),
+            w * 4,
+            0
+        );
+        let rtvs = [o.target.1 as usize];
+        call!(
+            k::OM_SET_RENDER_TARGETS,
+            unsafe extern "system" fn(Ptr, u32, *const usize, Ptr),
+            1,
+            rtvs.as_ptr(),
+            std::ptr::null_mut()
+        );
+        let vp = [0.0f32, 0.0, w as f32, h as f32, 0.0, 1.0];
+        call!(
+            k::RS_SET_VIEWPORTS,
+            unsafe extern "system" fn(Ptr, u32, *const f32),
+            1,
+            vp.as_ptr()
+        );
+        call!(
+            k::RS_SET_STATE,
+            unsafe extern "system" fn(Ptr, Ptr),
+            c.raster
+        );
+        call!(
+            k::OM_SET_BLEND_STATE,
+            unsafe extern "system" fn(Ptr, Ptr, *const f32, u32),
+            o.blend,
+            std::ptr::null(),
+            u32::MAX
+        );
+        call!(
+            k::OM_SET_DEPTH_STENCIL_STATE,
+            unsafe extern "system" fn(Ptr, Ptr, u32),
+            std::ptr::null_mut(),
+            0
+        );
+        call!(
+            k::IA_SET_INPUT_LAYOUT,
+            unsafe extern "system" fn(Ptr, Ptr),
+            std::ptr::null_mut()
+        );
+        call!(
+            k::IA_SET_PRIMITIVE_TOPOLOGY,
+            unsafe extern "system" fn(Ptr, u32),
+            4
+        );
+        call!(
+            k::VS_SET_SHADER,
+            unsafe extern "system" fn(Ptr, Ptr, *const Ptr, u32),
+            c.vs,
+            std::ptr::null(),
+            0
+        );
+        call!(
+            k::PS_SET_SHADER,
+            unsafe extern "system" fn(Ptr, Ptr, *const Ptr, u32),
+            o.ps,
+            std::ptr::null(),
+            0
+        );
+        let views = [o.view];
+        call!(
+            k::PS_SET_SHADER_RESOURCES,
+            unsafe extern "system" fn(Ptr, u32, u32, *const Ptr),
+            0,
+            1,
+            views.as_ptr()
+        );
+        call!(k::DRAW, unsafe extern "system" fn(Ptr, u32, u32), 3, 0);
+        restore(ctx, s);
+    }
+}
+
+/// Puts the game's tracked bindings back on the real context.
+unsafe fn restore(ctx: Ptr, s: &State) {
+    macro_rules! call {
+        ($slot:expr, $ty:ty $(, $arg:expr)*) => {{
+            let f: $ty = std::mem::transmute(real_method(ctx, $slot));
+            f(ctx $(, $arg)*)
+        }};
+    }
+    use vt::context as k;
+    let b = &s.bound;
+    // SAFETY: the real context; values the game set before.
+    unsafe {
+        call!(
+            k::RS_SET_VIEWPORTS,
+            unsafe extern "system" fn(Ptr, u32, *const f32),
+            1,
+            b.viewport.as_ptr()
+        );
+        call!(
+            k::RS_SET_STATE,
+            unsafe extern "system" fn(Ptr, Ptr),
+            b.raster as Ptr
+        );
+        call!(
+            k::OM_SET_BLEND_STATE,
+            unsafe extern "system" fn(Ptr, Ptr, *const f32, u32),
+            b.blend as Ptr,
+            b.blend_factor.as_ptr(),
+            b.sample_mask
+        );
+        call!(
+            k::OM_SET_DEPTH_STENCIL_STATE,
+            unsafe extern "system" fn(Ptr, Ptr, u32),
+            b.depth as Ptr,
+            b.stencil_ref
+        );
+        call!(
+            k::IA_SET_INPUT_LAYOUT,
+            unsafe extern "system" fn(Ptr, Ptr),
+            b.layout as Ptr
+        );
+        call!(
+            k::IA_SET_PRIMITIVE_TOPOLOGY,
+            unsafe extern "system" fn(Ptr, u32),
+            b.topology
+        );
+        call!(
+            k::VS_SET_SHADER,
+            unsafe extern "system" fn(Ptr, Ptr, *const Ptr, u32),
+            b.vs as Ptr,
+            std::ptr::null(),
+            0
+        );
+        call!(
+            k::PS_SET_SHADER,
+            unsafe extern "system" fn(Ptr, Ptr, *const Ptr, u32),
+            b.ps as Ptr,
+            std::ptr::null(),
+            0
+        );
+        call!(
+            k::PS_SET_SHADER_RESOURCES,
+            unsafe extern "system" fn(Ptr, u32, u32, *const usize),
+            0,
+            3,
+            b.ps_srv.as_ptr()
+        );
+        call!(
+            k::OM_SET_RENDER_TARGETS,
+            unsafe extern "system" fn(Ptr, u32, *const usize, Ptr),
+            8,
+            b.rtv.as_ptr(),
+            b.dsv as Ptr
+        );
     }
 }
 
@@ -615,8 +1176,14 @@ Out ps(float4 p : SV_Position) {
 }
 ";
 
-/// Compiles HLSL with the system's `d3dcompiler_47.dll`.
+/// Compiles the composite HLSL with the system's `d3dcompiler_47.dll`.
 unsafe fn compile(entry: &str, target: &str) -> Option<Vec<u8>> {
+    // SAFETY: forwarded.
+    unsafe { compile_source(COMPOSITE_HLSL, entry, target) }
+}
+
+/// Compiles HLSL with the system's `d3dcompiler_47.dll`.
+unsafe fn compile_source(source: &str, entry: &str, target: &str) -> Option<Vec<u8>> {
     use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
     type Compile = unsafe extern "system" fn(
         *const u8,
@@ -641,8 +1208,8 @@ unsafe fn compile(entry: &str, target: &str) -> Option<Vec<u8>> {
         let mut code: Ptr = std::ptr::null_mut();
         let mut errors: Ptr = std::ptr::null_mut();
         let hr = f(
-            COMPOSITE_HLSL.as_ptr(),
-            COMPOSITE_HLSL.len(),
+            source.as_ptr(),
+            source.len(),
             std::ptr::null(),
             std::ptr::null(),
             std::ptr::null(),

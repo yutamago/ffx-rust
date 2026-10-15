@@ -135,6 +135,23 @@ pub struct Frame {
     pub cmds: Vec<Cmd>,
 }
 
+/// Input for the renderer's overlay, from the game window.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Input {
+    /// Show or hide the overlay (its hotkey).
+    Toggle,
+    /// The pointer, in window pixels.
+    Move(f32, f32),
+    /// 0 left, 1 right, 2 middle.
+    Button { button: u8, pressed: bool },
+    /// Wheel notches (positive: away from the user).
+    Wheel(f32),
+    /// A Windows virtual-key code.
+    Key { vk: u32, pressed: bool },
+    /// A typed character.
+    Char(u32),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Msg {
     Buffer {
@@ -183,6 +200,13 @@ pub enum Msg {
         id: Id,
     },
     Frame(Frame),
+    /// What happened in the game window since the last frame; `width` and
+    /// `height` are its back buffer's.
+    Input {
+        width: u32,
+        height: u32,
+        events: Vec<Input>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -295,6 +319,7 @@ const UPDATE_BUFFER: u32 = 7;
 const UPDATE_TEXTURE: u32 = 8;
 const RELEASE: u32 = 9;
 const FRAME: u32 = 10;
+const INPUT: u32 = 11;
 
 fn slots_u8(w: &mut Writer, v: &[(u8, Id)]) {
     w.len_of(v);
@@ -521,6 +546,43 @@ impl Msg {
                 w.u32(*id);
                 RELEASE
             }
+            Self::Input {
+                width,
+                height,
+                events,
+            } => {
+                w.u32s(&[*width, *height]);
+                w.len_of(events);
+                for e in events {
+                    match *e {
+                        Input::Toggle => w.u8(0),
+                        Input::Move(x, y) => {
+                            w.u8(1);
+                            w.f32(x);
+                            w.f32(y);
+                        }
+                        Input::Button { button, pressed } => {
+                            w.u8(2);
+                            w.u8(button);
+                            w.u8(u8::from(pressed));
+                        }
+                        Input::Wheel(d) => {
+                            w.u8(3);
+                            w.f32(d);
+                        }
+                        Input::Key { vk, pressed } => {
+                            w.u8(4);
+                            w.u32(vk);
+                            w.u8(u8::from(pressed));
+                        }
+                        Input::Char(c) => {
+                            w.u8(5);
+                            w.u32(c);
+                        }
+                    }
+                }
+                INPUT
+            }
             Self::Frame(f) => {
                 w.u32s(&[f.number, f.width, f.height]);
                 w.len_of(&f.cmds);
@@ -666,6 +728,33 @@ impl Msg {
                 data: r.blob()?,
             },
             RELEASE => Self::Release { id: r.u32()? },
+            INPUT => {
+                let [width, height] = r.u32s()?;
+                let n = r.u32()?;
+                let mut events = Vec::with_capacity(n as usize);
+                for _ in 0..n {
+                    events.push(match r.u8()? {
+                        0 => Input::Toggle,
+                        1 => Input::Move(r.f32()?, r.f32()?),
+                        2 => Input::Button {
+                            button: r.u8()?,
+                            pressed: r.u8()? != 0,
+                        },
+                        3 => Input::Wheel(r.f32()?),
+                        4 => Input::Key {
+                            vk: r.u32()?,
+                            pressed: r.u8()? != 0,
+                        },
+                        5 => Input::Char(r.u32()?),
+                        _ => return Err(DecodeError("input")),
+                    });
+                }
+                Self::Input {
+                    width,
+                    height,
+                    events,
+                }
+            }
             FRAME => {
                 let [number, width, height] = r.u32s()?;
                 let n = r.u32()?;
@@ -778,6 +867,24 @@ mod tests {
                     per_instance: false,
                     step: 0,
                 }],
+            },
+            Msg::Input {
+                width: 1280,
+                height: 720,
+                events: vec![
+                    Input::Toggle,
+                    Input::Move(3.0, 4.5),
+                    Input::Button {
+                        button: 0,
+                        pressed: true,
+                    },
+                    Input::Wheel(-1.0),
+                    Input::Key {
+                        vk: 0x79,
+                        pressed: false,
+                    },
+                    Input::Char(0x41),
+                ],
             },
             Msg::Frame(Frame {
                 number: 3,

@@ -574,6 +574,16 @@ unsafe extern "system" fn create_device_and_swap_chain(
         hook_context(proxy::vtable());
         *context = proxy::wrap(ctx);
         live::start();
+        if !desc.is_null() {
+            // DXGI_SWAP_CHAIN_DESC: width, height first; the window at 44.
+            let d = desc.cast::<u8>();
+            let w = std::ptr::read_unaligned(d.cast::<u32>());
+            let h = std::ptr::read_unaligned(d.add(4).cast::<u32>());
+            let hwnd = std::ptr::read_unaligned(d.add(44).cast::<usize>());
+            if live::on() {
+                live::set_window(hwnd, w, h);
+            }
+        }
         if !swap_chain.is_null() && !(*swap_chain).is_null() {
             let vtable = *(*swap_chain).cast::<*mut usize>();
             if let Some(o) =
@@ -2106,7 +2116,8 @@ unsafe extern "system" fn present(swap_chain: Ptr, interval: u32, flags: u32) ->
     LAST_DRAWS.store(DRAWS.swap(0, Ordering::AcqRel), Ordering::Release);
     rehook();
     if live::on() {
-        live::present(&mut state());
+        // SAFETY: on the render thread, inside Present.
+        unsafe { live::present(&mut state(), swap_chain) };
     }
     // SAFETY: on the game thread, inside Present.
     unsafe { capture::on_present(swap_chain) };

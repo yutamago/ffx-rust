@@ -181,6 +181,9 @@ pub struct Enhanced {
     pub notes: HashMap<String, usize>,
     /// The map's lights as last seen in a character draw.
     map_lights: Option<MapLights>,
+    /// Draws in the last frame: enhanced, and with the game's shaders.
+    pub last_items: usize,
+    pub last_other: usize,
 }
 
 /// The game's per-map character lighting, in linear terms: key and fill
@@ -431,6 +434,8 @@ impl Enhanced {
             compare,
             notes: HashMap::new(),
             map_lights: None,
+            last_items: 0,
+            last_other: 0,
         }
     }
 

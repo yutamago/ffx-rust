@@ -18,6 +18,7 @@ pub mod families;
 pub mod formats;
 #[cfg(windows)]
 pub mod live;
+pub mod overlay;
 pub mod png;
 mod replay;
 
@@ -170,6 +171,8 @@ impl Renderer {
                 self.shaders.remove(&id);
             }
             Msg::Frame(frame) => self.draw_frame(&frame, filter)?,
+            // Overlay input is the live loop's.
+            Msg::Input { .. } => {}
         }
         Ok(())
     }
