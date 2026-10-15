@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
-use ffx_gfx::{Cmd, Draw, Frame, Id, StateKind};
+use ffx_gfx::{Cmd, Draw, Frame, Id, Msg, StateKind};
 
 use crate::families::{Families, Family};
 use crate::{Filter, Renderer, formats};
@@ -30,6 +30,10 @@ const RESOLVE_SIZE: usize = 16 + 64;
 const VOLUMETRIC_WGSL: &str = include_str!("volumetric.wgsl");
 const WATER_WGSL: &str = include_str!("water.wgsl");
 const PROBE_WGSL: &str = include_str!("probe.wgsl");
+const EFFECT_WGSL: &str = include_str!("effect.wgsl");
+/// Ids of the effect light's own target in the renderer's mirror (above
+/// any 32-bit process's user addresses, which the game's ids are).
+const EFFECT_IDS: Id = 0xfff0_0000;
 /// Light probes: at most this many per frame, each a cube of faces this
 /// size.
 const MAX_PROBES: usize = 2;
@@ -183,6 +187,22 @@ struct Item {
     centre: Option<[f32; 3]>,
 }
 
+/// The effect light's targets and passes, for one scene image size and
+/// format.
+struct EffectLight {
+    size: (u32, u32),
+    format: wgpu::TextureFormat,
+    /// The effects' target in the mirror: texture and view ids.
+    ids: (Id, Id),
+    /// A copy of the scene image (read while it is written).
+    copy: (wgpu::Texture, wgpu::TextureView),
+    small: [wgpu::TextureView; 2],
+    down: wgpu::RenderPipeline,
+    blur: wgpu::RenderPipeline,
+    apply: wgpu::RenderPipeline,
+    layout: wgpu::BindGroupLayout,
+}
+
 /// The light probes' G-buffer layers (six per probe) and the buffer of
 /// their spherical harmonics.
 struct ProbeTargets {
@@ -231,6 +251,8 @@ pub struct Enhanced {
     gbuffer_layout: wgpu::PipelineLayout,
     lighting: (wgpu::RenderPipeline, wgpu::BindGroupLayout),
     probes: ProbeTargets,
+    effect: Option<EffectLight>,
+    effect_generation: u32,
     /// Water: its layouts, pipeline layout and pipelines by geometry.
     water_layouts: (
         wgpu::BindGroupLayout,
@@ -930,6 +952,8 @@ impl Enhanced {
             water_layouts: (water_layout, water_scene_layout, water_pipeline_layout),
             water_pipelines: HashMap::new(),
             probes: probe_targets(device),
+            effect: None,
+            effect_generation: 0,
             frame_count: 0,
             materials: HashMap::new(),
             flat_material: one_pixel(device, queue, [128, 128, 179, 255]),
@@ -3227,6 +3251,299 @@ impl Enhanced {
             height: frame.height,
             cmds: rest,
         };
+        if self.settings.effect_light && self.settings.enabled {
+            self.effect_light(r, &rest, color_view)?;
+        }
         r.draw_frame(&rest, &Filter::default())
+    }
+
+    /// Whether a draw adds light: blended with the target, adding.
+    fn additive(r: &Renderer, d: &Draw) -> bool {
+        let (blend, _) = formats::blend(r.state(d.blend, StateKind::Blend), 0);
+        blend.is_some_and(|b| {
+            b.color.operation == wgpu::BlendOperation::Add
+                && b.color.dst_factor == wgpu::BlendFactor::One
+        })
+    }
+
+    /// Light from the frame's effects onto the scene image, before the
+    /// effects themselves are drawn over it.
+    fn effect_light(&mut self, r: &mut Renderer, rest: &Frame, color_view: Id) -> Result<()> {
+        let emissive: Vec<&Draw> = rest
+            .cmds
+            .iter()
+            .filter_map(|c| match c {
+                Cmd::Draw(d)
+                    if d.rtv.first().map(|x| x.1) == Some(color_view) && Self::additive(r, d) =>
+                {
+                    Some(&**d)
+                }
+                _ => None,
+            })
+            .collect();
+        if emissive.is_empty() {
+            return Ok(());
+        }
+        let Some((desc, format)) = r
+            .views
+            .get(&color_view)
+            .and_then(|v| r.textures.get(&v.resource))
+            .map(|t| (t.desc, t.format))
+        else {
+            return Ok(());
+        };
+        let size = (desc[0], desc[1]);
+        let device = r.device.clone();
+        let queue = r.queue.clone();
+        if self
+            .effect
+            .as_ref()
+            .is_none_or(|e| e.size != size || e.format != format)
+        {
+            self.effect_generation += 1;
+            let ids = (
+                EFFECT_IDS + self.effect_generation * 2,
+                EFFECT_IDS + self.effect_generation * 2 + 1,
+            );
+            if let Some(old) = &self.effect {
+                r.apply(Msg::Release { id: old.ids.0 }, &Filter::default())?;
+                r.apply(Msg::Release { id: old.ids.1 }, &Filter::default())?;
+            }
+            let mut d = desc;
+            d[2] = 1;
+            d[3] = 1;
+            d[5] = 1;
+            d[6] = 0;
+            d[7] = 0;
+            d[8] = 0x28;
+            d[9] = 0;
+            d[10] = 0;
+            r.apply(
+                Msg::Texture {
+                    id: ids.0,
+                    desc: d,
+                    subresources: Vec::new(),
+                },
+                &Filter::default(),
+            )?;
+            r.apply(
+                Msg::View {
+                    id: ids.1,
+                    kind: ffx_gfx::ViewKind::RenderTarget,
+                    resource: ids.0,
+                    desc: None,
+                },
+                &Filter::default(),
+            )?;
+            let copy = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("effect light scene copy"),
+                size: wgpu::Extent3d {
+                    width: size.0,
+                    height: size.1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            let copy_view = copy.create_view(&wgpu::TextureViewDescriptor::default());
+            let small = || {
+                device
+                    .create_texture(&wgpu::TextureDescriptor {
+                        label: Some("effect light"),
+                        size: wgpu::Extent3d {
+                            width: (size.0 / 8).max(1),
+                            height: (size.1 / 8).max(1),
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format: wgpu::TextureFormat::Rgba16Float,
+                        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                            | wgpu::TextureUsages::TEXTURE_BINDING,
+                        view_formats: &[],
+                    })
+                    .create_view(&wgpu::TextureViewDescriptor::default())
+            };
+            let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("effect light"),
+                entries: &layout_entries(
+                    &[
+                        (0, uniform(16)),
+                        (1, tex(FLOAT)),
+                        (2, tex(FLOAT)),
+                        (3, tex(UNFILTERED)),
+                        (4, tex(wgpu::TextureSampleType::Depth)),
+                        (
+                            5,
+                            wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        ),
+                    ],
+                    wgpu::ShaderStages::FRAGMENT,
+                ),
+            });
+            let target = |format| {
+                [Some(wgpu::ColorTargetState {
+                    format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })]
+            };
+            let hdr = target(wgpu::TextureFormat::Rgba16Float);
+            self.effect = Some(EffectLight {
+                size,
+                format,
+                ids,
+                copy: (copy, copy_view),
+                small: [small(), small()],
+                down: fullscreen_entry(&device, &layout, EFFECT_WGSL, "fs_down", &hdr),
+                blur: fullscreen_entry(&device, &layout, EFFECT_WGSL, "fs_blur", &hdr),
+                apply: fullscreen_entry(&device, &layout, EFFECT_WGSL, "fs_apply", &target(format)),
+                layout,
+            });
+        }
+        let e = self.effect.as_ref().expect("made above");
+        // The effects alone, onto black, against the scene's depth.
+        let mut cmds = vec![Cmd::ClearTarget {
+            view: e.ids.1,
+            color: [0.0; 4],
+        }];
+        for c in &rest.cmds {
+            match c {
+                Cmd::UpdateBuffer { .. } => cmds.push(c.clone()),
+                Cmd::Draw(d) if emissive.iter().any(|x| std::ptr::eq(*x, &**d)) => {
+                    let mut d = d.clone();
+                    d.rtv = vec![(0, e.ids.1)];
+                    cmds.push(Cmd::Draw(d));
+                }
+                _ => {}
+            }
+        }
+        let ids = e.ids;
+        r.draw_frame(
+            &Frame {
+                number: rest.number,
+                width: rest.width,
+                height: rest.height,
+                cmds,
+            },
+            &Filter::default(),
+        )?;
+        let (Some(scene), Some(fx_view)) = (
+            r.views
+                .get(&color_view)
+                .and_then(|v| r.textures.get(&v.resource))
+                .map(|t| t.texture.clone()),
+            r.textures.get(&ids.0).map(|t| {
+                t.texture
+                    .create_view(&wgpu::TextureViewDescriptor::default())
+            }),
+        ) else {
+            return Ok(());
+        };
+        let Some(target) = r.texture_view(color_view, false) else {
+            return Ok(());
+        };
+        let e = self.effect.as_ref().expect("made above");
+        let t = self.targets.as_ref().expect("made by render");
+        let strength = self.settings.effect_light_strength;
+        let params: [[f32; 4]; 6] = [
+            [strength, 0.0, 0.0, 0.0],
+            [strength, 1.5, 0.0, 0.0],
+            [strength, 0.0, 1.5, 0.0],
+            [strength, 4.0, 0.0, 0.0],
+            [strength, 0.0, 4.0, 0.0],
+            [strength, 0.0, 0.0, 0.0],
+        ];
+        let mut bytes = Vec::new();
+        for p in &params {
+            put4(&mut bytes, *p);
+            bytes.resize(bytes.len().next_multiple_of(256), 0);
+        }
+        let ubuf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("effect light"),
+            size: bytes.len() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&ubuf, 0, &bytes);
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("effect light"),
+        });
+        enc.copy_texture_to_texture(
+            scene.as_image_copy(),
+            e.copy.0.as_image_copy(),
+            wgpu::Extent3d {
+                width: size.0,
+                height: size.1,
+                depth_or_array_layers: 1,
+            },
+        );
+        let passes: [(
+            &wgpu::RenderPipeline,
+            &wgpu::TextureView,
+            &wgpu::TextureView,
+            &wgpu::TextureView,
+        ); 6] = [
+            (&e.down, &fx_view, &self.black, &e.small[0]),
+            (&e.blur, &e.small[0], &self.black, &e.small[1]),
+            (&e.blur, &e.small[1], &self.black, &e.small[0]),
+            (&e.blur, &e.small[0], &self.black, &e.small[1]),
+            (&e.blur, &e.small[1], &self.black, &e.small[0]),
+            (&e.apply, &e.copy.1, &e.small[0], &target),
+        ];
+        for (k, (pipeline, a, b, out)) in passes.into_iter().enumerate() {
+            let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &e.layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                            buffer: &ubuf,
+                            offset: k as u64 * 256,
+                            size: wgpu::BufferSize::new(16),
+                        }),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(a),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(b),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(&t.albedo),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(&t.depth),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::Sampler(&self.linear),
+                    },
+                ],
+            });
+            let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("effect light"),
+                color_attachments: &[attachment(out, wgpu::LoadOp::Clear(wgpu::Color::BLACK))],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            rp.set_pipeline(pipeline);
+            rp.set_bind_group(0, &group, &[]);
+            rp.draw(0..3, 0..1);
+        }
+        queue.submit([enc.finish()]);
+        Ok(())
     }
 }

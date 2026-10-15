@@ -654,6 +654,13 @@ fn panel(
                 slider(ui, "area (units)", &mut s.shadow_extent, 10.0..=400.0);
                 slider(ui, "softness", &mut s.shadow_softness, 0.0..=8.0);
             });
+            egui::CollapsingHeader::new("Effects").show(ui, |ui| {
+                ui.checkbox(
+                    &mut s.effect_light,
+                    "Fire and magic light their surroundings",
+                );
+                slider(ui, "strength", &mut s.effect_light_strength, 0.0..=10.0);
+            });
             egui::CollapsingHeader::new("Water").show(ui, |ui| {
                 ui.checkbox(&mut s.water, "Enhanced water");
                 slider(ui, "reflection", &mut s.water_reflection, 0.0..=2.0);

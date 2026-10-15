@@ -64,6 +64,9 @@ pub struct Settings {
     /// Skin scattering: light bleeding red past the terminator and into
     /// shadow edges on what looks like skin.
     pub skin: f32,
+    /// Light from the game's effects (fire, magic) on what is around them.
+    pub effect_light: bool,
+    pub effect_light_strength: f32,
     /// The enhanced water (reflections, refraction, light); off: the
     /// game's.
     pub water: bool,
@@ -148,6 +151,8 @@ impl Default for Settings {
             probe_strength: 1.0,
             probe_mix: 0.7,
             skin: 0.5,
+            effect_light: true,
+            effect_light_strength: 4.0,
             water: true,
             water_reflection: 1.0,
             water_refraction: 0.04,
