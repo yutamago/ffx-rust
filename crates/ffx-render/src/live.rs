@@ -336,6 +336,7 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             let mut io = crate::editor::Io {
                 scene: &scene,
                 game: enhanced.map_lights,
+                view: enhanced.camera(),
                 profiles: &profiles,
                 camera: r.world.camera,
                 glows: &glows,

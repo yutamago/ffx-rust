@@ -56,6 +56,7 @@
 //! | `gfxstats` | `ok frames <n> draws <n>`: draws in the last frame |
 //! | `overlay` | shows or hides the live renderer's overlay (as F10): `ok <shown>` |
 //! | `overlayclick <x> <y>` | a left click in the overlay, in back buffer pixels |
+//! | `overlaymouse <x> <y> [down\|up]` | moves the overlay's pointer there, pressing or releasing the left button |
 //! | `editor` | opens or closes the renderer's editor (as F11; shows the overlay) |
 //! | `quit` | ends the process |
 
@@ -1095,6 +1096,17 @@ fn command(line: &str) -> Result<String, String> {
         "overlay" => format!("ok {}", crate::gfx::live::toggle_overlay()),
         "editor" => {
             crate::gfx::live::toggle_editor();
+            "ok".into()
+        }
+        "overlaymouse" => {
+            let x: f32 = arg(1)?.parse().map_err(|e| format!("{e}"))?;
+            let y: f32 = arg(2)?.parse().map_err(|e| format!("{e}"))?;
+            let button = match words.get(3).copied() {
+                Some("down") => Some(true),
+                Some("up") => Some(false),
+                _ => None,
+            };
+            crate::gfx::live::mouse(x, y, button);
             "ok".into()
         }
         "overlayclick" => {

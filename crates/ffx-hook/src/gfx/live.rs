@@ -121,6 +121,15 @@ pub fn click(x: f32, y: f32) {
     });
 }
 
+/// Moves the pointer in the overlay, and presses or releases the left
+/// button there (for the test harness: drags take several frames).
+pub fn mouse(x: f32, y: f32, button: Option<bool>) {
+    push_input(ffx_gfx::Input::Move(x, y));
+    if let Some(pressed) = button {
+        push_input(ffx_gfx::Input::Button { button: 0, pressed });
+    }
+}
+
 /// Whether the overlay is showing.
 pub fn overlay_visible() -> bool {
     OVERLAY.load(Ordering::Acquire)

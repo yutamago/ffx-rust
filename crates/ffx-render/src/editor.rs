@@ -54,6 +54,9 @@ pub struct Io<'a> {
     pub scene: &'a str,
     /// The game's own lights this frame (what lights that follow it get).
     pub game: Option<rig::Game>,
+    /// The game's camera: view-projection (rows) and eye, for the
+    /// handles.
+    pub view: Option<(crate::enhanced::math::Mat, [f32; 3])>,
     /// The settings profiles' names.
     pub profiles: &'a [String],
     pub camera: Option<([f32; 3], [f32; 3])>,
@@ -90,6 +93,8 @@ pub struct Editor {
     images: Vec<String>,
     /// The scene and edits the renderer has (to apply only changes).
     applied: Option<(String, Edits)>,
+    /// The selected light's handles.
+    gizmo: crate::gizmo::Gizmo,
 }
 
 fn files_in(dir: &std::path::Path, ext: &str) -> Vec<String> {
@@ -167,6 +172,7 @@ impl Editor {
             files: Vec::new(),
             images: Vec::new(),
             applied: None,
+            gizmo: crate::gizmo::Gizmo::default(),
         }
     }
 
@@ -195,6 +201,13 @@ impl Editor {
             io.selected = None;
             return;
         }
+        // The lights' handles (in the Light tab): a click they take does
+        // not pick.
+        let click = if self.tab == Tab::Light && self.handles(root.ctx(), io) {
+            None
+        } else {
+            click
+        };
         if let Some(at) = click {
             io.pick = Some(at);
         }
@@ -318,6 +331,45 @@ impl Editor {
         }
     }
 
+    /// Draws and works the lights' handles; true when they take the
+    /// pointer.
+    fn handles(&mut self, ctx: &egui::Context, io: &Io) -> bool {
+        let (Some((view_proj, eye)), Some((_, look_at))) = (io.view, io.camera) else {
+            return false;
+        };
+        let view = crate::gizmo::View {
+            view_proj,
+            eye,
+            look_at,
+            screen: ctx.content_rect(),
+        };
+        let scene = io.scene.to_owned();
+        let editable = self.scope == Scope::Global
+            || self
+                .edits
+                .scenes
+                .get(&scene)
+                .is_some_and(|s| s.rig.is_some());
+        let lights = self.edits.rig_for(&scene).lights.clone();
+        let mut edit = self
+            .light
+            .filter(|_| editable)
+            .and_then(|k| lights.get(k).cloned());
+        let before = edit.clone();
+        let (clicked, taken) = self.gizmo.ui(ctx, &view, &lights, self.light, &mut edit);
+        if let Some(k) = clicked {
+            self.light = Some(k);
+        }
+        if edit != before
+            && let (Some(k), Some(l)) = (self.light, edit)
+            && let Some(rig) = Self::rig_mut(&mut self.edits, self.scope, &scene)
+            && let Some(slot) = rig.lights.get_mut(k)
+        {
+            *slot = l;
+        }
+        taken
+    }
+
     /// The rig changes go to: the default (made from the built-in one when
     /// missing), or the scene's own (none while it uses the default).
     fn rig_mut<'a>(edits: &'a mut Edits, scope: Scope, scene: &str) -> Option<&'a mut Rig> {
@@ -416,6 +468,16 @@ impl Editor {
                 .on_hover_text(
                     "Higher is darker: bright day 14–15, overcast 12, interiors 7–9, night 2–4",
                 );
+            });
+            ui.horizontal(|ui| {
+                ui.label("Handles");
+                use crate::gizmo::Mode as G;
+                ui.selectable_value(&mut self.gizmo.mode, G::Move, "Move")
+                    .on_hover_text("Arrows along the world axes (point and spot lights)");
+                ui.selectable_value(&mut self.gizmo.mode, G::Rotate, "Rotate")
+                    .on_hover_text("Rings about the world axes (directional and spot lights)");
+                ui.selectable_value(&mut self.gizmo.mode, G::Scale, "Scale")
+                    .on_hover_text("The circle of its reach (attenuation radius)");
             });
             ui.horizontal(|ui| {
                 ui.strong("Lights");

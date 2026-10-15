@@ -4708,6 +4708,13 @@ impl Enhanced {
         r.draw_frame(&rest, &Filter::default())
     }
 
+    /// The game's camera last frame (unjittered view-projection, rows) and
+    /// its eye.
+    #[must_use]
+    pub fn camera(&self) -> Option<(math::Mat, [f32; 3])> {
+        self.last_view_proj
+    }
+
     /// Whether FSR can run (loaded on first ask; why not is noted once).
     #[cfg_attr(not(windows), allow(clippy::unused_self))] // FSR is Windows-only
     fn fsr_ready(&mut self, device: &wgpu::Device) -> bool {

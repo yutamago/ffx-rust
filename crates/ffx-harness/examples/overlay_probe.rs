@@ -1,7 +1,8 @@
 //! `overlay_probe <out dir> <step>...`: loads save 1 (`FFX_PROBE_SAVE`: another)
 //! with the renderer and
 //! runs the steps, to try the overlay. Steps: `shot:<name>` (a PNG in the
-//! out dir), `wait:<frames>`, `click:<x>,<y>` (a left click in the
+//! out dir), `wait:<frames>`, `mouse:<x>,<y>[,down|up]` (the pointer
+//! there, the left button pressed or released), `click:<x>,<y>` (a left click in the
 //! overlay, back buffer pixels), `overlay` (F10), `editor` (F11),
 //! `cmd:<harness command>`,
 //! `set:<key>=<value>` (a line of `ffx-render.toml` in the game folder,
@@ -44,6 +45,17 @@ fn main() -> ffx_harness::Result<()> {
                 let (x, y) = arg.split_once(',').expect("x,y");
                 println!("{}", game.command(&format!("overlayclick {x} {y}"))?);
                 game.wait(10)?;
+            }
+            // mouse:x,y[,down|up]: the pointer there (a drag: down, moves,
+            // up, with waits between).
+            "mouse" => {
+                let parts: Vec<&str> = arg.split(',').collect();
+                let button = parts.get(2).copied().unwrap_or("");
+                println!(
+                    "{}",
+                    game.command(&format!("overlaymouse {} {} {button}", parts[0], parts[1]))?
+                );
+                game.wait(3)?;
             }
             "overlay" => {
                 println!("{}", game.command("overlay")?);

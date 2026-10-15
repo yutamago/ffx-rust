@@ -238,6 +238,12 @@ dynamic. The default lights are the game's: the original light and the
 map's key, fill and ambient light, which follow the game's direction and
 colour (at the game's brightness 1 the intensity is what is shown) until
 told not to. World units: 20 to the height of a character, about 1.75 m.
+Every point and spot light shows as an icon over the scene (a click
+selects it); the selected light has Blender-like handles (`gizmo.rs`,
+through the game's camera, drawn under the panels): Move, arrows along
+the world axes; Rotate, rings about them (directional lights at what the
+camera looks at); Scale, the circle of its reach. A drag on a handle does
+not pick.
 Then the lights found in glows (off, brighter or dimmer, or made into a
 light of one's own).
 
