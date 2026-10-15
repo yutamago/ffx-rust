@@ -490,8 +490,9 @@ struct Link {
     fence: Option<SharedFence>,
     /// Frames the renderer did not answer in time.
     misses: u32,
-    /// The overlay image to lay over this frame at Present.
-    overlay: Option<(u32, u32, Vec<u8>)>,
+    /// The overlay image laid over each frame at Present while it shows:
+    /// the renderer sends the parts that change.
+    overlay: Option<OverlayImage>,
     overlay_pass: Option<OverlayPass>,
     /// Whether the renderer answered this frame already.
     answered: bool,
@@ -1020,7 +1021,7 @@ pub unsafe fn present(s: &mut State, swap_chain: Ptr) {
             cmds: Vec::new(),
         }));
         let frame = link.frame;
-        link.overlay = receive(link, frame).and_then(|r| r.overlay);
+        let _ = receive(link, frame);
     } else if !OVERLAY.load(Ordering::Acquire) {
         // Input (the toggle) still goes out.
         let pending = INPUT.lock().is_ok_and(|q| !q.is_empty());
@@ -1029,11 +1030,12 @@ pub unsafe fn present(s: &mut State, swap_chain: Ptr) {
         }
         link.overlay = None;
     }
-    if let Some((w, h, pixels)) = link.overlay.take()
-        && OVERLAY.load(Ordering::Acquire)
+    if OVERLAY.load(Ordering::Acquire)
+        && let Some(mut image) = link.overlay.take()
     {
         // SAFETY: forwarded from the caller.
-        unsafe { draw_overlay(link, s, swap_chain, w, h, &pixels) };
+        unsafe { draw_overlay(link, s, swap_chain, &mut image) };
+        link.overlay = Some(image);
     }
     link.answered = false;
     link.clears.clear();
@@ -1110,7 +1112,6 @@ fn finish(link: &mut Link, s: &mut State, scene: Scene) {
         }
         return;
     };
-    link.overlay = reply.overlay;
     NO_AFTERIMAGE.store(reply.no_afterimage, Ordering::Relaxed);
     let data = reply.scene;
     if (reply.width, reply.height) != (w, h) {
@@ -1196,7 +1197,6 @@ struct Reply {
     /// The shared textures' generation and set, and the fence (its handle
     /// here and the value that means written).
     shared: Option<SharedAt>,
-    overlay: Option<(u32, u32, Vec<u8>)>,
     /// The renderer's settings turn the game's afterimage off.
     no_afterimage: bool,
 }
@@ -1277,19 +1277,28 @@ fn receive(link: &mut Link, frame: u32) -> Option<Reply> {
                 return None;
             }
         }
-        let mut overlay = None;
         if flags & 1 != 0 {
-            let mut size = [0u8; 8];
-            if !link.to_game.read(&mut size, &mut wait) {
+            // The screen's size, then the part that changed (x, y, width,
+            // height) and its pixels: kept from every answer, also those
+            // for frames no longer waited for.
+            let mut at = [0u8; 24];
+            if !link.to_game.read(&mut at, &mut wait) {
                 return None;
             }
-            let ow = u32::from_le_bytes(size[0..4].try_into().expect("4"));
-            let oh = u32::from_le_bytes(size[4..8].try_into().expect("4"));
-            let mut pixels = vec![0u8; (ow * oh * 4) as usize];
+            let v = |i: usize| u32::from_le_bytes(at[4 * i..4 * i + 4].try_into().expect("4"));
+            let screen = (v(0), v(1));
+            let area = (v(2), v(3), v(4), v(5));
+            let mut pixels = vec![0u8; (area.2 * area.3 * 4) as usize];
             if !link.to_game.read(&mut pixels, &mut wait) {
                 return None;
             }
-            overlay = Some((ow, oh, pixels));
+            let image = link
+                .overlay
+                .get_or_insert_with(|| OverlayImage::new(screen));
+            if image.size != screen {
+                *image = OverlayImage::new(screen);
+            }
+            image.put(area, &pixels);
         }
         if number == frame {
             OVERLAY_KEYS.store(flags & 16 != 0, Ordering::Release);
@@ -1299,10 +1308,46 @@ fn receive(link: &mut Link, frame: u32) -> Option<Reply> {
                 height: h,
                 scene,
                 shared,
-                overlay,
                 no_afterimage: flags & 8 != 0,
             });
         }
+    }
+}
+
+/// The overlay as the renderer last sent it, and what changed since the
+/// game's texture had it.
+struct OverlayImage {
+    size: (u32, u32),
+    pixels: Vec<u8>,
+    /// x0, y0, x1, y1.
+    dirty: Option<(u32, u32, u32, u32)>,
+}
+
+impl OverlayImage {
+    fn new(size: (u32, u32)) -> Self {
+        Self {
+            size,
+            pixels: vec![0; (size.0 * size.1 * 4) as usize],
+            dirty: Some((0, 0, size.0, size.1)),
+        }
+    }
+
+    /// `pixels` at `area` (x, y, width, height).
+    fn put(&mut self, area: (u32, u32, u32, u32), pixels: &[u8]) {
+        let (left, top, width, height) = area;
+        let (right, bottom) = (left + width, top + height);
+        if width == 0 || height == 0 || right > self.size.0 || bottom > self.size.1 {
+            return;
+        }
+        let row = (width * 4) as usize;
+        for r in 0..height as usize {
+            let at = ((top as usize + r) * self.size.0 as usize + left as usize) * 4;
+            self.pixels[at..at + row].copy_from_slice(&pixels[r * row..(r + 1) * row]);
+        }
+        self.dirty = Some(match self.dirty {
+            Some(d) => (d.0.min(left), d.1.min(top), d.2.max(right), d.3.max(bottom)),
+            None => (left, top, right, bottom),
+        });
     }
 }
 
@@ -1333,7 +1378,8 @@ float4 ps(float4 p : SV_Position) : SV_Target0 {
     clippy::many_single_char_names,
     clippy::cast_precision_loss
 )] // one pass set up, drawn and undone
-unsafe fn draw_overlay(link: &mut Link, s: &State, swap_chain: Ptr, w: u32, h: u32, pixels: &[u8]) {
+unsafe fn draw_overlay(link: &mut Link, s: &State, swap_chain: Ptr, image: &mut OverlayImage) {
+    let (w, h) = image.size;
     const IID_TEXTURE2D: [u8; 16] = [
         0xf2, 0xaa, 0x15, 0x6f, 0x08, 0xd2, 0x89, 0x4e, 0x9a, 0xb4, 0x48, 0x95, 0x35, 0xd3, 0x4f,
         0x9c,
@@ -1343,6 +1389,7 @@ unsafe fn draw_overlay(link: &mut Link, s: &State, swap_chain: Ptr, w: u32, h: u
     // SAFETY: the game's device, context and swap chain, original methods.
     unsafe {
         if link.overlay_pass.as_ref().is_none_or(|o| o.size != (w, h)) {
+            image.dirty = Some((0, 0, w, h));
             let Some(vs) = link.composite.as_ref().map(|c| c.vs).or_else(|| {
                 let code = compile_source(OVERLAY_HLSL, "vs", "vs_4_0")?;
                 type CreateShader =
@@ -1463,16 +1510,20 @@ unsafe fn draw_overlay(link: &mut Link, s: &State, swap_chain: Ptr, w: u32, h: u
             }};
         }
         use vt::context as k;
-        call!(
-            k::UPDATE_SUBRESOURCE,
-            unsafe extern "system" fn(Ptr, Ptr, u32, *const u32, *const u8, u32, u32),
-            o.texture,
-            0,
-            std::ptr::null(),
-            pixels.as_ptr(),
-            w * 4,
-            0
-        );
+        if let Some((x0, y0, x1, y1)) = image.dirty.take() {
+            // D3D11_BOX: left, top, front, right, bottom, back.
+            let area = [x0, y0, 0, x1, y1, 1];
+            call!(
+                k::UPDATE_SUBRESOURCE,
+                unsafe extern "system" fn(Ptr, Ptr, u32, *const u32, *const u8, u32, u32),
+                o.texture,
+                0,
+                area.as_ptr(),
+                image.pixels[((y0 * w + x0) * 4) as usize..].as_ptr(),
+                w * 4,
+                0
+            );
+        }
         let rtvs = [o.target.1 as usize];
         call!(
             k::OM_SET_RENDER_TARGETS,

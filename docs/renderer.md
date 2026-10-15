@@ -132,7 +132,13 @@ Passes, in order:
     first); its output at the game's size is resolved. Without its DLLs,
     or off Direct3D 12, TAA stands in.
 12. **Resolve** into the game's targets at the game's size (the enhanced
-    passes run at `render_scale`), with sharpening.
+    passes run at `render_scale`), with sharpening. Where the passes run
+    at another size (FSR, `render_scale`) or the editor outlines a pick,
+    the scene's depth and draw ids are drawn once more at the game's size
+    without jitter (`fs_edge`): the depth the game's later draws test
+    against (save spheres, effects) then follows the upscaled image's
+    edges, and the editor's dashed outline is drawn at the screen's
+    resolution, over the finished image.
 13. **Effect light**: the game's additive effect draws (fire, magic) drawn
     once more onto black, blurred wide, light the surfaces around them.
 
@@ -158,7 +164,11 @@ use of it (fades, distortion) is unchanged.
 ## Settings and the overlay
 
 F10 shows the overlay in the game: every setting, live, with the frame
-rate (figures over half a second, in fixed widths). The mouse is the
+rate (figures over half a second, in fixed widths). The overlay goes to
+the game as the part of the screen that changed (what the panels cover
+now and covered before), read back from the GPU a frame late, and not at
+all while it stays the same; the hook keeps the whole image and lays it
+over each frame. The mouse is the
 overlay's while it shows; keys reach the game unless the pointer is over
 the panel or a text field has focus (the renderer's answer carries flag
 16, and the hook's DirectInput wrap then reads the keyboard as released).
@@ -178,7 +188,11 @@ that differs from it has a ↺ button that resets just that one. Profiles
 can be made (factory defaults), duplicated, renamed and deleted; "Copy"
 puts the saved profile on the clipboard as TOML under a
 `# FFX renderer profile: <name>` line, "Paste" makes a profile from such
-text. Debug views show one input of the lighting (shadow, occlusion,
+text. The second line has the renderer's CPU and GPU time per frame (GPU
+timestamps between the passes, a few frames old; "GPU time per pass"
+lists them; where the GPU cannot write timestamps it shows "?"); the
+game's own drawing and the wait for the screen are not in it.
+Debug views show one input of the lighting (shadow, occlusion,
 normals, albedo, baked light, cascades, skin, probe light).
 
 ## Materials

@@ -1,5 +1,5 @@
 //! `ffx-render replay <capture.ffxgfx> <out dir> [--until N] [--target ID]
-//! [--enhanced] [--game DIR] [--settings FILE] [--set key=value] [--materials DIR]
+//! [--enhanced] [--game DIR] [--settings FILE] [--set key=value] [--pick x,y [--outline]] [--materials DIR]
 //! [--export-materials DIR]`: draws a captured frame and writes every
 //! 8-bit colour render target it drew into as `<out dir>/<view id>.png`.
 
@@ -61,6 +61,8 @@ fn replay(args: &[String]) -> Result<()> {
     let mut glow = false;
     // A pick as the editor makes it (0–1 of the screen), after the frame.
     let mut pick: Option<(f32, f32)> = None;
+    // With a pick: the frame again with the picked texture outlined.
+    let mut outline = false;
     let mut game: Option<PathBuf> = None;
     let mut sets: Vec<String> = Vec::new();
     let mut file: Option<String> = None;
@@ -75,6 +77,7 @@ fn replay(args: &[String]) -> Result<()> {
             }
             "--enhanced" => enhanced = true,
             "--glow" => glow = true,
+            "--outline" => outline = true,
             "--pick" => {
                 let v = args.get(i + 1).context("x,y")?;
                 let (x, y) = v.split_once(',').context("x,y")?;
@@ -167,6 +170,10 @@ fn replay(args: &[String]) -> Result<()> {
                 e.render_until(&mut r, &f, filter.until)?;
                 if pick.is_some() {
                     println!("picked: {:?}", e.picked);
+                    if outline {
+                        e.selected = e.picked.as_ref().map(|p| p.texture);
+                        e.render_until(&mut r, &f, filter.until)?;
+                    }
                 }
                 if glow {
                     let fx = ffx_render::enhanced::Enhanced::glowing_effects(&r, &f);
@@ -193,11 +200,21 @@ fn replay(args: &[String]) -> Result<()> {
             (_, m) => r.apply(m, &filter)?,
         }
     }
-    if let Some(e) = &e {
+    if let Some(e) = &mut e {
         println!(
             "enhanced: {} items, {} draws with the game's shaders",
             e.last_items, e.last_other
         );
+        r.device.poll(wgpu::PollType::wait_indefinitely())?;
+        if let Some(t) = e.timer.as_mut() {
+            t.poll(&r.device);
+            let passes: Vec<String> = t
+                .last
+                .iter()
+                .map(|(n, ms)| format!("{n} {ms:.2}"))
+                .collect();
+            println!("GPU {:.2} ms: {}", t.total, passes.join(", "));
+        }
         for (n, c) in &e.notes {
             println!("note: {c} x {n}");
         }

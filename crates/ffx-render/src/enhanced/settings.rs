@@ -80,7 +80,8 @@ pub struct Settings {
     /// cut-out surfaces) are on scenery.
     pub character_shadows: f32,
     /// Light probes: characters take their indirect light from the
-    /// scenery around them (its baked light, seen from where they stand).
+    /// scenery around them (its baked light, seen from where they stand),
+    /// and so does scenery lit dynamically (`baked_light` below 1).
     pub probes: bool,
     pub probe_strength: f32,
     /// How much the probe light replaces the characters' ambient.

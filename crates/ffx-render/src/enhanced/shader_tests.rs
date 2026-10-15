@@ -53,6 +53,7 @@ fn gbuffer_variants() {
             uv: bits & 8 != 0,
             alpha_test: bits & 16 != 0,
             shadow: false,
+            edge: false,
         };
         let present: Vec<u32> = (0..7).collect();
         validate(&format!("gbuffer {v:?}"), &gbuffer_source(v, &present));

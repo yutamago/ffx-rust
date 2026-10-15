@@ -8,7 +8,8 @@ struct Resolve {
     // Rows of the view matrix, for the game's view-space normals.
     view: array<vec4<f32>, 4>,
     // x: the scene's clear alpha (where nothing was drawn), y: sharpening,
-    // z: the editor highlights draws (outlined, by the ids' top bit)
+    // z: the editor highlights draws (outlined, by the ids' top bit),
+    // w: depth and ids at the game's size (bindings 6 and 7)
     clear: vec4<f32>,
 };
 
@@ -18,10 +19,18 @@ struct Resolve {
 @group(0) @binding(3) var normal_tex: texture_2d<f32>;
 @group(0) @binding(4) var depth_tex: texture_depth_2d;
 @group(0) @binding(5) var id_tex: texture_2d<u32>;
+// At the game's size, drawn without jitter (else the same as 4 and 5).
+@group(0) @binding(6) var full_depth_tex: texture_depth_2d;
+@group(0) @binding(7) var full_id_tex: texture_2d<u32>;
 
 fn highlighted(q: vec2<i32>) -> bool {
+    if (res.clear.w > 0.5) {
+        let size = vec2<i32>(textureDimensions(full_id_tex));
+        return (textureLoad(full_id_tex, clamp(q, vec2<i32>(0), size - 1), 0).r & 0x80000000u) != 0u;
+    }
     let size = vec2<i32>(textureDimensions(id_tex));
-    return (textureLoad(id_tex, clamp(q, vec2<i32>(0), size - 1), 0).r & 0x80000000u) != 0u;
+    let p = vec2<i32>(floor(vec2<f32>(q) * res.params.x));
+    return (textureLoad(id_tex, clamp(p, vec2<i32>(0), size - 1), 0).r & 0x80000000u) != 0u;
 }
 
 struct VsOut {
@@ -165,15 +174,16 @@ fn fs(in: VsOut) -> Out {
     var out: Out;
     let ipx = vec2<i32>(floor(in.pos.xy * scale));
     if (res.clear.z > 0.5) {
-        // What the editor picked: tinted, with an outline two pixels wide.
-        let on = highlighted(ipx);
-        let r = i32(max(scale * 2.0, 1.0));
-        let edge = on != highlighted(ipx + vec2<i32>(r, 0)) || on != highlighted(ipx - vec2<i32>(r, 0))
-            || on != highlighted(ipx + vec2<i32>(0, r)) || on != highlighted(ipx - vec2<i32>(0, r));
-        if (edge) {
+        // What the editor picked: a dashed outline two screen pixels
+        // wide, on top of the finished image (the surface itself as it is).
+        let q = vec2<i32>(in.pos.xy);
+        let on = highlighted(q);
+        let across = on != highlighted(q + vec2<i32>(2, 0)) || on != highlighted(q - vec2<i32>(2, 0));
+        let down = on != highlighted(q + vec2<i32>(0, 2)) || on != highlighted(q - vec2<i32>(0, 2));
+        // Dashes along the edge: by y where it runs up and down, else by x.
+        let along = select(q.x, q.y, across && !down);
+        if ((across || down) && (along / 6) % 2 == 0) {
             c = vec3<f32>(1.0, 0.8, 0.2);
-        } else if (on) {
-            c = mix(c, vec3<f32>(1.0, 0.8, 0.2), 0.12);
         }
     }
     let nm = textureLoad(normal_tex, ipx, 0);
@@ -186,6 +196,10 @@ fn fs(in: VsOut) -> Out {
     out.color = vec4<f32>(c, alpha);
     let vn = vec3<f32>(dot(res.view[0].xyz, n), dot(res.view[1].xyz, n), dot(res.view[2].xyz, n));
     out.normal = vec4<f32>(normalize(vn), 1.0);
-    out.depth = textureLoad(depth_tex, ipx, 0);
+    if (res.clear.w > 0.5) {
+        out.depth = textureLoad(full_depth_tex, vec2<i32>(in.pos.xy), 0);
+    } else {
+        out.depth = textureLoad(depth_tex, ipx, 0);
+    }
     return out;
 }

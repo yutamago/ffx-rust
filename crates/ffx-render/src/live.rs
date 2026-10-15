@@ -309,12 +309,19 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
         let t_handoff = t1.elapsed();
         if !overlay.visible {
             enhanced.selected = None;
+            overlay.hidden();
         }
         // The overlay, over the whole window.
         let overlay_image = if overlay.visible && screen.0 > 0 {
             let stats = crate::overlay::Stats {
                 frame_ms: frame_time.as_secs_f32() * 1000.0,
                 draw_ms: t_draw.as_secs_f32() * 1000.0,
+                gpu: enhanced
+                    .timer
+                    .as_ref()
+                    .map(|t| t.last.clone())
+                    .unwrap_or_default(),
+                gpu_ms: enhanced.timer.as_ref().map_or(0.0, |t| t.total),
                 enhanced_items: enhanced.last_items,
                 other_draws: enhanced.last_other,
             };
@@ -345,7 +352,7 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
                 stats,
                 &mut io,
             ) {
-                Ok(img) => Some(img),
+                Ok(img) => img,
                 Err(e) => {
                     log(&format!("overlay: {e}"));
                     None
@@ -363,7 +370,8 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
         // is in shared textures, 4: with a fence, 8: the game's afterimage
         // off, 16: the overlay takes the keyboard, 32: send the glowing
         // effects drawn after the scene), the scene's colour, normal and depth (or the shared
-        // generation and set), then the overlay's size and pixels.
+        // generation and set), then the screen's size, the part of the
+        // overlay that changed (x, y, width, height) and its pixels.
         let (w, h, mut data) = match shared {
             Some(s) => {
                 let mut d = s.generation.to_le_bytes().to_vec();
@@ -398,7 +406,7 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
                 0
             }
             | if enhanced.settings.afterimage { 0 } else { 8 }
-            | if overlay_image.is_some() && overlay.wants_keys {
+            | if overlay.visible && overlay.wants_keys {
                 16
             } else {
                 0
@@ -410,10 +418,11 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             };
         out.extend_from_slice(&flags.to_le_bytes());
         out.extend_from_slice(&data);
-        if let Some(img) = &overlay_image {
-            out.extend_from_slice(&screen.0.to_le_bytes());
-            out.extend_from_slice(&screen.1.to_le_bytes());
-            out.extend_from_slice(img);
+        if let Some((x, y, w, h, pixels)) = &overlay_image {
+            for v in [screen.0, screen.1, *x, *y, *w, *h] {
+                out.extend_from_slice(&v.to_le_bytes());
+            }
+            out.extend_from_slice(pixels);
         }
         to_game.write(&out, std::thread::yield_now);
         if frames.is_multiple_of(120) {

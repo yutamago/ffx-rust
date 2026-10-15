@@ -40,10 +40,15 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
 ";
 
 /// Frame statistics the overlay shows.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Stats {
     pub frame_ms: f32,
+    /// The renderer's CPU time for the frame.
     pub draw_ms: f32,
+    /// The GPU's, per pass (a few frames old), and the whole; empty where
+    /// the GPU cannot tell.
+    pub gpu: Vec<(&'static str, f32)>,
+    pub gpu_ms: f32,
     pub enhanced_items: usize,
     pub other_draws: usize,
 }
@@ -56,9 +61,38 @@ struct Painter {
     /// egui's textures (and ours, without a texture to write: previews).
     textures: HashMap<egui::TextureId, (Option<wgpu::Texture>, wgpu::BindGroup)>,
     target: Option<((u32, u32), wgpu::Texture, wgpu::TextureView)>,
+    /// A part of the image on its way back from the GPU.
+    pending: Option<Pending>,
+    /// What the last painted image showed (a hash of its meshes) and the
+    /// part of the screen it covered.
+    last: Option<(u64, (u32, u32, u32, u32))>,
+    /// Paint all of it next time (a texture changed, or the game has no
+    /// image yet).
+    pub dirty: bool,
 }
 
+/// A part of the overlay image being read back.
+struct Pending {
+    buffer: wgpu::Buffer,
+    /// x, y, width, height.
+    area: (u32, u32, u32, u32),
+    pitch: u32,
+    ready: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// A part of the overlay image: x, y, width, height and its pixels
+/// (premultiplied RGBA8, rows packed).
+pub type Update = (u32, u32, u32, u32, Vec<u8>);
+
 impl Painter {
+    /// Paint again next time though the meshes are the same (a texture
+    /// they show changed).
+    fn repaint(&mut self) {
+        if let Some(l) = self.last.as_mut() {
+            l.0 ^= 1;
+        }
+    }
+
     #[allow(clippy::too_many_lines)] // one pipeline description
     fn new(device: &wgpu::Device) -> Self {
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -162,6 +196,9 @@ impl Painter {
             sampler,
             textures: HashMap::new(),
             target: None,
+            pending: None,
+            last: None,
+            dirty: true,
         }
     }
 
@@ -172,6 +209,7 @@ impl Painter {
         id: egui::TextureId,
         view: Option<&wgpu::TextureView>,
     ) {
+        self.repaint();
         let Some(view) = view else {
             self.textures.remove(&id);
             return;
@@ -200,6 +238,7 @@ impl Painter {
         id: egui::TextureId,
         delta: &egui::epaint::ImageDelta,
     ) {
+        self.repaint();
         let egui::ImageData::Color(image) = &delta.image;
         let [w, h] = image.size;
         let pixels: Vec<u8> = image
@@ -277,7 +316,37 @@ impl Painter {
         size: (u32, u32),
         primitives: &[egui::ClippedPrimitive],
         ppp: f32,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<Option<Update>> {
+        use std::hash::{Hash, Hasher};
+        // What came back from the GPU since (a frame late: no wait for the
+        // frame's other work).
+        let _ = device.poll(wgpu::PollType::Poll);
+        let mut out = None;
+        if self
+            .pending
+            .as_ref()
+            .is_some_and(|p| p.ready.load(std::sync::atomic::Ordering::Acquire))
+        {
+            let p = self.pending.take().expect("checked");
+            let (x, y, w, h) = p.area;
+            {
+                let data = p
+                    .buffer
+                    .slice(..)
+                    .get_mapped_range()
+                    .map_err(|e| anyhow!("{e:?}"))?;
+                let mut pixels = Vec::with_capacity((w * h * 4) as usize);
+                for r in 0..h as usize {
+                    let at = r * p.pitch as usize;
+                    pixels.extend_from_slice(&data[at..at + 4 * w as usize]);
+                }
+                out = Some((x, y, w, h, pixels));
+            }
+            p.buffer.unmap();
+        }
+        if self.pending.is_some() {
+            return Ok(out);
+        }
         if self.target.as_ref().is_none_or(|t| t.0 != size) {
             let texture = device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("overlay"),
@@ -316,6 +385,57 @@ impl Painter {
             indices.extend(mesh.indices.iter().map(|i| i + base));
             draws.push((first..indices.len() as u32, mesh.texture_id, p.clip_rect));
         }
+        // Unchanged: nothing to paint or send.
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        size.hash(&mut hasher);
+        vertices.hash(&mut hasher);
+        indices.hash(&mut hasher);
+        for (range, tex, clip) in &draws {
+            range.hash(&mut hasher);
+            tex.hash(&mut hasher);
+            for f in [clip.min.x, clip.min.y, clip.max.x, clip.max.y] {
+                f.to_bits().hash(&mut hasher);
+            }
+        }
+        let hash = hasher.finish();
+        if !self.dirty && self.last.is_some_and(|l| l.0 == hash) {
+            return Ok(out);
+        }
+        // The part to send: what the panels cover now and covered before
+        // (to clear it), all of it when the game has nothing yet.
+        let pixel = |clip: &egui::Rect| {
+            (
+                (clip.min.x * ppp).clamp(0.0, size.0 as f32) as u32,
+                (clip.min.y * ppp).clamp(0.0, size.1 as f32) as u32,
+                (clip.max.x * ppp).ceil().clamp(0.0, size.0 as f32) as u32,
+                (clip.max.y * ppp).ceil().clamp(0.0, size.1 as f32) as u32,
+            )
+        };
+        let union = |a: (u32, u32, u32, u32), b: (u32, u32, u32, u32)| {
+            if a.2 <= a.0 || a.3 <= a.1 {
+                b
+            } else if b.2 <= b.0 || b.3 <= b.1 {
+                a
+            } else {
+                (a.0.min(b.0), a.1.min(b.1), a.2.max(b.2), a.3.max(b.3))
+            }
+        };
+        let covered = draws
+            .iter()
+            .filter(|d| !d.0.is_empty())
+            .map(|d| pixel(&d.2))
+            .fold((0, 0, 0, 0), union);
+        let area = if self.dirty {
+            (0, 0, size.0, size.1)
+        } else {
+            union(covered, self.last.map_or((0, 0, 0, 0), |l| l.1))
+        };
+        self.last = Some((hash, covered));
+        self.dirty = false;
+        if area.2 <= area.0 || area.3 <= area.1 {
+            return Ok(out);
+        }
+        let area = (area.0, area.1, area.2 - area.0, area.3 - area.1);
         let vbuf = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size: (vertices.len() as u64).max(20).next_multiple_of(4),
@@ -351,10 +471,10 @@ impl Painter {
                 resource: uniforms.as_entire_binding(),
             }],
         });
-        let pitch = (size.0 * 4).next_multiple_of(256);
+        let pitch = (area.2 * 4).next_multiple_of(256);
         let readback = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: u64::from(pitch * size.1),
+            size: u64::from(pitch * area.3),
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
@@ -397,32 +517,44 @@ impl Painter {
             }
         }
         enc.copy_texture_to_buffer(
-            texture.as_image_copy(),
+            wgpu::TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: area.0,
+                    y: area.1,
+                    z: 0,
+                },
+                aspect: wgpu::TextureAspect::All,
+            },
             wgpu::TexelCopyBufferInfo {
                 buffer: &readback,
                 layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(pitch),
-                    rows_per_image: Some(size.1),
+                    rows_per_image: Some(area.3),
                 },
             },
             wgpu::Extent3d {
-                width: size.0,
-                height: size.1,
+                width: area.2,
+                height: area.3,
                 depth_or_array_layers: 1,
             },
         );
         queue.submit([enc.finish()]);
-        let slice = readback.slice(..);
-        slice.map_async(wgpu::MapMode::Read, |_| {});
-        device.poll(wgpu::PollType::wait_indefinitely())?;
-        let data = slice.get_mapped_range().map_err(|e| anyhow!("{e:?}"))?;
-        let mut out = Vec::with_capacity((size.0 * size.1 * 4) as usize);
-        for y in 0..size.1 as usize {
-            out.extend_from_slice(
-                &data[y * pitch as usize..y * pitch as usize + 4 * size.0 as usize],
-            );
-        }
+        let ready = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = ready.clone();
+        readback.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+            if r.is_ok() {
+                flag.store(true, std::sync::atomic::Ordering::Release);
+            }
+        });
+        self.pending = Some(Pending {
+            buffer: readback,
+            area,
+            pitch,
+            ready,
+        });
         Ok(out)
     }
 }
@@ -489,6 +621,9 @@ pub struct Overlay {
     times_from: std::time::Instant,
     /// Frames per second, mean and longest frame time (ms) shown.
     shown: (f32, f32, f32),
+    /// The frame figures shown, renewed with those (so the image stays the
+    /// same in between and need not be sent).
+    stats_shown: Option<Stats>,
     pub editor: crate::editor::Editor,
     /// Whether the picked texture's preview is registered.
     preview: bool,
@@ -515,6 +650,7 @@ impl Overlay {
             times: Vec::new(),
             times_from: std::time::Instant::now(),
             shown: (0.0, 0.0, 0.0),
+            stats_shown: None,
             editor: crate::editor::Editor::new(
                 file.parent().unwrap_or_else(|| std::path::Path::new(".")),
             ),
@@ -592,12 +728,21 @@ impl Overlay {
             let mean = self.times.iter().sum::<f32>() / self.times.len() as f32;
             let worst = self.times.iter().copied().fold(0.0, f32::max);
             self.shown = (1000.0 / mean, mean, worst);
+            self.stats_shown = None;
             self.times.clear();
             self.times_from = std::time::Instant::now();
         }
     }
 
-    /// Runs the panel over a `size` screen; returns the overlay image.
+    /// The overlay is hidden: the game drops its image, so all of it goes
+    /// when it shows again.
+    pub fn hidden(&mut self) {
+        self.painter.dirty = true;
+        self.painter.pending = None;
+    }
+
+    /// Runs the panel over a `size` screen; returns the part of the image
+    /// that changed (a frame late), if any.
     ///
     /// # Errors
     /// When painting fails.
@@ -609,7 +754,8 @@ impl Overlay {
         settings: &mut Settings,
         stats: Stats,
         io: &mut crate::editor::Io,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<Option<Update>> {
+        let stats = self.stats_shown.get_or_insert(stats).clone();
         let ppp = (size.1 as f32 / 720.0).max(1.0);
         let points = egui::vec2(size.0 as f32 / ppp, size.1 as f32 / ppp);
         let input = egui::RawInput {
@@ -999,13 +1145,31 @@ fn panel(
                 ))
                 .monospace(),
             );
+            let gpu = if head.stats.gpu.is_empty() {
+                "  ?".to_owned()
+            } else {
+                format!("{:5.1}", head.stats.gpu_ms)
+            };
             ui.label(
                 egui::RichText::new(format!(
-                    "draw {:5.1} ms, {:4} enhanced, {:4} original",
+                    "CPU {:5.1} ms, GPU {gpu} ms, {:4} enhanced, {:4} original",
                     head.stats.draw_ms, head.stats.enhanced_items, head.stats.other_draws
                 ))
                 .monospace(),
             );
+            if !head.stats.gpu.is_empty() {
+                egui::CollapsingHeader::new("GPU time per pass")
+                    .id_salt("gpu passes")
+                    .show(ui, |ui| {
+                        egui::Grid::new("gpu grid").num_columns(2).show(ui, |ui| {
+                            for (name, ms) in &head.stats.gpu {
+                                ui.label(*name);
+                                ui.label(egui::RichText::new(format!("{ms:5.1} ms")).monospace());
+                                ui.end_row();
+                            }
+                        });
+                    });
+            }
             ui.horizontal(|ui| {
                 ui.label("F10 hides the overlay.");
                 ui.toggle_value(editor, "Editor (F11)");
@@ -1085,7 +1249,7 @@ fn settings_ui(ui: &mut egui::Ui, e: &mut Ed) {
         check(
             ui,
             f!(e.probes),
-            "Characters lit by the scenery around them",
+            "Light probes: characters, and the bounce on dynamic scenery",
         );
         slider(ui, f!(e.probe_strength), "probe light", 0.0..=3.0);
         slider(ui, f!(e.probe_mix), "probe share", 0.0..=1.0);

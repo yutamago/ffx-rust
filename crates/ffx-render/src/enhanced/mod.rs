@@ -17,6 +17,7 @@ mod post;
 mod settings;
 #[cfg(test)]
 mod shader_tests;
+pub mod timer;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -241,6 +242,9 @@ struct Variant {
     uv: bool,
     alpha_test: bool,
     shadow: bool,
+    /// Depth and draw id only, at the game's resolution (the depth handed
+    /// back and the editor's outline).
+    edge: bool,
 }
 
 /// A vertex buffer slot: stride (or slot), step per instance, attributes
@@ -565,6 +569,10 @@ pub struct Enhanced {
     last_render: Option<std::time::Instant>,
     /// Images the editor puts in place of textures (`Material::texture`).
     pub texture_dir: Option<std::path::PathBuf>,
+    /// GPU time per pass (where the GPU can tell), made on the first
+    /// frame.
+    pub timer: Option<timer::Timer>,
+    timer_tried: bool,
     replacements: HashMap<String, Option<wgpu::TextureView>>,
     /// Where to write each generated material map and its colour texture
     /// (`<hash>.png`, `<hash>_albedo.png`), for editing into a pack.
@@ -584,6 +592,9 @@ pub struct Enhanced {
         wgpu::TextureFormat,
     )>,
     targets: Option<Targets>,
+    /// Depth and draw ids at the game's size, where the passes run at
+    /// another (its size, depth, ids).
+    edge: Option<((u32, u32), wgpu::TextureView, wgpu::TextureView)>,
     /// Shadow cascades: size, the array for sampling, one view per layer.
     /// Size; the cascades with every caster and with those rays do not
     /// cover; the six layers (three each).
@@ -697,6 +708,37 @@ fn fullscreen_entry(
         multiview_mask: None,
         cache: None,
     })
+}
+
+/// The depth and draw id targets at the game's size.
+fn edge_targets(
+    device: &wgpu::Device,
+    size: (u32, u32),
+) -> ((u32, u32), wgpu::TextureView, wgpu::TextureView) {
+    let make = |format: wgpu::TextureFormat, label: &str| {
+        device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some(label),
+                size: wgpu::Extent3d {
+                    width: size.0,
+                    height: size.1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            })
+            .create_view(&wgpu::TextureViewDescriptor::default())
+    };
+    (
+        size,
+        make(wgpu::TextureFormat::Depth32Float, "full-size depth"),
+        make(wgpu::TextureFormat::R32Uint, "full-size ids"),
+    )
 }
 
 fn layout_entries(
@@ -1521,6 +1563,8 @@ impl Enhanced {
             materials: HashMap::new(),
             material_dir: None,
             texture_dir: None,
+            timer: None,
+            timer_tried: false,
             #[cfg(windows)]
             fsr: None,
             fsr_tried: false,
@@ -1533,6 +1577,7 @@ impl Enhanced {
             flat_material: one_pixel(device, queue, [128, 128, 179, 255]),
             output: None,
             targets: None,
+            edge: None,
             shadow: None,
             white: one_pixel(device, queue, [255; 4]),
             black: one_pixel(device, queue, [0, 0, 0, 255]),
@@ -1683,7 +1728,13 @@ impl Enhanced {
         ];
         let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some(if v.shadow { "shadow" } else { "gbuffer" }),
+            label: Some(if v.shadow {
+                "shadow"
+            } else if v.edge {
+                "edge"
+            } else {
+                "gbuffer"
+            }),
             layout: Some(&self.gbuffer_layout),
             vertex: wgpu::VertexState {
                 module: &module,
@@ -1715,9 +1766,21 @@ impl Enhanced {
             multisample: wgpu::MultisampleState::default(),
             fragment: Some(wgpu::FragmentState {
                 module: &module,
-                entry_point: Some(if v.shadow { "fs_shadow" } else { "fs" }),
+                entry_point: Some(if v.shadow {
+                    "fs_shadow"
+                } else if v.edge {
+                    "fs_edge"
+                } else {
+                    "fs"
+                }),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
-                targets: if v.shadow { &[] } else { &gtargets },
+                targets: if v.shadow {
+                    &[]
+                } else if v.edge {
+                    &gtargets[5..]
+                } else {
+                    &gtargets
+                },
             }),
             multiview_mask: None,
             cache: None,
@@ -2475,6 +2538,7 @@ impl Enhanced {
             uv: have[3] && ps.texture_slots.contains_key("TextureSampler"),
             alpha_test: ps.used.contains("AlphaThreshold"),
             shadow: false,
+            edge: false,
         };
         if !variant.cloth {
             // Without the cloth path, COLOR1 is not read.
@@ -2915,6 +2979,16 @@ impl Enhanced {
         put_rows(&mut cam, &prev_view_proj);
         assert_eq!(cam.len(), CAMERA_SIZE, "camera uniform layout");
         let cam_at = alloc(&cam, CAMERA_SIZE);
+        // Depth and ids at the game's size: where the passes run at another
+        // size (the depth the game's later draws test against must match
+        // the upscaled image), or for the editor's outline; without jitter.
+        let edge_on = self.settings.enabled && (internal != size || self.selected.is_some());
+        let edge_cam_at = {
+            let mut c = Vec::new();
+            put_rows(&mut c, &unjittered);
+            c.extend_from_slice(&cam[c.len()..]);
+            alloc(&c, CAMERA_SIZE)
+        };
         // The key light: the map's, or the settings'.
         let (sun_dir, sun_color, sun_intensity, fill, sky) =
             match (self.settings.map_lights, self.map_lights) {
@@ -3381,7 +3455,7 @@ impl Enhanced {
                 clear_alpha,
                 s.sharpen.clamp(0.0, 2.0),
                 if self.selected.is_some() { 1.0 } else { 0.0 },
-                0.0,
+                if edge_on { 1.0 } else { 0.0 },
             ],
         );
         assert_eq!(resolve.len(), RESOLVE_SIZE, "resolve uniform layout");
@@ -3446,6 +3520,14 @@ impl Enhanced {
                 size: wgpu::BufferSize::new(size as u64),
             })
         };
+        let edge_cam_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &self.camera_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: binding(edge_cam_at, CAMERA_SIZE),
+            }],
+        });
         let cam_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &self.camera_layout,
@@ -3481,6 +3563,18 @@ impl Enhanced {
                 ..i.key.clone()
             };
             let shadow_pipe = self.pipeline(&device, &shadow_key);
+            let edge_key = GKey {
+                variant: Variant {
+                    edge: true,
+                    ..i.key.variant
+                },
+                ..i.key.clone()
+            };
+            let edge_pipe = if edge_on {
+                self.pipeline(&device, &edge_key)
+            } else {
+                None
+            };
             let material = i
                 .albedo
                 .and_then(|(v, _)| r.views.get(&v).map(|vv| vv.resource))
@@ -3541,7 +3635,7 @@ impl Enhanced {
                     },
                 ],
             });
-            prepared.push((pipe, shadow_pipe, group, i));
+            prepared.push((pipe, shadow_pipe, group, i, edge_pipe));
         }
         let mut water_prepared = Vec::new();
         for (w, at) in waters.iter().zip(&water_at) {
@@ -3616,7 +3710,7 @@ impl Enhanced {
         // vertex, stride, index source and first index.
         let mut fresh: Vec<FreshBlas> = Vec::new();
         if traced_on {
-            for (k, (_, _, _, i)) in prepared.iter().enumerate() {
+            for (k, (_, _, _, i, _)) in prepared.iter().enumerate() {
                 let Some(found) = blas_input(r, i, gbuf.size()) else {
                     continue;
                 };
@@ -3661,10 +3755,27 @@ impl Enhanced {
                 fresh.push((blas, size, vsrc, first_vertex, stride, isrc));
             }
         }
+        if !std::mem::replace(&mut self.timer_tried, true) {
+            self.timer = timer::Timer::new(&device, &queue);
+        }
+        if let Some(tm) = self.timer.as_mut() {
+            tm.poll(&device);
+        }
         let t = self.targets.as_ref().expect("made above");
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("enhanced"),
         });
+        if let Some(tm) = self.timer.as_mut() {
+            tm.begin(&mut enc);
+        }
+        // The pass before this point ends: its GPU time.
+        macro_rules! mark {
+            ($name:expr) => {
+                if let Some(tm) = self.timer.as_mut() {
+                    tm.mark(&mut enc, $name);
+                }
+            };
+        }
         let needed = (instances.len() as u32).max(1);
         if self.rt && self.tlas.as_ref().is_none_or(|t| t.0 < needed) {
             let capacity = needed.next_power_of_two().max(64);
@@ -3799,6 +3910,7 @@ impl Enhanced {
         let record = |rp: &mut wgpu::RenderPass, i: &Item| -> bool {
             record_parts(rp, &i.vertex, i.index, &i.draw)
         };
+        mark!("rays");
         // Shadow cascades.
         if self.settings.shadows {
             let sets = if traced_on { 6 } else { 3 };
@@ -3821,7 +3933,7 @@ impl Enhanced {
                     multiview_mask: None,
                 });
                 rp.set_bind_group(0, group, &[]);
-                for (k, (_, sp, igroup, i)) in prepared.iter().enumerate() {
+                for (k, (_, sp, igroup, i, _)) in prepared.iter().enumerate() {
                     if rest_only && traced[k] {
                         continue;
                     }
@@ -3833,6 +3945,7 @@ impl Enhanced {
                 }
             }
         }
+        mark!("shadows");
         // G-buffer.
         {
             let clear = |v| attachment(v, wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT));
@@ -3860,11 +3973,46 @@ impl Enhanced {
             });
             rp.set_viewport(0.0, 0.0, internal.0 as f32, internal.1 as f32, 0.0, 1.0);
             rp.set_bind_group(0, &cam_group, &[]);
-            for (p, _, group, i) in &prepared {
+            for (p, _, group, i, _) in &prepared {
                 rp.set_pipeline(p);
                 rp.set_bind_group(1, group, &[]);
                 record(&mut rp, i);
             }
+        }
+        mark!("g-buffer");
+        if edge_on {
+            if self.edge.as_ref().is_none_or(|e| e.0 != size) {
+                self.edge = Some(edge_targets(&device, size));
+            }
+            let (_, edge_depth, edge_id) = self.edge.as_ref().expect("made above");
+            let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("edge"),
+                color_attachments: &[attachment(
+                    edge_id,
+                    wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                )],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: edge_depth,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            rp.set_bind_group(0, &edge_cam_group, &[]);
+            for (_, _, group, i, ep) in &prepared {
+                if let Some(ep) = ep {
+                    rp.set_pipeline(ep);
+                    rp.set_bind_group(1, group, &[]);
+                    record(&mut rp, i);
+                }
+            }
+            drop(rp);
+            mark!("full-size depth");
         }
         // Light probes: the scenery around each, then its harmonics.
         if !centres.is_empty() {
@@ -3901,7 +4049,7 @@ impl Enhanced {
                     multiview_mask: None,
                 });
                 rp.set_bind_group(0, &group, &[]);
-                for (p, _, igroup, i) in &prepared {
+                for (p, _, igroup, i, _) in &prepared {
                     if i.centre.is_none() {
                         rp.set_pipeline(p);
                         rp.set_bind_group(1, igroup, &[]);
@@ -3943,6 +4091,7 @@ impl Enhanced {
             cp.set_bind_group(0, &group, &[]);
             cp.dispatch_workgroups(centres.len() as u32, 1, 1);
         }
+        mark!("probes");
         // Ambient occlusion, then its blur across and down.
         if self.settings.ao {
             let passes: [(
@@ -3991,6 +4140,7 @@ impl Enhanced {
                 rp.draw(0..3, 0..1);
             }
         }
+        mark!("occlusion");
         // Lighting.
         {
             let glows: Vec<lights::Light> = if self.settings.glow_lights {
@@ -4095,6 +4245,7 @@ impl Enhanced {
             rp.set_bind_group(0, &group, &[]);
             rp.draw(0..3, 0..1);
         }
+        mark!("lighting");
         // Water, over the lit scene: it reads copies of the image and depth.
         if !water_prepared.is_empty() {
             let extent = wgpu::Extent3d {
@@ -4166,6 +4317,7 @@ impl Enhanced {
                 record_parts(&mut rp, &w.vertex, w.index, &w.draw);
             }
         }
+        mark!("water");
         // Volumetric light.
         if self.settings.volumetrics {
             let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -4202,6 +4354,7 @@ impl Enhanced {
             rp.set_bind_group(0, &group, &[]);
             rp.draw(0..3, 0..1);
         }
+        mark!("volumetric");
         // Depth of field, motion blur, bloom.
         let fx = self.post.run(
             &device,
@@ -4227,6 +4380,7 @@ impl Enhanced {
             Some(v) if fx.bloom.is_some() => v.clone(),
             _ => self.black.clone(),
         };
+        mark!("camera effects");
         // Tone mapping into the intermediate image.
         {
             let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -4321,6 +4475,7 @@ impl Enhanced {
             rp.set_bind_group(0, &group, &[]);
             rp.draw(0..3, 0..1);
         }
+        mark!("tone mapping, TAA");
         // FSR: the motion everywhere, then its own command list between
         // this frame's two submissions.
         #[cfg(windows)]
@@ -4422,6 +4577,7 @@ impl Enhanced {
             None if taa => &t.history[taa_write],
             None => &t.ldr,
         };
+        mark!("FSR");
         // Resolve into the game's scene targets.
         let (Some(cv), Some(nv), Some(dv)) = (
             r.texture_view(color_view, false),
@@ -4457,6 +4613,8 @@ impl Enhanced {
                         (3, tex(UNFILTERED)),
                         (4, tex(wgpu::TextureSampleType::Depth)),
                         (5, tex(wgpu::TextureSampleType::Uint)),
+                        (6, tex(wgpu::TextureSampleType::Depth)),
+                        (7, tex(wgpu::TextureSampleType::Uint)),
                     ],
                     wgpu::ShaderStages::FRAGMENT,
                 ),
@@ -4487,6 +4645,10 @@ impl Enhanced {
             self.output = Some((pipeline, layout, formats_now.clone(), depth_format));
         }
         let (pipeline, layout, _, _) = self.output.as_ref().expect("made above");
+        let (edge_depth, edge_id) = match (&self.edge, edge_on) {
+            (Some((_, d, i)), true) => (d, i),
+            _ => (&t.depth, &t.id),
+        };
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout,
@@ -4515,6 +4677,14 @@ impl Enhanced {
                     binding: 5,
                     resource: wgpu::BindingResource::TextureView(&t.id),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(edge_depth),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: wgpu::BindingResource::TextureView(edge_id),
+                },
             ],
         });
         {
@@ -4542,7 +4712,14 @@ impl Enhanced {
             rp.set_bind_group(0, &group, &[]);
             rp.draw(0..3, 0..1);
         }
+        mark!("resolve");
+        if let Some(tm) = self.timer.as_mut() {
+            tm.finish(&mut enc);
+        }
         queue.submit([enc.finish()]);
+        if let Some(tm) = self.timer.as_mut() {
+            tm.submitted();
+        }
         self.tlas = tlas_slot;
         if let Some(e) = pollster::block_on(scope.pop()) {
             self.note(format!("enhanced frame: {e}"));

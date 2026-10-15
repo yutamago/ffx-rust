@@ -143,7 +143,9 @@ impl Renderer {
             | wgpu::Features::FLOAT32_FILTERABLE
             | wgpu::Features::DUAL_SOURCE_BLENDING
             | wgpu::Features::DEPTH32FLOAT_STENCIL8
-            | wgpu::Features::EXPERIMENTAL_RAY_QUERY;
+            | wgpu::Features::EXPERIMENTAL_RAY_QUERY
+            | wgpu::Features::TIMESTAMP_QUERY
+            | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS;
         let features = adapter.features() & wanted;
         let limits = adapter.limits();
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {

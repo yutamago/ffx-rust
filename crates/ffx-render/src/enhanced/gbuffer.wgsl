@@ -230,3 +230,16 @@ fn fs_shadow(in: VsOut) {
         }
     }
 }
+
+// Depth and the draw id only (at the game's size).
+@fragment
+fn fs_edge(in: VsOut) -> @location(0) u32 {
+    if (ALPHA_TEST && HAS_UV) {
+        let a = item.color.a * textureSample(albedo_tex, albedo_samp, in.uv).a;
+        if (a < item.params.x) {
+            discard;
+        }
+    }
+    let raw = u32(item.tint.w);
+    return (raw & 0x7fffffu) | select(0u, 0x80000000u, raw >= 0x800000u);
+}
