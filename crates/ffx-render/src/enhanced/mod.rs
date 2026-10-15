@@ -181,7 +181,8 @@ pub struct Enhanced {
         wgpu::TextureFormat,
     )>,
     targets: Option<Targets>,
-    shadow: Option<(u32, wgpu::TextureView)>,
+    /// Shadow cascades: size, the array for sampling, one view per layer.
+    shadow: Option<(u32, wgpu::TextureView, Vec<wgpu::TextureView>)>,
     white: wgpu::TextureView,
     black: wgpu::TextureView,
     linear: wgpu::Sampler,
@@ -325,7 +326,7 @@ const UNFILTERED: wgpu::TextureSampleType = wgpu::TextureSampleType::Float { fil
 /// (64).
 const ITEM_SIZE: usize = 192;
 const CAMERA_SIZE: usize = 64 * 3 + 32;
-const LIGHT_SIZE: usize = 64 * 2 + 16 * 16;
+const LIGHT_SIZE: usize = 64 + 16 * 12 + 16 * 15;
 const POST_SIZE: usize = 16 + 64 + 16;
 
 fn attachment(
@@ -431,7 +432,14 @@ impl Enhanced {
                     (2, tex(UNFILTERED)),
                     (3, tex(UNFILTERED)),
                     (4, tex(wgpu::TextureSampleType::Depth)),
-                    (5, tex(wgpu::TextureSampleType::Depth)),
+                    (
+                        5,
+                        wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Depth,
+                            view_dimension: wgpu::TextureViewDimension::D2Array,
+                            multisampled: false,
+                        },
+                    ),
                     (
                         6,
                         wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
@@ -746,32 +754,43 @@ impl Enhanced {
         });
     }
 
-    fn shadow_map(&mut self, device: &wgpu::Device) -> wgpu::TextureView {
+    fn shadow_map(&mut self, device: &wgpu::Device) -> (wgpu::TextureView, Vec<wgpu::TextureView>) {
         let size = self.settings.shadow_size.clamp(256, 8192);
-        if let Some((s, v)) = &self.shadow
+        if let Some((s, a, l)) = &self.shadow
             && *s == size
         {
-            return v.clone();
+            return (a.clone(), l.clone());
         }
-        let v = device
-            .create_texture(&wgpu::TextureDescriptor {
-                label: Some("shadow"),
-                size: wgpu::Extent3d {
-                    width: size,
-                    height: size,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Depth32Float,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("shadow"),
+            size: wgpu::Extent3d {
+                width: size,
+                height: size,
+                depth_or_array_layers: 3,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let array = texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+        let layers: Vec<wgpu::TextureView> = (0..3)
+            .map(|l| {
+                texture.create_view(&wgpu::TextureViewDescriptor {
+                    dimension: Some(wgpu::TextureViewDimension::D2),
+                    base_array_layer: l,
+                    array_layer_count: Some(1),
+                    ..Default::default()
+                })
             })
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        self.shadow = Some((size, v.clone()));
-        v
+            .collect();
+        self.shadow = Some((size, array.clone(), layers.clone()));
+        (array, layers)
     }
 
     /// Builds the G-buffer item of a draw, or `None` when the enhanced
@@ -980,6 +999,7 @@ impl Enhanced {
                 .map_or(0, |x| x.1);
             (view, samp)
         });
+        debug_assert_eq!(u.len(), ITEM_SIZE, "item uniform layout");
         Some(Item {
             key,
             vertex,
@@ -1161,6 +1181,7 @@ impl Enhanced {
         put_rows(&mut cam, &math::transpose(&inv_vp));
         put4(&mut cam, [eye[0], eye[1], eye[2], 1.0]);
         put4(&mut cam, [time, 0.0, 0.0, 0.0]);
+        assert_eq!(cam.len(), CAMERA_SIZE, "camera uniform layout");
         let cam_at = alloc(&cam, CAMERA_SIZE);
         // The key light: the map's, or the settings'.
         let (sun_dir, sun_color, sun_intensity, fill, sky) =
@@ -1184,32 +1205,71 @@ impl Enhanced {
                     (self.settings.sky_color, self.settings.sky_intensity),
                 ),
             };
-        // Its shadow box around the view.
+        // Three shadow cascades along the view, each a box around a sphere
+        // holding its slice of the view (stable as the camera turns),
+        // snapped to whole texels (stable as it moves).
         let forward = math::normalize([view[2][0], view[2][1], view[2][2]]);
-        let extent = self.settings.shadow_extent;
-        let center = [
-            eye[0] + forward[0] * extent * 0.6,
-            eye[1] + forward[1] * extent * 0.6,
-            eye[2] + forward[2] * extent * 0.6,
-        ];
-        let back = extent * 4.0;
-        let light_eye = [
-            center[0] - sun_dir[0] * back,
-            center[1] - sun_dir[1] * back,
-            center[2] - sun_dir[2] * back,
-        ];
-        let light_view = math::look_along(light_eye, sun_dir);
-        let light_vp = math::mul(&math::ortho(extent, extent, 0.0, back * 2.0), &light_view);
-        let mut shadow_cam = Vec::new();
-        put_rows(&mut shadow_cam, &light_vp);
-        put_rows(&mut shadow_cam, &light_view);
-        put_rows(&mut shadow_cam, &math::identity());
-        put4(
-            &mut shadow_cam,
-            [light_eye[0], light_eye[1], light_eye[2], 1.0],
+        let near_extent = self.settings.shadow_extent.max(1.0);
+        let splits = [near_extent, near_extent * 3.5, near_extent * 12.0];
+        let shadow_size = self.settings.shadow_size.clamp(256, 8192) as f32;
+        // Tangents of the half field of view, from the projection.
+        let proj = math::mul(&view_proj, &math::invert(&view));
+        let (tx, ty) = (
+            1.0 / proj[0][0].abs().max(1e-3),
+            1.0 / proj[1][1].abs().max(1e-3),
         );
-        put4(&mut shadow_cam, [time, 0.0, 0.0, 0.0]);
-        let shadow_cam_at = alloc(&shadow_cam, CAMERA_SIZE);
+        let rotation = math::look_along([0.0; 3], sun_dir);
+        let mut cascades = Vec::new();
+        let mut from = 0.0f32;
+        for &to in &splits {
+            let mid = (from + to) * 0.5;
+            let center = [
+                eye[0] + forward[0] * mid,
+                eye[1] + forward[1] * mid,
+                eye[2] + forward[2] * mid,
+            ];
+            let corner = |d: f32| {
+                let dx = d * tx;
+                let dy = d * ty;
+                ((d - mid) * (d - mid) + dx * dx + dy * dy).sqrt()
+            };
+            let radius = corner(from).max(corner(to)).ceil();
+            let texel = 2.0 * radius / shadow_size;
+            let c = [
+                math::dot([rotation[0][0], rotation[0][1], rotation[0][2]], center),
+                math::dot([rotation[1][0], rotation[1][1], rotation[1][2]], center),
+                math::dot([rotation[2][0], rotation[2][1], rotation[2][2]], center),
+            ];
+            let snapped = [
+                (c[0] / texel).floor() * texel,
+                (c[1] / texel).floor() * texel,
+            ];
+            let depth = radius * 4.0;
+            let mut lv = rotation;
+            lv[0][3] = -snapped[0];
+            lv[1][3] = -snapped[1];
+            lv[2][3] = -(c[2] - depth);
+            cascades.push(math::mul(
+                &math::ortho(radius, radius, 0.0, depth * 2.0),
+                &lv,
+            ));
+            from = to;
+        }
+        let extent = near_extent;
+        let cascade_at: Vec<u64> = cascades
+            .iter()
+            .map(|vp| {
+                let mut c = Vec::new();
+                put_rows(&mut c, vp);
+                put_rows(&mut c, &math::identity());
+                put_rows(&mut c, &math::identity());
+                put4(&mut c, [eye[0], eye[1], eye[2], 1.0]);
+                put4(&mut c, [time, 0.0, 0.0, 0.0]);
+                alloc(&c, CAMERA_SIZE)
+            })
+            .collect();
+        let shadow_cam = Vec::<u8>::new();
+        let _ = shadow_cam;
         let mut item_at = Vec::with_capacity(items.len());
         for i in &items {
             let u = alloc(&i.uniform, ITEM_SIZE);
@@ -1220,7 +1280,9 @@ impl Enhanced {
         let s = &self.settings;
         let mut light = Vec::new();
         put_rows(&mut light, &math::transpose(&inv_vp));
-        put_rows(&mut light, &light_vp);
+        for c in &cascades {
+            put_rows(&mut light, c);
+        }
         put4(&mut light, [eye[0], eye[1], eye[2], 1.0]);
         put4(
             &mut light,
@@ -1262,7 +1324,7 @@ impl Enhanced {
                 1.0 / shadow_size as f32,
                 s.shadow_softness,
                 extent * 0.002,
-                0.0,
+                if s.ao { 1.0 } else { 0.0 },
             ],
         );
         put4(&mut light, [size.0 as f32, size.1 as f32, 0.0, 0.0]);
@@ -1278,6 +1340,11 @@ impl Enhanced {
                 s.character_falloff,
             ],
         );
+        put4(
+            &mut light,
+            [splits[0], splits[1], splits[2], f32::from(s.debug_view)],
+        );
+        assert_eq!(light.len(), LIGHT_SIZE, "light uniform layout");
         let light_at = alloc(&light, LIGHT_SIZE);
         let ao_at: Vec<u64> = [[0.0f32, 0.0], [1.0, 0.0], [0.0, 1.0]]
             .iter()
@@ -1305,6 +1372,7 @@ impl Enhanced {
         );
         put_rows(&mut post, &view);
         put4(&mut post, [0.0, 0.0, 0.0, 0.0]);
+        assert_eq!(post.len(), POST_SIZE, "post uniform layout");
         let post_at = alloc(&post, POST_SIZE);
         let ubuf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("enhanced uniforms"),
@@ -1341,19 +1409,19 @@ impl Enhanced {
                 resource: binding(cam_at, CAMERA_SIZE),
             }],
         });
-        let shadow_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout: &self.camera_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: binding(shadow_cam_at, CAMERA_SIZE),
-            }],
-        });
-        self.note(format!(
-            "{} items, {} other commands",
-            items.len(),
-            rest.len()
-        ));
+        let shadow_groups: Vec<wgpu::BindGroup> = cascade_at
+            .iter()
+            .map(|&at| {
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: None,
+                    layout: &self.camera_layout,
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: binding(at, CAMERA_SIZE),
+                    }],
+                })
+            })
+            .collect();
         // Per-item bind groups and pipelines.
         let mut prepared = Vec::new();
         for (i, (u, b)) in items.iter().zip(&item_at) {
@@ -1409,7 +1477,7 @@ impl Enhanced {
             });
             prepared.push((pipe, shadow_pipe, group, i));
         }
-        let shadow_view = self.shadow_map(&device);
+        let (shadow_view, shadow_layers) = self.shadow_map(&device);
         let t = self.targets.as_ref().expect("made above");
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("enhanced"),
@@ -1444,29 +1512,31 @@ impl Enhanced {
             }
             true
         };
-        // Shadow map.
+        // Shadow cascades.
         if self.settings.shadows {
-            let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("shadow"),
-                color_attachments: &[],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &shadow_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
+            for (layer, group) in shadow_layers.iter().zip(&shadow_groups) {
+                let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("shadow"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: layer,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
                     }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            rp.set_bind_group(0, &shadow_group, &[]);
-            for (_, sp, group, i) in &prepared {
-                if let Some(sp) = sp {
-                    rp.set_pipeline(sp);
-                    rp.set_bind_group(1, group, &[]);
-                    record(&mut rp, i);
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                rp.set_bind_group(0, group, &[]);
+                for (_, sp, igroup, i) in &prepared {
+                    if let Some(sp) = sp {
+                        rp.set_pipeline(sp);
+                        rp.set_bind_group(1, igroup, &[]);
+                        record(&mut rp, i);
+                    }
                 }
             }
         }

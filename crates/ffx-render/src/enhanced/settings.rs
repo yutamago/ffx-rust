@@ -44,7 +44,8 @@ pub struct Settings {
     pub specular: f32,
     pub shadows: bool,
     pub shadow_size: u32,
-    /// Half-width of the shadow map's box, in world units.
+    /// How far the first (sharpest) shadow cascade reaches, in world
+    /// units; the next two reach 3.5 and 12 times as far.
     pub shadow_extent: f32,
     /// Filter radius, in shadow texels.
     pub shadow_softness: f32,
@@ -57,6 +58,10 @@ pub struct Settings {
     /// How much of it darkens scenery's baked light (which has coarse
     /// occlusion of its own).
     pub ao_on_baked: f32,
+    /// Show one input of the lighting instead of the image: 0 none,
+    /// 1 shadow, 2 occlusion, 3 normal, 4 albedo, 5 baked light,
+    /// 6 shadow cascades.
+    pub debug_view: u8,
     /// Keep the game's blob shadows (redundant with real shadows).
     pub fake_shadows: bool,
 }
@@ -88,7 +93,7 @@ impl Default for Settings {
             specular: 0.5,
             shadows: true,
             shadow_size: 2048,
-            shadow_extent: 60.0,
+            shadow_extent: 50.0,
             shadow_softness: 2.0,
             fog: true,
             ao: true,
@@ -96,6 +101,7 @@ impl Default for Settings {
             ao_strength: 1.0,
             ao_on_baked: 0.6,
             fake_shadows: false,
+            debug_view: 0,
         }
     }
 }

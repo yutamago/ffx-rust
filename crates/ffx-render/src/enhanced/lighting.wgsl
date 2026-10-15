@@ -5,8 +5,8 @@
 
 struct Light {
     inv_view_proj: mat4x4<f32>,
-    // Rows of the shadow map's view-projection.
-    shadow: array<vec4<f32>, 4>,
+    // Rows of the three shadow cascades' view-projections.
+    shadow: array<vec4<f32>, 12>,
     eye: vec4<f32>,
     // xyz: direction the light travels, w: intensity
     sun: vec4<f32>,
@@ -35,6 +35,10 @@ struct Light {
     // z: ambient occlusion on baked light, w: characters' falloff (0: the
     // game's soft wrap, 1: physical)
     scenery: vec4<f32>,
+    // View distances where cascades 0, 1 and 2 end; w: debug view (0
+    // none, 1 shadow, 2 occlusion, 3 normal, 4 albedo, 5 baked light,
+    // 6 cascades)
+    splits: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> light: Light;
@@ -42,7 +46,7 @@ struct Light {
 @group(0) @binding(2) var normal_tex: texture_2d<f32>;
 @group(0) @binding(3) var baked_tex: texture_2d<f32>;
 @group(0) @binding(4) var depth_tex: texture_depth_2d;
-@group(0) @binding(5) var shadow_tex: texture_depth_2d;
+@group(0) @binding(5) var shadow_tex: texture_depth_2d_array;
 @group(0) @binding(6) var shadow_samp: sampler_comparison;
 @group(0) @binding(7) var ao_tex: texture_2d<f32>;
 
@@ -70,9 +74,25 @@ fn shadow_factor(p: vec3<f32>, n: vec3<f32>) -> f32 {
     if (light.mix.w < 0.5) {
         return 1.0;
     }
-    let wp = vec4<f32>(p + n * light.shadow_params.z, 1.0);
-    let c = vec4<f32>(dot(light.shadow[0], wp), dot(light.shadow[1], wp), dot(light.shadow[2], wp), dot(light.shadow[3], wp));
-    let s = c.xyz / c.w;
+    let d = abs(dot(light.view_z, vec4<f32>(p, 1.0)));
+    var c = 0;
+    if (d > light.splits.x) {
+        c = 1;
+    }
+    if (d > light.splits.y) {
+        c = 2;
+    }
+    if (d > light.splits.z) {
+        return 1.0;
+    }
+    // Normal offset grows with the cascade's texel size.
+    let wp = vec4<f32>(p + n * light.shadow_params.z * f32(1 << u32(c * 2)), 1.0);
+    let r0 = light.shadow[c * 4];
+    let r1 = light.shadow[c * 4 + 1];
+    let r2 = light.shadow[c * 4 + 2];
+    let r3 = light.shadow[c * 4 + 3];
+    let h = vec4<f32>(dot(r0, wp), dot(r1, wp), dot(r2, wp), dot(r3, wp));
+    let s = h.xyz / h.w;
     let uv = vec2<f32>(s.x * 0.5 + 0.5, 0.5 - s.y * 0.5);
     if (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0)) || s.z > 1.0) {
         return 1.0;
@@ -88,9 +108,14 @@ fn shadow_factor(p: vec3<f32>, n: vec3<f32>) -> f32 {
     let rot = mat2x2<f32>(cos(a), sin(a), -sin(a), cos(a));
     var sum = 0.0;
     for (var i = 0; i < 12; i = i + 1) {
-        sum = sum + textureSampleCompareLevel(shadow_tex, shadow_samp, uv + rot * taps[i] * r, s.z);
+        sum = sum + textureSampleCompareLevel(shadow_tex, shadow_samp, uv + rot * taps[i] * r, c, s.z);
     }
-    return sum / 12.0;
+    var f = sum / 12.0;
+    // Fade out the last cascade's far edge.
+    if (c == 2) {
+        f = mix(f, 1.0, smoothstep(light.splits.z * 0.85, light.splits.z, d));
+    }
+    return f;
 }
 
 fn ggx(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, rough: f32, f0: f32) -> f32 {
@@ -149,6 +174,22 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
         let fill = light.fill_color.rgb * light.fill.w * pow(dot(n, lf) * 0.5 + 0.5, 2.0);
         let indirect = baked * light.mix.x + hemi;
         color = albedo * (indirect * ao + direct + fill) + light.sun_color.rgb * light.sun.w * nl * shadow * spec;
+    }
+    let debug = i32(light.splits.w);
+    if (debug == 1) {
+        return vec4<f32>(vec3<f32>(shadow * nl), 1.0);
+    } else if (debug == 2) {
+        return vec4<f32>(vec3<f32>(ao), 1.0);
+    } else if (debug == 3) {
+        return vec4<f32>(n * 0.5 + 0.5, 1.0);
+    } else if (debug == 4) {
+        return vec4<f32>(albedo, 1.0);
+    } else if (debug == 5) {
+        return vec4<f32>(baked, 1.0);
+    } else if (debug == 6) {
+        let dz = abs(dot(light.view_z, vec4<f32>(p, 1.0)));
+        let c = select(select(select(vec3<f32>(1.0), vec3<f32>(0.2, 0.2, 1.0), dz < light.splits.z), vec3<f32>(0.2, 1.0, 0.2), dz < light.splits.y), vec3<f32>(1.0, 0.2, 0.2), dz < light.splits.x);
+        return vec4<f32>(c * (0.3 + 0.7 * shadow), 1.0);
     }
     // The game's fog, by distance from the eye.
     if (light.fog_range.w > 0.5) {

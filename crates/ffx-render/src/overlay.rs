@@ -662,6 +662,21 @@ fn panel(
                 slider(ui, "contrast", &mut s.contrast, 0.5..=1.5);
                 ui.checkbox(&mut s.fog, "The game's fog");
             });
+            egui::CollapsingHeader::new("Debug").show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    for (v, name) in [
+                        (0, "image"),
+                        (1, "shadow"),
+                        (2, "occlusion"),
+                        (3, "normals"),
+                        (4, "albedo"),
+                        (5, "baked light"),
+                        (6, "cascades"),
+                    ] {
+                        ui.selectable_value(&mut s.debug_view, v, name);
+                    }
+                });
+            });
             ui.separator();
             ui.horizontal(|ui| {
                 if ui.button("Save").clicked() {
