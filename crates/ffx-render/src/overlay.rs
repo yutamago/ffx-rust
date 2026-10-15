@@ -650,6 +650,30 @@ fn panel(
                 slider(ui, "area (units)", &mut s.shadow_extent, 10.0..=400.0);
                 slider(ui, "softness", &mut s.shadow_softness, 0.0..=8.0);
             });
+            egui::CollapsingHeader::new("Volumetric light").show(ui, |ui| {
+                ui.checkbox(&mut s.volumetrics, "Light shafts");
+                ui.add(
+                    egui::Slider::new(&mut s.fog_density, 0.0..=0.02)
+                        .logarithmic(true)
+                        .text("density"),
+                );
+                slider(ui, "forward scattering", &mut s.fog_anisotropy, 0.0..=0.95);
+                slider(
+                    ui,
+                    "shaft brightness",
+                    &mut s.volumetric_strength,
+                    0.0..=1.0,
+                );
+                slider(ui, "haze", &mut s.haze, 0.0..=2.0);
+                let mut steps = s.volumetric_steps as f32;
+                ui.add(
+                    egui::Slider::new(&mut steps, 8.0..=64.0)
+                        .step_by(4.0)
+                        .text("steps"),
+                );
+                s.volumetric_steps = steps as u32;
+                slider(ui, "distance", &mut s.volumetric_distance, 100.0..=3000.0);
+            });
             egui::CollapsingHeader::new("Ambient occlusion").show(ui, |ui| {
                 ui.checkbox(&mut s.ao, "On");
                 slider(ui, "radius", &mut s.ao_radius, 0.5..=20.0);

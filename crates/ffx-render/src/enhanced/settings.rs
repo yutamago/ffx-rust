@@ -55,6 +55,20 @@ pub struct Settings {
     /// Filter radius, in shadow texels.
     pub shadow_softness: f32,
     pub fog: bool,
+    /// Volumetric light: shafts of the key light through the air.
+    pub volumetrics: bool,
+    /// Extinction per world unit (a character is about 20 tall).
+    pub fog_density: f32,
+    /// Forward scattering, 0–0.95 (higher: shafts glow toward the light).
+    pub fog_anisotropy: f32,
+    /// Brightness of the light shafts relative to the key light on
+    /// surfaces.
+    pub volumetric_strength: f32,
+    /// Sky light the air scatters evenly (haze).
+    pub haze: f32,
+    pub volumetric_steps: u32,
+    /// How far the march goes, in world units.
+    pub volumetric_distance: f32,
     /// The enhanced passes' resolution relative to the game's (above 1:
     /// supersampling).
     pub render_scale: f32,
@@ -109,6 +123,13 @@ impl Default for Settings {
             shadow_extent: 50.0,
             shadow_softness: 2.0,
             fog: true,
+            volumetrics: true,
+            fog_density: 0.0015,
+            fog_anisotropy: 0.6,
+            volumetric_strength: 0.05,
+            haze: 0.3,
+            volumetric_steps: 24,
+            volumetric_distance: 300.0,
             render_scale: 1.0,
             antialiasing: 1,
             ao: true,

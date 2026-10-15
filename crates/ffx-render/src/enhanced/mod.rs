@@ -27,6 +27,8 @@ const AO_WGSL: &str = include_str!("ao.wgsl");
 const MATERIAL_WGSL: &str = include_str!("material.wgsl");
 const RESOLVE_WGSL: &str = include_str!("resolve.wgsl");
 const RESOLVE_SIZE: usize = 16 + 64;
+const VOLUMETRIC_WGSL: &str = include_str!("volumetric.wgsl");
+const VOL_SIZE: usize = 64 + 16 * 12 + 16 * 8;
 const AO_SIZE: usize = 64 * 2 + 32;
 
 /// Variables of one shader's first constant buffer: name → (offset, size),
@@ -161,6 +163,8 @@ struct Targets {
     hdr: wgpu::TextureView,
     ao: [wgpu::TextureView; 2],
     ldr: wgpu::TextureView,
+    /// Volumetric light, half size.
+    vol: wgpu::TextureView,
 }
 
 pub struct Enhanced {
@@ -172,6 +176,10 @@ pub struct Enhanced {
     item_layout: wgpu::BindGroupLayout,
     gbuffer_layout: wgpu::PipelineLayout,
     lighting: (wgpu::RenderPipeline, wgpu::BindGroupLayout),
+    /// Volumetric light and its layout.
+    volumetric: (wgpu::RenderPipeline, wgpu::BindGroupLayout),
+    /// Frames drawn (for per-frame noise).
+    frame_count: u32,
     /// Tone mapping into the intermediate image, and its layout.
     tone: (wgpu::RenderPipeline, wgpu::BindGroupLayout),
     /// Material map generation (first level, then each smaller one).
@@ -528,6 +536,7 @@ impl Enhanced {
                     (2, tex(UNFILTERED)),
                     (3, tex(wgpu::TextureSampleType::Depth)),
                     (4, tex(FLOAT)),
+                    (6, tex(FLOAT)),
                     (
                         5,
                         wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
@@ -539,6 +548,37 @@ impl Enhanced {
         let tone = (
             fullscreen(device, &tone_layout, OUTPUT_WGSL, &rgba8, None),
             tone_layout,
+        );
+        let vol_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("volumetric"),
+            entries: &layout_entries(
+                &[
+                    (0, uniform(VOL_SIZE as u64)),
+                    (1, tex(wgpu::TextureSampleType::Depth)),
+                    (
+                        2,
+                        wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Depth,
+                            view_dimension: wgpu::TextureViewDimension::D2Array,
+                            multisampled: false,
+                        },
+                    ),
+                    (
+                        3,
+                        wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                    ),
+                ],
+                S::FRAGMENT,
+            ),
+        });
+        let rgba16 = [Some(wgpu::ColorTargetState {
+            format: wgpu::TextureFormat::Rgba16Float,
+            blend: None,
+            write_mask: wgpu::ColorWrites::ALL,
+        })];
+        let volumetric = (
+            fullscreen(device, &vol_layout, VOLUMETRIC_WGSL, &rgba16, None),
+            vol_layout,
         );
         let linear = device.create_sampler(&wgpu::SamplerDescriptor {
             mag_filter: wgpu::FilterMode::Linear,
@@ -565,6 +605,8 @@ impl Enhanced {
             ao: (ao_pass, ao_blur, ao_layout),
             material_gen,
             tone,
+            volumetric,
+            frame_count: 0,
             materials: HashMap::new(),
             flat_material: one_pixel(device, queue, [128, 128, 179, 255]),
             output: None,
@@ -817,6 +859,23 @@ impl Enhanced {
                 make(wgpu::TextureFormat::R8Unorm, "ao blur"),
             ],
             ldr: make(wgpu::TextureFormat::Rgba8Unorm, "ldr"),
+            vol: device
+                .create_texture(&wgpu::TextureDescriptor {
+                    label: Some("volumetric"),
+                    size: wgpu::Extent3d {
+                        width: (size.0 / 2).max(1),
+                        height: (size.1 / 2).max(1),
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba16Float,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                })
+                .create_view(&wgpu::TextureViewDescriptor::default()),
         });
     }
 
@@ -1583,9 +1642,55 @@ impl Enhanced {
             ],
         );
         put_rows(&mut post, &view);
-        put4(&mut post, [0.0, 0.0, 0.0, 0.0]);
+        put4(
+            &mut post,
+            [0.0, if s.volumetrics { 1.0 } else { 0.0 }, 0.0, 0.0],
+        );
         assert_eq!(post.len(), POST_SIZE, "post uniform layout");
         let post_at = alloc(&post, POST_SIZE);
+        self.frame_count = self.frame_count.wrapping_add(1);
+        let mut vol = Vec::new();
+        put_rows(&mut vol, &math::transpose(&inv_vp));
+        for c in &cascades {
+            put_rows(&mut vol, c);
+        }
+        put4(&mut vol, [eye[0], eye[1], eye[2], 1.0]);
+        put4(
+            &mut vol,
+            [
+                sun_dir[0],
+                sun_dir[1],
+                sun_dir[2],
+                sun_intensity * s.volumetric_strength,
+            ],
+        );
+        put4(&mut vol, [sun_color[0], sun_color[1], sun_color[2], 0.0]);
+        put4(
+            &mut vol,
+            [
+                s.fog_density,
+                s.fog_anisotropy.clamp(0.0, 0.95),
+                s.volumetric_steps.clamp(4, 128) as f32,
+                s.volumetric_distance,
+            ],
+        );
+        put4(
+            &mut vol,
+            [
+                (internal.0 / 2).max(1) as f32,
+                (internal.1 / 2).max(1) as f32,
+                s.haze,
+                (self.frame_count % 64) as f32,
+            ],
+        );
+        put4(
+            &mut vol,
+            [sky.0[0] * sky.1, sky.0[1] * sky.1, sky.0[2] * sky.1, 0.0],
+        );
+        put4(&mut vol, view[2]);
+        put4(&mut vol, [splits[0], splits[1], splits[2], 0.0]);
+        assert_eq!(vol.len(), VOL_SIZE, "volumetric uniform layout");
+        let vol_at = alloc(&vol, VOL_SIZE);
         let mut resolve = Vec::new();
         put4(
             &mut resolve,
@@ -1912,6 +2017,42 @@ impl Enhanced {
             rp.set_bind_group(0, &group, &[]);
             rp.draw(0..3, 0..1);
         }
+        // Volumetric light.
+        if self.settings.volumetrics {
+            let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &self.volumetric.1,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: binding(vol_at, VOL_SIZE),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&t.depth),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&shadow_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::Sampler(&self.compare),
+                    },
+                ],
+            });
+            let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("volumetric"),
+                color_attachments: &[attachment(&t.vol, wgpu::LoadOp::Clear(wgpu::Color::BLACK))],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            rp.set_pipeline(&self.volumetric.0);
+            rp.set_bind_group(0, &group, &[]);
+            rp.draw(0..3, 0..1);
+        }
         // Tone mapping into the intermediate image.
         {
             let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1941,6 +2082,10 @@ impl Enhanced {
                     wgpu::BindGroupEntry {
                         binding: 5,
                         resource: wgpu::BindingResource::Sampler(&self.linear),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 6,
+                        resource: wgpu::BindingResource::TextureView(&t.vol),
                     },
                 ],
             });

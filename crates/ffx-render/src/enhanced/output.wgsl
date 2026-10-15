@@ -7,7 +7,7 @@ struct Post {
     tone: vec4<f32>,
     // Rows of the view matrix, for the game's view-space normals.
     view: array<vec4<f32>, 4>,
-    // x: bloom strength
+    // x: bloom strength, y: volumetric light on
     bloom: vec4<f32>,
 };
 
@@ -17,6 +17,8 @@ struct Post {
 @group(0) @binding(3) var depth_tex: texture_depth_2d;
 @group(0) @binding(4) var bloom_tex: texture_2d<f32>;
 @group(0) @binding(5) var bloom_samp: sampler;
+// Volumetric light (half resolution): rgb scattered light, a transmittance.
+@group(0) @binding(6) var vol_tex: texture_2d<f32>;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -73,6 +75,10 @@ fn fs(in: VsOut) -> Out {
     let size = vec2<f32>(textureDimensions(hdr_tex));
     var hdr = textureLoad(hdr_tex, px, 0).rgb;
     hdr = hdr + textureSampleLevel(bloom_tex, bloom_samp, in.pos.xy / size, 0.0).rgb * post.bloom.x;
+    if (post.bloom.y > 0.5) {
+        let v = textureSampleLevel(vol_tex, bloom_samp, in.pos.xy / size, 0.0);
+        hdr = hdr * v.a + v.rgb;
+    }
     let x = hdr * post.tone.x;
     var c: vec3<f32>;
     if (post.tone.y < 0.5) {
