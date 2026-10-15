@@ -102,7 +102,6 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
     );
     log(&format!("{} shaders with families", families.len()));
     let settings_path = exe_dir.join("ffx-render.toml");
-    let mut settings_stamp = None;
     let mut enhanced = crate::enhanced::Enhanced::new(
         &r.device,
         &r.queue,
@@ -118,7 +117,7 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
         .filter(|d| std::fs::create_dir_all(d).is_ok());
     let filter = Filter::default();
     let mut idle_from = std::time::Instant::now();
-    let mut overlay = crate::overlay::Overlay::new(&r.device);
+    let mut overlay = crate::overlay::Overlay::new(&r.device, &settings_path, &enhanced.settings);
     let mut screen = (0u32, 0u32);
     // The scene image goes back through shared textures where it can.
     let mut share = if std::env::var("FFX_GFX_SHARE").is_ok_and(|v| v == "0") {
@@ -194,16 +193,9 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
                 }
             }
         }
-        // Settings edits apply at once.
-        if frames.is_multiple_of(30) {
-            let stamp = std::fs::metadata(&settings_path)
-                .and_then(|m| m.modified())
-                .ok();
-            if stamp != settings_stamp {
-                settings_stamp = stamp;
-                enhanced.settings = load_settings(&settings_path);
-                log(&format!("settings: {:?}", enhanced.settings));
-            }
+        // Edits of the settings file apply at once.
+        if frames.is_multiple_of(30) && overlay.profiles.poll(&mut enhanced.settings) {
+            log(&format!("settings: {:?}", enhanced.settings));
         }
         let t0 = std::time::Instant::now();
         let t_parsed = t0 - t_head;
@@ -258,27 +250,9 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
         } else {
             None
         };
-        if overlay.save {
-            overlay.save = false;
-            overlay.message = match toml::to_string_pretty(&enhanced.settings) {
-                Ok(text) => match std::fs::write(&settings_path, text) {
-                    Ok(()) => "saved".into(),
-                    Err(e) => format!("not saved: {e}"),
-                },
-                Err(e) => format!("not saved: {e}"),
-            };
-            settings_stamp = std::fs::metadata(&settings_path)
-                .and_then(|m| m.modified())
-                .ok();
-        }
-        if overlay.reset {
-            overlay.reset = false;
-            enhanced.settings = crate::enhanced::Settings::default();
-            overlay.message = "defaults (not saved)".into();
-        }
         // Answer: frame, scene size, flags (1: overlay follows, 2: the scene
         // is in shared textures, 4: with a fence, 8: the game's afterimage
-        // off), the scene's colour, normal and depth (or the shared
+        // off, 16: the overlay takes the keyboard), the scene's colour, normal and depth (or the shared
         // generation and set), then the overlay's size and pixels.
         let (w, h, mut data) = match shared {
             Some(s) => {
@@ -313,7 +287,12 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             } else {
                 0
             }
-            | if enhanced.settings.afterimage { 0 } else { 8 };
+            | if enhanced.settings.afterimage { 0 } else { 8 }
+            | if overlay_image.is_some() && overlay.wants_keys {
+                16
+            } else {
+                0
+            };
         out.extend_from_slice(&flags.to_le_bytes());
         out.extend_from_slice(&data);
         if let Some(img) = &overlay_image {
@@ -330,6 +309,7 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             ));
         }
         frame_time = last_frame.elapsed();
+        overlay.frame_time(frame_time.as_secs_f32() * 1000.0);
         last_frame = std::time::Instant::now();
         idle_from = std::time::Instant::now();
     }

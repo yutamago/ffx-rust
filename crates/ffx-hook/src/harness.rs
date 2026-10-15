@@ -449,8 +449,9 @@ unsafe extern "system" fn get_device_state(this: *mut c_void, size: u32, data: *
     // In background mode the devices are background devices, so they would
     // report what the user types into other windows: their real state is
     // dropped and only the test's keys count.
-    let isolate = BACKGROUND.load(Ordering::Relaxed) || crate::gfx::live::overlay_visible();
-    if isolate && !data.is_null() && size != 256 {
+    let background = BACKGROUND.load(Ordering::Relaxed);
+    let isolate = background || crate::gfx::live::overlay_takes_keys();
+    if (background || crate::gfx::live::overlay_visible()) && !data.is_null() && size != 256 {
         // SAFETY: the caller's buffer holds `size` bytes.
         unsafe { std::ptr::write_bytes(data, 0, size as usize) };
         hr = 0;

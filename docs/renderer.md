@@ -111,10 +111,24 @@ use of it (fades, distortion) is unchanged.
 
 ## Settings and the overlay
 
-F10 shows the overlay in the game: every setting, live. "Save" writes
-`ffx-render.toml` next to `ffx-render.exe`; edits to that file apply
-within half a second. Debug views show one input of the lighting (shadow,
-occlusion, normals, albedo, baked light, cascades, skin, probe light).
+F10 shows the overlay in the game: every setting, live, with the frame
+rate (figures over half a second, in fixed widths). The mouse is the
+overlay's while it shows; keys reach the game unless the pointer is over
+the panel or a text field has focus (the renderer's answer carries flag
+16, and the hook's DirectInput wrap then reads the keyboard as released).
+What does not fit on the screen scrolls.
+
+Settings live in profiles: `profiles/<name>.toml` next to
+`ffx-render.exe`, the active one's name in `profiles/active`; the first
+start makes "Default" from `ffx-render.toml`. The active settings are also
+in `ffx-render.toml` (edits to that file apply within half a second).
+"Save" writes the active profile, "Revert" goes back to it, and a setting
+that differs from it has a ↺ button that resets just that one. Profiles
+can be made (factory defaults), duplicated, renamed and deleted; "Copy"
+puts the saved profile on the clipboard as TOML under a
+`# FFX renderer profile: <name>` line, "Paste" makes a profile from such
+text. Debug views show one input of the lighting (shadow, occlusion,
+normals, albedo, baked light, cascades, skin, probe light).
 
 ## Material packs
 

@@ -35,8 +35,11 @@ use crate::log::log;
 type Ptr = *mut c_void;
 
 static ON: AtomicBool = AtomicBool::new(false);
-/// The overlay is showing (F10): the game's keyboard reads as released.
+/// The overlay is showing (F10): the mouse is its own.
 static OVERLAY: AtomicBool = AtomicBool::new(false);
+/// The overlay takes the keyboard (a text field has focus, or the pointer
+/// is over a panel): the game's keyboard reads as released.
+static OVERLAY_KEYS: AtomicBool = AtomicBool::new(false);
 /// The renderer's settings turn the game's afterimage off.
 static NO_AFTERIMAGE: AtomicBool = AtomicBool::new(false);
 /// The pixel shader of the game's afterimage pass (by its bytecode hash):
@@ -65,6 +68,7 @@ static SCREEN: Mutex<(u32, u32)> = Mutex::new((0, 0));
 pub fn toggle_overlay() -> bool {
     let now = !OVERLAY.load(Ordering::Acquire);
     OVERLAY.store(now, Ordering::Release);
+    OVERLAY_KEYS.store(false, Ordering::Release);
     push_input(ffx_gfx::Input::Toggle);
     now
 }
@@ -85,6 +89,12 @@ pub fn click(x: f32, y: f32) {
 /// Whether the overlay is showing.
 pub fn overlay_visible() -> bool {
     OVERLAY.load(Ordering::Acquire)
+}
+
+/// Whether the overlay is showing and takes the keyboard (else the keys go
+/// to the game, overlay or not).
+pub fn overlay_takes_keys() -> bool {
+    overlay_visible() && OVERLAY_KEYS.load(Ordering::Acquire)
 }
 
 fn push_input(e: ffx_gfx::Input) {
@@ -132,6 +142,7 @@ unsafe extern "system" fn window_proc(
             if lparam & (1 << 30) == 0 {
                 let now = !visible;
                 OVERLAY.store(now, Ordering::Release);
+                OVERLAY_KEYS.store(false, Ordering::Release);
                 push_input(ffx_gfx::Input::Toggle);
                 // SAFETY: on the window's thread.
                 unsafe { ShowCursor(i32::from(now)) };
@@ -172,16 +183,18 @@ unsafe extern "system" fn window_proc(
                 push_input(ffx_gfx::Input::Wheel(delta));
                 true
             }
+            // Keys reach the overlay always, the game too unless the
+            // overlay takes them.
             0x100 | 0x101 => {
                 push_input(ffx_gfx::Input::Key {
                     vk: wparam as u32,
                     pressed: msg == 0x100,
                 });
-                true
+                overlay_takes_keys()
             }
             0x102 => {
                 push_input(ffx_gfx::Input::Char(wparam as u32));
-                true
+                overlay_takes_keys()
             }
             // WM_SETCURSOR: an arrow over the client area.
             0x20 => {
@@ -1174,6 +1187,7 @@ fn receive(link: &mut Link, frame: u32) -> Option<Reply> {
             overlay = Some((ow, oh, pixels));
         }
         if number == frame {
+            OVERLAY_KEYS.store(flags & 16 != 0, Ordering::Release);
             return Some(Reply {
                 width: w,
                 height: h,

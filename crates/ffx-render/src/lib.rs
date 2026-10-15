@@ -13,6 +13,7 @@
     clippy::items_after_statements
 )]
 
+pub mod clipboard;
 pub mod enhanced;
 pub mod families;
 pub mod formats;
@@ -20,6 +21,7 @@ pub mod formats;
 pub mod live;
 pub mod overlay;
 pub mod png;
+pub mod profiles;
 mod replay;
 #[cfg(windows)]
 pub mod share;
