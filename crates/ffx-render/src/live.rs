@@ -50,6 +50,15 @@ fn load_settings(path: &std::path::Path) -> crate::enhanced::Settings {
     }
 }
 
+/// What the sequence editor's picture shows: sequence, frame, depth of
+/// field and settings.
+type Shown = (
+    Option<usize>,
+    usize,
+    Option<[f32; 3]>,
+    crate::enhanced::Settings,
+);
+
 /// Runs until the game exits.
 ///
 /// # Errors
@@ -136,6 +145,9 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
     let mut last_frame = std::time::Instant::now();
     let mut effect_msgs = 0u32;
     let mut frame_time = std::time::Duration::ZERO;
+    // What the sequence editor's picture shows (sequence, frame, keys,
+    // settings).
+    let mut last_preview: Option<Shown> = None;
     loop {
         let mut head = [0u8; 8];
         if !to_renderer.read(&mut head, wait) {
@@ -291,12 +303,70 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             // Focus where it looks (not on the game's look-at point).
             r.world.camera = None;
         }
+        // The sequence editor: a recording takes the game's frames; paused,
+        // the recorded frame at its cursor is drawn (with its keys) and
+        // shown over the screen; in play, a sequence the camera follows
+        // sets the depth of field.
+        if targets.is_some() {
+            overlay
+                .editor
+                .seq
+                .frame(&r.world.scene, &frame, r.world.camera);
+        }
+        let paused = overlay.visible && overlay.editor.paused;
+        let mut preview = None;
+        if paused
+            && overlay.editor.preview
+            && let Some(k) = overlay.editor.sequence
+            && let Some(rec) = overlay
+                .editor
+                .seq
+                .take(k)
+                .and_then(|t| t.get(overlay.editor.cursor))
+        {
+            preview = rec.frame();
+            r.world.camera = rec.camera;
+            enhanced.dof_override = overlay.editor.seq.list[k].dof_at(overlay.editor.cursor as f32);
+        } else if !paused && overlay.editor.seq.recording.is_none() && !overlay.freecam.on {
+            enhanced.dof_override = overlay
+                .editor
+                .seq
+                .follow(&r.world.scene, r.world.camera)
+                .map(|f| f.0);
+        } else {
+            enhanced.dof_override = None;
+        }
         let t0 = std::time::Instant::now();
         let t_parsed = t0 - t_head;
-        if targets.is_some()
-            && let Err(e) = enhanced.render(&mut r, &frame)
-        {
-            log(&format!("frame {}: {e}", frame.number));
+        if let Some(p) = &preview {
+            // Drawn again only when what it shows changes.
+            let shown = (
+                overlay.editor.sequence,
+                overlay.editor.cursor,
+                enhanced
+                    .dof_override
+                    .map(|k| [k.focus, k.strength, k.radius]),
+                enhanced.settings.clone(),
+            );
+            if last_preview.as_ref() != Some(&shown) {
+                if let Err(e) = enhanced.render(&mut r, p) {
+                    log(&format!("sequence frame {}: {e}", overlay.editor.cursor));
+                }
+                let view = enhanced
+                    .last_color_view
+                    .and_then(|v| r.texture_view(v, false));
+                overlay.set_scene(&r.device, view.as_deref());
+                last_preview = Some(shown);
+            }
+        } else {
+            if last_preview.take().is_some() {
+                overlay.set_scene(&r.device, None);
+            }
+            if targets.is_some()
+                && let Err(e) = enhanced.render(&mut r, &frame)
+            {
+                log(&format!("frame {}: {e}", frame.number));
+            }
         }
         let t_draw = t0.elapsed();
         let resource = |v: ffx_gfx::Id| r.views.get(&v).map(|v| v.resource);
@@ -438,7 +508,8 @@ pub fn run(name: &str, pid: u32) -> Result<()> {
             } else {
                 0
             }
-            | if overlay.freecam.on { 64 } else { 0 };
+            | if overlay.freecam.on { 64 } else { 0 }
+            | if paused { 128 } else { 0 };
         out.extend_from_slice(&flags.to_le_bytes());
         out.extend_from_slice(&data);
         if let Some((x, y, w, h, pixels)) = &overlay_image {

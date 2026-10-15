@@ -218,6 +218,26 @@ after, the view and field of view go to the game's renderer as
 override's branch skips. The game then draws and culls for it; what lies
 outside the map's camera views may be unfinished. Off: the override ends.
 
+## Sequence editor
+
+The editor's Sequence tab (`sequence.rs`) records real-time cutscenes and
+keys their depth of field. Record keeps the frames the game sends from
+then on (compressed with LZ4, about 0.2 MB a frame; two minutes at most,
+a new scene ends it) and their cameras; Stop makes a sequence of the scene
+with that take. Pause game uses the game's own pause (`g_PauseOn`: the
+world stops, rendering goes on; its "PAUSE" text is hidden, the
+renderer's answer carries flag 128; Resume starts the pause's fade-out as
+Start does). Paused, the take's frame at the timeline's cursor is drawn
+(with the current settings and the keys' depth of field) and shown over
+the whole screen; it plays, steps and jumps. Keys set the focus distance
+(world units; "pick" takes it from a click in the picture), strength and
+radius at a frame; between keys they ease from one to the next.
+`sequences.toml` beside the renderer keeps each sequence's camera path
+and keys (takes last the session: they draw with the game's objects of
+the moment). In play, a scene's camera is matched to its sequences'
+paths (eye within 0.5 units, look-at within 2), followed frame by frame;
+where it follows one, its keys set the depth of field.
+
 ## Materials
 
 The G-buffer has, besides albedo (roughness in alpha), normal, baked

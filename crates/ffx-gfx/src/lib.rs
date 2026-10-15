@@ -857,6 +857,22 @@ fn read_frame(r: &mut Reader) -> Result<Frame, DecodeError> {
     })
 }
 
+/// A frame on its own (as a `Frame` message's payload; for recordings).
+#[must_use]
+pub fn encode_frame(f: &Frame) -> Vec<u8> {
+    let mut w = Writer::default();
+    write_frame(&mut w, f);
+    w.bytes
+}
+
+/// A frame from [`encode_frame`]'s bytes.
+///
+/// # Errors
+/// On truncated or malformed bytes.
+pub fn decode_frame(bytes: &[u8]) -> Result<Frame, DecodeError> {
+    read_frame(&mut Reader::new(bytes))
+}
+
 /// Splits a stream into messages.
 ///
 /// # Errors

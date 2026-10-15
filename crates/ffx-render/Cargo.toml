@@ -15,6 +15,7 @@ serde.workspace = true
 toml.workspace = true
 miniz_oxide.workspace = true
 pollster = "0.4"
+lz4_flex = { version = "0.11", default-features = false, features = ["safe-encode", "safe-decode"] }
 egui = "0.36.2"
 wgpu = "30.0.1"
 

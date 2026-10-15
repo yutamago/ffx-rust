@@ -91,6 +91,7 @@
 0x006db070 function LangManager_Get
 0x006db090 function LangManager_FromSettings  # settings language index -> game language id
 0x006f0330 function Save_InitFolder            # Documents (SHGetFolderPathW CSIDL_PERSONAL) + Square Enix\FINAL FANTASY X&X-2 HD Remaster\FINAL FANTASY X\
+0x006f32e0 function Pause_HideScreen             # the pause screen's Flash "hidePause" (Pause_Update calls it when Start ends the pause)
 0x006fa300 function Fmod_PushCommand             # thiscall(mgr; cmd, a, b, c): queues an FMOD command (ring of 0x96 x 0x14 at 0x00ce8458, "Too many fmod commands at the same time!!"); dispatched through table 0x00c3a368 (0x1a music stop?, 0x27 music start, 0x28 music read, 0x33 sfx start)
 0x0070d890 function FmodSfx_Start                # thiscall(sfx; seq, volume, pan): "FmodSfx::start: Fail to start sequence(%d)"; volume/127 -> 0..1, pan/127*2-1 -> -1..1 (0x0070f310)
 0x00729570 function Fp_Hide                      # (id): sets bit 0x10 in the FP (field effect) state entry (0x00d30260 + i*0x4c); the "FP Disp Status" dump (0x00729060) prints it as Disp OFF
@@ -232,6 +233,7 @@
 0x007bf7f0 function Cam_AddPolar                 # (handle, side, dtheta, dphi, dlen): relative polar position, mode 7
 0x007bf940 function Cam_SetPos                   # (handle, side, &xyz): absolute position; applied now if the channel is active
 0x007c0010 function Cam_SetChannelSuspended      # (handle, on): sets the suspended byte of the matching channel slots
+0x00820ae0 function Game_Frame                   # the game's frame (update and draw): with g_PauseOn the world update (0x00821e80) is skipped for the pause's (0x008893e0); calls Battle_Update, Cam_Update, Screen_UpdateFades
 0x00821750 function Menu_Request                 # (menu id): g_012fbc38 = id, result 0x012fbc3c = -1; 0x40100000/0x40200000 handled separately
 0x008277f0 function SG_InitBones              # allocs "%s:Elem" (0x160/bone) and "%s:Fcv" (0x18c/bone); bind pose from the .chr bone table (20 bytes: parent, rot centideg, trans /1000, scale >>12)
 0x00829c90 function Chr_KindDir               # kind (0-6 or its letter) -> chr folder name
@@ -480,6 +482,8 @@
 0x0088cac0 function Msg_LoadFile               # (name): new_<lang>pc/event/obj_ps3/<xx>/<name>.bin, battle/btl/<name>/<name>.bin (name with _), battle/kernel (monster*), menu/*.dcp (macro*)
 0x0088d670 function Map_GetEntranceIndex         # byte g_SaveData+0xc
 0x0088ea60 function Map_RequestChange            # (map, entrance): game state (0x00785240) +0 = map, +2 = previous, +0xc = entrance; map < 0 = return to the saved map
+0x008ab340 function Pause_Update                 # per frame: enters the pause (Pause_Enter) when g_PauseOn is set and not entered; Start (pad 0x800) at fade 0x40 hides the screen and sets the step +4; at 0x80 it ends (flags cleared, sound resumed)
+0x008ab3d0 function Pause_Enter                  # sound and timers paused (0x00640e20(1), 0x00821cc0(1)), the pause screen shown (0x006f3300), g_PauseEntered = g_PauseOn = 1, fade 0x80 step -4
 0x008b70a0 function MacroDic_Section             # (n, table) -> *(macrodic table + (n - 19) * 4)
 0x008b85c0 function MacroDic_Load                # Msg_LoadFile("macrodic"): 16 section offsets -> pointers in g_MacroDic
 0x008c6920 function Cmd_HealAmount            # formula +0x28: 6 = power*50, 7 = (stat+power)/2*power, 8 = maxHP*power/16; power +0x2a
@@ -576,6 +580,10 @@
 0x01327148 label    g_EventSprites               # 128 x 0x1c: +0 active, +1 alpha, +4/+6 x/y, +8/+0xa scale*256, +0xc frame, +0x10 rgb, +0x14 data; drawn by 0x00874420
 0x01328558 label    g_NativeTables            # per-group native function tables
 0x0132ffa0 label    g_PartyWorkers               # [16] worker id per party index (0x0042, FUN_00885fd0)
+0x01340828 label    g_PauseOn                    # nonzero: Game_Frame runs the pause instead of the world; set alone, Pause_Update enters the pause
+0x01340838 label    g_PauseFade                  # the pause's dimming, 0x40 (paused) to 0x80 (running)
+0x0134083c label    g_PauseFadeStep              # added to g_PauseFade each frame: -4 entering, +4 leaving
+0x0134084c label    g_PauseEntered               # 1 once Pause_Enter ran
 0x01869ab0 label    g_MsgVars                    # per window 32 pointers to text variable records {u8 default type, u8 type, i32 value}; text code 0x12
 0x01869eb0 label    g_MacroDic                   # macrodic section pointer table (MacroDic_Load)
 0x022fb504 label    g_Settings

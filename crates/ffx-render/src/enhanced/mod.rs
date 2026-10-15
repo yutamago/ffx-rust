@@ -588,6 +588,11 @@ pub struct Enhanced {
     pub proj_scale: f32,
     pub view_eye: [f32; 3],
     pub view_forward: [f32; 3],
+    /// The depth of field a sequence's keyframes set (in play where the
+    /// camera follows a recorded path, or in the sequence editor).
+    pub dof_override: Option<crate::sequence::Key>,
+    /// The scene colour target of the last frame drawn.
+    pub last_color_view: Option<Id>,
     timer_tried: bool,
     replacements: HashMap<String, Option<wgpu::TextureView>>,
     /// Where to write each generated material map and its colour texture
@@ -1602,6 +1607,8 @@ impl Enhanced {
             proj_scale: 0.0,
             view_eye: [0.0; 3],
             view_forward: [0.0, 0.0, 1.0],
+            dof_override: None,
+            last_color_view: None,
             timer_tried: false,
             #[cfg(windows)]
             fsr: None,
@@ -2802,6 +2809,7 @@ impl Enhanced {
             return r.draw_frame(frame, &Filter::default());
         };
         let (color_view, normal_view, depth_view) = (first.rtv[0].1, first.rtv[1].1, first.dsv);
+        self.last_color_view = Some(color_view);
         let Some(size) = r
             .views
             .get(&color_view)
@@ -4518,11 +4526,20 @@ impl Enhanced {
         }
         mark!("volumetric");
         // Depth of field, motion blur, bloom.
+        // A sequence's keyframes: their depth of field.
+        let dof_settings = self.dof_override.map(|k| Settings {
+            depth_of_field: k.strength > 0.0,
+            dof_focus: k.focus.max(0.0),
+            dof_strength: k.strength,
+            dof_radius: k.radius,
+            dof_follow_camera: k.focus <= 0.0 && self.settings.dof_follow_camera,
+            ..self.settings.clone()
+        });
         let fx = self.post.run(
             &device,
             &queue,
             &mut enc,
-            &self.settings,
+            dof_settings.as_ref().unwrap_or(&self.settings),
             &post::Inputs {
                 hdr: &t.hdr,
                 depth: &t.depth,

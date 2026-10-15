@@ -20,6 +20,7 @@ enum Tab {
     #[default]
     Light,
     Materials,
+    Sequence,
     Files,
 }
 
@@ -39,6 +40,8 @@ enum Mode {
     Select,
     /// Puts a new light there (point or spot).
     Place(LightType),
+    /// Sets the selected sequence key's focus to what is there.
+    Focus,
 }
 
 /// A file being taken in: its changes and, per part, how it stands and
@@ -72,6 +75,7 @@ pub struct Io<'a> {
     pub preview: bool,
 }
 
+#[allow(clippy::struct_excessive_bools)] // independent states of the panel
 pub struct Editor {
     pub open: bool,
     pub edits: Edits,
@@ -95,6 +99,16 @@ pub struct Editor {
     applied: Option<(String, Edits)>,
     /// The selected light's handles.
     gizmo: crate::gizmo::Gizmo,
+    /// The sequence editor: its sequences, the game paused, the frame
+    /// shown and whether it plays, the sequence and key picked, and
+    /// whether the recording shows while paused.
+    pub seq: crate::sequence::Sequences,
+    pub paused: bool,
+    pub cursor: usize,
+    pub playing: bool,
+    pub sequence: Option<usize>,
+    key: Option<usize>,
+    pub preview: bool,
 }
 
 fn files_in(dir: &std::path::Path, ext: &str) -> Vec<String> {
@@ -173,6 +187,13 @@ impl Editor {
             images: Vec::new(),
             applied: None,
             gizmo: crate::gizmo::Gizmo::default(),
+            seq: crate::sequence::Sequences::new(exe_dir),
+            paused: false,
+            cursor: 0,
+            playing: false,
+            sequence: None,
+            key: None,
+            preview: true,
         }
     }
 
@@ -208,6 +229,8 @@ impl Editor {
         } else {
             click
         };
+        // In the sequence editor a click only picks a focus.
+        let click = click.filter(|_| self.tab != Tab::Sequence || self.mode == Mode::Focus);
         if let Some(at) = click {
             io.pick = Some(at);
         }
@@ -243,6 +266,7 @@ impl Editor {
                 ui.horizontal(|ui| {
                     ui.selectable_value(&mut self.tab, Tab::Light, "Light");
                     ui.selectable_value(&mut self.tab, Tab::Materials, "Materials");
+                    ui.selectable_value(&mut self.tab, Tab::Sequence, "Sequence");
                     if ui
                         .selectable_value(&mut self.tab, Tab::Files, "Files")
                         .clicked()
@@ -267,6 +291,7 @@ impl Editor {
                     .show(ui, |ui| match self.tab {
                         Tab::Light => self.light_ui(ui, io),
                         Tab::Materials => self.material_ui(ui, io),
+                        Tab::Sequence => self.sequence_ui(ui, io),
                         Tab::Files => self.files_ui(ui),
                     });
             });
@@ -313,6 +338,25 @@ impl Editor {
                 rig.lights.push(light);
                 self.light = Some(rig.lights.len() - 1);
                 self.message = "light added".into();
+            }
+            Mode::Focus => {
+                self.mode = Mode::Select;
+                let (Some(k), Some(i), Some((eye, _))) = (self.sequence, self.key, io.camera)
+                else {
+                    return;
+                };
+                if p.empty {
+                    self.message = "nothing there to focus on".into();
+                    return;
+                }
+                let d = (0..3)
+                    .map(|j| (p.position[j] - eye[j]).powi(2))
+                    .sum::<f32>()
+                    .sqrt();
+                if let Some(key) = self.seq.list.get_mut(k).and_then(|s| s.keys.get_mut(i)) {
+                    key.focus = d;
+                    self.message = format!("focus {d:.1} units away");
+                }
             }
             Mode::Select => {
                 if p.texture == 0 {
@@ -645,6 +689,228 @@ impl Editor {
                 }
             }
         });
+    }
+
+    #[allow(clippy::too_many_lines)] // recording, the list, the timeline, the keys
+    fn sequence_ui(&mut self, ui: &mut egui::Ui, io: &mut Io) {
+        let scene = io.scene.to_owned();
+        ui.horizontal(|ui| {
+            if let Some((_, frames)) = &self.seq.recording {
+                if ui.button(format!("Stop ({} frames)", frames.len())).clicked()
+                    && let Some(k) = self.seq.stop()
+                {
+                    self.sequence = Some(k);
+                    self.cursor = 0;
+                }
+            } else if ui
+                .add_enabled(!scene.is_empty(), egui::Button::new(egui::RichText::new("Record").color(egui::Color32::from_rgb(230, 80, 80))))
+                .on_hover_text("Records the frames from now (a cutscene as it plays), until Stop or a new scene")
+                .clicked()
+            {
+                self.seq.record(&scene);
+            }
+            let text = if self.paused { "▶ Resume game" } else { "⏸ Pause game" };
+            if ui
+                .button(text)
+                .on_hover_text("The game stops; the overlay stays (hiding it resumes)")
+                .clicked()
+            {
+                self.paused = !self.paused;
+                self.playing = false;
+            }
+            if ui
+                .add_enabled(self.seq.dirty(), egui::Button::new("Save"))
+                .on_hover_text("Writes sequences.toml (the keyframes and camera paths)")
+                .clicked()
+            {
+                self.seq.save();
+            }
+        });
+        if !self.seq.message.is_empty() {
+            ui.label(&self.seq.message);
+        }
+        ui.separator();
+        ui.strong("Sequences in this scene");
+        let mut any = false;
+        for (k, s) in self.seq.list.iter().enumerate() {
+            if s.scene != scene {
+                continue;
+            }
+            any = true;
+            let take = self.seq.take(k).is_some();
+            let text = format!(
+                "{}  ·  {} frames, {} keys{}",
+                s.name,
+                s.cameras.len(),
+                s.keys.len(),
+                if take { "  · recorded now" } else { "" }
+            );
+            if ui
+                .selectable_label(self.sequence == Some(k), text)
+                .clicked()
+            {
+                self.sequence = Some(k);
+                self.cursor = 0;
+                self.key = None;
+            }
+        }
+        if !any {
+            ui.label("None yet: Record while a cutscene plays.");
+        }
+        let Some(k) = self
+            .sequence
+            .filter(|&k| self.seq.list.get(k).is_some_and(|s| s.scene == scene))
+        else {
+            return;
+        };
+        ui.separator();
+        let frames = self.seq.list[k].cameras.len().max(1);
+        let take = self.seq.take(k).map(<[_]>::len);
+        let mut delete = false;
+        ui.horizontal(|ui| {
+            ui.label("Name");
+            ui.text_edit_singleline(&mut self.seq.list[k].name);
+            delete = ui.button("Delete").clicked();
+        });
+        if delete {
+            self.seq.delete(k);
+            self.sequence = None;
+            return;
+        }
+        // The timeline.
+        if take.is_some() {
+            ui.checkbox(
+                &mut self.preview,
+                "Show the recording while the game is paused",
+            );
+        } else {
+            ui.label("Recorded in an earlier session: record it again to see it (the keys stay).");
+        }
+        ui.horizontal(|ui| {
+            if ui.button("|◀").clicked() {
+                self.cursor = 0;
+            }
+            if ui.button("◀").clicked() {
+                self.cursor = self.cursor.saturating_sub(1);
+            }
+            let play = if self.playing { "❚❚" } else { "▶" };
+            if ui
+                .button(play)
+                .on_hover_text("Plays the recording (the game paused)")
+                .clicked()
+            {
+                self.playing = !self.playing;
+                if self.playing {
+                    self.paused = true;
+                }
+            }
+            if ui.button("▶").clicked() {
+                self.cursor = (self.cursor + 1).min(frames - 1);
+            }
+            if ui.button("▶|").clicked() {
+                self.cursor = frames - 1;
+            }
+        });
+        if self.playing {
+            self.cursor += 1;
+            if self.cursor >= frames {
+                self.cursor = frames - 1;
+                self.playing = false;
+            }
+        }
+        let mut c = self.cursor;
+        let marks: Vec<u32> = self.seq.list[k].keys.iter().map(|k| k.frame).collect();
+        let r = ui.add(
+            egui::Slider::new(&mut c, 0..=frames - 1)
+                .text("frame")
+                .clamping(egui::SliderClamping::Always),
+        );
+        // Keyframes as ticks under the slider.
+        let rail = r.rect;
+        let painter = ui.painter();
+        let width = (rail.width() - 60.0).max(1.0);
+        for m in &marks {
+            let x = rail.left() + width * (*m as f32 / (frames - 1).max(1) as f32);
+            painter.line_segment(
+                [
+                    egui::pos2(x, rail.bottom()),
+                    egui::pos2(x, rail.bottom() + 5.0),
+                ],
+                egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 200, 60)),
+            );
+        }
+        ui.add_space(6.0);
+        self.cursor = c;
+        // The keys.
+        ui.horizontal(|ui| {
+            ui.strong("Depth of field keys");
+            if ui.button("+ Key here").clicked() {
+                let at = self.cursor as u32;
+                let base = self.seq.list[k].dof_at(at as f32).unwrap_or_default();
+                let keys = &mut self.seq.list[k].keys;
+                keys.retain(|x| x.frame != at);
+                keys.push(crate::sequence::Key { frame: at, ..base });
+                keys.sort_by_key(|x| x.frame);
+                self.key = keys.iter().position(|x| x.frame == at);
+            }
+        });
+        if self.mode == Mode::Focus {
+            ui.label("Click what to focus on in the picture.");
+        }
+        let mut remove = None;
+        egui::Grid::new("keys")
+            .num_columns(6)
+            .striped(true)
+            .show(ui, |ui| {
+                ui.label("frame");
+                ui.label("focus");
+                ui.label("strength");
+                ui.label("radius");
+                ui.label("");
+                ui.label("");
+                ui.end_row();
+                for (i, key) in self.seq.list[k].keys.iter_mut().enumerate() {
+                    if ui
+                        .selectable_label(self.key == Some(i), key.frame.to_string())
+                        .clicked()
+                    {
+                        self.key = Some(i);
+                        self.cursor = key.frame as usize;
+                    }
+                    ui.add(
+                        egui::DragValue::new(&mut key.focus)
+                            .speed(0.5)
+                            .range(0.0..=10000.0),
+                    )
+                    .on_hover_text("World units from the camera (0: automatic)");
+                    ui.add(
+                        egui::DragValue::new(&mut key.strength)
+                            .speed(0.01)
+                            .range(0.0..=4.0),
+                    );
+                    ui.add(
+                        egui::DragValue::new(&mut key.radius)
+                            .speed(0.1)
+                            .range(0.0..=64.0),
+                    );
+                    if ui
+                        .button("pick")
+                        .on_hover_text("Click what to focus on")
+                        .clicked()
+                    {
+                        self.key = Some(i);
+                        self.mode = Mode::Focus;
+                    }
+                    if ui.button("Delete").clicked() {
+                        remove = Some(i);
+                    }
+                    ui.end_row();
+                }
+            });
+        if let Some(i) = remove {
+            self.seq.list[k].keys.remove(i);
+            self.key = None;
+        }
     }
 
     #[allow(clippy::too_many_lines)] // the picked texture's material, then the list

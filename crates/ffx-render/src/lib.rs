@@ -27,6 +27,7 @@ pub mod overlay;
 pub mod png;
 pub mod profiles;
 mod replay;
+pub mod sequence;
 #[cfg(windows)]
 pub mod share;
 

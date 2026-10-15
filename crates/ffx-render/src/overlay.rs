@@ -33,11 +33,18 @@ fn vs(@location(0) pos: vec2<f32>, @location(1) uv: vec2<f32>, @location(2) colo
     return out;
 }
 
+// Coordinates from 2 across: an opaque image (the scene, whose alpha is
+// the game's glow mask), at the coordinates less 2.
 @fragment
 fn fs(in: VsOut) -> @location(0) vec4<f32> {
-    return in.color * textureSample(tex, samp, in.uv);
+    let opaque = in.uv.x >= 1.5;
+    let t = textureSample(tex, samp, in.uv - vec2<f32>(select(0.0, 2.0, opaque), 0.0));
+    return in.color * select(t, vec4<f32>(t.rgb, 1.0), opaque);
 }
 ";
+
+/// The egui texture of the sequence editor's picture.
+const SCENE: egui::TextureId = egui::TextureId::User(2);
 
 /// Frame statistics the overlay shows.
 #[derive(Debug, Clone, Default)]
@@ -628,6 +635,9 @@ pub struct Overlay {
     pub editor: crate::editor::Editor,
     /// The free camera.
     pub freecam: crate::freecam::FreeCam,
+    /// The sequence editor's picture of a recorded frame is registered
+    /// (drawn under everything).
+    scene_shown: bool,
     /// Whether the picked texture's preview is registered.
     preview: bool,
 }
@@ -658,8 +668,16 @@ impl Overlay {
                 file.parent().unwrap_or_else(|| std::path::Path::new(".")),
             ),
             freecam: crate::freecam::FreeCam::default(),
+            scene_shown: false,
             preview: false,
         }
+    }
+
+    /// The picture of a recorded frame for the sequence editor, over the
+    /// whole screen (none: the game's image shows).
+    pub fn set_scene(&mut self, device: &wgpu::Device, view: Option<&wgpu::TextureView>) {
+        self.scene_shown = view.is_some();
+        self.painter.set_view(device, SCENE, view);
     }
 
     /// The preview of the texture the editor picked.
@@ -747,6 +765,9 @@ impl Overlay {
     pub fn hidden(&mut self) {
         self.painter.dirty = true;
         self.painter.pending = None;
+        // Hidden, the overlay cannot resume the game: it goes on.
+        self.editor.paused = false;
+        self.editor.playing = false;
     }
 
     /// Runs the panel over a `size` screen; returns the part of the image
@@ -806,8 +827,17 @@ impl Overlay {
         let editor = &mut self.editor;
         let free = &mut self.freecam;
         io.preview = self.preview;
+        let scene_shown = self.scene_shown;
         let out = self.ctx.run_ui(input, |ui| {
             let ctx = ui.ctx().clone();
+            if scene_shown {
+                ctx.layer_painter(egui::LayerId::background()).image(
+                    SCENE,
+                    ctx.content_rect(),
+                    egui::Rect::from_min_max(egui::pos2(2.0, 0.0), egui::pos2(3.0, 1.0)),
+                    egui::Color32::WHITE,
+                );
+            }
             // A click on the scene (not on a panel) is the editor's.
             let over = ctx.is_pointer_over_egui();
             let click = ctx

@@ -45,6 +45,8 @@ static OVERLAY_KEYS: AtomicBool = AtomicBool::new(false);
 static WANT_EFFECTS: AtomicBool = AtomicBool::new(false);
 /// The renderer's settings turn the game's afterimage off.
 static NO_AFTERIMAGE: AtomicBool = AtomicBool::new(false);
+/// The renderer has the game paused (its sequence editor; `game_pause`).
+static PAUSED: AtomicBool = AtomicBool::new(false);
 /// The renderer's free camera (eye, look-at in game space, projection
 /// distance, roll), put into the game's override camera at Present; and
 /// whether the override is ours to turn off.
@@ -71,6 +73,50 @@ static WINDOW: AtomicUsize = AtomicUsize::new(0);
 static WNDPROC: AtomicUsize = AtomicUsize::new(0);
 /// The back buffer's size.
 static SCREEN: Mutex<(u32, u32)> = Mutex::new((0, 0));
+
+/// The game's own pause (`Pause_Enter` 0x008ab3d0, `Pause_Update`
+/// 0x008ab340): its flag, set when it is entered, the fade's step, and the
+/// pause screen's hide.
+const PAUSE_ON: u32 = 0x0134_0828;
+const PAUSE_ENTERED: u32 = 0x0134_084c;
+const PAUSE_STEP: u32 = 0x0134_083c;
+const PAUSE_HIDE: u32 = 0x006f_32e0;
+/// 0: not ours, 1: asked for, 2: entered and its screen hidden.
+static PAUSE_STATE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// The renderer's pause through the game's own: setting its flag makes
+/// `Pause_Update` enter it (world update stopped, sound paused, the image
+/// dimmed; the "PAUSE" text is hidden again); to end it, the fade goes
+/// up as when Start is pressed, and the game resumes by itself.
+fn game_pause() {
+    let want = PAUSED.load(Ordering::Acquire);
+    let state = PAUSE_STATE.load(Ordering::Relaxed);
+    let at = |a: u32| crate::rebase(a) as *mut u32;
+    // SAFETY: the game's pause globals and its function, on the thread that
+    // presents (the harness calls game functions there too).
+    unsafe {
+        match (want, state) {
+            (true, 0) => {
+                std::ptr::write_volatile(at(PAUSE_ON), 1);
+                PAUSE_STATE.store(1, Ordering::Relaxed);
+                log("  live: game paused");
+            }
+            (true, 1) if std::ptr::read_volatile(at(PAUSE_ENTERED)) == 1 => {
+                let hide: extern "C" fn() = std::mem::transmute(crate::rebase(PAUSE_HIDE));
+                hide();
+                PAUSE_STATE.store(2, Ordering::Relaxed);
+            }
+            (false, 1 | 2) => {
+                if std::ptr::read_volatile(at(PAUSE_ON)) == 1 {
+                    std::ptr::write_volatile(at(PAUSE_STEP), 4);
+                }
+                PAUSE_STATE.store(0, Ordering::Relaxed);
+                log("  live: game resumed");
+            }
+            _ => {}
+        }
+    }
+}
 
 /// The trampoline to the original `Cam_Update` (`0x007bc110`).
 pub static CAM_UPDATE_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
@@ -640,6 +686,7 @@ struct Link {
     /// the renderer sends the parts that change.
     overlay: Option<OverlayImage>,
     overlay_pass: Option<OverlayPass>,
+
     /// Whether the renderer answered this frame already.
     answered: bool,
     /// Skip the game's own scene draws (the renderer's replace them).
@@ -755,6 +802,7 @@ pub fn start() {
                 indices: HashMap::new(),
                 overlay: None,
                 overlay_pass: None,
+
                 answered: false,
                 skip: std::env::var("FFX_RENDERER_SKIP").map_or(true, |v| v != "0"),
                 streak: 0,
@@ -1177,6 +1225,7 @@ pub unsafe fn present(s: &mut State, swap_chain: Ptr) {
         link.overlay = None;
     }
     free_camera();
+    game_pause();
     if OVERLAY.load(Ordering::Acquire)
         && let Some(mut image) = link.overlay.take()
     {
@@ -1466,6 +1515,7 @@ fn receive(link: &mut Link, frame: u32) -> Option<Reply> {
         }
         if number == frame {
             OVERLAY_KEYS.store(flags & 16 != 0, Ordering::Release);
+            PAUSED.store(flags & 128 != 0, Ordering::Release);
             WANT_EFFECTS.store(flags & 32 != 0, Ordering::Relaxed);
             return Some(Reply {
                 width: w,

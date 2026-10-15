@@ -59,6 +59,7 @@ pub unsafe extern "system" fn DllMain(
 /// # Safety
 /// `base` must be the main module; called before other threads run game code.
 unsafe fn install_hooks(base: usize) {
+    ffx_hook::log::install_diagnostics();
     log(&format!(
         "ffx-hook {} loaded, FFX.exe at {base:#010x}",
         env!("CARGO_PKG_VERSION")
