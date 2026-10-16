@@ -4431,6 +4431,9 @@
 0x007b8170 function Native_Cam_6035            # 0x6035: 0x007bb520(w, a, s, 0); 0; ported in native_cam
 0x007b8210 function Native_CamFocusCut           # 0x6034: () -> cam; drops the focus half's transition and applies the target now (0x007bed60(cam, 0)); 0x6016 is the eye version
 0x007b8270 function Native_CamFocusWait          # 0x6038 (poll): waits until the focus half's transition ends (0x007bdd20(cam, 0) == 0 -> 5); 0x601a is the eye version ("CameraWaitStart!")
+0x007b8330 function Native_Cam_601c            # 0x601c: (var, degrees): 0x007bf520(cam, 1, 1, &var, radians); the handle; ported in native_cam
+0x007b8470 function Native_Cam_601d            # 0x601d: (var, degrees, y, x): 0x007bf600(cam, 1, 1, &var, radians, y, x); the handle; ported in native_cam
+0x007b8530 function Native_Cam_601f            # 0x601f: as 0x601d with 0 for the mode; ported in native_cam
 0x007b8660 function Native_Cam_6043            # 0x6043: (v): 0x007bdf90(cam, 1, v ^ 0xffff); the handle; ported in native_cam
 0x007b86f0 function Native_Cam_603f            # 0x603f: 0x007bad10(w, a, s, 0); 0; ported in native_cam
 0x007b8710 function Native_CamEyeOrbitScaled     # 0x6040: args (actor a, actor b, height, yaw deg, pitch deg, distance) -> cam; 0x007badb0(half 1, mode 1): eye = mean of actors + height * actor height + orbit at distance/100 * actor size
@@ -4488,8 +4491,11 @@
 0x007b9eb0 function Native_Cam_604a            # 0x604a: as 0x6048 for g_BtlSplines[0]; ported in native_cam
 0x007b9f40 function Native_CamPathAddFocus       # 0x604b: () -> cam; 0x007baac0(cam, 0): appends the focus point to path list 0
 0x007b9fe0 function Native_CamRefSetTarget       # 0x6027: args (target, bone?, y offset) -> 0; ref (side 0) follow mode 3: +0xc = target, +0xe = bone, offset (0,y,0) (0x007beeb0); scripts push (0, -1, y); ?target/bone meaning
+0x007ba020 function Native_Cam_6059            # 0x6059: (path, a): focus along path (0/1 battle spline lists, else a variable): 0x007bfe70(cam, 0, path, 0.0, a); 0; ported in native_cam
 0x007ba0e0 function Native_Cam_6028            # 0x6028: 0x007bb2b0(w, a, s, 0, 0); 0; ported in native_cam
+0x007ba100 function Native_Cam_605a            # 0x605a: (path, t, a): as 0x6059 from t; ported in native_cam
 0x007ba1d0 function Native_CamRefAddLineArea     # 0x6029: args (x1, z1, x2, z2, r) floats -> 0; adds a segment constraint (max 5, count at side +0xc4) to the ref (0x007bf0b0 stores dir, origin, -dot, |dir|^2, r); ?keeps the ref within r of the segment
+0x007ba210 function Native_Cam_605b            # 0x605b: (path, a): eye along path: 0x007bfd90(cam, 1, path, a); 0; ported in native_cam
 0x007ba2d0 function Native_CamRefAddCircleArea   # 0x602b: args (x, z, r) -> 0; adds a circle constraint (type 3) to the ref's list (0x007bf1f0); ?keeps the ref inside/around the circle
 0x007ba2f0 function Native_CamRefClearAreas      # 0x602d: no args -> camera handle; clears the ref's constraint count (byte 0x01137634 + side/channel, 0x007bed10)
 0x007ba650 function MsAtelCameraInit          # fh v3:exact 0x007ba5d0
@@ -6105,7 +6111,9 @@
 0x00859640 function Native_TurnSetYaw            # 0x0028: args (yaw) -> wrapped yaw; turn struct +0x20 = wrap(yaw), +0x2c = wrap(current yaw pos+0x34 - yaw) (FUN_0088bc20)
 0x008596b0 function Native_SetMapFadeFrames      # 0x00bb: args (n) -> n; g_SaveData+0x12 = n; 0x0086ff40 passes it to 0x0088eb50 (frame counters 0x01330850/54) and to the fade; scripts push 0 or 15 before 0x010b
 0x008596d0 function Native_MusicPlay             # 0x0104 (music) -> 1; Music_Play 0x00886a20 (FMOD cmd 0x27 start, volume 0x7f), current music 0x01327130 = id; id 0x25 sets 0x01325b40
+0x00859710 function Native_MsgSelect           # 0x007d start: (window[, a[, b]]): window clamped into args +0, up to two more stack words into +8, their count in +6; window +0x1d |= 0x20; ported in native_msg
 0x00859880 function Native_TurnSetPitch          # 0x0029: args (angle) -> wrapped angle; turn struct +0x24 = wrap(angle), +0x30 = wrap(pos+0x30 - angle); ?pitch, paired with 0x0020
+0x00859c50 function Native_MsgSelect_Poll      # 0x007d poll (and 0x013b): closed/state 4: choice (0x008b7fd0 first byte if 0x008b7ff0 > 0, else -1) into args +4, 1; open with text shown and 0x008b7fb0 == 2: choice stored, window closed; ported in native_msg
 0x00859d70 function Native_MusicWaitLoaded       # 0x0105 start: empty (poll 0x00859df0 returns 5, int 0x00859ee0 returns 1); PS2 wait stubbed on PC; scripts call it right after 0x0102
 0x00859ee0 function Native_MusicWaitLoaded_Result # 0x0105 int: returns 1
 0x0085a2a0 function Native_TurnSetSpeed          # 0x002e: args (rad/frame); turn struct +0x10 (FUN_00871580), the turn step (0x00869xxx; +0x14 when flag 0x200); default pi/64; scripts 0.1047
@@ -6113,6 +6121,7 @@
 0x0085a4e0 function Native_SetTurnMotions        # 0x00c5: args (m0, m1, m2, m3) -> 0; ctx+0xae0..0xaec = the four motion ids in push order (e.g. 69735/69736/69733/69734 = 0x1106x); indexed by 0x00c6's kind
 0x0085a5c0 function Native_TurnSetSpeed2         # 0x002f: args (rad/frame); turn struct +0x18 (FUN_00871560); default pi/64; ?second-axis or in-motion turn speed; scripts 0.1745
 0x0085a670 function Native_GetTurnKind           # 0x00c6: args () -> bit0 = remaining turn angle (turn block +0x2c at ctx+0x890+level*0x44) > 0, bit1 = |angle| beyond the threshold g_01327124 (degrees, via 0x00873ad0); used as `func 0x00c6; popi3; pushi3; func 0x00c7; func_facc 0x5000`
+0x0085a6f0 function Native_MsgSelect_Result    # 0x007d int (and 0x013b): closes the window, pushes the saved words back; returns the choice (args +4, i16); ported in native_msg
 0x0085ab80 function Native_SetMoveParam3C        # 0x006d: args (float a) -> a; move block +0x3c for all 9 levels (0x0086f1c0); 0x0086d300 default pi; init pushes 0.1309 (7.5 deg); ? angle limit used while moving
 0x0085abb0 function Native_GetTurnMotion         # 0x00c7: args (kind) -> ctx+0xae0[kind], the motion set by 0x00c5
 0x0085abd0 function Native_MsgWaitEx             # 0x0084 start: args (window, x) -> -; window clamped to 0..7, saved with x (x is always 1 in the scripts) in the call state; window +0x1d |= 0x10; end slot 0x0085b6d0
@@ -6125,6 +6134,7 @@
 0x0085b230 function Native_SetTurnParam18        # 0x0070: args (float a) -> a; turn block +0x18 (0x0086f260); default pi/64; init 0.1745
 0x0085b280 function CT_0216_init_teachAbilityToPartyMemberWithMsg # fh v3:exact 0x0085b120 +CT_0216_init_teachAbilityToPartyMemberWithMsg
 0x0085b480 function Native_SetTurnParam1C        # 0x0071: args (float a) -> a; turn block +0x1c (0x0086f210); default pi/64; init 0.1745
+0x0085b4e0 function Native_0036                # 0x0036: (worker): 0x00863e10(it, level) for levels 0..9; 0; ported in native_move
 0x0085b5d0 function CT_0216_exec_teachAbilityToPartyMemberWithMsg # fh v3:exact 0x0085b470 +CT_0216_exec_teachAbilityToPartyMemberWithMsg
 0x0085b620 function Native_WorkerStopMove        # 0x0077: args (worker) -> 0; Script_StopMove(Script_GetWorker(w), -1); scripts push `pushimm -1; func 0x0033` (own index)
 0x0085b6d0 function Native_MsgWaitEx_End         # 0x0084 int result: pushes the saved window, pops it again and Msg_CloseWindow's it; returns 0
@@ -6149,6 +6159,7 @@
 0x0085c320 function Native_SetTriggerMode        # 0x007f: args (m) -> 1/0; worker types 2/3/5/6 only; bits 13-14 of the worker word ctx+0x34 = m; debug draw (0x0087d820 area) colours mode 0/1/2 and draws nonzero modes only when debugging; scripts push 1 (567) or 2 (22); ? disables the trigger
 0x0085c370 function Native_SpriteShow            # 0x011b (slot 0-127, data var) -> slot; sprite table 0x01327148 (0x1c each): active, alpha 0xff, color 0x80808080, data = Script_VarAddress(var)
 0x0085c3b0 function Native_BitFlagSet            # 0x0210 (bit) -> bit; sets bit in the 1024-bit array 0x0113085c (game state +0x3dcc) via 0x008701f0; clear = 0x0085c810, test = 0x0086b9e0; nagi0700 only
+0x0085c3e0 function Native_003d                # 0x003d: 0x0086db80(worker, 0xff); 0; ported in native_move
 0x0085c420 function Native_WaitForever           # 0x005f poll: returns 0 forever (never done), parks the entry until it is interrupted; 14636 calls in 1555 scripts
 0x0085c4c0 function Native_SpriteHide            # 0x011c (slot) -> slot; sprite +0 = 0 (slot < 0 clears slot 0) (0x008747f0)
 0x0085c4e0 function Native_WaitFrames_0000       # 0x0000: args (frames) -> frames; start slot stores the count in *result (40 instead of 10 when 0x00782970()==0x610000 && *0x00c64ca0==0x290, a one-off timing patch); scripts: "pushimm 1; func 0x0000"
@@ -6204,6 +6215,7 @@
 0x008603d0 function Native_MsgShowWait_Poll      # 0x013b poll: tail call to 0x00859c50: waits on window state +0x14 (0 or 4 done; 2 = choice made) and stores the chosen option
 0x008603e0 function Native_TriggerSetPoint       # 0x0057: args (x, y, z) -> 1; worker types 3/6 only: position = point, +0x34 |= 0x80, +0x36 |= 1
 0x00860760 function Native_MsgShowWait_Result    # 0x013b int: tail call to 0x0085a6f0 -> chosen option (-1 none)
+0x008607a0 function Msg_ShowSetup              # (worker, args, stack, mode): pops (window, message, b, a, x, y, anchor), re-pushes them for Native_MsgSetPos, style 0, text, flags 0, choice bytes +0x1e/+0x1f, MsgOpen with mode|2, then Native_MsgSelect; mode 0 from Native_MsgShowWait, 8 from 0x00855d70; ported in native_msg
 0x00860a60 function debugSetRikkuName         # fh switch:cg2 0x71008aefb8
 0x00860a90 function getMegasAdding            # fh v3:bsim1.00 0x00860a30
 0x00860f20 function setMegasAdding            # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_MegasAdding = v (getMegasAdding 0x00860a90)
@@ -11380,6 +11392,7 @@
 0x00c44a50 function MsPreProcess                 # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%23include'; Switch 0x71003beea0 MsPreProcess (symbols from Fahrenheit's server export)
 0x00c44bf0 label    g_pppSinTable                # 4096 f32 sines over a turn: pppGetRotMatrix* read [(a>>4)&0xfff] and [((a+0x4000)>>4)&0xfff] (cosine)
 0x00c49498 label    g_SqsBattleStream            # the battle streaming sound's id (SqsBattleStreamingDataSend: a +8, else b +8, else -1)
+0x00c494c8 label    g_CamFinishCount           # counts Native_CamMoveFinish (0x007b9b40) calls with magic 0x92; at 2 sets g_BtlRandomLatch and becomes -1
 0x00c49680 label g_ChrDefaultMoves           # Ch_MotionSetMoves(chr, slot, -1) stores entry [slot] (0, 1, 2, then zeros)
 0x00c496e0 label g_Chr6e0                   # u32, Ch_SysSet6e0
 0x00c496ea label g_ChrShadeByLight           # i8: Ch_DrawCalcShade multiplies the shade fade by the light value fade (+0x36c) when set
@@ -11482,6 +11495,7 @@
 0x01128ab4 label    g_Cd_SectorBase           # added to every cdrom.mdg start sector (cd_file_sector); CdEnvInit: the disc's first sector less the table's own
 0x01128ab8 label    g_Cd_HddInstallCount      # hdd_install_check(g_Cd_HddInstall) (CdEnvInit); check_ex_file_size loops over that many
 0x01128ae4 label    g_Cd_HddInstall           # HDD-install table, 0x34-byte entries: archive (u8) +0, PS2 file number +8, size +0x10 (check_ex_file_size)
+0x0112a008 label    g_WaitFramesByTime         # with it set Native_WaitFrames_Poll_0000 (0x0085c6b0) counts down by 0x00645d90() while 0x0076efc0() holds
 0x0112a07c label    g_EmptyName               # u8 0 (.bss): what Kernel_GetItemName and 0x00774720 (ability names) return for ID 0
 0x0112a4fc label    g_Hdd_State               # 2 words zeroed by hdd_state_clear
 0x0112a508 label    g_Hdd_Mounted             # i8: hdd_mount/hdd_unmount set it, hdd_mount_flg_get returns it
@@ -11683,7 +11697,9 @@
 0x01136a58 label g_BtlMoveTarget              # u8; The move target position (MsMoveTargetPos).
 0x01136a68 label g_BtlAction                  # i32; Set to -1 by MsActionInit.
 0x01136ad8 label g_BtlEffectCameraFloats      # [u32; 16]; 16 floats MsEffectSetCameraBufFloat sets.
+0x01136b5c label    g_CamWaitFrames            # Native_CamWait (0x007b9be0) debug frame count
 0x01136b60 label g_BtlSplines                 # [u32; 2]; Reset by MsSplineInit.
+0x01136b68 label    g_BtlSplineLists           # two 0x210-byte camera path lists (count word, points) after g_BtlSplines; Native_Cam_6059/605a/605b, 0x007bb970
 0x01136f88 label g_AtelCamera              # 4 x 3 words cleared by MsAtelCameraInit
 0x01136fb8 label g_BtlScreenOffset            # [u32; 2]; The offset MsScreenResetOffset keeps (x, y).
 0x01136fc4 label    g_CamOverrideRoll            # override camera roll (Cam_OverrideSet param 4)
@@ -11735,6 +11751,7 @@
 0x012f4e94 label    g_SqsShoutSkipped         # set when a shout sound was skipped (SqsShoutStreamingPlayState)
 0x012f4ecc label    g_SqsShoutBuffer          # the shout sound buffer's IOP address (SqsShoutStreamingDataSend)
 0x012f4ed0 label    g_SqsSifDmaId             # the id of the last SIF DMA (SqsSifDmaStart)
+0x012fb7e0 label    g_BtlRandomLatch           # set by g_CamFinishCount, read and cleared by Native_BtlRandom (0x007b89a0): the next draw gives 2 or 0
 0x012fb7f0 label    g_SgVCount                   # vertical blank counter, +2 a frame (0x00821e80); Sg_MainCalcRate reads it; yiGetVCount
 0x012fbc40 label g_CurrentMapNo             # current map (field) number: Ch_UseLargeCollisionRad, Ch_ShouldDisableClothForMotion, Ch_ClothSetAtariJimenCheck, Native_MsgSetPos compare it with map numbers
 0x012fbc54 label g_ChrClothParaEdit          # i8, Ch_ClothSetParaEdit / Ch_ClothGetParaEdit
