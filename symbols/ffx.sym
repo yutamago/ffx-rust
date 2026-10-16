@@ -4408,54 +4408,96 @@
 0x007a2730 function MsMessageCueInit          # fh switch:bsim1.00 0x710035e990
 0x007a2750 function MsStoneMove               # fh v3:exact 0x007a2770
 0x007a2780 function MsStoneRegist             # fh v3:exact 0x007a27a0
+0x007a29a0 function Native_7012                # 0x7012: actor +0x435 = 0; state +0xdfb 2 -> 3, else +0x432 = 0; 0; ported in native_btl/native_move (script round 9)
 0x007a2a20 function Native_ActorQueueMotion      # 0x7016: args (motion) -> 0; self actor: clears motion state (0x007ab6c0) and sets +0x3f2 = motion; 0x007aa160 plays it next frame through 0x007ab360 (255 = none, idle); used after 0x7007/0x7008
+0x007a2a80 function Native_707a                # 0x707a: (selector): 0x0079a920(picked, its -16 pick, 0, 0, 0); ported in native_btl/native_move (script round 9)
+0x007a2b10 function Native_7039                # 0x7039: 0x0078cca0(actor, record), 0x007a8f20(); 0; ported in native_btl/native_move (script round 9)
+0x007a2ce0 function Native_7086                # 0x7086: 0x0078e5a0(actor); 0; ported in native_btl/native_move (script round 9)
+0x007a2d00 function Native_7031                # 0x7031: actor +0x432 = 1; 0; ported in native_btl/native_move (script round 9)
+0x007a2f40 function Native_70b5                # 0x70b5: actor +0x400 = 0xffff; 0; ported in native_btl/native_move (script round 9)
+0x007a2fe0 function Native_709e                # 0x709e: (selector, a, b): 0x007b74d0(picked, a, b); ported in native_btl/native_move (script round 9)
 0x007a30a0 function CT_7106_ret_doesChrKnowCommand # fh v3:bsim1.00 0x007a30c0 +CT_7106_ret_doesChrKnowCommand
+0x007a32a0 function Native_70e2                # 0x70e2: (selector, v): 0x0083d040(picked model, 4, v); 0; ported in native_btl/native_move (script round 9)
 0x007a3530 function Native_7002                # 0x7002 start: (a, b) -> 0x00781c90(a, 1, b); ported in native_btl/native_msg (script round 8)
 0x007a35a0 function Native_ActorPlayMotion       # 0x7007: args (motion; bit 0x8000 = no blend) -> length in frames << 8 / speed; plays a motion on the script's battle actor (0x007a8fc0, 0x00837d00)
 0x007a36c0 function Native_706f                # 0x706f: 0x007a8fc0(worker, args, stack, 1); ported in native_btl/native_msg (script round 8)
+0x007a3920 function Native_708c                # 0x708c: (a, b): 0x00782ba0(a, b); ported in native_btl/native_move (script round 9)
 0x007a3980 function Native_ActorWaitMotion       # 0x7008 (poll): waits until the self actor's motion ends (0x007a8c50/0x008392c0); returns 5 when done or no actor; used right after 0x7007
 0x007a39d0 function Native_BtlSetFlagBded        # 0x7001: args (flag) -> 0; byte 0x0112bded = flag & 1 (cleared at battle load 0x00781020); ?meaning; every battle script's worker 1 entry 0 calls it with 0
+0x007a3b20 function Native_7009                # 0x7009: (b): 0x00796070(actor, b & 1 == 0); 0; ported in native_btl/native_move (script round 9)
 0x007a3c50 function Native_702b                # 0x702b: -1 when the actor model is busy (0x008392c0), else 0; ported in native_btl/native_msg (script round 8)
+0x007a3cc0 function Native_7033                # 0x7033: (b): actor +0x32 = b & 1; 0; ported in native_btl/native_move (script round 9)
 0x007a3d90 function Native_7003                # 0x7003: (a, b) -> 0x00795eb0(actor, 2, 0, -1, b, a); 0; ported in native_btl/native_msg (script round 8)
+0x007a3eb0 function Native_7055                # 0x7055: (b): 0x00796f20(record, 0, b & 1); 0; ported in native_btl/native_move (script round 9)
 0x007a3f50 function Native_7006                # 0x7006: (a, b): with actor +0x41d set, 0x00795eb0(actor, 1, 0, -1, b, a); 0; ported in native_btl/native_msg (script round 8)
+0x007a3fb0 function Native_7029                # 0x7029: (b): actor +0x505 = b & 1; 0; ported in native_btl/native_move (script round 9)
+0x007a4050 function Native_7017                # 0x7017: (a, b): actor +0xe12 += 1 when 0x0079eb10(actor, a, 7, b, 1); 0; ported in native_btl/native_move (script round 9)
+0x007a40a0 function Native_7108                # 0x7108: (a, b): MsSetChrDirTarget(actor, 1, 1, -1, b, a) with +0x41d; 0; ported in native_btl/native_move (script round 9)
 0x007a4100 function Native_700a                # 0x700a: (b, f): actor +0x538 = f, +0x50c = b, 0x007ab300(actor); 0; ported in native_btl/native_msg (script round 8)
 0x007a4310 function Native_700c                # 0x700c: 0x007a9150(worker, args, stack, 0.0); 0; ported in native_btl/native_msg (script round 8)
 0x007a43a0 function Native_7085                # 0x7085: as 0x700c, the returned record +0x418 = 1; 0; ported in native_btl/native_msg (script round 8)
+0x007a4440 function Native_7084                # 0x7084: 0x00788e30(record); 0; ported in native_btl/native_move (script round 9)
 0x007a44b0 function Native_BtlUseCommand         # 0x700b: args (target selector, command id e.g. 0x3048/0x4008) -> 1 if queued; if the self actor can act (0x007b24a0), resolves the targets (Battle_SelectActors) and queues the command (0x007ac9c0)
 0x007a4550 function Native_BtlIsUnderwater       # 0x7005: () -> (signed char)0x0112c9ce, the formation's underwater byte (see Battle_IsUnderwater); not in the Ghidra dump, a two-instruction function
+0x007a4580 function Native_7062                # 0x7062: (a, b): 0x0079eba0(actor, a, b, 1); ported in native_btl/native_move (script round 9)
 0x007a4910 function Native_DebugPrint            # 0x7015: args (value) -> 0; prints "***** %d : %x : c%02d *****" with the value and the actor index
+0x007a49f0 function Native_705a                # 0x705a: (targets, command): 0x007ac9c0(actor, command, MsGetChrBit(.., 0, 1, 1, -1)); 1; ported in native_btl/native_move (script round 9)
 0x007a4d50 function Native_GetActorProperty      # 0x700f: args (actor selector, property) -> value; Battle_GetActorProperty(self, property, selector), averaged over the selected actors
 0x007a4e60 function Native_702d                # 0x702d: 0x007ab730(actor record); 0; ported in native_btl/native_msg (script round 8)
 0x007a4e90 function Native_BtlGetBattleId        # 0x7024: () -> Battle_GetBattleId (0x00782970; a jmp thunk); scripts compare it to constants like 0x2050000
 0x007a4ea0 function Native_GetSelfProperty       # 0x70aa: args (property) -> value; Battle_GetActorProperty(self, property, -13 = self)
+0x007a5090 function Native_7030                # 0x7030: actor +0x412; ported in native_btl/native_move (script round 9)
 0x007a50c0 function Native_SetActorsProperty     # 0x7018: args (actor selector, property, value) -> 0; Battle_SetActorProperty(self, property, selector, value); hack for battle 0xd40000 props 0x54/0xed
 0x007a51e0 function Native_ActorSetFlag36        # 0x705d: args (a, b; both ignored) -> self index; self actor +0x36 = 1; ?0x00797080 then calls 0x007fb290 on the model the next time the actor is shown
+0x007a5270 function Native_7047                # 0x7047: (i, a): 0x007ab0b0(i, actor, a, 0); 0; ported in native_btl/native_move (script round 9)
+0x007a5330 function Native_7034                # 0x7034: (v): 0x0112c9f1 = v, 0x0112a8e0 1 -> 2; v; ported in native_btl/native_move (script round 9)
 0x007a5360 function Native_SetActorProperty   # func 0x70ab: pops value, property, actor; calls 0x007b4b70
 0x007a53f0 function Native_7048                # 0x7048: (i, x, y, z) -> 0x007ab0b0(i, 0, 0, &[x, y, z]); 0; ported in native_btl/native_msg (script round 8)
+0x007a5540 function Native_703c                # 0x703c start: as 0x7097 with guard value 2; ported in native_btl/native_move (script round 9)
 0x007a5650 function Native_70ac                # 0x70ac (float): (i) -> 0x007b2c90(actor, i); ported in native_btl/native_msg (script round 8)
+0x007a5680 function Native_703c_Poll           # 0x703c poll: 0x007a8700(args); ported in native_btl/native_move (script round 9)
+0x007a56d0 function Native_7041                # 0x7041: nothing; 0; ported in native_btl/native_move (script round 9)
 0x007a5780 function Native_7097                # 0x7097 start: (v): once at a time (0x0112a8e4) 0x007981e0(v, 2, worker, &out); out into args; ported in native_btl/native_msg (script round 8)
+0x007a57e0 function Native_70a8                # 0x70a8: (selector, property, value f): MsSetChrMotionInfo(picked, property, value); 0; ported in native_btl/native_move (script round 9)
+0x007a5890 function Native_7051                # 0x7051 poll: 5 once actor +0xe12 is 0; ported in native_btl/native_move (script round 9)
 0x007a58c0 function Native_7097_Poll           # 0x7097 poll: 0x007a8700(args); ported in native_btl/native_msg (script round 8)
 0x007a58d0 function Native_704a                # 0x704a: (selector): how many picked actors have +0x415 set; ported in native_btl/native_msg (script round 8)
 0x007a5930 function Native_SetSelfFloatProperty  # 0x70b2: args (property 0-9, float value) -> 0; 0x007b4a90 sets self actor float fields (+0x4bc..; 9 also sets the model's +0x4e4 through 0x0082b880)
+0x007a59d0 function Native_701c                # 0x701c: (v): actor +0x420 = v; 0; ported in native_btl/native_move (script round 9)
 0x007a5af0 function Native_BtlSelectTarget       # 0x7010: args (selector, property, unused, mode) -> chosen actor index; keeps actors with property 4 and 0x52, filters by the property (mode 0 any, 1 highest, 2 lowest, |0x80 zero), ties random (Rng 4); sets the self's target mask (+0xdc0, 0x00796430)
+0x007a5bc0 function Native_702a                # 0x702a: actor +0x508 (i8); ported in native_btl/native_move (script round 9)
 0x007a5bf0 function Native_701d                # 0x701d: actor +0x420 (i8), 0 without one; ported in native_btl/native_msg (script round 8)
 0x007a5d80 function Native_7026                # 0x7026: (v): actor +0x44f = v; 0; ported in native_btl/native_msg (script round 8)
 0x007a5df0 function Native_BtlRunEvent           # 0x703f (start): args (slot 1-based, event handler id e.g. 28) ; runs the handler via Battle_RunEvent(slot-1, 0xff, id, ...), finish flag -> result
+0x007a5e50 function Native_707f                # 0x707f: (selector): 0x007ab2a0(picked); 0; ported in native_btl/native_move (script round 9)
 0x007a5ec0 function Native_BtlRunEvent_Poll      # 0x703f (poll): 0x007a8700: returns 5 once the flag set by the start handler is 0, else 1
+0x007a60f0 function Native_7093                # 0x7093: 0x00791780(actor, record); ported in native_btl/native_move (script round 9)
 0x007a6170 function Native_BtlFindActor          # 0x7069: args (selector, property, unused, mode) -> actor index; like 0x7010 without the filters and without setting targets (Battle_FilterActors, Rng 7); used as (-14, 92, 0, 0)
 0x007a62d0 function Native_7019                # 0x7019: 0x007acc90(actor), 0 without one; ported in native_btl/native_msg (script round 8)
 0x007a6390 function Native_701a                # 0x701a: (a, b) -> 0x0078cd30(actor, a, b); ported in native_btl/native_msg (script round 8)
 0x007a6600 function Native_7104                # 0x7104: (a, b, c) -> 0x0079d2a0(a, b, c); ported in native_btl/native_msg (script round 8)
+0x007a6700 function Native_708f                # 0x708f: (v): 0x007a8720(actor, v, 1); ported in native_btl/native_move (script round 9)
 0x007a6870 function Native_BtlCountActorsInBoth  # 0x701e: args (selector a, selector b) -> number of actors in both masks (Battle_SelectActors)
 0x007a6a80 function Native_ActorGetId            # 0x7021: args (selector) -> id (+0xe, the ushort that 0x1xxx selectors match) of the first selected actor, -1 if none
 0x007a6b40 function Native_ActorGetSlotRef       # 0x70a1: args (selector) -> monster: actor +0xc byte; party: -6 - position in party list 0x0112c895 (18 entries); 0xff if none; ?meaning
 0x007a6d30 function Native_7037                # 0x7037: (b, a) -> 0x007ac840(actor, a, b, 1); ported in native_btl/native_msg (script round 8)
 0x007a6d70 function Native_702e                # 0x702e (float): (v) -> MsGetTargetDist(actor, v, 0), 0.0 without an actor; ported in native_btl/native_msg (script round 8)
+0x007a6dd0 function Native_7038                # 0x7038: (b, a): 0x007acb40(actor, a, b); ported in native_btl/native_move (script round 9)
+0x007a6e40 function Native_7059                # 0x7059 (float): MsGetTargetDist(actor, v, 1); ported in native_btl/native_move (script round 9)
 0x007a6ef0 function CT_703B_ret_setCommandDisabled # fh v3:exact 0x007a6f10 +CT_703B_ret_setCommandDisabled
 0x007a7340 function Native_BtlSetPadOrientation  # 0x7099: args (n) -> 0; 0x0112c9cd = n & 3; 0x0089d390 uses it to rotate the d-pad bits (0x1000/0x2000/0x4000/0x8000) for cursor movement; set with each camera shot
 0x007a7440 function Native_70a2                # 0x70a2 start: (v): g_011363e8 = 1, v into args; 0x0079ccf0(v); ported in native_btl/native_msg (script round 8)
 0x007a7470 function Native_707b                # 0x707b: (selector, k): 0x0079fd40(picked, k) (k 9 only when 0x007a8920(picked)); ported in native_btl/native_msg (script round 8)
 0x007a76e0 function Native_BtlGetTurnActor       # 0x708d: () -> (signed char)0x0112c9e2, the actor whose turn last started (set with 0x0112c9df/e0 in the turn code ~0x00792350); ?exact meaning
+0x007a76f0 function Native_70a5                # 0x70a5: (x, y, z) into 0x0112a8d0..d8, 0x0112a8dc = 1.0, 0x0112c9fd = 1; 0; ported in native_btl/native_move (script round 9)
+0x007a7740 function Native_70c9                # 0x70c9: (selector, k): 0x0079fdf0(picked, k); ported in native_btl/native_move (script round 9)
+0x007a7cb0 function Native_70cc                # 0x70cc: (selector): actor +0xdc0 = the set; ported in native_btl/native_move (script round 9)
+0x007a7d60 function Native_70cd                # 0x70cd: (selector): actor +0xdc0 |= MsGetChrBit set; the set; ported in native_btl/native_move (script round 9)
+0x007a7f20 function Native_70ce                # 0x70ce: (selector): actor +0xdc0 &= !the set; ported in native_btl/native_move (script round 9)
+0x007a7fa0 function Native_70d5                # 0x70d5: (selector): actor +0x6d1 = picked; picked; ported in native_btl/native_move (script round 9)
+0x007a8160 function Native_7058                # 0x7058: (selector, motion): 0 when the picked actor motion +0x3f0 is 0x007a8c80(it, motion), else -1; ported in native_btl/native_move (script round 9)
+0x007a8450 function Native_70e0                # 0x70e0: 1 when the actor can act and its partner (+0xded) has +0xdf1 clear; ported in native_btl/native_move (script round 9)
+0x007a84c0 function Native_706b                # 0x706b: (selector, a, b): 0x0082aea0(picked model, a, b & 1); 0; ported in native_btl/native_move (script round 9)
 0x007a8620 function Native_7000                # 0x7000: actor +0xdf2 = 0; 0; ported in native_btl/native_msg (script round 8)
 0x007a8920 function addMonDieSe                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Please increase ZanmatoSep Size\\n'; Switch 0x7100382390 addMonDieSe (symbols from Fahrenheit's server export)
 0x007a89c0 function MsSetChrVisibleBtl2Event  # fh switch:cg2 0x7100348680
@@ -6339,6 +6381,7 @@
 0x00858c90 function Native_01e4               # 0x01e4: `(x, y, z, n)`: returns `0x0090a470(x, y, z, n)`'s `EAX`. (ffx_script::vm::bridge::native_map)
 0x00858d30 function Native_GetPitchToMoveTarget  # 0x0020: no args -> float; second result of FUN_0088b4d0 (vertical angle to the move target); scripts feed it to 0x0029
 0x00858e50 function Native_MusicLoad             # 0x0102 start (music) -> result slot; poll 0x00859040, int 0x00859250
+0x00858f40 function Native_00f5                # 0x00f5 (float): (x, y, z): second result of 0x0088b4d0(&a, &b, worker pos, z, y, x); ported in native_btl/native_move (script round 9)
 0x00859040 function Native_MusicLoad_Poll        # 0x0102 poll: done (5) once the sound request count 0x012fb808 <= 1
 0x00859060 function Native_MsgClose              # 0x006b: args (window) -> window; Msg_CloseWindow 0x008640f0 (state 3 = closing unless already 0/3)
 0x008591d0 function Native_01e6               # 0x01e6: `(n, x, y)`: `0x0090a430(n, x, y)`; returns `n`. (ffx_script::vm::bridge::native_map)
@@ -6379,6 +6422,7 @@
 0x0085b6d0 function Native_MsgWaitEx_End         # 0x0084 int result: pushes the saved window, pops it again and Msg_CloseWindow's it; returns 0
 0x0085b700 function Native_PartyAdd              # 0x00ca: args (chr) -> chr; Party_SetMember(chr, 1); chr 6 when save +0xbec (0x0112d67c) == 0x43d also goes to slot 3 (0x00784d00(6,3)); chr 15 sets 0x01325ac8 = 3
 0x0085b7c0 function Native_MsgWait               # 0x007c start: args (window) -> -; pushes a 0 and pops it as the second argument, then the same as Native_MsgWaitEx; 10966 calls, after 0x006a
+0x0085b820 function Native_00cb                # 0x00cb: (chr): 0x007869b0(chr, 0), then party slots without chr to 0x00786950; chr; ported in native_btl/native_move (script round 9)
 0x0085b900 function CT_0160_ret_hasKeyItem    # fh v3:bsim1.00 0x0085b7a0 +CT_0160_ret_hasKeyItem
 0x0085b920 function CT_0216_ret_teachAbilityToPartyMemberWithMsg # fh v3:exact 0x0085b7c0 +CT_0216_ret_teachAbilityToPartyMemberWithMsg
 0x0085b950 function Native_WorkerStopTurn        # 0x0078: args (worker) -> 0; Script_StopTurn(Script_GetWorker(w), -1)
@@ -6434,6 +6478,7 @@
 0x0085e1d0 function Native_VoiceIsPlaying        # 0x00d8: args () -> 1 while the voice plays (countdown 0x01325ae0/e4 or 0x008864b0), else 0; "VoiceStatusStart!" / "VoiceStatusExec: Frame = %d!"; scripts loop `func 0x00d8; popa_jz` after 0x00d6
 0x0085e290 function Native_MusicFadeOut          # 0x0188 (frames) -> frames; <1 stops current music now, else fades it (0x00886af0); then plays the queued music 0x00c526d0 (id | volume << 8) if any
 0x0085e4a0 function Native_SoundWait_Poll        # 0x00d9 poll only: voice-sync countdown (0x01325aec/0x01325ae8, "VoiceSyncStart!", "VoiceSyncExec: Frame = %d!") else done when no sound request is pending (0x008864b0)
+0x0085e620 function Native_0006                # 0x0006: (slot, model, motion): attachment of a model to the worker character in a slot (+0xaf4/+0xafc/+0xb04/+0xb14); 1; ported in native_btl/native_move (script round 9)
 0x0085e920 function Native_AttachCamera          # 0x0002: args (kind 0-3, slot 0-2, unused) -> 0; ?camera controller FUN_007ba780 (0x01136f88.. tables, 0x007bd110), kind 0 -> 1 for the player worker; +0xaa = 2, kind 1 sets +0x36 0x10; scripts "1, 0, 0" at e0
 0x0085f040 function Native_SetArriveRadius       # 0x0017: args (radius) -> radius; current move slot +0x38 (FUN_00870d10), the radius 0x002d sets for all slots; 0 adds 0x800 in 0x0018
 0x0085f170 function Native_SetYaw                # 0x0095: args (float a) -> a; Script_StopTurn(self), a = Angle_Wrap(a) into transform +0x20 (movement heading, read by 0x008629c0) and +0x34 (model rot Y); updates the model (0x0082b1b0/0x0082b520) or 0x0086f4c0
@@ -12608,6 +12653,7 @@
 0x0228615c label    g_OpdNumPal                  # byte palette of the number printer (opd_num_pal_set/default)
 0x022881d4 label    g_OpdNumFrames               # u16 counted up by opd_num_vdisp
 0x022c9760 label    g_OpdHeapDisplay             # 4 x 0x40 heap gauges: +0 flags (0xffff none, bits 8-11 priority, 0x8000 ppp heap at +4), +8 used, +0xc total (opd_heap_display_*)
+0x022fb4d4 label    g_MenuWaitFrames           # CT_401D_init (0x00a78210) sets 1; Native_MenuOpen_Poll counts it down
 0x022fb4d8 label    g_ChrWaitMotionFrames     # frames Native_ChrWaitMotion_Poll_501e waited, counted while 0x012fb80c is 1
 0x022fb4dc label    g_TkMenuSceneData         # 8 menu scene data blocks (TkMenuSetSceneDataAdrs, TkMenuInitSeq zeroes them; layout in crates/ffx-menu/src/scene.rs)
 0x022fb504 label    g_Settings
