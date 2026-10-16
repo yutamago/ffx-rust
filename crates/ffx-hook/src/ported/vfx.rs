@@ -1074,6 +1074,26 @@ ported! {
         let frame = locals.0.as_mut_ptr() as u32 + 0x1f0;
         slots::bridge::opp_chr_fade_center_a76b60(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opp2_optic_laser(obj, list)`: its stack locals in a buffer on
+    /// this shim's stack (the frame pointer at its end).
+    opp2_optic_laser @ 0x00a7_3810 => extern "C" fn opp2_optic_laser(obj: u32, list: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x30]);
+        let mut locals = Locals([0; 0x30]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        slots::bridge::opp2_optic_laser(&mut mem(), obj, list, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp2_md_break(obj, list)`: its stack locals in a buffer on this
+    /// shim's stack (the frame pointer at its end).
+    opp2_md_break @ 0x00a7_3d90 => extern "C" fn opp2_md_break(obj: u32, list: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x90]);
+        let mut locals = Locals([0; 0x90]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x90;
+        slots::bridge::opp2_md_break(&mut mem(), obj, list, frame, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))
