@@ -4022,6 +4022,7 @@
 0x008aa1e0 function TkMenuMainClearSelectWindow # fh switch:bsim1.00 0x71004ba0e0
 0x008aa3f0 function TkMenuMainFreeWindow      # fh v3:exact 0x008aa3a0
 0x008aa410 function TkMenuMainFreeWindowGroup # fh v3:exact 0x008aa3c0
+0x008aa450 function TkMenuMainGetIgnoreJoinFlag # () -> g_TkMenuMainIgnoreJoinFlag; the getter beside TkMenuMainSetIgnoreJoinFlag (TkMenuGetPlayerListMax picks the list by it)
 0x008aa460 function TkMenuMainGetMenuActiveMask # fh v3:bsim1.00 0x008aa410
 0x008aab00 function TkMenuMainRegistWindow    # fh switch:bsim1.00+call.cs 0x71004ba0f0 cdecl
 0x008aab20 function TkMenuMainRemoveMenu      # fh v3:exact 0x008aaad0
@@ -7033,6 +7034,7 @@
 0x01326d70 label    g_MsgWindows                 # 2 banks x 8 message windows, 0x2c bytes: +0x14 state, +0x16 Msg_Flags, +0x18 display flags, +0x1d mode flags
 0x013270d0 label    g_PadPressed                 # buttons newly pressed this frame, OR over pads (0x00871d70)
 0x01327148 label    g_EventSprites               # 128 x 0x1c: +0 active, +1 alpha, +4/+6 x/y, +8/+0xa scale*256, +0xc frame, +0x10 rgb, +0x14 data; drawn by 0x00874420
+0x01328150 label    g_TkVibratePads           # 8 pads x 0x24: two 16-byte channels (+0 pointer, +4 u32, +8 u16, +0xa u8), +0x22 on; TkStopVibrate(All) zero all but the pointers
 0x01328270 label    g_TkVibrateVolume         # 2 x u8 (TkGetVibrateVolume reports them, 0 when g_TkVibrateOff)
 0x01328272 label    g_TkVibrateOff            # nonzero: TkGetVibrateVolume reports 0, 0
 0x01328274 label    g_TkVibrateMask           # u16, pads allowed to vibrate (TkSetVibrateMask: bit per pad; pad < 0: 0xff or 0)
@@ -7064,10 +7066,12 @@
 0x0134084c label    g_PauseEntered               # 1 once Pause_Enter ran
 0x01840870 label    g_TkMenuMainIgnoreJoinFlag # TkMenuMainSetIgnoreJoinFlag
 0x0184087c label    g_TkMenuDrawShadeRatio    # TkMenuGetDrawShadeRatio; TkMenuDrawShadeRatioDiff sets it (fh bsim names)
+0x01840886 label    g_TkMenuPlayerStep        # u8, the last change of menu character: 1 (TkMenuSetNextPlayer2), 0xff (TkMenuSetPrevPlayer2)
 0x018408ec label    g_TkMenuMainActiveMask    # bit per main menu (TkMenuMainGetMenuActiveMask; TkMenuMainActiveMenu sets, TkMenuMainSleepMenu clears)
 0x018408f8 label    g_TkMn2MenuMode           # TkMn2GetMenuMode; TkMenuMainActiveMenu tests its high half for 0x80
 0x01841c00 label    g_TkMenuHelpMessage       # 3 x i32: current help message, the previous one, a timer (TkMenuSetHelpMessage resets it on a change)
 0x01841c14 label    g_TkMenuPlayers           # u8 character ids, indexed by g_TkMenuCurrentPlayerPos (TkMenuGetCurrentPlayer)
+0x01841c1c label    g_TkMenuPlayerListMax     # TkMenuGetPlayerListMax without the ignore-join flag (with it: g_TkMenuPlayerListMax2)
 0x01841c20 label    g_TkMenuPlayerListMax2    # TkMenuGetPlayerListMax2
 0x01841c28 label    g_TkMenuCurrentPlayerPos  # TkMenuGetCurrentPlayerPos / TkMenuSetCurrentPlayerPos
 0x01841c38 label    g_TkMenuSummons           # u8 aeon ids, indexed by g_TkMenuCurrentSummonPos (TkMenuGetCurrentSummon)
@@ -7079,6 +7083,7 @@
 0x018663c4 label    g_TkMenuSaveLoadActive    # cleared by TkMenuSaveLoadActive
 0x01869ab0 label    g_MsgVars                    # per window 32 pointers to text variable records {u8 default type, u8 type, i32 value}; text code 0x12
 0x01869eb0 label    g_MacroDic                   # macrodic section pointer table (MacroDic_Load)
+0x0186a23c label    g_TkMenuSummonGrowMax     # SetSummonGrowMax, once: summon growth records (8 bytes) before the first with byte +7 set
 0x0186a380 label    g_TkMenuImportantCounter  # TkMenuGetImportantCounter
 0x0186a388 label    g_TkMenuImportantListMax  # TkMenuImportantListMax
 0x0186a420 label    g_TkMenuDummyControler    # +0 buttons, +4 pending buttons, +8..+0xf current/pending stick byte pairs (TkMenuFlushDummyControler: pending -> current, pending -> released, 0x80)

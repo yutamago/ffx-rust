@@ -34,6 +34,17 @@ pub fn in_radius(r: f32, dx: f32, dy: f32, dz: f32) -> bool {
     f64::from(r * r) >= sum
 }
 
+/// The original's degree factor (`0x00b11330`): the float π/180 widened.
+const DEG: f64 = f32::from_bits(0x3c8e_fa35) as f64;
+
+/// `TkDegtoRad(deg)`: radians (a double product rounded to a float),
+/// wrapped by [`wrap_angle`].
+#[must_use]
+pub fn deg_to_rad(deg: f32) -> f32 {
+    #[allow(clippy::cast_possible_truncation)]
+    wrap_angle((f64::from(deg) * DEG) as f32)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -47,5 +58,6 @@ mod tests {
         assert!(in_radius(5.0, 3.0, 4.0, 0.0));
         assert!(!in_radius(4.9, 3.0, 4.0, 0.0));
         assert!(!in_radius(f32::NAN, 0.0, 0.0, 0.0));
+        assert!((deg_to_rad(270.0) + std::f32::consts::FRAC_PI_2).abs() < 1e-6);
     }
 }

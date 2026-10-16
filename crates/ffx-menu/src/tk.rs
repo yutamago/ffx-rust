@@ -130,6 +130,8 @@ pub mod bridge {
     pub const DEBUG_FONT_POS: Global<[i32; 2]> = Global::new(0x0133_c8d4);
     /// The menu's party (`u8` character ids).
     pub const MENU_PLAYERS: Global<u8> = Global::new(0x0184_1c14);
+    /// `TkMenuGetPlayerListMax` without the ignore-join flag.
+    pub const MENU_PLAYER_LIST_MAX: Global<u32> = Global::new(0x0184_1c1c);
     /// `TkMenuGetPlayerListMax2`.
     pub const MENU_PLAYER_LIST_MAX2: Global<u32> = Global::new(0x0184_1c20);
     /// The index of the menu's current character in [`MENU_PLAYERS`].
@@ -219,6 +221,16 @@ pub mod bridge {
     pub const BATTLE_MUSIC_BUFFER: Global<u32> = Global::new(0x0133_c8c0);
     /// `TkMenuSaveLoadActive` clears it.
     pub const MENU_SAVE_LOAD_ACTIVE: Global<u32> = Global::new(0x0186_63c4);
+    /// Vibration per pad, 8 records of `0x24` bytes: two channels of 16
+    /// (`+0` pointer, `+4` `u32`, `+8` `u16`, `+0xa` `u8`), then `+0x22` on.
+    pub const VIBRATE_PADS: Global<u8> = Global::new(0x0132_8150);
+    /// Bytes per pad in [`VIBRATE_PADS`].
+    pub const VIBRATE_PAD: u32 = 0x24;
+    /// The last change of character: 1 next, `0xff` previous.
+    pub const MENU_PLAYER_STEP: Global<u8> = Global::new(0x0184_0886);
+    /// How many summon growth records lead with byte `+7` zero
+    /// (`SetSummonGrowMax`, once).
+    pub const MENU_SUMMON_GROW_MAX: Global<u32> = Global::new(0x0186_a23c);
 
     /// Originals that read one global (`get`), store their argument in one
     /// (`set`), or store a constant (`clear`).
@@ -575,6 +587,124 @@ pub mod bridge {
     /// count it drops; returns the record.
     pub fn tk_mn2_get_summon_grow(mem: &mut impl Mem) -> u32 {
         ffx_kernel::bridge::first_record(mem, ffx_kernel::bridge::SUMMON_GROW, 0)
+    }
+
+    /// `SetSummonGrowMax()` (`0x008c1910`): when still 0, counts the summon
+    /// growth records (8 bytes each) up to the first whose byte `+7` is
+    /// set, storing the count after each one.
+    pub fn set_summon_grow_max(mem: &mut impl Mem) {
+        if MENU_SUMMON_GROW_MAX.get(mem) != 0 {
+            return;
+        }
+        let record = tk_mn2_get_summon_grow(mem);
+        let table = ffx_kernel::bridge::SUMMON_GROW.get(mem);
+        #[allow(clippy::cast_sign_loss)] // counted down to 0 as unsigned
+        let mut left = ffx_kernel::bridge::ms_get_excel_data_num(mem, table, 0) as u32;
+        let mut p = record.wrapping_add(7);
+        while left != 0 {
+            if mem.read::<u8>(p) != 0 {
+                return;
+            }
+            let n = MENU_SUMMON_GROW_MAX.get(mem).wrapping_add(1);
+            MENU_SUMMON_GROW_MAX.set(mem, n);
+            p = p.wrapping_add(8);
+            left -= 1;
+        }
+    }
+
+    /// The character at `i` in a list of `max(mem)`, clamped to it (an
+    /// empty list reads the byte before it).
+    fn player_from_index<M: Mem>(mem: &M, i: i32, max: fn(&M) -> u32) -> u8 {
+        let i = if i < 0 {
+            0
+        } else {
+            #[allow(clippy::cast_possible_wrap)]
+            let last = (max(mem) as i32).wrapping_sub(1);
+            i.min(last)
+        };
+        #[allow(clippy::cast_sign_loss)]
+        mem.read(MENU_PLAYERS.ptr(mem).addr.wrapping_add(i as u32))
+    }
+
+    /// `TkMenuMainGetIgnoreJoinFlag()` (`0x008aa450`).
+    pub fn tk_menu_main_get_ignore_join_flag(mem: &impl Mem) -> u32 {
+        MENU_MAIN_IGNORE_JOIN.get(mem)
+    }
+
+    /// `TkMenuGetPlayerListMax()` (`0x008a9b30`): the second count while
+    /// the ignore-join flag is set, else the first.
+    pub fn tk_menu_get_player_list_max(mem: &impl Mem) -> u32 {
+        if tk_menu_main_get_ignore_join_flag(mem) != 0 {
+            MENU_PLAYER_LIST_MAX2.get(mem)
+        } else {
+            MENU_PLAYER_LIST_MAX.get(mem)
+        }
+    }
+
+    /// `TkMenuGetPlayerFromIndex2(i)` (`0x008a9ad0`): the character at `i`
+    /// of [`tk_menu_get_player_list_max`].
+    pub fn tk_menu_get_player_from_index(mem: &impl Mem, i: i32) -> u8 {
+        player_from_index(mem, i, tk_menu_get_player_list_max)
+    }
+
+    /// `TkMenuGetPlayerFromIndex2_008a9b00(i)` (`0x008a9b00`): the same over
+    /// `TkMenuGetPlayerListMax2`.
+    pub fn tk_menu_get_player_from_index2(mem: &impl Mem, i: i32) -> u8 {
+        player_from_index(mem, i, |m| MENU_PLAYER_LIST_MAX2.get(m))
+    }
+
+    /// `TkMenuSetNextPlayer2()` (`0x008aaf40`): the next character, back
+    /// to the first after the last.
+    pub fn tk_menu_set_next_player2(mem: &mut impl Mem) {
+        #[allow(clippy::cast_possible_wrap)]
+        let next = (MENU_CURRENT_PLAYER_POS.get(mem) as i32).wrapping_add(1);
+        #[allow(clippy::cast_possible_wrap)]
+        let max = MENU_PLAYER_LIST_MAX2.get(mem) as i32;
+        MENU_PLAYER_STEP.set(mem, 1);
+        #[allow(clippy::cast_sign_loss)]
+        MENU_CURRENT_PLAYER_POS.set(mem, if next >= max { 0 } else { next as u32 });
+    }
+
+    /// `TkMenuSetPrevPlayer2()` (`0x008aafc0`): the previous character,
+    /// to the last before the first.
+    pub fn tk_menu_set_prev_player2(mem: &mut impl Mem) {
+        #[allow(clippy::cast_possible_wrap)]
+        let prev = (MENU_CURRENT_PLAYER_POS.get(mem) as i32).wrapping_sub(1);
+        #[allow(clippy::cast_sign_loss)]
+        let pos = if prev < 0 {
+            MENU_PLAYER_LIST_MAX2.get(mem).wrapping_sub(1)
+        } else {
+            prev as u32
+        };
+        MENU_CURRENT_PLAYER_POS.set(mem, pos);
+        MENU_PLAYER_STEP.set(mem, 0xff);
+    }
+
+    /// One pad's vibration off: its on byte and both channels' state.
+    fn stop_vibrate(mem: &mut impl Mem, pad: i32) {
+        #[allow(clippy::cast_sign_loss)]
+        let p = VIBRATE_PADS
+            .ptr(mem)
+            .addr
+            .wrapping_add(pad.clamp(0, 7) as u32 * VIBRATE_PAD);
+        mem.write(p + 0x22, 0u8);
+        for c in [p, p + 0x10] {
+            mem.write(c + 4, 0u32);
+            mem.write(c + 8, 0u16);
+            mem.write(c + 0xa, 0u8);
+        }
+    }
+
+    /// `TkStopVibrate(pad)` (`0x00876290`), `pad` clamped to 0..=7.
+    pub fn tk_stop_vibrate(mem: &mut impl Mem, pad: i32) {
+        stop_vibrate(mem, pad);
+    }
+
+    /// `TkStopVibrateAll()` (`0x008762f0`).
+    pub fn tk_stop_vibrate_all(mem: &mut impl Mem) {
+        for pad in 0..8 {
+            stop_vibrate(mem, pad);
+        }
     }
 }
 

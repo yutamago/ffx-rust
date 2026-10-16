@@ -167,6 +167,14 @@ ported! {
     TkSetVibrateMask @ 0x0087_5f60 => extern "C" fn tk_set_vibrate_mask(pad: i32, on: i32) {
         tk::tk_set_vibrate_mask(&mut mem(), pad, on);
     }
+    /// `TkStopVibrate(pad)`.
+    TkStopVibrate @ 0x0087_6290 => extern "C" fn tk_stop_vibrate(pad: i32) {
+        tk::tk_stop_vibrate(&mut mem(), pad);
+    }
+    /// `TkStopVibrateAll()`.
+    TkStopVibrateAll @ 0x0087_62f0 => extern "C" fn tk_stop_vibrate_all() {
+        tk::tk_stop_vibrate_all(&mut mem());
+    }
     /// `TkCreateDECI2Header(out, a, b, c, d)`.
     TkCreateDECI2Header @ 0x0088_5120 => extern "C" fn tk_create_deci2_header(out: u32, a: u32, b: u32, c: u32, d: u32) {
         #[allow(clippy::cast_possible_truncation)] // the original stores the low parts
@@ -254,6 +262,10 @@ ported! {
     TkGetTGS @ 0x0088_d6d0 => extern "C" fn tk_get_tgs() -> u32 {
         u32::from(tk::tk_get_tgs(&mem()))
     }
+    /// `TkDegtoRad(deg)`: in `st0`.
+    TkDegtoRad @ 0x0088_9b80 => extern "C" fn tk_degto_rad(deg: f32) -> f32 {
+        ffx_menu::math::deg_to_rad(deg)
+    }
     /// `TkSetDebugMenuStatus(on)`.
     TkSetDebugMenuStatus @ 0x0088_ea30 => extern "C" fn tk_set_debug_menu_status(on: i32) {
         tk::tk_set_debug_menu_status(&mut mem(), on);
@@ -302,6 +314,18 @@ ported! {
     TkMenuGetPlayerListMax2 @ 0x008a_9b50 => extern "C" fn tk_menu_get_player_list_max2() -> u32 {
         tk::tk_menu_get_player_list_max2(&mem())
     }
+    /// `TkMenuGetPlayerFromIndex2(i)` (over `TkMenuGetPlayerListMax`).
+    TkMenuGetPlayerFromIndex2 @ 0x008a_9ad0 => extern "C" fn tk_menu_get_player_from_index(i: i32) -> u32 {
+        u32::from(tk::tk_menu_get_player_from_index(&mem(), i))
+    }
+    /// The same over `TkMenuGetPlayerListMax2`.
+    TkMenuGetPlayerFromIndex2_008a9b00 @ 0x008a_9b00 => extern "C" fn tk_menu_get_player_from_index2(i: i32) -> u32 {
+        u32::from(tk::tk_menu_get_player_from_index2(&mem(), i))
+    }
+    /// `TkMenuGetPlayerListMax()`.
+    TkMenuGetPlayerListMax @ 0x008a_9b30 => extern "C" fn tk_menu_get_player_list_max() -> u32 {
+        tk::tk_menu_get_player_list_max(&mem())
+    }
     /// `TkMenuGetSummonListMax()`.
     TkMenuGetSummonListMax @ 0x008a_9bf0 => extern "C" fn tk_menu_get_summon_list_max() -> u32 {
         tk::tk_menu_get_summon_list_max(&mem())
@@ -309,6 +333,10 @@ ported! {
     /// `TkMenuMainClearSelectWindow(window)`.
     TkMenuMainClearSelectWindow @ 0x008a_a1e0 => extern "C" fn tk_menu_main_clear_select_window(window: u32) {
         tk::tk_menu_main_clear_select_window(&mut mem(), window);
+    }
+    /// `TkMenuMainGetIgnoreJoinFlag()`.
+    TkMenuMainGetIgnoreJoinFlag @ 0x008a_a450 => extern "C" fn tk_menu_main_get_ignore_join_flag() -> u32 {
+        tk::tk_menu_main_get_ignore_join_flag(&mem())
     }
     /// `TkMenuMainGetMenuActiveMask()`.
     TkMenuMainGetMenuActiveMask @ 0x008a_a460 => extern "C" fn tk_menu_main_get_menu_active_mask() -> u32 {
@@ -325,6 +353,14 @@ ported! {
     /// `TkMenuSetHelpMessage(id)`.
     TkMenuSetHelpMessage @ 0x008a_aeb0 => extern "C" fn tk_menu_set_help_message(id: i32) {
         tk::tk_menu_set_help_message(&mut mem(), id);
+    }
+    /// `TkMenuSetNextPlayer2()`.
+    TkMenuSetNextPlayer2 @ 0x008a_af40 => extern "C" fn tk_menu_set_next_player2() {
+        tk::tk_menu_set_next_player2(&mut mem());
+    }
+    /// `TkMenuSetPrevPlayer2()`.
+    TkMenuSetPrevPlayer2 @ 0x008a_afc0 => extern "C" fn tk_menu_set_prev_player2() {
+        tk::tk_menu_set_prev_player2(&mut mem());
     }
     /// `TkMenuSummonEnableMask()`.
     TkMenuSummonEnableMask @ 0x008a_b1e0 => extern "C" fn tk_menu_summon_enable_mask() -> u32 {
@@ -365,6 +401,10 @@ ported! {
     /// `TkMn2GetSummonGrow()`: the summon growth record.
     TkMn2GetSummonGrow @ 0x008c_1c20 => extern "C" fn tk_mn2_get_summon_grow() -> u32 {
         tk::tk_mn2_get_summon_grow(&mut mem())
+    }
+    /// `SetSummonGrowMax()`.
+    SetSummonGrowMax @ 0x008c_1910 => extern "C" fn set_summon_grow_max() {
+        tk::set_summon_grow_max(&mut mem());
     }
     /// `TkMn2SetFontShade(s0, s1, s2, s3)`.
     TkMn2SetFontShade @ 0x008c_2c30 => extern "C" fn tk_mn2_set_font_shade(s0: u32, s1: u32, s2: u32, s3: u32) {

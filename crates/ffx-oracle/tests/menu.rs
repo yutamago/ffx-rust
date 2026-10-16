@@ -1278,3 +1278,117 @@ fn floats_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn players_vibration_and_degrees_match_the_original() {
+    let Some(mut t) = setup(0x0dd_ba11) else {
+        return;
+    };
+    for _ in 0..1500 {
+        t.scramble(tk::MENU_PLAYERS.sym, 16);
+        for g in [tk::MENU_PLAYER_LIST_MAX, tk::MENU_PLAYER_LIST_MAX2] {
+            let v = t.rng.pick(&[0u32, 1, 3, 7, 0xffff_ffff, 0x7fff_ffff]);
+            t.put(t.sym(g.sym), v);
+        }
+        let v = t.rng.pick(&[0u32, 1, 0x100]);
+        t.put(t.sym(tk::MENU_MAIN_IGNORE_JOIN.sym), v);
+        let v = t
+            .rng
+            .pick(&[0u32, 1, 2, 6, 7, 0xffff_ffff, 0x7fff_ffff, 0x8000_0000]);
+        t.put(t.sym(tk::MENU_CURRENT_PLAYER_POS.sym), v);
+        t.scramble(tk::MENU_PLAYER_STEP.sym, 1);
+        t.twin("TkMenuMainGetIgnoreJoinFlag", 0x008a_a450, &[], U32, |o| {
+            w(tk::tk_menu_main_get_ignore_join_flag(o))
+        });
+        t.twin("TkMenuGetPlayerListMax", 0x008a_9b30, &[], U32, |o| {
+            w(tk::tk_menu_get_player_list_max(o))
+        });
+        let k = t
+            .rng
+            .pick(&[0u32, 1, 2, 5, 6, 7, 9, 0xffff_ffff, 0x8000_0000]);
+        t.twin("TkMenuGetPlayerFromIndex2", 0x008a_9ad0, &[k], U32, |o| {
+            w(u32::from(tk::tk_menu_get_player_from_index(o, i(k))))
+        });
+        t.twin(
+            "TkMenuGetPlayerFromIndex2_008a9b00",
+            0x008a_9b00,
+            &[k],
+            U32,
+            |o| w(u32::from(tk::tk_menu_get_player_from_index2(o, i(k)))),
+        );
+        if t.rng.below(2) == 0 {
+            t.twin("TkMenuSetNextPlayer2", 0x008a_af40, &[], VOID, |o| {
+                tk::tk_menu_set_next_player2(o);
+                0
+            });
+        } else {
+            t.twin("TkMenuSetPrevPlayer2", 0x008a_afc0, &[], VOID, |o| {
+                tk::tk_menu_set_prev_player2(o);
+                0
+            });
+        }
+        t.scramble(tk::VIBRATE_PADS.sym, 8 * tk::VIBRATE_PAD as usize);
+        let pad = t
+            .rng
+            .pick(&[0u32, 1, 5, 7, 8, 100, 0xffff_ffff, 0x8000_0000]);
+        t.twin("TkStopVibrate", 0x0087_6290, &[pad], VOID, |o| {
+            tk::tk_stop_vibrate(o, i(pad));
+            0
+        });
+        t.scramble(tk::VIBRATE_PADS.sym, 8 * tk::VIBRATE_PAD as usize);
+        t.twin("TkStopVibrateAll", 0x0087_62f0, &[], VOID, |o| {
+            tk::tk_stop_vibrate_all(o);
+            0
+        });
+    }
+    // degrees: random, whole turns, and the wrap's edges
+    let mut degrees = vec![
+        0.0,
+        -0.0,
+        180.0,
+        -180.0,
+        360.0,
+        540.0,
+        -720.0,
+        90.0,
+        f32::NAN,
+    ];
+    degrees.extend((0..3000).map(|_| t.rng.float(-2000.0, 2000.0)));
+    for a in degrees {
+        let r =
+            t.a.call(t.a.rebase(0x0088_9b80), Conv::Cdecl, &[a.to_bits()])
+                .unwrap();
+        let want = r.st0.expect("a float in st0");
+        let got = f64::from(ffx_menu::math::deg_to_rad(a));
+        assert!(
+            want.to_bits() == got.to_bits() || (want.is_nan() && got.is_nan()),
+            "TkDegtoRad({a}): {want} vs {got}"
+        );
+    }
+    // the summon growth count, over the loaded table with its flag bytes
+    // rewritten (in both)
+    let kernel = ffx_kernel::bridge::SUMMON_GROW;
+    if kernel.get(&t.b) == 0 {
+        eprintln!("no summon growth table in this snapshot; SetSummonGrowMax skipped");
+        return;
+    }
+    let record = ffx_kernel::bridge::first_record(&mut t.b, kernel, 0);
+    let table = kernel.get(&t.b);
+    let n = ffx_kernel::bridge::ms_get_excel_data_num(&t.b, table, 0);
+    eprintln!("summon growth: {n} records at {record:#x}");
+    for round in 0..60 {
+        let start = if round % 4 == 0 { t.rng.next() } else { 0 };
+        t.put(t.sym(tk::MENU_SUMMON_GROW_MAX.sym), start);
+        if round > 0 {
+            for r in 0..u32::try_from(n).unwrap_or(0) {
+                let v = u8::from(t.rng.below(6) == 0);
+                t.put(record + 8 * r + 7, v);
+            }
+        }
+        t.twin("SetSummonGrowMax", 0x008c_1910, &[], VOID, |o| {
+            tk::set_summon_grow_max(o);
+            0
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
