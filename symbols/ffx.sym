@@ -82,6 +82,7 @@
 0x00435610 function Phyre_PBase_Bind          # fh v3:exact 0x00435710 Phyre::PBase::Bind
 0x00435740 function Phyre_PBase_GetClassDescriptor # fh v3:bsim1.00 0x00435840 Phyre::PBase::GetClassDescriptor
 0x00435820 function Phyre_PClassDescriptorForType_Phyre_PPhysics_PPhysicsRigidBodyBase__getPointerFromScriptContext # fh switch:bsim1.00 0x71001918c0 Phyre::PClassDescriptorForType<Phyre::PPhysics::PPhysicsRigidBodyBase>::getPointerFromScriptContext
+0x00436f70 function PScripting_RegisterPhyreNamespace      # lua state setup: calls 0x00436f90 with the "Phyre" namespace (lua.md)
 0x00437260 function Phyre_PScripting_UnregisterTypes # fh switch:bsim1.00 0x7100076000 Phyre::PScripting::UnregisterTypes
 0x004374d0 function Phyre_PTypeDispenser_GetType_Phyre_PType # fh v3:bsim1.00 0x004375d0 Phyre::PTypeDispenser::GetType<Phyre::PType>
 0x00437740 function Phyre_PType_GetFixupForPTypePointer # fh v3:exact 0x00437840 Phyre::PType::GetFixupForPTypePointer
@@ -276,7 +277,10 @@
 0x00551220 function Phyre_PClassDescriptorForType_Phyre_PMatrix4x3__getPointerFromScriptContext # fh switch:bsim1.00 0x71000bb750 Phyre::PClassDescriptorForType<Phyre::PMatrix4x3>::getPointerFromScriptContext
 0x00553160 function Phyre_PClassDescriptorForType_Phyre_PSprite_PSpriteAnimationInfo__getPointerFromScriptContext # fh switch:bsim1.00 0x71001293d0 Phyre::PClassDescriptorForType<Phyre::PSprite::PSpriteAnimationInfo>::getPointerFromScriptContext
 0x005531d0 function Phyre_PGameplay_PScriptableComponent_initialize # fh switch:bsim1.00 0x71000cbe40 Phyre::PGameplay::PScriptableComponent::initialize
+0x00554830 function PScriptedComponent_initialize          # slot 1 of PScriptedComponent/PCameraControllerComponent vftables (0x00b2d414, 0x00b2db34); never runs (lua.md)
+0x00554860 function PScriptedComponent_createThread        # makes the component's Lua thread via 0x005d53b0; never runs (lua.md)
 0x00555ef0 function Phyre_PGameplay_PTimerComponent_uninitialize # fh switch:bsim1.00 0x710016b730 Phyre::PGameplay::PTimerComponent::uninitialize
+0x00555f20 function PScriptedComponent_update              # delay countdown, thread via 0x005d53b0, then 0x005d0260; never runs (lua.md)
 0x005587a0 function Phyre_PClassDescriptorForType_Phyre_PGameplay_PCameraControllerComponent__getPointerFromScriptContext # fh switch:bsim1.00 0x71000c7d30 Phyre::PClassDescriptorForType<Phyre::PGameplay::PCameraControllerComponent>::getPointerFromScriptContext
 0x0055b3e0 function Phyre_PClassDescriptorForType_Phyre_PSprite_PSpriteCollection__getPointerFromScriptContext # fh switch:bsim1.00 0x7100125280 Phyre::PClassDescriptorForType<Phyre::PSprite::PSpriteCollection>::getPointerFromScriptContext
 0x0056d4f0 function Phyre_PClassDescriptorForType_Phyre_PGameplay_PLocator__getPointerFromScriptContext # fh switch:bsim1.00 0x7100169e10 Phyre::PClassDescriptorForType<Phyre::PGameplay::PLocator>::getPointerFromScriptContext
@@ -359,10 +363,14 @@
 0x005ce6e0 function Phyre_PRingBuffer_Phyre_PScripting_PAsyncProcessBufferBlock__allocateBlock # fh switch:cg2 0x71001a3a80 Phyre::PRingBuffer<Phyre::PScripting::PAsyncProcessBufferBlock>::allocateBlock
 0x005d0350 function Phyre_PScripting_PScheduler_addOneShotScript # fh switch:bsim1.00 0x71000f4330 Phyre::PScripting::PScheduler::addOneShotScript
 0x005d0ce0 function Phyre_PClassDescriptorForType_Phyre_PScripting_PScheduler__getPointerFromScriptContext # fh switch:bsim1.00 0x71000f4c60 Phyre::PClassDescriptorForType<Phyre::PScripting::PScheduler>::getPointerFromScriptContext
+0x005d0f00 function PScripting_PScheduler_initialize       # calls the state builder 0x00618150; no references in the image (lua.md)
+0x005d5350 function PScripting_NewState                    # lua_newstate, 0x009540f0, Phyre types, RegisterFunctions; no references (lua.md)
+0x005d53b0 function PScripting_NewStateForScript           # lua_newstate, 0x009540f0, Phyre types, RegisterFunctions; sets global "phyre_pscript" and loads the PScript; called by 0x00554860/0x00555f20 only; never runs (lua.md)
 0x005d5620 function Phyre_PScripting_ExecuteScript # fh switch:bsim0.90 0x71000f8300 Phyre::PScripting::ExecuteScript
 0x005d5780 function Phyre_PScripting_GetPScriptFromContext # fh switch:bsim1.00 0x71000f6ea0 Phyre::PScripting::GetPScriptFromContext
 0x005d5b70 function Phyre_PScripting_Panic    # fh switch:bsim1.00 0x71000f7650 Phyre::PScripting::Panic
 0x005d6070 function Phyre_PScripting_RegisterFunctions # fh switch:bsim1.00 0x71000f7a40 Phyre::PScripting::RegisterFunctions
+0x005d6120 function PScripting_CompileScriptFile           # opens a file (PStreamReaderFile), runs it in a fresh state and sizes it with PScriptingCompiler_CalculateSize; no references (lua.md)
 0x005f5530 function Phyre_PPhysics_PPhysicsShapeBase_allocatePlatformInstance # fh switch:bsim1.00 0x710017ed30 Phyre::PPhysics::PPhysicsShapeBase::allocatePlatformInstance
 0x005fda80 function Phyre_PClassDescriptorForType_Phyre_PFramework_PApplicationViewport__getPointerFromScriptContext # fh switch:bsim1.00 0x71001b90f0 Phyre::PClassDescriptorForType<Phyre::PFramework::PApplicationViewport>::getPointerFromScriptContext
 0x005fdc80 function Phyre_PClassDescriptorForType_Phyre_PPhysics_PPhysicsCharacterCamera__getPointerFromScriptContext # fh switch:bsim1.00 0x710018cdf0 Phyre::PClassDescriptorForType<Phyre::PPhysics::PPhysicsCharacterCamera>::getPointerFromScriptContext
@@ -436,6 +444,7 @@
 0x00616010 function Phyre_PRendering_PRenderThread_threadEntry # fh v3:exact 0x006161d0 Phyre::PRendering::PRenderThread::threadEntry
 0x00616dc0 function Phyre_PAnimation_PNetworkOptimizeProcess_setName # fh switch:bsim1.00 0x7100158240 Phyre::PAnimation::PNetworkOptimizeProcess::setName
 0x00617f30 function Phyre_PScripting_PAsyncProcessHeader_process # fh switch:bsim1.00 0x71001a3f90 Phyre::PScripting::PAsyncProcessHeader::process
+0x00618150 function PScripting_BuildStateImage             # lua_newstate with PScriptMemoryAnalyzer/Recorder, base+table libs, RegisterFunctions, atpanic; only caller 0x005d0f00 (lua.md)
 0x006185a0 function Phyre_PScripting_PScriptingCompiler_CalculateSize # fh switch:bsim1.00 0x71001a46f0 Phyre::PScripting::PScriptingCompiler::CalculateSize
 0x006185d0 function Phyre_PScripting_PScriptingCompiler_GetChunksForFunction # fh switch:bsim1.00 0x71001a4720 Phyre::PScripting::PScriptingCompiler::GetChunksForFunction
 0x00618600 function Phyre_PScripting_PScriptingCompiler_Writer # fh switch:bsim0.99 0x71001a4670 Phyre::PScripting::PScriptingCompiler::Writer
@@ -6411,8 +6420,10 @@
 0x0094ab80 function lua_atpanic               # fh switch:bsim1.00 0x710076c3d4
 0x0094ad00 function lua_concat                # fh switch:bsim1.00 0x710076f3fc
 0x0094ae10 function lua_dump                  # fh switch:bsim1.00 0x710076f17c
+0x0094ae50 function lua_gc                                 # Lua 5.2.1; (L, 2=LUA_GCCOLLECT, 0) in 0x00618150
 0x0094b080 function lua_getglobal             # fh switch:bsim1.00 0x710076deb8
 0x0094b450 function lua_newuserdata           # fh switch:bsim0.99 0x710076f584
+0x0094b4d0 function lua_pcallk                             # Lua 5.2.1; lua_pcall failed messages in its callers 0x004362b0, 0x00618330
 0x0094b660 function lua_pushfstring           # fh switch:bsim0.93 0x710076dcc8
 0x0094b690 function lua_pushinteger           # fh switch:cg5 0x710087db08
 0x0094b6c0 function lua_pushlightuserdata     # fh switch:bsim0.98 0x710076de6c
@@ -6425,7 +6436,11 @@
 0x0094c1b0 function lua_touserdata            # fh switch:cg2 0x7100882988
 0x0094c2c0 function lua_version               # fh switch:bsim1.00 0x710076c3e4
 0x0094cae0 function luaL_checkstack           # fh switch:bsim1.00 0x71007707b8
+0x0094d550 function luaL_newmetatable                      # Lua 5.2.1; registry field -1001000 (0xfff0b9d8)
+0x0094d5b0 function luaL_newstate                          # Lua 5.2.1; lua_newstate(0x0094c5f0, 0) + lua_atpanic(0x0094ddb0); no references; never runs (lua.md)
+0x0094ddb0 function luaL_panic                             # Lua 5.2.1 lauxlib panic: "PANIC: unprotected error in call to Lua API (%s)"
 0x009506b0 function lua_close                 # fh switch:bsim1.00 0x710077e1e8
+0x009506d0 function lua_newstate                           # Lua 5.2.1; callers 0x0094d5b0, 0x005d5350, 0x005d53b0, 0x005d6120, 0x00618150; never runs (lua.md)
 0x00954e60 function luaopen_base              # fh switch:bsim1.00 0x7100772228
 0x00955860 function luaopen_table             # fh switch:bsim1.00 0x7100781c48
 0x009da280 function IsLoadTexture             # fh v3:exact 0x009da280
