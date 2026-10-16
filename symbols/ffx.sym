@@ -5353,7 +5353,7 @@
 0x00826db0 function Ch_HandleRewind           # fh v3:bsim1.00 0x00826e30
 0x00826dc0 function Ch_IdGetFromName             # layout: alphabetical run between Ch_HandleRewind and Ch_InitAll (1 unnamed in the gap); Switch 0x710040d3f0 Ch_IdGetFromName is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00826ea0 function Ch_InitAll                # fh v3:exact 0x00826f20
-0x00826fbc function Ch_MemMove                # fh switch:cg2 0x7100410460
+0x00826fa0 function Ch_MemMove                # fh switch:cg2 0x7100410460; starts at 0x00826fa0 (MoveChrMemory: returns 0 at once unless g_ChrMemMoveTrigger 0x012fbda0), the dump splits it at the early return (0x00826fbc); Switch Ch_MemMove calls Ch_MemMoveEventMgrp
 0x00827250 function Ch_MemMoveSetTrigger      # fh v3:bsim1.00 0x008272d0
 0x00827280 function Ch_ModelCreatePacket      # fh v3:exact 0x00827300
 0x00827590 function Ch_ModelMapping          # ours (Switch's is unnamed FUN_710040cd10, called by Ch_ArcMapping for entry 0): fixes up a moved model header (self pointer at +0) and its models
@@ -5753,6 +5753,8 @@
 0x00836f10 function SG_FindMotionGroup        # (a, b, key) -> the loaded motion group with those numbers and key, 0 else; callers ChN_ReadSystemMGRP, Chr_LoadMotionGroup
 0x00836f70 function SG_RelocateGroup          # offsets -> pointers; header +0 holds the load address
 0x00836fc0 function SG_RelocateSequence       # motion (+0x0c) and clip (+0x10) tables, 16 bytes each, pointer words +8/+0xc
+0x00837050 function Ch_MemMoveEventMgrp       # switch: Ch_MemMove calls it, it calls Sg_MemMoveWork then Ch_MgrpMove (cg_switch.calls); here: for the first loaded motion group (table 0x013011e0, i16 +4 == 1) that 0x0083c350 moves, Ch_MgrpMove(new, old) and 1, else 0
+0x008370c0 function Ch_MgrpMove               # switch: called by Ch_MemMoveEventMgrp after Sg_MemMoveWork, calls the group relocation (cg_switch.calls); (new, old): SG_RelocateGroup(new), the 0x013011e0 entry, g_ChrSequences entries with group +0x10 == old and the active characters' +0x7e8 (Ch_MoveMgrp) follow by new - old
 0x00837180 function Ch_MotionCancel           # fh switch:bsim1.00 0x7100423030
 0x008371a0 function Ch_MotionGetId            # chr +0x72c, the current motion id (Native_ChrGetMotion reads it too); Switch name
 0x008371b0 function Ch_MotionIsEnd           # ours: with a sequence (+0x73e) Ch_GetSeqFrame == -1, else u16 +0x724 (loops left) == 0
@@ -5859,6 +5861,7 @@
 0x0083c0b0 function Sg_MemGetSum              # (header) -> 16-bit sum of the block's data halfwords (AX); Switch name
 0x0083c260 function Sg_MemInit                   # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'heap=%x-%x\\n'; Switch 0x71004301f0 Sg_MemInit (symbols from Fahrenheit's server export)
 0x0083c320 function Sg_MemIsFree              # (p) -> 1 when the block's owner nibble (+0xc of the header) is 0; Switch name (28 bytes there)
+0x0083c350 function Sg_MemMoveWork            # switch: called by Ch_MemMoveEventMgrp before Ch_MgrpMove (cg_switch.calls); (&ptr, &moved): moves the heap block *ptr points at (header at -0x10, heap 0x013019b8) to a free block lower down or into the free block before it (memmove), updates *ptr, adds its size - 0x10 to *moved; returns new - old, 0 when it did not move
 0x0083c480 function Sg_MemRealloc             # fh v3:bsim1.00 0x0083c500
 0x0083c4a0 function Sg_MemSetAlign            # fh v3:exact 0x0083c520
 0x0083c4d0 function Sg_MemSetCheck            # fh v3:bsim1.00 0x0083c550
@@ -12201,7 +12204,7 @@
 0x013009e0 label g_ChrGuiCalcNormal          # 0 or 1, Ch_GuiSetCalcNormAll / Ch_GuiGetCalcNormal
 0x013009e8 label g_ChrFunctionHistory9e8    # u32, cleared by Ch_FunctionHistoryClear
 0x01300a00 label    g_ChCreateName            # char buffer ch_create_name 0x00838100 formats "%c%03d" (class letter c/m/n/s/w/f/k or '-', number) into
-0x01300a08 label g_ChrSequences             # 100 x 0x14 bytes: data, u16 key +4, u16 taken +6, next same key +8, next key +0xc (SG_AddSequence, Ch_SeqLink)
+0x01300a08 label g_ChrSequences             # 100 x 0x14 bytes: data, u16 key +4, u16 taken +6, next same key +8, next key +0xc, motion group +0x10 (SG_AddSequence, Ch_SeqLink, Ch_MgrpMove)
 0x013011d8 label g_ChrSequenceHead          # first chain of g_ChrSequences (Ch_SeqLink)
 0x013017f8 label g_ChrMotionHalf             # Ch_MotionSetHalf / Ch_MotionGetHalf
 0x013019c0 label g_ChrClutDisposeHold       # non-zero holds clut disposal (Ch_ClutDisposeCheck)

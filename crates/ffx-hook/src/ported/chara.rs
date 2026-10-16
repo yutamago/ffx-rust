@@ -1143,6 +1143,11 @@ ported! {
     Ch_SeqLink @ 0x0083_8170 => extern "C" fn ch_seq_link() {
         mo::bridge::ch_seq_link(&mut mem());
     }
+    /// `Ch_MgrpMove(new, old)`: a motion group moved; `SG_RelocateGroup`
+    /// is the main module's port.
+    Ch_MgrpMove @ 0x0083_70c0 => extern "C" fn ch_mgrp_move(new: u32, old: u32) -> u32 {
+        mo::bridge::ch_mgrp_move(&mut mem(), new, old, ffx_sg::seq::bridge::relocate_group)
+    }
     /// `Ch_MotionLoopFrame(chr)`.
     Ch_MotionLoopFrame @ 0x0083_92d0 => extern "C" fn ch_motion_loop_frame(chr: u32) -> u32 {
         mo::bridge::ch_motion_loop_frame(&mut mem(), chr)

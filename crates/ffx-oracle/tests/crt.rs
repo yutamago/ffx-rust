@@ -1,22 +1,37 @@
-//! The oracle's native CRT and Win32 stubs (`crt` in the library): each
-//! called through the import it is bound to, the results checked against
-//! what MSVCR110 gives. `_CIsqrt` and `_CIfmod` are checked through x87
-//! code that calls them like the game does. Needs `FFX_GAME_DIR`.
+//! The oracle's native CRT and Win32 stubs (`crt` in the library, the
+//! [`Runtime::Native`] oracle): each called through the import it is bound
+//! to, the results checked against what MSVCR110 gives. `_CIsqrt` and
+//! `_CIfmod` are checked through x87 code that calls them like the game
+//! does. The recorded MSVCR110 output is also checked against the real
+//! DLL in the oracle ([`Runtime::Dll`]). Needs `FFX_GAME_DIR`.
 
 #![allow(clippy::many_single_char_names)] // o the oracle, a/b/s strings, n counts
 
 use std::path::PathBuf;
 
-use ffx_oracle::{Conv, Oracle};
+use ffx_oracle::{Conv, Oracle, Runtime};
 
-fn oracle() -> Option<Oracle> {
+fn oracle_with(runtime: Runtime) -> Option<Oracle> {
     let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
         eprintln!("FFX_GAME_DIR is not set; skipping");
         return None;
     };
-    let mut o = Oracle::load(PathBuf::from(dir).join("FFX.exe")).unwrap();
+    let mut o = Oracle::load_with(PathBuf::from(dir).join("FFX.exe"), runtime).unwrap();
     o.set_fpu_control(0x027f).unwrap();
     Some(o)
+}
+
+/// The oracle with native stubs only.
+fn oracle() -> Option<Oracle> {
+    oracle_with(Runtime::Native)
+}
+
+/// Both: native stubs, then the real DLL.
+fn both() -> Vec<(&'static str, Oracle)> {
+    [("native", Runtime::Native), ("dll", Runtime::Dll)]
+        .into_iter()
+        .filter_map(|(n, r)| Some((n, oracle_with(r)?)))
+        .collect()
 }
 
 fn stub(o: &Oracle, name: &str) -> u32 {
@@ -293,7 +308,7 @@ fn string_functions() {
     assert_eq!(call(&mut o, "tolower", &[u32::from(b'Q')]), u32::from(b'q'));
     assert_eq!(call(&mut o, "toupper", &[u32::from(b'q')]), u32::from(b'Q'));
     assert_eq!(call(&mut o, "toupper", &[0xe9]), 0xe9);
-    assert_eq!(call(&mut o, "isalpha", &[u32::from(b'a')]), 0x102);
+    assert_eq!(call(&mut o, "isalpha", &[u32::from(b'a')]), 2);
     assert_eq!(call(&mut o, "isdigit", &[u32::from(b'5')]), 4);
     assert_eq!(call(&mut o, "isspace", &[u32::from(b'\t')]), 8);
     let num = string(&mut o, b"  -0x1Fz");
@@ -420,10 +435,15 @@ fn missing_imports_by_callers() {
 /// `msvcr110.dll` printed, run on Windows) through the `sprintf` stub.
 #[test]
 fn sprintf_matches_recorded_msvcr110_output() {
-    let Some(mut o) = oracle() else { return };
-    let sp = stub(&o, "sprintf");
+    for (runtime, mut o) in both() {
+        sprintf_recorded(runtime, &mut o);
+    }
+}
+
+fn sprintf_recorded(runtime: &str, o: &mut Oracle) {
+    let sp = stub(o, "sprintf");
     let buf = o.alloc(1024).unwrap();
-    let abc = string(&mut o, b"abc");
+    let abc = string(o, b"abc");
     let mut n = 0;
     for line in include_str!("data/msvcr110-sprintf.tsv").lines() {
         if line.starts_with('#') {
@@ -431,7 +451,7 @@ fn sprintf_matches_recorded_msvcr110_output() {
         }
         let p: Vec<&str> = line.splitn(3, '\t').collect();
         let (fmt, arg, want) = (p[0], p[1], p[2]);
-        let f = string(&mut o, fmt.as_bytes());
+        let f = string(o, fmt.as_bytes());
         let args: Vec<u32> = match arg {
             "abc" => vec![buf, f, abc],
             "null" => vec![buf, f, 0],
@@ -445,8 +465,12 @@ fn sprintf_matches_recorded_msvcr110_output() {
             a => vec![buf, f, u32::from_str_radix(a, 16).unwrap()],
         };
         o.call(sp, Conv::Cdecl, &args).unwrap();
-        let got = read_cstr(&mut o, buf);
-        assert_eq!(String::from_utf8_lossy(&got), want, "{fmt} of {arg}");
+        let got = read_cstr(o, buf);
+        assert_eq!(
+            String::from_utf8_lossy(&got),
+            want,
+            "{runtime}: {fmt} of {arg}"
+        );
         n += 1;
     }
     assert!(n > 700);
@@ -455,8 +479,13 @@ fn sprintf_matches_recorded_msvcr110_output() {
 /// `atof` and `strtol` against values the game's `msvcr110.dll` returned.
 #[test]
 fn numbers_match_recorded_msvcr110_output() {
-    let Some(mut o) = oracle() else { return };
-    let atof = stub(&o, "atof");
+    for (runtime, mut o) in both() {
+        numbers_recorded(runtime, &mut o);
+    }
+}
+
+fn numbers_recorded(runtime: &str, o: &mut Oracle) {
+    let atof = stub(o, "atof");
     for (text, bits) in [
         ("1.5", 0x3ff8_0000_0000_0000u64),
         (" -12.5e-1xyz", 0xbff4_0000_0000_0000),
@@ -476,11 +505,11 @@ fn numbers_match_recorded_msvcr110_output() {
         ("1e-400", 0),
         ("0x10", 0),
     ] {
-        let s = string(&mut o, text.as_bytes());
+        let s = string(o, text.as_bytes());
         let r = o.call(atof, Conv::Cdecl, &[s]).unwrap();
-        assert_eq!(r.st0.unwrap().to_bits(), bits, "atof({text})");
+        assert_eq!(r.st0.unwrap().to_bits(), bits, "{runtime}: atof({text})");
     }
-    let strtol = stub(&o, "strtol");
+    let strtol = stub(o, "strtol");
     let end = o.alloc(4).unwrap();
     for (text, base, v, used) in [
         ("  -0x1Fz", 0, -31, 7),
@@ -494,9 +523,9 @@ fn numbers_match_recorded_msvcr110_output() {
         ("z", 36, 35, 1),
         ("-2147483648", 10, -2_147_483_648, 11),
     ] {
-        let s = string(&mut o, text.as_bytes());
+        let s = string(o, text.as_bytes());
         let r = o.call(strtol, Conv::Cdecl, &[s, end, base]).unwrap();
-        assert_eq!(r.eax.cast_signed(), v, "strtol({text}, {base})");
+        assert_eq!(r.eax.cast_signed(), v, "{runtime}: strtol({text}, {base})");
         let e: u32 = u32::from_le_bytes(o.read(end, 4).unwrap().try_into().unwrap());
         assert_eq!(e - s, used, "strtol({text}, {base}) end");
     }
@@ -576,5 +605,34 @@ fn threading_stubs() {
                 .any(|m| m.ends_with(&format!("!{name}"))),
             "{name} still missing"
         );
+    }
+}
+
+/// `sprintf_s` into too small a buffer (the oracle's invalid-parameter
+/// handler returns; the game has none and would end): MSVCR110 writes what
+/// fits and a NUL, then clears the first byte, and returns -1.
+#[test]
+fn sprintf_s_overflow_as_msvcr110() {
+    for (runtime, mut o) in both() {
+        let f = string(&mut o, b"%s%s");
+        let x = string(&mut o, b"ab");
+        let y = string(&mut o, b"cdefghijk");
+        let at = stub(&o, "sprintf_s");
+        for (size, ret, want) in [
+            (8u32, -1, &b"\0bcdefg\0\x55\x55"[..]),
+            (1, -1, b"\0\x55\x55\x55\x55\x55\x55\x55\x55\x55"),
+            (11, -1, b"\0bcdefghij\0"),
+            (12, 11, b"abcdefghijk\0"),
+        ] {
+            let buf = o.alloc(16).unwrap();
+            o.write(buf, &[0x55; 16]).unwrap();
+            let r = o.call(at, Conv::Cdecl, &[buf, size, f, x, y]).unwrap().eax;
+            assert_eq!(r.cast_signed(), ret, "{runtime}: size {size}");
+            assert_eq!(
+                o.read(buf, want.len()).unwrap(),
+                want,
+                "{runtime}: size {size}"
+            );
+        }
     }
 }

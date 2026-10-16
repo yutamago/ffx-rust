@@ -4528,3 +4528,83 @@ fn crt_users_match_the_original_on(t: &mut Twin) {
         }
     }
 }
+
+/// `Ch_MgrpMove(new, old)`: a motion group moved; its table entry, its
+/// sequences and the characters playing it follow (with the main module's
+/// `SG_RelocateGroup` port for the group itself). On the snapshot `old` is
+/// sometimes one of the game's own groups, so its real sequences and
+/// characters move too.
+#[test]
+fn mgrp_move_matches_the_original() {
+    for mut t in twins() {
+        mgrp_move_on(&mut t);
+    }
+}
+
+fn mgrp_move_on(t: &mut Twin) {
+    use ffx_chara::motion::bridge as mo;
+    let mut rng = Xorshift(0x0006_6a70);
+    let chrs = live_characters(t, &mut rng);
+    let table = 0x0130_11e0u32;
+    let seqs = 0x0130_0a08u32;
+    for round in 0..12u32 {
+        // the former address: made up, or a group the table holds
+        let held: Vec<u32> = (0..50)
+            .map(|i| rd::<u32>(&t.b, table + 12 * i))
+            .filter(|&g| g != 0)
+            .collect();
+        let old = if round % 3 == 2 && !held.is_empty() {
+            held[rng.next() as usize % held.len()]
+        } else {
+            0x0200_0000 + (rng.next() & 0xfff_fff0)
+        };
+        // the group at its new place, built for `old`
+        let n = rng.next() % 3;
+        let group = t.alloc(0x10);
+        let entries = t.alloc(20 * 3);
+        let delta = group.wrapping_sub(old);
+        t.put_u32(group, if round % 5 == 4 { group } else { old });
+        t.put_u32(group + 4, n);
+        t.put_u32(group + 0xc, entries.wrapping_sub(delta));
+        for k in 0..n {
+            let e = entries + 20 * k;
+            t.put(e + 8, &[0, 0, 0, 0]);
+            let data = random_block(t, &mut rng, 0x10);
+            t.put_u32(e + 0xc, data.wrapping_sub(delta));
+        }
+        if round % 3 != 2 && !rng.next().is_multiple_of(4) {
+            let i = rng.next() % 50;
+            t.put_u32(table + 12 * i, old);
+        }
+        // sequences of the group (some unused), others left alone
+        for _ in 0..rng.next() % 4 {
+            let e = seqs + 0x14 * (rng.next() % 100);
+            let data = if rng.next().is_multiple_of(4) {
+                0
+            } else {
+                rng.next() | 1
+            };
+            t.put_u32(e, data);
+            t.put_u32(e + 0x10, old);
+        }
+        // characters playing it
+        for &chr in &chrs {
+            if rng.next().is_multiple_of(3) {
+                t.put_u32(chr + 0x7e8, old);
+            }
+        }
+        t.check(
+            &format!("Ch_MgrpMove {round}"),
+            0x0083_70c0,
+            &[group, old],
+            |m| {
+                Res::Int(mo::ch_mgrp_move(
+                    m,
+                    group,
+                    old,
+                    ffx_sg::seq::bridge::relocate_group,
+                ))
+            },
+        );
+    }
+}
