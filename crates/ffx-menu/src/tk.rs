@@ -4863,17 +4863,17 @@ pub mod bridge {
     /// `+0x1c` changed for the call and put back).
     pub fn tk_menu_draw_menu_window_scissor_with_label(
         mem: &mut impl Mem,
-        w: u32,
+        window: u32,
         mode: i32,
         t: i32,
     ) -> u32 {
-        let h: u32 = mem.read(w + 0x1c);
-        let y: u32 = mem.read(w + 0x14);
-        mem.write(w + 0x14, y.wrapping_add(10));
-        mem.write(w + 0x1c, h.wrapping_sub(10));
-        let r = tk_menu_draw_menu_window_scissor(mem, w, mode, t);
-        mem.write(w + 0x14, y);
-        mem.write(w + 0x1c, h);
+        let height: u32 = mem.read(window + 0x1c);
+        let top: u32 = mem.read(window + 0x14);
+        mem.write(window + 0x14, top.wrapping_add(10));
+        mem.write(window + 0x1c, height.wrapping_sub(10));
+        let r = tk_menu_draw_menu_window_scissor(mem, window, mode, t);
+        mem.write(window + 0x14, top);
+        mem.write(window + 0x1c, height);
         r
     }
 
