@@ -4161,6 +4161,8 @@
 0x00847b00 function Gu_DrawStart              # (buffer): GIF tag (one A+D) at buffer+0x10, g_GuPacket = g_GuPacketData = buffer, count 2, then Gu_SetTest(1, 1, 0, 0, 0, 0, 1, 2); fh v3:exact 0x00847b00
 0x008482f0 function Gu_FontSetX               # g_GuPrintX = x; Switch name, alphabetical slot Gu_DrawStart..Gu_PacketEndTag
 0x00848300 function Gu_FontSetY               # g_GuPrintY = y; Switch name, alphabetical slot
+0x00848310 function Gu_FontSetupWindow        # (window) print base/cursor = client origin +0x80/+0x82 + position +0x14/+0x16, client size at 0x01303704/08, italic/bold off, Gu_PrintSetSize(0x100), colour/CR cleared, 0x013036f8 = 0x013036f4; Switch name, alphabetical slot Gu_FontSetY..Gu_PacketEndTag
+0x008483e0 function Gu_SetAlpha               # (a, b, c, d, fix): A+D ALPHA_1 (register 0x42) into g_GuPacketData, fields sign-extended into 64-bit shifts; no direct caller; own name (beside Gu_SetPrim/Rgbaq/Test)
 0x00848460 function Gu_PacketEndTag           # (): the open GIF tag's NLOOP (15 bits) = quadwords since Gu_PacketBeginTag - 1
 0x00848480 function Gu_SetPrim                # (prim): A+D PRIM (register 0) into g_GuPacketData, sign-extended to 64 bits
 0x008484c0 function Gu_SetRgbaq               # (r, g, b, a): A+D RGBAQ (register 1) into g_GuPacketData, a | 0x800000 as the top field
@@ -4192,8 +4194,10 @@
 0x008493e0 function Gu_ButtonSetToggleValue   # fh v3:bsim1.00 0x008493e0
 0x00849440 function Gu_MouseInRect            # (rect {i16 x, y, w, h}, dx, dy) -> 1 when g_GuMouseX/Y is strictly inside the moved rectangle
 0x00849490 function Gu_WindowMouseIn          # (window) Gu_SetHScale(+0x8e); mouse strictly inside the i16 rect +0xc; own name
+0x008494f0 function Gu_ControlFreeText        # (control) user_free(+0x28) when u16 +0x26 != 0; no direct caller; own name
 0x008496d0 function Gu_WindowControlSetRect   # (window, id, x, y, w, h) the control rects (x, y + client origin +0x80), -1 kept; own name
 0x00849780 function Gu_Hide                   # fh switch:bsim1.00 0x7100440810
+0x008497f0 function Gu_InitBox                # (box, x, y, w, h) three rect copies, tints 0x80808080/0x8080, +0x22 = 0; Switch name, alphabetical slot Gu_Hide..Gu_Main (Gu_HoseiClock, Gu_Init, Gu_InitBox)
 0x00849850 function Gu_Main                   # fh v3:exact 0x00849850
 0x00849970 function Gu_MessageBox             # fh v3:exact 0x00849970
 0x00849aa0 function Gu_MouseGetWindowY        # fh switch:bsim1.00 0x710043fd40
@@ -4205,6 +4209,7 @@
 0x00849b80 function Gu_MouseSetEnable         # 0x01303760 = on; Switch name, the one name between Gu_MouseSetCapture and Gu_MouseSetWindow
 0x00849b90 function Gu_MouseSetWindow         # fh v3:exact 0x00849b90
 0x00849bb0 function Gu_SelectorAllocate       # fh v3:exact 0x00849bb0
+0x00849bd0 function Gu_SelectorDispose        # (selector) user_free of +8 and +0xc (when +8 set), then of itself; Switch name, alphabetical slot Gu_SelectorAllocate..Gu_SelectorGetItemValue (frees itself)
 0x00849d10 function Gu_SelectorGetItemValue   # (selector): the selected item's value (+0xc array at +2), beside Gu_SelectorGetItemName
 0x00849d30 function Gu_SelectorGetItemName    # fh v3:bsim1.00 0x00849d30
 0x00849d50 function Gu_SelectorGetSelect      # (selector) -> i16 +2, the selected item
@@ -4714,6 +4719,7 @@
 0x00872590 function Obj_GetFloat28            # (p) f32 +0x28; own name
 0x008725a0 function Ref_Deref                 # (ref) [[ref[0] + 0x20] + ref[1]]; own name
 0x008725c0 function Table_PairWord            # (table, i, second) word 0/1 of 8-byte entry i; own name
+0x008725e0 function Script_PcOffset           # (ctx, worker) worker +0x18 - *(ctx+4)+0x30 - *(ctx+4); own name
 0x00872650 function Script_WorkerLevel        # (worker, level) -> 0x4c-byte level block at worker+0x12c+level*0x4c, level clamped to 0..8 (types 5/6: 0..1); +0x18 PC, +0x1f request state, +0x20/+0x24 registers A/B, +0x28 float accumulator, +0x44 move block ptr, +0x48 turn block ptr
 0x008726f0 function Script_Jump               # (worker, level, label): level PC = the worker's code start + labels[label] (worker header +0x24) of the worker running at the call depth (level +0x0e + depth*2 inside a call); level +0x1e = 0
 0x00872860 function AtelCancelSignals         # (worker, level, mode): drops queued signals above level, replying to waiting REQSW/REQEW senders
@@ -4763,16 +4769,19 @@
 0x00875430 function AtelActorRemove           # fh v3:exact 0x008753b0
 0x00875510 function AtelActorSetUp2           # (..., messages, messages2, ...): script context +0x34 = messages, +0x38 = section 5 (or messages); was Event_InitScripts
 0x008756d0 function AtelBattleSetUp           # fh v3:exact 0x00875650
+0x00875af0 function Vibrate_BumpStream        # (k) stream k (clamped 0..7) u16 counter 0x01328170 + k*0x24 += 1, byte +2 = 0; record left in eax; own name
 0x00875d30 function Vibrate_CheckDone         # (pad) state 1/2 ends when both streams +6 are 0x200/0xfffe; own name
 0x00875de0 function TkGetVibrateOn            # (pad) -> u8 g_TkVibratePads[pad].+0x22, pad clamped to 0..7 (the byte TkStopVibrate clears)
 0x00875e10 function TkGetVibrateVolume        # fh switch:bsim1.00 0x7100479c70
 0x00875e50 function TkGetVibratePad           # (pad) -> &g_TkVibratePads[pad], pad clamped to 0..7
+0x00875e80 function Vibrate_ResetAll          # () 8 streams (0x01328150, 0x24 each): counters and both 0x10-byte entries cleared; g_TkVibrateOff 0, u16 0x01328274 = 0xff; own name
 0x00875ef0 function Vibrate_ResetPad          # (pad) +0x22, u16 +0x20 cleared, both 16-byte streams reset; own name
 0x00875f30 function Vibrate_ResetStream       # (stream) +4, u16 +8, +0xa cleared; own name
 0x00875f50 function TkSetVibrateOff           # (v) g_TkVibrateOff = low byte; own name
 0x00875f60 function TkSetVibrateMask          # fh v3:exact 0x00875ee0
 0x00875fb0 function TkSetVibrateStream        # fh v3:cg2 0x875f30
 0x00876160 function Vibrate_HoldStream        # (stream) +4 = 0xfffe0000, u16 +8 = 0; own name
+0x00876230 function Vibrate_SetStream         # (entry, src) entry from curve header src: +4 0, +6 (src[1]+1)*2, +8 src[0], +9 src[2], +0 set_ptr32(src+2); null: +4 0x02000000, +8 0, +0 0; own name
 0x00876290 function TkStopVibrate             # fh v3:exact 0x00876210
 0x008762f0 function TkStopVibrateAll          # fh v3:exact 0x00876270
 0x00876350 function Vibrate_StartStream       # (stream, curve) header (level, length, flag) into +8/+6/+9, pointer = curve + 2; own name
@@ -5058,6 +5067,7 @@
 0x0088ec10 function TkSetTGS                  # (v): u8 g_TkTGS (TkGetTGS's byte)
 0x0088ec20 function TkConfig_SetByteC         # (v) g_FFXConfig byte +0xc; own name
 0x0088ec60 function TkVU1SyncPath             # fh v3:bsim1.00+call.cs 0x0088ebd0 cdecl
+0x0088ec90 function Tk_NoteEternalCalm        # (scene) isEternalCalmScene; first time: byte 0x018663d0 = 1, 0x018663d4 = 0; own name
 0x0088ecf0 function TkDebugPrint              # (fmt) dbgPrintf (a PC stub), returns 1; no caller; own name
 0x0088edc0 function TkGetDebugFontBuffer      # None
 0x0088edf0 function TkGetDebugFontStringWidth # (proportional, s) TkGetStrWidth >> 4; Switch name, the only slot TkGetDebugFontBuffer..TkGetStrWidth (picked by behaviour among its names)
@@ -5068,6 +5078,9 @@
 0x0088faf0 function TkSetDebugFontLocate      # fh switch:bsim1.00 0x7100492180
 0x0088fb10 function TkDebugFont_SetWord4      # (p) g_TkDebugFontBuffer word +4 = set_ptr32(p); own name
 0x008904e0 function TkSetDebugFontLocate2     # (x, y): 0x0133c8dc/e0 = x << 4, y << 4 (TkSetDebugFontLocate's pair at 0x0133c8d4)
+0x00890780 function TkDebugFont_SwapBuffer    # () g_TkDebugFontBuffer flipped between 0x0133c8c4/0x0133c8c8; write pointers +0/+4 = start +8; 0x0133c8d0..d8 = 0; own name
+0x008907e0 function TkEucToSjis               # (src, out) one EUC char to Shift-JIS for the debug font: 0 -> 0, ASCII -> 1, two-byte -> 2; own name
+0x00890860 function Dma_PutTagEx              # (p, qwc, pce, id, irq, addr) tag QWC (1 for 0), byte 3 ((irq<<3|id)<<2|pce)<<2, addr; zero quadword after for qwc 0; returns the end; own name
 0x008908c0 function Dma_PutCall               # (p, addr) call tag (id 5) QWC 1 to addr + a zero quadword; byte 2 untouched; returns p + 0x20; own name
 0x00890910 function Dma_PutEnd                # (p) end tag (id 7) + a zero quadword; returns p + 0x20; own name
 0x00890960 function Dma_PutCnt                # (p) cnt tag (id 1) + a zero quadword; own name
@@ -5077,6 +5090,7 @@
 0x00890a60 function Dma_CloseCnt              # (p, end, flags) cnt tag (0x1000) at p, QWC (end - p + 15) / 16 - 1, last word QWC | flags; returns end; own name
 0x00890aa0 function Dma_CloseCnt2             # (p, end, a, b) cnt tag, words 2-3 = a, b; returns end; own name
 0x00890ae0 function Dma_CloseNext             # (p, end, addr, a, b) next tag (0x2000) to addr; returns end; own name
+0x00890d30 function Dma_PutTagEx2             # a copy of Dma_PutTagEx; own name
 0x00890d90 function Dma_PutCall2              # (p, addr) a copy of Dma_PutCall; own name
 0x00890e70 function TOSepStop4e               # g_MagicImports slot 648 (10 overlays): 0x0133f77c = 0; SndIsSepPlay(0x8000004e) then SndSepStop(0x8000004e); hidden from the dump
 0x00890eb0 function TOBtlCloseHelpWin         # fh v3:bsim1.00 0x00890e20
@@ -5374,6 +5388,7 @@
 0x008b4e70 function MenuSaveLoad_Reset        # (v) save/load flags cleared, second window +0x58 = v; own name
 0x008b4eb0 function MenuSaveLoad_ResetToggles # u8 0x0186626a, 0x0186626b = 0; own name
 0x008b4ec0 function TkMenuJumpToLoadedScene   # fh v3:cg14 0x8b4e70
+0x008b4fb0 function MenuSave_OpenWindow2      # (arg) window 0x01866258: +0x10 0x008b4920, mode 4, +0x58 arg; registered; own name
 0x008b50b0 function TkMenuPreSave             # fh v3:exact 0x008b5060
 0x008b54c0 function MenuSaveLoad_MarkSlots    # (free, need) 99 slot states at 0x01866290: marks (3) while free < need, used flag 0x01866278; own name
 0x008b5530 function TkMenuRestartSelFileWindow # fh switch:bsim1.00 0x71004db0a0
@@ -5496,6 +5511,8 @@
 0x008c19a0 function TkMn2GetAbilityMes        # (id) auto-ability name: MsGetRomAbility text +0 (+4 hiragana), as TkMn2GetCommandName; Switch name (0x71004c78b0); Switch has no TkMn2GetAbilityName
 0x008c19e0 function TkMn2GetCommandHelp       # fh v3:cg5 0x8c19c0
 0x008c1a20 function TkMn2GetCommandName       # fh v3:cg2 0x8c1a00
+0x008c1a60 function TkMn2GetCommonPlate       # (plate, rect, c1, c2, a, b) TkMn2SeqGetRect + two TkMn2SeqGetColor (+8, +0xc), a, b (+0x10, +0x14): the plate TkMn2DumpPlate prints; Switch name, the two TkMn2GetCommonPlate names fill the two slots TkMn2GetCommandName..TkMn2GetExcelData
+0x008c1aa0 function TkMn2GetCommonPlateCustom # (i, plate, rect, c1, c2, a, b) the same from scene i; Switch name, the two TkMn2GetCommonPlate names fill the two slots TkMn2GetCommandName..TkMn2GetExcelData
 0x008c1af0 function TkMn2GetExcelData         # (id, table) MsGetExcelData record, strings to a dropped local; Switch name, alphabetical slot TkMn2GetCommandName..TkMn2GetItemHelp
 0x008c1b30 function TkMn2GetItemHelp          # fh v3:cg3 0x8c1b10
 0x008c1b70 function TkMn2GetKaizou            # MsGetRomKaizou first record; Switch name, alphabetical slot
@@ -5612,6 +5629,7 @@
 0x008d0460 function TkMenuCtrlLimit           # fh v3:exact 0x008d0430
 0x008d0c90 function TkMenuLimitCloseWindow    # (): close request for 0x0186a714 (TkMenuCtrlLimit's), forget it
 0x008d0cb0 function TkMenuLimitCloseWindow2   # (): close request for 0x0186a718 (TkMenuCtrlLimit's), forget it
+0x008d0d50 function MenuLimit_OpenWindow      # (arg) window 0x0186a714: MenuLimit_WindowIdle, 0x008d0e90, 0x008d16f0, 0x008d1bb0; rows TkMn2GetListMax, 7 visible; own name
 0x008d0e80 function MenuLimit_WindowIdle      # (window) +0x28 = 0; own name
 0x008d1b50 function TkMenuLimitClearWindow    # (): 0x0186a714 +0x28 = 0, +0x45 = 0
 0x008d1b70 function TkMenuLimitClearWindow2   # (): 0x0186a718 +0x28 = 0, +0x45 = 0
@@ -5650,6 +5668,8 @@
 0x008d9600 function TkMenuCtrlWShop           # fh v3:exact 0x008d95d0
 0x008d9b00 function MenuWShop_UsableByte      # (list, i) copy of MenuItem_UsableByte; own name
 0x008d9b10 function TkMenuWShopCloseWindow    # (): close request for 0x0186ac3c (TkMenuCtrlWShop's), +0x10 = 0, forget it
+0x008d9b30 function MenuTuto_CloseWindow      # () tutorial window 0x0186ac34 closed (+0x41 1, +0x10 0, +0x3e 2), forgotten; TkMn2SeqStopScene("scene18") always; own name
+0x008d9b60 function MenuTuto_CloseWindow2     # () tutorial window 0x0186ac38 the same, then TkMn2SeqStopScene("scene9") only after a close; own name
 0x008d9b90 function TkMenuWShopCloseWindow3   # (): the same for 0x0186ac30 (weapon shop code)
 0x008d9bb0 function TkMenuWShopCloseWindow2   # (): the same for 0x0186ac40 (TkMenuCtrlWShop's)
 0x008daaa0 function MenuTuto_RestartWindow    # TkMenuRestartSelFileWindow(0x0186ac34); own name
@@ -5659,8 +5679,17 @@
 0x008db7a0 function MenuTuto_SetChoice        # (window, i) 0x025d16bc = 1, 0x01871528 = i; own name
 0x008db840 function MenuTuto_GetChoice        # 0x01871528 when 0x025d16bc is set, else -1; own name
 0x008db870 function DrawBlackBackGround       # fh v3:exact 0x008db850
+0x008dbd40 function MenuDraw_SpriteP          # (p, x, y, entry) MenuDraw_Sp3Body tint 0x80; own name
+0x008dbd70 function MenuDraw_SpritePA         # (p, x, y, entry, alpha); own name
+0x008dbda0 function MenuDraw_SpriteP8A        # (p, x, y, entry, alpha) ox = 8; own name
 0x008dbdd0 function MenuDraw_SpriteVA         # (p, x, y, entry, alpha); own name
 0x008dbe00 function MenuDraw_SpriteV8A        # (p, x, y, entry, alpha) ox = 8; own name
+0x008dbe30 function MenuDraw_SpriteP1         # (p, x, y, entry) unused arg 1; own name
+0x008dbe60 function MenuDraw_SpriteP1A        # (p, x, y, entry, alpha) unused arg 1; own name
+0x008dbe90 function MenuDraw_SpriteP2         # (p, x, y, entry) unused arg 2; own name
+0x008dbec0 function MenuDraw_SpriteP2A        # (p, x, y, entry, alpha) unused arg 2; own name
+0x008dbef0 function MenuDraw_SpriteP8         # (p, x, y, entry) ox = 8; own name
+0x008dbf20 function MenuDraw_Sp3Body          # (p, _, x, y, entry, ox, oy, alpha) the unmirrored sprite body: u, v from cell * 16 + 8, screen offsets forward, u clamped to 0xff0 cutting the right edge; own name
 0x008dc0f0 function MenuDraw_Sprite           # (p, x, y, entry) MenuDraw_Sp3RBody tint 0x80; own name
 0x008dc120 function MenuDraw_SpriteA          # (p, x, y, entry, alpha); own name
 0x008dc150 function MenuDraw_Sprite1          # (p, x, y, entry) unused arg 1; no caller; own name
@@ -5675,6 +5704,7 @@
 0x008dc9b0 function TkMenuConfigMes           # fh switch:bsim1.00 0x71004c3490
 0x008dc9e0 function TkMenuDraw1612Width       # fh call.cs cdecl
 0x008dc9f0 function TkMenuDraw1612WidthHeight # fh switch:bsim1.00 0x71004bfde0
+0x008dca20 function TkMenuDrawSp30            # (x, y) TkMenuDrawSp3(x, y, 0), the 0 written into the caller's argument slot; own name
 0x008dca30 function TkMenuDrawSp3R0           # (x, y) TkMenuDrawSp3R(x, y, 0), the 0 written into the caller's argument slot; own name
 0x008dca90 function TkMenuDrawCursor2         # fh switch:bsim1.00 0x71004c0b40
 0x008dcb10 function TkMenuDrawEasyMes1208     # fh switch:bsim1.00 0x71004c19a0
@@ -5756,8 +5786,18 @@
 0x008e2960 function TkMenuCtrlWorldMap        # fh v3:exact 0x008e2960
 0x008e2b10 function MenuWorldMap_CloseWindow  # close request for 0x01871698, forget it; own name
 0x008e2d50 function TkMenuWorldMapWindowWord64 # () -> word +0x64 of *g_TkMenuWorldMapWindow (caller TkMenuCtrlWorldMap); name ours
+0x008e2d60 function MenuWorldMap_OpenWindow   # () g_TkMenuWorldMapWindow: callbacks 0x008e2b00/0x008e2b30/0x008e2b60, mode 7, tint 0x80 x3, +0x68 6; own name
 0x008e2de0 function TOMenuCloseYesNoWindow    # fh switch:bsim1.00 0x71004e7cb0
 0x008e3390 function TkMn2GetListMax2          # () -> 0x023cc120; Switch symbol name (BSim)
+0x008e33a0 function TkMenuOpenSubCmdWindow    # (x, items, c) TkMenuOpenSubCmdWindowMain with d 0; Switch name of the TkMenuOpenSubCmdWindow family (Main, plain, 2), by role: no alphabetical slot here
+0x008e33c0 function TkMenuOpenSubCmdWindow2   # (x, items, c, d) a jump to TkMenuOpenSubCmdWindowMain; Switch name of the TkMenuOpenSubCmdWindow family (Main, plain, 2), by role: no alphabetical slot here
+0x008e33d0 function TkMenuOpenSubCmdWindowMain# (x, items, c, d) window into 0x023cc120: 2x2, mode 2 (3 for items 0), callbacks 0x008e2e20/0x008e2f80/0x008e36b0, +0x37 1, +0x90/+0x94 1/1; Switch name of the TkMenuOpenSubCmdWindow family (Main, plain, 2), by role: no alphabetical slot here
+0x008e3470 function MenuSubCmd_OpenMainA      # (x, items, c, d) as TkMenuOpenSubCmdWindowMain without +0x37, +0x90/+0x94 0/1; own name
+0x008e3510 function MenuSubCmd_OpenMainB      # (x, items, c, d) +0x90/+0x94 1/2; own name
+0x008e35b0 function MenuSubCmd_OpenMainC      # (x, items, c, d) +0x90/+0x94 0/2; own name
+0x008e3650 function MenuSubCmd_OpenA          # (x, items, c) MenuSubCmd_OpenMainA with d 0; own name
+0x008e3670 function MenuSubCmd_OpenB          # (x, items, c) MenuSubCmd_OpenMainB with d 0; own name
+0x008e3690 function MenuSubCmd_OpenC          # (x, items, c) MenuSubCmd_OpenMainC with d 0; own name
 0x008e36f0 function TkMenuCloseSubCmdWindow   # fh switch:bsim1.00 0x71004e9140
 0x008e3710 function TkMenuCloseSubCmdWindow1  # (): close request for 0x023cc124 and forget it (TkMenuCloseSubCmdWindow does 0x023cc128)
 0x008e3b80 function TkMenuSetSubCmdWindowCursor # (i): g_TkMenuSubCmdWindow busy (+0x45 = 1), cursor +0x2c/+0x48 = i, state +0x28 = 6
