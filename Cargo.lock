@@ -682,6 +682,7 @@ dependencies = [
  "ffx-chara",
  "ffx-field",
  "ffx-kernel",
+ "ffx-sg",
  "ffx-system",
 ]
 
