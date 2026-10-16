@@ -10,6 +10,7 @@ license = "MIT OR Apache-2.0"
 rust-version = "1.90"
 
 [workspace.dependencies]
+ffx-auto = { path = "crates/ffx-auto" }
 ffx-battle = { path = "crates/ffx-battle" }
 ffx-bridge = { path = "crates/ffx-bridge" }
 ffx-chara = { path = "crates/ffx-chara" }

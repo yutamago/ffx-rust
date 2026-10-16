@@ -18,6 +18,7 @@ use ffx_bridge::RawMem;
 
 use crate::Hook;
 
+mod auto;
 mod battle;
 mod chara;
 mod kernel;
@@ -38,6 +39,7 @@ mod vfx;
 #[must_use]
 pub fn hooks() -> Vec<Hook> {
     let mut all = Vec::new();
+    all.extend(auto::hooks());
     all.extend(battle::hooks());
     all.extend(chara::hooks());
     all.extend(kernel::hooks());
