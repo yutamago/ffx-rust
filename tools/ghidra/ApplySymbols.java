@@ -1,12 +1,18 @@
 // Applies symbols/ffx.sym to the current program: names functions and labels,
 // and sets plate comments. Run as a Ghidra headless pre/post script.
 //
+// A function entry inside another function's body (Ghidra folded it into the
+// one before, as with an aligned-stack prologue or a function only reached
+// through a pointer) cuts that body short at the entry, then creates the
+// function there.
+//
 // Script argument: absolute path of the .sym file.
 // Line format: <address> <function|label> <name> [# comment]
 //@category FFX
 
 import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.listing.CodeUnit;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.symbol.SourceType;
@@ -50,6 +56,16 @@ public class ApplySymbols extends GhidraScript {
             if (kind.equals("function")) {
                 Function f = getFunctionAt(addr);
                 if (f == null) {
+                    Function outer = getFunctionContaining(addr);
+                    if (outer != null) {
+                        AddressSet body = new AddressSet(outer.getBody());
+                        body.delete(addr, body.getMaxAddress());
+                        outer.setBody(body);
+                        println("line " + lineNo + ": cut " + outer.getName() + " short at " + addr);
+                    }
+                    if (getInstructionAt(addr) == null) {
+                        disassemble(addr);
+                    }
                     f = createFunction(addr, name);
                 }
                 if (f == null) {
