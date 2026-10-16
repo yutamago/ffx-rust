@@ -4215,6 +4215,7 @@
 0x0084b600 function Gu_WindowSetFlag2         # (window, on): flag bit 1 of +0x88 (the bit Gu_WindowOpen clears)
 0x0084b620 function Gu_WindowSetLocalTrans    # fh switch:cg4 0x71008b5e68
 0x0084b660 function Gu_WindowSetParent        # fh v3:bsim1.00 0x0084b660
+0x0084b670 function Gu_SetPopupWindow         # (w) 0x01303740 = w, the selector popup window (Gu_SelectorOpen stores it; the mouse handler routes clicks to it); own name
 0x0084b680 function Gu_WindowSetFlag1         # (window, on): flag bit 0 of +0x88 from on's low bit
 0x0084b6a0 function Gu_WindowSetTitle         # fh v3:cg19 0x84b6a0
 0x0084b6b0 function Gu_WindowSetW             # (window, w): +0x10 and copies; client +0x84 = w - 2 * left border (half of Gu_WindowSetSize)
@@ -4653,6 +4654,7 @@
 0x00871d70 function AtelExec_Internal_871d10  # fh call.cs stdcall
 0x00871e50 function AtelUpdateWaterStatus     # fh v3:exact 0x00871df0
 0x00871f30 function AtelUpdateWindowStatus    # fh switch:cg2 0x710046cc00
+0x008720d0 function Atel_SetScriptByteGate    # (v) 0x00c526d4 = v, gating 0x008655b0 writing script context +0x1e6; own name
 0x00872160 function TkChSetBattleChrNum       # fh v3:exact 0x00872100
 0x00872190 function TkCh_Allocate             # fh v3:exact 0x00872130
 0x00872210 function TkCh_Allocate2            # fh v3:exact 0x008721b0
@@ -4666,6 +4668,7 @@
 0x008724f0 function TkRefreshSoundMode        # fh v3:exact 0x00872490
 0x00872530 function Tk_SetScale               # (which, v) f32 0x01325b98[which != 0] = v; own name
 0x00872550 function TkSoftWareReset           # fh switch:bsim1.00 0x7100471580
+0x00872580 function Tk_ByteHighBit            # (b) b & 0x80; no caller; own name
 0x00872590 function Obj_GetFloat28            # (p) f32 +0x28; own name
 0x008725a0 function Ref_Deref                 # (ref) [[ref[0] + 0x20] + ref[1]]; own name
 0x008725c0 function Table_PairWord            # (table, i, second) word 0/1 of 8-byte entry i; own name
@@ -4724,6 +4727,7 @@
 0x00875e50 function TkGetVibratePad           # (pad) -> &g_TkVibratePads[pad], pad clamped to 0..7
 0x00875ef0 function Vibrate_ResetPad          # (pad) +0x22, u16 +0x20 cleared, both 16-byte streams reset; own name
 0x00875f30 function Vibrate_ResetStream       # (stream) +4, u16 +8, +0xa cleared; own name
+0x00875f50 function TkSetVibrateOff           # (v) g_TkVibrateOff = low byte; own name
 0x00875f60 function TkSetVibrateMask          # fh v3:exact 0x00875ee0
 0x00875fb0 function TkSetVibrateStream        # fh v3:cg2 0x875f30
 0x00876160 function Vibrate_HoldStream        # (stream) +4 = 0xfffe0000, u16 +8 = 0; own name
@@ -4759,8 +4763,14 @@
 0x00879a70 function AtelLoadSourceData        # fh v3:exact 0x008799f0
 0x00879f00 function AtelUpdateFilePath        # fh v3:exact 0x00879e80
 0x0087ddd0 function AtelDebugDrawRect         # fh switch:bsim1.00 0x710047b940
+0x00885110 function AtelSetDebugDraw          # (v) byte 0x01328a78, the debug draw toggle (debug pad button 0x800 flips it); own name
 0x00885120 function TkCreateDECI2Header       # fh v3:exact 0x00885080
+0x00885150 function TkGetDebugControler1Hist  # (i) TkGetControlerHist(0, 0, i) zero-extended; Switch name, alphabetical slot TkCreateDECI2Header..TkGetDebugControlerAnalog (two slots, two names)
+0x00885170 function TkGetDebugControler1TrigHist# (i) TkGetControlerTrigHist(0, 0, i); Switch name, alphabetical slot
 0x00885190 function TkGetDebugControlerAnalog # fh switch:bsim1.00 0x710047b9d0
+0x008851b0 function TkGetDebugControlerHist   # (i) TkGetControlerHist(1, 0, i); Switch name, alphabetical slot after TkGetDebugControlerAnalog (Hist, ReptHist, TrigHist match the callees)
+0x008851d0 function TkGetDebugControlerReptHist# (i) TkGetControlerReptHist(1, 0, i); Switch name, alphabetical slot
+0x008851f0 function TkGetDebugControlerTrigHist# (i) TkGetControlerTrigHist(1, 0, i); Switch name, alphabetical slot
 0x00885240 function TkInitDeci2               # fh v3:exact 0x008851a0
 0x00885420 function TkIsDeci2Send             # () -> i8 0x0132f580, sign-extended; Switch symbol name (BSim), in the DECI2 code beside TkCreateDECI2Header
 0x00885640 function Phyre_PRendering_PRenderInterfaceBase_GetClearMaskDescription # fh switch:bsim1.00 0x710004aa80 Phyre::PRendering::PRenderInterfaceBase::GetClearMaskDescription
@@ -4894,7 +4904,9 @@
 0x00888c40 function Pad_MapButtons               # (a, b, buttons): remaps button bits through the config table 0x01330488
 0x00888d70 function TkGetControlerHist        # fh v3:bsim1.00 0x00888ce0
 0x00888d90 function TkGetControlerId          # (pad, port) work byte +0x80, into al over the work pointer; Switch name, alphabetical slot TkGetControlerHist..
+0x00888db0 function TkGetControlerIdHist      # (pad, port, i) frame byte +0 into al over the frame pointer; Switch name, the one name for the slot TkGetControlerId..TkGetControlerPress
 0x00888dd0 function TkGetControlerPress       # (pad, port) work byte +0x82; Switch name, alphabetical slot (between the Id and Press hist readers)
+0x00888df0 function TkGetControlerPressHist   # (pad, port, i) frame byte +1; Switch name, alphabetical slot TkGetControlerPress..TkGetControlerWork2
 0x00888e10 function TkGetControlerWork2       # (a, b) -> &0x013304c0[(a + b) * 0x20] (beside g_PadButtonMap)
 0x00888e30 function TkGetControlerRept2Hist   # (pad, port, i) frame u16 +0x1c, into ax over the frame pointer; Switch name, alphabetical slot TkGetControlerWork2..TkGetControlerReptHist
 0x00888e50 function TkGetControlerReptHist    # fh v3:bsim1.00 0x00888dc0
@@ -4923,6 +4935,7 @@
 0x0088b430 function Math_Atan2XZ                 # (x0, z0, x1, z1) -> angle with axis special cases
 0x0088b4d0 function Math_YawPitchTo              # (*yaw, *pitch, from xyz, to xyz)
 0x0088b730 function Math_InRadius                # (r, dx, dy, dz) -> dx^2+dy^2+dz^2 <= r^2
+0x0088b800 function Math_ClampPi              # (a) a clamped to [-pi, pi] (float pi); NaN passes; own name
 0x0088bc20 function Math_WrapAngle               # wraps to [-pi, pi]
 0x0088bc70 function Math_Det3Points           # (x1, y1, x2, y2, x3, y3) -> float twice the signed triangle area (sums in doubles, rounded to float)
 0x0088c0a0 function Math_AngleFrom12Bits      # (a) Math_WrapAngle((a & 0xfff) * 2pi / 4096), f32 steps; own name
@@ -5000,16 +5013,28 @@
 0x0088ebe0 function TkSetOutputEncount        # (on): u8 0x01330871 (the byte TkGetOutputEncount reads)
 0x0088ebf0 function TkSetStartMapIndex        # (id, index) -> 0x0133085c/0x01330860; Switch name, alphabetical slot TkSetOutputEncount..TkSetTGS
 0x0088ec10 function TkSetTGS                  # (v): u8 g_TkTGS (TkGetTGS's byte)
+0x0088ec20 function TkConfig_SetByteC         # (v) g_FFXConfig byte +0xc; own name
 0x0088ec60 function TkVU1SyncPath             # fh v3:bsim1.00+call.cs 0x0088ebd0 cdecl
+0x0088ecf0 function TkDebugPrint              # (fmt) dbgPrintf (a PC stub), returns 1; no caller; own name
 0x0088edc0 function TkGetDebugFontBuffer      # None
+0x0088edf0 function TkGetDebugFontStringWidth # (proportional, s) TkGetStrWidth >> 4; Switch name, the only slot TkGetDebugFontBuffer..TkGetStrWidth (picked by behaviour among its names)
 0x0088ee70 function TkGetStrWidth             # (proportional, s) -> width in 1/16: per character (lead byte >= 0x80: two bytes) g_FontWidths[c] + 2, or 9 / 13 for one / two bytes
 0x0088f140 function TkPutDebugFontString      # fh switch:bsim1.00 0x7100492f20
 0x0088f4c0 function TkPutDebugFontStringP     # fh switch:bsim1.00 0x7100492a20
 0x0088fab0 function TkSetDebugFontBuffer      # (p) debug font current pointer = p (only logs past the end +0xc); Switch name, alphabetical slot TkPutDebugFontStringP..TkSetDebugFontLocate
 0x0088faf0 function TkSetDebugFontLocate      # fh switch:bsim1.00 0x7100492180
+0x0088fb10 function TkDebugFont_SetWord4      # (p) g_TkDebugFontBuffer word +4 = set_ptr32(p); own name
 0x008904e0 function TkSetDebugFontLocate2     # (x, y): 0x0133c8dc/e0 = x << 4, y << 4 (TkSetDebugFontLocate's pair at 0x0133c8d4)
+0x008908c0 function Dma_PutCall               # (p, addr) call tag (id 5) QWC 1 to addr + a zero quadword; byte 2 untouched; returns p + 0x20; own name
+0x00890910 function Dma_PutEnd                # (p) end tag (id 7) + a zero quadword; returns p + 0x20; own name
+0x00890960 function Dma_PutCnt                # (p) cnt tag (id 1) + a zero quadword; own name
+0x008909b0 function Dma_PutRet                # (p) ret tag (id 6) + a zero quadword; own name
 0x00890a00 function TkGetCharWidth            # (proportional, c) -> one character's width as TkGetStrWidth counts it: g_FontWidths[c] + 2, or 9 / 13
 0x00890a30 function Gs_Pack5c                 # copy of Gs_Pack5; own name
+0x00890a60 function Dma_CloseCnt              # (p, end, flags) cnt tag (0x1000) at p, QWC (end - p + 15) / 16 - 1, last word QWC | flags; returns end; own name
+0x00890aa0 function Dma_CloseCnt2             # (p, end, a, b) cnt tag, words 2-3 = a, b; returns end; own name
+0x00890ae0 function Dma_CloseNext             # (p, end, addr, a, b) next tag (0x2000) to addr; returns end; own name
+0x00890d90 function Dma_PutCall2              # (p, addr) a copy of Dma_PutCall; own name
 0x00890eb0 function TOBtlCloseHelpWin         # fh v3:bsim1.00 0x00890e20
 0x00890ee0 function TOBtlCloseSignWindow      # fh v3:bsim1.00 0x00890e50
 0x00890ef0 function TOBtlCloseSimpleHelpMes   # fh v3:bsim1.00+call.cs 0x00890e60 cdecl
@@ -5145,6 +5170,7 @@
 0x008a8e30 function TOMenuGetDBuffDC          # fh switch:bsim1.00 0x71004bcd80
 0x008a8e50 function TOMenuGetFirstReadEndFlag # fh v3:bsim1.00 0x008a8e00
 0x008a9670 function TkMenuDrawShadeRatioDiff  # fh v3:bsim1.00 0x008a9630
+0x008a9680 function TkMenuSetDrawShadeRatioStep# (v) 0x01840880, added to g_TkMenuDrawShadeRatio each draw; own name
 0x008a9720 function TkMenuExchangePlayerPos   # fh v3:exact 0x008a96d0
 0x008a9820 function TkMenuGetArmor            # (chr) ply_save u8 +0x2e; Switch name, alphabetical slot (pairs with TkMenuGetWeapon +0x2d)
 0x008a9840 function TkMenuGetPlayerStep       # () -> i8 g_TkMenuPlayerStep, sign-extended
@@ -5207,6 +5233,7 @@
 0x008aafc0 function TkMenuSetPrevPlayer2      # fh v3:bsim1.00 0x008aaf70
 0x008aafe0 function TkMenuSetPrevSummon       # (): g_TkMenuCurrentSummonPos - 1, the last before the first; g_TkMenuSummonStep = 0xff
 0x008ab000 function TkMenuSetSP               # (chr, sp) ply u8 +0x3b (MsGetSaveSP reads it); Switch name, alphabetical slot
+0x008ab020 function TkMenuSetScreenX2Flag     # (v) byte 0x01840885 (TkMenuStart, the next slot, sets it to 1); Switch name, alphabetical slot TkMenuSetSP..TkMenuStart
 0x008ab1e0 function TkMenuSummonEnableMask    # fh v3:bsim1.00+call.cs 0x008ab190 cdecl
 0x008ab1f0 function TkMenuWindowStepFade      # (window) -> 0x1000: menu window fade +0x52 += step +0x54 (16-bit), kept in 0..0x1000
 0x008ab220 function TkMenuGetHelpRatio2       # () -> 0x01840878; Switch symbol name (BSim)
@@ -5430,8 +5457,14 @@
 0x008c2300 function TkMn2RestoreFontShade     # (): the four g_TkMn2FontShade words back from the copies after each (0x023cc474, 0x46c, 0x464, 0x45c)
 0x008c2330 function TkMn2SaveFontShade        # (): the four g_TkMn2FontShade words to the copies after each
 0x008c2360 function TkMn2RefreshList          # fh switch:bsim1.00 0x71004c4110
+0x008c2ad0 function TkMn2SeqGetColor          # (name) TOSeqGetColor(1, name, &local), the word returned; Switch name: the four TkMn2SeqGet{Color,ColorCustom,Num,NumCustom} names fill the last four slots before TkMn2SeqGetPos in order
+0x008c2af0 function TkMn2SeqGetColorCustom    # (i, name) TOSeqGetColor(i, ...); Switch name: the four TkMn2SeqGet{Color,ColorCustom,Num,NumCustom} names fill the last four slots before TkMn2SeqGetPos in order
+0x008c2b10 function TkMn2SeqGetNum            # (name) TOSeqGetNum(1, ...), the halfword sign-extended; Switch name: the four TkMn2SeqGet{Color,ColorCustom,Num,NumCustom} names fill the last four slots before TkMn2SeqGetPos in order
+0x008c2b30 function TkMn2SeqGetNumCustom      # (i, name); Switch name: the four TkMn2SeqGet{Color,ColorCustom,Num,NumCustom} names fill the last four slots before TkMn2SeqGetPos in order
 0x008c2b50 function TkMn2SeqGetPos            # fh switch:bsim1.00 0x71004c7660
+0x008c2b70 function TkMn2SeqGetPosCustom      # (i, name, &pos) TOSeqGetPoint(i, name, pos, pos + 2); Switch name, the one name for the slot TkMn2SeqGetPos..TkMn2SeqGetRect
 0x008c2b90 function TkMn2SeqGetRect           # fh switch:bsim1.00 0x71004c74c0
+0x008c2bc0 function TkMn2SeqGetRectCustom     # (i, name, &rect) TOSeqGetRect into four halfwords; Switch name, the one name for the slot TkMn2SeqGetRect..TkMn2SeqStartScene
 0x008c2bf0 function TkMn2SeqStartScene        # fh switch:bsim1.00 0x71004c7690
 0x008c2c10 function TkMn2SeqStopScene         # fh switch:bsim1.00 0x71004c76a0
 0x008c2c30 function TkMn2SetFontShade         # fh switch:bsim1.00 0x71004c5040
@@ -5483,6 +5516,9 @@
 0x008ca540 function TkMenuClearDummyControler # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-menu port shows the behaviour it names (crates/ffx-hook/src/ported/menu.rs)
 0x008ca560 function TkMenuSetDummyControlerPending # (buttons): g_TkMenuDummyControler +4 (what TkMenuFlushDummyControler makes current)
 0x008ca570 function TkMenuSetDummyControlerFlag # fh v3:bsim1.00 0x008ca540
+0x008ca580 function MenuDraw_Line             # (p, x, y, w, a, b) line primitive (GIF list 0x00f51510); no caller; own name
+0x008ca610 function MenuDraw_Strip            # (p, x, y, xs, n, dx, tag) n XYZ2 points (x + xs[k] + dx, y + 16k); own name
+0x008ca6f0 function MenuDraw_StripR           # (p, x, y, xs, n, dx, tag) the same with x - xs[k]; own name
 0x008cad80 function Gs_Pack5d                 # copy of Gs_Pack5; own name
 0x008cadb0 function MenuConfig_SetBit9        # (option) +0xc = bit 8; bit 9 set when +8 is 0; config table callback; own name
 0x008cade0 function MenuConfig_GetBit5        # (option) +8 = !bit 5, +0xc = bit 8; own name
@@ -5569,9 +5605,23 @@
 0x008db7a0 function MenuTuto_SetChoice        # (window, i) 0x025d16bc = 1, 0x01871528 = i; own name
 0x008db840 function MenuTuto_GetChoice        # 0x01871528 when 0x025d16bc is set, else -1; own name
 0x008db870 function DrawBlackBackGround       # fh v3:exact 0x008db850
+0x008dbdd0 function MenuDraw_SpriteVA         # (p, x, y, entry, alpha); own name
+0x008dbe00 function MenuDraw_SpriteV8A        # (p, x, y, entry, alpha) ox = 8; own name
+0x008dc0f0 function MenuDraw_Sprite           # (p, x, y, entry) MenuDraw_Sp3RBody tint 0x80; own name
+0x008dc120 function MenuDraw_SpriteA          # (p, x, y, entry, alpha); own name
+0x008dc150 function MenuDraw_Sprite1          # (p, x, y, entry) unused arg 1; no caller; own name
+0x008dc180 function MenuDraw_Sprite2          # (p, x, y, entry) unused arg 2; no caller; own name
+0x008dc1b0 function MenuDraw_Sp3RBody         # (p, _, x, y, entry, ox, oy, alpha) GifTag (TOGetGsRegWord, tint) + one sprite per 12-byte cell of TkMenuGetTableEntry(entry, 0x00c5a900), x mirrored; own name
+0x008dc360 function MenuDraw_Bar              # (p, n, cell, x, y) one sprite stretched n down; own name
+0x008dc480 function MenuDraw_BarV             # (p, n, cell, x, y) one sprite stretched n right; own name
+0x008dc5a0 function MenuDraw_Bar2             # (p, m, n, cell, x, y) stretched m right and n down; own name
+0x008dc6b0 function MenuDraw_SpriteV          # (p, x, y, entry) MenuDraw_Sp3UBody; own name
+0x008dc6e0 function MenuDraw_SpriteV8         # (p, x, y, entry) ox = 8; own name
+0x008dc710 function MenuDraw_Sp3UBody         # (p, _, x, y, entry, ox, oy, alpha) the same flipped vertically, u clamped to 0xff0; own name
 0x008dc9b0 function TkMenuConfigMes           # fh switch:bsim1.00 0x71004c3490
 0x008dc9e0 function TkMenuDraw1612Width       # fh call.cs cdecl
 0x008dc9f0 function TkMenuDraw1612WidthHeight # fh switch:bsim1.00 0x71004bfde0
+0x008dca30 function TkMenuDrawSp3R0           # (x, y) TkMenuDrawSp3R(x, y, 0), the 0 written into the caller's argument slot; own name
 0x008dca90 function TkMenuDrawCursor2         # fh switch:bsim1.00 0x71004c0b40
 0x008dcb10 function TkMenuDrawEasyMes1208     # fh switch:bsim1.00 0x71004c19a0
 0x008dcb80 function TkMenuDrawEasyMes1612     # fh switch:bsim1.00 0x71004c1660
@@ -5592,6 +5642,24 @@
 0x008dd440 function TkMenuDrawScissorClear    # fh switch:bsim1.00 0x71004bfe20
 0x008dd460 function TkMenuDrawScissorRect     # 5-byte jmp TODrawScissorXYWH thunk (not a function in the dump, left original); Switch name, after TkMenuDrawScissorClear
 0x008dd4f0 function TkMenuDrawShape           # fh switch:bsim1.00 0x71004c3910
+0x008dd520 function TkMenuDrawSp3             # g_TkMenuPacket += 0x10, = 0x008dbd40(...); Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd550 function TkMenuDrawSp3A            # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd580 function TkMenuDrawSp3AHalf        # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd5b0 function TkMenuDrawSp3AUR          # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd5e0 function TkMenuDrawSp3AURHalf      # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd610 function TkMenuDrawSp3FaceA        # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd6a0 function TkMenuDrawSp3FaceAA       # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd740 function TkMenuDrawSp3FaceB        # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd770 function TkMenuDrawSp3FaceBA       # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd7a0 function TkMenuDrawSp3Half         # ox 8 variant; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd7d0 function TkMenuDrawSp3R            # (x, y, entry) MenuDraw_Sprite at g_TkMenuPacket + 0x10; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd800 function TkMenuDrawSp3RA           # (x, y, entry, alpha); Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd830 function TkMenuDrawSp3StretchD     # (cell, x, y, n) MenuDraw_Bar; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd860 function TkMenuDrawSp3StretchR     # (cell, x, y, n) MenuDraw_BarV; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd890 function TkMenuDrawSp3StretchRD    # (cell, x, y, m, n) MenuDraw_Bar2; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd8c0 function TkMenuDrawSp3Tex0         # (a, b, c) MenuDraw_GifTag (the TEX0 setup); Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd8f0 function TkMenuDrawSp3UR           # (x, y, entry) MenuDraw_SpriteV; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd920 function TkMenuDrawSp3URHalf       # (x, y, entry) MenuDraw_SpriteV8; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
 0x008ddc60 function TkMenuEquipWin            # fh switch:bsim1.00 0x71004c1280
 0x008dde10 function TkMenuGetCommandHelp      # fh v3:cg3 0x8dddf0
 0x008ddea0 function TOMenuGetGetImportantHelp # fh v3:cg3 0x8dde80
@@ -5612,6 +5680,9 @@
 0x008df8f0 function TOSetDrawInfo             # fh v3:exact 0x008df8e0
 0x008dfd80 function TOSkipCode                # fh v3:exact 0x008dfd70
 0x008dfea0 function TODrawMovieMessageWaitNamesp # fh v3:bsim0.91 0x008dfe90 _TODrawMovieMessageWaitNamesp
+0x008e0200 function MenuWin_StateSlide        # (w) +0x2c = 1, float +0x4c -= 12, +0x114 = +0x104; returns 0; own name
+0x008e0240 function MenuWin_StateOpen         # (w) +0x2c = 2, +0xa0 = +0xa8, handlers 0x008e0230 (+0x114), 0x008de970 (+0x11c); returns 0; own name
+0x008e0280 function MenuWin_StateWaitText     # (w) +0x2e = 2, or 3 when the text at +0x98 is empty; +0x120 = itself; returns 0; own name
 0x008e0350 function TkMenuCtrlMain            # fh v3:exact 0x008e0340
 0x008e0ba0 function TkMenuDrawMain            # fh call.cs cdecl
 0x008e1c60 function TkMenuAppearMainCmdWindow # fh call.cs cdecl
@@ -5619,6 +5690,7 @@
 0x008e2270 function TkMenuMainGetOptionMenu   # fh v3:bsim1.00 0x008e2270 +TkMenuMainGetOptionMenu
 0x008e2280 function TkMenuMainGetMaxOptions   # fh v3:bsim1.00 0x008e2280 +TkMenuMainGetMaxOptions
 0x008e2290 function TkMenuMainGetOptionEnabled # fh v3:bsim1.00 0x008e2290 +TkMenuMainGetOptionEnabled
+0x008e24c0 function TkMenuMainOpenOption      # (i) option i (TkMenuMainGetOptionMenu): its menu slot activated, main menu (1) slept; 0x0187154c = -1; own name
 0x008e2630 function TkMn2GetMainPos           # fh switch:bsim1.00 0x71004d55d0
 0x008e2690 function TkScreenToMenuX           # (x) -> float(x) * 512 / 1920 (a 1920-wide coordinate in the 512-wide menu)
 0x008e26b0 function TkScreenToMenuY           # (y) -> float(y) * 416 / 1080
@@ -5948,6 +6020,7 @@
 0x00914a10 function yiKeyFrame_main           # fh switch:cg2 0x710052e1e0
 0x009151c0 function yiRotMatrixSeq            # fh v3:exact 0x009151c0
 0x009152d0 function yiTexSwap_init            # fh v3:exact 0x009152d0
+0x00916ad0 function Yi_PutRef                 # (p, a, b) {b, 0, a, 0}; a left in eax; own name
 0x00917050 function yiClutAlloc_makepacket    # fh v3:exact 0x00917050
 0x009173e0 function yiIsPow2                     # (bits) -> 1 when at most one of the low 16 bits is set
 0x00917430 function yiLog2Ceil16                 # (bits) -> the only set bit's index, else the highest one's + 1; -1 none (low 16 bits)
@@ -9376,6 +9449,7 @@
 0x0186ac34 label    g_TkMenuTutoWindows       # 2 tutorial windows (MenuTuto_RestartWindow/2)
 0x01871528 label    g_TkMenuTutoChoice        # MenuTuto_GetChoice/SetChoice
 0x01871530 label    g_TkMenuPacket            # menu GS packet pointer; TkMenuDrawEnv writes 0x50 bytes at +0x10 and moves it 0x60 on
+0x0187154c label    g_TkMenuMainChoice        # reset to -1 by TkMenuMainOpenOption
 0x01871568 label    g_TkMenuMainOptions       # 8-byte entries: +0 menu (TkMenuMainGetOptionMenu), +4 i16 enabled (TkMenuMainGetOptionEnabled)
 0x01871688 label    g_TkMenuMainMaxOptions    # TkMenuMainGetMaxOptions
 0x01871698 label    g_TkMenuWorldMapWindow    # MenuWorldMap_CloseWindow
