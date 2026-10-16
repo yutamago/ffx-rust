@@ -71,6 +71,16 @@ pub const VU0_COPY_REG: u32 = 0x00c8_f980;
 /// The emulated VU0 register the `VFX_ScaleVec3` callers pass their
 /// scale through (`0x00c8f970`).
 pub const VU0_SCALE: u32 = 0x00c8_f970;
+/// The emulated VU0 `vf00` (`0x00c0a004`).
+pub const VU0_VF00: u32 = 0x00c0_a004;
+/// 100.0 in `.rdata` (`0x00b304f8`), the matrix row scale.
+pub const SCALE_100: u32 = 0x00b3_04f8;
+/// 10.0 in `.rdata` (`0x00b92318`).
+pub const SCALE_10: u32 = 0x00b9_2318;
+/// The field scale of effect vectors (`.rdata` float, `0x00b67e24`).
+pub const FIELD_SCALE: u32 = 0x00b6_7e24;
+/// 1024.0 in `.rdata` (`0x00b51ba8`, a double).
+pub const FIELD_Y_OFFSET: u32 = 0x00b5_1ba8;
 
 /// [`ffx_bridge::Mem`].
 pub mod bridge {
@@ -312,6 +322,53 @@ pub mod bridge {
             mem.write(dst.wrapping_add(4 * i), last);
         }
         last
+    }
+
+    /// The three rows of a matrix scaled in place by the `.rdata` float at
+    /// `scale` ([`rcbg_scale_vector`] each): `rcbgScaleMatrix100`
+    /// (`0x0091ffd0`) and `rcefScaleMatrix100` (`0x0092e630`) with 100.0
+    /// (`0x00b304f8`).
+    pub fn rcbg_scale_rows(mem: &mut impl Mem, m: u32, scale: u32) {
+        let s = crate::x87::copy(mem.read::<u32>(mem.rebase(scale)));
+        for r in 0..3u32 {
+            rcbg_scale_vector(mem, m + 0x10 * r, m + 0x10 * r, s);
+        }
+    }
+
+    /// `rcefVecToField(v)` (`0x0092d7e0`): `v` scaled by the `.rdata`
+    /// float at `0x00b67e24` ([`rcbg_scale_vector`]), then 1024 off its y.
+    pub fn rcef_vec_to_field(mem: &mut impl Mem, v: u32) {
+        let s = crate::x87::copy(mem.read::<u32>(mem.rebase(super::FIELD_SCALE)));
+        rcbg_scale_vector(mem, v, v, s);
+        let y: f32 = mem.read(v + 4);
+        let k = Reg::constant(mem.read::<f64>(mem.rebase(super::FIELD_Y_OFFSET)));
+        mem.write(v + 4, (Reg::load(y) - k).store());
+    }
+
+    /// `rcuiScaleVector(dst, v, s, a, b, c)` (`0x00930f30`): an inlined
+    /// `VFX_ScaleVec3` through [`super::VU0_COPY_REG`]: `v`'s x, y, z
+    /// times `s` (z with the element as the memory operand), its w kept;
+    /// `s, a, b, c` to [`super::VU0_SCALE`]; out to `dst`. Returns `v`'s w.
+    pub fn rcui_scale_vector(mem: &mut impl Mem, dst: u32, v: u32, s: u32, rest: [u32; 3]) -> u32 {
+        let vf = mem.rebase(super::VU0_COPY_REG);
+        let e = mem.read::<[f32; 4]>(v);
+        let k = Reg::load(f32::from_bits(s));
+        let x = (Reg::load(e[0]) * k).store();
+        let y = (Reg::load(e[1]) * k).store();
+        let z = k.mul_m32(e[2]).store();
+        mem.write(vf, [x, y, z, e[3]]);
+        let sc = mem.rebase(super::VU0_SCALE);
+        mem.write(sc, [s, rest[0], rest[1], rest[2]]);
+        mem.write(dst, [x, y, z, e[3]]);
+        e[3].to_bits()
+    }
+
+    /// `rcefGetVf00(dst)` (`0x00925020`): the emulated VU0 `vf00`
+    /// (`0x00c0a004`, `VFX_Copy16To`) to `dst`; returns its w.
+    pub fn rcef_get_vf00(mem: &mut impl Mem, dst: u32) -> u32 {
+        let v = mem.read::<[u32; 4]>(mem.rebase(super::VU0_VF00));
+        mem.write(dst, v);
+        v[3]
     }
 }
 

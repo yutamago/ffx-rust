@@ -185,6 +185,21 @@ pub const SPRING_FUNCTIONS: [u32; 3] = [0x0092_8c60, 0x0092_8d70, 0x0092_8aa0];
 pub const SPRING_STIFFNESS: u32 = 0x00b3_4254;
 /// A new spring's damping, 0.4 (`.rdata`, `0x00b10f3c`).
 pub const SPRING_DAMPING: u32 = 0x00b1_0f3c;
+/// The debug gravity's z, -0.1 (`.rdata`, `0x00b59644`).
+pub const GRAVITY_Z: u32 = 0x00b5_9644;
+/// `rcbgSetReg(record)` (`0x00920450`), a `ret` in this build.
+pub const RCBG_SET_REG: u32 = 0x0092_0450;
+/// `Ch_ElemGetMatrix(chr, elem, out)` (`0x00833c30`).
+pub const CH_ELEM_GET_MATRIX: u32 = 0x0083_3c30;
+/// `op_rt_m_yxz(out, m, rotation, translation)` (`0x007e9a30`).
+pub const OP_RT_M_YXZ: u32 = 0x007e_9a30;
+/// `pppFpGetMngPtr(id, run, mng)` (`0x007292f0`).
+pub const PPP_FP_GET_MNG_PTR: u32 = 0x0072_92f0;
+/// `Fp_Restart(id)` (`0x00729700`).
+pub const FP_RESTART: u32 = 0x0072_9700;
+/// The field programs' degree-to-radian factor (`.rdata` float,
+/// `0x00b678ec`).
+pub const FPM_ANGLE_SCALE: u32 = 0x00b6_78ec;
 /// The two buffers `rcefSetupDraw` points `+0x34` and `+0x38` at.
 pub const REF_BUFFERS: [u32; 2] = [0x0230_fd60, 0x0230_fda0];
 /// `rcfxNail`'s callbacks (`rcfxNailInit`: `+4`, `+0x10`, `+0x14`).
@@ -2323,6 +2338,215 @@ pub mod bridge {
         mem.write(out + 0x58, 0u32);
         mem.write(out + 0x5c, 0u32);
         out + 0x60
+    }
+
+    /// `rcbgTrxSetRegsAlloc(t, a..g, n)` (`0x0092d320`): [`rcbg_trx_set_regs`]
+    /// with the seven register words (their low halves), then
+    /// [`rcbg_trx_alloc_entries`] with the format (`c`), the size (`f`,
+    /// `g`) and `n` entries.
+    #[allow(clippy::too_many_arguments, clippy::cast_possible_truncation)] // the original's
+    pub fn rcbg_trx_set_regs_alloc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        t: u32,
+        r: [u32; 7],
+        n: u32,
+        call: &mut C,
+    ) {
+        let h = |v: u32| (v as u16).cast_signed();
+        rcbg_trx_set_regs(
+            mem,
+            t,
+            h(r[0]),
+            h(r[1]),
+            h(r[2]),
+            h(r[3]),
+            h(r[4]),
+            h(r[5]),
+            h(r[6]),
+        );
+        rcbg_trx_alloc_entries(mem, t, h(r[2]), h(r[5]), h(r[6]), n, call);
+    }
+
+    /// `rcdtListsDelete(l)` (`0x009242d0`): [`rcdt_lists_fini`], then the
+    /// block freed (`rcFree`, a tail call).
+    pub fn rcdt_lists_delete<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        l: u32,
+        call: &mut C,
+    ) -> u32 {
+        rcdt_lists_fini(mem, l, call);
+        rc_free(mem, call, l)
+    }
+
+    /// `rcfxSpringNew()` (`0x00928d50`): 0x30 bytes ([`rc_alloc`]),
+    /// [`rcfx_spring_init`].
+    pub fn rcfx_spring_new<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let s = rc_alloc(mem, call, 0x30);
+        rcfx_spring_init(mem, s);
+        s
+    }
+
+    /// `rcfxParticleFini(ps)` (`0x00928870`): the four particle buffers
+    /// (`+0x24..+0x30`) freed, then [`rcfx_particle_fini_forces`].
+    pub fn rcfx_particle_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        ps: u32,
+        call: &mut C,
+    ) {
+        for o in [0x24u32, 0x28, 0x2c, 0x30] {
+            free_word(mem, call, ps + o);
+        }
+        rcfx_particle_fini_forces(mem, ps, call);
+    }
+
+    /// `rcbgPSimAddDamp(psim, k)` (`0x0091f7a0`): a damping force
+    /// (`rcfxDampNew`, `k` at `+0x1c`) added to the simulation's particle
+    /// system (`+0x18`).
+    pub fn rcbg_psim_add_damp<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        psim: u32,
+        k: u32,
+        call: &mut C,
+    ) {
+        let f = rcfx_damp_new(mem, call);
+        mem.write(f.wrapping_add(0x1c), crate::x87::copy(k));
+        let ps = mem.read::<u32>(psim + 0x18);
+        rcfx_particle_add_force(mem, ps, f, call);
+    }
+
+    /// `rcbgPSimAddWind(psim, dir, pos, power)` (`0x0091f980`): a wind
+    /// (`rcfxWindNew`, [`rcfx_wind_set`]) added to the particle system.
+    pub fn rcbg_psim_add_wind<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        psim: u32,
+        dir: u32,
+        pos: u32,
+        power: u32,
+        call: &mut C,
+    ) {
+        let f = rcfx_wind_new(mem, call);
+        rcfx_wind_set(mem, f, dir, pos, crate::x87::copy(power));
+        let ps = mem.read::<u32>(psim + 0x18);
+        rcfx_particle_add_force(mem, ps, f, call);
+    }
+
+    /// `rcbgPSimAddGravity(psim, g)` (`0x0091f7c0`): `g` replaced by the
+    /// debug gravity (0, 1, -0.1, 0; two `rcPrint` messages, no-ops), a
+    /// gravity force with it (`rcfxGravityNew`, `+0x1c`) added to the
+    /// particle system.
+    pub fn rcbg_psim_add_gravity<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        psim: u32,
+        g: u32,
+        call: &mut C,
+    ) {
+        mem.write(g, 0u32);
+        mem.write(g + 4, 1f32);
+        let v = mem.read::<u32>(mem.rebase(super::GRAVITY_Z));
+        mem.write(g + 8, crate::x87::copy(v));
+        mem.write(g + 0xc, 0u32);
+        let f = rcfx_gravity_new(mem, call);
+        crate::vu0::bridge::rc_copy_qword(mem, f.wrapping_add(0x1c), g);
+        let ps = mem.read::<u32>(psim + 0x18);
+        rcfx_particle_add_force(mem, ps, f, call);
+    }
+
+    /// `rcbgPalProc(pal)` (`0x00929b60`): flag bit 0 [`rcbg_pal_white`],
+    /// else by the mode (`+0xa`) 1 [`rcbg_pal_rotate`], 2
+    /// [`rcbg_pal_shift`], anything else [`rcbg_pal_copy_to_last`].
+    pub fn rcbg_pal_proc(mem: &mut impl Mem, pal: u32) {
+        if mem.read::<u8>(pal) & 1 != 0 {
+            rcbg_pal_white(mem, pal);
+            return;
+        }
+        match mem.read::<u8>(pal + 0xa) {
+            1 => rcbg_pal_rotate(mem, pal),
+            2 => rcbg_pal_shift(mem, pal),
+            _ => rcbg_pal_copy_to_last(mem, pal),
+        }
+    }
+
+    /// `rcbgModelSetTexReg(page)` (`0x009284d0`): a GS register record (the
+    /// 64-bit `page << 17 | 0x1000f`, register 0x47, then 0, 0, 0, -1, -1)
+    /// built on the stack (`work`, 0x20 bytes) for `rcbgSetReg`.
+    pub fn rcbg_model_set_tex_reg<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        page: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let v = (i64::from(page.cast_signed()) << 17) | 0x1000f;
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // the halves
+        let (lo, hi) = (v as u32, (v >> 32) as u32);
+        for (i, w) in (0u32..).zip([lo, hi, 0x47, 0, 0, 0, u32::MAX, u32::MAX]) {
+            mem.write(work + 4 * i, w);
+        }
+        let f = mem.rebase(super::RCBG_SET_REG);
+        call(mem, f, &[work])
+    }
+
+    /// `rcbgFPmGetElemMatrix(out, chr, elem)` (`0x00922350`): a character
+    /// element's matrix (`Ch_ElemGetMatrix(chr, elem, out)`), its three rows
+    /// times 10.
+    pub fn rcbg_fpm_get_elem_matrix<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        out: u32,
+        chr: u32,
+        elem: u32,
+        call: &mut C,
+    ) {
+        let f = mem.rebase(super::CH_ELEM_GET_MATRIX);
+        call(mem, f, &[chr, elem, out]);
+        crate::vu0::bridge::rcbg_scale_rows(mem, out, crate::vu0::SCALE_10);
+    }
+
+    /// `rcbgFPmGetMatrix(fp, out)` (`0x00922290`): the object's rotation
+    /// (`+0x18`, scaled to radians by the `.rdata` float at `0x00b678ec`
+    /// into `work`, 0x10 bytes), `out` the identity scaled by `+0x28`, then
+    /// `op_rt_m_yxz(out, out, rotation, +0x8)`.
+    pub fn rcbg_fpm_get_matrix<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        fp: u32,
+        out: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let s = crate::x87::copy(mem.read::<u32>(mem.rebase(super::FPM_ANGLE_SCALE)));
+        crate::vu0::bridge::rcbg_scale_vector(mem, work, fp + 0x18, s);
+        ffx_ps2::vu0::bridge::matrix_identity(mem, out);
+        crate::geom::bridge::rc_mat4f_set_scale_vec3f(mem, out, fp + 0x28);
+        let f = mem.rebase(super::OP_RT_M_YXZ);
+        call(mem, f, &[out, out, work, fp + 8])
+    }
+
+    /// `rcbgFPmRestart(id, chr, elem)` (`0x00922300`): with the field
+    /// program's manager (`pppFpGetMngPtr(id, 0, &mng)`, `mng` in `work`):
+    /// flag 0x100, `Fp_Restart(id)` and the character element's matrix
+    /// into `mng + 0xc`.
+    pub fn rcbg_fpm_restart<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        id: u32,
+        chr: u32,
+        elem: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(super::PPP_FP_GET_MNG_PTR);
+        call(mem, f, &[id, 0, work]);
+        let mng = mem.read::<u32>(work);
+        if mng == 0 {
+            return 0;
+        }
+        let v = mem.read::<u32>(mng);
+        mem.write(mng, v | 0x100);
+        let f = mem.rebase(super::FP_RESTART);
+        call(mem, f, &[id]);
+        let mng = mem.read::<u32>(work);
+        let f = mem.rebase(super::CH_ELEM_GET_MATRIX);
+        call(mem, f, &[chr, elem, mng.wrapping_add(0xc)])
     }
 }
 

@@ -5,6 +5,12 @@ use ffx_bridge::Global;
 
 /// The UI work area (`rcuiMouseMove*`).
 pub const WORK: Global<u32> = Global::new(0x0193_c0f0);
+/// The map directory names (`0x00c60e30`, "yanagi", …).
+pub const MAP_DIRS: u32 = 0x00c6_0e30;
+/// "/ffx/proj/map/%s/" (`0x00b688e0`).
+pub const BASE_PATH_FORMAT: u32 = 0x00b6_88e0;
+/// `Gu_WindowCloseTree(w)` (`0x0084ab80`).
+pub const GU_WINDOW_CLOSE_TREE: u32 = 0x0084_ab80;
 
 /// Offsets in the work area.
 pub mod work {
@@ -372,5 +378,49 @@ pub mod bridge {
     /// (all but the selected layer in mode 2).
     pub fn rcui_set_select(mem: &mut impl Mem) -> u32 {
         select_flags(mem, true, true)
+    }
+
+    /// `rcuiMakeBasePath()` (`0x00937af0`): `/ffx/proj/map/<dir>/` into the
+    /// work's `+0x74` (`sprintf`, the directory from the table at
+    /// `0x00c60e30` by `+0x64`).
+    pub fn rcui_make_base_path<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let w = WORK.get(mem);
+        let i = mem.read::<u32>(w.wrapping_add(0x64));
+        let dirs = mem.rebase(super::MAP_DIRS);
+        let dir = mem.read::<u32>(dirs.wrapping_add(i.wrapping_mul(4)));
+        let sprintf = mem.read::<u32>(mem.rebase(crate::yi::CRT_SPRINTF));
+        let fmt = mem.rebase(super::BASE_PATH_FORMAT);
+        call(mem, sprintf, &[w.wrapping_add(0x74), fmt, dir])
+    }
+
+    /// `rcuiCloseWindow(&w)` (`0x00937f50`): an open window closed
+    /// (`Gu_WindowCloseTree`) and the handle cleared.
+    pub fn rcui_close_window<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        at: u32,
+        call: &mut C,
+    ) {
+        let w = mem.read::<u32>(at);
+        if w != 0 {
+            let f = mem.rebase(super::GU_WINDOW_CLOSE_TREE);
+            call(mem, f, &[w]);
+            mem.write(at, 0u32);
+        }
+    }
+
+    /// `rcuiReset()` (`0x00936570`): the work's `+0x5c`, `+0x288`, `+0x308`,
+    /// `+0x30c` cleared; the renderer's bit 0 disabled when set
+    /// (`yiRenderDisable(1)`).
+    pub fn rcui_reset(mem: &mut impl Mem) {
+        for o in [0x5cu32, 0x288, 0x308, 0x30c] {
+            let w = WORK.get(mem);
+            mem.write(w.wrapping_add(o), 0u32);
+        }
+        if crate::yi::bridge::yi_get_render_status(mem) & 1 != 0 {
+            crate::yi::bridge::yi_render_disable(mem, 1);
+        }
     }
 }

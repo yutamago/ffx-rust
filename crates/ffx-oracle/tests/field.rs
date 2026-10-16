@@ -7873,3 +7873,471 @@ fn round9_real_heap_matches_the_original_on_a_snapshot() {
         );
     }
 }
+
+/// `mov eax, [esp + 0xc]; mov ecx, [value]; mov [eax], ecx; ret`: a
+/// `pppFpGetMngPtr` stand-in storing the manager through its third
+/// argument.
+fn store_arg3_stub(value: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d];
+    c.extend_from_slice(&value.to_le_bytes());
+    c.extend_from_slice(&[0x89, 0x08, 0xc3]);
+    c
+}
+
+/// Round 10: parser keywords, floats and text, the TIM2/list deleters,
+/// matrix row scales, field-program matrices and restarts, map reads by
+/// kind, map and base paths, rcui reset, transfer set-up, `rcfx` springs,
+/// particles and the simulation's forces, palette dispatch, effect task
+/// lists and character blocks, scene screen settings, the pre-loaded map's
+/// field objects and object removal by kind.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round10_field_helpers_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x000a_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    t.install_trig();
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let fcall = &mut oracle_fcall;
+    let (log, rv) = (env.log, env.rv);
+    let del = t.b.rebase(model::USER_FREE);
+    let (mngv, bn, block) = (t.alloc(4), t.alloc(4), t.alloc(4));
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (Some(model::CH_ELEM_GET_MATRIX), log_stub(log, rv, 70, 3)),
+        (Some(model::PPP_FP_GET_MNG_PTR), store_arg3_stub(mngv)),
+        (Some(model::FP_RESTART), log_stub(log, rv, 71, 1)),
+        (Some(yi::YI_MAP_READ_MASTER), log_stub(log, rv, 72, 5)),
+        (Some(rcui::GU_WINDOW_CLOSE_TREE), log_stub(log, rv, 73, 1)),
+        (Some(task::PPP_RUN_PART), log_stub(log, rv, 74, 2)),
+        (Some(task::PPP_MEM_ALLOC), log_stub(log, block, 75, 3)),
+        (Some(task::PPP_MEM_FREE), log_stub(log, rv, 76, 3)),
+        (
+            Some(task::CH_TEXTURE_SET_CLUT_BASE),
+            log_stub(log, rv, 77, 3),
+        ),
+        (
+            Some(task::CH_TEXTURE_SET_IMAGE_BASE),
+            log_stub(log, rv, 78, 3),
+        ),
+        (Some(task::CH_DRAW_EN_EFFECT), log_stub(log, rv, 79, 2)),
+        (Some(guide::MS_DEBUG_DRAW_BOARD), log_stub(log, rv, 82, 0)),
+        (Some(guide::MS_BATTLE_GET_NUM), log_stub(log, bn, 83, 0)),
+    ];
+    t.cave_from(env.cave_end, &list);
+    let vf_args = t.b.rebase(vu0::VU0_SCALE) + 4;
+    let skip = [(vf_args, 12u32)];
+    let slot = t.alloc(4);
+    t.set(task::main::ENV_SLOT, slot);
+    let (chunk, parse, data, out) = (t.alloc(8), t.alloc(0x90), t.alloc(0x200), t.alloc(0x100));
+    let words = ["alpha", "Beta", "gamma", "be", "x"];
+    let table = t.alloc(4 * (words.len() + 1));
+    for (i, w) in (0u32..).zip(words) {
+        let s = t.alloc(8);
+        let mut b = w.as_bytes().to_vec();
+        b.push(0);
+        t.write(s, &b);
+        t.put(table + 4 * i, s);
+    }
+    let names = t.alloc(0x40);
+    for i in 0..4u32 {
+        t.write(names + 16 * i, format!("map{i}\0").as_bytes());
+        t.put(names + 16 * i + 0xc, 0x100 + i);
+    }
+    let rw = t.alloc(0x400);
+    t.set(rcui::WORK, rw);
+    for k in 0..30u32 {
+        env.reset(&mut t, &mut rng);
+        // the parser
+        let mut text = Vec::new();
+        for _ in 0..=rng.below(6) {
+            let w = match rng.below(4) {
+                0 => words[rng.below(5) as usize].to_uppercase(),
+                1 => format!("{}.{}", rng.range(-300, 300), rng.below(100)),
+                2 => "zeta".to_string(),
+                _ => words[rng.below(5) as usize].to_string(),
+            };
+            text.extend(w.bytes());
+            text.push(if rng.below(3) == 0 { b'\n' } else { b' ' });
+        }
+        text.extend(b"\n1.5\n\0");
+        t.write(data, &text);
+        parser_over(&mut t, chunk, parse, data);
+        if k % 3 != 0 {
+            t.put(parse + 8, 1u32);
+        }
+        t.same(
+            "rcdtParseGetKeyword",
+            |o| o.eax(0x0092_be40, &[parse, table]),
+            |m| rcdt::bridge::rcdt_parse_get_keyword(m, parse, table, call),
+        );
+        t.same(
+            "rcdtParseGetFloat",
+            |o| o.float(0x0092_bbb0, &[parse]),
+            |m| bits(rcdt::bridge::rcdt_parse_get_float(m, parse, fcall)),
+        );
+        t.same(
+            "rcdtParseGetText",
+            |o| o.eax(0x0092_bdd0, &[parse, out]),
+            |m| rcdt::bridge::rcdt_parse_get_text(m, parse, out, call),
+        );
+        t.same(
+            "rcdtParseAdvanceLine",
+            |o| o.void(0x0092_b9b0, &[parse]),
+            |m| rcdt::bridge::rcdt_parse_advance_line(m, parse),
+        );
+        // deleters
+        let tm = rcdt::bridge::rcdt_tm2_new(&mut t.a, call);
+        rcdt::bridge::rcdt_tm2_new(&mut t.b, call);
+        t.put(
+            tm + 0x40,
+            if rng.below(2) == 0 { 0 } else { rng.next() | 1 },
+        );
+        t.same(
+            "rcdtTm2Delete",
+            |o| o.eax(0x0092_3450, &[tm]),
+            |m| rcdt::bridge::rcdt_tm2_delete(m, tm, call),
+        );
+        let l = model::bridge::rc_alloc(&mut t.a, call, 0x20);
+        model::bridge::rc_alloc(&mut t.b, call, 0x20);
+        t.write(l, &[0; 0x20]);
+        t.put(l + 4, rng.next() | 1);
+        t.same(
+            "rcdtListsDelete",
+            |o| o.eax(0x0092_42d0, &[l]),
+            |m| model::bridge::rcdt_lists_delete(m, l, call),
+        );
+        // vectors and matrices
+        let m0 = t.alloc(0x40);
+        for i in 0..16 {
+            t.put(m0 + 4 * i, float_in(&mut rng, -500, 500));
+        }
+        t.same_but(
+            "rcefVecToField",
+            &skip,
+            |o| o.void(0x0092_d7e0, &[m0]),
+            |m| vu0::bridge::rcef_vec_to_field(m, m0),
+        );
+        t.same_but(
+            "rcbgScaleMatrix100",
+            &skip,
+            |o| o.void(0x0091_ffd0, &[m0]),
+            |m| vu0::bridge::rcbg_scale_rows(m, m0, vu0::SCALE_100),
+        );
+        t.same_but(
+            "rcefScaleMatrix100",
+            &skip,
+            |o| o.void(0x0092_e630, &[m0]),
+            |m| vu0::bridge::rcbg_scale_rows(m, m0, vu0::SCALE_100),
+        );
+        let (s, a, b, c) = (rng.float(), rng.next(), rng.next(), rng.next());
+        t.same(
+            "rcuiScaleVector",
+            |o| o.eax(0x0093_0f30, &[out, m0, s, a, b, c]),
+            |m| vu0::bridge::rcui_scale_vector(m, out, m0, s, [a, b, c]),
+        );
+        t.same(
+            "rcefGetVf00",
+            |o| o.eax(0x0092_5020, &[out]),
+            |m| vu0::bridge::rcef_get_vf00(m, out),
+        );
+        let (chr, elem) = (rng.next(), rng.below(8));
+        t.same_but(
+            "rcbgFPmGetElemMatrix",
+            &skip,
+            |o| o.void(0x0092_2350, &[m0, chr, elem]),
+            |m| model::bridge::rcbg_fpm_get_elem_matrix(m, m0, chr, elem, call),
+        );
+        let fp = t.alloc(0x40);
+        for i in 0..16 {
+            t.put(fp + 4 * i, float_in(&mut rng, -10, 10));
+        }
+        let work = t.stack_scratch(0);
+        t.same_but(
+            "rcbgFPmGetMatrix",
+            &skip,
+            |o| o.eax(0x0092_2290, &[fp, m0]),
+            |m| model::bridge::rcbg_fpm_get_matrix(m, fp, m0, work, call),
+        );
+        let mng = t.alloc(0x50);
+        t.put(mngv, if rng.below(3) == 0 { 0 } else { mng });
+        t.same(
+            "rcbgFPmRestart",
+            |o| {
+                let r = o.eax(0x0092_2300, &[7, chr, elem]);
+                if Mem::read::<u32>(&*o.0, mngv) == 0 {
+                    0
+                } else {
+                    r
+                }
+            },
+            |m| model::bridge::rcbg_fpm_restart(m, 7, chr, elem, work, call),
+        );
+        // map reads by kind, names and paths
+        let (map, alarm) = (rng.below(0x400), rng.below(6));
+        t.same(
+            "yiFieldMapRead",
+            |o| o.void(0x0090_85d0, &[map, alarm]),
+            |m| yi::bridge::yi_field_map_read(m, map, alarm, call),
+        );
+        t.same(
+            "yiBattleMapRead",
+            |o| o.void(0x0090_8370, &[map, alarm]),
+            |m| yi::bridge::yi_battle_map_read(m, map, alarm, call),
+        );
+        t.set(yi::MAP_NAMES, names);
+        t.set(yi::MAP_NAME_COUNT, rng.below(5));
+        t.set(
+            yi::CURRENT_MAP,
+            [0, 0x100, 0x102, 0x103, 0x200][rng.below(5) as usize],
+        );
+        t.same(
+            "yiGetMapName",
+            |o| o.eax(0x0090_7e70, &[out]),
+            |m| yi::bridge::yi_get_map_name(m, out, call),
+        );
+        t.put(rw + 0x64, rng.below(4));
+        t.same(
+            "rcuiMakeBasePath",
+            |o| o.eax(0x0093_7af0, &[]),
+            |m| rcui::bridge::rcui_make_base_path(m, call),
+        );
+        let hw = t.alloc(4);
+        t.put(hw, if rng.below(2) == 0 { 0 } else { rng.next() });
+        t.same(
+            "rcuiCloseWindow",
+            |o| o.void(0x0093_7f50, &[hw]),
+            |m| rcui::bridge::rcui_close_window(m, hw, call),
+        );
+        t.fill(rw + 0x40, 0x300, &mut rng);
+        t.set(yi::RENDER_STATUS, rng.next());
+        t.same(
+            "rcuiReset",
+            |o| o.void(0x0093_6570, &[]),
+            rcui::bridge::rcui_reset,
+        );
+        // transfers, rcfx
+        let tr = t.alloc(0x40);
+        t.fill(tr, 0x40, &mut rng);
+        t.put(tr + 0x34, 0x40u32);
+        let regs = [
+            rng.next(),
+            rng.next(),
+            [0u32, 0x13, 0x14][rng.below(3) as usize],
+            rng.next(),
+            rng.next(),
+            rng.below(32),
+            rng.below(32),
+        ];
+        let n = rng.below(4);
+        let mut args = vec![tr];
+        args.extend(regs);
+        args.push(n);
+        t.same(
+            "rcbgTrxSetRegsAlloc",
+            |o| o.void(0x0092_d320, &args),
+            |m| model::bridge::rcbg_trx_set_regs_alloc(m, tr, regs, n, call),
+        );
+        t.same(
+            "rcfxSpringNew",
+            |o| o.eax(0x0092_8d50, &[]),
+            |m| model::bridge::rcfx_spring_new(m, call),
+        );
+        let ps = t.alloc(0x40);
+        for o in [0x24u32, 0x28, 0x2c, 0x30] {
+            t.put(ps + o, if rng.below(2) == 0 { 0 } else { rng.next() | 1 });
+        }
+        t.put(ps + 0x34, 0u32);
+        t.put(ps + 0x38, 0u32);
+        t.same(
+            "rcfxParticleFini",
+            |o| o.void(0x0092_8870, &[ps]),
+            |m| model::bridge::rcfx_particle_fini(m, ps, call),
+        );
+        let (psim, ps) = (t.alloc(0x20), t.alloc(0x40));
+        t.put(psim + 0x18, ps);
+        let k1 = rng.float();
+        t.same(
+            "rcbgPSimAddDamp",
+            |o| o.void(0x0091_f7a0, &[psim, k1]),
+            |m| model::bridge::rcbg_psim_add_damp(m, psim, k1, call),
+        );
+        let (dir, pos) = (t.alloc(0x10), t.alloc(0x10));
+        t.fill(dir, 0x10, &mut rng);
+        t.fill(pos, 0x10, &mut rng);
+        let power = rng.float();
+        t.same(
+            "rcbgPSimAddWind",
+            |o| o.void(0x0091_f980, &[psim, dir, pos, power]),
+            |m| model::bridge::rcbg_psim_add_wind(m, psim, dir, pos, power, call),
+        );
+        let g = t.alloc(0x10);
+        t.fill(g, 0x10, &mut rng);
+        t.same(
+            "rcbgPSimAddGravity",
+            |o| o.void(0x0091_f7c0, &[psim, g]),
+            |m| model::bridge::rcbg_psim_add_gravity(m, psim, g, call),
+        );
+        // a palette through the dispatcher
+        let (pal, trx) = (t.alloc(0x10), t.alloc(0x40));
+        let entries = 2 + rng.below(3);
+        let pd = t.alloc(0x410 * entries as usize);
+        t.fill(pd, 0x410 * entries as usize, &mut rng);
+        t.put(trx + 0x30, entries);
+        t.put(trx + 0x34, 0x410u32);
+        t.put(trx + 0x38, pd);
+        t.put(pal, u8::try_from(rng.below(4)).unwrap());
+        t.put(pal + 0xc, trx);
+        t.put(pal + 4, u16::try_from(rng.below(5)).unwrap());
+        t.put(pal + 6, u16::try_from(rng.below(0x100)).unwrap());
+        t.put(pal + 8, u16::try_from(rng.below(entries - 1)).unwrap());
+        t.put(pal + 0xa, u8::try_from(rng.below(4)).unwrap());
+        t.put(pal + 0xb, u8::try_from(rng.below(4)).unwrap());
+        t.same(
+            "rcbgPalProc",
+            |o| o.void(0x0092_9b60, &[pal]),
+            |m| model::bridge::rcbg_pal_proc(m, pal),
+        );
+        let page = rng.next();
+        // rcbgSetReg is a bare `ret`: the result is the record's stack
+        // address
+        t.same(
+            "rcbgModelSetTexReg",
+            |o| o.void(0x0092_84d0, &[page]),
+            |m| {
+                model::bridge::rcbg_model_set_tex_reg(m, page, work, call);
+            },
+        );
+        // effect tasks
+        let (e, part, arg) = (rng.next(), rng.next(), rng.next());
+        t.same(
+            "rcefRunPart",
+            |o| o.eax(0x0092_eec0, &[e, part, arg]),
+            |m| task::bridge::rcef_run_part(m, e, part, arg, call),
+        );
+        let obj = t.alloc(0x490);
+        t.put(block, obj);
+        t.same(
+            "rcefObjNew",
+            |o| o.eax(0x0093_0030, &[]),
+            |m| task::bridge::rcef_obj_new(m, call),
+        );
+        // a task list: the head at ctrl, the tail at ctrl + 0xbc
+        let ctrl = t.alloc(0x200);
+        let n = rng.below(4);
+        let tasks: Vec<u32> = (0..n).map(|_| t.alloc(0xbc)).collect();
+        let mut nodes = vec![ctrl];
+        nodes.extend(&tasks);
+        nodes.push(ctrl + 0xbc);
+        for w in nodes.windows(2) {
+            t.put(w[0] + 8, w[1]);
+            t.put(w[1] + 4, w[0]);
+        }
+        for &x in &tasks {
+            t.put(x + 0xb4, if rng.below(2) == 0 { 0 } else { del });
+        }
+        t.same(
+            "rcefTaskCtrlFini",
+            |o| o.void(0x0093_0260, &[ctrl]),
+            |m| task::bridge::rcef_task_ctrl_fini(m, ctrl, call),
+        );
+        // a chain to run: dead tasks in the middle are killed
+        let n = 1 + rng.below(4);
+        let tasks: Vec<u32> = (0..n).map(|_| t.alloc(0xbc)).collect();
+        let before = t.alloc(0xbc);
+        for (i, &x) in tasks.iter().enumerate() {
+            let at_end = i + 1 == tasks.len();
+            t.put(
+                x,
+                if !at_end && rng.below(2) == 0 {
+                    4u32
+                } else {
+                    1
+                },
+            );
+            t.put(x + 4, if i == 0 { before } else { tasks[i - 1] });
+            t.put(x + 8, if at_end { 0 } else { tasks[i + 1] });
+            t.put(x + 0xac, 0u32);
+            t.put(x + 0xc, if rng.below(2) == 0 { 0 } else { del });
+            t.put(x + 0xb0, 0u32);
+            t.put(x + 0xb4, 0u32);
+        }
+        t.same(
+            "rcefTaskCtrlProc",
+            |o| o.void(0x0093_0300, &[tasks[0]]),
+            |m| task::bridge::rcef_task_ctrl_proc(m, tasks[0], call),
+        );
+        let ch = t.alloc(0x100);
+        t.fill(ch, 0x10, &mut rng);
+        if rng.below(2) == 0 {
+            t.put(ch + 8, 0u32);
+        }
+        t.same(
+            "rcefChrFini",
+            |o| o.void(0x0093_0710, &[ch]),
+            |m| task::bridge::rcef_chr_fini(m, ch, call),
+        );
+        // the scene's screen, the pre-loaded map's field objects
+        if guide::YN_MAP_SYSTEM.get(&t.b) == 0 {
+            t.same(
+                "rcbgInit",
+                |o| o.void(0x0092_1ce0, &[]),
+                |m| guide::bridge::rcbg_init(m, call),
+            );
+        }
+        t.same(
+            "rcbgPreDummyInit",
+            |o| o.void(0x0092_1640, &[]),
+            |m| guide::bridge::rcbg_pre_dummy_init(m, call),
+        );
+        let roll = rng.float();
+        t.same(
+            "Yn_PreBgSetScrBank",
+            |o| o.void(0x0091_ad10, &[roll]),
+            |m| guide::bridge::yn_pre_bg_set_scr_bank(m, roll, call),
+        );
+        let (x, y) = (rng.float(), rng.float());
+        t.same(
+            "Yn_PreBgSetScrOffset",
+            |o| o.void(0x0091_ad40, &[x, y]),
+            |m| guide::bridge::yn_pre_bg_set_scr_offset(m, x, y, call),
+        );
+        let sys = guide::YN_MAP_SYSTEM.get(&t.b);
+        t.put(sys + 8, rng.below(2));
+        t.put(
+            bn,
+            [0, 0x0061_0000, 0x0235_0000, 0x0100_0000][rng.below(4) as usize],
+        );
+        t.same(
+            "rcbgPreAddFpObjects",
+            |o| o.void(0x0092_2010, &[]),
+            |m| guide::bridge::rcbg_pre_add_fp_objects(m, call),
+        );
+        let fs = Mem::read::<u32>(&t.b, Mem::read::<u32>(&t.b, sys) + 8);
+        let nth = rng.below(2);
+        t.same(
+            "Yn_FpTrxTexGet",
+            |o| o.eax(0x0091_9ba0, &[nth]),
+            |m| guide::bridge::yn_fp_trx_tex_get(m, nth),
+        );
+        let tex = t.alloc(0xa0);
+        t.fill(tex, 0xa0, &mut rng);
+        let (image, clut) = (rng.next(), rng.next());
+        t.same(
+            "Yn_FpTrxTexSetAddr",
+            |o| o.void(0x0091_9be0, &[tex, image, clut]),
+            |m| guide::bridge::yn_fp_trx_tex_set_addr(m, tex, image, clut),
+        );
+        let kind = Mem::read::<u32>(&t.b, fs + scene::layout::OBJECT_COUNT);
+        let kind = if kind == 0 {
+            0x2_0006
+        } else {
+            let first = Mem::read::<u32>(&t.b, Mem::read::<u32>(&t.b, fs + scene::layout::OBJECTS));
+            Mem::read::<u32>(&t.b, first)
+        };
+        t.same(
+            "rcbgSceneDelObjects",
+            |o| o.void(0x0092_06f0, &[fs, kind]),
+            |m| scene::bridge::rcbg_scene_del_objects(m, fs, kind, call),
+        );
+    }
+}

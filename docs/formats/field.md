@@ -561,8 +561,35 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   (`user_malloc`/`user_free`, with the CRT's critical sections stubbed),
   so objects are built and torn down with the real allocator; on the image
   alone the heap needs Win32 events and the bump allocator stays.
-- Not ported: `yiWindowDrawBar` (`0x00907c10`) still is no function start
-  in the dump.
+- `yiWindowDrawBar` (`0x00907c10`) is a function start in the rebuilt
+  dump and has its hook from round 10.
+
+## Field helpers by unblocked callers (round 10)
+
+- Parser readers: `rcdtParseGetKeyword` (`0x0092be40`, the token's index
+  in a null-ended string table, same length and `_strnicmp`, else -1),
+  `rcdtParseGetFloat` (`0x0092bbb0`, `atof` in text mode, `ST0`),
+  `rcdtParseGetText` (`0x0092bdd0`, `strncpy` of the token, its length),
+  `rcdtParseAdvanceLine` (`0x0092b9b0`).
+- Field programs: `rcbgFPmGetMatrix` (`0x00922290`: rotation `+0x18` times
+  the `.rdata` factor `0x00b678ec`, scale `+0x28`, translation `+0x8`,
+  `op_rt_m_yxz`), `rcbgFPmGetElemMatrix` (`0x00922350`, a character
+  element's matrix with its rows times 10), `rcbgFPmRestart` (`0x00922300`,
+  the manager's flag 0x100, `Fp_Restart`, the element matrix at
+  `mng + 0xc`), `rcbgPreAddFpObjects` (`0x00922010`).
+- `rcbgPSimAddDamp`/`AddWind`/`AddGravity` add forces to the simulation's
+  particle system (`+0x18`); the gravity one overwrites its vector with the
+  debug gravity (0, 1, -0.1). `rcbgPalProc` (`0x00929b60`) picks the
+  palette animation: flag bit 0 white, mode `+0xa` 1 rotate, 2 shift,
+  else a copy to the last entry.
+- Effect task lists: `rcefTaskCtrlFini` kills the tail's previous task
+  until the head is reached; `rcefTaskCtrlProc` runs a `+0x8` chain, then
+  kills the tasks flagged 4 (each task's next read before it is killed).
+- `rcbgModelSetTexReg` (`0x009284d0`) builds a register record
+  (`page << 17 | 0x1000f`, register 0x47) for `rcbgSetReg`, a bare `ret`
+  here, so its `eax` is the record's stack address.
+- `yiFieldMapRead`/`yiBattleMapRead` read CD directory 0x13/0x1a files
+  `2 map` and `2 map + 1` (`yiMapReadMaster`), status bits 0x2000/0x1000.
 
 ## Floats
 

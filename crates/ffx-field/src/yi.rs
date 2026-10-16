@@ -81,6 +81,19 @@ pub const RAM_INUSE_TEXT: u32 = 0x00b6_6f0c;
 pub const MAP_PATH_PARTS: u32 = 0x0091_61d0;
 /// MSVCR110's `sprintf` import slot (`0x00b0c3dc`).
 pub const CRT_SPRINTF: u32 = 0x00b0_c3dc;
+/// `yiMapReadMaster` (`0x009093b0`).
+pub const YI_MAP_READ_MASTER: u32 = 0x0090_93b0;
+/// The map name table (`0x025d5888`): 16-byte entries, the name, the map
+/// number at `+0xc`.
+pub const MAP_NAMES: Global<u32> = Global::new(0x025d_5888);
+/// Its entry count (`0x01934ec8`).
+pub const MAP_NAME_COUNT: Global<u32> = Global::new(0x0193_4ec8);
+/// The name without a current map (`0x00b424c8`).
+pub const MAP_NAME_NONE: u32 = 0x00b4_24c8;
+/// The name of a map not in the table (`0x00b66fd4`).
+pub const MAP_NAME_UNKNOWN: u32 = 0x00b6_6fd4;
+/// "%s" (`0x00b0e160`).
+pub const FORMAT_S: u32 = 0x00b0_e160;
 /// "host0:%s%s.vpa" (`0x00b66efc`).
 pub const HOST_VPA_FORMAT: u32 = 0x00b6_6efc;
 /// `sceOpen(path, mode)` (`0x0062fa30`).
@@ -3513,5 +3526,70 @@ pub mod bridge {
             call(mem, f, &[m, m, a]);
         }
         0
+    }
+
+    /// `yiFieldMapRead(map, alarm)` (`0x009085d0`): `yiMapReadMaster(0x13,
+    /// 2 map, 0x13, 2 map + 1, alarm)` (through `call`), status bit 0x2000.
+    pub fn yi_field_map_read<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        map: u32,
+        alarm: u32,
+        call: &mut C,
+    ) {
+        map_read(mem, 0x13, map, alarm, 0x2000, call);
+    }
+
+    /// `yiBattleMapRead(map, alarm)` (`0x00908370`): the same with CD
+    /// directory 0x1a, status bit 0x1000.
+    pub fn yi_battle_map_read<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        map: u32,
+        alarm: u32,
+        call: &mut C,
+    ) {
+        map_read(mem, 0x1a, map, alarm, 0x1000, call);
+    }
+
+    fn map_read<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        dir: u32,
+        map: u32,
+        alarm: u32,
+        bit: u32,
+        call: &mut C,
+    ) {
+        let n = map.wrapping_mul(2);
+        let f = mem.rebase(super::YI_MAP_READ_MASTER);
+        call(mem, f, &[dir, n, dir, n.wrapping_add(1), alarm]);
+        let st = RENDER_STATUS.get(mem);
+        RENDER_STATUS.set(mem, st | bit);
+    }
+
+    /// `yiGetMapName(out)` (`0x00907e70`): the current map's name
+    /// (`sprintf(out, "%s", …)`: the entry of the name table `0x025d5888`,
+    /// `0x01934ec8` entries of 16 bytes with the map at `+0xc`, whose map
+    /// is `g_CurrentMapNo`; a default string without one, another without
+    /// a map).
+    pub fn yi_get_map_name<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        out: u32,
+        call: &mut C,
+    ) -> u32 {
+        let cur = super::CURRENT_MAP.get(mem);
+        let name = if cur == 0 {
+            mem.rebase(super::MAP_NAME_NONE)
+        } else {
+            let n = super::MAP_NAME_COUNT.get(mem).cast_signed();
+            let table = super::MAP_NAMES.get(mem);
+            (0..n.max(0).cast_unsigned())
+                .find(|&i| mem.read::<u32>(table.wrapping_add(16 * i + 0xc)) == cur)
+                .map_or_else(
+                    || mem.rebase(super::MAP_NAME_UNKNOWN),
+                    |i| table.wrapping_add(16 * i),
+                )
+        };
+        let sprintf = mem.read::<u32>(mem.rebase(super::CRT_SPRINTF));
+        let fmt = mem.rebase(super::FORMAT_S);
+        call(mem, sprintf, &[out, fmt, name])
     }
 }
