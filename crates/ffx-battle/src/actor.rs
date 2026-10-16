@@ -953,6 +953,113 @@ pub mod bridge {
             _ => 0,
         }
     }
+
+    /// `MsGetCommandFar(chr, command)` (`0x00799690`): the command's reach
+    /// (`+0x1a` bits 7-8), 3 for actors 4, 8 and 13 with bit 0x200.
+    pub fn ms_get_command_far(mem: &impl Mem, chr: i32, command: u32) -> u32 {
+        let f = Ptr::<u8>::new(command).field::<u16>(0x1a).get(mem);
+        if f & 0x200 != 0 && matches!(chr, 4 | 8 | 13) {
+            3
+        } else {
+            u32::from(f >> 7) & 3
+        }
+    }
+
+    /// `MsGetCursorTarget(chr, selector, command, event)` (`0x00799820`):
+    /// the actors of `selector` ([`ms_get_chr_bit`], `any` set) the cursor
+    /// may pick for `command`: not ones the cursor skips (`+0xdd9`), busy
+    /// with an event the command does not reach (`+0x1a` bits 0x400/0x800),
+    /// beyond its reach (`+0x4ff`, not `chr` itself) or dead (unless bit
+    /// 0x40).
+    pub fn ms_get_cursor_target(
+        mem: &impl Mem,
+        chr: u32,
+        selector: u32,
+        command: u32,
+        event: u32,
+    ) -> u32 {
+        let mut set = ms_get_chr_bit(mem, chr, selector, 0, 1);
+        let flags = Ptr::<u8>::new(command).field::<u16>(0x1a).get(mem);
+        for i in 0..ACTORS {
+            if (set.cast_signed() >> i) & 1 == 0 {
+                continue;
+            }
+            let mut out = ms_get_chr_cursor_flag(mem, i) == 0;
+            match ms_get_chr_event_flag(mem, i, event) {
+                0 => out |= flags & 0x400 == 0,
+                1 => out |= flags & 0x800 == 0,
+                2 => out = true,
+                _ => {}
+            }
+            let far = ms_get_command_far(mem, chr.cast_signed(), command);
+            if ms_get_chr_dist(mem, i).cast_signed() > far.cast_signed() && chr != i {
+                out = true;
+            }
+            if (ms_get_chr_stat_death(mem, i) != 0 && flags & 0x40 == 0) || out {
+                set &= !(1 << i);
+            }
+        }
+        set
+    }
+
+    /// `MsGetGuardChr(user, target)` (`0x0078eef0`): who takes `target`'s
+    /// hit: of its side's other actors (monsters 0x14-0x1b, else 0-0x11)
+    /// under guard or sentinel (status 2 bits 0x1000/0x2000) that may act,
+    /// the one with the most HP (doubled under sentinel, plus half Tidus'
+    /// affection for Tidus' allies), else `target` itself.
+    pub fn ms_get_guard_chr(mem: &mut impl Mem, user: u32, target: u32) -> u32 {
+        use crate::save::bridge::ms_add_love_param;
+        let (lo, hi) = if ms_get_ram_chr_monster(target) != 0 {
+            (0x14, 0x1c)
+        } else {
+            (0, 0x12)
+        };
+        let (mut best, mut at) = (-1i32, -1i32);
+        for i in lo..hi {
+            let a = ms_get_chr(mem, i);
+            let s2 = Ptr::<u8>::new(a).field::<u16>(0x616).get(mem);
+            if i == user
+                || i == target
+                || byte(mem, a, 0xdc8) == 0
+                || s2 & 0x3000 == 0
+                || byte(mem, a, 0xdcc) != 0
+                || ms_auto_command_status_check(mem, a, 1, 1, 1) == 0
+            {
+                continue;
+            }
+            let mut v = Ptr::<u8>::new(a).field::<i32>(0x5d0).get(mem);
+            if s2 & 0x2000 != 0 {
+                v = v.wrapping_mul(2);
+            }
+            if target == 0 {
+                v = v.wrapping_add(ms_add_love_param(mem, i.cast_signed(), 0).cast_signed() / 2);
+            }
+            if i == 0 {
+                v = v.wrapping_add(
+                    ms_add_love_param(mem, target.cast_signed(), 0).cast_signed() / 2,
+                );
+            }
+            if best < v {
+                best = v;
+                at = i.cast_signed();
+            }
+        }
+        if at >= 0 { at.cast_unsigned() } else { target }
+    }
+
+    /// `MsGetChrVigor(i)` (`0x0078cce0`): 1 when the actor is in good shape
+    /// (weak level 0: HP over half; not dead or stone).
+    pub fn ms_get_chr_vigor(mem: &impl Mem, i: u32) -> u32 {
+        let a = ms_get_chr(mem, i);
+        let p = Ptr::<u8>::new(a);
+        let hp = p.field::<i32>(0x5d0).get(mem);
+        let max = p.field::<i32>(0x594).get(mem);
+        u32::from(
+            weak_level(hp, max) == 0
+                && ms_get_chr_stat_death(mem, i) == 0
+                && ms_get_chr_stat_stone(mem, i) == 0,
+        )
+    }
 }
 
 #[cfg(test)]

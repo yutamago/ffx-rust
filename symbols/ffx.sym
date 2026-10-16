@@ -1996,6 +1996,7 @@
 0x0078e460 function MsThreatProcess           # fh v3:exact+call.cs 0x0078e4b0 cdecl
 0x0078e5a0 function MsUseChrMpLimit           # fh v3:exact 0x0078e5f0
 0x0078e630 function DmgCalc                   # fh v3:exact 0x0078e680 +DmgCalc
+0x0078eef0 function MsGetGuardChr             # (user, target) -> who takes target's hit: the side's guard/sentinel actor (status 2 0x1000/0x2000, MsAutoCommandStatusCheck) with most HP (x2 sentinel, + half Tidus' affection), else target; called by MsCalcCommand's target step 0x0078ba70; ported
 0x0078f060 function AfterDamageProcess        # fh call.cs cdecl
 0x0078f700 function MsCheckLeftWindow         # fh v3:exact 0x0078f750
 0x0078f7c0 function MsGetMenuChrInfo          # fh v3:exact 0x0078f810

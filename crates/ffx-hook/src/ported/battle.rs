@@ -1126,4 +1126,21 @@ ported! {
     MsGetActionBuffer @ 0x0078_d040 => extern "C" fn ms_get_action_buffer(actor: u32) -> u32 {
         save::ms_get_action_buffer(&mut mem(), actor)
     }
+
+    /// `MsGetCommandFar(chr, command)`.
+    MsGetCommandFar @ 0x0079_9690 => extern "C" fn ms_get_command_far(chr: i32, command: u32) -> u32 {
+        actor::ms_get_command_far(&mem(), chr, command)
+    }
+    /// `MsGetCursorTarget(chr, selector, command, event)`.
+    MsGetCursorTarget @ 0x0079_9820 => extern "C" fn ms_get_cursor_target(chr: u32, selector: u32, command: u32, event: u32) -> u32 {
+        actor::ms_get_cursor_target(&mem(), chr, selector, command, event)
+    }
+    /// `MsGetGuardChr(user, target)`.
+    MsGetGuardChr @ 0x0078_eef0 => extern "C" fn ms_get_guard_chr(user: u32, target: u32) -> u32 {
+        actor::ms_get_guard_chr(&mut mem(), user, target)
+    }
+    /// `MsGetChrVigor(i)`.
+    MsGetChrVigor @ 0x0078_cce0 => extern "C" fn ms_get_chr_vigor(i: u32) -> u32 {
+        actor::ms_get_chr_vigor(&mem(), i)
+    }
 }

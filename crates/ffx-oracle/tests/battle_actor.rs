@@ -303,6 +303,43 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
                 |m| act::ms_get_chr_bit(m, chr, sel, all.cast_signed(), any.cast_signed()),
             );
         }
+        // targeting: reach, cursor, guards
+        let cmd = w.command(a, b, rng);
+        for _ in 0..6 {
+            let chr = rng.range(-1, 0x20).cast_unsigned();
+            twin(
+                "MsGetCommandFar",
+                a,
+                b,
+                0x0079_9690,
+                &[chr, cmd],
+                ALL,
+                |m| act::ms_get_command_far(m, chr.cast_signed(), cmd),
+            );
+            let sel = match rng.below(3) {
+                0 => rng.range(-27, 0).cast_unsigned(),
+                1 => rng.below(0x20),
+                _ => 0x1000 + rng.below(0x40),
+            };
+            let ev = [0xff, rng.below(4)][rng.below(2) as usize];
+            twin(
+                "MsGetCursorTarget",
+                a,
+                b,
+                0x0079_9820,
+                &[chr, sel, cmd, ev],
+                ALL,
+                |m| act::ms_get_cursor_target(m, chr, sel, cmd, ev),
+            );
+            let (u, t) = (rng.below(0x20), [0, rng.below(0x20)][rng.below(2) as usize]);
+            twin("MsGetGuardChr", a, b, 0x0078_eef0, &[u, t], ALL, |m| {
+                act::ms_get_guard_chr(m, u, t)
+            });
+            let i = rng.below(0x20);
+            twin("MsGetChrVigor", a, b, 0x0078_cce0, &[i], ALL, |m| {
+                act::ms_get_chr_vigor(m, i)
+            });
+        }
         // the message cue and Rikku's captures; TOBtlCloseSignWindow (the
         // system module's) runs as the original in both
         let close = |m: &mut Oracle| {
