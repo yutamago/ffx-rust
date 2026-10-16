@@ -1,9 +1,10 @@
 //! `ffx-battle`: random numbers, the save block, actors, the battle camera,
 //! battle globals and helpers, damage.
 
+use ffx_battle::vector::bridge as vector;
 use ffx_battle::{actor::bridge as actor, camera::bridge as camera, command::bridge as cmd};
 use ffx_battle::{damage::bridge as dmg, state::bridge as state, util::bridge as util};
-use ffx_battle::{misc::bridge as misc, save::bridge as save, vector::bridge as vector};
+use ffx_battle::{minor::bridge as minor, misc::bridge as misc, save::bridge as save};
 
 use super::{call0, mem, ported};
 
@@ -1142,5 +1143,111 @@ ported! {
     /// `MsGetChrVigor(i)`.
     MsGetChrVigor @ 0x0078_cce0 => extern "C" fn ms_get_chr_vigor(i: u32) -> u32 {
         actor::ms_get_chr_vigor(&mem(), i)
+    }
+    /// `MsSetDirThetaMode(actor)`.
+    MsSetDirThetaMode @ 0x0079_6940 => extern "C" fn ms_set_dir_theta_mode(actor: u32) -> u32 {
+        minor::ms_set_dir_theta_mode(&mut mem(), actor)
+    }
+    /// `MsBtlListField(i)`.
+    MsBtlListField @ 0x0079_d190 => extern "C" fn ms_btl_list_field(i: i32) -> u32 {
+        minor::ms_btl_list_field(&mem(), i)
+    }
+    /// `MsBtlListFieldNum(map)`.
+    MsBtlListFieldNum @ 0x0079_d1c0 => extern "C" fn ms_btl_list_field_num(map: i32) -> i32 {
+        minor::ms_btl_list_field_num(&mem(), map)
+    }
+    /// `ResetEncountExe(all)`.
+    ResetEncountExe @ 0x0078_0ff0 => extern "C" fn reset_encount_exe(all: u32) {
+        minor::reset_encount_exe(&mut mem(), all);
+    }
+    /// `MsEffectCameraCall(camera, mode)`.
+    MsEffectCameraCall @ 0x0078_7740 => extern "C" fn ms_effect_camera_call(camera: i32, mode: u32) -> u32 {
+        minor::ms_effect_camera_call(&mut mem(), camera, mode)
+    }
+    /// `resetZanmatoSepList()`.
+    resetZanmatoSepList @ 0x007a_8f20 => extern "C" fn reset_zanmato_sep_list() -> u32 {
+        minor::reset_zanmato_sep_list(&mut mem())
+    }
+    /// `MsSetMotBinAddress(actor, i)`.
+    MsSetMotBinAddress @ 0x0079_cd80 => extern "C" fn ms_set_mot_bin_address(actor: u32, i: i32) -> u32 {
+        minor::ms_set_mot_bin_address(&mut mem(), actor, i)
+    }
+    /// `MsAtelRegist(manager, name, script)`.
+    MsAtelRegist @ 0x0079_7a40 => extern "C" fn ms_atel_regist(manager: i32, _name: u32, script: u32) -> i32 {
+        minor::ms_atel_regist(&mut mem(), manager, script)
+    }
+    /// `MsSEPtransInit()`.
+    MsSEPtransInit @ 0x007a_0500 => extern "C" fn ms_sep_trans_init() -> u32 {
+        minor::ms_sep_trans_init(&mut mem())
+    }
+    /// `MsAtelCamInit()`.
+    MsAtelCamInit @ 0x0079_7500 => extern "C" fn ms_atel_cam_init() {
+        minor::ms_atel_cam_init(&mut mem());
+    }
+    /// `Mon_FindHandler(file, i, &k)`.
+    Mon_FindHandler @ 0x0079_7410 => extern "C" fn mon_find_handler(file: u32, i: i32, k: u32) -> u32 {
+        minor::mon_find_handler(&mut mem(), file, i, k)
+    }
+    /// `MsMotBinFrame(_, actor, motion, frame)`.
+    MsMotBinFrame @ 0x0079_cb40 => extern "C" fn ms_mot_bin_frame(_x: u32, actor: u32, motion: u32, frame: u32) -> u32 {
+        minor::ms_mot_bin_frame(&mem(), actor, motion, frame)
+    }
+    /// `MsSEP3DfadeOutAll(time)`.
+    MsSEP3DfadeOutAll @ 0x007a_08e0 => extern "C" fn ms_sep3d_fade_out_all(time: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // a u16 argument
+        minor::ms_sep3d_fade_out_all(&mut mem(), time as u16)
+    }
+    /// `MsWeaponReadSet(actor, slot, weapon)`.
+    MsWeaponReadSet @ 0x007a_d940 => extern "C" fn ms_weapon_read_set(actor: u32, slot: u32, weapon: u32) {
+        #[allow(clippy::cast_possible_truncation)] // a byte argument
+        minor::ms_weapon_read_set(&mut mem(), actor, slot as u8, weapon);
+    }
+    /// `MsEffectCameraBufInit()`.
+    MsEffectCameraBufInit @ 0x0078_76e0 => extern "C" fn ms_effect_camera_buf_init() {
+        minor::ms_effect_camera_buf_init(&mut mem());
+    }
+    /// `MsInitSaveWeaponEquipFlag()`.
+    MsInitSaveWeaponEquipFlag @ 0x007a_be30 => extern "C" fn ms_init_save_weapon_equip_flag() -> u32 {
+        minor::ms_init_save_weapon_equip_flag(&mut mem())
+    }
+    /// `MsStoneRegist(chr)`.
+    MsStoneRegist @ 0x007a_2780 => extern "C" fn ms_stone_regist(chr: u32) -> u32 {
+        minor::ms_stone_regist(&mut mem(), chr)
+    }
+    /// `MsSetSaveCommandUse(chr, command, on)`.
+    MsSetSaveCommandUse @ 0x0078_5e00 => extern "C" fn ms_set_save_command_use(chr: i32, command: u32, on: u32) -> u32 {
+        minor::ms_set_save_command_use(&mut mem(), chr, command, on)
+    }
+    /// `MsAtelCameraInit()`.
+    MsAtelCameraInit @ 0x007b_a650 => extern "C" fn ms_atel_camera_init() {
+        minor::ms_atel_camera_init(&mut mem());
+    }
+    /// `MsNumberCalcProcess()`.
+    MsNumberCalcProcess @ 0x0079_f5e0 => extern "C" fn ms_number_calc_process() -> u32 {
+        minor::ms_number_calc_process(&mut mem())
+    }
+    /// `MsGetNowSelectedCamraLevel()`.
+    MsGetNowSelectedCamraLevel @ 0x007b_bc30 => extern "C" fn ms_get_now_selected_camra_level() -> i32 {
+        camera::ms_get_now_selected_camra_level(&mem())
+    }
+    /// `MsCameraFree(id)`.
+    MsCameraFree @ 0x007b_d000 => extern "C" fn ms_camera_free(id: u32) -> u32 {
+        camera::ms_camera_free(&mut mem(), id)
+    }
+    /// `MsEffectCameraInit()`.
+    MsEffectCameraInit @ 0x007b_ba70 => extern "C" fn ms_effect_camera_init() -> u32 {
+        camera::ms_effect_camera_init(&mut mem())
+    }
+    /// `MsEffectCameraSet(look_at, eye, depth, roll)` (floats as bits).
+    MsEffectCameraSet @ 0x007b_bb10 => extern "C" fn ms_effect_camera_set(look_at: u32, eye: u32, depth: u32, roll: u32) -> u32 {
+        camera::ms_effect_camera_set(&mut mem(), look_at, eye, depth, roll)
+    }
+    /// `MsSetScreen(i, a, b, c, d, e, near, far, z0, z1)` (floats as bits).
+    MsSetScreen @ 0x007b_c7f0 => extern "C" fn ms_set_screen(i: i32, a: u32, b: u32, c: u32, d: u32, e: u32, near: u32, far: u32, z0: u32, z1: u32) {
+        camera::ms_set_screen(&mut mem(), i, [a, b, c, d, e, near, far, z0, z1]);
+    }
+    /// `MsVectorGetSide(ax, az, bx, bz)` (floats as bits).
+    MsVectorGetSide @ 0x007c_4180 => extern "C" fn ms_vector_get_side(ax: u32, az: u32, bx: u32, bz: u32) -> i32 {
+        vector::ms_vector_get_side(&mut mem(), [ax, az, bx, bz])
     }
 }

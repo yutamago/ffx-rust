@@ -12,7 +12,7 @@
 //! The battle code of `FFX.exe` (the PS2 `Ms*` functions) is ported module
 //! by module, each with a `bridge` onto the game's memory
 //! (`docs/porting.md`): [`rng`], [`save`], [`actor`], [`camera`],
-//! [`state`], [`util`], [`damage`], [`command`] and [`vector`].
+//! [`state`], [`util`], [`damage`], [`command`], [`vector`], [`misc`] and [`minor`].
 
 pub mod actor;
 pub mod camera;
@@ -20,6 +20,7 @@ pub mod command;
 pub mod damage;
 mod encounters;
 mod formation;
+pub mod minor;
 pub mod misc;
 pub mod rng;
 pub mod save;

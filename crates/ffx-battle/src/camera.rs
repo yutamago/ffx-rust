@@ -79,6 +79,20 @@ pub fn id_check(slots: [Slot; SLOTS], id: u32) -> i32 {
     }
 }
 
+/// `MsGetNowSelectedCamraLevel`: the highest level (with its bonus) among
+/// the live slots, 0 when none is above 0.
+#[must_use]
+pub fn best_level(slots: [Slot; SLOTS]) -> i32 {
+    let mut best = 0;
+    for s in slots {
+        let l = s.level();
+        if l > best && s.off == 0 && s.done == 0 {
+            best = l;
+        }
+    }
+    best
+}
+
 /// A float as the x87 copies it (`flds`/`fstps`): a signalling NaN comes
 /// out quiet.
 #[must_use]
@@ -94,7 +108,7 @@ pub const fn x87_copy(bits: u32) -> u32 {
 pub mod bridge {
     use ffx_bridge::{Global, Mem};
 
-    use super::{SLOTS, Slot, current, id_check, x87_copy};
+    use super::{SLOTS, Slot, best_level, current, id_check, x87_copy};
 
     /// The first camera's request slots.
     pub const SLOTS_AT: Global<u8> = Global::new(0x0113_81a8);
@@ -214,6 +228,132 @@ pub mod bridge {
             0
         } else {
             u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+        }
+    }
+    /// The camera `g_Cameras` puts first (`0x00c4423c`, a byte):
+    /// `MsGetNowSelectedCamraLevel` looks at its slots.
+    pub const SELECTED: Global<u8> = Global::new(0x00c4_423c);
+
+    /// `MsGetNowSelectedCamraLevel` (`0x007bbc30`): [`best_level`] of the
+    /// camera [`SELECTED`].
+    pub fn ms_get_now_selected_camra_level(mem: &impl Mem) -> i32 {
+        best_level(slots(mem, u32::from(SELECTED.get(mem))))
+    }
+
+    /// `MsCameraFree(id)` (`0x007bd000`): clears (ID, flags, bonus) every
+    /// slot of camera `id & 0xff` whose ID equals `id` but for bits 20-23;
+    /// how many it cleared.
+    pub fn ms_camera_free(mem: &mut impl Mem, id: u32) -> u32 {
+        let base = SLOTS_AT.ptr(mem).addr + (id & 0xff) * CAMERA_SIZE;
+        let key = id & 0xff0f_ffff;
+        let mut n = 0;
+        for i in 0u32..4 {
+            let at = base + 8 * i;
+            if mem.read::<u32>(at) & 0xff0f_ffff == key {
+                mem.write(at, 0u32);
+                mem.write(at + 4, 0u16);
+                mem.write(at + 6, 0u8);
+                n += 1;
+            }
+        }
+        n
+    }
+
+    /// The override camera (`MsEffectCameraSet`): screen depth, roll, eye,
+    /// look-at and up (vec4 each), and whether it is on.
+    pub const OVERRIDE_DEPTH: Global<u32> = Global::new(0x0231_1428);
+    pub const OVERRIDE_ROLL: Global<u32> = Global::new(0x0113_6fc4);
+    pub const OVERRIDE_EYE: Global<[u32; 4]> = Global::new(0x0113_6fc8);
+    pub const OVERRIDE_LOOK_AT: Global<[u32; 4]> = Global::new(0x0113_6fd8);
+    pub const OVERRIDE_UP: Global<[u32; 4]> = Global::new(0x0113_6fe8);
+    pub const OVERRIDE_ON: Global<u32> = Global::new(0x0231_142c);
+    /// The default screen depth (1024.0, `0x00b55178`) and -1.0
+    /// (`0x00b92340`), what `MsEffectCameraInit` resets to.
+    pub const DEFAULT_DEPTH: Global<u32> = Global::new(0x00b5_5178);
+    pub const MINUS_ONE: Global<u32> = Global::new(0x00b9_2340);
+    /// The emulated EE register `r0` (`g_Ee_Gpr`, always zero): the
+    /// override camera's vectors reset to it.
+    pub const EE_R0: Global<[u32; 4]> = Global::new(0x00c8_f508);
+    /// The EE register the PS2 code moved `MsEffectCameraSet`'s vectors
+    /// through (`0x00c8f588`).
+    pub const EE_MOVE: Global<[u32; 4]> = Global::new(0x00c8_f588);
+
+    /// `MsEffectCameraInit` (`0x007bba70`): override off, depth 1024, roll
+    /// 0, eye and look-at `r0`, up `r0` with y -1.0; EAX `r0`'s w.
+    pub fn ms_effect_camera_init(mem: &mut impl Mem) -> u32 {
+        let r0 = EE_R0.get(mem);
+        let depth = x87_copy(DEFAULT_DEPTH.get(mem));
+        OVERRIDE_DEPTH.set(mem, depth);
+        OVERRIDE_ROLL.set(mem, 0);
+        OVERRIDE_LOOK_AT.set(mem, r0);
+        OVERRIDE_EYE.set(mem, r0);
+        OVERRIDE_UP.set(mem, [r0[0], x87_copy(MINUS_ONE.get(mem)), r0[2], r0[3]]);
+        OVERRIDE_ON.set(mem, 0);
+        r0[3]
+    }
+
+    /// `MsEffectCameraSet(look_at, eye, depth, roll)` (`0x007bbb10`):
+    /// override on with these (null vectors kept); EAX `eye`'s w, or null.
+    pub fn ms_effect_camera_set(
+        mem: &mut impl Mem,
+        look_at: u32,
+        eye: u32,
+        depth: u32,
+        roll: u32,
+    ) -> u32 {
+        OVERRIDE_ON.set(mem, 1);
+        if look_at != 0 {
+            let v: [u32; 4] = mem.read(look_at);
+            EE_MOVE.set(mem, v);
+            OVERRIDE_LOOK_AT.set(mem, v);
+        }
+        let mut eax = eye;
+        if eye != 0 {
+            let v: [u32; 4] = mem.read(eye);
+            EE_MOVE.set(mem, v);
+            OVERRIDE_EYE.set(mem, v);
+            eax = v[3];
+        }
+        OVERRIDE_DEPTH.set(mem, x87_copy(depth));
+        OVERRIDE_ROLL.set(mem, x87_copy(roll));
+        eax
+    }
+
+    /// `MsSetScreen(i, a, b, c, d, e, near, far, z0, z1)` (`0x007bc7f0`):
+    /// screen `i` (signed, below 3): `+0x1c` = a, `+0x10` b, `+0x14` c,
+    /// `+0x20` d, `+0x24` e, `+0` near, `+4` far, `+8` z0, `+0xc` z1, and
+    /// the depth mapping `(far − near)·(z0·z1) / (z1 − z0)` at `+0x18`,
+    /// `(near·z1 − far·z0) / (z1 − z0)` at `+0x28` (x87 at 53 bits, each
+    /// stored as `f32`).
+    #[allow(clippy::many_single_char_names)]
+    pub fn ms_set_screen(mem: &mut impl Mem, i: i32, f: [u32; 9]) {
+        use ffx_bridge::x87::{div, load, mul, store, sub};
+        if i >= 3 {
+            return;
+        }
+        let s = SCREENS
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.cast_unsigned().wrapping_mul(SCREEN_SIZE));
+        let [a, b, c, d, e, near, far, z0, z1] = f;
+        let (n, fa, za, zb) = (load(near), load(far), load(z0), load(z1));
+        let dz = sub(zb, za);
+        let k = div(mul(sub(fa, n), mul(za, zb)), dz);
+        let o = div(sub(mul(n, zb), mul(fa, za)), dz);
+        for (off, v) in [
+            (0x1c, x87_copy(a)),
+            (0x10, x87_copy(b)),
+            (0x14, x87_copy(c)),
+            (0x18, store(k)),
+            (0x20, x87_copy(d)),
+            (0x24, x87_copy(e)),
+            (0x28, store(o)),
+            (0, x87_copy(near)),
+            (4, x87_copy(far)),
+            (8, x87_copy(z0)),
+            (0xc, x87_copy(z1)),
+        ] {
+            mem.write(s.wrapping_add(off), v);
         }
     }
 }

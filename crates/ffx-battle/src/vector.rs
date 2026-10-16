@@ -314,4 +314,28 @@ pub mod bridge {
         set_vf(mem, 0, d);
         mem.write(out, d);
     }
+    /// `MsVectorGetSide(ax, az, bx, bz)` (`0x007c4180`): -1 when `b` lies
+    /// to one side of `a` (the y of `a × b` negative: `ax·bz` above
+    /// `az·bx`), else 0 (NaN too). The operands `(ax, 0, az, ?)` and
+    /// `(bx, 0, bz, ?)` go to the first two matrix registers (their w is
+    /// whatever the original's stack held: left as it was here), the
+    /// products to [`VF_ACC`], the cross product to the third register.
+    pub fn ms_vector_get_side(mem: &mut impl Mem, f: [u32; 4]) -> i32 {
+        use ffx_bridge::x87::{load, mul, store, sub};
+        let [ax, az, bx, bz] = f.map(load);
+        let mut m = VF_M.get(mem);
+        m[0] = [store(ax), 0, store(az), m[0][3]];
+        m[1] = [store(bx), 0, store(bz), m[1][3]];
+        let mut acc = VF_ACC.get(mem);
+        acc[0] = store(mul(bz, 0.0));
+        acc[1] = store(mul(az, bx));
+        acc[2] = store(mul(ax, 0.0));
+        m[2][0] = store(sub(load(acc[0]), mul(az, 0.0)));
+        let y = store(sub(load(acc[1]), mul(ax, bz)));
+        m[2][1] = y;
+        m[2][2] = store(sub(load(acc[2]), mul(bx, 0.0)));
+        VF_ACC.set(mem, acc);
+        VF_M.set(mem, m);
+        if 0.0 > f32::from_bits(y) { -1 } else { 0 }
+    }
 }
