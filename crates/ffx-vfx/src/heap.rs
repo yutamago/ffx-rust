@@ -185,4 +185,18 @@ pub mod bridge {
         ppp_create_heap(mem, env, memory, size);
         mem.write(env.wrapping_add(0x14), 0u32);
     }
+
+    /// `pppMemFree(heap, spare, data)` (`0x00716a90`): `data` back to
+    /// `heap` when it lies at or below the heap's last block (`+8`), else to
+    /// `spare`; nothing for null.
+    pub fn ppp_mem_free(mem: &mut impl Mem, heap: u32, spare: u32, data: u32) {
+        if data == 0 {
+            return;
+        }
+        if data <= mem.read::<u32>(heap.wrapping_add(8)) {
+            ppp_free(mem, heap, data);
+        } else {
+            ppp_free(mem, spare, data);
+        }
+    }
 }

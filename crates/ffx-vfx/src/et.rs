@@ -114,14 +114,15 @@ pub mod bridge {
         u32::from(mem.read::<u8>(b.wrapping_add(0x3a)))
     }
 
-    /// Sets or clears `bit` in a drawn character's draw flags; returns
-    /// `bit` if it was clear before, else 0.
+    /// Sets or clears `bit` in a drawn character's draw flags (drawn: a bind
+    /// flag in `drawn` set; 0 for any character); returns `bit` if it was
+    /// clear before, else 0.
     fn draw_bit(mem: &mut impl Mem, h: u32, drawn: u16, bit: u8, set: bool) -> u32 {
         let Some(index) = find_chr(mem, h) else {
             return 0;
         };
         let rec = chr(mem, index);
-        if mem.read::<u16>(rec + 0xc) & drawn == 0 {
+        if drawn != 0 && mem.read::<u16>(rec + 0xc) & drawn == 0 {
             return 0;
         }
         let k = u32::from(mem.read::<u16>(rec + 0xe));
@@ -343,5 +344,287 @@ pub mod bridge {
             mem.write(out.wrapping_add(2 * idx), u as u16);
         }
         moved
+    }
+
+    fn or_flags(mem: &mut impl Mem, h: u32, set: u16) -> Option<u32> {
+        let i = find_chr(mem, h)?;
+        let p = Ptr::<u16>::new(chr(mem, i) + 0xc);
+        let v = p.get(mem) | set;
+        p.set(mem, v);
+        Some(i)
+    }
+
+    /// `op_et_bindeff2_breath_off(h)` (`0x007fb470`): bind flag 0x200 set;
+    /// for characters 1 and 0x65 (the `u16` at the handle) bit 0 of
+    /// `g_EtBreathFlags` cleared.
+    pub fn op_et_bindeff2_breath_off(mem: &mut impl Mem, h: u32) {
+        if or_flags(mem, h, 0x200).is_some() && matches!(mem.read::<u16>(h), 1 | 0x65) {
+            let v = BREATH_FLAGS.get(mem) & !1;
+            BREATH_FLAGS.set(mem, v);
+        }
+    }
+
+    /// `op_et_bindeff2_draw_off(h)` (`0x007fb530`).
+    pub fn op_et_bindeff2_draw_off(mem: &mut impl Mem, h: u32) -> u32 {
+        draw_bit(mem, h, 0x10, 8, true)
+    }
+
+    /// `op_et_bindeff2_draw_set(h, hide)` (`0x007fb610`): as
+    /// `op_et_bindeff2_draw_off` (`hide` not 0) or `_draw_on`.
+    pub fn op_et_bindeff2_draw_set(mem: &mut impl Mem, h: u32, hide: u32) -> u32 {
+        draw_bit(mem, h, 0x10, 8, hide != 0)
+    }
+
+    /// `op_et_bindeff_draw_set(h, hide)` (`0x007fbb20`): as
+    /// `op_et_bindeff_draw_off` (`hide` not 0) or `_draw_on`.
+    pub fn op_et_bindeff_draw_set(mem: &mut impl Mem, h: u32, hide: u32) -> u32 {
+        draw_bit(mem, h, 1, 4, hide != 0)
+    }
+
+    /// `op_et_chr_draw_off(h)` (`0x007fc000`): bit 0 of any character's
+    /// draw flags set; returns 1 if it was clear.
+    pub fn op_et_chr_draw_off(mem: &mut impl Mem, h: u32) -> u32 {
+        draw_bit(mem, h, 0, 1, true)
+    }
+
+    /// `op_et_chr_draw_on(h)` (`0x007fc060`): bit 0 cleared; returns 1 if
+    /// it was clear.
+    pub fn op_et_chr_draw_on(mem: &mut impl Mem, h: u32) -> u32 {
+        draw_bit(mem, h, 0, 1, false)
+    }
+
+    /// `op_et_chr_draw_set(h, hide)` (`0x007fc0c0`).
+    pub fn op_et_chr_draw_set(mem: &mut impl Mem, h: u32, hide: u32) -> u32 {
+        draw_bit(mem, h, 0, 1, hide != 0)
+    }
+
+    /// `op_et_bindeff2_walk_off(h)` (`0x007fb7f0`): bind flag 0x100 set.
+    pub fn op_et_bindeff2_walk_off(mem: &mut impl Mem, h: u32) {
+        or_flags(mem, h, 0x100);
+    }
+
+    /// `op_et_bindeff2_water_off(h)` (`0x007fb890`): bind flags 0x3400 set.
+    pub fn op_et_bindeff2_water_off(mem: &mut impl Mem, h: u32) {
+        or_flags(mem, h, 0x3400);
+    }
+
+    /// `g_EtBindDefault` (`0x011a0080`): bind flags; `0x007fb870` keeps
+    /// the water bits at 0x800.
+    pub const BIND_DEFAULT: Global<u32> = Global::new(0x011a_0080);
+
+    /// `op_et_bind_default_water(...)` (`0x007fb870`): the low half of
+    /// `g_EtBindDefault` with bits 0x3400 cleared and 0x800 set; returns the
+    /// word it computed (left in `eax`).
+    pub fn op_et_bind_default_water(mem: &mut impl Mem) -> u32 {
+        let v = (BIND_DEFAULT.get(mem) & 0xcbff) | 0x800;
+        #[allow(clippy::cast_possible_truncation)] // the low half is stored
+        mem.write(BIND_DEFAULT.ptr(mem).addr, v as u16);
+        v
+    }
+
+    /// `op_et_draw_flags_switch(h, restore)` (`0x007fc200`):
+    /// [`op_et_draw_flags_restore`] (`restore` not 0) or
+    /// [`op_et_draw_flags_save`].
+    pub fn op_et_draw_flags_switch(mem: &mut impl Mem, h: u32, restore: u32) -> u32 {
+        if restore == 0 {
+            op_et_draw_flags_save(mem, h)
+        } else {
+            op_et_draw_flags_restore(mem, h)
+        }
+    }
+
+    fn eff_obj_flags(mem: &mut impl Mem, id: u32, f: impl FnOnce(u16) -> u16) {
+        if let Some(i) = find_eff(mem, id) {
+            let obj = mem.read::<u32>(EFF.ptr(mem).at(i).addr + 4);
+            let p = Ptr::<u16>::new(obj.wrapping_add(0xb0));
+            let v = f(p.get(mem));
+            p.set(mem, v);
+        }
+    }
+
+    fn eff_flags(mem: &mut impl Mem, id: u32, f: impl FnOnce(u32) -> u32) {
+        if let Some(i) = find_eff(mem, id) {
+            let p = Ptr::<u32>::new(EFF.ptr(mem).at(i).addr + 0xc);
+            let v = f(p.get(mem));
+            p.set(mem, v);
+        }
+    }
+
+    /// `op_et_eff_signal_and(id, mask)` (`0x007fc490`): the first effect
+    /// with ID `id` keeps the bits of `mask` in its object's signals (`u16`
+    /// at `+0xb0`).
+    pub fn op_et_eff_signal_and(mem: &mut impl Mem, id: u32, mask: u32) {
+        #[allow(clippy::cast_possible_truncation)] // a u16 argument
+        eff_obj_flags(mem, id, |v| v & mask as u16);
+    }
+
+    /// `op_et_eff_signal_or(id, bits)` (`0x007fc550`).
+    pub fn op_et_eff_signal_or(mem: &mut impl Mem, id: u32, bits: u32) {
+        #[allow(clippy::cast_possible_truncation)] // a u16 argument
+        eff_obj_flags(mem, id, |v| v | bits as u16);
+    }
+
+    /// `op_et_eff_flags_and(id, mask)` (`0x007fc4d0`): the first effect
+    /// with ID `id` keeps the bits of `mask` in its record's `+0xc`.
+    pub fn op_et_eff_flags_and(mem: &mut impl Mem, id: u32, mask: u32) {
+        eff_flags(mem, id, |v| v & mask);
+    }
+
+    /// `op_et_eff_flags_or(id, bits)` (`0x007fc510`).
+    pub fn op_et_eff_flags_or(mem: &mut impl Mem, id: u32, bits: u32) {
+        eff_flags(mem, id, |v| v | bits);
+    }
+
+    /// `op_et_eff_init_all()` (`0x007fef70`): every `g_EtEff` record
+    /// emptied as `opu_eff_free_by_id` does, the object (`+4`) kept.
+    pub fn op_et_eff_init_all(mem: &mut impl Mem) {
+        for i in 0..EFFS {
+            let r = EFF.ptr(mem).at(i).addr;
+            mem.write(r, u32::MAX);
+            mem.write(r + 8, 0x101u16);
+            mem.write(r + 0xc, 0u32);
+            mem.write(r + 0x10, 0u8);
+            mem.write(r + 0x18, 0u8);
+            mem.write(r + 0x1c, 0xffu16);
+        }
+    }
+
+    /// `MsBattleGetStatus()` (`0x007816f0`), called through `call`.
+    const MS_BATTLE_GET_STATUS: Global<u32> = Global::new(0x0078_16f0);
+
+    /// The first of the 208 `g_EtChrHandles` the opus functions look at:
+    /// 0 in battle, else 0x20.
+    fn handles_from<M: Mem>(mem: &mut M, call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32) -> u32 {
+        let f = MS_BATTLE_GET_STATUS.ptr(mem).addr;
+        if call(mem, f, &[]) == 0 { 0x20 } else { 0 }
+    }
+
+    fn handle(mem: &impl Mem, k: u32) -> u32 {
+        mem.read(CHR_HANDLES.ptr(mem).addr.wrapping_add(4 * k))
+    }
+
+    /// `opus_chr_handle_count()` (`0x007fcf60`): how many of the 208
+    /// handles (from 0 in battle, else from 0x20; `MsBattleGetStatus`
+    /// through `call`) are not null.
+    pub fn opus_chr_handle_count<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let k0 = handles_from(mem, call);
+        let n = (0..0xd0).filter(|&k| handle(mem, k0 + k) != 0).count();
+        u32::try_from(n).unwrap_or(0)
+    }
+
+    /// `opus_chr_handle_nth(n)` (`0x007fcfb0`): the `n`th non-null one of
+    /// those handles; the first when there are fewer, 0 for none.
+    pub fn opus_chr_handle_nth<M: Mem>(
+        mem: &mut M,
+        n: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let k0 = handles_from(mem, call);
+        let mut seen = 0u32;
+        for k in 0..0xd0 {
+            let h = handle(mem, k0 + k);
+            if h != 0 {
+                if seen == n {
+                    return h;
+                }
+                seen += 1;
+            }
+        }
+        (0..0xd0)
+            .map(|k| handle(mem, k0 + k))
+            .find(|&h| h != 0)
+            .unwrap_or(0)
+    }
+
+    /// `opus_chr_draw_index_nth(n)` (`0x007fcf10`): the draw flag index
+    /// (`+0xe`) of [`opus_chr_handle_nth`]'s character, 0 when it has no
+    /// record.
+    pub fn opus_chr_draw_index_nth<M: Mem>(
+        mem: &mut M,
+        n: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let h = opus_chr_handle_nth(mem, n, call);
+        draw_index(mem, h).unwrap_or(0)
+    }
+
+    /// `opu_unit_free_by_oef2(opus, oef2)` (`0x007fdf70`), called through
+    /// `call`.
+    const OPU_UNIT_FREE_BY_OEF2: Global<u32> = Global::new(0x007f_df70);
+    /// `op_oef2_set2(oef2)` (`0x007e3e30`), called through `call`.
+    const OP_OEF2_SET2: Global<u32> = Global::new(0x007e_3e30);
+    /// `opu_et_unit(oef2, a, b, c)` (`0x007fd7f0`), called through `call`.
+    const OPU_ET_UNIT: Global<u32> = Global::new(0x007f_d7f0);
+    /// `g_OpusEncount`: the encounter effect's oef2 object
+    /// (`op_et_encount_effect_on`).
+    pub const ENCOUNT: Global<u32> = Global::new(0x0119_fe98);
+
+    /// `op_et_oef2_free(oef2)` (`0x007fc2a0`) and `opu_et_oef2_free(oef2)`
+    /// (`0x007fda60`): `opu_unit_free_by_oef2(g_OpusBattle, oef2)` through
+    /// `call`; returns what it returns.
+    pub fn op_et_oef2_free<M: Mem>(
+        mem: &mut M,
+        oef2: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = OPU_UNIT_FREE_BY_OEF2.ptr(mem).addr;
+        let b = OPUS_BATTLE.get(mem);
+        call(mem, f, &[b, oef2])
+    }
+
+    /// `op_et_oef2_start(oef2)` (`0x007fc2c0`, and `0x007fc970`):
+    /// `op_oef2_set2(oef2)` and `opu_et_unit(oef2, 0, 0, -1)` through
+    /// `call`; returns the latter's result.
+    pub fn op_et_oef2_start<M: Mem>(
+        mem: &mut M,
+        oef2: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = OP_OEF2_SET2.ptr(mem).addr;
+        call(mem, f, &[oef2]);
+        let f = OPU_ET_UNIT.ptr(mem).addr;
+        call(mem, f, &[oef2, 0, 0, u32::MAX])
+    }
+
+    /// `op_et_encount_effect_free()` (`0x007fc5f0`): `g_OpusEncount`'s
+    /// units freed (`op_et_oef2_free`) and the object cleared; returns 0
+    /// when there is none, else the free's result.
+    pub fn op_et_encount_effect_free<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let e = ENCOUNT.get(mem);
+        if e == 0 {
+            return 0;
+        }
+        let r = op_et_oef2_free(mem, e, call);
+        ENCOUNT.set(mem, 0);
+        r
+    }
+
+    /// `op_et_monster_add(oef2)` (`0x007fc8a0`): -1 for null, 0 when it is
+    /// one of the 8 `g_OpusMonsters` already or none is free; else it takes
+    /// the first free one, is started (`op_et_oef2_start`) and 1 returned.
+    pub fn op_et_monster_add<M: Mem>(
+        mem: &mut M,
+        oef2: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if oef2 == 0 {
+            return u32::MAX;
+        }
+        let at = |mem: &M, i: u32| crate::opus::bridge::MONSTERS.ptr(mem).addr + 4 * i;
+        if (0..8).any(|i| mem.read::<u32>(at(mem, i)) == oef2) {
+            return 0;
+        }
+        let Some(i) = (0..8).find(|&i| mem.read::<u32>(at(mem, i)) == 0) else {
+            return 0;
+        };
+        mem.write(at(mem, i), oef2);
+        op_et_oef2_start(mem, oef2, call);
+        1
     }
 }

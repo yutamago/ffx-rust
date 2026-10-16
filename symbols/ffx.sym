@@ -1427,6 +1427,8 @@
 0x0070ab90 function FmodVoice_initList        # fh call.cs thiscall
 0x0070b3f0 function FfxFmod_soundInit_setLang # fh call.cs thiscall
 0x0070d890 function FmodSfx_Start                # thiscall(sfx; seq, volume, pan): "FmodSfx::start: Fail to start sequence(%d)"; volume/127 -> 0..1, pan/127*2-1 -> -1..1 (0x0070f310)
+0x0070fd20 function vfxIntTree_Find           # thiscall (this, key) -> the node whose i32 at +0xc is *key, else 0: from the root this+0xc, child [0] when the node's key is greater, [1] when less, the header (this) ends; callers 0x00710270/0x00710290
+0x0070fda0 function vfxIntTree_Insert         # thiscall (this, node) -> 0, or the node already holding the key: node+8 (parent link, bit 0 colour) gets bit 0, children = this, linked under the search's last node ((node+8 & 1) + parent), as vfxIntTree_Find walks
 0x00710e30 function VFX_Copy16From            # (dst, src): four words copied, the last left in eax (callers: sg_calcenvelope_normW)
 0x00710e70 function VFX_Copy16To              # (src, dst): four words copied, the last left in eax
 0x00710ea0 function VFX_ScaleVec3             # (dst, v, float s): x, y, z of v times s (x87, z with v's element as the memory operand), returns dst
@@ -1450,9 +1452,15 @@
 0x007122f0 function pppRunPartFp              # fh v3:exact+call.cs 0x007123d0 cdecl _pppRunPartFp
 0x007123c0 function pppStartPart              # fh v3:exact 0x007124a0 _pppStartPart
 0x00712560 function pppStartPartFromYonish    # fh v3:exact 0x00712640 _pppStartPartFromYonish
+0x00712b80 function pppBornPObjects           # (part): each birth record (+0x3c, +0x18 of them, 16 bytes) whose frame (+8) is at or before the part's (+8) is set to 0x7fffffff and gets pppCreatePObject; stops at a failure (called by pppRunPart)
 0x00712bd0 function caculateVFXRenderDataShapeFieldBufferSize # fh v3:exact 0x00712cb0
 0x00712c30 function calculateVFXSP_AlphaFunction # fh v3:exact 0x00712d10
 0x00712d00 function calculateVFXSP_ZMat       # fh v3:exact 0x00712de0
+0x00712d20 function pppPObjectCon2            # (obj): as pppPObjectCon with the program table records' +0x20 (Con2)
+0x00712d90 function pppPObjectCon             # (obj): each program of the object's definition: work area offset into obj + [prog+0x20], then the record's +0x1c (Con) called as f(obj, entry); from pppCreatePObject
+0x00712e00 function pppPartCall18             # (part): f(part) for each of the part's programs (+0x34, +0x14 of them) whose record has a function at +0x18 (pppRunPart)
+0x00712e40 function pppPartCall10             # (part): as pppPartCall18 with the records' +0x10
+0x00712e80 function pppPartCall14             # (part): as pppPartCall18 with the records' +0x14
 0x00713290 function clearVFXRenderDataShp     # fh v3:exact 0x00713370
 0x007133e0 function createGuildMapRenderDataBuffer # fh v3:exact 0x007134c0
 0x00713790 function createVFXRenderDataBuffer # fh v3:bsim0.97 0x00713870
@@ -1499,12 +1507,15 @@
 0x00728660 function JobSchedule_pppPart_getFillBufferRequest # fh v3:exact 0x00728750
 0x00728750 function JobSchedule_pppPart_initFillBufferRequest # fh v3:exact 0x00728840
 0x007287b0 function JobSchedule_pppPart_fillBuffer_drawShp_007287b0 # fh v3:exact 0x007288a0
+0x007289d0 function pppNull                   # a lone ret: the step, set-up and draw of 69 program table entries (the pppop_* records and others)
 0x00728e40 function hideDisplayOffParticle    # fh v3:exact+call.cs 0x00728f30 cdecl
 0x00728f10 function pppCheckViewCylinder      # fh v3:cg4 0x729000
 0x00729050 function pppFpSetDisp              # (on): g_pppFpDisp = on (eax = on)
 0x007291c0 function pppFpFree                 # fh v3:exact 0x007292b0
 0x00729290 function pppFpGetHeapSize          # fh v3:exact 0x00729380
 0x007292f0 function pppFpGetMngPtr            # fh v3:exact 0x007293e0
+0x007294f0 function Fp_EndGroup               # (group) Fp_End for every g_FpData entry whose u16 at +0x66 (after the ID at +0x64) is group: g_FpRun +0x1d = 1; callers 0x0091b790, 0x00933cc0
+0x00729530 function Fp_RestartGroup           # (group) Fp_Restart for every g_FpData entry of the group (+0x66): g_FpRun +0 = 0, +0x1d = 0
 0x00729570 function pppFpIDdispOff            # (id): sets bit 0x10 in the FP (field effect) state entry (0x00d30260 + i*0x4c); the "FP Disp Status" dump (0x00729060) prints it as Disp OFF; was Fp_Hide
 0x007295b0 function pppFpIDdispOn             # (id): clears bit 0x10 of the FP state entry (Disp ON in the 0x00729060 dump); was Fp_Show
 0x00729660 function Fp_End                       # (id): sets entry +0x1d = 1; the 0x00729060 dump shows Stat END
@@ -1560,11 +1571,13 @@
 0x0072e6d0 function KeDttMdl_UseSingleInstance # fh v3:exact 0x0072e7b0
 0x0072e730 function pppKeMdlDttCon            # ppp program table record "pppKeMdlDtt" +0x1c set-up: area 0 +0xa8/+0xa0/+0xa4 = 0
 0x0072e760 function pppKeMdlDttCon2           # ppp program table record "pppKeMdlDtt" +0x20 set-up: area 0 +0xa8/+0xa0/+0xa4 = 0 (as pppKeMdlDttCon)
+0x0072e790 function pppKeMdlDttDraw           # ppp program table record "pppKeMdlDtt" draw; not a function start in the Ghidra dump
 0x0072eb20 function pppVtMime                 # fh v3:exact 0x0072ec00
 0x0072ed70 function pppVtMimeCon              # fh v3:exact 0x0072ee50
 0x0072edb0 function pppVtMimeCon2             # ppp program table record "pppVtMime" (0x00c3b278) +0x20 second set-up; "pppVtMime" (0x00c3c920) +0x20 second set-up
 0x0072ede0 function pppVtMimeDes              # fh v3:exact 0x0072eec0
 0x0072ee20 function pppKeTkFadeCon            # ppp program table record "pppKeTkFade" (0x00c3d758) +0x1c set-up; "pppKeTkFade" (0x00c3d758) +0x20 second set-up
+0x0072ee50 function pppKeTkFadeDraw           # ppp program table record "pppKeTkFade" draw; not a function start in the Ghidra dump
 0x0072f3c0 function VFX_Copy16To_0072f3c0     # the same code as VFX_Copy16To (callers: op_shape_draw, sg_calcenvelope_normW)
 0x0072f420 function pppVu0RNext              # vrnext as the PC port emulates it: *out = g_Vu0_R stepped (when g_Vu0_RSeeded, which it does not set) else 1.0; the rand programs' draws (pppRandFloat ...) call it after srand
 0x0072f4b0 function pppRandFloat              # fh v3:exact 0x0072f590
@@ -1614,6 +1627,11 @@
 0x00734400 function pppKeOfsMatXYZ            # ppp program table record "pppKeOfsMatXYZ" step: obj+0x10 = XYZ rotation of area 1 scaled by area 2 about the pivot p = area0[+0x10] + area0[+0x20]: position = area0 + p - M p
 0x00734640 function pppParMatrix              # fh v3:exact 0x00734710
 0x00734880 function pppKeParMatR              # fh v3:exact 0x00734950
+0x00734910 function pppChrSclXYZMatrix        # ppp program table record "pppChrSclXYZMatrix" step
+0x007349b0 function pppChrSclXZMatrix         # ppp program table record "pppChrSclXZMatrix" step
+0x00734a30 function pppChrSclYMatrix          # ppp program table record "pppChrSclYMatrix" step
+0x00734aa0 function pppChrYSclXYZMatrix       # ppp program table record "pppChrYSclXYZMatrix" step
+0x00734af0 function pppChrXSclXYZMatrix       # ppp program table record "pppChrXSclXYZMatrix" step
 0x00734b70 function pppDrawMatrix             # ppp program table record "pppDrawMatrix" draw: obj+0x9c = 0, then tail-jumps to FFXVu0MulMatrix(obj+0x50, g_pppViewMatrixCopy, obj+0x10)
 0x00734ba0 function pppDrawMatrixLoop         # ppp program table record "pppDrawMatrixLoop" draw: the same code as pppDrawMatrix
 0x00734bd0 function pppDrawMatrixFront        # fh v3:exact 0x00734ca0
@@ -1626,8 +1644,11 @@
 0x00735020 function pppKeDMatPhtFrDraw        # ppp program table record "pppKeDMatPhtFr" draw: area 0's rows scaled by the part's scale (+0x60) into area 1, its position through g_pppViewMatrix, then the same for the object's matrix
 0x00735160 function pppKeZCrctDraw            # fh v3:exact 0x00735230
 0x007354c0 function pppKeZCrctShpDraw         # fh v3:exact 0x00735590
+0x00735ee0 function pppEiZCrctDisPosDraw      # ppp program table record "pppEiZCrctDisPos" draw
+0x00736050 function pppKeTh                   # ppp program table record "pppKeTh" step; not a function start in the Ghidra dump
 0x00736460 function pppKeThCon                # fh v3:exact 0x00736520
 0x007364e0 function pppKeThCon2               # fh v3:exact 0x007365a0
+0x00736570 function pppKeThDes                # ppp program table record "pppKeTh" +0x24 destructor; not a function start in the Ghidra dump
 0x00736580 function pppKeThDraw               # fh v3:exact 0x00736640
 0x00736690 function pppKeThRes128Con          # ppp program table record "pppKeThRes128" (0x00c3d370) +0x1c set-up
 0x007366c0 function pppKeThRes128x4Con        # ppp program table record "pppKeThRes128x4" (0x00c3d398) +0x1c set-up
@@ -1671,81 +1692,167 @@
 0x00736e60 function pppKeThTpCon              # fh v3:exact 0x00736f20
 0x00736e90 function pppKeThSft                # fh v3:exact 0x00736f50
 0x00737130 function pppKeThSftCon             # fh v3:exact 0x007371f0
+0x007371c0 function pppNeiChrPointLightDraw   # ppp program table record "pppNeiChrPointLight" draw
+0x007372b0 function pppNeiChrPointLightCon    # ppp program table record "pppNeiChrPointLight" +0x1c set-up; not a function start in the Ghidra dump
+0x007372c0 function pppNeiChrPointLightDes    # ppp program table record "pppNeiChrPointLight" +0x24 destructor; not a function start in the Ghidra dump
+0x007374e0 function pppEePmulth               # (dst, a, b): the R5900 PMULTH: dst words = low signed halves multiplied; both halves' products into the emulated LO/HI (0x00c8f708..0x00c8f727); used by the model draws
+0x007375d0 function pppEePpacb                # (dst, a, b): the R5900 PPACB: dst bytes 0..7 the low bytes of b's halves, 8..15 a's
+0x00737770 function pppDrawMdlDraw            # ppp program table record "pppDrawMdl" draw; not a function start in the Ghidra dump
+0x00737b20 function pppDrawMdlSemiDraw        # ppp program table record "pppDrawMdlSemi" draw; not a function start in the Ghidra dump
+0x00737f40 function pppDrawMdlTsDraw          # ppp program table record "pppDrawMdlTs" draw; not a function start in the Ghidra dump
 0x007384f0 function pppDrawMdlTsCon           # ppp program table record "pppDrawMdlTs" (0x00c3a8a0) +0x1c set-up; "pppDrawMdlTs" (0x00c3a8a0) +0x20 second set-up; "pppDrawMdlTs" (0x00c3bf48) +0x1c set-up and 1 more
+0x00738530 function pppDrawMdl2Draw           # ppp program table record "pppDrawMdl2" draw; not a function start in the Ghidra dump
+0x00738a40 function pppDrawMdlSemi2Draw       # ppp program table record "pppDrawMdlSemi2" draw; not a function start in the Ghidra dump
+0x00738ec0 function pppDrawMdlTs2Draw         # ppp program table record "pppDrawMdlTs2" draw; not a function start in the Ghidra dump
 0x00739480 function pppDrawMdlTs2Con          # ppp program table record "pppDrawMdlTs2" (0x00c3b020) +0x1c set-up; "pppDrawMdlTs2" (0x00c3b020) +0x20 second set-up; "pppDrawMdlTs2" (0x00c3c6c8) +0x1c set-up and 1 more
+0x007394c0 function pppDrawMdl3Draw           # ppp program table record "pppDrawMdl3" draw; not a function start in the Ghidra dump
+0x00739d30 function pppDrawMdlSemi3Draw       # ppp program table record "pppDrawMdlSemi3" draw; not a function start in the Ghidra dump
+0x0073a370 function pppDrawMdlTs3Draw         # ppp program table record "pppDrawMdlTs3" draw; not a function start in the Ghidra dump
 0x0073aac0 function pppDrawMdlTs3Con          # ppp program table record "pppDrawMdlTs3" (0x00c3b138) +0x1c set-up; "pppDrawMdlTs3" (0x00c3b138) +0x20 second set-up; "pppDrawMdlTs3" (0x00c3c7e0) +0x1c set-up and 1 more
 0x0073ab00 function pppDrawMdlSeaCon          # ppp program table record "pppDrawMdlSea" (0x00c3ad00) +0x1c set-up; "pppDrawMdlSea" (0x00c3c3a8) +0x1c set-up
 0x0073ab40 function pppDrawMdlSeaCon2         # ppp program table record "pppDrawMdlSea" (0x00c3ad00) +0x20 second set-up; "pppDrawMdlSea" (0x00c3c3a8) +0x20 second set-up
+0x0073ab70 function pppDrawMdlSeaDes          # ppp program table record "pppDrawMdlSea" +0x24 destructor
+0x0073abe0 function pppDrawMdlSeaDraw         # ppp program table record "pppDrawMdlSea" draw; not a function start in the Ghidra dump
 0x0073b7b0 function pppDrawMdlInfCon          # ppp program table record "pppDrawMdlInf" (0x00c3b2c8) +0x1c set-up; "pppDrawMdlInf" (0x00c3c970) +0x1c set-up
 0x0073b800 function pppDrawMdlInfCon2         # ppp program table record "pppDrawMdlInf" (0x00c3b2c8) +0x20 second set-up; "pppDrawMdlInf" (0x00c3c970) +0x20 second set-up
+0x0073b830 function pppDrawMdlInfDes          # ppp program table record "pppDrawMdlInf" +0x24 destructor
+0x0073b9b0 function pppDrawMdlInfDraw         # ppp program table record "pppDrawMdlInf" draw; not a function start in the Ghidra dump
 0x0073cfb0 function pppDrawMdlPSimCon         # ppp program table record "pppDrawMdlPSim" (0x00c3b4d0) +0x1c set-up; "pppDrawMdlPSim" (0x00c3cb78) +0x1c set-up
 0x0073cfe0 function pppDrawMdlPSimCon2        # ppp program table record "pppDrawMdlPSim" (0x00c3b4d0) +0x20 second set-up; "pppDrawMdlPSim" (0x00c3cb78) +0x20 second set-up
+0x0073d010 function pppDrawMdlPSimDes         # ppp program table record "pppDrawMdlPSim" +0x24 destructor
+0x0073d070 function pppDrawMdlPSimDraw        # ppp program table record "pppDrawMdlPSim" draw
 0x0073d8c0 function pppDrawMdlCameraCon       # ppp program table record "pppDrawMdlCamera" (0x00c3b688) +0x1c set-up; "pppDrawMdlCamera" (0x00c3cd30) +0x1c set-up
 0x0073d8f0 function pppDrawMdlCameraCon2      # ppp program table record "pppDrawMdlCamera" (0x00c3b688) +0x20 second set-up; "pppDrawMdlCamera" (0x00c3cd30) +0x20 second set-up
+0x0073d920 function pppDrawMdlCameraDes       # ppp program table record "pppDrawMdlCamera" +0x24 destructor; not a function start in the Ghidra dump
+0x0073d930 function pppDrawMdlCameraDraw      # ppp program table record "pppDrawMdlCamera" draw; not a function start in the Ghidra dump
 0x0073e240 function pppDrawMdlLoopCon         # ppp program table record "pppDrawMdlLoop" (0x00c3b638) +0x1c set-up; "pppDrawMdlLoop" (0x00c3cce0) +0x1c set-up
 0x0073e270 function pppDrawMdlLoopCon2        # ppp program table record "pppDrawMdlLoop" (0x00c3b638) +0x20 second set-up; "pppDrawMdlLoop" (0x00c3cce0) +0x20 second set-up
+0x0073e2a0 function pppDrawMdlLoopDes         # ppp program table record "pppDrawMdlLoop" +0x24 destructor; not a function start in the Ghidra dump
+0x0073e2b0 function pppDrawMdlLoopDraw        # ppp program table record "pppDrawMdlLoop" draw; not a function start in the Ghidra dump
 0x0073e9d0 function pppDrawMdlLoopZCon        # ppp program table record "pppDrawMdlLoopZ" (0x00c3b7c8) +0x1c set-up; "pppDrawMdlLoopZ" (0x00c3ce70) +0x1c set-up
 0x0073ea00 function pppDrawMdlLoopZCon2       # ppp program table record "pppDrawMdlLoopZ" (0x00c3b7c8) +0x20 second set-up; "pppDrawMdlLoopZ" (0x00c3ce70) +0x20 second set-up
+0x0073ea30 function pppDrawMdlLoopZDes        # ppp program table record "pppDrawMdlLoopZ" +0x24 destructor; not a function start in the Ghidra dump
+0x0073ea40 function pppDrawMdlLoopZDraw       # ppp program table record "pppDrawMdlLoopZ" draw; not a function start in the Ghidra dump
 0x0073f1c0 function pppDrawMdlLoopDisPosCon   # ppp program table record "pppDrawMdlLoopDisPos" (0x00c3b7f0) +0x1c set-up; "pppDrawMdlLoopDisPos" (0x00c3ce98) +0x1c set-up
 0x0073f1f0 function pppDrawMdlLoopDisPosCon2  # ppp program table record "pppDrawMdlLoopDisPos" (0x00c3b7f0) +0x20 second set-up; "pppDrawMdlLoopDisPos" (0x00c3ce98) +0x20 second set-up
+0x0073f220 function pppDrawMdlLoopDisPosDes   # ppp program table record "pppDrawMdlLoopDisPos" +0x24 destructor; not a function start in the Ghidra dump
+0x0073f230 function pppDrawMdlLoopDisPosDraw  # ppp program table record "pppDrawMdlLoopDisPos" draw; not a function start in the Ghidra dump
 0x0073f9e0 function pppDrawMdlCameraLoopCon   # ppp program table record "pppDrawMdlCameraLoop" (0x00c3b6b0) +0x1c set-up; "pppDrawMdlCameraLoop" (0x00c3cd58) +0x1c set-up
 0x0073fa10 function pppDrawMdlCameraLoopCon2  # ppp program table record "pppDrawMdlCameraLoop" (0x00c3b6b0) +0x20 second set-up; "pppDrawMdlCameraLoop" (0x00c3cd58) +0x20 second set-up
+0x0073fa40 function pppDrawMdlCameraLoopDes   # ppp program table record "pppDrawMdlCameraLoop" +0x24 destructor; not a function start in the Ghidra dump
+0x0073fa50 function pppDrawMdlCameraLoopDraw  # ppp program table record "pppDrawMdlCameraLoop" draw; not a function start in the Ghidra dump
 0x007403f0 function pppDrawMdlRevCon          # ppp program table record "pppDrawMdlRev" (0x00c3dcf8) +0x1c set-up
+0x00740410 function pppDrawMdlRevDraw         # ppp program table record "pppDrawMdlRev" draw; not a function start in the Ghidra dump
 0x007409e0 function pppDrawShape              # fh v3:bsim1.00 0x00740aa0
 0x00740a70 function pppDrawShape0             # fh v3:exact 0x00740b30
 0x00740eb0 function pppDrawShapeCon           # ppp program table record "pppDrawShape" (0x00c3a8c8) +0x1c set-up; "pppDrawShape" (0x00c3a8c8) +0x20 second set-up; "pppDrawShape" (0x00c3bf70) +0x1c set-up and 1 more
 0x00740ed0 function pppDrawShapeX             # fh v3:bsim1.00 0x00740f90
+0x00740f60 function pppDrawShapeX0            # pppDrawShapeX's per-object draw (obj, key, entry), as pppDrawShape0 for pppDrawShape
 0x00741450 function pppDrawShapeXCon          # ppp program table record "pppDrawShapeX" (0x00c3b1b0) +0x1c set-up; "pppDrawShapeX" (0x00c3b1b0) +0x20 second set-up; "pppDrawShapeX" (0x00c3c858) +0x1c set-up and 1 more
 0x00741570 function pppDrawShapeRevCon        # ppp program table record "pppDrawShapeRev" (0x00c3b7a0) +0x1c set-up; "pppDrawShapeRev" (0x00c3b7a0) +0x20 second set-up; "pppDrawShapeRev" (0x00c3ce48) +0x1c set-up and 1 more
+0x007415a0 function pppDrawShapeRevDraw       # ppp program table record "pppDrawShapeRev" draw; not a function start in the Ghidra dump
+0x00742b50 function pppDrawShapeFieldCon      # ppp program table record "pppDrawShapeField" +0x1c set-up
+0x00742bd0 function pppDrawShapeFieldDes      # ppp program table record "pppDrawShapeField" +0x24 destructor
+0x00742cc0 function pppDrawShapeFieldDraw     # ppp program table record "pppDrawShapeField" draw
+0x00743f00 function pppDrawShapeFieldRevCon   # ppp program table record "pppDrawShapeFieldRev" +0x1c set-up
+0x00743f80 function pppDrawShapeFieldRevDes   # ppp program table record "pppDrawShapeFieldRev" +0x24 destructor
+0x00744040 function pppDrawShapeFieldRevDraw  # ppp program table record "pppDrawShapeFieldRev" draw
+0x007450a0 function pppDrawShapeFieldSpdCon   # ppp program table record "pppDrawShapeFieldSpd" +0x1c set-up
+0x00745130 function pppDrawShapeFieldSpdDes   # ppp program table record "pppDrawShapeFieldSpd" +0x24 destructor
+0x00745210 function pppDrawShapeFieldSpdDraw  # ppp program table record "pppDrawShapeFieldSpd" draw
+0x00746200 function pppDrawShapeFieldGlobalCon # ppp program table record "pppDrawShapeFieldGlobal" +0x1c set-up
+0x00746280 function pppDrawShapeFieldGlobalDes # ppp program table record "pppDrawShapeFieldGlobal" +0x24 destructor
+0x00746320 function pppDrawShapeFieldGlobalDraw # ppp program table record "pppDrawShapeFieldGlobal" draw
+0x00747410 function pppDrawShapeCameraCon     # ppp program table record "pppDrawShapeCamera" +0x1c set-up
+0x00747490 function pppDrawShapeCameraDes     # ppp program table record "pppDrawShapeCamera" +0x24 destructor
+0x00747540 function pppDrawShapeCameraDraw    # ppp program table record "pppDrawShapeCamera" draw
+0x00748660 function pppDrawShapeCameraDisPosCon # ppp program table record "pppDrawShapeCameraDisPos" +0x1c set-up
+0x007486e0 function pppDrawShapeCameraDisPosDes # ppp program table record "pppDrawShapeCameraDisPos" +0x24 destructor
+0x00748790 function pppDrawShapeCameraDisPosDraw # ppp program table record "pppDrawShapeCameraDisPos" draw
+0x007490b0 function pppKeMdlBmpCon            # ppp program table record "pppKeMdlBmp" +0x1c set-up; not a function start in the Ghidra dump
+0x007490c0 function pppKeMdlBmpCon2           # ppp program table record "pppKeMdlBmp" +0x20 set-up; not a function start in the Ghidra dump
+0x007490d0 function pppKeMdlBmpDraw           # ppp program table record "pppKeMdlBmp" draw; not a function start in the Ghidra dump
 0x007497e0 function pppKeMdlTfdCon            # ppp program table record "pppKeMdlTfd" (0x00c3ab98) +0x1c set-up; "pppKeMdlTfd" (0x00c3ab98) +0x20 second set-up; "pppKeMdlTfd" (0x00c3c240) +0x1c set-up and 1 more
 0x00749810 function pppKeMdlTfdDraw           # fh v3:exact 0x007498e0
 0x007498f0 function pppKeMdlTfdUvCon          # ppp program table record "pppKeMdlTfdUv" (0x00c3dd48) +0x1c set-up; "pppKeMdlTfdUv" (0x00c3dd48) +0x20 second set-up
 0x00749950 function pppKeMdlTfdUvDraw         # fh v3:exact 0x00749a20
 0x00749b10 function pppKeMdlTfd2Con           # ppp program table record "pppKeMdlTfd2" (0x00c3dd70) +0x1c set-up; "pppKeMdlTfd2" (0x00c3dd70) +0x20 second set-up
+0x00749b40 function pppKeMdlTfd2Draw          # ppp program table record "pppKeMdlTfd2" draw
 0x00749c30 function pppKeMdlTfdUv2Con         # ppp program table record "pppKeMdlTfdUv2" (0x00c3dd98) +0x1c set-up; "pppKeMdlTfdUv2" (0x00c3dd98) +0x20 second set-up
+0x00749c90 function pppKeMdlTfdUv2Draw        # ppp program table record "pppKeMdlTfdUv2" draw
 0x00749e60 function pppKeMdlTfd3Con           # ppp program table record "pppKeMdlTfd3" (0x00c3ddc0) +0x1c set-up; "pppKeMdlTfd3" (0x00c3ddc0) +0x20 second set-up
 0x00749e90 function pppKeMdlTfd3Draw          # fh v3:exact 0x00749f60
 0x00749f90 function pppKeMdlTfdUv3Con         # ppp program table record "pppKeMdlTfdUv3" (0x00c3dde8) +0x1c set-up; "pppKeMdlTfdUv3" (0x00c3dde8) +0x20 second set-up
 0x00749ff0 function pppKeMdlTfdUv3Draw        # fh v3:exact 0x0074a0c0
+0x0074a1e0 function pppNeiDrawMdlPointLightDraw # ppp program table record "pppNeiDrawMdlPointLight" draw; not a function start in the Ghidra dump
+0x0074a850 function pppNeiDrawMdlSemiPointLightDraw # ppp program table record "pppNeiDrawMdlSemiPointLight" draw; not a function start in the Ghidra dump
+0x0074ae70 function pppNeiDrawMdlTsPointLightDraw # ppp program table record "pppNeiDrawMdlTsPointLight" draw; not a function start in the Ghidra dump
 0x0074b500 function pppNeiDrawMdlTsPointLightCon # ppp program table record "pppNeiDrawMdlTsPointLight" (0x00c3de60) +0x1c set-up; "pppNeiDrawMdlTsPointLight" (0x00c3de60) +0x20 second set-up
 0x0074b630 function pppVu0AddY                # (dst, v, vec by value: .y at +0x14): dst.x = v.x + y (vaddy.x); leaves dst in eax
 0x0074b650 function pppVu0AddZ                # as pppVu0AddY with the z (+0x18)
+0x0074b6a0 function pppNeiDrawShapePointLightDraw # ppp program table record "pppNeiDrawShapePointLight" draw; not a function start in the Ghidra dump
 0x0074b9a0 function pppNeiDrawShapePointLightCon # ppp program table record "pppNeiDrawShapePointLight" (0x00c3de88) +0x1c set-up; "pppNeiDrawShapePointLight" (0x00c3de88) +0x20 second set-up
 0x0074c490 function pppKeShpTail              # ppp program table record "pppKeShpTail" step: area 0 a ring of positions (+0 length, +1 index, slots from +0x10), the object's +0x40 into the next slot (KeVu0CopyVecXYZ), every slot at frame 0 (w = 1.0)
 0x0074c540 function pppKeShpTailCon           # ppp program table record "pppKeShpTail" (0x00c3a8f0) +0x1c set-up; "pppKeShpTail" (0x00c3bf98) +0x1c set-up
+0x0074c570 function pppKeShpTailDraw          # ppp program table record "pppKeShpTail" draw; not a function start in the Ghidra dump
 0x0074d490 function pppKeShpTailX             # ppp program table record "pppKeShpTailX" step: the same code as pppKeShpTail
 0x0074d540 function pppKeShpTailXCon          # ppp program table record "pppKeShpTailX" (0x00c3b228) +0x1c set-up; "pppKeShpTailX" (0x00c3c8d0) +0x1c set-up
+0x0074d570 function pppKeShpTailXDraw         # ppp program table record "pppKeShpTailX" draw; not a function start in the Ghidra dump
 0x0074e490 function pppKeShpTail2             # ppp program table record "pppKeShpTail2" step: the same code as pppKeShpTail
 0x0074e540 function pppKeShpTail2Con          # ppp program table record "pppKeShpTail2" (0x00c3a918) +0x1c set-up; "pppKeShpTail2" (0x00c3bfc0) +0x1c set-up
+0x0074e570 function pppKeShpTail2Draw         # ppp program table record "pppKeShpTail2" draw; not a function start in the Ghidra dump
 0x0074f4d0 function pppKeShpTail2X            # ppp program table record "pppKeShpTail2X" step: the same code as pppKeShpTail
 0x0074f580 function pppKeShpTail2XCon         # ppp program table record "pppKeShpTail2X" (0x00c3b480) +0x1c set-up; "pppKeShpTail2X" (0x00c3cb28) +0x1c set-up
+0x0074f5b0 function pppKeShpTail2XDraw        # ppp program table record "pppKeShpTail2X" draw; not a function start in the Ghidra dump
 0x007500d0 function pppVu0MulX_007500d0       # the same arithmetic as pppVu0MulX, leaves v in eax (0x0091cb70, 0x00925040)
 0x007502c0 function pppKeShpTail3             # fh v3:exact 0x00750390
 0x00750510 function pppKeShpTail3Con          # ppp program table record "pppKeShpTail3" +0x1c set-up: ring index +0x298, +0x294/+0x290 cleared, CRT rand() low half at +0x296, +0xa0..+0xcc cleared
 0x007505a0 function pppKeShpTail3Con2         # ppp program table record "pppKeShpTail3" (0x00c3ac38) +0x20 second set-up; "pppKeShpTail3" (0x00c3c2e0) +0x20 second set-up
+0x00750620 function pppKeShpTail3Draw         # ppp program table record "pppKeShpTail3" draw; not a function start in the Ghidra dump
 0x00751ca0 function pppKeShpTail3X            # fh v3:exact 0x00751d80
 0x00751eb0 function pppKeShpTail3XCon         # ppp program table record "pppKeShpTail3X" +0x1c set-up: the same code as pppKeShpTail3Con
 0x00751f40 function pppKeShpTail3XCon2        # ppp program table record "pppKeShpTail3X" (0x00c3b868) +0x20 second set-up; "pppKeShpTail3X" (0x00c3cf10) +0x20 second set-up
+0x00751fc0 function pppKeShpTail3XDraw        # ppp program table record "pppKeShpTail3X" draw; not a function start in the Ghidra dump
 0x00753f10 function pppKeShpTailPht           # ppp program table record "pppKeShpTailPht" step: as pppKeShpTail3X (velocity, then position) with 27 slots, index +0x1f4, f32 motion at +0x1e0/+0x1e4/+0x1e8, key's halves at +0x30 and floats at +0x1c
 0x00754180 function pppKeShpTailPhtCon        # ppp program table record "pppKeShpTailPht" +0x1c set-up: as pppKeShpTail3Con, index +0x294, CRT rand() at +0x292, float motion +0x280.. cleared
 0x00754260 function pppKeShpTailPhtCon2       # ppp program table record "pppKeShpTailPht" +0x20 set-up: clears the ring index, seed and motion (no rand)
+0x00754300 function pppKeShpTailPhtDraw       # ppp program table record "pppKeShpTailPht" draw; not a function start in the Ghidra dump
+0x00754fb0 function pppKeShpTailLc            # ppp program table record "pppKeShpTailLc" step; not a function start in the Ghidra dump
 0x00754fc0 function pppKeShpTailLcCon         # ppp program table record "pppKeShpTailLc" (0x00c3ded8) +0x1c set-up
+0x00754ff0 function pppKeShpTailLcDraw        # ppp program table record "pppKeShpTailLc" draw; not a function start in the Ghidra dump
+0x00755000 function pppKeShpDtt               # ppp program table record "pppKeShpDtt" step; not a function start in the Ghidra dump
 0x00755010 function pppKeShpDttCon            # ppp program table record "pppKeShpDtt" (0x00c3ac10) +0x1c set-up; "pppKeShpDtt" (0x00c3ac10) +0x20 second set-up; "pppKeShpDtt" (0x00c3c2b8) +0x1c set-up and 1 more
+0x00755040 function pppKeShpDttDraw           # ppp program table record "pppKeShpDtt" draw; not a function start in the Ghidra dump
 0x00756240 function pppDrawRainCon            # ppp program table record "pppDrawRain" (0x00c3b430) +0x1c set-up; "pppDrawRain" (0x00c3cad8) +0x1c set-up
+0x00756270 function pppDrawRainDes            # ppp program table record "pppDrawRain" +0x24 destructor
+0x007562c0 function pppDrawRainDraw           # ppp program table record "pppDrawRain" draw
 0x007566a0 function pppDrawSpriteCon          # ppp program table record "pppDrawSprite" (0x00c3df00) +0x1c set-up
+0x007566d0 function pppDrawSpriteDes          # ppp program table record "pppDrawSprite" +0x24 destructor; not a function start in the Ghidra dump
 0x007566e0 function pppDrawSprite             # ppp program table record "pppDrawSprite" (0x00c3df00) +0xc draw
 0x00757210 function pppDrawFilterCon          # ppp program table record "pppDrawFilter" (0x00c3ba98) +0x1c set-up; "pppDrawFilter" (0x00c3d140) +0x1c set-up
+0x00757240 function pppDrawFilterCon2         # ppp program table record "pppDrawFilter" +0x20 set-up; not a function start in the Ghidra dump
+0x00757250 function pppDrawFilterDes          # ppp program table record "pppDrawFilter" +0x24 destructor
+0x00757280 function pppDrawFilterDraw         # ppp program table record "pppDrawFilter" draw
+0x00757370 function pppDrawHookDraw           # ppp program table record "pppDrawHook" draw: area 0 +0xa0 = key +4; g_pppUserFuncs[birth record +0xe](obj, key +4) when set
 0x007573c0 function pppPointAp                # fh v3:exact 0x007574b0
 0x00757470 function pppPointApCon             # ppp program table record "pppPointAp" (0x00c3ab70) +0x1c set-up; "pppPointAp" (0x00c3c218) +0x1c set-up
 0x00757490 function pppPointRAp               # fh v3:exact 0x00757580
 0x00757750 function pppPointRApCon            # ppp program table record "pppPointRAp" (0x00c3e108) +0x1c set-up
+0x00757770 function pppBornVertex             # (obj, key, short *v): a child object (birth record key +0xc, none for -1; parent set at +4) at v through obj's matrix, into its field key +0x10 (pppVertexAp)
 0x00757840 function pppVertexAp               # fh v3:exact 0x00757930
 0x00757b30 function pppVertexApCon            # ppp program table record "pppVertexAp" (0x00c3a940) +0x1c set-up; "pppVertexAp" (0x00c3bfe8) +0x1c set-up
+0x00757b50 function pppBornVertexRel          # as pppBornVertex less g_pppWorldMatrix's translation (pppVertexApDisPos)
+0x00757c30 function pppVertexApDisPos         # ppp program table record "pppVertexApDisPos" step
 0x00757e90 function pppVertexApDisPosCon      # ppp program table record "pppVertexApDisPos" (0x00c3b778) +0x1c set-up; "pppVertexApDisPos" (0x00c3ce20) +0x1c set-up
+0x00757eb0 function pppSegmentAp              # ppp program table record "pppSegmentAp" step; not a function start in the Ghidra dump
+0x00757ec0 function pppFaceAp                 # ppp program table record "pppFaceAp" step; not a function start in the Ghidra dump
+0x00757ed0 function pppBornVertexLc           # (obj, key, short *v): a child object (birth record key +0xc) at v as floats (field key +0x10); on level 0x18cd or map 0x10e (0x0113335c 0, 0x00c3a504 not -1) the parent's program end (+0x14) moves on 0x1000 when the parent has no more frames left than the child (pppVertexApLc)
 0x00757ff0 function pppVertexApLc             # fh v3:bsim0.94 0x007580e0
 0x00758250 function pppVertexApLcCon          # ppp program table record "pppVertexApLc" (0x00c3a968) +0x1c set-up; "pppVertexApLc" (0x00c3a968) +0x20 second set-up; "pppVertexApLc" (0x00c3c010) +0x1c set-up and 1 more
+0x00758270 function pppBornShort              # (obj, key, short v): a child object (birth record key +0xc) whose i16 at key +0x10 is v (pppVertexApAt)
 0x007582e0 function pppVertexApAt             # fh v3:exact 0x007583d0
 0x007584b0 function pppVertexApAtCon          # ppp program table record "pppVertexApAt" (0x00c3b728) +0x1c set-up; "pppVertexApAt" (0x00c3b728) +0x20 second set-up; "pppVertexApAt" (0x00c3cdd0) +0x1c set-up and 1 more
+0x007584d0 function pppKeBornRnd              # ppp program table record "pppKeBornRnd" step
 0x00758790 function pppKeBornRndCon           # ppp program table record "pppKeBornRnd" (0x00c3aff8) +0x1c set-up; "pppKeBornRnd" (0x00c3c6a0) +0x1c set-up
 0x007587b0 function pppKeBornRnd2             # fh v3:cg2 0x7588a0
 0x00758820 function pppKeBornRnd2Con          # ppp program table record "pppKeBornRnd2" (0x00c3aee0) +0x1c set-up; "pppKeBornRnd2" (0x00c3c588) +0x1c set-up
@@ -1756,45 +1863,76 @@
 0x00758ae0 function pppKeBornRnd4_Born        # fh switch:cg2 0x710030e010
 0x00758dd0 function pppKeBornRnd4Con          # ppp program table record "pppKeBornRnd4" (0x00c3e1a8) +0x1c set-up
 0x00758df0 function pppKeBornRnd4             # fh switch:cg2 0x710030e150
+0x00758f20 function pppKeBornRnd5             # ppp program table record "pppKeBornRnd5" step
 0x00758f90 function pppKeBornRnd5Con          # ppp program table record "pppKeBornRnd5" (0x00c3a9e0) +0x1c set-up; "pppKeBornRnd5" (0x00c3c088) +0x1c set-up
 0x00758fc0 function pppKeBornRnd5_Born        # fh v3:cg8 0x7590b0
+0x00759200 function pppKeBornRnd6             # ppp program table record "pppKeBornRnd6" step
 0x00759270 function pppKeBornRnd6Con          # ppp program table record "pppKeBornRnd6" (0x00c3af80) +0x1c set-up; "pppKeBornRnd6" (0x00c3c628) +0x1c set-up
 0x007592a0 function pppKeBornRnd6_Born        # fh v3:exact 0x00759390
+0x007595e0 function pppKeBornPtCmpl           # ppp program table record "pppKeBornPtCmpl" step
 0x00759620 function pppKeBornPtCmplCon        # ppp program table record "pppKeBornPtCmpl" (0x00c3e1d0) +0x1c set-up
 0x00759650 function pppKeGrvEff               # fh v3:exact 0x00759740
+0x007597a0 function pppKeGrvEffCon            # ppp program table record "pppKeGrvEff" +0x1c set-up; not a function start in the Ghidra dump
 0x007597b0 function pppKeGrvTgt               # fh v3:exact 0x007598a0
 0x00759800 function pppKeGrvTgtCon            # ppp program table record "pppKeGrvTgt" (0x00c3b368) +0x1c set-up; "pppKeGrvTgt" (0x00c3ca10) +0x1c set-up
 0x00759830 function pppKeHitBall              # ppp program table record "pppKeHitBall" (0x00c3ad50) +0x8 step; "pppKeHitBall" (0x00c3c3f8) +0x8 step
+0x00759880 function pppKeHitBallCon           # ppp program table record "pppKeHitBall" +0x1c set-up; not a function start in the Ghidra dump
+0x00759890 function pppKeHitBorn_00759890     # ppp program table record "pppKeHitBorn" step
 0x00759990 function pppKeHitBornCon           # ppp program table record "pppKeHitBorn" (0x00c3e1f8) +0x1c set-up
+0x007599b0 function pppKeHitChkPxB            # ppp program table record "pppKeHitChkPxB" step; not a function start in the Ghidra dump
 0x00759bc0 function pppKeHitChkPxBCon         # ppp program table record "pppKeHitChkPxB" (0x00c3ad78) +0x1c set-up; "pppKeHitChkPxB" (0x00c3c420) +0x1c set-up
 0x00759bf0 function pppKeHmgEff               # fh v3:exact 0x00759ce0
+0x00759d70 function pppKeHmgEffCon            # ppp program table record "pppKeHmgEff" +0x1c set-up; not a function start in the Ghidra dump
 0x00759d80 function pppKeHitBorn              # fh switch:cg2 0x710030f430
 0x00759f10 function pppKeThHitBornCon         # ppp program table record "pppKeThHitBorn" (0x00c3e220) +0x1c set-up
 0x00759f30 function pppKeLnsLpSft             # fh v3:exact 0x0075a020
 0x00759fb0 function pppKeLnsLpSftCon          # ppp program table record "pppKeLnsLpSft" (0x00c3ac60) +0x1c set-up; "pppKeLnsLpSft" (0x00c3ac60) +0x20 second set-up; "pppKeLnsLpSft" (0x00c3c308) +0x1c set-up and 1 more
 0x00759fd0 function pppKeLnsArndCon           # ppp program table record "pppKeLnsArnd" (0x00c3aa30) +0x1c set-up; "pppKeLnsArnd" (0x00c3c0d8) +0x1c set-up
+0x00759ff0 function pppKeLnsArndDraw          # ppp program table record "pppKeLnsArnd" draw; not a function start in the Ghidra dump
+0x0075a0f0 function pppKeLnsArndTCon          # ppp program table record "pppKeLnsArndT" +0x1c set-up
 0x0075a140 function pppKeLnsArndTDes          # fh v3:cg2 0x75a230
 0x0075a190 function pppKeLnsArndTDraw         # fh v3:exact 0x0075a280
+0x0075a250 function pppKeLnsArndTOtDraw       # the g_pppOtList draw pppKeLnsArndTCon registers (node area+0x24): f(area, i, frame) from pppOtFunc_Control
 0x0075a2d0 function pppKeLnsArndUpdate        # fh v3:bsim1.00 0x0075a3c0
 0x0075a370 function pppKeLnsClmCon            # fh v3:exact 0x0075a460
+0x0075a3a0 function pppKeLnsClmDraw           # ppp program table record "pppKeLnsClm" draw; not a function start in the Ghidra dump
 0x0075a4a0 function pppKeLnsClmTCon           # fh v3:exact 0x0075a590
 0x0075a4f0 function pppKeLnsClmTDes           # fh v3:cg2 0x75a5e0
 0x0075a540 function pppKeLnsClmTDraw          # fh v3:exact 0x0075a630
+0x0075a610 function pppKeLnsClmTOtDraw        # the g_pppOtList draw pppKeLnsClmTCon registers (node area+0x40)
 0x0075a6a0 function pppKeLnsClmUpdate         # fh v3:exact 0x0075a790
 0x0075a740 function pppKeLnsCrnCon            # fh v3:bsim1.00 0x0075a830
+0x0075a760 function pppKeLnsCrnDraw           # ppp program table record "pppKeLnsCrn" draw; not a function start in the Ghidra dump
 0x0075a870 function pppKeLnsCrnTCon           # fh v3:exact 0x0075a960
 0x0075a8b0 function pppKeLnsCrnTDes           # fh v3:cg2 0x75a9a0
 0x0075a900 function pppKeLnsCrnTDraw          # fh v3:exact 0x0075a9f0
+0x0075a9e0 function pppKeLnsCrnTOtDraw        # the g_pppOtList draw pppKeLnsCrnTCon registers (node area+0x1c)
 0x0075aab0 function pppKeLnsCrnUpdate         # fh v3:exact 0x0075aba0
 0x0075ab30 function pppKeLnsFlsCon            # ppp program table record "pppKeLnsFls" +0x1c set-up: 0x0076a640(area 0 + 0xa0): set_ptr32(g_pppRandTarget), set_ptr32(0)
+0x0075ab50 function pppKeLnsFlsDraw           # ppp program table record "pppKeLnsFls" draw; not a function start in the Ghidra dump
 0x0075ac60 function pppKeLnsFlsTCon           # fh v3:cg2 0x75ad50
 0x0075acb0 function pppKeLnsFlsTDes           # fh v3:cg2 0x75ada0
 0x0075ad00 function pppKeLnsFlsTDraw          # fh v3:exact 0x0075adf0
+0x0075ade0 function pppKeLnsFlsTOtDraw        # the g_pppOtList draw pppKeLnsFlsTCon registers (node area+0x20)
 0x0075ae90 function pppKeLnsFlsUpdate         # fh v3:bsim1.00 0x0075af80
 0x0075af30 function pppKeLnsLpCon             # fh v3:exact 0x0075b020
 0x0075af60 function pppKeLnsLpCon2            # ppp program table record "pppKeLnsLp" (0x00c3aa08) +0x20 second set-up; "pppKeLnsLp" (0x00c3c0b0) +0x20 second set-up
 0x0075af80 function pppKeLnsLpDraw            # fh v3:exact 0x0075b070
+0x0075b090 function pppKeLnsLpTCon            # ppp program table record "pppKeLnsLpT" +0x1c set-up
 0x0075b110 function pppKeLnsLpTCon2           # ppp program table record "pppKeLnsLpT" (0x00c3bae8) +0x20 second set-up; "pppKeLnsLpT" (0x00c3d190) +0x20 second set-up
+0x0075b130 function pppKeLnsLpTDes            # ppp program table record "pppKeLnsLpT" +0x24 destructor
+0x0075b160 function pppKeLnsLpTDraw           # ppp program table record "pppKeLnsLpT" draw
+0x0075b230 function pppKeLnsLpTOtDraw         # the g_pppOtList draw pppKeLnsLpTCon registers (node area+0xb0)
+0x0075b690 function pppKeAcmCic               # ppp program table record "pppKeAcmCic" step
+0x0075b6b0 function pppKeAccSpdSv             # ppp program table record "pppKeAccSpdSv" step; not a function start in the Ghidra dump
+0x0075b6c0 function pppKeAccSpdSvCon          # ppp program table record "pppKeAccSpdSv" +0x1c set-up; not a function start in the Ghidra dump
+0x0075b6d0 function pppKeThCp                 # ppp program table record "pppKeThCp" step; not a function start in the Ghidra dump
+0x0075b6e0 function pppKeThCpCon              # ppp program table record "pppKeThCp" +0x1c set-up; not a function start in the Ghidra dump
+0x0075b6f0 function pppKeThCpDes              # ppp program table record "pppKeThCp" +0x24 destructor; not a function start in the Ghidra dump
+0x0075b700 function pppKeThCpSft              # ppp program table record "pppKeThCpSft" step; not a function start in the Ghidra dump
+0x0075b710 function pppKeThLz                 # ppp program table record "pppKeThLz" step; not a function start in the Ghidra dump
+0x0075b720 function pppKeThLzCon              # ppp program table record "pppKeThLz" +0x1c set-up; not a function start in the Ghidra dump
+0x0075b730 function pppKeThLzDes              # ppp program table record "pppKeThLz" +0x24 destructor; not a function start in the Ghidra dump
 0x0075b740 function pppAccele                 # ppp program table record "pppAccele" (0x00c3a508) +0x8 step; "pppAccele" (0x00c3bbb0) +0x8 step
 0x0075b810 function pppAcceleCon              # ppp program table record "pppAccele" (0x00c3a508) +0x1c set-up; "pppAccele" (0x00c3a508) +0x20 second set-up; "pppAccele" (0x00c3bbb0) +0x1c set-up and 1 more
 0x0075b850 function pppAngAccele              # ppp program table record "pppAngAccele" (0x00c3a530) +0x8 step; "pppAngAccele" (0x00c3bbd8) +0x8 step
@@ -1803,6 +1941,8 @@
 0x0075b9d0 function pppSclAcceleCon           # ppp program table record "pppSclAccele" (0x00c3a558) +0x1c set-up; "pppSclAccele" (0x00c3a558) +0x20 second set-up; "pppSclAccele" (0x00c3bc00) +0x1c set-up and 1 more
 0x0075ba40 function pppColAccele              # ppp program table record "pppColAccele" (0x00c3a580) +0x8 step; "pppColAccele" (0x00c3bc28) +0x8 step
 0x0075bac0 function pppColAcceleCon           # ppp program table record "pppColAccele" (0x00c3a580) +0x1c set-up; "pppColAccele" (0x00c3a580) +0x20 second set-up; "pppColAccele" (0x00c3bc28) +0x1c set-up and 1 more
+0x0075bb00 function vfx_vec3_scale            # (dst, v, s) dst.xyz = v.xyz * s (x87: x, y in registers, z memory operand); callers 0x0088a500, 0x0088abd0
+0x0075bb30 function pppEiWfacc                # ppp program table record "pppEiWfacc" step
 0x0075bde0 function pppMove                   # ppp program table record "pppMove" (0x00c3a5a8) +0x8 step; "pppMove" (0x00c3bc50) +0x8 step
 0x0075beb0 function pppMoveCon                # ppp program table record "pppMove" (0x00c3a5a8) +0x1c set-up; "pppMove" (0x00c3a5a8) +0x20 second set-up; "pppMove" (0x00c3bc50) +0x1c set-up and 1 more
 0x0075bef0 function pppAngMove                # ppp program table record "pppAngMove" (0x00c3a5d0) +0x8 step; "pppAngMove" (0x00c3bc78) +0x8 step
@@ -1825,6 +1965,7 @@
 0x0075c500 function pppPointLoop              # ppp program table record "pppPointLoop" (0x00c3b570) +0x8 step; "pppPointLoop" (0x00c3cc18) +0x8 step
 0x0075c5a0 function pppPointLoopCon           # ppp program table record "pppPointLoop" (0x00c3b570) +0x1c set-up; "pppPointLoop" (0x00c3cc18) +0x1c set-up
 0x0075c5d0 function pppPointLoopCon2          # ppp program table record "pppPointLoop" (0x00c3b570) +0x20 second set-up; "pppPointLoop" (0x00c3cc18) +0x20 second set-up
+0x0075cd30 function pppKeOfsPt                # ppp program table record "pppKeOfsPt" step
 0x0075cdf0 function pppKeOfsPtCon             # ppp program table record "pppKeOfsPt" (0x00c3d690) +0x1c set-up; "pppKeOfsPt" (0x00c3d690) +0x20 second set-up
 0x0075ce30 function pppAngle                  # fh v3:exact 0x0075cf20
 0x0075ce80 function pppAngleCon               # ppp program table record "pppAngle" (0x00c3a670) +0x1c set-up; "pppAngle" (0x00c3a670) +0x20 second set-up; "pppAngle" (0x00c3bd18) +0x1c set-up and 1 more
@@ -1840,11 +1981,27 @@
 0x0075d240 function pppColorCon               # fh v3:exact 0x0075d330
 0x0075d280 function pppPObjPoint              # ppp program table record "pppPObjPoint" (0x00c3d730) +0x8 step
 0x0075d340 function pppVertexAttend           # fh v3:exact 0x0075d430
+0x0075d450 function pppEiWindFun              # ppp program table record "pppEiWindFun" step
 0x0075d590 function pppEiWindFunCon           # ppp program table record "pppEiWindFun" (0x00c3b048) +0x1c set-up; "pppEiWindFun" (0x00c3c6f0) +0x1c set-up
 0x0075d5d0 function pppNeiLightEikyo          # fh v3:exact 0x0075d6c0
 0x0075d6c0 function pppNeiLightEikyoCon       # fh v3:exact 0x0075d7b0
 0x0075d700 function pppNeiPointLight          # fh v3:exact 0x0075d7f0
 0x0075d7c0 function pppNeiPointLightCon       # ppp program table record "pppNeiPointLight" (0x00c3b8b8) +0x1c set-up; "pppNeiPointLight" (0x00c3b8b8) +0x20 second set-up; "pppNeiPointLight" (0x00c3cf60) +0x1c set-up and 1 more
+0x0075d7f0 function pppFpPointLight           # ppp program table record "pppFpPointLight" step
+0x0075d910 function pppFpPointLightCon        # ppp program table record "pppFpPointLight" +0x1c set-up; not a function start in the Ghidra dump
+0x0075d920 function pppFpPointLightCon2       # ppp program table record "pppFpPointLight" +0x20 set-up; not a function start in the Ghidra dump
+0x0075d930 function pppFpPointLightModel      # ppp program table record "pppFpPointLightModel" step
+0x0075db10 function pppFpPointLightModelCon   # ppp program table record "pppFpPointLightModel" +0x1c set-up; not a function start in the Ghidra dump
+0x0075db20 function pppFpPointLightModelCon2  # ppp program table record "pppFpPointLightModel" +0x20 set-up; not a function start in the Ghidra dump
+0x0075db30 function pppFpPointLightVsf        # ppp program table record "pppFpPointLightVsf" step
+0x0075dd50 function pppFpPointLightVsfCon     # ppp program table record "pppFpPointLightVsf" +0x1c set-up; not a function start in the Ghidra dump
+0x0075dd60 function pppFpPointLightVsfCon2    # ppp program table record "pppFpPointLightVsf" +0x20 set-up; not a function start in the Ghidra dump
+0x0075dd70 function pppFpPointLightModelScl   # ppp program table record "pppFpPointLightModelScl" step
+0x0075df70 function pppFpPointLightModelSclCon # ppp program table record "pppFpPointLightModelScl" +0x1c set-up; not a function start in the Ghidra dump
+0x0075df80 function pppFpPointLightModelSclCon2 # ppp program table record "pppFpPointLightModelScl" +0x20 set-up; not a function start in the Ghidra dump
+0x0075df90 function pppFpPointLightVsfScl     # ppp program table record "pppFpPointLightVsfScl" step
+0x0075e1d0 function pppFpPointLightVsfSclCon  # ppp program table record "pppFpPointLightVsfScl" +0x1c set-up; not a function start in the Ghidra dump
+0x0075e1e0 function pppFpPointLightVsfSclCon2 # ppp program table record "pppFpPointLightVsfScl" +0x20 set-up; not a function start in the Ghidra dump
 0x0075e310 function pppKeMvYpEff              # fh v3:exact 0x0075e400
 0x0075e430 function pppKeDrct                 # fh v3:exact 0x0075e520
 0x0075e470 function pppKeDrctCon              # fh v3:exact 0x0075e560
@@ -2954,6 +3111,9 @@
 0x007e7fc0 function op_length_get             # fh v3:bsim1.00 0x007e7ed0
 0x007e8010 function op_m_copy                 # fh v3:exact 0x007e7f20
 0x007e83b0 function op_mul_m                  # fh v3:exact 0x007e82c0
+0x007e9580 function op_rt_m_x                 # (dst, src, float angle): src turned about X into dst (all four rows), sin/cos from g_pppSinTable[ftol(angle) & 0xfff] and [+0x400]
+0x007e9670 function op_rt_m_y                 # (dst, src, float angle): as op_rt_m_x about Y
+0x007e9760 function op_rt_m_z                 # (dst, src, float angle): as op_rt_m_x about Z
 0x007e9a30 function op_rt_m_yxz               # fh v3:bsim1.00 0x007e9940
 0x007e9f20 function op_spline_table           # fh v3:cg4 0x7e9e30
 0x007ea120 function op_spline_xyz             # fh v3:exact 0x007ea030
@@ -2989,23 +3149,43 @@
 0x007fb250 function op_et_battle_init         # fh v3:exact 0x007fb170
 0x007fb290 function op_et_bindeff             # fh v3:exact 0x007fb1b0
 0x007fb360 function op_et_bindeff2            # fh v3:exact 0x007fb280
+0x007fb470 function op_et_bindeff2_breath_off # (h) g_EtChr bind flags |= 0x200; characters 1/0x65 (u16 at h) clear bit 0 of g_EtBreathFlags; between op_et_bindeff2 and op_et_bindeff2_breath_on, the off form of it
 0x007fb4c0 function op_et_bindeff2_breath_on  # fh v3:exact 0x007fb3e0
+0x007fb530 function op_et_bindeff2_draw_off   # (h) -> 8 if newly set: draw flags (g_EtChrDrawFlags2 if nonzero, else g_EtChrDrawFlags) |= 8 when bind flags & 0x10; the set form of op_et_bindeff2_draw_on
 0x007fb5a0 function op_et_bindeff2_draw_on    # fh v3:bsim1.00 0x007fb4c0
+0x007fb610 function op_et_bindeff2_draw_set   # (h, hide) op_et_bindeff2_draw_off (hide) or _draw_on, one body; returns ~old & 8
+0x007fb7f0 function op_et_bindeff2_walk_off   # (h) bind flags |= 0x100 (op_et_bindeff2_walk_on clears it)
 0x007fb830 function op_et_bindeff2_walk_on    # fh v3:bsim1.00 0x007fb750
+0x007fb870 function op_et_bind_default_water  # () u16 g_EtBindDefault = (g_EtBindDefault & 0xcbff) | 0x800, the word left in eax
+0x007fb890 function op_et_bindeff2_water_off  # (h) bind flags |= 0x3400 (op_et_bindeff2_water_on clears them)
 0x007fb8e0 function op_et_bindeff2_water_on   # fh v3:bsim1.00 0x007fb800
 0x007fba40 function op_et_bindeff_draw_off    # fh v3:bsim1.00 0x007fb960
 0x007fbab0 function op_et_bindeff_draw_on     # fh v3:bsim1.00 0x007fb9d0
+0x007fbb20 function op_et_bindeff_draw_set    # (h, hide) op_et_bindeff_draw_off (hide) or _draw_on: bit 4 when bind flags & 1; returns ~old & 4
 0x007fbb90 function op_et_bindeff_off         # fh v3:exact 0x007fbab0
 0x007fbcd0 function op_et_bindeff_off_signal  # fh v3:exact 0x007fbbf0
+0x007fc000 function op_et_chr_draw_off        # (h) -> 1 if newly set: draw flags |= 1 for any character with a record (no bind flag test)
+0x007fc060 function op_et_chr_draw_on         # (h) -> ~old & 1: draw flags &= 0xfe
+0x007fc0c0 function op_et_chr_draw_set        # (h, hide) op_et_chr_draw_off (hide) or _draw_on
 0x007fc130 function op_et_draw_flags_restore  # (h) -> u8: g_EtChrDrawFlags[i] = g_EtChrDrawFlags2[i] & 0x7f, g_EtChrDrawFlags2[i] = 0, returns the old g_EtChrDrawFlags2 (i = the record's +0xe; __report_rangecheckfailure for i >= 0xf0 after the first store); g_MagicImports slot 547
 0x007fc190 function op_et_draw_flags_save     # (h) -> u8: g_EtChrDrawFlags2[i] = g_EtChrDrawFlags[i] | 0x80, g_EtChrDrawFlags[i] = 0, returns the old g_EtChrDrawFlags2; g_MagicImports slot 548
+0x007fc200 function op_et_draw_flags_switch   # (h, restore) op_et_draw_flags_restore (restore) or op_et_draw_flags_save, one body with both range checks
+0x007fc2a0 function op_et_oef2_free           # (oef2) opu_unit_free_by_oef2(g_OpusBattle, oef2)
+0x007fc2c0 function op_et_oef2_start          # (oef2) op_oef2_set2(oef2); opu_et_unit(oef2, 0, 0, -1)
 0x007fc2e0 function op_et_eff                 # fh v3:exact 0x007fc200
 0x007fc450 function op_et_eff_off_signal      # fh v3:bsim1.00 0x007fc370
+0x007fc490 function op_et_eff_signal_and      # (id, u16 mask) the first g_EtEff record with this ID: object +0xb0 &= mask (op_et_eff_off_signal's |= form)
+0x007fc4d0 function op_et_eff_flags_and       # (id, mask) the first g_EtEff record with this ID: +0xc &= mask
+0x007fc510 function op_et_eff_flags_or        # (id, bits) the first g_EtEff record with this ID: +0xc |= bits
+0x007fc550 function op_et_eff_signal_or       # (id, u16 bits) the first g_EtEff record with this ID: object +0xb0 |= bits
 0x007fc590 function op_et_encount_effect_on   # fh v3:exact 0x007fc4b0
+0x007fc5f0 function op_et_encount_effect_free # () g_OpusEncount != 0: opu_unit_free_by_oef2(g_OpusBattle, it), cleared (op_et_encount_effect_on starts its units)
 0x007fc620 function op_et_ffx_init            # fh v3:exact 0x007fc540
 0x007fc650 function op_et_monster_free        # fh v3:exact 0x007fc570
 0x007fc780 function op_et_monster_init        # fh v3:exact 0x007fc6a0
+0x007fc8a0 function op_et_monster_add         # (oef2) -> -1 null, 0 present or no slot, 1: first free g_OpusMonsters slot, op_oef2_set2 + opu_et_unit(oef2, 0, 0, -1)
 0x007fc920 function op_et_prayeff_send_read_through # fh v3:exact 0x007fc840
+0x007fc970 function op_et_oef2_start2         # (oef2) the op_et_oef2_start body again
 0x007fca40 function op_et_weapon_afterimage_fade # fh v3:bsim1.00 0x007fc960
 0x007fca90 function op_et_weapon_free         # fh v3:exact 0x007fc9b0
 0x007fcaf0 function op_et_weapon_free_all     # fh v3:exact 0x007fca10
@@ -3021,10 +3201,14 @@
 0x007fcd60 function op_ovl_effect_free        # fh v3:exact 0x007fcc80
 0x007fcdd0 function op_ovl_effect_init        # fh v3:exact 0x007fccf0
 0x007fce10 function op_pray_effect_check      # fh v3:exact 0x007fcd30
+0x007fcf10 function opus_chr_draw_index_nth   # (n) -> the u16 +0xe (draw flag index) of opus_chr_handle_nth(n)'s g_EtChr record, 0 without one
+0x007fcf60 function opus_chr_handle_count     # () -> non-null g_EtChrHandles among 208 from index 0 in battle (MsBattleGetStatus != 0), else from 0x20
+0x007fcfb0 function opus_chr_handle_nth       # (n) -> the n-th non-null handle of those 208, else the first non-null, else 0
 0x007fd720 function opu_end_all               # fh switch:bsim0.91 0x71003f1f50
 0x007fd760 function opu_et_init               # fh v3:exact 0x007fd680
 0x007fd7f0 function opu_et_unit               # fh v3:exact 0x007fd710
 0x007fda40 function opu_et_unit_free_by_id    # fh switch:bsim1.00 0x71003ed4a0
+0x007fda60 function opu_et_oef2_free          # (oef2) the op_et_oef2_free body again
 0x007fde30 function opu_unit_free_by_id       # fh v3:exact 0x007fdd50
 0x007fdf70 function opu_unit_free_by_oef2     # fh v3:exact 0x007fde90
 0x007fe1a0 function opus_change_chrhd_battle_to_ffx # fh v3:exact 0x007fe0c0
@@ -3036,6 +3220,7 @@
 0x007fe970 function opus_get_chr_status_index # fh v3:exact 0x007fe890
 0x007feaa0 function op_et_chr_index_by_no     # (no) -> index of the first of 208 g_EtChr records whose +4 (character number) is no, else -1
 0x007feba0 function opus_get_eff_status_index # fh v3:exact 0x007feac0
+0x007fef70 function op_et_eff_init_all        # () every g_EtEff record: +0 -1, +8 0x101, +0xc 0, +0x10 0, +0x18 0, +0x1c 0xff (+4 kept); callers opu_et_init, 0x007ff960
 0x007ff090 function op_et_chr_show            # (on): g_OpEtChrShow = on, g_EtChrHidden = !on; bit 1 of the draw flags of the first 208 g_EtChr records with a handle set (on = 0) or cleared; g_MagicImports slot 568
 0x007ff100 function op_fog_param_set          # fh v3:exact 0x007ff020
 0x007ff1d0 function op_free                   # fh v3:exact 0x007ff0f0
@@ -3072,7 +3257,9 @@
 0x00800df0 function opus_fullauto_no_get      # fh v3:exact 0x00800d10
 0x00800e80 function opus_get_monster_index    # fh v3:exact 0x00800da0
 0x00800f60 function opus_get_osu_by_draw      # fh v3:exact 0x00800e80
+0x00800fd0 function opus_get_weapon_by_no     # (no) -> g_OpusWeapons[i] for the first g_OpusWeaponNos[i] == no, else 0
 0x00801000 function opus_get_weapon_index     # fh v3:exact 0x00800f20
+0x00801030 function opus_get_weapon_index_by_no # (no) -> the first i with g_OpusWeaponNos[i] == no, else -1
 0x00801200 function opus_osu_init             # fh v3:exact 0x00801120
 0x008014c0 function opus_prog_off             # fh v3:exact 0x008013e0
 0x00801700 function opus_prog_on              # fh v3:exact 0x00801620
@@ -3081,12 +3268,15 @@
 0x008044e0 function opu_motion                # fh switch:cg2 0x71003e4c60
 0x00804c90 function opu_v_en_bone             # fh switch:cg2 0x71003e5500
 0x008061a0 function opus_mdc_free             # fh v3:exact 0x008060c0
+0x00806a50 function opusTree_Next             # thiscall (it) -> it: *it = in-order successor (node +0 left, +4 parent, +8 right, byte +0xd nil), nothing at the header (MSVC tree iterator ++)
+0x00806aa0 function opusTree_Next2            # the opusTree_Next body again
 0x00807830 function yonExtMapDeleteId         # fh v3:bsim1.00 0x00807750
 0x00807860 function yonExtMapRegister         # fh v3:bsim1.00 0x00807780
 0x00807870 function op_chara_hsv              # fh v3:cg4 0x807790
 0x008079f0 function op_chara_hsv_make         # fh v3:cg4 0x807ae0
 0x00807b20 function op_chara_hsv_size_get     # fh v3:exact 0x00807c90
 0x00808a20 function opus_all_clut_dispose     # fh v3:exact 0x00808b90
+0x00808c10 function vfx_vec4_min              # (dst, v, s) dst[i] = v[i] < s ? v[i] : s; callers 0x00809180, 0x00809620, 0x0081bef0, 0x0081c2a0
 0x0080a560 function opus_chara_rgba_set       # fh v3:exact 0x0080a6c0
 0x0080aa00 function opus_chara_status_rgb_set # fh v3:exact 0x0080ab60
 0x0080abb0 function opus_ffxfocus_free        # fh v3:exact 0x0080ad10
@@ -3104,6 +3294,7 @@
 0x008161f0 function opu_en_on                 # fh switch:cg3 0x71003fc0f0
 0x008165d0 function opu_et_no                 # fh switch:bsim1.00 0x71003fbd90
 0x00817590 function opus_camera_limit         # fh switch:cg2 0x71003fcb90
+0x00817cc0 function vfx_vec_w_add             # (dst, v, s) dst.w = v.w + s; callers 0x0088a500, 0x0088abd0
 0x0081c140 function SqsCmdSetC2               # (ctx, cmd) -> cmd + 4: the command's u16 +2 to +0xc2 of ctx +0x220; entry of the IOP command table 0x00c48f30
 0x0081ce70 function SqsAllVoiceTerminate      # fh v3:exact 0x0081cf80
 0x0081cef0 function SqsBattleStreamingDataSend # fh v3:exact 0x0081d000
@@ -6400,6 +6591,7 @@
 0x00a690c0 function op_ffxlight_to_omdlight   # fh v3:exact 0x00a690c0
 0x00a69940 function op_md_spr_init_x64        # fh v3:bsim1.00 0x00a69940
 0x00a69c80 function op_md_tex0_change         # fh switch:bsim1.00 0x71003ccfd0
+0x00a69de0 function op_md_packet_set_addr     # (packet, a, b): unless MagicFile_GetMagicId is 0x94, 0x239 or 0xd0, every tag from packet+0x20 (until type 0xff at +1) takes a at +8, b at +0xc; tag = 0x10 + count (i16 +2) * g_OpMdTagSizes[type & 7]; g_MagicImports slot 620
 0x00a69f10 function op_md_vn_index            # fh v3:exact 0x00a69f10
 0x00a69fe0 function op_md_vn_index_sub        # fh switch:bsim0.92 0x71003cd320
 0x00a6a3a0 function op_md_chara_path3         # fh v3:exact 0x00a6a3a0
@@ -8493,6 +8685,7 @@
 0x00c0a004 label g_Vu0_Vf00                  # emulated VU0 vf00 (x, y, z, w) = (0, 0, 0, 1.0f): AsmEmuInit and restoreVf00Register store exactly that
 0x00c30f94 label NvOptimusEnablement          # fh v4:imported
 0x00c30f98 label AmdPowerXpressRequestHighPerformance # fh v4:imported
+0x00c322aa label    g_VfxCurrentType          # byte: graphicVFXSetCurrentVFXType
 0x00c32308 label    g_SaveData_AlbhedFade     # SaveDataSetAlbhedFade stores it, only while a SaveDataManager exists
 0x00c33468 label    g_EternalCalmFirstMap     # first of the 7 Eternal Calm maps (a map = PS2 file number / 18, as CDfileSize_CD asks): isEternalCalmScene/Mgrp, getEternalCalmSceneName/Size subtract it
 0x00c334b8 label    g_EternalCalmSceneNames   # 7 pointers to "host0:/ffx_master/jppc/event/obj..." paths, indexed by getEternalCalmSceneName
@@ -8555,6 +8748,7 @@
 0x00c86b60 label    g_NkzAuronLimitTime          # f32 per level, NkzGetAuronLimitTime (4.0 4.0 4.0 3.0)
 0x00c86b70 label    g_NkzAuronLimitButtons       # 0x20 bytes per sequence, NkzGetAuronLimitButtonData
 0x00c86bf0 label    g_NkzTidusLimitTime          # f32 per level, NkzGetTidusLimitTime (3.0 3.0 3.0 2.0)
+0x00c88aa8 label    g_OpMdTagSizes            # 8 u32: element bytes of the model packet tag types (0x14, 0x1c, 0x20, 0x28, 0x18, 0x20, 0x28, 0x30)
 0x00c8b500 label    g_pppColorConShift           # added once to pppColorCon's work offset, then cleared there; also RW by pppDrawShape0
 0x00c8f508 label g_Ee_Gpr                    # emulated R5900 GPRs, 32 x 16 bytes: r0 (zero) here, t0 at +0x80 (pppRandFloat: t0 = r0 - 1), sp at +0x1d0 (AsmEmuInit stores this address there); argument registers set by AsmEmuSetFuncParam0 and the setters around it
 0x00c8f588 label g_Ee_GprMove              # the EE register MsEffectCameraSet moves its vectors through
@@ -8573,6 +8767,7 @@
 0x00ccb998 label    g_SaveData_DialogState    # SaveDataGet/SetDialogState; also written by SaveDataSetScreenState, SaveDataToLoad
 0x00ccb99c label    g_SaveData_IsSave         # SaveDataSetSave writes, SaveDataIsSave: == 1
 0x00ccb9a4 label    g_SaveData_CrcCheckOff    # nonzero: SaveDataCheckCrc passes every save without computing TkCRC
+0x00ccb9cc label    g_pppSpecialPart          # set to 1 by pppRunPartStd for a part with 0x33 births or during spell 0x296
 0x00ccb9d0 label    g_EtChrHidden             # 1 after op_et_chr_show(0)
 0x00ccc830 label    g_FreeCamera              # the free camera singleton (0x344 bytes, FreeCamera_FreeCamera), created on demand by its users, FreeCamera_destroyInstance
 0x00ccc88c label    g_AsyncLoadManager        # the instance AsyncLoadManager_sGetInstance returns
@@ -8582,6 +8777,7 @@
 0x00ce7318 label g_SortedSaveTable # 200 x 3 words, sorted by SortSaveTable_006f0fb0; name ours
 0x00ce81f4 label    g_SaveDataManager         # the instance SaveDataManager_instance returns (+4 callback result, +8 state for isBusy, +0x350 ref buffer)
 0x00ce901c label    g_UserHeap                # user_malloc/user_free's heap: CRITICAL_SECTION, then the allocator at +0x18 (arena size, bin min, bin max, arenas, node pool); malloc_pool_init creates it
+0x00cec1a4 label    g_pppOtDrawing            # pppOtFunc_Control (0x00716ac0) sets it to 1 while it calls the g_pppOtList draws, 0 after; the KeLns draws in 0x00760000.c test it
 0x00cec1c0 label    g_FillBufferRequests      # 12 words zeroed by JobSchedule_pppPart_clearFillBufferRequest (and initFillBufferRequest, after the 6 buffers at 0x00cec1a8)
 0x00cec1f0 label    g_pppFpDisp               # the field effects' display switch: pppFpSetDisp; the field effect debug listing prints On/Off from it
 0x00cec1f4 label    g_FpPointLightA              # cleared by pppFpPointLightInit and pppFpLoop, read by pppFpPointLightProc
@@ -8591,6 +8787,7 @@
 0x00d2c258 label    g_FpData                     # current field's FP (effect) table: u16 count at +4, 0x50-byte entries with the id at +0x64; runtime state at 0x00d2c260 (0x80 each) and 0x00d30260 (0x4c each)
 0x00d2c260 label    g_FpRun                      # FP run records, 0x80 per g_FpData entry: +0 frame counter (-0x1000 not started), +0x1d status (0 run, 1 end: Fp_End, 2: Fp_RestartMode2)
 0x00d30260 label    g_FpDisp                     # FP display records, 0x4c per entry: +0 flags (0x10 hidden: pppFpIDdispOff, 2 stuck to map: pppFpSetStickMap, 8 to a display object), +4 stick target
+0x00d4b46c label    g_KeLnsLpTCount           # pppKeLnsLpTCon (0x0075b090) stores it at area +0x8c and increments it (byte)
 0x00d52398 label    g_pppRandTarget          # the float the ppp rand programs (pppRandFloat ...) add to when the key's target offset is -1
 0x00d524a4 label    g_KePmcomNext                # next free address of the pmcom arena 0x00e524f0..0x00f524f0 (KePmcomAlloc)
 0x010d4d28 label    g_KePmcomQueue               # 256 entries of (kind, pointer) (KePmcomQueuePush)
@@ -8817,11 +9014,14 @@
 0x0113e23c label g_BtlPosState             # 0x34 bytes (three 1.0 scales at +0x10) and 6 words after it (+0x3c points back here), reset by MsBtlPosInit
 0x0113f3d2 label g_BtlUcId                    # u16; The user character ID MsSaveUcID keeps.
 0x0119fe10 label    g_OpSprStack                 # op scratch stack, i32 marks: op_spr_alloc(n) pushes top + n (top index g_OpSprTop)
+0x0119fe98 label    g_OpusEncount             # the encounter effect's oef2 object: op_et_encount_effect_on runs opu_et_unit on it, op_et_encount_effect_free frees its units and clears it
+0x0119fe9c label    g_OpusWeaponNos           # 4 bytes: the weapon numbers of g_OpusWeapons (set by op_et_weapon_init, 0xff free; opus_get_weapon_by_no)
 0x0119fea0 label    g_OpusWeapons                # 4 weapon opus objects (opus_get_weapon_index)
 0x0119fed0 label    g_OpusMonsters               # 8 monster opus objects (opus_get_monster_index)
 0x011a0061 label    g_OpPrayEffect               # op_pray_effect_check returns -1 while nonzero
 0x011a0063 label    g_OpEtChrShow             # byte: the last op_et_chr_show argument
 0x011a0067 label    g_OpWotTrigger               # set by op_wot_triger, read by op_ot_draw
+0x011a0080 label    g_EtBindDefault           # u16 bind flags; op_et_bind_default_water keeps the water bits (0x3400) at 0x800
 0x011a03a0 label    g_OpOef2ClutCues             # ring of 64 CLUT masks (op_oef2_tex_clut_cue_check, op_oef2_tex_clut_cue_trans)
 0x011a04a0 label    g_OpOef2ClutCueHead          # u16 first entry of g_OpOef2ClutCues
 0x011a04a2 label    g_OpOef2ClutCueCount         # u16 entries in g_OpOef2ClutCues
@@ -9182,14 +9382,20 @@
 0x022fb504 label    g_Settings
 0x022fb6c0 label g_CdChannelNames # CD channel names, 0x80 bytes each, cleared by cd_channel_clear 0x0076d530; name ours
 0x02305834 label    g_Abmap                      # the sphere grid data (LoadAbmap): +4 i16 link count, +0x808 nodes of 0x28 (x, y i16, +6 kind, +0x21 panel bits), +0xa816 link flags (0x14 each), +0xf834 kind sizes (0x30 each)
+0x0230fd20 label    g_pppCurrentProgram       # the program index pppRunPartStd is running, 0 after
+0x0230fd24 label    g_pppObjectCount          # pppRunPartStd adds each birth record's object count
 0x0230fd2c label    g_PppPacketPos               # the VFX packet write position (pppFpLoop); KeLnsShp_Draw records it
+0x0230fd30 label    g_pppUserFuncs            # user function table pppCallUsrFunc / 0x00757370 index by the part's byte +0xe; pppAllFreePObject clears it
 0x0230fd34 label    g_pppStopStatus              # set by pppFpStopStatus; the ppp per-frame steps (pppColor, pppAngle, ...) do nothing while nonzero
 0x0230fd3c label    g_pppMemAllocFailed       # pppMemAlloc: 1 when neither heap had room
 0x0230fde0 label    g_pppWoodMatrix           # the billboard rotation pppDrawMatrixWoodSta builds (FFXVu0CopyMatrix from 0x0230fee0); pppDrawMatrixWood turns the scaled rows by it
 0x0230fe20 label    g_pppViewMatrixCopy       # FFXVu0CopyMatrix of g_pppViewMatrix (0x00920000.c); pppDrawMatrix multiplies the object's matrix by it
+0x0230fe60 label    g_pppScreenMatrix         # MsCopyScreenMatrix(0x0230fe60) in pppOtFunc_Control (0x00716ac0) before the g_pppOtList draws
 0x0230ff20 label    g_pppViewMatrix           # cdc_Mul4x4(g_pppViewMatrix, g_pppCameraMatrix, 0x0230ffa0) (0x00920000.c); translation at 0x0230ff50, which pppDrawMatrixNoRot adds; the pppDrawMatrix* and pppKeDMat* draws transform positions by it
 0x0230ff60 label    g_pppCameraMatrix         # MsCopyCameraMatrix(0x0230ff60) each frame; sceVu0InversMatrix4x4 of it into 0x0230fca0
+0x0230ffa0 label    g_pppWorldMatrix          # the running part's matrix: pppSetMatrix (XYZ rotation of part +0x50, rows scaled by +0x60, position +0x40); g_pppViewMatrix = it x g_pppCameraMatrix
 0x0230ffe4 label    g_pppCurrentPart             # the part pppRunPart/pppRunPartFp/pppStartPart set while they run it; +0x3c points at 16-byte object records (the object at +4), which pppPObjPoint and pppKeThTp index by the key
+0x0230fff0 label    g_pppOtList               # the draw list of the pppKeLns...T programs: their TCon pppOtFunc_Reg(0x0230fff0, node, draw, area), TDes pppOtFunc_Lev(0x0230fff0, node); +4 tail, +0xc u16 count
 0x02310000 label g_ChrTexAnim               # 64 x 0x30: source +0, work +4, u8 format +0xd (0 old, 1 new) (chr_texanim_init)
 0x02310c40 label    g_CdLib                   # function table of the PS2 CD-library emulation
 0x02310c58 label g_CdChannelKeepNames # when set, cd_channel_clear 0x0076d530 keeps the channel names; name ours

@@ -556,4 +556,122 @@ pub mod bridge {
         SHAPE_ENLARGE.set(mem, n);
         n
     }
+
+    /// `calculateVFXSP_ZMat(z)` (`0x00712d00`): 1 when `z` is nonzero.
+    #[must_use]
+    pub fn calculate_vfx_sp_zmat(z: u32) -> u32 {
+        u32::from(z != 0)
+    }
+
+    /// `calculateVFXSP_AlphaFunction(f)` (`0x00712c30`): the renderer's
+    /// blend flags for a PS2 alpha function (0x41, 0x42, 0x46, 0x48,
+    /// 0x88; 0x44 and others none, the others with a debug message).
+    #[must_use]
+    pub fn calculate_vfx_sp_alpha_function(f: u32) -> u32 {
+        match f {
+            0x41 => 0x100,
+            0x42 => 0x10,
+            0x46 => 0x20,
+            0x48 => 2,
+            0x88 => 0x200,
+            _ => 0,
+        }
+    }
+
+    /// `graphicVFXGetRenderDataByGeometry(g)` (`0x006453b0`): its render
+    /// data (`+0x24`), 0 for none.
+    pub fn graphic_vfx_get_render_data_by_geometry(mem: &impl Mem, g: u32) -> u32 {
+        if g == 0 {
+            0
+        } else {
+            mem.read(g.wrapping_add(0x24))
+        }
+    }
+
+    /// `g_VfxCurrentType` (`0x00c322aa`, a byte).
+    pub const CURRENT_TYPE: Global<u8> = Global::new(0x00c3_22aa);
+
+    /// The axis rotations `op_rt_m_x/y/z(dst, src, angle)`: `angle` in
+    /// `g_pppSinTable` steps (4096 a turn, `ftol` of it), the matrix
+    /// `src` turned about the axis into `dst` (every row, the translation
+    /// too; `src` read first, so they may be the same).
+    #[allow(clippy::many_single_char_names)] // i, s, c, m, p, q, u, v
+    pub fn op_rt_m(mem: &mut impl Mem, dst: u32, src: u32, angle: f32, axis: crate::mat::Axis) {
+        use crate::mat::Axis;
+        use ffx_bridge::x87::Reg;
+        let i = ffx_bridge::x87::ftol(mem, f64::from(angle));
+        let table = crate::ppp::bridge::SIN.ptr(mem);
+        let s = ffx_bridge::x87::round_trip(f32::from_bits(table.at(i & 0xfff).get(mem)));
+        let c = ffx_bridge::x87::round_trip(f32::from_bits(
+            table.at(i.wrapping_add(0x400) & 0xfff).get(mem),
+        ));
+        let m: [f32; 16] = mem.read(src);
+        mem.write(dst, m);
+        let (p, q) = match axis {
+            Axis::X => (1, 2),
+            Axis::Y => (2, 0),
+            Axis::Z => (0, 1),
+        };
+        let (s, c) = (Reg::load(s), Reg::load(c));
+        for r in 0..4 {
+            let (u, v) = (Reg::load(m[4 * r + p]), Reg::load(m[4 * r + q]));
+            // p' = u c - v s, q' = v c + u s
+            let pu = (u * c - v * s).store();
+            let qv = (v * c + u * s).store();
+            #[allow(clippy::cast_possible_truncation)] // below 16
+            {
+                mem.write(dst.wrapping_add(4 * (4 * r + p) as u32), pu);
+                mem.write(dst.wrapping_add(4 * (4 * r + q) as u32), qv);
+            }
+        }
+    }
+
+    /// `op_rt_m_yxz(dst, src, angles, t)` (`0x007e9a30`): `src` turned
+    /// about Y, X then Z (angles `[1]`, `[0]`, `[2]`), `t` added to the
+    /// translation.
+    pub fn op_rt_m_yxz(mem: &mut impl Mem, dst: u32, src: u32, angles: u32, t: u32) {
+        use crate::mat::Axis;
+        let a: [f32; 3] = mem.read(angles);
+        op_rt_m(mem, dst, src, a[1], Axis::Y);
+        let a0: f32 = mem.read(angles);
+        op_rt_m(mem, dst, dst, a0, Axis::X);
+        let a2: f32 = mem.read(angles.wrapping_add(8));
+        op_rt_m(mem, dst, dst, a2, Axis::Z);
+        for i in 0..3 {
+            let at = dst.wrapping_add(0x30 + 4 * i);
+            let v = ffx_bridge::x87::Reg::load(mem.read(t.wrapping_add(4 * i)))
+                .add_m32(mem.read(at))
+                .store();
+            mem.write(at, v);
+        }
+    }
+
+    /// `g_OpMdTagSizes` (`0x00c88aa8`): bytes per element of each of the
+    /// eight model packet tag types.
+    pub const MD_TAG_SIZES: Global<[u32; 8]> = Global::new(0x00c8_8aa8);
+
+    /// `op_md_packet_set_addr(packet, a, b)` (`0x00a69de0`): unless the
+    /// running spell is 0x94, 0x239 or 0xd0, every tag of the packet (from
+    /// `+0x20`, until a type byte of 0xff at `+1`) takes `a` at `+8` and `b`
+    /// at `+0xc`; a tag is 0x10 bytes plus its count (`i16` at `+2`) times
+    /// its type's size.
+    pub fn op_md_packet_set_addr(mem: &mut impl Mem, packet: u32, a: u32, b: u32) {
+        for id in [0x94, 0x239, 0xd0] {
+            if ffx_system::instance::bridge::magic_id(mem) == id {
+                return;
+            }
+        }
+        let sizes = MD_TAG_SIZES.ptr(mem).addr;
+        let mut t = packet.wrapping_add(0x20);
+        while mem.read::<u8>(t.wrapping_add(1)) != 0xff {
+            let kind = u32::from(mem.read::<u8>(t.wrapping_add(1)) & 7);
+            let n = i32::from(mem.read::<i16>(t.wrapping_add(2)));
+            mem.write(t.wrapping_add(8), a);
+            mem.write(t.wrapping_add(0xc), b);
+            let size: u32 = mem.read(sizes + 4 * kind);
+            t = t
+                .wrapping_add(0x10)
+                .wrapping_add(n.cast_unsigned().wrapping_mul(size));
+        }
+    }
 }
