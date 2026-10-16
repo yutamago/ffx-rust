@@ -4617,6 +4617,59 @@ pub mod bridge {
         }
         run_seq_ops(mem, STATUS_LAYOUT_B);
     }
+    /// `Vibrate_SetStreamsMode(rec, mode, a, b)` (`0x00876130`, own name):
+    /// mode 1 sets both entries from curve headers ([`vibrate_set_streams`])
+    /// and the record's mode `+0x22` to 1; other modes only clear the
+    /// mode. Returns the data pointer, or the record.
+    pub fn vibrate_set_streams_mode(
+        mem: &mut impl Mem,
+        rec: u32,
+        mode: i32,
+        a: u32,
+        b: u32,
+    ) -> u32 {
+        if mode != 1 {
+            mem.write(rec + 0x22, 0u8);
+            return rec;
+        }
+        let r = vibrate_set_streams(mem, rec, a, b);
+        mem.write(rec + 0x22, 1u8);
+        r
+    }
+
+    /// `TkSetVibrateStream(k, curve, table)` (`0x00875fb0`): stream `k`
+    /// (0..=7) restarted on curve `curve` of `table`: entry 0 from the
+    /// header past its first part (when its second halfword is non-zero),
+    /// entry 1 from the header at `+4` (when its first is); mode 1.
+    /// Returns the second entry's data pointer.
+    pub fn tk_set_vibrate_stream(mem: &mut impl Mem, k: i32, curve: u32, table: u32) -> u32 {
+        let k = k.clamp(0, 7).cast_unsigned();
+        let rec = mem.rebase(0x0132_8150) + k * 0x24;
+        let n: u16 = mem.read(rec + 0x20);
+        mem.write(rec + 0x20, n.wrapping_add(1));
+        mem.write(rec + 0x22, 0u8);
+        let base = if curve < 0x40 && table != 0 {
+            match mem.read::<u32>(table.wrapping_add(4 * curve)) {
+                0 => None,
+                off => Some(off.wrapping_add(table)),
+            }
+        } else {
+            None
+        };
+        let second = match base {
+            Some(b) if mem.read::<u16>(b) != 0 => b.wrapping_add(4),
+            _ => 0,
+        };
+        let first = match base {
+            Some(b) if mem.read::<u16>(b.wrapping_add(2)) != 0 => u32::from(mem.read::<u16>(b))
+                .wrapping_add(4)
+                .wrapping_add(b),
+            _ => 0,
+        };
+        let r = vibrate_set_streams(mem, rec, first, second);
+        mem.write(rec + 0x22, 1u8);
+        r
+    }
 }
 
 #[cfg(test)]

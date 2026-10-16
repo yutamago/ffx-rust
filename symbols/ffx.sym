@@ -4785,6 +4785,7 @@
 0x00875f60 function TkSetVibrateMask          # fh v3:exact 0x00875ee0
 0x00875fb0 function TkSetVibrateStream        # fh v3:cg2 0x875f30
 0x00876050 function Vibrate_StartLevel        # (k, e, from, to, len) stream k entry e restarted as a level easing from -> to over len (clamped 0..0x7f; from = +0xa when negative); counter bumped, mode +0x22 = 2; returns len; own name
+0x00876130 function Vibrate_SetStreamsMode    # (rec, mode, a, b) mode 1: Vibrate_SetStreams + mode byte +0x22 = 1; else +0x22 = 0 (record left in eax); own name
 0x00876160 function Vibrate_HoldStream        # (stream) +4 = 0xfffe0000, u16 +8 = 0; own name
 0x00876180 function Vibrate_SetStreams        # (rec, a, b) Vibrate_SetStream for both 0x10-byte entries; second data pointer left in eax; own name
 0x00876230 function Vibrate_SetStream         # (entry, src) entry from curve header src: +4 0, +6 (src[1]+1)*2, +8 src[0], +9 src[2], +0 set_ptr32(src+2); null: +4 0x02000000, +8 0, +0 0; own name

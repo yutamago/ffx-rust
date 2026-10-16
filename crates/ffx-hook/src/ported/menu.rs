@@ -2919,4 +2919,16 @@ ported! {
     MenuStatus_LoadLayout @ 0x008d_4920 => extern "C" fn menu_status_load_layout() {
         tk::menu_status_load_layout(&mut mem());
     }
+    /// `Gu_WindowSetTitle(window, s)`: the title control (`+0x34`).
+    Gu_WindowSetTitle @ 0x0084_b6a0 => extern "C" fn gu_window_set_title(window: u32, s: u32) {
+        gu::gu_control_set_text(&mut mem(), window.wrapping_add(0x34), s, &mut |_, p| user_free(p), &mut |_, n| user_malloc(n));
+    }
+    /// `Vibrate_SetStreamsMode(rec, mode, a, b)`.
+    Vibrate_SetStreamsMode @ 0x0087_6130 => extern "C" fn vibrate_set_streams_mode(rec: u32, mode: i32, a: u32, b: u32) -> u32 {
+        tk::vibrate_set_streams_mode(&mut mem(), rec, mode, a, b)
+    }
+    /// `TkSetVibrateStream(k, curve, table)`.
+    TkSetVibrateStream @ 0x0087_5fb0 => extern "C" fn tk_set_vibrate_stream(k: i32, curve: u32, table: u32) -> u32 {
+        tk::tk_set_vibrate_stream(&mut mem(), k, curve, table)
+    }
 }

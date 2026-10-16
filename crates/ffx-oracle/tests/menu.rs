@@ -5074,6 +5074,24 @@ fn tk_round8_matches_the_original() {
         let curves = t.rng.bytes(0x40);
         tb.extend(curves);
         let table = if t.rng.below(8) == 0 { 0 } else { t.alloc(&tb) };
+        let vrec = t.alloc_random(0x24);
+        let vmode = t.rng.pick(&[0u32, 1, 2]);
+        t.twin(
+            "Vibrate_SetStreamsMode",
+            0x0087_6130,
+            &[vrec, vmode, ha, hb],
+            U32,
+            |o| w(tk::vibrate_set_streams_mode(o, vrec, i(vmode), ha, hb)),
+        );
+        let sk = t.rng.pick(&[0u32, 2, 7, 8, 0xffff_ffff]);
+        let sc = t.rng.pick(&[0u32, 1, 2, 5, 0x3f, 0x40]);
+        t.twin(
+            "TkSetVibrateStream",
+            0x0087_5fb0,
+            &[sk, sc, table],
+            U32,
+            |o| w(tk::tk_set_vibrate_stream(o, i(sk), sc, table)),
+        );
         let ck = t.rng.pick(&[0u32, 1, 2, 5, 0x3f, 0x40]);
         let cn = t.rng.pick(&[0u32, 1, 2, 3, 4, 7, 10]);
         t.twin(
@@ -5244,6 +5262,22 @@ fn gu_texts_match_the_original() {
             t.put(ck + 0x26, capk);
             t.put(ck + 0x28, if capk == 0 { ck + 0x30 } else { hk });
         }
+        let tw = t.alloc_random(0x98);
+        t.put(tw + 0x34 + 0x26, 0u16);
+        t.put(tw + 0x34 + 0x28, tw + 0x34 + 0x30);
+        t.twin("Gu_WindowSetTitle", 0x0084_b6a0, &[tw, sp], VOID, |o| {
+            gu::gu_control_set_text(
+                o,
+                tw + 0x34,
+                sp,
+                &mut |o, p| free_into(o, flog, p),
+                &mut |o, n| {
+                    let _ = free_into(o, mlog, n);
+                    arena
+                },
+            );
+            0
+        });
         let id = t.rng.pick(&[0u32, 1, 2, 3, 0x8001, 0x1_0001]);
         t.twin(
             "Gu_WindowControlSetText",
