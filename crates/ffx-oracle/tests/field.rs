@@ -7202,7 +7202,7 @@ fn round9_models_guide_and_rcfx_match_the_original() {
         );
         t.put(tr + 0x3c, rng.below(4));
         t.same(
-            "rcbgTrxMakePacket",
+            "rcbgTrxPacketMake",
             |o| o.eax(0x0092_d5a0, &[tr, out]),
             |m| model::bridge::rcbg_trx_make_packet(m, tr, out),
         );
@@ -7546,7 +7546,7 @@ fn yn_file(rng: &mut Xorshift) -> Vec<u8> {
 
 /// `yiMapReadMaster` (a MAP1 file through `GetCD`'s table: the 2D and 3D
 /// maps, the alarms, effect data and two more background files) and the
-/// debug `yiMapReadHost`, over round 8's loading environment with the CD,
+/// debug `yiMapSetup`, over round 8's loading environment with the CD,
 /// file and renderer calls logged.
 #[test]
 #[allow(clippy::too_many_lines)] // the stand-ins, then the cases
@@ -7664,7 +7664,7 @@ fn round9_map_reads_match_the_original() {
         t.b.write(host, &[0; 0x1000]).unwrap();
         let m0 = rng.below(0x400);
         t.same(
-            "yiMapReadHost",
+            "yiMapSetup",
             |o| o.eax(0x0090_9680, &[m0]),
             |m| yi::bridge::yi_map_read_host(m, m0, host, image, call),
         );

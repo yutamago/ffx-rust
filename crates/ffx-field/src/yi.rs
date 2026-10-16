@@ -3216,7 +3216,7 @@ pub mod bridge {
         0
     }
 
-    /// The start of `yiMapReadMaster` and `yiMapReadHost`: the renderer's
+    /// The start of `yiMapReadMaster` and `yiMapSetup`: the renderer's
     /// objects and textures reset (with `sceGsSyncPath` around the first in
     /// the former), the alarm cleared.
     fn map_read_reset<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
@@ -3363,7 +3363,7 @@ pub mod bridge {
         0
     }
 
-    /// `yiMapReadHost(map)` (`0x00909680`): the debug map loader: after the
+    /// `yiMapSetup(map)` (`0x00909680`): the debug map loader: after the
     /// reset ([`map_read_reset`]) the map's directory and name
     /// (`0x009161d0`) make `host0:<dir><name>.vpa`, which is read whole
     /// (`sceOpen`/`sceLseek`/`sceRead`/`sceClose`) into a `yiMalloc`
