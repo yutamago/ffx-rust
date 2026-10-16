@@ -234,7 +234,7 @@ fn chain(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, top: u32, vec: u32)
             0
         }),
         3 => twin(
-            "msGetChrPosNoChr",
+            "MsGetTransChrPos",
             a,
             b,
             0x0079_5ac0,

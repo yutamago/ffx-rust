@@ -18,7 +18,8 @@
 //!   frame-limiter `Sleep` (`0x0062f3bb`) and the start-up loop's 33 ms
 //!   `Time_Sleep` (`0x0066b345`, the logos) return at once and add their
 //!   time to the game's clock (`Phyre_PTimerWin32_GetTime`, `0x0042fd80`), so the game still
-//!   sees its usual frame rate;
+//!   sees its usual frame rate; it also ends the start-up logos
+//!   (`OpeningScreen.swf`, timed by Flash in real time) on their first frame;
 //! - with `FFX_HARNESS_VIRTUAL_CLOCK=1` (and fast mode), the game's clock is
 //!   its start time plus the skipped sleeps only, never real time, so every
 //!   frame advances it by exactly one frame interval; with `lockstep on`
@@ -971,6 +972,9 @@ unsafe extern "system" fn present(swap_chain: *mut c_void, interval: u32, flags:
     if VIRTUAL.load(Ordering::Acquire) {
         run_vsync();
     }
+    if FAST.load(Ordering::Relaxed) {
+        skip_opening_screen();
+    }
     // SAFETY: forwarded: inside the swap chain's own Present.
     unsafe { run_due_jobs(frame, swap_chain) };
     // Lockstep: hold the game here until the script allows more frames,
@@ -991,6 +995,22 @@ unsafe extern "system" fn present(swap_chain: *mut c_void, interval: u32, flags:
     };
     // SAFETY: forwarded, the sync interval perhaps lowered.
     unsafe { original(swap_chain, interval, flags) }
+}
+
+/// Ends the start-up logos as their movie's `Finish` callback
+/// (`0x00652400`) does: `graphicInitScene` (`0x006416c0`) shows
+/// `OpeningScreen.swf` while the flag `0x00ccb9c2` is set and loads the game
+/// meanwhile; the loading waits that follow the loop still run. Flash times
+/// the movie in real time, so fast mode cannot shorten it otherwise.
+fn skip_opening_screen() {
+    let flag = crate::rebase(0x00cc_b9c2) as *mut u8;
+    // SAFETY: a byte in the image's data; the game thread is the only other
+    // user and is here, inside Present.
+    unsafe {
+        if flag.read_volatile() != 0 {
+            flag.write_volatile(0);
+        }
+    }
 }
 
 /// A cdecl call with up to eight `u32` arguments.

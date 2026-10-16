@@ -84,9 +84,13 @@ unsafe fn install_hooks(base: usize) {
     // SAFETY: forwarded from the caller.
     match unsafe { ffx_hook::install(base, &ffx_hook::hooks(), &disabled) } {
         Ok(results) => {
-            for (name, outcome) in results {
-                log(&format!("  {name}: {outcome:?}"));
-            }
+            // One write: the log may sit on a slow share (WSL), and
+            // opening it once per hook made start-up take minutes.
+            let lines: Vec<String> = results
+                .iter()
+                .map(|(name, outcome)| format!("  {name}: {outcome:?}"))
+                .collect();
+            log(&lines.join("\n"));
         }
         Err(wrong) => log(&format!("  not patching: {wrong}")),
     }

@@ -2230,8 +2230,8 @@ ported! {
     Table_00c334d4_0067aa50 @ 0x0067_aa50 => extern "C" fn table_00c334d4_0067aa50(x: u32) -> u32 {
         accessor::bridge::table_00c334d4(&mem(), x)
     }
-    /// `EntryWordC_00684ca0`.
-    EntryWordC_00684ca0 @ 0x0068_4ca0 => extern "thiscall" fn entrywordc_00684ca0(this: u32, i: u32) -> u32 {
+    /// `AbmapManager_GetMeshInstace`.
+    AbmapManager_GetMeshInstace @ 0x0068_4ca0 => extern "thiscall" fn entrywordc_00684ca0(this: u32, i: u32) -> u32 {
         accessor::bridge::entry_word_c(&mem(), this, i)
     }
     /// `UnlinkRecord_00776910`.
@@ -2282,8 +2282,8 @@ ported! {
     TOBtlCtbAnimStep_008a2ad0 @ 0x008a_2ad0 => extern "C" fn tobtlctbanimstep_008a2ad0(rec: u32) -> u32 {
         window::bridge::anim_step_8a2ad0(&mut mem(), rec)
     }
-    /// `TOBtlAdvanceAngle_00890f30`.
-    TOBtlAdvanceAngle_00890f30 @ 0x0089_0f30 => extern "C" fn tobtladvanceangle_00890f30() {
+    /// `TOBtlCtrlActiveChrCursor`.
+    TOBtlCtrlActiveChrCursor @ 0x0089_0f30 => extern "C" fn tobtladvanceangle_00890f30() {
         window::bridge::advance_angle(&mut mem());
     }
     /// `cd_file_size_bytes`.
@@ -2428,8 +2428,8 @@ ported! {
     TOSeqGetSceneState_008ae530 @ 0x008a_e530 => extern "C" fn toseqgetscenestate_008ae530(i: i32, name: u32) -> i32 {
         scene::bridge::scene_state(&mem(), i, name)
     }
-    /// `TOSetQuadRGBA_009047f0`.
-    TOSetQuadRGBA_009047f0 @ 0x0090_47f0 => extern "C" fn tosetquadrgba_009047f0(p: u32, k: u32, r: u8, g: u8, b: u8, a: u8) {
+    /// `TOSetPolyG4A_RGBA`.
+    TOSetPolyG4A_RGBA @ 0x0090_47f0 => extern "C" fn tosetquadrgba_009047f0(p: u32, k: u32, r: u8, g: u8, b: u8, a: u8) {
         window::bridge::set_quad_rgba(&mut mem(), p, k, [r, g, b, a]);
     }
     /// `TOSetMessageArea_008b8b20`.

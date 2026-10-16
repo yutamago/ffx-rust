@@ -806,7 +806,7 @@ ported! {
     pppFpGetHeapUsed @ 0x0072_92d0 => extern "C" fn ppp_fp_get_heap_used() -> u32 {
         fp::bridge::ppp_fp_stat(&mem(), 3)
     }
-    /// `pppFpGetHeapPeak()`.
+    /// `pppFpGetHeapMaxUseSize()`.
     pppFpGetHeapMaxUseSize @ 0x0072_9280 => extern "C" fn ppp_fp_get_heap_peak() -> u32 {
         fp::bridge::ppp_fp_stat(&mem(), 4)
     }
@@ -889,9 +889,9 @@ ported! {
     op_color_shift_load16 @ 0x007e_ca60 => extern "C" fn op_color_shift_load16(dst: u32, base: u32) {
         op::bridge::op_color_shift_load16(&mut mem(), dst, base);
     }
-    /// `op_oef2_clut_pos_set(rec, pos)`.
-    op_oef2_clut_change_monster @ 0x007e_45e0 => extern "C" fn op_oef2_clut_pos_set(rec: u32, pos: u32) -> u32 {
-        op::bridge::op_oef2_clut_pos_set(&mut mem(), rec, pos)
+    /// `op_oef2_clut_change_monster(rec, pos)`.
+    op_oef2_clut_change_monster @ 0x007e_45e0 => extern "C" fn op_oef2_clut_change_monster(rec: u32, pos: u32) -> u32 {
+        op::bridge::op_oef2_clut_change_monster(&mut mem(), rec, pos)
     }
     /// `op_oef2_tex_pos_set(rec, pos)`.
     op_oef2_tex_pos_set @ 0x007e_4ff0 => extern "C" fn op_oef2_tex_pos_set(rec: u32, pos: u32) -> u32 {
@@ -910,9 +910,9 @@ ported! {
     opus_monster_tex_pos @ 0x0080_0e50 => extern "C" fn opus_monster_tex_pos(slot: u32) -> u32 {
         opus::bridge::opus_monster_tex_pos(&mem(), slot)
     }
-    /// `opus_parts_clear(i, n)`.
-    opus_osu_init_group @ 0x0080_1480 => extern "C" fn opus_parts_clear(i: u32, n: u32) {
-        opus::bridge::opus_parts_clear(&mut mem(), i, n);
+    /// `opus_osu_init_group(i, n)`.
+    opus_osu_init_group @ 0x0080_1480 => extern "C" fn opus_osu_init_group(i: u32, n: u32) {
+        opus::bridge::opus_osu_init_group(&mut mem(), i, n);
     }
     /// `op_oef2_sound_wait()`.
     op_oef2_sound_wait @ 0x0080_0330 => extern "C" fn op_oef2_sound_wait() -> u32 {
@@ -2477,16 +2477,16 @@ ported! {
     pppKeLnsLpCon @ 0x0075_af30 => extern "C" fn ppp_ke_lns_lp_con(obj: u32, ctrl: u32) {
         prog::bridge::ppp_ke_lns_lp_con(&mut mem(), obj, ctrl);
     }
-    /// `op_rt_m_x(dst, src, angle)`.
-    op_rt_m_x @ 0x007e_9580 => extern "C" fn op_rt_m_x(dst: u32, src: u32, angle: f32) {
+    /// `op_rot_m_x(dst, src, angle)`.
+    op_rot_m_x @ 0x007e_9580 => extern "C" fn op_rot_m_x(dst: u32, src: u32, angle: f32) {
         op::bridge::op_rt_m(&mut mem(), dst, src, angle, mat::Axis::X);
     }
-    /// `op_rt_m_y(dst, src, angle)`.
-    op_rt_m_y @ 0x007e_9670 => extern "C" fn op_rt_m_y(dst: u32, src: u32, angle: f32) {
+    /// `op_rot_m_y(dst, src, angle)`.
+    op_rot_m_y @ 0x007e_9670 => extern "C" fn op_rot_m_y(dst: u32, src: u32, angle: f32) {
         op::bridge::op_rt_m(&mut mem(), dst, src, angle, mat::Axis::Y);
     }
-    /// `op_rt_m_z(dst, src, angle)`.
-    op_rt_m_z @ 0x007e_9760 => extern "C" fn op_rt_m_z(dst: u32, src: u32, angle: f32) {
+    /// `op_rot_m_z(dst, src, angle)`.
+    op_rot_m_z @ 0x007e_9760 => extern "C" fn op_rot_m_z(dst: u32, src: u32, angle: f32) {
         op::bridge::op_rt_m(&mut mem(), dst, src, angle, mat::Axis::Z);
     }
     /// `op_rt_m_yxz(dst, src, angles, t)`.
