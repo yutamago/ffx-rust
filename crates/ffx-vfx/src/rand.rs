@@ -9,6 +9,23 @@
 //! `op_random(x)` and `op_random_p(x)` scale a draw to `[-x, x)` and
 //! `[0, x)`, and leave `R` at the draw minus 1.8872414 (the next seed),
 //! with the x87 arithmetic of the original ([`crate::x87`]).
+//!
+//! The particle programs `pppRandFloat`, `pppRandUpFloat`,
+//! `pppRandDownFloat` and their vector forms (`pppRandFV`, `...UpFV`,
+//! `...DownFV`) draw differently, in the PC port's translation of the
+//! PS2's VU0 code ([`bridge::draw`]): `t0 = r0 - 1` is copied into a VF
+//! register, `R ^= t0 & 0x7fffff`, the CRT is seeded with
+//! `srand(R & 0x7fffff)`, `vrnext` draws, and the draw is that plus
+//! `t0` as a float. Every emulated register write is reproduced. At an
+//! object's frame 0 the program draws once, or twice when the key's flag
+//! byte is set, and keeps the value `w` in its work area:
+//! - plain: `2 d1` or `d2 + d1`, applied as `target += w k - k`;
+//! - up: `d1` or `(d2 + d1) / 2`, applied as `target += k w`;
+//! - down: `-d1` or `(-d1 - d2) / 2`, applied as `target += k w`.
+//!
+//! At later frames whose key applies it adds again with the kept `w`. The
+//! target is a field of the object (key `+4`) or `g_pppRandTarget` for -1;
+//! `k` is the key's float at `+8` (or three at `+0x10`).
 
 use crate::x87;
 
@@ -46,6 +63,8 @@ pub fn positive(d: f32, x: f32) -> (f32, f32) {
 pub mod bridge {
     use ffx_bridge::{Global, Mem};
 
+    use crate::x87;
+
     /// `g_Vu0_R`: VU0's `R`, as `f32` bits.
     pub const R: Global<u32> = Global::new(0x00c0_a000);
     /// `g_Vu0_RSeeded`: nonzero once `R` has been seeded.
@@ -67,6 +86,150 @@ pub mod bridge {
     /// `op_random_p(x)` (`0x007e6780`): a random value in `[0, x)`.
     pub fn op_random_p(mem: &mut impl Mem, x: f32) -> f32 {
         run(mem, x, super::positive)
+    }
+
+    /// `g_Ee_Gpr`'s `r0`, low word.
+    const R0: Global<u32> = Global::new(0x00c8_f508);
+    /// `g_Ee_Gpr`'s `t0` (four words).
+    const T0: Global<u32> = Global::new(0x00c8_f588);
+    /// The emulated VF register the draws leave their value in (x).
+    pub const VF_DRAW: Global<u32> = Global::new(0x00c8_f7a0);
+    /// The emulated VF register that takes `t0` (four words).
+    pub const VF_T0: Global<u32> = Global::new(0x00c8_f7b0);
+    /// `g_pppRandTarget`: what the rand programs add to for target -1.
+    pub const TARGET: Global<u32> = Global::new(0x00d5_2398);
+
+    fn at(mem: &impl Mem, g: Global<u32>, word: u32) -> u32 {
+        g.ptr(mem).addr + 4 * word
+    }
+
+    /// `pppVu0RNext(out, _)` (`0x0072f420`): `vrnext`: `R` stepped (when
+    /// seeded; it does not mark it seeded) into `out`, else 1.0.
+    pub fn ppp_vu0_rnext(mem: &mut impl Mem, out: u32) {
+        let v = if SEEDED.get(mem) != 0 {
+            let r = super::step(R.get(mem));
+            R.set(mem, r);
+            r
+        } else {
+            1.0f32.to_bits()
+        };
+        mem.write(out, crate::x87::load(v));
+    }
+
+    /// One draw of the rand programs, `srand` being the CRT's.
+    pub fn draw<M: Mem>(mem: &mut M, srand: &mut impl FnMut(&mut M, u32)) -> f32 {
+        let t0 = R0.get(mem).wrapping_sub(1);
+        let hi = (t0.cast_signed() >> 31).cast_unsigned();
+        T0.set(mem, t0);
+        VF_T0.set(mem, t0);
+        let z = mem.read::<u32>(at(mem, T0, 2));
+        mem.write(at(mem, VF_T0, 2), z);
+        let w = mem.read::<u32>(at(mem, T0, 3));
+        mem.write(at(mem, VF_T0, 3), w);
+        let r = R.get(mem) ^ (crate::x87::load(t0) & 0x007f_ffff);
+        R.set(mem, r);
+        mem.write(at(mem, T0, 1), hi);
+        mem.write(at(mem, VF_T0, 1), hi);
+        srand(mem, r & 0x007f_ffff);
+        #[allow(clippy::cast_precision_loss)] // fild, then fstp m32
+        let tf = VF_T0.get(mem).cast_signed() as f32;
+        VF_T0.set(mem, tf.to_bits());
+        let out = VF_DRAW.ptr(mem).addr;
+        ppp_vu0_rnext(mem, out);
+        let d = crate::x87::add(f32::from_bits(VF_DRAW.get(mem)), tf);
+        VF_DRAW.set(mem, d.to_bits());
+        d
+    }
+
+    /// How a rand program spreads its draws.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Spread {
+        /// `pppRandFloat`, `pppRandFV`.
+        Plain,
+        /// `pppRandUpFloat`, `pppRandUpFV`.
+        Up,
+        /// `pppRandDownFloat`, `pppRandDownFV`.
+        Down,
+    }
+
+    /// The float rand programs: `vector` for the three-value forms.
+    pub fn ppp_rand_float<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        spread: Spread,
+        vector: bool,
+        srand: &mut impl FnMut(&mut M, u32),
+    ) {
+        use crate::x87::{ADD, MUL, Reg, SUB};
+        if crate::ppp::bridge::STOP.get(mem) != 0 {
+            return;
+        }
+        let frame = mem.read::<u32>(obj.wrapping_add(0xc));
+        let work = |mem: &M| {
+            let offsets = mem.read::<u32>(ctrl.wrapping_add(0xc));
+            obj.wrapping_add(0xa0)
+                .wrapping_add(mem.read::<u32>(offsets))
+        };
+        let w_at = if frame == 0 {
+            let d1 = draw(mem, srand);
+            let d1 = if spread == Spread::Down { -d1 } else { d1 };
+            let two = mem.read::<u8>(key + if vector { 0x20 } else { 0xc }) != 0;
+            let w = if two {
+                let d2 = draw(mem, srand);
+                match spread {
+                    Spread::Plain => x87::add(d2, d1),
+                    Spread::Up => Reg::load_f32(d2).mem(ADD, d1).constant(MUL, 0.5).store(),
+                    Spread::Down => Reg::load_f32(d1).mem(SUB, d2).constant(MUL, 0.5).store(),
+                }
+            } else if spread == Spread::Plain {
+                let r = Reg::load_f32(d1);
+                r.reg(ADD, r).store()
+            } else {
+                d1
+            };
+            let w_at = work(mem);
+            mem.write(w_at, w.to_bits());
+            w_at
+        } else {
+            if mem.read::<u32>(key) != frame {
+                return;
+            }
+            work(mem)
+        };
+        let to = mem.read::<u32>(key + 4);
+        let t_at = if to == u32::MAX {
+            TARGET.ptr(mem).addr
+        } else {
+            obj.wrapping_add(0xa0).wrapping_add(to)
+        };
+        let float = |mem: &M, a: u32| f32::from_bits(mem.read(a));
+        if vector {
+            for i in 0..3 {
+                let k = float(mem, key + 0x10 + 4 * i);
+                let w = float(mem, w_at);
+                let term = if spread == Spread::Plain {
+                    let kk = Reg::load_f32(x87::load_f32(k));
+                    Reg::load_f32(w).reg(MUL, kk).reg(SUB, kk).store()
+                } else {
+                    x87::mul(k, w)
+                };
+                let target = t_at.wrapping_add(4 * i);
+                let sum = x87::add(term, float(mem, target));
+                mem.write(target, sum.to_bits());
+            }
+        } else {
+            let k = float(mem, key + 8);
+            let w = float(mem, w_at);
+            let term = if spread == Spread::Plain {
+                Reg::load_f32(w).mem(MUL, k).mem(SUB, k)
+            } else {
+                Reg::load_f32(k).mem(MUL, w)
+            };
+            let sum = term.mem(ADD, float(mem, t_at)).store();
+            mem.write(t_at, sum.to_bits());
+        }
     }
 }
 
