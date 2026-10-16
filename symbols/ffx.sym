@@ -4553,6 +4553,7 @@
 0x00920c00 function rcbgSceneSetMatrix        # fh v3:exact 0x00920c00
 0x00920e40 function rcbgSceneSetMatrix_Cross  # fh switch:cg2 0x7100547310
 0x009210a0 function rcbgSceneSetPal           # fh switch:bsim1.00 0x71005472b0
+0x00921250 function rcVec3fLength                # (v) -> float: sqrt((x*x + y*y) + z*z) through _CIsqrt, stored as f32; rcVec3fNormalize divides by it
 0x009212c0 function rcVec3fMul                # fh v3:bsim1.00 0x009212c0
 0x00921360 function rcVec3fNormalize          # fh v3:exact 0x00921360
 0x009213d0 function rcBBoxGetCenter           # fh v3:exact 0x009213d0
@@ -4648,6 +4649,7 @@
 0x0092ba70 function rcdtParseGetBegin         # fh switch:bsim1.00 0x71005495d0
 0x0092ba90 function rcdtParseGetBin           # fh v3:exact 0x0092ba90
 0x0092bf50 function rcdtParseInit             # fh v3:exact 0x0092bf50
+0x0092c000 function rcdtParseInitSeparators      # (parse): parse +0xc, 128 bytes per ASCII code, = 1 for 0x00..0x20 (whitespace), 0 else; read by the token scanners 0x0092bd20, 0x0092be40; rcdtParseInit tail-calls it
 0x0092c0a0 function rcdtParseSet              # fh v3:exact 0x0092c0a0
 0x0092c0d0 function rcdtParseSetPos           # fh switch:cg2 0x71008bfbc8
 0x0092d230 function rcbgTrxDraw               # fh switch:cg3 0x71005557c0
@@ -4676,11 +4678,13 @@
 0x0092ede0 function rcefTaskRetSeqCont_Inner  # fh call.cs cdecl
 0x0092ee00 function rcefTaskRetSeqCont        # fh v3:exact+call.cs 0x0092ee00 cdecl
 0x0092ee20 function rcefTaskSetSeq            # fh v3:exact 0x0092ee20
+0x0092ee40 function rcefTaskSetSeqCont           # (task, seq): rcefTaskSetSeq then flags |= 2 (run the new sequence this frame), as rcefTaskRetSeqCont does for a return; in g_MagicImports
 0x0092ee60 function rcefTaskWait              # fh v3:exact 0x0092ee60
 0x0092ee90 function rcefTaskWaitSeq           # fh v3:exact 0x0092ee90
 0x0092eee0 function rcefParCreate             # fh v3:exact 0x0092eee0
 0x0092efd0 function rcefParInit               # fh v3:exact 0x0092efd0
 0x0092f010 function rcefParProc               # fh v3:exact 0x0092f010
+0x0092f470 function rcefAnimeStart               # (anime, data, out0, out1): +4 data, +0x48/+0x4c outputs, +0 = 1 (running), +0x20 = anime + 0x50; 0x00925590 starts obj +0x330 with obj +0x1f0, +0x170
 0x0092f4a0 function rcefAnimeFini             # fh v3:exact 0x0092f4a0
 0x0092f4c0 function rcefAnimeInit             # fh v3:exact 0x0092f4c0
 0x0092f4f0 function rcefAnimeProc             # fh v3:exact 0x0092f4f0
@@ -4695,15 +4699,19 @@
 0x0092fe30 function rcefObjCalcWorldMatrix    # fh v3:exact 0x0092fe30
 0x0092fee0 function rcefObjFini               # fh v3:exact 0x0092fee0
 0x0092ff20 function rcefObjInit               # fh v3:exact 0x0092ff20
+0x0092fff0 function rcefObjIsAnimeEnd            # (obj) -> bit 0 of obj +0x330 (rcefAnimeStart's running flag) clear; as rcefObjIsParEnd for +0x280
 0x00930010 function rcefObjIsParEnd           # fh v3:bsim1.00 0x00930010
 0x00930030 function rcefObjNew                # fh v3:bsim1.00 0x00930030
 0x00930060 function rcefObjProc               # fh v3:exact+call.cs 0x00930060 cdecl
+0x009301e0 function rcefObjClearMode             # (obj): obj +0xbc &= ~0xff0; rcefObjSetMode calls it then ORs the mode in
 0x00930200 function rcefObjSetMode            # fh v3:exact 0x00930200
 0x00930220 function rcefTaskCtrlAdd           # fh v3:exact 0x00930220
 0x00930260 function rcefTaskCtrlFini          # fh v3:exact 0x00930260
 0x00930290 function rcefTaskCtrlInit          # fh v3:exact 0x00930290
 0x009302e0 function rcefTaskCtrlIsEnd         # fh v3:exact 0x009302e0
 0x00930300 function rcefTaskCtrlProc          # fh v3:exact 0x00930300
+0x00930350 function rcEffectTaskAnimeWait        # sequence (obj): rcefTaskRetSeqCont once rcefObjIsAnimeEnd; next to rcEffectTaskParWait; in g_MagicImports
+0x009303c0 function rcEffectTaskFlagWait         # sequence (task): rcefTaskRetSeqCont once 0x025d5c10 is 0; in g_MagicImports
 0x00930430 function rcEffectTaskMotionWait    # fh v3:exact 0x00930430
 0x00930490 function rcEffectTaskParWait       # fh v3:bsim1.00 0x00930490
 0x009304b0 function rcEffectTaskPrayWait      # fh v3:exact 0x009304b0
@@ -6976,10 +6984,15 @@
 0x00c30f94 label NvOptimusEnablement          # fh v4:imported
 0x00c30f98 label AmdPowerXpressRequestHighPerformance # fh v4:imported
 0x00c5e350 label    g_GuideFlags                 # bit 0: the minimap may show (clear: Guide_FadeOff)
+0x00c5e364 label    g_GuideFadeDelay             # frames Guide_FadeStep waits before fading in (and longer than it before fading out); 2 in .data
+0x00c5e368 label    g_GuideFadeSteps             # steps of a minimap fade: g_GuideFade = level * 128 / steps (Guide_FadeStep); 6 in .data
 0x00c5e370 label    g_GuideMarkerPalette         # 16 RGBA of floats (128 = 1), by marker flags & 0xf
 0x00c5e478 label    g_GuideEnabled               # 0: Guide_Update returns at once
 0x00c5e790 label    g_GuidePacketStrides         # bytes per primitive of the minimap mesh's packet types 0-7 (0x14 0x1c 0x20 0x28 0x18 0x20 0x28 0x30); type 0: triangles, vertex indices at +0xc
 0x00c64ce8 label g_MagicImports                # 744 slots (0xba0 bytes) handed to every magic_*.dll's InitMagicPRX: 658 FFX.exe functions (effects 278, battle 114, map 104, characters 83, ...), the overlays' only way into the game
+0x00c86b60 label    g_NkzAuronLimitTime          # f32 per level, NkzGetAuronLimitTime (4.0 4.0 4.0 3.0)
+0x00c86b70 label    g_NkzAuronLimitButtons       # 0x20 bytes per sequence, NkzGetAuronLimitButtonData
+0x00c86bf0 label    g_NkzTidusLimitTime          # f32 per level, NkzGetTidusLimitTime (3.0 3.0 3.0 2.0)
 0x00c8f508 label g_Ee_Gpr                    # emulated R5900 GPRs, 32 x 16 bytes: r0 (zero) here, t0 at +0x80 (pppRandFloat: t0 = r0 - 1), sp at +0x1d0 (AsmEmuInit stores this address there); argument registers set by AsmEmuSetFuncParam0 and the setters around it
 0x00cc9698 label    g_BasePath
 0x00cc9c48 label BigFileStream_sBigFileStreamInstacne # was g_FileSys
@@ -6988,6 +7001,7 @@
 0x00ccb960 label    g_CharsetWestern
 0x00cded58 label    g_LangManager
 0x00d2c258 label    g_FpData                     # current field's FP (effect) table: u16 count at +4, 0x50-byte entries with the id at +0x64; runtime state at 0x00d2c260 (0x80 each) and 0x00d30260 (0x4c each)
+0x010d5600 label    g_KeMdlTkClut                # three words KeMdl_MkTkClut stores (the third a float)
 0x0112a92c label    g_KernelCommand
 0x0112a930 label    g_KernelMonMagic1
 0x0112a934 label g_KernelMonMagic2             # monmagic2 (Kernel_LoadTables 0x00781d40); read by MsGetRomMonCommand2
@@ -7010,6 +7024,8 @@
 0x01136fd8 label    g_CamOverrideLookAt          # override camera look-at, vec4 (game space)
 0x01136fe8 label    g_CamOverrideUp              # override camera up vector, vec4 (reset to (0,-1,0)-ish: 0x01136fec = -1.0)
 0x01137540 label    g_Cameras                    # ?3 cameras x 0xda0: two sides of 0x61c each (0 = ref, 1 = cam), channels of 0x130 at +0xc0, channel table at 0x011381a8
+0x012f4e80 label    g_SqsIopStatus               # sound driver status words: 0 system (SqsIopSoundSystemStatus), 1 error (SqsIopSoundErrorStatus), indexed by SqsReportIopSoundStatus
+0x012fb7f0 label    g_SgVCount                   # vertical blank counter, +2 a frame (0x00821e80); Sg_MainCalcRate reads it; yiGetVCount
 0x01326b28 label    g_ScriptContext              # event/script context pointer (FUN_0086aff0): +0x0a player worker, +0x0c worker count, +0x218 player position, +0x1e4/0x1f0 talk state
 0x01326d70 label    g_MsgWindows                 # 2 banks x 8 message windows, 0x2c bytes: +0x14 state, +0x16 Msg_Flags, +0x18 display flags, +0x1d mode flags
 0x013270d0 label    g_PadPressed                 # buttons newly pressed this frame, OR over pads (0x00871d70)
@@ -7022,7 +7038,18 @@
 0x0134084c label    g_PauseEntered               # 1 once Pause_Enter ran
 0x01869ab0 label    g_MsgVars                    # per window 32 pointers to text variable records {u8 default type, u8 type, i32 value}; text code 0x12
 0x01869eb0 label    g_MacroDic                   # macrodic section pointer table (MacroDic_Load)
+0x018ded08 label    g_YiRenderStatus             # field renderer flags: yiRenderEnable/Disable; |= 0x11 once a map is read (yiMapReadMaster); bit 0 gates yiCallFieldParticle
+0x018ded0c label    g_YiDrawMask                 # yiGetDrawMask/yiSetDrawMask; -9 after a map is read, -1 with the battle map circle on (yiMapReadMaster); script native 0x8000 sets its bits
+0x018deff8 label    g_YiScaleFactor              # x, y, z floats (yiSetScaleFactor)
+0x018df588 label    g_YiDObjCount                # display objects in use (yiGetMatrixDObj bound)
+0x018df59c label    g_YiDObjs                    # display objects, 0xb4 bytes each: +0 matrix, +0x40 rotation, +0x50 translation, +0x74 u16 group (yiGetMatrixGroup), +0x76 u16 rotation order (yiRotMatrixSeq; 0x00908190)
+0x019138a8 label    g_YiMapData                  # the map data read (yiMapReadMaster, yiObjReadCallback); +4 its status (yiGetMapStatus)
+0x0193bf6c label    g_GuideFadeState             # Guide_FadeStep: 0 hidden (waiting), 1 fading in, 2 shown, 3 fading out; Guide_FadeOff clears it
+0x0193bf70 label    g_GuideFadeWait              # frames waited (Guide_FadeStep)
+0x0193bf74 label    g_GuideFadeLevel             # steps faded in, 0..g_GuideFadeSteps (Guide_FadeStep)
 0x0193bf78 label    g_GuideFade                  # the minimap's alpha, 0..128 (Guide_FadeStep)
+0x0193bf7c label    g_GuideBattleSave            # the guide's +0x6c float kept over a battle (rcbgGuideBattleBegin/End)
+0x0193bf80 label    g_YnMapSystem                # Yn's field state: +0 the map (its +8: guide map list, +0x18 i16 count, +0x1a i16 shown, +0x1c models), +4 the guide (Yn_GuideMapGetMapNo, Yn_GuideMapSetMapNo, Yn_BattleBegin)
 0x022fb504 label    g_Settings
 0x02310c40 label    g_CdLib                   # function table of the PS2 CD-library emulation
 0x02311428 label    g_CamOverrideScreenDepth     # override projection distance (default 1024.0; Native_CamSetScreenDepth's units)
@@ -7030,4 +7057,5 @@
 0x02311430 label    g_Camera                     # pointer to the active camera channel (FUN_007bd470 reads its sides): +0x50 look-at point (ref, side 0) xyz, +0x66c eye (side 1) xyz; live: the look-at follows the player at chest height on the S.S. Winno deck
 0x023c44e0 label    g_ChrCount                   # number of field characters in g_ChrArray
 0x023c44e4 label    g_ChrArray                   # field characters, 0x880 bytes each (byte +2 = active)
+0x023cbbf0 label    g_SgFrame                    # main loop frame counter: Sg_MainLoop increments it and passes it to sceGsSwapDBuffDc; yiGetFCount returns it * 2
 0x023cbebc label gNeedAutoSave                # fh v4:user_defined
