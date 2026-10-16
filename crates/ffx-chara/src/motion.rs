@@ -185,6 +185,56 @@ pub mod bridge {
     /// The first sequence of the first key (`Ch_SeqLink`).
     pub const SEQUENCE_HEAD: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x0130_11d8);
 
+    /// The motion group table (`SG_RemoveMotionGroup`): 50 entries of 12
+    /// bytes from `0x013011e0`, the group's address first.
+    pub const MOTION_GROUP_TABLE: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x0130_11e0);
+
+    /// `Ch_MgrpMove(new, old)` (`0x008370c0`, the Switch name): a motion
+    /// group moved from `old` to `new`. `relocate_group` is
+    /// `SG_RelocateGroup` (at `new`); then the group's table entry, the
+    /// sequences of the group (data `+0` and group `+0x10` of each used
+    /// [`SEQUENCES`] entry whose group is `old`) and every active
+    /// character playing it (`+0x7e8`, through `Ch_MoveMgrp`) follow by
+    /// `new - old`. Returns what the original leaves in EAX (its loops'
+    /// ends: the character array's, else the sequence table's).
+    pub fn ch_mgrp_move<M: Mem>(
+        mem: &mut M,
+        new: u32,
+        old: u32,
+        relocate_group: impl FnOnce(&mut M, u32),
+    ) -> u32 {
+        let d = new.wrapping_sub(old);
+        relocate_group(mem, new);
+        let table = MOTION_GROUP_TABLE.ptr(mem).addr;
+        if let Some(e) = (0..50)
+            .map(|i| table + 12 * i)
+            .find(|&e| mem.read::<u32>(e) == old)
+        {
+            mem.write(e, new);
+        }
+        let seqs = SEQUENCES.ptr(mem).addr;
+        for i in 0..100 {
+            let e = seqs + 0x14 * i;
+            let data: u32 = mem.read(e);
+            if data != 0 && mem.read::<u32>(e + 0x10) == old {
+                mem.write(e, data.wrapping_add(d));
+                mem.write(e + 0x10, old.wrapping_add(d));
+            }
+        }
+        let array = crate::handle::bridge::CHR_ARRAY;
+        if array.get(mem) == 0 {
+            return seqs + 0x14 * 100 + 0x10;
+        }
+        crate::handle::bridge::each_active(mem, |m, c| {
+            if m.read::<u32>(c + 0x7e8) == old {
+                crate::mapping::bridge::ch_move_mgrp(m, c, d);
+            }
+        });
+        #[allow(clippy::cast_sign_loss)] // the original multiplies unsigned
+        let n = crate::handle::bridge::CHR_COUNT.get(mem) as u32;
+        array.get(mem).wrapping_add(n.wrapping_mul(0x880))
+    }
+
     /// `Ch_SeqLink()` (`0x00838170`): links the used sequences: one chain
     /// per key through `+8` (later ones marked taken), the chains'
     /// first entries through `+0xc` from [`SEQUENCE_HEAD`].
