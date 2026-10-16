@@ -1597,6 +1597,12 @@ fn tk_round2_matches_the_original() {
             t.twin("TkMn2GetCommandName", 0x008c_1a20, &[id], U32, |o| {
                 w(tk::tk_mn2_get_command_name(o, id))
             });
+            t.twin("TkMn2GetAbilityMes", 0x008c_19a0, &[id], U32, |o| {
+                w(tk::tk_mn2_get_ability_mes(o, id))
+            });
+            t.twin("TkMn2GetAbilityHelp", 0x008c_1960, &[id], U32, |o| {
+                w(tk::tk_mn2_get_ability_help(o, id))
+            });
             for (name, sym) in [
                 ("TkMn2GetCommandHelp", 0x008c_19e0),
                 ("TkMenuGetCommandHelp", 0x008d_de10),

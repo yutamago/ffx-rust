@@ -890,6 +890,18 @@ pub mod bridge {
         kernel_text(mem, ffx_kernel::bridge::COMMAND, id, 0)
     }
 
+    /// `TkMn2GetAbilityMes(id)` (`0x008c19a0`): an auto-ability's name
+    /// (`MsGetRomAbility`, text offset `+0`, `+4` in hiragana).
+    pub fn tk_mn2_get_ability_mes(mem: &mut impl Mem, id: u32) -> u32 {
+        kernel_text(mem, ffx_kernel::bridge::A_ABILITY, id, 0)
+    }
+
+    /// `TkMn2GetAbilityHelp(id)` (`0x008c1960`): an auto-ability's help
+    /// text (`+8`, `+0xc` in hiragana).
+    pub fn tk_mn2_get_ability_help(mem: &mut impl Mem, id: u32) -> u32 {
+        kernel_text(mem, ffx_kernel::bridge::A_ABILITY, id, 8)
+    }
+
     /// `TkMenuGetCommandHelp(id)` (`0x008dde10`) and `TkMn2GetCommandHelp`
     /// (`0x008c19e0`): a command's help text.
     pub fn tk_get_command_help(mem: &mut impl Mem, id: u32) -> u32 {

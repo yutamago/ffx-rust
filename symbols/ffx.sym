@@ -4722,6 +4722,8 @@
 0x008c1870 function TkMn2DrawWeaponName       # fh switch:bsim1.00 0x71004c6db0
 0x008c18a0 function TkMn2DumpPlate            # fh switch:bsim1.00 0x71004c7740
 0x008c1910 function SetSummonGrowMax          # fh v3:exact 0x008c18f0 +SetSummonGrowMax
+0x008c1960 function TkMn2GetAbilityHelp       # (id) MsGetRomAbility text +8 (+0xc hiragana); Switch name: Switch 0x71004c7860, followed by TkMn2GetAbilityMes, same order here
+0x008c19a0 function TkMn2GetAbilityMes        # (id) auto-ability name: MsGetRomAbility text +0 (+4 hiragana), as TkMn2GetCommandName; Switch name (0x71004c78b0); Switch has no TkMn2GetAbilityName
 0x008c19e0 function TkMn2GetCommandHelp       # fh v3:cg5 0x8c19c0
 0x008c1a20 function TkMn2GetCommandName       # fh v3:cg2 0x8c1a00
 0x008c1b30 function TkMn2GetItemHelp          # fh v3:cg3 0x8c1b10

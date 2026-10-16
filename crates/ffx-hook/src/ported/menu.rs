@@ -1704,4 +1704,12 @@ ported! {
         #[allow(clippy::cast_possible_truncation)] // a 16-bit store
         gu::gu_window_set_word30(&mut mem(), window, v as u16)
     }
+    /// `TkMn2GetAbilityMes(id)`: an auto-ability's name.
+    TkMn2GetAbilityMes @ 0x008c_19a0 => extern "C" fn tk_mn2_get_ability_mes(id: u32) -> u32 {
+        tk::tk_mn2_get_ability_mes(&mut mem(), id)
+    }
+    /// `TkMn2GetAbilityHelp(id)`: an auto-ability's help text.
+    TkMn2GetAbilityHelp @ 0x008c_1960 => extern "C" fn tk_mn2_get_ability_help(id: u32) -> u32 {
+        tk::tk_mn2_get_ability_help(&mut mem(), id)
+    }
 }
