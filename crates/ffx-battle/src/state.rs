@@ -295,6 +295,36 @@ pub mod bridge {
             ATEL_COUNT.set(mem, n + 1);
         }
     }
+
+    /// The battle field records (14 bytes each, `i16` ID first) the
+    /// encounter table loaded (`MsBattleGetNum`).
+    pub const FIELD_RECORDS: Global<u32> = Global::new(0x0112_a9c8);
+    /// The current battle field's record (`i16`, `MsBattleGetNum`).
+    pub const FIELD_INDEX: Global<i16> = Global::new(0x0112_c256);
+
+    /// `MsBattleCheck` (`0x00780c90`): 1 while a battle runs ([`STATUS`])
+    /// or runs commands ([`EXE`]), else 0.
+    pub fn ms_battle_check(mem: &impl Mem) -> u32 {
+        u32::from(STATUS.get(mem) != 0 || EXE.get(mem) != 0)
+    }
+
+    /// `MsBattleChrStart` (`0x00780cb0`): 1 once the actors exist.
+    pub fn ms_battle_chr_start(mem: &impl Mem) -> u32 {
+        u32::from(crate::actor::bridge::CHR_TOP.get(mem) != 0)
+    }
+
+    /// `MsBattleGetNum` (`0x007816b0`): in battle, the field's ID (its
+    /// record's first `i16`) `<< 16` + the encounter group's ID, else 0.
+    pub fn ms_battle_get_num(mem: &impl Mem) -> u32 {
+        if STATUS.get(mem) == 0 {
+            return 0;
+        }
+        let i = i32::from(FIELD_INDEX.get(mem)).cast_unsigned();
+        let rec = FIELD_RECORDS.get(mem).wrapping_add(i.wrapping_mul(14));
+        let f = i32::from(Ptr::<i16>::new(rec).get(mem)).cast_unsigned();
+        let g = Ptr::<u8>::new(SCENE_GROUP.get(mem)).get(mem);
+        (f << 16).wrapping_add(u32::from(g))
+    }
 }
 
 #[cfg(test)]

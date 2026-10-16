@@ -7123,6 +7123,7 @@
 0x0112a960 label g_KernelSummonGrow            # battle resource 6 (MsBattleInit); MsGetRomSummonGrow
 0x0112a964 label g_KernelKaizou                # battle resource 5 (MsBattleInit); MsGetRomKaizou
 0x0112a9c0 label g_BtlVoiceEvent             # pointer to a byte flag; MsGetVoiceEventFlag (0x007986a0) is 1 when it is set and g_BtlVoiceMute is not
+0x0112a9c8 label g_BtlFieldRecords           # pointer to the battle fields' 14-byte records (i16 ID first); MsBattleGetNum reads record g_BtlFieldIndex
 0x0112a9d4 label g_BtlEncountType            # u8 (MsGetEncountType 0x00782a10)
 0x0112a9f0 label g_BtlSceneField             # pointer to the battle field's i16 ID; MsGetBattleScene returns it << 16 + *g_BtlSceneGroup
 0x0112a9fc label g_BtlSceneGroup             # pointer to the encounter group's u8 ID (MsGetBattleScene)
@@ -7132,6 +7133,7 @@
 0x0112bde1 label g_BtlCommandCueCount        # i8 entries in g_BtlCommandCue
 0x0112be90 label g_BtlGilAmount               # i32, gil offered (DmgCalc_Bribe) or thrown (MsCalcDamageCommand formula 0x15: gil / 10)
 0x0112c021 label g_BtlReadCueLevel           # u8, MsBtlReadCueLevel (0x007ad180)
+0x0112c256 label g_BtlFieldIndex             # i16, the current battle field's record (MsBattleGetNum: its ID << 16 + the group ID)
 0x0112c526 label g_BtlWeaponList             # u16 list MsGetSaveWeaponList (0x007abd10) fills with 0x5000 + equipment slot
 0x0112c895 label g_BtlParty                  # 3 x u8 ply_save indices; MsSetSaveParty (0x00786930) copies them to g_SaveInParty
 0x0112c948 label g_BtlUseItem                # u16 item being used (MsSetUseItem 0x00790790); MsGetSaveItemNum counts one less of it

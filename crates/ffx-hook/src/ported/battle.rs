@@ -711,4 +711,110 @@ ported! {
     MsCalcDamageCTB @ 0x0078_98d0 => extern "C" fn ms_calc_damage_ctb(cue: u32, ctb: u32, rank: i32, haste: u32, slow: u32) {
         cmd::ms_calc_damage_ctb(&mut mem(), cue, ctb, rank, haste, slow);
     }
+
+    // Actor getters.
+    /// `MsGetRamChrHP(i)`.
+    MsGetRamChrHP @ 0x0079_add0 => extern "C" fn ms_get_ram_chr_hp(i: u32) -> u32 {
+        actor::ms_get_ram_chr_hp(&mem(), i)
+    }
+    /// `MsGetRamChrHP_0079adf0(i)`.
+    MsGetRamChrHP_0079adf0 @ 0x0079_adf0 => extern "C" fn ms_get_ram_chr_hp_max(i: u32) -> u32 {
+        actor::ms_get_ram_chr_hp_max(&mem(), i)
+    }
+    /// `MsGetRamChrMP(i)`.
+    MsGetRamChrMP @ 0x0079_ae50 => extern "C" fn ms_get_ram_chr_mp(i: u32) -> u32 {
+        actor::ms_get_ram_chr_mp(&mem(), i)
+    }
+    /// `MsGetRamChrMPmax(i)`.
+    MsGetRamChrMPmax @ 0x0079_ae70 => extern "C" fn ms_get_ram_chr_mp_max(i: u32) -> u32 {
+        actor::ms_get_ram_chr_mp_max(&mem(), i)
+    }
+    /// `MsGetRamChrMag(i)`.
+    MsGetRamChrMag @ 0x0079_ae90 => extern "C" fn ms_get_ram_chr_mag(i: u32) -> u32 {
+        actor::ms_get_ram_chr_mag(&mem(), i)
+    }
+    /// `MsGetRamChrName(i)`.
+    MsGetRamChrName @ 0x0079_af10 => extern "C" fn ms_get_ram_chr_name(i: u32) -> u32 {
+        actor::ms_get_ram_chr_name(&mem(), i)
+    }
+    /// `MsGetRamChrIconNumber(i)`.
+    MsGetRamChrIconNumber @ 0x0079_ae10 => extern "C" fn ms_get_ram_chr_icon_number(i: u32) -> u32 {
+        actor::ms_get_ram_chr_icon_number(&mem(), i)
+    }
+    /// `MsGetRamChrIconType(i)`.
+    MsGetRamChrIconType @ 0x0079_ae30 => extern "C" fn ms_get_ram_chr_icon_type(i: u32) -> u32 {
+        actor::ms_get_ram_chr_icon_type(&mem(), i)
+    }
+    /// `MsGetRamChrMegas(i)`.
+    MsGetRamChrMegas @ 0x0079_aed0 => extern "C" fn ms_get_ram_chr_megas(i: u32) -> u32 {
+        actor::ms_get_ram_chr_megas(&mem(), i)
+    }
+    /// `MsGetRamChrDisableZan(i)`.
+    MsGetRamChrDisableZan @ 0x0079_ad90 => extern "C" fn ms_get_ram_chr_disable_zan(i: u32) -> u32 {
+        actor::ms_get_ram_chr_disable_zan(&mem(), i)
+    }
+    /// `MsGetRamChrCTBmax(i)`.
+    MsGetRamChrCTBmax @ 0x0079_ad10 => extern "C" fn ms_get_ram_chr_ctb_max(i: u32) -> u32 {
+        actor::ms_get_ram_chr_ctb_max(&mem(), i)
+    }
+    /// `MsGetChrStatDeath(i)`.
+    MsGetChrStatDeath @ 0x0079_5780 => extern "C" fn ms_get_chr_stat_death(i: u32) -> u32 {
+        actor::ms_get_chr_stat_death(&mem(), i)
+    }
+    /// `MsGetChrStatStone(i)`.
+    MsGetChrStatStone @ 0x0079_5800 => extern "C" fn ms_get_chr_stat_stone(i: u32) -> u32 {
+        actor::ms_get_chr_stat_stone(&mem(), i)
+    }
+    /// `MsGetChrStatWeak(i)`.
+    MsGetChrStatWeak @ 0x0079_5840 => extern "C" fn ms_get_chr_stat_weak(i: u32) -> u32 {
+        actor::ms_get_chr_stat_weak(&mem(), i)
+    }
+    /// `MsGetChrStatZombie(i)`.
+    MsGetChrStatZombie @ 0x0079_5880 => extern "C" fn ms_get_chr_stat_zombie(i: u32) -> u32 {
+        actor::ms_get_chr_stat_zombie(&mem(), i)
+    }
+    /// `MsGetChrStatPoison(i)`.
+    MsGetChrStatPoison @ 0x0079_57c0 => extern "C" fn ms_get_chr_stat_poison(i: u32) -> u32 {
+        actor::ms_get_chr_stat_poison(&mem(), i)
+    }
+    /// `MsGetChrLimitGauge(i)`.
+    MsGetChrLimitGauge @ 0x0079_5550 => extern "C" fn ms_get_chr_limit_gauge(i: u32) -> u32 {
+        actor::ms_get_chr_limit_gauge(&mem(), i)
+    }
+    /// `MsGetChrLimitGaugeMax(i)`.
+    MsGetChrLimitGaugeMax @ 0x0079_5590 => extern "C" fn ms_get_chr_limit_gauge_max(i: u32) -> u32 {
+        actor::ms_get_chr_limit_gauge_max(&mem(), i)
+    }
+    /// `MsGetChrHandle(i)`.
+    MsGetChrHandle @ 0x0079_5080 => extern "C" fn ms_get_chr_handle(i: u32) -> u32 {
+        actor::ms_get_chr_handle(&mem(), i)
+    }
+    /// `MsGetChrGroup(i)`.
+    MsGetChrGroup @ 0x0079_5040 => extern "C" fn ms_get_chr_group(i: u32) -> u32 {
+        actor::ms_get_chr_group(&mem(), i)
+    }
+    /// `MsGetChrCursorFlag(i)`.
+    MsGetChrCursorFlag @ 0x0079_4ca0 => extern "C" fn ms_get_chr_cursor_flag(i: u32) -> u32 {
+        actor::ms_get_chr_cursor_flag(&mem(), i)
+    }
+    /// `MsGetChrCommand(i)`.
+    MsGetChrCommand @ 0x007b_09b0 => extern "C" fn ms_get_chr_command(i: u32) -> u32 {
+        actor::ms_get_chr_command(&mem(), i)
+    }
+    /// `MsGetChrCommand2(i)`.
+    MsGetChrCommand2 @ 0x007b_09e0 => extern "C" fn ms_get_chr_command2(i: u32) -> u32 {
+        actor::ms_get_chr_command2(&mem(), i)
+    }
+    /// `MsBattleCheck`.
+    MsBattleCheck @ 0x0078_0c90 => extern "C" fn ms_battle_check() -> u32 {
+        state::ms_battle_check(&mem())
+    }
+    /// `MsBattleChrStart`.
+    MsBattleChrStart @ 0x0078_0cb0 => extern "C" fn ms_battle_chr_start() -> u32 {
+        state::ms_battle_chr_start(&mem())
+    }
+    /// `MsBattleGetNum`.
+    MsBattleGetNum @ 0x0078_16b0 => extern "C" fn ms_battle_get_num() -> u32 {
+        state::ms_battle_get_num(&mem())
+    }
 }
