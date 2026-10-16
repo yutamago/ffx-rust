@@ -176,7 +176,7 @@ pub mod bridge {
     /// whole), `+0x14` (`f32`).
     pub fn loading_screen_set_parameter(mem: &mut impl Mem, this: u32, a: u32, b: u32, c: u32) {
         if a != 0 {
-            let v = crate::x87::round_trip(mem.read(a));
+            let v = ffx_bridge::x87::round_trip(mem.read(a));
             mem.write(this.wrapping_add(4), v);
         }
         if b != 0 {
@@ -184,7 +184,7 @@ pub mod bridge {
             mem.write(this.wrapping_add(0x10), v);
         }
         if c != 0 {
-            let v = crate::x87::round_trip(mem.read(c));
+            let v = ffx_bridge::x87::round_trip(mem.read(c));
             mem.write(this.wrapping_add(0x14), v);
         }
     }
