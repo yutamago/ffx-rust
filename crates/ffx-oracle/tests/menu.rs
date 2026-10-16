@@ -4939,3 +4939,141 @@ fn menu_rects_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn tk_round8_matches_the_original() {
+    let Some(mut t) = setup_any(0x8a8a_0808) else {
+        return;
+    };
+    let snapshot = std::env::var_os("FFX_SNAPSHOT").is_some();
+    let (log, arena) = record_mallocs(&mut t);
+    let floats = [
+        0.0f32,
+        -0.0,
+        1.0,
+        2.0,
+        0.25,
+        3.0,
+        3.2,
+        -3.2,
+        7.5,
+        -100.25,
+        1e9,
+        -1e9,
+        1e-30,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::NAN,
+        std::f32::consts::PI,
+        -std::f32::consts::PI,
+    ];
+    for round in 0..150u32 {
+        let f = t.rng.pick(&floats);
+        let g = t.rng.pick(&floats);
+        for (name, sym, func) in [
+            (
+                "CIsqrt",
+                0x0088_c400,
+                ffx_menu::math::ci_sqrt as fn(f32) -> f32,
+            ),
+            (
+                "Math_WrapAngleFloor",
+                0x0088_c630,
+                ffx_menu::math::wrap_angle_floor,
+            ),
+        ] {
+            let r =
+                t.a.call(t.a.rebase(sym), Conv::Cdecl, &[f.to_bits()])
+                    .unwrap();
+            same_float(name, r.st0, func(f));
+        }
+        let dst = t.alloc_random(4);
+        let src = t.alloc(&g.to_le_bytes());
+        t.twin(
+            "Math_StoreMax",
+            0x0088_9b00,
+            &[dst, src, f.to_bits()],
+            VOID,
+            |o| {
+                tk::math_store_max(o, dst, src, f);
+                0
+            },
+        );
+        t.twin(
+            "Math_StoreMin",
+            0x0088_9b40,
+            &[dst, src, 0, 0, 0, f.to_bits()],
+            VOID,
+            |o| {
+                tk::math_store_min(o, dst, src, f);
+                0
+            },
+        );
+        let busy = t.rng.pick(&[0u8, 0, 1]);
+        t.put(t.sym(0x0132_f581), busy);
+        let pend = t.rng.pick(&[0u32, 0, 5]);
+        t.put(t.sym(0x0132_f578), pend);
+        let (a, n) = (t.rng.next(), t.rng.int());
+        t.twin("TkDeci2Send", 0x0088_5470, &[a, n], U32, |o| {
+            s(tk::tk_deci2_send(o, a, i(n)))
+        });
+        t.twin("Gu_SelectorAllocate", 0x0084_9bb0, &[], U32, |o| {
+            w(gu::gu_selector_allocate(o, &mut |o, n| {
+                let _ = free_into(o, log, n);
+                arena
+            }))
+        });
+        let c = t.alloc_random(0x48);
+        t.twin("Gu_ControlInit", 0x0084_95e0, &[c], U32, |o| {
+            w(gu::gu_control_init(o, c))
+        });
+        let len = t.rng.below(20) as usize;
+        let mut sb: Vec<u8> = t.rng.bytes(len).into_iter().map(|c| c.max(1)).collect();
+        sb.push(0);
+        let sp = t.alloc(&sb);
+        t.twin("Yi_StrLower", 0x0091_6290, &[sp], VOID, |o| {
+            gu::yi_str_case(o, sp, false);
+            0
+        });
+        t.twin("Yi_StrUpper", 0x0091_62c0, &[sp], VOID, |o| {
+            gu::yi_str_case(o, sp, true);
+            0
+        });
+        if snapshot {
+            let id = t
+                .rng
+                .pick(&[0u32, 1, 0x3000, 0x3010, 0x3050, 0x30ff, 0x1234]);
+            t.twin("TkMenuGetCommandName", 0x008d_de50, &[id], U32, |o| {
+                w(tk::tk_menu_get_command_name(o, id))
+            });
+            let count = ffx_chara::handle::bridge::CHR_COUNT.get(&t.b);
+            let array = ffx_chara::handle::bridge::CHR_ARRAY.get(&t.b);
+            let live: Vec<u32> = (0..u32::try_from(count).unwrap_or(0))
+                .map(|k| array + k * ffx_chara::layout::SIZE)
+                .filter(|&c| {
+                    let blk: u32 = Mem::read(&t.b, c + ffx_chara::layout::BLK);
+                    blk != 0 && blk != 0xcdcd_cdcd
+                })
+                .collect();
+            if round % 10 == 0 && !live.is_empty() {
+                let chr = live[t.rng.below(u32::try_from(live.len()).unwrap()) as usize];
+                let p = [
+                    t.rng.pick(&floats[..13]),
+                    t.rng.pick(&floats[..13]),
+                    t.rng.pick(&floats[..13]),
+                ];
+                t.twin(
+                    "TkCh_SetPos",
+                    0x0087_2310,
+                    &[chr, p[0].to_bits(), p[1].to_bits(), p[2].to_bits()],
+                    VOID,
+                    |o| {
+                        tk::tk_ch_set_pos(o, chr, p);
+                        0
+                    },
+                );
+            }
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}

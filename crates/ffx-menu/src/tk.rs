@@ -4202,6 +4202,57 @@ pub mod bridge {
             draw,
         )
     }
+    /// `TkMenuGetCommandName(id)` (`0x008dde50`, own name): the command's
+    /// name string (`MsGetRomPlyCommand`'s strings plus the record's first
+    /// halfword, or its third with hiragana on).
+    pub fn tk_menu_get_command_name(mem: &impl Mem, id: u32) -> u32 {
+        let k = u32::from(ffx_battle::save::bridge::ms_get_save_config_hiragana(mem) != 0);
+        let table = ffx_kernel::bridge::COMMAND.get(mem);
+        #[allow(clippy::cast_possible_wrap)] // 12 bits
+        let (record, strings) = ffx_kernel::bridge::excel_data(mem, (id & 0xfff) as i32, table);
+        strings.wrapping_add(u32::from(mem.read::<u16>(record.wrapping_add(4 * k))))
+    }
+
+    /// `Math_StoreMax(dst, src, v)` (`0x00889b00`, own name): `*dst` = `v`,
+    /// or `*src` when `v` is less (a NaN keeps `v`); through x87.
+    pub fn math_store_max(mem: &mut impl Mem, dst: u32, src: u32, v: f32) {
+        let s: f32 = mem.read(src);
+        let r = if v < s { s } else { v };
+        mem.write(dst, ffx_bridge::x87::round_trip(r));
+    }
+
+    /// `Math_StoreMin(dst, src, _, _, _, v)` (`0x00889b40`, own name):
+    /// `*dst` = `v`, or `*src` when `v` is greater.
+    pub fn math_store_min(mem: &mut impl Mem, dst: u32, src: u32, v: f32) {
+        let s: f32 = mem.read(src);
+        let r = if v > s { s } else { v };
+        mem.write(dst, ffx_bridge::x87::round_trip(r));
+    }
+
+    /// `TkDeci2Send(a, n)` (`0x00885470`, own name): with no request
+    /// pending (`0x0132f581` and `0x0132f578` clear) one is queued: `n -
+    /// 0x81` truncated to a multiple of 128 at `0x0132f57e`, `a |
+    /// 0x20000000` at `0x0132f578`; 1. Busy: -1.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn tk_deci2_send(mem: &mut impl Mem, a: u32, n: i32) -> i32 {
+        let busy = mem.read::<u8>(mem.rebase(0x0132_f581)) != 0
+            || mem.read::<u32>(mem.rebase(0x0132_f578)) != 0;
+        if busy {
+            return -1;
+        }
+        let v = n.wrapping_sub(0x81);
+        let v = v.wrapping_add(if v < 0 { 0x7f } else { 0 }) & !0x7f;
+        mem.write(mem.rebase(0x0132_f57e), v.cast_unsigned() as u16);
+        mem.write(mem.rebase(0x0132_f578), a | 0x2000_0000);
+        1
+    }
+
+    /// `TkCh_SetPos(chr, x, y, z)` (`0x00872310`, own name): `Ch_SetPos3`
+    /// with the floats passed through x87.
+    pub fn tk_ch_set_pos(mem: &mut impl Mem, chr: u32, [x, y, z]: [f32; 3]) {
+        let r = ffx_bridge::x87::round_trip;
+        ffx_chara::chr::bridge::ch_set_pos3(mem, chr, r(x), r(y), r(z));
+    }
 }
 
 #[cfg(test)]

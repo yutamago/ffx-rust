@@ -4195,6 +4195,7 @@
 0x00849440 function Gu_MouseInRect            # (rect {i16 x, y, w, h}, dx, dy) -> 1 when g_GuMouseX/Y is strictly inside the moved rectangle
 0x00849490 function Gu_WindowMouseIn          # (window) Gu_SetHScale(+0x8e); mouse strictly inside the i16 rect +0xc; own name
 0x008494f0 function Gu_ControlFreeText        # (control) user_free(+0x28) when u16 +0x26 != 0; no direct caller; own name
+0x008495e0 function Gu_ControlInit            # (control) memclear 0x44, +0x28 = +0x30 (empty text), +0x40 &= ~3, u16 +0x26 = 0; own name
 0x008496d0 function Gu_WindowControlSetRect   # (window, id, x, y, w, h) the control rects (x, y + client origin +0x80), -1 kept; own name
 0x00849780 function Gu_Hide                   # fh switch:bsim1.00 0x7100440810
 0x008497f0 function Gu_InitBox                # (box, x, y, w, h) three rect copies, tints 0x80808080/0x8080, +0x22 = 0; Switch name, alphabetical slot Gu_Hide..Gu_Main (Gu_HoseiClock, Gu_Init, Gu_InitBox)
@@ -4707,6 +4708,7 @@
 0x00872210 function TkCh_Allocate2            # fh v3:exact 0x008721b0
 0x008722b0 function TkCh_BindToElem           # fh switch:bsim1.00 0x7100473ff0
 0x008722f0 function TkCh_Dispose              # fh v3:exact 0x00872290
+0x00872310 function TkCh_SetPos               # (chr, x, y, z) Ch_SetPos3 with the floats through x87; own name
 0x00872340 function TkCheckPlayVoice          # fh v3:exact 0x008722e0
 0x00872350 function TkCheckSoftWareReset      # fh v3:bsim1.00 0x008722f0
 0x00872360 function Tk_GetScale               # (which) f32 0x01325b98[which != 0]; own name
@@ -4824,6 +4826,7 @@
 0x008851f0 function TkGetDebugControlerTrigHist# (i) TkGetControlerTrigHist(1, 0, i); Switch name, alphabetical slot
 0x00885240 function TkInitDeci2               # fh v3:exact 0x008851a0
 0x00885420 function TkIsDeci2Send             # () -> i8 0x0132f580, sign-extended; Switch symbol name (BSim), in the DECI2 code beside TkCreateDECI2Header
+0x00885470 function TkDeci2Send               # (a, n) when idle: u16 0x0132f57e = (n - 0x81) truncated to 128s, 0x0132f578 = a | 0x20000000, 1; busy -1; own name
 0x00885640 function Phyre_PRendering_PRenderInterfaceBase_GetClearMaskDescription # fh switch:bsim1.00 0x710004aa80 Phyre::PRendering::PRenderInterfaceBase::GetClearMaskDescription
 0x00885b00 function AtelSetUpSourceDebug      # fh v3:exact 0x00885a60
 0x00885e50 function SndClearFootStatus        # fh v3:bsim1.00 0x00885db0
@@ -4978,6 +4981,8 @@
 0x008894f0 function TkSetPadButtonMap         # (a, b, i, to): g_PadButtonMap[a + b][i] = to (Pad_MapButtons reads it)
 0x00889a80 function TkUpdateScanControler     # fh v3:exact 0x008899f0
 0x00889ac0 function TkFindPadButton           # (a, b, k) -> where in g_PadButtonMap[a + b] the code g_PadButtonCodes[k] is, -1 if nowhere
+0x00889b00 function Math_StoreMax             # (dst, src, v) *dst = v < *src ? *src : v (x87); own name
+0x00889b40 function Math_StoreMin             # (dst, src, _, _, _, v) *dst = v > *src ? *src : v; own name
 0x00889b80 function TkDegtoRad                # fh v3:exact 0x00889af0
 0x0088a4a0 function TkMtCalcSpline            # fh v3:bsim1.00 0x0088a410
 0x0088a4d0 function TkMtCalcSpline3           # fh v3:bsim1.00 0x0088a440
@@ -4996,9 +5001,11 @@
 0x0088c380 function Math_SinTable2            # (angle) Math_SinTable(angle); own name
 0x0088c3a0 function CIsin                     # fh v3:bsim1.00 0x0088c310 +_CIsin
 0x0088c3c0 function Math_LengthSq3            # (x, y, z) -> float x*x + y*y + z*z (squares rounded to float)
+0x0088c400 function CIsqrt                    # (x) _CIsqrt stored to a float; own name beside CIsin/CItan
 0x0088c420 function CItan                     # fh v3:bsim1.00 0x0088c390 +_CItan
 0x0088c510 function Math_UnitMatrix           # (m): a 4x4 float identity (zeroes, then the diagonal 1.0)
 0x0088c5a0 function TkNormalFVector           # fh switch:bsim1.00 0x7100488080
+0x0088c630 function Math_WrapAngleFloor       # (a) (a + pi) - floor((a + pi) / 2pi) * 2pi - pi, float steps; own name
 0x0088c690 function Math_SinTable             # (angle in 1/0x8000 turns) -> i32 from the quarter-wave u16 table g_SinQuarter
 0x0088c710 function TkResetClip               # fh v3:exact 0x0088c680
 0x0088c7d0 function TkClearAlarm              # fh v3:cg2 0x88c740
@@ -5747,6 +5754,7 @@
 0x008dd920 function TkMenuDrawSp3URHalf       # (x, y, entry) MenuDraw_SpriteV8; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
 0x008ddc60 function TkMenuEquipWin            # fh switch:bsim1.00 0x71004c1280
 0x008dde10 function TkMenuGetCommandHelp      # fh v3:cg3 0x8dddf0
+0x008dde50 function TkMenuGetCommandName      # (id) MsGetRomPlyCommand strings + u16 [record + 4*hiragana]; no direct caller; own name
 0x008ddea0 function TOMenuGetGetImportantHelp # fh v3:cg3 0x8dde80
 0x008ddee0 function TOMenuGetGetImportantName # fh v3:cg2 0x8ddec0
 0x008ddf20 function TkMenuSaveMes             # fh switch:bsim1.00 0x71004c3430
@@ -6128,6 +6136,8 @@
 0x00914a10 function yiKeyFrame_main           # fh switch:cg2 0x710052e1e0
 0x009151c0 function yiRotMatrixSeq            # fh v3:exact 0x009151c0
 0x009152d0 function yiTexSwap_init            # fh v3:exact 0x009152d0
+0x00916290 function Yi_StrLower               # (s) tolower in place; own name
+0x009162c0 function Yi_StrUpper               # (s) toupper in place; own name
 0x00916ad0 function Yi_PutRef                 # (p, a, b) {b, 0, a, 0}; a left in eax; own name
 0x00917050 function yiClutAlloc_makepacket    # fh v3:exact 0x00917050
 0x009173e0 function yiIsPow2                     # (bits) -> 1 when at most one of the low 16 bits is set

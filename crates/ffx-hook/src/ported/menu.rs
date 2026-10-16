@@ -2819,4 +2819,48 @@ ported! {
     TkMenuDrawSp3FaceAA @ 0x008d_d6a0 => extern "C" fn tk_menu_draw_sp3_face_aa(x: u32, y: u32, entry: u32, alpha: u32) -> u32 {
         tk::tk_menu_draw_sp3_face(&mut mem(), [x, y, entry, alpha], &mut |_| graphic_get_abmap(), &mut |_, f| graphic_draw_ui_element(f))
     }
+    /// `TkMenuGetCommandName(id)`.
+    TkMenuGetCommandName @ 0x008d_de50 => extern "C" fn tk_menu_get_command_name(id: u32) -> u32 {
+        tk::tk_menu_get_command_name(&mem(), id)
+    }
+    /// `Math_StoreMax(dst, src, v)`.
+    Math_StoreMax @ 0x0088_9b00 => extern "C" fn math_store_max(dst: u32, src: u32, v: f32) {
+        tk::math_store_max(&mut mem(), dst, src, v);
+    }
+    /// `Math_StoreMin(dst, src, _, _, _, v)`.
+    Math_StoreMin @ 0x0088_9b40 => extern "C" fn math_store_min(dst: u32, src: u32, _a: u32, _b: u32, _c: u32, v: f32) {
+        tk::math_store_min(&mut mem(), dst, src, v);
+    }
+    /// `TkDeci2Send(a, n)`: 1, or -1 when busy.
+    TkDeci2Send @ 0x0088_5470 => extern "C" fn tk_deci2_send(a: u32, n: i32) -> i32 {
+        tk::tk_deci2_send(&mut mem(), a, n)
+    }
+    /// `TkCh_SetPos(chr, x, y, z)`.
+    TkCh_SetPos @ 0x0087_2310 => extern "C" fn tk_ch_set_pos(chr: u32, x: f32, y: f32, z: f32) {
+        tk::tk_ch_set_pos(&mut mem(), chr, [x, y, z]);
+    }
+    /// `CIsqrt(x)`: in `st0`.
+    CIsqrt @ 0x0088_c400 => extern "C" fn ci_sqrt(x: f32) -> f32 {
+        ffx_menu::math::ci_sqrt(x)
+    }
+    /// `Math_WrapAngleFloor(a)`: in `st0`.
+    Math_WrapAngleFloor @ 0x0088_c630 => extern "C" fn math_wrap_angle_floor(a: f32) -> f32 {
+        ffx_menu::math::wrap_angle_floor(a)
+    }
+    /// `Gu_SelectorAllocate()`: through the game's `user_malloc`.
+    Gu_SelectorAllocate @ 0x0084_9bb0 => extern "C" fn gu_selector_allocate() -> u32 {
+        gu::gu_selector_allocate(&mut mem(), &mut |_, n| user_malloc(n))
+    }
+    /// `Gu_ControlInit(control)`: 0.
+    Gu_ControlInit @ 0x0084_95e0 => extern "C" fn gu_control_init(control: u32) -> u32 {
+        gu::gu_control_init(&mut mem(), control)
+    }
+    /// `Yi_StrLower(s)`.
+    Yi_StrLower @ 0x0091_6290 => extern "C" fn yi_str_lower(s: u32) {
+        gu::yi_str_case(&mut mem(), s, false);
+    }
+    /// `Yi_StrUpper(s)`.
+    Yi_StrUpper @ 0x0091_62c0 => extern "C" fn yi_str_upper(s: u32) {
+        gu::yi_str_case(&mut mem(), s, true);
+    }
 }

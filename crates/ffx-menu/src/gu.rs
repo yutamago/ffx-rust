@@ -1095,6 +1095,48 @@ pub mod bridge {
         mem.write(b + 0x22, 0u16);
         0
     }
+    /// `Gu_SelectorAllocate()` (`0x00849bb0`): `user_malloc(0x2c)`, cleared
+    /// (`memclear`). Returns it.
+    pub fn gu_selector_allocate<M: Mem>(
+        mem: &mut M,
+        malloc: &mut impl FnMut(&mut M, u32) -> u32,
+    ) -> u32 {
+        let p = malloc(mem, 0x2c);
+        ffx_system::heap::memclear(mem, p, 0x2c)
+    }
+
+    /// `Gu_ControlInit(control)` (`0x008495e0`, own name): `0x44` bytes
+    /// cleared, the text pointer `+0x28` at its own buffer `+0x30` (empty),
+    /// flags bits 0-1 of `+0x40` and the length `+0x26` zero. Returns 0.
+    pub fn gu_control_init(mem: &mut impl Mem, c: u32) -> u32 {
+        ffx_system::heap::memclear(mem, c, 0x44);
+        mem.write(c + 0x28, c + 0x30);
+        mem.write(c + 0x30, 0u8);
+        let f: u32 = mem.read(c + 0x40);
+        mem.write(c + 0x40, f & !3);
+        mem.write(c + 0x26, 0u16);
+        0
+    }
+
+    /// `Yi_StrLower(s)` (`0x00916290`) and `Yi_StrUpper(s)` (`0x009162c0`,
+    /// own names): the string's ASCII letters lowered or raised in place
+    /// (the C locale's `tolower`/`toupper`).
+    pub fn yi_str_case(mem: &mut impl Mem, s: u32, upper: bool) {
+        let mut p = s;
+        loop {
+            let c: u8 = mem.read(p);
+            if c == 0 {
+                return;
+            }
+            let c = if upper {
+                c.to_ascii_uppercase()
+            } else {
+                c.to_ascii_lowercase()
+            };
+            mem.write(p, c);
+            p = p.wrapping_add(1);
+        }
+    }
 }
 
 #[cfg(test)]
