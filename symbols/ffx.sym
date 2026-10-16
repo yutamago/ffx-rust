@@ -1527,12 +1527,20 @@
 0x00728750 function JobSchedule_pppPart_initFillBufferRequest # fh v3:exact 0x00728840
 0x007287b0 function JobSchedule_pppPart_fillBuffer_drawShp_007287b0 # fh v3:exact 0x007288a0
 0x007289d0 function pppNull                   # a lone ret: the step, set-up and draw of 69 program table entries (the pppop_* records and others)
+0x00728a60 function vfx_vec3_scale3           # (dst, v, sx, sy, sz) dst.xyz = v.xyz * (sx, sy, sz)
 0x00728e40 function hideDisplayOffParticle    # fh v3:exact+call.cs 0x00728f30 cdecl
 0x00728f10 function pppCheckViewCylinder      # fh v3:cg4 0x729000
 0x00729050 function pppFpSetDisp              # (on): g_pppFpDisp = on (eax = on)
 0x007291c0 function pppFpFree                 # fh v3:exact 0x007292b0
+0x00729280 function pppFpGetHeapPeak          # () -> 0x00cec210, the peak field-effect heap use pppFpLoop records
 0x00729290 function pppFpGetHeapSize          # fh v3:exact 0x00729380
+0x007292d0 function pppFpGetHeapUsed          # () -> 0x00cec20c, the field-effect heap use of the last pppFpLoop
 0x007292f0 function pppFpGetMngPtr            # fh v3:exact 0x007293e0
+0x007293d0 function pppFpGetPacketPeak        # () -> 0x00cec208, the peak packet use pppFpLoop records
+0x007293e0 function pppFpGetPacketSize        # () -> 0x00cec200, the packet budget pppFpLoop checks ("Packet Error!!")
+0x007293f0 function pppFpGetPacketUsed        # () -> 0x00cec204, the packet use of the last pppFpLoop
+0x00729400 function pppFpGroupDispOff         # (group) g_FpDisp |= 0x10 for every g_FpData entry whose u16 +0x66 is group (pppFpIDdispOff by group)
+0x00729440 function pppFpGroupDispOn          # (group) g_FpDisp &= ~0x10 for the group's entries
 0x007294f0 function Fp_EndGroup               # (group) Fp_End for every g_FpData entry whose u16 at +0x66 (after the ID at +0x64) is group: g_FpRun +0x1d = 1; callers 0x0091b790, 0x00933cc0
 0x00729530 function Fp_RestartGroup           # (group) Fp_Restart for every g_FpData entry of the group (+0x66): g_FpRun +0 = 0, +0x1d = 0
 0x00729570 function pppFpIDdispOff            # (id): sets bit 0x10 in the FP (field effect) state entry (0x00d30260 + i*0x4c); the "FP Disp Status" dump (0x00729060) prints it as Disp OFF; was Fp_Hide
@@ -1838,6 +1846,7 @@
 0x0074f4d0 function pppKeShpTail2X            # ppp program table record "pppKeShpTail2X" step: the same code as pppKeShpTail
 0x0074f580 function pppKeShpTail2XCon         # ppp program table record "pppKeShpTail2X" (0x00c3b480) +0x1c set-up; "pppKeShpTail2X" (0x00c3cb28) +0x1c set-up
 0x0074f5b0 function pppKeShpTail2XDraw        # ppp program table record "pppKeShpTail2X" draw; not a function start in the Ghidra dump
+0x00750020 function pppVec4Copy               # (dst, src) four floats through the FPU (fld/fstp)
 0x007500d0 function pppVu0MulX_007500d0       # the same arithmetic as pppVu0MulX, leaves v in eax (0x0091cb70, 0x00925040)
 0x007502c0 function pppKeShpTail3             # fh v3:exact 0x00750390
 0x00750510 function pppKeShpTail3Con          # ppp program table record "pppKeShpTail3" +0x1c set-up: ring index +0x298, +0x294/+0x290 cleared, CRT rand() low half at +0x296, +0xa0..+0xcc cleared
@@ -2040,6 +2049,7 @@
 0x0075e310 function pppKeMvYpEff              # fh v3:exact 0x0075e400
 0x0075e430 function pppKeDrct                 # fh v3:exact 0x0075e520
 0x0075e470 function pppKeDrctCon              # fh v3:exact 0x0075e560
+0x0075e4b0 function op_word_copy              # (dst, src) *dst = *src (one word); 1 caller
 0x0075eca0 function KeVu0AddVecXYZ            # fh v3:exact 0x0075ed90
 0x0075ede0 function KeVu0CopyVecXYZ           # fh v3:exact 0x0075eed0
 0x0075f920 function KeVu0RndI                 # fh v3:exact 0x0075fa10
@@ -2094,6 +2104,7 @@
 0x0076ab90 function KeLnsShp_Draw             # fh switch:bsim1.00 0x710031c940
 0x0076abe0 function KeLnsShp_Update           # fh v3:exact 0x0076acf0
 0x0076b0f0 function lmemcpy                   # fh v3:bsim1.00 0x0076b200
+0x0076b1e0 function op_sum_words              # (p, n) -> the sum of n words at p
 0x0076b200 function pppClearWait              # fh v3:bsim1.00 0x0076b310
 0x0076b2d0 function pppInitProtocolDriver     # fh v3:exact 0x0076b3e0
 0x0076b3d0 function pppSendPacket             # fh v3:exact 0x0076b4e0
@@ -2967,6 +2978,9 @@
 0x007b2ad0 function MsDeathYoujinbou          # fh v3:exact 0x007b2ae0
 0x007b2b00 function MsGetSummonEnergy         # fh v3:cg4 0x7b2b10
 0x007b2b20 function MsGetYoujinbouCom         # fh v3:bsim1.00 0x007b2b30
+0x007b2b40 function MsSet01130838             # (v) dword 0x01130838 = v
+0x007b2b50 function MsSetVoiceId              # (v) dword 0x0112c8f4 = v (battle init sets -1)
+0x007b2b60 function MsSetVoiceWait            # (v) dword 0x0112c8f0 = v, the flag msVoiceCheckStanbyOn/Off test
 0x007b2b70 function msVoiceCheckStanbyOn      # g_MagicImports slot 593 (2 overlays): with 0x0112c8f0 set, msVoiceCheckStanby(1) != 0 -> -1 (else continues); hidden from the dump
 0x007b2ba0 function msVoiceCheckStanbyOff     # g_MagicImports slot 595 (2 overlays): with 0x0112c8f0 set, msVoiceCheckStanby(0) != 0 -> -1 (else continues); hidden from the dump
 0x007b2be0 function msVoiceIsStreaming        # g_MagicImports slot 594 (2 overlays): SndGetStreamState() != 0 -> 1; hidden from the dump
@@ -3124,6 +3138,7 @@
 0x007e3e30 function op_oef2_set2              # fh v3:exact 0x007e3d40
 0x007e4540 function op_gs_store               # fh switch:bsim1.00 0x71003d8890
 0x007e45c0 function op_oef2_clut_change       # fh switch:bsim1.00 0x71003d8c20
+0x007e45e0 function op_oef2_clut_pos_set      # (rec, pos) -> new u16: table-3 record u16 = (pos & 0x3fff) + (old & 0x3c), byte +0xf = 1 (the monster CLUT position, 0x00808640)
 0x007e46b0 function op_oef2_clut_load         # fh v3:exact 0x007e45c0
 0x007e46d0 function op_oef2_tex_clut_cue_check # fh v3:exact 0x007e45e0
 0x007e4720 function op_oef2_tex_clut_cue_loop # fh v3:exact 0x007e4630
@@ -3131,7 +3146,9 @@
 0x007e4c30 function op_oef2_tex_clut_cue_trans # fh v3:exact 0x007e4b40
 0x007e4e40 function op_oef2_tex_clut_ovl_clear # fh v3:exact 0x007e4d50
 0x007e4e80 function op_oef2_tex_clut_ovl_trans # fh v3:exact 0x007e4d90
+0x007e4ff0 function op_oef2_tex_pos_set       # (rec, pos) -> new low half: table-2 record low 14 bits = (pos & 0x3fff) + (old & 0xfc), byte +0x1f = 1
 0x007e5030 function op_oef2_texture_load      # fh v3:exact 0x007e4f40
+0x007e5210 function op_tex_vdisp_load_triger  # (on) byte 0x011a0066 = on (name from the dump's import of an older symbol)
 0x007e63a0 function op_num                    # fh v3:bsim1.00 0x007e62b0
 0x007e63b0 function op_num_char_256           # fh v3:bsim1.00 0x007e62c0
 0x007e6440 function op_num_display            # fh v3:bsim1.00 0x007e6350
@@ -3146,6 +3163,7 @@
 0x007e6a00 function op_spr_alloc              # fh v3:bsim1.00 0x007e6910
 0x007e6a60 function op_spr_free               # fh v3:bsim1.00 0x007e6970
 0x007e6c30 function ops_init_spr              # fh v3:exact 0x007e6b40
+0x007e6c60 function op_word_copy2             # the op_word_copy body again
 0x007e79a0 function op_apply_m_w1             # fh v3:exact 0x007e78b0
 0x007e7ed0 function op_deg_get                # fh v3:exact 0x007e7de0
 0x007e7fc0 function op_length_get             # fh v3:bsim1.00 0x007e7ed0
@@ -3177,6 +3195,8 @@
 0x007ec7d0 function op_wot_triger             # fh v3:exact 0x007ec6f0
 0x007ec7e0 function op_zbuf_clear             # fh v3:exact 0x007ec700
 0x007ec890 function ops_init_draw_work        # fh v3:exact 0x007ec7b0
+0x007eca60 function op_color_shift_load16     # (dst, base) u16 at base + g_pppColorConShift; the shift cleared
+0x007ecec0 function op_vec_w_scale            # (dst, v, s) dst.w = v.w * s
 0x007ecf30 function op_anm_tex0_reset         # fh v3:bsim1.00 0x007ece50
 0x007ed0c0 function op_shape_draw             # fh v3:cg2 0x7ecfe0
 0x007f67c0 function opus_0154_wave_omd_make   # fh switch:cg2 0x71003e2830
@@ -3265,11 +3285,14 @@
 0x007fe200 function opus_change_chrhd_ffx_to_battle # fh v3:exact 0x007fe120
 0x007fe340 function opus_change_osu_en_by_chr_status # fh v3:exact 0x007fe260
 0x007fe450 function opus_chr_index_map        # (out) -> moved: out = 240 u16 0xffff, then out[record +0xe] = the record handle's place in g_EtChrHandles; counts the places that differ from +0xe
+0x007fe540 function opus_monster_index        # (obj) -> slot among the 8 g_OpusMonsters (no null check, unlike opus_get_monster_index), else -1
+0x007fe570 function opus_weapon_index         # (obj) -> the opus_get_weapon_index body again
 0x007fe6c0 function opus_end_all_sub          # fh v3:exact 0x007fe5e0
 0x007fe920 function opu_eff_free_by_id        # (id): every g_EtEff record with this ID emptied (id -1, +4 0, +8 0x101, +0xc 0, +0x10/+0x18 0, +0x1c 0xff); nothing for -1 (opu_unit_free_by_id, opu_unit_free_by_oef2, opus_end_all_sub)
 0x007fe970 function opus_get_chr_status_index # fh v3:exact 0x007fe890
 0x007feaa0 function op_et_chr_index_by_no     # (no) -> index of the first of 208 g_EtChr records whose +4 (character number) is no, else -1
 0x007feba0 function opus_get_eff_status_index # fh v3:exact 0x007feac0
+0x007fedf0 function opus_chr_handles_clear    # () the 240 g_EtChrHandles zeroed
 0x007fef70 function op_et_eff_init_all        # () every g_EtEff record: +0 -1, +8 0x101, +0xc 0, +0x10 0, +0x18 0, +0x1c 0xff (+4 kept); callers opu_et_init, 0x007ff960
 0x007ff090 function op_et_chr_show            # (on): g_OpEtChrShow = on, g_EtChrHidden = !on; bit 1 of the draw flags of the first 208 g_EtChr records with a handle set (on = 0) or cleared; g_MagicImports slot 568
 0x007ff100 function op_fog_param_set          # fh v3:exact 0x007ff020
@@ -3308,12 +3331,15 @@
 0x00800d60 function opu_id_list_add           # (unit, short id) -> index: adds id to the i16 list at unit+0x1c (u16 length +0x34, the last place kept) unless found before the first negative entry (opu_et_ovl)
 0x00800da0 function opu_eff_part_index        # (unit) -> the g_EtEff record (+0x14)'s part: +0x1a & 7 when below its count (+8), else the index of +0x18 in its byte list (+0x10), else count & ~0xff
 0x00800df0 function opus_fullauto_no_get      # fh v3:exact 0x00800d10
+0x00800e20 function opus_monster_clut_pos     # (slot) -> 0 without g_OpusMonsterFlags[slot], else 0x3fc0 (bit 0) or 0x3fd0
+0x00800e50 function opus_monster_tex_pos      # (slot) -> 0 without flags, else 0x3f40 (bit 0) or 0x3fc0
 0x00800e80 function opus_get_monster_index    # fh v3:exact 0x00800da0
 0x00800f60 function opus_get_osu_by_draw      # fh v3:exact 0x00800e80
 0x00800fd0 function opus_get_weapon_by_no     # (no) -> g_OpusWeapons[i] for the first g_OpusWeaponNos[i] == no, else 0
 0x00801000 function opus_get_weapon_index     # fh v3:exact 0x00800f20
 0x00801030 function opus_get_weapon_index_by_no # (no) -> the first i with g_OpusWeaponNos[i] == no, else -1
 0x00801200 function opus_osu_init             # fh v3:exact 0x00801120
+0x00801480 function opus_parts_clear          # (u16 i, u16 n) the first 16 bytes of n 0x100-byte parts (+0x20) of opus object i (table at g_OpusBattle) zeroed
 0x008014c0 function opus_prog_off             # fh v3:exact 0x008013e0
 0x00801700 function opus_prog_on              # fh v3:exact 0x00801620
 0x00803730 function op_mdc_mem_transfer_cue_free # fh v3:exact 0x00803650
@@ -3324,6 +3350,8 @@
 0x008061a0 function opus_mdc_free             # fh v3:exact 0x008060c0
 0x00806a50 function opusTree_Next             # thiscall (it) -> it: *it = in-order successor (node +0 left, +4 parent, +8 right, byte +0xd nil), nothing at the header (MSVC tree iterator ++)
 0x00806aa0 function opusTree_Next2            # the opusTree_Next body again
+0x00806d70 function opusTree_Max              # (node) the rightmost node below node (+8 until the next is nil)
+0x00806db0 function opusTree_Min              # (node) the leftmost node below node (+0 until the next is nil)
 0x00807830 function yonExtMapDeleteId         # fh v3:bsim1.00 0x00807750
 0x00807860 function yonExtMapRegister         # fh v3:bsim1.00 0x00807780
 0x00807870 function op_chara_hsv              # fh v3:cg4 0x807790
@@ -3331,6 +3359,7 @@
 0x00807b20 function op_chara_hsv_size_get     # fh v3:exact 0x00807c90
 0x00808a20 function opus_all_clut_dispose     # fh v3:exact 0x00808b90
 0x00808c10 function vfx_vec4_min              # (dst, v, s) dst[i] = v[i] < s ? v[i] : s; callers 0x00809180, 0x00809620, 0x0081bef0, 0x0081c2a0
+0x00808cb0 function opus_vec3_scale           # (dst, v, _, _, _, s) dst.xyz = v.xyz * s, s the sixth argument
 0x0080a560 function opus_chara_rgba_set       # fh v3:exact 0x0080a6c0
 0x0080aa00 function opus_chara_status_rgb_set # fh v3:exact 0x0080ab60
 0x0080abb0 function opus_ffxfocus_free        # fh v3:exact 0x0080ad10
@@ -3348,6 +3377,7 @@
 0x008161f0 function opu_en_on                 # fh switch:cg3 0x71003fc0f0
 0x008165d0 function opu_et_no                 # fh switch:bsim1.00 0x71003fbd90
 0x00817590 function opus_camera_limit         # fh switch:cg2 0x71003fcb90
+0x00817c30 function op_add64                  # (dst, src, n) 64-bit dst = src + (i32) n
 0x00817cc0 function vfx_vec_w_add             # (dst, v, s) dst.w = v.w + s; callers 0x0088a500, 0x0088abd0
 0x0081c140 function SqsCmdSetC2               # (ctx, cmd) -> cmd + 4: the command's u16 +2 to +0xc2 of ctx +0x220; entry of the IOP command table 0x00c48f30
 0x0081ce70 function SqsAllVoiceTerminate      # fh v3:exact 0x0081cf80
@@ -8914,6 +8944,11 @@
 0x00cec1f0 label    g_pppFpDisp               # the field effects' display switch: pppFpSetDisp; the field effect debug listing prints On/Off from it
 0x00cec1f4 label    g_FpPointLightA              # cleared by pppFpPointLightInit and pppFpLoop, read by pppFpPointLightProc
 0x00cec1fc label    g_FpPointLightB              # cleared by pppFpPointLightInit and pppFpLoop, read by pppFpPointLightProc
+0x00cec200 label    g_pppFpPacketSize         # field-effect packet budget (pppFpGetPacketSize)
+0x00cec204 label    g_pppFpPacketUsed         # last pppFpLoop's packet use (g_PppPacketPos - 0x00cec220)
+0x00cec208 label    g_pppFpPacketPeak         # peak of g_pppFpPacketUsed
+0x00cec20c label    g_pppFpHeapUsed           # last pppFpLoop's heap use
+0x00cec210 label    g_pppFpHeapPeak           # peak of g_pppFpHeapUsed
 0x00cec22c label    g_pppFpHeap                  # the field effects' ppp heap {cur, first, last, used}: pppFpGetHeapSize adds last - first + 16; 0x007296a0 makes it current
 0x00cec23c label    g_pppFpHeap2                 # the field effects' second ppp heap (pppFpGetHeapSize)
 0x00d2c258 label    g_FpData                     # current field's FP (effect) table: u16 count at +4, 0x50-byte entries with the id at +0x64; runtime state at 0x00d2c260 (0x80 each) and 0x00d30260 (0x4c each)
@@ -9146,11 +9181,13 @@
 0x01139e50 label g_BtlDebugField             # 2 x u32; MsDebugGetFieldNum (0x007c5f50) returns [0] << 16 + [1]
 0x0113e23c label g_BtlPosState             # 0x34 bytes (three 1.0 scales at +0x10) and 6 words after it (+0x3c points back here), reset by MsBtlPosInit
 0x0113f3d2 label g_BtlUcId                    # u16; The user character ID MsSaveUcID keeps.
+0x0113fcd0 label    g_Op3dListener            # matrix op_3d_vol_pan_get applies (op_apply_m_w1) to a sound position
 0x0119fe10 label    g_OpSprStack                 # op scratch stack, i32 marks: op_spr_alloc(n) pushes top + n (top index g_OpSprTop)
 0x0119fe98 label    g_OpusEncount             # the encounter effect's oef2 object: op_et_encount_effect_on runs opu_et_unit on it, op_et_encount_effect_free frees its units and clears it
 0x0119fe9c label    g_OpusWeaponNos           # 4 bytes: the weapon numbers of g_OpusWeapons (set by op_et_weapon_init, 0xff free; opus_get_weapon_by_no)
 0x0119fea0 label    g_OpusWeapons                # 4 weapon opus objects (opus_get_weapon_index)
 0x0119fed0 label    g_OpusMonsters               # 8 monster opus objects (opus_get_monster_index)
+0x0119fef0 label    g_OpusMonsterFlags        # byte per g_OpusMonsters slot (bit 7 skips the texture move in 0x00808640, bit 0 picks the first VRAM spot)
 0x0119fef8 label    g_OpusWeaponEffCount      # byte per g_OpusWeapons slot: op_et_weapon_unit numbers unit IDs with it (op_et_weapon_init clears it)
 0x011a0061 label    g_OpPrayEffect               # op_pray_effect_check returns -1 while nonzero
 0x011a0063 label    g_OpEtChrShow             # byte: the last op_et_chr_show argument
@@ -9564,6 +9601,7 @@
 0x023c3640 label    g_OpOef2SoundCueHead      # u16 ring head of g_OpOef2SoundCueRing
 0x023c3642 label    g_OpOef2SoundCueCount     # u16 queued cues (<= 32); op_oef2_sound_cue_check returns it, op_oef2_sound_wait waits for 0
 0x023c3648 label    g_OpOef2StreamCues           # 2 stream cue pointers (op_oef2_stream_cue, op_oef2_sound_cue_*)
+0x023c3668 label    g_OpSoundCurves           # f32 volume max/min (+0/+4), pan max/min (+0x10/+0x14), volume base/slope (+0x18/+0x1c), pan slope (+0x24) for op_3d_vol_pan_get
 0x023c44a0 label g_ChrTex0List              # texture list Ch_TextureSetTex0 last worked on
 0x023c44e0 label    g_ChrCount                   # number of field characters in g_ChrArray
 0x023c44e4 label    g_ChrArray                   # field characters, 0x880 bytes each (byte +2 = active)
