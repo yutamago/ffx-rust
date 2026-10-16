@@ -228,4 +228,57 @@ pub mod bridge {
             }
         }
     }
+
+    /// `std::_Tree::_Lrotate(node)` (`0x00a41930`, `thiscall` on the tree,
+    /// `ret 4`; nodes: left `+0`, parent `+4`, right `+8`, nil `+0xd`; the
+    /// head at `*this`, its parent link the root).
+    pub fn tree_rotate_left(mem: &mut impl Mem, tree: u32, x: u32) {
+        let y: u32 = mem.read(x.wrapping_add(8));
+        let yl: u32 = mem.read(y);
+        mem.write(x.wrapping_add(8), yl);
+        if mem.read::<u8>(yl.wrapping_add(0xd)) == 0 {
+            mem.write(yl.wrapping_add(4), x);
+        }
+        let xp: u32 = mem.read(x.wrapping_add(4));
+        mem.write(y.wrapping_add(4), xp);
+        let head: u32 = mem.read(tree);
+        if x == mem.read::<u32>(head.wrapping_add(4)) {
+            mem.write(head.wrapping_add(4), y);
+        } else {
+            let p: u32 = mem.read(x.wrapping_add(4));
+            if x == mem.read::<u32>(p) {
+                mem.write(p, y);
+            } else {
+                mem.write(p.wrapping_add(8), y);
+            }
+        }
+        mem.write(y, x);
+        mem.write(x.wrapping_add(4), y);
+    }
+
+    /// `std::_Tree::_Rrotate(node)` (`0x00a41b40`): the mirror of
+    /// [`tree_rotate_left`].
+    pub fn tree_rotate_right(mem: &mut impl Mem, tree: u32, x: u32) {
+        let y: u32 = mem.read(x);
+        let yr: u32 = mem.read(y.wrapping_add(8));
+        mem.write(x, yr);
+        if mem.read::<u8>(yr.wrapping_add(0xd)) == 0 {
+            mem.write(yr.wrapping_add(4), x);
+        }
+        let xp: u32 = mem.read(x.wrapping_add(4));
+        mem.write(y.wrapping_add(4), xp);
+        let head: u32 = mem.read(tree);
+        if x == mem.read::<u32>(head.wrapping_add(4)) {
+            mem.write(head.wrapping_add(4), y);
+        } else {
+            let p: u32 = mem.read(x.wrapping_add(4));
+            if x == mem.read::<u32>(p.wrapping_add(8)) {
+                mem.write(p.wrapping_add(8), y);
+            } else {
+                mem.write(p, y);
+            }
+        }
+        mem.write(y.wrapping_add(8), x);
+        mem.write(x.wrapping_add(4), y);
+    }
 }

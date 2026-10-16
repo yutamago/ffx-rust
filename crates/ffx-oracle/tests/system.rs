@@ -4322,3 +4322,527 @@ fn round5_system_functions_match_the_original_on_the_snapshot() {
     };
     round5(&mut a, &mut b, &mut Xorshift(0x4005_0202));
 }
+
+/// Round 6's small accessors: setters, flags, float copies, tree ends,
+/// tables, an offset-list unlink and two block copies.
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one pass; a, b: the oracles
+fn round6(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use accessor::bridge as acc;
+    use window::bridge as w;
+    let g = |addr: u32| Global::<u32>::new(addr);
+    for _ in 0..20 {
+        let obj = random_block(a, b, rng, 0x440);
+        set(a, b, g(0x00ce_81f4), obj);
+        assert_eq!(eax(a, 0x006f_24d0, &[]), acc::clear_word8_of_00ce81f4(b));
+        let v = rng.next();
+        assert_eq!(
+            call(a, 0x006f_24f0, Conv::Thiscall(obj), &[v]).eax,
+            acc::set_member(b, obj, 0xc, v)
+        );
+        assert_eq!(
+            call(a, 0x006f_2520, Conv::Thiscall(obj), &[v]).eax,
+            acc::set_member(b, obj, 0x394, v)
+        );
+        for (f, _) in acc::WORD_SETTERS {
+            assert_eq!(eax(a, f, &[v]), acc::set_word_global(b, f, v));
+        }
+        eax(a, 0x0076_dc60, &[v]);
+        acc::set_byte_01128ac0(b, v.to_le_bytes()[0]);
+        set(a, b, g(0x0132_6b28), obj);
+        set(a, b, g(0x0132_5b88), rng.next() % 2);
+        assert_eq!(eax(a, 0x0087_29e0, &[]), acc::check_01326b28(b));
+        assert_eq!(eax(a, 0x0087_29c0, &[]), acc::flag_01326b28(b));
+        set(a, b, g(0x0187_1698), obj);
+        assert_eq!(
+            eax(a, 0x008e_2dd0, &[v]),
+            acc::set_world_map_window_word68(b, v)
+        );
+        put(a, b, obj + 0x364, u8::try_from(rng.next() % 3).unwrap());
+        let ra = call(a, 0x006f_2120, Conv::Thiscall(obj), &[]).eax & 0xff;
+        assert_eq!(ra, u32::from(acc::take_byte364(b, obj)));
+        let i = rng.next() % 0x40;
+        assert_eq!(
+            call(a, 0x006f_2430, Conv::Thiscall(obj), &[i]).eax,
+            acc::set_flag_3bc(b, obj, i)
+        );
+        call(a, 0x006e_4fd0, Conv::Thiscall(obj), &[]);
+        acc::reset_e4fd0(b, obj);
+        let src = alloc(a, b, 0x10);
+        let floats: [f32; 4] = std::array::from_fn(|_| {
+            let x = f32::from_bits(rng.next());
+            if x.is_nan() { 1.5 } else { x }
+        });
+        put(a, b, src, floats);
+        assert_eq!(
+            call(a, 0x0070_37e0, Conv::Thiscall(obj), &[src]).eax,
+            acc::copy_floats(b, obj, src, 0x14, 2)
+        );
+        assert_eq!(
+            call(a, 0x0070_3750, Conv::Thiscall(obj), &[src]).eax,
+            acc::copy_floats(b, obj, src, 4, 4)
+        );
+        let n = rng.next() % 3;
+        eax(a, 0x0076_cfa0, &[n]);
+        acc::set_c40e19(b, n);
+        call(a, 0x0061_acf0, Conv::Thiscall(obj), &[]);
+        acc::vfile_reset(b, obj);
+        let k = rng.next() % 2;
+        put(
+            a,
+            b,
+            obj + k * 0x1e8 + 0x1f8,
+            [8u32, 7][(rng.next() % 2) as usize],
+        );
+        assert_eq!(
+            call(a, 0x006d_bf30, Conv::Thiscall(obj), &[k]).eax,
+            acc::record_state_is8(b, obj, k)
+        );
+        let entries = random_block(a, b, rng, 0x40);
+        put(a, b, obj + 4, rng.next() % 4);
+        for e in 0..4u32 {
+            put(a, b, obj + 0x10 + 8 * e, entries + 0x10 * e);
+        }
+        let e = rng.next() % 4;
+        assert_eq!(
+            call(a, 0x0068_4ca0, Conv::Thiscall(obj), &[e]).eax,
+            acc::entry_word_c(b, obj, e)
+        );
+        assert_eq!(
+            call(a, 0x0040_2b50, Conv::Thiscall(obj), &[]).eax,
+            acc::copy_c8a538(b, obj)
+        );
+        same_memory("round 6 accessors", a, b);
+    }
+    // message windows and the 0x01868a90 table
+    for i in 0..8u32 {
+        let (m, e) = (rng.next(), rng.next());
+        set_entry(a, b, window::bridge::MSG_WINDOWS, i, m);
+        set_entry(a, b, window::bridge::TABLE_01868A90, i, e);
+        assert_eq!(
+            eax(a, 0x008b_9640, &[i]),
+            window::bridge::message_window(b, i.cast_signed())
+        );
+        assert_eq!(
+            eax(a, 0x008b_9a50, &[i]),
+            window::bridge::table_01868a90_entry(b, i.cast_signed())
+        );
+    }
+    // HDD heads
+    let heads = a.rebase(0x0112_a52c);
+    for i in 0..51u32 {
+        put(a, b, heads + 12 * i, rng.next());
+        assert_eq!(
+            eax(a, 0x0077_8960, &[i]),
+            acc::hdd_head_sectors(b, i).cast_unsigned()
+        );
+    }
+    // tree ends: a chain each way ending at nil nodes
+    let nil = alloc(a, b, 0x10);
+    put(a, b, nil + 0xd, 1u8);
+    let mut nodes = Vec::new();
+    for _ in 0..6 {
+        let n = alloc(a, b, 0x10);
+        put(a, b, n, [nil, nil, nil, 0]);
+        nodes.push(n);
+    }
+    for w in nodes.windows(2) {
+        put(a, b, w[0], w[1]);
+        put(a, b, w[1] + 8, w[0]);
+    }
+    for &n in &nodes {
+        assert_eq!(eax(a, 0x00a4_19b0, &[n]), acc::tree_extreme(b, n, 0));
+        assert_eq!(eax(a, 0x00a4_1990, &[n]), acc::tree_extreme(b, n, 8));
+    }
+    // the seven-word table
+    set(a, b, g(0x00c3_3468), 100);
+    for x in 90..115u32 {
+        assert_eq!(eax(a, 0x0067_aa50, &[x]), acc::table_00c334d4(b, x));
+    }
+    // the offset list
+    let block = random_block(a, b, rng, 0x400);
+    set(a, b, g(0x0112_a03c), block);
+    for _ in 0..10 {
+        let rec = block + 0x10 * (rng.next() % 0x30);
+        put(a, b, rec + 0x38, 0x10 * (rng.next() % 0x30));
+        put(a, b, rec + 0x44, 0x10 * (rng.next() % 0x30));
+        assert_eq!(eax(a, 0x0077_6910, &[rec]), acc::unlink_record(b, rec));
+        same_memory("unlink", a, b);
+    }
+    let src = a.rebase(0x022f_b620);
+    let bytes: Vec<u8> = (0..0x80)
+        .map(|_| u8::try_from(rng.next() & 0xff).unwrap())
+        .collect();
+    a.write(src, &bytes).unwrap();
+    b.write(src, &bytes).unwrap();
+    eax(a, 0x009d_a750, &[]);
+    acc::copy_9da750(b);
+    same_memory("round 6 tables", a, b);
+    // round 6, second batch
+    let packet = alloc(a, b, 0x10);
+    for _ in 0..50 {
+        let v: [u32; 4] = std::array::from_fn(|_| rng.next());
+        for f in [0x008e_f830, 0x008e_fd40] {
+            let ra = eax(a, f, &[packet, v[0], v[1] % 256, v[2]]);
+            let fields = [
+                v[0].cast_signed(),
+                (v[1] % 256).cast_signed(),
+                v[2].cast_signed(),
+            ];
+            assert_eq!(ra, pkt::bridge::adp_reg_at(b, f, packet, &fields));
+        }
+        let floats: [f32; 4] = std::array::from_fn(|k| {
+            let x = f32::from_bits(v[k]);
+            if x.is_nan() { 2.0 } else { x }
+        });
+        eax(a, 0x008e_8980, &floats.map(f32::to_bits));
+        pkt::bridge::open_scissor(b, floats);
+        let ra = eax(a, 0x008b_8cd0, &[packet, v[0], v[1], v[2], v[3]]);
+        assert_eq!(
+            ra,
+            pkt::bridge::set_rect_direct(b, packet, v.map(u32::cast_signed))
+        );
+        let i = v[0] % 6;
+        eax(a, 0x008c_a370, &[i, v[1]]);
+        w::set_byte_186a429(b, i, v[1].to_le_bytes()[0]);
+        same_memory("round 6 packets", a, b);
+    }
+    for start in [-1i32, 0, 1, 2, -7] {
+        set(a, b, w::SWITCH_18763E0, start);
+        for _ in 0..4 {
+            assert_eq!(eax(a, 0x0090_6740, &[]), w::step_switch(b).cast_unsigned());
+        }
+    }
+    set(a, b, Global::<u32>::new(0x0134_0438), 0);
+    for _ in 0..8 {
+        let (x, y, z) = (rng.next(), rng.next(), rng.next());
+        assert_eq!(
+            eax(a, 0x0089_e4f0, &[x, y, z]),
+            w::push_entry_13402b8(b, x, y, z)
+        );
+    }
+    for (count, v) in [(0u8, 3u32), (5, 3), (5, 2), (12, 3)] {
+        set(a, b, Global::<u8>::new(0x0186_9f18), count);
+        eax(a, 0x008b_e050, &[v]);
+        w::set_entries_1869f20(b, v);
+    }
+    let rec = random_block(a, b, rng, 0x18);
+    put(a, b, rec + 0xf, 0u8);
+    for _ in 0..10 {
+        assert_eq!(eax(a, 0x008a_2ad0, &[rec]), w::anim_step_8a2ad0(b, rec));
+    }
+    for angle in [0.0f32, 3.0, 3.1, 3.125, -3.0, 100.0] {
+        set(a, b, w::ANGLE_133FA7C, angle);
+        for _ in 0..5 {
+            eax(a, 0x0089_0f30, &[]);
+            w::advance_angle(b);
+        }
+    }
+    same_memory("round 6 window state", a, b);
+    if cd::bridge::SECTORS.get(a) == 0 {
+        let t = random_block(a, b, rng, 0x400);
+        set(a, b, cd::bridge::SECTORS, t);
+        set(a, b, cd::bridge::FILE_BASE, 0x10);
+    }
+    for n in 0..200 {
+        assert_eq!(
+            eax(a, 0x0076_c440, &[n]),
+            cd::bridge::cd_file_size_bytes(b, n.cast_signed())
+        );
+    }
+    let mgr = random_block(a, b, rng, 0x400);
+    let entries = random_block(a, b, rng, 0x20 * 8);
+    put(a, b, mgr + 0x368, entries);
+    for k in 0..8u32 {
+        put(a, b, entries + 0x20 * k + 6, u16::try_from(k * 3).unwrap());
+    }
+    for count in [0u32, 3, 8, u32::MAX] {
+        put(a, b, mgr + 0x3a0, count);
+        for id in [0u32, 3, 9, 21, 22] {
+            let ra = call(a, 0x006f_1e40, Conv::Thiscall(mgr), &[id]).eax;
+            assert_eq!(ra, save::bridge::find_entry_by_id(b, mgr, id));
+        }
+    }
+    let slots = random_block(a, b, rng, 0x18 * 10);
+    for k in 0..10u32 {
+        put(
+            a,
+            b,
+            slots + 0x18 * k,
+            u8::try_from(rng.next() % 2).unwrap(),
+        );
+        put(a, b, slots + 0x18 * k + 4, rng.next() % 3);
+    }
+    put(a, b, mgr, [0x8000_000au32, slots]);
+    for key in 0..3 {
+        assert_eq!(
+            call(a, 0x006f_c390, Conv::Thiscall(mgr), &[key]).eax,
+            save::bridge::release_slots(b, mgr, key)
+        );
+    }
+    same_memory("round 6 save tables", a, b);
+    // MapFindU32_0060c6b0 over the u32 tree of round4b's layout
+    let head = alloc(a, b, 0x10);
+    let mut keys: Vec<u32> = (0..20).map(|_| rng.next() % 100).collect();
+    keys.sort_unstable();
+    keys.dedup();
+    let root = build_tree(a, b, head, &keys);
+    put(a, b, head + 0xc, root);
+    let key = alloc(a, b, 4);
+    for k in 0..100u32 {
+        put(a, b, key, k);
+        assert_eq!(
+            call(a, 0x0060_c6b0, Conv::Thiscall(head), &[key]).eax,
+            stl::bridge::map_find_u32(b, head, key)
+        );
+    }
+}
+
+#[test]
+fn round6_system_functions_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round6(&mut a, &mut b, &mut Xorshift(0x4006_0001));
+    round6c(&mut a, &mut b, &mut Xorshift(0x4006_0011));
+}
+
+#[test]
+fn round6_system_functions_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round6(&mut a, &mut b, &mut Xorshift(0x4006_0002));
+    round6c(&mut a, &mut b, &mut Xorshift(0x4006_0012));
+}
+
+/// Round 6, third batch: byte swaps, settings tables, input state, ids,
+/// float pairs, the fixup runners, tree rotations, window opening, slots,
+/// repeat buttons, the PC read table, packets, strings, preloads.
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one pass; a, b: the oracles
+fn round6c(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use accessor::bridge as acc;
+    use window::bridge as w;
+    let cells = alloc(a, b, 0x10);
+    put(a, b, cells, [0u32; 4]);
+    let fns: Vec<u32> = (0..4u32)
+        .map(|k| stand_in(a, b, 0x180 + 0x10 * k, &recorder(cells + 4 * k, 0x7000 + k)))
+        .collect();
+    let b_call = |m: &mut Oracle, f: u32, args: &[u32]| m.call(f, Conv::Cdecl, args).unwrap().eax;
+    let obj = random_block(a, b, rng, 0x440);
+    let out = alloc(a, b, 0x10);
+    for _ in 0..10 {
+        assert_eq!(eax(a, 0x0064_7440, &[obj]), acc::swap3(b, obj));
+        assert_eq!(
+            eax(a, 0x0064_7490, &[obj, out]),
+            acc::swap3_out(b, obj, out)
+        );
+        assert_eq!(
+            call(a, 0x0040_2b00, Conv::Thiscall(obj), &[]).eax,
+            acc::copy_default_tables(b, obj)
+        );
+        let v = [rng.next(), rng.next(), rng.next()];
+        let ra = call(
+            a,
+            0x0063_2930,
+            Conv::Thiscall(obj),
+            &[out, v[0], v[1], v[2]],
+        )
+        .eax;
+        assert_eq!(ra, acc::swap_state_ac(b, obj, out, v));
+        same_memory("round 6c state", a, b);
+    }
+    let list = random_block(a, b, rng, 0x20);
+    for k in 0..8u32 {
+        put(a, b, list + 4 * k, rng.next() % 600);
+    }
+    put(a, b, obj + 0x40, list);
+    for _ in 0..30 {
+        put(a, b, obj + 0x18, rng.next() % 9);
+        let n = [0, 1, 500, 501, rng.next() % 600, Mem::read::<u32>(a, list)]
+            [(rng.next() % 6) as usize];
+        assert_eq!(
+            call(a, 0x006f_b320, Conv::Thiscall(obj), &[n]).eax,
+            acc::select_id(b, obj, n)
+        );
+        same_memory("select_id", a, b);
+    }
+    let pairs = alloc(a, b, 4 + 12 * 20);
+    put(a, b, pairs, 0u32);
+    for _ in 0..40 {
+        let key = rng.next() % 12;
+        let (x, y) = (rng.next() % 1000, rng.next() % 1000);
+        #[allow(clippy::cast_precision_loss)]
+        let (fx, fy) = (x as f32 / 7.0, y as f32 / 3.0);
+        let ra = call(
+            a,
+            0x006e_4020,
+            Conv::Thiscall(pairs),
+            &[key, fx.to_bits(), fy.to_bits()],
+        )
+        .eax;
+        assert_eq!(ra, acc::set_pair_floats(b, pairs, key, fx, fy));
+        same_memory("pair floats", a, b);
+    }
+    // the fixup runners: a list of n items, the recorder as fn
+    let src = random_block(a, b, rng, 0x20);
+    let dst_buf = alloc(a, b, 0x1c * 8);
+    let dst = alloc(a, b, 4);
+    let flist = alloc(a, b, 8);
+    for n in [0u32, 1, 5] {
+        put(a, b, flist, [rng.next(), n]);
+        for (sym, size) in [(0x0060_ca70, 0x1c), (0x0060_ca10, 0x10)] {
+            let ctx = rng.next();
+            put(a, b, dst, dst_buf);
+            let ra = call(a, sym, Conv::Thiscall(flist), &[fns[0], src, ctx, dst]).eax;
+            Mem::write(b, dst, dst_buf);
+            let rb = acc::fixup_run_all(b, flist, [fns[0], src, ctx, dst], size, b_call);
+            if n != 0 {
+                assert_eq!(ra, rb, "{sym:#x} {n}");
+            }
+        }
+    }
+    same_memory("fixup runners", a, b);
+    // tree rotations on a 7-node tree with parent links
+    let head = alloc(a, b, 0x10);
+    put(a, b, head + 0xd, 1u8);
+    let nodes: Vec<u32> = (0..7).map(|_| alloc(a, b, 0x10)).collect();
+    // in-order 0..7, root 3; children of 3: 1, 5; of 1: 0, 2; of 5: 4, 6
+    let shape = [
+        (3usize, Some(1usize), Some(5usize)),
+        (1, Some(0), Some(2)),
+        (5, Some(4), Some(6)),
+    ];
+    for &n in &nodes {
+        put(a, b, n, [head, head, head, 0]);
+    }
+    for (p, l, r) in shape {
+        for (c, off) in [(l, 0u32), (r, 8)] {
+            if let Some(c) = c {
+                put(a, b, nodes[p] + off, nodes[c]);
+                put(a, b, nodes[c] + 4, nodes[p]);
+            }
+        }
+    }
+    put(a, b, head + 4, nodes[3]);
+    let tree = alloc(a, b, 4);
+    put(a, b, tree, head);
+    for _ in 0..30 {
+        let n = nodes[(rng.next() % 7) as usize];
+        let right: u32 = Mem::read(a, n + 8);
+        let left: u32 = Mem::read(a, n);
+        if rng.next().is_multiple_of(2) && right != head {
+            call(a, 0x00a4_1930, Conv::Thiscall(tree), &[n]);
+            stl::bridge::tree_rotate_left(b, tree, n);
+        } else if left != head {
+            call(a, 0x00a4_1b40, Conv::Thiscall(tree), &[n]);
+            stl::bridge::tree_rotate_right(b, tree, n);
+        }
+        same_memory("tree rotations", a, b);
+    }
+    // window and message opening, slot clearing
+    for i in 0..8u32 {
+        let win = random_block(a, b, rng, 0x80);
+        put(a, b, win + 0x60, [fns[0], fns[1], fns[2]]);
+        set_entry(a, b, w::WINDOWS, i, win);
+        let msg = random_block(a, b, rng, 0x120);
+        put(a, b, msg + 0x100, fns[2]);
+        put(a, b, msg + 0xf8, fns[3]);
+        set_entry(a, b, w::MSG_WINDOWS, i, msg);
+        let slot = alloc(a, b, 0x1c);
+        for off in [0x10, 0x14, 0x18] {
+            let part = random_block(a, b, rng, 0x30);
+            put(a, b, slot + off, part);
+        }
+        put(a, b, w::MSG_WINDOW_SLOTS.ptr(b).addr + 4 * i, slot);
+    }
+    for i in 0..8u32 {
+        let k = i.cast_signed();
+        assert_eq!(eax(a, 0x0090_6c80, &[i]), w::open_window(b, k, b_call));
+        assert_eq!(eax(a, 0x008b_8560, &[i]), w::open_message(b, k, b_call));
+        assert_eq!(eax(a, 0x008a_b800, &[i]), w::clear_message_slot(b, i));
+        same_memory("window opening", a, b);
+    }
+    // repeat buttons
+    let input = alloc(a, b, 8 + 4 * 29);
+    for _ in 0..200 {
+        let times: Vec<f32> = (0..29u32)
+            .map(|_| f32::from(u16::try_from(rng.next() % 40).unwrap()) / 100.0)
+            .collect();
+        put(a, b, input, [rng.next() & 0xffff, rng.next() & 0xffff]);
+        for (k, h) in (0u32..).zip(&times) {
+            put(a, b, input + 8 + 4 * k, *h);
+        }
+        let mask = rng.next() & 0x1fff_ffff;
+        let ra = call(a, 0x0063_13a0, Conv::Thiscall(input), &[mask]).eax & 0xff;
+        assert_eq!(ra, u32::from(pad::bridge::is_rep_button(b, input, mask)));
+        same_memory("isRepButton", a, b);
+    }
+    eax(a, 0x00a4_2ba0, &[]);
+    cd::bridge::pc_read_func_set(b);
+    let packets = alloc(a, b, 0x80);
+    set(a, b, pkt::bridge::PACKET_CURSOR, packets);
+    for _ in 0..4 {
+        let (x, y) = (rng.next(), rng.next());
+        assert_eq!(
+            eax(a, 0x008f_f020, &[x, y]),
+            pkt::bridge::xyoffset_packet(b, x, y)
+        );
+    }
+    same_memory("PC read table, packets", a, b);
+    let text = alloc(a, b, 0x40);
+    let copy = alloc(a, b, 0x40);
+    for k in 0..40u32 {
+        let len = (k % 30) as usize;
+        let mut bytes: Vec<u8> = (0..len)
+            .map(|_| {
+                [b'\n', b'1', b' ', b'-', b'/', b'.', b'a', b'9', 0x81][(rng.next() % 9) as usize]
+            })
+            .collect();
+        bytes.push(0);
+        a.write(text, &bytes).unwrap();
+        b.write(text, &bytes).unwrap();
+        let s = if k == 39 { 0 } else { text };
+        assert_eq!(
+            eax(a, 0x00a7_b1a0, &[copy, s]),
+            msg::bridge::copy_cutting_lines(b, copy, s)
+        );
+        // the number font only takes digits, space, - . / (others hang it)
+        let digits: Vec<u8> = bytes
+            .iter()
+            .map(|&c| {
+                if c == 0 || b"0123456789 -./".contains(&c) {
+                    c
+                } else {
+                    b'5'
+                }
+            })
+            .collect();
+        a.write(text, &digits).unwrap();
+        b.write(text, &digits).unwrap();
+        eax(a, 0x0089_e600, &[text, copy]);
+        msg::bridge::number_font_string(b, text, copy);
+        same_memory("strings", a, b);
+    }
+    // preloaded magic PRX table
+    let counts = a.rebase(0x0193_fd44);
+    for on in [0u32, 1] {
+        set(a, b, Global::<u32>::new(0x0193_fd40), on);
+        for i in 0..12u32 {
+            put(a, b, counts + 4 * i, (rng.next() % 3).cast_signed() - 1);
+        }
+        let ids = a.rebase(0x00c6_4c18);
+        for k in 0..30 {
+            let id = if k % 3 == 0 {
+                -1
+            } else {
+                Mem::read::<i32>(a, ids + 12 * (rng.next() % 12))
+            };
+            let o = if k % 4 == 0 { 0 } else { out };
+            assert_eq!(
+                eax(a, 0x009d_ad70, &[id.cast_unsigned(), o]),
+                instance::bridge::find_preloaded(b, id, o)
+            );
+            same_memory("preloads", a, b);
+        }
+    }
+}

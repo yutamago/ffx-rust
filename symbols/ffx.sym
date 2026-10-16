@@ -23,6 +23,8 @@
 0x00401880 function Settings_Construct        # GameSetting.ini path at +0x430; field 0 = language index
 0x00401cb0 function Settings_Load             # reads Documents\Square Enix\...\GameSetting.ini (Language=jp|en|fr|de|it|es|kr|ch)
 0x00402a00 function SetWordAt_00402a00 # thiscall(this, i, v), ret 8: this[i] = v, returns 0; name ours
+0x00402b00 function Settings_CopyDefaultTables # thiscall(settings) -> 0: the 0x51-word tables 0x00c8a538, 0x00c8a3f0, 0x00c8a2a8 to +0x60, +0x1a4, +0x2e8, +0x42c = 0x51; caller Settings_Load; name ours
+0x00402b50 function CopyTable_00c8a538 # thiscall(this): the 0x51 words at 0x00c8a538 to +0x60, +0x42c = 0x51; caller 0x0065f450; name ours
 0x00402be0 function GetTable_00c8a538 # stdcall(i), ret 4: word i of the table at 0x00c8a538; callers 0x00700da0, 0x00701fa0; name ours
 0x00405ba0 function ReturnConst_00405ba0 # () -> 0x80; name ours
 0x00405e20 function zlib_uncompress           # zlib 1.2.x uncompress(dst, &dst_len, src, src_len), cdecl; replaced by ffx-hook
@@ -407,6 +409,7 @@
 0x0060b860 function Identity_0060b860 # cdecl(x) -> x (frame-pointer build); name ours
 0x0060c010 function Identity_0060c010 # cdecl(x) -> x (frame-pointer build); name ours
 0x0060c020 function Identity_0060c020 # cdecl(x) -> x (frame-pointer build); name ours
+0x0060c6b0 function MapFindU32_0060c6b0 # thiscall(head; &key), ret 4: the same lookup as MapFindU32_0062fe50; caller 0x0060df30; name ours
 0x0060c700 function Identity_0060c700 # cdecl(x) -> x (frame-pointer build); name ours
 0x0060c710 function Identity_0060c710 # cdecl(x) -> x (frame-pointer build); name ours
 0x0060c720 function Identity_0060c720 # cdecl(x) -> x (frame-pointer build); name ours
@@ -458,6 +461,7 @@
 0x0061aa90 function FileSys_Read              # wrapper that calls FileSys_ReadSync
 0x0061acb0 function PStreamFile_entrySize64 # thiscall(this) -> edx:eax = u64 at +8 of *(this+0xc) (called by Phyre_PSerialization_PStreamFile_getFileSize); name ours
 0x0061acc0 function VbfStream_Open            # fopen(path, "rb") for one of 15 reader streams
+0x0061acf0 function VFile_reset # thiscall(this): +0xc, +0x10, +0x14 and byte +0 zeroed (the VFile released); caller BigFileHandle_releaseVFile; name ours
 0x0061b590 function BigFileStream_createInstance # allocates the 0x44-byte FileSys into g_FileSys; was FileSys_CreateSingleton
 0x0061b7e0 function FileSys_NewReadRequest    # finds the first block and its file offset for a read at a 64-bit position
 0x0061b8d0 function BigFileStream_fileTaskRead # freads the stored blocks; stored size 0 means 0x10000; was ReadRequest_ReadBlocks
@@ -593,6 +597,7 @@
 0x006313a0 function Virtuos_InputManager_isRepButton # fh v3:exact 0x00631550 Virtuos::InputManager::isRepButton
 0x00631550 function Virtuos_InputManager_setInputInfo # fh v3:exact 0x00631700 Virtuos::InputManager::setInputInfo
 0x006315c0 function Input_BuildPadMap          # pairs each key binding (settings +0x60) with its PS2 pad bit
+0x00632930 function InputManager_SwapState_00632930 # thiscall(this; out, a, b, c), ret 0x10 -> out: the three words at +0xac to out, replaced by a, b, c; +0, +4 zeroed; caller 0x00630df0 (input manager); name ours
 0x006329c0 function Virtuos_InputManager_setVibration # fh v3:exact 0x00632b70 Virtuos::InputManager::setVibration
 0x00632a30 function Virtuos_InputManager_updateInput # fastcall(input 0x00ccb170): ORs the bits of held bindings into the pad word (+0), previous at +4; was Input_UpdatePad
 0x006332d0 function Identity_006332d0 # cdecl(x) -> x (frame-pointer build); name ours
@@ -859,6 +864,8 @@
 0x006460a0 function DecodingGamecodeJPCHKR    # (src, pos, out, lang) -> pos + bytes: character code -> UTF-8 via the jp/kr/ch table (3 bytes, 2 for 17 and 40); was Text_DecodeCharCjk
 0x006461f0 function Text_DecodeCharWestern    # (src, pos, out) -> pos + bytes: character code -> UTF-8 via ffxsjistbl_us.bin, codes < 0xc0 only (a jump table of offsets)
 0x00646920 function MallocAndReadGamecode     # loads ffx_encoding/ffxsjistbl_<lang>.bin into g_CharsetCjk/g_CharsetWestern; was Text_LoadCharset
+0x00647440 function SwapWords3_00647440 # cdecl(p) -> 0x1c: the three words at p byte-swapped in place (big-endian header); caller 0x006479b0; name ours
+0x00647490 function SwapWords3Out_00647490 # cdecl(p, out) -> 0x1c: as SwapWords3_00647440, then *out = word 1; caller 0x006477f0; name ours
 0x00647c90 function GetU32_01325ac4 # () -> u32 at 0x01325ac4; name ours
 0x00647cb0 function ReturnConst_00647cb0 # () -> 0x6900; name ours
 0x00647d70 function SaveDataCheckCrc          # fh call.cs cdecl
@@ -1060,6 +1067,7 @@
 0x0067a7b0 function iVoiceVolumeDirect        # fh v3:exact 0x0067a960
 0x0067a8e0 function iSyncDataChange           # fh v3:bsim1.00 0x0067aa90
 0x0067a960 function iSyncInitialize           # fh v3:exact 0x0067ab10
+0x0067aa50 function Table_00c334d4_0067aa50 # cdecl(x): word x - *0x00c33468 of the 7 at 0x00c334d4, 0 outside; caller Cd_QueueRead; name ours
 0x0067aa70 function getEternalCalmMgrpSize    # fh v3:bsim1.00 0x0067ac20
 0x0067aac0 function getEternalCalmSceneName   # fh v3:bsim1.00 0x0067ac70
 0x0067aae0 function getEternalCalmSceneSize   # fh v3:bsim1.00 0x0067ac90
@@ -1106,6 +1114,7 @@
 0x00680320 function FreeCamera_setFreePause   # fh v3:exact 0x006804d0 FreeCamera::setFreePause
 0x00680410 function FreeCamera_setType        # fh switch:cg2 0x71008a1cd8 FreeCamera::setType
 0x006843a0 function AbmapManager_CheckWordVertex # fh v3:exact 0x00684540 AbmapManager::CheckWordVertex
+0x00684ca0 function EntryWordC_00684ca0 # thiscall(this; i), ret 4: +0xc of entry 0 (count +4 >= 2) or entry i (8 bytes each from +0x10); caller 0x00652a10; name ours
 0x00684cd0 function AbmapManager_GetVertexInfo # fh v3:exact 0x00684e70 AbmapManager::GetVertexInfo
 0x006857b0 function AbmapManager_ToDestroy    # fh v3:bsim1.00 0x00685950 AbmapManager::ToDestroy
 0x00686c50 function IdentityStd_00686c50 # stdcall(x) -> x, ret 4; name ours
@@ -1267,6 +1276,7 @@
 0x006db1f0 function LocalizationManager_getText # fh v3:exact 0x006db320 LocalizationManager::getText
 0x006db2f0 function LocalizationManager_readLocalizationKit # fh v3:exact 0x006db420 LocalizationManager::readLocalizationKit
 0x006db870 function EighthAtLeastOne          # stdcall(n, unused), ret 8: n / 8 (signed) above 8, else 1; name ours
+0x006dbf30 function RecordStateIs8_006dbf30 # thiscall(this; i), ret 4: word +0x1f8 of 0x1e8-byte record i == 8; caller graphicInitScene; name ours
 0x006dbf50 function JobSchedule_JobScheduler_waitForComplete # fh v3:exact 0x006dc080 JobSchedule::JobScheduler::waitForComplete
 0x006dc010 function std_map_cstr_find_006dc010 # thiscall(head; key*), ret 4: the node whose tagged string key (+0xc, bit 0 stripped) equals *key (strcmp order, address order when either is null), or 0; root head+0xc, children +0/+4; callers 0x006dc8d0/0x006dd230/0x006dd7b0; name ours
 0x006dc8a0 function Instance_006dc800_Get     # () -> [0x00cdede8], the object 0x006dc800 creates (0x006dc870 clears it); Fahrenheit's BSim match says MorphManager::GetInstance, but MorphManager_GetInstance is 0x006abf40
@@ -1280,11 +1290,13 @@
 0x006e32c0 function Phyre_FogEffectManager_GetInstance # fh v3:bsim1.00 0x006e33f0 Phyre::FogEffectManager::GetInstance
 0x006e34f0 function Phyre_FogEffectManager_reset # fh switch:bsim0.95 0x710025ee50 Phyre::FogEffectManager::reset
 0x006e36c0 function Phyre_FogEffectManager_setChrFogFadeType # fh v3:exact 0x006e37f0 Phyre::FogEffectManager::setChrFogFadeType
+0x006e4020 function SetPairFloats_006e4020 # thiscall(this; key, a, b), ret 0xc: the 12-byte entry with key (from +4, count +0, appended when missing) gets floats a, b; returns 3 * index; caller 0x006e4100; name ours
 0x006e40b0 function DepthBiasHooks_clearDepthBias # fh v3:exact 0x006e41e0 DepthBiasHooks::clearDepthBias
 0x006e45e0 function LoadingScreen_LoadingScreen # fh v3:exact 0x006e4710 LoadingScreen::LoadingScreen
 0x006e4720 function LoadingScreen_initialize  # fh v3:exact 0x006e4850 LoadingScreen::initialize
 0x006e4770 function LoadingScreen_loadTextures # fh v3:exact 0x006e48a0 LoadingScreen::loadTextures
 0x006e4ea0 function LoadingScreen_render      # fh v3:exact 0x006e4fd0 LoadingScreen::render
+0x006e4fd0 function Reset_006e4fd0 # thiscall(this): +0x10 = 0, floats +4, +8, +0x14 = 0.0; caller 0x00642c80; name ours
 0x006e4ff0 function LoadingScreen_setParameterManually # fh switch:bsim1.00 0x7100228000 LoadingScreen::setParameterManually
 0x006e56d0 function RemapButtonIcon_sDestoryInstance # fh switch:bsim1.00 0x710022fc60 RemapButtonIcon::sDestoryInstance
 0x006e56f0 function Phyre_Virtuos_AssetsSharingManager_FixID # fh switch:bsim1.00 0x71000c6670 Phyre::Virtuos::AssetsSharingManager::FixID
@@ -1355,16 +1367,22 @@
 0x006f1d70 function SaveDataManager_doSave    # fh v3:exact 0x006f1eb0 SaveDataManager::doSave
 0x006f1db0 function SetWord0_006f1db0 # thiscall(this): this[0] = 1 (caller 0x00647e40); eax untouched; name ours
 0x006f1dc0 function SetByte364_006f1dc0 # thiscall(this): byte this+0x364 = 1 (caller 0x00647d40); eax untouched; name ours
+0x006f1e40 function SaveDataManager_findEntry_006f1e40 # thiscall(this; id), ret 4: the first of +0x3a0 0x20-byte entries at *(this + 0x368) with u16 +6 == id, or 0; caller 0x00649330; name ours
 0x006f1ed0 function SaveDataManager_getRefBuffer # fh v3:bsim1.00 0x006f2010 SaveDataManager::getRefBuffer
 0x006f2070 function SaveDataManager_instance  # fh v3:bsim1.00 0x006f21b0 SaveDataManager::instance
 0x006f2080 function SaveDataManager_isAlbhedLoaded # fh v3:bsim1.00 0x006f21c0 SaveDataManager::isAlbhedLoaded
 0x006f2090 function SaveDataManager_isBusy    # fh v3:exact 0x006f21d0 SaveDataManager::isBusy
 0x006f20d0 function SaveDataManager_isDeletingFinished # thiscall(this) -> this+8 == 6 (the only call of SaveDataIsDeletingFinished); name ours
+0x006f2120 function SaveDataManager_takeByte364 # thiscall(this) -> al: byte +0x364 returned and cleared (SaveDataManager_pauseLoadUnloadHeaders 0x006f1dc0 sets it); caller 0x00648010; name ours
 0x006f2150 function SaveDataManager_isLoadingFinished # thiscall(this) -> this+8 == 4 (the only call of SaveDataIsLoadingFinished); name ours
 0x006f2190 function SaveDataManager_isSaveEnabled # fh v3:bsim1.00 0x006f22d0 SaveDataManager::isSaveEnabled
 0x006f21a0 function SaveDataManager_isSavingFinished # thiscall(this) -> this+8 == 2 (the only call of SaveDataIsSavingFinished); name ours
 0x006f2410 function SaveDataManager_preDebugSave # fh v3:exact 0x006f2550 SaveDataManager::preDebugSave
+0x006f2430 function SaveDataManager_setFlag3bc # thiscall(this; i), ret 4: byte this+0x3bc+i = 1, returns i; caller 0x006484f0; name ours
+0x006f24d0 function SaveData_ClearWord8_006f24d0 # (): word +8 of *0x00ce81f4 = 0, returns the object; caller SaveDataResetToIdle; name ours
+0x006f24f0 function SetMemberC_006f24f0 # thiscall(this; v), ret 4: this+0xc = v, returns v; caller 0x00647d50 (save data); name ours
 0x006f2500 function SaveDataManager_setCbResult # fh v3:bsim1.00 0x006f2640 SaveDataManager::setCbResult
+0x006f2520 function SetMember394_006f2520 # thiscall(this; v), ret 4: this+0x394 = v, returns v; caller 0x00648f80 (save data); name ours
 0x006f2530 function SaveDataManager_setSaveDataIconString # fh v3:exact 0x006f2670 SaveDataManager::setSaveDataIconString
 0x006f2560 function SaveDataManager_setSaveDataInfo # fh v3:exact 0x006f26a0 SaveDataManager::setSaveDataInfo
 0x006f2ce0 function SignalSema                # fh v3:bsim1.00 0x006f2e20
@@ -1411,6 +1429,7 @@
 0x006fb080 function SyncManager_syncDataChangeAsync # fh v3:exact 0x006fb160 SyncManager::syncDataChangeAsync
 0x006fb130 function SyncManager_syncDataChangeAsyncTask # fh v3:exact 0x006fb210 SyncManager::syncDataChangeAsyncTask
 0x006fb160 function SyncManager_syncGetData   # fh v3:exact 0x006fb240 SyncManager::syncGetData
+0x006fb320 function SelectId_006fb320 # thiscall(this; n), ret 4: for n in 1..=500 not already +0xc: +0xc = n, +8 = +0x1c = 0, +0x1c = 1 when n is in the +0x18 words at *(this + 0x40); returns 0; caller 0x0067a990; name ours
 0x006fb6c0 function user_aligned_free         # fh v3:exact 0x006fb7a0
 0x006fb770 function UserHeap_AlignedMalloc    # cdecl(size, align): UserHeap_Alloc(size + align), pointer moved up to a multiple of align (__aullrem of the sign-extended pointer), the distance in the byte before; the first size bytes filled 0xcd; name ours
 0x006fb820 function UserHeap_Calloc # cdecl(n, size): malloc_pool_init on first use, UserHeap_Alloc(n * size) under the heap's critical section, memset 0; name ours
@@ -1420,6 +1439,9 @@
 0x006fb9b0 function malloc_pool_init          # fh call.cs cdecl _malloc_pool_init
 0x006fba90 function UserHeap_MemSize          # cdecl(p): UserHeap_BlockSize under the lock (no first-use check); name ours
 0x006fbb00 function UserHeap_Realloc          # cdecl(p, size): new block (none for 0), memcpy_s min(old, size) bytes, old freed; name ours
+0x006fc390 function ReleaseSlots_006fc390 # thiscall(this; key), ret 4 -> 0: every 0x18-byte slot (count in +0 low 31 bits, array *(this + 4)) with byte 1 and +4 == key gets byte 0; caller 0x0068bfa0; name ours
+0x00703750 function CopyFloats4_00703750 # thiscall(this; src), ret 4: 4 floats from src to this+4 through the x87 stack, returns src; caller 0x006c3970; name ours
+0x007037e0 function CopyFloats2_007037e0 # thiscall(this; src), ret 4: 2 floats from src to this+0x14 through the x87 stack, returns src; caller 0x006c3970; name ours
 0x00703bc0 function cdc_Vector_CanNormalize3  # thiscall(v): al = 1 when (x²+y²)+z² (stored f32) is not NaN (_isnan), finite (_finite) and > FLT_MIN (0x00b4cf60); only caller cdc_Vector_SafeNormalize3; name ours
 0x00704200 function cdc_Vector_SafeNormalize3 # fh v3:exact 0x007042f0 cdc::Vector::SafeNormalize3
 0x00704dd0 function cdc_Inverse4x4            # cdecl(dst, m): the general 4x4 inverse by cofactors (f32 stores between steps), 1/det or 0; leaves dst+0x48 in eax; only caller sceVu0InversMatrix4x4; name ours (cdc_ like its neighbours)
@@ -2088,7 +2110,10 @@
 0x0076c270 function cd_module_file_sector     # (module, n): cd_file_sector(i16 [g_CdLib+0x2c][module] + n); name ours
 0x0076c320 function CDfileSize_CD             # cdecl(number): size of a PS2 file from the sector table (cdrom.mdg); wrapped so mod files report their size; was Cd_FileSize
 0x0076c410 function CDfileSize_CD_EX          # fh v3:exact 0x0076c520
+0x0076c440 function cd_file_size_bytes # cdecl(n): (sectors to the next entry * 0x100 - top byte) * 8 for entry n + g_CdLib+0x20, 0 when absent (bit 23); caller Cd_QueueRead; name ours
 0x0076c560 function CdEnvInit                 # fh v3:exact 0x0076c670
+0x0076cfa0 function CdSetC40e19_0076cfa0 # cdecl(n): byte 0x00c40e19 = (n != 1); caller CdEnvInit; name ours
+0x0076cfc0 function SetGlobal_01128ac4 # cdecl(v): *0x01128ac4 = v, returns v; caller 0x0088e880; name ours
 0x0076cfd0 function FileReadMain              # fh v3:bsim1.00 0x0076d0f0
 0x0076d0d0 function GetCD                     # fh v3:bsim1.00 0x0076d1e0
 0x0076d510 function cd_file_sector            # fh v3:exact 0x0076d620
@@ -2107,6 +2132,7 @@
 0x0076dac0 function dvd_cd_unk8 # () -> 0x10: one of seven getters by MsGetSaveConfigEnglish/TkGetLang, all returning the same; name ours (the eighth/ninth of the dvd_cd_* family)
 0x0076dc20 function cd_size_from_table # cdecl(n): 1 when entry n + g_CdLib+0x20 of the sector table has bit 23 clear and bit 22 set (size from sizetbl.bin), else 0; name ours
 0x0076dc50 function get_read_buffer           # () -> the CD reader's buffer (0x01128ac8); Fahrenheit Switch BSim 1.00 0x710031e670
+0x0076dc60 function SetByte_01128ac0 # cdecl(v): byte 0x01128ac0 = v; caller 0x00a7aee0; name ours
 0x0076de90 function printf_cut                # fh switch:bsim1.00 0x71003202d0
 0x0076e5e0 function read_err_disp_set         # (v): byte 0x01128a87 = v; Fahrenheit Switch BSim 1.00 0x710031ea70
 0x0076e630 function read_thread_init          # fh v3:bsim1.00 0x0076e740
@@ -2128,6 +2154,7 @@
 0x00774740 function ResetRecords_00774740 # (): records (0x138 bytes) of entry *0x0112a088 of the table *0x0112a01c (offset + *0x0112a03c, i16 count at +4): +0x114/+0x116 = +0x120/+0x122, +0x118/+0x11c = 0.0; callers 0x0076f470, 0x00775ce0, 0x00775de0, 0x00776110; name ours
 0x00774ae0 function getSa_MenuTextureName     # fh v3:exact 0x00774bf0
 0x007767a0 function Kernel_GetItemName        # (id) -> char*: g_EmptyName for 0, else MsGetRomItem's strings + the record's first u16; name ours
+0x00776910 function UnlinkRecord_00776910 # cdecl(rec): unlinks rec from the offset list in *0x0112a03c (+0x38 next, +0x44 previous) and marks it 7; caller 0x007767d0; name ours
 0x00776f50 function MsGetSavePlayerPtr_thunk  # (chr): jmp MsGetSavePlayerPtr
 0x00777230 function ReturnAddress_00777230 # () -> 0x00c41748 (an address in the image); name ours
 0x00777420 function hdd_state_clear           # (): zeroes the two words at 0x0112a4fc (before g_Hdd_Mounted); name ours
@@ -2137,6 +2164,7 @@
 0x00777e90 function get_hdd_status            # () -> 2 when g_Hdd_Err, else (i8) g_Hdd_Status; name ours, after get_hdd_err
 0x00777eb0 function get_hdd_name              # fh v3:exact 0x00777fb0
 0x007787b0 function get_hdd_word_518          # () -> [0x0112a518]; TkRefreshHdd reads it; name ours
+0x00778960 function hdd_head_sectors # cdecl(i): word 1 of g_Hdd_Heads entry i (0x0112a52c + 12 i) / 2048, toward zero; caller 0x00773530; name ours
 0x007789e0 function hdd_head_reset            # fh v3:exact 0x00778ad0
 0x007791a0 function hdd_install_check         # fh v3:exact 0x00779290
 0x007792e0 function hdd_install_init          # fh v3:exact 0x007793d0
@@ -4670,6 +4698,8 @@
 0x00872650 function Script_WorkerLevel        # (worker, level) -> 0x4c-byte level block at worker+0x12c+level*0x4c, level clamped to 0..8 (types 5/6: 0..1); +0x18 PC, +0x1f request state, +0x20/+0x24 registers A/B, +0x28 float accumulator, +0x44 move block ptr, +0x48 turn block ptr
 0x008726f0 function Script_Jump               # (worker, level, label): level PC = the worker's code start + labels[label] (worker header +0x24) of the worker running at the call depth (level +0x0e + depth*2 inside a call); level +0x1e = 0
 0x00872860 function AtelCancelSignals         # (worker, level, mode): drops queued signals above level, replying to waiting REQSW/REQEW senders
+0x008729c0 function Flag_01326b28_008729c0 # (): byte 0 of *0x01326b28 |= 0x80, +0x210 |= 2, returns the object; caller 0x006bce00; name ours
+0x008729e0 function Check_01326b28_008729e0 # (): 1 when 0x01325b88 is set and byte 3 of *0x01326b28 & 3 == 2; caller 0x006662f0; name ours
 0x00872b50 function AtelCheckMenuOtakaraFlag  # fh switch:cg2 0x71008b8908
 0x00872b60 function AtelClearMenuOtakaraFlag  # fh v3:bsim1.00 0x00872b00
 0x00872b70 function AtelClearPauseFlag        # fh v3:bsim1.00 0x00872b10
@@ -5011,6 +5041,7 @@
 0x00890eb0 function TOBtlCloseHelpWin         # fh v3:bsim1.00 0x00890e20
 0x00890ee0 function TOBtlCloseSignWindow      # fh v3:bsim1.00 0x00890e50
 0x00890ef0 function TOBtlCloseSimpleHelpMes   # fh v3:bsim1.00+call.cs 0x00890e60 cdecl
+0x00890f30 function TOBtlAdvanceAngle_00890f30 # (): f32 0x0133fa7c += pi / 30 (double 0x00b5ee38), wrapped by 2 pi past pi; caller TOControlBtlWindow; name ours
 0x00890f70 function TOBtlCtrlAuronLimitWindow # fh v3:exact 0x00890ee0
 0x00891140 function TOBtlCtrlChrNum           # fh v3:bsim1.00 0x008910b0
 0x00891220 function TOBtlCtrlEnemyLimit       # fh v3:exact 0x00891190
@@ -5108,6 +5139,8 @@
 0x0089de30 function TODapsSetPos              # fh v3:exact 0x0089dda0
 0x0089dec0 function TODapsString              # fh v3:exact 0x0089de30
 0x0089e360 function TOFontGlyphSprite # cdecl(s, out) -> s: the glyph of the char at s (byte - 0x30, or s[1] + 0xa0 after a lead byte < 0x30) from g_TOFontGlyphs into a sprite (+8/+0xc x,y; +0x10/+0x14 right, bottom (y + 8.0); +0x1c width; +0x20 8.0; +0x26 flags, +4 flags bit 3; +2 0x14); TO-prefix like its neighbours; name ours
+0x0089e4f0 function PushEntry_013402b8 # cdecl(a, b, c) -> c: 12-byte entry *0x01340438 (then incremented) at 0x013402b8 = (u16 1, u16 a at +4, u16 b at +6, c at +8); caller 0x009415e0; name ours
+0x0089e600 function TONumberFontString_0089e600 # cdecl(src, dst): digits kept, space -> :, - . / -> G H I (any other char spins the original forever; the battle number font); caller 0x008ebb80; name ours
 0x0089e660 function DrawCrossCtbIcon          # fh v3:exact 0x0089e5d0
 0x0089eca0 function TOBtlCloseComWinChange    # fh switch:bsim1.00 0x71004b0aa0
 0x0089ece0 function TOBtlCtrlCtbWindow        # fh v3:bsim0.94 0x0089ec70
@@ -5125,6 +5158,7 @@
 0x008a2160 function TOBtlGetChangePad         # fh v3:exact 0x008a2100 _TOBtlGetChangePad
 0x008a22f0 function TOBtlGetLeftPad           # fh v3:cg10 0x8a2290 _TOBtlGetLeftPad
 0x008a2690 function TOBtlGetRightPad          # fh v3:cg10 0x8a2630 _TOBtlGetRightPad
+0x008a2ad0 function TOBtlCtbAnimStep_008a2ad0 # cdecl(rec) -> 0: i8 step +0xf picks 4, 7, 11, 16 to add to i16 +0x10; after four steps +0xf = 0 and +0x14 = 0x008a2b10; caller TOBtlCtrlCtbWindow; name ours
 0x008a2da0 function TODrawWaitBtlWinChange    # fh v3:cg3 0x8a2d40 __TODrawWaitBtlWinChange
 0x008a32b0 function TODrawWaitBtlWinInputGil  # fh v3:cg7 0x8a3250 __TODrawWaitBtlWinInputGil
 0x008a3680 function TODrawWaitBtlWinLeft      # fh v3:cg5 0x8a3620 __TODrawWaitBtlWinLeft
@@ -5221,6 +5255,7 @@
 0x008ab590 function TOAllClearMessageWindow   # fh v3:bsim1.00 0x008ab540
 0x008ab7b0 function TOAllCloseMessageWindow   # fh v3:bsim1.00 0x008ab760
 0x008ab7d0 function TOCDGetFileName           # fh v3:bsim1.00 0x008ab780
+0x008ab800 function TOClearMessageSlot_008ab800 # cdecl(i): g_TOMessageWindowSlots[i]: halves +0, +8 of *(slot+0x10), +0, +0x2c of *(slot+0x14), bytes +0, +1 of *(slot+0x18) zeroed; caller 0x008ab860; name ours
 0x008ab8f0 function TOCloseMessageWindow      # (i): TOCloseWindow(i), then jmp TOCloseMessage(i); fh v3:bsim1.00 0x008ab8a0
 0x008ab9a0 function TOControlMessageWindowForMenu # fh v3:exact 0x008ab950
 0x008aba30 function TODVDFileRead             # fh switch:bsim1.00 0x71004f4c70
@@ -5270,6 +5305,7 @@
 0x008af4f0 function TOSeqStopScene            # fh v3:exact 0x008af4a0
 0x008af590 function TOSetEnvMovieMessage      # fh v3:exact 0x008af540
 0x008af5c0 function TOSetExeMessageWindowArea # fh v3:exact 0x008af570
+0x008af690 function SetGlobal_01841e0c # cdecl(v): *0x01841e0c = v, returns v; caller TOSetExeMessageWindowArea; name ours
 0x008af7d0 function TOSetMessageWindowActive  # (i): u16 +6 of the 8 message-window objects (0x01865b3c) to 0, then window i's to 1; leaves its object in eax; name ours (TOSet... by the file's alphabetical order)
 0x008af840 function TOSetMessageWindowMode    # (v): g_MessageWindowMode = v, returns v; name ours (TOGetMessageWindowMode's setter, in the file's order)
 0x008afb90 function TOSetMessageWindowValue   # (i, v): u16 +4 of window i's object = v; name ours
@@ -5328,6 +5364,7 @@
 0x008b84f0 function TOMacroSetByte1 # cdecl(win, n, v): byte 1 of macro record n of message window win (the table at 0x01869ab0, as TOMacroSetType sets byte 0); callers 0x008c2c60, 0x00a59350; name ours
 0x008b8510 function TOMacroSetValue_008b8510 # the same code as TOMacroSetValue 0x008b8980; callers 0x008c2c60, 0x00a59350; name ours
 0x008b8530 function TOIsMessageStatus3Pressed # (i) -> 1 when TOGetMessageStatus(i) == 3 and bit 0x20 of the pad byte 0x025d09d4; name ours
+0x008b8560 function TOOpenMessage_008b8560 # cdecl(i): message window i: +0 = 1, +0x2c = 0, its +0x100(window), +0x114 = +0x104, then a tail call of +0xf8(window); caller 0x008ade10; name ours
 0x008b85c0 function MacroDic_Load                # Msg_LoadFile("macrodic"): 16 section offsets -> pointers in g_MacroDic
 0x008b86e0 function TOSetExeMessageArea       # fh v3:exact 0x008b8690
 0x008b8960 function TOMacroSetType            # (win, n, t): byte 0 of macro record n of message window win (g_MsgVars; the Btl form sets byte 1 too); name ours
@@ -5338,7 +5375,9 @@
 0x008b9130 function GetU32_025d16c4 # () -> u32 at 0x025d16c4; name ours
 0x008b9140 function TOValueToMesFontL         # fh v3:exact 0x008b90f0
 0x008b9330 function TOGetFontWidth            # fh v3:exact 0x008b92e0 _TOGetFontWidth
+0x008b9640 function TOGetMessageWindow_008b9640 # cdecl(i): message window i (the pointer table at 0x018676f0); caller 0x008ada30; name ours
 0x008b9650 function TOGetMessageWH            # fh v3:exact 0x008b9600 _TOGetMessageWH
+0x008b9a50 function TOGetTableEntry_008b9a50 # cdecl(i): entry i of the table at 0x01868a90; caller 0x008ada30; name ours
 0x008b9eb0 function TkMenuGetPlayerDamegedColor # fh v3:bsim1.00 0x008b9e60
 0x008ba370 function BtlEnd_RowX               # (i, n) (7-n)*44/2 + 44i + 76; own name
 0x008ba3c0 function BtlEnd_ApStep             # (chr) the same step for MsGetNextAP; own name
@@ -5355,6 +5394,7 @@
 0x008bdf10 function BtlEnd_InitApStep         # 0x01869f14 = result 19 (AP), 0x01869f10 = its step (ap/189 | 1, +2 on a multiple of 5); own name
 0x008bdfc0 function SetTable_02310f20 # cdecl(i, v) -> i: word i of the table at 0x02310f20 = v; callers 0x008ba4e0, 0x008bb690; name ours
 0x008bdfe0 function TOSetPair_008bdfe0 # cdecl(prev, cur): 0x025cc584 = prev (or the stored 0x025cc588 for 0), 0x025cc588 = cur, u16 0x0186a178 = 0x1000 when equal else 0 (returned); callers 0x008ba660, 0x008bdb70; name ours
+0x008be050 function SetEntries_01869f20 # cdecl(v): for the byte 0x01869f18 14-byte entries from 0x01869f22, +2 = v and (v == 3) +0 = 2 * entries after it; caller TkBtlEndCtrl; name ours
 0x008be320 function GetU32_00c5a084 # () -> u32 at 0x00c5a084; name ours
 0x008be330 function TOInitMenuGraph           # fh switch:bsim1.00 0x71004b1c00
 0x008be370 function TOMenuAtelReq             # fh v3:exact 0x008be340
@@ -5472,6 +5512,7 @@
 0x008c9410 function MenuItem_CompareEntries   # (list, a, b) 32-byte entries as 8 unsigned words: 1/-1/0; own name
 0x008c9460 function MenuItem_SwapEntries      # (list, a, b) swap 32-byte entries; own name
 0x008ca320 function TOMenuGetDummyAnalogControler # fh v3:exact 0x008ca2f0
+0x008ca370 function SetByte_0186a429_008ca370 # cdecl(i, v): byte 0x0186a42d, 0x0186a42f, 0x0186a429 or 0x0186a42b (i = 0..3, a jump table) = v; caller 0x0085f2e0; name ours
 0x008ca480 function TkMenuDraw                # fh v3:cg2 0x8ca450
 0x008ca490 function TkMenuFlushDummyControler # fh switch:bsim1.00 0x71004c3a50
 0x008ca500 function TkMenuGetDummyControler   # g_TkMenuDummyControler; Switch name, alphabetical slot
@@ -5628,6 +5669,7 @@
 0x008e2960 function TkMenuCtrlWorldMap        # fh v3:exact 0x008e2960
 0x008e2b10 function MenuWorldMap_CloseWindow  # close request for 0x01871698, forget it; own name
 0x008e2d50 function TkMenuWorldMapWindowWord64 # () -> word +0x64 of *g_TkMenuWorldMapWindow (caller TkMenuCtrlWorldMap); name ours
+0x008e2dd0 function TkMenuWorldMapWindowSetWord68 # cdecl(v): word +0x68 of *g_TkMenuWorldMapWindow = v, returns the window; caller TkMenuCtrlWorldMap; name ours
 0x008e2de0 function TOMenuCloseYesNoWindow    # fh switch:bsim1.00 0x71004e7cb0
 0x008e3390 function TkMn2GetListMax2          # () -> 0x023cc120; Switch symbol name (BSim)
 0x008e36f0 function TkMenuCloseSubCmdWindow   # fh switch:bsim1.00 0x71004e9140
@@ -5675,6 +5717,7 @@
 0x008ef790 function TOAdpGsDirectRGBA         # (p, rgba) -> p + 16: the four colour bytes as words; fh switch:bsim1.00 0x710051b230
 0x008ef7d0 function TOAdpFBA # cdecl(p, value) -> p + 0x10: GS register 0x4a from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
 0x008ef800 function TOAdpFOG # cdecl(p, fog) -> p + 0x10: GS FOG (0x0a), the value in bits 56..63; name ours
+0x008ef830 function TOAdpFOGCOL # cdecl(p, FCR, FCG, FCB) -> p + 0x10: GS FOGCOL (0x3d), 8 bits each, sign-extended and OR-ed in unmasked; caller 0x008fab00; name ours (the PS2 register name)
 0x008ef880 function TOAdpFRAME # cdecl(p, FBP, FBW, PSM, FBMSK) -> p + 0x10: GS register 0x4c from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
 0x008ef8e0 function TOAdpWords4               # (p, a, b, c, d) -> p + 16; name ours
 0x008ef910 function TOAdpSCISSOR # cdecl(p, SCAX0, SCAX1, SCAY0, SCAY1) -> p + 0x10: GS register 0x40 from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
@@ -5690,6 +5733,7 @@
 0x008efc90 function TOAdpXYZOffset # cdecl(p, x, y, z) -> p + 0x10: (x + 0x700) * 16, (y + 0x730) * 16, z * 16, 0; name ours
 0x008efcd0 function TOAdpWords3 # cdecl(p, a, b, c) -> p + 0x10: a, b, c, 0; name ours
 0x008efd00 function TOAdpXYZWOffset # cdecl(p, x, y, z, w) -> p + 0x10: (x + 0x700) * 16, (y + 0x730) * 16, z * 16, w * 16; name ours
+0x008efd40 function TOAdpZBUF # cdecl(p, ZBP, PSM, ZMSK) -> p + 0x10: GS ZBUF_1 (0x4e): ZBP at 0, PSM at 24, ZMSK at 32, sign-extended and OR-ed in unmasked; caller 0x008fade0; name ours (the PS2 register name)
 0x008f0680 function TOAdpMenuIconImportantName # fh v3:exact 0x008f0680
 0x008f0700 function TOAdpMenuIconItemAbmap    # fh v3:cg3 0x8f0700
 0x008f0770 function TOAdpMenuIconItemName     # fh v3:cg4 0x8f0770
@@ -5749,6 +5793,7 @@
 0x008fe040 function TOMakePktSeqPrimFunc      # fh v3:exact 0x008fe040
 0x008fe080 function TOMakePktSeqPrimMes       # fh v3:exact 0x008fe080
 0x008feb00 function TOMakePktShapeCursor      # fh v3:exact 0x008feb00
+0x008ff020 function TOXyoffsetPacket_008ff020 # cdecl(x, y) -> x: at *0x018716cc a GIF tag (0x8001, 0x10000000, A+D) and XYOFFSET_1 (x, y | sign of x), the cursor +0x20; caller TODrawMovieMessage; name ours
 0x008ff140 function TOClearEntry_008ff140 # cdecl(i): the 16-byte entry i (< 16, signed) of 0x018762e0 zeroed, returns its address; callers 0x008e3cf0, 0x008e4140; name ours
 0x00900f40 function TOMenuInitBrush           # fh switch:bsim1.00 0x71005280f0
 0x00900f60 function TOMenuSet_018762ee        # (i, v): i < 16 (signed): u16 at 0x018762ee + 16 i = v; between TOMenuInitBrush and TOMenuTransFacePlyTex; name ours
@@ -5796,6 +5841,7 @@
 0x00906290 function TOMakePktFont1612Shadow_00906290 # fh switch:bsim1.00 0x7100508b70 _TOMakePktFont1612Shadow
 0x009062b0 function getScaleButtonIconWidth   # fh v3:exact 0x009062b0
 0x00906730 function GetU32_018763e0 # () -> u32 at 0x018763e0; name ours
+0x00906740 function StepSwitch_018763e0 # (): *0x018763e0 steps -1 -> 0 -> 1 -> -1 (other values stay), returns it; caller 0x006b8ce0; name ours
 0x00906780 function TOConvAlbhedWord          # fh v3:exact 0x00906780
 0x00906b20 function TOGetFFXToAlbhedTblAdrs   # fh v3:bsim1.00 0x00906b20
 0x00906ba0 function TOCloseWindow             # fh v3:exact 0x00906ba0
@@ -5803,6 +5849,7 @@
 0x00906bf0 function TODrawWindow              # fh v3:exact 0x00906bf0
 0x00906c20 function TOGetWindowStatus         # fh v3:bsim1.00 0x00906c20
 0x00906c40 function TOGetWindowType           # fh v3:bsim1.00 0x00906c40
+0x00906c80 function TOOpenWindow_00906c80 # cdecl(i): window i: +0 = 1, +8 = 0, its +0x60(window), +8 = 1, +0x74 = the function at +0x60 + 4 * (+8) (returned); caller 0x008ade10; name ours
 0x00906ce0 function TOSetExeWindowArea        # fh v3:exact 0x00906ce0
 0x00906d90 function TOSetWindowRGBA # cdecl(i, r, g, b, a): stores the four colour bytes at +0x58..+0x5b of window i (TO-prefix like its neighbours); name ours
 0x00906fb0 function TOGetWindowStructAdrs     # fh v3:bsim1.00 0x00906fb0 _TOGetWindowStructAdrs
@@ -6495,12 +6542,14 @@
 0x009da3e0 function MagicFile_Init            # fh v3:exact 0x009da3d0
 0x009da420 function MagicFile_IsNexData       # fh v3:bsim1.00 0x009da410
 0x009da430 function MagicFile_Load            # fh v3:exact 0x009da420
+0x009da750 function Copy_009da750 # (): 64 bytes 0x022fb620 -> 0x02311480 and 0x022fb660 -> 0x02311440; caller MsScreenProcess; name ours
 0x009da7a0 function MagicFile_SetMagicId      # fh v3:exact 0x009da780
 0x009da7f0 function MagicFile_Start           # fh v3:exact 0x009da7d0
 0x009da880 function MagicFile_Stop            # fh v3:exact 0x009da860
 0x009da960 function MagicFile_Unload          # fh v3:exact 0x009da940
 0x009dac60 function MagicFile_Update          # fh v3:exact 0x009dac40
 0x009daca0 function MagicFile_clearAllPreloadedPrx # fh v3:exact 0x009dac80
+0x009dad70 function MagicFile_FindPreloaded_009dad70 # cdecl(id, &out): with 0x0193fd40 set, the first of 12 entries (0x00c64c18, 12 bytes) with id (any for negative) and a positive count (0x0193fd44 + 4 i): *out = &count, 1; else 0; caller MagicFile_isPrxPreloaded; name ours
 0x009dae60 function MagicFile_isPrxPreloaded  # fh v3:exact 0x009dae40
 0x009db110 function onMagicDLLLoaded          # fh v3:exact 0x009db0f0
 0x009e24f0 function PInputSource_setVftable # thiscall(this): *this = Phyre_PInputs_PInputSource_vftable (base part of three constructors at 0x00ada8c0..); eax untouched; name ours
@@ -6529,6 +6578,10 @@
 0x00a418f0 function IdentityStd_00a418f0 # stdcall(x) -> x, ret 4; name ours
 0x00a41900 function Identity_00a41900 # cdecl(x) -> x (frame-pointer build); name ours
 0x00a41910 function Identity_00a41910 # cdecl(x) -> x (frame-pointer build); name ours
+0x00a41930 function std_Tree_Lrotate_00a41930 # thiscall(tree; node), ret 4: std::_Tree::_Lrotate (left +0, parent +4, right +8, nil +0xd, head *tree); caller 0x00a41ff0; name ours
+0x00a41990 function std_Tree_Max_00a41990 # cdecl(node): the rightmost node below node (links +8, nil flag +0xd); caller 0x00a41ff0; name ours
+0x00a419b0 function std_Tree_Min_00a419b0 # cdecl(node): the leftmost node below node (links +0, nil flag +0xd); caller 0x00a41ff0; name ours
+0x00a41b40 function std_Tree_Rrotate_00a41b40 # thiscall(tree; node), ret 4: std::_Tree::_Rrotate; caller 0x00a41ff0; name ours
 0x00a42490 function ReturnMinus1_00a42490 # stdcall(3 args), ret 0xc: returns -1 (vtable only); name ours
 0x00a42830 function CDfileName_PC             # cdecl(number) -> "host0:/ffx/master/..." path of a PS2 file of the current module; was Cd_FileName
 0x00a428a0 function CDfileSize_PC             # cdecl(number): size from sizetbl.bin, or the real file for some modules ("CDfileSize_PC: MISSING?"); was CdFileSize_PC
@@ -6541,6 +6594,7 @@
 0x00a430c0 function pc_sizetbl_set            # fh v3:cg2 0xa430c0
 0x00a43100 function pc_sizetbl_set_Ex         # fh v3:exact 0x00a43100
 0x00a431f0 function setFullArenaLocalizationEnable # fh switch:bsim1.00 0x7100857650
+0x00a43210 function SetGlobal_01a85ba4 # cdecl(v): *0x01a85ba4 = v, returns v; caller BasicDebugTweakUtil_handleInput; name ours
 0x00a43220 function set_read_chgname          # fh v3:exact 0x00a43220
 0x00a43ca0 function sa_meth01dec2_ex          # stand-in: only "... Asm function 'sa_meth01dec2_ex' not implementd" through dbgPrintf; returns 0
 0x00a43cb0 function sa_meth01dec_ex           # stand-in: only "... Asm function 'sa_meth01dec_ex' not implementd" through dbgPrintf; returns 0
@@ -6721,6 +6775,7 @@
 0x00a7a780 function Native_ChrPlayMotion2        # 0x5042: same body as 0x501a (Native_PlayMotionCommon mode 1)
 0x00a7aae0 function Native_PlayMotionCommon      # (ctx, args, mode, other worker): pops end, start, loops, unused, motion (+ worker); mode 0/1/2 -> Chr_PlayMotionMarks/Chr_PlayMotion/Chr_PlayMotionInclEnd; per-map hacks set chr +0x870
 0x00a7ae90 function GetU32_023cbeb0 # () -> u32 at 0x023cbeb0; name ours
+0x00a7b1a0 function CopyCuttingLines_00a7b1a0 # cdecl(dst, src): src copied with line feeds turned into terminators, returns length + 1 (null src: empty dst, 0); caller 0x00a7aee0; name ours
 0x00a7b220 function TOMenuExecLayerHandle     # fh v3:exact 0x00a7b220
 0x00a7b460 function TkMenuExecScene           # fh v3:exact 0x00a7b460
 0x00a7b7d0 function TkMenuGetParamHandle      # fh v3:exact 0x00a7b7d0

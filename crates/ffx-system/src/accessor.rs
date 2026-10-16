@@ -215,4 +215,333 @@ pub mod bridge {
         let w = Global::<u32>::new(0x0187_1698).get(mem);
         mem.read(w.wrapping_add(0x64))
     }
+
+    /// A word global's setter: stores `v`, returns it (`0x0076cfc0`
+    /// `0x01128ac4`, `0x008af690` `0x01841e0c`, `0x00a43210` `0x01a85ba4`).
+    pub const WORD_SETTERS: [(u32, u32); 3] = [
+        (0x0076_cfc0, 0x0112_8ac4),
+        (0x008a_f690, 0x0184_1e0c),
+        (0x00a4_3210, 0x01a8_5ba4),
+    ];
+
+    /// A setter of [`WORD_SETTERS`].
+    pub fn set_word_global(mem: &mut impl Mem, function: u32, v: u32) -> u32 {
+        Global::<u32>::new(super::lookup(&WORD_SETTERS, function)).set(mem, v);
+        v
+    }
+
+    /// `0x0076dc60(v)`: the byte global `0x01128ac0` set.
+    pub fn set_byte_01128ac0(mem: &mut impl Mem, v: u8) {
+        Global::<u8>::new(0x0112_8ac0).set(mem, v);
+    }
+
+    /// `0x006f24d0()`: word `+8` of `*0x00ce81f4` cleared; returns the object.
+    pub fn clear_word8_of_00ce81f4(mem: &mut impl Mem) -> u32 {
+        let o = Global::<u32>::new(0x00ce_81f4).get(mem);
+        mem.write(o.wrapping_add(8), 0u32);
+        o
+    }
+
+    /// `thiscall(this, v)`, `ret 4`: word `off` of `this` set, `v` returned
+    /// (`0x006f24f0` `+0xc`, `0x006f2520` `+0x394`).
+    pub fn set_member(mem: &mut impl Mem, this: u32, off: u32, v: u32) -> u32 {
+        mem.write(this.wrapping_add(off), v);
+        v
+    }
+
+    /// `0x008729c0()`: on `*0x01326b28`, byte 0 gets bit 7 and word `+0x210`
+    /// bit 1; returns the object.
+    pub fn flag_01326b28(mem: &mut impl Mem) -> u32 {
+        let o = Global::<u32>::new(0x0132_6b28).get(mem);
+        let b: u8 = mem.read(o);
+        mem.write(o, b | 0x80);
+        let w: u32 = mem.read(o.wrapping_add(0x210));
+        mem.write(o.wrapping_add(0x210), w | 2);
+        o
+    }
+
+    /// `0x008729e0()`: 1 when `0x01325b88` is set and the low two bits of
+    /// byte 3 of `*0x01326b28` are 2.
+    pub fn check_01326b28(mem: &impl Mem) -> u32 {
+        if Global::<u32>::new(0x0132_5b88).get(mem) == 0 {
+            return 0;
+        }
+        let o = Global::<u32>::new(0x0132_6b28).get(mem);
+        u32::from(mem.read::<u8>(o.wrapping_add(3)) & 3 == 2)
+    }
+
+    /// `0x008e2dd0(v)`: word `+0x68` of `g_TkMenuWorldMapWindow`'s window
+    /// set; returns the window.
+    pub fn set_world_map_window_word68(mem: &mut impl Mem, v: u32) -> u32 {
+        let w = Global::<u32>::new(0x0187_1698).get(mem);
+        mem.write(w.wrapping_add(0x68), v);
+        w
+    }
+
+    /// `0x006f2120()` (`thiscall`): byte `+0x364` returned and cleared.
+    pub fn take_byte364(mem: &mut impl Mem, this: u32) -> u8 {
+        let b: u8 = mem.read(this.wrapping_add(0x364));
+        if b != 0 {
+            mem.write(this.wrapping_add(0x364), 0u8);
+        }
+        b
+    }
+
+    /// `0x006f2430(i)` (`thiscall`, `ret 4`): byte `+0x3bc + i` set;
+    /// returns `i`.
+    pub fn set_flag_3bc(mem: &mut impl Mem, this: u32, i: u32) -> u32 {
+        mem.write(this.wrapping_add(0x3bc).wrapping_add(i), 1u8);
+        i
+    }
+
+    /// `0x006e4fd0()` (`thiscall`): `+0x10` 0, the floats `+4`, `+8`, `+0x14`
+    /// 0.0.
+    pub fn reset_e4fd0(mem: &mut impl Mem, this: u32) {
+        mem.write(this.wrapping_add(0x10), 0u32);
+        for off in [4, 8, 0x14] {
+            mem.write(this.wrapping_add(off), 0.0f32);
+        }
+    }
+
+    /// `thiscall(this, src)`, `ret 4`: `n` floats from `src` to `this + at`
+    /// through the x87 stack (a signalling NaN becomes quiet); returns
+    /// `src` (`0x007037e0`: 2 to `+0x14`; `0x00703750`: 4 to `+4`).
+    pub fn copy_floats(mem: &mut impl Mem, this: u32, src: u32, at: u32, n: u32) -> u32 {
+        for k in 0..n {
+            let v: f32 = mem.read(src.wrapping_add(4 * k));
+            mem.write(
+                this.wrapping_add(at + 4 * k),
+                ffx_bridge::x87::round_trip(v),
+            );
+        }
+        src
+    }
+
+    /// `0x0076cfa0(n)`: the byte `0x00c40e19` is 1 unless `n` is 1.
+    pub fn set_c40e19(mem: &mut impl Mem, n: u32) {
+        Global::<u8>::new(0x00c4_0e19).set(mem, u8::from(n.wrapping_sub(1) != 0));
+    }
+
+    /// `0x0061acf0()` (`thiscall`): `+0xc`, `+0x10`, `+0x14` and byte `+0`
+    /// zeroed (a `VFile` released).
+    pub fn vfile_reset(mem: &mut impl Mem, this: u32) {
+        mem.write(this.wrapping_add(0xc), [0u32; 3]);
+        mem.write(this, 0u8);
+    }
+
+    /// `0x006dbf30(i)` (`thiscall`, `ret 4`): whether word `+0x1f8` of the
+    /// 0x1e8-byte record `i` is 8.
+    pub fn record_state_is8(mem: &impl Mem, this: u32, i: u32) -> u32 {
+        let at = this.wrapping_add(i.wrapping_mul(0x1e8)).wrapping_add(0x1f8);
+        u32::from(mem.read::<u32>(at) == 8)
+    }
+
+    /// `0x00778960(i)`: word 1 of the 12-byte HDD head `i` (`0x0112a52c`)
+    /// over 2048, rounded toward zero.
+    pub fn hdd_head_sectors(mem: &impl Mem, i: u32) -> i32 {
+        let v: i32 = mem.read(mem.rebase(0x0112_a52c).wrapping_add(i.wrapping_mul(12)));
+        v / 2048
+    }
+
+    /// `std::_Tree::_Min(node)` (`0x00a419b0`) and `_Max` (`0x00a41990`):
+    /// follows the left (`+0`) or right (`+8`) links while the next node is
+    /// not nil (`+0xd`).
+    pub fn tree_extreme(mem: &impl Mem, node: u32, link: u32) -> u32 {
+        let mut n = node;
+        loop {
+            let next: u32 = mem.read(n.wrapping_add(link));
+            if mem.read::<u8>(next.wrapping_add(0xd)) != 0 {
+                return n;
+            }
+            n = next;
+        }
+    }
+
+    /// `0x0067aa50(x)`: entry `x - *0x00c33468` of the seven words at
+    /// `0x00c334d4`, 0 outside them.
+    pub fn table_00c334d4(mem: &impl Mem, x: u32) -> u32 {
+        let k = x
+            .wrapping_sub(Global::<u32>::new(0x00c3_3468).get(mem))
+            .cast_signed();
+        if !(0..7).contains(&k) {
+            return 0;
+        }
+        mem.read(
+            Global::<u32>::new(0x00c3_34d4)
+                .ptr(mem)
+                .addr
+                .wrapping_add(k.cast_unsigned() * 4),
+        )
+    }
+
+    /// `0x00684ca0(i)` (`thiscall`, `ret 4`): word `+0xc` of entry 0 when
+    /// the count (`+4`) is 2 or more, else of entry `i` (8 bytes each from
+    /// `+0x10`).
+    pub fn entry_word_c(mem: &impl Mem, this: u32, i: u32) -> u32 {
+        let e: u32 = if mem.read::<i32>(this.wrapping_add(4)) >= 2 {
+            mem.read(this.wrapping_add(0x10))
+        } else {
+            mem.read(this.wrapping_add(i.wrapping_mul(8)).wrapping_add(0x10))
+        };
+        mem.read(e.wrapping_add(0xc))
+    }
+
+    /// `0x00776910(rec)`: unlinks a record from the list in the block at
+    /// `*0x0112a03c` (`+0x38` next, `+0x44` previous, both offsets in the
+    /// block) and marks it 7. Returns its previous offset.
+    pub fn unlink_record(mem: &mut impl Mem, rec: u32) -> u32 {
+        let base = Global::<u32>::new(0x0112_a03c).get(mem);
+        let prev: u32 = mem.read(rec.wrapping_add(0x44));
+        let next: u32 = mem.read(rec.wrapping_add(0x38));
+        mem.write(base.wrapping_add(prev).wrapping_add(0x38), next);
+        let prev: u32 = mem.read(rec.wrapping_add(0x44));
+        mem.write(next.wrapping_add(base).wrapping_add(0x44), prev);
+        mem.write(rec, 7u8);
+        prev
+    }
+
+    /// `0x009da750()`: 64 bytes copied from `0x022fb620` to `0x02311480`
+    /// and 64 from `0x022fb660` to `0x02311440`.
+    pub fn copy_9da750(mem: &mut impl Mem) {
+        for (from, to) in [(0x022f_b620u32, 0x0231_1480u32), (0x022f_b660, 0x0231_1440)] {
+            let v: [u32; 16] = mem.read(mem.rebase(from));
+            let at = mem.rebase(to);
+            mem.write(at, v);
+        }
+    }
+
+    /// `0x00402b50()` (`thiscall`): the 0x51 words at `0x00c8a538` copied to
+    /// `+0x60`, the count 0x51 at `+0x42c`. Returns the table's end.
+    pub fn copy_c8a538(mem: &mut impl Mem, this: u32) -> u32 {
+        let src = mem.rebase(0x00c8_a538);
+        for k in 0..0x51u32 {
+            let v: u32 = mem.read(src + 4 * k);
+            mem.write(this.wrapping_add(0x60 + 4 * k), v);
+        }
+        mem.write(this.wrapping_add(0x42c), 0x51u32);
+        src + 4 * 0x51
+    }
+
+    /// `0x00647440(p)`: the three words at `p` byte-swapped in place;
+    /// returns 0x1c.
+    pub fn swap3(mem: &mut impl Mem, p: u32) -> u32 {
+        for k in 0..3u32 {
+            let v: u32 = mem.read(p + 4 * k);
+            mem.write(p + 4 * k, v.swap_bytes());
+        }
+        0x1c
+    }
+
+    /// `0x00647490(p, out)`: [`swap3`], then word 1 (swapped) to `*out`.
+    pub fn swap3_out(mem: &mut impl Mem, p: u32, out: u32) -> u32 {
+        swap3(mem, p);
+        let v: u32 = mem.read(p + 4);
+        mem.write(out, v);
+        0x1c
+    }
+
+    /// `0x00402b00()` (`thiscall`, the settings): the three 0x51-word default
+    /// tables (`0x00c8a538`, `0x00c8a3f0`, `0x00c8a2a8`) copied to `+0x60`,
+    /// `+0x1a4` and `+0x2e8`, the count 0x51 at `+0x42c`. Returns 0.
+    pub fn copy_default_tables(mem: &mut impl Mem, this: u32) -> u32 {
+        for (src, dst) in [
+            (0x00c8_a538u32, 0x60u32),
+            (0x00c8_a3f0, 0x1a4),
+            (0x00c8_a2a8, 0x2e8),
+        ] {
+            let src = mem.rebase(src);
+            for k in 0..0x51u32 {
+                let v: u32 = mem.read(src + 4 * k);
+                mem.write(this.wrapping_add(dst + 4 * k), v);
+            }
+        }
+        mem.write(this.wrapping_add(0x42c), 0x51u32);
+        0
+    }
+
+    /// `0x00632930(out, a, b, c)` (`thiscall`, `ret 0x10`): the three words
+    /// at `+0xac` to `out`, replaced by `a`, `b`, `c`; `+0`, `+4` zeroed.
+    /// Returns `out`.
+    pub fn swap_state_ac(mem: &mut impl Mem, this: u32, out: u32, v: [u32; 3]) -> u32 {
+        let old: [u32; 3] = mem.read(this.wrapping_add(0xac));
+        mem.write(out, old);
+        mem.write(this.wrapping_add(0xac), v[0]);
+        mem.write(this.wrapping_add(0xb0), v[1]);
+        mem.write(this.wrapping_add(4), 0u32);
+        mem.write(this, 0u32);
+        mem.write(this.wrapping_add(0xb4), v[2]);
+        out
+    }
+
+    /// `0x006fb320(n)` (`thiscall`, `ret 4`): for `n` in 1..=500 other than
+    /// the current `+0xc`: `+0xc` = `n`, `+8` and `+0x1c` 0, then `+0x1c` 1
+    /// when `n` is among the `+0x18` words at `*(this + 0x40)`. Returns 0.
+    pub fn select_id(mem: &mut impl Mem, this: u32, n: u32) -> u32 {
+        if n.wrapping_sub(1) > 0x1f3 || mem.read::<u32>(this.wrapping_add(0xc)) == n {
+            return 0;
+        }
+        let count: i32 = mem.read(this.wrapping_add(0x18));
+        mem.write(this.wrapping_add(0xc), n);
+        mem.write(this.wrapping_add(0x1c), 0u32);
+        mem.write(this.wrapping_add(8), 0u32);
+        let list: u32 = mem.read(this.wrapping_add(0x40));
+        for k in 0..count.max(0).cast_unsigned() {
+            if mem.read::<u32>(list.wrapping_add(4 * k)) == n {
+                mem.write(this.wrapping_add(0x1c), 1u32);
+                break;
+            }
+        }
+        0
+    }
+
+    /// `0x006e4020(key, a, b)` (`thiscall`, `ret 0xc`): the 12-byte entry
+    /// (from `+4`, count `+0`) with `key`, appended when missing, gets the
+    /// floats `a`, `b` (through the x87 stack). Returns 3 times its index.
+    /// (A count of 0x100 or more writes to address 0 in the original.)
+    pub fn set_pair_floats(mem: &mut impl Mem, this: u32, key: u32, a: f32, b: f32) -> u32 {
+        let count: u32 = mem.read(this);
+        let mut i = 0;
+        while i < count && mem.read::<u32>(this.wrapping_add(4 + 12 * i)) != key {
+            i += 1;
+        }
+        if i == count {
+            mem.write(this, count.wrapping_add(1));
+        }
+        let e = this.wrapping_add(12 * i);
+        mem.write(e.wrapping_add(8), ffx_bridge::x87::round_trip(a));
+        mem.write(e.wrapping_add(4), key);
+        mem.write(e.wrapping_add(0xc), ffx_bridge::x87::round_trip(b));
+        i * 3
+    }
+
+    /// `Fixup_RunAll(fn, src, ctx, &dst)` (`0x0060ca70`, `thiscall` on the
+    /// list, `ret 0x10`) and `Fixup_RunAll16` (`0x0060ca10`): for each of
+    /// the list's `+4` items, `size` bytes (28 or 16) copied from `src` to
+    /// `*dst`, then `fn(*dst, i, ctx, *list)` (cdecl, passed to `call`), and
+    /// `*dst` moved past them. Returns `&dst`'s address for the 28-byte form
+    /// and `fn`'s last result for the 16-byte one (0 for an empty list).
+    pub fn fixup_run_all<M: Mem>(
+        mem: &mut M,
+        list: u32,
+        args: [u32; 4],
+        size: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [f, src, ctx, dst] = args;
+        let mut result = 0;
+        let mut i = 0u32;
+        while i < mem.read::<u32>(list.wrapping_add(4)) {
+            let at: u32 = mem.read(dst);
+            for k in (0..size).step_by(4) {
+                let v: u32 = mem.read(src + k);
+                mem.write(at + k, v);
+            }
+            let first: u32 = mem.read(list);
+            result = call(mem, f, &[at, i, ctx, first]);
+            let at: u32 = mem.read(dst);
+            mem.write(dst, at.wrapping_add(size));
+            i += 1;
+        }
+        if size == 0x1c && i > 0 { dst } else { result }
+    }
 }

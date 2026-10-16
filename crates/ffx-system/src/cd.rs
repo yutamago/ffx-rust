@@ -313,4 +313,42 @@ pub mod bridge {
         let e: u32 = mem.read(SECTORS.get(mem).wrapping_add(i.wrapping_mul(4)));
         u32::from(e & 0x80_0000 == 0 && e & 0x40_0000 != 0)
     }
+
+    /// `0x0076c440(n)`: file `n`'s size in bytes from the sector table:
+    /// the sectors to the next entry times 0x800, less 8 times the entry's
+    /// top byte; 0 for an absent file (bit 23).
+    pub fn cd_file_size_bytes(mem: &impl Mem, n: i32) -> u32 {
+        let i = n.wrapping_add(FILE_BASE.get(mem)).cast_unsigned();
+        let at = SECTORS.get(mem).wrapping_add(i.wrapping_mul(4));
+        let e: u32 = mem.read(at);
+        if e & 0x80_0000 != 0 {
+            return 0;
+        }
+        let next: u32 = mem.read(at.wrapping_add(4));
+        let sectors = (next & 0x3f_ffff).wrapping_sub(e & 0x3f_ffff);
+        (sectors << 8).wrapping_sub(e >> 24) << 3
+    }
+
+    /// `PcReadFunc_set()` (`0x00a42ba0`): the PC's read functions into
+    /// `g_CdLib`'s table (offset, function).
+    pub const PC_READ_FUNCS: [(u32, u32); 9] = [
+        (0x14, 0x00a4_28a0),
+        (0x58, 0x00a4_2830),
+        (0x54, 0x00a4_2a00),
+        (0x68, 0x00a4_32a0),
+        (0x60, 0x00a4_2b70),
+        (0x78, 0x00a4_2870),
+        (0x88, 0x00a4_29c0),
+        (0x8c, 0x00a4_29b0),
+        (0x04, 0x00a4_2880),
+    ];
+
+    /// See [`PC_READ_FUNCS`].
+    pub fn pc_read_func_set(mem: &mut impl Mem) {
+        let table = CD_LIB.ptr(mem).addr;
+        for (off, f) in PC_READ_FUNCS {
+            let f = mem.rebase(f);
+            mem.write(table + off, f);
+        }
+    }
 }
