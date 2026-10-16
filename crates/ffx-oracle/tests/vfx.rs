@@ -3280,3 +3280,242 @@ fn vu0_macros_and_tables_match_the_original() {
         }
     }
 }
+
+// ---- round 5: renderer flags, EE/VU emulation, rotations, packets -----
+
+/// A float that is a number (no NaNs or infinities: the rotations' x87
+/// sums of products would pick between two NaNs by register order).
+fn finite(rng: &mut Xorshift) -> u32 {
+    loop {
+        let v = rng.float();
+        if (v & 0x7f80_0000) != 0x7f80_0000 {
+            return v;
+        }
+    }
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
+fn round5_helpers_match_the_original() {
+    use heap::bridge as h;
+    use mat::bridge as b;
+    use op::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0005_ba5e);
+        let x = p.alloc(0x40);
+        let y = p.alloc(0x40);
+        let dst = p.alloc(0x40);
+        let angles = p.alloc(0x10);
+        let packet = p.alloc(0x2000);
+        let env_slot = p.alloc(4);
+        let env = p.alloc(0x40);
+        let arena = p.alloc(0x2000);
+        let obj = p.alloc(0x400);
+        let parent = p.alloc(0x60);
+        let key = p.alloc(0x40);
+        let ctrl = p.alloc(0x10);
+        let offsets = p.alloc(0x10);
+        let tables = p.alloc(0x400);
+        p.set(ctrl + 0xc, offsets);
+        p.put(h::ENV_SLOT, env_slot);
+        p.set(env_slot, env);
+        for round in 0..2000u32 {
+            let f = rng.next();
+            for (name, sym) in [
+                ("calculateVFXSP_ZMat", 0x0071_2d00),
+                ("calculateVFXSP_AlphaFunction", 0x0071_2c30),
+            ] {
+                let arg = if rng.chance(50) { rng.below(0x100) } else { f };
+                p.check(name, sym, &[arg], |_| {
+                    Some(if sym == 0x0071_2d00 {
+                        o::calculate_vfx_sp_zmat(arg)
+                    } else {
+                        o::calculate_vfx_sp_alpha_function(arg)
+                    })
+                });
+            }
+            p.fill(x, 0x40, &mut rng);
+            p.fill(y, 0x40, &mut rng);
+            let g = if rng.chance(20) { 0 } else { x };
+            p.check(
+                "graphicVFXGetRenderDataByGeometry",
+                0x0064_53b0,
+                &[g],
+                |m| Some(o::graphic_vfx_get_render_data_by_geometry(m, g)),
+            );
+            p.check("graphicVFXSetCurrentVFXType", 0x0064_5670, &[f], |m| {
+                o::CURRENT_TYPE.set(m, f as u8);
+                None
+            });
+            p.check("pppEePmulth", 0x0073_74e0, &[dst, x, y], |m| {
+                b::ppp_ee_pmulth(m, dst, x, y);
+                None
+            });
+            p.check("pppEePpacb", 0x0073_75d0, &[dst, x, y], |m| {
+                b::ppp_ee_ppacb(m, dst, x, y);
+                None
+            });
+            // rotations of a matrix of numbers
+            for i in (0..0x40).step_by(4) {
+                let v = finite(&mut rng);
+                p.set(x + i, v);
+            }
+            for i in 0..4 {
+                let a = if rng.chance(30) {
+                    f32::from(rng.below(0x3000) as u16).to_bits()
+                } else {
+                    (f32::from_bits(finite(&mut rng)) % 1.0e6).to_bits()
+                };
+                p.set(angles + 4 * i, a);
+            }
+            let a: u32 = p.get(angles);
+            let d = if rng.chance(30) { x } else { dst };
+            for (name, sym, axis) in [
+                ("op_rt_m_x", 0x007e_9580, mat::Axis::X),
+                ("op_rt_m_y", 0x007e_9670, mat::Axis::Y),
+                ("op_rt_m_z", 0x007e_9760, mat::Axis::Z),
+            ] {
+                p.check(name, sym, &[d, x, a], |m| {
+                    o::op_rt_m(m, d, x, f32::from_bits(a), axis);
+                    None
+                });
+            }
+            p.check("op_rt_m_yxz", 0x007e_9a30, &[dst, x, angles, y], |m| {
+                o::op_rt_m_yxz(m, dst, x, angles, y);
+                None
+            });
+            // a model packet: tags of random types and counts
+            let mut t = packet + 0x20;
+            for _ in 0..rng.below(8) {
+                p.set(
+                    t + 1,
+                    rng.below(8) as u8 | if rng.chance(30) { 0x80 } else { 0 },
+                );
+                p.set(t + 2, rng.below(16) as u16);
+                let kind = u32::from(p.get::<u8>(t + 1) & 7);
+                let size: u32 = p.get(p.sym(o::MD_TAG_SIZES.sym) + 4 * kind);
+                t += 0x10 + u32::from(p.get::<u16>(t + 2)) * size;
+            }
+            p.set(t + 1, 0xffu8);
+            if !p.snapshot() || round > 0 {
+                let id = rng.pick(&[0u32, 0x94, 0x239, 0xd0, 7]);
+                p.put(ffx_system::instance::bridge::MAGIC_ID, id);
+            }
+            let (va, vb) = (rng.next(), rng.next());
+            p.check(
+                "op_md_packet_set_addr",
+                0x00a6_9de0,
+                &[packet, va, vb],
+                |m| {
+                    o::op_md_packet_set_addr(m, packet, va, vb);
+                    None
+                },
+            );
+            // the part matrix
+            for i in (0..0x80).step_by(4) {
+                let v = finite(&mut rng);
+                p.set(obj + i, v);
+            }
+            for i in 0..3 {
+                p.set(obj + 0x50 + 4 * i, rng.next());
+            }
+            if !p.snapshot() || round > 0 {
+                p.put(
+                    ppp::bridge::R0,
+                    [
+                        finite(&mut rng),
+                        finite(&mut rng),
+                        finite(&mut rng),
+                        finite(&mut rng),
+                    ],
+                );
+            }
+            p.check("pppSetMatrix", 0x0071_7410, &[obj], |m| {
+                b::ppp_set_matrix(m, obj);
+                None
+            });
+            // pppVertexAttend on a shape table of the environment
+            for i in (0..0x60).step_by(4) {
+                let v = finite(&mut rng);
+                p.set(parent + i, v);
+            }
+            p.set(obj + 4, parent);
+            p.set(offsets, 0u32);
+            p.set(offsets + 4, 0x40u32);
+            let records = tables;
+            let blocks = tables + 0x80;
+            let lists = tables + 0x100;
+            let verts = tables + 0x200;
+            p.set(env + 0x28, records);
+            p.set(env + 0x20, blocks);
+            for r in 0..8 {
+                p.set(records + 8 * r, rng.below(4) as u16);
+                p.set(records + 8 * r + 4, lists + 0x10 * r);
+            }
+            for k in 0..4 {
+                p.set(blocks + 0x20 * k + 0x14, verts + 0x40 * k);
+            }
+            p.fill(lists, 0x100, &mut rng);
+            for i in (0..0x80).step_by(2) {
+                p.set(lists + i, rng.below(10) as u16);
+            }
+            p.fill(verts, 0x100, &mut rng);
+            p.set(obj + 0xa0, rng.below(8) as u16);
+            p.set(key + 4, if rng.chance(10) { u32::MAX } else { 0 });
+            p.set(
+                key + 0xc,
+                if rng.chance(10) {
+                    0xffffu16
+                } else {
+                    rng.below(8) as u16
+                },
+            );
+            p.check("pppVertexAttend", 0x0075_d340, &[obj, key, ctrl], |m| {
+                b::ppp_vertex_attend(m, obj, key, ctrl);
+                None
+            });
+            // pppKeLnsLpCon, pppVtMimeDes and pppMemFree on the environment's heaps
+            p.set(offsets, rng.below(0x40) * 4);
+            p.check("pppKeLnsLpCon", 0x0075_af30, &[obj, ctrl], |m| {
+                prog::bridge::ppp_ke_lns_lp_con(m, obj, ctrl);
+                None
+            });
+            if round % 4 == 0 {
+                p.check("pppCreateHeap", 0x0072_c480, &[env, arena, 0x1000], |m| {
+                    h::ppp_create_heap(m, env, arena, 0x1000);
+                    None
+                });
+                p.check(
+                    "pppCreateHeap",
+                    0x0072_c480,
+                    &[env + 0x10, arena + 0x1000, 0x1000],
+                    |m| {
+                        h::ppp_create_heap(m, env + 0x10, arena + 0x1000, 0x1000);
+                        None
+                    },
+                );
+            }
+            let size = rng.below(0x200);
+            let block = p.check("pppMemAlloc", 0x0071_6a30, &[env, env + 0x10, size], |m| {
+                Some(h::ppp_mem_alloc(m, env, env + 0x10, size))
+            });
+            let off0: u32 = p.get(offsets);
+            if rng.chance(50) {
+                p.set(obj + off0 + 0xac, block);
+                p.check("pppVtMimeDes", 0x0072_ede0, &[obj, ctrl], |m| {
+                    prog::bridge::ppp_vt_mime_des(m, obj, ctrl);
+                    None
+                });
+            } else {
+                p.check("pppMemFree", 0x0071_6a90, &[env, env + 0x10, block], |m| {
+                    h::ppp_mem_free(m, env, env + 0x10, block);
+                    None
+                });
+            }
+        }
+    }
+}

@@ -948,4 +948,25 @@ pub mod bridge {
         mem.write(w, stub::ptr32(target));
         mem.write(w + 4, stub::ptr32(0));
     }
+
+    /// `pppVtMimeDes(obj, ctrl)` (`0x0072ede0`): area 0's buffer (`+0xac`)
+    /// back to the current environment's heaps, the pointer cleared.
+    pub fn ppp_vt_mime_des(mem: &mut impl Mem, obj: u32, ctrl: u32) {
+        let w = area(mem, obj, ctrl, 0);
+        let data: u32 = mem.read(w.wrapping_add(0xac));
+        if data != 0 {
+            let env: u32 = mem.read(crate::heap::bridge::ENV_SLOT.get(mem));
+            crate::heap::bridge::ppp_mem_free(mem, env, env.wrapping_add(0x10), data);
+            mem.write(w.wrapping_add(0xac), 0u32);
+        }
+    }
+
+    /// `pppKeLnsLpCon(obj, ctrl)` (`0x0075af30`): `KeLnsLp_Init` on area 0
+    /// (from `+0xa0`), then `+0x9c` and `+0xa8` of it 0.0.
+    pub fn ppp_ke_lns_lp_con(mem: &mut impl Mem, obj: u32, ctrl: u32) {
+        let w = area(mem, obj, ctrl, 0).wrapping_add(0xa0);
+        ke::ke_lns_lp_init(mem, w);
+        mem.write(w.wrapping_add(0x9c), 0u32);
+        mem.write(w.wrapping_add(0xa8), 0u32);
+    }
 }

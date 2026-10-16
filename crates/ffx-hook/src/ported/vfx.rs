@@ -1504,4 +1504,71 @@ ported! {
     opus_chr_index_map @ 0x007f_e450 => extern "C" fn opus_chr_index_map(out: u32) -> u32 {
         et::bridge::opus_chr_index_map(&mut mem(), out)
     }
+
+    // ---- round 5: renderer flags, EE/VU emulation, rotations, packets ----
+    /// `calculateVFXSP_ZMat(z)`.
+    calculateVFXSP_ZMat @ 0x0071_2d00 => extern "C" fn calculate_vfx_sp_zmat(z: u32) -> u32 {
+        op::bridge::calculate_vfx_sp_zmat(z)
+    }
+    /// `calculateVFXSP_AlphaFunction(f)`.
+    calculateVFXSP_AlphaFunction @ 0x0071_2c30 => extern "C" fn calculate_vfx_sp_alpha_function(f: u32) -> u32 {
+        op::bridge::calculate_vfx_sp_alpha_function(f)
+    }
+    /// `graphicVFXGetRenderDataByGeometry(g)`.
+    graphicVFXGetRenderDataByGeometry @ 0x0064_53b0 => extern "C" fn graphic_vfx_get_render_data_by_geometry(g: u32) -> u32 {
+        op::bridge::graphic_vfx_get_render_data_by_geometry(&mem(), g)
+    }
+    /// `graphicVFXSetCurrentVFXType(type)`.
+    graphicVFXSetCurrentVFXType @ 0x0064_5670 => extern "C" fn graphic_vfx_set_current_vfx_type(kind: u32) {
+        #[allow(clippy::cast_possible_truncation)] // a byte argument
+        op::bridge::CURRENT_TYPE.set(&mut mem(), kind as u8);
+    }
+    /// `pppEePmulth(dst, a, b)`.
+    pppEePmulth @ 0x0073_74e0 => extern "C" fn ppp_ee_pmulth(dst: u32, a: u32, b: u32) {
+        mat::bridge::ppp_ee_pmulth(&mut mem(), dst, a, b);
+    }
+    /// `pppEePpacb(dst, a, b)`.
+    pppEePpacb @ 0x0073_75d0 => extern "C" fn ppp_ee_ppacb(dst: u32, a: u32, b: u32) {
+        mat::bridge::ppp_ee_ppacb(&mut mem(), dst, a, b);
+    }
+    /// `pppMemFree(heap, spare, data)`.
+    pppMemFree @ 0x0071_6a90 => extern "C" fn ppp_mem_free(heap: u32, spare: u32, data: u32) {
+        heap::bridge::ppp_mem_free(&mut mem(), heap, spare, data);
+    }
+    /// `pppVtMimeDes(obj, ctrl)`.
+    pppVtMimeDes @ 0x0072_ede0 => extern "C" fn ppp_vt_mime_des(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_vt_mime_des(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeLnsLpCon(obj, ctrl)`.
+    pppKeLnsLpCon @ 0x0075_af30 => extern "C" fn ppp_ke_lns_lp_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_lns_lp_con(&mut mem(), obj, ctrl);
+    }
+    /// `op_rt_m_x(dst, src, angle)`.
+    op_rt_m_x @ 0x007e_9580 => extern "C" fn op_rt_m_x(dst: u32, src: u32, angle: f32) {
+        op::bridge::op_rt_m(&mut mem(), dst, src, angle, mat::Axis::X);
+    }
+    /// `op_rt_m_y(dst, src, angle)`.
+    op_rt_m_y @ 0x007e_9670 => extern "C" fn op_rt_m_y(dst: u32, src: u32, angle: f32) {
+        op::bridge::op_rt_m(&mut mem(), dst, src, angle, mat::Axis::Y);
+    }
+    /// `op_rt_m_z(dst, src, angle)`.
+    op_rt_m_z @ 0x007e_9760 => extern "C" fn op_rt_m_z(dst: u32, src: u32, angle: f32) {
+        op::bridge::op_rt_m(&mut mem(), dst, src, angle, mat::Axis::Z);
+    }
+    /// `op_rt_m_yxz(dst, src, angles, t)`.
+    op_rt_m_yxz @ 0x007e_9a30 => extern "C" fn op_rt_m_yxz(dst: u32, src: u32, angles: u32, t: u32) {
+        op::bridge::op_rt_m_yxz(&mut mem(), dst, src, angles, t);
+    }
+    /// `op_md_packet_set_addr(packet, a, b)`.
+    op_md_packet_set_addr @ 0x00a6_9de0 => extern "C" fn op_md_packet_set_addr(packet: u32, a: u32, b: u32) {
+        op::bridge::op_md_packet_set_addr(&mut mem(), packet, a, b);
+    }
+    /// `pppSetMatrix(part)`.
+    pppSetMatrix @ 0x0071_7410 => extern "C" fn ppp_set_matrix(part: u32) {
+        mat::bridge::ppp_set_matrix(&mut mem(), part);
+    }
+    /// `pppVertexAttend(obj, key, ctrl)`.
+    pppVertexAttend @ 0x0075_d340 => extern "C" fn ppp_vertex_attend(obj: u32, key: u32, ctrl: u32) {
+        mat::bridge::ppp_vertex_attend(&mut mem(), obj, key, ctrl);
+    }
 }

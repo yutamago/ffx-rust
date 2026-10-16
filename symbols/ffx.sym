@@ -1574,6 +1574,8 @@
 0x007371c0 function pppNeiChrPointLightDraw   # ppp program table record "pppNeiChrPointLight" draw
 0x007372b0 function pppNeiChrPointLightCon    # ppp program table record "pppNeiChrPointLight" +0x1c set-up; not a function start in the Ghidra dump
 0x007372c0 function pppNeiChrPointLightDes    # ppp program table record "pppNeiChrPointLight" +0x24 destructor; not a function start in the Ghidra dump
+0x007374e0 function pppEePmulth               # (dst, a, b): the R5900 PMULTH: dst words = low signed halves multiplied; both halves' products into the emulated LO/HI (0x00c8f708..0x00c8f727); used by the model draws
+0x007375d0 function pppEePpacb                # (dst, a, b): the R5900 PPACB: dst bytes 0..7 the low bytes of b's halves, 8..15 a's
 0x00737770 function pppDrawMdlDraw            # ppp program table record "pppDrawMdl" draw; not a function start in the Ghidra dump
 0x00737b20 function pppDrawMdlSemiDraw        # ppp program table record "pppDrawMdlSemi" draw; not a function start in the Ghidra dump
 0x00737f40 function pppDrawMdlTsDraw          # ppp program table record "pppDrawMdlTs" draw; not a function start in the Ghidra dump
@@ -2910,6 +2912,9 @@
 0x007e7fc0 function op_length_get             # fh v3:bsim1.00 0x007e7ed0
 0x007e8010 function op_m_copy                 # fh v3:exact 0x007e7f20
 0x007e83b0 function op_mul_m                  # fh v3:exact 0x007e82c0
+0x007e9580 function op_rt_m_x                 # (dst, src, float angle): src turned about X into dst (all four rows), sin/cos from g_pppSinTable[ftol(angle) & 0xfff] and [+0x400]
+0x007e9670 function op_rt_m_y                 # (dst, src, float angle): as op_rt_m_x about Y
+0x007e9760 function op_rt_m_z                 # (dst, src, float angle): as op_rt_m_x about Z
 0x007e9a30 function op_rt_m_yxz               # fh v3:bsim1.00 0x007e9940
 0x007e9f20 function op_spline_table           # fh v3:cg4 0x7e9e30
 0x007ea120 function op_spline_xyz             # fh v3:exact 0x007ea030
@@ -5854,6 +5859,7 @@
 0x00a690c0 function op_ffxlight_to_omdlight   # fh v3:exact 0x00a690c0
 0x00a69940 function op_md_spr_init_x64        # fh v3:bsim1.00 0x00a69940
 0x00a69c80 function op_md_tex0_change         # fh switch:bsim1.00 0x71003ccfd0
+0x00a69de0 function op_md_packet_set_addr     # (packet, a, b): unless MagicFile_GetMagicId is 0x94, 0x239 or 0xd0, every tag from packet+0x20 (until type 0xff at +1) takes a at +8, b at +0xc; tag = 0x10 + count (i16 +2) * g_OpMdTagSizes[type & 7]; g_MagicImports slot 620
 0x00a69f10 function op_md_vn_index            # fh v3:exact 0x00a69f10
 0x00a69fe0 function op_md_vn_index_sub        # fh switch:bsim0.92 0x71003cd320
 0x00a6a3a0 function op_md_chara_path3         # fh v3:exact 0x00a6a3a0
@@ -7939,6 +7945,7 @@
 0x00c0a004 label g_Vu0_Vf00                  # emulated VU0 vf00 (x, y, z, w) = (0, 0, 0, 1.0f): AsmEmuInit and restoreVf00Register store exactly that
 0x00c30f94 label NvOptimusEnablement          # fh v4:imported
 0x00c30f98 label AmdPowerXpressRequestHighPerformance # fh v4:imported
+0x00c322aa label    g_VfxCurrentType          # byte: graphicVFXSetCurrentVFXType
 0x00c32308 label    g_SaveData_AlbhedFade     # SaveDataSetAlbhedFade stores it, only while a SaveDataManager exists
 0x00c33468 label    g_EternalCalmFirstMap     # first of the 7 Eternal Calm maps (a map = PS2 file number / 18, as CDfileSize_CD asks): isEternalCalmScene/Mgrp, getEternalCalmSceneName/Size subtract it
 0x00c334b8 label    g_EternalCalmSceneNames   # 7 pointers to "host0:/ffx_master/jppc/event/obj..." paths, indexed by getEternalCalmSceneName
@@ -7993,6 +8000,7 @@
 0x00c86b60 label    g_NkzAuronLimitTime          # f32 per level, NkzGetAuronLimitTime (4.0 4.0 4.0 3.0)
 0x00c86b70 label    g_NkzAuronLimitButtons       # 0x20 bytes per sequence, NkzGetAuronLimitButtonData
 0x00c86bf0 label    g_NkzTidusLimitTime          # f32 per level, NkzGetTidusLimitTime (3.0 3.0 3.0 2.0)
+0x00c88aa8 label    g_OpMdTagSizes            # 8 u32: element bytes of the model packet tag types (0x14, 0x1c, 0x20, 0x28, 0x18, 0x20, 0x28, 0x30)
 0x00c8b500 label    g_pppColorConShift           # added once to pppColorCon's work offset, then cleared there; also RW by pppDrawShape0
 0x00c8f508 label g_Ee_Gpr                    # emulated R5900 GPRs, 32 x 16 bytes: r0 (zero) here, t0 at +0x80 (pppRandFloat: t0 = r0 - 1), sp at +0x1d0 (AsmEmuInit stores this address there); argument registers set by AsmEmuSetFuncParam0 and the setters around it
 0x00c8f588 label g_Ee_GprMove              # the EE register MsEffectCameraSet moves its vectors through
@@ -8543,6 +8551,7 @@
 0x0230fe20 label    g_pppViewMatrixCopy       # FFXVu0CopyMatrix of g_pppViewMatrix (0x00920000.c); pppDrawMatrix multiplies the object's matrix by it
 0x0230ff20 label    g_pppViewMatrix           # cdc_Mul4x4(g_pppViewMatrix, g_pppCameraMatrix, 0x0230ffa0) (0x00920000.c); translation at 0x0230ff50, which pppDrawMatrixNoRot adds; the pppDrawMatrix* and pppKeDMat* draws transform positions by it
 0x0230ff60 label    g_pppCameraMatrix         # MsCopyCameraMatrix(0x0230ff60) each frame; sceVu0InversMatrix4x4 of it into 0x0230fca0
+0x0230ffa0 label    g_pppWorldMatrix          # the running part's matrix: pppSetMatrix (XYZ rotation of part +0x50, rows scaled by +0x60, position +0x40); g_pppViewMatrix = it x g_pppCameraMatrix
 0x0230ffe4 label    g_pppCurrentPart             # the part pppRunPart/pppRunPartFp/pppStartPart set while they run it; +0x3c points at 16-byte object records (the object at +4), which pppPObjPoint and pppKeThTp index by the key
 0x02310000 label g_ChrTexAnim               # 64 x 0x30: source +0, work +4, u8 format +0xd (0 old, 1 new) (chr_texanim_init)
 0x02310c40 label    g_CdLib                   # function table of the PS2 CD-library emulation

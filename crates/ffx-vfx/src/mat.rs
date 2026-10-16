@@ -491,4 +491,110 @@ pub mod bridge {
         let x = Reg::load(f(mem, v)).add_m32(s).store();
         mem.write(dst, x);
     }
+
+    /// The emulated R5900 `LO`/`HI` pairs `pppEePmulth` writes, in the
+    /// order of its four words (`0x00c8f718`, `0x00c8f708`, `0x00c8f720`,
+    /// `0x00c8f710`, the high halves' products 4 bytes after each).
+    const PMULTH_LOHI: [u32; 4] = [0x00c8_f718, 0x00c8_f708, 0x00c8_f720, 0x00c8_f710];
+
+    /// `pppEePmulth(dst, a, b)` (`0x007374e0`): the R5900's `PMULTH`:
+    /// each word of `dst` the product of the low signed halves of `a`'s and
+    /// `b`'s words; the products of both halves into the emulated
+    /// `LO`/`HI`.
+    pub fn ppp_ee_pmulth(mem: &mut impl Mem, dst: u32, a: u32, b: u32) {
+        let x: [u32; 4] = mem.read(a);
+        let y: [u32; 4] = mem.read(b);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)] // the signed halves
+        let half = |w: u32, hi: bool| i32::from((if hi { w >> 16 } else { w }) as u16 as i16);
+        for i in 0..4 {
+            let lo = half(x[i], false)
+                .wrapping_mul(half(y[i], false))
+                .cast_unsigned();
+            let hi = half(x[i], true)
+                .wrapping_mul(half(y[i], true))
+                .cast_unsigned();
+            let g = ffx_bridge::Global::<u32>::new(PMULTH_LOHI[i]).ptr(mem).addr;
+            mem.write(g, lo);
+            #[allow(clippy::cast_possible_truncation)] // 0..4
+            mem.write(at(dst, i as u32), lo);
+            mem.write(g.wrapping_add(4), hi);
+        }
+    }
+
+    /// `pppEePpacb(dst, a, b)` (`0x007375d0`): the R5900's `PPACB`: the
+    /// low bytes of `b`'s eight halves, then `a`'s, into `dst`'s 16 bytes.
+    pub fn ppp_ee_ppacb(mem: &mut impl Mem, dst: u32, a: u32, b: u32) {
+        let x: [u32; 4] = mem.read(a);
+        let y: [u32; 4] = mem.read(b);
+        let mut out = [0u8; 16];
+        for i in 0..4 {
+            for (k, w) in [(0, y[i]), (8, x[i])] {
+                out[k + 2 * i] = w.to_le_bytes()[0];
+                out[k + 2 * i + 1] = w.to_le_bytes()[2];
+            }
+        }
+        mem.write(dst, out);
+    }
+
+    /// `g_pppWorldMatrix` (`0x0230ffa0`): the running part's matrix
+    /// (`pppSetMatrix`).
+    pub const WORLD: Global<[f32; 16]> = Global::new(0x0230_ffa0);
+
+    /// `pppSetMatrix(part)` (`0x00717410`): `g_pppWorldMatrix` = the
+    /// `XYZ` rotation of the part's angles (`+0x50`), rows scaled by its
+    /// scale (`+0x60`, as `pppKeMatPht` scales), its position (`+0x40`).
+    pub fn ppp_set_matrix(mem: &mut impl Mem, part: u32) {
+        let m = WORLD.ptr(mem).addr;
+        ppp_get_rot_matrix(mem, m, part.wrapping_add(0x50), super::order::XYZ);
+        scale_rows(mem, m, part.wrapping_add(0x60));
+        copy_xyz(mem, m.wrapping_add(0x30), part.wrapping_add(0x40));
+    }
+
+    /// `pppVertexAttend(obj, key, ctrl)` (`0x0075d340`): unless the key's
+    /// `+4` is -1 or its shape (`i16` at `+0xc`) negative, area 1 takes
+    /// vertex `n` of that shape (`n` from the shape's index list at area
+    /// 0's `u16`), its three `i16` as floats through the parent's matrix
+    /// (`get_ptr32(obj + 4) + 0x10`). The shapes are the current
+    /// environment's tables: `+0x28` 8-byte records (`i16` vertex block,
+    /// then the index list), `+0x20` 0x20-byte blocks (vertices at
+    /// `+0x14`).
+    pub fn ppp_vertex_attend(mem: &mut impl Mem, obj: u32, key: u32, ctrl: u32) {
+        if mem.read::<u32>(key.wrapping_add(4)) == u32::MAX {
+            return;
+        }
+        let shape = mem.read::<i16>(key.wrapping_add(0xc));
+        if shape < 0 {
+            return;
+        }
+        let a0 = area(mem, obj, ctrl, 0);
+        let a1 = area(mem, obj, ctrl, 1);
+        let parent = stub::ptr32(mem.read(obj.wrapping_add(4)));
+        let env: u32 = mem.read(crate::heap::bridge::ENV_SLOT.get(mem));
+        let records: u32 = mem.read(env.wrapping_add(0x28));
+        let rec = records.wrapping_add((i32::from(shape) * 8).cast_unsigned());
+        let block = i32::from(mem.read::<i16>(rec));
+        let blocks: u32 = mem.read(env.wrapping_add(0x20));
+        let verts = stub::ptr32(
+            mem.read(
+                blocks
+                    .wrapping_add((block * 0x20).cast_unsigned())
+                    .wrapping_add(0x14),
+            ),
+        );
+        let list = stub::ptr32(mem.read(rec.wrapping_add(4)));
+        let i = u32::from(mem.read::<u16>(a0));
+        let n = u32::from(mem.read::<u16>(list.wrapping_add(2 * i)));
+        let v: [f32; 4] = [
+            f32::from(mem.read::<i16>(verts.wrapping_add(6 * n))),
+            f32::from(mem.read::<i16>(verts.wrapping_add(6 * n + 2))),
+            f32::from(mem.read::<i16>(verts.wrapping_add(6 * n + 4))),
+            1.0,
+        ];
+        let m = parent.wrapping_add(0x10);
+        for c in 0..3 {
+            let col = [0, 4, 8, 12].map(|r| f(mem, at(m, r + c)));
+            let x = math::mul4x4_component(c, v, col);
+            mem.write(a1.wrapping_add(4 * c), x);
+        }
+    }
 }
