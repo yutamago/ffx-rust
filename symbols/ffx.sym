@@ -1436,7 +1436,10 @@
 0x0072edb0 function pppVtMimeCon2             # ppp program table record "pppVtMime" (0x00c3b278) +0x20 second set-up; "pppVtMime" (0x00c3c920) +0x20 second set-up
 0x0072ede0 function pppVtMimeDes              # fh v3:exact 0x0072eec0
 0x0072ee20 function pppKeTkFadeCon            # ppp program table record "pppKeTkFade" (0x00c3d758) +0x1c set-up; "pppKeTkFade" (0x00c3d758) +0x20 second set-up
+0x0072f420 function pppVu0RNext              # vrnext as the PC port emulates it: *out = g_Vu0_R stepped (when g_Vu0_RSeeded, which it does not set) else 1.0; the rand programs' draws (pppRandFloat ...) call it after srand
 0x0072f4b0 function pppRandFloat              # fh v3:exact 0x0072f590
+0x0072f680 function pppRandUpFloat           # ppp program table record "pppRandUpFloat" (0x00c3d780) +0x8 step: d1 or (d2 + d1) * 0.5, target += k w
+0x0072f850 function pppRandDownFloat         # ppp program table record "pppRandDownFloat" (0x00c3b3e0) +0x8 step: -d1 or (-d1 - d2) * 0.5, target += k w
 0x00730ab0 function pppRandFV                 # fh v3:exact 0x00730ba0
 0x00730ce0 function pppRandUpFV               # fh v3:exact 0x00730dd0
 0x00730ef0 function pppRandDownFV             # fh v3:exact 0x00730fd0
@@ -7179,6 +7182,7 @@
 0x00d2c258 label    g_FpData                     # current field's FP (effect) table: u16 count at +4, 0x50-byte entries with the id at +0x64; runtime state at 0x00d2c260 (0x80 each) and 0x00d30260 (0x4c each)
 0x00d2c260 label    g_FpRun                      # FP run records, 0x80 per g_FpData entry: +0 frame counter (-0x1000 not started), +0x1d status (0 run, 1 end: Fp_End, 2: Fp_RestartMode2)
 0x00d30260 label    g_FpDisp                     # FP display records, 0x4c per entry: +0 flags (0x10 hidden: pppFpIDdispOff, 2 stuck to map: pppFpSetStickMap, 8 to a display object), +4 stick target
+0x00d52398 label    g_pppRandTarget          # the float the ppp rand programs (pppRandFloat ...) add to when the key's target offset is -1
 0x010d5600 label    g_KeMdlTkClut                # three words KeMdl_MkTkClut stores (the third a float)
 0x010e7640 label    g_pppWaitDone                # set by pppClearWait, polled by pppSendWait
 0x01128a90 label    g_Cd_ExSizes              # u32 per PS2 file number: pc_sizetbl_set_Ex() (CdEnvInit); CDfileSize_CD_EX indexes it with number + g_CdLib_FileBase

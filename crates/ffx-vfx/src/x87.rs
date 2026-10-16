@@ -67,51 +67,119 @@ fn propagate(st: u32, mem: u32) -> Option<u32> {
     }
 }
 
-fn finish(x: f64) -> f32 {
-    #[allow(clippy::cast_possible_truncation)] // the fstp m32 rounding
-    let r = x as f32;
-    if r.is_nan() {
-        f32::from_bits(INDEFINITE)
-    } else {
-        r
+/// A value in an x87 register between instructions, at 53-bit precision:
+/// a number (exactly an `f64`: chains of a few operations on `f32` values
+/// never leave the `f64` range, so the register's wider exponent does not
+/// matter), or a NaN, kept as the quiet `f32` bits it came from or the
+/// indefinite.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Reg {
+    /// A number (or an infinity).
+    Num(f64),
+    /// A quiet NaN, as `f32` bits.
+    Nan(u32),
+}
+
+/// An arithmetic operation of the FPU.
+pub type Op = fn(f64, f64) -> f64;
+
+/// `+`.
+pub const ADD: Op = |a, b| a + b;
+/// `-`.
+pub const SUB: Op = |a, b| a - b;
+/// `*`.
+pub const MUL: Op = |a, b| a * b;
+
+impl Reg {
+    /// `fld m32`.
+    #[must_use]
+    pub fn load(bits: u32) -> Self {
+        if is_nan(bits) {
+            Self::Nan(bits | QUIET)
+        } else {
+            Self::Num(f32::from_bits(bits).into())
+        }
+    }
+
+    /// `fld m32` of an `f32`.
+    #[must_use]
+    pub fn load_f32(x: f32) -> Self {
+        Self::load(x.to_bits())
+    }
+
+    fn num(x: f64) -> Self {
+        if x.is_nan() {
+            Self::Nan(INDEFINITE)
+        } else {
+            Self::Num(x)
+        }
+    }
+
+    /// `fop m32`: the register `op` a memory operand.
+    #[must_use]
+    pub fn mem(self, op: Op, mem: f32) -> Self {
+        let m = mem.to_bits();
+        match self {
+            Self::Nan(s) => Self::Nan(propagate(s, m).unwrap_or(s)),
+            Self::Num(_) if is_nan(m) => Self::Nan(load(m)),
+            Self::Num(a) => Self::num(op(a, mem.into())),
+        }
+    }
+
+    /// `fop m64` with a constant that is not a NaN.
+    #[must_use]
+    pub fn constant(self, op: Op, c: f64) -> Self {
+        match self {
+            Self::Nan(_) => self,
+            Self::Num(a) => Self::num(op(a, c)),
+        }
+    }
+
+    /// `fop st(i)`: this register `op` another one.
+    #[must_use]
+    pub fn reg(self, op: Op, other: Self) -> Self {
+        match (self, other) {
+            (Self::Nan(a), Self::Nan(b)) => Self::Nan(propagate(a, b).unwrap_or(a)),
+            (Self::Nan(_), _) => self,
+            (_, Self::Nan(_)) => other,
+            (Self::Num(a), Self::Num(b)) => Self::num(op(a, b)),
+        }
+    }
+
+    /// `fstp m32`.
+    #[must_use]
+    pub fn store(self) -> f32 {
+        match self {
+            #[allow(clippy::cast_possible_truncation)] // the fstp m32 rounding
+            Self::Num(x) => x as f32,
+            Self::Nan(b) => f32::from_bits(b),
+        }
     }
 }
 
 /// `fld st; fadd m32; fstp m32`: `st + mem`.
 #[must_use]
 pub fn add(st: f32, mem: f32) -> f32 {
-    match propagate(st.to_bits(), mem.to_bits()) {
-        Some(n) => f32::from_bits(n),
-        None => finish(f64::from(st) + f64::from(mem)),
-    }
+    Reg::load_f32(st).mem(ADD, mem).store()
 }
 
 /// `fld st; fsub m32; fstp m32`: `st - mem`.
 #[must_use]
 pub fn sub(st: f32, mem: f32) -> f32 {
-    match propagate(st.to_bits(), mem.to_bits()) {
-        Some(n) => f32::from_bits(n),
-        None => finish(f64::from(st) - f64::from(mem)),
-    }
+    Reg::load_f32(st).mem(SUB, mem).store()
 }
 
 /// `fld st; fmul m32; fstp m32`: `st * mem`.
 #[must_use]
 pub fn mul(st: f32, mem: f32) -> f32 {
-    match propagate(st.to_bits(), mem.to_bits()) {
-        Some(n) => f32::from_bits(n),
-        None => finish(f64::from(st) * f64::from(mem)),
-    }
+    Reg::load_f32(st).mem(MUL, mem).store()
 }
 
 /// `fld st; fsub m64; fstp m32` with a constant that is not a NaN:
 /// `st - c`.
 #[must_use]
 pub fn sub_f64(st: f32, c: f64) -> f32 {
-    if st.is_nan() {
-        return load_f32(st);
-    }
-    finish(f64::from(st) - c)
+    Reg::load_f32(st).constant(SUB, c).store()
 }
 
 #[cfg(test)]

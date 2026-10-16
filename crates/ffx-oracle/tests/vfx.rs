@@ -2054,3 +2054,155 @@ fn op_wrappers_match_the_original() {
         }
     }
 }
+
+// ---- rand programs ----------------------------------------------------
+
+const PPP_VU0_RNEXT: u32 = 0x0072_f420;
+/// The import slot of MSVCR110's `srand`.
+const SRAND_SLOT: u32 = 0x00b0_c484;
+/// Free code space for the `srand` recorder (after the float thunk).
+const SRAND_RECORDER: u32 = 0x00b0_bf40;
+
+/// Points the `srand` import at a recorder that appends each seed to `log`
+/// (count at `log`, seeds after it), in both oracles alike; returns `log`.
+fn record_srand(p: &mut Pair) -> u32 {
+    let log = p.alloc(0x1000);
+    let (count, seeds) = (log, log + 4);
+    let at = p.sym(SRAND_RECORDER);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+    c.extend([0x8b, 0x0d]); // mov ecx, [count]
+    c.extend(count.to_le_bytes());
+    c.extend([0x89, 0x04, 0x8d]); // mov [seeds + ecx*4], eax
+    c.extend(seeds.to_le_bytes());
+    c.push(0x41); // inc ecx
+    c.extend([0x89, 0x0d]); // mov [count], ecx
+    c.extend(count.to_le_bytes());
+    c.push(0xc3);
+    p.a.write(at, &c).unwrap();
+    p.b.write(at, &c).unwrap();
+    let slot = p.sym(SRAND_SLOT);
+    p.set(slot, at);
+    log
+}
+
+/// The Rust side of the recorder.
+fn srand_log(log: u32) -> impl FnMut(&mut Oracle, u32) {
+    move |m, seed| {
+        let n: u32 = Mem::read(m, log);
+        Mem::write(m, log + 4 + 4 * (n % 0x3ff), seed);
+        Mem::write(m, log, n + 1);
+    }
+}
+
+type RandProg = (&'static str, u32, rand::bridge::Spread, bool);
+
+const RAND_PROGS: [RandProg; 6] = [
+    (
+        "pppRandFloat",
+        0x0072_f4b0,
+        rand::bridge::Spread::Plain,
+        false,
+    ),
+    (
+        "pppRandUpFloat",
+        0x0072_f680,
+        rand::bridge::Spread::Up,
+        false,
+    ),
+    (
+        "pppRandDownFloat",
+        0x0072_f850,
+        rand::bridge::Spread::Down,
+        false,
+    ),
+    ("pppRandFV", 0x0073_0ab0, rand::bridge::Spread::Plain, true),
+    ("pppRandUpFV", 0x0073_0ce0, rand::bridge::Spread::Up, true),
+    (
+        "pppRandDownFV",
+        0x0073_0ef0,
+        rand::bridge::Spread::Down,
+        true,
+    ),
+];
+
+#[test]
+fn rand_programs_match_the_original() {
+    use rand::bridge as r;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x5a4d_0001);
+        let log = record_srand(&mut p);
+        let obj = p.alloc(0x400);
+        let key = p.alloc(0x40);
+        let ctrl = p.alloc(0x10);
+        let offsets = p.alloc(8);
+        let out = p.alloc(4);
+        p.set(ctrl + 0xc, offsets);
+        for round in 0..3000 {
+            // the log wraps like the Rust side's
+            let n: u32 = p.get(log);
+            if n >= 0x3f0 {
+                p.set(log, 0u32);
+            }
+            let state = !p.snapshot() || round > 0;
+            if state {
+                // r0 - 1 never a signalling NaN (the oracle keeps those)
+                let t0 = if rng.chance(50) {
+                    u32::MAX
+                } else {
+                    rng.float()
+                };
+                p.put(
+                    ppp::bridge::R0,
+                    [t0.wrapping_add(1), rng.next(), rng.next(), rng.next()],
+                );
+                let t0_at = p.sym(0x00c8_f588);
+                p.set(t0_at + 8, rng.next());
+                p.set(t0_at + 12, rng.next());
+                p.put(r::R, rng.next());
+                p.put(r::SEEDED, u32::from(rng.chance(80)));
+                p.put(r::TARGET, rng.float());
+                p.put(ppp::bridge::STOP, u32::from(rng.chance(10)));
+            }
+            for i in (0..0x400).step_by(4) {
+                let v = rng.float();
+                p.set(obj + i, v);
+            }
+            for i in (0..0x40).step_by(4) {
+                let v = rng.float();
+                p.set(key + i, v);
+            }
+            let off0 = rng.below(0x40) * 4;
+            p.set(offsets, off0);
+            let frame = if rng.chance(50) {
+                0
+            } else {
+                rng.pick(&[1u32, 7, 0x8000_0000])
+            };
+            p.set(obj + 0xc, frame);
+            let kf = if rng.chance(70) { frame } else { frame ^ 1 };
+            p.set(key, kf);
+            let target = if rng.chance(30) {
+                u32::MAX
+            } else {
+                rng.below(0x50) * 4
+            };
+            p.set(key + 4, target);
+            p.set(key + 0xc, u8::from(rng.chance(50)));
+            p.set(key + 0x20, u8::from(rng.chance(50)));
+            let (name, sym, spread, vector) = rng.pick(&RAND_PROGS);
+            p.check(
+                &format!("{name} round {round}"),
+                sym,
+                &[obj, key, ctrl],
+                |m| {
+                    r::ppp_rand_float(m, obj, key, ctrl, spread, vector, &mut srand_log(log));
+                    None
+                },
+            );
+            p.check("pppVu0RNext", PPP_VU0_RNEXT, &[out, p.sym(r::R.sym)], |m| {
+                r::ppp_vu0_rnext(m, out);
+                None
+            });
+        }
+    }
+}
