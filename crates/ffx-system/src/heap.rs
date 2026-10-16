@@ -48,6 +48,11 @@ pub trait Os {
     /// message (`FormatMessageA`, allocating) and pass it to the error hook
     /// at `0x0193cd4c` when one is set.
     fn report_free_failure(&mut self);
+    /// The heap's first use, while `*g_UserHeap` is still null: the host
+    /// creates it (`malloc_pool_init`, `0x006fb9b0`: the page manager, the
+    /// heap object from the C runtime's `malloc`, its critical section, a
+    /// first 16-byte block).
+    fn malloc_pool_init(&mut self);
 }
 
 /// The user heap object (`*g_UserHeap`: lock, then the allocator at
@@ -967,6 +972,293 @@ pub fn heap_free(mem: &mut impl Mem, os: &mut impl Os, heap: u32, p: u32) -> boo
         release_arena(mem, os, heap, arena);
     }
     true
+}
+
+/// `0x00942dc0` (fastcall, the heap in ECX): a new arena from the page
+/// manager (its first two pages and its last one committed): 255 empty
+/// bins, an in-use 16-byte block at `+0x1000`, one free block from
+/// `+0x1010` in bin 254, an in-use 16-byte block at the end; 0 when a page
+/// call fails.
+pub fn new_arena(mem: &mut impl Mem, os: &mut impl Os, heap: u32) -> u32 {
+    let mgr = PAGE_MANAGER.get(mem);
+    let size = rd(mem, heap);
+    let a = page_alloc(mem, os, mgr, size, 0x1000);
+    if a == 0 {
+        return 0;
+    }
+    let mgr = PAGE_MANAGER.get(mem);
+    if !commit(mem, os, mgr, a, 0x2000) {
+        return 0;
+    }
+    let last = rd(mem, heap).wrapping_sub(0x1000).wrapping_add(a);
+    if last >= a.wrapping_add(0x2000) {
+        let mgr = PAGE_MANAGER.get(mem);
+        if !commit(mem, os, mgr, last, 0x1000) {
+            return 0;
+        }
+    }
+    mem.write(a, [0u32; 0xff0 / 4]);
+    for i in 0..0xff {
+        let h = a + 16 * i;
+        wr(mem, h + 4, h);
+        wr(mem, h + 8, h);
+    }
+    wr(mem, a + 0x1008, 0);
+    mem.write(a + 0x1000, BLOCK_MAGIC);
+    wr(mem, a + 0x1004, 0x10);
+    wr(mem, a + 0x100c, 2);
+    let big = rd(mem, heap).wrapping_sub(0x1020);
+    let blk = a + 0x1010;
+    mem.write(blk, [BLOCK_MAGIC, big, 0x10]);
+    let end = blk.wrapping_add(big);
+    mem.write(end, [BLOCK_MAGIC, 0x10, big, 2]);
+    let node = node_alloc(mem, os, heap + 0x10);
+    wr(mem, node, blk);
+    wr(mem, node + 0xc, big);
+    wr(mem, blk + 0xc, node);
+    let bin = a + 0xfe0;
+    wr(mem, bin + 8, node);
+    wr(mem, bin + 4, node);
+    wr(mem, node + 4, bin);
+    wr(mem, node + 8, bin);
+    wr(mem, a + 0xff0, 0);
+    mem.write(a + 0xff4, [BLOCK_MAGIC; 3]);
+    a
+}
+
+/// What a block header holds at `+0`.
+pub const BLOCK_MAGIC: u32 = 0xabcd_ef12;
+
+/// `0x00943380` (`thiscall(heap, size, &arena)`, `ret 8`), with the arena
+/// returned: the first free node of at least `size` bytes, out of its bin:
+/// in the size's bin (the first big enough), else the first node of the
+/// next non-empty bin, in the first arena that has one (arenas added at
+/// the end as needed). `(node, arena)`, the node 0 when no arena can be
+/// made.
+pub fn find_free(mem: &mut impl Mem, os: &mut impl Os, heap: u32, size: u32) -> (u32, u32) {
+    let mut arena = rd(mem, heap + 0xc);
+    if arena == 0 {
+        arena = new_arena(mem, os, heap);
+        wr(mem, heap + 0xc, arena);
+        if arena == 0 {
+            return (0, 0);
+        }
+    }
+    loop {
+        #[allow(clippy::cast_possible_truncation)] // the original keeps eax
+        let mut bin = bin_index(mem, heap, size) as i32;
+        let mut bin_head = bin.cast_unsigned().wrapping_mul(16).wrapping_add(arena);
+        let mut n = rd(mem, bin_head + 8);
+        let mut found = false;
+        while n != bin_head {
+            if rd(mem, n + 0xc).cast_signed() >= size.cast_signed() {
+                found = true;
+                break;
+            }
+            n = rd(mem, n + 8);
+        }
+        if !found {
+            loop {
+                if bin >= 0xff {
+                    break;
+                }
+                n = rd(mem, bin_head + 0x18);
+                bin_head = bin_head.wrapping_add(0x10);
+                bin += 1;
+                if n != bin_head {
+                    break;
+                }
+            }
+        }
+        if bin < 0xff && n != bin_head {
+            remove_free(mem, n);
+            return (n, arena);
+        }
+        if rd(mem, arena + 0xff0) == 0 {
+            let next = new_arena(mem, os, heap);
+            wr(mem, arena + 0xff0, next);
+        }
+        arena = rd(mem, arena + 0xff0);
+        if arena == 0 {
+            return (0, 0);
+        }
+    }
+}
+
+/// [`find_free`] with the arena stored at `arena_out`, as the original.
+pub fn find_free_at(
+    mem: &mut impl Mem,
+    os: &mut impl Os,
+    heap: u32,
+    size: u32,
+    arena_out: u32,
+) -> u32 {
+    let first = rd(mem, heap + 0xc);
+    wr(mem, arena_out, first);
+    let (node, arena) = find_free(mem, os, heap, size);
+    wr(mem, arena_out, arena);
+    node
+}
+
+/// `0x00942b60` (`thiscall(heap, size)`, `ret 4`): a block of `size`
+/// bytes rounded up to 16, plus its header, carved from [`find_free`]'s
+/// node: the pages it now covers committed, the rest left free (its node
+/// moves to the remainder, or the remainder is free without a node when
+/// under the bins' minimum, or the whole node is used). Returns the user
+/// pointer, or 0.
+pub fn heap_alloc(mem: &mut impl Mem, os: &mut impl Os, heap: u32, size: u32) -> u32 {
+    let mut need = (size.wrapping_add(0xf) & !0xf).wrapping_add(0x10);
+    let (node, arena) = find_free(mem, os, heap, need);
+    if node == 0 {
+        return 0;
+    }
+    let blk = rd(mem, node);
+    let mut rest = rd(mem, node + 0xc).wrapping_sub(need).cast_signed();
+    if rest < 0x10 {
+        need = need.wrapping_add(rest.cast_unsigned());
+        rest = 0;
+    }
+    let next = rd(mem, blk + 4).wrapping_add(blk);
+    let p = blk + 0x10;
+    wr(mem, blk + 0xc, 2);
+    wr(mem, blk + 4, need);
+    let mgr = PAGE_MANAGER.get(mem);
+    if rest == 0 {
+        node_free(mem, os, heap + 0x10, node);
+        wr(mem, next + 8, need);
+        let from = p.wrapping_add(0xfff) & 0xffff_f000;
+        let to = need.wrapping_sub(0x10).wrapping_add(p) & 0xffff_f000;
+        if from < to {
+            let mgr = PAGE_MANAGER.get(mem);
+            if !commit(mem, os, mgr, from, to.wrapping_sub(from)) {
+                return 0;
+            }
+        }
+        return p;
+    }
+    let mut end = p.wrapping_add(need);
+    let up = end.wrapping_add(0xfff) & 0xffff_f000;
+    if up <= next {
+        end = up;
+    }
+    let from = p.wrapping_add(0xfff) & 0xffff_f000;
+    let to = end & 0xffff_f000;
+    if from < to && !commit(mem, os, mgr, from, to.wrapping_sub(from)) {
+        return 0;
+    }
+    let r = blk.wrapping_add(need);
+    let rest = rest.cast_unsigned();
+    mem.write(r, [BLOCK_MAGIC, rest, need]);
+    wr(mem, next + 8, rest);
+    if rest.cast_signed() < rd(mem, heap + 4).cast_signed() {
+        wr(mem, r + 0xc, 3);
+        node_free(mem, os, heap + 0x10, node);
+        return p;
+    }
+    wr(mem, r + 0xc, node);
+    wr(mem, node, r);
+    wr(mem, node + 0xc, rest);
+    insert_free(mem, heap, node, arena);
+    p
+}
+
+/// `0x00943480` (`thiscall(heap, p)`, `ret 4`): the usable size of the
+/// block at `p` (its size less the header), or -1 when `p` is in no arena.
+pub fn block_size(mem: &impl Mem, heap: u32, p: u32) -> u32 {
+    let mut arena = rd(mem, heap + 0xc);
+    while arena != 0 {
+        if p >= arena && p < rd(mem, heap).wrapping_add(arena) {
+            return rd(mem, p.wrapping_sub(0xc)).wrapping_sub(0x10);
+        }
+        arena = rd(mem, arena + 0xff0);
+    }
+    u32::MAX
+}
+
+/// The user heap, created on first use ([`Os::malloc_pool_init`]).
+fn user_heap(mem: &impl Mem, os: &mut impl Os) -> u32 {
+    if USER_HEAP.get(mem) == 0 {
+        os.malloc_pool_init();
+    }
+    USER_HEAP.get(mem)
+}
+
+/// `memset(p, 0xcd, len)`, the fill `user_malloc` leaves in new blocks.
+fn fill_cd(mem: &mut impl Mem, p: u32, len: u32) {
+    mem.write_bytes(p, &vec![0xcd; len as usize]);
+}
+
+/// `user_malloc(size)` (`0x006fb910`, behind the `0x00687020` jump):
+/// [`heap_alloc`] under the heap's lock, the block filled with `0xcd`.
+pub fn user_malloc(mem: &mut impl Mem, os: &mut impl Os, size: u32) -> u32 {
+    let heap = user_heap(mem, os);
+    os.enter_critical_section(heap);
+    let p = heap_alloc(mem, os, heap + 0x18, size);
+    os.leave_critical_section(heap);
+    fill_cd(mem, p, size);
+    p
+}
+
+/// `user_aligned_malloc(size, align)` (`0x006fb770`, behind `0x00686ff0`):
+/// `size + align` bytes, the pointer moved up to the next multiple of
+/// `align` (by 1..=`align` bytes; the remainder taken of the pointer
+/// sign-extended to 64 bits, as `__aullrem` gets it), the distance stored
+/// in the byte before it; the first `size` bytes of the block filled with
+/// `0xcd`.
+pub fn user_aligned_malloc(mem: &mut impl Mem, os: &mut impl Os, size: u32, align: u32) -> u32 {
+    let heap = user_heap(mem, os);
+    os.enter_critical_section(heap);
+    let p = heap_alloc(mem, os, heap + 0x18, size.wrapping_add(align));
+    os.leave_critical_section(heap);
+    #[allow(clippy::cast_possible_truncation)] // a remainder below `align`
+    let rem = (i64::from(p.cast_signed()).cast_unsigned() % u64::from(align)) as u32;
+    let r = p.wrapping_sub(rem).wrapping_add(align);
+    fill_cd(mem, p, size);
+    mem.write(
+        r.wrapping_sub(1),
+        r.to_le_bytes()[0].wrapping_sub(p.to_le_bytes()[0]),
+    );
+    r
+}
+
+/// `user_mem_size(p)` (`0x006fba90`, behind `0x00687050`): [`block_size`]
+/// under the heap's lock.
+pub fn user_mem_size(mem: &mut impl Mem, os: &mut impl Os, p: u32) -> u32 {
+    let heap = USER_HEAP.get(mem);
+    os.enter_critical_section(heap);
+    let n = block_size(mem, heap + 0x18, p);
+    os.leave_critical_section(heap);
+    n
+}
+
+/// `user_realloc(p, size)` (`0x006fbb00`, behind `0x00687060`): a new block
+/// of `size` (none for 0), the old contents copied up to the smaller size
+/// (`memcpy_s`), the old block freed; returns the new block.
+pub fn user_realloc(mem: &mut impl Mem, os: &mut impl Os, p: u32, size: u32) -> u32 {
+    let mut heap = user_heap(mem, os);
+    let mut q = 0;
+    if size != 0 {
+        os.enter_critical_section(heap);
+        q = heap_alloc(mem, os, heap + 0x18, size);
+        os.leave_critical_section(heap);
+        heap = USER_HEAP.get(mem);
+    }
+    if p != 0 {
+        os.enter_critical_section(heap);
+        let old = block_size(mem, heap + 0x18, p);
+        os.leave_critical_section(heap);
+        let n = old.min(size);
+        if q != 0 {
+            let mut bytes = vec![0u8; n as usize];
+            mem.read_bytes(p, &mut bytes);
+            mem.write_bytes(q, &bytes);
+        }
+        let heap = USER_HEAP.get(mem);
+        os.enter_critical_section(heap);
+        heap_free(mem, os, heap + 0x18, p);
+        os.leave_critical_section(heap);
+    }
+    q
 }
 
 /// `user_free(p)` (`0x006fb8b0`): [`heap_free`] on the user heap under its

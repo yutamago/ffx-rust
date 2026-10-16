@@ -2154,17 +2154,21 @@ const IAT_ENTER_CS: u32 = 0x00b0_c154;
 const IAT_LEAVE_CS: u32 = 0x00b0_c158;
 const IAT_VIRTUAL_ALLOC: u32 = 0x00b0_c09c;
 const IAT_VIRTUAL_FREE: u32 = 0x00b0_c098;
+const IAT_MEMCPY_S: u32 = 0x00b0_c434;
+const USER_ALIGNED_MALLOC: u32 = 0x0068_6ff0;
+const USER_MEM_SIZE: u32 = 0x0068_7050;
+const USER_REALLOC: u32 = 0x0068_7060;
 /// Free image bytes after `.text` for the stand-ins.
 const HEAP_TEST_CODE: u32 = 0x00b0_bc00;
 
 /// Win32 stand-ins in both oracles: the critical sections do nothing,
 /// `VirtualFree` succeeds, `VirtualAlloc` commits in place or reserves the
 /// next 64 KiB-aligned piece of a test region (1 MiB and up: of a range
-/// nothing writes to), and fails for any size of exactly 0x3000 (to reach
-/// the flush-and-retry paths). The oracle has no TEB: every `fs:[0]`
+/// nothing writes to), and fails for any size of exactly `fail_size` (to
+/// reach the flush-and-retry paths; `u32::MAX`: never). The oracle has no TEB: every `fs:[0]`
 /// access in the image (the SEH registrations, which only touch the stack
 /// chain) becomes a no-op. Returns the two cursors' addresses.
-fn patch_heap_os(a: &mut Oracle, b: &mut Oracle) -> (u32, u32) {
+fn patch_heap_os(a: &mut Oracle, b: &mut Oracle, fail_size: u32) -> (u32, u32) {
     let region = alloc(a, b, 0x220_0000);
     let start = (region + 0xffff) & 0xffff_0000;
     let cursors = alloc(a, b, 8);
@@ -2174,7 +2178,7 @@ fn patch_heap_os(a: &mut Oracle, b: &mut Oracle) -> (u32, u32) {
         #[rustfmt::skip]
         let mut va: Vec<u8> = vec![
             0x8b, 0x44, 0x24, 0x04, 0x8b, 0x4c, 0x24, 0x08,             // eax = addr, ecx = size
-            0x81, 0xf9, 0x00, 0x30, 0x00, 0x00, 0x74, 0x34,             // size 0x3000: fail
+            0x81, 0xf9, 0, 0, 0, 0, 0x74, 0x34,                         // fail_size: fail
             0x85, 0xc0, 0x75, 0x32,                                     // addr: commit in place
             0x81, 0xc1, 0xff, 0xff, 0x00, 0x00, 0x81, 0xe1, 0x00, 0x00, 0xff, 0xff,
             0x81, 0xf9, 0x00, 0x00, 0x10, 0x00, 0x73, 0x0e,             // >= 1 MiB: big
@@ -2182,6 +2186,7 @@ fn patch_heap_os(a: &mut Oracle, b: &mut Oracle) -> (u32, u32) {
             0xa1, 0, 0, 0, 0, 0x01, 0x0d, 0, 0, 0, 0, 0xc2, 0x10, 0x00, // big cursor
             0x31, 0xc0, 0xc2, 0x10, 0x00,
         ];
+        va[10..14].copy_from_slice(&fail_size.to_le_bytes());
         for (at, c) in [
             (41, cursors),
             (47, cursors),
@@ -2194,7 +2199,14 @@ fn patch_heap_os(a: &mut Oracle, b: &mut Oracle) -> (u32, u32) {
         o.write(code + 0x60, &[0xb8, 1, 0, 0, 0, 0xc2, 0x0c, 0x00])
             .unwrap();
         o.write(code + 0x70, &[0xc2, 0x04, 0x00]).unwrap();
+        #[rustfmt::skip]
+        let memcpy_s = [
+            0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c, 0x8b, 0x74, 0x24, 0x14, // dst, src
+            0x8b, 0x4c, 0x24, 0x18, 0xf3, 0xa4, 0x5f, 0x5e, 0x31, 0xc0, 0xc3, // rep movsb count
+        ];
+        o.write(code + 0x80, &memcpy_s).unwrap();
         for (slot, at) in [
+            (IAT_MEMCPY_S, code + 0x80),
             (IAT_VIRTUAL_ALLOC, code),
             (IAT_VIRTUAL_FREE, code + 0x60),
             (IAT_ENTER_CS, code + 0x70),
@@ -2231,15 +2243,17 @@ fn patch_heap_os(a: &mut Oracle, b: &mut Oracle) -> (u32, u32) {
 /// copied into memory after each call ([`TestOs::sync`]).
 struct TestOs {
     at: u32,
+    fail_size: u32,
     small: u32,
     big: u32,
     locks: i32,
 }
 
 impl TestOs {
-    fn new(o: &Oracle, at: u32) -> Self {
+    fn new(o: &Oracle, at: u32, fail_size: u32) -> Self {
         Self {
             at,
+            fail_size,
             small: Mem::read(o, at),
             big: Mem::read(o, at + 4),
             locks: 0,
@@ -2255,12 +2269,6 @@ impl TestOs {
         );
         Mem::write(b, self.at, [self.small, self.big]);
     }
-
-    /// Takes `b`'s cursors after original code ran there.
-    fn reload(&mut self, b: &Oracle) {
-        self.small = Mem::read(b, self.at);
-        self.big = Mem::read(b, self.at + 4);
-    }
 }
 
 impl ffx_system::heap::Os for TestOs {
@@ -2271,7 +2279,7 @@ impl ffx_system::heap::Os for TestOs {
         self.locks -= 1;
     }
     fn virtual_alloc(&mut self, addr: u32, size: u32, _alloc_type: u32, _protect: u32) -> u32 {
-        if size == 0x3000 {
+        if size == self.fail_size {
             return 0;
         }
         if addr != 0 {
@@ -2292,6 +2300,9 @@ impl ffx_system::heap::Os for TestOs {
     }
     fn report_free_failure(&mut self) {
         panic!("VirtualFree failed");
+    }
+    fn malloc_pool_init(&mut self) {
+        panic!("the tests start with a heap");
     }
 }
 
@@ -2314,7 +2325,7 @@ fn fresh_page_manager(a: &mut Oracle, b: &mut Oracle) -> u32 {
 /// Random mallocs (the original, in both; when `mallocs`) and frees (the
 /// original in `a`, `ffx_system::heap::user_free` in `b`); `live` starts
 /// with blocks the heap already holds. Memory compared after every free.
-#[allow(clippy::many_single_char_names)] // a, b: the oracles; n, k, p
+#[allow(clippy::many_single_char_names, clippy::too_many_lines)] // a, b: the oracles; one loop of operations
 fn heap_rounds(
     a: &mut Oracle,
     b: &mut Oracle,
@@ -2323,47 +2334,99 @@ fn heap_rounds(
     rounds: u32,
     mallocs: bool,
 ) {
-    let (cur_at, _) = patch_heap_os(a, b);
-    let mut os = TestOs::new(b, cur_at);
+    let (cur_at, _) = patch_heap_os(a, b, u32::MAX);
+    let mut os = TestOs::new(b, cur_at, u32::MAX);
     let start = os.small;
     let (mut frees, mut nulls) = (0, 0);
     for n in 0..rounds {
         if live.is_empty() && !mallocs {
             break;
         }
-        let malloc = mallocs && (live.is_empty() || rng.next() % 5 < 2);
-        if malloc {
-            let size = match rng.next() % 4 {
-                0 => rng.next() % 0x40,
-                1 => rng.next() % 0x2000,
-                2 => rng.next() % 0x2_0000,
-                _ => 0x1000 * (rng.next() % 8),
-            };
-            let pa = eax(a, USER_MALLOC, &[size]);
-            let pb = eax(b, USER_MALLOC, &[size]);
-            assert_eq!(pa, pb, "malloc {n}");
-            os.reload(b);
-            if pa == 0 {
-                nulls += 1;
-            } else {
-                live.push(pa);
-            }
+        let op = if !mallocs {
+            if rng.next().is_multiple_of(4) { 4 } else { 5 }
+        } else if live.is_empty() {
+            0
         } else {
-            let k = (rng.next() as usize) % live.len();
-            let p = live.swap_remove(k);
-            eax(a, USER_FREE, &[p]);
-            ffx_system::heap::user_free(b, &mut os, p);
-            assert_eq!(os.locks, 0);
-            os.sync(a, b, &format!("free {n}"));
-            let d = a.diff(b).unwrap();
-            assert!(
-                d.is_empty(),
-                "free {n} of {p:#x}: {} bytes differ, first {:x?}",
-                d.len(),
-                &d[..d.len().min(8)]
-            );
-            frees += 1;
+            rng.next() % 6
+        };
+        let size = match rng.next() % 4 {
+            0 => rng.next() % 0x40,
+            1 => rng.next() % 0x2000,
+            2 => rng.next() % 0x2_0000,
+            _ => 0x1000 * (rng.next() % 8),
+        };
+        let what = format!("op {op} at {n}");
+        match op {
+            0 => {
+                let pa = eax(a, USER_MALLOC, &[size]);
+                let pb = ffx_system::heap::user_malloc(b, &mut os, size);
+                assert_eq!(pa, pb, "{what}: malloc {size:#x}");
+                if pa == 0 {
+                    nulls += 1;
+                } else {
+                    live.push(pa);
+                }
+            }
+            1 => {
+                // the distance back fits the byte below 256
+                let align = [4, 8, 16, 32, 64, 100, 128][(rng.next() % 7) as usize];
+                let ra = eax(a, USER_ALIGNED_MALLOC, &[size, align]);
+                let rb = ffx_system::heap::user_aligned_malloc(b, &mut os, size, align);
+                assert_eq!(ra, rb, "{what}: aligned malloc {size:#x} {align}");
+                let back = u32::from(Mem::read::<u8>(a, ra - 1));
+                let block = ra - back;
+                live.push(block);
+            }
+            2 => {
+                let p = if rng.next().is_multiple_of(5) {
+                    0
+                } else {
+                    live.swap_remove((rng.next() as usize) % live.len())
+                };
+                let size = if rng.next().is_multiple_of(9) {
+                    0
+                } else {
+                    size
+                };
+                let qa = eax(a, USER_REALLOC, &[p, size]);
+                let qb = ffx_system::heap::user_realloc(b, &mut os, p, size);
+                assert_eq!(qa, qb, "{what}: realloc {p:#x} {size:#x}");
+                if qa != 0 {
+                    live.push(qa);
+                }
+            }
+            3 | 4 => {
+                // a random pointer only image-only: the game's arena spans
+                // pages the snapshot does not hold
+                let p = if mallocs && rng.next().is_multiple_of(7) {
+                    rng.next()
+                } else {
+                    live[(rng.next() as usize) % live.len()]
+                };
+                let na = eax(a, USER_MEM_SIZE, &[p]);
+                assert_eq!(
+                    na,
+                    ffx_system::heap::user_mem_size(b, &mut os, p),
+                    "{what}: size of {p:#x}"
+                );
+            }
+            _ => {
+                let k = (rng.next() as usize) % live.len();
+                let p = live.swap_remove(k);
+                eax(a, USER_FREE, &[p]);
+                ffx_system::heap::user_free(b, &mut os, p);
+                frees += 1;
+            }
         }
+        assert_eq!(os.locks, 0, "{what}");
+        os.sync(a, b, &what);
+        let d = a.diff(b).unwrap();
+        assert!(
+            d.is_empty(),
+            "{what}: {} bytes differ, first {:x?}",
+            d.len(),
+            &d[..d.len().min(8)]
+        );
     }
     let mgr = ffx_system::heap::PAGE_MANAGER.get(b);
     eprintln!(
@@ -2508,8 +2571,8 @@ fn the_page_manager_matches_the_original() {
     let (a, b) = (&mut a, &mut b);
     let mgr = fresh_page_manager(a, b);
     set(a, b, h::PAGE_MANAGER, mgr);
-    let (cursors, _) = patch_heap_os(a, b);
-    let mut os = TestOs::new(b, cursors);
+    let (cursors, _) = patch_heap_os(a, b, 0x3000);
+    let mut os = TestOs::new(b, cursors, 0x3000);
     let mut rng = Xorshift(0x9a6e_0001);
     let mut live: Vec<(u32, u32)> = Vec::new();
     let mut queued: Vec<(u32, u32)> = Vec::new();

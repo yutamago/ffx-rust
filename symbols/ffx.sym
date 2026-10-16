@@ -1032,9 +1032,10 @@
 0x006843a0 function AbmapManager_CheckWordVertex # fh v3:exact 0x00684540 AbmapManager::CheckWordVertex
 0x00684cd0 function AbmapManager_GetVertexInfo # fh v3:exact 0x00684e70 AbmapManager::GetVertexInfo
 0x006857b0 function AbmapManager_ToDestroy    # fh v3:bsim1.00 0x00685950 AbmapManager::ToDestroy
-0x00686ff0 function user_aligned_malloc       # fh v3:bsim1.00 0x00687190
-0x00687020 function user_malloc               # fh v3:bsim1.00 0x006871c0
-0x00687050 function user_mem_size             # fh v3:bsim1.00 0x006871f0
+0x00686ff0 function user_aligned_malloc       # cdecl(size, align): jmp UserHeap_AlignedMalloc; fh v3:bsim1.00 0x00687190
+0x00687020 function user_malloc               # cdecl(size): jmp UserHeap_Malloc; fh v3:bsim1.00 0x006871c0
+0x00687050 function user_mem_size             # cdecl(p): jmp UserHeap_MemSize; fh v3:bsim1.00 0x006871f0
+0x00687060 function user_realloc              # cdecl(p, size): jmp UserHeap_Realloc; name ours (after user_mem_size)
 0x006898c0 function TouchManager_GetInstance  # () -> [0x00ccc850]; fh switch:bsim1.00 0x710023e180 TouchManager::GetInstance
 0x0068cc90 function AsyncControllerTaskManager_ClearControllerInfo # fh v3:exact 0x0068ce30 AsyncControllerTaskManager::ClearControllerInfo
 0x0068ccd0 function AsyncControllerTaskManager_GetControllerInfo # fh v3:exact 0x0068ce70 AsyncControllerTaskManager::GetControllerInfo
@@ -1304,8 +1305,12 @@
 0x006fb130 function SyncManager_syncDataChangeAsyncTask # fh v3:exact 0x006fb210 SyncManager::syncDataChangeAsyncTask
 0x006fb160 function SyncManager_syncGetData   # fh v3:exact 0x006fb240 SyncManager::syncGetData
 0x006fb6c0 function user_aligned_free         # fh v3:exact 0x006fb7a0
+0x006fb770 function UserHeap_AlignedMalloc    # cdecl(size, align): UserHeap_Alloc(size + align), pointer moved up to a multiple of align (__aullrem of the sign-extended pointer), the distance in the byte before; the first size bytes filled 0xcd; name ours
 0x006fb8b0 function user_free                 # cdecl(p): UserHeap_Free(*g_UserHeap + 0x18, p) under the heap's critical section (*g_UserHeap + 0); fh v3:exact 0x006fb990
+0x006fb910 function UserHeap_Malloc           # cdecl(size): malloc_pool_init on first use, UserHeap_Alloc under the heap's lock, the block filled 0xcd; name ours
 0x006fb9b0 function malloc_pool_init          # fh call.cs cdecl _malloc_pool_init
+0x006fba90 function UserHeap_MemSize          # cdecl(p): UserHeap_BlockSize under the lock (no first-use check); name ours
+0x006fbb00 function UserHeap_Realloc          # cdecl(p, size): new block (none for 0), memcpy_s min(old, size) bytes, old freed; name ours
 0x00703bc0 function cdc_Vector_CanNormalize3  # thiscall(v): al = 1 when (x²+y²)+z² (stored f32) is not NaN (_isnan), finite (_finite) and > FLT_MIN (0x00b4cf60); only caller cdc_Vector_SafeNormalize3; name ours
 0x00704200 function cdc_Vector_SafeNormalize3 # fh v3:exact 0x007042f0 cdc::Vector::SafeNormalize3
 0x00704dd0 function cdc_Inverse4x4            # cdecl(dst, m): the general 4x4 inverse by cofactors (f32 stores between steps), 1/det or 0; leaves dst+0x48 in eax; only caller sceVu0InversMatrix4x4; name ours (cdc_ like its neighbours)
@@ -5406,10 +5411,13 @@
 0x0093da30 function movieOpen                 # fh switch:bsim1.00 0x710056ae50
 0x0093e510 function chr_anim_win              # fh switch:bsim1.00 0x710056aae0
 0x00942110 function sasa_menu                 # fh v3:exact 0x00942110
-0x00942b60 function UserHeap_Alloc            # thiscall(heap, size) -> p: (size + 15 & ~15) + 16 from FUN_00943380's free node; header +0 0xabcdef12, +4 size, +8 previous size, +0xc 2 in use; name ours
+0x00942b60 function UserHeap_Alloc            # thiscall(heap, size), ret 4 -> p: (size + 15 & ~15) + 16 from UserHeap_FindFree's node; the covered pages committed; remainder keeps the node (or is free with node 3 under heap[1], or joins the block under 16 bytes); name ours
+0x00942dc0 function UserHeap_NewArena         # fastcall(heap): PageAlloc(heap[0], 0x1000), commits its first 2 and last page; 255 bins, 16-byte in-use blocks at +0x1000 and the end, one free block from +0x1010 in bin 254; name ours
 0x00943050 function UserHeap_ReleaseArena     # thiscall(heap, arena), ret 4: unchains an arena that is one free block, its node to the pool, its first two pages and last header page to PageQueueDecommit, PageRelease; name ours
 0x00943130 function UserHeap_Free             # thiscall(heap, p), ret 4 -> al: the block's arena, merges with free neighbours (node > 3 removed, 3 = free without node), one node into the bins, whole pages inside queued for decommit, an empty arena released; name ours
 0x009432e0 function UserHeap_BinIndex         # thiscall(heap, size), ret 4 -> edx:eax: x = min(size - heap[1], heap[2] - heap[1]); over 0x23dc x = r - (r - x)^3 / r^2 (64-bit, __allmul/__alldiv); x * 254 / r; name ours
+0x00943380 function UserHeap_FindFree         # thiscall(heap, size, &arena), ret 8 -> node: first node >= size in the size's bin, else the first of the next non-empty bin, arena by arena (new ones appended); unlinked; name ours
+0x00943480 function UserHeap_BlockSize        # thiscall(heap, p), ret 4: the block's size - 16, or -1 outside every arena; name ours
 0x009434c0 function UserHeap_InsertFree       # thiscall(heap, node, arena), ret 8: node into arena's bin (16-byte heads at arena + 16 bin): by size then address, bin 254 by address; name ours
 0x009435a0 function UserHeap_RemoveFree       # thiscall(heap, node), ret 4: unlinks a free node (+4 prev, +8 next), clears them; leaves node in eax; name ours
 0x009438b0 function VirtualAlloc_Commit_RW    # fh v3:exact+call.cs 0x009438b0 cdecl _VirtualAlloc_Commit_RW

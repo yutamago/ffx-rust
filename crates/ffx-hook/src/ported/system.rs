@@ -9,7 +9,7 @@ use ffx_system::{
     stl, stub, vbf, window,
 };
 
-use super::{mem, ported};
+use super::{call0, mem, ported};
 
 /// The heap's Win32 calls, through the game's own import slots (so they are
 /// the calls the originals make, to the same critical sections).
@@ -89,6 +89,11 @@ impl heap::Os for GameOs {
                 f(message);
             }
         }
+    }
+    fn malloc_pool_init(&mut self) {
+        // the original (`malloc_pool_init`, cdecl, no arguments): the page
+        // manager, the CRT malloc'd heap object, InitializeCriticalSection
+        call0(0x006f_b9b0);
     }
 }
 
@@ -930,6 +935,54 @@ ported! {
     /// `VirtualAlloc_Reserve_NA(size)`.
     VirtualAlloc_Reserve_NA @ 0x0094_39a0 => extern "C" fn virtual_alloc_reserve_na(size: u32) -> u32 {
         heap::reserve(&mut mem(), &mut GameOs, size)
+    }
+    /// `user_malloc(size)`: a jump to `UserHeap_Malloc`.
+    user_malloc @ 0x0068_7020 => extern "C" fn user_malloc(size: u32) -> u32 {
+        heap::user_malloc(&mut mem(), &mut GameOs, size)
+    }
+    /// `UserHeap_Malloc(size)`.
+    UserHeap_Malloc @ 0x006f_b910 => extern "C" fn user_heap_malloc(size: u32) -> u32 {
+        heap::user_malloc(&mut mem(), &mut GameOs, size)
+    }
+    /// `user_aligned_malloc(size, align)`: a jump to `UserHeap_AlignedMalloc`.
+    user_aligned_malloc @ 0x0068_6ff0 => extern "C" fn user_aligned_malloc(size: u32, align: u32) -> u32 {
+        heap::user_aligned_malloc(&mut mem(), &mut GameOs, size, align)
+    }
+    /// `UserHeap_AlignedMalloc(size, align)`.
+    UserHeap_AlignedMalloc @ 0x006f_b770 => extern "C" fn user_heap_aligned_malloc(size: u32, align: u32) -> u32 {
+        heap::user_aligned_malloc(&mut mem(), &mut GameOs, size, align)
+    }
+    /// `user_mem_size(p)`: a jump to `UserHeap_MemSize`.
+    user_mem_size @ 0x0068_7050 => extern "C" fn user_mem_size(p: u32) -> u32 {
+        heap::user_mem_size(&mut mem(), &mut GameOs, p)
+    }
+    /// `UserHeap_MemSize(p)`.
+    UserHeap_MemSize @ 0x006f_ba90 => extern "C" fn user_heap_mem_size(p: u32) -> u32 {
+        heap::user_mem_size(&mut mem(), &mut GameOs, p)
+    }
+    /// `user_realloc(p, size)`: a jump to `UserHeap_Realloc`.
+    user_realloc @ 0x0068_7060 => extern "C" fn user_realloc(p: u32, size: u32) -> u32 {
+        heap::user_realloc(&mut mem(), &mut GameOs, p, size)
+    }
+    /// `UserHeap_Realloc(p, size)`.
+    UserHeap_Realloc @ 0x006f_bb00 => extern "C" fn user_heap_realloc(p: u32, size: u32) -> u32 {
+        heap::user_realloc(&mut mem(), &mut GameOs, p, size)
+    }
+    /// `UserHeap_Alloc(size)` (`this` the allocator).
+    UserHeap_Alloc @ 0x0094_2b60 => extern "thiscall" fn user_heap_alloc(this: u32, size: u32) -> u32 {
+        heap::heap_alloc(&mut mem(), &mut GameOs, this, size)
+    }
+    /// `UserHeap_FindFree(size, &arena)`.
+    UserHeap_FindFree @ 0x0094_3380 => extern "thiscall" fn user_heap_find_free(this: u32, size: u32, arena: u32) -> u32 {
+        heap::find_free_at(&mut mem(), &mut GameOs, this, size, arena)
+    }
+    /// `UserHeap_NewArena()` (the allocator in ECX).
+    UserHeap_NewArena @ 0x0094_2dc0 => extern "fastcall" fn user_heap_new_arena(this: u32) -> u32 {
+        heap::new_arena(&mut mem(), &mut GameOs, this)
+    }
+    /// `UserHeap_BlockSize(p)`.
+    UserHeap_BlockSize @ 0x0094_3480 => extern "thiscall" fn user_heap_block_size(this: u32, p: u32) -> u32 {
+        heap::block_size(&mem(), this, p)
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
