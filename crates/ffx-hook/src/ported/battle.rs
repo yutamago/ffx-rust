@@ -11,6 +11,18 @@ use super::{call0, mem, ported};
 const TO_GET_FFX_LANG: u32 = 0x0064_10e0;
 /// `TOBtlCloseSignWindow` (system), which the message cue calls.
 const TO_BTL_CLOSE_SIGN_WINDOW: u32 = 0x0089_0ee0;
+/// `achievementUnlockAchievement(n)` (main), which `Battle_Steal` calls.
+const ACHIEVEMENT_UNLOCK: u32 = 0x0082_2380;
+
+/// Calls an original cdecl function of one argument by its `ffx.sym`
+/// address.
+fn call1(sym: u32, a: u32) -> u32 {
+    // SAFETY: the address is a cdecl function of this build taking one u32.
+    unsafe {
+        let f: unsafe extern "C" fn(u32) -> u32 = std::mem::transmute(crate::rebase(sym));
+        f(a)
+    }
+}
 
 ported! {
     /// `rnd`: the global random generator.
@@ -1089,5 +1101,29 @@ ported! {
     /// `MsCameraGetID(cam)`.
     MsCameraGetID @ 0x007b_d300 => extern "C" fn ms_camera_get_id(cam: u32) -> u32 {
         camera::ms_camera_get_id(&mem(), cam)
+    }
+
+    // Items and steals.
+    /// `MsSetItemWindow`: the battle item lists.
+    MsSetItemWindow @ 0x0079_06a0 => extern "C" fn ms_set_item_window() {
+        save::ms_set_item_window(&mut mem());
+    }
+    /// `MsSaveItemUse(item, n)`.
+    MsSaveItemUse @ 0x0079_0550 => extern "C" fn ms_save_item_use(item: u32, n: i32) -> i32 {
+        save::ms_save_item_use(&mut mem(), item, n)
+    }
+    /// `Battle_Steal(user, target, spoils, info, fail)`.
+    Battle_Steal @ 0x0078_b760 => extern "C" fn battle_steal(user: u32, target: u32, spoils: u32, info: u32, fail: i32) -> u32 {
+        save::battle_steal(&mut mem(), user, target, spoils, info, fail, |_| call0(TO_GET_FFX_LANG), |_, n| {
+            call1(ACHIEVEMENT_UNLOCK, n);
+        })
+    }
+    /// `Battle_StealGil(user, target, spoils, info, fail)`: Mug's gil.
+    Battle_StealGil @ 0x0078_b920 => extern "C" fn battle_steal_gil(_user: u32, target: u32, spoils: u32, info: u32, fail: i32) -> u32 {
+        save::battle_steal_gil(&mut mem(), target, spoils, info, fail)
+    }
+    /// `MsGetActionBuffer(actor)`.
+    MsGetActionBuffer @ 0x0078_d040 => extern "C" fn ms_get_action_buffer(actor: u32) -> u32 {
+        save::ms_get_action_buffer(&mut mem(), actor)
     }
 }

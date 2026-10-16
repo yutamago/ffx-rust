@@ -1935,6 +1935,7 @@
 0x0078ae00 function DmgCalc_InflictStatus     # fh v3:exact 0x0078aec0 +DmgCalc_InflictStatus
 0x0078b4e0 function DmgCalc_InflictStatus_Extra # fh v3:exact 0x0078b5a0 +DmgCalc_InflictStatus_Extra
 0x0078b760 function Battle_Steal              # steal chance spoils+0x0a, items +0x24/+0x26, counts +0x28/+0x29
+0x0078b920 function Battle_StealGil           # Mug's gil: spoils +0x113 x (100 + roll%101) x 100/200 x target +0x712 / 255 into the result's +0x10; +0x712 halved per success; brnd(10); ported
 0x0078ba30 function DmgCalc_ShatterFail       # fh v3:exact 0x0078baf0 +DmgCalc_ShatterFail
 0x0078bd50 function DmgCalc_Threaten          # fh v3:exact 0x0078be10 +DmgCalc_Threaten
 0x0078bd90 function DmgCalc_ReelBonus         # damage x (time + 2 start) / (2 start) while actor +0xd26 is set; +0xd2c/+0xd30 are the floats MsSetReelResult stores for Wakka ("time", "start_time" in its debug text); ported
@@ -1961,6 +1962,7 @@
 0x0078cce0 function MsGetChrVigor             # fh v3:exact 0x0078cda0
 0x0078ce50 function MsGetCommand              # fh v3:exact+call.cs 0x0078cf10 cdecl
 0x0078cf70 function MsGetCommandMP            # fh v3:exact+call.cs 0x0078d030 cdecl
+0x0078d040 function MsGetActionBuffer         # the first of an actor's two 0x2d8-byte buffers at +0x774 whose +2 is 0xff, MsStructClear'ed; MsCalcCommand's only callee of it; ported
 0x0078d090 function MsGetFirstAttack          # fh v3:exact 0x0078d150
 0x0078d1d0 function MsGetNextCTB              # fh v3:exact 0x0078d290
 0x0078d210 function MsGetRndChr               # fh v3:exact 0x0078d2d0
@@ -7413,6 +7415,7 @@
 0x0112a90e label g_BtlDebugDamage1            # u8, DmgCalc: every HP/MP hit does 1; debug native case 0xe
 0x0112a90f label g_BtlDebugDamage10000        # u8, DmgCalc: every HP/MP hit does 10000; debug native case 0xf
 0x0112a910 label g_BtlDebugDamage100000       # u8, DmgCalc: every HP/MP hit does 100000; debug native case 0x10
+0x0112a911 label g_BtlDebugRareSteal          # u8, Battle_Steal always takes the rare item
 0x0112a91b label g_BtlMapCircleOn            # i8 (MsBattleGetMapCircleOn 0x007816a0)
 0x0112a91f label g_BtlDebugAllMiss            # u8, debug env flag: DmgCalc_CheckHit always misses, no status lands, MsCalcEscape fails
 0x0112a929 label g_BtlRead2                # u16; with the one before it (same function, ffx_battle::misc)
@@ -7447,6 +7450,8 @@
 0x0112c021 label g_BtlReadCueLevel           # u8, MsBtlReadCueLevel (0x007ad180)
 0x0112c256 label g_BtlFieldIndex             # i16, the current battle field's record (MsBattleGetNum: its ID << 16 + the group ID)
 0x0112c526 label g_BtlWeaponList             # u16 list MsGetSaveWeaponList (0x007abd10) fills with 0x5000 + equipment slot
+0x0112c6b6 label g_BtlItemWindow              # 0x70 x u16, battle-usable items (kernel flag 2, not 0x400) in inventory order, 0xff after (MsSetItemWindow)
+0x0112c796 label g_BtlItemWindow2             # 0x70 x u16, the same for items with flag 0x400 (MsSetItemWindow)
 0x0112c895 label g_BtlParty                  # 3 x u8 ply_save indices; MsSetSaveParty (0x00786930) copies them to g_SaveInParty
 0x0112c8c8 label g_BtlChrSet                 # u32 actor bits; MsGetChrBit selector -4 returns its present actors
 0x0112c8e8 label g_BtlLastMagic2              # u32; The last magic of kind 2 (MsEffectGetLastMagicNum2).
@@ -7462,6 +7467,7 @@
 0x0112c9df label g_BtlTurnActorNow           # u8, the actor whose turn it is (MsGetChrBit -18); copied to g_BtlTurnActor when a turn starts
 0x0112c9e0 label g_BtlCommandActor           # u8, the actor whose command runs, 0xff none (MsGetChrBit -2, -3: its command cue entry's targets)
 0x0112c9e2 label    g_BtlTurnActor               # ?actor index copied from 0x0112c9df when a turn starts; read by 0x708d
+0x0112c9e5 label g_BtlStealRule               # u8, 2: nothing can be stolen or mugged in this battle (Battle_Steal, Battle_StealGil)
 0x0112c9e6 label g_BtlMenuCommandSet          # u8; with the one before it (same function, ffx_battle::misc)
 0x0112c9ff label g_BtlEscapeRule              # i8, set by battle script (0x007a77a0): 1 no escape, 2 always (MsCalcEscape)
 0x0112ca03 label g_BtlSummonLimit             # u8; Summons keep the overdrive gauge while this is set (MsSummonLimitSave).
@@ -7487,6 +7493,7 @@
 0x011307eb label g_SaveOutParty              # 0x11 x u8 reserve members (MsGetSaveOutParty 0x007852d0, count 0x11)
 0x011307fc label g_SaveSharedCommands        # flag words of commands 0x3060-0x3fff for everybody, bit of cmd - 0x60 (MsGetSaveCommand 0x00785020); below 0x3060 they are in ply_save +0x3e
 0x01130834 label g_SaveYoujinbouCom          # save +0x3da4: u32 Yojimbo's command (MsGetYoujinbouCom 0x007b2b20)
+0x01130840 label g_StealCount                 # u32, items stolen from monster kind 6 (+0xded); achievementUnlockAchievement(4) from 200 (Battle_Steal)
 0x0113085c label g_SaveEventFlags            # MsGetSaveEventFlag (0x00785250)
 0x0113095c label g_SaveItemIds               # 0x70 x u16 inventory item IDs (MsSaveItemTypeBuffer 0x00790530, count 0x70; MsGetSaveItemNum)
 0x01130b5c label g_SaveItemCounts            # 0x70 x u8 inventory counts (MsSaveItemNumBuffer 0x00790510)
