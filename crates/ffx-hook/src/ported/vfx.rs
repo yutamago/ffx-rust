@@ -2,7 +2,34 @@
 //! original leaves a result in `eax` return the full `u32`.
 
 use super::{mem, ported};
+use ffx_vfx::rand::bridge::Spread;
 use ffx_vfx::{et, fp, heap, op, opd, opus, ppp, prog, rand};
+
+/// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`), so the
+/// CRT's state moves as it does with the originals.
+fn crt_srand(seed: u32) {
+    // SAFETY: the slot holds the address of the CRT's cdecl `srand(seed)`.
+    unsafe {
+        let slot = crate::rebase(0x00b0_c484) as *const usize;
+        let f: unsafe extern "C" fn(u32) = std::mem::transmute(slot.read());
+        f(seed);
+    }
+}
+
+/// A float rand program with the CRT's `srand`.
+fn rand_program(obj: u32, key: u32, ctrl: u32, spread: Spread, vector: bool) {
+    rand::bridge::ppp_rand_float(
+        &mut mem(),
+        obj,
+        key,
+        ctrl,
+        spread,
+        vector,
+        &mut |_, seed| {
+            crt_srand(seed);
+        },
+    );
+}
 
 ported! {
     // ---- rand ----
@@ -13,6 +40,37 @@ ported! {
     /// `op_random_p(x)`: a random value in `[0, x)`.
     op_random_p @ 0x007e_6780 => extern "C" fn op_random_p(x: f32) -> f32 {
         rand::bridge::op_random_p(&mut mem(), x)
+    }
+
+    // ---- rand programs ----
+    /// `pppVu0RNext(out, _)`: `vrnext` into `out`.
+    pppVu0RNext @ 0x0072_f420 => extern "C" fn ppp_vu0_rnext(out: u32, r: u32) {
+        let _ = r;
+        rand::bridge::ppp_vu0_rnext(&mut mem(), out);
+    }
+    /// `pppRandFloat(obj, key, ctrl)`.
+    pppRandFloat @ 0x0072_f4b0 => extern "C" fn ppp_rand_float(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Plain, false);
+    }
+    /// `pppRandUpFloat(obj, key, ctrl)`.
+    pppRandUpFloat @ 0x0072_f680 => extern "C" fn ppp_rand_up_float(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Up, false);
+    }
+    /// `pppRandDownFloat(obj, key, ctrl)`.
+    pppRandDownFloat @ 0x0072_f850 => extern "C" fn ppp_rand_down_float(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Down, false);
+    }
+    /// `pppRandFV(obj, key, ctrl)`.
+    pppRandFV @ 0x0073_0ab0 => extern "C" fn ppp_rand_fv(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Plain, true);
+    }
+    /// `pppRandUpFV(obj, key, ctrl)`.
+    pppRandUpFV @ 0x0073_0ce0 => extern "C" fn ppp_rand_up_fv(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Up, true);
+    }
+    /// `pppRandDownFV(obj, key, ctrl)`.
+    pppRandDownFV @ 0x0073_0ef0 => extern "C" fn ppp_rand_down_fv(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Down, true);
     }
 
     // ---- ppp programs ----
