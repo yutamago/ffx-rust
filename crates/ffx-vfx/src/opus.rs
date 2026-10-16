@@ -184,10 +184,10 @@ pub mod bridge {
         monster_variant(mem, slot).map_or(0, |k| (k + 0xfd) << 6)
     }
 
-    /// `opus_parts_clear(i, n)` (`0x00801480`): the first 16 bytes of the
+    /// `opus_osu_init_group(i, n)` (`0x00801480`): the first 16 bytes of the
     /// first `n` 0x100-byte parts of opus object `i` (the table at
     /// `g_OpusBattle`) zeroed.
-    pub fn opus_parts_clear(mem: &mut impl Mem, i: u32, n: u32) {
+    pub fn opus_osu_init_group(mem: &mut impl Mem, i: u32, n: u32) {
         let obj: u32 = mem.read(OPUS_BATTLE.ptr(mem).addr.wrapping_add(4 * (i & 0xffff)));
         let mut p: u32 = mem.read(obj.wrapping_add(0x20));
         for _ in 0..(n & 0xffff) {

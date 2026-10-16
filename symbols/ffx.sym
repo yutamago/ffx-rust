@@ -2150,7 +2150,7 @@
 0x00680320 function FreeCamera_setFreePause   # fh v3:exact 0x006804d0 FreeCamera::setFreePause
 0x00680410 function FreeCamera_setType        # fh switch:cg2 0x71008a1cd8 FreeCamera::setType
 0x006843a0 function AbmapManager_CheckWordVertex # fh v3:exact 0x00684540 AbmapManager::CheckWordVertex
-0x00684ca0 function AbmapManager_GetMeshInstace  # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a1fd8 AbmapManager::GetMeshInstace, 2 votes, round 2
+0x00684ca0 function AbmapManager_GetMeshInstace  # thiscall(mgr, i) -> entry i's mesh instance (+0xc; entry 0 once the count +4 is above 1); only caller PhyreScene_RenderABmap as on the Switch (AbmapManager::GetMeshInstace, 32 bytes, called by PhyreScene::RenderABmap); sorts between AbmapManager_CheckWordVertex and AbmapManager_GetVertexInfo; cg-match switch lead 0x71008a1fd8 (2 votes); the system porter's EntryWordC_00684ca0
 0x00684cd0 function AbmapManager_GetVertexInfo # fh v3:exact 0x00684e70 AbmapManager::GetVertexInfo
 0x006857b0 function AbmapManager_ToDestroy    # fh v3:bsim1.00 0x00685950 AbmapManager::ToDestroy
 0x00686c50 function IdentityStd_00686c50 # stdcall(x) -> x, ret 4; name ours
@@ -2800,7 +2800,7 @@
 0x00729050 function pppFpSetDisp              # (on): g_pppFpDisp = on (eax = on)
 0x00729060 function pppFpDispDebug               # str-match switch: only user of 6 string(s) held once by both builds, e.g. '---- FP Disp Status Start\\n\\n'; Switch 0x71002d72b0 pppFpDispDebug (symbols from Fahrenheit's server export)
 0x007291c0 function pppFpFree                 # fh v3:exact 0x007292b0
-0x00729280 function pppFpGetHeapMaxUseSize       # layout: alphabetical run between pppFpFree and pppFpGetHeapSize (1 unnamed in the gap); Switch 0x71002d58a0 pppFpGetHeapMaxUseSize is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x00729280 function pppFpGetHeapMaxUseSize       # () -> 0x00cec210, the ppp heap's high-water mark; caller the rcui FP memory window as on the Switch (pppFpGetHeapMaxUseSize, called by rcuiFpMemProc); sorts between pppFpFree and pppFpGetHeapSize; the vfx porter's pppFpGetHeapPeak
 0x00729290 function pppFpGetHeapSize          # fh v3:exact 0x00729380
 0x007292d0 function pppFpGetHeapUsed          # () -> 0x00cec20c, the field-effect heap use of the last pppFpLoop
 0x007292f0 function pppFpGetMngPtr            # fh v3:exact 0x007293e0
@@ -3986,7 +3986,7 @@
 0x00795980 function MsGetChrTopPos            # fh v3:exact 0x00795990
 0x00795a20 function MsGetChrWidth             # fh v3:exact 0x00795a30
 0x00795aa0 function MsGetMon                  # fh v3:exact+call.cs 0x00795ab0 cdecl
-0x00795ac0 function MsGetTransChrPos             # layout: alphabetical run between MsGetMon and MsGetWeapon (1 unnamed in the gap); Switch 0x7100349660 MsGetTransChrPos is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x00795ac0 function MsGetTransChrPos             # (actor, vec): MsGetChrBtlPos when the actor rides on nothing (+0x43f == -1), else Ch_OptposGet of the carrier's model at point +0x441; Switch MsGetTransChrPos (0x7100349660) calls exactly Ch_OptposGet and MsGetChrBtlPos and sorts between MsGetMon and MsGetWeapon, as here; the battle porter's msGetChrPosNoChr
 0x00795b10 function MsGetWeapon               # fh v3:exact 0x00795b20
 0x00795b40 function MsGetWeaponHandle         # fh v3:exact 0x00795b50
 0x00795bb0 function MsGetWeaponSpecial        # fh v3:exact 0x00795bc0
@@ -4116,7 +4116,7 @@
 0x0079b470 function MsSetCommandUse              # layout: alphabetical run between MsSetAutoStatus and MsSetRamChr (1 unnamed in the gap); Switch 0x7100369710 MsSetCommandUse is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0079b4f0 function MsSetRamChr               # copies the stat record (section 2) into the battle actor; was Mon_InitActor
 0x0079bb50 function MsSetRamChrAbility        # equipment checks per character (weapon/armor in inventory, flag 0x02 skipped); was Battle_CheckEquipment
-0x0079c070 function MsSetRamChrCommand           # layout: alphabetical run between MsSetRamChrAbility and MsSetRamChrData (2 unnamed in the gap); Switch 0x71003694e0 MsSetRamChrCommand is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0079c070 function MsSetRamChrCommand           # (chr, id, on): sets/clears bit id & 0xf of u16 word (id & 0xfff) >> 4 of the chr's command bitset +0x664 (MsGetChr); Switch MsSetRamChrCommand (0x71003694e0, 88 bytes, calls MsGetChr) sorts between MsSetRamChrAbility and MsSetRamChrData, as here; the battle porter's MsSetChrCommandFlag
 0x0079c0c0 function MsSetRamChrCommandUse        # layout: alphabetical run between MsSetRamChrAbility and MsSetRamChrData (2 unnamed in the gap); Switch 0x7100369540 MsSetRamChrCommandUse is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0079c110 function MsSetRamChrData           # monster slot i (actor via 0x00795aa0) gets id = formation +0x0c + 2i (0xffff: empty); was Battle_SetUpActors
 0x0079c5f0 function MsSetRamChrParam          # party actor from ply_save and equipment: weapon formula/power -> +0x5c1/+0x5c7, crit -> +0x5d8, a_ability records applied; was Battle_InitPartyActor
@@ -4634,7 +4634,7 @@
 0x007e3f60 function op_vec4_move              # (dst, src) four words
 0x007e4540 function op_gs_store               # fh switch:bsim1.00 0x71003d8890
 0x007e45c0 function op_oef2_clut_change       # fh switch:bsim1.00 0x71003d8c20
-0x007e45e0 function op_oef2_clut_change_monster  # layout: alphabetical run between op_oef2_clut_change and op_oef2_clut_load (2 unnamed in the gap); Switch 0x71003d8c40 op_oef2_clut_change_monster is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x007e45e0 function op_oef2_clut_change_monster  # (rec, pos): u16 +0 = (pos & 0x3fff) + (old & 0x3c), byte +0xf = 1 (reload); only caller opu_tc_load as on the Switch (op_oef2_clut_change_monster 0x71003d8c40, 36 bytes, called by opu_tc_load); sorts after op_oef2_clut_change; the vfx porter's op_oef2_clut_pos_set
 0x007e4610 function op_oef2_clut_cue             # layout: alphabetical run between op_oef2_clut_change and op_oef2_clut_load (2 unnamed in the gap); Switch 0x71003d91b0 op_oef2_clut_cue is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007e46b0 function op_oef2_clut_load         # fh v3:exact 0x007e45c0
 0x007e46d0 function op_oef2_tex_clut_cue_check # fh v3:exact 0x007e45e0
@@ -4699,7 +4699,7 @@
 0x007ea120 function op_spline_xyz             # fh v3:exact 0x007ea030
 0x007ea2d0 function op_spline_xyz_table       # fh v3:exact 0x007ea1e0
 0x007ea550 function op_trans_m                   # structure: VU0-emulated (dst, src, vec): src with vec added to its translation row; Switch op_trans_m (0x71003da6a0) is the op matrix file's only name between op_spline_xyz_table and op_unit_m
-0x007ea6d0 function op_unit_m                    # structure: (m): memset 0x40 then 1.0 on the diagonal (identity); Switch op_unit_m (40 bytes) sorts before op_unit_m_scale, as here
+0x007ea6d0 function op_unit_m                    # structure: (m): memset 0x40 then 1.0 on the diagonal (identity); Switch op_unit_m (40 bytes) sorts before op_unit_m_scale, as here; ported in ffx_vfx::small with oracle parity (same name from the vfx porter)
 0x007ea700 function op_unit_m_scale           # fh v3:exact 0x007ea610
 0x007ea730 function op_unit_m_scale2             # structure: (m, v): zero, diagonal v.x, v.y, v.z, 1.0; Switch op_unit_m_scale2 (52 bytes) sorts between op_unit_m_scale and op_vector_m, as here
 0x007ea760 function op_vector_m                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '*** Calling op_vector_m() math.c:%d ***\\n'; Switch 0x71003dd0f0 op_vector_m (symbols from Fahrenheit's server export)
@@ -4822,6 +4822,7 @@
 0x007fda30 function opu_et_unit_ofs           # (oef2, a, b, c) arg0 += 0x10, tail jmp opu_et_unit
 0x007fda40 function opu_et_unit_free_by_id    # fh switch:bsim1.00 0x71003ed4a0
 0x007fda60 function opu_et_oef2_free          # (oef2) the op_et_oef2_free body again
+0x007fda80 function opu_init                     # structure: calls opus_osu_init_group, opus_osu_init, set_ptr32 and opus_get_eff_status_index, the callees of the Switch's opu_init (0x71003ec230, also called from opu_et_init); only caller opu_et_init as on the Switch
 0x007fdc80 function opu_debug_reload          # g_MagicImports slot 717 (130 overlays), after opu_main_host: with the debug flag 0x02322790, per bit of 0x02321580 frees/reloads the debug oef2 objects (0x023215c0..0x023215dc) through op_et_encount_effect_free, 0x007e5c10, op_oef2_set2, 0x007e3b70; hidden from the dump
 0x007fde30 function opu_unit_free_by_id       # fh v3:exact 0x007fdd50
 0x007fdf70 function opu_unit_free_by_oef2     # fh v3:exact 0x007fde90
@@ -4894,7 +4895,7 @@
 0x00801030 function opus_get_weapon_index_by_no # (no) -> the first i with g_OpusWeaponNos[i] == no, else -1
 0x00801060 function opus_no_get                  # structure: (oef2, unit, no) -> the 0x100-byte unit with number no (+0x1a) and the same group (+0x1e), searched in two index lists (+0x14, +0x10), 0xffff/0xff00 special cases, calls is_ptr32_null; Switch opus_no_get (0x71003f4ff0, calls is_ptr32_null) sorts between opus_get_weapon_index_by_no and opus_osu_init, as here; 47 callers
 0x00801200 function opus_osu_init             # fh v3:exact 0x00801120
-0x00801480 function opus_osu_init_group          # structure: (battle i, n): zeroes n entries of g_OpusBattle[i]'s +0x20 table; the one Switch name of that file between opus_osu_init and opus_prog_off (opus_osu_init_group, 0x71003f4160)
+0x00801480 function opus_osu_init_group          # (battle i, n): zeroes the first 16 bytes of n 0x100-byte units of g_OpusBattle[i]'s +0x20 table; its only caller 0x007fda80 calls opus_osu_init_group, opus_osu_init, set_ptr32, opus_get_eff_status_index, the callees of the Switch's opu_init, which calls opus_osu_init_group (0x71003f4160); sorts between opus_osu_init and opus_prog_off; the vfx porter's opus_parts_clear
 0x008014c0 function opus_prog_off             # fh v3:exact 0x008013e0
 0x00801700 function opus_prog_on              # fh v3:exact 0x00801620
 0x00802080 function op_float_scale2           # the op_float_scale body again
@@ -6884,7 +6885,7 @@
 0x00890ee0 function TOBtlCloseSignWindow      # fh v3:bsim1.00 0x00890e50
 0x00890ef0 function TOBtlCloseSimpleHelpMes   # fh v3:bsim1.00+call.cs 0x00890e60 cdecl
 0x00890f10 function TOBwakkStop               # g_MagicImports slot 649 (10 overlays): TOSeqStopScene(2, "bwakk"), 0x008e89d0(), byte 0x0133c93f = 0; hidden from the dump
-0x00890f30 function QuickConfigMenuCtrl          # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008ba858 QuickConfigMenuCtrl, 2 votes, round 1
+0x00890f30 function TOBtlCtrlActiveChrCursor     # (): advances the battle window's cursor angle 0x0133fa7c by 6 degrees (0.10471976) and wraps it past pi; only caller TOControlBtlWindow; Switch TOBtlCtrlActiveChrCursor (56 bytes, no callees) is the name sorting between TOBtlCloseSimpleHelpMes and TOBtlCtrlAuronLimitWindow here; was QuickConfigMenuCtrl (cg 2 votes; the Switch's is a 1880-byte touch menu); the system porter's TOBtlAdvanceAngle_00890f30
 0x00890f70 function TOBtlCtrlAuronLimitWindow # fh v3:exact 0x00890ee0
 0x00891140 function TOBtlCtrlChrNum           # fh v3:bsim1.00 0x008910b0
 0x00891220 function TOBtlCtrlEnemyLimit       # fh v3:exact 0x00891190
@@ -7833,7 +7834,7 @@
 0x00904650 function TOInitAddPkt              # fh v3:bsim1.00 0x00904650
 0x009046d0 function TOSetEnvCursor            # fh v3:bsim1.00 0x009046d0
 0x009047c0 function TOSetPktBuffAdrs          # fh v3:exact 0x009047c0
-0x009047f0 function TOSetPolyG4A_RGBA            # layout: alphabetical run between TOSetPktBuffAdrs and TOSetPolyG4A_XYWH (2 unnamed in the gap); Switch 0x7100509540 TOSetPolyG4A_RGBA is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x009047f0 function TOSetPolyG4A_RGBA            # (poly, i, r, g, b, a): colour of vertex i (< 4) at +0x10/+0x14/+0x18/+0x1c, or of all four; callers TOBtlDrawInfoWinBack and 0x0089b860 as on the Switch (TOSetPolyG4A_RGBA 0x7100509540, called by TOBtlDrawInfoWinBack, TOMakePktTargetStatusBack); sorts before TOSetPolyG4A_XY4/XYWH; the system porter's TOSetQuadRGBA_009047f0
 0x00904860 function TOSetPolyG4A_XY4             # layout: alphabetical run between TOSetPktBuffAdrs and TOSetPolyG4A_XYWH (2 unnamed in the gap); Switch 0x7100509510 TOSetPolyG4A_XY4 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x009048a0 function TOSetPolyG4A_XYWH         # fh switch:bsim1.00 0x71005094e0
 0x009048e0 function TOSetRegFont1612          # fh v3:bsim1.00 0x009048e0

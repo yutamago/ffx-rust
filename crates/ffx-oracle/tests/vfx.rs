@@ -5262,8 +5262,8 @@ fn round7_small_functions_match_the_original() {
             });
             p.fill(a, 0x40, &mut rng);
             let pos = rng.next();
-            p.check("op_oef2_clut_pos_set", 0x007e_45e0, &[a, pos], |m| {
-                Some(o::op_oef2_clut_pos_set(m, a, pos))
+            p.check("op_oef2_clut_change_monster", 0x007e_45e0, &[a, pos], |m| {
+                Some(o::op_oef2_clut_change_monster(m, a, pos))
             });
             p.check("op_oef2_tex_pos_set", 0x007e_4ff0, &[a + 0x10, pos], |m| {
                 Some(o::op_oef2_tex_pos_set(m, a + 0x10, pos))
@@ -5285,8 +5285,8 @@ fn round7_small_functions_match_the_original() {
             }
             p.set(b + 0x20, nodes);
             let (i, n) = (rng.below(4) | (rng.below(2) << 16), rng.below(0x10));
-            p.check("opus_parts_clear", 0x0080_1480, &[i, n], |m| {
-                opus::bridge::opus_parts_clear(m, i, n);
+            p.check("opus_osu_init_group", 0x0080_1480, &[i, n], |m| {
+                opus::bridge::opus_osu_init_group(m, i, n);
                 None
             });
             // chains of nodes: left at +0, right at +8, nil byte +0xd

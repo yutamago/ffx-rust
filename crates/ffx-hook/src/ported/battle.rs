@@ -1822,8 +1822,8 @@ ported! {
     MsGetChrCommandFlag @ 0x0079_ad30 => extern "C" fn ms_get_chr_command_flag(chr: u32, id: u32) -> u32 {
         ffx_battle::ability::bridge::ms_get_chr_command_flag(&mem(), chr, id)
     }
-    /// `MsSetChrCommandFlag(chr, id, on)`.
-    MsSetChrCommandFlag @ 0x0079_c070 => extern "C" fn ms_set_chr_command_flag(chr: u32, id: u32, on: u32) {
+    /// `MsSetRamChrCommand(chr, id, on)`.
+    MsSetRamChrCommand @ 0x0079_c070 => extern "C" fn ms_set_chr_command_flag(chr: u32, id: u32, on: u32) {
         ffx_battle::ability::bridge::ms_set_chr_command_flag(&mut mem(), chr, id, on);
     }
     /// `MsSortCommandList(list, keys, n)`.
@@ -1878,8 +1878,8 @@ ported! {
     msGetChrPos @ 0x0079_6ea0 => extern "C" fn ms_get_chr_pos_of(actor: u32, vec: u32) {
         pos::ms_get_chr_pos_of(&mut mem(), &crt_trig, actor, vec);
     }
-    /// `msGetChrPosNoChr(actor, vec)`.
-    msGetChrPosNoChr @ 0x0079_5ac0 => extern "C" fn ms_get_chr_pos_no_chr(actor: u32, vec: u32) {
+    /// `MsGetTransChrPos(actor, vec)`.
+    MsGetTransChrPos @ 0x0079_5ac0 => extern "C" fn ms_get_chr_pos_no_chr(actor: u32, vec: u32) {
         pos::ms_get_chr_pos_no_chr(&mut mem(), &crt_trig, actor, vec);
     }
     /// `MsCheckBtlPos(i, actor, flat)`.

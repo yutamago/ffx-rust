@@ -114,7 +114,7 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, mem2: u3
     );
     let on = rng.below(2);
     twin(
-        "MsSetChrCommandFlag",
+        "MsSetRamChrCommand",
         a,
         b,
         0x0079_c070,
@@ -125,7 +125,7 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, mem2: u3
             0
         },
     );
-    same("MsSetChrCommandFlag", a, b);
+    same("MsSetRamChrCommand", a, b);
     let n = rng.range(-1, 0x21);
     let list = mem2 + 2 * rng.below(0x100);
     twin(
