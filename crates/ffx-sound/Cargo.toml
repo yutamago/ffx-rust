@@ -8,6 +8,10 @@ rust-version.workspace = true
 
 [dependencies]
 ffx-bridge.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+ffx-vbf.workspace = true
 
 [lints]
 workspace = true

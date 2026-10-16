@@ -554,6 +554,7 @@ dependencies = [
  "ffx-motion",
  "ffx-phyre",
  "ffx-script",
+ "ffx-sound",
  "ffx-text",
  "ffx-vbf",
  "rayon",
@@ -791,6 +792,8 @@ name = "ffx-sound"
 version = "0.1.0"
 dependencies = [
  "ffx-bridge",
+ "ffx-vbf",
+ "thiserror",
 ]
 
 [[package]]

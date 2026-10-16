@@ -55,6 +55,78 @@ enum Command {
     /// Export and import motion groups (`*.mgrp`) as JSON.
     #[command(subcommand)]
     Motion(MotionCommand),
+    /// List sound banks (`*.fsb`) and export their samples as WAV.
+    #[command(subcommand)]
+    Sound(SoundCommand),
+}
+
+#[derive(Subcommand)]
+enum SoundCommand {
+    /// List a bank's samples: name, rate, channels, frames, seconds, loop.
+    List {
+        #[command(flatten)]
+        game: GameArgs,
+        /// Archive path, e.g. `ffx_data/gamedata/ps3data/sound_pc/sfx/us/0201_bank00.fsb`.
+        path: String,
+    },
+    /// Write samples as WAV files (all, or those named).
+    Wav {
+        #[command(flatten)]
+        game: GameArgs,
+        /// Archive path of the bank.
+        path: String,
+        /// Output folder.
+        #[arg(short, long)]
+        out: PathBuf,
+        /// Sample names (default: all).
+        names: Vec<String>,
+    },
+}
+
+fn sound(cmd: SoundCommand) -> Result<()> {
+    match cmd {
+        SoundCommand::List { game, path } => {
+            let game = Game::open(&game)?;
+            let bytes = read_file(&game.archive, &path)?;
+            let bank = ffx_sound::fsb::Bank::parse(&bytes).with_context(|| path.clone())?;
+            println!("name\trate\tchannels\tframes\tseconds\tloop");
+            for s in &bank.samples {
+                let looped = s
+                    .looped
+                    .map_or_else(|| "-".into(), |(a, b)| format!("{a}-{b}"));
+                println!(
+                    "{}\t{}\t{}\t{}\t{:.2}\t{looped}",
+                    s.name,
+                    s.rate,
+                    s.channels,
+                    s.frames,
+                    f64::from(s.frames) / f64::from(s.rate)
+                );
+            }
+        }
+        SoundCommand::Wav {
+            game,
+            path,
+            out,
+            names,
+        } => {
+            let game = Game::open(&game)?;
+            let bytes = read_file(&game.archive, &path)?;
+            let bank = ffx_sound::fsb::Bank::parse(&bytes).with_context(|| path.clone())?;
+            std::fs::create_dir_all(&out)?;
+            for s in bank
+                .samples
+                .iter()
+                .filter(|s| names.is_empty() || names.contains(&s.name))
+            {
+                let pcm = ffx_sound::ima::decode(&bytes[s.data.clone()], s.channels, s.frames);
+                let file = out.join(format!("{}.wav", s.name));
+                std::fs::write(&file, ffx_sound::wav(&pcm, s.channels, s.rate))?;
+                println!("{}", file.display());
+            }
+        }
+    }
+    Ok(())
 }
 
 #[derive(Subcommand)]
@@ -1127,6 +1199,7 @@ fn run(cli: Cli) -> Result<()> {
         Command::Model(cmd) => model(cmd),
         Command::Phyre(cmd) => phyre(cmd),
         Command::Motion(cmd) => motion(cmd),
+        Command::Sound(cmd) => sound(cmd),
     }
 }
 
