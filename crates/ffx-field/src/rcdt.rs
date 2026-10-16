@@ -40,6 +40,12 @@ pub const fn default_separator(c: u8) -> bool {
 /// The parser where the game keeps it, through [`ffx_bridge::Mem`].
 /// MSVCR110's `atoi` import slot (`0x00b0c40c`).
 pub const CRT_ATOI: u32 = 0x00b0_c40c;
+/// MSVCR110's `atof` import slot (`0x00b0c408`).
+pub const CRT_ATOF: u32 = 0x00b0_c408;
+/// MSVCR110's `strncpy` import slot (`0x00b0c368`).
+pub const CRT_STRNCPY: u32 = 0x00b0_c368;
+/// `_strnicmp`'s import thunk (`0x0094993c`).
+pub const CRT_STRNICMP: u32 = 0x0094_993c;
 
 pub mod bridge {
     use ffx_bridge::Mem;
@@ -353,6 +359,112 @@ pub mod bridge {
         let v = call(mem, atoi, &[at]);
         rcdt_parse_next_token(mem, p);
         v
+    }
+
+    /// `rcdtParseAdvanceLine(parse)` (`0x0092b9b0`): past the line
+    /// ([`rcdt_parse_skip_line`]) and the separators after it.
+    pub fn rcdt_parse_advance_line(mem: &mut impl Mem, p: u32) {
+        rcdt_parse_skip_line(mem, p);
+        let at = rcdt_parse_skip_separators(mem, p);
+        mem.write(p + 4, at);
+    }
+
+    /// `rcdtParseGetKeyword(parse, table)` (`0x0092be40`): the index of the
+    /// token in the null-ended table of strings (same length, `_strnicmp`
+    /// through its import thunk `0x0094993c`), else -1; then the next
+    /// token. Without a token (a separator skipped first): -1, the cursor
+    /// left there.
+    pub fn rcdt_parse_get_keyword<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        p: u32,
+        table: u32,
+        call: &mut C,
+    ) -> u32 {
+        let c = mem.read::<u8>(mem.read::<u32>(p + 4));
+        if mem.read::<u8>(p.wrapping_add(0xc).wrapping_add(u32::from(c))) != 0 {
+            let at = rcdt_parse_skip_separators(mem, p);
+            mem.write(p + 4, at);
+        }
+        let n = rcdt_parse_token_len(mem, p);
+        if n.cast_signed() < 1 {
+            return u32::MAX;
+        }
+        let strnicmp = mem.rebase(super::CRT_STRNICMP);
+        let mut i = 0u32;
+        let found = loop {
+            let s = mem.read::<u32>(table.wrapping_add(4 * i));
+            if s == 0 {
+                break u32::MAX;
+            }
+            let mut len = 0u32;
+            while mem.read::<u8>(s.wrapping_add(len)) != 0 {
+                len += 1;
+            }
+            if len == n {
+                let cur = mem.read::<u32>(p + 4);
+                if call(mem, strnicmp, &[cur, s, n]) == 0 {
+                    break i;
+                }
+            }
+            i += 1;
+        };
+        rcdt_parse_next_token(mem, p);
+        found
+    }
+
+    /// `rcdtParseGetFloat(parse)` (`0x0092bbb0`): binary mode: the float at
+    /// the cursor, which moves past it; text mode: the token through the
+    /// CRT's `atof` (import slot `0x00b0c408`, a double in `ST0`, through
+    /// `fcall`) rounded to `f32`, then the next token.
+    pub fn rcdt_parse_get_float<M: Mem>(
+        mem: &mut M,
+        p: u32,
+        fcall: &mut impl FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    ) -> f32 {
+        if mem.read::<u32>(p + parse::MODE) == 0 {
+            let v = crate::x87::copy(mem.read::<u32>(mem.read::<u32>(p + parse::CURSOR)));
+            rcdt_parse_advance(mem, p, 4);
+            return f32::from_bits(v);
+        }
+        let atof = mem.read::<u32>(mem.rebase(super::CRT_ATOF));
+        let at = mem.read::<u32>(p + parse::CURSOR);
+        let v =
+            ffx_bridge::x87::Reg::constant(fcall(mem, atof, crate::camera::FArgs::Stack(&[at])))
+                .store();
+        rcdt_parse_next_token(mem, p);
+        v
+    }
+
+    /// `rcdtParseGetText(parse, out)` (`0x0092bdd0`): in text mode the
+    /// token copied to `out` (the CRT's `strncpy`, import slot
+    /// `0x00b0c368`) and ended, then the next token; returns its length (0
+    /// in binary mode, nothing copied).
+    pub fn rcdt_parse_get_text<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        p: u32,
+        out: u32,
+        call: &mut C,
+    ) -> u32 {
+        let n = rcdt_parse_token_len_text(mem, p);
+        if n.cast_signed() > 0 {
+            let strncpy = mem.read::<u32>(mem.rebase(super::CRT_STRNCPY));
+            let cur = mem.read::<u32>(p + 4);
+            call(mem, strncpy, &[out, cur, n]);
+            mem.write(out.wrapping_add(n), 0u8);
+            rcdt_parse_next_token(mem, p);
+        }
+        n
+    }
+
+    /// `rcdtTm2Delete(tm2)` (`0x00923450`): [`rcdt_tm2_fini`], then the
+    /// holder freed (`rcFree`, a tail call).
+    pub fn rcdt_tm2_delete<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        t: u32,
+        call: &mut C,
+    ) -> u32 {
+        rcdt_tm2_fini(mem, t, call);
+        crate::model::bridge::rc_free(mem, call, t)
     }
 }
 

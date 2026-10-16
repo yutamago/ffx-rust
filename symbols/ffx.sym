@@ -7967,6 +7967,7 @@
 0x00907cc0 function yiWindowGrowInit         # (window): progress +6 = 0, drawn (x0, y0, x0, y1) (kind 0 slot +0x60; table g_YiWindowHandlers)
 0x00907cf0 function yiWindowGrowOpen         # (window): progress += 0x2aa (<= 0x1000), drawn x1 from it; at x1: state 2, handler 0x00907d70 (kind 0)
 0x00907d80 function yiWindowSetHandlers       # (window): +0x60..+0x70, +0x78 = the six handlers of kind +4 (i16) from the table 0x00c5d788 (6 words a kind)
+0x00907e70 function yiGetMapName              # (out): sprintf "%s" of the current map's name (table 0x025d5888, count 0x01934ec8)
 0x00907f00 function yiMapGetSection              # (map, index) -> map + section offset (+0x10 + 4 index) for data tagged MAP1, else 0; loadPhyreFieldMap, yiMapReadMaster, yiObjReadCallback, yiSetIDPage, yiSetPreBgPage
 0x00907f50 function initEventList             # fh v3:exact 0x00907f50
 0x00908000 function loadPhyreFieldMap         # fh v3:exact 0x00908000
@@ -8004,6 +8005,7 @@
 0x00908bb0 function yiGetFogParam             # fh v3:exact 0x00908bb0
 0x00908c30 function yiSetColorShift           # fh switch:bsim1.00 0x710052b7b0
 0x00908c50 function yiGetDObjGroup               # (index) -> u16 group of display object index (g_YiDObjs +0x74), -1 when index >= g_YiDObjCount
+0x00908d00 function yiSetLightMatrices        # (): Sg_LightGetDir x3 normalised, Sg_LightGetColor x4, normal light 0x018deeb8, light colour 0x018deef8; yiDisp
 0x00908dd0 function yiGetMapStatus            # fh v3:exact 0x00908dd0
 0x00908df0 function yiGetMatrixDObj           # fh v3:bsim1.00 0x00908df0
 0x00908e30 function yiGetMatrixGroup          # fh v3:exact 0x00908e30
@@ -8035,6 +8037,7 @@
 0x00909ff0 function yiSetColorOffset             # (rgba ints): g_YiColorOffset = channel - 128 as floats (fild); in g_MagicImports
 0x0090a040 function yiSetBackColor            # fh v3:exact 0x0090a040
 0x0090a0e0 function yiSetBattleCenter         # fh switch:bsim1.00 0x710052c5b0
+0x0090a140 function yiSetBattleView           # (view): unless status 0x800: view x g_YiViewAdjust to 0x018ded78/0x018dedb8/0x018dedf8, MsCameraGetScrDpt to 0x018df160; Sg_MainLoop
 0x0090a1d0 function yiSetFieldVec4i              # (a, b, c, d): four ints as floats to g_YiFieldVec4
 0x0090a200 function yiSetFieldVec4               # (a, b, c, d): four floats to g_YiFieldVec4; script native 0x0091c600; ?meaning
 0x0090a230 function yiSetFieldVec6               # (a..f): six floats to 0x01931218; script native 0x0091c6b0; ?meaning
@@ -8047,6 +8050,7 @@
 0x0090a520 function yiSetMatrixDObj              # (index, m) -> 0/-1: m into display object index's matrix (counterpart of yiGetMatrixDObj)
 0x0090a560 function yiSetMatrixGroup             # (group, m) -> 0/-1: m into the first object of the group (counterpart of yiGetMatrixGroup)
 0x0090a5c0 function yiSetColorDObj               # (index, a, b) -> 0/-1: the low bytes of a's and b's four words into the object's colours (+0x90..+0x97)
+0x0090a640 function yiSetViewMatrices         # (m, view): m to g_YiViewMatrix (+0x20/+0x24 to 0x018df168), view as yiSetBattleView
 0x0090a6f0 function yiSetPreBgPage            # fh v3:exact 0x0090a6f0
 0x0090a730 function yiSetViewAdjust              # (m): g_YiViewAdjust = m
 0x0090a750 function yiSetRotTransDObj         # fh v3:exact 0x0090a750
@@ -8124,6 +8128,7 @@
 0x009175f0 function yiImageRman_entry            # str-match switch: only user of 1 string(s) held once by both builds, e.g. "GSmem overflow.(%dx%d)\\n'%s'"; Switch 0x710053c930 yiImageRman_entry (symbols from Fahrenheit's server export)
 0x009178e0 function yiImageRman_foecrentry       # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'GSmem overflow.'; Switch 0x710053d0c0 yiImageRman_foecrentry (symbols from Fahrenheit's server export)
 0x00917b70 function yiImageRman_serch         # fh switch:bsim0.92 0x710053ccf0
+0x00917d80 function yiImageVramAlloc          # (img): GS memory by format +0xc (yiVramAllocPsm), 0x13 -> 0x1b and 0x14 -> 0x2c below page 0x2e00, 0x14 page cache 0x025d17a4; yiImageRman_entry
 0x00918090 function yiVramAllocPsm               # (bytes, psm) -> address >> 6 or -1: as yiVramAlloc from regions 0, 1 (0x025d17bc/ac, 17b8/a8); PSMT8 (0x13) / PSMT4 (0x14) 4x / 8x the size from regions 2, 3 (17c0/b0, 17c4/b4)
 0x00918130 function yiVramAlloc                  # (bytes) -> g_YiVramNext >> 6 and moves it on by bytes rounded to 64, or -1 past g_YiVramLimit
 0x009188c0 function yiImage_init              # fh switch:bsim0.97 0x710053c8e0
@@ -8138,6 +8143,7 @@
 0x00919a60 function Yn_MapSystemFini          # (): rcbgFini when g_YnMapSystem is set (a guard jumping into it; returns the caller's eax without one); yiResetObj
 0x00919ba0 function Yn_FpTrxTexGet            # fh switch:bsim1.00 0x7100548ce0
 0x00919bc0 function Yn_EmbeddedTrxGetCnt      # (obj): jumps to rcbgEmbeddedTrxGetCnt; called from 0x0073b5c0 and three more
+0x00919be0 function Yn_FpTrxTexSetAddr        # (tex, image, clut): rcbgTrxTexSetAddr; pppDrawMdl* callers
 0x00919c00 function Yn_GuideMapClearFlags        # (bits): rcbgGuideClearFlags on g_YnMapSystem's guide, if any
 0x00919c30 function Yn_GuideMapSetFlags          # (bits): rcbgGuideSetFlags on g_YnMapSystem's guide, if any
 0x00919c60 function Yn_GuideMapEnd            # fh v3:bsim1.00 0x00919c60
@@ -8193,6 +8199,7 @@
 0x0091ac80 function Yn_MapPartSetSize            # (part, w, h): +4, +8; native 0x8019 (0x0091b360)
 0x0091acc0 function Yn_MapPartSet14              # (part, v): float +0x14; native 0x8014 (0x0091b280)
 0x0091ad10 function Yn_PreBgSetScrBank        # fh switch:bsim1.00 0x7100548410
+0x0091ad40 function Yn_PreBgSetScrOffset      # (x, y): the current scene's +0xb8/+0xbc, rcbgSceneSetMatrix
 0x0091ad80 function Yn_SceneSetC0                # (a, float b, c, d, e): scene +0xc0..+0xd0, +0xd4 = 0.0, +0xd8 = 0; script native 0x0091b550
 0x0091adf0 function Yn_SeaGetAngPtr           # () -> the sea's angle vector, 0 without a sea
 0x0091ae00 function Yn_SeaGetMatrix           # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
@@ -8320,6 +8327,7 @@
 0x0091fef0 function rcbgPSimSetInitCnt        # fh switch:bsim1.00 0x7100546570
 0x0091ff10 function rcbgPSimSetPos            # fh v3:exact 0x0091ff10
 0x0091ffb0 function rcbgPSimSetReady          # fh switch:bsim0.98 0x7100546520
+0x0091ffd0 function rcbgScaleMatrix100        # (m): three rows times 100.0 (rcbgScaleVector)
 0x00920020 function rcCalcPersMatrix          # fh switch:bsim1.00 0x7100541240
 0x00920050 function rcbgTexGetLog2Size           # (w, h, &lw, &lh, &tbw): rcLog2Ceil of each; tbw = ceil(w / 64) rounded up to even; outputs optional; rcbgLayerDraw, rcbgSceneChkSortLayer
 0x009200a0 function rcbgScaleVector           # (dst, v, s): v through vf31, x y z times s (VFX_ScaleVec3), out to dst; rcbgSetViewMatrix scales eye/at by the scene's +0xf4
@@ -8332,6 +8340,7 @@
 0x00920540 function rcbgSceneAddObject        # fh v3:exact 0x00920540
 0x00920650 function rcbgSceneWaveDCStop          # (scene): +0xac = 0.0, +0xdc = 0: ends the wave Yn_SceneSetDC starts (its update 0x00920580 calls it when +0xf0 reaches +0xe4)
 0x00920670 function rcbgSceneDelObject        # (scene, obj): the object's delete function, the table shifted and shrunk (rcRealloc rcbgScene.c 0xba)
+0x009206f0 function rcbgSceneDelObjects       # (scene, kind): rcbgSceneDelObject of the first of kind until none
 0x00920740 function rcbgSceneDraw             # fh v3:exact 0x00920740
 0x00920830 function rcbgSceneDrawLayer        # fh switch:bsim1.00 0x7100547250
 0x00920870 function rcbgSceneFini             # fh v3:exact 0x00920870
@@ -8360,6 +8369,7 @@
 0x009218c0 function rcbgPreAddObject          # (obj): rcbgSceneAddObject to the map's current scene (+8), rcbgPreDummyInit without a map (rcbgLoadBin YNTT/YNFT)
 0x00921910 function Yn_BattleCaptureNum          # (): while g_YnMapSystem +0xc is 0 takes a non-zero MsBattleGetNum and clears +8; 0x0091a8c0
 0x00921940 function rcbgChkId                 # fh v3:exact 0x00921940
+0x009219e0 function rcbgDelObjects            # (kind): rcbgSceneDelObjects on the current scene
 0x00921a50 function rcbgPreAddFp              # (map): rcbgFPm097New (0x61), rcbgFPm173New (0xad), rcbgFPm565New (0x235/0x236) to rcbgPreAddObject
 0x00921aa0 function rcbgFini                  # fh v3:exact 0x00921aa0
 0x00921b90 function rcbgChunkTag                 # (i) -> 0x00c5e480[i]: the Yn data chunk tag strings YNDT YNPR YNSC YNTX YNTM YNSM YNST YNSP YNTT YNSE YNFT YNGM YNED
@@ -8369,6 +8379,7 @@
 0x00921c60 function Yn_SceneFindObject        # (kind, n): rcbgSceneGetObject in the current scene, then in each of the map's; Yn_FpTrxTexGet
 0x00921ce0 function rcbgInit                  # fh v3:exact 0x00921ce0
 0x00921d60 function rcbgLoadBin               # (data): an RCBG background (YNDT, then YNPR map, YNSC scenes, YNSM models, YNST transfers, YNTT/YNFT texture transfers, YNGM a scene's guide model, YNED end); parse on the stack (Yn_PreBgSetData)
+0x00922010 function rcbgPreAddFpObjects       # (): rcbgPreDummyInit without a map, MsDebugDrawBoard in debug, rcbgPreAddFp(rcbgPreGetMapNo()), system +0x8 = 1
 0x009220c0 function rcbgFpTrxTexNew           # fh v3:exact 0x009220c0
 0x009220e0 function rcbgTrxTexDelete          # fh v3:bsim1.00 0x009220e0
 0x00922100 function rcbgTrxTexDraw            # fh v3:bsim1.00 0x00922100
@@ -8377,6 +8388,9 @@
 0x00922160 function rcbgTrxTexInit            # (tex): kind 0x20003, rcbgTrxTexDelete, rcbgTrxTexDraw, +0x14 -1, two transfers +0x20/+0x60 (rcbgTrxTexNew)
 0x009221b0 function rcbgTrxTexNew             # fh v3:bsim1.00 0x009221b0
 0x00922210 function rcbgTrxTexSetAddr         # (tex, image, clut): GS addresses at +0x18/+0x1c, rcbgTrxSetRegs for the image (+0x20, psm 0x13) and CLUT (+0x60, 16x16)
+0x00922290 function rcbgFPmGetMatrix          # (fp, out): rotation +0x18 (x 0x00b678ec), identity scaled by +0x28, op_rt_m_yxz with +0x8
+0x00922300 function rcbgFPmRestart            # (id, chr, elem): pppFpGetMngPtr, flag 0x100, Fp_Restart, Ch_ElemGetMatrix into mng + 0xc; rcbgFPm173Proc*
+0x00922350 function rcbgFPmGetElemMatrix      # (out, chr, elem): Ch_ElemGetMatrix, three rows times 10.0
 0x009224b0 function rcbgScaleVector_009224b0  # the same code as rcbgScaleVector 0x009200a0
 0x00922510 function rcCopyQword_00922510      # (dst, src): as rcCopyQword_0091cb40
 0x00922560 function rcbgFPm097Init            # fh switch:bsim1.00 0x71005524e0
@@ -8394,8 +8408,10 @@
 0x00922f50 function rcbgFPm565Init               # (part) -> part: type 0x20008, functions 0x00922f30, 0x00922fb0; maps 0x235, 0x236 (0x00921a50)
 0x00922f80 function rcbgFPm565New             # (): rcAlloc 0x10 (rcbgFP.c), rcbgFPm565Init
 0x00923100 function rcbgFpGetWork             # fh v3:exact 0x00923100
+0x00923190 function rcbgFPmGetPartData        # (id, n, part, k): pppFpGetMngPtr data, +0x30 chain n times, +8 table, part (0x10 from +0x28), +0xc offsets[k] + 0xa0 + node; 0 when missing
 0x00923240 function rcdtTm2ClutAlphaToPs2        # (clut): 256 RGBA entries, alpha a -> a * 128 / 255, alpha 0 -> entry 0; rcdtTm2 load (0x009232a0) when asked
 0x00923280 function rcdtTm2GetPsm                # (picture header) -> GS PSM of its image type (+0x13) from 0x00c5e754 (1 CT16, 2 CT24, 3 CT32, 4 T4, 5 T8), 0 for 0
+0x00923450 function rcdtTm2Delete             # (tm2): rcdtTm2Fini + rcFree; rcbgSceneLoadTexture*
 0x00923470 function rcdtTm2Fini               # fh switch:bsim0.91 0x710054b060
 0x009237e0 function rcdtTm2Init               # fh switch:bsim1.00 0x710054aff0
 0x00923800 function rcdtTm2Load               # fh switch:bsim1.00 0x710054b0c0
@@ -8405,6 +8421,7 @@
 0x00923bc0 function rcdtRsdLoad_LoadMatRsd       # str: its error message names it: "rcdtRsdLoad::LoadMatRsd : File not found."
 0x00923ed0 function rcdtRsdLoad_LoadMatRsd2      # str: its error message names it: "rcdtRsdLoad::LoadMatRsd2 : File not found."
 0x00924090 function rcdtRsdLoad_LoadPly          # str: its error message names it: "rcdtRsdLoad::LoadPly : File not found."
+0x009242d0 function rcdtListsDelete           # (l): rcdtListsFini + rcFree; rcbgModelCreateFromFile
 0x009242f0 function rcdtListsFini             # (l): rcFree +0x4, +0xc, +0x14, the +0x18 entries of +0x1c and the table
 0x00924390 function rcdtRsd2Init                 # (rsd): 8 words cleared (rcdtRsd2.c, 0x00924750)
 0x00924750 function rcdtRsd2New               # (): rcAlloc 0x20 (rcdtRsd2.c), rcdtRsd2Init
@@ -8419,6 +8436,7 @@
 0x00924be0 function rcefTargetSetDelay           # (u16): 0x025d5ea2, the delay 0x009248c0 gives a reached target
 0x00924f30 function rcbgChrHandleIndex           # (handle) -> battle slot 0..14 or 20..27 whose MsGetChrHandle is handle, else -1; 0x00935340
 0x00924f90 function rcCopyQword_00924f90      # (dst, src): as rcCopyQword_0091cb40
+0x00925020 function rcefGetVf00               # (dst): vf00 (0x00c0a004) to dst
 0x00925040 function rcbgScaleVector4_00925040 # the same code as rcbgScaleVector4_0091cb70
 0x009250a0 function rcCopyQword_009250a0      # (dst, src): as rcCopyQword_0091cb40
 0x00925130 function rcefWorkCall_00924c70     # g_MagicImports slot 526 (1 overlay): 0x00924c70(0x025d5a20); hidden from the dump
@@ -8430,6 +8448,7 @@
 0x009254f0 function rcefMainSetEnv               # (main): *(0x00c3a4cc) = main +0x10 (the ppp memory environment of rcefMainInit); g_MagicImports
 0x00925510 function rcefMainSetEnv_00925510      # the same code; g_MagicImports
 0x00925530 function rcefWorkSwap              # (w): the quadwords at +0x1c4/+0x1d4 swapped, +0x1e8 = 0, +0x1f0 = 1; rcefWorkCall_00925530
+0x009255d0 function rcefWorkSetFromVf00       # (w, b, v): +0x1c0 = 1, vf00 to +0x1c4, b to +0x1d4, v at +0x1e4, +0x1e8/+0x1f4 = 0, +0x1f0 = 1
 0x00925630 function rcefWorkSet               # (w, a, b, v): +0x1c0 = 1, a/b to +0x1c4/+0x1d4, v at +0x1e4, +0x1e8 = 0, +0x1f0 = 1
 0x009256d0 function rcefMainSetPar            # fh v3:exact 0x009256d0
 0x00925710 function rcefSetStream             # (s) -> s: 0x025d5c14 = s, with s 0x025d5be0 = 3; entry of the table at 0x00c65500; ?meaning
@@ -8481,10 +8500,13 @@
 0x00928320 function rcbgModelInit             # (model): kind 0x20001, rcbgModelDelete, 0x009283e0, rcbgModelDraw; +0x20 cleared, bbox +0x90, matrices +0xc0/+0x100 identity (rcbgModelNew)
 0x009283b0 function rcbgModelNew              # fh v3:bsim1.00 0x009283b0
 0x00928460 function rcbgModelSetAlpha         # fh v3:exact 0x00928460
+0x009284d0 function rcbgModelSetTexReg        # (page): a GS register record (page << 17 | 0x1000f, reg 0x47) for rcbgSetReg; rcbgModelDraw
 0x00928540 function rcbgModelSetScale         # fh v3:exact 0x00928540
 0x00928600 function rcbgScaleVector_00928600  # the same code as rcbgScaleVector 0x009200a0
 0x00928660 function rcfxParticleAddForce      # (ps, force): inserted before the first force of greater priority (+0x18); rcRealloc rcfxParticle.c 0x61/0x6e; rcbgPSimAddDamp/AddWind
 0x00928800 function rcfxParticleFiniForces    # (ps): each force's delete (+0x4), then the table (+0x38) freed
+0x00928850 function rcfxParticleDelete        # (ps): rcfxParticleFini + rcFree
+0x00928870 function rcfxParticleFini          # (ps): rcFree +0x24..+0x30, rcfxParticleFiniForces
 0x009288e0 function rcfxParticleInit          # (fx): rcfxParticle.c defaults (+8 0.03 f64, +0x18 0.001, +0x20 0.1); 0x00928950 allocates 0x40 bytes for it
 0x00928950 function rcfxParticleNew           # (): rcAlloc 0x40 (rcfxParticle.c), rcfxParticleInit
 0x00928970 function rcfxParticleResetForce    # fh v3:exact 0x00928970
@@ -8493,6 +8515,7 @@
 0x00928a60 function rcfxParticleSetTime       # fh switch:bsim1.00 0x710054f8b0
 0x00928c80 function rcfxSpringFini            # fh switch:bsim0.91 0x710054fa80
 0x00928ce0 function rcfxSpringInit            # (s): kind 0x30005, functions 0x00928c60/0x00928d70/0x00928aa0, 0.8 and 0.4
+0x00928d50 function rcfxSpringNew             # (): rcAlloc(0x30, rcfxSpring.c 0x1d) + rcfxSpringInit
 0x00928d80 function rcfxSpringSetCnt          # (s, n): +0x1c = n, +0x20 (8 n) and +0x24 (4 n) reallocated (rcfxSpring.c 0x42/0x43)
 0x00928e50 function rcbgScaleVector_00928e50  # the same code as rcbgScaleVector 0x009200a0
 0x00928eb0 function rcCopyQword_00928eb0      # (dst, src): as rcCopyQword_0091cb40
@@ -8520,6 +8543,7 @@
 0x00929a10 function rcbgPalRotate             # (pal): the entry (+0x8) rotated by +0x6 into the last entry (rcbgTrxSetNo), stepped by the speed +0xb
 0x00929ab0 function rcbgPalSetNo              # fh v3:bsim1.00 0x00929ab0
 0x00929ac0 function rcbgPalShift              # (pal): as rcbgPalRotate, zeros shifted in
+0x00929b60 function rcbgPalProc               # (pal): bit 0 rcbgPalWhite, else mode +0xa: 1 rotate, 2 shift, else rcbgPalCopyToLast; rcbgLayerProc
 0x00929ba0 function rcbgPalWhite              # (pal): the entry with every colour white (alpha kept) into the last entry
 0x00929bf0 function rcbgLayerDraw             # fh switch:cg8 0x7100553a70
 0x0092ac90 function rcbgLayerFini             # (layer): rcbgTrxDelete of +0xa0 and +0xbc, rcbgLayerAnimeFini(+0x90), rcbgPalFini(+0xb0) (0x00929980, empty); rcbgSceneFini
@@ -8574,7 +8598,9 @@
 0x0092bd20 function rcdtParseSkipToken        # (parse): the cursor past non-separators
 0x0092bd60 function rcdtParseSkipSeparators   # (parse): the cursor past separators
 0x0092bda0 function rcdtParseGetPos              # (parse) -> parse +4, the cursor
+0x0092bdd0 function rcdtParseGetText          # (parse, out): text mode: strncpy of the token, ended, next token; returns its length
 0x0092be10 function rcdtParseTokenLenText     # (parse) -> rcdtParseTokenLen in mode 1 (+8), else 0
+0x0092be40 function rcdtParseGetKeyword       # (parse, table): index of the token in a null-ended string table (same length, _strnicmp), else -1; then the next token
 0x0092bf30 function rcdtParseTokenLen         # (parse) -> rcdtParseSkipToken - cursor
 0x0092bf50 function rcdtParseInit             # fh v3:exact 0x0092bf50
 0x0092bfb0 function rcdtParseIsEnd            # (parse) -> 1 once the cursor reaches the chunk end
@@ -8585,6 +8611,7 @@
 0x0092c0d0 function rcdtParseSetPos           # fh switch:cg2 0x71008bfbc8
 0x0092c0f0 function rcdtParseAddSeparators       # (parse, chars): parse +0xc[c] = 1 for every byte of the C string
 0x0092d230 function rcbgTrxDraw               # fh switch:cg3 0x71005557c0
+0x0092d320 function rcbgTrxSetRegsAlloc       # (t, a..g, n): rcbgTrxSetRegs + rcbgTrxAllocEntries(t, c, f, g, n); rcbgPalAlloc
 0x0092d360 function rcbgTrxSetRegs               # (t, a..g i16) -> g: +0x1c = ((c << 8 | b) << 16) | a, +0x24 = e << 16 | d, +0x28 = f, +0x2c = g | f >> 31, +0x18 = +0x20 = 0 (sign-extended); 0x0092d320 (rcbgPalAlloc)
 0x0092d3e0 function rcbgTrxAllocEntries       # (t, format, w, h, n): entry size (4wh+16 or wh+16), n entries rcAlloc'ed to +0x38 (rcbgTrx.c 0x72), +0x10 |= 1
 0x0092d450 function rcbgTrxDelete             # fh v3:bsim1.00 0x0092d450
@@ -8601,12 +8628,15 @@
 0x0092d690 function rcbgScaleVector_0092d690  # the same code as rcbgScaleVector 0x009200a0
 0x0092d6f0 function rcCopyQword_0092d6f0      # (dst, src): as rcCopyQword_0091cb40 (6 callers)
 0x0092d780 function rcbgScaleVector_0092d780  # the same code as rcbgScaleVector 0x009200a0
+0x0092d7e0 function rcefVecToField            # (v): scaled by the float at 0x00b67e24 (rcbgScaleVector_0092d690), then y - 1024
+0x0092d810 function rcefAngleWrap             # (a) -> float: into 0..2pi (double 0x00b39378): negative 2pi - fmod(-a, 2pi), past 2pi fmod(a, 2pi) (_CIfmod ST1, ST0)
 0x0092d860 function op_et_bindeff_draw_off_thunk # g_MagicImports slot 454 (1 overlay): jmp op_et_bindeff_draw_off; hidden from the dump
 0x0092d870 function op_et_bindeff_draw_on_thunk # g_MagicImports slot 455 (1 overlay): jmp op_et_bindeff_draw_on; hidden from the dump
 0x0092dd30 function rcefChgChrClut            # fh switch:cg2 0x7100557340
 0x0092de30 function rcefDirToAngle               # (float) -> 3pi/2 (double 0x00b67e18) - x, as f32; from 0x00924a20 (g_MagicImports)
 0x0092de50 function rcMat4fSetScale001           # (m) -> identity scaled by 0.01 (0x00b1f2b0); FFXVu0UnitMatrix's eax
 0x0092de80 function rcMat4fSetScale0001          # (m) -> identity scaled by 0.001 (0x00b368a4)
+0x0092ded0 function rcefAngleToDir            # (out, a): (-sin a, 0, -cos a, 0)
 0x0092df90 function rcefEffectEndMotion       # g_MagicImports slot 432 (39 overlays), before rcefEffectReady: MsEffectEndMotion(dword 0x025d5bb8, 0); hidden from the dump
 0x0092dfb0 function rcefEffectReady           # fh v3:exact 0x0092dfb0
 0x0092e1c0 function rcefGetChrHandle          # fh v3:exact 0x0092e1c0
@@ -8614,6 +8644,7 @@
 0x0092e240 function rcefGetChrMatrix          # fh v3:exact 0x0092e240
 0x0092e400 function rcAngleDiff                  # (float a, float b) -> |a - b| as f32, 2pi - it past pi (doubles 0x00b92288, 0x00b39378); g_MagicImports
 0x0092e620 function rcefIsBattle              # fh v3:bsim1.00 0x0092e620
+0x0092e630 function rcefScaleMatrix100        # (m): three rows times 100.0 (rcbgScaleVector_0092d690); rcefGetChrMatrix
 0x0092e680 function rcefPlaySE                # fh v3:exact 0x0092e680
 0x0092e6b0 function rcefPlayStream            # fh v3:exact 0x0092e6b0
 0x0092e770 function rcefWorkCall_00925530     # g_MagicImports slot 472 (9 overlays): 0x00925530(0x025d5a20); hidden from the dump
@@ -8624,6 +8655,7 @@
 0x0092e9a0 function rcefSetDamage             # fh v3:exact 0x0092e9a0
 0x0092eb10 function MsEffectSetMotion_thunk   # g_MagicImports slot 447 (28 overlays), between rcefSetDamage and rcefStreamCue: jmp MsEffectSetMotion; hidden from the dump
 0x0092ebf0 function rcefStreamCue             # fh v3:exact 0x0092ebf0
+0x0092ec20 function rcefVecToAngle            # (v) -> float: acos(-v.z) (_CIacos), 2pi minus it when v.x > 0
 0x0092ec60 function rcefStreamCue_0092ec60    # fh switch:bsim1.00 0x71005582b0
 0x0092ec90 function rcefTaskDestruct            # (task): calls task +0xb4 if set (rcefTaskKill)
 0x0092ecb0 function rcefTaskCallSeq           # fh v3:exact 0x0092ecb0
@@ -8636,6 +8668,7 @@
 0x0092ee40 function rcefTaskSetSeqCont           # (task, seq): rcefTaskSetSeq then flags |= 2 (run the new sequence this frame), as rcefTaskRetSeqCont does for a return; in g_MagicImports
 0x0092ee60 function rcefTaskWait              # fh v3:exact 0x0092ee60
 0x0092ee90 function rcefTaskWaitSeq           # fh v3:exact 0x0092ee90
+0x0092eec0 function rcefRunPart               # (env, part, arg): *g_pppEnvSlot = env, pppRunPart(part, arg); rcefParProc
 0x0092eee0 function rcefParCreate             # fh v3:exact 0x0092eee0
 0x0092efd0 function rcefParInit               # fh v3:exact 0x0092efd0
 0x0092f010 function rcefParProc               # fh v3:exact 0x0092f010
@@ -8691,6 +8724,7 @@
 0x00930d80 function Gui_YanagiInit            # fh v3:exact 0x00930d80
 0x00930db0 function RopeDebug                    # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'rope:%f,%f,%f'; Switch 0x710055ea10 RopeDebug (symbols from Fahrenheit's server export)
 0x00930e70 function RopeDebug2                   # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%d:%f,%f,%f'; Switch 0x710055eaf0 RopeDebug2 (symbols from Fahrenheit's server export)
+0x00930f30 function rcuiScaleVector           # (dst, v, s, a, b, c): inlined VFX_ScaleVec3 through vf31, s/a/b/c to 0x00c8f970
 0x00931050 function rcuiAlphaProc                # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Alpha Fix'; Switch 0x710055ba70 rcuiAlphaProc (symbols from Fahrenheit's server export)
 0x009313f0 function rcuiAnimeProc                # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Anime Data'; Switch 0x710055aff0 rcuiAnimeProc (symbols from Fahrenheit's server export)
 0x00931910 function rcuiCameraProc               # str-match switch: only user of 10 string(s) held once by both builds, e.g. 'Camera Pos.X'; Switch 0x7100559ab0 rcuiCameraProc (symbols from Fahrenheit's server export)
@@ -8702,11 +8736,14 @@
 0x00934af0 function rcuiClearSelect           # (): g_RcuiWork +0x28c mode 1 clears bit 0 of the selected layer's +0xb0, mode 2 bit 1 of every layer (0xc0 bytes each)
 0x00934b50 function rcuiSetSelect             # (): as rcuiClearSelect, setting the bits (mode 2: all but the selected layer +0x288)
 0x00935340 function rcuiMotionProc               # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'Motion Speed'; Switch 0x710055c730 rcuiMotionProc (symbols from Fahrenheit's server export)
+0x00935690 function rcuiMotionStep            # (d): the selected motion (work +0x8d8) moved d groups (ranges 0x00c60dc0, motions 0x00c60a78)
 0x009364a0 function rcuiPreMemWinOpen         # fh switch:bsim1.00 0x710055e6c0
+0x00936570 function rcuiReset                 # (): rcui work +0x5c/+0x288/+0x308/+0x30c = 0, yiRenderDisable(1) when bit 0 is on
 0x00937190 function rcuiVramWrite             # fh switch:cg2 0x710055dd50
 0x00937400 function rcefMemChk                   # str-match switch: only user of 1 string(s) held once by both builds, e.g. '---- rcefMemChk mcb:%p top:%p bottom:%p'; Switch 0x71005586f0 rcefMemChk (symbols from Fahrenheit's server export)
 0x00937440 function rcefMemDebugDisp          # fh switch:bsim1.00 0x7100558660
 0x009374f0 function rcefMemDebugInit             # str-match switch: only user of 1 string(s) held once by both builds, e.g. '---- rcefMemDebugInit Heap %p[%x] : Packet %p[%x]'; Switch 0x7100558620 rcefMemDebugInit (symbols from Fahrenheit's server export)
+0x00937610 function rcuiScaleVector_00937610  # the same code as rcuiScaleVector 0x00930f30; rcuiResetChrPos
 0x00937780 function rcuiAddItems                 # structure: (window, items): walks a 0-terminated item table, type 1 -> Gu_WindowAddButton, type 2 -> Gu_WindowAddStatic; callers are the rcui*Proc debug windows (rcuiAlphaProc, rcuiAnimeProc, rcuiCameraProc, rcuiLayerProc); Switch rcuiAddItems (148 bytes) is the rcui file's name sorting here
 0x00937940 function rcuiGetStageName          # fh switch:bsim1.00 0x7100563a00
 0x00937960 function rcuiGetStageName2            # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'host:/ffx/proj/map/btlmaster/info/btlmap.csv'; Switch 0x7100563a10 rcuiGetStageName2 (symbols from Fahrenheit's server export)
@@ -8714,17 +8751,22 @@
 0x00937b20 function rcuiMakeFullPath          # fh switch:bsim1.00 0x7100563880
 0x00937b70 function rcuiResetChrPos           # fh switch:cg2 0x7100563b40
 0x00937ef0 function rcuiWindowCreate          # fh v3:exact 0x00937ef0
+0x00937f50 function rcuiCloseWindow           # (&w): Gu_WindowCloseTree on an open window, handle cleared
+0x00937f70 function rcuiSetNumber             # (n): two decimal digits over the last two characters of the work's strings +0x174 and +0x27c; rcbgGuideMapSaveSub
 0x00938080 function rcbgGuideMapConvSub          # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'host:/ffx/proj/map/master/%c%c%c%c/%s/guid/rsd/guid%02d.rsd'; Switch 0x71005629f0 rcbgGuideMapConvSub (symbols from Fahrenheit's server export)
 0x009382e0 function rcuiVu0CopyVector            # (dst, src): through the VU0 register at 0x00c8f980, which keeps the copy
 0x00938350 function rcbgFpSaveSub                # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'host:/ffx/proj/map/f_particle/b%03d.fpd'; Switch 0x71005627c0 rcbgFpSaveSub (symbols from Fahrenheit's server export)
 0x00939040 function rcbgSaveBinNormal            # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Save(Bin.) Failed.'; Switch 0x7100561c10 rcbgSaveBinNormal (symbols from Fahrenheit's server export)
 0x009391d0 function rcbgGuideMapSaveSub          # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x7100562eb0 rcbgGuideMapSaveSub, 6 votes, round 1
 0x00939480 function rcbgSaveChkPackList          # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'host:%s'; Switch 0x71005616f0 rcbgSaveChkPackList (symbols from Fahrenheit's server export)
+0x009396a0 function rcuiGuideSaveSize         # (g): bytes of a guide map save (0x10, per map 0x30 + transfers + indices, 0x38)
 0x00939950 function rcbgTrxSave               # fh switch:bsim0.99 0x71005625c0
 0x00939b10 function rcbgSaveText                 # str-match switch: only user of 19 string(s) held once by both builds, e.g. 'Save(Text) Failed.'; Switch 0x7100563100 rcbgSaveText (symbols from Fahrenheit's server export)
 0x0093a280 function rcbgModelCreateFromFile   # fh switch:cg3 0x7100560ba0
 0x0093a800 function rcbgFpLoadTextSub            # str-match switch: only user of 2 string(s) held once by both builds, e.g. '/ffx/proj/map/btlmaster/%c%c%c%c/%s/3d/eff/'; Switch 0x71005610f0 rcbgFpLoadTextSub (symbols from Fahrenheit's server export)
 0x0093a910 function rcbgFpTrxTexLoadTextGetTrxCnt # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s%d_00.tm2'; Switch 0x7100561290 rcbgFpTrxTexLoadTextGetTrxCnt (symbols from Fahrenheit's server export)
+0x0093adf0 function rcbgPalLoadConfig         # (pal, parse): keywords (0x00c60e94) 0 mode byte +0xa, 1 speed byte +0xb, 2 stop
+0x0093aee0 function rcbgSceneLoadTextSubConfigKeys # (obj, parse): keywords (0x00c60e44) 0..2 the ints +0x5c/+0x60/+0x64, 3 stop; rcbgSceneLoadTextSubConfig
 0x0093b200 function rcbgSceneLoadTextModel       # str-match switch: only user of 2 string(s) held once by both builds, e.g. '%s/3d/mdl'; Switch 0x71005609d0 rcbgSceneLoadTextModel (symbols from Fahrenheit's server export)
 0x0093b3e0 function rcbgSceneLoadTextSub      # fh switch:bsim0.92 0x710055f800
 0x0093b590 function rcbgSceneLoadTextSubConfig   # layout: alphabetical run between rcbgSceneLoadTextSub and rcbgSceneLoadTexture (1 unnamed in the gap); Switch 0x71005600d0 rcbgSceneLoadTextSubConfig is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)

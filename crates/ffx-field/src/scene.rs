@@ -529,4 +529,18 @@ pub mod bridge {
             i += 1;
         }
     }
+
+    /// `rcbgSceneDelObjects(scene, kind)` (`0x009206f0`): every object of
+    /// `kind` removed, the first each time ([`rcbg_scene_del_object`]).
+    pub fn rcbg_scene_del_objects<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        s: u32,
+        kind: u32,
+        call: &mut C,
+    ) {
+        while rcbg_scene_count_objects(mem, s, kind).cast_signed() > 0 {
+            let o = rcbg_scene_get_object(mem, s, kind, 0);
+            rcbg_scene_del_object(mem, s, o, call);
+        }
+    }
 }

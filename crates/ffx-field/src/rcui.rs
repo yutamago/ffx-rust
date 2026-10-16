@@ -5,6 +5,18 @@ use ffx_bridge::Global;
 
 /// The UI work area (`rcuiMouseMove*`).
 pub const WORK: Global<u32> = Global::new(0x0193_c0f0);
+/// The map directory names (`0x00c60e30`, "yanagi", …).
+pub const MAP_DIRS: u32 = 0x00c6_0e30;
+/// "/ffx/proj/map/%s/" (`0x00b688e0`).
+pub const BASE_PATH_FORMAT: u32 = 0x00b6_88e0;
+/// `Gu_WindowCloseTree(w)` (`0x0084ab80`).
+pub const GU_WINDOW_CLOSE_TREE: u32 = 0x0084_ab80;
+/// The motion table (`0x00c60a78`, 0x69 entries of 8 bytes, the number
+/// first).
+pub const MOTIONS: u32 = 0x00c6_0a78;
+/// The motion group starts (`0x00c60dc0`, 27 ranges, each ending at the
+/// next).
+pub const MOTION_GROUPS: u32 = 0x00c6_0dc0;
 
 /// Offsets in the work area.
 pub mod work {
@@ -372,5 +384,135 @@ pub mod bridge {
     /// (all but the selected layer in mode 2).
     pub fn rcui_set_select(mem: &mut impl Mem) -> u32 {
         select_flags(mem, true, true)
+    }
+
+    /// `rcuiMakeBasePath()` (`0x00937af0`): `/ffx/proj/map/<dir>/` into the
+    /// work's `+0x74` (`sprintf`, the directory from the table at
+    /// `0x00c60e30` by `+0x64`).
+    pub fn rcui_make_base_path<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let w = WORK.get(mem);
+        let i = mem.read::<u32>(w.wrapping_add(0x64));
+        let dirs = mem.rebase(super::MAP_DIRS);
+        let dir = mem.read::<u32>(dirs.wrapping_add(i.wrapping_mul(4)));
+        let sprintf = mem.read::<u32>(mem.rebase(crate::yi::CRT_SPRINTF));
+        let fmt = mem.rebase(super::BASE_PATH_FORMAT);
+        call(mem, sprintf, &[w.wrapping_add(0x74), fmt, dir])
+    }
+
+    /// `rcuiCloseWindow(&w)` (`0x00937f50`): an open window closed
+    /// (`Gu_WindowCloseTree`) and the handle cleared.
+    pub fn rcui_close_window<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        at: u32,
+        call: &mut C,
+    ) {
+        let w = mem.read::<u32>(at);
+        if w != 0 {
+            let f = mem.rebase(super::GU_WINDOW_CLOSE_TREE);
+            call(mem, f, &[w]);
+            mem.write(at, 0u32);
+        }
+    }
+
+    /// `rcuiReset()` (`0x00936570`): the work's `+0x5c`, `+0x288`, `+0x308`,
+    /// `+0x30c` cleared; the renderer's bit 0 disabled when set
+    /// (`yiRenderDisable(1)`).
+    pub fn rcui_reset(mem: &mut impl Mem) {
+        for o in [0x5cu32, 0x288, 0x308, 0x30c] {
+            let w = WORK.get(mem);
+            mem.write(w.wrapping_add(o), 0u32);
+        }
+        if crate::yi::bridge::yi_get_render_status(mem) & 1 != 0 {
+            crate::yi::bridge::yi_render_disable(mem, 1);
+        }
+    }
+
+    /// `rcuiMotionStep(d)` (`0x00935690`): the motion selected (work
+    /// `+0x8d8`, an index into the 0x69 motions at `0x00c60a78`, 8 bytes
+    /// each) moved `d` groups: its group is the first of the 27 ranges at
+    /// `0x00c60dc0` holding its number (else 0); the new group (negative:
+    /// 26, past 26: 0) starts at a number whose motion becomes the
+    /// selection (unchanged when none has it).
+    pub fn rcui_motion_step(mem: &mut impl Mem, d: i32) {
+        let w = WORK.get(mem);
+        let motions = mem.rebase(super::MOTIONS);
+        let groups = mem.rebase(super::MOTION_GROUPS);
+        let cur = mem.read::<u32>(w.wrapping_add(0x8d8));
+        let x = mem.read::<i32>(motions.wrapping_add(cur.wrapping_mul(8)));
+        let found = (0..0x1bu32)
+            .find(|&e| {
+                mem.read::<i32>(groups + 4 * e) <= x && x < mem.read::<i32>(groups + 4 * e + 4)
+            })
+            .unwrap_or(0);
+        let g = found.cast_signed().wrapping_add(d);
+        let g = if g < 0 {
+            0x1a
+        } else if g.cast_unsigned() > 0x1a {
+            0
+        } else {
+            g.cast_unsigned()
+        };
+        let target = mem.read::<i32>(groups + 4 * g);
+        if let Some(i) =
+            (0..0x69u32).find(|&i| mem.read::<i32>(motions.wrapping_add(8 * i)) == target)
+        {
+            mem.write(w.wrapping_add(0x8d8), i);
+        }
+    }
+
+    /// `rcuiSetNumber(n)` (`0x00937f70`): `n`'s two decimal digits (tens
+    /// truncated toward zero, plus `'0'`) over the last two characters of
+    /// the work's strings at `+0x174` and `+0x27c`.
+    pub fn rcui_set_number(mem: &mut impl Mem, n: i32) {
+        let tens = n / 10;
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // `mov byte`
+        let (hi, lo) = ((tens + 0x30) as u8, (n - tens * 10 + 0x30) as u8);
+        for s in [0x174u32, 0x27c] {
+            let w = WORK.get(mem);
+            let mut len = 0u32;
+            while mem.read::<u8>(w.wrapping_add(s + len)) != 0 {
+                len += 1;
+            }
+            let w = WORK.get(mem);
+            mem.write(w.wrapping_add(s - 2 + len), hi);
+            let w = WORK.get(mem);
+            mem.write(w.wrapping_add(s - 1 + len), lo);
+        }
+    }
+
+    /// `rcuiGuideSaveSize(g)` (`0x009396a0`): the bytes a guide map save
+    /// takes: 0x10, per map (`+0x4` of them from `+0x8`, 0xc0 bytes each)
+    /// 0x30 plus its two transfers' data (`+0xbc`, `+0x98 + 8`: entry size
+    /// times count) and, with `+0x98` indices, 0xa0 + 4 each rounded to 16
+    /// + 0x20, else 0xa0; then 0x38.
+    pub fn rcui_guide_save_size(mem: &impl Mem, g: u32) -> u32 {
+        let n = mem.read::<i32>(g + 4);
+        let mut size = 0x10u32;
+        let mut e = mem.read::<u32>(g + 8).wrapping_add(0x98);
+        let data = |mem: &dyn Fn(u32) -> u32, t: u32| mem(t + 0x34).wrapping_mul(mem(t + 0x30));
+        let rd = |a: u32| mem.read::<u32>(a);
+        for _ in 0..n.max(0) {
+            let k = mem.read::<i32>(e);
+            let mut part = 0xa0u32;
+            if k > 0 {
+                let b = k.cast_unsigned().wrapping_shl(2);
+                part = b.wrapping_add(0xa0);
+                if b & 0xf != 0 {
+                    part = part.wrapping_add(0x10 - (b & 0xf));
+                }
+                part = part
+                    .wrapping_add(0x20)
+                    .wrapping_add(data(&rd, mem.read::<u32>(e + 8)));
+            }
+            size = size
+                .wrapping_add(0x30)
+                .wrapping_add(data(&rd, mem.read::<u32>(e + 0x24)))
+                .wrapping_add(part);
+            e = e.wrapping_add(0xc0);
+        }
+        size.wrapping_add(0x38)
     }
 }

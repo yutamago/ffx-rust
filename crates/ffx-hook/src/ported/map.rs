@@ -2095,6 +2095,10 @@ ported! {
     yiWindowDrawPop @ 0x0090_7210 => extern "C" fn shim_yiwindowdrawpop(w: u32) -> u32 {
         yi::bridge::yi_window_draw_pop(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `yiWindowDrawBar(w)`.
+    yiWindowDrawBar @ 0x0090_7c10 => extern "C" fn shim_yi_window_draw_bar(w: u32) -> u32 {
+        yi::bridge::yi_window_draw_bar(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `rcAlloc(size: u32, _file: u32, _line: u32)`.
     rcAlloc @ 0x0092_58a0 => extern "C" fn shim_rc_alloc(size: u32, _file: u32, _line: u32) -> u32 {
         model::bridge::rc_alloc(&mut mem(), &mut |_, f, a| call_cdecl(f, a), size)
@@ -2656,6 +2660,262 @@ ported! {
     rcefWorkSet @ 0x0092_5630 => extern "C" fn shim_rcef_work_set(w: u32, a: u32, b: u32, v: u32) {
         task::bridge::rcef_work_set(&mut mem(), w, a, b, v);
     }
+    /// `Yn_FpTrxTexGet(n)`.
+    Yn_FpTrxTexGet @ 0x0091_9ba0 => extern "C" fn shim_yn_fp_trx_tex_get(n: u32) -> u32 {
+        guide::bridge::yn_fp_trx_tex_get(&mem(), n)
+    }
+    /// `Yn_FpTrxTexSetAddr(tex, image, clut)`.
+    Yn_FpTrxTexSetAddr @ 0x0091_9be0 => extern "C" fn shim_yn_fp_trx_tex_set_addr(t: u32, image: u32, clut: u32) {
+        guide::bridge::yn_fp_trx_tex_set_addr(&mut mem(), t, image, clut);
+    }
+    /// `rcdtParseAdvanceLine(parse)`.
+    rcdtParseAdvanceLine @ 0x0092_b9b0 => extern "C" fn shim_rcdt_parse_advance_line(p: u32) {
+        rcdt::bridge::rcdt_parse_advance_line(&mut mem(), p);
+    }
+    /// `rcdtParseGetKeyword(parse, table)`.
+    rcdtParseGetKeyword @ 0x0092_be40 => extern "C" fn shim_rcdt_parse_get_keyword(p: u32, table: u32) -> u32 {
+        rcdt::bridge::rcdt_parse_get_keyword(&mut mem(), p, table, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcdtParseGetFloat(parse)`.
+    rcdtParseGetFloat @ 0x0092_bbb0 => extern "C" fn shim_rcdt_parse_get_float(p: u32) -> f32 {
+        rcdt::bridge::rcdt_parse_get_float(&mut mem(), p, &mut |_, f, a| call_float(f, a))
+    }
+    /// `rcdtParseGetText(parse, out)`.
+    rcdtParseGetText @ 0x0092_bdd0 => extern "C" fn shim_rcdt_parse_get_text(p: u32, out: u32) -> u32 {
+        rcdt::bridge::rcdt_parse_get_text(&mut mem(), p, out, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcdtTm2Delete(tm2)`.
+    rcdtTm2Delete @ 0x0092_3450 => extern "C" fn shim_rcdt_tm2_delete(t: u32) -> u32 {
+        rcdt::bridge::rcdt_tm2_delete(&mut mem(), t, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefVecToField(v)`.
+    rcefVecToField @ 0x0092_d7e0 => extern "C" fn shim_rcef_vec_to_field(v: u32) {
+        vu0::bridge::rcef_vec_to_field(&mut mem(), v);
+    }
+    /// `rcbgScaleMatrix100(m)`.
+    rcbgScaleMatrix100 @ 0x0091_ffd0 => extern "C" fn shim_rcbg_scale_matrix100(m: u32) {
+        vu0::bridge::rcbg_scale_rows(&mut mem(), m, vu0::SCALE_100);
+    }
+    /// `rcefScaleMatrix100(m)`.
+    rcefScaleMatrix100 @ 0x0092_e630 => extern "C" fn shim_rcef_scale_matrix100(m: u32) {
+        vu0::bridge::rcbg_scale_rows(&mut mem(), m, vu0::SCALE_100);
+    }
+    /// `rcbgFPmGetElemMatrix(out, chr, elem)`.
+    rcbgFPmGetElemMatrix @ 0x0092_2350 => extern "C" fn shim_rcbg_fpm_get_elem_matrix(out: u32, chr: u32, elem: u32) {
+        model::bridge::rcbg_fpm_get_elem_matrix(&mut mem(), out, chr, elem, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcbgFPmGetMatrix(fp, out)`.
+    rcbgFPmGetMatrix @ 0x0092_2290 => extern "C" fn shim_rcbg_fpm_get_matrix(fp: u32, out: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        model::bridge::rcbg_fpm_get_matrix(&mut mem(), fp, out, w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcbgFPmRestart(id, chr, elem)`.
+    rcbgFPmRestart @ 0x0092_2300 => extern "C" fn shim_rcbg_fpm_restart(id: u32, chr: u32, elem: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        model::bridge::rcbg_fpm_restart(&mut mem(), id, chr, elem, w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcuiScaleVector(dst, v, s, a, b, c)`.
+    rcuiScaleVector @ 0x0093_0f30 => extern "C" fn shim_rcui_scale_vector(dst: u32, v: u32, s: u32, a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rcui_scale_vector(&mut mem(), dst, v, s, [a, b, c])
+    }
+    /// `rcefGetVf00(dst)`.
+    rcefGetVf00 @ 0x0092_5020 => extern "C" fn shim_rcef_get_vf00(dst: u32) -> u32 {
+        vu0::bridge::rcef_get_vf00(&mut mem(), dst)
+    }
+    /// `yiFieldMapRead(map, alarm)`.
+    yiFieldMapRead @ 0x0090_85d0 => extern "C" fn shim_yi_field_map_read(map: u32, alarm: u32) {
+        yi::bridge::yi_field_map_read(&mut mem(), map, alarm, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `yiBattleMapRead(map, alarm)`.
+    yiBattleMapRead @ 0x0090_8370 => extern "C" fn shim_yi_battle_map_read(map: u32, alarm: u32) {
+        yi::bridge::yi_battle_map_read(&mut mem(), map, alarm, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `yiGetMapName(out)`.
+    yiGetMapName @ 0x0090_7e70 => extern "C" fn shim_yi_get_map_name(out: u32) -> u32 {
+        yi::bridge::yi_get_map_name(&mut mem(), out, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcuiMakeBasePath()`.
+    rcuiMakeBasePath @ 0x0093_7af0 => extern "C" fn shim_rcui_make_base_path() -> u32 {
+        rcui::bridge::rcui_make_base_path(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcuiCloseWindow(&w)`.
+    rcuiCloseWindow @ 0x0093_7f50 => extern "C" fn shim_rcui_close_window(at: u32) {
+        rcui::bridge::rcui_close_window(&mut mem(), at, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcuiReset()`.
+    rcuiReset @ 0x0093_6570 => extern "C" fn shim_rcui_reset() {
+        rcui::bridge::rcui_reset(&mut mem());
+    }
+    /// `rcbgTrxSetRegsAlloc(t, a, b, c, d, e, f, g, n)`.
+    rcbgTrxSetRegsAlloc @ 0x0092_d320 => extern "C" fn shim_rcbg_trx_set_regs_alloc(t: u32, a: u32, b: u32, c: u32, d: u32, e: u32, f: u32, g: u32, n: u32) {
+        model::bridge::rcbg_trx_set_regs_alloc(&mut mem(), t, [a, b, c, d, e, f, g], n, &mut |_, fun, args| call_cdecl(fun, args));
+    }
+    /// `rcdtListsDelete(l)`.
+    rcdtListsDelete @ 0x0092_42d0 => extern "C" fn shim_rcdt_lists_delete(l: u32) -> u32 {
+        model::bridge::rcdt_lists_delete(&mut mem(), l, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcfxSpringNew()`.
+    rcfxSpringNew @ 0x0092_8d50 => extern "C" fn shim_rcfx_spring_new() -> u32 {
+        model::bridge::rcfx_spring_new(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcfxParticleFini(ps)`.
+    rcfxParticleFini @ 0x0092_8870 => extern "C" fn shim_rcfx_particle_fini(ps: u32) {
+        model::bridge::rcfx_particle_fini(&mut mem(), ps, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcbgPSimAddDamp(psim, k)`.
+    rcbgPSimAddDamp @ 0x0091_f7a0 => extern "C" fn shim_rcbg_psim_add_damp(psim: u32, k: u32) {
+        model::bridge::rcbg_psim_add_damp(&mut mem(), psim, k, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcbgPSimAddWind(psim, dir, pos, power)`.
+    rcbgPSimAddWind @ 0x0091_f980 => extern "C" fn shim_rcbg_psim_add_wind(psim: u32, dir: u32, pos: u32, power: u32) {
+        model::bridge::rcbg_psim_add_wind(&mut mem(), psim, dir, pos, power, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcbgPSimAddGravity(psim, g)`.
+    rcbgPSimAddGravity @ 0x0091_f7c0 => extern "C" fn shim_rcbg_psim_add_gravity(psim: u32, g: u32) {
+        model::bridge::rcbg_psim_add_gravity(&mut mem(), psim, g, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcbgPalProc(pal)`.
+    rcbgPalProc @ 0x0092_9b60 => extern "C" fn shim_rcbg_pal_proc(pal: u32) {
+        model::bridge::rcbg_pal_proc(&mut mem(), pal);
+    }
+    /// `rcbgModelSetTexReg(page)`.
+    rcbgModelSetTexReg @ 0x0092_84d0 => extern "C" fn shim_rcbg_model_set_tex_reg(page: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        model::bridge::rcbg_model_set_tex_reg(&mut mem(), page, w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefRunPart(env, part, arg)`.
+    rcefRunPart @ 0x0092_eec0 => extern "C" fn shim_rcef_run_part(env: u32, part: u32, arg: u32) -> u32 {
+        task::bridge::rcef_run_part(&mut mem(), env, part, arg, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefObjNew()`.
+    rcefObjNew @ 0x0093_0030 => extern "C" fn shim_rcef_obj_new() -> u32 {
+        task::bridge::rcef_obj_new(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefTaskCtrlFini(ctrl)`.
+    rcefTaskCtrlFini @ 0x0093_0260 => extern "C" fn shim_rcef_task_ctrl_fini(ctrl: u32) {
+        task::bridge::rcef_task_ctrl_fini(&mut mem(), ctrl, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefTaskCtrlProc(first)`.
+    rcefTaskCtrlProc @ 0x0093_0300 => extern "C" fn shim_rcef_task_ctrl_proc(first: u32) {
+        task::bridge::rcef_task_ctrl_proc(&mut mem(), first, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefChrFini(c)`.
+    rcefChrFini @ 0x0093_0710 => extern "C" fn shim_rcef_chr_fini(c: u32) {
+        task::bridge::rcef_chr_fini(&mut mem(), c, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `Yn_PreBgSetScrBank(roll)`.
+    Yn_PreBgSetScrBank @ 0x0091_ad10 => extern "C" fn shim_yn_pre_bg_set_scr_bank(roll: u32) {
+        guide::bridge::yn_pre_bg_set_scr_bank(&mut mem(), roll, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `Yn_PreBgSetScrOffset(x, y)`.
+    Yn_PreBgSetScrOffset @ 0x0091_ad40 => extern "C" fn shim_yn_pre_bg_set_scr_offset(x: u32, y: u32) {
+        guide::bridge::yn_pre_bg_set_scr_offset(&mut mem(), x, y, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcbgPreAddFpObjects()`.
+    rcbgPreAddFpObjects @ 0x0092_2010 => extern "C" fn shim_rcbg_pre_add_fp_objects() {
+        guide::bridge::rcbg_pre_add_fp_objects(&mut mem(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcbgSceneDelObjects(scene, kind)`.
+    rcbgSceneDelObjects @ 0x0092_06f0 => extern "C" fn shim_rcbg_scene_del_objects(s: u32, kind: u32) {
+        scene::bridge::rcbg_scene_del_objects(&mut mem(), s, kind, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefAngleWrap(a)`.
+    rcefAngleWrap @ 0x0092_d810 => extern "C" fn shim_rcef_angle_wrap(a: u32) -> f32 {
+        vu0::bridge::rcef_angle_wrap(&mut mem(), a, &mut |_, f, x| call_float(f, x))
+    }
+    /// `rcefVecToAngle(v)`.
+    rcefVecToAngle @ 0x0092_ec20 => extern "C" fn shim_rcef_vec_to_angle(v: u32) -> f32 {
+        vu0::bridge::rcef_vec_to_angle(&mut mem(), v, &mut |_, f, x| call_float(f, x))
+    }
+    /// `rcefAngleToDir(out, a)`.
+    rcefAngleToDir @ 0x0092_ded0 => extern "C" fn shim_rcef_angle_to_dir(out: u32, a: u32) {
+        vu0::bridge::rcef_angle_to_dir(&mut mem(), out, a, &mut |_, f, x| call_float(f, x));
+    }
+    /// `rcuiScaleVector_00937610(dst, v, s, a, b, c)`.
+    rcuiScaleVector_00937610 @ 0x0093_7610 => extern "C" fn shim_rcui_scale_vector_00937610(dst: u32, v: u32, s: u32, a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rcui_scale_vector(&mut mem(), dst, v, s, [a, b, c])
+    }
+    /// `rcefMainCreateObj(main)`.
+    rcefMainCreateObj @ 0x0092_5140 => extern "C" fn shim_rcef_main_create_obj(m: u32) -> u32 {
+        task::bridge::rcef_main_create_obj(&mut mem(), m, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefMainFini(main)`.
+    rcefMainFini @ 0x0092_51c0 => extern "C" fn shim_rcef_main_fini(m: u32) {
+        task::bridge::rcef_main_fini(&mut mem(), m, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefWorkSetFromVf00(w, b, v)`.
+    rcefWorkSetFromVf00 @ 0x0092_55d0 => extern "C" fn shim_rcef_work_set_from_vf00(w: u32, b: u32, v: u32) {
+        task::bridge::rcef_work_set_from_vf00(&mut mem(), w, b, v);
+    }
+    /// `rcbgPalAlloc(pal, entries)`.
+    rcbgPalAlloc @ 0x0092_9950 => extern "C" fn shim_rcbg_pal_alloc(pal: u32, entries: u32) {
+        model::bridge::rcbg_pal_alloc(&mut mem(), pal, entries, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcfxParticleDelete(ps)`.
+    rcfxParticleDelete @ 0x0092_8850 => extern "C" fn shim_rcfx_particle_delete(ps: u32) -> u32 {
+        model::bridge::rcfx_particle_delete(&mut mem(), ps, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcbgFPm173ProcSphere(fp)`.
+    rcbgFPm173ProcSphere @ 0x0092_2eb0 => extern "C" fn shim_rcbg_fpm173_proc_sphere(fp: u32) {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        model::bridge::rcbg_fpm173_proc_sphere(&mut mem(), fp, w, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcbgFPmGetPartData(id, n, part, k)`.
+    rcbgFPmGetPartData @ 0x0092_3190 => extern "C" fn shim_rcbg_fpm_get_part_data(id: u32, n: i32, part: u32, k: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        model::bridge::rcbg_fpm_get_part_data(&mut mem(), id, n, part, k, w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcbgPalLoadConfig(pal, parse)`.
+    rcbgPalLoadConfig @ 0x0093_adf0 => extern "C" fn shim_rcbg_pal_load_config(pal: u32, p: u32) {
+        model::bridge::rcbg_pal_load_config(&mut mem(), pal, p, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcbgSceneLoadTextSubConfigKeys(obj, parse)`.
+    rcbgSceneLoadTextSubConfigKeys @ 0x0093_aee0 => extern "C" fn shim_rcbg_scene_load_text_sub_keys(o: u32, p: u32) {
+        model::bridge::rcbg_scene_load_text_sub_keys(&mut mem(), o, p, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `yiSetBattleView(view)`.
+    yiSetBattleView @ 0x0090_a140 => extern "C" fn shim_yi_set_battle_view(view: u32) {
+        let mut work = Matrix([0; 0x40]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        yi::bridge::yi_set_battle_view(&mut mem(), view, w, &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a));
+    }
+    /// `yiSetViewMatrices(m, view)`.
+    yiSetViewMatrices @ 0x0090_a640 => extern "C" fn shim_yi_set_view_matrices(m: u32, view: u32) {
+        let mut work = Matrix([0; 0x40]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        yi::bridge::yi_set_view_matrices(&mut mem(), m, view, w, &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a));
+    }
+    /// `yiSetLightMatrices()`.
+    yiSetLightMatrices @ 0x0090_8d00 => extern "C" fn shim_yi_set_light_matrices() -> u32 {
+        let mut work = Lights([0; 0x70]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        yi::bridge::yi_set_light_matrices(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `yiImageVramAlloc(img)`.
+    yiImageVramAlloc @ 0x0091_7d80 => extern "C" fn shim_yi_image_vram_alloc(img: u32) -> u32 {
+        yi::bridge::yi_image_vram_alloc(&mut mem(), img)
+    }
+    /// `rcuiMotionStep(d)`.
+    rcuiMotionStep @ 0x0093_5690 => extern "C" fn shim_rcui_motion_step(d: i32) {
+        rcui::bridge::rcui_motion_step(&mut mem(), d);
+    }
+    /// `rcuiSetNumber(n)`.
+    rcuiSetNumber @ 0x0093_7f70 => extern "C" fn shim_rcui_set_number(n: i32) {
+        rcui::bridge::rcui_set_number(&mut mem(), n);
+    }
+    /// `rcuiGuideSaveSize(g)`.
+    rcuiGuideSaveSize @ 0x0093_96a0 => extern "C" fn shim_rcui_guide_save_size(g: u32) -> u32 {
+        rcui::bridge::rcui_guide_save_size(&mem(), g)
+    }
+    /// `rcbgDelObjects(kind)`.
+    rcbgDelObjects @ 0x0092_19e0 => extern "C" fn shim_rcbg_del_objects(kind: u32) {
+        guide::bridge::rcbg_del_objects(&mut mem(), kind, &mut |_, f, a| call_cdecl(f, a));
+    }
 }
 
 /// The original's 16-byte aligned stack buffer for a load-image packet
@@ -2671,6 +2931,14 @@ struct Work([u8; 0xa4]);
 /// model description, a CD read's result).
 #[repr(C, align(16))]
 struct Scratch([u8; 0x20]);
+
+/// A 16-byte aligned stack matrix of the original.
+#[repr(C, align(16))]
+struct Matrix([u8; 0x40]);
+
+/// `yiSetLightMatrices`'s seven stack vectors.
+#[repr(C, align(16))]
+struct Lights([u8; 0x70]);
 
 /// `rcbgSceneSetMatrix`'s matrices and scaled vectors.
 #[repr(C, align(16))]
@@ -2690,8 +2958,19 @@ struct Host([u8; 0x1000]);
 fn call_float(f: u32, args: camera::FArgs<'_>) -> f64 {
     match args {
         camera::FArgs::St0(x) => st0_call(f, x),
+        camera::FArgs::St01(a, b) => st01_call(f, a, b),
         // SAFETY: the callers pass cdecl functions of two words returning
         // a float (`Ch_SetClipZ`); the declared `f32` return pops ST0.
+        // SAFETY: a cdecl function of one word returning a double
+        // (`atof`); the declared `f64` return pops ST0.
+        // SAFETY: a cdecl function without arguments returning a float
+        // (`MsCameraGetScrDpt`); the declared `f64` return pops ST0.
+        camera::FArgs::Stack(&[]) => unsafe {
+            std::mem::transmute::<usize, unsafe extern "C" fn() -> f64>(f as usize)()
+        },
+        camera::FArgs::Stack(&[a]) => unsafe {
+            std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> f64>(f as usize)(a)
+        },
         camera::FArgs::Stack(&[a, b]) => unsafe {
             f64::from(std::mem::transmute::<
                 usize,
@@ -2717,17 +2996,51 @@ fn st0_call(f: u32, x: f64) -> f64 {
         std::arch::asm!(
             "fld qword ptr [{x}]",
             "call {f}",
-            "fstp qword ptr [{out}]",
+            "fstp qword ptr [edi]",
             x = in(reg) &raw const x,
             f = in(reg) f,
-            out = in(reg) &raw mut out,
+            // edi: the callee keeps it (eax, ecx and edx it may not)
+            in("edi") &raw mut out,
             clobber_abi("C"),
         );
         out
     }
     #[cfg(not(target_arch = "x86"))]
     {
+        // the CRT's intrinsics only run in the 32-bit game
         let _ = (f, x);
+        unreachable!("the CRT intrinsics: this runs in the 32-bit game")
+    }
+}
+
+/// An `_CI*` intrinsic of two operands (`_CIfmod`) through the game's
+/// import thunk: `a` in `ST1`, `b` in `ST0` (`fld qword` each), the result
+/// read back from `ST0`.
+fn st01_call(f: u32, a: f64, b: f64) -> f64 {
+    // SAFETY: the thunk jumps to the CRT's intrinsic, which takes its
+    // operands in ST1 and ST0 and leaves the result alone in ST0 (eax,
+    // ecx, edx, the x87 and SSE registers clobbered).
+    #[cfg(target_arch = "x86")]
+    unsafe {
+        let mut out = 0f64;
+        std::arch::asm!(
+            "fld qword ptr [{a}]",
+            "fld qword ptr [{b}]",
+            "call {f}",
+            "fstp qword ptr [edi]",
+            a = in(reg) &raw const a,
+            b = in(reg) &raw const b,
+            f = in(reg) f,
+            // edi: the callee keeps it (eax, ecx and edx it may not)
+            in("edi") &raw mut out,
+            clobber_abi("C"),
+        );
+        out
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        // the CRT's intrinsics only run in the 32-bit game
+        let _ = (f, a, b);
         unreachable!("the CRT intrinsics: this runs in the 32-bit game")
     }
 }

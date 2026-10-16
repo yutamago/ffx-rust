@@ -31,10 +31,11 @@ fn crt_atan2(y: f64, x: f64) -> f64 {
             "fld qword ptr [{y}]",
             "fld qword ptr [{x}]",
             "call {f}",
-            "fstp qword ptr [{out}]",
+            "fstp qword ptr [edi]",
             y = in(reg) &raw const y,
             x = in(reg) &raw const x,
-            out = in(reg) &raw mut out,
+            // edi: the callee keeps it (eax, ecx and edx it may not)
+            in("edi") &raw mut out,
             f = in(reg) f,
             clobber_abi("C"),
         );
