@@ -676,6 +676,60 @@ pub mod bridge {
             mem.write(chr + l::FADE_SHADE_COL + 12 * i + 4, v);
         }
     }
+
+    /// `Ch_WindGet(chr, &a, &b, &c)` (`0x00824c30`): the wind's `+0x80c`,
+    /// `+0x804` and `+0x808` floats (through the x87); null outputs are
+    /// skipped.
+    pub fn ch_wind_get(mem: &mut impl Mem, chr: u32, a: u32, b: u32, c: u32) {
+        for (out, at) in [(b, 0x804), (c, 0x808), (a, 0x80c)] {
+            if out != 0 {
+                let v = crate::x87::load(f(mem, chr + at));
+                mem.write(out, v);
+            }
+        }
+    }
+
+    /// `Ch_WindGetEnable(chr)` (`0x00824c70`): bit 1 of [`l::FLAGS2`].
+    pub fn ch_wind_get_enable(mem: &impl Mem, chr: u32) -> u32 {
+        flag(mem, chr, l::FLAGS2, 1 << 1)
+    }
+
+    /// `Ch_Set7f8(chr, a, b)` (`0x00833940`): the words at `+0x7f8` and
+    /// `+0x7fc`.
+    pub fn ch_set_7f8(mem: &mut impl Mem, chr: u32, a: u32, b: u32) {
+        mem.write(chr + 0x7f8, [a, b]);
+    }
+
+    /// `Chr_GetU16(p)` (`0x0082ba20`): `*p` in `ax`; the rest of `eax`
+    /// keeps `p`'s high half.
+    pub fn chr_get_u16(mem: &impl Mem, p: u32) -> u32 {
+        (p & 0xffff_0000) | u32::from(mem.read::<u16>(p))
+    }
+
+    /// `Ch_CalcHeight(chr)` (`0x00830b20`): `+0x70` = −(the highest
+    /// vertex y of all models / 1000).
+    pub fn ch_calc_height(mem: &mut impl Mem, chr: u32) {
+        let mut top = 0.0f32;
+        let header: u32 = mem.read(chr + l::MODEL_HEADER);
+        let n = u32::from(mem.read::<u16>(header + l::HEADER_MODELS));
+        let models: u32 = mem.read(chr + l::MODELS);
+        for i in 0..n {
+            let m = models.wrapping_add(i * l::MODEL_SIZE);
+            let data: u32 = mem.read(m);
+            let count = u32::from(mem.read::<u16>(data + 4));
+            let verts: u32 = mem.read(m + 8);
+            for k in 0..count {
+                let y = f(mem, verts.wrapping_add(16 * k + 4));
+                if top < y {
+                    top = crate::x87::load(y);
+                }
+            }
+        }
+        let h = crate::x87::Reg::load(top)
+            .div_st(crate::x87::Reg::constant(1000.0))
+            .store();
+        put_f(mem, chr + 0x70, -h);
+    }
 }
 
 #[cfg(test)]
