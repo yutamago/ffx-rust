@@ -18,7 +18,9 @@
 //! - [`attach`]: attachment points, binding to them, optional positions.
 //! - [`cloth`]: the cloth exceptions and resetting cloth.
 //! - [`mapping`]: fixing up moved character data, filling model blocks.
-//! - [`motion`]: motion lerps.
+//! - [`motion`]: motion lerps, the motion frame loop, the sequence table.
+//! - [`matrix`]: the root and model matrices.
+//! - [`texanim`]: texture animation and texture register fix-ups.
 //! - [`fixed`]: fixed-point and 12-bit angle helpers.
 //! - [`x87`]: what the game's x87 code does to the floats it computes.
 
@@ -33,8 +35,10 @@ pub mod handle;
 pub mod id;
 pub mod layout;
 pub mod mapping;
+pub mod matrix;
 pub mod motion;
 pub mod parts;
 pub mod sys;
+pub mod texanim;
 pub mod texture;
 pub mod x87;

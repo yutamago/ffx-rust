@@ -8,9 +8,11 @@ use ffx_chara::handle::bridge as h;
 use ffx_chara::id::bridge as id;
 use ffx_chara::layout as l;
 use ffx_chara::mapping::{self as mp, bridge as mb};
+use ffx_chara::matrix::bridge as mx;
 use ffx_chara::motion as mo;
 use ffx_chara::parts::bridge as p;
 use ffx_chara::sys::bridge as sy;
+use ffx_chara::texanim::bridge as ta;
 use ffx_chara::texture::bridge as tx;
 
 use super::{mem, ported};
@@ -1034,5 +1036,179 @@ ported! {
     /// `Ch_TexDataMapping(tex)`.
     Ch_TexDataMapping @ 0x0083_cba0 => extern "C" fn ch_tex_data_mapping(tex: u32) {
         mb::ch_tex_data_mapping(&mut mem(), tex);
+    }
+
+    // ---- settings
+    /// `Ch_SetAllocateErr()`.
+    Ch_SetAllocateErr @ 0x0082_85d0 => extern "C" fn ch_set_allocate_err() {
+        sy::ch_set_allocate_err(&mut mem());
+    }
+    /// `Ch_SetDrawIcon(on)`.
+    Ch_SetDrawIcon @ 0x0083_0c70 => extern "C" fn ch_set_draw_icon(on: u32) {
+        sy::set_bit0(&mut mem(), sy::DRAW_ICON, on);
+    }
+    /// `Ch_SetDrawIcon2(on)`.
+    Ch_SetDrawIcon2 @ 0x0083_0c80 => extern "C" fn ch_set_draw_icon2(on: u32) {
+        sy::set_bit0(&mut mem(), sy::DRAW_ICON2, on);
+    }
+    /// `Ch_SysSet7e4(v)`.
+    Ch_SysSet7e4 @ 0x0083_0d00 => extern "C" fn ch_sys_set_7e4(v: u32) {
+        sy::SYS_7E4.set(&mut mem(), v);
+    }
+    /// `Ch_SysSetSwitch7d8(on)`: returns the old value.
+    Ch_SysSetSwitch7d8 @ 0x0083_17b0 => extern "C" fn ch_sys_set_switch_7d8(on: u32) -> i32 {
+        sy::ch_sys_set_switch_7d8(&mut mem(), on)
+    }
+    /// `Ch_DrawGetShadeByLight()`.
+    Ch_DrawGetShadeByLight @ 0x0083_17d0 => extern "C" fn ch_draw_get_shade_by_light() -> i32 {
+        sy::get_i8(&mem(), p::SHADE_BY_LIGHT)
+    }
+    /// `Ch_SysSet6e0(v)`.
+    Ch_SysSet6e0 @ 0x0083_20e0 => extern "C" fn ch_sys_set_6e0(v: u32) {
+        sy::SYS_6E0.set(&mut mem(), v);
+    }
+    /// `Ch_FunctionHistoryClear()`.
+    Ch_FunctionHistoryClear @ 0x0083_3760 => extern "C" fn ch_function_history_clear() {
+        sy::HISTORY_9E8.set(&mut mem(), 0);
+    }
+
+    // ---- more accessors
+    /// `Ch_WindGet(chr, &a, &b, &c)`.
+    Ch_WindGet @ 0x0082_4c30 => extern "C" fn ch_wind_get(chr: u32, a: u32, b: u32, c: u32) {
+        c::ch_wind_get(&mut mem(), chr, a, b, c);
+    }
+    /// `Ch_WindGetEnable(chr)`.
+    Ch_WindGetEnable @ 0x0082_4c70 => extern "C" fn ch_wind_get_enable(chr: u32) -> u32 {
+        c::ch_wind_get_enable(&mem(), chr)
+    }
+    /// `Chr_GetU16(p)`.
+    Chr_GetU16 @ 0x0082_ba20 => extern "C" fn chr_get_u16(p: u32) -> u32 {
+        c::chr_get_u16(&mem(), p)
+    }
+    /// `Ch_CalcHeight(chr)`.
+    Ch_CalcHeight @ 0x0083_0b20 => extern "C" fn ch_calc_height(chr: u32) {
+        c::ch_calc_height(&mut mem(), chr);
+    }
+    /// `Ch_Set7f8(chr, a, b)`.
+    Ch_Set7f8 @ 0x0083_3940 => extern "C" fn ch_set_7f8(chr: u32, a: u32, b: u32) {
+        c::ch_set_7f8(&mut mem(), chr, a, b);
+    }
+
+    // ---- every character
+    /// `Ch_UnbindChildren(chr)`.
+    Ch_UnbindChildren @ 0x0082_6150 => extern "C" fn ch_unbind_children(chr: u32) {
+        h::ch_unbind_children(&mut mem(), chr);
+    }
+    /// `Ch_HandleFromId(id)`.
+    Ch_HandleFromId @ 0x0082_61f0 => extern "C" fn ch_handle_from_id(id: u32) -> u32 {
+        h::ch_handle_from_id(&mem(), id)
+    }
+    /// `Ch_CompareDrawOrder(&a, &b)`.
+    Ch_CompareDrawOrder @ 0x0083_20f0 => extern "C" fn ch_compare_draw_order(a: u32, b: u32) -> u32 {
+        h::ch_compare_draw_order(&mem(), a, b)
+    }
+    /// `Ch_AllClearFlags24()`.
+    Ch_AllClearFlags24 @ 0x0083_2db0 => extern "C" fn ch_all_clear_flags24() {
+        h::ch_all_clear_flags24(&mut mem());
+    }
+
+    // ---- elements and normals
+    /// `Ch_SetCalcNorm2(holder)`.
+    Ch_SetCalcNorm2 @ 0x0079_69c0 => extern "C" fn ch_set_calc_norm2_holder(p: u32) -> u32 {
+        p::ch_set_calc_norm2_holder(&mut mem(), p)
+    }
+    /// `Ch_IsNotExceptionId(id)`.
+    Ch_IsNotExceptionId @ 0x0083_1780 => extern "C" fn ch_is_not_exception_id(id: u32) -> u32 {
+        p::ch_is_not_exception_id(&mem(), id)
+    }
+    /// `Ch_ElemInMotion(chr, e)`.
+    Ch_ElemInMotion @ 0x0083_42c0 => extern "C" fn ch_elem_in_motion(chr: u32, e: u32) -> u32 {
+        p::ch_elem_in_motion(&mem(), chr, e)
+    }
+
+    // ---- motion
+    /// `Chr_RangeClass(a, b, x, y)`.
+    Chr_RangeClass @ 0x0083_1330 => extern "C" fn chr_range_class(a: i32, b: i32, x: i32, y: i32) -> u32 {
+        mo::range_class(a, b, x, y)
+    }
+    /// `Ch_MotionSetNull(chr)`.
+    Ch_MotionSetNull @ 0x0083_7540 => extern "C" fn ch_motion_set_null(chr: u32) {
+        mo::bridge::ch_motion_set_null(&mut mem(), chr);
+    }
+    /// `Ch_MotionSet737(chr, v)`.
+    Ch_MotionSet737 @ 0x0083_7570 => extern "C" fn ch_motion_set_737(chr: u32, v: u32) -> u32 {
+        mo::bridge::ch_motion_set_737(&mut mem(), chr, v)
+    }
+    /// `Ch_SeqLink()`.
+    Ch_SeqLink @ 0x0083_8170 => extern "C" fn ch_seq_link() {
+        mo::bridge::ch_seq_link(&mut mem());
+    }
+    /// `Ch_MotionLoopFrame(chr)`.
+    Ch_MotionLoopFrame @ 0x0083_92d0 => extern "C" fn ch_motion_loop_frame(chr: u32) -> u32 {
+        mo::bridge::ch_motion_loop_frame(&mut mem(), chr)
+    }
+    /// `Ch_MemRelinkBack(heap)`.
+    Ch_MemRelinkBack @ 0x0083_c6a0 => extern "C" fn ch_mem_relink_back(heap: u32) {
+        mb::ch_mem_relink_back(&mut mem(), heap);
+    }
+
+    // ---- matrices
+    /// `Ch_GetRootScaledMatrix(out, chr)`.
+    Ch_GetRootScaledMatrix @ 0x0082_6a80 => extern "C" fn ch_get_root_scaled_matrix(out: u32, chr: u32) {
+        mx::ch_get_root_scaled_matrix(&mut mem(), out, chr);
+    }
+    /// `Ch_ElemInit(e)`.
+    Ch_ElemInit @ 0x0082_8b60 => extern "C" fn ch_elem_init(e: u32) -> u32 {
+        mx::ch_elem_init(&mut mem(), e)
+    }
+    /// `Ch_ModelGetBaseMatrix(chr, i, out)`.
+    Ch_ModelGetBaseMatrix @ 0x0083_0500 => extern "C" fn ch_model_get_base_matrix(chr: u32, i: u32, out: u32) -> u32 {
+        mx::ch_model_get_base_matrix(&mut mem(), chr, i, out)
+    }
+    /// `Ch_ModelGetMatrix(chr, i, out)`.
+    Ch_ModelGetMatrix @ 0x0083_0550 => extern "C" fn ch_model_get_matrix(chr: u32, i: u32, out: u32) {
+        mx::ch_model_get_matrix(&mut mem(), chr, i, out);
+    }
+    /// `Ch_GetRootGlobalMatrix(chr, out)`.
+    Ch_GetRootGlobalMatrix @ 0x0083_3f80 => extern "C" fn ch_get_root_global_matrix(chr: u32, out: u32) -> u32 {
+        mx::ch_get_root_global_matrix(&mut mem(), chr, out)
+    }
+    /// `Ch_GetRootLightMatrix(chr, out)`.
+    Ch_GetRootLightMatrix @ 0x0083_3fc0 => extern "C" fn ch_get_root_light_matrix(chr: u32, out: u32) -> u32 {
+        mx::ch_get_root_light_matrix(&mut mem(), chr, out)
+    }
+
+    // ---- texture animation
+    /// `chr_texanim_init()`.
+    chr_texanim_init @ 0x0077_c870 => extern "C" fn chr_texanim_init() {
+        ta::chr_texanim_init(&mut mem());
+    }
+    /// `chr_texanim_memory_move(src, i)`.
+    chr_texanim_memory_move @ 0x0077_c900 => extern "C" fn chr_texanim_memory_move(src: u32, i: u32) {
+        ta::chr_texanim_memory_move(&mut mem(), src, i);
+    }
+    /// `chr_texanim_clut_swizzle(dst, src, which)`.
+    chr_texanim_clut_swizzle @ 0x0077_ca10 => extern "C" fn chr_texanim_clut_swizzle(dst: u32, src: u32, which: u32) {
+        ta::chr_texanim_clut_swizzle(&mut mem(), dst, src, which);
+    }
+    /// `chr_texanim_count(&n, &max)`.
+    chr_texanim_count @ 0x0077_cdc0 => extern "C" fn chr_texanim_count(n: u32, max: u32) {
+        ta::chr_texanim_count(&mut mem(), n, max);
+    }
+    /// `chr_texanim_memory_move_new(src, i)`.
+    chr_texanim_memory_move_new @ 0x0077_f970 => extern "C" fn chr_texanim_memory_move_new(src: u32, i: u32) {
+        ta::chr_texanim_memory_move_new(&mut mem(), src, i);
+    }
+    /// `chr_texanim_memory_move_old(src, i)`.
+    chr_texanim_memory_move_old @ 0x0078_03a0 => extern "C" fn chr_texanim_memory_move_old(src: u32, i: u32) {
+        ta::chr_texanim_memory_move_old(&mut mem(), src, i);
+    }
+    /// `Ch_TextureSetTex0(chr)`.
+    Ch_TextureSetTex0 @ 0x0083_13f0 => extern "C" fn ch_texture_set_tex0(chr: u32) {
+        ta::ch_texture_set_tex0(&mut mem(), chr);
+    }
+    /// `Ch_TextureSetImage(img, tex)`.
+    Ch_TextureSetImage @ 0x0083_d1e0 => extern "C" fn ch_texture_set_image(img: u32, tex: u32) {
+        ta::ch_texture_set_image(&mut mem(), img, tex);
     }
 }

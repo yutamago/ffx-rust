@@ -446,6 +446,32 @@ pub mod bridge {
             }
         }
     }
+
+    /// `Ch_MemRelinkBack(heap)` (`0x0083c6a0`): the block list from
+    /// `heap+0xc` (`+0` next, `+4` previous, kind in the low 4 bits of
+    /// `+0xc`, 0xf ends it): free blocks (kind 0) absorb the free ones
+    /// after them, each block's next gets its previous pointer back;
+    /// then `heap`'s first byte is cleared.
+    pub fn ch_mem_relink_back(mem: &mut impl Mem, heap: u32) {
+        let mut b: u32 = mem.read(heap + 0xc);
+        while mem.read::<u8>(b + 0xc) & 0xf != 0xf {
+            // kind 0: free
+            if mem.read::<u8>(b + 0xc).trailing_zeros() >= 4 {
+                loop {
+                    let next: u32 = mem.read(b);
+                    if mem.read::<u8>(next + 0xc) & 0xf != 0 {
+                        break;
+                    }
+                    let after: u32 = mem.read(next);
+                    mem.write(b, after);
+                }
+            }
+            let next: u32 = mem.read(b);
+            mem.write(next + 4, b);
+            b = mem.read(b);
+        }
+        mem.write(heap, 0u8);
+    }
 }
 
 #[cfg(test)]

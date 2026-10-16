@@ -541,6 +541,7 @@ name = "ffx-chara"
 version = "0.1.0"
 dependencies = [
  "ffx-bridge",
+ "ffx-ps2",
  "ffx-system",
 ]
 

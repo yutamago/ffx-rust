@@ -256,3 +256,39 @@ subtracts 6.283184 until the angle is within ±3.141592, using the `double`
 widenings of those `f32` values, and stores each step as `f32`. Rust's
 `f64` arithmetic followed by `as f32` gives the same result bit for bit.
 The loop never ends for infinities, in the original and in Rust.
+
+## Matrices and elements
+
+An element (`0x160` bytes, from `+0x328`) has its data pointer at `+0`,
+a local matrix at `+8` and a global matrix at `+0x88` (`Ch_ElemInit`
+`0x00828b60` sets both to the identity, `+0xe4..+0x100` to 0 and
+`+0x104..+0x110` to 1.0). The root global and light matrices are the
+character's `+0x1d0` and `+0x210` (`Ch_GetRootGlobalMatrix` `0x00833f80`).
+A model's base matrix is the global matrix of the element its data starts
+with (`u16` at the model data's `+0`, `Ch_ModelGetBaseMatrix`
+`0x00830500`); `Ch_ModelGetMatrix` (`0x00830550`) multiplies it by the
+root global matrix with `cdc_Mul4x4`.
+
+## Motion frames and sequences
+
+`Ch_MotionLoopFrame` (`0x008392d0`) keeps the frame (`i32` `+0x740`, 8.8
+fixed) inside the motion: past the end (`+0x71c`) it steps back by the
+loop length (`+0x720`) while loops are left (`i16` `+0x724`, 0 loops for
+ever), restarts at `+0x718` when the length is 0, or stops on the end's
+last whole frame when the loops run out (clearing `+0x728` and `+0x754`).
+
+The sequence table `g_ChrSequences` (`0x01300a08`, 100 entries of `0x14`
+bytes) is relinked by `Ch_SeqLink` (`0x00838170`): one chain per key
+(`u16` `+4`) through `+8`, the chains' first entries through `+0xc` from
+`g_ChrSequenceHead` (`0x013011d8`).
+
+## Texture animation
+
+`g_ChrTexAnim` (`0x02310000`): 64 entries of `0x30` bytes: source `+0`,
+work buffer `+4`, format byte `+0xd` (0 old, 1 new). When the source
+moves, `chr_texanim_memory_move` (`0x0077c900`) copies the word at `+0xc`
+of each of its 16-byte records into the work buffer from `+0x5b8` (old)
+or `+0xd28` (new). `Ch_TextureSetTex0` (`0x008313f0`) writes each
+texture-list entry's base pointers: the image texture's (index `+2`) into
+bits 0..13 of `+0x14`, the clut texture's (index `+0`) into bits 7..20 of
+`+0x18`.
