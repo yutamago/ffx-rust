@@ -591,6 +591,36 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
 - `yiFieldMapRead`/`yiBattleMapRead` read CD directory 0x13/0x1a files
   `2 map` and `2 map + 1` (`yiMapReadMaster`), status bits 0x2000/0x1000.
 
+## Two-operand intrinsics, angles, views and lights (round 11)
+
+- `_CIfmod` takes its operands in `ST1` (the dividend) and `ST0` (the
+  divisor) and leaves `fmod` alone in `ST0`; the float-call path has a
+  two-operand form for it (`FArgs::St01`; the hook loads both with
+  `fld qword` before calling the import thunk `0x009498e0`).
+  `rcefAngleWrap` (`0x0092d810`) brings an angle into `0..=2π`: negative
+  ones as `2π - fmod(-a, 2π)`, ones past 2π as `fmod(a, 2π)`, others (NaN
+  too) unchanged.
+- `rcefVecToAngle` (`0x0092ec20`): `acos(-v.z)`, mirrored to `2π - a` for
+  `v.x > 0`; `rcefAngleToDir` (`0x0092ded0`): `(-sin a, 0, -cos a, 0)`.
+- Renderer views: `yiSetBattleView` (`0x0090a140`, skipped with status bit
+  0x800) and `yiSetViewMatrices` (`0x0090a640`) multiply the battle view
+  by `g_YiViewAdjust` into the three view matrices `0x018ded78`,
+  `0x018dedb8`, `0x018dedf8` and keep the screen depth at `0x018df160`;
+  `yiSetLightMatrices` (`0x00908d00`) builds the normal light matrix
+  (`0x018deeb8`, three normalised directions) and the light colour matrix
+  (`0x018deef8`, four colours).
+- `yiImageVramAlloc` (`0x00917d80`): image GS memory by format; format
+  0x13 below page 0x2e00 becomes 0x1b, format 0x14 becomes 0x2c and is
+  cached at `0x025d17a4` for the next 0x14 image (format 0x24).
+- Keyword configs: palettes (`0x0093adf0`, table `0x00c60e94`: mode
+  `+0xa`, speed `+0xb`) and text sub-configs (`0x0093aee0`, table
+  `0x00c60e44`: `+0x5c`, `+0x60`, `+0x64`).
+- Testing: text parsers need a bounded chunk. With `rcdtChunkSetBin`'s
+  unbounded size, `rcdtParseSkipSeparators` keeps scanning through memory
+  after trailing separators, because NUL counts as a separator. `_CIacos`
+  is the x87's `atan2(sqrt(1 - x²), x)` in both oracles, and `_CIfmod` is
+  the oracle's `fprem` stub.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

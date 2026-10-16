@@ -126,6 +126,8 @@ pub const WORK: u32 = SCRATCH + 0x20;
 pub enum FArgs<'a> {
     /// In `ST0` (the CRT's `_CI*` intrinsics), at full precision.
     St0(f64),
+    /// In `ST1` and `ST0` (`_CIfmod(ST1, ST0)`: the first is `ST1`).
+    St01(f64, f64),
     /// cdecl words.
     Stack(&'a [u32]),
 }

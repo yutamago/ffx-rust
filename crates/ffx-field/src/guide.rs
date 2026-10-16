@@ -1778,6 +1778,18 @@ pub mod bridge {
         let s = YN_MAP_SYSTEM.get(mem);
         mem.write(s + 8, 1u32);
     }
+
+    /// `rcbgDelObjects(kind)` (`0x009219e0`): with a current scene,
+    /// `rcbgSceneDelObjects(scene, kind)`.
+    pub fn rcbg_del_objects<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        kind: u32,
+        call: &mut C,
+    ) {
+        if let Some(c) = yn_scene(mem) {
+            scene::bridge::rcbg_scene_del_objects(mem, c, kind, call);
+        }
+    }
 }
 
 #[cfg(test)]

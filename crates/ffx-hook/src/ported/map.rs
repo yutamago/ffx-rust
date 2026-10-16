@@ -2822,6 +2822,100 @@ ported! {
     rcbgSceneDelObjects @ 0x0092_06f0 => extern "C" fn shim_rcbg_scene_del_objects(s: u32, kind: u32) {
         scene::bridge::rcbg_scene_del_objects(&mut mem(), s, kind, &mut |_, f, a| call_cdecl(f, a));
     }
+    /// `rcefAngleWrap(a)`.
+    rcefAngleWrap @ 0x0092_d810 => extern "C" fn shim_rcef_angle_wrap(a: u32) -> f32 {
+        vu0::bridge::rcef_angle_wrap(&mut mem(), a, &mut |_, f, x| call_float(f, x))
+    }
+    /// `rcefVecToAngle(v)`.
+    rcefVecToAngle @ 0x0092_ec20 => extern "C" fn shim_rcef_vec_to_angle(v: u32) -> f32 {
+        vu0::bridge::rcef_vec_to_angle(&mut mem(), v, &mut |_, f, x| call_float(f, x))
+    }
+    /// `rcefAngleToDir(out, a)`.
+    rcefAngleToDir @ 0x0092_ded0 => extern "C" fn shim_rcef_angle_to_dir(out: u32, a: u32) {
+        vu0::bridge::rcef_angle_to_dir(&mut mem(), out, a, &mut |_, f, x| call_float(f, x));
+    }
+    /// `rcuiScaleVector_00937610(dst, v, s, a, b, c)`.
+    rcuiScaleVector_00937610 @ 0x0093_7610 => extern "C" fn shim_rcui_scale_vector_00937610(dst: u32, v: u32, s: u32, a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rcui_scale_vector(&mut mem(), dst, v, s, [a, b, c])
+    }
+    /// `rcefMainCreateObj(main)`.
+    rcefMainCreateObj @ 0x0092_5140 => extern "C" fn shim_rcef_main_create_obj(m: u32) -> u32 {
+        task::bridge::rcef_main_create_obj(&mut mem(), m, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefMainFini(main)`.
+    rcefMainFini @ 0x0092_51c0 => extern "C" fn shim_rcef_main_fini(m: u32) {
+        task::bridge::rcef_main_fini(&mut mem(), m, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefWorkSetFromVf00(w, b, v)`.
+    rcefWorkSetFromVf00 @ 0x0092_55d0 => extern "C" fn shim_rcef_work_set_from_vf00(w: u32, b: u32, v: u32) {
+        task::bridge::rcef_work_set_from_vf00(&mut mem(), w, b, v);
+    }
+    /// `rcbgPalAlloc(pal, entries)`.
+    rcbgPalAlloc @ 0x0092_9950 => extern "C" fn shim_rcbg_pal_alloc(pal: u32, entries: u32) {
+        model::bridge::rcbg_pal_alloc(&mut mem(), pal, entries, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcfxParticleDelete(ps)`.
+    rcfxParticleDelete @ 0x0092_8850 => extern "C" fn shim_rcfx_particle_delete(ps: u32) -> u32 {
+        model::bridge::rcfx_particle_delete(&mut mem(), ps, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcbgFPm173ProcSphere(fp)`.
+    rcbgFPm173ProcSphere @ 0x0092_2eb0 => extern "C" fn shim_rcbg_fpm173_proc_sphere(fp: u32) {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        model::bridge::rcbg_fpm173_proc_sphere(&mut mem(), fp, w, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcbgFPmGetPartData(id, n, part, k)`.
+    rcbgFPmGetPartData @ 0x0092_3190 => extern "C" fn shim_rcbg_fpm_get_part_data(id: u32, n: i32, part: u32, k: u32) -> u32 {
+        let mut work = Scratch([0; 0x20]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        model::bridge::rcbg_fpm_get_part_data(&mut mem(), id, n, part, k, w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcbgPalLoadConfig(pal, parse)`.
+    rcbgPalLoadConfig @ 0x0093_adf0 => extern "C" fn shim_rcbg_pal_load_config(pal: u32, p: u32) {
+        model::bridge::rcbg_pal_load_config(&mut mem(), pal, p, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcbgSceneLoadTextSubConfigKeys(obj, parse)`.
+    rcbgSceneLoadTextSubConfigKeys @ 0x0093_aee0 => extern "C" fn shim_rcbg_scene_load_text_sub_keys(o: u32, p: u32) {
+        model::bridge::rcbg_scene_load_text_sub_keys(&mut mem(), o, p, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `yiSetBattleView(view)`.
+    yiSetBattleView @ 0x0090_a140 => extern "C" fn shim_yi_set_battle_view(view: u32) {
+        let mut work = Matrix([0; 0x40]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        yi::bridge::yi_set_battle_view(&mut mem(), view, w, &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a));
+    }
+    /// `yiSetViewMatrices(m, view)`.
+    yiSetViewMatrices @ 0x0090_a640 => extern "C" fn shim_yi_set_view_matrices(m: u32, view: u32) {
+        let mut work = Matrix([0; 0x40]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        yi::bridge::yi_set_view_matrices(&mut mem(), m, view, w, &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a));
+    }
+    /// `yiSetLightMatrices()`.
+    yiSetLightMatrices @ 0x0090_8d00 => extern "C" fn shim_yi_set_light_matrices() -> u32 {
+        let mut work = Lights([0; 0x70]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        yi::bridge::yi_set_light_matrices(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `yiImageVramAlloc(img)`.
+    yiImageVramAlloc @ 0x0091_7d80 => extern "C" fn shim_yi_image_vram_alloc(img: u32) -> u32 {
+        yi::bridge::yi_image_vram_alloc(&mut mem(), img)
+    }
+    /// `rcuiMotionStep(d)`.
+    rcuiMotionStep @ 0x0093_5690 => extern "C" fn shim_rcui_motion_step(d: i32) {
+        rcui::bridge::rcui_motion_step(&mut mem(), d);
+    }
+    /// `rcuiSetNumber(n)`.
+    rcuiSetNumber @ 0x0093_7f70 => extern "C" fn shim_rcui_set_number(n: i32) {
+        rcui::bridge::rcui_set_number(&mut mem(), n);
+    }
+    /// `rcuiGuideSaveSize(g)`.
+    rcuiGuideSaveSize @ 0x0093_96a0 => extern "C" fn shim_rcui_guide_save_size(g: u32) -> u32 {
+        rcui::bridge::rcui_guide_save_size(&mem(), g)
+    }
+    /// `rcbgDelObjects(kind)`.
+    rcbgDelObjects @ 0x0092_19e0 => extern "C" fn shim_rcbg_del_objects(kind: u32) {
+        guide::bridge::rcbg_del_objects(&mut mem(), kind, &mut |_, f, a| call_cdecl(f, a));
+    }
 }
 
 /// The original's 16-byte aligned stack buffer for a load-image packet
@@ -2837,6 +2931,14 @@ struct Work([u8; 0xa4]);
 /// model description, a CD read's result).
 #[repr(C, align(16))]
 struct Scratch([u8; 0x20]);
+
+/// A 16-byte aligned stack matrix of the original.
+#[repr(C, align(16))]
+struct Matrix([u8; 0x40]);
+
+/// `yiSetLightMatrices`'s seven stack vectors.
+#[repr(C, align(16))]
+struct Lights([u8; 0x70]);
 
 /// `rcbgSceneSetMatrix`'s matrices and scaled vectors.
 #[repr(C, align(16))]
@@ -2856,10 +2958,16 @@ struct Host([u8; 0x1000]);
 fn call_float(f: u32, args: camera::FArgs<'_>) -> f64 {
     match args {
         camera::FArgs::St0(x) => st0_call(f, x),
+        camera::FArgs::St01(a, b) => st01_call(f, a, b),
         // SAFETY: the callers pass cdecl functions of two words returning
         // a float (`Ch_SetClipZ`); the declared `f32` return pops ST0.
         // SAFETY: a cdecl function of one word returning a double
         // (`atof`); the declared `f64` return pops ST0.
+        // SAFETY: a cdecl function without arguments returning a float
+        // (`MsCameraGetScrDpt`); the declared `f64` return pops ST0.
+        camera::FArgs::Stack(&[]) => unsafe {
+            std::mem::transmute::<usize, unsafe extern "C" fn() -> f64>(f as usize)()
+        },
         camera::FArgs::Stack(&[a]) => unsafe {
             std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> f64>(f as usize)(a)
         },
@@ -2900,6 +3008,37 @@ fn st0_call(f: u32, x: f64) -> f64 {
     {
         // the CRT's intrinsics only run in the 32-bit game
         let _ = (f, x);
+        unreachable!("the CRT intrinsics: this runs in the 32-bit game")
+    }
+}
+
+/// An `_CI*` intrinsic of two operands (`_CIfmod`) through the game's
+/// import thunk: `a` in `ST1`, `b` in `ST0` (`fld qword` each), the result
+/// read back from `ST0`.
+fn st01_call(f: u32, a: f64, b: f64) -> f64 {
+    // SAFETY: the thunk jumps to the CRT's intrinsic, which takes its
+    // operands in ST1 and ST0 and leaves the result alone in ST0 (eax,
+    // ecx, edx, the x87 and SSE registers clobbered).
+    #[cfg(target_arch = "x86")]
+    unsafe {
+        let mut out = 0f64;
+        std::arch::asm!(
+            "fld qword ptr [{a}]",
+            "fld qword ptr [{b}]",
+            "call {f}",
+            "fstp qword ptr [{out}]",
+            a = in(reg) &raw const a,
+            b = in(reg) &raw const b,
+            f = in(reg) f,
+            out = in(reg) &raw mut out,
+            clobber_abi("C"),
+        );
+        out
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        // the CRT's intrinsics only run in the 32-bit game
+        let _ = (f, a, b);
         unreachable!("the CRT intrinsics: this runs in the 32-bit game")
     }
 }

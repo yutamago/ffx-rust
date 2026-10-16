@@ -73,6 +73,16 @@ pub const VU0_COPY_REG: u32 = 0x00c8_f980;
 pub const VU0_SCALE: u32 = 0x00c8_f970;
 /// The emulated VU0 `vf00` (`0x00c0a004`).
 pub const VU0_VF00: u32 = 0x00c0_a004;
+/// 2π as the `f32` value widened (`.rdata` double, `0x00b39378`).
+pub const TWO_PI: u32 = 0x00b3_9378;
+/// `_CIfmod`'s import thunk (`0x009498e0`): `fmod(ST1, ST0)` into ST0.
+pub const CI_FMOD: u32 = 0x0094_98e0;
+/// `_CIacos`'s import thunk (`0x009498da`).
+pub const CI_ACOS: u32 = 0x0094_98da;
+/// `_CIsin`'s import thunk (`0x009498c8`).
+pub const CI_SIN: u32 = 0x0094_98c8;
+/// `_CIcos`'s import thunk (`0x009498c2`).
+pub const CI_COS: u32 = 0x0094_98c2;
 /// 100.0 in `.rdata` (`0x00b304f8`), the matrix row scale.
 pub const SCALE_100: u32 = 0x00b3_04f8;
 /// 10.0 in `.rdata` (`0x00b92318`).
@@ -369,6 +379,66 @@ pub mod bridge {
         let v = mem.read::<[u32; 4]>(mem.rebase(super::VU0_VF00));
         mem.write(dst, v);
         v[3]
+    }
+
+    /// `rcefAngleWrap(a)` (`0x0092d810`): an angle into `0..=2π` (the
+    /// `.rdata` double at `0x00b39378`): negative ones as `2π - fmod(-a,
+    /// 2π)`, ones past 2π as `fmod(a, 2π)` (`_CIfmod`, ST1 and ST0, through
+    /// `fcall`), both stored as `f32`; the rest (NaN too) unchanged.
+    pub fn rcef_angle_wrap<M: Mem>(
+        mem: &mut M,
+        a: u32,
+        fcall: &mut impl FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    ) -> f32 {
+        let x = Reg::load(f32::from_bits(a));
+        let two_pi = mem.read::<f64>(mem.rebase(super::TWO_PI));
+        let f = mem.rebase(super::CI_FMOD);
+        if x.value() < 0.0 {
+            let r = fcall(mem, f, crate::camera::FArgs::St01((-x).value(), two_pi));
+            return (Reg::constant(two_pi) - Reg::constant(r)).store();
+        }
+        if two_pi < x.value() {
+            let r = fcall(mem, f, crate::camera::FArgs::St01(x.value(), two_pi));
+            return Reg::constant(r).store();
+        }
+        f32::from_bits(crate::x87::copy(a))
+    }
+
+    /// `rcefVecToAngle(v)` (`0x0092ec20`): `acos(-v.z)` (`_CIacos`, through
+    /// `fcall`) stored as `f32`, `2π` minus it when `v.x > 0`.
+    pub fn rcef_vec_to_angle<M: Mem>(
+        mem: &mut M,
+        v: u32,
+        fcall: &mut impl FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    ) -> f32 {
+        let z = Reg::load(mem.read::<f32>(v + 8));
+        let f = mem.rebase(super::CI_ACOS);
+        let a = Reg::constant(fcall(mem, f, crate::camera::FArgs::St0((-z).value()))).store();
+        let x = mem.read::<f32>(v);
+        if 0.0 < x {
+            let two_pi = Reg::constant(mem.read::<f64>(mem.rebase(super::TWO_PI)));
+            return (two_pi - Reg::load(a)).store();
+        }
+        a
+    }
+
+    /// `rcefAngleToDir(out, a)` (`0x0092ded0`): `(-sin a, 0, -cos a, 0)`
+    /// (`_CIsin`, `_CIcos` through `fcall`, each rounded to `f32` first).
+    pub fn rcef_angle_to_dir<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        a: u32,
+        fcall: &mut impl FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    ) {
+        let x = Reg::load(f32::from_bits(a)).value();
+        let f = mem.rebase(super::CI_SIN);
+        let s = Reg::constant(fcall(mem, f, crate::camera::FArgs::St0(x))).store();
+        mem.write(out, (-Reg::load(s)).store());
+        mem.write(out + 4, 0f32);
+        let f = mem.rebase(super::CI_COS);
+        let c = Reg::constant(fcall(mem, f, crate::camera::FArgs::St0(x))).store();
+        mem.write(out + 8, (-Reg::load(c)).store());
+        mem.write(out + 0xc, 0f32);
     }
 }
 

@@ -894,6 +894,53 @@ pub mod bridge {
         }
         mem.write(c + 8, 0u32);
     }
+
+    /// `rcefMainCreateObj(main)` (`0x00925140`): [`rcef_obj_new`], its init
+    /// once more ([`rcef_obj_init`]), then added to the main's task list
+    /// (`+0x1c`, [`rcef_task_ctrl_add`]). Returns the object.
+    pub fn rcef_main_create_obj<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        m: u32,
+        call: &mut C,
+    ) -> u32 {
+        let o = rcef_obj_new(mem, call);
+        rcef_obj_init(mem, o);
+        rcef_task_ctrl_add(mem, m + 0x1c, o);
+        o
+    }
+
+    /// `rcefMainFini(main)` (`0x009251c0`): its environment current, the
+    /// block at `+0x18` back to the heap (`pppMemFree`) and cleared, then
+    /// [`rcef_task_ctrl_fini`] of its list (`+0x1c`).
+    pub fn rcef_main_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        m: u32,
+        call: &mut C,
+    ) {
+        let slot = super::main::ENV_SLOT.get(mem);
+        mem.write(slot, mem.read::<u32>(m + super::main::ENV));
+        let p = mem.read::<u32>(m + 0x18);
+        if p != 0 {
+            let heap = mem.read::<u32>(super::main::ENV_SLOT.get(mem));
+            let f = mem.rebase(super::PPP_MEM_FREE);
+            call(mem, f, &[heap, heap.wrapping_add(0x10), p]);
+            mem.write(m + 0x18, 0u32);
+        }
+        rcef_task_ctrl_fini(mem, m + 0x1c, call);
+    }
+
+    /// `rcefWorkSetFromVf00(w, b, v)` (`0x009255d0`): `+0x1c0` 1, `vf00` to
+    /// `+0x1c4`, `b` to `+0x1d4` (`rcCopyQword`), `v` at `+0x1e4`, `+0x1e8`
+    /// 0, `+0x1f0` 1, `+0x1f4` 0.
+    pub fn rcef_work_set_from_vf00(mem: &mut impl Mem, w: u32, b: u32, v: u32) {
+        mem.write(w + 0x1c0, 1u32);
+        crate::vu0::bridge::rcef_get_vf00(mem, w + 0x1c4);
+        crate::vu0::bridge::rc_copy_qword(mem, w + 0x1d4, b);
+        mem.write(w + 0x1e4, v);
+        mem.write(w + 0x1e8, 0u32);
+        mem.write(w + 0x1f0, 1u32);
+        mem.write(w + 0x1f4, 0u32);
+    }
 }
 
 #[cfg(test)]

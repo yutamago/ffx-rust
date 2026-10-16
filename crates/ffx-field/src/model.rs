@@ -197,6 +197,12 @@ pub const OP_RT_M_YXZ: u32 = 0x007e_9a30;
 pub const PPP_FP_GET_MNG_PTR: u32 = 0x0072_92f0;
 /// `Fp_Restart(id)` (`0x00729700`).
 pub const FP_RESTART: u32 = 0x0072_9700;
+/// `Ch_OptposGetElement(chr, n, k)` (`0x00835660`).
+pub const CH_OPTPOS_GET_ELEMENT: u32 = 0x0083_5660;
+/// The palette configuration keywords (`0x00c60e94`, a null-ended table).
+pub const PAL_CONFIG_KEYS: u32 = 0x00c6_0e94;
+/// The text sub-configuration keywords (`0x00c60e44`).
+pub const TEXT_SUB_KEYS: u32 = 0x00c6_0e44;
 /// The field programs' degree-to-radian factor (`.rdata` float,
 /// `0x00b678ec`).
 pub const FPM_ANGLE_SCALE: u32 = 0x00b6_78ec;
@@ -2547,6 +2553,163 @@ pub mod bridge {
         let mng = mem.read::<u32>(work);
         let f = mem.rebase(super::CH_ELEM_GET_MATRIX);
         call(mem, f, &[chr, elem, mng.wrapping_add(0xc)])
+    }
+
+    /// `rcbgPalAlloc(pal, entries)` (`0x00929950`): a new transfer
+    /// (`rcbgTrxNew`) at `+0xc` for `entries + 1` 16x16 CLUTs at GS page
+    /// `0x2e00` ([`rcbg_trx_set_regs_alloc`]).
+    pub fn rcbg_pal_alloc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        pal: u32,
+        entries: u32,
+        call: &mut C,
+    ) {
+        let t = rcbg_trx_new(mem, call);
+        mem.write(pal + 0xc, t);
+        rcbg_trx_set_regs_alloc(
+            mem,
+            t,
+            [0x2e00, 1, 0, 0, 0, 0x10, 0x10],
+            entries.wrapping_add(1),
+            call,
+        );
+    }
+
+    /// `rcfxParticleDelete(ps)` (`0x00928850`): [`rcfx_particle_fini`],
+    /// then the system freed (`rcFree`, a tail call).
+    pub fn rcfx_particle_delete<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        ps: u32,
+        call: &mut C,
+    ) -> u32 {
+        rcfx_particle_fini(mem, ps, call);
+        rc_free(mem, call, ps)
+    }
+
+    /// `rcbgFPm173ProcSphere(fp)` (`0x00922eb0`): at step 0x7c (`+0x1c`)
+    /// field program 0x4e restarts on the character's (`+0x10`) element 8
+    /// (`Ch_OptposGetElement(chr, 8, 0)`, [`rcbg_fpm_restart`]) and `+0x20`
+    /// is cleared. `work` as for [`rcbg_fpm_restart`].
+    pub fn rcbg_fpm173_proc_sphere<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        fp: u32,
+        work: u32,
+        call: &mut C,
+    ) {
+        if mem.read::<u32>(fp + 0x1c) != 0x7c {
+            return;
+        }
+        let chr = mem.read::<u32>(fp + 0x10);
+        let f = mem.rebase(super::CH_OPTPOS_GET_ELEMENT);
+        let elem = call(mem, f, &[chr, 8, 0]);
+        let chr = mem.read::<u32>(fp + 0x10);
+        rcbg_fpm_restart(mem, 0x4e, chr, elem, work, call);
+        mem.write(fp + 0x20, 0u32);
+    }
+
+    /// `rcbgFPmGetPartData(id, n, part, k)` (`0x00923190`): from the field
+    /// program's data (`pppFpGetMngPtr(id, &data, 0)`, `data` in `work`):
+    /// its `+0x30` chain followed `n` times, that node's `+0x8` table,
+    /// its first entry's part `part` (0x10 bytes from `+0x28`), whose
+    /// `+0xc` offsets give the `k`th block, `0xa0` past the node; 0 when
+    /// any link is missing.
+    pub fn rcbg_fpm_get_part_data<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        id: u32,
+        n: i32,
+        part: u32,
+        k: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(super::PPP_FP_GET_MNG_PTR);
+        call(mem, f, &[id, work, 0]);
+        let data = mem.read::<u32>(work);
+        if data == 0 {
+            return 0;
+        }
+        let mut node = mem.read::<u32>(data + 0x30);
+        for _ in 0..n.max(0) {
+            if node != 0 {
+                node = mem.read::<u32>(node);
+            }
+        }
+        if node == 0 {
+            return 0;
+        }
+        let t = mem.read::<u32>(node + 8);
+        if t == 0 {
+            return 0;
+        }
+        let e = mem.read::<u32>(t);
+        if e == 0 {
+            return 0;
+        }
+        let p = part.wrapping_shl(4).wrapping_add(0x28).wrapping_add(e);
+        if p == 0 {
+            return 0;
+        }
+        let offsets = mem.read::<u32>(p.wrapping_add(0xc));
+        mem.read::<u32>(offsets.wrapping_add(k.wrapping_mul(4)))
+            .wrapping_add(0xa0)
+            .wrapping_add(node)
+    }
+
+    /// `rcbgPalLoadConfig(pal, parse)` (`0x0093adf0`): after the next
+    /// token, keywords from the table at `0x00c60e94` until the parser
+    /// ends: 0 the mode byte `+0xa`, 1 the speed byte `+0xb` (integers), 2
+    /// stops; others are skipped.
+    pub fn rcbg_pal_load_config<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        pal: u32,
+        p: u32,
+        call: &mut C,
+    ) {
+        use crate::rcdt::bridge as rb;
+        rb::rcdt_parse_next_token(mem, p);
+        let table = mem.rebase(super::PAL_CONFIG_KEYS);
+        while rb::rcdt_parse_is_end(mem, p) == 0 {
+            match rb::rcdt_parse_get_keyword(mem, p, table, call) {
+                0 => {
+                    #[allow(clippy::cast_possible_truncation)] // `mov byte`
+                    let v = rb::rcdt_parse_get_int(mem, p, call) as u8;
+                    mem.write(pal + 0xa, v);
+                }
+                1 => {
+                    #[allow(clippy::cast_possible_truncation)] // `mov byte`
+                    let v = rb::rcdt_parse_get_int(mem, p, call) as u8;
+                    mem.write(pal + 0xb, v);
+                }
+                2 => return,
+                _ => {}
+            }
+        }
+    }
+
+    /// `rcbgSceneLoadTextSubConfigKeys(obj, parse)` (`0x0093aee0`): after
+    /// the next token, keywords from the table at `0x00c60e44` until the
+    /// parser ends: 0, 1, 2 the integers at `+0x5c`, `+0x60`, `+0x64`; 3
+    /// stops; others are skipped.
+    pub fn rcbg_scene_load_text_sub_keys<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        o: u32,
+        p: u32,
+        call: &mut C,
+    ) {
+        use crate::rcdt::bridge as rb;
+        rb::rcdt_parse_next_token(mem, p);
+        let table = mem.rebase(super::TEXT_SUB_KEYS);
+        while rb::rcdt_parse_is_end(mem, p) == 0 {
+            let at = match rb::rcdt_parse_get_keyword(mem, p, table, call) {
+                0 => 0x5c,
+                1 => 0x60,
+                2 => 0x64,
+                3 => return,
+                _ => continue,
+            };
+            let v = rb::rcdt_parse_get_int(mem, p, call);
+            mem.write(o + at, v);
+        }
     }
 }
 
