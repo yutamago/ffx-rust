@@ -76,7 +76,7 @@ and 7 more that still have their model block.
 | `0x4d4` | `i8` | automatic mouth movement | `Ch_MouthSetAutoTalk` (`0x00834770`) |
 | `0x4d8` | `f32` | 1234 after `Ch_MouthInit` (`0x00834750`) | |
 | `0x51c` | `f32` | (`hiju`) | `Ch_SetHiju` (`0x0082b340`) |
-| `0x530` | 16 bytes ×n | optional positions; one exists when its x is not 0 | `Ch_OptposGetExist` (`0x00835680`) |
+| `0x524` | 16 bytes ×n | optional positions x, y, z, w; one exists when its w (`0x530`) is not 0. `Ch_OptposGet` takes position `i` if any component is not 0, else position 0 if its w is not 0, else the point at `0x200` with w = 1 | `Ch_OptposGetExist` (`0x00835680`), `Ch_OptposGet` (`0x008354f0`) |
 | `0x694` | 16 bytes | bottom position | `Ch_OptposGetBottom` (`0x00835600`) |
 | `0x6a4` | 16 bytes | top position | `Ch_OptposGetTop` (`0x008356e0`) |
 | `0x6b4` | 16 bytes | camera reference | `Ch_OptposGetCameraRef` (`0x00835630`) |
@@ -170,6 +170,56 @@ and returns its result.
 | `0x71` | string | name (the object's `+4` points here) | the snapshots |
 | `0xb8` | string | directory name | `Ch_GetBlkDirName` |
 | `0x124` | ptr, `u32` | resident data and its size | `Ch_EffectGetResidentPtr` (`0x0082a9b0`), `Ch_GetChrRenderInsatanceFromOEF2Content` (`0x00826af0`) |
+| `0x6c` | ptr | the character archive it came from; attachment points: 16-byte entries from the archive's `+0x20`, count `+0x24`; entry `u16` id in bits 0..13 and kind in 14..15, `i16` element `+2`, offset x, y, z `+4` | `Ch_ElemGetAttr` (`0x00833a70`), `Ch_ElemGetDirect` (`0x00833bf0`) |
+
+`Ch_ElemGetAttr` returns the kind: 1 writes the offset scaled by
+10000 / data scale² × bind scale, 2 does not, 0 (or no such point) gives
+the unit vector (0, 0, 0, 1). Its element output is written in every case.
+
+## Loaded data and its pointers
+
+Loaded character data keeps its own address in its first word. When it
+moves, the difference to its new address is added to each of its pointers
+(`Ch_ArcMapping` `0x008256f0`, `Ch_ModelMapping` `0x00827590`,
+`Ch_TexDataMapping` `0x0083cba0`). A second call finds a difference of 0
+and changes nothing.
+
+- Archive (`.chr`): self pointer, `u32` entry count `+4`, (pointer, size)
+  pairs from `+0x10`. Entry 0 is the model header, 1 the texture data, 4 a
+  list of pointers (the pair is the list and its count,
+  `Ch_RelElemMapping`), 9 the model parameters (`Ch_CbArcMapping`
+  `0x00825ee0` copies them into the model block, defaults when the archive
+  has 9 entries or fewer, the second set of floats from parameter version
+  `0x1624`), 10 one more table (block `+0x120`).
+- Model header: `u16` version `+4`, model count `+6`, element count `+0xa`;
+  the model table at `+0x10` has 24-byte entries for versions
+  `0x831..0x1313` and 40-byte ones otherwise (`Chr_ModelEntry`
+  `0x00828be0`). A model has a mesh table (`u16` count `+6`, 12-byte
+  entries at `+0x10`) and a cloth table (`u16` count `+0x18`, `0x24`-byte
+  entries at `+0x1c`).
+- Texture data from version `0x1029` (`+0x10`) is fixed up, `+0x20` from
+  `0x1126`. A clut starting with the colour key `00 ff 00` or `ff 00 00`
+  has its first entry cleared.
+- `Ch_ClutMapping` (`0x0083ca20`) lays the cluts out after the clut table,
+  each at a 128-byte boundary less 0x20, size `(header & 0x7fff) + 2`
+  × 16 bytes, copying them when asked.
+
+## Cloth
+
+A model's cloth entry (`0x24` bytes): vertex index list `+8` (`u16`), `i8`
+extra count `+0x13`, `i16` vertex count `+0x1c`. The model's buffer
+(`+0xc`) holds per cloth `3 × k` vectors (`k` = count + extra): positions,
+velocities, previous positions. `Ch_ClothReset2` (`0x00824670`) copies the
+model vertices (`+8`) into positions and previous positions and zeroes the
+velocities' x, y, z, then sets flag bit 23 and resets the characters bound
+to it; it needs flag bit 21 and stops at a model without a buffer.
+
+The PC port's exceptions are literal tables in the code, by character id,
+model, part, motion id and the current map number (`g_CurrentMapNo`,
+`0x012fbc40`): `Ch_UseAnchorVertex`, `Ch_UseLargeCollisionRad` (radius
+scales 1.03 by default, 1.05, 1.165, 1.2, 1.25), `Ch_ShouldDisableClothForMotion`,
+`Ch_ClothSetAtariJimenCheck` (a case byte per id at `0x008248ac`).
+
 
 ## Module settings
 
@@ -206,3 +256,39 @@ subtracts 6.283184 until the angle is within ±3.141592, using the `double`
 widenings of those `f32` values, and stores each step as `f32`. Rust's
 `f64` arithmetic followed by `as f32` gives the same result bit for bit.
 The loop never ends for infinities, in the original and in Rust.
+
+## Matrices and elements
+
+An element (`0x160` bytes, from `+0x328`) has its data pointer at `+0`,
+a local matrix at `+8` and a global matrix at `+0x88` (`Ch_ElemInit`
+`0x00828b60` sets both to the identity, `+0xe4..+0x100` to 0 and
+`+0x104..+0x110` to 1.0). The root global and light matrices are the
+character's `+0x1d0` and `+0x210` (`Ch_GetRootGlobalMatrix` `0x00833f80`).
+A model's base matrix is the global matrix of the element its data starts
+with (`u16` at the model data's `+0`, `Ch_ModelGetBaseMatrix`
+`0x00830500`); `Ch_ModelGetMatrix` (`0x00830550`) multiplies it by the
+root global matrix with `cdc_Mul4x4`.
+
+## Motion frames and sequences
+
+`Ch_MotionLoopFrame` (`0x008392d0`) keeps the frame (`i32` `+0x740`, 8.8
+fixed) inside the motion: past the end (`+0x71c`) it steps back by the
+loop length (`+0x720`) while loops are left (`i16` `+0x724`, 0 loops for
+ever), restarts at `+0x718` when the length is 0, or stops on the end's
+last whole frame when the loops run out (clearing `+0x728` and `+0x754`).
+
+The sequence table `g_ChrSequences` (`0x01300a08`, 100 entries of `0x14`
+bytes) is relinked by `Ch_SeqLink` (`0x00838170`): one chain per key
+(`u16` `+4`) through `+8`, the chains' first entries through `+0xc` from
+`g_ChrSequenceHead` (`0x013011d8`).
+
+## Texture animation
+
+`g_ChrTexAnim` (`0x02310000`): 64 entries of `0x30` bytes: source `+0`,
+work buffer `+4`, format byte `+0xd` (0 old, 1 new). When the source
+moves, `chr_texanim_memory_move` (`0x0077c900`) copies the word at `+0xc`
+of each of its 16-byte records into the work buffer from `+0x5b8` (old)
+or `+0xd28` (new). `Ch_TextureSetTex0` (`0x008313f0`) writes each
+texture-list entry's base pointers: the image texture's (index `+2`) into
+bits 0..13 of `+0x14`, the clut texture's (index `+0`) into bits 7..20 of
+`+0x18`.

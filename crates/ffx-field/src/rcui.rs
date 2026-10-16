@@ -162,4 +162,11 @@ pub mod bridge {
     pub fn rcui_copy_matrix(mem: &mut impl Mem, dst: u32, src: u32) {
         copy_floats(mem, dst, src, 16);
     }
+
+    /// `TextUtilList::TextUtilList(this)` (`0x0090e6d0`): 64 bytes cleared
+    /// (`memset`, which returns `this`).
+    pub fn text_util_list_text_util_list(mem: &mut impl Mem, this: u32) -> u32 {
+        mem.write(this, [0u32; 16]);
+        this
+    }
 }

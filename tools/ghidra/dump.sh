@@ -12,12 +12,15 @@ ghidra="${GHIDRA_INSTALL_DIR:?set GHIDRA_INSTALL_DIR}"
 export JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-21-openjdk-amd64}"
 export GHIDRA_HEADLESS_MAXMEM="${GHIDRA_HEADLESS_MAXMEM:-16G}"
 
-mkdir -p "$work/ghidra" "$work/decomp"
+# FFX_DECOMP_OUT: write the dump elsewhere (then swap it in), so readers of
+# $work/decomp keep a whole one meanwhile.
+out="${FFX_DECOMP_OUT:-$work/decomp}"
+mkdir -p "$work/ghidra" "$out"
 common=(-scriptPath "$repo/tools/ghidra"
         -postScript ApplySymbols.java "$repo/symbols/ffx.sym"
-        -postScript DumpDecomp.java "$work/decomp"
-        -postScript DumpDataRefs.java "$work/decomp"
-        -postScript DumpCallSites.java "$work/decomp"
+        -postScript DumpDecomp.java "$out"
+        -postScript DumpDataRefs.java "$out"
+        -postScript DumpCallSites.java "$out"
         -max-cpu "$(nproc)")
 
 if [[ -d "$work/ghidra/ffx.rep" ]]; then

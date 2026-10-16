@@ -39,6 +39,11 @@ pub const ENABLED: Global<u32> = Global::new(0x00c5_e478);
 
 /// The sea's matrix (`Yn_SeaGetMatrix`, `Yn_SeaSetMatrix`).
 pub const SEA_MATRIX: Global<[f32; 16]> = Global::new(0x0193_bf28);
+/// 10.0, an `f64` in `.rdata`: the minimap model's origin scale
+/// (`Guide_RevealFog`).
+pub const FOG_SCALE: Global<f64> = Global::new(0x00b9_22b0);
+/// 40.0, an `f64` in `.rdata`: a fog cell's size (`Guide_RevealFog`).
+pub const FOG_CELL: Global<f64> = Global::new(0x00b5_af28);
 
 /// Size and centre of the minimap for each [`TARGET`]
 /// (`rcbgGuideSetTarget`'s cases).
@@ -175,6 +180,7 @@ pub mod bridge {
         FLAGS, Fade, POS, SIZE, TARGET, TARGETS, YN_MAP_SYSTEM, map, object, system,
     };
     use crate::{scene, x87};
+    use ffx_bridge::x87::{Reg, ftol};
 
     /// The guide object, when Yn's field state and it exist.
     fn yn_guide(mem: &impl Mem) -> Option<u32> {
@@ -443,6 +449,80 @@ pub mod bridge {
     /// `Yn_MapPartAnimeOff(part)` (`0x00919f40`).
     pub fn yn_map_part_anime_off(mem: &mut impl Mem, part: i32) {
         map_part_anime(mem, part, false);
+    }
+
+    /// `Yn_SeaResetMatrix()` (`0x0091ae30`): the identity; returns
+    /// `FFXVu0UnitMatrix`'s `eax`.
+    pub fn yn_sea_reset_matrix(mem: &mut impl Mem) -> u32 {
+        let m = super::SEA_MATRIX.ptr(mem).addr;
+        ffx_ps2::vu0::bridge::matrix_identity(mem, m)
+    }
+
+    /// `Yn_SeaSetMatrix(m)` (`0x0091ae60`): `FFXVu0CopyMatrix`.
+    pub fn yn_sea_set_matrix(mem: &mut impl Mem, m: u32) -> u32 {
+        let at = super::SEA_MATRIX.ptr(mem).addr;
+        ffx_ps2::vu0::bridge::matrix_copy(mem, at, m)
+    }
+
+    /// `Yn_PreBgLayerDispGet(part)` (`0x0091a770`): layer `part`'s first
+    /// word (its display flags) for a part below the count, else 0. With
+    /// no map the original reads the layers pointer at address 8, as here.
+    pub fn yn_pre_bg_layer_disp_get(mem: &impl Mem, part: i32) -> u32 {
+        if part >= yn_map_part_count(mem) {
+            return 0;
+        }
+        let s = YN_MAP_SYSTEM.get(mem);
+        let m = if s == 0 {
+            0
+        } else {
+            mem.read::<u32>(s + system::MAP)
+        };
+        let scene = if m == 0 {
+            0
+        } else {
+            mem.read::<u32>(m + map::SCENE)
+        };
+        let layers = mem.read::<u32>(scene.wrapping_add(scene::layout::LAYERS));
+        #[allow(clippy::cast_sign_loss)] // a negative part indexes back, as the original
+        let at = layers.wrapping_add((part as u32).wrapping_mul(scene::layer::SIZE));
+        mem.read(at)
+    }
+
+    /// `Guide_RevealFog(guide, x, z)` (`0x0091f420`): marks the 13 cells
+    /// of a diamond of radius 2 around the player's cell as seen in the
+    /// guide's 64 x 64 fog bitmap (`+0x70`). The cell is
+    /// `((x - ox * 10) / 40, (oz * 10 - z) / 40)` (`ox`, `oz` the minimap
+    /// model's `+0x90` and `+0xa8`; 10.0 and 40.0 `f64` constants in
+    /// `.rdata`), through `_ftol2_sse`, each coordinate clamped to 0..=63.
+    /// Returns the z cell (what `eax` holds).
+    pub fn guide_reveal_fog(mem: &mut impl Mem, g: u32, x: f32, z: f32) -> u32 {
+        const DX: [i8; 13] = [0, -1, 0, 1, -2, -1, 0, 1, 2, -1, 0, 1, 0];
+        const DZ: [i8; 13] = [-2, -1, -1, -1, 0, 0, 0, 0, 0, 1, 1, 1, 2];
+        let o = guide_mesh_object(mem, g);
+        let k = Reg::constant(super::FOG_SCALE.get(mem));
+        let ox = (Reg::load(mem.read::<f32>(o + 0x90)) * k).store();
+        let oz = k.mul_m32(mem.read::<f32>(o + 0xa8)).store();
+        let cell = Reg::constant(super::FOG_CELL.get(mem));
+        let ix = ftol(mem, (Reg::load(x).sub_m32(ox) / cell).value());
+        let iz = ftol(mem, (Reg::load(oz).sub_m32(z) / cell).value());
+        let fog = mem.read::<u32>(g + object::FOG);
+        for (dx, dz) in DX.into_iter().zip(DZ) {
+            let clamp = |v: u32| -> u32 {
+                #[allow(clippy::cast_possible_wrap)]
+                let v = v as i32;
+                #[allow(clippy::cast_sign_loss)]
+                if v < 0 { 0 } else { v.min(0x3f) as u32 }
+            };
+            #[allow(clippy::cast_sign_loss)]
+            let cx = clamp(ix.wrapping_add(i32::from(dx) as u32));
+            #[allow(clippy::cast_sign_loss)]
+            let cz = clamp(iz.wrapping_add(i32::from(dz) as u32));
+            let bit = cz * 64 + cx;
+            let at = fog.wrapping_add(bit >> 3);
+            let b = mem.read::<u8>(at);
+            mem.write(at, b | (1 << (bit & 7)));
+        }
+        iz
     }
 
     /// `Guide_MeshObject(guide)` (`0x0091d460`): the map's own minimap
