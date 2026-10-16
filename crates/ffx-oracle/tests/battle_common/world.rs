@@ -9,6 +9,8 @@ use ffx_oracle::Oracle;
 use super::*;
 /// `TOGetFFXLang`, which `DmgCalc_Bribe` asks (another module's).
 pub const TO_GET_FFX_LANG: u32 = 0x0064_10e0;
+/// `achievementUnlockAchievement` (main), stubbed in both oracles.
+pub const ACHIEVEMENT: u32 = 0x0082_2380;
 
 /// Where the cases live: the actors, a command, a result and scratch for
 /// the out values.

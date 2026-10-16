@@ -20,6 +20,7 @@ pub mod command;
 pub mod damage;
 mod encounters;
 mod formation;
+pub mod misc;
 pub mod rng;
 pub mod save;
 pub mod state;

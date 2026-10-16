@@ -650,6 +650,244 @@ pub mod bridge {
         }
         v
     }
+
+    /// Item list A (`MsSetItemWindow`: usable items without flag 0x400),
+    /// 0x70 `u16`, `0xff` after the last.
+    pub const ITEM_WINDOW: Global<[u16; 0x70]> = Global::new(0x0112_c6b6);
+    /// Item list B (usable items with flag 0x400).
+    pub const ITEM_WINDOW2: Global<[u16; 0x70]> = Global::new(0x0112_c796);
+    /// Items stolen so far (`Battle_Steal`, achievement 4 at 200).
+    pub const STEAL_COUNT: Global<u32> = Global::new(0x0113_0840);
+    /// No steals in this battle when 2 (`Battle_Steal`).
+    pub const STEAL_RULE: Global<u8> = Global::new(0x0112_c9e5);
+    /// Debug: steals take the rare item (`Battle_Steal`).
+    pub const DEBUG_RARE_STEAL: Global<u8> = Global::new(0x0112_a911);
+
+    /// `MsSetItemWindow` (`0x007906a0`): the battle item lists, in
+    /// inventory order: items usable in battle (kernel flag 2) into list A,
+    /// or list B with flag 0x400; the rest `0xff`.
+    pub fn ms_set_item_window(mem: &mut impl Mem) {
+        let ids: [u16; ITEM_SLOTS as usize] = ITEM_IDS.ptr(mem).cast().get(mem);
+        let (mut a, mut b) = ([0xffu16; 0x70], [0xffu16; 0x70]);
+        let (mut na, mut nb) = (0, 0);
+        for id in ids {
+            if id == 0xff {
+                continue;
+            }
+            let rec = ffx_kernel::bridge::rom(mem, ffx_kernel::bridge::ITEM, u32::from(id), 0);
+            let flags: u32 = mem.read(rec.wrapping_add(0x1c));
+            if flags & 2 == 0 {
+                continue;
+            }
+            if flags & 0x400 == 0 {
+                a[na] = id;
+                na += 1;
+            } else {
+                b[nb] = id;
+                nb += 1;
+            }
+        }
+        ITEM_WINDOW.set(mem, a);
+        ITEM_WINDOW2.set(mem, b);
+    }
+
+    /// `MsSaveItemUse(item, n)` (`0x00790550`): adds `n` (negative: uses)
+    /// of `item` (`0x2xxx`) to the inventory, 0-99 a slot, into the first
+    /// free slot when it has none; marks it got or used (`MsSetItemCheck`)
+    /// when the count changes; rebuilds the battle lists. 0, or -1 when
+    /// nothing changed hands.
+    pub fn ms_save_item_use(mem: &mut impl Mem, item: u32, n: i32) -> i32 {
+        use ffx_kernel::bridge::ms_check_range;
+        if item & 0xffff_f000 != 0x2000 || n == 0 {
+            return -1;
+        }
+        let ids = ITEM_IDS.ptr(mem);
+        let counts = ITEM_COUNTS.ptr(mem);
+        let mut free = -1i32;
+        for i in 0..ITEM_SLOTS {
+            let id = ids.at(i).get(mem);
+            let c = counts.at(i).get(mem);
+            if u32::from(id) == item && c != 0 && (n >= 0 || i32::from(c) + n >= 0) {
+                let v = ms_check_range(i32::from(c) + n, 0, 99);
+                counts.at(i).set(mem, v.to_le_bytes()[0]);
+                if v != i32::from(c) {
+                    let table = if n > 0 {
+                        ms_get_item_check(mem)
+                    } else {
+                        ms_get_save_item_use(mem)
+                    };
+                    ms_set_item_check(mem, item, table);
+                }
+                if v == 0 {
+                    ids.at(i).set(mem, 0xff);
+                }
+                ms_set_item_window(mem);
+                return 0;
+            }
+            if (id == 0 || c == 0) && free < 0 {
+                free = i.cast_signed();
+            }
+        }
+        if free >= 0 && n > 0 {
+            let f = free.cast_unsigned();
+            ids.at(f).set(
+                mem,
+                item.to_le_bytes()[..2]
+                    .try_into()
+                    .map_or(0, u16::from_le_bytes),
+            );
+            counts
+                .at(f)
+                .set(mem, ms_check_range(n, 0, 99).to_le_bytes()[0]);
+            ms_set_item_window(mem);
+            return 0;
+        }
+        -1
+    }
+
+    /// `Battle_Steal(user, target, spoils, info, fail)` (`0x0078b760`): a
+    /// steal from a monster's spoils (`+0xa` chance /255, items `+0x24` /
+    /// `+0x26`, counts `+0x28` / `+0x29`) with generator 10; the rare item
+    /// with generator 11 below 32 (128 with the user's `+0x6be` bit 0x80,
+    /// 256 with 0x100). A steal halves the chance, counts at the target's
+    /// `+0xdeb`, and puts the item in the inventory; `info` `+8`/`+0xa` say
+    /// what (`0xffff` = something to steal, `+7` set). In the Korean game
+    /// item 0x2065 is 2 × 0x206d. `lang` is `TOGetFFXLang`, `achievement`
+    /// `achievementUnlockAchievement` (both other modules').
+    #[allow(clippy::too_many_arguments)]
+    pub fn battle_steal<M: Mem>(
+        mem: &mut M,
+        user: u32,
+        target: u32,
+        spoils: u32,
+        info: u32,
+        fail: i32,
+        lang: impl FnOnce(&mut M) -> u32,
+        achievement: impl FnOnce(&mut M, u32),
+    ) -> u32 {
+        use crate::damage::bridge::DEBUG_ALWAYS_HIT;
+        use crate::rng::bridge::brnd;
+        if spoils == 0 {
+            return 0;
+        }
+        let u8_at = |mem: &M, o: u32| mem.read::<u8>(spoils.wrapping_add(o));
+        let u16_at = |mem: &M, o: u32| mem.read::<u16>(spoils.wrapping_add(o));
+        let mut chance = i32::from(u8_at(mem, 0xa));
+        let something = chance != 0
+            && u8_at(mem, 0x28) != 0
+            && u16_at(mem, 0x24) & 0xf000 == 0x2000
+            && STEAL_RULE.get(mem) != 2;
+        if !something {
+            chance = 0;
+        }
+        mem.write(info.wrapping_add(8), if something { 0xffffu16 } else { 0 });
+        mem.write(info.wrapping_add(7), 1u8);
+        mem.write(info.wrapping_add(0xa), 0u16);
+        let r = brnd(mem, 10).cast_signed() % 0xff;
+        let k: u16 = mem.read(user.wrapping_add(0x6be));
+        let rare = if k & 0x100 != 0 {
+            0x100
+        } else if k & 0x80 != 0 {
+            0x80
+        } else {
+            0x20
+        };
+        if !((r < chance || DEBUG_ALWAYS_HIT.get(mem) != 0) && fail == 0) {
+            return 0;
+        }
+        let c = u8_at(mem, 0xa);
+        let c = (u32::from(c) * 50 / 100).to_le_bytes()[0];
+        mem.write(spoils.wrapping_add(0xa), c.max(1));
+        let r = brnd(mem, 11) & 0xff;
+        let which = u32::from(
+            (r < rare || DEBUG_RARE_STEAL.get(mem) != 0)
+                && u8_at(mem, 0x29) != 0
+                && u16_at(mem, 0x26) & 0xf000 == 0x2000,
+        );
+        let mut count = u16::from(u8_at(mem, 0x28 + which));
+        let mut item = u16_at(mem, 0x24 + 2 * which);
+        mem.write(info.wrapping_add(8), count);
+        mem.write(info.wrapping_add(0xa), item);
+        if lang(mem) == 0xb && item == 0x2065 {
+            mem.write(spoils.wrapping_add(0x24 + 2 * which), 0x206du16);
+            mem.write(spoils.wrapping_add(0x28 + which), 2u8);
+            item = 0x206d;
+            count = 2;
+            mem.write(info.wrapping_add(0xa), item);
+            mem.write(info.wrapping_add(8), count);
+        }
+        if target != 0 {
+            let s: u8 = mem.read(target.wrapping_add(0xdeb));
+            if s != 0xff {
+                mem.write(target.wrapping_add(0xdeb), s + 1);
+            }
+        }
+        if mem.read::<u8>(target.wrapping_add(0xded)) == 6 {
+            let n = STEAL_COUNT.get(mem).wrapping_add(1);
+            STEAL_COUNT.set(mem, n);
+            if n.cast_signed() >= 200 {
+                achievement(mem, 4);
+            }
+        }
+        ms_save_item_use(mem, u32::from(item), i32::from(count.cast_signed()));
+        0
+    }
+
+    /// `Battle_StealGil(user, target, spoils, info, fail)` (`0x0078b920`):
+    /// Mug's gil: with the spoils' gil (`+0x113`) and the target's chance
+    /// (`+0x712`, /255, halved by each success), `(100 + roll % 101) · gil
+    /// · 100 / 200 · chance / 255` gil into `info` `+0x10` (-1 for none to
+    /// take); generator 10.
+    pub fn battle_steal_gil(
+        mem: &mut impl Mem,
+        target: u32,
+        spoils: u32,
+        info: u32,
+        fail: i32,
+    ) -> u32 {
+        use crate::damage::bridge::DEBUG_ALWAYS_HIT;
+        use crate::rng::bridge::brnd;
+        if spoils == 0 {
+            return 0;
+        }
+        mem.write(info.wrapping_add(0xc), 1u8);
+        let gil: u8 = mem.read(spoils.wrapping_add(0x113));
+        if gil == 0 || STEAL_RULE.get(mem) == 2 {
+            mem.write(info.wrapping_add(0x10), u32::MAX);
+            return 0;
+        }
+        mem.write(info.wrapping_add(0x10), 0u32);
+        let chance = i32::from(mem.read::<i16>(target.wrapping_add(0x712)));
+        let r = brnd(mem, 10).cast_signed() % 0xff;
+        if (r < chance || DEBUG_ALWAYS_HIT.get(mem) != 0) && fail == 0 {
+            let r = brnd(mem, 10).cast_signed() % 0x65;
+            let x = (r + 100).wrapping_mul(i32::from(gil)).wrapping_mul(100) / 200;
+            let now = i32::from(mem.read::<i16>(target.wrapping_add(0x712)));
+            mem.write(info.wrapping_add(0x10), x.wrapping_mul(now) / 0xff);
+            let c = (chance * 50 / 100).max(1);
+            mem.write(
+                target.wrapping_add(0x712),
+                c.to_le_bytes()[..2]
+                    .try_into()
+                    .map_or(0, u16::from_le_bytes),
+            );
+        }
+        0
+    }
+
+    /// `MsGetActionBuffer(actor)` (`0x0078d040`): the first of the actor's
+    /// two 0x2d8-byte action buffers (`+0x774`) not in use (`+2` 0xff),
+    /// cleared; null when both are.
+    pub fn ms_get_action_buffer(mem: &mut impl Mem, actor: u32) -> u32 {
+        for i in 0..2 {
+            let p = actor.wrapping_add(0x774 + i * 0x2d8);
+            if mem.read::<u8>(p.wrapping_add(2)) == 0xff {
+                crate::util::bridge::ms_struct_clear(mem, p, 0x2d8);
+                return p;
+            }
+        }
+        0
+    }
 }
 
 #[cfg(test)]
