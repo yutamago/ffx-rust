@@ -4274,6 +4274,7 @@
 0x00857180 function Native_SetTalkRange          # 0x0061: args (range: float, truncated); pos block (FUN_0086c2b0) +0x40; talk check 0x00866980: dist <= ctx+0x1f0 + range; usually 13.0
 0x008572e0 function Native_SetRadius44           # 0x0062: args (r: float, truncated); pos block +0x44, ?collision/push radius (consumer not found); usually 6.0, set next to 0x0061/0x0063
 0x00857400 function Native_Random                # 0x00a6: args (n) -> (Rng_Next(2) & 0xffff) * max(n,1) >> 16, so 0..n-1; scripts use `pushimm 7; func 0x00a6; popv`
+0x008574c0 function Native_01a5               # 0x01a5: `(a, b)` -> `0x00909e30(a, b)`; 1. (ffx_script::vm::bridge::native_map)
 0x008574f0 function Native_SetTalkAngle          # 0x0063: args (radians); pos block +0x3c; talk check passes it to FUN_0088b780 with the player yaw; usually 1.047 (60 degrees)
 0x00857520 function Native_TurnStart             # 0x0019: args (slotMask, mode, param); turn struct +0x00 = param, +0x02 = mode (low 5 bits: 2 timed turn, 3 ...), FUN_00871030/FUN_00871090 spread it to the slots in mask; scripts "0, 0xd002, 0" / "0, 0x1003, 0" then 0x001b
 0x00857680 function Native_Random16              # 0x00a9: args () -> Rng_Next(2) & 0xffff (Ghidra misses this function; checked in the disassembly); scripts follow it with `pushimm 5; mod`
@@ -4295,10 +4296,12 @@
 0x008587a0 function Native_GetYawToMoveTarget    # 0x001f: no args -> float; FUN_0088b430 atan2 in XZ from position to current move slot target (+0x28/+0x30); scripts feed it to 0x0028
 0x00858970 function Native_AngleToPoint          # 0x00f4 float (x, y, z) -> atan2 angle from the worker's x/z (0x0086c2b0) to (x, z), y ignored (0x0088b430)
 0x00858b50 function Native_MsgOpen               # 0x006a: args (window, mode) -> window; window state +0x14 = 1 (opening); Msg_ClampChoices(win, mode) gives the flags in +0x1d (bit 2 = choice, uses Msg_Flags choice count); sets up and shows the text box (0x008ada30, 0x00906d90, 0x008b0000, position 0x008af850/0x008afa90, 0x008ade10); mode is 0 (32825 calls), 2 (211) or 66
+0x00858c90 function Native_01e4               # 0x01e4: `(x, y, z, n)`: returns `0x0090a470(x, y, z, n)`'s `EAX`. (ffx_script::vm::bridge::native_map)
 0x00858d30 function Native_GetPitchToMoveTarget  # 0x0020: no args -> float; second result of FUN_0088b4d0 (vertical angle to the move target); scripts feed it to 0x0029
 0x00858e50 function Native_MusicLoad             # 0x0102 start (music) -> result slot; poll 0x00859040, int 0x00859250
 0x00859040 function Native_MusicLoad_Poll        # 0x0102 poll: done (5) once the sound request count 0x012fb808 <= 1
 0x00859060 function Native_MsgClose              # 0x006b: args (window) -> window; Msg_CloseWindow 0x008640f0 (state 3 = closing unless already 0/3)
+0x008591d0 function Native_01e6               # 0x01e6: `(n, x, y)`: `0x0090a430(n, x, y)`; returns `n`. (ffx_script::vm::bridge::native_map)
 0x00859250 function Native_MusicLoad_Result      # 0x0102 int: Music_Load(music) 0x00886960 -> music; FMOD cmd 0x28 = FmodMusic::read (0x00709080, ids < 0xb6)
 0x00859410 function Native_FootstepHookEnable    # 0x0151 (material) -> 1; sets bit n of 0x0132ff2c: footstep sound on ground material n (Snd_KickFoot 0x008866b0) goes to a script request (0x00876950) instead of the SE; ?
 0x00859590 function Native_SetMapFadeType        # 0x00bc: args (t) -> t; g_SaveData+0x11 = t; at the map change 0x0086ff40 picks 0x0082cbc0 (t=0) or 0x0082cbe0 (t=1) fade; scripts push it right before map jump 0x010b
@@ -6100,16 +6103,72 @@
 0x0091ae60 function Yn_SeaSetMatrix           # fh v3:bsim1.00 0x0091ae60
 0x0091ae80 function Yn_SeaSetPos              # fh v3:bsim1.00 0x0091ae80
 0x0091aea0 function Yn_SeaSetUvSpd            # fh v3:exact 0x0091aea0
+0x0091af60 function Native_MapSpriteWait      # 0x8004: start): pushes 1 and goes on as [`native_8005`] (so `+4` is 1). (ffx_script::vm::bridge::native_map)
+0x0091af80 function Native_806a               # 0x806a: `0x0091a260(x)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091afa0 function Native_MapSpriteWait_Poll # 0x8004: [`native_8005_poll`]. (ffx_script::vm::bridge::native_map)
+0x0091afc0 function Native_806b               # 0x806b: `(on)`: 2 into `0x025d5eb8` when on, then `0x00645e40()`; 1. (ffx_script::vm::bridge::native_map)
+0x0091aff0 function Native_8006               # 0x8006: start): `(n)`, `0x00874000(n)`'s `EAX`; on map `0x159c` at scenario `0x7e4` with `n` 2 it first sets `0x0193bf68`. (ffx_script::vm::bridge::native_map)
+0x0091b040 function Native_8006_Poll          # 0x8006: done at once. (ffx_script::vm::bridge::native_map)
+0x0091b050 function Native_8007               # 0x8007: `0x00729740()`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b060 function Native_8008               # 0x8008: `0x007296a0()`; 1. (ffx_script::vm::bridge::native_map)
 0x0091b070 function Native_FpBind                # 0x8009: args (fp id, bone) -> 1; Fp_BindToWorker(worker, id, bone); bone often from func 0x0213
 0x0091b0a0 function Native_FpBindPos             # 0x800a: args (fp id, x, y, z) -> 1; debug "**** mpfpbindpos id:%d pos:%f,%f,%f"; 0x00862920 sets the bound effect's offset (0x0072a630)
 0x0091b130 function Native_FpUnbind              # 0x800b: args (fp id; <= 0 = all) -> 1; 0x008628a0 clears the worker's FP slots (0x0072a120)
+0x0091b160 function Native_800c               # 0x800c: `(on)` -> `0x00729050(on != 0)`; returns `on != 0`. (ffx_script::vm::bridge::native_map)
 0x0091b1a0 function Native_MapPartShow           # 0x800f: args (part index) -> 1; language override through 0x006412b0, then 0x0091a830 clears bit 0 of the 0xc0-byte map part entry and enables it (0x00644120(i, 1))
 0x0091b1e0 function Native_MapPartHide           # 0x8010: args (part index) -> 1; 0x0091a7c0 sets bit 0 and disables the part (0x00644120(i, 0))
+0x0091b200 function Native_8011               # 0x8011: `0x0091ab30(a, b, c)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b280 function Native_8014               # 0x8014: `(n, x)` -> `0x0091acc0(n, x)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b400 function Native_801d               # 0x801d: `0x0091a930(a, b)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b430 function Native_801e               # 0x801e: `0x0091a080(x)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b450 function Native_801f               # 0x801f: `0x0091a030(x)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b470 function Native_8020               # 0x8020: `0x00919f90(x)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b490 function Native_8021               # 0x8021: `0x00919f40(x)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b4b0 function Native_8022               # 0x8022: `0x00919fe0(a, b)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b550 function Native_8026               # 0x8026: `(a, x, b, c, d)` (x a float) -> `0x0091ad80(a, x, b, c, d)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b680 function Native_802c               # 0x802c: `0x0091a220()`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b690 function Native_802d               # 0x802d: `0x0091a200()`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b6a0 function Native_802e               # 0x802e: `0x0091a9c0(a, b)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b6d0 function Native_802f               # 0x802f: `0x0091a970(x)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b6f0 function Native_8030               # 0x8030: `0x0091aa90(a, b)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b740 function Native_8032               # 0x8032: `(x)` -> `0x00919df0(x)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b790 function Native_8035               # 0x8035: `0x00729530`/`0x007294f0`. (ffx_script::vm::bridge::native_map)
+0x0091b7d0 function Native_8036               # 0x8036: `0x00729440`/`0x00729400`. (ffx_script::vm::bridge::native_map)
+0x0091b810 function Native_FogSetParams       # 0x8037: `(a, b, c)` -> `yiSetFogParam(a, b, c)`; on stage `0x140` also `0x006431e0(a)`, `0x006431a0(b)`, `0x006431c0(c / 255)` and `0x00643180(1.0)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b8b0 function Native_FogSetParam0       # 0x8038: the fog's first parameter, then `0x006431e0(x)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b930 function Native_FogGetParam0       # 0x8039: float): the fog's first parameter. (ffx_script::vm::bridge::native_map)
+0x0091b960 function Native_FogSetParam1       # 0x803a: the second, then `0x006431a0(x)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091b9e0 function Native_FogGetParam1       # 0x803b: float): the second. (ffx_script::vm::bridge::native_map)
+0x0091ba10 function Native_FogSetParam2       # 0x803c: the third, then `0x006431c0(x / 255)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091baa0 function Native_FogGetParam2       # 0x803d: float): the third. (ffx_script::vm::bridge::native_map)
+0x0091bad0 function Native_FogSetColor        # 0x803e: `(r, g, b)` -> `yiSetFogColor(&[r, g, b, 0])`, then [`fog_color_tail`]; 1. (ffx_script::vm::bridge::native_map)
+0x0091bbb0 function Native_FogSetRed          # 0x803f: the fog colour's red. (ffx_script::vm::bridge::native_map)
+0x0091bc80 function Native_FogSetGreen        # 0x8040: green. (ffx_script::vm::bridge::native_map)
+0x0091bd50 function Native_FogSetBlue         # 0x8041: blue. (ffx_script::vm::bridge::native_map)
+0x0091be20 function Native_FogGetRed          # 0x8042: the fog colour's red. (ffx_script::vm::bridge::native_map)
+0x0091be50 function Native_FogGetGreen        # 0x8043: green. (ffx_script::vm::bridge::native_map)
+0x0091be80 function Native_FogGetBlue         # 0x8044: blue. (ffx_script::vm::bridge::native_map)
+0x0091beb0 function Native_BackSetColor       # 0x8045: `(r, g, b)` -> `yiSetBackColor(&[r, g, b, 0])`; 1. (ffx_script::vm::bridge::native_map)
+0x0091c000 function Native_BackGetRed         # 0x8049: the back colour's red. (ffx_script::vm::bridge::native_map)
+0x0091c030 function Native_BackGetGreen       # 0x804a: green. (ffx_script::vm::bridge::native_map)
+0x0091c060 function Native_BackGetBlue        # 0x804b: blue. (ffx_script::vm::bridge::native_map)
+0x0091c150 function Native_804f               # 0x804f: `(a, x, b)` -> `0x0091a150(a, x, x, b)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091c3c0 function Native_8059               # 0x8059: `(a, b)` -> `0x0072a590(b, a)` (the top first); 1. (ffx_script::vm::bridge::native_map)
+0x0091c410 function Native_FpSetStickPos      # 0x805b: `(n, x, y, z)` -> `pppFpSetStickPos(n, &[z, y, x])` (the floats in pop order); 1. (ffx_script::vm::bridge::native_map)
+0x0091c470 function Native_805c               # 0x805c: `(on)`: `on != 0` into `0x025d5eb8`, then `0x00645e40()`; 1. (ffx_script::vm::bridge::native_map)
+0x0091c4a0 function Native_805d               # 0x805d: `0x007297e0()`, then `0x0091a930(i, 0)` for each `i` below `0x0091a3d0()` (asked again each time); 1. (ffx_script::vm::bridge::native_map)
+0x0091c4d0 function Native_805e               # 0x805e: `Yn_GuideMapSetMapNo`'s caller `0x00919da0(x)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091c4f0 function Native_805f               # 0x805f: `0x007295f0(x)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091c510 function Native_8060               # 0x8060: `0x00729480(x)`; 1. (ffx_script::vm::bridge::native_map)
 0x0091c530 function Native_FieldSetMaskBit       # 0x8000: args (bit, on) -> bit; 0x0088eba0 sets/clears the bit in 0x018ded0c (default -9/-1, saved by Script init 0x00865dc0); ?meaning; map 0x188 forces bit 14 on
+0x0091c5b0 function Native_8001               # 0x8001: `(on)`: `0x00909e20(0x10)` and `0x00643df0(1)`, or `0x00909e10(0x10)` and `0x00643df0(0)`; returns `on`. (ffx_script::vm::bridge::native_map)
 0x0091c670 function Native_FpRun                 # 0x8002: args (fp id, restart) -> restart; restart != 0: Fp_Restart (run from start), 0: Fp_End
 0x0091c740 function Native_FpShow                # 0x800d: args (fp id, show) -> show; show != 0: Fp_Show, 0: Fp_Hide
 0x0091c7a0 function Native_FpRunMode2            # ?0x8003: args (fp id) -> 1; Fp_RestartMode2 (state 2)
+0x0091c7c0 function Native_8066               # 0x8066: `0x0072a750(x)`; 1. (ffx_script::vm::bridge::native_map)
+0x0091c7e0 function Native_MapSpriteWaitEnd   # 0x8005: start): `(a, b)` into the args words (`+0` a, `+4` b); returns `a`. (ffx_script::vm::bridge::native_map)
 0x0091c810 function Native_BltzSetObjModels      # ?0x8067: args (worker a, worker b, mode, unused) -> 1; Blitzball only (bltz000x); first map object of type 0x20008 gets both workers' models (+0x9c via 0x0086b3a0) and mode (0x00922ef0)
+0x0091c860 function Native_MapSpriteWaitEnd_Poll# 0x8005: the state of sprite object `+0` (`0x0072a760`): 1 not done, 2 done unless `+4` is set, others done (5). (ffx_script::vm::bridge::native_map)
 0x0091cb40 function rcCopyQword_0091cb40      # (dst, src): VFX_Copy16From(vf31 0x00c8f980, src), VFX_Copy16To(vf31, dst): a quadword copied through the emulated VU0 register (lqc2/sqc2); rcbgGuideUpdateEx
 0x0091cbd0 function rcCopyQword_0091cbd0      # (dst, src): as rcCopyQword_0091cb40; rcbgGuideUpdateEx, rcbgGuideUpdateWalk
 0x0091cc00 function Yn_NearestOnLine2D        # (out, a, b, p, clamp): a + t (b - a), t = -((a - p) . d) / |d|^2 (0 if |d|^2 <= 0), clamped to 0..1 when clamp

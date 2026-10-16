@@ -122,6 +122,11 @@ impl run::NativeHost for Run<'_> {
         self.0.call(ftol, Conv::Cdecl, &[]).unwrap();
         f80_to_f64(raw)
     }
+    fn scratch(&mut self) -> u32 {
+        // the bottom of the emulated stack: no call reaches that deep, and
+        // the comparisons leave the stack out, as the originals' locals are
+        self.0.stack_range().start + 0x100
+    }
 }
 
 /// An 80-bit x87 value as `fstp m64` stores it, NaN payloads kept (the
@@ -2355,6 +2360,7 @@ fn natives_match_the_original() {
     let ctrls = in_use(&Oracle::from_snapshot(&exe, &pages).unwrap());
     let mut rng = Xorshift(0x5eed_0005);
     let (mut compared, mut stops) = (0, 0);
+    let mut seen = std::collections::BTreeSet::new();
     for c in ctrls {
         let mut pair = None;
         let n = {
@@ -2362,7 +2368,10 @@ fn natives_match_the_original() {
             actors(a, b).len().min(12)
         };
         for i in 0..n {
-            for &(sym, float) in &PORTED {
+            for &(sym, float) in PORTED
+                .iter()
+                .chain(&ffx_script::vm::bridge::native_map::PORTED)
+            {
                 let (a, b) = pair.get_or_insert_with(|| fresh_run_pair(&pages, &exe, c));
                 let w = v::atel_get_basic_work(b, i32::try_from(i).unwrap());
                 orig(a, ATEL_GET_BASIC_WORK, &[u32::try_from(i).unwrap()]);
@@ -2415,9 +2424,19 @@ fn natives_match_the_original() {
                 }
                 no_diff(a, b, &what);
                 compared += 1;
+                seen.insert(sym);
             }
         }
     }
-    eprintln!("{compared} native calls compared ({stops} stopped in the original)");
+    let never: Vec<String> = PORTED
+        .iter()
+        .chain(&ffx_script::vm::bridge::native_map::PORTED)
+        .filter(|(sym, _)| !seen.contains(sym))
+        .map(|(sym, _)| format!("{sym:#x}"))
+        .collect();
+    eprintln!(
+        "{compared} native calls compared ({stops} stopped in the original); never completed here: {}",
+        never.join(" ")
+    );
     assert!(compared > 0, "nothing ran");
 }
