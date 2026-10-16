@@ -2337,6 +2337,7 @@
 0x00785a00 function MsSaveAddInfoData         # fh v3:exact 0x00785ac0
 0x00785b10 function MsSaveEncountCheck        # fh v3:exact 0x00785bd0
 0x00785b60 function MsGetChrAbilityMap        # fh v3:exact+call.cs 0x00785c20 cdecl
+0x00785c20 function MsSetGIL                  # (n): g_SaveGil = n clamped to 0..999999999; callers MsPayGIL, 0x0085f140; name ours
 0x00785c50 function MsSetSaveCommand          # fh v3:exact+call.cs 0x00785d10 cdecl
 0x00785e00 function MsSetSaveCommandUse       # fh v3:exact 0x00785ec0
 0x00785ed0 function MsSetSaveConfigEnglish    # fh v3:exact 0x00785f90
@@ -2538,9 +2539,11 @@
 0x00790b90 function AddMonsterCapture         # fh v3:exact 0x00790be0 +AddMonsterCapture
 0x00790be0 function MsSetMonsterCheck         # fh v3:bsim1.00 0x00790c30
 0x00790c10 function MsBattleProcess           # per frame; outside battle, a raised request flag 0x0112a8e2 starts Battle_Load; was Battle_Update
+0x00791170 function MsCheckChrHold            # (i, actor, cue): actor +0x4b6 != 0; the turn driver 0x00792210 asks it for actor 5 only; name ours
 0x00791630 function MsCheckChrMotionAll       # fh v3:exact 0x00791680
 0x00792170 function MsCheckPlyBtlPosAll       # fh v3:exact 0x007921c0
 0x00792200 function MsDebugCameraSleepInit    # fh v3:bsim1.00 0x00792250
+0x00792880 function MsCountChrReady           # (bits): actors in bits with +0x40b and +0x40a set; the turn driver 0x00792210 (g_BtlChrSet, after MsPayGIL); name ours
 0x007928d0 function MsGetBattleEndStatus      # fh v3:exact+call.cs 0x007928f0 cdecl
 0x007929b0 function MsInsertBtlCommand        # fh v3:exact 0x007929d0
 0x00792a40 function MsResetBtlTarget          # fh v3:exact 0x00792a60
@@ -2680,6 +2683,8 @@
 0x007990d0 function MsGetItem                 # gil, AP, two drop slots, overkill drops, bribe (spoils section 4); was Battle_GiveRewards
 0x007993b0 function MsSetWeaponName           # fh call.cs cdecl
 0x00799420 function msFieldItemGet            # (takara index, rewards): kind 0 gil x100, 2 item, 5 equipment from buki_get, 10 key item; was Treasure_Give
+0x007995c0 function MsCheckSameSide           # (i, bits): MsGetRamChrMonster(i) == that of the first actor in bits, 1 when none; MsSetChrMimic; name ours
+0x00799610 function MsCheckTargetsGone        # (bits, command): 1 when an actor in bits lacks +0xdc8/+0xdd9 or is KO'd (unless command +0x1a bit 6), or bits empty; MsSetChrMimic; name ours
 0x00799690 function MsGetCommandFar           # fh v3:exact 0x007996a0
 0x007996d0 function MsGetCommandTarget        # fh v3:exact 0x007996e0
 0x00799820 function MsGetCursorTarget         # fh v3:exact 0x00799830
@@ -2887,6 +2892,7 @@
 0x007ac680 function MsPushBtlPosAll           # fh v3:bsim1.00 0x007ac6a0
 0x007ac6a0 function MsSetChrPosAfterSummon    # fh v3:exact 0x007ac6c0
 0x007ac9c0 function Battle_QueueCommand          # (actor, command, target mask, ...): adds a command to the 4-entry queue at 0x01136a80 for the current actor; "TARGET ERROR CHR" when no target is valid
+0x007acb00 function MsActionRequestSet        # (kind): if g_BtlAction != -1: 0x48-byte block 0x01136a78 cleared, its byte 0 = kind, 0x01136a6c/0x01136a70 = 0, returns 0; else -1; MsActionRequest; name ours
 0x007acd40 function MsActTargetSearch         # (self, selector, property, unused, rng, mode, resolved, &pick): actors whose property is nonzero (mode|0x80: zero); mode 1 highest, 2 lowest; random pick via Rng_Next(rng); was Battle_FilterActors
 0x007ace90 function MsActionInit              # fh v3:bsim1.00 0x007aceb0
 0x007aceb0 function MsActionRequest           # fh call.cs cdecl
@@ -2907,7 +2913,10 @@
 0x007ade10 function MsExchangeParty           # fh v3:exact 0x007ade20
 0x007adf10 function MsExchangePlayer          # fh v3:exact 0x007adf20
 0x007adf90 function MsExchangeSummon          # fh v3:exact 0x007adfa0
+0x007ae0f0 function MsCheckCommand3029        # (u16 *ids): ids not null and ids[0] or ids[1] == 0x3029; MsParseCommand; name ours
+0x007ae120 function MsCommandKindMode         # (kind, command): kinds 1/5: 0 if command +0x1c bit 20, 2 if bit 21, else 1; MsParseCommand; name ours
 0x007ae1a0 function MsInsertChrCommand        # fh v3:exact 0x007ae1b0
+0x007ae2e0 function MsInsertScriptCommand     # (i, after, id): actor +0xdf2 = 0, MsInsertInputCue(i,0,0,0,after,1), MsInsertCommandCue of a one-entry cue (+2 0x100, +8 id, +0x10 g_BtlScriptTargets); MsParseCommand; name ours
 0x007ae370 function MsParseCommand            # fh v3:exact+call.cs 0x007ae380 cdecl
 0x007aeec0 function MsReturnParty             # fh v3:exact 0x007aeed0
 0x007aef20 function MsReturnSummon            # fh v3:exact 0x007aef30
@@ -2919,12 +2928,14 @@
 0x007af4b0 function MsCheckStatusAfterInput   # fh v3:exact 0x007af4c0
 0x007af4f0 function MsCheckStatusBeforeAction # fh v3:exact 0x007af500
 0x007af770 function MsCheckStatusBeforeActionDamage # fh v3:exact 0x007af780
+0x007af800 function MsDefensePosOffAll        # (): if g_BtlGuardTook: MsDefensePosOff on actors with +0x6d4 != 0xff, flag cleared; MsDeleteInputCue; name ours
 0x007af880 function MsDefensePosOff           # fh switch:bsim1.00 0x710037a3e0
 0x007af8a0 function MsDefenseProcess          # fh v3:exact 0x007af8b0
 0x007af920 function MsDefenseStartProcess     # fh v3:exact 0x007af930
 0x007afa60 function MsPaymentProcess          # fh v3:exact 0x007afa70
 0x007afa80 function MsPaymentProcessStart     # fh v3:exact 0x007afa90
 0x007afab0 function MsPoisonProcess           # fh v3:exact 0x007afac0
+0x007afb60 function MsAddChrGain              # (i, actor): if +0x714: +0x5bc += i8 +0x728[+0x715&1] (MsCheckRange 0..+0x5bd), +0x6e1 += i8 +0x726[..] (0..100); MsDeleteInputCue; name ours
 0x007afbd0 function MsCheckRikkuLimit         # fh v3:exact 0x007afbe0
 0x007afc90 function MsEffectLimitCheck        # fh v3:exact 0x007afca0
 0x007afd30 function MsEffectLimitStart        # fh v3:exact 0x007afd40
@@ -9223,6 +9234,7 @@
 0x0112bdf0 label g_BtlMenuCommand             # [u32; 0x12]; The menu command MsSetMenuCommand copies (0x48 bytes) and its flag.
 0x0112be38 label g_BtlMimic                # 0x48 bytes cleared by MsInitMimic
 0x0112be90 label g_BtlGilAmount               # i32, gil offered (DmgCalc_Bribe) or thrown (MsCalcDamageCommand formula 0x15: gil / 10)
+0x0112be94 label g_BtlMimicGil             # i32, g_BtlGilAmount when the mimic cue g_BtlMimic was saved (MsSetChrMimic)
 0x0112be98 label g_BtlEffectBuffer            # u32; The effect buffer and its size (MsEffectGetBufferAddress).
 0x0112be9c label g_BtlEffectBufferSize        # u32; with the one before it (same function, ffx_battle::misc)
 0x0112bea0 label g_BtlReadCue                 # u8; The read cue: entries of 12 bytes from 0x0112bea0, the current one (MsBtlReadStatusComplete marks its +2 done).
@@ -9242,6 +9254,7 @@
 0x0112c8a3 label g_BtlPartyExtra           # 17 bytes after the party, restored from 0x0112c8b4 by MsReturnParty
 0x0112c8b4 label g_BtlPartyExtraSaved      # 17 bytes (MsReturnParty)
 0x0112c8c8 label g_BtlChrSet                 # u32 actor bits; MsGetChrBit selector -4 returns its present actors
+0x0112c8d0 label g_BtlScriptTargets        # u32 targets: 0x007a3d00 copies an actor's +0xdc0, MsInsertScriptCommand queues a command on them, MsBattleExe clears
 0x0112c8d4 label g_BtlMotionBusy           # bit per actor: MsCheckChrMotionAll marks the first actor found running a motion
 0x0112c8e8 label g_BtlLastMagic2              # u32; The last magic of kind 2 (MsEffectGetLastMagicNum2).
 0x0112c90c label g_BtlMessageCueInit2         # u32; with the one before it (same function, ffx_battle::misc)
@@ -9359,6 +9372,7 @@
 0x01136428 label g_BtlMoveSplines          # 0x210-byte move splines: u32 count, points from +0x10 (MsGetChrMovePos kind 7, TkMtCalcSpline)
 0x01136a58 label g_BtlMoveTarget              # u8; The move target position (MsMoveTargetPos).
 0x01136a68 label g_BtlAction                  # i32; Set to -1 by MsActionInit.
+0x01136a6c label g_BtlActionRequest        # u32, cleared by MsActionRequestSet with 0x01136a70 and the 0x48-byte block 0x01136a78
 0x01136ad8 label g_BtlEffectCameraFloats      # [u32; 16]; 16 floats MsEffectSetCameraBufFloat sets.
 0x01136b60 label g_BtlSplines                 # [u32; 2]; Reset by MsSplineInit.
 0x01136f88 label g_AtelCamera              # 4 x 3 words cleared by MsAtelCameraInit

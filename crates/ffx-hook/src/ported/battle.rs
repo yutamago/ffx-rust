@@ -1,6 +1,7 @@
 //! `ffx-battle`: random numbers, the save block, actors, the battle camera,
 //! battle globals and helpers, damage.
 
+use ffx_battle::exec::bridge as exec;
 use ffx_battle::{actor::bridge as actor, camera::bridge as camera, command::bridge as cmd};
 use ffx_battle::{
     body::bridge as body, menu::bridge as menu, target::bridge as target, vector::bridge as vector,
@@ -39,6 +40,37 @@ fn call4(sym: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
         let f: unsafe extern "C" fn(u32, u32, u32, u32) -> u32 =
             std::mem::transmute(crate::rebase(sym));
         f(a, b, c, d)
+    }
+}
+
+/// Calls the game's cdecl code at a run-time address (`exec::Call`).
+#[allow(clippy::many_single_char_names)]
+fn call_ptr<M>(_: &mut M, f: u32, args: &[u32]) -> u32 {
+    // SAFETY: a cdecl function of the game taking these arguments (the
+    // bridge passes the arguments the original passes it).
+    unsafe {
+        match *args {
+            [a] => std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> u32>(f as usize)(a),
+            [a, b, c, d] => std::mem::transmute::<
+                usize,
+                unsafe extern "C" fn(u32, u32, u32, u32) -> u32,
+            >(f as usize)(a, b, c, d),
+            _ => unreachable!("no exec call takes {} arguments", args.len()),
+        }
+    }
+}
+
+/// The calls `MsCheckRikkuLimit` makes: the CD library's read queue gets
+/// a block whose `+0xc` is the actor index (the original's other words
+/// are stack garbage; zeros here).
+fn cd_call<M>(m: &mut M, f: u32, args: &[u32]) -> u32 {
+    if let [file, dest, done, i] = *args {
+        let block = [0u32, 0, 0, i, 0, 0, 0];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = block.as_ptr() as u32;
+        call_ptr(m, f, &[file, dest, done, at])
+    } else {
+        call_ptr(m, f, args)
     }
 }
 
@@ -2074,5 +2106,66 @@ ported! {
     /// `MsCameraGet(owner, cam, kind)`.
     MsCameraGet @ 0x007b_d110 => extern "C" fn ms_camera_get(owner: u32, cam: u32, kind: u32) -> u32 {
         camera::ms_camera_get(&mut mem(), owner, cam, kind)
+    }
+    /// `MsSetGIL(n)`.
+    MsSetGIL @ 0x0078_5c20 => extern "C" fn ms_set_gil(n: i32) {
+        exec::ms_set_gil(&mut mem(), n);
+    }
+    /// `MsPayGIL(n)`.
+    MsPayGIL @ 0x0078_59a0 => extern "C" fn ms_pay_gil(n: i32) -> i32 {
+        exec::ms_pay_gil(&mut mem(), n)
+    }
+    /// `MsCheckChrHold(i, actor, cue)`.
+    MsCheckChrHold @ 0x0079_1170 => extern "C" fn ms_check_chr_hold(_i: u32, actor: u32, _cue: u32) -> u32 {
+        exec::ms_check_chr_hold(&mem(), actor)
+    }
+    /// `MsCountChrReady(bits)`.
+    MsCountChrReady @ 0x0079_2880 => extern "C" fn ms_count_chr_ready(bits: u32) -> u32 {
+        exec::ms_count_chr_ready(&mem(), bits)
+    }
+    /// `MsSystemMessageCheck()`.
+    MsSystemMessageCheck @ 0x0079_d050 => extern "C" fn ms_system_message_check() -> i32 {
+        exec::ms_system_message_check(&mut mem(), &mut call_ptr)
+    }
+    /// `MsCheckRikkuLimit(i, actor, cue)`.
+    MsCheckRikkuLimit @ 0x007a_fbd0 => extern "C" fn ms_check_rikku_limit(i: u32, actor: u32, cue: u32) -> u32 {
+        exec::ms_check_rikku_limit(&mut mem(), &mut cd_call, i, actor, cue)
+    }
+    /// `MsCheckSameSide(i, bits)`.
+    MsCheckSameSide @ 0x0079_95c0 => extern "C" fn ms_check_same_side(i: u32, bits: u32) -> u32 {
+        exec::ms_check_same_side(i, bits)
+    }
+    /// `MsCheckTargetsGone(bits, command)`.
+    MsCheckTargetsGone @ 0x0079_9610 => extern "C" fn ms_check_targets_gone(bits: u32, command: u32) -> u32 {
+        exec::ms_check_targets_gone(&mem(), bits, command)
+    }
+    /// `MsSetChrMimic(i, actor, cue)`.
+    MsSetChrMimic @ 0x0079_9b40 => extern "C" fn ms_set_chr_mimic(i: u32, actor: u32, cue: u32) -> u32 {
+        exec::ms_set_chr_mimic(&mut mem(), &crt_trig, i, actor, cue)
+    }
+    /// `MsActionRequestSet(kind)`.
+    MsActionRequestSet @ 0x007a_cb00 => extern "C" fn ms_action_request_set(kind: u32) -> i32 {
+        exec::ms_action_request_set(&mut mem(), kind.to_le_bytes()[0])
+    }
+    /// `MsDefensePosOffAll()`.
+    MsDefensePosOffAll @ 0x007a_f800 => extern "C" fn ms_defense_pos_off_all() {
+        exec::ms_defense_pos_off_all(&mut mem());
+    }
+    /// `MsAddChrGain(i, actor)`.
+    MsAddChrGain @ 0x007a_fb60 => extern "C" fn ms_add_chr_gain(_i: u32, actor: u32) {
+        exec::ms_add_chr_gain(&mut mem(), actor);
+    }
+    /// `MsCheckCommand3029(ids)`.
+    MsCheckCommand3029 @ 0x007a_e0f0 => extern "C" fn ms_check_command_3029(ids: u32) -> u32 {
+        exec::ms_check_command_3029(&mem(), ids)
+    }
+    /// `MsCommandKindMode(kind, command)`.
+    MsCommandKindMode @ 0x007a_e120 => extern "C" fn ms_command_kind_mode(kind: u32, command: u32) -> u32 {
+        exec::ms_command_kind_mode(&mem(), kind, command)
+    }
+    /// `MsInsertScriptCommand(i, after, id)`.
+    MsInsertScriptCommand @ 0x007a_e2e0 => extern "C" fn ms_insert_script_command(i: u32, after: u32, id: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the original stores the low half
+        exec::ms_insert_script_command(&mut mem(), i, after, id as u16)
     }
 }
