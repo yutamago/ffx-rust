@@ -472,6 +472,71 @@ pub mod bridge {
         }
         mem.write(heap, 0u8);
     }
+
+    /// `Ch_MoveChrBlk(new, old)` (`0x008347a0`): a character archive moved
+    /// from `old` to `new`: the (last) model block holding `old` takes
+    /// `new` (`Ch_CbArcMapping`), and each active character on that block
+    /// is mapped again (`Ch_CbMapping`, `Ch_TextureReMapping`, its texture
+    /// animation moved, its other-character motion `+0x758` moved too).
+    pub fn ch_move_chr_blk(mem: &mut impl Mem, new: u32, old: u32) {
+        let base = crate::handle::bridge::CHR_BLK.ptr(mem).addr;
+        let mut b = 0u32;
+        for i in 0..40 {
+            let at = base + i * l::BLK_SIZE;
+            if mem.read::<u32>(at) != u32::MAX && mem.read::<u32>(at + 0x6c) == old {
+                b = at;
+            }
+        }
+        if b == 0 {
+            return;
+        }
+        ch_cb_arc_mapping(mem, b, new);
+        let d = new.wrapping_sub(old);
+        crate::handle::bridge::each_active(mem, |m, c| {
+            if m.read::<u32>(c + l::BLK) != b {
+                return;
+            }
+            ch_cb_mapping(m, c, b);
+            crate::texanim::bridge::ch_texture_re_mapping(m, c);
+            if m.read::<u32>(c + 0x6fc) != 0 {
+                let tex: u32 = m.read(m.read::<u32>(c + l::BLK) + l::BLK_TEX);
+                let i: u32 = m.read(c + 0x700);
+                crate::texanim::bridge::chr_texanim_memory_move(m, tex, i);
+            }
+            let mo: u32 = m.read(c + 0x758);
+            if mo != 0 {
+                m.write(c + 0x758, mo.wrapping_add(d));
+            }
+        });
+    }
+
+    /// `Ch_AnalysisChrNum(src, dst)` (`0x00829e60`): a `.chr` path's
+    /// `.cah` name: `src` up to its `.chr` dot copied over `dst` (no NUL:
+    /// `strncpy`), `"ah"` appended at the first NUL in `dst` from there,
+    /// then the first `mdl/` in it removed. Nothing without `.chr`.
+    /// Returns 0.
+    pub fn ch_analysis_chr_num(mem: &mut impl Mem, src: u32, dst: u32) -> u32 {
+        use crate::handle::bridge::c_string;
+        let s = c_string(mem, src);
+        let Some(dot) = s.windows(4).position(|w| w == b".chr") else {
+            return 0;
+        };
+        mem.write_bytes(dst, &s[..=dot]);
+        let mut end = dst;
+        while mem.read::<u8>(end) != 0 {
+            end = end.wrapping_add(1);
+        }
+        mem.write_bytes(end, b"ah\0");
+        let d = c_string(mem, dst);
+        if let Some(q) = d.windows(4).position(|w| w == b"mdl/") {
+            let rest = &d[q + 4..];
+            let at = dst + u32::try_from(q).unwrap_or(0);
+            let mut v = rest.to_vec();
+            v.push(0);
+            mem.write_bytes(at, &v);
+        }
+        0
+    }
 }
 
 #[cfg(test)]

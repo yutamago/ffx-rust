@@ -556,4 +556,389 @@ pub mod bridge {
         SHAPE_ENLARGE.set(mem, n);
         n
     }
+
+    /// `calculateVFXSP_ZMat(z)` (`0x00712d00`): 1 when `z` is nonzero.
+    #[must_use]
+    pub fn calculate_vfx_sp_zmat(z: u32) -> u32 {
+        u32::from(z != 0)
+    }
+
+    /// `calculateVFXSP_AlphaFunction(f)` (`0x00712c30`): the renderer's
+    /// blend flags for a PS2 alpha function (0x41, 0x42, 0x46, 0x48,
+    /// 0x88; 0x44 and others none, the others with a debug message).
+    #[must_use]
+    pub fn calculate_vfx_sp_alpha_function(f: u32) -> u32 {
+        match f {
+            0x41 => 0x100,
+            0x42 => 0x10,
+            0x46 => 0x20,
+            0x48 => 2,
+            0x88 => 0x200,
+            _ => 0,
+        }
+    }
+
+    /// `graphicVFXGetRenderDataByGeometry(g)` (`0x006453b0`): its render
+    /// data (`+0x24`), 0 for none.
+    pub fn graphic_vfx_get_render_data_by_geometry(mem: &impl Mem, g: u32) -> u32 {
+        if g == 0 {
+            0
+        } else {
+            mem.read(g.wrapping_add(0x24))
+        }
+    }
+
+    /// `g_VfxCurrentType` (`0x00c322aa`, a byte).
+    pub const CURRENT_TYPE: Global<u8> = Global::new(0x00c3_22aa);
+
+    /// The axis rotations `op_rt_m_x/y/z(dst, src, angle)`: `angle` in
+    /// `g_pppSinTable` steps (4096 a turn, `ftol` of it), the matrix
+    /// `src` turned about the axis into `dst` (every row, the translation
+    /// too; `src` read first, so they may be the same).
+    #[allow(clippy::many_single_char_names)] // i, s, c, m, p, q, u, v
+    pub fn op_rt_m(mem: &mut impl Mem, dst: u32, src: u32, angle: f32, axis: crate::mat::Axis) {
+        use crate::mat::Axis;
+        use ffx_bridge::x87::Reg;
+        let i = ffx_bridge::x87::ftol(mem, f64::from(angle));
+        let table = crate::ppp::bridge::SIN.ptr(mem);
+        let s = ffx_bridge::x87::round_trip(f32::from_bits(table.at(i & 0xfff).get(mem)));
+        let c = ffx_bridge::x87::round_trip(f32::from_bits(
+            table.at(i.wrapping_add(0x400) & 0xfff).get(mem),
+        ));
+        let m: [f32; 16] = mem.read(src);
+        mem.write(dst, m);
+        let (p, q) = match axis {
+            Axis::X => (1, 2),
+            Axis::Y => (2, 0),
+            Axis::Z => (0, 1),
+        };
+        let (s, c) = (Reg::load(s), Reg::load(c));
+        for r in 0..4 {
+            let (u, v) = (Reg::load(m[4 * r + p]), Reg::load(m[4 * r + q]));
+            // p' = u c - v s, q' = v c + u s
+            let pu = (u * c - v * s).store();
+            let qv = (v * c + u * s).store();
+            #[allow(clippy::cast_possible_truncation)] // below 16
+            {
+                mem.write(dst.wrapping_add(4 * (4 * r + p) as u32), pu);
+                mem.write(dst.wrapping_add(4 * (4 * r + q) as u32), qv);
+            }
+        }
+    }
+
+    /// `op_rt_m_yxz(dst, src, angles, t)` (`0x007e9a30`): `src` turned
+    /// about Y, X then Z (angles `[1]`, `[0]`, `[2]`), `t` added to the
+    /// translation.
+    pub fn op_rt_m_yxz(mem: &mut impl Mem, dst: u32, src: u32, angles: u32, t: u32) {
+        use crate::mat::Axis;
+        let a: [f32; 3] = mem.read(angles);
+        op_rt_m(mem, dst, src, a[1], Axis::Y);
+        let a0: f32 = mem.read(angles);
+        op_rt_m(mem, dst, dst, a0, Axis::X);
+        let a2: f32 = mem.read(angles.wrapping_add(8));
+        op_rt_m(mem, dst, dst, a2, Axis::Z);
+        for i in 0..3 {
+            let at = dst.wrapping_add(0x30 + 4 * i);
+            let v = ffx_bridge::x87::Reg::load(mem.read(t.wrapping_add(4 * i)))
+                .add_m32(mem.read(at))
+                .store();
+            mem.write(at, v);
+        }
+    }
+
+    /// `g_OpMdTagSizes` (`0x00c88aa8`): bytes per element of each of the
+    /// eight model packet tag types.
+    pub const MD_TAG_SIZES: Global<[u32; 8]> = Global::new(0x00c8_8aa8);
+
+    /// `op_md_packet_set_addr(packet, a, b)` (`0x00a69de0`): unless the
+    /// running spell is 0x94, 0x239 or 0xd0, every tag of the packet (from
+    /// `+0x20`, until a type byte of 0xff at `+1`) takes `a` at `+8` and `b`
+    /// at `+0xc`; a tag is 0x10 bytes plus its count (`i16` at `+2`) times
+    /// its type's size.
+    pub fn op_md_packet_set_addr(mem: &mut impl Mem, packet: u32, a: u32, b: u32) {
+        for id in [0x94, 0x239, 0xd0] {
+            if ffx_system::instance::bridge::magic_id(mem) == id {
+                return;
+            }
+        }
+        let sizes = MD_TAG_SIZES.ptr(mem).addr;
+        let mut t = packet.wrapping_add(0x20);
+        while mem.read::<u8>(t.wrapping_add(1)) != 0xff {
+            let kind = u32::from(mem.read::<u8>(t.wrapping_add(1)) & 7);
+            let n = i32::from(mem.read::<i16>(t.wrapping_add(2)));
+            mem.write(t.wrapping_add(8), a);
+            mem.write(t.wrapping_add(0xc), b);
+            let size: u32 = mem.read(sizes + 4 * kind);
+            t = t
+                .wrapping_add(0x10)
+                .wrapping_add(n.cast_unsigned().wrapping_mul(size));
+        }
+    }
+
+    /// A sound function (the sound module's), called through `call`.
+    fn snd<M: Mem>(
+        mem: &mut M,
+        f: u32,
+        args: &[u32],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = Global::<u32>::new(f).ptr(mem).addr;
+        call(mem, f, args)
+    }
+
+    /// `SndSepPlay(id, pan, vol)`.
+    const SND_SEP_PLAY: u32 = 0x0088_6e50;
+    /// `SndStopBattleStream()`.
+    const SND_STOP_BATTLE_STREAM: u32 = 0x0088_7760;
+    /// `SndStartBattleStream(channel, pan, vol)`.
+    const SND_START_BATTLE_STREAM: u32 = 0x0088_75a0;
+    /// `SndSepVolumeTranslate(id, vol, 0)`.
+    const SND_SEP_VOLUME_TRANSLATE: u32 = 0x0088_6ff0;
+    /// `SndSepTransSepOnly(sep, +0xc)`.
+    const SND_SEP_TRANS_SEP_ONLY: u32 = 0x0088_6f30;
+    /// `SndDataSendSync(0)`.
+    const SND_DATA_SEND_SYNC: u32 = 0x0088_5ee0;
+    /// `MagicFile_GetMagicId()` (the system module's).
+    const MAGIC_FILE_GET_MAGIC_ID: u32 = 0x009d_a3b0;
+
+    /// `g_OpOef2BattleStreamPlaying` (`0x011a0083`): set by
+    /// `op_oef2_se_on` when it starts a battle stream.
+    pub const BATTLE_STREAM_ON: Global<u8> = Global::new(0x011a_0083);
+    /// `g_OpOef2SoundCueHead`/`Count` (`0x023c3640`/`0x023c3642`) and the
+    /// 32-entry ring of cues (`0x023c3540`) and their arguments
+    /// (`0x023c35c0`).
+    pub const SOUND_CUE_HEAD: Global<u16> = Global::new(0x023c_3640);
+    /// See [`SOUND_CUE_HEAD`].
+    pub const SOUND_CUE_COUNT: Global<u16> = Global::new(0x023c_3642);
+    const SOUND_CUES: Global<u32> = Global::new(0x023c_3540);
+    const SOUND_CUE_ARGS: Global<u32> = Global::new(0x023c_35c0);
+    /// The second word of `g_OpOef2StreamCues` (`0x023c364c`).
+    pub const STREAM_CUE2: Global<u32> = Global::new(0x023c_364c);
+
+    /// The separate-sound ID of a kind-1 cue (`+8` points at its record,
+    /// the ID at `+8`).
+    fn sep_id(mem: &impl Mem, cue: u32) -> u32 {
+        let rec = ffx_system::stub::ptr32(mem.read(cue.wrapping_add(8)));
+        mem.read(rec.wrapping_add(8))
+    }
+
+    /// `op_oef2_se_on(cue, pan, vol)` (`0x007ffe10`): with `vol * 127 /
+    /// 256` (rounded toward 0), a kind-1 cue plays its separate sound
+    /// (`SndSepPlay`, when its ID is not negative), a kind-2 cue sets
+    /// `g_OpOef2BattleStreamPlaying`, stops the battle stream and starts
+    /// channel 0 and/or 1 for whichever of `0x023c3520`/`0x023c3524` it is
+    /// (all through `call`); returns 1, or 0 for another kind.
+    pub fn op_oef2_se_on<M: Mem>(
+        mem: &mut M,
+        cue: u32,
+        pan: u32,
+        vol: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let v = vol.cast_signed().wrapping_mul(0x7f);
+        let v = (v.wrapping_add((v >> 31) & 0xff) >> 8).cast_unsigned();
+        match mem.read::<u8>(cue) {
+            1 => {
+                let id = sep_id(mem, cue);
+                if id.cast_signed() >= 0 {
+                    snd(mem, SND_SEP_PLAY, &[id, pan, v], call);
+                }
+                1
+            }
+            2 => {
+                BATTLE_STREAM_ON.set(mem, 1);
+                snd(mem, SND_STOP_BATTLE_STREAM, &[], call);
+                for (ch, at) in [(0u32, 0x023c_3520u32), (1, 0x023c_3524)] {
+                    if Global::<u32>::new(at).get(mem) == cue {
+                        snd(mem, SND_START_BATTLE_STREAM, &[ch, pan, v], call);
+                    }
+                }
+                1
+            }
+            _ => 0,
+        }
+    }
+
+    /// `op_oef2_se_volume(cue, vol)` (`0x007ffde0`): a kind-1 cue's
+    /// separate sound to `vol` (`SndSepVolumeTranslate(id, vol, 0)` through
+    /// `call`); returns its result, or the cue (left in `eax`) for another
+    /// kind.
+    pub fn op_oef2_se_volume<M: Mem>(
+        mem: &mut M,
+        cue: u32,
+        vol: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if mem.read::<u8>(cue) != 1 {
+            return cue;
+        }
+        let id = sep_id(mem, cue);
+        snd(mem, SND_SEP_VOLUME_TRANSLATE, &[id, vol, 0], call)
+    }
+
+    /// `op_oef2_sound_cue_push(cue, arg)` (`0x007ffeb0`): a kind-1 cue
+    /// with a record queues (after `SndSepTransSepOnly(record, record
+    /// +0xc)` through `call`) at slot `(head + count) & 31` of the ring
+    /// with `arg`, the count one more; returns 0, or -1 when the ring is
+    /// full (32) or the cue is not one.
+    pub fn op_oef2_sound_cue_push<M: Mem>(
+        mem: &mut M,
+        cue: u32,
+        arg: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let count = SOUND_CUE_COUNT.get(mem);
+        if count >= 0x20 || mem.read::<u8>(cue) != 1 || mem.read::<u32>(cue.wrapping_add(8)) == 0 {
+            return u32::MAX;
+        }
+        let rec = ffx_system::stub::ptr32(mem.read(cue.wrapping_add(8)));
+        let extra: u32 = mem.read(rec.wrapping_add(0xc));
+        snd(mem, SND_SEP_TRANS_SEP_ONLY, &[rec, extra], call);
+        let slot = u32::from(
+            SOUND_CUE_HEAD
+                .get(mem)
+                .wrapping_add(SOUND_CUE_COUNT.get(mem))
+                & 0x1f,
+        );
+        SOUND_CUES.ptr(mem).at(slot).set(mem, cue);
+        SOUND_CUE_ARGS.ptr(mem).at(slot).set(mem, arg);
+        let n = SOUND_CUE_COUNT.get(mem).wrapping_add(1);
+        SOUND_CUE_COUNT.set(mem, n);
+        0
+    }
+
+    /// `op_oef2_sound_cue_multi(oef2, from, to, arg)` (`0x008002c0`):
+    /// unless the running magic is 0x1fb (`MagicFile_GetMagicId` through
+    /// `call`), the kind-1 cues `from ..= to` (at most the block's `u16`
+    /// count at `+0x4c`) of table 6 queued with `arg`; returns 0.
+    pub fn op_oef2_sound_cue_multi<M: Mem>(
+        mem: &mut M,
+        oef2: u32,
+        from: u32,
+        to: u32,
+        arg: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if snd(mem, MAGIC_FILE_GET_MAGIC_ID, &[], call) == 0x1fb {
+            return 0;
+        }
+        let n: u16 = mem.read(oef2.wrapping_add(0x4c));
+        if n == 0 {
+            return 0;
+        }
+        #[allow(clippy::cast_possible_truncation)] // u16 arguments
+        let end = u32::from((to as u16).wrapping_add(1).min(n));
+        #[allow(clippy::cast_possible_truncation)]
+        let mut i = u32::from(from as u16);
+        while i < end {
+            let cue = op_oef2_a_get(mem, oef2, 6, i);
+            if cue != 0 && mem.read::<u8>(cue) == 1 {
+                op_oef2_sound_cue_push(mem, cue, arg, call);
+            }
+            i += 1;
+        }
+        0
+    }
+
+    /// `op_oef2_sound_cue_check()` (`0x008000f0`): for `g_OpOef2StreamCues`
+    /// then `0x023c364c`: a cue pending (not -1) gives 0x2000/0x2001; -1
+    /// waits for `SndDataSendSync(0)` (through `call`; 0x1000/0x1001 while
+    /// it is busy) and clears it; then the queued sound cue count.
+    pub fn op_oef2_sound_cue_check<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        for (g, k) in [(OEF2_STREAM_CUES.sym, 0u32), (STREAM_CUE2.sym, 1)] {
+            let g = Global::<u32>::new(g);
+            let v = g.get(mem);
+            if v == 0 {
+                continue;
+            }
+            if v != u32::MAX {
+                return 0x2000 + k;
+            }
+            if snd(mem, SND_DATA_SEND_SYNC, &[0], call) != 0 {
+                return 0x1000 + k;
+            }
+            g.set(mem, 0);
+        }
+        u32::from(SOUND_CUE_COUNT.get(mem))
+    }
+
+    /// A character module function, called through `call`.
+    fn ch<M: Mem>(
+        mem: &mut M,
+        f: u32,
+        args: &[u32],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        snd(mem, f, args, call)
+    }
+
+    /// `op_chara_hsv_size_get(chr)` (`0x00807b20`): 8 bytes per entry of
+    /// each of the character's CLUTs (`Ch_ClutGetNb`, `Ch_ClutGetSize`
+    /// through `call`), rounded up to 16, plus 0x20; 0 when that is 0.
+    pub fn op_chara_hsv_size_get<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let n = ch(mem, 0x0083_c9a0, &[chr], call).cast_signed();
+        if n == 0 {
+            return 0;
+        }
+        let mut total = 0u32;
+        let mut k = 0i32;
+        while k < n {
+            let s = ch(mem, 0x0083_c9f0, &[chr, k.cast_unsigned()], call);
+            total = total.wrapping_add(s.wrapping_mul(8));
+            k += 1;
+        }
+        let t = total.wrapping_add(0xf) & !0xf;
+        if t == 0 { 0 } else { t + 0x20 }
+    }
+
+    /// `op_chara_packet_size_get(chr, mode, visible)` (`0x008037c0`): for
+    /// a mimic (`opus_mimic_check`) what `0x0080f580(mode, visible)`
+    /// gives; else per model (`Ch_GetNbModel`; with `visible`, hidden
+    /// ones, `Ch_ModelGetHide`, are skipped) its effect packet size
+    /// (`Ch_ModelCalcSizeEffectPacket`) rounded up to 16 (masked to 28
+    /// bits), with mode 2 also `(size / 28) * 12` rounded the same way;
+    /// plus 0x10 per model and one more; 0 without models. All through
+    /// `call`.
+    pub fn op_chara_packet_size_get<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        mode: u32,
+        visible: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if ch(mem, 0x0080_f630, &[chr], call) != 0 {
+            return ch(mem, 0x0080_f580, &[mode, visible], call);
+        }
+        let models = ch(mem, 0x0083_0410, &[chr], call);
+        if models == 0 {
+            return 0;
+        }
+        let mut total = 0u32;
+        let mut model = 0i32;
+        while model < models.cast_signed() {
+            let hidden = ch(mem, 0x0082_add0, &[chr, model.cast_unsigned()], call);
+            if hidden == 0 || visible == 0 {
+                let size = ch(mem, 0x0083_0450, &[chr, model.cast_unsigned()], call);
+                let rounded = size.wrapping_add(0xf) & 0x0fff_fff0;
+                let extra = if mode == 2 {
+                    #[allow(clippy::cast_possible_truncation)] // the high word
+                    let hi = ((u64::from(rounded) * 0x2492_4925) >> 32) as u32;
+                    let q = (((rounded - hi) >> 1) + hi) >> 4;
+                    (q * 0xc + 0xf) & 0x0fff_fff0
+                } else {
+                    0
+                };
+                total = total.wrapping_add(extra).wrapping_add(rounded);
+            }
+            model += 1;
+        }
+        models.wrapping_add(1).wrapping_shl(4).wrapping_add(total)
+    }
 }

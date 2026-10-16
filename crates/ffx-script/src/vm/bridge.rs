@@ -9,7 +9,10 @@ pub use ffx_bridge::Host;
 use ffx_bridge::{Global, Mem};
 
 pub mod globals;
+pub mod native;
+pub mod native_map;
 pub mod run;
+pub mod signal;
 
 use super::{
     Classes, block, buffer_size, ctrl, header, is_small, level, level_index, slot_float, slot_int,

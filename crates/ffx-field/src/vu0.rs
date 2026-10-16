@@ -65,6 +65,10 @@ pub const VU0_R_SEEDED: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x00c8
 /// The scale `KeVu0RndI` applies before converting (an `f64` in `.rdata`).
 pub const RND_SCALE: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b5_1588);
 
+/// The emulated VU0 register (`vf31`, 16 bytes) the `rcCopyQword_*`
+/// copies go through.
+pub const VU0_COPY_REG: u32 = 0x00c8_f980;
+
 /// [`ffx_bridge::Mem`].
 pub mod bridge {
     use ffx_bridge::Mem;
@@ -192,6 +196,25 @@ pub mod bridge {
         let k = super::RND_SCALE.get(mem);
         let v = Reg::load(f32::from_bits(x87::copy(s2.to_bits()))) * Reg::constant(k);
         ftol(mem, v.value())
+    }
+
+    /// The quadword copies through the emulated VU0 register at
+    /// [`super::VU0_COPY_REG`] (`lqc2`/`sqc2`: `VFX_Copy16From` the source
+    /// into it, `VFX_Copy16To` it to the destination), thirteen copies of
+    /// `(dst, src)` in the map module (`rcCopyQword_*`). Returns the last
+    /// word.
+    pub fn rc_copy_qword(mem: &mut impl Mem, dst: u32, src: u32) -> u32 {
+        let vf = mem.rebase(super::VU0_COPY_REG);
+        for i in 0..4u32 {
+            let w = mem.read::<u32>(src.wrapping_add(4 * i));
+            mem.write(vf + 4 * i, w);
+        }
+        let mut w = 0;
+        for i in 0..4u32 {
+            w = mem.read::<u32>(vf + 4 * i);
+            mem.write(dst.wrapping_add(4 * i), w);
+        }
+        w
     }
 }
 

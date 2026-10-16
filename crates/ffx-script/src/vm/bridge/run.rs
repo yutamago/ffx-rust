@@ -1,13 +1,16 @@
 //! The interpreter `Script_Run` (`0x008641e0`) over game memory: the
-//! dispatch loop and every opcode handler, with the callees not ported yet
-//! (native functions, the three request families, `AtelExecReturn`, the
-//! wait conditions, the run lock) called in the original through
-//! [`Host`]. The arithmetic is [`crate::vm::exec`].
+//! dispatch loop and every opcode handler, the signals in
+//! [`super::signal`], the natives through [`Natives`] (Rust ones from
+//! [`super::native`]); the natives not ported yet, the run lock,
+//! `MsBattleCheck` and the ctrl work's callbacks are called in the
+//! original through [`Host`]. The arithmetic is [`crate::vm::exec`].
 
 // w, l, s: the worker, its level and its stack, as everywhere in the bridge
 #![allow(clippy::many_single_char_names)]
 
 use ffx_bridge::{Global, Host, Mem};
+
+use super::signal::{self, Request};
 
 use super::{
     CONTEXT, ERROR, atel_get_basic_work, atel_pop_stack_float, atel_pop_stack_integer,
@@ -97,6 +100,15 @@ pub trait NativeHost: Host {
     /// Calls the cdecl function at `addr` (rebased) and returns `ST0` as
     /// an `fstp m64` stores it (exact at the game's 53-bit precision).
     fn call_float(&mut self, addr: u32, args: &[u32]) -> f64;
+    /// 64 bytes of memory the game can read and write for the duration of
+    /// a native: what the originals' stack locals are when they pass their
+    /// address to a callee (`yiGetFogColor(&rgba)`).
+    fn scratch(&mut self) -> u32;
+}
+
+#[cfg(target_pointer_width = "32")]
+thread_local! {
+    static SCRATCH: core::cell::UnsafeCell<[u32; 16]> = const { core::cell::UnsafeCell::new([0; 16]) };
 }
 
 #[cfg(target_pointer_width = "32")]
@@ -112,6 +124,12 @@ impl NativeHost for ffx_bridge::RawMem {
             let f: F6 = std::mem::transmute(addr as usize);
             f(a[0], a[1], a[2], a[3], a[4], a[5])
         }
+    }
+    fn scratch(&mut self) -> u32 {
+        // the game thread's own buffer: a 32-bit process, so the address
+        // fits; natives do not nest
+        #[allow(clippy::cast_possible_truncation)]
+        SCRATCH.with(|s| s.get() as usize as u32)
     }
 }
 
@@ -138,7 +156,7 @@ pub fn script_native_entry(mem: &impl Mem, id: u32) -> u32 {
 /// (camera) native sets the worker's flag `0x20` unless it has `0x10`;
 /// then the entry's start function `(worker, args, stack)`, whose `EAX` it
 /// returns (0 without one).
-pub fn script_call_native(host: &mut impl Host, id: u32, w: u32, args: u32, s: u32) -> u32 {
+pub fn script_call_native<H: NativeHost>(host: &mut H, id: u32, w: u32, args: u32, s: u32) -> u32 {
     if id >> 12 == 6 {
         let f = host.read::<u16>(w + worker::FLAGS2);
         if f & 0x10 == 0 {
@@ -149,27 +167,44 @@ pub fn script_call_native(host: &mut impl Host, id: u32, w: u32, args: u32, s: u
     if f == 0 {
         return 0;
     }
-    host.call(f, &[w, args, s])
+    call_int(host, f, w, args, s, 3)
+}
+
+/// The `ffx.sym` address of a handler at `f`.
+fn sym_of(host: &impl Mem, f: u32) -> u32 {
+    f.wrapping_sub(host.image_base()).wrapping_add(0x0040_0000)
+}
+
+/// Calls an integer handler: its Rust version ([`super::native::find`])
+/// or the original, with `n` of `(worker, args, stack)`.
+fn call_int<H: NativeHost>(host: &mut H, f: u32, w: u32, args: u32, s: u32, n: usize) -> u32 {
+    match super::native::find::<H>(sym_of(host, f)) {
+        Some(super::native::Native::Int(r)) => r(host, w, args, s),
+        _ => host.call(f, &[w, args, s][..n]),
+    }
 }
 
 /// `Script_PollNative(id, worker, args)` (`0x00877730`): the entry's poll
 /// function `(worker, args)`, or 5 (done, run on) without one.
-pub fn script_poll_native(host: &mut impl Host, id: u32, w: u32, args: u32) -> u32 {
+pub fn script_poll_native<H: NativeHost>(host: &mut H, id: u32, w: u32, args: u32) -> u32 {
     let f: u32 = host.read(script_native_entry(host, id) + 4);
     if f == 0 {
         return 5;
     }
-    host.call(f, &[w, args])
+    call_int(host, f, w, args, 0, 2)
 }
 
 /// `Script_FinishNative(id, worker, args, stack)` (`0x008777f0`): pushes
 /// the entry's float result (`ST0` stored as `f32`) or else its integer
 /// result, or 0 without either.
-pub fn script_finish_native(host: &mut impl NativeHost, id: u32, w: u32, args: u32, s: u32) {
+pub fn script_finish_native<H: NativeHost>(host: &mut H, id: u32, w: u32, args: u32, s: u32) {
     let e = script_native_entry(host, id);
     let f: u32 = host.read(e + 8);
     if f != 0 {
-        let x = host.call_float(f, &[w, args, s]);
+        let x = match super::native::find::<H>(sym_of(host, f)) {
+            Some(super::native::Native::Float(r)) => r(host, w, args, s),
+            _ => host.call_float(f, &[w, args, s]),
+        };
         // fstp m32, then fld/fstp of that f32 (a quiet NaN stays as it is)
         atel_push_stack_float(host, s, ffx_bridge::x87::store(x));
         return;
@@ -178,7 +213,7 @@ pub fn script_finish_native(host: &mut impl NativeHost, id: u32, w: u32, args: u
     let v = if f == 0 {
         0
     } else {
-        host.call(f, &[w, args, s])
+        call_int(host, f, w, args, s, 3)
     };
     atel_push_stack_integer(host, s, v);
 }
@@ -433,12 +468,12 @@ fn wait(host: &mut impl Host, r: &Run) -> bool {
         match host.read::<u8>(l + level::STATE) {
             0 => return true,
             1 => {
-                let q = call(host, WAIT_CHECK, &[r.w, l]);
+                let q = signal::atel_search_reply_signal(host, r.w, l);
                 if q == 0 {
                     return false;
                 }
                 let id = u32::from(host.read::<u16>(r.w + worker::ID));
-                call(host, WAIT_END, &[id, q]);
+                signal::atel_free_signal(host, id, q);
                 host.write(l + level::STATE, 0u8);
                 return true;
             }
@@ -757,27 +792,22 @@ fn execute<H: Host>(
             }
         }
         0x36 | 0x45..=0x49 => {
-            call(host, FAMILY1, &[u32::from(op), l, w, s]);
+            signal::script_op_req(host, op, w, s);
         }
         0x37 | 0x4a..=0x4e | 0x38 | 0x4f..=0x53 => {
-            let f = if op == 0x37 || (0x4a..=0x4e).contains(&op) {
-                FAMILY2
-            } else {
-                FAMILY3
-            };
-            r.cont = call(host, f, &[u32::from(op), w, l, s, r.cont]);
+            r.cont = signal::script_op_req_wait(host, op, w, l, s);
             set_flags(host, w, 0xebff, 0x800);
         }
         0x39 => {
             let entry = pop(host);
             let slot = pop(host);
             let lvl = pop(host);
-            let to = call(host, PARTY_WORKER, &[slot]);
+            let to = signal::atel_get_party_worker(host, slot);
             let v = if entry == 0 || to.cast_signed() < 0 {
                 0
             } else {
                 let id = u32::from(host.read::<u16>(w + worker::ID));
-                call(host, REQUEST, &[id, to, 0, lvl, entry])
+                signal::atel_request(host, Request::new(id, to, 0, lvl, entry))
             };
             push(host, v);
         }
@@ -785,11 +815,11 @@ fn execute<H: Host>(
             let entry = pop(host);
             let slot = pop(host);
             let lvl = pop(host);
-            let to = call(host, PARTY_WORKER, &[slot]);
+            let to = signal::atel_get_party_worker(host, slot);
             let v = if entry != 0 && to.cast_signed() >= 0 {
                 let id = u32::from(host.read::<u16>(w + worker::ID));
                 let kind = if op == 0x3a { 1 } else { 2 };
-                call(host, REQUEST, &[id, to, kind, lvl, entry])
+                signal::atel_request(host, Request::new(id, to, kind, lvl, entry))
             } else {
                 0
             };
@@ -814,11 +844,7 @@ fn execute<H: Host>(
             if f != 0 {
                 host.call(f, &[id, u32::from(op)]);
             } else {
-                call(
-                    host,
-                    ATEL_EXEC_RETURN,
-                    &[id, u32::MAX, u32::from(op == 0x3e)],
-                );
+                signal::atel_exec_return(host, id, u32::MAX, u32::from(op == 0x3e));
             }
             return Next::Stay;
         }
@@ -827,14 +853,14 @@ fn execute<H: Host>(
             r.cont = 0;
             let v = pop(host);
             let id = u32::from(host.read::<u16>(w + worker::ID));
-            call(host, ATEL_EXEC_RETURN, &[id, v, u32::from(op == 0x3f)]);
+            signal::atel_exec_return(host, id, v, u32::from(op == 0x3f));
             return Next::Stay;
         }
         0x54 => {
             set_flags(host, w, 0xf3ff, 0x1000);
             r.cont = 0;
             let id = u32::from(host.read::<u16>(w + worker::ID));
-            call(host, ATEL_EXEC_RETURN, &[id, 0, 0]);
+            signal::atel_exec_return(host, id, 0, 0);
             return Next::Stay;
         }
         0x59..=0x5c => {
@@ -858,10 +884,10 @@ fn execute<H: Host>(
             let entry = pop(host);
             let a = pop(host);
             let (to, ok) = if op == 0x77 {
-                (a, call(host, WAIT_FOR, &[a, entry]) != 0)
+                (a, signal::atel_is_signal_queued(host, a, entry) != 0)
             } else {
-                let to = call(host, PARTY_WORKER, &[a]);
-                let ok = call(host, WAIT_FOR, &[to, entry]) != 0;
+                let to = signal::atel_get_party_worker(host, a);
+                let ok = signal::atel_is_signal_queued(host, to, entry) != 0;
                 (to, ok && to.cast_signed() >= 0)
             };
             if ok {
@@ -879,12 +905,12 @@ fn execute<H: Host>(
             let c = pop(host);
             let b = pop(host);
             let a = pop(host);
-            call(host, OP_79, &[w, a, b, c]);
+            signal::script_op79(host, w, a, b, c);
         }
         0x7a => {
             let b = pop(host);
             let a = pop(host);
-            let v = call(host, OP_7A, &[w, a, b]);
+            let v = signal::script_op7a(host, w, a, b);
             push(host, v);
         }
         _ => unreachable!("opcode {op:#x} is past the table or handled by the loop"),

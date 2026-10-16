@@ -39,6 +39,11 @@ pub const SINGLE_INSTANCE_MAGIC: [u32; 10] = [
     0x203, 0x15c, 0x15e, 0x182, 0x241, 0x20a, 0x23a, 0x29b, 0x1db, 0x46,
 ];
 
+/// A pointer to the current VFX data pointer (`KeBornRnd2`).
+pub const VFX_DATA: u32 = 0x00c3_a4cc;
+/// `KeDttSpr_MkGifPk_Pre`'s `.rdata` constants: 1/1024 (`f32`), 0.0625
+/// (`f64`), 4096 (`f32`), 4096 (`f64`).
+pub const SPR_PRE_CONSTS: [u32; 4] = [0x00b5_1b9c, 0x00b9_21e0, 0x00b5_0224, 0x00b5_15c8];
 /// The `pmcom` arena's next address (`KePmcomAlloc`).
 pub const PMCOM_NEXT: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x00d5_24a4);
 /// Its base.
@@ -52,6 +57,7 @@ pub const PMCOM_QUEUE_INDEX: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0
 
 /// The `Ke` objects where the game keeps them, through [`ffx_bridge::Mem`].
 pub mod bridge {
+    use crate::x87;
     use ffx_bridge::Mem;
     use ffx_bridge::x87::Reg;
     use ffx_system::stub::{is_ptr32_null, ptr32};
@@ -324,6 +330,223 @@ pub mod bridge {
         let x = mem.read::<f32>(src);
         mem.write(dst, Reg::load(x).sub_m32(s).store());
         ffx_ps2::ee::bridge::restore_vf00(mem);
+    }
+
+    /// `KeBornRnd2(obj, arg, born, &index, shape, random, n)`
+    /// (`0x00769230`): spawns up to `n` (8-bit) particles at points of
+    /// shape `shape` of the current VFX data (`[[0x00c3a4cc]] + 0x28`, 8
+    /// bytes each: `i16` model, `i16` point count, the point list): for
+    /// each, `born(obj, arg, vertices + 6 * point, &more)`; it stops when
+    /// `born` clears `more` (returning 0). The vertices are the object's
+    /// (`+0x90`) or the model's (`+0x14` of its `0x20`-byte record at `+0x20`;
+    /// none for model `-0x6fe8`). Points go in order from `*index`
+    /// (wrapping at the count), or at random (`KeVu0RndI() % count`) when
+    /// `random`; the last one is kept in `*index` and 1 returned.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ke_born_rnd2<M: Mem>(
+        mem: &mut M,
+        o: u32,
+        arg: u32,
+        born: u32,
+        index: u32,
+        shape: i16,
+        random: u8,
+        n: u8,
+        mut rnd: impl FnMut(&mut M) -> u32,
+        mut call: impl FnMut(&mut M, u32, u32, u32, u32) -> u32,
+    ) -> u32 {
+        let data = mem.read::<u32>(mem.read::<u32>(mem.rebase(super::VFX_DATA)));
+        let rec = mem
+            .read::<u32>(data.wrapping_add(0x28))
+            .wrapping_add(i32::from(shape).cast_unsigned().wrapping_mul(8));
+        let mut verts = ptr32(mem.read::<u32>(o.wrapping_add(0x90)));
+        if verts == 0 {
+            let model = mem.read::<u16>(rec);
+            if model != 0x9018 {
+                let data = mem.read::<u32>(mem.read::<u32>(mem.rebase(super::VFX_DATA)));
+                let models = mem.read::<u32>(data.wrapping_add(0x20));
+                let m = i32::from(model.cast_signed()).cast_unsigned();
+                verts = ptr32(mem.read::<u32>(models.wrapping_add(m << 5).wrapping_add(0x14)));
+            }
+        }
+        let count = |mem: &M| i32::from(mem.read::<i16>(rec.wrapping_add(2)));
+        let draw = |mem: &mut M, rnd: &mut dyn FnMut(&mut M) -> u32| -> u32 {
+            let r = rnd(mem).cast_signed();
+            r.wrapping_rem(count(mem)).cast_unsigned()
+        };
+        let mut i = if random != 0 {
+            draw(mem, &mut rnd)
+        } else {
+            u32::from(mem.read::<u16>(index))
+        };
+        let mut left = n;
+        while left != 0 {
+            let points = ptr32(mem.read::<u32>(rec.wrapping_add(4)));
+            let pt = u32::from(mem.read::<u16>(points.wrapping_add(i.wrapping_mul(2))));
+            let more = call(mem, born, o, arg, verts.wrapping_add(pt * 6));
+            if more == 0 {
+                return 0;
+            }
+            if random != 0 {
+                i = draw(mem, &mut rnd);
+            } else {
+                i = i.wrapping_add(1);
+                if i.cast_signed() >= count(mem) {
+                    i = 0;
+                }
+            }
+            left -= 1;
+        }
+        #[allow(clippy::cast_possible_truncation)] // the low half
+        mem.write(index, i as u16);
+        1
+    }
+
+    /// `KeDttSpr_MkGifPk_Pre(spr)` (`0x00768d30`): loads the sprite
+    /// packet's emulated VU0 registers (`0x00c8f7a0`..`0x00c8f9ac`) before
+    /// its GIF packets: the scratchpad block (`op_spr_alloc(0x90)`, `alloc`;
+    /// its `+0x80`, `+0x84` set to -8) into eight registers, the sprite's
+    /// matrix rows (`+0x20`, `+0x28` data), its scale (`+0x30`) and
+    /// position (`+0x50`), and the products the VU program needs (the
+    /// emulated VU0 constants at `0x00c0a004`..`0x00c0a010`, 1/sqrt(2) as
+    /// `0x3f3504f3`, `.rdata` constants 1/1024, 0.0625, 4096). The x87
+    /// chains are kept, rounding only where the original stores. Frees the
+    /// block (`op_spr_free`, `free`).
+    #[allow(clippy::too_many_lines)] // one register after another
+    pub fn ke_dtt_spr_mk_gif_pk_pre<M: Mem>(
+        mem: &mut M,
+        o: u32,
+        alloc: impl FnOnce(&mut M) -> u32,
+        free: impl FnOnce(&mut M),
+    ) {
+        let reg = |mem: &M, a: u32| mem.rebase(a);
+        let get = |mem: &M, a: u32| -> f32 { mem.read::<f32>(mem.rebase(a)) };
+        let put = |mem: &mut M, a: u32, v: f32| {
+            let at = mem.rebase(a);
+            mem.write(at, v);
+        };
+        let b = alloc(mem);
+        mem.write(b.wrapping_add(0x80), [0xffff_fff8u32, 0xffff_fff8]);
+        for (i, dst) in [0x920u32, 0x940, 0x960, 0x8e0, 0x870, 0x8d0, 0x820, 0x7c0]
+            .into_iter()
+            .enumerate()
+        {
+            #[allow(clippy::cast_possible_truncation)] // 0..8
+            let v = mem.read::<[u32; 4]>(b.wrapping_add(16 * i as u32));
+            let at = reg(mem, 0x00c8_f000 + dst);
+            mem.write(at, v);
+        }
+        let p20 = ptr32(mem.read::<u32>(o.wrapping_add(0x20)));
+        let row = mem.read::<[u32; 4]>(p20);
+        let at = reg(mem, 0x00c8_f7b0);
+        mem.write(at, row);
+        let r8 = Reg::load(get(mem, 0x00c0_a008));
+        let row = mem.read::<[u32; 4]>(p20.wrapping_add(0x10));
+        let at = reg(mem, 0x00c8_f980);
+        mem.write(at, row);
+        put(mem, 0x00c8_f7b4, r8.add_m32(f32::from_bits(row[1])).store());
+        let k = mem.read::<u32>(mem.rebase(super::SPR_PRE_CONSTS[0]));
+        let at = reg(mem, 0x00c8_f910);
+        mem.write(at, [x87::copy(k), 0, 0, 0]);
+        let p28 = ptr32(mem.read::<u32>(o.wrapping_add(0x28)));
+        for i in 0..4u32 {
+            let v = mem.read::<[u32; 4]>(p28.wrapping_add(16 * i));
+            let at = reg(mem, 0x00c8_f7d0 + 16 * i);
+            mem.write(at, v);
+        }
+        let s = mem.read::<[i32; 4]>(b.wrapping_add(0x80));
+        let at = reg(mem, 0x00c8_f840);
+        mem.write(at, s);
+        // fild, fstp m32, fld: each an f32 of the int
+        let f = |v: i32| Reg::load(f32::from_bits(x87::store(f64::from(v))));
+        let sixteenth = Reg::constant(mem.read::<f64>(mem.rebase(super::SPR_PRE_CONSTS[1])));
+        put(mem, 0x00c8_f840, (f(s[0]) * sixteenth).store());
+        put(mem, 0x00c8_f844, (f(s[1]) * sixteenth).store());
+        put(mem, 0x00c8_f848, (f(s[2]) * sixteenth).store());
+        let s3 = f32::from_bits(x87::store(f64::from(s[3])));
+        put(mem, 0x00c8_f84c, sixteenth.mul_m32(s3).store());
+        let pos = mem.read::<[u32; 4]>(o.wrapping_add(0x50));
+        let at = reg(mem, 0x00c8_f980);
+        mem.write(at, pos);
+        let r4 = Reg::load(get(mem, 0x00c0_a004));
+        put(mem, 0x00c8_f880, r4.store());
+        let w = Reg::load(get(mem, 0x00c8_f98c));
+        let r8 = Reg::load(get(mem, 0x00c0_a008));
+        let c = 0x3f35_04f3u32;
+        let at = reg(mem, 0x00c8_f528);
+        mem.write(at, c);
+        let at = reg(mem, 0x00c8_f890);
+        mem.write(at, [c, c]);
+        let v530 = mem.read::<u32>(mem.rebase(0x00c8_f530));
+        let at = reg(mem, 0x00c8_f898);
+        mem.write(at, v530);
+        put(mem, 0x00c8_f884, (w + r8).store());
+        let v534 = mem.read::<u32>(mem.rebase(0x00c8_f534));
+        let z = Reg::load(get(mem, 0x00c8_f988));
+        let at = reg(mem, 0x00c8_f52c);
+        mem.write(at, c);
+        let at = reg(mem, 0x00c8_f89c);
+        mem.write(at, v534);
+        put(mem, 0x00c8_f8a0, (r4 + z).store());
+        put(mem, 0x00c8_f8a4, r8.store());
+        let x = Reg::load(get(mem, 0x00c8_f7b0));
+        let k528 = get(mem, 0x00c8_f528);
+        put(mem, 0x00c8_f890, x.mul_m32(k528).store());
+        let c894 = Reg::load(get(mem, 0x00c8_f894));
+        let y = Reg::load(get(mem, 0x00c8_f7b4));
+        put(mem, 0x00c8_f894, (c894 * y).store());
+        let sc = mem.read::<[u32; 4]>(o.wrapping_add(0x30));
+        let at = reg(mem, 0x00c8_f7a0);
+        mem.write(at, sc);
+        put(mem, 0x00c8_f7a0, x.mul_m32(f32::from_bits(sc[0])).store());
+        put(
+            mem,
+            0x00c8_f7a4,
+            (Reg::load(f32::from_bits(sc[1])) * y).store(),
+        );
+        let zz = Reg::load(get(mem, 0x00c8_f7a8));
+        put(mem, 0x00c8_f8b4, (zz * y).store());
+        put(mem, 0x00c8_f8b0, (zz * x).store());
+        let cy = Reg::load(get(mem, 0x00c8_f894));
+        put(mem, 0x00c8_f8c4, (zz * cy).store());
+        let cx = Reg::load(get(mem, 0x00c8_f890));
+        put(mem, 0x00c8_f8c0, (zz * cx).store());
+        let a = Reg::load(get(mem, 0x00c8_f8a0));
+        put(mem, 0x00c8_f890, (cx * a).store());
+        let bb = Reg::load(get(mem, 0x00c8_f884));
+        put(mem, 0x00c8_f894, (cy * bb).store());
+        put(mem, 0x00c8_f884, (y * bb).store());
+        put(mem, 0x00c8_f8a0, (x * a).store());
+        let k = mem.read::<u32>(mem.rebase(super::SPR_PRE_CONSTS[2]));
+        let at = reg(mem, 0x00c8_f950);
+        mem.write(at, [x87::copy(k), 0, 0, 0]);
+        let big = Reg::constant(mem.read::<f64>(mem.rebase(super::SPR_PRE_CONSTS[3])));
+        put(mem, 0x00c8_f954, (r8 + big).store());
+        let r10 = Reg::load(get(mem, 0x00c0_a010));
+        put(mem, 0x00c8_f938, r10.add_m32(get(mem, 0x00c0_a00c)).store());
+        #[allow(clippy::eq_op)] // fsub st(0), st: 0, or NaN for infinities
+        put(mem, 0x00c8_f97c, (r10 - r10).store());
+        free(mem);
+    }
+
+    /// `KeAddScaledColor(out, base, step, k)` (`0x00764c40`): each of the
+    /// four channels `step * k + base`, stored as `f32`, then clamped to
+    /// 0.0..=255.0 (NaN kept).
+    pub fn ke_add_scaled_color(mem: &mut impl Mem, out: u32, base: u32, step: u32, k: u32) {
+        let k = ffx_bridge::x87::load(k);
+        for i in 0..4u32 {
+            let d = ffx_bridge::x87::load(mem.read(step.wrapping_add(4 * i)));
+            let b = ffx_bridge::x87::load(mem.read(base.wrapping_add(4 * i)));
+            let v = x87::store(d * k + b);
+            let at = out.wrapping_add(4 * i);
+            mem.write(at, v);
+            let f = f32::from_bits(v);
+            if f > 255.0 {
+                mem.write(at, 255.0f32.to_bits());
+            } else if f < 0.0 {
+                mem.write(at, 0u32);
+            }
+        }
     }
 }
 

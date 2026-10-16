@@ -4,7 +4,7 @@
 use super::{mem, ported};
 use ffx_vfx::mat::{self, order};
 use ffx_vfx::rand::bridge::{Kind, Spread};
-use ffx_vfx::{et, fp, heap, op, opd, opus, ppp, prog, rand};
+use ffx_vfx::{et, fp, heap, op, opd, opus, part, ppp, prog, rand, tree};
 
 /// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`), so the
 /// CRT's state moves as it does with the originals.
@@ -24,6 +24,47 @@ fn crt_rand() -> u32 {
         let slot = crate::rebase(0x00b0_c420) as *const usize;
         let f: unsafe extern "C" fn() -> u32 = std::mem::transmute(slot.read());
         f()
+    }
+}
+
+/// A function the originals call through a pointer (the program table's
+/// `+4`..`+0x24`, `TOGetFFXLang`, `graphicVFXDestroy`): cdecl, up to four
+/// arguments; returns `eax`.
+#[allow(clippy::many_single_char_names)] // the arguments
+fn call_ptr(f: u32, args: &[u32]) -> u32 {
+    // SAFETY: `f` is a function the game stored in its particle program
+    // table, or one of its own; the originals call it as cdecl with these
+    // arguments.
+    unsafe {
+        match *args {
+            [] => {
+                let f: unsafe extern "C" fn() -> u32 = std::mem::transmute(f as usize);
+                f()
+            }
+            [a] => {
+                let f: unsafe extern "C" fn(u32) -> u32 = std::mem::transmute(f as usize);
+                f(a)
+            }
+            [a, b] => {
+                let f: unsafe extern "C" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
+                f(a, b)
+            }
+            [a, b, c] => {
+                let f: unsafe extern "C" fn(u32, u32, u32) -> u32 = std::mem::transmute(f as usize);
+                f(a, b, c)
+            }
+            [a, b, c, d] => {
+                let f: unsafe extern "C" fn(u32, u32, u32, u32) -> u32 =
+                    std::mem::transmute(f as usize);
+                f(a, b, c, d)
+            }
+            [a, b, c, d, e, g, h] => {
+                let f: unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32) -> u32 =
+                    std::mem::transmute(f as usize);
+                f(a, b, c, d, e, g, h)
+            }
+            _ => unreachable!("the functions called back take 0 to 4 or 7 arguments"),
+        }
     }
 }
 
@@ -436,6 +477,303 @@ ported! {
     /// `op_et_bindeff_off_signal(h)`.
     op_et_bindeff_off_signal @ 0x007f_bcd0 => extern "C" fn op_et_bindeff_off_signal(h: u32) {
         et::bridge::op_et_bindeff_off_signal(&mut mem(), h);
+    }
+    /// `Fp_EndGroup(group)`.
+    Fp_EndGroup @ 0x0072_94f0 => extern "C" fn fp_end_group(group: u32) {
+        fp::bridge::fp_end_group(&mut mem(), group);
+    }
+    /// `Fp_RestartGroup(group)`.
+    Fp_RestartGroup @ 0x0072_9530 => extern "C" fn fp_restart_group(group: u32) {
+        fp::bridge::fp_restart_group(&mut mem(), group);
+    }
+    /// `op_et_bindeff2_breath_off(h)`.
+    op_et_bindeff2_breath_off @ 0x007f_b470 => extern "C" fn op_et_bindeff2_breath_off(h: u32) {
+        et::bridge::op_et_bindeff2_breath_off(&mut mem(), h);
+    }
+    /// `op_et_bindeff2_draw_off(h)`.
+    op_et_bindeff2_draw_off @ 0x007f_b530 => extern "C" fn op_et_bindeff2_draw_off(h: u32) -> u32 {
+        et::bridge::op_et_bindeff2_draw_off(&mut mem(), h)
+    }
+    /// `op_et_bindeff2_draw_set(h, hide)`.
+    op_et_bindeff2_draw_set @ 0x007f_b610 => extern "C" fn op_et_bindeff2_draw_set(h: u32, hide: u32) -> u32 {
+        et::bridge::op_et_bindeff2_draw_set(&mut mem(), h, hide)
+    }
+    /// `op_et_bindeff2_walk_off(h)`.
+    op_et_bindeff2_walk_off @ 0x007f_b7f0 => extern "C" fn op_et_bindeff2_walk_off(h: u32) {
+        et::bridge::op_et_bindeff2_walk_off(&mut mem(), h);
+    }
+    /// `op_et_bind_default_water()`; returns the word it computed.
+    op_et_bind_default_water @ 0x007f_b870 => extern "C" fn op_et_bind_default_water() -> u32 {
+        et::bridge::op_et_bind_default_water(&mut mem())
+    }
+    /// `op_et_bindeff2_water_off(h)`.
+    op_et_bindeff2_water_off @ 0x007f_b890 => extern "C" fn op_et_bindeff2_water_off(h: u32) {
+        et::bridge::op_et_bindeff2_water_off(&mut mem(), h);
+    }
+    /// `op_et_bindeff_draw_set(h, hide)`.
+    op_et_bindeff_draw_set @ 0x007f_bb20 => extern "C" fn op_et_bindeff_draw_set(h: u32, hide: u32) -> u32 {
+        et::bridge::op_et_bindeff_draw_set(&mut mem(), h, hide)
+    }
+    /// `op_et_chr_draw_off(h)`.
+    op_et_chr_draw_off @ 0x007f_c000 => extern "C" fn op_et_chr_draw_off(h: u32) -> u32 {
+        et::bridge::op_et_chr_draw_off(&mut mem(), h)
+    }
+    /// `op_et_chr_draw_on(h)`.
+    op_et_chr_draw_on @ 0x007f_c060 => extern "C" fn op_et_chr_draw_on(h: u32) -> u32 {
+        et::bridge::op_et_chr_draw_on(&mut mem(), h)
+    }
+    /// `op_et_chr_draw_set(h, hide)`.
+    op_et_chr_draw_set @ 0x007f_c0c0 => extern "C" fn op_et_chr_draw_set(h: u32, hide: u32) -> u32 {
+        et::bridge::op_et_chr_draw_set(&mut mem(), h, hide)
+    }
+    /// `op_et_draw_flags_switch(h, restore)`.
+    op_et_draw_flags_switch @ 0x007f_c200 => extern "C" fn op_et_draw_flags_switch(h: u32, restore: u32) -> u32 {
+        et::bridge::op_et_draw_flags_switch(&mut mem(), h, restore)
+    }
+    /// `op_et_oef2_free(oef2)`.
+    op_et_oef2_free @ 0x007f_c2a0 => extern "C" fn op_et_oef2_free(oef2: u32) -> u32 {
+        et::bridge::op_et_oef2_free(&mut mem(), oef2, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_et_oef2_free(oef2)`.
+    opu_et_oef2_free @ 0x007f_da60 => extern "C" fn opu_et_oef2_free(oef2: u32) -> u32 {
+        et::bridge::op_et_oef2_free(&mut mem(), oef2, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_et_oef2_start(oef2)`.
+    op_et_oef2_start @ 0x007f_c2c0 => extern "C" fn op_et_oef2_start(oef2: u32) -> u32 {
+        et::bridge::op_et_oef2_start(&mut mem(), oef2, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_et_oef2_start2(oef2)`: the same body.
+    op_et_oef2_start2 @ 0x007f_c970 => extern "C" fn op_et_oef2_start2(oef2: u32) -> u32 {
+        et::bridge::op_et_oef2_start(&mut mem(), oef2, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_et_eff_signal_and(id, mask)`.
+    op_et_eff_signal_and @ 0x007f_c490 => extern "C" fn op_et_eff_signal_and(id: u32, mask: u32) {
+        et::bridge::op_et_eff_signal_and(&mut mem(), id, mask);
+    }
+    /// `op_et_eff_flags_and(id, mask)`.
+    op_et_eff_flags_and @ 0x007f_c4d0 => extern "C" fn op_et_eff_flags_and(id: u32, mask: u32) {
+        et::bridge::op_et_eff_flags_and(&mut mem(), id, mask);
+    }
+    /// `op_et_eff_flags_or(id, bits)`.
+    op_et_eff_flags_or @ 0x007f_c510 => extern "C" fn op_et_eff_flags_or(id: u32, bits: u32) {
+        et::bridge::op_et_eff_flags_or(&mut mem(), id, bits);
+    }
+    /// `op_et_eff_signal_or(id, bits)`.
+    op_et_eff_signal_or @ 0x007f_c550 => extern "C" fn op_et_eff_signal_or(id: u32, bits: u32) {
+        et::bridge::op_et_eff_signal_or(&mut mem(), id, bits);
+    }
+    /// `op_et_encount_effect_free()`.
+    op_et_encount_effect_free @ 0x007f_c5f0 => extern "C" fn op_et_encount_effect_free() -> u32 {
+        et::bridge::op_et_encount_effect_free(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_et_monster_add(oef2)`.
+    op_et_monster_add @ 0x007f_c8a0 => extern "C" fn op_et_monster_add(oef2: u32) -> u32 {
+        et::bridge::op_et_monster_add(&mut mem(), oef2, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_chr_draw_index_nth(n)`.
+    opus_chr_draw_index_nth @ 0x007f_cf10 => extern "C" fn opus_chr_draw_index_nth(n: u32) -> u32 {
+        et::bridge::opus_chr_draw_index_nth(&mut mem(), n, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_chr_handle_count()`.
+    opus_chr_handle_count @ 0x007f_cf60 => extern "C" fn opus_chr_handle_count() -> u32 {
+        et::bridge::opus_chr_handle_count(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_chr_handle_nth(n)`.
+    opus_chr_handle_nth @ 0x007f_cfb0 => extern "C" fn opus_chr_handle_nth(n: u32) -> u32 {
+        et::bridge::opus_chr_handle_nth(&mut mem(), n, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_et_eff_init_all()`.
+    op_et_eff_init_all @ 0x007f_ef70 => extern "C" fn op_et_eff_init_all() {
+        et::bridge::op_et_eff_init_all(&mut mem());
+    }
+    /// `opus_get_weapon_by_no(no)`.
+    opus_get_weapon_by_no @ 0x0080_0fd0 => extern "C" fn opus_get_weapon_by_no(no: u32) -> u32 {
+        opus::bridge::opus_get_weapon_by_no(&mem(), no)
+    }
+    /// `opus_get_weapon_index_by_no(no)`.
+    opus_get_weapon_index_by_no @ 0x0080_1030 => extern "C" fn opus_get_weapon_index_by_no(no: u32) -> i32 {
+        opus::bridge::opus_get_weapon_index_by_no(&mem(), no)
+    }
+    /// `vfx_vec_w_add(dst, v, s)`.
+    vfx_vec_w_add @ 0x0081_7cc0 => extern "C" fn vfx_vec_w_add(dst: u32, v: u32, s: f32) {
+        mat::bridge::vfx_vec_w_add(&mut mem(), dst, v, s);
+    }
+    /// `vfx_vec3_scale(dst, v, s)`.
+    vfx_vec3_scale @ 0x0075_bb00 => extern "C" fn vfx_vec3_scale(dst: u32, v: u32, s: f32) {
+        mat::bridge::vfx_vec3_scale(&mut mem(), dst, v, s);
+    }
+    /// `vfx_vec4_min(dst, v, s)`.
+    vfx_vec4_min @ 0x0080_8c10 => extern "C" fn vfx_vec4_min(dst: u32, v: u32, s: f32) {
+        mat::bridge::vfx_vec4_min(&mut mem(), dst, v, s);
+    }
+    /// `vfxIntTree_Find(this, key)`.
+    vfxIntTree_Find @ 0x0070_fd20 => extern "thiscall" fn vfx_int_tree_find(this: u32, key: u32) -> u32 {
+        tree::bridge::vfx_int_tree_find(&mem(), this, key)
+    }
+    /// `vfxIntTree_Insert(this, node)`.
+    vfxIntTree_Insert @ 0x0070_fda0 => extern "thiscall" fn vfx_int_tree_insert(this: u32, node: u32) -> u32 {
+        tree::bridge::vfx_int_tree_insert(&mut mem(), this, node)
+    }
+    /// `opusTree_Next(it)`.
+    opusTree_Next @ 0x0080_6a50 => extern "thiscall" fn opus_tree_next(it: u32) -> u32 {
+        tree::bridge::opus_tree_next(&mut mem(), it)
+    }
+    /// `opusTree_Next2(it)`: the same body.
+    opusTree_Next2 @ 0x0080_6aa0 => extern "thiscall" fn opus_tree_next2(it: u32) -> u32 {
+        tree::bridge::opus_tree_next(&mut mem(), it)
+    }
+    /// `op_et_bindeff2_off(h)`.
+    op_et_bindeff2_off @ 0x007f_b6d0 => extern "C" fn op_et_bindeff2_off(h: u32) -> u32 {
+        et::bridge::op_et_bindeff2_off(&mut mem(), h, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_et_unit_free_by_id(id)`.
+    opu_et_unit_free_by_id @ 0x007f_da40 => extern "C" fn opu_et_unit_free_by_id(id: u32) -> u32 {
+        et::bridge::opu_et_unit_free_by_id(&mut mem(), id, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_et_unit_ofs(oef2, a, b, c)`.
+    opu_et_unit_ofs @ 0x007f_da30 => extern "C" fn opu_et_unit_ofs(o: u32, a: u32, b: u32, c: u32) -> u32 {
+        et::bridge::opu_et_unit_ofs(&mut mem(), [o, a, b, c], &mut |_, f, x| call_ptr(f, x))
+    }
+    /// `pppEePextlh(dst, rs, rt)`.
+    pppEePextlh @ 0x0073_7450 => extern "C" fn ppp_ee_pextlh(dst: u32, rs: u32, rt: u32) {
+        mat::bridge::ppp_ee_pextlh(&mut mem(), dst, rs, rt);
+    }
+    /// `pppEePpach(dst, rs, rt)`.
+    pppEePpach @ 0x0073_76a0 => extern "C" fn ppp_ee_ppach(dst: u32, rs: u32, rt: u32) {
+        mat::bridge::ppp_ee_ppach(&mut mem(), dst, rs, rt);
+    }
+    /// `pppEePsrlw(dst, src, sa)`.
+    pppEePsrlw @ 0x0073_7700 => extern "C" fn ppp_ee_psrlw(dst: u32, src: u32, sa: u32) {
+        mat::bridge::ppp_ee_psrlw(&mut mem(), dst, src, sa);
+    }
+    /// `pppColorShiftLoad(dst, base)`.
+    pppColorShiftLoad @ 0x0073_7420 => extern "C" fn ppp_color_shift_load(dst: u32, base: u32) {
+        mat::bridge::ppp_color_shift_load(&mut mem(), dst, base);
+    }
+    /// `pppColorShiftStore(src, base)`.
+    pppColorShiftStore @ 0x0073_7750 => extern "C" fn ppp_color_shift_store(src: u32, base: u32) {
+        mat::bridge::ppp_color_shift_store(&mut mem(), src, base);
+    }
+    /// `pppVu0MoveVia(dst, src)`.
+    pppVu0MoveVia @ 0x0073_ce30 => extern "C" fn ppp_vu0_move_via(dst: u32, src: u32) {
+        mat::bridge::ppp_vu0_move_via(&mut mem(), dst, src);
+    }
+    /// `pppVu0LoadVf00(dst)`.
+    pppVu0LoadVf00 @ 0x0073_ce80 => extern "C" fn ppp_vu0_load_vf00(dst: u32) {
+        mat::bridge::ppp_vu0_load_vf00(&mut mem(), dst);
+    }
+    /// `pppVu0LoadVf00_2(dst)`.
+    pppVu0LoadVf00_2 @ 0x0073_e110 => extern "C" fn ppp_vu0_load_vf00_2(dst: u32) {
+        mat::bridge::ppp_vu0_load_vf00(&mut mem(), dst);
+    }
+    /// `pppVu0Length(v)`.
+    pppVu0Length @ 0x0073_ceb0 => extern "C" fn ppp_vu0_length(v: u32) -> f32 {
+        mat::bridge::ppp_vu0_length(&mut mem(), v)
+    }
+    /// `pppVu0Length_2(v)`.
+    pppVu0Length_2 @ 0x0073_d7c0 => extern "C" fn ppp_vu0_length_2(v: u32) -> f32 {
+        mat::bridge::ppp_vu0_length(&mut mem(), v)
+    }
+    /// `pppVu0Length_3(v)`.
+    pppVu0Length_3 @ 0x0073_e140 => extern "C" fn ppp_vu0_length_3(v: u32) -> f32 {
+        mat::bridge::ppp_vu0_length(&mut mem(), v)
+    }
+    /// `pppShapeIterInit(shape, it)`.
+    pppShapeIterInit @ 0x0073_e990 => extern "C" fn ppp_shape_iter_init(shape: u32, it: u32) {
+        mat::bridge::ppp_shape_iter_init(&mut mem(), shape, it);
+    }
+    /// `pppShapeIterInit_2(shape, it)`.
+    pppShapeIterInit_2 @ 0x0073_f180 => extern "C" fn ppp_shape_iter_init_2(shape: u32, it: u32) {
+        mat::bridge::ppp_shape_iter_init(&mut mem(), shape, it);
+    }
+    /// `pppShapeIterInit_3(shape, it)`.
+    pppShapeIterInit_3 @ 0x0073_f9a0 => extern "C" fn ppp_shape_iter_init_3(shape: u32, it: u32) {
+        mat::bridge::ppp_shape_iter_init(&mut mem(), shape, it);
+    }
+    /// `pppShapeRandFlip(def, out)`.
+    pppShapeRandFlip @ 0x0074_19e0 => extern "C" fn ppp_shape_rand_flip(def: u32, out: u32) {
+        mat::bridge::ppp_shape_rand_flip(&mut mem(), def, out);
+    }
+    /// `pppDrawMdlSeaDes(obj, ctrl)`.
+    pppDrawMdlSeaDes @ 0x0073_ab70 => extern "C" fn ppp_draw_mdl_sea_des(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_draw_mdl_sea_des(&mut mem(), obj, ctrl);
+    }
+    /// `pppDrawMdlInfDes(obj, ctrl)`.
+    pppDrawMdlInfDes @ 0x0073_b830 => extern "C" fn ppp_draw_mdl_inf_des(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_draw_mdl_inf_des(&mut mem(), obj, ctrl);
+    }
+    /// `pppDrawMdlPSimDes(obj, ctrl)`.
+    pppDrawMdlPSimDes @ 0x0073_d010 => extern "C" fn ppp_draw_mdl_psim_des(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_draw_mdl_psim_des(&mut mem(), obj, ctrl, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppKeBornRnd2(obj, key, ctrl)`.
+    pppKeBornRnd2 @ 0x0075_87b0 => extern "C" fn ppp_ke_born_rnd2(obj: u32, key: u32, ctrl: u32) {
+        let kind = prog::bridge::BornRnd::Rnd2;
+        prog::bridge::ppp_ke_born_rnd(&mut mem(), kind, obj, key, ctrl, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppKeBornRnd3(obj, key, ctrl)`.
+    pppKeBornRnd3 @ 0x0075_8960 => extern "C" fn ppp_ke_born_rnd3(obj: u32, key: u32, ctrl: u32) {
+        let kind = prog::bridge::BornRnd::Rnd3;
+        prog::bridge::ppp_ke_born_rnd(&mut mem(), kind, obj, key, ctrl, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppKeBornRnd5(obj, key, ctrl)`.
+    pppKeBornRnd5 @ 0x0075_8f20 => extern "C" fn ppp_ke_born_rnd5(obj: u32, key: u32, ctrl: u32) {
+        let kind = prog::bridge::BornRnd::Rnd5;
+        prog::bridge::ppp_ke_born_rnd(&mut mem(), kind, obj, key, ctrl, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppKeBornRnd6(obj, key, ctrl)`.
+    pppKeBornRnd6 @ 0x0075_9200 => extern "C" fn ppp_ke_born_rnd6(obj: u32, key: u32, ctrl: u32) {
+        let kind = prog::bridge::BornRnd::Rnd6;
+        prog::bridge::ppp_ke_born_rnd(&mut mem(), kind, obj, key, ctrl, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_oef2_se_on(cue, pan, vol)`.
+    op_oef2_se_on @ 0x007f_fe10 => extern "C" fn op_oef2_se_on(cue: u32, pan: u32, vol: u32) -> u32 {
+        op::bridge::op_oef2_se_on(&mut mem(), cue, pan, vol, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_oef2_se_volume(cue, vol)`.
+    op_oef2_se_volume @ 0x007f_fde0 => extern "C" fn op_oef2_se_volume(cue: u32, vol: u32) -> u32 {
+        op::bridge::op_oef2_se_volume(&mut mem(), cue, vol, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_oef2_sound_cue_push(cue, arg)`.
+    op_oef2_sound_cue_push @ 0x007f_feb0 => extern "C" fn op_oef2_sound_cue_push(cue: u32, arg: u32) -> u32 {
+        op::bridge::op_oef2_sound_cue_push(&mut mem(), cue, arg, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_oef2_sound_cue_multi(oef2, from, to, arg)`.
+    op_oef2_sound_cue_multi @ 0x0080_02c0 => extern "C" fn op_oef2_sound_cue_multi(oef2: u32, from: u32, to: u32, arg: u32) -> u32 {
+        op::bridge::op_oef2_sound_cue_multi(&mut mem(), oef2, from, to, arg, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_oef2_sound_cue_check()`.
+    op_oef2_sound_cue_check @ 0x0080_00f0 => extern "C" fn op_oef2_sound_cue_check() -> u32 {
+        op::bridge::op_oef2_sound_cue_check(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_et_bindeff(h)`; returns what the original leaves in `eax`.
+    op_et_bindeff @ 0x007f_b290 => extern "C" fn op_et_bindeff(h: u32) -> u32 {
+        et::bridge::op_et_bindeff(&mut mem(), h, &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
+    }
+    /// `op_et_bindeff_off(h)`.
+    op_et_bindeff_off @ 0x007f_bb90 => extern "C" fn op_et_bindeff_off(h: u32) {
+        et::bridge::op_et_bindeff_off(&mut mem(), h, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_et_weapon_unit(h)`.
+    op_et_weapon_unit @ 0x007f_c9b0 => extern "C" fn op_et_weapon_unit(h: u32) -> u32 {
+        et::bridge::op_et_weapon_unit(&mut mem(), h, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_chara_hsv_size_get(chr)`.
+    op_chara_hsv_size_get @ 0x0080_7b20 => extern "C" fn op_chara_hsv_size_get(chr: u32) -> u32 {
+        op::bridge::op_chara_hsv_size_get(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_chara_packet_size_get(chr, mode, visible)`.
+    op_chara_packet_size_get @ 0x0080_37c0 => extern "C" fn op_chara_packet_size_get(chr: u32, mode: u32, visible: u32) -> u32 {
+        op::bridge::op_chara_packet_size_get(&mut mem(), chr, mode, visible, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeOfsPt(obj, key, ctrl)`.
+    pppKeOfsPt @ 0x0075_cd30 => extern "C" fn ppp_ke_ofs_pt(obj: u32, key: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_ofs_pt(&mut mem(), obj, key, ctrl, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppKeAcmCic(obj, key)`.
+    pppKeAcmCic @ 0x0075_b690 => extern "C" fn ppp_ke_acm_cic(obj: u32, key: u32) {
+        let _ = obj;
+        prog::bridge::ppp_ke_acm_cic(&mut mem(), key, &mut |_, f, a| call_ptr(f, a));
     }
     /// `op_et_eff_off_signal(id)`.
     op_et_eff_off_signal @ 0x007f_c450 => extern "C" fn op_et_eff_off_signal(id: u32) {
@@ -1241,6 +1579,11 @@ ported! {
         let _ = key;
         mat::bridge::ppp_matrix_scl(&mut mem(), obj, ctrl);
     }
+    /// `pppKeMatSN(obj, key, ctrl)`.
+    pppKeMatSN @ 0x0073_4020 => extern "C" fn ppp_ke_mat_sn(obj: u32, key: u32, ctrl: u32) {
+        let _ = key;
+        mat::bridge::ppp_ke_mat_sn(&mut mem(), obj, ctrl);
+    }
     /// `pppKeMatPht(obj, key, ctrl)`.
     pppKeMatPht @ 0x0073_41e0 => extern "C" fn ppp_ke_mat_pht(obj: u32, key: u32, ctrl: u32) {
         let _ = key;
@@ -1503,5 +1846,293 @@ ported! {
     /// `opus_chr_index_map(out)`: how many moved.
     opus_chr_index_map @ 0x007f_e450 => extern "C" fn opus_chr_index_map(out: u32) -> u32 {
         et::bridge::opus_chr_index_map(&mut mem(), out)
+    }
+
+    // ---- round 5: renderer flags, EE/VU emulation, rotations, packets ----
+    /// `calculateVFXSP_ZMat(z)`.
+    calculateVFXSP_ZMat @ 0x0071_2d00 => extern "C" fn calculate_vfx_sp_zmat(z: u32) -> u32 {
+        op::bridge::calculate_vfx_sp_zmat(z)
+    }
+    /// `calculateVFXSP_AlphaFunction(f)`.
+    calculateVFXSP_AlphaFunction @ 0x0071_2c30 => extern "C" fn calculate_vfx_sp_alpha_function(f: u32) -> u32 {
+        op::bridge::calculate_vfx_sp_alpha_function(f)
+    }
+    /// `graphicVFXGetRenderDataByGeometry(g)`.
+    graphicVFXGetRenderDataByGeometry @ 0x0064_53b0 => extern "C" fn graphic_vfx_get_render_data_by_geometry(g: u32) -> u32 {
+        op::bridge::graphic_vfx_get_render_data_by_geometry(&mem(), g)
+    }
+    /// `graphicVFXSetCurrentVFXType(type)`.
+    graphicVFXSetCurrentVFXType @ 0x0064_5670 => extern "C" fn graphic_vfx_set_current_vfx_type(kind: u32) {
+        #[allow(clippy::cast_possible_truncation)] // a byte argument
+        op::bridge::CURRENT_TYPE.set(&mut mem(), kind as u8);
+    }
+    /// `pppEePmulth(dst, a, b)`.
+    pppEePmulth @ 0x0073_74e0 => extern "C" fn ppp_ee_pmulth(dst: u32, a: u32, b: u32) {
+        mat::bridge::ppp_ee_pmulth(&mut mem(), dst, a, b);
+    }
+    /// `pppEePpacb(dst, a, b)`.
+    pppEePpacb @ 0x0073_75d0 => extern "C" fn ppp_ee_ppacb(dst: u32, a: u32, b: u32) {
+        mat::bridge::ppp_ee_ppacb(&mut mem(), dst, a, b);
+    }
+    /// `pppMemFree(heap, spare, data)`.
+    pppMemFree @ 0x0071_6a90 => extern "C" fn ppp_mem_free(heap: u32, spare: u32, data: u32) {
+        heap::bridge::ppp_mem_free(&mut mem(), heap, spare, data);
+    }
+    /// `pppVtMimeDes(obj, ctrl)`.
+    pppVtMimeDes @ 0x0072_ede0 => extern "C" fn ppp_vt_mime_des(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_vt_mime_des(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeLnsLpCon(obj, ctrl)`.
+    pppKeLnsLpCon @ 0x0075_af30 => extern "C" fn ppp_ke_lns_lp_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_lns_lp_con(&mut mem(), obj, ctrl);
+    }
+    /// `op_rt_m_x(dst, src, angle)`.
+    op_rt_m_x @ 0x007e_9580 => extern "C" fn op_rt_m_x(dst: u32, src: u32, angle: f32) {
+        op::bridge::op_rt_m(&mut mem(), dst, src, angle, mat::Axis::X);
+    }
+    /// `op_rt_m_y(dst, src, angle)`.
+    op_rt_m_y @ 0x007e_9670 => extern "C" fn op_rt_m_y(dst: u32, src: u32, angle: f32) {
+        op::bridge::op_rt_m(&mut mem(), dst, src, angle, mat::Axis::Y);
+    }
+    /// `op_rt_m_z(dst, src, angle)`.
+    op_rt_m_z @ 0x007e_9760 => extern "C" fn op_rt_m_z(dst: u32, src: u32, angle: f32) {
+        op::bridge::op_rt_m(&mut mem(), dst, src, angle, mat::Axis::Z);
+    }
+    /// `op_rt_m_yxz(dst, src, angles, t)`.
+    op_rt_m_yxz @ 0x007e_9a30 => extern "C" fn op_rt_m_yxz(dst: u32, src: u32, angles: u32, t: u32) {
+        op::bridge::op_rt_m_yxz(&mut mem(), dst, src, angles, t);
+    }
+    /// `op_md_packet_set_addr(packet, a, b)`.
+    op_md_packet_set_addr @ 0x00a6_9de0 => extern "C" fn op_md_packet_set_addr(packet: u32, a: u32, b: u32) {
+        op::bridge::op_md_packet_set_addr(&mut mem(), packet, a, b);
+    }
+    /// `pppSetMatrix(part)`.
+    pppSetMatrix @ 0x0071_7410 => extern "C" fn ppp_set_matrix(part: u32) {
+        mat::bridge::ppp_set_matrix(&mut mem(), part);
+    }
+    /// `pppVertexAttend(obj, key, ctrl)`.
+    pppVertexAttend @ 0x0075_d340 => extern "C" fn ppp_vertex_attend(obj: u32, key: u32, ctrl: u32) {
+        mat::bridge::ppp_vertex_attend(&mut mem(), obj, key, ctrl);
+    }
+
+    // ---- parts and objects ----
+    /// `pppInitPdt(pdt, programs)`.
+    pppInitPdt @ 0x0071_20f0 => extern "C" fn ppp_init_pdt(pdt: u32, programs: u32) {
+        part::bridge::ppp_init_pdt(&mut mem(), pdt, programs);
+    }
+    /// `pppInitData(data, programs, _)`.
+    pppInitData @ 0x0071_1fa0 => extern "C" fn ppp_init_data(data: u32, programs: u32, x: u32) {
+        let _ = x;
+        part::bridge::ppp_init_data(&mut mem(), data, programs);
+    }
+    /// `pppOtFunc_Reg(list, node, a, b)`; returns `node`.
+    pppOtFunc_Reg @ 0x0071_6be0 => extern "C" fn ppp_ot_func_reg(list: u32, node: u32, a: u32, b: u32) -> u32 {
+        part::bridge::ppp_ot_func_reg(&mut mem(), list, node, a, b);
+        // the original leaves set_ptr32(node) in eax (the TCon set-ups return it)
+        node
+    }
+    /// `pppPObjectCon(obj)`.
+    pppPObjectCon @ 0x0071_2d90 => extern "C" fn ppp_pobject_con(obj: u32) {
+        part::bridge::ppp_pobject_con(&mut mem(), obj, 0x1c, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppPObjectCon2(obj)`.
+    pppPObjectCon2 @ 0x0071_2d20 => extern "C" fn ppp_pobject_con2(obj: u32) {
+        part::bridge::ppp_pobject_con(&mut mem(), obj, 0x20, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppPartCall10(part)`.
+    pppPartCall10 @ 0x0071_2e40 => extern "C" fn ppp_part_call10(p: u32) {
+        part::bridge::ppp_part_call(&mut mem(), p, 0x10, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppPartCall14(part)`.
+    pppPartCall14 @ 0x0071_2e80 => extern "C" fn ppp_part_call14(p: u32) {
+        part::bridge::ppp_part_call(&mut mem(), p, 0x14, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppPartCall18(part)`.
+    pppPartCall18 @ 0x0071_2e00 => extern "C" fn ppp_part_call18(p: u32) {
+        part::bridge::ppp_part_call(&mut mem(), p, 0x18, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppCreatePObject(part, def)`: the object, or 0.
+    pppCreatePObject @ 0x0071_6770 => extern "C" fn ppp_create_pobject(p: u32, def: u32) -> u32 {
+        part::bridge::ppp_create_pobject(&mut mem(), p, def, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppBornPObjects(part)`.
+    pppBornPObjects @ 0x0071_2b80 => extern "C" fn ppp_born_pobjects(p: u32) {
+        part::bridge::ppp_born_pobjects(&mut mem(), p, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDeletePObject(obj, _)`.
+    pppDeletePObject @ 0x0071_68f0 => extern "C" fn ppp_delete_pobject(obj: u32, x: u32) {
+        let _ = x;
+        part::bridge::ppp_delete_pobject(&mut mem(), obj, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDrawShape(def, prog, entry, c)`.
+    pppDrawShape @ 0x0074_09e0 => extern "C" fn ppp_draw_shape(def: u32, prog: u32, e: u32, c: u32) -> u32 {
+        let draw = part::bridge::DRAW_SHAPE0;
+        part::bridge::ppp_draw_shape(&mut mem(), draw, def, prog, e, c, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeX(def, prog, entry, c)`.
+    pppDrawShapeX @ 0x0074_0ed0 => extern "C" fn ppp_draw_shape_x(def: u32, prog: u32, e: u32, c: u32) -> u32 {
+        let draw = part::bridge::DRAW_SHAPE_X0;
+        part::bridge::ppp_draw_shape(&mut mem(), draw, def, prog, e, c, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppOtFunc_Control(list)`.
+    pppOtFunc_Control @ 0x0071_6ac0 => extern "C" fn ppp_ot_func_control(list: u32) {
+        part::bridge::ppp_ot_func_control(&mut mem(), list, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppOtFunc_Lev(list, node)`; returns `list` as the original leaves it.
+    pppOtFunc_Lev @ 0x0071_6ba0 => extern "C" fn ppp_ot_func_lev(list: u32, node: u32) -> u32 {
+        part::bridge::ppp_ot_func_lev(&mut mem(), list, node);
+        list
+    }
+    /// `pppKeLnsArndTCon(obj, ctrl)`.
+    pppKeLnsArndTCon @ 0x0075_a0f0 => extern "C" fn ppp_ke_lns_arnd_t_con(obj: u32, ctrl: u32) -> u32 {
+        prog::bridge::ppp_ke_lns_t_con(&mut mem(), prog::bridge::LnsT::Arnd, obj, ctrl)
+    }
+    /// `pppKeLnsClmTCon(obj, ctrl)`.
+    pppKeLnsClmTCon @ 0x0075_a4a0 => extern "C" fn ppp_ke_lns_clm_t_con(obj: u32, ctrl: u32) -> u32 {
+        prog::bridge::ppp_ke_lns_t_con(&mut mem(), prog::bridge::LnsT::Clm, obj, ctrl)
+    }
+    /// `pppKeLnsCrnTCon(obj, ctrl)`.
+    pppKeLnsCrnTCon @ 0x0075_a870 => extern "C" fn ppp_ke_lns_crn_t_con(obj: u32, ctrl: u32) -> u32 {
+        prog::bridge::ppp_ke_lns_t_con(&mut mem(), prog::bridge::LnsT::Crn, obj, ctrl)
+    }
+    /// `pppKeLnsFlsTCon(obj, ctrl)`.
+    pppKeLnsFlsTCon @ 0x0075_ac60 => extern "C" fn ppp_ke_lns_fls_t_con(obj: u32, ctrl: u32) -> u32 {
+        prog::bridge::ppp_ke_lns_t_con(&mut mem(), prog::bridge::LnsT::Fls, obj, ctrl)
+    }
+    /// `pppKeLnsArndTDes(obj, ctrl)`.
+    pppKeLnsArndTDes @ 0x0075_a140 => extern "C" fn ppp_ke_lns_arnd_t_des(obj: u32, ctrl: u32) -> u32 {
+        let kind = prog::bridge::LnsT::Arnd;
+        prog::bridge::ppp_ke_lns_t_des(&mut mem(), kind, obj, ctrl, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeLnsClmTDes(obj, ctrl)`.
+    pppKeLnsClmTDes @ 0x0075_a4f0 => extern "C" fn ppp_ke_lns_clm_t_des(obj: u32, ctrl: u32) -> u32 {
+        let kind = prog::bridge::LnsT::Clm;
+        prog::bridge::ppp_ke_lns_t_des(&mut mem(), kind, obj, ctrl, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeLnsCrnTDes(obj, ctrl)`.
+    pppKeLnsCrnTDes @ 0x0075_a8b0 => extern "C" fn ppp_ke_lns_crn_t_des(obj: u32, ctrl: u32) -> u32 {
+        let kind = prog::bridge::LnsT::Crn;
+        prog::bridge::ppp_ke_lns_t_des(&mut mem(), kind, obj, ctrl, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeLnsFlsTDes(obj, ctrl)`.
+    pppKeLnsFlsTDes @ 0x0075_acb0 => extern "C" fn ppp_ke_lns_fls_t_des(obj: u32, ctrl: u32) -> u32 {
+        let kind = prog::bridge::LnsT::Fls;
+        prog::bridge::ppp_ke_lns_t_des(&mut mem(), kind, obj, ctrl, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeLnsLpTCon(obj, ctrl)`.
+    pppKeLnsLpTCon @ 0x0075_b090 => extern "C" fn ppp_ke_lns_lp_t_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_lns_lp_t_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeLnsLpTDes(obj, ctrl)`.
+    pppKeLnsLpTDes @ 0x0075_b130 => extern "C" fn ppp_ke_lns_lp_t_des(obj: u32, ctrl: u32) -> u32 {
+        prog::bridge::ppp_ke_lns_lp_t_des(&mut mem(), obj, ctrl)
+    }
+    /// `pppAllFreePObject(part)`.
+    pppAllFreePObject @ 0x0071_1f20 => extern "C" fn ppp_all_free_pobject(p: u32) {
+        part::bridge::ppp_all_free_pobject(&mut mem(), p, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppRunPartStd(part)`.
+    pppRunPartStd @ 0x0071_6c40 => extern "C" fn ppp_run_part_std(p: u32) {
+        part::bridge::ppp_run_part_std(&mut mem(), p, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppRunPart(part, flags)`: 1 when the part has ended.
+    pppRunPart @ 0x0071_2250 => extern "C" fn ppp_run_part(p: u32, flags: u32) -> u32 {
+        part::bridge::ppp_run_part(&mut mem(), p, flags & 0xff, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppStartPart(part, rate, data, call_set_ups)`.
+    pppStartPart @ 0x0071_23c0 => extern "C" fn ppp_start_part(p: u32, rate: u32, data: u32, set_ups: u32) {
+        part::bridge::ppp_start_part(&mut mem(), p, rate, data, set_ups, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppCallUsrFunc(part, table, arg)`.
+    pppCallUsrFunc @ 0x0071_6710 => extern "C" fn ppp_call_usr_func(p: u32, table: u32, arg: u32) {
+        part::bridge::ppp_call_usr_func(&mut mem(), p, table, arg, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDrawHookDraw(obj, key, ctrl)`.
+    pppDrawHookDraw @ 0x0075_7370 => extern "C" fn ppp_draw_hook(obj: u32, key: u32, ctrl: u32) {
+        part::bridge::ppp_draw_hook(&mut mem(), obj, key, ctrl, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppPointAp(obj, key, ctrl)`.
+    pppPointAp @ 0x0075_73c0 => extern "C" fn ppp_point_ap(obj: u32, key: u32, ctrl: u32) {
+        part::bridge::ppp_point_ap(&mut mem(), obj, key, ctrl, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppBornShort(obj, key, v)`.
+    pppBornShort @ 0x0075_8270 => extern "C" fn ppp_born_short(obj: u32, key: u32, v: u32) {
+        #[allow(clippy::cast_possible_truncation)] // a short argument
+        part::bridge::ppp_born_short(&mut mem(), obj, key, v as u16, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppBornVertex(obj, key, v)`.
+    pppBornVertex @ 0x0075_7770 => extern "C" fn ppp_born_vertex(obj: u32, key: u32, v: u32) {
+        part::bridge::ppp_born_vertex(&mut mem(), obj, key, v, false, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppBornVertexRel(obj, key, v)`.
+    pppBornVertexRel @ 0x0075_7b50 => extern "C" fn ppp_born_vertex_rel(obj: u32, key: u32, v: u32) {
+        part::bridge::ppp_born_vertex(&mut mem(), obj, key, v, true, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppPointRAp(obj, key, ctrl)`.
+    pppPointRAp @ 0x0075_7490 => extern "C" fn ppp_point_r_ap(obj: u32, key: u32, ctrl: u32) {
+        part::bridge::ppp_point_r_ap(
+            &mut mem(),
+            obj,
+            key,
+            ctrl,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, seed| crt_srand(seed),
+        );
+    }
+    /// `pppKeHitBorn(obj, key, ctrl)`.
+    pppKeHitBorn @ 0x0075_9d80 => extern "C" fn ppp_ke_hit_born(obj: u32, key: u32, ctrl: u32) {
+        part::bridge::ppp_ke_hit_born(&mut mem(), obj, key, ctrl, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppBornVertexLc(obj, key, v)`.
+    pppBornVertexLc @ 0x0075_7ed0 => extern "C" fn ppp_born_vertex_lc(obj: u32, key: u32, v: u32) {
+        part::bridge::ppp_born_vertex_lc(&mut mem(), obj, key, v, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppVertexAp(obj, key, ctrl)`.
+    pppVertexAp @ 0x0075_7840 => extern "C" fn ppp_vertex_ap(obj: u32, key: u32, ctrl: u32) {
+        part::bridge::ppp_vertex_ap(
+            &mut mem(),
+            obj,
+            key,
+            ctrl,
+            part::bridge::VertexAp::Ap,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, seed| crt_srand(seed),
+        );
+    }
+    /// `pppVertexApDisPos(obj, key, ctrl)`.
+    pppVertexApDisPos @ 0x0075_7c30 => extern "C" fn ppp_vertex_ap_dis_pos(obj: u32, key: u32, ctrl: u32) {
+        part::bridge::ppp_vertex_ap(
+            &mut mem(),
+            obj,
+            key,
+            ctrl,
+            part::bridge::VertexAp::DisPos,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, seed| crt_srand(seed),
+        );
+    }
+    /// `pppVertexApLc(obj, key, ctrl)`.
+    pppVertexApLc @ 0x0075_7ff0 => extern "C" fn ppp_vertex_ap_lc(obj: u32, key: u32, ctrl: u32) {
+        part::bridge::ppp_vertex_ap(
+            &mut mem(),
+            obj,
+            key,
+            ctrl,
+            part::bridge::VertexAp::Lc,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, seed| crt_srand(seed),
+        );
+    }
+    /// `pppVertexApAt(obj, key, ctrl)`.
+    pppVertexApAt @ 0x0075_82e0 => extern "C" fn ppp_vertex_ap_at(obj: u32, key: u32, ctrl: u32) {
+        part::bridge::ppp_vertex_ap(
+            &mut mem(),
+            obj,
+            key,
+            ctrl,
+            part::bridge::VertexAp::At,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, seed| crt_srand(seed),
+        );
     }
 }

@@ -91,6 +91,22 @@ pub const fn menu_help_ratio(a: i32, b: i32) -> i32 {
     b.wrapping_add(2).wrapping_mul(a).wrapping_mul(2) / 4
 }
 
+/// The GS register packers (`Gs_Pack4` and copies): `(a, b, c, d)` as the
+/// `u64` `a | b << 32 | c << 16 | d << 48` (the `or`s overlapping).
+#[must_use]
+pub const fn gs_pack4(a: u32, b: u32, c: u32, d: u32) -> u64 {
+    (a as u64) | ((b as u64) << 32) | ((c as u64) << 16) | ((d as u64) << 48)
+}
+
+/// `Gs_Pack5(a, b, c, d, e)` and copies: [`gs_pack4`] with `e & 0x0ffffff0`
+/// folded in above `c` and `d` (`<< 12`).
+#[must_use]
+#[allow(clippy::many_single_char_names)]
+pub const fn gs_pack5(a: u32, b: u32, c: u32, d: u32, e: u32) -> u64 {
+    let e = e & 0x0fff_fff0;
+    gs_pack4(a, b, (e << 12) | c, (e >> 20) | d)
+}
+
 /// A menu command list: 4-byte records (`u8` a, `u8` b, two more bytes)
 /// ending at a record whose first byte is `0xff`. `TkMenuGetCommandOffset`:
 /// the index of the first record matching `(a, b)`, 0 when none does (or
@@ -2013,7 +2029,7 @@ pub mod bridge {
         }
     }
 
-    /// `Pad_GetWorkByte9D(pad, port)` (`0x00888ba0`, own name): byte
+    /// `TkGetControlerActuatorMode(pad, port)` (`0x00888ba0`): byte
     /// `+0x9d` of the controller work.
     pub fn pad_get_work_byte_9d(mem: &impl Mem, pad: i32, port: i32) -> u8 {
         mem.read(tk_get_controler_work(mem, pad, port).wrapping_add(0x9d))
@@ -2308,7 +2324,7 @@ pub mod bridge {
         MENU_PARTY_BITS.set(mem, bits);
     }
 
-    /// `Pad_RefreshActuatorMode()` (`0x00872480`, own name): pad 0's
+    /// `TkRefreshActuator()` (`0x00872480`): pad 0's
     /// actuator mode from the menu setting bit 4.
     pub fn pad_refresh_actuator_mode(mem: &mut impl Mem) -> u32 {
         let on = (mem.read::<u8>(save::ms_get_save_menu(mem)) >> 4) & 1;
@@ -2573,6 +2589,1501 @@ pub mod bridge {
     pub fn window_clear_1c(mem: &mut impl Mem, window: u32) -> u32 {
         mem.write(window.wrapping_add(0x1c), 0u32);
         window
+    }
+
+    // ---- round 6: pad history, menu list logic, save/load slots, battle
+    // end, status layout, scissor wrappers ----
+
+    /// A pad history `u16` (`TkGetControlerHist` and kin): field `field`
+    /// of input frame `i`, loaded into `ax` over the frame pointer.
+    pub fn tk_get_controler_hist(mem: &impl Mem, pad: i32, port: i32, i: i32, field: u32) -> u32 {
+        let f = pad_get_frame(mem, pad, port, i);
+        (f & 0xffff_0000) | u32::from(mem.read::<u16>(f.wrapping_add(field)))
+    }
+
+    /// `TkGetControlerAnalogHist(pad, port, k, i)` (`0x00888c20`): analog
+    /// byte `k` (`+0xc + k`) of frame `i`, loaded into `al` over `k`.
+    pub fn tk_get_controler_analog_hist(
+        mem: &impl Mem,
+        pad: i32,
+        port: i32,
+        k: u32,
+        i: i32,
+    ) -> u32 {
+        let f = pad_get_frame(mem, pad, port, i);
+        (k & !0xff) | u32::from(mem.read::<u8>(f.wrapping_add(0xc).wrapping_add(k)))
+    }
+
+    /// `TkGetControlerActuatorNumber(pad, port)` (`0x00888bc0`): for a
+    /// pad of type 5 (`+0x9f`), how many of its two actuator modes
+    /// (`+0xf6`, `+0xf7`) are not 8; 0 otherwise.
+    pub fn tk_get_controler_actuator_number(mem: &impl Mem, pad: i32, port: i32) -> u32 {
+        let w = tk_get_controler_work(mem, pad, port);
+        if mem.read::<u8>(w.wrapping_add(0x9f)) != 5 {
+            return 0;
+        }
+        u32::from(mem.read::<u8>(w.wrapping_add(0xf6)) != 8)
+            + u32::from(mem.read::<u8>(w.wrapping_add(0xf7)) != 8)
+    }
+
+    /// `MenuAbility_RefreshList(chr)` (`0x008c6800`, own name): the item
+    /// list from the menu status commands (`MsMenuStatusNum(0, 0)`, 4-byte
+    /// records to `0xff`): each `@ A D E` record with byte 1 zero whose
+    /// command the character has learnt becomes an entry (id, 1, usable:
+    /// command flag `+0x22` bit 6 and MP cost `+0x25` within the
+    /// character's MP); the first usable index and the row count are kept.
+    /// Returns the rows.
+    pub fn menu_ability_refresh_list(mem: &mut impl Mem, chr: u32) -> i32 {
+        let mut rec = ffx_battle::menu::bridge::ms_menu_status_num(mem, 0, 0);
+        MENU_ITEM_FIRST_USABLE.set(mem, -1);
+        let mp = tk_menu_get_ply(mem, chr, 0x20).cast_signed();
+        let list = MENU_ITEM_LIST.ptr(mem).addr;
+        for k in 0..0x200 {
+            mem.write(list + 4 * k, 0u32);
+        }
+        let mut rows = 0i32;
+        let mut at = list;
+        loop {
+            let kind = mem.read::<u8>(rec);
+            if kind == 0xff {
+                break;
+            }
+            if mem.read::<u8>(rec + 1) == 0 && matches!(kind, 0x40 | 0x41 | 0x44 | 0x45) {
+                let id = mem.read::<u16>(rec + 2);
+                if save::ms_get_save_command(mem, chr.cast_signed(), u32::from(id)) != 0 {
+                    mem.write(at, id);
+                    mem.write(at + 2, 1u8);
+                    let cmd =
+                        ffx_kernel::bridge::rom(mem, ffx_kernel::bridge::COMMAND, u32::from(id), 0);
+                    let usable = mem.read::<u8>(cmd + 0x22) & 0x40 != 0
+                        && i32::from(mem.read::<u8>(cmd + 0x25)) <= mp;
+                    mem.write(at + 3, u8::from(usable));
+                    if usable && MENU_ITEM_FIRST_USABLE.get(mem) < 0 {
+                        #[allow(clippy::cast_possible_truncation)] // the original stores DI
+                        MENU_ITEM_FIRST_USABLE.set(mem, rows as i16);
+                    }
+                    at += 4;
+                    rows += 1;
+                }
+            }
+            rec += 4;
+        }
+        MENU_ITEM_ROWS.set(mem, rows.cast_unsigned());
+        rows
+    }
+
+    /// `MenuMain_ResetWindow(window)` (`0x008aa4b0`, own name): a menu
+    /// window back to its defaults (callbacks and state cleared, ids
+    /// `+0x2c`/`+0x2e` = -1, `+0x34` = `0x01000000`, `+0x3e` = `0x0101`).
+    pub fn menu_main_reset_window(mem: &mut impl Mem, w: u32) {
+        let w32 = |mem: &mut _, o: u32, v: u32| Mem::write(mem, w.wrapping_add(o), v);
+        w32(mem, 0x46, 0);
+        w32(mem, 0x38, 0);
+        w32(mem, 0x24, 0);
+        w32(mem, 0x28, 0);
+        for o in (0..0x20).step_by(4) {
+            w32(mem, o, 0);
+        }
+        w32(mem, 0x34, 0x0100_0000);
+        mem.write(w.wrapping_add(0x2c), 0xffffu16);
+        mem.write(w.wrapping_add(0x2e), 0xffffu16);
+        w32(mem, 0x30, 0);
+        w32(mem, 0x3e, 0x101);
+        for o in [0x42, 0x4a, 0x4e, 0x52] {
+            w32(mem, o, 0);
+        }
+        for o in (0x58..0x98).step_by(4) {
+            w32(mem, o, 0);
+        }
+    }
+
+    /// `MenuItem_CompareEntries(list, a, b)` (`0x008c9410`, own name): 32-
+    /// byte entries `a` and `b` compared as 8 unsigned words: 1, -1 or 0.
+    pub fn menu_item_compare_entries(mem: &impl Mem, list: u32, a: u32, b: u32) -> i32 {
+        let (pa, pb) = (list.wrapping_add(a << 5), list.wrapping_add(b << 5));
+        for k in 0..8 {
+            let x = mem.read::<u32>(pa.wrapping_add(4 * k));
+            let y = mem.read::<u32>(pb.wrapping_add(4 * k));
+            match x.cmp(&y) {
+                core::cmp::Ordering::Greater => return 1,
+                core::cmp::Ordering::Less => return -1,
+                core::cmp::Ordering::Equal => {}
+            }
+        }
+        0
+    }
+
+    /// `MenuItem_SwapEntries(list, a, b)` (`0x008c9460`, own name): the two
+    /// 32-byte entries swapped word by word.
+    pub fn menu_item_swap_entries(mem: &mut impl Mem, list: u32, a: u32, b: u32) {
+        let (pa, pb) = (list.wrapping_add(a << 5), list.wrapping_add(b << 5));
+        for k in 0..8 {
+            let x = mem.read::<u32>(pa.wrapping_add(4 * k));
+            let y = mem.read::<u32>(pb.wrapping_add(4 * k));
+            mem.write(pa.wrapping_add(4 * k), y);
+            mem.write(pb.wrapping_add(4 * k), x);
+        }
+    }
+
+    /// `MenuWShop_InitCursor(window)` (`0x008d9580`, own name): the cursor
+    /// on the first usable item of the `+0x30` entries (0 when none), the
+    /// scroll `+0x32` centred on it within `+0x3a` visible rows and clamped,
+    /// copied to `+0x34`.
+    pub fn menu_wshop_init_cursor(mem: &mut impl Mem, w: u32) {
+        let n = u32::from(mem.read::<u16>(w.wrapping_add(0x30)));
+        let mut i = 0u32;
+        while i < n && mem.read::<u8>(item_entry(mem, i).wrapping_add(3)) == 0 {
+            i += 1;
+        }
+        let visible = mem.read::<u16>(w.wrapping_add(0x3a));
+        #[allow(clippy::cast_possible_truncation)] // 16-bit stores
+        let cursor = if i == n { 0 } else { i as u16 };
+        mem.write(w.wrapping_add(0x48), cursor);
+        let scroll = cursor.wrapping_sub(visible >> 1);
+        mem.write(w.wrapping_add(0x32), scroll);
+        if i32::from(scroll.cast_signed()) >= n.cast_signed().wrapping_sub(i32::from(visible)) {
+            #[allow(clippy::cast_possible_truncation)]
+            mem.write(w.wrapping_add(0x32), (n as u16).wrapping_sub(visible));
+        }
+        if mem.read::<i16>(w.wrapping_add(0x32)) < 0 {
+            mem.write(w.wrapping_add(0x32), 0u16);
+        }
+        let v = mem.read::<u16>(w.wrapping_add(0x32));
+        mem.write(w.wrapping_add(0x34), v);
+    }
+
+    /// The save/load menu's 99 slot states (`u8`: 0 free, 1 used, 3
+    /// marked) and the any-used flag.
+    pub const SAVE_SLOTS: Global<u8> = Global::new(0x0186_6290);
+    /// Set when [`SAVE_SLOTS`] has a used slot (`MenuSaveLoad_MarkSlots`).
+    pub const SAVE_SLOTS_USED: Global<u32> = Global::new(0x0186_6278);
+
+    /// `MenuSaveLoad_MarkSlots(free, need)` (`0x008b54c0`, own name): marks
+    /// (3) cleared; then each free slot is marked while `free` is below
+    /// `need`, otherwise `need` is taken from `free`; any used slot sets
+    /// the flag.
+    pub fn menu_save_load_mark_slots(mem: &mut impl Mem, free: i32, need: i32) {
+        let base = SAVE_SLOTS.ptr(mem).addr;
+        SAVE_SLOTS_USED.set(mem, 0);
+        for k in 0..99 {
+            let s = mem.read::<u8>(base + k);
+            if s == 0 || s == 3 {
+                mem.write(base + k, 0u8);
+            }
+        }
+        let mut free = free;
+        for k in 0..99 {
+            match mem.read::<u8>(base + k) {
+                0 if free < need => mem.write(base + k, 3u8),
+                0 => free = free.wrapping_sub(need),
+                1 => SAVE_SLOTS_USED.set(mem, 1),
+                _ => {}
+            }
+        }
+    }
+
+    /// The weapon shop's list kind, table and slot count.
+    pub const WSHOP_LIST: Global<[u32; 4]> = Global::new(0x0186_ac20);
+
+    /// `MenuWShop_CountSlots()` (`0x008db440`, own name): of the up to 16
+    /// `u16` ids from `+2` of the shop record (`TkMn2GetExcelData`), the
+    /// number before the first 0 or `0xff`.
+    pub fn menu_wshop_count_slots(mem: &mut impl Mem) {
+        let [id, _, _, table] = WSHOP_LIST.get(mem);
+        let rec = tk_mn2_get_excel_data(mem, id.cast_signed(), table);
+        let mut n = 0u32;
+        while n < 16 {
+            let v = mem.read::<u16>(rec.wrapping_add(2 + 2 * n));
+            if v == 0xff || v == 0 {
+                break;
+            }
+            n += 1;
+        }
+        let at = WSHOP_LIST.ptr(mem).addr + 4;
+        mem.write(at, n);
+    }
+
+    /// The battle-end AP total and its counting step.
+    pub const BTL_END_AP: Global<[u32; 2]> = Global::new(0x0186_9f10);
+
+    /// The battle-end counting step for `ap`: `ap / 189 | 1`, moved off a
+    /// multiple of 5 by adding 2.
+    #[must_use]
+    pub const fn btl_end_ap_step(ap: u32) -> u32 {
+        let s = (ap / 0xbd) | 1;
+        if s.is_multiple_of(5) { s + 2 } else { s }
+    }
+
+    /// `BtlEnd_InitApStep()` (`0x008bdf10`, own name): the AP total from
+    /// result 19 and its step.
+    pub fn btl_end_init_ap_step(mem: &mut impl Mem) {
+        let ap = btl_end_get_result(mem, 19);
+        BTL_END_AP.set(mem, [btl_end_ap_step(ap), ap]);
+    }
+
+    /// `BtlEnd_ApStep(chr)` (`0x008ba3c0`, own name): the step for the
+    /// character's `MsGetNextAP`.
+    pub fn btl_end_ap_step_for(mem: &mut impl Mem, chr: i32) -> u32 {
+        btl_end_ap_step(ffx_battle::menu::bridge::ms_get_next_ap(mem, chr).cast_unsigned())
+    }
+
+    /// The battle-end list: count `u8` and up to three 14-byte entries.
+    pub const BTL_END_LIST: Global<u8> = Global::new(0x0186_9f18);
+
+    /// `BtlEnd_CompactList()` (`0x008ba400`, own name): entries whose byte
+    /// `+9` is set move to the front (swapped, their `u16` `+2` staying in
+    /// place), at most three.
+    #[allow(clippy::many_single_char_names)]
+    pub fn btl_end_compact_list(mem: &mut impl Mem) {
+        let n = i32::from(BTL_END_LIST.get(mem));
+        let base = BTL_END_LIST.ptr(mem).addr + 8;
+        let mut dest = base;
+        for k in 0..n.max(0).cast_unsigned() {
+            if dest + 2 > base + 0x1e {
+                return;
+            }
+            let e = base + 0xe * k;
+            if mem.read::<u8>(e + 9) != 0 {
+                let d = [
+                    mem.read::<u32>(dest),
+                    mem.read::<u32>(dest + 4),
+                    mem.read::<u32>(dest + 8),
+                ];
+                let d3 = mem.read::<u16>(dest + 0xc);
+                let v = mem.read::<u32>(e);
+                mem.write(dest, v);
+                let v = mem.read::<u32>(e + 4);
+                mem.write(dest + 4, v);
+                let v = mem.read::<u32>(e + 8);
+                mem.write(dest + 8, v);
+                let v = mem.read::<u16>(e + 0xc);
+                mem.write(dest + 0xc, v);
+                mem.write(e, d[0]);
+                mem.write(e + 4, d[1]);
+                mem.write(e + 8, d[2]);
+                mem.write(e + 0xc, d3);
+                let a = mem.read::<u16>(e + 2);
+                let b = mem.read::<u16>(dest + 2);
+                mem.write(dest + 2, a);
+                mem.write(e + 2, b);
+                dest += 0xe;
+            }
+        }
+    }
+
+    /// `MenuMn2_Ease(t, dir)` (`0x008d30c0`, own name): the low half of
+    /// `Math_CosLookup(t)`, or for a negative `dir` `0x1000` minus that of
+    /// `0x1000 - t`.
+    pub fn menu_mn2_ease(mem: &impl Mem, t: i32, dir: i32) -> u32 {
+        if dir < 0 {
+            0x1000u32.wrapping_sub(math_cos_lookup(mem, 0x1000i32.wrapping_sub(t)) & 0xffff)
+        } else {
+            math_cos_lookup(mem, t) & 0xffff
+        }
+    }
+
+    /// The status menu's rectangle size override (`MenuStatus_OffsetRect`).
+    pub const STATUS_RECT_SIZE: Global<[u16; 2]> = Global::new(0x0186_a8a4);
+
+    /// `MenuStatus_OffsetRect(dx, dy, out, rect, sized)` (`0x008d3220`, own
+    /// name): the 24-byte rectangle copied, moved by (`dx`, `dy`), and with
+    /// `sized` given the override size.
+    pub fn menu_status_offset_rect(
+        mem: &mut impl Mem,
+        dx: u16,
+        dy: u16,
+        out: u32,
+        rect: u32,
+        sized: bool,
+    ) {
+        for k in 0..6 {
+            let v = mem.read::<u32>(rect.wrapping_add(4 * k));
+            mem.write(out.wrapping_add(4 * k), v);
+        }
+        let v = mem.read::<u16>(out).wrapping_add(dx);
+        mem.write(out, v);
+        let v = mem.read::<u16>(out.wrapping_add(2)).wrapping_add(dy);
+        mem.write(out.wrapping_add(2), v);
+        if sized {
+            let [w, h] = STATUS_RECT_SIZE.get(mem);
+            mem.write(out.wrapping_add(4), w);
+            mem.write(out.wrapping_add(6), h);
+        }
+    }
+
+    /// The status menu's origin (`u16` x, y).
+    pub const STATUS_ORIGIN: Global<[u16; 2]> = Global::new(0x0186_a86c);
+
+    /// `MenuStatus_GetPos(out, alt)` (`0x008d4e30`) and `MenuStatus_GetPos2`
+    /// (`0x008d4e80`, own names): one of two `u16` positions (`a` or `b`
+    /// with `alt`) plus the status origin.
+    pub fn menu_status_get_pos(mem: &mut impl Mem, out: u32, alt: bool, pos: u32, alt_pos: u32) {
+        let p = mem.rebase(if alt { alt_pos } else { pos });
+        let [ox, oy] = STATUS_ORIGIN.get(mem);
+        let x = mem.read::<u16>(p).wrapping_add(ox);
+        let y = mem.read::<u16>(p + 2).wrapping_add(oy);
+        mem.write(out, x);
+        mem.write(out.wrapping_add(2), y);
+    }
+
+    /// `MenuHdd_Close()` (`0x008e2930`, own name): the HDD menu's state
+    /// cleared, then the main task's callback `+8` (if any task) with the
+    /// close routine `0x008e2910`.
+    pub fn menu_hdd_close<M: Mem>(mem: &mut M, call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        let at = mem.rebase(0x023c_c130);
+        mem.write(at, 0u32);
+        let task = MENU_MAIN_TASK.get(mem);
+        if task != 0 {
+            let f = mem.read::<u32>(task + 8);
+            let close = mem.rebase(0x008e_2910);
+            call(mem, f, &[close, 0, 0]);
+        }
+    }
+
+    /// `MenuSaveLoad_BuildCrcTable(table)` (`0x008b1370`, own name): `u16`
+    /// CRC-16 (`0x1021`) entries of `i << 9`, the top bit of `i` folded in
+    /// first, eight steps in all (the `TkCRC` table's variant); like that
+    /// one it stops at 254, leaving entry 255 untouched.
+    pub fn menu_save_load_build_crc_table(mem: &mut impl Mem, table: u32) {
+        for i in 0u32..0xff {
+            let mut v = if i & 0x80 == 0 {
+                i << 9
+            } else {
+                (i << 9) ^ 0x1021
+            };
+            for _ in 0..7 {
+                v = if v & 0x8000 == 0 {
+                    v << 1
+                } else {
+                    (v << 1) ^ 0x1021
+                };
+            }
+            #[allow(clippy::cast_possible_truncation)]
+            mem.write(table.wrapping_add(2 * i), v as u16);
+        }
+    }
+
+    /// `MenuDraw_GifTag(packet, a, b, c)` (`0x008de0a0`, own name): a
+    /// 64-byte GIF header (`a`, `b`, `c` at `+0x30`); the end back.
+    pub fn menu_draw_gif_tag(mem: &mut impl Mem, p: u32, a: u32, b: u32, c: u32) -> u32 {
+        let words = [
+            1u32,
+            0x1000_0000,
+            0xe,
+            0,
+            1,
+            0,
+            0x14,
+            0,
+            0x8001,
+            0x2400_0000,
+            0x16,
+            0,
+            a,
+            b,
+            c,
+            0,
+        ];
+        mem.write(p, words);
+        p.wrapping_add(0x40)
+    }
+
+    /// `TkMenuDrawInitString()` (`0x008dce30`): both menu packet pointers
+    /// from `Sg_PacketGetPtr` (after the no-op `TkVU1SyncPath`); the
+    /// pointer back (left in `eax`).
+    pub fn tk_menu_draw_init_string(mem: &mut impl Mem) -> u32 {
+        let p = ffx_sg::state::bridge::packet_get_ptr(mem);
+        mem.write(mem.rebase(0x0187_152c), p);
+        MENU_PACKET.set(mem, p);
+        p
+    }
+
+    /// `TkMn2DrawMenuWindowScissor(y, h, mode, ratio)` (`0x008c0f70`): a
+    /// full-width scissor; mode 1 shrinks it to `|ratio| × h / 4096` (minus
+    /// 2, not negative) from the bottom (top for a negative ratio), mode 2
+    /// cuts that amount off; returns the scissor's bottom.
+    pub fn tk_mn2_draw_menu_window_scissor(
+        mem: &mut impl Mem,
+        y: i32,
+        h: i32,
+        mode: i32,
+        ratio: i32,
+    ) -> u32 {
+        let part = |h: i32| {
+            let v = ratio.wrapping_abs().wrapping_mul(h);
+            v.wrapping_add((v >> 31) & 0xfff) >> 12
+        };
+        let (y, h) = match mode {
+            1 => {
+                let q = part(h);
+                let y = if ratio < 0 {
+                    y
+                } else {
+                    y.wrapping_sub(q).wrapping_add(h)
+                };
+                let hh = q.wrapping_sub(2);
+                (y, if hh < 0 { 0 } else { hh })
+            }
+            2 => {
+                let q = part(h);
+                let y = if ratio < 0 {
+                    y.wrapping_add(2).wrapping_add(q)
+                } else {
+                    y
+                };
+                let hh = h.wrapping_sub(q);
+                (y, if hh < 0 { 0 } else { hh })
+            }
+            _ => (y, h),
+        };
+        ffx_system::pkt::bridge::draw_scissor_xywh(mem, 0, y, 0x200, h.wrapping_sub(1))
+    }
+
+    /// The weapon shop's table (`MenuWShop_GetRecord`).
+    pub const WSHOP_TABLE: Global<u32> = Global::new(0x0186_abac);
+
+    /// `MenuWShop_GetRecord(id)` (`0x008d9170`, own name): the record of
+    /// the 12-bit id in the shop table.
+    pub fn menu_wshop_get_record(mem: &impl Mem, id: u32) -> u32 {
+        let t = WSHOP_TABLE.get(mem);
+        #[allow(clippy::cast_possible_wrap)]
+        tk_mn2_get_excel_data(mem, (id & 0xfff) as i32, t)
+    }
+
+    /// `TkMenuMainFreeWindow(window)` (`0x008aa3f0`): reset, unused
+    /// (`+0x40`), idle.
+    pub fn tk_menu_main_free_window(mem: &mut impl Mem, w: u32) {
+        menu_main_reset_window(mem, w);
+        mem.write(w.wrapping_add(0x40), 0u8);
+        mem.write(w.wrapping_add(0x28), 0u32);
+    }
+
+    /// The menu's 32 window records (`0x98` bytes each).
+    pub const MENU_WINDOWS: Global<u8> = Global::new(0x0184_0900);
+
+    /// `MenuMain_ResetAllWindows()` (`0x008aa470`, own name): every window
+    /// record reset.
+    pub fn menu_main_reset_all_windows(mem: &mut impl Mem) {
+        let base = MENU_WINDOWS.ptr(mem).addr;
+        for k in 0..0x20 {
+            menu_main_reset_window(mem, base + k * 0x98);
+        }
+    }
+
+    /// `TkMenuDrawKick()` (`0x008dce50`): the full-screen scissor, then
+    /// `TkMenuDrawInitString`; the packet pointer back.
+    pub fn tk_menu_draw_kick(mem: &mut impl Mem) -> u32 {
+        ffx_system::pkt::bridge::draw_scissor_xywh(mem, 0, 0, 0x200, 0x1a0);
+        tk_menu_draw_init_string(mem)
+    }
+
+    /// `Msg_CancelChoice(worker, slot)` (`0x00864150`, own name): after
+    /// `AtelGetBasicWork(worker)` (for its cache), choice slot `slot` (0..3) of the current script context: its pending answer
+    /// `+0x64` = -1, `+0x68` = 0, `+0x73` = 0; a pending one (not negative)
+    /// first writes the default byte `+0x72` to its target `+0x6c`.
+    pub fn msg_cancel_choice(mem: &mut impl Mem, worker: i32, slot: i32) {
+        ffx_script::vm::bridge::atel_get_basic_work(mem, worker);
+        let ctx = mem.read::<u32>(mem.rebase(0x0132_6b28));
+        let s = ctx.wrapping_add(slot.clamp(0, 3).cast_unsigned() << 4);
+        let old = mem.read::<i32>(s + 0x64);
+        mem.write(s + 0x64, u32::MAX);
+        mem.write(s + 0x68, 0u32);
+        mem.write(s + 0x73, 0u8);
+        if old >= 0 {
+            let to = mem.read::<u32>(s + 0x6c);
+            let v = mem.read::<u8>(s + 0x72);
+            mem.write(to, v);
+        }
+    }
+
+    /// `TkSetDebugFontBuffer(p)` (`0x0088fab0`): the debug font's current
+    /// pointer; past its end (`+0xc`) the original only logs. Returns the
+    /// end (left in `eax`).
+    pub fn tk_set_debug_font_buffer(mem: &mut impl Mem, p: u32) -> u32 {
+        let buf = DEBUG_FONT_BUFFER.get(mem);
+        mem.write(buf, p);
+        mem.read::<u32>(buf.wrapping_add(0xc))
+    }
+
+    /// The `+0x28`-float of an object (`Obj_GetFloat28`).
+    pub fn obj_get_float28(mem: &impl Mem, p: u32) -> f32 {
+        mem.read(p.wrapping_add(0x28))
+    }
+
+    /// The two-float table at `0x01325b98` (`Tk_GetScale`): entry
+    /// `which != 0`.
+    pub const SCALE_PAIR: Global<[f32; 2]> = Global::new(0x0132_5b98);
+
+    /// `Tk_GetScale(which)` (`0x00872360`, own name).
+    pub fn tk_get_scale(mem: &impl Mem, which: u32) -> f32 {
+        SCALE_PAIR.get(mem)[usize::from(which != 0)]
+    }
+
+    /// `Tk_SetScale(which, v)` (`0x00872530`, own name): stored through
+    /// `fld`/`fstp` (a signalling NaN comes out quiet).
+    pub fn tk_set_scale(mem: &mut impl Mem, which: u32, v: f32) {
+        let at = SCALE_PAIR.ptr(mem).addr + 4 * u32::from(which != 0);
+        mem.write(at, ffx_bridge::x87::round_trip(v));
+    }
+
+    /// `Math_AngleFrom12Bits(a)` (`0x0088c0a0`) and `Math_AngleFrom15Bits`
+    /// (`0x0088c0e0`, own names): the low `bits` of `a` as an angle (×2π
+    /// from `0x00b39378`, ÷ the scale constant, each step rounded to `f32`
+    /// as the original stores it), wrapped by `Math_WrapAngle`.
+    pub fn math_angle_from_bits(mem: &impl Mem, a: u32, mask: u32, scale: u32) -> f32 {
+        #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+        let v = f64::from(a & mask) as f32;
+        let tau = mem.read::<f64>(mem.rebase(0x00b3_9378));
+        let div = mem.read::<f64>(mem.rebase(scale));
+        #[allow(clippy::cast_possible_truncation)]
+        let v = (f64::from(v) * tau) as f32;
+        #[allow(clippy::cast_possible_truncation)]
+        let v = (f64::from(v) / div) as f32;
+        crate::math::wrap_angle(v)
+    }
+
+    // ---- round 7: menu sprite packets and the main option dispatch ----
+
+    /// A GS `XYZ`/`UV` pair as the packet builders store it: `x` and `y`
+    /// each sign-extended to 64 bits, `y` shifted 16 (the `or`s
+    /// overlapping, as `cdq`/`shld` produce it).
+    #[must_use]
+    pub const fn gs_xy(x: i32, y: i32) -> u64 {
+        (x as i64).cast_unsigned() | ((y as i64).cast_unsigned() << 16)
+    }
+
+    fn put_u64(mem: &mut impl Mem, at: u32, v: u64) {
+        mem.write(at, v);
+    }
+
+    /// The header of a menu sprite (`0x8001`, `0x64000000`, the GIF
+    /// register list `gif`, `0x156` or `0x1c9`). The original stores the
+    /// list's address as a literal (no relocation), so it is stored as is.
+    fn sprite_header(mem: &mut impl Mem, p: u32, first: u32, gif: u32, prim: u32) {
+        mem.write(p, [first, 0x6400_0000, gif, 0, prim, 0]);
+    }
+
+    /// A menu font/sprite cell: `u8 u`, `u8 v`, `i8 dx`, `i8 dy`, `u16 w`,
+    /// `u16 h`, `u16 sw`, `u16 sh` (12 bytes; `TkMenuDrawSprite`).
+    fn cell(mem: &impl Mem, e: u32) -> ([i32; 2], [i32; 2], [i32; 4]) {
+        let b = |o| i32::from(mem.read::<u8>(e + o));
+        let s = |o| i32::from(mem.read::<i8>(e + o));
+        let h = |o| i32::from(mem.read::<u16>(e + o));
+        ([b(0), b(1)], [s(2), s(3)], [h(4), h(6), h(8), h(10)])
+    }
+
+    /// `MenuDraw_Sprites(p, _, x, y, entry, ox, oy, alpha)` (`0x008dc1b0`,
+    /// own name): `MenuDraw_GifTag` (the GS word from `TOGetGsRegWord`,
+    /// tint `alpha << 24 | 0x808080`) and one sprite per cell of table
+    /// entry `entry` (`TkMenuGetTableEntry` of `0x00c5a900`): texture from
+    /// (`u × 16 − 8`, not negative; `v × 16 + 8`), screen from the cell's
+    /// offset back from `(x + 0x700, y + 0x730) × 16` (x mirrored). Returns
+    /// the packet end.
+    #[allow(clippy::many_single_char_names, clippy::too_many_arguments)]
+    pub fn menu_draw_sprites(mem: &mut impl Mem, args: [u32; 8], mirror: bool) -> u32 {
+        sprites(mem, args, u8::from(mirror))
+    }
+
+    /// `MenuDraw_Sp3Body(p, _, x, y, entry, ox, oy, alpha)` (`0x008dbf20`,
+    /// own name): the unmirrored form of [`menu_draw_sprites`]: texture
+    /// from (`u × 16 + 8`, `v × 16 + 8`), screen from the cell's offset
+    /// forward, the right edge cut where `u` passes `0xff0`.
+    pub fn menu_draw_sprites_plain(mem: &mut impl Mem, args: [u32; 8]) -> u32 {
+        sprites(mem, args, 2)
+    }
+
+    /// The three sprite bodies: 0 `0x008dc1b0`, 1 `0x008dc710`, 2
+    /// `0x008dbf20`.
+    #[allow(clippy::many_single_char_names)]
+    fn sprites(mem: &mut impl Mem, args: [u32; 8], mode: u8) -> u32 {
+        let mirror = mode == 1;
+        let [p, _, x, y, entry, ox, oy, alpha] = args;
+        let sx = x.wrapping_add(0x700) << 4;
+        let sy = y.wrapping_add(0x730) << 4;
+        let table = tk_menu_get_table_entry(mem, entry, mem.rebase(0x00c5_a900));
+        let gs = ffx_system::pkt::bridge::GS_WORD_008FA7B0;
+        #[allow(clippy::cast_possible_truncation)]
+        let mut q = menu_draw_gif_tag(mem, p, gs as u32, 0, (alpha << 24) | 0x0080_8080);
+        if table == 0 {
+            return q;
+        }
+        let mut k = 0u32;
+        while k < mem.read::<u32>(table) {
+            let e = table + 4 + 12 * k;
+            let ([u, v], [dx, dy], [w, h, sw, sh]) = cell(mem, e);
+            let (sx, sy, ox, oy) = (
+                sx.cast_signed(),
+                sy.cast_signed(),
+                ox.cast_signed(),
+                oy.cast_signed(),
+            );
+            sprite_header(mem, q, 0x8001, 0x00f5_3530, 0x156);
+            if mode == 2 {
+                let u0 = u * 16 + 8;
+                let v0 = v * 16 + 8;
+                let mut u1 = w * 16 + u0;
+                let v1 = h * 16 + v0;
+                let xa = (dx * 16).wrapping_add(sx).wrapping_add(ox);
+                let mut xb = (sw * 16).wrapping_add(xa);
+                let ya = (dy * 16).wrapping_add(sy).wrapping_add(oy);
+                let yb = (sh * 16).wrapping_add(ya);
+                if u1 > 0xff0 {
+                    xb = xb.wrapping_sub(u1 - 0xff0);
+                    u1 = 0xff0;
+                }
+                put_u64(mem, q + 0x18, gs_xy(u0, v0));
+                put_u64(mem, q + 0x20, gs_xy(xa, ya));
+                put_u64(mem, q + 0x28, gs_xy(u1, v1));
+                put_u64(mem, q + 0x30, gs_xy(xb, yb));
+            } else if mirror {
+                let u0 = u * 16 + 8;
+                let v0 = (v * 16 - 8).max(0);
+                let mut u1 = w * 16 + u0;
+                let v1 = h * 16 - 8 + v0;
+                let xa = dx * 16 + sx + ox;
+                let mut xb = sw * 16 + xa;
+                let ya = dy * 16 + sy + oy;
+                let yb = sh * 16 + ya;
+                if u1 > 0xff0 {
+                    xb -= u1 - 0xff0;
+                    u1 = 0xff0;
+                }
+                put_u64(mem, q + 0x18, gs_xy(u0, v0));
+                put_u64(mem, q + 0x20, gs_xy(xa, yb));
+                put_u64(mem, q + 0x28, gs_xy(u1, v1));
+                put_u64(mem, q + 0x30, gs_xy(xb, ya));
+            } else {
+                let v0 = v * 16 + 8;
+                let u0 = (u * 16 - 8).max(0);
+                let u1 = w * 16 + u0;
+                let v1 = h * 16 + v0;
+                let xa = sx.wrapping_sub(dx * 16).wrapping_add(ox);
+                let xb = xa.wrapping_sub(sw * 16);
+                let ya = (dy * 16).wrapping_add(sy).wrapping_add(oy);
+                let yb = (sh * 16).wrapping_add(ya);
+                put_u64(mem, q + 0x18, gs_xy(u0, v0));
+                put_u64(mem, q + 0x20, gs_xy(xa, ya));
+                put_u64(mem, q + 0x28, gs_xy(u1, v1));
+                put_u64(mem, q + 0x30, gs_xy(xb, yb));
+            }
+            q += 0x40;
+            k += 1;
+        }
+        q
+    }
+
+    /// The three bar sprites (`MenuDraw_Bar`, `0x008dc360`;
+    /// `MenuDraw_BarV`, `0x008dc480`; `MenuDraw_Bar2`, `0x008dc5a0`, own
+    /// names): one sprite of cell `cell` at `(x + 0x700, y + 0x730) × 16`
+    /// stretched to `n` pixels (`Bar`: down, ending at the cell width; `V`:
+    /// vertical texture, along x; `Bar2`: `n` down and `m` across), nothing
+    /// for `n <= 0`. Returns the packet end.
+    #[allow(clippy::many_single_char_names, clippy::too_many_arguments)]
+    pub fn menu_draw_bar(
+        mem: &mut impl Mem,
+        kind: u8,
+        p: u32,
+        n: i32,
+        m: i32,
+        c: u32,
+        x: i32,
+        y: i32,
+    ) -> u32 {
+        if n <= 0 {
+            return p;
+        }
+        let [b4, b5] = [4, 5].map(|o| i32::from(mem.read::<u8>(c + o)));
+        let [h8, ha, hc, he] = [8, 0xa, 0xc, 0xe].map(|o| i32::from(mem.read::<u16>(c + o)));
+        let (bx, by) = (x.wrapping_add(0x700), y.wrapping_add(0x730));
+        sprite_header(mem, p, 0x8001, 0x00f5_3530, 0x156);
+        match kind {
+            0 | 2 => {
+                let u0 = b4 * 16 + 8;
+                let v = (ha + b5) * 16 - 8;
+                let u1 = h8 * 16 + u0;
+                let x1 = if kind == 0 {
+                    hc.wrapping_add(bx) << 4
+                } else {
+                    bx.wrapping_add(m) << 4
+                };
+                put_u64(mem, p + 0x18, gs_xy(u0, v));
+                put_u64(mem, p + 0x20, gs_xy(bx << 4, by << 4));
+                put_u64(mem, p + 0x28, gs_xy(u1, v));
+                put_u64(mem, p + 0x30, gs_xy(x1, by.wrapping_add(n) << 4));
+            }
+            _ => {
+                let v0 = b5 * 16 + 8;
+                let u = (hc + b4) * 16 - 8;
+                let v1 = ha * 16 + v0;
+                put_u64(mem, p + 0x18, gs_xy(u, v0));
+                put_u64(mem, p + 0x20, gs_xy(bx << 4, by << 4));
+                put_u64(mem, p + 0x28, gs_xy(u, v1));
+                put_u64(
+                    mem,
+                    p + 0x30,
+                    gs_xy(bx.wrapping_add(n) << 4, he.wrapping_add(by) << 4),
+                );
+            }
+        }
+        p + 0x40
+    }
+
+    /// `MenuDraw_Line(p, x, y, w, a, b)` (`0x008ca580`, own name): a
+    /// horizontal line primitive (GIF list `0x00f51510`, `0x1c9`) from
+    /// `(x, y)` to `(x + w, y)` with registers `a`, `b`; the packet end.
+    #[allow(clippy::many_single_char_names, clippy::too_many_arguments)]
+    pub fn menu_draw_line(mem: &mut impl Mem, p: u32, args: [i32; 5]) -> u32 {
+        let [x, y, w, a, b] = args;
+        sprite_header(mem, p, 1, 0x00f5_1510, 0x1c9);
+        mem.write(p + 0x18, [a.cast_unsigned(), 0]);
+        put_u64(mem, p + 0x20, gs_xy(x, y));
+        mem.write(p + 0x28, [b.cast_unsigned(), 0]);
+        put_u64(mem, p + 0x30, gs_xy(x.wrapping_add(w), y));
+        mem.write(p + 0x38, [0u32, 0]);
+        p + 0x40
+    }
+
+    /// `MenuDraw_Strip(p, x, y, xs, n, dx, tag)` (`0x008ca610`) and
+    /// `MenuDraw_StripR` (`0x008ca6f0`, own names): a GIF packet of `n`
+    /// `XYZ2` points, point `k` at (`x ± xs[k] + dx`, `y + 16k`) (`xs`
+    /// `u16`s; subtracted for `R`), padded to a quadword. Returns the end.
+    #[allow(clippy::many_single_char_names, clippy::too_many_arguments)]
+    pub fn menu_draw_strip(mem: &mut impl Mem, p: u32, args: [u32; 6], reverse: bool) -> u32 {
+        let [x, y, xs, n, dx, tag] = args;
+        mem.write(p, [1u32, 0x2400_0000, 0x10, 0, 0x1ca, 0, tag, 0]);
+        let sign = if n.cast_signed() < 0 { u32::MAX } else { 0 };
+        mem.write(p + 0x20, [n | 0x8000, sign | 0x1400_0000]);
+        mem.write(p + 0x28, [5u32, 0]);
+        let mut q = p + 0x30;
+        let mut y = y;
+        for k in 0..n.cast_signed().max(0).cast_unsigned() {
+            let v = u32::from(mem.read::<u16>(xs.wrapping_add(2 * k)));
+            let px = if reverse {
+                x.wrapping_sub(v).wrapping_add(dx)
+            } else {
+                v.wrapping_add(dx.wrapping_add(x))
+            };
+            put_u64(mem, q, gs_xy(px.cast_signed(), y.cast_signed()));
+            y = y.wrapping_add(0x10);
+            q += 8;
+        }
+        if n & 1 != 0 {
+            mem.write(q, [0u32, 0]);
+            q += 8;
+        }
+        q
+    }
+
+    /// The main menu's last chosen option (`TkMenuMainOpenOption` resets
+    /// it).
+    pub const MENU_MAIN_CHOICE: Global<i32> = Global::new(0x0187_154c);
+
+    /// `TkMenuMainOpenOption(i)` (`0x008e24c0`, own name): option `i`'s
+    /// menu (`TkMenuMainGetOptionMenu`) activated and the main menu (slot 1)
+    /// put to sleep; menus 0..20 map to slots 3, 2, 4, -, 6, 7, -, 9, 10,
+    /// -, 15, ..., 21 (15), 20 (20). Returns the menu.
+    pub fn tk_menu_main_open_option<M: Mem>(
+        mem: &mut M,
+        i: i32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        MENU_MAIN_CHOICE.set(mem, -1);
+        let menu = tk_menu_main_get_option_menu(mem, i);
+        let slot = match menu {
+            0 => 3,
+            1 => 2,
+            2 => 4,
+            4 => 6,
+            5 => 7,
+            7 => 9,
+            8 => 10,
+            10 => 15,
+            15 => 21,
+            20 => 20,
+            _ => return menu,
+        };
+        tk_menu_main_active_menu(mem, slot, 0, call);
+        tk_menu_main_sleep_menu(mem, 1, call);
+        menu
+    }
+    /// The Gu selector's popup window (`Gu_SelectorOpen` stores it; the
+    /// mouse handler hands it the clicks while it is set).
+    pub const GU_POPUP_WINDOW: Global<u32> = Global::new(0x0130_3740);
+    /// The gate for the script byte at context `+0x1e6` (`0x008655b0`).
+    pub const ATEL_SCRIPT_BYTE_GATE: Global<u32> = Global::new(0x00c5_26d4);
+    /// The debug draw toggle (button `0x800` on the debug pad flips it).
+    pub const ATEL_DEBUG_DRAW: Global<u8> = Global::new(0x0132_8a78);
+    /// The step `TkMenuDrawShadeRatio` adds each frame to the shade ratio.
+    pub const MENU_SHADE_RATIO_STEP: Global<u32> = Global::new(0x0184_0880);
+    /// The menu's screen x2 flag (`TkMenuStart` sets it).
+    pub const MENU_SCREEN_X2: Global<u8> = Global::new(0x0184_0885);
+
+    /// A setter of one global: `v` (its low byte for a byte global).
+    /// Every one of these returns what it loaded: `eax` holds `v`, or for
+    /// a byte, `al` over the rest of `v` — `v` either way.
+    pub fn set_word(mem: &mut impl Mem, g: Global<u32>, v: u32) -> u32 {
+        g.set(mem, v);
+        v
+    }
+
+    /// The byte form of [`set_word`].
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn set_byte(mem: &mut impl Mem, g: Global<u8>, v: u32) -> u32 {
+        g.set(mem, v as u8);
+        v
+    }
+
+    /// `TkConfig_SetByteC(v)` (`0x0088ec20`, own name): config byte `+0xc`.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn tk_config_set_byte_c(mem: &mut impl Mem, v: u32) -> u32 {
+        let at = FFX_CONFIG.ptr(mem).addr.wrapping_add(0xc);
+        mem.write(at, v as u8);
+        v
+    }
+
+    /// `TkGetDebugControler1Hist(i)` and friends (`0x00885150`..`0x008851f0`):
+    /// `hist` field of frame `i` of pad `pad`, port 0, zero-extended.
+    pub fn tk_get_debug_controler_hist(mem: &impl Mem, pad: i32, i: i32, field: u32) -> u32 {
+        tk_get_controler_hist(mem, pad, 0, i, field) & 0xffff
+    }
+
+    /// `TkGetControlerIdHist(pad, port, i)` (`0x00888db0`): byte `+0` of
+    /// frame `i`, loaded into `al` over the frame pointer.
+    pub fn tk_get_controler_id_hist(mem: &impl Mem, pad: i32, port: i32, i: i32) -> u32 {
+        let f = pad_get_frame(mem, pad, port, i);
+        (f & 0xffff_ff00) | u32::from(mem.read::<u8>(f))
+    }
+
+    /// `TkGetControlerPressHist(pad, port, i)` (`0x00888df0`): byte `+1`.
+    pub fn tk_get_controler_press_hist(mem: &impl Mem, pad: i32, port: i32, i: i32) -> u32 {
+        u32::from(mem.read::<u8>(pad_get_frame(mem, pad, port, i).wrapping_add(1)))
+    }
+
+    /// `TkMenuMainFreeWindowGroup(group)` (`0x008aa410`): every used
+    /// window record (`+0x40` == 1) of group `+0x36` freed.
+    pub fn tk_menu_main_free_window_group(mem: &mut impl Mem, group: u32) {
+        let base = MENU_WINDOWS.ptr(mem).addr;
+        for k in 0..0x20u32 {
+            let w = base + k * 0x98;
+            if mem.read::<u8>(w + 0x40) == 1 && u32::from(mem.read::<u8>(w + 0x36)) == group {
+                tk_menu_main_free_window(mem, w);
+            }
+        }
+    }
+
+    /// `Dma_TagSize(p, end)`: the quadword count between `p` and `end`
+    /// minus one (the DMA tag's QWC), as the original's `u32` arithmetic.
+    fn dma_qwc(p: u32, end: u32) -> u32 {
+        (end.wrapping_sub(p).wrapping_add(0xf) >> 4).wrapping_sub(1)
+    }
+
+    /// `Dma_CloseCnt(p, end, flags)` (`0x00890a60`, own name): a `cnt`
+    /// tag (`0x1000`) at `p` over `p..end`; the last word is the QWC with
+    /// `flags` or-ed in. Returns `end`.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn dma_close_cnt(mem: &mut impl Mem, p: u32, end: u32, flags: u32) -> u32 {
+        let q = dma_qwc(p, end);
+        mem.write(p, q as u16);
+        mem.write(p + 2, 0x1000u16);
+        mem.write(p + 4, [0u32, 0, q | flags]);
+        end
+    }
+
+    /// `Dma_CloseCnt2(p, end, a, b)` (`0x00890aa0`, own name): a `cnt` tag
+    /// with `a`, `b` as its last two words. Returns `end`.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn dma_close_cnt2(mem: &mut impl Mem, p: u32, end: u32, a: u32, b: u32) -> u32 {
+        mem.write(p, dma_qwc(p, end) as u16);
+        mem.write(p + 2, 0x1000u16);
+        mem.write(p + 4, [0u32, a, b]);
+        end
+    }
+
+    /// `Dma_CloseNext(p, end, addr, a, b)` (`0x00890ae0`, own name): a
+    /// `next` tag (`0x2000`) to `addr`, `a`, `b` after. Returns `end`.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn dma_close_next(mem: &mut impl Mem, p: u32, end: u32, addr: u32, a: u32, b: u32) -> u32 {
+        mem.write(p, dma_qwc(p, end) as u16);
+        mem.write(p + 2, 0x2000u16);
+        mem.write(p + 4, [addr, a, b]);
+        end
+    }
+
+    /// `Dma_PutTag(p, id, addr)` (`0x00890910` `end`/`0x70`, `0x00890960`
+    /// `cnt`/`0x10`, `0x008909b0` `ret`/`0x60`, `0x008908c0` and
+    /// `0x00890d90` `call`/`0x50` with `addr`; own names): a one-quadword
+    /// tag (QWC 1, byte 2 left as it is, id in byte 3) and a zero
+    /// quadword. Returns `p + 0x20`.
+    pub fn dma_put_tag(mem: &mut impl Mem, p: u32, id: u8, addr: u32) -> u32 {
+        mem.write(p, 1u16);
+        mem.write(p + 3, id);
+        mem.write(p + 4, [addr, 0, 0, 0, 0, 0, 0]);
+        p + 0x20
+    }
+
+    /// `MenuWin_StateSlide(w)` (`0x008e0200`, own name): state `+0x2c` 1,
+    /// `+0x4c` 12 higher (a float, through x87), next handler `+0x114` from
+    /// `+0x104`. Returns 0.
+    pub fn menu_win_state_slide(mem: &mut impl Mem, w: u32) -> u32 {
+        let y: f32 = mem.read(w + 0x4c);
+        mem.write(w + 0x2c, 1u16);
+        #[allow(clippy::cast_possible_truncation)]
+        mem.write(w + 0x4c, (f64::from(y) - 12.0) as f32);
+        let next: u32 = mem.read(w + 0x104);
+        mem.write(w + 0x114, next);
+        0
+    }
+
+    /// `MenuWin_StateOpen(w)` (`0x008e0240`, own name): state `+0x2c` 2,
+    /// `+0xa0` from `+0xa8`, handlers `0x008e0230` (`+0x114`) and
+    /// `0x008de970` (`+0x11c`). Returns 0.
+    pub fn menu_win_state_open(mem: &mut impl Mem, w: u32) -> u32 {
+        mem.write(w + 0x2c, 2u16);
+        let v: u32 = mem.read(w + 0xa8);
+        mem.write(w + 0xa0, v);
+        let (a, b) = (mem.rebase(0x008e_0230), mem.rebase(0x008d_e970));
+        mem.write(w + 0x114, a);
+        mem.write(w + 0x11c, b);
+        0
+    }
+
+    /// `MenuWin_StateWaitText(w)` (`0x008e0280`, own name): state `+0x2e`
+    /// 2, or 3 when the text at `+0x98` is empty; the handler `+0x120` is
+    /// itself. Returns 0.
+    pub fn menu_win_state_wait_text(mem: &mut impl Mem, w: u32) -> u32 {
+        let text: u32 = mem.read(w + 0x98);
+        let state: u16 = if mem.read::<u8>(text) == 0 { 3 } else { 2 };
+        mem.write(w + 0x2e, state);
+        let me = mem.rebase(0x008e_0280);
+        mem.write(w + 0x120, me);
+        0
+    }
+
+    /// `Yi_PutRef(p, a, b)` (`0x00916ad0`, own name): `{b, 0, a, 0}`.
+    /// Returns `a` (left in `eax`).
+    pub fn yi_put_ref(mem: &mut impl Mem, p: u32, a: u32, b: u32) -> u32 {
+        mem.write(p, [b, 0, a, 0]);
+        a
+    }
+
+    /// `TkDebugFont_SetWord4(p)` (`0x0088fb10`, own name): word `+4` of
+    /// the current debug font buffer = `set_ptr32(p)` (`p`). Returns `p`.
+    pub fn tk_debug_font_set_word4(mem: &mut impl Mem, p: u32) -> u32 {
+        let buf = DEBUG_FONT_BUFFER.get(mem);
+        mem.write(buf.wrapping_add(4), p);
+        p
+    }
+
+    /// `TkGetDebugFontStringWidth(proportional, s)` (`0x0088edf0`):
+    /// [`tk_get_str_width`] in 16-pixel cells (arithmetic shift).
+    pub fn tk_get_debug_font_string_width(mem: &impl Mem, proportional: i32, s: u32) -> i32 {
+        tk_get_str_width(mem, proportional, s) >> 4
+    }
+    /// The first value of scene `i`'s parameter `name` (`TOSeqGet*`'s
+    /// lookup), 0 when it has none.
+    fn seq_value(mem: &impl Mem, i: i32, name: u32) -> u32 {
+        let h = crate::scene::bridge::tk_menu_get_param_handle(mem, i, name);
+        if h == 0 {
+            0
+        } else {
+            crate::scene::bridge::tk_menu_get_param_offset(mem, i, h.cast_signed(), 0)
+        }
+    }
+
+    /// `TkMn2SeqGetColor(name)` (`0x008c2ad0`) and
+    /// `TkMn2SeqGetColorCustom(i, name)` (`0x008c2af0`): `TOSeqGetColor`
+    /// into a local, returned (scene 1 for the first).
+    pub fn tk_mn2_seq_get_color(mem: &impl Mem, i: i32, name: u32) -> u32 {
+        seq_value(mem, i, name)
+    }
+
+    /// `TkMn2SeqGetNum(name)` (`0x008c2b10`) and `TkMn2SeqGetNumCustom(i,
+    /// name)` (`0x008c2b30`): `TOSeqGetNum`'s halfword, sign-extended.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn tk_mn2_seq_get_num(mem: &impl Mem, i: i32, name: u32) -> i32 {
+        i32::from(seq_value(mem, i, name) as i16)
+    }
+
+    /// `TkMn2SeqGetPosCustom(i, name, &pos)` (`0x008c2b70`): `TOSeqGetPoint`
+    /// into two halfwords.
+    pub fn tk_mn2_seq_get_pos_custom(mem: &mut impl Mem, i: i32, name: u32, out: u32) {
+        ffx_system::scene::bridge::get_point(
+            mem,
+            i,
+            name,
+            [out, out.wrapping_add(2)],
+            crate::scene::bridge::tk_menu_get_param_handle,
+            crate::scene::bridge::tk_menu_get_param_offset,
+        );
+    }
+
+    /// `TkMn2SeqGetRectCustom(i, name, &rect)` (`0x008c2bc0`):
+    /// `TOSeqGetRect` into four halfwords.
+    pub fn tk_mn2_seq_get_rect_custom(mem: &mut impl Mem, i: i32, name: u32, out: u32) {
+        let outs = [0, 2, 4, 6].map(|o| out.wrapping_add(o));
+        ffx_system::scene::bridge::get_rect(
+            mem,
+            i,
+            name,
+            outs,
+            crate::scene::bridge::tk_menu_get_param_handle,
+            crate::scene::bridge::tk_menu_get_param_offset,
+        );
+    }
+    /// `TkMn2SeqStartScene(name)` (`0x008c2bf0`): `TOSeqStartScene(1,
+    /// name)`.
+    pub fn tk_mn2_seq_start_scene(mem: &mut impl Mem, name: u32) -> u32 {
+        ffx_system::scene::bridge::start_scene(
+            mem,
+            1,
+            name,
+            false,
+            crate::scene::bridge::tk_menu_get_scene_handle,
+        )
+    }
+
+    /// `TkMn2SeqStopScene(name)` (`0x008c2c10`): `TOSeqStopScene(1, name)`.
+    pub fn tk_mn2_seq_stop_scene(mem: &mut impl Mem, name: u32) -> u32 {
+        ffx_system::scene::bridge::stop_scene(mem, 1, name)
+    }
+
+    /// `TkMn2SetMacroParam(n, b, v)` (`0x008c2c60`): window 0's macro `n`
+    /// byte 1 = `b`, value = `v`. Returns `v`.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn tk_mn2_set_macro_param(mem: &mut impl Mem, n: i32, b: u32, v: u32) -> u32 {
+        ffx_system::window::bridge::macro_set_byte1(mem, 0, n, b as u8);
+        ffx_system::window::bridge::macro_set_value(mem, 0, n, v)
+    }
+
+    /// `TkGetDebugControlerAnalog(k)` (`0x00885190`): analog byte `k` of
+    /// the debug pad's (1) current frame.
+    pub fn tk_get_debug_controler_analog(mem: &impl Mem, k: u32) -> u32 {
+        tk_get_controler_analog_hist(mem, 1, 0, k, 0)
+    }
+
+    /// `TkMenuMainAllocWindow()` (`0x008aa1a0`): the first unused window
+    /// record (`+0x40` zero), reset (`MenuMain_ResetWindowRet`); 0 when
+    /// all 32 are used.
+    pub fn tk_menu_main_alloc_window(mem: &mut impl Mem) -> u32 {
+        let base = MENU_WINDOWS.ptr(mem).addr;
+        for k in 0..0x20u32 {
+            let w = base + k * 0x98;
+            if mem.read::<u8>(w + 0x40) == 0 {
+                menu_main_reset_window(mem, w);
+                return w;
+            }
+        }
+        0
+    }
+
+    /// `TkMalloc(size)` (`0x0088e650`): `Sg_MemSetAlign(0x40)`, then
+    /// `user_malloc` of `size` rounded up to 2 KiB (as the original's
+    /// signed rounding).
+    pub fn tk_malloc<M: Mem>(
+        mem: &mut M,
+        size: u32,
+        malloc: &mut impl FnMut(&mut M, u32) -> u32,
+    ) -> u32 {
+        ffx_sg::state::bridge::mem_set_align(mem, 0x40);
+        let a = size.wrapping_add(0x7ff);
+        let bias = if a.cast_signed() < 0 { 0x7ff } else { 0 };
+        let rounded = a.wrapping_add(bias) & 0xffff_f800;
+        malloc(mem, rounded)
+    }
+
+    /// `TkMn2DumpPlate(plate)` (`0x008c18a0`): six `dbgPrintf`s (a PC
+    /// stub); `eax` is left with the sign-extended halfword `+6`.
+    pub fn tk_mn2_dump_plate(mem: &impl Mem, plate: u32) -> u32 {
+        i32::from(mem.read::<i16>(plate.wrapping_add(6))).cast_unsigned()
+    }
+
+    /// `TkMn2GetMainPos()` (`0x008e2630`): the main menu's scene layout:
+    /// `rect_noactive` (`0x023cc138`), `pos_noactive` (`0x023cc144`),
+    /// `pos_nmblkline` (`0x0187168c`), the rectangle at `0x01871690`, and
+    /// two colours (`0x023cc148`, `0x023cc140`). Returns the last colour.
+    pub fn tk_mn2_get_main_pos(mem: &mut impl Mem) -> u32 {
+        let r = |mem: &mut _, a: u32| Mem::rebase(mem, a);
+        let (n0, d0) = (r(mem, 0x00b6_67ec), r(mem, 0x023c_c138));
+        tk_mn2_seq_get_rect(mem, n0, d0);
+        let (n1, d1) = (r(mem, 0x00b6_67fc), r(mem, 0x023c_c144));
+        tk_mn2_seq_get_pos(mem, n1, d1);
+        let (n2, d2) = (r(mem, 0x00b6_680c), r(mem, 0x0187_168c));
+        tk_mn2_seq_get_pos(mem, n2, d2);
+        let (n3, d3) = (r(mem, 0x00b6_681c), r(mem, 0x0187_1690));
+        tk_mn2_seq_get_rect(mem, n3, d3);
+        let n4 = r(mem, 0x00b6_682c);
+        let c0 = tk_mn2_seq_get_color(mem, 1, n4);
+        let d4 = r(mem, 0x023c_c148);
+        mem.write(d4, c0);
+        let n5 = r(mem, 0x00b6_683c);
+        let c1 = tk_mn2_seq_get_color(mem, 1, n5);
+        let d5 = r(mem, 0x023c_c140);
+        mem.write(d5, c1);
+        c1
+    }
+
+    /// `TkMn2GetCommonPlate(plate, rect, c1, c2, a, b)` (`0x008c1a60`) and
+    /// `TkMn2GetCommonPlateCustom(i, plate, rect, c1, c2, a, b)`
+    /// (`0x008c1aa0`): a menu plate from scene `i` (1 for the first): the
+    /// rectangle named `rect`, colours `c1` (`+8`) and `c2` (`+0xc`), then
+    /// `a`, `b` (`+0x10`, `+0x14`). Returns `b` (left in `eax`).
+    pub fn tk_mn2_get_common_plate(
+        mem: &mut impl Mem,
+        i: i32,
+        plate: u32,
+        names: [u32; 3],
+        a: u32,
+        b: u32,
+    ) -> u32 {
+        tk_mn2_seq_get_rect_custom(mem, i, names[0], plate);
+        let c1 = tk_mn2_seq_get_color(mem, i, names[1]);
+        mem.write(plate + 8, c1);
+        let c2 = tk_mn2_seq_get_color(mem, i, names[2]);
+        mem.write(plate + 0xc, [c2, a, b]);
+        b
+    }
+
+    /// `Script_PcOffset(ctx, worker)` (`0x008725e0`, own name): the
+    /// worker's code pointer (`+0x18`) less the script base (`ctx+4`) and
+    /// its `+0x30`.
+    pub fn script_pc_offset(mem: &impl Mem, ctx: u32, worker: u32) -> u32 {
+        let base: u32 = mem.read(ctx.wrapping_add(4));
+        let pc: u32 = mem.read(worker.wrapping_add(0x18));
+        let off: u32 = mem.read(base.wrapping_add(0x30));
+        pc.wrapping_sub(off).wrapping_sub(base)
+    }
+
+    /// `Tk_NoteEternalCalm(scene)` (`0x0088ec90`, own name): on an Eternal
+    /// Calm scene seen first, `0x018663d0` = 1 and `0x018663d4` = 0.
+    /// Returns what the original leaves in `eax`: the check's result, or
+    /// 0 after setting.
+    pub fn tk_note_eternal_calm(mem: &mut impl Mem, scene: i32) -> u32 {
+        let r = ffx_system::config::bridge::is_eternal_calm(mem, scene);
+        let flag = mem.rebase(0x0186_63d0);
+        if r != 0 && mem.read::<u8>(flag) == 0 {
+            mem.write(flag, 1u8);
+            mem.write(mem.rebase(0x0186_63d4), 0u32);
+        }
+        r
+    }
+    /// `MenuTuto_CloseWindow(k)` (`0x008d9b30` for 0, `0x008d9b60` for 1,
+    /// own names): tutorial window `k` closed (`+0x41` = 1, `+0x10` = 0,
+    /// `+0x3e` = 2) and forgotten, then its scene stopped (`scene18`, for
+    /// the first always; `scene9`, for the second only after a close).
+    /// Returns what the original leaves in `eax`: the stop's result, or 0.
+    pub fn menu_tuto_close_window(mem: &mut impl Mem, k: usize) -> u32 {
+        let w = TUTO_WINDOWS[k].get(mem);
+        if w != 0 {
+            mem.write(w + 0x41, 1u8);
+            mem.write(w + 0x10, 0u32);
+            mem.write(w + 0x3e, 2u8);
+            TUTO_WINDOWS[k].set(mem, 0);
+        } else if k == 1 {
+            return 0;
+        }
+        let name = mem.rebase(if k == 0 { 0x00b6_6708 } else { 0x00b6_5a94 });
+        tk_mn2_seq_stop_scene(mem, name)
+    }
+
+    /// The window openers' common start: a window from
+    /// [`tk_menu_main_alloc_window`] (the original faults when none is
+    /// free).
+    fn open_window(mem: &mut impl Mem) -> u32 {
+        tk_menu_main_alloc_window(mem)
+    }
+
+    fn put_code(mem: &mut impl Mem, at: u32, f: u32) {
+        let f = mem.rebase(f);
+        mem.write(at, f);
+    }
+
+    /// `MenuSave_OpenWindow2(arg)` (`0x008b4fb0`, own name): the save
+    /// menu's second window (`0x01866258`): callbacks `+0x10` =
+    /// `0x008b4920`, mode `+0x3e` 4, `+0x58` = `arg`; registered. Returns
+    /// the window.
+    pub fn menu_save_open_window2<M: Mem>(
+        mem: &mut M,
+        arg: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = open_window(mem);
+        mem.write(w + 8, [0u32, 0]);
+        put_code(mem, w + 0x10, 0x008b_4920);
+        mem.write(w + 0x14, 0u32);
+        mem.write(w + 0x1c, 0u32);
+        mem.write(w + 0x3e, 4u8);
+        SAVE_LOAD_WINDOW2.set(mem, w);
+        mem.write(w + 0x58, arg);
+        tk_menu_main_regist_window(mem, w, call);
+        w
+    }
+
+    /// `MenuWorldMap_OpenWindow()` (`0x008e2d60`, own name): the world map
+    /// window (`0x01871698`): callbacks `0x008e2b00`, `0x008e2b30`,
+    /// `0x008e2b60`, mode 7, tint `0x80` ×3, `+0x64` 0, `+0x68` 6;
+    /// registered. Returns the window.
+    pub fn menu_world_map_open_window<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = open_window(mem);
+        put_code(mem, w + 8, 0x008e_2b00);
+        put_code(mem, w + 0xc, 0x008e_2b30);
+        put_code(mem, w + 0x10, 0x008e_2b60);
+        mem.write(w + 0x14, 0u32);
+        mem.write(w + 0x1c, 0u32);
+        mem.write(w + 0x3e, 7u8);
+        WORLD_MAP_WINDOW.set(mem, w);
+        mem.write(w + 0x58, [0x80u32, 0x80, 0x80, 0, 6]);
+        tk_menu_main_regist_window(mem, w, call);
+        w
+    }
+
+    /// `TkMn2OpenSummonGrowWindow()` (`0x008ced30`): callbacks
+    /// `0x008cd2e0`, `0x008cd460`, `0x008cdba0`, `0x008ceed0`; mode 2, rows
+    /// from `TkMn2GetSummonGrowMax`, 9 visible, 3 columns, `+0x54` `0xaa`;
+    /// registered, kept at `0x0186a5a8`, the status background set up.
+    /// Returns the window.
+    pub fn tk_mn2_open_summon_grow_window<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = open_window(mem);
+        put_code(mem, w + 8, 0x008c_d2e0);
+        put_code(mem, w + 0xc, 0x008c_d460);
+        put_code(mem, w + 0x10, 0x008c_dba0);
+        put_code(mem, w + 0x14, 0x008c_eed0);
+        mem.write(w + 0x3e, 2u8);
+        mem.write(w + 0x48, 0u16);
+        mem.write(w + 0x32, 0u32);
+        mem.write(w + 0x42, 1u8);
+        #[allow(clippy::cast_possible_truncation)]
+        let rows = tk_mn2_get_summon_grow_max(mem) as u16;
+        mem.write(w + 0x30, rows);
+        mem.write(w + 0x3a, 9u16);
+        mem.write(w + 0x36, 3u16);
+        mem.write(w + 0x54, 0xaau16);
+        tk_menu_main_regist_window(mem, w, call);
+        SUMMON_GROW_WINDOW.set(mem, w);
+        tk_mn2_init_status_bg(mem);
+        w
+    }
+
+    /// `MenuLimit_OpenWindow(arg)` (`0x008d0d50`, own name): the limit
+    /// menu's window (`0x0186a714`): callbacks `MenuLimit_WindowIdle`,
+    /// `0x008d0e90`, `0x008d16f0`, `0x008d1bb0`; `+0x3e` `0x201`, rows from
+    /// `TkMn2GetListMax`, `+0x36` `0x103`, 7 visible, `+0x58` = `arg`.
+    /// Returns what the registration returns (left in `eax`).
+    pub fn menu_limit_open_window<M: Mem>(
+        mem: &mut M,
+        arg: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = open_window(mem);
+        mem.write(w + 0x48, 0u16);
+        mem.write(w + 0x32, 0u32);
+        put_code(mem, w + 0xc, 0x008d_0e90);
+        put_code(mem, w + 0x10, 0x008d_16f0);
+        put_code(mem, w + 0x14, 0x008d_1bb0);
+        mem.write(w + 0x3e, 0x201u16);
+        mem.write(w + 0x42, 1u8);
+        mem.write(w + 0x58, arg);
+        mem.write(w + 0x45, 0xffu8);
+        mem.write(w + 0x5c, 1u32);
+        put_code(mem, w + 8, 0x008d_0e80);
+        #[allow(clippy::cast_possible_truncation)]
+        let rows = tk_mn2_get_list_max(mem) as u16;
+        mem.write(w + 0x30, rows);
+        mem.write(w + 0x36, 0x103u16);
+        mem.write(w + 0x3a, 7u16);
+        let r = tk_menu_main_regist_window(mem, w, call);
+        LIMIT_WINDOW.set(mem, w);
+        r
+    }
+
+    /// The sub-command window openers (`0x008e33d0`
+    /// `TkMenuOpenSubCmdWindowMain`, `0x008e3470`, `0x008e3510`,
+    /// `0x008e35b0`): kept in `0x023cc120`; 2 rows of 2, cursor 1, `+0x37`
+    /// 1 (`b37`), mode 2 (3 for `items` 0), `+0x24` = `x`, callbacks
+    /// `0x008e2e20`, `0x008e2f80`, `0x008e36b0`, `+0x58..` = `items`, `c`,
+    /// `d`, `+0x90`/`+0x94` the variant's pair; registered. Returns the
+    /// window.
+    #[allow(clippy::too_many_arguments)]
+    pub fn menu_sub_cmd_open<M: Mem>(
+        mem: &mut M,
+        args: [u32; 4],
+        b37: bool,
+        pair: [u32; 2],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [x, items, c, d] = args;
+        let w = open_window(mem);
+        MN2_LIST_MAX2.set(mem, w);
+        mem.write(w + 0x30, 2u16);
+        mem.write(w + 0x3a, 2u16);
+        mem.write(w + 0x48, 1u16);
+        mem.write(w + 0x42, 1u8);
+        if b37 {
+            mem.write(w + 0x37, 1u8);
+        }
+        mem.write(w + 0x3e, u8::from(items == 0) + 2);
+        mem.write(w + 0x24, x);
+        mem.write(w + 8, 0u32);
+        put_code(mem, w + 0xc, 0x008e_2e20);
+        put_code(mem, w + 0x10, 0x008e_2f80);
+        put_code(mem, w + 0x14, 0x008e_36b0);
+        mem.write(w + 0x1c, 0u32);
+        mem.write(w + 0x5c, c);
+        mem.write(w + 0x58, items);
+        mem.write(w + 0x60, d);
+        mem.write(w + 0x90, pair);
+        tk_menu_main_regist_window(mem, w, call);
+        w
+    }
+    /// `TkMenuCtrlHdd(w)` (`0x008e2870`): the HDD menu's control step (the
+    /// pad reads it starts with are unused): state `+0x1c` 0 closes the
+    /// HDD menu (`MenuHdd_Close`) and moves to 1; in state 1, once
+    /// `0x023cc130` is set, menu 20 sleeps and the main menu (1) wakes.
+    pub fn tk_menu_ctrl_hdd<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        match mem.read::<u32>(w + 0x1c) {
+            0 => {
+                menu_hdd_close(mem, call);
+                mem.write(w + 0x1c, 1u32);
+            }
+            1 if mem.read::<u32>(mem.rebase(0x023c_c130)) != 0 => {
+                tk_menu_main_sleep_menu(mem, 0x14, call);
+                tk_menu_main_active_menu(mem, 1, 0, call);
+            }
+            _ => {}
+        }
+    }
+
+    /// `Vibrate_BumpStream(k)` (`0x00875af0`, own name): vibration stream
+    /// `k` (clamped to 0..=7, negative to 0): its `u16` counter
+    /// (`0x01328170 + k * 0x24`) up by one and its byte `+2` cleared.
+    /// Returns the stream's record (`0x01328150 + k * 0x24`, left in
+    /// `eax`).
+    pub fn vibrate_bump_stream(mem: &mut impl Mem, k: i32) -> u32 {
+        let k = k.clamp(0, 7).cast_unsigned();
+        let rec = mem.rebase(0x0132_8150) + k * 0x24;
+        let n: u16 = mem.read(rec + 0x20);
+        mem.write(rec + 0x20, n.wrapping_add(1));
+        mem.write(rec + 0x22, 0u8);
+        rec
+    }
+
+    /// `TkDebugFont_SwapBuffer()` (`0x00890780`, own name): the debug
+    /// font's current buffer (`g_TkDebugFontBuffer`) flipped between the
+    /// two at `0x0133c8c4`/`0x0133c8c8`; its write pointer (`+0`, `+4`)
+    /// back to its start (`+8`), the position words cleared. Returns the
+    /// start.
+    pub fn tk_debug_font_swap_buffer(mem: &mut impl Mem) -> u32 {
+        let pair: [u32; 2] = mem.read(mem.rebase(0x0133_c8c4));
+        let cur = if DEBUG_FONT_BUFFER.get(mem) == pair[0] {
+            pair[1]
+        } else {
+            pair[0]
+        };
+        DEBUG_FONT_BUFFER.set(mem, cur);
+        let start: u32 = mem.read(cur + 8);
+        mem.write(cur, [start, start]);
+        mem.write(mem.rebase(0x0133_c8d0), [0u32; 3]);
+        start
+    }
+
+    /// `Dma_PutTagEx(p, qwc, pce, id, irq, addr)` (`0x00890860`, and its
+    /// copy `0x00890d30`; own names): a DMA tag with QWC `qwc` (1 when 0),
+    /// byte 3 `((irq << 3 | id) << 2 | pce) << 2` (8-bit), `addr`, and two
+    /// zero words; for `qwc` 0 a zero quadword follows. Returns the end.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn dma_put_tag_ex(mem: &mut impl Mem, p: u32, qwc: u32, bits: [u32; 3], addr: u32) -> u32 {
+        let [pce, id, irq] = bits.map(|b| b as u8);
+        mem.write(p, if qwc == 0 { 1 } else { qwc as u16 });
+        let b = (((irq << 3) | id) << 2 | pce) << 2;
+        mem.write(p + 3, b);
+        mem.write(p + 4, [addr, 0, 0]);
+        if qwc == 0 {
+            mem.write(p + 0x10, [0u32; 4]);
+            p + 0x20
+        } else {
+            p + 0x10
+        }
+    }
+
+    /// `Vibrate_SetStream(entry, src)` (`0x00876230`, own name): a stream
+    /// entry from a curve header `src` (step 0, length `(src[1] + 1) × 2`,
+    /// bytes `src[0]` and `src[2]`, data from `src + 2`), or for null an
+    /// idle entry (`+4` = `0x02000000`, `+8` 0, no data). Returns the data
+    /// pointer (`set_ptr32`'s, left in `eax`).
+    pub fn vibrate_set_stream(mem: &mut impl Mem, entry: u32, src: u32) -> u32 {
+        if src == 0 {
+            mem.write(entry + 4, 0x0200_0000u32);
+            mem.write(entry + 8, 0u16);
+            mem.write(entry, 0u32);
+            return 0;
+        }
+        mem.write(entry + 4, 0u16);
+        let n = u16::from(mem.read::<u8>(src + 1));
+        mem.write(entry + 6, n.wrapping_add(1).wrapping_mul(2));
+        let a: u8 = mem.read(src);
+        mem.write(entry + 8, a);
+        let data = src + 2;
+        let b: u8 = mem.read(data);
+        mem.write(entry + 9, b);
+        mem.write(entry, data);
+        data
+    }
+
+    /// `Vibrate_ResetAll()` (`0x00875e80`, own name): the eight streams'
+    /// counters and both entries cleared, vibration on, every pad allowed
+    /// (`0xff`). Returns `0xff`.
+    pub fn vibrate_reset_all(mem: &mut impl Mem) -> u32 {
+        let base = mem.rebase(0x0132_8150);
+        for k in 0..8 {
+            let rec = base + k * 0x24;
+            mem.write(rec + 0x22, 0u8);
+            mem.write(rec + 0x20, 0u16);
+            for e in [rec, rec + 0x10] {
+                mem.write(e + 4, 0u32);
+                mem.write(e + 8, 0u16);
+                mem.write(e + 0xa, 0u8);
+            }
+        }
+        VIBRATE_OFF.set(mem, 0);
+        mem.write(mem.rebase(0x0132_8274), 0xffu16);
+        0xff
+    }
+
+    /// `TkEucToSjis(src, out)` (`0x008907e0`, own name): one character of
+    /// the debug font's EUC text: 0 ends (0 written, 0 returned), ASCII
+    /// passes (1), a two-byte EUC code becomes Shift-JIS (2).
+    pub fn tk_euc_to_sjis(mem: &mut impl Mem, src: u32, out: u32) -> u32 {
+        let c0: u8 = mem.read(src);
+        let d0: u8 = mem.read(src + 1);
+        if c0 == 0 {
+            mem.write(out, 0u8);
+            return 0;
+        }
+        if c0 < 0x80 {
+            mem.write(out, c0);
+            return 1;
+        }
+        let (c, d) = (c0 & 0x7f, d0 & 0x7f);
+        let lead: u8 = if c < 0x5f { 0x70 } else { 0xb0 };
+        let trail_base: u8 = if c & 1 == 0 {
+            0x7e
+        } else {
+            0x1f + u8::from(d > 0x5f)
+        };
+        #[allow(clippy::cast_possible_truncation)]
+        let first = ((u32::from(c) + 1) >> 1) as u8;
+        mem.write(out, first.wrapping_add(lead));
+        mem.write(out + 1, trail_base.wrapping_add(d));
+        2
     }
 }
 

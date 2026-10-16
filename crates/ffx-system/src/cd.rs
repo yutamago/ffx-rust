@@ -16,6 +16,21 @@ pub const fn start_sector(entry: u32, base: u32) -> u32 {
     (entry & 0x3f_ffff).wrapping_add(base)
 }
 
+/// The DVD layout the nine `dvd_cd_*` functions (`0x0076d6c0` +
+/// `0x80 * kind`) report, by kind: FAT data size, FAT sector, FAT size, FID
+/// sector, FID size, ID sector, ID size, and two more (`0x0076da40`,
+/// `0x0076dac0`). Each function picks one of seven getters by
+/// `MsGetSaveConfigEnglish` and `TkGetLang` (`0x0077a4f0` + `0x90 *
+/// variant` + `0x10 * kind`), but every variant returns the same value,
+/// so the choice does not matter on PC.
+pub const DVD_CD_LAYOUT: [u32; 9] = [2, 0x118, 0x2_0000, 0x158, 0x82, 0x117, 0x30, 0xf, 0x10];
+
+/// The `dvd_cd_*` kind of a getter at `0x0077a4f0..0x0077a8e0`.
+#[must_use]
+pub const fn dvd_cd_getter_kind(addr: u32) -> usize {
+    ((addr - 0x0077_a4f0) / 0x10 % 9) as usize
+}
+
 /// The originals over game memory (`ffx_bridge::Mem`).
 pub mod bridge {
     use ffx_bridge::{Global, Mem};
@@ -185,5 +200,117 @@ pub mod bridge {
         let p = HDD_PASS_NAMES.ptr(mem).addr;
         mem.write(p, *b"ffxpassf");
         mem.write(p + 12, *b"ffxpassr");
+    }
+
+    /// `g_CdLib + 0x2c`: a table of `i16` file-number offsets (by module).
+    pub const MODULE_FILES: Global<u32> = Global::new(0x0231_0c6c);
+    /// The scrambled names `hdd_set_pass_names_x` writes over
+    /// [`HDD_PASS_NAMES`], as four words.
+    pub const HDD_PASS_SCRAMBLED: [u32; 4] = [0x97a9_9d9e, 0xa89a_a09a, 0x9fa7_95a1, 0x6ba7_9da2];
+
+    /// `cd_module_file_sector(m, n)` (`0x0076c270`): [`cd_file_sector`] of
+    /// file `n` of module `m` (the module's first file from the `i16`
+    /// table at `g_CdLib + 0x2c`).
+    pub fn module_file_sector(mem: &impl Mem, m: i32, n: i32) -> u32 {
+        let t = MODULE_FILES.get(mem);
+        let first: i16 = mem.read(t.wrapping_add(m.cast_unsigned().wrapping_mul(2)));
+        cd_file_sector(mem, i32::from(first).wrapping_add(n))
+    }
+
+    /// `hdd_set_pass_names_x()` (`0x00779a80`): the two 8-byte names from
+    /// scrambled words, byte `i` of each then raised by `0xcd - i`.
+    pub fn hdd_set_pass_names_x(mem: &mut impl Mem) {
+        let p = HDD_PASS_NAMES.ptr(mem).addr;
+        let w = HDD_PASS_SCRAMBLED;
+        mem.write(p, [w[0], w[1]]);
+        mem.write(p + 12, [w[2], w[3]]);
+        for i in 0..8u8 {
+            for at in [p, p + 12] {
+                let a = at + u32::from(i);
+                let b: u8 = mem.read(a);
+                mem.write(a, b.wrapping_add(0xcd_u8.wrapping_sub(i)));
+            }
+        }
+    }
+
+    /// `hdd_install_find(archive, n)` (`0x0076d600`): the HDD-install
+    /// entry of archive `archive` (its low byte compared) and file `n`, or
+    /// 0 (also for -1 in either, or an empty table).
+    pub fn hdd_install_find(mem: &impl Mem, archive: u32, n: u32) -> u32 {
+        let count = HDD_INSTALL_COUNT.get(mem);
+        if count == 0 || archive == u32::MAX || n == u32::MAX {
+            return 0;
+        }
+        let mut e = HDD_INSTALL.get(mem);
+        for _ in 0..count.max(0) {
+            if u32::from(mem.read::<u8>(e)) == archive && mem.read::<u32>(e + 8) == n {
+                return e;
+            }
+            e = e.wrapping_add(0x34);
+        }
+        0
+    }
+
+    /// The CD read channels' flag (`0x02310c58`): when 0,
+    /// `cd_channel_clear` also clears the channel's name.
+    pub const CHANNEL_KEEP_NAMES: Global<u32> = Global::new(0x0231_0c58);
+    /// The channel names, 128 bytes each.
+    pub const CHANNEL_NAMES: Global<[u8; 0x80]> = Global::new(0x022f_b6c0);
+    /// The channels, 56 bytes each.
+    pub const CHANNELS: Global<[u8; 0x38]> = Global::new(0x0112_7c80);
+
+    /// `cd_channel_clear(n)` (`0x0076d530`): channel `n`'s words at `+8`,
+    /// `+4`, `+0`, `+0x30`, `+0x24` and its byte at `+0x34` zeroed (and
+    /// its name's first byte, unless [`CHANNEL_KEEP_NAMES`]).
+    pub fn cd_channel_clear(mem: &mut impl Mem, n: u32) {
+        if CHANNEL_KEEP_NAMES.get(mem) == 0 {
+            let at = CHANNEL_NAMES.ptr(mem).addr.wrapping_add(n.wrapping_shl(7));
+            mem.write(at, 0u8);
+        }
+        let c = CHANNELS.ptr(mem).addr.wrapping_add(n.wrapping_mul(0x38));
+        for off in [8, 4, 0, 0x30, 0x24] {
+            mem.write(c.wrapping_add(off), 0u32);
+        }
+        mem.write(c.wrapping_add(0x34), 0u8);
+    }
+
+    /// `0x0076c250(n)`: [`cd_file_sector`] of `n` relative to the current
+    /// module ([`FILE_BASE`] added; a tail jump).
+    pub fn cd_module_file_sector_rel(mem: &impl Mem, n: i32) -> u32 {
+        cd_file_sector(mem, n.wrapping_add(FILE_BASE.get(mem)))
+    }
+
+    /// `set_read_chgname(from, to)` (`0x00a43220`): the pair in the first
+    /// slot of [`CHGNAME_FROM`] that is 0; with all 16 taken, the assertion
+    /// `i!=FILE_NAME_CHG_TBL_CNT` (`read_debug.c`, line 0x7e) goes to
+    /// `movie_err` (passed in: expression, file, line) and slot 16 is
+    /// written anyway. Returns the slot.
+    pub fn set_read_chgname<M: Mem>(
+        mem: &mut M,
+        from: u32,
+        to: u32,
+        assert_fail: impl FnOnce(&mut M, u32, u32, u32),
+    ) -> u32 {
+        let table = CHGNAME_FROM.ptr(mem).addr;
+        let mut i = 0u32;
+        while i < 16 && mem.read::<u32>(table + 4 * i) != 0 {
+            i += 1;
+        }
+        if i == 16 {
+            let expr = mem.rebase(0x00b7_ad40);
+            let file = mem.rebase(0x00b7_ad20);
+            assert_fail(mem, expr, file, 0x7e);
+        }
+        mem.write(table + 4 * i, from);
+        mem.write(CHGNAME_TO.ptr(mem).addr + 4 * i, to);
+        i
+    }
+
+    /// `0x0076dc20(n)`: whether file `n` of the current module is present
+    /// (bit 23 clear) with its size in `sizetbl.bin` (bit 22 set).
+    pub fn cd_size_from_table(mem: &impl Mem, n: i32) -> u32 {
+        let i = n.wrapping_add(FILE_BASE.get(mem)).cast_unsigned();
+        let e: u32 = mem.read(SECTORS.get(mem).wrapping_add(i.wrapping_mul(4)));
+        u32::from(e & 0x80_0000 == 0 && e & 0x40_0000 != 0)
     }
 }

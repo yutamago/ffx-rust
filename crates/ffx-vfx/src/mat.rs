@@ -491,4 +491,272 @@ pub mod bridge {
         let x = Reg::load(f(mem, v)).add_m32(s).store();
         mem.write(dst, x);
     }
+
+    /// The emulated R5900 `LO`/`HI` pairs `pppEePmulth` writes, in the
+    /// order of its four words (`0x00c8f718`, `0x00c8f708`, `0x00c8f720`,
+    /// `0x00c8f710`, the high halves' products 4 bytes after each).
+    const PMULTH_LOHI: [u32; 4] = [0x00c8_f718, 0x00c8_f708, 0x00c8_f720, 0x00c8_f710];
+
+    /// `pppEePmulth(dst, a, b)` (`0x007374e0`): the R5900's `PMULTH`:
+    /// each word of `dst` the product of the low signed halves of `a`'s and
+    /// `b`'s words; the products of both halves into the emulated
+    /// `LO`/`HI`.
+    pub fn ppp_ee_pmulth(mem: &mut impl Mem, dst: u32, a: u32, b: u32) {
+        let x: [u32; 4] = mem.read(a);
+        let y: [u32; 4] = mem.read(b);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)] // the signed halves
+        let half = |w: u32, hi: bool| i32::from((if hi { w >> 16 } else { w }) as u16 as i16);
+        for i in 0..4 {
+            let lo = half(x[i], false)
+                .wrapping_mul(half(y[i], false))
+                .cast_unsigned();
+            let hi = half(x[i], true)
+                .wrapping_mul(half(y[i], true))
+                .cast_unsigned();
+            let g = ffx_bridge::Global::<u32>::new(PMULTH_LOHI[i]).ptr(mem).addr;
+            mem.write(g, lo);
+            #[allow(clippy::cast_possible_truncation)] // 0..4
+            mem.write(at(dst, i as u32), lo);
+            mem.write(g.wrapping_add(4), hi);
+        }
+    }
+
+    /// `pppEePpacb(dst, a, b)` (`0x007375d0`): the R5900's `PPACB`: the
+    /// low bytes of `b`'s eight halves, then `a`'s, into `dst`'s 16 bytes.
+    pub fn ppp_ee_ppacb(mem: &mut impl Mem, dst: u32, a: u32, b: u32) {
+        let x: [u32; 4] = mem.read(a);
+        let y: [u32; 4] = mem.read(b);
+        let mut out = [0u8; 16];
+        for i in 0..4 {
+            for (k, w) in [(0, y[i]), (8, x[i])] {
+                out[k + 2 * i] = w.to_le_bytes()[0];
+                out[k + 2 * i + 1] = w.to_le_bytes()[2];
+            }
+        }
+        mem.write(dst, out);
+    }
+
+    /// `g_pppWorldMatrix` (`0x0230ffa0`): the running part's matrix
+    /// (`pppSetMatrix`).
+    pub const WORLD: Global<[f32; 16]> = Global::new(0x0230_ffa0);
+
+    /// `pppSetMatrix(part)` (`0x00717410`): `g_pppWorldMatrix` = the
+    /// `XYZ` rotation of the part's angles (`+0x50`), rows scaled by its
+    /// scale (`+0x60`, as `pppKeMatPht` scales), its position (`+0x40`).
+    pub fn ppp_set_matrix(mem: &mut impl Mem, part: u32) {
+        let m = WORLD.ptr(mem).addr;
+        ppp_get_rot_matrix(mem, m, part.wrapping_add(0x50), super::order::XYZ);
+        scale_rows(mem, m, part.wrapping_add(0x60));
+        copy_xyz(mem, m.wrapping_add(0x30), part.wrapping_add(0x40));
+    }
+
+    /// `pppVertexAttend(obj, key, ctrl)` (`0x0075d340`): unless the key's
+    /// `+4` is -1 or its shape (`i16` at `+0xc`) negative, area 1 takes
+    /// vertex `n` of that shape (`n` from the shape's index list at area
+    /// 0's `u16`), its three `i16` as floats through the parent's matrix
+    /// (`get_ptr32(obj + 4) + 0x10`). The shapes are the current
+    /// environment's tables: `+0x28` 8-byte records (`i16` vertex block,
+    /// then the index list), `+0x20` 0x20-byte blocks (vertices at
+    /// `+0x14`).
+    pub fn ppp_vertex_attend(mem: &mut impl Mem, obj: u32, key: u32, ctrl: u32) {
+        if mem.read::<u32>(key.wrapping_add(4)) == u32::MAX {
+            return;
+        }
+        let shape = mem.read::<i16>(key.wrapping_add(0xc));
+        if shape < 0 {
+            return;
+        }
+        let a0 = area(mem, obj, ctrl, 0);
+        let a1 = area(mem, obj, ctrl, 1);
+        let parent = stub::ptr32(mem.read(obj.wrapping_add(4)));
+        let env: u32 = mem.read(crate::heap::bridge::ENV_SLOT.get(mem));
+        let records: u32 = mem.read(env.wrapping_add(0x28));
+        let rec = records.wrapping_add((i32::from(shape) * 8).cast_unsigned());
+        let block = i32::from(mem.read::<i16>(rec));
+        let blocks: u32 = mem.read(env.wrapping_add(0x20));
+        let verts = stub::ptr32(
+            mem.read(
+                blocks
+                    .wrapping_add((block * 0x20).cast_unsigned())
+                    .wrapping_add(0x14),
+            ),
+        );
+        let list = stub::ptr32(mem.read(rec.wrapping_add(4)));
+        let i = u32::from(mem.read::<u16>(a0));
+        let n = u32::from(mem.read::<u16>(list.wrapping_add(2 * i)));
+        let v: [f32; 4] = [
+            f32::from(mem.read::<i16>(verts.wrapping_add(6 * n))),
+            f32::from(mem.read::<i16>(verts.wrapping_add(6 * n + 2))),
+            f32::from(mem.read::<i16>(verts.wrapping_add(6 * n + 4))),
+            1.0,
+        ];
+        let m = parent.wrapping_add(0x10);
+        for c in 0..3 {
+            let col = [0, 4, 8, 12].map(|r| f(mem, at(m, r + c)));
+            let x = math::mul4x4_component(c, v, col);
+            mem.write(a1.wrapping_add(4 * c), x);
+        }
+    }
+
+    /// `vfx_vec_w_add(dst, v, s)` (`0x00817cc0`): `dst.w = v.w + s`.
+    pub fn vfx_vec_w_add(mem: &mut impl Mem, dst: u32, v: u32, s: f32) {
+        let w = crate::x87::add(f(mem, v.wrapping_add(0xc)), s);
+        mem.write(dst.wrapping_add(0xc), w);
+    }
+
+    /// `vfx_vec3_scale(dst, v, s)` (`0x0075bb00`): `dst.xyz = v.xyz * s`
+    /// (x and y multiplied in registers, z by the memory operand).
+    pub fn vfx_vec3_scale(mem: &mut impl Mem, dst: u32, v: u32, s: f32) {
+        use crate::x87::{MUL, Reg};
+        let r = Reg::load_f32(s);
+        let x = Reg::load_f32(f(mem, v)).reg(MUL, r).store();
+        let y = Reg::load_f32(f(mem, v.wrapping_add(4))).reg(MUL, r).store();
+        let z = r.mem(MUL, f(mem, v.wrapping_add(8))).store();
+        mem.write(dst, x);
+        mem.write(dst.wrapping_add(4), y);
+        mem.write(dst.wrapping_add(8), z);
+    }
+
+    /// `vfx_vec4_min(dst, v, s)` (`0x00808c10`): each component of `dst`
+    /// the smaller of `v`'s and `s` (`s` unless `v`'s is less).
+    pub fn vfx_vec4_min(mem: &mut impl Mem, dst: u32, v: u32, s: f32) {
+        for i in 0..4 {
+            let c = f(mem, v.wrapping_add(4 * i));
+            let x = if c < s { c } else { crate::x87::load_f32(s) };
+            mem.write(dst.wrapping_add(4 * i), x);
+        }
+    }
+
+    /// `pppEePextlh(dst, rs, rt)` (`0x00737450`): the R5900's `PEXTLH`:
+    /// the halves of the low two words of `rt` and `rs` interleaved (`rt`'s
+    /// first).
+    pub fn ppp_ee_pextlh(mem: &mut impl Mem, dst: u32, rs: u32, rt: u32) {
+        let a: [u16; 4] = mem.read(rs);
+        let b: [u16; 4] = mem.read(rt);
+        let out = [b[0], a[0], b[1], a[1], b[2], a[2], b[3], a[3]];
+        mem.write(dst, out);
+    }
+
+    /// `pppEePpach(dst, rs, rt)` (`0x007376a0`): the R5900's `PPACH`: the
+    /// low halves of `rt`'s four words, then of `rs`'s.
+    pub fn ppp_ee_ppach(mem: &mut impl Mem, dst: u32, rs: u32, rt: u32) {
+        let a: [u16; 8] = mem.read(rs);
+        let b: [u16; 8] = mem.read(rt);
+        let out = [b[0], b[2], b[4], b[6], a[0], a[2], a[4], a[6]];
+        mem.write(dst, out);
+    }
+
+    /// `pppEePsrlw(dst, src, sa)` (`0x00737700`): the R5900's `PSRLW` as
+    /// the PC code does it: each word shifted arithmetically by `sa & 31`
+    /// and masked with `0x7fffffff >> (sa - 1 & 31)` (so a shift of 0 gives
+    /// 0).
+    pub fn ppp_ee_psrlw(mem: &mut impl Mem, dst: u32, src: u32, sa: u32) {
+        let s = sa & 0xff;
+        let mask = 0x7fff_ffff_u32 >> (s.wrapping_sub(1) & 31);
+        for i in 0..4 {
+            let v = mem.read::<i32>(src.wrapping_add(4 * i));
+            mem.write(
+                dst.wrapping_add(4 * i),
+                (v >> (s & 31)).cast_unsigned() & mask,
+            );
+        }
+    }
+
+    /// The emulated VU0 register `0x00c8f980` `pppVu0MoveVia` goes through.
+    const VF_MOVE: Global<[u32; 4]> = Global::new(0x00c8_f980);
+
+    /// `pppVu0MoveVia(dst, src)` (`0x0073ce30`): `src` into the emulated
+    /// register at `0x00c8f980` and from there into `dst`.
+    pub fn ppp_vu0_move_via(mem: &mut impl Mem, dst: u32, src: u32) {
+        let v: [u32; 4] = mem.read(src);
+        VF_MOVE.set(mem, v);
+        mem.write(dst, v);
+    }
+
+    /// `pppVu0LoadVf00(dst)` (`0x0073ce80`, `0x0073e110`): `dst` = `vf00`.
+    pub fn ppp_vu0_load_vf00(mem: &mut impl Mem, dst: u32) {
+        let v = crate::prog::bridge::VF00.get(mem);
+        mem.write(dst, v);
+    }
+
+    /// The emulated VU0 registers the length macro uses: `0x00c8f820`
+    /// (squares, running sums) and `0x00c8f830` (the vector).
+    const VF_LEN_ACC: u32 = 0x00c8_f820;
+    const VF_LEN_V: u32 = 0x00c8_f830;
+    /// `g_Vu0_Q`.
+    const VU0_Q: Global<f32> = Global::new(0x00c8_f788);
+
+    /// `pppVu0Length(v)` (`0x0073ceb0`, `0x0073d7c0`, `0x0073e140`): the
+    /// emulated VU0 length macro: the vector into `0x00c8f830`, its squares
+    /// there, `0x00c8f820` = (x², x² + y², x² + y² + z²), `Q` = the square
+    /// root of the last (its absolute value), `0x00c8f830`'s x then
+    /// `vf00.x + Q`, which is returned.
+    pub fn ppp_vu0_length(mem: &mut impl Mem, v: u32) -> f32 {
+        use crate::x87::{add, mul};
+        let x: [f32; 4] = mem.read(v);
+        let vr = Global::<[f32; 4]>::new(VF_LEN_V).ptr(mem).addr;
+        let acc = Global::<[f32; 4]>::new(VF_LEN_ACC).ptr(mem).addr;
+        mem.write(vr, x);
+        let sq = [mul(x[0], x[0]), mul(x[1], x[1]), mul(x[2], x[2])];
+        let s1 = add(sq[0], sq[1]);
+        let s2 = add(sq[2], s1);
+        mem.write(acc, sq[0]);
+        mem.write(acc + 4, s1);
+        mem.write(acc + 8, s2);
+        // the square root in 53 bits rounded to 24 is the f32 square root
+        let q = s2.abs().sqrt();
+        VU0_Q.set(mem, q);
+        let vf00x = f32::from_bits(crate::prog::bridge::VF00.get(mem)[0]);
+        let r = add(vf00x, q);
+        mem.write(vr, r);
+        mem.write(vr + 4, sq[1]);
+        mem.write(vr + 8, sq[2]);
+        r
+    }
+
+    /// `pppColorShiftLoad(dst, base)` (`0x00737420`): two words from
+    /// `base + g_pppColorConShift` into `dst`; the shift cleared.
+    pub fn ppp_color_shift_load(mem: &mut impl Mem, dst: u32, base: u32) {
+        let at = base.wrapping_add(crate::ppp::bridge::COLOR_CON_SHIFT.get(mem));
+        let v: [u32; 2] = mem.read(at);
+        mem.write(dst, v);
+        crate::ppp::bridge::COLOR_CON_SHIFT.set(mem, 0);
+    }
+
+    /// `pppColorShiftStore(src, base)` (`0x00737750`): a word from `src`
+    /// to `base + g_pppColorConShift`; the shift cleared.
+    pub fn ppp_color_shift_store(mem: &mut impl Mem, src: u32, base: u32) {
+        let at = base.wrapping_add(crate::ppp::bridge::COLOR_CON_SHIFT.get(mem));
+        let v: u32 = mem.read(src);
+        mem.write(at, v);
+        crate::ppp::bridge::COLOR_CON_SHIFT.set(mem, 0);
+    }
+
+    /// `pppShapeIterInit(shape, it)` (`0x0073e990`, `0x0073f180`,
+    /// `0x0073f9a0`): `it` = (`set_ptr32(shape)`, shape `+8`, 0, 0, shape
+    /// `+0x14`, 0, 0).
+    pub fn ppp_shape_iter_init(mem: &mut impl Mem, shape: u32, it: u32) {
+        let a: u32 = mem.read(shape.wrapping_add(8));
+        let b: u32 = mem.read(shape.wrapping_add(0x14));
+        mem.write(it.wrapping_add(4), a);
+        mem.write(it.wrapping_add(0x10), b);
+        for k in [6u32, 5, 3, 2] {
+            mem.write(it.wrapping_add(4 * k), 0u32);
+        }
+        mem.write(it, stub::ptr32(shape));
+    }
+
+    /// `pppShapeRandFlip(def, out)` (`0x007419e0`): `out` `u16` 1, then
+    /// for bits 0 and 1 of the definition's byte `+0xf`, an `op_random(1.0)`
+    /// draw above 0 sets the same bit of `out`'s high byte.
+    pub fn ppp_shape_rand_flip(mem: &mut impl Mem, def: u32, out: u32) {
+        mem.write(out, 1u16);
+        let flags: u8 = mem.read(def.wrapping_add(0xf));
+        for bit in [1u8, 2] {
+            if flags & bit != 0 && crate::rand::bridge::op_random(mem, 1.0) > 0.0 {
+                let b: u8 = mem.read(out.wrapping_add(1));
+                mem.write(out.wrapping_add(1), b | bit);
+            }
+        }
+    }
 }

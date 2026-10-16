@@ -12,8 +12,8 @@ use std::path::PathBuf;
 use ffx_bridge::{Global, Mem};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_system::{
-    btl, cd, config, fixup, instance, math, menu, msg, names, pad, pkt, render, save, scene, stl,
-    stub, vbf, window,
+    accessor, btl, cd, config, daps, files, fixup, instance, math, menu, msg, names, pad, pkt,
+    render, save, scene, stl, stub, vbf, window,
 };
 
 /// The game thread's x87 control word.
@@ -355,6 +355,125 @@ const IS_PTR32_NULL: u32 = 0x00a4_46a0;
 const TO_SKIP_CODE: u32 = 0x008d_fd80;
 const TO_GET_GROUP: u32 = 0x008d_f610;
 const SCE_MC_SYNC: u32 = 0x0062_f9f0;
+
+/// The one-instruction accessors (`ffx_system::accessor`), on the image's
+/// globals and random objects and arguments.
+#[test]
+#[allow(clippy::many_single_char_names)] // a, b: the oracles; x, y: arguments
+fn accessors_match_the_original() {
+    use accessor::bridge as acc;
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let (a, b) = (&mut a, &mut b);
+    let mut rng = Xorshift(0xacce_5502);
+    for (f, v) in accessor::CONSTANTS {
+        assert_eq!(eax(a, f, &[]), v, "{f:#x}");
+    }
+    for (f, _) in accessor::ADDRESSES {
+        assert_eq!(eax(a, f, &[]), acc::address(b, f), "{f:#x}");
+    }
+    for (f, g) in accessor::GLOBALS {
+        for _ in 0..4 {
+            set(a, b, Global::<u32>::new(g), rng.next());
+            assert_eq!(eax(a, f, &[]), acc::global(b, f), "{f:#x}");
+        }
+    }
+    let world_map = random_block(a, b, &mut rng, 0x80);
+    set(a, b, Global::<u32>::new(0x0187_1698), world_map);
+    assert_eq!(eax(a, 0x008e_2d50, &[]), acc::world_map_window_word64(b));
+    for _ in 0..50 {
+        let (x, y) = (rng.next(), rng.next());
+        for f in accessor::MINUS_ONE_3 {
+            assert_eq!(
+                call(a, f, Conv::Stdcall, &[x, y, x]).eax,
+                u32::MAX,
+                "{f:#x}"
+            );
+        }
+        for f in accessor::FIRST {
+            assert_eq!(eax(a, f, &[x, y]), stub::ptr32(x), "{f:#x}");
+        }
+        for f in accessor::FIRST_STDCALL {
+            assert_eq!(
+                call(a, f, Conv::Stdcall, &[x]).eax,
+                stub::ptr32(x),
+                "{f:#x}"
+            );
+        }
+        assert_eq!(
+            call(a, 0x0067_70b0, Conv::Stdcall, &[x]).eax,
+            accessor::SIZE_0X18
+        );
+        assert_eq!(eax(a, 0x0040_1000, &[x, y]), accessor::second(x, y));
+        let byte = u8::try_from(x & 0xff).unwrap();
+        assert_eq!(
+            eax(a, 0x0060_ab40, &[x]) & 0xff,
+            u32::from(accessor::first_u8(byte))
+        );
+        let half = u16::try_from(x & 0xffff).unwrap();
+        assert_eq!(
+            eax(a, 0x0061_e710, &[x]) & 0xffff,
+            u32::from(accessor::first_u16(half))
+        );
+        let r = call(a, 0x0060_ab70, Conv::Cdecl, &[x]);
+        assert_eq!(
+            u64::from(r.edx) << 32 | u64::from(r.eax),
+            accessor::zero_extend(x)
+        );
+        assert_eq!(eax(a, 0x0060_ab80, &[x, y]), accessor::add(x, y));
+        assert_eq!(eax(a, 0x0061_d110, &[x, y]), accessor::add(x, y));
+        assert_eq!(eax(a, 0x0061_e6e0, &[x, y]), accessor::difference(x, y));
+    }
+    let obj = random_block(a, b, &mut rng, 0x400);
+    let rec = random_block(a, b, &mut rng, 0x10);
+    put(a, b, obj + 0xc, rec);
+    let r = call(a, 0x0061_acb0, Conv::Thiscall(obj), &[]);
+    assert_eq!(
+        u64::from(r.edx) << 32 | u64::from(r.eax),
+        acc::entry_size64(b, obj)
+    );
+    assert_eq!(
+        call(a, 0x0063_1310, Conv::Thiscall(obj), &[]).eax,
+        acc::stick_info(obj)
+    );
+    for state in 0..8u32 {
+        put(a, b, obj + 8, state);
+        for (f, s) in [(0x006f_20d0, 6), (0x006f_2150, 4), (0x006f_21a0, 2)] {
+            let ra = call(a, f, Conv::Thiscall(obj), &[]).eax;
+            assert_eq!(ra, acc::state_is(b, obj, s), "{f:#x} {state}");
+        }
+    }
+    call(a, 0x009e_24f0, Conv::Thiscall(obj), &[]);
+    acc::set_vftable(b, obj, acc::PINPUT_SOURCE_VFTABLE);
+    call(a, 0x0061_a730, Conv::Thiscall(obj + 0x10), &[]);
+    acc::set_vftable(b, obj + 0x10, acc::PWORLD_MATRIX_CONTROLLER_VFTABLE);
+    call(a, 0x006f_1db0, Conv::Thiscall(obj + 0x20), &[]);
+    acc::set_word0(b, obj + 0x20);
+    call(a, 0x006f_1dc0, Conv::Thiscall(obj), &[]);
+    acc::set_byte364(b, obj);
+    same_memory("accessor stores", a, b);
+}
+
+/// The `dvd_cd_*` layout functions and their 63 per-language getters, for
+/// every language byte (`TkGetLang` reads `0x01330830`).
+#[test]
+fn dvd_cd_layout_matches_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    for g in (0x0077_a4f0..0x0077_a8e0).step_by(0x10) {
+        let want = cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(g)];
+        assert_eq!(eax(&mut a, g, &[]), want, "{g:#x}");
+    }
+    for lang in (0..=20u8).chain([0x7f, 0x80, 0xff]) {
+        put(&mut a, &mut b, 0x0133_0830, lang);
+        for (k, want) in cd::DVD_CD_LAYOUT.into_iter().enumerate() {
+            let f = 0x0076_d6c0 + 0x80 * u32::try_from(k).unwrap();
+            assert_eq!(eax(&mut a, f, &[]), want, "{f:#x} lang {lang}");
+        }
+    }
+}
 
 #[test]
 fn pointer_helpers_stubs_and_text_codes_match_the_original() {
@@ -2195,9 +2314,8 @@ const HEAP_TEST_CODE: u32 = 0x00b0_bc00;
 /// `VirtualFree` succeeds, `VirtualAlloc` commits in place or reserves the
 /// next 64 KiB-aligned piece of a test region (1 MiB and up: of a range
 /// nothing writes to), and fails for any size of exactly `fail_size` (to
-/// reach the flush-and-retry paths; `u32::MAX`: never). The oracle has no TEB: every `fs:[0]`
-/// access in the image (the SEH registrations, which only touch the stack
-/// chain) becomes a no-op. Returns the two cursors' addresses.
+/// reach the flush-and-retry paths; `u32::MAX`: never). Returns the two
+/// cursors' addresses.
 fn patch_heap_os(a: &mut Oracle, b: &mut Oracle, fail_size: u32) -> (u32, u32) {
     let region = alloc(a, b, 0x220_0000);
     let start = (region + 0xffff) & 0xffff_0000;
@@ -2228,7 +2346,9 @@ fn patch_heap_os(a: &mut Oracle, b: &mut Oracle, fail_size: u32) -> (u32, u32) {
         o.write(code, &va).unwrap();
         o.write(code + 0x60, &[0xb8, 1, 0, 0, 0, 0xc2, 0x0c, 0x00])
             .unwrap();
-        o.write(code + 0x70, &[0xc2, 0x04, 0x00]).unwrap();
+        // the critical sections: xor eax, eax; ret 4 (ntdll leaves STATUS_SUCCESS)
+        o.write(code + 0x70, &[0x31, 0xc0, 0xc2, 0x04, 0x00])
+            .unwrap();
         #[rustfmt::skip]
         let memcpy_s = [
             0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c, 0x8b, 0x74, 0x24, 0x14, // dst, src
@@ -2245,26 +2365,6 @@ fn patch_heap_os(a: &mut Oracle, b: &mut Oracle, fail_size: u32) -> (u32, u32) {
             let s = o.rebase(slot);
             Mem::write(o, s, at);
         }
-        // fs:[0]: mov eax, fs:[0] / mov fs:[0], eax / mov fs:[0], ecx
-        let text = o.rebase(0x0040_1000);
-        let bytes = o.read(text, 0x0070_aa7b).unwrap();
-        let mut i = 0;
-        while i + 7 <= bytes.len() {
-            let w = &bytes[i..i + 7];
-            let at = text + u32::try_from(i).unwrap();
-            if w[..6] == [0x64, 0xa1, 0, 0, 0, 0] {
-                o.write(at, &[0xb8, 0, 0, 0, 0, 0x90]).unwrap();
-                i += 6;
-            } else if w[..6] == [0x64, 0xa3, 0, 0, 0, 0] {
-                o.write(at, &[0x90; 6]).unwrap();
-                i += 6;
-            } else if w == [0x64, 0x89, 0x0d, 0, 0, 0, 0] {
-                o.write(at, &[0x90; 7]).unwrap();
-                i += 7;
-            } else {
-                i += 1;
-            }
-        }
     }
     (cursors, cursors + 4)
 }
@@ -2277,6 +2377,15 @@ struct TestOs {
     small: u32,
     big: u32,
     locks: i32,
+    /// What the C runtime's `malloc` returns, in order (allocated in `b`
+    /// beforehand, as `a`'s stub will).
+    mallocs: Vec<u32>,
+    /// What was handed to the C runtime's `free`.
+    freed: Vec<u32>,
+    /// Critical sections initialized.
+    inits: Vec<u32>,
+    /// `VirtualAlloc` fails above this size.
+    max_size: u32,
 }
 
 impl TestOs {
@@ -2287,6 +2396,10 @@ impl TestOs {
             small: Mem::read(o, at),
             big: Mem::read(o, at + 4),
             locks: 0,
+            mallocs: Vec::new(),
+            freed: Vec::new(),
+            inits: Vec::new(),
+            max_size: u32::MAX,
         }
     }
 
@@ -2309,7 +2422,7 @@ impl ffx_system::heap::Os for TestOs {
         self.locks -= 1;
     }
     fn virtual_alloc(&mut self, addr: u32, size: u32, _alloc_type: u32, _protect: u32) -> u32 {
-        if size == self.fail_size {
+        if size == self.fail_size || size > self.max_size {
             return 0;
         }
         if addr != 0 {
@@ -2331,9 +2444,191 @@ impl ffx_system::heap::Os for TestOs {
     fn report_free_failure(&mut self) {
         panic!("VirtualFree failed");
     }
-    fn malloc_pool_init(&mut self) {
-        panic!("the tests start with a heap");
+    fn initialize_critical_section(&mut self, cs: u32) {
+        self.inits.push(cs);
     }
+    fn crt_malloc(&mut self, _size: u32) -> u32 {
+        self.mallocs.remove(0)
+    }
+    fn crt_free(&mut self, p: u32) {
+        self.freed.push(p);
+    }
+    fn mem_system_init(&mut self) {
+        panic!("the tests set the memory system up");
+    }
+}
+
+/// The heap's entry points around the allocator: `malloc_pool_init` on a
+/// fresh heap, calloc, aligned free, the Phyre allocations, operator new,
+/// memclear, the jumps to them, the heap object's release.
+#[test]
+#[allow(clippy::too_many_lines)] // one script over the entry points
+fn heap_entry_points_match_the_original() {
+    use ffx_system::heap as h;
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let (a, b) = (&mut a, &mut b);
+    let mgr = fresh_page_manager(a, b);
+    set(a, b, h::PAGE_MANAGER, mgr);
+    let (cursors, _) = patch_heap_os(a, b, u32::MAX);
+    // big reservations into a real region (arenas are written at both
+    // ends), and VirtualAlloc failing above 16 MiB so malloc_pool_init
+    // steps its 0x30000000-byte arena down to 16 MiB (48 heap objects)
+    let region = alloc(a, b, 0x111_0000);
+    put(a, b, cursors + 4, (region + 0xffff) & 0xffff_0000);
+    for o in [&mut *a, &mut *b] {
+        let code = o.rebase(HEAP_TEST_CODE);
+        let slot = o.rebase(0x00b0_c150); // InitializeCriticalSection
+        Mem::write(o, slot, code + 0x70);
+        #[rustfmt::skip]
+        let limit = [
+            0x81, 0x7c, 0x24, 0x08, 0x00, 0x00, 0x00, 0x01, // cmp [esp+8], 16 MiB
+            0x76, 0x05, 0x31, 0xc0, 0xc2, 0x10, 0x00,       // ja: xor eax, eax; ret 0x10
+            0xe9, 0, 0, 0, 0,                               // jmp the VirtualAlloc stand-in
+        ];
+        let mut limit = limit.to_vec();
+        let at = code + 0xc0;
+        let rel = code.wrapping_sub(at + 20);
+        limit[16..20].copy_from_slice(&rel.to_le_bytes());
+        o.write(at, &limit).unwrap();
+        let slot = o.rebase(IAT_VIRTUAL_ALLOC);
+        Mem::write(o, slot, at);
+    }
+    set(a, b, h::MEM_SYSTEM, 1);
+    set(a, b, h::USER_HEAP, 0);
+    let mut os = TestOs::new(b, cursors, u32::MAX);
+    os.max_size = 0x100_0000;
+    for _ in 0..48 {
+        os.mallocs.push(b.alloc(0x30).unwrap());
+    }
+    eax(a, 0x006f_b9b0, &[]);
+    h::malloc_pool_init(b, &mut os);
+    os.sync(a, b, "malloc_pool_init");
+    assert!(
+        os.mallocs.is_empty(),
+        "{} heap objects left",
+        os.mallocs.len()
+    );
+    assert_eq!(os.freed.len(), 47);
+    assert_eq!(h::ARENA_SIZE.get(b), 0x100_0000);
+    assert_eq!(os.inits.len(), 48);
+    same_memory("malloc_pool_init", a, b);
+    assert_ne!(h::FIRST_BLOCK.get(b), 0);
+    // MemSystem_Ensure with the memory system set: nothing
+    eax(a, 0x0094_28a0, &[]);
+    h::mem_system_ensure(b, &mut os);
+    let mut rng = Xorshift(0x4005_0001);
+    let mut live: Vec<(u32, bool)> = Vec::new(); // (block, phyre)
+    for n in 0..600u32 {
+        let what = format!("heap entry op {n}");
+        let mut os = TestOs::new(b, cursors, u32::MAX);
+        os.max_size = 0x100_0000;
+        match rng.next() % 9 {
+            0 => {
+                let (k, size) = (rng.next() % 8, rng.next() % 0x200);
+                let sym = if n % 2 == 0 { 0x006f_b820 } else { 0x0068_7000 };
+                let p = eax(a, sym, &[k, size]);
+                assert_eq!(p, h::user_calloc(b, &mut os, k, size), "{what}");
+                if p != 0 {
+                    live.push((p, false));
+                }
+            }
+            1 => {
+                let size = rng.next() % 0x400;
+                let p = eax(a, 0x0042_fb40, &[size]);
+                assert_eq!(p, h::phyre_malloc(b, &mut os, size), "{what}");
+                live.push((p, true));
+            }
+            2 => {
+                let (size, align) = (rng.next() % 0x400, 1 << (2 + rng.next() % 6));
+                let p = eax(a, 0x0042_fb80, &[size, align]);
+                assert_eq!(
+                    p,
+                    h::phyre_malloc_aligned(b, &mut os, size, align),
+                    "{what}"
+                );
+                live.push((p, true));
+            }
+            3 => {
+                let size = rng.next() % 0x300;
+                let sym = if n % 2 == 0 { 0x0063_0310 } else { 0x0063_04c0 };
+                let p = eax(a, sym, &[size]);
+                assert_eq!(p, h::user_malloc(b, &mut os, size), "{what}");
+                live.push((p, false));
+            }
+            4 => {
+                let (size, align) = (rng.next() % 0x300, 1 << (2 + rng.next() % 6));
+                let p = eax(a, 0x0068_6ff0, &[size, align]);
+                assert_eq!(p, h::user_aligned_malloc(b, &mut os, size, align), "{what}");
+                eax(a, 0x006f_b6c0, &[p]);
+                h::user_aligned_free(b, &mut os, p);
+            }
+            5 | 6 if !live.is_empty() => {
+                let (p, phyre) = live.swap_remove((rng.next() as usize) % live.len());
+                if phyre {
+                    eax(a, 0x0042_fb20, &[p]);
+                    h::phyre_free(b, &mut os, p);
+                } else {
+                    eax(a, 0x0068_7010, &[p]);
+                    h::user_free(b, &mut os, p);
+                }
+            }
+            7 => {
+                eax(a, 0x0042_fb20, &[0]);
+                h::phyre_free(b, &mut os, 0);
+            }
+            _ => {
+                let (p, len) = (region + rng.next() % 0x1000, rng.next() % 0x100);
+                assert_eq!(
+                    eax(a, 0x0062_f4e0, &[p, len]),
+                    h::memclear(b, p, len),
+                    "{what}"
+                );
+            }
+        }
+        os.sync(a, b, &what);
+        same_memory(&what, a, b);
+    }
+    // BigFileStream::setStreamPrefix: a copy in a new[] block
+    let fs = random_block(a, b, &mut rng, 0x48);
+    for path in [
+        &b"\0"[..],
+        b"c:/ffx/data/\0",
+        b"a much longer prefix for the stream files/\0",
+    ] {
+        let p = alloc(a, b, path.len());
+        a.write(p, path).unwrap();
+        b.write(p, path).unwrap();
+        let mut os = TestOs::new(b, cursors, u32::MAX);
+        os.max_size = 0x100_0000;
+        let ra = call(a, 0x0061_c3a0, Conv::Thiscall(fs), &[p]).eax;
+        assert_eq!(
+            ra,
+            ffx_system::files::bridge::set_stream_prefix(b, &mut os, fs, p)
+        );
+        os.sync(a, b, "setStreamPrefix");
+        same_memory("setStreamPrefix", a, b);
+    }
+    // UserHeap_Init on a scratch object
+    let obj = random_block(a, b, &mut rng, 0x18);
+    for (arena, x, y) in [
+        (0x30_0000, 0, 0x20_0000),
+        (0x1234_5001, 7, 9),
+        (0xffff_f001, 1, 2),
+    ] {
+        let ra = call(a, 0x0094_2a40, Conv::Thiscall(obj), &[arena, x, y]).eax;
+        assert_eq!(ra, h::heap_init(b, obj, arena, x, y));
+    }
+    same_memory("UserHeap_Init", a, b);
+    // the heap object back to the C runtime (a's free stub does nothing)
+    let mut os = TestOs::new(b, cursors, u32::MAX);
+    for sym in [0x006f_b9a0, 0x0068_7030] {
+        eax(a, sym, &[]);
+        h::user_heap_destroy(b, &mut os);
+    }
+    assert_eq!(os.freed, [h::USER_HEAP.get(b); 2]);
+    same_memory("UserHeap_Destroy", a, b);
 }
 
 /// A page manager as the game's starts: empty size lists and queue, no
@@ -2731,4 +3026,1299 @@ fn the_page_manager_matches_the_original() {
             "bin of {size:#x} over {lo:#x}+{range:#x}"
         );
     }
+}
+
+// ---- round 4 ----
+
+/// The buffer-at-+8 destructors (`ffx_system::heap::free_member8`).
+const FREE_MEMBER8: [u32; 13] = [
+    0x0063_3b70,
+    0x0063_3b80,
+    0x0063_3b90,
+    0x0063_3ba0,
+    0x0063_3bb0,
+    0x0063_3bc0,
+    0x0063_3bd0,
+    0x0063_3bf0,
+    0x0063_3c00,
+    0x0063_3c10,
+    0x0063_3c20,
+    0x0063_3c30,
+    0x0069_0a20,
+];
+
+#[test]
+fn buffer_destructors_match_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let (a, b) = (&mut a, &mut b);
+    let mgr = fresh_page_manager(a, b);
+    set(a, b, ffx_system::heap::PAGE_MANAGER, mgr);
+    let base = alloc(a, b, 0x30);
+    put(a, b, base + 0x18, [0x8_0000u32, 0x40, 0x7_0000, 0, 0x10, 0]);
+    set(a, b, ffx_system::heap::USER_HEAP, base);
+    let (cursors, _) = patch_heap_os(a, b, u32::MAX);
+    let obj = alloc(a, b, 16);
+    let mut rng = Xorshift(0x4004_0001);
+    for n in 0..400usize {
+        let size = rng.next() % 0x3000;
+        let p = eax(a, USER_MALLOC, &[size]);
+        assert_eq!(p, eax(b, USER_MALLOC, &[size]));
+        let mut os = TestOs::new(b, cursors, u32::MAX);
+        put(a, b, obj + 8, if n % 5 == 0 { 0 } else { p });
+        let sym = FREE_MEMBER8[n % FREE_MEMBER8.len()];
+        let ra = call(a, sym, Conv::Thiscall(obj), &[]).eax;
+        assert_eq!(
+            ra,
+            ffx_system::heap::free_member8(b, &mut os, obj),
+            "{sym:#x}"
+        );
+        os.sync(a, b, "dtor");
+        same_memory("buffer destructors", a, b);
+    }
+}
+
+#[allow(clippy::many_single_char_names, clippy::too_many_lines)] // a, b: the oracles; one pass over many
+fn round4(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use window::bridge as w;
+    // identities
+    for v in [0, 1, rng.next(), u32::MAX] {
+        assert_eq!(eax(a, 0x008f_2f70, &[v]), stub::ptr32(v));
+        assert_eq!(eax(a, 0x008e_d040, &[v]), stub::ptr32(v));
+    }
+    // GS packet words
+    let pkt = alloc(a, b, 0x40);
+    for _ in 0..200 {
+        let v: [u32; 5] = std::array::from_fn(|_| rng.next());
+        assert_eq!(
+            eax(a, 0x008e_f8e0, &[pkt, v[0], v[1], v[2], v[3]]),
+            pkt::bridge::adp_words4(b, pkt, [v[0], v[1], v[2], v[3]])
+        );
+        assert_eq!(
+            eax(a, 0x008e_fb90, &[pkt + 4, v[0], v[1]]),
+            pkt::bridge::adp_xy2(b, pkt + 4, v[0], v[1])
+        );
+        assert_eq!(
+            eax(a, 0x008e_fbf0, &[pkt + 0x10, v[2], v[3]]),
+            pkt::bridge::adp_xyz2_offset(b, pkt + 0x10, v[2], v[3])
+        );
+        assert_eq!(
+            eax(a, 0x008e_f790, &[pkt + 0x20, v[4]]),
+            pkt::bridge::adp_gs_direct_rgba(b, pkt + 0x20, v[4])
+        );
+        // quiet NaNs only: the oracle keeps a loaded signalling NaN
+        let f: [f32; 4] = std::array::from_fn(|_| {
+            let x = rng.float();
+            if x.is_nan() {
+                f32::from_bits(x.to_bits() | 0x0040_0000)
+            } else {
+                x
+            }
+        });
+        eax(a, 0x008e_8940, &f.map(f32::to_bits));
+        pkt::bridge::open_font_scissor(b, f);
+        same_memory("packets", a, b);
+    }
+    // getters
+    for round in 0..4 {
+        for (sym, g) in [
+            (0x008a_c2c0, instance::bridge::BTL_MENU_TEX),
+            (0x008a_9b60, instance::bridge::YES_NO_WINDOW),
+        ] {
+            if round > 0 {
+                set(a, b, g, rng.next());
+            }
+            assert_eq!(eax(a, sym, &[]), instance::bridge::word(b, g));
+        }
+    }
+    // macro records and the 0x01868a90 table, made up
+    for i in 0..3u32 {
+        let recs = random_block(a, b, rng, 32 * 8);
+        for n in 0..32 {
+            set_entry(a, b, w::MSG_VARS, i * 32 + n, recs + 8 * n);
+        }
+        let e = random_block(a, b, rng, 0x10);
+        set_entry(a, b, w::TABLE_01868A90, i, e);
+    }
+    for k in 0..60u32 {
+        let (i, n) = (k % 3, rng.next() % 32);
+        let t = rng.next();
+        eax(a, 0x008b_8960, &[i, n, t]);
+        w::macro_set_type(b, i.cast_signed(), n.cast_signed(), t.to_le_bytes()[0]);
+        let v = rng.next();
+        assert_eq!(
+            eax(a, 0x008b_8980, &[i, n, v]),
+            w::macro_set_value(b, i.cast_signed(), n.cast_signed(), v)
+        );
+        assert_eq!(
+            eax(a, 0x008b_7c40, &[i]),
+            w::table_01868a90(b, i.cast_signed())
+        );
+    }
+    same_memory("macro records", a, b);
+    // battle window close, hdd names
+    set(
+        a,
+        b,
+        btl::bridge::BTL_WINDOW_STATE,
+        std::array::from_fn(|_| rng.next()),
+    );
+    assert_eq!(eax(a, 0x0089_ade0, &[]), btl::bridge::close_btl_window(b));
+    eax(a, 0x0077_9a80, &[]);
+    cd::bridge::hdd_set_pass_names_x(b);
+    same_memory("battle window, hdd names", a, b);
+    // module file sectors over a made-up module table and sector table
+    if Mem::read::<u32>(a, cd::bridge::MODULE_FILES.ptr(a).addr) == 0 {
+        let t = alloc(a, b, 0x40);
+        for k in 0..0x20u32 {
+            put(a, b, t + 2 * k, u16::try_from(rng.next() % 0x100).unwrap());
+        }
+        set(a, b, cd::bridge::MODULE_FILES, t);
+        let sectors = random_block(a, b, rng, 0x800);
+        set(a, b, cd::bridge::SECTORS, sectors);
+    }
+    for _ in 0..100 {
+        let (m, n) = (rng.next() % 0x10, rng.next() % 0x80);
+        assert_eq!(
+            eax(a, 0x0076_c270, &[m, n]),
+            cd::bridge::module_file_sector(b, m.cast_signed(), n.cast_signed())
+        );
+    }
+    // a 12-byte element copy, overlapping or into null
+    let blk = random_block(a, b, rng, 0x100);
+    for (first, last, dest) in [
+        (blk, blk + 0x30, blk + 0x60),
+        (blk, blk, blk + 0x60),
+        (blk, blk + 0xc, 0),
+        (blk + 0x18, blk + 0x48, blk + 0xc),
+    ] {
+        assert_eq!(
+            eax(a, 0x0059_e830, &[first, last, dest]),
+            stl::bridge::uninitialized_copy12(b, first, last, dest)
+        );
+    }
+    same_memory("copies", a, b);
+}
+
+/// A balanced tree of `keys` under `head` (left +0, right +4, key +0xc).
+fn build_tree(a: &mut Oracle, b: &mut Oracle, head: u32, keys: &[u32]) -> u32 {
+    if keys.is_empty() {
+        return head;
+    }
+    let mid = keys.len() / 2;
+    let node = alloc(a, b, 0x10);
+    let l = build_tree(a, b, head, &keys[..mid]);
+    let r = build_tree(a, b, head, &keys[mid + 1..]);
+    put(a, b, node, [l, r, 0, keys[mid]]);
+    node
+}
+
+/// Batch 2 of round 4: memcmp, word setter, a map lookup, window colours,
+/// the HDD-install lookup, CD channel clears.
+#[allow(clippy::many_single_char_names)] // a, b: the oracles
+fn round4b(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use window::bridge as w;
+    let x = random_block(a, b, rng, 0x40);
+    let y = alloc(a, b, 0x40);
+    for n in 0..400u32 {
+        let bytes = Oracle::read(a, x, 0x40).unwrap();
+        a.write(y, &bytes).unwrap();
+        b.write(y, &bytes).unwrap();
+        let len = rng.next() % 0x30;
+        if n % 3 != 0 {
+            let at = rng.next() % 0x30;
+            put(a, b, y + at, u8::try_from(rng.next() & 0xff).unwrap());
+        }
+        let ra = eax(a, 0x0040_1020, &[x, y, len]);
+        assert_eq!(
+            ra,
+            stl::bridge::memcmp(b, x, y, len).cast_unsigned(),
+            "memcmp {n}"
+        );
+    }
+    let obj = alloc(a, b, 0x40);
+    for _ in 0..16 {
+        let (i, v) = (rng.next() % 16, rng.next());
+        let ra = call(a, 0x0040_2a00, Conv::Thiscall(obj), &[i, v]).eax;
+        assert_eq!(ra, stl::bridge::set_word(b, obj, i, v));
+    }
+    // a tree of u32 keys under a head (root at +0xc)
+    let head = alloc(a, b, 0x10);
+    let mut keys: Vec<u32> = (0..40).map(|_| rng.next() % 1000).collect();
+    keys.sort_unstable();
+    keys.dedup();
+    let root = build_tree(a, b, head, &keys);
+    put(a, b, head + 0xc, root);
+    let key = alloc(a, b, 4);
+    for k in 0..1000u32 {
+        put(a, b, key, k);
+        let ra = call(a, 0x0062_fe50, Conv::Thiscall(head), &[key]).eax;
+        assert_eq!(ra, stl::bridge::map_find_u32(b, head, key), "key {k}");
+    }
+    // window colours over made-up windows
+    for i in 0..4u32 {
+        let win = random_block(a, b, rng, 0x80);
+        set_entry(a, b, w::WINDOWS, i, win);
+    }
+    for _ in 0..20 {
+        let i = rng.next() % 4;
+        let c: [u32; 4] = std::array::from_fn(|_| rng.next());
+        eax(a, 0x0090_6d90, &[i, c[0], c[1], c[2], c[3]]);
+        w::set_window_rgba(b, i.cast_signed(), c.map(|v| v.to_le_bytes()[0]));
+    }
+    same_memory("memcmp, words, windows", a, b);
+    // the HDD-install table: the game's where loaded, else made up
+    if cd::bridge::HDD_INSTALL_COUNT.get(a) <= 0 {
+        let t = random_block(a, b, rng, 0x34 * 12);
+        for k in 0..12 {
+            put(a, b, t + 0x34 * k, u8::try_from(k % 3).unwrap());
+            put(a, b, t + 0x34 * k + 8, k * 7);
+        }
+        set(a, b, cd::bridge::HDD_INSTALL, t);
+        set(a, b, cd::bridge::HDD_INSTALL_COUNT, 12);
+    }
+    let t = cd::bridge::HDD_INSTALL.get(a);
+    for k in 0..200u32 {
+        let (arch, n) = if k % 2 == 0 && cd::bridge::HDD_INSTALL_COUNT.get(a) > 0 {
+            let e = t + 0x34 * (rng.next() % cd::bridge::HDD_INSTALL_COUNT.get(a).cast_unsigned());
+            (u32::from(Mem::read::<u8>(a, e)), Mem::read::<u32>(a, e + 8))
+        } else {
+            (
+                [0, 1, 2, u32::MAX, rng.next()][(k % 5) as usize],
+                [0, 7, 14, u32::MAX, rng.next()][(k / 5 % 5) as usize],
+            )
+        };
+        assert_eq!(
+            eax(a, 0x0076_d600, &[arch, n]),
+            cd::bridge::hdd_install_find(b, arch, n),
+            "{arch} {n}"
+        );
+    }
+    for k in 0..20u32 {
+        set(a, b, cd::bridge::CHANNEL_KEEP_NAMES, k % 2);
+        let n = rng.next() % 8;
+        eax(a, 0x0076_d530, &[n]);
+        cd::bridge::cd_channel_clear(b, n);
+    }
+    same_memory("cd", a, b);
+}
+
+/// A balanced tree in the `0x0069a250` layout (left +0, right +8, nil
+/// flag +0xd, key +0x10) under `head`.
+fn nil_tree(a: &mut Oracle, b: &mut Oracle, head: u32, keys: &[u32]) -> u32 {
+    if keys.is_empty() {
+        return head;
+    }
+    let mid = keys.len() / 2;
+    let node = alloc(a, b, 0x14);
+    let l = nil_tree(a, b, head, &keys[..mid]);
+    let r = nil_tree(a, b, head, &keys[mid + 1..]);
+    put(a, b, node, [l, 0, r, 0, keys[mid]]);
+    node
+}
+
+/// Batch 3 of round 4: the debug print buffer, the GS TEST register,
+/// touch records, a map's equal range, glyph sprites, sequence end checks,
+/// fixup records and the save table sort.
+#[allow(clippy::many_single_char_names, clippy::too_many_lines)] // a, b: the oracles
+fn round4c(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use daps::bridge as dp;
+    use instance::bridge as ins;
+    assert_eq!(eax(a, 0x0089_dc40, &[]), dp::init(b));
+    let text = alloc(a, b, 0x100);
+    for n in 0..300u32 {
+        match n % 5 {
+            0 | 1 => {
+                let len = rng.next() % 0x60;
+                for k in 0..len {
+                    put(
+                        a,
+                        b,
+                        text + k,
+                        u8::try_from(0x20 + rng.next() % 0x5f).unwrap(),
+                    );
+                }
+                put(a, b, text + len, 0u8);
+                assert_eq!(
+                    eax(a, 0x0089_dec0, &[text]),
+                    dp::string(b, text),
+                    "string {n}"
+                );
+            }
+            2 | 3 => {
+                let (x, y) = (rng.next() % 2000, rng.next());
+                let y = [y % 700, y, 0x7fff_ffff, 0x8000_0000][(n as usize / 5) % 4];
+                let ra = eax(a, 0x0089_de30, &[x, y]);
+                assert_eq!(
+                    ra,
+                    dp::set_pos(b, x.cast_signed(), y.cast_signed()),
+                    "set_pos {n}"
+                );
+            }
+            _ => {
+                if n % 50 == 4 {
+                    assert_eq!(eax(a, 0x0089_dc10, &[]), dp::init(b));
+                }
+                let used = [0x7bf_i16, 0x7c0, -3, 0x100][(n as usize / 5) % 4];
+                set(a, b, dp::USED, used);
+            }
+        }
+    }
+    same_memory("daps", a, b);
+    let packet = alloc(a, b, 0x20);
+    for _ in 0..100 {
+        let f: [u32; 8] = std::array::from_fn(|k| {
+            if rng.next().is_multiple_of(4) {
+                rng.next()
+            } else {
+                rng.next() % [2, 8, 256, 4, 2, 2, 2, 4][k]
+            }
+        });
+        let mut args = vec![packet];
+        args.extend(f);
+        let ra = eax(a, 0x008e_f970, &args);
+        assert_eq!(
+            ra,
+            pkt::bridge::adp_test(b, packet, f.map(u32::cast_signed))
+        );
+    }
+    same_memory("TOAdpTEST", a, b);
+    let records = random_block(a, b, rng, 0x150 * 4);
+    eax(a, 0x0068_9a10, &[records, 4]);
+    pad::bridge::touch_records_init(b, records, 4);
+    eax(a, 0x0068_9a10, &[records + 0x150, 0]);
+    pad::bridge::touch_records_init(b, records + 0x150, 0);
+    same_memory("touch records", a, b);
+
+    // a tree in the 0x69a250 layout: key +0x10, nil flag +0xd, left +0, right +8
+    let head = alloc(a, b, 0x14);
+    put(a, b, head + 0xd, 1u8);
+    let mut keys: Vec<u32> = (0..30).map(|_| rng.next() % 100).collect();
+    keys.sort_unstable();
+    let root = nil_tree(a, b, head, &keys);
+    put(a, b, head + 4, root);
+    let this = alloc(a, b, 4);
+    put(a, b, this, head);
+    let (key, out) = (alloc(a, b, 4), alloc(a, b, 8));
+    for k in 0..110u32 {
+        put(a, b, key, k);
+        let ra = call(a, 0x0069_a250, Conv::Thiscall(this), &[out, key]).eax;
+        assert_eq!(
+            ra,
+            stl::bridge::equal_range_u32(b, this, out, key),
+            "key {k}"
+        );
+        same_memory("equal_range", a, b);
+    }
+    let sprite = alloc(a, b, 0x30);
+    let chars = alloc(a, b, 4);
+    for c in 0..0x200u32 {
+        let (first, second) = if c < 0x100 {
+            (c, rng.next() & 0xff)
+        } else {
+            (rng.next() % 0x30, c - 0x100)
+        };
+        put(
+            a,
+            b,
+            chars,
+            [u8::try_from(first).unwrap(), u8::try_from(second).unwrap()],
+        );
+        assert_eq!(
+            eax(a, 0x0089_e360, &[chars, sprite]),
+            msg::bridge::glyph_sprite(b, chars, sprite)
+        );
+        same_memory("glyph sprite", a, b);
+    }
+    // sequences: names in eight slots per scene, handles into the scene blocks
+    let names: [&[u8]; 5] = [b"\0", b"a\0", b"ab\0", b"open\0", b"close_menu\0"];
+    let name = alloc(a, b, 0x20);
+    for i in 0..8u32 {
+        let block = if i == 3 {
+            0
+        } else {
+            random_block(a, b, rng, 0x400)
+        };
+        set_entry(a, b, ffx_menu::scene::bridge::SCENE_DATA, i, block);
+        for j in 0..8u32 {
+            let slot = scene::bridge::SLOTS.ptr(b).addr + 8 + i * 0x100 + j * 0x20;
+            let mut bytes = [0u8; 0x14];
+            let nm = names[(rng.next() % 5) as usize];
+            bytes[..nm.len()].copy_from_slice(nm);
+            put(a, b, slot, bytes);
+            put(
+                a,
+                b,
+                slot + 0x14,
+                if rng.next().is_multiple_of(4) {
+                    0
+                } else {
+                    rng.next() % 0x3f0
+                },
+            );
+        }
+    }
+    for i in 0..8u32 {
+        for nm in names.iter().chain([b"opened\0".as_slice(), b"b\0"].iter()) {
+            let mut bytes = [0u8; 0x20];
+            bytes[..nm.len()].copy_from_slice(nm);
+            put(a, b, name, bytes);
+            let ra = eax(a, 0x008a_e070, &[i, name]);
+            let rb = scene::bridge::check_term_scene(
+                b,
+                i.cast_signed(),
+                name,
+                ffx_menu::scene::bridge::tk_menu_is_term_scene,
+            );
+            assert_eq!(ra, rb, "scene {i}");
+        }
+    }
+    // fixup records from random LEB128 streams
+    let stream = alloc(a, b, 0x40);
+    let (cursor, record) = (alloc(a, b, 4), random_block(a, b, rng, 0x20));
+    for n in 0..200u32 {
+        let mut bytes = Vec::new();
+        for _ in 0..6 {
+            let v = [0, 1, rng.next() % 300, rng.next()][(rng.next() % 4) as usize];
+            let mut v = v;
+            loop {
+                let low = u8::try_from(v & 0x7f).unwrap();
+                v >>= 7;
+                bytes.push(if v == 0 { low } else { low | 0x80 });
+                if v == 0 {
+                    break;
+                }
+            }
+        }
+        a.write(stream, &bytes).unwrap();
+        b.write(stream, &bytes).unwrap();
+        put(a, b, cursor, stream);
+        let flags = rng.next() & 0x78;
+        let ra = call(a, 0x0060_e730, Conv::Thiscall(record), &[cursor, flags]).eax;
+        assert_eq!(
+            ra,
+            fixup::bridge::read_record(b, record, cursor, flags),
+            "record {n}"
+        );
+        same_memory("Fixup_ReadRecord", a, b);
+    }
+    // the save table, with few distinct keys so ties happen
+    for round in 0..4 {
+        let base = save::bridge::SORTED_TABLE.ptr(b).addr;
+        for i in 0..200u32 {
+            let m = [3, 50, 0x7fff_ffff, u32::MAX][round];
+            put(
+                a,
+                b,
+                base + 12 * i,
+                [rng.next(), rng.next() % m, (rng.next() % 5).wrapping_sub(2)],
+            );
+        }
+        assert_eq!(eax(a, 0x006f_0fb0, &[]), save::bridge::sort_table(b));
+        same_memory("sort table", a, b);
+    }
+    // the record resets of 0x00774740, counts 0..9 and a negative one
+    let records = random_block(a, b, rng, 0x138 * 9);
+    let table = alloc(a, b, 8 * 11);
+    for e in 0..11u32 {
+        let count: i16 = if e == 10 {
+            -2
+        } else {
+            i16::try_from(e).unwrap()
+        };
+        put(a, b, table + 8 * e, records - 0x1000);
+        put(a, b, table + 8 * e + 4, count);
+    }
+    set(a, b, ins::RECORD_ENTRIES, table);
+    set(a, b, ins::RECORD_BASE, 0x1000);
+    for e in 0..11u32 {
+        set(a, b, ins::RECORD_ENTRY, e);
+        assert_eq!(eax(a, 0x0077_4740, &[]), ins::reset_records(b), "entry {e}");
+        same_memory("reset_records", a, b);
+    }
+}
+
+/// Batch 4 of round 4: sequence slots, the battle command-window stack,
+/// fill-buffer requests, touch tracks, a string-keyed map, window tables
+/// and small setters.
+#[allow(clippy::many_single_char_names, clippy::too_many_lines)] // a, b: the oracles
+fn round4d(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use btl::bridge as bt;
+    use ffx_menu::scene::bridge as ms;
+    use render::bridge as rd;
+    use window::bridge as w;
+    // sequences: scene blocks with named records for TkMenuGetSceneHandle
+    let names: [&[u8]; 4] = [b"open\0", b"close\0", b"wait\0", b"none\0"];
+    let name = alloc(a, b, 0x20);
+    let put_name = |a: &mut Oracle, b: &mut Oracle, nm: &[u8]| {
+        let mut bytes = [0u8; 0x20];
+        bytes[..nm.len()].copy_from_slice(nm);
+        put(a, b, name, bytes);
+    };
+    for i in 0..8u32 {
+        let block = if i == 5 {
+            0
+        } else {
+            seq_scene_block(a, b, rng, &names[..3])
+        };
+        set_entry(a, b, ms::SCENE_DATA, i, block);
+        let base = scene::bridge::SLOTS.ptr(b).addr + i * 0x100;
+        put(a, b, base, [0u8; 0x100]);
+    }
+    for n in 0..400u32 {
+        let i = (rng.next() % 8).cast_signed();
+        put_name(a, b, names[(rng.next() % 4) as usize]);
+        let (ra, rb) = match n % 5 {
+            0 => (
+                eax(a, 0x008a_f0d0, &[i.cast_unsigned(), name]),
+                scene::bridge::start_scene(b, i, name, false, ms::tk_menu_get_scene_handle),
+            ),
+            1 => (
+                eax(a, 0x008a_f1b0, &[i.cast_unsigned(), name]),
+                scene::bridge::start_scene(b, i, name, true, ms::tk_menu_get_scene_handle),
+            ),
+            2 => (
+                eax(a, 0x008a_f4f0, &[i.cast_unsigned(), name]),
+                scene::bridge::stop_scene(b, i, name),
+            ),
+            3 => (
+                eax(a, 0x008a_e070, &[i.cast_unsigned(), name]),
+                scene::bridge::check_term_scene(b, i, name, ms::tk_menu_is_term_scene),
+            ),
+            _ => {
+                if rng.next().is_multiple_of(8) {
+                    (
+                        eax(a, 0x008a_e5a0, &[i.cast_unsigned()]),
+                        scene::bridge::init_all_scene(b, i),
+                    )
+                } else {
+                    let slot = scene::bridge::SLOTS.ptr(b).addr
+                        + i.cast_unsigned() * 0x100
+                        + (rng.next() % 8) * 0x20;
+                    put(a, b, slot, u16::try_from(rng.next() % 5).unwrap());
+                    (0, 0)
+                }
+            }
+        };
+        assert_eq!(ra, rb, "sequence call {n}");
+        same_memory("sequences", a, b);
+    }
+    // the command-window stack
+    let stack = bt::ACTION_STACK.ptr(b).addr;
+    for n in 0..60u32 {
+        if n % 6 == 0 {
+            for k in 0..6u32 {
+                let mut level = [0u8; 0xf0];
+                for (j, v) in level.iter_mut().enumerate() {
+                    *v = u8::try_from((rng.next() >> (j % 4)) & 0xff).unwrap();
+                }
+                level[0x52] = u8::try_from(rng.next() % 2).unwrap();
+                level[0x5a] = u8::try_from(rng.next() % 5).unwrap();
+                level[0x5b] = u8::try_from(rng.next() % 6).unwrap().wrapping_sub(1);
+                let cmd: u16 = [0x311e, 0x3029, 0x1234][(rng.next() % 3) as usize];
+                level[0x5c..0x5e].copy_from_slice(&cmd.to_le_bytes());
+                put(a, b, stack + 0xf0 * k, level);
+            }
+            set(
+                a,
+                b,
+                bt::ACTION_DEPTH,
+                i8::try_from(rng.next() % 6).unwrap() - 1,
+            );
+            set(a, b, bt::ACTION_MASK, rng.next());
+            set(
+                a,
+                b,
+                bt::ACTION_PREV_VALUE,
+                u16::try_from(rng.next() & 0xffff).unwrap(),
+            );
+            let saved: [u8; 0x140] =
+                std::array::from_fn(|_| u8::try_from(rng.next() & 0xff).unwrap());
+            put(a, b, bt::ACTION_SAVED.ptr(b).addr, saved);
+        }
+        assert_eq!(
+            eax(a, 0x0089_a630, &[]),
+            bt::set_prev_action(b),
+            "TOBtlSetPrevAction {n}"
+        );
+        same_memory("TOBtlSetPrevAction", a, b);
+    }
+    // fill-buffer requests
+    for n in 0..300u32 {
+        if n % 50 == 0 {
+            for k in 0..6u32 {
+                put(a, b, rd::FILL_BUFFERS.ptr(b).addr + 4 * k, rng.next());
+                put(
+                    a,
+                    b,
+                    rd::FILL_COUNTS.ptr(b).addr + 4 * k,
+                    0x150 + rng.next() % 8,
+                );
+                put(
+                    a,
+                    b,
+                    rd::FILL_LOADS.ptr(b).addr + 4 * k,
+                    [rng.next() % 1000, 100_000, 99_999, rng.next()][(rng.next() % 4) as usize],
+                );
+            }
+        }
+        let size = rng.next() % 300;
+        assert_eq!(
+            eax(a, 0x0072_8660, &[size]),
+            rd::get_fill_buffer_request(b, size.cast_signed()),
+            "fill {n}"
+        );
+        same_memory("fill buffers", a, b);
+    }
+    // touch tracks
+    let tracks = random_block(a, b, rng, 0x1c8 * 3);
+    for (base, n) in [(tracks, 3), (tracks, 0), (0, 1)] {
+        let ra = eax(a, 0x0068_98d0, &[base, n]);
+        let rb = pad::bridge::touch_tracks_init(b, base, n);
+        if n != 0 {
+            assert_eq!(ra, rb);
+        }
+    }
+    same_memory("touch tracks", a, b);
+    // a string-keyed tree with tagged keys (some null)
+    let head = alloc(a, b, 0x10);
+    let words = ["", "a", "ab", "abc", "b", "ba", "c", "zz"];
+    let mut keys: Vec<u32> = vec![0];
+    for w in words {
+        let p = alloc(a, b, 8);
+        let mut bytes = [0u8; 8];
+        bytes[..w.len()].copy_from_slice(w.as_bytes());
+        put(a, b, p, bytes);
+        keys.push(p);
+    }
+    // sorted by the comparison the lookup uses: null first, then strings
+    let tree_keys = keys.clone();
+    let root = cstr_tree(a, b, head, &tree_keys, rng);
+    put(a, b, head + 0xc, root);
+    let key = alloc(a, b, 4);
+    for &k in &keys {
+        for tag in [0, 1] {
+            put(a, b, key, k | tag);
+            let ra = call(a, 0x006d_c010, Conv::Thiscall(head), &[key]).eax;
+            assert_eq!(ra, stl::bridge::map_find_cstr(b, head, key));
+        }
+    }
+    let other = alloc(a, b, 4);
+    put(a, b, other, *b"abd\0");
+    put(a, b, key, other);
+    assert_eq!(
+        call(a, 0x006d_c010, Conv::Thiscall(head), &[key]).eax,
+        stl::bridge::map_find_cstr(b, head, key)
+    );
+    // window tables and small setters
+    for i in 0..4u32 {
+        let e = random_block(a, b, rng, 0x20);
+        put(a, b, e + 1, u8::try_from(rng.next() % 4).unwrap());
+        set_entry(a, b, w::TABLE_01868A90, i, e);
+    }
+    for i in 0..4u32 {
+        let k = i.cast_signed();
+        assert_eq!(
+            eax(a, 0x008b_7fb0, &[i]),
+            w::table_kind(b, k).cast_unsigned()
+        );
+        assert_eq!(eax(a, 0x008b_7fd0, &[i]), w::table_kind2_data(b, k));
+        assert_eq!(
+            eax(a, 0x008b_7ff0, &[i]),
+            w::table_kind2_byte7(b, k).cast_unsigned()
+        );
+    }
+    for win in 0..2u32 {
+        for n in 0..4u32 {
+            let r = random_block(a, b, rng, 8);
+            put(a, b, w::MSG_VARS.ptr(b).addr + 4 * (win * 32 + n), r);
+            let v = rng.next();
+            eax(a, 0x008b_84f0, &[win, n, v]);
+            w::macro_set_byte1(b, win.cast_signed(), n.cast_signed(), v.to_le_bytes()[0]);
+            assert_eq!(
+                eax(a, 0x008b_8510, &[win, n, v]),
+                w::macro_set_value(b, win.cast_signed(), n.cast_signed(), v)
+            );
+        }
+    }
+    for i in 0..8u32 {
+        let (win, msg) = (
+            random_block(a, b, rng, 0x80),
+            random_block(a, b, rng, 0x120),
+        );
+        set_entry(a, b, w::WINDOWS, i, win);
+        set_entry(a, b, w::MSG_WINDOWS, i, msg);
+    }
+    eax(a, 0x008a_b7b0, &[]);
+    w::all_close_message_window(b);
+    same_memory("window tables", a, b);
+    for i in 0..8u32 {
+        assert_eq!(
+            call(a, 0x0040_2be0, Conv::Stdcall, &[i]).eax,
+            instance::bridge::table_00c8a538(b, i)
+        );
+        let v = rng.next();
+        assert_eq!(
+            eax(a, 0x008b_dfc0, &[i, v]),
+            instance::bridge::set_table_02310f20(b, i, v)
+        );
+    }
+    let manager = random_block(a, b, rng, 0x400);
+    set(a, b, save::bridge::MANAGER, manager);
+    let v = rng.next();
+    assert_eq!(
+        eax(a, 0x0064_8640, &[v]),
+        save::bridge::set_manager_word360(b, v)
+    );
+    let printf = a.rebase(0x0043_52f0);
+    a.stub_return(printf, 0x5555).unwrap();
+    let saved = instance::bridge::LOCALIZATION_MANAGER.get(a);
+    for m in [0, random_block(a, b, rng, 16), saved] {
+        set(a, b, instance::bridge::LOCALIZATION_MANAGER, m);
+        let ra = eax(a, 0x0064_1100, &[]);
+        assert_eq!(
+            ra,
+            instance::bridge::localization_manager_word0(b, &mut |_, _| {})
+        );
+    }
+    same_memory("small setters", a, b);
+    if cd::bridge::SECTORS.get(a) != 0 {
+        for n in 0..50 {
+            assert_eq!(
+                eax(a, 0x0076_c250, &[n]),
+                cd::bridge::cd_module_file_sector_rel(b, n.cast_signed())
+            );
+        }
+    }
+    // Kernel_GetAbilityName over the a_ability table (made up when absent)
+    if ffx_kernel::bridge::A_ABILITY.get(a) == 0 {
+        let t = alloc(a, b, 0x400);
+        put(a, b, t, 2u16);
+        put(a, b, t + 8, [0x0001u16, 0x0010, 8, 0x200]);
+        put(a, b, t + 16, 0x40u32);
+        put(a, b, t + 20, [0x0020u16, 0x0030, 4, 0x280]);
+        put(a, b, t + 28, 0xc0u32);
+        let words: [u32; 0x80] = std::array::from_fn(|_| rng.next() & 0x03ff_03ff);
+        put(a, b, t + 0x40, words);
+        set(a, b, ffx_kernel::bridge::A_ABILITY, t);
+    }
+    for n in 0..300u32 {
+        let id = [0, rng.next() & 0x3f, 0x8000 | (rng.next() & 0x7f)][(n % 3) as usize];
+        let ra = eax(a, 0x0077_4720, &[id]);
+        assert_eq!(
+            ra,
+            names::bridge::ability_name(b, id, ffx_menu::tk::bridge::tk_mn2_get_ability_mes),
+            "ability {id:#x}"
+        );
+    }
+    same_memory("ability names", a, b);
+}
+
+/// A menu scene block whose hash table (`TkMenuGetSceneHandle`) holds
+/// records for `names` (each `"..\0"`), their status words random.
+fn seq_scene_block(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, names: &[&[u8]]) -> u32 {
+    let block = alloc(a, b, 0x400);
+    put(a, b, block, [0u8; 0x400]);
+    let mut groups: Vec<Vec<usize>> = vec![Vec::new(); 16];
+    for (k, nm) in names.iter().enumerate() {
+        groups[ffx_menu::scene::bucket(&nm[..nm.len() - 1]) as usize].push(k);
+    }
+    for (h, group) in (0u32..).zip(&groups) {
+        if group.is_empty() {
+            continue;
+        }
+        let list = 0x100 + 0x40 * h;
+        put(a, b, block + 0x40 + 4 * h, list);
+        put(a, b, block + list, u32::try_from(group.len()).unwrap());
+        for (j, &k) in (0u32..).zip(group) {
+            let at = 0x380 + 0x10 * u32::try_from(k).unwrap();
+            let mut bytes = [0u8; 0x10];
+            bytes[..names[k].len()].copy_from_slice(names[k]);
+            put(a, b, block + at, bytes);
+            let record = block + list + 4 + 12 * j;
+            put(a, b, record, [at, rng.next(), rng.next()]);
+        }
+    }
+    block
+}
+
+/// A balanced tree of `keys` (in lookup order) in the `0x006dc010` layout
+/// (left +0, right +4, tagged key +0xc) under `head`, keys tagged at random.
+fn cstr_tree(a: &mut Oracle, b: &mut Oracle, head: u32, keys: &[u32], rng: &mut Xorshift) -> u32 {
+    if keys.is_empty() {
+        return head;
+    }
+    let mid = keys.len() / 2;
+    let node = alloc(a, b, 0x10);
+    let l = cstr_tree(a, b, head, &keys[..mid], rng);
+    let r = cstr_tree(a, b, head, &keys[mid + 1..], rng);
+    put(a, b, node, [l, r, 0, keys[mid] | (rng.next() & 1)]);
+    node
+}
+
+#[test]
+fn round4_system_functions_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round4(&mut a, &mut b, &mut Xorshift(0x4004_0002));
+    round4b(&mut a, &mut b, &mut Xorshift(0x4004_0012));
+    round4c(&mut a, &mut b, &mut Xorshift(0x4004_0022));
+    round4d(&mut a, &mut b, &mut Xorshift(0x4004_0032));
+}
+
+#[test]
+fn round4_system_functions_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round4(&mut a, &mut b, &mut Xorshift(0x4004_0003));
+    round4b(&mut a, &mut b, &mut Xorshift(0x4004_0013));
+    round4c(&mut a, &mut b, &mut Xorshift(0x4004_0023));
+    round4d(&mut a, &mut b, &mut Xorshift(0x4004_0033));
+}
+
+/// Free image bytes for the file-layer stand-ins (after the heap's).
+const FILE_TEST_CODE: u32 = 0x00b0_be00;
+
+/// Writes `code` at `FILE_TEST_CODE + off` in both oracles; its address.
+fn stand_in(a: &mut Oracle, b: &mut Oracle, off: u32, code: &[u8]) -> u32 {
+    let at = a.rebase(FILE_TEST_CODE) + off;
+    a.write(at, code).unwrap();
+    b.write(at, code).unwrap();
+    at
+}
+
+/// `jmp to` at the original `sym` in both oracles.
+fn redirect(a: &mut Oracle, b: &mut Oracle, sym: u32, to: u32) {
+    let at = a.rebase(sym);
+    let rel = to.wrapping_sub(at + 5);
+    let mut jmp = vec![0xe9];
+    jmp.extend_from_slice(&rel.to_le_bytes());
+    a.write(at, &jmp).unwrap();
+    b.write(at, &jmp).unwrap();
+}
+
+/// A cdecl stand-in: records its first argument at `cell` and returns it
+/// xor `key`.
+fn recorder(cell: u32, key: u32) -> Vec<u8> {
+    let mut v = vec![0x8b, 0x44, 0x24, 0x04, 0xa3];
+    v.extend_from_slice(&cell.to_le_bytes());
+    v.push(0x35);
+    v.extend_from_slice(&key.to_le_bytes());
+    v.push(0xc3);
+    v
+}
+
+/// The file layer over stand-ins for what it calls (the stream read,
+/// `File_Probe`, `0x00a42c00`, `movie_err`, `GetFileSizeEx` and the CD
+/// table's functions), so only the wrappers' own logic is compared.
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one script over the wrappers; a, b: the oracles
+fn file_layer(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use files::bridge as f;
+    let cells = alloc(a, b, 0x40);
+    put(a, b, cells, [0u8; 0x40]);
+    // PStreamFile::read (thiscall, ret 8): this ^ buf + n, recorded
+    #[rustfmt::skip]
+    let mut read = vec![
+        0x89, 0xc8, 0x33, 0x44, 0x24, 0x04, 0x03, 0x44, 0x24, 0x08, // eax = ecx ^ buf + n
+        0xa3, 0, 0, 0, 0, 0xc2, 0x08, 0x00,
+    ];
+    read[11..15].copy_from_slice(&cells.to_le_bytes());
+    let read = stand_in(a, b, 0, &read);
+    redirect(a, b, 0x0060_8090, read);
+    let probe = stand_in(a, b, 0x20, &recorder(cells + 4, 0x1234_5600));
+    redirect(a, b, 0x0060_7e00, probe);
+    let name = stand_in(a, b, 0x40, &recorder(cells + 8, 0x0bad_0000));
+    redirect(a, b, 0x00a4_2c00, name);
+    // movie_err: records all three arguments
+    #[rustfmt::skip]
+    let mut err = vec![
+        0x8b, 0x44, 0x24, 0x04, 0xa3, 0, 0, 0, 0,
+        0x8b, 0x44, 0x24, 0x08, 0xa3, 0, 0, 0, 0,
+        0x8b, 0x44, 0x24, 0x0c, 0xa3, 0, 0, 0, 0, 0xc3,
+    ];
+    for (k, at) in [(5, cells + 0xc), (14, cells + 0x10), (23, cells + 0x14)] {
+        err[k..k + 4].copy_from_slice(&u32::to_le_bytes(at));
+    }
+    let err = stand_in(a, b, 0x60, &err);
+    redirect(a, b, 0x0076_efa0, err);
+    // GetFileSizeEx(h, &size), stdcall: size = (h, h * 3), succeeds for odd h
+    #[rustfmt::skip]
+    let size_ex = [
+        0x8b, 0x44, 0x24, 0x04, 0x8b, 0x4c, 0x24, 0x08,       // eax = h, ecx = &size
+        0x89, 0x41, 0x04, 0x8d, 0x04, 0x40, 0x89, 0x01,       // hi = h, lo = h * 3
+        0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x01, 0xc2, 0x08, 0x00, // eax = h & 1
+    ];
+    let size_ex = stand_in(a, b, 0x80, &size_ex);
+    for o in [&mut *a, &mut *b] {
+        let slot = o.rebase(0x00b0_c13c);
+        Mem::write(o, slot, size_ex);
+    }
+    let scratch = alloc(a, b, 8);
+    let get_size = |m: &mut Oracle, h: u32| -> Option<u64> {
+        let ok = m.call(size_ex, Conv::Stdcall, &[h, scratch]).unwrap().eax;
+        let v: u64 = Mem::read(m, scratch);
+        Mem::write(m, scratch, 0u64);
+        (ok != 0).then_some(v)
+    };
+    let b_read = |m: &mut Oracle, s: u32, buf: u32, n: u32| {
+        m.call(read, Conv::Thiscall(s), &[buf, n]).unwrap().eax
+    };
+    let b_probe = |m: &mut Oracle, n: u32| m.call(probe, Conv::Cdecl, &[n]).unwrap().eax;
+    // streams: closed, handle-backed, entry-backed
+    let entry = random_block(a, b, rng, 0x10);
+    let rec = random_block(a, b, rng, 0x10);
+    put(a, b, entry + 0xc, rec);
+    let mut streams = Vec::new();
+    for (h, e) in [(u32::MAX, 0), (6, 0), (7, 0), (u32::MAX, entry), (9, entry)] {
+        let s = alloc(a, b, 8);
+        put(a, b, s, [h, e]);
+        streams.push(s);
+    }
+    for &s in &streams {
+        assert_eq!(
+            call(a, 0x0060_7f20, Conv::Thiscall(s), &[]).eax & 0xff,
+            u32::from(f::stream_is_open(b, s))
+        );
+        let r = call(a, 0x0060_7dc0, Conv::Thiscall(s), &[]);
+        #[allow(clippy::cast_possible_truncation)] // eax
+        let want = f::stream_file_size(b, s, get_size) as u32;
+        assert_eq!(r.eax, want);
+        let r = call(a, 0x006f_9d50, Conv::Thiscall(s), &[]);
+        #[allow(clippy::cast_possible_truncation)]
+        let want = f::fios_stream_file_size(b, s, get_size) as u32;
+        assert_eq!(r.eax, want);
+    }
+    for &s in streams.iter().chain([0].iter()) {
+        assert_eq!(eax(a, 0x0067_9570, &[s]), f::fios_file_size(b, s, get_size));
+        assert_eq!(eax(a, 0x0062_f760, &[s]), f::fios_file_size(b, s, get_size));
+        let (buf, n) = (rng.next(), rng.next() % 0x1000);
+        assert_eq!(
+            eax(a, 0x0067_9800, &[s, buf, n]),
+            f::fios_read(b, s, buf, n, b_read)
+        );
+        assert_eq!(
+            eax(a, 0x0062_fc00, &[s, buf, n]),
+            f::sce_read(b, s, buf, n, b_read)
+        );
+        same_memory("stream reads", a, b);
+    }
+    for _ in 0..20 {
+        let nm = rng.next();
+        assert_eq!(
+            eax(a, 0x0067_96f0, &[nm]),
+            f::fios_is_file_exist(b, nm, b_probe)
+        );
+    }
+    // the CD table's functions: recorders, one per slot
+    let table = cd::bridge::CD_LIB.ptr(b).addr;
+    for (k, slot) in [0u32, 8, 0x10, 0x58].into_iter().enumerate() {
+        let k = u32::try_from(k).unwrap();
+        let fun = stand_in(
+            a,
+            b,
+            0xa0 + 0x10 * k,
+            &recorder(cells + 0x18 + 4 * k, 0x100 * (k + 1)),
+        );
+        put(a, b, table + slot, fun);
+    }
+    let b_call =
+        |m: &mut Oracle, fun: u32, args: &[u32]| m.call(fun, Conv::Cdecl, args).unwrap().eax;
+    for _ in 0..10 {
+        let (x, y, z) = (rng.next(), rng.next(), rng.next());
+        assert_eq!(
+            eax(a, 0x008a_ba30, &[x, y, z]),
+            f::dvd_file_read(b, x, y, z, b_call)
+        );
+        assert_eq!(
+            eax(a, 0x008a_b7d0, &[x, y]),
+            f::cd_get_file_name(b, x, y, b_call)
+        );
+        same_memory("CD table calls", a, b);
+    }
+    let b_name = |m: &mut Oracle, n: u32| m.call(name, Conv::Cdecl, &[n]).unwrap().eax;
+    for k in 0..12u32 {
+        put(a, b, table + 0x20, rng.next() % 0x100);
+        put(a, b, table + 0x30, k % 2);
+        let n = rng.next() % 0x200;
+        assert_eq!(eax(a, 0x00a4_2830, &[n]), f::cd_file_name_pc(b, n, b_name));
+        assert_eq!(
+            eax(a, 0x00a4_29d0, &[n]),
+            f::get_cd_file_name_pc(b, n, b_name)
+        );
+        same_memory("CD names", a, b);
+    }
+    // VFile: assign, and fileRead over FileSys_Read (the read stand-in)
+    redirect(a, b, 0x0061_aa90, read);
+    for k in 0..6u32 {
+        let state = random_block(a, b, rng, 0x18);
+        let vf = random_block(a, b, rng, 0x20);
+        put(a, b, vf + 0x18, state);
+        let h = rng.next();
+        assert_eq!(
+            call(a, 0x0061_aa10, Conv::Thiscall(vf), &[h]).eax,
+            f::vfile_assign(b, vf, h)
+        );
+        put(a, b, vf + 0x10, [u32::MAX - k, rng.next()]);
+        let (buf, n) = (
+            if k == 0 { vf } else { rng.next() },
+            [0, 1, 0x800, rng.next()][(k % 4) as usize],
+        );
+        let ra = call(a, 0x0061_aa60, Conv::Thiscall(vf), &[buf, n]).eax;
+        assert_eq!(
+            ra,
+            f::vfile_file_read(b, vf, buf, n, b_read),
+            "fileRead {k}"
+        );
+        same_memory("VFile", a, b);
+    }
+    // the read-name table: fill all 16 slots, then one more (the assertion)
+    let from = cd::bridge::CHGNAME_FROM.ptr(b).addr;
+    put(a, b, from, [0u32; 33]);
+    put(a, b, from + 8, 5u32);
+    for k in 0..17u32 {
+        let (x, y) = (rng.next() | 1, rng.next());
+        let ra = eax(a, 0x00a4_3220, &[x, y]);
+        let rb = cd::bridge::set_read_chgname(b, x, y, |m, e, fl, l| {
+            m.call(err, Conv::Cdecl, &[e, fl, l]).unwrap();
+        });
+        assert_eq!(ra, rb, "set_read_chgname {k}");
+        same_memory("set_read_chgname", a, b);
+    }
+}
+
+#[test]
+fn file_layer_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    file_layer(&mut a, &mut b, &mut Xorshift(0x4005_0101));
+}
+
+#[test]
+fn file_layer_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    file_layer(&mut a, &mut b, &mut Xorshift(0x4005_0102));
+}
+
+/// Round 5's window dispatchers (over recording stand-ins), quads, key
+/// state, lower-casing and the size-table flag.
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one pass; a, b: the oracles
+fn round5(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use window::bridge as w;
+    let cells = alloc(a, b, 0x10);
+    put(a, b, cells, [0u32; 4]);
+    let fns: Vec<u32> = (0..4u32)
+        .map(|k| stand_in(a, b, 0x100 + 0x10 * k, &recorder(cells + 4 * k, 0x5000 + k)))
+        .collect();
+    let b_call = |m: &mut Oracle, f: u32, args: &[u32]| m.call(f, Conv::Cdecl, args).unwrap().eax;
+    for i in 0..8u32 {
+        let win = random_block(a, b, rng, 0x80);
+        put(a, b, win, u16::try_from(rng.next() % 2).unwrap());
+        put(a, b, win + 0x74, fns[0]);
+        put(a, b, win + 0x78, fns[1]);
+        set_entry(a, b, w::WINDOWS, i, win);
+        let msg = random_block(a, b, rng, 0x120);
+        put(a, b, msg, u16::try_from(rng.next() % 3).unwrap());
+        put(a, b, msg + 0x1e, u16::try_from(rng.next() % 2).unwrap());
+        put(a, b, msg + 0x2c, u16::try_from(1 + rng.next() % 2).unwrap());
+        let flag = alloc(a, b, 4);
+        put(a, b, flag, u32::from(rng.next().is_multiple_of(2)));
+        put(a, b, msg + 0x98, flag);
+        put(a, b, msg + 0x114, if i == 3 { 0 } else { fns[2] });
+        put(a, b, msg + 0xf8, fns[3]);
+        put(a, b, msg + 0xfc, fns[2]);
+        set_entry(a, b, w::MSG_WINDOWS, i, msg);
+        let e = random_block(a, b, rng, 0x20);
+        put(
+            a,
+            b,
+            e + 1,
+            [
+                i8::try_from(rng.next() % 3).unwrap() - 1,
+                i8::try_from(rng.next() % 200).unwrap_or(-7),
+            ],
+        );
+        set_entry(a, b, w::TABLE_01868A90, i, e);
+    }
+    for n in 0..40u32 {
+        let i = n % 8;
+        let k = i.cast_signed();
+        assert_eq!(eax(a, 0x0090_6bd0, &[i]), w::control_window(b, k, b_call));
+        assert_eq!(eax(a, 0x0090_6bf0, &[i]), w::draw_window(b, k, b_call));
+        assert_eq!(eax(a, 0x008b_5850, &[i]), w::control_message(b, k, b_call));
+        assert_eq!(eax(a, 0x008b_8ca0, &[i]), w::message_call_f8(b, k, b_call));
+        assert_eq!(
+            eax(a, 0x008b_6b70, &[i]),
+            w::control_pad_status(b, k, b_call),
+            "pad status {n}"
+        );
+        assert_eq!(
+            eax(a, 0x008b_8010, &[i]),
+            w::message_table_byte2(b, k).cast_unsigned()
+        );
+        same_memory("window dispatchers", a, b);
+    }
+    let quad = alloc(a, b, 0x10);
+    for _ in 0..20 {
+        let v: [u32; 4] = std::array::from_fn(|_| rng.next());
+        eax(a, 0x0090_48a0, &[quad, v[0], v[1], v[2], v[3]]);
+        w::set_poly_g4a_xywh(b, quad, v[0], v[1], v[2], v[3]);
+    }
+    same_memory("quads", a, b);
+    // key state: devices with blocks for some of the 7
+    let devices = alloc(a, b, 0xa0);
+    put(a, b, devices, [0u8; 0xa0]);
+    for d in 0..7u32 {
+        if d != 2 {
+            let block = random_block(a, b, rng, 0x120);
+            put(a, b, devices + 0x80 + 4 * d, block);
+        }
+    }
+    let this = alloc(a, b, 0x2bc);
+    put(a, b, this + 0x2b8, devices);
+    for binding in (0..300u32).step_by(7).chain([27, 28, 283, 284, u32::MAX]) {
+        for d in [0, 2, 6, 7, 100] {
+            let ra = call(a, 0x0062_9d50, Conv::Thiscall(this), &[binding, d]).eax & 0xff;
+            assert_eq!(
+                ra,
+                u32::from(pad::bridge::key_held(b, this, binding, d)),
+                "{binding} {d}"
+            );
+        }
+    }
+    let text = alloc(a, b, 0x40);
+    for k in 0..30u32 {
+        let len = (k % 20) as usize;
+        let mut bytes: Vec<u8> = (0..len)
+            .map(|_| u8::try_from(1 + rng.next() % 255).unwrap())
+            .collect();
+        bytes.push(0);
+        a.write(text, &bytes).unwrap();
+        b.write(text, &bytes).unwrap();
+        let p = if k == 29 { 0 } else { text };
+        assert_eq!(eax(a, 0x0060_7d50, &[p]), stl::bridge::to_lower_ascii(b, p));
+        same_memory("lowercase", a, b);
+    }
+    if cd::bridge::SECTORS.get(a) == 0 {
+        let t = random_block(a, b, rng, 0x400);
+        set(a, b, cd::bridge::SECTORS, t);
+        set(a, b, cd::bridge::FILE_BASE, 0x10);
+    }
+    for n in 0..200 {
+        assert_eq!(
+            eax(a, 0x0076_dc20, &[n]),
+            cd::bridge::cd_size_from_table(b, n.cast_signed())
+        );
+    }
+    // the TOAdp register writers and packet words
+    let packet = alloc(a, b, 0x10);
+    for n in 0..200u32 {
+        for (f, shifts, _) in pkt::bridge::ADP_REGS {
+            let count = shifts.len() + 1;
+            let fields: Vec<u32> = (0..count)
+                .map(|_| {
+                    if n % 5 == 0 {
+                        rng.next()
+                    } else {
+                        rng.next() % 1024
+                    }
+                })
+                .collect();
+            let mut args = vec![packet];
+            args.extend(&fields);
+            let ra = eax(a, f, &args);
+            let signed: Vec<i32> = fields.iter().map(|&v| v.cast_signed()).collect();
+            assert_eq!(ra, pkt::bridge::adp_reg_at(b, f, packet, &signed), "{f:#x}");
+            same_memory("TOAdp registers", a, b);
+        }
+        let v: [u32; 4] = std::array::from_fn(|_| rng.next());
+        assert_eq!(
+            eax(a, 0x008e_f800, &[packet, v[0]]),
+            pkt::bridge::adp_fog(b, packet, v[0])
+        );
+        assert_eq!(
+            eax(a, 0x008e_fb60, &[packet]),
+            pkt::bridge::adp_texflush(b, packet)
+        );
+        assert_eq!(
+            eax(a, 0x008e_fbc0, &[packet, v[0], v[1], v[2], v[3]]),
+            pkt::bridge::adp_xy_frac(b, packet, v)
+        );
+        assert_eq!(
+            eax(a, 0x008e_fc30, &[packet, v[0], v[1]]),
+            pkt::bridge::adp_words2_reg10(b, packet, v[0], v[1])
+        );
+        assert_eq!(
+            eax(a, 0x008e_fcd0, &[packet, v[0], v[1], v[2]]),
+            pkt::bridge::adp_words3(b, packet, v[0], v[1], v[2])
+        );
+        assert_eq!(
+            eax(a, 0x008e_fc90, &[packet, v[0], v[1], v[2]]),
+            pkt::bridge::adp_xyz_offset(b, packet, v[0], v[1], v[2], None)
+        );
+        assert_eq!(
+            eax(a, 0x008e_fd00, &[packet, v[0], v[1], v[2], v[3]]),
+            pkt::bridge::adp_xyz_offset(b, packet, v[0], v[1], v[2], Some(v[3]))
+        );
+        same_memory("TOAdp words", a, b);
+    }
+    // input masks, the pair flag, entry clears, the screen size
+    let input = alloc(a, b, 8);
+    for _ in 0..100 {
+        put(a, b, input, [rng.next() & 0xff, rng.next() & 0xff]);
+        let mask = 1 << (rng.next() % 8)
+            | if rng.next().is_multiple_of(4) {
+                0x30
+            } else {
+                0
+            };
+        assert_eq!(
+            call(a, 0x0063_1340, Conv::Thiscall(input), &[mask]).eax,
+            pad::bridge::is_hold_button(b, input, mask)
+        );
+        let ra = call(a, 0x0063_1360, Conv::Thiscall(input), &[mask]).eax & 0xff;
+        assert_eq!(ra, u32::from(pad::bridge::is_press_button(b, input, mask)));
+        let ra = call(a, 0x0063_1380, Conv::Thiscall(input), &[mask]).eax & 0xff;
+        assert_eq!(
+            ra,
+            u32::from(pad::bridge::is_release_button(b, input, mask))
+        );
+    }
+    for _ in 0..30 {
+        let (p, c) = (
+            [0, 1, 2, rng.next()][(rng.next() % 4) as usize],
+            rng.next() % 3,
+        );
+        assert_eq!(eax(a, 0x008b_dfe0, &[p, c]), w::set_pair(b, p, c));
+        let i = [0, 5, 15, 16, u32::MAX, 0x8000_0000][(rng.next() % 6) as usize];
+        assert_eq!(
+            eax(a, 0x008f_f140, &[i]),
+            w::clear_entry_18762e0(b, i.cast_signed())
+        );
+        let (sw, sh) = (rng.next(), rng.next());
+        eax(a, 0x0090_48f0, &[sw, sh]);
+        w::set_screen_wh(b, sw, sh);
+        same_memory("pair, entries, screen", a, b);
+    }
+}
+
+#[test]
+fn round5_system_functions_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round5(&mut a, &mut b, &mut Xorshift(0x4005_0201));
+}
+
+#[test]
+fn round5_system_functions_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round5(&mut a, &mut b, &mut Xorshift(0x4005_0202));
 }

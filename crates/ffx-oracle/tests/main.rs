@@ -146,6 +146,13 @@ impl Res for i32 {
     }
 }
 
+impl Res for u16 {
+    fn check(self, r: &Ret, what: &str) {
+        let [lo, hi, _, _] = r.eax.to_le_bytes();
+        assert_eq!(u16::from_le_bytes([lo, hi]), self, "{what}: ax");
+    }
+}
+
 impl Res for u8 {
     fn check(self, r: &Ret, what: &str) {
         assert_eq!(r.eax.to_le_bytes()[0], self, "{what}: al");
@@ -1024,6 +1031,7 @@ fn all(a: &mut Oracle, b: &mut Oracle, seed: u32, from_game: bool) {
     vectors(a, b, &mut rng, 500);
     packet(a, b, &mut rng, 200);
     round2(a, b, &mut rng, 150);
+    round3(a, b, &mut rng, 150);
 }
 
 #[test]
@@ -1596,4 +1604,624 @@ fn round2(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
     state_cases(a, b, rng, rounds);
     line_cases(a, b, rng, rounds);
     sequence_cases(a, b, rng, rounds);
+}
+
+// Round 3: fades and focus, the frame rate, the mouse, map ids, the
+// memory manager's blocks, quaternions and directions (with the C
+// runtime's trigonometry replaced alike on both sides), sequences.
+
+/// `_CIcos`, `_CIsin` and `_CIacos` (imports the oracle lacks) replaced at
+/// their thunks by exact stand-ins: `x²` (`fmul st, st`), `2x` (`fadd st,
+/// st`) and `x + 1` (`fld1; faddp`); the bridges get the same through their
+/// callback.
+fn patch_trig(o: &mut Oracle) {
+    for (thunk, code) in [
+        (0x0094_98c2, &[0xd8, 0xc8, 0xc3][..]),
+        (0x0094_98c8, &[0xd8, 0xc0, 0xc3][..]),
+        (0x0094_98da, &[0xd9, 0xe8, 0xde, 0xc1, 0xc3][..]),
+    ] {
+        let at = o.rebase(thunk);
+        o.write(at, code).unwrap();
+    }
+}
+
+fn stand_in(c: ffx_sg::quat::Crt, x: f64) -> f32 {
+    use ffx_bridge::x87::Reg;
+    let x = Reg::constant(x);
+    match c {
+        ffx_sg::quat::Crt::Cos => (x * x).store(),
+        ffx_sg::quat::Crt::Sin => (x + x).store(),
+        ffx_sg::quat::Crt::Acos => (x + Reg::ONE).store(),
+    }
+}
+
+fn frame_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use state::bridge as s;
+    for _ in 0..rounds {
+        let v = arg(rng);
+        twin("Sg_MemSetAlign", a, b, 0x0083_c4a0, &[v], |m| {
+            s::mem_set_align(m, v)
+        });
+        twin("Sg_MemCache", a, b, 0x0083_b700, &[v], |_| s::mem_cache(v));
+        let fades: [Set<u32>; 4] = [
+            ("Sg_FadeIn", 0x0082_cb80, |m, t| s::fade_in(m, t)),
+            ("Sg_FadeInW", 0x0082_cba0, |m, t| s::fade_in_w(m, t)),
+            ("Sg_FadeOut", 0x0082_cbc0, |m, t| s::fade_out(m, t)),
+            ("Sg_FadeOutW", 0x0082_cbe0, |m, t| s::fade_out_w(m, t)),
+        ];
+        for (name, sym, f) in fades {
+            let t = arg(rng);
+            twin(name, a, b, sym, &[t], |m| f(m, t));
+        }
+        let c: [u32; 4] = std::array::from_fn(|_| arg(rng));
+        twin("Sg_FilterSub", a, b, 0x0082_cc80, &c, |m| {
+            s::filter_sub(m, c[0], c[1], c[2], c[3])
+        });
+        twin("Sg_FocusReset", a, b, 0x0082_ccf0, &[], |m| {
+            s::focus_reset(m)
+        });
+        put(a, b, a.rebase(s::FOCUS.sym), [arg(rng), arg(rng)]);
+        twin("Sg_ToggleFocus", a, b, 0x0082_cd80, &[], |m| {
+            s::toggle_focus(m);
+        });
+        // The frame rate.
+        set(a, b, s::VCOUNT, rng.next());
+        set(a, b, s::VCOUNT_LAST, rng.next());
+        set(a, b, s::RATE_MODE, rng.below(3));
+        let base = rng.below(8);
+        set(a, b, s::RATE_HIST_BASE, base);
+        set(a, b, s::RATE_HIST_HEAD, base + rng.below(8));
+        for k in 0..8 {
+            put(a, b, a.rebase(s::RATE_HIST.sym) + 4 * k, rng.next());
+        }
+        for g in [0x0130_07b1u32, 0x0130_07b2, 0x0130_07b3, 0x00c4_96d4] {
+            put(a, b, a.rebase(g), rng.below(3).to_le_bytes()[0]);
+        }
+        twin("Sg_MainCalcRate", a, b, 0x0082_06c0, &[], |m| {
+            s::main_calc_rate(m)
+        });
+        put(
+            a,
+            b,
+            a.rebase(s::VIEWER_MODE.sym),
+            rng.below(2).to_le_bytes()[0],
+        );
+        twin("Sg_GetUserName2", a, b, 0x0082_0620, &[], |m| {
+            s::get_user_name2(m)
+        });
+        put(
+            a,
+            b,
+            a.rebase(s::ID_EXIST_SHADE.sym),
+            rng.below(2).to_le_bytes()[0],
+        );
+        let c = rng.next();
+        twin("Sg_IdGetShade", a, b, 0x0083_e980, &[c], |m| {
+            s::id_get_shade(m, c)
+        });
+        let what = if rng.below(2) == 0 { 0x1113 } else { arg(rng) };
+        twin("Sg_Debug", a, b, 0x0083_e5c0, &[what, v], |m| {
+            s::debug(m, what, v);
+        });
+        twin("getUCStatus", a, b, 0x0082_2460, &[], |m| {
+            s::get_uc_status(m)
+        });
+        let id = if rng.below(3) == 0 { 0 } else { alloc(a, b, 4) };
+        if id != 0 {
+            put(
+                a,
+                b,
+                id,
+                if rng.below(2) == 0 {
+                    0x1154u16
+                } else {
+                    rng.next().to_le_bytes()[0].into()
+                },
+            );
+        }
+        twin("set0434isDarkYojimbo", a, b, 0x0082_9c60, &[id], |m| {
+            s::set_dark_yojimbo(m, id);
+        });
+        let deg = angle(rng);
+        twin("Sg_PlayerSetDirFix", a, b, 0x0082_d990, &[v, deg], |m| {
+            s::player_set_dir_fix(m, v, f32::from_bits(deg));
+        });
+        // The mouse buttons.
+        set(a, b, s::MOUSE_RAW, rng.below(8));
+        set(a, b, s::MOUSE_BUTTONS, rng.next() & 0x7_0707);
+        let pos = [rng.below(3), rng.below(3)];
+        put(a, b, a.rebase(s::MOUSE.sym), pos);
+        set(
+            a,
+            b,
+            s::MOUSE_CLICK_POS,
+            if rng.below(2) == 0 {
+                pos
+            } else {
+                [rng.below(3), 7]
+            },
+        );
+        set(a, b, s::MOUSE_CLICK_TIMER, rng.below(3));
+        twin("Sg_MouseButtonMain", a, b, 0x0085_17c0, &[], |m| {
+            s::mouse_button_main(m)
+        });
+        // Map ids: an id with its header, the map objects.
+        let id = if rng.below(4) == 0 {
+            0
+        } else {
+            let id = floats(a, b, rng, 8);
+            let hdr = block(a, b, rng, 16);
+            put(a, b, id + 0x1c, hdr);
+            put(a, b, id + 0x18, rng.next());
+            id
+        };
+        let n = rng.below(4);
+        let objs = block(a, b, rng, 0x880 * 4);
+        set(a, b, s::MAP_OBJECTS, objs);
+        set(a, b, s::MAP_OBJECT_COUNT, n);
+        twin("Sg_IdSetPtr", a, b, 0x0083_ea00, &[id], |m| {
+            s::id_set_ptr(m, id);
+        });
+        let req = [0x4010_0000, 0x4020_0000, 0x4200_0000, rng.next()][rng.below(4) as usize];
+        put(
+            a,
+            b,
+            a.rebase(ffx_system::save::bridge::SCREEN_STATE.sym),
+            rng.below(2),
+        );
+        set(a, b, s::MENU_ACTIVE, rng.below(2));
+        twin(
+            &format!("Sg_MenuSetReserve({req:#x})"),
+            a,
+            b,
+            0x0082_1750,
+            &[req],
+            |m| {
+                s::menu_set_reserve(m, req, |m| {
+                    ffx_menu::tk::bridge::tk_menu_save_load_active(m);
+                });
+            },
+        );
+        twin("Sg_ToggleEnableTkAnti", a, b, 0x0083_b100, &[], |m| {
+            s::toggle_enable_tk_anti(m);
+        });
+        let i = rng.below(16);
+        twin("Sg_IdSetMapTable", a, b, 0x0083_e9e0, &[i, v], |m| {
+            s::id_set_map_table(m, i, v)
+        });
+        twin("Sg_IdGetMapTable", a, b, 0x0083_e960, &[i], |m| {
+            s::id_get_map_table(m, i)
+        });
+        twin("Sg_IdEventInitAll", a, b, 0x0083_e8d0, &[], |m| {
+            s::id_event_init_all(m);
+        });
+        set(a, b, s::EID_PRINT_HEAD, rng.below(0x100));
+        set(a, b, s::EID_PRINT_TAIL, rng.below(0x100));
+        twin("eidprintfPrint", a, b, 0x0076_b8d0, &[], |m| {
+            s::eid_printf_print(m);
+        });
+        for sym in [0x0077_a480u32, 0x0077_a490, 0x0077_a4a0, 0x0084_e870] {
+            twin(&format!("stub {sym:#x}"), a, b, sym, &[], |_| ());
+        }
+        for sym in [0x00a4_3ca0u32, 0x00a4_3cb0] {
+            twin(&format!("stub {sym:#x}"), a, b, sym, &[], |_| {
+                s::not_implemented()
+            });
+        }
+    }
+}
+
+/// A chain of memory blocks (16-byte headers, `+0` next, `+4` previous,
+/// owner nibble at `+0xc`), the first in `MEM_FIRST`; their data
+/// addresses.
+fn blocks(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) -> Vec<u32> {
+    let n = 2 + rng.below(5);
+    let sizes: Vec<u32> = (0..n).map(|_| 16 * (1 + rng.below(6))).collect();
+    let total: u32 = sizes.iter().map(|s| s + 16).sum::<u32>() + 16;
+    let base = block(a, b, rng, total as usize);
+    let mut at = base;
+    let mut heads = Vec::new();
+    for s in &sizes {
+        heads.push(at);
+        at += 16 + s;
+    }
+    heads.push(at);
+    for (k, &h) in heads.iter().enumerate() {
+        let next = heads.get(k + 1).copied().unwrap_or(h + 16);
+        // The manager walks `+4` from the first block (`Sg_MemCache_SerchFree`).
+        let prev = next;
+        put(a, b, h, next);
+        put(a, b, h + 4, prev);
+        let owner = if rng.below(2) == 0 {
+            0u32
+        } else {
+            1 + rng.below(15)
+        };
+        let w: u32 = Mem::read(&*a, h + 0xc);
+        put(a, b, h + 0xc, w & !0xf | owner);
+        put(a, b, h + 10, u16::from(rng.below(4).to_le_bytes()[0]) * 3);
+    }
+    set(a, b, state::bridge::MEM_FIRST, heads[0]);
+    heads.iter().map(|h| h + 16).collect()
+}
+
+fn memory_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use state::bridge as s;
+    // The debug names live at 0x05fb0000; map that page in both.
+    set(a, b, s::IS_DEBUG, 0);
+    for _ in 0..rounds {
+        let data = blocks(a, b, rng);
+        let p = data[rng.below(u32::try_from(data.len()).unwrap()) as usize];
+        let maybe = if rng.below(6) == 0 { 0 } else { p };
+        twin("Sg_MemIsFree", a, b, 0x0083_c320, &[maybe], |m| {
+            s::mem_is_free(m, maybe)
+        });
+        twin("Sg_MemGetSum", a, b, 0x0083_c0b0, &[p - 16], |m| {
+            s::mem_get_sum(m, p - 16)
+        });
+        twin("Sg_MemGetStr", a, b, 0x0083_c070, &[maybe], |m| {
+            s::mem_get_str(m, maybe)
+        });
+        twin("Sg_MemClearStr", a, b, 0x0083_bab0, &[maybe], |m| {
+            s::mem_clear_str(m, maybe);
+        });
+        let r = rng.next();
+        twin("Sg_MemSetRtAddr", a, b, 0x0083_c560, &[r], |m| {
+            s::mem_set_rt_addr(m, r)
+        });
+        twin("Sg_MemCache_SerchFree", a, b, 0x0083_b770, &[p], |m| {
+            s::mem_cache_serch_free(m, p)
+        });
+    }
+}
+
+/// Free image bytes after `.text` for the classifier stand-ins.
+const CLASSIFY_CODE: u32 = 0x00b0_bb00;
+
+/// Real `_isnan` (of a double) and `_finite` at their import slots, for
+/// `cdc_Vector_SafeNormalize3` under `sg_normalize`.
+fn patch_classify(o: &mut Oracle) {
+    #[rustfmt::skip]
+    let isnan: [u8; 34] = [
+        0x8b, 0x44, 0x24, 0x08,             // mov eax, [esp+8]
+        0x25, 0xff, 0xff, 0xff, 0x7f,       // and eax, 0x7fffffff
+        0x3d, 0x00, 0x00, 0xf0, 0x7f,       // cmp eax, 0x7ff00000
+        0x77, 0x0c,                         // ja nan
+        0x72, 0x07,                         // jb num
+        0x83, 0x7c, 0x24, 0x04, 0x00,       // cmp dword [esp+4], 0
+        0x75, 0x03,                         // jne nan
+        0x31, 0xc0, 0xc3,                   // num: xor eax, eax; ret
+        0xb8, 0x01, 0x00, 0x00, 0x00, 0xc3, // nan: mov eax, 1; ret
+    ];
+    #[rustfmt::skip]
+    let finite: [u8; 21] = [
+        0x8b, 0x44, 0x24, 0x08,             // mov eax, [esp+8]
+        0x25, 0x00, 0x00, 0xf0, 0x7f,       // and eax, 0x7ff00000
+        0x3d, 0x00, 0x00, 0xf0, 0x7f,       // cmp eax, 0x7ff00000
+        0x0f, 0x95, 0xc0,                   // setne al
+        0x0f, 0xb6, 0xc0,                   // movzx eax, al
+        0xc3,                               // ret
+    ];
+    let code = o.rebase(CLASSIFY_CODE);
+    o.write(code, &isnan).unwrap();
+    o.write(code + 0x40, &finite).unwrap();
+    Mem::write(o, o.rebase(IAT_ISNAN), code);
+    Mem::write(o, o.rebase(IAT_FINITE), code + 0x40);
+}
+
+fn quaternion_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::quat::bridge as q;
+    patch_trig(a);
+    patch_trig(b);
+    patch_classify(a);
+    patch_classify(b);
+    for n in 0..rounds {
+        let qa = floats(a, b, rng, 4);
+        let m = if n % 5 == 0 {
+            qa
+        } else {
+            floats(a, b, rng, 16)
+        };
+        twin("Sg_QuaternionToMatrix", a, b, 0x0084_5450, &[qa, m], |o| {
+            q::quaternion_to_matrix(o, qa, m);
+        });
+        let mtx = floats(a, b, rng, 16);
+        if n % 2 == 0 {
+            // A positive trace now and then.
+            for k in [0u32, 5, 10] {
+                put(
+                    a,
+                    b,
+                    mtx + 4 * k,
+                    f32::from(u8::try_from(rng.below(8)).unwrap()) / 4.0,
+                );
+            }
+        }
+        let out = if n % 7 == 0 { mtx } else { alloc(a, b, 16) };
+        twin(
+            "Sg_MatrixToQuaternion",
+            a,
+            b,
+            0x0084_5170,
+            &[mtx, out],
+            |o| q::matrix_to_quaternion(o, mtx, out),
+        );
+        let qb = floats(a, b, rng, 4);
+        if n % 3 == 0 {
+            // Nearly the same quaternion: the linear branch.
+            let x: [u32; 4] = Mem::read(&*a, qa);
+            put(a, b, qb, x);
+        }
+        let t = rng.float();
+        let out = if n % 4 == 0 { qa } else { alloc(a, b, 16) };
+        twin(
+            "Sg_QuaternionSlerp",
+            a,
+            b,
+            0x0084_5310,
+            &[qa, qb, t, out],
+            |o| q::quaternion_slerp(o, qa, qb, f32::from_bits(t), out, &mut stand_in),
+        );
+        let (h, v) = (angle(rng), angle(rng));
+        let out = alloc(a, b, 16);
+        twin(
+            "Sg_CreateVectorFromHV",
+            a,
+            b,
+            0x0084_50d0,
+            &[out, h, v],
+            |o| {
+                q::create_vector_from_hv(
+                    o,
+                    out,
+                    f32::from_bits(h),
+                    f32::from_bits(v),
+                    &mut stand_in,
+                );
+            },
+        );
+        let v = floats(a, b, rng, 3);
+        let m = block(a, b, rng, 64);
+        twin("Sg_VectorToMatrix2", a, b, 0x0084_5560, &[m, v], |o| {
+            q::vector_to_matrix2(o, m, v)
+        });
+        let count = rng.below(5);
+        let vs = floats(a, b, rng, 16);
+        let c = count | rng.next() << 16;
+        twin("sg_normalize", a, b, 0x0084_6710, &[vs, c], |o| {
+            q::normalize(o, vs, c);
+        });
+    }
+}
+
+fn misc3_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::camera::bridge as c;
+    use ffx_sg::seq::bridge as q;
+    use gs::bridge as g;
+    for _ in 0..rounds {
+        // Cam_IsMoving over random camera bytes.
+        let cam = rng.below(3);
+        let base = a.rebase(ffx_battle::camera::bridge::CAMERAS.sym) + cam * 0xda0;
+        for _ in 0..24 {
+            let off = rng.below(0xda0 / 2) * 2;
+            let v = if rng.below(2) == 0 {
+                0u16
+            } else {
+                rng.below(16).to_le_bytes()[0].into()
+            };
+            put(a, b, base + off, v);
+        }
+        let side = rng.next();
+        twin(
+            "Cam_IsMoving",
+            a,
+            b,
+            0x007b_dd20,
+            &[cam | rng.next() << 8, side],
+            |m| c::cam_is_moving(m, cam, side),
+        );
+        // Debug colour and the draw frame.
+        let db = alloc(a, b, 0x40);
+        set(a, b, g::DB_PTR, db);
+        set(a, b, g::IS_DEBUG, rng.below(2).to_le_bytes()[0]);
+        let col = rng.next();
+        twin("Sg_DbColor8", a, b, 0x0084_1270, &[col], |m| {
+            g::db_color8(m, col);
+        });
+        let p = block(a, b, rng, 32 * 16);
+        set(a, b, g::PACKET, p);
+        set(a, b, g::COUNT, rng.below(8));
+        set(a, b, g::DRAW_MODE, rng.below(4).to_le_bytes()[0]);
+        set(a, b, g::DRAW_FBP16, rng.int());
+        set(a, b, g::DRAW_FBP, rng.next());
+        twin("Sg_DrawSetFrame", a, b, 0x0082_cf80, &[], |m| {
+            g::draw_set_frame(m);
+        });
+        // A motion group of sequences that moved.
+        let n = rng.below(4);
+        let group = alloc(a, b, 0x10);
+        let table = alloc(a, b, 20 * 4);
+        let delta = rng.below(0x100) * 4;
+        put(
+            a,
+            b,
+            group,
+            group.wrapping_sub(if rng.below(5) == 0 { 0 } else { delta }),
+        );
+        put(a, b, group + 4, n);
+        put(a, b, group + 0xc, table.wrapping_sub(delta));
+        for k in 0..n {
+            let e = table + 20 * k;
+            let cnt = rng.below(3);
+            put(a, b, e + 8, [i16::try_from(cnt).unwrap(), 0]);
+            let t = block(a, b, rng, 0x40);
+            put(a, b, e + 0xc, t.wrapping_sub(delta));
+            put(a, b, e + 0x10, 0u32);
+        }
+        let given = if rng.below(8) == 0 { 0 } else { group };
+        twin("SG_RelocateGroup", a, b, 0x0083_6f70, &[given], |m| {
+            q::relocate_group(m, given);
+        });
+        // Channels to rewind.
+        let obj = alloc(a, b, 0x7e0);
+        let mut next = 0u32;
+        for _ in 0..rng.below(4) {
+            let ch = block(a, b, rng, 0x20);
+            let bytes = stream(rng, 64);
+            let s = a.alloc_bytes(&bytes).unwrap();
+            assert_eq!(b.alloc_bytes(&bytes).unwrap(), s);
+            put(a, b, ch, next);
+            put(a, b, ch + 8, s);
+            next = ch;
+        }
+        put(a, b, obj + 0x74c, next);
+        twin("SG_RewindChannels", a, b, 0x0083_98f0, &[obj], |m| {
+            q::rewind_channels(m, obj);
+        });
+        // Motion groups and sequences tables.
+        let groups = a.rebase(q::MOTION_GROUPS.sym);
+        for k in 0..50u32 {
+            let g = if rng.below(3) == 0 {
+                0
+            } else {
+                rng.below(4) + 1
+            };
+            put(a, b, groups + 12 * k, g);
+            put(
+                a,
+                b,
+                groups + 12 * k + 4,
+                [i16::from(rng.below(2) == 1), i16::from(rng.below(2) == 1)],
+            );
+            put(a, b, groups + 12 * k + 8, rng.below(2));
+        }
+        let (x, y, key) = (rng.below(2), rng.below(2), rng.below(2));
+        twin("SG_FindMotionGroup", a, b, 0x0083_6f10, &[x, y, key], |m| {
+            q::find_motion_group(m, x.cast_signed(), y.cast_signed(), key)
+        });
+        let gid = rng.below(6);
+        twin("SG_RemoveMotionGroup", a, b, 0x0083_6da0, &[gid], |m| {
+            q::remove_motion_group(m, gid);
+        });
+        let seqs = a.rebase(q::SEQUENCES.sym);
+        for k in 0..100u32 {
+            let v = if rng.below(4) == 0 {
+                0
+            } else {
+                rng.below(8) + 1
+            };
+            put(a, b, seqs + 20 * k, v);
+        }
+        let sq = rng.below(10);
+        twin("SG_RemoveSequence", a, b, 0x0083_6de0, &[sq], |m| {
+            q::remove_sequence(m, sq);
+        });
+        // Angles and distances.
+        let (cur, target, step) = (angle(rng), angle(rng), angle(rng));
+        twin(
+            "Sg_AngleApproach",
+            a,
+            b,
+            0x0083_5f80,
+            &[cur, target, step],
+            |_| {
+                vec::bridge::angle_approach(
+                    f32::from_bits(cur),
+                    f32::from_bits(target),
+                    f32::from_bits(step),
+                )
+            },
+        );
+        let raw = angle(rng);
+        twin("SG_RawToRad", a, b, 0x0083_8c60, &[raw], |m| {
+            vec::bridge::raw_to_rad(m, f32::from_bits(raw))
+        });
+        let (va, vb) = (floats(a, b, rng, 3), floats(a, b, rng, 3));
+        twin("Sg_VectorGetLength2", a, b, 0x0083_66a0, &[va, vb], |m| {
+            vec::bridge::vector_get_length2(m, va, vb)
+        });
+        twin("Sg_VectorGetLengthXZ", a, b, 0x0083_e3e0, &[va, vb], |m| {
+            vec::bridge::vector_get_length_xz(m, va, vb)
+        });
+    }
+}
+
+fn round3(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    frame_cases(a, b, rng, rounds);
+    memory_cases(a, b, rng, rounds);
+    quaternion_cases(a, b, rng, rounds);
+    misc3_cases(a, b, rng, rounds);
+    packet_setter_cases(a, b, rng, rounds);
+}
+
+/// The `Ch_PacketSet*` setters over random arguments.
+fn packet_setter_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::chpacket::bridge as p;
+    let f = f32::from_bits;
+    for _ in 0..rounds {
+        let v = rng.next();
+        twin("Ch_PacketSetName", a, b, 0x0084_3000, &[v], |m| {
+            p::set_name(m, v)
+        });
+        let ones: [Set<()>; 7] = [
+            ("Ch_PacketSetCull", 0x0084_3010, |m, v| p::set_cull(m, v)),
+            ("Ch_PacketSetFSpecular", 0x0084_3020, |m, v| {
+                p::set_fspecular(m, v);
+            }),
+            ("Ch_PacketSetShadow", 0x0084_3040, |m, v| {
+                p::set_shadow(m, v);
+            }),
+            ("Ch_PacketSetShadowSemi", 0x0084_3070, |m, v| {
+                p::set_shadow_semi(m, v);
+            }),
+            ("Ch_PacketSetShadowTexture", 0x0084_3080, |m, v| {
+                p::set_shadow_texture(m, v);
+            }),
+            ("Ch_PacketSetSpecular", 0x0084_30e0, |m, v| {
+                p::set_specular(m, v);
+            }),
+            ("Ch_PacketSetTexture", 0x0084_30f0, |m, v| {
+                p::set_texture(m, v);
+            }),
+        ];
+        for (name, sym, set) in ones {
+            let v = rng.next();
+            twin(name, a, b, sym, &[v], |m| set(m, v));
+        }
+        let [r, g, bl, al] = [rng.next(), rng.next(), rng.next(), rng.next()];
+        twin(
+            "Ch_PacketSetShadowColor",
+            a,
+            b,
+            0x0084_3050,
+            &[r, g, bl],
+            |m| {
+                p::set_shadow_color(m, r, g, bl);
+            },
+        );
+        twin(
+            "Ch_PacketSetSpecColor",
+            a,
+            b,
+            0x0084_30a0,
+            &[r, g, bl, al],
+            |m| {
+                p::set_spec_color(m, r, g, bl, al);
+            },
+        );
+        let (x, y) = (rng.float(), rng.float());
+        twin(
+            "Ch_PacketSetSpecCoefficient",
+            a,
+            b,
+            0x0084_3090,
+            &[x],
+            |m| {
+                p::set_spec_coefficient(m, f(x));
+            },
+        );
+        twin("Ch_PacketSetSpecSize", a, b, 0x0084_30d0, &[y], |m| {
+            p::set_spec_size(m, f(y));
+        });
+    }
 }

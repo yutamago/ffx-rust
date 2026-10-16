@@ -132,8 +132,9 @@ pub mod worker {
     pub const FLAGS2: u32 = 0x36;
     /// Camera handle cache of the group 6 natives (`AtelGetCameraWorkAdrs`).
     pub const CAMERA: u32 = 0x3c;
-    /// `u32`: the bound program counter (`AtelGetBindPC`, `0x0086adf0`;
-    /// `AtelGetBindPCFromID`).
+    /// `u32`: the character the worker is bound to ("PC", player
+    /// character: `AtelGetBindPC`, `AtelGetBindPCFromID`; matched by
+    /// `AtelFindActorByChar`, `0x0086a470`, for the party slots).
     pub const BIND_PC: u32 = 0x40;
     /// Storage 5 variables: inside the worker itself.
     pub const STORAGE5: u32 = 0x48;

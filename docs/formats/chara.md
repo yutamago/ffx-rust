@@ -292,3 +292,52 @@ or `+0xd28` (new). `Ch_TextureSetTex0` (`0x008313f0`) writes each
 texture-list entry's base pointers: the image texture's (index `+2`) into
 bits 0..13 of `+0x14`, the clut texture's (index `+0`) into bits 7..20 of
 `+0x18`.
+
+## Motion sequences
+
+A sequence (`+0x714`) is a byte code `Ch_GetSeqFrame` (`0x00836af0`)
+walks to count its frames: 0 and 5 end it; 1 is a segment of 9 bytes
+(motion `+1` of the group at `+0x710`, repeat count `+3`, frames between
+the key indices `+5` and `+7`); 2 skips a byte; 3 adds the value at `+1`
+(3 bytes); 4 jumps through the list at `+0x70c`; 6 skips 3 bytes. Its
+16-bit operands are read by `ReadU16Unaligned` (`0x00838220`), which
+sign-extends both bytes before or-ing them: a low byte from `0x80` makes
+the high one `0xff`. `Ch_SetSequence` (`0x00837ac0`) starts motion
+`character << 16 | number` from the sequence table (`g_ChrSequences`,
+chains by character from `Ch_SeqLink`); another character's motion must
+be in the model block's lists and is kept at `+0x758`.
+
+## Texture layout
+
+`Ch_TextureReMapping` (`0x0083cdd0`) lays the texture data out in the
+buffer at `+0x6dc`: the texture list (32 bytes per entry, count at
+`+0x6f4`, GS registers from `Ch_TextureSetRegs`), then the clut textures
+(64 bytes, `+0x6e4`, `Ch_TextureSetClut`), then the image textures (64
+bytes, `+0x6ec`, `Ch_TextureSetImage`). A texture's base is `u16` `+0x38`
+and `+0x3a`, copied into bits 0..13 of `+0x24` (`Sg_GsloadSetBase`).
+List entries take the image base into bits 0..13 of `+0x14` and the clut
+base into bits 7..20 of `+0x18` (`Ch_TextureSetTex0`).
+
+## Effect packets
+
+`Ch_EffectPacketStorePoly` (`0x00845820`) writes 28 bytes per triangle
+after a 32-byte block tag (`0x1000`, the texture's registers or
+`0x8044`), opened again whenever the texture index, MAT, PRG or the
+fourth state word changes. Texture coordinates are `v × 4096 / (size ×
+16)`, truncated (`fistp` in chop mode). While the packet pointer is 0 it
+only measures: size, triangle count, largest x and y.
+
+## Debug text and generated names
+
+- `Ch_FunctionHistory` (`0x00833770`) and `Ch_CheckRadian` (`0x00836790`)
+  `sprintf` into the debug line at `0x023c4000`: `"%s:%s:%d\n"` (character
+  name at chr+4, source file, line) for each active character with no
+  models, and `"radian value error =%f"` for an angle outside
+  `[0x00b599e0, 0x00b599f0)` or NaN. `%f` follows MSVCR110: 17 significant
+  digits, then zeros (see `ffx_chara::msvc::fmt_f`).
+- `ch_create_name` (`0x00838100`) formats `"%c%03d"` into `0x01300a00`: the
+  letter is the database type (c, m, n, s, w, f, k; `-` otherwise) and the
+  number is the id within it. Id 0 returns the constant at `0x00b59a08`.
+- `Ch_AnalysisChrNum` (`0x00829e60`) turns `.../mdl/xxx.chr` into the
+  `.../xxx.ah` name: it copies up to the dot, appends `ah`, and drops the
+  first `mdl/`.

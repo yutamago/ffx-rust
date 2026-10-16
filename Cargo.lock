@@ -682,6 +682,8 @@ dependencies = [
  "ffx-chara",
  "ffx-field",
  "ffx-kernel",
+ "ffx-script",
+ "ffx-sg",
  "ffx-system",
 ]
 
@@ -804,6 +806,8 @@ dependencies = [
  "ffx-bridge",
  "ffx-chara",
  "ffx-ps2",
+ "ffx-script",
+ "ffx-system",
 ]
 
 [[package]]

@@ -307,6 +307,179 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   code; Fahrenheit's Switch BSim names for them (`yiGetRootMatrix`,
   `yiSetRootMatrix`, `SqsEeSoundCreateTime`) are wrong matches.
 
+## Sprite packets, sphere grid helpers, map file records (round 6)
+
+- `KeDttSpr_MkGifPk_Pre` (`0x00768d30`): the sprite pre-packet, a chain
+  of VU0 float products kept on the x87 stack (each step rounded to 53
+  bits, stored as `f32` only where the original stores), the constants
+  at `0x00b51b9c`, `0x00b921e0`, `0x00b50224`, `0x00b515c8`; its packet
+  space from `op_spr_alloc(0x90)`.
+- Sphere grid: node visitors `AbmapForEachNode` (`0x00a59710`, over the
+  `+2` node count, kind -1 skipped) and `AbmapForNodeAndLinked`
+  (`0x00a59760`: the node, then the other end of each link, two `u16`s at
+  the start of the `0x14`-byte links from `+0xa808`, link count `+4`),
+  both stopping at the first non-zero result; node and link matrices
+  (`0x00a5ad30`, `0x00a5a360`) built from the emulated zero register
+  (`g_Ee_Gpr`) with the scale on the diagonal and the `i16` position as
+  translation; character markers (`0x50` bytes from `+0x11088`, node
+  `+0x44`); the cursor pulse `+0x115c5` from the sine table
+  (`AbmapPulseCursor` `0x00a47440`, truncating `fistp`); the help state
+  (`AbmapResetHelp`); `AbmapVu0LoadMatrix1`/`2` load 64 bytes into the
+  emulated `vf01`..`vf04` / `vf05`..`vf08` (`0x00c8f7a0`, `0x00c8f7e0`).
+- Map file records (reader `0x0090f900`, magic `0x214365`, version
+  `0x110`): object records of `0x40` bytes (`yiObjSave`/`yiObjLoad`,
+  object `+0x80..+0x96` and the floats `+0x50..+0x6c`), camera records
+  (`yiCameraLoad`), the fog record (`yiFogLoad`: `+0x68340..+0x6834c`,
+  `+0xba400`, colour `+0x68378`, `+0x6822c`), the matrix chunk
+  (`yiLoadMatrixChunk`). The fog parameters for VU1
+  (`yiRender_setupFogParam` `0x0090d1b0`): `+0x68350 = -255 / (far -
+  near)` (0 when equal), `+0x68354 = 255 - +0x68344` (255 with
+  `+0x67f08` bit 3), `+0x68358 = -near`.
+- `rcfx` initialisers: kinds `0x30002` gravity, `0x30004` nail, `0x30006`
+  wind, each with its callbacks; `rcfxParticleInit` (0.03, 0.001, 0.1).
+- `rcefAnimeStep` (`0x0092f400`): time `+0x40` += speed `+0x44`; past
+  the key's length (`+0x12` of the 8-byte keys at `+4`) to the next key;
+  past the last (table `+6`) loops with key flag 0x80, else stops (bit 0
+  of `+0` cleared).
+- `rcuiClearSelect`/`rcuiSetSelect` (`0x00934af0`, `0x00934b50`): the
+  layer selection bits (`+0xb0` bit 0 of the selected layer in mode 1,
+  bit 1 of each layer's first word in mode 2).
+- Functions that do not return a value often leave something in `eax`
+  that a caller could read; the ports return the same (`check-clobber`
+  checks the callers). `yiRender_setupFogParam` and `KeAddScaledColor`
+  end with `fnstsw ax` over an untouched upper half (the caller's `eax`),
+  so they are `void`.
+- Skipped: `0x00915bb0` stores uninitialised stack words (`local_24`
+  etc.), so its output is not deterministic; `0x00919a60` is a guard
+  jumping into `rcbgFini`; `0x0083bdb0` (a free-block helper beside the
+  `Sg_`/`Ch_` code, writing `0x01301968`) is left to its module.
+
+## Free camera, map teardown, windows (round 7)
+
+- Free camera (`FreeCamera`, the PC build's fly camera, `0x344` bytes,
+  singleton `g_FreeCamera` `0x00ccc830`): two `Phyre::PCameraPerspective`
+  at `+0xc` and `+0x164` (their buffers at `+0xdc`, `+0x234`; bit 0 marks a
+  buffer not owned), a `PWorldMatrixFlyController` at `+0x2bc`, speed
+  `+8` (60.0), flags `+0x338`, `+0x339`, `+0x33a`, `+0x33c`. The
+  constructor (`0x0067fe70`) and destructor (`0x0067ff10`) link an
+  exception frame at `fs:[0]`; the ports run the Phyre constructors and
+  destructors (library code) through callbacks.
+  `FreeCamera_destroyInstance` (`0x00680000`) is called by
+  `graphicFinalize`.
+- Map teardown (`Yn_MapSystemFini` `0x00919a60` → `rcbgFini`
+  `0x00921aa0`): the guide's minimap VFX (`graphicVFXDestroy(0, model
+  +0x14)`), `rcbgPreFini` (each scene, `0x110` bytes, `rcbgSceneFini`;
+  the scene array, `+0xc` and the map freed; `MsSetCameraMatrix(0, 0, 0,
+  0, 0, 1024.0)`), `sceDevVif0Reset` in debug builds, the guide
+  (`rcbgGuideDelete`: its VFX instance, handle low word `0x0230fd20`,
+  high word the guide; the walk model), the chunks at `+0x10`, `+0x14`,
+  `+0x18`, then the system. Scenes (`rcbgSceneFini`): layers (`0xc0`
+  bytes: transfers `+0xa0`, `+0xbc`, animation block `+0x90`), objects
+  (destructor at `+4` of each), `+0x14`, models (`+0x1c`, `i16` count
+  `+0x18`). Everything is freed through `rcFree` (`0x009258e0`, a jump
+  to `user_free`).
+- Window handlers (`g_YiWindowHandlers` `0x00c5d788`, 6 slots a kind:
+  `+0x60` init, `+0x64` open, `+0x68` after opening, `+0x6c` close,
+  `+0x70` after closing, `+0x78` draw; the current one at `+0x74`, the
+  idle handler `0x00907e50`). Window fields: `+0` active, `+6` progress
+  (1/4096), `+8` state (2 open, 4 closed), `+0xc`/`+0xe` frames and
+  reload, `+0x10` height, `+0x18..+0x24` the rectangle animated from,
+  `+0x28..+0x34` the rectangle (x0, y0, x1, y1), `+0x38`/`+0x3c` steps,
+  `+0x48..+0x54` the rectangle drawn, `+0x58` colour. Kinds: 0 grows from
+  the left edge (`+0x2aa` progress a frame), 1 and 2 pop, 3 slides down,
+  4 and 5 up, 6 and 7 right, 8 and 9 left (6 frames over a 512x416 area;
+  the "Here" variants start from the window's own rectangle), 10 is a
+  bar `(0, 8, 512, 28)`. The draw handlers call the PS2 2D drawing and
+  stay original.
+- `rcCopyQword_*`: thirteen copies of `(dst, src)` moving a quadword
+  through the emulated `vf31` (`0x00c8f980`) with `VFX_Copy16From` and
+  `VFX_Copy16To`.
+- Testing: the Phyre perspective calls `_CItan` (patched to `fptan`);
+  `operator delete`, `rcFree`, the VFX calls, `MsSetCameraMatrix` and
+  `sceDevVif0Reset` are replaced by logging stubs in both oracles (the
+  CRT heap needs critical sections the oracle does not stub yet), so the
+  tests compare the calls and their order.
+- Not ported: the map file reader `0x0090f900` (it calls the
+  `sceGs*`/`FlushCache` stubs, `Sg_MFIFOSync` and graphics objects, and
+  `0x0090ff40`/`0x0090e5d0`, not ported yet); the window draw handlers;
+  `0x006e9250` (a UI movie loader registering `getLocByStr` etc.).
+
+## Map file reader, background loading, window drawing (round 8)
+
+- Map render file (`yiMapFileRead` `0x0090f900`, through `yiArc_readmem`
+  `0x0090f8e0`, which checks version `0x110`): magic `0x214365`, version
+  `0x110`, the record count at `+0xc` (decremented as records are read),
+  records from `+0x40`, each a `0x40`-byte header (`+0` kind, `+4` the
+  data length) and its data:
+  - 0 an object (`0xb4` bytes at `+0x6878c`, count `+0x68788`;
+    `yiObjInit`, `yiObjLoad`, `graphicObjectSetTranslation` and
+    `SetRotation`), the current object for the cameras that follow;
+  - 1 a camera key list (`0x5c` bytes at `+0x6e190`, count `+0x6e18c`),
+    linked to the previous camera (`+0x4c` next, `+0x50` previous; the
+    first goes to the object's `+0xa8`), its keys after a further `0x40`
+    bytes; a key count (`+0x48`) that disagrees with the length ends the
+    file;
+  - 2 a texture (`0x24`-byte entries from `+0x9c19c`, count `+0x9c198`):
+    uploaded with `sceGsSetDefLoadImage`/`sceGsExecLoadImage` (format
+    0x14: halved width and quartered height, PSM 0), or kept in the
+    scene's VRAM copy from `+0x276a4` when its GS address is `0x3c00` or
+    above (`yiLoadVramImage`; format 0x13 is swizzled by `0x0090e0b0`);
+  - 3 the CLUTs (kinds 2..=4 at `+0x24`; `yiClutAlloc_makepacket`);
+  - 4 the fog (`yiFogLoad`; the matrix `+0x68078` turned by the fog
+    angles `+0xba400`/`+0xba404`, degrees);
+  - 5 and 8 packet lists (`+0x9d4c4`, `+0x9d5c4`, sizes at `+0x9d6c4`,
+    count `+0x9d4c0`; by index `+0x24` when `+0x20` is set, else
+    appended with the length / 128 or / 32);
+  - 6 animation tracks (`0x720`-byte sets from `+0x9d9d0`);
+  - 7 the matrix chunk (`yiLoadMatrixChunk`).
+  The original leaves the current object and camera uninitialised, so
+  files start with an object. Its load-image packet is a 16-byte aligned
+  stack buffer; the port takes it as a parameter.
+- Background files (`rcbgLoadBin` `0x00921d60`, from `Yn_PreBgSetData`):
+  a `YNDT` chunk, then chunks with a 16-byte header (the tag from the
+  `rcbgChkId` table, `+4` the length in 16-byte units, `+0xa` a scene
+  index): `YNPR` the map (`rcbgPreInit`, `rcbgPreLoad`), `YNSC` the next
+  scene (`rcbgSceneLoad`: layers, colours, `rcbgSceneChkLayers` /
+  `rcbgSceneChkSortLayer`, `rcbgSceneSetMatrix`), `YNSM`/`YNST` a model or
+  transfer of that scene, `YNTT`/`YNFT` texture transfers of the current
+  scene, `YNGM` a model replacing the last one of scene `+0xa`, `YNED`
+  the end. Then `rcbgPreSetSceneNo(0)`.
+- GS memory for image layers (`rcbgSceneChkSortLayer`): each layer with
+  flag 0x10 gets its image page at `+0x34` (64-word units, the 128x64
+  rounded size; past `0x68000` words the images move to page `0x2f00`
+  and count a quarter), then its CLUT page at `+0x36` (`0x100` words each
+  from `0xbc000`); the transfers' `BITBLTBUF` words follow, and pending
+  transfers are drawn. Image layers always have their CLUT transfer at
+  `+0xa0`.
+- The `rc` allocator (`rcAlloc`/`rcCalloc`/`rcRealloc`, `yiMalloc`,
+  `yiMalloc64`) sits on `user_malloc`; `rcRealloc` keeps a block of the
+  same size (`Sg_MemGetSize`) and copies the smaller size otherwise. The
+  `*New` constructors allocate and run the matching `*Init`.
+- Map (re)set-up: `yiResetObj` (teardown, a new `rcbgInit`,
+  `yiRender_resetobj`, graphics unloads), `yiObjReadCallback` (a `MAP1`
+  file's background `+0x10`, render data `+0x14`, alarm, `ppp` data
+  `+0x38`, two more backgrounds `+0x40`/`+0x3c`; then the draw mask and
+  the default animations), `yiObjReadFinish`. Animation slots:
+  `yiAnimInfo_init`, `yiAnimDetach`, `yiKeyFrame_attachDObj` (keyframe
+  records from `+0x9d4c4`, kind 5 for packet lists), `yiAnimAttachDefault`.
+- Window draw handlers (slot `+0x78`): plates (`0x008f9a40`) and menu
+  plates (`TODrawMenuPlateXYWHType`) with their scissors; the pop window
+  of map 0x15b clips to the `TO` window at (38, 115); the help bar draws
+  two sprites and a text shape from the layout at `0x025d1618`
+  (`0x00907c10` is not a function start in the dump, so its port has no
+  hook).
+- Testing: the allocator is a bump allocator in both oracles (its size
+  below each block for `Sg_MemGetSize`); frees and the engine calls are
+  logging stand-ins in a code cave (the body of `0x00764de0`). The CRT
+  stubs (critical sections) are not on main yet, so the round 7 teardown
+  tests still log `rcFree` instead of using the real allocator.
+- Not ported: `rcbgSceneSetMatrix` (projection, `_CIatan`, camera calls on
+  stack matrices), `rcbgGuideSetModelFromIdMap`, `yiMapReadMaster` (CD
+  function table, `fprintf`), `0x00909680` (host file loading), the jump
+  thunks `yiFree` (`0x0090bbc0`), `Yn_RcbgInit` (`0x00919a70`) and the two
+  `Yn_PreBgSetData` jumps (`0x00919b90`, `0x00919d30`), which are not
+  functions of their own in the dump.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

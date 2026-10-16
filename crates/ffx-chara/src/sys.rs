@@ -255,6 +255,133 @@ pub mod bridge {
         SWITCH_7D8.set(mem, (on & 1) as i8);
         old
     }
+
+    /// The tag of the current effect packet block (`Ch_EffectPacketStorePoly`).
+    pub const PACKET_HEAD: Global<u32> = Global::new(0x0130_3654);
+    /// Polygons measured while only measuring.
+    pub const PACKET_POLYS: Global<u32> = Global::new(0x0130_3660);
+    /// The largest x and y measured (`i32`).
+    pub const PACKET_MAX: Global<[i32; 2]> = Global::new(0x0130_3664);
+    /// `u16` texture index, MAT, PRG and one more state, each followed by
+    /// the value the current block was opened with (`0x0130366c`..`8a`,
+    /// 4 bytes apart).
+    pub const PACKET_STATE: Global<u16> = Global::new(0x0130_366c);
+    /// The texture of the current block (a texture list entry, or 0).
+    pub const PACKET_TEX: Global<u32> = Global::new(0x0130_368c);
+
+    /// `u16 * 4096 / (size * 16)` truncated, as `fistp` in chop mode; the
+    /// low half stored.
+    fn uv(v: u16, size: u16) -> u16 {
+        let q = f64::from(v) * 4096.0 / (f64::from(size) * 16.0);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // in range
+        let r = if q.is_finite() {
+            q.trunc() as i64 as u32
+        } else {
+            0x8000_0000
+        };
+        #[allow(clippy::cast_possible_truncation)] // the low half
+        let r = r as u16;
+        r
+    }
+
+    /// `Ch_EffectPacketStorePoly(a, b, c)` (`0x00845820`): one triangle
+    /// (vertices of `u16` x, y, u, v). A changed texture/MAT/PRG state
+    /// opens a new 32-byte block (tag `0x1000`, the texture's registers,
+    /// or `0x8044` without one). A triangle takes 28 bytes: x's at `+0`,
+    /// y's at `+0x14`, with a texture u, v in 4.12 of its size at `+8`.
+    /// While only measuring, the sizes, a polygon count and the largest x
+    /// and y are kept instead.
+    pub fn ch_effect_packet_store_poly(mem: &mut impl Mem, a: u32, b: u32, c: u32) {
+        let st = PACKET_STATE.ptr(mem).addr;
+        let changed =
+            (0..4).any(|k| mem.read::<u16>(st + 8 * k) != mem.read::<u16>(st + 8 * k + 4));
+        let mut size_add = 0u32;
+        let mut p = PACKET_PTR.get(mem);
+        if changed {
+            for k in 0..4 {
+                let v: u16 = mem.read(st + 8 * k);
+                mem.write(st + 8 * k + 4, v);
+            }
+            if p == 0 {
+                size_add = 0x20;
+            } else {
+                let list = crate::texanim::bridge::TEX0_LIST.get(mem);
+                let tex = if list == 0 {
+                    0
+                } else {
+                    let i = i32::from(mem.read::<i16>(st));
+                    list.wrapping_add(i.cast_unsigned() << 5)
+                };
+                PACKET_TEX.set(mem, tex);
+                PACKET_HEAD.set(mem, p);
+                mem.write(p, [0x1000u32, 0x7fc0_c0c0]);
+                if tex == 0 {
+                    mem.write(p + 0xc, 0u32);
+                    mem.write(p + 8, 0u32);
+                    mem.write(p + 0x10, 0x8044u16);
+                } else {
+                    let r: [u32; 2] = mem.read(tex + 0x14);
+                    mem.write(p + 8, r);
+                    let v: [u8; 2] = mem.read(tex + 0x11);
+                    mem.write(p + 0x10, v);
+                }
+                p += 0x20;
+                PACKET_PTR.set(mem, p);
+            }
+        }
+        if p == 0 {
+            let s = PACKET_SIZE.get(mem);
+            PACKET_SIZE.set(mem, s.wrapping_add(size_add).wrapping_add(0x1c));
+            let mut max = PACKET_MAX.get(mem);
+            for (k, m) in (0u32..).zip(max.iter_mut()) {
+                let v = [a, b, c].map(|q| i32::from(mem.read::<u16>(q + 2 * k)));
+                let top = v[0].max(v[1]).max(v[2]);
+                if top > *m {
+                    *m = top;
+                }
+            }
+            PACKET_MAX.set(mem, max);
+            let n = PACKET_POLYS.get(mem);
+            PACKET_POLYS.set(mem, n.wrapping_add(1));
+            return;
+        }
+        let tex = PACKET_TEX.get(mem);
+        mem.write(p + 6, 0u16);
+        let v = [a, b, c].map(|q| mem.read::<[u16; 4]>(q));
+        mem.write(p, [v[0][0], v[1][0], v[2][0]]);
+        mem.write(p + 0x14, [v[0][1], v[1][1], v[2][1]]);
+        if tex != 0 {
+            let (w, h): (u16, u16) = (mem.read(tex + 8), mem.read(tex + 0xa));
+            for (k, q) in (0u32..).zip(v) {
+                mem.write(p + 8 + 4 * k, [uv(q[2], w), uv(q[3], h)]);
+            }
+        }
+        let head = PACKET_HEAD.get(mem);
+        let n: u16 = mem.read(head + 2);
+        mem.write(head + 2, n.wrapping_add(1));
+        PACKET_PTR.set(mem, p + 0x1c);
+    }
+
+    /// The effect packets' colour scale (`f32` × 3, `Ch_EffectSetColor`).
+    pub const EFFECT_COLOR: Global<[f32; 3]> = Global::new(0x0130_33ac);
+    /// The effect packets' alpha (`i32`, `Ch_EffectSetAlpha`).
+    pub const EFFECT_ALPHA: Global<u32> = Global::new(0x0130_33b8);
+    /// `128.0` (`double`).
+    pub const K_128: Global<f64> = Global::new(0x00b4_c170);
+
+    /// `Ch_EffectSetColor(r, g, b)` (`0x00842c40`): through the x87.
+    pub fn ch_effect_set_color(mem: &mut impl Mem, rgb: [f32; 3]) {
+        EFFECT_COLOR.set(mem, rgb.map(crate::x87::load));
+    }
+
+    /// `Ch_EffectSetAlpha(a)` (`0x00842c60`): `_ftol2_sse(a × 128)`.
+    pub fn ch_effect_set_alpha(mem: &mut impl Mem, a: f32) {
+        let x = crate::x87::Reg::load(a)
+            .mul_st(crate::x87::Reg::constant(K_128.get(mem)))
+            .get();
+        let v = ffx_bridge::x87::ftol(mem, x);
+        EFFECT_ALPHA.set(mem, v);
+    }
 }
 
 #[cfg(test)]
