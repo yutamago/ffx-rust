@@ -1641,10 +1641,9 @@ fn script_programs_match_the_original() {
         if let Some(only) = std::env::var("ATEL_ONLY")
             .ok()
             .and_then(|s| s.parse::<u32>().ok())
+            && only != k
         {
-            if only != k {
-                continue;
-            }
+            continue;
         }
         let what = format!("program {k} on {w:#x}, mode {mode}: {code:02x?}");
         if std::env::var_os("ATEL_TRACE").is_some() {
