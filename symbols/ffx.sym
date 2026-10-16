@@ -4856,6 +4856,7 @@
 0x007ecf30 function op_anm_tex0_reset         # fh v3:bsim1.00 0x007ece50
 0x007ed0c0 function op_shape_draw             # fh v3:cg2 0x7ecfe0
 0x007f5ed0 function op_spr_cmd_size           # (cmd) -> ((i16) cmd[+2] * (14 if cmd[0] bit 3 else 7) + 7) * 16
+0x007f5f70 function opus_wave_cmd_7f5f70        # ours (g_MagicImports slot used by every overlay): (obj, cmd) opp command; kind 0x1000 opus_no_get, 0x007e5260 into a local, op_unit_m_scale(obj, 0.0625), then opus_0154_wave_draw unless 0x012fb7d0; kind 0x2000 branches on MsGetAnimaChainOff; ported in crates/ffx-vfx slots
 0x007f65d0 function opus_0154_wave_draw          # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003e1f80 opus_0154_wave_draw, 3 votes, round 1
 0x007f67c0 function opus_0154_wave_omd_make   # fh switch:cg2 0x71003e2830
 0x007f7360 function opus_0706_acc_draw           # layout: alphabetical run between opus_0154_wave_omd_make and opus_0706_noise_draw (1 unnamed in the gap); Switch 0x71003e3920 opus_0706_acc_draw is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -9469,8 +9470,11 @@
 0x00a6cf10 function op_normal_light44_ffx     # fh v3:exact 0x00a6cf10
 0x00a6cfb0 function op_refrection_st_float    # fh v3:cg7 0xa6cfb0
 0x00a6d380 function op_vertex_normal_point44_ffx # fh v3:exact 0x00a6d380
+0x00a6dbe0 function opp_0437_cmd_a6dbe0         # ours (g_MagicImports slot used by every overlay): (obj, cmd) by kind 0..0x6000 sets up the part's buffers and calls opus_0437_dot_draw, opus_0437_draw (per bone, bone set 0x0080e160/0x0080e900), 0x00a6ed40 and op_m_copy; ported in crates/ffx-vfx slots
 0x00a6e2e0 function opus_0437_dot_draw        # fh switch:cg2 0x7100870250
 0x00a6e650 function opus_0437_draw            # fh switch:cg2 0x7100870ea0
+0x00a6f4d0 function opp_mdc_draw_a6f4d0         # ours (g_MagicImports slot used by every overlay): (obj, cmd) kinds 0x2000/0x1000 draw a character model with a texture (0x00808a90 record, graphicVFXIsTextureWithBpLoaded) through graphicSetNoLightSpecularPassParam / 0x006439b0 or op1_mdc_ref_nolight, with per-magic alpha and gain cases; ported in crates/ffx-vfx slots
+0x00a70910 function opp_0582_cmd_a70910         # ours (g_MagicImports slot used by every overlay): (obj, cmd) by kind 0..0x8000 allocates the part's tables, calls opus_0582_dot_draw / _break_make / _draw / _break_draw, the character texture bases (Ch_TextureSetClutBase 0x3c00, Ch_TextureSetImageBase 0x2ee0) and Sg_FadeOutW(1); ported in crates/ffx-vfx slots
 0x00a70d70 function opus_0582_draw            # fh switch:cg4 0x7100871b30
 0x00a71780 function opus_0582_break_make      # fh switch:cg4 0x71008725b0
 0x00a72380 function opus_0582_break_draw      # fh switch:cg4 0x7100872d90
@@ -9478,9 +9482,14 @@
 0x00a73810 function opp2_optic_laser             # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x710086ca60 opp2_optic_laser, 3 votes, round 1
 0x00a73c20 function createGT3MeshBreakRenderDataBuffer # fh switch:cg3 0x71008741f0
 0x00a73d90 function opp2_md_break             # fh switch:cg3 0x7100874300
+0x00a74410 function opp_md_break_init_a74410    # ours (g_MagicImports slot used by every overlay): (obj, cmd) kind 0: op_oef2_a_get, op heap buffer at rec+0xbc, 0x00a744e0, rec+0xbb = 0x82, opu_id_list_add, createGT3MeshBreakRenderDataBuffer then graphicVFXSetup; returns cmd+6
 0x00a74a00 function opu2_part                    # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'WARNING: parScl[0] was 0.0 in uv_15 (u2_part_work_scale) -- '; Switch 0x71008748f0 opu2_part (symbols from Fahrenheit's server export)
+0x00a74c60 function opp_map_draw_a74c60         # ours (g_MagicImports slot used by every overlay): (obj, cmd) kind 0 0x27e20-byte buffer + 0x00a753f0, kind 0x1000 opus_map_del_draw; obj xy = 0.0 / 2048.0 over the emulated r0
 0x00a74d30 function opp_draw_part_a74d30      # g_MagicImports slot 733 (581 overlays): aligned-stack prologue (like pppKeMatSN), draws a part by its +0x21a kind (0x1000/0x2000/...) with op_unit_m_scale, op_mul_m and FUN_00801f00; hidden from the dump
 0x00a75170 function opus_map_del_draw         # fh switch:cg2 0x7100874df0
+0x00a756e0 function opp_chr_center_a756e0       # ours (g_MagicImports slot used by every overlay): (obj, cmd) on g_EtChrHandles[rec+0x18]: kind 0 MsSetChrVisibleAppear; kind 0x1000 sets shader parameter "center" (0x00b7c568) through 0x0063d880 from the part's two points times Ch_GetRootScaledMatrix
+0x00a76720 function opp_part_a76720             # ours (g_MagicImports slot used by every overlay): (obj, cmd) kind 0 clears u16 rec+0xc0, kind 0x1000 calls 0x00a76770(obj, rec); returns cmd+2
+0x00a76b60 function opp_chr_fade_center_a76b60  # ours (g_MagicImports slot used by every overlay): (obj, cmd) on g_EtChrHandles[rec+0x18]: kind 0x1000 bone set 0x0080e160/0x0080e900, part matrices 0x008062c0, per bone the unit's +0x90 point through the inverse into graphicCharacterInstanceSetBTUFadeCenter (0x0063b5d0) / 1000; kind 0x2000 moves a unit by bone record 0x00803200; ported in crates/ffx-vfx slots
 0x00a77b30 function Native_FootSetMaterial       # 0x403b (index, material) -> 0; footstep material table 0x01301af8[set 0x01301b00 * 4 + index] = material (read by 0x0083d7e0)
 0x00a77c30 function Native_SetControlAngle       # 0x4040 float (degrees) -> 0; stick-direction offset 0x01300780 = wrap(deg) + current input angle 0x013007a0 (0x0082d950), used by the player movement code 0x0082d5xx; scripts push 19, -160
 0x00a77d30 function Atel_Sg_Flash             # fh v3:bsim1.00 0x00a77d30 +Atel_Sg_Flash
