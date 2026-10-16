@@ -8,6 +8,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+ffx-auto.workspace = true
 ffx-battle.workspace = true
 ffx-bridge.workspace = true
 ffx-chara.workspace = true
