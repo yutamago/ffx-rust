@@ -1339,9 +1339,15 @@
 0x007122f0 function pppRunPartFp              # fh v3:exact+call.cs 0x007123d0 cdecl _pppRunPartFp
 0x007123c0 function pppStartPart              # fh v3:exact 0x007124a0 _pppStartPart
 0x00712560 function pppStartPartFromYonish    # fh v3:exact 0x00712640 _pppStartPartFromYonish
+0x00712b80 function pppBornPObjects           # (part): each birth record (+0x3c, +0x18 of them, 16 bytes) whose frame (+8) is at or before the part's (+8) is set to 0x7fffffff and gets pppCreatePObject; stops at a failure (called by pppRunPart)
 0x00712bd0 function caculateVFXRenderDataShapeFieldBufferSize # fh v3:exact 0x00712cb0
 0x00712c30 function calculateVFXSP_AlphaFunction # fh v3:exact 0x00712d10
 0x00712d00 function calculateVFXSP_ZMat       # fh v3:exact 0x00712de0
+0x00712d20 function pppPObjectCon2            # (obj): as pppPObjectCon with the program table records' +0x20 (Con2)
+0x00712d90 function pppPObjectCon             # (obj): each program of the object's definition: work area offset into obj + [prog+0x20], then the record's +0x1c (Con) called as f(obj, entry); from pppCreatePObject
+0x00712e00 function pppPartCall18             # (part): f(part) for each of the part's programs (+0x34, +0x14 of them) whose record has a function at +0x18 (pppRunPart)
+0x00712e40 function pppPartCall10             # (part): as pppPartCall18 with the records' +0x10
+0x00712e80 function pppPartCall14             # (part): as pppPartCall18 with the records' +0x14
 0x00713290 function clearVFXRenderDataShp     # fh v3:exact 0x00713370
 0x007133e0 function createGuildMapRenderDataBuffer # fh v3:exact 0x007134c0
 0x00713790 function createVFXRenderDataBuffer # fh v3:bsim0.97 0x00713870

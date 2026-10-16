@@ -4,7 +4,7 @@
 use super::{mem, ported};
 use ffx_vfx::mat::{self, order};
 use ffx_vfx::rand::bridge::{Kind, Spread};
-use ffx_vfx::{et, fp, heap, op, opd, opus, ppp, prog, rand};
+use ffx_vfx::{et, fp, heap, op, opd, opus, part, ppp, prog, rand};
 
 /// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`), so the
 /// CRT's state moves as it does with the originals.
@@ -24,6 +24,26 @@ fn crt_rand() -> u32 {
         let slot = crate::rebase(0x00b0_c420) as *const usize;
         let f: unsafe extern "C" fn() -> u32 = std::mem::transmute(slot.read());
         f()
+    }
+}
+
+/// A program function the originals call through the program table
+/// (`+0x10`..`+0x20` of a record): cdecl, one or two arguments.
+fn call_ptr(f: u32, args: &[u32]) {
+    // SAFETY: `f` is a function the game stored in its particle program
+    // table; the originals call it as cdecl with these arguments.
+    unsafe {
+        match *args {
+            [a] => {
+                let f: unsafe extern "C" fn(u32) = std::mem::transmute(f as usize);
+                f(a);
+            }
+            [a, b] => {
+                let f: unsafe extern "C" fn(u32, u32) = std::mem::transmute(f as usize);
+                f(a, b);
+            }
+            _ => unreachable!("program functions take one or two arguments"),
+        }
     }
 }
 
@@ -1570,5 +1590,48 @@ ported! {
     /// `pppVertexAttend(obj, key, ctrl)`.
     pppVertexAttend @ 0x0075_d340 => extern "C" fn ppp_vertex_attend(obj: u32, key: u32, ctrl: u32) {
         mat::bridge::ppp_vertex_attend(&mut mem(), obj, key, ctrl);
+    }
+
+    // ---- parts and objects ----
+    /// `pppInitPdt(pdt, programs)`.
+    pppInitPdt @ 0x0071_20f0 => extern "C" fn ppp_init_pdt(pdt: u32, programs: u32) {
+        part::bridge::ppp_init_pdt(&mut mem(), pdt, programs);
+    }
+    /// `pppInitData(data, programs, _)`.
+    pppInitData @ 0x0071_1fa0 => extern "C" fn ppp_init_data(data: u32, programs: u32, x: u32) {
+        let _ = x;
+        part::bridge::ppp_init_data(&mut mem(), data, programs);
+    }
+    /// `pppOtFunc_Reg(list, node, a, b)`.
+    pppOtFunc_Reg @ 0x0071_6be0 => extern "C" fn ppp_ot_func_reg(list: u32, node: u32, a: u32, b: u32) {
+        part::bridge::ppp_ot_func_reg(&mut mem(), list, node, a, b);
+    }
+    /// `pppPObjectCon(obj)`.
+    pppPObjectCon @ 0x0071_2d90 => extern "C" fn ppp_pobject_con(obj: u32) {
+        part::bridge::ppp_pobject_con(&mut mem(), obj, 0x1c, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppPObjectCon2(obj)`.
+    pppPObjectCon2 @ 0x0071_2d20 => extern "C" fn ppp_pobject_con2(obj: u32) {
+        part::bridge::ppp_pobject_con(&mut mem(), obj, 0x20, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppPartCall10(part)`.
+    pppPartCall10 @ 0x0071_2e40 => extern "C" fn ppp_part_call10(p: u32) {
+        part::bridge::ppp_part_call(&mut mem(), p, 0x10, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppPartCall14(part)`.
+    pppPartCall14 @ 0x0071_2e80 => extern "C" fn ppp_part_call14(p: u32) {
+        part::bridge::ppp_part_call(&mut mem(), p, 0x14, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppPartCall18(part)`.
+    pppPartCall18 @ 0x0071_2e00 => extern "C" fn ppp_part_call18(p: u32) {
+        part::bridge::ppp_part_call(&mut mem(), p, 0x18, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppCreatePObject(part, def)`: the object, or 0.
+    pppCreatePObject @ 0x0071_6770 => extern "C" fn ppp_create_pobject(p: u32, def: u32) -> u32 {
+        part::bridge::ppp_create_pobject(&mut mem(), p, def, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppBornPObjects(part)`.
+    pppBornPObjects @ 0x0071_2b80 => extern "C" fn ppp_born_pobjects(p: u32) {
+        part::bridge::ppp_born_pobjects(&mut mem(), p, &mut |_, f, a| call_ptr(f, a));
     }
 }

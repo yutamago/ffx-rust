@@ -9,7 +9,7 @@ use std::sync::{Arc, OnceLock};
 
 use ffx_bridge::{Global, Mem, Value};
 use ffx_oracle::{Conv, Oracle, Pages};
-use ffx_vfx::{et, fp, heap, mat, op, opd, opus, ppp, prog, rand, x87};
+use ffx_vfx::{et, fp, heap, mat, op, opd, opus, part, ppp, prog, rand, x87};
 
 fn exe() -> Option<PathBuf> {
     let dir = std::env::var_os("FFX_GAME_DIR").map(PathBuf::from);
@@ -3513,6 +3513,224 @@ fn round5_helpers_match_the_original() {
             } else {
                 p.check("pppMemFree", 0x0071_6a90, &[env, env + 0x10, block], |m| {
                     h::ppp_mem_free(m, env, env + 0x10, block);
+                    None
+                });
+            }
+        }
+    }
+}
+
+// ---- parts and objects ------------------------------------------------
+
+/// The program table (`g_pppProgramTable`).
+const PROGRAM_TABLE: u32 = 0x00c3_a508;
+
+fn call_original(m: &mut Oracle, f: u32, args: &[u32]) {
+    m.call(f, Conv::Cdecl, args).unwrap();
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn parts_and_objects_match_the_original() {
+    use part::bridge as pt;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x9a27_0b1e);
+        let programs = p.sym(PROGRAM_TABLE);
+        let block = p.alloc(0x1000);
+        let env_slot = p.alloc(4);
+        let env = p.alloc(0x40);
+        let arena = p.alloc(0x8000);
+        let part = p.alloc(0x80);
+        let defs = p.alloc(0x400);
+        let list = p.alloc(0x20);
+        // (defs: four 16-byte definitions, their program lists from +0x100)
+        let offs = p.alloc(0x10);
+        for i in 0..4 {
+            p.set(offs + 4 * i, 0x40 * i);
+        }
+        let nodes = p.alloc(0x40);
+        let recs = p.alloc(0x80);
+        let set = p.sym(0x0071_7610); // setVfxShapeEnlargeBufferFactor
+        p.put(heap::bridge::ENV_SLOT, env_slot);
+        p.set(env_slot, env);
+        for round in 0..1500u32 {
+            // a part data block: three definitions and a terminator
+            p.fill(block, 0x1000, &mut rng);
+            p.set(block + 8, 0x800u32);
+            p.set(block + 0xc, 0x900u32);
+            let n8 = rng.below(5);
+            let n9 = rng.below(5);
+            p.set(block + 0x800, n8);
+            p.set(block + 0x900, n9);
+            for i in 0..n8 {
+                p.set(block + 0x804 + 4 * i, rng.below(12));
+            }
+            for i in 0..n9 {
+                p.set(block + 0x904 + 4 * i, rng.below(0x100) * 4);
+            }
+            // the definitions: the first at +0x10, the others 0x100 apart,
+            // each linked by its first word (relative to the block)
+            let chain = 1 + rng.below(4);
+            for k in 0..=chain {
+                let def = if k == 0 {
+                    block + 0x10
+                } else {
+                    block + 0x100 * k
+                };
+                let next = if k == chain { 0 } else { 0x100 * (k + 1) };
+                p.set(def, next);
+                let n = rng.below(4) as u16;
+                p.set(def + 0x26, n);
+                for e in 0..u32::from(n) {
+                    p.set(def + 0x28 + 0x10 * e, rng.below(12));
+                    p.set(def + 0x30 + 0x10 * e, rng.below(0x80) * 4);
+                    p.set(def + 0x34 + 0x10 * e, rng.below(0x80) * 4);
+                }
+            }
+            if rng.chance(5) {
+                p.set(block + 0x10, 0u32);
+            }
+            let pdt = block;
+            p.check(
+                &format!("pppInitPdt round {round}"),
+                0x0071_20f0,
+                &[pdt, programs],
+                |m| {
+                    pt::ppp_init_pdt(m, pdt, programs);
+                    None
+                },
+            );
+
+            // an effect data block: two empty part data blocks and the
+            // three other tables
+            let data = block + 0xa00;
+            for (at, off) in [
+                (0x10u32, 0x100u32),
+                (0x14, 0x200),
+                (0x18, 0x300),
+                (0x1c, 0x380),
+            ] {
+                p.set(data + at, off);
+            }
+            let pdts = rng.below(3) as u16;
+            p.set(data + 6, pdts);
+            for i in 0..u32::from(pdts) {
+                let pd = 0x40 + 0x40 * i;
+                p.set(data + 0x100 + 4 * i, pd);
+                p.set(data + pd + 8, 0x20u32);
+                p.set(data + pd + 0xc, 0x24u32);
+                p.set(data + pd + 0x20, 0u32);
+                p.set(data + pd + 0x24, 0u32);
+                p.set(data + pd + 0x10, 0u32);
+            }
+            for (at, n) in [(8u32, 4u32), (0xa, 8), (0xc, 8)] {
+                p.set(data + at, rng.below(n) as u16);
+            }
+            p.check(
+                &format!("pppInitData round {round}"),
+                0x0071_1fa0,
+                &[data, programs, 0],
+                |m| {
+                    pt::ppp_init_data(m, data, programs);
+                    None
+                },
+            );
+
+            // pppOtFunc_Reg on a list
+            if round % 8 == 0 {
+                p.set(list + 4, list + 0x10);
+                p.set(list + 0xc, 0u16);
+            }
+            let node = nodes + 0x10 * rng.below(4);
+            let (a, b) = (rng.next(), rng.next());
+            p.check("pppOtFunc_Reg", 0x0071_6be0, &[list, node, a, b], |m| {
+                pt::ppp_ot_func_reg(m, list, node, a, b);
+                None
+            });
+
+            // object definitions whose programs are the first twelve
+            // records of the table (pppAccele ... pppColor)
+            if round % 16 == 0 {
+                for (h, mem) in [(env, arena), (env + 0x10, arena + 0x4000)] {
+                    p.check("pppCreateHeap", 0x0072_c480, &[h, mem, 0x4000], |m| {
+                        heap::bridge::ppp_create_heap(m, h, mem, 0x4000);
+                        None
+                    });
+                }
+                p.set(part + 0x30, 0u32);
+                for d in 0..4 {
+                    // 16-byte definitions (the part's birth records too),
+                    // their program lists after them
+                    let def = defs + 0x10 * d;
+                    let prog = defs + 0x100 + 0x80 * d;
+                    p.set(def, prog);
+                    p.set(def + 4, 0u32);
+                    p.set(def + 0xc, 0u16);
+                    p.set(prog + 0x20, 0x200 + 0x40 * rng.below(4));
+                    p.set(prog + 0x24, rng.below(4) as u16);
+                    let n = 1 + rng.below(3) as u16;
+                    p.set(prog + 0x26, n);
+                    for e in 0..u32::from(n) {
+                        let entry = prog + 0x28 + 0x10 * e;
+                        let r = if rng.chance(10) {
+                            0
+                        } else {
+                            programs + 0x28 * rng.below(12)
+                        };
+                        p.set(entry, r);
+                        p.set(entry + 8, 0x40 * e);
+                        // the entry's +0xc: the work area offsets the
+                        // set-up reads
+                        p.set(entry + 0xc, offs);
+                    }
+                }
+            }
+            let def = defs + 0x10 * rng.below(4);
+            if rng.chance(30) {
+                p.set(def + 4, 0u32);
+            }
+            p.check(
+                &format!("pppCreatePObject round {round}"),
+                0x0071_6770,
+                &[part, def],
+                |m| Some(pt::ppp_create_pobject(m, part, def, &mut call_original)),
+            );
+            let obj = p.get::<u32>(part + 0x30);
+            if obj != 0 {
+                p.check("pppPObjectCon2", 0x0071_2d20, &[obj], |m| {
+                    pt::ppp_pobject_con(m, obj, 0x20, &mut call_original);
+                    None
+                });
+            }
+            // births
+            p.set(part + 8, rng.below(10));
+            p.set(part + 0x18, rng.below(4));
+            p.set(part + 0x3c, if rng.chance(10) { 0 } else { defs });
+            for d in 0..4 {
+                p.set(defs + 0x10 * d + 8, rng.below(12));
+            }
+            p.check("pppBornPObjects", 0x0071_2b80, &[part], |m| {
+                pt::ppp_born_pobjects(m, part, &mut call_original);
+                None
+            });
+            // the part's program loops
+            let n = rng.below(4);
+            p.set(part + 0x14, n);
+            p.set(part + 0x34, recs);
+            for i in 0..4 {
+                let r = recs + 0x40 + 0x10 * i;
+                p.set(recs + 4 * i, r);
+                for at in [0x10, 0x14, 0x18] {
+                    p.set(r + at, if rng.chance(50) { set } else { 0 });
+                }
+            }
+            for (name, sym, at) in [
+                ("pppPartCall10", 0x0071_2e40, 0x10),
+                ("pppPartCall14", 0x0071_2e80, 0x14),
+                ("pppPartCall18", 0x0071_2e00, 0x18),
+            ] {
+                p.check(name, sym, &[part], |m| {
+                    pt::ppp_part_call(m, part, at, &mut call_original);
                     None
                 });
             }
