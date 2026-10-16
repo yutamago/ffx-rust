@@ -114,7 +114,30 @@ fn setup_any(seed: u32) -> Option<Twins> {
     })
 }
 
+/// `fstp st0; ret`, placed in code space no menu test reaches (the body of
+/// `pppFpLoop`, past the x87 stand-ins).
+const FPU_POP: u32 = 0x0072_9ab0 + 0x70;
+
 impl Twins {
+    /// Empties the original side's x87 stack (results earlier calls left),
+    /// so the next call's `ST0` is its own.
+    fn drain_x87(&mut self) {
+        let at = self.a.rebase(FPU_POP);
+        if Mem::read::<[u8; 3]>(&self.a, at) != [0xdd, 0xd8, 0xc3] {
+            self.a.write(at, &[0xdd, 0xd8, 0xc3]).unwrap();
+            self.b
+                .write(self.b.rebase(FPU_POP), &[0xdd, 0xd8, 0xc3])
+                .unwrap();
+        }
+        for _ in 0..8 {
+            if self.a.call(at, Conv::Cdecl, &[]).unwrap().st0.is_none() {
+                break;
+            }
+        }
+        self.a.clear_dirty();
+        self.b.clear_dirty();
+    }
+
     fn sym(&self, sym: u32) -> u32 {
         self.b.rebase(sym)
     }
@@ -159,10 +182,18 @@ impl Twins {
         mask: u64,
         rust: impl FnOnce(&mut Oracle) -> u64,
     ) {
+        self.drain_x87();
         let r = self
             .a
             .call(self.a.rebase(sym), Conv::Cdecl, args)
             .unwrap_or_else(|e| panic!("{what} {args:x?}: {e}"));
+        // an integer or void port of a function that leaves a float in ST0
+        // drops the caller's result (a void Ch_CheckRadian hid every model)
+        assert!(
+            r.st0.is_none(),
+            "{what} {args:x?}: the original returns {:?} in ST0; the port must return a float",
+            r.st0
+        );
         let ra = u64::from(r.eax) | (u64::from(r.edx) << 32);
         let rb = rust(&mut self.b);
         assert_eq!(ra & mask, rb & mask, "{what} {args:x?}: result");
