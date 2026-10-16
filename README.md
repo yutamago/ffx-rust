@@ -6,6 +6,10 @@ recovered by reverse engineering `FFX.exe`.
 You need your own copy of the game. This repository contains no game code or
 data, and never will: binaries, archives and extracted files stay out of git.
 
+The goal is all of the game code in Rust: no `FFX.exe`, 64-bit, other
+platforms, and mods that can change anything. How we get there:
+[docs/rewrite-plan.md](docs/rewrite-plan.md).
+
 ## Status
 
 | Part | State |
