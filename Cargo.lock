@@ -853,6 +853,7 @@ version = "0.1.0"
 dependencies = [
  "ffx-bridge",
  "ffx-field",
+ "ffx-ps2",
  "ffx-system",
 ]
 

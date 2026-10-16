@@ -9,7 +9,7 @@ use std::sync::{Arc, OnceLock};
 
 use ffx_bridge::{Global, Mem, Value};
 use ffx_oracle::{Conv, Oracle, Pages};
-use ffx_vfx::{et, fp, heap, op, opd, opus, ppp, prog, rand, x87};
+use ffx_vfx::{et, fp, heap, mat, op, opd, opus, ppp, prog, rand, x87};
 
 fn exe() -> Option<PathBuf> {
     let dir = std::env::var_os("FFX_GAME_DIR").map(PathBuf::from);
@@ -96,15 +96,12 @@ impl Pair {
     /// On the image alone, and on the snapshot when there is one.
     fn all() -> Vec<Pair> {
         let Some(exe) = exe() else { return Vec::new() };
-        let mut image = Pair {
+        // Oracle::load sets the game thread's control word (0x027f)
+        let image = Pair {
             name: "image",
             a: Oracle::load(&exe).unwrap(),
             b: Oracle::load(&exe).unwrap(),
         };
-        // the game thread's control word (53-bit precision), as the
-        // snapshot oracle has it
-        image.a.set_fpu_control(0x027f).unwrap();
-        image.b.set_fpu_control(0x027f).unwrap();
         let mut v = vec![image];
         if let Some(p) = pages() {
             v.push(Pair {
@@ -1446,6 +1443,16 @@ fn debug_display_matches_the_original() {
 /// The set-ups of the program table: `(name, address, bridge)`.
 const PROG_CONS: &[(&str, u32, Con)] = &[
     (
+        "pppKeMdlDttCon",
+        0x0072_e730,
+        prog::bridge::ppp_ke_mdl_dtt_con,
+    ),
+    (
+        "pppKeShpTailPhtCon2",
+        0x0075_4260,
+        prog::bridge::ppp_ke_shp_tail_pht_con2,
+    ),
+    (
         "pppDrawShapeCon",
         0x0074_0eb0,
         prog::bridge::ppp_draw_shape_con,
@@ -2100,6 +2107,28 @@ const PROG_STEPS: &[(&str, u32, Step)] = &[
     ("pppPObjPoint", 0x0075_d280, prog::bridge::ppp_p_obj_point),
     ("pppKeThTp", 0x0073_6d80, prog::bridge::ppp_ke_th_tp),
     ("pppKeGrvTgt", 0x0075_97b0, prog::bridge::ppp_ke_grv_tgt),
+    ("pppKeThSft", 0x0073_6e90, prog::bridge::ppp_ke_th_sft),
+    ("pppKeShpTail", 0x0074_c490, |m, o, _, c| {
+        prog::bridge::ppp_ke_shp_tail(m, o, c);
+    }),
+    ("pppKeShpTailX", 0x0074_d490, |m, o, _, c| {
+        prog::bridge::ppp_ke_shp_tail(m, o, c);
+    }),
+    ("pppKeShpTail2", 0x0074_e490, |m, o, _, c| {
+        prog::bridge::ppp_ke_shp_tail(m, o, c);
+    }),
+    ("pppKeShpTail2X", 0x0074_f4d0, |m, o, _, c| {
+        prog::bridge::ppp_ke_shp_tail(m, o, c);
+    }),
+    ("pppKeShpTail3", 0x0075_02c0, |m, o, k, c| {
+        prog::bridge::ppp_ke_shp_tail3(m, o, k, c, prog::bridge::Tail3::Plain);
+    }),
+    ("pppKeShpTail3X", 0x0075_1ca0, |m, o, k, c| {
+        prog::bridge::ppp_ke_shp_tail3(m, o, k, c, prog::bridge::Tail3::X);
+    }),
+    ("pppKeShpTailPht", 0x0075_3f10, |m, o, k, c| {
+        prog::bridge::ppp_ke_shp_tail3(m, o, k, c, prog::bridge::Tail3::Pht);
+    }),
 ];
 
 #[test]
@@ -2131,6 +2160,14 @@ fn program_table_matches_the_original() {
                     rng.next()
                 };
                 p.set(obj + i, v);
+            }
+            // the position the tail programs copy through the FPU: no
+            // signalling NaNs (the oracle keeps them)
+            for i in (0x40..0x50).step_by(4) {
+                let v: u32 = p.get(obj + i);
+                if x87::is_snan(v) {
+                    p.set(obj + i, v | 0x0040_0000);
+                }
             }
             for k in [key, key2] {
                 for i in (0..0x40).step_by(4) {
@@ -2506,6 +2543,21 @@ const RAND_PROGS: [RandProg; 24] = [
     ),
 ];
 
+const SRAND_PROGS: [RandProg; 9] = {
+    use rand::bridge::{Kind, Spread};
+    [
+        ("pppSRandFV", 0x0073_25f0, Spread::Plain, Kind::FloatVec),
+        ("pppSRandUpFV", 0x0073_28b0, Spread::Up, Kind::FloatVec),
+        ("pppSRandDownFV", 0x0073_2b40, Spread::Down, Kind::FloatVec),
+        ("pppSRandCV", 0x0073_2dd0, Spread::Plain, Kind::CharVec),
+        ("pppSRandUpCV", 0x0073_30e0, Spread::Up, Kind::CharVec),
+        ("pppSRandDownCV", 0x0073_33e0, Spread::Down, Kind::CharVec),
+        ("pppSRandHCV", 0x0073_36e0, Spread::Plain, Kind::ShortVec),
+        ("pppSRandUpHCV", 0x0073_3a00, Spread::Up, Kind::ShortVec),
+        ("pppSRandDownHCV", 0x0073_3d10, Spread::Down, Kind::ShortVec),
+    ]
+};
+
 #[test]
 fn rand_programs_match_the_original() {
     use rand::bridge as r;
@@ -2571,18 +2623,266 @@ fn rand_programs_match_the_original() {
             for flag in [9, 0xa, 0xc, 0x10, 0x20] {
                 p.set(key + flag, u8::from(rng.chance(50)));
             }
-            let (name, sym, spread, kind) = rng.pick(&RAND_PROGS);
+            let seeded = rng.chance(40);
+            let (name, sym, spread, kind) = if seeded {
+                rng.pick(&SRAND_PROGS)
+            } else {
+                rng.pick(&RAND_PROGS)
+            };
             p.check(
                 &format!("{name} round {round}"),
                 sym,
                 &[obj, key, ctrl],
                 |m| {
-                    r::ppp_rand(m, obj, key, ctrl, spread, kind, &mut srand_log(log));
+                    if seeded {
+                        r::ppp_srand(m, obj, key, ctrl, spread, kind, &mut srand_log(log));
+                    } else {
+                        r::ppp_rand(m, obj, key, ctrl, spread, kind, &mut srand_log(log));
+                    }
                     None
                 },
             );
             p.check("pppVu0RNext", PPP_VU0_RNEXT, &[out, p.sym(r::R.sym)], |m| {
                 r::ppp_vu0_rnext(m, out);
+                None
+            });
+        }
+    }
+}
+
+// ---- matrix programs and the set-ups that call rand -------------------
+
+/// The import slot of MSVCR110's `rand`.
+const RAND_SLOT: u32 = 0x00b0_c420;
+/// Free code space for the fake `rand` (after the `srand` recorder).
+const FAKE_RAND: u32 = 0x00b0_bf80;
+
+/// Points the `rand` import at a linear congruential generator whose state
+/// is at the returned address, in both oracles alike.
+fn fake_rand(p: &mut Pair) -> u32 {
+    let state = p.alloc(4);
+    let at = p.sym(FAKE_RAND);
+    let mut c = vec![0xa1]; // mov eax, [state]
+    c.extend(state.to_le_bytes());
+    c.extend([0x69, 0xc0]); // imul eax, eax, 1103515245
+    c.extend(1_103_515_245u32.to_le_bytes());
+    c.push(0x05); // add eax, 12345
+    c.extend(12345u32.to_le_bytes());
+    c.push(0xa3); // mov [state], eax
+    c.extend(state.to_le_bytes());
+    c.extend([0xc1, 0xe8, 0x10]); // shr eax, 16
+    c.extend([0x25, 0xff, 0x7f, 0, 0]); // and eax, 0x7fff
+    c.push(0xc3);
+    p.a.write(at, &c).unwrap();
+    p.b.write(at, &c).unwrap();
+    let slot = p.sym(RAND_SLOT);
+    p.set(slot, at);
+    state
+}
+
+/// The Rust side of [`fake_rand`].
+fn rand_lcg(state: u32) -> impl FnMut(&mut Oracle) -> u32 {
+    move |m| {
+        let s: u32 = Mem::read(m, state);
+        let s = s.wrapping_mul(1_103_515_245).wrapping_add(12345);
+        Mem::write(m, state, s);
+        (s >> 16) & 0x7fff
+    }
+}
+
+type MatStep = fn(&mut Oracle, u32, u32, u32);
+
+const MAT_STEPS: &[(&str, u32, MatStep)] = {
+    use mat::bridge as b;
+    use mat::order as o;
+    &[
+        ("pppMatrixLoop", 0x0072_d1b0, |m, x, _, c| {
+            b::ppp_matrix(m, x, c, o::XYZ);
+        }),
+        ("pppMatrixXYZ", 0x0072_d390, |m, x, _, c| {
+            b::ppp_matrix(m, x, c, o::XYZ);
+        }),
+        ("pppMatrixXZY", 0x0072_d570, |m, x, _, c| {
+            b::ppp_matrix(m, x, c, o::XZY);
+        }),
+        ("pppMatrixYXZ", 0x0072_d750, |m, x, _, c| {
+            b::ppp_matrix(m, x, c, o::YXZ);
+        }),
+        ("pppMatrixYZX", 0x0072_d930, |m, x, _, c| {
+            b::ppp_matrix(m, x, c, o::YZX);
+        }),
+        ("pppMatrixZXY", 0x0072_db10, |m, x, _, c| {
+            b::ppp_matrix(m, x, c, o::ZXY);
+        }),
+        ("pppMatrixZYX", 0x0072_dcf0, |m, x, _, c| {
+            b::ppp_matrix(m, x, c, o::ZYX);
+        }),
+        ("pppMatrixLoc", 0x0073_4130, |m, x, _, c| {
+            b::ppp_matrix_loc(m, x, c);
+        }),
+        ("pppMatrixScl", 0x0073_4170, |m, x, _, c| {
+            b::ppp_matrix_scl(m, x, c);
+        }),
+        ("pppParMatrix", 0x0073_4640, |m, x, k, _| {
+            b::ppp_par_matrix(m, x, k);
+        }),
+        ("pppKeMatSN", 0x0073_4020, |m, x, _, c| {
+            b::ppp_ke_mat_sn(m, x, c);
+        }),
+        ("pppKeMatPht", 0x0073_41e0, |m, x, _, c| {
+            b::ppp_ke_mat_pht(m, x, c);
+        }),
+        ("pppKeOfsMatXYZ", 0x0073_4400, |m, x, _, c| {
+            b::ppp_ke_ofs_mat_xyz(m, x, c);
+        }),
+        ("pppDrawMatrix", 0x0073_4b70, |m, x, _, _| {
+            b::ppp_draw_matrix(m, x);
+        }),
+        ("pppDrawMatrixLoop", 0x0073_4ba0, |m, x, _, _| {
+            b::ppp_draw_matrix(m, x);
+        }),
+        ("pppDrawMatrixFront", 0x0073_4bd0, |m, x, _, _| {
+            b::ppp_draw_matrix_front(m, x);
+        }),
+        ("pppDrawMatrixNoRot", 0x0073_4c50, |m, x, _, _| {
+            b::ppp_draw_matrix_no_rot(m, x);
+        }),
+        ("pppDrawMatrixWood", 0x0073_4cf0, |m, x, _, _| {
+            b::ppp_draw_matrix_wood(m, x);
+        }),
+        ("pppKeDMatDraw", 0x0073_4eb0, |m, x, _, c| {
+            b::ppp_ke_d_mat_draw(m, x, c);
+        }),
+        ("pppKeDMatFrDraw", 0x0073_4ef0, |m, x, _, c| {
+            b::ppp_ke_d_mat_fr_draw(m, x, c);
+        }),
+        ("pppKeDMatPhtDraw", 0x0073_4f80, |m, x, _, c| {
+            b::ppp_ke_d_mat_pht_draw(m, x, c);
+        }),
+        ("pppKeDMatPhtFrDraw", 0x0073_5020, |m, x, _, c| {
+            b::ppp_ke_d_mat_pht_fr_draw(m, x, c);
+        }),
+    ]
+};
+
+type RotCompound = (&'static str, u32, [mat::Axis; 3]);
+
+const ROT_COMPOUNDS: [RotCompound; 6] = {
+    use mat::order as o;
+    [
+        ("pppGetRotMatrixXYZ", 0x0072_c800, o::XYZ),
+        ("pppGetRotMatrixXZY", 0x0072_c890, o::XZY),
+        ("pppGetRotMatrixYXZ", 0x0072_c9f0, o::YXZ),
+        ("pppGetRotMatrixYZX", 0x0072_ca80, o::YZX),
+        ("pppGetRotMatrixZXY", 0x0072_cbe0, o::ZXY),
+        ("pppGetRotMatrixZYX", 0x0072_cc70, o::ZYX),
+    ]
+};
+
+type RandCon = fn(&mut Oracle, u32, u32, &mut dyn FnMut(&mut Oracle) -> u32);
+
+const RAND_CONS: [(&str, u32, RandCon); 3] = [
+    ("pppKeShpTail3Con", 0x0075_0510, |m, o, c, r| {
+        prog::bridge::ppp_ke_shp_tail3_con(m, o, c, &mut |x: &mut Oracle| r(x));
+    }),
+    ("pppKeShpTail3XCon", 0x0075_1eb0, |m, o, c, r| {
+        prog::bridge::ppp_ke_shp_tail3_con(m, o, c, &mut |x: &mut Oracle| r(x));
+    }),
+    ("pppKeShpTailPhtCon", 0x0075_4180, |m, o, c, r| {
+        prog::bridge::ppp_ke_shp_tail_pht_con(m, o, c, &mut |x: &mut Oracle| r(x));
+    }),
+];
+
+#[test]
+#[allow(clippy::too_many_lines)] // one setup, then the random rounds
+fn matrix_programs_match_the_original() {
+    use mat::bridge as b;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x3a77_1c05);
+        let rand_state = fake_rand(&mut p);
+        let obj = p.alloc(0x800);
+        let parent = p.alloc(0x60);
+        let key = p.alloc(0x40);
+        let ctrl = p.alloc(0x10);
+        let offsets = p.alloc(4 * 4);
+        let angles = p.alloc(0x10);
+        let out = p.alloc(0x40);
+        let part = p.alloc(0x80);
+        p.set(ctrl + 0xc, offsets);
+        for round in 0..3000 {
+            for i in (0..0x800).step_by(4) {
+                let v = rng.float();
+                p.set(obj + i, v);
+            }
+            for i in (0..0x60).step_by(4) {
+                let v = rng.float();
+                p.set(parent + i, v);
+            }
+            // angles anywhere, some exact quarter turns
+            for i in (0x0..0x800).step_by(0x40) {
+                if rng.chance(30) {
+                    for j in 0..4 {
+                        let a = if rng.chance(30) {
+                            rng.below(8) * 0x2000
+                        } else {
+                            rng.next()
+                        };
+                        p.set(obj + i + 4 * j, a);
+                    }
+                }
+            }
+            p.set(obj + 4, parent);
+            // the four areas in distinct 0x80-byte slots
+            let mut slots: Vec<u32> = (0..12).collect();
+            for i in 0..4u32 {
+                let j = i + rng.below(12 - i);
+                slots.swap(i as usize, j as usize);
+                p.set(offsets + 4 * i, slots[i as usize] * 0x80);
+            }
+            p.set(key + 4, if rng.chance(20) { u32::MAX } else { 0 });
+            for i in 0..3 {
+                p.set(angles + 4 * i, rng.next());
+            }
+            if !p.snapshot() || round > 0 {
+                // r0's words fill the rotations: no signalling NaNs
+                p.put(
+                    ppp::bridge::R0,
+                    [rng.float(), rng.float(), rng.float(), rng.float()],
+                );
+                for g in [b::VIEW.sym, b::VIEW_COPY.sym, b::WOOD.sym] {
+                    let at = p.sym(g);
+                    for i in (0..0x40).step_by(4) {
+                        let v = rng.float();
+                        p.set(at + i, v);
+                    }
+                }
+                let at = p.sym(b::MAT_SN.sym);
+                p.set(at, rng.next());
+                p.set(at + 4, rng.next());
+                for i in (0..0x80).step_by(4) {
+                    let v = rng.float();
+                    p.set(part + i, v);
+                }
+                p.put(prog::bridge::CURRENT_PART, part);
+            }
+            let (name, sym, f) = rng.pick(MAT_STEPS);
+            p.check(
+                &format!("{name} round {round}"),
+                sym,
+                &[obj, key, ctrl],
+                |m| {
+                    f(m, obj, key, ctrl);
+                    None
+                },
+            );
+            let (name, sym, order) = rng.pick(&ROT_COMPOUNDS);
+            p.check(&format!("{name} round {round}"), sym, &[out, angles], |m| {
+                b::ppp_get_rot_matrix(m, out, angles, order);
+                None
+            });
+            let (name, sym, f) = rng.pick(&RAND_CONS);
+            p.check(&format!("{name} round {round}"), sym, &[obj, ctrl], |m| {
+                f(m, obj, ctrl, &mut rand_lcg(rand_state));
                 None
             });
         }

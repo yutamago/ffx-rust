@@ -200,7 +200,6 @@ pub mod bridge {
         kind: Kind,
         srand: &mut impl FnMut(&mut M, u32),
     ) {
-        use crate::x87::{ADD, MUL, Reg, SUB};
         if crate::ppp::bridge::STOP.get(mem) != 0 {
             return;
         }
@@ -216,22 +215,8 @@ pub mod bridge {
                 .wrapping_add(mem.read::<u32>(offsets))
         };
         let w_at = if per_key || frame == 0 {
-            let d1 = draw(mem, srand);
-            let d1 = if spread == Spread::Down { -d1 } else { d1 };
             let two = mem.read::<u8>(key + kind.flag()) != 0;
-            let w = if two {
-                let d2 = draw(mem, srand);
-                match spread {
-                    Spread::Plain => x87::add(d2, d1),
-                    Spread::Up => Reg::load_f32(d2).mem(ADD, d1).constant(MUL, 0.5).store(),
-                    Spread::Down => Reg::load_f32(d1).mem(SUB, d2).constant(MUL, 0.5).store(),
-                }
-            } else if spread == Spread::Plain {
-                let r = Reg::load_f32(d1);
-                r.reg(ADD, r).store()
-            } else {
-                d1
-            };
+            let w = spread_draw(mem, spread, two, srand);
             let w_at = work(mem);
             mem.write(w_at, w.to_bits());
             w_at
@@ -241,6 +226,94 @@ pub mod bridge {
             }
             work(mem)
         };
+        apply(mem, obj, key, spread, kind, w_at, 0, false);
+    }
+
+    /// One spread value: a draw (negated for `Down`), or with `two` the
+    /// two draws combined.
+    fn spread_draw<M: Mem>(
+        mem: &mut M,
+        spread: Spread,
+        two: bool,
+        srand: &mut impl FnMut(&mut M, u32),
+    ) -> f32 {
+        use crate::x87::{ADD, MUL, Reg, SUB};
+        let d1 = draw(mem, srand);
+        let d1 = if spread == Spread::Down { -d1 } else { d1 };
+        if two {
+            let d2 = draw(mem, srand);
+            match spread {
+                Spread::Plain => x87::add(d2, d1),
+                Spread::Up => Reg::load_f32(d2).mem(ADD, d1).constant(MUL, 0.5).store(),
+                Spread::Down => Reg::load_f32(d1).mem(SUB, d2).constant(MUL, 0.5).store(),
+            }
+        } else if spread == Spread::Plain {
+            let r = Reg::load_f32(d1);
+            r.reg(ADD, r).store()
+        } else {
+            d1
+        }
+    }
+
+    /// The seeded-per-axis rand programs (`pppSRand{,Up,Down}{FV,CV,HCV}`,
+    /// `kind` `FloatVec`, `CharVec` or `ShortVec`): as [`ppp_rand`], but
+    /// each of the three (four) targets gets a draw of its own, kept at
+    /// `+4 i` in the work area. `FV` draws at frame 0, the others whenever
+    /// their key applies; the `HCV` forms add the sign-extended low byte of
+    /// each `ftol` (a `cbw` the plain rand programs do not have).
+    pub fn ppp_srand<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        spread: Spread,
+        kind: Kind,
+        srand: &mut impl FnMut(&mut M, u32),
+    ) {
+        if crate::ppp::bridge::STOP.get(mem) != 0 {
+            return;
+        }
+        let frame = mem.read::<u32>(obj.wrapping_add(0xc));
+        let draws = if kind == Kind::FloatVec {
+            if frame != 0 && mem.read::<u32>(key) != frame {
+                return;
+            }
+            frame == 0
+        } else {
+            if mem.read::<u32>(key) != frame {
+                return;
+            }
+            true
+        };
+        let offsets = mem.read::<u32>(ctrl.wrapping_add(0xc));
+        let w_at = obj
+            .wrapping_add(0xa0)
+            .wrapping_add(mem.read::<u32>(offsets));
+        if draws {
+            let n = if kind == Kind::FloatVec { 3 } else { 4 };
+            for i in 0..n {
+                let two = mem.read::<u8>(key + kind.flag()) != 0;
+                let w = spread_draw(mem, spread, two, srand);
+                mem.write(w_at.wrapping_add(4 * i), w.to_bits());
+            }
+        }
+        apply(mem, obj, key, spread, kind, w_at, 4, kind == Kind::ShortVec);
+    }
+
+    /// Adds a rand program's value (at `w_at`, the next one `stride`
+    /// further for each target) to its targets.
+    #[allow(clippy::too_many_arguments)]
+    fn apply<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        spread: Spread,
+        kind: Kind,
+        w_at: u32,
+        stride: u32,
+        cbw: bool,
+    ) {
+        use crate::x87::{ADD, MUL, Reg, SUB};
         let to = mem.read::<u32>(key + 4);
         let t_at = if to == u32::MAX {
             TARGET.ptr(mem).addr
@@ -263,7 +336,7 @@ pub mod bridge {
             Kind::FloatVec => {
                 for i in 0..3 {
                     let k = float(mem, key + 0x10 + 4 * i);
-                    let w = float(mem, w_at);
+                    let w = float(mem, w_at.wrapping_add(stride * i));
                     let term = if spread == Spread::Plain {
                         let kk = Reg::load_f32(x87::load_f32(k));
                         Reg::load_f32(w).reg(MUL, kk).reg(SUB, kk).store()
@@ -275,13 +348,23 @@ pub mod bridge {
                     mem.write(target, sum.to_bits());
                 }
             }
-            _ => apply_int(mem, spread, kind, key, w_at, t_at),
+            _ => apply_int(mem, spread, kind, key, w_at, t_at, stride, cbw),
         }
     }
 
     /// The integer rand programs' application: `ftol` of `w k - k` (plain)
     /// or `k w`, its low bits added to each target.
-    fn apply_int<M: Mem>(mem: &mut M, spread: Spread, kind: Kind, key: u32, w_at: u32, t_at: u32) {
+    #[allow(clippy::too_many_arguments)]
+    fn apply_int<M: Mem>(
+        mem: &mut M,
+        spread: Spread,
+        kind: Kind,
+        key: u32,
+        w_at: u32,
+        t_at: u32,
+        stride: u32,
+        cbw: bool,
+    ) {
         use crate::x87::{MUL, Reg, SUB};
         let (count, width) = match kind {
             Kind::Char => (1, 1),
@@ -301,7 +384,7 @@ pub mod bridge {
                 Kind::CharVec => Reg::Num(f64::from(mem.read::<i8>(key + 8 + i))),
                 _ => Reg::Num(f64::from(mem.read::<i16>(key + 8 + 2 * i))),
             };
-            let value = f32::from_bits(mem.read(w_at));
+            let value = f32::from_bits(mem.read(w_at.wrapping_add(stride * i)));
             let product = if spread == Spread::Plain {
                 Reg::load_f32(value).reg(MUL, factor).reg(SUB, factor)
             } else {
@@ -316,7 +399,12 @@ pub mod bridge {
                     mem.write(target, sum);
                 }
                 2 => {
-                    let sum = mem.read::<u16>(target).wrapping_add(int as u16);
+                    let add = if cbw {
+                        i16::from(int as i8).cast_unsigned()
+                    } else {
+                        int as u16
+                    };
+                    let sum = mem.read::<u16>(target).wrapping_add(add);
                     mem.write(target, sum);
                 }
                 _ => {

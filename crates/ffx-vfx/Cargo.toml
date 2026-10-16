@@ -9,6 +9,7 @@ rust-version.workspace = true
 [dependencies]
 ffx-bridge.workspace = true
 ffx-field.workspace = true
+ffx-ps2.workspace = true
 ffx-system.workspace = true
 
 [lints]

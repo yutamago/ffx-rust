@@ -364,6 +364,10 @@ pub mod bridge {
         ppp_ke_shp_tail3_con2: 0, [W8(0x298, 0), W16(0x294, 0), W32(0x290, 0), W32(0xa0, 0), W32(0xa4, 0), W32(0xa8, 0), W32(0xac, 0), W32(0xb0, 0), W32(0xb4, 0), W32(0xb8, 0), W32(0xbc, 0), W32(0xc0, 0), W32(0xc4, 0), W32(0xc8, 0), W32(0xcc, 0)];
         /// `pppKeShpTail3XCon2` (`0x00751f40`).
         ppp_ke_shp_tail3_x_con2: 0, [W8(0x298, 0), W16(0x294, 0), W32(0x290, 0), W32(0xa0, 0), W32(0xa4, 0), W32(0xa8, 0), W32(0xac, 0), W32(0xb0, 0), W32(0xb4, 0), W32(0xb8, 0), W32(0xbc, 0), W32(0xc0, 0), W32(0xc4, 0), W32(0xc8, 0), W32(0xcc, 0)];
+        /// `pppKeMdlDttCon` (`0x0072e730`).
+        ppp_ke_mdl_dtt_con: 0, [W32(0xa8, 0), W32(0xa0, 0), W32(0xa4, 0)];
+        /// `pppKeShpTailPhtCon2` (`0x00754260`).
+        ppp_ke_shp_tail_pht_con2: 0, [W32(0x288, 0), W8(0x294, 0), W32(0x284, 0), W16(0x290, 0), W32(0x280, 0), W32(0x28c, 0), W32(0xa0, 0), W32(0xa4, 0), W32(0xa8, 0), W32(0xac, 0), W32(0xb0, 0), W32(0xb4, 0), W32(0xb8, 0), W32(0xbc, 0), W32(0xc0, 0), W32(0xc4, 0), W32(0xc8, 0), W32(0xcc, 0)];
         /// `pppDrawMdlInfCon` (`0x0073b7b0`).
         ppp_draw_mdl_inf_con: 2, [Null(0x170), Null(0x174), Null(0x178), Null(0x17c)];
     }
@@ -683,5 +687,254 @@ pub mod bridge {
         mem.write(w1 + 4, b);
         let w0 = area(mem, obj, ctrl, 0).wrapping_add(0xa0);
         mem.write(w1 + 8, stub::ptr32(w0));
+    }
+
+    /// A set-up that takes a CRT `rand()` between its stores: `before`,
+    /// then the low half of `rand()` at `rand_at`, then `after`.
+    #[allow(clippy::too_many_arguments)]
+    fn con_rand<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        ctrl: u32,
+        before: &[Init],
+        rand_at: u32,
+        after: &[Init],
+        rand: &mut impl FnMut(&mut M) -> u32,
+    ) {
+        con(mem, obj, ctrl, 0, before);
+        let r = rand(mem);
+        let w = area(mem, obj, ctrl, 0);
+        #[allow(clippy::cast_possible_truncation)] // the low half
+        mem.write(w.wrapping_add(rand_at), r as u16);
+        con(mem, obj, ctrl, 0, after);
+    }
+
+    const TAIL3_ZEROS: [Init; 12] = [
+        W32(0xa0, 0),
+        W32(0xa4, 0),
+        W32(0xa8, 0),
+        W32(0xac, 0),
+        W32(0xb0, 0),
+        W32(0xb4, 0),
+        W32(0xb8, 0),
+        W32(0xbc, 0),
+        W32(0xc0, 0),
+        W32(0xc4, 0),
+        W32(0xc8, 0),
+        W32(0xcc, 0),
+    ];
+
+    /// `pppKeShpTail3Con` (`0x00750510`) and `pppKeShpTail3XCon`
+    /// (`0x00751eb0`): the ring's index cleared, a random seed at `+0x296`,
+    /// the motion cleared.
+    pub fn ppp_ke_shp_tail3_con<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        ctrl: u32,
+        rand: &mut impl FnMut(&mut M) -> u32,
+    ) {
+        let before = [W8(0x298, 0), W16(0x294, 0), W32(0x290, 0)];
+        con_rand(mem, obj, ctrl, &before, 0x296, &TAIL3_ZEROS, rand);
+    }
+
+    /// `pppKeShpTailPhtCon` (`0x00754180`): as the `Tail3` set-up, the
+    /// ring's index at `+0x294`, the seed at `+0x292`, and the float motion
+    /// at `+0x280` cleared too.
+    pub fn ppp_ke_shp_tail_pht_con<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        ctrl: u32,
+        rand: &mut impl FnMut(&mut M) -> u32,
+    ) {
+        let before = [W8(0x294, 0), W16(0x290, 0), W32(0x28c, 0)];
+        let after = [
+            W32(0x288, 0),
+            W32(0x284, 0),
+            W32(0xa0, 0),
+            W32(0x280, 0),
+            W32(0xa4, 0),
+            W32(0xa8, 0),
+            W32(0xac, 0),
+            W32(0xb0, 0),
+            W32(0xb4, 0),
+            W32(0xb8, 0),
+            W32(0xbc, 0),
+            W32(0xc0, 0),
+            W32(0xc4, 0),
+            W32(0xc8, 0),
+            W32(0xcc, 0),
+        ];
+        con_rand(mem, obj, ctrl, &before, 0x292, &after, rand);
+    }
+
+    /// The object's position (`+0x40`, `w` = 1.0) into `count` ring slots
+    /// from `first`, 16 bytes apart (at frame 0).
+    fn fill_ring(mem: &mut impl Mem, obj: u32, first: u32, count: u32) {
+        let mut v: [u32; 4] = mem.read(obj.wrapping_add(0x40));
+        v[3] = ONE;
+        for k in 0..count {
+            mem.write(first.wrapping_add(16 * k), v);
+        }
+    }
+
+    /// `pppKeShpTail` (`0x0074c490`), `pppKeShpTailX` (`0x0074d490`),
+    /// `pppKeShpTail2` (`0x0074e490`) and `pppKeShpTail2X` (`0x0074f4d0`)
+    /// `(obj, key, ctrl)`: area 0 is a ring of positions (`+0` the length,
+    /// `+1` the index, the slots from `+0x10`); the object's position goes
+    /// into the next slot (filled everywhere at frame 0).
+    pub fn ppp_ke_shp_tail(mem: &mut impl Mem, obj: u32, ctrl: u32) {
+        if STOP.get(mem) != 0 {
+            return;
+        }
+        let p = area(mem, obj, ctrl, 0).wrapping_add(0xa0);
+        if mem.read::<u32>(obj.wrapping_add(0xc)) == 0 {
+            let n = u32::from(mem.read::<u8>(p));
+            fill_ring(mem, obj, p.wrapping_add(0x10), n);
+        }
+        if mem.read::<u8>(p + 1) == 0 {
+            let n: u8 = mem.read(p);
+            mem.write(p + 1, n);
+        }
+        let i = mem.read::<u8>(p + 1).wrapping_sub(1);
+        mem.write(p + 1, i);
+        let slot = p.wrapping_add((u32::from(i) + 1) * 16);
+        ffx_field::vu0::bridge::ke_vu0_copy_vec_xyz(mem, slot, obj.wrapping_add(0x40));
+    }
+
+    /// The forms of the `pppKeShpTail3` steps.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Tail3 {
+        /// `pppKeShpTail3`: position += velocity, then velocity +=
+        /// acceleration.
+        Plain,
+        /// `pppKeShpTail3X`: velocity first.
+        X,
+        /// `pppKeShpTailPht`: as `X` with 27 slots, and a float motion
+        /// (`+0x1e0` position, `+0x1e4` velocity, `+0x1e8` acceleration).
+        Pht,
+    }
+
+    /// `pppKeShpTail3` (`0x007502c0`), `pppKeShpTail3X` (`0x00751ca0`) and
+    /// `pppKeShpTailPht` (`0x00753f10`) `(obj, key, ctrl)`: a ring of 28
+    /// (27) positions from `+0x30` (index byte at `+0x1f8`, `+0x1f4`), and
+    /// two `i16` motions (position, velocity and acceleration: halves 0..4,
+    /// 8..12, 12..16 and 4..8, 16..20, 20..24) the key adds to.
+    #[allow(clippy::many_single_char_names)] // p, h, i, x, v, a
+    pub fn ppp_ke_shp_tail3(mem: &mut impl Mem, obj: u32, key: u32, ctrl: u32, form: Tail3) {
+        if STOP.get(mem) != 0 {
+            return;
+        }
+        let p = area(mem, obj, ctrl, 0).wrapping_add(0xa0);
+        let (slots, index_at) = if form == Tail3::Pht {
+            (0x1b, 0x1f4)
+        } else {
+            (0x1c, 0x1f8)
+        };
+        if mem.read::<u32>(obj.wrapping_add(0xc)) == 0 {
+            fill_ring(mem, obj, p.wrapping_add(0x30), slots);
+        }
+        let index = p.wrapping_add(index_at);
+        if mem.read::<u8>(index) == 0 {
+            #[allow(clippy::cast_possible_truncation)] // 27 or 28
+            mem.write(index, slots as u8);
+        }
+        let i = mem.read::<u8>(index).wrapping_sub(1);
+        mem.write(index, i);
+        let slot = p.wrapping_add((u32::from(i) + 3) * 16);
+        ffx_field::vu0::bridge::ke_vu0_copy_vec_xyz(mem, slot, obj.wrapping_add(0x40));
+        let h = |i: u32| p.wrapping_add(2 * i);
+        for (pos, vel, acc) in [(0, 8, 12), (4, 16, 20)] {
+            for j in 0..4 {
+                let (x, v, a) = (h(pos + j), h(vel + j), h(acc + j));
+                if form == Tail3::Plain {
+                    add_i16(mem, x, v);
+                    add_i16(mem, v, a);
+                } else {
+                    add_i16(mem, v, a);
+                    add_i16(mem, x, v);
+                }
+            }
+        }
+        if form == Tail3::Pht {
+            let a = f32::from_bits(mem.read(p + 0x1e8));
+            let v = x87::add(a, f32::from_bits(mem.read(p + 0x1e4)));
+            mem.write(p + 0x1e4, v.to_bits());
+            let x = x87::add(v, f32::from_bits(mem.read(p + 0x1e0)));
+            mem.write(p + 0x1e0, x.to_bits());
+        }
+        if !applies(mem, obj, key) {
+            return;
+        }
+        let k = if form == Tail3::Pht { 0x30 } else { 0x20 };
+        for (half, from) in [
+            (0, k),
+            (8, k + 0x10),
+            (12, k + 0x18),
+            (4, k + 8),
+            (16, k + 0x20),
+            (20, k + 0x28),
+        ] {
+            for j in 0..4 {
+                add_i16(mem, h(half + j), key + from + 2 * j);
+            }
+        }
+        if form == Tail3::Pht {
+            for (at, from) in [(0x1e0, 0x1c), (0x1e4, 0x20)] {
+                let v = x87::add(
+                    f32::from_bits(mem.read(p + at)),
+                    f32::from_bits(mem.read(key + from)),
+                );
+                mem.write(p + at, v.to_bits());
+            }
+            let v = x87::add(
+                f32::from_bits(mem.read(key + 0x24)),
+                f32::from_bits(mem.read(p + 0x1e8)),
+            );
+            mem.write(p + 0x1e8, v.to_bits());
+        }
+    }
+
+    fn add_i16(mem: &mut impl Mem, at: u32, from: u32) {
+        let v = mem.read::<u16>(at).wrapping_add(mem.read(from));
+        mem.write(at, v);
+    }
+
+    /// `pppKeThSft(obj, key, ctrl)` (`0x00736e90`): with its key, area 1's
+    /// byte `+0xf0` from the key's `+0x38`, area 0's four floats (`+0xc0`,
+    /// `+0xc4`, `+0xc8`, `+0xcc`) and sixteen `i16` (`+0xa0`) += the key's
+    /// (`+0x28`, `+0x2c`, `+0x30`, `+0x34`; `+8`); then, except at frame 0,
+    /// area 1's floats (`+0xbc`, `+0xd4`, `+0x10c`, `+0xdc`) and `i16`
+    /// (`+0x110`) += area 0's.
+    pub fn ppp_ke_th_sft(mem: &mut impl Mem, obj: u32, key: u32, ctrl: u32) {
+        if STOP.get(mem) != 0 {
+            return;
+        }
+        let w0 = area(mem, obj, ctrl, 0);
+        let w1 = area(mem, obj, ctrl, 1);
+        if applies(mem, obj, key) {
+            let b: u8 = mem.read(key + 0x38);
+            mem.write(w1.wrapping_add(0xf0), b);
+            for (at, from) in [(0xc8, 0x30), (0xc0, 0x28), (0xc4, 0x2c), (0xcc, 0x34)] {
+                let v = x87::add(f(mem, key + from), f(mem, w0.wrapping_add(at)));
+                set_f(mem, w0.wrapping_add(at), v);
+            }
+            for j in 0..16 {
+                add_i16(mem, w0.wrapping_add(0xa0 + 2 * j), key + 8 + 2 * j);
+            }
+            if mem.read::<u32>(obj.wrapping_add(0xc)) == 0 {
+                return;
+            }
+        }
+        for (at, from) in [(0x10c, 0xc8), (0xbc, 0xc0), (0xd4, 0xc4), (0xdc, 0xcc)] {
+            let v = x87::add(f(mem, w0.wrapping_add(from)), f(mem, w1.wrapping_add(at)));
+            set_f(mem, w1.wrapping_add(at), v);
+        }
+        for j in 0..16 {
+            add_i16(
+                mem,
+                w1.wrapping_add(0x110 + 2 * j),
+                w0.wrapping_add(0xa0 + 2 * j),
+            );
+        }
     }
 }
