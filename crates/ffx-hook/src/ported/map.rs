@@ -1212,6 +1212,276 @@ ported! {
     rcbgPSimSetReady @ 0x0091_ffb0 => extern "C" fn rcbg_psim_set_ready(p: u32) {
         model::bridge::rcbg_psim_set_ready(&mut mem(), p, |_, f, a, b| call_ptr2(f, a, b));
     }
+    /// `Yn_MapPartAnimeGetCount(part)`.
+    Yn_MapPartAnimeGetCount @ 0x0091_a2a0 => extern "C" fn yn_map_part_anime_get_count(part: i32) -> u32 {
+        guide::bridge::yn_map_part_anime_get_count(&mem(), part)
+    }
+    /// `Yn_MapPartGetAlpha(part)`.
+    Yn_MapPartGetAlpha @ 0x0091_a2e0 => extern "C" fn yn_map_part_get_alpha(part: i32) -> u32 {
+        guide::bridge::yn_map_part_get_alpha(&mem(), part)
+    }
+    /// `Yn_MapPartGetPosX(part)`.
+    Yn_MapPartGetPosX @ 0x0091_a330 => extern "C" fn yn_map_part_get_pos_x(part: i32) -> f32 {
+        guide::bridge::yn_map_part_get_pos_x(&mem(), part)
+    }
+    /// `Yn_MapPartGetPosY(part)`.
+    Yn_MapPartGetPosY @ 0x0091_a380 => extern "C" fn yn_map_part_get_pos_y(part: i32) -> f32 {
+        guide::bridge::yn_map_part_get_pos_y(&mem(), part)
+    }
+    /// `Yn_MapPartGetHeight(part)`.
+    Yn_MapPartGetHeight @ 0x0091_a3f0 => extern "C" fn yn_map_part_get_height(part: i32) -> u32 {
+        guide::bridge::yn_map_part_get_height(&mem(), part)
+    }
+    /// `Yn_MapPartGet0C(part)`.
+    Yn_MapPartGet0C @ 0x0091_a440 => extern "C" fn yn_map_part_get_0c(part: i32) -> u32 {
+        guide::bridge::yn_map_part_get_0c(&mem(), part)
+    }
+    /// `Yn_MapPartGet10(part)`.
+    Yn_MapPartGet10 @ 0x0091_a490 => extern "C" fn yn_map_part_get_10(part: i32) -> u32 {
+        guide::bridge::yn_map_part_get_10(&mem(), part)
+    }
+    /// `Yn_MapPartGetScaleY(part)`.
+    Yn_MapPartGetScaleY @ 0x0091_a4e0 => extern "C" fn yn_map_part_get_scale_y(part: i32) -> f32 {
+        guide::bridge::yn_map_part_get_scale_y(&mem(), part)
+    }
+    /// `Yn_MapPartGetScaleX(part)`.
+    Yn_MapPartGetScaleX @ 0x0091_a530 => extern "C" fn yn_map_part_get_scale_x(part: i32) -> f32 {
+        guide::bridge::yn_map_part_get_scale_x(&mem(), part)
+    }
+    /// `Yn_MapPartGet24(part)`.
+    Yn_MapPartGet24 @ 0x0091_a580 => extern "C" fn yn_map_part_get_24(part: i32) -> u32 {
+        guide::bridge::yn_map_part_get_24(&mem(), part)
+    }
+    /// `Yn_MapPartGet28(part)`.
+    Yn_MapPartGet28 @ 0x0091_a5d0 => extern "C" fn yn_map_part_get_28(part: i32) -> u32 {
+        guide::bridge::yn_map_part_get_28(&mem(), part)
+    }
+    /// `Yn_MapPartGetWidth(part)`.
+    Yn_MapPartGetWidth @ 0x0091_a620 => extern "C" fn yn_map_part_get_width(part: i32) -> u32 {
+        guide::bridge::yn_map_part_get_width(&mem(), part)
+    }
+    /// `Yn_MapPartGet14(part)`.
+    Yn_MapPartGet14 @ 0x0091_a670 => extern "C" fn yn_map_part_get_14(part: i32) -> f32 {
+        guide::bridge::yn_map_part_get_14(&mem(), part)
+    }
+    /// `Yn_MapPartAnimeSetMode(part, bits)`.
+    Yn_MapPartAnimeSetMode @ 0x0091_9fe0 => extern "C" fn yn_map_part_anime_set_mode(part: i32, bits: u32) {
+        guide::bridge::yn_map_part_anime_set_mode(&mut mem(), part, bits);
+    }
+    /// `Yn_MapPartAnimeFlag0Off(part)`.
+    Yn_MapPartAnimeFlag0Off @ 0x0091_a030 => extern "C" fn yn_map_part_anime_flag0_off(part: i32) {
+        guide::bridge::yn_map_part_anime_flag0_off(&mut mem(), part);
+    }
+    /// `Yn_MapPartAnimeFlag0On(part)`.
+    Yn_MapPartAnimeFlag0On @ 0x0091_a080 => extern "C" fn yn_map_part_anime_flag0_on(part: i32) {
+        guide::bridge::yn_map_part_anime_flag0_on(&mut mem(), part);
+    }
+    /// `Yn_MapPartMoveTo(part, x, y, frames)`.
+    Yn_MapPartMoveTo @ 0x0091_a0f0 => extern "C" fn yn_map_part_move_to(part: i32, x: u32, y: u32, frames: u32) {
+        guide::bridge::yn_map_part_move_to(&mut mem(), part, x, y, frames);
+    }
+    /// `Yn_MapPartScaleTo(part, sx, sy, frames)`.
+    Yn_MapPartScaleTo @ 0x0091_a150 => extern "C" fn yn_map_part_scale_to(part: i32, sx: u32, sy: u32, frames: u32) {
+        guide::bridge::yn_map_part_scale_to(&mut mem(), part, sx, sy, frames);
+    }
+    /// `Yn_MapPartAnimeSetLastFrame(part)`.
+    Yn_MapPartAnimeSetLastFrame @ 0x0091_a970 => extern "C" fn yn_map_part_anime_set_last_frame(part: i32) {
+        guide::bridge::yn_map_part_anime_set_last_frame(&mut mem(), part);
+    }
+    /// `Yn_MapPartAnimeSetRate(part, rate)`.
+    Yn_MapPartAnimeSetRate @ 0x0091_a9c0 => extern "C" fn yn_map_part_anime_set_rate(part: i32, rate: u32) {
+        guide::bridge::yn_map_part_anime_set_rate(&mut mem(), part, rate);
+    }
+    /// `Yn_MapPartSetPos(part, x, y)`.
+    Yn_MapPartSetPos @ 0x0091_aae0 => extern "C" fn yn_map_part_set_pos(part: i32, x: u32, y: u32) {
+        guide::bridge::yn_map_part_set_pos(&mut mem(), part, x, y);
+    }
+    /// `Yn_MapPartSet24(part, a, b)`.
+    Yn_MapPartSet24 @ 0x0091_ac40 => extern "C" fn yn_map_part_set_24(part: i32, a: u32, b: u32) {
+        guide::bridge::yn_map_part_set_24(&mut mem(), part, a, b);
+    }
+    /// `Yn_MapPartSetSize(part, w, h)`.
+    Yn_MapPartSetSize @ 0x0091_ac80 => extern "C" fn yn_map_part_set_size(part: i32, w: u32, h: u32) {
+        guide::bridge::yn_map_part_set_size(&mut mem(), part, w, h);
+    }
+    /// `Yn_MapPartSet14(part, v)`.
+    Yn_MapPartSet14 @ 0x0091_acc0 => extern "C" fn yn_map_part_set_14(part: i32, v: u32) {
+        guide::bridge::yn_map_part_set_14(&mut mem(), part, v);
+    }
+    /// `Yn_MapPartAnimeSetFrame(part, frame)`.
+    Yn_MapPartAnimeSetFrame @ 0x0091_a930 => extern "C" fn yn_map_part_anime_set_frame(part: i32, frame: u32) {
+        #[allow(clippy::cast_possible_truncation)] // the low half
+        guide::bridge::yn_map_part_anime_set_frame(&mut mem(), part, frame as u16);
+    }
+    /// `Yn_SeaGetWork()`.
+    Yn_SeaGetWork @ 0x0091_9a10 => extern "C" fn yn_sea_get_work() -> u32 {
+        model::bridge::yn_sea_get_work(&mut mem(), fp_run)
+    }
+    /// `AbmapInitHoming(node, t)`.
+    AbmapInitHoming @ 0x00a4_8d70 => extern "C" fn abmap_init_homing(node: u32, t: u32) -> u32 {
+        abmap::bridge::abmap_init_homing(&mut mem(), node, t)
+    }
+    /// `AbmapInitMovingToTarget(target, node)`.
+    AbmapInitMovingToTarget @ 0x00a4_8c80 => extern "C" fn abmap_init_moving_to_target(target: u32, node: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the low half
+        abmap::bridge::abmap_init_moving_to_target(&mut mem(), target, node as u16)
+    }
+    /// `AbmapCalcMoveCost(node, cost)`.
+    AbmapCalcMoveCost @ 0x00a4_7560 => extern "C" fn abmap_calc_move_cost(node: u32, cost: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the low half
+        abmap::bridge::abmap_calc_move_cost(&mut mem(), node as u16, cost)
+    }
+    /// `AbmapCtrlTilt()`.
+    AbmapCtrlTilt @ 0x00a4_8f50 => extern "C" fn abmap_ctrl_tilt() -> u32 {
+        abmap::bridge::abmap_ctrl_tilt(&mut mem())
+    }
+    /// `AbmapState_HomeOnNode()`.
+    AbmapState_HomeOnNode @ 0x00a5_9e80 => extern "C" fn abmap_state_home_on_node() -> u32 {
+        abmap::bridge::abmap_state_home_on_node(&mut mem())
+    }
+    /// `LoadSaveAbmap()`.
+    LoadSaveAbmap @ 0x00a4_9590 => extern "C" fn load_save_abmap() -> u32 {
+        abmap::bridge::load_save_abmap(&mut mem())
+    }
+    /// `abmap_test_panel(bit, node)`.
+    abmap_test_panel @ 0x00a4_57d0 => extern "C" fn abmap_test_panel(bit: u32, node: u32) -> u32 {
+        abmap::bridge::abmap_test_panel(&mem(), bit, node)
+    }
+    /// `abmap_other_has_panel(chr, node)`.
+    abmap_other_has_panel @ 0x00a4_5800 => extern "C" fn abmap_other_has_panel(chr: u32, node: u32) -> u32 {
+        abmap::bridge::abmap_other_has_panel(&mem(), chr, node)
+    }
+    /// `abmap_chr_node(chr)`.
+    abmap_chr_node @ 0x00a4_5870 => extern "C" fn abmap_chr_node(chr: u32) -> u32 {
+        abmap::bridge::abmap_chr_node(&mem(), chr)
+    }
+    /// `rcbgPSimSetPos(psim, which, v)`.
+    rcbgPSimSetPos @ 0x0091_ff10 => extern "C" fn rcbg_psim_set_pos(p: u32, which: u32, v: u32) {
+        model::bridge::rcbg_psim_set_pos(&mut mem(), p, which, v, |_, f, a, b| call_ptr2(f, a, b));
+    }
+    /// `KeThBP_Quit(bp)`.
+    KeThBP_Quit @ 0x0076_36c0 => extern "C" fn ke_th_bp_quit(bp: u32) {
+        ke::bridge::ke_th_bp_quit(&mut mem(), bp);
+    }
+    /// `SqsBattleStreamingDataSend(a, b)`.
+    SqsBattleStreamingDataSend @ 0x0081_cef0 => extern "C" fn sqs_battle_streaming_data_send(a: u32, b: u32) {
+        nkz::bridge::sqs_battle_streaming_data_send(&mut mem(), a, b, |_| {
+            // fprintf(stderr, "FMOD SFX ERROR! ...") through the CRT's imports.
+            // SAFETY: the import slots hold MSVCR110's __iob_func and fprintf.
+            unsafe {
+                let iob: unsafe extern "C" fn() -> usize =
+                    std::mem::transmute(*(crate::rebase(0x00b0_c350) as *const usize));
+                let fprintf: unsafe extern "C" fn(usize, usize) -> i32 =
+                    std::mem::transmute(*(crate::rebase(0x00b0_c38c) as *const usize));
+                fprintf(iob() + 0x40, crate::rebase(0x00b5_8f40));
+            }
+        });
+    }
+    /// `yiClutAlloc_makepacket(packet, cluts, n)`.
+    yiClutAlloc_makepacket @ 0x0091_7050 => extern "C" fn yi_clut_alloc_makepacket(pk: u32, cluts: u32, n: u32) -> u32 {
+        yi::bridge::yi_clut_alloc_makepacket(&mut mem(), pk, cluts, n)
+    }
+    /// `yiRender_setupparamGS(render)`.
+    yiRender_setupparamGS @ 0x0090_d260 => extern "C" fn yi_render_setupparam_gs(r: u32) {
+        yi::bridge::yi_render_setupparam_gs(&mut mem(), r);
+    }
+    /// `KeVu0RndI()`.
+    KeVu0RndI @ 0x0075_f920 => extern "C" fn ke_vu0_rnd_i() -> u32 {
+        vu0::bridge::ke_vu0_rnd_i(&mut mem(), |_, seed| {
+            // SAFETY: the import slot holds MSVCR110's cdecl srand(seed).
+            unsafe {
+                let f: unsafe extern "C" fn(u32) =
+                    std::mem::transmute(*(crate::rebase(0x00b0_c484) as *const usize));
+                f(seed);
+            }
+        })
+    }
+    /// `NkzSetLuluLimitTbl(group)`.
+    NkzSetLuluLimitTbl @ 0x00a5_cc70 => extern "C" fn nkz_set_lulu_limit_tbl(group: u32) {
+        nkz::bridge::nkz_set_lulu_limit_tbl(&mut mem(), group);
+    }
+    /// `rcbgPalGetEntryData(pal, n)`.
+    rcbgPalGetEntryData @ 0x0092_9990 => extern "C" fn rcbg_pal_get_entry_data(pal: u32, n: u32) -> u32 {
+        model::bridge::rcbg_pal_get_entry_data(&mem(), pal, n)
+    }
+    /// `rcbgPalGetLastEntryData(pal)`.
+    rcbgPalGetLastEntryData @ 0x0092_9930 => extern "C" fn rcbg_pal_get_last_entry_data(pal: u32) -> u32 {
+        model::bridge::rcbg_pal_get_last_entry_data(&mem(), pal)
+    }
+    /// `rcbgLayerGetTexData(layer)`.
+    rcbgLayerGetTexData @ 0x0092_acf0 => extern "C" fn rcbg_layer_get_tex_data(layer: u32) -> u32 {
+        model::bridge::rcbg_layer_get_tex_data(&mem(), layer)
+    }
+    /// `rcbgTexGetLog2Size(w, h, lw, lh, tbw)`.
+    rcbgTexGetLog2Size @ 0x0092_0050 => extern "C" fn rcbg_tex_get_log2_size(w: i32, h: i32, lw: u32, lh: u32, tbw: u32) {
+        model::bridge::rcbg_tex_get_log2_size(&mut mem(), w, h, lw, lh, tbw);
+    }
+    /// `Yn_SceneGetObject(kind, n)`.
+    Yn_SceneGetObject @ 0x0092_1be0 => extern "C" fn yn_scene_get_object(kind: u32, n: u32) -> u32 {
+        model::bridge::yn_scene_get_object(&mem(), kind, n)
+    }
+    /// `Yn_SceneCountObjects(kind)`.
+    Yn_SceneCountObjects @ 0x0092_1c20 => extern "C" fn yn_scene_count_objects(kind: u32) -> u32 {
+        model::bridge::yn_scene_count_objects(&mem(), kind)
+    }
+    /// `Yn_BattleCaptureNum()`.
+    Yn_BattleCaptureNum @ 0x0092_1910 => extern "C" fn yn_battle_capture_num() {
+        model::bridge::yn_battle_capture_num(&mut mem());
+    }
+    /// `rcbgFpFadeInit(fade, id, step, frames)`.
+    rcbgFpFadeInit @ 0x0092_2930 => extern "C" fn rcbg_fp_fade_init(fade: u32, id: u32, step: u32, frames: u32) {
+        model::bridge::rcbg_fp_fade_init(&mut mem(), fade, id, step, frames, |m, id| {
+            ffx_vfx::fp::bridge::ppp_fp_id_disp_off(m, id);
+        });
+    }
+    /// `rcbgChrFindById(id)`.
+    rcbgChrFindById @ 0x0092_e1e0 => extern "C" fn rcbg_chr_find_by_id(id: u32) -> u32 {
+        model::bridge::rcbg_chr_find_by_id(&mut mem(), id)
+    }
+    /// `rcbgChrHandleIndex(handle)`.
+    rcbgChrHandleIndex @ 0x0092_4f30 => extern "C" fn rcbg_chr_handle_index(handle: u32) -> u32 {
+        model::bridge::rcbg_chr_handle_index(&mem(), handle)
+    }
+    /// `rcdtChunkHandleGetEnd(&chunk)`.
+    rcdtChunkHandleGetEnd @ 0x0092_bb90 => extern "C" fn rcdt_chunk_handle_get_end(h: u32) -> u32 {
+        rcdt::bridge::rcdt_chunk_handle_get_end(&mem(), h)
+    }
+    /// `rcMat4fSetScale001(m)`.
+    rcMat4fSetScale001 @ 0x0092_de50 => extern "C" fn rc_mat4f_set_scale_001(m: u32) -> u32 {
+        geom::bridge::rc_mat4f_set_scale_001(&mut mem(), m)
+    }
+    /// `rcMat4fSetScale0001(m)`.
+    rcMat4fSetScale0001 @ 0x0092_de80 => extern "C" fn rc_mat4f_set_scale_0001(m: u32) -> u32 {
+        geom::bridge::rc_mat4f_set_scale_0001(&mut mem(), m)
+    }
+    /// `rcuiCollectChrHandles()`.
+    rcuiCollectChrHandles @ 0x0093_2570 => extern "C" fn rcui_collect_chr_handles() {
+        rcui::bridge::rcui_collect_chr_handles(&mut mem());
+    }
+    /// `KePmcomAlloc(bytes)`.
+    KePmcomAlloc @ 0x0076_2f50 => extern "C" fn ke_pmcom_alloc(bytes: u32) -> u32 {
+        ke::bridge::ke_pmcom_alloc(&mut mem(), bytes)
+    }
+    /// `KePmcomQueuePush(kind, p)`.
+    KePmcomQueuePush @ 0x0076_2fa0 => extern "C" fn ke_pmcom_queue_push(kind: u32, p: u32) {
+        ke::bridge::ke_pmcom_queue_push(&mut mem(), kind, p);
+    }
+    /// `KeLnsDefault_Init(obj)`.
+    KeLnsDefault_Init @ 0x0076_a640 => extern "C" fn ke_lns_default_init(o: u32) -> u32 {
+        ke::bridge::ke_lns_default_init(&mut mem(), o)
+    }
+    /// `KeVu0MulX(dst, src, s)`.
+    KeVu0MulX @ 0x0076_76c0 => extern "C" fn ke_vu0_mul_x(dst: u32, src: u32, s: u32) {
+        ke::bridge::ke_vu0_mul_x(&mut mem(), dst, src, f32::from_bits(s));
+    }
+    /// `KeVu0SubX(dst, src, s)`.
+    KeVu0SubX @ 0x0076_7720 => extern "C" fn ke_vu0_sub_x(dst: u32, src: u32, s: u32) {
+        ke::bridge::ke_vu0_sub_x(&mut mem(), dst, src, f32::from_bits(s));
+    }
+    /// `NkzGetMonsterListNum()`.
+    NkzGetMonsterListNum @ 0x00a5_cb20 => extern "C" fn nkz_get_monster_list_num() -> u32 {
+        nkz::bridge::nkz_get_monster_list_num()
+    }
 }
 
 /// Calls a game function pointer (an absolute address, cdecl) with one

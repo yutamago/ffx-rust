@@ -47,6 +47,10 @@ pub const SCREEN_WORLD: Global<[f32; 16]> = Global::new(0x025d_5920);
 /// 10.0, an `f64` in `.rdata`: a model's scale factor
 /// (`rcbgModelSetScale`).
 pub const MODEL_SCALE: Global<f64> = Global::new(0x00b9_22b0);
+/// 0.01, an `f32` in `.rdata` (`rcMat4fSetScale001`).
+pub const SCALE_001: u32 = 0x00b1_f2b0;
+/// 0.001, an `f32` in `.rdata` (`rcMat4fSetScale0001`).
+pub const SCALE_0001: u32 = 0x00b3_68a4;
 /// -2.0, an `f64` in `.rdata` (`rcbgSetClipMatrix`).
 pub const CLIP_FACTOR: Global<f64> = Global::new(0x00b2_c5d0);
 
@@ -328,6 +332,26 @@ pub mod bridge {
         let k = Reg::constant(MODEL_SCALE.get(mem));
         let v = (Reg::load(s) * k).store().to_bits();
         rc_mat4f_set_scale(mem, model.wrapping_add(0xc0), v, v, v)
+    }
+
+    /// `rcMat4fSetScale001(m)` (`0x0092de50`): the identity scaled by 0.01
+    /// (an `f32` in `.rdata`); returns `FFXVu0UnitMatrix`'s `eax`.
+    pub fn rc_mat4f_set_scale_001(mem: &mut impl Mem, m: u32) -> u32 {
+        uniform_scale(mem, m, super::SCALE_001)
+    }
+
+    /// `rcMat4fSetScale0001(m)` (`0x0092de80`): by 0.001.
+    pub fn rc_mat4f_set_scale_0001(mem: &mut impl Mem, m: u32) -> u32 {
+        uniform_scale(mem, m, super::SCALE_0001)
+    }
+
+    fn uniform_scale(mem: &mut impl Mem, m: u32, k: u32) -> u32 {
+        let r = ffx_ps2::vu0::bridge::matrix_identity(mem, m);
+        let v = x87::copy(mem.read::<u32>(mem.rebase(k)));
+        mem.write(m + 0x28, v);
+        mem.write(m + 0x14, v);
+        mem.write(m, v);
+        r
     }
 }
 
