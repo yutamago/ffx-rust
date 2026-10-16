@@ -669,6 +669,58 @@ ported! {
     TOGetGsRegWord @ 0x008f_a7b0 => extern "C" fn to_get_gs_reg_word() -> u64 {
         pkt::bridge::GS_WORD_008FA7B0
     }
+    /// `TouchManager::GetInstance()`.
+    TouchManager_GetInstance @ 0x0068_98c0 => extern "C" fn touch_manager_get_instance() -> u32 {
+        instance::bridge::word(&mem(), instance::bridge::TOUCH_MANAGER)
+    }
+    /// `AchievementManager_GetInstance()`.
+    AchievementManager_GetInstance @ 0x006f_15b0 => extern "C" fn achievement_manager_get_instance() -> u32 {
+        instance::bridge::word(&mem(), instance::bridge::ACHIEVEMENT_MANAGER)
+    }
+    /// `MagicFile_GetToBeDeleteMagicId()`.
+    MagicFile_GetToBeDeleteMagicId @ 0x009d_a3d0 => extern "C" fn magic_file_get_to_be_delete_magic_id() -> u32 {
+        instance::bridge::word(&mem(), instance::bridge::MAGIC_TO_DELETE)
+    }
+    /// `get_hdd_word_518()`.
+    get_hdd_word_518 @ 0x0077_87b0 => extern "C" fn get_hdd_word_518() -> u32 {
+        instance::bridge::word(&mem(), instance::bridge::HDD_WORD_518)
+    }
+    /// `TOGetWord_01841e08()`.
+    TOGetWord_01841e08 @ 0x008a_c2d0 => extern "C" fn to_get_word_01841e08() -> u32 {
+        instance::bridge::word(&mem(), instance::bridge::TO_GET_WORDS[0])
+    }
+    /// `TOGetWord_01841d98()`.
+    TOGetWord_01841d98 @ 0x008a_c3f0 => extern "C" fn to_get_word_01841d98() -> u32 {
+        instance::bridge::word(&mem(), instance::bridge::TO_GET_WORDS[1])
+    }
+    /// `TOGetWord_01841e00()`.
+    TOGetWord_01841e00 @ 0x008a_c790 => extern "C" fn to_get_word_01841e00() -> u32 {
+        instance::bridge::word(&mem(), instance::bridge::TO_GET_WORDS[2])
+    }
+    /// `TOGetWord_01841d9c()`.
+    TOGetWord_01841d9c @ 0x008a_cf10 => extern "C" fn to_get_word_01841d9c() -> u32 {
+        instance::bridge::word(&mem(), instance::bridge::TO_GET_WORDS[3])
+    }
+    /// `Table60_Get(i)` (`this` in ECX).
+    Table60_Get @ 0x0063_11b0 => extern "thiscall" fn table60_get(this: u32, i: u32) -> u32 {
+        instance::bridge::table_60(&mem(), this, i)
+    }
+    /// `EighthAtLeastOne(n, _)`.
+    EighthAtLeastOne @ 0x006d_b870 => extern "stdcall" fn eighth_at_least_one(n: i32, _unused: u32) -> i32 {
+        instance::bridge::eighth_at_least_one(n)
+    }
+    /// `TOSetMessageWindowMode(v)`.
+    TOSetMessageWindowMode @ 0x008a_f840 => extern "C" fn to_set_message_window_mode(v: u32) -> u32 {
+        window::bridge::set_message_window_mode(&mut mem(), v)
+    }
+    /// `TOIsMessageStatus3Pressed(i)`.
+    TOIsMessageStatus3Pressed @ 0x008b_8530 => extern "C" fn to_is_message_status3_pressed(i: i32) -> u32 {
+        window::bridge::is_message_status3_pressed(&mem(), i)
+    }
+    /// `TOMenuSet_018762ee(i, v)`.
+    TOMenuSet_018762ee @ 0x0090_0f60 => extern "C" fn to_menu_set_018762ee(i: i32, v: u32) {
+        window::bridge::menu_set_018762ee(&mut mem(), i, v);
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

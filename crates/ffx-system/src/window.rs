@@ -187,4 +187,36 @@ pub mod bridge {
         mem.write(w.wrapping_add(4), (v & 0xffff) as u16);
         i.cast_unsigned() & 0xffff_0000 | v & 0xffff
     }
+
+    /// `g_MessageWindowMode` (`TOGetMessageWindowMode`,
+    /// `TOSetMessageWindowMode`).
+    pub const MESSAGE_WINDOW_MODE: Global<u32> = Global::new(0x0186_59bc);
+    /// The pad byte `TOIsMessageStatus3Pressed` tests (bit 0x20).
+    pub const PAD_BYTE_25D09D4: Global<u8> = Global::new(0x025d_09d4);
+    /// The 16 `u16`s at a stride of 16 bytes `TOMenuSet_018762ee` writes.
+    pub const MENU_018762EE: Global<u16> = Global::new(0x0187_62ee);
+
+    /// `TOSetMessageWindowMode(v)` (`0x008af840`): returns `v`.
+    pub fn set_message_window_mode(mem: &mut impl Mem, v: u32) -> u32 {
+        MESSAGE_WINDOW_MODE.set(mem, v);
+        v
+    }
+
+    /// `TOIsMessageStatus3Pressed(i)` (`0x008b8530`): 1 when message
+    /// window `i`'s status is 3 and bit 0x20 of the pad byte is set.
+    pub fn is_message_status3_pressed(mem: &impl Mem, i: i32) -> u32 {
+        u32::from(message_status(mem, i) == 3 && PAD_BYTE_25D09D4.get(mem) & 0x20 != 0)
+    }
+
+    /// `TOMenuSet_018762ee(i, v)` (`0x00900f60`): for `i < 16` (signed),
+    /// the `u16` at `0x018762ee + 16 i`.
+    pub fn menu_set_018762ee(mem: &mut impl Mem, i: i32, v: u32) {
+        if i < 16 {
+            let at = MENU_018762EE
+                .ptr(mem)
+                .addr
+                .wrapping_add(i.cast_unsigned().wrapping_mul(16));
+            mem.write(at, (v & 0xffff) as u16);
+        }
+    }
 }

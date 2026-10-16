@@ -539,6 +539,7 @@
 0x00630de0 function inputSetInputInfoToCurrentFrame # fh v3:bsim1.00 0x00630f90
 0x00630e20 function inputSetVibration         # fh v3:cg2 0x630fd0
 0x00630e40 function FlashScene_dtor_FlashScene # fh switch:bsim1.00 0x71007e49e0 FlashScene::~FlashScene
+0x006311b0 function Table60_Get               # thiscall(this, i), ret 4: [this + 0x60 + 4 i]; callers 0x00700da0, 0x00701fa0; name ours
 0x006312e0 function Virtuos_InputManager_getButtonInfo # fh v3:bsim1.00 0x00631490 Virtuos::InputManager::getButtonInfo
 0x00631300 function Virtuos_InputManager_getInstance # fh v3:bsim1.00 0x006314b0 Virtuos::InputManager::getInstance
 0x00631310 function Virtuos_InputManager_getStickInfo # fh v3:bsim1.00 0x006314c0 Virtuos::InputManager::getStickInfo
@@ -1034,6 +1035,7 @@
 0x00686ff0 function user_aligned_malloc       # fh v3:bsim1.00 0x00687190
 0x00687020 function user_malloc               # fh v3:bsim1.00 0x006871c0
 0x00687050 function user_mem_size             # fh v3:bsim1.00 0x006871f0
+0x006898c0 function TouchManager_GetInstance  # () -> [0x00ccc850]; fh switch:bsim1.00 0x710023e180 TouchManager::GetInstance
 0x0068cc90 function AsyncControllerTaskManager_ClearControllerInfo # fh v3:exact 0x0068ce30 AsyncControllerTaskManager::ClearControllerInfo
 0x0068ccd0 function AsyncControllerTaskManager_GetControllerInfo # fh v3:exact 0x0068ce70 AsyncControllerTaskManager::GetControllerInfo
 0x0068dc10 function AsyncControllerTaskManager_sGetInstance # fh v3:bsim1.00 0x0068ddb0 AsyncControllerTaskManager::sGetInstance
@@ -1171,6 +1173,7 @@
 0x006db090 function LocalizationManager_Initialize # settings language index -> game language id; was LangManager_FromSettings
 0x006db1f0 function LocalizationManager_getText # fh v3:exact 0x006db320 LocalizationManager::getText
 0x006db2f0 function LocalizationManager_readLocalizationKit # fh v3:exact 0x006db420 LocalizationManager::readLocalizationKit
+0x006db870 function EighthAtLeastOne          # stdcall(n, unused), ret 8: n / 8 (signed) above 8, else 1; name ours
 0x006dbf50 function JobSchedule_JobScheduler_waitForComplete # fh v3:exact 0x006dc080 JobSchedule::JobScheduler::waitForComplete
 0x006dc8a0 function Instance_006dc800_Get     # () -> [0x00cdede8], the object 0x006dc800 creates (0x006dc870 clears it); Fahrenheit's BSim match says MorphManager::GetInstance, but MorphManager_GetInstance is 0x006abf40
 0x006de700 function DynGeoMemManager_clearDynGeoMemory # fh v3:exact+call.cs 0x006de830 thiscall DynGeoMemManager::clearDynGeoMemory
@@ -1249,6 +1252,7 @@
 0x006f0330 function SetUpDefaultSaveFolder    # Documents (SHGetFolderPathW CSIDL_PERSONAL) + Square Enix\FINAL FANTASY X&X-2 HD Remaster\FINAL FANTASY X\; was Save_InitFolder
 0x006f0510 function SaveDataManager_debugSave_Internal_6f0650 # fh call.cs cdecl
 0x006f1550 function AchievementTryObtainPlat  # fh v3:exact 0x006f1690 +AchievementTryObtainPlat
+0x006f15b0 function AchievementManager_GetInstance # () -> [0x00ce81a8]; SaveDataUnlockAchievement and BasicDebugTweakUtil_handleInput ask for it; name ours
 0x006f1ce0 function SaveDataManager_doLoad    # fh v3:exact 0x006f1e20 SaveDataManager::doLoad
 0x006f1d70 function SaveDataManager_doSave    # fh v3:exact 0x006f1eb0 SaveDataManager::doSave
 0x006f1ed0 function SaveDataManager_getRefBuffer # fh v3:bsim1.00 0x006f2010 SaveDataManager::getRefBuffer
@@ -1796,6 +1800,7 @@
 0x00777e80 function get_hdd_err               # () -> (i8) g_Hdd_Err, sign-extended; fh switch:bsim1.00 0x7100332e00
 0x00777e90 function get_hdd_status            # () -> 2 when g_Hdd_Err, else (i8) g_Hdd_Status; name ours, after get_hdd_err
 0x00777eb0 function get_hdd_name              # fh v3:exact 0x00777fb0
+0x007787b0 function get_hdd_word_518          # () -> [0x0112a518]; TkRefreshHdd reads it; name ours
 0x007789e0 function hdd_head_reset            # fh v3:exact 0x00778ad0
 0x007791a0 function hdd_install_check         # fh v3:exact 0x00779290
 0x007792e0 function hdd_install_init          # fh v3:exact 0x007793d0
@@ -4410,15 +4415,19 @@
 0x008abe40 function TODrawMessageWindowForMenu # fh v3:exact 0x008abdf0
 0x008abf30 function TODrawMovieMessage        # fh switch:cg3 0x71004fc2d0
 0x008ac130 function TOFTCTransfer             # fh v3:exact 0x008ac0e0
+0x008ac2d0 function TOGetWord_01841e08        # () -> [0x01841e08]; between TOGetBtlMenuTexAdrs and TOGetFFXLangStr; name ours
 0x008ac300 function TOGetFFXLangStr           # fh v3:exact 0x008ac2b0
 0x008ac390 function TOGetFFXLangSwapFlag      # fh v3:bsim1.00 0x008ac340
 0x008ac3a0 function TOGetFFXVideoMode         # fh v3:bsim1.00 0x008ac350
 0x008ac3d0 function TOGetFontWidthTblAdrs     # fh v3:bsim1.00 0x008ac380
+0x008ac3f0 function TOGetWord_01841d98        # () -> [0x01841d98]; between TOGetFontWidthTblAdrs and TOGetImageWH; name ours
 0x008ac400 function TOGetImageWH              # fh v3:exact+call.cs 0x008ac3b0 cdecl
 0x008ac760 function TOGetInternationalBaseDicType # fh v3:exact 0x008ac710
+0x008ac790 function TOGetWord_01841e00        # () -> [0x01841e00]; between TOGetInternationalBaseDicType and TOGetMessageWindowMode; name ours
 0x008ac7b0 function TOGetMessageWindowMode    # fh v3:bsim1.00 0x008ac760
 0x008ac850 function TOGetSaveChrName          # fh v3:exact+call.cs 0x008ac800 cdecl
 0x008ac8c0 function TOGetShapTextureName      # fh v3:exact+call.cs 0x008ac870 cdecl
+0x008acf10 function TOGetWord_01841d9c        # () -> [0x01841d9c]; before TOGetSystemConfirmButtonAssign; name ours
 0x008acf30 function TOGetSystemConfirmButtonAssign # fh v3:exact 0x008acee0
 0x008acf50 function TOGetTextureName          # fh v3:exact 0x008acf00
 0x008ad780 function TOInitBattleFontPath      # fh v3:bsim0.92 0x008ad730
@@ -4445,6 +4454,7 @@
 0x008af590 function TOSetEnvMovieMessage      # fh v3:exact 0x008af540
 0x008af5c0 function TOSetExeMessageWindowArea # fh v3:exact 0x008af570
 0x008af7d0 function TOSetMessageWindowActive  # (i): u16 +6 of the 8 message-window objects (0x01865b3c) to 0, then window i's to 1; leaves its object in eax; name ours (TOSet... by the file's alphabetical order)
+0x008af840 function TOSetMessageWindowMode    # (v): g_MessageWindowMode = v, returns v; name ours (TOGetMessageWindowMode's setter, in the file's order)
 0x008afb90 function TOSetMessageWindowValue   # (i, v): u16 +4 of window i's object = v; name ours
 0x008b00a0 function TOSortMessageWindowPriority # fh v3:exact 0x008b0050
 0x008b0340 function TOSwapInternationalEnvExec # fh v3:exact 0x008b02f0
@@ -4485,6 +4495,7 @@
 0x008b81d0 function TOInitMacroCmd            # fh v3:exact 0x008b8180
 0x008b8210 function TOInitMessage             # fh v3:exact 0x008b81c0
 0x008b8290 function TOIntToMes                # fh v3:exact 0x008b8240
+0x008b8530 function TOIsMessageStatus3Pressed # (i) -> 1 when TOGetMessageStatus(i) == 3 and bit 0x20 of the pad byte 0x025d09d4; name ours
 0x008b85c0 function MacroDic_Load                # Msg_LoadFile("macrodic"): 16 section offsets -> pointers in g_MacroDic
 0x008b86e0 function TOSetExeMessageArea       # fh v3:exact 0x008b8690
 0x008b8af0 function TOSetMessageFunc          # fh v3:exact 0x008b8aa0
@@ -4731,6 +4742,7 @@
 0x008fe080 function TOMakePktSeqPrimMes       # fh v3:exact 0x008fe080
 0x008feb00 function TOMakePktShapeCursor      # fh v3:exact 0x008feb00
 0x00900f40 function TOMenuInitBrush           # fh switch:bsim1.00 0x71005280f0
+0x00900f60 function TOMenuSet_018762ee        # (i, v): i < 16 (signed): u16 at 0x018762ee + 16 i = v; between TOMenuInitBrush and TOMenuTransFacePlyTex; name ours
 0x00901100 function TOMenuTransFacePlyTex     # fh switch:bsim1.00 0x7100522020
 0x00901130 function TOMenuTransFaceSmnTex     # fh switch:bsim1.00 0x7100522040
 0x00901160 function TOMenuTransSmallFacePlyTex # fh switch:bsim1.00 0x7100522000
@@ -5262,6 +5274,7 @@
 0x009da370 function MagicFile_GetEffectOverlayTable # fh v3:exact 0x009da370
 0x009da390 function MagicFile_GetHandle       # fh v3:bsim1.00 0x009da390
 0x009da3b0 function MagicFile_GetMagicId      # fh v3:bsim1.00 0x009da3a0
+0x009da3d0 function MagicFile_GetToBeDeleteMagicId # () -> [0x00c64ca8]; fh switch:bsim1.00 0x71007e2dd0
 0x009da3e0 function MagicFile_Init            # fh v3:exact 0x009da3d0
 0x009da420 function MagicFile_IsNexData       # fh v3:bsim1.00 0x009da410
 0x009da430 function MagicFile_Load            # fh v3:exact 0x009da420

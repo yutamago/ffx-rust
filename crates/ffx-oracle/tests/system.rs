@@ -2040,10 +2040,93 @@ fn small_state(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     same_memory("scissors", a, b);
 }
 
+/// More one-global getters and setters of round 3.
+fn small_state2(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use instance::bridge as i;
+    use window::bridge as w;
+    let getters = [
+        (0x0068_98c0, i::TOUCH_MANAGER),
+        (0x006f_15b0, i::ACHIEVEMENT_MANAGER),
+        (0x009d_a3d0, i::MAGIC_TO_DELETE),
+        (0x0077_87b0, i::HDD_WORD_518),
+        (0x008a_c2d0, i::TO_GET_WORDS[0]),
+        (0x008a_c3f0, i::TO_GET_WORDS[1]),
+        (0x008a_c790, i::TO_GET_WORDS[2]),
+        (0x008a_cf10, i::TO_GET_WORDS[3]),
+    ];
+    for round in 0..4 {
+        for &(sym, g) in &getters {
+            if round > 0 {
+                set(a, b, g, rng.next());
+            }
+            assert_eq!(eax(a, sym, &[]), i::word(b, g), "{sym:#x}");
+        }
+    }
+    let obj = random_block(a, b, rng, 0x100);
+    for k in 0..0x28 {
+        let ra = call(a, 0x0063_11b0, Conv::Thiscall(obj), &[k]).eax;
+        assert_eq!(ra, i::table_60(b, obj, k));
+    }
+    for n in [
+        0,
+        1,
+        7,
+        8,
+        9,
+        15,
+        16,
+        17,
+        100,
+        -1,
+        -9,
+        -100,
+        i32::MIN,
+        i32::MAX,
+    ] {
+        let ra = call(a, 0x006d_b870, Conv::Stdcall, &[n.cast_unsigned(), 7]).eax;
+        assert_eq!(ra, i::eighth_at_least_one(n).cast_unsigned(), "{n}");
+    }
+    for _ in 0..8 {
+        let v = rng.next();
+        assert_eq!(eax(a, 0x008a_f840, &[v]), w::set_message_window_mode(b, v));
+    }
+    for n in 0..64u32 {
+        // small negatives (near the table), large positives (skipped)
+        let k = match n % 3 {
+            0 => (rng.next() % 40).cast_signed() - 20,
+            1 => rng.next().cast_signed() | 0x7fff_0000,
+            _ => (n / 3).cast_signed() % 16,
+        };
+        let v = rng.next();
+        eax(a, 0x0090_0f60, &[k.cast_unsigned(), v]);
+        w::menu_set_018762ee(b, k, v);
+    }
+    same_memory("small state 2", a, b);
+    // TOIsMessageStatus3Pressed over made-up message windows 0..3
+    for k in 0..4u32 {
+        let m = random_block(a, b, rng, 0x120);
+        set_entry(a, b, w::MSG_WINDOWS, k, m);
+    }
+    for n in 0..64u32 {
+        let k = n % 4;
+        let m = Mem::read::<u32>(b, w::MSG_WINDOWS.ptr(b).addr + 4 * k);
+        put(a, b, m + 0x2e, u16::try_from(rng.next() % 5).unwrap());
+        set(
+            a,
+            b,
+            w::PAD_BYTE_25D09D4,
+            u8::try_from(rng.next() & 0xff).unwrap(),
+        );
+        let ra = eax(a, 0x008b_8530, &[k]);
+        assert_eq!(ra, w::is_message_status3_pressed(b, k.cast_signed()));
+    }
+}
+
 fn round3(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     leb128_and_stubs(a, b, rng);
     trees_and_names(a, b, rng);
     small_state(a, b, rng);
+    small_state2(a, b, rng);
 }
 
 #[test]

@@ -244,4 +244,44 @@ pub mod bridge {
     pub fn trophy_manager(mem: &impl Mem) -> u32 {
         TROPHY_MANAGER.get(mem)
     }
+
+    /// `TouchManager::GetInstance`'s object pointer.
+    pub const TOUCH_MANAGER: Global<u32> = Global::new(0x00cc_c850);
+    /// The achievement manager (`SaveDataUnlockAchievement` asks for it).
+    pub const ACHIEVEMENT_MANAGER: Global<u32> = Global::new(0x00ce_81a8);
+    /// The magic file's ID to delete (`MagicFile_GetToBeDeleteMagicId`).
+    pub const MAGIC_TO_DELETE: Global<u32> = Global::new(0x00c6_4ca8);
+
+    /// The HDD word `get_hdd_word_518` returns (`TkRefreshHdd` reads it).
+    pub const HDD_WORD_518: Global<u32> = Global::new(0x0112_a518);
+    /// The words the unnamed `TOGet` getters return, by getter address:
+    /// `0x008ac2d0`, `0x008ac3f0`, `0x008ac790`, `0x008acf10`.
+    pub const TO_GET_WORDS: [Global<u32>; 4] = [
+        Global::new(0x0184_1e08),
+        Global::new(0x0184_1d98),
+        Global::new(0x0184_1e00),
+        Global::new(0x0184_1d9c),
+    ];
+
+    /// A getter of one global word: `TouchManager_GetInstance`
+    /// (`0x006898c0`), `AchievementManager_GetInstance` (`0x006f15b0`),
+    /// `MagicFile_GetToBeDeleteMagicId` (`0x009da3d0`), `get_hdd_word_518`
+    /// (`0x007787b0`), the `TOGet` getters at `0x008ac2d0`, `0x008ac3f0`,
+    /// `0x008ac790`, `0x008acf10`.
+    pub fn word(mem: &impl Mem, g: Global<u32>) -> u32 {
+        g.get(mem)
+    }
+
+    /// `0x006311b0` (`thiscall(this, i)`, `ret 4`): word `i` of the table
+    /// at `this + 0x60`.
+    pub fn table_60(mem: &impl Mem, this: u32, i: u32) -> u32 {
+        mem.read(this.wrapping_add(0x60).wrapping_add(i.wrapping_mul(4)))
+    }
+
+    /// `0x006db870(n, _)` (stdcall, `ret 8`): `n / 8` (signed, toward
+    /// zero) above 8, else 1.
+    #[must_use]
+    pub const fn eighth_at_least_one(n: i32) -> i32 {
+        if n > 8 { n / 8 } else { 1 }
+    }
 }
