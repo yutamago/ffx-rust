@@ -3,7 +3,7 @@
 
 use ffx_battle::{actor::bridge as actor, camera::bridge as camera, command::bridge as cmd};
 use ffx_battle::{damage::bridge as dmg, state::bridge as state, util::bridge as util};
-use ffx_battle::{save::bridge as save, vector::bridge as vector};
+use ffx_battle::{misc::bridge as misc, save::bridge as save, vector::bridge as vector};
 
 use super::{call0, mem, ported};
 
@@ -886,5 +886,151 @@ ported! {
     /// `MsVectorNormal(out, v)`.
     MsVectorNormal @ 0x007c_44a0 => extern "C" fn ms_vector_normal(out: u32, v: u32) {
         vector::ms_vector_normal(&mut mem(), out, v);
+    }
+
+    // Battle bookkeeping (ffx_battle::misc).
+    /// `MsComBufInit`.
+    MsComBufInit @ 0x0079_d290 => extern "C" fn ms_com_buf_init() {
+        misc::ms_com_buf_init(&mut mem());
+    }
+    /// `MsEtEffectReadInit`.
+    MsEtEffectReadInit @ 0x0079_e730 => extern "C" fn ms_et_effect_read_init() {
+        misc::ms_et_effect_read_init(&mut mem());
+    }
+    /// `MsNumberInit`.
+    MsNumberInit @ 0x0079_f9f0 => extern "C" fn ms_number_init() {
+        misc::ms_number_init(&mut mem());
+    }
+    /// `MsActionInit`.
+    MsActionInit @ 0x007a_ce90 => extern "C" fn ms_action_init() {
+        misc::ms_action_init(&mut mem());
+    }
+    /// `MsEffectCameraReset`.
+    MsEffectCameraReset @ 0x007b_bb00 => extern "C" fn ms_effect_camera_reset() {
+        misc::ms_effect_camera_reset(&mut mem());
+    }
+    /// `MsBattleGetFontAddress`.
+    MsBattleGetFontAddress @ 0x0078_1680 => extern "C" fn ms_battle_get_font_address() -> u32 {
+        misc::ms_battle_get_font_address(&mem())
+    }
+    /// `MsRegMotionInit`.
+    MsRegMotionInit @ 0x0079_ccd0 => extern "C" fn ms_reg_motion_init() {
+        misc::ms_reg_motion_init(&mut mem());
+    }
+    /// `MsBtlStartAP`.
+    MsBtlStartAP @ 0x0079_8e90 => extern "C" fn ms_btl_start_ap() {
+        misc::ms_btl_start_ap(&mut mem());
+    }
+    /// `MsBtlInitItemMem`.
+    MsBtlInitItemMem @ 0x0079_a000 => extern "C" fn ms_btl_init_item_mem() {
+        misc::ms_btl_init_item_mem(&mut mem());
+    }
+    /// `MsBtlInitItemMem_007a0cd0`.
+    MsBtlInitItemMem_007a0cd0 @ 0x007a_0cd0 => extern "C" fn ms_btl_init_item_mem2() {
+        misc::ms_btl_init_item_mem2(&mut mem());
+    }
+    /// `MsMessageCueInit`.
+    MsMessageCueInit @ 0x007a_2730 => extern "C" fn ms_message_cue_init() {
+        misc::ms_message_cue_init(&mut mem());
+    }
+    /// `MsSplineInit`.
+    MsSplineInit @ 0x007b_aaa0 => extern "C" fn ms_spline_init() {
+        misc::ms_spline_init(&mut mem());
+    }
+    /// `MsBattleSpecialCameraFree`.
+    MsBattleSpecialCameraFree @ 0x0079_dd90 => extern "C" fn ms_battle_special_camera_free() {
+        misc::ms_battle_special_camera_free(&mut mem());
+    }
+    /// `MsBtlReadStatusComplete`.
+    MsBtlReadStatusComplete @ 0x007a_d550 => extern "C" fn ms_btl_read_status_complete() {
+        misc::ms_btl_read_status_complete(&mut mem());
+    }
+    /// `MsScreenFocusReset`.
+    MsScreenFocusReset @ 0x007b_bd80 => extern "C" fn ms_screen_focus_reset() {
+        misc::ms_screen_focus_reset(&mut mem());
+    }
+    /// `MsBtlListInit`.
+    MsBtlListInit @ 0x0079_d250 => extern "C" fn ms_btl_list_init() {
+        misc::ms_btl_list_init(&mut mem());
+    }
+    /// `MsBtlReadInit`.
+    MsBtlReadInit @ 0x0078_3000 => extern "C" fn ms_btl_read_init() {
+        misc::ms_btl_read_init(&mut mem());
+    }
+    /// `MsMoveTargetPos`.
+    MsMoveTargetPos @ 0x007a_b160 => extern "C" fn ms_move_target_pos() -> u32 {
+        misc::ms_move_target_pos(&mem())
+    }
+    /// `FinishReadPhyreBattleMap`.
+    FinishReadPhyreBattleMap @ 0x0078_2fd0 => extern "C" fn finish_read_phyre_battle_map() {
+        misc::finish_read_phyre_battle_map(&mut mem());
+    }
+    /// `MsDebugCameraSleepInit`.
+    MsDebugCameraSleepInit @ 0x0079_2200 => extern "C" fn ms_debug_camera_sleep_init() {
+        misc::ms_debug_camera_sleep_init(&mut mem());
+    }
+    /// `MsResetDirMove(p)`.
+    MsResetDirMove @ 0x007a_b170 => extern "C" fn ms_reset_dir_move(p: u32) {
+        misc::ms_reset_dir_move(&mut mem(), p);
+    }
+    /// `MsPaymentProcess(p)`.
+    MsPaymentProcess @ 0x007a_fa60 => extern "C" fn ms_payment_process(p: u32) -> u32 {
+        misc::ms_payment_process(&mem(), p)
+    }
+    /// `MsMotionSpeedSetNormal(p)`.
+    MsMotionSpeedSetNormal @ 0x007a_a260 => extern "C" fn ms_motion_speed_set_normal(p: u32) {
+        misc::ms_motion_speed_set_normal(&mut mem(), p);
+    }
+    /// `msMoveReset(p)`.
+    msMoveReset @ 0x007a_a280 => extern "C" fn ms_move_reset(p: u32) {
+        misc::ms_move_reset(&mut mem(), p);
+    }
+    /// `MsSetMenuCommand(p)`.
+    MsSetMenuCommand @ 0x0079_2e50 => extern "C" fn ms_set_menu_command(p: u32) {
+        misc::ms_set_menu_command(&mut mem(), p);
+    }
+    /// `MsSummonLimitSave(p)`.
+    MsSummonLimitSave @ 0x007b_06e0 => extern "C" fn ms_summon_limit_save(p: u32) {
+        misc::ms_summon_limit_save(&mut mem(), p);
+    }
+    /// `MsSummonLimitLoad(p)`.
+    MsSummonLimitLoad @ 0x007b_06b0 => extern "C" fn ms_summon_limit_load(p: u32) {
+        misc::ms_summon_limit_load(&mut mem(), p);
+    }
+    /// `MsEffectGetBufferAddress(p)`.
+    MsEffectGetBufferAddress @ 0x007b_7eb0 => extern "C" fn ms_effect_get_buffer_address(p: u32) -> u32 {
+        misc::ms_effect_get_buffer_address(&mut mem(), p)
+    }
+    /// `MsEffectGetLastMagicNum2(p)`.
+    MsEffectGetLastMagicNum2 @ 0x0078_7bf0 => extern "C" fn ms_effect_get_last_magic_num2(p: u32) -> u32 {
+        misc::ms_effect_get_last_magic_num2(&mem(), p)
+    }
+    /// `MsMoveSplineSet(p)`.
+    MsMoveSplineSet @ 0x007a_b140 => extern "C" fn ms_move_spline_set(p: u32) {
+        misc::ms_move_spline_set(&mut mem(), p);
+    }
+    /// `MsSaveUcID(id)`.
+    MsSaveUcID @ 0x007d_42e0 => extern "C" fn ms_save_uc_id(id: u32) {
+        misc::ms_save_uc_id(&mut mem(), id.to_le_bytes()[..2].try_into().map_or(0, u16::from_le_bytes));
+    }
+    /// `MsScreenInit(w, h)`.
+    MsScreenInit @ 0x007c_0540 => extern "C" fn ms_screen_init(w: u32, h: u32) {
+        misc::ms_screen_init(&mut mem(), w, h);
+    }
+    /// `MsBattleSpecialCameraPause(camera)`.
+    MsBattleSpecialCameraPause @ 0x0079_ddb0 => extern "C" fn ms_battle_special_camera_pause(camera: u32) {
+        misc::ms_battle_special_camera_pause(&mut mem(), camera.to_le_bytes()[0]);
+    }
+    /// `MsScreenOffset(x, y)` (floats as bits).
+    MsScreenOffset @ 0x007b_c0c0 => extern "C" fn ms_screen_offset(x: u32, y: u32) {
+        misc::ms_screen_offset(&mut mem(), x, y);
+    }
+    /// `MsScreenResetOffset(x, y)`.
+    MsScreenResetOffset @ 0x007b_c720 => extern "C" fn ms_screen_reset_offset(x: u32, y: u32) {
+        misc::ms_screen_reset_offset(&mut mem(), x, y);
+    }
+    /// `MsEffectSetCameraBufFloat(i, f)`.
+    MsEffectSetCameraBufFloat @ 0x007b_7f50 => extern "C" fn ms_effect_set_camera_buf_float(i: u32, f: u32) {
+        misc::ms_effect_set_camera_buf_float(&mut mem(), i, f);
     }
 }
