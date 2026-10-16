@@ -191,4 +191,71 @@ pub mod bridge {
     pub fn op_et_weapon_afterimage_fade(mem: &mut impl Mem, id: u32) {
         signal(mem, id, 0x8000);
     }
+
+    /// The draw flag index of character `h`'s record, if it has one.
+    fn draw_index(mem: &impl Mem, h: u32) -> Option<u32> {
+        let i = find_chr(mem, h)?;
+        Some(u32::from(mem.read::<u16>(chr(mem, i) + 0xe)))
+    }
+
+    fn range_check(i: u32) {
+        // the original's __report_rangecheckfailure (a fast fail)
+        assert!(i < 0xf0, "draw flag index {i:#x} out of range");
+    }
+
+    /// `op_et_draw_flags_restore(h)` (`0x007fc130`): the character's
+    /// draw flags back from `g_EtChrDrawFlags2` (bit 7 off), which is
+    /// cleared; returns what it held (0 for an unknown handle).
+    pub fn op_et_draw_flags_restore(mem: &mut impl Mem, h: u32) -> u32 {
+        let Some(i) = draw_index(mem, h) else {
+            return 0;
+        };
+        let held = mem.read::<u8>(DRAW_FLAGS2.ptr(mem).addr + i);
+        mem.write(DRAW_FLAGS.ptr(mem).addr + i, held & 0x7f);
+        range_check(i);
+        mem.write(DRAW_FLAGS2.ptr(mem).addr + i, 0u8);
+        u32::from(held)
+    }
+
+    /// `op_et_draw_flags_save(h)` (`0x007fc190`): the character's draw
+    /// flags kept in `g_EtChrDrawFlags2` (with bit 7) and cleared; returns
+    /// what `g_EtChrDrawFlags2` held before (0 for an unknown handle).
+    pub fn op_et_draw_flags_save(mem: &mut impl Mem, h: u32) -> u32 {
+        let Some(i) = draw_index(mem, h) else {
+            return 0;
+        };
+        let flags = mem.read::<u8>(DRAW_FLAGS.ptr(mem).addr + i);
+        let held = mem.read::<u8>(DRAW_FLAGS2.ptr(mem).addr + i);
+        mem.write(DRAW_FLAGS2.ptr(mem).addr + i, flags | 0x80);
+        range_check(i);
+        mem.write(DRAW_FLAGS.ptr(mem).addr + i, 0u8);
+        u32::from(held)
+    }
+
+    /// `g_EtChrHidden`: 1 while `op_et_chr_show(0)` hides every character.
+    pub const CHR_HIDDEN: Global<u32> = Global::new(0x00cc_b9d0);
+    /// `g_OpEtChrShow`: the last `op_et_chr_show` argument (a byte).
+    pub const CHR_SHOW: Global<u8> = Global::new(0x011a_0063);
+
+    /// `op_et_chr_show(on)` (`0x007ff090`): with 0, sets bit 1 of the draw
+    /// flags of the first 208 records that have a handle (and an index
+    /// below 0xf0), else clears it.
+    pub fn op_et_chr_show(mem: &mut impl Mem, on: u32) {
+        #[allow(clippy::cast_possible_truncation)] // the low byte
+        CHR_SHOW.set(mem, on as u8);
+        CHR_HIDDEN.set(mem, u32::from(on == 0));
+        for r in 0..0xd0 {
+            let at = chr(mem, r);
+            if mem.read::<u32>(at) == 0 {
+                continue;
+            }
+            let i = u32::from(mem.read::<u16>(at + 0xe));
+            if i >= 0xf0 {
+                continue;
+            }
+            let p = DRAW_FLAGS.ptr(mem).addr + i;
+            let f: u8 = mem.read(p);
+            mem.write(p, if on == 0 { f | 2 } else { f & 0xfd });
+        }
+    }
 }

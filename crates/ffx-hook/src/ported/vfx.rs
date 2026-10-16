@@ -1352,4 +1352,51 @@ ported! {
     pppKeShpTailPhtCon @ 0x0075_4180 => extern "C" fn ppp_ke_shp_tail_pht_con(obj: u32, ctrl: u32) {
         prog::bridge::ppp_ke_shp_tail_pht_con(&mut mem(), obj, ctrl, &mut |_| crt_rand());
     }
+    /// `pppKeMdlDttCon2(obj, ctrl)`.
+    pppKeMdlDttCon2 @ 0x0072_e760 => extern "C" fn ppp_ke_mdl_dtt_con2(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_mdl_dtt_con2(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeLnsFlsCon(obj, ctrl)`.
+    pppKeLnsFlsCon @ 0x0075_ab30 => extern "C" fn ppp_ke_lns_fls_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_lns_fls_con(&mut mem(), obj, ctrl);
+    }
+
+    // ---- oef2 blocks, environments, draw flags ----
+    /// `op_oef2_a_get(oef, kind, n)`.
+    op_oef2_a_get @ 0x007e_3810 => extern "C" fn op_oef2_a_get(oef: u32, kind: u32, n: u32) -> u32 {
+        op::bridge::op_oef2_a_get(&mem(), oef, kind, n)
+    }
+    /// `op_oef2_set(oef, data)`.
+    op_oef2_set @ 0x007e_3b70 => extern "C" fn op_oef2_set(oef: u32, data: u32) {
+        op::bridge::op_oef2_set(&mut mem(), oef, data);
+    }
+    /// `op_oef2_set2(oef)`.
+    op_oef2_set2 @ 0x007e_3e30 => extern "C" fn op_oef2_set2(oef: u32) {
+        op::bridge::op_oef2_set2(&mut mem(), oef);
+    }
+    /// `op_oef2_clut_load(clut)`: only a debug message (`dbgPrintf` is
+    /// empty) for a null one.
+    op_oef2_clut_load @ 0x007e_46b0 => extern "C" fn op_oef2_clut_load(clut: u32) {
+        let _ = clut;
+    }
+    /// `pppInitEnv(env, data, memory, size)`.
+    pppInitEnv @ 0x0071_69d0 => extern "C" fn ppp_init_env(env: u32, data: u32, memory: u32, size: u32) {
+        heap::bridge::ppp_init_env(&mut mem(), env, data, memory, size);
+    }
+    /// `pppMemAlloc(heap, spare, size)`.
+    pppMemAlloc @ 0x0071_6a30 => extern "C" fn ppp_mem_alloc(heap: u32, spare: u32, size: u32) -> u32 {
+        heap::bridge::ppp_mem_alloc(&mut mem(), heap, spare, size)
+    }
+    /// `op_et_draw_flags_restore(h)`.
+    op_et_draw_flags_restore @ 0x007f_c130 => extern "C" fn op_et_draw_flags_restore(h: u32) -> u32 {
+        et::bridge::op_et_draw_flags_restore(&mut mem(), h)
+    }
+    /// `op_et_draw_flags_save(h)`.
+    op_et_draw_flags_save @ 0x007f_c190 => extern "C" fn op_et_draw_flags_save(h: u32) -> u32 {
+        et::bridge::op_et_draw_flags_save(&mut mem(), h)
+    }
+    /// `op_et_chr_show(on)`.
+    op_et_chr_show @ 0x007f_f090 => extern "C" fn op_et_chr_show(on: u32) {
+        et::bridge::op_et_chr_show(&mut mem(), on);
+    }
 }

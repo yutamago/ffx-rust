@@ -326,4 +326,132 @@ pub mod bridge {
         slot.set(mem, cue);
         0
     }
+
+    /// `op_oef2_a_get(oef, kind, n)` (`0x007e3810`): entry `n & 0xff` of
+    /// table `kind` of an `oef2` block: for kind 2 the 0x20-byte record
+    /// (0 when its `+0x10` is 0), kind 3 the 0x10-byte record (0 when its
+    /// `u16` at `+2` is 0), kind 6 the 0x10-byte record, else the word in
+    /// the table (the table offsets at `+4 kind`, from the block).
+    pub fn op_oef2_a_get(mem: &impl Mem, oef: u32, kind: u32, n: u32) -> u32 {
+        let n = n & 0xff;
+        let table = |k: u32| mem.read::<u32>(oef.wrapping_add(4 * k));
+        match kind {
+            2 => {
+                let r = table(2).wrapping_add(n * 0x20).wrapping_add(oef);
+                if mem.read::<u32>(r.wrapping_add(0x10)) != 0 {
+                    r
+                } else {
+                    0
+                }
+            }
+            3 => {
+                let r = table(3).wrapping_add(n * 0x10).wrapping_add(oef);
+                if mem.read::<u16>(r.wrapping_add(2)) != 0 {
+                    r
+                } else {
+                    0
+                }
+            }
+            6 => table(6).wrapping_add(n * 0x10).wrapping_add(oef),
+            _ => {
+                let t = mem.read::<u32>(oef.wrapping_add(kind.wrapping_mul(4)));
+                mem.read(t.wrapping_add(n * 4).wrapping_add(oef))
+            }
+        }
+    }
+
+    /// One table of `op_oef2_set`: for each of the source words (`src..`,
+    /// the count re-read at `count` each turn), a nonzero one rebased on
+    /// `data` into the destination (`dst`, `stride` bytes apart).
+    fn rebase_table(mem: &mut impl Mem, data: u32, src: u32, dst: u32, stride: u32, count: u32) {
+        let mut i = 0;
+        while i < u32::from(mem.read::<u16>(count)) {
+            let v: u32 = mem.read(src.wrapping_add(4 * i));
+            if v != 0 {
+                mem.write(dst.wrapping_add(stride * i), v.wrapping_add(data));
+            }
+            i += 1;
+        }
+    }
+
+    /// `op_oef2_set(oef, data)` (`0x007e3b70`): once per data block (its
+    /// `u16` at `+0x40` marks it done), fills the `oef2` block's tables
+    /// with the data's offsets made pointers: the counts at `data + 0x42..
+    /// 0x52` (`u16`), the offsets at `data + 4 ..0x24` (from `data`), the
+    /// destinations at `oef + 4 ..0x24` (from `oef`): plain words, the
+    /// `+0x14` of 0x20-byte records, the `+4` of 0x10-byte records, and
+    /// the sound records (type byte, `+8` the data, `+0xc` an end: when
+    /// the old `+8` is below 0x100000, the type is 1 and `+0xc` > 0, it
+    /// becomes `+8` plus the old one; then a negative `+0xc` other than
+    /// `0x80000000` takes the `+0xc` of the record its low byte names).
+    /// Reads every count again each turn, as the original does.
+    #[allow(clippy::many_single_char_names)] // n, i, r, v, p
+    pub fn op_oef2_set(mem: &mut impl Mem, oef: u32, data: u32) {
+        if mem.read::<u16>(data.wrapping_add(0x40)) != 0 {
+            return;
+        }
+        mem.write(data.wrapping_add(0x40), 1u16);
+        for (k, extra, stride, n_at) in [
+            (1u32, 0u32, 4u32, 0x42u32),
+            (2, 0x14, 0x20, 0x44),
+            (3, 4, 0x10, 0x46),
+            (4, 0, 4, 0x48),
+            (5, 0, 4, 0x4a),
+        ] {
+            let n: u16 = mem.read(data.wrapping_add(n_at));
+            if n != 0 {
+                let src = mem.read::<u32>(data.wrapping_add(4 * k)).wrapping_add(data);
+                let dst = mem
+                    .read::<u32>(oef.wrapping_add(4 * k))
+                    .wrapping_add(extra)
+                    .wrapping_add(oef);
+                rebase_table(mem, data, src, dst, stride, data.wrapping_add(n_at));
+            }
+        }
+        let n: u16 = mem.read(data.wrapping_add(0x4c));
+        if n != 0 {
+            let src = mem.read::<u32>(data.wrapping_add(0x18)).wrapping_add(data);
+            let table = mem.read::<u32>(oef.wrapping_add(0x18)).wrapping_add(oef);
+            let mut i = 0;
+            while i < u32::from(mem.read::<u16>(data.wrapping_add(0x4c))) {
+                let v: u32 = mem.read(src.wrapping_add(4 * i));
+                let r = table.wrapping_add(0x10 * i);
+                let old: i32 = mem.read(r.wrapping_add(8));
+                if v != 0 && old < 0x10_0000 {
+                    let p = v.wrapping_add(data);
+                    mem.write(r.wrapping_add(8), p);
+                    if mem.read::<u8>(r) == 1 && mem.read::<i32>(r.wrapping_add(0xc)) > 0 {
+                        mem.write(r.wrapping_add(0xc), p.wrapping_add(old.cast_unsigned()));
+                    }
+                }
+                i += 1;
+            }
+            let table = mem.read::<u32>(oef.wrapping_add(0x18)).wrapping_add(oef);
+            let mut i = 0;
+            while i < u32::from(mem.read::<u16>(data.wrapping_add(0x4c))) {
+                let r = table.wrapping_add(0x10 * i);
+                let end: u32 = mem.read(r.wrapping_add(0xc));
+                if mem.read::<u8>(r) == 1 && end.cast_signed() < 0 && end != 0x8000_0000 {
+                    let v: u32 = mem.read(table.wrapping_add(0xc + 0x10 * (end & 0xff)));
+                    mem.write(r.wrapping_add(0xc), v);
+                }
+                i += 1;
+            }
+        }
+        for (k, n_at) in [(8u32, 0x50u32), (9, 0x52)] {
+            let n: u16 = mem.read(data.wrapping_add(n_at));
+            if n != 0 {
+                let dst = mem.read::<u32>(oef.wrapping_add(4 * k)).wrapping_add(oef);
+                let src = mem.read::<u32>(data.wrapping_add(4 * k)).wrapping_add(data);
+                rebase_table(mem, data, src, dst, 4, data.wrapping_add(n_at));
+            }
+        }
+    }
+
+    /// `op_oef2_set2(oef)` (`0x007e3e30`): `op_oef2_set(oef, oef + [oef +
+    /// 0x3c])`.
+    pub fn op_oef2_set2(mem: &mut impl Mem, oef: u32) {
+        let data = mem.read::<u32>(oef.wrapping_add(0x3c)).wrapping_add(oef);
+        op_oef2_set(mem, oef, data);
+    }
 }

@@ -2888,3 +2888,183 @@ fn matrix_programs_match_the_original() {
         }
     }
 }
+
+// ---- oef2 blocks, ppp environments, character draw flags ---------------
+
+#[test]
+#[allow(clippy::too_many_lines)] // one setup, then the random rounds
+#[allow(clippy::cast_possible_truncation)] // small random values
+fn oef2_env_and_draw_flags_match_the_original() {
+    use et::bridge as e;
+    use heap::bridge as h;
+    use op::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0ef2_5e70);
+        let oef = p.alloc(0x2000);
+        let data = p.alloc(0x2000);
+        let heaps = p.alloc(0x40);
+        let arena = p.alloc(0x4000);
+        let env = p.alloc(0x40);
+        let env_slot = p.alloc(4);
+        let tables = p.alloc(0x20);
+        for round in 0..2000u32 {
+            // an oef2 block: table offsets, the sound records' table at 0x800
+            for k in 0..10 {
+                let at = if k == 6 { 0x800 } else { 0x100 + 0x40 * k };
+                p.set(oef + 4 * k, at);
+            }
+            for i in (0x100..0x2000).step_by(4) {
+                let v = match rng.below(4) {
+                    0 => 0,
+                    1 => rng.below(0x20_0000),
+                    2 => 0x8000_0000 | rng.below(0x100),
+                    _ => rng.next(),
+                };
+                p.set(oef + i, v);
+            }
+            for r in 0..0x40 {
+                p.set(oef + 0x800 + 0x10 * r, u8::from(rng.chance(60)));
+            }
+            // its data: offsets to the source tables, the counts, the mark
+            let d = data + if rng.chance(10) { 4 } else { 0 };
+            for k in 1..10 {
+                p.set(d + 4 * k, 0x100 + 0x40 * k);
+            }
+            for i in (0x100..0x400).step_by(4) {
+                let v = if rng.chance(30) { 0 } else { rng.below(0x1000) };
+                p.set(d + i, v);
+            }
+            for at in (0x42..0x54).step_by(2) {
+                let n = if rng.chance(20) {
+                    0u16
+                } else {
+                    rng.below(16) as u16
+                };
+                p.set(d + at, n);
+            }
+            p.set(d + 0x40, u16::from(rng.chance(10)));
+            p.set(oef + 0x3c, d.wrapping_sub(oef));
+            if rng.chance(50) {
+                p.check(
+                    &format!("op_oef2_set round {round}"),
+                    0x007e_3b70,
+                    &[oef, d],
+                    |m| {
+                        o::op_oef2_set(m, oef, d);
+                        None
+                    },
+                );
+            } else {
+                p.check(
+                    &format!("op_oef2_set2 round {round}"),
+                    0x007e_3e30,
+                    &[oef],
+                    |m| {
+                        o::op_oef2_set2(m, oef);
+                        None
+                    },
+                );
+            }
+            let kind = rng.pick(&[0u32, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+            let n = rng.next();
+            for k in [2u32, 3, 6] {
+                p.set(oef + 4 * k, 0x100 + rng.below(0x40) * 4);
+            }
+            p.set(oef + 4 * kind, 0x100 + rng.below(0x100) * 4);
+            p.check(
+                &format!("op_oef2_a_get({kind}) round {round}"),
+                0x007e_3810,
+                &[oef, kind, n],
+                |m| Some(o::op_oef2_a_get(m, oef, kind, n)),
+            );
+            let arg = if rng.chance(50) { 0 } else { oef };
+            p.check("op_oef2_clut_load", 0x007e_46b0, &[arg], |_| None);
+
+            // pppInitEnv and pppMemAlloc on two heaps
+            p.put(h::ENV_SLOT, env_slot);
+            let with_data = if rng.chance(70) { tables } else { 0 };
+            p.fill(tables, 0x20, &mut rng);
+            p.check(
+                &format!("pppInitEnv round {round}"),
+                0x0071_69d0,
+                &[env, with_data, arena, 0x2000],
+                |m| {
+                    h::ppp_init_env(m, env, with_data, arena, 0x2000);
+                    None
+                },
+            );
+            let spare = heaps + 0x20;
+            if rng.chance(70) {
+                p.check(
+                    "pppCreateHeap",
+                    0x0072_c480,
+                    &[spare, arena + 0x2000, 0x2000],
+                    |m| {
+                        h::ppp_create_heap(m, spare, arena + 0x2000, 0x2000);
+                        None
+                    },
+                );
+            } else {
+                p.set(spare + 4, 0u32);
+            }
+            for _ in 0..8 {
+                let size = rng.below(0x900);
+                p.check(
+                    &format!("pppMemAlloc({size:#x}) round {round}"),
+                    0x0071_6a30,
+                    &[env, spare, size],
+                    |m| Some(h::ppp_mem_alloc(m, env, spare, size)),
+                );
+            }
+
+            // character records with handles and draw flag indexes
+            if !p.snapshot() || round > 0 {
+                let chr = p.sym(e::CHR.sym);
+                for i in 0..e::CHRS {
+                    let handle = if rng.chance(30) { 0x1000 + i } else { 0 };
+                    p.set(chr + 0x20 * i, handle);
+                    let index = rng.below(0x100) as u16;
+                    p.set(chr + 0x20 * i + 0xe, index);
+                }
+                for g in [e::DRAW_FLAGS.sym, e::DRAW_FLAGS2.sym] {
+                    let at = p.sym(g);
+                    p.fill(at, 0x100, &mut rng);
+                }
+            }
+            let chr = p.sym(e::CHR.sym);
+            let i = rng.below(e::CHRS);
+            let handle = rng.pick(&[0, 0x1000 + i, 0x5555]);
+            if handle == 0x1000 + i {
+                p.set(chr + 0x20 * i, handle);
+                p.set(chr + 0x20 * i + 0xe, rng.below(0xf0) as u16);
+            }
+            let save = rng.chance(50);
+            let (name, sym) = if save {
+                ("op_et_draw_flags_save", 0x007f_c190)
+            } else {
+                ("op_et_draw_flags_restore", 0x007f_c130)
+            };
+            let found = (0..e::CHRS).find(|&j| p.get::<u32>(chr + 0x20 * j) == handle);
+            if found.is_some_and(|j| p.get::<u16>(chr + 0x20 * j + 0xe) >= 0xf0) {
+                continue; // the original fast-fails
+            }
+            p.check(&format!("{name} round {round}"), sym, &[handle], |m| {
+                Some(if save {
+                    e::op_et_draw_flags_save(m, handle)
+                } else {
+                    e::op_et_draw_flags_restore(m, handle)
+                })
+            });
+            let on = rng.pick(&[0u32, 1, 0x100, 0xffff_ffff]);
+            p.check(
+                &format!("op_et_chr_show({on}) round {round}"),
+                0x007f_f090,
+                &[on],
+                |m| {
+                    e::op_et_chr_show(m, on);
+                    None
+                },
+            );
+        }
+    }
+}

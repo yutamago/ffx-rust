@@ -1437,6 +1437,7 @@
 0x0072ded0 function KeDttMdl_MkGifPk          # fh v3:cg16 0x72dfb0
 0x0072e6d0 function KeDttMdl_UseSingleInstance # fh v3:exact 0x0072e7b0
 0x0072e730 function pppKeMdlDttCon            # ppp program table record "pppKeMdlDtt" +0x1c set-up: area 0 +0xa8/+0xa0/+0xa4 = 0
+0x0072e760 function pppKeMdlDttCon2           # ppp program table record "pppKeMdlDtt" +0x20 set-up: area 0 +0xa8/+0xa0/+0xa4 = 0 (as pppKeMdlDttCon)
 0x0072eb20 function pppVtMime                 # fh v3:exact 0x0072ec00
 0x0072ed70 function pppVtMimeCon              # fh v3:exact 0x0072ee50
 0x0072edb0 function pppVtMimeCon2             # ppp program table record "pppVtMime" (0x00c3b278) +0x20 second set-up; "pppVtMime" (0x00c3c920) +0x20 second set-up
@@ -1659,6 +1660,7 @@
 0x0075a8b0 function pppKeLnsCrnTDes           # fh v3:cg2 0x75a9a0
 0x0075a900 function pppKeLnsCrnTDraw          # fh v3:exact 0x0075a9f0
 0x0075aab0 function pppKeLnsCrnUpdate         # fh v3:exact 0x0075aba0
+0x0075ab30 function pppKeLnsFlsCon            # ppp program table record "pppKeLnsFls" +0x1c set-up: 0x0076a640(area 0 + 0xa0): set_ptr32(g_pppRandTarget), set_ptr32(0)
 0x0075ac60 function pppKeLnsFlsTCon           # fh v3:cg2 0x75ad50
 0x0075acb0 function pppKeLnsFlsTDes           # fh v3:cg2 0x75ada0
 0x0075ad00 function pppKeLnsFlsTDraw          # fh v3:exact 0x0075adf0
@@ -2795,6 +2797,8 @@
 0x007fbab0 function op_et_bindeff_draw_on     # fh v3:bsim1.00 0x007fb9d0
 0x007fbb90 function op_et_bindeff_off         # fh v3:exact 0x007fbab0
 0x007fbcd0 function op_et_bindeff_off_signal  # fh v3:exact 0x007fbbf0
+0x007fc130 function op_et_draw_flags_restore  # (h) -> u8: g_EtChrDrawFlags[i] = g_EtChrDrawFlags2[i] & 0x7f, g_EtChrDrawFlags2[i] = 0, returns the old g_EtChrDrawFlags2 (i = the record's +0xe; __report_rangecheckfailure for i >= 0xf0 after the first store); g_MagicImports slot 547
+0x007fc190 function op_et_draw_flags_save     # (h) -> u8: g_EtChrDrawFlags2[i] = g_EtChrDrawFlags[i] | 0x80, g_EtChrDrawFlags[i] = 0, returns the old g_EtChrDrawFlags2; g_MagicImports slot 548
 0x007fc2e0 function op_et_eff                 # fh v3:exact 0x007fc200
 0x007fc450 function op_et_eff_off_signal      # fh v3:bsim1.00 0x007fc370
 0x007fc590 function op_et_encount_effect_on   # fh v3:exact 0x007fc4b0
@@ -2829,6 +2833,7 @@
 0x007fe6c0 function opus_end_all_sub          # fh v3:exact 0x007fe5e0
 0x007fe970 function opus_get_chr_status_index # fh v3:exact 0x007fe890
 0x007feba0 function opus_get_eff_status_index # fh v3:exact 0x007feac0
+0x007ff090 function op_et_chr_show            # (on): g_OpEtChrShow = on, g_EtChrHidden = !on; bit 1 of the draw flags of the first 208 g_EtChr records with a handle set (on = 0) or cleared; g_MagicImports slot 568
 0x007ff100 function op_fog_param_set          # fh v3:exact 0x007ff020
 0x007ff1d0 function op_free                   # fh v3:exact 0x007ff0f0
 0x007ff260 function op_heap_display_clear     # fh v3:bsim1.00 0x007ff180
@@ -7477,6 +7482,7 @@
 0x00c32308 label    g_SaveData_AlbhedFade     # SaveDataSetAlbhedFade stores it, only while a SaveDataManager exists
 0x00c33468 label    g_EternalCalmFirstMap     # first of the 7 Eternal Calm maps (a map = PS2 file number / 18, as CDfileSize_CD asks): isEternalCalmScene/Mgrp, getEternalCalmSceneName/Size subtract it
 0x00c334b8 label    g_EternalCalmSceneNames   # 7 pointers to "host0:/ffx_master/jppc/event/obj..." paths, indexed by getEternalCalmSceneName
+0x00c3a4cc label    g_pppEnvSlot              # pointer to where pppInitEnv stores the current ppp environment (rcefMainSetEnv)
 0x00c3a4d0 label    g_AlphaScale              # f32 set by useExtendedAlpha (512 extended, 256 normal)
 0x00c3a508 label    g_pppProgramTable            # 418 x 0x28-byte particle program records to 0x00c3e658: +0 name ("pppAccele", ...), +8 per-frame step, +0xc draw, +0x14 Sta, +0x1c set-up (Con), +0x20 second set-up (Con2), +0x24 destructor (Des); pppColor -> pppColor/pppColorCon
 0x00c3e6e0 label    g_pppKeMatSNWords         # two words pppKeMatSN copies to area 0 +0x70/+0x74
@@ -7534,6 +7540,7 @@
 0x00ccb998 label    g_SaveData_DialogState    # SaveDataGet/SetDialogState; also written by SaveDataSetScreenState, SaveDataToLoad
 0x00ccb99c label    g_SaveData_IsSave         # SaveDataSetSave writes, SaveDataIsSave: == 1
 0x00ccb9a4 label    g_SaveData_CrcCheckOff    # nonzero: SaveDataCheckCrc passes every save without computing TkCRC
+0x00ccb9d0 label    g_EtChrHidden             # 1 after op_et_chr_show(0)
 0x00ccc88c label    g_AsyncLoadManager        # the instance AsyncLoadManager_sGetInstance returns
 0x00ccca4c label    g_ClusterManager          # the instance ClusterManager_GetInstance returns
 0x00cded58 label    g_LangManager
@@ -7711,6 +7718,7 @@
 0x0119fea0 label    g_OpusWeapons                # 4 weapon opus objects (opus_get_weapon_index)
 0x0119fed0 label    g_OpusMonsters               # 8 monster opus objects (opus_get_monster_index)
 0x011a0061 label    g_OpPrayEffect               # op_pray_effect_check returns -1 while nonzero
+0x011a0063 label    g_OpEtChrShow             # byte: the last op_et_chr_show argument
 0x011a0067 label    g_OpWotTrigger               # set by op_wot_triger, read by op_ot_draw
 0x011a03a0 label    g_OpOef2ClutCues             # ring of 64 CLUT masks (op_oef2_tex_clut_cue_check, op_oef2_tex_clut_cue_trans)
 0x011a04a0 label    g_OpOef2ClutCueHead          # u16 first entry of g_OpOef2ClutCues
@@ -7920,6 +7928,7 @@
 0x022fb4dc label    g_TkMenuSceneData         # 8 menu scene data blocks (TkMenuSetSceneDataAdrs, TkMenuInitSeq zeroes them; layout in crates/ffx-menu/src/scene.rs)
 0x022fb504 label    g_Settings
 0x0230fd34 label    g_pppStopStatus              # set by pppFpStopStatus; the ppp per-frame steps (pppColor, pppAngle, ...) do nothing while nonzero
+0x0230fd3c label    g_pppMemAllocFailed       # pppMemAlloc: 1 when neither heap had room
 0x0230fde0 label    g_pppWoodMatrix           # the billboard rotation pppDrawMatrixWoodSta builds (FFXVu0CopyMatrix from 0x0230fee0); pppDrawMatrixWood turns the scaled rows by it
 0x0230fe20 label    g_pppViewMatrixCopy       # FFXVu0CopyMatrix of g_pppViewMatrix (0x00920000.c); pppDrawMatrix multiplies the object's matrix by it
 0x0230ff20 label    g_pppViewMatrix           # cdc_Mul4x4(g_pppViewMatrix, g_pppCameraMatrix, 0x0230ffa0) (0x00920000.c); translation at 0x0230ff50, which pppDrawMatrixNoRot adds; the pppDrawMatrix* and pppKeDMat* draws transform positions by it

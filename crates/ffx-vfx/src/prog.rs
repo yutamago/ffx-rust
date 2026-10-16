@@ -366,6 +366,8 @@ pub mod bridge {
         ppp_ke_shp_tail3_x_con2: 0, [W8(0x298, 0), W16(0x294, 0), W32(0x290, 0), W32(0xa0, 0), W32(0xa4, 0), W32(0xa8, 0), W32(0xac, 0), W32(0xb0, 0), W32(0xb4, 0), W32(0xb8, 0), W32(0xbc, 0), W32(0xc0, 0), W32(0xc4, 0), W32(0xc8, 0), W32(0xcc, 0)];
         /// `pppKeMdlDttCon` (`0x0072e730`).
         ppp_ke_mdl_dtt_con: 0, [W32(0xa8, 0), W32(0xa0, 0), W32(0xa4, 0)];
+        /// `pppKeMdlDttCon2` (`0x0072e760`).
+        ppp_ke_mdl_dtt_con2: 0, [W32(0xa8, 0), W32(0xa0, 0), W32(0xa4, 0)];
         /// `pppKeShpTailPhtCon2` (`0x00754260`).
         ppp_ke_shp_tail_pht_con2: 0, [W32(0x288, 0), W8(0x294, 0), W32(0x284, 0), W16(0x290, 0), W32(0x280, 0), W32(0x28c, 0), W32(0xa0, 0), W32(0xa4, 0), W32(0xa8, 0), W32(0xac, 0), W32(0xb0, 0), W32(0xb4, 0), W32(0xb8, 0), W32(0xbc, 0), W32(0xc0, 0), W32(0xc4, 0), W32(0xc8, 0), W32(0xcc, 0)];
         /// `pppDrawMdlInfCon` (`0x0073b7b0`).
@@ -936,5 +938,14 @@ pub mod bridge {
                 w0.wrapping_add(0xa0 + 2 * j),
             );
         }
+    }
+
+    /// `pppKeLnsFlsCon(obj, ctrl)` (`0x0075ab30`): through `0x0076a640`,
+    /// area 0's `+0xa0` points at `g_pppRandTarget`, `+0xa4` is null.
+    pub fn ppp_ke_lns_fls_con(mem: &mut impl Mem, obj: u32, ctrl: u32) {
+        let w = area(mem, obj, ctrl, 0).wrapping_add(0xa0);
+        let target = crate::rand::bridge::TARGET.ptr(mem).addr;
+        mem.write(w, stub::ptr32(target));
+        mem.write(w + 4, stub::ptr32(0));
     }
 }
