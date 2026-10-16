@@ -2825,22 +2825,38 @@
 0x0082aa30 function Ch_EnClip                 # fh v3:bsim1.00 0x0082aab0
 0x0082aa70 function Ch_EnMapID                # fh v3:exact 0x0082aaf0
 0x0082aae0 function Ch_EnRotHokan             # fh v3:bsim1.00 0x0082ab60
+0x0082ab10 function Ch_GetBodyHit             # 1 - chr +0x194 bit 8 (Ch_EnBodyHit sets the bit to !on); Switch name: this file's functions are in name order, it sits between Ch_EnRotHokan and Ch_GetCamHeight
 0x0082ab30 function Ch_GetCamHeight           # fh v3:bsim1.00 0x0082abb0
 0x0082ab40 function Ch_GetClip                # fh switch:bsim1.00 0x710041e230
 0x0082ab60 function Ch_GetDataScale           # fh v3:bsim1.00 0x0082abe0
 0x0082ab80 function Ch_GetDir                 # fh v3:bsim1.00 0x0082ac00
 0x0082ab90 function Ch_GetFieldMode           # fh v3:bsim1.00 0x0082ac10
 0x0082aba0 function Ch_GetFixHeight           # fh v3:bsim1.00 0x0082ac20
+0x0082abb0 function Ch_GetGrav                # chr +0x504 float, what Ch_AddGrav adds to; Switch name, in name order between Ch_GetFixHeight and Ch_GetGravMode
 0x0082abc0 function Ch_GetGravMode            # fh v3:bsim1.00 0x0082ac40
+0x0082abd0 function Ch_GetHide                # movsx chr +0x180, the hide byte of Chr_SetHideFlags; fh switch:bsim1.00 0x710041e3e0 (dropped as too small, fits the name order)
+0x0082abe0 function Ch_GetHideCalc            # 1 when chr +0x181 (Ch_SetHideCalc) != 0, +0x194 bit 13, or the alpha fade +0x354 == 0.0; Switch name, in name order between Ch_GetHide and Ch_GetHideEvent
 0x0082ac20 function Ch_GetHideEvent           # fh v3:exact 0x0082aca0
 0x0082ac40 function Ch_GetJimen               # fh v3:bsim1.00 0x0082acc0
+0x0082ac50 function Ch_GetMotionSpeed         # movsx chr +0x750, 8.8 fixed (Ch_SetMotionSpeed); fh switch:bsim1.00 0x710041e4e0, fits the name order
+0x0082ac60 function Ch_GetOrgMatrix           # chr +0x10c (Ch_SetOrgMatrix); Switch name, in name order between Ch_GetMotionSpeed and Ch_GetOverlapHit
 0x0082ac70 function Ch_GetOverlapHit          # fh switch:bsim1.00 0x710041e860
 0x0082ac90 function Ch_GetPos                 # fh v3:bsim1.00 0x0082ad10
+0x0082acc0 function Ch_GetPosSg               # sets g_ChrSkipSetPos3 = 1: the next Ch_SetPos3 leaves the position; Switch name, in name order between Ch_GetPos and Ch_GetResHide; Ghidra misses it (no direct caller), so not hooked
+0x0082acd0 function Ch_GetResHide             # movsx chr +0x180, what Ch_SetResHide writes; Switch name, in name order between Ch_GetPosSg and Ch_GetRot
 0x0082ace0 function Ch_GetRot                 # fh v3:exact 0x0082ad60
 0x0082ad00 function Ch_GetScale               # fh v3:bsim1.00 0x0082ad80
+0x0082ad30 function Ch_GetScaleX              # chr +0x5c (Ch_SetScale bit 1); Switch name, in name order after Ch_GetScale
+0x0082ad40 function Ch_GetScaleY              # chr +0x60
+0x0082ad50 function Ch_GetScaleZ              # chr +0x64
+0x0082ad60 function Ch_GetSp                  # chr +0x154 float (Ch_SetSp); Switch name, in name order before Ch_GetThickness
+0x0082ad70 function Ch_GetThickness           # model block (chr +0x1c4) +0x1c, the default Ch_SetThickness falls back to; Switch name, in name order before Ch_GetThicknessBtl
 0x0082ad90 function Ch_GetThicknessBtl        # fh v3:bsim1.00 0x0082ae10
 0x0082adb0 function Ch_GetThicknessBtlCam     # fh v3:bsim1.00 0x0082ae30
+0x0082adc0 function Ch_IdGetPNum              # movsx chr +0x824 (-1 after every Ch_SetPos, Ch_ResetPos); fh switch:bsim1.00 0x710041e810, fits the name order
 0x0082add0 function Ch_ModelGetHide           # fh v3:exact 0x0082ae50
+0x0082adf0 function Ch_ModelGetNromPtr        # (chr, i): model i (chr +0x1bc, 0x38 bytes each) +4; Switch name, in name order between Ch_ModelGetHide and Ch_ModelSetAlpha
+0x0082ae10 function Ch_ModelGetVtexPtr        # (chr, i): model i +8; Switch name, in name order before Ch_ModelSetAlpha
 0x0082ae30 function Ch_ModelSetAlpha          # fh v3:exact 0x0082aeb0
 0x0082aea0 function Ch_ModelSetHide           # fh v3:exact 0x0082af20
 0x0082afb0 function Ch_MotionSetHokan         # fh v3:exact 0x0082b030
@@ -2848,8 +2864,10 @@
 0x0082b010 function Ch_MotionSetNextHokan     # fh v3:exact 0x0082b090
 0x0082b040 function Ch_MoveSetChgRun          # fh v3:exact 0x0082b0c0
 0x0082b080 function Ch_ResetMotion            # (chr): +0x730 = 1, scripted motion flag +0x736 = 0, +0x728 = 0; called before every play; was Chr_ReleaseMotion
+0x0082b0b0 function Ch_ResetPos               # chr +0x824 = -1; Switch name, in name order between Ch_ResetMotion and Ch_SetBattleChrNum
 0x0082b0d0 function Ch_SetBattleChrNum        # fh v3:bsim1.00 0x0082b150
 0x0082b0f0 function Ch_SetCamHeight           # fh v3:cg2 0x82b170
+0x0082b130 function Ch_SetChocobo             # (chr, on): chr +0x198 bit 2 = on & 1, returns the changed bit; Switch name, in name order between Ch_SetCamHeight and Ch_SetClipZ
 0x0082b150 function Ch_SetClipZ               # fh v3:exact 0x0082b1d0
 0x0082b190 function Ch_SetDir                 # fh switch:bsim1.00 0x710041de10
 0x0082b1b0 function Ch_SetDirF                # fh v3:exact 0x0082b230
@@ -2860,6 +2878,9 @@
 0x0082b280 function Ch_SetHideCalc            # fh v3:bsim1.00 0x0082b300
 0x0082b2a0 function Ch_SetHideEffect          # fh v3:bsim1.00 0x0082b320
 0x0082b2c0 function Ch_SetHideEvent           # fh v3:exact 0x0082b340
+0x0082b320 function Ch_SetHitHeight           # chr +0x4f8 float; Switch name, in name order after Ch_SetHideEvent
+0x0082b340 function Ch_SetHiju                # chr +0x51c float; Switch name, in name order
+0x0082b360 function Ch_SetJimen               # chr +0x16c float, the ground height Ch_GetJimen reads; Switch name, in name order before Ch_SetMotionSpeed
 0x0082b380 function Ch_SetMotionSpeed         # fh v3:bsim1.00+call.cs 0x0082b400 cdecl
 0x0082b3a0 function Ch_SetMotionType          # fh v3:bsim1.00 0x0082b420
 0x0082b3c0 function Ch_SetOffset              # fh v3:bsim1.00 0x0082b440
@@ -2884,10 +2905,13 @@
 0x0082b900 function Ch_SetTransparent         # fh v3:bsim1.00 0x0082b980
 0x0082b920 function Ch_SetVelY                # fh switch:bsim1.00 0x710041dd40
 0x0082b940 function Ch_SetWeight              # fh v3:exact 0x0082b9c0
+0x0082b960 function Ch_TextureGetAnimId       # chr +0x700; Switch name, in name order between Ch_SetWeight and Ch_Vu1SetClipmode
 0x0082b970 function Ch_Vu1SetClipmode         # fh v3:bsim1.00 0x0082b9f0
+0x0082b990 function Chr_FadeSet               # (fade, target, frames): fade = {current, target, frames}, current = target when frames == 0; under Ch_SetTransparent (+0x354), Ch_SetShade (+0x360), Ch_SetSpecularAlpha (+0x378), Ch_SetShadeCol (+0x330/+0x33c/+0x348)
 0x0082b9b0 function TkChPatchM160             # fh v3:exact 0x0082ba30
 0x0082ba00 function TkChPatchM339             # fh v3:exact 0x0082ba80
 0x0082ba30 function Chr_SetHideFlags             # (chr, on, mask) -> old: chr +0x180 hide bits (1 Ev, 2 Eff, 8 Disp, 0x10 Blt, 0x20 Z per the "Hide : %x" debug text)
+0x0082ba70 function Chr_WrapAngle             # (a) -> a in -3.141592..=3.141592 by steps of 6.283184 (double constants 0x00b582f0, 0x00b59638, 0x00b59648), each step stored as float; Ch_GetRot's
 0x0082bc50 function Sg_AccSetFrameMap         # fh switch:cg3 0x710042ba10
 0x0082bd10 function Sg_AccSetAlpha            # fh v3:exact+call.cs 0x0082bd90 cdecl
 0x0082be20 function Sg_AccSetFrameChr         # fh switch:cg3 0x710042ba80
@@ -6975,6 +6999,7 @@
 0x00c0a004 label g_Vu0_Vf00                  # emulated VU0 vf00 (x, y, z, w) = (0, 0, 0, 1.0f): AsmEmuInit and restoreVf00Register store exactly that
 0x00c30f94 label NvOptimusEnablement          # fh v4:imported
 0x00c30f98 label AmdPowerXpressRequestHighPerformance # fh v4:imported
+0x00c49680 label g_ChrDefaultMoves           # Ch_MotionSetMoves(chr, slot, -1) stores entry [slot] (0, 1, 2, then zeros)
 0x00c5e350 label    g_GuideFlags                 # bit 0: the minimap may show (clear: Guide_FadeOff)
 0x00c5e370 label    g_GuideMarkerPalette         # 16 RGBA of floats (128 = 1), by marker flags & 0xf
 0x00c5e478 label    g_GuideEnabled               # 0: Guide_Update returns at once
@@ -7010,6 +7035,10 @@
 0x01136fd8 label    g_CamOverrideLookAt          # override camera look-at, vec4 (game space)
 0x01136fe8 label    g_CamOverrideUp              # override camera up vector, vec4 (reset to (0,-1,0)-ish: 0x01136fec = -1.0)
 0x01137540 label    g_Cameras                    # ?3 cameras x 0xda0: two sides of 0x61c each (0 = ref, 1 = cam), channels of 0x130 at +0xc0, channel table at 0x011381a8
+0x012fbd9c label g_ChrHandleCursor           # Ch_HandleGetNext's slot index into g_ChrArray; Ch_HandleRewind sets 0
+0x012fbda4 label g_ChrFunctionHistoryCount   # Ch_FunctionHistoryInit sets 0
+0x012fbda8 label g_ChrFunctionHistory        # 127 entries of 16 bytes (to 0x012fc598); Ch_FunctionHistoryInit clears byte 0 of each
+0x012ffad8 label g_ChrSkipSetPos3            # set by Ch_GetPosSg; Ch_SetPos3 clears it instead of moving the character
 0x01326b28 label    g_ScriptContext              # event/script context pointer (FUN_0086aff0): +0x0a player worker, +0x0c worker count, +0x218 player position, +0x1e4/0x1f0 talk state
 0x01326d70 label    g_MsgWindows                 # 2 banks x 8 message windows, 0x2c bytes: +0x14 state, +0x16 Msg_Flags, +0x18 display flags, +0x1d mode flags
 0x013270d0 label    g_PadPressed                 # buttons newly pressed this frame, OR over pads (0x00871d70)
@@ -7030,4 +7059,5 @@
 0x02311430 label    g_Camera                     # pointer to the active camera channel (FUN_007bd470 reads its sides): +0x50 look-at point (ref, side 0) xyz, +0x66c eye (side 1) xyz; live: the look-at follows the player at chest height on the S.S. Winno deck
 0x023c44e0 label    g_ChrCount                   # number of field characters in g_ChrArray
 0x023c44e4 label    g_ChrArray                   # field characters, 0x880 bytes each (byte +2 = active)
+0x023c8d00 label g_ChrBlk                    # 40 character model blocks of 0x12c bytes (Ch_BlkGetHandleFast); chr +0x1c4 points at one: +0x1c thickness, +0x30 scale, +0x71 name, +0xb8 directory, +0x124/+0x128 resident data
 0x023cbebc label gNeedAutoSave                # fh v4:user_defined
