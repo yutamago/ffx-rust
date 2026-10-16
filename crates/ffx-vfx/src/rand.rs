@@ -152,14 +152,52 @@ pub mod bridge {
         Down,
     }
 
-    /// The float rand programs: `vector` for the three-value forms.
-    pub fn ppp_rand_float<M: Mem>(
+    /// What a rand program applies its value to: the key's factors and the
+    /// targets.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Kind {
+        /// One `f32` factor at `+8`, an `f32` target (`pppRandFloat`).
+        Float,
+        /// Three `f32` factors at `+0x10`, `f32` targets (`pppRandFV`).
+        FloatVec,
+        /// One `u8` factor at `+8`, a byte target (`pppRandChar`).
+        Char,
+        /// One `u16` factor at `+8`, a half-word target (`pppRandShort`).
+        Short,
+        /// One `u32` factor at `+8` (as an `f32`), a word target
+        /// (`pppRandInt`).
+        Int,
+        /// Three `i32` factors at `+0x10` (as `f32`), word targets
+        /// (`pppRandIV`).
+        IntVec,
+        /// Four `i8` factors at `+8`, byte targets (`pppRandCV`).
+        CharVec,
+        /// Four `i16` factors at `+8`, half-word targets (`pppRandHCV`).
+        ShortVec,
+    }
+
+    impl Kind {
+        /// Where the key's "draw twice" flag byte is.
+        #[must_use]
+        pub const fn flag(self) -> u32 {
+            match self {
+                Self::Float | Self::Int | Self::CharVec => 0xc,
+                Self::FloatVec | Self::IntVec => 0x20,
+                Self::Char => 9,
+                Self::Short => 0xa,
+                Self::ShortVec => 0x10,
+            }
+        }
+    }
+
+    /// The rand programs (`pppRand{,Up,Down}{Float,FV,Char,Short,Int,IV,CV,HCV}`).
+    pub fn ppp_rand<M: Mem>(
         mem: &mut M,
         obj: u32,
         key: u32,
         ctrl: u32,
         spread: Spread,
-        vector: bool,
+        kind: Kind,
         srand: &mut impl FnMut(&mut M, u32),
     ) {
         use crate::x87::{ADD, MUL, Reg, SUB};
@@ -167,15 +205,20 @@ pub mod bridge {
             return;
         }
         let frame = mem.read::<u32>(obj.wrapping_add(0xc));
+        // the integer vector forms draw whenever their key applies
+        let per_key = matches!(kind, Kind::IntVec | Kind::CharVec | Kind::ShortVec);
+        if per_key && mem.read::<u32>(key) != frame {
+            return;
+        }
         let work = |mem: &M| {
             let offsets = mem.read::<u32>(ctrl.wrapping_add(0xc));
             obj.wrapping_add(0xa0)
                 .wrapping_add(mem.read::<u32>(offsets))
         };
-        let w_at = if frame == 0 {
+        let w_at = if per_key || frame == 0 {
             let d1 = draw(mem, srand);
             let d1 = if spread == Spread::Down { -d1 } else { d1 };
-            let two = mem.read::<u8>(key + if vector { 0x20 } else { 0xc }) != 0;
+            let two = mem.read::<u8>(key + kind.flag()) != 0;
             let w = if two {
                 let d2 = draw(mem, srand);
                 match spread {
@@ -205,30 +248,82 @@ pub mod bridge {
             obj.wrapping_add(0xa0).wrapping_add(to)
         };
         let float = |mem: &M, a: u32| f32::from_bits(mem.read(a));
-        if vector {
-            for i in 0..3 {
-                let k = float(mem, key + 0x10 + 4 * i);
+        match kind {
+            Kind::Float => {
+                let k = float(mem, key + 8);
                 let w = float(mem, w_at);
                 let term = if spread == Spread::Plain {
-                    let kk = Reg::load_f32(x87::load_f32(k));
-                    Reg::load_f32(w).reg(MUL, kk).reg(SUB, kk).store()
+                    Reg::load_f32(w).mem(MUL, k).mem(SUB, k)
                 } else {
-                    x87::mul(k, w)
+                    Reg::load_f32(k).mem(MUL, w)
                 };
-                let target = t_at.wrapping_add(4 * i);
-                let sum = x87::add(term, float(mem, target));
-                mem.write(target, sum.to_bits());
+                let sum = term.mem(ADD, float(mem, t_at)).store();
+                mem.write(t_at, sum.to_bits());
             }
-        } else {
-            let k = float(mem, key + 8);
-            let w = float(mem, w_at);
-            let term = if spread == Spread::Plain {
-                Reg::load_f32(w).mem(MUL, k).mem(SUB, k)
-            } else {
-                Reg::load_f32(k).mem(MUL, w)
+            Kind::FloatVec => {
+                for i in 0..3 {
+                    let k = float(mem, key + 0x10 + 4 * i);
+                    let w = float(mem, w_at);
+                    let term = if spread == Spread::Plain {
+                        let kk = Reg::load_f32(x87::load_f32(k));
+                        Reg::load_f32(w).reg(MUL, kk).reg(SUB, kk).store()
+                    } else {
+                        x87::mul(k, w)
+                    };
+                    let target = t_at.wrapping_add(4 * i);
+                    let sum = x87::add(term, float(mem, target));
+                    mem.write(target, sum.to_bits());
+                }
+            }
+            _ => apply_int(mem, spread, kind, key, w_at, t_at),
+        }
+    }
+
+    /// The integer rand programs' application: `ftol` of `w k - k` (plain)
+    /// or `k w`, its low bits added to each target.
+    fn apply_int<M: Mem>(mem: &mut M, spread: Spread, kind: Kind, key: u32, w_at: u32, t_at: u32) {
+        use crate::x87::{MUL, Reg, SUB};
+        let (count, width) = match kind {
+            Kind::Char => (1, 1),
+            Kind::Short => (1, 2),
+            Kind::Int => (1, 4),
+            Kind::IntVec => (3, 4),
+            Kind::CharVec => (4, 1),
+            _ => (4, 2),
+        };
+        for i in 0..count {
+            #[allow(clippy::cast_precision_loss)] // fild, then fstp m32
+            let factor = match kind {
+                Kind::Char => Reg::Num(f64::from(mem.read::<u8>(key + 8))),
+                Kind::Short => Reg::Num(f64::from(mem.read::<u16>(key + 8))),
+                Kind::Int => Reg::load_f32(mem.read::<u32>(key + 8) as f32),
+                Kind::IntVec => Reg::load_f32(mem.read::<i32>(key + 0x10 + 4 * i) as f32),
+                Kind::CharVec => Reg::Num(f64::from(mem.read::<i8>(key + 8 + i))),
+                _ => Reg::Num(f64::from(mem.read::<i16>(key + 8 + 2 * i))),
             };
-            let sum = term.mem(ADD, float(mem, t_at)).store();
-            mem.write(t_at, sum.to_bits());
+            let value = f32::from_bits(mem.read(w_at));
+            let product = if spread == Spread::Plain {
+                Reg::load_f32(value).reg(MUL, factor).reg(SUB, factor)
+            } else {
+                factor.mem(MUL, value)
+            };
+            let int = ffx_bridge::x87::ftol(mem, product.value());
+            let target = t_at.wrapping_add(width * i);
+            #[allow(clippy::cast_possible_truncation)] // the low byte or half
+            match width {
+                1 => {
+                    let sum = mem.read::<u8>(target).wrapping_add(int as u8);
+                    mem.write(target, sum);
+                }
+                2 => {
+                    let sum = mem.read::<u16>(target).wrapping_add(int as u16);
+                    mem.write(target, sum);
+                }
+                _ => {
+                    let sum = mem.read::<u32>(target).wrapping_add(int);
+                    mem.write(target, sum);
+                }
+            }
         }
     }
 }
