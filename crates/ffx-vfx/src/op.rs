@@ -81,14 +81,16 @@ pub mod bridge {
     pub const OEF2_CLUT_OVL: Global<u32> = Global::new(0x011a_04c0);
 
     /// `op_spr_alloc(n)` (`0x007e6a00`): pushes a mark `n` past the top
-    /// one.
-    pub fn op_spr_alloc(mem: &mut impl Mem, n: u32) {
+    /// one and returns the top one, the start of the `n` bytes (Ghidra
+    /// calls it void; `opp_main` uses the result as its work area).
+    pub fn op_spr_alloc(mem: &mut impl Mem, n: u32) -> u32 {
         let top = SPR_TOP.get(mem);
         let stack = SPR_STACK.ptr(mem);
         let i = i32::from(top).cast_unsigned();
-        let v = stack.at(i).get(mem).wrapping_add(n);
-        stack.at(i.wrapping_add(1)).set(mem, v);
+        let base = stack.at(i).get(mem);
+        stack.at(i.wrapping_add(1)).set(mem, base.wrapping_add(n));
         SPR_TOP.set(mem, top.wrapping_add(1));
+        base
     }
 
     /// `op_spr_free()` (`0x007e6a60`): pops a mark.

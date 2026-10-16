@@ -151,8 +151,8 @@ ported! {
 
     // ---- op layer ----
     /// `op_spr_alloc(n)`.
-    op_spr_alloc @ 0x007e_6a00 => extern "C" fn op_spr_alloc(n: u32) {
-        op::bridge::op_spr_alloc(&mut mem(), n);
+    op_spr_alloc @ 0x007e_6a00 => extern "C" fn op_spr_alloc(n: u32) -> u32 {
+        op::bridge::op_spr_alloc(&mut mem(), n)
     }
     /// `op_spr_free()`.
     op_spr_free @ 0x007e_6a60 => extern "C" fn op_spr_free() {
@@ -288,8 +288,8 @@ ported! {
         opus::bridge::opus_get_osu_by_draw(&mem(), obj, like, kind, any)
     }
     /// `opus_fullauto_no_get(obj)`.
-    opus_fullauto_no_get @ 0x0080_0df0 => extern "C" fn opus_fullauto_no_get(obj: u32) {
-        opus::bridge::opus_fullauto_no_get(&mut mem(), obj);
+    opus_fullauto_no_get @ 0x0080_0df0 => extern "C" fn opus_fullauto_no_get(obj: u32) -> u32 {
+        opus::bridge::opus_fullauto_no_get(&mut mem(), obj)
     }
     /// `opu_wait(obj, cmd)`.
     opu_wait @ 0x0080_c500 => extern "C" fn opu_wait(obj: u32, cmd: u32) -> u32 {

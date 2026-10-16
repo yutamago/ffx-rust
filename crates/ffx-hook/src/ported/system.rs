@@ -219,16 +219,18 @@ ported! {
     }
 
     /// `cdc::Mul4x4(dst, m, v)`: a 4-vector times a matrix.
-    cdc_Mul4x4 @ 0x0070_58f0 => extern "C" fn cdc_mul4x4(dst: u32, m: u32, v: u32) {
+    cdc_Mul4x4 @ 0x0070_58f0 => extern "C" fn cdc_mul4x4(dst: u32, m: u32, v: u32) -> u32 {
         math::bridge::mul4x4_vector(&mut mem(), dst, m, v);
+        dst // left in eax; FFXVu0ApplyMatrix returns it
     }
     /// `cdc::Mul4x4(dst, a, b)`: `b × a`.
     cdc_Mul4x4_007059b0 @ 0x0070_59b0 => extern "C" fn cdc_mul4x4_matrix(dst: u32, a: u32, b: u32) {
         math::bridge::mul4x4(&mut mem(), dst, a, b);
     }
     /// `cdc::Mul3x4(dst, m, v)`: a point transformed.
-    cdc_Mul3x4 @ 0x0070_5850 => extern "C" fn cdc_mul3x4(dst: u32, m: u32, v: u32) {
+    cdc_Mul3x4 @ 0x0070_5850 => extern "C" fn cdc_mul3x4(dst: u32, m: u32, v: u32) -> u32 {
         math::bridge::mul3x4(&mut mem(), dst, m, v);
+        dst // left in eax; FFXVu0RotTransPers and the envelope code use it
     }
     /// `cdc::Transpose(dst, m)`.
     cdc_Transpose @ 0x0070_63f0 => extern "C" fn cdc_transpose(dst: u32, m: u32) {

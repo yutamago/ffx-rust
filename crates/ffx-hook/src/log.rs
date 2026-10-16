@@ -52,8 +52,42 @@ unsafe extern "system" fn fault(
             "FAULT {code:#010x} at {at:#010x} ({})",
             module_at(at)
         ));
+        #[cfg(target_arch = "x86")]
+        // SAFETY: the system passes a valid context of the faulting thread.
+        unsafe {
+            log_context(&*(*info).ContextRecord);
+        }
     }
     0 // EXCEPTION_CONTINUE_SEARCH
+}
+
+/// The registers, and the stack words that point into a module (return
+/// addresses, most likely): what ran before a jump into nowhere.
+#[cfg(all(windows, target_arch = "x86"))]
+unsafe fn log_context(c: &windows_sys::Win32::System::Diagnostics::Debug::CONTEXT) {
+    log(&format!(
+        "  eax {:08x} ebx {:08x} ecx {:08x} edx {:08x} esi {:08x} edi {:08x} ebp {:08x} esp {:08x}",
+        c.Eax, c.Ebx, c.Ecx, c.Edx, c.Esi, c.Edi, c.Ebp, c.Esp
+    ));
+    let mut found = 0;
+    for i in 0..256u32 {
+        let at = c.Esp.wrapping_add(i * 4);
+        // SAFETY: the faulting thread's stack, checked readable first.
+        let word = unsafe {
+            if windows_sys::Win32::System::Memory::IsBadReadPtr(at as *const _, 4) != 0 {
+                break;
+            }
+            std::ptr::read_volatile(at as *const u32)
+        };
+        let module = module_at(word as usize);
+        if module != "no module" {
+            log(&format!("  [esp+{:#05x}] {word:08x} {module}", i * 4));
+            found += 1;
+            if found == 24 {
+                break;
+            }
+        }
+    }
 }
 
 /// The module holding `at`, and the offset in it.

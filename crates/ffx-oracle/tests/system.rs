@@ -204,8 +204,12 @@ fn matrix_products_match_the_original_bit_for_bit() {
                     _ => 0x3c,
                 };
             let (x, y) = (block + 0x40, block + 0x80);
-            eax(&mut a, sym, &[dst, x, y]);
+            let ret = eax(&mut a, sym, &[dst, x, y]);
             rust(&mut b, dst, x, y);
+            if sym != CDC_MUL4X4_MATRIX {
+                // the shims return dst: callers read the eax these leave
+                assert_eq!(ret, dst, "{name} case {n}: eax");
+            }
             assert_eq!(
                 floats(&a, block, 48),
                 floats(&b, block, 48),

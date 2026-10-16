@@ -750,8 +750,7 @@ fn op_services_match_the_original() {
             }
             let n = rng.next();
             p.check("op_spr_alloc", OP_SPR_ALLOC, &[n], |m| {
-                o::op_spr_alloc(m, n);
-                None
+                Some(o::op_spr_alloc(m, n))
             });
             p.check("op_spr_free", OP_SPR_FREE, &[], |m| {
                 o::op_spr_free(m);
@@ -1319,10 +1318,7 @@ fn opus_objects_match_the_original() {
                 &format!("opus_fullauto_no_get({v})"),
                 OPUS_FULLAUTO_NO_GET,
                 &[obj],
-                |m| {
-                    u::opus_fullauto_no_get(m, obj);
-                    None
-                },
+                |m| Some(u::opus_fullauto_no_get(m, obj)),
             );
             // script commands
             let c = rng.next();
