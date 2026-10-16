@@ -1333,4 +1333,44 @@ ported! {
     asmClearBlock @ 0x0077_f1f0 => extern "C" fn asm_clear_block() {}
     /// `asmClearBlock0()`: a debug print only.
     asmClearBlock0 @ 0x0077_f200 => extern "C" fn asm_clear_block0() {}
+    /// `Ch_IdGetShade(chr)`.
+    Ch_IdGetShade @ 0x0083_d880 => extern "C" fn ch_id_get_shade(chr: u32) -> u32 {
+        id::ch_id_get_shade(&mem(), chr)
+    }
+    /// `Ch_IdGetShade0(chr)`.
+    Ch_IdGetShade0 @ 0x0083_d8a0 => extern "C" fn ch_id_get_shade0(chr: u32) -> u32 {
+        id::ch_id_get_shade_field(&mem(), chr, 0)
+    }
+    /// `Ch_IdGetShade1(chr)`.
+    Ch_IdGetShade1 @ 0x0083_d8c0 => extern "C" fn ch_id_get_shade1(chr: u32) -> u32 {
+        id::ch_id_get_shade_field(&mem(), chr, 1)
+    }
+    /// `Ch_IdGetShade2(chr)`.
+    Ch_IdGetShade2 @ 0x0083_d8e0 => extern "C" fn ch_id_get_shade2(chr: u32) -> u32 {
+        id::ch_id_get_shade_field(&mem(), chr, 2)
+    }
+    /// `Ch_DrawSetSituation(chr, v)`.
+    Ch_DrawSetSituation @ 0x0083_0160 => extern "C" fn ch_draw_set_situation(chr: u32, v: u32) {
+        c::ch_draw_set_situation(&mut mem(), chr, v);
+    }
+    /// `Ch_PacketRefEffect(_, out)`.
+    Ch_PacketRefEffect @ 0x0083_0df0 => extern "C" fn ch_packet_ref_effect(_unused: u32, out: u32) -> u32 {
+        c::ch_packet_ref_effect(&mut mem(), out)
+    }
+    /// `Ch_TextureSetAnimTimer(chr, v)`.
+    Ch_TextureSetAnimTimer @ 0x0083_d070 => extern "C" fn ch_texture_set_anim_timer(chr: u32, v: u32) {
+        ta::ch_texture_set_anim_timer(&mut mem(), chr, v);
+    }
+    /// `ch_create_section(id)`.
+    ch_create_section @ 0x0083_8150 => extern "C" fn ch_create_section(id: u32) -> u32 {
+        ta::ch_create_section(&mem(), id)
+    }
+    /// `Ch_EffectSetColor(r, g, b)`.
+    Ch_EffectSetColor @ 0x0084_2c40 => extern "C" fn ch_effect_set_color(r: f32, g: f32, b: f32) {
+        sy::ch_effect_set_color(&mut mem(), [r, g, b]);
+    }
+    /// `Ch_EffectSetAlpha(a)`.
+    Ch_EffectSetAlpha @ 0x0084_2c60 => extern "C" fn ch_effect_set_alpha(a: f32) {
+        sy::ch_effect_set_alpha(&mut mem(), a);
+    }
 }

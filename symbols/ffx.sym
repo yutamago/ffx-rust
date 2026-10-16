@@ -3209,6 +3209,7 @@
 0x00830d60 function Ch_TextureGetClutBase     # (chr, i): clut texture i +0x3a (u16); Switch name, in name order
 0x00830d90 function Ch_TextureGetImageAddr    # (chr, i): image texture i (chr +0x6ec, count +0x6f0) +0x30; Switch name, in name order before Ch_TextureGetImageBase
 0x00830dc0 function Ch_TextureGetImageBase    # fh v3:bsim1.00 0x00830e40
+0x00830df0 function Ch_PacketRefEffect       # ours: (_, out) DMA ref tag 0x30000008 to 0x013033d0 (0x008439f0's), returns out + 0x10
 0x008311d0 function Ch_TextureLoadClut        # fh v3:exact 0x00831250
 0x00831300 function Ch_TextureLoadImage       # fh v3:exact 0x00831380
 0x00831330 function Chr_RangeClass           # ours: (a, b, x, y) 1 if a == b; range a..b (wrapping when a > b): 2/3 x in it, 4/5 y in it, else 0
@@ -3443,6 +3444,10 @@
 0x0083d820 function Ch_IdGetEncount           # fh v3:bsim1.00 0x0083d820
 0x0083d840 function Ch_IdGetMap               # chr +0x828 & 0x7f; 0x30..0x3f through the table 0x013019d8; Switch name, in name order
 0x0083d860 function Ch_IdGetMapB              # chr +0x828 & 0x7f; Switch name, in name order
+0x0083d880 function Ch_IdGetShade            # Switch name (name order Ch_IdGetMapB < Ch_IdGetShade < Shade0..2 < Ch_IdGetSound, as 0x0083d860..0x0083d900): 0x0083e980(chr +0x828): bits 17..31 while 0x013034b8, else 0x4210
+0x0083d8a0 function Ch_IdGetShade0           # Switch name, in name order: Ch_IdGetShade & 0x1f
+0x0083d8c0 function Ch_IdGetShade1           # Switch name, in name order: Ch_IdGetShade >> 5 & 0x1f
+0x0083d8e0 function Ch_IdGetShade2           # Switch name, in name order: Ch_IdGetShade >> 10 & 0x1f
 0x0083d900 function Ch_IdGetSound             # chr +0x828 bits 15-16; Switch name, in name order
 0x0083d920 function Ch_IdGetWater             # chr +0x828 bits 13-14; Switch name, in name order before Ch_IdSetDefPid
 0x0083d940 function Ch_IdSetDefPid            # fh v3:bsim1.00 0x0083d940
@@ -3519,6 +3524,8 @@
 0x00842070 function Sg_GsXYOFFSET2            # fh v3:cg3 0x842070
 0x00842140 function Sg_GsXYZF2                # fh v3:exact 0x00842140
 0x00842210 function Sg_GsXYZF2V               # fh v3:bsim1.00 0x00842210
+0x00842c40 function Ch_EffectSetColor        # ours: (r, g, b) f32 x 3 at 0x013033ac (through the x87); the effect packet code scales colours by it
+0x00842c60 function Ch_EffectSetAlpha        # ours: (a) 0x013033b8 = _ftol2_sse(a * 128.0)
 0x00842c80 function Ch_EffectPacketCreateMain # fh v3:exact 0x00842c80
 0x00843200 function SendSpadToMFIFO           # fh v3:bsim1.00 0x00843200
 0x00843210 function Sg_GetIsPrerend           # fh v3:exact 0x00843210
@@ -8037,6 +8044,10 @@
 0x013019e0 label g_ChrSpecularPackets       # two 0x40-byte GS packets (0x013019e0, 0x01301a20) Ch_TextureSendSpecular references; clut data pointers at +0x30
 0x01301af8 label g_ChrIdEffectTable          # u8, 4 per set: Ch_IdGetEffectTable
 0x01301b00 label g_ChrIdEffectTableIndex     # i8, the set (Sg_IdSetEffectTableIndex)
+0x013033ac label g_ChrEffectColor           # f32 x 3, Ch_EffectSetColor
+0x013033b8 label g_ChrEffectAlpha           # i32, Ch_EffectSetAlpha
+0x013033d0 label g_ChrEffectPacket          # the packet Ch_PacketRefEffect references (0x008439f0 returns its address)
+0x013034b8 label g_ChrIdShadeOn             # i8: id shades on (0x00844bb0 returns it; 0x0083e980)
 0x01303654 label g_ChrPacketHead            # tag of the open effect packet block; Ch_EffectPacketStorePoly counts triangles in its u16 +2
 0x01303658 label g_ChrPacketPtr              # effect packet write pointer, 0 = only measure (Ch_EffectPacketStoreEND)
 0x0130365c label g_ChrPacketSize             # effect packet bytes (Ch_EffectPacketGetSize)

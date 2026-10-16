@@ -391,4 +391,40 @@ pub mod bridge {
         let w: u32 = mem.read(regs + 0x18);
         mem.write(regs + 0x18, w ^ ((c ^ w) & 0x1f_ff80));
     }
+
+    /// `Ch_TextureSetAnimTimer(chr, v)` (`0x0083d070`): with a texture
+    /// animation (`+0x6fc`), its entry's (`+0x700`) byte `+0xe`
+    /// (`tex_anim_timer`).
+    pub fn ch_texture_set_anim_timer(mem: &mut impl Mem, chr: u32, v: u32) {
+        if mem.read::<u32>(chr + 0x6fc) == 0 {
+            return;
+        }
+        let i: u32 = mem.read(chr + 0x700);
+        #[allow(clippy::cast_possible_truncation)] // the low byte
+        mem.write(entry(mem, i) + 0xe, v as u8);
+    }
+
+    /// `sg_getdbname`'s strings (kinds 0..6, the last for anything else):
+    /// the addresses of its `.rdata` names, by its jump table's order.
+    const DB_NAMES: [u32; 8] = [
+        0x00b5_9334,
+        0x00b5_9338,
+        0x00b5_933c,
+        0x00b5_9340,
+        0x00b5_9344,
+        0x00b5_9348,
+        0x00b5_9330,
+        0x00b8_fbeb,
+    ];
+    /// `sg_getdbname`'s byte table: which of [`DB_NAMES`] for each of
+    /// `0..=0x77`.
+    const DB_INDEX: Global<u8> = Global::new(0x0082_9d04);
+
+    /// `ch_create_section(id)` (`0x00838150`): `sg_getdbname` of the kind
+    /// (`id` bits 12..15): the folder name of a character kind.
+    pub fn ch_create_section(mem: &impl Mem, id: u32) -> u32 {
+        let kind = (id.cast_signed() >> 12).cast_unsigned() & 0xf;
+        let i = DB_INDEX.ptr(mem).at(kind).get(mem);
+        Global::<u8>::new(DB_NAMES[usize::from(i)]).ptr(mem).addr
+    }
 }

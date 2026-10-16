@@ -4348,3 +4348,121 @@ fn debug_stubs_match_the_original() {
         }
     }
 }
+
+#[test]
+fn shades_situations_and_names_match_the_original() {
+    for mut t in twins() {
+        shades_situations_and_names_match_the_original_on(&mut t);
+    }
+}
+
+fn shades_situations_and_names_match_the_original_on(t: &mut Twin) {
+    use ffx_chara::texanim::bridge as ta;
+    let mut rng = Xorshift(0x5eed_040a);
+    let chrs = characters(t, &mut rng);
+    for on in [0u8, 1, 0x80] {
+        let at = t.a.rebase(id::ID_SHADE_ON.sym);
+        t.put(at, &[on]);
+        for &chr in &chrs {
+            for pid in [
+                rd::<u32>(&t.b, chr + l::PID),
+                rng.next(),
+                0x8000_0000,
+                0xfffe_0000,
+            ] {
+                t.put_u32(chr + l::PID, pid);
+                t.check(
+                    &format!("Ch_IdGetShade {chr:#x} {pid:#x} {on}"),
+                    0x0083_d880,
+                    &[chr],
+                    |m| Res::Int(id::ch_id_get_shade(m, chr)),
+                );
+                for (k, f) in [0x0083_d8a0u32, 0x0083_d8c0, 0x0083_d8e0]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let k = u32::try_from(k).unwrap();
+                    t.check(
+                        &format!("Ch_IdGetShade{k} {chr:#x} {pid:#x}"),
+                        f,
+                        &[chr],
+                        |m| Res::Int(id::ch_id_get_shade_field(m, chr, k)),
+                    );
+                }
+            }
+        }
+    }
+    let out = t.alloc(0x10);
+    t.check("Ch_PacketRefEffect", 0x0083_0df0, &[rng.next(), out], |m| {
+        Res::Int(c::ch_packet_ref_effect(m, out))
+    });
+    let live = live_characters(t, &mut rng);
+    let made_up = *live.last().unwrap();
+    for chr in live {
+        if t.name == "synthetic" || chr == made_up {
+            let inst = if rng.next() & 1 == 0 {
+                0
+            } else {
+                random_block(t, &mut rng, 0x20)
+            };
+            t.put_u32(chr + l::RENDER_INSTANCE, inst);
+            let entry = rng.next() % 64;
+            t.put_u32(chr + 0x700, entry);
+        }
+        for v in [0u32, 1, 0x1ff, rng.next()] {
+            t.check(
+                &format!("Ch_DrawSetSituation {chr:#x} {v:#x}"),
+                0x0083_0160,
+                &[chr, v],
+                |m| void!(c::ch_draw_set_situation(m, chr, v)),
+            );
+            if rd::<u32>(&t.b, chr + 0x700) < 64 {
+                for anim in [0u32, 1] {
+                    t.put_u32(chr + 0x6fc, anim);
+                    t.check(
+                        &format!("Ch_TextureSetAnimTimer {chr:#x} {v:#x} {anim}"),
+                        0x0083_d070,
+                        &[chr, v],
+                        |m| void!(ta::ch_texture_set_anim_timer(m, chr, v)),
+                    );
+                }
+            }
+        }
+    }
+    for id in (0..16u32)
+        .map(|k| k << 12)
+        .chain([0x8000_f123, rng.next(), u32::MAX])
+    {
+        t.check(
+            &format!("ch_create_section {id:#x}"),
+            0x0083_8150,
+            &[id],
+            |m| Res::Int(ta::ch_create_section(m, id)),
+        );
+    }
+}
+
+#[test]
+fn effect_color_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x5eed_040b);
+        let mut vals: Vec<u32> = FLOATS.to_vec();
+        vals.extend((0..300).map(|_| small_float(&mut rng)));
+        vals.extend((0..300).map(|_| any_float(&mut rng)));
+        for &v in &vals {
+            let rgb = [v, any_float(&mut rng), small_float(&mut rng)];
+            t.check(
+                &format!("Ch_EffectSetColor {rgb:x?}"),
+                0x0084_2c40,
+                &rgb,
+                |m| void!(sy::ch_effect_set_color(m, rgb.map(fl))),
+            );
+            t.check(
+                &format!("Ch_EffectSetAlpha {v:#x}"),
+                0x0084_2c60,
+                &[v],
+                |m| void!(sy::ch_effect_set_alpha(m, fl(v))),
+            );
+        }
+    }
+}

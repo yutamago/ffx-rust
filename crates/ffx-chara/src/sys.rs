@@ -361,6 +361,27 @@ pub mod bridge {
         mem.write(head + 2, n.wrapping_add(1));
         PACKET_PTR.set(mem, p + 0x1c);
     }
+
+    /// The effect packets' colour scale (`f32` × 3, `Ch_EffectSetColor`).
+    pub const EFFECT_COLOR: Global<[f32; 3]> = Global::new(0x0130_33ac);
+    /// The effect packets' alpha (`i32`, `Ch_EffectSetAlpha`).
+    pub const EFFECT_ALPHA: Global<u32> = Global::new(0x0130_33b8);
+    /// `128.0` (`double`).
+    pub const K_128: Global<f64> = Global::new(0x00b4_c170);
+
+    /// `Ch_EffectSetColor(r, g, b)` (`0x00842c40`): through the x87.
+    pub fn ch_effect_set_color(mem: &mut impl Mem, rgb: [f32; 3]) {
+        EFFECT_COLOR.set(mem, rgb.map(crate::x87::load));
+    }
+
+    /// `Ch_EffectSetAlpha(a)` (`0x00842c60`): `_ftol2_sse(a × 128)`.
+    pub fn ch_effect_set_alpha(mem: &mut impl Mem, a: f32) {
+        let x = crate::x87::Reg::load(a)
+            .mul_st(crate::x87::Reg::constant(K_128.get(mem)))
+            .get();
+        let v = ffx_bridge::x87::ftol(mem, x);
+        EFFECT_ALPHA.set(mem, v);
+    }
 }
 
 #[cfg(test)]

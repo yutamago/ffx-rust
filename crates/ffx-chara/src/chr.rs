@@ -796,6 +796,31 @@ pub mod bridge {
             put_f(mem, dst + 4 * k, v);
         }
     }
+
+    /// `Ch_DrawSetSituation(chr, v)` (`0x00830160`): the byte at `+0x187`,
+    /// and the render instance's (`+0x830`, when there is one) `+0x15`
+    /// (`graphicCharacterInstanceSetDrawSituation`).
+    pub fn ch_draw_set_situation(mem: &mut impl Mem, chr: u32, v: u32) {
+        #[allow(clippy::cast_possible_truncation)] // the low byte
+        let b = v as u8;
+        mem.write(chr + 0x187, b);
+        let inst: u32 = mem.read(chr + l::RENDER_INSTANCE);
+        if inst != 0 {
+            mem.write(inst + 0x15, b);
+        }
+    }
+
+    /// The effect packet the characters reference (`0x008439f0` returns
+    /// it).
+    pub const EFFECT_PACKET: Global<u32> = Global::new(0x0130_33d0);
+
+    /// `Ch_PacketRefEffect(_, out)` (`0x00830df0`): a DMA reference tag to
+    /// [`EFFECT_PACKET`] (8 quadwords); returns `out + 0x10`.
+    pub fn ch_packet_ref_effect(mem: &mut impl Mem, out: u32) -> u32 {
+        let at = EFFECT_PACKET.ptr(mem).addr;
+        mem.write(out, [0x3000_0008u32, at, 0, 0]);
+        out + 0x10
+    }
 }
 
 #[cfg(test)]
