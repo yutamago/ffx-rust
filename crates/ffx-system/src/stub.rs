@@ -13,6 +13,8 @@ pub const SIF_SET_DMA: u32 = 1;
 pub const PAD_GET_STATE: u32 = 6;
 /// `ModelBuffer_AllocateBuffer(...)` (`0x0072ac20`).
 pub const MODEL_BUFFER_ALLOCATE: u32 = 0xffff;
+/// `TOGetLineFeedHeight()` (`0x008b7c60`): a text line is 16 pixels.
+pub const LINE_FEED_HEIGHT: u32 = 0x10;
 /// What `sceMcSync(mode, &cmd, &result)` (`0x0062f9f0`) returns: -1, no
 /// memory-card operation running.
 pub const MC_SYNC: i32 = -1;
