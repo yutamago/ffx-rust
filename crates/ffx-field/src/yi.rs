@@ -26,6 +26,12 @@ pub const SG_VCOUNT: Global<u32> = Global::new(0x012f_b7f0);
 /// buffers with it).
 pub const SG_FRAME: Global<u32> = Global::new(0x023c_bbf0);
 
+/// Set with bit 8 of [`RENDER_STATUS`] by `yiSetRenderParam` (script
+/// native `0x0091c580`).
+pub const RENDER_PARAM: Global<u32> = Global::new(0x018d_ed2c);
+/// Three bytes `yiSetColor3` stores (script native `0x00859000`).
+pub const COLOR3: Global<[u8; 3]> = Global::new(0x0193_4ea4);
+
 /// Offsets in a display object.
 pub mod dobj {
     /// Size (`yiGetMatrixDObj` stride).
@@ -57,8 +63,8 @@ pub mod bridge {
     use ffx_bridge::Mem;
 
     use super::{
-        DOBJ_COUNT, DOBJS, DRAW_MASK, MAP_DATA, RENDER_STATUS, SCALE_FACTOR, SG_FRAME, SG_VCOUNT,
-        dobj, render,
+        COLOR3, DOBJ_COUNT, DOBJS, DRAW_MASK, MAP_DATA, RENDER_PARAM, RENDER_STATUS, SCALE_FACTOR,
+        SG_FRAME, SG_VCOUNT, dobj, render,
     };
     use crate::x87;
 
@@ -137,6 +143,25 @@ pub mod bridge {
             }
         }
         -1
+    }
+
+    /// `yiSetRenderParam(v)` (`0x00908580`): render status bit 8 and the
+    /// value.
+    pub fn yi_set_render_param(mem: &mut impl Mem, v: u32) {
+        let s = RENDER_STATUS.get(mem);
+        RENDER_STATUS.set(mem, s | 0x100);
+        RENDER_PARAM.set(mem, v);
+    }
+
+    /// `yiCheckDObj(index)` (`0x009086b0`): 0 for an object in use, else -1.
+    pub fn yi_check_dobj(mem: &impl Mem, index: u32) -> i32 {
+        if index < DOBJ_COUNT.get(mem) { 0 } else { -1 }
+    }
+
+    /// `yiSetColor3(r, g, b)` (`0x0090a400`): the low bytes; returns 0.
+    pub fn yi_set_color3(mem: &mut impl Mem, r: u8, g: u8, b: u8) -> u32 {
+        COLOR3.set(mem, [r, g, b]);
+        0
     }
 
     /// `yiSetScaleFactor(v)` (`0x0090a950`).

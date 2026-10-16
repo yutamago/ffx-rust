@@ -18,9 +18,12 @@ pub const ACTIVE: u32 = 0x002;
 pub const NAME: u32 = 0x004;
 /// `f32` x, y, z position, `w` after it (`Ch_GetPos`, `Ch_SetPos3`).
 pub const POS: u32 = 0x00c;
-/// The position again, all four words copied after every `Ch_SetPos`
-/// (`Ch_SetPos`, `Ch_SetPos3`).
-pub const POS_COPY: u32 = 0x01c;
+/// `f32` x, y, z, w: where the character goes this frame; `Ch_GetVel` is
+/// it minus [`POS`]. `Ch_SetPos` and `Ch_SetPos3` copy the position here
+/// word by word.
+pub const POS_NEXT: u32 = 0x01c;
+/// `f32` x, y, z: another point; `Ch_GetVel2` is it minus [`POS`].
+pub const POS_2: u32 = 0x02c;
 /// `f32` vertical velocity, `Ch_SetVelY`'s argument × 0.05.
 pub const VEL_Y: u32 = 0x050;
 /// `f32` x, y, z scale (`Ch_GetScale`, `Ch_SetScale`).
@@ -69,9 +72,22 @@ pub const BATTLE_CHR_NUM: u32 = 0x18c;
 pub const FLAGS: u32 = 0x194;
 /// `u32` more flags, [`F2_CHOCOBO`] and on.
 pub const FLAGS2: u32 = 0x198;
-/// Pointer to the character this one takes its shade from
-/// (`Ch_SetShadeID`).
-pub const SHADE_PARENT: u32 = 0x19c;
+/// The character this one is bound to (`Ch_BindToElemDirect`); bound
+/// characters take its shade (`Ch_SetShadeID`).
+pub const BIND_PARENT: u32 = 0x19c;
+/// `u32` element of [`BIND_PARENT`] it is bound to.
+pub const BIND_ELEM: u32 = 0x1a0;
+/// `f32` x, y, z offset from that element (`Ch_BindToElemDirectOfs`:
+/// the arguments × 100 × the block's [`BLK_BIND_SCALE`]).
+pub const BIND_OFFSET: u32 = 0x1a4;
+/// `f32` 1 after every bind.
+pub const BIND_1B0: u32 = 0x1b0;
+/// `f32` bind scale (`Ch_BindSetScale`).
+pub const BIND_SCALE: u32 = 0x1b4;
+/// The parent's [`BIND_SELF`] when bound, else -1.
+pub const BIND_PARENT_ID: u32 = 0x1b8;
+/// `u32` copied into a bound child's [`BIND_PARENT_ID`].
+pub const BIND_SELF: u32 = 0x190;
 /// Pointer to the models, [`MODEL_SIZE`] bytes each (`Ch_ModelGetHide`).
 pub const MODELS: u32 = 0x1bc;
 /// Pointer to a header with the `u16` model count at `+6`
@@ -145,8 +161,9 @@ pub const F_NO_BODY_HIT: u32 = 1 << 8;
 pub const F_ROT_HOKAN: u32 = 1 << 10;
 /// [`FLAGS`]: hide past the clip distance (`Ch_EnClip`).
 pub const F_CLIP: u32 = 1 << 11;
-/// [`FLAGS`]: hidden from the calculation pass as well (`Ch_GetHideCalc`).
-pub const F_HIDE_CALC: u32 = 1 << 13;
+/// [`FLAGS`]: effects drawn (`Ch_DrawEnEffect`); also counts as hidden
+/// from the calculation pass (`Ch_GetHideCalc`).
+pub const F_DRAW_EFFECT: u32 = 1 << 13;
 /// [`FLAGS`]: cleared by `Ch_MotionSetHokan`.
 pub const F_HOKAN_16: u32 = 1 << 16;
 /// [`FLAGS`]: shaded by the map id (`Ch_IdEnableShade`).
@@ -206,3 +223,111 @@ pub const BLK_DIR_NAME: u32 = 0xb8;
 pub const BLK_RESIDENT: u32 = 0x124;
 /// Block: `u32` size of the resident data.
 pub const BLK_RESIDENT_SIZE: u32 = 0x128;
+
+/// Model header ([`MODEL_HEADER`]): `u16` format version; the model count
+/// is valid from `0x831` on (`Ch_GetNbModel`).
+pub const HEADER_VERSION: u32 = 0x4;
+/// Model header: `u16` model count (`Ch_GetNbModel`).
+pub const HEADER_MODELS: u32 = 0x6;
+/// Model header: `u16` element (bone) count (`Ch_GetNbElem`).
+pub const HEADER_ELEMS: u32 = 0xa;
+/// Block: texture data (`Ch_TexGetNbClut`): `u16` clut count at `+8`,
+/// `u16` image count at `+0xc`, cluts (8 bytes each) from the pointer at
+/// `+0x18`, images (16 bytes: `u16` width `+8`, height `+0xa`, data
+/// `+0xc`) from the pointer at `+0x1c`.
+pub const BLK_TEX: u32 = 0x14;
+/// Block: `f32` scale of bind offsets (`Ch_BindToElemDirectOfs`).
+pub const BLK_BIND_SCALE: u32 = 0x38;
+
+/// `f32` shadow height (`Ch_ShadowSetHeight`).
+pub const SHADOW_HEIGHT: u32 = 0x17c;
+/// `u8` sound id (`Ch_SoundSetId`).
+pub const SOUND_ID: u32 = 0x184;
+/// `u8` point light bits (`Ch_PLightSetEnable`, `Ch_PLightSetEnableMask`).
+pub const PLIGHT: u32 = 0x188;
+/// Pointer to the elements (bones), [`ELEM_SIZE`] bytes each
+/// (`Ch_ElemGetParent`).
+pub const ELEMS: u32 = 0x328;
+/// Light value fade (`Ch_GetLightValue` returns its address; `Ch_SetShadeID`).
+pub const FADE_LIGHT: u32 = 0x36c;
+/// `f32` neck turning speed; 0 is stored as 6 (`Ch_NeckSetSpeed`).
+pub const NECK_SPEED: u32 = 0x420;
+/// `f32` × 2 neck limits (`Ch_NeckSetLimit`).
+pub const NECK_LIMIT: u32 = 0x424;
+/// `i8` automatic mouth movement (`Ch_MouthSetAutoTalk`).
+pub const MOUTH_AUTO_TALK: u32 = 0x4d4;
+/// `f32`, 1234 after `Ch_MouthInit`.
+pub const MOUTH_4D8: u32 = 0x4d8;
+/// Optional positions, 16 bytes each; one exists when its x is not 0
+/// (`Ch_OptposGetExist`).
+pub const OPTPOS: u32 = 0x530;
+/// 16 bytes, the bottom position (`Ch_OptposGetBottom`).
+pub const OPTPOS_BOTTOM: u32 = 0x694;
+/// 16 bytes, the top position (`Ch_OptposGetTop`).
+pub const OPTPOS_TOP: u32 = 0x6a4;
+/// 16 bytes, the camera reference (`Ch_OptposGetCameraRef`).
+pub const OPTPOS_CAMERA_REF: u32 = 0x6b4;
+/// `u32` horizontal shadow direction (`Ch_SetShadowDirH`).
+pub const SHADOW_DIR_H: u32 = 0x6d8;
+/// Clut textures, [`TEXTURE_SIZE`] bytes each (`Ch_TextureGetClutAddr`).
+pub const CLUT_TEXTURES: u32 = 0x6e4;
+/// `i16` count of [`CLUT_TEXTURES`].
+pub const CLUT_TEXTURE_COUNT: u32 = 0x6e8;
+/// Image textures, [`TEXTURE_SIZE`] bytes each (`Ch_TextureGetImageAddr`).
+pub const IMAGE_TEXTURES: u32 = 0x6ec;
+/// `i16` count of [`IMAGE_TEXTURES`].
+pub const IMAGE_TEXTURE_COUNT: u32 = 0x6f0;
+/// Cluts, 16 bytes each: pointer, original pointer, size in bytes
+/// (`Ch_ClutGetPtr`, `Ch_ClutGetOrgPtr`, `Ch_ClutGetSize`).
+pub const CLUTS: u32 = 0x704;
+/// `u8`, which clut `Ch_ClutEnable` put in the textures.
+pub const CLUT_ENABLED: u32 = 0x708;
+/// `u16` loop of the motion (`Ch_MotionSetLoop`).
+pub const MOTION_LOOP: u32 = 0x726;
+/// `u32` current motion id (`Ch_MotionGetId`).
+pub const MOTION_ID: u32 = 0x72c;
+/// `u32` current motion frame, 8.8 fixed (`Ch_MotionGetFrame`).
+pub const MOTION_FRAME: u32 = 0x740;
+/// `u16`, 1 after `Ch_ClothSetFast`.
+pub const CLOTH_810: u32 = 0x810;
+/// `u16` frames of the fast cloth settle (`Ch_ClothSetFast`).
+pub const CLOTH_FRAMES: u32 = 0x812;
+/// `f32`, 0 or 2 (`Ch_ClothSetFast`).
+pub const CLOTH_81C: u32 = 0x81c;
+/// `f32` × 3 cloth mesh offset (`Ch_ClothMeshMappingOffset`).
+pub const CLOTH_OFFSET: u32 = 0x864;
+/// `u32` map id word (`Ch_IdGet*`): bits 0-6 map, 7-8 encounter, 9-10
+/// effect, 11-12 dictionary, 13-14 water, 15-16 sound, 17-31 shade.
+pub const PID: u32 = 0x828;
+
+/// [`FLAGS`]: recompute the normals every frame (`Ch_SetCalcNorm`).
+pub const F_CALC_NORM: u32 = 1 << 0;
+/// [`FLAGS`]: one budgeted normal update (`Ch_ReserveCalcNorm`).
+pub const F_RESERVE_CALC_NORM: u32 = 1 << 3;
+/// [`FLAGS`]: the second kind (`Ch_ReserveCalcNorm2`).
+pub const F_RESERVE_CALC_NORM2: u32 = 1 << 4;
+/// [`FLAGS`]: cull (`Ch_DrawSetCull`).
+pub const F_CULL: u32 = 1 << 19;
+/// [`FLAGS`]: keep the frame rate (`Ch_SetKeepFps`).
+pub const F_KEEP_FPS: u32 = 1 << 20;
+/// [`FLAGS`]: cloth (`Ch_ClothSetEnable`).
+pub const F_CLOTH: u32 = 1 << 22;
+/// [`FLAGS2`]: texture animation (`Ch_TextureAnimSetEnable`).
+pub const F2_TEXTURE_ANIM: u32 = 1 << 8;
+/// [`DIRTY`] bit 0: cloth gravity (`Ch_ClothEnableGrav`).
+pub const D_CLOTH_GRAV: u32 = 1 << 0;
+
+/// Bytes per element (`Ch_ElemGetParent` indexes by 0x160).
+pub const ELEM_SIZE: u32 = 0x160;
+/// Element: pointer to its data, whose `+4` is the parent
+/// (`Ch_ElemGetParent`).
+pub const ELEM_DATA: u32 = 0x00;
+/// Element: replacement matrix (`Ch_ElemSetReplaceMatrix`).
+pub const ELEM_REPLACE_MATRIX: u32 = 0xc8;
+/// Element: quaternion matrix (`Ch_ElemSetQuatMatrix`).
+pub const ELEM_QUAT_MATRIX: u32 = 0xcc;
+/// Element: `f32` weight of [`ELEM_QUAT_MATRIX`].
+pub const ELEM_QUAT_WEIGHT: u32 = 0xe0;
+/// Bytes per texture in [`CLUT_TEXTURES`] and [`IMAGE_TEXTURES`]: `+0x30`
+/// address, `u16` base at `+0x3a`.
+pub const TEXTURE_SIZE: u32 = 0x40;

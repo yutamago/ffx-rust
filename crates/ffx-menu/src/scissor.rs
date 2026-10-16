@@ -127,6 +127,38 @@ pub fn begin_scissor_xyuv(s: &Scissor, q: &mut impl Corners) -> bool {
     true
 }
 
+/// What `BeginScissor_XY` puts in all four corners of a rectangle wholly
+/// outside the box (`0x00b368b8`).
+pub const OUTSIDE: f32 = -100_000.0;
+
+/// `BeginScissor_XY`: clips (x0, y0)–(x1, y1) to the box. A rectangle
+/// wholly outside (on an edge counts) first goes to [`OUTSIDE`] in all four
+/// corners; then each edge inside the box is moved onto it. Always true.
+pub fn begin_scissor_xy(s: &Scissor, q: &mut impl Corners) -> bool {
+    use Corner::{X0, X1, Y0, Y1};
+    if s.on != 1 {
+        return true;
+    }
+    if s.left >= q.get(X1) || s.right <= q.get(X0) || s.bottom <= q.get(Y0) || s.top >= q.get(Y1) {
+        for c in [X0, Y0, X1, Y1] {
+            q.set(c, OUTSIDE);
+        }
+    }
+    if q.get(X0) < s.left && q.get(X1) > s.left {
+        q.set(X0, s.left);
+    }
+    if q.get(X0) < s.right && q.get(X1) > s.right {
+        q.set(X1, s.right);
+    }
+    if q.get(Y0) < s.top && q.get(Y1) > s.top {
+        q.set(Y0, s.top);
+    }
+    if q.get(Y0) < s.bottom && q.get(Y1) > s.bottom {
+        q.set(Y1, s.bottom);
+    }
+    true
+}
+
 /// The originals, on the game's globals (`ffx_bridge::Mem`).
 pub mod bridge {
     use ffx_bridge::{Global, Mem};
@@ -178,6 +210,14 @@ pub mod bridge {
     pub fn begin_scissor_xyuv_at(mem: &mut impl Mem, at: [u32; 8]) -> bool {
         let s = scissor(mem);
         begin_scissor_xyuv(&s, &mut Pointers { mem, at })
+    }
+
+    /// `BeginScissor_XY(&x0, &y0, &x1, &y1)` (`0x008e58e0`).
+    pub fn begin_scissor_xy_at(mem: &mut impl Mem, at: [u32; 4]) -> bool {
+        let s = scissor(mem);
+        let [x0, y0, x1, y1] = at;
+        let at = [x0, y0, x1, y1, 0, 0, 0, 0];
+        super::begin_scissor_xy(&s, &mut Pointers { mem, at })
     }
 
     /// `CloseScissor()` (`0x008e5cd0`).

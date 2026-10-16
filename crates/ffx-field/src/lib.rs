@@ -12,7 +12,10 @@
 //! - [`model`]: scene objects (`rcbgModel` and its primitive packets,
 //!   layers, transfers, palettes, animations, particle simulations).
 //! - [`guide`]: the guide map, the minimap (`rcbgGuide`, `Guide_*`, `Yn_*`).
+//! - [`scene`]: the map's scene, its layers (map parts) and objects.
 //! - [`task`]: the field effects' tasks and objects (`rcef`).
+//! - [`rcui`]: the field UI helpers.
+//! - [`ke`]: `Ke` resource heaps and lens flare objects.
 //! - [`yi`]: the field renderer's state and display objects.
 //! - [`vu0`]: the VU0-style vector helpers (`KeVu0*`).
 //! - [`nkz`]: overdrive tables (`Nkz`) and sound status (`Sqs`).
@@ -20,10 +23,13 @@
 
 pub mod geom;
 pub mod guide;
+pub mod ke;
 pub mod model;
 pub mod nkz;
 pub mod packet;
 pub mod rcdt;
+pub mod rcui;
+pub mod scene;
 pub mod task;
 pub mod vu0;
 pub mod x87;

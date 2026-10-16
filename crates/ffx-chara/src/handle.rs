@@ -142,6 +142,36 @@ pub mod bridge {
         mem.read::<u32>(chr + l::BLK).wrapping_add(l::BLK_DIR_NAME)
     }
 
+    /// `Ch_TextureAnimGetHandle(id)` (`0x00835ed0`): the first active
+    /// character with texture animation `id`, or 0.
+    pub fn ch_texture_anim_get_handle(mem: &impl Mem, id: u32) -> u32 {
+        let end = slot(mem, CHR_COUNT.get(mem));
+        let mut c = CHR_ARRAY.get(mem);
+        while c != end {
+            if active(mem, c) && mem.read::<u32>(c + l::TEXTURE_ANIM_ID) == id {
+                return c;
+            }
+            c = c.wrapping_add(l::SIZE);
+        }
+        0
+    }
+
+    /// Cloth file loads (`Ch_IsLoadingClothFile`): 50 of `0x110` bytes,
+    /// state byte at `+0` (1 = loading), key at `+4`.
+    pub const CLOTH_LOADS: Global<u8> = Global::new(0x012f_c6a0);
+    /// Entries in [`CLOTH_LOADS`] (to `0x012ffbc0`).
+    pub const CLOTH_LOADS_LEN: u32 = (0x012f_fbc0 - 0x012f_c6a0) / 0x110;
+
+    /// `Ch_IsLoadingClothFile(key)` (`0x0082a100`): 1 while a load of
+    /// `key` is in progress.
+    pub fn ch_is_loading_cloth_file(mem: &impl Mem, key: u32) -> u32 {
+        let first = CLOTH_LOADS.ptr(mem).addr;
+        u32::from((0..CLOTH_LOADS_LEN).any(|i| {
+            let e = first + i * 0x110;
+            mem.read::<u32>(e + 4) == key && mem.read::<u8>(e) == 1
+        }))
+    }
+
     /// `Ch_FunctionHistoryInit()` (`0x00826a40`): count 0, each entry's
     /// first byte 0.
     pub fn ch_function_history_init(mem: &mut impl Mem) {

@@ -135,6 +135,17 @@ cargo run --release -p ffx-harness --example replay -- tools/replays/battle-atta
 tools/replay-compare.py /mnt/c/…/orig.trace /mnt/c/…/rust.trace
 ```
 
+`tools/replays/menu-browse.txt` opens the main menu and takes screenshots
+at fixed frames. Some of the screen animates by the wall clock (the
+character panels' shimmer), so two runs of the original already differ in
+about 27,000 pixels; `tools/shot-compare.py ORIG ORIG2 RUST` (three
+directories of the screenshots: the original twice, then the Rust run)
+counts only the pixels the original draws the same both times, a few
+pixels around each animated one left out.
+
+All three replays give the original's events and screenshots with every
+replacement in (1172 functions, 2026-10-16).
+
 `fpucw` answers the game thread's x87 control word: `0x027f` (53-bit
 precision, round to nearest, all exceptions masked).
 

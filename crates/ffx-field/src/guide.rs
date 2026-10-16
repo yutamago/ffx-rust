@@ -2,8 +2,8 @@
 //! `docs/formats/field.md`, `docs/renderer.md` "Minimap").
 //!
 //! `g_YnMapSystem` points at Yn's field state: `+0` the map, `+4` the
-//! guide object. The map's `+8` holds the guide map list (the minimap
-//! models of the map and which one shows).
+//! guide object. The map's `+8` is its scene ([`crate::scene`]), which
+//! also holds the minimap models and which one shows.
 
 use ffx_bridge::Global;
 
@@ -25,6 +25,30 @@ pub const FADE_LEVEL: Global<i32> = Global::new(0x0193_bf74);
 pub const FADE: Global<i32> = Global::new(0x0193_bf78);
 /// The guide's `+0x6c`, kept over a battle (`rcbgGuideBattleBegin`).
 pub const BATTLE_SAVE: Global<u32> = Global::new(0x0193_bf7c);
+/// Where the minimap sits: 0..=3 the corners, 4 the centre
+/// (`rcbgGuideSetTarget`; script native 0x00f3).
+pub const TARGET: Global<u32> = Global::new(0x00c5_e354);
+/// The minimap's size in pixels (`rcbgGuideSetSize`): `0x80`, `0x100`
+/// centred.
+pub const SIZE: Global<u32> = Global::new(0x00c5_e358);
+/// The minimap's centre, x then y (`rcbgGuideSetPos`).
+pub const POS: Global<[u32; 2]> = Global::new(0x00c5_e35c);
+/// 0: `rcbgGuideUpdate` returns at once (`Guide_SetEnabled`, from the
+/// debug tweak menu).
+pub const ENABLED: Global<u32> = Global::new(0x00c5_e478);
+
+/// The sea's matrix (`Yn_SeaGetMatrix`, `Yn_SeaSetMatrix`).
+pub const SEA_MATRIX: Global<[f32; 16]> = Global::new(0x0193_bf28);
+
+/// Size and centre of the minimap for each [`TARGET`]
+/// (`rcbgGuideSetTarget`'s cases).
+pub const TARGETS: [(u32, [u32; 2]); 5] = [
+    (0x80, [0x50, 0x40]),
+    (0x80, [0x1b0, 0x40]),
+    (0x80, [0x50, 0x160]),
+    (0x80, [0x1b0, 0x160]),
+    (0x100, [0x100, 0xd0]),
+];
 
 /// Offsets in Yn's field state.
 pub mod system {
@@ -36,18 +60,8 @@ pub mod system {
 
 /// Offsets in the map.
 pub mod map {
-    /// `+0x8`: the guide map list.
-    pub const GUIDE_MAPS: u32 = 0x8;
-}
-
-/// Offsets in the guide map list.
-pub mod guide_maps {
-    /// `+0x18`: how many (`i16`, `Yn_GuideMapSetMapNo` bounds).
-    pub const COUNT: u32 = 0x18;
-    /// `+0x1a`: the one shown (`i16`).
-    pub const CURRENT: u32 = 0x1a;
-    /// `+0x1c`: the models, one pointer each.
-    pub const MODELS: u32 = 0x1c;
+    /// `+0x8`: its scene ([`crate::scene::layout`]).
+    pub const SCENE: u32 = 0x8;
 }
 
 /// Offsets in the guide object (`rcbgGuideNew`).
@@ -56,8 +70,10 @@ pub mod object {
     pub const MODEL: u32 = 0x0;
     /// `+0x8`: the model made from the walk mesh.
     pub const WALK_MODEL: u32 = 0x8;
-    /// `+0x6c`: a float kept over battles.
-    pub const BATTLE_KEPT: u32 = 0x6c;
+    /// `+0x6c`: how far the view may move down, a float: the minimap's
+    /// offset is clamped to minus it (`rcbgGuideUpdateEx`); set by a
+    /// script native (`0x0091b740`), kept over battles.
+    pub const LIMIT: u32 = 0x6c;
     /// `+0x70`: non-zero when the fog of war is kept (`Guide_RevealFog`).
     pub const FOG: u32 = 0x70;
     /// `+0x74`: the blink counter of the markers.
@@ -155,10 +171,189 @@ pub mod bridge {
     use ffx_bridge::Mem;
 
     use super::{
-        BATTLE_SAVE, FADE, FADE_DELAY, FADE_LEVEL, FADE_STATE, FADE_STEPS, FADE_WAIT, FLAGS, Fade,
-        YN_MAP_SYSTEM, guide_maps, map, object, system,
+        BATTLE_SAVE, ENABLED, FADE, FADE_DELAY, FADE_LEVEL, FADE_STATE, FADE_STEPS, FADE_WAIT,
+        FLAGS, Fade, POS, SIZE, TARGET, TARGETS, YN_MAP_SYSTEM, map, object, system,
     };
-    use crate::x87;
+    use crate::{scene, x87};
+
+    /// The guide object, when Yn's field state and it exist.
+    fn yn_guide(mem: &impl Mem) -> Option<u32> {
+        let s = YN_MAP_SYSTEM.get(mem);
+        if s == 0 {
+            return None;
+        }
+        Some(mem.read::<u32>(s + system::GUIDE)).filter(|&g| g != 0)
+    }
+
+    /// The scene, when Yn's field state, its map and the scene exist.
+    fn yn_scene(mem: &impl Mem) -> Option<u32> {
+        let s = YN_MAP_SYSTEM.get(mem);
+        if s == 0 {
+            return None;
+        }
+        let m = mem.read::<u32>(s + system::MAP);
+        if m == 0 {
+            return None;
+        }
+        Some(mem.read::<u32>(m + map::SCENE)).filter(|&c| c != 0)
+    }
+
+    /// `rcbgGuideSetPos(guide, x, y)` (`0x0091d900`): the minimap's centre
+    /// (global; the guide is not read).
+    pub fn rcbg_guide_set_pos(mem: &mut impl Mem, _guide: u32, x: u32, y: u32) {
+        POS.set(mem, [x, y]);
+    }
+
+    /// `rcbgGuideSetSize(guide, size)` (`0x0091d920`).
+    pub fn rcbg_guide_set_size(mem: &mut impl Mem, _guide: u32, size: u32) {
+        SIZE.set(mem, size);
+    }
+
+    /// `rcbgGuideSetTarget(guide, target)` (`0x0091d930`): stores the
+    /// target, then its size and centre (other values: only the target).
+    pub fn rcbg_guide_set_target(mem: &mut impl Mem, g: u32, target: u32) {
+        TARGET.set(mem, target);
+        if let Some(&(size, [x, y])) = TARGETS.get(target as usize) {
+            rcbg_guide_set_size(mem, g, size);
+            rcbg_guide_set_pos(mem, g, x, y);
+        }
+    }
+
+    /// `rcbgGuideGetTarget()` (`0x0091d480`).
+    pub fn rcbg_guide_get_target(mem: &impl Mem) -> u32 {
+        TARGET.get(mem)
+    }
+
+    /// `rcbgGuideSetFlags(guide, bits)` (`0x0091d430`).
+    pub fn rcbg_guide_set_flags(mem: &mut impl Mem, _guide: u32, bits: u32) {
+        let f = FLAGS.get(mem);
+        FLAGS.set(mem, f | bits);
+    }
+
+    /// `rcbgGuideClearFlags(guide, bits)` (`0x0091d420`).
+    pub fn rcbg_guide_clear_flags(mem: &mut impl Mem, _guide: u32, bits: u32) {
+        let f = FLAGS.get(mem);
+        FLAGS.set(mem, f & !bits);
+    }
+
+    /// `rcbgGuideSetFlag3(guide, on)` (`0x0091d510`): flag bit 3.
+    pub fn rcbg_guide_set_flag3(mem: &mut impl Mem, _guide: u32, on: i32) {
+        let f = FLAGS.get(mem);
+        FLAGS.set(mem, if on != 0 { f | 8 } else { f & !8 });
+    }
+
+    /// `rcbgGuideGetLimit(guide)` (`0x0091d450`).
+    pub fn rcbg_guide_get_limit(mem: &impl Mem, g: u32) -> f32 {
+        f32::from_bits(mem.read(g + object::LIMIT))
+    }
+
+    /// `rcbgGuideSetLimit(guide, limit)` (`0x0091d580`), the float as bits.
+    pub fn rcbg_guide_set_limit(mem: &mut impl Mem, g: u32, limit: u32) {
+        mem.write(g + object::LIMIT, x87::copy(limit));
+    }
+
+    /// `Guide_SetEnabled(on)` (`0x0091f640`).
+    pub fn guide_set_enabled(mem: &mut impl Mem, on: u32) {
+        ENABLED.set(mem, on);
+    }
+
+    /// `Yn_GuideMapSetMode(target)` (`0x00919e20`).
+    pub fn yn_guide_map_set_mode(mem: &mut impl Mem, target: u32) {
+        if let Some(g) = yn_guide(mem) {
+            rcbg_guide_set_target(mem, g, target);
+        }
+    }
+
+    /// `Yn_GuideMapSetFlags(bits)` (`0x00919c30`).
+    pub fn yn_guide_map_set_flags(mem: &mut impl Mem, bits: u32) {
+        if let Some(g) = yn_guide(mem) {
+            rcbg_guide_set_flags(mem, g, bits);
+        }
+    }
+
+    /// `Yn_GuideMapClearFlags(bits)` (`0x00919c00`).
+    pub fn yn_guide_map_clear_flags(mem: &mut impl Mem, bits: u32) {
+        if let Some(g) = yn_guide(mem) {
+            rcbg_guide_clear_flags(mem, g, bits);
+        }
+    }
+
+    /// `Yn_GuideMapSetFlag3(on)` (`0x00919d40`).
+    pub fn yn_guide_map_set_flag3(mem: &mut impl Mem, on: i32) {
+        if let Some(g) = yn_guide(mem) {
+            rcbg_guide_set_flag3(mem, g, on);
+        }
+    }
+
+    /// `Yn_GuideMapGetLimit()` (`0x00919ca0`): 0 without a guide.
+    pub fn yn_guide_map_get_limit(mem: &impl Mem) -> f32 {
+        yn_guide(mem).map_or(0.0, |g| rcbg_guide_get_limit(mem, g))
+    }
+
+    /// `Yn_GuideMapSetLimit(limit)` (`0x00919df0`), the float as bits.
+    pub fn yn_guide_map_set_limit(mem: &mut impl Mem, limit: u32) {
+        if let Some(g) = yn_guide(mem) {
+            rcbg_guide_set_limit(mem, g, x87::copy(limit));
+        }
+    }
+
+    /// `Yn_GuideMapSetPos(x, y)` (`0x00919e50`).
+    pub fn yn_guide_map_set_pos(mem: &mut impl Mem, x: u32, y: u32) {
+        if let Some(g) = yn_guide(mem) {
+            rcbg_guide_set_pos(mem, g, x, y);
+        }
+    }
+
+    /// `Yn_GuideMapSetSize(size)` (`0x00919e80`).
+    pub fn yn_guide_map_set_size(mem: &mut impl Mem, size: u32) {
+        if let Some(g) = yn_guide(mem) {
+            rcbg_guide_set_size(mem, g, size);
+        }
+    }
+
+    /// `Yn_PSimGetCnt()` (`0x00919ef0`): always one particle simulation.
+    #[must_use]
+    pub const fn yn_psim_get_cnt() -> u32 {
+        1
+    }
+
+    /// `Yn_SeaGetMatrix()` (`0x0091ae00`): the sea's matrix.
+    pub fn yn_sea_get_matrix(mem: &impl Mem) -> u32 {
+        super::SEA_MATRIX.ptr(mem).addr
+    }
+
+    /// `Yn_MapPartCount()` (`0x0091a3d0`): the scene's layers, 0 without
+    /// a scene.
+    pub fn yn_map_part_count(mem: &impl Mem) -> i32 {
+        yn_scene(mem).map_or(0, |c| mem.read(c + scene::layout::LAYER_COUNT))
+    }
+
+    /// Bit 1 of layer `part`'s animation, when `part` is below the count
+    /// (`Yn_MapPartAnimeOn`/`Off`).
+    fn map_part_anime(mem: &mut impl Mem, part: i32, on: bool) {
+        if part >= yn_map_part_count(mem) {
+            return;
+        }
+        // the count is not 0, so the scene exists
+        let c = yn_scene(mem).unwrap_or(0);
+        let layers = mem.read::<u32>(c + scene::layout::LAYERS);
+        #[allow(clippy::cast_sign_loss)] // a negative part indexes back, as the original
+        let at = layers
+            .wrapping_add((part as u32).wrapping_mul(scene::layer::SIZE))
+            .wrapping_add(scene::layer::ANIME);
+        let f = mem.read::<u32>(at);
+        mem.write(at, if on { f | 2 } else { f & !2 });
+    }
+
+    /// `Yn_MapPartAnimeOn(part)` (`0x00919f90`).
+    pub fn yn_map_part_anime_on(mem: &mut impl Mem, part: i32) {
+        map_part_anime(mem, part, true);
+    }
+
+    /// `Yn_MapPartAnimeOff(part)` (`0x00919f40`).
+    pub fn yn_map_part_anime_off(mem: &mut impl Mem, part: i32) {
+        map_part_anime(mem, part, false);
+    }
 
     /// `Guide_MeshObject(guide)` (`0x0091d460`): the map's own minimap
     /// model, else the one made from the walk mesh.
@@ -207,14 +402,14 @@ pub mod bridge {
     /// `rcbgGuideBattleBegin(guide)` (`0x0091ccc0`): keeps the guide's
     /// `+0x6c` over the battle.
     pub fn rcbg_guide_battle_begin(mem: &mut impl Mem, g: u32) {
-        let v = x87::copy(mem.read(g + object::BATTLE_KEPT));
+        let v = x87::copy(mem.read(g + object::LIMIT));
         BATTLE_SAVE.set(mem, v);
     }
 
     /// `rcbgGuideBattleEnd(guide)` (`0x0091cce0`): puts it back.
     pub fn rcbg_guide_battle_end(mem: &mut impl Mem, g: u32) {
         let v = x87::copy(BATTLE_SAVE.get(mem));
-        mem.write(g + object::BATTLE_KEPT, v);
+        mem.write(g + object::LIMIT, v);
     }
 
     /// `Yn_BattleBegin()` (`0x00919a20`): for the guide, if Yn's field
@@ -259,9 +454,9 @@ pub mod bridge {
         if m == 0 {
             return -1;
         }
-        match mem.read::<u32>(m + map::GUIDE_MAPS) {
+        match mem.read::<u32>(m + map::SCENE) {
             0 => -1,
-            l => i32::from(mem.read::<i16>(l + guide_maps::CURRENT)),
+            l => i32::from(mem.read::<i16>(l + scene::layout::GUIDE_CURRENT)),
         }
     }
 }

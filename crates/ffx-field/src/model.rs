@@ -85,6 +85,13 @@ pub mod trx {
     pub const DELETE: u32 = 0x4;
     /// `+0xc`: the draw function (`rcbgTrxDraw`, `0x0092d470`).
     pub const DRAW: u32 = 0xc;
+    /// `+0x30`: entries (`rcbgTrxGetCnt`).
+    pub const COUNT: u32 = 0x30;
+    /// `+0x34`: bytes per entry.
+    pub const ENTRY_SIZE: u32 = 0x34;
+    /// `+0x38`: the entries (`rcbgTrxGetEntry`); an entry's data follows
+    /// its 16-byte header (`rcbgTrxGetEntryData`).
+    pub const ENTRIES: u32 = 0x38;
     /// `+0x3c`: the transfer to run on the next draw; -1 for none
     /// (`rcbgTrxSetNo`, cleared by `rcbgTrxDraw`).
     pub const NO: u32 = 0x3c;
@@ -110,12 +117,51 @@ pub mod anime {
     pub const RATE: u32 = 0x14;
 }
 
-/// A particle simulation (`rcbgPSim`).
+/// A particle simulation (`rcbgPSimInit`, `0xb0` bytes).
 pub mod psim {
+    /// Size.
+    pub const SIZE: u32 = 0xb0;
+    /// The object type `rcbgPSimInit` gives it.
+    pub const KIND_PSIM: u32 = 0x0002_0004;
+    /// Its delete, process and draw functions (`+4`, `+8`, `+0xc`; the
+    /// second is `rcbgPSimProc`).
+    pub const FUNCTIONS: [u32; 3] = [0x0091_fd40, 0x0091_fe70, 0x0091_fd60];
+    /// Where its model's blob keeps the input particles (`rcbgPSimGetOmdIn`).
+    pub const OMD_IN: u32 = 0x20;
     /// `+0x14`: its model.
     pub const MODEL: u32 = 0x14;
     /// `+0xa4`: the initial count (`rcbgPSimSetInitCnt`).
     pub const INIT_CNT: u32 = 0xa4;
+}
+
+/// A model's scale (`rcbgModelSetScale` stores ten times it on the
+/// matrix diagonal; `rcbgModelGetScale` divides by 10).
+pub const SCALE_FACTOR: f64 = 10.0;
+
+/// `rcPad16(n)`: bytes from `n` to the next multiple of 16, with the C
+/// remainder (a negative `n` gives 17..=31).
+#[must_use]
+pub const fn pad16(n: i32) -> i32 {
+    let r = n % 16;
+    if r != 0 { 16 - r } else { 0 }
+}
+
+/// `rcLog2Ceil(n)`: the smallest `k` in 1..=16 with `n <= 1 << k`
+/// (16 when none is).
+#[must_use]
+pub fn log2_ceil(n: i32) -> u32 {
+    let mut k = 1u32;
+    let mut p = 2u32;
+    loop {
+        if n <= p.cast_signed() {
+            return k;
+        }
+        p = p.rotate_left(1);
+        k += 1;
+        if k >= 16 {
+            return k;
+        }
+    }
 }
 
 /// The scene objects where the game keeps them, through [`ffx_bridge::Mem`].
@@ -231,6 +277,50 @@ pub mod bridge {
     /// `rcbgPSimSetInitCnt(psim, n)` (`0x0091fef0`).
     pub fn rcbg_psim_set_init_cnt(mem: &mut impl Mem, p: u32, n: u32) {
         mem.write(p + psim::INIT_CNT, n);
+    }
+
+    /// `rcbgModelGetScale(model)` (`0x00928300`): the matrix's first
+    /// element over 10.
+    pub fn rcbg_model_get_scale(mem: &impl Mem, m: u32) -> f32 {
+        let x = crate::x87::load(mem.read(m + obj::MATRIX));
+        f32::from_bits(crate::x87::store(x / super::SCALE_FACTOR))
+    }
+
+    /// `rcbgTrxGetCnt(trx)` (`0x0092d4c0`).
+    pub fn rcbg_trx_get_cnt(mem: &impl Mem, t: u32) -> u32 {
+        mem.read(t + trx::COUNT)
+    }
+
+    /// `rcbgTrxGetEntry(trx, n)` (`0x0092d4d0`).
+    pub fn rcbg_trx_get_entry(mem: &impl Mem, t: u32, n: u32) -> u32 {
+        let size = mem.read::<u32>(t + trx::ENTRY_SIZE);
+        size.wrapping_mul(n)
+            .wrapping_add(mem.read(t + trx::ENTRIES))
+    }
+
+    /// `rcbgTrxGetEntryData(trx, n)` (`0x0092d4f0`).
+    pub fn rcbg_trx_get_entry_data(mem: &impl Mem, t: u32, n: u32) -> u32 {
+        rcbg_trx_get_entry(mem, t, n).wrapping_add(0x10)
+    }
+
+    /// `rcbgPSimInit(psim)` (`0x0091fe00`).
+    pub fn rcbg_psim_init(mem: &mut impl Mem, p: u32) {
+        mem.write_bytes(p, &[0; psim::SIZE as usize]);
+        mem.write(p, psim::KIND_PSIM);
+        for (i, f) in (1u32..).zip(psim::FUNCTIONS) {
+            let at = mem.rebase(f);
+            mem.write(p + 4 * i, at);
+        }
+    }
+
+    /// `rcbgPSimGetOmdIn(psim)` (`0x0091fdc0`).
+    pub fn rcbg_psim_get_omd_in(mem: &impl Mem, p: u32) -> u32 {
+        mem.read::<u32>(p + psim::MODEL).wrapping_add(psim::OMD_IN)
+    }
+
+    /// `rcbgFPm173End(fp)` (`0x00922b50`): `+0x24` = 1.
+    pub fn rcbg_fpm173_end(mem: &mut impl Mem, f: u32) {
+        mem.write(f + 0x24, 1u32);
     }
 
     /// `rcbgPSimClearOMD(psim)` (`0x0091f9b0`): detaches its model's blob.

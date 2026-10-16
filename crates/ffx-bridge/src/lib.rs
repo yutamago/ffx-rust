@@ -13,7 +13,9 @@
 //! [`IMAGE_BASE`]; [`Global`] rebases them through [`Mem::image_base`]
 //! (the game runs with ASLR). Heap addresses are used as they are.
 
+pub mod frame;
 pub mod snapshot;
+pub mod x87;
 
 use std::marker::PhantomData;
 

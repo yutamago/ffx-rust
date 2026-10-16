@@ -21,7 +21,8 @@ and 7 more that still have their model block.
 | `0x002` | `u8` | slot in use | `Ch_CheckHandle`, `Ch_HandleGetNext` (`0x00826d70`) |
 | `0x004` | ptr | name: the model block's `+0x71` | `Ch_GetName` (`0x00826b90`) |
 | `0x00c` | `f32` ×4 | position x, y, z, w | `Ch_GetPos` (`0x0082ac90`), `Ch_SetPos3` (`0x0082b480`) |
-| `0x01c` | `f32` ×4 | the position again, copied word by word after each set | `Ch_SetPos` (`0x0082b440`) |
+| `0x01c` | `f32` ×4 | where the character goes this frame; `Ch_SetPos` copies the position here word by word | `Ch_GetVel` (`0x00834000`, this minus the position), `Ch_SetPos` (`0x0082b440`) |
+| `0x02c` | `f32` ×3 | a second point | `Ch_GetVel2` (`0x00834030`) |
 | `0x050` | `f32` | vertical velocity, the argument × 0.05 | `Ch_SetVelY` (`0x0082b920`) |
 | `0x05c` | `f32` ×3 | scale | `Ch_SetScale` (`0x0082b560`), `Ch_GetScaleX` (`0x0082ad30`) |
 | `0x06c` | `f32` ×3 | offset | `Ch_SetOffset` (`0x0082b3c0`) |
@@ -34,22 +35,33 @@ and 7 more that still have their model block.
 | `0x168` | `f32` | direction | `Ch_SetDir` (`0x0082b190`) |
 | `0x16c` | `f32` | ground height | `Ch_SetJimen` (`0x0082b360`) |
 | `0x170` | `f32` | speed from which the character runs; 18 for 0 or less | `Ch_MoveSetChgRun` (`0x0082b040`) |
+| `0x17c` | `f32` | shadow height | `Ch_ShadowSetHeight` (`0x00830cb0`) |
 | `0x180` | `u8` | hide bits: 1 event, 2 effect, 0x10 battle | `Chr_SetHideFlags` (`0x0082ba30`) |
 | `0x181` | `u8` | hidden from the calculation pass | `Ch_SetHideCalc` (`0x0082b280`) |
 | `0x182` | `i8` | ground mode | `Ch_SetGravMode` (`0x0082b240`) |
 | `0x183` | `i8` | shadow mode | `Ch_SetShadowMode` (`0x0082b820`) |
 | `0x185` | `i8` | field mode (also the default motion's slot) | `Ch_SetFieldMode` (`0x0082b1e0`) |
-| `0x186` | `u8` | motion type | `Ch_SetMotionType` (`0x0082b3a0`) |
+| `0x184` | `u8` | sound id | `Ch_SoundSetId` (`0x00835b50`) |
+| `0x186` | `u8` | motion type | `Ch_SetMotionType` (`0x0082b3a0`), `Ch_GetMotionType` (`0x00833f70`) |
+| `0x188` | `u8` | point light bits | `Ch_PLightSetEnableMask` (`0x00830b00`) |
 | `0x18c` | `u32` | battle character number | `Ch_SetBattleChrNum` (`0x0082b0d0`) |
 | `0x194` | `u32` | flags (below) | |
 | `0x198` | `u32` | more flags: bit 2 chocobo, bit 3 VU1 clip mode, bit 5 skipped by the OEF2 lookup | `Ch_SetChocobo` (`0x0082b130`), `Ch_Vu1SetClipmode` (`0x0082b970`) |
-| `0x19c` | ptr | the character whose shade this one follows | `Ch_SetShadeID`'s helper (`0x0082b7a0`) |
+| `0x190` | `u32` | what a bound child copies to its `+0x1b8` | `Ch_BindToElemDirect` (`0x00832680`) |
+| `0x19c` | ptr | the character this one is bound to; bound characters take its shade | `Ch_BindToElemDirect`, `Ch_SetShadeID`'s helper (`0x0082b7a0`) |
+| `0x1a0` | `u32` | the parent's element it is bound to | `Ch_BindToElemDirect` |
+| `0x1a4` | `f32` ×3 | offset from that element: the arguments × 100 × the block's `+0x38` | `Ch_BindToElemDirectOfs` (`0x008326e0`) |
+| `0x1b0` | `f32` | 1 after each bind | `Ch_BindToElemDirect` |
+| `0x1b4` | `f32` | bind scale | `Ch_BindSetScale` (`0x00832610`) |
+| `0x1b8` | `u32` | the parent's `+0x190`, or -1 when unbound | `Ch_BindToElemDirect` |
 | `0x1bc` | ptr | models, `0x38` bytes each: `+4` normals, `+8` vertices, `+0x14` alpha, `+0x18` hidden | `Ch_ModelGetHide` (`0x0082add0`), `Ch_ModelGetNromPtr` (`0x0082adf0`) |
-| `0x1c0` | ptr | header, `u16` model count at `+6` | `Ch_ModelSetHide` (`0x0082aea0`) |
+| `0x1c0` | ptr | header: `u16` version at `+4` (counts valid from `0x831`), models at `+6`, elements at `+0xa` | `Ch_GetNbModel` (`0x00830410`), `Ch_GetNbElem` (`0x008303f0`) |
 | `0x1c4` | ptr | model block in `g_ChrBlk` (below) | `Ch_GetBlkDirName` (`0x00826a60`) |
-| `0x330` | fade ×3 | shade colour r, g, b | `Ch_SetShadeCol` (`0x0082b5d0`) |
+| `0x328` | ptr | elements (bones), `0x160` bytes each: `+0` data (its `+4` the parent), `+0xc8` replacement matrix, `+0xcc` quaternion matrix, `+0xe0` its weight | `Ch_ElemGetParent` (`0x00833cf0`), `Ch_ElemSetQuatMatrix` (`0x00833df0`) |
+| `0x330` | fade ×3 | shade colour r, g, b | `Ch_SetShadeCol` (`0x0082b5d0`), `Ch_DrawCalcShade` (`0x0082eaf0`) |
 | `0x354` | fade | alpha; 0 also hides from the calculation pass | `Ch_SetTransparent` (`0x0082b900`), `Ch_GetHideCalc` (`0x0082abe0`) |
 | `0x360` | fade | shade | `Ch_SetShade` (`0x0082b5b0`) |
+| `0x36c` | fade | light value; multiplies the shade when `g_ChrShadeByLight` is set | `Ch_GetLightValue` (`0x0083cb90`), `Ch_DrawCalcShade` |
 | `0x378` | fade | specular alpha | `Ch_SetSpecularAlpha` (`0x0082b860`) |
 | `0x408` | `u32` | effect level | `Ch_EffectSetEffectLevel` (`0x0082a9d0`) |
 | `0x4e4` | `f32` | collision radius; 0 or less takes the block's `+0x1c` | `Ch_SetThickness` (`0x0082b880`) |
@@ -59,18 +71,39 @@ and 7 more that still have their model block.
 | `0x4f8` | `f32` | hit height | `Ch_SetHitHeight` (`0x0082b320`) |
 | `0x500` | `f32` | weight when characters push each other | `Ch_SetWeight` (`0x0082b940`) |
 | `0x504` | `f32` | gravity | `Ch_AddGrav` (`0x0082a890`), `Ch_GetGrav` (`0x0082abb0`) |
+| `0x420` | `f32` | neck turning speed; 0 is stored as 6 | `Ch_NeckSetSpeed` (`0x00835020`) |
+| `0x424` | `f32` ×2 | neck limits | `Ch_NeckSetLimit` (`0x00834fd0`) |
+| `0x4d4` | `i8` | automatic mouth movement | `Ch_MouthSetAutoTalk` (`0x00834770`) |
+| `0x4d8` | `f32` | 1234 after `Ch_MouthInit` (`0x00834750`) | |
 | `0x51c` | `f32` | (`hiju`) | `Ch_SetHiju` (`0x0082b340`) |
-| `0x700` | `u32` | texture animation id | `Ch_TextureGetAnimId` (`0x0082b960`) |
+| `0x530` | 16 bytes ×n | optional positions; one exists when its x is not 0 | `Ch_OptposGetExist` (`0x00835680`) |
+| `0x694` | 16 bytes | bottom position | `Ch_OptposGetBottom` (`0x00835600`) |
+| `0x6a4` | 16 bytes | top position | `Ch_OptposGetTop` (`0x008356e0`) |
+| `0x6b4` | 16 bytes | camera reference | `Ch_OptposGetCameraRef` (`0x00835630`) |
+| `0x6d8` | `u32` | horizontal shadow direction | `Ch_SetShadowDirH` (`0x00830c90`) |
+| `0x6e4` | ptr, `i16` at `0x6e8` | clut textures, `0x40` bytes each: address `+0x30`, `u16` base `+0x3a` | `Ch_TextureGetClutAddr` (`0x00830d30`), `Ch_ClutGetNb` (`0x0083c9a0`) |
+| `0x6ec` | ptr, `i16` at `0x6f0` | image textures, the same layout | `Ch_TextureGetImageAddr` (`0x00830d90`) |
+| `0x700` | `u32` | texture animation id | `Ch_TextureGetAnimId` (`0x0082b960`), `Ch_TextureAnimGetHandle` (`0x00835ed0`) |
+| `0x704` | ptr | cluts, 16 bytes each: pointer, original pointer, size in bytes (32-byte header, 4 per entry) | `Ch_ClutGetPtr` (`0x0083c9d0`), `Ch_ClutGetSize` (`0x0083c9f0`) |
+| `0x708` | `u8` | which of the two `Ch_ClutEnable` (`0x0083c940`) put in the clut textures | |
+| `0x726` | `u16` | motion loop | `Ch_MotionSetLoop` (`0x00839960`) |
 | `0x728` | `u16` | cleared for each new motion | `Ch_ResetMotion` (`0x0082b080`) |
 | `0x730` | `u32` | 1 for each new motion | `Ch_ResetMotion` |
 | `0x736` | `u8` | a scripted motion plays | `Ch_ResetMotion` |
 | `0x73a` | `u16` | interpolation frames into the next clip; 0 marks the object dirty | `Ch_MotionSetHokan` (`0x0082afb0`) |
 | `0x73c` | `u16` | interpolation frames of the next motion; -1 is stored as 0, 0 as 1 | `Ch_MotionSetNextHokan` (`0x0082b010`) |
 | `0x750` | `i16` | motion speed, 8.8 fixed | `Ch_SetMotionSpeed` (`0x0082b380`) |
+| `0x72c` | `u32` | current motion id | `Ch_MotionGetId` (`0x008371a0`) |
+| `0x740` | `u32` | current motion frame, 8.8 fixed | `Ch_MotionGetFrame` (`0x00839860`) |
 | `0x75c` | `u32` ×n | motions by slot (stand, walk, run); -1 takes `g_ChrDefaultMoves` (`0x00c49680`) | `Ch_MotionSetMoves` (`0x0082afe0`) |
-| `0x820` | `u32` | bit 2: needs an update | `Chr_SetHideFlags` (on clearing) |
+| `0x810` | `u16` | 1 after `Ch_ClothSetFast` (`0x00824920`) | |
+| `0x812` | `u16` | cloth settle frames: 10, 15, 20 or 1 by character id (table `g_ChrClothFastCases`) | `Ch_ClothSetFast` |
+| `0x81c` | `f32` | 0, or 2 for the ids of case 1 | `Ch_ClothSetFast` |
+| `0x820` | `u32` | bit 0: cloth gravity; bit 2: needs an update | `Ch_ClothEnableGrav` (`0x008245f0`), `Chr_SetHideFlags` (on clearing) |
 | `0x824` | `i16` | -1 after each `Ch_SetPos` | `Ch_ResetPos` (`0x0082b0b0`), `Ch_IdGetPNum` (`0x0082adc0`) |
+| `0x828` | `u32` | map id word (below) | `Ch_IdGetMap` (`0x0083d840`) |
 | `0x830` | ptr | render instance | `Ch_GetChrRenderInstance` (`0x00826b70`) |
+| `0x864` | `f32` ×3 | cloth mesh offset; character `0x65` gets y = 11245 | `Ch_ClothMeshMappingOffset` (`0x00824620`) |
 
 A fade is 12 bytes: current `f32`, target `f32`, frames `i32`. Setting one
 (`Chr_FadeSet`, `0x0082b990`) stores target and frames, and the current
@@ -84,11 +117,34 @@ Flags at `0x194`:
 | 8 | no body hit (`Ch_EnBodyHit(chr, 0)`) | `Ch_EnBodyHit` (`0x0082a9f0`), `Ch_GetBodyHit` (`0x0082ab10`) |
 | 10 | interpolate rotations | `Ch_EnRotHokan` (`0x0082aae0`) |
 | 11 | hide past the clip distance | `Ch_EnClip` (`0x0082aa30`) |
-| 13 | hidden from the calculation pass | `Ch_GetHideCalc` |
+| 0 | recompute the normals every frame | `Ch_SetCalcNorm` (`0x00835750`) |
+| 3, 4 | one budgeted normal update (two kinds), unless bit 0 | `Ch_ReserveCalcNorm` (`0x00835710`), `Ch_ReserveCalcNorm2` (`0x00835730`) |
+| 13 | effects drawn; also counts as hidden from the calculation pass | `Ch_DrawEnEffect` (`0x0082eb60`), `Ch_GetHideCalc` |
 | 16 | cleared with the interpolation frames | `Ch_MotionSetHokan` |
 | 18 | shaded by map id | `Ch_IdEnableShade` (`0x008340f0`) |
+| 19 | cull | `Ch_DrawSetCull` (`0x008300b0`) |
+| 20 | keep the frame rate | `Ch_SetKeepFps` (`0x00839b50`) |
+| 22 | cloth | `Ch_ClothSetEnable` (`0x0082a930`) |
 | 25 | position set | `Ch_SetPos` |
 | 30 | overlap hit | `Ch_SetOverlapHit` (`0x0082b420`) |
+
+At `0x198` there are more flags: bit 2 marks a chocobo (`Ch_SetChocobo`), bit 3 is the VU1 clip mode, bit 5 excludes the character from the OEF2 lookup, and bit 8 turns on texture animation (`Ch_TextureAnimSetEnable`, `0x00830d10`).
+
+### The map id word (`+0x828`)
+
+These fields describe the ground under the character. Each one has its own `Ch_IdGet*` reader; the 13 functions sit in name order at `0x0083d7a0`..`0x0083d940`.
+
+| Bits | Field | Reader |
+|---|---|---|
+| 0-6 | map id; ids `0x30`-`0x3f` go through `g_ChrIdMapTable` (`0x013019d8`) | `Ch_IdGetMap`, `Ch_IdGetMapB` (raw) |
+| 7-8 | encounter | `Ch_IdGetEncount` |
+| 9-10 | effect, an index into the current set of `g_ChrIdEffectTable` | `Ch_IdGetEffect`, `Ch_IdGetEffectTable` |
+| 11-12 | dictionary | `Ch_IdGetDictionary` |
+| 13-14 | water | `Ch_IdGetWater` |
+| 15-16 | sound | `Ch_IdGetSound` |
+| 17-31 | shade: three 5-bit fields (`Ch_IdShadeCalc`, `0x0083e980`; not ported, its callee is in another module) | `Ch_IdGetShade0`-`2` |
+
+`Ch_IdSetDefPid` sets the word to `0xfffe0000`. `Ch_IdGetEffectTable` returns 8 or 9 (bit 29 of `+0x194`) for motion type 2.
 
 The `En` setters set the bit to bit 0 of their argument and return the old
 bit. `Ch_EnBodyHit` and `Ch_EnMapID` store the inverse, since their bits
@@ -108,10 +164,23 @@ and returns its result.
 | `0x24` | `f32` | default battle camera thickness | `Ch_SetThicknessBtlCam` |
 | `0x28` | `f32` | default fixed height | `Ch_SetFixHeight` |
 | `0x2c` | `f32` | default camera height | `Ch_SetCamHeight` |
+| `0x14` | ptr | texture data: `u16` clut count `+8`, image count `+0xc`; cluts of 8 bytes from the pointer at `+0x18`; images of 16 bytes (`u16` width `+8`, height `+0xa`, data `+0xc`) from the pointer at `+0x1c` | `Ch_TexGetNbClut` (`0x0083cd90`), `Ch_TexGetImage` (`0x0083cd50`) |
 | `0x30` | `f32` | data scale | `Ch_GetDataScale` (`0x0082ab60`) |
+| `0x38` | `f32` | scale of bind offsets | `Ch_BindToElemDirectOfs` |
 | `0x71` | string | name (the object's `+4` points here) | the snapshots |
 | `0xb8` | string | directory name | `Ch_GetBlkDirName` |
 | `0x124` | ptr, `u32` | resident data and its size | `Ch_EffectGetResidentPtr` (`0x0082a9b0`), `Ch_GetChrRenderInsatanceFromOEF2Content` (`0x00826af0`) |
+
+## Module settings
+
+The `Ch` module keeps its own settings in globals (`ffx_chara::sys`):
+
+- drawing switches: `g_ChrDrawDisableSpec`, `g_ChrDrawFourceSpec` and `g_ChrDrawParaEdit` (`0x013007db`..`d9`, `Ch_DrawSet*`/`Ch_DrawGet*`);
+- the shadow: mode `0x013008bd`, colour r, g, b at `0x013008bf`, and direction (two words) at `0x013008c4`;
+- the camera and screen matrices it draws with (64 bytes each at `0x013008f8` and `0x01300938`, `Ch_SysSet*Matrix`);
+- cloth editing values (`0x012fbc54`..`5c`);
+- the mouth threshold, clamped to 0..200 (`Ch_GuiSetMouthTh`);
+- the effect packet writer (`0x01303658`). `Ch_EffectPacketStoreEND` writes the 16-byte end tag `0xff00` there, or, while the pointer is 0, only adds 16 to the size at `0x0130365c`.
 
 ## Floats
 
@@ -121,9 +190,16 @@ NaN, so a float the original stores after loading it (`Ch_SetDir`,
 every bit: `Ch_SetPos` copies the position that way. When two quiet NaNs
 are added (`Ch_AddGrav`), the result is the one with the larger
 significand, or the positive one if the significands are equal.
-`ffx_chara::x87` implements these rules, and its tests check them against
-the host CPU's x87 unit. The oracle's emulator does not quiet signalling
-NaNs on `fld`, so the parity tests leave signalling NaNs out.
+A quiet NaN wins over a signalling one taken straight from memory
+(`fmul m32`), and an invalid operation (∞ − ∞, 0 × ∞) gives the negative
+"indefinite" NaN. Chains of operations on the stack (`Ch_DrawCalcShade`'s
+three-way products, `Ch_BindToElemDirectOfs`'s × 100 × scale,
+`Ch_GetVel`'s differences) are rounded to `double` at every step and to
+`f32` only when stored. `ffx_chara::x87::Reg` computes the same way with
+`f64` and the x87's NaN rules. Its tests check single operations and
+chains against the host CPU's x87 unit, about 50,000 cases, signalling
+NaNs included. The oracle's emulator does not quiet signalling NaNs on
+`fld`, so the parity tests leave signalling NaNs out.
 
 `Ch_GetRot` wraps the angle with `Chr_WrapAngle` (`0x0082ba70`). It adds or
 subtracts 6.283184 until the angle is within ±3.141592, using the `double`

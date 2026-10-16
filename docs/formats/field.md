@@ -37,16 +37,62 @@ snapshot's is 2 triangles over 4 vertices.
 ## Guide map (`rcbgGuide*`, `Guide_*`, `Yn_GuideMap*`)
 
 `g_YnMapSystem` (`0x0193bf80`) points at Yn's field state: `+0` the map,
-`+4` the guide object. The map's `+8` is the guide map list: `+0x18`
-count (`i16`), `+0x1a` the one shown (`i16`, `Yn_GuideMapGetMapNo`,
-`0x00919c70`), `+0x1c` the models (`Yn_GuideMapSetMapNo`, `0x00919da0`).
+`+4` the guide object. The map's `+8` is its scene (below), which also
+holds the minimap models: `+0x18` count (`i16`), `+0x1a` the one shown
+(`i16`, `Yn_GuideMapGetMapNo`, `0x00919c70`), `+0x1c` the models
+(`Yn_GuideMapSetMapNo`, `0x00919da0`), `+0xf4` world units per minimap
+pixel (10.0).
 
 Guide object: `+0` the map's own minimap model, else `+8` the one made
-from the walk mesh (`Guide_MeshObject`, `0x0091d460`); `+0x6c` a float
-kept in `0x0193bf7c` over battles (`rcbgGuideBattleBegin`/`End`,
-`0x0091ccc0`/`0x0091cce0`, from `Yn_BattleBegin`/`End`); `+0x70` fog of
-war on; `+0x74` blink counter. `g_GuideFlags` (`0x00c5e350`) bit 0: may
-show (`rcbgGuideSetDispProg`, `0x0091d560`).
+from the walk mesh (`Guide_MeshObject`, `0x0091d460`); `+0x6c` the view
+limit, a float: `rcbgGuideUpdateEx` clamps the minimap's offset to minus
+it (`rcbgGuideGetLimit`/`SetLimit`, `0x0091d450`/`0x0091d580`; script
+native `0x0091b740`), kept in `0x0193bf7c` over battles
+(`rcbgGuideBattleBegin`/`End`, `0x0091ccc0`/`0x0091cce0`); `+0x70` fog of
+war on; `+0x74` blink counter. The guide's setters write globals and
+ignore the object: `g_GuideFlags` (`0x00c5e350`; bit 0 may show,
+`rcbgGuideSetDispProg`; bit 3 `rcbgGuideSetFlag3`, no reader found; bit 8
+read by the update), `g_GuideTarget` (`0x00c5e354`), `g_GuideSize`
+(`0x00c5e358`) and `g_GuidePos` (`0x00c5e35c`, x then y).
+`rcbgGuideSetTarget` (`0x0091d930`) maps a target to size and centre:
+
+| Target | Size | Centre |
+|---|---|---|
+| 0 top left | `0x80` | `0x50, 0x40` |
+| 1 top right | `0x80` | `0x1b0, 0x40` |
+| 2 bottom left | `0x80` | `0x50, 0x160` |
+| 3 bottom right | `0x80` | `0x1b0, 0x160` |
+| 4 centre | `0x100` | `0x100, 0xd0` |
+
+The `Yn_GuideMap*` wrappers (`0x00919c00`..`0x00919e80`) call these on
+`g_YnMapSystem`'s guide when it exists.
+
+## Scene (`rcbgScene`)
+
+`rcbgSceneInit` (`0x009209e0`, `0x110` bytes): `+0` 1, `+4` layer count
+and `+8` the layers (the script natives' "map parts", `0xc0` bytes each,
+`rcbgLayerInit` `0x0092ad20`: animation at `+0x90`, palette at `+0xb0`),
+`+0xc` object count and `+0x10` the objects (pointers; an object's first
+word is its type: `0x20002` transfer, `0x20004` particle simulation
+`rcbgPSimInit`, `0x20008` ...; `rcbgSceneGetObject`/`CountObjects`,
+`0x00920950`/`0x009209a0`), then the minimap models above.
+`Yn_MapPartCount` (`0x0091a3d0`) returns the layer count;
+`Yn_MapPartAnimeOn`/`Off` switch bit 1 of a layer's animation word. On
+the HD deck snapshot the scene has no layers or objects (the remaster
+draws backgrounds through PhyreEngine); the battle snapshot's has one
+object.
+
+Yn data chunks are tagged `YNDT YNPR YNSC YNTX YNTM YNSM YNST YNSP YNTT
+YNSE YNFT YNGM YNED` (`rcbgChunkTag`, `0x00921b90`, table `0x00c5e480`).
+
+## Background matrices
+
+`rcbgUpdateMatrix` (`0x0092b160`): `g_RcbgViewWorldMatrix` (`0x025d5960`)
+= world (`0x025d59a0`, `rcbgSetWorldMatrix`) through `g_CameraMatrix`;
+then that through the clip matrix (`0x025d58e0`, `rcbgSetClipMatrix`)
+into `0x025d58a0` and through `g_ScreenMatrix` into `0x025d5920`.
+`rcCalcPersMatrix(dst, m)` (`0x00920020`) is `m` through camera then
+screen. Both use `cdc_Mul4x4_007059b0` (`ffx_system::math`).
 
 The fade (`Guide_FadeStep`, `0x0091d280`) is a state machine:
 
@@ -97,7 +143,18 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
 - Chunk (`rcdtChunkInit`, `0x0092b840`): `+0` data, `+4` size
   (`0x7fffffff` from `rcdtChunkSetBin`). Parser (`rcdtParseInit`,
   `0x0092bf50`): `+0` chunk, `+4` cursor, `+0xc` 128 separator flags, set
-  for `0x00..0x20` (`rcdtParseInitSeparators`, `0x0092c000`).
+  for `0x00..0x20` (`rcdtParseInitSeparators`, `0x0092c000`; more with
+  `rcdtParseAddSeparators`, `0x0092c0f0`), `+8` the mode
+  (`rcdtParseSetMode`).
+- Texture transfer entries: `+0x30` count, `+0x34` entry size, `+0x38`
+  the entries, each a 16-byte header then data (`rcbgTrxGetEntry`,
+  `rcbgTrxGetEntryData`, `0x0092d4d0`/`0x0092d4f0`).
+- `Ke` resource heap (`KeThResHd_Init`, `0x00764bb0`): `+0` block count
+  (`u8`), `+1` size class (`u8`), `+2` stride = `(class − 1) * 48 + 0x80`
+  (`u16`), `+4` the first free block; blocks from `+0x10`, each one's
+  first word pointing at the next, the last 0.
+- `rcui` work (`g_RcuiWork`, `0x0193c0f0`): `+0xbe8` the ID dragged,
+  `+0xbec` `rcuiMouseMoveGetID`, `+0xbf0` dragging.
 - DMA packet (`rcPacketData*`): `+0` start, `+4` cursor; opening reserves
   a quadword for the DMA tag, closing appends a GIF tag with EOP
   (`0x8000, 0x10000000, 0, 0`) and writes the tag `0x70000000 | (qwords

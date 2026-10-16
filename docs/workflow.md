@@ -55,6 +55,10 @@ appended to our comment as `fh: <name>`. Rerun the script after refreshing
 either source. When naming something new, use their name if they have one,
 so both projects mean the same function by the same word.
 
+Branches that name things in the same range conflict in `ffx.sym`;
+`tools/sym-resolve.py` keeps both sides' lines in address order and, where an
+address is named twice, the longer line, printing what it dropped.
+
 ## Progress and ownership
 
 ```bash

@@ -44,8 +44,8 @@ same ID in all 361 files, but the battle reads the monster file's.
 
 | Offset | Type | Field | Evidence |
 |---|---|---|---|
-| `0x14` | `u32` | HP | actor `+0x594` current, `+0x59c` max |
-| `0x18` | `u32` | MP | actor `+0x598`, `+0x5a0` |
+| `0x14` | `u32` | HP | actor `+0x594` max (`MsGetRamChrHP_0079adf0`), also `+0x59c`; the current HP is `+0x5d0` (`MsGetRamChrHP`, `0x0079add0`) |
+| `0x18` | `u32` | MP | actor `+0x598` max, also `+0x5a0`; the current MP is `+0x5d4` |
 | `0x1c` | `u32` | overkill threshold | actor `+0x5a4`, `+0xf60` |
 | `0x20` | `u8` | strength | actor `+0x5a8`; cubed for physical damage in `MsCalcDamageCommand` (`0x00789bf0`) |
 | `0x21` | `u8` | defense | actor `+0x5a9`; physical damage reduction in `MsCalcDamageCommand` |

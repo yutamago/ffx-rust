@@ -76,7 +76,19 @@ MsGetRomItem @ 0x0079_09f0 => extern "C" fn ms_get_rom_item(id: u32, strings: u3
 `extern "C"` is cdecl; use `"stdcall"`, `"thiscall"` (first argument
 `this`) or `"fastcall"` as the original needs. The name must be the one in
 `symbols/ffx.sym`; the function must be at least five bytes (the jump).
-`tools/check-ported.py` checks both.
+`tools/check-ported.py` checks both, and with `FFX_GAME_DIR` set that the
+shim pops what the original's `ret` pops.
+
+The game reaches the shim through a thunk the macro generates, which keeps
+`eax`, `ecx` and `edx` for the caller except where the return type puts
+the result (`eax`, and `edx` for 64 bits). FFX.exe was built with
+whole-program optimisation: a caller may keep a scratch register live
+across a call to a function the compiler knew leaves it alone
+(`op_spline_xyz_table` returns the `eax` it had before calling
+`op_spr_free`). `tools/check-clobber.py` lists those call sites; with the
+thunk they need nothing more, but a shim returning `u8`, `u16` or `bool`
+must still match what the original leaves in the rest of `eax` when a
+caller reads all of it.
 
 ## 5. Check it in the game
 
