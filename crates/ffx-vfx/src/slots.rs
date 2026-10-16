@@ -269,4 +269,99 @@ pub mod bridge {
         go(mem, 0x008a_f0d0, &[2, s], call);
         go(mem, 0x0088_6ba0, &[0x68], call)
     }
+
+    /// `g_OpDebugMode` (`0x02322790`, byte) and the debug reload bits
+    /// (`0x02321580`, byte).
+    pub const DEBUG_MODE: Global<u8> = Global::new(0x0232_2790);
+    /// See [`DEBUG_MODE`].
+    pub const DEBUG_RELOAD: Global<u8> = Global::new(0x0232_1580);
+
+    /// One `opu_debug_reload` branch: the reload bit, the function run
+    /// first on a debug object (if any), the object pair (two words of
+    /// the debug table at `0x023215c0`) with the two buffers
+    /// `0x007e5c10` loads them from, and whether the second is optional.
+    struct Reload {
+        bit: u8,
+        first: Option<(u32, u32)>,
+        objs: [u32; 2],
+        bufs: [u32; 2],
+        optional: bool,
+    }
+
+    const RELOADS: [Reload; 5] = [
+        Reload {
+            bit: 0x20,
+            first: Some((0x007f_c5f0, 0x0232_15d8)),
+            objs: [0x0232_15d8, 0x0232_15dc],
+            bufs: [0x0232_2040, 0x0232_2140],
+            optional: false,
+        },
+        Reload {
+            bit: 1,
+            first: None,
+            objs: [0x0232_15c0, 0x0232_15c4],
+            bufs: [0x0232_1640, 0x0232_1740],
+            optional: false,
+        },
+        Reload {
+            bit: 2,
+            first: Some((0x007f_c650, 0x0232_15c8)),
+            objs: [0x0232_15c8, 0x0232_15cc],
+            bufs: [0x0232_1840, 0x0232_1940],
+            optional: true,
+        },
+        Reload {
+            bit: 4,
+            first: Some((0x007f_ca90, 0x0232_15c8)),
+            objs: [0x0232_15d0, 0x0232_15d4],
+            bufs: [0x0232_1a40, 0x0232_1b40],
+            optional: true,
+        },
+        Reload {
+            bit: 0x10,
+            first: None,
+            objs: [0x0232_15e8, 0x0232_15ec],
+            bufs: [0x0232_1e40, 0x0232_1f40],
+            optional: false,
+        },
+    ];
+
+    /// `opu_debug_reload()` (`0x007fdc80`): in debug mode, for each reload
+    /// bit set (0x20 the encounter effect, 1, 2 a monster, 4 a weapon,
+    /// 0x10): the object freed first where that applies
+    /// (`op_et_encount_effect_free`, `op_et_monster_free`,
+    /// `op_et_weapon_free`), its file reloaded (`0x007e5c10(buffer,
+    /// obj)`), `op_oef2_set2(obj)`, then the second object (when there is
+    /// one, or always) reloaded and `op_oef2_set(obj, second)`. All
+    /// through `call`, each word read when it is passed.
+    pub fn opu_debug_reload<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if DEBUG_MODE.get(mem) == 0 {
+            return;
+        }
+        let w = |mem: &M, sym: u32| mem.read::<u32>(addr(mem, sym));
+        for r in &RELOADS {
+            if DEBUG_RELOAD.get(mem) & r.bit == 0 {
+                continue;
+            }
+            if let Some((f, arg)) = r.first {
+                let a = w(mem, arg);
+                go(mem, f, &[a], call);
+            }
+            let (b0, o0) = (addr(mem, r.bufs[0]), w(mem, r.objs[0]));
+            go(mem, 0x007e_5c10, &[b0, o0], call);
+            let o0 = w(mem, r.objs[0]);
+            go(mem, 0x007e_3e30, &[o0], call);
+            let o1 = w(mem, r.objs[1]);
+            if r.optional && o1 == 0 {
+                continue;
+            }
+            let b1 = addr(mem, r.bufs[1]);
+            go(mem, 0x007e_5c10, &[b1, o1], call);
+            let (o0, o1) = (w(mem, r.objs[0]), w(mem, r.objs[1]));
+            go(mem, 0x007e_3b70, &[o0, o1], call);
+        }
+    }
 }

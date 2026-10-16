@@ -1048,6 +1048,10 @@ ported! {
     TOBgoodStart @ 0x0089_ab80 => extern "C" fn to_bgood_start() -> u32 {
         slots::bridge::to_bgood_start(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opu_debug_reload()`.
+    opu_debug_reload @ 0x007f_dc80 => extern "C" fn opu_debug_reload() {
+        slots::bridge::opu_debug_reload(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
     /// `op_et_eff_off_signal(id)`.
     op_et_eff_off_signal @ 0x007f_c450 => extern "C" fn op_et_eff_off_signal(id: u32) {
         et::bridge::op_et_eff_off_signal(&mut mem(), id);

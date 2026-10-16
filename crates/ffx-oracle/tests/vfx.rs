@@ -5324,6 +5324,9 @@ fn former_hidden_slots_match_the_original() {
                 &[0x0093_0770u32, 0x0092_5530, 0x0092_4c70, 0x007b_2c10][..],
                 1u8,
             ),
+            // opu_debug_reload's: the frees, op_oef2_set2, the loader, op_oef2_set
+            (&[0x007f_c5f0, 0x007f_c650, 0x007f_ca90, 0x007e_3e30][..], 1),
+            (&[0x007e_5c10, 0x007e_3b70][..], 2),
             (
                 &[
                     0x0088_7570,
@@ -5481,6 +5484,17 @@ fn former_hidden_slots_match_the_original() {
             ];
             let (name, at, f) = rng.pick(&tos);
             p.check(name, at, &[], |m| Some(f(m, &mut call_original)));
+            // opu_debug_reload over recorded loaders
+            p.set(p.sym(s::DEBUG_MODE.sym), u8::from(rng.chance(80)));
+            p.set(p.sym(s::DEBUG_RELOAD.sym), rng.next() as u8);
+            let table = p.sym(0x0232_15c0);
+            for i in 0..12 {
+                p.set(table + 4 * i, rng.pick(&[0u32, 0x100, 0x200]));
+            }
+            p.check("opu_debug_reload", 0x007f_dc80, &[], |m| {
+                s::opu_debug_reload(m, &mut call_original);
+                None
+            });
             // op_oef2_sound_wait with cues pending and queued
             p.set(c1, rng.pick(&[0u32, u32::MAX, 0x1234]));
             p.set(c2, rng.pick(&[0u32, u32::MAX, 0x1234]));
