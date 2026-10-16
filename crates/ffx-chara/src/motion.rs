@@ -463,6 +463,46 @@ pub mod bridge {
             u32::from(mem.read::<u16>(chr + l::MOTION_LOOPS_LEFT) == 0)
         }
     }
+
+    /// The active camera (`g_Camera`).
+    pub const CAMERA: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x0231_1430);
+    /// `"c10"`, `2500.0`, `900.0` and `-0.785398` (`double`):
+    /// `Ch_AnimCopy2`'s name and limits.
+    pub const COPY2_NAME: ffx_bridge::Global<u8> = ffx_bridge::Global::new(0x00b5_9af8);
+    /// `900.0`, the distance² limit.
+    pub const COPY2_NEAR: ffx_bridge::Global<f32> = ffx_bridge::Global::new(0x00b5_9afc);
+    /// `2500.0`, the distance² limit for `c10*` models.
+    pub const COPY2_NEAR_C10: ffx_bridge::Global<f32> = ffx_bridge::Global::new(0x00b5_9b00);
+    /// `-0.785398` (`double`), the camera angle limit.
+    pub const COPY2_ANGLE: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b5_9b08);
+
+    /// `Ch_AnimCopy2(chr)` (`0x00839140`): whether the character is close
+    /// to the camera (distance² from `+0x694` to the camera's `+0x65c`
+    /// under 900, 2500 for `c10` models) while the camera's angle
+    /// (`+0x6b0`, or `+0x6d0` when its byte `+0x64d` is 0) is above
+    /// -0.785398. Only `al` is the result.
+    pub fn ch_anim_copy2(mem: &impl Mem, chr: u32) -> u8 {
+        let cam = CAMERA.get(mem);
+        let p: [f32; 3] = mem.read(chr + 0x694);
+        let c: [f32; 3] = mem.read(cam + 0x65c);
+        let d: [f32; 3] = std::array::from_fn(|i| ffx_ps2::vu0::sub(p[i], c[i]));
+        let d2 = ffx_system::math::length_squared(d);
+        let name: u32 = mem.read(chr + l::NAME);
+        let s = crate::handle::bridge::c_string(mem, name);
+        let near = if s.windows(3).any(|w| w == b"c10") {
+            COPY2_NEAR_C10.get(mem)
+        } else {
+            COPY2_NEAR.get(mem)
+        };
+        let angle: f32 = if mem.read::<u8>(cam + 0x64d) != 0 {
+            mem.read(cam + 0x6b0)
+        } else {
+            mem.read(cam + 0x6d0)
+        };
+        let near = f64::from(crate::x87::load(near));
+        let close = near > f64::from(crate::x87::load(d2));
+        u8::from(close && f64::from(crate::x87::load(angle)) > COPY2_ANGLE.get(mem))
+    }
 }
 
 #[cfg(test)]

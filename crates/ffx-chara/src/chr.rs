@@ -771,6 +771,47 @@ pub mod bridge {
         mem.write(out, [0x3000_0008u32, at, 0, 0]);
         out + 0x10
     }
+
+    /// `crossAssertIsValidFloat(x)` (`0x006ef2d0`) as `Ch_SetRot` uses it:
+    /// neither NaN nor infinite (`_isnan`, `_finite`).
+    fn is_valid_float(x: f32) -> bool {
+        x.is_finite()
+    }
+
+    /// `Ch_SetRot(chr, a)` (`0x0082b520`): the angle at [`l::ROT`] (through
+    /// the x87); 0 instead when it is not a valid float (then a debug
+    /// print, a no-op in this build).
+    pub fn ch_set_rot(mem: &mut impl Mem, chr: u32, a: f32) {
+        let a = x87::load(a);
+        put_f(mem, chr + l::ROT, if is_valid_float(a) { a } else { 0.0 });
+    }
+
+    /// `Ch_SetDirF(chr, a)` (`0x0082b1b0`): `Ch_SetRot`, then `Ch_SetDir`
+    /// with the same angle.
+    pub fn ch_set_dir_f(mem: &mut impl Mem, chr: u32, a: f32) {
+        ch_set_rot(mem, chr, a);
+        put_f(mem, chr + l::DIR, x87::load(a));
+    }
+
+    /// `62.83184` and `-62.83184` (`double`), `Ch_CheckRadian`'s limits.
+    pub const RADIAN_LIMITS: [Global<f64>; 2] =
+        [Global::new(0x00b5_99e0), Global::new(0x00b5_99f0)];
+
+    /// `Ch_CheckRadian(a)` (`0x00836790`): for an angle of ten turns or more
+    /// (or NaN), `sprintf(debug line, "radian value error =%f", a)`; then
+    /// it wraps a copy of the angle like `Chr_WrapAngle` and drops it (for
+    /// ever on infinities, as the original).
+    pub fn ch_check_radian(mem: &mut impl Mem, a: f32) {
+        let x = f64::from(x87::load(a));
+        let [hi, lo] = RADIAN_LIMITS.map(|g| g.get(mem));
+        if x.partial_cmp(&hi) != Some(core::cmp::Ordering::Less) || x <= lo {
+            let mut s = b"radian value error =".to_vec();
+            s.extend(crate::msvc::fmt_f(x, 6).bytes());
+            let at = crate::handle::bridge::DEBUG_LINE.ptr(mem).addr;
+            crate::handle::bridge::put_c_string(mem, at, &s);
+        }
+        let _ = super::wrap_angle(a);
+    }
 }
 
 #[cfg(test)]
