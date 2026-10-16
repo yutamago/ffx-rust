@@ -1,0 +1,33 @@
+# Menu: load the first manual save (salvage ship deck), open the main
+# menu and walk through its screens (items, abilities, status, config),
+# back out and close it. Ranges: the pad word (0x00ccb170) and the party
+# records (0x0113205c, 18 x 0x94); the window tables hold heap pointers,
+# which differ between any two runs. Screenshots at fixed frames go to
+# %TEMP%\ffx-snap\menu-<n>.bmp, for tools/shot-compare.py.
+load 1
+lockstep on
+wait 30
+trace 0x00ccb170:8 0x0113205c:0xa68
+press triangle 4 40
+shot C:\Users\USER\AppData\Local\Temp\ffx-snap\menu-1.bmp
+press down 4 15
+press down 4 15
+press circle 4 40
+shot C:\Users\USER\AppData\Local\Temp\ffx-snap\menu-2.bmp
+press down 4 15
+press down 4 15
+press right 4 15
+press cross 4 30
+press down 4 15
+press circle 4 40
+shot C:\Users\USER\AppData\Local\Temp\ffx-snap\menu-3.bmp
+press cross 4 30
+press down 4 15
+press down 4 15
+press circle 4 40
+shot C:\Users\USER\AppData\Local\Temp\ffx-snap\menu-4.bmp
+press cross 4 30
+press cross 4 30
+press triangle 4 30
+wait 60
+shot C:\Users\USER\AppData\Local\Temp\ffx-snap\menu-5.bmp
