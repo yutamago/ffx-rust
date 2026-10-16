@@ -4464,9 +4464,11 @@
 0x00908480 function yiDisp                    # fh switch:bsim1.00 0x710052b0b0
 0x009084b0 function yiDisposeAnimDObj         # fh switch:bsim1.00 0x710052c6f0
 0x00908550 function yiDrawScrEffect           # fh v3:exact 0x00908550
+0x00908580 function yiSetRenderParam             # (v): g_YiRenderStatus |= 0x100, 0x018ded2c = v; script native 0x0091c580
 0x009085d0 function yiFieldMapRead            # fh v3:bsim1.00 0x009085d0
 0x00908600 function yiFieldMapReadNB          # fh v3:cg3 0x908600
 0x00908630 function yiFieldObjReadNB          # fh switch:bsim1.00 0x710052ac80
+0x009086b0 function yiCheckDObj                  # (index) -> 0 when index < g_YiDObjCount, else -1; script native 0x0091c780
 0x009086d0 function yiGetBackColor            # fh v3:exact 0x009086d0
 0x009087f0 function yiGetBattleCenter         # fh v3:exact 0x009087f0
 0x009088b0 function yiGetCDFileName           # fh switch:bsim1.00 0x710052a0f0
@@ -4498,6 +4500,7 @@
 0x0090a0e0 function yiSetBattleCenter         # fh switch:bsim1.00 0x710052c5b0
 0x0090a270 function yiSetColorScale           # fh v3:bsim1.00 0x0090a270
 0x0090a2b0 function yiSetDrawMask             # fh v3:bsim1.00 0x0090a2b0
+0x0090a400 function yiSetColor3                  # (r, g, b) -> 0: the low bytes to 0x01934ea4..a6; script native 0x00859000 (three ints)
 0x0090a4a0 function yiSetIDPage               # fh v3:exact 0x0090a4a0
 0x0090a6f0 function yiSetPreBgPage            # fh v3:exact 0x0090a6f0
 0x0090a750 function yiSetRotTransDObj         # fh v3:exact 0x0090a750
@@ -4530,16 +4533,26 @@
 0x00919a20 function Yn_BattleBegin            # fh v3:bsim1.00 0x00919a20
 0x00919a40 function Yn_BattleEnd              # fh v3:bsim1.00 0x00919a40
 0x00919ba0 function Yn_FpTrxTexGet            # fh switch:bsim1.00 0x7100548ce0
+0x00919c00 function Yn_GuideMapClearFlags        # (bits): rcbgGuideClearFlags on g_YnMapSystem's guide, if any
+0x00919c30 function Yn_GuideMapSetFlags          # (bits): rcbgGuideSetFlags on g_YnMapSystem's guide, if any
 0x00919c60 function Yn_GuideMapEnd            # fh v3:bsim1.00 0x00919c60
 0x00919c70 function Yn_GuideMapGetMapNo       # fh v3:exact 0x00919c70
+0x00919ca0 function Yn_GuideMapGetLimit          # () -> float: rcbgGuideGetLimit of the guide, 0.0 without one
 0x00919cd0 function Yn_GuideMapInit           # fh v3:bsim1.00 0x00919cd0
 0x00919d00 function Yn_GuideMapProcEx         # per field frame: Guide_Update(*(0x0193bf80 + 4), show), the guide object of the minimap (Native_MinimapSetCorner); was Guide_Frame
+0x00919d40 function Yn_GuideMapSetFlag3          # (on): rcbgGuideSetFlag3 on the guide, if any
 0x00919d70 function Yn_GuideMapSetDispProg    # fh v3:bsim1.00 0x00919d70
 0x00919da0 function Yn_GuideMapSetMapNo       # fh v3:exact 0x00919da0
+0x00919df0 function Yn_GuideMapSetLimit          # (float): rcbgGuideSetLimit on the guide, if any; script native 0x0091b740
 0x00919e20 function Yn_GuideMapSetMode        # fh v3:bsim1.00 0x00919e20
+0x00919e50 function Yn_GuideMapSetPos            # (x, y): rcbgGuideSetPos on the guide, if any; script native 0x0091b790
+0x00919e80 function Yn_GuideMapSetSize           # (size): rcbgGuideSetSize on the guide, if any; script native 0x008581a0
 0x00919f00 function Yn_PSimGetHandle_00919f00 # fh switch:cg3 0x71008af228
 0x00919f10 function Yn_PSimSetPos             # fh v3:exact 0x00919f10
+0x00919f40 function Yn_MapPartAnimeOff           # (part): clears bit 1 of map part (scene layer, 0xc0 bytes) part's animation word (+0x90) when part < Yn_MapPartCount; script native 0x0091b490
+0x00919f90 function Yn_MapPartAnimeOn            # (part): sets that bit; script native 0x0091b470
 0x0091a0d0 function Yn_PreBgChangeStage       # fh v3:exact 0x0091a0d0
+0x0091a3d0 function Yn_MapPartCount             # () -> the scene's layer count (g_YnMapSystem map +8 scene +4), 0 without one; 33 callers
 0x0091a770 function Yn_PreBgLayerDispGet      # fh v3:exact 0x0091a770
 0x0091aa60 function Yn_PreBgSetData           # fh v3:exact 0x0091aa60
 0x0091ad10 function Yn_PreBgSetScrBank        # fh switch:bsim1.00 0x7100548410
@@ -4562,17 +4575,26 @@
 0x0091cce0 function rcbgGuideBattleEnd        # fh v3:exact 0x0091cce0
 0x0091d280 function Guide_FadeStep               # (show): steps the minimap's fade g_GuideFade toward shown (128) or hidden (0)
 0x0091d3a0 function Guide_FadeOff                # (): minimap hidden at once (g_GuideFade = 0); Guide_Update when g_GuideFlags bit 0 is clear
+0x0091d420 function rcbgGuideClearFlags          # (guide, bits): g_GuideFlags &= ~bits (the guide is not read)
+0x0091d430 function rcbgGuideSetFlags            # (guide, bits): g_GuideFlags |= bits
+0x0091d450 function rcbgGuideGetLimit            # (guide) -> float guide +0x6c: rcbgGuideUpdateEx clamps the view offset to minus it
 0x0091d460 function Guide_MeshObject             # (guide) -> the minimap mesh object: guide +0 (the map's own, MAP1 chunk 0xb), else guide +8 (made from the walkmesh)
+0x0091d480 function rcbgGuideGetTarget           # () -> g_GuideTarget (0x00934110 reads it)
 0x0091d4e0 function rcbgGuideNew              # fh v3:bsim1.00 0x0091d4e0
+0x0091d510 function rcbgGuideSetFlag3            # (guide, on): g_GuideFlags bit 3 (no reader found in FFX.exe)
 0x0091d560 function rcbgGuideSetDispProg      # fh v3:bsim1.00 0x0091d560
+0x0091d580 function rcbgGuideSetLimit            # (guide, float): guide +0x6c
 0x0091d590 function rcbgGuideSetModel         # fh v3:exact 0x0091d590
 0x0091d5e0 function rcbgGuideSetModelFromIdMap # fh v3:exact 0x0091d5e0
 0x0091d880 function rcbgGuideSetModelSub      # fh v3:exact 0x0091d880
+0x0091d900 function rcbgGuideSetPos              # (guide, x, y): g_GuidePos (the minimap's centre in pixels; rcbgGuideSetTarget)
+0x0091d920 function rcbgGuideSetSize             # (guide, size): g_GuideSize (0x80 at a corner, 0x100 centred; rcbgGuideSetTarget)
 0x0091d930 function rcbgGuideSetTarget        # fh v3:exact 0x0091d930
 0x0091da10 function rcbgGuideUpdate           # fh switch:bsim1.00 0x7100541de0
 0x0091da80 function rcbgGuideUpdateEx         # cdecl (guide, show): the field minimap: fade (Guide_FadeStep), markers (Minimap_GetWorkerMarker; flags 0xf palette, 0x100 square, 0x200 triangle, 0x20000 diamond, 0x10000 exit line, 0x400 ring, 0x1000 blink, 0x800 player, 0x2000 destination), fog of war (Guide_RevealFog when guide +0x70), blink counter guide +0x74, mesh drawn by 0x00928020; nothing when g_GuideEnabled is 0; was Guide_Update
 0x0091ecb0 function rcbgGuideUpdateWalk       # fh v3:exact 0x0091ecb0
 0x0091f420 function Guide_RevealFog              # (guide, x, z): clears the fog of war around the player (four maps, g_SaveData + 0x350c)
+0x0091f640 function Guide_SetEnabled             # (on): g_GuideEnabled; from BasicDebugTweakUtil_handleInput
 0x0091f7a0 function rcbgPSimAddDamp           # fh switch:bsim1.00 0x7100546310
 0x0091f980 function rcbgPSimAddWind           # fh switch:bsim1.00 0x7100546400
 0x0091f9b0 function rcbgPSimClearOMD          # fh switch:bsim1.00 0x71005460e0
@@ -4592,10 +4614,13 @@
 0x00920740 function rcbgSceneDraw             # fh v3:exact 0x00920740
 0x00920830 function rcbgSceneDrawLayer        # fh switch:bsim1.00 0x7100547250
 0x00920870 function rcbgSceneFini             # fh v3:exact 0x00920870
+0x00920950 function rcbgSceneGetObject           # (scene, kind, n) -> the n-th object of scene +0x10 (count +0xc) whose first word is kind, else 0
+0x009209a0 function rcbgSceneCountObjects        # (scene, kind) -> objects whose first word is kind
 0x009209e0 function rcbgSceneInit             # fh v3:exact 0x009209e0
 0x00920c00 function rcbgSceneSetMatrix        # fh v3:exact 0x00920c00
 0x00920e40 function rcbgSceneSetMatrix_Cross  # fh switch:cg2 0x7100547310
 0x009210a0 function rcbgSceneSetPal           # fh switch:bsim1.00 0x71005472b0
+0x00921220 function rcVec3fDot                   # (a, b) -> float: (a.y*b.y + a.x*b.x) + a.z*b.z on the x87 stack, stored as f32
 0x00921250 function rcVec3fLength                # (v) -> float: sqrt((x*x + y*y) + z*z) through _CIsqrt, stored as f32; rcVec3fNormalize divides by it
 0x009212c0 function rcVec3fMul                # fh v3:bsim1.00 0x009212c0
 0x00921360 function rcVec3fNormalize          # fh v3:exact 0x00921360
@@ -4609,6 +4634,7 @@
 0x009217e0 function rcbgPreSetSceneNo         # fh v3:exact 0x009217e0
 0x00921940 function rcbgChkId                 # fh v3:exact 0x00921940
 0x00921aa0 function rcbgFini                  # fh v3:exact 0x00921aa0
+0x00921b90 function rcbgChunkTag                 # (i) -> 0x00c5e480[i]: the Yn data chunk tag strings YNDT YNPR YNSC YNTX YNTM YNSM YNST YNSP YNTT YNSE YNFT YNGM YNED
 0x00921ce0 function rcbgInit                  # fh v3:exact 0x00921ce0
 0x009220c0 function rcbgFpTrxTexNew           # fh v3:exact 0x009220c0
 0x009220e0 function rcbgTrxTexDelete          # fh v3:bsim1.00 0x009220e0
@@ -4663,6 +4689,7 @@
 0x009289f0 function rcfxParticleSetCnt        # fh switch:bsim1.00 0x710054f3f0
 0x00928a60 function rcfxParticleSetTime       # fh switch:bsim1.00 0x710054f8b0
 0x00928c80 function rcfxSpringFini            # fh switch:bsim0.91 0x710054fa80
+0x00929910 function rcLog2Ceil                   # (n) -> smallest k in 1..16 with n <= 1 << k (16 when none); from 0x00920050
 0x00929950 function rcbgPalAlloc              # fh switch:bsim1.00 0x71005551c0
 0x009299b0 function rcbgPalInit               # fh v3:exact 0x009299b0
 0x00929ab0 function rcbgPalSetNo              # fh v3:bsim1.00 0x00929ab0
@@ -4675,6 +4702,7 @@
 0x0092b160 function rcbgUpdateMatrix          # fh v3:exact 0x0092b160
 0x0092b1a0 function rcbgLayerLoad             # fh v3:exact 0x0092b1a0
 0x0092b270 function rcbgLayerLoadCalcCenter   # fh switch:bsim1.00 0x7100554f40
+0x0092b2c0 function rcPad16                      # (n) -> 16 - n % 16 (C remainder), 0 when it divides; 7 callers around 0x00938xxx
 0x0092b2f0 function rcbgModelLoad             # fh v3:exact 0x0092b2f0
 0x0092b390 function rcbgPreLoad               # fh v3:exact 0x0092b390
 0x0092b460 function rcbgSceneChkSortLayer     # fh v3:exact 0x0092b460
@@ -4685,7 +4713,10 @@
 0x0092b780 function rcbgTrxTexLoad            # fh v3:exact 0x0092b780
 0x0092b7d0 function rcdtChunkDelete           # fh v3:bsim1.00 0x0092b7d0
 0x0092b810 function rcdtChunkGetBegin         # fh v3:bsim1.00 0x0092b810
+0x0092b820 function rcdtChunkGetEnd              # (chunk) -> chunk +0 + chunk +4 (data + size)
 0x0092b840 function rcdtChunkInit             # fh switch:bsim1.00 0x7100549250
+0x0092b860 function rcdtChunkIsEmpty             # (chunk) -> 1 when data or size is 0
+0x0092b920 function rcdtChunkSet                 # (chunk, data, size)
 0x0092b940 function rcdtChunkSetBin           # fh v3:exact 0x0092b940
 0x0092b960 function rcdtParseAdvance          # fh v3:exact 0x0092b960
 0x0092ba60 function rcdtParseFini             # fh v3:bsim1.00 0x0092ba60
@@ -4695,15 +4726,19 @@
 0x0092c000 function rcdtParseInitSeparators      # (parse): parse +0xc, 128 bytes per ASCII code, = 1 for 0x00..0x20 (whitespace), 0 else; read by the token scanners 0x0092bd20, 0x0092be40; rcdtParseInit tail-calls it
 0x0092c0a0 function rcdtParseSet              # fh v3:exact 0x0092c0a0
 0x0092c0d0 function rcdtParseSetPos           # fh switch:cg2 0x71008bfbc8
+0x0092c0f0 function rcdtParseAddSeparators       # (parse, chars): parse +0xc[c] = 1 for every byte of the C string
 0x0092d230 function rcbgTrxDraw               # fh switch:cg3 0x71005557c0
 0x0092d450 function rcbgTrxDelete             # fh v3:bsim1.00 0x0092d450
 0x0092d470 function rcbgTrxDraw_0092d470      # fh v3:exact 0x0092d470
 0x0092d490 function rcbgTrxFini               # fh v3:exact 0x0092d490
+0x0092d4d0 function rcbgTrxGetEntry              # (trx, n) -> trx +0x38 + trx +0x34 * n (rcbgTrxDraw, rcbgTrxNew)
+0x0092d4f0 function rcbgTrxGetEntryData          # (trx, n) -> rcbgTrxGetEntry + 0x10 (palettes 0x00929930, 0x00929990)
 0x0092d510 function rcbgTrxInit               # fh v3:exact 0x0092d510
 0x0092d580 function rcbgTrxNew                # fh v3:bsim1.00 0x0092d580
 0x0092d670 function rcbgTrxSetNo              # fh v3:bsim1.00 0x0092d670
 0x0092d680 function rcbgTrxSetTag             # fh v3:bsim1.00 0x0092d680
 0x0092dd30 function rcefChgChrClut            # fh switch:cg2 0x7100557340
+0x0092de30 function rcefDirToAngle               # (float) -> 3pi/2 (double 0x00b67e18) - x, as f32; from 0x00924a20 (g_MagicImports)
 0x0092dfb0 function rcefEffectReady           # fh v3:exact 0x0092dfb0
 0x0092e1c0 function rcefGetChrHandle          # fh v3:exact 0x0092e1c0
 0x0092e240 function rcefGetChrMatrix          # fh v3:exact 0x0092e240
@@ -4714,6 +4749,7 @@
 0x0092e9a0 function rcefSetDamage             # fh v3:exact 0x0092e9a0
 0x0092ebf0 function rcefStreamCue             # fh v3:exact 0x0092ebf0
 0x0092ec60 function rcefStreamCue_0092ec60    # fh switch:bsim1.00 0x71005582b0
+0x0092ec90 function rcefTaskDestruct            # (task): calls task +0xb4 if set (rcefTaskKill)
 0x0092ecb0 function rcefTaskCallSeq           # fh v3:exact 0x0092ecb0
 0x0092ed10 function rcefTaskInit              # fh v3:exact 0x0092ed10
 0x0092ed50 function rcefTaskKill              # fh v3:exact 0x0092ed50
@@ -4776,7 +4812,11 @@
 0x00939950 function rcbgTrxSave               # fh switch:bsim0.99 0x71005625c0
 0x0093a280 function rcbgModelCreateFromFile   # fh switch:cg3 0x7100560ba0
 0x0093b3e0 function rcbgSceneLoadTextSub      # fh switch:bsim0.92 0x710055f800
+0x0093c110 function rcuiMouseMoveReset           # (): g_RcuiWork +0xbf0 = 0, the same code as rcuiMouseMoveEnd
+0x0093c120 function rcuiMouseMoveIsID            # (id) -> 1 when g_RcuiWork +0xbe8 == id and +0xbf0 (dragging) is set
 0x0093c3d0 function rcuiNumberIsOK            # fh switch:bsim1.00 0x71005645f0
+0x0093ce10 function rcuiCopyMatrix               # (dst, src): 16 floats through the x87 stack, in order
+0x0093ce50 function rcuiCopyVector               # (dst, src): 4 floats through the x87 stack
 0x0093d830 function FFXSamp0TransMatrix       # fh v3:exact 0x0093d830
 0x0093d900 function FFXSamp0UnitMatrix        # fh v3:exact 0x0093d900
 0x0093d960 function FFXSamp0ViewScreenMatrix  # fh v3:exact 0x0093d960
@@ -7039,10 +7079,14 @@
 0x00c59554 label    g_SystemConfirmButtonAssign # TOGetSystemConfirmButtonAssign returns it with -1 replaced by 0 (and stores that back)
 0x00c5955c label    g_ButtonData              # 2 words: setButtonData(a, b); resetButtonData sets both to -1
 0x00c5e350 label    g_GuideFlags                 # bit 0: the minimap may show (clear: Guide_FadeOff)
+0x00c5e354 label    g_GuideTarget                # where the minimap sits: 0..3 the corners, 4 the centre (rcbgGuideSetTarget; script native 0x00f3)
+0x00c5e358 label    g_GuideSize                  # minimap size in pixels, 0x80 (0x100 centred)
+0x00c5e35c label    g_GuidePos                   # minimap centre x, y in pixels (0x50/0x1b0, 0x40/0x160; 0x100, 0xd0 centred)
 0x00c5e364 label    g_GuideFadeDelay             # frames Guide_FadeStep waits before fading in (and longer than it before fading out); 2 in .data
 0x00c5e368 label    g_GuideFadeSteps             # steps of a minimap fade: g_GuideFade = level * 128 / steps (Guide_FadeStep); 6 in .data
 0x00c5e370 label    g_GuideMarkerPalette         # 16 RGBA of floats (128 = 1), by marker flags & 0xf
 0x00c5e478 label    g_GuideEnabled               # 0: Guide_Update returns at once
+0x00c5e480 label    g_RcbgChunkTags              # 13 pointers to the Yn chunk tags (rcbgChunkTag)
 0x00c5e790 label    g_GuidePacketStrides         # bytes per primitive of the minimap mesh's packet types 0-7 (0x14 0x1c 0x20 0x28 0x18 0x20 0x28 0x30); type 0: triangles, vertex indices at +0xc
 0x00c64ca0 label    g_MagicFile_MagicId       # MagicFile_GetMagicId; -1 = none (MagicFile_GetEffectOverlayTable checks)
 0x00c64cac label    g_MagicFile_Handle        # MagicFile_GetHandle; -1 = none (MagicFile_GetEffectOverlayTable checks)
@@ -7281,16 +7325,20 @@
 0x018716f8 label    g_TkMenuScissorBox        # 4 x f32 left, top, right, bottom (BeginScissor_XYUV; an edge counts as outside)
 0x018ded08 label    g_YiRenderStatus             # field renderer flags: yiRenderEnable/Disable; |= 0x11 once a map is read (yiMapReadMaster); bit 0 gates yiCallFieldParticle
 0x018ded0c label    g_YiDrawMask                 # yiGetDrawMask/yiSetDrawMask; -9 after a map is read, -1 with the battle map circle on (yiMapReadMaster); script native 0x8000 sets its bits
+0x018ded2c label    g_YiRenderParam              # yiSetRenderParam's value
 0x018deff8 label    g_YiScaleFactor              # x, y, z floats (yiSetScaleFactor)
 0x018df588 label    g_YiDObjCount                # display objects in use (yiGetMatrixDObj bound)
 0x018df59c label    g_YiDObjs                    # display objects, 0xb4 bytes each: +0 matrix, +0x40 rotation, +0x50 translation, +0x74 u16 group (yiGetMatrixGroup), +0x76 u16 rotation order (yiRotMatrixSeq; 0x00908190)
 0x019138a8 label    g_YiMapData                  # the map data read (yiMapReadMaster, yiObjReadCallback); +4 its status (yiGetMapStatus)
+0x01934ea4 label    g_YiColor3                   # three bytes (yiSetColor3)
+0x0193bf28 label    g_YnSeaMatrix                # the sea's matrix (Yn_SeaGetMatrix, Yn_SeaSetMatrix, Yn_SeaResetMatrix)
 0x0193bf6c label    g_GuideFadeState             # Guide_FadeStep: 0 hidden (waiting), 1 fading in, 2 shown, 3 fading out; Guide_FadeOff clears it
 0x0193bf70 label    g_GuideFadeWait              # frames waited (Guide_FadeStep)
 0x0193bf74 label    g_GuideFadeLevel             # steps faded in, 0..g_GuideFadeSteps (Guide_FadeStep)
 0x0193bf78 label    g_GuideFade                  # the minimap's alpha, 0..128 (Guide_FadeStep)
 0x0193bf7c label    g_GuideBattleSave            # the guide's +0x6c float kept over a battle (rcbgGuideBattleBegin/End)
 0x0193bf80 label    g_YnMapSystem                # Yn's field state: +0 the map (its +8: guide map list, +0x18 i16 count, +0x1a i16 shown, +0x1c models), +4 the guide (Yn_GuideMapGetMapNo, Yn_GuideMapSetMapNo, Yn_BattleBegin)
+0x0193c0f0 label    g_RcuiWork                   # rcui work area: +0xbe8 the ID dragged, +0xbec rcuiMouseMoveGetID, +0xbf0 dragging
 0x0193fdac label    g_MagicFile_IsNexData     # MagicFile_IsNexData
 0x01a85ba8 label    g_FullArenaLocalization   # toggled (non-zero -> 0, 0 -> 1) by setFullArenaLocalizationEnable; read by 0x00a42c00, 0x00a42fa0
 0x01a85bb0 label    g_ReadChgName_From        # 16 u32 (FILE_NAME_CHG_TBL_CNT, read_debug.c): set_read_chgname(a, b) puts a in the first zero slot, b in g_ReadChgName_To; clear_read_chgname zeroes both
@@ -7327,3 +7375,9 @@
 0x023cbebc label gNeedAutoSave                # fh v4:user_defined
 0x023cc128 label    g_TkMenuSubCmdWindow      # the open sub-command window (TkMenuCloseSubCmdWindow sets its +0x41 and clears this; TkMenuRestartSubCmdWindow2)
 0x023cc458 label    g_TkMn2FontShade          # 4 words 8 bytes apart, stored downwards: TkMn2SetFontShade(s0..s3) puts s0 at 0x023cc470, s3 here
+
+0x025d58a0 label    g_RcbgClipWorldMatrix        # g_RcbgViewWorldMatrix through g_RcbgClipMatrix (rcbgUpdateMatrix)
+0x025d58e0 label    g_RcbgClipMatrix             # rcbgSetClipMatrix
+0x025d5920 label    g_RcbgScreenWorldMatrix      # g_RcbgViewWorldMatrix through g_ScreenMatrix (rcbgUpdateMatrix)
+0x025d5960 label    g_RcbgViewWorldMatrix        # g_RcbgWorldMatrix through g_CameraMatrix (rcbgUpdateMatrix)
+0x025d59a0 label    g_RcbgWorldMatrix            # rcbgSetWorldMatrix
