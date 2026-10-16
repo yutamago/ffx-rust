@@ -4670,6 +4670,91 @@ pub mod bridge {
         mem.write(rec + 0x22, 1u8);
         r
     }
+    /// A byte global read zero-extended (`movzx eax, byte [g]`):
+    /// `Ch_DrawGetShadowMode` (`0x0082ec60`, `0x013008bd`),
+    /// `Ch_DrawGetShadowSemi` (`0x0082ec70`, `0x013008be`) and
+    /// `TkGetSavedLang` (`0x0088c850`, `0x01330874`).
+    pub fn get_byte(mem: &impl Mem, g: u32) -> u32 {
+        u32::from(mem.read::<u8>(mem.rebase(g)))
+    }
+
+    /// `Ch_RequestCalcNormal()` (`0x00832540`, own name): byte
+    /// `0x013009e4` = 1, the count of deferred normal recalculations the
+    /// character draw takes one from.
+    pub fn ch_request_calc_normal(mem: &mut impl Mem) {
+        mem.write(mem.rebase(0x0130_09e4), 1u8);
+    }
+
+    /// `Pad_RemapButton(pad, port, code)` (`0x00888cf0`, own name): codes
+    /// 4..=11 (the buttons after the four directions) through the pad's
+    /// button map (`TkFindPadButton`) and back to a code by its position in
+    /// `g_PadButtonCodes` (`0x00c54e28`) plus 4; 0 for an unmapped button;
+    /// other codes unchanged.
+    pub fn pad_remap_button(mem: &impl Mem, pad: i32, port: i32, code: i32) -> i32 {
+        if !(4..0xc).contains(&code) {
+            return code;
+        }
+        let b = tk_find_pad_button(mem, pad, port, code - 4);
+        if b < 0 {
+            return 0;
+        }
+        let codes = mem.rebase(0x00c5_4e28);
+        let mut k = 0u32;
+        while i32::from(mem.read::<i8>(codes + k)) != b {
+            k += 1;
+        }
+        k.cast_signed() + 4
+    }
+
+    /// `Atel_FindWorkerByOwner(owner)` (`0x00876440`, own name): the
+    /// first active worker (`+0xaa` 1) of the current control's
+    /// `+0xc` workers whose `+0x9c` is `owner`: its `u16 +0x2e`; -1 if
+    /// none.
+    pub fn atel_find_worker_by_owner(mem: &mut impl Mem, owner: u32) -> i32 {
+        let ctrl = ffx_script::vm::bridge::atel_get_cur_ctrl_work(mem);
+        let n = i32::from(mem.read::<u16>(ctrl + 0xc));
+        for k in 0..n {
+            let w = ffx_script::vm::bridge::atel_get_basic_work(mem, k);
+            if mem.read::<u8>(w + 0xaa) == 1 && mem.read::<u32>(w + 0x9c) == owner {
+                return i32::from(mem.read::<u16>(w + 0x2e));
+            }
+        }
+        -1
+    }
+
+    /// `TkInitSceneFromSave()` (`0x0088dd60`, own name): fade and
+    /// `0x01330854` cleared; without a pending load (`0x00c33480` is -1)
+    /// `0x01327108` = 1; otherwise the save's event block takes its stored
+    /// map and entrance back (halfwords `+0xba` to `+0`, `+0xc2` to `+2`,
+    /// bytes `+0xb8` to `+0xc` (then cleared) and `+0xce` to `+0xd`) and
+    /// `0x0133084c` = 1. `0x01330858` cleared either way.
+    pub fn tk_init_scene_from_save(mem: &mut impl Mem) {
+        let g = |mem: &mut _, a: u32| Mem::rebase(mem, a);
+        let at = g(mem, 0x00c3_3480);
+        let pending: i32 = mem.read(at);
+        let a = g(mem, 0x0133_0850);
+        mem.write(a, [0u32, 0]);
+        if pending == -1 {
+            let x = g(mem, 0x0132_7108);
+            mem.write(x, 1u32);
+        } else {
+            let e = ffx_battle::save::bridge::ms_get_save_event_address(mem);
+            let b8: u16 = mem.read(e + 0xb8);
+            let ba: u16 = mem.read(e + 0xba);
+            mem.write(e + 0xb8, 0u16);
+            let c2: u16 = mem.read(e + 0xc2);
+            mem.write(e + 2, c2);
+            let ce: u8 = mem.read(e + 0xce);
+            mem.write(e, ba);
+            #[allow(clippy::cast_possible_truncation)]
+            mem.write(e + 0xc, b8 as u8);
+            mem.write(e + 0xd, ce);
+            let x = g(mem, 0x0133_084c);
+            mem.write(x, 1u32);
+        }
+        let x = g(mem, 0x0133_0858);
+        mem.write(x, 0u32);
+    }
 }
 
 #[cfg(test)]

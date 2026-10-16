@@ -4658,6 +4658,18 @@ fn tk_round7_matches_the_original() {
             U32,
             |o| w(tk::menu_win_match_scene_table(o, i(kind))),
         );
+        for (name, sym, g) in [
+            ("Ch_DrawGetShadowMode", 0x0082_ec60u32, 0x0130_08bdu32),
+            ("Ch_DrawGetShadowSemi", 0x0082_ec70, 0x0130_08be),
+            ("TkGetSavedLang", 0x0088_c850, 0x0133_0874),
+        ] {
+            t.scramble(g, 1);
+            t.twin(name, sym, &[], U32, |o| w(tk::get_byte(o, g)));
+        }
+        t.twin("Ch_RequestCalcNormal", 0x0083_2540, &[], VOID, |o| {
+            tk::ch_request_calc_normal(o);
+            0
+        });
         let sc = t.rng.pick(&[0u32, 1, 0x40, 0x7f, 0x80, 0x100, 0xffff_ffff]);
         t.scramble(0x0186_63d0, 8);
         t.twin("Tk_NoteEternalCalm", 0x0088_ec90, &[sc], U32, |o| {
@@ -4710,6 +4722,21 @@ fn tk_round7_matches_the_original() {
                     0
                 });
             }
+            let pending = t.rng.pick(&[0xffff_ffffu32, 0, 3]);
+            t.put(t.sym(0x00c3_3480), pending);
+            t.twin("TkInitSceneFromSave", 0x0088_dd60, &[], VOID, |o| {
+                tk::tk_init_scene_from_save(o);
+                0
+            });
+            let owner = t.rng.pick(&[0u32, 1, 2, 0x10, 0xffff_ffff]);
+            t.twin("Atel_FindWorkerByOwner", 0x0087_6440, &[owner], U32, |o| {
+                s(tk::atel_find_worker_by_owner(o, owner))
+            });
+            let code = t.rng.pick(&[0u32, 3, 4, 5, 8, 11, 12, 0xffff_ffff]);
+            let pp = t.rng.below(2);
+            t.twin("Pad_RemapButton", 0x0088_8cf0, &[pp, 0, code], U32, |o| {
+                s(tk::pad_remap_button(o, i(pp), 0, i(code)))
+            });
             t.twin("TkMn2GetMainPos", 0x008e_2630, &[], U32, |o| {
                 w(tk::tk_mn2_get_main_pos(o))
             });

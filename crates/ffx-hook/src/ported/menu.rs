@@ -2931,4 +2931,32 @@ ported! {
     TkSetVibrateStream @ 0x0087_5fb0 => extern "C" fn tk_set_vibrate_stream(k: i32, curve: u32, table: u32) -> u32 {
         tk::tk_set_vibrate_stream(&mut mem(), k, curve, table)
     }
+    /// `Ch_DrawGetShadowMode()`.
+    Ch_DrawGetShadowMode @ 0x0082_ec60 => extern "C" fn ch_draw_get_shadow_mode() -> u32 {
+        tk::get_byte(&mem(), 0x0130_08bd)
+    }
+    /// `Ch_DrawGetShadowSemi()`.
+    Ch_DrawGetShadowSemi @ 0x0082_ec70 => extern "C" fn ch_draw_get_shadow_semi() -> u32 {
+        tk::get_byte(&mem(), 0x0130_08be)
+    }
+    /// `TkGetSavedLang()`.
+    TkGetSavedLang @ 0x0088_c850 => extern "C" fn tk_get_saved_lang() -> u32 {
+        tk::get_byte(&mem(), 0x0133_0874)
+    }
+    /// `Ch_RequestCalcNormal()`.
+    Ch_RequestCalcNormal @ 0x0083_2540 => extern "C" fn ch_request_calc_normal() {
+        tk::ch_request_calc_normal(&mut mem());
+    }
+    /// `Pad_RemapButton(pad, port, code)`.
+    Pad_RemapButton @ 0x0088_8cf0 => extern "C" fn pad_remap_button(pad: i32, port: i32, code: i32) -> i32 {
+        tk::pad_remap_button(&mem(), pad, port, code)
+    }
+    /// `Atel_FindWorkerByOwner(owner)`: `u16 +0x2e`, or -1.
+    Atel_FindWorkerByOwner @ 0x0087_6440 => extern "C" fn atel_find_worker_by_owner(owner: u32) -> i32 {
+        tk::atel_find_worker_by_owner(&mut mem(), owner)
+    }
+    /// `TkInitSceneFromSave()`.
+    TkInitSceneFromSave @ 0x0088_dd60 => extern "C" fn tk_init_scene_from_save() {
+        tk::tk_init_scene_from_save(&mut mem());
+    }
 }

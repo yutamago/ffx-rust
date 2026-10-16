@@ -3685,6 +3685,8 @@
 0x0082ebe0 function Ch_DrawGetParaEdit        # movsx g_ChrDrawParaEdit (Ch_DrawSetParaEdit's); Switch name, in name order before Ch_DrawGetShadowColor
 0x0082ebf0 function Ch_DrawGetShadowColor     # fh switch:bsim1.00 0x7100419950
 0x0082ec30 function Ch_DrawGetShadowDir       # fh switch:bsim1.00 0x71004199a0
+0x0082ec60 function Ch_DrawGetShadowMode      # () g_ChrShadowMode zero-extended; Switch name, the two slots Ch_DrawGetShadowDir..Ch_DrawInitAll before Ch_DrawIcons in order
+0x0082ec70 function Ch_DrawGetShadowSemi      # () byte 0x013008be (Sg_SetMovieGomiAvoid sets it) zero-extended; Switch name, the two slots Ch_DrawGetShadowDir..Ch_DrawInitAll before Ch_DrawIcons in order
 0x0082ed30 function Ch_DrawInitAll            # fh v3:bsim1.00 0x0082edb0
 0x0082fe00 function Ch_DrawMainForSituation   # fh v3:exact 0x0082fe80
 0x008300b0 function Ch_DrawSetCull            # fh v3:cg2 0x830130
@@ -3758,6 +3760,7 @@
 0x008320e0 function Ch_SysSet6e0             # ours: g_Chr6e0 = v (no reader found)
 0x008320f0 function Ch_CompareDrawOrder      # ours: qsort comparator (&a, &b) -> (*a)+0x6d4 - (*b)+0x6d4
 0x00832110 function Apply_Envelope            # fh v3:exact 0x00832190
+0x00832540 function Ch_RequestCalcNormal      # () byte 0x013009e4 = 1 (the draw takes deferred normal recalculations off it); own name
 0x00832550 function Ch_AllReserveCalcNorm     # Chr_RequestBoneUpdate for every active chr in g_ChrArray; was Chr_RequestBoneUpdateAll
 0x008325b0 function Ch_AllSetCalcNorm        # Switch name (0x7100414520): Ch_SetCalcNorm(chr, on) on every active character
 0x00832610 function Ch_BindSetScale           # fh v3:bsim1.00 0x00832690
@@ -4794,6 +4797,7 @@
 0x00876350 function Vibrate_StartStream       # (stream, curve) header (level, length, flag) into +8/+6/+9, pointer = curve + 2; own name
 0x00876390 function TkGetVibrateDefaultCurve  # (kind) -> the default curve TkGetVibrateCurve uses: 2/3 0x00c52ae8, 5 0x00c52af8, 6 0x00c52b08, else 0x00c52ad8
 0x008763e0 function TkGetVibrateCurve         # (kind, i, curve) -> u16 curve[i]; without a curve the default for kind: 2/3 0x00c52ae8, 5 0x00c52af8, 6 0x00c52b08, else 0x00c52ad8
+0x00876440 function Atel_FindWorkerByOwner    # (owner) first active (+0xaa 1) worker of the current control with +0x9c == owner: u16 +0x2e, else -1; own name
 0x00876930 function AtelCalcSound             # fh switch:bsim1.00 0x7100478700
 0x008772e0 function AtelClearCameraMatrixFlag # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_AtelCameraMatrixFlag = -1
 0x00877330 function AtelClearSnd3dWorkAll     # fh v3:exact 0x008772b0
@@ -4962,6 +4966,7 @@
 0x00888c00 function TkGetControlerAnalog      # (pad, port, i) work byte +0x84+i, loaded into al over i; Switch name (precedes TkGetControlerAnalogHist)
 0x00888c20 function TkGetControlerAnalogHist  # fh v3:exact 0x00888b90
 0x00888c40 function Pad_MapButtons               # (a, b, buttons): remaps button bits through the config table 0x01330488
+0x00888cf0 function Pad_RemapButton           # (pad, port, code) codes 4..11 through TkFindPadButton back to a code by position in g_PadButtonCodes + 4 (0 when unmapped); others unchanged; own name
 0x00888d70 function TkGetControlerHist        # fh v3:bsim1.00 0x00888ce0
 0x00888d90 function TkGetControlerId          # (pad, port) work byte +0x80, into al over the work pointer; Switch name, alphabetical slot TkGetControlerHist..
 0x00888db0 function TkGetControlerIdHist      # (pad, port, i) frame byte +0 into al over the frame pointer; Switch name, the one name for the slot TkGetControlerId..TkGetControlerPress
@@ -5021,6 +5026,7 @@
 0x0088c7f0 function TkRestartSyncH            # fh v3:bsim1.00 0x0088c790
 0x0088c800 function TkGetSyncH                # fh v3:bsim1.00 0x0088c770
 0x0088c810 function TkInitAlarm               # fh v3:bsim1.00 0x0088c780
+0x0088c850 function TkGetSavedLang            # () byte 0x01330874 (stored from TkGetLang at init) zero-extended; own name
 0x0088c860 function TKMallocAndReadEventFTC   # fh v3:exact 0x0088c7d0
 0x0088cac0 function TKMallocAndReadEventMessage # (name): new_<lang>pc/event/obj_ps3/<xx>/<name>.bin, battle/btl/<name>/<name>.bin (name with _), battle/kernel (monster*), menu/*.dcp (macro*); was Msg_LoadFile
 0x0088d120 function Math_RoundUp              # (n, step) -> n rounded up to a multiple of step (unsigned)
@@ -5055,6 +5061,7 @@
 0x0088d6c0 function TkGetStartMapEventIndex   # 0x01330860 (TkSetStartMapIndex arg 2); Switch name, alphabetical slot
 0x0088d6d0 function TkGetTGS                  # fh v3:bsim1.00 0x0088d640
 0x0088d710 function TkInit                    # fh v3:exact 0x0088d680
+0x0088dd60 function TkInitSceneFromSave       # () fade/0x01330854 cleared; no load pending (0x00c33480 -1): 0x01327108 = 1; else the save event block restores map/entrance (+0xba->+0, +0xc2->+2, +0xb8->+0xc then 0, +0xce->+0xd), 0x0133084c = 1; own name
 0x0088df40 function TkInitSaveWork            # fh v3:cg6 0x88deb0
 0x0088e070 function TkInitScene               # fh v3:exact 0x0088dfe0
 0x0088e610 function TkLoadVibrate             # fh switch:bsim1.00 0x7100490400
