@@ -1,9 +1,11 @@
 //! `ffx-battle`: random numbers, the save block, actors, the battle camera,
 //! battle globals and helpers, damage.
 
+use ffx_battle::cue::bridge as cue;
 use ffx_battle::{actor::bridge as actor, camera::bridge as camera, command::bridge as cmd};
+use ffx_battle::{body::bridge as body, menu::bridge as menu, vector::bridge as vector};
 use ffx_battle::{damage::bridge as dmg, state::bridge as state, util::bridge as util};
-use ffx_battle::{misc::bridge as misc, save::bridge as save, vector::bridge as vector};
+use ffx_battle::{minor::bridge as minor, misc::bridge as misc, save::bridge as save};
 
 use super::{call0, mem, ported};
 
@@ -1142,5 +1144,415 @@ ported! {
     /// `MsGetChrVigor(i)`.
     MsGetChrVigor @ 0x0078_cce0 => extern "C" fn ms_get_chr_vigor(i: u32) -> u32 {
         actor::ms_get_chr_vigor(&mem(), i)
+    }
+    /// `MsSetDirThetaMode(actor)`.
+    MsSetDirThetaMode @ 0x0079_6940 => extern "C" fn ms_set_dir_theta_mode(actor: u32) -> u32 {
+        minor::ms_set_dir_theta_mode(&mut mem(), actor)
+    }
+    /// `MsBtlListField(i)`.
+    MsBtlListField @ 0x0079_d190 => extern "C" fn ms_btl_list_field(i: i32) -> u32 {
+        minor::ms_btl_list_field(&mem(), i)
+    }
+    /// `MsBtlListFieldNum(map)`.
+    MsBtlListFieldNum @ 0x0079_d1c0 => extern "C" fn ms_btl_list_field_num(map: i32) -> i32 {
+        minor::ms_btl_list_field_num(&mem(), map)
+    }
+    /// `ResetEncountExe(all)`.
+    ResetEncountExe @ 0x0078_0ff0 => extern "C" fn reset_encount_exe(all: u32) {
+        minor::reset_encount_exe(&mut mem(), all);
+    }
+    /// `MsEffectCameraCall(camera, mode)`.
+    MsEffectCameraCall @ 0x0078_7740 => extern "C" fn ms_effect_camera_call(camera: i32, mode: u32) -> u32 {
+        minor::ms_effect_camera_call(&mut mem(), camera, mode)
+    }
+    /// `resetZanmatoSepList()`.
+    resetZanmatoSepList @ 0x007a_8f20 => extern "C" fn reset_zanmato_sep_list() -> u32 {
+        minor::reset_zanmato_sep_list(&mut mem())
+    }
+    /// `MsSetMotBinAddress(actor, i)`.
+    MsSetMotBinAddress @ 0x0079_cd80 => extern "C" fn ms_set_mot_bin_address(actor: u32, i: i32) -> u32 {
+        minor::ms_set_mot_bin_address(&mut mem(), actor, i)
+    }
+    /// `MsAtelRegist(manager, name, script)`.
+    MsAtelRegist @ 0x0079_7a40 => extern "C" fn ms_atel_regist(manager: i32, _name: u32, script: u32) -> i32 {
+        minor::ms_atel_regist(&mut mem(), manager, script)
+    }
+    /// `MsSEPtransInit()`.
+    MsSEPtransInit @ 0x007a_0500 => extern "C" fn ms_sep_trans_init() -> u32 {
+        minor::ms_sep_trans_init(&mut mem())
+    }
+    /// `MsAtelCamInit()`.
+    MsAtelCamInit @ 0x0079_7500 => extern "C" fn ms_atel_cam_init() {
+        minor::ms_atel_cam_init(&mut mem());
+    }
+    /// `Mon_FindHandler(file, i, &k)`.
+    Mon_FindHandler @ 0x0079_7410 => extern "C" fn mon_find_handler(file: u32, i: i32, k: u32) -> u32 {
+        minor::mon_find_handler(&mut mem(), file, i, k)
+    }
+    /// `MsMotBinFrame(_, actor, motion, frame)`.
+    MsMotBinFrame @ 0x0079_cb40 => extern "C" fn ms_mot_bin_frame(_x: u32, actor: u32, motion: u32, frame: u32) -> u32 {
+        minor::ms_mot_bin_frame(&mem(), actor, motion, frame)
+    }
+    /// `MsSEP3DfadeOutAll(time)`.
+    MsSEP3DfadeOutAll @ 0x007a_08e0 => extern "C" fn ms_sep3d_fade_out_all(time: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // a u16 argument
+        minor::ms_sep3d_fade_out_all(&mut mem(), time as u16)
+    }
+    /// `MsWeaponReadSet(actor, slot, weapon)`.
+    MsWeaponReadSet @ 0x007a_d940 => extern "C" fn ms_weapon_read_set(actor: u32, slot: u32, weapon: u32) {
+        #[allow(clippy::cast_possible_truncation)] // a byte argument
+        minor::ms_weapon_read_set(&mut mem(), actor, slot as u8, weapon);
+    }
+    /// `MsEffectCameraBufInit()`.
+    MsEffectCameraBufInit @ 0x0078_76e0 => extern "C" fn ms_effect_camera_buf_init() {
+        minor::ms_effect_camera_buf_init(&mut mem());
+    }
+    /// `MsInitSaveWeaponEquipFlag()`.
+    MsInitSaveWeaponEquipFlag @ 0x007a_be30 => extern "C" fn ms_init_save_weapon_equip_flag() -> u32 {
+        minor::ms_init_save_weapon_equip_flag(&mut mem())
+    }
+    /// `MsStoneRegist(chr)`.
+    MsStoneRegist @ 0x007a_2780 => extern "C" fn ms_stone_regist(chr: u32) -> u32 {
+        minor::ms_stone_regist(&mut mem(), chr)
+    }
+    /// `MsSetSaveCommandUse(chr, command, on)`.
+    MsSetSaveCommandUse @ 0x0078_5e00 => extern "C" fn ms_set_save_command_use(chr: i32, command: u32, on: u32) -> u32 {
+        minor::ms_set_save_command_use(&mut mem(), chr, command, on)
+    }
+    /// `MsAtelCameraInit()`.
+    MsAtelCameraInit @ 0x007b_a650 => extern "C" fn ms_atel_camera_init() {
+        minor::ms_atel_camera_init(&mut mem());
+    }
+    /// `MsNumberCalcProcess()`.
+    MsNumberCalcProcess @ 0x0079_f5e0 => extern "C" fn ms_number_calc_process() -> u32 {
+        minor::ms_number_calc_process(&mut mem())
+    }
+    /// `MsGetNowSelectedCamraLevel()`.
+    MsGetNowSelectedCamraLevel @ 0x007b_bc30 => extern "C" fn ms_get_now_selected_camra_level() -> i32 {
+        camera::ms_get_now_selected_camra_level(&mem())
+    }
+    /// `MsCameraFree(id)`.
+    MsCameraFree @ 0x007b_d000 => extern "C" fn ms_camera_free(id: u32) -> u32 {
+        camera::ms_camera_free(&mut mem(), id)
+    }
+    /// `MsEffectCameraInit()`.
+    MsEffectCameraInit @ 0x007b_ba70 => extern "C" fn ms_effect_camera_init() -> u32 {
+        camera::ms_effect_camera_init(&mut mem())
+    }
+    /// `MsEffectCameraSet(look_at, eye, depth, roll)` (floats as bits).
+    MsEffectCameraSet @ 0x007b_bb10 => extern "C" fn ms_effect_camera_set(look_at: u32, eye: u32, depth: u32, roll: u32) -> u32 {
+        camera::ms_effect_camera_set(&mut mem(), look_at, eye, depth, roll)
+    }
+    /// `MsSetScreen(i, a, b, c, d, e, near, far, z0, z1)` (floats as bits).
+    MsSetScreen @ 0x007b_c7f0 => extern "C" fn ms_set_screen(i: i32, a: u32, b: u32, c: u32, d: u32, e: u32, near: u32, far: u32, z0: u32, z1: u32) {
+        camera::ms_set_screen(&mut mem(), i, [a, b, c, d, e, near, far, z0, z1]);
+    }
+    /// `MsVectorGetSide(ax, az, bx, bz)` (floats as bits).
+    MsVectorGetSide @ 0x007c_4180 => extern "C" fn ms_vector_get_side(ax: u32, az: u32, bx: u32, bz: u32) -> i32 {
+        vector::ms_vector_get_side(&mut mem(), [ax, az, bx, bz])
+    }
+    /// `Battle_FirstSelectedActor(chr, selector, all, any)`.
+    Battle_FirstSelectedActor @ 0x0079_47f0 => extern "C" fn battle_first_selected_actor(chr: u32, selector: u32, all: i32, any: i32) -> i32 {
+        body::battle_first_selected_actor(&mem(), chr, selector, all, any)
+    }
+    /// `msSetChrBodyHit(actor, part, on)`.
+    msSetChrBodyHit @ 0x0079_6f20 => extern "C" fn ms_set_chr_body_hit(actor: u32, part: i32, on: i32) -> u32 {
+        body::ms_set_chr_body_hit(&mut mem(), actor, part, on)
+    }
+    /// `MsGetChrHeight(i)`: on the x87 stack.
+    MsGetChrHeight @ 0x0079_50f0 => extern "C" fn ms_get_chr_height(i: u32) -> f32 {
+        body::ms_get_chr_height(&mem(), i)
+    }
+    /// `MsGetChrCamHeight(i)`: on the x87 stack.
+    MsGetChrCamHeight @ 0x0079_4a30 => extern "C" fn ms_get_chr_cam_height(i: u32) -> f32 {
+        body::ms_get_chr_cam_height(&mem(), i)
+    }
+    /// `MsGetChrCamWidth(i)`: on the x87 stack.
+    MsGetChrCamWidth @ 0x0079_4a70 => extern "C" fn ms_get_chr_cam_width(i: u32) -> f32 {
+        body::ms_get_chr_cam_width(&mem(), i)
+    }
+    /// `MsGetChrDir(i, &dir)`.
+    MsGetChrDir @ 0x0079_4d20 => extern "C" fn ms_get_chr_dir(i: u32, dir: u32) -> i32 {
+        body::ms_get_chr_dir(&mut mem(), i, dir)
+    }
+    /// `MsGetChrGround(i)`: on the x87 stack.
+    MsGetChrGround @ 0x0079_4fb0 => extern "C" fn ms_get_chr_ground(i: u32) -> f32 {
+        body::ms_get_chr_ground(&mem(), i)
+    }
+    /// `MsSetChrPos(i, pos)`.
+    MsSetChrPos @ 0x0079_6150 => extern "C" fn ms_set_chr_pos(i: u32, pos: u32) -> i32 {
+        body::ms_set_chr_pos(&mut mem(), i, pos)
+    }
+    /// `MsSetChrWeight(i, how)`.
+    MsSetChrWeight @ 0x0079_68e0 => extern "C" fn ms_set_chr_weight(i: u32, how: i32) {
+        body::ms_set_chr_weight(&mut mem(), i, how);
+    }
+    /// `msSetChrWeight(actor, w)` (a float as bits).
+    msSetChrWeight @ 0x0079_72c0 => extern "C" fn ms_set_chr_weight2(actor: u32, w: u32) {
+        body::ms_set_chr_weight2(&mut mem(), actor, w);
+    }
+    /// `MsSetChrMoveFlag(i, v)`.
+    MsSetChrMoveFlag @ 0x0079_6110 => extern "C" fn ms_set_chr_move_flag(i: u32, v: u32) -> i32 {
+        #[allow(clippy::cast_possible_truncation)] // a byte argument
+        body::ms_set_chr_move_flag(&mut mem(), i, v as u8)
+    }
+    /// `MsSetChrMotionLevel(i, v)`.
+    MsSetChrMotionLevel @ 0x0079_60d0 => extern "C" fn ms_set_chr_motion_level(i: u32, v: u32) -> i32 {
+        #[allow(clippy::cast_possible_truncation)] // a byte argument
+        body::ms_set_chr_motion_level(&mut mem(), i, v as u8)
+    }
+    /// `MsSetChrSpecular(i, v, frames)` (v a float as bits).
+    MsSetChrSpecular @ 0x0079_6360 => extern "C" fn ms_set_chr_specular(i: u32, v: u32, frames: i32) -> u32 {
+        body::ms_set_chr_specular(&mut mem(), i, v, frames)
+    }
+    /// `MsCheckChrMotionAll(mode)`.
+    MsCheckChrMotionAll @ 0x0079_1630 => extern "C" fn ms_check_chr_motion_all(mode: i32) -> u32 {
+        body::ms_check_chr_motion_all(&mut mem(), mode)
+    }
+    /// `MsEffectResetMotionDisable(actor)`.
+    MsEffectResetMotionDisable @ 0x0078_8270 => extern "C" fn ms_effect_reset_motion_disable(actor: u32) -> u32 {
+        minor::ms_effect_reset_motion_disable(&mut mem(), actor)
+    }
+    /// `MsGetNextAP(chr)`.
+    MsGetNextAP @ 0x0078_4e90 => extern "C" fn ms_get_next_ap(chr: i32) -> i32 {
+        menu::ms_get_next_ap(&mut mem(), chr)
+    }
+    /// `MsGetSaveChrName(chr)`.
+    MsGetSaveChrName @ 0x0078_4fb0 => extern "C" fn ms_get_save_chr_name(chr: u32) -> u32 {
+        menu::ms_get_save_chr_name(&mem(), chr)
+    }
+    /// `MsMenuStatusNum(id, strings)`.
+    MsMenuStatusNum @ 0x0079_0200 => extern "C" fn ms_menu_status_num(id: i32, strings: u32) -> u32 {
+        menu::ms_menu_status_num(&mut mem(), id, strings)
+    }
+    /// `MsWeaponName(id, k, second, &icon)`.
+    MsWeaponName @ 0x007a_0c50 => extern "C" fn ms_weapon_name(id: u32, k: u32, second: u32, icon: u32) -> u32 {
+        menu::ms_weapon_name(&mut mem(), id, k, second, icon)
+    }
+    /// `MsMenuGetChrSkipCommand(i)`.
+    MsMenuGetChrSkipCommand @ 0x0078_fb80 => extern "C" fn ms_menu_get_chr_skip_command(i: u32) -> u32 {
+        menu::ms_menu_get_chr_skip_command(&mem(), i)
+    }
+    /// `MsGetCheckEnglish()`: the language from `TkGetLang` (menu).
+    MsGetCheckEnglish @ 0x0078_4e60 => extern "C" fn ms_get_check_english() -> i32 {
+        menu::ms_get_check_english(ffx_menu::tk::bridge::tk_get_lang(&mem()))
+    }
+    /// `MsGetBattleEndStatus()`.
+    MsGetBattleEndStatus @ 0x0079_28d0 => extern "C" fn ms_get_battle_end_status() -> u32 {
+        menu::ms_get_battle_end_status(&mem())
+    }
+    /// `MsCameraSetRoll(id, roll)` (a float as bits).
+    MsCameraSetRoll @ 0x007b_fa80 => extern "C" fn ms_camera_set_roll(id: u32, roll: u32) {
+        camera::ms_camera_set_roll(&mut mem(), id, roll);
+    }
+    /// `MsCameraSetScrDpt(id, depth)` (a float as bits).
+    MsCameraSetScrDpt @ 0x007b_fbd0 => extern "C" fn ms_camera_set_scr_dpt(id: u32, depth: u32) {
+        camera::ms_camera_set_scr_dpt(&mut mem(), id, depth);
+    }
+    /// `MsDebugGetCameraMode(side)`.
+    MsDebugGetCameraMode @ 0x007c_fb20 => extern "C" fn ms_debug_get_camera_mode(side: i32) -> u32 {
+        camera::ms_debug_get_camera_mode(&mem(), side)
+    }
+    /// `MsCopyCameraMatrix(out)`.
+    MsCopyCameraMatrix @ 0x007c_0070 => extern "C" fn ms_copy_camera_matrix(out: u32) -> u32 {
+        camera::ms_copy_camera_matrix(&mut mem(), out)
+    }
+    /// `MsCopyScreenMatrix(out)`.
+    MsCopyScreenMatrix @ 0x007b_ba50 => extern "C" fn ms_copy_screen_matrix(out: u32) -> u32 {
+        camera::ms_copy_screen_matrix(&mut mem(), out)
+    }
+    /// `MsSubPoint(out, a, b)`.
+    MsSubPoint @ 0x007c_40b0 => extern "C" fn ms_sub_point(out: u32, a: u32, b: u32) {
+        vector::ms_sub_point(&mut mem(), out, a, b);
+    }
+    /// `MsPointLen(a, b)`: on the x87 stack.
+    MsPointLen @ 0x007c_2ec0 => extern "C" fn ms_point_len(a: u32, b: u32) -> f32 {
+        vector::ms_point_len(&mut mem(), a, b)
+    }
+    /// `MsPointLen2D(a, b)`: on the x87 stack.
+    MsPointLen2D @ 0x007c_3030 => extern "C" fn ms_point_len_2d(a: u32, b: u32) -> f32 {
+        vector::ms_point_len_2d(&mut mem(), a, b)
+    }
+    /// `Battle_ChrMoveFlags(actor)`.
+    Battle_ChrMoveFlags @ 0x007b_4a70 => extern "C" fn battle_chr_move_flags(actor: u32) -> u32 {
+        body::battle_chr_move_flags(&mem(), actor)
+    }
+    /// `MsMenuCountStatus(i)`.
+    MsMenuCountStatus @ 0x0078_fa80 => extern "C" fn ms_menu_count_status(i: u32) -> u32 {
+        minor::ms_menu_count_status(&mem(), i)
+    }
+    /// `MsMenuDefCountStatus(i)`.
+    MsMenuDefCountStatus @ 0x0078_faa0 => extern "C" fn ms_menu_def_count_status(i: u32) -> u32 {
+        minor::ms_menu_def_count_status(&mem(), i)
+    }
+    /// `MsMenuHalfElement(i)`.
+    MsMenuHalfElement @ 0x0078_fe40 => extern "C" fn ms_menu_half_element(i: u32) -> u32 {
+        minor::ms_menu_half_element(&mem(), i)
+    }
+    /// `MsMenuBitStatus(i)`.
+    MsMenuBitStatus @ 0x0078_f950 => extern "C" fn ms_menu_bit_status(i: u32) -> u32 {
+        minor::ms_menu_bit_status(&mem(), i)
+    }
+    /// `MsGetSummonerNum(i)`.
+    MsGetSummonerNum @ 0x0078_8e10 => extern "C" fn ms_get_summoner_num(i: u32) -> u32 {
+        minor::ms_get_summoner_num(&mem(), i)
+    }
+    /// `MsMenuWeakElement(i)`.
+    MsMenuWeakElement @ 0x007a_9a20 => extern "C" fn ms_menu_weak_element(i: u32) -> u32 {
+        minor::ms_menu_weak_element(&mem(), i)
+    }
+    /// `MsMenuCheckChrLive(i)`.
+    MsMenuCheckChrLive @ 0x0078_f970 => extern "C" fn ms_menu_check_chr_live(i: u32) -> u32 {
+        minor::ms_menu_check_chr_live(&mem(), i)
+    }
+    /// `MsGetSummonEnergy(i)`.
+    MsGetSummonEnergy @ 0x007b_2b00 => extern "C" fn ms_get_summon_energy(i: u32) -> u32 {
+        minor::ms_get_summon_energy(&mem(), i)
+    }
+    /// `MsEffectGetTargetFlag(i)`.
+    MsEffectGetTargetFlag @ 0x0078_7c10 => extern "C" fn ms_effect_get_target_flag(i: u32) -> i32 {
+        minor::ms_effect_get_target_flag(&mem(), i)
+    }
+    /// `MsSetMotionAttackWait(i)`.
+    MsSetMotionAttackWait @ 0x007a_b500 => extern "C" fn ms_set_motion_attack_wait(i: u32) -> u32 {
+        minor::ms_set_motion_attack_wait(&mut mem(), i)
+    }
+    /// `MsSetMotionReturn(i)`.
+    MsSetMotionReturn @ 0x007a_b520 => extern "C" fn ms_set_motion_return(i: u32) -> u32 {
+        minor::ms_set_motion_return(&mut mem(), i)
+    }
+    /// `MsDefensePosOff(actor)`.
+    MsDefensePosOff @ 0x007a_f880 => extern "C" fn ms_defense_pos_off(actor: u32) -> u32 {
+        minor::ms_defense_pos_off(&mut mem(), actor)
+    }
+    /// `MsPushBtlPosAll()`.
+    MsPushBtlPosAll @ 0x007a_c680 => extern "C" fn ms_push_btl_pos_all() {
+        minor::ms_push_btl_pos_all(&mut mem());
+    }
+    /// `MsInitParamData()`.
+    MsInitParamData @ 0x0078_5960 => extern "C" fn ms_init_param_data() {
+        minor::ms_init_param_data(&mut mem());
+    }
+    /// `MsInitMimic()`.
+    MsInitMimic @ 0x0079_9ab0 => extern "C" fn ms_init_mimic() {
+        minor::ms_init_mimic(&mut mem());
+    }
+    /// `MsInitChrAbilityMap()`.
+    MsInitChrAbilityMap @ 0x0079_8820 => extern "C" fn ms_init_chr_ability_map() {
+        minor::ms_init_chr_ability_map(&mut mem());
+    }
+    /// `MsBattleMemInit()`.
+    MsBattleMemInit @ 0x0078_1d00 => extern "C" fn ms_battle_mem_init() {
+        minor::ms_battle_mem_init(&mut mem());
+    }
+    /// `frnd()`: a float in [1, 2) on the x87 stack.
+    frnd @ 0x0079_8930 => extern "C" fn frnd() -> f32 {
+        minor::frnd(&mut mem())
+    }
+    /// `MsGetStatusThreat(i)`.
+    MsGetStatusThreat @ 0x0079_afc0 => extern "C" fn ms_get_status_threat(i: u32) -> u32 {
+        minor::ms_get_status_threat(&mem(), i)
+    }
+    /// `MsCheckChrHitMotionAll()`.
+    MsCheckChrHitMotionAll @ 0x007a_f2b0 => extern "C" fn ms_check_chr_hit_motion_all() -> i32 {
+        minor::ms_check_chr_hit_motion_all(&mem())
+    }
+    /// `MsSetPartyRelifeTime()`.
+    MsSetPartyRelifeTime @ 0x0078_e0a0 => extern "C" fn ms_set_party_relife_time() {
+        minor::ms_set_party_relife_time(&mut mem());
+    }
+    /// `MsCheckPlyBtlPosAll()`.
+    MsCheckPlyBtlPosAll @ 0x0079_2170 => extern "C" fn ms_check_ply_btl_pos_all() -> u32 {
+        minor::ms_check_ply_btl_pos_all(&mut mem())
+    }
+    /// `MsCommandStartChrStatusAll()`.
+    MsCommandStartChrStatusAll @ 0x0079_3ef0 => extern "C" fn ms_command_start_chr_status_all() {
+        minor::ms_command_start_chr_status_all(&mut mem());
+    }
+    /// `MsEffectCheck()`.
+    MsEffectCheck @ 0x0078_7810 => extern "C" fn ms_effect_check() -> u32 {
+        minor::ms_effect_check(&mem())
+    }
+    /// `MsEffectMotionLevel(id)`.
+    MsEffectMotionLevel @ 0x0078_7ca0 => extern "C" fn ms_effect_motion_level(id: u32) -> i32 {
+        minor::ms_effect_motion_level(&mem(), id)
+    }
+    /// `MsMenuStatusNumSize()`.
+    MsMenuStatusNumSize @ 0x0079_0220 => extern "C" fn ms_menu_status_num_size() -> i32 {
+        minor::ms_menu_status_num_size(&mem())
+    }
+    /// `MsProvOff(chr)`.
+    MsProvOff @ 0x0078_d4e0 => extern "C" fn ms_prov_off(chr: u32) {
+        minor::ms_prov_off(&mut mem(), chr);
+    }
+    /// `MsSaveEncountCheck()`.
+    MsSaveEncountCheck @ 0x0078_5b10 => extern "C" fn ms_save_encount_check() -> u32 {
+        minor::ms_save_encount_check(&mut mem())
+    }
+    /// `MsImportantName(id)`.
+    MsImportantName @ 0x0079_0860 => extern "C" fn ms_important_name(id: u32) -> u32 {
+        minor::ms_important_name(&mem(), id)
+    }
+    /// `MsSetSaveConfigEnglish(on)`: the language from `TkGetLang` (menu).
+    MsSetSaveConfigEnglish @ 0x0078_5ed0 => extern "C" fn ms_set_save_config_english(on: u32) {
+        let m = &mut mem();
+        let lang = ffx_menu::tk::bridge::tk_get_lang(m);
+        minor::ms_set_save_config_english(m, on, lang);
+    }
+    /// `MsBtlListEncount(i)`.
+    MsBtlListEncount @ 0x0079_d170 => extern "C" fn ms_btl_list_encount(i: i32) -> u32 {
+        minor::ms_btl_list_encount(&mem(), i)
+    }
+    /// `MsCheckInputCueExe(chr)`.
+    MsCheckInputCueExe @ 0x007b_1fd0 => extern "C" fn ms_check_input_cue_exe(chr: u32) -> u32 {
+        cue::ms_check_input_cue_exe(&mem(), chr)
+    }
+    /// `MsCheckCommandCueExe(chr)`.
+    MsCheckCommandCueExe @ 0x007b_07d0 => extern "C" fn ms_check_command_cue_exe(chr: u32) -> u32 {
+        cue::ms_check_command_cue_exe(&mem(), chr)
+    }
+    /// `MsCheckInputCuePos(chr)`.
+    MsCheckInputCuePos @ 0x007b_2020 => extern "C" fn ms_check_input_cue_pos(chr: u32) {
+        cue::ms_check_input_cue_pos(&mut mem(), chr);
+    }
+    /// `MsCheckTurnInputCue(chr)`.
+    MsCheckTurnInputCue @ 0x007b_2060 => extern "C" fn ms_check_turn_input_cue(chr: u32) -> u32 {
+        cue::ms_check_turn_input_cue(&mem(), chr)
+    }
+    /// `MsExeInputCue(chr, on)`.
+    MsExeInputCue @ 0x007b_2290 => extern "C" fn ms_exe_input_cue(chr: u32, on: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // a byte argument
+        cue::ms_exe_input_cue(&mut mem(), chr, on as u8)
+    }
+    /// `MsExeComandCue(chr, on)`.
+    MsExeComandCue @ 0x007b_0960 => extern "C" fn ms_exe_comand_cue(chr: u32, on: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // a byte argument
+        cue::ms_exe_comand_cue(&mut mem(), chr, on as u8)
+    }
+    /// `MsRegistInputCue(chr, prio, turn, flag)`.
+    MsRegistInputCue @ 0x007b_2430 => extern "C" fn ms_regist_input_cue(chr: u32, prio: u32, turn: u32, flag: u32) -> i32 {
+        #[allow(clippy::cast_possible_truncation)] // byte arguments
+        cue::ms_regist_input_cue(&mut mem(), chr, prio as u8, turn as u8, flag as u8)
+    }
+    /// `MsInsertInputCue(chr, prio, turn, flag, after, on)`.
+    MsInsertInputCue @ 0x007b_2300 => extern "C" fn ms_insert_input_cue(chr: u32, prio: u32, turn: u32, flag: u32, after: u32, on: u32) -> i32 {
+        #[allow(clippy::cast_possible_truncation)] // byte arguments
+        cue::ms_insert_input_cue(&mut mem(), chr, prio, turn as u8, flag, after, on as u8)
+    }
+    /// `MsDeleteCommandCue(chr, slot, keep)`.
+    MsDeleteCommandCue @ 0x007b_0860 => extern "C" fn ms_delete_command_cue(chr: u32, slot: u32, keep: u32) -> i32 {
+        cue::ms_delete_command_cue(&mut mem(), chr, slot, keep)
+    }
+    /// `MsGetDamageResult(chr, target, &damage, &kind, &more)`.
+    MsGetDamageResult @ 0x0079_a920 => extern "C" fn ms_get_damage_result(chr: u32, target: u32, damage: u32, kind: u32, more: u32) -> i32 {
+        cue::ms_get_damage_result(&mut mem(), chr, target, damage, kind, more)
+    }
+    /// `MsGetDamageInfo(chr, target, &a, &b, &c)`.
+    MsGetDamageInfo @ 0x0079_a680 => extern "C" fn ms_get_damage_info(chr: u32, target: u32, a: u32, b: u32, c: u32) -> i32 {
+        cue::ms_get_damage_info(&mut mem(), chr, target, [a, b, c])
+    }
+    /// `MsGetTargetList(chr, &n)`.
+    MsGetTargetList @ 0x007b_7090 => extern "C" fn ms_get_target_list(chr: u32, n: u32) -> u32 {
+        cue::ms_get_target_list(&mut mem(), chr, n)
     }
 }

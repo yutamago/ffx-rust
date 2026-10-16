@@ -164,6 +164,12 @@ pub mod bridge {
         text(mem, table, i, 0)
     }
 
+    /// `Msg_TableFlags(table, i)` (`0x0086bf00`): entry `i`'s flags in
+    /// `table`.
+    pub fn msg_table_flags(mem: &impl Mem, table: u32, i: i32) -> u16 {
+        mem.read::<u16>(entry(table, i).wrapping_add(2))
+    }
+
     /// `Msg_TableTextAlt(table, i)` (`0x0086ba60`): its alternate.
     pub fn msg_table_text_alt(mem: &impl Mem, table: u32, i: i32) -> u32 {
         text(mem, table, i, 4)

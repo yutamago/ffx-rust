@@ -8,7 +8,9 @@ rust-version.workspace = true
 
 [dependencies]
 ffx-bridge.workspace = true
+ffx-chara.workspace = true
 ffx-kernel.workspace = true
+ffx-ps2.workspace = true
 thiserror.workspace = true
 toml.workspace = true
 

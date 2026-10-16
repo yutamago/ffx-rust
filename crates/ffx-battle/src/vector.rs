@@ -314,4 +314,74 @@ pub mod bridge {
         set_vf(mem, 0, d);
         mem.write(out, d);
     }
+    /// `MsVectorGetSide(ax, az, bx, bz)` (`0x007c4180`): -1 when `b` lies
+    /// to one side of `a` (the y of `a × b` negative: `ax·bz` above
+    /// `az·bx`), else 0 (NaN too). The operands `(ax, 0, az, ?)` and
+    /// `(bx, 0, bz, ?)` go to the first two matrix registers (their w is
+    /// whatever the original's stack held: left as it was here), the
+    /// products to [`VF_ACC`], the cross product to the third register.
+    pub fn ms_vector_get_side(mem: &mut impl Mem, f: [u32; 4]) -> i32 {
+        use ffx_bridge::x87::{load, mul, store, sub};
+        let [ax, az, bx, bz] = f.map(load);
+        let mut m = VF_M.get(mem);
+        m[0] = [store(ax), 0, store(az), m[0][3]];
+        m[1] = [store(bx), 0, store(bz), m[1][3]];
+        let mut acc = VF_ACC.get(mem);
+        acc[0] = store(mul(bz, 0.0));
+        acc[1] = store(mul(az, bx));
+        acc[2] = store(mul(ax, 0.0));
+        m[2][0] = store(sub(load(acc[0]), mul(az, 0.0)));
+        let y = store(sub(load(acc[1]), mul(ax, bz)));
+        m[2][1] = y;
+        m[2][2] = store(sub(load(acc[2]), mul(bx, 0.0)));
+        VF_ACC.set(mem, acc);
+        VF_M.set(mem, m);
+        if 0.0 > f32::from_bits(y) { -1 } else { 0 }
+    }
+    /// `MsSubPoint(out, a, b)` (`0x007c40b0`): `out.xyz = a.xyz − b.xyz`
+    /// through the matrix registers (`a`, `b`, then the difference);
+    /// `out.w` is the result register's w; `vf00` restored.
+    pub fn ms_sub_point(mem: &mut impl Mem, out: u32, a: u32, b: u32) {
+        use ffx_bridge::x87::{load, store, sub};
+        let va: Vec4 = mem.read(a);
+        let vb: Vec4 = mem.read(b);
+        let mut m = VF_M.get(mem);
+        m[0] = va;
+        m[1] = vb;
+        for i in 0..3 {
+            m[2][i] = store(sub(load(va[i]), load(vb[i])));
+        }
+        VF_M.set(mem, m);
+        ffx_ps2::ee::bridge::restore_vf00(mem);
+        mem.write(out, m[2]);
+    }
+    /// `MsPointLen(a, b)` (`0x007c2ec0`) and `MsPointLen2D` (`0x007c3030`,
+    /// without y): `|a − b|` as `MsVectorLen` takes it, the difference in
+    /// the first register (y and w `a`'s in 2D, w `a`'s in 3D), `b` in the
+    /// third, `vf00` restored before the squares; an `f32`.
+    fn point_len(mem: &mut impl Mem, a: u32, b: u32, with_y: bool) -> f32 {
+        use ffx_bridge::x87::{load, store, sub};
+        let va: Vec4 = mem.read(a);
+        let vb: Vec4 = mem.read(b);
+        let mut d = va;
+        d[0] = store(sub(load(va[0]), load(vb[0])));
+        if with_y {
+            d[1] = store(sub(load(va[1]), load(vb[1])));
+        }
+        d[2] = store(sub(load(va[2]), load(vb[2])));
+        set_vf(mem, 2, vb);
+        ffx_ps2::ee::bridge::restore_vf00(mem);
+        let m = square_sum(mem, d, with_y);
+        length_out(mem, sqrt(m))
+    }
+
+    /// `MsPointLen(a, b)` (`0x007c2ec0`): see [`point_len`].
+    pub fn ms_point_len(mem: &mut impl Mem, a: u32, b: u32) -> f32 {
+        point_len(mem, a, b, true)
+    }
+
+    /// `MsPointLen2D(a, b)` (`0x007c3030`): see [`point_len`].
+    pub fn ms_point_len_2d(mem: &mut impl Mem, a: u32, b: u32) -> f32 {
+        point_len(mem, a, b, false)
+    }
 }

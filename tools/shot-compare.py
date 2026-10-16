@@ -16,7 +16,7 @@ import pathlib
 import struct
 import sys
 
-RADIUS = 4
+RADIUS = 12
 
 
 def pixels(path):
