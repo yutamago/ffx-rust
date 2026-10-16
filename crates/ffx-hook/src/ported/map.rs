@@ -4,7 +4,7 @@
 //! the original).
 
 use super::{mem, ported};
-use ffx_field::{geom, guide, model, nkz, packet, rcdt, task, vu0, yi};
+use ffx_field::{geom, guide, ke, model, nkz, packet, rcdt, rcui, scene, task, vu0, yi};
 
 ported! {
     /// `rcdtChunkInit(chunk)`.
@@ -383,5 +383,272 @@ ported! {
     /// `SqsIopSoundErrorStatus()`.
     SqsIopSoundErrorStatus @ 0x0081_d700 => extern "C" fn sqs_iop_sound_error_status() -> u32 {
         nkz::bridge::sqs_iop_sound_error_status(&mem())
+    }
+    /// `rcbgGuideSetPos(guide, x, y)`.
+    rcbgGuideSetPos @ 0x0091_d900 => extern "C" fn rcbg_guide_set_pos(g: u32, x: u32, y: u32) {
+        guide::bridge::rcbg_guide_set_pos(&mut mem(), g, x, y);
+    }
+    /// `rcbgGuideSetSize(guide, size)`.
+    rcbgGuideSetSize @ 0x0091_d920 => extern "C" fn rcbg_guide_set_size(g: u32, size: u32) {
+        guide::bridge::rcbg_guide_set_size(&mut mem(), g, size);
+    }
+    /// `rcbgGuideSetTarget(guide, target)`.
+    rcbgGuideSetTarget @ 0x0091_d930 => extern "C" fn rcbg_guide_set_target(g: u32, target: u32) {
+        guide::bridge::rcbg_guide_set_target(&mut mem(), g, target);
+    }
+    /// `rcbgGuideGetTarget()`.
+    rcbgGuideGetTarget @ 0x0091_d480 => extern "C" fn rcbg_guide_get_target() -> u32 {
+        guide::bridge::rcbg_guide_get_target(&mem())
+    }
+    /// `rcbgGuideSetFlags(guide, bits)`.
+    rcbgGuideSetFlags @ 0x0091_d430 => extern "C" fn rcbg_guide_set_flags(g: u32, bits: u32) {
+        guide::bridge::rcbg_guide_set_flags(&mut mem(), g, bits);
+    }
+    /// `rcbgGuideClearFlags(guide, bits)`.
+    rcbgGuideClearFlags @ 0x0091_d420 => extern "C" fn rcbg_guide_clear_flags(g: u32, bits: u32) {
+        guide::bridge::rcbg_guide_clear_flags(&mut mem(), g, bits);
+    }
+    /// `rcbgGuideSetFlag3(guide, on)`.
+    rcbgGuideSetFlag3 @ 0x0091_d510 => extern "C" fn rcbg_guide_set_flag3(g: u32, on: i32) {
+        guide::bridge::rcbg_guide_set_flag3(&mut mem(), g, on);
+    }
+    /// `rcbgGuideGetLimit(guide)`.
+    rcbgGuideGetLimit @ 0x0091_d450 => extern "C" fn rcbg_guide_get_limit(g: u32) -> f32 {
+        guide::bridge::rcbg_guide_get_limit(&mem(), g)
+    }
+    /// `rcbgGuideSetLimit(guide, limit)`.
+    rcbgGuideSetLimit @ 0x0091_d580 => extern "C" fn rcbg_guide_set_limit(g: u32, limit: u32) {
+        guide::bridge::rcbg_guide_set_limit(&mut mem(), g, limit);
+    }
+    /// `Guide_SetEnabled(on)`.
+    Guide_SetEnabled @ 0x0091_f640 => extern "C" fn guide_set_enabled(on: u32) {
+        guide::bridge::guide_set_enabled(&mut mem(), on);
+    }
+    /// `Yn_GuideMapSetMode(target)`.
+    Yn_GuideMapSetMode @ 0x0091_9e20 => extern "C" fn yn_guide_map_set_mode(target: u32) {
+        guide::bridge::yn_guide_map_set_mode(&mut mem(), target);
+    }
+    /// `Yn_GuideMapSetFlags(bits)`.
+    Yn_GuideMapSetFlags @ 0x0091_9c30 => extern "C" fn yn_guide_map_set_flags(bits: u32) {
+        guide::bridge::yn_guide_map_set_flags(&mut mem(), bits);
+    }
+    /// `Yn_GuideMapClearFlags(bits)`.
+    Yn_GuideMapClearFlags @ 0x0091_9c00 => extern "C" fn yn_guide_map_clear_flags(bits: u32) {
+        guide::bridge::yn_guide_map_clear_flags(&mut mem(), bits);
+    }
+    /// `Yn_GuideMapSetFlag3(on)`.
+    Yn_GuideMapSetFlag3 @ 0x0091_9d40 => extern "C" fn yn_guide_map_set_flag3(on: i32) {
+        guide::bridge::yn_guide_map_set_flag3(&mut mem(), on);
+    }
+    /// `Yn_GuideMapGetLimit()`.
+    Yn_GuideMapGetLimit @ 0x0091_9ca0 => extern "C" fn yn_guide_map_get_limit() -> f32 {
+        guide::bridge::yn_guide_map_get_limit(&mem())
+    }
+    /// `Yn_GuideMapSetLimit(limit)`.
+    Yn_GuideMapSetLimit @ 0x0091_9df0 => extern "C" fn yn_guide_map_set_limit(limit: u32) {
+        guide::bridge::yn_guide_map_set_limit(&mut mem(), limit);
+    }
+    /// `Yn_GuideMapSetPos(x, y)`.
+    Yn_GuideMapSetPos @ 0x0091_9e50 => extern "C" fn yn_guide_map_set_pos(x: u32, y: u32) {
+        guide::bridge::yn_guide_map_set_pos(&mut mem(), x, y);
+    }
+    /// `Yn_GuideMapSetSize(size)`.
+    Yn_GuideMapSetSize @ 0x0091_9e80 => extern "C" fn yn_guide_map_set_size(size: u32) {
+        guide::bridge::yn_guide_map_set_size(&mut mem(), size);
+    }
+    /// `Yn_MapPartCount()`.
+    Yn_MapPartCount @ 0x0091_a3d0 => extern "C" fn yn_map_part_count() -> i32 {
+        guide::bridge::yn_map_part_count(&mem())
+    }
+    /// `Yn_MapPartAnimeOn(part)`.
+    Yn_MapPartAnimeOn @ 0x0091_9f90 => extern "C" fn yn_map_part_anime_on(part: i32) {
+        guide::bridge::yn_map_part_anime_on(&mut mem(), part);
+    }
+    /// `Yn_MapPartAnimeOff(part)`.
+    Yn_MapPartAnimeOff @ 0x0091_9f40 => extern "C" fn yn_map_part_anime_off(part: i32) {
+        guide::bridge::yn_map_part_anime_off(&mut mem(), part);
+    }
+    /// `Yn_PSimGetCnt()`.
+    Yn_PSimGetCnt @ 0x0091_9ef0 => extern "C" fn yn_psim_get_cnt() -> u32 {
+        guide::bridge::yn_psim_get_cnt()
+    }
+    /// `Yn_SeaGetMatrix()`.
+    Yn_SeaGetMatrix @ 0x0091_ae00 => extern "C" fn yn_sea_get_matrix() -> u32 {
+        guide::bridge::yn_sea_get_matrix(&mem())
+    }
+    /// `rcbgSceneInit(scene)`.
+    rcbgSceneInit @ 0x0092_09e0 => extern "C" fn rcbg_scene_init(s: u32) {
+        scene::bridge::rcbg_scene_init(&mut mem(), s);
+    }
+    /// `rcbgSceneGetObject(scene, kind, n)`.
+    rcbgSceneGetObject @ 0x0092_0950 => extern "C" fn rcbg_scene_get_object(s: u32, kind: u32, n: u32) -> u32 {
+        scene::bridge::rcbg_scene_get_object(&mem(), s, kind, n)
+    }
+    /// `rcbgSceneCountObjects(scene, kind)`.
+    rcbgSceneCountObjects @ 0x0092_09a0 => extern "C" fn rcbg_scene_count_objects(s: u32, kind: u32) -> u32 {
+        scene::bridge::rcbg_scene_count_objects(&mem(), s, kind)
+    }
+    /// `rcbgChunkTag(i)`.
+    rcbgChunkTag @ 0x0092_1b90 => extern "C" fn rcbg_chunk_tag(i: u32) -> u32 {
+        scene::bridge::rcbg_chunk_tag(&mem(), i)
+    }
+    /// `rcbgLayerInit(layer)`.
+    rcbgLayerInit @ 0x0092_ad20 => extern "C" fn rcbg_layer_init(l: u32) {
+        scene::bridge::rcbg_layer_init(&mut mem(), l);
+    }
+    /// `rcdtParseSetMode(parse, mode)`.
+    rcdtParseSetMode @ 0x0092_c0c0 => extern "C" fn rcdt_parse_set_mode(p: u32, mode: u32) {
+        rcdt::bridge::rcdt_parse_set_mode(&mut mem(), p, mode);
+    }
+    /// `rcdtParseAddSeparators(parse, chars)`.
+    rcdtParseAddSeparators @ 0x0092_c0f0 => extern "C" fn rcdt_parse_add_separators(p: u32, chars: u32) {
+        rcdt::bridge::rcdt_parse_add_separators(&mut mem(), p, chars);
+    }
+    /// `rcdtChunkSet(chunk, data, size)`.
+    rcdtChunkSet @ 0x0092_b920 => extern "C" fn rcdt_chunk_set(c: u32, data: u32, size: u32) {
+        rcdt::bridge::rcdt_chunk_set(&mut mem(), c, data, size);
+    }
+    /// `rcdtChunkGetEnd(chunk)`.
+    rcdtChunkGetEnd @ 0x0092_b820 => extern "C" fn rcdt_chunk_get_end(c: u32) -> u32 {
+        rcdt::bridge::rcdt_chunk_get_end(&mem(), c)
+    }
+    /// `rcdtChunkIsEmpty(chunk)`.
+    rcdtChunkIsEmpty @ 0x0092_b860 => extern "C" fn rcdt_chunk_is_empty(c: u32) -> u32 {
+        u32::from(rcdt::bridge::rcdt_chunk_is_empty(&mem(), c))
+    }
+    /// `rcdtTm2Init(tm2)`.
+    rcdtTm2Init @ 0x0092_37e0 => extern "C" fn rcdt_tm2_init(t: u32) {
+        rcdt::bridge::rcdt_tm2_init(&mut mem(), t);
+    }
+    /// `rcbgModelGetScale(model)`.
+    rcbgModelGetScale @ 0x0092_8300 => extern "C" fn rcbg_model_get_scale(m: u32) -> f32 {
+        model::bridge::rcbg_model_get_scale(&mem(), m)
+    }
+    /// `rcbgTrxGetCnt(trx)`.
+    rcbgTrxGetCnt @ 0x0092_d4c0 => extern "C" fn rcbg_trx_get_cnt(t: u32) -> u32 {
+        model::bridge::rcbg_trx_get_cnt(&mem(), t)
+    }
+    /// `rcbgTrxGetEntry(trx, n)`.
+    rcbgTrxGetEntry @ 0x0092_d4d0 => extern "C" fn rcbg_trx_get_entry(t: u32, n: u32) -> u32 {
+        model::bridge::rcbg_trx_get_entry(&mem(), t, n)
+    }
+    /// `rcbgTrxGetEntryData(trx, n)`.
+    rcbgTrxGetEntryData @ 0x0092_d4f0 => extern "C" fn rcbg_trx_get_entry_data(t: u32, n: u32) -> u32 {
+        model::bridge::rcbg_trx_get_entry_data(&mem(), t, n)
+    }
+    /// `rcbgPSimInit(psim)`.
+    rcbgPSimInit @ 0x0091_fe00 => extern "C" fn rcbg_psim_init(p: u32) {
+        model::bridge::rcbg_psim_init(&mut mem(), p);
+    }
+    /// `rcbgPSimGetOmdIn(psim)`.
+    rcbgPSimGetOmdIn @ 0x0091_fdc0 => extern "C" fn rcbg_psim_get_omd_in(p: u32) -> u32 {
+        model::bridge::rcbg_psim_get_omd_in(&mem(), p)
+    }
+    /// `rcbgFPm173End(fp)`.
+    rcbgFPm173End @ 0x0092_2b50 => extern "C" fn rcbg_fpm173_end(f: u32) {
+        model::bridge::rcbg_fpm173_end(&mut mem(), f);
+    }
+    /// `rcPad16(n)`.
+    rcPad16 @ 0x0092_b2c0 => extern "C" fn rc_pad16(n: i32) -> i32 {
+        model::pad16(n)
+    }
+    /// `rcLog2Ceil(n)`.
+    rcLog2Ceil @ 0x0092_9910 => extern "C" fn rc_log2_ceil(n: i32) -> u32 {
+        model::log2_ceil(n)
+    }
+    /// `rcefModelInit(model)`.
+    rcefModelInit @ 0x0092_f750 => extern "C" fn rcef_model_init(m: u32) {
+        task::bridge::rcef_model_init(&mut mem(), m);
+    }
+    /// `rcefIsBattle()`.
+    rcefIsBattle @ 0x0092_e620 => extern "C" fn rcef_is_battle() -> u32 {
+        u32::from(task::bridge::rcef_is_battle(&mem()))
+    }
+    /// `rcefDirToAngle(dir)`.
+    rcefDirToAngle @ 0x0092_de30 => extern "C" fn rcef_dir_to_angle(dir: u32) -> f32 {
+        task::bridge::rcef_dir_to_angle(&mem(), dir)
+    }
+    /// `rcVec3fDot(a, b)`.
+    rcVec3fDot @ 0x0092_1220 => extern "C" fn rc_vec3f_dot(a: u32, b: u32) -> f32 {
+        geom::bridge::rc_vec3f_dot(&mem(), a, b)
+    }
+    /// `rcBBoxSet(box, points, n)`.
+    rcBBoxSet @ 0x0092_1530 => extern "C" fn rc_bbox_set(b: u32, points: u32, n: i32) {
+        geom::bridge::rc_bbox_set(&mut mem(), b, points, n);
+    }
+    /// `rcCalcPersMatrix(dst, m)`.
+    rcCalcPersMatrix @ 0x0092_0020 => extern "C" fn rc_calc_pers_matrix(dst: u32, m: u32) {
+        geom::bridge::rc_calc_pers_matrix(&mut mem(), dst, m);
+    }
+    /// `rcbgUpdateMatrix()`.
+    rcbgUpdateMatrix @ 0x0092_b160 => extern "C" fn rcbg_update_matrix() {
+        geom::bridge::rcbg_update_matrix(&mut mem());
+    }
+    /// `yiSetRenderParam(v)`.
+    yiSetRenderParam @ 0x0090_8580 => extern "C" fn yi_set_render_param(v: u32) {
+        yi::bridge::yi_set_render_param(&mut mem(), v);
+    }
+    /// `yiCheckDObj(index)`.
+    yiCheckDObj @ 0x0090_86b0 => extern "C" fn yi_check_dobj(index: u32) -> i32 {
+        yi::bridge::yi_check_dobj(&mem(), index)
+    }
+    /// `yiSetColor3(r, g, b)`: the low bytes.
+    yiSetColor3 @ 0x0090_a400 => extern "C" fn yi_set_color3(r: u32, g: u32, b: u32) -> u32 {
+        let [r, g, b] = [r, g, b].map(|c| c.to_le_bytes()[0]);
+        yi::bridge::yi_set_color3(&mut mem(), r, g, b)
+    }
+    /// `rcuiMouseMoveEnd()`.
+    rcuiMouseMoveEnd @ 0x0093_c050 => extern "C" fn rcui_mouse_move_end() {
+        rcui::bridge::rcui_mouse_move_end(&mut mem());
+    }
+    /// `rcuiMouseMoveReset()`: the same code.
+    rcuiMouseMoveReset @ 0x0093_c110 => extern "C" fn rcui_mouse_move_reset() {
+        rcui::bridge::rcui_mouse_move_end(&mut mem());
+    }
+    /// `rcuiMouseMoveGetID()`.
+    rcuiMouseMoveGetID @ 0x0093_c100 => extern "C" fn rcui_mouse_move_get_id() -> u32 {
+        rcui::bridge::rcui_mouse_move_get_id(&mem())
+    }
+    /// `rcuiMouseMoveIsID(id)`.
+    rcuiMouseMoveIsID @ 0x0093_c120 => extern "C" fn rcui_mouse_move_is_id(id: u32) -> u32 {
+        u32::from(rcui::bridge::rcui_mouse_move_is_id(&mem(), id))
+    }
+    /// `rcuiNumberIsOK(input)`.
+    rcuiNumberIsOK @ 0x0093_c3d0 => extern "C" fn rcui_number_is_ok(input: u32) -> u32 {
+        rcui::bridge::rcui_number_is_ok(&mut mem(), input)
+    }
+    /// `rcuiCopyVector(dst, src)`.
+    rcuiCopyVector @ 0x0093_ce50 => extern "C" fn rcui_copy_vector(dst: u32, src: u32) {
+        rcui::bridge::rcui_copy_vector(&mut mem(), dst, src);
+    }
+    /// `rcuiCopyMatrix(dst, src)`.
+    rcuiCopyMatrix @ 0x0093_ce10 => extern "C" fn rcui_copy_matrix(dst: u32, src: u32) {
+        rcui::bridge::rcui_copy_matrix(&mut mem(), dst, src);
+    }
+    /// `KeThResHd_Init(hd, count, size)`: the low bytes of both.
+    KeThResHd_Init @ 0x0076_4bb0 => extern "C" fn ke_th_res_hd_init(hd: u32, count: u32, size: u32) {
+        let [c, _, _, _] = count.to_le_bytes();
+        let [s, _, _, _] = size.to_le_bytes();
+        ke::bridge::ke_th_res_hd_init(&mut mem(), hd, c, s);
+    }
+    /// `KeThCp_Init(cp)`.
+    KeThCp_Init @ 0x0076_4800 => extern "C" fn ke_th_cp_init(cp: u32) {
+        ke::bridge::ke_th_cp_init(&mut mem(), cp);
+    }
+    /// `KeLnsFls_Init(obj)`.
+    KeLnsFls_Init @ 0x0076_9690 => extern "C" fn ke_lns_fls_init(o: u32) {
+        ke::bridge::ke_lns_init(&mut mem(), o);
+    }
+    /// `KeLnsCrn_Init(obj)`: the same code.
+    KeLnsCrn_Init @ 0x0076_a170 => extern "C" fn ke_lns_crn_init(o: u32) {
+        ke::bridge::ke_lns_init(&mut mem(), o);
+    }
+    /// `KeLnsClm_Init(obj)`.
+    KeLnsClm_Init @ 0x0076_9ca0 => extern "C" fn ke_lns_clm_init(o: u32) {
+        ke::bridge::ke_lns_clm_init(&mut mem(), o);
+    }
+    /// `KeLnsFlr_Init(obj, src)`.
+    KeLnsFlr_Init @ 0x0076_a1d0 => extern "C" fn ke_lns_flr_init(o: u32, src: u32) {
+        ke::bridge::ke_lns_flr_init(&mut mem(), o, src);
     }
 }

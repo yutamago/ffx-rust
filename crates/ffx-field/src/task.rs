@@ -126,6 +126,10 @@ pub mod anime {
     pub const WORK: u32 = 0x50;
 }
 
+/// `3π/2`, the original's `.rdata` double (`0x00b67e18`; the `f32`
+/// nearest it, widened).
+pub const THREE_HALF_PI: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b6_7e18);
+
 /// The stack level after `rcefTaskCallSeq`, or `None` when the stack is
 /// full (nothing changes).
 #[must_use]
@@ -349,6 +353,25 @@ pub mod bridge {
         mem.write(a + anime::OUT[1], out1);
         mem.write(a + anime::RUNNING, 1u32);
         mem.write(a + anime::CURSOR, a + anime::WORK);
+    }
+
+    /// `rcefModelInit(model)` (`0x0092f750`): an object's model part,
+    /// `0xd0` bytes, cleared.
+    pub fn rcef_model_init(mem: &mut impl Mem, m: u32) {
+        mem.write_bytes(m, &[0; 0xd0]);
+    }
+
+    /// `rcefIsBattle()` (`0x0092e620`): whether a battle runs
+    /// (`MsBattleGetStatus` non-zero).
+    pub fn rcef_is_battle(mem: &impl Mem) -> bool {
+        ffx_battle::state::bridge::ms_battle_get_status(mem) != 0
+    }
+
+    /// `rcefDirToAngle(dir)` (`0x0092de30`): `3π/2 - dir`, as `f32`; the
+    /// float as bits.
+    pub fn rcef_dir_to_angle(mem: &impl Mem, dir: u32) -> f32 {
+        let k = super::THREE_HALF_PI.get(mem);
+        f32::from_bits(crate::x87::store(k - crate::x87::load(dir)))
     }
 
     /// `rcEffectTaskParWait(obj)` (`0x00930490`): a sequence that returns
