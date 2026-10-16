@@ -4618,6 +4618,46 @@ fn tk_round7_matches_the_original() {
             gu::gu_font_setup_window(o, fw);
             0
         });
+        let v: Vec<f32> = (0..4)
+            .map(|_| t.rng.pick(&[0.0f32, 1.0, -2.5, 3.0e-3, 1e20, -7.0, 1e-30]))
+            .collect();
+        let vb: Vec<u8> = v.iter().flat_map(|f| f.to_le_bytes()).collect();
+        let vp = t.alloc(&vb);
+        t.twin("TkNormalFVector", 0x0088_c5a0, &[vp], VOID, |o| {
+            tk::tk_normal_f_vector(o, vp);
+            0
+        });
+        // the scene-name table against a string
+        let table = t.sym(0x00c5_b240);
+        let k0 = t.rng.below(7);
+        let name: Vec<u8> = (0..12)
+            .map(|j| Mem::read::<u8>(&t.b, table + 0x10 * k0 + j))
+            .collect();
+        let mut text = t
+            .rng
+            .bytes(8)
+            .into_iter()
+            .map(|c| (c & 0x3f) + 0x30)
+            .collect::<Vec<u8>>();
+        if t.rng.below(2) == 0 {
+            text.extend(name.iter().take_while(|&&c| c != 0));
+        }
+        text.push(0);
+        t.put_bytes(t.sym(0x023c_bc60), &text);
+        let id: u32 = if t.rng.below(2) == 0 {
+            Mem::read(&t.b, table + 0x10 * k0 + 0xc)
+        } else {
+            t.rng.next()
+        };
+        t.put(t.sym(0x0132_5ac0), id);
+        let kind = t.rng.pick(&[0xeu32, 0xe, 3]);
+        t.twin(
+            "MenuWin_MatchSceneTable",
+            0x008e_02f0,
+            &[0, kind],
+            U32,
+            |o| w(tk::menu_win_match_scene_table(o, i(kind))),
+        );
         let sc = t.rng.pick(&[0u32, 1, 0x40, 0x7f, 0x80, 0x100, 0xffff_ffff]);
         t.scramble(0x0186_63d0, 8);
         t.twin("Tk_NoteEternalCalm", 0x0088_ec90, &[sc], U32, |o| {
@@ -4781,5 +4821,121 @@ fn menu_openers_match_the_original() {
             &mut callback,
         ))
     });
+    eprintln!("{} calls", t.calls);
+}
+
+/// The element words `TkMenuDrawRect` sets (the rest is stack garbage).
+const UI_FIELDS: [u32; 16] = [
+    0, 4, 0x10, 0x14, 0x18, 0x1c, 0x20, 0x24, 0x30, 0x34, 0x38, 0x3c, 0x80, 0x88, 0x90, 0x94,
+];
+
+/// `graphicGetAbmap` returns the word at `cell`; `graphicDrawUIElement`
+/// appends the element's set words and its four other arguments at `*log`
+/// and returns `0x77`. In both oracles. Returns (`cell`, `log`).
+fn record_ui(t: &mut Twins) -> (u32, u32) {
+    let cell = t.alloc(&[0; 4]);
+    let buf = t.alloc(&vec![0; 0x10000]);
+    let log = t.alloc(&buf.to_le_bytes());
+    let l = log.to_le_bytes();
+    let mut draw: Vec<u8> = vec![0x8b, 0x4c, 0x24, 0x04, 0x8b, 0x15]; // ecx = element, edx = [log]
+    draw.extend(l);
+    let mut k = 0u32;
+    for off in UI_FIELDS {
+        draw.extend([0x8b, 0x81]); // mov eax, [ecx + off]
+        draw.extend(off.to_le_bytes());
+        draw.extend([0x89, 0x82]); // mov [edx + k], eax
+        draw.extend(k.to_le_bytes());
+        k += 4;
+    }
+    for a in 0..4u8 {
+        draw.extend([0x8b, 0x44, 0x24, 8 + 4 * a]); // mov eax, [esp + 8 + 4a]
+        draw.extend([0x89, 0x82]);
+        draw.extend(k.to_le_bytes());
+        k += 4;
+    }
+    draw.extend([0x81, 0x05]); // add dword [log], k
+    draw.extend(l);
+    draw.extend(k.to_le_bytes());
+    draw.extend([0xb8, 0x77, 0, 0, 0, 0xc3]);
+    let mut abmap = vec![0xa1];
+    abmap.extend(cell.to_le_bytes());
+    abmap.push(0xc3);
+    for o in [&mut t.a, &mut t.b] {
+        let d = o.rebase(0x0063_eee0);
+        o.write(d, &draw).unwrap();
+        let a = o.rebase(0x0064_1060);
+        o.write(a, &abmap).unwrap();
+    }
+    (cell, log)
+}
+
+/// The draw recorder's effect, for the bridge side.
+fn draw_into(o: &mut Oracle, log: u32, fields: &[(u32, u32)]) -> u32 {
+    let at: u32 = Mem::read(o, log);
+    let mut k = 0;
+    for off in UI_FIELDS {
+        let v = fields.iter().find(|f| f.0 == off).expect("a set field").1;
+        Mem::write(o, at + k, v);
+        k += 4;
+    }
+    for v in [0u32, 1, 0, 0] {
+        Mem::write(o, at + k, v);
+        k += 4;
+    }
+    Mem::write(o, log, at + k);
+    0x77
+}
+
+#[test]
+fn menu_rects_match_the_original() {
+    let Some(mut t) = setup_any(0x0dd3_4000) else {
+        return;
+    };
+    let (cell, log) = record_ui(&mut t);
+    let entries = Mem::read::<u32>(&t.b, t.sym(0x00c5_a900));
+    for _ in 0..60 {
+        let ab = t.rng.pick(&[0u32, 0, 1, 2]);
+        t.put(cell, ab);
+        let r = [t.rng.int(), t.rng.int(), t.rng.int(), t.rng.int()];
+        let c = [t.rng.next(), t.rng.next()];
+        t.twin(
+            "TkMenuDrawRect",
+            0x008d_d340,
+            &[r[0], r[1], r[2], r[3], c[0], c[1]],
+            U32,
+            |o| {
+                w(tk::tk_menu_draw_rect(
+                    o,
+                    r.map(i),
+                    c,
+                    &mut |o| Mem::read(o, cell),
+                    &mut |o, f| draw_into(o, log, f),
+                ))
+            },
+        );
+        let pk = t.alloc_random(0x1000);
+        t.put(t.sym(tk::MENU_PACKET.sym), pk);
+        let (x, y) = (t.rng.below(0x280), t.rng.below(0x200));
+        let entry = t.rng.below(entries + 2);
+        let alpha = t.rng.below(0x100);
+        for (name, sym, args, al) in [
+            ("TkMenuDrawSp3FaceA", 0x008d_d610, vec![x, y, entry], 0x80),
+            (
+                "TkMenuDrawSp3FaceAA",
+                0x008d_d6a0,
+                vec![x, y, entry, alpha],
+                alpha,
+            ),
+        ] {
+            t.twin(name, sym, &args, U32, |o| {
+                w(tk::tk_menu_draw_sp3_face(
+                    o,
+                    [x, y, entry, al],
+                    &mut |o| Mem::read(o, cell),
+                    &mut |o, f| draw_into(o, log, f),
+                ))
+            });
+        }
+    }
     eprintln!("{} calls", t.calls);
 }

@@ -5723,6 +5723,7 @@
 0x008dd0d0 function TkMenuDrawMenuInfoWindow2 # fh switch:bsim1.00 0x71004c1ee0
 0x008dd1c0 function TkMenuDrawMenuWeapon      # fh switch:bsim1.00 0x71004c1b10
 0x008dd310 function TkMenuDrawMes1208Clut     # fh switch:bsim1.00 0x71004c19f0
+0x008dd340 function TkMenuDrawRect            # (x, y, w, h, c0, c1) PC: graphicDrawUIElement(element, 0, 1, 0, 0) unless graphicGetAbmap() == 1; corners (x, y), (x + w, y + h) as floats with c0/c1 bytes, depth 1000; Switch name, the one name for the slot TkMenuDrawMes1208Clut..TkMenuDrawScissorClear
 0x008dd440 function TkMenuDrawScissorClear    # fh switch:bsim1.00 0x71004bfe20
 0x008dd460 function TkMenuDrawScissorRect     # 5-byte jmp TODrawScissorXYWH thunk (not a function in the dump, left original); Switch name, after TkMenuDrawScissorClear
 0x008dd4f0 function TkMenuDrawShape           # fh switch:bsim1.00 0x71004c3910
@@ -5767,6 +5768,7 @@
 0x008e0200 function MenuWin_StateSlide        # (w) +0x2c = 1, float +0x4c -= 12, +0x114 = +0x104; returns 0; own name
 0x008e0240 function MenuWin_StateOpen         # (w) +0x2c = 2, +0xa0 = +0xa8, handlers 0x008e0230 (+0x114), 0x008de970 (+0x11c); returns 0; own name
 0x008e0280 function MenuWin_StateWaitText     # (w) +0x2e = 2, or 3 when the text at +0x98 is empty; +0x120 = itself; returns 0; own name
+0x008e02f0 function MenuWin_MatchSceneTable   # (_, kind) 0x01871534 = kind == 14 and one of 7 records at 0x00c5b240 (name, id +0xc) has its name in the string at 0x023cbc60 (strstr) and id == 0x01325ac0; own name
 0x008e0350 function TkMenuCtrlMain            # fh v3:exact 0x008e0340
 0x008e0ba0 function TkMenuDrawMain            # fh call.cs cdecl
 0x008e1c60 function TkMenuAppearMainCmdWindow # fh call.cs cdecl

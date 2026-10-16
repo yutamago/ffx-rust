@@ -4085,6 +4085,123 @@ pub mod bridge {
         mem.write(out + 1, trail_base.wrapping_add(d));
         2
     }
+    /// `TkNormalFVector(v)` (`0x0088c5a0`): `FFXVu0Normalize(v, v)`.
+    pub fn tk_normal_f_vector(mem: &mut impl Mem, v: u32) {
+        ffx_ps2::vu0::bridge::normalize(mem, v, v);
+    }
+
+    /// The C runtime's `strstr` on game strings: whether `needle` occurs
+    /// in `hay` (an empty needle always does).
+    fn c_contains(mem: &impl Mem, hay: u32, needle: u32) -> bool {
+        let read = |p: u32| {
+            let mut v = Vec::new();
+            let mut q = p;
+            loop {
+                let c: u8 = mem.read(q);
+                if c == 0 {
+                    return v;
+                }
+                v.push(c);
+                q = q.wrapping_add(1);
+            }
+        };
+        let (h, n) = (read(hay), read(needle));
+        n.is_empty() || h.windows(n.len()).any(|w| w == n.as_slice())
+    }
+
+    /// `MenuWin_MatchSceneTable(_, kind)` (`0x008e02f0`, own name): the
+    /// flag at `0x01871534` set when `kind` is 14 and one of the seven
+    /// 16-byte records at `0x00c5b240` (a name, then an id at `+0xc`) has
+    /// its name inside the string at `0x023cbc60` and its id equal to
+    /// `0x01325ac0`; cleared otherwise. Returns what the last record leaves
+    /// in `eax`: that global's value when its name matched, else 0.
+    pub fn menu_win_match_scene_table(mem: &mut impl Mem, kind: i32) -> u32 {
+        let flag = mem.rebase(0x0187_1534);
+        mem.write(flag, 0u32);
+        let hay = mem.rebase(0x023c_bc60);
+        let table = mem.rebase(0x00c5_b240);
+        let cur: u32 = mem.read(mem.rebase(0x0132_5ac0));
+        let mut eax = 0;
+        for k in 0..7 {
+            let rec = table + 0x10 * k;
+            eax = 0;
+            if c_contains(mem, hay, rec) {
+                eax = cur;
+                if cur == mem.read::<u32>(rec + 0xc) && kind == 0xe {
+                    mem.write(flag, 1u32);
+                }
+            }
+        }
+        eax
+    }
+
+    /// `TkMenuDrawRect(x, y, w, h, c0, c1)` (`0x008dd340`): on
+    /// PC a renderer UI element (`graphicDrawUIElement(element, 0, 1, 0,
+    /// 0)`), skipped while `graphicGetAbmap` is 1: corners (`x`, `y`) and
+    /// (`x + w`, `y + h`) as floats, each with the bytes of its colour, depth
+    /// 1000. `draw` gets the element's set fields as (offset, word); the
+    /// original's other words are stack garbage. Returns `draw`'s result,
+    /// or 1 when skipped.
+    #[allow(clippy::cast_precision_loss, clippy::many_single_char_names)]
+    pub fn tk_menu_draw_rect<M: Mem>(
+        mem: &mut M,
+        [x, y, w, h]: [i32; 4],
+        colours: [u32; 2],
+        abmap: &mut impl FnMut(&mut M) -> u32,
+        draw: &mut impl FnMut(&mut M, &[(u32, u32)]) -> u32,
+    ) -> u32 {
+        if abmap(mem) == 1 {
+            return 1;
+        }
+        let f = |v: i32| (v as f32).to_bits();
+        let mut fields = vec![
+            (0, f(x)),
+            (4, f(y)),
+            (0x20, f(x.wrapping_add(w))),
+            (0x24, f(y.wrapping_add(h))),
+            (0x80, 1000),
+            (0x88, 0),
+            (0x90, 0),
+            (0x94, 0),
+        ];
+        for (base, c) in [(0x10, colours[0]), (0x30, colours[1])] {
+            for k in 0..4 {
+                fields.push((base + 4 * k, (c >> (8 * k)) & 0xff));
+            }
+        }
+        draw(mem, &fields)
+    }
+
+    /// `TkMenuDrawSp3FaceA(x, y, entry)` (`0x008dd610`) and
+    /// `TkMenuDrawSp3FaceAA(x, y, entry, alpha)` (`0x008dd6a0`): a face
+    /// sprite (`MenuDraw_SpriteP1`, tint `alpha`) at `g_TkMenuPacket +
+    /// 0x10`, then its frame as four [`tk_menu_draw_rect`] bars (grey
+    /// `0x40808080`): top and bottom `0x5e × 2`, left and right `0xb ×
+    /// 0x39`. Returns the last bar's result.
+    pub fn tk_menu_draw_sp3_face<M: Mem>(
+        mem: &mut M,
+        [x, y, entry, alpha]: [u32; 4],
+        abmap: &mut impl FnMut(&mut M) -> u32,
+        draw: &mut impl FnMut(&mut M, &[(u32, u32)]) -> u32,
+    ) -> u32 {
+        let p = MENU_PACKET.get(mem).wrapping_add(0x10);
+        MENU_PACKET.set(mem, p);
+        let end = menu_draw_sprites_plain(mem, [p, 1, x, y, entry, 0, 0, alpha]);
+        MENU_PACKET.set(mem, end);
+        let (x, y) = (x.cast_signed(), y.cast_signed());
+        let grey = [0x4080_8080; 2];
+        tk_menu_draw_rect(mem, [x, y, 0x5e, 2], grey, abmap, draw);
+        tk_menu_draw_rect(mem, [x, y.wrapping_add(0x3b), 0x5e, 2], grey, abmap, draw);
+        let y2 = y.wrapping_add(2);
+        tk_menu_draw_rect(mem, [x, y2, 0xb, 0x39], grey, abmap, draw);
+        tk_menu_draw_rect(
+            mem,
+            [x.wrapping_add(0x53), y2, 0xb, 0x39],
+            grey,
+            abmap,
+            draw,
+        )
+    }
 }
 
 #[cfg(test)]

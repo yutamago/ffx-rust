@@ -39,13 +39,45 @@ fn user_malloc(size: u32) -> u32 {
     )
 }
 
-/// Calls a game function pointer (a menu callback, cdecl) with one to three
+/// `graphicGetAbmap()` (`0x00641060`), the renderer's.
+fn graphic_get_abmap() -> u32 {
+    call_ptr(
+        u32::try_from(crate::rebase(0x0064_1060)).expect("32-bit"),
+        &[],
+    )
+}
+
+/// `graphicDrawUIElement(element, 0, 1, 0, 0)` (`0x0063eee0`), the
+/// renderer's, on an element built from `fields` (the rest zero).
+fn graphic_draw_ui_element(fields: &[(u32, u32)]) -> u32 {
+    let mut element = [0u32; 0x26];
+    for &(o, v) in fields {
+        element[(o / 4) as usize] = v;
+    }
+    let p = u32::try_from(element.as_mut_ptr() as usize).expect("32-bit");
+    call_ptr(
+        u32::try_from(crate::rebase(0x0063_eee0)).expect("32-bit"),
+        &[p, 0, 1, 0, 0],
+    )
+}
+
+/// Calls a game function pointer (a menu callback, cdecl) with zero to five
 /// arguments.
+#[allow(clippy::many_single_char_names)] // the arguments in order
 fn call_ptr(f: u32, args: &[u32]) -> u32 {
     // SAFETY: `f` is a callback the game stored in a menu window; the
     // originals call it as cdecl with these arguments.
     unsafe {
         match *args {
+            [] => {
+                let f: unsafe extern "C" fn() -> u32 = std::mem::transmute(f as usize);
+                f()
+            }
+            [a, b, c, d, e] => {
+                let f: unsafe extern "C" fn(u32, u32, u32, u32, u32) -> u32 =
+                    std::mem::transmute(f as usize);
+                f(a, b, c, d, e)
+            }
             [a] => {
                 let f: unsafe extern "C" fn(u32) -> u32 = std::mem::transmute(f as usize);
                 f(a)
@@ -2766,5 +2798,25 @@ ported! {
     /// `Gu_FontSetupWindow(window)`.
     Gu_FontSetupWindow @ 0x0084_8310 => extern "C" fn gu_font_setup_window(window: u32) {
         gu::gu_font_setup_window(&mut mem(), window);
+    }
+    /// `TkNormalFVector(v)`.
+    TkNormalFVector @ 0x0088_c5a0 => extern "C" fn tk_normal_f_vector(v: u32) {
+        tk::tk_normal_f_vector(&mut mem(), v);
+    }
+    /// `MenuWin_MatchSceneTable(_, kind)`: see the bridge for `eax`.
+    MenuWin_MatchSceneTable @ 0x008e_02f0 => extern "C" fn menu_win_match_scene_table(_a: u32, kind: i32) -> u32 {
+        tk::menu_win_match_scene_table(&mut mem(), kind)
+    }
+    /// `TkMenuDrawRect(x, y, w, h, c0, c1)`: through the renderer.
+    TkMenuDrawRect @ 0x008d_d340 => extern "C" fn tk_menu_draw_rect(x: i32, y: i32, w: i32, h: i32, c0: u32, c1: u32) -> u32 {
+        tk::tk_menu_draw_rect(&mut mem(), [x, y, w, h], [c0, c1], &mut |_| graphic_get_abmap(), &mut |_, f| graphic_draw_ui_element(f))
+    }
+    /// `TkMenuDrawSp3FaceA(x, y, entry)`: the last rectangle's result.
+    TkMenuDrawSp3FaceA @ 0x008d_d610 => extern "C" fn tk_menu_draw_sp3_face_a(x: u32, y: u32, entry: u32) -> u32 {
+        tk::tk_menu_draw_sp3_face(&mut mem(), [x, y, entry, 0x80], &mut |_| graphic_get_abmap(), &mut |_, f| graphic_draw_ui_element(f))
+    }
+    /// `TkMenuDrawSp3FaceAA(x, y, entry, alpha)`: the last rectangle's result.
+    TkMenuDrawSp3FaceAA @ 0x008d_d6a0 => extern "C" fn tk_menu_draw_sp3_face_aa(x: u32, y: u32, entry: u32, alpha: u32) -> u32 {
+        tk::tk_menu_draw_sp3_face(&mut mem(), [x, y, entry, alpha], &mut |_| graphic_get_abmap(), &mut |_, f| graphic_draw_ui_element(f))
     }
 }
