@@ -11,6 +11,7 @@ ffx-bridge.workspace = true
 ffx-battle.workspace = true
 ffx-field.workspace = true
 ffx-sg.workspace = true
+ffx-script.workspace = true
 ffx-chara.workspace = true
 ffx-kernel.workspace = true
 ffx-system.workspace = true

@@ -829,6 +829,147 @@ pub mod bridge {
         mem.write(reg, [0x3fu32, 0]);
         PACKET_COUNT.set(mem, n.wrapping_add(2));
     }
+
+    /// `Gu_WindowStartDrag(window)` (`0x0084a580`, own name): flag `0x20`,
+    /// the drag origin from the mouse and flag `0x10` (as
+    /// [`gu_window_start_move`]), then `Gu_WindowStartMove` on its open
+    /// children and itself recursively on them.
+    #[allow(clippy::many_single_char_names, clippy::cast_sign_loss)]
+    pub fn gu_window_start_drag(mem: &mut impl Mem, w: u32) {
+        let f = mem.read::<u32>(at(w, 0x88)) | 0x20;
+        mem.write(at(w, 0x88), f);
+        let x = MOUSE_X.get(mem);
+        let list = WINDOW_LIST.get(mem);
+        #[allow(clippy::cast_possible_truncation)] // 16-bit stores
+        mem.write(at(w, 0x1c), x as u16);
+        let y = MOUSE_Y.get(mem);
+        #[allow(clippy::cast_possible_truncation)]
+        mem.write(at(w, 0x1e), y as u16);
+        mem.write(at(w, 0x20), 0u32);
+        let f = mem.read::<u32>(at(w, 0x88)) | 0x10;
+        mem.write(at(w, 0x88), f);
+        let mut c = list;
+        while c != 0 {
+            if mem.read::<u32>(at(c, 8)) == w {
+                gu_window_start_move(mem, c);
+            }
+            c = mem.read(c);
+        }
+        let mut c = list;
+        while c != 0 {
+            if mem.read::<u32>(at(c, 8)) == w {
+                gu_window_start_drag(mem, c);
+            }
+            c = mem.read(c);
+        }
+    }
+
+    /// `Gu_WindowCloseTree(window)` (`0x0084ab80`, own name): its handler
+    /// `+0x7c` gets `(window, 0x8003, 0)`, it is flagged closed (4), and so
+    /// are its children, recursively.
+    pub fn gu_window_close_tree<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let f = mem.read::<u32>(at(w, 0x7c));
+        if f != 0 {
+            call(mem, f, &[w, 0x8003, 0]);
+        }
+        let mut c = WINDOW_LIST.get(mem);
+        let v = mem.read::<u32>(at(w, 0x88)) | 4;
+        mem.write(at(w, 0x88), v);
+        while c != 0 {
+            if mem.read::<u32>(at(c, 8)) == w {
+                gu_window_close_tree(mem, c, call);
+            }
+            c = mem.read(c);
+        }
+    }
+
+    /// `Gu_ListCopyNext(node)` (`0x0084a600`, own name): along the list,
+    /// each node's `+4` = its `+0`.
+    pub fn gu_list_copy_next(mem: &mut impl Mem, node: u32) {
+        let mut n = node;
+        while n != 0 {
+            let next = mem.read::<u32>(n);
+            mem.write(at(n, 4), next);
+            n = next;
+        }
+    }
+
+    /// `Gu_WindowMouseIn(window)` (`0x00849490`, own name): `Gu_SetHScale`
+    /// of its scale, then whether the mouse is strictly inside its `i16`
+    /// rectangle `+0xc`.
+    pub fn gu_window_mouse_in(mem: &mut impl Mem, w: u32) -> u32 {
+        gu_set_h_scale(mem, gu_window_get_h_scale(mem, w));
+        let r = |o| i32::from(mem.read::<i16>(at(w, o)));
+        let (x, y, ww, hh) = (r(0xc), r(0xe), r(0x10), r(0x12));
+        let (mx, my) = (MOUSE_X.get(mem), MOUSE_Y.get(mem));
+        u32::from(x < mx && mx < ww + x && y < my && my < hh + y)
+    }
+
+    /// `Gu_WindowControlSetLeftText(window, id, on)` (`0x0084a6c0`): flag
+    /// `0x10` of each control `id` set to `on` bit 0.
+    pub fn gu_window_control_set_left_text(mem: &mut impl Mem, w: u32, id: u16, on: u32) {
+        let n = mem.read::<i32>(at(w, 0x90));
+        for k in 0..n.max(0).cast_unsigned() {
+            let c = mem.read::<u32>(at(w, 0x94)).wrapping_add(k * 0x44);
+            if mem.read::<u16>(at(c, 0x2e)) == id {
+                let v = mem.read::<u32>(at(c, 0x40));
+                mem.write(at(c, 0x40), v ^ (((on << 4) ^ v) & 0x10));
+            }
+        }
+    }
+
+    /// `Gu_WindowControlSetRect(window, id, x, y, w, h)` (`0x008496d0`,
+    /// own name): the first control `id` gets the given corner (offset by
+    /// the window's client origin `+0x80`) and size, each -1 kept, in its
+    /// three rectangles.
+    #[allow(clippy::many_single_char_names)]
+    pub fn gu_window_control_set_rect(mem: &mut impl Mem, win: u32, id: u32, v: [i32; 4]) {
+        let n = mem.read::<i32>(at(win, 0x90));
+        let mut k = 0;
+        loop {
+            if k >= n {
+                return;
+            }
+            let c = mem
+                .read::<u32>(at(win, 0x94))
+                .wrapping_add(k.cast_unsigned() * 0x44);
+            if u32::from(mem.read::<u16>(at(c, 0x2e))) == id {
+                break;
+            }
+            k += 1;
+        }
+        let c = mem
+            .read::<u32>(at(win, 0x94))
+            .wrapping_add(k.cast_unsigned() * 0x44);
+        let base = [
+            mem.read::<u16>(at(win, 0x80)),
+            mem.read::<u16>(at(win, 0x82)),
+            0,
+            0,
+        ];
+        for (j, (&val, &b)) in v.iter().zip(&base).enumerate() {
+            if val != -1 {
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let s = b.wrapping_add(val as u16);
+                let j = u32::try_from(j).unwrap_or(0);
+                for r in 0..3 {
+                    mem.write(at(c, 2 * j + 8 * r), s);
+                }
+            }
+        }
+    }
+
+    /// `Gu_MouseSetWindow(window)` (`0x00849b90`): `Sg_SetMouse` at the
+    /// window's corner.
+    pub fn gu_mouse_set_window(mem: &mut impl Mem, w: u32) -> i32 {
+        let x = i32::from(mem.read::<i16>(at(w, 0xc)));
+        let y = i32::from(mem.read::<i16>(at(w, 0xe)));
+        ffx_sg::state::bridge::set_mouse(mem, x, y)
+    }
 }
 
 #[cfg(test)]

@@ -91,6 +91,22 @@ pub const fn menu_help_ratio(a: i32, b: i32) -> i32 {
     b.wrapping_add(2).wrapping_mul(a).wrapping_mul(2) / 4
 }
 
+/// The GS register packers (`Gs_Pack4` and copies): `(a, b, c, d)` as the
+/// `u64` `a | b << 32 | c << 16 | d << 48` (the `or`s overlapping).
+#[must_use]
+pub const fn gs_pack4(a: u32, b: u32, c: u32, d: u32) -> u64 {
+    (a as u64) | ((b as u64) << 32) | ((c as u64) << 16) | ((d as u64) << 48)
+}
+
+/// `Gs_Pack5(a, b, c, d, e)` and copies: [`gs_pack4`] with `e & 0x0ffffff0`
+/// folded in above `c` and `d` (`<< 12`).
+#[must_use]
+#[allow(clippy::many_single_char_names)]
+pub const fn gs_pack5(a: u32, b: u32, c: u32, d: u32, e: u32) -> u64 {
+    let e = e & 0x0fff_fff0;
+    gs_pack4(a, b, (e << 12) | c, (e >> 20) | d)
+}
+
 /// A menu command list: 4-byte records (`u8` a, `u8` b, two more bytes)
 /// ending at a record whose first byte is `0xff`. `TkMenuGetCommandOffset`:
 /// the index of the first record matching `(a, b)`, 0 when none does (or
@@ -2973,11 +2989,13 @@ pub mod bridge {
     }
 
     /// `TkMenuDrawInitString()` (`0x008dce30`): both menu packet pointers
-    /// from `Sg_PacketGetPtr` (after the no-op `TkVU1SyncPath`).
-    pub fn tk_menu_draw_init_string(mem: &mut impl Mem) {
+    /// from `Sg_PacketGetPtr` (after the no-op `TkVU1SyncPath`); the
+    /// pointer back (left in `eax`).
+    pub fn tk_menu_draw_init_string(mem: &mut impl Mem) -> u32 {
         let p = ffx_sg::state::bridge::packet_get_ptr(mem);
         mem.write(mem.rebase(0x0187_152c), p);
         MENU_PACKET.set(mem, p);
+        p
     }
 
     /// `TkMn2DrawMenuWindowScissor(y, h, mode, ratio)` (`0x008c0f70`): a
@@ -3030,6 +3048,98 @@ pub mod bridge {
         let t = WSHOP_TABLE.get(mem);
         #[allow(clippy::cast_possible_wrap)]
         tk_mn2_get_excel_data(mem, (id & 0xfff) as i32, t)
+    }
+
+    /// `TkMenuMainFreeWindow(window)` (`0x008aa3f0`): reset, unused
+    /// (`+0x40`), idle.
+    pub fn tk_menu_main_free_window(mem: &mut impl Mem, w: u32) {
+        menu_main_reset_window(mem, w);
+        mem.write(w.wrapping_add(0x40), 0u8);
+        mem.write(w.wrapping_add(0x28), 0u32);
+    }
+
+    /// The menu's 32 window records (`0x98` bytes each).
+    pub const MENU_WINDOWS: Global<u8> = Global::new(0x0184_0900);
+
+    /// `MenuMain_ResetAllWindows()` (`0x008aa470`, own name): every window
+    /// record reset.
+    pub fn menu_main_reset_all_windows(mem: &mut impl Mem) {
+        let base = MENU_WINDOWS.ptr(mem).addr;
+        for k in 0..0x20 {
+            menu_main_reset_window(mem, base + k * 0x98);
+        }
+    }
+
+    /// `TkMenuDrawKick()` (`0x008dce50`): the full-screen scissor, then
+    /// `TkMenuDrawInitString`; the packet pointer back.
+    pub fn tk_menu_draw_kick(mem: &mut impl Mem) -> u32 {
+        ffx_system::pkt::bridge::draw_scissor_xywh(mem, 0, 0, 0x200, 0x1a0);
+        tk_menu_draw_init_string(mem)
+    }
+
+    /// `Msg_CancelChoice(worker, slot)` (`0x00864150`, own name): after
+    /// `AtelGetBasicWork(worker)` (for its cache), choice slot `slot` (0..3) of the current script context: its pending answer
+    /// `+0x64` = -1, `+0x68` = 0, `+0x73` = 0; a pending one (not negative)
+    /// first writes the default byte `+0x72` to its target `+0x6c`.
+    pub fn msg_cancel_choice(mem: &mut impl Mem, worker: i32, slot: i32) {
+        ffx_script::vm::bridge::atel_get_basic_work(mem, worker);
+        let ctx = mem.read::<u32>(mem.rebase(0x0132_6b28));
+        let s = ctx.wrapping_add(slot.clamp(0, 3).cast_unsigned() << 4);
+        let old = mem.read::<i32>(s + 0x64);
+        mem.write(s + 0x64, u32::MAX);
+        mem.write(s + 0x68, 0u32);
+        mem.write(s + 0x73, 0u8);
+        if old >= 0 {
+            let to = mem.read::<u32>(s + 0x6c);
+            let v = mem.read::<u8>(s + 0x72);
+            mem.write(to, v);
+        }
+    }
+
+    /// `TkSetDebugFontBuffer(p)` (`0x0088fab0`): the debug font's current
+    /// pointer; past its end (`+0xc`) the original only logs. Returns the
+    /// end (left in `eax`).
+    pub fn tk_set_debug_font_buffer(mem: &mut impl Mem, p: u32) -> u32 {
+        let buf = DEBUG_FONT_BUFFER.get(mem);
+        mem.write(buf, p);
+        mem.read::<u32>(buf.wrapping_add(0xc))
+    }
+
+    /// The `+0x28`-float of an object (`Obj_GetFloat28`).
+    pub fn obj_get_float28(mem: &impl Mem, p: u32) -> f32 {
+        mem.read(p.wrapping_add(0x28))
+    }
+
+    /// The two-float table at `0x01325b98` (`Tk_GetScale`): entry
+    /// `which != 0`.
+    pub const SCALE_PAIR: Global<[f32; 2]> = Global::new(0x0132_5b98);
+
+    /// `Tk_GetScale(which)` (`0x00872360`, own name).
+    pub fn tk_get_scale(mem: &impl Mem, which: u32) -> f32 {
+        SCALE_PAIR.get(mem)[usize::from(which != 0)]
+    }
+
+    /// `Tk_SetScale(which, v)` (`0x00872530`, own name): stored through
+    /// `fld`/`fstp` (a signalling NaN comes out quiet).
+    pub fn tk_set_scale(mem: &mut impl Mem, which: u32, v: f32) {
+        let at = SCALE_PAIR.ptr(mem).addr + 4 * u32::from(which != 0);
+        mem.write(at, ffx_bridge::x87::round_trip(v));
+    }
+
+    /// `Math_AngleFrom12Bits(a)` (`0x0088c0a0`) and `Math_AngleFrom15Bits`
+    /// (`0x0088c0e0`, own names): the low `bits` of `a` as an angle (×2π
+    /// from `0x00b39378`, ÷ the scale constant, each step rounded to `f32`
+    /// as the original stores it), wrapped by `Math_WrapAngle`.
+    pub fn math_angle_from_bits(mem: &impl Mem, a: u32, mask: u32, scale: u32) -> f32 {
+        #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+        let v = f64::from(a & mask) as f32;
+        let tau = mem.read::<f64>(mem.rebase(0x00b3_9378));
+        let div = mem.read::<f64>(mem.rebase(scale));
+        #[allow(clippy::cast_possible_truncation)]
+        let v = (f64::from(v) * tau) as f32;
+        #[allow(clippy::cast_possible_truncation)]
+        let v = (f64::from(v) / div) as f32;
+        crate::math::wrap_angle(v)
     }
 }
 
