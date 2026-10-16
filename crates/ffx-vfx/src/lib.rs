@@ -7,6 +7,7 @@
 //! - [`rand`]: VU0's random register (`op_random`, `op_random_p`);
 //! - [`ppp`]: particle programs and rotation matrices;
 //! - [`prog`]: the program table's set-ups and steps;
+//! - [`mat`]: the matrix programs and their draws;
 //! - [`heap`]: the particle heaps;
 //! - [`fp`]: the field's particle effects;
 //! - [`op`]: the op layer's services;
@@ -19,6 +20,7 @@
 pub mod et;
 pub mod fp;
 pub mod heap;
+pub mod mat;
 pub mod op;
 pub mod opd;
 pub mod opus;

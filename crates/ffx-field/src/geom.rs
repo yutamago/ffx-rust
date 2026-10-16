@@ -44,6 +44,16 @@ pub const CLIP_WORLD: Global<[f32; 16]> = Global::new(0x025d_58a0);
 /// [`VIEW_WORLD`] through the screen matrix (`rcbgUpdateMatrix`).
 pub const SCREEN_WORLD: Global<[f32; 16]> = Global::new(0x025d_5920);
 
+/// 10.0, an `f64` in `.rdata`: a model's scale factor
+/// (`rcbgModelSetScale`).
+pub const MODEL_SCALE: Global<f64> = Global::new(0x00b9_22b0);
+/// 0.01, an `f32` in `.rdata` (`rcMat4fSetScale001`).
+pub const SCALE_001: u32 = 0x00b1_f2b0;
+/// 0.001, an `f32` in `.rdata` (`rcMat4fSetScale0001`).
+pub const SCALE_0001: u32 = 0x00b3_68a4;
+/// -2.0, an `f64` in `.rdata` (`rcbgSetClipMatrix`).
+pub const CLIP_FACTOR: Global<f64> = Global::new(0x00b2_c5d0);
+
 /// Offset of a matrix's translation row.
 pub const MAT_TRANSLATE: u32 = 0x30;
 
@@ -89,8 +99,10 @@ pub mod bridge {
     use ffx_bridge::Mem;
 
     use super::{CAMERA_MATRIX, CLIP, CLIP_WORLD, SCREEN_MATRIX, SCREEN_WORLD, VIEW_WORLD, WORLD};
+    use super::{CLIP_FACTOR, MODEL_SCALE};
     use super::{MAT_TRANSLATE, bbox, center, cross_term, length3, short_convert_scale};
     use crate::x87;
+    use ffx_bridge::x87::Reg;
 
     fn vec3(mem: &impl Mem, v: u32) -> [u32; 3] {
         mem.read(v)
@@ -258,6 +270,88 @@ pub mod bridge {
     pub fn rc_mat4f_set_translate_vec3f(mem: &mut impl Mem, matrix: u32, v: u32) {
         let [x, y, z] = vec3(mem, v).map(x87::copy);
         rc_mat4f_set_translate(mem, matrix, x, y, z);
+    }
+
+    /// `rcMat4fSetScale(m, x, y, z)` (`0x009257f0`): the identity with the
+    /// diagonal's first three set (`fld; fstp`); returns
+    /// `FFXVu0UnitMatrix`'s `eax`.
+    pub fn rc_mat4f_set_scale(mem: &mut impl Mem, m: u32, x: u32, y: u32, z: u32) -> u32 {
+        let r = ffx_ps2::vu0::bridge::matrix_identity(mem, m);
+        mem.write(m, x87::copy(x));
+        mem.write(m + 0x14, x87::copy(y));
+        mem.write(m + 0x28, x87::copy(z));
+        r
+    }
+
+    /// `rcbgSetClipMatrix(w, h, d, near, far)` (`0x0092b0d0`): the identity
+    /// with `2d / w`, `2d / h`, `(near + far) / (far - near)`,
+    /// `near * (far * -2.0) / (far - near)` (the -2.0 an `f64` in
+    /// `.rdata`), `[2][3]` 1
+    /// and `[3][3]` 0, kept on the x87 stack between stores.
+    pub fn rcbg_set_clip_matrix(
+        mem: &mut impl Mem,
+        w: f32,
+        h: f32,
+        d: f32,
+        near: f32,
+        far: f32,
+    ) -> u32 {
+        let c = CLIP.ptr(mem).addr;
+        let r = ffx_ps2::vu0::bridge::matrix_identity(mem, c);
+        let d2 = Reg::load(d) + Reg::load(d);
+        mem.write(c, (d2 / Reg::load(w)).store());
+        mem.write(c + 0x14, d2.div_m32(h).store());
+        let (n, f) = (Reg::load(near), Reg::load(far));
+        let span = f - n;
+        mem.write(c + 0x28, ((n + f) / span).store());
+        let k = Reg::constant(CLIP_FACTOR.get(mem));
+        mem.write(c + 0x38, ((n * (f * k)) / span).store());
+        mem.write(c + 0x2c, 1f32);
+        mem.write(c + 0x3c, 0f32);
+        r
+    }
+
+    /// `rcbgSetWorldMatrix(m)` (`0x0092b140`): `FFXVu0CopyMatrix` into
+    /// [`WORLD`]; returns its `eax`.
+    pub fn rcbg_set_world_matrix(mem: &mut impl Mem, m: u32) -> u32 {
+        let w = WORLD.ptr(mem).addr;
+        ffx_ps2::vu0::bridge::matrix_copy(mem, w, m)
+    }
+
+    /// `rcMat4fSetScaleVec3f(m, v)` (`0x00925820`): [`rc_mat4f_set_scale`]
+    /// with the vector's x, y, z.
+    pub fn rc_mat4f_set_scale_vec3f(mem: &mut impl Mem, m: u32, v: u32) -> u32 {
+        let [x, y, z] = vec3(mem, v).map(x87::copy);
+        rc_mat4f_set_scale(mem, m, x, y, z)
+    }
+
+    /// `rcbgModelSetScale(model, s)` (`0x00928540`): the model's matrix
+    /// (`+0xc0`) a uniform scale of `s * 10.0` (the 10.0 an `f64` in
+    /// `.rdata`, the product stored as `f32`).
+    pub fn rcbg_model_set_scale(mem: &mut impl Mem, model: u32, s: f32) -> u32 {
+        let k = Reg::constant(MODEL_SCALE.get(mem));
+        let v = (Reg::load(s) * k).store().to_bits();
+        rc_mat4f_set_scale(mem, model.wrapping_add(0xc0), v, v, v)
+    }
+
+    /// `rcMat4fSetScale001(m)` (`0x0092de50`): the identity scaled by 0.01
+    /// (an `f32` in `.rdata`); returns `FFXVu0UnitMatrix`'s `eax`.
+    pub fn rc_mat4f_set_scale_001(mem: &mut impl Mem, m: u32) -> u32 {
+        uniform_scale(mem, m, super::SCALE_001)
+    }
+
+    /// `rcMat4fSetScale0001(m)` (`0x0092de80`): by 0.001.
+    pub fn rc_mat4f_set_scale_0001(mem: &mut impl Mem, m: u32) -> u32 {
+        uniform_scale(mem, m, super::SCALE_0001)
+    }
+
+    fn uniform_scale(mem: &mut impl Mem, m: u32, k: u32) -> u32 {
+        let r = ffx_ps2::vu0::bridge::matrix_identity(mem, m);
+        let v = x87::copy(mem.read::<u32>(mem.rebase(k)));
+        mem.write(m + 0x28, v);
+        mem.write(m + 0x14, v);
+        mem.write(m, v);
+        r
     }
 }
 

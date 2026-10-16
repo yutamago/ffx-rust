@@ -5,6 +5,42 @@
 use ffx_ps2::{ee::bridge as ee, vu0::bridge as vu0};
 
 use super::{mem, ported};
+use ffx_ps2::vu0::{Axis, Trig};
+
+/// MSVCR110's `_CIcos` or `_CIsin` through the game's import slot
+/// (`0x00b0c3b4`, `0x00b0c3b8`): the angle in `ST0` as `fld dword` loads
+/// it, the result stored as `fstp dword` stores it.
+fn crt_trig(t: Trig, x: f32) -> f32 {
+    let slot = match t {
+        Trig::Cos => 0x00b0_c3b4,
+        Trig::Sin => 0x00b0_c3b8,
+    };
+    // SAFETY: the slot holds the address of the CRT's intrinsic, which
+    // takes its argument in ST0 and returns in ST0 (eax, ecx, edx, the x87
+    // and SSE registers clobbered).
+    #[cfg(target_arch = "x86")]
+    unsafe {
+        let f = (crate::rebase(slot) as *const usize).read();
+        let bits: u32;
+        std::arch::asm!(
+            "fld dword ptr [{x}]",
+            "call {f}",
+            "sub esp, 4",
+            "fstp dword ptr [esp]",
+            "pop eax",
+            x = in(reg) &raw const x,
+            f = in(reg) f,
+            lateout("eax") bits,
+            clobber_abi("C"),
+        );
+        f32::from_bits(bits)
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = (slot, x);
+        unreachable!("the CRT's trigonometry runs in the 32-bit game")
+    }
+}
 
 ported! {
     /// `FFXVu0CopyVector(dst, src)`.
@@ -111,6 +147,26 @@ ported! {
     /// `setZSFlag()`.
     setZSFlag @ 0x0042_ef30 => extern "C" fn set_zs_flag() {
         ee::set_zs_flag(&mut mem());
+    }
+    /// `FFXVu0Normalize(dst, src)`.
+    FFXVu0Normalize @ 0x006e_d6f0 => extern "C" fn ffx_vu0_normalize(dst: u32, src: u32) {
+        vu0::normalize(&mut mem(), dst, src);
+    }
+    /// `FFXVu0RotMatrixX(dst, src, angle)`.
+    FFXVu0RotMatrixX @ 0x006e_d780 => extern "C" fn ffx_vu0_rot_matrix_x(dst: u32, src: u32, angle: f32) -> u32 {
+        vu0::rot_matrix(&mut mem(), Axis::X, dst, src, angle, &mut crt_trig)
+    }
+    /// `FFXVu0RotMatrixY(dst, src, angle)`.
+    FFXVu0RotMatrixY @ 0x006e_d7c0 => extern "C" fn ffx_vu0_rot_matrix_y(dst: u32, src: u32, angle: f32) -> u32 {
+        vu0::rot_matrix(&mut mem(), Axis::Y, dst, src, angle, &mut crt_trig)
+    }
+    /// `FFXVu0RotMatrixZ(dst, src, angle)`.
+    FFXVu0RotMatrixZ @ 0x006e_d800 => extern "C" fn ffx_vu0_rot_matrix_z(dst: u32, src: u32, angle: f32) -> u32 {
+        vu0::rot_matrix(&mut mem(), Axis::Z, dst, src, angle, &mut crt_trig)
+    }
+    /// `FFXVu0ClipScreen()`.
+    FFXVu0ClipScreen @ 0x0083_5b90 => extern "C" fn ffx_vu0_clip_screen() -> u32 {
+        vu0::clip_screen(&mem())
     }
     /// `setSSFlag()`.
     setSSFlag @ 0x0042_ef20 => extern "C" fn set_ss_flag() {

@@ -187,6 +187,126 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   group `+0x74` (`u16`), rotation order `+0x76` (`yiGetMatrixDObj`,
   `yiGetMatrixGroup`).
 
+## Renderer state and textures (round 4)
+
+- Render state save (`yiPushRenderState` `0x00909c60`,
+  `yiPopRenderState` `0x00909b90`): the area at `0x01931230` holds the
+  render status, colour scale (`0x018df00c`), colour offset
+  (`0x018df01c`), a word (`0x018df140`), three floats (`0x018df144`),
+  the colour shift (`0x018df150`), then 128 display objects as 100-byte
+  records: the object's `+0x88` float, rotation, translation and matrix.
+  Floats move through `fld`/`fstp`, vectors through `FFXVu0CopyVector`,
+  matrices with `rep movsd`.
+- Background colour (`yiGetBackColor` `0x009086d0`): RGBA bytes at
+  `0x018df178`. With render status bits 0 and 2 each channel is
+  `channel * scale + offset` (each step stored as `f32`), clamped to
+  `0..=255` and converted with `_ftol2_sse`; else the raw bytes.
+- Battle centre (`0x018df02c`) is kept divided by the four scale factor
+  words (`yiSetBattleCenter`, `yiGetBattleCenter`).
+- The renderer object `g_YiRender` (`0x01876e00`): `+0x68788` the object
+  count animations may name, `+0x9cabc` animations in use, `+0x9cac0` 64
+  animation slots of `0x28` bytes (`+0` flags, bit 0 in use; `+4` kind,
+  4 default and 1 keyframe; `+6` object id; `+0x14`/`+0x18` start time
+  from `yiGetFCount` or `yiGetVCount` by `0x0193bb08`; `+0x24` keyframe
+  data), `+0x9d4c4` keyframe data per index, `+0x9d9c4` texture swaps in
+  use, `+0x9d9c8` 64 texture swaps of `0x720` bytes (eight words, then
+  64 slots of `0x1c`; `+4` the frame shown, `+0x1c` the frame count)
+  (`yiAnimAttachDefault_009143c0`, `yiKeyFrame_attachChr` `0x00914630`,
+  `yiTexSwap_init` `0x009152d0`, `yiTexSwapSetFrame` `0x00909e30`).
+- Map data sections (`yiMapGetSection` `0x00907f00`): data tagged `MAP1`
+  has section offsets at `+0x10 + 4 * index`, relative to the data.
+- VRAM regions (`yiVramAllocPsm` `0x00918090`): four bump regions
+  (`0x025d17a8`: limits at `+0..+0xc`, next addresses at `+0x10..+0x1c`;
+  region 0 is `yiVramAlloc`'s). PSMT8 and PSMT4 images that fit neither
+  of the first two take four or eight times their size from the last
+  two.
+
+## Scene parts, TIM2 and the sphere grid (round 4)
+
+- Fog of war (`Guide_RevealFog` `0x0091f420`): the guide's 64 x 64 bit
+  map at `+0x70`; the player's cell is `((x - ox * 10) / 40,
+  (oz * 10 - z) / 40)` through `_ftol2_sse` (`ox`, `oz` the minimap
+  model's `+0x90`, `+0xa8`), and the 13 cells of a radius-2 diamond
+  around it (clamped to the map) are marked seen.
+
+- Per-map FP parts (`rcbgFP.c`, chosen by map in `0x00921a50`): type
+  `0x20008` and two functions at `+4`, `+8`: map `0x61`
+  (`rcbgFPm097Init`), `0xad` (`rcbgFPm173Init`), `0x235`/`0x236`
+  (`rcbgFPm565Init`). `rcfxDampInit` (`0x009293d0`): type `0x30003`,
+  factor 0.0001 at `+0x1c`.
+- `rcbgFpGetWork(id, part, index)` (`0x00923100`): the FP run record's
+  data (`+0x30`), its part list (`+8`), the part table (`+0`), entry
+  `0x28 + 16 * part`, its work offsets (`+0xc`): `offset + 0xa0 + data`.
+  `Yn_PSimGetHandle(n)` reads the word at work `(n + 0x5b, 6, 2)`.
+- Scene waves: `Yn_SceneSetDC` starts one (`+0xdc` mode) that
+  `rcbgSceneWaveDCStop` (`0x00920650`) ends; `Yn_SceneSetC0` another
+  (`+0xc0`) ended by `rcbgSceneWaveC0Stop` (`0x00921200`).
+- TIM2: the picture header's image type (`+0x13`) maps to a GS pixel
+  format through `0x00c5e754` (`rcdtTm2GetPsm`); `rcdtTm2ClutAlphaToPs2`
+  scales CLUT alphas from 0..255 to 0..128 (`a * 128 / 255`).
+- Map part language overrides (`MapPart_InitLangOverrides` `0x0067c620`,
+  `MapPart_LangOverride` `0x0067fb30`): two entries of ten words at
+  `+0x2c00` of the field object, a map id and nine parts by language
+  slot (game languages 0..5, then 9 and 10).
+- Sphere grid (`g_Abmap`, `0x02305834`): `+4` link count, nodes of
+  `0x28` bytes from `+0x808` (x, y `i16`, kind at `+6`, panel bits at
+  `+0x21`), link flags every `0x14` bytes from `+0xa816`, node kind
+  sizes every `0x30` bytes from `+0xf834` (`AbmapGetNodePosRadius`
+  returns half of it).
+- Lens flare shapes (`KeLnsShp_Update` `0x0076abe0`): the state's clock
+  (`u16`) moves `0x200` a frame through frames of 8 bytes (duration at
+  `+0x12`, bit 7 of `+0x14` loops); `KeLnsClm_SetShp` seeds element
+  phases with `s = s * 0x80d + 7` (16 bits) over 65535.0.
+
+## Map parts, sphere grid moves, render set-up (round 5)
+
+- Map part (scene layer, `0xc0` bytes) fields the script natives read and
+  write through `Yn_MapPart*` (`0x00919fe0`..`0x0091acc0`; each checks the
+  part against `Yn_MapPartCount`): `+4`/`+8` width and height, `+0xc`,
+  `+0x10`, `+0x14` (float), `+0x24`, `+0x28`, colour alpha `+0x43`, scale
+  `+0x44`/`+0x48`, position `+0x4c`/`+0x50`; a scale change from
+  `+0x54`/`+0x5c` to `+0x58`/`+0x60` over `+0x74` frames (counter
+  `+0x78`; `Yn_MapPartScaleTo`, a 0.0 target keeps the scale), a move from
+  `+0x64`/`+0x6c` to `+0x68`/`+0x70` over `+0x7c` frames (counter `+0x80`;
+  `Yn_MapPartMoveTo`); the animation word `+0x90` (bit 0, bit 1, mode bits
+  8..11), current frame `+0x96`, frame count `+0x98`, rate `+0xa4`.
+  Natives `0x8012`..`0x8056` (entries of 16 bytes from `0x00c5dc9c`;
+  setters at slot 0, getters at slot `0xc`).
+- Sphere grid (`g_Abmap`): node links at `+0x814` (five pointers per
+  node), the cheapest cost at `+0x82c` (`AbmapCalcMoveCost` `0x00a47560`:
+  a depth-first walk, step 1 when the link's `+0xc` byte matches the mask
+  `0x01a86104`, else 4; limit `0x01a860fc`); the camera at `+0x112b8`
+  (copied to `+0x11308`), zoom `+0x112f4`; homing state at
+  `+0x11620`..`+0x11648` (`AbmapInitHoming`, `AbmapState_HomeOnNode`:
+  `FFXVu0InterVectorXYZ` from the start toward the node); state functions
+  at `+0x115a8` (saved at `+0x115b0`); tilt level `+0x115cb` (0, -3640,
+  -7281) eased over 30 frames through the sine table `0x00c44bf0` into
+  `+0x11340` (`AbmapCtrlTilt`); zoom level `+0x115cc` (1, 0.5, 0.25,
+  0.125); the characters' nodes every `0x50` bytes from `+0x110cc`. The
+  save (`MsGetSaveAbilityMap`): node kinds and panel bits (2 bytes per
+  node), link flags from `+0xa00`, nodes from `+0xf00`, tilt and zoom at
+  `+0xf18`, `+0xf19` (`LoadSaveAbmap`).
+- GS set-up packets of the renderer (`yiRender_setupparamGS` `0x0090d260`,
+  `+0x677a8` and `+0x678a8`): DMA 12 quadwords, VIF `FLUSH`, `DIRECT` 11,
+  an A+D tag of 10 registers; the background colour is `b << 16 | g << 8
+  | r` from `+0x68340`, through the renderer's own colour scale and offset
+  (`+0x6820c`, `+0x6821c`) when flag bit 2 is set (clamped to 0..255,
+  `_ftol2`); the frame register from `+0x9cab4 >> 11` unless flag bit 25.
+- CLUT upload packet (`yiClutAlloc_makepacket` `0x00917050`): 72 transfers
+  of `0x460` bytes (A+D `BITBLTBUF`/`TRXPOS`/`TRXREG`/`TRXDIR` left 0 by
+  the PC build, an `IMAGE` tag, 256 colours), double-buffered at
+  `+0x13b14`.
+- `KeVu0RndI` (`0x0075f920`): two VU0 random steps through the emulated
+  EE/VU0 registers (`0x00c8f5xx`, `g_Vu0_R`), each `srand`ing the CRT.
+- `NkzSetLuluLimitTbl` (`0x00a5cc70`): one of 17 Lulu digit tables
+  (`0x14` bytes from `0x00b7b7f4`) by battle group and her magic.
+- `0x00441010` is `Phyre::PCluster::create(count, descriptor, flags)`, one
+  body (not folded); `0x0064b7a0`, `0x0064b7e0`, `0x0064b800` are its
+  typed wrappers for `PMaterialSet`, `PTexture2D` and `PWorldMatrix`
+  (descriptors `0x00c998e8`, `0x00ca37d0`, `0x00c92090`), PhyreEngine
+  code; Fahrenheit's Switch BSim names for them (`yiGetRootMatrix`,
+  `yiSetRootMatrix`, `SqsEeSoundCreateTime`) are wrong matches.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

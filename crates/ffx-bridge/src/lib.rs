@@ -297,6 +297,33 @@ impl Mem for RawMem {
     }
 }
 
+/// Game memory plus calls into the game's own code, for bridges whose
+/// original calls functions that are still original (callbacks the game
+/// stores, callees not ported yet). In the game a plain call
+/// ([`RawMem`]); in `ffx-oracle`, the emulator.
+pub trait Host: Mem {
+    /// Calls the cdecl function at `addr` (an address in this process,
+    /// already rebased) with up to six 32-bit arguments; returns `EAX`.
+    fn call(&mut self, addr: u32, args: &[u32]) -> u32;
+}
+
+#[cfg(target_pointer_width = "32")]
+impl Host for RawMem {
+    fn call(&mut self, addr: u32, args: &[u32]) -> u32 {
+        type F6 = unsafe extern "C" fn(u32, u32, u32, u32, u32, u32) -> u32;
+        assert!(args.len() <= 6, "at most six arguments");
+        let mut a = [0u32; 6];
+        a[..args.len()].copy_from_slice(args);
+        // SAFETY: the address is a cdecl function of the game taking at
+        // most these arguments; cdecl lets the caller pass more than the
+        // callee reads, and the caller pops them.
+        unsafe {
+            let f: F6 = std::mem::transmute(addr as usize);
+            f(a[0], a[1], a[2], a[3], a[4], a[5])
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

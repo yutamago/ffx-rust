@@ -366,6 +366,12 @@ pub mod bridge {
         en_flag(mem, chr, l::FLAGS, l::F_CALC_NORM, on)
     }
 
+    /// `Ch_SetCalcNorm2(chr, on)` (`0x00835780`): a debug print (a no-op in
+    /// this build), then [`l::F_CALC_NORM2`]; returns the bit that changed.
+    pub fn ch_set_calc_norm2(mem: &mut impl Mem, chr: u32, on: u32) -> u32 {
+        set_flag(mem, chr, l::FLAGS, l::F_CALC_NORM2, on)
+    }
+
     /// `Ch_ReserveCalcNorm(chr)` (`0x00835710`) and `Ch_ReserveCalcNorm2`
     /// (`0x00835730`, `bit` [`l::F_RESERVE_CALC_NORM2`]): the bit, unless
     /// the normals are recomputed every frame anyway.
@@ -470,6 +476,58 @@ pub mod bridge {
     /// `Ch_SetKeepFps(chr, on)` (`0x00839b50`): returns the old bit.
     pub fn ch_set_keep_fps(mem: &mut impl Mem, chr: u32, on: u32) -> u32 {
         en_flag(mem, chr, l::FLAGS, l::F_KEEP_FPS, on)
+    }
+
+    /// The ids `Ch_IsNotExceptionId` looks for (9 words).
+    pub const EXCEPTION_IDS: Global<u32> = Global::new(0x00b5_9840);
+
+    /// `Ch_IsNotExceptionId(id)` (`0x00831780`): 0 when `id` is one of
+    /// the nine words at [`EXCEPTION_IDS`], else 1.
+    pub fn ch_is_not_exception_id(mem: &impl Mem, id: u32) -> u32 {
+        let t = EXCEPTION_IDS.ptr(mem).addr;
+        u32::from(!(0..9).any(|i| mem.read::<u32>(t + 4 * i) == id))
+    }
+
+    /// `Ch_ElemInMotion(chr, e)` (`0x008342c0`): 1 when element `e` is
+    /// among the elements the motion at `+0x758` animates (`u16` count
+    /// `+2`, `u16` list from `+8`; every element when there is none),
+    /// looking at no more than the model's element count.
+    pub fn ch_elem_in_motion(mem: &impl Mem, chr: u32, e: u32) -> u32 {
+        let m: u32 = mem.read(chr + 0x758);
+        let n = if m == 0 {
+            0
+        } else {
+            i32::from(mem.read::<u16>(m + 2))
+        };
+        let header: u32 = mem.read(chr + l::MODEL_HEADER);
+        let elems = i32::from(mem.read::<u16>(header + l::HEADER_ELEMS));
+        let mut i = 0i32;
+        while i < elems {
+            let v = if m == 0 {
+                i.cast_unsigned()
+            } else {
+                if i >= n {
+                    return 0;
+                }
+                u32::from(mem.read::<u16>(m.wrapping_add(8 + 2 * i.cast_unsigned())))
+            };
+            if e == v {
+                return 1;
+            }
+            i += 1;
+        }
+        0
+    }
+
+    /// `Ch_SetCalcNorm2` (`0x007969c0`) on a holder `{chr, …, +0x3c u8,
+    /// +0x3d u8}`: on when either byte is set; returns it.
+    pub fn ch_set_calc_norm2_holder(mem: &mut impl Mem, p: u32) -> u32 {
+        let on = u32::from(mem.read::<u8>(p + 0x3c) != 0 || mem.read::<u8>(p + 0x3d) != 0);
+        let chr: u32 = mem.read(p);
+        if chr != 0 {
+            ch_set_calc_norm2(mem, chr, on);
+        }
+        on
     }
 }
 

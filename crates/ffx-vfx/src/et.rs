@@ -191,4 +191,157 @@ pub mod bridge {
     pub fn op_et_weapon_afterimage_fade(mem: &mut impl Mem, id: u32) {
         signal(mem, id, 0x8000);
     }
+
+    /// The draw flag index of character `h`'s record, if it has one.
+    fn draw_index(mem: &impl Mem, h: u32) -> Option<u32> {
+        let i = find_chr(mem, h)?;
+        Some(u32::from(mem.read::<u16>(chr(mem, i) + 0xe)))
+    }
+
+    fn range_check(i: u32) {
+        // the original's __report_rangecheckfailure (a fast fail)
+        assert!(i < 0xf0, "draw flag index {i:#x} out of range");
+    }
+
+    /// `op_et_draw_flags_restore(h)` (`0x007fc130`): the character's
+    /// draw flags back from `g_EtChrDrawFlags2` (bit 7 off), which is
+    /// cleared; returns what it held (0 for an unknown handle).
+    pub fn op_et_draw_flags_restore(mem: &mut impl Mem, h: u32) -> u32 {
+        let Some(i) = draw_index(mem, h) else {
+            return 0;
+        };
+        let held = mem.read::<u8>(DRAW_FLAGS2.ptr(mem).addr + i);
+        mem.write(DRAW_FLAGS.ptr(mem).addr + i, held & 0x7f);
+        range_check(i);
+        mem.write(DRAW_FLAGS2.ptr(mem).addr + i, 0u8);
+        u32::from(held)
+    }
+
+    /// `op_et_draw_flags_save(h)` (`0x007fc190`): the character's draw
+    /// flags kept in `g_EtChrDrawFlags2` (with bit 7) and cleared; returns
+    /// what `g_EtChrDrawFlags2` held before (0 for an unknown handle).
+    pub fn op_et_draw_flags_save(mem: &mut impl Mem, h: u32) -> u32 {
+        let Some(i) = draw_index(mem, h) else {
+            return 0;
+        };
+        let flags = mem.read::<u8>(DRAW_FLAGS.ptr(mem).addr + i);
+        let held = mem.read::<u8>(DRAW_FLAGS2.ptr(mem).addr + i);
+        mem.write(DRAW_FLAGS2.ptr(mem).addr + i, flags | 0x80);
+        range_check(i);
+        mem.write(DRAW_FLAGS.ptr(mem).addr + i, 0u8);
+        u32::from(held)
+    }
+
+    /// `g_EtChrHidden`: 1 while `op_et_chr_show(0)` hides every character.
+    pub const CHR_HIDDEN: Global<u32> = Global::new(0x00cc_b9d0);
+    /// `g_OpEtChrShow`: the last `op_et_chr_show` argument (a byte).
+    pub const CHR_SHOW: Global<u8> = Global::new(0x011a_0063);
+
+    /// `op_et_chr_show(on)` (`0x007ff090`): with 0, sets bit 1 of the draw
+    /// flags of the first 208 records that have a handle (and an index
+    /// below 0xf0), else clears it.
+    pub fn op_et_chr_show(mem: &mut impl Mem, on: u32) {
+        #[allow(clippy::cast_possible_truncation)] // the low byte
+        CHR_SHOW.set(mem, on as u8);
+        CHR_HIDDEN.set(mem, u32::from(on == 0));
+        for r in 0..0xd0 {
+            let at = chr(mem, r);
+            if mem.read::<u32>(at) == 0 {
+                continue;
+            }
+            let i = u32::from(mem.read::<u16>(at + 0xe));
+            if i >= 0xf0 {
+                continue;
+            }
+            let p = DRAW_FLAGS.ptr(mem).addr + i;
+            let f: u8 = mem.read(p);
+            mem.write(p, if on == 0 { f | 2 } else { f & 0xfd });
+        }
+    }
+
+    /// `op_et_chr_index_by_no(no)` (`0x007feaa0`): the first of the 208
+    /// `g_EtChr` records with character number `no` (`+4`), else -1.
+    pub fn op_et_chr_index_by_no(mem: &impl Mem, no: u32) -> i32 {
+        (0..0xd0)
+            .find(|&i| mem.read::<u32>(chr(mem, i) + 4) == no)
+            .map_or(-1, u32::cast_signed)
+    }
+
+    /// `opu_eff_part_index(unit)` (`0x00800da0`): for the `g_EtEff` record
+    /// the unit names (`+0x14`), its part (`+0x1a & 7`) when below the
+    /// record's count (`+8`); else the index of the unit's byte `+0x18` in
+    /// the record's list (`+0x10`), or the count with its low byte
+    /// cleared (0 for none).
+    pub fn opu_eff_part_index(mem: &impl Mem, unit: u32) -> u32 {
+        let rec = EFF
+            .ptr(mem)
+            .at(u32::from(mem.read::<u16>(unit.wrapping_add(0x14))))
+            .addr;
+        let part = u32::from(mem.read::<u16>(unit.wrapping_add(0x1a)) & 7);
+        let count = u32::from(mem.read::<u8>(rec + 8));
+        if part < count {
+            return part;
+        }
+        let want: u8 = mem.read(unit.wrapping_add(0x18));
+        for i in 0..count {
+            if mem.read::<u8>(rec + 0x10 + i) == want {
+                return i;
+            }
+        }
+        count & 0xffff_ff00
+    }
+
+    /// `opu_eff_free_by_id(id)` (`0x007fe920`): every `g_EtEff` record
+    /// with this ID (none for -1) emptied.
+    pub fn opu_eff_free_by_id(mem: &mut impl Mem, id: u32) {
+        if id == u32::MAX {
+            return;
+        }
+        for i in 0..EFFS {
+            let r = EFF.ptr(mem).at(i).addr;
+            if mem.read::<u32>(r) != id {
+                continue;
+            }
+            mem.write(r, u32::MAX);
+            mem.write(r + 4, 0u32);
+            mem.write(r + 8, 0x101u16);
+            mem.write(r + 0xc, 0u32);
+            mem.write(r + 0x10, 0u8);
+            mem.write(r + 0x18, 0u8);
+            mem.write(r + 0x1c, 0xffu16);
+        }
+    }
+
+    /// `g_EtChrHandles`: 240 character handles (`0x012a8100`) in the order
+    /// the draw flags were laid out.
+    pub const CHR_HANDLES: Global<u32> = Global::new(0x012a_8100);
+
+    /// `opus_chr_index_map(out)` (`0x007fe450`): `out` (240 `u16`, all
+    /// 0xffff first) maps each character's draw flag index to its place in
+    /// `g_EtChrHandles`; returns how many moved.
+    pub fn opus_chr_index_map(mem: &mut impl Mem, out: u32) -> u32 {
+        for i in 0..0x78 {
+            mem.write(out.wrapping_add(4 * i), u32::MAX);
+        }
+        let mut moved = 0u32;
+        for r in 0..CHRS {
+            let rec = chr(mem, r);
+            let h: u32 = mem.read(rec);
+            if h == 0 {
+                continue;
+            }
+            let Some(u) =
+                (0..0xf0).find(|&u| mem.read::<u32>(CHR_HANDLES.ptr(mem).addr + 4 * u) == h)
+            else {
+                continue;
+            };
+            let idx = u32::from(mem.read::<u16>(rec + 0xe));
+            if idx != u {
+                moved += 1;
+            }
+            #[allow(clippy::cast_possible_truncation)] // below 0xf0
+            mem.write(out.wrapping_add(2 * idx), u as u16);
+        }
+        moved
+    }
 }

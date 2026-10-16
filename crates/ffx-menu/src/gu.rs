@@ -89,6 +89,24 @@ pub fn pack(fields: &[(i32, u32)]) -> u64 {
 }
 
 /// The originals, on the game's windows and globals (`ffx_bridge::Mem`).
+/// `Gu_Approach(cur, target, step)` (`0x00849270`, own name): `target`
+/// when equal, else `target + (cur - target) / min(|cur - target|, step)`
+/// (`target` when that divisor is 0); truncating, wrapping as the
+/// original's 32-bit arithmetic does.
+#[must_use]
+pub const fn approach(cur: i32, target: i32, step: i32) -> i32 {
+    let d = cur.wrapping_sub(target);
+    if d == 0 {
+        return target;
+    }
+    let a = d.wrapping_abs();
+    let s = if a < step { a } else { step };
+    if s == 0 {
+        return target;
+    }
+    d.wrapping_div(s).wrapping_add(target)
+}
+
 pub mod bridge {
     use ffx_bridge::{Global, Mem};
 
@@ -152,6 +170,27 @@ pub mod bridge {
     pub fn gu_window_set_word30(mem: &mut impl Mem, window: u32, v: u16) -> u32 {
         mem.write(at(window, 0x30), v);
         window
+    }
+
+    /// `Gu_PrintSetMetrics(size)` (`0x008487e0`, own name): part of
+    /// [`gu_print_set_size`]: the size at `0x01303728` and the metrics
+    /// derived from it (×8, ×8 + 1, ×4, ×1, each `>> 8`); returns the ×4
+    /// one (left in `eax`).
+    pub fn gu_print_set_metrics(mem: &mut impl Mem, size: i32) -> i32 {
+        mem.write(mem.rebase(0x0130_3728), size);
+        let w8 = size.wrapping_mul(8) >> 8;
+        mem.write(mem.rebase(0x0130_36fc), w8);
+        mem.write(mem.rebase(0x0130_36f0), w8.wrapping_add(1));
+        let w4 = size.wrapping_mul(4) >> 8;
+        mem.write(mem.rebase(0x0130_371c), w4);
+        mem.write(mem.rebase(0x0130_3724), size >> 8);
+        w4
+    }
+
+    /// `Gu_WindowGetWord8C(window)` (`0x0084af60`, own name): the `i16`
+    /// `+0x8c`.
+    pub fn gu_window_get_word8c(mem: &impl Mem, window: u32) -> i32 {
+        i32::from(mem.read::<i16>(at(window, 0x8c)))
     }
 
     /// `Gu_PrintSetX(x)` (`0x00848820`).

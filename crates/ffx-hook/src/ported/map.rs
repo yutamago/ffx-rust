@@ -4,7 +4,7 @@
 //! the original).
 
 use super::{mem, ported};
-use ffx_field::{geom, guide, ke, model, nkz, packet, rcdt, rcui, scene, task, vu0, yi};
+use ffx_field::{abmap, geom, guide, ke, model, nkz, packet, rcdt, rcui, scene, task, vu0, yi};
 
 ported! {
     /// `rcdtChunkInit(chunk)`.
@@ -901,4 +901,614 @@ ported! {
     yiPkUnpackMatrixDma @ 0x0090_ccb0 => extern "C" fn yi_pk_unpack_matrix_dma(m: u32, out: u32, addr: u32) {
         yi::bridge::yi_pk_unpack_matrix_dma(&mut mem(), m, out, addr);
     }
+    // ---- round 4 ----
+    /// `yiGetColorScale(out)`.
+    yiGetColorScale @ 0x0090_88d0 => extern "C" fn yi_get_color_scale(out: u32) -> u32 {
+        yi::bridge::yi_get_color_scale(&mut mem(), out)
+    }
+    /// `yiSetColorScale(v)`.
+    yiSetColorScale @ 0x0090_a270 => extern "C" fn yi_set_color_scale(v: u32) -> u32 {
+        yi::bridge::yi_set_color_scale(&mut mem(), v)
+    }
+    /// `yiSetColorShift(out)`.
+    yiSetColorShift @ 0x0090_8c30 => extern "C" fn yi_set_color_shift(out: u32) -> u32 {
+        yi::bridge::yi_set_color_shift(&mut mem(), out)
+    }
+    /// `yiSetBattleCenter(v)`.
+    yiSetBattleCenter @ 0x0090_a0e0 => extern "C" fn yi_set_battle_center(v: u32) -> u32 {
+        yi::bridge::yi_set_battle_center(&mut mem(), v)
+    }
+    /// `yiGetBattleCenter(out)`.
+    yiGetBattleCenter @ 0x0090_87f0 => extern "C" fn yi_get_battle_center(out: u32) -> u32 {
+        yi::bridge::yi_get_battle_center(&mut mem(), out)
+    }
+    /// `yiPushRenderState()`.
+    yiPushRenderState @ 0x0090_9c60 => extern "C" fn yi_push_render_state() -> u32 {
+        yi::bridge::yi_push_render_state(&mut mem())
+    }
+    /// `yiPopRenderState()`.
+    yiPopRenderState @ 0x0090_9b90 => extern "C" fn yi_pop_render_state() -> u32 {
+        yi::bridge::yi_pop_render_state(&mut mem())
+    }
+    /// `yiGetBackColor(out)`.
+    yiGetBackColor @ 0x0090_86d0 => extern "C" fn yi_get_back_color(out: u32) -> u32 {
+        yi::bridge::yi_get_back_color(&mut mem(), out)
+    }
+    /// `yiImage_init(image)`.
+    yiImage_init @ 0x0091_88c0 => extern "C" fn yi_image_init(im: u32) -> u32 {
+        yi::bridge::yi_image_init(&mut mem(), im)
+    }
+    /// `yiTexSwap_init(render)`.
+    yiTexSwap_init @ 0x0091_52d0 => extern "C" fn yi_tex_swap_init(r: u32) -> u32 {
+        yi::bridge::yi_tex_swap_init(&mut mem(), r)
+    }
+    /// `yiTexSwapSetFrame(index, frame)`.
+    yiTexSwapSetFrame @ 0x0090_9e30 => extern "C" fn yi_tex_swap_set_frame(index: u32, frame: u32) -> u32 {
+        yi::bridge::yi_tex_swap_set_frame(&mut mem(), index, frame)
+    }
+    /// `yiAnimAttachDefault_009143c0(render, id, a, b)`.
+    yiAnimAttachDefault_009143c0 @ 0x0091_43c0 => extern "C" fn yi_anim_attach_default(r: u32, id: u32, a: u32, b: u32) -> u32 {
+        yi::bridge::yi_anim_attach_default(&mut mem(), r, id, a, b)
+    }
+    /// `yiKeyFrame_attachChr(render, id, keyframe, arg)`.
+    yiKeyFrame_attachChr @ 0x0091_4630 => extern "C" fn yi_key_frame_attach_chr(r: u32, id: u32, kf: u32, arg: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the original stores the low half
+        yi::bridge::yi_key_frame_attach_chr(&mut mem(), r, id, kf, arg as u16)
+    }
+    /// `yiSetFieldVec4i(a, b, c, d)`.
+    yiSetFieldVec4i @ 0x0090_a1d0 => extern "C" fn yi_set_field_vec4i(a: i32, b: i32, c: i32, d: i32) {
+        yi::bridge::yi_set_field_vec4i(&mut mem(), [a, b, c, d]);
+    }
+    /// `yiSetFieldVec4(a, b, c, d)`.
+    yiSetFieldVec4 @ 0x0090_a200 => extern "C" fn yi_set_field_vec4(a: u32, b: u32, c: u32, d: u32) {
+        yi::bridge::yi_set_field_vec4(&mut mem(), [a, b, c, d]);
+    }
+    /// `yiSetFieldVec6(a, b, c, d, e, f)`.
+    yiSetFieldVec6 @ 0x0090_a230 => extern "C" fn yi_set_field_vec6(a: u32, b: u32, c: u32, d: u32, e: u32, f: u32) {
+        yi::bridge::yi_set_field_vec6(&mut mem(), [a, b, c, d, e, f]);
+    }
+    /// `yiSetFieldPair(on, a, b)`.
+    yiSetFieldPair @ 0x0090_a430 => extern "C" fn yi_set_field_pair(on: u32, a: u32, b: u32) -> u32 {
+        yi::bridge::yi_set_field_pair(&mut mem(), on, a, b)
+    }
+    /// `yiSetFieldVec3Int(a, b, c, n)`.
+    yiSetFieldVec3Int @ 0x0090_a470 => extern "C" fn yi_set_field_vec3_int(a: u32, b: u32, c: u32, n: u32) -> u32 {
+        yi::bridge::yi_set_field_vec3_int(&mut mem(), a, b, c, n)
+    }
+    /// `yiMapGetSection(map, index)`.
+    yiMapGetSection @ 0x0090_7f00 => extern "C" fn yi_map_get_section(map: u32, index: u32) -> u32 {
+        yi::bridge::yi_map_get_section(&mem(), map, index)
+    }
+    /// `yiVramAllocPsm(bytes, psm)`.
+    yiVramAllocPsm @ 0x0091_8090 => extern "C" fn yi_vram_alloc_psm(bytes: i32, psm: u32) -> u32 {
+        yi::bridge::yi_vram_alloc_psm(&mut mem(), bytes, psm)
+    }
+    /// `rcMat4fSetScale(m, x, y, z)`.
+    rcMat4fSetScale @ 0x0092_57f0 => extern "C" fn rc_mat4f_set_scale(m: u32, x: u32, y: u32, z: u32) -> u32 {
+        geom::bridge::rc_mat4f_set_scale(&mut mem(), m, x, y, z)
+    }
+    /// `rcbgSetClipMatrix(w, h, d, near, far)`.
+    rcbgSetClipMatrix @ 0x0092_b0d0 => extern "C" fn rcbg_set_clip_matrix(w: u32, h: u32, d: u32, near: u32, far: u32) -> u32 {
+        let f = f32::from_bits;
+        geom::bridge::rcbg_set_clip_matrix(&mut mem(), f(w), f(h), f(d), f(near), f(far))
+    }
+    /// `rcbgSetWorldMatrix(m)`.
+    rcbgSetWorldMatrix @ 0x0092_b140 => extern "C" fn rcbg_set_world_matrix(m: u32) -> u32 {
+        geom::bridge::rcbg_set_world_matrix(&mut mem(), m)
+    }
+    /// `Yn_SeaResetMatrix()`.
+    Yn_SeaResetMatrix @ 0x0091_ae30 => extern "C" fn yn_sea_reset_matrix() -> u32 {
+        guide::bridge::yn_sea_reset_matrix(&mut mem())
+    }
+    /// `Yn_SeaSetMatrix(m)`.
+    Yn_SeaSetMatrix @ 0x0091_ae60 => extern "C" fn yn_sea_set_matrix(m: u32) -> u32 {
+        guide::bridge::yn_sea_set_matrix(&mut mem(), m)
+    }
+    /// `Yn_PreBgLayerDispGet(part)`.
+    Yn_PreBgLayerDispGet @ 0x0091_a770 => extern "C" fn yn_pre_bg_layer_disp_get(part: i32) -> u32 {
+        guide::bridge::yn_pre_bg_layer_disp_get(&mem(), part)
+    }
+    /// `Guide_RevealFog(guide, x, z)`.
+    Guide_RevealFog @ 0x0091_f420 => extern "C" fn guide_reveal_fog(g: u32, x: u32, z: u32) -> u32 {
+        guide::bridge::guide_reveal_fog(&mut mem(), g, f32::from_bits(x), f32::from_bits(z))
+    }
+    /// `KeLnsLp_Init(obj)`.
+    KeLnsLp_Init @ 0x0076_a670 => extern "C" fn ke_lns_lp_init(o: u32) -> u32 {
+        ke::bridge::ke_lns_lp_init(&mut mem(), o)
+    }
+    /// `KeLnsCrn_SetShp(obj, shp)`.
+    KeLnsCrn_SetShp @ 0x0076_a1a0 => extern "C" fn ke_lns_crn_set_shp(o: u32, shp: u32) -> u32 {
+        ke::bridge::ke_lns_crn_set_shp(&mut mem(), o, shp)
+    }
+    /// `KeLnsShp_Draw(obj)`.
+    KeLnsShp_Draw @ 0x0076_ab90 => extern "C" fn ke_lns_shp_draw(o: u32) -> u32 {
+        ke::bridge::ke_lns_shp_draw(&mut mem(), o)
+    }
+    /// `KeLnsShp_Update(obj)`.
+    KeLnsShp_Update @ 0x0076_abe0 => extern "C" fn ke_lns_shp_update(o: u32) -> u32 {
+        ke::bridge::ke_lns_shp_update(&mut mem(), o)
+    }
+    /// `KeLnsClm_SetShp(obj, shp, seed)`.
+    KeLnsClm_SetShp @ 0x0076_9cd0 => extern "C" fn ke_lns_clm_set_shp(o: u32, shp: u32, seed: u32) {
+        ke::bridge::ke_lns_clm_set_shp(&mut mem(), o, shp, seed);
+    }
+    /// `KeDttMdl_UseSingleInstance()`.
+    KeDttMdl_UseSingleInstance @ 0x0072_e6d0 => extern "C" fn ke_dtt_mdl_use_single_instance() -> u32 {
+        ke::bridge::ke_dtt_mdl_use_single_instance(&mem())
+    }
+    /// `AbmapAllLinksLimitFlag(mask)`.
+    AbmapAllLinksLimitFlag @ 0x00a4_73d0 => extern "C" fn abmap_all_links_limit_flag(mask: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the low byte
+        abmap::bridge::abmap_all_links_limit_flag(&mut mem(), mask as u8)
+    }
+    /// `abmap_lost_panel(bit, node)`.
+    abmap_lost_panel @ 0x00a4_58c0 => extern "C" fn abmap_lost_panel(bit: u32, node: u32) -> u32 {
+        abmap::bridge::abmap_lost_panel(&mut mem(), bit, node)
+    }
+    /// `AbmapGetNodePosRadius(node, out)`.
+    AbmapGetNodePosRadius @ 0x00a5_b4c0 => extern "C" fn abmap_get_node_pos_radius(node: u32, out: u32) -> f32 {
+        #[allow(clippy::cast_possible_truncation)] // the low half
+        abmap::bridge::abmap_get_node_pos_radius(&mut mem(), node as u16, out)
+    }
+    /// `rcbgPSimGetPos(psim, which, out)`.
+    rcbgPSimGetPos @ 0x0091_fdd0 => extern "C" fn rcbg_psim_get_pos(p: u32, which: u32, out: u32) -> u32 {
+        model::bridge::rcbg_psim_get_pos(&mut mem(), p, which, out)
+    }
+    /// `rcbgSceneSetPal(scene)`.
+    rcbgSceneSetPal @ 0x0092_10a0 => extern "C" fn rcbg_scene_set_pal(s: u32) {
+        model::bridge::rcbg_scene_set_pal(&mut mem(), s);
+    }
+    /// `rcbgChkId(id)`.
+    rcbgChkId @ 0x0092_1940 => extern "C" fn rcbg_chk_id(id: u32) -> i32 {
+        model::bridge::rcbg_chk_id(&mem(), id)
+    }
+    /// `rcbgFPm097Init(part)`.
+    rcbgFPm097Init @ 0x0092_2560 => extern "C" fn rcbg_fpm097_init(p: u32) -> u32 {
+        model::bridge::rcbg_fpm097_init(&mut mem(), p)
+    }
+    /// `rcbgFPm173Init(part)`.
+    rcbgFPm173Init @ 0x0092_2b70 => extern "C" fn rcbg_fpm173_init(p: u32) -> u32 {
+        model::bridge::rcbg_fpm173_init(&mut mem(), p)
+    }
+    /// `rcbgFPm565Init(part)`.
+    rcbgFPm565Init @ 0x0092_2f50 => extern "C" fn rcbg_fpm565_init(p: u32) -> u32 {
+        model::bridge::rcbg_fpm565_init(&mut mem(), p)
+    }
+    /// `rcfxDampInit(damp)`.
+    rcfxDampInit @ 0x0092_93d0 => extern "C" fn rcfx_damp_init(p: u32) -> u32 {
+        model::bridge::rcfx_damp_init(&mut mem(), p)
+    }
+    /// `rcbgFpGetWork(id, part, index)`.
+    rcbgFpGetWork @ 0x0092_3100 => extern "C" fn rcbg_fp_get_work(id: u32, part: u32, index: u32) -> u32 {
+        model::bridge::rcbg_fp_get_work(&mut mem(), id, part, index, fp_run)
+    }
+    /// `rcbgSceneDrawLayer(layer)`.
+    rcbgSceneDrawLayer @ 0x0092_0830 => extern "C" fn rcbg_scene_draw_layer(layer: u32) -> u32 {
+        model::bridge::rcbg_scene_draw_layer(&mut mem(), layer, |m, f, l| {
+            ffx_vfx::op::bridge::op_func_after_ot3d_set(m, f, l, 0, 1).cast_unsigned()
+        })
+    }
+    /// `rcbgSceneWaveDCStop(scene)`.
+    rcbgSceneWaveDCStop @ 0x0092_0650 => extern "C" fn rcbg_scene_wave_dc_stop(s: u32) {
+        model::bridge::rcbg_scene_wave_dc_stop(&mut mem(), s);
+    }
+    /// `rcbgSceneWaveC0Stop(scene)`.
+    rcbgSceneWaveC0Stop @ 0x0092_1200 => extern "C" fn rcbg_scene_wave_c0_stop(s: u32) {
+        model::bridge::rcbg_scene_wave_c0_stop(&mut mem(), s);
+    }
+    /// `rcfxParticleClearForces(p)`.
+    rcfxParticleClearForces @ 0x0092_89b0 => extern "C" fn rcfx_particle_clear_forces(p: u32) {
+        model::bridge::rcfx_particle_clear_forces(&mut mem(), p);
+    }
+    /// `rcdtTm2GetPsm(picture)`.
+    rcdtTm2GetPsm @ 0x0092_3280 => extern "C" fn rcdt_tm2_get_psm(pic: u32) -> u32 {
+        model::bridge::rcdt_tm2_get_psm(&mem(), pic)
+    }
+    /// `rcdtTm2ClutAlphaToPs2(clut)`.
+    rcdtTm2ClutAlphaToPs2 @ 0x0092_3240 => extern "C" fn rcdt_tm2_clut_alpha_to_ps2(clut: u32) {
+        model::bridge::rcdt_tm2_clut_alpha_to_ps2(&mut mem(), clut);
+    }
+    /// `rcdtRsd2Init(rsd)`.
+    rcdtRsd2Init @ 0x0092_4390 => extern "C" fn rcdt_rsd2_init(p: u32) {
+        model::bridge::rcdt_rsd2_init(&mut mem(), p);
+    }
+    /// `rcbgTrxSetRegs(t, a, b, c, d, e, f, g)`, the `i16`s widened.
+    rcbgTrxSetRegs @ 0x0092_d360 => extern "C" fn rcbg_trx_set_regs(t: u32, a: u32, b: u32, c: u32, d: u32, e: u32, f: u32, g: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the low halves
+        let h = |v: u32| (v as u16).cast_signed();
+        model::bridge::rcbg_trx_set_regs(&mut mem(), t, h(a), h(b), h(c), h(d), h(e), h(f), h(g))
+    }
+    /// `rcbgClipCodeAnd(out, a, b, c, d)`.
+    rcbgClipCodeAnd @ 0x0092_aed0 => extern "C" fn rcbg_clip_code_and(out: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
+        model::bridge::rcbg_clip_code_and(&mut mem(), out, a, b, c, d)
+    }
+    /// `rcefTaskProc(task)`.
+    rcefTaskProc @ 0x0092_ed90 => extern "C" fn rcef_task_proc(t: u32) -> u32 {
+        task::bridge::rcef_task_proc(&mut mem(), t, |_, f, t| call_ptr1(f, t))
+    }
+    /// `rcefTaskDestruct(task)`.
+    rcefTaskDestruct @ 0x0092_ec90 => extern "C" fn rcef_task_destruct(t: u32) -> u32 {
+        task::bridge::rcef_task_destruct(&mut mem(), t, |_, f, t| call_ptr1(f, t))
+    }
+    /// `rcEffectTaskPrayWait(task)`.
+    rcEffectTaskPrayWait @ 0x0093_04b0 => extern "C" fn rc_effect_task_pray_wait(t: u32) {
+        task::bridge::rc_effect_task_pray_wait(&mut mem(), t, |m, _| ffx_vfx::op::bridge::op_pray_effect_check(m));
+    }
+    /// `rcefObjInit(obj)`.
+    rcefObjInit @ 0x0092_ff20 => extern "C" fn rcef_obj_init(o: u32) -> u32 {
+        task::bridge::rcef_obj_init(&mut mem(), o)
+    }
+    /// `rcefParCreate(par, data, index, a, b, c)`.
+    rcefParCreate @ 0x0092_eee0 => extern "C" fn rcef_par_create(p: u32, data: u32, index: u32, a: u32, b: u32, c: u32) -> u32 {
+        task::bridge::rcef_par_create(&mut mem(), p, data, index, a, b, c)
+    }
+    /// `MapPart::InitLangOverrides()` (`this` in ECX).
+    MapPart_InitLangOverrides @ 0x0067_c620 => extern "fastcall" fn map_part_init_lang_overrides(this: u32) -> u32 {
+        scene::bridge::map_part_init_lang_overrides(&mut mem(), this)
+    }
+    /// `MapPart::LangOverride(lang, map)`.
+    MapPart_LangOverride @ 0x0067_fb30 => extern "thiscall" fn map_part_lang_override(this: u32, lang: u32, map: u32) -> u32 {
+        scene::bridge::map_part_lang_override(&mut mem(), this, lang, map, |_| {
+            // Phyre::PhyrePrintf(2, "\n Warning: uncorrect LanguageType \n")
+            // SAFETY: a variadic cdecl function of this build and its string.
+            unsafe {
+                let f: unsafe extern "C" fn(u32, u32) -> u32 =
+                    std::mem::transmute(crate::rebase(0x0043_52f0));
+                #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+                f(2, crate::rebase(0x00b4_5b7c) as u32);
+            }
+        })
+    }
+    /// `TextUtilList::TextUtilList()`.
+    TextUtilList_TextUtilList @ 0x0090_e6d0 => extern "C" fn text_util_list_text_util_list(this: u32) -> u32 {
+        rcui::bridge::text_util_list_text_util_list(&mut mem(), this)
+    }
+    /// `rcMat4fSetScaleVec3f(m, v)`.
+    rcMat4fSetScaleVec3f @ 0x0092_5820 => extern "C" fn rc_mat4f_set_scale_vec3f(m: u32, v: u32) -> u32 {
+        geom::bridge::rc_mat4f_set_scale_vec3f(&mut mem(), m, v)
+    }
+    /// `rcbgModelSetScale(model, s)`.
+    rcbgModelSetScale @ 0x0092_8540 => extern "C" fn rcbg_model_set_scale(model: u32, s: u32) -> u32 {
+        geom::bridge::rcbg_model_set_scale(&mut mem(), model, f32::from_bits(s))
+    }
+    /// `yiAttachChrDObj(id, a, b)`.
+    yiAttachChrDObj @ 0x0090_8350 => extern "C" fn yi_attach_chr_dobj(id: u32, a: u32, b: u32) -> u32 {
+        yi::bridge::yi_attach_chr_dobj(&mut mem(), id, a, b)
+    }
+    /// `yiCallFieldParticle()`.
+    yiCallFieldParticle @ 0x0090_83e0 => extern "C" fn yi_call_field_particle() {
+        yi::bridge::yi_call_field_particle(&mut mem(), |_| {
+            super::call0(0x0072_9ab0); // pppFpLoop
+        });
+    }
+    /// `rcfxParticleResetForce(p)`.
+    rcfxParticleResetForce @ 0x0092_8970 => extern "C" fn rcfx_particle_reset_force(p: u32) {
+        model::bridge::rcfx_particle_reset_force(&mut mem(), p, |_, f, a, b| call_ptr2(f, a, b));
+    }
+    /// `rcbgSceneDraw(scene)`.
+    rcbgSceneDraw @ 0x0092_0740 => extern "C" fn rcbg_scene_draw(s: u32) -> u32 {
+        model::bridge::rcbg_scene_draw(
+            &mut mem(),
+            s,
+            |_, f, o| {
+                call_ptr1(f, o);
+            },
+            |m, f, l| ffx_vfx::op::bridge::op_func_after_ot3d_set(m, f, l, 0, 1).cast_unsigned(),
+        )
+    }
+    /// `Yn_PSimGetHandle(n)`.
+    Yn_PSimGetHandle @ 0x0091_99f0 => extern "C" fn yn_psim_get_handle(n: u32) -> u32 {
+        model::bridge::yn_psim_get_handle(&mut mem(), n, fp_run)
+    }
+    /// `rcefMainSetPar(main, obj, data_index, index)`.
+    rcefMainSetPar @ 0x0092_56d0 => extern "C" fn rcef_main_set_par(main: u32, o: u32, data_index: u32, index: u32) -> u32 {
+        task::bridge::rcef_main_set_par(&mut mem(), main, o, data_index, index)
+    }
+    /// `Yn_PSimGetHandle_00919f00(n)`: a jump to `Yn_PSimGetHandle`.
+    Yn_PSimGetHandle_00919f00 @ 0x0091_9f00 => extern "C" fn yn_psim_get_handle_jump(n: u32) -> u32 {
+        model::bridge::yn_psim_get_handle(&mut mem(), n, fp_run)
+    }
+    /// `rcbgPSimSetReady(psim)`.
+    rcbgPSimSetReady @ 0x0091_ffb0 => extern "C" fn rcbg_psim_set_ready(p: u32) {
+        model::bridge::rcbg_psim_set_ready(&mut mem(), p, |_, f, a, b| call_ptr2(f, a, b));
+    }
+    /// `Yn_MapPartAnimeGetCount(part)`.
+    Yn_MapPartAnimeGetCount @ 0x0091_a2a0 => extern "C" fn yn_map_part_anime_get_count(part: i32) -> u32 {
+        guide::bridge::yn_map_part_anime_get_count(&mem(), part)
+    }
+    /// `Yn_MapPartGetAlpha(part)`.
+    Yn_MapPartGetAlpha @ 0x0091_a2e0 => extern "C" fn yn_map_part_get_alpha(part: i32) -> u32 {
+        guide::bridge::yn_map_part_get_alpha(&mem(), part)
+    }
+    /// `Yn_MapPartGetPosX(part)`.
+    Yn_MapPartGetPosX @ 0x0091_a330 => extern "C" fn yn_map_part_get_pos_x(part: i32) -> f32 {
+        guide::bridge::yn_map_part_get_pos_x(&mem(), part)
+    }
+    /// `Yn_MapPartGetPosY(part)`.
+    Yn_MapPartGetPosY @ 0x0091_a380 => extern "C" fn yn_map_part_get_pos_y(part: i32) -> f32 {
+        guide::bridge::yn_map_part_get_pos_y(&mem(), part)
+    }
+    /// `Yn_MapPartGetHeight(part)`.
+    Yn_MapPartGetHeight @ 0x0091_a3f0 => extern "C" fn yn_map_part_get_height(part: i32) -> u32 {
+        guide::bridge::yn_map_part_get_height(&mem(), part)
+    }
+    /// `Yn_MapPartGet0C(part)`.
+    Yn_MapPartGet0C @ 0x0091_a440 => extern "C" fn yn_map_part_get_0c(part: i32) -> u32 {
+        guide::bridge::yn_map_part_get_0c(&mem(), part)
+    }
+    /// `Yn_MapPartGet10(part)`.
+    Yn_MapPartGet10 @ 0x0091_a490 => extern "C" fn yn_map_part_get_10(part: i32) -> u32 {
+        guide::bridge::yn_map_part_get_10(&mem(), part)
+    }
+    /// `Yn_MapPartGetScaleY(part)`.
+    Yn_MapPartGetScaleY @ 0x0091_a4e0 => extern "C" fn yn_map_part_get_scale_y(part: i32) -> f32 {
+        guide::bridge::yn_map_part_get_scale_y(&mem(), part)
+    }
+    /// `Yn_MapPartGetScaleX(part)`.
+    Yn_MapPartGetScaleX @ 0x0091_a530 => extern "C" fn yn_map_part_get_scale_x(part: i32) -> f32 {
+        guide::bridge::yn_map_part_get_scale_x(&mem(), part)
+    }
+    /// `Yn_MapPartGet24(part)`.
+    Yn_MapPartGet24 @ 0x0091_a580 => extern "C" fn yn_map_part_get_24(part: i32) -> u32 {
+        guide::bridge::yn_map_part_get_24(&mem(), part)
+    }
+    /// `Yn_MapPartGet28(part)`.
+    Yn_MapPartGet28 @ 0x0091_a5d0 => extern "C" fn yn_map_part_get_28(part: i32) -> u32 {
+        guide::bridge::yn_map_part_get_28(&mem(), part)
+    }
+    /// `Yn_MapPartGetWidth(part)`.
+    Yn_MapPartGetWidth @ 0x0091_a620 => extern "C" fn yn_map_part_get_width(part: i32) -> u32 {
+        guide::bridge::yn_map_part_get_width(&mem(), part)
+    }
+    /// `Yn_MapPartGet14(part)`.
+    Yn_MapPartGet14 @ 0x0091_a670 => extern "C" fn yn_map_part_get_14(part: i32) -> f32 {
+        guide::bridge::yn_map_part_get_14(&mem(), part)
+    }
+    /// `Yn_MapPartAnimeSetMode(part, bits)`.
+    Yn_MapPartAnimeSetMode @ 0x0091_9fe0 => extern "C" fn yn_map_part_anime_set_mode(part: i32, bits: u32) {
+        guide::bridge::yn_map_part_anime_set_mode(&mut mem(), part, bits);
+    }
+    /// `Yn_MapPartAnimeFlag0Off(part)`.
+    Yn_MapPartAnimeFlag0Off @ 0x0091_a030 => extern "C" fn yn_map_part_anime_flag0_off(part: i32) {
+        guide::bridge::yn_map_part_anime_flag0_off(&mut mem(), part);
+    }
+    /// `Yn_MapPartAnimeFlag0On(part)`.
+    Yn_MapPartAnimeFlag0On @ 0x0091_a080 => extern "C" fn yn_map_part_anime_flag0_on(part: i32) {
+        guide::bridge::yn_map_part_anime_flag0_on(&mut mem(), part);
+    }
+    /// `Yn_MapPartMoveTo(part, x, y, frames)`.
+    Yn_MapPartMoveTo @ 0x0091_a0f0 => extern "C" fn yn_map_part_move_to(part: i32, x: u32, y: u32, frames: u32) {
+        guide::bridge::yn_map_part_move_to(&mut mem(), part, x, y, frames);
+    }
+    /// `Yn_MapPartScaleTo(part, sx, sy, frames)`.
+    Yn_MapPartScaleTo @ 0x0091_a150 => extern "C" fn yn_map_part_scale_to(part: i32, sx: u32, sy: u32, frames: u32) {
+        guide::bridge::yn_map_part_scale_to(&mut mem(), part, sx, sy, frames);
+    }
+    /// `Yn_MapPartAnimeSetLastFrame(part)`.
+    Yn_MapPartAnimeSetLastFrame @ 0x0091_a970 => extern "C" fn yn_map_part_anime_set_last_frame(part: i32) {
+        guide::bridge::yn_map_part_anime_set_last_frame(&mut mem(), part);
+    }
+    /// `Yn_MapPartAnimeSetRate(part, rate)`.
+    Yn_MapPartAnimeSetRate @ 0x0091_a9c0 => extern "C" fn yn_map_part_anime_set_rate(part: i32, rate: u32) {
+        guide::bridge::yn_map_part_anime_set_rate(&mut mem(), part, rate);
+    }
+    /// `Yn_MapPartSetPos(part, x, y)`.
+    Yn_MapPartSetPos @ 0x0091_aae0 => extern "C" fn yn_map_part_set_pos(part: i32, x: u32, y: u32) {
+        guide::bridge::yn_map_part_set_pos(&mut mem(), part, x, y);
+    }
+    /// `Yn_MapPartSet24(part, a, b)`.
+    Yn_MapPartSet24 @ 0x0091_ac40 => extern "C" fn yn_map_part_set_24(part: i32, a: u32, b: u32) {
+        guide::bridge::yn_map_part_set_24(&mut mem(), part, a, b);
+    }
+    /// `Yn_MapPartSetSize(part, w, h)`.
+    Yn_MapPartSetSize @ 0x0091_ac80 => extern "C" fn yn_map_part_set_size(part: i32, w: u32, h: u32) {
+        guide::bridge::yn_map_part_set_size(&mut mem(), part, w, h);
+    }
+    /// `Yn_MapPartSet14(part, v)`.
+    Yn_MapPartSet14 @ 0x0091_acc0 => extern "C" fn yn_map_part_set_14(part: i32, v: u32) {
+        guide::bridge::yn_map_part_set_14(&mut mem(), part, v);
+    }
+    /// `Yn_MapPartAnimeSetFrame(part, frame)`.
+    Yn_MapPartAnimeSetFrame @ 0x0091_a930 => extern "C" fn yn_map_part_anime_set_frame(part: i32, frame: u32) {
+        #[allow(clippy::cast_possible_truncation)] // the low half
+        guide::bridge::yn_map_part_anime_set_frame(&mut mem(), part, frame as u16);
+    }
+    /// `Yn_SeaGetWork()`.
+    Yn_SeaGetWork @ 0x0091_9a10 => extern "C" fn yn_sea_get_work() -> u32 {
+        model::bridge::yn_sea_get_work(&mut mem(), fp_run)
+    }
+    /// `AbmapInitHoming(node, t)`.
+    AbmapInitHoming @ 0x00a4_8d70 => extern "C" fn abmap_init_homing(node: u32, t: u32) -> u32 {
+        abmap::bridge::abmap_init_homing(&mut mem(), node, t)
+    }
+    /// `AbmapInitMovingToTarget(target, node)`.
+    AbmapInitMovingToTarget @ 0x00a4_8c80 => extern "C" fn abmap_init_moving_to_target(target: u32, node: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the low half
+        abmap::bridge::abmap_init_moving_to_target(&mut mem(), target, node as u16)
+    }
+    /// `AbmapCalcMoveCost(node, cost)`.
+    AbmapCalcMoveCost @ 0x00a4_7560 => extern "C" fn abmap_calc_move_cost(node: u32, cost: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the low half
+        abmap::bridge::abmap_calc_move_cost(&mut mem(), node as u16, cost)
+    }
+    /// `AbmapCtrlTilt()`.
+    AbmapCtrlTilt @ 0x00a4_8f50 => extern "C" fn abmap_ctrl_tilt() -> u32 {
+        abmap::bridge::abmap_ctrl_tilt(&mut mem())
+    }
+    /// `AbmapState_HomeOnNode()`.
+    AbmapState_HomeOnNode @ 0x00a5_9e80 => extern "C" fn abmap_state_home_on_node() -> u32 {
+        abmap::bridge::abmap_state_home_on_node(&mut mem())
+    }
+    /// `LoadSaveAbmap()`.
+    LoadSaveAbmap @ 0x00a4_9590 => extern "C" fn load_save_abmap() -> u32 {
+        abmap::bridge::load_save_abmap(&mut mem())
+    }
+    /// `abmap_test_panel(bit, node)`.
+    abmap_test_panel @ 0x00a4_57d0 => extern "C" fn abmap_test_panel(bit: u32, node: u32) -> u32 {
+        abmap::bridge::abmap_test_panel(&mem(), bit, node)
+    }
+    /// `abmap_other_has_panel(chr, node)`.
+    abmap_other_has_panel @ 0x00a4_5800 => extern "C" fn abmap_other_has_panel(chr: u32, node: u32) -> u32 {
+        abmap::bridge::abmap_other_has_panel(&mem(), chr, node)
+    }
+    /// `abmap_chr_node(chr)`.
+    abmap_chr_node @ 0x00a4_5870 => extern "C" fn abmap_chr_node(chr: u32) -> u32 {
+        abmap::bridge::abmap_chr_node(&mem(), chr)
+    }
+    /// `rcbgPSimSetPos(psim, which, v)`.
+    rcbgPSimSetPos @ 0x0091_ff10 => extern "C" fn rcbg_psim_set_pos(p: u32, which: u32, v: u32) {
+        model::bridge::rcbg_psim_set_pos(&mut mem(), p, which, v, |_, f, a, b| call_ptr2(f, a, b));
+    }
+    /// `KeThBP_Quit(bp)`.
+    KeThBP_Quit @ 0x0076_36c0 => extern "C" fn ke_th_bp_quit(bp: u32) {
+        ke::bridge::ke_th_bp_quit(&mut mem(), bp);
+    }
+    /// `SqsBattleStreamingDataSend(a, b)`.
+    SqsBattleStreamingDataSend @ 0x0081_cef0 => extern "C" fn sqs_battle_streaming_data_send(a: u32, b: u32) {
+        nkz::bridge::sqs_battle_streaming_data_send(&mut mem(), a, b, |_| {
+            // fprintf(stderr, "FMOD SFX ERROR! ...") through the CRT's imports.
+            // SAFETY: the import slots hold MSVCR110's __iob_func and fprintf.
+            unsafe {
+                let iob: unsafe extern "C" fn() -> usize =
+                    std::mem::transmute(*(crate::rebase(0x00b0_c350) as *const usize));
+                let fprintf: unsafe extern "C" fn(usize, usize) -> i32 =
+                    std::mem::transmute(*(crate::rebase(0x00b0_c38c) as *const usize));
+                fprintf(iob() + 0x40, crate::rebase(0x00b5_8f40));
+            }
+        });
+    }
+    /// `yiClutAlloc_makepacket(packet, cluts, n)`.
+    yiClutAlloc_makepacket @ 0x0091_7050 => extern "C" fn yi_clut_alloc_makepacket(pk: u32, cluts: u32, n: u32) -> u32 {
+        yi::bridge::yi_clut_alloc_makepacket(&mut mem(), pk, cluts, n)
+    }
+    /// `yiRender_setupparamGS(render)`.
+    yiRender_setupparamGS @ 0x0090_d260 => extern "C" fn yi_render_setupparam_gs(r: u32) {
+        yi::bridge::yi_render_setupparam_gs(&mut mem(), r);
+    }
+    /// `KeVu0RndI()`.
+    KeVu0RndI @ 0x0075_f920 => extern "C" fn ke_vu0_rnd_i() -> u32 {
+        vu0::bridge::ke_vu0_rnd_i(&mut mem(), |_, seed| {
+            // SAFETY: the import slot holds MSVCR110's cdecl srand(seed).
+            unsafe {
+                let f: unsafe extern "C" fn(u32) =
+                    std::mem::transmute(*(crate::rebase(0x00b0_c484) as *const usize));
+                f(seed);
+            }
+        })
+    }
+    /// `NkzSetLuluLimitTbl(group)`.
+    NkzSetLuluLimitTbl @ 0x00a5_cc70 => extern "C" fn nkz_set_lulu_limit_tbl(group: u32) {
+        nkz::bridge::nkz_set_lulu_limit_tbl(&mut mem(), group);
+    }
+    /// `rcbgPalGetEntryData(pal, n)`.
+    rcbgPalGetEntryData @ 0x0092_9990 => extern "C" fn rcbg_pal_get_entry_data(pal: u32, n: u32) -> u32 {
+        model::bridge::rcbg_pal_get_entry_data(&mem(), pal, n)
+    }
+    /// `rcbgPalGetLastEntryData(pal)`.
+    rcbgPalGetLastEntryData @ 0x0092_9930 => extern "C" fn rcbg_pal_get_last_entry_data(pal: u32) -> u32 {
+        model::bridge::rcbg_pal_get_last_entry_data(&mem(), pal)
+    }
+    /// `rcbgLayerGetTexData(layer)`.
+    rcbgLayerGetTexData @ 0x0092_acf0 => extern "C" fn rcbg_layer_get_tex_data(layer: u32) -> u32 {
+        model::bridge::rcbg_layer_get_tex_data(&mem(), layer)
+    }
+    /// `rcbgTexGetLog2Size(w, h, lw, lh, tbw)`.
+    rcbgTexGetLog2Size @ 0x0092_0050 => extern "C" fn rcbg_tex_get_log2_size(w: i32, h: i32, lw: u32, lh: u32, tbw: u32) {
+        model::bridge::rcbg_tex_get_log2_size(&mut mem(), w, h, lw, lh, tbw);
+    }
+    /// `Yn_SceneGetObject(kind, n)`.
+    Yn_SceneGetObject @ 0x0092_1be0 => extern "C" fn yn_scene_get_object(kind: u32, n: u32) -> u32 {
+        model::bridge::yn_scene_get_object(&mem(), kind, n)
+    }
+    /// `Yn_SceneCountObjects(kind)`.
+    Yn_SceneCountObjects @ 0x0092_1c20 => extern "C" fn yn_scene_count_objects(kind: u32) -> u32 {
+        model::bridge::yn_scene_count_objects(&mem(), kind)
+    }
+    /// `Yn_BattleCaptureNum()`.
+    Yn_BattleCaptureNum @ 0x0092_1910 => extern "C" fn yn_battle_capture_num() {
+        model::bridge::yn_battle_capture_num(&mut mem());
+    }
+    /// `rcbgFpFadeInit(fade, id, step, frames)`.
+    rcbgFpFadeInit @ 0x0092_2930 => extern "C" fn rcbg_fp_fade_init(fade: u32, id: u32, step: u32, frames: u32) {
+        model::bridge::rcbg_fp_fade_init(&mut mem(), fade, id, step, frames, |m, id| {
+            ffx_vfx::fp::bridge::ppp_fp_id_disp_off(m, id);
+        });
+    }
+    /// `rcbgChrFindById(id)`.
+    rcbgChrFindById @ 0x0092_e1e0 => extern "C" fn rcbg_chr_find_by_id(id: u32) -> u32 {
+        model::bridge::rcbg_chr_find_by_id(&mut mem(), id)
+    }
+    /// `rcbgChrHandleIndex(handle)`.
+    rcbgChrHandleIndex @ 0x0092_4f30 => extern "C" fn rcbg_chr_handle_index(handle: u32) -> u32 {
+        model::bridge::rcbg_chr_handle_index(&mem(), handle)
+    }
+    /// `rcdtChunkHandleGetEnd(&chunk)`.
+    rcdtChunkHandleGetEnd @ 0x0092_bb90 => extern "C" fn rcdt_chunk_handle_get_end(h: u32) -> u32 {
+        rcdt::bridge::rcdt_chunk_handle_get_end(&mem(), h)
+    }
+    /// `rcMat4fSetScale001(m)`.
+    rcMat4fSetScale001 @ 0x0092_de50 => extern "C" fn rc_mat4f_set_scale_001(m: u32) -> u32 {
+        geom::bridge::rc_mat4f_set_scale_001(&mut mem(), m)
+    }
+    /// `rcMat4fSetScale0001(m)`.
+    rcMat4fSetScale0001 @ 0x0092_de80 => extern "C" fn rc_mat4f_set_scale_0001(m: u32) -> u32 {
+        geom::bridge::rc_mat4f_set_scale_0001(&mut mem(), m)
+    }
+    /// `rcuiCollectChrHandles()`.
+    rcuiCollectChrHandles @ 0x0093_2570 => extern "C" fn rcui_collect_chr_handles() {
+        rcui::bridge::rcui_collect_chr_handles(&mut mem());
+    }
+    /// `KePmcomAlloc(bytes)`.
+    KePmcomAlloc @ 0x0076_2f50 => extern "C" fn ke_pmcom_alloc(bytes: u32) -> u32 {
+        ke::bridge::ke_pmcom_alloc(&mut mem(), bytes)
+    }
+    /// `KePmcomQueuePush(kind, p)`.
+    KePmcomQueuePush @ 0x0076_2fa0 => extern "C" fn ke_pmcom_queue_push(kind: u32, p: u32) {
+        ke::bridge::ke_pmcom_queue_push(&mut mem(), kind, p);
+    }
+    /// `KeLnsDefault_Init(obj)`.
+    KeLnsDefault_Init @ 0x0076_a640 => extern "C" fn ke_lns_default_init(o: u32) -> u32 {
+        ke::bridge::ke_lns_default_init(&mut mem(), o)
+    }
+    /// `KeVu0MulX(dst, src, s)`.
+    KeVu0MulX @ 0x0076_76c0 => extern "C" fn ke_vu0_mul_x(dst: u32, src: u32, s: u32) {
+        ke::bridge::ke_vu0_mul_x(&mut mem(), dst, src, f32::from_bits(s));
+    }
+    /// `KeVu0SubX(dst, src, s)`.
+    KeVu0SubX @ 0x0076_7720 => extern "C" fn ke_vu0_sub_x(dst: u32, src: u32, s: u32) {
+        ke::bridge::ke_vu0_sub_x(&mut mem(), dst, src, f32::from_bits(s));
+    }
+    /// `NkzGetMonsterListNum()`.
+    NkzGetMonsterListNum @ 0x00a5_cb20 => extern "C" fn nkz_get_monster_list_num() -> u32 {
+        nkz::bridge::nkz_get_monster_list_num()
+    }
+}
+
+/// Calls a game function pointer (an absolute address, cdecl) with one
+/// argument: the sequence, after- and destructor functions of `rcef` tasks.
+fn call_ptr1(f: u32, arg: u32) -> u32 {
+    // SAFETY: the task's function slots hold cdecl functions taking it.
+    unsafe {
+        let f: unsafe extern "C" fn(u32) -> u32 = std::mem::transmute(f as usize);
+        f(arg)
+    }
+}
+
+/// Calls a force's reset function (an absolute address, cdecl) with the
+/// force and its particle system (`rcfxParticleResetForce`).
+fn call_ptr2(f: u32, a: u32, b: u32) {
+    // SAFETY: the force's reset slot holds a cdecl function of (force, p).
+    unsafe {
+        let f: unsafe extern "C" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
+        f(a, b);
+    }
+}
+
+/// The VFX run record of an FP id (`pppFpGetMngPtr(id, &run, NULL)`).
+fn fp_run(m: &mut super::RawMem, id: u32) -> u32 {
+    let mut run = 0u32;
+    #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+    let at = (&raw mut run).expose_provenance() as u32;
+    ffx_vfx::fp::bridge::ppp_fp_get_mng_ptr(m, id, at, 0);
+    run
 }
