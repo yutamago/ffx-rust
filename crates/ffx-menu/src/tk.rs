@@ -4899,6 +4899,58 @@ pub mod bridge {
         mem.write(entry.wrapping_add(0xa), r as u8);
         r
     }
+    /// The save file names' format (`0x023cc0a0`: the product code and
+    /// `FF0906%02d`, set by `TOMenuMakeSaveFileName`'s caller) applied to
+    /// `n`; `None` when it holds a conversion the formatter lacks.
+    fn save_name(mem: &impl Mem, n: u32) -> Option<Vec<u8>> {
+        let f = ffx_text::printf::c_string(mem, mem.rebase(0x023c_c0a0));
+        ffx_text::printf::format(mem, &f, &mut || n)
+    }
+
+    /// The icon file name `010906%02d.ico` (`0x00c5b3fc`) for `n`.
+    fn icon_name(mem: &impl Mem, n: u32) -> Vec<u8> {
+        let f = ffx_text::printf::c_string(mem, mem.rebase(0x00c5_b3fc));
+        ffx_text::printf::format(mem, &f, &mut || n).unwrap_or_default()
+    }
+
+    /// The memory-card paths the save menu builds into `out` for slot
+    /// `n` (`S` the save name): `/S` (`MenuSave_PathDir`, `0x008b3ff0`),
+    /// `/S/S` (`MenuSave_PathData`, `0x008b4060`), `/S/010906nn.ico`
+    /// (`MenuSave_PathIcon`, `0x008b4110`) and `/S/icon.sys`
+    /// (`MenuSave_PathIconSys`, `0x008b4230`); own names. The original
+    /// builds them with `sprintf` and `strcat`s, ending with the text and
+    /// its terminator. `false` (nothing written) when the save name's
+    /// format is beyond [`ffx_text::printf`].
+    pub fn menu_save_path(mem: &mut impl Mem, out: u32, n: u32, kind: u8) -> bool {
+        let Some(name) = save_name(mem, n) else {
+            return false;
+        };
+        let mut p = vec![b'/'];
+        p.extend(&name);
+        match kind {
+            1 => {
+                p.push(b'/');
+                p.extend(&name);
+            }
+            2 => {
+                p.push(b'/');
+                p.extend(icon_name(mem, n));
+            }
+            3 => p.extend(b"/icon.sys"),
+            _ => {}
+        }
+        p.push(0);
+        mem.write_bytes(out, &p);
+        true
+    }
+
+    /// `MenuSave_IconName(out, n)` (`0x008b41e0`, own name):
+    /// `010906%02d.ico` for `n` copied to `out`.
+    pub fn menu_save_icon_name(mem: &mut impl Mem, out: u32, n: u32) {
+        let mut s = icon_name(mem, n);
+        s.push(0);
+        mem.write_bytes(out, &s);
+    }
 }
 
 #[cfg(test)]

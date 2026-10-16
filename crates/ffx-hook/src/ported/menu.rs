@@ -3006,4 +3006,41 @@ ported! {
     CIatan2 @ 0x0088_9e70 => extern "C" fn ci_atan2(y: f32, x: f32) -> f32 {
         ffx_menu::math::ci_atan2(y, x, |a, b| crt_x87(0x00b0_c3b0, a, Some(b)))
     }
+    /// `MenuSave_PathDir(out, n)`: `/S`.
+    MenuSave_PathDir @ 0x008b_3ff0 => extern "C" fn menu_save_path_dir(out: u32, n: u32) {
+        tk::menu_save_path(&mut mem(), out, n, 0);
+    }
+    /// `MenuSave_PathData(out, n)`: `/S/S`.
+    MenuSave_PathData @ 0x008b_4060 => extern "C" fn menu_save_path_data(out: u32, n: u32) {
+        tk::menu_save_path(&mut mem(), out, n, 1);
+    }
+    /// `MenuSave_PathIcon(out, n)`: `/S/010906nn.ico`.
+    MenuSave_PathIcon @ 0x008b_4110 => extern "C" fn menu_save_path_icon(out: u32, n: u32) {
+        tk::menu_save_path(&mut mem(), out, n, 2);
+    }
+    /// `MenuSave_PathIconSys(out, n)`: `/S/icon.sys`.
+    MenuSave_PathIconSys @ 0x008b_4230 => extern "C" fn menu_save_path_icon_sys(out: u32, n: u32) {
+        tk::menu_save_path(&mut mem(), out, n, 3);
+    }
+    /// `MenuSave_IconName(out, n)`.
+    MenuSave_IconName @ 0x008b_41e0 => extern "C" fn menu_save_icon_name(out: u32, n: u32) {
+        tk::menu_save_icon_name(&mut mem(), out, n);
+    }
+    /// `Gu_WindowControlSetTextf(window, id, fmt, ...)`: up to 12 argument
+    /// words read; a format beyond the bridge's formatter goes through the
+    /// game's own `vsprintf` (import slot `0x00b0c430`).
+    Gu_WindowControlSetTextf @ 0x0084_a810 => extern "C" fn gu_window_control_set_textf(window: u32, id: u32, fmt: u32, a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32, a9: u32, a10: u32, a11: u32) {
+        let args = [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11];
+        let mut m = mem();
+        let done = gu::gu_window_control_set_textf(&mut m, window, id, fmt, &args, &mut |_, p| user_free(p), &mut |_, n| user_malloc(n));
+        if !done {
+            let mut buf = [0u8; 0x400];
+            let at = u32::try_from(buf.as_mut_ptr() as usize).unwrap_or(0);
+            let list = u32::try_from(args.as_ptr() as usize).unwrap_or(0);
+            // SAFETY: an import slot of this build, filled by the loader.
+            let vsprintf = unsafe { (crate::rebase(0x00b0_c430) as *const u32).read() };
+            call_ptr(vsprintf, &[at, fmt, list]);
+            gu::gu_window_control_set_text(&mut m, window, id, at, &mut |_, p| user_free(p), &mut |_, n| user_malloc(n));
+        }
+    }
 }

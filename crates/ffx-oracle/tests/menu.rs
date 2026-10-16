@@ -5559,3 +5559,170 @@ fn ci_wrappers_match_the_original() {
         }
     }
 }
+
+/// MSVCR110 `sprintf`'s import slot.
+const SPRINTF_SLOT: u32 = 0x00b0_c3dc;
+
+#[test]
+fn printf_matches_the_runtime() {
+    let Some(mut t) = setup_any(0x9f9f_0001) else {
+        return;
+    };
+    let formats: &[&[u8]] = &[
+        b"%d",
+        b"%5d",
+        b"%-5d|",
+        b"%05d",
+        b"%+d",
+        b"% d",
+        b"%u",
+        b"%x",
+        b"%#x",
+        b"%X",
+        b"%08X",
+        b"%o",
+        b"%#o",
+        b"%.3d",
+        b"%.0d",
+        b"%c",
+        b"%s",
+        b"%.2s",
+        b"%10s",
+        b"%-10s|",
+        b"%hd",
+        b"%hhx",
+        b"%hu",
+        b"%ld",
+        b"%%",
+        b"%d.%02d",
+        b"%d.%d",
+        b"%p",
+        b"%*d",
+        b"%.*d",
+        b"%-*d|",
+        b"%3c",
+        b"%I64d",
+        b"%lld",
+        b"%5.3d",
+        b"%-08x|",
+        b"%+05d",
+        b"FF0906%02d",
+        b"010906%02d.ico",
+        b"",
+    ];
+    let text = t.alloc(b"hello\0");
+    for round in 0..400u32 {
+        let fmt = formats[(round as usize) % formats.len()];
+        let mut fb = fmt.to_vec();
+        fb.push(0);
+        let f = t.alloc(&fb);
+        let mut args: Vec<u32> = (0..4).map(|_| t.rng.int()).collect();
+        if fmt
+            .windows(2)
+            .any(|w| w == b"%s" || w == b".2" || w == b"0s")
+            || fmt.ends_with(b"s|")
+        {
+            args[0] = if round % 7 == 0 { 0 } else { text };
+        }
+        if fmt.contains(&b'*') {
+            args[0] = t.rng.pick(&[0u32, 3, 12, 0xffff_fffb, 0xffff_ffff]);
+        }
+        let buf = t.alloc(&[0u8; 0x80]);
+        let stub: u32 = Mem::read(&t.a, t.a.rebase(SPRINTF_SLOT));
+        let mut call = vec![buf, f];
+        call.extend(&args);
+        let r =
+            t.a.call(stub, Conv::Cdecl, &call)
+                .unwrap_or_else(|e| panic!("{:?} {args:x?}: {e}", String::from_utf8_lossy(fmt)));
+        let n = ffx_text::printf::sprintf(&mut t.b, buf, f, &args).expect("supported");
+        assert_eq!(
+            r.eax,
+            n,
+            "{:?} {args:x?}: length",
+            String::from_utf8_lossy(fmt)
+        );
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{:?} {args:x?}: text",
+            String::from_utf8_lossy(fmt)
+        );
+        t.a.clear_dirty();
+        t.b.clear_dirty();
+    }
+}
+
+#[test]
+fn save_paths_match_the_original() {
+    let Some(mut t) = setup_any(0x5a5e_0002) else {
+        return;
+    };
+    let codes: [&[u8]; 3] = [
+        b"BISLPS-25088FF0906%02d\0",
+        b"BESCES-50490FF0906%02d\0",
+        b"BKSLPM-67513FF0906%02d\0",
+    ];
+    let flog = record_frees(&mut t);
+    let (mlog, arena) = record_mallocs(&mut t);
+    for round in 0..150u32 {
+        let code = codes[(round % 3) as usize];
+        t.put_bytes(t.sym(0x023c_c0a0), code);
+        let n = t.rng.pick(&[0u32, 1, 9, 10, 99, 100, 0xffff_ffff]);
+        let out = t.alloc_random(0x80);
+        for (name, sym, kind) in [
+            ("MenuSave_PathDir", 0x008b_3ff0u32, 0u8),
+            ("MenuSave_PathData", 0x008b_4060, 1),
+            ("MenuSave_PathIcon", 0x008b_4110, 2),
+            ("MenuSave_PathIconSys", 0x008b_4230, 3),
+        ] {
+            t.twin(name, sym, &[out, n], VOID, |o| {
+                assert!(tk::menu_save_path(o, out, n, kind));
+                0
+            });
+        }
+        t.twin("MenuSave_IconName", 0x008b_41e0, &[out, n], VOID, |o| {
+            tk::menu_save_icon_name(o, out, n);
+            0
+        });
+        // a formatted control text
+        let win = window(&mut t);
+        let controls: u32 = Mem::read(&t.b, win + 0x94);
+        for k in 0..6 {
+            let ck = controls + k * 0x44;
+            let hk = t.alloc_random(0x40);
+            let capk = t.rng.pick(&[0u16, 0x20]);
+            t.put(ck + 0x26, capk);
+            t.put(ck + 0x28, if capk == 0 { ck + 0x30 } else { hk });
+        }
+        let fmt = t.rng.pick(&[0u32, 1, 2, 3]);
+        let fmts: [&[u8]; 4] = [
+            b"%d.%02d\0",
+            b"%d.%d\0",
+            b"%s and %d %s\0",
+            b"%08X-%-6d|%c\0",
+        ];
+        let f = t.alloc(fmts[fmt as usize]);
+        let s1 = t.alloc(b"a fairly long label text\0");
+        let args = [t.rng.int(), t.rng.int(), s1, 0x41];
+        let args = if fmt == 2 { [s1, args[1], s1, 0] } else { args };
+        let id = t.rng.pick(&[1u32, 2, 3, 0x1_0001]);
+        let mut call = vec![win, id, f];
+        call.extend(args);
+        t.twin("Gu_WindowControlSetTextf", 0x0084_a810, &call, VOID, |o| {
+            assert!(gu::gu_window_control_set_textf(
+                o,
+                win,
+                id,
+                f,
+                &args,
+                &mut |o, p| free_into(o, flog, p),
+                &mut |o, n| {
+                    let _ = free_into(o, mlog, n);
+                    arena
+                },
+            ));
+            0
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}

@@ -5984,6 +5984,7 @@
 0x0084a670 function Gu_WindowControlSetHide   # fh v3:exact 0x0084a670
 0x0084a6c0 function Gu_WindowControlSetLeftText# (window, id, on) control flag 0x10 = on; Switch name, the slot between Gu_WindowControlSetHide and Gu_WindowControlSetText
 0x0084a710 function Gu_WindowControlSetText   # fh v3:exact 0x0084a710
+0x0084a810 function Gu_WindowControlSetTextf  # (window, id, fmt, ...) vsprintf into a 1 KiB local, then the Gu_WindowControlSetText logic on the first control with id; Switch name, alphabetical slot Gu_WindowControlSetText..Gu_WindowCreate
 0x0084a920 function Gu_WindowCreate           # fh v3:exact 0x0084a920
 0x0084ab80 function Gu_WindowCloseTree        # (window) handler +0x7c (window, 0x8003, 0), flag 4, children recursively; own name
 0x0084abd0 function Gu_WindowFreeClosed       # () windows flagged closed (+0x88 bit 2) unlinked from g_GuWindowList and user_free-d with their controls' heap texts, controls array and +0x5c buffer (when +0x5a); own name (the gap's Switch names DelControl/Dispose are unproven)
@@ -7258,6 +7259,11 @@
 0x008b3d90 function TkMenuSaveLoadCloseWindow2 # (): close request (+0x41 = 1) for 0x01866258 and forget it; save/load menu (TkMenuCtrlSaveLoad area)
 0x008b3db0 function TkMenuCloseSaveLoadScreen # fh v3:exact 0x008b3d60
 0x008b3e40 function TkMenuSaveLoadCloseWindow # (): close request for g_TkMenuSaveLoadWindow (TkMenuCtrlSaveLoad reads it) and forget it
+0x008b3ff0 function MenuSave_PathDir          # (out, n) "/" + sprintf(0x023cc0a0 = product code + "FF0906%02d", n); own name
+0x008b4060 function MenuSave_PathData         # (out, n) "/S/S" with S the save name of slot n; own name
+0x008b4110 function MenuSave_PathIcon         # (out, n) "/S/" + "010906%02d.ico"; own name
+0x008b41e0 function MenuSave_IconName         # (out, n) sprintf "010906%02d.ico"; own name
+0x008b4230 function MenuSave_PathIconSys      # (out, n) "/S/icon.sys"; own name
 0x008b4e40 function TkMenuGetSaveFileInfo     # (i) -> &0x0159ec70[i * 0x40], i clamped to 0..0x62: the 99 save files (save/load menu code)
 0x008b4e70 function MenuSaveLoad_Reset        # (v) save/load flags cleared, second window +0x58 = v; own name
 0x008b4eb0 function MenuSaveLoad_ResetToggles # u8 0x0186626a, 0x0186626b = 0; own name
