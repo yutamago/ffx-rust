@@ -4,9 +4,11 @@
 //! becomes a core (portable, on its own types) and a `bridge` function
 //! over game memory (`docs/porting.md`), one module per area.
 
+pub mod accessor;
 pub mod btl;
 pub mod cd;
 pub mod config;
+pub mod daps;
 pub mod fixup;
 pub mod heap;
 pub mod instance;

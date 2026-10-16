@@ -9,6 +9,7 @@
 //! - [`prog`]: the program table's set-ups and steps;
 //! - [`mat`]: the matrix programs and their draws;
 //! - [`heap`]: the particle heaps;
+//! - [`part`]: parts, their data and objects;
 //! - [`fp`]: the field's particle effects;
 //! - [`op`]: the op layer's services;
 //! - [`et`]: its character and effect tables;
@@ -24,7 +25,9 @@ pub mod mat;
 pub mod op;
 pub mod opd;
 pub mod opus;
+pub mod part;
 pub mod ppp;
 pub mod prog;
 pub mod rand;
+pub mod tree;
 pub mod x87;

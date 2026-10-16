@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Checks the ported replacements (crates/ffx-hook/src/ported/*.rs) against
 the Ghidra dump: every address is a function start, of at least five bytes
-(the jump patch), not ported twice, and named alike in symbols/ffx.sym.
+(the jump patch), not ported twice, and named alike in symbols/ffx.sym
+(which must name it).
 With FFX_GAME_DIR set, also that the shim pops what the original's `ret`
 pops (cdecl nothing, stdcall every argument, thiscall all but `this`,
 fastcall all but the first two): a mismatch unbalances the caller's stack.
@@ -62,6 +63,9 @@ for f in sorted((progress.REPO / "crates/ffx-hook/src/ported").glob("*.rs")):
                 bad += 1
         if names.get(a) and names[a] != name:
             print(f"{where}: ffx.sym calls it {names[a]}")
+            bad += 1
+        elif not names.get(a):
+            print(f"{where}: no function line in symbols/ffx.sym")
             bad += 1
 print(f"{len(seen)} ported, {bad} problems")
 sys.exit(1 if bad else 0)

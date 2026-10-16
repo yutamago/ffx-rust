@@ -9,7 +9,7 @@ use std::sync::{Arc, OnceLock};
 
 use ffx_bridge::{Global, Mem, Value};
 use ffx_oracle::{Conv, Oracle, Pages};
-use ffx_vfx::{et, fp, heap, mat, op, opd, opus, ppp, prog, rand, x87};
+use ffx_vfx::{et, fp, heap, mat, op, opd, opus, part, ppp, prog, rand, tree, x87};
 
 fn exe() -> Option<PathBuf> {
     let dir = std::env::var_os("FFX_GAME_DIR").map(PathBuf::from);
@@ -591,8 +591,10 @@ type ById2 = fn(&mut Oracle, u32, u32);
 
 fn fp_calls(p: &mut Pair, rng: &mut Xorshift, ids: &[u32], outs: u32, round: u32) {
     use fp::bridge as f;
-    let by_id: [(&str, u32, ById); 6] = [
+    let by_id: [(&str, u32, ById); 8] = [
         ("Fp_Restart", FP_RESTART, f::fp_restart),
+        ("Fp_RestartGroup", 0x0072_9530, f::fp_restart_group),
+        ("Fp_EndGroup", 0x0072_94f0, f::fp_end_group),
         ("Fp_RestartMode2", FP_RESTART_MODE2, f::fp_restart_mode2),
         ("Fp_End", FP_END, f::fp_end),
         ("pppFpIDdispOff", PPP_FP_ID_DISP_OFF, f::ppp_fp_id_disp_off),
@@ -680,6 +682,9 @@ fn field_effects_match_the_original() {
             for i in 0..n {
                 let id = rng.pick(&pool);
                 p.set(table + 0x64 + 0x50 * i, id);
+                // the group (Fp_EndGroup, Fp_RestartGroup)
+                let group = rng.pick(&pool);
+                p.set(table + 0x66 + 0x50 * i, group);
                 let run = p.sym(f::RUN.sym) + 0x80 * i;
                 p.fill(run, 0x80, &mut rng);
                 if rng.chance(30) {
@@ -980,11 +985,20 @@ const OP_ET_EFF_OFF_SIGNAL: u32 = 0x007f_c450;
 const OP_ET_WEAPON_AFTERIMAGE_FADE: u32 = 0x007f_ca40;
 
 type ByHandle = fn(&mut Oracle, u32) -> u32;
+type ByHandle2 = fn(&mut Oracle, u32, u32) -> u32;
 
 /// One of each `et` function on `handles` and effect `ids`.
+#[allow(clippy::too_many_lines)] // one call of each
 fn et_calls(p: &mut Pair, rng: &mut Xorshift, handles: &[u32], ids: &[u32], out: u32, what: &str) {
     use et::bridge as e;
-    let returning: [(&str, u32, ByHandle); 3] = [
+    let returning: [(&str, u32, ByHandle); 6] = [
+        (
+            "op_et_bindeff2_draw_off",
+            0x007f_b530,
+            e::op_et_bindeff2_draw_off,
+        ),
+        ("op_et_chr_draw_off", 0x007f_c000, e::op_et_chr_draw_off),
+        ("op_et_chr_draw_on", 0x007f_c060, e::op_et_chr_draw_on),
         (
             "op_et_bindeff_draw_on",
             OP_ET_BINDEFF_DRAW_ON,
@@ -1001,7 +1015,22 @@ fn et_calls(p: &mut Pair, rng: &mut Xorshift, handles: &[u32], ids: &[u32], out:
             e::op_et_bindeff2_draw_on,
         ),
     ];
-    let void: [(&str, u32, ById); 4] = [
+    let void: [(&str, u32, ById); 7] = [
+        (
+            "op_et_bindeff2_breath_off",
+            0x007f_b470,
+            e::op_et_bindeff2_breath_off,
+        ),
+        (
+            "op_et_bindeff2_walk_off",
+            0x007f_b7f0,
+            e::op_et_bindeff2_walk_off,
+        ),
+        (
+            "op_et_bindeff2_water_off",
+            0x007f_b890,
+            e::op_et_bindeff2_water_off,
+        ),
         (
             "op_et_bindeff2_walk_on",
             OP_ET_BINDEFF2_WALK_ON,
@@ -1035,8 +1064,52 @@ fn et_calls(p: &mut Pair, rng: &mut Xorshift, handles: &[u32], ids: &[u32], out:
             e::op_et_weapon_afterimage_fade,
         ),
     ];
+    let switches: [(&str, u32, ByHandle2); 4] = [
+        (
+            "op_et_bindeff2_draw_set",
+            0x007f_b610,
+            e::op_et_bindeff2_draw_set,
+        ),
+        (
+            "op_et_bindeff_draw_set",
+            0x007f_bb20,
+            e::op_et_bindeff_draw_set,
+        ),
+        ("op_et_chr_draw_set", 0x007f_c0c0, e::op_et_chr_draw_set),
+        (
+            "op_et_draw_flags_switch",
+            0x007f_c200,
+            e::op_et_draw_flags_switch,
+        ),
+    ];
+    let masks: [(&str, u32, ById2); 4] = [
+        ("op_et_eff_signal_and", 0x007f_c490, e::op_et_eff_signal_and),
+        ("op_et_eff_flags_and", 0x007f_c4d0, e::op_et_eff_flags_and),
+        ("op_et_eff_flags_or", 0x007f_c510, e::op_et_eff_flags_or),
+        ("op_et_eff_signal_or", 0x007f_c550, e::op_et_eff_signal_or),
+    ];
     for _ in 0..8 {
         let h = rng.pick(handles);
+        let (name, sym, f) = rng.pick(&switches);
+        let on = rng.pick(&[0u32, 1, 0x100]);
+        p.check(
+            &format!("{name}({h:#x}, {on}) {what}"),
+            sym,
+            &[h, on],
+            |m| Some(f(m, h, on)),
+        );
+        let id = rng.pick(ids);
+        let (name, sym, f) = rng.pick(&masks);
+        let mask = rng.next();
+        p.check(
+            &format!("{name}({id:#x}, {mask:#x}) {what}"),
+            sym,
+            &[id, mask],
+            |m| {
+                f(m, id, mask);
+                None
+            },
+        );
         p.check(
             &format!("op_get_chr_status_stone({h:#x}) {what}"),
             OP_GET_CHR_STATUS_STONE,
@@ -3276,6 +3349,1136 @@ fn vu0_macros_and_tables_match_the_original() {
                 p.check("opus_chr_index_map", 0x007f_e450, &[out], |m| {
                     Some(e::opus_chr_index_map(m, out))
                 });
+            }
+        }
+    }
+}
+
+// ---- round 5: renderer flags, EE/VU emulation, rotations, packets -----
+
+/// A float that is a number (no NaNs or infinities: the rotations' x87
+/// sums of products would pick between two NaNs by register order).
+fn finite(rng: &mut Xorshift) -> u32 {
+    loop {
+        let v = rng.float();
+        if (v & 0x7f80_0000) != 0x7f80_0000 {
+            return v;
+        }
+    }
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
+fn round5_helpers_match_the_original() {
+    use heap::bridge as h;
+    use mat::bridge as b;
+    use op::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0005_ba5e);
+        let x = p.alloc(0x40);
+        let y = p.alloc(0x40);
+        let dst = p.alloc(0x40);
+        let angles = p.alloc(0x10);
+        let packet = p.alloc(0x2000);
+        let env_slot = p.alloc(4);
+        let env = p.alloc(0x40);
+        let arena = p.alloc(0x2000);
+        let obj = p.alloc(0x400);
+        let parent = p.alloc(0x60);
+        let key = p.alloc(0x40);
+        let ctrl = p.alloc(0x10);
+        let offsets = p.alloc(0x10);
+        let tables = p.alloc(0x400);
+        p.set(ctrl + 0xc, offsets);
+        p.put(h::ENV_SLOT, env_slot);
+        p.set(env_slot, env);
+        for round in 0..2000u32 {
+            let f = rng.next();
+            for (name, sym) in [
+                ("calculateVFXSP_ZMat", 0x0071_2d00),
+                ("calculateVFXSP_AlphaFunction", 0x0071_2c30),
+            ] {
+                let arg = if rng.chance(50) { rng.below(0x100) } else { f };
+                p.check(name, sym, &[arg], |_| {
+                    Some(if sym == 0x0071_2d00 {
+                        o::calculate_vfx_sp_zmat(arg)
+                    } else {
+                        o::calculate_vfx_sp_alpha_function(arg)
+                    })
+                });
+            }
+            p.fill(x, 0x40, &mut rng);
+            p.fill(y, 0x40, &mut rng);
+            let g = if rng.chance(20) { 0 } else { x };
+            p.check(
+                "graphicVFXGetRenderDataByGeometry",
+                0x0064_53b0,
+                &[g],
+                |m| Some(o::graphic_vfx_get_render_data_by_geometry(m, g)),
+            );
+            p.check("graphicVFXSetCurrentVFXType", 0x0064_5670, &[f], |m| {
+                o::CURRENT_TYPE.set(m, f as u8);
+                None
+            });
+            p.check("pppEePmulth", 0x0073_74e0, &[dst, x, y], |m| {
+                b::ppp_ee_pmulth(m, dst, x, y);
+                None
+            });
+            p.check("pppEePpacb", 0x0073_75d0, &[dst, x, y], |m| {
+                b::ppp_ee_ppacb(m, dst, x, y);
+                None
+            });
+            // rotations of a matrix of numbers
+            for i in (0..0x40).step_by(4) {
+                let v = finite(&mut rng);
+                p.set(x + i, v);
+            }
+            for i in 0..4 {
+                let a = if rng.chance(30) {
+                    f32::from(rng.below(0x3000) as u16).to_bits()
+                } else {
+                    (f32::from_bits(finite(&mut rng)) % 1.0e6).to_bits()
+                };
+                p.set(angles + 4 * i, a);
+            }
+            let a: u32 = p.get(angles);
+            let d = if rng.chance(30) { x } else { dst };
+            for (name, sym, axis) in [
+                ("op_rt_m_x", 0x007e_9580, mat::Axis::X),
+                ("op_rt_m_y", 0x007e_9670, mat::Axis::Y),
+                ("op_rt_m_z", 0x007e_9760, mat::Axis::Z),
+            ] {
+                p.check(name, sym, &[d, x, a], |m| {
+                    o::op_rt_m(m, d, x, f32::from_bits(a), axis);
+                    None
+                });
+            }
+            p.check("op_rt_m_yxz", 0x007e_9a30, &[dst, x, angles, y], |m| {
+                o::op_rt_m_yxz(m, dst, x, angles, y);
+                None
+            });
+            // a model packet: tags of random types and counts
+            let mut t = packet + 0x20;
+            for _ in 0..rng.below(8) {
+                p.set(
+                    t + 1,
+                    rng.below(8) as u8 | if rng.chance(30) { 0x80 } else { 0 },
+                );
+                p.set(t + 2, rng.below(16) as u16);
+                let kind = u32::from(p.get::<u8>(t + 1) & 7);
+                let size: u32 = p.get(p.sym(o::MD_TAG_SIZES.sym) + 4 * kind);
+                t += 0x10 + u32::from(p.get::<u16>(t + 2)) * size;
+            }
+            p.set(t + 1, 0xffu8);
+            if !p.snapshot() || round > 0 {
+                let id = rng.pick(&[0u32, 0x94, 0x239, 0xd0, 7]);
+                p.put(ffx_system::instance::bridge::MAGIC_ID, id);
+            }
+            let (va, vb) = (rng.next(), rng.next());
+            p.check(
+                "op_md_packet_set_addr",
+                0x00a6_9de0,
+                &[packet, va, vb],
+                |m| {
+                    o::op_md_packet_set_addr(m, packet, va, vb);
+                    None
+                },
+            );
+            // the part matrix
+            for i in (0..0x80).step_by(4) {
+                let v = finite(&mut rng);
+                p.set(obj + i, v);
+            }
+            for i in 0..3 {
+                p.set(obj + 0x50 + 4 * i, rng.next());
+            }
+            if !p.snapshot() || round > 0 {
+                p.put(
+                    ppp::bridge::R0,
+                    [
+                        finite(&mut rng),
+                        finite(&mut rng),
+                        finite(&mut rng),
+                        finite(&mut rng),
+                    ],
+                );
+            }
+            p.check("pppSetMatrix", 0x0071_7410, &[obj], |m| {
+                b::ppp_set_matrix(m, obj);
+                None
+            });
+            // pppVertexAttend on a shape table of the environment
+            for i in (0..0x60).step_by(4) {
+                let v = finite(&mut rng);
+                p.set(parent + i, v);
+            }
+            p.set(obj + 4, parent);
+            p.set(offsets, 0u32);
+            p.set(offsets + 4, 0x40u32);
+            let records = tables;
+            let blocks = tables + 0x80;
+            let lists = tables + 0x100;
+            let verts = tables + 0x200;
+            p.set(env + 0x28, records);
+            p.set(env + 0x20, blocks);
+            for r in 0..8 {
+                p.set(records + 8 * r, rng.below(4) as u16);
+                p.set(records + 8 * r + 4, lists + 0x10 * r);
+            }
+            for k in 0..4 {
+                p.set(blocks + 0x20 * k + 0x14, verts + 0x40 * k);
+            }
+            p.fill(lists, 0x100, &mut rng);
+            for i in (0..0x80).step_by(2) {
+                p.set(lists + i, rng.below(10) as u16);
+            }
+            p.fill(verts, 0x100, &mut rng);
+            p.set(obj + 0xa0, rng.below(8) as u16);
+            p.set(key + 4, if rng.chance(10) { u32::MAX } else { 0 });
+            p.set(
+                key + 0xc,
+                if rng.chance(10) {
+                    0xffffu16
+                } else {
+                    rng.below(8) as u16
+                },
+            );
+            p.check("pppVertexAttend", 0x0075_d340, &[obj, key, ctrl], |m| {
+                b::ppp_vertex_attend(m, obj, key, ctrl);
+                None
+            });
+            // pppKeLnsLpCon, pppVtMimeDes and pppMemFree on the environment's heaps
+            p.set(offsets, rng.below(0x40) * 4);
+            p.check("pppKeLnsLpCon", 0x0075_af30, &[obj, ctrl], |m| {
+                prog::bridge::ppp_ke_lns_lp_con(m, obj, ctrl);
+                None
+            });
+            if round % 4 == 0 {
+                p.check("pppCreateHeap", 0x0072_c480, &[env, arena, 0x1000], |m| {
+                    h::ppp_create_heap(m, env, arena, 0x1000);
+                    None
+                });
+                p.check(
+                    "pppCreateHeap",
+                    0x0072_c480,
+                    &[env + 0x10, arena + 0x1000, 0x1000],
+                    |m| {
+                        h::ppp_create_heap(m, env + 0x10, arena + 0x1000, 0x1000);
+                        None
+                    },
+                );
+            }
+            let size = rng.below(0x200);
+            let block = p.check("pppMemAlloc", 0x0071_6a30, &[env, env + 0x10, size], |m| {
+                Some(h::ppp_mem_alloc(m, env, env + 0x10, size))
+            });
+            let off0: u32 = p.get(offsets);
+            if rng.chance(50) {
+                p.set(obj + off0 + 0xac, block);
+                p.check("pppVtMimeDes", 0x0072_ede0, &[obj, ctrl], |m| {
+                    prog::bridge::ppp_vt_mime_des(m, obj, ctrl);
+                    None
+                });
+            } else {
+                p.check("pppMemFree", 0x0071_6a90, &[env, env + 0x10, block], |m| {
+                    h::ppp_mem_free(m, env, env + 0x10, block);
+                    None
+                });
+            }
+        }
+    }
+}
+
+// ---- parts and objects ------------------------------------------------
+
+/// The program table (`g_pppProgramTable`).
+const PROGRAM_TABLE: u32 = 0x00c3_a508;
+
+fn call_original(m: &mut Oracle, f: u32, args: &[u32]) -> u32 {
+    m.call(f, Conv::Cdecl, args).unwrap().eax
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
+fn parts_and_objects_match_the_original() {
+    use part::bridge as pt;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x9a27_0b1e);
+        let programs = p.sym(PROGRAM_TABLE);
+        let block = p.alloc(0x1000);
+        let env_slot = p.alloc(4);
+        let env = p.alloc(0x40);
+        let arena = p.alloc(0x8000);
+        let part = p.alloc(0x80);
+        let defs = p.alloc(0x400);
+        let list = p.alloc(0x20);
+        // (defs: four 16-byte definitions, their program lists from +0x100)
+        let offs = p.alloc(0x10);
+        let keys = p.alloc(0x200 * 16);
+        for i in (0..0x200 * 16).step_by(0x20) {
+            p.set(keys + i, (i % 0x200) / 0x20 * 0x1000);
+            for j in (4..0x20).step_by(4) {
+                let v = rng.float();
+                p.set(keys + i + j, v);
+            }
+        }
+        let part2 = p.alloc(0x80);
+        let start = p.alloc(0x200);
+        let log = record_srand(&mut p);
+        let hits_list = p.alloc(0x400);
+        // (hits_list + 0x200: the shape tables of the pppVertexAp steps)
+        for i in 0..4 {
+            p.set(offs + 4 * i, 0x40 * i);
+        }
+        let nodes = p.alloc(0x40);
+        let recs = p.alloc(0x80);
+        let set = p.sym(0x0071_7610); // setVfxShapeEnlargeBufferFactor
+        p.put(heap::bridge::ENV_SLOT, env_slot);
+        p.set(env_slot, env);
+        // graphicVFXDestroy: the renderer's side (its tables are not set up
+        // in the oracle); the bridges call it like the originals
+        let destroy = p.sym(0x0064_5280);
+        p.a.stub_return(destroy, 0).unwrap();
+        p.b.stub_return(destroy, 0).unwrap();
+        for round in 0..1500u32 {
+            // a part data block: three definitions and a terminator
+            p.fill(block, 0x1000, &mut rng);
+            p.set(block + 8, 0x800u32);
+            p.set(block + 0xc, 0x900u32);
+            let n8 = rng.below(5);
+            let n9 = rng.below(5);
+            p.set(block + 0x800, n8);
+            p.set(block + 0x900, n9);
+            for i in 0..n8 {
+                p.set(block + 0x804 + 4 * i, rng.below(12));
+            }
+            for i in 0..n9 {
+                p.set(block + 0x904 + 4 * i, rng.below(0x100) * 4);
+            }
+            // the definitions: the first at +0x10, the others 0x100 apart,
+            // each linked by its first word (relative to the block)
+            let chain = 1 + rng.below(4);
+            for k in 0..=chain {
+                let def = if k == 0 {
+                    block + 0x10
+                } else {
+                    block + 0x100 * k
+                };
+                let next = if k == chain { 0 } else { 0x100 * (k + 1) };
+                p.set(def, next);
+                let n = rng.below(4) as u16;
+                p.set(def + 0x26, n);
+                for e in 0..u32::from(n) {
+                    p.set(def + 0x28 + 0x10 * e, rng.below(12));
+                    p.set(def + 0x30 + 0x10 * e, rng.below(0x80) * 4);
+                    p.set(def + 0x34 + 0x10 * e, rng.below(0x80) * 4);
+                }
+            }
+            if rng.chance(5) {
+                p.set(block + 0x10, 0u32);
+            }
+            let pdt = block;
+            p.check(
+                &format!("pppInitPdt round {round}"),
+                0x0071_20f0,
+                &[pdt, programs],
+                |m| {
+                    pt::ppp_init_pdt(m, pdt, programs);
+                    None
+                },
+            );
+
+            // an effect data block: two empty part data blocks and the
+            // three other tables
+            let data = block + 0xa00;
+            for (at, off) in [
+                (0x10u32, 0x100u32),
+                (0x14, 0x200),
+                (0x18, 0x300),
+                (0x1c, 0x380),
+            ] {
+                p.set(data + at, off);
+            }
+            let pdts = rng.below(3) as u16;
+            p.set(data + 6, pdts);
+            for i in 0..u32::from(pdts) {
+                let pd = 0x40 + 0x40 * i;
+                p.set(data + 0x100 + 4 * i, pd);
+                p.set(data + pd + 8, 0x20u32);
+                p.set(data + pd + 0xc, 0x24u32);
+                p.set(data + pd + 0x20, 0u32);
+                p.set(data + pd + 0x24, 0u32);
+                p.set(data + pd + 0x10, 0u32);
+            }
+            for (at, n) in [(8u32, 4u32), (0xa, 8), (0xc, 8)] {
+                p.set(data + at, rng.below(n) as u16);
+            }
+            p.check(
+                &format!("pppInitData round {round}"),
+                0x0071_1fa0,
+                &[data, programs, 0],
+                |m| {
+                    pt::ppp_init_data(m, data, programs);
+                    None
+                },
+            );
+
+            // pppOtFunc_Reg on a list
+            if round % 8 == 0 {
+                p.set(list + 4, list + 0x10);
+                p.set(list + 0xc, 0u16);
+            }
+            let node = nodes + 0x10 * rng.below(4);
+            let (a, b) = (rng.next(), rng.next());
+            p.check("pppOtFunc_Reg", 0x0071_6be0, &[list, node, a, b], |m| {
+                pt::ppp_ot_func_reg(m, list, node, a, b);
+                None
+            });
+
+            // object definitions whose programs are the first twelve
+            // records of the table (pppAccele ... pppColor)
+            if round % 16 == 0 {
+                for (h, mem) in [(env, arena), (env + 0x10, arena + 0x4000)] {
+                    p.check("pppCreateHeap", 0x0072_c480, &[h, mem, 0x4000], |m| {
+                        heap::bridge::ppp_create_heap(m, h, mem, 0x4000);
+                        None
+                    });
+                }
+                p.set(part + 0x30, 0u32);
+                for d in 0..4 {
+                    // 16-byte definitions (the part's birth records too),
+                    // their program lists after them
+                    let def = defs + 0x10 * d;
+                    let prog = defs + 0x100 + 0x80 * d;
+                    p.set(def, prog);
+                    p.set(def + 4, 0u32);
+                    p.set(def + 0xc, 0u16);
+                    p.set(prog + 0x20, 0x200 + 0x40 * rng.below(4));
+                    p.set(prog + 0x24, rng.below(4) as u16);
+                    let n = 1 + rng.below(3) as u16;
+                    p.set(prog + 0x26, n);
+                    p.set(prog + 0xc, u8::from(rng.chance(20)));
+                    p.set(prog + 0x14, rng.pick(&[0x7000_0000u32, 0x3000, 0x8000]));
+                    p.set(prog + 0x18, 0u32);
+                    p.set(prog + 0x1c, rng.pick(&[0x7fff_ffffu32, 0x4000]));
+                    for e in 0..u32::from(n) {
+                        let entry = prog + 0x28 + 0x10 * e;
+                        // the steps of pppAccele .. pppColor, or a draw
+                        let k = rng.pick(&[0u32, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 19, 20]);
+                        let r = if rng.chance(10) {
+                            0
+                        } else {
+                            programs + 0x28 * k
+                        };
+                        p.set(entry, r);
+                        p.set(entry + 4, 0x20u16);
+                        // the program's keys: frames 0x1000 apart
+                        let k = keys + 0x200 * (4 * d + e);
+                        p.set(entry + 8, k);
+                        // the entry's +0xc: the work area offsets the
+                        // set-up reads
+                        p.set(entry + 0xc, offs);
+                    }
+                }
+            }
+            let def = defs + 0x10 * rng.below(4);
+            p.check(
+                &format!("pppCreatePObject round {round}"),
+                0x0071_6770,
+                &[part, def],
+                |m| Some(pt::ppp_create_pobject(m, part, def, &mut call_original)),
+            );
+            let obj = p.get::<u32>(part + 0x30);
+            if obj != 0 {
+                p.check("pppPObjectCon2", 0x0071_2d20, &[obj], |m| {
+                    pt::ppp_pobject_con(m, obj, 0x20, &mut call_original);
+                    None
+                });
+            }
+            // births
+            p.set(part + 8, rng.below(10));
+            p.set(part + 0x18, rng.below(4));
+            p.set(part + 0x3c, if rng.chance(10) { 0 } else { defs });
+            for d in 0..4 {
+                p.set(defs + 0x10 * d + 8, rng.below(12));
+            }
+            p.check("pppBornPObjects", 0x0071_2b80, &[part], |m| {
+                pt::ppp_born_pobjects(m, part, &mut call_original);
+                None
+            });
+            // (a null birth list only here: pppRunPartStd would read
+            // through it)
+            p.set(part + 0x3c, defs);
+            // a frame of the part
+            p.set(part + 0x1c, u8::from(rng.chance(50)));
+            p.set(part + 0x1d, u8::from(rng.chance(20)));
+            p.set(part + 4, rng.below(0x20000));
+            p.set(part + 0x10, 0x1000u32);
+            if !p.snapshot() || round > 0 {
+                p.put(ppp::bridge::STOP, u32::from(rng.chance(10)));
+            }
+            p.put(prog::bridge::CURRENT_PART, part);
+            if rng.chance(50) {
+                p.check(
+                    &format!("pppRunPartStd round {round}"),
+                    0x0071_6c40,
+                    &[part],
+                    |m| {
+                        pt::ppp_run_part_std(m, part, &mut call_original);
+                        None
+                    },
+                );
+            } else {
+                let flags = rng.pick(&[0u32, 0x10, 0x20, 0x30]);
+                p.check(
+                    &format!("pppRunPart round {round}"),
+                    0x0071_2250,
+                    &[part, flags],
+                    |m| Some(pt::ppp_run_part(m, part, flags, &mut call_original)),
+                );
+            }
+            let head = p.get::<u32>(part + 0x30);
+            if head != 0 && rng.chance(10) {
+                let next = p.get::<u32>(head);
+                p.set(part + 0x30, next);
+                p.check("pppDeletePObject", 0x0071_68f0, &[head, 0], |m| {
+                    pt::ppp_delete_pobject(m, head, &mut call_original);
+                    None
+                });
+            }
+            if round % 16 == 15 {
+                // the birth records it frees: a heap block
+                let env = p.get::<u32>(env_slot);
+                let births = p.check("pppMemAlloc", 0x0071_6a30, &[env, env + 0x10, 0x40], |m| {
+                    Some(heap::bridge::ppp_mem_alloc(m, env, env + 0x10, 0x40))
+                });
+                p.set(part + 0x3c, births);
+                p.check("pppAllFreePObject", 0x0071_1f20, &[part], |m| {
+                    pt::ppp_all_free_pobject(m, part, &mut call_original);
+                    None
+                });
+                p.set(part + 0x3c, defs);
+            }
+
+            // the part's program loops
+            let n = rng.below(4);
+            p.set(part + 0x14, n);
+            p.set(part + 0x34, recs);
+            for i in 0..4 {
+                let r = recs + 0x40 + 0x10 * i;
+                p.set(recs + 4 * i, r);
+                for at in [0x10, 0x14, 0x18] {
+                    p.set(r + at, if rng.chance(50) { set } else { 0 });
+                }
+            }
+            // the user functions and the programs that make child objects
+            let table = recs + 0x10;
+            for i in 0..4 {
+                p.set(table + 4 * i, if rng.chance(50) { set } else { 0 });
+            }
+            let arg = rng.next();
+            p.check("pppCallUsrFunc", 0x0071_6710, &[part, table, arg], |m| {
+                pt::ppp_call_usr_func(m, part, table, arg, &mut call_original);
+                None
+            });
+            let head = p.get::<u32>(part + 0x30);
+            if head != 0 {
+                p.put(pt::USER_FUNCS, if rng.chance(30) { 0 } else { table });
+                let key = start + 0x180;
+                let ctrl = start + 0x1c0;
+                p.set(ctrl + 0xc, offs);
+                p.fill(key, 0x20, &mut rng);
+                p.set(
+                    key + 4,
+                    if rng.chance(10) {
+                        u32::MAX
+                    } else {
+                        rng.below(4)
+                    },
+                );
+                p.set(key + 8, rng.below(0x10) * 4);
+                p.set(
+                    key + 0xc,
+                    if rng.chance(10) {
+                        u32::MAX
+                    } else {
+                        rng.below(4)
+                    },
+                );
+                p.set(key + 0x10, rng.below(0x10) * 4);
+                p.check("pppDrawHookDraw", 0x0075_7370, &[head, key, ctrl], |m| {
+                    pt::ppp_draw_hook(m, head, key, ctrl, &mut call_original);
+                    None
+                });
+                if !p.snapshot() || round > 0 {
+                    p.put(ppp::bridge::STOP, u32::from(rng.chance(10)));
+                }
+                p.check("pppPointAp", 0x0075_73c0, &[head, key, ctrl], |m| {
+                    pt::ppp_point_ap(m, head, key, ctrl, &mut call_original);
+                    None
+                });
+                let v = rng.next() & 0xffff;
+                p.check("pppBornShort", 0x0075_8270, &[head, key, v], |m| {
+                    pt::ppp_born_short(m, head, key, v as u16, &mut call_original);
+                    None
+                });
+                let vert = start + 0x1e0;
+                p.fill(vert, 8, &mut rng);
+                for i in (0x10..0x50).step_by(4) {
+                    let x = finite(&mut rng);
+                    p.set(head + i, x);
+                }
+                for (name, sym, relative) in [
+                    ("pppBornVertex", 0x0075_7770, false),
+                    ("pppBornVertexRel", 0x0075_7b50, true),
+                ] {
+                    p.check(name, sym, &[head, key, vert], |m| {
+                        pt::ppp_born_vertex(m, head, key, vert, relative, &mut call_original);
+                        None
+                    });
+                }
+                // pppPointRAp: two rand-program draws for the direction
+                p.set(log, 0u32);
+                for at in [4u32, 8] {
+                    let v = finite(&mut rng);
+                    p.set(key + at, v);
+                }
+                p.set(key + 0x18, rng.below(0x10) * 4);
+                p.set(key + 0x1c, rng.below(4) as u8);
+                if !p.snapshot() || round > 0 {
+                    p.put(rand::bridge::R, rng.next());
+                    p.put(rand::bridge::SEEDED, u32::from(rng.chance(80)));
+                    p.put(
+                        ppp::bridge::R0,
+                        [finite(&mut rng), rng.next(), rng.next(), rng.next()],
+                    );
+                }
+                p.check("pppPointRAp", 0x0075_7490, &[head, key, ctrl], |m| {
+                    pt::ppp_point_r_ap(m, head, key, ctrl, &mut call_original, &mut srand_log(log));
+                    None
+                });
+                // pppKeHitBorn over a list of three hit nodes (key +8 the
+                // child's field again, +0xc the flag)
+                p.set(
+                    key + 4,
+                    if rng.chance(10) {
+                        u32::MAX
+                    } else {
+                        rng.below(4)
+                    },
+                );
+                p.set(key + 8, rng.below(0x10) * 4);
+                p.set(key + 0xc, u8::from(rng.chance(50)));
+                p.set(key, p.get::<u32>(head + 0xc));
+                if !p.snapshot() || round > 0 {
+                    let id = rng.pick(&[0u32, 0xcb, 0x296]);
+                    p.put(ffx_system::instance::bridge::MAGIC_ID, id);
+                }
+                let nodes = hits_list;
+                for k in 0..3u32 {
+                    let n = nodes + 0x100 * k;
+                    p.set(n, if k == 2 { 0 } else { n + 0x100 });
+                    p.set(n + 0x3e, rng.pick(&[0u16, 0x800, 0x840, 0x40]));
+                    p.set(n + 0x36, rng.below(3) as u8);
+                }
+                let a0 = p.get::<u32>(offs);
+                p.set(head + a0 + 0xa0, if rng.chance(10) { 0 } else { hits_list });
+                p.check("pppKeHitBorn", 0x0075_9d80, &[head, key, ctrl], |m| {
+                    pt::ppp_ke_hit_born(m, head, key, ctrl, &mut call_original);
+                    None
+                });
+                // the pppVertexAp steps on a shape table of the environment
+                let shapes = hits_list + 0x200;
+                let (records, blocks, lists, verts) =
+                    (shapes, shapes + 0x40, shapes + 0x80, shapes + 0x100);
+                p.set(env + 0x28, records);
+                p.set(env + 0x20, blocks);
+                for r in 0..4 {
+                    p.set(records + 8 * r, rng.below(2) as u16);
+                    p.set(records + 8 * r + 2, rng.below(6) as u16);
+                    p.set(records + 8 * r + 4, lists + 0x10 * r);
+                }
+                for k in 0..2 {
+                    p.set(blocks + 0x20 * k + 0x14, verts + 0x40 * k);
+                }
+                for i in (0..0x40).step_by(2) {
+                    p.set(lists + i, rng.below(8) as u16);
+                }
+                p.fill(verts, 0x80, &mut rng);
+                p.set(head + 0x90, if rng.chance(20) { verts } else { 0 });
+                p.set(
+                    key + 4,
+                    if rng.chance(10) {
+                        0xffffu16
+                    } else {
+                        rng.below(4) as u16
+                    },
+                );
+                p.set(key + 6, rng.below(3) as u8);
+                p.set(key + 7, rng.below(4) as u8);
+                p.set(key + 8, rng.pick(&[0u8, 0, 1, 1, 2]));
+                p.set(
+                    key + 0xc,
+                    if rng.chance(10) {
+                        u32::MAX
+                    } else {
+                        rng.below(4)
+                    },
+                );
+                p.set(key + 0x10, rng.below(0x10) * 4);
+                let a0 = p.get::<u32>(offs);
+                p.set(head + a0 + 0xa2, rng.below(2) as u16);
+                p.set(head + a0 + 0xa0, rng.below(8) as u16);
+                let hash = p.sym(0x0064_1da0);
+                let h = rng.pick(&[0u32, 0xe6c, 0x18cd]);
+                // the story and the script's effect flags, for the
+                // localisation rule
+                let scen = p.sym(0x0078_7360);
+                let atel = p.sym(0x0086_b030);
+                let (sv, av) = (rng.pick(&[0u32, 0xcc6]), u32::from(rng.chance(50)));
+                for (at, v) in [(hash, h), (scen, sv), (atel, av)] {
+                    p.a.stub_return(at, v).unwrap();
+                    p.b.stub_return(at, v).unwrap();
+                }
+                // r0 is the zero register: draws in [0, 1) then, which the
+                // random form scales to an index
+                p.put(ppp::bridge::R0, [0, rng.next(), rng.next(), rng.next()]);
+                let form = rng.pick(&[
+                    ("pppVertexAp", 0x0075_7840, pt::VertexAp::Ap),
+                    ("pppVertexApDisPos", 0x0075_7c30, pt::VertexAp::DisPos),
+                    ("pppVertexApLc", 0x0075_7ff0, pt::VertexAp::Lc),
+                    ("pppVertexApAt", 0x0075_82e0, pt::VertexAp::At),
+                ]);
+                p.set(log, 0u32);
+                p.check(form.0, form.1, &[head, key, ctrl], |m| {
+                    pt::ppp_vertex_ap(
+                        m,
+                        head,
+                        key,
+                        ctrl,
+                        form.2,
+                        &mut call_original,
+                        &mut srand_log(log),
+                    );
+                    None
+                });
+                p.put(ppp::bridge::STOP, 0);
+            }
+
+            // pppStartPart on a data block: length, loop flag, programs
+            // (the records above), births (a chain of definitions)
+            if round % 4 == 3 {
+                p.set(start, rng.below(0x10000));
+                p.set(start + 4, u8::from(rng.chance(50)));
+                p.set(start + 8, 0x100u32);
+                p.set(start + 0xc, 0x140u32);
+                p.set(start + 0x100, 4u32);
+                for i in 0..4 {
+                    p.set(start + 0x104 + 4 * i, recs + 0x40 + 0x10 * i);
+                }
+                let nb = 1 + rng.below(3);
+                p.set(start + 0x140, nb);
+                for k in 0..nb {
+                    let node = start + 0x10 + 0x20 * k;
+                    p.set(node, if k + 1 == nb { 0 } else { node + 0x20 });
+                    p.set(node + 0x10, rng.below(8) * 0x1000);
+                }
+                let rate = rng.below(0x2000);
+                let set_ups = u32::from(rng.chance(50));
+                // TOGetFFXLang: a fixed language (its manager logs at
+                // creation, which the oracle cannot run)
+                let lang = p.sym(0x0064_10e0);
+                let l = rng.pick(&[1u32, 0xb]);
+                p.a.stub_return(lang, l).unwrap();
+                p.b.stub_return(lang, l).unwrap();
+                p.check(
+                    "pppStartPart",
+                    0x0071_23c0,
+                    &[part2, rate, start, set_ups],
+                    |m| {
+                        pt::ppp_start_part(m, part2, rate, start, set_ups, &mut call_original);
+                        None
+                    },
+                );
+                p.put(prog::bridge::CURRENT_PART, part);
+            }
+            for (name, sym, at) in [
+                ("pppPartCall10", 0x0071_2e40, 0x10),
+                ("pppPartCall14", 0x0071_2e80, 0x14),
+                ("pppPartCall18", 0x0071_2e00, 0x18),
+            ] {
+                p.check(name, sym, &[part], |m| {
+                    pt::ppp_part_call(m, part, at, &mut call_original);
+                    None
+                });
+            }
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::cast_possible_truncation)]
+fn lns_t_programs_match_the_original() {
+    use prog::bridge::{self as pb, LnsT};
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x1a5e_77c0);
+        let destroy = p.sym(0x0064_5280);
+        p.a.stub_return(destroy, 0).unwrap();
+        p.b.stub_return(destroy, 0).unwrap();
+        // the draws the nodes call (the renderer's side) replaced by a
+        // recorder of their arguments
+        arg_recorder(
+            &mut p,
+            &[
+                0x0075_a250,
+                0x0075_a610,
+                0x0075_a9e0,
+                0x0075_ade0,
+                0x0075_b230,
+            ],
+            3,
+        );
+        let list = p.sym(0x0230_fff0);
+        p.set(list + 4, list);
+        p.set(list + 0xc, 0u16);
+        // eight objects, each its own offsets; `None` while unregistered
+        let objs = p.alloc(8 * 0x400);
+        let ctrls = p.alloc(8 * 0x20);
+        let mut live: [Option<Option<LnsT>>; 8] = [None; 8];
+        for i in 0..8 {
+            let ctrl = ctrls + 0x20 * i;
+            p.set(ctrl + 0xc, ctrl + 0x10);
+            p.set(ctrl + 0x10, rng.below(0x40) * 4);
+        }
+        for _ in 0..2000 {
+            if rng.chance(10) {
+                p.check("pppOtFunc_Control", 0x0071_6ac0, &[list], |m| {
+                    part::bridge::ppp_ot_func_control(m, list, &mut call_original);
+                    None
+                });
+            }
+            let i = rng.below(8);
+            let (obj, ctrl) = (objs + 0x400 * i, ctrls + 0x20 * i);
+            match live[i as usize] {
+                None => {
+                    p.fill(obj, 0x400, &mut rng);
+                    p.put(part::bridge::CURRENT_PROGRAM, rng.next());
+                    p.put(pb::LNS_LP_T_COUNT, rng.next() as u8);
+                    p.set(list + 0xe, rng.next() as u16);
+                    let kinds = [
+                        Some(LnsT::Arnd),
+                        Some(LnsT::Clm),
+                        Some(LnsT::Crn),
+                        Some(LnsT::Fls),
+                        None,
+                    ];
+                    let kind = kinds[rng.below(5) as usize];
+                    match kind {
+                        Some(k) => {
+                            let at =
+                                [0x0075_a0f0, 0x0075_a4a0, 0x0075_a870, 0x0075_ac60][k as usize];
+                            p.check(&format!("{k:?}TCon"), at, &[obj, ctrl], |m| {
+                                Some(pb::ppp_ke_lns_t_con(m, k, obj, ctrl))
+                            });
+                        }
+                        None => {
+                            p.check("pppKeLnsLpTCon", 0x0075_b090, &[obj, ctrl], |m| {
+                                pb::ppp_ke_lns_lp_t_con(m, obj, ctrl);
+                                None
+                            });
+                        }
+                    }
+                    live[i as usize] = Some(kind);
+                }
+                Some(Some(k)) => {
+                    let at = [0x0075_a140, 0x0075_a4f0, 0x0075_a8b0, 0x0075_acb0][k as usize];
+                    p.check(&format!("{k:?}TDes"), at, &[obj, ctrl], |m| {
+                        Some(pb::ppp_ke_lns_t_des(m, k, obj, ctrl, &mut call_original))
+                    });
+                    live[i as usize] = None;
+                }
+                Some(None) => {
+                    p.check("pppKeLnsLpTDes", 0x0075_b130, &[obj, ctrl], |m| {
+                        Some(pb::ppp_ke_lns_lp_t_des(m, obj, ctrl))
+                    });
+                    live[i as usize] = None;
+                }
+            }
+        }
+    }
+}
+
+/// Replaces the functions at `syms` by a recorder of their first `n` (at
+/// most four) arguments (a log of 256 entries of 16 bytes after a count),
+/// so that checks compare what callers pass them; returns the log.
+fn arg_recorder(p: &mut Pair, syms: &[u32], n: u8) -> u32 {
+    let log = p.alloc(4 + 0x100 * 16);
+    let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x81, 0xe1, 0xff, 0, 0, 0]); // and ecx, 0xff
+    c.extend([0xc1, 0xe1, 0x04]); // shl ecx, 4
+    for k in 0..n {
+        c.extend([0x8b, 0x44, 0x24, 4 + 4 * k]); // mov eax, [esp + 4 + 4k]
+        c.extend([0x89, 0x81]); // mov [ecx + log + 4 + 4k], eax
+        c.extend((log + 4 + 4 * u32::from(k)).to_le_bytes());
+    }
+    c.extend([0xff, 0x05]); // inc dword [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0xb8, 0x5a, 0x5a, 0x5a, 0x5a]); // mov eax, 0x5a5a5a5a
+    c.push(0xc3);
+    for &sym in syms {
+        let at = p.sym(sym);
+        p.a.write(at, &c).unwrap();
+        p.b.write(at, &c).unwrap();
+    }
+    log
+}
+
+#[test]
+#[allow(clippy::cast_possible_truncation)]
+fn shape_runners_match_the_original() {
+    use part::bridge as pt;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x5a9e_d2a1);
+        arg_recorder(&mut p, &[pt::DRAW_SHAPE0, pt::DRAW_SHAPE_X0], 3);
+        let objs = p.alloc(8 * 0x100);
+        let keys = p.alloc(0x400);
+        let (def, prog, e) = (p.alloc(0x10), p.alloc(0x40), p.alloc(0x10));
+        for _ in 0..2000 {
+            let n = 1 + rng.below(8);
+            let c = rng.below(4);
+            p.set(prog + 0xc, u8::from(rng.chance(20)));
+            p.set(prog + 0x20, 0x20 + 4 * rng.below(8));
+            p.set(e + 4, (4 * rng.below(8)) as u16);
+            p.set(def + 4, objs);
+            p.set(def + 0xc, n as u16);
+            for k in 0..0x100 {
+                p.set(keys + 4 * k, rng.below(4));
+            }
+            for k in 0..n {
+                let o = objs + 0x100 * k;
+                p.set(o, objs + 0x100 * (k + 1));
+                p.set(o + 0xc, rng.below(4));
+                let slot = o + p.get::<u32>(prog + 0x20) + 4 * c;
+                p.set(slot, keys + 4 * rng.below(0x80));
+            }
+            let (name, at, draw) = if rng.chance(50) {
+                ("pppDrawShape", 0x0074_09e0, pt::DRAW_SHAPE0)
+            } else {
+                ("pppDrawShapeX", 0x0074_0ed0, pt::DRAW_SHAPE_X0)
+            };
+            p.check(name, at, &[def, prog, e, c], |m| {
+                Some(pt::ppp_draw_shape(
+                    m,
+                    draw,
+                    def,
+                    prog,
+                    e,
+                    c,
+                    &mut call_original,
+                ))
+            });
+        }
+    }
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::many_single_char_names,
+    clippy::cast_possible_truncation
+)]
+fn et_opus_math_and_trees_match_the_original() {
+    use et::bridge as e;
+    use tree::bridge as t;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0e75_7ee5);
+        // op_oef2_set2, opu_et_unit and opu_unit_free_by_oef2: recorded
+        arg_recorder(&mut p, &[0x007e_3e30], 1);
+        arg_recorder(&mut p, &[0x007f_d7f0], 4);
+        arg_recorder(&mut p, &[0x007f_df70], 2);
+        let btl = p.sym(0x0112_a8e0); // g_BtlStatus (MsBattleGetStatus)
+        let handles = p.sym(e::CHR_HANDLES.sym);
+        let chr_at = p.sym(e::CHR.sym);
+        let nos = p.sym(opus::bridge::WEAPON_NOS.sym);
+        let weapons = p.sym(opus::bridge::WEAPONS.sym);
+        let monsters = p.sym(opus::bridge::MONSTERS.sym);
+        let (dst, v) = (p.alloc(0x10), p.alloc(0x10));
+        let tree = p.alloc(0x10);
+        let nodes = p.alloc(0x20 * 0x40);
+        let it = p.alloc(4);
+        let key = p.alloc(4);
+        for round in 0..300 {
+            // the opus handles and characters
+            for k in 0..0xf0 {
+                let h = if rng.chance(60) {
+                    0
+                } else {
+                    0x100 + rng.below(8)
+                };
+                p.set(handles + 4 * k, h);
+            }
+            for i in 0..e::CHRS {
+                let h = if rng.chance(80) {
+                    0
+                } else {
+                    0x100 + rng.below(8)
+                };
+                p.set(chr_at + 0x20 * i, h);
+                p.set(chr_at + 0x20 * i + 0xe, rng.below(0x10000) as u16);
+            }
+            p.set(btl, rng.pick(&[0u8, 1, 0xff]));
+            p.check("opus_chr_handle_count", 0x007f_cf60, &[], |m| {
+                Some(e::opus_chr_handle_count(m, &mut call_original))
+            });
+            let n = rng.below(0x30);
+            p.check("opus_chr_handle_nth", 0x007f_cfb0, &[n], |m| {
+                Some(e::opus_chr_handle_nth(m, n, &mut call_original))
+            });
+            p.check("opus_chr_draw_index_nth", 0x007f_cf10, &[n], |m| {
+                Some(e::opus_chr_draw_index_nth(m, n, &mut call_original))
+            });
+            // weapons and monsters
+            for i in 0..4 {
+                p.set(nos + i, rng.pick(&[0u8, 1, 2, 0xff]));
+                p.set(weapons + 4 * i, rng.pick(&[0u32, 0x200, 0x300]));
+            }
+            for i in 0..8 {
+                p.set(monsters + 4 * i, rng.pick(&[0u32, 0, 0x400, 0x500]));
+            }
+            let no = rng.pick(&[0u32, 1, 2, 0xff, 0x101]);
+            p.check("opus_get_weapon_by_no", 0x0080_0fd0, &[no], |m| {
+                Some(opus::bridge::opus_get_weapon_by_no(m, no))
+            });
+            p.check("opus_get_weapon_index_by_no", 0x0080_1030, &[no], |m| {
+                Some(opus::bridge::opus_get_weapon_index_by_no(m, no).cast_unsigned())
+            });
+            let o = rng.pick(&[0u32, 0x400, 0x500, 0x600]);
+            p.check("op_et_monster_add", 0x007f_c8a0, &[o], |m| {
+                Some(e::op_et_monster_add(m, o, &mut call_original))
+            });
+            p.put(e::OPUS_BATTLE, rng.next());
+            p.check("op_et_oef2_free", 0x007f_c2a0, &[o], |m| {
+                Some(e::op_et_oef2_free(m, o, &mut call_original))
+            });
+            p.check("opu_et_oef2_free", 0x007f_da60, &[o], |m| {
+                Some(e::op_et_oef2_free(m, o, &mut call_original))
+            });
+            for at in [0x007f_c2c0, 0x007f_c970] {
+                p.check("op_et_oef2_start", at, &[o], |m| {
+                    Some(e::op_et_oef2_start(m, o, &mut call_original))
+                });
+            }
+            p.put(e::ENCOUNT, o);
+            p.check("op_et_encount_effect_free", 0x007f_c5f0, &[], |m| {
+                Some(e::op_et_encount_effect_free(m, &mut call_original))
+            });
+            p.put(e::BIND_DEFAULT, rng.next());
+            p.check("op_et_bind_default_water", 0x007f_b870, &[], |m| {
+                Some(e::op_et_bind_default_water(m))
+            });
+            if round % 50 == 0 {
+                p.check("op_et_eff_init_all", 0x007f_ef70, &[], |m| {
+                    e::op_et_eff_init_all(m);
+                    None
+                });
+            }
+            // the vector helpers (no signalling NaNs)
+            for i in 0..4 {
+                let x = finite(&mut rng);
+                p.set(v + 4 * i, x);
+            }
+            p.fill(dst, 0x10, &mut rng);
+            let sb = finite(&mut rng);
+            let s = f32::from_bits(sb);
+            p.check("vfx_vec_w_add", 0x0081_7cc0, &[dst, v, sb], |m| {
+                mat::bridge::vfx_vec_w_add(m, dst, v, s);
+                None
+            });
+            p.check("vfx_vec3_scale", 0x0075_bb00, &[dst, v, sb], |m| {
+                mat::bridge::vfx_vec3_scale(m, dst, v, s);
+                None
+            });
+            p.check("vfx_vec4_min", 0x0080_8c10, &[dst, v, sb], |m| {
+                mat::bridge::vfx_vec4_min(m, dst, v, s);
+                None
+            });
+            // the keyed tree: insert a few, find some
+            p.set(tree + 0xc, tree);
+            let count = 1 + rng.below(0x40);
+            for k in 0..count {
+                let node = nodes + 0x20 * k;
+                p.fill(node, 0x10, &mut rng);
+                p.set(node + 0xc, rng.below(0x20).cast_signed() - 0x10);
+                let r =
+                    p.a.call(p.sym(0x0070_fda0), Conv::Thiscall(tree), &[node])
+                        .unwrap();
+                let mine = t::vfx_int_tree_insert(&mut p.b, tree, node);
+                assert_eq!(r.eax, mine, "vfxIntTree_Insert");
+                p.same("vfxIntTree_Insert");
+            }
+            for _ in 0..8 {
+                p.set(key, rng.below(0x24).cast_signed() - 0x12);
+                let r =
+                    p.a.call(p.sym(0x0070_fd20), Conv::Thiscall(tree), &[key])
+                        .unwrap();
+                assert_eq!(
+                    r.eax,
+                    t::vfx_int_tree_find(&p.b, tree, key),
+                    "vfxIntTree_Find"
+                );
+            }
+            // the iterated tree: a random binary search tree (header node 0,
+            // nil; children and the root's parent the header), walked from a
+            // random node
+            let m = 1 + rng.below(0x20);
+            let node = |k: u32| nodes + 0x20 * k;
+            let (mut left, mut right, mut parent) = ([0u32; 0x21], [0u32; 0x21], [0u32; 0x21]);
+            let mut keys = [0u32; 0x21];
+            for k in 1..=m {
+                keys[k as usize] = rng.next();
+                if k == 1 {
+                    continue;
+                }
+                let mut c = 1usize;
+                loop {
+                    let next = if keys[k as usize] < keys[c] {
+                        &mut left[c]
+                    } else {
+                        &mut right[c]
+                    };
+                    if *next == 0 {
+                        *next = k;
+                        parent[k as usize] = c as u32;
+                        break;
+                    }
+                    c = *next as usize;
+                }
+            }
+            for k in 0..=m {
+                let n = node(k);
+                let ku = k as usize;
+                p.set(n, node(left[ku]));
+                p.set(n + 4, node(parent[ku]));
+                p.set(n + 8, node(right[ku]));
+                p.set(n + 0xd, u8::from(k == 0));
+            }
+            p.set(it, node(rng.below(m + 1)));
+            for at in [0x0080_6a50, 0x0080_6aa0] {
+                for _ in 0..4 {
+                    let r = p.a.call(p.sym(at), Conv::Thiscall(it), &[]).unwrap();
+                    let mine = t::opus_tree_next(&mut p.b, it);
+                    assert_eq!(r.eax, mine, "opusTree_Next");
+                    p.same("opusTree_Next");
+                }
             }
         }
     }

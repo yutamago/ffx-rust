@@ -592,4 +592,42 @@ pub mod bridge {
         v[2] = Reg::load(c2).add_m32(s).store();
         db_vertex_xyz(mem, v);
     }
+
+    /// `Sg_DbColor8(c)` (`0x00841270`): `Sg_DbColor` with 255 or 0 per
+    /// colour bit (1 red, 2 green, 0 blue).
+    pub fn db_color8(mem: &mut impl Mem, c: u32) {
+        let ch = |bit: u32| if c & bit != 0 { 0xff } else { 0 };
+        db_color(mem, ch(2), ch(4), ch(1));
+    }
+
+    /// The draw environment's mode (`i8`) and frame buffer word
+    /// (`Sg_DrawSetFrame`).
+    pub const DRAW_MODE: Global<u8> = Global::new(0x0130_0775);
+    /// See [`DRAW_MODE`]: the 16-bit frame buffer's address.
+    pub const DRAW_FBP16: Global<i32> = Global::new(0x0130_077c);
+    /// The draw buffer's GS address (`>> 11` gives `FBP`).
+    pub const DRAW_FBP: Global<u32> = Global::new(0x012f_fafc);
+
+    /// `Sg_DrawSetFrame()` (`0x0082cf80`): both contexts' `FRAME` for the
+    /// draw mode: 0 the draw buffer, 1 the 16-bit buffer at page `0xd0`,
+    /// 2 the 16-bit buffer at [`DRAW_FBP16`].
+    pub fn draw_set_frame(mem: &mut impl Mem) {
+        match DRAW_MODE.get(mem).cast_signed() {
+            0 => {
+                let fbp = DRAW_FBP.get(mem) >> 11;
+                frame_1(mem, fbp, 0);
+                frame_2(mem, fbp, 0);
+            }
+            1 => {
+                frame_16_1(mem, 0xd0, 0);
+                frame_16_2(mem, 0xd0, 0);
+            }
+            2 => {
+                let fbp = (DRAW_FBP16.get(mem) / 2048).cast_unsigned();
+                frame_16_1(mem, fbp, 0);
+                frame_16_2(mem, fbp, 0);
+            }
+            _ => {}
+        }
+    }
 }

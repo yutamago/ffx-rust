@@ -448,6 +448,95 @@ pub mod bridge {
     pub fn ms_camera_set_scr_dpt(mem: &mut impl Mem, id: u32, depth: u32) {
         set_param(mem, id, depth, 0xcc0, 0xca0, 0xd94, 0xc9c, 0xcd8);
     }
+    /// The camera matrices' source (`MsSetCameraMatrix`): on, the roll,
+    /// and two vectors (the look-at and the eye).
+    pub const MATRIX_ON: Global<u32> = Global::new(0x0231_14c4);
+    pub const MATRIX_ROLL: Global<u32> = Global::new(0x0113_9e20);
+    pub const MATRIX_LOOK_AT: Global<[u32; 4]> = Global::new(0x0113_9e24);
+    pub const MATRIX_EYE: Global<[u32; 4]> = Global::new(0x0113_9e34);
+
+    /// `MsSetCameraMatrix(on, screen, camera, look_at, eye, roll)`
+    /// (`0x007c06d0`): with `on` (bit 0), the screen and camera matrices
+    /// from `screen` and `camera` and the vectors and roll kept; EAX `eye`'s
+    /// w, else 0.
+    pub fn ms_set_camera_matrix(
+        mem: &mut impl Mem,
+        on: u32,
+        screen: u32,
+        camera: u32,
+        look_at: u32,
+        eye: u32,
+        roll: u32,
+    ) -> u32 {
+        let on = on & 1;
+        MATRIX_ON.set(mem, on);
+        if on == 0 {
+            return 0;
+        }
+        let s = SCREEN_MATRIX.ptr(mem).addr;
+        ffx_ps2::vu0::bridge::matrix_copy(mem, s, screen);
+        let c = CAMERA_MATRIX.ptr(mem).addr;
+        ffx_ps2::vu0::bridge::matrix_copy(mem, c, camera);
+        MATRIX_ROLL.set(mem, x87_copy(roll));
+        let v: [u32; 4] = mem.read(look_at);
+        EE_MOVE.set(mem, v);
+        MATRIX_LOOK_AT.set(mem, v);
+        let v: [u32; 4] = mem.read(eye);
+        EE_MOVE.set(mem, v);
+        MATRIX_EYE.set(mem, v);
+        v[3]
+    }
+    /// `MsCameraGet(owner, cam, kind)` (`0x007bd110`): the request ID of
+    /// `owner`'s kind-`kind` (low 4 bits, not 0) request on camera `cam`
+    /// (0-2): an existing slot's, else a free slot (no kind in byte 2's low
+    /// bits) takes `owner << 24 | kind << 16 | slot << 8 | cam`, starting
+    /// from the current channel's state (its 0x30 bytes at `+0xcb8` and both
+    /// sides' 0x130 bytes at `+0xf0` and `+0x70c`, positions reset to `r0`).
+    /// 0 when none is free.
+    pub fn ms_camera_get(mem: &mut impl Mem, owner: u32, cam: u32, kind: u32) -> u32 {
+        let kind = kind & 0xf;
+        if kind == 0 || cam > 2 {
+            return 0;
+        }
+        let base = camera_base(mem, cam);
+        let slots = SLOTS_AT.ptr(mem).addr + cam * CAMERA_SIZE;
+        for k in 0..4 {
+            let id: u32 = mem.read(slots + 8 * k);
+            if owner == id >> 24
+                && kind == (id.cast_signed() >> 16).cast_unsigned() & 0xf
+                && cam == id & 0xff
+            {
+                return id;
+            }
+        }
+        let Some(k) = (0..4u32).find(|&k| mem.read::<u8>(slots + 8 * k + 2).trailing_zeros() >= 4)
+        else {
+            return 0;
+        };
+        let n = ms_camera_get_num(mem, cam);
+        let id = (((owner.wrapping_shl(8).wrapping_add(kind))
+            .wrapping_shl(8)
+            .wrapping_add(k))
+        .wrapping_shl(8))
+        .wrapping_add(cam);
+        mem.write(slots + 8 * k, id);
+        mem.write(slots + 8 * k + 4, 0u8);
+        mem.write(slots + 8 * k + 6, 0u8);
+        if n == k {
+            return id;
+        }
+        let r0 = EE_R0.get(mem);
+        let v: [u32; 12] = mem.read(base + 0xcb8 + 0x30 * n);
+        mem.write(base + 0xcb8 + 0x30 * k, v);
+        for side in [0xf0u32, 0x70c] {
+            let v: [u32; 0x4c] = mem.read(base + side + 0x130 * n);
+            let d = base + side + 0x130 * k;
+            mem.write(d, v);
+            mem.write(d + 0x70, r0);
+            mem.write(d + 4, 0u8);
+        }
+        id
+    }
 }
 
 #[cfg(test)]

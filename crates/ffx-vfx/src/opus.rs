@@ -25,6 +25,26 @@ pub mod bridge {
             .map_or(-1, u32::cast_signed)
     }
 
+    /// `g_OpusWeaponNos`: the weapon numbers of the four weapon objects
+    /// (bytes, 0xff free).
+    pub const WEAPON_NOS: Global<u8> = Global::new(0x0119_fe9c);
+
+    /// `opus_get_weapon_index_by_no(no)` (`0x00801030`): the slot whose
+    /// weapon number is `no`, or -1.
+    pub fn opus_get_weapon_index_by_no(mem: &impl Mem, no: u32) -> i32 {
+        (0..4)
+            .find(|&i| u32::from(WEAPON_NOS.ptr(mem).at(i).get(mem)) == no)
+            .map_or(-1, u32::cast_signed)
+    }
+
+    /// `opus_get_weapon_by_no(no)` (`0x00800fd0`): the object of the slot
+    /// whose weapon number is `no`, or 0.
+    pub fn opus_get_weapon_by_no(mem: &impl Mem, no: u32) -> u32 {
+        (0..4)
+            .find(|&i| u32::from(WEAPON_NOS.ptr(mem).at(i).get(mem)) == no)
+            .map_or(0, |i| WEAPONS.ptr(mem).at(i).get(mem))
+    }
+
     /// `opus_get_monster_index(obj)` (`0x00800e80`): its slot, or -1 (also
     /// for null).
     pub fn opus_get_monster_index(mem: &impl Mem, obj: u32) -> i32 {

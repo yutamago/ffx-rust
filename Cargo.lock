@@ -805,7 +805,10 @@ dependencies = [
  "ffx-battle",
  "ffx-bridge",
  "ffx-chara",
+ "ffx-menu",
  "ffx-ps2",
+ "ffx-script",
+ "ffx-system",
 ]
 
 [[package]]

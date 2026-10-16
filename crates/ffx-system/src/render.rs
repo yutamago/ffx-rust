@@ -67,4 +67,41 @@ pub mod bridge {
     pub fn clear_fill_buffer_request(mem: &mut impl Mem) {
         FILL_REQUESTS.set(mem, [0; 12]);
     }
+
+    /// The six fill-buffer queues' bases (`0x00cec1a8`), request counts
+    /// (`0x00cec1c0`) and loads (`0x00cec1d8`).
+    pub const FILL_BUFFERS: Global<[u32; 6]> = Global::new(0x00ce_c1a8);
+    /// See [`FILL_BUFFERS`].
+    pub const FILL_COUNTS: Global<[i32; 6]> = Global::new(0x00ce_c1c0);
+    /// See [`FILL_BUFFERS`].
+    pub const FILL_LOADS: Global<[i32; 6]> = Global::new(0x00ce_c1d8);
+
+    /// `JobSchedule_pppPart_getFillBufferRequest(size)` (`0x00728660`): of
+    /// the queues with fewer than 0x156 requests, the least loaded (first on
+    /// a tie, and only below 100000) gets the request: its count and load
+    /// grow and the request's 0x214-byte slot is returned; 0 when none.
+    pub fn get_fill_buffer_request(mem: &mut impl Mem, size: i32) -> u32 {
+        let counts = FILL_COUNTS.ptr(mem).addr;
+        let loads = FILL_LOADS.ptr(mem).addr;
+        let mut best = 100_000i32;
+        let mut pick = None;
+        for k in 0..6u32 {
+            let count: i32 = mem.read(counts + 4 * k);
+            let load: i32 = mem.read(loads + 4 * k);
+            if count < 0x156 && load < best {
+                best = load;
+                pick = Some(k);
+            }
+        }
+        let Some(k) = pick else {
+            return 0;
+        };
+        let count = mem.read::<i32>(counts + 4 * k).wrapping_add(1);
+        mem.write(counts + 4 * k, count);
+        let load = mem.read::<i32>(loads + 4 * k).wrapping_add(size);
+        mem.write(loads + 4 * k, load);
+        let base: u32 = mem.read(FILL_BUFFERS.ptr(mem).addr + 4 * k);
+        base.wrapping_sub(0x214)
+            .wrapping_add(count.cast_unsigned().wrapping_mul(0x214))
+    }
 }

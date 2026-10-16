@@ -20,6 +20,15 @@ pub const VERSION: Global<u8> = Global::new(0x00b7_b7dc);
 /// status (`SqsReportIopSoundStatus`).
 pub const SQS_IOP_STATUS: Global<u32> = Global::new(0x012f_4e80);
 
+/// Set when a shout sound was skipped (`SqsShoutStreamingPlayState`).
+pub const SHOUT_SKIPPED: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x012f_4e94);
+/// The SIF DMA records (two of 16 bytes: source, destination, size,
+/// attribute).
+pub const SIF_DMA: u32 = 0x012f_4e00;
+/// The id of the last SIF DMA.
+pub const SIF_DMA_ID: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x012f_4ed0);
+/// The shout sound buffer's IOP address.
+pub const SHOUT_BUFFER: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x012f_4ecc);
 /// The battle streaming sound's id (`SqsBattleStreamingDataSend`; -1
 /// none).
 pub const BATTLE_STREAM: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x00c4_9498);
@@ -172,5 +181,62 @@ pub mod bridge {
     #[must_use]
     pub const fn nkz_get_monster_list_num() -> u32 {
         0x8b
+    }
+
+    /// `SqsShoutStreamingPlayState()` (`0x0081edf0`): clears the shout
+    /// skip flag (`0x012f4e94`; the PC build prints "Virtuos: Shout sound
+    /// skipped" through the empty `dbgPrintf`); returns 0.
+    pub fn sqs_shout_streaming_play_state(mem: &mut impl Mem) -> u32 {
+        if super::SHOUT_SKIPPED.get(mem) != 0 {
+            super::SHOUT_SKIPPED.set(mem, 0);
+        }
+        0
+    }
+
+    /// `SqsSifDmaStart(_, src, dst, size)` (`0x0081eeb0`): the SIF DMA
+    /// record's first transfer (`0x012f4e00`: source, destination, size,
+    /// attribute 0) and its id (`0x012f4ed0`) 0; returns 0.
+    pub fn sqs_sif_dma_start(mem: &mut impl Mem, src: u32, dst: u32, size: u32) -> u32 {
+        let r = mem.rebase(super::SIF_DMA);
+        mem.write(r, [src, dst, size, 0]);
+        super::SIF_DMA_ID.set(mem, 0);
+        0
+    }
+
+    /// `SqsShoutStreamingDataSend(src, size)` (`0x0081ed40`): for data, a
+    /// SIF DMA to the shout buffer (`0x012f4ecc`): one transfer up to
+    /// `0xa0000` bytes, else `0x80000` and the rest; the id `sceSifSetDma`
+    /// gives (the PC stub's) into `0x012f4ed0`.
+    pub fn sqs_shout_streaming_data_send(mem: &mut impl Mem, src: u32, size: i32) {
+        if src == 0 {
+            return;
+        }
+        let r = mem.rebase(super::SIF_DMA);
+        mem.write(r, src);
+        mem.write(r + 0xc, 0u32);
+        let buf = super::SHOUT_BUFFER.get(mem);
+        if size > 0xa_0000 {
+            mem.write(r + 0x10, src.wrapping_add(0x8_0000));
+            mem.write(r + 0x14, buf.wrapping_add(0x8_0000));
+            mem.write(r + 4, buf);
+            mem.write(r + 8, 0x8_0000u32);
+            mem.write(r + 0x18, size.wrapping_sub(0x8_0000).cast_unsigned());
+            mem.write(r + 0x1c, 0u32);
+        } else {
+            mem.write(r + 4, buf);
+            mem.write(r + 8, size.cast_unsigned());
+        }
+        super::SIF_DMA_ID.set(mem, ffx_system::stub::SIF_SET_DMA);
+    }
+
+    /// `SqsCmdSetC2(ctx, cmd)` (`0x0081c140`, an IOP command
+    /// handler in the table at `0x00c48f30`): the command's second `u16`
+    /// to `+0xc2` of the context's `+0x220` record. Returns the next
+    /// command (`cmd + 4`).
+    pub fn sqs_cmd_set_c2(mem: &mut impl Mem, ctx: u32, cmd: u32) -> u32 {
+        let v = mem.read::<u32>(ctx.wrapping_add(0x220));
+        let x = mem.read::<u16>(cmd.wrapping_add(2));
+        mem.write(v.wrapping_add(0xc2), x);
+        cmd.wrapping_add(4)
     }
 }
