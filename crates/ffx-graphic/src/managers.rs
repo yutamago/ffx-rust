@@ -8,6 +8,7 @@
 
 /// The originals, over game memory.
 pub mod bridge {
+    use crate::host::{Conv, Host};
     use ffx_bridge::{Global, Mem, x87};
 
     pub use crate::scene::bridge::{embedded, field, set_byte_field, set_field, set_if_changed};
@@ -41,7 +42,7 @@ pub mod bridge {
     /// virtual destructor `(1)` (deleting), then the global is cleared.
     /// Returns `eax` when an object was deleted (its destructor's), else
     /// `None` (`eax` untouched).
-    pub fn destroy_singleton(h: &mut impl crate::host::Host, g: Global<u32>) -> Option<u32> {
+    pub fn destroy_singleton(h: &mut impl Host, g: Global<u32>) -> Option<u32> {
         let obj = g.get(h);
         if obj == 0 {
             return None;
@@ -60,8 +61,129 @@ pub mod bridge {
 
     // ---- DynGeoMemManager: +0 the current buffer set ----
     // A buffer set: +0 the current buffer, +4 its index, +8 the count,
-    // +0x10 the buffers' table, +0x14 the mutex; a buffer: +4 its start,
-    // +8 its fill position.
+    // +0x10 the buffers' table, +0x14 the mutex; a buffer: +0 its size,
+    // +4 its start, +8 its fill position (an address).
+
+    /// MSVCR110's `printf`, `__iob_func` and `fprintf`, through the
+    /// image's import slots.
+    pub const PRINTF_SLOT: u32 = 0x00b0_c380;
+    /// See [`PRINTF_SLOT`].
+    pub const IOB_FUNC_SLOT: u32 = 0x00b0_c350;
+    /// See [`PRINTF_SLOT`].
+    pub const FPRINTF_SLOT: u32 = 0x00b0_c38c;
+    /// `"No buffer memory in this manager.\n"`.
+    pub const MSG_NO_BUFFER: u32 = 0x00b4_a6e8;
+    /// `"Error! Do not have enough memory in dynamic geometry memory..."`.
+    pub const MSG_FULL: u32 = 0x00b4_a658;
+
+    /// Calls the CRT function an import slot holds (cdecl).
+    fn call_import(h: &mut impl Host, slot: u32, args: &[u32]) -> u32 {
+        let at = h.rebase(slot);
+        let f: u32 = h.read(at);
+        h.call(f, Conv::Cdecl, args)
+    }
+
+    /// `DynGeoMemManager_getBufferFromDynGeoMemory(this, size)`: `size`
+    /// bytes at the current buffer's fill position rounded up to 16; 0
+    /// without a set, or (with a message on `stderr`, the fill position
+    /// left rounded) when the buffer is full. A set without buffers prints
+    /// its message and then faults, as the original.
+    pub fn dyn_geo_get_buffer(h: &mut impl Host, this: u32, size: u32) -> u32 {
+        let set: u32 = h.read(this);
+        if set == 0 {
+            return 0;
+        }
+        let buffer = if h.read::<u32>(set + 8) == 0 {
+            let msg = h.rebase(MSG_NO_BUFFER);
+            call_import(h, PRINTF_SLOT, &[msg]);
+            0
+        } else {
+            let index: u32 = h.read(set + 4);
+            let table: u32 = h.read(set + 0x10);
+            h.read(table.wrapping_add(index.wrapping_mul(4)))
+        };
+        let fill: u32 = h.read(buffer + 8);
+        let start = (fill.wrapping_sub(1) & !0xf).wrapping_add(0x10);
+        let limit = h.read::<u32>(buffer + 4).wrapping_add(h.read(buffer));
+        let end = size.wrapping_add(start);
+        h.write(buffer + 8, end);
+        if end > limit {
+            let msg = h.rebase(MSG_FULL);
+            let iob = call_import(h, IOB_FUNC_SLOT, &[]);
+            call_import(h, FPRINTF_SLOT, &[iob.wrapping_add(0x40), msg]);
+            h.write(buffer + 8, start);
+            return 0;
+        }
+        start
+    }
+
+    /// `ffx-graphic`'s 16-byte round-up (`((x - 1) & ~0xf) + 0x10`; 0 stays 0).
+    #[must_use]
+    pub fn align16(x: u32) -> u32 {
+        (x.wrapping_sub(1) & !0xf).wrapping_add(0x10)
+    }
+
+    /// `graphicDynGeoMemManagerGetBufferForSegment(data, segment, vertices,
+    /// indices)`: one block from `g_DynGeoFillBuffer`'s manager cut into
+    /// five arrays (12, 16, 12 and 8 bytes a vertex, 2 an index), each
+    /// rounded to 16; their addresses go
+    /// into the segment (`+0xc..+0x1c`) and into the current buffer's slot
+    /// (`+0x2c + 0x1c * id ..`), with the counts. 0 when the memory is
+    /// exhausted, else 1.
+    pub fn get_buffer_for_segment<H: Host>(
+        h: &mut H,
+        data: u32,
+        segment: u32,
+        vertices: u32,
+        indices: u32,
+    ) -> u32 {
+        let v12 = align16(vertices.wrapping_mul(12));
+        let colours = align16(vertices.wrapping_mul(16));
+        let uvs = align16(vertices.wrapping_mul(8));
+        let size = align16(indices.wrapping_mul(2))
+            .wrapping_add(uvs)
+            .wrapping_add(v12)
+            .wrapping_add(colours)
+            .wrapping_add(v12);
+        let manager = DYN_GEO_FILL_BUFFER.get(h);
+        let base = dyn_geo_get_buffer(h, manager, size);
+        if base == 0 {
+            return 0;
+        }
+        let third = base.wrapping_add(colours).wrapping_add(v12);
+        let fourth = base
+            .wrapping_add(v12)
+            .wrapping_add(colours)
+            .wrapping_add(v12);
+        let fifth = base
+            .wrapping_add(uvs)
+            .wrapping_add(v12)
+            .wrapping_add(colours)
+            .wrapping_add(v12);
+        let manager = DYN_GEO_FILL_BUFFER.get(h);
+        let id = dyn_geo_current_buffer_id(h, manager);
+        let seg = segment.wrapping_mul(0x6c);
+        let slot = seg.wrapping_add(id.wrapping_mul(0x1c));
+        let put = |h: &mut H, offset: u32, v: u32| {
+            let segs: u32 = h.read(data + 0x94);
+            h.write(segs.wrapping_add(offset), v);
+        };
+        put(h, slot.wrapping_add(0x34), base);
+        put(h, slot.wrapping_add(0x3c), base.wrapping_add(v12));
+        put(h, slot.wrapping_add(0x38), third);
+        put(h, slot.wrapping_add(0x40), fourth);
+        put(h, slot.wrapping_add(0x44), fifth);
+        put(h, seg + 0xc, base);
+        put(h, seg + 0x14, base.wrapping_add(v12));
+        put(h, seg + 0x10, third);
+        put(h, seg + 0x18, fourth);
+        put(h, seg + 0x1c, fifth);
+        put(h, seg + 8, indices);
+        put(h, seg + 4, vertices);
+        put(h, slot.wrapping_add(0x30), indices);
+        put(h, slot.wrapping_add(0x2c), vertices);
+        1
+    }
 
     /// `DynGeoMemManager_getCurrentBufferId(this)`: the set's index, -1
     /// without one.
@@ -200,5 +322,73 @@ pub mod bridge {
     #[must_use]
     pub fn effect_allowed(id: u32) -> u8 {
         u8::from(id != 0x17 && id != 0x15c)
+    }
+
+    /// `ShadowManager_RemoveFromShadowMap(this, obj)`: the first of the 8 x 8
+    /// shadow-map slots (`+0xde8`) holding `obj` is freed: its word, its
+    /// count (`+0x29e8`) and its flag byte (`+0x2ae8`); with a count above
+    /// 1 also the flag bytes at `+1`, `+8` and `+9` from it. Returns 0
+    /// (`al`).
+    pub fn remove_from_shadow_map(m: &mut impl Mem, this: u32, obj: u32) -> u8 {
+        for i in 0..64 {
+            if m.read::<u32>(this + 0xde8 + 4 * i) == obj {
+                if m.read::<i32>(this + 0x29e8 + 4 * i) > 1 {
+                    m.write(this + 0x2ae9 + i, 0u8);
+                    m.write(this + 0x2af0 + i, 0u8);
+                    m.write(this + 0x2af1 + i, 0u8);
+                }
+                m.write(this + 0x2ae8 + i, 0u8);
+                m.write(this + 0x29e8 + 4 * i, 0u32);
+                m.write(this + 0xde8 + 4 * i, 0u32);
+                return 0;
+            }
+        }
+        0
+    }
+
+    /// `DynGeoTree_Find(this, &key)` (`FUN_006dedd0`): a search tree whose
+    /// head is `this` (root at `+0xc`); nodes `+0` lower, `+4` higher,
+    /// `+0xc` the key. The node, else 0.
+    pub fn tree_find(m: &impl Mem, this: u32, key_ptr: u32) -> u32 {
+        let key: u32 = m.read(key_ptr);
+        let mut node: u32 = m.read(this + 0xc);
+        while node != this {
+            let k: u32 = m.read(node + 0xc);
+            if k == key {
+                return node;
+            }
+            node = m.read(node + if key < k { 0 } else { 4 });
+        }
+        0
+    }
+
+    /// `DynGeoTree_Insert(this, node)` (`FUN_006dee50`): links `node` (key
+    /// at `+0xc`) under the tree whose head is `this`: its children become
+    /// the head, its `+8` (parent, bit 0 a colour) gets bit 0 set, then the
+    /// parent. Returns the node already holding the key (leaving the new
+    /// one half-linked, as the original), else 0.
+    pub fn tree_insert(m: &mut impl Mem, this: u32, node: u32) -> u32 {
+        let tag: u32 = m.read(node + 8);
+        m.write(node + 8, tag.wrapping_add(1 - (tag & 1)));
+        m.write(node, this);
+        m.write(node + 4, this);
+        let key: u32 = m.read(node + 0xc);
+        // an empty tree hangs the node from the root word itself
+        let mut parent = this + 0xc;
+        let mut right = false;
+        let mut cur: u32 = m.read(this + 0xc);
+        while cur != this {
+            parent = cur;
+            let k: u32 = m.read(cur + 0xc);
+            if k == key {
+                return cur;
+            }
+            right = key > k;
+            cur = m.read(cur + if right { 4 } else { 0 });
+        }
+        let tag: u32 = m.read(node + 8);
+        m.write(node + 8, (tag & 1).wrapping_add(parent));
+        m.write(parent + if right { 4 } else { 0 }, node);
+        0
     }
 }

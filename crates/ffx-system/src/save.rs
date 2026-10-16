@@ -264,4 +264,41 @@ pub mod bridge {
         }
         0
     }
+
+    /// Fourteen counters (`0x012fbbbc`), the first a total.
+    pub const COUNTERS: Global<[u32; 14]> = Global::new(0x012f_bbbc);
+    /// Their copy (`0x012fbbf4`).
+    pub const COUNTERS_COPY: Global<[u32; 14]> = Global::new(0x012f_bbf4);
+    /// What is added to them next (`0x023056e8`).
+    pub const COUNTERS_PENDING: Global<u32> = Global::new(0x0230_56e8);
+
+    /// `0x00821a40(k)`: the pending amount added to the total and, unless
+    /// `k` is -1, to counter `k` (`0x012fbbbc + 4k`); the pending amount
+    /// cleared. Returns 0.
+    pub fn counters_flush(mem: &mut impl Mem, k: i32) -> u32 {
+        let n = COUNTERS_PENDING.get(mem);
+        let base = COUNTERS.ptr(mem).addr;
+        let total: u32 = mem.read(base);
+        mem.write(base, total.wrapping_add(n));
+        if k != -1 {
+            let at = base.wrapping_add(k.cast_unsigned().wrapping_mul(4));
+            let v: u32 = mem.read(at);
+            mem.write(at, v.wrapping_add(n));
+        }
+        COUNTERS_PENDING.set(mem, 0);
+        0
+    }
+
+    /// `0x00821a70()`: the pending amount added to the total (kept
+    /// pending), then the fourteen counters copied to [`COUNTERS_COPY`];
+    /// returns the amount.
+    pub fn counters_snapshot(mem: &mut impl Mem) -> u32 {
+        let n = COUNTERS_PENDING.get(mem);
+        let base = COUNTERS.ptr(mem).addr;
+        let total: u32 = mem.read(base);
+        mem.write(base, total.wrapping_add(n));
+        let v = COUNTERS.get(mem);
+        COUNTERS_COPY.set(mem, v);
+        n
+    }
 }

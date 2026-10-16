@@ -16,12 +16,14 @@
 
 pub mod ability;
 pub mod actor;
+pub mod atel;
 pub mod body;
 pub mod camera;
 pub mod command;
 pub mod cue;
 pub mod damage;
 mod encounters;
+pub mod exec;
 pub mod flow;
 mod formation;
 pub mod menu;
@@ -32,6 +34,7 @@ pub mod rng;
 pub mod save;
 pub mod stat;
 pub mod state;
+pub mod target;
 pub mod turn;
 pub mod util;
 pub mod vector;

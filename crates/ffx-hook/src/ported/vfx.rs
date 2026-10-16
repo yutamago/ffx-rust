@@ -31,10 +31,11 @@ fn crt_atan2(y: f64, x: f64) -> f64 {
             "fld qword ptr [{y}]",
             "fld qword ptr [{x}]",
             "call {f}",
-            "fstp qword ptr [{out}]",
+            "fstp qword ptr [edi]",
             y = in(reg) &raw const y,
             x = in(reg) &raw const x,
-            out = in(reg) &raw mut out,
+            // edi: the callee keeps it (eax, ecx and edx it may not)
+            in("edi") &raw mut out,
             f = in(reg) f,
             clobber_abi("C"),
         );
@@ -53,7 +54,7 @@ fn crt_rand() -> u32 {
 }
 
 /// A function the originals call through a pointer (the program table's
-/// `+4`..`+0x24`, `TOGetFFXLang`, `graphicVFXDestroy`): cdecl, up to four
+/// `+4`..`+0x24`, `TOGetFFXLang`, `graphicVFXDestroy`, ...): cdecl, up to twelve
 /// arguments; returns `eax`.
 fn call_ptr(f: u32, args: &[u32]) -> u32 {
     super::call_cdecl(f, args)
@@ -1031,6 +1032,96 @@ ported! {
     /// `TOBtlLibraGetRects()`.
     TOBtlLibraGetRects @ 0x0089_7dc0 => extern "C" fn to_btl_libra_get_rects() -> u32 {
         slots::bridge::to_btl_libra_get_rects(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_part_a76720(obj, cmd)`.
+    opp_part_a76720 @ 0x00a7_6720 => extern "C" fn opp_part_a76720(obj: u32, cmd: u32) -> u32 {
+        slots::bridge::opp_part_a76720(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_map_draw_a74c60(obj, cmd)`.
+    opp_map_draw_a74c60 @ 0x00a7_4c60 => extern "C" fn opp_map_draw_a74c60(obj: u32, cmd: u32) -> u32 {
+        slots::bridge::opp_map_draw_a74c60(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_md_break_init_a74410(obj, cmd)`.
+    opp_md_break_init_a74410 @ 0x00a7_4410 => extern "C" fn opp_md_break_init_a74410(obj: u32, cmd: u32) -> u32 {
+        slots::bridge::opp_md_break_init_a74410(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_wave_cmd_7f5f70(obj, cmd)`: its stack locals in a buffer on
+    /// this shim's stack (the frame pointer at its end).
+    opus_wave_cmd_7f5f70 @ 0x007f_5f70 => extern "C" fn opus_wave_cmd_7f5f70(obj: u32, cmd: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x40]);
+        let mut locals = Locals([0; 0x40]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x40;
+        slots::bridge::opus_wave_cmd_7f5f70(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_chr_center_a756e0(obj, cmd)`: its stack locals in a buffer on
+    /// this shim's stack (the frame pointer at its end).
+    opp_chr_center_a756e0 @ 0x00a7_56e0 => extern "C" fn opp_chr_center_a756e0(obj: u32, cmd: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x60]);
+        let mut locals = Locals([0; 0x60]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x60;
+        slots::bridge::opp_chr_center_a756e0(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_chr_fade_center_a76b60(obj, cmd)`: its stack locals in a
+    /// buffer on this shim's stack (the frame pointer at its end).
+    opp_chr_fade_center_a76b60 @ 0x00a7_6b60 => extern "C" fn opp_chr_fade_center_a76b60(obj: u32, cmd: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x1f0]);
+        let mut locals = Locals([0; 0x1f0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x1f0;
+        slots::bridge::opp_chr_fade_center_a76b60(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp2_optic_laser(obj, list)`: its stack locals in a buffer on
+    /// this shim's stack (the frame pointer at its end).
+    opp2_optic_laser @ 0x00a7_3810 => extern "C" fn opp2_optic_laser(obj: u32, list: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x30]);
+        let mut locals = Locals([0; 0x30]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        slots::bridge::opp2_optic_laser(&mut mem(), obj, list, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp2_md_break(obj, list)`: its stack locals in a buffer on this
+    /// shim's stack (the frame pointer at its end).
+    opp2_md_break @ 0x00a7_3d90 => extern "C" fn opp2_md_break(obj: u32, list: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x90]);
+        let mut locals = Locals([0; 0x90]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x90;
+        slots::bridge::opp2_md_break(&mut mem(), obj, list, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_0582_cmd_a70910(obj, cmd)`.
+    opp_0582_cmd_a70910 @ 0x00a7_0910 => extern "C" fn opp_0582_cmd_a70910(obj: u32, cmd: u32) -> u32 {
+        slots::bridge::opp_0582_cmd_a70910(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_0437_cmd_a6dbe0(obj, cmd)`: its stack locals in a buffer on
+    /// this shim's stack (the frame pointer at its end).
+    opp_0437_cmd_a6dbe0 @ 0x00a6_dbe0 => extern "C" fn opp_0437_cmd_a6dbe0(obj: u32, cmd: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xf0]);
+        let mut locals = Locals([0; 0xf0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xf0;
+        slots::bridge::opp_0437_cmd_a6dbe0(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_mdc_draw_a6f4d0(obj, cmd)`: its stack locals in a buffer on
+    /// this shim's stack (the frame pointer at its end).
+    opp_mdc_draw_a6f4d0 @ 0x00a6_f4d0 => extern "C" fn opp_mdc_draw_a6f4d0(obj: u32, cmd: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x3b0]);
+        let mut locals = Locals([0; 0x3b0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x3b0;
+        slots::bridge::opp_mdc_draw_a6f4d0(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu2_part(obj, cmd)`.
+    opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
+        slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))
     }
     /// `op_char_table_set`.
     op_char_table_set @ 0x007e_13e0 => extern "C" fn op_char_table_set(table: u32, chars: u32, v: u32)  {

@@ -397,6 +397,9 @@ fn link(t: &mut Twins, nodes: &[(u64, u32, u32)], head: u32, parent: u32) -> u32
 /// A UI remap: its original and ours.
 type Remap = (u32, fn(f32) -> f32);
 
+/// A minimap viewport getter: ours.
+type Vp = fn(&G, u32) -> u32;
+
 /// A table whose map holds `keys` (each with a fresh geometry), built as
 /// a balanced search tree under the head the way `std::map` links it
 /// (absent children point at the head). Returns `(table, [(key,
@@ -1206,6 +1209,377 @@ fn vfx_update_render_data_shp_matches_the_original() {
             &[lo, hi, part, obj, segment],
             |g| Out::U32(rdb::update_shp(g, lo, hi, part, obj, segment)),
         );
+    }
+}
+
+/// A dynamic-geometry manager as `g_DynGeoFillBuffer`'s: a set of four
+/// buffers, the current one `room` bytes from full. Returns the manager.
+fn build_dyn_geo(t: &mut Twins, rng: &mut Rng, room: u32) -> u32 {
+    let mut table = Vec::new();
+    for _ in 0..4 {
+        let size = 0x400 + rng.below(0x400);
+        let start = t.zeros(size as usize + 0x40);
+        let fill = start + size.saturating_sub(room) - rng.below(16);
+        let b = t.zeros(0x10);
+        t.w32(b, size);
+        t.w32(b + 4, start);
+        t.w32(b + 8, fill);
+        table.extend(b.to_le_bytes());
+    }
+    let table = t.alloc(&table);
+    let set = t.zeros(0x20);
+    t.w32(set + 4, rng.below(4));
+    t.w32(set + 8, 4);
+    t.w32(set + 0x10, table);
+    let manager = t.zeros(8);
+    t.w32(manager, if rng.chance(15) { 0 } else { set });
+    // the CRT's stderr message on a full buffer: recording stubs in the
+    // import slots
+    let iob = t.stub(None, 0x10b, false, 0, 0, 0x5000);
+    let fprintf = t.stub(None, 0xf9, false, 2, 0, 1);
+    t.global(managers::bridge::IOB_FUNC_SLOT, iob);
+    t.global(managers::bridge::FPRINTF_SLOT, fprintf);
+    manager
+}
+
+#[test]
+fn dyn_geo_buffers_match_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0xd1_9e0b);
+    for round in 0..400 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let room = rng.below(0x300);
+        let manager = build_dyn_geo(&mut t, &mut rng, room);
+        t.global(managers::bridge::DYN_GEO_FILL_BUFFER.sym, manager);
+        let (v, i) = (rng.below(24), rng.below(40));
+        let what = format!("round {round} room {room:#x} vertices {v} indices {i}");
+        if round % 2 == 0 {
+            let size = rng.below(0x300);
+            t.check(&what, 0x006d_e940, Conv::Thiscall(manager), &[size], |g| {
+                Out::U32(managers::bridge::dyn_geo_get_buffer(g, manager, size))
+            });
+        } else if t.r32(manager) != 0 {
+            let data = t.zeros(0x100);
+            let segs = t.alloc(&rng.bytes(0x6c * 8 + 0x100));
+            t.w32(data + 0x94, segs);
+            let seg = rng.below(6);
+            t.check(&what, 0x0063_fdb0, Conv::Cdecl, &[data, seg, v, i], |g| {
+                Out::U32(managers::bridge::get_buffer_for_segment(g, data, seg, v, i))
+            });
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case per function
+fn round2_accessors_match_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x2002_0002);
+    for round in 0..300 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        match round % 6 {
+            0 => {
+                let mut s = rng.bytes(0x10000);
+                for i in 0..16 {
+                    let at = 0xfc8c + 4 * i;
+                    s[at..at + 4].copy_from_slice(&rng.float().to_le_bytes());
+                }
+                s[0xfc88] = u8::from(rng.chance(2));
+                let scene = t.alloc(&s);
+                let out = t.zeros(0x20);
+                let p: [u32; 6] = std::array::from_fn(|i| out + 4 * i as u32);
+                t.check(&what, 0x0065_e9e0, Conv::Thiscall(scene), &p, |g| {
+                    Out::U32(scene::bridge::yiq_param(g, scene, p))
+                });
+            }
+            1 => {
+                let scene = t.zeros(0x10000);
+                let n = rng.below(8);
+                let list: Vec<u8> = (0..8).flat_map(|_| rng.below(6).to_le_bytes()).collect();
+                let list = t.alloc(&list);
+                t.w32(scene + 0xfb48, n);
+                t.w32(scene + 0xfb50, list);
+                let chr = rng.below(6);
+                t.check(&what, 0x0066_8640, Conv::Thiscall(scene), &[chr], |g| {
+                    Out::U32(scene::bridge::remove_chr_from_pipeline(g, scene, chr))
+                });
+            }
+            2 => {
+                let inst = if rng.chance(8) {
+                    0
+                } else {
+                    let n = rng.below(4);
+                    let mut refs = Vec::new();
+                    for _ in 0..n {
+                        let segs = rng.below(5);
+                        let mut sb = rng.bytes(0x6c * 5);
+                        for k in 0..5 {
+                            sb[0x6c * k + 0x18..0x6c * k + 0x1c]
+                                .copy_from_slice(&rng.below(4).to_le_bytes());
+                        }
+                        let sp = t.alloc(&sb);
+                        let mesh = t.zeros(8);
+                        t.w32(mesh, segs | (rng.next() & 0x8000_0000));
+                        t.w32(mesh + 4, sp);
+                        let r = t.alloc(&mesh.to_le_bytes());
+                        refs.extend(r.to_le_bytes());
+                    }
+                    refs.extend([0; 4]);
+                    let refs = t.alloc(&refs);
+                    let inst = t.zeros(8);
+                    t.w32(inst, n | (rng.next() & 0x8000_0000));
+                    t.w32(inst + 4, refs);
+                    inst
+                };
+                let (id, hide) = (rng.below(4), rng.below(3));
+                t.check(&what, 0x0063_bdf0, Conv::Cdecl, &[inst, id, hide], |g| {
+                    Out::U32(scene::bridge::set_mesh_segment_hide(g, inst, id, hide))
+                });
+            }
+            3 => {
+                let menu = if rng.chance(4) {
+                    0
+                } else {
+                    t.alloc(&rng.bytes(0x100))
+                };
+                if menu != 0 && rng.chance(2) {
+                    t.w8(menu + 0x70, 0);
+                }
+                t.global(scene::bridge::ESC_MENU.sym, menu);
+                t.check(&what, 0x0063_da80, Conv::Cdecl, &[], |g| {
+                    Out::U32(scene::bridge::is_esc_menu_active(g))
+                });
+            }
+            4 => {
+                let mut s = rng.bytes(0x2c00);
+                for i in 0..64 {
+                    let at = 0xde8 + 4 * i;
+                    s[at..at + 4].copy_from_slice(&rng.below(80).to_le_bytes());
+                    let c = 0x29e8 + 4 * i;
+                    s[c..c + 4].copy_from_slice(&(rng.below(4) as i32 - 1).to_le_bytes());
+                }
+                let sm = t.alloc(&s);
+                let obj = rng.below(80);
+                t.check(&what, 0x006c_e9d0, Conv::Thiscall(sm), &[obj], |g| {
+                    Out::U8(managers::bridge::remove_from_shadow_map(g, sm, obj))
+                });
+            }
+            _ => {
+                // a random search tree under a head
+                let head = t.zeros(0x10);
+                let keys: Vec<u32> = (0..rng.below(12)).map(|_| rng.below(40)).collect();
+                let mut nodes: Vec<(u32, u32)> = Vec::new();
+                for &k in &keys {
+                    if nodes.iter().any(|&(nk, _)| nk == k) {
+                        continue;
+                    }
+                    let n = t.zeros(0x10);
+                    t.w32(n, head);
+                    t.w32(n + 4, head);
+                    t.w32(n + 0xc, k);
+                    // insert under the root
+                    let mut at = head + 0xc;
+                    loop {
+                        let cur = t.r32(at);
+                        if cur == head || cur == 0 {
+                            t.w32(at, n);
+                            break;
+                        }
+                        let ck = t.r32(cur + 0xc);
+                        at = cur + if k < ck { 0 } else { 4 };
+                    }
+                    nodes.push((k, n));
+                }
+                if nodes.is_empty() {
+                    t.w32(head + 0xc, head);
+                }
+                let kp = t.alloc(&rng.below(40).to_le_bytes());
+                t.check(&what, 0x006d_edd0, Conv::Thiscall(head), &[kp], |g| {
+                    Out::U32(managers::bridge::tree_find(g, head, kp))
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn tex_anim_matches_the_original() {
+    use ffx_graphic::texanim::bridge as ta;
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x7e7a_0001);
+    let word = |rng: &mut Rng| match rng.below(3) {
+        0 => rng.below(0x100),
+        1 => [0x7000_0000, 0x6fff_ffff, 0x8000_0000, 0xffff_fff1, 0][rng.below(5) as usize],
+        _ => rng.next(),
+    };
+    for round in 0..3000 {
+        t.reset();
+        let what = format!("round {round}");
+        let a: [u32; 8] = std::array::from_fn(|_| word(&mut rng));
+        let q = t.zeros(0x10);
+        match round % 10 {
+            0 => t.check(&what, 0x0077_e730, Conv::Cdecl, &a[..2], |g| {
+                Out::U32(ta::load_image(g, a[0], a[1], 0x100))
+            }),
+            1 => t.check(&what, 0x0077_e7c0, Conv::Cdecl, &a[..2], |g| {
+                Out::U32(ta::load_image(g, a[0], a[1], 0x101))
+            }),
+            2 => t.check(&what, 0x0077_e770, Conv::Cdecl, &a[..3], |g| {
+                Out::U32(ta::load_image_regs(g, a[0], a[1], a[2]))
+            }),
+            3 => t.check(&what, 0x0077_e800, Conv::Cdecl, &a[..1], |g| {
+                Out::U32(ta::sync_path(g, a[0]))
+            }),
+            4 => t.check(&what, 0x0077_eaa0, Conv::Cdecl, &a[..1], |g| {
+                Out::U32(ta::sync_path(g, a[0]))
+            }),
+            5 => t.check(
+                &what,
+                0x0077_ebc0,
+                Conv::Cdecl,
+                &[q, a[0], a[1], a[2]],
+                |g| Out::U32(ta::qword(g, q, a[0], a[1], a[2])),
+            ),
+            6 => {
+                let p: [u32; 6] = std::array::from_fn(|i| a[i]);
+                t.check(
+                    &what,
+                    0x0077_eb70,
+                    Conv::Cdecl,
+                    &[q, p[0], p[1], p[2], p[3], p[4], p[5]],
+                    |g| Out::U32(ta::dma_tag(g, q, p)),
+                );
+            }
+            7 => {
+                let mut args = vec![q];
+                args.extend(a);
+                t.check(&what, 0x0077_ebe0, Conv::Cdecl, &args, |g| {
+                    Out::U32(ta::gif_tag(g, q, a))
+                });
+            }
+            8 => {
+                let i = rng.below(64);
+                t.check(&what, 0x0077_e9f0, Conv::Cdecl, &[i], |g| {
+                    Out::U32(ta::work(g, i))
+                });
+            }
+            _ => {
+                // the dispatch, with both sets and the dialogue stubbed
+                let i = rng.below(64);
+                let at = t.rebase(ta::CHR_TEXANIM.sym) + 0x30 * i + 0xd;
+                t.w8(at, [0u8, 1, 2, 0xff][rng.below(4) as usize]);
+                t.stub_sym(ta::NO_SET_NEW, Conv::Cdecl, 6, rng.next());
+                t.stub_sym(ta::NO_SET_OLD, Conv::Cdecl, 3, rng.next());
+                t.check(
+                    &what,
+                    0x0077_e940,
+                    Conv::Cdecl,
+                    &[i, a[0], a[1], a[2], a[3]],
+                    |g| Out::U32(ta::no_set(g, i, a[0], a[1], a[2], a[3])),
+                );
+                t.stub_sym(ta::DLG_CHECK, Conv::Cdecl, 0, rng.below(3));
+                t.stub_sym(ta::DLG_RUN, Conv::Cdecl, 1, rng.next());
+                t.check(&what, 0x0077_e920, Conv::Cdecl, &[a[4]], |g| {
+                    Out::U32(ta::dlg(g, a[4]))
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn round2_more_matches_the_original() {
+    use ffx_graphic::texanim::bridge as ta;
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x2002_0003);
+    for round in 0..600 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        match round % 4 {
+            0 => {
+                // the minimap viewport over a target height
+                let scene = t.alloc(&rng.bytes(0x1100));
+                t.w8(scene, u8::from(rng.chance(2)));
+                t.w32(scene + 0x74, rng.below(6));
+                let target = t.alloc(&rng.bytes(0x20));
+                let h = [
+                    0,
+                    1,
+                    720,
+                    1080,
+                    2160,
+                    0x7fff_ffff,
+                    0x8000_0000,
+                    0xffff_ffff,
+                    rng.next(),
+                ][rng.below(9) as usize];
+                t.w32(target + 0x1c, h);
+                let cell = t.zeros(8);
+                t.w32(cell, target);
+                let owner = t.zeros(0x90);
+                t.w32(owner + 0x8c, cell);
+                t.w32(scene + 0x10cc, owner);
+                let fs: [(u32, Vp); 3] = [
+                    (0x0065_e320, |g, s| {
+                        scene::bridge::minimap_viewport_size(g, s)
+                    }),
+                    (0x0065_e3f0, |g, s| scene::bridge::minimap_viewport_x(g, s)),
+                    (0x0065_e560, |g, s| scene::bridge::minimap_viewport_y(g, s)),
+                ];
+                for (sym, f) in fs {
+                    t.check(
+                        &format!("{what} h {h:#x}"),
+                        sym,
+                        Conv::Thiscall(scene),
+                        &[],
+                        |g| Out::U32(f(g, scene)),
+                    );
+                }
+            }
+            1 => {
+                let i = rng.below(64);
+                let e = t.rebase(ta::CHR_TEXANIM.sym) + 0x30 * i;
+                let work = t.alloc(&rng.bytes(0xd60));
+                for n in 0..64 {
+                    t.w8(work + 0xd08 + n, rng.below(3) as u8);
+                }
+                t.w32(e, u32::from(!rng.chance(5)));
+                t.w32(e + 4, work);
+                let which = rng.below(4);
+                let v = rng.next();
+                t.check(&what, 0x0077_fda0, Conv::Cdecl, &[i, which, v], |g| {
+                    ta::reset_pos(g, i, which, v);
+                    Out::None
+                });
+            }
+            _ => {
+                // insert into a tree built by the original's own inserts
+                let head = t.zeros(0x10);
+                t.w32(head + 0xc, head);
+                for k in 0..rng.below(10) {
+                    let n = t.zeros(0x10);
+                    t.w32(n + 0xc, rng.below(30));
+                    t.w32(n + 8, rng.below(2));
+                    t.check(
+                        &format!("{what} insert {k}"),
+                        0x006d_ee50,
+                        Conv::Thiscall(head),
+                        &[n],
+                        |g| Out::U32(managers::bridge::tree_insert(g, head, n)),
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -2286,6 +2660,31 @@ fn snapshot_render_data_and_scene_match_the_original() {
             run_accessor(&mut t, acc, scene, 0, 0, "snapshot");
         }
     }
+    // the minimap viewport on the real render target
+    let owner = t.r32(scene + 0x10cc);
+    if owner != 0 && t.r32(owner + 0x8c) != 0 {
+        let fs: [(u32, Vp); 3] = [
+            (0x0065_e320, |g, s| {
+                scene::bridge::minimap_viewport_size(g, s)
+            }),
+            (0x0065_e3f0, |g, s| scene::bridge::minimap_viewport_x(g, s)),
+            (0x0065_e560, |g, s| scene::bridge::minimap_viewport_y(g, s)),
+        ];
+        for (sym, f) in fs {
+            t.check("snapshot minimap", sym, Conv::Thiscall(scene), &[], |g| {
+                Out::U32(f(g, scene))
+            });
+        }
+    }
+    let yiq = t.zeros(0x20);
+    let p: [u32; 6] = std::array::from_fn(|i| yiq + 4 * i as u32);
+    t.check(
+        "snapshot yiq",
+        0x0065_e9e0,
+        Conv::Thiscall(scene),
+        &p,
+        |g| Out::U32(scene::bridge::yiq_param(g, scene, p)),
+    );
     let table = t.r32(t.rebase(vfx::bridge::TABLE.sym));
     if table == 0 {
         eprintln!("no effect table in this snapshot");

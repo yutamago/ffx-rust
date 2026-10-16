@@ -561,6 +561,86 @@ pub fn native_motion_blur<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) ->
     0
 }
 
+/// `Native_SpriteSetPos` (`0x0085cc50`, `0x011f`): `(sprite, x, y)` ->
+/// `0x00874b30(sprite, x, y)` (on language 0xb with graphics name hash
+/// 0x199, (0x10e, 0xd5) becomes (0x122, 0xd5)); the sprite.
+pub fn native_sprite_set_pos<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let y = pop(h, s);
+    let mut x = pop(h, s);
+    let sp = pop(h, s);
+    if call(h, 0x008a_c2f0, &[]) == 0xb
+        && call(h, 0x0064_1da0, &[]) == 0x199
+        && x == 0x10e
+        && y == 0xd5
+    {
+        x = 0x122;
+    }
+    call(h, 0x0087_4b30, &[sp, x, y]);
+    sp
+}
+
+/// `Native_LightSet` (`0x00a78030`, `0x4013`): `(light, r, g, b, pitch,
+/// yaw)` -> `Light_Set(light, r, g, b, pitch, yaw)`; 0.
+pub fn native_light_set<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let mut v = [0u32; 6];
+    for x in v.iter_mut().rev() {
+        *x = pop(h, s);
+    }
+    call(h, 0x0083_6520, &v);
+    0
+}
+
+/// `Native_SetModel` (`0x0085d000`, `0x0001`): `(model)`: detaches what the
+/// worker had (`Worker_Detach` with 0 pushed), allocates the character
+/// (`TkCh_Allocate2(model, id)` into `+0x9c`), sets its battle number,
+/// sound id and yaw from the position, `+0xa8` = model and `+0xaa` = 1,
+/// places it (`AtelSetPos3d`), outside a battle its sound and footsteps,
+/// and binds the effects `+0x38` bits 5-7 ask for; 0.
+pub fn native_set_model<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
+    let c = call(h, 0x0086_aff0, &[]);
+    let p = atel_get_pos_work_adrs(h, w);
+    atel_push_stack_integer(h, s, 0);
+    call(h, 0x0085_ca00, &[w, a, s]);
+    let m = pop(h, s);
+    let id = u32::from(h.read::<u16>(w + worker::ID));
+    let ch = call(h, 0x0087_2210, &[m, id]);
+    h.write(w + worker::CHAR_HANDLE, ch);
+    call(h, 0x0087_2160, &[w]);
+    let snd = |h: &mut H| u32::from(h.read::<u8>(w + 0xaf));
+    let (ch, k) = (h.read::<u32>(w + worker::CHAR_HANDLE), snd(h));
+    call(h, 0x0083_5b50, &[ch, k]);
+    for f in [0x0082_b1b0, 0x0082_b520] {
+        let yaw = x87::store(x87::load(h.read(p + 0x20)));
+        let ch = h.read::<u32>(w + worker::CHAR_HANDLE);
+        call(h, f, &[ch, yaw]);
+    }
+    #[allow(clippy::cast_possible_truncation)] // the original stores SI
+    h.write(w + 0xa8, m as u16);
+    h.write(w + 0xaa, 1_u8);
+    let pos: Vec<u32> = (0..3)
+        .map(|i| x87::store(x87::load(h.read(p + i * 4))))
+        .collect();
+    call(h, 0x0087_0b20, &[w, pos[0], pos[1], pos[2], 0]);
+    if h.read::<u16>(c + 0x1a) == 0 {
+        if h.read::<u8>(w + 0xaa) == 1 {
+            let ch = h.read::<u32>(w + worker::CHAR_HANDLE);
+            if ch != 0 {
+                let k = snd(h);
+                call(h, 0x0083_5b50, &[ch, k]);
+            }
+        }
+        let id = u32::from(h.read::<u16>(w + worker::ID));
+        let k = snd(h);
+        call(h, 0x0088_5fd0, &[k, id]);
+    }
+    for (bit, k) in [(0x20u8, 0u32), (0x40, 1), (0x80, 2)] {
+        if h.read::<u8>(w + 0x38) & bit != 0 {
+            call(h, 0x0086_2700, &[w, k]);
+        }
+    }
+    0
+}
+
 /// The Rust version of one of these handlers, if there is one.
 #[must_use]
 pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
@@ -608,12 +688,18 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x00a7_7d80 => Int(native_fade_in),
         0x00a7_7da0 => Int(native_fade_out),
         0x00a7_7e00 => Int(native_motion_blur),
-        _ => return None,
+        0x0085_cc50 => Int(native_sprite_set_pos),
+        0x00a7_8030 => Int(native_light_set),
+        0x0085_d000 => Int(native_set_model),
+        _ => return super::native_btl::find(sym),
     })
 }
 
 /// Every handler [`find`] has, with whether it returns a float.
-pub const PORTED: [(u32, bool); 43] = [
+pub const PORTED: [(u32, bool); 46] = [
+    (0x0085_cc50, false),
+    (0x00a7_8030, false),
+    (0x0085_d000, false),
     (0x0085_6c30, false),
     (0x0085_7520, false),
     (0x0086_02f0, false),

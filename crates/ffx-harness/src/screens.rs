@@ -115,6 +115,9 @@ pub fn load_save(game: &mut Game, entry: u32) -> Result<String> {
     // The title's cursor starts on Load; the Flash menus read keys.
     game.command("key 1c 3 30")?;
     wait_for(game, is_save_list, 30, 20)?;
+    // The list is drawn a little before it takes keys; a Down sent at once
+    // was sometimes lost and the autosave loaded instead.
+    game.wait(30)?;
     for _ in 0..entry {
         game.command("key d0 3 20")?;
     }

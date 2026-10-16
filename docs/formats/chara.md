@@ -341,3 +341,15 @@ only measures: size, triangle count, largest x and y.
 - `Ch_AnalysisChrNum` (`0x00829e60`) turns `.../mdl/xxx.chr` into the
   `.../xxx.ah` name: it copies up to the dot, appends `ah`, and drops the
   first `mdl/`.
+
+## Moving motion groups
+
+`Ch_MemMove` (`0x00826fa0`, MoveChrMemory) compacts the character heap
+when `0x012fbda0` is set. Its event step `Ch_MemMoveEventMgrp`
+(`0x00837050`) moves the first loaded motion group (table `0x013011e0`,
+50 x 12 bytes: group, `i16` state `+4` == 1) that `Sg_MemMoveWork`
+(`0x0083c350`) can move lower, then `Ch_MgrpMove(new, old)` (`0x008370c0`)
+fixes what pointed at it: `SG_RelocateGroup(new)`, the table entry, every
+used sequence (`0x01300a08`, 100 x `0x14`) whose group `+0x10` is `old`
+(data `+0` and group by `new - old`), and every active character whose
+`+0x7e8` is `old` (`Ch_MoveMgrp`). Names from the Switch build's call graph.

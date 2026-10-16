@@ -278,4 +278,164 @@ pub mod bridge {
             m.write(chr + 0x15, v as u8);
         }
     }
+
+    /// `PhyreScene_getYIQParam(this, &y0, &y1, &y2, &o0, &o1, &o2)`: the
+    /// three YIQ scales (`+0xfcac..`) and offsets (`+0xfcbc..`); while the
+    /// override (`+0xfc88`) is on, scaled by `+0xfc8c..` with `+0xfc9c..`
+    /// added to the offsets. Every value goes through the x87 on its way
+    /// out. Returns the last pointer (`eax`).
+    #[allow(clippy::many_single_char_names)]
+    pub fn yiq_param(m: &mut impl Mem, scene: u32, out: [u32; 6]) -> u32 {
+        use x87::Reg;
+        let f = |m: &dyn Fn(u32) -> u32, at: u32| f32::from_bits(m(at));
+        let rd = |at: u32| -> u32 { m.read(scene + at) };
+        let mut v = [0f32; 6];
+        for (i, off) in [0xfcac, 0xfcb0, 0xfcb4, 0xfcbc, 0xfcc0, 0xfcc4]
+            .into_iter()
+            .enumerate()
+        {
+            v[i] = f(&rd, off);
+        }
+        if m.read::<u8>(scene + 0xfc88) != 0 {
+            let s = [f(&rd, 0xfc8c), f(&rd, 0xfc90), f(&rd, 0xfc94)];
+            let o = [f(&rd, 0xfc9c), f(&rd, 0xfca0), f(&rd, 0xfca4)];
+            // the original's operand orders: scale first for 0 and 2
+            v[0] = Reg::load(s[0]).mul_m32(v[0]).store();
+            v[3] = Reg::load(s[0]).mul_m32(v[3]).add_m32(o[0]).store();
+            v[1] = Reg::load(v[1]).mul_m32(s[1]).store();
+            v[4] = Reg::load(v[4]).mul_m32(s[1]).add_m32(o[1]).store();
+            v[2] = Reg::load(s[2]).mul_m32(v[2]).store();
+            v[5] = Reg::load(s[2]).mul_m32(v[5]).add_m32(o[2]).store();
+        }
+        for (at, x) in out.into_iter().zip(v) {
+            m.write(at, x87::round_trip(x).to_bits());
+        }
+        out[5]
+    }
+
+    /// `PhyreScene_removeChrFromPipeline(this, chr)`: clears the first slot
+    /// holding `chr` among the pipeline's characters (`+0xfb50`, count
+    /// `+0xfb48`). Returns its index, else the count (`eax`).
+    pub fn remove_chr_from_pipeline(m: &mut impl Mem, scene: u32, chr: u32) -> u32 {
+        let count: u32 = m.read(scene + 0xfb48);
+        let list: u32 = m.read(scene + 0xfb50);
+        for i in 0..count {
+            if m.read::<u32>(list + 4 * i) == chr {
+                m.write(list + 4 * i, 0u32);
+                return i;
+            }
+        }
+        count
+    }
+
+    /// `graphicCharacterInstanceSetMeshSegmentHide(inst, id, hide)`: every
+    /// segment (`0x6c` bytes, id at `+0x18`) of every mesh of the instance
+    /// whose id matches gets the hide byte (`+0x14`). Returns `inst`.
+    pub fn set_mesh_segment_hide(m: &mut impl Mem, inst: u32, id: u32, hide: u32) -> u32 {
+        if inst == 0 {
+            return inst;
+        }
+        let mut i = 0u32;
+        while i < m.read::<u32>(inst) & 0x7fff_ffff {
+            let meshes: u32 = m.read(inst + 4);
+            let mesh_ref: u32 = m.read(meshes + 4 * i);
+            let mesh: u32 = m.read(mesh_ref);
+            let n = m.read::<u32>(mesh) & 0x7fff_ffff;
+            for k in 0..n {
+                let segs: u32 = m.read(mesh + 4);
+                let at = segs.wrapping_add(0x6c * k);
+                if m.read::<u32>(at + 0x18) == id {
+                    m.write(at + 0x14, u8::from(hide != 0));
+                }
+            }
+            i += 1;
+        }
+        inst
+    }
+
+    /// `g_FFEscMenu`: the PC escape menu object.
+    pub const ESC_MENU: Global<u32> = Global::new(0x00cc_c870);
+
+    /// `graphicIsEscMenuActive()` (`FUN_0063da80`): the escape menu exists
+    /// and is open (`+0x70`) or has a selection (`+0xe4 >= 0`).
+    pub fn is_esc_menu_active(m: &impl Mem) -> u32 {
+        let menu = ESC_MENU.get(m);
+        u32::from(menu != 0 && (m.read::<u8>(menu + 0x70) != 0 || m.read::<i32>(menu + 0xe4) >= 0))
+    }
+
+    /// The render target height the minimap viewport scales with: the
+    /// live pointer of `*(scene + 0x10cc) + 0x8c`, its `+0x1c`.
+    fn target_height(m: &impl Mem, scene: u32) -> u32 {
+        let owner: u32 = m.read(scene + 0x10cc);
+        let cell: u32 = m.read(owner + 0x8c);
+        let target = if m.read::<u8>(cell + 4) == 0 {
+            m.read(cell)
+        } else {
+            0u32
+        };
+        m.read(target + 0x1c)
+    }
+
+    /// `fild` of a word read as unsigned (`+ 2^32` when negative).
+    fn unsigned(v: u32) -> f64 {
+        f64::from(v)
+    }
+
+    /// `fistp qword` under truncation (`or cw, 0xc00`): the low word.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    fn chop(v: f64) -> u32 {
+        // in range for every height the game has; out of range the x87
+        // gives the integer indefinite
+        let t = v.trunc();
+        if t.is_nan() || t >= 9.223_372_036_854_776e18 || t < -9.223_372_036_854_776e18 {
+            0
+        } else {
+            t as i64 as u32
+        }
+    }
+
+    /// `PhyreScene_getMinimapViewportSize(this)` (`FUN_0065e320`): the
+    /// minimap's size for the target height: `h * 120.25 / 16 * 9 / 416`
+    /// in blitzball (`this[0]`), else `f32(h * 104) / 16 * 9 / 416`.
+    pub fn minimap_viewport_size(m: &impl Mem, scene: u32) -> u32 {
+        let h = target_height(m, scene);
+        if m.read::<u8>(scene) != 0 {
+            let v = x87::mul(unsigned(h), 120.25);
+            let v = x87::div(x87::mul(x87::mul(v, 0.0625), 9.0), 416.0);
+            chop(v)
+        } else {
+            let w = f64::from(f32::from_bits(x87::store(unsigned(h.wrapping_mul(0x68)))));
+            chop(x87::div(x87::mul(x87::mul(w, 0.0625), 9.0), 416.0))
+        }
+    }
+
+    /// The viewport offsets: `f32(h) * base / 512`, truncated.
+    fn scaled(h: u32, base: f32) -> u32 {
+        let d = f64::from(f32::from_bits(x87::store(unsigned(h))));
+        chop(x87::mul(x87::mul(d, f64::from(base)), 0.001_953_125))
+    }
+
+    /// `PhyreScene_getMinimapViewportX(this)` (`FUN_0065e3f0`): by the
+    /// minimap type (`+0x74`): 1, 2: 39; 3, 4: 368.75 in blitzball else
+    /// 377; else 0; scaled by the target height / 512.
+    pub fn minimap_viewport_x(m: &impl Mem, scene: u32) -> u32 {
+        let base = match m.read::<u32>(scene + 0x74) {
+            1 | 2 => 39.0,
+            3 | 4 if m.read::<u8>(scene) != 0 => 368.75,
+            3 | 4 => 377.0,
+            _ => 0.0,
+        };
+        scaled(target_height(m, scene), base)
+    }
+
+    /// `PhyreScene_getMinimapViewportY(this)` (`FUN_0065e560`): 111 in
+    /// blitzball else 96, scaled by the target height / 512.
+    pub fn minimap_viewport_y(m: &impl Mem, scene: u32) -> u32 {
+        let base = if m.read::<u8>(scene) != 0 {
+            111.0
+        } else {
+            96.0
+        };
+        scaled(target_height(m, scene), base)
+    }
 }

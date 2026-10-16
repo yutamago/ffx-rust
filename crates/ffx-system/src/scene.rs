@@ -231,4 +231,45 @@ pub mod bridge {
     pub fn scene_state(mem: &impl Mem, i: i32, name: u32) -> i32 {
         find(mem, i, name).map_or(0, |s| i32::from(mem.read::<i16>(s)))
     }
+
+    /// `0x008af060(i, name, x, y)`: every slot of scene `i` named `name`
+    /// (all eight checked) moved with `TkMenuSetScenePos(i, handle, x, y)`
+    /// (the menu's, passed in) on its handle (`+0x1c`).
+    pub fn set_scene_pos_by_name<M: Mem>(
+        mem: &mut M,
+        i: i32,
+        name: u32,
+        x: u32,
+        y: u32,
+        mut set_pos: impl FnMut(&mut M, i32, u32, u32, u32),
+    ) {
+        for j in 0..8 {
+            let s = slot(mem, i, j);
+            if str_eq(mem, name, s.wrapping_add(8)) {
+                let handle: u32 = mem.read(s.wrapping_add(0x1c));
+                set_pos(mem, i, handle, x, y);
+            }
+        }
+    }
+
+    /// `TOSeqGetColorRGBA(i, name, &r, &g, &b, &a)` (`0x008ae3a0`): the
+    /// colour parameter `name` of scene `i` (`TkMenuGetParamHandle`, then
+    /// `TkMenuGetParamOffset(i, handle, 0)`, the menu's, passed in) split
+    /// into its four bytes, or all 0 without the parameter. Returns `a`'s
+    /// address (left in `eax`).
+    pub fn get_color_rgba<M: Mem>(
+        mem: &mut M,
+        i: i32,
+        name: u32,
+        out: [u32; 4],
+        get_handle: impl FnOnce(&mut M, i32, u32) -> u32,
+        get_offset: impl FnOnce(&mut M, i32, u32, u32) -> u32,
+    ) -> u32 {
+        let h = get_handle(mem, i, name);
+        let c = if h == 0 { 0 } else { get_offset(mem, i, h, 0) };
+        for (k, &p) in out.iter().enumerate() {
+            mem.write(p, c.to_le_bytes()[k]);
+        }
+        out[3]
+    }
 }

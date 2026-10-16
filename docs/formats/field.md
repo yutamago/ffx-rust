@@ -561,8 +561,104 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   (`user_malloc`/`user_free`, with the CRT's critical sections stubbed),
   so objects are built and torn down with the real allocator; on the image
   alone the heap needs Win32 events and the bump allocator stays.
-- Not ported: `yiWindowDrawBar` (`0x00907c10`) still is no function start
-  in the dump.
+- `yiWindowDrawBar` (`0x00907c10`) is a function start in the rebuilt
+  dump and has its hook from round 10.
+
+## Field helpers by unblocked callers (round 10)
+
+- Parser readers: `rcdtParseGetKeyword` (`0x0092be40`, the token's index
+  in a null-ended string table, same length and `_strnicmp`, else -1),
+  `rcdtParseGetFloat` (`0x0092bbb0`, `atof` in text mode, `ST0`),
+  `rcdtParseGetText` (`0x0092bdd0`, `strncpy` of the token, its length),
+  `rcdtParseAdvanceLine` (`0x0092b9b0`).
+- Field programs: `rcbgFPmGetMatrix` (`0x00922290`: rotation `+0x18` times
+  the `.rdata` factor `0x00b678ec`, scale `+0x28`, translation `+0x8`,
+  `op_rt_m_yxz`), `rcbgFPmGetElemMatrix` (`0x00922350`, a character
+  element's matrix with its rows times 10), `rcbgFPmRestart` (`0x00922300`,
+  the manager's flag 0x100, `Fp_Restart`, the element matrix at
+  `mng + 0xc`), `rcbgPreAddFpObjects` (`0x00922010`).
+- `rcbgPSimAddDamp`/`AddWind`/`AddGravity` add forces to the simulation's
+  particle system (`+0x18`); the gravity one overwrites its vector with the
+  debug gravity (0, 1, -0.1). `rcbgPalProc` (`0x00929b60`) picks the
+  palette animation: flag bit 0 white, mode `+0xa` 1 rotate, 2 shift,
+  else a copy to the last entry.
+- Effect task lists: `rcefTaskCtrlFini` kills the tail's previous task
+  until the head is reached; `rcefTaskCtrlProc` runs a `+0x8` chain, then
+  kills the tasks flagged 4 (each task's next read before it is killed).
+- `rcbgModelSetTexReg` (`0x009284d0`) builds a register record
+  (`page << 17 | 0x1000f`, register 0x47) for `rcbgSetReg`, a bare `ret`
+  here, so its `eax` is the record's stack address.
+- `yiFieldMapRead`/`yiBattleMapRead` read CD directory 0x13/0x1a files
+  `2 map` and `2 map + 1` (`yiMapReadMaster`), status bits 0x2000/0x1000.
+
+## Two-operand intrinsics, angles, views and lights (round 11)
+
+- `_CIfmod` takes its operands in `ST1` (the dividend) and `ST0` (the
+  divisor) and leaves `fmod` alone in `ST0`; the float-call path has a
+  two-operand form for it (`FArgs::St01`; the hook loads both with
+  `fld qword` before calling the import thunk `0x009498e0`).
+  `rcefAngleWrap` (`0x0092d810`) brings an angle into `0..=2π`: negative
+  ones as `2π - fmod(-a, 2π)`, ones past 2π as `fmod(a, 2π)`, others (NaN
+  too) unchanged.
+- `rcefVecToAngle` (`0x0092ec20`): `acos(-v.z)`, mirrored to `2π - a` for
+  `v.x > 0`; `rcefAngleToDir` (`0x0092ded0`): `(-sin a, 0, -cos a, 0)`.
+- Renderer views: `yiSetBattleView` (`0x0090a140`, skipped with status bit
+  0x800) and `yiSetViewMatrices` (`0x0090a640`) multiply the battle view
+  by `g_YiViewAdjust` into the three view matrices `0x018ded78`,
+  `0x018dedb8`, `0x018dedf8` and keep the screen depth at `0x018df160`;
+  `yiSetLightMatrices` (`0x00908d00`) builds the normal light matrix
+  (`0x018deeb8`, three normalised directions) and the light colour matrix
+  (`0x018deef8`, four colours).
+- `yiImageVramAlloc` (`0x00917d80`): image GS memory by format; format
+  0x13 below page 0x2e00 becomes 0x1b, format 0x14 becomes 0x2c and is
+  cached at `0x025d17a4` for the next 0x14 image (format 0x24).
+- Keyword configs: palettes (`0x0093adf0`, table `0x00c60e94`: mode
+  `+0xa`, speed `+0xb`) and text sub-configs (`0x0093aee0`, table
+  `0x00c60e44`: `+0x5c`, `+0x60`, `+0x64`).
+- Testing: text parsers need a bounded chunk. With `rcdtChunkSetBin`'s
+  unbounded size, `rcdtParseSkipSeparators` keeps scanning through memory
+  after trailing separators, because NUL counts as a separator. `_CIacos`
+  is the x87's `atan2(sqrt(1 - x²), x)` in both oracles, and `_CIfmod` is
+  the oracle's `fprem` stub.
+
+## Random vectors, the pmcom environment and the renderer's bounds (round 12)
+
+- `KeVecAddRandom` (`0x00766f10`) adds `op_random(range[i])` to x, y, z
+  (times `op_random_p(1.0)` when its third argument is set, the first
+  draw stored as a `double`); `KeVecScaleRandom` (`0x00766f70`) adds
+  `v[i] * s - v[i]` for `s = r + r` or `r + r'` (`op_random(1.0)` draws,
+  `s` stored as `f32`). Both read the draws from `ST0`, so the port calls
+  `op_random` through the float path (`FArgs::Stack`) and keeps the
+  original's rounding points.
+- The pmcom environment: `pppInitPmcomEnv` (`0x00760610`) resets the
+  arena pointers and calls `pppInitEnv(0x010d4cfc, 0, 0x00fd24f0,
+  0x100000)`; `pppFreeAllEnvObjects` (`0x007605d0`) frees the object
+  blocks at `0x00d4e390` (0x80 bytes, count `0x00d4b4cc`) in it.
+  `KeResampleRgbaToRgb` (`0x00760640`) scales an RGBA image to BGR
+  bytes, filling the destination bottom row first; its last row lands
+  one row before the buffer, one pixel to the right.
+- `KeThBP_Init` (`0x00763030`, the Switch build's name: it calls
+  `set_ptr32` seven times, as this does) sets up a `KeThBP` object with
+  its GIF tag at `+0x40 + 0x30n`.
+- Sphere grid: `AbmapResetCursorCamera` (`0x00a5b030`) puts the cursor
+  256 units from the current character (`+0x115bc`), 32 below it, then
+  pulses it; `AbmapStoreSave` (`0x00a5bb70`) copies node bytes, link
+  flags and the characters' `u16`s into `MsGetSaveAbilityMap`'s block;
+  `AbmapScaledLevelValue` (`0x00a5cbe0`) is `ftol(T[i] * (level + 50) *
+  T[j])` for `T` = 1, 1, 1.5, 3, 5 (100000 for `j` 4).
+- `rcbgSceneLoadTextCameraCalcRef` (`0x0093b110`, the Switch name in its
+  sorted place before `rcbgSceneLoadTextModel`): the reference point
+  `+0x78 = +0x68 + +0xf4 * row 2` of the rotation built from the degrees
+  at `+0x98`.. and the direction `+0x88 = -row 1`. It returns
+  `FFXVu0RotMatrixZ`'s `eax`, the address of its stack matrix; the test
+  leaves that out.
+- Renderer: `yiRender_addDirectBlock` (`0x0090c120`) aligns the data
+  pointer to 64 bytes and adds a ref tag to a VIF FLUSH, STMOD, STCYCL,
+  DIRECTHL block; `yiTriContainsXZ` (`0x00910270`) tests a point against
+  a triangle on x, z (two edge products stored as `f32`, their sum kept
+  at 53 bits); `yiBoundsMinMax` (`0x009130f0`) starts from ±FLT_MAX.
+  `yiImage_dumpall` (`0x00918680`) only prints, through `dbgPrintf` (a
+  bare `ret`).
 
 ## Floats
 
