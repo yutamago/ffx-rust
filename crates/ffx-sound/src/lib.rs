@@ -1,14 +1,14 @@
 //! Music, sound effects and voice (the PS2 `Snd` module, the FMOD layer).
 //!
 //! The `sound` module of `docs/rewrite-plan.md`: the sound data
-//! ([`fsb`] banks of [`ima`] ADPCM samples) and, as functions are ported, a
-//! core and a [`bridge`] per original (`docs/porting.md`).
+//! ([`fsb`] banks of [`ima`] ADPCM samples) and the ported game-side sound
+//! logic, a core and a `bridge` per original (`docs/porting.md`): the PS2
+//! sound API ([`snd`]) and the FMOD command queue's entry points ([`fmod`]).
 
+pub mod fmod;
 pub mod fsb;
 pub mod ima;
-
-/// The originals, where the game keeps their state (`ffx_bridge::Mem`).
-pub mod bridge {}
+pub mod snd;
 
 /// A WAV file of 16-bit PCM.
 #[must_use]

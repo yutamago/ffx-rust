@@ -1,8 +1,12 @@
 //! `ffx-battle`: random numbers, the save block, actors, the battle camera,
 //! battle globals and helpers, damage.
 
+use ffx_battle::atel::bridge as atel;
+use ffx_battle::exec::bridge as exec;
 use ffx_battle::{actor::bridge as actor, camera::bridge as camera, command::bridge as cmd};
-use ffx_battle::{body::bridge as body, menu::bridge as menu, vector::bridge as vector};
+use ffx_battle::{
+    body::bridge as body, menu::bridge as menu, target::bridge as target, vector::bridge as vector,
+};
 use ffx_battle::{
     cue::bridge as cue, flow::bridge as flow, pos::bridge as pos, turn::bridge as turn,
 };
@@ -28,14 +32,66 @@ fn call1(sym: u32, a: u32) -> u32 {
     }
 }
 
-/// MSVCR110's `_CIcos` or `_CIsin` through the game's import slot
-/// (`0x00b0c3b4`, `0x00b0c3b8`, behind the thunks `0x009498c2`,
-/// `0x009498c8`): the angle (`f32` bits) loaded with `fld dword`, the
-/// result stored with `fstp dword`, as `MsGetSummonerPos` does.
+/// Calls an original cdecl function of four arguments by its `ffx.sym`
+/// address.
+#[allow(clippy::many_single_char_names)]
+fn call4(sym: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
+    // SAFETY: the address is a cdecl function of this build taking four u32s.
+    unsafe {
+        let f: unsafe extern "C" fn(u32, u32, u32, u32) -> u32 =
+            std::mem::transmute(crate::rebase(sym));
+        f(a, b, c, d)
+    }
+}
+
+/// Calls the game's cdecl code at a run-time address (`exec::Call`).
+fn call_ptr<M>(_: &mut M, f: u32, args: &[u32]) -> u32 {
+    super::call_cdecl(f, args)
+}
+
+/// The calls `MsCheckRikkuLimit` makes: the CD library's read queue gets
+/// a block whose `+0xc` is the actor index (the original's other words
+/// are stack garbage; zeros here).
+fn cd_call<M>(m: &mut M, f: u32, args: &[u32]) -> u32 {
+    if let [file, dest, done, i] = *args {
+        let block = [0u32, 0, 0, i, 0, 0, 0];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = block.as_ptr() as u32;
+        call_ptr(m, f, &[file, dest, done, at])
+    } else {
+        call_ptr(m, f, args)
+    }
+}
+
+/// `AtelRegistSignal2` with the signal block on this stack, as the
+/// original builds it.
+fn regist_signal<M>(_: &mut M, block: [u32; 8]) -> u32 {
+    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    call1(0x0086_e9e0, block.as_ptr() as u32)
+}
+
+/// The script calls of `ffx_battle::atel` (the script module's code).
+macro_rules! script {
+    ($s:ident) => {
+        let mut call = call_ptr;
+        let mut signal = regist_signal;
+        let mut $s = atel::Script {
+            call: &mut call,
+            signal: &mut signal,
+        };
+    };
+}
+
+/// MSVCR110's `_CIcos`, `_CIsin` or `_CIatan` through the game's import
+/// slot (`0x00b0c3b4`, `0x00b0c3b8`, `0x00b0c450`, behind the thunks
+/// `0x009498c2`, `0x009498c8`, `0x00949d5c`): the argument (`f32` bits)
+/// loaded with `fld dword`, the result stored with `fstp dword`, as the
+/// battle code does.
 fn crt_trig(t: pos::Trig, x: u32) -> u32 {
     let slot = match t {
         pos::Trig::Cos => 0x00b0_c3b4,
         pos::Trig::Sin => 0x00b0_c3b8,
+        pos::Trig::Atan => 0x00b0_c450,
     };
     // SAFETY: the slot holds the address of the CRT's intrinsic, which
     // takes its argument in ST0 and returns in ST0 (eax, ecx, edx, the x87
@@ -61,6 +117,44 @@ fn crt_trig(t: pos::Trig, x: u32) -> u32 {
     {
         let _ = (slot, x);
         unreachable!("the CRT's trigonometry runs in the 32-bit game")
+    }
+}
+
+/// What `ffx_battle::target` calls in other modules: the CRT through
+/// [`crt_trig`], script's ported functions, the originals of the rest.
+fn host() -> target::Host<'static> {
+    fn spline(_: &mut target::Dm<'_>, out: u32, points: u32, n: u32, t: u32) {
+        call4(0x0088_a4a0, out, points, n, t);
+    }
+    fn total(m: &mut target::Dm<'_>) -> u32 {
+        ffx_script::vm::bridge::atel_get_total_actor_number2(m)
+    }
+    fn top(m: &mut target::Dm<'_>) -> u32 {
+        ffx_script::vm::bridge::atel_get_now_ctrl_top_id(m)
+    }
+    fn is_bind(_: &mut target::Dm<'_>, i: u32) -> u32 {
+        call1(0x0086_d950, i)
+    }
+    fn dir(_: &mut target::Dm<'_>, i: u32) -> u32 {
+        // SAFETY: a cdecl function of this build taking a byte index and
+        // returning an f32 in ST0.
+        unsafe {
+            let f: unsafe extern "C" fn(u32) -> f32 =
+                std::mem::transmute(crate::rebase(0x0086_a6e0));
+            f(i).to_bits()
+        }
+    }
+    fn pos(_: &mut target::Dm<'_>, i: u32, x: u32, y: u32, z: u32) {
+        call4(0x0086_b1e0, i, x, y, z);
+    }
+    target::Host {
+        trig: &crt_trig,
+        spline: &spline,
+        atel_total: &total,
+        atel_top: &top,
+        atel_is_bind: &is_bind,
+        atel_dir: &dir,
+        atel_pos: &pos,
     }
 }
 
@@ -1818,6 +1912,86 @@ ported! {
             call1(ACHIEVEMENT_UNLOCK, n);
         })
     }
+    /// `MsVectorRect2Polar(a, b, &yaw, &pitch, &len)`: `_CIatan` through
+    /// its import slot.
+    MsVectorRect2Polar @ 0x007c_4990 => extern "C" fn ms_vector_rect2_polar(a: u32, b: u32, yaw: u32, pitch: u32, len: u32) {
+        vector::ms_vector_rect2_polar(&mut mem(), &crt_trig, a, b, yaw, pitch, len);
+    }
+    /// `MsVectorPolar2Rect(out, base, yaw, pitch, r)`.
+    MsVectorPolar2Rect @ 0x007c_47c0 => extern "C" fn ms_vector_polar2_rect(out: u32, base: u32, yaw: u32, pitch: u32, r0: u32, r1: u32, r2: u32, r3: u32) {
+        vector::ms_vector_polar2_rect(&mut mem(), &crt_trig, out, base, yaw, pitch, [r0, r1, r2, r3]);
+    }
+    /// `MsVectorNormal2(out, a, b, s)`.
+    MsVectorNormal2 @ 0x007c_45e0 => extern "C" fn ms_vector_normal2(out: u32, a: u32, b: u32, s0: u32, s1: u32, s2: u32, s3: u32) {
+        vector::ms_vector_normal2(&mut mem(), out, a, b, [s0, s1, s2, s3]);
+    }
+    /// `MsGetChrBottomPos(i, vec)`.
+    MsGetChrBottomPos @ 0x0079_4830 => extern "C" fn ms_get_chr_bottom_pos(i: u32, vec: u32) -> i32 {
+        target::ms_get_chr_bottom_pos(&mut mem(), &crt_trig, i, vec)
+    }
+    /// `MsGetChrCameraPos(i, vec)`.
+    MsGetChrCameraPos @ 0x0079_4ab0 => extern "C" fn ms_get_chr_camera_pos(i: u32, vec: u32) -> i32 {
+        target::ms_get_chr_camera_pos(&mut mem(), &crt_trig, i, vec)
+    }
+    /// `MsGetChrTargetDir(i, dir)`: on the x87 stack.
+    MsGetChrTargetDir @ 0x0079_58c0 => extern "C" fn ms_get_chr_target_dir(i: u32, dir: u32) -> f32 {
+        target::ms_get_chr_target_dir(&mem(), i, dir)
+    }
+    /// `MsTurnMoveVector(i, actor, vec, angle)`.
+    MsTurnMoveVector @ 0x007a_b190 => extern "C" fn ms_turn_move_vector(i: u32, actor: u32, vec: u32, angle: u32) {
+        let mut m = mem();
+        target::ms_turn_move_vector(&mut target::Dm::new(&mut m), &host(), i, actor, vec, angle);
+    }
+    /// `MsGetChrInfoOne(i, kind, k, dir, out)`.
+    MsGetChrInfoOne @ 0x0079_4060 => extern "C" fn ms_get_chr_info_one(i: u32, kind: u32, k: u32, dir: u32, out: u32) -> u32 {
+        let mut m = mem();
+        target::ms_get_chr_info_one(&mut target::Dm::new(&mut m), &host(), i, kind, k, dir, out)
+    }
+    /// `MsGetChrInfo(kind, bits, k, out)`.
+    MsGetChrInfo @ 0x0079_5170 => extern "C" fn ms_get_chr_info(kind: u32, bits: u32, k: u32, out: u32) -> u32 {
+        let mut m = mem();
+        target::ms_get_chr_info(&mut target::Dm::new(&mut m), &host(), kind, bits, k, out, None)
+    }
+    /// `MsAtelChrInfo(selector, kind, out)`.
+    MsAtelChrInfo @ 0x0079_75c0 => extern "C" fn ms_atel_chr_info(selector: u32, kind: u32, out: u32) -> u32 {
+        let mut m = mem();
+        target::ms_atel_chr_info(&mut target::Dm::new(&mut m), &host(), selector, kind, out)
+    }
+    /// `MsAtelChrInfoOne(i, kind, acc)`.
+    MsAtelChrInfoOne @ 0x0079_84c0 => extern "C" fn ms_atel_chr_info_one(i: u32, kind: u32, acc: u32) {
+        let mut m = mem();
+        target::ms_atel_chr_info_one(&mut target::Dm::new(&mut m), &host(), i, kind, acc);
+    }
+    /// `MsGetChrTargetInfo(i, kind, &pos, &width, &height)`.
+    MsGetChrTargetInfo @ 0x007a_a050 => extern "C" fn ms_get_chr_target_info(i: u32, kind: u32, pos: u32, width: u32, height: u32) -> i32 {
+        let mut m = mem();
+        target::ms_get_chr_target_info(&mut target::Dm::new(&mut m), &host(), i, kind, pos, width, height)
+    }
+    /// `MsGetMoveTargetPos(i, actor, kind, out, &done)`: on the x87 stack.
+    MsGetMoveTargetPos @ 0x007a_9ac0 => extern "C" fn ms_get_move_target_pos(i: u32, actor: u32, kind: u32, out: u32, done: u32) -> f32 {
+        let mut m = mem();
+        f32::from_bits(target::ms_get_move_target_pos(&mut target::Dm::new(&mut m), &host(), i, actor, kind, out, done, None))
+    }
+    /// `MsGetChrMoveAccelPos(actor, n, speed, target, out)`.
+    MsGetChrMoveAccelPos @ 0x007a_ac40 => extern "C" fn ms_get_chr_move_accel_pos(actor: u32, n: u32, speed: u32, to: u32, out: u32) -> u32 {
+        let mut m = mem();
+        target::ms_get_chr_move_accel_pos(&mut target::Dm::new(&mut m), &crt_trig, actor, n, speed, to, out, None)
+    }
+    /// `MsGetChrMovePos(i, out)`.
+    MsGetChrMovePos @ 0x007a_93e0 => extern "C" fn ms_get_chr_move_pos(i: u32, out: u32) {
+        let mut m = mem();
+        target::ms_get_chr_move_pos(&mut target::Dm::new(&mut m), &host(), i, out, None);
+    }
+    /// `MsSetRikkuLimit(chr, actor, cue)`.
+    MsSetRikkuLimit @ 0x007b_0520 => extern "C" fn ms_set_rikku_limit(chr: u32, actor: u32, cue: u32) -> u32 {
+        let mut m = mem();
+        target::ms_set_rikku_limit(&mut target::Dm::new(&mut m), &host(), chr, actor, cue)
+    }
+    /// `MsSetTargetDir(i, targets)`.
+    MsSetTargetDir @ 0x0079_69f0 => extern "C" fn ms_set_target_dir(i: u32, targets: u32) {
+        let mut m = mem();
+        target::ms_set_target_dir(&mut target::Dm::new(&mut m), &host(), i, targets);
+    }
     /// `MsGetChrCommandFlag(chr, id)`.
     MsGetChrCommandFlag @ 0x0079_ad30 => extern "C" fn ms_get_chr_command_flag(chr: u32, id: u32) -> u32 {
         ffx_battle::ability::bridge::ms_get_chr_command_flag(&mem(), chr, id)
@@ -1940,5 +2114,120 @@ ported! {
     /// `MsCameraGet(owner, cam, kind)`.
     MsCameraGet @ 0x007b_d110 => extern "C" fn ms_camera_get(owner: u32, cam: u32, kind: u32) -> u32 {
         camera::ms_camera_get(&mut mem(), owner, cam, kind)
+    }
+    /// `MsSetGIL(n)`.
+    MsSetGIL @ 0x0078_5c20 => extern "C" fn ms_set_gil(n: i32) {
+        exec::ms_set_gil(&mut mem(), n);
+    }
+    /// `MsPayGIL(n)`.
+    MsPayGIL @ 0x0078_59a0 => extern "C" fn ms_pay_gil(n: i32) -> i32 {
+        exec::ms_pay_gil(&mut mem(), n)
+    }
+    /// `MsCheckChrHold(i, actor, cue)`.
+    MsCheckChrHold @ 0x0079_1170 => extern "C" fn ms_check_chr_hold(_i: u32, actor: u32, _cue: u32) -> u32 {
+        exec::ms_check_chr_hold(&mem(), actor)
+    }
+    /// `MsCountChrReady(bits)`.
+    MsCountChrReady @ 0x0079_2880 => extern "C" fn ms_count_chr_ready(bits: u32) -> u32 {
+        exec::ms_count_chr_ready(&mem(), bits)
+    }
+    /// `MsSystemMessageCheck()`.
+    MsSystemMessageCheck @ 0x0079_d050 => extern "C" fn ms_system_message_check() -> i32 {
+        exec::ms_system_message_check(&mut mem(), &mut call_ptr)
+    }
+    /// `MsCheckRikkuLimit(i, actor, cue)`.
+    MsCheckRikkuLimit @ 0x007a_fbd0 => extern "C" fn ms_check_rikku_limit(i: u32, actor: u32, cue: u32) -> u32 {
+        exec::ms_check_rikku_limit(&mut mem(), &mut cd_call, i, actor, cue)
+    }
+    /// `MsCheckSameSide(i, bits)`.
+    MsCheckSameSide @ 0x0079_95c0 => extern "C" fn ms_check_same_side(i: u32, bits: u32) -> u32 {
+        exec::ms_check_same_side(i, bits)
+    }
+    /// `MsCheckTargetsGone(bits, command)`.
+    MsCheckTargetsGone @ 0x0079_9610 => extern "C" fn ms_check_targets_gone(bits: u32, command: u32) -> u32 {
+        exec::ms_check_targets_gone(&mem(), bits, command)
+    }
+    /// `MsSetChrMimic(i, actor, cue)`.
+    MsSetChrMimic @ 0x0079_9b40 => extern "C" fn ms_set_chr_mimic(i: u32, actor: u32, cue: u32) -> u32 {
+        exec::ms_set_chr_mimic(&mut mem(), &crt_trig, i, actor, cue)
+    }
+    /// `MsActionRequestSet(kind)`.
+    MsActionRequestSet @ 0x007a_cb00 => extern "C" fn ms_action_request_set(kind: u32) -> i32 {
+        exec::ms_action_request_set(&mut mem(), kind.to_le_bytes()[0])
+    }
+    /// `MsDefensePosOffAll()`.
+    MsDefensePosOffAll @ 0x007a_f800 => extern "C" fn ms_defense_pos_off_all() {
+        exec::ms_defense_pos_off_all(&mut mem());
+    }
+    /// `MsAddChrGain(i, actor)`.
+    MsAddChrGain @ 0x007a_fb60 => extern "C" fn ms_add_chr_gain(_i: u32, actor: u32) {
+        exec::ms_add_chr_gain(&mut mem(), actor);
+    }
+    /// `MsCheckCommand3029(ids)`.
+    MsCheckCommand3029 @ 0x007a_e0f0 => extern "C" fn ms_check_command_3029(ids: u32) -> u32 {
+        exec::ms_check_command_3029(&mem(), ids)
+    }
+    /// `MsCommandKindMode(kind, command)`.
+    MsCommandKindMode @ 0x007a_e120 => extern "C" fn ms_command_kind_mode(kind: u32, command: u32) -> u32 {
+        exec::ms_command_kind_mode(&mem(), kind, command)
+    }
+    /// `MsInsertScriptCommand(i, after, id)`.
+    MsInsertScriptCommand @ 0x007a_e2e0 => extern "C" fn ms_insert_script_command(i: u32, after: u32, id: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the original stores the low half
+        exec::ms_insert_script_command(&mut mem(), i, after, id as u16)
+    }
+    /// `MsAtelGetHandler(kind, i, n, &base)`.
+    MsAtelGetHandler @ 0x0079_8590 => extern "C" fn ms_atel_get_handler(kind: u32, i: u32, n: i32, out: u32) -> u32 {
+        atel::ms_atel_get_handler(&mut mem(), kind, i, n, out)
+    }
+    /// `MsAtelRequestExe(kind, i, n, flags, actor, &same)`.
+    MsAtelRequestExe @ 0x0079_7d50 => extern "C" fn ms_atel_request_exe(kind: u32, i: u32, n: i32, flags: u32, actor: u32, out: u32) -> i32 {
+        script!(s);
+        atel::ms_atel_request_exe(&mut mem(), &mut s, kind, i, n, flags, actor, out)
+    }
+    /// `MsAtelCameraPriority(kind, i, n, bonus)`.
+    MsAtelCameraPriority @ 0x0079_8760 => extern "C" fn ms_atel_camera_priority(kind: u32, i: u32, n: i32, bonus: u32) {
+        script!(s);
+        atel::ms_atel_camera_priority(&mut mem(), &mut s, kind, i, n, bonus.to_le_bytes()[0]);
+    }
+    /// `MsAtelBlur()`.
+    MsAtelBlur @ 0x0079_86c0 => extern "C" fn ms_atel_blur() {
+        script!(s);
+        atel::ms_atel_blur(&mut mem(), &mut s);
+    }
+    /// `MsSetMotion(i, motion, wait, x, flags, actor, &same)`.
+    MsSetMotion @ 0x007a_b360 => extern "C" fn ms_set_motion(i: u32, motion: i32, wait: u32, x: u32, flags: u32, actor: u32, out: u32) -> u32 {
+        script!(s);
+        atel::ms_set_motion(&mut mem(), &mut s, i, motion, wait, x.to_le_bytes()[0], flags, actor, out)
+    }
+    /// `msResetHeadTarget(actor)`: the neck through chara's code.
+    msResetHeadTarget @ 0x007b_1f10 => extern "C" fn ms_reset_head_target(actor: u32) -> u32 {
+        atel::ms_reset_head_target(&mut mem(), &mut call_ptr, actor)
+    }
+    /// `MsSetTargetsMotion(chr, cue, k, &far)`.
+    MsSetTargetsMotion @ 0x0079_1fa0 => extern "C" fn ms_set_targets_motion(chr: u32, cue: u32, k: u32, out: u32) -> i32 {
+        script!(s);
+        atel::ms_set_targets_motion(&mut mem(), &mut s, chr, cue, k, out)
+    }
+    /// `MsPaymentProcessStart(actor)`.
+    MsPaymentProcessStart @ 0x007a_fa80 => extern "C" fn ms_payment_process_start(actor: u32) {
+        script!(s);
+        atel::ms_payment_process_start(&mut mem(), &mut s, actor);
+    }
+    /// `MsSetVoiceCheck(i, voice, flags, actor, &same)`.
+    MsSetVoiceCheck @ 0x007a_07b0 => extern "C" fn ms_set_voice_check(i: u32, voice: i32, flags: u32, actor: u32, out: u32) -> u32 {
+        script!(s);
+        atel::ms_set_voice_check(&mut mem(), &mut s, i, voice, flags, actor, out)
+    }
+    /// `MsAtelParseSysTag(kind, i, n)`.
+    MsAtelParseSysTag @ 0x0079_79d0 => extern "C" fn ms_atel_parse_sys_tag(kind: u32, i: u32, n: i32) -> i32 {
+        script!(s);
+        atel::ms_atel_parse_sys_tag(&mut mem(), &mut s, kind, i, n)
+    }
+    /// `MsDefenseStartProcess()`: the caller's registers in the VU scale
+    /// words left as they were.
+    MsDefenseStartProcess @ 0x007a_f920 => extern "C" fn ms_defense_start_process() {
+        script!(s);
+        atel::ms_defense_start_process(&mut mem(), &mut s, &crt_trig, None);
     }
 }

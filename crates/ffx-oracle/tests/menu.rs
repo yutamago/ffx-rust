@@ -4618,6 +4618,58 @@ fn tk_round7_matches_the_original() {
             gu::gu_font_setup_window(o, fw);
             0
         });
+        let v: Vec<f32> = (0..4)
+            .map(|_| t.rng.pick(&[0.0f32, 1.0, -2.5, 3.0e-3, 1e20, -7.0, 1e-30]))
+            .collect();
+        let vb: Vec<u8> = v.iter().flat_map(|f| f.to_le_bytes()).collect();
+        let vp = t.alloc(&vb);
+        t.twin("TkNormalFVector", 0x0088_c5a0, &[vp], VOID, |o| {
+            tk::tk_normal_f_vector(o, vp);
+            0
+        });
+        // the scene-name table against a string
+        let table = t.sym(0x00c5_b240);
+        let k0 = t.rng.below(7);
+        let name: Vec<u8> = (0..12)
+            .map(|j| Mem::read::<u8>(&t.b, table + 0x10 * k0 + j))
+            .collect();
+        let mut text = t
+            .rng
+            .bytes(8)
+            .into_iter()
+            .map(|c| (c & 0x3f) + 0x30)
+            .collect::<Vec<u8>>();
+        if t.rng.below(2) == 0 {
+            text.extend(name.iter().take_while(|&&c| c != 0));
+        }
+        text.push(0);
+        t.put_bytes(t.sym(0x023c_bc60), &text);
+        let id: u32 = if t.rng.below(2) == 0 {
+            Mem::read(&t.b, table + 0x10 * k0 + 0xc)
+        } else {
+            t.rng.next()
+        };
+        t.put(t.sym(0x0132_5ac0), id);
+        let kind = t.rng.pick(&[0xeu32, 0xe, 3]);
+        t.twin(
+            "hardCodeToFixTheWrongData",
+            0x008e_02f0,
+            &[0, kind],
+            U32,
+            |o| w(tk::hard_code_to_fix_the_wrong_data(o, i(kind))),
+        );
+        for (name, sym, g) in [
+            ("Ch_DrawGetShadowMode", 0x0082_ec60u32, 0x0130_08bdu32),
+            ("Ch_DrawGetShadowSemi", 0x0082_ec70, 0x0130_08be),
+            ("TkGetSavedLang", 0x0088_c850, 0x0133_0874),
+        ] {
+            t.scramble(g, 1);
+            t.twin(name, sym, &[], U32, |o| w(tk::get_byte(o, g)));
+        }
+        t.twin("Ch_RequestCalcNormal", 0x0083_2540, &[], VOID, |o| {
+            tk::ch_request_calc_normal(o);
+            0
+        });
         let sc = t.rng.pick(&[0u32, 1, 0x40, 0x7f, 0x80, 0x100, 0xffff_ffff]);
         t.scramble(0x0186_63d0, 8);
         t.twin("Tk_NoteEternalCalm", 0x0088_ec90, &[sc], U32, |o| {
@@ -4664,6 +4716,59 @@ fn tk_round7_matches_the_original() {
                 tk::tk_menu_ctrl_hdd(o, hw, &mut callback);
                 0
             });
+            if round % 10 == 0 {
+                t.twin("TkMn2GetStatusPos", 0x008d_4920, &[], VOID, |o| {
+                    tk::tk_mn2_get_status_pos(o);
+                    0
+                });
+            }
+            let pending = t.rng.pick(&[0xffff_ffffu32, 0, 3]);
+            t.put(t.sym(0x00c3_3480), pending);
+            t.twin("TkInitSceneFromSave", 0x0088_dd60, &[], VOID, |o| {
+                tk::tk_init_scene_from_save(o);
+                0
+            });
+            let owner = t.rng.pick(&[0u32, 1, 2, 0x10, 0xffff_ffff]);
+            t.twin("Atel_FindWorkerByOwner", 0x0087_6440, &[owner], U32, |o| {
+                s(tk::atel_find_worker_by_owner(o, owner))
+            });
+            let code = t.rng.pick(&[0u32, 3, 4, 5, 8, 11, 12, 0xffff_ffff]);
+            let pp = t.rng.below(2);
+            t.twin(
+                "TkGetControlerBindAnalogIndex",
+                0x0088_8cf0,
+                &[pp, 0, code],
+                U32,
+                |o| s(tk::tk_get_controler_bind_analog_index(o, i(pp), 0, i(code))),
+            );
+            let sw = t.alloc_random(0x30);
+            let wh = t.rng.pick(&[0u32, 0x40, 0x100, 0xffff_fff0]);
+            t.put(sw + 0x1c, wh);
+            let smode = t.rng.pick(&[0u32, 1, 2, 3]);
+            let st = t
+                .rng
+                .pick(&[0u32, 0x800, 0x1000, 0xffff_f800, 0x8000_0000, 7]);
+            t.twin(
+                "TkMenuDrawMenuWindowScissorWithLabel",
+                0x008d_d2d0,
+                &[sw, smode, st],
+                U32,
+                |o| {
+                    w(tk::tk_menu_draw_menu_window_scissor_with_label(
+                        o,
+                        sw,
+                        i(smode),
+                        i(st),
+                    ))
+                },
+            );
+            t.twin(
+                "TkMenuDrawMenuWindowScissor",
+                0x008d_d220,
+                &[sw, smode, st],
+                U32,
+                |o| w(tk::tk_menu_draw_menu_window_scissor(o, sw, i(smode), i(st))),
+            );
             t.twin("TkMn2GetMainPos", 0x008e_2630, &[], U32, |o| {
                 w(tk::tk_mn2_get_main_pos(o))
             });
@@ -4781,5 +4886,574 @@ fn menu_openers_match_the_original() {
             &mut callback,
         ))
     });
+    eprintln!("{} calls", t.calls);
+}
+
+/// The element words `TkMenuDrawRect` sets (the rest is stack garbage).
+const UI_FIELDS: [u32; 16] = [
+    0, 4, 0x10, 0x14, 0x18, 0x1c, 0x20, 0x24, 0x30, 0x34, 0x38, 0x3c, 0x80, 0x88, 0x90, 0x94,
+];
+
+/// `graphicGetAbmap` returns the word at `cell`; `graphicDrawUIElement`
+/// appends the element's set words and its four other arguments at `*log`
+/// and returns `0x77`. In both oracles. Returns (`cell`, `log`).
+fn record_ui(t: &mut Twins) -> (u32, u32) {
+    let cell = t.alloc(&[0; 4]);
+    let buf = t.alloc(&vec![0; 0x10000]);
+    let log = t.alloc(&buf.to_le_bytes());
+    let l = log.to_le_bytes();
+    let mut draw: Vec<u8> = vec![0x8b, 0x4c, 0x24, 0x04, 0x8b, 0x15]; // ecx = element, edx = [log]
+    draw.extend(l);
+    let mut k = 0u32;
+    for off in UI_FIELDS {
+        draw.extend([0x8b, 0x81]); // mov eax, [ecx + off]
+        draw.extend(off.to_le_bytes());
+        draw.extend([0x89, 0x82]); // mov [edx + k], eax
+        draw.extend(k.to_le_bytes());
+        k += 4;
+    }
+    for a in 0..4u8 {
+        draw.extend([0x8b, 0x44, 0x24, 8 + 4 * a]); // mov eax, [esp + 8 + 4a]
+        draw.extend([0x89, 0x82]);
+        draw.extend(k.to_le_bytes());
+        k += 4;
+    }
+    draw.extend([0x81, 0x05]); // add dword [log], k
+    draw.extend(l);
+    draw.extend(k.to_le_bytes());
+    draw.extend([0xb8, 0x77, 0, 0, 0, 0xc3]);
+    let mut abmap = vec![0xa1];
+    abmap.extend(cell.to_le_bytes());
+    abmap.push(0xc3);
+    for o in [&mut t.a, &mut t.b] {
+        let d = o.rebase(0x0063_eee0);
+        o.write(d, &draw).unwrap();
+        let a = o.rebase(0x0064_1060);
+        o.write(a, &abmap).unwrap();
+    }
+    (cell, log)
+}
+
+/// The draw recorder's effect, for the bridge side.
+fn draw_into(o: &mut Oracle, log: u32, fields: &[(u32, u32)]) -> u32 {
+    let at: u32 = Mem::read(o, log);
+    let mut k = 0;
+    for off in UI_FIELDS {
+        let v = fields.iter().find(|f| f.0 == off).expect("a set field").1;
+        Mem::write(o, at + k, v);
+        k += 4;
+    }
+    for v in [0u32, 1, 0, 0] {
+        Mem::write(o, at + k, v);
+        k += 4;
+    }
+    Mem::write(o, log, at + k);
+    0x77
+}
+
+#[test]
+fn menu_rects_match_the_original() {
+    let Some(mut t) = setup_any(0x0dd3_4000) else {
+        return;
+    };
+    let (cell, log) = record_ui(&mut t);
+    let entries = Mem::read::<u32>(&t.b, t.sym(0x00c5_a900));
+    for _ in 0..60 {
+        let ab = t.rng.pick(&[0u32, 0, 1, 2]);
+        t.put(cell, ab);
+        let r = [t.rng.int(), t.rng.int(), t.rng.int(), t.rng.int()];
+        let c = [t.rng.next(), t.rng.next()];
+        t.twin(
+            "TkMenuDrawRect",
+            0x008d_d340,
+            &[r[0], r[1], r[2], r[3], c[0], c[1]],
+            U32,
+            |o| {
+                w(tk::tk_menu_draw_rect(
+                    o,
+                    r.map(i),
+                    c,
+                    &mut |o| Mem::read(o, cell),
+                    &mut |o, f| draw_into(o, log, f),
+                ))
+            },
+        );
+        let pk = t.alloc_random(0x1000);
+        t.put(t.sym(tk::MENU_PACKET.sym), pk);
+        let (x, y) = (t.rng.below(0x280), t.rng.below(0x200));
+        let entry = t.rng.below(entries + 2);
+        let alpha = t.rng.below(0x100);
+        for (name, sym, args, al) in [
+            ("TkMenuDrawSp3FaceA", 0x008d_d610, vec![x, y, entry], 0x80),
+            (
+                "TkMenuDrawSp3FaceAA",
+                0x008d_d6a0,
+                vec![x, y, entry, alpha],
+                alpha,
+            ),
+        ] {
+            t.twin(name, sym, &args, U32, |o| {
+                w(tk::tk_menu_draw_sp3_face(
+                    o,
+                    [x, y, entry, al],
+                    &mut |o| Mem::read(o, cell),
+                    &mut |o, f| draw_into(o, log, f),
+                ))
+            });
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn tk_round8_matches_the_original() {
+    let Some(mut t) = setup_any(0x8a8a_0808) else {
+        return;
+    };
+    let snapshot = std::env::var_os("FFX_SNAPSHOT").is_some();
+    let (log, arena) = record_mallocs(&mut t);
+    let floats = [
+        0.0f32,
+        -0.0,
+        1.0,
+        2.0,
+        0.25,
+        3.0,
+        3.2,
+        -3.2,
+        7.5,
+        -100.25,
+        1e9,
+        -1e9,
+        1e-30,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::NAN,
+        std::f32::consts::PI,
+        -std::f32::consts::PI,
+    ];
+    for round in 0..150u32 {
+        let f = t.rng.pick(&floats);
+        let g = t.rng.pick(&floats);
+        for (name, sym, func) in [
+            (
+                "CIsqrt",
+                0x0088_c400,
+                ffx_menu::math::ci_sqrt as fn(f32) -> f32,
+            ),
+            (
+                "Math_WrapAngleFloor",
+                0x0088_c630,
+                ffx_menu::math::wrap_angle_floor,
+            ),
+        ] {
+            let r =
+                t.a.call(t.a.rebase(sym), Conv::Cdecl, &[f.to_bits()])
+                    .unwrap();
+            same_float(name, r.st0, func(f));
+        }
+        let fin = [
+            0.0f32, -0.0, 1.0, 2.0, 0.25, 3.0, 3.2, -3.2, 7.5, -100.25, 1e5, 6.3, -6.3, 1e-30,
+        ];
+        let (fa, fb, fc) = (t.rng.pick(&fin), t.rng.pick(&fin), t.rng.pick(&fin));
+        for (name, sym, scale, mask) in [
+            (
+                "Math_AngleTo12Bits",
+                0x0088_bfe0u32,
+                0x00b5_15c8u32,
+                0xfffu32,
+            ),
+            ("Math_AngleTo15Bits", 0x0088_c040, 0x00b5_1588, 0x7fff),
+        ] {
+            t.twin(name, sym, &[fa.to_bits()], U32, |o| {
+                w(tk::math_angle_to_bits(o, fa, scale, mask))
+            });
+        }
+        let r =
+            t.a.call(t.a.rebase(0x0088_c5c0), Conv::Cdecl, &[fa.to_bits()])
+                .unwrap();
+        same_float("Math_AngleToDegrees", r.st0, tk::math_angle_to_degrees(fa));
+        let r =
+            t.a.call(
+                t.a.rebase(0x0088_b6b0),
+                Conv::Cdecl,
+                &[fa.to_bits(), fb.to_bits(), fc.to_bits()],
+            )
+            .unwrap();
+        same_float(
+            "Math_AngleStepTo",
+            r.st0,
+            tk::math_angle_step_to(fa, fb, fc),
+        );
+        let rec = t.alloc_random(0x24);
+        let ha = if t.rng.below(3) == 0 {
+            0
+        } else {
+            t.alloc_random(4)
+        };
+        let hb = if t.rng.below(3) == 0 {
+            0
+        } else {
+            t.alloc_random(4)
+        };
+        t.twin(
+            "Vibrate_SetStreams",
+            0x0087_6180,
+            &[rec, ha, hb],
+            U32,
+            |o| w(tk::vibrate_set_streams(o, rec, ha, hb)),
+        );
+        let vk = t.rng.pick(&[0u32, 3, 7, 9, 0xffff_ffff]);
+        let ve = t.rng.pick(&[0u32, 1, 2, 0xffff_ffff]);
+        let vf = t.rng.pick(&[0u32, 0x40, 0x7f, 0x80, 0xffff_ffff]);
+        let vt = t.rng.pick(&[0u32, 0x40, 0x100, 0xffff_ffff]);
+        let vl = t.rng.pick(&[0u32, 10, 0x8000, 0x1_0005, 0xffff_ffff]);
+        t.twin(
+            "Vibrate_StartLevel",
+            0x0087_6050,
+            &[vk, ve, vf, vt, vl],
+            U32,
+            |o| {
+                s(tk::vibrate_start_level(
+                    o,
+                    i(vk),
+                    i(ve),
+                    i(vf),
+                    i(vt),
+                    i(vl),
+                ))
+            },
+        );
+        let mut tb = vec![0u8; 0x100];
+        for k in 0..0x40usize {
+            if k % 3 != 0 {
+                tb[4 * k..4 * k + 4].copy_from_slice(&0x100u32.to_le_bytes());
+            }
+        }
+        let curves = t.rng.bytes(0x40);
+        tb.extend(curves);
+        let table = if t.rng.below(8) == 0 { 0 } else { t.alloc(&tb) };
+        let vrec = t.alloc_random(0x24);
+        let vmode = t.rng.pick(&[0u32, 1, 2]);
+        t.twin(
+            "Vibrate_SetStreamsMode",
+            0x0087_6130,
+            &[vrec, vmode, ha, hb],
+            U32,
+            |o| w(tk::vibrate_set_streams_mode(o, vrec, i(vmode), ha, hb)),
+        );
+        let vrec2 = t.alloc_random(0x24);
+        let smode = t.rng.pick(&[0u8, 1, 2]);
+        t.put(vrec2 + 0x22, smode);
+        let sent = t.alloc_random(0x10);
+        let sdata = if t.rng.below(3) == 0 {
+            0
+        } else {
+            t.alloc_random(8)
+        };
+        t.put(sent, sdata);
+        let sstep = t.rng.pick(&[0u16, 3, 9, 0x7fff, 0xffff]);
+        t.put(sent + 4, sstep);
+        let slen6 = t.rng.pick(&[0u16, 10, 0x7fff, 0xfffe]);
+        t.put(sent + 6, slen6);
+        let slen = t.rng.pick(&[0u32, 4, 10, 0xffff_ffff]);
+        t.twin(
+            "Vibrate_StepLevel",
+            0x0087_5c90,
+            &[vrec2, sent, slen],
+            U32,
+            |o| w(tk::vibrate_step_level(o, vrec2, sent, i(slen))),
+        );
+        let lrec = t.alloc_random(0x24);
+        let lmode = t.rng.pick(&[0u8, 1, 2, 3]);
+        t.put(lrec + 0x22, lmode);
+        let le = t.rng.below(2);
+        let lentry = lrec + 0x10 * le;
+        let lsize = t.rng.pick(&[0u16, 5, 0x1ff, 0x200, 0xfffe]);
+        t.put(lentry + 6, lsize);
+        t.put(lentry, 0u32);
+        t.twin("Vibrate_EntryLevel", 0x0087_5c20, &[lrec, le], U32, |o| {
+            w(tk::vibrate_entry_level(o, lrec, le))
+        });
+        let sk = t.rng.pick(&[0u32, 2, 7, 8, 0xffff_ffff]);
+        let sc = t.rng.pick(&[0u32, 1, 2, 5, 0x3f, 0x40]);
+        t.twin(
+            "TkSetVibrateStream",
+            0x0087_5fb0,
+            &[sk, sc, table],
+            U32,
+            |o| w(tk::tk_set_vibrate_stream(o, i(sk), sc, table)),
+        );
+        let ck = t.rng.pick(&[0u32, 1, 2, 5, 0x3f, 0x40]);
+        let cn = t.rng.pick(&[0u32, 1, 2, 3, 4, 7, 10]);
+        t.twin(
+            "Vibrate_CurveData",
+            0x0087_5d70,
+            &[ck, cn, table],
+            U32,
+            |o| w(tk::vibrate_curve_data(o, ck, i(cn), table)),
+        );
+        // the CLUT allocator
+        if round % 30 == 0 {
+            let mode = t.rng.pick(&[2u32, 3, 4, 0, 7]);
+            t.scramble(0x0193_bb0c, 0x14);
+            t.twin("yiClutAlloc_init", 0x0091_6e60, &[mode], U32, |o| {
+                w(tk::yi_clut_alloc_init(o, i(mode)))
+            });
+        }
+        t.twin("yiClutAlloc_get256idx", 0x0091_6e50, &[], U32, |o| {
+            w(tk::yi_clut_alloc_get256idx(o))
+        });
+        let clut = t.alloc_random(0x1200);
+        let csrc = t.alloc_random(0x400);
+        let ck = t.rng.pick(&[0u32, 1, 2, 0xffff_ffff]);
+        t.twin(
+            "yiClutAlloc_copy256",
+            0x0091_6d40,
+            &[clut + 0x500, csrc, ck],
+            U32,
+            |o| w(tk::yi_clut_alloc_copy256(o, clut + 0x500, csrc, i(ck))),
+        );
+        let ci = t.rng.pick(&[0u32, 1, 2, 3, 7, 0xffff_ffff, 0xffff_fffe]);
+        t.twin(
+            "yiClutAlloc_copy16",
+            0x0091_6c80,
+            &[clut + 0x500, csrc, ck, ci],
+            U32,
+            |o| {
+                w(tk::yi_clut_alloc_copy16(
+                    o,
+                    clut + 0x500,
+                    csrc,
+                    i(ck),
+                    i(ci),
+                ))
+            },
+        );
+        let dst = t.alloc_random(4);
+        let src = t.alloc(&g.to_le_bytes());
+        t.twin(
+            "Math_StoreMax",
+            0x0088_9b00,
+            &[dst, src, f.to_bits()],
+            VOID,
+            |o| {
+                tk::math_store_max(o, dst, src, f);
+                0
+            },
+        );
+        t.twin(
+            "Math_StoreMin",
+            0x0088_9b40,
+            &[dst, src, 0, 0, 0, f.to_bits()],
+            VOID,
+            |o| {
+                tk::math_store_min(o, dst, src, f);
+                0
+            },
+        );
+        let busy = t.rng.pick(&[0u8, 0, 1]);
+        t.put(t.sym(0x0132_f581), busy);
+        let pend = t.rng.pick(&[0u32, 0, 5]);
+        t.put(t.sym(0x0132_f578), pend);
+        let (a, n) = (t.rng.next(), t.rng.int());
+        t.twin("TkDeci2Send", 0x0088_5470, &[a, n], U32, |o| {
+            s(tk::tk_deci2_send(o, a, i(n)))
+        });
+        t.twin("Gu_SelectorAllocate", 0x0084_9bb0, &[], U32, |o| {
+            w(gu::gu_selector_allocate(o, &mut |o, n| {
+                let _ = free_into(o, log, n);
+                arena
+            }))
+        });
+        let c = t.alloc_random(0x48);
+        t.twin("Gu_ControlInit", 0x0084_95e0, &[c], U32, |o| {
+            w(gu::gu_control_init(o, c))
+        });
+        let len = t.rng.below(20) as usize;
+        let mut sb: Vec<u8> = t.rng.bytes(len).into_iter().map(|c| c.max(1)).collect();
+        sb.push(0);
+        let sp = t.alloc(&sb);
+        t.twin("Yi_StrLower", 0x0091_6290, &[sp], VOID, |o| {
+            gu::yi_str_case(o, sp, false);
+            0
+        });
+        t.twin("Yi_StrUpper", 0x0091_62c0, &[sp], VOID, |o| {
+            gu::yi_str_case(o, sp, true);
+            0
+        });
+        if snapshot {
+            let id = t
+                .rng
+                .pick(&[0u32, 1, 0x3000, 0x3010, 0x3050, 0x30ff, 0x1234]);
+            t.twin("TkMenuGetCommandName", 0x008d_de50, &[id], U32, |o| {
+                w(tk::tk_menu_get_command_name(o, id))
+            });
+            let count = ffx_chara::handle::bridge::CHR_COUNT.get(&t.b);
+            let array = ffx_chara::handle::bridge::CHR_ARRAY.get(&t.b);
+            let live: Vec<u32> = (0..u32::try_from(count).unwrap_or(0))
+                .map(|k| array + k * ffx_chara::layout::SIZE)
+                .filter(|&c| {
+                    let blk: u32 = Mem::read(&t.b, c + ffx_chara::layout::BLK);
+                    blk != 0 && blk != 0xcdcd_cdcd
+                })
+                .collect();
+            if round % 10 == 0 && !live.is_empty() {
+                let chr = live[t.rng.below(u32::try_from(live.len()).unwrap()) as usize];
+                let p = [
+                    t.rng.pick(&floats[..13]),
+                    t.rng.pick(&floats[..13]),
+                    t.rng.pick(&floats[..13]),
+                ];
+                t.twin(
+                    "TkCh_SetPos",
+                    0x0087_2310,
+                    &[chr, p[0].to_bits(), p[1].to_bits(), p[2].to_bits()],
+                    VOID,
+                    |o| {
+                        tk::tk_ch_set_pos(o, chr, p);
+                        0
+                    },
+                );
+            }
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn gu_texts_match_the_original() {
+    let Some(mut t) = setup_any(0x7e47_0001) else {
+        return;
+    };
+    let flog = record_frees(&mut t);
+    let (mlog, arena) = record_mallocs(&mut t);
+    for _ in 0..200 {
+        let c = t.alloc_random(0x44);
+        let cap = t.rng.pick(&[0u16, 0, 0x14, 0x30, 0xffff]);
+        t.put(c + 0x26, cap);
+        let heap = t.alloc_random(0x40);
+        t.put(c + 0x28, if cap == 0 { c + 0x30 } else { heap });
+        let len = t.rng.pick(&[0usize, 3, 14, 15, 16, 0x20, 0x2f, 0x35]);
+        let mut sb: Vec<u8> = t.rng.bytes(len).into_iter().map(|c| c.max(1)).collect();
+        sb.push(0);
+        let sp = if t.rng.below(5) == 0 { 0 } else { t.alloc(&sb) };
+        t.twin("Gu_ControlSetText", 0x0084_9610, &[c, sp], VOID, |o| {
+            gu::gu_control_set_text(o, c, sp, &mut |o, p| free_into(o, flog, p), &mut |o, n| {
+                let _ = free_into(o, mlog, n);
+                arena
+            });
+            0
+        });
+        let win = window(&mut t);
+        let controls: u32 = Mem::read(&t.b, win + 0x94);
+        for k in 0..6 {
+            let ck = controls + k * 0x44;
+            let hk = t.alloc_random(0x40);
+            let capk = t.rng.pick(&[0u16, 0x20]);
+            t.put(ck + 0x26, capk);
+            t.put(ck + 0x28, if capk == 0 { ck + 0x30 } else { hk });
+        }
+        let tw = t.alloc_random(0x98);
+        t.put(tw + 0x34 + 0x26, 0u16);
+        t.put(tw + 0x34 + 0x28, tw + 0x34 + 0x30);
+        t.twin("Gu_WindowSetTitle", 0x0084_b6a0, &[tw, sp], VOID, |o| {
+            gu::gu_control_set_text(
+                o,
+                tw + 0x34,
+                sp,
+                &mut |o, p| free_into(o, flog, p),
+                &mut |o, n| {
+                    let _ = free_into(o, mlog, n);
+                    arena
+                },
+            );
+            0
+        });
+        let id = t.rng.pick(&[0u32, 1, 2, 3, 0x8001, 0x1_0001]);
+        t.twin(
+            "Gu_WindowControlSetText",
+            0x0084_a710,
+            &[win, id, sp],
+            VOID,
+            |o| {
+                gu::gu_window_control_set_text(
+                    o,
+                    win,
+                    id,
+                    sp,
+                    &mut |o, p| free_into(o, flog, p),
+                    &mut |o, n| {
+                        let _ = free_into(o, mlog, n);
+                        arena
+                    },
+                );
+                0
+            },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn gu_lists_match_the_original() {
+    let Some(mut t) = setup_any(0x91e5_7001) else {
+        return;
+    };
+    let flog = record_frees(&mut t);
+    for _ in 0..100 {
+        // a window list with some closed
+        let n = t.rng.below(5);
+        let mut next = 0u32;
+        for _ in 0..n {
+            let w0 = t.alloc_random(0xa0);
+            t.put(w0, next);
+            let fl = t.rng.pick(&[0u32, 4, 0, 0xff]);
+            t.put(w0 + 0x88, fl);
+            let nc = t.rng.pick(&[0i32, 1, 3, -1]);
+            t.put(w0 + 0x90, nc);
+            let ctrls = if t.rng.below(4) == 0 {
+                0
+            } else {
+                t.alloc_random(0x44 * 3)
+            };
+            t.put(w0 + 0x94, ctrls);
+            let big = t.rng.pick(&[0u16, 0, 5]);
+            t.put(w0 + 0x5a, big);
+            next = w0;
+        }
+        t.put(t.sym(gu::WINDOW_LIST.sym), next);
+        t.twin("Gu_WindowFreeClosed", 0x0084_abd0, &[], VOID, |o| {
+            gu::gu_window_free_closed(o, &mut |o, p| free_into(o, flog, p));
+            0
+        });
+        // a selector fitted to a window
+        let win = t.alloc_random(0xa0);
+        let h = t.rng.pick(&[0u16, 9, 40, 90, 200, 0xfff0]);
+        t.put(win + 0x12, h);
+        let sel = t.alloc_random(0x20);
+        let total = t.rng.pick(&[0u16, 1, 3, 10, 30, 0xffff]);
+        let cur = t.rng.pick(&[0u16, 1, 5, 20, 0xfffe]);
+        t.put(sel + 4, total);
+        t.put(sel + 2, cur);
+        t.twin("Gu_SelectorFitWindow", 0x0084_a000, &[win, sel], U32, |o| {
+            s(gu::gu_selector_fit_window(o, win, sel))
+        });
+        // EUC text
+        let len = t.rng.below(12) as usize;
+        let mut text: Vec<u8> = t.rng.bytes(len).into_iter().map(|c| c.max(1)).collect();
+        text.extend([0, 0]);
+        let src = t.alloc(&text);
+        let dst = t.alloc_random(0x20);
+        let cnt = t.rng.pick(&[0u32, 1, 2, 5, 16, 0xffff_ffff]);
+        let src = if t.rng.below(8) == 0 { 0 } else { src };
+        t.twin(
+            "TkEucToSjisString",
+            0x0088_ed10,
+            &[src, dst, cnt],
+            U32,
+            |o| w(tk::tk_euc_to_sjis_string(o, src, dst, i(cnt))),
+        );
+    }
     eprintln!("{} calls", t.calls);
 }

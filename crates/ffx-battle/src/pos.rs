@@ -199,9 +199,19 @@ pub mod bridge {
         [0x4fc, 0x4fd, 0x4fe].map(|o| i8_at(mem, a, o))
     }
 
-    /// `_CIcos` / `_CIsin`, the C runtime's, from the caller (the angle as
-    /// `f32` bits, the result as `fstp dword` stores it).
-    pub use ffx_ps2::vu0::Trig;
+    /// A C runtime function of one float the battle code calls through
+    /// the x87 (`_CIcos`, `_CIsin`, `_CIatan`): the caller supplies it (in
+    /// the game, MSVCR110's own) taking the argument as `fld dword` loads
+    /// it (`f32` bits) and returning what `fstp dword` stores.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Trig {
+        /// `_CIcos` (thunk `0x009498c2`).
+        Cos,
+        /// `_CIsin` (thunk `0x009498c8`).
+        Sin,
+        /// `_CIatan` (thunk `0x00949d5c`).
+        Atan,
+    }
 
     /// `MsGetSummonerPos`'s angle offsets (`f64`) and radii (`f32`).
     pub const QUARTER: Global<f64> = Global::new(0x00b5_4f30);

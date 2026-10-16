@@ -87,5 +87,22 @@ for f in sorted((progress.REPO / "crates/ffx-hook/src/ported").glob("*.rs")):
         if PANICS.search(line) and "runs in the 32-bit game" not in line and "\"32-bit\"" not in line:
             print(f"{f.name}:{n}: may panic in the game: {line.strip()[:80]}")
             bad += 1
+# An asm! block that calls the game must not use an `in(reg)` operand after
+# the call: the register allocator may have put it in eax/ecx/edx, which the
+# callee overwrites (an output pointer in edx crashed the field replays).
+for f in sorted((progress.REPO / "crates/ffx-hook/src").rglob("*.rs")):
+    text = f.read_text(encoding="utf-8")
+    for m in re.finditer(r"asm!\((.*?)\);", text, re.S):
+        body = m.group(1)
+        lines = body.splitlines()
+        call = next((i for i, l in enumerate(lines) if re.search(r'"\s*call\b', l)), None)
+        if call is None:
+            continue
+        after = " ".join(l for l in lines[call + 1:] if l.strip().startswith('"'))
+        for name in set(re.findall(r"\{(\w+)\}", after)):
+            if re.search(rf"\b{name}\s*=\s*in\(reg\)", body):
+                n = text[: m.start()].count("\n") + 1
+                print(f"{f.name}:{n}: asm uses {{{name}}} after a call, in a register the callee may clobber")
+                bad += 1
 print(f"{len(seen)} ported, {bad} problems")
 sys.exit(1 if bad else 0)
