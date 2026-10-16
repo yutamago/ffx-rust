@@ -45,6 +45,20 @@ pub const VU0_MATRIX1: u32 = 0x00c8_f7a0;
 pub const VU0_MATRIX2: u32 = 0x00c8_f7e0;
 /// The sine table (4096 `f32`s, a quarter turn in 1024).
 pub const SIN_TABLE: u32 = 0x00c4_4bf0;
+/// 256.0 (`f32`, `.rdata`): the cursor distance (`AbmapResetCursorCamera`).
+pub const CURSOR_DISTANCE: u32 = 0x00b5_01c0;
+/// 32.0 (`f64`, `.rdata`): how far the cursor sits below the character.
+pub const CURSOR_LIFT: u32 = 0x00b4_12f8;
+/// The characters' cursor colours, a vector each (`0x00c86010`).
+pub const CHR_COLORS: u32 = 0x00c8_6010;
+/// `MsGetSaveAbilityMap()` (`0x00784f40`): the save's sphere grid block.
+pub const MS_GET_SAVE_ABILITY_MAP: u32 = 0x0078_4f40;
+/// The player tag globals `AbmapSetupPlyTag` fills (`0x02305804`..30).
+pub const PLY_TAG: u32 = 0x0230_5804;
+/// 2.0 (`f64`, `.rdata`).
+pub const TWO_F64: u32 = 0x00b9_2270;
+/// 1.5, 3.0, 5.0 (`f32`s, `.rdata`): `AbmapScaledLevelValue`'s tables.
+pub const LEVEL_SCALES: [u32; 3] = [0x00b3_eb58, 0x00b3_eb94, 0x00b3_eb98];
 
 /// Offsets in the sphere grid data.
 pub mod layout {
@@ -737,5 +751,142 @@ pub mod bridge {
             mem.write(to + 4 * i, last);
         }
         last
+    }
+
+    // ---- round 12 ----
+
+    /// `AbmapResetCursorCamera()` (`0x00a5b030`): the cursor distance
+    /// (`+0x115a0`, [`super::CURSOR_DISTANCE`]), the current character's
+    /// position (`+0x11088 + 0x50 * +0x115bc`) to `+0x11520` with y moved
+    /// down by [`super::CURSOR_LIFT`] and w twice the distance, that
+    /// character's colour ([`super::CHR_COLORS`]) to `+0x11560`; then
+    /// tail-calls `AbmapPulseCursor` and returns its result.
+    pub fn abmap_reset_cursor_camera(mem: &mut impl Mem) -> u32 {
+        let src = ABMAP.get(mem);
+        let chr = u32::from(mem.read::<u8>(src.wrapping_add(0x115bc)));
+        let d = x87::copy(mem.read(mem.rebase(super::CURSOR_DISTANCE)));
+        mem.write(src.wrapping_add(0x115a0), d);
+        let pos = src.wrapping_add(0x11088 + chr * 0x50);
+        let p = mem.read::<[u32; 4]>(pos);
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x11520), p);
+        let lift = mem.read::<f64>(mem.rebase(super::CURSOR_LIFT));
+        let y = x87::store(x87::load(mem.read(pos.wrapping_add(8))) - lift);
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x11528), y);
+        let g = ABMAP.get(mem);
+        let chr = u32::from(mem.read::<u8>(g.wrapping_add(0x115bc)));
+        let c = mem.read::<[u32; 4]>(mem.rebase(super::CHR_COLORS) + chr * 0x10);
+        mem.write(g.wrapping_add(0x11560), c);
+        let g = ABMAP.get(mem);
+        let d = x87::load(mem.read(g.wrapping_add(0x115a0)));
+        mem.write(g.wrapping_add(0x1152c), x87::store(d + d));
+        abmap_pulse_cursor(mem)
+    }
+
+    /// `AbmapStoreSave()` (`0x00a5bb70`): the sphere grid's progress into
+    /// `MsGetSaveAbilityMap`'s block: each node's two bytes (`+0x80e`,
+    /// `+0x829` of the 0x28-byte nodes) as pairs, each link's flags byte
+    /// (`+0xa814`, 0x14 apart) from `+0xa00`, the seven characters'
+    /// `u16`s (`+0x110cc`, 0x50 apart) at `+0xf00` and the bytes
+    /// `+0x115cb`/`+0x115cc` at `+0xf18`. Returns the last byte.
+    pub fn abmap_store_save<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(super::MS_GET_SAVE_ABILITY_MAP);
+        let out = call(mem, f, &[]);
+        let mut i = 0u32;
+        while i32::from(mem.read::<i16>(ABMAP.get(mem).wrapping_add(2))) > i.cast_signed() {
+            let g = ABMAP.get(mem);
+            let n = g.wrapping_add(i * 0x28);
+            let a = mem.read::<u8>(n.wrapping_add(0x80e));
+            mem.write(out.wrapping_add(i * 2), a);
+            let b = mem.read::<u8>(n.wrapping_add(0x829));
+            mem.write(out.wrapping_add(i * 2 + 1), b);
+            i += 1;
+        }
+        let mut i = 0u32;
+        while i32::from(mem.read::<i16>(ABMAP.get(mem).wrapping_add(4))) > i.cast_signed() {
+            let g = ABMAP.get(mem);
+            let a = mem.read::<u8>(g.wrapping_add(0xa814 + i * 0x14));
+            mem.write(out.wrapping_add(0xa00 + i), a);
+            i += 1;
+        }
+        for k in 0..7u32 {
+            let g = ABMAP.get(mem);
+            let v = mem.read::<u16>(g.wrapping_add(0x110cc + k * 0x50));
+            mem.write(out.wrapping_add(0xf00 + k * 2), v);
+        }
+        let g = ABMAP.get(mem);
+        let a = mem.read::<u8>(g.wrapping_add(0x115cb));
+        mem.write(out.wrapping_add(0xf18), a);
+        let g = ABMAP.get(mem);
+        let b = mem.read::<u8>(g.wrapping_add(0x115cc));
+        mem.write(out.wrapping_add(0xf19), b);
+        u32::from(b)
+    }
+
+    /// `AbmapSetupPlyTag(tag)` (`0x00a47c60`): the tag's position
+    /// (`+0x30`, `+0x32`) and width 0x12 (`+0x38`) into the tag globals
+    /// ([`super::PLY_TAG`]), its screen size through the zoom
+    /// (`+0x11350`): `ftol((x + 0x12) / zoom)` and `ftol((y + 2.0) /
+    /// zoom)`, the second also halved into `+0x34` and kept at `+0x36`.
+    /// Returns the original's `eax`: the high half of `(y + 4) << 4`, the
+    /// low half of the second size.
+    pub fn abmap_setup_ply_tag(mem: &mut impl Mem, tag: u32) -> u32 {
+        let t = super::PLY_TAG;
+        mem.write(tag.wrapping_add(0x38), 0x12u16);
+        let g = ABMAP.get(mem);
+        let x = i32::from(mem.read::<i16>(tag.wrapping_add(0x30)));
+        mem.write(mem.rebase(t + 0x2c), x);
+        let y = i32::from(mem.read::<i16>(tag.wrapping_add(0x32)));
+        mem.write(mem.rebase(t + 0x28), y);
+        let w = x.wrapping_add(i32::from(mem.read::<i16>(tag.wrapping_add(0x38))));
+        let wf = x87::load(x87::store(f64::from(w)));
+        let zoom = x87::load(mem.read(g.wrapping_add(0x11350)));
+        let a = ftol(mem, wf / zoom);
+        mem.write(mem.rebase(t + 0x24), a);
+        let y = mem.read::<i32>(mem.rebase(t + 0x28));
+        let yf = x87::load(x87::store(f64::from(y)));
+        let two = mem.read::<f64>(mem.rebase(super::TWO_F64));
+        let zoom = x87::load(mem.read(g.wrapping_add(0x11350)));
+        let b = ftol(mem, (yf + two) / zoom);
+        let c = mem.read::<i32>(mem.rebase(t + 0x28));
+        let h = c.wrapping_add(4);
+        mem.write(mem.rebase(t + 0x14), (h / 2) << 4);
+        mem.write(mem.rebase(t + 0x20), b);
+        mem.write(mem.rebase(t + 0x10), h << 4);
+        mem.write(mem.rebase(t + 0x1c), 0u32);
+        mem.write(mem.rebase(t + 0x18), 0u32);
+        mem.write(mem.rebase(t + 0xc), 0xbu32);
+        mem.write(mem.rebase(t + 0x8), 0xau32);
+        mem.write(mem.rebase(t + 0x4), 0xffff_ffeeu32);
+        mem.write(mem.rebase(t), 0u32);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // the low half
+        mem.write(tag.wrapping_add(0x34), (b.cast_signed() >> 1) as u16);
+        let lo = mem.read::<u16>(mem.rebase(t + 0x20));
+        mem.write(tag.wrapping_add(0x36), lo);
+        (h.cast_unsigned().wrapping_shl(4) & 0xffff_0000) | u32::from(lo)
+    }
+
+    /// `AbmapScaledLevelValue(level, i, j)` (`0x00a5cbe0`): 100000 for `j`
+    /// 4, else `ftol(T[i] * (level + 50) * T[j])` for `T` = 1, 1, 1.5, 3,
+    /// 5 ([`super::LEVEL_SCALES`]: 1.5, 3, 5 from `.rdata`). Indices past
+    /// the original's two local tables (`i` past 4, `j` past 9) read its
+    /// stack; this gives 0 for them.
+    pub fn abmap_scaled_level_value(mem: &impl Mem, level: i32, i: u32, j: u32) -> u32 {
+        if j == 4 {
+            return 100_000;
+        }
+        let [a, b, c] = super::LEVEL_SCALES.map(|at| mem.read::<u32>(mem.rebase(at)));
+        let one = 1f32.to_bits();
+        // the locals from ebp-0x2c: the j table, then the i table
+        let both = [one, one, a, b, c, one, one, a, b, c];
+        let (Some(&ti), Some(&tj)) = (both.get(5 + i as usize), both.get(j as usize)) else {
+            return 0;
+        };
+        let l = x87::load(x87::store(f64::from(level.wrapping_add(0x32))));
+        ftol(mem, x87::load(ti) * l * x87::load(tj))
     }
 }

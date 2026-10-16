@@ -3346,6 +3346,9 @@
 0x0075fcd0 function KeVu0SubVecXYZ               # layout: alphabetical run between KeVu0Sqrt and KeVu0VecLen (2 unnamed in the gap); Switch 0x71003074a0 KeVu0SubVecXYZ is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0075fda0 function KeVu0VecLen               # fh v3:exact 0x0075fe90
 0x0075fde0 function KeVu0VecLenXY             # fh v3:exact 0x0075fed0
+0x007605d0 function pppFreeAllEnvObjects      # (): for each of *0x00d4b4cc object blocks (0x80 from 0x00d4e390), *g_pppEnvSlot = the pmcom environment 0x010d4cfc and pppAllFreePObject(block); called by pppDataRcv, pppPartDraw; name ours
+0x00760610 function pppInitPmcomEnv           # (): 0x00d524a0 = 0x00d524a8, g_KePmcomNext = its base 0x00e524f0, pppInitEnv(0x010d4cfc, 0, 0x00fd24f0, 0x100000); name ours
+0x00760640 function KeResampleRgbaToRgb       # (src, sw, sh, dst, dw, dh): nearest-neighbour RGBA to bottom-up BGR bytes by Bresenham error terms; returns the row error; pppPartDraw; name ours
 0x007610a0 function dumpFvector               # fh switch:bsim1.00 0x71002d1e50
 0x007610e0 function dumpMatrix                   # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s=\\n{ %f %f %f %f }\\n{ %f %f %f %f }\\n{ %f %f %f %f }\\n{ %f'; Switch 0x71002d1db0 dumpMatrix (symbols from Fahrenheit's server export)
 0x007614a0 function pppDataRcv                # fh v3:exact 0x00761590
@@ -3358,6 +3361,7 @@
 0x00762550 function pppSetPartMatrix          # fh switch:cg2 0x71008b5328
 0x00762f50 function KePmcomAlloc                 # (bytes) -> block: bytes + 15 rounded down to 8 from the pmcom arena 0x00e524f0..0x00f524f0 (next 0x00d524a4); past the end restarts at the base (spins forever when it still does not fit); 0x00760080 ("pmcom_data_init")
 0x00762fa0 function KePmcomQueuePush             # (kind, p): (kind, set_ptr32(p)) into the 256-entry ring at 0x010d4d28, index 0x010d552c back to 0 past 255; 0x0075ff00
+0x00763030 function KeThBP_Init               # (args): object args[0], segment count byte args[1] at +0x37; self +0x10, links cleared, +0x4c 1.0, +0x20 3n+2, +0x28 0x40000b0, GIF tag at +0x40 + 0x30n; returns 6n. Switch KeThBP_Init calls set_ptr32 7 times as this does (cg_switch), sorts before KeThBP_MkGifPk 0x00763100; callers KeThBP_Update, KeThCp_AddBp
 0x00763100 function KeThBP_MkGifPk            # fh v3:exact 0x007631f0
 0x007636c0 function KeThBP_Quit               # fh v3:exact 0x007637b0
 0x007637f0 function KeThBP_Update             # fh v3:bsim0.93 0x007638e0
@@ -3379,6 +3383,8 @@
 0x00766c50 function prcPrintMatrix               # str-match switch: only user of 2 string(s) held once by both builds, e.g. '---- FAMTRIX\\n'; Switch 0x7100306ce0 prcPrintMatrix (symbols from Fahrenheit's server export)
 0x00766d10 function prcPrintPacket               # str-match switch: only user of 8 string(s) held once by both builds, e.g. 'nloop:%d nreg:%d regs:%lx pp:%p %016lx:%016lx\\n'; Switch 0x7100306d90 prcPrintPacket (symbols from Fahrenheit's server export)
 0x00766e60 function prcPrintTex0                 # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'TBP0:%04xh TBW:%d PSM:%xh TW:%d TH:%d TCC:%d TFX:%d\\n'; Switch 0x7100306c80 prcPrintTex0 (symbols from Fahrenheit's server export)
+0x00766f10 function KeVecAddRandom            # (dst, range, scaled): dst[i] += op_random(range[i]) (times op_random_p(1.0) when scaled), x y z; ppp shape setups 0x00741a40...; name ours
+0x00766f70 function KeVecScaleRandom          # (dst, v, pair): s = r + r (r = op_random(1.0)) or r + op_random(1.0); dst[i] += v[i] * s - v[i], x y z; returns dst; name ours
 0x00766ff0 function KeMdl_Draw                # fh v3:exact 0x007670d0
 0x00767530 function KeMdl_MkTkClut            # fh v3:exact 0x00767610
 0x007676c0 function KeVu0MulX                    # (dst, src, s): dst.x = src.x * s (a VU macro helper); 0x0088a040
@@ -8038,6 +8044,7 @@
 0x0090bc10 function yiMallocQuiet             # (size): Sg_MemSetErrorIgnore(1), then user_malloc (tail call)
 0x0090bc40 function yiPkAddGsAD_0090bc40         # the same code as yiPkAddGsAD
 0x0090bee0 function yiRender_destroy          # fh switch:bsim1.00 0x7100539700
+0x0090c120 function yiRender_addDirectBlock   # (render, src, n): data pointer +0xba3e0 aligned to 64, DMA ref tag 0x30000000|(n+1) at +0xba3f0 (+0xba3f8 counts), block VIF FLUSH, STMOD, STCYCL 1,1, DIRECTHL n, n quadwords; returns src + 16n; name ours
 0x0090c1f0 function yiRender_addRef              # (render, addr, qwc u16): DMA ref tag (0x30000000 | qwc, addr) at render +0xba3f0, which moves 16 on; render +0xba3f8 counts tags
 0x0090c230 function yiRender_addRefData          # (render, block): yiRender_addRef of block +0x10 for block's u16 quadword count
 0x0090ccb0 function yiPkUnpackMatrixDma          # (m, out, addr): DMA tag 0x20000005, VIF FLUSH, STCYCL 1,1, UNPACK V4-32 x4 to addr, then the matrix
@@ -8066,10 +8073,12 @@
 0x0090f900 function yiMapFileRead             # (scene, file): map render file (0x214365, version 0x110; count +0xc; 0x40-byte record headers): 0 objects, 1 cameras, 2 textures, 3 CLUTs, 4 fog, 5/8 packet lists, 6 animation tracks, 7 matrices (yiArc_readmem)
 0x0090ff40 function yiObjInit                 # (obj): a 0xb4-byte map object cleared, scales 1.0, +0xc GS tag 0x6c040014, +0x10 identity (yiMapFileRead)
 0x00910040 function yiPkAddGsAD_00910040         # the same code as yiPkAddGsAD
+0x00910270 function yiTriContainsXZ           # (tri, p) -> 1 when p's x, z lie inside the triangle of tri's three vectors (either winding, edge cross products against the full one); name ours
 0x00910340 function yiTriColorsFromGif        # (out, gif, first): three RGBAQ quadwords' bytes to out (alphas first set to 0x80), +0x12 cleared
 0x009103e0 function yiTriColorsUvFromGif      # (out, gif, first, uv): as yiTriColorsFromGif with alpha 0x7f, then three UV quadwords' u16s to +0x14
 0x00910580 function yiHighestBit                 # (bits) -> index of the highest of the low 16 bits set, -1 none
 0x00911970 function yiPolyBufClear            # (buf): zeroes 0x4000 bytes and the counters at +0x4000..+0x4084
+0x009130f0 function yiBoundsMinMax            # (obj, min, max): min/max from +-FLT_MAX (0x00b17504, 0x00b1f2d0) with w 1.0 over the i16 +0x12 vectors at obj + *(obj+8); returns the count or 0; name ours
 0x009131d0 function yiScreff_entry            # fh v3:exact 0x009131d0
 0x00913f30 function yiScreff_init             # fh switch:bsim1.00 0x7100534af0
 0x00913f50 function yiRender_initfog          # (r): the fog block at +0xbe07c (0x60, grey, 0.03/0.02/0.005, 64.0)
@@ -8096,6 +8105,7 @@
 0x00917d80 function yiImageVramAlloc          # (img): GS memory by format +0xc (yiVramAllocPsm), 0x13 -> 0x1b and 0x14 -> 0x2c below page 0x2e00, 0x14 page cache 0x025d17a4; yiImageRman_entry
 0x00918090 function yiVramAllocPsm               # (bytes, psm) -> address >> 6 or -1: as yiVramAlloc from regions 0, 1 (0x025d17bc/ac, 17b8/a8); PSMT8 (0x13) / PSMT4 (0x14) 4x / 8x the size from regions 2, 3 (17c0/b0, 17c4/b4)
 0x00918130 function yiVramAlloc                  # (bytes) -> g_YiVramNext >> 6 and moves it on by bytes rounded to 64, or -1 past g_YiVramLimit
+0x00918680 function yiImage_dumpall           # (rman) -> 0: dbgPrintf of every page's images (a bare ret on PC). Switch yiImage_dumpall: called by yiImageRman_entry and yiImageRman_foecrentry, as this is
 0x009188c0 function yiImage_init              # fh switch:bsim0.97 0x710053c8e0
 0x00918ba0 function yiImage_printusemem          # str-match switch: only user of 6 string(s) held once by both builds, e.g. 'GSmem(texture M  area) *** %5.1f%%(%3.1f/%3.1f page) ***\\n'; Switch 0x710053c190 yiImage_printusemem (symbols from Fahrenheit's server export)
 0x00918f20 function yiImage_readonlyTIM1         # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'unknown color mode'; Switch 0x710053dad0 yiImage_readonlyTIM1 (symbols from Fahrenheit's server export)
@@ -8693,6 +8703,7 @@
 0x00931050 function rcuiAlphaProc                # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Alpha Fix'; Switch 0x710055ba70 rcuiAlphaProc (symbols from Fahrenheit's server export)
 0x009313f0 function rcuiAnimeProc                # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Anime Data'; Switch 0x710055aff0 rcuiAnimeProc (symbols from Fahrenheit's server export)
 0x00931910 function rcuiCameraProc               # str-match switch: only user of 10 string(s) held once by both builds, e.g. 'Camera Pos.X'; Switch 0x7100559ab0 rcuiCameraProc (symbols from Fahrenheit's server export)
+0x00932470 function rcuiChrMotionSetup        # (): the selected character (+0x870[+0x8b0]): Ch_GetNbElem to +0x8b8, buffer +0x8c8 freed and rcAlloc'd 16 per element ('rcuiPre.c' 0xd08), +0x8cc 0x16, Ch_SetMotionSpeed 0x100 (+0x8d4); name ours
 0x00932570 function rcuiCollectChrHandles        # (): every character's index and handle into the rcui work's lists (+0x830, +0x870; count +0x824)
 0x00933c80 function Yn_FpMemWinOpen           # fh v3:exact 0x00933c80
 0x00934250 function rcuiGuideProcConvertAll      # str-match switch: only user of 2 string(s) held once by both builds, e.g. '---- Guide Map Data Convert START'; Switch 0x710055c640 rcuiGuideProcConvertAll (symbols from Fahrenheit's server export)
@@ -8732,6 +8743,7 @@
 0x0093a910 function rcbgFpTrxTexLoadTextGetTrxCnt # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s%d_00.tm2'; Switch 0x7100561290 rcbgFpTrxTexLoadTextGetTrxCnt (symbols from Fahrenheit's server export)
 0x0093adf0 function rcbgPalLoadConfig         # (pal, parse): keywords (0x00c60e94) 0 mode byte +0xa, 1 speed byte +0xb, 2 stop
 0x0093aee0 function rcbgSceneLoadTextSubConfigKeys # (obj, parse): keywords (0x00c60e44) 0..2 the ints +0x5c/+0x60/+0x64, 3 stop; rcbgSceneLoadTextSubConfig
+0x0093b110 function rcbgSceneLoadTextCameraCalcRef # (cam): rotation from the degrees at +0x98/9c/a0, +0x78 = +0x68 + +0xf4 * row 2, +0x88 = -row 1. Switch rcbgSceneLoadTextCameraCalcRef sorts right before rcbgSceneLoadTextModel (0x0093b200); callers rcuiCameraProc and the camera text loader 0x0093af60
 0x0093b200 function rcbgSceneLoadTextModel       # str-match switch: only user of 2 string(s) held once by both builds, e.g. '%s/3d/mdl'; Switch 0x71005609d0 rcbgSceneLoadTextModel (symbols from Fahrenheit's server export)
 0x0093b3e0 function rcbgSceneLoadTextSub      # fh switch:bsim0.92 0x710055f800
 0x0093b590 function rcbgSceneLoadTextSubConfig   # layout: alphabetical run between rcbgSceneLoadTextSub and rcbgSceneLoadTexture (1 unnamed in the gap); Switch 0x71005600d0 rcbgSceneLoadTextSubConfig is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -9222,6 +9234,7 @@
 0x00a47440 function AbmapPulseCursor          # (): +0x115a4 = sin(frame +0x11698), +0x115c5 = ((sin + 1) * 8 + 0x70) * +0x115c6 >> 7 (eiAbmCalc)
 0x00a474d0 function AbmapCalcMoveCosts        # fh v3:exact 0x00a474d0 +AbmapCalcMoveCosts
 0x00a47560 function AbmapCalcMoveCost         # fh v3:exact 0x00a47560 +AbmapCalcMoveCost
+0x00a47c60 function AbmapSetupPlyTag          # (tag): tag +0x30/+0x32 and width 0x12 (+0x38) into 0x02305804..30, sizes ftol((x+0x12)/zoom), ftol((y+2.0)/zoom) (+0x11350) to +0x34 (halved)/+0x36; AbmapPositionPlyTag; name ours
 0x00a47d50 function AbmapState_ChangingNode   # fh v3:exact+call.cs 0x00a47d50 cdecl
 0x00a47f00 function AbmapState_Warping        # fh v3:exact+call.cs 0x00a47f00
 0x00a48740 function abmap_cheng_panel         # fh v3:exact 0x00a48740
@@ -9255,9 +9268,11 @@
 0x00a5a800 function AbmapCalcLinkPoints       # fh v3:exact 0x00a5a800 +AbmapCalcLinkPoints
 0x00a5a990 function AbmapSetChrMarker         # (chr): marker +0x11088 + 0x50 chr on its node +0x44: x, y, 0, 1; +0x3c half the kind size + 3.0
 0x00a5ad30 function AbmapMakeNodeMatrix       # (out, pos, scale): scale matrix (from the zero register), translation the i16 position, 1.0 (7 callers)
+0x00a5b030 function AbmapResetCursorCamera    # (): +0x115a0 = 256.0, current character's position (+0x11088 + 0x50 * +0x115bc) to +0x11520 (y - 32.0, w twice the distance), its colour (0x00c86010) to +0x11560, then AbmapPulseCursor; name ours
 0x00a5b4c0 function AbmapGetNodePosRadius     # fh v3:exact 0x00a5b4c0 +AbmapGetNodePosRadius
 0x00a5b7b0 function AbmapInitChoosingMoveTarget # fh v3:exact 0x00a5b7b0 +AbmapInitChoosingMoveTarget
 0x00a5b930 function AbmapResetHelp            # (): +0x115a8 = state 0x00a45010, +0x115ac = AbmapSetHelpMessage, +0x115c3/+0x115c4 cleared
+0x00a5bb70 function AbmapStoreSave            # (): node byte pairs (+0x80e/+0x829), link flags (+0xa814) from +0xa00, seven characters' u16s (+0x110cc) at +0xf00, +0x115cb/cc at +0xf18 into MsGetSaveAbilityMap's block; name ours
 0x00a5bca0 function AbmapTryUseItem           # fh v3:exact 0x00a5bca0 +AbmapTryUseItem
 0x00a5bd80 function KaGDebFirstCall           # fh v3:bsim1.00 0x00a5bd80
 0x00a5be30 function AbmapVu0LoadMatrix1       # (m): 64 bytes into the emulated vf01..vf04 (0x00c8f7a0)
@@ -9270,6 +9285,7 @@
 0x00a5cb10 function NkzGetLuluLimitTime       # fh v3:bsim1.00 0x00a5cb10
 0x00a5cb20 function NkzGetMonsterListNum      # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
 0x00a5cbd0 function NkzGetTidusLimitTime      # fh v3:bsim1.00 0x00a5cbd0
+0x00a5cbe0 function AbmapScaledLevelValue     # (level, i, j): 100000 for j 4, else ftol(T[i] * (level + 50) * T[j]), T = 1, 1, 1.5, 3, 5; name ours
 0x00a5cc70 function NkzSetLuluLimitTbl        # fh v3:exact 0x00a5cc70
 0x00a5cee0 function AbmapQuarterOrOne_a5cee0  # (_, n) -> n / 4, or 1 when 0 (identical to 0x00a5cf10; called by 0x008db400)
 0x00a5cf00 function NkzVersion                # fh v3:bsim1.00 0x00a5cf00

@@ -192,6 +192,9 @@ pub const RENDER_PACKET: [u32; 32] = [
 /// The `.rdata` floats of the fog block (`yiRender_initfog`): 0.03,
 /// 0.02, 0.005 and 64.0.
 pub const FOG_DEFAULTS: [u32; 4] = [0x00b6_7120, 0x00b4_82d8, 0x00b3_eb3c, 0x00b5_83dc];
+/// The largest finite float and its negation (`f32`s, `.rdata`):
+/// `yiBoundsMinMax`'s starting minimum and maximum.
+pub const BOUNDS_INIT: [u32; 2] = [0x00b1_7504, 0x00b1_f2d0];
 /// `FFXVu0RotMatrixX/Y/Z(dst, src, angle)` (`0x006ed780`, `0x006ed7c0`,
 /// `0x006ed800`).
 pub const VU0_ROT_MATRIX: [u32; 3] = [0x006e_d780, 0x006e_d7c0, 0x006e_d800];
@@ -3752,5 +3755,110 @@ pub mod bridge {
             }
         }
         0
+    }
+
+    // ---- round 12 ----
+
+    /// `yiImage_dumpall(rman)` (`0x00918680`): prints every page's images
+    /// through `dbgPrintf`, a bare `ret` on PC; returns 0.
+    #[must_use]
+    pub fn yi_image_dumpall(_rman: u32) -> u32 {
+        0
+    }
+
+    /// `yiRender_addDirectBlock(render, src, n)` (`0x0090c120`): aligns
+    /// the data pointer (`+0xba3e0`) to 64 bytes (in 16-byte steps), adds
+    /// a DMA ref tag (`0x30000000 | (n + 1)`, the block) at `+0xba3f0`
+    /// (counted at `+0xba3f8`), then the block: VIF FLUSH, STMOD 0,
+    /// STCYCL 1,1, DIRECTHL `n`, and `n` quadwords from `src`. Returns
+    /// `src + 16n`.
+    pub fn yi_render_add_direct_block(mem: &mut impl Mem, r: u32, src: u32, n: u32) -> u32 {
+        let data = r.wrapping_add(0xba3e0);
+        let tags = mem.read::<u32>(r.wrapping_add(0xba3f0));
+        let d = mem.read::<u32>(data);
+        if d & 0x3f != 0 {
+            mem.write(data, ((0x40 - (d & 0x3f)) & 0xffff_fff0).wrapping_add(d));
+        }
+        let block = mem.read::<u32>(data);
+        mem.write(data, n.wrapping_add(1).wrapping_shl(4).wrapping_add(block));
+        mem.write(tags, (n.wrapping_add(1) & 0xffff) | 0x3000_0000);
+        mem.write(tags.wrapping_add(4), block);
+        mem.write(tags.wrapping_add(8), 0u32);
+        mem.write(tags.wrapping_add(0xc), 0u32);
+        let at = r.wrapping_add(0xba3f0);
+        let v = mem.read::<u32>(at).wrapping_add(0x10);
+        mem.write(at, v);
+        let at = r.wrapping_add(0xba3f8);
+        let v = mem.read::<u32>(at).wrapping_add(1);
+        mem.write(at, v);
+        mem.write(block.wrapping_add(0xc), n | 0x5100_0000);
+        mem.write(block, 0x1100_0000u32);
+        mem.write(block.wrapping_add(4), 0x0500_0000u32);
+        mem.write(block.wrapping_add(8), 0x0100_0404u32);
+        let (mut s, mut d) = (src, block.wrapping_add(0x10));
+        for _ in 0..n {
+            let q = mem.read::<[u32; 4]>(s);
+            mem.write(d, q);
+            s = s.wrapping_add(0x10);
+            d = d.wrapping_add(0x10);
+        }
+        s
+    }
+
+    /// `yiTriContainsXZ(tri, p)` (`0x00910270`): 1 when `p`'s x, z lie
+    /// inside the triangle of the three vectors at `tri` (projected on
+    /// x, z), by two edge cross products (`f32`) against the full one
+    /// (their sum at 53 bits), for either winding; else 0.
+    pub fn yi_tri_contains_xz(mem: &impl Mem, tri: u32, p: u32) -> u32 {
+        let f = |o: u32| x87::load(mem.read(tri.wrapping_add(o)));
+        let a = f(0x28) - f(0x8);
+        let b = f(0x10) - f(0);
+        let c = f(0x18) - f(0x8);
+        let d = f(0x20) - f(0);
+        let full = x87::load(x87::store(b * a - d * c));
+        let e = x87::load(mem.read(p)) - f(0);
+        let g = x87::load(mem.read(p.wrapping_add(8))) - f(0x8);
+        let s1 = x87::load(x87::store(a * e - d * g));
+        let s3 = x87::load(x87::store(-c * e + b * g));
+        if 0.0 < s1 && 0.0 < s3 && s3 + s1 < full {
+            return 1;
+        }
+        u32::from(s1 < 0.0 && s3 < 0.0 && full < s1 + s3)
+    }
+
+    /// `yiBoundsMinMax(obj, min, max)` (`0x009130f0`): `min` and `max`
+    /// start at the largest finite floats ([`super::BOUNDS_INIT`]) with w
+    /// 1.0, then take each of the `+0x12` (`i16`) vectors at `obj + +8`
+    /// (16 bytes apart), x, y, z in turn. Returns the count when there are
+    /// vectors, else 0.
+    pub fn yi_bounds_min_max(mem: &mut impl Mem, obj: u32, min: u32, max: u32) -> u32 {
+        let first = mem.read::<u32>(obj.wrapping_add(8));
+        let hi = x87::copy(mem.read(mem.rebase(super::BOUNDS_INIT[0])));
+        let lo = x87::copy(mem.read(mem.rebase(super::BOUNDS_INIT[1])));
+        for i in 0..3u32 {
+            mem.write(min.wrapping_add(4 * i), hi);
+            mem.write(max.wrapping_add(4 * i), lo);
+        }
+        mem.write(min.wrapping_add(0xc), 1f32);
+        mem.write(max.wrapping_add(0xc), 1f32);
+        let mut v = obj.wrapping_add(first);
+        let mut n = 0i32;
+        let mut r = 0u32;
+        while i32::from(mem.read::<i16>(obj.wrapping_add(0x12))) > n {
+            for i in 0..3u32 {
+                let x = mem.read::<f32>(v.wrapping_add(4 * i));
+                if x < mem.read::<f32>(min.wrapping_add(4 * i)) {
+                    mem.write(min.wrapping_add(4 * i), x87::copy(x.to_bits()));
+                }
+                let x = mem.read::<f32>(v.wrapping_add(4 * i));
+                if x > mem.read::<f32>(max.wrapping_add(4 * i)) {
+                    mem.write(max.wrapping_add(4 * i), x87::copy(x.to_bits()));
+                }
+            }
+            r = i32::from(mem.read::<i16>(obj.wrapping_add(0x12))).cast_unsigned();
+            n += 1;
+            v = v.wrapping_add(0x10);
+        }
+        r
     }
 }

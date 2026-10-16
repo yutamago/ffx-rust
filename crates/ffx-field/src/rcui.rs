@@ -17,6 +17,10 @@ pub const MOTIONS: u32 = 0x00c6_0a78;
 /// The motion group starts (`0x00c60dc0`, 27 ranges, each ending at the
 /// next).
 pub const MOTION_GROUPS: u32 = 0x00c6_0dc0;
+/// `Ch_GetNbElem(chr)` (`0x008303f0`).
+pub const CH_GET_NB_ELEM: u32 = 0x0083_03f0;
+/// `Ch_SetMotionSpeed(chr, speed)` (`0x0082b380`).
+pub const CH_SET_MOTION_SPEED: u32 = 0x0082_b380;
 
 /// Offsets in the work area.
 pub mod work {
@@ -55,6 +59,7 @@ pub mod bridge {
     use super::{NUMBER_OK, WORK, work};
     use crate::x87;
     use ffx_bridge::x87::Reg;
+    use ffx_system::stub::ptr32;
 
     /// `rcuiMouseMoveEnd()` (`0x0093c050`); `rcuiMouseMoveReset`
     /// (`0x0093c110`) is the same code.
@@ -514,5 +519,53 @@ pub mod bridge {
             e = e.wrapping_add(0xc0);
         }
         size.wrapping_add(0x38)
+    }
+
+    // ---- round 12 ----
+
+    /// `rcuiChrMotionSetup()` (`0x00932470`): for the selected character
+    /// (handle `+0x870 + 4 * +0x8b0`, -1 none) its element count to
+    /// `+0x8b8`, `+0x8bc`..`+0x8c4` cleared, the element buffer (`+0x8c8`)
+    /// freed and reallocated at 16 bytes per element, `+0x8cc` 0x16,
+    /// `+0x8d0` 0, motion speed 0x100 (`Ch_SetMotionSpeed`, kept at
+    /// `+0x8d4`). Returns the work pointer, or the selection index with no
+    /// character.
+    pub fn rcui_chr_motion_setup<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let w = WORK.get(mem);
+        let sel = mem.read::<u32>(w.wrapping_add(0x8b0));
+        let h = mem.read::<u32>(w.wrapping_add(0x870).wrapping_add(sel.wrapping_mul(4)));
+        if h == u32::MAX {
+            return sel;
+        }
+        let f = mem.rebase(super::CH_GET_NB_ELEM);
+        let n = call(mem, f, &[h]);
+        let w = WORK.get(mem);
+        mem.write(w.wrapping_add(0x8b8), n);
+        for off in [0x8bcu32, 0x8c0, 0x8c4] {
+            let w = WORK.get(mem);
+            mem.write(w.wrapping_add(off), 0u32);
+        }
+        let w = WORK.get(mem);
+        let p = ptr32(mem.read(w.wrapping_add(0x8c8)));
+        if p != 0 {
+            crate::model::bridge::rc_free(mem, call, p);
+        }
+        let w = WORK.get(mem);
+        mem.write(w.wrapping_add(0x8c8), ptr32(0));
+        let size = mem.read::<u32>(w.wrapping_add(0x8b8)) << 4;
+        let b = crate::model::bridge::rc_alloc(mem, call, size);
+        let w = WORK.get(mem);
+        mem.write(w.wrapping_add(0x8c8), ptr32(b));
+        mem.write(w.wrapping_add(0x8cc), 0x16u32);
+        let w = WORK.get(mem);
+        mem.write(w.wrapping_add(0x8d0), 0u32);
+        let f = mem.rebase(super::CH_SET_MOTION_SPEED);
+        call(mem, f, &[h, 0x100]);
+        let w = WORK.get(mem);
+        mem.write(w.wrapping_add(0x8d4), 0x100u32);
+        w
     }
 }
