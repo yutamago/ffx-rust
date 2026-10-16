@@ -1,9 +1,9 @@
 //! `ffx-battle`: random numbers, the save block, actors, the battle camera,
 //! battle globals and helpers, damage.
 
-use ffx_battle::save::bridge as save;
 use ffx_battle::{actor::bridge as actor, camera::bridge as camera, command::bridge as cmd};
 use ffx_battle::{damage::bridge as dmg, state::bridge as state, util::bridge as util};
+use ffx_battle::{save::bridge as save, vector::bridge as vector};
 
 use super::{call0, mem, ported};
 
@@ -816,5 +816,31 @@ ported! {
     /// `MsBattleGetNum`.
     MsBattleGetNum @ 0x0078_16b0 => extern "C" fn ms_battle_get_num() -> u32 {
         state::ms_battle_get_num(&mem())
+    }
+
+    // Vectors and matrices (VU0 code on the x87).
+    /// `MsMulVector(v, s, b1, b2, b3)`: `v *= s` (floats as bits).
+    MsMulVector @ 0x007c_2e10 => extern "C" fn ms_mul_vector(v: u32, s: u32, b1: u32, b2: u32, b3: u32) {
+        vector::ms_mul_vector(&mut mem(), v, [s, b1, b2, b3]);
+    }
+    /// `MsDivVector(v, s, b1, b2, b3)`: `v *= 1 / s`.
+    MsDivVector @ 0x007c_2520 => extern "C" fn ms_div_vector(v: u32, s: u32, b1: u32, b2: u32, b3: u32) {
+        vector::ms_div_vector(&mut mem(), v, [s, b1, b2, b3]);
+    }
+    /// `MsAddPoint(out, a, b)`.
+    MsAddPoint @ 0x007c_1480 => extern "C" fn ms_add_point(out: u32, a: u32, b: u32) {
+        vector::ms_add_point(&mut mem(), out, a, b);
+    }
+    /// `MsSetNormalUpVector(v)`.
+    MsSetNormalUpVector @ 0x007c_0ab0 => extern "C" fn ms_set_normal_up_vector(v: u32) {
+        vector::ms_set_normal_up_vector(&mut mem(), v);
+    }
+    /// `MsApplyMatrix(out, m, v)`.
+    MsApplyMatrix @ 0x007c_1550 => extern "C" fn ms_apply_matrix(out: u32, m: u32, v: u32) {
+        vector::ms_apply_matrix(&mut mem(), out, m, v);
+    }
+    /// `MsNearRag(a, b)`: an angle, on the x87 stack.
+    MsNearRag @ 0x007c_04c0 => extern "C" fn ms_near_rag(a: u32, b: u32) -> f32 {
+        vector::ms_near_rag(&mem(), a, b)
     }
 }

@@ -58,6 +58,73 @@ pub fn ftol2(x: f64) -> u32 {
     }
 }
 
+/// A float as `fld m32` loads it: exact, but a signalling NaN comes out
+/// quiet.
+#[must_use]
+pub fn load(bits: u32) -> f64 {
+    let quiet = if bits & 0x7f80_0000 == 0x7f80_0000 && bits & 0x007f_ffff != 0 {
+        bits | 0x0040_0000
+    } else {
+        bits
+    };
+    f64::from(f32::from_bits(quiet))
+}
+
+/// `fstp m32`: rounded to `f32` (NaNs keep their sign and top payload
+/// bits).
+#[must_use]
+pub fn store(x: f64) -> u32 {
+    #[allow(clippy::cast_possible_truncation)] // the store rounds
+    let f = x as f32;
+    f.to_bits()
+}
+
+/// The NaN an x87 operation on `a` and `b` gives when one of them is NaN:
+/// of two, the larger significand, then the positive one (SSE, and so
+/// Rust, take the first operand instead). Operands come from [`load`], so
+/// they are quiet.
+#[must_use]
+pub fn nan(a: f64, b: f64) -> Option<f64> {
+    const SIG: u64 = 0x000f_ffff_ffff_ffff;
+    match (a.is_nan(), b.is_nan()) {
+        (true, true) => {
+            let (x, y) = (a.to_bits(), b.to_bits());
+            Some(if (y & SIG, x >> 63) > (x & SIG, y >> 63) {
+                b
+            } else {
+                a
+            })
+        }
+        (true, false) => Some(a),
+        (false, true) => Some(b),
+        (false, false) => None,
+    }
+}
+
+/// `a + b` on the x87 at 53 bits.
+#[must_use]
+pub fn add(a: f64, b: f64) -> f64 {
+    nan(a, b).unwrap_or(a + b)
+}
+
+/// `a - b` on the x87 at 53 bits.
+#[must_use]
+pub fn sub(a: f64, b: f64) -> f64 {
+    nan(a, b).unwrap_or(a - b)
+}
+
+/// `a * b` on the x87 at 53 bits.
+#[must_use]
+pub fn mul(a: f64, b: f64) -> f64 {
+    nan(a, b).unwrap_or(a * b)
+}
+
+/// `a / b` on the x87 at 53 bits.
+#[must_use]
+pub fn div(a: f64, b: f64) -> f64 {
+    nan(a, b).unwrap_or(a / b)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

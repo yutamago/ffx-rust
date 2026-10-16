@@ -6305,6 +6305,7 @@
 0x00b38f34 label Phyre_PClassDescriptorConcrete_Phyre_PScripting_PScript__vftable # fh v4:imported Phyre::PClassDescriptorConcrete<Phyre::PScripting::PScript>::vftable
 0x00b39098 label Phyre_PScripting_PUtilityScripting_vftable # fh v4:imported Phyre::PScripting::PUtilityScripting::vftable
 0x00b39348 label Phyre_PWorldMatrixFlyController_vftable # fh v4:imported Phyre::PWorldMatrixFlyController::vftable
+0x00b39378 label g_TwoPiF64                   # f64 of 2pi rounded to f32 (0x401921fb60000000); MsNearRag's turn
 0x00b39384 label Phyre_PPhysics_PUtilityPhysics_vftable # fh v4:imported Phyre::PPhysics::PUtilityPhysics::vftable
 0x00b39394 label Phyre_PClassDescriptorForType_Phyre_PPhysics_PPhysicsMaterial__vftable # fh v4:imported Phyre::PClassDescriptorForType<Phyre::PPhysics::PPhysicsMaterial>::vftable
 0x00b393dc label Phyre_PClassDescriptorAbstract_Phyre_PPhysics_PPhysicsMaterial__vftable # fh v4:imported Phyre::PClassDescriptorAbstract<Phyre::PPhysics::PPhysicsMaterial>::vftable
@@ -7034,6 +7035,7 @@
 0x00b920cc label mkvparser_SimpleBlock_vftable # fh v4:imported mkvparser::SimpleBlock::vftable
 0x00b920dc label mkvparser_BlockEntry_vftable # fh v4:imported mkvparser::BlockEntry::vftable
 0x00b920ec label mkvparser_Track_vftable      # fh v4:imported mkvparser::Track::vftable
+0x00b92288 label g_PiF64                      # f64 of pi rounded to f32 (0x400921fb60000000); MsNearRag's half turn
 0x00c0a000 label    g_Vu0_R                      # emulated VU0 R (random) register, f32 bits in [1,2): op_random/op_random_p step it (vrnext: low 22 fraction bits << 1, bit 4 of R^(R>>18) in) and leave draw - 1.8872414 there; 0x0075fe50 seeds it
 0x00c0a004 label g_Vu0_Vf00                  # emulated VU0 vf00 (x, y, z, w) = (0, 0, 0, 1.0f): AsmEmuInit and restoreVf00Register store exactly that
 0x00c30f94 label NvOptimusEnablement          # fh v4:imported
@@ -7065,6 +7067,7 @@
 0x00c8b500 label    g_pppColorConShift           # added once to pppColorCon's work offset, then cleared there; also RW by pppDrawShape0
 0x00c8f508 label g_Ee_Gpr                    # emulated R5900 GPRs, 32 x 16 bytes: r0 (zero) here, t0 at +0x80 (pppRandFloat: t0 = r0 - 1), sp at +0x1d0 (AsmEmuInit stores this address there); argument registers set by AsmEmuSetFuncParam0 and the setters around it
 0x00c8f728 label    g_Vu0_RSeeded                # nonzero once g_Vu0_R is seeded (0x0075fe50 sets it with R); op_random draws 1.0 while 0, then sets it
+0x00c8f788 label g_Vu0_Q                      # emulated VU0 Q (f32): MsDivVector leaves vf00.w / s there, MsVectorLen the length; the VF registers follow from 0x00c8f790, 16 bytes each (MsApplyMatrix: acc 0x00c8f790, matrix 0x00c8f7d0, vector 0x00c8f810, result 0x00c8f850)
 0x00cc9698 label    g_BasePath
 0x00cc9c48 label BigFileStream_sBigFileStreamInstacne # was g_FileSys
 0x00cc9cf5 label    g_SteamReady              # guards every other Steam call (achievements, RunCallbacks)
