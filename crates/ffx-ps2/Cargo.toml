@@ -1,0 +1,13 @@
+[package]
+name = "ffx-ps2"
+description = "The PS2 emulation the PC port carries: the R5900 and VU0 registers in globals (`AsmEmu`, `FFXVu`)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ffx-bridge.workspace = true
+
+[lints]
+workspace = true

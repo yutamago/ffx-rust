@@ -1,0 +1,13 @@
+[package]
+name = "ffx-sg"
+description = "The main loop, fades, scene changes and menu requests (the PS2 `Sg` module, `FFXApplication`)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ffx-bridge.workspace = true
+
+[lints]
+workspace = true

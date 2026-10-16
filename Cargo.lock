@@ -536,6 +536,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffx-chara"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
+]
+
+[[package]]
 name = "ffx-cli"
 version = "0.1.0"
 dependencies = [
@@ -579,8 +586,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffx-field"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
+]
+
+[[package]]
 name = "ffx-gfx"
 version = "0.1.0"
+
+[[package]]
+name = "ffx-graphic"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
+]
 
 [[package]]
 name = "ffx-harness"
@@ -603,9 +624,24 @@ version = "0.1.0"
 dependencies = [
  "ffx-battle",
  "ffx-bridge",
+ "ffx-chara",
  "ffx-core",
+ "ffx-field",
  "ffx-gfx",
+ "ffx-graphic",
  "ffx-kernel",
+ "ffx-menu",
+ "ffx-monster",
+ "ffx-motion",
+ "ffx-movie",
+ "ffx-pcui",
+ "ffx-ps2",
+ "ffx-script",
+ "ffx-sg",
+ "ffx-sound",
+ "ffx-system",
+ "ffx-text",
+ "ffx-vfx",
  "windows-sys",
 ]
 
@@ -628,6 +664,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffx-menu"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
+]
+
+[[package]]
 name = "ffx-monster"
 version = "0.1.0"
 dependencies = [
@@ -647,20 +690,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffx-movie"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
+]
+
+[[package]]
 name = "ffx-oracle"
 version = "0.1.0"
 dependencies = [
  "ffx-battle",
  "ffx-bridge",
+ "ffx-chara",
  "ffx-core",
+ "ffx-field",
+ "ffx-graphic",
  "ffx-kernel",
+ "ffx-menu",
+ "ffx-monster",
+ "ffx-motion",
+ "ffx-movie",
+ "ffx-pcui",
  "ffx-phyre",
+ "ffx-ps2",
+ "ffx-script",
+ "ffx-sg",
+ "ffx-sound",
+ "ffx-system",
  "ffx-text",
  "ffx-vbf",
+ "ffx-vfx",
  "flate2",
  "goblin",
  "thiserror",
  "unicorn-engine",
+]
+
+[[package]]
+name = "ffx-pcui"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
 ]
 
 [[package]]
@@ -671,6 +742,13 @@ dependencies = [
  "flate2",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "ffx-ps2"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
 ]
 
 [[package]]
@@ -702,6 +780,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffx-sg"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
+]
+
+[[package]]
+name = "ffx-sound"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
+]
+
+[[package]]
 name = "ffx-studio"
 version = "0.1.0"
 dependencies = [
@@ -716,6 +808,13 @@ dependencies = [
  "serde",
  "serde_json",
  "toml",
+]
+
+[[package]]
+name = "ffx-system"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
 ]
 
 [[package]]
@@ -734,6 +833,13 @@ dependencies = [
  "flate2",
  "md-5",
  "thiserror",
+]
+
+[[package]]
+name = "ffx-vfx"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
 ]
 
 [[package]]

@@ -44,7 +44,15 @@ written) must agree.
   random cases (a fixed-seed xorshift), negative and out-of-range values.
 - Real state on `Oracle::from_snapshot` (`FFX_SNAPSHOT`, a snapshot of the
   running game: `cargo run -p ffx-harness --example snapshot`): the
-  game's own tables and objects.
+  game's own tables and objects. Two are kept in `~/ffx-work/snapshots/`:
+  `field.snap` (the first manual save, on the salvage ship deck) and
+  `battle.snap` (600 frames into that save's first battle, `cdsp00_00`).
+  A test that needs battle state should skip on a snapshot without it.
+
+  ```bash
+  FFX_GAME_DIR=~/steam-games/FFX-X2-HD FFX_SNAPSHOT=~/ffx-work/snapshots/battle.snap \
+      cargo test --release -p ffx-oracle --test <module>
+  ```
 - `Oracle::stub_return(addr, value)` fixes a callee (a clock) for the test.
 - Floats: the game thread runs x87 at 53-bit precision (`0x027f`); the
   snapshot oracle sets that control word. Results compare exactly unless
@@ -73,6 +81,13 @@ MsGetRomItem @ 0x0079_09f0 => extern "C" fn ms_get_rom_item(id: u32, strings: u3
 - A replay that exercises it (`docs/harness.md`): the trace with
   replacements must equal the trace with `--hook-disable replacements`.
 - `tools/progress.py` counts it as replaced.
+
+## Choosing what to port
+
+`tools/worklist.py --module <m> --named` lists the functions of a module
+whose callees are all ported already (or library code, left original for
+now): the ones that can be ported next, most-called first.
+`tools/progress.py` shows where each module stands.
 
 ## What not to do
 

@@ -1,0 +1,13 @@
+[package]
+name = "ffx-field"
+description = "Field maps: backgrounds, walk meshes, the guide map and map effects (the PS2 `rc*`, `Yn`, `Gu`, `Ke`, `Sqs`, `Nkz`, `yi` modules)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ffx-bridge.workspace = true
+
+[lints]
+workspace = true

@@ -246,42 +246,6 @@ fn vsync_ticks_now() -> u64 {
     ticks
 }
 
-/// Whether `AsyncLoadManager` (`*0x00ccc88c`) is idle: its thread
-/// (`0x00691360`) swaps the two request lists (count, capacity, items at
-/// `+0x20` and `+0x2c`; `+0x38` is the one being filled), works through the
-/// other one and empties it. New requests wait in the filling list until the
-/// game wakes the thread, so only the list being worked on counts.
-fn async_loader_idle() -> bool {
-    let word = |at: usize| {
-        read_memory(at, 4).map_or(0, |b| u32::from_le_bytes(b.try_into().expect("4 bytes")))
-    };
-    let inst = word(crate::rebase(0x00cc_c88c)) as usize;
-    if inst == 0 {
-        return true;
-    }
-    let filling = word(inst + 0x38) & 1;
-    let working = 1 - filling as usize;
-    word(inst + 0x20 + 0xc * working) == 0
-}
-
-/// In lockstep, before a frame ends: lets the asset loader finish the work
-/// it was given, so a load takes the same number of frames every run (at
-/// most 10 s of real time, against a loader that never finishes). Idle must
-/// hold twice, 1 ms apart: a wake-up the game just sent may not have
-/// reached the thread yet.
-fn wait_for_loads() {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    let mut steady = 0;
-    while steady < 2 && std::time::Instant::now() < deadline {
-        if async_loader_idle() {
-            steady += 1;
-        } else {
-            steady = 0;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(1));
-    }
-}
-
 /// Calls the vsync handler once per vsync of game time since the last call.
 fn run_vsync() {
     let cb = VSYNC_CALLBACK.load(Ordering::Acquire);
@@ -632,6 +596,9 @@ enum Job {
     Shot(String),
     Snapshot(String),
     FpuControl,
+    /// Until the bytes at the range equal the value (under the mask), or
+    /// the frame limit passes: `(range, value, mask, limit frame)`.
+    WaitFor(TraceRange, Vec<u8>, Vec<u8>, u32),
 }
 
 static JOBS: Mutex<VecDeque<(Job, Sender<String>)>> = Mutex::new(VecDeque::new());
@@ -667,6 +634,28 @@ fn parse_trace_range(spec: &str) -> Result<TraceRange, String> {
         deref,
         off,
         len,
+    })
+}
+
+/// The bytes of a trace range, if readable.
+fn range_bytes(r: &TraceRange) -> Option<Vec<u8>> {
+    let at = crate::rebase(r.addr);
+    let at = if r.deref {
+        let p = read_memory(at, 4).ok()?;
+        u32::from_le_bytes(p.try_into().ok()?) as usize + r.off as usize
+    } else {
+        at + r.off as usize
+    };
+    read_memory(at, r.len).ok()
+}
+
+/// Whether a range equals `value` under `mask` (bytes, little-endian).
+fn range_matches(r: &TraceRange, value: &[u8], mask: &[u8]) -> bool {
+    range_bytes(r).is_some_and(|b| {
+        b.iter()
+            .zip(value)
+            .zip(mask)
+            .all(|((x, v), m)| x & m == v & m)
     })
 }
 
@@ -910,6 +899,9 @@ unsafe fn run_due_jobs(frame: u32, swap_chain: *mut c_void) {
                 let ready = match job.0 {
                     Job::WaitUntil(f) | Job::Release(f, _) => frame >= f,
                     Job::Call(..) | Job::Shot(_) | Job::Snapshot(_) | Job::FpuControl => true,
+                    Job::WaitFor(ref r, ref value, ref mask, limit) => {
+                        frame >= limit || range_matches(r, value, mask)
+                    }
                 };
                 if ready {
                     due.push(job);
@@ -945,6 +937,18 @@ unsafe fn run_due_jobs(frame: u32, swap_chain: *mut c_void) {
                     |(n, bytes)| format!("ok {n} regions {bytes} bytes"),
                 ));
             }
+            Job::WaitFor(r, value, mask, _) => {
+                let hit = range_matches(&r, &value, &mask);
+                // hold here, on the game thread, before another frame runs
+                if LOCKSTEP.load(Ordering::Acquire) {
+                    ALLOWED.store(frame, Ordering::Release);
+                }
+                let _ = reply.send(if hit {
+                    format!("ok {frame}")
+                } else {
+                    format!("err timeout at {frame}")
+                });
+            }
             Job::FpuControl => {
                 let _ = reply.send(format!("ok {:#06x}", crate::snapshot::fpu_control()));
             }
@@ -961,10 +965,10 @@ unsafe fn run_due_jobs(frame: u32, swap_chain: *mut c_void) {
 unsafe extern "system" fn present(swap_chain: *mut c_void, interval: u32, flags: u32) -> i32 {
     let frame = FRAME.fetch_add(1, Ordering::AcqRel) + 1;
     trace_frame(frame);
+    // Not a barrier on the asset loader (AsyncLoadManager): some of its
+    // tasks need frames to pass, so holding the game thread until it is
+    // idle deadlocks. Replays wait for game state instead (`waitfor`).
     if VIRTUAL.load(Ordering::Acquire) {
-        if LOCKSTEP.load(Ordering::Acquire) {
-            wait_for_loads();
-        }
         run_vsync();
     }
     // SAFETY: forwarded: inside the swap chain's own Present.
@@ -1380,6 +1384,30 @@ fn command(line: &str) -> Result<String, String> {
             let until = now() + parse_u32(arg(1)?)?;
             ALLOWED.fetch_max(until, Ordering::AcqRel);
             on_game_thread(Job::WaitUntil(until))
+        }
+        "waitfor" => {
+            // waitfor <range> <value hex> [mask hex] [frames]: advances (in
+            // lockstep, frame by frame) until the bytes match
+            let r = parse_trace_range(arg(1)?)?;
+            let hexbytes = |t: &str| -> Result<Vec<u8>, String> {
+                (0..t.len() / 2)
+                    .map(|i| {
+                        u8::from_str_radix(&t[2 * i..2 * i + 2], 16).map_err(|e| e.to_string())
+                    })
+                    .collect()
+            };
+            let value = hexbytes(arg(2)?)?;
+            let mask = words
+                .get(3)
+                .map_or_else(|| Ok(vec![0xff; value.len()]), |m| hexbytes(m))?;
+            let limit = now() + words.get(4).map_or(Ok(600), |w| parse_u32(w))?;
+            if value.len() != r.len || mask.len() != r.len {
+                return Err("value and mask must be as long as the range".into());
+            }
+            // let lockstep run up to the limit; the job answers as soon as
+            // the bytes match, and the script's next command holds again
+            ALLOWED.fetch_max(limit, Ordering::AcqRel);
+            on_game_thread(Job::WaitFor(r, value, mask, limit))
         }
         "lockstep" => {
             let on = arg(1)? == "on";

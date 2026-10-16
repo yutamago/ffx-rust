@@ -19,14 +19,40 @@ use ffx_bridge::RawMem;
 use crate::Hook;
 
 mod battle;
+mod chara;
 mod kernel;
+mod main;
+mod map;
+mod menu;
+mod movie;
+mod pc_ui;
+mod ps2_emu;
+mod render;
+mod script;
+mod sound;
+mod system;
+mod text;
+mod vfx;
 
 /// Every replacement, for the hook table.
 #[must_use]
 pub fn hooks() -> Vec<Hook> {
     let mut all = Vec::new();
     all.extend(battle::hooks());
+    all.extend(chara::hooks());
     all.extend(kernel::hooks());
+    all.extend(main::hooks());
+    all.extend(map::hooks());
+    all.extend(menu::hooks());
+    all.extend(movie::hooks());
+    all.extend(pc_ui::hooks());
+    all.extend(ps2_emu::hooks());
+    all.extend(render::hooks());
+    all.extend(script::hooks());
+    all.extend(sound::hooks());
+    all.extend(system::hooks());
+    all.extend(text::hooks());
+    all.extend(vfx::hooks());
     all
 }
 

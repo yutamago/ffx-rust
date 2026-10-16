@@ -12,19 +12,30 @@ rust-version = "1.90"
 [workspace.dependencies]
 ffx-battle = { path = "crates/ffx-battle" }
 ffx-bridge = { path = "crates/ffx-bridge" }
+ffx-chara = { path = "crates/ffx-chara" }
 ffx-core = { path = "crates/ffx-core" }
 ffx-dxbc = { path = "crates/ffx-dxbc" }
+ffx-field = { path = "crates/ffx-field" }
 ffx-gfx = { path = "crates/ffx-gfx" }
+ffx-graphic = { path = "crates/ffx-graphic" }
 ffx-harness = { path = "crates/ffx-harness" }
 ffx-hook = { path = "crates/ffx-hook" }
 ffx-kernel = { path = "crates/ffx-kernel" }
+ffx-menu = { path = "crates/ffx-menu" }
 ffx-monster = { path = "crates/ffx-monster" }
 ffx-motion = { path = "crates/ffx-motion" }
+ffx-movie = { path = "crates/ffx-movie" }
+ffx-pcui = { path = "crates/ffx-pcui" }
 ffx-phyre = { path = "crates/ffx-phyre" }
+ffx-ps2 = { path = "crates/ffx-ps2" }
 ffx-script = { path = "crates/ffx-script" }
+ffx-sg = { path = "crates/ffx-sg" }
+ffx-sound = { path = "crates/ffx-sound" }
 ffx-studio = { path = "crates/ffx-studio" }
+ffx-system = { path = "crates/ffx-system" }
 ffx-text = { path = "crates/ffx-text" }
 ffx-vbf = { path = "crates/ffx-vbf" }
+ffx-vfx = { path = "crates/ffx-vfx" }
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
 flate2 = "1.1.10"

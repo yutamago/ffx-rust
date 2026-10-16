@@ -10,9 +10,24 @@ publish = false
 [dependencies]
 ffx-battle.workspace = true
 ffx-bridge.workspace = true
+ffx-chara.workspace = true
 ffx-core.workspace = true
+ffx-field.workspace = true
 ffx-gfx.workspace = true
+ffx-graphic.workspace = true
 ffx-kernel.workspace = true
+ffx-menu.workspace = true
+ffx-monster.workspace = true
+ffx-motion.workspace = true
+ffx-movie.workspace = true
+ffx-pcui.workspace = true
+ffx-ps2.workspace = true
+ffx-script.workspace = true
+ffx-sg.workspace = true
+ffx-sound.workspace = true
+ffx-system.workspace = true
+ffx-text.workspace = true
+ffx-vfx.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [

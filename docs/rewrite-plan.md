@@ -230,6 +230,29 @@ Linux and the Steam Deck first (wgpu and our platform layer already cover
 them), then macOS, then whatever else. Controller mappings and the PC UI
 screens need a per-platform pass.
 
+## Determinism
+
+Replays need the same inputs to reach the same state. Found so far:
+- The game's clock follows real time; `--virtual-clock` makes it one frame
+  interval per frame.
+- Archive reads run on the thread pool (`FileSys_SubmitRead`); on the
+  virtual clock they run at once on the game thread.
+- The PS2 vsync interrupt is a thread calling its handler every 16 ms of
+  real time (`createVsyncEmuThread`, `VsyncThreadImpl_run`); on the virtual
+  clock the handler runs from `Present`, once per 1/59.94 s of game time.
+- Heap addresses change between runs (Windows' bottom-up ASLR, and other
+  threads allocating); `ffx-launch` turns ASLR off for the game, but
+  allocation order still varies, so traces compare values, not pointers.
+- The asset loader (`AsyncLoadManager`, its own thread) takes a varying
+  number of frames. It cannot be awaited at frame boundaries: some of its
+  tasks need frames to pass. Logic is not affected (a battle makes the same
+  random calls in the same order either way), only timing, so replays
+  wait for game state (`waitfor`) instead of counting frames, and battle
+  logic is compared by its call sequence (the call log).
+- Threads of the game: the render thread (`PRenderThread`), the asset
+  loader, an input task manager, two FMOD threads, the movie decoder's
+  (libvpx, only with a movie), a Virtuos test-command thread.
+
 ## The PS2 emulation registers
 
 Some of the PS2 code was hand-written R5900 and VU0 assembly; the PC port

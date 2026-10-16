@@ -1,0 +1,13 @@
+[package]
+name = "ffx-pcui"
+description = "The PC user interface: title, config, save list, the Esc menu (`Menu*`, `FFEscMenu`, Iggy)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ffx-bridge.workspace = true
+
+[lints]
+workspace = true
