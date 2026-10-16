@@ -5735,7 +5735,7 @@
 0x008366f0 function Sg_RadToDeg               # (r) -> r * 180.0 (0x00b48378) / pi (0x00b582f0) as f32; Ch_Neck
 0x00836710 function enableGameControlTextureAnimation # fh v3:bsim1.00+call.cs 0x00836790 cdecl
 0x00836720 function Angle_Wrap_00836720       # the same code as Angle_Wrap; a copy in the character file (8 callers)
-0x00836790 function Ch_CheckRadian            # ours: if !(a < g_ChRadianHi) || a <= g_ChRadianLo sprintfs "radian value error = %f" into 0x023c4000, then wraps the angle (Angle_Wrap_0083a010) and drops the result
+0x00836790 function Ch_CheckRadian            # ours: if !(a < g_ChRadianHi) || a <= g_ChRadianLo sprintfs "radian value error = %f" into 0x023c4000, then returns the angle wrapped like Angle_Wrap_0083a010 in ST0 (callers rotate characters by it)
 0x00836830 function ChN_DisposeSystemMGRP     # fh v3:bsim1.00 0x008368b0
 0x00836850 function ChN_ExistSystemMGRP       # fh v3:exact 0x008368d0
 0x00836870 function ChN_ReadSystemMGRP        # (chr id, n): resident motion group via SG_LoadResidentGroup, then SG_AddMotionGroup; was Chr_LoadSystemMgrp
