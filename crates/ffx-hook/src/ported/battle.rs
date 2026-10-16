@@ -1,6 +1,7 @@
 //! `ffx-battle`: random numbers, the save block, actors, the battle camera,
 //! battle globals and helpers, damage.
 
+use ffx_battle::atel::bridge as atel;
 use ffx_battle::exec::bridge as exec;
 use ffx_battle::{actor::bridge as actor, camera::bridge as camera, command::bridge as cmd};
 use ffx_battle::{
@@ -44,20 +45,8 @@ fn call4(sym: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
 }
 
 /// Calls the game's cdecl code at a run-time address (`exec::Call`).
-#[allow(clippy::many_single_char_names)]
 fn call_ptr<M>(_: &mut M, f: u32, args: &[u32]) -> u32 {
-    // SAFETY: a cdecl function of the game taking these arguments (the
-    // bridge passes the arguments the original passes it).
-    unsafe {
-        match *args {
-            [a] => std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> u32>(f as usize)(a),
-            [a, b, c, d] => std::mem::transmute::<
-                usize,
-                unsafe extern "C" fn(u32, u32, u32, u32) -> u32,
-            >(f as usize)(a, b, c, d),
-            _ => unreachable!("no exec call takes {} arguments", args.len()),
-        }
-    }
+    super::call_cdecl(f, args)
 }
 
 /// The calls `MsCheckRikkuLimit` makes: the CD library's read queue gets
@@ -72,6 +61,25 @@ fn cd_call<M>(m: &mut M, f: u32, args: &[u32]) -> u32 {
     } else {
         call_ptr(m, f, args)
     }
+}
+
+/// `AtelRegistSignal2` with the signal block on this stack, as the
+/// original builds it.
+fn regist_signal<M>(_: &mut M, block: [u32; 8]) -> u32 {
+    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    call1(0x0086_e9e0, block.as_ptr() as u32)
+}
+
+/// The script calls of `ffx_battle::atel` (the script module's code).
+macro_rules! script {
+    ($s:ident) => {
+        let mut call = call_ptr;
+        let mut signal = regist_signal;
+        let mut $s = atel::Script {
+            call: &mut call,
+            signal: &mut signal,
+        };
+    };
 }
 
 /// MSVCR110's `_CIcos`, `_CIsin` or `_CIatan` through the game's import
@@ -2167,5 +2175,59 @@ ported! {
     MsInsertScriptCommand @ 0x007a_e2e0 => extern "C" fn ms_insert_script_command(i: u32, after: u32, id: u32) -> u32 {
         #[allow(clippy::cast_possible_truncation)] // the original stores the low half
         exec::ms_insert_script_command(&mut mem(), i, after, id as u16)
+    }
+    /// `MsAtelGetHandler(kind, i, n, &base)`.
+    MsAtelGetHandler @ 0x0079_8590 => extern "C" fn ms_atel_get_handler(kind: u32, i: u32, n: i32, out: u32) -> u32 {
+        atel::ms_atel_get_handler(&mut mem(), kind, i, n, out)
+    }
+    /// `MsAtelRequestExe(kind, i, n, flags, actor, &same)`.
+    MsAtelRequestExe @ 0x0079_7d50 => extern "C" fn ms_atel_request_exe(kind: u32, i: u32, n: i32, flags: u32, actor: u32, out: u32) -> i32 {
+        script!(s);
+        atel::ms_atel_request_exe(&mut mem(), &mut s, kind, i, n, flags, actor, out)
+    }
+    /// `MsAtelCameraPriority(kind, i, n, bonus)`.
+    MsAtelCameraPriority @ 0x0079_8760 => extern "C" fn ms_atel_camera_priority(kind: u32, i: u32, n: i32, bonus: u32) {
+        script!(s);
+        atel::ms_atel_camera_priority(&mut mem(), &mut s, kind, i, n, bonus.to_le_bytes()[0]);
+    }
+    /// `MsAtelBlur()`.
+    MsAtelBlur @ 0x0079_86c0 => extern "C" fn ms_atel_blur() {
+        script!(s);
+        atel::ms_atel_blur(&mut mem(), &mut s);
+    }
+    /// `MsSetMotion(i, motion, wait, x, flags, actor, &same)`.
+    MsSetMotion @ 0x007a_b360 => extern "C" fn ms_set_motion(i: u32, motion: i32, wait: u32, x: u32, flags: u32, actor: u32, out: u32) -> u32 {
+        script!(s);
+        atel::ms_set_motion(&mut mem(), &mut s, i, motion, wait, x.to_le_bytes()[0], flags, actor, out)
+    }
+    /// `msResetHeadTarget(actor)`: the neck through chara's code.
+    msResetHeadTarget @ 0x007b_1f10 => extern "C" fn ms_reset_head_target(actor: u32) -> u32 {
+        atel::ms_reset_head_target(&mut mem(), &mut call_ptr, actor)
+    }
+    /// `MsSetTargetsMotion(chr, cue, k, &far)`.
+    MsSetTargetsMotion @ 0x0079_1fa0 => extern "C" fn ms_set_targets_motion(chr: u32, cue: u32, k: u32, out: u32) -> i32 {
+        script!(s);
+        atel::ms_set_targets_motion(&mut mem(), &mut s, chr, cue, k, out)
+    }
+    /// `MsPaymentProcessStart(actor)`.
+    MsPaymentProcessStart @ 0x007a_fa80 => extern "C" fn ms_payment_process_start(actor: u32) {
+        script!(s);
+        atel::ms_payment_process_start(&mut mem(), &mut s, actor);
+    }
+    /// `MsSetVoiceCheck(i, voice, flags, actor, &same)`.
+    MsSetVoiceCheck @ 0x007a_07b0 => extern "C" fn ms_set_voice_check(i: u32, voice: i32, flags: u32, actor: u32, out: u32) -> u32 {
+        script!(s);
+        atel::ms_set_voice_check(&mut mem(), &mut s, i, voice, flags, actor, out)
+    }
+    /// `MsAtelParseSysTag(kind, i, n)`.
+    MsAtelParseSysTag @ 0x0079_79d0 => extern "C" fn ms_atel_parse_sys_tag(kind: u32, i: u32, n: i32) -> i32 {
+        script!(s);
+        atel::ms_atel_parse_sys_tag(&mut mem(), &mut s, kind, i, n)
+    }
+    /// `MsDefenseStartProcess()`: the caller's registers in the VU scale
+    /// words left as they were.
+    MsDefenseStartProcess @ 0x007a_f920 => extern "C" fn ms_defense_start_process() {
+        script!(s);
+        atel::ms_defense_start_process(&mut mem(), &mut s, &crt_trig, None);
     }
 }

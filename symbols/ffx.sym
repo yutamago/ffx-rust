@@ -3928,6 +3928,7 @@
 0x00790c10 function MsBattleProcess           # per frame; outside battle, a raised request flag 0x0112a8e2 starts Battle_Load; was Battle_Update
 0x00791170 function MsCheckChrHold            # (i, actor, cue): actor +0x4b6 != 0; the turn driver 0x00792210 asks it for actor 5 only; name ours
 0x00791630 function MsCheckChrMotionAll       # fh v3:exact 0x00791680
+0x00791fa0 function MsSetTargetsMotion        # (chr, cue, k, &far): entry k's command (MsGetCommand) and targets +0x10: out of reach (+0x4ff > MsGetCommandFar) counted in far, KO'd skipped unless command +0x1a bit 6; the rest +0xded = chr, MsSetMotion(+0x422, 0x1c, 0, 0, 1), head target (MsSetHeadTarget / msResetHeadTarget by +0x1c bit 27); kept targets to +0x10 and g_BtlChrSet; -1/0; name ours
 0x00792170 function MsCheckPlyBtlPosAll       # fh v3:exact 0x007921c0
 0x00792200 function MsDebugCameraSleepInit    # fh v3:bsim1.00 0x00792250
 0x00792880 function MsCountChrReady           # (bits): actors in bits with +0x40b and +0x40a set; the turn driver 0x00792210 (g_BtlChrSet, after MsPayGIL); name ours
@@ -4049,7 +4050,7 @@
 0x007976a0 function MsAtelChrInit             # fh v3:exact 0x007976b0
 0x00797920 function MsAtelGetID                  # layout: alphabetical run between MsAtelChrInit and MsAtelRegist (3 unnamed in the gap); Switch 0x710033b6a0 MsAtelGetID is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00797970 function MsAtelGetSysReq              # layout: alphabetical run between MsAtelChrInit and MsAtelRegist (3 unnamed in the gap); Switch 0x710033b620 MsAtelGetSysReq is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x007979d0 function MsAtelParseSysTag            # layout: alphabetical run between MsAtelChrInit and MsAtelRegist (3 unnamed in the gap); Switch 0x710033b570 MsAtelParseSysTag is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x007979d0 function MsAtelParseSysTag         # (kind, i, n): with MsAtelGetHandler's handler, its work decodes (AtelDecodeCommand, AtelDecodeSignal) until AtelGetRequestLevel < 7: 0, else -1; ported. layout: alphabetical run between MsAtelChrInit and MsAtelRegist (3 unnamed in the gap); Switch 0x710033b570 MsAtelParseSysTag is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00797a40 function MsAtelRegist              # (manager, name, script): queue a script in a script manager (8 slots, 0x54 bytes each); was Script_Register
 0x00797a90 function MsAtelRegistFree          # fh v3:exact 0x00797aa0
 0x00797ae0 function MsAtelRegistInit          # fh v3:exact 0x00797af0
@@ -4063,7 +4064,10 @@
 0x007982a0 function MsAtelRequestSystemCheckExe # fh v3:exact 0x007982b0
 0x00798390 function MsAtelSetUp               # fh v3:exact 0x007983a0
 0x007984c0 function MsAtelChrInfoOne          # (i, kind, acc): adds script actor i's position (1, 8, 9; 0x0086b1e0), direction (2, +pi 7; 0x0086a6e0) or 18.0/10.0 (3, 10 / 4, 11) to acc; other kinds add stack garbage; named here; ported
+0x00798590 function MsAtelGetHandler          # (kind, i, n, &base): handler n (Mon_FindHandler) of kind 2 (records 0x0112a984 +0x10, i <= 1), 3 (actor i +0xf7c while g_BtlChrScripts; base = sum of +0xdf6 before it) or 4 (script camera, i 0); name ours
 0x007986a0 function MsGetVoiceEventFlag       # fh v3:exact 0x007986b0
+0x007986c0 function MsAtelBlur                # (): Sg_Blur(0), then under script control 2 MsAtelCameraPriority(2, 1, 0x3e, 0), (2, 0, 0..2, 0); MsAtelRequestExe flag 4; name ours
+0x00798760 function MsAtelCameraPriority      # (kind, i, n, bonus): the handler's work camera (AtelGetBasicWork, AtelGetCameraWorkAdrs) gets MsCameraPriority bonus; name ours
 0x00798820 function MsInitChrAbilityMap       # fh v3:bsim1.00 0x00798830
 0x00798890 function MsRandMize                # cdecl(n): seeds 0x00c42200/04 from Rng_ClockSeed * (n + 1), then fills the 68 generators; was Rng_Seed
 0x007988f0 function brnd                      # cdecl(index): one of the 68 generators at 0x01135ee0 (multiplier table 0x00c42208, xor 0x00c42318); was Rng_Next
@@ -11557,8 +11561,10 @@
 0x0112a94c label g_KernelCtbBase               # battle resource 0xb (MsBattleInit 0x00781700); MsGetRomCTBbase/CTBcount
 0x0112a954 label g_BtlMotBin               # pointer to the motion binary: u16 count, u16 offsets (MsSetMotBinAddress sets actor +0x4f8 from entry i)
 0x0112a958 label g_StatusRom               # kernel table MsMenuStatusNum reads
+0x0112a95c label g_BtlEffectOwner          # u32, the owner op_et_eff gets in MsStatusEffect
 0x0112a960 label g_KernelSummonGrow            # battle resource 6 (MsBattleInit); MsGetRomSummonGrow
 0x0112a964 label g_KernelKaizou                # battle resource 5 (MsBattleInit); MsGetRomKaizou
+0x0112a984 label g_BtlScriptRecords        # 2 x 0x20: +0 i8 the first record's work count (record 1's base), +0x10 script file (MsAtelGetHandler kind 2); copied from 0x0112a9a4 by 0x00782670
 0x0112a9b0 label g_BtlPosFile              # pointer to the battle map's position file: flag, i8 group count, records of 0x20 (flag set) or 3 x 0x20 per group (MsBtlGetPos)
 0x0112a9bc label g_BtlFont                    # u32; The battle font (MsBattleGetFontAddress).
 0x0112a9c0 label g_BtlVoiceEvent             # pointer to a byte flag; MsGetVoiceEventFlag (0x007986a0) is 1 when it is set and g_BtlVoiceMute is not
@@ -11618,6 +11624,7 @@
 0x0112c9d4 label g_BtlNumbersKind12        # u8 (MsNumberCalcProcess)
 0x0112c9d5 label g_BtlNumbersShown         # u8 (MsNumberCalcProcess)
 0x0112c9d7 label g_BtlEffectCameraMode     # u8 (MsEffectCameraCall's second argument)
+0x0112c9db label g_BtlChrScripts           # u8, actors' monster-file handlers usable (MsAtelGetHandler kind 3); MsBattleExe, 0x00784070 write it
 0x0112c9dd label g_BtlCameraKoHeight       # u8, MsGetChrCameraPos keeps a KO'd actor's (+0xdcc 2) +0xf70 height
 0x0112c9df label g_BtlTurnActorNow           # u8, the actor whose turn it is (MsGetChrBit -18); copied to g_BtlTurnActor when a turn starts
 0x0112c9e0 label g_BtlCommandActor           # u8, the actor whose command runs, 0xff none (MsGetChrBit -2, -3: its command cue entry's targets)

@@ -16,6 +16,7 @@
 
 pub mod ability;
 pub mod actor;
+pub mod atel;
 pub mod body;
 pub mod camera;
 pub mod command;
