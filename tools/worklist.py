@@ -7,7 +7,8 @@ functions most used), then smaller first.
   tools/worklist.py [--module M] [--limit N] [--named] [--max-bytes B]
 
 Columns: address, module, bytes, callers, name (and calls into imports,
-which need a platform equivalent).
+which need a platform equivalent). Functions too short to hook that only
+return (dbgPrintf, FlushCache) block nobody.
 """
 import argparse
 import os
@@ -19,6 +20,19 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import progress  # noqa: E402
 
 WORK = pathlib.Path(os.environ.get("FFX_WORK", pathlib.Path.home() / "ffx-work"))
+
+
+def is_stub(a, size):
+    """A function that only returns (`ret`, `ret n`, `xor eax,eax; ret`, ...)."""
+    exe = os.environ.get("FFX_GAME_DIR")
+    if not exe:
+        return size == 1
+    import subprocess
+    out = subprocess.run(["objdump", "-d", "--no-show-raw-insn", f"--start-address={a:#x}",
+                          f"--stop-address={a + size:#x}", str(pathlib.Path(exe).expanduser() / "FFX.exe")],
+                         capture_output=True, text=True, check=False).stdout
+    ops = [line.split("\t", 1)[1].split()[0] for line in out.splitlines() if ":\t" in line]
+    return bool(ops) and ops[-1] == "ret" and all(o in ("ret", "xor", "mov", "or") for o in ops)
 
 
 def main():
@@ -49,9 +63,14 @@ def main():
             callees[a].add(c)
             callers[c].add(a)
 
+    # functions too short to hook (a bare `ret` such as dbgPrintf, FlushCache)
+    # do nothing a port has to replace: they block no caller
+    stub = {a for a, _, s in rows if s < 5 and is_stub(a, s)}
+
     def blocking(a):
         return [c for c in callees[a]
-                if c != a and c not in ported and progress.KIND.get(module.get(c)) == "game"]
+                if c != a and c not in ported and c not in stub
+                and progress.KIND.get(module.get(c)) == "game"]
 
     out = []
     for a, _, s in rows:
