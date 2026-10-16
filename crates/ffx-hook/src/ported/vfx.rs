@@ -18,17 +18,9 @@ fn crt_srand(seed: u32) {
 
 /// A rand program with the CRT's `srand`.
 fn rand_program(obj: u32, key: u32, ctrl: u32, spread: Spread, kind: Kind) {
-    rand::bridge::ppp_rand(
-        &mut mem(),
-        obj,
-        key,
-        ctrl,
-        spread,
-        kind,
-        &mut |_, seed| {
-            crt_srand(seed);
-        },
-    );
+    rand::bridge::ppp_rand(&mut mem(), obj, key, ctrl, spread, kind, &mut |_, seed| {
+        crt_srand(seed);
+    });
 }
 
 ported! {

@@ -173,9 +173,14 @@ pub struct Oracle {
     uc: Unicorn<'static, State>,
 }
 
+/// The x87 control word of FFX.exe's game thread (`fpucw`, docs/harness.md):
+/// 53-bit precision, round to nearest, all exceptions masked.
+pub const GAME_FPU_CONTROL: u32 = 0x027f;
+
 impl Oracle {
     /// Loads `FFX.exe` (or any PE32 image) into a fresh emulator at its
-    /// preferred base.
+    /// preferred base, the x87 set as on the game thread
+    /// ([`GAME_FPU_CONTROL`]).
     ///
     /// # Errors
     /// Fails if the file cannot be read or parsed, or the emulator refuses a
@@ -346,9 +351,15 @@ impl Oracle {
             },
         )?;
         let mut o = Self { uc };
-        if let Some(p) = &o.uc.get_data().pages.clone() {
-            o.set_fpu_control(p.snapshot.fpu_control)?;
-        }
+        // The game thread's x87 control word (53-bit precision, docs/porting.md);
+        // the emulator starts at 64-bit, where chained float code rounds
+        // differently. A snapshot carries the one it was taken with.
+        let cw =
+            o.uc.get_data()
+                .pages
+                .as_ref()
+                .map_or(GAME_FPU_CONTROL, |p| p.snapshot.fpu_control);
+        o.set_fpu_control(cw)?;
         Ok(o)
     }
 
