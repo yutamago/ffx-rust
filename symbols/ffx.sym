@@ -2955,32 +2955,69 @@
 0x007b7eb0 function MsEffectGetBufferAddress  # fh switch:bsim1.00 0x7100391ac0
 0x007b7f50 function MsEffectSetCameraBufFloat # fh v3:exact 0x007b7ed0
 0x007b7f70 function Native_CamFocusTimeLinear    # 0x602e: args (frames) -> 0; linear transition time for the battle camera's focus point (half 0, 0x007bde50 type 1); paired with 0x6010 (eye half)
+0x007b8050 function Native_Cam_6030            # 0x6030: (frames): MsCameraMoveFrame(cam, 0, 0, frames, 3); 0; ported in native_cam
 0x007b8130 function Native_CamFocusTimeEase      # 0x6032: args (accel, hold, decel frames, curve) -> 0; eased transition for the focus (half 0, 0x007bd860 type 2: total = sum); e.g. (20, 10, 20, 0)
+0x007b8170 function Native_Cam_6035            # 0x6035: 0x007bb520(w, a, s, 0); 0; ported in native_cam
 0x007b8210 function Native_CamFocusCut           # 0x6034: () -> cam; drops the focus half's transition and applies the target now (0x007bed60(cam, 0)); 0x6016 is the eye version
 0x007b8270 function Native_CamFocusWait          # 0x6038 (poll): waits until the focus half's transition ends (0x007bdd20(cam, 0) == 0 -> 5); 0x601a is the eye version ("CameraWaitStart!")
+0x007b8660 function Native_Cam_6043            # 0x6043: (v): 0x007bdf90(cam, 1, v ^ 0xffff); the handle; ported in native_cam
+0x007b86f0 function Native_Cam_603f            # 0x603f: 0x007bad10(w, a, s, 0); 0; ported in native_cam
 0x007b8710 function Native_CamEyeOrbitScaled     # 0x6040: args (actor a, actor b, height, yaw deg, pitch deg, distance) -> cam; 0x007badb0(half 1, mode 1): eye = mean of actors + height * actor height + orbit at distance/100 * actor size
 0x007b8730 function Native_CamFocusOrbitScaled   # 0x6041: same as 0x6040 for the focus point (half 0, mode 1); most common shot setup, e.g. (-2, -1, 49, 0, 0, -70)
 0x007b8750 function Native_CamEyeOrbit           # 0x6044: same as 0x6040 with mode 2: distance/10 + actor size (absolute); eye half; e.g. (-2, -1, 30, -160, 0, 150)
 0x007b8770 function Native_CamFocusOrbit         # 0x6045: same as 0x6044 for the focus point (half 0, mode 2)
+0x007b87b0 function Native_Cam_604d            # 0x604d: 0x007badb0(w, a, s, 1, 4); 0; ported in native_cam
+0x007b8840 function Native_Cam_607d            # 0x607d: (v): 0x007bcdd0(cam, v); the handle; ported in native_cam
 0x007b88b0 function Native_CamSetDepthMaskMode   # ?0x607e: args (flags; <0 keeps the old value | 2) -> cam; camera +0xcac; Battle cam update passes it to 0x0082cb60 (full-screen Z mask enable)
 0x007b8920 function Native_CamSetDepthMask       # ?0x607f: args (plane 0/1, z) -> cam; camera +0xcb0/+0xcb4 -> 0x0082ce20 -> full-screen Z rectangle (0x0082bb90, 0x006430f0 z/16.77M) that hides geometry beyond z
 0x007b89a0 function Native_BtlRandom             # 0x6080: args (n) -> Rng_Next(0xe + (n & 1)); battle 0x92 special case with 0x012fb7e0 forces a result; scripts use it with mod
+0x007b8a10 function Native_Cam_6087            # 0x6087: 0x007beae0(cam, 0); the handle; ported in native_cam
+0x007b8a70 function Native_Cam_6088            # 0x6088: 0x007beae0(cam, 1); the handle; ported in native_cam
+0x007b8e80 function Native_Cam_605c            # 0x605c: returns 0x007bb8c0(w, a, s, 0, 1); ported in native_cam
 0x007b8ea0 function Native_CamSuspend            # 0x6000: args (worker) -> camera handle; marks that worker's camera channel suspended (Cam_SetChannelSuspended 0x007c0010, flag 1); worker via Script_GetWorker, handle at worker +0x3c (allocated on demand by Cam_GetHandle 0x007ba780)
+0x007b8f10 function Native_Cam_605d            # 0x605d: returns 0x007bb8c0(w, a, s, 1, 1); ported in native_cam
 0x007b8f30 function Native_CamResume             # 0x6001: args (worker) -> camera handle; same as 0x6000 with flag 0 (0x007c0010); scripts push a worker index (e.g. 2)
+0x007b8fe0 function Native_Cam_6076            # 0x6076: 0x007ba950(); 0. Not a function start in the dump yet; ported in native_cam
 0x007b9010 function Native_CamSetRoll            # 0x603a: args (degrees) -> cam; 0x007bfa80 stores radians in the camera's +0xc94 (eye half's roll channel)
 0x007b90b0 function Native_CamSetScreenDepth     # 0x603b: args (depth e.g. 404, 624, 1024) -> cam; debug string "MsCameraSetScrDpt"; 0x007bfbd0 (projection distance, i.e. zoom/FOV)
 0x007b9220 function Native_CamSetPos             # 0x6002: args (x, y, z) floats -> 0; sets the camera eye position (side 1) via Cam_SetPos 0x007bf940; side 1 = "cam", side 0 = "ref" per the debug dump "ref%s\ncam%s" in 0x007d2430; a few hard-coded per-map fixes
 0x007b9260 function Native_CamGetPos             # 0x6003: args (&x, &y, &z) variable refs -> 0; stores the eye position (side 1) through Script_VarAddress into three script vars (Cam_GetPos 0x007bd420)
 0x007b92e0 function Native_CamSetPolar           # 0x6004: args (theta deg, phi deg, len) -> 0; sets the eye (side 1) in polar form around its reference, degrees * pi/180 (Cam_SetPolar 0x007bf700; "theta,phi,len" in the camera dump)
+0x007b9320 function Native_Cam_6005            # 0x6005: 0x007bb5d0(w, a, s, 1, -1); 0; ported in native_cam
+0x007b9340 function Native_Cam_6083            # 0x6083: returns 0x007bb8c0(w, a, s, 0, 8); ported in native_cam
+0x007b9360 function Native_Cam_6006            # 0x6006: 0x007bb410(w, a, s, 1, -1); 0; ported in native_cam
+0x007b9380 function Native_Cam_6084            # 0x6084: returns 0x007bb8c0(w, a, s, 1, 8); ported in native_cam
+0x007b93a0 function Native_Cam_6007            # 0x6007: 0x007bb410(w, a, s, 1, 0); 0; ported in native_cam
+0x007b93c0 function Native_Cam_6008            # 0x6008: 0x007bb410(w, a, s, 1, 1); 0; ported in native_cam
+0x007b9400 function Native_Cam_603c            # 0x603c: 0x007bac40(w, a, s, 1); 0; ported in native_cam
+0x007b94a0 function Native_Cam_606b            # 0x606b: 0x007bb840(w, a, s, 3); 0; ported in native_cam
+0x007b9520 function Native_Cam_600f            # 0x600f: 0x007bed10(cam, 1); the handle; ported in native_cam
+0x007b9580 function Native_Cam_6071            # 0x6071: 0x007bb840(w, a, s, 5); 0; ported in native_cam
 0x007b96c0 function Native_CamMove               # 0x6010: args (frames) -> 0; starts the eye (side 1) moving to its set position over n frames, linear (Cam_StartMove 0x007bde50, mode 0)
+0x007b9730 function Native_Cam_6011            # 0x6011: (frames): MsCameraMoveFrame(cam, 1, 1, frames, 1); 0; ported in native_cam
+0x007b97a0 function Native_Cam_605f            # 0x605f: 0x007c4f50(cam, 0); 0; ported in native_cam
+0x007b9800 function Native_Cam_6012            # 0x6012: (frames): MsCameraMoveFrame(cam, 1, 0, frames, 3); 0; ported in native_cam
+0x007b98e0 function Native_Cam_6060            # 0x6060: 0x007c4f50(cam, 1); 0; ported in native_cam
 0x007b9940 function Native_CamMoveEased          # 0x6014: args (accel frames, hold frames, decel frames, curve?) -> 0; eye move, total = a+b+c frames, type 2 (Cam_StartMoveEased 0x007bd860, mode 0); scripts push e.g. 20,30,20,0
 0x007b9980 function Native_CamMoveEased1         # 0x6015: like 0x6014 but mode byte 1 (side +1); ?mode 1 = relative/continuous move
+0x007b99a0 function Native_Cam_6063            # 5 once 0x007c4f10(cam, 1) is 0; ported in native_cam
+0x007b9a00 function Native_Cam_6017            # 0x6017: 0x007bb520(w, a, s, 1); 0; ported in native_cam
+0x007b9a20 function Native_Cam_6062            # 5 once 0x007c4f10(cam, 0) is 0; ported in native_cam
+0x007b9aa0 function Native_Cam_6064            # (id) into the args word; EAX is the id; ported in native_cam
+0x007b9ac0 function Native_Cam_6019            # 0x6019: 0x007bec90(cam, 1); the handle; ported in native_cam
+0x007b9b20 function Native_Cam_6064_Poll       # 0x6064 poll: 5 once 0x007c5680(args[0]) is 0; ported in native_cam
 0x007b9b40 function Native_CamMoveFinish         # 0x6016: no args -> camera handle; stops the eye's interpolation and applies the target position now (Cam_FinishMove 0x007bed60, side 1)
 0x007b9be0 function Native_CamWait               # 0x601a (poll slot only): no args; done (5) once the eye stops moving (Cam_IsMoving 0x007bdd20 == 0); strings "CameraWaitStart!", "CameraWaitExec: Frame = %d!"
 0x007b9d00 function Native_CamRefSetPos          # 0x6020: args (x, y, z) -> 0; sets the camera reference/look-at point (side 0), same body as 0x6002 with side 0 (0x007bb6a0)
+0x007b9d20 function Native_Cam_6046            # 0x6046: returns 0x007bb970(w, a, s, 1); ported in native_cam
+0x007b9d40 function Native_Cam_6021            # 0x6021: 0x007ba3c0(w, a, s, 0); 0; ported in native_cam
+0x007b9d60 function Native_Cam_6047            # 0x6047: returns 0x007bb970(w, a, s, 0); ported in native_cam
+0x007b9da0 function Native_Cam_6048            # 0x6048: MsCameraGetID(cam) == cam clears g_BtlSplines[1]; the handle; ported in native_cam
 0x007b9e30 function Native_CamPathAddEye         # 0x6049: () -> cam; 0x007baac0(cam, 1): appends the eye's yaw/pitch/distance and roll to path list 1 (0x01136b60, max 32), used by the path move 0x007ba020 (>= 3 points)
+0x007b9eb0 function Native_Cam_604a            # 0x604a: as 0x6048 for g_BtlSplines[0]; ported in native_cam
 0x007b9f40 function Native_CamPathAddFocus       # 0x604b: () -> cam; 0x007baac0(cam, 0): appends the focus point to path list 0
 0x007b9fe0 function Native_CamRefSetTarget       # 0x6027: args (target, bone?, y offset) -> 0; ref (side 0) follow mode 3: +0xc = target, +0xe = bone, offset (0,y,0) (0x007beeb0); scripts push (0, -1, y); ?target/bone meaning
+0x007ba0e0 function Native_Cam_6028            # 0x6028: 0x007bb2b0(w, a, s, 0, 0); 0; ported in native_cam
 0x007ba1d0 function Native_CamRefAddLineArea     # 0x6029: args (x1, z1, x2, z2, r) floats -> 0; adds a segment constraint (max 5, count at side +0xc4) to the ref (0x007bf0b0 stores dir, origin, -dot, |dir|^2, r); ?keeps the ref within r of the segment
 0x007ba2d0 function Native_CamRefAddCircleArea   # 0x602b: args (x, z, r) -> 0; adds a circle constraint (type 3) to the ref's list (0x007bf1f0); ?keeps the ref inside/around the circle
 0x007ba2f0 function Native_CamRefClearAreas      # 0x602d: no args -> camera handle; clears the ref's constraint count (byte 0x01137634 + side/channel, 0x007bed10)
@@ -4269,6 +4306,7 @@
 0x00857680 function Native_Random16              # 0x00a9: args () -> Rng_Next(2) & 0xffff (Ghidra misses this function; checked in the disassembly); scripts follow it with `pushimm 5; mod`
 0x008577c0 function Native_SetTYZAngle           # 0x008d: args (float a) -> -; transform +0x4c = a, dirty bit; debug label "TYZ:" (0x0087ae00); init pushes 1.0471976 (60 deg), same as 0x0063 (+0x3c, "TZX:"); ? vertical angle of the talk/touch area
 0x00857870 function Native_MsgSetText            # 0x0064: args (window, msg); window (FUN_0086be90) +0x08/+0x0c = Msg_Text(msg), +0x16 = Msg_Flags(msg); g 0x01325ac0 = msg
+0x008578c0 function Native_BitIndex            # 0x0142: (mask, n): the index of the nth set bit of mask (from bit 0), 0 if there are fewer; ported in native_msg
 0x008579a0 function Native_MoveWait              # 0x001a poll: no args; done (5) when current move slot mode (+0x02 & 0x7f) is 0
 0x00857b30 function Native_TurnWait              # 0x001b poll: no args; done (5) when the turn struct mode (+0x02 & 0x1f) is 0
 0x00857c40 function Native_MinimapSetCorner      # 0x00f3 (corner) -> corner; minimap 0x0193bf80 position: 0 top-left (0x50,0x40), 1 top-right (0x1b0,0x40), 2 bottom-left, 3 bottom-right, 4 centre (0x0091d930)
@@ -9202,6 +9240,7 @@
 0x01303760 label    g_GuMouseEnable           # Gu_MouseSetEnable
 0x01325240 label    g_GuMouseX                # mouse x as the Gu layer reads it (Gu_MouseInRect pairs it with a rectangle's x and width; window +0x0c); was g_GuMouseY
 0x01325244 label    g_GuMouseY                # mouse y (pairs with +0x0e and the height); was g_GuMouseX
+0x01325ac0 label    g_AtelLastSetMsg           # the message Native_MsgSetText (0x00857870) last put in a window; also written by 0x008607a0, 0x00860b00, read by 0x008e02f0
 0x01325ac8 label    g_MegasAdding                # read by getMegasAdding (0x00860a90)
 0x01325b70 label    g_MsgLastIndex            # last message index looked up (written by Msg_Text, Msg_TextAlt, Msg_Text1, Msg_Get)
 0x01325b74 label    g_MsgNone                 # what the Msg_ lookups return without a message table (an empty string)

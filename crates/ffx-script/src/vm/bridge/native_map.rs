@@ -24,7 +24,7 @@ fn popf(h: &mut impl NativeHost, s: u32) -> u32 {
 
 /// `AtelPopStackFloat`'s `ST0` before any store: an integer slot exactly,
 /// a float slot as loaded.
-fn pop_st0(h: &mut impl NativeHost, s: u32) -> f64 {
+pub(super) fn pop_st0(h: &mut impl NativeHost, s: u32) -> f64 {
     let d = h.read::<i32>(s);
     if d > 0 && h.read::<u8>(s + 0x54 + (d - 1).cast_unsigned()) == crate::vm::stack::INT {
         f64::from(pop(h, s).cast_signed())
@@ -641,7 +641,7 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x0091_c5b0 => Int(native_8001),
         0x0091_c7c0 => Int(native_8066),
         0x0091_c810 => Int(native_bltz_set_obj_models),
-        _ => return None,
+        _ => return super::native_cam::find(sym),
     })
 }
 
