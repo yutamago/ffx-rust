@@ -670,6 +670,7 @@ name = "ffx-menu"
 version = "0.1.0"
 dependencies = [
  "ffx-bridge",
+ "ffx-kernel",
 ]
 
 [[package]]
@@ -777,6 +778,7 @@ dependencies = [
 name = "ffx-script"
 version = "0.1.0"
 dependencies = [
+ "ffx-bridge",
  "ffx-vbf",
  "thiserror",
 ]
@@ -825,6 +827,7 @@ dependencies = [
 name = "ffx-text"
 version = "0.1.0"
 dependencies = [
+ "ffx-bridge",
  "ffx-vbf",
  "thiserror",
  "toml",

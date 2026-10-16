@@ -152,6 +152,119 @@ script blocks and their files come back byte for byte. A second test grows
 a worker of `m001` past its range and checks the relocated code, the
 shifted sections and that the result round-trips again.
 
+## The VM in memory
+
+What the Atel accessors show of the running VM. The offsets are constants
+in [`ffx_script::vm`](../../crates/ffx-script/src/vm/mod.rs), and
+`ffx_script::vm::bridge` runs those accessors over game memory, checked
+against the original on the field and battle snapshots
+(`crates/ffx-oracle/tests/script.rs`).
+
+### Ctrl works
+
+A ctrl work is one running script block: seven of them, `0x238` bytes each,
+at `0x01325ba0` (`AtelGetCtrlWork`, `0x0086afa0`). `g_ScriptContext`
+(`0x01326b28`), the current one (`AtelGetCurCtrlWork`, `AtelSetCurrentCtrl`,
+`AtelChangeCurrentCtrl`), follows the array. Ctrl work 0 runs the event; in
+the battle snapshot ctrl works 2 (75 workers) and 3 (6) are in use too.
+
+| Offset | Type | Meaning | Evidence |
+|---|---|---|---|
+| `0x00` | `u8` | bit 0: in use | `AtelGetEventActorTotal` (`0x0086b300`), `AtelRemoveCtrlWork` (`0x0086ed40`) |
+| `0x03` | `u8` | bits 0-1: run mode (1 skips all workers, 2 all but flag `0x8000`) | `Script_Run` |
+| `0x0a` | `u16` | the player's worker, `0xffff` none | `AtelGetNowCtrlTopId` (`0x0086c1a0`) |
+| `0x0c` | `u16` | workers with a full work area (actors) | `AtelGetActorType` (`0x0086a7b0`), `AtelGetCtrlworkActorTotal` |
+| `0x10` | `u16` | all workers | `AtelGetBasicWork` (`0x0086a830`) |
+| `0x14`, `0x16`, `0x18` | `u16` | workers of the `0x5b8`, `0x558` and `0x2e8` classes | `AtelGetBasicWork`, `AtelGetTotalActorNumber2` (`0x0086c510`) |
+| `0x1a` | `u16` | ctrl work number (0 = the event's) | `AtelGetBasicWork`'s cache, `AtelGetRealVarAdrs` |
+| `0x1c` | `u32` | the first worker | `AtelGetBasicWork` |
+| `0x20` | `u32` | `&AtelGetBasicWork` (field snapshot) | |
+| `0x2c`, `0x30` | `u32` | bases of variable storage 0 and 1 (storage 0 is in the save data in the field) | `AtelGetRealVarAdrs` (`0x0086c2e0`) |
+| `0x34`, `0x38` | `u32` | the event's message tables | `AtelActorSetUp2`, `Msg_Text` |
+| `0x44` | `u32` | `AtelSetVibrateStreamExt`'s value | `0x008715e0` |
+| `0x48` | `u32` | a map record; `+0x18` the map camera (ctrl work 0's) | `AtelGetEventMapCameraId` (`0x0086b5d0`) |
+| `0x4c` | `u32` | `AtelExecCtrlEvent` for the event | `AtelActorSetUp2` (`0x00875510`) |
+| `0x50` | `u32` | callback `(ctrl)` | `AtelInitActor` (`0x0086cae0`) |
+| `0x54` | `u32` | callback `(worker, offset) -> address` for storage 3; null in both snapshots | `AtelGetRealVarAdrs` |
+| `0x58`, `0x5c` | `u32` | callbacks `(worker, level)` before and after a worker runs | `Script_Run` |
+| `0x1f4` | `u32` | cleared when the ctrl work is freed | `AtelRemoveCtrlWork` |
+
+### Workers
+
+Workers lie back to back from `ctrl + 0x1c`, in five size classes, in this
+order (`AtelGetBasicWork`): `actors - n558 - n2e8 - n5b8` of `0xb58` bytes,
+then `n558` of `0x558`, `n5b8` of `0x5b8`, `n2e8` of `0x2e8`, and the rest
+(up to the count at `+0x10`) of `0x30`. The block header has the same counts at `+0x34`
+(all), `+0x36` (actors), `+0x14`, `+0x16`, `+0x1c`
+(`AtelGetActorBufferSize`, `0x0086a290`). `AtelGetBasicWork` maps an index
+outside `0..0x10` to worker 0 and caches its last result
+(`g_AtelBasicWorkCache`, `0x013270e4`) keyed on the ctrl number and the
+index (`0x013270dc`, `0x013270e0`); `AtelRemoveCtrlWork` drops the cache.
+
+| Offset | Type | Meaning | Evidence |
+|---|---|---|---|
+| `0x00` | `u32` | worker header in the block; its first byte is the type | `AtelGetPosWorkAdrs`, `AtelGetActorType` |
+| `0x04` | `u32` | the script block | `AtelGetRealVarAdrs` |
+| `0x2e` | `u16` | worker index | `AtelGetActorId` (`0x0086a5d0`) |
+| `0x32` | `u8` | level running | `AtelPopStackFloat`'s error report |
+| `0x34`, `0x36` | `u16` | flags `Script_Run` tests | `Script_Run` |
+| `0x3c` | | camera handle cache | `AtelGetCameraWorkAdrs` (`0x0086ae50`) |
+| `0x48` | | storage 5 variables | `AtelGetRealVarAdrs` |
+| `0x9c` | `u32` | field character | `AtelGetCharHandle` (`0x0086ae80`) |
+| `0xc0` | | | `AtelGetBattleIdAdrs2` (`0x0086a990`) |
+| `0xc4` | | the value stack (below) | `Script_Run` passes it to every opcode |
+| `0x12c` | `0x4c` × 9 | levels (below); types 5 and 6 have two | `Script_WorkerLevel` (`0x00872650`) |
+| `0x284` / `0x558` | | position block of types 5 and 6 / of the others (type 4 has none) | `AtelGetPosWorkAdrs` (`0x0086c2b0`) |
+
+A level (one request priority): `+0x18` program counter, `+0x1d` call depth
+(three return addresses from `+0`, worker IDs from `+0x10`), `+0x1f` request
+state, `+0x20` and `+0x24` registers A and B, `+0x28` the float accumulator.
+
+### The stack
+
+19 tagged slots (`AtelPushStackInteger`, `0x0086e3f0`;
+`AtelPushStackFloat`, `0x0086e3c0`): `+0x00` depth (`i32`), `+0x04` the
+values (`u32` × 19), `+0x54` their kinds (`u8` × 19: 1 integer, 2 float).
+A push onto a full stack is dropped; a pop from an empty one gives 0 (or
+0.0); both set `g_AtelError` (`0x013270d8`) to 0. A negative depth is not
+checked. Popping converts: `AtelPopStackInteger` (`0x0086df00`) truncates a
+non-integer slot with `_ftol2_sse` (`cvttsd2si`: `0x80000000` for NaN and
+out of range); `AtelPopStackFloat` (`0x0086de50`) converts a non-float slot
+from `i32`. `AtelFetchStackInteger` (`0x0086df40`) reads the top and pops it
+only when asked.
+
+### Variables
+
+The worker header's `+0x14` (relative to the block) points to 8-byte
+descriptors: a location word and, at `+4`, the array length (`u16`; `+6`
+another `u16`, `AtelGetVarArrayRange`). The word holds the type in bits
+28-31 (`u8`, `i8`, `u16`, `i16`, `u32`, `i32`, `f32`; past 6 nothing is
+read or stored), the storage area in bits 25-27 and the offset in bits 0-23
+(`AtelGetRealVarAdrs`):
+
+| Storage | Area |
+|---|---|
+| 0, 1 | ctrl work `+0x2c`, `+0x30` |
+| 2, 3, 4 | worker header `+0x28`, `+0x2c`, `+0x30` (offsets in the block; 4 is the data after the worker's code); 3 goes through the ctrl work's `+0x54` callback when it is set |
+| 5 | inside the worker, from `+0x48` |
+| 6 | block `+0x20` (shared by the block's workers) |
+| 7 | none (address 0) |
+
+An element index is clamped to `0..length-1` (`AtelGetValueAdrs`,
+`0x0086c570`; element sizes 1, 2 or 4, `AtelGetValueIncValue`).
+`AtelGetValueInteger`/`Float` (`0x0086c730`, `0x0086c610`) read by type;
+`AtelSetValueInteger`/`Float` (`0x00871400`, `0x008712e0`) store, with
+`clamp` saturating the narrow types (the opcodes' "store mode 1"). The
+opcodes go through `Script_PushVar` (`1f`), `Script_StoreVar` (`20`, `21`,
+`23`, `24`; bit `0x80` pops an index below the value), `Script_PushVarElem`
+(`22`) and `Script_PushVarRef` (`27`, which pushes the location word
+advanced to the element, not an address).
+
+Floats pass through the x87 (`fld`/`fstp`), which quiets signalling NaNs
+on hardware (the game masks the invalid exception); Unicorn, which the
+oracle runs on, keeps them signalling, so the parity tests leave sNaNs out
+of stored values.
+
 ## Open questions
 
 - The meaning of most native functions.
