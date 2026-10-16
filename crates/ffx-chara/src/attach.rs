@@ -307,6 +307,14 @@ pub mod bridge {
             .store();
         mem.write(chr + 0x6c4, [a[0], t, a[2], a[3]]);
     }
+
+    /// `Ch_OptposGetMatrix(chr, id, offset, out)` (`0x008356b0`):
+    /// `Ch_ElemGetAttr` for point `id` (offset into `offset`), then that
+    /// element's `Ch_ElemGetMatrix` into `out`.
+    pub fn ch_optpos_get_matrix(mem: &mut impl Mem, chr: u32, id: u32, offset: u32, out: u32) {
+        let (_, e) = elem_get_attr(mem, chr, id, None, offset);
+        crate::matrix::bridge::ch_elem_get_matrix(mem, chr, e, out);
+    }
 }
 
 #[cfg(test)]

@@ -2952,6 +2952,13 @@
 0x00824b40 function Ch_UseLargeCollisionRad  # Switch name (0x710041ef70): (chr, model, part) -> float collision radius scale (1.03 default; 1.05/1.165/1.2/1.25 by id, map, motion)
 0x00824c30 function Ch_WindGet               # Switch name (0x710041ee60, 10 insns, after Ch_WindSet among the cloth functions): (chr, &a, &b, &c) <- +0x80c, +0x804, +0x808, null skipped
 0x00824c70 function Ch_WindGetEnable         # Switch name (0x710041ee30, 3 insns): chr +0x198 bit 1
+0x00824c90 function Ch_WindSet               # Switch name (0x710041ee40, after Ch_WindGetEnable): (chr, a, b, c) +0x80c = a, +0x804 = b, +0x808 = c, then Ch_WindSetEnable(chr, 1)
+0x00824cc0 function Ch_WindSetEnable         # Switch name (0x710041ee10, 5 insns, before Ch_WindGetEnable): chr +0x198 bit 1 = on bit 0
+0x00824ce0 function Chr_AddVector3           # ours: (dst, a, b) x, y, z sums through the x87
+0x00824d10 function Chr_CopyVector4          # ours: (dst, src) four floats through fld/fstp
+0x00824d40 function Chr_DotVector3           # ours: (a, b, out) *out = (a.y*b.y + a.x*b.x) + a.z*b.z
+0x00824d70 function Chr_ScaleVector3         # ours: (dst, v, s) x, y, z times s
+0x00824da0 function Chr_SubVector3           # ours: (dst, a, b) x, y, z differences through the x87
 0x00824dd0 function Sg_GlobalGetWind          # fh switch:bsim1.00 0x710041edb0
 0x00824e30 function Sg_GlobalSetWind          # fh switch:bsim1.00 0x710041ed90
 0x00824f00 function ChN_DataDispose           # fh v3:exact 0x00824f90
@@ -3205,8 +3212,8 @@
 0x008311d0 function Ch_TextureLoadClut        # fh v3:exact 0x00831250
 0x00831300 function Ch_TextureLoadImage       # fh v3:exact 0x00831380
 0x00831330 function Chr_RangeClass           # ours: (a, b, x, y) 1 if a == b; range a..b (wrapping when a > b): 2/3 x in it, 4/5 y in it, else 0
-0x00831390 function Ch_TextureSetClutBase     # fh v3:bsim1.00 0x00831410
-0x008313c0 function Ch_TextureSetImageBase    # fh v3:bsim1.00 0x00831440
+0x00831390 function Ch_TextureSetImageBase     # fh v3:bsim1.00 0x00831410
+0x008313c0 function Ch_TextureSetClutBase    # fh v3:bsim1.00 0x00831440
 0x008313f0 function Ch_TextureSetTex0        # ours: texture list +0x6e0 (count +0x6f4): +0x14 bits 0..13 = image texture (+2) +0x3a, +0x18 bits 7..20 = clut texture (+0) +0x3a
 0x008314c0 function Ch_UpdateClothMatrix      # render cloth +0x834: each cloth mesh (+0x40 model) <- flip(-1,-1,1,1) x root (+0x1d0) x base element global matrix with translation x 1000; state +0xc 2; clears mesh vectors unless it was 2. fh: v3:exact 0x00831540
 0x008316d0 function Ch_UseAnchorVertex        # fh v3:exact 0x00831750
@@ -3243,10 +3250,11 @@
 0x00833940 function Ch_Set7f8                # ours: (chr, a, b) +0x7f8 = a, +0x7fc = b
 0x00833960 function Ch_ElemCalcQuaternion     # fh v3:exact 0x008339e0
 0x00833a70 function Ch_ElemGetAttr            # (model, point id, &bone, &offset): searches the chr def +0x6c list (16-byte entries, id & 0x3fff) -> bone index and scaled offset; was Chr_FindAttachPoint
+0x00833b80 function Ch_ElemGetBaseMatrix     # Switch name (0x7100414070; Switch order Attr, Matrix, BaseMatrix, Parent, Pos): (chr, e, out) copies element e's global matrix (translation x 1000 when Ch_ElemInMotion), returns it
 0x00833bf0 function Ch_ElemGetDirect         # Switch name (0x71004152e0): (chr, id) -> element of attachment point id (blk +0x6c list), 0 if none
-0x00833c30 function Ch_ElemGetMatrix          # fh v3:exact 0x00833cb0
+0x00833c30 function Ch_ElemGetMatrix          # (chr, e, out) active chr: root (+0x1d0) x element global matrix (translation x 1000 when Ch_ElemInMotion). fh: v3:exact 0x00833cb0
 0x00833cf0 function Ch_ElemGetParent          # (chr, elem): element (chr +0x328, 0x160 bytes each) +0 -> +4; Switch name, the only one in name order between Ch_ElemGetMatrix and Ch_ElemGetPos
-0x00833d10 function Ch_ElemGetPos             # fh v3:exact 0x00833d90
+0x00833d10 function Ch_ElemGetPos             # (chr, e, v, out) v through Ch_ElemGetMatrix's matrix, or its translation without v. fh: v3:exact 0x00833d90
 0x00833df0 function Ch_ElemSetQuatMatrix      # (chr, elem, matrix, w): element +0xcc = matrix, +0xe0 = w; Switch name, in name order before Ch_ElemSetReplaceMatrix (+0xc8)
 0x00833e30 function Ch_ElemSetReplaceMatrix   # fh v3:exact 0x00833eb0
 0x00833e60 function Ch_GetBigImageSize       # Switch name (0x7100417fc0): (chr, &w, &h, rows) widest image, stacked height, row starts of the archive's image list
@@ -3267,7 +3275,7 @@
 0x00834740 function Ch_MouthGetAutoTalk       # movsx chr +0x4d4 (Ch_MouthSetAutoTalk's); Switch name, in name order before Ch_MouthInit; the dump's fh Ch_PLightGetEnable was a BSim miss
 0x00834750 function Ch_MouthInit              # fh v3:exact 0x008347d0
 0x00834770 function Ch_MouthSetAutoTalk       # fh switch:bsim1.00 0x7100416e40
-0x008347a0 function Ch_MoveChrBlk             # fh switch:cg2 0x7100416020
+0x008347a0 function Ch_MoveChrBlk             # (new, old) the g_ChrBlk block whose archive (+0x6c) was old: Ch_CbArcMapping(blk, new), then each active character on it Ch_CbMapping, Ch_TextureReMapping, chr_texanim_memory_move, +0x758 += new - old. fh: switch:cg2 0x7100416020
 0x008348d0 function Ch_Neck                   # fh switch:cg2 0x7100417500
 0x00834e60 function Ch_NeckInit               # fh v3:exact 0x00834ee0
 0x00834f60 function Ch_NeckSetEnable          # fh v3:exact 0x00834fe0
@@ -3367,6 +3375,7 @@
 0x00839e30 function Angle12_Lerp              # 12-bit angle interpolation the short way
 0x00839e80 function AngleTurn_Lerp            # the same on floats in turns
 0x00839f50 function Chr_FracStep             # ours: (a, b, n) fa = frac(a) (x - _ftol2_sse(x), +1 if < 0), fb = frac(fa - b); fa if fb == 0, else fa - fb/n if fb < 0.5, else fa + (1 - fb)/n; called by 0x008395b0
+0x0083a010 function Chr_WrapAngleDiscard     # ours: wraps its float argument into +-3.141592 like Chr_WrapAngle and drops the result (no effect but the time; loops for ever on huge values)
 0x0083a270 function Sg_Capture                # fh v3:exact 0x0083a2f0
 0x0083a470 function Sg_CaptureEnable          # fh v3:exact 0x0083a4f0
 0x0083a620 function Sg_CaptureGetGuiHide      # fh v3:exact 0x0083a6a0
@@ -3416,12 +3425,14 @@
 0x0083cd50 function Ch_TexGetImage            # (chr, i, &w, &h): image i (16 bytes from texture data +0x1c): w = u16 +8, h = u16 +0xa, returns +0xc; Switch name, in name order
 0x0083cd90 function Ch_TexGetNbClut           # texture data +8 (u16), 0 without data; Switch name, in name order
 0x0083cdb0 function Ch_TexGetNbImage          # texture data +0xc (u16); Switch name, in name order before Ch_TextureReMapping
-0x0083cdd0 function Ch_TextureReMapping       # fh v3:exact 0x0083cdd0
+0x0083cdd0 function Ch_TextureReMapping       # texture data (blk +0x14, from 0x1029) into chr +0x6dc: list (32 B, Ch_TextureSetRegs), clut (64 B, Ch_TextureSetClut), image (64 B, Ch_TextureSetImage) textures; +0x6ea/+0x6f2 sums of +0x36. fh: v3:exact 0x0083cdd0
 0x0083cf80 function Ch_TextureSendSpecular   # Switch name (0x71004250b0): two DMA ref tags (g_ChrSpecularPackets) to out, returns out + 0x40
 0x0083d040 function Ch_TextureSetAnim         # fh v3:exact 0x0083d040
 0x0083d070 function Ch_TextureSetAnimTimer    # fh v3:exact 0x0083d070
 0x0083d0a0 function Ch_TextureSetup           # fh v3:exact 0x0083d0a0
-0x0083d1e0 function Ch_TextureSetImage       # ours: (img, tex) tex +0x3c = 1 (bpp <= 16) or 4, +0x36 its low half, +0x30 = img data
+0x0083d1e0 function Ch_TextureSetClut       # ours: (clut entry, tex) tex +0x3c = 1 (entry i32 <= 16) or 4, +0x36 its low half, +0x30 = entry data (Ch_TextureReMapping's clut loop)
+0x0083d220 function Ch_TextureSetImage        # ours: (image entry, tex) tex +0x30 = entry +0xc, +0x34 = u16 +8 >> 6, +0x36 = u16 +2 (Ch_TextureReMapping)
+0x0083d250 function Ch_TextureSetRegs        # ours: (img, tex) sizes, power-of-two sizes and the GS TEX0 fields at +0x14..+0x1f from an image header (Ch_TextureReMapping)
 0x0083d370 function Sg_GsloadSetBase          # fh v3:exact 0x0083d370
 0x0083d7a0 function Ch_IdGetDictionary        # chr +0x828 bits 11-12; Switch name: the 13 functions 0x0083d7a0..0x0083d940 match the 13 Switch Ch_IdGet*/Ch_IdSetDefPid names of that file in name order
 0x0083d7c0 function Ch_IdGetEffect            # chr +0x828 bits 9-10; Switch name, in name order (Ch_IdGetEffectTable calls it)
@@ -8017,6 +8028,8 @@
 0x013011d8 label g_ChrSequenceHead          # first chain of g_ChrSequences (Ch_SeqLink)
 0x013017f8 label g_ChrMotionHalf             # Ch_MotionSetHalf / Ch_MotionGetHalf
 0x013019c0 label g_ChrClutDisposeHold       # non-zero holds clut disposal (Ch_ClutDisposeCheck)
+0x013019c4 label g_ChrRemapImages           # image textures Ch_TextureReMapping laid out
+0x013019c8 label g_ChrRemapCluts            # clut textures Ch_TextureReMapping laid out
 0x013019d8 label g_ChrIdMapTable             # u32 by raw map id: Ch_IdGetMap maps ids 0x30..0x3f through it (0x0083e9e0 sets entries)
 0x013019e0 label g_ChrSpecularPackets       # two 0x40-byte GS packets (0x013019e0, 0x01301a20) Ch_TextureSendSpecular references; clut data pointers at +0x30
 0x01301af8 label g_ChrIdEffectTable          # u8, 4 per set: Ch_IdGetEffectTable
