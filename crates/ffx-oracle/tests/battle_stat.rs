@@ -10,30 +10,11 @@
 
 mod battle_common;
 
+use battle_common::crt::{patch, stand_in};
 use battle_common::world::{ACTOR, ACTORS, World, quiet, world};
 use battle_common::*;
 use ffx_battle::stat::bridge as s;
 use ffx_oracle::Oracle;
-
-fn patch(o: &mut Oracle) {
-    for (at, code) in [
-        (0x0094_98c2, [0xd8, 0xc8, 0xc3]),
-        (0x0094_98c8, [0xd8, 0xc0, 0xc3]),
-        (0x0094_97b8, [0xd9, 0xfa, 0xc3]),
-    ] {
-        let at = o.rebase(at);
-        o.write(at, &code).unwrap();
-    }
-}
-
-fn stand_in(t: ffx_battle::pos::bridge::Trig, x: u32) -> u32 {
-    use ffx_battle::pos::bridge::Trig;
-    use ffx_bridge::x87::{add, load, mul, store};
-    match t {
-        Trig::Cos => store(mul(load(x), load(x))),
-        Trig::Sin => store(add(load(x), load(x))),
-    }
-}
 
 fn float(rng: &mut Xorshift) -> u32 {
     match rng.below(4) {

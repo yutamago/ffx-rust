@@ -12,31 +12,13 @@
 
 mod battle_common;
 
+use battle_common::crt::{patch as patch_trig, stand_in};
 use battle_common::world::quiet;
 use battle_common::*;
 use ffx_battle::pos::bridge as p;
 use ffx_oracle::Oracle;
 
 const ACTOR: u32 = 0xf90;
-
-fn patch_trig(o: &mut Oracle) {
-    let cos = o.rebase(0x0094_98c2);
-    o.write(cos, &[0xd8, 0xc8, 0xc3]).unwrap();
-    let sin = o.rebase(0x0094_98c8);
-    o.write(sin, &[0xd8, 0xc0, 0xc3]).unwrap();
-    // `_CIsqrt` (MsPointLen) as the CPU's: `fsqrt; ret`
-    let sqrt = o.rebase(0x0094_97b8);
-    o.write(sqrt, &[0xd9, 0xfa, 0xc3]).unwrap();
-}
-
-/// The stand-ins as the Rust gets them (`f32` bits in and out).
-fn stand_in(t: p::Trig, x: u32) -> u32 {
-    use ffx_bridge::x87::{add, load, mul, store};
-    match t {
-        p::Trig::Cos => store(mul(load(x), load(x))),
-        p::Trig::Sin => store(add(load(x), load(x))),
-    }
-}
 
 /// The sisters' `MsDivVector` leaves the caller's saved registers in
 /// `VF_B`'s last three words: those are the harness's in `a`.

@@ -65,6 +65,8 @@ fn patch_sqrt(a: &mut Oracle, b: &mut Oracle) {
 
 fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     patch_sqrt(a, b);
+    battle_common::crt::patch(a);
+    battle_common::crt::patch(b);
     let buf = scratch(a, b, 0x100);
     for _ in 0..3000 {
         let vals: Vec<u8> = (0..0x40).flat_map(|_| float(rng).to_le_bytes()).collect();
@@ -180,7 +182,54 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
             },
         );
         same("vectors", a, b);
+        polar(a, b, rng, buf);
     }
+}
+
+/// The polar conversions and `MsVectorNormal2`, with the CRT's trigonometry
+/// as the shared stand-ins (`battle_common::crt`).
+fn polar(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, buf: u32) {
+    use battle_common::crt::stand_in;
+    let vals: Vec<u8> = (0..0x40).flat_map(|_| float(rng).to_le_bytes()).collect();
+    poke(a, b, buf, &vals);
+    // sometimes a zero difference or zero coordinates
+    if rng.below(4) == 0 {
+        let p = a.read(buf, 16).unwrap();
+        poke(a, b, buf + 0x10, &p);
+    }
+    if rng.below(4) == 0 {
+        poke(a, b, buf + 4 * rng.below(3), &[0; 4]);
+    }
+    let pick = |rng: &mut Xorshift, k: u32| if rng.below(5) == 0 { 0 } else { buf + 0x40 + k };
+    let (yaw, pitch, len) = (pick(rng, 0x20), pick(rng, 0x24), pick(rng, 0x28));
+    let base = if rng.below(3) == 0 { 0 } else { buf + 0x10 };
+    let args = [buf, base, yaw, pitch, len];
+    twin("MsVectorRect2Polar", a, b, 0x007c_4990, &args, 0, |m| {
+        v::ms_vector_rect2_polar(m, &stand_in, buf, base, yaw, pitch, len);
+        0
+    });
+    same("MsVectorRect2Polar", a, b);
+    let r = [float(rng), float(rng), float(rng), float(rng)];
+    let (y, p) = (float(rng), float(rng));
+    // the original compares base with r0's first word, not with 0
+    let r0 = ffx_battle::camera::bridge::EE_R0;
+    let saved = r0.get(b);
+    if rng.below(4) == 0 {
+        set(a, b, r0, [base, saved[1], saved[2], saved[3]]);
+    }
+    let args = [buf + 0x40, base, y, p, r[0], r[1], r[2], r[3]];
+    twin("MsVectorPolar2Rect", a, b, 0x007c_47c0, &args, 0, |m| {
+        v::ms_vector_polar2_rect(m, &stand_in, buf + 0x40, base, y, p, r);
+        0
+    });
+    same("MsVectorPolar2Rect", a, b);
+    set(a, b, r0, saved);
+    let args = [buf + 0x50, buf, buf + 0x10, r[0], r[1], r[2], r[3]];
+    twin("MsVectorNormal2", a, b, 0x007c_45e0, &args, 0, |m| {
+        v::ms_vector_normal2(m, buf + 0x50, buf, buf + 0x10, r);
+        0
+    });
+    same("MsVectorNormal2", a, b);
 }
 
 #[test]

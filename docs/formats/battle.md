@@ -107,3 +107,30 @@ slots as `M%d:%03d`):
 Each monster in a slot gets its file `battle/mon/_mNNN` read
 (`Mon_LoadAll`, `0x00784070`). In battle, the monster's id is at
 `+0x0e` of its actor.
+
+## Known original bug: more than 16 hits overrun a target's results
+
+Each actor has two action buffers of 0x2d8 bytes, at `+0x774` and `+0xa4c`
+(`MsGetActionBuffer`, `0x0078d040`, hands out the first whose `+2` is 0xff
+and clears it). A buffer is a results block: a 0x18-byte head (`+0` the
+result count, `+1` the count after the call), then 16 results of 0x2c bytes
+from `+0x18` (0x18 + 16 · 0x2c = 0x2d8).
+
+`MsCalcDamage` (`0x00789740`) appends `hits_n` results without a limit. The
+loop at `0x007897a3`-`0x00789858` runs `i` from the head's count while
+`i < count + hits_n` and writes result `i` at `results + 0x18 + i · 0x2c`;
+nothing compares `i` with 16. `MsCalcDrainResult` (`0x0078a240`) does check
+(`cmp byte [ebx+1], 0x10` at `0x0078a25a`), so the cap was intended.
+
+`hits_n` is the target's count from `MsCalcCommandTarget` (`0x0078ba70`):
+the command's hit count (`+0x2b`), with the counts of every target a guard
+covers (`MsGetGuardChr`) or a reflect sends back added to one actor. A
+command with more than 16 hits on one actor therefore writes past its
+buffer: from the second buffer (`+0xa4c`, ending at `+0xd24`) onward into
+the actor's later fields. In the oracle tests (`tests/battle_calc.rs`) a
+fake record with a large `+0x2b` reached the actor's spoils pointer
+(`+0xf88`), which `Battle_Steal` then read as a pointer (an emulator fault
+in the original, the same read in the Rust). The game's own commands hit
+at most a few times, so this needs many guards or reflects stacking on one
+actor. `ffx_battle` keeps the behaviour; the tests limit hits to 0-4 and
+three targets per command.
