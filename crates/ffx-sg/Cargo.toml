@@ -11,6 +11,8 @@ ffx-battle.workspace = true
 ffx-bridge.workspace = true
 ffx-chara.workspace = true
 ffx-ps2.workspace = true
+ffx-script.workspace = true
+ffx-system.workspace = true
 
 [lints]
 workspace = true

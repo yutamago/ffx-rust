@@ -174,4 +174,36 @@ pub mod bridge {
             }
         }
     }
+
+    /// `Cam_IsMoving(cam, side)` (`0x007bdd20`): what of battle camera
+    /// `cam`'s side is moving: bit 0 a channel with a running key (the
+    /// side's three at `+0x58c` from the side, and for side 1 the camera's
+    /// two at `+0xd84`), bit 1 the side's byte at `+2`, bit 2 the current
+    /// channel (`MsCameraGetNum`) in state `0xe`.
+    pub fn cam_is_moving(mem: &impl Mem, cam: u32, side: u32) -> u32 {
+        let cam = cam & 0xff;
+        let side = side & 1;
+        let base = battle::CAMERAS.ptr(mem).addr.wrapping_add(cam * 0xda0);
+        let side_base = base.wrapping_add(side * 0x61c).wrapping_add(0x30);
+        let n = battle::ms_camera_get_num(mem, cam);
+        let ch = side_base
+            .wrapping_add(0xc0)
+            .wrapping_add(n.wrapping_mul(0x130));
+        let busy =
+            |at: u32, count: u32| (0..count).any(|k| mem.read::<u16>(at.wrapping_add(16 * k)) != 0);
+        let mut r = 0;
+        if side == 1 && busy(base.wrapping_add(0xd84), 2) {
+            r = 1;
+        }
+        if busy(side_base.wrapping_add(0x58c), 3) {
+            r = 1;
+        }
+        if mem.read::<u8>(side_base.wrapping_add(2)) != 0 {
+            r |= 2;
+        }
+        if mem.read::<u8>(ch.wrapping_add(2)) == 0xe {
+            r |= 4;
+        }
+        r
+    }
 }

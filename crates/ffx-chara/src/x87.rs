@@ -202,6 +202,12 @@ impl Reg {
         Self(f64::from_bits(self.0.to_bits() & !(1 << 63)))
     }
 
+    /// `fchs`.
+    #[must_use]
+    pub fn chs(self) -> Self {
+        Self(f64::from_bits(self.0.to_bits() ^ (1 << 63)))
+    }
+
     /// The value, for comparisons.
     #[must_use]
     pub const fn get(self) -> f64 {

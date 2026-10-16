@@ -94,4 +94,79 @@ pub mod bridge {
         mem.write(e + 0x104, [1.0f32; 4]);
         r
     }
+
+    /// `1000.0` (`double`): the element translations' scale.
+    pub const K_1000: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b0_dba0);
+
+    /// The translation of `m` × 1000, as the originals scale an animated
+    /// element's matrix.
+    fn scale_translation(mem: &impl Mem, m: &mut [f32; 16]) {
+        let k = crate::x87::Reg::constant(K_1000.get(mem));
+        m[12] = crate::x87::Reg::load(m[12]).mul_st(k).store();
+        m[13] = crate::x87::Reg::load(m[13]).mul_st(k).store();
+        m[14] = k.mul_m32(m[14]).store();
+    }
+
+    fn elem_global(mem: &impl Mem, chr: u32, e: u32) -> u32 {
+        mem.read::<u32>(chr + l::ELEMS)
+            .wrapping_add(e.wrapping_mul(l::ELEM_SIZE))
+            .wrapping_add(ELEM_GLOBAL)
+    }
+
+    /// The element's world matrix: the root global matrix times its
+    /// global matrix, the translation × 1000 first when the motion
+    /// animates it.
+    fn elem_world(mem: &impl Mem, chr: u32, e: u32) -> [f32; 16] {
+        let mut g: [f32; 16] = mem.read(elem_global(mem, chr, e));
+        if crate::parts::bridge::ch_elem_in_motion(mem, chr, e) != 0 {
+            scale_translation(mem, &mut g);
+        }
+        let root: [f32; 16] = mem.read(chr + ROOT_GLOBAL);
+        ffx_system::math::mul4x4(&root, &g)
+    }
+
+    /// `Ch_ElemGetBaseMatrix(chr, e, out)` (`0x00833b80`): copies the
+    /// element's global matrix to `out` when given (translation × 1000
+    /// when the motion animates it); returns where it is.
+    pub fn ch_elem_get_base_matrix(mem: &mut impl Mem, chr: u32, e: u32, out: u32) -> u32 {
+        let g = elem_global(mem, chr, e);
+        if out != 0 {
+            vu0::matrix_copy(mem, out, g);
+            if crate::parts::bridge::ch_elem_in_motion(mem, chr, e) != 0 {
+                let mut m: [f32; 16] = mem.read(out);
+                scale_translation(mem, &mut m);
+                mem.write(out + 0x30, [m[12], m[13], m[14]]);
+            }
+        }
+        g
+    }
+
+    /// `Ch_ElemGetMatrix(chr, e, out)` (`0x00833c30`): the element's world
+    /// matrix into `out`, for an active character and a given `out`.
+    pub fn ch_elem_get_matrix(mem: &mut impl Mem, chr: u32, e: u32, out: u32) {
+        if out == 0 || mem.read::<u8>(chr + l::ACTIVE) == 0 {
+            return;
+        }
+        let m = elem_world(mem, chr, e);
+        mem.write(out, m);
+    }
+
+    /// `Ch_ElemGetPos(chr, e, v, out)` (`0x00833d10`): `v` through the
+    /// element's world matrix into `out` (a vector of four), or without
+    /// `v` the matrix's translation (x, y, z).
+    pub fn ch_elem_get_pos(mem: &mut impl Mem, chr: u32, e: u32, v: u32, out: u32) {
+        let m = elem_world(mem, chr, e);
+        if v == 0 {
+            mem.write(out, [12, 13, 14].map(|i| crate::x87::load(m[i])));
+            return;
+        }
+        let x: [f32; 4] = mem.read(v);
+        let r: [f32; 4] = std::array::from_fn(|i| {
+            #[allow(clippy::cast_possible_truncation)] // 0..4
+            let i = i as u32;
+            let col = [0, 4, 8, 12].map(|row| m[(row + i) as usize]);
+            ffx_system::math::mul4x4_component(i, x, col)
+        });
+        mem.write(out, r);
+    }
 }

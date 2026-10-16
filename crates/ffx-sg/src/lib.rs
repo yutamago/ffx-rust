@@ -6,8 +6,11 @@
 
 pub mod assert;
 pub mod camera;
+pub mod chpacket;
 pub mod gs;
 pub mod light;
+pub mod quat;
+pub mod scratch;
 pub mod seq;
 pub mod state;
 pub mod vec;

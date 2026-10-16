@@ -23,7 +23,7 @@ pub mod bridge {
     use ffx_bridge::Mem;
 
     use super::attr_kind;
-    use crate::chr::bridge::{blk, f};
+    use crate::chr::bridge::{blk, f, put_f};
     use crate::layout as l;
     use crate::x87::Reg;
 
@@ -154,6 +154,12 @@ pub mod bridge {
     /// when any of its components is not 0, else position 0 when its w is
     /// not 0, else the fallback point with w = 1.
     pub fn ch_optpos_get(mem: &mut impl Mem, chr: u32, i: u32, out: u32) {
+        let v = optpos(mem, chr, i);
+        mem.write(out, v);
+    }
+
+    /// What [`ch_optpos_get`] writes, as bits.
+    fn optpos(mem: &impl Mem, chr: u32, i: u32) -> [u32; 4] {
         let at = |k: u32| chr.wrapping_add(OPTPOS).wrapping_add(k.wrapping_mul(16));
         let p = at(i);
         // w first, then x, y, z; NaN counts as not 0
@@ -161,14 +167,17 @@ pub mod bridge {
             .iter()
             .any(|&c| f(mem, p.wrapping_add(c)) != 0.0);
         if set {
-            let v: [u32; 4] = mem.read(p);
-            mem.write(out, v);
+            mem.read(p)
         } else if f(mem, at(0) + 12) != 0.0 {
-            let v: [u32; 4] = mem.read(at(0));
-            mem.write(out, v);
+            mem.read(at(0))
         } else {
             let v = [0, 4, 8].map(|c| crate::x87::load(f(mem, chr + OPTPOS_FALLBACK + c)));
-            mem.write(out, [v[0], v[1], v[2], 1.0]);
+            [
+                v[0].to_bits(),
+                v[1].to_bits(),
+                v[2].to_bits(),
+                1f32.to_bits(),
+            ]
         }
     }
 
@@ -176,6 +185,135 @@ pub mod bridge {
     /// out)`.
     pub fn ch_optpos_get_base(mem: &mut impl Mem, chr: u32, out: u32) {
         ch_optpos_get(mem, chr, 0, out);
+    }
+
+    /// `10000.0`, the `double` `Ch_OptposCalc` divides by the data scale.
+    pub const K_10000: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b3_0720);
+    /// `0.5` (`double`).
+    pub const K_HALF: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b9_2220);
+    /// `0.8f` widened to `double`.
+    pub const K_0_8: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b3_eb68);
+    /// `1000.0f`: the w scale of the element matrices.
+    pub const K_1000: ffx_bridge::Global<f32> = ffx_bridge::Global::new(0x00b1_f2cc);
+
+    /// `Ch_OptposCalc(chr)` (`0x008350f0`): every optional position from
+    /// the attachment points (an element's position through the root
+    /// matrix, or for kind 1 the point's scaled offset through it), then
+    /// the derived points: camera reference (`+0x6b4`, position 0 lowered
+    /// by the camera height), bottom (`+0x694`, the middle of positions
+    /// 7, 8 and 1 at the higher of 7's and 8's heights; the old one kept
+    /// at `+0x684`), top (`+0x6a4`), the heights `+0x510` and `+0x514`,
+    /// and `+0x6c4`.
+    #[allow(clippy::too_many_lines)]
+    pub fn ch_optpos_calc(mem: &mut impl Mem, chr: u32) {
+        use ffx_system::math::{mul4x4, mul4x4_component};
+        for i in 0..22 {
+            put_f(mem, chr + OPTPOS + 12 + 16 * i, 0.0);
+        }
+        let b = blk(mem, chr);
+        let list: u32 = mem.read(b + BLK_ATTRS);
+        if list == 0 {
+            return;
+        }
+        let mut n: i32 = mem.read(list + 0x24);
+        let mut e: u32 = mem.read(list + 0x20);
+        let s = f(mem, b + l::BLK_DATA_SCALE);
+        let k = Reg::constant(K_10000.get(mem))
+            .div_st(Reg::load(s))
+            .div_m32(s)
+            .mul_m32(f(mem, b + l::BLK_BIND_SCALE))
+            .store();
+        let root: [f32; 16] = mem.read(chr + 0x1d0);
+        while n > 0 {
+            let elem = i32::from(mem.read::<i16>(e + 2));
+            #[allow(clippy::cast_sign_loss)] // movsx, then masked
+            let id = i32::from(mem.read::<i16>(e)) as u32 & 0x3fff;
+            let elems: u32 = mem.read(chr + l::ELEMS);
+            let g = elems.wrapping_add(elem.cast_unsigned().wrapping_mul(l::ELEM_SIZE)) + 0x88;
+            let mut unit = ffx_ps2::vu0::identity();
+            unit[15] = crate::x87::load(K_1000.get(mem));
+            let global: [f32; 16] = mem.read(g);
+            let mut local = mul4x4(&global, &unit);
+            local[15] = 1.0;
+            let m = mul4x4(&root, &local);
+            let p = chr.wrapping_add(OPTPOS).wrapping_add(id * 16);
+            match mem.read::<u16>(e) & 0xc000 {
+                0 | 0x8000 => {
+                    mem.write(p, [12, 13, 14].map(|i| crate::x87::load(m[i])));
+                }
+                0x4000 => {
+                    let rk = Reg::load(k);
+                    let v = [
+                        Reg::load(f(mem, e + 4)).mul_st(rk).store(),
+                        Reg::load(f(mem, e + 8)).mul_st(rk).store(),
+                        rk.mul_m32(f(mem, e + 0xc)).store(),
+                        1.0,
+                    ];
+                    let r: [f32; 4] = std::array::from_fn(|i| {
+                        #[allow(clippy::cast_possible_truncation)] // 0..4
+                        let i = i as u32;
+                        let col = [0, 4, 8, 12].map(|row| m[(row + i) as usize]);
+                        mul4x4_component(i, v, col)
+                    });
+                    mem.write(p, r);
+                }
+                _ => {}
+            }
+            put_f(
+                mem,
+                chr.wrapping_add(OPTPOS + 12).wrapping_add(id * 16),
+                1.0,
+            );
+            e = e.wrapping_add(16);
+            n -= 1;
+        }
+        let half = Reg::constant(K_HALF.get(mem));
+        let fv = |v: [u32; 4]| v.map(f32::from_bits);
+        let a = optpos(mem, chr, 0);
+        mem.write(chr + 0x6b4, a);
+        let cam = Reg::load(f(mem, chr + 0x6b8))
+            .sub_m32(f(mem, chr + l::CAM_HEIGHT))
+            .store();
+        put_f(mem, chr + 0x6b8, cam);
+        let mut a = fv(optpos(mem, chr, 7));
+        let mut bv = fv(optpos(mem, chr, 8));
+        a[0] = Reg::load(a[0]).add_m32(bv[0]).store();
+        a[2] = Reg::load(a[2]).add_m32(bv[2]).store();
+        a[0] = Reg::load(a[0]).mul_st(half).store();
+        a[2] = half.mul_m32(a[2]).store();
+        // the higher of the two; NaN takes position 8's
+        if bv[1].partial_cmp(&a[1]) != Some(std::cmp::Ordering::Less) {
+            a[1] = crate::x87::load(bv[1]);
+        }
+        bv = fv(optpos(mem, chr, 1));
+        bv[0] = Reg::load(a[0]).add_m32(bv[0]).store();
+        let old: [u32; 4] = mem.read(chr + 0x694);
+        mem.write(chr + 0x684, old);
+        bv[2] = Reg::load(a[2]).add_m32(bv[2]).store();
+        bv[0] = Reg::load(bv[0]).mul_st(half).store();
+        bv[2] = half.mul_m32(bv[2]).store();
+        a[0] = crate::x87::load(bv[0]);
+        a[2] = crate::x87::load(bv[2]);
+        mem.write(chr + 0x694, [a[0], a[1], a[2], a[3]]);
+        mem.write(chr + 0x6a4, bv);
+        let d = Reg::load(f(mem, chr + 0x6a8)).sub_m32(f(mem, chr + 0x698));
+        let d = if d.get() < 0.0 { d.chs() } else { d }.store();
+        put_f(mem, chr + 0x510, d);
+        let h = Reg::load(f(mem, chr + l::POS + 4)).sub_m32(f(mem, chr + 0x698));
+        let h = if h.get() < 0.0 { h.chs() } else { h }.store();
+        put_f(mem, chr + 0x514, h);
+        let t = Reg::load(a[1])
+            .sub_st(Reg::load(d).mul_st(Reg::constant(K_0_8.get(mem))))
+            .store();
+        mem.write(chr + 0x6c4, [a[0], t, a[2], a[3]]);
+    }
+
+    /// `Ch_OptposGetMatrix(chr, id, offset, out)` (`0x008356b0`):
+    /// `Ch_ElemGetAttr` for point `id` (offset into `offset`), then that
+    /// element's `Ch_ElemGetMatrix` into `out`.
+    pub fn ch_optpos_get_matrix(mem: &mut impl Mem, chr: u32, id: u32, offset: u32, out: u32) {
+        let (_, e) = elem_get_attr(mem, chr, id, None, offset);
+        crate::matrix::bridge::ch_elem_get_matrix(mem, chr, e, out);
     }
 }
 

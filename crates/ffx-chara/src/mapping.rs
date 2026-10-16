@@ -472,6 +472,43 @@ pub mod bridge {
         }
         mem.write(heap, 0u8);
     }
+
+    /// `Ch_MoveChrBlk(new, old)` (`0x008347a0`): a character archive moved
+    /// from `old` to `new`: the (last) model block holding `old` takes
+    /// `new` (`Ch_CbArcMapping`), and each active character on that block
+    /// is mapped again (`Ch_CbMapping`, `Ch_TextureReMapping`, its texture
+    /// animation moved, its other-character motion `+0x758` moved too).
+    pub fn ch_move_chr_blk(mem: &mut impl Mem, new: u32, old: u32) {
+        let base = crate::handle::bridge::CHR_BLK.ptr(mem).addr;
+        let mut b = 0u32;
+        for i in 0..40 {
+            let at = base + i * l::BLK_SIZE;
+            if mem.read::<u32>(at) != u32::MAX && mem.read::<u32>(at + 0x6c) == old {
+                b = at;
+            }
+        }
+        if b == 0 {
+            return;
+        }
+        ch_cb_arc_mapping(mem, b, new);
+        let d = new.wrapping_sub(old);
+        crate::handle::bridge::each_active(mem, |m, c| {
+            if m.read::<u32>(c + l::BLK) != b {
+                return;
+            }
+            ch_cb_mapping(m, c, b);
+            crate::texanim::bridge::ch_texture_re_mapping(m, c);
+            if m.read::<u32>(c + 0x6fc) != 0 {
+                let tex: u32 = m.read(m.read::<u32>(c + l::BLK) + l::BLK_TEX);
+                let i: u32 = m.read(c + 0x700);
+                crate::texanim::bridge::chr_texanim_memory_move(m, tex, i);
+            }
+            let mo: u32 = m.read(c + 0x758);
+            if mo != 0 {
+                m.write(c + 0x758, mo.wrapping_add(d));
+            }
+        });
+    }
 }
 
 #[cfg(test)]

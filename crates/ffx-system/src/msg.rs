@@ -44,11 +44,53 @@ pub const fn group(code: u32) -> u32 {
 
 /// The originals over game memory (`ffx_bridge::Mem`).
 pub mod bridge {
-    use ffx_bridge::Mem;
+    use ffx_bridge::{Global, Mem};
 
     /// `TOSkipCode(p)` (`0x008dfd80`): the address after the code at `p`.
     pub fn skip_code(mem: &impl Mem, p: u32) -> u32 {
         p.wrapping_add(super::skip_code(|i| mem.read(p.wrapping_add(i))))
+    }
+
+    /// The glyph table (`0x00c58f00`): four bytes per glyph, its x and y in
+    /// the font sheet, flags (bit 3: narrow) and its width.
+    pub const GLYPHS: Global<[u8; 4]> = Global::new(0x00c5_8f00);
+    /// The glyph cell height (`0x00b92314`, 8.0).
+    pub const GLYPH_HEIGHT: Global<f32> = Global::new(0x00b9_2314);
+    /// Added to the glyph's y for its bottom (`0x00b922a8`, 8.0 as a double).
+    pub const GLYPH_BOTTOM: Global<f64> = Global::new(0x00b9_22a8);
+
+    /// `0x0089e360(s, out)`: the glyph of the character at `s` (one byte
+    /// from `0x30`, or `s[1] + 0xa0` after a lead byte below it) looked up
+    /// into the sprite `out`: `+2` 0x14, `+8`/`+0xc` x and y, `+0x10`/`+0x14`
+    /// right and bottom, `+0x1c` width, `+0x20` height, `+0x26` the flags
+    /// and `+4` their bit 3. Returns `s`.
+    pub fn glyph_sprite(mem: &mut impl Mem, s: u32, out: u32) -> u32 {
+        let lead: u8 = mem.read(s);
+        let index = if lead < 0x30 {
+            u16::from(mem.read::<u8>(s.wrapping_add(1))) + 0xa0
+        } else {
+            u16::from(lead) - 0x30
+        };
+        let glyph: [u8; 4] = mem.read(GLYPHS.ptr(mem).addr.wrapping_add(u32::from(index) * 4));
+        let (x, y, width) = (
+            f32::from(glyph[0]),
+            f32::from(glyph[1]),
+            f32::from(glyph[3]),
+        );
+        mem.write(out.wrapping_add(2), 0x14u16);
+        mem.write(out.wrapping_add(0x1c), width);
+        mem.write(out.wrapping_add(0x20), GLYPH_HEIGHT.get(mem));
+        mem.write(out.wrapping_add(8), x);
+        mem.write(out.wrapping_add(0xc), y);
+        mem.write(out.wrapping_add(0x10), width + x);
+        #[allow(clippy::cast_possible_truncation)] // fstp to a float
+        mem.write(
+            out.wrapping_add(0x14),
+            (f64::from(y) + GLYPH_BOTTOM.get(mem)) as f32,
+        );
+        mem.write(out.wrapping_add(0x26), u16::from(glyph[2]));
+        mem.write(out.wrapping_add(4), u16::from(glyph[2] >> 3 & 1));
+        s
     }
 }
 
