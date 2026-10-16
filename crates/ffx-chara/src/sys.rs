@@ -69,6 +69,134 @@ pub mod bridge {
     /// `u16` packet program (`Ch_EffectPacketStorePRG`).
     pub const PACKET_PRG: Global<u16> = Global::new(0x0130_367c);
 
+    /// `u8` set by `Sg_SetMovieGomiAvoid`, read by `Ch_DrawGetShadowSemi`.
+    pub const MOVIE_GOMI_AVOID: Global<u8> = Global::new(0x0130_08be);
+
+    /// `Ch_DrawGetShadowMode()` (`0x0082ec60`) and `Ch_DrawGetShadowSemi()`
+    /// (`0x0082ec70`): a byte setting, zero-extended.
+    pub fn get_u8(mem: &impl Mem, g: Global<u8>) -> u32 {
+        u32::from(g.get(mem))
+    }
+
+    /// The reader's entry points the character module calls through: the
+    /// sync (`Ch_ReadSync`), the kind-table callback (`Chr_TableIndex`)
+    /// and the event motion group read (`Ch_RomReadEventMGRPsync`).
+    pub const READ_SYNC_FN: Global<u32> = Global::new(0x0231_0c48);
+    pub const TABLE_FN: Global<u32> = Global::new(0x0231_0c50);
+    pub const READ_EVENT_FN: Global<u32> = Global::new(0x0231_0cc0);
+    /// Per kind (8): a table of `i16` count and `i16` ids.
+    pub const KIND_TABLES: Global<u32> = Global::new(0x012f_fab8);
+    /// Per kind: the `i16` `Chr_TableIndex` passes to [`TABLE_FN`].
+    pub const KIND_ARGS: Global<i16> = Global::new(0x00c4_9660);
+    /// The `i8` index step per table entry.
+    pub const KIND_STRIDE: Global<i8> = Global::new(0x00c4_967f);
+
+    /// `Ch_ReadSync()` (`0x0082a5e0`): a tail jump through
+    /// [`READ_SYNC_FN`]; its result.
+    pub fn ch_read_sync<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = READ_SYNC_FN.get(mem);
+        call(mem, f, &[])
+    }
+
+    /// `Ch_RomReadEventMGRPsync(p)` (`0x0082a7f0`): [`READ_EVENT_FN`]`(12,
+    /// p)`; its result.
+    pub fn ch_rom_read_event_mgrp_sync<M: Mem>(
+        mem: &mut M,
+        p: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = READ_EVENT_FN.get(mem);
+        call(mem, f, &[12, p])
+    }
+
+    /// `Chr_TableIndex(id)` (`0x0082a640`): the position of `id & 0xfff`
+    /// in its kind's table (kind `id >> 12 & 0xf`, 0..=7), counted in
+    /// [`KIND_STRIDE`] steps, after calling [`TABLE_FN`] with the kind's
+    /// [`KIND_ARGS`] entry; -1 when absent.
+    pub fn chr_table_index<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> i32 {
+        let kind = (id.cast_signed() >> 12) & 0xf;
+        if kind > 7 {
+            return -1;
+        }
+        let k = kind.cast_unsigned();
+        let table: u32 = mem.read(KIND_TABLES.ptr(mem).addr.wrapping_add(4 * k));
+        let want = (id & 0xfff).cast_signed();
+        let mut index = 0i32;
+        let mut i = 0i32;
+        while i < i32::from(mem.read::<i16>(table)) {
+            let at = table.wrapping_add(2 + 2 * i.cast_unsigned());
+            if i32::from(mem.read::<i16>(at)) == want {
+                let arg = i32::from(mem.read::<i16>(KIND_ARGS.ptr(mem).addr.wrapping_add(2 * k)));
+                let f = TABLE_FN.get(mem);
+                call(mem, f, &[arg.cast_unsigned()]);
+                return index;
+            }
+            index = index.wrapping_add(i32::from(KIND_STRIDE.get(mem)));
+            i += 1;
+        }
+        -1
+    }
+
+    /// The effect packet being written (`Ch_EffectPacketSetPtr`).
+    pub const PACKET_BASE: Global<u32> = Global::new(0x0130_3650);
+    /// The open block's value after each of the four packet states
+    /// (`+4` after `0x0130366c`, MAT, PRG and the fourth, 8 bytes apart).
+    pub const PACKET_STATE_VALUES: [u32; 4] = [0x0130_3670, 0x0130_3678, 0x0130_3680, 0x0130_3688];
+
+    /// `Ch_EffectPacketSetPtr(p)` (`0x00845710`): starts an effect packet
+    /// at `p`, or with 0 starts measuring one (size 0x20, nothing
+    /// counted). A packet starts with a 0x20-byte header: 0, the header
+    /// size, the vertex and normal buffers' offsets from `p`
+    /// (`sg_getvtex`/`sg_getnorm`, passed in), the measured triangles and
+    /// one more than each measured maximum (`u16`), 0. The four state
+    /// values are reset to `0xffff`. Returns what the original leaves in
+    /// EAX: the second maximum plus one, or -1 without a packet.
+    pub fn ch_effect_packet_set_ptr<M: Mem>(
+        mem: &mut M,
+        p: u32,
+        vtex: impl FnOnce(&mut M) -> u32,
+        norm: impl FnOnce(&mut M) -> u32,
+    ) -> u32 {
+        PACKET_PTR.set(mem, p);
+        let image = PACKET_PTR.ptr(mem).addr.wrapping_sub(0x0130_3658);
+        for v in PACKET_STATE_VALUES {
+            mem.write(image.wrapping_add(v), 0xffffu16);
+        }
+        if p == 0 {
+            PACKET_SIZE.set(mem, 0x20);
+            PACKET_POLYS.set(mem, 0);
+            PACKET_MAX.set(mem, [0, 0]);
+            return u32::MAX;
+        }
+        PACKET_PTR.set(mem, p.wrapping_add(0x20));
+        PACKET_BASE.set(mem, p);
+        mem.write(p, 0u32);
+        mem.write(p.wrapping_add(4), 0x20u32);
+        let v = vtex(mem);
+        let base = PACKET_BASE.get(mem);
+        mem.write(base.wrapping_add(8), v.wrapping_sub(base));
+        let n = norm(mem);
+        let base = PACKET_BASE.get(mem);
+        mem.write(base.wrapping_add(0xc), n.wrapping_sub(base));
+        #[allow(clippy::cast_possible_truncation)] // the low halves
+        {
+            let polys = PACKET_POLYS.get(mem) as u16;
+            let [mx, my] = PACKET_MAX.get(mem).map(i32::cast_unsigned);
+            mem.write(base.wrapping_add(0x10), polys);
+            mem.write(base.wrapping_add(0x12), mx.wrapping_add(1) as u16);
+            mem.write(base.wrapping_add(0x14), my.wrapping_add(1) as u16);
+            mem.write(base.wrapping_add(0x16), 0u16);
+            my.wrapping_add(1)
+        }
+    }
+
     /// `Ch_*Get*` of an `i8` setting, sign-extended.
     pub fn get_i8(mem: &impl Mem, g: Global<i8>) -> i32 {
         i32::from(g.get(mem))

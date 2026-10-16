@@ -8,7 +8,7 @@
 //! 30 Hz through the handler table at `0x00c3a368`. A few commands are
 //! synchronous (`FmodManager_registCommandSync`): the caller waits for the
 //! thread's answer. Both stay original here (Win32 mutexes and events); the
-//! bridges reach them through [`FmodHost::call_this5`].
+//! bridges reach them through `ffx_graphic::host::Host` (thiscall).
 
 /// The `FmodManager` object (`0x50` bytes, created by `iFmodInitialize`).
 pub const FMOD_MANAGER: u32 = 0x00ce_9010;
@@ -20,20 +20,14 @@ pub const PUSH_COMMAND: u32 = 0x006f_a300;
 /// d): runs a command on the FMOD thread and returns its result.
 pub const REGIST_COMMAND_SYNC: u32 = 0x006f_a500;
 
-/// The bridge's host: game memory, cdecl calls ([`ffx_bridge::Host`]) and
-/// thiscall calls into the original code.
-pub trait FmodHost: ffx_bridge::Host {
-    /// Calls the thiscall function at `addr` (rebased) with `this` in `ecx`
-    /// and five stack arguments, which it pops; returns `EAX`.
-    fn call_this5(&mut self, addr: u32, this: u32, args: [u32; 5]) -> u32;
-}
+pub use ffx_graphic::host::{Conv, Host as FmodHost};
 
 /// The original functions, over game memory.
 #[allow(clippy::many_single_char_names)] // the originals' arguments
 pub mod bridge {
     use ffx_bridge::{Global, Mem};
 
-    use super::{FMOD_MANAGER, FmodHost, PUSH_COMMAND, REGIST_COMMAND_SYNC};
+    use super::{Conv, FMOD_MANAGER, FmodHost, PUSH_COMMAND, REGIST_COMMAND_SYNC};
 
     /// `g_FmodManager`.
     pub const MANAGER: Global<u32> = Global::new(FMOD_MANAGER);
@@ -55,13 +49,21 @@ pub mod bridge {
     /// `Fmod_PushCommand(mgr; cmd, a, b, c, d)`.
     pub fn push_command(h: &mut impl FmodHost, mgr: u32, cmd: u32, args: [u32; 4]) -> u32 {
         let f = h.rebase(PUSH_COMMAND);
-        h.call_this5(f, mgr, [cmd, args[0], args[1], args[2], args[3]])
+        h.call(
+            f,
+            Conv::Thiscall(mgr),
+            &[cmd, args[0], args[1], args[2], args[3]],
+        )
     }
 
     /// `FmodManager_registCommandSync(mgr; cmd, a, b, c, d)`.
     pub fn regist_command_sync(h: &mut impl FmodHost, mgr: u32, cmd: u32, args: [u32; 4]) -> u32 {
         let f = h.rebase(REGIST_COMMAND_SYNC);
-        h.call_this5(f, mgr, [cmd, args[0], args[1], args[2], args[3]])
+        h.call(
+            f,
+            Conv::Thiscall(mgr),
+            &[cmd, args[0], args[1], args[2], args[3]],
+        )
     }
 
     /// `FmodManager_registCommandAsync1(mgr; cmd)` 0x006fa280: the command with no
@@ -187,15 +189,13 @@ pub mod bridge {
 
     /// `iFmodFinalize()` (0x00679fb0) -> 0.
     pub fn i_fmod_finalize(h: &mut impl FmodHost) -> u32 {
-        let f = h.rebase(FMOD_FINALIZE);
-        h.call(f, &[]);
+        h.call_sym(FMOD_FINALIZE, Conv::Cdecl, &[]);
         0
     }
 
     /// `iFmodInitialize()` (0x00679fc0) -> 0.
     pub fn i_fmod_initialize(h: &mut impl FmodHost) -> u32 {
-        let f = h.rebase(FMOD_INITIALIZE);
-        h.call(f, &[]);
+        h.call_sym(FMOD_INITIALIZE, Conv::Cdecl, &[]);
         0
     }
 

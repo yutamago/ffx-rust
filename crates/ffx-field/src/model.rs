@@ -2711,6 +2711,41 @@ pub mod bridge {
             mem.write(o + at, v);
         }
     }
+
+    // ---- round 13 ----
+
+    /// `rcbgPSimFini(p)` (`0x0091fd80`): the model (`+0x14`) and particle
+    /// system (`+0x18`) deleted and cleared when set. Returns
+    /// `rcfxParticleDelete`'s `eax`, or 0 without a particle system.
+    pub fn rcbg_psim_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        p: u32,
+        call: &mut C,
+    ) -> u32 {
+        let m = mem.read::<u32>(p.wrapping_add(0x14));
+        if m != 0 {
+            rcbg_model_delete(mem, m, call);
+            mem.write(p.wrapping_add(0x14), 0u32);
+        }
+        let ps = mem.read::<u32>(p.wrapping_add(0x18));
+        if ps == 0 {
+            return 0;
+        }
+        let r = rcfx_particle_delete(mem, ps, call);
+        mem.write(p.wrapping_add(0x18), 0u32);
+        r
+    }
+
+    /// `rcbgPSimDelete(p)` (`0x0091fd40`): [`rcbg_psim_fini`], then `p`
+    /// freed (a tail call of `rcFree`).
+    pub fn rcbg_psim_delete<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        p: u32,
+        call: &mut C,
+    ) -> u32 {
+        rcbg_psim_fini(mem, p, call);
+        rc_free(mem, call, p)
+    }
 }
 
 #[cfg(test)]

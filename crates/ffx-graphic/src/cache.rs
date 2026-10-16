@@ -259,4 +259,42 @@ pub mod bridge {
             &[0, title, msg, yet, name, hi, names],
         );
     }
+
+    /// `g_CacheEntries`: the 100 entries (`0x28` bytes) the slots point at.
+    pub const ENTRIES: Global<u32> = Global::new(0x0130_1ff8);
+    /// `g_CacheState`: a word `Cache_Init` clears.
+    pub const STATE: Global<u32> = Global::new(0x0130_32b8);
+
+    /// `Cache_Init()`: every slot to its entry, every entry free.
+    pub fn init(m: &mut impl Mem) {
+        let entries = ENTRIES.ptr(m).addr;
+        for i in 0..SLOTS {
+            let e = entries + 0x28 * i;
+            let at = slot(m, i);
+            m.write(at, e);
+            m.write(e + 0xc, 0u32);
+        }
+        STATE.set(m, 0);
+    }
+
+    /// `Cache_ClearCheck()`: every entry's age (flags bits 0-2) one lower,
+    /// unless 0 or pinned (7).
+    pub fn clear_check(m: &mut impl Mem) {
+        for i in 0..SLOTS {
+            let e = entry(m, i);
+            let b: u8 = m.read(e + 8);
+            let age = b & 7;
+            if age != 0 && age != 7 {
+                m.write(e + 8, (b & !7) | ((age - 1) & 7));
+            }
+        }
+    }
+
+    /// `Cache_Lock(kind, id)`: pins the live entry (age 7).
+    pub fn lock(m: &mut impl Mem, kind: i32, id: u32) {
+        if let Some(e) = find_live(m, kind, id) {
+            let b: u8 = m.read(e + 8);
+            m.write(e + 8, b | 7);
+        }
+    }
 }

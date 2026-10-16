@@ -641,6 +641,147 @@ pub fn native_set_model<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32
     0
 }
 
+/// `Native_0006` (`0x0085e620`, `0x0006`): `(slot, model, motion)`: the
+/// slot detached (`0x00862780` with it pushed and popped again); with a
+/// character and a model, the attachment (`0x00872190(model)`) into
+/// `+0xaf4 + slot * 4` with `motion` in `+0xafc + slot * 4`, its sound id
+/// 15, bound to the character (`0x008722b0`) with its flags (`+0xb08`
+/// bits 0 and 1), the slot's bit in `+0xb14` and the model in `+0xb04 +
+/// slot * 2`; 1, or 0 without a character or model.
+pub fn native_0006<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let motion = pop(h, s);
+    let model = pop(h, s);
+    let slot = pop(h, s);
+    atel_push_stack_integer(h, s, slot);
+    let k = pop(h, s);
+    call(h, 0x0086_2780, &[w, k]);
+    if h.read::<u32>(w + worker::CHAR_HANDLE) == 0 || model == 0 {
+        return 0;
+    }
+    let at = w.wrapping_add(slot.wrapping_mul(4));
+    let c = call(h, 0x0087_2190, &[model]);
+    h.write(at + 0xaf4, c);
+    h.write(at + 0xafc, motion);
+    call(h, 0x0083_5b50, &[c, 0xf]);
+    let c = h.read::<u32>(at + 0xaf4);
+    if c == 0 {
+        return 1;
+    }
+    let (mot, ch) = (
+        h.read::<u32>(at + 0xafc),
+        h.read::<u32>(w + worker::CHAR_HANDLE),
+    );
+    let id = u32::from(h.read::<u16>(w + 0xa8));
+    call(h, 0x0087_22b0, &[id, c, ch, mot, slot]);
+    for f in [0x0082_b240, 0x0082_aa70, 0x0082_b820] {
+        let c = h.read::<u32>(at + 0xaf4);
+        call(h, f, &[c, 0]);
+    }
+    let fl = h.read::<u32>(at + 0xb08);
+    let c = h.read::<u32>(at + 0xaf4);
+    call(h, 0x0082_aa30, &[c, fl & 1]);
+    let fl = h.read::<u32>(at + 0xb08);
+    let c = h.read::<u32>(at + 0xaf4);
+    call(h, 0x0082_b970, &[c, (fl >> 1) & 1]);
+    // shl dx, cl: a 16-bit shift by the count mod 32
+    let bit = 1u32.checked_shl(slot & 0x1f).unwrap_or(0);
+    #[allow(clippy::cast_possible_truncation)] // the original ORs DX
+    let bit = bit as u16;
+    let b = h.read::<u16>(w + 0xb14);
+    h.write(w + 0xb14, b | bit);
+    #[allow(clippy::cast_possible_truncation)] // the original stores SI
+    h.write(w.wrapping_add(slot.wrapping_mul(2)) + 0xb04, model as u16);
+    1
+}
+
+/// `Native_00f5` (`0x00858f40`, `0x00f5`, float): `(x, y, z)`: the second
+/// result of `0x0088b4d0(&a, &b, the worker's position, z, y, x)` (the
+/// original's two stack locals; here zeroed scratch).
+pub fn native_00f5<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
+    let p = atel_get_pos_work_adrs(h, w);
+    let x = popf(h, s);
+    let y = popf(h, s);
+    let z = popf(h, s);
+    let o = h.scratch();
+    h.write(o, 0_u32);
+    h.write(o + 4, 0_u32);
+    let pos: Vec<u32> = (0..3)
+        .map(|i| x87::store(x87::load(h.read(p + i * 4))))
+        .collect();
+    let f = h.rebase(0x0088_b4d0);
+    h.call_n(f, &[o, o + 4, pos[0], pos[1], pos[2], z, y, x]);
+    x87::load(h.read(o + 4))
+}
+
+/// `Native_00cb` (`0x0085b820`, `0x00cb`): `(chr)`: `0x007869b0(chr, 0)`,
+/// then the three party slots (`0x007852f0`) with `chr` replaced by `0xff`
+/// handed to `0x00786950`; `chr`.
+pub fn native_00cb<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    call(h, 0x0078_69b0, &[v, 0]);
+    let o = h.scratch();
+    for i in 0..3 {
+        h.write(o + i * 4, 0_u32);
+    }
+    call(h, 0x0078_52f0, &[o, o + 4, o + 8]);
+    let mut p = [0u32; 3];
+    for (i, x) in p.iter_mut().enumerate() {
+        let k = h.read::<u32>(o + u32::try_from(i).unwrap_or(0) * 4);
+        *x = if k == v && k != 0xff { 0xff } else { k };
+    }
+    call(h, 0x0078_6950, &p);
+    v
+}
+
+/// `g_022fb4d4` (`0x022fb4d4`): the menu wait's frames (`CT_401D_init`
+/// sets 1).
+pub const MENU_WAIT: Global<u32> = Global::new(0x022f_b4d4);
+/// `g_023cbbf0` (`0x023cbbf0`), printed by the menu natives' debug lines.
+const MENU_DEBUG: Global<u32> = Global::new(0x023c_bbf0);
+
+/// `CT_401D_init` (`0x00a78210`, `0x401d`, start): `(menu)`: a debug line;
+/// `Sg_MenuSetReserve(menu)` unless it is `0x4008000f`-`0x40080011` and
+/// `getMegasAdding()` is 0; [`MENU_WAIT`] = 1; the last call's `EAX`.
+pub fn native_menu_open<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    let f = h.rebase(0x00b7_c588);
+    let d = MENU_DEBUG.get(h);
+    call(h, 0x0062_f500, &[f, d]);
+    let r = if (0x4008_000f..=0x4008_0011).contains(&v) {
+        let g = call(h, 0x0086_0a90, &[]);
+        if g == 0 {
+            g
+        } else {
+            call(h, 0x0082_1750, &[v])
+        }
+    } else {
+        call(h, 0x0082_1750, &[v])
+    };
+    MENU_WAIT.set(h, 1);
+    r
+}
+
+/// `Native_MenuOpen_Poll` (`0x00a78270`): a debug line; 1 once
+/// [`MENU_WAIT`] (counted down) was 0, else 0.
+pub fn native_menu_open_poll<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    let f = h.rebase(0x00b7_c598);
+    let d = MENU_DEBUG.get(h);
+    call(h, 0x0062_f500, &[f, d]);
+    let c = MENU_WAIT.get(h);
+    MENU_WAIT.set(h, c.wrapping_sub(1));
+    u32::from(c == 0)
+}
+
+/// `Native_MenuOpen_Result` (`0x00a782a0`): a debug line with the menu
+/// result (`0x00821740`); that result.
+pub fn native_menu_open_result<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    let r = call(h, 0x0082_1740, &[]);
+    let f = h.rebase(0x00b7_c5a8);
+    let d = MENU_DEBUG.get(h);
+    call(h, 0x0062_f500, &[f, d, r]);
+    call(h, 0x0082_1740, &[])
+}
+
 /// The Rust version of one of these handlers, if there is one.
 #[must_use]
 pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
@@ -691,12 +832,24 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x0085_cc50 => Int(native_sprite_set_pos),
         0x00a7_8030 => Int(native_light_set),
         0x0085_d000 => Int(native_set_model),
+        0x0085_e620 => Int(native_0006),
+        0x0085_8f40 => Float(native_00f5),
+        0x0085_b820 => Int(native_00cb),
+        0x00a7_8210 => Int(native_menu_open),
+        0x00a7_8270 => Int(native_menu_open_poll),
+        0x00a7_82a0 => Int(native_menu_open_result),
         _ => return super::native_btl::find(sym),
     })
 }
 
 /// Every handler [`find`] has, with whether it returns a float.
-pub const PORTED: [(u32, bool); 46] = [
+pub const PORTED: [(u32, bool); 52] = [
+    (0x0085_e620, false),
+    (0x0085_8f40, true),
+    (0x0085_b820, false),
+    (0x00a7_8210, false),
+    (0x00a7_8270, false),
+    (0x00a7_82a0, false),
     (0x0085_cc50, false),
     (0x00a7_8030, false),
     (0x0085_d000, false),

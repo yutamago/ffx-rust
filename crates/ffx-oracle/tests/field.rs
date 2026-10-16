@@ -294,12 +294,21 @@ impl Orig<'_> {
         r
     }
 
+    /// An integer (or no) result: the original must not leave a float in
+    /// `ST0`, which a port without a float result would drop (a void
+    /// `Ch_CheckRadian` made every model invisible).
     fn eax(&mut self, f: u32, args: &[u32]) -> u32 {
-        self.call(f, args).eax
+        let r = self.call(f, args);
+        assert!(
+            r.st0.is_none(),
+            "{f:#x} leaves {:?} in ST0: the port must return it",
+            r.st0
+        );
+        r.eax
     }
 
     fn void(&mut self, f: u32, args: &[u32]) {
-        self.call(f, args);
+        self.eax(f, args);
     }
 
     /// A float result, as bits (NaNs as one).
@@ -8910,6 +8919,207 @@ fn round12_field_helpers_match_the_original() {
             "yiBoundsMinMax",
             |o| o.eax(0x0091_30f0, &[obj, min, max]),
             |m| yi::bridge::yi_bounds_min_max(m, obj, min, max),
+        );
+    }
+}
+
+/// Round 13: particle simulation teardown, the load window's title, the
+/// scene's wave, effect particle kicks, key frame angle wrapping and the
+/// image VRAM areas (placement, overlap, the last area).
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round13_field_helpers_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x000d_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let log = env.log;
+    let (is_end_rv, new_obj_rv, par_end_rv) = (t.alloc(4), t.alloc(4), t.alloc(4));
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (
+            Some(rcui::GU_WINDOW_SET_TITLE),
+            log_stub_from(log, env.rv, 110, 0, 1),
+        ),
+        (
+            Some(task::TASK_CTRL_IS_END),
+            log_stub(log, is_end_rv, 111, 1),
+        ),
+        (
+            Some(task::MAIN_CREATE_OBJ),
+            log_stub(log, new_obj_rv, 112, 1),
+        ),
+        (
+            Some(task::OBJ_IS_PAR_END),
+            log_stub(log, par_end_rv, 113, 1),
+        ),
+        (Some(task::MAIN_SET_PAR), log_stub(log, env.rv, 114, 4)),
+        (Some(task::OBJ_ATTACH_CHR), log_stub(log, env.rv, 115, 3)),
+    ];
+    t.cave_from(env.cave_end, &list);
+    let rw = t.alloc(0x1000);
+    t.set(rcui::WORK, rw);
+    let (psim, s, m) = (t.alloc(0x40), t.alloc(0x100), t.alloc(0x40));
+    let objs = [t.alloc(0x160), t.alloc(0x160)];
+    let vecs = [t.alloc(0x10), t.alloc(0x10), t.alloc(0x10)];
+    let (v, page, img) = (t.alloc(0x10), t.alloc(0x20), t.alloc(0x160));
+    let imgs: Vec<u32> = (0..4).map(|_| t.alloc(0x160)).collect();
+    for k in 0..40u32 {
+        env.reset(&mut t, &mut rng);
+        // particle simulations
+        for (o, n) in [(0x14u32, 0x20u32), (0x18, 0x40)] {
+            let p = if rng.below(3) == 0 {
+                0
+            } else {
+                let p = model::bridge::rc_alloc(&mut t.a, call, n);
+                model::bridge::rc_alloc(&mut t.b, call, n);
+                t.write(p, &vec![0; n as usize]);
+                p
+            };
+            t.put(psim + o, p);
+        }
+        if k % 2 == 0 {
+            t.same(
+                "rcbgPSimFini",
+                |o| o.eax(0x0091_fd80, &[psim]),
+                |m| model::bridge::rcbg_psim_fini(m, psim, call),
+            );
+        } else {
+            let p = model::bridge::rc_alloc(&mut t.a, call, 0x40);
+            model::bridge::rc_alloc(&mut t.b, call, 0x40);
+            let (a, b) = (
+                Mem::read::<u32>(&t.b, psim + 0x14),
+                Mem::read::<u32>(&t.b, psim + 0x18),
+            );
+            t.put(p + 0x14, a);
+            t.put(p + 0x18, b);
+            t.same(
+                "rcbgPSimDelete",
+                |o| o.eax(0x0091_fd40, &[p]),
+                |m| model::bridge::rcbg_psim_delete(m, p, call),
+            );
+        }
+        // the load window
+        t.put(rw + 0x64, rng.below(8));
+        t.put(rw + 4, rng.next());
+        let buf = t.stack_scratch(0);
+        t.same(
+            "rcuiLoadSetTitle",
+            |o| o.eax(0x0093_4fb0, &[]),
+            |m| rcui::bridge::rcui_load_set_title(m, buf, call),
+        );
+        // the scene's wave
+        t.put(s + 0xdc, rng.below(3));
+        t.put(s + 0xe4, rng.range(-2, 5));
+        t.put(s + 0xf0, rng.range(0, 5));
+        for o in [0xe0u32, 0xe8, 0xec] {
+            t.put(s + o, float_in(&mut rng, -40, 40));
+        }
+        t.same(
+            "rcbgSceneWaveDCProc",
+            |o| o.void(0x0092_0580, &[s]),
+            |m| scene::bridge::rcbg_scene_wave_dc_proc(m, s, call),
+        );
+        // effect particle kicks
+        t.put(is_end_rv, rng.below(2));
+        t.put(par_end_rv, rng.below(2));
+        t.put(new_obj_rv, objs[0]);
+        t.put(m + 0x24, objs[1]);
+        for &o in &objs {
+            t.fill(o + 0xb0, 0x20, &mut rng);
+        }
+        for &p in &vecs {
+            t.fill(p, 0x10, &mut rng);
+        }
+        let mut a = [
+            m,
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            vecs[0],
+            vecs[1],
+            vecs[2],
+            0,
+            0,
+        ];
+        a[8] = rng.next() & 0x1ff0;
+        a[9] = rng.below(2);
+        t.same(
+            "rcefMainKickPar",
+            |o| o.eax(0x0092_53a0, &a),
+            |m| task::bridge::rcef_main_kick_par(m, a, call),
+        );
+        // key frame angles
+        for i in 0..4 {
+            t.put(v + 4 * i, float_in(&mut rng, -30, 30));
+        }
+        t.same(
+            "yiKeyFrameWrapAngles",
+            |o| o.void(0x0091_5120, &[v]),
+            |m| yi::bridge::yi_key_frame_wrap_angles(m, v),
+        );
+        // image rectangles in a page
+        t.put(page + 0x10, rng.range(16, 128));
+        t.put(page + 0x14, rng.range(16, 128));
+        let rect = |t: &mut Twin, rng: &mut Xorshift, o: u32| {
+            let size = |rng: &mut Xorshift| {
+                if rng.below(2) == 0 {
+                    1 << rng.below(6)
+                } else {
+                    rng.range(1, 40)
+                }
+            };
+            let (w, h) = (size(rng), size(rng));
+            t.put(o + 0x11c, rng.range(-4, 100));
+            t.put(o + 0x120, rng.range(-4, 100));
+            t.put(o + 0x13c, w);
+            t.put(o + 0x140, h);
+        };
+        rect(&mut t, &mut rng, img);
+        for (i, &o) in imgs.iter().enumerate() {
+            rect(&mut t, &mut rng, o);
+            let next = imgs.get(i + 1).copied().unwrap_or(0);
+            t.put(o + 0x15c, if i == 1 && k % 3 == 0 { img } else { next });
+        }
+        if k % 4 == 0 {
+            // the image itself in the list
+            t.put(imgs[2] + 0x15c, img);
+            t.put(img + 0x15c, imgs[3]);
+        }
+        let head = if k % 5 == 0 { 0 } else { imgs[0] };
+        t.same(
+            "yiImageRectFree",
+            |o| o.eax(0x0091_7490, &[page, head, img]),
+            |m| yi::bridge::yi_image_rect_free(m, page, head, img),
+        );
+        // the last area
+        let start = rng.below(0x10) << 12;
+        t.set(yi::LAST_AREA_START, start);
+        t.set(yi::LAST_AREA_END, start + (rng.below(8) << 8));
+        t.set(
+            yi::LAST_AREA_USED,
+            if rng.below(2) == 0 {
+                start
+            } else {
+                start + 0x100
+            },
+        );
+        t.set(yi::LAST_AREA_PSMT4, u8::try_from(rng.below(2)).unwrap());
+        t.put(
+            img + 0xc,
+            [0x13u32, 0x14, 0x14, 0x24][rng.below(4) as usize],
+        );
+        t.put(img + 0x140, rng.below(8));
+        t.same(
+            "yiImageTakeLastPage",
+            |o| o.eax(0x0091_7e70, &[img, img]),
+            |m| yi::bridge::yi_image_take_last_page(m, img, img),
+        );
+        let (pages, mode) = (rng.below(0x38), rng.below(4));
+        t.same(
+            "yiVramSetup",
+            |o| o.eax(0x0091_7f20, &[pages, mode]),
+            |m| yi::bridge::yi_vram_setup(m, pages, mode),
         );
     }
 }

@@ -34,8 +34,9 @@ fi
 rm -rf "$shots/rust"
 for r in field-walk battle-attack menu-browse; do
     run "$r" rust
-    echo "== $r: $(python3 tools/replay-compare.py "$lin/$r-orig.trace" "$lin/$r-rust.trace" 2>&1 | tail -1)"
-    python3 tools/replay-compare.py "$lin/$r-orig.trace" "$lin/$r-rust.trace" >/dev/null 2>&1 || bad=1
+    cmp=(python3 tools/replay-compare.py "$lin/$r-orig.trace" "$lin/$r-rust.trace" --also "$lin/$r-orig2.trace")
+    echo "== $r: $("${cmp[@]}" 2>&1 | tail -1)"
+    "${cmp[@]}" >/dev/null 2>&1 || bad=1
 done
-python3 tools/shot-compare.py "$shots/orig" "$shots/orig2" "$shots/rust" || bad=1
+python3 tools/shot-compare.py "$shots/orig" "$shots/orig2" "$shots/rust" --coarse field-walk || bad=1
 exit $bad

@@ -39,9 +39,15 @@ fn setup() -> Option<Twins> {
     let dir = PathBuf::from(dir);
     let exe = dir.join("FFX.exe");
     let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    for o in [&mut a, &mut b] {
+        let at = o.rebase(FPU_POP);
+        o.write(at, &[0xdd, 0xd8, 0xc3]).unwrap(); // fstp st0; ret
+    }
     Some(Twins {
-        a: Oracle::from_snapshot(&exe, &pages).unwrap(),
-        b: Oracle::from_snapshot(&exe, &pages).unwrap(),
+        a,
+        b,
         archive: Archive::open(dir.join("data/FFX_Data.vbf")).unwrap(),
     })
 }
@@ -131,10 +137,7 @@ fn character_decoders_match_the_original() {
                 let pos = (n % 7) as i32 - 2;
                 #[allow(clippy::cast_sign_loss)]
                 let args = [src, pos as u32, out, lang as u32];
-                let ra =
-                    t.a.call(t.a.rebase(DECODING_GAMECODE_JPCHKR), Conv::Cdecl, &args)
-                        .unwrap()
-                        .eax;
+                let ra = int_call(&mut t.a, DECODING_GAMECODE_JPCHKR, &args);
                 let rb = bridge::decoding_gamecode_jpchkr(&mut t.b, src, pos, out, lang);
                 #[allow(clippy::cast_sign_loss)]
                 let rb = rb as u32;
@@ -160,10 +163,7 @@ fn character_decoders_match_the_original() {
         let pos = (n % 7) as i32 - 2;
         #[allow(clippy::cast_sign_loss)]
         let args = [src, pos as u32, out];
-        let ra =
-            t.a.call(t.a.rebase(TEXT_DECODE_CHAR_WESTERN), Conv::Cdecl, &args)
-                .unwrap()
-                .eax;
+        let ra = int_call(&mut t.a, TEXT_DECODE_CHAR_WESTERN, &args);
         let rb = bridge::text_decode_char_western(&mut t.b, src, pos, out);
         #[allow(clippy::cast_sign_loss)]
         let rb = rb as u32;
@@ -298,8 +298,7 @@ fn convert(t: &mut Twins, text: &[u8], lang: i32, tables: (&[u8], &[u8]), what: 
     let out = t.alloc(&vec![0xcc; n]);
     #[allow(clippy::cast_sign_loss)]
     let args = [src, out, lang as u32];
-    t.a.call(t.a.rebase(TEXT_TO_UTF8), Conv::Cdecl, &args)
-        .unwrap();
+    int_call(&mut t.a, TEXT_TO_UTF8, &args);
     bridge::text_to_utf8(&mut t.b, src, out, lang);
     let oa = t.a.read(out, n).unwrap();
     assert_eq!(oa, t.b.read(out, n).unwrap(), "{what}: output");
@@ -307,4 +306,27 @@ fn convert(t: &mut Twins, text: &[u8], lang: i32, tables: (&[u8], &[u8]), what: 
         assert_eq!(core, oa[..core.len()], "{what}: core");
         assert_eq!(oa[core.len()], 0, "{what}: terminator");
     }
+}
+
+/// `fstp st0; ret`, in code no text test reaches (the body of
+/// `pppFpLoop`).
+const FPU_POP: u32 = 0x0072_9b20;
+
+/// Runs the original at `f` (cdecl) on an empty x87 stack: its `eax`.
+/// Fails when it leaves a float in `ST0`, which an integer port would
+/// drop.
+fn int_call(o: &mut Oracle, f: u32, args: &[u32]) -> u32 {
+    let pop = o.rebase(FPU_POP);
+    for _ in 0..8 {
+        if o.call(pop, Conv::Cdecl, &[]).unwrap().st0.is_none() {
+            break;
+        }
+    }
+    let r = o.call(o.rebase(f), Conv::Cdecl, args).unwrap();
+    assert!(
+        r.st0.is_none(),
+        "{f:#x}: the original returns {:?} in ST0",
+        r.st0
+    );
+    r.eax
 }

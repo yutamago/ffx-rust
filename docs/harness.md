@@ -135,6 +135,15 @@ cargo run --release -p ffx-harness --example replay -- tools/replays/battle-atta
 tools/replay-compare.py /mnt/c/…/orig.trace /mnt/c/…/rust.trace
 ```
 
+The field replay's screenshots are compared coarsely (`shot-compare.py
+--coarse field-walk`): the ship's sway runs on a timer the replay does not
+pin down, so four runs of the original differ by 110,000 to 200,000 pixels
+there, a sub-pixel shift of the whole picture. Blocks of 40x40 pixels then
+move by up to about 14 brightness levels (the light beams at the top),
+while a missing character model moves its blocks by about 50; the limit
+is 25. Battle and menu screenshots
+stay exact.
+
 `tools/replays/menu-browse.txt` opens the main menu and takes screenshots
 at fixed frames. Some of the screen animates by the wall clock (the
 character panels' shimmer), so two runs of the original already differ in
@@ -184,7 +193,9 @@ target/release/game-slot run -- <command>    # waits, runs it in the slot
 ```
 
 `tools/run-game.sh` refuses to start a game while someone else holds the
-slot. A detached game (`Game::detach`) outlives its slot. Run long game
+slot. A test stopped mid-run leaves its game running; the next
+`Game::launch` in the slot ends it with the harness's `quit` (only games
+that answer on the harness port: a game the user plays is never touched). A detached game (`Game::detach`) outlives its slot. Run long game
 tests as background commands: they wait for their turn and finish later.
 
 ## Tests
