@@ -61,38 +61,9 @@ fn graphic_draw_ui_element(fields: &[(u32, u32)]) -> u32 {
     )
 }
 
-/// Calls a game function pointer (a menu callback, cdecl) with zero to five
-/// arguments.
-#[allow(clippy::many_single_char_names)] // the arguments in order
+/// Calls a game function pointer (a menu callback, cdecl).
 fn call_ptr(f: u32, args: &[u32]) -> u32 {
-    // SAFETY: `f` is a callback the game stored in a menu window; the
-    // originals call it as cdecl with these arguments.
-    unsafe {
-        match *args {
-            [] => {
-                let f: unsafe extern "C" fn() -> u32 = std::mem::transmute(f as usize);
-                f()
-            }
-            [a, b, c, d, e] => {
-                let f: unsafe extern "C" fn(u32, u32, u32, u32, u32) -> u32 =
-                    std::mem::transmute(f as usize);
-                f(a, b, c, d, e)
-            }
-            [a] => {
-                let f: unsafe extern "C" fn(u32) -> u32 = std::mem::transmute(f as usize);
-                f(a)
-            }
-            [a, b] => {
-                let f: unsafe extern "C" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
-                f(a, b)
-            }
-            [a, b, c] => {
-                let f: unsafe extern "C" fn(u32, u32, u32) -> u32 = std::mem::transmute(f as usize);
-                f(a, b, c)
-            }
-            _ => unreachable!("menu callbacks take one to three arguments"),
-        }
-    }
+    super::call_cdecl(f, args)
 }
 
 ported! {
@@ -2803,9 +2774,9 @@ ported! {
     TkNormalFVector @ 0x0088_c5a0 => extern "C" fn tk_normal_f_vector(v: u32) {
         tk::tk_normal_f_vector(&mut mem(), v);
     }
-    /// `MenuWin_MatchSceneTable(_, kind)`: see the bridge for `eax`.
-    MenuWin_MatchSceneTable @ 0x008e_02f0 => extern "C" fn menu_win_match_scene_table(_a: u32, kind: i32) -> u32 {
-        tk::menu_win_match_scene_table(&mut mem(), kind)
+    /// `hardCodeToFixTheWrongData(_, kind)`: see the bridge for `eax`.
+    hardCodeToFixTheWrongData @ 0x008e_02f0 => extern "C" fn hard_code_to_fix_the_wrong_data(_a: u32, kind: i32) -> u32 {
+        tk::hard_code_to_fix_the_wrong_data(&mut mem(), kind)
     }
     /// `TkMenuDrawRect(x, y, w, h, c0, c1)`: through the renderer.
     TkMenuDrawRect @ 0x008d_d340 => extern "C" fn tk_menu_draw_rect(x: i32, y: i32, w: i32, h: i32, c0: u32, c1: u32) -> u32 {
@@ -2915,9 +2886,9 @@ ported! {
     Gu_WindowControlSetText @ 0x0084_a710 => extern "C" fn gu_window_control_set_text(window: u32, id: u32, s: u32) {
         gu::gu_window_control_set_text(&mut mem(), window, id, s, &mut |_, p| user_free(p), &mut |_, n| user_malloc(n));
     }
-    /// `MenuStatus_LoadLayout()`.
-    MenuStatus_LoadLayout @ 0x008d_4920 => extern "C" fn menu_status_load_layout() {
-        tk::menu_status_load_layout(&mut mem());
+    /// `TkMn2GetStatusPos()`.
+    TkMn2GetStatusPos @ 0x008d_4920 => extern "C" fn tk_mn2_get_status_pos() {
+        tk::tk_mn2_get_status_pos(&mut mem());
     }
     /// `Gu_WindowSetTitle(window, s)`: the title control (`+0x34`).
     Gu_WindowSetTitle @ 0x0084_b6a0 => extern "C" fn gu_window_set_title(window: u32, s: u32) {
@@ -2931,14 +2902,6 @@ ported! {
     TkSetVibrateStream @ 0x0087_5fb0 => extern "C" fn tk_set_vibrate_stream(k: i32, curve: u32, table: u32) -> u32 {
         tk::tk_set_vibrate_stream(&mut mem(), k, curve, table)
     }
-    /// `Ch_DrawGetShadowMode()`.
-    Ch_DrawGetShadowMode @ 0x0082_ec60 => extern "C" fn ch_draw_get_shadow_mode() -> u32 {
-        tk::get_byte(&mem(), 0x0130_08bd)
-    }
-    /// `Ch_DrawGetShadowSemi()`.
-    Ch_DrawGetShadowSemi @ 0x0082_ec70 => extern "C" fn ch_draw_get_shadow_semi() -> u32 {
-        tk::get_byte(&mem(), 0x0130_08be)
-    }
     /// `TkGetSavedLang()`.
     TkGetSavedLang @ 0x0088_c850 => extern "C" fn tk_get_saved_lang() -> u32 {
         tk::get_byte(&mem(), 0x0133_0874)
@@ -2947,9 +2910,9 @@ ported! {
     Ch_RequestCalcNormal @ 0x0083_2540 => extern "C" fn ch_request_calc_normal() {
         tk::ch_request_calc_normal(&mut mem());
     }
-    /// `Pad_RemapButton(pad, port, code)`.
-    Pad_RemapButton @ 0x0088_8cf0 => extern "C" fn pad_remap_button(pad: i32, port: i32, code: i32) -> i32 {
-        tk::pad_remap_button(&mem(), pad, port, code)
+    /// `TkGetControlerBindAnalogIndex(pad, port, code)`.
+    TkGetControlerBindAnalogIndex @ 0x0088_8cf0 => extern "C" fn tk_get_controler_bind_analog_index(pad: i32, port: i32, code: i32) -> i32 {
+        tk::tk_get_controler_bind_analog_index(&mem(), pad, port, code)
     }
     /// `Atel_FindWorkerByOwner(owner)`: `u16 +0x2e`, or -1.
     Atel_FindWorkerByOwner @ 0x0087_6440 => extern "C" fn atel_find_worker_by_owner(owner: u32) -> i32 {

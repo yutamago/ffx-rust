@@ -77,5 +77,15 @@ for f in sorted((progress.REPO / "crates/ffx-hook/src/ported").glob("*.rs")):
         elif not names.get(a):
             print(f"{where}: no function line in symbols/ffx.sym")
             bad += 1
+# A panic in a function the game calls cannot unwind: it ends the process.
+# Shims and their helpers must not panic (the trigonometry stand-ins built
+# only off the game's target are the exception).
+PANICS = re.compile(r"\b(unreachable!|panic!|todo!|unimplemented!)|\.unwrap\(\)|\.expect\(")
+for f in sorted((progress.REPO / "crates/ffx-hook/src/ported").glob("*.rs")):
+    lines = f.read_text(encoding="utf-8").splitlines()
+    for n, line in enumerate(lines, 1):
+        if PANICS.search(line) and "runs in the 32-bit game" not in line and "\"32-bit\"" not in line:
+            print(f"{f.name}:{n}: may panic in the game: {line.strip()[:80]}")
+            bad += 1
 print(f"{len(seen)} ported, {bad} problems")
 sys.exit(1 if bad else 0)

@@ -142,7 +142,7 @@ launcher normally writes. Without it the game creates the file with
 `Language=jp`, so the script sets the `Language=` line on every launch.
 
 Then check `ffx-hook.log` in the game folder: every hook should say
-`Installed`.
+`Installed` (one block of lines, written at once: the log may sit on the slow WSL share).
 
 No Steam patch is needed. `SteamAPI_RestartAppIfNecessary(0)` returns false,
 `SteamAPI_Init()` fails, and the game carries on with Steam features

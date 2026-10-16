@@ -473,12 +473,96 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   logging stand-ins in a code cave (the body of `0x00764de0`). The CRT
   stubs (critical sections) are not on main yet, so the round 7 teardown
   tests still log `rcFree` instead of using the real allocator.
-- Not ported: `rcbgSceneSetMatrix` (projection, `_CIatan`, camera calls on
-  stack matrices), `rcbgGuideSetModelFromIdMap`, `yiMapReadMaster` (CD
-  function table, `fprintf`), `0x00909680` (host file loading), the jump
+- Not ported (ported in round 9 unless listed below): `rcbgSceneSetMatrix`
+  (projection, `_CIatan`, camera calls on stack matrices),
+  `rcbgGuideSetModelFromIdMap`, `yiMapReadMaster` (CD function table,
+  `fprintf`), `0x00909680` (host file loading), the jump
   thunks `yiFree` (`0x0090bbc0`), `Yn_RcbgInit` (`0x00919a70`) and the two
   `Yn_PreBgSetData` jumps (`0x00919b90`, `0x00919d30`), which are not
   functions of their own in the dump.
+
+## Map camera, ID-map guide model, swizzle, map reads (round 9)
+
+- Camera block (`rcbgSceneSetMatrix` `0x00920c00`, `crates/ffx-field`
+  `camera`): `+0x64` a y offset (`i32`), `+0x68` eye, `+0x78` the point
+  looked at, `+0x88` up, `+0xa8` the field of view in degrees (0 leaves
+  everything alone; NaN does not), `+0xac` roll, `+0xb0`/`+0xb4` the x
+  scale and it times 7/6, `+0xb8`/`+0xbc` the screen-centre offsets. In
+  order: the player's clip distance to 1000 (`Ch_SetClipZ`), the
+  projection (`rcbgSetProjectionMatrixSub` `0x009202e0`:
+  `t = tan(fov / 2)` through `_CItan`, x scale `512 / (2 d t)` with `d`
+  the screen depth `0x0113701c`, `FFXSamp0ViewScreenMatrix` with the
+  centre `0x01137020`/`24` moved by the offsets and the near/far planes
+  `0x01137008`/`0c`, times 10 and 2 * 65536 when the scene's `+0xfc` is
+  set; `256 / t` back), the battle screen offset `0x01136fb8`, the clip
+  matrix (`512 / sx`, `416 / sy`), the view (`rcbgSetViewMatrix`
+  `0x009204b0`: eye and target scaled by the scene's `+0xf4`, then
+  `MsCameraMatrix`), both to `MsSetCameraMatrix` (roll argument
+  `256 / t + 256`), and the renderer's field of view
+  `2 atan(448 / (2 sy) / d)` (`_CIatan`), aspect `(512 / 2 sx) / (448 /
+  2 sy)` and `g_CameraMatrix`. The stack matrices and vectors are a
+  `work` parameter in the port; `_CItan`/`_CIatan` are called through
+  the game's import thunks (`ST0` in and out).
+- The scale-vector routine (`VFX_ScaleVec3` through vf31) exists as
+  fourteen identical copies (`0x009200a0`, `0x00927b00`, twelve more),
+  plus two that scale all four elements (`pppVu0MulX_007500d0`) and two
+  that convert to 12.4 fixed point (`rcVec4fToFixed`). Each copies its
+  16-byte argument area to `0x00c8f970`: the scale, then three words of
+  its caller's stack, which the port does not write.
+- `rcbgModelCreate` (`0x00927be0`) builds a primitive blob from a
+  description (`n`, `{type, count, flags}` triples, vertex and normal
+  counts): a 0x20 header (`+4` 0x20, `+8` the vertex offset, `+0xc` the
+  normal offset, `+0x10` the primitive count, `+0x12`/`+0x14` the vertex
+  and normal counts, `+0x16` 0x44), packet headers (`+1` type, `+2`
+  count, `+4` flags) each followed by `count` records of the type's
+  stride (`0x00c5e790`: 20, 28, 32, 40, 24, 32, 40, 48), an end mark
+  `0xffff`; every part rounded to 16 bytes.
+- `rcbgGuideSetModelFromIdMap` (`0x0091d5e0`): the walk mesh (`ID map`,
+  `0x01301a94`): `+6` groups, `+0xa` vertices (`i16` x and z at 8-byte
+  steps from `+0x18`), `+0xc` the scale (vertices are divided by it),
+  `+0x1c` the groups (0x10 bytes: `+8` the triangle count, `+0xc` the
+  triangles, 0x10 bytes with three `u16` vertex indices). More than
+  0x1ff triangles build nothing ("ID MAP no POLYGON oosugi desu"). The
+  model is one type-0 packet, white triangles, vertices packed to `i16`
+  by the bounding box's scale (`rcbgModelFToS0`).
+- Format-0x13 images (`yiSwizzleImage` `0x0090e0b0`, from
+  `yiLoadVramImage`): powers of two up to 1024 each way, cut into
+  128x64 tiles; each tile's lines are gathered at 0x80 bytes,
+  `yiSwizzlePage` (`0x0090e2e0`) places its 16x16 blocks by the tables at
+  `0x00c5db40` (reading order) and `0x00c5db60` (the GS block layout,
+  four rows of eight) and `yiSwizzleColumns` (`0x0090e000`) reorders each
+  block's bytes by `0x00c5da80`; the result goes out in rows of `2 w`
+  bytes (at most 0x100), `h / 2` of them (at most 0x20).
+- `yiMapReadMaster` (`0x009093b0`, `Sg_MapInit`): after the renderer
+  reset, the map ids `0x01934edc` and, with a CD file, `GetCD`'s table
+  (`+0x0` read, `+0x8` finish, `+0x10` select a map, `+0x14` a file's
+  size) reads a `MAP1` file into a `yiMalloc64` buffer (`g_YiMapData`):
+  section 0 the 2D map (`graphicFieldMapLoad(name, 0)`,
+  `Yn_PreBgSetData`, status bit 0x4000), 1 the 3D map (`(name, 1)`,
+  `yiArc_readmem`), `alarm + 2` the alarms, 10 effect data
+  (`pppSetFpPdt`), 12 and 11 more backgrounds; the CD ids go to
+  `0x01934ed4`. Then status `| 0x11`, the draw mask (-1 with the battle
+  map circle, else -9) and the default animations. `yiMapSetup`
+  (`0x00909680`) is the debug path: `host0:<dir><name>.vpa` read whole
+  through `sceOpen`/`sceRead`.
+- Smaller pieces: `rcbgSceneDelObject`, `Yn_SceneFindObject` (the
+  current scene, then each scene), `rcbgPreAddFp`/`rcbgPreGetMapNo` (the
+  field programs of maps 0x61, 0xad, 0x235/0x236 and the battles that
+  use them), `rcfx` particle forces (sorted by `+0x18`), spring, nail
+  and wind set-up, palette animations (rotate, shift, white into the
+  last entry), transfer entries and their GS upload packet, renderer
+  resets (`+0x27624` packet, `+0xbe07c` fog), `yiRotMatrixSeq` (orders
+  XYZ, YXZ, ZXY, XZY, YZX, ZYX), parser helpers, effect task kill.
+- Testing: the trigonometric intrinsics are the CPU's (`fptan`, `fpatan`,
+  `fcos`, `fsin`) in both oracles; `MsCameraMatrix` stores four of its
+  own uninitialised locals over vf registers (`0x00c8f7d8`, `0x00c8f7e8`),
+  so those bytes, like the scale routine's stack copy, are taken from the
+  original's side before comparing. On snapshots the game's own heap runs
+  (`user_malloc`/`user_free`, with the CRT's critical sections stubbed),
+  so objects are built and torn down with the real allocator; on the image
+  alone the heap needs Win32 events and the bump allocator stays.
+- Not ported: `yiWindowDrawBar` (`0x00907c10`) still is no function start
+  in the dump.
 
 ## Floats
 

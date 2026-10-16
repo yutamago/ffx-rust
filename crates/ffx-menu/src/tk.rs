@@ -4109,13 +4109,13 @@ pub mod bridge {
         n.is_empty() || h.windows(n.len()).any(|w| w == n.as_slice())
     }
 
-    /// `MenuWin_MatchSceneTable(_, kind)` (`0x008e02f0`, own name): the
+    /// `hardCodeToFixTheWrongData(_, kind)` (`0x008e02f0`): the
     /// flag at `0x01871534` set when `kind` is 14 and one of the seven
     /// 16-byte records at `0x00c5b240` (a name, then an id at `+0xc`) has
     /// its name inside the string at `0x023cbc60` and its id equal to
     /// `0x01325ac0`; cleared otherwise. Returns what the last record leaves
     /// in `eax`: that global's value when its name matched, else 0.
-    pub fn menu_win_match_scene_table(mem: &mut impl Mem, kind: i32) -> u32 {
+    pub fn hard_code_to_fix_the_wrong_data(mem: &mut impl Mem, kind: i32) -> u32 {
         let flag = mem.rebase(0x0187_1534);
         mem.write(flag, 0u32);
         let hay = mem.rebase(0x023c_bc60);
@@ -4483,7 +4483,7 @@ pub mod bridge {
     }
 
     /// The status screen's layout before `num_wpnplt`
-    /// ([`menu_status_load_layout`]).
+    /// ([`tk_mn2_get_status_pos`]).
     const STATUS_LAYOUT_A: &[SeqOp] = &[
         SeqOp::Color(0x00b6_2884, 0x023c_c41c),
         SeqOp::Color(0x00b6_2890, 0x023c_c418),
@@ -4587,7 +4587,7 @@ pub mod bridge {
         SeqOp::Pos(0x00b6_61a8, 0x023c_c3e0),
     ];
 
-    /// The weapon plates and where `MenuStatus_LoadLayout` copies them.
+    /// The weapon plates and where `TkMn2GetStatusPos` copies them.
     const WEAPON_PLATE_COPIES: [(u32, u32); 4] = [
         (0x0186_a8e8, 0x0186_a930),
         (0x0186_a900, 0x0186_a948),
@@ -4595,13 +4595,13 @@ pub mod bridge {
         (0x0186_a978, 0x0186_a990),
     ];
 
-    /// `MenuStatus_LoadLayout()` (`0x008d4920`, own name): the status
+    /// `TkMn2GetStatusPos()` (`0x008d4920`): the status
     /// screen's layout from scene 1 (menu background colours, name and
     /// weapon plates, limit gauge, faces, ...); the four weapon plates are
     /// then copied (24 bytes each, [`WEAPON_PLATE_COPIES`]), the copies
     /// moved down by `num_wpnplt`
     /// (also kept at `0x0186a9d4`).
-    pub fn menu_status_load_layout(mem: &mut impl Mem) {
+    pub fn tk_mn2_get_status_pos(mem: &mut impl Mem) {
         run_seq_ops(mem, STATUS_LAYOUT_A);
         let dy = tk_mn2_seq_get_num(mem, 1, mem.rebase(0x00b6_60e8)).cast_unsigned();
         mem.write(mem.rebase(0x0186_a9d4), dy);
@@ -4670,10 +4670,8 @@ pub mod bridge {
         mem.write(rec + 0x22, 1u8);
         r
     }
-    /// A byte global read zero-extended (`movzx eax, byte [g]`):
-    /// `Ch_DrawGetShadowMode` (`0x0082ec60`, `0x013008bd`),
-    /// `Ch_DrawGetShadowSemi` (`0x0082ec70`, `0x013008be`) and
-    /// `TkGetSavedLang` (`0x0088c850`, `0x01330874`).
+    /// A byte global read zero-extended (`movzx eax, byte [g]`), as
+    /// `TkGetSavedLang` (`0x0088c850`, `0x01330874`) does.
     pub fn get_byte(mem: &impl Mem, g: u32) -> u32 {
         u32::from(mem.read::<u8>(mem.rebase(g)))
     }
@@ -4685,12 +4683,17 @@ pub mod bridge {
         mem.write(mem.rebase(0x0130_09e4), 1u8);
     }
 
-    /// `Pad_RemapButton(pad, port, code)` (`0x00888cf0`, own name): codes
+    /// `TkGetControlerBindAnalogIndex(pad, port, code)` (`0x00888cf0`): codes
     /// 4..=11 (the buttons after the four directions) through the pad's
     /// button map (`TkFindPadButton`) and back to a code by its position in
     /// `g_PadButtonCodes` (`0x00c54e28`) plus 4; 0 for an unmapped button;
     /// other codes unchanged.
-    pub fn pad_remap_button(mem: &impl Mem, pad: i32, port: i32, code: i32) -> i32 {
+    pub fn tk_get_controler_bind_analog_index(
+        mem: &impl Mem,
+        pad: i32,
+        port: i32,
+        code: i32,
+    ) -> i32 {
         if !(4..0xc).contains(&code) {
             return code;
         }

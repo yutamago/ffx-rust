@@ -4652,11 +4652,11 @@ fn tk_round7_matches_the_original() {
         t.put(t.sym(0x0132_5ac0), id);
         let kind = t.rng.pick(&[0xeu32, 0xe, 3]);
         t.twin(
-            "MenuWin_MatchSceneTable",
+            "hardCodeToFixTheWrongData",
             0x008e_02f0,
             &[0, kind],
             U32,
-            |o| w(tk::menu_win_match_scene_table(o, i(kind))),
+            |o| w(tk::hard_code_to_fix_the_wrong_data(o, i(kind))),
         );
         for (name, sym, g) in [
             ("Ch_DrawGetShadowMode", 0x0082_ec60u32, 0x0130_08bdu32),
@@ -4717,8 +4717,8 @@ fn tk_round7_matches_the_original() {
                 0
             });
             if round % 10 == 0 {
-                t.twin("MenuStatus_LoadLayout", 0x008d_4920, &[], VOID, |o| {
-                    tk::menu_status_load_layout(o);
+                t.twin("TkMn2GetStatusPos", 0x008d_4920, &[], VOID, |o| {
+                    tk::tk_mn2_get_status_pos(o);
                     0
                 });
             }
@@ -4734,9 +4734,13 @@ fn tk_round7_matches_the_original() {
             });
             let code = t.rng.pick(&[0u32, 3, 4, 5, 8, 11, 12, 0xffff_ffff]);
             let pp = t.rng.below(2);
-            t.twin("Pad_RemapButton", 0x0088_8cf0, &[pp, 0, code], U32, |o| {
-                s(tk::pad_remap_button(o, i(pp), 0, i(code)))
-            });
+            t.twin(
+                "TkGetControlerBindAnalogIndex",
+                0x0088_8cf0,
+                &[pp, 0, code],
+                U32,
+                |o| s(tk::tk_get_controler_bind_analog_index(o, i(pp), 0, i(code))),
+            );
             let sw = t.alloc_random(0x30);
             let wh = t.rng.pick(&[0u32, 0x40, 0x100, 0xffff_fff0]);
             t.put(sw + 0x1c, wh);

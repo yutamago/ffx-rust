@@ -105,6 +105,35 @@ whose callees are all ported already (or library code, left original for
 now): the ones that can be ported next, most-called first.
 `tools/progress.py` shows where each module stands.
 
+## Trivial functions
+
+Getters, setters, flag stores, constants and field copies are ported by
+`tools/autoport.py`, not by hand. It evaluates every unported game
+function symbolically over a small exact set of integer instructions
+(moves and extensions, `lea`, add/sub/and/or/xor/not/neg/inc/dec, shifts
+and multiplies by constants, `cmp`/`test` + `setcc`, push/pop and the MSVC
+frame, `ret`). A function qualifies only when it is straight-line code of
+those alone covering its whole body, reads nothing but its arguments
+(`this`, fastcall's `ecx`/`edx`), touches the stack only for its frame,
+restores every callee-saved register, is at least five bytes with nothing
+jumping or pointing inside it, and either defines all 32 bits of `eax`
+(a `mov al, [x]` getter does not) or leaves `eax` alone. Relocations tell
+image addresses from constants.
+
+Each match becomes a row of `ffx_auto::ROWS` (`crates/ffx-auto/src/table.rs`:
+the loads and stores in program order, the `eax` expression), run by the
+interpreter in `ffx_auto` from a generated shim in
+`crates/ffx-hook/src/ported/auto.rs`. Only functions named in
+`symbols/ffx.sym` are ported; `tools/autoport.py --unnamed` lists the rest
+for naming, after which a rerun picks them up. `--verify` runs
+`crates/ffx-oracle/tests/auto.rs` (every row against the original on random
+arguments, pointers, indices and globals, and on both snapshots; `eax` in all
+32 bits and every written byte) and drops a failing row for good
+(`tools/autoport-dropped.tsv`), never patching it. Do not edit the
+generated files; a function a module agent ports by hand simply leaves the
+table on the next run. `--rejects` shows why the other candidates were
+skipped.
+
 ## What not to do
 
 - No raw pointers in module crates: `Mem` only, so the same code runs in
