@@ -2370,6 +2370,20 @@ ported! {
     MagicFile_FindPreloaded_009dad70 @ 0x009d_ad70 => extern "C" fn magicfile_findpreloaded_009dad70(id: i32, out: u32) -> u32 {
         instance::bridge::find_preloaded(&mut mem(), id, out)
     }
+    /// `PStreamFile::GetStreamPrefix()`.
+    Phyre_PSerialization_PStreamFile_GetStreamPrefix @ 0x0060_7d30 => extern "C" fn get_stream_prefix() -> u32 {
+        files::bridge::stream_prefix(&mem())
+    }
+    /// `fiosUnifyFilename(src, out, size)`.
+    fiosUnifyFilename @ 0x0067_9820 => extern "C" fn fios_unify_filename(src: u32, out: u32, size: u32) -> u32 {
+        files::bridge::unify_filename(&mut mem(), src, out, size, |m, level, fmt, arg| {
+            call_sym(m, 0x0043_52f0, &[level, fmt, arg]);
+        })
+    }
+    /// `get_hdd_name(n)`.
+    get_hdd_name @ 0x0077_7eb0 => extern "C" fn get_hdd_name(n: i32) -> u32 {
+        cd::bridge::get_hdd_name(&mut mem(), n)
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

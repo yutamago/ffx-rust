@@ -4846,3 +4846,60 @@ fn round6c(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         }
     }
 }
+
+/// `fiosUnifyFilename` over prefixes and paths with and without the PS3
+/// names, `size` from roomy to too small; `get_hdd_name`; the prefix getter.
+#[test]
+fn unify_filename_matches_the_original() {
+    use files::bridge as f;
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let (a, b) = (&mut a, &mut b);
+    let printf = a.rebase(0x0043_52f0);
+    a.stub_return(printf, 0x5555).unwrap();
+    let prefix = alloc(a, b, 0x40);
+    let src = alloc(a, b, 0x100);
+    let out = alloc(a, b, 0x100);
+    let put_str = |a: &mut Oracle, b: &mut Oracle, at: u32, s: &[u8]| {
+        let mut v = s.to_vec();
+        v.push(0);
+        a.write(at, &v).unwrap();
+        b.write(at, &v).unwrap();
+    };
+    let prefixes: [&[u8]; 3] = [b"", b"data/", b"c:/game/ffx/"];
+    let paths: [&[u8]; 8] = [
+        b"chr/c001.cgfx.phyre",
+        b"data/chr/c001.cgfx.phyre",
+        b"GCM/tex/a.dds.phyre",
+        b"data/GCM/x.cgfx.phyre",
+        b"plain.bin",
+        b"",
+        b"c:/game/ffx/abc/GCMGCM.cgfx.phyre.cgfx.phyre",
+        b"a.cgfx.phyreGCM",
+    ];
+    for pre in prefixes {
+        put_str(a, b, prefix, pre);
+        set(a, b, f::STREAM_PREFIX, prefix);
+        assert_eq!(eax(a, 0x0060_7d30, &[]), f::stream_prefix(b));
+        for path in paths {
+            put_str(a, b, src, path);
+            for size in [0x100u32, 0x30, 0x14, 8, 1] {
+                let ra = eax(a, 0x0067_9820, &[src, out, size]);
+                let mut printed = Vec::new();
+                let rb =
+                    f::unify_filename(b, src, out, size, |_, l, fm, s| printed.push((l, fm, s)));
+                assert_eq!(ra, rb, "{pre:?} {path:?} {size}");
+                assert_eq!(printed.len(), usize::from(path.len() > size as usize));
+                same_memory("fiosUnifyFilename", a, b);
+            }
+        }
+    }
+    for n in [0, 1, 9, 10, -1, i32::MAX, i32::MIN] {
+        assert_eq!(
+            eax(a, 0x0077_7eb0, &[n.cast_unsigned()]),
+            cd::bridge::get_hdd_name(b, n)
+        );
+        same_memory("get_hdd_name", a, b);
+    }
+}

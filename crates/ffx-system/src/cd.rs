@@ -351,4 +351,14 @@ pub mod bridge {
             mem.write(table + off, f);
         }
     }
+
+    /// `get_hdd_name(n)` (`0x00777eb0`): `sprintf(0x0112a78c, "pfs0:ffx%d",
+    /// n)`; returns the buffer.
+    pub fn get_hdd_name(mem: &mut impl Mem, n: i32) -> u32 {
+        let buf = mem.rebase(0x0112_a78c);
+        let mut text = format!("pfs0:ffx{n}").into_bytes();
+        text.push(0);
+        mem.write_bytes(buf, &text);
+        buf
+    }
 }

@@ -237,4 +237,90 @@ pub mod bridge {
             }
         }
     }
+
+    /// The stream path prefix (`g_BasePath`, `0x00cc9698`).
+    pub const STREAM_PREFIX: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x00cc_9698);
+
+    /// `PStreamFile::GetStreamPrefix()` (`0x00607d30`).
+    pub fn stream_prefix(mem: &impl Mem) -> u32 {
+        STREAM_PREFIX.get(mem)
+    }
+
+    fn c_str(mem: &impl Mem, p: u32) -> Vec<u8> {
+        let mut v = Vec::new();
+        loop {
+            let c: u8 = mem.read(p.wrapping_add(u32::try_from(v.len()).unwrap_or(u32::MAX)));
+            if c == 0 {
+                return v;
+            }
+            v.push(c);
+        }
+    }
+
+    fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
+        if needle.is_empty() {
+            return Some(0);
+        }
+        hay.windows(needle.len()).position(|w| w == needle)
+    }
+
+    /// `fiosUnifyFilename(src, out, size)` (`0x00679820`): `out` cleared
+    /// (`size` bytes), an overflow message printed (`Phyre_PhyrePrintf(1,
+    /// fmt, src)`, passed in) when `src` is longer than `size`; then the
+    /// PC path: `.cgfx.phyre` becomes `.fx.phyre`, `GCM` becomes `D3D11`,
+    /// and the stream prefix goes in front unless the path already holds it
+    /// (`sprintf_s(out, size, ...)`: an empty `out` and -1 when it does not
+    /// fit). Returns the length written.
+    pub fn unify_filename<M: Mem>(
+        mem: &mut M,
+        src: u32,
+        out: u32,
+        size: u32,
+        print: impl FnOnce(&mut M, u32, u32, u32),
+    ) -> u32 {
+        mem.write_bytes(out, &vec![0; size as usize]);
+        let path = c_str(mem, src);
+        if size.cast_signed() < i32::try_from(path.len()).unwrap_or(i32::MAX) {
+            let fmt = mem.rebase(0x00b4_4dbc);
+            print(mem, 1, fmt, src);
+        }
+        let mut buf = match find(&path, b".cgfx.phyre") {
+            Some(at) => {
+                let mut v = path[..at].to_vec();
+                v.extend_from_slice(b".fx.phyre");
+                v
+            }
+            None => path.clone(),
+        };
+        let prefix_at = stream_prefix(mem);
+        let prefix = c_str(mem, prefix_at);
+        let has_prefix = find(&buf, &prefix).is_some();
+        let pre = if has_prefix { Vec::new() } else { prefix };
+        let text = match find(&buf, b"GCM") {
+            Some(at) => {
+                let mut v = pre;
+                v.extend_from_slice(&buf[..at]);
+                v.extend_from_slice(b"D3D11");
+                v.extend_from_slice(&buf[at + 3..]);
+                v
+            }
+            None => {
+                let mut v = pre;
+                v.append(&mut buf);
+                v
+            }
+        };
+        if text.len() >= size as usize {
+            if size > 0 {
+                mem.write(out, 0u8);
+            }
+            return u32::MAX;
+        }
+        mem.write_bytes(out, &text);
+        mem.write(
+            out.wrapping_add(u32::try_from(text.len()).unwrap_or(0)),
+            0u8,
+        );
+        u32::try_from(text.len()).unwrap_or(u32::MAX)
+    }
 }
