@@ -60,6 +60,15 @@ the merge, `tools/sym-resolve.py` merges it per symbol against the common
 ancestor (a line only one side changed takes that side; both changed: ours,
 reported) and reports a name given to two addresses.
 
+## Verifying a merge batch
+
+`tools/verify-batch.py [BASE]` (BASE: the last pushed state, `origin/main`)
+runs only what the batch can affect: unit tests of the changed crates and of
+every crate depending on them, their `ffx-oracle` tests on the image alone
+and on both snapshots (all of them when `ffx-oracle/src` or `ffx-bridge`
+changed), the port checks, the hook build and the replays. The game-data
+tests that read the whole archive run separately, now and then.
+
 ## Progress and ownership
 
 ```bash
