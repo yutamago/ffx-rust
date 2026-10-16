@@ -1078,4 +1078,470 @@ pub mod bridge {
             _ => FUNC_NAME.ptr(mem).addr,
         }
     }
+
+    // Round 3.
+    /// The memory manager's alignment less one (`Sg_MemSetAlign`).
+    pub const MEM_ALIGN: Global<u32> = Global::new(0x0130_1964);
+
+    /// `Sg_MemSetAlign(align)` (`0x0083c4a0`): `align - 1` (the warning for
+    /// a small alignment goes to the empty `dbgPrintf`); returns it.
+    pub fn mem_set_align(mem: &mut impl Mem, align: u32) -> u32 {
+        let v = align.wrapping_sub(1);
+        MEM_ALIGN.set(mem, v);
+        v
+    }
+
+    /// `Sg_MemCache(p)` (`0x0083b700`): `p` (the PS2's cache flush is gone).
+    #[must_use]
+    pub const fn mem_cache(p: u32) -> u32 {
+        p
+    }
+
+    /// `Sg_FadeIn(time)` (`0x0082cb80`): `Sg_Fade_Common(time, 1, 0)`.
+    pub fn fade_in(mem: &mut impl Mem, time: u32) -> u32 {
+        fade_common(mem, time, 1, 0)
+    }
+    /// `Sg_FadeInW(time)` (`0x0082cba0`): from white, `Sg_Fade_Common(time, 1, 1)`.
+    pub fn fade_in_w(mem: &mut impl Mem, time: u32) -> u32 {
+        fade_common(mem, time, 1, 1)
+    }
+    /// `Sg_FadeOut(time)` (`0x0082cbc0`): `Sg_Fade_Common(time, 0, 0)`.
+    pub fn fade_out(mem: &mut impl Mem, time: u32) -> u32 {
+        fade_common(mem, time, 0, 0)
+    }
+    /// `Sg_FadeOutW(time)` (`0x0082cbe0`): to white.
+    pub fn fade_out_w(mem: &mut impl Mem, time: u32) -> u32 {
+        fade_common(mem, time, 0, 1)
+    }
+
+    /// `Sg_FilterSub(r, g, b, time)` (`0x0082cc80`): `Sg_FilterAdd`, then
+    /// mode 8 (subtractive); returns on.
+    pub fn filter_sub(mem: &mut impl Mem, r: u32, g: u32, b: u32, time: u32) -> u32 {
+        let on = filter_add(mem, r, g, b, time);
+        FILTER_STATE.set(mem, 8);
+        on
+    }
+
+    /// `Sg_FocusReset()` (`0x0082ccf0`): focus values `0x10000` and
+    /// `0x20000`, then focus off (`Sg_EnFocus(0)`, whose old value it
+    /// returns).
+    pub fn focus_reset(mem: &mut impl Mem) -> u32 {
+        set_focus(mem, 0, 0x1_0000);
+        set_focus(mem, 1, 0x2_0000);
+        en_focus(mem, 0)
+    }
+
+    /// `Sg_ToggleFocus()` (`0x0082cd80`): flips focus on; when it comes on,
+    /// both focus values are set again (their bits).
+    pub fn toggle_focus(mem: &mut impl Mem) {
+        let v = FOCUS_ENABLE.get(mem).wrapping_sub(1) & 1;
+        FOCUS_ENABLE.set(mem, v);
+        if v != 0 {
+            let f0 = get_focus(mem, 0);
+            set_focus(mem, 0, f0);
+            let f1 = get_focus(mem, 1);
+            set_focus(mem, 1, f1);
+        }
+    }
+
+    /// The vertical blank counter (`g_SgVCount`).
+    pub const VCOUNT: Global<u32> = Global::new(0x012f_b7f0);
+    /// The counter at the last `Sg_MainCalcRate`.
+    pub const VCOUNT_LAST: Global<u32> = Global::new(0x012f_bc30);
+    /// The rate measurement mode (1: from the history).
+    pub const RATE_MODE: Global<u32> = Global::new(0x012f_b8a0);
+    /// The rate history: index pair and entries (`Sg_MainCalcRate`).
+    pub const RATE_HIST_HEAD: Global<u32> = Global::new(0x012f_b814);
+    /// See [`RATE_HIST_HEAD`].
+    pub const RATE_HIST_BASE: Global<u32> = Global::new(0x012f_b808);
+    /// See [`RATE_HIST_HEAD`].
+    pub const RATE_HIST: Global<u32> = Global::new(0x012f_b828);
+    /// The frame's rate in 1/256 frames (`0x100` at normal speed).
+    pub const RATE: Global<u32> = Global::new(0x023c_bbec);
+    /// [`RATE`] as a float (1.0 at normal speed).
+    pub const RATE_F: Global<f32> = Global::new(0x023c_bbe8);
+    /// 2^32 (`f32` in `.rdata`): an unsigned conversion's correction.
+    pub const TWO_32: Global<f32> = Global::new(0x00b1_1f14);
+    /// 1/256 (`f64` in `.rdata`).
+    pub const RATE_SCALE: Global<f64> = Global::new(0x00b5_0198);
+
+    /// `Sg_MainCalcRate()` (`0x008206c0`): the frame's rate from the
+    /// vertical blanks since the last call (`<< 7`, or the history entry in
+    /// mode 1), as an integer and a float (`/ 256`); normal speed (`0x100`,
+    /// 1.0) unless exactly one frame runs per game frame. Returns
+    /// `Sg_GetCurExecFrames()`.
+    pub fn main_calc_rate(mem: &mut impl Mem) -> i32 {
+        use ffx_bridge::x87::Reg;
+        let vc = VCOUNT.get(mem);
+        let mut rate = vc.wrapping_sub(VCOUNT_LAST.get(mem)) << 7;
+        RATE.set(mem, rate);
+        if RATE_MODE.get(mem) == 1 {
+            let i = RATE_HIST_HEAD
+                .get(mem)
+                .wrapping_sub(RATE_HIST_BASE.get(mem));
+            rate = mem.read(RATE_HIST.ptr(mem).addr.wrapping_add(i.wrapping_mul(4)));
+            RATE.set(mem, rate);
+        }
+        let mut x = Reg::constant(f64::from(rate.cast_signed()));
+        if rate.cast_signed() < 0 {
+            x = x.add_m32(TWO_32.get(mem));
+        }
+        let fr = Reg::load(x.store());
+        let rf = (fr * Reg::constant(RATE_SCALE.get(mem))).store();
+        VCOUNT_LAST.set(mem, vc);
+        RATE_F.set(mem, rf);
+        let n = get_cur_exec_frames(mem);
+        if n != 1 {
+            RATE.set(mem, 0x100);
+            RATE_F.set(mem, 1.0);
+        }
+        n
+    }
+
+    /// The development user name `Sg_GetUserName2` gives in viewer mode
+    /// (`"sugimoto"`).
+    pub const DEV_USER_NAME: Global<u8> = Global::new(0x00b5_9078);
+
+    /// `Sg_GetUserName2()` (`0x00820620`): [`DEV_USER_NAME`] in viewer
+    /// mode, else `Sg_GetUserName()`.
+    pub fn get_user_name2(mem: &impl Mem) -> u32 {
+        if get_viewer_mode(mem) == 0 {
+            get_user_name(mem)
+        } else {
+            DEV_USER_NAME.ptr(mem).addr
+        }
+    }
+
+    /// `Sg_IdGetShade(c)` (`0x0083e980`): bits 17..32 of a map id's colour
+    /// word when shading is on (`Sg_IdExistShade`), else `0x4210` (grey).
+    pub fn id_get_shade(mem: &impl Mem, c: u32) -> u32 {
+        if id_exist_shade(mem) == 0 {
+            0x4210
+        } else {
+            (c.cast_signed() >> 17).cast_unsigned() & 0x7fff
+        }
+    }
+
+    /// `Sg_Debug(what, v)` (`0x0083e5c0`): `what == 0x1113` sets the byte
+    /// at `0x01301a80`; anything else goes to the empty
+    /// `debug_exit_trace`.
+    pub fn debug(mem: &mut impl Mem, what: u32, v: u32) {
+        if what == 0x1113 {
+            let at = mem.rebase(0x0130_1a80);
+            mem.write(at, lo8(v));
+        }
+    }
+
+    /// `getUCStatus()` (`0x00822460`): bit 1 of the current script control
+    /// work's first byte (`AtelGetCurCtrlWork`), 0 without one.
+    pub fn get_uc_status(mem: &impl Mem) -> u32 {
+        let work = ffx_script::vm::bridge::atel_get_cur_ctrl_work(mem);
+        if work == 0 {
+            0
+        } else {
+            (u32::from(mem.read::<u8>(work)) >> 1) & 1
+        }
+    }
+
+    /// The dark Yojimbo flag (`set0434isDarkYojimbo`).
+    pub const DARK_YOJIMBO: Global<u32> = Global::new(0x00ce_c198);
+
+    /// `set0434isDarkYojimbo(id)` (`0x00829c60`): sets the flag when the
+    /// `u16` at `id` is `0x1154` or, failing that, the battle scene
+    /// (`MsGetBattleScene()`) is `0x24b0006`.
+    pub fn set_dark_yojimbo(mem: &mut impl Mem, id: u32) {
+        let hit = id != 0 && mem.read::<u16>(id) == 0x1154;
+        if hit || ffx_battle::state::bridge::ms_get_battle_scene(mem) == 0x24b_0006 {
+            DARK_YOJIMBO.set(mem, 1);
+        }
+    }
+
+    /// The player's direction: fixed on (`u8`) and the angle (`f32`)
+    /// (`Sg_PlayerSetDirFix`).
+    pub const PLAYER_DIR_FIX: Global<u8> = Global::new(0x0130_07c4);
+    /// See [`PLAYER_DIR_FIX`].
+    pub const PLAYER_DIR: Global<f32> = Global::new(0x0130_07c8);
+
+    /// `Sg_PlayerSetDirFix(on, degrees)` (`0x0082d990`): the angle in
+    /// radians (`x π / 180`, stored as `f32`), wrapped (`Angle_Wrap`).
+    pub fn player_set_dir_fix(mem: &mut impl Mem, on: u32, degrees: f32) {
+        use ffx_bridge::x87::Reg;
+        let pi = Reg::constant(crate::quat::bridge::PI.get(mem));
+        let k = Reg::constant(crate::quat::bridge::DEG_180.get(mem));
+        let r = (Reg::load(degrees) * pi / k).store();
+        PLAYER_DIR_FIX.set(mem, lo8(on));
+        PLAYER_DIR.set(mem, crate::vec::bridge::angle_wrap(r));
+    }
+
+    /// The mouse buttons: the raw state, this frame's and last frame's
+    /// decoded bits, the double-click position and timer
+    /// (`Sg_MouseButtonMain`).
+    pub const MOUSE_RAW: Global<u32> = Global::new(0x0132_5260);
+    /// See [`MOUSE_RAW`]: the decoded bits (`g_*`, read by the pad layer).
+    pub const MOUSE_BUTTONS: Global<u32> = Global::new(0x023c_bc10);
+    /// See [`MOUSE_RAW`].
+    pub const MOUSE_BUTTONS_LAST: Global<u32> = Global::new(0x0132_5250);
+    /// See [`MOUSE_RAW`].
+    pub const MOUSE_CLICK_POS: Global<[u32; 2]> = Global::new(0x0132_5254);
+    /// See [`MOUSE_RAW`].
+    pub const MOUSE_CLICK_TIMER: Global<u32> = Global::new(0x023c_bc00);
+
+    /// The decoded bits of one button: held (`hold`), pressed this frame
+    /// (`hold << 1`), released this frame (`hold << 2`).
+    fn edges(now: u32, last: u32, hold: u32) -> u32 {
+        let mut v = now;
+        if v & hold != 0 && last & hold == 0 {
+            v |= hold << 1;
+        }
+        if v & hold == 0 && last & hold != 0 {
+            v |= hold << 2;
+        }
+        v
+    }
+
+    /// `Sg_MouseButtonMain()` (`0x008517c0`): the three buttons' held,
+    /// pressed and released bits (left 1/2/4, right `0x100`.., middle
+    /// `0x10000`..), and a double click (8) when the left button is
+    /// pressed again at the same position within 50 frames. Returns the
+    /// new bits.
+    pub fn mouse_button_main(mem: &mut impl Mem) -> u32 {
+        let last = MOUSE_BUTTONS.get(mem);
+        let raw = MOUSE_RAW.get(mem);
+        MOUSE_BUTTONS_LAST.set(mem, last);
+        let mut v = u32::from(raw & 1 != 0);
+        v = edges(v, last, 1);
+        let mut timer = MOUSE_CLICK_TIMER.get(mem);
+        if v & 2 != 0 {
+            let pos = [MOUSE.get(mem)[0], MOUSE.get(mem)[1]];
+            if MOUSE_CLICK_POS.get(mem) == pos && timer != 0 {
+                v |= 8;
+                MOUSE_CLICK_POS.set(mem, [u32::MAX; 2]);
+            } else {
+                timer = 0x32;
+                MOUSE_CLICK_POS.set(mem, pos);
+            }
+        }
+        if timer != 0 {
+            timer -= 1;
+            MOUSE_CLICK_TIMER.set(mem, timer);
+        }
+        if raw & 2 != 0 {
+            v |= 0x100;
+        }
+        v = edges(v, last, 0x100);
+        if raw & 4 != 0 {
+            v |= 0x1_0000;
+        }
+        v = edges(v, last, 0x1_0000);
+        MOUSE_BUTTONS.set(mem, v);
+        v
+    }
+
+    /// `Sg_IdSetPtr(id)` (`0x0083ea00`): the current map id data: its
+    /// table count (`i16` at `+8` of `+0x1c`), the table at `+0xc` of that,
+    /// the data at `+0x18`, the zoom (`+0xc / 10`); for null all 0 and zoom 1.
+    /// Then every used map object (`0x880` bytes each, `+2` not 0) gets
+    /// `-1` at `+0x824`.
+    pub fn id_set_ptr(mem: &mut impl Mem, id: u32) {
+        use ffx_bridge::x87::Reg;
+        ID_PTR.set(mem, id);
+        let base = ID_PTR.ptr(mem).addr;
+        // 0x01301a84: table, 0x88: count, 0x8c: data, 0x90: zoom.
+        let zoom = if id == 0 {
+            mem.write(base.wrapping_sub(0x10), [0u32, 0, 0]);
+            1.0
+        } else {
+            let hdr: u32 = mem.read(id.wrapping_add(0x1c));
+            let count = i32::from(mem.read::<i16>(hdr.wrapping_add(8))).cast_unsigned();
+            let table: u32 = mem.read(hdr.wrapping_add(0xc));
+            let data: u32 = mem.read(id.wrapping_add(0x18));
+            mem.write(base.wrapping_sub(0x10), [table, count, data]);
+            let z: f32 = mem.read(id.wrapping_add(0xc));
+            (Reg::load(z) / Reg::constant(ZOOM_DIVISOR.get(mem))).store()
+        };
+        ID_ZOOM.set(mem, zoom);
+        let n = MAP_OBJECT_COUNT.get(mem);
+        let objs = MAP_OBJECTS.get(mem);
+        let end = objs.wrapping_add(n.wrapping_mul(0x880));
+        let mut p = objs;
+        while p != end {
+            if mem.read::<u8>(p.wrapping_add(2)) != 0 {
+                mem.write(p.wrapping_add(0x824), 0xffffu16);
+            }
+            p = p.wrapping_add(0x880);
+        }
+    }
+
+    /// `Sg_IdSetPtr`'s zoom divisor (`f64` 10 in `.rdata`).
+    pub const ZOOM_DIVISOR: Global<f64> = Global::new(0x00b9_22b0);
+    /// The map objects (`0x880` bytes each) and their count.
+    pub const MAP_OBJECTS: Global<u32> = Global::new(0x023c_44e4);
+    /// See [`MAP_OBJECTS`].
+    pub const MAP_OBJECT_COUNT: Global<u32> = Global::new(0x023c_44e0);
+
+    /// The pending menu request (`Sg_MenuSetReserve`) and its argument.
+    pub const MENU_RESERVE: Global<[u32; 2]> = Global::new(0x012f_bc38);
+    /// Not 0 while a menu runs (`Sg_MenuSetReserve` drops the 0x42000000
+    /// request otherwise).
+    pub const MENU_ACTIVE: Global<u32> = Global::new(0x0134_082c);
+
+    /// `Sg_MenuSetReserve(request)` (`0x00821750`): with the save screen
+    /// closed (`SaveDataIsScreenClosed`), the save (`0x40200000`) and load
+    /// (`0x40100000`) requests open it at once (`SaveDataSetScreenState(1)`,
+    /// `TkMenuSaveLoadActive`, `SaveDataSetSave(1 or 0)`); any other
+    /// request (`0x42000000` only while a menu runs) is kept for the main
+    /// loop.
+    pub fn menu_set_reserve(mem: &mut impl Mem, request: u32) {
+        use ffx_system::save::bridge as save;
+        if save::is_screen_closed(mem) != 0 && (request == 0x4010_0000 || request == 0x4020_0000) {
+            save::set_screen_state(mem, 1);
+            ffx_menu::tk::bridge::tk_menu_save_load_active(mem);
+            save::set_save(mem, u32::from(request == 0x4020_0000));
+            return;
+        }
+        if MENU_ACTIVE.get(mem) == 0 && request == 0x4200_0000 {
+            return;
+        }
+        MENU_RESERVE.set(mem, [request, u32::MAX]);
+    }
+
+    /// `Sg_ToggleEnableTkAnti()` (`0x0083b100`): flips [`TK_ANTI_ENABLE`].
+    pub fn toggle_enable_tk_anti(mem: &mut impl Mem) {
+        toggle(mem, TK_ANTI_ENABLE);
+    }
+
+    /// The map id table (`g_ChrIdMapTable`).
+    pub const ID_MAP_TABLE: Global<u32> = Global::new(0x0130_19d8);
+
+    /// `Sg_IdGetMapTable(i)` (`0x0083e960`).
+    pub fn id_get_map_table(mem: &impl Mem, i: u32) -> u32 {
+        mem.read(elem(mem, ID_MAP_TABLE, i, 4))
+    }
+
+    /// `Sg_IdSetMapTable(i, v)` (`0x0083e9e0`); `EAX` ends as `i`.
+    pub fn id_set_map_table(mem: &mut impl Mem, i: u32, v: u32) -> u32 {
+        let at = elem(mem, ID_MAP_TABLE, i, 4);
+        mem.write(at, v);
+        i
+    }
+
+    /// The map id events (`Sg_IdEventInitAll` clears them).
+    pub const ID_EVENTS: Global<[u32; 20]> = Global::new(0x0130_1a98);
+
+    /// `Sg_IdEventInitAll()` (`0x0083e8d0`): the events, both effect table
+    /// sets, then `Sg_IdSetEffectTableIndex(0)`.
+    pub fn id_event_init_all(mem: &mut impl Mem) {
+        ID_EVENTS.set(mem, [0; 20]);
+        let t = ID_EFFECT_TABLE.ptr(mem).addr;
+        mem.write(t, [0u8; 8]);
+        id_set_effect_table_index(mem, 0);
+    }
+
+    /// The debug print ring: head, tail (`eidprintfPrint`).
+    pub const EID_PRINT_HEAD: Global<u32> = Global::new(0x010e_787c);
+    /// See [`EID_PRINT_HEAD`].
+    pub const EID_PRINT_TAIL: Global<u32> = Global::new(0x010e_7878);
+
+    /// `eidprintfPrint()` (`0x0076b8d0`): empties the ring of 256 queued
+    /// messages (each printed through the empty `dbgPrintf`).
+    pub fn eid_printf_print(mem: &mut impl Mem) {
+        let tail = EID_PRINT_TAIL.get(mem);
+        let mut head = EID_PRINT_HEAD.get(mem);
+        while head != tail {
+            head = head.wrapping_add(1);
+            if head.cast_signed() >= 0x100 {
+                head = 0;
+            }
+            EID_PRINT_HEAD.set(mem, head);
+        }
+    }
+
+    // The memory manager's blocks: a 16-byte header before the data, the
+    // next header at `+0`, the previous at `+4`, the owner bits in the low
+    // nibble of `+0xc` (0 free); a debug name id in the low 11 bits of the
+    // `u16` at `-6` from the data.
+    /// The memory manager's first block (`Sg_MemCache_SerchFree`).
+    pub const MEM_FIRST: Global<u32> = Global::new(0x0130_1978);
+    /// The return address recorded with allocations (`Sg_MemSetRtAddr`).
+    pub const MEM_RT_ADDR: Global<u32> = Global::new(0x0130_19b0);
+
+    /// `Sg_MemIsFree(p)` (`0x0083c320`): 1 when the block of data `p` has
+    /// no owner, 0 for an owned one or null.
+    pub fn mem_is_free(mem: &impl Mem, p: u32) -> u32 {
+        if p == 0 {
+            return 0;
+        }
+        u32::from(mem.read::<u8>(p.wrapping_sub(4)).trailing_zeros() >= 4)
+    }
+
+    /// `Sg_MemGetSum(header)` (`0x0083c0b0`): the 16-bit sum of the
+    /// block's data halfwords, in `AX`.
+    pub fn mem_get_sum(mem: &impl Mem, header: u32) -> u16 {
+        let next: u32 = mem.read(header);
+        let n = next.wrapping_sub(header).wrapping_sub(0x10) >> 1;
+        let mut sum = 0u16;
+        for k in 0..n {
+            sum = sum.wrapping_add(mem.read(header.wrapping_add(0x10 + 2 * k)));
+        }
+        sum
+    }
+
+    /// The debug name of block data `p`: its id's 32-byte slot in the
+    /// debug name area at `0x05fb0000`, or none.
+    fn mem_name(mem: &impl Mem, p: u32) -> Option<u32> {
+        if IS_DEBUG.get(mem) == 0 || p == 0 {
+            return None;
+        }
+        let id = u32::from(mem.read::<u16>(p.wrapping_sub(6))) & 0x7ff;
+        (id != 0).then(|| (id + 0x002f_d800) << 5)
+    }
+
+    /// `Sg_MemGetStr(p)` (`0x0083c070`): the block's debug name, or the
+    /// empty string ([`FUNC_NAME`]).
+    pub fn mem_get_str(mem: &impl Mem, p: u32) -> u32 {
+        mem_name(mem, p).unwrap_or_else(|| FUNC_NAME.ptr(mem).addr)
+    }
+
+    /// `Sg_MemClearStr(p)` (`0x0083bab0`): empties the block's debug name
+    /// and drops its id.
+    pub fn mem_clear_str(mem: &mut impl Mem, p: u32) {
+        if let Some(at) = mem_name(mem, p) {
+            mem.write(at, 0u8);
+            let w: u16 = mem.read(p.wrapping_sub(6));
+            mem.write(p.wrapping_sub(6), w & 0xf800);
+        }
+    }
+
+    /// `Sg_MemSetRtAddr(a)` (`0x0083c560`): `(a - 8) / 4` in 23 bits (an
+    /// arithmetic shift); returns it.
+    pub fn mem_set_rt_addr(mem: &mut impl Mem, a: u32) -> u32 {
+        let v = (a.wrapping_sub(8).cast_signed() >> 2).cast_unsigned() & 0x7f_ffff;
+        MEM_RT_ADDR.set(mem, v);
+        v
+    }
+
+    /// `Sg_MemCache_SerchFree(p)` (`0x0083b770`): the data of the first
+    /// free block before block data `p` (in list order from the first
+    /// block) that is bigger than `p`'s block, else 0.
+    pub fn mem_cache_serch_free(mem: &impl Mem, p: u32) -> u32 {
+        let q = p.wrapping_sub(0x10);
+        let size = |b: u32| mem.read::<u32>(b).wrapping_sub(b).wrapping_sub(0x10);
+        let mut b = MEM_FIRST.get(mem);
+        while b != q {
+            if mem.read::<u8>(b.wrapping_add(0xc)).trailing_zeros() >= 4 && size(b) > size(q) {
+                return b.wrapping_add(0x10);
+            }
+            b = mem.read(b.wrapping_add(4));
+        }
+        0
+    }
+
+    /// The PC port's stand-ins for PS2 assembly routines it never
+    /// implemented (`SPAD_CALL`, `rgb32_to_24_asm`, `sa_printf_set`,
+    /// `sa_meth01dec_ex`, `sa_meth01dec2_ex`): only a warning through the
+    /// empty `dbgPrintf`. The two decoders return 0.
+    #[must_use]
+    pub const fn not_implemented() -> u32 {
+        0
+    }
 }

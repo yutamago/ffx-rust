@@ -164,4 +164,71 @@ pub mod bridge {
     pub fn angle_wrap(a: f32) -> f32 {
         ffx_chara::chr::wrap_angle(a)
     }
+
+    /// `Sg_AngleApproach(cur, target, step)` (`0x00835f80`): `cur` turned
+    /// toward `target` by at most `step` the short way round (the
+    /// difference wrapped first), wrapped; `target` itself when the
+    /// wrapped difference is 0.
+    #[must_use]
+    pub fn angle_approach(cur: f32, target: f32, step: f32) -> f32 {
+        let d = angle_wrap(Reg::load(cur).sub_m32(target).store());
+        #[allow(clippy::float_cmp)] // the original's `fucom` with 0
+        if d == 0.0 {
+            return x87::round_trip(target);
+        }
+        let r = if d > 0.0 {
+            if step > d {
+                Reg::load(d).subr_m32(cur)
+            } else {
+                Reg::load(step).subr_m32(cur)
+            }
+        } else if -step < d {
+            Reg::load((-Reg::load(d)).store()).add_m32(cur)
+        } else {
+            Reg::load(step).add_m32(cur)
+        };
+        angle_wrap(r.store())
+    }
+
+    /// `SG_RawToRad(x)` (`0x00838c60`): `x π / 2048` (4096 units a turn),
+    /// wrapped.
+    pub fn raw_to_rad(mem: &impl Mem, x: f32) -> f32 {
+        let r = Reg::load(x) * Reg::constant(PI.get(mem)) * Reg::constant(RAW_SCALE.get(mem));
+        angle_wrap(r.store())
+    }
+
+    /// 1/2048 (`f64` in `.rdata`, `SG_RawToRad`).
+    pub const RAW_SCALE: Global<f64> = Global::new(0x00b5_8590);
+
+    fn length_sq(d: [f32; 3]) -> f32 {
+        let [x, y, z] = d.map(Reg::load);
+        let s = (x * x + y * y) + z * z;
+        let r = if s.value().is_nan() {
+            s
+        } else {
+            Reg::constant(s.value().sqrt())
+        };
+        r.store()
+    }
+
+    /// `Sg_VectorGetLength2(a, b)` (`0x008366a0`): the distance from `a` to
+    /// `b` (each difference stored as `f32` first).
+    pub fn vector_get_length2(mem: &impl Mem, a: u32, b: u32) -> f32 {
+        let d = [0, 1, 2].map(|k| Reg::load(get(mem, b, k)).sub_m32(get(mem, a, k)).store());
+        length_sq(d)
+    }
+
+    /// `Sg_VectorGetLengthXZ(a, b)` (`0x0083e3e0`): the distance from `a` to
+    /// `b` in the x-z plane.
+    pub fn vector_get_length_xz(mem: &impl Mem, a: u32, b: u32) -> f32 {
+        let dx = Reg::load(Reg::load(get(mem, b, 0)).sub_m32(get(mem, a, 0)).store());
+        let dz = Reg::load(Reg::load(get(mem, b, 2)).sub_m32(get(mem, a, 2)).store());
+        let s = dx * dx + dz * dz;
+        let r = if s.value().is_nan() {
+            s
+        } else {
+            Reg::constant(s.value().sqrt())
+        };
+        r.store()
+    }
 }
