@@ -1364,4 +1364,32 @@ pub mod bridge {
             mem.write(dst.wrapping_add(4 * i), x);
         }
     }
+    /// `op_oef2_sound_wait()` (`0x00800330`): until no stream cue is
+    /// pending (a -1 cue waits for `SndDataSendSync(0)` and is then
+    /// cleared) and no sound cue is queued, `op_oef2_sound_cue_loop()`
+    /// (`0x00800170`); both through `call`. Returns 0.
+    pub fn op_oef2_sound_wait<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        loop {
+            let mut busy = false;
+            for g in [OEF2_STREAM_CUES.sym, STREAM_CUE2.sym] {
+                let g = Global::<u32>::new(g);
+                let v = g.get(mem);
+                if v == 0 {
+                    continue;
+                }
+                if v != u32::MAX || snd(mem, SND_DATA_SEND_SYNC, &[0], call) != 0 {
+                    busy = true;
+                    break;
+                }
+                g.set(mem, 0);
+            }
+            if !busy && SOUND_CUE_COUNT.get(mem) == 0 {
+                return 0;
+            }
+            snd(mem, 0x0080_0170, &[], call);
+        }
+    }
 }

@@ -4,7 +4,7 @@
 use super::{mem, ported};
 use ffx_vfx::mat::{self, order};
 use ffx_vfx::rand::bridge::{Kind, Spread};
-use ffx_vfx::{et, fp, heap, op, opd, opus, part, ppp, prog, rand, tree};
+use ffx_vfx::{et, fp, heap, op, opd, opus, part, ppp, prog, rand, slots, tree};
 
 /// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`), so the
 /// CRT's state moves as it does with the originals.
@@ -947,6 +947,106 @@ ported! {
     /// `opus_parts_clear(i, n)`.
     opus_parts_clear @ 0x0080_1480 => extern "C" fn opus_parts_clear(i: u32, n: u32) {
         opus::bridge::opus_parts_clear(&mut mem(), i, n);
+    }
+    /// `op_oef2_sound_wait()`.
+    op_oef2_sound_wait @ 0x0080_0330 => extern "C" fn op_oef2_sound_wait() -> u32 {
+        op::bridge::op_oef2_sound_wait(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_et_flag1_on()`.
+    op_et_flag1_on @ 0x007f_c990 => extern "C" fn op_et_flag1_on() {
+        slots::bridge::op_et_flag(&mut mem(), 1, true);
+    }
+    /// `op_et_flag1_off()`.
+    op_et_flag1_off @ 0x007f_c9a0 => extern "C" fn op_et_flag1_off() {
+        slots::bridge::op_et_flag(&mut mem(), 1, false);
+    }
+    /// `op_et_flag2_on()`.
+    op_et_flag2_on @ 0x007f_c900 => extern "C" fn op_et_flag2_on() {
+        slots::bridge::op_et_flag(&mut mem(), 2, true);
+    }
+    /// `op_et_flag2_off()`.
+    op_et_flag2_off @ 0x007f_c910 => extern "C" fn op_et_flag2_off() {
+        slots::bridge::op_et_flag(&mut mem(), 2, false);
+    }
+    /// `TOBtlLibraSetState6()`.
+    TOBtlLibraSetState6 @ 0x0089_0ec0 => extern "C" fn to_btl_libra_set_state6() -> u32 {
+        slots::bridge::to_btl_libra_set_state6(&mut mem())
+    }
+    /// `TOBtlLibraGetState()`.
+    TOBtlLibraGetState @ 0x0089_7770 => extern "C" fn to_btl_libra_get_state() -> u32 {
+        slots::bridge::to_btl_libra_get_state(&mem())
+    }
+    /// `rcefGetFloat25d5ea4()`.
+    rcefGetFloat25d5ea4 @ 0x0092_49a0 => extern "C" fn rcef_get_float_25d5ea4() -> f32 {
+        slots::bridge::get_float(&mem(), 0x025d_5ea4)
+    }
+    /// `TOGetFloat133f790()`.
+    TOGetFloat133f790 @ 0x0089_7780 => extern "C" fn to_get_float_133f790() -> f32 {
+        slots::bridge::get_float(&mem(), 0x0133_f790)
+    }
+    /// `MsGetBattle112be90()`.
+    MsGetBattle112be90 @ 0x007b_7f20 => extern "C" fn ms_get_battle_112be90() -> u32 {
+        slots::bridge::ms_get_battle_112be90(&mem())
+    }
+    /// `rcefReverseList()`.
+    rcefReverseList @ 0x0092_e7a0 => extern "C" fn rcef_reverse_list()  {
+        slots::bridge::rcef_reverse_list(&mut mem());
+    }
+    /// `rcefWorkCall_00925530()`.
+    rcefWorkCall_00925530 @ 0x0092_e770 => extern "C" fn rcef_work_call_00925530() -> u32 {
+        slots::bridge::rcef_work_call(&mut mem(), 0x0092_5530, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `rcefWorkCall_00924c70()`.
+    rcefWorkCall_00924c70 @ 0x0092_5130 => extern "C" fn rcef_work_call_00924c70() -> u32 {
+        slots::bridge::rcef_work_call(&mut mem(), 0x0092_4c70, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `rcefEffectEndMotion()`.
+    rcefEffectEndMotion @ 0x0092_df90 => extern "C" fn rcef_effect_end_motion() -> u32 {
+        slots::bridge::rcef_effect_end_motion(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `rcefChrAlloc()`.
+    rcefChrAlloc @ 0x0093_0800 => extern "C" fn rcef_chr_alloc() -> u32 {
+        slots::bridge::rcef_chr_alloc(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `msVoiceCheckStanbyOn()`.
+    msVoiceCheckStanbyOn @ 0x007b_2b70 => extern "C" fn ms_voice_check_stanby_on() -> u32 {
+        slots::bridge::ms_voice_check_stanby_on(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `msVoiceCheckStanbyOff()`.
+    msVoiceCheckStanbyOff @ 0x007b_2ba0 => extern "C" fn ms_voice_check_stanby_off() -> u32 {
+        slots::bridge::ms_voice_check_stanby_off(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `msVoiceIsStreaming()`.
+    msVoiceIsStreaming @ 0x007b_2be0 => extern "C" fn ms_voice_is_streaming() -> u32 {
+        slots::bridge::ms_voice_is_streaming(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TOSepStop4e()`.
+    TOSepStop4e @ 0x0089_0e70 => extern "C" fn to_sep_stop_4e() -> u32 {
+        slots::bridge::to_sep_stop_4e(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TOBwakkStop()`.
+    TOBwakkStop @ 0x0089_0f10 => extern "C" fn to_bwakk_stop() -> u32 {
+        slots::bridge::to_bwakk_stop(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TOBwakkCheckTerm()`.
+    TOBwakkCheckTerm @ 0x0089_77c0 => extern "C" fn to_bwakk_check_term() -> u32 {
+        slots::bridge::to_bwakk_check_term(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TOBgoodCheckTerm()`.
+    TOBgoodCheckTerm @ 0x0089_77e0 => extern "C" fn to_bgood_check_term() -> u32 {
+        slots::bridge::to_bgood_check_term(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TODum225GetNum()`.
+    TODum225GetNum @ 0x0089_8230 => extern "C" fn to_dum225_get_num() -> u32 {
+        slots::bridge::to_dum225_get_num(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TOBwakkStart()`.
+    TOBwakkStart @ 0x0089_8dc0 => extern "C" fn to_bwakk_start() -> u32 {
+        slots::bridge::to_bwakk_start(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TOBgoodStart()`.
+    TOBgoodStart @ 0x0089_ab80 => extern "C" fn to_bgood_start() -> u32 {
+        slots::bridge::to_bgood_start(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
     /// `op_et_eff_off_signal(id)`.
     op_et_eff_off_signal @ 0x007f_c450 => extern "C" fn op_et_eff_off_signal(id: u32) {

@@ -1,0 +1,272 @@
+//! Small functions of the spell overlays' import table (`g_MagicImports`,
+//! `docs/formats/magic.md`) that the Ghidra dump used to hide: flag
+//! setters, getters, and thin wrappers over the battle, sound, scene
+//! (`TO*`) and map-effect (`rcef*`) modules' functions, which are called
+//! through a callback.
+
+/// The functions over game memory.
+pub mod bridge {
+    use ffx_bridge::{Global, Mem};
+
+    /// Calls the game function at `sym` (rebased) through `call`.
+    fn go<M: Mem>(
+        mem: &mut M,
+        sym: u32,
+        args: &[u32],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = Global::<u32>::new(sym).ptr(mem).addr;
+        call(mem, f, args)
+    }
+
+    /// The address of game data `sym`, rebased.
+    fn addr(mem: &impl Mem, sym: u32) -> u32 {
+        Global::<u32>::new(sym).ptr(mem).addr
+    }
+
+    /// `g_OpEtFlags` (`0x011a006e`): `op_et_flag1_on/off` (bit 0) and
+    /// `op_et_flag2_on/off` (bit 1).
+    pub const ET_FLAGS: Global<u8> = Global::new(0x011a_006e);
+
+    /// `op_et_flag1_on`/`off` (`0x007fc990`/`0x007fc9a0`, `bit` 1) and
+    /// `op_et_flag2_on`/`off` (`0x007fc900`/`0x007fc910`, `bit` 2).
+    pub fn op_et_flag(mem: &mut impl Mem, bit: u8, on: bool) {
+        let v = ET_FLAGS.get(mem);
+        ET_FLAGS.set(mem, if on { v | bit } else { v & !bit });
+    }
+
+    /// `g_TOBtlLibraState` (`0x0133f6a8`, `i16`).
+    pub const LIBRA_STATE: Global<u16> = Global::new(0x0133_f6a8);
+
+    /// `TOBtlLibraSetState6()` (`0x00890ec0`): the state 6; returns 6.
+    pub fn to_btl_libra_set_state6(mem: &mut impl Mem) -> u32 {
+        LIBRA_STATE.set(mem, 6);
+        6
+    }
+
+    /// `TOBtlLibraGetState()` (`0x00897770`): the state, sign-extended.
+    pub fn to_btl_libra_get_state(mem: &impl Mem) -> u32 {
+        i32::from(LIBRA_STATE.get(mem).cast_signed()).cast_unsigned()
+    }
+
+    /// A float global read through the FPU: `rcefGetFloat25d5ea4`
+    /// (`0x009249a0`, `0x025d5ea4`) and `TOGetFloat133f790` (`0x00897780`,
+    /// `0x0133f790`).
+    pub fn get_float(mem: &impl Mem, sym: u32) -> f32 {
+        crate::x87::load_f32(mem.read(addr(mem, sym)))
+    }
+
+    /// `MsGetBattle112be90()` (`0x007b7f20`): the word at `0x0112be90`.
+    pub fn ms_get_battle_112be90(mem: &impl Mem) -> u32 {
+        mem.read(addr(mem, 0x0112_be90))
+    }
+
+    /// The map effects' work (`0x025d5a20`).
+    const RCEF_WORK: u32 = 0x025d_5a20;
+
+    /// `rcefWorkCall_00925530()` (`0x0092e770`, `f` 0x00925530) and
+    /// `rcefWorkCall_00924c70()` (`0x00925130`, `f` 0x00924c70):
+    /// `f(&work)` through `call`; returns its result.
+    pub fn rcef_work_call<M: Mem>(
+        mem: &mut M,
+        f: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = addr(mem, RCEF_WORK);
+        go(mem, f, &[w], call)
+    }
+
+    /// `rcefEffectEndMotion()` (`0x0092df90`): `MsEffectEndMotion(the word
+    /// at 0x025d5bb8, 0)` through `call`; returns its result.
+    pub fn rcef_effect_end_motion<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let e: u32 = mem.read(addr(mem, 0x025d_5bb8));
+        go(mem, 0x0078_7950, &[e, 0], call)
+    }
+
+    /// `rcefChrAlloc()` (`0x00930800`): a 0x100-byte block from the current
+    /// environment's heaps (`pppMemAlloc`), `rcefChrInit(block)` through
+    /// `call`; returns the block.
+    pub fn rcef_chr_alloc<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let env: u32 = mem.read(crate::heap::bridge::ENV_SLOT.get(mem));
+        let b = crate::heap::bridge::ppp_mem_alloc(mem, env, env.wrapping_add(0x10), 0x100);
+        go(mem, 0x0093_0770, &[b], call);
+        b
+    }
+
+    /// `rcefReverseList()` (`0x0092e7a0`): the words from `0x025d5bc0`
+    /// (the count at `0x025d5bbc`) reversed in place.
+    pub fn rcef_reverse_list(mem: &mut impl Mem) {
+        let count: i32 = mem.read(addr(mem, 0x025d_5bbc));
+        let first = addr(mem, 0x025d_5bc0);
+        let mut lo = first;
+        let mut hi = addr(mem, 0x025d_5bbc).wrapping_add(count.cast_unsigned().wrapping_mul(4));
+        // the original swaps count / 2 pairs (signed, toward zero)
+        for _ in 0..(count / 2).max(0) {
+            let (a, b): (u32, u32) = (mem.read(hi), mem.read(lo));
+            mem.write(lo, a);
+            mem.write(hi, b);
+            lo = lo.wrapping_add(4);
+            hi = hi.wrapping_sub(4);
+        }
+    }
+
+    /// The battle voice wait and ID ([`crate::op::bridge::SETTERS`]).
+    const VOICE_WAIT: u32 = 0x0112_c8f0;
+    const VOICE_ID: u32 = 0x0112_c8f4;
+
+    /// `msVoiceCheckStanbyOn()` (`0x007b2b70`): with a voice wait set, -1
+    /// while `msVoiceCheckStanby(1)` is not ready, else `Voice_Prepare(wait)`
+    /// and 0; 0 without one. Through `call`.
+    pub fn ms_voice_check_stanby_on<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let wait: u32 = mem.read(addr(mem, VOICE_WAIT));
+        if wait == 0 {
+            return 0;
+        }
+        if go(mem, 0x007b_2c10, &[1], call) != 0 {
+            return u32::MAX;
+        }
+        let wait: u32 = mem.read(addr(mem, VOICE_WAIT));
+        go(mem, 0x0088_7570, &[wait], call);
+        0
+    }
+
+    /// `msVoiceCheckStanbyOff()` (`0x007b2ba0`): with a voice wait set, -1
+    /// while `msVoiceCheckStanby(0)` is not ready, else `0x00887630()` and,
+    /// with a voice ID, `0x0079d090(id)` and the ID -1; returns 0. Through
+    /// `call`.
+    pub fn ms_voice_check_stanby_off<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let wait: u32 = mem.read(addr(mem, VOICE_WAIT));
+        if wait == 0 {
+            return 0;
+        }
+        if go(mem, 0x007b_2c10, &[0], call) != 0 {
+            return u32::MAX;
+        }
+        go(mem, 0x0088_7630, &[], call);
+        let id: u32 = mem.read(addr(mem, VOICE_ID));
+        if id.cast_signed() >= 0 {
+            go(mem, 0x0079_d090, &[id], call);
+            mem.write(addr(mem, VOICE_ID), u32::MAX);
+        }
+        0
+    }
+
+    /// `msVoiceIsStreaming()` (`0x007b2be0`): 1 when `SndGetStreamState()`
+    /// or `MsSystemMessageCheck()` (through `call`) is not 0, else 0.
+    pub fn ms_voice_is_streaming<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        u32::from(go(mem, 0x0088_64b0, &[], call) != 0 || go(mem, 0x0079_d050, &[], call) != 0)
+    }
+
+    /// The scene names the `TO*` wrappers pass (`.rdata`): "bwakk",
+    /// "bgood", "dum225".
+    const BWAKK: u32 = 0x00b5_ed2c;
+    const BGOOD: u32 = 0x00b5_ecdc;
+    const DUM225: u32 = 0x00b5_ecbc;
+    /// `g_TOBwakkOn` (`0x0133c93f`, byte).
+    pub const BWAKK_ON: Global<u8> = Global::new(0x0133_c93f);
+
+    /// `TOSepStop4e()` (`0x00890e70`): `0x0133f77c` = 0; when
+    /// `SndIsSepPlay(0x8000004e)`, `SndSepStop(0x8000004e)`. Returns the
+    /// last call's result.
+    pub fn to_sep_stop_4e<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        mem.write(addr(mem, 0x0133_f77c), 0u32);
+        let r = go(mem, 0x0088_6680, &[0x8000_004e], call);
+        if r == 0 {
+            return 0;
+        }
+        go(mem, 0x0088_6eb0, &[0x8000_004e], call)
+    }
+
+    /// `TOBwakkStop()` (`0x00890f10`): `TOSeqStopScene(2, "bwakk")`,
+    /// `0x008e89d0()`, `g_TOBwakkOn` 0; returns the second call's result.
+    pub fn to_bwakk_stop<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let s = addr(mem, BWAKK);
+        go(mem, 0x008a_f4f0, &[2, s], call);
+        let r = go(mem, 0x008e_89d0, &[], call);
+        BWAKK_ON.set(mem, 0);
+        r
+    }
+
+    /// `TOBwakkCheckTerm()` (`0x008977c0`): with `g_TOBwakkOn` 1,
+    /// `TOSeqCheckTermScene(2, "bwakk")`, else 0.
+    pub fn to_bwakk_check_term<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if BWAKK_ON.get(mem) != 1 {
+            return 0;
+        }
+        let s = addr(mem, BWAKK);
+        go(mem, 0x008a_e070, &[2, s], call)
+    }
+
+    /// `TOBgoodCheckTerm()` (`0x008977e0`): `TOSeqCheckTermScene(2,
+    /// "bgood")`.
+    pub fn to_bgood_check_term<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let s = addr(mem, BGOOD);
+        go(mem, 0x008a_e070, &[2, s], call)
+    }
+
+    /// `TODum225GetNum()` (`0x00898230`): `TOInitPadData()`,
+    /// `TOSeqGetNum(2, "dum225", 0x0133f778)`, `g_TOBwakkOn` 0; returns
+    /// `TOSeqGetNum`'s result.
+    pub fn to_dum225_get_num<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        go(mem, 0x008a_dbd0, &[], call);
+        let (s, out) = (addr(mem, DUM225), addr(mem, 0x0133_f778));
+        let r = go(mem, 0x008a_e410, &[2, s, out], call);
+        BWAKK_ON.set(mem, 0);
+        r
+    }
+
+    /// `TOBwakkStart()` (`0x00898dc0`): `0x0133f520` = 0,
+    /// `TOSeqStartSceneDrawContinue(2, "bwakk")`, `g_TOBwakkOn` 1; returns
+    /// the call's result.
+    pub fn to_bwakk_start<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        mem.write(addr(mem, 0x0133_f520), 0u32);
+        let s = addr(mem, BWAKK);
+        let r = go(mem, 0x008a_f1b0, &[2, s], call);
+        BWAKK_ON.set(mem, 1);
+        r
+    }
+
+    /// `TOBgoodStart()` (`0x0089ab80`): `TOSeqStartScene(2, "bgood")`,
+    /// `SndPlayClick(0x68)`; returns the latter's result.
+    pub fn to_bgood_start<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let s = addr(mem, BGOOD);
+        go(mem, 0x008a_f0d0, &[2, s], call);
+        go(mem, 0x0088_6ba0, &[0x68], call)
+    }
+}

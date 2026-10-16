@@ -9,7 +9,7 @@ use std::sync::{Arc, OnceLock};
 
 use ffx_bridge::{Global, Mem, Value};
 use ffx_oracle::{Conv, Oracle, Pages};
-use ffx_vfx::{et, fp, heap, mat, op, opd, opus, part, ppp, prog, rand, tree, x87};
+use ffx_vfx::{et, fp, heap, mat, op, opd, opus, part, ppp, prog, rand, slots, tree, x87};
 
 fn exe() -> Option<PathBuf> {
     let dir = std::env::var_os("FFX_GAME_DIR").map(PathBuf::from);
@@ -5302,6 +5302,191 @@ fn round7_small_functions_match_the_original() {
             });
             p.check("opusTree_Max", 0x0080_6d70, &[n], |m| {
                 Some(tree::bridge::opus_tree_max(m, n))
+            });
+        }
+    }
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::items_after_statements
+)]
+fn former_hidden_slots_match_the_original() {
+    use slots::bridge as s;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0051_07e5);
+        // the other modules' functions: recorded with their arguments
+        for (syms, n) in [
+            (
+                &[0x0093_0770u32, 0x0092_5530, 0x0092_4c70, 0x007b_2c10][..],
+                1u8,
+            ),
+            (
+                &[
+                    0x0088_7570,
+                    0x0079_d090,
+                    0x0088_6680,
+                    0x0088_6eb0,
+                    0x0088_6ba0,
+                    0x0088_5ee0,
+                ][..],
+                1,
+            ),
+            (
+                &[
+                    0x0088_7630,
+                    0x0088_64b0,
+                    0x0079_d050,
+                    0x008e_89d0,
+                    0x008a_dbd0,
+                ][..],
+                0,
+            ),
+            (
+                &[
+                    0x0078_7950,
+                    0x008a_f4f0,
+                    0x008a_e070,
+                    0x008a_f1b0,
+                    0x008a_f0d0,
+                ][..],
+                2,
+            ),
+            (&[0x008a_e410][..], 3),
+        ] {
+            arg_recorder(&mut p, syms, n);
+        }
+        // op_oef2_sound_cue_loop: a stand-in that clears the stream cues and
+        // takes one queued cue
+        let (c1, c2, count) = (p.sym(0x023c_3648), p.sym(0x023c_364c), p.sym(0x023c_3642));
+        let mut c = vec![0x31, 0xc0]; // xor eax, eax
+        for at in [c1, c2] {
+            c.push(0xa3); // mov [at], eax
+            c.extend(at.to_le_bytes());
+        }
+        c.extend([0x66, 0x39, 0x05]); // cmp [count], ax
+        c.extend(count.to_le_bytes());
+        c.extend([0x74, 0x07]); // je +7
+        c.extend([0x66, 0xff, 0x0d]); // dec word [count]
+        c.extend(count.to_le_bytes());
+        c.push(0xc3);
+        let lp = p.sym(0x0080_0170);
+        p.a.write(lp, &c).unwrap();
+        p.b.write(lp, &c).unwrap();
+        // an environment for rcefChrAlloc
+        let env_slot = p.alloc(4);
+        let env = p.alloc(0x40);
+        let arena = p.alloc(0x10000);
+        p.put(heap::bridge::ENV_SLOT, env_slot);
+        p.set(env_slot, env);
+        for (h, m) in [(env, arena), (env + 0x10, arena + 0x8000)] {
+            p.check("pppCreateHeap", 0x0072_c480, &[h, m, 0x8000], |mm| {
+                heap::bridge::ppp_create_heap(mm, h, m, 0x8000);
+                None
+            });
+        }
+        let out = p.alloc(4);
+        for round in 0..400 {
+            let v = rng.next();
+            p.set(p.sym(s::ET_FLAGS.sym), v as u8);
+            for (at, bit, on) in [
+                (0x007f_c990u32, 1u8, true),
+                (0x007f_c9a0, 1, false),
+                (0x007f_c900, 2, true),
+                (0x007f_c910, 2, false),
+            ] {
+                if rng.chance(50) {
+                    p.check("op_et_flag", at, &[], |m| {
+                        s::op_et_flag(m, bit, on);
+                        None
+                    });
+                }
+            }
+            p.set(p.sym(s::LIBRA_STATE.sym), rng.next() as u16);
+            p.check("TOBtlLibraGetState", 0x0089_7770, &[], |m| {
+                Some(s::to_btl_libra_get_state(m))
+            });
+            p.check("TOBtlLibraSetState6", 0x0089_0ec0, &[], |m| {
+                Some(s::to_btl_libra_set_state6(m))
+            });
+            for (at, g) in [(0x0092_49a0u32, 0x025d_5ea4u32), (0x0089_7780, 0x0133_f790)] {
+                let x = finite(&mut rng);
+                p.set(p.sym(g), x);
+                let t = float_call(&mut p, at, &[], out);
+                p.check_f32("get_float", t, out, |m| s::get_float(m, g));
+            }
+            p.set(p.sym(0x0112_be90), rng.next());
+            p.check("MsGetBattle112be90", 0x007b_7f20, &[], |m| {
+                Some(s::ms_get_battle_112be90(m))
+            });
+            let list = p.sym(0x025d_5bbc);
+            p.set(list, rng.below(0x20) as i32 - 2);
+            p.fill(list + 4, 0x80, &mut rng);
+            p.check("rcefReverseList", 0x0092_e7a0, &[], |m| {
+                s::rcef_reverse_list(m);
+                None
+            });
+            for (at, f) in [(0x0092_e770u32, 0x0092_5530u32), (0x0092_5130, 0x0092_4c70)] {
+                p.check("rcefWorkCall", at, &[], |m| {
+                    Some(s::rcef_work_call(m, f, &mut call_original))
+                });
+            }
+            p.set(p.sym(0x025d_5bb8), rng.next());
+            p.check("rcefEffectEndMotion", 0x0092_df90, &[], |m| {
+                Some(s::rcef_effect_end_motion(m, &mut call_original))
+            });
+            if round % 8 == 0 {
+                p.check("rcefChrAlloc", 0x0093_0800, &[], |m| {
+                    Some(s::rcef_chr_alloc(m, &mut call_original))
+                });
+            }
+            p.set(p.sym(0x0112_c8f0), rng.pick(&[0u32, 0, 5]));
+            p.set(p.sym(0x0112_c8f4), rng.pick(&[u32::MAX, 3]));
+            p.check("msVoiceCheckStanbyOn", 0x007b_2b70, &[], |m| {
+                Some(s::ms_voice_check_stanby_on(m, &mut call_original))
+            });
+            p.check("msVoiceCheckStanbyOff", 0x007b_2ba0, &[], |m| {
+                Some(s::ms_voice_check_stanby_off(m, &mut call_original))
+            });
+            p.check("msVoiceIsStreaming", 0x007b_2be0, &[], |m| {
+                Some(s::ms_voice_is_streaming(m, &mut call_original))
+            });
+            p.check("TOSepStop4e", 0x0089_0e70, &[], |m| {
+                Some(s::to_sep_stop_4e(m, &mut call_original))
+            });
+            p.set(p.sym(s::BWAKK_ON.sym), rng.pick(&[0u8, 1, 2]));
+            type To = fn(&mut Oracle, &mut dyn FnMut(&mut Oracle, u32, &[u32]) -> u32) -> u32;
+            let tos: [(&str, u32, To); 6] = [
+                ("TOBwakkStop", 0x0089_0f10, |m, c| {
+                    s::to_bwakk_stop(m, &mut |m, f, a| c(m, f, a))
+                }),
+                ("TOBwakkCheckTerm", 0x0089_77c0, |m, c| {
+                    s::to_bwakk_check_term(m, &mut |m, f, a| c(m, f, a))
+                }),
+                ("TOBgoodCheckTerm", 0x0089_77e0, |m, c| {
+                    s::to_bgood_check_term(m, &mut |m, f, a| c(m, f, a))
+                }),
+                ("TODum225GetNum", 0x0089_8230, |m, c| {
+                    s::to_dum225_get_num(m, &mut |m, f, a| c(m, f, a))
+                }),
+                ("TOBwakkStart", 0x0089_8dc0, |m, c| {
+                    s::to_bwakk_start(m, &mut |m, f, a| c(m, f, a))
+                }),
+                ("TOBgoodStart", 0x0089_ab80, |m, c| {
+                    s::to_bgood_start(m, &mut |m, f, a| c(m, f, a))
+                }),
+            ];
+            let (name, at, f) = rng.pick(&tos);
+            p.check(name, at, &[], |m| Some(f(m, &mut call_original)));
+            // op_oef2_sound_wait with cues pending and queued
+            p.set(c1, rng.pick(&[0u32, u32::MAX, 0x1234]));
+            p.set(c2, rng.pick(&[0u32, u32::MAX, 0x1234]));
+            p.set(count, rng.below(4) as u16);
+            p.check("op_oef2_sound_wait", 0x0080_0330, &[], |m| {
+                Some(op::bridge::op_oef2_sound_wait(m, &mut call_original))
             });
         }
     }
