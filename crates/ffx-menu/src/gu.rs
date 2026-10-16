@@ -1137,6 +1137,71 @@ pub mod bridge {
             p = p.wrapping_add(1);
         }
     }
+    /// `Gu_ControlSetText(control, s)` (`0x00849610`, own name): the text
+    /// copied in: null clears it (freeing a heap buffer) back to the inline
+    /// buffer `+0x30`; under 15 characters it goes inline (a heap buffer
+    /// freed first); longer ones get a heap buffer of `len + 0x11`
+    /// (capacity `len + 0x10` in `+0x26`), reused while big enough.
+    pub fn gu_control_set_text<M: Mem>(
+        mem: &mut M,
+        c: u32,
+        s: u32,
+        free: &mut impl FnMut(&mut M, u32) -> u32,
+        malloc: &mut impl FnMut(&mut M, u32) -> u32,
+    ) {
+        let cap = |mem: &M| mem.read::<i16>(c + 0x26);
+        if s == 0 {
+            if cap(mem) != 0 {
+                let p = mem.read(c + 0x28);
+                free(mem, p);
+            }
+            mem.write(c + 0x26, 0u16);
+            mem.write(c + 0x28, c + 0x30);
+            mem.write(c + 0x30, 0u8);
+            return;
+        }
+        let mut len = 0i32;
+        while mem.read::<u8>(s.wrapping_add(len.cast_unsigned())) != 0 {
+            len += 1;
+        }
+        if len < 0xf {
+            if cap(mem) != 0 {
+                let p = mem.read(c + 0x28);
+                free(mem, p);
+                mem.write(c + 0x28, c + 0x30);
+                mem.write(c + 0x26, 0u16);
+            }
+        } else if cap(mem) == 0 || i32::from(cap(mem)) < len {
+            if cap(mem) != 0 {
+                let p = mem.read(c + 0x28);
+                free(mem, p);
+            }
+            let p = malloc(mem, (len + 0x11).cast_unsigned());
+            mem.write(c + 0x28, p);
+            #[allow(clippy::cast_possible_truncation)]
+            mem.write(c + 0x26, (len + 0x10) as u16);
+        }
+        let dst: u32 = mem.read(c + 0x28);
+        for k in 0..=len.cast_unsigned() {
+            let ch: u8 = mem.read(s.wrapping_add(k));
+            mem.write(dst.wrapping_add(k), ch);
+        }
+    }
+
+    /// `Gu_WindowControlSetText(window, id, s)` (`0x0084a710`):
+    /// [`gu_control_set_text`] on the window's first control with `id`.
+    pub fn gu_window_control_set_text<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        id: u32,
+        s: u32,
+        free: &mut impl FnMut(&mut M, u32) -> u32,
+        malloc: &mut impl FnMut(&mut M, u32) -> u32,
+    ) {
+        if let Some(c) = find_control(mem, window, id) {
+            gu_control_set_text(mem, c, s, free, malloc);
+        }
+    }
 }
 
 #[cfg(test)]

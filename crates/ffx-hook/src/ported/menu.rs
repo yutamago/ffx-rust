@@ -2907,4 +2907,12 @@ ported! {
     yiClutAlloc_copy16 @ 0x0091_6c80 => extern "C" fn yi_clut_alloc_copy16(clut: u32, src: u32, k: i32, i: i32) -> u32 {
         tk::yi_clut_alloc_copy16(&mut mem(), clut, src, k, i)
     }
+    /// `Gu_ControlSetText(control, s)`: through the game's heap entries.
+    Gu_ControlSetText @ 0x0084_9610 => extern "C" fn gu_control_set_text(control: u32, s: u32) {
+        gu::gu_control_set_text(&mut mem(), control, s, &mut |_, p| user_free(p), &mut |_, n| user_malloc(n));
+    }
+    /// `Gu_WindowControlSetText(window, id, s)`.
+    Gu_WindowControlSetText @ 0x0084_a710 => extern "C" fn gu_window_control_set_text(window: u32, id: u32, s: u32) {
+        gu::gu_window_control_set_text(&mut mem(), window, id, s, &mut |_, p| user_free(p), &mut |_, n| user_malloc(n));
+    }
 }

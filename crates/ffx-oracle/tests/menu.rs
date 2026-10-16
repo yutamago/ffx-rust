@@ -5204,3 +5204,61 @@ fn tk_round8_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn gu_texts_match_the_original() {
+    let Some(mut t) = setup_any(0x7e47_0001) else {
+        return;
+    };
+    let flog = record_frees(&mut t);
+    let (mlog, arena) = record_mallocs(&mut t);
+    for _ in 0..200 {
+        let c = t.alloc_random(0x44);
+        let cap = t.rng.pick(&[0u16, 0, 0x14, 0x30, 0xffff]);
+        t.put(c + 0x26, cap);
+        let heap = t.alloc_random(0x40);
+        t.put(c + 0x28, if cap == 0 { c + 0x30 } else { heap });
+        let len = t.rng.pick(&[0usize, 3, 14, 15, 16, 0x20, 0x2f, 0x35]);
+        let mut sb: Vec<u8> = t.rng.bytes(len).into_iter().map(|c| c.max(1)).collect();
+        sb.push(0);
+        let sp = if t.rng.below(5) == 0 { 0 } else { t.alloc(&sb) };
+        t.twin("Gu_ControlSetText", 0x0084_9610, &[c, sp], VOID, |o| {
+            gu::gu_control_set_text(o, c, sp, &mut |o, p| free_into(o, flog, p), &mut |o, n| {
+                let _ = free_into(o, mlog, n);
+                arena
+            });
+            0
+        });
+        let win = window(&mut t);
+        let controls: u32 = Mem::read(&t.b, win + 0x94);
+        for k in 0..6 {
+            let ck = controls + k * 0x44;
+            let hk = t.alloc_random(0x40);
+            let capk = t.rng.pick(&[0u16, 0x20]);
+            t.put(ck + 0x26, capk);
+            t.put(ck + 0x28, if capk == 0 { ck + 0x30 } else { hk });
+        }
+        let id = t.rng.pick(&[0u32, 1, 2, 3, 0x8001, 0x1_0001]);
+        t.twin(
+            "Gu_WindowControlSetText",
+            0x0084_a710,
+            &[win, id, sp],
+            VOID,
+            |o| {
+                gu::gu_window_control_set_text(
+                    o,
+                    win,
+                    id,
+                    sp,
+                    &mut |o, p| free_into(o, flog, p),
+                    &mut |o, n| {
+                        let _ = free_into(o, mlog, n);
+                        arena
+                    },
+                );
+                0
+            },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
