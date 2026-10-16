@@ -137,7 +137,7 @@ pub(crate) const fn callee_pops(abi: &str) -> bool {
     !matches!(abi.as_bytes(), b"C" | b"cdecl")
 }
 
-/// Calls an original cdecl function by absolute address with 0 to 8 word
+/// Calls an original cdecl function by absolute address with 0 to 12 word
 /// arguments, returning `eax`. cdecl leaves the stack to the caller, so
 /// the call is the same for any count; more than 8 is a bug in the bridge
 /// that asked.
