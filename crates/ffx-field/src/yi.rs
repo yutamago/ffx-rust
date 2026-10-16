@@ -55,6 +55,42 @@ pub const MAP_READ_BUFFER: Global<u32> = Global::new(0x0191_38a4);
 pub const MAP2D_LOADS: Global<u32> = Global::new(0x0193_4ec4);
 /// Two camera ids reset to -1 (`0x01934ed4`).
 pub const CAMERA_IDS: Global<[u32; 2]> = Global::new(0x0193_4ed4);
+/// The map and file ids of the map read (`0x01934edc`, `yiMapReadMaster`'s
+/// first two arguments; -1 when none).
+pub const MAP_IDS: Global<[u32; 2]> = Global::new(0x0193_4edc);
+/// 0 after a 2D map is loaded, 1 after a 3D one (`0x01934ec0`).
+pub const MAP_KIND: Global<u32> = Global::new(0x0193_4ec0);
+/// `graphicSetHas2dMap(on)` (`0x00643450`).
+pub const GRAPHIC_SET_HAS_2D_MAP: u32 = 0x0064_3450;
+/// `graphicSetHas3dMap(on)` (`0x00643470`).
+pub const GRAPHIC_SET_HAS_3D_MAP: u32 = 0x0064_3470;
+/// `graphicFieldMapLoad(name, kind)` (`0x00640210`).
+pub const GRAPHIC_FIELD_MAP_LOAD: u32 = 0x0064_0210;
+/// `graphicFieldMapInitialize()` (`0x00640200`).
+pub const GRAPHIC_FIELD_MAP_INITIALIZE: u32 = 0x0064_0200;
+/// `graphicVFXLoadLevelData()` (`0x006454a0`).
+pub const GRAPHIC_VFX_LOAD_LEVEL_DATA: u32 = 0x0064_54a0;
+/// `GetCD()` (`0x0076d0d0`): the CD file table (`+0x0` read, `+0x8`
+/// finish, `+0x10` select a map, `+0x14` a file's size).
+pub const GET_CD: u32 = 0x0076_d0d0;
+/// `GetCDFileName_PC(file)` (`0x00a429d0`).
+pub const GET_CD_FILE_NAME_PC: u32 = 0x00a4_29d0;
+/// "RAM Inuse : %d u:%d\n" (`0x00b66f0c`).
+pub const RAM_INUSE_TEXT: u32 = 0x00b6_6f0c;
+/// `0x009161d0(map, dir, name, extra)`: a map's path parts.
+pub const MAP_PATH_PARTS: u32 = 0x0091_61d0;
+/// MSVCR110's `sprintf` import slot (`0x00b0c3dc`).
+pub const CRT_SPRINTF: u32 = 0x00b0_c3dc;
+/// "host0:%s%s.vpa" (`0x00b66efc`).
+pub const HOST_VPA_FORMAT: u32 = 0x00b6_6efc;
+/// `sceOpen(path, mode)` (`0x0062fa30`).
+pub const SCE_OPEN: u32 = 0x0062_fa30;
+/// `sceLseek(fd, offset, whence)` (`0x0062f8e0`).
+pub const SCE_LSEEK: u32 = 0x0062_f8e0;
+/// `sceRead(fd, buf, n)` (`0x0062fc00`).
+pub const SCE_READ: u32 = 0x0062_fc00;
+/// `sceClose(fd)` (`0x0062f610`).
+pub const SCE_CLOSE: u32 = 0x0062_f610;
 /// `0x018ded34`: `+0x18` of the last finished map read.
 pub const READ_TAIL: Global<u32> = Global::new(0x018d_ed34);
 /// `Sg_GetKeepFps` (`0x008205a0`).
@@ -65,9 +101,65 @@ pub const ANIM_USE_VCOUNT: Global<u32> = Global::new(0x0193_bb08);
 pub const ENABLE_KEYFRAME_ANIM: u32 = 0x0064_01e0;
 /// `yiRender_setupparamVU1` (`0x0090da90`).
 pub const RENDER_SETUP_VU1: u32 = 0x0090_da90;
-/// `0x0090e0b0`: swizzles a format-0x13 image into the scene's VRAM copy
-/// (`yiLoadVramImage` calls it; not ported).
+/// `yiSwizzleImage` (`0x0090e0b0`): swizzles a format-0x13 image into the
+/// scene's VRAM copy (`yiLoadVramImage` calls it).
 pub const YI_SWIZZLE_IMAGE: u32 = 0x0090_e0b0;
+/// The byte order inside a 16x16 block's column groups (`0x00c5da80`, two
+/// halves of 64 for even and odd groups).
+pub const SWIZZLE_COLUMNS: u32 = 0x00c5_da80;
+/// The block numbers of a 128x64 page in reading order (`0x00c5db40`).
+pub const SWIZZLE_ORDER: u32 = 0x00c5_db40;
+/// The GS block layout: four rows of eight block numbers (`0x00c5db60`).
+pub const SWIZZLE_BLOCKS: u32 = 0x00c5_db60;
+/// "Error : width is not 2^n\n" (`0x00b670d0`).
+pub const SWIZZLE_ERROR: u32 = 0x00b6_70d0;
+/// MSVCR110's `__iob_func` import slot (`0x00b0c350`).
+pub const CRT_IOB_FUNC: u32 = 0x00b0_c350;
+/// MSVCR110's `fprintf` import slot (`0x00b0c38c`).
+pub const CRT_FPRINTF: u32 = 0x00b0_c38c;
+/// `Sg_MemSetErrorIgnore`'s flag (`0x01301958`).
+pub const MEM_ERROR_IGNORE: Global<u32> = Global::new(0x0130_1958);
+/// The fixed GS packet `yiRender_initpacket` writes at `+0x27624`.
+pub const RENDER_PACKET: [u32; 32] = [
+    0,
+    0,
+    0,
+    0x5100_0005,
+    4,
+    0x1003_0000,
+    0xe,
+    0,
+    0,
+    0,
+    0x50,
+    0,
+    0,
+    0,
+    0x51,
+    0,
+    0x80,
+    0,
+    0x52,
+    0,
+    0,
+    0,
+    0x53,
+    0,
+    0,
+    0,
+    0,
+    0x5100_4001,
+    0xc000,
+    0x0800_0000,
+    0,
+    0,
+];
+/// The `.rdata` floats of the fog block (`yiRender_initfog`): 0.03,
+/// 0.02, 0.005 and 64.0.
+pub const FOG_DEFAULTS: [u32; 4] = [0x00b6_7120, 0x00b4_82d8, 0x00b3_eb3c, 0x00b5_83dc];
+/// `FFXVu0RotMatrixX/Y/Z(dst, src, angle)` (`0x006ed780`, `0x006ed7c0`,
+/// `0x006ed800`).
+pub const VU0_ROT_MATRIX: [u32; 3] = [0x006e_d780, 0x006e_d7c0, 0x006e_d800];
 /// `Sg_MFIFOSync` (`0x00843360`).
 pub const SG_MFIFO_SYNC: u32 = 0x0084_3360;
 /// `sceGsSyncPath` (`0x0062f880`).
@@ -2973,5 +3065,453 @@ pub mod bridge {
         super::RENDER_STATUS.set(mem, s & 0xffff_ff5f);
         super::READ_DONE.set(mem, v);
         sync_step(mem, call, true);
+    }
+
+    /// `yiSwizzleColumns(src, dst)` (`0x0090e000`): a 16x16 block of 8-bit
+    /// pixels reordered for the GS: four column groups of 64 bytes, each
+    /// byte from the group's position in the table at `0x00c5da80` (even and
+    /// odd groups use its two halves). Returns 0.
+    pub fn yi_swizzle_columns(mem: &mut impl Mem, src: u32, dst: u32) -> u32 {
+        let table = mem.rebase(super::SWIZZLE_COLUMNS);
+        for c in 0..4u32 {
+            let t = table + (c & 1) * 0x40;
+            for i in 0..0x40u32 {
+                let k = u32::from(mem.read::<u8>(t + i));
+                let v = mem.read::<u8>(src.wrapping_add(c * 0x40).wrapping_add(k));
+                mem.write(dst.wrapping_add(c * 0x40 + i), v);
+            }
+        }
+        0
+    }
+
+    /// `yiSwizzlePage(w, h, src, dst)` (`0x0090e2e0`): an 8-bit image
+    /// (lines of 0x80 bytes) to GS block order, 16x16 blocks: the block
+    /// numbers of `0x00c5db40` (`w / 16` per block row) placed through the
+    /// 4x8 block table of `0x00c5db60` (column, row: two `yiMalloc` maps of
+    /// 0x800 bytes), each block's 16 lines gathered, swizzled
+    /// ([`yi_swizzle_columns`]) and written as eight 0x20-byte rows 0x100
+    /// apart. `work` is the original's two 0x100-byte stack buffers.
+    pub fn yi_swizzle_page<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        w: i32,
+        h: i32,
+        mut src: u32,
+        dst: u32,
+        work: u32,
+        call: &mut C,
+    ) {
+        let col = crate::model::bridge::yi_malloc(mem, call, 0x800);
+        let row = crate::model::bridge::yi_malloc(mem, call, 0x800);
+        let blocks = mem.rebase(super::SWIZZLE_BLOCKS);
+        for r in 0..4u32 {
+            for k in 0..8u32 {
+                let e = u32::from(mem.read::<u8>(blocks + r * 8 + k));
+                mem.write(col.wrapping_add(e * 4), k);
+                mem.write(row.wrapping_add(e * 4), r);
+            }
+        }
+        let rows = h / 16;
+        let cols = w / 16;
+        let (lines, swizzled) = (work, work + 0x100);
+        for i in 0..0x200u32 {
+            mem.write(work + i, 0u8);
+        }
+        let mut order = mem.rebase(super::SWIZZLE_ORDER);
+        for _ in 0..rows.max(0) {
+            let mut s = src;
+            for x in 0..cols.max(0).cast_unsigned() {
+                let e = u32::from(mem.read::<u8>(order.wrapping_add(x)));
+                for k in 0..16u32 {
+                    for j in 0..4u32 {
+                        let v = mem.read::<u32>(s.wrapping_add(k * 0x80 + 4 * j));
+                        mem.write(lines + k * 0x10 + 4 * j, v);
+                    }
+                }
+                yi_swizzle_columns(mem, lines, swizzled);
+                let r = mem.read::<u32>(row.wrapping_add(e * 4));
+                let c = mem.read::<u32>(col.wrapping_add(e * 4));
+                let out = r
+                    .wrapping_shl(6)
+                    .wrapping_add(c)
+                    .wrapping_shl(5)
+                    .wrapping_add(dst);
+                for k in 0..8u32 {
+                    for j in 0..8u32 {
+                        let v = mem.read::<u32>(swizzled + k * 0x20 + 4 * j);
+                        mem.write(out.wrapping_add(k * 0x100 + 4 * j), v);
+                    }
+                }
+                s = s.wrapping_add(0x10);
+            }
+            src = src.wrapping_add(0x800);
+            order = order.wrapping_add(cols.cast_unsigned());
+        }
+        yi_free(mem, col, call);
+        yi_free(mem, row, call);
+    }
+
+    /// `yiSwizzleImage(w, h, src, dst)` (`0x0090e0b0`): a format-0x13 image
+    /// of `w` x `h` bytes (each a power of two up to 0x400, else "Error :
+    /// width is not 2^n" to `stderr` through `__iob_func`/`fprintf` and -1)
+    /// swizzled 128x64 tile by tile: each tile's lines into a 0x20000-byte
+    /// buffer (lines of 0x80), [`yi_swizzle_page`] into a 0x10000-byte one
+    /// (both `yiMalloc`, their first 0x2000 bytes cleared), and its rows (of
+    /// `2 w` bytes, at most 0x100; `h / 2` of them, at most 0x20) out to
+    /// `dst`. Returns 0. `work` as for [`yi_swizzle_page`].
+    pub fn yi_swizzle_image<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        w: i32,
+        h: i32,
+        src: u32,
+        dst: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let pow2 = |n: i32| (0..11).any(|c| n == 0x400 >> c);
+        if !pow2(w) || !pow2(h) {
+            let iob = mem.read::<u32>(mem.rebase(super::CRT_IOB_FUNC));
+            let file = call(mem, iob, &[]);
+            let fprintf = mem.read::<u32>(mem.rebase(super::CRT_FPRINTF));
+            let text = mem.rebase(super::SWIZZLE_ERROR);
+            call(mem, fprintf, &[file.wrapping_add(0x40), text]);
+            return u32::MAX;
+        }
+        let lines = crate::model::bridge::yi_malloc(mem, call, 0x20000);
+        let page = crate::model::bridge::yi_malloc(mem, call, 0x10000);
+        for i in 0..0x2000u32 {
+            mem.write(lines.wrapping_add(i), 0u8);
+        }
+        for i in 0..0x2000u32 {
+            mem.write(page.wrapping_add(i), 0u8);
+        }
+        let nx = (w - 1) / 128 + 1;
+        let ny = (h - 1) / 64 + 1;
+        let (w, pitch) = if nx == 1 { (w, w * 2) } else { (0x80, 0x100) };
+        let (h, half) = if ny == 1 { (h, h / 2) } else { (0x40, 0x20) };
+        let copy = |mem: &mut M, to: u32, from: u32, n: i32| {
+            for i in 0..n.max(0).cast_unsigned() {
+                let v = mem.read::<u8>(from.wrapping_add(i));
+                mem.write(to.wrapping_add(i), v);
+            }
+        };
+        for y in 0..ny {
+            let mut out = dst.wrapping_add((half * pitch * nx * y).cast_unsigned());
+            let mut inp = src.wrapping_add((w * nx * y).cast_unsigned().wrapping_shl(6));
+            for _ in 0..nx {
+                for k in 0..h.max(0) {
+                    let from = inp.wrapping_add((k * w * nx).cast_unsigned());
+                    copy(mem, lines + k.cast_unsigned() * 0x80, from, w);
+                }
+                yi_swizzle_page(mem, 0x80, 0x40, lines, page, work, call);
+                for k in 0..half.max(0) {
+                    let to = out.wrapping_add((k * pitch * nx).cast_unsigned());
+                    copy(mem, to, page + k.cast_unsigned() * 0x100, pitch);
+                }
+                inp = inp.wrapping_add(w.cast_unsigned());
+                out = out.wrapping_add(pitch.cast_unsigned());
+            }
+        }
+        yi_free(mem, lines, call);
+        yi_free(mem, page, call);
+        0
+    }
+
+    /// The start of `yiMapReadMaster` and `yiMapSetup`: the renderer's
+    /// objects and textures reset (with `sceGsSyncPath` around the first in
+    /// the former), the alarm cleared.
+    fn map_read_reset<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        sync_first: bool,
+        call: &mut C,
+    ) {
+        let sync = mem.rebase(super::GS_SYNC_PATH);
+        if sync_first {
+            call(mem, sync, &[0, 0]);
+        }
+        yi_reset_obj(mem, call);
+        call(mem, sync, &[0, 0]);
+        let r = super::state::RENDER.ptr(mem).addr;
+        yi_render_resettex(mem, r);
+        super::MAP_IDS.set(mem, [u32::MAX; 2]);
+        let f = mem.rebase(super::TK_CLEAR_ALARM);
+        call(mem, f, &[0]);
+    }
+
+    /// `yiMapReadMaster(map, file, cd_map, cd_file, alarm)` (`0x009093b0`):
+    /// reads a field map. After the reset ([`map_read_reset`]) the map ids
+    /// (`0x01934edc`) are `map`, `file` unless both are -1. With a CD file
+    /// (`cd_map`, `cd_file` not both -1): no 2D or 3D map, "RAM Inuse"
+    /// to `stdout`, the file read through `GetCD`'s table into a `yiMalloc64`
+    /// buffer ([`MAP_DATA`]; -1 when it is empty or the allocation fails),
+    /// then its MAP1 sections: 0 the 2D map (`graphicFieldMapLoad(name,
+    /// 0)`, [`super::MAP_SECTION`], `Yn_PreBgSetData`, status bit 0x4000), 1
+    /// the 3D map (`graphicFieldMapLoad(name, 1)`, `yiArc_readmem`),
+    /// `graphicFieldMapInitialize`, `graphicVFXLoadLevelData`, `alarm + 2`
+    /// the alarms (`TkClearAlarm`), 10 the effect data (`pppSetFpPdt`), 12
+    /// and 11 more `Yn_PreBgSetData`; the CD ids kept at `0x01934ed4`. Then
+    /// status `| 0x11`, the draw mask (-1 with the battle map circle, else
+    /// -9) and the default animations. Returns 0. `image` and `work` as
+    /// for `yiArc_readmem` and `Yn_PreBgSetData`; `local` is 0x1c bytes for
+    /// the CD read.
+    #[allow(clippy::too_many_arguments)]
+    pub fn yi_map_read_master<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        map: u32,
+        file: u32,
+        cd_map: u32,
+        cd_file: u32,
+        alarm: u32,
+        image: u32,
+        work: u32,
+        local: u32,
+        call: &mut C,
+    ) -> u32 {
+        map_read_reset(mem, true, call);
+        super::CAMERA_IDS.set(mem, [u32::MAX; 2]);
+        super::MAP_IDS.set(mem, [u32::MAX; 2]);
+        if map != u32::MAX || file != u32::MAX {
+            super::MAP_IDS.set(mem, [map, file]);
+        }
+        let r = super::state::RENDER.ptr(mem).addr;
+        if cd_map != u32::MAX || cd_file != u32::MAX {
+            let c = |mem: &M, f: u32| mem.rebase(f);
+            let f = c(mem, super::GRAPHIC_SET_HAS_2D_MAP);
+            call(mem, f, &[0]);
+            let f = c(mem, super::GRAPHIC_SET_HAS_3D_MAP);
+            call(mem, f, &[0]);
+            let iob = mem.read::<u32>(c(mem, super::CRT_IOB_FUNC));
+            let out = call(mem, iob, &[]);
+            let fprintf = mem.read::<u32>(c(mem, super::CRT_FPRINTF));
+            let text = c(mem, super::RAM_INUSE_TEXT);
+            call(mem, fprintf, &[out.wrapping_add(0x20), text, 0, 0]);
+            let get_cd = c(mem, super::GET_CD);
+            let cd = call(mem, get_cd, &[]);
+            let f = mem.read::<u32>(cd.wrapping_add(0x10));
+            call(mem, f, &[cd_map]);
+            let f = mem.read::<u32>(cd.wrapping_add(0x14));
+            let size = call(mem, f, &[cd_file]);
+            if size == 0 {
+                return u32::MAX;
+            }
+            let buf = crate::model::bridge::yi_malloc64(mem, call, size);
+            let f = mem.read::<u32>(cd);
+            call(mem, f, &[cd_file, buf, 0, local]);
+            let f = mem.read::<u32>(cd.wrapping_add(8));
+            call(mem, f, &[0]);
+            if buf == 0 {
+                return u32::MAX;
+            }
+            MAP_DATA.set(mem, buf);
+            for (index, has, flag) in [
+                (0u32, super::GRAPHIC_SET_HAS_2D_MAP, 0u32),
+                (1, super::GRAPHIC_SET_HAS_3D_MAP, 1),
+            ] {
+                let s = yi_map_get_section(mem, buf, index);
+                if s == 0 {
+                    continue;
+                }
+                let cd = call(mem, get_cd, &[]);
+                let f = mem.read::<u32>(cd.wrapping_add(0x10));
+                call(mem, f, &[map]);
+                let f = c(mem, super::GET_CD_FILE_NAME_PC);
+                let name = call(mem, f, &[file]);
+                let f = c(mem, has);
+                call(mem, f, &[1]);
+                let n = super::MAP2D_LOADS.get(mem);
+                super::MAP2D_LOADS.set(mem, n.wrapping_add(1));
+                let f = c(mem, super::GRAPHIC_FIELD_MAP_LOAD);
+                call(mem, f, &[name, flag]);
+                super::MAP_KIND.set(mem, flag);
+                if flag == 0 {
+                    super::MAP_SECTION.set(mem, s);
+                    crate::guide::bridge::yn_pre_bg_set_data(mem, s, work, call);
+                    let st = RENDER_STATUS.get(mem);
+                    RENDER_STATUS.set(mem, st | 0x4000);
+                } else {
+                    yi_arc_readmem(mem, r, s, image, call);
+                }
+            }
+            let f = c(mem, super::GRAPHIC_FIELD_MAP_INITIALIZE);
+            call(mem, f, &[]);
+            let f = c(mem, super::GRAPHIC_VFX_LOAD_LEVEL_DATA);
+            call(mem, f, &[]);
+            let s = yi_map_get_section(mem, buf, alarm.wrapping_add(2));
+            if s != 0 {
+                let f = c(mem, super::TK_CLEAR_ALARM);
+                call(mem, f, &[s]);
+            }
+            let s = yi_map_get_section(mem, buf, 10);
+            if s != 0 {
+                super::state::MAP_READ.set(mem, s);
+                let f = c(mem, super::PPP_SET_FP_PDT);
+                call(mem, f, &[s]);
+            }
+            for index in [0xc, 0xb] {
+                let s = yi_map_get_section(mem, buf, index);
+                if s != 0 {
+                    crate::guide::bridge::yn_pre_bg_set_data(mem, s, work, call);
+                }
+            }
+            super::CAMERA_IDS.set(mem, [cd_map, cd_file]);
+        }
+        let st = RENDER_STATUS.get(mem);
+        RENDER_STATUS.set(mem, st | 0x11);
+        let f = mem.rebase(super::MAP_CIRCLE_ON);
+        let on = call(mem, f, &[]);
+        DRAW_MASK.set(mem, if on != 0 { u32::MAX } else { 0xffff_fff7 });
+        yi_anim_attach_all(mem, r, call);
+        0
+    }
+
+    /// `yiMapSetup(map)` (`0x00909680`): the debug map loader: after the
+    /// reset ([`map_read_reset`]) the map's directory and name
+    /// (`0x009161d0`) make `host0:<dir><name>.vpa`, which is read whole
+    /// (`sceOpen`/`sceLseek`/`sceRead`/`sceClose`) into a `yiMalloc`
+    /// buffer, handed to `yiArc_readmem`, kept as [`MAP_DATA`] with status
+    /// `| 0x11`, every object drawn and the default animations attached;
+    /// the camera and map ids end -1. Returns 0. `work` is the original's
+    /// four 0x400-byte strings, `image` as for `yiArc_readmem`.
+    pub fn yi_map_read_host<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        map: u32,
+        work: u32,
+        image: u32,
+        call: &mut C,
+    ) -> u32 {
+        map_read_reset(mem, false, call);
+        let (extra, name, path, dir) = (work, work + 0x400, work + 0x800, work + 0xc00);
+        let c = |mem: &M, f: u32| mem.rebase(f);
+        let f = c(mem, super::MAP_PATH_PARTS);
+        call(mem, f, &[map, dir, name, extra]);
+        let sprintf = mem.read::<u32>(c(mem, super::CRT_SPRINTF));
+        let format = c(mem, super::HOST_VPA_FORMAT);
+        call(mem, sprintf, &[path, format, dir, name]);
+        let f = c(mem, super::SCE_OPEN);
+        let fd = call(mem, f, &[path, 1]);
+        if fd != 0 {
+            let seek = c(mem, super::SCE_LSEEK);
+            let size = call(mem, seek, &[fd, 0, 2]);
+            call(mem, seek, &[fd, 0, 0]);
+            let buf = crate::model::bridge::yi_malloc(mem, call, size);
+            let f = c(mem, super::SCE_READ);
+            call(mem, f, &[fd, buf, size]);
+            let f = c(mem, super::SCE_CLOSE);
+            call(mem, f, &[fd]);
+            if buf != 0 {
+                let r = super::state::RENDER.ptr(mem).addr;
+                yi_arc_readmem(mem, r, buf, image, call);
+                let st = RENDER_STATUS.get(mem);
+                RENDER_STATUS.set(mem, st | 0x11);
+                MAP_DATA.set(mem, buf);
+                DRAW_MASK.set(mem, u32::MAX);
+                yi_anim_attach_all(mem, r, call);
+            }
+        }
+        super::CAMERA_IDS.set(mem, [u32::MAX; 2]);
+        super::MAP_IDS.set(mem, [u32::MAX; 2]);
+        0
+    }
+
+    /// `yiAttachAnimDObj(obj, anim, arg)` (`0x00908330`):
+    /// `yiKeyFrame_attachDObj` on the renderer.
+    pub fn yi_attach_anim_dobj<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        obj: u32,
+        anim: u32,
+        arg: u32,
+        call: &mut C,
+    ) -> u32 {
+        let r = super::state::RENDER.ptr(mem).addr;
+        #[allow(clippy::cast_possible_truncation)] // the callee keeps 16 bits
+        yi_key_frame_attach_dobj(mem, r, obj, anim, arg as u16, call)
+    }
+
+    /// `yiMallocQuiet(size)` (`0x0090bc10`): `Sg_MemSetErrorIgnore(1)`,
+    /// then `user_malloc(size)` (a tail call).
+    pub fn yi_malloc_quiet<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        size: u32,
+        call: &mut C,
+    ) -> u32 {
+        super::MEM_ERROR_IGNORE.set(mem, 1);
+        crate::model::bridge::rc_alloc(mem, call, size)
+    }
+
+    /// `yiRender_resetall(r)` (`0x0090cd50`): `yiRender_resetobj`, then
+    /// `+0x9c198`, `+0xbe0ac`, `+0xbe0b0` cleared and `+0x67f34` -1.
+    pub fn yi_render_resetall<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        r: u32,
+        call: &mut C,
+    ) {
+        yi_render_resetobj(mem, r, call);
+        for o in [0x9c198u32, 0xbe0ac, 0xbe0b0] {
+            mem.write(r.wrapping_add(o), 0u32);
+        }
+        mem.write(r.wrapping_add(0x67f34), u32::MAX);
+    }
+
+    /// `yiRender_initpacket(r)` (`0x0090cf00`): the fixed GS packet at
+    /// `+0x27624` ([`super::RENDER_PACKET`]). Returns 0.
+    pub fn yi_render_initpacket(mem: &mut impl Mem, r: u32) -> u32 {
+        for (i, w) in (0u32..).zip(super::RENDER_PACKET) {
+            mem.write(r.wrapping_add(0x27624 + 4 * i), w);
+        }
+        0
+    }
+
+    /// `yiRender_initfog(r)` (`0x00913f50`): the fog block at `+0xbe07c`:
+    /// zeros, 0x60, a grey `0x80 0x80 0x80`, three small factors and 64.0
+    /// (the `.rdata` floats of [`super::FOG_DEFAULTS`]).
+    pub fn yi_render_initfog(mem: &mut impl Mem, r: u32) {
+        let at = |o: u32| r.wrapping_add(o);
+        for o in [0xbe080, 0xbe084] {
+            mem.write(at(o), 0u32);
+        }
+        mem.write(at(0xbe0a0), 0x60u32);
+        mem.write(at(0xbe088), 0u32);
+        mem.write(at(0xbe0a4), 0x8080u16);
+        mem.write(at(0xbe08c), 0u32);
+        mem.write(at(0xbe0a6), 0x80u8);
+        for (o, c) in [0xbe090, 0xbe094, 0xbe098]
+            .into_iter()
+            .zip(super::FOG_DEFAULTS)
+        {
+            let v = mem.read::<u32>(mem.rebase(c));
+            mem.write(at(o), x87::copy(v));
+        }
+        mem.write(at(0xbe07c), 0u32);
+        let v = mem.read::<u32>(mem.rebase(super::FOG_DEFAULTS[3]));
+        mem.write(at(0xbe09c), x87::copy(v));
+    }
+
+    /// `yiRotMatrixSeq(m, angles, order)` (`0x009151c0`): `m` rotated in
+    /// place by the three angles (`FFXVu0RotMatrixX/Y/Z`) in one of six
+    /// orders (0 XYZ, 1 YXZ, 2 ZXY, 3 XZY, 4 YZX, 5 ZYX; others none).
+    /// Returns 0.
+    pub fn yi_rot_matrix_seq<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        m: u32,
+        angles: u32,
+        order: u32,
+        call: &mut C,
+    ) -> u32 {
+        const ORDERS: [[u32; 3]; 6] = [
+            [0, 1, 2],
+            [1, 0, 2],
+            [2, 0, 1],
+            [0, 2, 1],
+            [1, 2, 0],
+            [2, 1, 0],
+        ];
+        let Some(seq) = ORDERS.get(order as usize) else {
+            return 0;
+        };
+        for &axis in seq {
+            let f = mem.rebase(super::VU0_ROT_MATRIX[axis as usize]);
+            let a = x87::copy(mem.read::<u32>(angles.wrapping_add(4 * axis)));
+            call(mem, f, &[m, m, a]);
+        }
+        0
     }
 }

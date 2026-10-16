@@ -1,6 +1,9 @@
 //! The effect "op" layer's small services: the scratch stack, matrices,
 //! the function ordering table, pad repeat, and the `oef2` cue lists.
 
+// a, b, d, k, m, p, s, t, v, w, x as in the descriptions
+#![allow(clippy::many_single_char_names)]
+
 /// A pad's state for `op_pad_set`: the buttons now and last time, the
 /// newly pressed ones, the auto-repeat output and its timer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -591,7 +594,7 @@ pub mod bridge {
     /// `g_VfxCurrentType` (`0x00c322aa`, a byte).
     pub const CURRENT_TYPE: Global<u8> = Global::new(0x00c3_22aa);
 
-    /// The axis rotations `op_rt_m_x/y/z(dst, src, angle)`: `angle` in
+    /// The axis rotations `op_rot_m_x/y/z(dst, src, angle)`: `angle` in
     /// `g_pppSinTable` steps (4096 a turn, `ftol` of it), the matrix
     /// `src` turned about the axis into `dst` (every row, the translation
     /// too; `src` read first, so they may be the same).
@@ -735,8 +738,24 @@ pub mod bridge {
         vol: u32,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) -> u32 {
+        let v = scale_volume(vol);
+        se_play(mem, cue, pan, v, call)
+    }
+
+    /// `vol * 127 / 256`, rounded toward 0 (the cue volume scale).
+    fn scale_volume(vol: u32) -> u32 {
         let v = vol.cast_signed().wrapping_mul(0x7f);
-        let v = (v.wrapping_add((v >> 31) & 0xff) >> 8).cast_unsigned();
+        (v.wrapping_add((v >> 31) & 0xff) >> 8).cast_unsigned()
+    }
+
+    /// The common part of `op_oef2_se_on` and `op_oef2_se_3d_on`.
+    fn se_play<M: Mem>(
+        mem: &mut M,
+        cue: u32,
+        pan: u32,
+        v: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
         match mem.read::<u8>(cue) {
             1 => {
                 let id = sep_id(mem, cue);
@@ -940,5 +959,437 @@ pub mod bridge {
             model += 1;
         }
         models.wrapping_add(1).wrapping_shl(4).wrapping_add(total)
+    }
+
+    /// The emulated VU0 registers `op_apply_m_w1` uses: the vector
+    /// `0x00c8f940`, the matrix `0x00c8f950`, the result `0x00c8f930`, the
+    /// accumulator `0x00c8f790`.
+    const MW1_V: u32 = 0x00c8_f940;
+    const MW1_M: u32 = 0x00c8_f950;
+    const MW1_OUT: u32 = 0x00c8_f930;
+    const MW1_ACC: u32 = 0x00c8_f790;
+    /// `vf00.w` (1.0).
+    const VF00_W: u32 = 0x00c0_a010;
+
+    fn rf(mem: &impl Mem, at: u32) -> f32 {
+        mem.read(at)
+    }
+
+    /// `op_apply_m_w1(dst, m, v)` (`0x007e79a0`): VU0's
+    /// `MULAx/MADDAy/MADDAz/MADDw` with `w` from `vf00` (1.0): `dst` = `m`
+    /// times (`v.xyz`, 1). The arguments go to the emulated `a0`..`a2`
+    /// (`a3` 0), `v` and `m` through `0x00c8f940`/`0x00c8f950`, the sums
+    /// through the accumulator `0x00c8f790`, the result through
+    /// `0x00c8f930`; each step is a product added in 53 bits, then stored
+    /// as `f32`.
+    pub fn op_apply_m_w1(mem: &mut impl Mem, dst: u32, m: u32, v: u32) {
+        use x87::{ADD, MUL, Reg};
+        for (n, a) in [dst, m, v, 0].into_iter().enumerate() {
+            #[allow(clippy::cast_possible_truncation)] // 0..4
+            ffx_ps2::ee::bridge::set_func_param(mem, n as u32, a);
+        }
+        let (vr, mr, out, acc) = (
+            Global::<u32>::new(MW1_V).ptr(mem).addr,
+            Global::<u32>::new(MW1_M).ptr(mem).addr,
+            Global::<u32>::new(MW1_OUT).ptr(mem).addr,
+            Global::<u32>::new(MW1_ACC).ptr(mem).addr,
+        );
+        let vv: [u32; 4] = mem.read(v);
+        mem.write(vr, vv);
+        let mm: [u32; 16] = mem.read(m);
+        mem.write(mr, mm);
+        let x = rf(mem, vr);
+        for i in 0..4 {
+            let r = Reg::load_f32(x).mem(MUL, rf(mem, mr + 4 * i)).store();
+            mem.write(acc + 4 * i, r);
+        }
+        for (k, c) in [(1u32, rf(mem, vr + 4)), (2, rf(mem, vr + 8))] {
+            for i in 0..4 {
+                let r = Reg::load_f32(c)
+                    .mem(MUL, rf(mem, mr + 0x10 * k + 4 * i))
+                    .mem(ADD, rf(mem, acc + 4 * i))
+                    .store();
+                mem.write(acc + 4 * i, r);
+            }
+        }
+        let w = rf(mem, Global::<u32>::new(VF00_W).ptr(mem).addr);
+        for i in 0..4 {
+            let r = Reg::load_f32(w)
+                .mem(MUL, rf(mem, mr + 0x30 + 4 * i))
+                .mem(ADD, rf(mem, acc + 4 * i))
+                .store();
+            mem.write(out + 4 * i, r);
+        }
+        let o: [u32; 4] = mem.read(out);
+        mem.write(dst, o);
+    }
+
+    /// `op_length_get(a, b)` (`0x007e7fc0`): the distance from `a` to `b`
+    /// (`xyz`): the differences as `f32`, the sum of their squares in 53
+    /// bits, `_CIsqrt` (an exact `f64` square root), as `f32`.
+    pub fn op_length_get(mem: &impl Mem, a: u32, b: u32) -> f32 {
+        let d = [0u32, 4, 8].map(|o| x87::sub(rf(mem, b + o), rf(mem, a + o)));
+        let [dx, dy, dz] = d.map(f64::from);
+        let s = (dx * dx + dy * dy) + dz * dz;
+        #[allow(clippy::cast_possible_truncation)] // fstp m32
+        let r = s.sqrt() as f32;
+        r
+    }
+
+    /// `op_deg_get(x0, y0, x1, y1, len)` (`0x007e7ed0`): the direction
+    /// from (`x1`, `y1`) to (`x0`, `y0`) in 4096ths of a turn: `a = y0 -
+    /// y1`, `b = x0 - x1` (`f32`); with `len`, `sqrt(a² + b²)` stored
+    /// there; `t = atan2(a, b)` (through `atan2`, as `f32`), `t * 2048 /
+    /// 3.1415920257568359` (`f32`), `-that - 1024` (`f32`), truncated
+    /// (`ftol2_sse`) `& 0xfff`, as a float.
+    pub fn op_deg_get<M: Mem>(
+        mem: &mut M,
+        p: [f32; 4],
+        len: u32,
+        atan2: &mut impl FnMut(&mut M, f64, f64) -> f64,
+    ) -> f32 {
+        use x87::{MUL, Reg, SUB};
+        let a = x87::sub(p[1], p[3]);
+        let b = x87::sub(p[0], p[2]);
+        if len != 0 {
+            let (fa, fb) = (f64::from(a), f64::from(b));
+            #[allow(clippy::cast_possible_truncation)] // fstp m32
+            let l = (fa * fa + fb * fb).sqrt() as f32;
+            mem.write(len, l);
+        }
+        let k = |mem: &M, at: u32| mem.read::<f64>(Global::<u32>::new(at).ptr(mem).addr);
+        let (c2048, cpi, c1024) = (
+            k(mem, 0x00b5_1bc0),
+            k(mem, 0x00b5_82f0),
+            k(mem, 0x00b5_1ba8),
+        );
+        #[allow(clippy::cast_possible_truncation)] // fstp m32
+        let t = atan2(mem, f64::from(a), f64::from(b)) as f32;
+        let t = Reg::load_f32(t)
+            .constant(MUL, c2048)
+            .constant(|x, y| x / y, cpi)
+            .store();
+        let t = neg(Reg::load_f32(t)).constant(SUB, c1024).store();
+        let i = ffx_bridge::x87::ftol(mem, f64::from(t)) & 0xfff;
+        #[allow(clippy::cast_precision_loss)] // below 4096, exact
+        let r = i as f32;
+        r
+    }
+
+    /// `fchs`.
+    fn neg(r: x87::Reg) -> x87::Reg {
+        match r {
+            x87::Reg::Num(x) => x87::Reg::Num(-x),
+            x87::Reg::Nan(b) => x87::Reg::Nan(b ^ 0x8000_0000),
+        }
+    }
+
+    /// `g_Op3dListener` (`0x0113fcd0`): the matrix `op_3d_vol_pan_get`
+    /// takes positions into the listener's space with.
+    pub const LISTENER: Global<u32> = Global::new(0x0113_fcd0);
+    /// The volume and pan curves (`0x023c3668`..`0x023c368c`).
+    const VOL_MAX: u32 = 0x023c_3668;
+    const VOL_MIN: u32 = 0x023c_366c;
+    const PAN_MAX: u32 = 0x023c_3678;
+    const PAN_MIN: u32 = 0x023c_367c;
+    const VOL_BASE: u32 = 0x023c_3680;
+    const VOL_SLOPE: u32 = 0x023c_3684;
+    const PAN_SLOPE: u32 = 0x023c_368c;
+    /// Where `op_3d_vol_pan_get`'s locals live ([`ffx_bridge::frame`]).
+    const VOL_PAN_FRAME: u32 = 0xfe70_0000;
+
+    /// `op_3d_vol_pan_get(pos, vol, out)` (`0x007ffa90`): the position in
+    /// listener space (`op_apply_m_w1` with `g_Op3dListener`, into a
+    /// local), its distance from the origin (the emulated `r0`,
+    /// `op_length_get`) giving `slope * d + base` clamped to the volume
+    /// curve's ends, times `vol` / 256 (toward 0, at most 0x7f) into
+    /// `*out`; the direction (`op_deg_get(0, 0, x, z)`) folded to a pan
+    /// around 64 (`±` up to 1024 4096ths times the pan slope), clamped and
+    /// truncated: returned.
+    pub fn op_3d_vol_pan_get<M: Mem>(
+        mem: &mut M,
+        pos: u32,
+        vol: u32,
+        out: u32,
+        atan2: &mut impl FnMut(&mut M, f64, f64) -> f64,
+    ) -> u32 {
+        let (vol_i, pan) = vol_pan(mem, pos, vol, atan2);
+        mem.write(out, vol_i);
+        pan
+    }
+
+    /// `op_3d_vol_pan_get` returning the volume instead of storing it.
+    fn vol_pan<M: Mem>(
+        mem: &mut M,
+        pos: u32,
+        vol: u32,
+        atan2: &mut impl FnMut(&mut M, f64, f64) -> f64,
+    ) -> (u32, u32) {
+        use x87::{ADD, MUL, Reg};
+        let listener = LISTENER.ptr(mem).addr;
+        let mut f = ffx_bridge::frame::Frame::new(mem, VOL_PAN_FRAME, 0x20);
+        let (v, r0) = (f.at(0), f.at(0x10));
+        op_apply_m_w1(&mut f, v, listener, pos);
+        let zero: [u32; 4] = f.read(ffx_ps2::ee::bridge::GPR.ptr(&f).addr);
+        f.write(r0, zero);
+        let d = op_length_get(&f, v, r0);
+        let (x, z): (f32, f32) = (f.read(v), f.read(v + 8));
+        let mem = f.inner();
+        let g = |mem: &M, at: u32| mem.read::<f32>(Global::<u32>::new(at).ptr(mem).addr);
+        let mut t = Reg::load_f32(g(mem, VOL_SLOPE))
+            .mem(MUL, d)
+            .mem(ADD, g(mem, VOL_BASE))
+            .store();
+        let hi = g(mem, VOL_MAX);
+        if hi < t {
+            t = x87::load_f32(hi);
+        }
+        let lo = g(mem, VOL_MIN);
+        if lo > t {
+            t = x87::load_f32(lo);
+        }
+        let n = ffx_bridge::x87::ftol(mem, f64::from(t))
+            .cast_signed()
+            .wrapping_mul(vol.cast_signed());
+        let vol_i = (n.wrapping_add((n >> 31) & 0xff) >> 8)
+            .min(0x7f)
+            .cast_unsigned();
+        let deg = op_deg_get(
+            mem,
+            [0.0, 0.0, x87::load_f32(x), x87::load_f32(z)],
+            0,
+            atan2,
+        );
+        let k = g(mem, PAN_SLOPE);
+        let r = Reg::load_f32(deg);
+        let p = if deg > 1024.0 && deg < 3072.0 {
+            if deg < 2048.0 {
+                Reg::Num(2048.0).reg(x87::SUB, r).mem(MUL, k)
+            } else {
+                neg(r.constant(x87::SUB, 2048.0).mem(MUL, k))
+            }
+        } else if deg < 1024.0 {
+            r.mem(MUL, k)
+        } else {
+            neg(Reg::Num(4096.0).reg(x87::SUB, r).mem(MUL, k))
+        };
+        let p = Reg::load_f32(p.store()).constant(ADD, 64.0).store();
+        let mut p = x87::load_f32(p);
+        let lo = g(mem, PAN_MIN);
+        if lo > p {
+            p = x87::load_f32(lo);
+        }
+        let hi = g(mem, PAN_MAX);
+        if hi < p {
+            p = x87::load_f32(hi);
+        }
+        (vol_i, ffx_bridge::x87::ftol(mem, f64::from(p)))
+    }
+
+    /// `SndSepPanDirect(id, pan)`.
+    const SND_SEP_PAN_DIRECT: u32 = 0x0088_6df0;
+    /// `SndSepVolumeDirect(id, vol)`.
+    const SND_SEP_VOLUME_DIRECT: u32 = 0x0088_6f60;
+    /// `SndIsSepPlay(id)`.
+    const SND_IS_SEP_PLAY: u32 = 0x0088_6680;
+    /// `SndVagStreamVolumeDirect(vol)`.
+    const SND_VAG_STREAM_VOLUME_DIRECT: u32 = 0x0088_7990;
+    /// The battle stream's pan (`0x00887970`).
+    const SND_STREAM_PAN_DIRECT: u32 = 0x0088_7970;
+
+    /// The pan and volume a 3D cue plays at: 0x40 and `vol * 127 / 256`
+    /// without a position, else `op_3d_vol_pan_get`'s.
+    fn pan_volume<M: Mem>(
+        mem: &mut M,
+        pos: u32,
+        vol: u32,
+        atan2: &mut impl FnMut(&mut M, f64, f64) -> f64,
+    ) -> (u32, u32) {
+        if pos == 0 {
+            (0x40, scale_volume(vol))
+        } else {
+            let (v, pan) = vol_pan(mem, pos, vol, atan2);
+            (pan, v)
+        }
+    }
+
+    /// `op_oef2_se_3d_on(cue, pos, vol)` (`0x007ffd20`): as
+    /// [`op_oef2_se_on`] with the pan and volume of a position.
+    pub fn op_oef2_se_3d_on<M: Mem>(
+        mem: &mut M,
+        cue: u32,
+        pos: u32,
+        vol: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        atan2: &mut impl FnMut(&mut M, f64, f64) -> f64,
+    ) -> u32 {
+        let (pan, v) = pan_volume(mem, pos, vol, atan2);
+        se_play(mem, cue, pan, v, call)
+    }
+
+    /// `op_oef2_se_3d_move(cue, pos, vol)` (`0x007ffc60`): a kind-1 cue
+    /// still playing (`SndIsSepPlay`) gets the position's pan and volume
+    /// (`SndSepPanDirect`, `SndSepVolumeDirect`); a kind-2 cue sets the
+    /// battle stream's (`SndVagStreamVolumeDirect`, then `0x00887970`).
+    /// All through `call`; returns 1, or 0 when nothing changed.
+    pub fn op_oef2_se_3d_move<M: Mem>(
+        mem: &mut M,
+        cue: u32,
+        pos: u32,
+        vol: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        atan2: &mut impl FnMut(&mut M, f64, f64) -> f64,
+    ) -> u32 {
+        let (pan, v) = pan_volume(mem, pos, vol, atan2);
+        let kind: u8 = mem.read(cue);
+        if kind == 1 {
+            let id = sep_id(mem, cue);
+            if id.cast_signed() >= 0 {
+                if snd(mem, SND_IS_SEP_PLAY, &[id], call) == 0 {
+                    return 0;
+                }
+                snd(mem, SND_SEP_PAN_DIRECT, &[id, pan], call);
+                snd(mem, SND_SEP_VOLUME_DIRECT, &[id, v], call);
+                return 1;
+            }
+        }
+        if kind != 2 {
+            return 0;
+        }
+        snd(mem, SND_VAG_STREAM_VOLUME_DIRECT, &[v], call);
+        snd(mem, SND_STREAM_PAN_DIRECT, &[pan], call);
+        1
+    }
+
+    /// The globals the one-line setters store to: `0x01130838`
+    /// (`0x007b2b40`), the battle voice ID `0x0112c8f4` (`0x007b2b50`, -1
+    /// when none), the battle voice wait `0x0112c8f0` (`0x007b2b60`, read by
+    /// `msVoiceCheckStanbyOn/Off`), and the byte `0x011a0066`
+    /// (`op_tex_vdisp_load_triger`, `0x007e5210`).
+    pub const SETTERS: [u32; 3] = [0x0113_0838, 0x0112_c8f4, 0x0112_c8f0];
+    /// See [`SETTERS`].
+    pub const TEX_VDISP_LOAD: Global<u8> = Global::new(0x011a_0066);
+
+    /// One of the [`SETTERS`].
+    pub fn set_word(mem: &mut impl Mem, i: usize, v: u32) {
+        Global::<u32>::new(SETTERS[i]).set(mem, v);
+    }
+
+    /// `op_tex_vdisp_load_triger(on)` (`0x007e5210`): the byte at
+    /// `0x011a0066`.
+    pub fn op_tex_vdisp_load_triger(mem: &mut impl Mem, on: u32) {
+        TEX_VDISP_LOAD.set(mem, on.to_le_bytes()[0]);
+    }
+
+    /// `op_word_copy(dst, src)` (`0x0075e4b0`, `0x007e6c60`): one word.
+    pub fn op_word_copy(mem: &mut impl Mem, dst: u32, src: u32) {
+        let w: u32 = mem.read(src);
+        mem.write(dst, w);
+    }
+
+    /// `op_vec_w_scale(dst, v, s)` (`0x007ecec0`): `dst.w = v.w * s`.
+    pub fn op_vec_w_scale(mem: &mut impl Mem, dst: u32, v: u32, s: f32) {
+        let w = x87::mul(rf(mem, v.wrapping_add(0xc)), s);
+        mem.write(dst.wrapping_add(0xc), w);
+    }
+
+    /// `op_add64(dst, src, n)` (`0x00817c30`): the 64-bit `src` plus `n`
+    /// (sign-extended) into `dst`.
+    pub fn op_add64(mem: &mut impl Mem, dst: u32, src: u32, n: u32) {
+        let v: u64 = mem.read(src);
+        let r = v.wrapping_add(i64::from(n.cast_signed()).cast_unsigned());
+        mem.write(dst, r);
+    }
+
+    /// `op_sum_words(p, n)` (`0x0076b1e0`): the sum of `n` words.
+    pub fn op_sum_words(mem: &impl Mem, p: u32, n: u32) -> u32 {
+        (0..n).fold(0u32, |a, i| a.wrapping_add(mem.read(p.wrapping_add(4 * i))))
+    }
+
+    /// `vfx_vec3_scale3(dst, v, sx, sy, sz)` (`0x00728a60`): each of
+    /// `v.xyz` times its own scale.
+    pub fn vfx_vec3_scale3(mem: &mut impl Mem, dst: u32, v: u32, s: [f32; 3]) {
+        for (i, k) in (0u32..).zip(s) {
+            let x = x87::mul(rf(mem, v.wrapping_add(4 * i)), k);
+            mem.write(dst.wrapping_add(4 * i), x);
+        }
+    }
+
+    /// `pppVec4Copy(dst, src)` (`0x00750020`): four floats through the
+    /// FPU.
+    pub fn ppp_vec4_copy(mem: &mut impl Mem, dst: u32, src: u32) {
+        for i in 0..4 {
+            let x = x87::load_f32(rf(mem, src.wrapping_add(4 * i)));
+            mem.write(dst.wrapping_add(4 * i), x);
+        }
+    }
+
+    /// `op_color_shift_load16(dst, base)` (`0x007eca60`): the `u16` at
+    /// `base + g_pppColorConShift`; the shift cleared.
+    pub fn op_color_shift_load16(mem: &mut impl Mem, dst: u32, base: u32) {
+        let shift = crate::ppp::bridge::COLOR_CON_SHIFT;
+        let v: u16 = mem.read(base.wrapping_add(shift.get(mem)));
+        mem.write(dst, v);
+        shift.set(mem, 0);
+    }
+
+    /// `op_oef2_clut_change_monster(rec, pos)` (`0x007e45e0`): a table-3 record's
+    /// `u16` becomes `(pos & 0x3fff) + (old & 0x3c)` and its byte `+0xf`
+    /// 1; returns the new `u16`.
+    pub fn op_oef2_clut_change_monster(mem: &mut impl Mem, rec: u32, pos: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // 16-bit arithmetic
+        let v = ((pos & 0x3fff) as u16).wrapping_add(mem.read::<u16>(rec) & 0x3c);
+        mem.write(rec, v);
+        mem.write(rec.wrapping_add(0xf), 1u8);
+        u32::from(v)
+    }
+
+    /// `op_oef2_tex_pos_set(rec, pos)` (`0x007e4ff0`): a table-2 record's
+    /// low 14 bits become `(pos & 0x3fff) + (old & 0xfc)` (16-bit, or'd
+    /// over the rest) and its byte `+0x1f` 1; returns the new low half.
+    pub fn op_oef2_tex_pos_set(mem: &mut impl Mem, rec: u32, pos: u32) -> u32 {
+        let old: u32 = mem.read(rec);
+        #[allow(clippy::cast_possible_truncation)] // 16-bit arithmetic
+        let v = ((pos & 0x3fff) as u16).wrapping_add((old as u16) & 0xfc);
+        mem.write(rec, (old & 0xffff_c000) | u32::from(v));
+        mem.write(rec.wrapping_add(0x1f), 1u8);
+        u32::from(v)
+    }
+
+    /// `opus_vec3_scale(dst, v, _, _, _, s)` (`0x00808cb0`): `dst.xyz =
+    /// v.xyz * s`, `s` the sixth argument.
+    pub fn opus_vec3_scale(mem: &mut impl Mem, dst: u32, v: u32, s: f32) {
+        for i in 0..3 {
+            let x = x87::mul(rf(mem, v.wrapping_add(4 * i)), s);
+            mem.write(dst.wrapping_add(4 * i), x);
+        }
+    }
+    /// `op_oef2_sound_wait()` (`0x00800330`): until no stream cue is
+    /// pending (a -1 cue waits for `SndDataSendSync(0)` and is then
+    /// cleared) and no sound cue is queued, `op_oef2_sound_cue_loop()`
+    /// (`0x00800170`); both through `call`. Returns 0.
+    pub fn op_oef2_sound_wait<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        loop {
+            let mut busy = false;
+            for g in [OEF2_STREAM_CUES.sym, STREAM_CUE2.sym] {
+                let g = Global::<u32>::new(g);
+                let v = g.get(mem);
+                if v == 0 {
+                    continue;
+                }
+                if v != u32::MAX || snd(mem, SND_DATA_SEND_SYNC, &[0], call) != 0 {
+                    busy = true;
+                    break;
+                }
+                g.set(mem, 0);
+            }
+            if !busy && SOUND_CUE_COUNT.get(mem) == 0 {
+                return 0;
+            }
+            snd(mem, 0x0080_0170, &[], call);
+        }
     }
 }

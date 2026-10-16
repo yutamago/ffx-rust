@@ -1,0 +1,13 @@
+[package]
+name = "ffx-auto"
+description = "Trivial FFX.exe functions (getters, setters, flag stores, constants) ported automatically by tools/autoport.py: a table of rows and its interpreter over game memory"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ffx-bridge.workspace = true
+
+[lints]
+workspace = true

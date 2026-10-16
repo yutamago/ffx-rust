@@ -92,6 +92,56 @@ pub mod bridge {
         mem.write(out.wrapping_add(4), u16::from(glyph[2] >> 3 & 1));
         s
     }
+
+    /// `0x00a7b1a0(dst, src)`: `src` copied with each line feed turned into
+    /// a terminator (an empty `dst` for a null `src`). Returns the length
+    /// plus one (0 for null).
+    pub fn copy_cutting_lines(mem: &mut impl Mem, dst: u32, src: u32) -> u32 {
+        if src == 0 {
+            mem.write(dst, 0u8);
+            return 0;
+        }
+        let mut len = 0u32;
+        while mem.read::<u8>(src.wrapping_add(len)) != 0 {
+            len += 1;
+        }
+        let mut k = 0;
+        loop {
+            let c: u8 = mem.read(src.wrapping_add(k));
+            mem.write(dst.wrapping_add(k), if c == b'\n' { 0 } else { c });
+            k += 1;
+            if c == 0 {
+                return len + 1;
+            }
+        }
+    }
+
+    /// `0x0089e600(src, dst)`: a number string for the battle font: digits
+    /// kept, a space as `:`, `-`, `.`, `/` as `G`, `H`, `I`; then the
+    /// terminator. Any other character makes the original spin forever (it
+    /// does not step past it); here it is skipped.
+    pub fn number_font_string(mem: &mut impl Mem, src: u32, dst: u32) {
+        let mut out = dst;
+        let mut p = src;
+        loop {
+            let c: u8 = mem.read(p);
+            if c == 0 {
+                break;
+            }
+            let mapped = match c {
+                b'0'..=b'9' => Some(c),
+                b' ' => Some(b':'),
+                b'-'..=b'/' => Some(b'G' + (c - b'-')),
+                _ => None,
+            };
+            if let Some(m) = mapped {
+                mem.write(out, m);
+                out = out.wrapping_add(1);
+            }
+            p = p.wrapping_add(1);
+        }
+        mem.write(out, 0u8);
+    }
 }
 
 #[cfg(test)]

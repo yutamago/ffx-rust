@@ -318,8 +318,8 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
     same("positions", a, b);
     let d = float(rng);
     let ra = call(a, 0x0079_58c0, &[i, d]);
-    let rb = t::ms_get_chr_near_dir(b, i, d).to_bits();
-    assert_eq!(f80_to_f32(ra.st0_raw.unwrap()), rb, "MsGetChrNearDir");
+    let rb = t::ms_get_chr_target_dir(b, i, d).to_bits();
+    assert_eq!(f80_to_f32(ra.st0_raw.unwrap()), rb, "MsGetChrTargetDir");
     let angle = float(rng);
     twin(
         "MsTurnMoveVector",

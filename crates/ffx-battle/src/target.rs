@@ -207,10 +207,10 @@ pub mod bridge {
         -1
     }
 
-    /// `MsGetChrNearDir(i, dir)` (`0x007958c0`): `MsNearRag(dir, d)` with
+    /// `MsGetChrTargetDir(i, dir)` (`0x007958c0`): `MsNearRag(dir, d)` with
     /// `d` actor `i`'s direction (`+0x53c` when `+0x510`, else `+0x49c`;
     /// 0 for a non-actor), an `f32` (on the x87 stack).
-    pub fn ms_get_chr_near_dir(mem: &impl Mem, i: u32, dir: u32) -> f32 {
+    pub fn ms_get_chr_target_dir(mem: &impl Mem, i: u32, dir: u32) -> f32 {
         let i = i & 0xff;
         let d = if ms_btl_chr_num_check(i) == 0 {
             0
@@ -275,7 +275,7 @@ pub mod bridge {
     /// `0x00794060(i, kind, k, dir, out)`: one actor's property `kind`
     /// into `out` (added): 1 position, 2 direction, 3 height, 4 width, 5
     /// battle position, 6 direction pair (`+0x514`/`+0x524` at `+0x511`),
-    /// 7 [`ms_get_chr_near_dir`] of `dir`, 8 bottom, 9 camera position,
+    /// 7 [`ms_get_chr_target_dir`] of `dir`, 8 bottom, 9 camera position,
     /// 10 camera height, 11 camera width, 12 [`ms_get_chr_move_pos`], 13
     /// optional position `k` relative to the position. 1, 0 for another
     /// kind (adding `r0`).
@@ -321,7 +321,7 @@ pub mod bridge {
                     let y = quiet(f32_at(mem, at(0x524)));
                     mem.write(loc, [x, y]);
                 }
-                7 => mem.write(loc, ms_get_chr_near_dir(mem, i, dir).to_bits()),
+                7 => mem.write(loc, ms_get_chr_target_dir(mem, i, dir).to_bits()),
                 8 => {
                     ms_get_chr_bottom_pos(mem, host.trig, i, loc);
                 }

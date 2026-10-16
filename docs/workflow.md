@@ -55,10 +55,35 @@ appended to our comment as `fh: <name>`. Rerun the script after refreshing
 either source. When naming something new, use their name if they have one,
 so both projects mean the same function by the same word.
 
+Naming from local data, without the server (`tools/naming/`; each writes a
+proposals TSV that `apply.py` merges, skipping named addresses and taken
+names):
+
+```bash
+tools/naming/strmatch.py --out /tmp/str.tsv     # sole user of a string held once by both builds
+tools/naming/import_self.py --out /tmp/self.tsv # sole user of its own __FUNCTION__ string
+tools/naming/bracket.py --out /tmp/br.tsv       # alphabetical layout vs the Switch file's names
+tools/naming/bracket.py --holdout 0.1           # measure bracket's precision first
+tools/naming/apply.py /tmp/str.tsv /tmp/self.tsv /tmp/br.tsv
+```
+
+`tools/cg-match.py --out /tmp/cg.tsv` reruns the call-graph match against the
+current anchors; take leads with 3+ votes (about 99% on holdouts; 2-vote
+leads are about 91%).
+
 Branches that name things in the same range conflict in `ffx.sym`; during
 the merge, `tools/sym-resolve.py` merges it per symbol against the common
 ancestor (a line only one side changed takes that side; both changed: ours,
 reported) and reports a name given to two addresses.
+
+## Verifying a merge batch
+
+`tools/verify-batch.py [BASE]` (BASE: the last pushed state, `origin/main`)
+runs only what the batch can affect: unit tests of the changed crates and of
+every crate depending on them, their `ffx-oracle` tests on the image alone
+and on both snapshots (all of them when `ffx-oracle/src` or `ffx-bridge`
+changed), the port checks, the hook build and the replays. The game-data
+tests that read the whole archive run separately, now and then.
 
 ## Progress and ownership
 
