@@ -597,6 +597,7 @@ version = "0.1.0"
 dependencies = [
  "ffx-battle",
  "ffx-bridge",
+ "ffx-chara",
  "ffx-ps2",
  "ffx-system",
 ]
@@ -799,7 +800,10 @@ dependencies = [
 name = "ffx-sg"
 version = "0.1.0"
 dependencies = [
+ "ffx-battle",
  "ffx-bridge",
+ "ffx-chara",
+ "ffx-ps2",
 ]
 
 [[package]]
@@ -861,6 +865,7 @@ version = "0.1.0"
 dependencies = [
  "ffx-bridge",
  "ffx-field",
+ "ffx-ps2",
  "ffx-system",
 ]
 

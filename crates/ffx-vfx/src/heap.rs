@@ -143,4 +143,46 @@ pub mod bridge {
         }
         n
     }
+
+    /// `g_pppMemAllocFailed`: set by `pppMemAlloc` when neither heap had
+    /// room.
+    pub const MEM_ALLOC_FAILED: Global<u32> = Global::new(0x0230_fd3c);
+    /// `g_pppEnvSlot`: points at where `pppInitEnv` stores the current
+    /// environment (`rcefMainSetEnv` sets it).
+    pub const ENV_SLOT: Global<u32> = Global::new(0x00c3_a4cc);
+
+    /// `pppMemAlloc(heap, spare, size)` (`0x00716a30`): from `heap`, else
+    /// from `spare` when it has memory (`+4`); 0 and the failure flag when
+    /// neither has room.
+    pub fn ppp_mem_alloc(mem: &mut impl Mem, heap: u32, spare: u32, size: u32) -> u32 {
+        let p = ppp_alloc(mem, heap, size);
+        MEM_ALLOC_FAILED.set(mem, 0);
+        if p != 0 {
+            return p;
+        }
+        if mem.read::<u32>(spare.wrapping_add(4)) != 0 {
+            let p = ppp_alloc(mem, spare, size);
+            if p != 0 {
+                return p;
+            }
+        }
+        MEM_ALLOC_FAILED.set(mem, 1);
+        0
+    }
+
+    /// `pppInitEnv(env, data, memory, size)` (`0x007169d0`): makes `env`
+    /// the current environment, takes `data`'s three tables (`+0x14..0x1c`)
+    /// into `+0x20..0x28`, and creates its heap.
+    pub fn ppp_init_env(mem: &mut impl Mem, env: u32, data: u32, memory: u32, size: u32) {
+        let slot = ENV_SLOT.get(mem);
+        mem.write(slot, env);
+        if data != 0 {
+            for i in 0..3 {
+                let t = ffx_system::stub::ptr32(mem.read(data.wrapping_add(0x14 + 4 * i)));
+                mem.write(env.wrapping_add(0x20 + 4 * i), t);
+            }
+        }
+        ppp_create_heap(mem, env, memory, size);
+        mem.write(env.wrapping_add(0x14), 0u32);
+    }
 }

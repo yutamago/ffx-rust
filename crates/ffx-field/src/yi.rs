@@ -137,6 +137,17 @@ pub mod render {
     pub const ANIM_IDS: u32 = 0x68788;
     /// Animations in use.
     pub const ANIM_COUNT: u32 = 0x9cabc;
+    /// Its flags (bit 2: colour-scaled background, bit 25: no frame
+    /// register in the GS set-up).
+    pub const FLAGS: u32 = 0x67f08;
+    /// Its colour scale, four floats (`yiRender_setupparamGS`).
+    pub const COLOR_SCALE: u32 = 0x6820c;
+    /// Its colour offset.
+    pub const COLOR_OFFSET: u32 = 0x6821c;
+    /// The background colour, RGB bytes.
+    pub const BACK_COLOR: u32 = 0x68340;
+    /// The frame buffer base (bytes; `>> 11` for the GS).
+    pub const FRAME_BASE: u32 = 0x9cab4;
     /// The animation slots: `+0` flags (bit 0 in use; `u16` type at `+0`
     /// for keyframes), `+2` `u16` argument, `+4` `u16` kind, `+6` `u16`
     /// object id, `+8` keyframe index, `+0xc`/`+0x10` arguments, `+0x14`
@@ -201,6 +212,9 @@ pub mod state {
     /// Flags and floats two script natives set (`yiSetFieldPair`,
     /// `yiSetFieldVec3Int`).
     pub const FIELD_FLAGS: Global<u32> = Global::new(0x0193_4e78);
+    /// CLUTs in the first VRAM area (`yiClutAlloc_makepacket`: 32, or 16
+    /// for texture mode 4).
+    pub const CLUT_SPLIT: Global<u32> = Global::new(0x0193_bb14);
     /// Non-zero once a map is read (`yiCallFieldParticle`'s gate).
     pub const MAP_READ: Global<u32> = Global::new(0x0191_38a0);
     /// Non-zero: animations time by the vertical blank counter, else by
@@ -941,6 +955,178 @@ pub mod bridge {
     pub fn yi_call_field_particle<M: Mem>(mem: &mut M, fp_loop: impl FnOnce(&mut M)) {
         if state::MAP_READ.get(mem) != 0 && RENDER_STATUS.get(mem) & 1 != 0 {
             fp_loop(mem);
+        }
+    }
+
+    /// `yiClutAlloc_makepacket(packet, cluts, n)` (`0x00917050`): the CLUT
+    /// upload packet: a VIF `DIRECT` of `n * 0x46` quadwords, then 72
+    /// transfers of `0x460` bytes from `+0x10`, each a GIF A+D tag of four
+    /// registers (`BITBLTBUF`, `TRXPOS`, `TRXREG` 16 x 16, `TRXDIR`; the
+    /// PC build leaves their values 0), an `IMAGE` tag of 64 quadwords and
+    /// the next 256-colour CLUT from `cluts` (left alone when null). The
+    /// texture mode (`+0x67f20`: 2, 3 → 32, 4 → 16) sets how many CLUTs
+    /// go to the first VRAM area (`0x0193bb14`, which the PC build does
+    /// not otherwise use). The packet (`0x13b10` bytes, its end count at
+    /// `+0x13b10`) is copied to the second buffer at `+0x13b14` and the
+    /// count to `+0x676a4`. Returns 0.
+    pub fn yi_clut_alloc_makepacket(mem: &mut impl Mem, pk: u32, cluts: u32, n: u32) -> u32 {
+        match mem.read::<u32>(pk.wrapping_add(0x67f20)) {
+            2 | 3 => state::CLUT_SPLIT.set(mem, 0x20),
+            4 => state::CLUT_SPLIT.set(mem, 0x10),
+            _ => {}
+        }
+        let qwc = n.wrapping_mul(0x46);
+        mem.write(pk.wrapping_add(0xc), qwc | 0x5100_0000);
+        mem.write(pk, [0u32; 3]);
+        let mut src = cluts;
+        for i in 0..72u32 {
+            let rec = pk.wrapping_add(0x10 + i * 0x460);
+            mem.write(
+                rec,
+                [
+                    4u32,
+                    0x1003_0000,
+                    0xe,
+                    0,
+                    0,
+                    0,
+                    0x50,
+                    0,
+                    0,
+                    0,
+                    0x51,
+                    0,
+                    0x10,
+                    0,
+                    0x52,
+                    0,
+                    0,
+                    0,
+                    0x53,
+                    0,
+                    0x8040,
+                    0x0800_0000,
+                    0,
+                    0,
+                ],
+            );
+            if src != 0 {
+                let c = mem.read::<[u32; 256]>(src);
+                mem.write(rec.wrapping_add(0x60), c);
+                src = src.wrapping_add(0x400);
+            }
+        }
+        let end = qwc.wrapping_add(1);
+        mem.write(pk.wrapping_add(0x13b10), end);
+        let mut buf = vec![0u8; 0x13b10];
+        mem.read_bytes(pk, &mut buf);
+        mem.write_bytes(pk.wrapping_add(0x13b14), &buf);
+        let end = mem.read::<u32>(pk.wrapping_add(0x13b10));
+        mem.write(pk.wrapping_add(0x676a4), end);
+        0
+    }
+
+    /// The renderer's background colour as the GS `BGCOLOR`-style word
+    /// `b << 16 | g << 8 | r`: the raw bytes (`+0x68340`), or with flag
+    /// bit 2 (`+0x67f08`) each scaled and offset by the renderer's own
+    /// colour scale and offset (`+0x6820c`, `+0x6821c`), clamped to
+    /// 0..=255 (as `yiGetBackColor`) and converted with `_ftol2`.
+    fn render_back_color(mem: &impl Mem, r: u32) -> u32 {
+        let c = mem.read::<[u8; 3]>(r.wrapping_add(render::BACK_COLOR));
+        if mem.read::<u8>(r.wrapping_add(render::FLAGS)) & 4 == 0 {
+            return u32::from(c[2]) << 16 | u32::from(c[1]) << 8 | u32::from(c[0]);
+        }
+        let top = state::BACK_MAX.get(mem);
+        let top_f = state::BACK_MAX_F32.get(mem);
+        let ch = |i: u32| -> u32 {
+            let s = mem.read::<f32>(r.wrapping_add(render::COLOR_SCALE + 4 * i));
+            let o = mem.read::<f32>(r.wrapping_add(render::COLOR_OFFSET + 4 * i));
+            let x = Reg::load(s).mul_m32(f32::from(c[i as usize])).store();
+            let mut v = Reg::load(o).add_m32(x).store();
+            if ffx_bridge::x87::load(v.to_bits()) < 0.0 {
+                v = 0.0;
+            }
+            if ffx_bridge::x87::load(v.to_bits()) > top {
+                v = top_f;
+            }
+            ffx_bridge::x87::ftol2(ffx_bridge::x87::load(v.to_bits()))
+        };
+        let (red, green, blue) = (ch(0), ch(1), ch(2));
+        blue.wrapping_shl(16) | green.wrapping_shl(8) | red
+    }
+
+    /// `yiRender_setupparamGS(render)` (`0x0090d260`): the two GS
+    /// set-up packets (`+0x677a8`, `+0x678a8`): a DMA tag of 12
+    /// quadwords, VIF `FLUSH` and `DIRECT` 11, a GIF A+D tag of 10
+    /// registers (`PRMODECONT`, `TEST`, `COLCLAMP`, `DTHE`, ..., the
+    /// background colour, `FOGCOL`-style `0x3d`, `0x3b`, `0x49`, and the
+    /// frame register `0x4f` from `+0x9cab4 >> 11` unless flag bit 25 is
+    /// set). The two differ only in `0x7000d` / `0x5000d`.
+    pub fn yi_render_setupparam_gs(mem: &mut impl Mem, r: u32) {
+        let color = render_back_color(mem, r);
+        let flags = mem.read::<u32>(r.wrapping_add(render::FLAGS));
+        let (frame, frame_reg) = if flags & 0x0200_0000 == 0 {
+            let fb = mem.read::<u32>(r.wrapping_add(render::FRAME_BASE));
+            ((fb >> 11) | 0x0100_0000, 0x4f)
+        } else {
+            (0, 0)
+        };
+        for (at, mode) in [(0x677a8, 0x0007_000du32), (0x678a8, 0x0005_000d)] {
+            let words: [u32; 52] = [
+                0x2000_000c,
+                0,
+                0,
+                0,
+                0x1100_0000,
+                0,
+                0,
+                0x5100_000b,
+                0x800a,
+                0x1000_0000,
+                0xe,
+                0,
+                0,
+                0,
+                0x3f,
+                0,
+                mode,
+                0,
+                0x48,
+                0,
+                0x60,
+                0,
+                0x15,
+                0,
+                0x44,
+                0,
+                0x43,
+                0,
+                0,
+                0,
+                0x4b,
+                0,
+                0,
+                0,
+                10,
+                0,
+                color,
+                0,
+                0x3d,
+                0,
+                0x80,
+                0,
+                0x3b,
+                0,
+                0,
+                0,
+                0x49,
+                0,
+                frame,
+                0,
+                frame_reg,
+                0,
+            ];
+            mem.write(r.wrapping_add(at), words);
         }
     }
 }

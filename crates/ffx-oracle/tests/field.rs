@@ -3569,3 +3569,746 @@ fn round4_callers_match_the_original() {
         );
     }
 }
+
+// ---- round 5 ----
+
+const YN_PART_GET_U32: [(u32, &str); 8] = [
+    (0x0091_a2a0, "Yn_MapPartAnimeGetCount"),
+    (0x0091_a2e0, "Yn_MapPartGetAlpha"),
+    (0x0091_a3f0, "Yn_MapPartGetHeight"),
+    (0x0091_a440, "Yn_MapPartGet0C"),
+    (0x0091_a490, "Yn_MapPartGet10"),
+    (0x0091_a580, "Yn_MapPartGet24"),
+    (0x0091_a5d0, "Yn_MapPartGet28"),
+    (0x0091_a620, "Yn_MapPartGetWidth"),
+];
+const YN_PART_GET_F32: [(u32, &str); 5] = [
+    (0x0091_a330, "Yn_MapPartGetPosX"),
+    (0x0091_a380, "Yn_MapPartGetPosY"),
+    (0x0091_a4e0, "Yn_MapPartGetScaleY"),
+    (0x0091_a530, "Yn_MapPartGetScaleX"),
+    (0x0091_a670, "Yn_MapPartGet14"),
+];
+
+fn yn_part_u32(m: &mut Oracle, f: u32, part: i32) -> u32 {
+    use guide::bridge as g;
+    match f {
+        0x0091_a2a0 => g::yn_map_part_anime_get_count(m, part),
+        0x0091_a2e0 => g::yn_map_part_get_alpha(m, part),
+        0x0091_a3f0 => g::yn_map_part_get_height(m, part),
+        0x0091_a440 => g::yn_map_part_get_0c(m, part),
+        0x0091_a490 => g::yn_map_part_get_10(m, part),
+        0x0091_a580 => g::yn_map_part_get_24(m, part),
+        0x0091_a5d0 => g::yn_map_part_get_28(m, part),
+        _ => g::yn_map_part_get_width(m, part),
+    }
+}
+
+fn yn_part_f32(m: &mut Oracle, f: u32, part: i32) -> f32 {
+    use guide::bridge as g;
+    match f {
+        0x0091_a330 => g::yn_map_part_get_pos_x(m, part),
+        0x0091_a380 => g::yn_map_part_get_pos_y(m, part),
+        0x0091_a4e0 => g::yn_map_part_get_scale_y(m, part),
+        0x0091_a530 => g::yn_map_part_get_scale_x(m, part),
+        _ => g::yn_map_part_get_14(m, part),
+    }
+}
+
+/// The script natives' map part accessors, on a synthetic Yn scene.
+#[test]
+#[allow(clippy::too_many_lines)] // one case after another
+fn round5_map_parts_match_the_original() {
+    use guide::bridge as g;
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0005_0001);
+    let (sys, map, scene, layers) = (
+        t.alloc(0x20),
+        t.alloc(0x20),
+        t.alloc(0x110),
+        t.alloc(0xc0 * 6),
+    );
+    t.set(guide::YN_MAP_SYSTEM, sys);
+    t.put(sys, map);
+    t.put(map + 8, scene);
+    t.put(scene + scene::layout::LAYERS, layers);
+    for round in 0..60 {
+        t.floats(layers, 0xc0 * 6 / 4, &mut rng);
+        t.put(scene + scene::layout::LAYER_COUNT, u(rng.range(0, 6)));
+        // occasionally no scene at all (count 0)
+        t.put(sys, if round % 10 == 9 { 0 } else { map });
+        let part = rng.range(0, 7);
+        for (f, name) in YN_PART_GET_U32 {
+            let p = u(part);
+            t.same(name, |o| o.eax(f, &[p]), |m| yn_part_u32(m, f, part));
+        }
+        for (f, name) in YN_PART_GET_F32 {
+            t.same(
+                name,
+                |o| o.float(f, &[u(part)]),
+                |m| bits(yn_part_f32(m, f, part)),
+            );
+        }
+        let (a, b, c) = (rng.any_float(), rng.any_float(), rng.next());
+        let zero = if rng.below(3) == 0 { 0 } else { a };
+        let p = u(part);
+        t.same(
+            "Yn_MapPartAnimeSetMode",
+            |o| o.void(0x0091_9fe0, &[p, c]),
+            |m| g::yn_map_part_anime_set_mode(m, part, c),
+        );
+        t.same(
+            "Yn_MapPartAnimeFlag0Off",
+            |o| o.void(0x0091_a030, &[p]),
+            |m| g::yn_map_part_anime_flag0_off(m, part),
+        );
+        t.same(
+            "Yn_MapPartAnimeFlag0On",
+            |o| o.void(0x0091_a080, &[p]),
+            |m| g::yn_map_part_anime_flag0_on(m, part),
+        );
+        t.same(
+            "Yn_MapPartMoveTo",
+            |o| o.void(0x0091_a0f0, &[p, a, b, c]),
+            |m| g::yn_map_part_move_to(m, part, a, b, c),
+        );
+        t.same(
+            "Yn_MapPartScaleTo",
+            |o| o.void(0x0091_a150, &[p, zero, b, c]),
+            |m| g::yn_map_part_scale_to(m, part, zero, b, c),
+        );
+        t.same(
+            "Yn_MapPartScaleTo 0",
+            |o| o.void(0x0091_a150, &[p, a, 0x8000_0000, c]),
+            |m| {
+                g::yn_map_part_scale_to(m, part, a, 0x8000_0000, c);
+            },
+        );
+        t.same(
+            "Yn_MapPartAnimeSetFrame",
+            |o| o.void(0x0091_a930, &[p, c]),
+            |m| {
+                g::yn_map_part_anime_set_frame(m, part, u16::try_from(c & 0xffff).unwrap());
+            },
+        );
+        t.same(
+            "Yn_MapPartAnimeSetLastFrame",
+            |o| o.void(0x0091_a970, &[p]),
+            |m| g::yn_map_part_anime_set_last_frame(m, part),
+        );
+        t.same(
+            "Yn_MapPartAnimeSetRate",
+            |o| o.void(0x0091_a9c0, &[p, c]),
+            |m| g::yn_map_part_anime_set_rate(m, part, c),
+        );
+        t.same(
+            "Yn_MapPartSetPos",
+            |o| o.void(0x0091_aae0, &[p, a, b]),
+            |m| g::yn_map_part_set_pos(m, part, a, b),
+        );
+        t.same(
+            "Yn_MapPartSet24",
+            |o| o.void(0x0091_ac40, &[p, a, c]),
+            |m| g::yn_map_part_set_24(m, part, a, c),
+        );
+        t.same(
+            "Yn_MapPartSetSize",
+            |o| o.void(0x0091_ac80, &[p, c, a]),
+            |m| g::yn_map_part_set_size(m, part, c, a),
+        );
+        t.same(
+            "Yn_MapPartSet14",
+            |o| o.void(0x0091_acc0, &[p, b]),
+            |m| g::yn_map_part_set_14(m, part, b),
+        );
+        // scene objects through Yn
+        let (kind, n) = (rng.below(3), rng.below(3));
+        let objs = t.alloc(0x20);
+        for k in 0..4 {
+            let o = t.alloc(8);
+            t.put(o, rng.below(3));
+            t.put(objs + 4 * k, o);
+        }
+        t.put(scene + scene::layout::OBJECT_COUNT, rng.below(5));
+        t.put(scene + scene::layout::OBJECTS, objs);
+        t.same(
+            "Yn_SceneGetObject",
+            |o| o.eax(0x0092_1be0, &[kind, n]),
+            |m| model::bridge::yn_scene_get_object(m, kind, n),
+        );
+        t.same(
+            "Yn_SceneCountObjects",
+            |o| o.eax(0x0092_1c20, &[kind]),
+            |m| model::bridge::yn_scene_count_objects(m, kind),
+        );
+    }
+}
+
+/// The sphere grid's moves, tilt, homing and loading.
+#[test]
+#[allow(clippy::too_many_lines)] // one case after another
+fn round5_abmap_matches_the_original() {
+    use ffx_field::abmap::{self, bridge as ab};
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0005_0002);
+    let g = t.alloc(0x1_2000);
+    t.set(abmap::ABMAP, g);
+    let pad = t.alloc(0x2800);
+    t.set(abmap::TILT_PAD, pad);
+    // homing, moving to a target, the homing state, the tilt
+    for _ in 0..200 {
+        t.floats(g + 0x11000, 0x800 / 4, &mut rng);
+        t.fill(g + 0x800, 0x200, &mut rng);
+        for k in 0..12 {
+            t.put(
+                g + 0x808 + 0x28 * k + 6,
+                u16::try_from(rng.below(16)).unwrap(),
+            );
+        }
+        t.fill(g + 0xf800, 0x400, &mut rng);
+        let (node, f) = (rng.below(12), rng.any_float());
+        t.same(
+            "AbmapInitHoming",
+            |o| o.eax(0x00a4_8d70, &[node, f]),
+            |m| ab::abmap_init_homing(m, node, f),
+        );
+        // progress in a useful range
+        #[allow(clippy::cast_precision_loss)]
+        let (p, r) = (
+            (rng.range(0, 1100) as f32 / 1000.0).to_bits(),
+            (rng.range(0, 200) as f32 / 1000.0).to_bits(),
+        );
+        t.put(g + 0x11620, p);
+        t.put(g + 0x11624, r);
+        t.put(g + 0x11634, u16::try_from(rng.below(12)).unwrap());
+        t.same(
+            "AbmapState_HomeOnNode",
+            |o| o.eax(0x00a5_9e80, &[]),
+            ab::abmap_state_home_on_node,
+        );
+        let target = rng.below(7);
+        let n = rng.next() & 0xffff;
+        if rng.below(2) == 0 {
+            t.put(g + 0x115b0, 0u32);
+        }
+        t.same(
+            "AbmapInitMovingToTarget",
+            |o| o.eax(0x00a4_8c80, &[target, n]),
+            |m| ab::abmap_init_moving_to_target(m, target, u16::try_from(n).unwrap()),
+        );
+        t.put(pad + 0x2700, if rng.below(2) == 0 { 0xffffu16 } else { 1 });
+        t.put(g + 0x1166e, u16::try_from(rng.below(4)).unwrap());
+        t.put(g + 0x115cb, u8::try_from(rng.below(4)).unwrap());
+        t.put(
+            g + 0x115ce,
+            u16::try_from(rng.range(-2, 31) & 0xffff).unwrap(),
+        );
+        t.put(g + 0x11340, u(rng.range(-8000, 100)));
+        t.same(
+            "AbmapCtrlTilt",
+            |o| o.eax(0x00a4_8f50, &[]),
+            ab::abmap_ctrl_tilt,
+        );
+    }
+    // move costs: a small graph of 10 nodes with up to 5 links each
+    let links = t.alloc(0x14 * 24);
+    for _ in 0..40 {
+        t.fill(links, 0x14 * 24, &mut rng);
+        for l in 0..24 {
+            let at = links + 0x14 * l;
+            t.put(at, u16::try_from(rng.below(10)).unwrap());
+            t.put(at + 2, u16::try_from(rng.below(10)).unwrap());
+            t.put(at + 0xe, u8::try_from(rng.below(8) & 6).unwrap());
+        }
+        for k in 0..10 {
+            let nd = g + 0x28 * k;
+            for s in 0..5 {
+                let l = if rng.below(4) == 0 {
+                    0
+                } else {
+                    links + 0x14 * rng.below(24)
+                };
+                t.put(nd + 0x814 + 4 * s, l);
+            }
+            t.put(nd + 0x82c, 0xffffu16);
+        }
+        t.set(abmap::MOVE_STEP, rng.below(5));
+        t.set(abmap::MOVE_LIMIT, rng.range(0, 40));
+        t.set(abmap::MOVE_MASK, u8::try_from(rng.next() & 0xff).unwrap());
+        let (node, cost) = (rng.below(10), rng.below(4));
+        t.same(
+            "AbmapCalcMoveCost",
+            |o| o.eax(0x00a4_7560, &[node, cost]),
+            |m| ab::abmap_calc_move_cost(m, u16::try_from(node).unwrap(), cost),
+        );
+    }
+    // the saved grid, panels and joined characters
+    let save = t.b.rebase(0x0112_ec7c);
+    let ply = ffx_battle::save::bridge::PLY_SAVE.ptr(&t.b).addr;
+    for _ in 0..30 {
+        t.fill(save, 0x1000, &mut rng);
+        t.put(g + 2, u16::try_from(rng.below(20)).unwrap());
+        t.put(g + 4, u16::try_from(rng.below(20)).unwrap());
+        for k in 0..20 {
+            let kind = if rng.below(4) == 0 {
+                0xffff
+            } else {
+                u16::try_from(rng.below(40)).unwrap()
+            };
+            t.put(g + 0x808 + 0x28 * k + 6, kind);
+        }
+        t.same(
+            "LoadSaveAbmap",
+            |o| o.eax(0x00a4_9590, &[]),
+            ab::load_save_abmap,
+        );
+        for c in 0..8 {
+            t.put(
+                ply + c * 0x94 + 0x2c,
+                u8::try_from(rng.next() & 0xff).unwrap(),
+            );
+        }
+        let (a, node) = (rng.below(40), rng.below(20));
+        t.same(
+            "abmap_test_panel",
+            |o| o.eax(0x00a4_57d0, &[a, node]),
+            |m| ab::abmap_test_panel(m, a, node),
+        );
+        let chr = rng.below(8);
+        t.same(
+            "abmap_other_has_panel",
+            |o| o.eax(0x00a4_5800, &[chr, node]),
+            |m| ab::abmap_other_has_panel(m, chr, node),
+        );
+        t.same(
+            "abmap_chr_node",
+            |o| o.eax(0x00a4_5870, &[chr]),
+            |m| ab::abmap_chr_node(m, chr),
+        );
+    }
+}
+
+/// `srand` import slot (MSVCR110).
+const SRAND_SLOT: u32 = 0x00b0_c484;
+
+impl Twin {
+    /// Points `srand` at a recorder in code space that appends each seed to
+    /// the log at `log` (`[log]` the write position); returns the log.
+    fn record_srand(&mut self) -> u32 {
+        let log = self.alloc(0x100);
+        self.put(log, log + 4);
+        // mov eax,[esp+4]; mov ecx,[log]; mov [ecx],eax; add dword [log],4; ret
+        let l = log.to_le_bytes();
+        let code = [
+            0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d, l[0], l[1], l[2], l[3], 0x89, 0x01, 0x83, 0x05,
+            l[0], l[1], l[2], l[3], 0x04, 0xc3,
+        ];
+        for o in [&mut self.a, &mut self.b] {
+            let at = o.rebase(CODE_AREA + 0xa0);
+            o.write(at, &code).unwrap();
+            let slot = o.rebase(SRAND_SLOT);
+            o.write(slot, &at.to_le_bytes()).unwrap();
+        }
+        log
+    }
+}
+
+/// What the recorder does, on the bridge's side.
+fn srand_log(log: u32) -> impl FnMut(&mut Oracle, u32) {
+    move |m, seed| {
+        let at = Mem::read::<u32>(m, log);
+        Mem::write(m, at, seed);
+        Mem::write(m, log, at + 4);
+    }
+}
+
+/// The render packets, the VU0 random step, Lulu's table and the rest.
+#[test]
+#[allow(clippy::too_many_lines)] // one case after another
+fn round5_render_and_ke_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    t.install_round4_code();
+    let mut rng = Xorshift(0x0005_0003);
+    // CLUT packet
+    let (pk, cluts) = (t.alloc(0x6_8000), t.alloc(72 * 0x400));
+    t.fill(cluts, 72 * 0x400, &mut rng);
+    for mode in [2, 3, 4, 7] {
+        t.put(pk + 0x67f20, mode);
+        let n = rng.below(4);
+        let src = if mode == 7 { 0 } else { cluts };
+        t.same(
+            "yiClutAlloc_makepacket",
+            |o| o.eax(0x0091_7050, &[pk, src, n]),
+            |m| yi::bridge::yi_clut_alloc_makepacket(m, pk, src, n),
+        );
+    }
+    // GS set-up
+    let r = t.alloc(0xa_0000);
+    for _ in 0..100 {
+        let flags = rng.next() & 0x0200_0004;
+        t.put(r + yi::render::FLAGS, flags);
+        t.fill(r + yi::render::BACK_COLOR, 4, &mut rng);
+        t.put(r + yi::render::FRAME_BASE, rng.next());
+        for i in 0..4 {
+            #[allow(clippy::cast_precision_loss)]
+            let (s, o) = if rng.below(2) == 0 {
+                (
+                    (rng.range(0, 300) as f32 / 128.0).to_bits(),
+                    (rng.range(-200, 200) as f32).to_bits(),
+                )
+            } else {
+                (
+                    (rng.range(-100_000, 100_000) as f32 / 64.0).to_bits(),
+                    (rng.range(-100_000, 100_000) as f32 / 64.0).to_bits(),
+                )
+            };
+            t.put(r + yi::render::COLOR_SCALE + 4 * i, s);
+            t.put(r + yi::render::COLOR_OFFSET + 4 * i, o);
+        }
+        t.same(
+            "yiRender_setupparamGS",
+            |o| o.void(0x0090_d260, &[r]),
+            |m| yi::bridge::yi_render_setupparam_gs(m, r),
+        );
+    }
+    // the VU0 random step, srand recorded
+    let log = t.record_srand();
+    for _ in 0..50 {
+        t.put(t.b.rebase(0x00c8_f508), rng.next());
+        t.set(vu0::VU0_R, 0x3f80_0000 | (rng.next() & 0x007f_ffff));
+        t.set(vu0::VU0_R_SEEDED, rng.below(2));
+        t.fill(t.b.rebase(0x00c8_f528), 0x10, &mut rng);
+        t.fill(t.b.rebase(0x00c8_f588), 0x10, &mut rng);
+        t.put(log, log + 4);
+        t.same(
+            "KeVu0RndI",
+            |o| o.eax(0x0075_f920, &[]),
+            |m| vu0::bridge::ke_vu0_rnd_i(m, srand_log(log)),
+        );
+    }
+    // Lulu's digit tables by group and magic
+    let chr = t.alloc(0x1_0000);
+    t.set(ffx_battle::actor::bridge::CHR_TOP, chr);
+    for group in 0..21 {
+        for mag in [
+            0u8, 0x19, 0x22, 0x23, 0x3b, 0x5a, 0x63, 0x95, 0xc7, 0xfe, 0xff,
+        ] {
+            t.put(chr + 5 * 0xf90 + 0x5aa, mag);
+            t.same(
+                "NkzSetLuluLimitTbl",
+                |o| o.void(0x00a5_cc70, &[group]),
+                |m| nkz::bridge::nkz_set_lulu_limit_tbl(m, group),
+            );
+        }
+    }
+    // battle streaming id (with a magic file loaded)
+    for _ in 0..20 {
+        t.put(MAGIC_ID, rng.below(0x300));
+        let (a, b) = if rng.below(2) == 0 {
+            (0, t.alloc(0x10))
+        } else {
+            (t.alloc(0x10), 0)
+        };
+        let (a, b) = if rng.below(4) == 0 { (0, 0) } else { (a, b) };
+        if a != 0 {
+            t.put(a + 8, rng.next());
+        }
+        if b != 0 {
+            t.put(b + 8, rng.next());
+        }
+        t.same(
+            "SqsBattleStreamingDataSend",
+            |o| o.void(0x0081_cef0, &[a, b]),
+            |m| {
+                nkz::bridge::sqs_battle_streaming_data_send(m, a, b, |_| panic!("no error path"));
+            },
+        );
+    }
+    // KeThBP_Quit: buckets of linked objects, the owner in a list
+    let (bp, objs, prev, next) = (
+        t.alloc(0x58 + 0x30 * 8),
+        t.alloc(0x40 * 16),
+        t.alloc(0x10),
+        t.alloc(0x10),
+    );
+    for _ in 0..30 {
+        t.fill(objs, 0x40 * 16, &mut rng);
+        t.fill(bp, 0x58, &mut rng);
+        for k in 0..8 {
+            let head = if rng.below(3) == 0 {
+                0
+            } else {
+                objs + 0x40 * rng.below(8)
+            };
+            t.put(bp + 0x58 + 0x30 * k, head);
+        }
+        for k in 0..16 {
+            let nx = if k >= 8 || rng.below(3) == 0 {
+                0
+            } else {
+                objs + 0x40 * (k + 8)
+            };
+            t.put(objs + 0x40 * k + 8, nx);
+        }
+        t.put(bp + 0x3c, u16::try_from(rng.below(5)).unwrap());
+        t.put(bp + 0x34, u16::try_from(rng.below(4)).unwrap());
+        t.put(bp + 0x38, u16::try_from(rng.below(4)).unwrap());
+        t.put(bp + 8, if rng.below(3) == 0 { 0 } else { next });
+        t.put(bp + 0xc, if rng.below(3) == 0 { 0 } else { prev });
+        t.same(
+            "KeThBP_Quit",
+            |o| o.void(0x0076_36c0, &[bp]),
+            |m| ke::bridge::ke_th_bp_quit(m, bp),
+        );
+    }
+    // small Ke helpers
+    let (p, q) = (t.alloc(0x10), t.alloc(0x10));
+    t.set(ke::PMCOM_NEXT, t.b.rebase(ke::PMCOM_BASE));
+    for _ in 0..100 {
+        let n = rng.below(0x40_000);
+        t.same(
+            "KePmcomAlloc",
+            |o| o.eax(0x0076_2f50, &[n]),
+            |m| ke::bridge::ke_pmcom_alloc(m, n),
+        );
+        let (kind, ptr) = (rng.next(), rng.next());
+        t.same(
+            "KePmcomQueuePush",
+            |o| o.void(0x0076_2fa0, &[kind, ptr]),
+            |m| ke::bridge::ke_pmcom_queue_push(m, kind, ptr),
+        );
+        t.floats(q, 4, &mut rng);
+        let s = rng.float();
+        t.same(
+            "KeVu0MulX",
+            |o| o.void(0x0076_76c0, &[p, q, s]),
+            |m| ke::bridge::ke_vu0_mul_x(m, p, q, f32::from_bits(s)),
+        );
+        t.same(
+            "KeVu0SubX",
+            |o| o.void(0x0076_7720, &[p, q, s]),
+            |m| ke::bridge::ke_vu0_sub_x(m, p, q, f32::from_bits(s)),
+        );
+        t.fill(p, 0x10, &mut rng);
+        t.same(
+            "KeLnsDefault_Init",
+            |o| o.eax(0x0076_a640, &[p]),
+            |m| ke::bridge::ke_lns_default_init(m, p),
+        );
+    }
+    t.same(
+        "NkzGetMonsterListNum",
+        |o| o.eax(0x00a5_cb20, &[]),
+        |_| nkz::bridge::nkz_get_monster_list_num(),
+    );
+}
+
+/// Palettes, layers, texture sizes, FP fades, characters, matrices.
+#[test]
+#[allow(clippy::too_many_lines)] // one case after another
+fn round5_scene_helpers_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    t.install_round4_code();
+    let mut rng = Xorshift(0x0005_0004);
+    let (pal, trx, layer, h, out) = (
+        t.alloc(0x20),
+        t.alloc(0x100),
+        t.alloc(0xc0),
+        t.alloc(4),
+        t.alloc(0x10),
+    );
+    for _ in 0..100 {
+        t.fill(trx, 0x100, &mut rng);
+        t.put(trx + 0x30, rng.below(4) + 1);
+        t.put(pal + 0xc, trx);
+        let n = rng.below(4);
+        t.same(
+            "rcbgPalGetEntryData",
+            |o| o.eax(0x0092_9990, &[pal, n]),
+            |m| model::bridge::rcbg_pal_get_entry_data(m, pal, n),
+        );
+        t.same(
+            "rcbgPalGetLastEntryData",
+            |o| o.eax(0x0092_9930, &[pal]),
+            |m| model::bridge::rcbg_pal_get_last_entry_data(m, pal),
+        );
+        t.put(layer + 0xbc, if rng.below(3) == 0 { 0 } else { trx });
+        t.same(
+            "rcbgLayerGetTexData",
+            |o| o.eax(0x0092_acf0, &[layer]),
+            |m| model::bridge::rcbg_layer_get_tex_data(m, layer),
+        );
+        t.put(h, trx);
+        t.same(
+            "rcdtChunkHandleGetEnd",
+            |o| o.eax(0x0092_bb90, &[h]),
+            |m| rcdt::bridge::rcdt_chunk_handle_get_end(m, h),
+        );
+        let (w, hh) = (rng.range(-70, 2000), rng.range(-70, 2000));
+        let outs = [out, out + 4, out + 8].map(|a| if rng.below(4) == 0 { 0 } else { a });
+        t.same(
+            "rcbgTexGetLog2Size",
+            |o| o.void(0x0092_0050, &[u(w), u(hh), outs[0], outs[1], outs[2]]),
+            |m| {
+                model::bridge::rcbg_tex_get_log2_size(m, w, hh, outs[0], outs[1], outs[2]);
+            },
+        );
+        t.fill(trx, 0x40, &mut rng);
+        t.same(
+            "rcMat4fSetScale001",
+            |o| o.eax(0x0092_de50, &[trx]),
+            |m| geom::bridge::rc_mat4f_set_scale_001(m, trx),
+        );
+        t.same(
+            "rcMat4fSetScale0001",
+            |o| o.eax(0x0092_de80, &[trx]),
+            |m| geom::bridge::rc_mat4f_set_scale_0001(m, trx),
+        );
+        let (id, step, frames) = (rng.below(8), rng.any_float(), rng.next());
+        t.same(
+            "rcbgFpFadeInit",
+            |o| o.void(0x0092_2930, &[layer, id, step, frames]),
+            |m| {
+                model::bridge::rcbg_fp_fade_init(m, layer, id, step, frames, |mm, id| {
+                    ffx_vfx::fp::bridge::ppp_fp_id_disp_off(mm, id);
+                });
+            },
+        );
+    }
+    // particle simulation positions: ready after the initial count
+    let add = t.b.rebase(CODE_AREA) + 0x80;
+    let (p, sys, list, item, v) = (
+        t.alloc(0xb0),
+        t.alloc(0x40),
+        t.alloc(4),
+        t.alloc(0x20),
+        t.alloc(0x10),
+    );
+    t.put(list, item);
+    t.put(item + 0x10, add);
+    for _ in 0..100 {
+        t.fill(p, 0xb0, &mut rng);
+        t.floats(v, 4, &mut rng);
+        t.put(p + 0x18, sys);
+        t.put(p + 0x9c, rng.below(2));
+        t.put(p + 0xa0, rng.below(2));
+        t.put(p + 0xa4, rng.below(3));
+        t.put(sys + 0x34, rng.below(2));
+        t.put(sys + 0x38, list);
+        t.put(sys + 0x1c, 0u32);
+        let which = rng.below(2);
+        t.same(
+            "rcbgPSimSetPos",
+            |o| o.void(0x0091_ff10, &[p, which, v]),
+            |m| {
+                model::bridge::rcbg_psim_set_pos(m, p, which, v, |m2, f, a, b| {
+                    m2.call(f, Conv::Cdecl, &[a, b]).unwrap();
+                });
+            },
+        );
+    }
+    // Yn's battle number: none in the image, so nothing changes or the
+    // number stays
+    let sys = t.alloc(0x20);
+    t.set(guide::YN_MAP_SYSTEM, sys);
+    for v in [0u32, 5] {
+        t.put(sys + 0xc, v);
+        t.same(
+            "Yn_BattleCaptureNum",
+            |o| o.void(0x0092_1910, &[]),
+            model::bridge::yn_battle_capture_num,
+        );
+    }
+    // characters: an empty image
+    for id in [0u32, 1, 0x1234] {
+        t.same(
+            "rcbgChrFindById",
+            |o| o.eax(0x0092_e1e0, &[id]),
+            |m| model::bridge::rcbg_chr_find_by_id(m, id),
+        );
+    }
+    let work = t.alloc(0x900);
+    t.set(rcui::WORK, work);
+    t.same(
+        "rcuiCollectChrHandles",
+        |o| o.void(0x0093_2570, &[]),
+        rcui::bridge::rcui_collect_chr_handles,
+    );
+}
+
+/// Round 5 on the game's state: characters, the battle number, Lulu's
+/// magic, map parts.
+#[test]
+fn round5_state_matches_the_original_on_a_snapshot() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    for id in 0..0x20 {
+        t.same(
+            "rcbgChrFindById",
+            |o| o.eax(0x0092_e1e0, &[id]),
+            |m| model::bridge::rcbg_chr_find_by_id(m, id),
+        );
+    }
+    let battle = ffx_battle::actor::bridge::CHR_TOP.get(&t.b) != 0;
+    for i in (0..0x30).filter(|_| battle) {
+        let hd = ffx_battle::actor::bridge::ms_get_chr_handle(&t.b, i);
+        t.same(
+            "rcbgChrHandleIndex",
+            |o| o.eax(0x0092_4f30, &[hd]),
+            |m| model::bridge::rcbg_chr_handle_index(m, hd),
+        );
+    }
+    let work = t.alloc(0x900);
+    t.set(rcui::WORK, work);
+    t.same(
+        "rcuiCollectChrHandles",
+        |o| o.void(0x0093_2570, &[]),
+        rcui::bridge::rcui_collect_chr_handles,
+    );
+    let scratch = t.alloc(4);
+    t.same(
+        "Yn_SeaGetWork",
+        |o| o.eax(0x0091_9a10, &[]),
+        |m| {
+            model::bridge::yn_sea_get_work(m, |mm, id| {
+                ffx_vfx::fp::bridge::ppp_fp_get_mng_ptr(mm, id, scratch, 0);
+                let run = Mem::read::<u32>(mm, scratch);
+                Mem::write(mm, scratch, 0u32);
+                run
+            })
+        },
+    );
+    if guide::YN_MAP_SYSTEM.get(&t.b) != 0 {
+        t.same(
+            "Yn_BattleCaptureNum",
+            |o| o.void(0x0092_1910, &[]),
+            model::bridge::yn_battle_capture_num,
+        );
+        for part in 0..8 {
+            for (f, name) in YN_PART_GET_U32 {
+                t.same(
+                    name,
+                    |o| o.eax(f, &[part]),
+                    |m| yn_part_u32(m, f, i32::try_from(part).unwrap()),
+                );
+            }
+        }
+        for kind in 0..4 {
+            t.same(
+                "Yn_SceneCountObjects",
+                |o| o.eax(0x0092_1c20, &[kind]),
+                |m| model::bridge::yn_scene_count_objects(m, kind),
+            );
+        }
+    }
+    if battle {
+        for group in 0..20 {
+            t.same(
+                "NkzSetLuluLimitTbl",
+                |o| o.void(0x00a5_cc70, &[group]),
+                |m| nkz::bridge::nkz_set_lulu_limit_tbl(m, group),
+            );
+        }
+    }
+}

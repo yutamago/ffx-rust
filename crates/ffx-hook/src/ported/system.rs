@@ -1386,10 +1386,6 @@ ported! {
     GetU32_01325ac4 @ 0x0064_7c90 => extern "C" fn getu32_01325ac4() -> u32 {
         accessor::bridge::global(&mem(), 0x0064_7c90)
     }
-    /// `() -> *0x01128ac8`.
-    GetU32_01128ac8 @ 0x0076_dc50 => extern "C" fn getu32_01128ac8() -> u32 {
-        accessor::bridge::global(&mem(), 0x0076_dc50)
-    }
     /// `() -> *0x0112a010`.
     GetU32_0112a010 @ 0x0077_4670 => extern "C" fn getu32_0112a010() -> u32 {
         accessor::bridge::global(&mem(), 0x0077_4670)
@@ -1805,6 +1801,10 @@ ported! {
     /// `TOAllCloseMessageWindow()`.
     TOAllCloseMessageWindow @ 0x008a_b7b0 => extern "C" fn to_all_close_message_window() {
         window::bridge::all_close_message_window(&mut mem());
+    }
+    /// `Kernel_GetAbilityName(id)`.
+    Kernel_GetAbilityName @ 0x0077_4720 => extern "C" fn kernel_get_ability_name(id: u32) -> u32 {
+        names::bridge::ability_name(&mut mem(), id, ffx_menu::tk::bridge::tk_mn2_get_ability_mes)
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {

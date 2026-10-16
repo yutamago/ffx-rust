@@ -26,9 +26,8 @@ pub const ADDRESSES: [(u32, u32); 6] = [
 ];
 
 /// Getters returning a `u32` global: `(function, global)`.
-pub const GLOBALS: [(u32, u32); 11] = [
+pub const GLOBALS: [(u32, u32); 10] = [
     (0x0064_7c90, 0x0132_5ac4), // caller Sg_MainLoop
-    (0x0076_dc50, 0x0112_8ac8),
     (0x0077_4670, 0x0112_a010),
     (0x008a_cf20, 0x0184_1d30),
     (0x008b_9130, 0x025d_16c4),

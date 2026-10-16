@@ -169,4 +169,26 @@ pub mod bridge {
         mem.write(this, [0u32; 16]);
         this
     }
+
+    /// `rcuiCollectChrHandles()` (`0x00932570`): every character
+    /// (`Ch_HandleRewind`, `Ch_HandleGetNext`) appended to the rcui work's
+    /// lists: its index at `+0x830`, its handle at `+0x870`, the count at
+    /// `+0x824`.
+    pub fn rcui_collect_chr_handles(mem: &mut impl Mem) {
+        use ffx_chara::handle::bridge as h;
+        h::ch_handle_rewind(mem);
+        let mut c = h::ch_handle_get_next(mem);
+        while c != 0 {
+            let w = WORK.get(mem);
+            let n = mem.read::<u32>(w.wrapping_add(0x824));
+            mem.write(w.wrapping_add(0x830).wrapping_add(n.wrapping_mul(4)), n);
+            let w = WORK.get(mem);
+            let n = mem.read::<u32>(w.wrapping_add(0x824));
+            mem.write(w.wrapping_add(0x870).wrapping_add(n.wrapping_mul(4)), c);
+            let w = WORK.get(mem);
+            let n = mem.read::<u32>(w.wrapping_add(0x824));
+            mem.write(w.wrapping_add(0x824), n.wrapping_add(1));
+            c = h::ch_handle_get_next(mem);
+        }
+    }
 }

@@ -2314,9 +2314,8 @@ const HEAP_TEST_CODE: u32 = 0x00b0_bc00;
 /// `VirtualFree` succeeds, `VirtualAlloc` commits in place or reserves the
 /// next 64 KiB-aligned piece of a test region (1 MiB and up: of a range
 /// nothing writes to), and fails for any size of exactly `fail_size` (to
-/// reach the flush-and-retry paths; `u32::MAX`: never). The oracle has no TEB: every `fs:[0]`
-/// access in the image (the SEH registrations, which only touch the stack
-/// chain) becomes a no-op. Returns the two cursors' addresses.
+/// reach the flush-and-retry paths; `u32::MAX`: never). Returns the two
+/// cursors' addresses.
 fn patch_heap_os(a: &mut Oracle, b: &mut Oracle, fail_size: u32) -> (u32, u32) {
     let region = alloc(a, b, 0x220_0000);
     let start = (region + 0xffff) & 0xffff_0000;
@@ -2365,26 +2364,6 @@ fn patch_heap_os(a: &mut Oracle, b: &mut Oracle, fail_size: u32) -> (u32, u32) {
         ] {
             let s = o.rebase(slot);
             Mem::write(o, s, at);
-        }
-        // fs:[0]: mov eax, fs:[0] / mov fs:[0], eax / mov fs:[0], ecx
-        let text = o.rebase(0x0040_1000);
-        let bytes = o.read(text, 0x0070_aa7b).unwrap();
-        let mut i = 0;
-        while i + 7 <= bytes.len() {
-            let w = &bytes[i..i + 7];
-            let at = text + u32::try_from(i).unwrap();
-            if w[..6] == [0x64, 0xa1, 0, 0, 0, 0] {
-                o.write(at, &[0xb8, 0, 0, 0, 0, 0x90]).unwrap();
-                i += 6;
-            } else if w[..6] == [0x64, 0xa3, 0, 0, 0, 0] {
-                o.write(at, &[0x90; 6]).unwrap();
-                i += 6;
-            } else if w == [0x64, 0x89, 0x0d, 0, 0, 0, 0] {
-                o.write(at, &[0x90; 7]).unwrap();
-                i += 7;
-            } else {
-                i += 1;
-            }
         }
     }
     (cursors, cursors + 4)
@@ -3617,6 +3596,28 @@ fn round4d(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
             );
         }
     }
+    // Kernel_GetAbilityName over the a_ability table (made up when absent)
+    if ffx_kernel::bridge::A_ABILITY.get(a) == 0 {
+        let t = alloc(a, b, 0x400);
+        put(a, b, t, 2u16);
+        put(a, b, t + 8, [0x0001u16, 0x0010, 8, 0x200]);
+        put(a, b, t + 16, 0x40u32);
+        put(a, b, t + 20, [0x0020u16, 0x0030, 4, 0x280]);
+        put(a, b, t + 28, 0xc0u32);
+        let words: [u32; 0x80] = std::array::from_fn(|_| rng.next() & 0x03ff_03ff);
+        put(a, b, t + 0x40, words);
+        set(a, b, ffx_kernel::bridge::A_ABILITY, t);
+    }
+    for n in 0..300u32 {
+        let id = [0, rng.next() & 0x3f, 0x8000 | (rng.next() & 0x7f)][(n % 3) as usize];
+        let ra = eax(a, 0x0077_4720, &[id]);
+        assert_eq!(
+            ra,
+            names::bridge::ability_name(b, id, ffx_menu::tk::bridge::tk_mn2_get_ability_mes),
+            "ability {id:#x}"
+        );
+    }
+    same_memory("ability names", a, b);
 }
 
 /// A menu scene block whose hash table (`TkMenuGetSceneHandle`) holds
