@@ -61,6 +61,10 @@ pub mod reg {
     pub const TEST_1: u32 = 0x47;
     /// `TEST_2`.
     pub const TEST_2: u32 = 0x48;
+    /// `ZBUF_1`.
+    pub const ZBUF_1: u32 = 0x4e;
+    /// `ZBUF_2`.
+    pub const ZBUF_2: u32 = 0x4f;
     /// `FRAME_1`.
     pub const FRAME_1: u32 = 0x4c;
     /// `FRAME_2`.
@@ -68,6 +72,7 @@ pub mod reg {
 }
 
 /// The originals over game memory (`ffx_bridge::Mem`).
+#[allow(clippy::many_single_char_names)] // coordinates, channels
 pub mod bridge {
     use ffx_bridge::{Global, Mem};
 
@@ -427,5 +432,164 @@ pub mod bridge {
             let c: f32 = mem.read(v.wrapping_add(4 * k));
             mem.write(p.wrapping_add(4 + 4 * k), ffx_bridge::x87::round_trip(c));
         }
+    }
+
+    /// A vertex record (3, x, y, z) from values, as `Sg_DbVertex` writes
+    /// it from a vector.
+    fn db_vertex_xyz(mem: &mut impl Mem, v: [f32; 3]) {
+        if IS_DEBUG.get(mem) == 0 {
+            return;
+        }
+        let p = DB_PTR.get(mem);
+        mem.write(p, 3u32);
+        mem.write(p.wrapping_add(4), v.map(ffx_bridge::x87::round_trip));
+        DB_PTR.set(mem, p.wrapping_add(0x10));
+    }
+
+    /// `Sg_GsSetPacket(p)` (`0x00841cf0`): the packet at `p`, or at
+    /// `Sg_PacketGetPtr()` for null, the count at 1; returns the packet.
+    pub fn set_packet(mem: &mut impl Mem, p: u32) -> u32 {
+        let p = if p == 0 {
+            crate::state::bridge::packet_get_ptr(mem)
+        } else {
+            p
+        };
+        COUNT.set(mem, 1);
+        PACKET.set(mem, p);
+        p
+    }
+
+    fn zbuf(mem: &mut impl Mem, zmsk: u32, r: u32) -> u32 {
+        let zbp = crate::state::bridge::vram_get_addr_z().cast_signed() / 2048;
+        let lo = zbp.cast_unsigned() | 0x3100_0000;
+        put(mem, u64::from(lo) | u64::from(zmsk) << 32, r);
+        zmsk
+    }
+
+    /// `Sg_GsZBUF(zmsk)` (`0x008422f0`): the depth buffer at
+    /// `Sg_VramGetAddrZ() / 2048`, 24-bit; `zmsk` above.
+    pub fn zbuf_1(mem: &mut impl Mem, zmsk: u32) -> u32 {
+        zbuf(mem, zmsk, reg::ZBUF_1)
+    }
+
+    /// `Sg_GsZBUF2(zmsk)` (`0x00842350`).
+    pub fn zbuf_2(mem: &mut impl Mem, zmsk: u32) -> u32 {
+        zbuf(mem, zmsk, reg::ZBUF_2)
+    }
+
+    /// The debug font texture: base pointer (`u16` at `+2`... of the word
+    /// at `0x01325170`) and width (`0x01325220`) (`Sg_SetDebugTEX_0`).
+    pub const DEBUG_TEX: Global<u32> = Global::new(0x0132_5170);
+    /// The debug font texture's buffer width word.
+    pub const DEBUG_TEX_WIDTH: Global<u32> = Global::new(0x0132_5220);
+
+    /// `Sg_SetDebugTEX_0(q)` (`0x00851160`): an A+D `TEX0_1` quadword at
+    /// `q` for the debug font: the data merged into what `q` held (`TBP0`
+    /// from the high half of [`DEBUG_TEX`], `TBW` from the width, `PSM`,
+    /// `TW`, `TH`, `TCC`, `TFX`, `CBP` from its low half); returns the high
+    /// data word.
+    pub fn set_debug_tex0(mem: &mut impl Mem, q: u32) -> u32 {
+        let tex = DEBUG_TEX.get(mem);
+        let lo: u32 = mem.read(q);
+        let lo = (lo & !0x3fff) | ((tex >> 16) & 0x3fff);
+        let width = (DEBUG_TEX_WIDTH.get(mem) & 0x1f80) | 0x3a_8000;
+        let lo = (lo & 0xdd40_3fff) | (width << 7);
+        let hi: u32 = mem.read(q.wrapping_add(4));
+        let hi = (hi & 0xffff_ffb7) | 0x37;
+        let hi = (hi & 0x8000_007f) | ((tex & 0x3fff) << 7);
+        mem.write(q, [lo, hi, 6, 0]);
+        hi
+    }
+
+    /// `Sg_Db2DVertex(x, y)` (`0x00840fc0`): a 2D vertex record (`u16` 4,
+    /// x, y) in debug builds.
+    pub fn db_2d_vertex(mem: &mut impl Mem, x: u32, y: u32) {
+        if IS_DEBUG.get(mem) == 0 {
+            return;
+        }
+        let p = DB_PTR.get(mem);
+        mem.write(p, [4, crate::lo16(x), crate::lo16(y)]);
+        DB_PTR.set(mem, p.wrapping_add(8));
+    }
+
+    /// `Sg_DbColor(r, g, b)` (`0x00841230`): a colour record (2, r, g, b)
+    /// in debug builds.
+    pub fn db_color(mem: &mut impl Mem, r: u32, g: u32, b: u32) {
+        if IS_DEBUG.get(mem) == 0 {
+            return;
+        }
+        let p = DB_PTR.get(mem);
+        mem.write(p, [2, crate::lo8(r), crate::lo8(g), crate::lo8(b)]);
+        DB_PTR.set(mem, p.wrapping_add(4));
+    }
+
+    /// The debug circles' unit circle: 13 cosines, then 13 sines (`f32`).
+    pub const DB_COS: Global<[f32; 13]> = Global::new(0x0130_32d4);
+    /// See [`DB_COS`].
+    pub const DB_SIN: Global<[f32; 13]> = Global::new(0x0130_3308);
+
+    /// A circle of radius `r` around `c` as a line strip of 13 vertices:
+    /// component `a` gets `cos * r + c.a`, component `b` `r * sin + c.b`,
+    /// the third `c` as it is.
+    fn db_circle(mem: &mut impl Mem, c: u32, r: f32, a: usize, b: usize) {
+        use ffx_bridge::x87::Reg;
+        db_line_strip(mem);
+        let r = Reg::load(r);
+        for k in 0..13 {
+            let cos = DB_COS.get(mem)[k];
+            let sin = DB_SIN.get(mem)[k];
+            let raw: [f32; 3] = mem.read(c);
+            let mut v = raw.map(ffx_bridge::x87::round_trip);
+            v[a] = (Reg::load(cos) * r).add_m32(raw[a]).store();
+            v[b] = r.mul_m32(sin).add_m32(raw[b]).store();
+            db_vertex_xyz(mem, v);
+        }
+    }
+
+    /// `Sg_DbCircle(c, r)` (`0x008410a0`): in the x-z plane.
+    pub fn db_circle_xz(mem: &mut impl Mem, c: u32, r: f32) {
+        db_circle(mem, c, r, 0, 2);
+    }
+
+    /// `Sg_DbCircleXY(c, r)` (`0x00841170`).
+    pub fn db_circle_xy(mem: &mut impl Mem, c: u32, r: f32) {
+        db_circle(mem, c, r, 0, 1);
+    }
+
+    /// `Sg_DbCircleYZ(c, r)` (`0x008411d0`).
+    pub fn db_circle_yz(mem: &mut impl Mem, c: u32, r: f32) {
+        db_circle(mem, c, r, 1, 2);
+    }
+
+    /// `Sg_DbNull(c, s)` (`0x008414b0`): a locator, three lines of length
+    /// `2 s` through `c` along the axes (one `Sg_DbLine`, six vertices).
+    pub fn db_null(mem: &mut impl Mem, c: u32, s: f32) {
+        use ffx_bridge::x87::{Reg, round_trip};
+        db_line(mem);
+        let c0: f32 = mem.read(c);
+        let c1: f32 = mem.read(c.wrapping_add(4));
+        let c2: f32 = mem.read(c.wrapping_add(8));
+        let mut v = [c0, c1, c2].map(round_trip);
+        v[0] = Reg::load(c0).sub_m32(s).store();
+        db_vertex_xyz(mem, v);
+        let c0: f32 = mem.read(c);
+        v[0] = Reg::load(c0).add_m32(s).store();
+        db_vertex_xyz(mem, v);
+        let c0: f32 = mem.read(c);
+        let c1: f32 = mem.read(c.wrapping_add(4));
+        v[0] = round_trip(c0);
+        v[1] = Reg::load(c1).sub_m32(s).store();
+        db_vertex_xyz(mem, v);
+        let c1: f32 = mem.read(c.wrapping_add(4));
+        v[1] = Reg::load(s).add_m32(c1).store();
+        db_vertex_xyz(mem, v);
+        let c1: f32 = mem.read(c.wrapping_add(4));
+        let c2: f32 = mem.read(c.wrapping_add(8));
+        v[1] = round_trip(c1);
+        v[2] = Reg::load(c2).sub_m32(s).store();
+        db_vertex_xyz(mem, v);
+        let c2: f32 = mem.read(c.wrapping_add(8));
+        v[2] = Reg::load(c2).add_m32(s).store();
+        db_vertex_xyz(mem, v);
     }
 }

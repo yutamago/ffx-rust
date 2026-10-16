@@ -1023,6 +1023,7 @@ fn all(a: &mut Oracle, b: &mut Oracle, seed: u32, from_game: bool) {
     points(a, b, &mut rng, 300, false);
     vectors(a, b, &mut rng, 500);
     packet(a, b, &mut rng, 200);
+    round2(a, b, &mut rng, 150);
 }
 
 #[test]
@@ -1042,4 +1043,557 @@ fn snapshot_cases() {
     // The game's own lights first, then the rest.
     points(&mut a, &mut b, &mut rng, 20, true);
     all(&mut a, &mut b, 0x5eed_0003, true);
+}
+
+// Round 2: camera and screen, light set-up, angle wraps, fades, capture,
+// resources, maps, the debug lines and sequences.
+
+/// A float of moderate size (no infinity: the angle wraps never end on
+/// one) or a quiet NaN.
+fn angle(rng: &mut Xorshift) -> u32 {
+    match rng.below(12) {
+        0 => 0x7fc0_0000,
+        1 => 0,
+        2 => 0x8000_0000,
+        _ => {
+            let e = rng.below(18) + 115; // 2^-12 .. 2^5 times 1..2
+            rng.next() & 0x807f_ffff | e << 23
+        }
+    }
+}
+
+/// `n` floats at `at` in both.
+fn put_floats(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, at: u32, n: u32) {
+    for k in 0..n {
+        let f = rng.float();
+        put(a, b, at + 4 * k, f);
+    }
+}
+
+fn camera_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::camera::bridge as c;
+    let i = |v: i32| v.cast_unsigned();
+    // The battle camera in use: a block of floats.
+    let cam = floats(a, b, rng, 0xda0 / 4);
+    set(a, b, ffx_battle::camera::bridge::CAMERA, cam);
+    for _ in 0..rounds {
+        put_floats(a, b, rng, cam + 0x50, 3);
+        put_floats(a, b, rng, cam + 0x61c + 0x50, 3);
+        put_floats(a, b, rng, cam + 0xc9c, 1);
+        let center = a.rebase(c::SCREEN_CENTER.sym);
+        put_floats(a, b, rng, center, 2);
+        twin("Sg_CalcScreenMatrix", a, b, 0x0083_f160, &[], |m| {
+            c::calc_screen_matrix(m);
+        });
+        let mtx = block(a, b, rng, 64);
+        let wide = rng.below(3);
+        twin(
+            "Sg_CalcViewClipMatrix",
+            a,
+            b,
+            0x0083_f1c0,
+            &[mtx, wide],
+            |m| c::calc_view_clip_matrix(m, mtx, wide),
+        );
+        let v = if rng.below(4) == 0 {
+            0
+        } else {
+            alloc(a, b, 16)
+        };
+        twin("Sg_CameraGetPos", a, b, 0x0083_f260, &[v], |m| {
+            c::camera_get_pos(m, v)
+        });
+        let at = a.rebase(c::CAMERA_REF.sym);
+        put_floats(a, b, rng, at, 3);
+        twin("Sg_CameraGetRef", a, b, 0x0083_f2a0, &[v], |m| {
+            c::camera_get_ref(m, v)
+        });
+        twin("Sg_GetLookVector", a, b, 0x0083_f710, &[v], |m| {
+            c::get_look_vector(m, v)
+        });
+        let (x, y) = (rng.int(), rng.int());
+        twin(
+            "Sg_SetScreenCenter",
+            a,
+            b,
+            0x0083_f7a0,
+            &[i(x), i(y)],
+            |m| c::set_screen_center(m, x, y),
+        );
+        // Battle camera positions and channels (`g_Cameras`).
+        let (n, side) = (rng.below(3), rng.next());
+        let pos = a.rebase(c::CAMERA_POS_NOW.sym) + n * 0xda0 + (side & 1) * 0x61c;
+        put_floats(a, b, rng, pos, 3);
+        let out: [u32; 3] =
+            std::array::from_fn(|_| if rng.below(4) == 0 { 0 } else { alloc(a, b, 4) });
+        let cam_arg = n | rng.next() << 8;
+        twin(
+            "Cam_GetPos",
+            a,
+            b,
+            0x007b_d420,
+            &[cam_arg, side, out[0], out[1], out[2]],
+            |m| c::cam_get_pos(m, cam_arg, side, out),
+        );
+        let id = n | (rng.below(4) << 8);
+        let channels = a.rebase(c::CHANNELS.sym) + n * 0xda0;
+        for k in 0..4 {
+            let w = if rng.below(2) == 0 { id } else { rng.next() };
+            put(a, b, channels + 8 * k, w);
+        }
+        let on = arg(rng);
+        twin(
+            "Cam_SetChannelSuspended",
+            a,
+            b,
+            0x007c_0010,
+            &[id, on],
+            |m| {
+                c::cam_set_channel_suspended(m, id, on);
+            },
+        );
+    }
+}
+
+fn light_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use light::bridge as l;
+    for _ in 0..rounds {
+        for g in l::LIGHT_DIRS {
+            put_floats(a, b, rng, a.rebase(g.sym), 4);
+        }
+        put_floats(a, b, rng, a.rebase(l::LIGHT_COLORS.sym), 16);
+        let out = alloc(a, b, 16);
+        let i = rng.below(6);
+        twin("Sg_LightGetColor", a, b, 0x0083_60f0, &[i, out], |m| {
+            l::get_color_of(m, i, out);
+        });
+        twin("Sg_LightGetDir", a, b, 0x0083_61c0, &[i, out], |m| {
+            l::get_dir(m, i, out);
+        });
+        let v = if rng.below(4) == 0 { 0 } else { out };
+        twin("Sg_GetLightPos", a, b, 0x0083_6070, &[rng.next(), v], |m| {
+            l::get_light_pos(m, v)
+        });
+        twin("Sg_InitLight", a, b, 0x0083_60b0, &[], l::init_light);
+        let chr = floats(a, b, rng, 0x100);
+        let flags = rng.next().to_le_bytes()[0];
+        put(a, b, chr + 0x188, flags);
+        twin(
+            &format!("Sg_LightSetChr flags {flags:#x}"),
+            a,
+            b,
+            0x0083_6250,
+            &[chr],
+            |m| l::set_chr(m, chr),
+        );
+        // Sg_AnimValF: equal, NaN, zero and other frame counts.
+        let v = floats(a, b, rng, 3);
+        match rng.below(4) {
+            0 => {
+                let x: u32 = Mem::read(&*a, v);
+                put(a, b, v + 4, x);
+            }
+            1 => put(a, b, v + 8, 0u32),
+            _ => put(a, b, v + 8, rng.int()),
+        }
+        twin("Sg_AnimValF", a, b, 0x0083_6020, &[v], |m| {
+            l::anim_val_f(m, v)
+        });
+        // Sg_PLightDefine on a fresh table.
+        let base = floats(a, b, rng, 16 * 11);
+        set(a, b, l::PLIGHTS, base);
+        let last = rng.below(16).cast_signed() - 1;
+        set(a, b, l::PLIGHT_LAST, last);
+        let n = rng.below(16).cast_signed();
+        let xyz = [rng.float(), rng.float(), rng.float()];
+        let radius = rng.float();
+        let rgb = [rng.int(), rng.int(), rng.int()];
+        let light = arg(rng);
+        let args = [
+            n.cast_unsigned(),
+            xyz[0],
+            xyz[1],
+            xyz[2],
+            radius,
+            rgb[0].cast_unsigned(),
+            rgb[1].cast_unsigned(),
+            rgb[2].cast_unsigned(),
+            light,
+        ];
+        twin(
+            &format!("Sg_PLightDefine({n}) last {last}"),
+            a,
+            b,
+            0x0083_19b0,
+            &args,
+            |m| {
+                l::define(
+                    m,
+                    n,
+                    xyz.map(f32::from_bits),
+                    f32::from_bits(radius),
+                    rgb,
+                    light,
+                );
+            },
+        );
+    }
+}
+
+const ANGLE_WRAPS: [u32; 6] = [
+    0x0082_db50,
+    0x0082_9800,
+    0x0083_6720,
+    0x0083_a010,
+    0x0084_5640,
+    0x0084_eb60,
+];
+
+fn vector_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    for _ in 0..rounds {
+        let va = floats(a, b, rng, 4);
+        let vb = floats(a, b, rng, 4);
+        let out = match rng.below(3) {
+            0 => va,
+            1 => vb,
+            _ => alloc(a, b, 16),
+        };
+        twin("Sg_VecCross", a, b, 0x0082_95a0, &[out, va, vb], |m| {
+            vec::bridge::cross(m, out, va, vb);
+        });
+        let mtx = floats(a, b, rng, 16);
+        twin(
+            "Sg_MatrixApplyVec3",
+            a,
+            b,
+            0x0082_4e60,
+            &[out, mtx, va],
+            |m| {
+                vec::bridge::matrix_apply_vec3(m, out, mtx, va);
+            },
+        );
+        put_floats(a, b, rng, a.rebase(vec::bridge::WIND.sym), 3);
+        let o: [u32; 3] =
+            std::array::from_fn(|_| if rng.below(4) == 0 { 0 } else { alloc(a, b, 4) });
+        twin("Sg_GlobalGetWind", a, b, 0x0082_4dd0, &o, |m| {
+            vec::bridge::global_get_wind(m, o[0], o[1], o[2]);
+        });
+        let x = angle(rng);
+        for sym in ANGLE_WRAPS {
+            twin(
+                &format!("Angle_Wrap {sym:#x}({x:#x})"),
+                a,
+                b,
+                sym,
+                &[x],
+                |_| vec::bridge::angle_wrap(f32::from_bits(x)),
+            );
+        }
+    }
+}
+
+fn state_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use state::bridge as s;
+    let i = |v: i32| v.cast_unsigned();
+    // `Phyre_PTimerWin32_GetTime` becomes `fld qword [now]; ret`.
+    let now = alloc(a, b, 8);
+    for o in [&mut *a, &mut *b] {
+        let mut code = vec![0xdd, 0x05];
+        code.extend_from_slice(&now.to_le_bytes());
+        code.push(0xc3);
+        let at = o.rebase(0x0042_fd80);
+        o.write(at, &code).unwrap();
+    }
+    for _ in 0..rounds {
+        let (t, x, y) = (arg(rng), arg(rng), arg(rng));
+        twin("Sg_Fade_Common", a, b, 0x0082_cdc0, &[t, x, y], |m| {
+            s::fade_common(m, t, x, y)
+        });
+        let c: [u32; 4] = std::array::from_fn(|_| arg(rng));
+        twin("Sg_Flash", a, b, 0x0082_cca0, &c, |m| {
+            s::flash(m, c[0], c[1], c[2], c[3]);
+        });
+        let c: [u32; 4] = std::array::from_fn(|_| arg(rng));
+        twin("Sg_FilterAdd", a, b, 0x0082_cc20, &c, |m| {
+            s::filter_add(m, c[0], c[1], c[2], c[3])
+        });
+        let (n, v) = (rng.below(4), arg(rng));
+        twin("Sg_SetFocus", a, b, 0x0082_ce20, &[n, v], |m| {
+            s::set_focus(m, n, v)
+        });
+        twin("Sg_AccSetClear", a, b, 0x0082_bdc0, &c, |m| {
+            s::acc_set_clear(m, c[0], c[1], c[2], c[3]);
+        });
+        let chr = if rng.below(4) == 0 {
+            0
+        } else {
+            floats(a, b, rng, 8)
+        };
+        twin("Sg_SetPlayer", a, b, 0x0082_dad0, &[chr], |m| {
+            s::set_player(m, chr)
+        });
+        for g in [0x0130_07b1u32, 0x0130_07b2, 0x0130_07b3, 0x00c4_96d4] {
+            let v = rng.next().to_le_bytes()[0] & 0x83;
+            put(a, b, a.rebase(g), v);
+        }
+        twin("Sg_GetCurExecFrames", a, b, 0x0082_d7e0, &[], |m| {
+            s::get_cur_exec_frames(m)
+        });
+        let out = alloc(a, b, 12);
+        twin("Sg_GetPlayerPos", a, b, 0x0082_d880, &[out], |m| {
+            s::get_player_pos(m, out)
+        });
+        for g in s::DISPLAY_ENV {
+            let v = rng.next();
+            put(a, b, a.rebase(g.sym), v);
+        }
+        put(
+            a,
+            b,
+            a.rebase(s::CAPTURE_GUI.sym),
+            rng.next().to_le_bytes()[0],
+        );
+        twin("Sg_CaptureEnable", a, b, 0x0083_a470, &[], |m| {
+            s::capture_enable(m)
+        });
+        let (mode, on) = (arg(rng), rng.below(3));
+        twin(
+            "Sg_CaptureEnable_Kari",
+            a,
+            b,
+            0x0083_a4f0,
+            &[mode, on],
+            |m| s::capture_enable_kari(m, mode, on),
+        );
+        twin("Sg_CaptureEnable_KariOn", a, b, 0x0083_a580, &[mode], |m| {
+            s::capture_enable_kari_on(m, mode)
+        });
+        twin("Sg_CaptureSetGui", a, b, 0x0083_a660, &[mode], |m| {
+            s::capture_set_gui(m, mode);
+        });
+        let o: [u32; 3] =
+            std::array::from_fn(|_| if rng.below(4) == 0 { 0 } else { alloc(a, b, 4) });
+        twin("Sg_GetTkAntiXYB", a, b, 0x0083_adf0, &o, |m| {
+            s::get_tk_anti_xyb(m, o);
+        });
+        // Resources, through the game's own table.
+        let (n, v) = (rng.below(40), rng.next());
+        twin(
+            &format!("Sg_GetResource({n})"),
+            a,
+            b,
+            0x0083_fbe0,
+            &[n, v],
+            |m| s::get_resource(m, n, v),
+        );
+        twin(
+            &format!("Sg_SetResource({n})"),
+            a,
+            b,
+            0x0083_fe10,
+            &[n, v],
+            |m| s::set_resource(m, n, v),
+        );
+        let len = usize::try_from(rng.below(24)).unwrap();
+        let mut text: Vec<u8> = (0..len)
+            .map(|_| b'a' + rng.below(26).to_le_bytes()[0])
+            .collect();
+        text.push(0);
+        let str_at = a.alloc_bytes(&text).unwrap();
+        assert_eq!(b.alloc_bytes(&text).unwrap(), str_at);
+        twin(
+            &format!("Sg_SetResourceSTR({n}, {len})"),
+            a,
+            b,
+            0x0083_fe60,
+            &[n, str_at],
+            |m| {
+                s::set_resource_str(m, n, str_at);
+            },
+        );
+        // Maps.
+        set(a, b, s::MAP_DIR_SELECT, rng.below(3));
+        let which = rng.below(2);
+        twin("Sg_MapSetName", a, b, 0x0084_4fb0, &[str_at, which], |m| {
+            s::map_set_name(m, str_at, which);
+        });
+        set(a, b, s::IS_DEBUG, rng.below(2).to_le_bytes()[0]);
+        twin("Sg_MapInitAll", a, b, 0x0084_4eb0, &[], |m| {
+            s::map_init_all(m);
+        });
+        let (x, y) = (rng.int(), rng.int());
+        twin("Sg_SetMouse", a, b, 0x0085_1ae0, &[i(x), i(y)], |m| {
+            s::set_mouse(m, x, y)
+        });
+        twin("sg_AddY", a, b, 0x0085_0820, &[i(x)], |m| s::add_y(m, i(x)));
+        twin("sa_task_start", a, b, 0x0077_a2c0, &[], |m| {
+            s::sa_task_start(m);
+        });
+        // The kind tables, over every small value and the letters.
+        let k = if rng.below(2) == 0 {
+            rng.below(0x80)
+        } else {
+            arg(rng)
+        };
+        twin(
+            &format!("sg_getdbname({k:#x})"),
+            a,
+            b,
+            0x0082_9c90,
+            &[k],
+            |m| s::get_db_name(m, k),
+        );
+        twin(
+            &format!("sg_getdbnum({k:#x})"),
+            a,
+            b,
+            0x0082_9d80,
+            &[k],
+            |_| s::get_db_num(k.cast_signed()),
+        );
+        twin(
+            &format!("sg_getdbtype({k:#x})"),
+            a,
+            b,
+            0x0082_9e10,
+            &[k],
+            |_| s::get_db_type(k),
+        );
+        // FFXApplication::getAppTime at a chosen clock.
+        let t = f64::from(rng.below(100_000)) / 64.0;
+        put(a, b, now, t);
+        put(
+            a,
+            b,
+            a.rebase(s::APP_START.sym),
+            f64::from(rng.below(1000)) / 8.0,
+        );
+        let app = floats(a, b, rng, 16);
+        let at = a.rebase(0x0042_f690);
+        let r = a.call(at, Conv::Thiscall(app), &[]).unwrap();
+        if r.st0.is_some() {
+            let pop = a.rebase(POP_STUB);
+            a.call(pop, Conv::Cdecl, &[]).unwrap();
+        }
+        s::get_app_time(b, app, t).check(&r, "FFXApplication_getAppTime");
+        assert_eq!(a.diff(b).unwrap(), [], "FFXApplication_getAppTime: memory");
+    }
+}
+
+fn line_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use gs::bridge as g;
+    put_floats(a, b, rng, a.rebase(g::DB_COS.sym), 13);
+    put_floats(a, b, rng, a.rebase(g::DB_SIN.sym), 13);
+    for _ in 0..rounds {
+        let p = block(a, b, rng, 64 * 16);
+        let given = if rng.below(3) == 0 { 0 } else { p };
+        set(a, b, state::bridge::PACKET, p + 16);
+        twin("Sg_GsSetPacket", a, b, 0x0084_1cf0, &[given], |m| {
+            g::set_packet(m, given)
+        });
+        let z = rng.next();
+        twin("Sg_GsZBUF", a, b, 0x0084_22f0, &[z], |m| g::zbuf_1(m, z));
+        twin("Sg_GsZBUF2", a, b, 0x0084_2350, &[z], |m| g::zbuf_2(m, z));
+        put(a, b, a.rebase(g::DEBUG_TEX.sym), rng.next());
+        put(a, b, a.rebase(g::DEBUG_TEX_WIDTH.sym), rng.next());
+        let q = block(a, b, rng, 16);
+        twin("Sg_SetDebugTEX_0", a, b, 0x0085_1160, &[q], |m| {
+            g::set_debug_tex0(m, q)
+        });
+        let db = alloc(a, b, 0x200);
+        set(a, b, g::DB_PTR, db);
+        set(a, b, g::IS_DEBUG, rng.below(2).to_le_bytes()[0]);
+        let (x, y) = (rng.next(), rng.next());
+        twin("Sg_Db2DVertex", a, b, 0x0084_0fc0, &[x, y], |m| {
+            g::db_2d_vertex(m, x, y);
+        });
+        twin("Sg_DbColor", a, b, 0x0084_1230, &[x, y, z], |m| {
+            g::db_color(m, x, y, z);
+        });
+        let c = floats(a, b, rng, 3);
+        let r = rng.float();
+        twin("Sg_DbCircle", a, b, 0x0084_10a0, &[c, r], |m| {
+            g::db_circle_xz(m, c, f32::from_bits(r));
+        });
+        twin("Sg_DbCircleXY", a, b, 0x0084_1170, &[c, r], |m| {
+            g::db_circle_xy(m, c, f32::from_bits(r));
+        });
+        twin("Sg_DbCircleYZ", a, b, 0x0084_11d0, &[c, r], |m| {
+            g::db_circle_yz(m, c, f32::from_bits(r));
+        });
+        set(a, b, g::DB_PTR, db);
+        twin("Sg_DbNull", a, b, 0x0084_14b0, &[c, r], |m| {
+            g::db_null(m, c, f32::from_bits(r));
+        });
+    }
+}
+
+/// A channel byte stream: deltas, waits and two-byte deltas.
+fn stream(rng: &mut Xorshift, len: usize) -> Vec<u8> {
+    (0..len)
+        .map(|_| match rng.below(4) {
+            0 => 0x80 | rng.below(4).to_le_bytes()[0],
+            _ => rng.next().to_le_bytes()[0],
+        })
+        .collect()
+}
+
+fn sequence_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::seq::bridge as q;
+    for _ in 0..rounds {
+        // A sequence with two tables of 16-byte entries.
+        let seq = block(a, b, rng, 0x20);
+        let counts = [
+            rng.below(6).cast_signed() - 1,
+            rng.below(6).cast_signed() - 1,
+        ];
+        let delta = rng.next();
+        for (k, n) in (0u32..).zip(counts) {
+            let n16 = i16::try_from(n).unwrap();
+            put(a, b, seq + 8 + 2 * k, n16);
+            let t = block(a, b, rng, 0x60);
+            put(a, b, seq + 0xc + 4 * k, t.wrapping_sub(delta));
+        }
+        let given = if rng.below(8) == 0 { 0 } else { seq };
+        twin(
+            "SG_RelocateSequence",
+            a,
+            b,
+            0x0083_6fc0,
+            &[given, delta],
+            |m| q::relocate_sequence(m, given, delta),
+        );
+        // An object with a list of channels.
+        let obj = alloc(a, b, 0x750);
+        let mut next = 0u32;
+        for _ in 0..rng.below(4) {
+            let ch = block(a, b, rng, 0x20);
+            let bytes = stream(rng, 128);
+            let s = a.alloc_bytes(&bytes).unwrap();
+            assert_eq!(b.alloc_bytes(&bytes).unwrap(), s);
+            put(a, b, ch, next);
+            put(a, b, ch + 0xc, s);
+            put(a, b, ch + 6, u16::from(rng.below(3).to_le_bytes()[0]));
+            next = ch;
+        }
+        put(a, b, obj + 0x74c, next);
+        let frames = rng.below(20).cast_signed() - 2;
+        twin(
+            &format!("SG_StepChannels({frames})"),
+            a,
+            b,
+            0x0083_94d0,
+            &[obj, frames.cast_unsigned()],
+            |m| q::step_channels(m, obj, frames),
+        );
+    }
+}
+
+fn round2(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    camera_cases(a, b, rng, rounds);
+    light_cases(a, b, rng, rounds);
+    vector_cases(a, b, rng, rounds);
+    state_cases(a, b, rng, rounds);
+    line_cases(a, b, rng, rounds);
+    sequence_cases(a, b, rng, rounds);
 }

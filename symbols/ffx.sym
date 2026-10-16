@@ -2973,6 +2973,7 @@
 0x00824dd0 function Sg_GlobalGetWind          # fh switch:bsim1.00 0x710041edb0
 0x00824e10 function Sg_GlobalInitWind         # (): wind (0x012fbc44) = (0.01, 0, 0); Switch name, between Sg_GlobalGetWind and Sg_GsloadSetBase
 0x00824e30 function Sg_GlobalSetWind          # fh switch:bsim1.00 0x710041ed90
+0x00824e60 function Sg_MatrixApplyVec3        # (out, m, v): out[j] = m[j] v.x + m[4+j] v.y + m[8+j] v.z for four columns (stack cookie); the cloth helpers' matrix product, next to Sg_VecAdd
 0x00824f00 function ChN_DataDispose           # fh v3:exact 0x00824f90
 0x00824f90 function Ch_Allocate               # fh v3:bsim0.91 0x00825010
 0x00825650 function Ch_Allocate2              # fh v3:exact 0x008256d0
@@ -3022,10 +3023,13 @@
 0x00828b60 function Ch_ElemInit              # ours: (elem) data 0, +0x144 = 1, local (+8) and global (+0x88) matrices identity, +0xe4..+0x100 = 0, +0x104..+0x110 = 1.0; called by SG_InitBones
 0x00828be0 function Chr_ModelEntry           # ours: (i, base, version) -> base + i * (24 for versions 0x831..0x1313, else 40)
 0x00828c10 function InsideTriangle            # fh v3:exact 0x00828c90
+0x008295a0 function Sg_VecCross               # (out, a, b): out = a x b, a component at a time; beside the triangle tests (passThisTriangle)
 0x008295e0 function characterChange           # fh switch:cg2 0x7100410c00
+0x00829800 function Angle_Wrap_00829800       # the same code as Angle_Wrap (0x0082db50): into -pi..pi in steps of 2pi, each stored as f32; a copy in another file
 0x00829870 function passThisTriangle          # fh v3:exact 0x008298f0
 0x00829c60 function set0434isDarkYojimbo      # fh switch:bsim1.00 0x7100410fa0
 0x00829c90 function sg_getdbname              # kind (0-6 or its letter) -> chr folder name; was Chr_KindDir
+0x00829d80 function sg_getdbnum               # (c) -> kind of a kind letter (c 0, m 1, n 2, s 3, w 4, f 5, k 6), -1 else; Switch name beside sg_getdbname/sg_getdbtype
 0x00829e10 function sg_getdbtype              # id >> 12 -> 'c','m','n','s','w','f','k'; was Chr_KindLetter
 0x00829e60 function Ch_AnalysisChrNum         # fh v3:exact 0x00829ee0
 0x00829ef0 function Ch_DataRead               # (chr id): queues "[%s:%s]CHRDATA" (prints "SG:RomRead:%s %x"); was Chr_LoadData
@@ -3147,6 +3151,7 @@
 0x0082bcb0 function Sg_AccSetDrawMap          # (v): byte 0x01300776, read by Sg_AccSetFrameMap; Switch name order Sg_AccEnableBG, Sg_AccSetDrawMap, Sg_AccSetDrawChr
 0x0082bcc0 function Sg_AccGetAlpha            # () -> i16 0x0130070e, the value Sg_AccSetAlpha sets
 0x0082bd10 function Sg_AccSetAlpha            # fh v3:exact+call.cs 0x0082bd90 cdecl
+0x0082bdc0 function Sg_AccSetClear            # (r, g, b, a): bytes 0x01300771..74; Switch name (36 bytes there), among the Sg_Acc* setters
 0x0082be00 function Sg_AccSetDrawChr          # (v): byte 0x01300778, read by Sg_AccSetFrameChr
 0x0082be10 function Sg_AccEnableBG            # (v): byte 0x01300777, read by Sg_AccDrawBG
 0x0082be20 function Sg_AccSetFrameChr         # fh switch:cg3 0x710042ba80
@@ -3336,12 +3341,15 @@
 0x00835e90 function Ch_SysSetScreenMatrix     # (m): 64 bytes from m to g_ChrScreenMatrix (Ch_SysGetScreenMatrixPtr's); Switch name
 0x00835eb0 function Ch_SysSetCameraMatrix     # (m): 64 bytes from m to g_ChrCameraMatrix (Ch_SysGetCameraMatrixPtr's); Switch name
 0x00835ed0 function Ch_TextureAnimGetHandle   # fh v3:exact 0x00835f50
+0x00836020 function Sg_AnimValF               # ({f32 value, f32 target, i32 frames}): value moves (target - value) / frames, frames counts down; Switch name in the light/water group
+0x00836070 function Sg_GetLightPos            # (_, &v) -> 0x00c49724 (the first light direction, copied to v); Switch name, right before Sg_InitLight as there
 0x008360a0 function Sg_GetSuimen              # () -> f32 0x013009d8 (Sg_SetSuimen's water height)
 0x008360b0 function Sg_InitLight              # fh v3:exact 0x00836130
 0x008360f0 function Sg_LightGetColor          # fh v3:exact 0x00836170
 0x008361b0 function Sg_LightGetColorMatrixPtr # () -> 0x023c4400, the matrix Sg_LightSetColor fills; Switch name (Fahrenheit's BSim put it on 0x00836240)
 0x008361c0 function Sg_LightGetDir            # fh v3:exact 0x00836240
 0x00836240 function Sg_LightGetNormalMatrixPtr # () -> 0x01300978, the matrix Sg_LightSetDir fills; Switch name
+0x00836250 function Sg_LightSetChr            # (chr): light matrices from the character's own directions/colours (+0x384.., +0x3c4.., chosen by the i8 at +0x188) or the global ones; Switch name
 0x00836310 function Sg_LightSetColor          # fh v3:exact 0x00836390
 0x00836430 function Sg_LightSetDir            # fh v3:exact 0x008364b0
 0x00836520 function Light_Set                    # (light 0-3, r, g, b, pitch deg, yaw deg): color /255 (0x00836310) and direction from the two angles (0x00836430)
@@ -3350,6 +3358,7 @@
 0x00836670 function Sg_VectorGetLength        # (v) -> sqrt((x² + y²) + z²) through _CIsqrt, as f32; Switch name order after Sg_SetWaterLimit
 0x008366f0 function Sg_RadToDeg               # (r) -> r * 180.0 (0x00b48378) / pi (0x00b582f0) as f32; Ch_Neck
 0x00836710 function enableGameControlTextureAnimation # fh v3:bsim1.00+call.cs 0x00836790 cdecl
+0x00836720 function Angle_Wrap_00836720       # the same code as Angle_Wrap; a copy in the character file (8 callers)
 0x00836830 function ChN_DisposeSystemMGRP     # fh v3:bsim1.00 0x008368b0
 0x00836850 function ChN_ExistSystemMGRP       # fh v3:exact 0x008368d0
 0x00836870 function ChN_ReadSystemMGRP        # (chr id, n): resident motion group via SG_LoadResidentGroup, then SG_AddMotionGroup; was Chr_LoadSystemMgrp
@@ -3412,10 +3421,14 @@
 0x00839e00 function Fixed8_ToFloat            # v / 256
 0x00839e30 function Angle12_Lerp              # 12-bit angle interpolation the short way
 0x00839e80 function AngleTurn_Lerp            # the same on floats in turns
+0x0083a010 function Angle_Wrap_0083a010       # the same code as Angle_Wrap; a copy
 0x0083a270 function Sg_Capture                # fh v3:exact 0x0083a2f0
 0x0083a470 function Sg_CaptureEnable          # fh v3:exact 0x0083a4f0
+0x0083a4f0 function Sg_CaptureEnable_Kari     # (mode, on): with on, a capture in mode hiding the GUI; Switch name (CaptureEnable, _Kari, _KariOn in this order)
+0x0083a580 function Sg_CaptureEnable_KariOn   # (mode): a capture in mode, hiding the GUI, flag +0xc set; Switch name
 0x0083a620 function Sg_CaptureGetGuiHide      # fh v3:exact 0x0083a6a0
 0x0083a640 function Sg_CaptureGetSelect       # () -> i8 0x0130181c; Fahrenheit Switch BSim 1.00 0x7100434760
+0x0083a660 function Sg_CaptureSetGui          # (v): byte 0x0130181d, which Sg_CaptureEnable turns into the GUI-hide word (1 - v & 1); Switch name
 0x0083a680 function Sg_CaptureSetSelect       # (v): byte 0x0130181c = v; partner of Sg_CaptureGetSelect
 0x0083a690 function Sg_CaptureToFile          # fh v3:exact 0x0083a710
 0x0083a9a0 function Sg_CaptureToFileZ         # fh switch:cg4 0x7100434b80
@@ -3493,9 +3506,12 @@
 0x0083f0a0 function Sg_MallocA                # fh v3:bsim1.00 0x0083f0a0
 0x0083f0c0 function virtuos_realloc           # fh switch:bsim1.00 0x7100431a80
 0x0083f160 function Sg_CalcScreenMatrix       # fh v3:exact 0x0083f160
+0x0083f1c0 function Sg_CalcViewClipMatrix     # (m, wide): unit matrix, m[0][0] and m[1][1] = 1/(2 extent/depth) scaled, m[2][2], m[3][2] fixed; Switch name order after Sg_CalcScreenMatrix
 0x0083f260 function Sg_CameraGetPos           # fh switch:bsim1.00 0x710042a480
+0x0083f2a0 function Sg_CameraGetRef           # (&v) -> 0x00c4ded0 (the reference point, copied to v); Switch name beside Sg_CameraGetPos
 0x0083f2e0 function Sg_CameraSetPlayer        # fh v3:exact 0x0083f2e0
 0x0083f6f0 function Sg_ControlMouseCamera     # fh v3:bsim1.00 0x0083f6f0
+0x0083f710 function Sg_GetLookVector          # (&v) -> 0x01301bd0 = Sg_CameraGetRef's point - Sg_CameraGetPos's; Switch name
 0x0083f780 function Sg_InitCamera             # fh v3:exact 0x0083f780
 0x0083f7a0 function Sg_SetScreenCenter        # fh v3:exact 0x0083f7a0
 0x0083f800 function Load1TIM                  # fh v3:exact 0x0083f800
@@ -3524,10 +3540,16 @@
 0x00840d70 function Cache_Unuse               # fh v3:exact 0x00840d70
 0x00840dd0 function Cache_Use                 # fh v3:exact 0x00840dd0
 0x00840e60 function Sg_CacheDisposeChr        # fh v3:exact 0x00840e60
+0x00840fc0 function Sg_Db2DVertex             # (x, y): debug line record (u16 4, x, y) while g_FFXIsDebug; Switch name
+0x008410a0 function Sg_DbCircle               # (c, r): debug line strip of 13 vertices around c in the x-z plane; Switch name (Sg_DbCircle, XY, YZ)
+0x00841170 function Sg_DbCircleXY             # (c, r): the same in the x-y plane
+0x008411d0 function Sg_DbCircleYZ             # (c, r): the same in the y-z plane
+0x00841230 function Sg_DbColor                # (r, g, b): debug line record (2, r, g, b) while g_FFXIsDebug; Switch name
 0x008412c0 function Sg_DbDraw                 # fh v3:exact 0x008412c0
 0x00841440 function Sg_DbInitAll              # fh v3:exact 0x00841440
 0x00841470 function Sg_DbLine                 # fh switch:bsim1.00 0x7100432680
 0x00841490 function Sg_DbLineStrip           # (): debug line buffer word 0x20001 (Sg_DbLine writes 0x10001); Switch name order Sg_DbLine, Sg_DbLineStrip
+0x008414b0 function Sg_DbNull                 # (c, s): a locator, three debug lines of length 2s through c; Switch name
 0x00841610 function Sg_DbVertex               # fh switch:bsim1.00 0x71004326e0
 0x00841670 function Sg_GsALPHA                # fh v3:bsim1.00 0x00841670
 0x008416f0 function Sg_GsDIMX                 # (): A+D DIMX (0x44) = 0xffff_ffff_ffff_fffc; Switch name
@@ -3558,6 +3580,8 @@
 0x00842070 function Sg_GsXYOFFSET2            # fh v3:cg3 0x842070
 0x00842140 function Sg_GsXYZF2                # fh v3:exact 0x00842140
 0x00842210 function Sg_GsXYZF2V               # fh v3:bsim1.00 0x00842210
+0x008422f0 function Sg_GsZBUF                 # (zmsk): A+D ZBUF_1 (0x4e), base Sg_VramGetAddrZ()/2048, 24-bit; Switch name
+0x00842350 function Sg_GsZBUF2                # (zmsk): the same for ZBUF_2 (0x4f)
 0x00842c80 function Ch_EffectPacketCreateMain # fh v3:exact 0x00842c80
 0x00843200 function SendSpadToMFIFO           # fh v3:bsim1.00 0x00843200
 0x00843210 function Sg_GetIsPrerend           # fh v3:exact 0x00843210
@@ -3581,6 +3605,7 @@
 0x00845170 function Sg_MatrixToQuaternion     # fh v3:exact 0x00845170
 0x00845310 function Sg_QuaternionSlerp        # fh v3:exact 0x00845310
 0x00845450 function Sg_QuaternionToMatrix     # fh v3:exact 0x00845450
+0x00845640 function Angle_Wrap_00845640       # the same code as Angle_Wrap; a copy
 0x008456c0 function Sg_GetFuncName            # fh v3:bsim1.00 0x008456c0
 0x00845700 function Ch_EffectPacketGetSize    # fh v3:bsim1.00 0x00845700
 0x00845710 function Ch_EffectPacketSetPtr     # fh v3:exact 0x00845710
@@ -3700,6 +3725,7 @@
 0x0084d270 function gui_chr_GWM_SELECTOR      # fh v3:exact 0x0084d270
 0x0084e7c0 function SgGu_BgColor              # fh v3:exact 0x0084e7c0
 0x0084e870 function SgGu_LightDump            # fh v3:exact 0x0084e870
+0x0084eb60 function Angle_Wrap_0084eb60       # the same code as Angle_Wrap; a copy
 0x0084ede0 function SystemOnHost              # fh v3:exact 0x0084ede0
 0x0084f270 function Sg_SelectMainMenu         # fh v3:exact 0x0084f270
 0x0084f320 function Sg_SelectMainMenu2        # fh switch:bsim1.00 0x7100438600

@@ -2,7 +2,7 @@
 //! loop, point lights, the GS packet writers, small vector helpers,
 //! `crossAssertIsValidFloat`.
 
-use ffx_sg::{gs, light, state, vec};
+use ffx_sg::{camera, gs, light, seq, state, vec};
 
 use super::{mem, ported};
 
@@ -618,5 +618,263 @@ ported! {
     /// `Sg_MouseGetMove()`.
     Sg_MouseGetMove @ 0x0085_1910 => extern "C" fn sg_mouse_get_move() -> u32 {
         state::bridge::mouse_get_move(&mem())
+    }
+
+    // Round 2.
+    /// `FFXApplication::getAppTime(this)`, with the time from the game's own clock.
+    FFXApplication_getAppTime @ 0x0042_f690 => extern "thiscall" fn ffx_application_get_app_time(this: u32) -> f32 {
+        state::bridge::get_app_time(&mem(), this, app_clock())
+    }
+    /// `sa_task_start()`.
+    sa_task_start @ 0x0077_a2c0 => extern "C" fn sa_task_start() {
+        state::bridge::sa_task_start(&mut mem());
+    }
+    /// `Cam_GetPos(cam, side, x, y, z)`.
+    Cam_GetPos @ 0x007b_d420 => extern "C" fn cam_get_pos(cam: u32, side: u32, x: u32, y: u32, z: u32) -> u32 {
+        camera::bridge::cam_get_pos(&mut mem(), cam, side, [x, y, z])
+    }
+    /// `Cam_SetChannelSuspended(id, on)`.
+    Cam_SetChannelSuspended @ 0x007c_0010 => extern "C" fn cam_set_channel_suspended(id: u32, on: u32) {
+        camera::bridge::cam_set_channel_suspended(&mut mem(), id, on);
+    }
+    /// `Sg_GlobalGetWind(x, y, z)`.
+    Sg_GlobalGetWind @ 0x0082_4dd0 => extern "C" fn sg_global_get_wind(x: u32, y: u32, z: u32) {
+        vec::bridge::global_get_wind(&mut mem(), x, y, z);
+    }
+    /// `Sg_MatrixApplyVec3(out, m, v)`.
+    Sg_MatrixApplyVec3 @ 0x0082_4e60 => extern "C" fn sg_matrix_apply_vec3(out: u32, m: u32, v: u32) {
+        vec::bridge::matrix_apply_vec3(&mut mem(), out, m, v);
+    }
+    /// `Sg_VecCross(out, a, b)`.
+    Sg_VecCross @ 0x0082_95a0 => extern "C" fn sg_vec_cross(out: u32, a: u32, b: u32) {
+        vec::bridge::cross(&mut mem(), out, a, b);
+    }
+    /// `Angle_Wrap_00829800(x)`.
+    Angle_Wrap_00829800 @ 0x0082_9800 => extern "C" fn angle_wrap_00829800(x: f32) -> f32 {
+        vec::bridge::angle_wrap(x)
+    }
+    /// `sg_getdbname(kind)`.
+    sg_getdbname @ 0x0082_9c90 => extern "C" fn sg_getdbname(kind: u32) -> u32 {
+        state::bridge::get_db_name(&mem(), kind)
+    }
+    /// `sg_getdbnum(c)`.
+    sg_getdbnum @ 0x0082_9d80 => extern "C" fn sg_getdbnum(c: i32) -> i32 {
+        state::bridge::get_db_num(c)
+    }
+    /// `sg_getdbtype(kind)`.
+    sg_getdbtype @ 0x0082_9e10 => extern "C" fn sg_getdbtype(kind: u32) -> u32 {
+        state::bridge::get_db_type(kind)
+    }
+    /// `Sg_AccSetClear(r, g, b, a)`.
+    Sg_AccSetClear @ 0x0082_bdc0 => extern "C" fn sg_acc_set_clear(r: u32, g: u32, b: u32, a: u32) {
+        state::bridge::acc_set_clear(&mut mem(), r, g, b, a);
+    }
+    /// `Sg_FilterAdd(r, g, b, time)`.
+    Sg_FilterAdd @ 0x0082_cc20 => extern "C" fn sg_filter_add(r: u32, g: u32, b: u32, time: u32) -> u32 {
+        state::bridge::filter_add(&mut mem(), r, g, b, time)
+    }
+    /// `Sg_Flash(time, r, g, b)`.
+    Sg_Flash @ 0x0082_cca0 => extern "C" fn sg_flash(time: u32, r: u32, g: u32, b: u32) {
+        state::bridge::flash(&mut mem(), time, r, g, b);
+    }
+    /// `Sg_Fade_Common(time, out, black)`.
+    Sg_Fade_Common @ 0x0082_cdc0 => extern "C" fn sg_fade_common(time: u32, out: u32, black: u32) -> u32 {
+        state::bridge::fade_common(&mut mem(), time, out, black)
+    }
+    /// `Sg_SetFocus(i, v)`.
+    Sg_SetFocus @ 0x0082_ce20 => extern "C" fn sg_set_focus(i: u32, v: u32) -> u32 {
+        state::bridge::set_focus(&mut mem(), i, v)
+    }
+    /// `Sg_GetCurExecFrames()`.
+    Sg_GetCurExecFrames @ 0x0082_d7e0 => extern "C" fn sg_get_cur_exec_frames() -> i32 {
+        state::bridge::get_cur_exec_frames(&mem())
+    }
+    /// `Sg_GetPlayerPos(v)`.
+    Sg_GetPlayerPos @ 0x0082_d880 => extern "C" fn sg_get_player_pos(v: u32) -> u32 {
+        state::bridge::get_player_pos(&mut mem(), v)
+    }
+    /// `Sg_SetPlayer(chr)`.
+    Sg_SetPlayer @ 0x0082_dad0 => extern "C" fn sg_set_player(chr: u32) -> u32 {
+        state::bridge::set_player(&mut mem(), chr)
+    }
+    /// `Angle_Wrap(x)`.
+    Angle_Wrap @ 0x0082_db50 => extern "C" fn angle_wrap(x: f32) -> f32 {
+        vec::bridge::angle_wrap(x)
+    }
+    /// `Sg_PLightDefine(i, x, y, z, radius, r, g, b, light)`.
+    Sg_PLightDefine @ 0x0083_19b0 => extern "C" fn sg_p_light_define(i: i32, x: f32, y: f32, z: f32, radius: f32, r: i32, g: i32, b: i32, light: u32) {
+        light::bridge::define(&mut mem(), i, [x, y, z], radius, [r, g, b], light);
+    }
+    /// `Sg_AnimValF(v)`.
+    Sg_AnimValF @ 0x0083_6020 => extern "C" fn sg_anim_val_f(v: u32) -> u32 {
+        light::bridge::anim_val_f(&mut mem(), v)
+    }
+    /// `Sg_GetLightPos(_, out)`.
+    Sg_GetLightPos @ 0x0083_6070 => extern "C" fn sg_get_light_pos(_unused: u32, out: u32) -> u32 {
+        light::bridge::get_light_pos(&mut mem(), out)
+    }
+    /// `Sg_InitLight()`.
+    Sg_InitLight @ 0x0083_60b0 => extern "C" fn sg_init_light() -> u32 {
+        light::bridge::init_light(&mut mem())
+    }
+    /// `Sg_LightGetColor(i, out)`.
+    Sg_LightGetColor @ 0x0083_60f0 => extern "C" fn sg_light_get_color(i: u32, out: u32) {
+        light::bridge::get_color_of(&mut mem(), i, out);
+    }
+    /// `Sg_LightGetDir(i, out)`.
+    Sg_LightGetDir @ 0x0083_61c0 => extern "C" fn sg_light_get_dir(i: u32, out: u32) {
+        light::bridge::get_dir(&mut mem(), i, out);
+    }
+    /// `Sg_LightSetChr(chr)`.
+    Sg_LightSetChr @ 0x0083_6250 => extern "C" fn sg_light_set_chr(chr: u32) -> u32 {
+        light::bridge::set_chr(&mut mem(), chr)
+    }
+    /// `Angle_Wrap_00836720(x)`.
+    Angle_Wrap_00836720 @ 0x0083_6720 => extern "C" fn angle_wrap_00836720(x: f32) -> f32 {
+        vec::bridge::angle_wrap(x)
+    }
+    /// `SG_RelocateSequence(seq, base)`.
+    SG_RelocateSequence @ 0x0083_6fc0 => extern "C" fn sg_relocate_sequence(seq: u32, base: u32) -> u32 {
+        seq::bridge::relocate_sequence(&mut mem(), seq, base)
+    }
+    /// `SG_StepChannels(obj, frames)`.
+    SG_StepChannels @ 0x0083_94d0 => extern "C" fn sg_step_channels(obj: u32, frames: i32) -> u32 {
+        seq::bridge::step_channels(&mut mem(), obj, frames)
+    }
+    /// `Angle_Wrap_0083a010(x)`.
+    Angle_Wrap_0083a010 @ 0x0083_a010 => extern "C" fn angle_wrap_0083a010(x: f32) -> f32 {
+        vec::bridge::angle_wrap(x)
+    }
+    /// `Sg_CaptureEnable()`.
+    Sg_CaptureEnable @ 0x0083_a470 => extern "C" fn sg_capture_enable() -> u32 {
+        state::bridge::capture_enable(&mut mem())
+    }
+    /// `Sg_CaptureEnable_Kari(mode, on)`.
+    Sg_CaptureEnable_Kari @ 0x0083_a4f0 => extern "C" fn sg_capture_enable_kari(mode: u32, on: u32) {
+        state::bridge::capture_enable_kari(&mut mem(), mode, on);
+    }
+    /// `Sg_CaptureEnable_KariOn(mode)`.
+    Sg_CaptureEnable_KariOn @ 0x0083_a580 => extern "C" fn sg_capture_enable_kari_on(mode: u32) -> u32 {
+        state::bridge::capture_enable_kari_on(&mut mem(), mode)
+    }
+    /// `Sg_CaptureSetGui(v)`.
+    Sg_CaptureSetGui @ 0x0083_a660 => extern "C" fn sg_capture_set_gui(v: u32) {
+        state::bridge::capture_set_gui(&mut mem(), v);
+    }
+    /// `Sg_GetTkAntiXYB(x, y, b)`.
+    Sg_GetTkAntiXYB @ 0x0083_adf0 => extern "C" fn sg_get_tk_anti_xyb(x: u32, y: u32, b: u32) {
+        state::bridge::get_tk_anti_xyb(&mut mem(), [x, y, b]);
+    }
+    /// `Sg_CalcScreenMatrix()`.
+    Sg_CalcScreenMatrix @ 0x0083_f160 => extern "C" fn sg_calc_screen_matrix() {
+        camera::bridge::calc_screen_matrix(&mut mem());
+    }
+    /// `Sg_CalcViewClipMatrix(m, wide)`.
+    Sg_CalcViewClipMatrix @ 0x0083_f1c0 => extern "C" fn sg_calc_view_clip_matrix(m: u32, wide: u32) -> u32 {
+        camera::bridge::calc_view_clip_matrix(&mut mem(), m, wide)
+    }
+    /// `Sg_CameraGetPos(v)`.
+    Sg_CameraGetPos @ 0x0083_f260 => extern "C" fn sg_camera_get_pos(v: u32) -> u32 {
+        camera::bridge::camera_get_pos(&mut mem(), v)
+    }
+    /// `Sg_CameraGetRef(v)`.
+    Sg_CameraGetRef @ 0x0083_f2a0 => extern "C" fn sg_camera_get_ref(v: u32) -> u32 {
+        camera::bridge::camera_get_ref(&mut mem(), v)
+    }
+    /// `Sg_GetLookVector(v)`.
+    Sg_GetLookVector @ 0x0083_f710 => extern "C" fn sg_get_look_vector(v: u32) -> u32 {
+        camera::bridge::get_look_vector(&mut mem(), v)
+    }
+    /// `Sg_SetScreenCenter(x, y)`.
+    Sg_SetScreenCenter @ 0x0083_f7a0 => extern "C" fn sg_set_screen_center(x: i32, y: i32) -> i32 {
+        camera::bridge::set_screen_center(&mut mem(), x, y)
+    }
+    /// `Sg_GetResource(i, default)`.
+    Sg_GetResource @ 0x0083_fbe0 => extern "C" fn sg_get_resource(i: u32, default: u32) -> u32 {
+        state::bridge::get_resource(&mem(), i, default)
+    }
+    /// `Sg_SetResource(i, v)`.
+    Sg_SetResource @ 0x0083_fe10 => extern "C" fn sg_set_resource(i: u32, v: u32) {
+        state::bridge::set_resource(&mut mem(), i, v);
+    }
+    /// `Sg_SetResourceSTR(i, s)`.
+    Sg_SetResourceSTR @ 0x0083_fe60 => extern "C" fn sg_set_resource_str(i: u32, s: u32) {
+        state::bridge::set_resource_str(&mut mem(), i, s);
+    }
+    /// `Sg_Db2DVertex(x, y)`.
+    Sg_Db2DVertex @ 0x0084_0fc0 => extern "C" fn sg_db2_d_vertex(x: u32, y: u32) {
+        gs::bridge::db_2d_vertex(&mut mem(), x, y);
+    }
+    /// `Sg_DbCircle(c, r)`.
+    Sg_DbCircle @ 0x0084_10a0 => extern "C" fn sg_db_circle(c: u32, r: f32) {
+        gs::bridge::db_circle_xz(&mut mem(), c, r);
+    }
+    /// `Sg_DbCircleXY(c, r)`.
+    Sg_DbCircleXY @ 0x0084_1170 => extern "C" fn sg_db_circle_xy(c: u32, r: f32) {
+        gs::bridge::db_circle_xy(&mut mem(), c, r);
+    }
+    /// `Sg_DbCircleYZ(c, r)`.
+    Sg_DbCircleYZ @ 0x0084_11d0 => extern "C" fn sg_db_circle_yz(c: u32, r: f32) {
+        gs::bridge::db_circle_yz(&mut mem(), c, r);
+    }
+    /// `Sg_DbColor(r, g, b)`.
+    Sg_DbColor @ 0x0084_1230 => extern "C" fn sg_db_color(r: u32, g: u32, b: u32) {
+        gs::bridge::db_color(&mut mem(), r, g, b);
+    }
+    /// `Sg_DbNull(c, s)`.
+    Sg_DbNull @ 0x0084_14b0 => extern "C" fn sg_db_null(c: u32, s: f32) {
+        gs::bridge::db_null(&mut mem(), c, s);
+    }
+    /// `Sg_GsSetPacket(p)`.
+    Sg_GsSetPacket @ 0x0084_1cf0 => extern "C" fn sg_gs_set_packet(p: u32) -> u32 {
+        gs::bridge::set_packet(&mut mem(), p)
+    }
+    /// `Sg_GsZBUF(zmsk)`.
+    Sg_GsZBUF @ 0x0084_22f0 => extern "C" fn sg_gs_zbuf(zmsk: u32) -> u32 {
+        gs::bridge::zbuf_1(&mut mem(), zmsk)
+    }
+    /// `Sg_GsZBUF2(zmsk)`.
+    Sg_GsZBUF2 @ 0x0084_2350 => extern "C" fn sg_gs_zbuf2(zmsk: u32) -> u32 {
+        gs::bridge::zbuf_2(&mut mem(), zmsk)
+    }
+    /// `Sg_MapInitAll()`.
+    Sg_MapInitAll @ 0x0084_4eb0 => extern "C" fn sg_map_init_all() {
+        state::bridge::map_init_all(&mut mem());
+    }
+    /// `Sg_MapSetName(name, which)`.
+    Sg_MapSetName @ 0x0084_4fb0 => extern "C" fn sg_map_set_name(name: u32, which: u32) {
+        state::bridge::map_set_name(&mut mem(), name, which);
+    }
+    /// `Angle_Wrap_00845640(x)`.
+    Angle_Wrap_00845640 @ 0x0084_5640 => extern "C" fn angle_wrap_00845640(x: f32) -> f32 {
+        vec::bridge::angle_wrap(x)
+    }
+    /// `Angle_Wrap_0084eb60(x)`.
+    Angle_Wrap_0084eb60 @ 0x0084_eb60 => extern "C" fn angle_wrap_0084eb60(x: f32) -> f32 {
+        vec::bridge::angle_wrap(x)
+    }
+    /// `sg_AddY(d)`.
+    sg_AddY @ 0x0085_0820 => extern "C" fn sg_add_y(d: u32) -> u32 {
+        state::bridge::add_y(&mut mem(), d)
+    }
+    /// `Sg_SetDebugTEX_0(q)`.
+    Sg_SetDebugTEX_0 @ 0x0085_1160 => extern "C" fn sg_set_debug_tex_0(q: u32) -> u32 {
+        gs::bridge::set_debug_tex0(&mut mem(), q)
+    }
+    /// `Sg_SetMouse(x, y)`.
+    Sg_SetMouse @ 0x0085_1ae0 => extern "C" fn sg_set_mouse(x: i32, y: i32) -> i32 {
+        state::bridge::set_mouse(&mut mem(), x, y)
+    }
+}
+
+/// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in
+/// seconds (the harness's virtual clock under replay), for
+/// `FFXApplication::getAppTime`.
+fn app_clock() -> f64 {
+    // SAFETY: a cdecl function of this build taking nothing and returning a
+    // double in ST0.
+    unsafe {
+        let f: unsafe extern "C" fn() -> f64 = std::mem::transmute(crate::rebase(0x0042_fd80));
+        f()
     }
 }

@@ -36,6 +36,7 @@ data, the register number as 64 bits) and advances the count:
 | `Sg_GsTexHokan(on)` | `0x14` | `0x25` (bilinear) or `5` |
 | `Sg_GsXYOFFSET(x, y)` / `2` | `0x18`/`0x19` | `(2048 - w/2 - x) * 16`, the same for y in the high word |
 | `Sg_GsTEXFLUSH()` | `0x3f` | not written |
+| `Sg_GsZBUF(zmsk)` / `2` | `0x4e`/`0x4f` | `0x31000000 \| Sg_VramGetAddrZ() / 2048`, `zmsk` high |
 | `Sg_GsSCISSOR(x0, x1, y0, y1)` / `2` | `0x40`/`0x41` | 16 bits each, `x0`, `y0` at least 0, `x1` at most `w - 1`, `y1` at most `h - 1` (signed) |
 | `Sg_GsALPHA(a, b, c, d, fix)` | `0x42` | `a \| b<<2 \| c<<4 \| d<<6 \| fix<<32` |
 | `Sg_GsDIMX()` | `0x44` | `0xffff_ffff_ffff_fffc` |
@@ -72,3 +73,60 @@ old value sign-extended is returned):
 | `0x012fbbbb` | pause (`Sg_SetPause`, any byte) |
 | `0x012fbc34` | keep the frame rate (`Sg_SetKeepFps`, any byte) |
 | `0x00c496d4` | frames run per game frame (`Sg_SetExecFrames`, clamped to 0..=99) |
+
+## Lights
+
+Three directions (16 bytes each) at `0x00c49724`, `0x00c49734` and
+`0x013008e8`, and four colours (the third the ambient one last) from
+`0x00c49744`, 16 bytes apart. `Sg_InitLight` builds the colour matrix
+(`0x023c4400`, `FFXVu0LightColorMatrix`) and then the normal matrix
+(`0x01300978`, `FFXVu0NormalLightMatrix`) from them. `Sg_LightSetChr(chr)`
+does the same for a character: bit `i` (0..=2) of the `i8` at `+0x188`
+takes direction `i` from `+0x3c4 + 16 i` and colour `i` from
+`+0x384 + 16 i`, bit 3 the ambient colour from `+0x3b4`.
+
+`Sg_AnimValF` eases `{f32 value, f32 target, i32 frames}`: unless value
+equals target (a NaN never does), value += `(target - value) / frames`
+(the frame count rounded to `f32` first), or becomes the target when no
+frames are left; the count then drops by one unless 0.
+
+## Camera and screen
+
+`Sg_CalcScreenMatrix` calls the battle camera's `MsSetScreen(0, depth,
+...)` with `MsCameraGetScrDpt()`, the screen centre (`0x01301bbc`, set by
+`Sg_SetScreenCenter(x, y)` to `2048 + (x - 256)`, `2048 + (y - 208)`) and
+fixed planes. `Sg_CameraGetPos` copies the battle camera's side-1 position
+into `0x00c4dec0`; the reference point is `0x00c4ded0`, the look vector
+(reference minus position) `0x01301bd0`.
+
+## Sequence channels (`SG_StepChannels`)
+
+A channel list hangs from an object's `+0x74c` (next channel at `+0`).
+Channel: byte stream pointer `+0xc`, wait count `u16` `+6`, delta `i16`
+`+0x14`, value `u16` `+0x16`, previous value `+0x18`. Each frame the value
+moves by the delta; with no wait pending the next stream byte first sets:
+
+| Code | Meaning |
+|---|---|
+| `0xxxxxxx` | delta = the 7 bits, signed |
+| `10nnnnnn` | wait `n` frames |
+| `11llllll hhhhhhhh` | delta = `h` (signed) above the 6 bits `l`, 14-bit signed |
+
+`SG_RelocateSequence(seq, base)` adds `base` to the two table pointers
+(`+0xc`, `+0x10`, `i16` counts at `+8` and `+0xa`) and to the pointers at
+`+8` and `+0xc` of each 16-byte entry.
+
+## Character kinds (`sg_getdb*`)
+
+| Kind | Letter | Name |
+|---|---|---|
+| 0 | `c` | `pc` |
+| 1 | `m` | `mon` |
+| 2 | `n` | `npc` |
+| 3 | `s` | `sum` |
+| 4 | `w` | `wep` |
+| 5 | `f` | `obj` |
+| 6 | `k` | `skl` |
+
+`sg_getdbname` accepts the number or the letter; another value gives the
+empty string.

@@ -25,6 +25,7 @@ pub const PLIGHT_LIGHT: u32 = 0x29;
 /// The originals over game memory (`ffx_bridge::Mem`).
 #[allow(clippy::many_single_char_names)] // index, pointers, channels
 pub mod bridge {
+    use ffx_bridge::x87::Reg;
     use ffx_bridge::{Global, Mem, x87};
 
     use super::{PLIGHT_ATTENUATION, PLIGHT_ENABLE, PLIGHT_LIGHT, PLIGHT_RADIUS, PLIGHT_SIZE};
@@ -200,5 +201,159 @@ pub mod bridge {
     /// `Sg_SetWaterLimit(h)` (`0x00836660`).
     pub fn set_water_limit(mem: &mut impl Mem, h: f32) {
         WATER_LIMIT.set(mem, x87::round_trip(h));
+    }
+
+    /// The three light directions (16 bytes each): two in `.data`, the
+    /// third at `0x013008e8` (`Sg_LightGetDir`).
+    pub const LIGHT_DIRS: [Global<u8>; 3] = [
+        Global::new(0x00c4_9724),
+        Global::new(0x00c4_9734),
+        Global::new(0x0130_08e8),
+    ];
+    /// The three light colours and the ambient colour, 16 bytes apart
+    /// (`Sg_LightGetColor`).
+    pub const LIGHT_COLORS: Global<[u32; 4]> = Global::new(0x00c4_9744);
+    /// The attenuation `Sg_PLightDefine` gives (`f32` in `.rdata`).
+    pub const DEFAULT_ATTENUATION: Global<f32> = Global::new(0x00b9_2268);
+
+    /// The address of light colour `i` (0..=3, 3 the ambient).
+    fn color(mem: &impl Mem, i: u32) -> u32 {
+        LIGHT_COLORS.ptr(mem).addr.wrapping_add(16 * i)
+    }
+
+    fn copy16(mem: &mut impl Mem, from: u32, to: u32) {
+        let v: [u32; 4] = mem.read(from);
+        mem.write(to, v);
+    }
+
+    /// `Sg_LightGetColor(i, &c)` (`0x008360f0`): colour `i` (0..=3), 16
+    /// bytes; nothing for another `i`.
+    pub fn get_color_of(mem: &mut impl Mem, i: u32, out: u32) {
+        if i <= 3 {
+            let at = color(mem, i);
+            copy16(mem, at, out);
+        }
+    }
+
+    /// `Sg_LightGetDir(i, &d)` (`0x008361c0`): direction `i` (0..=2), 16
+    /// bytes; nothing for another `i`.
+    pub fn get_dir(mem: &mut impl Mem, i: u32, out: u32) {
+        if let Some(g) = LIGHT_DIRS.get(i as usize) {
+            let at = g.ptr(mem).addr;
+            copy16(mem, at, out);
+        }
+    }
+
+    /// `Sg_GetLightPos(_, &d)` (`0x00836070`): the first direction into `d`
+    /// when not null (the first argument is unused); its address.
+    pub fn get_light_pos(mem: &mut impl Mem, out: u32) -> u32 {
+        let at = LIGHT_DIRS[0].ptr(mem).addr;
+        if out != 0 {
+            copy16(mem, at, out);
+        }
+        at
+    }
+
+    /// The light matrices from three directions and four colours (by
+    /// address): `FFXVu0NormalLightMatrix`, then `FFXVu0LightColorMatrix`.
+    fn matrices(mem: &mut impl Mem, dirs: [u32; 3], colors: [u32; 4]) -> (u32, u32) {
+        use ffx_ps2::vu0::bridge as vu0;
+        let nm = NORMAL_MATRIX.ptr(mem).addr;
+        let cm = COLOR_MATRIX.ptr(mem).addr;
+        let a = vu0::normal_light_matrix(mem, nm, dirs);
+        let b = vu0::light_color_matrix(mem, cm, colors);
+        (a, b)
+    }
+
+    /// `Sg_InitLight()` (`0x008360b0`): the colour matrix from the four
+    /// colours, then the normal matrix from the three directions; returns
+    /// `FFXVu0NormalLightMatrix`'s result.
+    pub fn init_light(mem: &mut impl Mem) -> u32 {
+        use ffx_ps2::vu0::bridge as vu0;
+        let colors = [0, 1, 2, 3].map(|i| color(mem, i));
+        let cm = COLOR_MATRIX.ptr(mem).addr;
+        vu0::light_color_matrix(mem, cm, colors);
+        let dirs = LIGHT_DIRS.map(|g| g.ptr(mem).addr);
+        let nm = NORMAL_MATRIX.ptr(mem).addr;
+        vu0::normal_light_matrix(mem, nm, dirs)
+    }
+
+    /// `Sg_LightSetChr(chr)` (`0x00836250`): the light matrices for a
+    /// character: bits 0..=2 of its `i8` at `+0x188` take direction and
+    /// colour `i` from the character (`+0x3c4 + 16 i`, `+0x384 + 16 i`)
+    /// instead of the global ones, bit 3 its ambient (`+0x3b4`); returns
+    /// `FFXVu0LightColorMatrix`'s result.
+    pub fn set_chr(mem: &mut impl Mem, chr: u32) -> u32 {
+        let flags = mem.read::<u8>(chr.wrapping_add(0x188));
+        let pick =
+            |own: bool, at: u32, global: u32| if own { chr.wrapping_add(at) } else { global };
+        let dirs = [0u32, 1, 2].map(|i| {
+            pick(
+                flags & (1 << i) != 0,
+                0x3c4 + 16 * i,
+                LIGHT_DIRS[i as usize].ptr(mem).addr,
+            )
+        });
+        let colors =
+            [0u32, 1, 2, 3].map(|i| pick(flags & (1 << i) != 0, 0x384 + 16 * i, color(mem, i)));
+        matrices(mem, dirs, colors).1
+    }
+
+    /// `Sg_AnimValF(v)` (`0x00836020`): a value easing to its target over
+    /// a count of frames (`{f32 value, f32 target, i32 frames}`): unless
+    /// the value equals the target, it moves `(target - value) / frames`
+    /// (the target itself when no frames are left); the count then drops
+    /// by one unless 0. `EAX` ends as the new count.
+    pub fn anim_val_f(mem: &mut impl Mem, v: u32) -> u32 {
+        let cur: f32 = mem.read(v);
+        let target: f32 = mem.read(v.wrapping_add(4));
+        // `fucompp`: equal skips; unordered moves.
+        #[allow(clippy::float_cmp)] // the original's exact comparison
+        let equal = cur == target;
+        if !equal {
+            let n: i32 = mem.read(v.wrapping_add(8));
+            let next = if n == 0 {
+                x87::round_trip(target)
+            } else {
+                let fnum = f32::from_bits(x87::store(f64::from(n)));
+                Reg::load(target)
+                    .sub_m32(cur)
+                    .div_m32(fnum)
+                    .add_m32(cur)
+                    .store()
+            };
+            mem.write(v, next);
+        }
+        let n: u32 = mem.read(v.wrapping_add(8));
+        if n == 0 {
+            0
+        } else {
+            mem.write(v.wrapping_add(8), n - 1);
+            n - 1
+        }
+    }
+
+    /// `Sg_PLightDefine(i, x, y, z, radius, r, g, b, light)` (`0x008319b0`):
+    /// a whole point light (position, colour, radius, light, the default
+    /// attenuation, enabled) unless past the last one.
+    #[allow(clippy::too_many_arguments)] // the original's
+    pub fn define(
+        mem: &mut impl Mem,
+        i: i32,
+        xyz: [f32; 3],
+        radius: f32,
+        rgb: [i32; 3],
+        light: u32,
+    ) {
+        if i > PLIGHT_LAST.get(mem) {
+            return;
+        }
+        set_pos(mem, i, 7, xyz.map(x87::round_trip));
+        set_color(mem, i, rgb);
+        set_radius(mem, i, x87::round_trip(radius));
+        set_light(mem, i, light);
+        let a = x87::round_trip(DEFAULT_ATTENUATION.get(mem));
+        set_attenuation(mem, i, a);
+        set_enable(mem, i, 1);
     }
 }

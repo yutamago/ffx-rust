@@ -114,4 +114,54 @@ pub mod bridge {
         };
         r.store()
     }
+
+    /// `Sg_VecCross(out, a, b)` (`0x008295a0`): `out = a × b`, each
+    /// component `a.i b.j - a.j b.i` stored before the next is read.
+    pub fn cross(mem: &mut impl Mem, out: u32, a: u32, b: u32) {
+        for (k, (i, j)) in [(1, 2), (2, 0), (0, 1)].into_iter().enumerate() {
+            let p = Reg::load(get(mem, a, i)).mul_m32(get(mem, b, j));
+            let q = Reg::load(get(mem, a, j)).mul_m32(get(mem, b, i));
+            #[allow(clippy::cast_possible_truncation)] // 0..3
+            put(mem, out, k as u32, (p - q).store());
+        }
+    }
+
+    /// `Sg_GlobalGetWind(&x, &y, &z)` (`0x00824dd0`): null outputs are
+    /// skipped.
+    pub fn global_get_wind(mem: &mut impl Mem, x: u32, y: u32, z: u32) {
+        let w = WIND.get(mem);
+        for (o, v) in [(y, w[1]), (z, w[2]), (x, w[0])] {
+            if o != 0 {
+                mem.write(o, x87::round_trip(v));
+            }
+        }
+    }
+
+    /// `Sg_MatrixApplyVec3(out, m, v)` (`0x00824e60`): `out = (x, y, z)`
+    /// times the first three rows of the 4×4 matrix `m` (four results, all
+    /// computed before `out` is written). The products pair up as the
+    /// original's `fmul`s do: the first column's terms are
+    /// `m[0] v.x + v.y m[4]`, the others `m[4+j] v.y + m[j] v.x`.
+    pub fn matrix_apply_vec3(mem: &mut impl Mem, out: u32, m: u32, v: u32) {
+        let [x, y, z] = [0, 1, 2].map(|k| get(mem, v, k));
+        let e = |k: u32| get(mem, m, k);
+        let mut r = [0f32; 4];
+        r[0] = ((Reg::load(e(0)).mul_m32(x) + Reg::load(y).mul_m32(e(4)))
+            + Reg::load(z).mul_m32(e(8)))
+        .store();
+        for j in 1..4u32 {
+            let t = Reg::load(e(4 + j)).mul_m32(y) + Reg::load(e(j)).mul_m32(x);
+            r[j as usize] = (t + Reg::load(e(8 + j)).mul_m32(z)).store();
+        }
+        mem.write(out, r);
+    }
+
+    /// `Angle_Wrap(a)` (`0x0082db50`) and its five copies in other files:
+    /// `a` brought into `-π ..= π` in steps of `2π`, each step stored as
+    /// `f32` (`ffx_chara::chr::wrap_angle`, `Chr_WrapAngle`'s code). It
+    /// never ends for an infinity, as the original.
+    #[must_use]
+    pub fn angle_wrap(a: f32) -> f32 {
+        ffx_chara::chr::wrap_angle(a)
+    }
 }

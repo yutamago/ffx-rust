@@ -5,8 +5,10 @@
 //! over game memory (`docs/porting.md`), one module per area.
 
 pub mod assert;
+pub mod camera;
 pub mod gs;
 pub mod light;
+pub mod seq;
 pub mod state;
 pub mod vec;
 

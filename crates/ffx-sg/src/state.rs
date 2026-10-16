@@ -7,6 +7,7 @@
 //! value of a switch sign-extend it (`movsx`).
 
 /// The originals over game memory (`ffx_bridge::Mem`).
+#[allow(clippy::many_single_char_names)] // colour channels
 pub mod bridge {
     use ffx_bridge::{Global, Mem};
 
@@ -671,5 +672,410 @@ pub mod bridge {
     #[must_use]
     pub const fn get_is_prerend(status: u32) -> u32 {
         (status >> 14) & 1
+    }
+
+    /// Bytes from `src` up to and including its NUL to `dst` (`strcpy`).
+    pub fn strcpy(mem: &mut impl Mem, dst: u32, src: u32) {
+        let mut i = 0u32;
+        loop {
+            let c: u8 = mem.read(src.wrapping_add(i));
+            mem.write(dst.wrapping_add(i), c);
+            if c == 0 {
+                break;
+            }
+            i = i.wrapping_add(1);
+        }
+    }
+
+    /// The length of the string at `s` (`strlen`).
+    pub fn strlen(mem: &impl Mem, s: u32) -> u32 {
+        let mut n = 0u32;
+        while mem.read::<u8>(s.wrapping_add(n)) != 0 {
+            n = n.wrapping_add(1);
+        }
+        n
+    }
+
+    // Fades, flash, filter, focus, the accumulation buffer.
+    /// What the frame's screen effects do (bit 2 flash, 3 filter, 4 fade).
+    pub const EFFECTS: Global<u32> = Global::new(0x0130_0704);
+    /// The flash: mode `u8` at `+0`, colour at `+1..4`, time `u16` at `+4`
+    /// and `+6` (left and total).
+    pub const FLASH_STATE: Global<u8> = Global::new(0x0130_0728);
+    /// The filter: mode at `+0`, colour at `+1..4`, on (`u16`) at `+4`,
+    /// time (`u16`) at `+6`.
+    pub const FILTER_STATE: Global<u8> = Global::new(0x0130_0738);
+    /// The fade: mode at `+0`, `0xff` at `+1`, `0xffff` at `+2`, time
+    /// (`u16`) at `+4` and `+6`.
+    pub const FADE_STATE: Global<u8> = Global::new(0x0130_0748);
+    /// The focus bits (`Sg_SetFocus`).
+    pub const FOCUS_BITS: Global<u32> = Global::new(0x0130_0768);
+    /// The accumulation buffer's clear colour (`Sg_AccSetClear`).
+    pub const ACC_CLEAR: Global<[u8; 4]> = Global::new(0x0130_0771);
+    /// The player's control state after [`PLAYER`] (four words cleared by
+    /// `Sg_SetPlayer`).
+    pub const PLAYER_STATE: Global<[u32; 4]> = Global::new(0x0130_078c);
+    /// The debug pad holds the frame count (`Sg_GetCurExecFrames` then
+    /// uses [`EXEC_SPECIAL_SPEED`]).
+    pub const EXEC_SPECIAL: Global<u8> = Global::new(0x0130_07b1);
+
+    /// `Sg_Fade_Common(time, out, black)` (`0x0082cdc0`): mode 2 to 5 from
+    /// the two flags (`2 + 2 black` fading out, `3 + 2 black` in); `EAX`
+    /// ends as `time`.
+    pub fn fade_common(mem: &mut impl Mem, time: u32, out: u32, black: u32) -> u32 {
+        let e = EFFECTS.get(mem) | 0x10;
+        EFFECTS.set(mem, e);
+        let mode = u8::from(black != 0) * 2 + if out == 0 { 3 } else { 2 };
+        let p = FADE_STATE.ptr(mem).addr;
+        mem.write(p, mode);
+        let t = crate::lo16(time);
+        mem.write(p + 4, [t, t]);
+        mem.write(p + 2, 0xffffu16);
+        mem.write(p + 1, 0xffu8);
+        time
+    }
+
+    /// `Sg_Flash(time, r, g, b)` (`0x0082cca0`): mode 6.
+    pub fn flash(mem: &mut impl Mem, time: u32, r: u32, g: u32, b: u32) {
+        let e = EFFECTS.get(mem) | 4;
+        EFFECTS.set(mem, e);
+        let p = FLASH_STATE.ptr(mem).addr;
+        let t = crate::lo16(time);
+        mem.write(p + 4, [t, t]);
+        mem.write(p, [6, lo8(r), lo8(g), lo8(b)]);
+    }
+
+    /// `Sg_FilterAdd(r, g, b, time)` (`0x0082cc20`): mode 7; with a time,
+    /// the colour, the time and on; without, off. Returns on (0 or 1).
+    pub fn filter_add(mem: &mut impl Mem, r: u32, g: u32, b: u32, time: u32) -> u32 {
+        let e = EFFECTS.get(mem) | 8;
+        EFFECTS.set(mem, e);
+        let p = FILTER_STATE.ptr(mem).addr;
+        mem.write(p, 7u8);
+        if time == 0 {
+            mem.write(p + 4, 0u16);
+            return 0;
+        }
+        mem.write(p + 1, [lo8(r), lo8(g), lo8(b)]);
+        mem.write(p + 6, crate::lo16(time));
+        mem.write(p + 4, 1u16);
+        1
+    }
+
+    /// `Sg_SetFocus(i, v)` (`0x0082ce20`): focus value `i`; a non-zero
+    /// value sets bit `v & 31` of the focus bits and turns focus on
+    /// (`Sg_EnFocus(1)`, whose old value it returns); 0 clears bit 0 (and
+    /// returns `i`).
+    pub fn set_focus(mem: &mut impl Mem, i: u32, v: u32) -> u32 {
+        mem.write(FOCUS.ptr(mem).addr.wrapping_add(i.wrapping_mul(4)), v);
+        let bits = FOCUS_BITS.get(mem);
+        if v == 0 {
+            FOCUS_BITS.set(mem, bits & !1);
+            return i;
+        }
+        FOCUS_BITS.set(mem, bits | 1 << (v & 31));
+        en_focus(mem, 1)
+    }
+
+    /// `Sg_AccSetClear(r, g, b, a)` (`0x0082bdc0`).
+    pub fn acc_set_clear(mem: &mut impl Mem, r: u32, g: u32, b: u32, a: u32) {
+        ACC_CLEAR.set(mem, [r, g, b, a].map(lo8));
+    }
+
+    /// `Sg_SetPlayer(chr)` (`0x0082dad0`): also clears the player's control
+    /// state; returns `chr`.
+    pub fn set_player(mem: &mut impl Mem, chr: u32) -> u32 {
+        PLAYER.set(mem, chr);
+        PLAYER_STATE.set(mem, [0; 4]);
+        chr
+    }
+
+    /// `Sg_GetCurExecFrames()` (`0x0082d7e0`): the frames run per game
+    /// frame (the special speed while the debug pad holds it) OR-ed with
+    /// `Sg_GetExecStep()`.
+    pub fn get_cur_exec_frames(mem: &impl Mem) -> i32 {
+        let n = if EXEC_SPECIAL.get(mem) == 0 {
+            get(mem, EXEC_FRAMES)
+        } else {
+            get(mem, EXEC_SPECIAL_SPEED)
+        };
+        get_exec_step(mem) | n
+    }
+
+    /// `Sg_GetPlayerPos(&v)` (`0x0082d880`): 1 without a player; else its
+    /// position (`Ch_GetPos`) into `v`, and 0.
+    pub fn get_player_pos(mem: &mut impl Mem, v: u32) -> u32 {
+        let chr = PLAYER.get(mem);
+        if chr == 0 {
+            return 1;
+        }
+        for k in 0..3 {
+            let x: f32 = mem.read(chr.wrapping_add(ffx_chara::layout::POS + 4 * k));
+            mem.write(v.wrapping_add(4 * k), ffx_bridge::x87::round_trip(x));
+        }
+        0
+    }
+
+    // Capture.
+    /// Show the GUI in captures (`Sg_CaptureSetGui`).
+    pub const CAPTURE_GUI: Global<u8> = Global::new(0x0130_181d);
+    /// The capture state words from `0x01301804`: on, 3, the mode, two
+    /// flags (`Sg_CaptureEnable*`).
+    pub const CAPTURE: Global<u32> = Global::new(0x0130_1804);
+    /// The draw environment bytes the capture keeps (`0x01301944..=48`).
+    pub const CAPTURE_ENV: Global<[u8; 5]> = Global::new(0x0130_1944);
+    /// Where they come from: the display environment's words, in the
+    /// order they are kept.
+    pub const DISPLAY_ENV: [Global<u8>; 5] = [
+        Global::new(0x023c_bc24),
+        Global::new(0x023c_bc20),
+        Global::new(0x023c_bc30),
+        Global::new(0x023c_bc2c),
+        Global::new(0x023c_bc28),
+    ];
+
+    /// Keeps the display environment's bytes; the last one.
+    fn capture_env(mem: &mut impl Mem) -> u32 {
+        let env = DISPLAY_ENV.map(|g| g.get(mem));
+        CAPTURE_ENV.set(mem, env);
+        u32::from(env[4])
+    }
+
+    fn capture_words(mem: &mut impl Mem, words: &[(u32, u32)]) {
+        let base = CAPTURE.ptr(mem).addr;
+        for &(off, v) in words {
+            mem.write(base.wrapping_add(off), v);
+        }
+    }
+
+    /// `Sg_CaptureEnable()` (`0x0083a470`): starts a capture of the GUI
+    /// setting; the last kept environment byte.
+    pub fn capture_enable(mem: &mut impl Mem) -> u32 {
+        let hide = 1 - (u32::from(CAPTURE_GUI.get(mem)) & 1);
+        CAPTURE_GUI_HIDE.set(mem, hide);
+        let r = capture_env(mem);
+        capture_words(mem, &[(0, 1), (4, 3), (8, 0), (0xc, 0)]);
+        r
+    }
+
+    /// `Sg_CaptureEnable_Kari(mode, on)` (`0x0083a4f0`): with `on`, a
+    /// capture in `mode` hiding the GUI.
+    pub fn capture_enable_kari(mem: &mut impl Mem, mode: u32, on: u32) {
+        if on == 0 {
+            return;
+        }
+        mem.write(CAPTURE.ptr(mem).addr.wrapping_add(8), mode);
+        capture_env(mem);
+        capture_words(mem, &[(0, on), (4, 3), (0xc, 0), (0x10, 0)]);
+        CAPTURE_GUI_HIDE.set(mem, 1);
+    }
+
+    /// `Sg_CaptureEnable_KariOn(mode)` (`0x0083a580`); the last kept
+    /// environment byte.
+    pub fn capture_enable_kari_on(mem: &mut impl Mem, mode: u32) -> u32 {
+        mem.write(CAPTURE.ptr(mem).addr.wrapping_add(8), mode);
+        let r = capture_env(mem);
+        capture_words(mem, &[(0, 1), (0xc, 1), (0x10, 0)]);
+        CAPTURE_GUI_HIDE.set(mem, 1);
+        r
+    }
+
+    /// `Sg_CaptureSetGui(v)` (`0x0083a660`).
+    pub fn capture_set_gui(mem: &mut impl Mem, v: u32) {
+        CAPTURE_GUI.set(mem, lo8(v));
+    }
+
+    /// `Sg_GetTkAntiXYB(&x, &y, &b)` (`0x0083adf0`): null outputs skipped.
+    pub fn get_tk_anti_xyb(mem: &mut impl Mem, out: [u32; 3]) {
+        let v = TK_ANTI_XYB.get(mem);
+        for (o, x) in out.into_iter().zip(v) {
+            if o != 0 {
+                mem.write(o, x);
+            }
+        }
+    }
+
+    // Resources: entry `i` of [`RESOURCE_TABLE`] has its size (`i8`, 1 or
+    // 2 bytes, or the string's room) at `+1` and its offset at `+2`.
+    /// The resources changed (`Sg_SetResource`, `Sg_SaveResourceCheck`).
+    pub const RESOURCE_DIRTY: Global<u32> = Global::new(0x0130_1bec);
+
+    fn resource(mem: &impl Mem, i: u32) -> (i8, u32) {
+        let e = elem(mem, RESOURCE_TABLE, i, 4);
+        let size: i8 = mem.read(e.wrapping_add(1));
+        let off: i16 = mem.read(e.wrapping_add(2));
+        (
+            size,
+            RESOURCE_STR
+                .ptr(mem)
+                .addr
+                .wrapping_add(i32::from(off).cast_unsigned()),
+        )
+    }
+
+    /// `Sg_GetResource(i, default)` (`0x0083fbe0`): a one- or two-byte
+    /// resource, else `default`.
+    pub fn get_resource(mem: &impl Mem, i: u32, default: u32) -> u32 {
+        match resource(mem, i) {
+            (1, at) => u32::from(mem.read::<u8>(at)),
+            (2, at) => u32::from(mem.read::<u16>(at)),
+            _ => default,
+        }
+    }
+
+    /// `Sg_SetResource(i, v)` (`0x0083fe10`): marks the resources changed
+    /// and stores a one- or two-byte resource.
+    pub fn set_resource(mem: &mut impl Mem, i: u32, v: u32) {
+        RESOURCE_DIRTY.set(mem, 1);
+        match resource(mem, i) {
+            (1, at) => mem.write(at, lo8(v)),
+            (2, at) => mem.write(at, [lo8(v), lo8(v >> 8)]),
+            _ => {}
+        }
+    }
+
+    /// `Sg_SetResourceSTR(i, s)` (`0x0083fe60`): copies `s` when shorter
+    /// than the resource's room (compared unsigned, so a negative room
+    /// takes any string) and marks the resources changed.
+    pub fn set_resource_str(mem: &mut impl Mem, i: u32, s: u32) {
+        let len = strlen(mem, s);
+        let (size, at) = resource(mem, i);
+        if len < i32::from(size).cast_unsigned() {
+            strcpy(mem, at, s);
+            RESOURCE_DIRTY.set(mem, 1);
+        }
+    }
+
+    // Maps.
+    /// The map name lists the debug menu keeps (`Sg_MapInitAll` empties
+    /// each first entry).
+    pub const MAP_NAME_SLOTS: [Global<u8>; 6] = [
+        Global::new(0x0130_3580),
+        Global::new(0x0130_35c0),
+        Global::new(0x0130_34c0),
+        Global::new(0x0130_3500),
+        Global::new(0x0130_3600),
+        Global::new(0x0130_3540),
+    ];
+
+    /// `Sg_MapSetName(name, which)` (`0x00844fb0`): into the selected
+    /// entry of one of the two lists ([`map_get_name`]).
+    pub fn map_set_name(mem: &mut impl Mem, name: u32, which: u32) {
+        let dst = map_get_name(mem, which);
+        strcpy(mem, dst, name);
+    }
+
+    /// `Sg_MapInitAll()` (`0x00844eb0`): in debug builds the name slots
+    /// get the empty string ([`FUNC_NAME`]); then `Sg_SetthDispEnable(1)`.
+    pub fn map_init_all(mem: &mut impl Mem) {
+        if IS_DEBUG.get(mem) != 0 {
+            let src = FUNC_NAME.ptr(mem).addr;
+            for g in MAP_NAME_SLOTS {
+                let dst = g.ptr(mem).addr;
+                strcpy(mem, dst, src);
+            }
+        }
+        set_th_disp_enable(mem, 1);
+    }
+
+    // The debug menu and mouse.
+    /// The mouse position (two words) and its `f32` copies, x doubled and
+    /// y tripled (`Sg_SetMouse`).
+    pub const MOUSE: Global<[u32; 4]> = Global::new(0x0132_5240);
+
+    /// `Sg_SetMouse(x, y)` (`0x00851ae0`); `EAX` ends as `3 y`.
+    pub fn set_mouse(mem: &mut impl Mem, x: i32, y: i32) -> i32 {
+        let fx = ffx_bridge::x87::store(f64::from(x.wrapping_mul(2)));
+        let y3 = y.wrapping_mul(3);
+        let fy = ffx_bridge::x87::store(f64::from(y3));
+        MOUSE.set(mem, [x.cast_unsigned(), y.cast_unsigned(), fx, fy]);
+        y3
+    }
+
+    /// `sg_AddY(d)` (`0x00850820`); returns `d`.
+    pub fn add_y(mem: &mut impl Mem, d: u32) -> u32 {
+        let y = MENU_Y.get(mem).wrapping_add(d);
+        MENU_Y.set(mem, y);
+        d
+    }
+
+    /// The sound task buffers (`sa_task_start` clears them).
+    pub const SA_TASKS: Global<[u32; 8]> = Global::new(0x0112_a818);
+
+    /// `sa_task_start()` (`0x0077a2c0`).
+    pub fn sa_task_start(mem: &mut impl Mem) {
+        SA_TASKS.set(mem, [0; 8]);
+    }
+
+    /// The start time `FFXApplication::getAppTime` subtracts (`f64`).
+    pub const APP_START: Global<f64> = Global::new(0x00c9_0278);
+
+    /// `FFXApplication::getAppTime(this)` (`0x0042f690`, thiscall): `now`
+    /// (`Phyre_PTimerWin32_GetTime`, which the caller supplies) less the
+    /// start time less the application's pause time (`f32` at `+0x28`),
+    /// as `f32`.
+    pub fn get_app_time(mem: &impl Mem, this: u32, now: f64) -> f32 {
+        use ffx_bridge::x87::Reg;
+        let paused: f32 = mem.read(this.wrapping_add(0x28));
+        (Reg::constant(now) - Reg::constant(APP_START.get(mem)))
+            .sub_m32(paused)
+            .store()
+    }
+
+    // Character database kinds.
+    /// The kind names (`"skl"`, then `"pc"`, `"mon"`, `"npc"`, `"sum"`,
+    /// `"wep"`, `"obj"` for kinds 0..=5), 4 bytes apart.
+    pub const DB_NAMES: Global<u8> = Global::new(0x00b5_9330);
+
+    /// `sg_getdbnum(c)` (`0x00829d80`): the kind of a kind letter, -1 for
+    /// another.
+    #[must_use]
+    pub const fn get_db_num(c: i32) -> i32 {
+        match c {
+            0x63 => 0, // c
+            0x6d => 1, // m
+            0x6e => 2, // n
+            0x73 => 3, // s
+            0x77 => 4, // w
+            0x66 => 5, // f
+            0x6b => 6, // k
+            _ => -1,
+        }
+    }
+
+    /// `sg_getdbtype(kind)` (`0x00829e10`): the letter of kinds 0..=6
+    /// (`c m n s w f k`, the inverse of [`get_db_num`]), `-` for another, in `AL`;
+    /// the rest of `EAX` is the argument's.
+    #[must_use]
+    pub const fn get_db_type(kind: u32) -> u32 {
+        let c = match kind {
+            0 => b'c',
+            1 => b'm',
+            2 => b'n',
+            3 => b's',
+            4 => b'w',
+            5 => b'f',
+            6 => b'k',
+            _ => b'-',
+        };
+        (kind & !0xff) | c as u32
+    }
+
+    /// `sg_getdbname(kind)` (`0x00829c90`): the name of a kind given as a
+    /// number (0..=6) or a letter ([`get_db_num`]); the empty string for
+    /// another.
+    pub fn get_db_name(mem: &impl Mem, kind: u32) -> u32 {
+        let k = if kind <= 6 {
+            kind.cast_signed()
+        } else {
+            get_db_num(kind.cast_signed())
+        };
+        let names = DB_NAMES.ptr(mem).addr;
+        match k {
+            // "skl" is first in memory, kind 6.
+            6 => names,
+            0..=5 => names + 4 + 4 * k.cast_unsigned(),
+            _ => FUNC_NAME.ptr(mem).addr,
+        }
     }
 }
