@@ -12,9 +12,11 @@
 //!   runs against a second oracle on the same snapshot through
 //!   [`ffx_bridge::Mem`]; [`Oracle::diff`] then compares what both wrote.
 //!
-//! Imports are bound to stubs: a few CRT functions (`malloc`, `free`,
-//! `memcpy`, ...) are implemented natively, and calling any other import
-//! stops the emulation with [`Error::UnstubbedImport`].
+//! Imports are bound to stubs: the CRT functions the game uses (`malloc`,
+//! `memcpy`, the string functions, the `sprintf` family, `floor`,
+//! `_CIsqrt`, `rand`, ...) and the Win32 critical sections are implemented
+//! natively (`crt`), and calling any other import stops the emulation with
+//! [`Error::UnstubbedImport`]. [`Oracle::missing_imports`] lists those.
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
@@ -93,6 +95,7 @@ enum Stub {
     Memcpy,
     Memmove,
     Memset,
+    Crt(crt::Crt),
     Missing(usize),
 }
 
@@ -166,6 +169,10 @@ struct State {
     /// Pages written since the last [`Oracle::clear_dirty`].
     dirty: BTreeSet<u32>,
     image_base: u32,
+    /// The CRT's `rand` state (`srand`; 1 at start).
+    rand_seed: u32,
+    /// Stub address by import name.
+    imports: HashMap<String, u64>,
 }
 
 /// An emulated `FFX.exe` process.
@@ -252,7 +259,14 @@ impl Oracle {
             }
         }
 
-        let mut uc = Unicorn::new_with_data(Arch::X86, Mode::MODE_32, State::default())?;
+        let mut uc = Unicorn::new_with_data(
+            Arch::X86,
+            Mode::MODE_32,
+            State {
+                rand_seed: 1,
+                ..State::default()
+            },
+        )?;
         uc.mem_map(u64::from(base), image_size, Prot::ALL)?;
         uc.mem_write(u64::from(base), &image)?;
 
@@ -294,17 +308,28 @@ impl Oracle {
                 "memmove" => Stub::Memmove,
                 "memset" => Stub::Memset,
                 other => {
-                    let state = uc.get_data_mut();
-                    state.missing.push(format!("{}!{other}", import.dll));
-                    Stub::Missing(state.missing.len() - 1)
+                    if let Some(c) = crt::lookup(other) {
+                        Stub::Crt(c)
+                    } else {
+                        let state = uc.get_data_mut();
+                        state.missing.push(format!("{}!{other}", import.dll));
+                        Stub::Missing(state.missing.len() - 1)
+                    }
                 }
             };
-            uc.mem_write(next_stub, &[0xc3])?;
+            let code = match stub {
+                Stub::Crt(c) => crt::code(c, u32::try_from(next_stub).expect("32-bit")),
+                _ => vec![0xc3],
+            };
+            uc.mem_write(next_stub, &code)?;
             uc.mem_write(
                 u64::from(base) + import.offset as u64,
                 &u32::try_from(next_stub).expect("32-bit").to_le_bytes(),
             )?;
             uc.get_data_mut().stubs.insert(next_stub, stub);
+            uc.get_data_mut()
+                .imports
+                .insert(import.name.to_string(), next_stub);
             next_stub += 0x10;
         }
         let sentinel = uc.get_data().sentinel;
@@ -316,7 +341,7 @@ impl Oracle {
                 return;
             }
             if let Some(stub) = uc.get_data().stubs.get(&addr).copied()
-                && let Err(e) = run_stub(uc, stub)
+                && let Err(e) = run_stub(uc, stub, addr)
             {
                 uc.get_data_mut().fault = Some(e);
                 let _ = uc.emu_stop();
@@ -484,6 +509,23 @@ impl Oracle {
     /// Forgets the written pages.
     pub fn clear_dirty(&mut self) {
         self.uc.get_data_mut().dirty.clear();
+    }
+
+    /// The imports with no stub, as `DLL!name` (calling one fails with
+    /// [`Error::UnstubbedImport`]).
+    #[must_use]
+    pub fn missing_imports(&self) -> &[String] {
+        &self.uc.get_data().missing
+    }
+
+    /// The stub an import is bound to (call it with [`Oracle::call`]).
+    #[must_use]
+    pub fn import_stub(&self, name: &str) -> Option<u32> {
+        self.uc
+            .get_data()
+            .imports
+            .get(name)
+            .map(|&a| u32::try_from(a).expect("32-bit stub"))
     }
 
     /// The oracle's own stack, which differs between runs by construction.
@@ -806,7 +848,9 @@ fn f80_to_f64(b: &[u8]) -> f64 {
     }
     #[allow(clippy::cast_precision_loss)] // f64 holds what the game rounds to
     let m = mant as f64 / (1u64 << 63) as f64;
-    sign * m * 2f64.powi(exp - 16383)
+    // two steps, so subnormal results are not lost to an underflowed 2^e
+    let e = exp - 16383;
+    sign * m * 2f64.powi(e / 2) * 2f64.powi(e - e / 2)
 }
 
 fn alloc(uc: &mut Unicorn<State>, len: u64) -> Result<u32> {
@@ -827,7 +871,7 @@ fn alloc(uc: &mut Unicorn<State>, len: u64) -> Result<u32> {
 /// Implements one import natively. Stubs are entered by `call`, so the
 /// return address is at `[esp]` and the arguments follow it; the stub's own
 /// `ret` instruction then returns to the caller.
-fn run_stub(uc: &mut Unicorn<State>, stub: Stub) -> Result<()> {
+fn run_stub(uc: &mut Unicorn<State>, stub: Stub, addr: u64) -> Result<()> {
     let arg = |uc: &Unicorn<State>, i: u64| -> Result<u32> {
         let esp = uc.reg_read(RegisterX86::ESP)?;
         let b = uc.mem_read_as_vec(esp + 4 + 4 * i, 4)?;
@@ -839,16 +883,17 @@ fn run_stub(uc: &mut Unicorn<State>, stub: Stub) -> Result<()> {
         Stub::Free => 0,
         Stub::Memcpy | Stub::Memmove => {
             let (dst, src, len) = (arg(uc, 0)?, arg(uc, 1)?, arg(uc, 2)?);
-            let data = uc.mem_read_as_vec(u64::from(src), len as usize)?;
-            uc.mem_write(u64::from(dst), &data)?;
+            let data = crt::read(uc, src, len as usize)?;
+            crt::write(uc, dst, &data)?;
             dst
         }
         Stub::Memset => {
             let (dst, value, len) = (arg(uc, 0)?, arg(uc, 1)?, arg(uc, 2)?);
             #[allow(clippy::cast_possible_truncation)] // memset stores the low byte
-            uc.mem_write(u64::from(dst), &vec![value as u8; len as usize])?;
+            crt::write(uc, dst, &vec![value as u8; len as usize])?;
             dst
         }
+        Stub::Crt(c) => crt::run(uc, c, u32::try_from(addr).expect("32-bit stub"))?,
         Stub::Missing(i) => return Err(Error::UnstubbedImport(uc.get_data().missing[i].clone())),
     };
     uc.reg_write(RegisterX86::EAX, u64::from(ret))?;
@@ -873,5 +918,1156 @@ mod tests {
         let mut t = vec![(0x1000_0000, 0x1100_0000), (0x1180_0000, 0x1200_0000)];
         assert_eq!(gap(&mut t, 0x80_0000).unwrap(), 0x1100_0000);
         assert_eq!(gap(&mut t, 0x10_0000).unwrap(), 0x1200_0000);
+    }
+}
+
+/// Native stand-ins for the C runtime and Win32 imports `FFX.exe` calls
+/// (MSVCR110 semantics, single-threaded, the "C" locale).
+///
+/// A stub runs before the code at its address: a plain `ret` for cdecl, `ret
+/// n` for stdcall. Stubs that return a `double` in `ST0` store it in the
+/// 8 bytes after their code (`stub + 8`), and their code is `fld qword
+/// [stub + 8]; ret`. `_CIsqrt` and `_CIfmod` are x87 code themselves
+/// (`fsqrt`, an `fprem` loop): exact by construction.
+// short names follow the C library's own (s, d, e, p, n, ...)
+#[allow(clippy::many_single_char_names)]
+mod crt {
+    use super::{Error, PAGE, Result, State, alloc, map_from_snapshot};
+    use unicorn_engine::{RegisterX86, Unicorn};
+
+    /// One CRT or Win32 import.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(super) enum Crt {
+        Strdup,
+        Stricmp,
+        Strnicmp,
+        Strncmp,
+        Strncpy,
+        Strncat,
+        Strchr,
+        Strrchr,
+        Strstr,
+        Strpbrk,
+        Strspn,
+        Strlwr,
+        Tolower,
+        Toupper,
+        Atoi,
+        Strtol,
+        Strtoul,
+        Atof,
+        Strtod,
+        Memchr,
+        Abs,
+        /// `is*(c)`: the `_ctype` mask bits it tests.
+        Ctype(u16),
+        Sprintf,
+        Snprintf,
+        Vsprintf,
+        Vsnprintf,
+        SprintfS,
+        VsnprintfS,
+        StrcpyS,
+        StrcatS,
+        StrncpyS,
+        MemcpyS,
+        Finite,
+        Isnan,
+        Floor,
+        Ceil,
+        /// `_CIsqrt`: its code is `fsqrt; ret`.
+        CiSqrt,
+        /// `_CIfmod`: its code is an `fprem` loop.
+        CiFmod,
+        Rand,
+        Srand,
+        /// `InitializeCriticalSection*`, `Enter`/`Leave`/`DeleteCriticalSection`:
+        /// nothing to do on one thread; stdcall with this many arguments,
+        /// returning this.
+        Lock(u8, u32),
+        GetCurrentThreadId,
+    }
+
+    /// `_ctype` bits.
+    const UPPER: u16 = 0x1;
+    const LOWER: u16 = 0x2;
+    const DIGIT: u16 = 0x4;
+    const SPACE: u16 = 0x8;
+    const PUNCT: u16 = 0x10;
+    const CONTROL: u16 = 0x20;
+    const BLANK: u16 = 0x40;
+    const HEX: u16 = 0x80;
+    const ALPHA: u16 = 0x100;
+
+    /// The stub for an import name, if there is one.
+    pub(super) fn lookup(name: &str) -> Option<Crt> {
+        Some(match name {
+            "_strdup" | "strdup" => Crt::Strdup,
+            "_stricmp" => Crt::Stricmp,
+            "_strnicmp" => Crt::Strnicmp,
+            "strncmp" => Crt::Strncmp,
+            "strncpy" => Crt::Strncpy,
+            "strncat" => Crt::Strncat,
+            "strchr" => Crt::Strchr,
+            "strrchr" => Crt::Strrchr,
+            "strstr" => Crt::Strstr,
+            "strpbrk" => Crt::Strpbrk,
+            "strspn" => Crt::Strspn,
+            "_strlwr" => Crt::Strlwr,
+            "tolower" => Crt::Tolower,
+            "toupper" => Crt::Toupper,
+            "atoi" | "atol" => Crt::Atoi,
+            "strtol" => Crt::Strtol,
+            "strtoul" => Crt::Strtoul,
+            "atof" => Crt::Atof,
+            "strtod" => Crt::Strtod,
+            "memchr" => Crt::Memchr,
+            "abs" => Crt::Abs,
+            "isalpha" => Crt::Ctype(ALPHA | UPPER | LOWER),
+            "isupper" => Crt::Ctype(UPPER),
+            "islower" => Crt::Ctype(LOWER),
+            "isdigit" => Crt::Ctype(DIGIT),
+            "isxdigit" => Crt::Ctype(HEX),
+            "isspace" => Crt::Ctype(SPACE),
+            "ispunct" => Crt::Ctype(PUNCT),
+            "isalnum" => Crt::Ctype(ALPHA | UPPER | LOWER | DIGIT),
+            "isgraph" => Crt::Ctype(PUNCT | ALPHA | UPPER | LOWER | DIGIT),
+            "iscntrl" => Crt::Ctype(CONTROL),
+            "sprintf" => Crt::Sprintf,
+            "_snprintf" => Crt::Snprintf,
+            "vsprintf" => Crt::Vsprintf,
+            "_vsnprintf" => Crt::Vsnprintf,
+            "sprintf_s" => Crt::SprintfS,
+            "_vsnprintf_s" => Crt::VsnprintfS,
+            "strcpy_s" => Crt::StrcpyS,
+            "strcat_s" => Crt::StrcatS,
+            "strncpy_s" => Crt::StrncpyS,
+            "memcpy_s" | "memmove_s" => Crt::MemcpyS,
+            "_finite" => Crt::Finite,
+            "_isnan" => Crt::Isnan,
+            "floor" => Crt::Floor,
+            "ceil" => Crt::Ceil,
+            "_CIsqrt" => Crt::CiSqrt,
+            "_CIfmod" => Crt::CiFmod,
+            "rand" => Crt::Rand,
+            "srand" => Crt::Srand,
+            "InitializeCriticalSection"
+            | "EnterCriticalSection"
+            | "LeaveCriticalSection"
+            | "DeleteCriticalSection" => Crt::Lock(1, 0),
+            "TryEnterCriticalSection" => Crt::Lock(1, 1),
+            "InitializeCriticalSectionAndSpinCount" => Crt::Lock(2, 1),
+            "InitializeCriticalSectionEx" => Crt::Lock(3, 1),
+            "GetCurrentThreadId" => Crt::GetCurrentThreadId,
+            _ => return None,
+        })
+    }
+
+    /// The code at the stub's address.
+    pub(super) fn code(crt: Crt, stub: u32) -> Vec<u8> {
+        match crt {
+            Crt::Atof | Crt::Strtod | Crt::Floor | Crt::Ceil => {
+                // fld qword [stub + 8]; ret
+                let mut c = vec![0xdd, 0x05];
+                c.extend((stub + 8).to_le_bytes());
+                c.push(0xc3);
+                c
+            }
+            // fsqrt; ret
+            Crt::CiSqrt => vec![0xd9, 0xfa, 0xc3],
+            // fxch; 1: fprem; fnstsw ax; sahf; jp 1b; fstp st(1); ret
+            Crt::CiFmod => vec![
+                0xd9, 0xc9, 0xd9, 0xf8, 0xdf, 0xe0, 0x9e, 0x7a, 0xf9, 0xdd, 0xd9, 0xc3,
+            ],
+            Crt::Lock(n, _) => vec![0xc2, 4 * n, 0],
+            _ => vec![0xc3],
+        }
+    }
+
+    // ---- emulated memory
+
+    fn ensure(uc: &mut Unicorn<State>, addr: u32, len: usize) {
+        let mut a = u64::from(addr) & !(PAGE - 1);
+        let end = u64::from(addr) + len as u64;
+        while a < end {
+            if uc.mem_read_as_vec(a, 1).is_err() {
+                map_from_snapshot(uc, a);
+            }
+            a += PAGE;
+        }
+    }
+
+    pub(super) fn read(uc: &mut Unicorn<State>, addr: u32, len: usize) -> Result<Vec<u8>> {
+        ensure(uc, addr, len);
+        uc.mem_read_as_vec(u64::from(addr), len)
+            .map_err(|_| Error::BadAccess(u64::from(addr)))
+    }
+
+    /// Writes and marks the pages dirty, as emulated stores do.
+    pub(super) fn write(uc: &mut Unicorn<State>, addr: u32, bytes: &[u8]) -> Result<()> {
+        if bytes.is_empty() {
+            return Ok(());
+        }
+        ensure(uc, addr, bytes.len());
+        uc.mem_write(u64::from(addr), bytes)
+            .map_err(|_| Error::BadAccess(u64::from(addr)))?;
+        let last = addr.wrapping_add(u32::try_from(bytes.len() - 1).unwrap_or(u32::MAX));
+        let d = &mut uc.get_data_mut().dirty;
+        for p in (addr >> 12)..=(last >> 12) {
+            d.insert(p);
+        }
+        Ok(())
+    }
+
+    fn u32_at(uc: &mut Unicorn<State>, addr: u32) -> Result<u32> {
+        let b = read(uc, addr, 4)?;
+        Ok(u32::from_le_bytes(b.try_into().expect("4 bytes")))
+    }
+
+    /// The NUL-terminated string at `p` (without the NUL).
+    pub(super) fn cstr(uc: &mut Unicorn<State>, p: u32) -> Result<Vec<u8>> {
+        let mut out = Vec::new();
+        let mut a = p;
+        loop {
+            let b = read(uc, a, 1)?[0];
+            if b == 0 {
+                return Ok(out);
+            }
+            out.push(b);
+            a = a.wrapping_add(1);
+        }
+    }
+
+    /// At most `n` bytes of the string at `p`.
+    fn cstr_n(uc: &mut Unicorn<State>, p: u32, n: u32) -> Result<Vec<u8>> {
+        let mut out = Vec::new();
+        let mut a = p;
+        for _ in 0..n {
+            let b = read(uc, a, 1)?[0];
+            if b == 0 {
+                break;
+            }
+            out.push(b);
+            a = a.wrapping_add(1);
+        }
+        Ok(out)
+    }
+
+    fn put_cstr(uc: &mut Unicorn<State>, at: u32, s: &[u8]) -> Result<()> {
+        let mut v = s.to_vec();
+        v.push(0);
+        write(uc, at, &v)
+    }
+
+    // ---- character classes ("C" locale)
+
+    fn ctype(c: u8) -> u16 {
+        match c {
+            b'A'..=b'F' => UPPER | HEX | ALPHA,
+            b'G'..=b'Z' => UPPER | ALPHA,
+            b'a'..=b'f' => LOWER | HEX | ALPHA,
+            b'g'..=b'z' => LOWER | ALPHA,
+            b'0'..=b'9' => DIGIT | HEX,
+            b' ' => SPACE | BLANK,
+            0x09..=0x0d => SPACE | CONTROL,
+            0x00..=0x1f | 0x7f => CONTROL,
+            0x21..=0x7e => PUNCT,
+            _ => 0,
+        }
+    }
+
+    fn lower(c: u8) -> u8 {
+        c.to_ascii_lowercase()
+    }
+
+    /// `_stricmp`/`_strnicmp`: compares lowercased bytes.
+    fn icmp(a: &[u8], b: &[u8]) -> i32 {
+        for i in 0.. {
+            let (x, y) = (
+                a.get(i).copied().map_or(0, lower),
+                b.get(i).copied().map_or(0, lower),
+            );
+            if x != y || x == 0 {
+                return i32::from(x) - i32::from(y);
+            }
+        }
+        unreachable!()
+    }
+
+    // ---- numbers
+
+    /// `strtol`/`strtoul`: (value, bytes used, overflowed).
+    fn strtol(s: &[u8], base: u32, signed: bool) -> (u32, usize) {
+        let mut i = 0;
+        while i < s.len() && ctype(s[i]) & SPACE != 0 {
+            i += 1;
+        }
+        let mut neg = false;
+        if i < s.len() && (s[i] == b'+' || s[i] == b'-') {
+            neg = s[i] == b'-';
+            i += 1;
+        }
+        let mut base = base;
+        let start = i;
+        // a `0x` prefix commits to hex: with no digit after it nothing is
+        // converted (MSVCR110; glibc would take the `0`)
+        if (base == 0 || base == 16) && i + 1 < s.len() && s[i] == b'0' && (s[i + 1] | 0x20) == b'x'
+        {
+            i += 2;
+            base = 16;
+        } else if base == 0 {
+            base = if s.get(i) == Some(&b'0') { 8 } else { 10 };
+        }
+        let mut v: u64 = 0;
+        let mut over = false;
+        let digits_start = i;
+        while let Some(d) = s.get(i).and_then(|&c| char::from(c).to_digit(base)) {
+            v = v * u64::from(base) + u64::from(d);
+            if v > u64::from(u32::MAX) {
+                over = true;
+                v = u64::from(u32::MAX);
+            }
+            i += 1;
+        }
+        if i == digits_start {
+            // no digits: nothing converted, the end is the start
+            let _ = start;
+            return (0, 0);
+        }
+        #[allow(clippy::cast_possible_truncation)] // clamped
+        let r = if signed {
+            let limit = if neg { 0x8000_0000u64 } else { 0x7fff_ffff };
+            if over || v > limit {
+                if neg { 0x8000_0000 } else { 0x7fff_ffff }
+            } else if neg {
+                (v as u32).wrapping_neg()
+            } else {
+                v as u32
+            }
+        } else if over {
+            u32::MAX
+        } else if neg {
+            (v as u32).wrapping_neg()
+        } else {
+            v as u32
+        };
+        (r, i)
+    }
+
+    /// `strtod`/`atof`: (value, bytes used). Decimal and exponent forms (no
+    /// hex), correctly rounded. MSVCR110 agrees on everything tried but a
+    /// value just above half the smallest subnormal, which it flushes to 0.
+    fn strtod(s: &[u8]) -> (f64, usize) {
+        let mut i = 0;
+        while i < s.len() && ctype(s[i]) & SPACE != 0 {
+            i += 1;
+        }
+        let start = i;
+        if i < s.len() && (s[i] == b'+' || s[i] == b'-') {
+            i += 1;
+        }
+        let mut digits = 0;
+        while i < s.len() && s[i].is_ascii_digit() {
+            i += 1;
+            digits += 1;
+        }
+        if i < s.len() && s[i] == b'.' {
+            i += 1;
+            while i < s.len() && s[i].is_ascii_digit() {
+                i += 1;
+                digits += 1;
+            }
+        }
+        if digits == 0 {
+            return (0.0, 0);
+        }
+        if i < s.len() && (s[i] | 0x20) == b'e' {
+            let mut j = i + 1;
+            if j < s.len() && (s[j] == b'+' || s[j] == b'-') {
+                j += 1;
+            }
+            if j < s.len() && s[j].is_ascii_digit() {
+                while j < s.len() && s[j].is_ascii_digit() {
+                    j += 1;
+                }
+                i = j;
+            }
+        }
+        let text = std::str::from_utf8(&s[start..i]).unwrap_or("0");
+        let text = text.strip_suffix('.').unwrap_or(text);
+        (text.parse().unwrap_or(0.0), i)
+    }
+
+    // ---- printf
+
+    /// Where the variable arguments come from.
+    struct Args {
+        at: u32,
+    }
+
+    impl Args {
+        fn u32(&mut self, uc: &mut Unicorn<State>) -> Result<u32> {
+            let v = u32_at(uc, self.at)?;
+            self.at = self.at.wrapping_add(4);
+            Ok(v)
+        }
+        fn u64(&mut self, uc: &mut Unicorn<State>) -> Result<u64> {
+            let lo = self.u32(uc)?;
+            let hi = self.u32(uc)?;
+            Ok(u64::from(hi) << 32 | u64::from(lo))
+        }
+    }
+
+    /// Rounds the ASCII digit string to `n` digits the CRT's way (`_fptostr`):
+    /// up when the next digit is `'5'` or more, carrying through `'9'`;
+    /// shorter strings are padded with `'0'`. Returns whether a carry made
+    /// a new leading digit.
+    fn round_digits(d: &mut Vec<u8>, n: usize) -> bool {
+        if d.len() <= n {
+            d.resize(n, b'0');
+            return false;
+        }
+        let up = d[n] >= b'5';
+        d.truncate(n);
+        if !up {
+            return false;
+        }
+        let mut i = n;
+        loop {
+            if i == 0 {
+                d.insert(0, b'1');
+                d.truncate(n.max(1));
+                return true;
+            }
+            i -= 1;
+            if d[i] == b'9' {
+                d[i] = b'0';
+            } else {
+                d[i] += 1;
+                return false;
+            }
+        }
+    }
+
+    /// A double's decimal digits as MSVCR110 sees them: 17 significant
+    /// digits, correctly rounded, and the decimal exponent of the first.
+    /// Infinities and NaNs become the CRT's `1#INF`, `1#QNAN`, `1#SNAN`
+    /// and `1#IND` "digits" (exponent 0), which then round like digits
+    /// (`%.2f` of infinity is `1.#J`).
+    fn digits17(x: f64) -> (Vec<u8>, i32) {
+        if x.is_infinite() {
+            return (b"1#INF".to_vec(), 0);
+        }
+        if x.is_nan() {
+            let b = x.to_bits();
+            let quiet = b & (1 << 51) != 0;
+            let indefinite = b == 0xfff8_0000_0000_0000;
+            let s: &[u8] = if indefinite {
+                b"1#IND"
+            } else if quiet {
+                b"1#QNAN"
+            } else {
+                b"1#SNAN"
+            };
+            return (s.to_vec(), 0);
+        }
+        if x == 0.0 {
+            return (vec![b'0'; 17], 0);
+        }
+        let s = format!("{:.16e}", x.abs());
+        let (m, e) = s.split_once('e').expect("exponent");
+        let d: Vec<u8> = m.bytes().filter(u8::is_ascii_digit).collect();
+        (d, e.parse().expect("exponent digits"))
+    }
+
+    /// `%f`: [-]ddd.ddd with `prec` decimals.
+    fn fmt_f(x: f64, prec: usize, alt: bool) -> Vec<u8> {
+        let (mut d, mut e) = digits17(x);
+        let special = !x.is_finite();
+        let mut out = Vec::new();
+        let int_digits = if special { 1 } else { e + 1 };
+        let keep = int_digits + i32::try_from(prec).unwrap_or(i32::MAX);
+        if keep < 0 {
+            d = vec![b'0'];
+            e = -1;
+        } else {
+            #[allow(clippy::cast_sign_loss)] // checked above
+            if round_digits(&mut d, keep as usize) {
+                e += 1;
+            }
+        }
+        let int_digits = if special { 1 } else { e + 1 };
+        if int_digits <= 0 {
+            out.push(b'0');
+            if prec > 0 || alt {
+                out.push(b'.');
+            }
+            #[allow(clippy::cast_sign_loss)]
+            let zeros = (-int_digits) as usize;
+            for k in 0..prec {
+                out.push(if k < zeros {
+                    b'0'
+                } else {
+                    *d.get(k - zeros).unwrap_or(&b'0')
+                });
+            }
+        } else {
+            #[allow(clippy::cast_sign_loss)]
+            let n = int_digits as usize;
+            for k in 0..n {
+                out.push(*d.get(k).unwrap_or(&b'0'));
+            }
+            if prec > 0 || alt {
+                out.push(b'.');
+            }
+            for k in 0..prec {
+                out.push(*d.get(n + k).unwrap_or(&b'0'));
+            }
+        }
+        out
+    }
+
+    /// `%e`: d.ddde+XXX (three exponent digits).
+    fn fmt_e(x: f64, prec: usize, alt: bool, upper: bool) -> Vec<u8> {
+        let (mut d, mut e) = digits17(x);
+        if round_digits(&mut d, prec + 1) {
+            e += 1;
+        }
+        let mut out = vec![d[0]];
+        if prec > 0 || alt {
+            out.push(b'.');
+        }
+        out.extend(&d[1..=prec]);
+        out.push(if upper { b'E' } else { b'e' });
+        out.extend(format!("{}{:03}", if e < 0 { '-' } else { '+' }, e.abs()).bytes());
+        out
+    }
+
+    /// `%g`: `%e` when the exponent is below -4 or at least the precision,
+    /// else `%f`; trailing zeros dropped unless `#`.
+    fn fmt_g(x: f64, prec: usize, alt: bool, upper: bool) -> Vec<u8> {
+        let p = prec.max(1);
+        let (mut d, mut e) = digits17(x);
+        if x == 0.0 {
+            // the CRT puts zero's decimal point before its digit
+            e = -1;
+        } else if round_digits(&mut d, p) {
+            e += 1;
+        }
+        let mut out = if e < -4 || e >= i32::try_from(p).unwrap_or(i32::MAX) {
+            fmt_e(x, p - 1, alt, upper)
+        } else {
+            #[allow(clippy::cast_sign_loss)]
+            let decimals = (i32::try_from(p).unwrap_or(0) - 1 - e).max(0) as usize;
+            fmt_f(x, decimals, alt)
+        };
+        if !alt {
+            let epos = out.iter().position(|&c| c == b'e' || c == b'E');
+            let (mut mant, exp) = match epos {
+                Some(i) => (out[..i].to_vec(), out[i..].to_vec()),
+                None => (out.clone(), Vec::new()),
+            };
+            if mant.contains(&b'.') {
+                while mant.last() == Some(&b'0') {
+                    mant.pop();
+                }
+                if mant.last() == Some(&b'.') {
+                    mant.pop();
+                }
+            }
+            mant.extend(exp);
+            out = mant;
+        }
+        out
+    }
+
+    /// Formats `fmt` with arguments read from `args`, as MSVCR110's
+    /// `sprintf` family: flags `- + space # 0`, width and precision
+    /// (`*` too), sizes `h l ll I64 L`, conversions `d i u o x X c s p e E
+    /// f g G %`. `%s` of a null pointer is `(null)`. `%f`, `%e` and `%g`
+    /// use at most 17 significant digits (correctly rounded), then zeros;
+    /// infinities and NaNs print as `1.#INF`, `1.#QNAN`, `-1.#IND` digit
+    /// strings.
+    #[allow(clippy::too_many_lines)]
+    fn format(uc: &mut Unicorn<State>, fmt: &[u8], args: &mut Args) -> Result<Vec<u8>> {
+        let mut out = Vec::new();
+        let mut i = 0;
+        while i < fmt.len() {
+            let c = fmt[i];
+            i += 1;
+            if c != b'%' {
+                out.push(c);
+                continue;
+            }
+            let (mut left, mut plus, mut space, mut alt, mut zero) =
+                (false, false, false, false, false);
+            while i < fmt.len() {
+                match fmt[i] {
+                    b'-' => left = true,
+                    b'+' => plus = true,
+                    b' ' => space = true,
+                    b'#' => alt = true,
+                    b'0' => zero = true,
+                    _ => break,
+                }
+                i += 1;
+            }
+            let mut width: usize = 0;
+            if fmt.get(i) == Some(&b'*') {
+                let w = args.u32(uc)?.cast_signed();
+                if w < 0 {
+                    left = true;
+                }
+                width = w.unsigned_abs() as usize;
+                i += 1;
+            } else {
+                while let Some(d) = fmt.get(i).filter(|c| c.is_ascii_digit()) {
+                    width = width * 10 + usize::from(d - b'0');
+                    i += 1;
+                }
+            }
+            let mut prec: Option<usize> = None;
+            if fmt.get(i) == Some(&b'.') {
+                i += 1;
+                if fmt.get(i) == Some(&b'*') {
+                    let p = args.u32(uc)?.cast_signed();
+                    prec = (p >= 0).then(|| p.unsigned_abs() as usize);
+                    i += 1;
+                } else {
+                    let mut p = 0;
+                    while let Some(d) = fmt.get(i).filter(|c| c.is_ascii_digit()) {
+                        p = p * 10 + usize::from(d - b'0');
+                        i += 1;
+                    }
+                    prec = Some(p);
+                }
+            }
+            let mut size = 0u8; // 0 int, b'h', b'l', b'q' (64-bit), b'L'
+            loop {
+                match fmt.get(i) {
+                    Some(b'h') => size = b'h',
+                    Some(b'l') => size = if size == b'l' { b'q' } else { b'l' },
+                    Some(b'L') => size = b'L',
+                    Some(b'I') if fmt.get(i + 1..i + 3) == Some(b"64") => {
+                        size = b'q';
+                        i += 2;
+                    }
+                    Some(b'I') if fmt.get(i + 1..i + 3) == Some(b"32") => {
+                        i += 2;
+                    }
+                    Some(b'I') => {}
+                    _ => break,
+                }
+                i += 1;
+            }
+            let Some(&conv) = fmt.get(i) else { break };
+            i += 1;
+            let mut sign: Vec<u8> = Vec::new();
+            let mut prefix: Vec<u8> = Vec::new();
+            let mut body: Vec<u8>;
+            let mut numeric_zero_pad = zero && !left;
+            match conv {
+                b'%' => {
+                    out.push(b'%');
+                    continue;
+                }
+                b'c' => {
+                    #[allow(clippy::cast_possible_truncation)] // the low byte
+                    let v = args.u32(uc)? as u8;
+                    body = vec![v];
+                    numeric_zero_pad = zero && !left;
+                }
+                b's' => {
+                    let p = args.u32(uc)?;
+                    body = if p == 0 {
+                        b"(null)".to_vec()
+                    } else if let Some(n) = prec {
+                        cstr_n(uc, p, u32::try_from(n).unwrap_or(u32::MAX))?
+                    } else {
+                        cstr(uc, p)?
+                    };
+                    if let Some(n) = prec {
+                        body.truncate(n);
+                    }
+                    // `0` pads strings with zeros too
+                    numeric_zero_pad = zero && !left;
+                }
+                b'd' | b'i' | b'u' | b'o' | b'x' | b'X' | b'p' => {
+                    let raw: u64 = if size == b'q' {
+                        args.u64(uc)?
+                    } else {
+                        u64::from(args.u32(uc)?)
+                    };
+                    let signed = matches!(conv, b'd' | b'i');
+                    let (neg, mag): (bool, u64) = if size == b'q' {
+                        if signed && raw.cast_signed() < 0 {
+                            (true, raw.cast_signed().unsigned_abs())
+                        } else {
+                            (false, raw)
+                        }
+                    } else {
+                        #[allow(clippy::cast_possible_truncation)] // 32-bit
+                        let v = raw as u32;
+                        #[allow(clippy::cast_possible_truncation)]
+                        let v = if size == b'h' {
+                            if signed {
+                                i32::from((v as u16).cast_signed()).cast_unsigned()
+                            } else {
+                                u32::from(v as u16)
+                            }
+                        } else {
+                            v
+                        };
+                        if signed && v.cast_signed() < 0 {
+                            (true, u64::from(v.cast_signed().unsigned_abs()))
+                        } else {
+                            (false, u64::from(v))
+                        }
+                    };
+                    body = match conv {
+                        b'o' => format!("{mag:o}"),
+                        b'x' => format!("{mag:x}"),
+                        b'X' => format!("{mag:X}"),
+                        b'p' => format!("{mag:08X}"),
+                        _ => format!("{mag}"),
+                    }
+                    .into_bytes();
+                    if let Some(p) = prec {
+                        if p == 0 && mag == 0 {
+                            body.clear();
+                        }
+                        while body.len() < p {
+                            body.insert(0, b'0');
+                        }
+                        numeric_zero_pad = false;
+                    }
+                    if signed {
+                        if neg {
+                            sign.push(b'-');
+                        } else if plus {
+                            sign.push(b'+');
+                        } else if space {
+                            sign.push(b' ');
+                        }
+                    }
+                    if alt && mag != 0 {
+                        match conv {
+                            b'x' => prefix.extend(b"0x"),
+                            b'X' => prefix.extend(b"0X"),
+                            b'o' if body.first() != Some(&b'0') => body.insert(0, b'0'),
+                            _ => {}
+                        }
+                    }
+                }
+                b'e' | b'E' | b'f' | b'g' | b'G' => {
+                    let x = f64::from_bits(args.u64(uc)?);
+                    let p = prec.unwrap_or(6);
+                    body = match conv {
+                        b'f' => fmt_f(x, p, alt),
+                        b'e' | b'E' => fmt_e(x, p, alt, conv == b'E'),
+                        _ => fmt_g(x, p, alt, conv == b'G'),
+                    };
+                    if x.is_sign_negative() {
+                        sign.push(b'-');
+                    } else if plus {
+                        sign.push(b'+');
+                    } else if space {
+                        sign.push(b' ');
+                    }
+                }
+                other => {
+                    // unknown: printed as is
+                    out.push(other);
+                    continue;
+                }
+            }
+            let len = sign.len() + prefix.len() + body.len();
+            let pad = width.saturating_sub(len);
+            if left {
+                out.extend(&sign);
+                out.extend(&prefix);
+                out.extend(&body);
+                out.extend(std::iter::repeat_n(b' ', pad));
+            } else if numeric_zero_pad {
+                out.extend(&sign);
+                out.extend(&prefix);
+                out.extend(std::iter::repeat_n(b'0', pad));
+                out.extend(&body);
+            } else {
+                out.extend(std::iter::repeat_n(b' ', pad));
+                out.extend(&sign);
+                out.extend(&prefix);
+                out.extend(&body);
+            }
+        }
+        Ok(out)
+    }
+
+    /// `_snprintf`-style output into `count` bytes: the text, a NUL when
+    /// there is room; -1 when it did not fit.
+    fn put_counted(uc: &mut Unicorn<State>, buf: u32, count: u32, s: &[u8]) -> Result<u32> {
+        let n = count as usize;
+        match s.len().cmp(&n) {
+            std::cmp::Ordering::Less => {
+                put_cstr(uc, buf, s)?;
+                Ok(u32::try_from(s.len()).expect("length"))
+            }
+            std::cmp::Ordering::Equal => {
+                write(uc, buf, s)?;
+                Ok(count)
+            }
+            std::cmp::Ordering::Greater => {
+                write(uc, buf, &s[..n])?;
+                Ok(u32::MAX)
+            }
+        }
+    }
+
+    fn put_double(uc: &mut Unicorn<State>, stub: u32, v: f64) -> Result<()> {
+        // the stub's own slot: not a game page, so not marked dirty
+        uc.mem_write(u64::from(stub) + 8, &v.to_le_bytes())
+            .map_err(|_| Error::BadAccess(u64::from(stub)))
+    }
+
+    /// Runs one stub; returns EAX.
+    #[allow(clippy::too_many_lines)]
+    pub(super) fn run(uc: &mut Unicorn<State>, crt: Crt, stub: u32) -> Result<u32> {
+        let esp = u32::try_from(uc.reg_read(RegisterX86::ESP)?).expect("32-bit");
+        let mut a = [0u32; 6];
+        for (k, v) in (0u32..).zip(a.iter_mut()) {
+            *v = u32_at(uc, esp + 4 + 4 * k)?;
+        }
+        Ok(match crt {
+            Crt::Strdup => {
+                let s = cstr(uc, a[0])?;
+                let p = alloc(uc, s.len() as u64 + 1)?;
+                put_cstr(uc, p, &s)?;
+                p
+            }
+            Crt::Stricmp => {
+                let (a, b) = (cstr(uc, a[0])?, cstr(uc, a[1])?);
+                icmp(&a, &b).cast_unsigned()
+            }
+            Crt::Strnicmp => {
+                let n = a[2];
+                let (a, b) = (cstr_n(uc, a[0], n)?, cstr_n(uc, a[1], n)?);
+                icmp(&a, &b).cast_unsigned()
+            }
+            Crt::Strncmp => {
+                let n = a[2];
+                let (a, b) = (cstr_n(uc, a[0], n)?, cstr_n(uc, a[1], n)?);
+                let mut r = 0i32;
+                for k in 0..=a.len().max(b.len()) {
+                    if k >= n as usize {
+                        break;
+                    }
+                    let (x, y) = (
+                        a.get(k).copied().unwrap_or(0),
+                        b.get(k).copied().unwrap_or(0),
+                    );
+                    if x != y {
+                        r = if x < y { -1 } else { 1 };
+                        break;
+                    }
+                    if x == 0 {
+                        break;
+                    }
+                }
+                r.cast_unsigned()
+            }
+            Crt::Strncpy => {
+                let (dst, src, n) = (a[0], a[1], a[2]);
+                let mut s = cstr_n(uc, src, n)?;
+                s.resize(n as usize, 0);
+                write(uc, dst, &s)?;
+                dst
+            }
+            Crt::Strncat => {
+                let (dst, src, n) = (a[0], a[1], a[2]);
+                let d = cstr(uc, dst)?;
+                let s = cstr_n(uc, src, n)?;
+                put_cstr(uc, dst + u32::try_from(d.len()).expect("length"), &s)?;
+                dst
+            }
+            Crt::Strchr | Crt::Strrchr => {
+                let (p, c) = (a[0], a[1]);
+                #[allow(clippy::cast_possible_truncation)] // char
+                let c = c as u8;
+                let mut s = cstr(uc, p)?;
+                s.push(0);
+                let at = if crt == Crt::Strchr {
+                    s.iter().position(|&b| b == c)
+                } else {
+                    s.iter().rposition(|&b| b == c)
+                };
+                at.map_or(0, |k| p + u32::try_from(k).expect("offset"))
+            }
+            Crt::Strstr => {
+                let (p, q) = (a[0], a[1]);
+                let (s, n) = (cstr(uc, p)?, cstr(uc, q)?);
+                if n.is_empty() {
+                    p
+                } else {
+                    s.windows(n.len())
+                        .position(|w| w == n.as_slice())
+                        .map_or(0, |k| p + u32::try_from(k).expect("offset"))
+                }
+            }
+            Crt::Strpbrk => {
+                let (p, q) = (a[0], a[1]);
+                let (s, set) = (cstr(uc, p)?, cstr(uc, q)?);
+                s.iter()
+                    .position(|b| set.contains(b))
+                    .map_or(0, |k| p + u32::try_from(k).expect("offset"))
+            }
+            Crt::Strspn => {
+                let (s, set) = (cstr(uc, a[0])?, cstr(uc, a[1])?);
+                u32::try_from(s.iter().take_while(|b| set.contains(b)).count()).expect("length")
+            }
+            Crt::Strlwr => {
+                let p = a[0];
+                let s: Vec<u8> = cstr(uc, p)?.into_iter().map(lower).collect();
+                write(uc, p, &s)?;
+                p
+            }
+            Crt::Tolower | Crt::Toupper => {
+                let c = a[0];
+                if c < 0x80 {
+                    #[allow(clippy::cast_possible_truncation)] // ASCII
+                    let b = c as u8;
+                    u32::from(if crt == Crt::Tolower {
+                        b.to_ascii_lowercase()
+                    } else {
+                        b.to_ascii_uppercase()
+                    })
+                } else {
+                    c
+                }
+            }
+            Crt::Atoi => {
+                let s = cstr(uc, a[0])?;
+                strtol(&s, 10, true).0
+            }
+            Crt::Strtol | Crt::Strtoul => {
+                let (p, end, base) = (a[0], a[1], a[2]);
+                let s = cstr(uc, p)?;
+                let (v, used) = strtol(&s, base, crt == Crt::Strtol);
+                if end != 0 {
+                    let e = p + u32::try_from(used).expect("offset");
+                    write(uc, end, &e.to_le_bytes())?;
+                }
+                v
+            }
+            Crt::Atof | Crt::Strtod => {
+                let p = a[0];
+                let s = cstr(uc, p)?;
+                let (v, used) = strtod(&s);
+                if crt == Crt::Strtod {
+                    let end = a[1];
+                    if end != 0 {
+                        let e = p + u32::try_from(used).expect("offset");
+                        write(uc, end, &e.to_le_bytes())?;
+                    }
+                }
+                put_double(uc, stub, v)?;
+                0
+            }
+            Crt::Memchr => {
+                let (p, c, n) = (a[0], a[1], a[2]);
+                #[allow(clippy::cast_possible_truncation)] // char
+                let c = c as u8;
+                let b = read(uc, p, n as usize)?;
+                b.iter()
+                    .position(|&x| x == c)
+                    .map_or(0, |k| p + u32::try_from(k).expect("offset"))
+            }
+            Crt::Abs => a[0].cast_signed().wrapping_abs().cast_unsigned(),
+            Crt::Ctype(mask) => {
+                let c = a[0];
+                #[allow(clippy::cast_possible_truncation)] // checked
+                let bits = if c < 0x80 { ctype(c as u8) } else { 0 };
+                u32::from(bits & mask)
+            }
+            Crt::Sprintf => {
+                let (buf, fmt) = (a[0], a[1]);
+                let f = cstr(uc, fmt)?;
+                let s = format(uc, &f, &mut Args { at: esp + 12 })?;
+                put_cstr(uc, buf, &s)?;
+                u32::try_from(s.len()).expect("length")
+            }
+            Crt::Vsprintf => {
+                let (buf, fmt, va) = (a[0], a[1], a[2]);
+                let f = cstr(uc, fmt)?;
+                let s = format(uc, &f, &mut Args { at: va })?;
+                put_cstr(uc, buf, &s)?;
+                u32::try_from(s.len()).expect("length")
+            }
+            Crt::Snprintf => {
+                let (buf, count, fmt) = (a[0], a[1], a[2]);
+                let f = cstr(uc, fmt)?;
+                let s = format(uc, &f, &mut Args { at: esp + 16 })?;
+                put_counted(uc, buf, count, &s)?
+            }
+            Crt::Vsnprintf => {
+                let (buf, count, fmt, va) = (a[0], a[1], a[2], a[3]);
+                let f = cstr(uc, fmt)?;
+                let s = format(uc, &f, &mut Args { at: va })?;
+                put_counted(uc, buf, count, &s)?
+            }
+            Crt::SprintfS => {
+                let (buf, size, fmt) = (a[0], a[1], a[2]);
+                let f = cstr(uc, fmt)?;
+                let s = format(uc, &f, &mut Args { at: esp + 16 })?;
+                if s.len() >= size as usize {
+                    // the invalid-parameter path: an empty string, -1
+                    if size > 0 {
+                        write(uc, buf, &[0])?;
+                    }
+                    u32::MAX
+                } else {
+                    put_cstr(uc, buf, &s)?;
+                    u32::try_from(s.len()).expect("length")
+                }
+            }
+            Crt::VsnprintfS => {
+                let (buf, size, count, fmt, va) = (a[0], a[1], a[2], a[3], a[4]);
+                let f = cstr(uc, fmt)?;
+                let s = format(uc, &f, &mut Args { at: va })?;
+                // _TRUNCATE (-1) or a count below the size: truncate, -1
+                let room = if count == u32::MAX {
+                    size.saturating_sub(1)
+                } else {
+                    count.min(size.saturating_sub(1))
+                };
+                if s.len() <= room as usize {
+                    put_cstr(uc, buf, &s)?;
+                    u32::try_from(s.len()).expect("length")
+                } else {
+                    put_cstr(uc, buf, &s[..room as usize])?;
+                    u32::MAX
+                }
+            }
+            Crt::StrcpyS | Crt::StrcatS | Crt::StrncpyS => {
+                let (dst, size, src) = (a[0], a[1], a[2]);
+                let mut s = if crt == Crt::StrncpyS {
+                    let n = a[3];
+                    cstr_n(uc, src, n)?
+                } else {
+                    cstr(uc, src)?
+                };
+                if crt == Crt::StrcatS {
+                    let mut d = cstr(uc, dst)?;
+                    d.extend(s);
+                    s = d;
+                }
+                if s.len() >= size as usize {
+                    if size > 0 {
+                        write(uc, dst, &[0])?;
+                    }
+                    34 // ERANGE
+                } else {
+                    put_cstr(uc, dst, &s)?;
+                    0
+                }
+            }
+            Crt::MemcpyS => {
+                let (dst, size, src, n) = (a[0], a[1], a[2], a[3]);
+                if n > size {
+                    34
+                } else {
+                    let b = read(uc, src, n as usize)?;
+                    write(uc, dst, &b)?;
+                    0
+                }
+            }
+            Crt::Finite => {
+                u32::from(f64::from_bits(u64::from(a[1]) << 32 | u64::from(a[0])).is_finite())
+            }
+            Crt::Isnan => {
+                u32::from(f64::from_bits(u64::from(a[1]) << 32 | u64::from(a[0])).is_nan())
+            }
+            Crt::Floor | Crt::Ceil => {
+                let x = f64::from_bits(u64::from(a[1]) << 32 | u64::from(a[0]));
+                let v = if crt == Crt::Floor {
+                    x.floor()
+                } else {
+                    x.ceil()
+                };
+                put_double(uc, stub, v)?;
+                0
+            }
+            Crt::CiSqrt | Crt::CiFmod => {
+                // x87 code: EAX as it was
+                u32::try_from(uc.reg_read(RegisterX86::EAX)?).expect("32-bit")
+            }
+            Crt::Rand => {
+                let st = &mut uc.get_data_mut().rand_seed;
+                *st = st.wrapping_mul(214_013).wrapping_add(2_531_011);
+                (*st >> 16) & 0x7fff
+            }
+            Crt::Srand => {
+                let seed = a[0];
+                uc.get_data_mut().rand_seed = seed;
+                0
+            }
+            Crt::Lock(_, r) => r,
+            Crt::GetCurrentThreadId => 1,
+        })
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn digit_rounding() {
+            let mut d = b"1#INF".to_vec();
+            assert!(!round_digits(&mut d, 3));
+            assert_eq!(d, b"1#J");
+            let mut d = b"999".to_vec();
+            assert!(round_digits(&mut d, 2));
+            assert_eq!(d, b"10");
+        }
+
+        #[test]
+        fn floats_as_msvc() {
+            assert_eq!(fmt_f(1.5, 2, false), b"1.50");
+            assert_eq!(fmt_f(0.125, 2, false), b"0.13");
+            assert_eq!(fmt_f(f64::INFINITY, 6, false), b"1.#INF00");
+            assert_eq!(fmt_f(f64::INFINITY, 2, false), b"1.#J");
+            assert_eq!(fmt_f(0.1, 20, false), b"0.10000000000000001000");
+            assert_eq!(fmt_f(0.5, 0, false), b"1");
+            assert_eq!(fmt_f(9.5, 0, false), b"10");
+            assert_eq!(fmt_g(f64::INFINITY, 6, false, false), b"1.#INF");
+            assert_eq!(fmt_e(12345.678, 3, false, false), b"1.235e+004");
+            assert_eq!(fmt_g(100_000.0, 6, false, false), b"100000");
+            assert_eq!(fmt_g(1_000_000.0, 6, false, false), b"1e+006");
+            assert_eq!(fmt_g(0.0001, 6, false, false), b"0.0001");
+            assert_eq!(fmt_g(0.00001, 6, false, false), b"1e-005");
+            assert_eq!(fmt_f(1e20, 0, false), b"100000000000000000000");
+            assert_eq!(
+                fmt_f(123_456_789_012_345_678_901.0, 1, false),
+                b"123456789012345680000.0"
+            );
+        }
+
+        #[test]
+        fn numbers() {
+            assert_eq!(strtol(b"  -0x1f", 0, true), (0xffff_ffe1, 7));
+            assert_eq!(strtol(b"077", 0, true), (63, 3));
+            assert_eq!(strtol(b"99999999999", 10, true), (0x7fff_ffff, 11));
+            assert_eq!(strtol(b"x", 10, true), (0, 0));
+            assert_eq!(strtol(b"0xg", 0, true), (0, 0));
+            assert_eq!(strtol(b"-99999999999", 10, true), (0x8000_0000, 12));
+            assert_eq!(strtod(b" 1.5e3x"), (1500.0, 6));
+            assert_eq!(strtod(b"2."), (2.0, 2));
+        }
+
+        #[test]
+        fn classes() {
+            assert_eq!(ctype(b'A') & (ALPHA | UPPER | LOWER), 0x101);
+            assert_eq!(ctype(b'7') & DIGIT, DIGIT);
+            assert_eq!(icmp(b"ABC", b"abd"), -1);
+        }
     }
 }
