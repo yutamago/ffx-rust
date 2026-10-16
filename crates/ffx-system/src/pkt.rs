@@ -55,4 +55,19 @@ pub mod bridge {
         SCISSOR_BOX.set(mem, corners);
         bottom.cast_unsigned()
     }
+
+    /// `TOMakePktScissor(x0, y0, x1, y1)` (`0x008fdee0`, the same code at
+    /// `0x008f91f0`): the menu scissor on (not in XYUV mode), its box the
+    /// four integers as floats.
+    pub fn make_pkt_scissor(mem: &mut impl Mem, x0: i32, y0: i32, x1: i32, y1: i32) {
+        use ffx_menu::scissor::bridge::{SCISSOR_BOX, SCISSOR_ON, SCISSOR_XYUV};
+        #[allow(clippy::cast_precision_loss)] // fild then fstp dword: rounded
+        let corners = [x0, y0, x1, y1].map(|v| v as f32);
+        SCISSOR_ON.set(mem, 1);
+        SCISSOR_XYUV.set(mem, 0);
+        SCISSOR_BOX.set(mem, corners);
+    }
+
+    /// `0x008fa7b0()`: a constant GS register word, in `edx:eax`.
+    pub const GS_WORD_008FA7B0: u64 = 0x2005_d406_2131_3e00;
 }

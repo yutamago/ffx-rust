@@ -825,6 +825,7 @@ dependencies = [
 name = "ffx-system"
 version = "0.1.0"
 dependencies = [
+ "ffx-battle",
  "ffx-bridge",
  "ffx-kernel",
  "ffx-menu",

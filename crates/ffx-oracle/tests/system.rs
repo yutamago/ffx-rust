@@ -1901,9 +1901,149 @@ fn trees_and_names(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     same_memory("item names", a, b);
 }
 
+/// Getters and setters of round 3: managers, configuration bytes, the
+/// HDD state, message-window slots, scissors.
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)] // one pass over many small functions; random bytes
+fn small_state(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use cd::bridge as c;
+    use config::bridge as k;
+    use instance::bridge as i;
+    use window::bridge as w;
+    for round in 0..30 {
+        if round > 0 {
+            set(a, b, i::MORPH_MANAGER, rng.next());
+            set(a, b, i::TROPHY_MANAGER, rng.next());
+            set(a, b, k::FFX_VIDEO_MODE, rng.next() as i8);
+            set(a, b, k::DEF_DRAW_ENV2, rng.next() as i8);
+            set(a, b, c::HDD_STATUS, rng.next() as i8);
+            set(
+                a,
+                b,
+                c::HDD_ERR,
+                if round % 2 == 0 { 0 } else { rng.next() as i8 },
+            );
+            set(a, b, c::HDD_STATE, [rng.next(), rng.next()]);
+        }
+        assert_eq!(eax(a, 0x0063_1300, &[]), i::input_manager(b));
+        assert_eq!(eax(a, 0x006d_c8a0, &[]), i::morph_manager(b));
+        assert_eq!(eax(a, 0x0067_ac90, &[]), i::trophy_manager(b));
+        assert_eq!(
+            eax(a, 0x0088_7c40, &[]),
+            k::ffx_video_mode(b).cast_unsigned()
+        );
+        assert_eq!(
+            eax(a, 0x0088_7c60, &[]),
+            k::gs_set_def_draw_env2(b).cast_unsigned()
+        );
+        assert_eq!(eax(a, 0x0077_7e80, &[]), c::hdd_err(b).cast_unsigned());
+        assert_eq!(eax(a, 0x0077_7e90, &[]), c::hdd_status(b).cast_unsigned());
+        eax(a, 0x0077_7420, &[]);
+        c::hdd_state_clear(b);
+        eax(a, 0x0077_7940, &[]);
+        c::hdd_set_pass_names(b);
+        let r = call(a, 0x008f_a7b0, Conv::Cdecl, &[]);
+        assert_eq!(
+            u64::from(r.edx) << 32 | u64::from(r.eax),
+            pkt::bridge::GS_WORD_008FA7B0
+        );
+        same_memory("small state", a, b);
+    }
+
+    // the input manager's pads: 0x12 slots, some null, key states
+    let manager = random_block(a, b, rng, 0x2c0);
+    let table = random_block(a, b, rng, 0x100);
+    put(a, b, manager + 0x2b8, table);
+    for pad in 0..0x12u32 {
+        let p = if pad % 5 == 3 {
+            0
+        } else {
+            random_block(a, b, rng, 0x40)
+        };
+        put(a, b, table + 0x38 + 4 * pad, p);
+        if p != 0 {
+            for key in 0..0x10 {
+                put(a, b, p + 0x18 + key, u8::from(rng.next().is_multiple_of(3)));
+            }
+        }
+    }
+    for n in 0..800u32 {
+        let key = match n % 4 {
+            0 => rng.next(),
+            _ => rng.next() % 0x20,
+        };
+        let pad = if n % 7 == 0 {
+            rng.next()
+        } else {
+            rng.next() % 0x14
+        };
+        let ra = call(a, 0x0062_9ca0, Conv::Thiscall(manager), &[key, pad]).eax;
+        assert_eq!(
+            ra,
+            i::key_down(b, manager, key, pad),
+            "key {key:#x} pad {pad:#x}"
+        );
+        let obj = random_block(a, b, rng, 0xb0);
+        if n % 2 == 0 {
+            put(a, b, obj + 0xa8, 0u32);
+        }
+        let ra = call(a, 0x0063_1320, Conv::Fastcall, &[obj]).eax & 0xff;
+        assert_eq!(ra, u32::from(i::vibration_flag(b, obj)));
+    }
+
+    // the message-window slots: the game's objects where there are any
+    for k in 0..8 {
+        let at = w::MSG_WINDOW_SLOTS.ptr(b).addr + 4 * k;
+        let cur = Mem::read::<u32>(b, at);
+        if cur == 0 || !mapped(a, cur + 8) {
+            let obj = random_block(a, b, rng, 0x10);
+            put(a, b, at, obj);
+        }
+    }
+    for n in 0..64u32 {
+        let win = (n % 8).cast_signed();
+        let ra = eax(a, 0x008a_f7d0, &[win.cast_unsigned()]);
+        assert_eq!(ra, w::set_message_window_active(b, win));
+        let v = rng.next();
+        let ra = eax(a, 0x008a_fb90, &[win.cast_unsigned(), v]);
+        assert_eq!(ra, w::set_message_window_value(b, win, v));
+    }
+    same_memory("message-window slots", a, b);
+    for k in 0..4u32 {
+        let win = random_block(a, b, rng, 0x80);
+        put(a, b, win, u16::from(k != 2));
+        set_entry(a, b, w::WINDOWS, k, win);
+        let m = random_block(a, b, rng, 0x120);
+        put(a, b, m, u16::from(k != 1));
+        set_entry(a, b, w::MSG_WINDOWS, k, m);
+        eax(a, 0x008a_b8f0, &[k]);
+        w::close_message_window(b, k.cast_signed());
+    }
+    same_memory("TOCloseMessageWindow", a, b);
+
+    // scissors and the save-player thunk
+    for _ in 0..300 {
+        let r: [i32; 4] = std::array::from_fn(|_| match rng.next() % 3 {
+            0 => rng.next().cast_signed(),
+            _ => (rng.next() % 4000).cast_signed() - 2000,
+        });
+        let args = r.map(i32::cast_unsigned);
+        eax(a, 0x008f_dee0, &args);
+        pkt::bridge::make_pkt_scissor(b, r[0], r[1], r[2], r[3]);
+        eax(a, 0x008f_91f0, &args);
+        pkt::bridge::make_pkt_scissor(b, r[0], r[1], r[2], r[3]);
+        let chr = rng.next() % 0x20;
+        assert_eq!(
+            eax(a, 0x0077_6f50, &[chr]),
+            names::bridge::save_player_ptr(b, chr)
+        );
+    }
+    same_memory("scissors", a, b);
+}
+
 fn round3(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     leb128_and_stubs(a, b, rng);
     trees_and_names(a, b, rng);
+    small_state(a, b, rng);
 }
 
 #[test]

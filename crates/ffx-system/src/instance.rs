@@ -193,4 +193,55 @@ pub mod bridge {
     pub fn chr_move_cur_move_check(mem: &impl Mem, chr: u32) -> u32 {
         u32::from(mem.read::<u8>(chr.wrapping_add(0x22)) & 1)
     }
+
+    /// `Virtuos::InputManager`'s object (`getInstance` returns its address).
+    pub const INPUT_MANAGER: Global<u32> = Global::new(0x00cc_b170);
+    /// `MorphManager::GetInstance`'s object pointer.
+    pub const MORPH_MANAGER: Global<u32> = Global::new(0x00cd_ede8);
+    /// `TrophyManager::Instance`'s object pointer.
+    pub const TROPHY_MANAGER: Global<u32> = Global::new(0x00cc_c7cc);
+
+    /// `Virtuos::InputManager::getInstance()` (`0x00631300`).
+    pub fn input_manager(mem: &impl Mem) -> u32 {
+        INPUT_MANAGER.ptr(mem).addr
+    }
+
+    /// `Virtuos::InputManager::getVibrationFlag()` (`0x00631320`, `this`
+    /// in ECX): `+0xa8` non-zero.
+    pub fn vibration_flag(mem: &impl Mem, this: u32) -> bool {
+        mem.read::<u32>(this.wrapping_add(0xa8)) != 0
+    }
+
+    /// The key test at `0x00629ca0` (`thiscall(manager, key, pad)`, `ret
+    /// 8`): whether key `key` (11..=26) of pad `pad` (< 0x12) is down, the
+    /// pad's state at `+0x18 + key - 11` of the pad object
+    /// `[manager+0x2b8]+0x38+4 pad`. The whole `eax`: the result in `al`
+    /// over `key - 11` when the key is looked at, else over what the
+    /// original had there (the pad table, or `key - 11` when out of range).
+    pub fn key_down(mem: &impl Mem, this: u32, key: u32, pad: u32) -> u32 {
+        let table: u32 = mem.read(this.wrapping_add(0x2b8));
+        if pad >= 0x12 {
+            return table & !0xff;
+        }
+        let p: u32 = mem.read(table.wrapping_add(0x38).wrapping_add(4 * pad));
+        if p == 0 {
+            return table & !0xff;
+        }
+        let k = key.wrapping_sub(11);
+        if k >= 0x10 {
+            return k & !0xff;
+        }
+        let down = mem.read::<u8>(p.wrapping_add(0x18).wrapping_add(k)) != 0;
+        k & !0xff | u32::from(down)
+    }
+
+    /// `MorphManager::GetInstance()` (`0x006dc8a0`).
+    pub fn morph_manager(mem: &impl Mem) -> u32 {
+        MORPH_MANAGER.get(mem)
+    }
+
+    /// `TrophyManager::Instance()` (`0x0067ac90`).
+    pub fn trophy_manager(mem: &impl Mem) -> u32 {
+        TROPHY_MANAGER.get(mem)
+    }
 }

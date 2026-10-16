@@ -597,6 +597,78 @@ ported! {
     SaveDataCheckCrc @ 0x0064_7d70 => extern "C" fn save_data_check_crc() -> u32 {
         save::bridge::check_crc(&mut mem(), ffx_menu::tk::bridge::tk_crc)
     }
+    /// `Virtuos::InputManager::getInstance()`.
+    Virtuos_InputManager_getInstance @ 0x0063_1300 => extern "C" fn virtuos_input_manager_get_instance() -> u32 {
+        instance::bridge::input_manager(&mem())
+    }
+    /// `Virtuos::InputManager::getVibrationFlag()` (`this` in ECX).
+    Virtuos_InputManager_getVibrationFlag @ 0x0063_1320 => extern "fastcall" fn virtuos_input_manager_get_vibration_flag(this: u32) -> bool {
+        instance::bridge::vibration_flag(&mem(), this)
+    }
+    /// `Input_KeyDown(key, pad)` (`this` the input manager).
+    Input_KeyDown @ 0x0062_9ca0 => extern "thiscall" fn input_key_down(this: u32, key: u32, pad: u32) -> u32 {
+        instance::bridge::key_down(&mem(), this, key, pad)
+    }
+    /// `Instance_006dc800_Get()`.
+    Instance_006dc800_Get @ 0x006d_c8a0 => extern "C" fn instance_006dc800_get() -> u32 {
+        instance::bridge::morph_manager(&mem())
+    }
+    /// `TrophyManager::Instance()`.
+    TrophyManager_Instance @ 0x0067_ac90 => extern "C" fn trophy_manager_instance() -> u32 {
+        instance::bridge::trophy_manager(&mem())
+    }
+    /// `FFXGetVideoMode()`.
+    FFXGetVideoMode @ 0x0088_7c40 => extern "C" fn ffx_get_video_mode() -> i32 {
+        config::bridge::ffx_video_mode(&mem())
+    }
+    /// `sceGsSetDefDrawEnv2(...)`.
+    sceGsSetDefDrawEnv2 @ 0x0088_7c60 => extern "C" fn sce_gs_set_def_draw_env2() -> i32 {
+        config::bridge::gs_set_def_draw_env2(&mem())
+    }
+    /// `MsGetSavePlayerPtr_thunk(chr)`.
+    MsGetSavePlayerPtr_thunk @ 0x0077_6f50 => extern "C" fn ms_get_save_player_ptr_thunk(chr: u32) -> u32 {
+        names::bridge::save_player_ptr(&mem(), chr)
+    }
+    /// `hdd_state_clear()`.
+    hdd_state_clear @ 0x0077_7420 => extern "C" fn hdd_state_clear() {
+        cd::bridge::hdd_state_clear(&mut mem());
+    }
+    /// `hdd_set_pass_names()`.
+    hdd_set_pass_names @ 0x0077_7940 => extern "C" fn hdd_set_pass_names() {
+        cd::bridge::hdd_set_pass_names(&mut mem());
+    }
+    /// `get_hdd_err()`.
+    get_hdd_err @ 0x0077_7e80 => extern "C" fn get_hdd_err() -> i32 {
+        cd::bridge::hdd_err(&mem())
+    }
+    /// `get_hdd_status()`.
+    get_hdd_status @ 0x0077_7e90 => extern "C" fn get_hdd_status() -> i32 {
+        cd::bridge::hdd_status(&mem())
+    }
+    /// `TOCloseMessageWindow(i)`.
+    TOCloseMessageWindow @ 0x008a_b8f0 => extern "C" fn to_close_message_window(i: i32) {
+        window::bridge::close_message_window(&mut mem(), i);
+    }
+    /// `TOSetMessageWindowActive(i)`.
+    TOSetMessageWindowActive @ 0x008a_f7d0 => extern "C" fn to_set_message_window_active(i: i32) -> u32 {
+        window::bridge::set_message_window_active(&mut mem(), i)
+    }
+    /// `TOSetMessageWindowValue(i, v)`.
+    TOSetMessageWindowValue @ 0x008a_fb90 => extern "C" fn to_set_message_window_value(i: i32, v: u32) -> u32 {
+        window::bridge::set_message_window_value(&mut mem(), i, v)
+    }
+    /// `TODrawScissor(x0, y0, x1, y1)`.
+    TODrawScissor @ 0x008f_91f0 => extern "C" fn to_draw_scissor(x0: i32, y0: i32, x1: i32, y1: i32) {
+        pkt::bridge::make_pkt_scissor(&mut mem(), x0, y0, x1, y1);
+    }
+    /// `TOMakePktScissor(x0, y0, x1, y1)`.
+    TOMakePktScissor @ 0x008f_dee0 => extern "C" fn to_make_pkt_scissor(x0: i32, y0: i32, x1: i32, y1: i32) {
+        pkt::bridge::make_pkt_scissor(&mut mem(), x0, y0, x1, y1);
+    }
+    /// `TOGetGsRegWord()`: a constant in `edx:eax`.
+    TOGetGsRegWord @ 0x008f_a7b0 => extern "C" fn to_get_gs_reg_word() -> u64 {
+        pkt::bridge::GS_WORD_008FA7B0
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

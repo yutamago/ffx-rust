@@ -19,4 +19,10 @@ pub mod bridge {
         let (record, strings) = rom_strings(mem, ITEM, id);
         strings.wrapping_add(u32::from(mem.read::<u16>(record)))
     }
+
+    /// `0x00776f50(chr)`: a jump to `MsGetSavePlayerPtr` (the
+    /// `ply_save` record of `chr`).
+    pub fn save_player_ptr(mem: &impl Mem, chr: u32) -> u32 {
+        ffx_battle::save::bridge::ms_get_save_player_ptr(mem, chr)
+    }
 }

@@ -152,4 +152,39 @@ pub mod bridge {
         let d = crate::stub::ptr32(entry(mem, MACRO_DIC, table));
         mem.read(d.wrapping_add(0x2c))
     }
+
+    /// `TOCloseMessageWindow(i)` (`0x008ab8f0`): [`close_window`], then
+    /// [`close_message`] (a tail jump).
+    pub fn close_message_window(mem: &mut impl Mem, i: i32) {
+        close_window(mem, i);
+        close_message(mem, i);
+    }
+
+    /// The eight message-window objects `TOSetMessageWindowActive` and
+    /// `TOSetMessageWindowValue` index (pointers).
+    pub const MSG_WINDOW_SLOTS: Global<[u32; 8]> = Global::new(0x0186_5b3c);
+
+    /// `TOSetMessageWindowActive(i)` (`0x008af7d0`): the `u16` at `+6` of
+    /// every slot's object to 0 (in order), then window `i`'s to 1 (`i`
+    /// unchecked). Returns that object (left in `eax`).
+    pub fn set_message_window_active(mem: &mut impl Mem, i: i32) -> u32 {
+        let base = MSG_WINDOW_SLOTS.ptr(mem).addr;
+        for k in 0..8 {
+            let w: u32 = mem.read(base + 4 * k);
+            mem.write(w.wrapping_add(6), 0u16);
+        }
+        let w: u32 = mem.read(base.wrapping_add(i.cast_unsigned().wrapping_mul(4)));
+        mem.write(w.wrapping_add(6), 1u16);
+        w
+    }
+
+    /// `TOSetMessageWindowValue(i, v)` (`0x008afb90`): the `u16` at `+4` of
+    /// window `i`'s object (`i` unchecked). Returns the `eax` it leaves:
+    /// `v`'s low half in `ax` over `i`'s high half.
+    pub fn set_message_window_value(mem: &mut impl Mem, i: i32, v: u32) -> u32 {
+        let base = MSG_WINDOW_SLOTS.ptr(mem).addr;
+        let w: u32 = mem.read(base.wrapping_add(i.cast_unsigned().wrapping_mul(4)));
+        mem.write(w.wrapping_add(4), (v & 0xffff) as u16);
+        i.cast_unsigned() & 0xffff_0000 | v & 0xffff
+    }
 }
