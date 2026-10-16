@@ -128,6 +128,56 @@ clamped to -1..1 (`0x0070ef80`); a volume translation over `n` frames runs
 `FmodMusic +0x18` and raises the start signal at `+0x20`
 (`FmodManager_signalMusicStart`, for music ids below 0xb6).
 
+## The FMOD thread (`FfxFmod`, `ffx_sound::ffxfmod`)
+
+The FMOD thread runs each queued command through the handler table at
+`0x00c3a368` (`g_FmodCommandHandlers`): 70 cdecl `FmodCmd_*(FfxFmod*,
+u32 args[4])` (`0x00707b90..0x00708460`), each calling one `FfxFmod`
+method of the same name. Handlers 0x00-0x2f answer 0 (but 0x05, 0x11,
+0x12, 0x13 and 0x16, which return the method's result); 0x30-0x45 return
+the method's `eax`. Conversions in the handlers: 0x0d and 0x22 turn the
+frame count into `ftol(ceil(f32(i32 x) * 0.5) + 0.5)` (f32 stores between
+steps, CRT `ceil` at import slot `0x00b0c480`); 0x0e and 0x23 pass the
+volume as `f32(i32 x)`; 0x42-0x45 pass `f32(f32(i32 x) / 100.0)`; 0x37
+widens `a1:a0` to 64 bits but passes only `a0`.
+
+`FfxFmod` (`FmodManager +8`): `+4` FMOD `EventSystem*`, `+8` low-level
+`System*`, `+0xc` `FmodMusic*`, `+0x10` `FmodVoice*`, `+0x14` `FmodSfx*`,
+`+0x18/+0x1c/+0x20/+0x24` master/music/voice/sfx volume (f32 0..1). Its
+methods (`0x007067d0..0x00707580`, alphabetical like every PC source file,
+so named after the Switch build's `FfxFmod::*`) mostly forward to one
+object; empty on PC: `musicMuteSet`, `musicPitchDirect/Translate`,
+`musicPlayFast`, `musicTempoDirect/Translate`, `voicePanDirect/Translate`
+(`xor eax,eax; ret n`). `musicMultiPlay` and `musicPhrasePlay` are a plain
+`FmodMusic::start` for ids <= 0xb5. The volume setters clamp to 0..1
+(NaN stays), do nothing when the value equals the kept one (exact f32
+compare), else keep it and hand `f32(x * master)` to the objects'
+`setEntireVolume` (all three for the master). `soundUpdate` (cmd 2) is
+`EventSystem::update` + `ERRCHECK(r, "FfxFmod.cpp", 0x121)`; `soundLoop`
+(cmd 3) measures the elapsed time and updates the objects. `soundInit`
+(cmd 1) reads the language from `LocalizationManager_GetInstance()`:
+`FmodSfx +2` = English for languages 1 and 2; `FmodVoice +4` (English) is
+0 only for languages 0, 3 and 4.
+
+The objects: `FmodMusic` `+0x10` 0xb6 records of 0x3c bytes (`+0` the FMOD
+`Event*`, `+4` replay point, `+8` fading, `+0x20` play state), `+0x18` the
+playing music, `+0x20` start signal, `+0x28` the voice's first word.
+`FmodVoice` `+0x14` `Event*`, `+0x40/+0x44` play status (`+0x44` start
+signal), `+0x50` voice volume, `+0x54` paused, `+0x80` mute id, `+0x84`
+`FmodShout*`, `+0x88` entire volume. `FmodSfx` `+0` paused (byte), `+2`
+English, `+0x64` a binary tree of the playing `SfxEvent`s by sound id
+(`SfxEventTree_Find` 0x0070ba70: head `+0xc` the root, the head the leaf,
+node `+0` left (greater ids go left), `+4` right, `+0xc` id, `+0x10`
+`{count, _, SfxEvent**}`). `FmodSfx::setPan/setVolume/stop` apply to every
+event of the id; `start/forceStart/delayStart` need `canStartNewEvent`
+(no event of the id playing; id 1 always) and a new event from
+`createSfxEvent`, else print a message. `stopNonBlockingSound` only stops
+ids above 0x7f. The FMOD libraries are C++ `__stdcall` members (`this` the
+first stack word), called through the jmp thunks at `0x00948c70..`
+(`Event::getState` `0x00948ca6` -> slot `0x00b0c750`, `Event::setPaused`
+`0x00948cbe` -> `0x00b0c740`, `EventSystem::update` `0x00948c82` ->
+`0x00b0c768`); a state is "playing" with flag 8.
+
 ## Snd state
 
 | Address | | |

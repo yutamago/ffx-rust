@@ -25,6 +25,7 @@ use std::sync::Arc;
 use ffx_bridge::{Global, Mem, Value};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
+use ffx_sound::ffxfmod::bridge::{self as x, callee as xc};
 use ffx_sound::fmod::{self, bridge as f};
 use ffx_sound::snd::bridge as s;
 
@@ -39,19 +40,25 @@ fn exe() -> Option<PathBuf> {
 /// The worlds a test runs in: the image alone, and the snapshot when
 /// `FFX_SNAPSHOT` is set.
 fn worlds() -> Vec<(&'static str, Oracle, Oracle)> {
+    worlds_except(&[])
+}
+
+/// [`worlds`], with the originals in `keep` left unrecorded (the ones a
+/// test compares).
+fn worlds_except(keep: &[u32]) -> Vec<(&'static str, Oracle, Oracle)> {
     let Some(exe) = exe() else {
         return Vec::new();
     };
     let mut out = Vec::new();
     let mut a = Oracle::load(&exe).unwrap();
     let mut b = Oracle::load(&exe).unwrap();
-    setup(&mut a, &mut b, false);
+    setup(&mut a, &mut b, false, keep);
     out.push(("image", a, b));
     if let Some(snap) = std::env::var_os("FFX_SNAPSHOT") {
         let pages: Arc<Pages> = Pages::read(PathBuf::from(snap)).unwrap();
         let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
         let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
-        setup(&mut a, &mut b, true);
+        setup(&mut a, &mut b, true, keep);
         out.push(("snapshot", a, b));
     } else {
         eprintln!("FFX_SNAPSHOT is not set; image cases only");
@@ -131,12 +138,17 @@ const FAKE_FMOD: u32 = 0x0270_e000;
 const LOG_PTR: u32 = 0x0270_f000;
 /// One return value per recorder.
 const RETS: u32 = 0x0270_f100;
-/// The log: 32-byte entries `{tag, this, args[6]}`.
+/// Out values the stdcall recorders write through a pointer argument.
+const OUTS: u32 = 0x0270_f800;
+/// The language word the localization recorder points at.
+const LANG: u32 = 0x0270_fff0;
+/// The log: 64-byte entries `{tag, this, args[14]}`.
 const LOG: u32 = 0x0271_0000;
 const LOG_ENTRIES: u32 = 256;
 
-/// The callees replaced by recorders: (address, stack words, thiscall).
-const STUBS: &[(u32, u32, bool)] = &[
+/// The Snd callees replaced by recorders: (address, stack words,
+/// thiscall).
+const SND_STUBS: &[(u32, u32, bool)] = &[
     (s::SQS_DATA_SENDING_COMPLETED, 1, false),
     (s::SQS_SE_FORCE_PLAY, 4, false),
     (s::SQS_EE_SOUND_ERROR_STATUS, 0, false),
@@ -184,30 +196,186 @@ const STUBS: &[(u32, u32, bool)] = &[
 /// `SqsSeStop` (`SndStop` jumps to it).
 const SQS_SE_STOP: u32 = 0x0081_e7c0;
 
+/// How a recorded callee takes its arguments.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    /// The caller pops.
+    Cdecl,
+    /// `this` in `ecx` (logged), the callee pops.
+    This,
+    /// The callee pops (FMOD's members: `this` the first word).
+    Std,
+    /// [`Kind::Std`], argument `k` a pointer the recorder writes its out
+    /// value through when it returns 0 (not logged: the original passes
+    /// its stack).
+    StdOut(u32),
+}
+
+/// A recorded callee: its `ffx.sym` address, stack words, convention, and
+/// the import slot pointed at the recorder (0: a `jmp` at the address).
+#[derive(Clone, Copy)]
+struct Stub {
+    sym: u32,
+    words: u32,
+    kind: Kind,
+    slot: u32,
+}
+
+const fn stub(sym: u32, words: u32, kind: Kind) -> Stub {
+    Stub {
+        sym,
+        words,
+        kind,
+        slot: 0,
+    }
+}
+
+/// The FMOD layer's callees left original: the objects' methods, the
+/// `FfxFmod` methods that create and release FMOD, the helpers, and the
+/// FMOD imports (on their import slots).
+const FMOD_STUBS: &[Stub] = &[
+    stub(xc::MUSIC_CLEAR, 1, Kind::This),
+    stub(xc::MUSIC_CLEAR_ALL, 0, Kind::This),
+    stub(xc::MUSIC_CROSS_PLAY, 3, Kind::This),
+    stub(xc::MUSIC_DATA_SEND, 2, Kind::This),
+    stub(xc::MUSIC_INIT_DATA, 1, Kind::This),
+    stub(xc::MUSIC_INIT_TEMP_DATA, 1, Kind::This),
+    stub(xc::MUSIC_PAUSE_ALL, 1, Kind::This),
+    stub(xc::MUSIC_PLAY_STATE, 1, Kind::This),
+    stub(xc::MUSIC_READ, 2, Kind::This),
+    stub(xc::MUSIC_SET_ENTIRE_VOLUME, 1, Kind::This),
+    stub(xc::MUSIC_SET_MUTE, 1, Kind::This),
+    stub(xc::MUSIC_START, 1, Kind::This),
+    stub(xc::MUSIC_STOP, 1, Kind::This),
+    stub(xc::MUSIC_STOP_ALL, 0, Kind::This),
+    stub(xc::MUSIC_SWITCH_BGM, 2, Kind::This),
+    stub(xc::MUSIC_SYNC_STANDBY, 0, Kind::This),
+    stub(xc::MUSIC_VOLUME_DIRECT, 3, Kind::This),
+    stub(xc::MUSIC_VOLUME_FADE_OUT, 2, Kind::This),
+    stub(xc::MUSIC_VOLUME_TRANSLATE, 3, Kind::This),
+    stub(xc::VOICE_CLEAR, 0, Kind::This),
+    stub(xc::VOICE_DATA_CHANGE, 2, Kind::This),
+    stub(xc::VOICE_INIT_DATA, 2, Kind::This),
+    stub(xc::VOICE_INIT_LIST, 0, Kind::This),
+    stub(xc::VOICE_INIT_TEMP_DATA, 2, Kind::This),
+    stub(xc::VOICE_READ, 2, Kind::This),
+    stub(xc::VOICE_RELEASE_DATA, 0, Kind::This),
+    stub(xc::VOICE_SET_ENTIRE_VOLUME, 1, Kind::This),
+    stub(xc::VOICE_SET_MUTE, 1, Kind::This),
+    stub(xc::VOICE_SET_PAUSED, 1, Kind::This),
+    stub(xc::VOICE_SET_LANG, 1, Kind::This),
+    stub(xc::VOICE_SHOUT_START, 4, Kind::This),
+    stub(xc::VOICE_SOUND_STAGE_FLUSH, 1, Kind::This),
+    stub(xc::VOICE_START, 2, Kind::This),
+    stub(xc::VOICE_STOP, 0, Kind::This),
+    stub(xc::VOICE_VOLUME_DIRECT, 2, Kind::This),
+    stub(xc::VOICE_VOLUME_TRANSLATE, 2, Kind::This),
+    stub(xc::SHOUT_START, 8, Kind::This),
+    stub(xc::SHOUT_SET_VOLUME, 1, Kind::This),
+    stub(xc::SFX_CAN_START_NEW_EVENT, 1, Kind::This),
+    stub(xc::SFX_CREATE_EVENT, 1, Kind::This),
+    stub(xc::SFX_DELAY_START, 4, Kind::This),
+    stub(xc::SFX_FORCE_START, 3, Kind::This),
+    stub(xc::SFX_IS_PLAYING, 1, Kind::This),
+    stub(xc::SFX_LOAD_PROJECT, 3, Kind::This),
+    stub(xc::SFX_PAUSE, 1, Kind::This),
+    stub(xc::SFX_PLAY_BATTLE_STREAMING, 4, Kind::This),
+    stub(xc::SFX_SET_ENTIRE_VOLUME, 1, Kind::This),
+    stub(xc::SFX_SET_PAN, 2, Kind::This),
+    stub(xc::SFX_SET_PAN_TRANSLATE, 3, Kind::This),
+    stub(xc::SFX_SET_VOLUME, 2, Kind::This),
+    stub(xc::SFX_SET_VOLUME_TRANSLATE, 3, Kind::This),
+    stub(xc::SFX_START, 3, Kind::This),
+    stub(xc::SFX_STOP, 1, Kind::This),
+    stub(xc::SFX_STOP_ALL_NON_BLOCKING, 2, Kind::This),
+    stub(xc::SFX_STOP_ALL_NONLOOP, 0, Kind::This),
+    stub(xc::SFX_STOP_NON_BLOCKING, 1, Kind::This),
+    stub(xc::SFX_UNLOAD_BY_SEQ, 1, Kind::This),
+    stub(xc::SFX_UNLOAD_PROJECTS, 2, Kind::This),
+    stub(xc::EVENT_IS_PLAYING, 0, Kind::This),
+    stub(xc::EVENT_DELAY_START, 3, Kind::This),
+    stub(xc::EVENT_START, 2, Kind::This),
+    stub(xc::EVENT_SET_PAN, 1, Kind::This),
+    stub(xc::EVENT_SET_PAN_TRANSLATE, 2, Kind::This),
+    stub(xc::EVENT_SET_VOLUME, 1, Kind::This),
+    stub(xc::EVENT_SET_VOLUME_TRANSLATE, 2, Kind::This),
+    stub(xc::EVENT_STOP, 1, Kind::This),
+    stub(xc::FFX_INIT_EVENT_SYSTEM, 0, Kind::This),
+    stub(xc::FFX_SHUT_DOWN, 0, Kind::This),
+    stub(xc::FFX_SOUND_LOOP, 0, Kind::This),
+    stub(xc::LOCALIZATION, 0, Kind::Cdecl),
+    stub(xc::ERRCHECK, 3, Kind::Cdecl),
+    stub(xc::PRINT, 3, Kind::Cdecl),
+    Stub {
+        sym: x::EVENT_GET_STATE,
+        words: 2,
+        kind: Kind::StdOut(1),
+        slot: 0x00b0_c750,
+    },
+    Stub {
+        sym: x::EVENT_SET_PAUSED,
+        words: 2,
+        kind: Kind::Std,
+        slot: 0x00b0_c740,
+    },
+    Stub {
+        sym: x::EVENT_SYSTEM_UPDATE,
+        words: 1,
+        kind: Kind::Std,
+        slot: 0x00b0_c768,
+    },
+];
+
+/// Every recorded callee.
+fn stubs() -> &'static [Stub] {
+    static ALL: std::sync::OnceLock<Vec<Stub>> = std::sync::OnceLock::new();
+    ALL.get_or_init(|| {
+        let mut all: Vec<Stub> = SND_STUBS
+            .iter()
+            .map(|&(sym, words, this)| {
+                stub(sym, words, if this { Kind::This } else { Kind::Cdecl })
+            })
+            .collect();
+        all.extend_from_slice(FMOD_STUBS);
+        all
+    })
+}
+
 /// x86 for a recorder: logs `tag`, `this` (thiscall) and `words` stack
-/// arguments, returns `[ret]`, keeping `ecx` and `edx`.
-fn recorder(tag: u32, words: u32, this: bool, ptr: u32, ret: u32) -> Vec<u8> {
+/// arguments, returns `[ret]`, keeping `ecx` and `edx`; an out argument
+/// gets `[out]` when `[ret]` is 0 (FMOD answers only on success).
+fn recorder(tag: u32, words: u32, kind: Kind, ptr: u32, ret: u32, out: u32) -> Vec<u8> {
     let mut c = vec![0x51, 0x52, 0x8b, 0x15];
     c.extend_from_slice(&ptr.to_le_bytes());
     c.extend_from_slice(&[0xc7, 0x02]);
     c.extend_from_slice(&tag.to_le_bytes());
-    if this {
+    if kind == Kind::This {
         c.extend_from_slice(&[0x89, 0x4a, 0x04]);
     }
     for i in 0..words {
         #[allow(clippy::cast_possible_truncation)] // small offsets
         let (from, to) = ((0x0c + 4 * i) as u8, (8 + 4 * i) as u8);
-        c.extend_from_slice(&[0x8b, 0x4c, 0x24, from, 0x89, 0x4a, to]);
+        c.extend_from_slice(&[0x8b, 0x4c, 0x24, from]);
+        if kind == Kind::StdOut(i) {
+            // when it returns 0 (FMOD_OK): mov eax, [out]; mov [ecx], eax
+            c.extend_from_slice(&[0x83, 0x3d]);
+            c.extend_from_slice(&ret.to_le_bytes());
+            c.extend_from_slice(&[0x00, 0x75, 0x07, 0xa1]);
+            c.extend_from_slice(&out.to_le_bytes());
+            c.extend_from_slice(&[0x89, 0x01]);
+        } else {
+            c.extend_from_slice(&[0x89, 0x4a, to]);
+        }
     }
-    c.extend_from_slice(&[0x83, 0xc2, 0x20, 0x89, 0x15]);
+    c.extend_from_slice(&[0x83, 0xc2, 0x40, 0x89, 0x15]);
     c.extend_from_slice(&ptr.to_le_bytes());
     c.extend_from_slice(&[0x5a, 0x59, 0xa1]);
     c.extend_from_slice(&ret.to_le_bytes());
-    if this {
-        #[allow(clippy::cast_possible_truncation)] // at most 5 words
-        c.extend_from_slice(&[0xc2, (4 * words) as u8, 0]);
-    } else {
+    if kind == Kind::Cdecl {
         c.push(0xc3);
+    } else {
+        #[allow(clippy::cast_possible_truncation)] // at most 8 words
+        c.extend_from_slice(&[0xc2, (4 * words) as u8, 0]);
     }
     c
 }
@@ -228,23 +396,36 @@ fn alloc(a: &mut Oracle, b: &mut Oracle, len: usize) -> u32 {
     x
 }
 
-/// Installs the recorders and, on the image, a fake `FmodManager` chain.
-fn setup(a: &mut Oracle, b: &mut Oracle, snapshot: bool) {
-    for (k, &(sym, words, this)) in STUBS.iter().enumerate() {
+/// Installs the recorders (but for the originals in `keep`) and, on the
+/// image, a fake `FmodManager` chain.
+fn setup(a: &mut Oracle, b: &mut Oracle, snapshot: bool, keep: &[u32]) {
+    for (k, st) in stubs().iter().enumerate() {
+        if keep.contains(&st.sym) {
+            continue;
+        }
         let k = u32::try_from(k).unwrap();
-        let code = a.rebase(CODE) + 0x80 * k;
+        let code = a.rebase(CODE) + 0x100 * k;
+        assert!(code + 0x100 <= a.rebase(FAKE_FMOD));
         let ret = a.rebase(RETS) + 4 * k;
-        let rec = recorder(sym, words, this, a.rebase(LOG_PTR), ret);
-        assert!(rec.len() <= 0x80);
+        let out = a.rebase(OUTS) + 4 * k;
+        let rec = recorder(st.sym, st.words, st.kind, a.rebase(LOG_PTR), ret, out);
+        assert!(rec.len() <= 0x100);
         a.write(code, &rec).unwrap();
         b.write(code, &rec).unwrap();
-        let at = a.rebase(sym);
+        if st.slot != 0 {
+            let slot = a.rebase(st.slot);
+            put(a, b, slot, code);
+            continue;
+        }
+        let at = a.rebase(st.sym);
         let rel = code.wrapping_sub(at + 5);
         let mut jmp = vec![0xe9];
         jmp.extend_from_slice(&rel.to_le_bytes());
         a.write(at, &jmp).unwrap();
         b.write(at, &jmp).unwrap();
     }
+    let lang = a.rebase(LANG);
+    stub_ret(a, b, xc::LOCALIZATION, lang);
     if !snapshot || f::MANAGER.get(a) == 0 {
         // in the image, so the cases' heap resets keep it
         let mgr = a.rebase(FAKE_FMOD);
@@ -258,30 +439,67 @@ fn setup(a: &mut Oracle, b: &mut Oracle, snapshot: bool) {
 
 /// Sets recorder `sym`'s return value.
 fn stub_ret(a: &mut Oracle, b: &mut Oracle, sym: u32, v: u32) {
-    let k = STUBS.iter().position(|s| s.0 == sym).expect("a recorder");
+    let k = stubs()
+        .iter()
+        .position(|s| s.sym == sym)
+        .expect("a recorder");
     let at = a.rebase(RETS) + 4 * u32::try_from(k).unwrap();
     put(a, b, at, v);
 }
 
-/// Random return values for every recorder.
+/// Sets recorder `sym`'s out value.
+fn stub_out(a: &mut Oracle, b: &mut Oracle, sym: u32, v: u32) {
+    let k = stubs()
+        .iter()
+        .position(|s| s.sym == sym)
+        .expect("a recorder");
+    let at = a.rebase(OUTS) + 4 * u32::try_from(k).unwrap();
+    put(a, b, at, v);
+}
+
+/// Random return and out values for every recorder (the localization
+/// manager's stays a pointer).
 fn stub_rets(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
-    for &(sym, _, _) in STUBS {
+    for st in stubs() {
+        if st.sym == xc::LOCALIZATION {
+            continue;
+        }
         let v = rng.word();
-        stub_ret(a, b, sym, v);
+        stub_ret(a, b, st.sym, v);
+        let v = rng.word();
+        stub_out(a, b, st.sym, v);
     }
 }
 
 fn reset_log(a: &mut Oracle, b: &mut Oracle) {
     let log = a.rebase(LOG);
     put(a, b, a.rebase(LOG_PTR), log);
-    let zero = vec![0u8; (LOG_ENTRIES * 32) as usize];
+    let zero = vec![0u8; (LOG_ENTRIES * 64) as usize];
     a.write(log, &zero).unwrap();
     b.write(log, &zero).unwrap();
 }
 
 /// How many entries the case logged (the same in both, or the diff fails).
 fn logged(a: &Oracle) -> u32 {
-    (Mem::read::<u32>(a, a.rebase(LOG_PTR)) - a.rebase(LOG)) / 32
+    (Mem::read::<u32>(a, a.rebase(LOG_PTR)) - a.rebase(LOG)) / 64
+}
+
+/// A `ret` in `FFX.exe`'s code (`FfxFmod::getNowPlayMusic`'s): calling it
+/// shows the x87 stack as it is.
+const RET: u32 = 0x0070_67d6;
+/// `fstp st(0); ret` in `FFX.exe`'s code: pops one x87 register.
+const FPU_POP: u32 = 0x0068_ab21;
+
+/// Whether `o`'s x87 stack is empty; when not, it is emptied (what an
+/// earlier original left there, which the oracle keeps across calls).
+fn fpu_empty(o: &mut Oracle) -> bool {
+    let (ret, pop) = (o.rebase(RET), o.rebase(FPU_POP));
+    let mut empty = true;
+    while o.call(ret, Conv::Cdecl, &[]).unwrap().st0.is_some() {
+        empty = false;
+        o.call(pop, Conv::Cdecl, &[]).unwrap();
+    }
+    empty
 }
 
 /// Runs the original at `sym` on `a` and `bridge` on `b`; compares the
@@ -295,15 +513,41 @@ fn check(
     args: &[u32],
     bridge: impl FnOnce(&mut Run) -> Option<u32>,
 ) {
+    check_masked(what, a, b, sym, conv, args, u32::MAX, bridge);
+}
+
+/// [`check`], comparing only the bits of `eax` in `mask` (a callee that
+/// answers in `al`).
+#[allow(clippy::too_many_arguments)] // check's, plus the mask
+fn check_masked(
+    what: &str,
+    a: &mut Oracle,
+    b: &mut Oracle,
+    sym: u32,
+    conv: Conv,
+    args: &[u32],
+    mask: u32,
+    bridge: impl FnOnce(&mut Run) -> Option<u32>,
+) {
     reset_log(a, b);
     let at = a.rebase(sym);
-    let want = a
+    // what earlier originals left (the oracle keeps the x87 stack), gone
+    fpu_empty(a);
+    fpu_empty(b);
+    let ret = a
         .call(at, conv, args)
-        .unwrap_or_else(|e| panic!("{what} {args:x?}: {e}"))
-        .eax;
+        .unwrap_or_else(|e| panic!("{what} {args:x?}: {e}"));
+    // a float the original leaves in ST0 is a result its callers use: the
+    // bridges here all answer in eax (or nothing), so there must be none
+    assert!(
+        ret.st0.is_none(),
+        "{what} {args:x?}: the original returns {:?} in ST0, the port no float",
+        ret.st0
+    );
+    let want = ret.eax;
     let got = bridge(&mut Run(b));
     if let Some(got) = got {
-        assert_eq!(got, want, "{what} {args:x?}: eax");
+        assert_eq!(got & mask, want & mask, "{what} {args:x?}: eax");
     }
     let d = a.diff(b).unwrap();
     assert!(
@@ -1523,4 +1767,405 @@ fn stream_pc_name_core() {
     // voice 123, letters 'a' + 2 and 'a' + 4
     assert_eq!(name(123 << 12 | 3 << 6 | 5, true), "ve000123ce.vs");
     assert_eq!(name(5 << 12, false), "vj000005``.vs");
+}
+
+// ---- the FMOD thread: handlers, FfxFmod, the objects
+
+/// A random volume (f32): in and out of 0..1, signed zeros, a quiet NaN.
+fn volume(rng: &mut Xorshift) -> f32 {
+    #[allow(clippy::cast_precision_loss)] // small values
+    match rng.below(8) {
+        0 => 0.0,
+        1 => -0.0,
+        2 => 1.0,
+        3 => 0.5,
+        4 => -(rng.below(100) as f32) / 50.0,
+        5 => 1.0 + rng.below(100) as f32 / 50.0,
+        6 => f32::NAN,
+        _ => rng.below(1000) as f32 / 1000.0,
+    }
+}
+
+/// An argument word: a music id, a small signed number (percentages,
+/// frames), or anything.
+fn arg_word(rng: &mut Xorshift) -> u32 {
+    match rng.below(4) {
+        0 => rng.below(0xb8),
+        1 => rng.below(300).wrapping_sub(50),
+        _ => rng.word(),
+    }
+}
+
+/// Random words in both oracles.
+fn fill(a: &mut Oracle, b: &mut Oracle, at: u32, len: u32, rng: &mut Xorshift) {
+    for i in (0..len).step_by(4) {
+        let v = rng.word();
+        put(a, b, at + i, v);
+    }
+}
+
+/// An FMOD event pointer or none.
+fn event(rng: &mut Xorshift) -> u32 {
+    if rng.below(3) == 0 {
+        0
+    } else {
+        0x0400_0000 | rng.below(0x10_0000) << 4
+    }
+}
+
+/// A random `FmodSfx` event tree at `head` (`FmodSfx +0x64`): sound ids
+/// near the stop limit and one, each with a list of events (some none);
+/// returns its ids.
+fn sfx_tree(a: &mut Oracle, b: &mut Oracle, head: u32, rng: &mut Xorshift) -> Vec<u32> {
+    put(a, b, head + 0xc, head);
+    let mut ids = Vec::new();
+    for _ in 0..rng.below(7) {
+        let id = [1, 2, 0x7f, 0x80, 0x81, 0x200, rng.word()][rng.below(7) as usize];
+        if ids.contains(&id) {
+            continue;
+        }
+        ids.push(id);
+        let node = alloc(a, b, 0x20);
+        fill(a, b, node, 0x20, rng);
+        put(a, b, node, head);
+        put(a, b, node + 4, head);
+        put(a, b, node + 0xc, id);
+        let n = rng.below(4);
+        let events = alloc(a, b, 4 * n as usize + 4);
+        for i in 0..n {
+            let e = event(rng);
+            put(a, b, events + 4 * i, e);
+        }
+        put(a, b, node + 0x10, n);
+        put(a, b, node + 0x18, events);
+        // insert: smaller ids to the left
+        let mut at = head + 0xc;
+        loop {
+            let cur = Mem::read::<u32>(a, at);
+            if cur == head {
+                put(a, b, at, node);
+                break;
+            }
+            let key = Mem::read::<u32>(a, cur + 0xc).cast_signed();
+            at = if key > id.cast_signed() { cur } else { cur + 4 };
+        }
+    }
+    ids
+}
+
+/// An `FfxFmod` for a case: in a snapshot, now and then the game's own;
+/// else a random one with its three objects (the sfx's ids returned too).
+fn fake_fmod(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) -> (u32, Vec<u32>) {
+    let mgr = f::MANAGER.get(a);
+    if mgr != a.rebase(FAKE_FMOD) && mgr != 0 && rng.below(3) == 0 {
+        let ffx = Mem::read::<u32>(a, mgr + f::MANAGER_FMOD);
+        let objects = [x::MUSIC, x::VOICE, x::SFX].map(|o| Mem::read::<u32>(a, ffx + o));
+        if ffx != 0 && objects.iter().all(|&o| o != 0) {
+            return (ffx, Vec::new());
+        }
+    }
+    let ffx = alloc(a, b, 0x40);
+    fill(a, b, ffx, 0x40, rng);
+    let es = event(rng);
+    put(a, b, ffx + x::EVENT_SYSTEM, es);
+    for v in [
+        x::MASTER_VOLUME,
+        x::MUSIC_VOLUME,
+        x::VOICE_VOLUME,
+        x::SFX_VOLUME,
+    ] {
+        let f = volume(rng);
+        put(a, b, ffx + v, f);
+    }
+    let music = alloc(a, b, 0x40);
+    fill(a, b, music, 0x40, rng);
+    let records = alloc(a, b, (0xb6 * x::MUSIC_RECORD) as usize);
+    fill(a, b, records, 0xb6 * x::MUSIC_RECORD, rng);
+    for id in 0..0xb6 {
+        let e = event(rng);
+        put(a, b, records + id * x::MUSIC_RECORD, e);
+    }
+    put(a, b, music + x::MUSIC_RECORDS, records);
+    let id = rng.below(0xb6);
+    put(a, b, music + x::MUSIC_START_ID, id);
+    let voice = alloc(a, b, 0x100);
+    fill(a, b, voice, 0x100, rng);
+    let e = event(rng);
+    put(a, b, voice + x::VOICE_EVENT, e);
+    let paused = [0, 1, rng.word()][rng.below(3) as usize];
+    put(a, b, voice + x::VOICE_PAUSED, paused);
+    for v in [x::VOICE_VOLUME_LEVEL, x::VOICE_ENTIRE_VOLUME] {
+        let f = volume(rng);
+        put(a, b, voice + v, f);
+    }
+    let sfx = alloc(a, b, 0x80);
+    fill(a, b, sfx, 0x80, rng);
+    let p = u8::from(rng.below(2) == 0);
+    put(a, b, sfx + x::SFX_PAUSED, p);
+    let ids = sfx_tree(a, b, sfx + x::SFX_EVENTS, rng);
+    put(a, b, ffx + x::MUSIC, music);
+    put(a, b, ffx + x::VOICE, voice);
+    put(a, b, ffx + x::SFX, sfx);
+    (ffx, ids)
+}
+
+/// Return values that steer the FMOD paths: `getState`'s result and
+/// state, the sfx answers.
+fn fmod_rets(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    stub_rets(a, b, rng);
+    let r = [0, 0, rng.word()][rng.below(3) as usize];
+    stub_ret(a, b, x::EVENT_GET_STATE, r);
+    let s = [2, 8, 0, 9, rng.word()][rng.below(5) as usize];
+    stub_out(a, b, x::EVENT_GET_STATE, s);
+    for sym in [
+        xc::SFX_CAN_START_NEW_EVENT,
+        xc::EVENT_IS_PLAYING,
+        xc::SFX_CREATE_EVENT,
+        xc::VOICE_DATA_CHANGE,
+    ] {
+        let v = [0, 1, 0x100, rng.word()][rng.below(4) as usize];
+        stub_ret(a, b, sym, v);
+    }
+    let lang = rng.below(7);
+    let at = a.rebase(LANG);
+    put(a, b, at, lang);
+}
+
+#[test]
+fn fmod_handlers() {
+    let mut rng = Xorshift(0x5eed_0021);
+    for (world, mut a, mut b) in worlds() {
+        let (a, b) = (&mut a, &mut b);
+        for _ in 0..10 {
+            for (cmd, &at) in x::HANDLERS.iter().enumerate() {
+                let cmd = u32::try_from(cmd).unwrap();
+                a.reset_heap();
+                b.reset_heap();
+                let (fmod, _) = fake_fmod(a, b, &mut rng);
+                fmod_rets(a, b, &mut rng);
+                let args = alloc(a, b, 16);
+                for i in 0..4 {
+                    let v = arg_word(&mut rng);
+                    put(a, b, args + 4 * i, v);
+                }
+                cdecl(&format!("handler {cmd:#x}"), a, b, at, &[fmod, args], |h| {
+                    x::handle(h, cmd, fmod, args)
+                });
+            }
+        }
+        eprintln!("{world}: the 70 FMOD command handlers agree");
+    }
+}
+
+/// One thiscall case per `address name (args) => bridge`.
+macro_rules! method {
+    ($a:ident, $b:ident, $this:expr, $( $at:literal $name:literal ($($w:expr),*) => $f:expr ),* $(,)?) => {
+        $( check($name, $a, $b, $at, Conv::Thiscall($this), &[$($w),*], $f); )*
+    };
+}
+
+#[test]
+fn ffx_fmod_methods() {
+    let mut rng = Xorshift(0x5eed_0022);
+    for (world, mut a, mut b) in worlds() {
+        let (a, b) = (&mut a, &mut b);
+        for _ in 0..30 {
+            a.reset_heap();
+            b.reset_heap();
+            let (m, _) = fake_fmod(a, b, &mut rng);
+            fmod_rets(a, b, &mut rng);
+            let w: [u32; 4] = std::array::from_fn(|_| arg_word(&mut rng));
+            let (p, q, r, s4) = (w[0], w[1], w[2], w[3]);
+            let id = [rng.below(0xb6), 0xb5, 0xb6, p][rng.below(4) as usize];
+            let t = [0, 1, 2, p][rng.below(4) as usize];
+            let kind = [0, 1, 2, q][rng.below(4) as usize];
+            let v = volume(&mut rng).to_bits();
+            method!(a, b, m,
+                0x0070_67d0 "FfxFmod::getNowPlayMusic" () => |h| Some(x::get_now_play_music(h, m)),
+                0x0070_6920 "FfxFmod::initLoadMasterBank" () => |h| {
+                    x::init_load_master_bank(h, m);
+                    None
+                },
+                0x0070_69e0 "FfxFmod::musicClear" (p) => |h| Some(x::music_clear(h, m, p)),
+                0x0070_69f0 "FfxFmod::musicClearAll" () => |h| Some(x::music_clear_all(h, m)),
+                0x0070_6a00 "FfxFmod::musicCrossPlay" (p, q) => |h| Some(x::music_cross_play(h, m, p, q)),
+                0x0070_6a20 "FfxFmod::musicDataSend" (p) => |h| Some(x::music_data_send(h, m, p)),
+                0x0070_6a40 "FfxFmod::musicMultiPlay" (id) => |h| Some(x::music_multi_play(h, m, id)),
+                0x0070_6a70 "FfxFmod::musicPauseAll" (p) => |h| Some(x::music_pause_all(h, m, p)),
+                0x0070_6a80 "FfxFmod::musicPhrasePlay" (id, q) => |h| Some(x::music_multi_play(h, m, id)),
+                0x0070_6ad0 "FfxFmod::musicPlayState" (p) => |h| Some(x::music_play_state(h, m, p)),
+                0x0070_6ae0 "FfxFmod::musicRead" (p) => |h| Some(x::music_read(h, m, p)),
+                0x0070_6b00 "FfxFmod::musicReplayPointClear" (id) => |h| Some(x::music_replay_point_clear(h, m, id)),
+                0x0070_6b30 "FfxFmod::musicReplayPointSet" () => |h| Some(x::music_replay_point_set(h, m)),
+                0x0070_6b90 "FfxFmod::musicStart" (p) => |h| Some(x::music_start(h, m, p)),
+                0x0070_6ba0 "FfxFmod::musicStop" (p) => |h| Some(x::music_stop(h, m, p)),
+                0x0070_6bb0 "FfxFmod::musicStopAll" () => |h| Some(x::music_stop_all(h, m)),
+                0x0070_6bc0 "FfxFmod::musicSwitchBGM" (t) => |h| Some(x::music_switch_bgm(h, m, t)),
+                0x0070_6bf0 "FfxFmod::musicSyncStandby" () => |h| Some(x::music_sync_standby(h, m)),
+                0x0070_6c20 "FfxFmod::musicVolumeDirect" (p, v, r) => |h| Some(x::music_volume_direct(h, m, p, v, r)),
+                0x0070_6c40 "FfxFmod::musicVolumeFadeOut" (p, q) => |h| Some(x::music_volume_fade_out(h, m, p, q)),
+                0x0070_6c50 "FfxFmod::musicVolumeTranslate" (p, q, r) => |h| Some(x::music_volume_translate(h, m, p, q, r)),
+                0x0070_6db0 "FfxFmod::sfxDelayStart" (p, q, r, s4) => |h| Some(x::sfx_call(h, m, xc::SFX_DELAY_START, &[p, q, r, s4])),
+                0x0070_6dd0 "FfxFmod::sfxForceStart" (p, q, r) => |h| Some(x::sfx_call(h, m, xc::SFX_FORCE_START, &[p, q, r])),
+                0x0070_6df0 "FfxFmod::sfxIsPlaying" (p) => |h| Some(x::sfx_is_playing(h, m, p)),
+                0x0070_6e10 "FfxFmod::sfxIspaused" () => |h| Some(x::sfx_is_paused(h, m)),
+                0x0070_6e20 "FfxFmod::sfxLoad" (p, t) => |h| Some(x::sfx_load(h, m, p, t)),
+                0x0070_6e50 "FfxFmod::sfxPause" (t) => |h| Some(x::sfx_call(h, m, xc::SFX_PAUSE, &[t])),
+                0x0070_6e70 "FfxFmod::sfxPlayBattleStreaming" (p, q, r) => |h| Some(x::sfx_play_battle_streaming(h, m, p, q, r)),
+                0x0070_6e90 "FfxFmod::sfxSetPan" (p, q) => |h| Some(x::sfx_call(h, m, xc::SFX_SET_PAN, &[p, q])),
+                0x0070_6eb0 "FfxFmod::sfxSetPan/3" (p, q, r) => |h| Some(x::sfx_call(h, m, xc::SFX_SET_PAN_TRANSLATE, &[p, q, r])),
+                0x0070_6ed0 "FfxFmod::sfxSetVolume" (p, q) => |h| Some(x::sfx_call(h, m, xc::SFX_SET_VOLUME, &[p, q])),
+                0x0070_6ef0 "FfxFmod::sfxSetVolume/3" (p, q, r) => |h| Some(x::sfx_call(h, m, xc::SFX_SET_VOLUME_TRANSLATE, &[p, q, r])),
+                0x0070_6f10 "FfxFmod::sfxStart" (p, q, r) => |h| Some(x::sfx_call(h, m, xc::SFX_START, &[p, q, r])),
+                0x0070_6f30 "FfxFmod::sfxStop" (p) => |h| Some(x::sfx_call(h, m, xc::SFX_STOP, &[p])),
+                0x0070_6f50 "FfxFmod::sfxStopAllNonBlockingSound" (p) => |h| Some(x::sfx_call(h, m, xc::SFX_STOP_ALL_NON_BLOCKING, &[p, 0])),
+                0x0070_6f70 "FfxFmod::sfxStopAllNonloopSound" () => |h| Some(x::sfx_call(h, m, xc::SFX_STOP_ALL_NONLOOP, &[])),
+                0x0070_6f80 "FfxFmod::sfxStopNonBlockingSound" (p) => |h| Some(x::sfx_call(h, m, xc::SFX_STOP_NON_BLOCKING, &[p])),
+                0x0070_6fa0 "FfxFmod::sfxUnloadAllData" () => |h| Some(x::sfx_call(h, m, xc::SFX_UNLOAD_PROJECTS, &[0, 0])),
+                0x0070_6fb0 "FfxFmod::sfxUnloadBySeq" (p) => |h| Some(x::sfx_call(h, m, xc::SFX_UNLOAD_BY_SEQ, &[p])),
+                0x0070_6fd0 "FfxFmod::shoutStart" (p, q, r) => |h| Some(x::shout_start(h, m, p, q, r)),
+                0x0070_7080 "FfxFmod::soundInit" () => |h| Some(x::sound_init(h, m)),
+                0x0070_71c0 "FfxFmod::soundPlayStatus" () => |h| Some(x::sound_play_status(h, m)),
+                0x0070_71e0 "FfxFmod::soundSetMasterVolume" (v) => |h| Some(x::sound_set_volume(h, m, x::MASTER_VOLUME, v)),
+                0x0070_7280 "FfxFmod::soundSetMusicVolume" (v) => |h| Some(x::sound_set_volume(h, m, x::MUSIC_VOLUME, v)),
+                0x0070_72f0 "FfxFmod::soundSetMute" (p, kind) => |h| Some(x::sound_set_mute(h, m, p, kind)),
+                0x0070_7330 "FfxFmod::soundSetSfxVolume" (v) => |h| Some(x::sound_set_volume(h, m, x::SFX_VOLUME, v)),
+                0x0070_73a0 "FfxFmod::soundSetVoiceVolume" (v) => |h| Some(x::sound_set_volume(h, m, x::VOICE_VOLUME, v)),
+                0x0070_7410 "FfxFmod::soundStageFlush" (p) => |h| Some(x::sound_stage_flush(h, m, p)),
+                0x0070_7420 "FfxFmod::soundUpdate" () => |h| Some(x::sound_update(h, m)),
+                0x0070_7470 "FfxFmod::voiceClear" () => |h| Some(x::voice_clear(h, m)),
+                0x0070_7480 "FfxFmod::voiceDataChange" (p) => |h| Some(x::voice_data_change(h, m, p)),
+                0x0070_74b0 "FfxFmod::voiceIsPaused" () => |h| Some(x::voice_is_paused(h, m)),
+                0x0070_74e0 "FfxFmod::voicePlayStatus" () => |h| Some(x::sound_play_status(h, m)),
+                0x0070_74f0 "FfxFmod::voiceRead" (p) => |h| Some(x::voice_read(h, m, p)),
+                0x0070_7510 "FfxFmod::voiceReleaseData" () => |h| Some(x::voice_release_data(h, m)),
+                0x0070_7520 "FfxFmod::voiceSetPaused" (p) => |h| Some(x::voice_set_paused(h, m, p)),
+                0x0070_7530 "FfxFmod::voiceSetStartSignal" (p) => |h| Some(x::voice_set_start_signal(h, m, p)),
+                0x0070_7540 "FfxFmod::voiceStart" (p, q) => |h| Some(x::voice_start(h, m, p, q)),
+                0x0070_7550 "FfxFmod::voiceStop" () => |h| Some(x::voice_stop(h, m)),
+                0x0070_7560 "FfxFmod::voiceVolumeDirect" (v, q) => |h| Some(x::voice_volume_direct(h, m, v, q)),
+                0x0070_7580 "FfxFmod::voiceVolumeTranslate" (p, q) => |h| Some(x::voice_volume_translate(h, m, p, q)),
+            );
+        }
+        eprintln!("{world}: FfxFmod methods agree");
+    }
+}
+
+/// The object methods ported (left unrecorded in `fmod_objects`).
+const OBJECTS: &[u32] = &[
+    xc::MUSIC_PLAY_STATE,
+    xc::MUSIC_SYNC_STANDBY,
+    xc::MUSIC_VOLUME_FADE_OUT,
+    xc::VOICE_SET_ENTIRE_VOLUME,
+    xc::VOICE_SET_MUTE,
+    xc::VOICE_SET_PAUSED,
+    xc::VOICE_SET_LANG,
+    xc::VOICE_SHOUT_START,
+    xc::VOICE_SOUND_STAGE_FLUSH,
+    xc::SFX_CAN_START_NEW_EVENT,
+    xc::SFX_DELAY_START,
+    xc::SFX_FORCE_START,
+    xc::SFX_START,
+    xc::SFX_SET_PAN,
+    xc::SFX_SET_PAN_TRANSLATE,
+    xc::SFX_SET_VOLUME,
+    xc::SFX_SET_VOLUME_TRANSLATE,
+    xc::SFX_STOP,
+    xc::SFX_STOP_NON_BLOCKING,
+];
+
+#[test]
+fn fmod_objects() {
+    let mut rng = Xorshift(0x5eed_0023);
+    for (world, mut a, mut b) in worlds_except(OBJECTS) {
+        let (a, b) = (&mut a, &mut b);
+        for _ in 0..60 {
+            a.reset_heap();
+            b.reset_heap();
+            let (ffx, ids) = fake_fmod(a, b, &mut rng);
+            fmod_rets(a, b, &mut rng);
+            let [music, voice, sfx] =
+                [x::MUSIC, x::VOICE, x::SFX].map(|o| Mem::read::<u32>(a, ffx + o));
+            let w: [u32; 4] = std::array::from_fn(|_| arg_word(&mut rng));
+            let (p, q, r, s4) = (w[0], w[1], w[2], w[3]);
+            let id = [rng.below(0xb6), 0xb5, 0xb6, p][rng.below(4) as usize];
+            let v = volume(&mut rng).to_bits();
+            let lang = [0, 1, 2, 3, 4, 5, p][rng.below(7) as usize];
+            let flush = [0x189, 0x18e, 0x188, 0x18f, p][rng.below(5) as usize];
+            let paused = [0, 1, 2, p][rng.below(4) as usize];
+            for g in x::STAGE_FLUSH {
+                let v = rng.word();
+                let at = a.rebase(g);
+                put(a, b, at, v);
+            }
+            method!(a, b, music,
+                0x0070_9060 "FmodMusic::playState" (p) => |h| Some(x::music_object_play_state(h, music)),
+                0x0070_9d80 "FmodMusic::syncStandby" () => |h| Some(x::music_object_sync_standby(h, music)),
+                0x0070_9eb0 "FmodMusic::volumeFadeOut" (id, q) => |h| Some(x::music_object_volume_fade_out(h, music, id, q)),
+            );
+            method!(a, b, voice,
+                0x0070_b2b0 "FmodVoice::setEntireVolume" (v) => |h| x::voice_set_entire_volume(h, voice, v),
+                0x0070_b330 "FmodVoice::setMute" (paused) => |h| Some(x::voice_set_mute(h, voice, paused)),
+                0x0070_b370 "FmodVoice::setPaused" (paused) => |h| Some(x::voice_object_set_paused(h, voice, paused)),
+                0x0070_b3f0 "FfxFmod_soundInit_setLang" (lang) => |h| Some(x::voice_set_lang(h, voice, lang)),
+                0x0070_b430 "FmodVoice::shoutStart" (p, q, r, s4) => |h| Some(x::voice_shout_start(h, voice, [p, q, r, s4])),
+                0x0070_b570 "FmodVoice::soundStageFlush" (flush) => |h| Some(x::voice_sound_stage_flush(h, voice, flush)),
+            );
+            // the sfx: ids of the tree, one, the stop limit, any
+            let sid = if !ids.is_empty() && rng.below(3) != 0 {
+                ids[rng.below(u32::try_from(ids.len()).unwrap()) as usize]
+            } else {
+                [1, 0x7f, 0x80, p][rng.below(4) as usize]
+            };
+            let key = alloc(a, b, 4);
+            put(a, b, key, sid);
+            let tree = sfx + x::SFX_EVENTS;
+            check(
+                "FmodSfx tree find",
+                a,
+                b,
+                0x0070_ba70,
+                Conv::Thiscall(tree),
+                &[key],
+                |h| Some(x::sfx_find(h, tree, sid)),
+            );
+            check_masked(
+                "FmodSfx::canStartNewEvent",
+                a,
+                b,
+                0x0070_c7d0,
+                Conv::Thiscall(sfx),
+                &[sid],
+                0xff,
+                |h| Some(x::sfx_can_start_new_event(h, sfx, sid)),
+            );
+            method!(a, b, sfx,
+                0x0070_cc30 "FmodSfx_delayStart" (sid, q, r, s4) => |h| x::sfx_delay_start(h, sfx, [sid, q, r, s4]),
+                0x0070_ccd0 "FmodSfx::forceStart" (sid, q, r) => |h| x::sfx_force_start(h, sfx, sid, q, r),
+                0x0070_d890 "FmodSfx_Start" (sid, q, r) => |h| x::sfx_start(h, sfx, sid, q, r),
+                0x0070_d640 "FmodSfx::setPan" (sid, q) => |h| {
+                    x::sfx_set_pan(h, sfx, sid, q);
+                    None
+                },
+                0x0070_d690 "FmodSfx::setPan/3" (sid, q, r) => |h| {
+                    x::sfx_set_pan_translate(h, sfx, sid, q, r);
+                    None
+                },
+                0x0070_d6e0 "FmodSfx::setVolume" (sid, q) => |h| {
+                    x::sfx_set_volume(h, sfx, sid, q);
+                    None
+                },
+                0x0070_d730 "FmodSfx::setVolume/3" (sid, q, r) => |h| {
+                    x::sfx_set_volume_translate(h, sfx, sid, q, r);
+                    None
+                },
+                0x0070_d8f0 "FmodSfx::stop" (sid) => |h| {
+                    x::sfx_stop(h, sfx, sid);
+                    None
+                },
+                0x0070_db90 "FmodSfx::stopNonBlockingSound" (sid) => |h| x::sfx_stop_non_blocking(h, sfx, sid),
+            );
+        }
+        eprintln!("{world}: FMOD object methods agree");
+    }
 }

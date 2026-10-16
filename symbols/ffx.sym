@@ -2758,34 +2758,243 @@
 0x00705fa0 function cdc_Matrix_RotY           # thiscall(m, sin, cos), ret 8: columns 0 and 2 of each row turned (z' = z c - x s, x' = z s + x c); returns m; between RotX and RotZ, called by FFXVu0RotMatrixY; name ours
 0x00706070 function cdc_Matrix_RotZ           # fh v3:exact 0x00706160 cdc::Matrix::RotZ
 0x007063f0 function cdc_Transpose             # fh v3:exact 0x007064e0 cdc::Transpose
+0x007067d0 function FfxFmod_getNowPlayMusic   # thiscall(FfxFmod) -> FmodMusic +0x18 (the playing music); Switch FfxFmod::getNowPlayMusic by the PC build's alphabetical order of FfxFmod.cpp
 0x00706820 function FfxFmod_initEventSystem      # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'EventSystem create failed!\\n'; Switch 0x710029ef80 FfxFmod::initEventSystem (symbols from Fahrenheit's server export)
+0x00706920 function FfxFmod_initLoadMasterBank # thiscall(FfxFmod), cmd 0x2b: FmodMusic/FmodVoice initTempData (empty on PC); Switch FfxFmod::initLoadMasterBank by the PC build's alphabetical order of FfxFmod.cpp
+0x007069e0 function FfxFmod_musicClear        # thiscall(FfxFmod; id), cmd 0x25: jmp FmodMusic::clear; Switch FfxFmod::musicClear by the PC build's alphabetical order of FfxFmod.cpp
+0x007069f0 function FfxFmod_musicClearAll     # thiscall(FfxFmod), cmd 0x2d: jmp FmodMusic::clearAll; Switch FfxFmod::musicClearAll by the PC build's alphabetical order of FfxFmod.cpp
 0x00706a00 function FfxFmod_musicVolumeFadeOut # fh switch:bsim1.00 0x710029f720 FfxFmod::musicVolumeFadeOut
+0x00706a20 function FfxFmod_musicDataSend     # thiscall(FfxFmod; id), cmd 0x15: FmodMusic::dataSend(id, event system); Switch FfxFmod::musicDataSend by the PC build's alphabetical order of FfxFmod.cpp
+0x00706a40 function FfxFmod_musicMultiPlay    # thiscall(FfxFmod; id) -> 0, cmd 0x21: FmodMusic::start for id <= 0xb5; Switch FfxFmod::musicMultiPlay by the PC build's alphabetical order of FfxFmod.cpp
+0x00706a60 function FfxFmod_musicMuteSet      # thiscall(FfxFmod; a, b) -> 0, cmd 0x24: empty on PC; Switch FfxFmod::musicMuteSet by the PC build's alphabetical order of FfxFmod.cpp
+0x00706a70 function FfxFmod_musicPauseAll     # thiscall(FfxFmod; flag), cmd 0x2f: jmp FmodMusic::pauseAll; Switch FfxFmod::musicPauseAll by the PC build's alphabetical order of FfxFmod.cpp
+0x00706a80 function FfxFmod_musicPhrasePlay   # thiscall(FfxFmod; id, phrase) -> 0, cmd 0x1b: FmodMusic::start for id <= 0xb5; Switch FfxFmod::musicPhrasePlay by the PC build's alphabetical order of FfxFmod.cpp
+0x00706aa0 function FfxFmod_musicPitchDirect  # thiscall(FfxFmod; a, b) -> 0, cmd 0x20: empty on PC; Switch FfxFmod::musicPitchDirect by the PC build's alphabetical order of FfxFmod.cpp
+0x00706ab0 function FfxFmod_musicPitchTranslate # thiscall(FfxFmod; a, b, c) -> 0, cmd 0x1f: empty on PC; Switch FfxFmod::musicPitchTranslate by the PC build's alphabetical order of FfxFmod.cpp
+0x00706ac0 function FfxFmod_musicPlayFast     # thiscall(FfxFmod; id) -> 0, cmd 0x18: empty on PC; Switch FfxFmod::musicPlayFast by the PC build's alphabetical order of FfxFmod.cpp
+0x00706ad0 function FfxFmod_musicPlayState    # thiscall(FfxFmod; id), cmd 0x16: jmp FmodMusic::playState; Switch FfxFmod::musicPlayState by the PC build's alphabetical order of FfxFmod.cpp
 0x00706ae0 function FfxFmod_musicRead         # fh switch:bsim1.00 0x710029f820 FfxFmod::musicRead
+0x00706b00 function FfxFmod_musicReplayPointClear # thiscall(FfxFmod; id) -> 0, cmd 0x1a: music record +4 = 0 for id <= 0xb5; Switch FfxFmod::musicReplayPointClear by the PC build's alphabetical order of FfxFmod.cpp
+0x00706b30 function FfxFmod_musicReplayPointSet # thiscall(FfxFmod) -> 0, cmd 0x19: the playing music's record +4 = 1; Switch FfxFmod::musicReplayPointSet by the PC build's alphabetical order of FfxFmod.cpp
 0x00706b50 function FfxFmod_musicSeqCheck     # fh v3:exact 0x00706c40 FfxFmod::musicSeqCheck
 0x00706b70 function FfxFmod_setMusicStartId   # thiscall(fmod; id), ret 4: FmodMusic(+0xc) +0x18 = id; name ours
 0x00706b80 function FfxFmod_setMusicStartSignal # thiscall(fmod; on), ret 4: FmodMusic(+0xc) +0x20 = on; name ours
+0x00706b90 function FfxFmod_musicStart        # thiscall(FfxFmod; id), cmd 0x27: jmp FmodMusic::start; Switch FfxFmod::musicStart by the PC build's alphabetical order of FfxFmod.cpp
+0x00706ba0 function FfxFmod_musicStop         # thiscall(FfxFmod; id), cmd 0x26: jmp FmodMusic::stop; Switch FfxFmod::musicStop by the PC build's alphabetical order of FfxFmod.cpp
+0x00706bb0 function FfxFmod_musicStopAll      # thiscall(FfxFmod), cmd 0x2c: jmp FmodMusic::stopAll; Switch FfxFmod::musicStopAll by the PC build's alphabetical order of FfxFmod.cpp
+0x00706bc0 function FfxFmod_musicSwitchBGM    # thiscall(FfxFmod; type), cmd 0x2e: FmodMusic::switchBGM(type, event system) for types 0/1; Switch FfxFmod::musicSwitchBGM by the PC build's alphabetical order of FfxFmod.cpp
+0x00706bf0 function FfxFmod_musicSyncStandby  # thiscall(FfxFmod), cmd 0x14: jmp FmodMusic::syncStandby; Switch FfxFmod::musicSyncStandby by the PC build's alphabetical order of FfxFmod.cpp
+0x00706c00 function FfxFmod_musicTempoDirect  # thiscall(FfxFmod; a) -> 0, cmd 0x1e: empty on PC; Switch FfxFmod::musicTempoDirect by the PC build's alphabetical order of FfxFmod.cpp
+0x00706c10 function FfxFmod_musicTempoTranslate # thiscall(FfxFmod; a, b) -> 0, cmd 0x1d: empty on PC; Switch FfxFmod::musicTempoTranslate by the PC build's alphabetical order of FfxFmod.cpp
+0x00706c20 function FfxFmod_musicVolumeDirect # thiscall(FfxFmod; id, f32, c), cmd 0x23: FmodMusic::volumeDirect; Switch FfxFmod::musicVolumeDirect by the PC build's alphabetical order of FfxFmod.cpp
+0x00706c40 function FfxFmod_musicVolumeFadeOut2 # thiscall(FfxFmod; id, frames), cmd 0x1c: jmp FmodMusic::volumeFadeOut (0x00709eb0); Switch FfxFmod::musicVolumeFadeOut by the alphabetical order, but ffx.sym already gives that name to 0x00706a00 (fh BSim), which is musicCrossPlay by the order and command 0x17
+0x00706c50 function FfxFmod_musicVolumeTranslate # thiscall(FfxFmod; id, frames, volume), cmd 0x22: jmp FmodMusic::volumeTranslate; Switch FfxFmod::musicVolumeTranslate by the PC build's alphabetical order of FfxFmod.cpp
+0x00706db0 function FfxFmod_sfxDelayStart     # thiscall(FfxFmod; a, b, c, d) -> 0, cmd 0x35: FmodSfx_delayStart; Switch FfxFmod::sfxDelayStart by the PC build's alphabetical order of FfxFmod.cpp
+0x00706dd0 function FfxFmod_sfxForceStart     # thiscall(FfxFmod; a, b, c) -> 0, cmd 0x34: FmodSfx::forceStart; Switch FfxFmod::sfxForceStart by the PC build's alphabetical order of FfxFmod.cpp
+0x00706df0 function FfxFmod_sfxIsPlaying      # thiscall(FfxFmod; id) -> movzx al, cmd 0x3f: FmodSfx::isPlaying; Switch FfxFmod::sfxIsPlaying by the PC build's alphabetical order of FfxFmod.cpp
+0x00706e10 function FfxFmod_sfxIspaused       # thiscall(FfxFmod) -> FmodSfx +0 byte, cmd 0x41; Switch FfxFmod::sfxIspaused by the PC build's alphabetical order of FfxFmod.cpp
 0x00706e20 function FfxFmod_sfxLoad           # fh switch:bsim1.00 0x710029f870 FfxFmod::sfxLoad
 0x00706e50 function FfxFmod_sfxPause             # layout: alphabetical run between FfxFmod_sfxLoad and FfxFmod_sfxPlayBattleStreaming (1 unnamed in the gap); Switch 0x710029f9b0 FfxFmod::sfxPause is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00706e70 function FfxFmod_sfxPlayBattleStreaming # fh switch:bsim1.00 0x710029fa90 FfxFmod::sfxPlayBattleStreaming
+0x00706e90 function FfxFmod_sfxSetPan         # thiscall(FfxFmod; id, pan) -> 0, cmd 0x3d: FmodSfx::setPan (2 args); Switch FfxFmod::sfxSetPan by the PC build's alphabetical order of FfxFmod.cpp
+0x00706eb0 function FfxFmod_sfxSetPan3        # thiscall(FfxFmod; id, pan, frames) -> 0, cmd 0x3e: FmodSfx::setPan (3 args); the second sfxSetPan; Switch FfxFmod::sfxSetPan3 by the PC build's alphabetical order of FfxFmod.cpp
+0x00706ed0 function FfxFmod_sfxSetVolume      # thiscall(FfxFmod; id, volume) -> 0, cmd 0x3b: FmodSfx::setVolume (2 args); Switch FfxFmod::sfxSetVolume by the PC build's alphabetical order of FfxFmod.cpp
+0x00706ef0 function FfxFmod_sfxSetVolume3     # thiscall(FfxFmod; id, volume, frames) -> 0, cmd 0x3c: FmodSfx::setVolume (3 args); the second sfxSetVolume; Switch FfxFmod::sfxSetVolume3 by the PC build's alphabetical order of FfxFmod.cpp
+0x00706f10 function FfxFmod_sfxStart          # thiscall(FfxFmod; id, b, c) -> 0, cmd 0x33: FmodSfx_Start; Switch FfxFmod::sfxStart by the PC build's alphabetical order of FfxFmod.cpp
+0x00706f30 function FfxFmod_sfxStop           # thiscall(FfxFmod; id) -> 0, cmd 0x36: FmodSfx::stop; Switch FfxFmod::sfxStop by the PC build's alphabetical order of FfxFmod.cpp
+0x00706f50 function FfxFmod_sfxStopAllNonBlockingSound # thiscall(FfxFmod; a) -> 0, cmd 0x37: FmodSfx::stopAllNonBlockingSound(a, 0); Switch FfxFmod::sfxStopAllNonBlockingSound by the PC build's alphabetical order of FfxFmod.cpp
+0x00706f70 function FfxFmod_sfxStopAllNonloopSound # thiscall(FfxFmod) -> 0, cmd 0x39; Switch FfxFmod::sfxStopAllNonloopSound by the PC build's alphabetical order of FfxFmod.cpp
+0x00706f80 function FfxFmod_sfxStopNonBlockingSound # thiscall(FfxFmod; id) -> 0, cmd 0x38; Switch FfxFmod::sfxStopNonBlockingSound by the PC build's alphabetical order of FfxFmod.cpp
+0x00706fa0 function FfxFmod_sfxUnloadAllData  # thiscall(FfxFmod) -> 0, cmd 0x31: FmodSfx::unloadProjects(0, 0); Switch FfxFmod::sfxUnloadAllData by the PC build's alphabetical order of FfxFmod.cpp
+0x00706fb0 function FfxFmod_sfxUnloadBySeq    # thiscall(FfxFmod; seq) -> 0, cmd 0x32: FmodSfx::unloadProjectBySeq; Switch FfxFmod::sfxUnloadBySeq by the PC build's alphabetical order of FfxFmod.cpp
+0x00706fd0 function FfxFmod_shoutStart        # thiscall(FfxFmod; a, b, c), cmd 6: FmodVoice::shoutStart(a, b, c, low-level System); Switch FfxFmod::shoutStart by the PC build's alphabetical order of FfxFmod.cpp
+0x00706ff0 function FfxFmod_shutDown          # thiscall(FfxFmod), cmd 0x29: the objects' shutdowns, EventSystem unload/release (ERRCHECK lines 0xc9/0xcd); Switch FfxFmod::shutDown by the PC build's alphabetical order of FfxFmod.cpp
 0x00707080 function FfxFmod_soundInit         # fh v3:exact+call.cs 0x00707170 thiscall
+0x007070d0 function FfxFmod_soundLoop         # thiscall(FfxFmod), cmd 3: elapsed time (0x00641420), EventSystem::update, the objects' updates; Switch FfxFmod::soundLoop by the PC build's alphabetical order of FfxFmod.cpp
+0x007071c0 function FfxFmod_soundPlayStatus   # thiscall(FfxFmod) -> FmodVoice +0x44 | +0x40, cmd 5; Switch FfxFmod::soundPlayStatus by the PC build's alphabetical order of FfxFmod.cpp
+0x007071e0 function FfxFmod_soundSetMasterVolume # thiscall(FfxFmod; f32) -> 0, cmd 0x42: clamped to 0..1, kept at +0x18; on change the three objects' setEntireVolume; Switch FfxFmod::soundSetMasterVolume by the PC build's alphabetical order of FfxFmod.cpp
+0x00707280 function FfxFmod_soundSetMusicVolume # thiscall(FfxFmod; f32) -> 0, cmd 0x43: +0x1c, FmodMusic::setEntireVolume(x * master); Switch FfxFmod::soundSetMusicVolume by the PC build's alphabetical order of FfxFmod.cpp
+0x007072f0 function FfxFmod_soundSetMute      # thiscall(FfxFmod; id, kind) -> 0, cmd 0: kind 1 FmodMusic::setMute, 2 FmodVoice::setMute; Switch FfxFmod::soundSetMute by the PC build's alphabetical order of FfxFmod.cpp
+0x00707330 function FfxFmod_soundSetSfxVolume # thiscall(FfxFmod; f32) -> 0, cmd 0x45: +0x24, FmodSfx::setEntireVolume(x * master); Switch FfxFmod::soundSetSfxVolume by the PC build's alphabetical order of FfxFmod.cpp
+0x007073a0 function FfxFmod_soundSetVoiceVolume # thiscall(FfxFmod; f32) -> 0, cmd 0x44: +0x20, FmodVoice::setEntireVolume(x * master); Switch FfxFmod::soundSetVoiceVolume by the PC build's alphabetical order of FfxFmod.cpp
+0x00707410 function FfxFmod_soundStageFlush   # thiscall(FfxFmod; x), cmd 4: jmp FmodVoice::soundStageFlush; Switch FfxFmod::soundStageFlush by the PC build's alphabetical order of FfxFmod.cpp
+0x00707420 function FfxFmod_soundUpdate       # thiscall(FfxFmod) -> 0, cmd 2: EventSystem::update when created (ERRCHECK line 0x121); Switch FfxFmod::soundUpdate by the PC build's alphabetical order of FfxFmod.cpp
+0x00707470 function FfxFmod_voiceClear        # thiscall(FfxFmod): jmp FmodVoice::clear; Switch FfxFmod::voiceClear by the PC build's alphabetical order of FfxFmod.cpp
+0x00707480 function FfxFmod_voiceDataChange   # thiscall(FfxFmod; id) -> 0, cmd 9: FmodVoice_dataChange; on success FmodMusic +0x28 = FmodVoice +0; Switch FfxFmod::voiceDataChange by the PC build's alphabetical order of FfxFmod.cpp
+0x007074b0 function FfxFmod_voiceIsPaused     # thiscall(FfxFmod) -> FmodVoice +0x54, cmd 0x12; Switch FfxFmod::voiceIsPaused by the PC build's alphabetical order of FfxFmod.cpp
+0x007074c0 function FfxFmod_voicePanDirect    # thiscall(FfxFmod; a) -> 0, cmd 0xc: empty on PC; Switch FfxFmod::voicePanDirect by the PC build's alphabetical order of FfxFmod.cpp
+0x007074d0 function FfxFmod_voicePanTranslate # thiscall(FfxFmod; a, b) -> 0, cmd 0xb: empty on PC; Switch FfxFmod::voicePanTranslate by the PC build's alphabetical order of FfxFmod.cpp
+0x007074e0 function FfxFmod_voicePlayStatus   # thiscall(FfxFmod) -> FmodVoice +0x44 | +0x40, cmd 0x11; Switch FfxFmod::voicePlayStatus by the PC build's alphabetical order of FfxFmod.cpp
 0x007074f0 function FfxFmod_voiceRead         # fh switch:bsim1.00 0x710029f5e0 FfxFmod::voiceRead
+0x00707510 function FfxFmod_voiceReleaseData  # thiscall(FfxFmod), cmd 7: jmp FmodVoice::releaseData; Switch FfxFmod::voiceReleaseData by the PC build's alphabetical order of FfxFmod.cpp
+0x00707520 function FfxFmod_voiceSetPaused    # thiscall(FfxFmod; x), cmd 8: jmp FmodVoice::setPaused; Switch FfxFmod::voiceSetPaused by the PC build's alphabetical order of FfxFmod.cpp
+0x00707530 function FfxFmod_voiceSetStartSignal # thiscall(FfxFmod; x) -> x: FmodVoice +0x44 = x; Switch FfxFmod::voiceSetStartSignal by the PC build's alphabetical order of FfxFmod.cpp
+0x00707540 function FfxFmod_voiceStart        # thiscall(FfxFmod; pan, volume), cmd 0xf: jmp FmodVoice::start; Switch FfxFmod::voiceStart by the PC build's alphabetical order of FfxFmod.cpp
+0x00707550 function FfxFmod_voiceStop         # thiscall(FfxFmod), cmd 0xa: jmp FmodVoice::stop; Switch FfxFmod::voiceStop by the PC build's alphabetical order of FfxFmod.cpp
+0x00707560 function FfxFmod_voiceVolumeDirect # thiscall(FfxFmod; f32, b), cmd 0xe: FmodVoice::volumeDirect; Switch FfxFmod::voiceVolumeDirect by the PC build's alphabetical order of FfxFmod.cpp
+0x00707580 function FfxFmod_voiceVolumeTranslate # thiscall(FfxFmod; frames, volume), cmd 0xd: jmp FmodVoice::volumeTranslate; Switch FfxFmod::voiceVolumeTranslate by the PC build's alphabetical order of FfxFmod.cpp
 0x00707590 function FMOD_ErrorString             # structure: switch over the FMOD_RESULT codes returning "No errors.", "Tried to call lock a second time before unlock was called. "...; the fmod_errors.h helper; only caller ERRCHECK
 0x007079d0 function ERRCHECK                     # str: references "[Fmod Error]" and "FMOD error! (%d) %s:  _fileName = %s  _lineNum = %ld"; (result, file, line): prints FMOD_ErrorString(result) through printToOutput when result != 0; Switch _ERRCHECK (0x71002a04c0) holds the same format string; 57 callers in the Fmod code
 0x00707a50 function eventcallback                # structure: FMOD event callback (instance, type, ...): zeroes the out parameter for types 2 and 4; Switch eventcallback (0x71002a09f0, 76 bytes) sits between _ERRCHECK and fmodMemStats, as here (alphabetical run _ERRCHECK, eventcallback, fmodMemStats, getFullFilename, printToOutput)
 0x00707a70 function fmodMemStats                 # structure: queries FMOD memory statistics and returns the maximum; Switch fmodMemStats (calls FMOD_Memory_GetStats) sorts between eventcallback and getFullFilename, as here
 0x00707aa0 function getFullFilename              # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/Sound_PC/'; Switch 0x71002a0a90 getFullFilename (symbols from Fahrenheit's server export)
 0x00707b20 function printToOutput                # structure: (prefix, fmt, ...): vsprintf, sprintf("%s%s", prefix, text), Phyre_PhyrePrintf(2, ...); Switch printToOutput (0x71002a0940, 168 bytes) follows getFullFilename, as here
+0x00707b90 function FmodCmd_soundSetMute      # cdecl(FfxFmod, args*): FMOD command 0x00's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::soundSetMute; name ours
+0x00707bb0 function FmodCmd_soundInit         # cdecl(FfxFmod, args*): FMOD command 0x01's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::soundInit; name ours
+0x00707bc0 function FmodCmd_soundUpdate       # cdecl(FfxFmod, args*): FMOD command 0x02's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::soundUpdate; name ours
+0x00707bd0 function FmodCmd_soundLoop         # cdecl(FfxFmod, args*): FMOD command 0x03's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::soundLoop; name ours
+0x00707be0 function FmodCmd_soundStageFlush   # cdecl(FfxFmod, args*): FMOD command 0x04's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::soundStageFlush; name ours
+0x00707c00 function FmodCmd_soundPlayStatus   # cdecl(FfxFmod, args*): FMOD command 0x05's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::soundPlayStatus; name ours
+0x00707c10 function FmodCmd_shoutStart        # cdecl(FfxFmod, args*): FMOD command 0x06's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::shoutStart; name ours
+0x00707c30 function FmodCmd_voiceReleaseData  # cdecl(FfxFmod, args*): FMOD command 0x07's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::voiceReleaseData; name ours
+0x00707c40 function FmodCmd_voiceSetPaused    # cdecl(FfxFmod, args*): FMOD command 0x08's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::voiceSetPaused; name ours
+0x00707c60 function FmodCmd_voiceDataChange   # cdecl(FfxFmod, args*): FMOD command 0x09's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::voiceDataChange; name ours
+0x00707c80 function FmodCmd_voiceStop         # cdecl(FfxFmod, args*): FMOD command 0x0a's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::voiceStop; name ours
+0x00707c90 function FmodCmd_voicePanTranslate # cdecl(FfxFmod, args*): FMOD command 0x0b's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::voicePanTranslate; name ours
+0x00707cf0 function FmodCmd_voicePanDirect    # cdecl(FfxFmod, args*): FMOD command 0x0c's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::voicePanDirect; name ours
+0x00707d10 function FmodCmd_voiceVolumeTranslate # cdecl(FfxFmod, args*): FMOD command 0x0d's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::voiceVolumeTranslate; name ours
+0x00707d70 function FmodCmd_voiceVolumeDirect # cdecl(FfxFmod, args*): FMOD command 0x0e's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::voiceVolumeDirect; name ours
+0x00707da0 function FmodCmd_voiceStart        # cdecl(FfxFmod, args*): FMOD command 0x0f's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::voiceStart; name ours
+0x00707dc0 function FmodCmd_voiceRead         # cdecl(FfxFmod, args*): FMOD command 0x10's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::voiceRead; name ours
+0x00707de0 function FmodCmd_voicePlayStatus   # cdecl(FfxFmod, args*): FMOD command 0x11's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::voicePlayStatus; name ours
+0x00707df0 function FmodCmd_voiceIsPaused     # cdecl(FfxFmod, args*): FMOD command 0x12's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::voiceIsPaused; name ours
+0x00707e00 function FmodCmd_getNowPlayMusic   # cdecl(FfxFmod, args*): FMOD command 0x13's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::getNowPlayMusic; name ours
+0x00707e10 function FmodCmd_musicSyncStandby  # cdecl(FfxFmod, args*): FMOD command 0x14's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicSyncStandby; name ours
+0x00707e20 function FmodCmd_musicDataSend     # cdecl(FfxFmod, args*): FMOD command 0x15's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicDataSend; name ours
+0x00707e40 function FmodCmd_musicPlayState    # cdecl(FfxFmod, args*): FMOD command 0x16's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicPlayState; name ours
+0x00707e60 function FmodCmd_musicCrossPlay    # cdecl(FfxFmod, args*): FMOD command 0x17's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicCrossPlay; name ours
+0x00707e80 function FmodCmd_musicPlayFast     # cdecl(FfxFmod, args*): FMOD command 0x18's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicPlayFast; name ours
+0x00707ea0 function FmodCmd_musicReplayPointSet # cdecl(FfxFmod, args*): FMOD command 0x19's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicReplayPointSet; name ours
+0x00707eb0 function FmodCmd_musicReplayPointClear # cdecl(FfxFmod, args*): FMOD command 0x1a's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicReplayPointClear; name ours
+0x00707ed0 function FmodCmd_musicPhrasePlay   # cdecl(FfxFmod, args*): FMOD command 0x1b's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicPhrasePlay; name ours
+0x00707ef0 function FmodCmd_musicVolumeFadeOut # cdecl(FfxFmod, args*): FMOD command 0x1c's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicVolumeFadeOut; name ours
+0x00707f10 function FmodCmd_musicTempoTranslate # cdecl(FfxFmod, args*): FMOD command 0x1d's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicTempoTranslate; name ours
+0x00707f70 function FmodCmd_musicTempoDirect  # cdecl(FfxFmod, args*): FMOD command 0x1e's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicTempoDirect; name ours
+0x00707f90 function FmodCmd_musicPitchTranslate # cdecl(FfxFmod, args*): FMOD command 0x1f's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicPitchTranslate; name ours
+0x00707fb0 function FmodCmd_musicPitchDirect  # cdecl(FfxFmod, args*): FMOD command 0x20's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicPitchDirect; name ours
+0x00707fd0 function FmodCmd_musicMultiPlay    # cdecl(FfxFmod, args*): FMOD command 0x21's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicMultiPlay; name ours
+0x00707ff0 function FmodCmd_musicVolumeTranslate # cdecl(FfxFmod, args*): FMOD command 0x22's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicVolumeTranslate; name ours
+0x00708050 function FmodCmd_musicVolumeDirect # cdecl(FfxFmod, args*): FMOD command 0x23's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicVolumeDirect; name ours
+0x00708080 function FmodCmd_musicMuteSet      # cdecl(FfxFmod, args*): FMOD command 0x24's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicMuteSet; name ours
+0x007080a0 function FmodCmd_musicClear        # cdecl(FfxFmod, args*): FMOD command 0x25's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicClear; name ours
+0x007080c0 function FmodCmd_musicStop         # cdecl(FfxFmod, args*): FMOD command 0x26's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicStop; name ours
+0x007080e0 function FmodCmd_musicStart        # cdecl(FfxFmod, args*): FMOD command 0x27's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicStart; name ours
+0x00708100 function FmodCmd_musicRead         # cdecl(FfxFmod, args*): FMOD command 0x28's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicRead; name ours
+0x00708120 function FmodCmd_shutDown          # cdecl(FfxFmod, args*): FMOD command 0x29's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::shutDown; name ours
+0x00708130 function FmodCmd_initEventSystem   # cdecl(FfxFmod, args*): FMOD command 0x2a's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::initEventSystem; name ours
+0x00708140 function FmodCmd_initLoadMasterBank # cdecl(FfxFmod, args*): FMOD command 0x2b's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::initLoadMasterBank; name ours
+0x00708150 function FmodCmd_musicStopAll      # cdecl(FfxFmod, args*): FMOD command 0x2c's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicStopAll; name ours
+0x00708160 function FmodCmd_musicClearAll     # cdecl(FfxFmod, args*): FMOD command 0x2d's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicClearAll; name ours
+0x00708170 function FmodCmd_musicSwitchBGM    # cdecl(FfxFmod, args*): FMOD command 0x2e's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicSwitchBGM; name ours
+0x00708190 function FmodCmd_musicPauseAll     # cdecl(FfxFmod, args*): FMOD command 0x2f's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::musicPauseAll; name ours
+0x007081b0 function FmodCmd_sfxLoad           # cdecl(FfxFmod, args*): FMOD command 0x30's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::sfxLoad; name ours
+0x007081d0 function FmodCmd_sfxUnloadAllData  # cdecl(FfxFmod, args*): FMOD command 0x31's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::sfxUnloadAllData; name ours
+0x007081e0 function FmodCmd_sfxUnloadBySeq    # cdecl(FfxFmod, args*): FMOD command 0x32's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::sfxUnloadBySeq; name ours
+0x00708200 function FmodCmd_sfxStart          # cdecl(FfxFmod, args*): FMOD command 0x33's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::sfxStart; name ours
+0x00708220 function FmodCmd_sfxForceStart     # cdecl(FfxFmod, args*): FMOD command 0x34's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::sfxForceStart; name ours
+0x00708240 function FmodCmd_sfxDelayStart     # cdecl(FfxFmod, args*): FMOD command 0x35's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::sfxDelayStart; name ours
+0x00708260 function FmodCmd_sfxStop           # cdecl(FfxFmod, args*): FMOD command 0x36's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::sfxStop; name ours
+0x00708280 function FmodCmd_sfxStopAllNonBlockingSound # cdecl(FfxFmod, args*): FMOD command 0x37's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::sfxStopAllNonBlockingSound; name ours
+0x007082b0 function FmodCmd_sfxStopNonBlockingSound # cdecl(FfxFmod, args*): FMOD command 0x38's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::sfxStopNonBlockingSound; name ours
+0x007082d0 function FmodCmd_sfxPause          # cdecl(FfxFmod, args*): FMOD command 0x3a's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::sfxPause; name ours
+0x007082f0 function FmodCmd_sfxStopAllNonloopSound # cdecl(FfxFmod, args*): FMOD command 0x39's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::sfxStopAllNonloopSound; name ours
+0x00708300 function FmodCmd_sfxSetVolume      # cdecl(FfxFmod, args*): FMOD command 0x3b's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::sfxSetVolume; name ours
+0x00708320 function FmodCmd_sfxSetVolume3     # cdecl(FfxFmod, args*): FMOD command 0x3c's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::sfxSetVolume3; name ours
+0x00708340 function FmodCmd_sfxSetPan         # cdecl(FfxFmod, args*): FMOD command 0x3d's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::sfxSetPan; name ours
+0x00708360 function FmodCmd_sfxSetPan3        # cdecl(FfxFmod, args*): FMOD command 0x3e's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::sfxSetPan3; name ours
+0x00708380 function FmodCmd_sfxIsPlaying      # cdecl(FfxFmod, args*): FMOD command 0x3f's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::sfxIsPlaying; name ours
+0x007083a0 function FmodCmd_sfxPlayBattleStreaming # cdecl(FfxFmod, args*): FMOD command 0x40's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::sfxPlayBattleStreaming; name ours
+0x007083c0 function FmodCmd_sfxIspaused       # cdecl(FfxFmod, args*): FMOD command 0x41's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::sfxIspaused; name ours
+0x007083d0 function FmodCmd_soundSetMasterVolume # cdecl(FfxFmod, args*): FMOD command 0x42's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::soundSetMasterVolume; name ours
+0x00708400 function FmodCmd_soundSetMusicVolume # cdecl(FfxFmod, args*): FMOD command 0x43's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::soundSetMusicVolume; name ours
+0x00708430 function FmodCmd_soundSetVoiceVolume # cdecl(FfxFmod, args*): FMOD command 0x44's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::soundSetVoiceVolume; name ours
+0x00708460 function FmodCmd_soundSetSfxVolume # cdecl(FfxFmod, args*): FMOD command 0x45's handler (the table at 0x00c3a368, run by the FMOD thread); calls FfxFmod::soundSetSfxVolume; name ours
 0x00708630 function FmodMusic_FmodMusic       # fh switch:bsim0.92 0x71002a0b00 FmodMusic::FmodMusic
+0x00708720 function FmodMusic_clear           # thiscall(FmodMusic; id); Switch FmodMusic::clear by the PC build's alphabetical order of FmodMusic.cpp
+0x00708810 function FmodMusic_clearAll        # thiscall(FmodMusic); Switch FmodMusic::clearAll by the PC build's alphabetical order of FmodMusic.cpp
+0x00708900 function FmodMusic_crossPlay       # thiscall(FmodMusic; id, frames, event system); Switch FmodMusic::crossPlay by the PC build's alphabetical order of FmodMusic.cpp
+0x00708a00 function FmodMusic_dataSend        # thiscall(FmodMusic; id, event system); Switch FmodMusic::dataSend by the PC build's alphabetical order of FmodMusic.cpp
+0x00708af0 function FmodMusic_forceClearAll   # thiscall(FmodMusic); Switch FmodMusic::forceClearAll by the PC build's alphabetical order of FmodMusic.cpp
+0x00708be0 function FmodMusic_getState        # thiscall(FmodMusic); Switch FmodMusic::getState by the PC build's alphabetical order of FmodMusic.cpp
+0x00708c00 function FmodMusic_initData        # thiscall(FmodMusic; event system); Switch FmodMusic::initData by the PC build's alphabetical order of FmodMusic.cpp
 0x00708c60 function FmodMusic_initList           # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71002a1120 FmodMusic::initList, 6 votes, round 1
+0x00708d30 function FmodMusic_initTempData    # thiscall(FmodMusic; event system): empty on PC (ret 4); Switch FmodMusic::initTempData by the PC build's alphabetical order of FmodMusic.cpp
+0x00708d40 function FmodMusic_loadEventProject # thiscall(FmodMusic); Switch FmodMusic::loadEventProject by the PC build's alphabetical order of FmodMusic.cpp
+0x00708e50 function FmodMusic_loopVolumeTranslate # thiscall(FmodMusic); Switch FmodMusic::loopVolumeTranslate by the PC build's alphabetical order of FmodMusic.cpp
+0x00708fb0 function FmodMusic_pause           # thiscall(FmodMusic); Switch FmodMusic::pause by the PC build's alphabetical order of FmodMusic.cpp
+0x00709000 function FmodMusic_pauseAll        # thiscall(FmodMusic; flag); Switch FmodMusic::pauseAll by the PC build's alphabetical order of FmodMusic.cpp
+0x00709060 function FmodMusic_playState       # thiscall(FmodMusic; id) -> the playing music's record +0x20 | +0x20 (id unused); Switch FmodMusic::playState by the PC build's alphabetical order of FmodMusic.cpp
+0x00709080 function FmodMusic_read            # thiscall(FmodMusic; id, event system); Switch FmodMusic::read by the PC build's alphabetical order of FmodMusic.cpp
+0x007091b0 function FmodMusic_releaseOldMusic # thiscall(FmodMusic); Switch FmodMusic::releaseOldMusic by the PC build's alphabetical order of FmodMusic.cpp
+0x00709270 function FmodMusic_restart         # thiscall(FmodMusic); Switch FmodMusic::restart by the PC build's alphabetical order of FmodMusic.cpp
+0x007093e0 function FmodMusic_setEntireVolume # thiscall(FmodMusic; f32); Switch FmodMusic::setEntireVolume by the PC build's alphabetical order of FmodMusic.cpp
+0x00709520 function FmodMusic_setMute         # thiscall(FmodMusic; id); Switch FmodMusic::setMute by the PC build's alphabetical order of FmodMusic.cpp
+0x00709640 function FmodMusic_shutdown        # thiscall(FmodMusic); Switch FmodMusic::shutdown by the PC build's alphabetical order of FmodMusic.cpp
+0x007096f0 function FmodMusic_start           # thiscall(FmodMusic; id); Switch FmodMusic::start by the PC build's alphabetical order of FmodMusic.cpp
+0x007099a0 function FmodMusic_stop            # thiscall(FmodMusic; id); Switch FmodMusic::stop by the PC build's alphabetical order of FmodMusic.cpp
+0x00709b10 function FmodMusic_stopAll         # thiscall(FmodMusic); Switch FmodMusic::stopAll by the PC build's alphabetical order of FmodMusic.cpp
+0x00709c80 function FmodMusic_switchBGM       # thiscall(FmodMusic; type, event system); Switch FmodMusic::switchBGM by the PC build's alphabetical order of FmodMusic.cpp
+0x00709d80 function FmodMusic_syncStandby     # thiscall(FmodMusic) -> 1 when music 0x10's Event::getState answers 2; Switch FmodMusic::syncStandby by the PC build's alphabetical order of FmodMusic.cpp
+0x00709dd0 function FmodMusic_volumeDirect    # thiscall(FmodMusic; id, f32, c); Switch FmodMusic::volumeDirect by the PC build's alphabetical order of FmodMusic.cpp
+0x00709eb0 function FmodMusic_volumeFadeOut   # thiscall(FmodMusic; id, frames) -> 0: a playing music (state & 8) is marked fading (+8) and translated to 0; Switch FmodMusic::volumeFadeOut by the PC build's alphabetical order of FmodMusic.cpp
+0x00709f20 function FmodMusic_volumeReset     # thiscall(FmodMusic); Switch FmodMusic::volumeReset by the PC build's alphabetical order of FmodMusic.cpp
+0x00709ff0 function FmodMusic_volumeTranslate # thiscall(FmodMusic; id, frames, volume); Switch FmodMusic::volumeTranslate by the PC build's alphabetical order of FmodMusic.cpp
+0x0070a590 function FmodVoice_clear           # thiscall(FmodVoice); Switch FmodVoice::clear by the PC build's alphabetical order of FmodVoice.cpp
 0x0070a630 function FmodVoice_dataChange      # fh call.cs thiscall
 0x0070aa30 function FmodVoice_initData           # str: its error message names it: "FmodVoice::initData: NULL == mVoiceBtlEventProject! fileName = %s"
 0x0070ab90 function FmodVoice_initList        # fh call.cs thiscall
+0x0070ace0 function FmodVoice_initTempData    # thiscall(FmodVoice; event system, system): empty on PC (ret 8); Switch FmodVoice::initTempData by the PC build's alphabetical order of FmodVoice.cpp
+0x0070acf0 function FmodVoice_loopVolumeTranslate # thiscall(FmodVoice); Switch FmodVoice::loopVolumeTranslate by the PC build's alphabetical order of FmodVoice.cpp
+0x0070add0 function FmodVoice_read            # thiscall(FmodVoice; id, event system); Switch FmodVoice::read by the PC build's alphabetical order of FmodVoice.cpp
+0x0070b0b0 function FmodVoice_releaseData     # thiscall(FmodVoice); Switch FmodVoice::releaseData by the PC build's alphabetical order of FmodVoice.cpp
+0x0070b160 function FmodVoice_restart         # thiscall(FmodVoice); Switch FmodVoice::restart by the PC build's alphabetical order of FmodVoice.cpp
+0x0070b2b0 function FmodVoice_setEntireVolume # thiscall(FmodVoice; f32): clamped, kept at +0x88; on change FmodShout::setVolume and volumeDirect(+0x50, 0); Switch FmodVoice::setEntireVolume by the PC build's alphabetical order of FmodVoice.cpp
+0x0070b330 function FmodVoice_setMute         # thiscall(FmodVoice; id): +0x80 = id; volumeDirect(id == 1 ? 0 : +0x50, 0); Switch FmodVoice::setMute by the PC build's alphabetical order of FmodVoice.cpp
+0x0070b370 function FmodVoice_setPaused       # thiscall(FmodVoice; x) -> 0: Event::setPaused on a playing event when x changes (ERRCHECK 0x276/0x27d/0x282); Switch FmodVoice::setPaused by the PC build's alphabetical order of FmodVoice.cpp
 0x0070b3f0 function FfxFmod_soundInit_setLang # fh call.cs thiscall
+0x0070b430 function FmodVoice_shoutStart      # thiscall(FmodVoice; a, b, c, d) -> 0: FmodShout::start(a, b, c, d, +0x80, &+0x40, &+0x44, +0x24), then its volume; Switch FmodVoice::shoutStart by the PC build's alphabetical order of FmodVoice.cpp
+0x0070b480 function FmodVoice_shutdown        # thiscall(FmodVoice); Switch FmodVoice::shutdown by the PC build's alphabetical order of FmodVoice.cpp
+0x0070b570 function FmodVoice_soundStageFlush # thiscall(FmodVoice; x) -> 0: +0x2c = 0; unless x is 0x189..0x18e, 0x00cec174 and 0x00cec184 = 0; Switch FmodVoice::soundStageFlush by the PC build's alphabetical order of FmodVoice.cpp
+0x0070b5c0 function FmodVoice_start           # thiscall(FmodVoice; pan, volume); Switch FmodVoice::start by the PC build's alphabetical order of FmodVoice.cpp
+0x0070b6b0 function FmodVoice_stop            # thiscall(FmodVoice); Switch FmodVoice::stop by the PC build's alphabetical order of FmodVoice.cpp
+0x0070b750 function FmodVoice_updateState     # thiscall(FmodVoice; event system); Switch FmodVoice::updateState by the PC build's alphabetical order of FmodVoice.cpp
+0x0070b7f0 function FmodVoice_volumeDirect    # thiscall(FmodVoice; f32, b); Switch FmodVoice::volumeDirect by the PC build's alphabetical order of FmodVoice.cpp
+0x0070b880 function FmodVoice_volumeTranslate # thiscall(FmodVoice; frames, volume); Switch FmodVoice::volumeTranslate by the PC build's alphabetical order of FmodVoice.cpp
+0x0070ba70 function SfxEventTree_Find         # thiscall(tree; &id) -> the node of id or 0: FmodSfx +0x64's binary tree (root at +0xc, the head the leaf; left [0] when the node's id is greater, right [4] when less, id at +0xc), as vfxIntTree_Find; callers the FmodSfx methods
+0x0070c7d0 function FmodSfx_canStartNewEvent  # thiscall(FmodSfx; id) -> al: 0 while one of the id's SfxEvents plays, else 1 (id 1 always); Switch FmodSfx::canStartNewEvent by the PC build's alphabetical order of FmodSfx.cpp
 0x0070c8f0 function FmodSfx_createSfxEvent       # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'FmodSfx::start/delayStart: Too many event instances for sequ'; Switch 0x71002a3ea0 FmodSfx::createSfxEvent (symbols from Fahrenheit's server export)
 0x0070cc30 function FmodSfx_delayStart           # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'FmodSfx::delayStart: Fail to start sequence(%d) because we c'; Switch 0x71002a4370 FmodSfx::delayStart (symbols from Fahrenheit's server export)
+0x0070ccd0 function FmodSfx_forceStart        # thiscall(FmodSfx; id, b, c): canStartNewEvent, createSfxEvent, SfxEvent::start(b, c); Switch FmodSfx::forceStart by the PC build's alphabetical order of FmodSfx.cpp
+0x0070ce90 function FmodSfx_isPlaying         # thiscall(FmodSfx; id); Switch FmodSfx::isPlaying by the PC build's alphabetical order of FmodSfx.cpp
+0x0070cf10 function FmodSfx_loadProject       # thiscall(FmodSfx; event system, id, flag); Switch FmodSfx::loadProject by the PC build's alphabetical order of FmodSfx.cpp
+0x0070d0c0 function FmodSfx_pause             # thiscall(FmodSfx; x); Switch FmodSfx::pause by the PC build's alphabetical order of FmodSfx.cpp
 0x0070d190 function FmodSfx_playBattleStreaming  # str-match switch: only user of 1 string(s) held once by both builds, e.g. "FmodSfx::playBattleStreaming: can't find the right battle st"; Switch 0x71002a4ca0 FmodSfx::playBattleStreaming (symbols from Fahrenheit's server export)
+0x0070d500 function FmodSfx_setEntireVolume   # thiscall(FmodSfx; f32); Switch FmodSfx::setEntireVolume by the PC build's alphabetical order of FmodSfx.cpp
+0x0070d640 function FmodSfx_setPan            # thiscall(FmodSfx; id, pan): SfxEvent::setPan on every event of id; Switch FmodSfx::setPan by the PC build's alphabetical order of FmodSfx.cpp
+0x0070d690 function FmodSfx_setPan3           # thiscall(FmodSfx; id, pan, frames): the second setPan; Switch FmodSfx::setPan3 by the PC build's alphabetical order of FmodSfx.cpp
+0x0070d6e0 function FmodSfx_setVolume         # thiscall(FmodSfx; id, volume): SfxEvent::setVolume on every event of id; Switch FmodSfx::setVolume by the PC build's alphabetical order of FmodSfx.cpp
+0x0070d730 function FmodSfx_setVolume3        # thiscall(FmodSfx; id, volume, frames): the second setVolume; Switch FmodSfx::setVolume3 by the PC build's alphabetical order of FmodSfx.cpp
+0x0070d780 function FmodSfx_shutdown          # thiscall(FmodSfx); Switch FmodSfx::shutdown by the PC build's alphabetical order of FmodSfx.cpp
 0x0070d890 function FmodSfx_Start                # thiscall(sfx; seq, volume, pan): "FmodSfx::start: Fail to start sequence(%d)"; volume/127 -> 0..1, pan/127*2-1 -> -1..1 (0x0070f310)
+0x0070d8f0 function FmodSfx_stop              # thiscall(FmodSfx; id): SfxEvent::stop(0) on every event of id; Switch FmodSfx::stop by the PC build's alphabetical order of FmodSfx.cpp
+0x0070d930 function FmodSfx_stopAllNonBlockingSound # thiscall(FmodSfx; a, b); Switch FmodSfx::stopAllNonBlockingSound by the PC build's alphabetical order of FmodSfx.cpp
+0x0070d9e0 function FmodSfx_stopAllNonloopSound # thiscall(FmodSfx); Switch FmodSfx::stopAllNonloopSound by the PC build's alphabetical order of FmodSfx.cpp
+0x0070da90 function FmodSfx_stopAllSound      # thiscall(FmodSfx); Switch FmodSfx::stopAllSound by the PC build's alphabetical order of FmodSfx.cpp
+0x0070db90 function FmodSfx_stopNonBlockingSound # thiscall(FmodSfx; id): stop for ids > 0x7f (signed), else returns id; Switch FmodSfx::stopNonBlockingSound by the PC build's alphabetical order of FmodSfx.cpp
+0x0070dbb0 function FmodSfx_unloadProjectBySeq # thiscall(FmodSfx; seq); Switch FmodSfx::unloadProjectBySeq by the PC build's alphabetical order of FmodSfx.cpp
+0x0070dd10 function FmodSfx_unloadProjects    # thiscall(FmodSfx; a, b); Switch FmodSfx::unloadProjects by the PC build's alphabetical order of FmodSfx.cpp
+0x0070dec0 function FmodSfx_update            # thiscall(FmodSfx; f32 elapsed): called by FfxFmod::soundLoop; Switch FmodSfx::update by the PC build's alphabetical order of FmodSfx.cpp
 0x0070e2d0 function FmodShout_initData           # str: its error message names it: "FmodShout::initData: NULL == mShoutFsb! fileName = %s"
+0x0070e400 function FmodShout_setVolume       # thiscall(shout; f32): Switch FmodShout::setVolume by the order after FmodShout_initData; called by FmodVoice::setEntireVolume/shoutStart
+0x0070e480 function FmodShout_start           # thiscall(shout; a, b, c, d, mute, &status0, &status1, arg), ret 0x20: Switch FmodShout::start; called by FmodVoice::shoutStart
+0x0070eac0 function SfxEvent_delayStart       # thiscall(event; delay, b, c), ret 0xc: Switch SfxEvent::delayStart by the alphabetical order; called by FmodSfx_delayStart
+0x0070ec40 function SfxEvent_isPlaying        # thiscall(event) -> al: Switch SfxEvent::isPlaying by the order; called by FmodSfx::canStartNewEvent
+0x0070ef80 function SfxEvent_setPan           # thiscall(event; pan), ret 4: the first Switch SfxEvent::setPan; called by FmodSfx::setPan
+0x0070f000 function SfxEvent_setPan2          # thiscall(event; pan, frames), ret 8: the second SfxEvent::setPan; called by FmodSfx::setPan3
+0x0070f1a0 function SfxEvent_setVolume        # thiscall(event; volume), ret 4: the first Switch SfxEvent::setVolume; called by FmodSfx::setVolume
+0x0070f210 function SfxEvent_setVolume2       # thiscall(event; volume, frames), ret 8: the second SfxEvent::setVolume; called by FmodSfx::setVolume3
+0x0070f310 function SfxEvent_start            # thiscall(event; b, c), ret 8: Switch SfxEvent::start by the order; called by FmodSfx_Start/forceStart
+0x0070f490 function SfxEvent_stop             # thiscall(event; immediate), ret 4: Switch SfxEvent::stop by the order; called by FmodSfx::stop
 0x0070f930 function SfxBank_dtor_SfxBank         # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'this=0x%p, Unload Fmod Project\\n'; Switch 0x71002a8060 SfxBank::~SfxBank (symbols from Fahrenheit's server export)
 0x0070fd20 function vfxIntTree_Find           # thiscall (this, key) -> the node whose i32 at +0xc is *key, else 0: from the root this+0xc, child [0] when the node's key is greater, [1] when less, the header (this) ends; callers 0x00710270/0x00710290
 0x0070fda0 function vfxIntTree_Insert         # thiscall (this, node) -> 0, or the node already holding the key: node+8 (parent link, bit 0 colour) gets bit 0, children = this, linked under the search's last node ((node+8 & 1) + parent), as vfxIntTree_Find walks
@@ -11512,6 +11721,7 @@
 0x00c33468 label    g_EternalCalmFirstMap     # first of the 7 Eternal Calm maps (a map = PS2 file number / 18, as CDfileSize_CD asks): isEternalCalmScene/Mgrp, getEternalCalmSceneName/Size subtract it
 0x00c334b8 label    g_EternalCalmSceneNames   # 7 pointers to "host0:/ffx_master/jppc/event/obj..." paths, indexed by getEternalCalmSceneName
 0x00c34408 label    g_ShadowSize              # ShadowManager_GetShadowSize
+0x00c3a368 label    g_FmodCommandHandlers     # label: the 70 FMOD command handlers (cdecl(FfxFmod, args*)) by command, FmodCmd_*; read by the FMOD thread's queue loop
 0x00c3a488 label    g_VfxColorScale           # four floats updateVFXRenderData multiplies the part's colour by (FFXVu0MulVector)
 0x00c3a494 label    g_AlphaScaleInv           # f32 0.0078125 / g_AlphaScale, set by updateVFXRenderData
 0x00c3a4cc label    g_pppEnvSlot              # pointer to where pppInitEnv stores the current ppp environment (rcefMainSetEnv)
