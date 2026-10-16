@@ -184,7 +184,9 @@ target/release/game-slot run -- <command>    # waits, runs it in the slot
 ```
 
 `tools/run-game.sh` refuses to start a game while someone else holds the
-slot. A detached game (`Game::detach`) outlives its slot. Run long game
+slot. A test stopped mid-run leaves its game running; the next
+`Game::launch` in the slot ends it with the harness's `quit` (only games
+that answer on the harness port: a game the user plays is never touched). A detached game (`Game::detach`) outlives its slot. Run long game
 tests as background commands: they wait for their turn and finish later.
 
 ## Tests

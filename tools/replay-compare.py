@@ -9,8 +9,10 @@ traces drift even when the logic agrees.
   (a battle's draws and an event script's) interleave differently between
   runs; per generator their order is fixed.
 
-Usage: tools/replay-compare.py A.trace B.trace [A.calls B.calls]
-Exits 1 when anything differs.
+Usage: tools/replay-compare.py A.trace B.trace [A.calls B.calls] [--also A2.trace]
+Exits 1 when anything differs. With `--also`, a second run of the original:
+a range passes when B matches either original run (the originals themselves
+can differ by an event where a press lands a frame apart).
 """
 import sys
 from collections import defaultdict
@@ -40,11 +42,21 @@ def calls(path):
 
 
 def main():
+    argv = sys.argv[1:]
+    also = None
+    if "--also" in argv:
+        k = argv.index("--also")
+        also = events(argv[k + 1])
+        argv = argv[:k] + argv[k + 2:]
+    sys.argv = sys.argv[:1] + argv
     if len(sys.argv) not in (3, 5):
         sys.exit(__doc__)
     bad = 0
     ea, eb = events(sys.argv[1]), events(sys.argv[2])
     for i, (x, y) in enumerate(zip(ea, eb)):
+        if x != y and also is not None and i < len(also) and also[i] == y:
+            print(f"range {i}: matches the second original run")
+            continue
         if x != y:
             n = next((k for k, (u, v) in enumerate(zip(x, y)) if u != v), min(len(x), len(y)))
             print(f"range {i}: differs at event {n} ({len(x)} and {len(y)} events)")
