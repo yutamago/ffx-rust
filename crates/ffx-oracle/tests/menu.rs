@@ -4114,3 +4114,198 @@ fn menu_sprite_packets_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn tk_round6c_matches_the_original() {
+    let Some(mut t) = setup(0x5e17_a2c9) else {
+        return;
+    };
+    for round in 0..200u32 {
+        let v = t.rng.int();
+        // setters: the value (or al over it) stays in eax
+        for (name, sym, g, byte) in [
+            ("Gu_SetPopupWindow", 0x0084_b670, 0x0130_3740, false),
+            ("Atel_SetScriptByteGate", 0x0087_20d0, 0x00c5_26d4, false),
+            ("TkSetVibrateOff", 0x0087_5f50, 0x0132_8272, true),
+            ("AtelSetDebugDraw", 0x0088_5110, 0x0132_8a78, true),
+            ("TkConfig_SetByteC", 0x0088_ec20, 0x0133_888c, true),
+            (
+                "TkMenuSetDrawShadeRatioStep",
+                0x008a_9680,
+                0x0184_0880,
+                false,
+            ),
+            ("TkMenuSetScreenX2Flag", 0x008a_b020, 0x0184_0885, true),
+        ] {
+            let mask = if byte { 0xff } else { U32 };
+            t.twin(name, sym, &[v], mask, |o| {
+                if byte {
+                    #[allow(clippy::cast_possible_truncation)]
+                    Mem::write(o, o.rebase(g), v as u8);
+                } else {
+                    Mem::write(o, o.rebase(g), v);
+                }
+                w(v)
+            });
+        }
+        t.twin("Tk_ByteHighBit", 0x0087_2580, &[v], U32, |o| {
+            let _ = o;
+            w(v & 0x80)
+        });
+        t.twin("TkDebugPrint", 0x0088_ecf0, &[v], U32, |_| 1);
+        // debug font width
+        let len = t.rng.below(24) as usize;
+        let mut sb: Vec<u8> = t.rng.bytes(len).into_iter().map(|c| c.max(1)).collect();
+        sb.extend([0, 0, 0]);
+        let sp = t.alloc(&sb);
+        for prop in [0u32, 1] {
+            t.twin(
+                "TkGetDebugFontStringWidth",
+                0x0088_edf0,
+                &[prop, sp],
+                U32,
+                |o| s(tk::tk_get_debug_font_string_width(o, i(prop), sp)),
+            );
+        }
+        // pad history wrappers
+        for pad in [0u32, 1] {
+            let work = tk::tk_get_controler_work(&t.b, i(pad), 0);
+            let bytes = t.rng.bytes(0x100);
+            t.put_bytes(work, &bytes);
+            let typ = t.rng.pick(&[5u8, 4, 7]);
+            t.put(work + 0x9f, typ);
+            let m = t.rng.pick(&[8u8, 0, 1]);
+            t.put(work + 0xf6, m);
+        }
+        let fr = t.rng.int();
+        for (name, sym, pad, off) in [
+            ("TkGetDebugControler1Hist", 0x0088_5150, 0, 4),
+            ("TkGetDebugControler1TrigHist", 0x0088_5170, 0, 6),
+            ("TkGetDebugControlerHist", 0x0088_51b0, 1, 4),
+            ("TkGetDebugControlerReptHist", 0x0088_51d0, 1, 0xa),
+            ("TkGetDebugControlerTrigHist", 0x0088_51f0, 1, 6),
+        ] {
+            t.twin(name, sym, &[fr], U32, |o| {
+                w(tk::tk_get_debug_controler_hist(o, pad, i(fr), off))
+            });
+        }
+        let pad = t.rng.below(2);
+        let port = 0;
+        t.twin(
+            "TkGetControlerIdHist",
+            0x0088_8db0,
+            &[pad, port, fr],
+            U32,
+            |o| w(tk::tk_get_controler_id_hist(o, i(pad), 0, i(fr))),
+        );
+        t.twin(
+            "TkGetControlerPressHist",
+            0x0088_8df0,
+            &[pad, port, fr],
+            U32,
+            |o| w(tk::tk_get_controler_press_hist(o, i(pad), 0, i(fr))),
+        );
+        // debug font buffer word
+        let buf = t.alloc_random(0x10);
+        t.put(t.sym(tk::DEBUG_FONT_BUFFER.sym), buf);
+        t.twin("TkDebugFont_SetWord4", 0x0088_fb10, &[v], U32, |o| {
+            w(tk::tk_debug_font_set_word4(o, v))
+        });
+        // window groups
+        if round % 20 == 0 {
+            t.scramble(tk::MENU_WINDOWS.sym, 0x98 * 32);
+            let base = t.sym(tk::MENU_WINDOWS.sym);
+            for k in 0..32 {
+                let used = t.rng.pick(&[1u8, 1, 0, 2]);
+                t.put(base + k * 0x98 + 0x40, used);
+                let g = t.rng.pick(&[0u8, 1, 2, 3]);
+                t.put(base + k * 0x98 + 0x36, g);
+            }
+        }
+        let group = t.rng.pick(&[0u32, 1, 2, 3, 0x100]);
+        t.twin(
+            "TkMenuMainFreeWindowGroup",
+            0x008a_a410,
+            &[group],
+            VOID,
+            |o| {
+                tk::tk_menu_main_free_window_group(o, group);
+                0
+            },
+        );
+        // DMA tags
+        let p = t.alloc_random(0x40);
+        let end = p.wrapping_add(t.rng.below(0x300)).wrapping_sub(0x40);
+        let (a, b, c) = (t.rng.next(), t.rng.next(), t.rng.next());
+        t.twin("Dma_CloseCnt", 0x0089_0a60, &[p, end, a], U32, |o| {
+            w(tk::dma_close_cnt(o, p, end, a))
+        });
+        t.twin("Dma_CloseCnt2", 0x0089_0aa0, &[p, end, a, b], U32, |o| {
+            w(tk::dma_close_cnt2(o, p, end, a, b))
+        });
+        t.twin("Dma_CloseNext", 0x0089_0ae0, &[p, end, a, b, c], U32, |o| {
+            w(tk::dma_close_next(o, p, end, a, b, c))
+        });
+        for (name, sym, id, with) in [
+            ("Dma_PutCall", 0x0089_08c0, 0x50u8, true),
+            ("Dma_PutEnd", 0x0089_0910, 0x70, false),
+            ("Dma_PutCnt", 0x0089_0960, 0x10, false),
+            ("Dma_PutRet", 0x0089_09b0, 0x60, false),
+            ("Dma_PutCall2", 0x0089_0d90, 0x50, true),
+        ] {
+            let args: Vec<u32> = if with { vec![p, a] } else { vec![p] };
+            t.twin(name, sym, &args, U32, |o| {
+                w(tk::dma_put_tag(o, p, id, if with { a } else { 0 }))
+            });
+        }
+        // menu window states
+        let win = t.alloc_random(0x130);
+        let y = t
+            .rng
+            .pick(&[0.0f32, -12.0, 1.5, 300.25, -1e30, f32::INFINITY]);
+        t.put(win + 0x4c, y);
+        t.twin("MenuWin_StateSlide", 0x008e_0200, &[win], U32, |o| {
+            w(tk::menu_win_state_slide(o, win))
+        });
+        t.twin("MenuWin_StateOpen", 0x008e_0240, &[win], U32, |o| {
+            w(tk::menu_win_state_open(o, win))
+        });
+        let c0 = t.rng.pick(&[0u8, 0x41]);
+        let text = t.alloc(&[c0]);
+        t.put(win + 0x98, text);
+        t.twin("MenuWin_StateWaitText", 0x008e_0280, &[win], U32, |o| {
+            w(tk::menu_win_state_wait_text(o, win))
+        });
+        t.twin("Yi_PutRef", 0x0091_6ad0, &[p, a, b], U32, |o| {
+            w(tk::yi_put_ref(o, p, a, b))
+        });
+        // the float clamp
+        let f = t.rng.pick(&[
+            0.0f32,
+            3.0,
+            3.2,
+            -3.2,
+            -std::f32::consts::PI,
+            std::f32::consts::PI,
+            1e9,
+            -1e9,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+        ]);
+        let r =
+            t.a.call(t.a.rebase(0x0088_b800), Conv::Cdecl, &[f.to_bits()])
+                .unwrap();
+        same_float("Math_ClampPi", r.st0, ffx_menu::math::clamp_pi(f));
+        // TkMenuDrawSp3R0
+        let pk = t.alloc_random(0x1000);
+        t.put(t.sym(tk::MENU_PACKET.sym), pk);
+        let (x, yy) = (t.rng.below(0x280), t.rng.below(0x200));
+        t.twin("TkMenuDrawSp3R0", 0x008d_ca30, &[x, yy], U32, |o| {
+            let e = tk::menu_draw_sprites(o, [pk + 0x10, 0, x, yy, 0, 0, 0, 0x80], false);
+            tk::MENU_PACKET.set(o, e);
+            w(e)
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}

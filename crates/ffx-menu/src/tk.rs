@@ -3373,6 +3373,179 @@ pub mod bridge {
         tk_menu_main_sleep_menu(mem, 1, call);
         menu
     }
+    /// The Gu selector's popup window (`Gu_SelectorOpen` stores it; the
+    /// mouse handler hands it the clicks while it is set).
+    pub const GU_POPUP_WINDOW: Global<u32> = Global::new(0x0130_3740);
+    /// The gate for the script byte at context `+0x1e6` (`0x008655b0`).
+    pub const ATEL_SCRIPT_BYTE_GATE: Global<u32> = Global::new(0x00c5_26d4);
+    /// The debug draw toggle (button `0x800` on the debug pad flips it).
+    pub const ATEL_DEBUG_DRAW: Global<u8> = Global::new(0x0132_8a78);
+    /// The step `TkMenuDrawShadeRatio` adds each frame to the shade ratio.
+    pub const MENU_SHADE_RATIO_STEP: Global<u32> = Global::new(0x0184_0880);
+    /// The menu's screen x2 flag (`TkMenuStart` sets it).
+    pub const MENU_SCREEN_X2: Global<u8> = Global::new(0x0184_0885);
+
+    /// A setter of one global: `v` (its low byte for a byte global).
+    /// Every one of these returns what it loaded: `eax` holds `v`, or for
+    /// a byte, `al` over the rest of `v` — `v` either way.
+    pub fn set_word(mem: &mut impl Mem, g: Global<u32>, v: u32) -> u32 {
+        g.set(mem, v);
+        v
+    }
+
+    /// The byte form of [`set_word`].
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn set_byte(mem: &mut impl Mem, g: Global<u8>, v: u32) -> u32 {
+        g.set(mem, v as u8);
+        v
+    }
+
+    /// `TkConfig_SetByteC(v)` (`0x0088ec20`, own name): config byte `+0xc`.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn tk_config_set_byte_c(mem: &mut impl Mem, v: u32) -> u32 {
+        let at = FFX_CONFIG.ptr(mem).addr.wrapping_add(0xc);
+        mem.write(at, v as u8);
+        v
+    }
+
+    /// `TkGetDebugControler1Hist(i)` and friends (`0x00885150`..`0x008851f0`):
+    /// `hist` field of frame `i` of pad `pad`, port 0, zero-extended.
+    pub fn tk_get_debug_controler_hist(mem: &impl Mem, pad: i32, i: i32, field: u32) -> u32 {
+        tk_get_controler_hist(mem, pad, 0, i, field) & 0xffff
+    }
+
+    /// `TkGetControlerIdHist(pad, port, i)` (`0x00888db0`): byte `+0` of
+    /// frame `i`, loaded into `al` over the frame pointer.
+    pub fn tk_get_controler_id_hist(mem: &impl Mem, pad: i32, port: i32, i: i32) -> u32 {
+        let f = pad_get_frame(mem, pad, port, i);
+        (f & 0xffff_ff00) | u32::from(mem.read::<u8>(f))
+    }
+
+    /// `TkGetControlerPressHist(pad, port, i)` (`0x00888df0`): byte `+1`.
+    pub fn tk_get_controler_press_hist(mem: &impl Mem, pad: i32, port: i32, i: i32) -> u32 {
+        u32::from(mem.read::<u8>(pad_get_frame(mem, pad, port, i).wrapping_add(1)))
+    }
+
+    /// `TkMenuMainFreeWindowGroup(group)` (`0x008aa410`): every used
+    /// window record (`+0x40` == 1) of group `+0x36` freed.
+    pub fn tk_menu_main_free_window_group(mem: &mut impl Mem, group: u32) {
+        let base = MENU_WINDOWS.ptr(mem).addr;
+        for k in 0..0x20u32 {
+            let w = base + k * 0x98;
+            if mem.read::<u8>(w + 0x40) == 1 && u32::from(mem.read::<u8>(w + 0x36)) == group {
+                tk_menu_main_free_window(mem, w);
+            }
+        }
+    }
+
+    /// `Dma_TagSize(p, end)`: the quadword count between `p` and `end`
+    /// minus one (the DMA tag's QWC), as the original's `u32` arithmetic.
+    fn dma_qwc(p: u32, end: u32) -> u32 {
+        (end.wrapping_sub(p).wrapping_add(0xf) >> 4).wrapping_sub(1)
+    }
+
+    /// `Dma_CloseCnt(p, end, flags)` (`0x00890a60`, own name): a `cnt`
+    /// tag (`0x1000`) at `p` over `p..end`; the last word is the QWC with
+    /// `flags` or-ed in. Returns `end`.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn dma_close_cnt(mem: &mut impl Mem, p: u32, end: u32, flags: u32) -> u32 {
+        let q = dma_qwc(p, end);
+        mem.write(p, q as u16);
+        mem.write(p + 2, 0x1000u16);
+        mem.write(p + 4, [0u32, 0, q | flags]);
+        end
+    }
+
+    /// `Dma_CloseCnt2(p, end, a, b)` (`0x00890aa0`, own name): a `cnt` tag
+    /// with `a`, `b` as its last two words. Returns `end`.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn dma_close_cnt2(mem: &mut impl Mem, p: u32, end: u32, a: u32, b: u32) -> u32 {
+        mem.write(p, dma_qwc(p, end) as u16);
+        mem.write(p + 2, 0x1000u16);
+        mem.write(p + 4, [0u32, a, b]);
+        end
+    }
+
+    /// `Dma_CloseNext(p, end, addr, a, b)` (`0x00890ae0`, own name): a
+    /// `next` tag (`0x2000`) to `addr`, `a`, `b` after. Returns `end`.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn dma_close_next(mem: &mut impl Mem, p: u32, end: u32, addr: u32, a: u32, b: u32) -> u32 {
+        mem.write(p, dma_qwc(p, end) as u16);
+        mem.write(p + 2, 0x2000u16);
+        mem.write(p + 4, [addr, a, b]);
+        end
+    }
+
+    /// `Dma_PutTag(p, id, addr)` (`0x00890910` `end`/`0x70`, `0x00890960`
+    /// `cnt`/`0x10`, `0x008909b0` `ret`/`0x60`, `0x008908c0` and
+    /// `0x00890d90` `call`/`0x50` with `addr`; own names): a one-quadword
+    /// tag (QWC 1, byte 2 left as it is, id in byte 3) and a zero
+    /// quadword. Returns `p + 0x20`.
+    pub fn dma_put_tag(mem: &mut impl Mem, p: u32, id: u8, addr: u32) -> u32 {
+        mem.write(p, 1u16);
+        mem.write(p + 3, id);
+        mem.write(p + 4, [addr, 0, 0, 0, 0, 0, 0]);
+        p + 0x20
+    }
+
+    /// `MenuWin_StateSlide(w)` (`0x008e0200`, own name): state `+0x2c` 1,
+    /// `+0x4c` 12 higher (a float, through x87), next handler `+0x114` from
+    /// `+0x104`. Returns 0.
+    pub fn menu_win_state_slide(mem: &mut impl Mem, w: u32) -> u32 {
+        let y: f32 = mem.read(w + 0x4c);
+        mem.write(w + 0x2c, 1u16);
+        #[allow(clippy::cast_possible_truncation)]
+        mem.write(w + 0x4c, (f64::from(y) - 12.0) as f32);
+        let next: u32 = mem.read(w + 0x104);
+        mem.write(w + 0x114, next);
+        0
+    }
+
+    /// `MenuWin_StateOpen(w)` (`0x008e0240`, own name): state `+0x2c` 2,
+    /// `+0xa0` from `+0xa8`, handlers `0x008e0230` (`+0x114`) and
+    /// `0x008de970` (`+0x11c`). Returns 0.
+    pub fn menu_win_state_open(mem: &mut impl Mem, w: u32) -> u32 {
+        mem.write(w + 0x2c, 2u16);
+        let v: u32 = mem.read(w + 0xa8);
+        mem.write(w + 0xa0, v);
+        let (a, b) = (mem.rebase(0x008e_0230), mem.rebase(0x008d_e970));
+        mem.write(w + 0x114, a);
+        mem.write(w + 0x11c, b);
+        0
+    }
+
+    /// `MenuWin_StateWaitText(w)` (`0x008e0280`, own name): state `+0x2e`
+    /// 2, or 3 when the text at `+0x98` is empty; the handler `+0x120` is
+    /// itself. Returns 0.
+    pub fn menu_win_state_wait_text(mem: &mut impl Mem, w: u32) -> u32 {
+        let text: u32 = mem.read(w + 0x98);
+        let state: u16 = if mem.read::<u8>(text) == 0 { 3 } else { 2 };
+        mem.write(w + 0x2e, state);
+        let me = mem.rebase(0x008e_0280);
+        mem.write(w + 0x120, me);
+        0
+    }
+
+    /// `Yi_PutRef(p, a, b)` (`0x00916ad0`, own name): `{b, 0, a, 0}`.
+    /// Returns `a` (left in `eax`).
+    pub fn yi_put_ref(mem: &mut impl Mem, p: u32, a: u32, b: u32) -> u32 {
+        mem.write(p, [b, 0, a, 0]);
+        a
+    }
+
+    /// `TkDebugFont_SetWord4(p)` (`0x0088fb10`, own name): word `+4` of
+    /// the current debug font buffer = `set_ptr32(p)` (`p`). Returns `p`.
+    pub fn tk_debug_font_set_word4(mem: &mut impl Mem, p: u32) -> u32 {
+        let buf = DEBUG_FONT_BUFFER.get(mem);
+        mem.write(buf.wrapping_add(4), p);
+        p
+    }
+
+    /// `TkGetDebugFontStringWidth(proportional, s)` (`0x0088edf0`):
+    /// [`tk_get_str_width`] in 16-pixel cells (arithmetic shift).
+    pub fn tk_get_debug_font_string_width(mem: &impl Mem, proportional: i32, s: u32) -> i32 {
+        tk_get_str_width(mem, proportional, s) >> 4
+    }
 }
 
 #[cfg(test)]

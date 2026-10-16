@@ -2341,4 +2341,141 @@ ported! {
         tk::MENU_PACKET.set(&mut m, end);
         end
     }
+    /// `Gu_SetPopupWindow(w)`: `w` (left in `eax`).
+    Gu_SetPopupWindow @ 0x0084_b670 => extern "C" fn gu_set_popup_window(w: u32) -> u32 {
+        tk::set_word(&mut mem(), tk::GU_POPUP_WINDOW, w)
+    }
+    /// `Atel_SetScriptByteGate(v)`: `v` (left in `eax`).
+    Atel_SetScriptByteGate @ 0x0087_20d0 => extern "C" fn atel_set_script_byte_gate(v: u32) -> u32 {
+        tk::set_word(&mut mem(), tk::ATEL_SCRIPT_BYTE_GATE, v)
+    }
+    /// `TkSetVibrateOff(v)`: the low byte; `v` (`al` over it) in `eax`.
+    TkSetVibrateOff @ 0x0087_5f50 => extern "C" fn tk_set_vibrate_off(v: u32) -> u32 {
+        tk::set_byte(&mut mem(), tk::VIBRATE_OFF, v)
+    }
+    /// `AtelSetDebugDraw(v)`: the low byte; `v` in `eax`.
+    AtelSetDebugDraw @ 0x0088_5110 => extern "C" fn atel_set_debug_draw(v: u32) -> u32 {
+        tk::set_byte(&mut mem(), tk::ATEL_DEBUG_DRAW, v)
+    }
+    /// `TkConfig_SetByteC(v)`: the low byte; `v` in `eax`.
+    TkConfig_SetByteC @ 0x0088_ec20 => extern "C" fn tk_config_set_byte_c(v: u32) -> u32 {
+        tk::tk_config_set_byte_c(&mut mem(), v)
+    }
+    /// `TkMenuSetDrawShadeRatioStep(v)`: `v` (left in `eax`).
+    TkMenuSetDrawShadeRatioStep @ 0x008a_9680 => extern "C" fn tk_menu_set_draw_shade_ratio_step(v: u32) -> u32 {
+        tk::set_word(&mut mem(), tk::MENU_SHADE_RATIO_STEP, v)
+    }
+    /// `TkMenuSetScreenX2Flag(v)`: the low byte; `v` in `eax`.
+    TkMenuSetScreenX2Flag @ 0x008a_b020 => extern "C" fn tk_menu_set_screen_x2_flag(v: u32) -> u32 {
+        tk::set_byte(&mut mem(), tk::MENU_SCREEN_X2, v)
+    }
+    /// `Tk_ByteHighBit(b)`: `b & 0x80`.
+    Tk_ByteHighBit @ 0x0087_2580 => extern "C" fn tk_byte_high_bit(b: u32) -> u32 {
+        b & 0x80
+    }
+    /// `TkDebugPrint(fmt)`: `dbgPrintf` is an empty stub on PC; returns 1.
+    TkDebugPrint @ 0x0088_ecf0 => extern "C" fn tk_debug_print(_fmt: u32) -> u32 {
+        1
+    }
+    /// `TkGetDebugFontStringWidth(proportional, s)`.
+    TkGetDebugFontStringWidth @ 0x0088_edf0 => extern "C" fn tk_get_debug_font_string_width(proportional: i32, s: u32) -> i32 {
+        tk::tk_get_debug_font_string_width(&mem(), proportional, s)
+    }
+    /// `TkGetDebugControler1Hist(i)`: pad 0, zero-extended.
+    TkGetDebugControler1Hist @ 0x0088_5150 => extern "C" fn tk_get_debug_controler1_hist(i: i32) -> u32 {
+        tk::tk_get_debug_controler_hist(&mem(), 0, i, 4)
+    }
+    /// `TkGetDebugControler1TrigHist(i)`: pad 0, zero-extended.
+    TkGetDebugControler1TrigHist @ 0x0088_5170 => extern "C" fn tk_get_debug_controler1_trig_hist(i: i32) -> u32 {
+        tk::tk_get_debug_controler_hist(&mem(), 0, i, 6)
+    }
+    /// `TkGetDebugControlerHist(i)`: pad 1, zero-extended.
+    TkGetDebugControlerHist @ 0x0088_51b0 => extern "C" fn tk_get_debug_controler_hist(i: i32) -> u32 {
+        tk::tk_get_debug_controler_hist(&mem(), 1, i, 4)
+    }
+    /// `TkGetDebugControlerReptHist(i)`: pad 1, zero-extended.
+    TkGetDebugControlerReptHist @ 0x0088_51d0 => extern "C" fn tk_get_debug_controler_rept_hist(i: i32) -> u32 {
+        tk::tk_get_debug_controler_hist(&mem(), 1, i, 0xa)
+    }
+    /// `TkGetDebugControlerTrigHist(i)`: pad 1, zero-extended.
+    TkGetDebugControlerTrigHist @ 0x0088_51f0 => extern "C" fn tk_get_debug_controler_trig_hist(i: i32) -> u32 {
+        tk::tk_get_debug_controler_hist(&mem(), 1, i, 6)
+    }
+    /// `TkGetControlerIdHist(pad, port, i)`: `al` over the frame pointer.
+    TkGetControlerIdHist @ 0x0088_8db0 => extern "C" fn tk_get_controler_id_hist(pad: i32, port: i32, i: i32) -> u32 {
+        tk::tk_get_controler_id_hist(&mem(), pad, port, i)
+    }
+    /// `TkGetControlerPressHist(pad, port, i)`.
+    TkGetControlerPressHist @ 0x0088_8df0 => extern "C" fn tk_get_controler_press_hist(pad: i32, port: i32, i: i32) -> u32 {
+        tk::tk_get_controler_press_hist(&mem(), pad, port, i)
+    }
+    /// `TkDebugFont_SetWord4(p)`: `p` in `eax`.
+    TkDebugFont_SetWord4 @ 0x0088_fb10 => extern "C" fn tk_debug_font_set_word4(p: u32) -> u32 {
+        tk::tk_debug_font_set_word4(&mut mem(), p)
+    }
+    /// `TkMenuMainFreeWindowGroup(group)`.
+    TkMenuMainFreeWindowGroup @ 0x008a_a410 => extern "C" fn tk_menu_main_free_window_group(group: u32) {
+        tk::tk_menu_main_free_window_group(&mut mem(), group);
+    }
+    /// `Dma_CloseCnt(p, end, flags)`: `end`.
+    Dma_CloseCnt @ 0x0089_0a60 => extern "C" fn dma_close_cnt(p: u32, end: u32, flags: u32) -> u32 {
+        tk::dma_close_cnt(&mut mem(), p, end, flags)
+    }
+    /// `Dma_CloseCnt2(p, end, a, b)`: `end`.
+    Dma_CloseCnt2 @ 0x0089_0aa0 => extern "C" fn dma_close_cnt2(p: u32, end: u32, a: u32, b: u32) -> u32 {
+        tk::dma_close_cnt2(&mut mem(), p, end, a, b)
+    }
+    /// `Dma_CloseNext(p, end, addr, a, b)`: `end`.
+    Dma_CloseNext @ 0x0089_0ae0 => extern "C" fn dma_close_next(p: u32, end: u32, addr: u32, a: u32, b: u32) -> u32 {
+        tk::dma_close_next(&mut mem(), p, end, addr, a, b)
+    }
+    /// `Dma_PutCall(p, addr)`: `p + 0x20`.
+    Dma_PutCall @ 0x0089_08c0 => extern "C" fn dma_put_call(p: u32, addr: u32) -> u32 {
+        tk::dma_put_tag(&mut mem(), p, 0x50, addr)
+    }
+    /// `Dma_PutEnd(p)`: `p + 0x20`.
+    Dma_PutEnd @ 0x0089_0910 => extern "C" fn dma_put_end(p: u32) -> u32 {
+        tk::dma_put_tag(&mut mem(), p, 0x70, 0)
+    }
+    /// `Dma_PutCnt(p)`: `p + 0x20`.
+    Dma_PutCnt @ 0x0089_0960 => extern "C" fn dma_put_cnt(p: u32) -> u32 {
+        tk::dma_put_tag(&mut mem(), p, 0x10, 0)
+    }
+    /// `Dma_PutRet(p)`: `p + 0x20`.
+    Dma_PutRet @ 0x0089_09b0 => extern "C" fn dma_put_ret(p: u32) -> u32 {
+        tk::dma_put_tag(&mut mem(), p, 0x60, 0)
+    }
+    /// `Dma_PutCall2(p, addr)`: a copy of `Dma_PutCall`; `p + 0x20`.
+    Dma_PutCall2 @ 0x0089_0d90 => extern "C" fn dma_put_call2(p: u32, addr: u32) -> u32 {
+        tk::dma_put_tag(&mut mem(), p, 0x50, addr)
+    }
+    /// `MenuWin_StateSlide(w)`: 0.
+    MenuWin_StateSlide @ 0x008e_0200 => extern "C" fn menu_win_state_slide(w: u32) -> u32 {
+        tk::menu_win_state_slide(&mut mem(), w)
+    }
+    /// `MenuWin_StateOpen(w)`: 0.
+    MenuWin_StateOpen @ 0x008e_0240 => extern "C" fn menu_win_state_open(w: u32) -> u32 {
+        tk::menu_win_state_open(&mut mem(), w)
+    }
+    /// `MenuWin_StateWaitText(w)`: 0.
+    MenuWin_StateWaitText @ 0x008e_0280 => extern "C" fn menu_win_state_wait_text(w: u32) -> u32 {
+        tk::menu_win_state_wait_text(&mut mem(), w)
+    }
+    /// `Yi_PutRef(p, a, b)`: `a` (left in `eax`).
+    Yi_PutRef @ 0x0091_6ad0 => extern "C" fn yi_put_ref(p: u32, a: u32, b: u32) -> u32 {
+        tk::yi_put_ref(&mut mem(), p, a, b)
+    }
+    /// `Math_ClampPi(a)`: in `st0`.
+    Math_ClampPi @ 0x0088_b800 => extern "C" fn math_clamp_pi(a: f32) -> f32 {
+        ffx_menu::math::clamp_pi(a)
+    }
+    /// `TkMenuDrawSp3R0(x, y)`: `TkMenuDrawSp3R(x, y, 0)` (the original
+    /// writes the 0 into the caller's third argument slot and jumps).
+    TkMenuDrawSp3R0 @ 0x008d_ca30 => extern "C" fn tk_menu_draw_sp3_r0(x: u32, y: u32) -> u32 {
+        let mut m = mem();
+        let p = tk::MENU_PACKET.get(&m).wrapping_add(0x10);
+        let end = tk::menu_draw_sprites(&mut m, [p, 0, x, y, 0, 0, 0, 0x80], false);
+        tk::MENU_PACKET.set(&mut m, end);
+        end
+    }
 }
