@@ -228,4 +228,15 @@ pub mod bridge {
         }
         super::SIF_DMA_ID.set(mem, ffx_system::stub::SIF_SET_DMA);
     }
+
+    /// `SqsCmdSetC2(ctx, cmd)` (`0x0081c140`, an IOP command
+    /// handler in the table at `0x00c48f30`): the command's second `u16`
+    /// to `+0xc2` of the context's `+0x220` record. Returns the next
+    /// command (`cmd + 4`).
+    pub fn sqs_cmd_set_c2(mem: &mut impl Mem, ctx: u32, cmd: u32) -> u32 {
+        let v = mem.read::<u32>(ctx.wrapping_add(0x220));
+        let x = mem.read::<u16>(cmd.wrapping_add(2));
+        mem.write(v.wrapping_add(0xc2), x);
+        cmd.wrapping_add(4)
+    }
 }

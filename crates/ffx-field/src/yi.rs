@@ -17,6 +17,30 @@ pub const FOG_255: u32 = 0x00b1_70c0;
 pub const FOG_255_F32: u32 = 0x00b4_80d4;
 /// The window handlers by kind (`yiWindowSetHandlers`): 6 words a kind.
 pub const WINDOW_HANDLERS: u32 = 0x00c5_d788;
+/// The idle window handler (`0x00907e50`) the window finishers set.
+pub const WINDOW_IDLE: u32 = 0x0090_7e50;
+/// The handler of an open window (`0x00907d70`, returns 0).
+pub const WINDOW_OPEN_IDLE: u32 = 0x0090_7d70;
+/// `yiWindowFinishAll` (`0x00907040`), a closing window's last handler.
+pub const WINDOW_FINISH_ALL: u32 = 0x0090_7040;
+/// 416.0 and 512.0 as `f32`s (`.rdata`): the window area's height and
+/// width.
+pub const WINDOW_HEIGHT_F32: u32 = 0x00b4_1d98;
+/// See [`WINDOW_HEIGHT_F32`].
+pub const WINDOW_WIDTH_F32: u32 = 0x00b4_1d9c;
+/// 416.0, 512.0, 0.0 and 6.0 as `f64`s (`.rdata`): the slide sizes and
+/// the six frames they take.
+pub const WINDOW_HEIGHT: u32 = 0x00b4_1d30;
+/// See [`WINDOW_HEIGHT`].
+pub const WINDOW_WIDTH: u32 = 0x00b4_1d38;
+/// See [`WINDOW_HEIGHT`].
+pub const WINDOW_ZERO: u32 = 0x00b0_db90;
+/// See [`WINDOW_HEIGHT`].
+pub const WINDOW_FRAMES: u32 = 0x00b3_eb88;
+/// 8.0 and 28.0 (`f32`s, `.rdata`): the bar window's top and bottom.
+pub const WINDOW_BAR_TOP: u32 = 0x00b9_2314;
+/// See [`WINDOW_BAR_TOP`].
+pub const WINDOW_BAR_BOTTOM: u32 = 0x00b5_ee74;
 /// The draw mask (`yiSetDrawMask`): -9 after a map is read, -1 when the
 /// battle map circle is on (`yiMapReadMaster`); script native 0x8000 sets
 /// its bits.
@@ -1425,5 +1449,411 @@ pub mod bridge {
             mem.write(scene.wrapping_add(0x6822c + 4 * i), f);
         }
         last
+    }
+
+    /// `yiWindow*` handlers (window kinds of [`super::WINDOW_HANDLERS`]):
+    /// the window's `+0` (`u16`, active), `+6` (`i16`, opening progress
+    /// in 1/4096), `+8` (`u16`, state: 2 open, 4 closed), `+0xc`/`+0xe`
+    /// (`i16`, frames left and the reload), `+0x10` (`i16`, height),
+    /// `+0x18..=+0x24` (the rectangle animated from), `+0x28..=+0x34` (the
+    /// rectangle: x0, y0, x1, y1), `+0x38`/`+0x3c` (the per-frame steps),
+    /// `+0x48..=+0x54` (the rectangle drawn), `+0x58` (colour), the
+    /// handlers `+0x60..` and the current one `+0x74`. Each returns 1 when
+    /// it moved to the next state.
+    fn win_copy(mem: &mut impl Mem, w: u32, to: u32, from: u32) {
+        let v = x87::copy(mem.read::<u32>(w.wrapping_add(from)));
+        mem.write(w.wrapping_add(to), v);
+    }
+
+    fn win_const(mem: &impl Mem, c: u32) -> u32 {
+        let at = mem.rebase(c);
+        x87::copy(mem.read::<u32>(at))
+    }
+
+    fn win_f64(mem: &impl Mem, c: u32) -> f64 {
+        let at = mem.rebase(c);
+        mem.read::<f64>(at)
+    }
+
+    fn win_ld(mem: &impl Mem, w: u32, off: u32) -> f64 {
+        ffx_bridge::x87::load(mem.read::<u32>(w.wrapping_add(off)))
+    }
+
+    /// The state change of a finished step: state `state`, the handler
+    /// from slot `slot`. Returns 1.
+    fn win_next(mem: &mut impl Mem, w: u32, state: u16, slot: u32) -> u32 {
+        mem.write(w.wrapping_add(8), state);
+        let h = mem.read::<u32>(w.wrapping_add(slot));
+        mem.write(w.wrapping_add(0x74), h);
+        1
+    }
+
+    /// A slide step: `+field` plus (or minus) the step at `+step`, one
+    /// frame (`+0xc`) less; when none is left, the frames reloaded from
+    /// `+0xe` (`reload`) and [`win_next`].
+    #[allow(clippy::fn_params_excessive_bools, clippy::too_many_arguments)] // the variants, as flags
+    fn win_step(
+        mem: &mut impl Mem,
+        w: u32,
+        field: u32,
+        step: u32,
+        add: bool,
+        reload: bool,
+        state: u16,
+        slot: u32,
+    ) -> u32 {
+        let v = if add {
+            win_ld(mem, w, step) + win_ld(mem, w, field)
+        } else {
+            win_ld(mem, w, field) - win_ld(mem, w, step)
+        };
+        let frames = mem.read::<i16>(w.wrapping_add(0xc)).wrapping_sub(1);
+        mem.write(w.wrapping_add(0xc), frames);
+        mem.write(w.wrapping_add(field), x87::store(v));
+        if frames > 0 {
+            return 0;
+        }
+        if reload {
+            let r = mem.read::<u16>(w.wrapping_add(0xe));
+            mem.write(w.wrapping_add(0xc), r);
+        }
+        win_next(mem, w, state, slot)
+    }
+
+    /// The last handler of a close: inactive (`+0`, and `+8` when
+    /// `clear_state`), the idle handler (`0x00907e50`). Returns 1.
+    fn win_finish(mem: &mut impl Mem, w: u32, clear_state: bool) -> u32 {
+        mem.write(w, 0u16);
+        if clear_state {
+            mem.write(w.wrapping_add(8), 0u16);
+        }
+        let idle = mem.rebase(super::WINDOW_IDLE);
+        mem.write(w.wrapping_add(0x74), idle);
+        1
+    }
+
+    /// The drawn rectangle from the rectangle (x0, y0, `a`, `b`).
+    fn win_drawn(mem: &mut impl Mem, w: u32, a: u32, b: u32) {
+        win_copy(mem, w, 0x48, 0x28);
+        win_copy(mem, w, 0x4c, 0x2c);
+        win_copy(mem, w, 0x50, a);
+        win_copy(mem, w, 0x54, b);
+    }
+
+    /// `yiWindowGrowInit(w)` (`0x00907cc0`, kind 0): progress 0, drawn
+    /// x1 = x0 (a zero-width rectangle).
+    pub fn yi_window_grow_init(mem: &mut impl Mem, w: u32) -> u32 {
+        mem.write(w.wrapping_add(6), 0u16);
+        win_drawn(mem, w, 0x28, 0x34);
+        0
+    }
+
+    /// The drawn right edge of a growing window: `x0 + height * progress
+    /// / 4096` (`f32`).
+    fn win_grow_edge(mem: &mut impl Mem, w: u32) -> f64 {
+        let p = i32::from(mem.read::<i16>(w.wrapping_add(0x10)))
+            * i32::from(mem.read::<i16>(w.wrapping_add(6)));
+        #[allow(clippy::cast_precision_loss)] // fild, then fstp m32 rounds
+        let f = f64::from((p / 4096) as f32);
+        let t = x87::store(f + win_ld(mem, w, 0x28));
+        mem.write(w.wrapping_add(0x50), t);
+        f64::from(f32::from_bits(t))
+    }
+
+    /// `yiWindowGrowOpen(w)` (`0x00907cf0`): progress + 0x2aa (at most
+    /// 0x1000); the drawn x1 from it; open (state 2, the handler
+    /// `0x00907d70`) once it reaches x1.
+    pub fn yi_window_grow_open(mem: &mut impl Mem, w: u32) -> u32 {
+        let p = mem.read::<i16>(w.wrapping_add(6)).wrapping_add(0x2aa);
+        mem.write(w.wrapping_add(6), if p >= 0x1000 { 0x1000 } else { p });
+        let t = win_grow_edge(mem, w);
+        if win_ld(mem, w, 0x30) <= t {
+            mem.write(w.wrapping_add(8), 2u16);
+            let h = mem.rebase(super::WINDOW_OPEN_IDLE);
+            mem.write(w.wrapping_add(0x74), h);
+            return 1;
+        }
+        0
+    }
+
+    /// `yiWindowGrowClose(w)` (`0x00906fc0`): progress - 0x2aa (at least
+    /// 0); closed (state 4, the handler `yiWindowFinishAll`) once the
+    /// drawn x1 is back at x0.
+    pub fn yi_window_grow_close(mem: &mut impl Mem, w: u32) -> u32 {
+        let p = mem.read::<i16>(w.wrapping_add(6)).wrapping_add(-0x2aa);
+        mem.write(w.wrapping_add(6), if p > 0 { p } else { 0 });
+        let t = win_grow_edge(mem, w);
+        if t <= win_ld(mem, w, 0x28) {
+            mem.write(w.wrapping_add(8), 4u16);
+            let h = mem.rebase(super::WINDOW_FINISH_ALL);
+            mem.write(w.wrapping_add(0x74), h);
+            return 1;
+        }
+        0
+    }
+
+    /// `yiWindowFinishAll(w)` (`0x00907040`): [`win_finish`], state 0.
+    pub fn yi_window_finish_all(mem: &mut impl Mem, w: u32) -> u32 {
+        win_finish(mem, w, true)
+    }
+
+    /// `yiWindowFinish(w)` (`0x009071f0`, `0x00907370`, `0x009075b0`,
+    /// `0x009077e0`, `0x00907a20`: the same code): [`win_finish`].
+    pub fn yi_window_finish(mem: &mut impl Mem, w: u32) -> u32 {
+        win_finish(mem, w, false)
+    }
+
+    /// `yiWindowPopInit(w)` (`0x00907160`, kinds 1 and 2): no frames, the
+    /// drawn rectangle the rectangle.
+    pub fn yi_window_pop_init(mem: &mut impl Mem, w: u32) -> u32 {
+        mem.write(w.wrapping_add(0xc), 0u32);
+        win_drawn(mem, w, 0x30, 0x34);
+        0
+    }
+
+    /// `yiWindowPopOpen(w)` (`0x00907190`): open at once (state 2, slot
+    /// `+0x68`).
+    pub fn yi_window_pop_open(mem: &mut impl Mem, w: u32) -> u32 {
+        win_next(mem, w, 2, 0x68)
+    }
+
+    /// `yiWindowPopClose(w)` (`0x009071c0`): one frame (`+0xc`) less;
+    /// closed (state 4, slot `+0x70`) when none is left.
+    pub fn yi_window_pop_close(mem: &mut impl Mem, w: u32) -> u32 {
+        let f = mem.read::<i16>(w.wrapping_add(0xc)).wrapping_sub(1);
+        mem.write(w.wrapping_add(0xc), f);
+        if f > 0 {
+            return 0;
+        }
+        win_next(mem, w, 4, 0x70)
+    }
+
+    /// `yiWindowSlideDownInit(w)` (`0x00907450`, kind 3): the window drops
+    /// from y = 416 (the screen's bottom) to its rectangle: from `(x0, 0,
+    /// x1, 0)`, drawn `(x0, 0, x1, 0)`, 6 frames of `(416 - 0) / 6`, y1
+    /// 416.
+    pub fn yi_window_slide_down_init(mem: &mut impl Mem, w: u32) -> u32 {
+        let k = win_const(mem, super::WINDOW_HEIGHT_F32);
+        mem.write(w.wrapping_add(0x34), k);
+        mem.write(w.wrapping_add(0xc), 0x0006_0006u32);
+        for off in [0x2cu32, 0x24, 0x1c] {
+            mem.write(w.wrapping_add(off), 0u32);
+        }
+        win_copy(mem, w, 0x18, 0x28);
+        win_copy(mem, w, 0x20, 0x30);
+        win_copy(mem, w, 0x50, 0x20);
+        win_copy(mem, w, 0x48, 0x18);
+        mem.write(w.wrapping_add(0x4c), 0u32);
+        mem.write(w.wrapping_add(0x54), 0u32);
+        let s = (win_f64(mem, super::WINDOW_HEIGHT) - win_f64(mem, super::WINDOW_ZERO))
+            / win_f64(mem, super::WINDOW_FRAMES);
+        mem.write(w.wrapping_add(0x3c), x87::store(s));
+        0
+    }
+
+    /// `yiWindowSlideDownOpen(w)` (`0x009072e0`): the drawn y1 (`+0x54`)
+    /// grows by the step; then open.
+    pub fn yi_window_slide_down_open(mem: &mut impl Mem, w: u32) -> u32 {
+        win_step(mem, w, 0x54, 0x3c, true, true, 2, 0x68)
+    }
+
+    /// `yiWindowSlideDownClose(w)` (`0x00907330`): the drawn y1 shrinks;
+    /// then closed.
+    pub fn yi_window_slide_down_close(mem: &mut impl Mem, w: u32) -> u32 {
+        win_step(mem, w, 0x54, 0x3c, false, false, 4, 0x70)
+    }
+
+    /// `yiWindowSlideUpInitHere(w)` (`0x009074b0`, kind 4): from the
+    /// bottom edge (416) up to the rectangle moved so its bottom is at
+    /// 416: y0 = y0 - (416 - y1), 6 frames.
+    pub fn yi_window_slide_up_init_here(mem: &mut impl Mem, w: u32) -> u32 {
+        mem.write(w.wrapping_add(0xc), 0x0006_0006u32);
+        let h = win_f64(mem, super::WINDOW_HEIGHT);
+        let t = x87::store(win_ld(mem, w, 0x2c) - (h - win_ld(mem, w, 0x34)));
+        mem.write(w.wrapping_add(0x2c), t);
+        let k = win_const(mem, super::WINDOW_HEIGHT_F32);
+        mem.write(w.wrapping_add(0x24), k);
+        mem.write(w.wrapping_add(0x1c), k);
+        slide_up_rest(mem, w, k, f64::from(f32::from_bits(t)));
+        0
+    }
+
+    /// The common tail of the kind 4/5 inits: from `(x0, 416, x1, 416)`,
+    /// drawn the same, the step `(y1 - y0) / 6`.
+    fn slide_up_rest(mem: &mut impl Mem, w: u32, k: u32, y0: f64) {
+        win_copy(mem, w, 0x18, 0x28);
+        win_copy(mem, w, 0x20, 0x30);
+        win_copy(mem, w, 0x50, 0x20);
+        win_copy(mem, w, 0x48, 0x18);
+        mem.write(w.wrapping_add(0x4c), k);
+        mem.write(w.wrapping_add(0x54), k);
+        let s = (win_ld(mem, w, 0x34) - y0) / win_f64(mem, super::WINDOW_FRAMES);
+        mem.write(w.wrapping_add(0x3c), x87::store(s));
+    }
+
+    /// `yiWindowSlideUpInit(w)` (`0x00907690`, kind 5): the rectangle
+    /// `(x0, 0, x1, 416)` slides up from the bottom edge.
+    pub fn yi_window_slide_up_init(mem: &mut impl Mem, w: u32) -> u32 {
+        let k = win_const(mem, super::WINDOW_HEIGHT_F32);
+        mem.write(w.wrapping_add(0x34), k);
+        mem.write(w.wrapping_add(0xc), 0x0006_0006u32);
+        mem.write(w.wrapping_add(0x2c), 0u32);
+        mem.write(w.wrapping_add(0x24), k);
+        mem.write(w.wrapping_add(0x1c), k);
+        win_copy(mem, w, 0x18, 0x28);
+        win_copy(mem, w, 0x20, 0x30);
+        win_copy(mem, w, 0x50, 0x20);
+        win_copy(mem, w, 0x48, 0x18);
+        mem.write(w.wrapping_add(0x4c), k);
+        mem.write(w.wrapping_add(0x54), k);
+        let s = (win_f64(mem, super::WINDOW_HEIGHT) - win_f64(mem, super::WINDOW_ZERO))
+            / win_f64(mem, super::WINDOW_FRAMES);
+        mem.write(w.wrapping_add(0x3c), x87::store(s));
+        0
+    }
+
+    /// `yiWindowSlideUpOpen(w)` (`0x00907520`): the drawn y0 (`+0x4c`)
+    /// rises by the step; then open.
+    pub fn yi_window_slide_up_open(mem: &mut impl Mem, w: u32) -> u32 {
+        win_step(mem, w, 0x4c, 0x3c, false, true, 2, 0x68)
+    }
+
+    /// `yiWindowSlideUpClose(w)` (`0x00907570`): the drawn y0 falls; then
+    /// closed.
+    pub fn yi_window_slide_up_close(mem: &mut impl Mem, w: u32) -> u32 {
+        win_step(mem, w, 0x4c, 0x3c, true, false, 4, 0x70)
+    }
+
+    /// `yiWindowSlideRightInitHere(w)` (`0x009076f0`, kind 6): x1 = x1 +
+    /// x0, from the left edge (0), 6 frames of `(x1 - x0) / 6`.
+    pub fn yi_window_slide_right_init_here(mem: &mut impl Mem, w: u32) -> u32 {
+        mem.write(w.wrapping_add(0xc), 0x0006_0006u32);
+        let t = x87::store(win_ld(mem, w, 0x30) + win_ld(mem, w, 0x28));
+        mem.write(w.wrapping_add(0x30), t);
+        mem.write(w.wrapping_add(0x20), 0u32);
+        mem.write(w.wrapping_add(0x18), 0u32);
+        side_rest(mem, w, 0);
+        let s = (f64::from(f32::from_bits(t)) - win_ld(mem, w, 0x28))
+            / win_f64(mem, super::WINDOW_FRAMES);
+        mem.write(w.wrapping_add(0x38), x87::store(s));
+        0
+    }
+
+    /// The common middle of the kind 6..=9 inits: from y0/y1 of the
+    /// rectangle, drawn `(edge, y0, edge, y1)`.
+    fn side_rest(mem: &mut impl Mem, w: u32, edge: u32) {
+        win_copy(mem, w, 0x1c, 0x2c);
+        win_copy(mem, w, 0x24, 0x34);
+        win_copy(mem, w, 0x54, 0x24);
+        mem.write(w.wrapping_add(0x48), edge);
+        mem.write(w.wrapping_add(0x50), edge);
+        win_copy(mem, w, 0x4c, 0x1c);
+    }
+
+    /// `yiWindowSlideRightInit(w)` (`0x009078c0`, kind 7): the rectangle
+    /// `(0, y0, 512, y1)` slides in from the left edge.
+    pub fn yi_window_slide_right_init(mem: &mut impl Mem, w: u32) -> u32 {
+        let k = win_const(mem, super::WINDOW_WIDTH_F32);
+        mem.write(w.wrapping_add(0x30), k);
+        mem.write(w.wrapping_add(0xc), 0x0006_0006u32);
+        for off in [0x28u32, 0x20, 0x18] {
+            mem.write(w.wrapping_add(off), 0u32);
+        }
+        side_rest(mem, w, 0);
+        let s = (win_f64(mem, super::WINDOW_WIDTH) - win_f64(mem, super::WINDOW_ZERO))
+            / win_f64(mem, super::WINDOW_FRAMES);
+        mem.write(w.wrapping_add(0x38), x87::store(s));
+        0
+    }
+
+    /// `yiWindowSlideRightOpen(w)` (`0x00907750`): the drawn x1 (`+0x50`)
+    /// grows by the step; then open.
+    pub fn yi_window_slide_right_open(mem: &mut impl Mem, w: u32) -> u32 {
+        win_step(mem, w, 0x50, 0x38, true, true, 2, 0x68)
+    }
+
+    /// `yiWindowSlideRightClose(w)` (`0x009077a0`): the drawn x1 shrinks;
+    /// then closed.
+    pub fn yi_window_slide_right_close(mem: &mut impl Mem, w: u32) -> u32 {
+        win_step(mem, w, 0x50, 0x38, false, false, 4, 0x70)
+    }
+
+    /// `yiWindowSlideLeftInitHere(w)` (`0x00907920`, kind 8): x0 = x0 -
+    /// (512 - x1), from the right edge (512), 6 frames of `(x1 - x0) / 6`.
+    pub fn yi_window_slide_left_init_here(mem: &mut impl Mem, w: u32) -> u32 {
+        mem.write(w.wrapping_add(0xc), 0x0006_0006u32);
+        let width = win_f64(mem, super::WINDOW_WIDTH);
+        let t = x87::store(win_ld(mem, w, 0x28) - (width - win_ld(mem, w, 0x30)));
+        mem.write(w.wrapping_add(0x28), t);
+        let k = win_const(mem, super::WINDOW_WIDTH_F32);
+        mem.write(w.wrapping_add(0x20), k);
+        mem.write(w.wrapping_add(0x18), k);
+        side_rest(mem, w, k);
+        let s = (win_ld(mem, w, 0x30) - f64::from(f32::from_bits(t)))
+            / win_f64(mem, super::WINDOW_FRAMES);
+        mem.write(w.wrapping_add(0x38), x87::store(s));
+        0
+    }
+
+    /// `yiWindowSlideLeftInit(w)` (`0x00907b00`, kind 9): the rectangle
+    /// `(0, y0, 512, y1)` slides in from the right edge.
+    pub fn yi_window_slide_left_init(mem: &mut impl Mem, w: u32) -> u32 {
+        let k = win_const(mem, super::WINDOW_WIDTH_F32);
+        mem.write(w.wrapping_add(0x30), k);
+        mem.write(w.wrapping_add(0xc), 0x0006_0006u32);
+        mem.write(w.wrapping_add(0x28), 0u32);
+        mem.write(w.wrapping_add(0x20), k);
+        mem.write(w.wrapping_add(0x18), k);
+        side_rest(mem, w, k);
+        let s = (win_f64(mem, super::WINDOW_WIDTH) - win_f64(mem, super::WINDOW_ZERO))
+            / win_f64(mem, super::WINDOW_FRAMES);
+        mem.write(w.wrapping_add(0x38), x87::store(s));
+        0
+    }
+
+    /// `yiWindowSlideLeftOpen(w)` (`0x00907990`): the drawn x0 (`+0x48`)
+    /// moves left by the step; then open.
+    pub fn yi_window_slide_left_open(mem: &mut impl Mem, w: u32) -> u32 {
+        win_step(mem, w, 0x48, 0x38, false, true, 2, 0x68)
+    }
+
+    /// `yiWindowSlideLeftClose(w)` (`0x009079e0`): the drawn x0 moves
+    /// back; then closed.
+    pub fn yi_window_slide_left_close(mem: &mut impl Mem, w: u32) -> u32 {
+        win_step(mem, w, 0x48, 0x38, true, false, 4, 0x70)
+    }
+
+    /// `yiWindowBarInit(w)` (`0x00907b60`, kind 10): the drawn rectangle
+    /// `(0, 8, 512, 28)` and colour `0x80808080`.
+    pub fn yi_window_bar_init(mem: &mut impl Mem, w: u32) -> u32 {
+        mem.write(w.wrapping_add(0x48), 0u32);
+        mem.write(w.wrapping_add(0x58), 0x8080_8080u32);
+        for (off, c) in [
+            (0x4cu32, super::WINDOW_BAR_TOP),
+            (0x50, super::WINDOW_WIDTH_F32),
+            (0x54, super::WINDOW_BAR_BOTTOM),
+        ] {
+            let v = win_const(mem, c);
+            mem.write(w.wrapping_add(off), v);
+        }
+        0
+    }
+
+    /// `yiWindowBarOpen(w)` (`0x00907ba0`): open at once (state 2, the
+    /// handler `0x00907d70`).
+    pub fn yi_window_bar_open(mem: &mut impl Mem, w: u32) -> u32 {
+        mem.write(w.wrapping_add(8), 2u16);
+        let h = mem.rebase(super::WINDOW_OPEN_IDLE);
+        mem.write(w.wrapping_add(0x74), h);
+        1
+    }
+
+    /// `yiWindowBarClose(w)` (`0x00907bd0`): closed at once (state 4, the
+    /// handler `yiWindowFinishAll`).
+    pub fn yi_window_bar_close(mem: &mut impl Mem, w: u32) -> u32 {
+        mem.write(w.wrapping_add(8), 4u16);
+        let h = mem.rebase(super::WINDOW_FINISH_ALL);
+        mem.write(w.wrapping_add(0x74), h);
+        1
     }
 }

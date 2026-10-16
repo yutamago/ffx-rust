@@ -354,6 +354,56 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   jumping into `rcbgFini`; `0x0083bdb0` (a free-block helper beside the
   `Sg_`/`Ch_` code, writing `0x01301968`) is left to its module.
 
+## Free camera, map teardown, windows (round 7)
+
+- Free camera (`FreeCamera`, the PC build's fly camera, `0x344` bytes,
+  singleton `g_FreeCamera` `0x00ccc830`): two `Phyre::PCameraPerspective`
+  at `+0xc` and `+0x164` (their buffers at `+0xdc`, `+0x234`; bit 0 marks a
+  buffer not owned), a `PWorldMatrixFlyController` at `+0x2bc`, speed
+  `+8` (60.0), flags `+0x338`, `+0x339`, `+0x33a`, `+0x33c`. The
+  constructor (`0x0067fe70`) and destructor (`0x0067ff10`) link an
+  exception frame at `fs:[0]`; the ports run the Phyre constructors and
+  destructors (library code) through callbacks.
+  `FreeCamera_destroyInstance` (`0x00680000`) is called by
+  `graphicFinalize`.
+- Map teardown (`Yn_MapSystemFini` `0x00919a60` → `rcbgFini`
+  `0x00921aa0`): the guide's minimap VFX (`graphicVFXDestroy(0, model
+  +0x14)`), `rcbgPreFini` (each scene, `0x110` bytes, `rcbgSceneFini`;
+  the scene array, `+0xc` and the map freed; `MsSetCameraMatrix(0, 0, 0,
+  0, 0, 1024.0)`), `sceDevVif0Reset` in debug builds, the guide
+  (`rcbgGuideDelete`: its VFX instance, handle low word `0x0230fd20`,
+  high word the guide; the walk model), the chunks at `+0x10`, `+0x14`,
+  `+0x18`, then the system. Scenes (`rcbgSceneFini`): layers (`0xc0`
+  bytes: transfers `+0xa0`, `+0xbc`, animation block `+0x90`), objects
+  (destructor at `+4` of each), `+0x14`, models (`+0x1c`, `i16` count
+  `+0x18`). Everything is freed through `rcFree` (`0x009258e0`, a jump
+  to `user_free`).
+- Window handlers (`g_YiWindowHandlers` `0x00c5d788`, 6 slots a kind:
+  `+0x60` init, `+0x64` open, `+0x68` after opening, `+0x6c` close,
+  `+0x70` after closing, `+0x78` draw; the current one at `+0x74`, the
+  idle handler `0x00907e50`). Window fields: `+0` active, `+6` progress
+  (1/4096), `+8` state (2 open, 4 closed), `+0xc`/`+0xe` frames and
+  reload, `+0x10` height, `+0x18..+0x24` the rectangle animated from,
+  `+0x28..+0x34` the rectangle (x0, y0, x1, y1), `+0x38`/`+0x3c` steps,
+  `+0x48..+0x54` the rectangle drawn, `+0x58` colour. Kinds: 0 grows from
+  the left edge (`+0x2aa` progress a frame), 1 and 2 pop, 3 slides down,
+  4 and 5 up, 6 and 7 right, 8 and 9 left (6 frames over a 512x416 area;
+  the "Here" variants start from the window's own rectangle), 10 is a
+  bar `(0, 8, 512, 28)`. The draw handlers call the PS2 2D drawing and
+  stay original.
+- `rcCopyQword_*`: thirteen copies of `(dst, src)` moving a quadword
+  through the emulated `vf31` (`0x00c8f980`) with `VFX_Copy16From` and
+  `VFX_Copy16To`.
+- Testing: the Phyre perspective calls `_CItan` (patched to `fptan`);
+  `operator delete`, `rcFree`, the VFX calls, `MsSetCameraMatrix` and
+  `sceDevVif0Reset` are replaced by logging stubs in both oracles (the
+  CRT heap needs critical sections the oracle does not stub yet), so the
+  tests compare the calls and their order.
+- Not ported: the map file reader `0x0090f900` (it calls the
+  `sceGs*`/`FlushCache` stubs, `Sg_MFIFOSync` and graphics objects, and
+  `0x0090ff40`/`0x0090e5d0`, not ported yet); the window draw handlers;
+  `0x006e9250` (a UI movie loader registering `getLocByStr` etc.).
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

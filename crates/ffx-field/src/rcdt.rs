@@ -229,6 +229,61 @@ pub mod bridge {
         }
         at
     }
+
+    /// `rcdtChunkFini(chunk)` (`0x0092b7f0`): frees the chunk's data.
+    pub fn rcdt_chunk_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        c: u32,
+        call: &mut C,
+    ) -> u32 {
+        crate::model::bridge::free_field(mem, call, c)
+    }
+
+    /// `rcdtChunkDelete(chunk)` (`0x0092b7d0`): [`rcdt_chunk_fini`], then
+    /// the chunk freed.
+    pub fn rcdt_chunk_delete<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        c: u32,
+        call: &mut C,
+    ) -> u32 {
+        rcdt_chunk_fini(mem, c, call);
+        crate::model::bridge::rc_free(mem, call, c)
+    }
+
+    /// `rcdtParseNextToken(parse)` (`0x0092ba30`): the cursor past the
+    /// token ([`rcdt_parse_skip_token`]) and then the separators
+    /// ([`rcdt_parse_skip_separators`]). Returns the new cursor.
+    pub fn rcdt_parse_next_token(mem: &mut impl Mem, p: u32) -> u32 {
+        let at = rcdt_parse_skip_token(mem, p);
+        mem.write(p.wrapping_add(4), at);
+        let at = rcdt_parse_skip_separators(mem, p);
+        mem.write(p.wrapping_add(4), at);
+        at
+    }
+
+    /// `rcdtParseTokenLen(parse)` (`0x0092bf30`): the current token's
+    /// length.
+    pub fn rcdt_parse_token_len(mem: &impl Mem, p: u32) -> u32 {
+        rcdt_parse_skip_token(mem, p).wrapping_sub(mem.read::<u32>(p.wrapping_add(4)))
+    }
+
+    /// `rcdtParseTokenLenText(parse)` (`0x0092be10`): the token's length
+    /// in text mode (`+8` 1), else 0.
+    pub fn rcdt_parse_token_len_text(mem: &impl Mem, p: u32) -> u32 {
+        if mem.read::<u32>(p.wrapping_add(8)) == 1 {
+            rcdt_parse_token_len(mem, p)
+        } else {
+            0
+        }
+    }
+
+    /// `rcdtParseSeekChar(parse, c)` (`0x0092b990`): the cursor moved to
+    /// `c` ([`rcdt_parse_find_char`]). Returns it.
+    pub fn rcdt_parse_seek_char(mem: &mut impl Mem, p: u32, c: i8) -> u32 {
+        let at = rcdt_parse_find_char(mem, p, c);
+        mem.write(p.wrapping_add(4), at);
+        at
+    }
 }
 
 #[cfg(test)]
