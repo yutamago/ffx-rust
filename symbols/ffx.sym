@@ -30,6 +30,7 @@
 0x00402cf0 function std_string_ctor_move         # structure: thiscall(this, other): empty init, then takes other's heap pointer (capacity >= 16) or copies its small buffer, and leaves other empty; MSVC std::basic_string<char>(basic_string &&); name ours
 0x00402d60 function std_string_assign_move       # structure: thiscall(this, other): if this != other: frees own heap buffer (capacity > 15), then moves other in (0x004039b0); MSVC basic_string<char>::operator=(basic_string &&); name ours
 0x00402da0 function std_string_dtor              # structure: fastcall(this): operator_delete(ptr) when capacity > 15, then capacity 15, size 0, buf[0] = 0 (_Tidy(true)); MSVC ~basic_string<char>; 59 callers, mostly unwind funclets; name ours
+0x00404740 function std_string_Copy              # structure: thiscall(this, new size, old size): MSVC basic_string<char>::_Copy, reallocates the buffer (operator_new, copy, operator_delete); called by every growing std::string operation; name ours
 0x00405ba0 function ReturnConst_00405ba0 # () -> 0x80; name ours
 0x00405e20 function zlib_uncompress           # zlib 1.2.x uncompress(dst, &dst_len, src, src_len), cdecl; replaced by ffx-hook
 0x00406000 function zlib_inflateInit_         # called first by zlib_uncompress; stream ptr in ECX
@@ -49,6 +50,7 @@
 0x0042f0f0 function FFXApplication_dtor_FFXApplication # structure: restores FFXApplication_vftable, posts WM_CLOSE (SendMessageW 0x10) when the window flag is set, then the PApplication destructor 0x00620bc0; the Switch's ~FFXApplication likewise ends in PApplication::~PApplication
 0x0042f120 function Phyre_PString_dtor_PString   # structure: fastcall(this): Phyre_PhyreFree(the buffer) unless bit 0 (external buffer) is set; the Switch's Phyre::PString::~PString calls PhyreFree; 101 callers, mostly unwind funclets
 0x0042f150 function FFXApplication_scalar_deleting_dtor # structure: ~FFXApplication body then Phyre_PhyreFree(this) when flag bit 0; the second ~FFXApplication of the Switch (deleting form)
+0x0042f4d0 function ResetToLauncher              # structure: (): SendMessageW(main window, WM_CLOSE); callers are fatal file errors (BigFileStream_fileTaskUncompress, fiosOpen, Game_InitFileSystem, PhyreFIOS_LoadMagicfilePrx); Switch ResetToLauncher (88 bytes) is the free function of FFXApplication.cpp, and its decorated name ?ResetToLauncher@@ sorts before the ?afterGraphicSync@FFXApplication@@ methods, as here
 0x0042f4f0 function FFXApplication_afterGraphicSync # fh v3:exact 0x0042f5d0 FFXApplication::afterGraphicSync
 0x0042f520 function FFXApplication_animate    # fh v3:exact 0x0042f600 FFXApplication::animate
 0x0042f600 function FFXApplication_exitApplication # fh v3:exact 0x0042f6e0 FFXApplication::exitApplication
@@ -1898,6 +1900,8 @@
 0x006566c0 function PhyreScene_detachChrClusterFrom3DWorld # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f7370 PhyreScene::detachChrClusterFrom3DWorld, 2 votes, round 2
 0x00656940 function PhyreScene_addVFXDrawEvent # fh v3:exact 0x00656af0 PhyreScene::addVFXDrawEvent
 0x00657140 function PhyreScene_animate        # fh v3:bsim0.95 0x006572f0 PhyreScene::animate
+0x006575a0 function std_string_append_substr     # structure: thiscall(this, const string &s, pos, n): MSVC basic_string<char>::append(s, pos, n) ("invalid string position", "string too long"); name ours
+0x006576d0 function std_string_append_ptr        # structure: thiscall(this, const char *p, n): MSVC basic_string<char>::append(p, n): appends a substring of itself through 0x006575a0, "string too long" checks, grows through 0x00404740; name ours
 0x00657820 function PhyreScene_asyncDoFieldMapLoadTask # fh v3:exact 0x006579b0 PhyreScene::asyncDoFieldMapLoadTask
 0x00657850 function PhyreScene_asyncDoLoadCharacterTask # fh v3:exact 0x006579e0 PhyreScene::asyncDoLoadCharacterTask
 0x00657880 function PhyreScene_asyncDoloadMagicFileVFXTextureTask # fh v3:bsim1.00 0x00657a10 PhyreScene::asyncDoloadMagicFileVFXTextureTask
@@ -1963,6 +1967,18 @@
 0x00666c20 function PhyreScene_InitializeAllUsedRenderTargets # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f38e0 PhyreScene::InitializeAllUsedRenderTargets, 3 votes, round 2
 0x00666e40 function PhyreScene_processVFXDrawEvent # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f7430 PhyreScene::processVFXDrawEvent, 5 votes, round 2
 0x00667bb0 function PhyreScene_readAssetHeader # fh v3:exact 0x00667d40 PhyreScene::readAssetHeader
+0x00667e00 function Array_Reserve_00667e00       # structure: thiscall(array {count +0, capacity +4, data +8}, n): user_malloc(n * 4), copies count elements, user_free the old block, capacity = n; one of 12 template instances 0x00667e00..0x00668380 (element sizes 4, 8, 0x14, 0x10, 1) used by PhyreScene's lists (bootInit, loadVFXTexture, ...); name ours
+0x00667e80 function Array_Reserve_00667e80       # structure: thiscall(array {count +0, capacity +4, data +8}, n): user_malloc(n * 4), copies count elements, user_free the old block, capacity = n; one of 12 template instances 0x00667e00..0x00668380 (element sizes 4, 8, 0x14, 0x10, 1) used by PhyreScene's lists (bootInit, loadVFXTexture, ...); name ours
+0x00667f00 function Array_Reserve_00667f00       # structure: thiscall(array {count +0, capacity +4, data +8}, n): user_malloc(n * 4), copies count elements, user_free the old block, capacity = n; one of 12 template instances 0x00667e00..0x00668380 (element sizes 4, 8, 0x14, 0x10, 1) used by PhyreScene's lists (bootInit, loadVFXTexture, ...); name ours
+0x00667f80 function Array_Reserve_00667f80       # structure: thiscall(array {count +0, capacity +4, data +8}, n): user_malloc(n * 4), copies count elements, user_free the old block, capacity = n; one of 12 template instances 0x00667e00..0x00668380 (element sizes 4, 8, 0x14, 0x10, 1) used by PhyreScene's lists (bootInit, loadVFXTexture, ...); name ours
+0x00668000 function Array_Reserve_00668000       # structure: thiscall(array {count +0, capacity +4, data +8}, n): user_malloc(n * 4), copies count elements, user_free the old block, capacity = n; one of 12 template instances 0x00667e00..0x00668380 (element sizes 4, 8, 0x14, 0x10, 1) used by PhyreScene's lists (bootInit, loadVFXTexture, ...); name ours
+0x00668080 function Array_Reserve_00668080       # structure: thiscall(array {count +0, capacity +4, data +8}, n): user_malloc(n * 4), copies count elements, user_free the old block, capacity = n; one of 12 template instances 0x00667e00..0x00668380 (element sizes 4, 8, 0x14, 0x10, 1) used by PhyreScene's lists (bootInit, loadVFXTexture, ...); name ours
+0x00668100 function Array_Reserve_00668100       # structure: thiscall(array {count +0, capacity +4, data +8}, n): user_malloc(n * 4), copies count elements, user_free the old block, capacity = n; one of 12 template instances 0x00667e00..0x00668380 (element sizes 4, 8, 0x14, 0x10, 1) used by PhyreScene's lists (bootInit, loadVFXTexture, ...); name ours
+0x00668180 function Array_Reserve_00668180       # structure: thiscall(array {count +0, capacity +4, data +8}, n): user_malloc(n * 8), copies count elements, user_free the old block, capacity = n; one of 12 template instances 0x00667e00..0x00668380 (element sizes 4, 8, 0x14, 0x10, 1) used by PhyreScene's lists (bootInit, loadVFXTexture, ...); name ours
+0x00668200 function Array_Reserve_00668200       # structure: thiscall(array {count +0, capacity +4, data +8}, n): user_malloc(n * 20), copies count elements, user_free the old block, capacity = n; one of 12 template instances 0x00667e00..0x00668380 (element sizes 4, 8, 0x14, 0x10, 1) used by PhyreScene's lists (bootInit, loadVFXTexture, ...); name ours
+0x00668280 function Array_Reserve_00668280       # structure: thiscall(array {count +0, capacity +4, data +8}, n): user_malloc(n * 16), copies count elements, user_free the old block, capacity = n; one of 12 template instances 0x00667e00..0x00668380 (element sizes 4, 8, 0x14, 0x10, 1) used by PhyreScene's lists (bootInit, loadVFXTexture, ...); name ours
+0x00668300 function Array_Reserve_00668300       # structure: thiscall(array {count +0, capacity +4, data +8}, n): user_malloc(n * 8), copies count elements, user_free the old block, capacity = n; one of 12 template instances 0x00667e00..0x00668380 (element sizes 4, 8, 0x14, 0x10, 1) used by PhyreScene's lists (bootInit, loadVFXTexture, ...); name ours
+0x00668380 function Array_Reserve_00668380       # structure: thiscall(array {count +0, capacity +4, data +8}, n): user_malloc(n * 1), copies count elements, user_free the old block, capacity = n; one of 12 template instances 0x00667e00..0x00668380 (element sizes 4, 8, 0x14, 0x10, 1) used by PhyreScene's lists (bootInit, loadVFXTexture, ...); name ours
 0x00668550 function PhyreScene_registClustersToAddToWorld # fh v3:exact 0x006686e0 PhyreScene::registClustersToAddToWorld
 0x00668640 function PhyreScene_removeChrFromPipeline # fh v3:cg4 0x6687d0 PhyreScene::removeChrFromPipeline
 0x00668680 function PhyreScene_removeMeshInstance # fh v3:exact 0x00668810 PhyreScene::removeMeshInstance
@@ -6937,6 +6953,7 @@
 0x008979d0 function TOBtlInitChrNum           # fh v3:bsim1.00 0x00897940
 0x00897bd0 function TOBtlInitInfoWinMes       # fh v3:exact 0x00897b40
 0x00897dc0 function TOBtlLibraGetRects        # g_MagicImports slot 374 (1 overlay), before TOBtlOpenLibraWindow: TOSeqGetRect(2, "dum28"/"dum29", ...) and TOSeqGetPos-style 0x008ae450 calls into 0x0133f6a4..0x0133f744; hidden from the dump
+0x00897f00 function TOBtlInitLimitTimer          # structure: (): zeroes the limit timer state 0x0133f77c..0x0133f794, its position from TOSeqGetPoint(2, "dum201"), stops sound effect 0x8000004e if playing; callers are the Tidus/Auron/Lulu limit window init and control functions; Switch TOBtlInitLimitTimer (104 bytes) is the one unused name sorting between TOBtlInitInfoWinMes and TOBtlInitLuluLimitWindow here (with TOBtlInitLibraWindow, which is our TOBtlLibraGetRects 0x00897dc0)
 0x00897f70 function TOBtlInitLuluLimitWindow  # fh v3:exact 0x00897ee0
 0x00898010 function TOBtlInitStatusWin        # fh v3:exact 0x00897f80
 0x00898130 function TOBtlInitTargetBit        # fh switch:bsim1.00 0x710049aae0
@@ -8449,7 +8466,9 @@
 0x0092b920 function rcdtChunkSet                 # (chunk, data, size)
 0x0092b940 function rcdtChunkSetBin           # fh v3:exact 0x0092b940
 0x0092b960 function rcdtParseAdvance          # fh v3:exact 0x0092b960
+0x0092b970 function rcdtParseSkipToNextLine      # structure: (parse): rcdtParseSeekChar(parse, '\n') then cursor + 1; only caller rcdtParseAdvanceLine (inlined there on the Switch); name ours
 0x0092b990 function rcdtParseSeekChar         # (parse, c): cursor = rcdtParseFindChar(parse, c)
+0x0092b9b0 function rcdtParseAdvanceLine         # structure: (parse): skip to past the next '\n' (0x0092b970) then rcdtParseSkipSeparators; callers include rcuiGetStageName2 and rcuiGuideProcConvertAll, as the Switch's rcdtParseAdvanceLine (0x71005498d0, called by rcuiGetStageName2, rcuiGuideProcConvertAll, rcuiGetMapNo, rcdtRsd2Load)
 0x0092ba30 function rcdtParseNextToken        # (parse): cursor past the token (rcdtParseSkipToken) and the separators (rcdtParseSkipSeparators)
 0x0092ba60 function rcdtParseFini             # fh v3:bsim1.00 0x0092ba60
 0x0092ba70 function rcdtParseGetBegin         # fh switch:bsim1.00 0x71005495d0
@@ -8457,6 +8476,11 @@
 0x0092bae0 function rcdtParseFindChar         # (parse, c): the cursor advanced to c or the chunk end (rcdtChunkHandleGetEnd)
 0x0092bb20 function rcdtParseGetChunk            # (parse) -> parse +0
 0x0092bb90 function rcdtChunkHandleGetEnd        # (&chunk) -> rcdtChunkGetEnd(*handle)
+0x0092bbb0 function rcdtParseGetFloat            # structure: (parse) -> float: binary mode (+8 == 0) reads the next float and advances 4 (rcdtParseAdvance), text mode atof of the token then rcdtParseNextToken; Switch rcdtParseGetFloat; first of the five Get readers 0x0092bbb0..0x0092bcd0 in Switch-name order GetFloat, GetFloatBE, GetInt, GetLong, GetLongBE before rcdtParseGetMode
+0x0092bc00 function rcdtParseGetFloatBE          # structure: (parse) -> the next 4 bytes byte-swapped (big-endian) as a float, advance 4; Switch rcdtParseGetFloatBE
+0x0092bc50 function rcdtParseGetInt              # structure: (parse) -> int: binary mode reads the next word and advances 4, text mode atoi of the token then rcdtParseNextToken; Switch rcdtParseGetInt; 11 callers (rcdtRsdLoad_LoadMatRsd/2, LoadPly, rcuiGuideProcConvertAll, rcuiGetStageName2)
+0x0092bc90 function rcdtParseGetLong             # structure: (parse) -> long: as rcdtParseGetInt with atol; Switch rcdtParseGetLong
+0x0092bcd0 function rcdtParseGetLongBE           # structure: (parse) -> the next 4 bytes byte-swapped (big-endian), advance 4; Switch rcdtParseGetLongBE
 0x0092bd10 function rcdtParseGetMode             # (parse) -> parse +8 (rcdtParseSetMode)
 0x0092bd20 function rcdtParseSkipToken        # (parse): the cursor past non-separators
 0x0092bd60 function rcdtParseSkipSeparators   # (parse): the cursor past separators
@@ -8465,6 +8489,7 @@
 0x0092bf30 function rcdtParseTokenLen         # (parse) -> rcdtParseSkipToken - cursor
 0x0092bf50 function rcdtParseInit             # fh v3:exact 0x0092bf50
 0x0092bfb0 function rcdtParseIsEnd            # (parse) -> 1 once the cursor reaches the chunk end
+0x0092bfd0 function rcdtParseNew                 # structure: () -> rcAlloc(0x8c, "..\\program\\src\\rcData\\rcdtParse.c", 0x1c) then rcdtParseInit; callers the rcdtRsdLoad loaders; Switch rcdtParseNew (0x71005493f0: _rcAlloc + memset, called by rcdtRsd2Load)
 0x0092c000 function rcdtParseInitSeparators      # (parse): parse +0xc, 128 bytes per ASCII code, = 1 for 0x00..0x20 (whitespace), 0 else; read by the token scanners 0x0092bd20, 0x0092be40; rcdtParseInit tail-calls it
 0x0092c0a0 function rcdtParseSet              # fh v3:exact 0x0092c0a0
 0x0092c0c0 function rcdtParseSetMode          # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
@@ -8993,6 +9018,7 @@
 0x00a27cf0 function PVideoPlaybackWin32__ReadingThread # str: the only user of the string "PVideoPlaybackWin32::_ReadingThread" (its own __FUNCTION__ in an error print)
 0x00a27f20 function PVideoPlaybackWin32__VideoDecodingThread # str: the only user of the string "PVideoPlaybackWin32::_VideoDecodingThread" (its own __FUNCTION__ in an error print)
 0x00a284a0 function Phyre_PVideo_PVideoPlaybackWin32_updateTexture # fh v3:exact 0x00a284a0 Phyre::PVideo::PVideoPlaybackWin32::updateTexture
+0x00a28a40 function IggyMenu_dtor_IggyMenu       # structure: fastcall(this): restores IggyMenu_vftable, releases the Iggy player (+0x6c, +0x68) and frees with Phyre_PhyreFree; 24 callers are the IggyMenu subclasses' destructors and menu teardown, as the Switch's IggyMenu::~IggyMenu callers (FFEscMenu::~FFEscMenu, IconPanel::~IconPanel, ...)
 0x00a28ba0 function IggyMenu_callIggyAS3External # fh v3:exact 0x00a28ba0 IggyMenu::callIggyAS3External
 0x00a28d30 function iggyDataValueSet          # fh v3:exact 0x00a28d30
 0x00a28d70 function iggyDataValueSet_00a28d70 # fh v3:exact 0x00a28d70
