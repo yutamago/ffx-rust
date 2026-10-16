@@ -2916,6 +2916,81 @@ ported! {
     rcbgDelObjects @ 0x0092_19e0 => extern "C" fn shim_rcbg_del_objects(kind: u32) {
         guide::bridge::rcbg_del_objects(&mut mem(), kind, &mut |_, f, a| call_cdecl(f, a));
     }
+    // ---- round 12 ----
+    /// `KeVecAddRandom(dst, range, scaled)`.
+    KeVecAddRandom @ 0x0076_6f10 => extern "C" fn shim_ke_vec_add_random(dst: u32, range: u32, scaled: u32) {
+        ke::bridge::ke_vec_add_random(&mut mem(), dst, range, scaled, &mut |_, f, a| call_float(f, a));
+    }
+    /// `KeVecScaleRandom(dst, v, pair)`.
+    KeVecScaleRandom @ 0x0076_6f70 => extern "C" fn shim_ke_vec_scale_random(dst: u32, v: u32, pair: u32) -> u32 {
+        ke::bridge::ke_vec_scale_random(&mut mem(), dst, v, pair, &mut |_, f, a| call_float(f, a))
+    }
+    /// `pppFreeAllEnvObjects()`.
+    pppFreeAllEnvObjects @ 0x0076_05d0 => extern "C" fn shim_ppp_free_all_env_objects() {
+        ke::bridge::ppp_free_all_env_objects(&mut mem(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `pppInitPmcomEnv()`.
+    pppInitPmcomEnv @ 0x0076_0610 => extern "C" fn shim_ppp_init_pmcom_env() -> u32 {
+        ke::bridge::ppp_init_pmcom_env(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `KeResampleRgbaToRgb(src, sw, sh, dst, dw, dh)`.
+    KeResampleRgbaToRgb @ 0x0076_0640 => extern "C" fn shim_ke_resample_rgba_to_rgb(src: u32, sw: i32, sh: i32, dst: u32, dw: i32, dh: i32) -> u32 {
+        ke::bridge::ke_resample_rgba_to_rgb(&mut mem(), src, sw, sh, dst, dw, dh)
+    }
+    /// `KeThBP_Init(args)`.
+    KeThBP_Init @ 0x0076_3030 => extern "C" fn shim_ke_th_bp_init(args: u32) -> u32 {
+        ke::bridge::ke_th_bp_init(&mut mem(), args)
+    }
+    /// `KeVu0ScaleVecXY(dst, src, s)`.
+    KeVu0ScaleVecXY @ 0x0075_fab0 => extern "C" fn shim_ke_vu0_scale_vec_xy(dst: u32, src: u32, s: u32) -> u32 {
+        vu0::bridge::ke_vu0_scale_vec_xy(&mut mem(), dst, src, s)
+    }
+    /// `KeVu0SubVecXYZ(dst, a, b)`.
+    KeVu0SubVecXYZ @ 0x0075_fcd0 => extern "C" fn shim_ke_vu0_sub_vec_xyz(dst: u32, a: u32, b: u32) -> u32 {
+        vu0::bridge::ke_vu0_sub_vec_xyz(&mut mem(), dst, a, b)
+    }
+    /// `AbmapResetCursorCamera()`.
+    AbmapResetCursorCamera @ 0x00a5_b030 => extern "C" fn shim_abmap_reset_cursor_camera() -> u32 {
+        abmap::bridge::abmap_reset_cursor_camera(&mut mem())
+    }
+    /// `AbmapStoreSave()`.
+    AbmapStoreSave @ 0x00a5_bb70 => extern "C" fn shim_abmap_store_save() -> u32 {
+        abmap::bridge::abmap_store_save(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `AbmapSetupPlyTag(tag)`.
+    AbmapSetupPlyTag @ 0x00a4_7c60 => extern "C" fn shim_abmap_setup_ply_tag(tag: u32) -> u32 {
+        abmap::bridge::abmap_setup_ply_tag(&mut mem(), tag)
+    }
+    /// `AbmapScaledLevelValue(level, i, j)`.
+    AbmapScaledLevelValue @ 0x00a5_cbe0 => extern "C" fn shim_abmap_scaled_level_value(level: i32, i: u32, j: u32) -> u32 {
+        abmap::bridge::abmap_scaled_level_value(&mem(), level, i, j)
+    }
+    /// `rcuiChrMotionSetup()`.
+    rcuiChrMotionSetup @ 0x0093_2470 => extern "C" fn shim_rcui_chr_motion_setup() -> u32 {
+        rcui::bridge::rcui_chr_motion_setup(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcbgSceneLoadTextCameraCalcRef(cam)`.
+    rcbgSceneLoadTextCameraCalcRef @ 0x0093_b110 => extern "C" fn shim_rcbg_scene_load_text_camera_calc_ref(cam: u32) -> u32 {
+        let mut work = Matrix([0; 0x40]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        scene::bridge::rcbg_scene_load_text_camera_calc_ref(&mut mem(), cam, w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `yiImage_dumpall(rman)`.
+    yiImage_dumpall @ 0x0091_8680 => extern "C" fn shim_yi_image_dumpall(rman: u32) -> u32 {
+        yi::bridge::yi_image_dumpall(rman)
+    }
+    /// `yiRender_addDirectBlock(render, src, n)`.
+    yiRender_addDirectBlock @ 0x0090_c120 => extern "C" fn shim_yi_render_add_direct_block(r: u32, src: u32, n: u32) -> u32 {
+        yi::bridge::yi_render_add_direct_block(&mut mem(), r, src, n)
+    }
+    /// `yiTriContainsXZ(tri, p)`.
+    yiTriContainsXZ @ 0x0091_0270 => extern "C" fn shim_yi_tri_contains_xz(tri: u32, p: u32) -> u32 {
+        yi::bridge::yi_tri_contains_xz(&mem(), tri, p)
+    }
+    /// `yiBoundsMinMax(obj, min, max)`.
+    yiBoundsMinMax @ 0x0091_30f0 => extern "C" fn shim_yi_bounds_min_max(obj: u32, min: u32, max: u32) -> u32 {
+        yi::bridge::yi_bounds_min_max(&mut mem(), obj, min, max)
+    }
 }
 
 /// The original's 16-byte aligned stack buffer for a load-image packet

@@ -8689,3 +8689,227 @@ fn round11_field_helpers_match_the_original() {
         );
     }
 }
+
+/// Round 12: random vectors (the real `op_random`/`op_random_p` on VU0's
+/// `R`), the pmcom environment, the RGBA resampler, `KeThBP_Init`, two
+/// `KeVu0` helpers, the sphere grid's cursor, save block, player tag and
+/// level values, the rcui motion setup, the text camera's reference
+/// point, and the renderer's direct block, triangle test and bounds.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round12_field_helpers_match_the_original() {
+    use ffx_field::abmap;
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x000c_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    t.install_trig();
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let fcall = &mut oracle_fcall;
+    let (log, rv) = (env.log, env.rv);
+    let nbv = t.alloc(4);
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (Some(ke::PPP_ALL_FREE_POBJECT), log_stub(log, rv, 100, 1)),
+        (Some(ke::PPP_INIT_ENV), log_stub(log, rv, 101, 4)),
+        (Some(rcui::CH_GET_NB_ELEM), log_stub(log, nbv, 102, 1)),
+        (Some(rcui::CH_SET_MOTION_SPEED), log_stub(log, rv, 103, 2)),
+    ];
+    t.cave_from(env.cave_end, &list);
+    let slot = t.alloc(4);
+    t.set(task::main::ENV_SLOT, slot);
+    let grid = t.alloc(0x1_2000);
+    t.set(abmap::ABMAP, grid);
+    let rw = t.alloc(0x1000);
+    t.set(rcui::WORK, rw);
+    let render = t.alloc(0xba400);
+    let (blocks, tags, src) = (t.alloc(0x800), t.alloc(0x400), t.alloc(0x100));
+    let (dst, v, out) = (t.alloc(0x10), t.alloc(0x10), t.alloc(0x10));
+    let (img, pix) = (t.alloc(0x400), t.alloc(0x1000));
+    let (bp, args) = (t.alloc(0x40 + 0x30 * 256 + 0x10), t.alloc(8));
+    let (cam, tag, tri, p) = (t.alloc(0x100), t.alloc(0x40), t.alloc(0x30), t.alloc(0x10));
+    let (obj, min, max) = (t.alloc(0x200), t.alloc(0x10), t.alloc(0x10));
+    let count = t.b.rebase(ke::PPP_OBJECT_COUNT);
+    for k in 0..30u32 {
+        env.reset(&mut t, &mut rng);
+        // random vectors
+        for i in 0..4 {
+            t.put(dst + 4 * i, float_in(&mut rng, -8, 8));
+            t.put(v + 4 * i, float_in(&mut rng, -8, 8));
+        }
+        let scaled = rng.below(2);
+        t.same(
+            "KeVecAddRandom",
+            |o| o.void(0x0076_6f10, &[dst, v, scaled]),
+            |m| ke::bridge::ke_vec_add_random(m, dst, v, scaled, fcall),
+        );
+        t.same(
+            "KeVecScaleRandom",
+            |o| o.eax(0x0076_6f70, &[dst, v, scaled]),
+            |m| ke::bridge::ke_vec_scale_random(m, dst, v, scaled, fcall),
+        );
+        // the pmcom environment
+        t.put(count, rng.range(-1, 3));
+        t.same(
+            "pppFreeAllEnvObjects",
+            |o| o.void(0x0076_05d0, &[]),
+            |m| ke::bridge::ppp_free_all_env_objects(m, call),
+        );
+        t.same(
+            "pppInitPmcomEnv",
+            |o| o.eax(0x0076_0610, &[]),
+            |m| ke::bridge::ppp_init_pmcom_env(m, call),
+        );
+        let (sw, sh) = (rng.range(-1, 12), rng.range(-1, 12));
+        let (dw, dh) = (rng.range(1, 12), rng.range(1, 12));
+        t.fill(img, 0x400, &mut rng);
+        let d = pix + 0x400;
+        let a = [
+            img,
+            sw.cast_unsigned(),
+            sh.cast_unsigned(),
+            d,
+            dw.cast_unsigned(),
+            dh.cast_unsigned(),
+        ];
+        t.same(
+            "KeResampleRgbaToRgb",
+            |o| o.eax(0x0076_0640, &a),
+            |m| ke::bridge::ke_resample_rgba_to_rgb(m, img, sw, sh, d, dw, dh),
+        );
+        t.fill(bp, 0x80, &mut rng);
+        t.put(args, bp);
+        t.put(args + 4, rng.next());
+        t.same(
+            "KeThBP_Init",
+            |o| o.eax(0x0076_3030, &[args]),
+            |m| ke::bridge::ke_th_bp_init(m, args),
+        );
+        // KeVu0
+        let s = float_in(&mut rng, -4, 4);
+        t.same(
+            "KeVu0ScaleVecXY",
+            |o| o.eax(0x0075_fab0, &[out, v, s]),
+            |m| vu0::bridge::ke_vu0_scale_vec_xy(m, out, v, s),
+        );
+        t.same(
+            "KeVu0SubVecXYZ",
+            |o| o.eax(0x0075_fcd0, &[out, dst, v]),
+            |m| vu0::bridge::ke_vu0_sub_vec_xyz(m, out, dst, v),
+        );
+        // the sphere grid
+        t.fill(grid + 0x800, 0x400, &mut rng);
+        t.fill(grid + 0xa800, 0x400, &mut rng);
+        t.fill(grid + 0x11000, 0x700, &mut rng);
+        for i in 0..7 * 0x14 {
+            t.put(grid + 0x11088 + 4 * i, float_in(&mut rng, -100, 100));
+        }
+        t.put(grid + 0x115bc, u8::try_from(rng.below(7)).unwrap());
+        t.put(grid + 2, i16::try_from(rng.range(-1, 40)).unwrap());
+        t.put(grid + 4, i16::try_from(rng.range(-1, 40)).unwrap());
+        t.put(grid + 0x11350, float_in(&mut rng, 1, 4));
+        t.same(
+            "AbmapResetCursorCamera",
+            |o| o.eax(0x00a5_b030, &[]),
+            abmap::bridge::abmap_reset_cursor_camera,
+        );
+        t.same(
+            "AbmapStoreSave",
+            |o| o.eax(0x00a5_bb70, &[]),
+            |m| abmap::bridge::abmap_store_save(m, call),
+        );
+        t.put(tag + 0x30, i16::try_from(rng.range(-300, 300)).unwrap());
+        t.put(tag + 0x32, i16::try_from(rng.range(-300, 300)).unwrap());
+        t.same(
+            "AbmapSetupPlyTag",
+            |o| o.eax(0x00a4_7c60, &[tag]),
+            |m| abmap::bridge::abmap_setup_ply_tag(m, tag),
+        );
+        let (level, i, j) = (rng.range(-60, 120), rng.below(5), rng.below(10));
+        t.same(
+            "AbmapScaledLevelValue",
+            |o| o.eax(0x00a5_cbe0, &[level.cast_unsigned(), i, j]),
+            |m| abmap::bridge::abmap_scaled_level_value(m, level, i, j),
+        );
+        // rcui
+        t.put(rw + 0x8b0, rng.below(4));
+        for i in 0..4 {
+            let h = if rng.below(3) == 0 {
+                u32::MAX
+            } else {
+                rng.below(0x40)
+            };
+            t.put(rw + 0x870 + 4 * i, h);
+        }
+        let old = if rng.below(2) == 0 {
+            0
+        } else {
+            let p = model::bridge::rc_alloc(&mut t.a, call, 0x20);
+            model::bridge::rc_alloc(&mut t.b, call, 0x20);
+            p
+        };
+        t.put(rw + 0x8c8, old);
+        t.put(nbv, rng.below(8));
+        t.same(
+            "rcuiChrMotionSetup",
+            |o| o.eax(0x0093_2470, &[]),
+            |m| rcui::bridge::rcui_chr_motion_setup(m, call),
+        );
+        // the text camera
+        for o in (0x68..0x74).step_by(4).chain([0xf4]) {
+            t.put(cam + o, float_in(&mut rng, -50, 50));
+        }
+        for o in [0x98u32, 0x9c, 0xa0] {
+            t.put(cam + o, float_in(&mut rng, -360, 360));
+        }
+        let work = t.stack_scratch(0);
+        // the result is `FFXVu0RotMatrixZ`'s, the matrix's stack address
+        t.same(
+            "rcbgSceneLoadTextCameraCalcRef",
+            |o| o.void(0x0093_b110, &[cam]),
+            |m| {
+                scene::bridge::rcbg_scene_load_text_camera_calc_ref(m, cam, work, call);
+            },
+        );
+        // the renderer
+        t.same(
+            "yiImage_dumpall",
+            |o| o.eax(0x0091_8680, &[render]),
+            |_| yi::bridge::yi_image_dumpall(render),
+        );
+        t.put(render + 0xba3e0, blocks + rng.below(0x40));
+        t.put(render + 0xba3f0, tags + 0x10 * rng.below(8));
+        t.put(render + 0xba3f8, rng.next());
+        t.fill(src, 0x100, &mut rng);
+        let n = rng.below(6);
+        t.same(
+            "yiRender_addDirectBlock",
+            |o| o.eax(0x0090_c120, &[render, src, n]),
+            |m| yi::bridge::yi_render_add_direct_block(m, render, src, n),
+        );
+        for i in 0..12 {
+            t.put(tri + 4 * i, float_in(&mut rng, -8, 8));
+        }
+        for i in 0..4 {
+            t.put(p + 4 * i, float_in(&mut rng, -8, 8));
+        }
+        if k % 5 == 0 {
+            // a degenerate triangle
+            let x = Mem::read::<u32>(&t.b, tri);
+            t.put(tri + 0x10, x);
+        }
+        t.same(
+            "yiTriContainsXZ",
+            |o| o.eax(0x0091_0270, &[tri, p]),
+            |m| yi::bridge::yi_tri_contains_xz(m, tri, p),
+        );
+        t.put(obj + 8, 0x20u32);
+        t.put(obj + 0x12, i16::try_from(rng.range(-1, 8)).unwrap());
+        for i in 0..0x30 {
+            t.put(obj + 0x20 + 4 * i, float_in(&mut rng, -100, 100));
+        }
+        t.same(
+            "yiBoundsMinMax",
+            |o| o.eax(0x0091_30f0, &[obj, min, max]),
+            |m| yi::bridge::yi_bounds_min_max(m, obj, min, max),
+        );
+    }
+}
