@@ -478,9 +478,9 @@ ported! {
     AtelGetBattleStatusSys @ 0x0086_a9d0 => extern "C" fn atel_get_battle_status_sys() -> u32 {
         g::atel_get_battle_status_sys(&mem())
     }
-    /// `TkGetLastEventJumpIndex()`.
-    TkGetLastEventJumpIndex @ 0x0086_d9d0 => extern "C" fn tk_get_last_event_jump_index() -> u32 {
-        g::tk_get_last_event_jump_index(&mem())
+    /// `AtelGetSave20()`.
+    AtelGetSave20 @ 0x0086_d9d0 => extern "C" fn atel_get_save20() -> u32 {
+        g::atel_get_save20(&mem())
     }
     /// `AtelGetOnMemoryMovieFileNo()`.
     AtelGetOnMemoryMovieFileNo @ 0x0087_3b10 => extern "C" fn atel_get_on_memory_movie_file_no() -> u32 {

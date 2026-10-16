@@ -3967,7 +3967,7 @@
 0x0086d670 function AtelInitSourceCodeDebugWork # fh v3:exact 0x0086d600
 0x0086d6d0 function AtelInitTotal             # registers the native function tables per group; was Script_InitNatives
 0x0086d950 function AtelIsBind                # fh v3:exact 0x0086d8e0
-0x0086d9d0 function TkGetLastEventJumpIndex   # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_SaveData +0x20 (u8)
+0x0086d9d0 function AtelGetSave20             # ours: the Switch BSim name TkGetLastEventJumpIndex belongs to 0x0088d610 (its alphabetical Tk slot, menu module): g_SaveData +0x20 (u8)
 0x0086d9e0 function Script_TopTwoInts         # (worker, stack) -> 1 when the top two slots are both integers (kind 1): Script_Run's integer or float choice for arithmetic and comparisons
 0x0086da10 function AtelJumpGameOver          # fh v3:exact+call.cs 0x0086d9a0 cdecl
 0x0086dc50 function AtelLinkSigWorkButtom     # fh v3:exact 0x0086dbe0
@@ -8111,7 +8111,7 @@
 0x0130375c label    g_GuHidden                # Gu_Hide(on) sets it and returns the old value
 0x01303760 label    g_GuMouseEnable           # Gu_MouseSetEnable
 0x01325240 label    g_GuMouseX                # mouse x as the Gu layer reads it (Gu_MouseInRect pairs it with a rectangle's x and width; window +0x0c); was g_GuMouseY
-0x01325244 label    g_GuMouseX                # mouse x (Gu_MouseGetWindowX: minus window +0x0e; window +0x16 on open)
+0x01325244 label    g_GuMouseY                # mouse y (pairs with +0x0e and the height); was g_GuMouseX
 0x01325ac8 label    g_MegasAdding                # read by getMegasAdding (0x00860a90)
 0x01325b70 label    g_MsgLastIndex            # last message index looked up (written by Msg_Text, Msg_TextAlt, Msg_Text1, Msg_Get)
 0x01325b74 label    g_MsgNone                 # what the Msg_ lookups return without a message table (an empty string)

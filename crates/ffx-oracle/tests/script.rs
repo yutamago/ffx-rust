@@ -1212,9 +1212,7 @@ fn getters() -> Vec<Getter> {
         (0x0086_a9d0, "AtelGetBattleStatusSys", |b| {
             g::atel_get_battle_status_sys(b)
         }),
-        (0x0086_d9d0, "TkGetLastEventJumpIndex", |b| {
-            g::tk_get_last_event_jump_index(b)
-        }),
+        (0x0086_d9d0, "AtelGetSave20", |b| g::atel_get_save20(b)),
         (0x0087_3b10, "AtelGetOnMemoryMovieFileNo", |b| {
             g::atel_get_on_memory_movie_file_no(b)
         }),
