@@ -27,22 +27,38 @@ fn crt_rand() -> u32 {
     }
 }
 
-/// A program function the originals call through the program table
-/// (`+0x10`..`+0x20` of a record): cdecl, one or two arguments.
-fn call_ptr(f: u32, args: &[u32]) {
+/// A function the originals call through a pointer (the program table's
+/// `+4`..`+0x24`, `TOGetFFXLang`, `graphicVFXDestroy`): cdecl, up to four
+/// arguments; returns `eax`.
+#[allow(clippy::many_single_char_names)] // the arguments
+fn call_ptr(f: u32, args: &[u32]) -> u32 {
     // SAFETY: `f` is a function the game stored in its particle program
-    // table; the originals call it as cdecl with these arguments.
+    // table, or one of its own; the originals call it as cdecl with these
+    // arguments.
     unsafe {
         match *args {
+            [] => {
+                let f: unsafe extern "C" fn() -> u32 = std::mem::transmute(f as usize);
+                f()
+            }
             [a] => {
-                let f: unsafe extern "C" fn(u32) = std::mem::transmute(f as usize);
-                f(a);
+                let f: unsafe extern "C" fn(u32) -> u32 = std::mem::transmute(f as usize);
+                f(a)
             }
             [a, b] => {
-                let f: unsafe extern "C" fn(u32, u32) = std::mem::transmute(f as usize);
-                f(a, b);
+                let f: unsafe extern "C" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
+                f(a, b)
             }
-            _ => unreachable!("program functions take one or two arguments"),
+            [a, b, c] => {
+                let f: unsafe extern "C" fn(u32, u32, u32) -> u32 = std::mem::transmute(f as usize);
+                f(a, b, c)
+            }
+            [a, b, c, d] => {
+                let f: unsafe extern "C" fn(u32, u32, u32, u32) -> u32 =
+                    std::mem::transmute(f as usize);
+                f(a, b, c, d)
+            }
+            _ => unreachable!("program functions take up to four arguments"),
         }
     }
 }
@@ -1633,5 +1649,26 @@ ported! {
     /// `pppBornPObjects(part)`.
     pppBornPObjects @ 0x0071_2b80 => extern "C" fn ppp_born_pobjects(p: u32) {
         part::bridge::ppp_born_pobjects(&mut mem(), p, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDeletePObject(obj, _)`.
+    pppDeletePObject @ 0x0071_68f0 => extern "C" fn ppp_delete_pobject(obj: u32, x: u32) {
+        let _ = x;
+        part::bridge::ppp_delete_pobject(&mut mem(), obj, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppAllFreePObject(part)`.
+    pppAllFreePObject @ 0x0071_1f20 => extern "C" fn ppp_all_free_pobject(p: u32) {
+        part::bridge::ppp_all_free_pobject(&mut mem(), p, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppRunPartStd(part)`.
+    pppRunPartStd @ 0x0071_6c40 => extern "C" fn ppp_run_part_std(p: u32) {
+        part::bridge::ppp_run_part_std(&mut mem(), p, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppRunPart(part, flags)`: 1 when the part has ended.
+    pppRunPart @ 0x0071_2250 => extern "C" fn ppp_run_part(p: u32, flags: u32) -> u32 {
+        part::bridge::ppp_run_part(&mut mem(), p, flags & 0xff, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppStartPart(part, rate, data, call_set_ups)`.
+    pppStartPart @ 0x0071_23c0 => extern "C" fn ppp_start_part(p: u32, rate: u32, data: u32, set_ups: u32) {
+        part::bridge::ppp_start_part(&mut mem(), p, rate, data, set_ups, &mut |_, f, a| call_ptr(f, a));
     }
 }

@@ -3525,12 +3525,16 @@ fn round5_helpers_match_the_original() {
 /// The program table (`g_pppProgramTable`).
 const PROGRAM_TABLE: u32 = 0x00c3_a508;
 
-fn call_original(m: &mut Oracle, f: u32, args: &[u32]) {
-    m.call(f, Conv::Cdecl, args).unwrap();
+fn call_original(m: &mut Oracle, f: u32, args: &[u32]) -> u32 {
+    m.call(f, Conv::Cdecl, args).unwrap().eax
 }
 
 #[test]
-#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
 fn parts_and_objects_match_the_original() {
     use part::bridge as pt;
     for mut p in Pair::all() {
@@ -3545,6 +3549,16 @@ fn parts_and_objects_match_the_original() {
         let list = p.alloc(0x20);
         // (defs: four 16-byte definitions, their program lists from +0x100)
         let offs = p.alloc(0x10);
+        let keys = p.alloc(0x200 * 16);
+        for i in (0..0x200 * 16).step_by(0x20) {
+            p.set(keys + i, (i % 0x200) / 0x20 * 0x1000);
+            for j in (4..0x20).step_by(4) {
+                let v = rng.float();
+                p.set(keys + i + j, v);
+            }
+        }
+        let part2 = p.alloc(0x80);
+        let start = p.alloc(0x200);
         for i in 0..4 {
             p.set(offs + 4 * i, 0x40 * i);
         }
@@ -3553,6 +3567,11 @@ fn parts_and_objects_match_the_original() {
         let set = p.sym(0x0071_7610); // setVfxShapeEnlargeBufferFactor
         p.put(heap::bridge::ENV_SLOT, env_slot);
         p.set(env_slot, env);
+        // graphicVFXDestroy: the renderer's side (its tables are not set up
+        // in the oracle); the bridges call it like the originals
+        let destroy = p.sym(0x0064_5280);
+        p.a.stub_return(destroy, 0).unwrap();
+        p.b.stub_return(destroy, 0).unwrap();
         for round in 0..1500u32 {
             // a part data block: three definitions and a terminator
             p.fill(block, 0x1000, &mut rng);
@@ -3670,15 +3689,24 @@ fn parts_and_objects_match_the_original() {
                     p.set(prog + 0x24, rng.below(4) as u16);
                     let n = 1 + rng.below(3) as u16;
                     p.set(prog + 0x26, n);
+                    p.set(prog + 0xc, u8::from(rng.chance(20)));
+                    p.set(prog + 0x14, rng.pick(&[0x7000_0000u32, 0x3000, 0x8000]));
+                    p.set(prog + 0x18, 0u32);
+                    p.set(prog + 0x1c, rng.pick(&[0x7fff_ffffu32, 0x4000]));
                     for e in 0..u32::from(n) {
                         let entry = prog + 0x28 + 0x10 * e;
+                        // the steps of pppAccele .. pppColor, or a draw
+                        let k = rng.pick(&[0u32, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 19, 20]);
                         let r = if rng.chance(10) {
                             0
                         } else {
-                            programs + 0x28 * rng.below(12)
+                            programs + 0x28 * k
                         };
                         p.set(entry, r);
-                        p.set(entry + 8, 0x40 * e);
+                        p.set(entry + 4, 0x20u16);
+                        // the program's keys: frames 0x1000 apart
+                        let k = keys + 0x200 * (4 * d + e);
+                        p.set(entry + 8, k);
                         // the entry's +0xc: the work area offsets the
                         // set-up reads
                         p.set(entry + 0xc, offs);
@@ -3686,9 +3714,6 @@ fn parts_and_objects_match_the_original() {
                 }
             }
             let def = defs + 0x10 * rng.below(4);
-            if rng.chance(30) {
-                p.set(def + 4, 0u32);
-            }
             p.check(
                 &format!("pppCreatePObject round {round}"),
                 0x0071_6770,
@@ -3713,6 +3738,60 @@ fn parts_and_objects_match_the_original() {
                 pt::ppp_born_pobjects(m, part, &mut call_original);
                 None
             });
+            // (a null birth list only here: pppRunPartStd would read
+            // through it)
+            p.set(part + 0x3c, defs);
+            // a frame of the part
+            p.set(part + 0x1c, u8::from(rng.chance(50)));
+            p.set(part + 0x1d, u8::from(rng.chance(20)));
+            p.set(part + 4, rng.below(0x20000));
+            p.set(part + 0x10, 0x1000u32);
+            if !p.snapshot() || round > 0 {
+                p.put(ppp::bridge::STOP, u32::from(rng.chance(10)));
+            }
+            p.put(prog::bridge::CURRENT_PART, part);
+            if rng.chance(50) {
+                p.check(
+                    &format!("pppRunPartStd round {round}"),
+                    0x0071_6c40,
+                    &[part],
+                    |m| {
+                        pt::ppp_run_part_std(m, part, &mut call_original);
+                        None
+                    },
+                );
+            } else {
+                let flags = rng.pick(&[0u32, 0x10, 0x20, 0x30]);
+                p.check(
+                    &format!("pppRunPart round {round}"),
+                    0x0071_2250,
+                    &[part, flags],
+                    |m| Some(pt::ppp_run_part(m, part, flags, &mut call_original)),
+                );
+            }
+            let head = p.get::<u32>(part + 0x30);
+            if head != 0 && rng.chance(10) {
+                let next = p.get::<u32>(head);
+                p.set(part + 0x30, next);
+                p.check("pppDeletePObject", 0x0071_68f0, &[head, 0], |m| {
+                    pt::ppp_delete_pobject(m, head, &mut call_original);
+                    None
+                });
+            }
+            if round % 16 == 15 {
+                // the birth records it frees: a heap block
+                let env = p.get::<u32>(env_slot);
+                let births = p.check("pppMemAlloc", 0x0071_6a30, &[env, env + 0x10, 0x40], |m| {
+                    Some(heap::bridge::ppp_mem_alloc(m, env, env + 0x10, 0x40))
+                });
+                p.set(part + 0x3c, births);
+                p.check("pppAllFreePObject", 0x0071_1f20, &[part], |m| {
+                    pt::ppp_all_free_pobject(m, part, &mut call_original);
+                    None
+                });
+                p.set(part + 0x3c, defs);
+            }
+
             // the part's program loops
             let n = rng.below(4);
             p.set(part + 0x14, n);
@@ -3723,6 +3802,43 @@ fn parts_and_objects_match_the_original() {
                 for at in [0x10, 0x14, 0x18] {
                     p.set(r + at, if rng.chance(50) { set } else { 0 });
                 }
+            }
+            // pppStartPart on a data block: length, loop flag, programs
+            // (the records above), births (a chain of definitions)
+            if round % 4 == 3 {
+                p.set(start, rng.below(0x10000));
+                p.set(start + 4, u8::from(rng.chance(50)));
+                p.set(start + 8, 0x100u32);
+                p.set(start + 0xc, 0x140u32);
+                p.set(start + 0x100, 4u32);
+                for i in 0..4 {
+                    p.set(start + 0x104 + 4 * i, recs + 0x40 + 0x10 * i);
+                }
+                let nb = 1 + rng.below(3);
+                p.set(start + 0x140, nb);
+                for k in 0..nb {
+                    let node = start + 0x10 + 0x20 * k;
+                    p.set(node, if k + 1 == nb { 0 } else { node + 0x20 });
+                    p.set(node + 0x10, rng.below(8) * 0x1000);
+                }
+                let rate = rng.below(0x2000);
+                let set_ups = u32::from(rng.chance(50));
+                // TOGetFFXLang: a fixed language (its manager logs at
+                // creation, which the oracle cannot run)
+                let lang = p.sym(0x0064_10e0);
+                let l = rng.pick(&[1u32, 0xb]);
+                p.a.stub_return(lang, l).unwrap();
+                p.b.stub_return(lang, l).unwrap();
+                p.check(
+                    "pppStartPart",
+                    0x0071_23c0,
+                    &[part2, rate, start, set_ups],
+                    |m| {
+                        pt::ppp_start_part(m, part2, rate, start, set_ups, &mut call_original);
+                        None
+                    },
+                );
+                p.put(prog::bridge::CURRENT_PART, part);
             }
             for (name, sym, at) in [
                 ("pppPartCall10", 0x0071_2e40, 0x10),
