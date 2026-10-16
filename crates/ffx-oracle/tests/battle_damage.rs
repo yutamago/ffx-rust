@@ -24,6 +24,8 @@ struct World {
     command: u32,
     info: u32,
     out: u32,
+    /// A results block (`MsCalcDamage`): 0x18 bytes, then 16 of 0x2c.
+    results: u32,
     /// The kernel's commands (on a snapshot), else empty.
     commands: Vec<u32>,
     synthetic: bool,
@@ -90,6 +92,7 @@ fn world(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) ->
         command: scratch(a, b, 0x60),
         info: scratch(a, b, 0x2c),
         out: scratch(a, b, 0x100),
+        results: scratch(a, b, 0x2d8),
         commands,
         synthetic: !live,
     };
@@ -859,6 +862,65 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
             )
             .cast_unsigned()
         });
+        // several hits into a results block, and a drainer's own result
+        let results = w.results;
+        fill(a, b, rng, results, 0x2d8);
+        let first = rng.below(4);
+        let n = rng.range(0, 4).cast_unsigned();
+        poke(a, b, results, &[first.to_le_bytes()[0]]);
+        if rng.below(3) == 0 {
+            poke(a, b, user + 0x50, &[0]);
+        }
+        let o = d::DmgCalcOut {
+            damage: if rng.below(2) == 0 { 0 } else { out + 0xe0 },
+            hits: out + 0xf0,
+            misses: out + 0xf4,
+            changed: 0,
+        };
+        let args = [
+            ids[0], user, ids[1], target, cmd, id, results, o.damage, o.hits, o.misses, n,
+        ];
+        twin("MsCalcDamage", a, b, 0x0078_9740, &args, ALL, |m| {
+            d::ms_calc_damage(
+                m,
+                ids[0],
+                user,
+                ids[1],
+                target,
+                cmd,
+                id,
+                results,
+                o,
+                n.cast_signed(),
+                |m: &mut Oracle| {
+                    let at = m.rebase(TO_GET_FFX_LANG);
+                    m.call(at, Conv::Cdecl, &[]).unwrap().eax
+                },
+            )
+            .cast_unsigned()
+        });
+        poke(a, b, results + 1, &[rng.below(0x12).to_le_bytes()[0]]);
+        let none = rng.below(2);
+        twin(
+            "MsCalcDrainResult",
+            a,
+            b,
+            0x0078_a240,
+            &[ids[0], target, cmd, results, out + 0x40, none],
+            0,
+            |m| {
+                d::ms_calc_drain_result(
+                    m,
+                    ids[0],
+                    target,
+                    cmd,
+                    results,
+                    out + 0x40,
+                    none.cast_signed(),
+                );
+                0
+            },
+        );
         same("damage steps", a, b);
     }
 }

@@ -2301,6 +2301,155 @@ pub mod bridge {
         }
         dealt
     }
+
+    /// Set when a nameless user (`+0x50` empty) dealt 9999 or more in one
+    /// hit (`MsCalcDamage`).
+    pub const DAMAGE_9999: Global<u32> = Global::new(0x0113_3390);
+    /// The same for 99999.
+    pub const DAMAGE_99999: Global<u32> = Global::new(0x0113_3394);
+    /// Where [`ms_calc_damage`] keeps its locals.
+    pub const CALC_DAMAGE_FRAME: u32 = 0xffe0_0000;
+    /// Where [`ms_calc_drain_result`] keeps its locals.
+    pub const DRAIN_FRAME: u32 = 0xffd0_0000;
+    /// Bytes per result after the 0x18-byte head of a results block.
+    pub const INFO_SIZE: u32 = 0x2c;
+
+    /// `MsCalcDamage(user_id, user, target_id, target, command, command_id,
+    /// results, &damage, &hits, &misses, hits_n)` (`0x00789740`): `hits_n`
+    /// hits of a command on one target, results appended to the block
+    /// `results` (`+0` results so far, then 0x2c-byte entries from `+0x18`,
+    /// each one's statuses following the previous one's). The target's
+    /// pending HP, MP and CTB start from its own; `+0xdec` is set when the
+    /// total would KO it; the user's affection toward a party member it
+    /// hurts (or heals) changes when the user is Tidus (`user_id` 0).
+    /// Returns the total HP damage.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ms_calc_damage<M: Mem>(
+        mem: &mut M,
+        user_id: u32,
+        user: u32,
+        target_id: u32,
+        target: u32,
+        command: u32,
+        command_id: u32,
+        results: u32,
+        out: DmgCalcOut,
+        hits_n: i32,
+        mut lang: impl FnMut(&mut M) -> u32,
+    ) -> i32 {
+        let hp = u32_at(mem, target, 0x5d0);
+        mem.write(target.wrapping_add(0x6e4), hp);
+        let mp = u32_at(mem, target, 0x5d4);
+        mem.write(target.wrapping_add(0x6e8), mp);
+        let ctb = u32::from(u8_at(mem, target, 0x65c));
+        mem.write(target.wrapping_add(0x6ec), ctb);
+        mem.write(target.wrapping_add(0xd34), [0u32; 3]);
+        let first = u8_at(mem, results, 0);
+        let mut f = Frame::new(mem, CALC_DAMAGE_FRAME, 4);
+        let changed = f.at(0);
+        let mut parent = if first == 0 {
+            0
+        } else {
+            results
+                .wrapping_add(u32::from(first) * INFO_SIZE)
+                .wrapping_sub(0x14)
+        };
+        let mut sum = 0i32;
+        let mut i = i32::from(first);
+        while i < i32::from(u8_at(&f, results, 0)).wrapping_add(hits_n) {
+            let info = results
+                .wrapping_add(0x18)
+                .wrapping_add(i.cast_unsigned().wrapping_mul(INFO_SIZE));
+            set_up_damage_info(&mut f, info, parent, target);
+            let o = DmgCalcOut { changed, ..out };
+            let d = dmg_calc(
+                &mut f,
+                user_id,
+                user,
+                target_id,
+                target,
+                command,
+                command_id,
+                info,
+                o,
+                |f: &mut Frame<M>| lang(f.inner()),
+            );
+            if u8_at(&f, user, 0x50) == 0 {
+                if d >= 9999 {
+                    DAMAGE_9999.set(&mut f, 1);
+                }
+                if d >= 99_999 {
+                    DAMAGE_99999.set(&mut f, 1);
+                }
+            }
+            sum = sum.wrapping_add(d);
+            parent = info;
+            i += 1;
+        }
+        let changed: u32 = f.read(changed);
+        let mem = f.inner();
+        let hp = u32_at(mem, target, 0x5d0).cast_signed();
+        let ko = debug_can_take_damage(mem, target_id) != 0 && hp.wrapping_sub(sum) <= 0;
+        mem.write(target.wrapping_add(0xdec), u8::from(ko));
+        if user_id == 0 && target_id.cast_signed() < 8 {
+            if sum < 0 {
+                crate::save::bridge::ms_add_love_param(mem, target_id.cast_signed(), 1);
+            } else if sum > 0 {
+                crate::save::bridge::ms_add_love_param(mem, target_id.cast_signed(), -1);
+            }
+        }
+        mem.write(results.wrapping_add(0x16), changed.to_le_bytes()[0]);
+        let n = u8_at(mem, results, 0).wrapping_add(hits_n.to_le_bytes()[0]);
+        mem.write(results.wrapping_add(1), n);
+        sum
+    }
+
+    /// `MsCalcDrainResult(user_id, target, command, results, damage, none)`
+    /// (`0x0078a240`): appends the drainer's own result (what it drew, as
+    /// healing) to the block `results` (at most 16), with
+    /// [`dmg_calc_result_type`]'s reaction (nothing hit with `none`).
+    pub fn ms_calc_drain_result(
+        mem: &mut impl Mem,
+        user_id: u32,
+        target: u32,
+        command: u32,
+        results: u32,
+        damage: u32,
+        none: i32,
+    ) {
+        let n = u8_at(mem, results, 1);
+        if n >= 0x10 {
+            return;
+        }
+        let what = if none == 0 {
+            u32::from(u8_at(mem, command, 0x23))
+        } else {
+            0
+        };
+        let mut frame = Frame::new(mem, DRAIN_FRAME, 0x28);
+        let (counts, nulls) = (frame.at(0), frame.at(0x20));
+        frame.write(nulls, [0u32, u32::from(none != 0)]);
+        let asleep = i32::from(u8_at(&frame, target, 0x608));
+        let r = dmg_calc_result_type(
+            &mut frame, user_id, user_id, 0, 0, 0, 0, damage, counts, counts, 0, asleep, what,
+            nulls,
+        );
+        let kind = dmg_calc_hit_kind(&frame, what.cast_signed(), nulls);
+        let mem = frame.inner();
+        let v = u8_at(mem, results, 4) | 4;
+        mem.write(results.wrapping_add(4), v);
+        let entry = results
+            .wrapping_add(0x18)
+            .wrapping_add(u32::from(n) * INFO_SIZE);
+        mem.write(results.wrapping_add(1), n + 1);
+        mem.write(entry, r.to_le_bytes()[0]);
+        mem.write(entry.wrapping_add(0x18), low16(what));
+        mem.write(entry.wrapping_add(2), what.to_le_bytes()[0]);
+        mem.write(entry.wrapping_add(1), kind.to_le_bytes()[0]);
+        let d: [u32; 3] = mem.read(damage);
+        mem.write(entry.wrapping_add(0x20), d);
+        set_up_damage_info(mem, entry, 0, target);
+    }
 }
 
 #[cfg(test)]

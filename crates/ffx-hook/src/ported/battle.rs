@@ -674,4 +674,14 @@ ported! {
         let out = dmg::DmgCalcOut { damage, hits, misses, changed };
         dmg::dmg_calc(&mut mem(), user_id, user, target_id, target, command, command_id, info, out, |_| call0(TO_GET_FFX_LANG))
     }
+
+    /// `MsCalcDamage(user_id, user, target_id, target, command, command_id, results, &damage, &hits, &misses, hits_n)`.
+    MsCalcDamage @ 0x0078_9740 => extern "C" fn ms_calc_damage(user_id: u32, user: u32, target_id: u32, target: u32, command: u32, command_id: u32, results: u32, damage: u32, hits: u32, misses: u32, hits_n: i32) -> i32 {
+        let out = dmg::DmgCalcOut { damage, hits, misses, changed: 0 };
+        dmg::ms_calc_damage(&mut mem(), user_id, user, target_id, target, command, command_id, results, out, hits_n, |_| call0(TO_GET_FFX_LANG))
+    }
+    /// `MsCalcDrainResult(user_id, target, command, results, damage, none)`.
+    MsCalcDrainResult @ 0x0078_a240 => extern "C" fn ms_calc_drain_result(user_id: u32, target: u32, command: u32, results: u32, damage: u32, none: i32) {
+        dmg::ms_calc_drain_result(&mut mem(), user_id, target, command, results, damage, none);
+    }
 }
