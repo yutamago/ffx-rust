@@ -4376,6 +4376,68 @@ pub mod bridge {
         }
         sum.wrapping_add(base)
     }
+    /// The CLUT allocator's state: VRAM base (`0x0193bb0c`), cursor
+    /// (`+4`), the split (`+8`, `g_YiClutSplit`), CLUTs handed out (`+0xc`)
+    /// and the sub-slot within a 0x800 block (`+0x10`).
+    const CLUT_STATE: u32 = 0x0193_bb0c;
+
+    /// `yiClutAlloc_init(mode)` (`0x00916e60`): mode 2 starts at
+    /// `0xb4000`, 3 at `0x18000`, both with 32 CLUTs in the first area; 4 at
+    /// `0x82000` with 16; other modes keep the addresses. Count and sub-slot
+    /// cleared. Returns 0.
+    pub fn yi_clut_alloc_init(mem: &mut impl Mem, mode: i32) -> u32 {
+        let st = mem.rebase(CLUT_STATE);
+        let setup = match mode {
+            2 => Some((0xb_4000u32, 0x20u32)),
+            3 => Some((0x1_8000, 0x20)),
+            4 => Some((0x8_2000, 0x10)),
+            _ => None,
+        };
+        if let Some((base, split)) = setup {
+            mem.write(st, [base, base, split]);
+        }
+        mem.write(st + 0xc, [0u32, 0]);
+        0
+    }
+
+    /// `yiClutAlloc_get256idx()` (`0x00916e50`): the CLUTs handed out.
+    pub fn yi_clut_alloc_get256idx(mem: &impl Mem) -> u32 {
+        mem.read(mem.rebase(CLUT_STATE + 0xc))
+    }
+
+    /// `yiClutAlloc_copy256(clut, src, k)` (`0x00916d40`): 256 colours
+    /// (0x400 bytes) into CLUT `k` (`clut + 0x70 + k * 0x460`). Returns 0.
+    pub fn yi_clut_alloc_copy256(mem: &mut impl Mem, clut: u32, src: u32, k: i32) -> u32 {
+        let dst = clut
+            .wrapping_add(0x70)
+            .wrapping_add(k.wrapping_mul(0x460).cast_unsigned());
+        for q in 0..0x100 {
+            let v: u32 = mem.read(src.wrapping_add(4 * q));
+            mem.write(dst.wrapping_add(4 * q), v);
+        }
+        0
+    }
+
+    /// `yiClutAlloc_copy16(clut, src, k, i)` (`0x00916c80`): 16 colours
+    /// into slot `i` of CLUT `k`: the GS swizzle's two rows of 8
+    /// (`+0x70` and `+0xb0` of `clut + (i % 2 + k * 0x23 + i / 2 * 4) *
+    /// 0x20`, C division). Returns 0.
+    pub fn yi_clut_alloc_copy16(mem: &mut impl Mem, clut: u32, src: u32, k: i32, i: i32) -> u32 {
+        let idx = (i % 2)
+            .wrapping_add(k.wrapping_mul(0x23))
+            .wrapping_add((i / 2).wrapping_mul(4));
+        let base = clut.wrapping_add(idx.wrapping_mul(0x20).cast_unsigned());
+        for q in 0..16u32 {
+            let v: u32 = mem.read(src.wrapping_add(4 * q));
+            let off = if q < 8 {
+                0x70 + 4 * q
+            } else {
+                0xb0 + 4 * (q - 8)
+            };
+            mem.write(base.wrapping_add(off), v);
+        }
+        0
+    }
 }
 
 #[cfg(test)]

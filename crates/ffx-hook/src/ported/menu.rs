@@ -2891,4 +2891,20 @@ ported! {
     Vibrate_CurveData @ 0x0087_5d70 => extern "C" fn vibrate_curve_data(k: u32, n: i32, table: u32) -> u32 {
         tk::vibrate_curve_data(&mem(), k, n, table)
     }
+    /// `yiClutAlloc_init(mode)`: 0.
+    yiClutAlloc_init @ 0x0091_6e60 => extern "C" fn yi_clut_alloc_init(mode: i32) -> u32 {
+        tk::yi_clut_alloc_init(&mut mem(), mode)
+    }
+    /// `yiClutAlloc_get256idx()`.
+    yiClutAlloc_get256idx @ 0x0091_6e50 => extern "C" fn yi_clut_alloc_get256idx() -> u32 {
+        tk::yi_clut_alloc_get256idx(&mem())
+    }
+    /// `yiClutAlloc_copy256(clut, src, k)`: 0.
+    yiClutAlloc_copy256 @ 0x0091_6d40 => extern "C" fn yi_clut_alloc_copy256(clut: u32, src: u32, k: i32) -> u32 {
+        tk::yi_clut_alloc_copy256(&mut mem(), clut, src, k)
+    }
+    /// `yiClutAlloc_copy16(clut, src, k, i)`: 0.
+    yiClutAlloc_copy16 @ 0x0091_6c80 => extern "C" fn yi_clut_alloc_copy16(clut: u32, src: u32, k: i32, i: i32) -> u32 {
+        tk::yi_clut_alloc_copy16(&mut mem(), clut, src, k, i)
+    }
 }

@@ -6146,6 +6146,11 @@
 0x00916290 function Yi_StrLower               # (s) tolower in place; own name
 0x009162c0 function Yi_StrUpper               # (s) toupper in place; own name
 0x00916ad0 function Yi_PutRef                 # (p, a, b) {b, 0, a, 0}; a left in eax; own name
+0x00916c80 function yiClutAlloc_copy16        # (clut, src, k, i) 16 colours as two rows of 8 (+0x70, +0xb0) of slot (i%2 + k*0x23 + i/2*4)*0x20; Switch name by role (the yiClutAlloc_* family: PC order differs from Switch source order)
+0x00916d40 function yiClutAlloc_copy256       # (clut, src, k) 0x400 bytes into clut + 0x70 + k*0x460; Switch name by role (the yiClutAlloc_* family: PC order differs from Switch source order)
+0x00916da0 function yiClutAlloc_get256        # (mode; ecx the offset table, caller-popped) next 256-colour CLUT VRAM address / 64 (-1 past 0x48): four per 0x800 block at table offsets (0x00c5dbd0 for mode 2, 0x00c5dbe0 for 3/4), then from 0xb8000 by 0x100; Switch name by role (the yiClutAlloc_* family: PC order differs from Switch source order)
+0x00916e50 function yiClutAlloc_get256idx     # () 0x0193bb18, the CLUTs handed out; Switch name by role (the yiClutAlloc_* family: PC order differs from Switch source order); the dump label TkGetStartMapEventIndex is an fh BSim mismatch
+0x00916e60 function yiClutAlloc_init          # (mode) 2: 0xb4000/split 32, 3: 0x18000/32, 4: 0x82000/16; count 0x0193bb18 and sub-slot 0x0193bb1c cleared; Switch name by role (the yiClutAlloc_* family: PC order differs from Switch source order)
 0x00917050 function yiClutAlloc_makepacket    # fh v3:exact 0x00917050
 0x009173e0 function yiIsPow2                     # (bits) -> 1 when at most one of the low 16 bits is set
 0x00917430 function yiLog2Ceil16                 # (bits) -> the only set bit's index, else the highest one's + 1; -1 none (low 16 bits)

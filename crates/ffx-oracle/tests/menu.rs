@@ -5077,6 +5077,43 @@ fn tk_round8_matches_the_original() {
             U32,
             |o| w(tk::vibrate_curve_data(o, ck, i(cn), table)),
         );
+        // the CLUT allocator
+        if round % 30 == 0 {
+            let mode = t.rng.pick(&[2u32, 3, 4, 0, 7]);
+            t.scramble(0x0193_bb0c, 0x14);
+            t.twin("yiClutAlloc_init", 0x0091_6e60, &[mode], U32, |o| {
+                w(tk::yi_clut_alloc_init(o, i(mode)))
+            });
+        }
+        t.twin("yiClutAlloc_get256idx", 0x0091_6e50, &[], U32, |o| {
+            w(tk::yi_clut_alloc_get256idx(o))
+        });
+        let clut = t.alloc_random(0x1200);
+        let csrc = t.alloc_random(0x400);
+        let ck = t.rng.pick(&[0u32, 1, 2, 0xffff_ffff]);
+        t.twin(
+            "yiClutAlloc_copy256",
+            0x0091_6d40,
+            &[clut + 0x500, csrc, ck],
+            U32,
+            |o| w(tk::yi_clut_alloc_copy256(o, clut + 0x500, csrc, i(ck))),
+        );
+        let ci = t.rng.pick(&[0u32, 1, 2, 3, 7, 0xffff_ffff, 0xffff_fffe]);
+        t.twin(
+            "yiClutAlloc_copy16",
+            0x0091_6c80,
+            &[clut + 0x500, csrc, ck, ci],
+            U32,
+            |o| {
+                w(tk::yi_clut_alloc_copy16(
+                    o,
+                    clut + 0x500,
+                    csrc,
+                    i(ck),
+                    i(ci),
+                ))
+            },
+        );
         let dst = t.alloc_random(4);
         let src = t.alloc(&g.to_le_bytes());
         t.twin(
