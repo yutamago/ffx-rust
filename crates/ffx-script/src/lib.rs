@@ -7,6 +7,8 @@
 //! - [`text`]: disassembly to readable assembly and assembly back.
 //! - [`Container`]: monster and event files that hold a script.
 //! - [`Natives`]: native function IDs to their handlers in `FFX.exe`.
+//! - [`vm`]: the VM's workers, stacks and variables as the game keeps them,
+//!   and its accessors ported over game memory.
 //!
 //! Disassembling and reassembling any shipped script reproduces its bytes
 //! exactly. The format is described in `docs/formats/script.md`.
@@ -16,6 +18,7 @@ pub mod natives;
 pub mod opcode;
 mod script;
 pub mod text;
+pub mod vm;
 
 pub use container::{Container, Kind};
 pub use natives::Natives;

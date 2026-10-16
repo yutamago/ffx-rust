@@ -3545,7 +3545,7 @@
 0x0086c190 function AtelGetNamespaceNumber    # fh v3:cg4 0x86c120
 0x0086c1a0 function AtelGetNowCtrlTopId       # fh v3:exact 0x0086c130
 0x0086c2b0 function AtelGetPosWorkAdrs        # (worker): type 4 -> null, types 5/6 -> worker+0x284, else worker+0x558 (x,y,z +0; +0x30 pitch?, +0x34 yaw; +0x3c talk angle, +0x40 talk range); was Worker_PosBlock
-0x0086c2e0 function AtelGetRealVarAdrs        # (worker, location word): storage = bits 25-27 (0 globals at *(*0x01326b28+0x2c), 1 at +0x30, 2-6 script/worker data) + offset; was Script_VarAddress
+0x0086c2e0 function AtelGetRealVarAdrs        # (worker, location word) -> address: offset (bits 0-23) into the area of storage bits 25-27: 0 ctrl work +0x2c (save data in the field), 1 ctrl +0x30, 2/3/4 worker header +0x28/+0x2c/+0x30 (block-relative), 3 through the ctrl +0x54 callback when set, 5 worker +0x48, 6 block +0x20; 7 -> 0 (jump table 0x0086c3c8); was Script_VarAddress
 0x0086c3f0 function AtelGetRequestLevel       # fh v3:bsim1.00 0x0086c380
 0x0086c410 function AtelGetSaveDic            # fh v3:exact+call.cs 0x0086c3a0 cdecl
 0x0086c430 function AtelGetSaveDicName        # fh v3:exact+call.cs 0x0086c3c0 cdecl
@@ -3553,6 +3553,17 @@
 0x0086c4b0 function AtelGetSphereMonitor      # fh v3:exact 0x0086c440
 0x0086c4d0 function AtelGetStatusWinFadeOut   # fh v3:cg4 0x86c460
 0x0086c510 function AtelGetTotalActorNumber2  # fh v3:exact 0x0086c4a0
+0x0086c570 function AtelGetValueAdrs          # (worker, var, index) -> AtelGetRealVarAdrs of the var's word + index (negative -> 0, >= length -> length-1) * element size; Switch name: the Steam Atel functions are laid out alphabetically and AtelGetValueAdrs..AtelGetVersion fill 0x0086c570-0x0086c890 between AtelGetTotalActorNumber2 and AtelGetWaterBattleEffect, each matching its name
+0x0086c610 function AtelGetValueFloat         # (worker, var, index) -> element as float (ST0) by type nibble: u8, i8, u16, i16, u32, i32, f32 (jump table 0x0086c6bc), 0.0 past 6; Switch name (alphabetical slot, see AtelGetValueAdrs)
+0x0086c6e0 function AtelGetValueIncValue      # (type) -> element size: 1 for 0, 1, 7; 2 for 2, 3; 4 for 4-6; 0 otherwise; Switch name (alphabetical slot, see AtelGetValueAdrs)
+0x0086c730 function AtelGetValueInteger       # (worker, var, index) -> element as integer (f32 through _ftol2_sse, 0 past type 6); Switch name (alphabetical slot, see AtelGetValueAdrs)
+0x0086c7d0 function AtelGetVarAdrs            # (worker, var) -> AtelGetRealVarAdrs(worker, var's word); Switch name (alphabetical slot, see AtelGetValueAdrs)
+0x0086c7f0 function AtelGetVarArrayMax        # (worker, var) -> u16 array length at descriptor +4; Switch name (alphabetical slot, see AtelGetValueAdrs)
+0x0086c810 function AtelGetVarArrayNumber     # (worker, var): same code as AtelGetVarArrayMax; Switch name (alphabetical slot, see AtelGetValueAdrs)
+0x0086c830 function AtelGetVarArrayRange      # (worker, var) -> u16 at descriptor +6; Switch name (alphabetical slot, see AtelGetValueAdrs)
+0x0086c850 function AtelGetVarInfoAdrs        # (worker, var) -> the descriptor's location word (type, storage, offset); Switch name (alphabetical slot, see AtelGetValueAdrs)
+0x0086c870 function AtelGetVarType            # (worker, var) -> location word >> 28; Switch name (alphabetical slot, see AtelGetValueAdrs)
+0x0086c890 function AtelGetVersion            # () -> the build date and time string (0x00b5b9fc); Switch name (alphabetical slot, see AtelGetValueAdrs)
 0x0086c8a0 function AtelGetWaterBattleEffect  # fh v3:bsim1.00 0x0086c830
 0x0086cae0 function AtelInitActor             # fh v3:exact 0x0086ca70
 0x0086cb00 function AtelInitBasicWork         # fh v3:exact 0x0086ca90
@@ -3568,14 +3579,16 @@
 0x0086dca0 function AtelMapLoad               # fh v3:bsim1.00 0x0086dc30
 0x0086dd30 function AtelMapLoadNoCache        # fh v3:bsim1.00 0x0086dcc0
 0x0086ddb0 function AtelPopMember             # fh call.cs cdecl
-0x0086de50 function AtelPopStackFloat         # was Script_PopFloat
-0x0086df00 function AtelPopStackInteger       # was Script_PopInt
-0x0086dfb0 function Script_StoreVar           # mode bit 0x80: pop an array index too; bit 1: store mode
-0x0086e160 function Script_PushVarRef         # address of an array element (element size from the type nibble)
+0x0086de50 function AtelPopStackFloat         # (worker, stack) -> top slot as float in ST0 (float slots through fld, others fild); empty: 0.0, g_AtelError = 0, dbgPrintf of worker id and PC; was Script_PopFloat
+0x0086df00 function AtelPopStackInteger       # (worker, stack) -> top slot as integer (non-integer slots through _ftol2_sse); empty: 0, g_AtelError = 0; was Script_PopInt
+0x0086df40 function AtelFetchStackInteger     # (worker, pop, stack) -> top slot as integer like AtelPopStackInteger, popped only when pop != 0; Switch name: follows AtelPopStackInteger in both builds
+0x0086dfb0 function Script_StoreVar           # (worker, stack, var, mode): opcodes 20/21/23/24; pops the value (float for f32 vars), with mode bit 0x80 an index under it, then AtelSetValueFloat/AtelSetValueInteger with clamp = bit 0; resolves the address once beforehand for nothing; returns 0
+0x0086e100 function Script_PushVarElem        # (worker, stack, var): opcode 22 (pushva): pops an index, then Script_PushVar
+0x0086e160 function Script_PushVarRef         # (worker, stack, var): opcode 27: pops an index, pushes the var's location word + index (clamped) * element size (a reference, not an address)
 0x0086e310 function AtelPushMember            # fh call.cs cdecl
-0x0086e3c0 function Script_PushFloat
-0x0086e3f0 function AtelPushStackInteger      # was Script_PushInt
-0x0086e440 function Script_PushVar
+0x0086e3c0 function AtelPushStackFloat        # (worker, stack, float): slot kind 2; full stack (19) drops it, g_AtelError = 0; Switch name: precedes AtelPushStackInteger in both builds; was Script_PushFloat
+0x0086e3f0 function AtelPushStackInteger      # (worker, stack, value): slot kind 1; full stack (19) drops it, g_AtelError = 0; depth not checked below 0; was Script_PushInt
+0x0086e440 function Script_PushVar            # (worker, stack, var, index): opcode 1f; f32 vars push AtelGetValueFloat as a float slot, others AtelGetValueInteger
 0x0086e4c0 function AtelRecoverFPFromBattle   # fh v3:exact 0x0086e450
 0x0086e700 function AtelRecoverFromMenuCallback # fh v3:exact 0x0086e690
 0x0086e820 function AtelRegistAlbhedDic       # fh v3:bsim1.00 0x0086e7b0
@@ -3613,6 +3626,8 @@
 0x00870f60 function AtelSetShopRatio          # fh v3:bsim1.00 0x00870f00
 0x00871190 function AtelSetUpCtrlWork         # fh v3:exact 0x00871130
 0x00871210 function Msg_ClampChoices             # (window, mode): with mode bit 2, clamps the choice cursors +0x1e/+0x1f/+0x22/+0x23 to the counts in Msg_Flags (window +0x16); drops bit 2 (no choices) / bit 0x40; returns the flags
+0x008712e0 function AtelSetValueFloat         # (worker, var, index, float, clamp): integer types get the value through _ftol2_sse, saturated to the type with clamp; f32 stored; nothing past type 6; Switch name: AtelSetValueFloat/AtelSetValueInteger follow AtelSetUseFlag alphabetically, before AtelSetVel* (0x00871500 writes a level's velocity)
+0x00871400 function AtelSetValueInteger       # (worker, var, index, value, clamp): u8/i8/u16/i16 truncated or saturated (clamp), u32/i32 stored, f32 converted; nothing past type 6; Switch name (see AtelSetValueFloat)
 0x008715e0 function AtelSetVibrateStreamExt   # fh v3:bsim1.00 0x00871580
 0x008715f0 function AtelSetWaterBattleEffect  # fh v3:bsim1.00 0x00871590
 0x00871730 function AtelSkipReqLevel2         # fh v3:bsim1.00 0x008716d0
@@ -3636,7 +3651,7 @@
 0x008724a0 function TkRefreshHdd              # fh v3:exact+call.cs 0x00872440 cdecl
 0x008724f0 function TkRefreshSoundMode        # fh v3:exact 0x00872490
 0x00872550 function TkSoftWareReset           # fh switch:bsim1.00 0x7100471580
-0x00872650 function Script_WorkerLevel           # (worker, level) -> 0x4c-byte level block at ctx+0x12c+level*0x4c (types 5/6: 2 levels); +0x44 move block ptr, +0x48 turn block ptr
+0x00872650 function Script_WorkerLevel        # (worker, level) -> 0x4c-byte level block at worker+0x12c+level*0x4c, level clamped to 0..8 (types 5/6: 0..1); +0x18 PC, +0x1f request state, +0x20/+0x24 registers A/B, +0x28 float accumulator, +0x44 move block ptr, +0x48 turn block ptr
 0x008726f0 function Script_Jump               # pc = code start + labels[index]
 0x00872b50 function AtelCheckMenuOtakaraFlag  # fh switch:cg2 0x71008b8908
 0x00872b60 function AtelClearMenuOtakaraFlag  # fh v3:bsim1.00 0x00872b00
@@ -6557,6 +6572,7 @@
 0x00b4c250 label ShadowDynamicMeshInstance_vftable # fh v4:imported ShadowDynamicMeshInstance::vftable
 0x00b4c2e4 label FmodManager_vftable          # fh v4:imported FmodManager::vftable
 0x00b4cf30 label JobSchedule_JobWorker_vftable # fh v4:imported JobSchedule::JobWorker::vftable
+0x00b5b9fc label    g_AtelVersion                # build date and time string AtelGetVersion returns (__DATE__ " " __TIME__ style)
 0x00b69fe0 label type_info_vftable            # fh v4:imported type_info::vftable
 0x00b6ed04 label btCollisionShape_vftable     # fh v4:imported btCollisionShape::vftable
 0x00b6ed44 label btConvexShape_vftable        # fh v4:imported btConvexShape::vftable
@@ -7009,9 +7025,15 @@
 0x01136fd8 label    g_CamOverrideLookAt          # override camera look-at, vec4 (game space)
 0x01136fe8 label    g_CamOverrideUp              # override camera up vector, vec4 (reset to (0,-1,0)-ish: 0x01136fec = -1.0)
 0x01137540 label    g_Cameras                    # ?3 cameras x 0xda0: two sides of 0x61c each (0 = ref, 1 = cam), channels of 0x130 at +0xc0, channel table at 0x011381a8
-0x01326b28 label    g_ScriptContext              # event/script context pointer (FUN_0086aff0): +0x0a player worker, +0x0c worker count, +0x218 player position, +0x1e4/0x1f0 talk state
+0x01325ba0 label    g_AtelCtrlWorks              # 7 ctrl works x 0x238 (AtelGetCtrlWork); g_ScriptContext follows; layout in ffx_script::vm::ctrl
+0x01326b28 label    g_ScriptContext              # current ctrl work (AtelGetCurCtrlWork, AtelSetCurrentCtrl): +0x0a player worker, +0x0c actor count, +0x10 worker count, +0x1c workers, +0x2c/+0x30 variable storage 0/1, +0x218 player position, +0x1e4/0x1f0 talk state (ffx_script::vm::ctrl)
+0x01326b82 label    g_AtelMenuExecStatus         # i8: AtelSetMenuExecStatus; selects the bank of g_MsgWindows (AtelGetMesWinWork)
 0x01326d70 label    g_MsgWindows                 # 2 banks x 8 message windows, 0x2c bytes: +0x14 state, +0x16 Msg_Flags, +0x18 display flags, +0x1d mode flags
 0x013270d0 label    g_PadPressed                 # buttons newly pressed this frame, OR over pads (0x00871d70)
+0x013270d8 label    g_AtelError                  # set to 0 where the PS2 code reported a script error (stack over/underflow, bad request); AtelGetBasicWork adds 1 (mod 256) for an index past the end; saved and restored around calls by 0x008630c0 and 0x0086a470
+0x013270dc label    g_AtelBasicWorkCacheCtrl     # u16: ctrl work number (+0x1a) of the worker AtelGetBasicWork cached
+0x013270e0 label    g_AtelBasicWorkCacheIndex    # u16: index of the worker AtelGetBasicWork cached
+0x013270e4 label    g_AtelBasicWorkCache         # worker AtelGetBasicWork returned last; 0 = none (AtelRemoveCtrlWork and AtelInitTotal clear it; AtelRequireCtrlWork counts a loop down to 0 in it)
 0x01327148 label    g_EventSprites               # 128 x 0x1c: +0 active, +1 alpha, +4/+6 x/y, +8/+0xa scale*256, +0xc frame, +0x10 rgb, +0x14 data; drawn by 0x00874420
 0x01328558 label    g_NativeTables            # per-group native function tables
 0x0132ffa0 label    g_PartyWorkers               # [16] worker id per party index (0x0042, FUN_00885fd0)
