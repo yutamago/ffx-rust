@@ -3,23 +3,18 @@
 //! original, with its arguments as the original takes them (addresses as
 //! `u32`) and its full `EAX` (or `f32` bits for `ST0`) as the result.
 
+/// How the VM reaches original code: the ctrl work's callbacks, and the
+/// callees not ported yet.
+pub use ffx_bridge::Host;
 use ffx_bridge::{Global, Mem};
 
 pub mod globals;
+pub mod run;
 
 use super::{
     Classes, block, buffer_size, ctrl, header, is_small, level, level_index, slot_float, slot_int,
     stack, store_float, store_int, value_float, value_int, var, worker, worker_offset,
 };
-
-/// Calls into original code the VM reaches through function pointers (the
-/// ctrl work's callbacks). In the game this is a plain call; in the oracle,
-/// the emulator.
-pub trait Host: Mem {
-    /// Calls the cdecl function at `addr` (an address in this process) and
-    /// returns its `EAX`.
-    fn call(&mut self, addr: u32, args: &[u32]) -> u32;
-}
 
 /// `g_ScriptContext`: the current ctrl work.
 pub const CONTEXT: Global<u32> = Global::new(0x0132_6b28);
@@ -324,12 +319,12 @@ fn top(mem: &mut impl Mem, s: u32) -> Option<(u8, u32, i32)> {
 /// `AtelPopStackInteger(worker, stack)` (`0x0086df00`): the top as an
 /// integer ([`super::slot_int`]); 0 from an empty stack.
 pub fn atel_pop_stack_integer(mem: &mut impl Mem, s: u32) -> u32 {
-    atel_fetch_stack_integer(mem, 1, s)
+    script_top_int(mem, 1, s)
 }
 
-/// `AtelFetchStackInteger(worker, pop, stack)` (`0x0086df40`): the top as
+/// `Script_TopInt(worker, pop, stack)` (`0x0086df40`): the top as
 /// an integer, popped only when `pop` is not 0.
-pub fn atel_fetch_stack_integer(mem: &mut impl Mem, pop: u32, s: u32) -> u32 {
+pub fn script_top_int(mem: &mut impl Mem, pop: u32, s: u32) -> u32 {
     let Some((kind, raw, d)) = top(mem, s) else {
         return 0;
     };

@@ -10,10 +10,15 @@
 //! they compare exactly, NaNs only as NaNs (their bits are checked where
 //! the code stores them). `_ftol2_sse` pops each one.
 
+// a and b are the two oracles (original, bridge) throughout; w, l, s a worker,
+// its level and its stack
+#![allow(clippy::many_single_char_names)]
+
 use std::path::PathBuf;
 
 use ffx_bridge::Mem;
 use ffx_oracle::{Conv, Oracle, Pages};
+use ffx_script::vm::bridge::run;
 use ffx_script::vm::{self, bridge as v, ctrl, stack, worker};
 
 const ATEL_GET_BASIC_WORK: u32 = 0x0086_a830;
@@ -149,8 +154,24 @@ fn same_float(st0: f64, bits: u32) -> bool {
     }
 }
 
+/// Every byte written must agree, except inside words that hold an address
+/// in the emulated stack on both sides: original code the bridge calls
+/// (a native) runs on a shallower stack than when `Script_Run` calls it,
+/// so a pointer to one of its locals it leaves behind differs by the depth
+/// (the game's Rust frames differ in size from the original's as well).
 fn no_diff(a: &mut Oracle, b: &mut Oracle, what: &str) {
-    assert_eq!(a.diff(b).unwrap(), [], "{what}: memory");
+    let stack = a.stack_range();
+    assert_eq!(stack, b.stack_range());
+    let d: Vec<_> = a
+        .diff(b)
+        .unwrap()
+        .into_iter()
+        .filter(|&(at, _, _)| {
+            let w = at & !3;
+            !(stack.contains(&Mem::read::<u32>(a, w)) && stack.contains(&Mem::read::<u32>(b, w)))
+        })
+        .collect();
+    assert_eq!(d, [], "{what}: memory");
 }
 
 /// Writes `value` at `addr` in both oracles.
@@ -460,11 +481,7 @@ fn stacks_match_the_original() {
                 3 => {
                     let pop = rng.below(2);
                     let ra = orig(&mut a, ATEL_FETCH_STACK_INTEGER, &[0, pop, s]);
-                    assert_eq!(
-                        ra,
-                        v::atel_fetch_stack_integer(&mut b, pop, s),
-                        "{what}: fetch"
-                    );
+                    assert_eq!(ra, v::script_top_int(&mut b, pop, s), "{what}: fetch");
                 }
                 _ => {
                     // the worker argument is read only for the error report
@@ -1097,5 +1114,699 @@ fn globals_match_the_original() {
             assert_eq!(ra, rb, "{f:#x}({dst:#x}, {src:#x})");
             no_diff(&mut a, &mut b, "strings");
         }
+    }
+}
+
+const SCRIPT_RUN: u32 = 0x0086_41e0;
+
+/// A pair of oracles on the snapshot with the run lock stubbed (the mutex
+/// is a Windows object the emulator does not have; both sides call the
+/// same stubs).
+fn run_pair(pages: &std::sync::Arc<Pages>, exe: &std::path::Path) -> (Oracle, Oracle) {
+    let mut pair = (
+        Oracle::from_snapshot(exe, pages).unwrap(),
+        Oracle::from_snapshot(exe, pages).unwrap(),
+    );
+    let image = std::fs::read(exe).unwrap();
+    let pe = goblin::pe::PE::parse(&image).unwrap();
+    let sizes: Vec<usize> = CRT.iter().map(|(_, c)| c.len()).collect();
+    let caves = caves(&image, &pe, &sizes);
+    assert_eq!(caves.len(), CRT.len(), "room for the CRT stubs");
+    for o in [&mut pair.0, &mut pair.1] {
+        for f in [run::MUTEX_LOCK, run::MUTEX_UNLOCK] {
+            let at = o.rebase(f);
+            o.stub_return(at, 0).unwrap();
+        }
+        // CRT imports the oracle has no stub for, written into int3
+        // padding of the image (executable there), the IAT pointed at them
+        for (&(name, code), &cave) in CRT.iter().zip(&caves) {
+            let at = o.image_base() + cave;
+            Mem::write_bytes(o, at, code);
+            for imp in pe.imports.iter().filter(|i| i.name == name) {
+                let slot = o.image_base() + u32::try_from(imp.offset).unwrap();
+                Mem::write(o, slot, at);
+            }
+        }
+    }
+    pair
+}
+
+/// x86 for the imports natives reach that the oracle has no stub for: CRT
+/// functions (cdecl) and two Win32 waits (stdcall), the same on both sides.
+const CRT: [(&str, &[u8]); 11] = [
+    // fld1; fpatan; ret
+    ("_CIatan", &[0xd9, 0xe8, 0xd9, 0xf3, 0xc3]),
+    // the _CI* helpers take and return ST0 (ST1 too for atan2): one x87
+    // instruction each
+    ("_CIcos", &[0xd9, 0xff, 0xc3]),
+    ("_CIsin", &[0xd9, 0xfe, 0xc3]),
+    ("_CIsqrt", &[0xd9, 0xfa, 0xc3]),
+    ("_CIatan2", &[0xd9, 0xf3, 0xc3]),
+    // fptan; fstp st0; ret
+    ("_CItan", &[0xd9, 0xf2, 0xdd, 0xd8, 0xc3]),
+    // _isnan(double): fld qword [esp+4]; fucomip st0, st0; fstp st0;
+    // setp al; movzx eax, al; ret
+    (
+        "_isnan",
+        &[
+            0xdd, 0x44, 0x24, 0x04, 0xdf, 0xe8, 0xdd, 0xd8, 0x0f, 0x9a, 0xc0, 0x0f, 0xb6, 0xc0,
+            0xc3,
+        ],
+    ),
+    // _finite(double): mov eax, [esp+8]; and eax, 0x7ff00000; cmp eax,
+    // 0x7ff00000; setne al; movzx eax, al; ret
+    (
+        "_finite",
+        &[
+            0x8b, 0x44, 0x24, 0x08, 0x25, 0x00, 0x00, 0xf0, 0x7f, 0x3d, 0x00, 0x00, 0xf0, 0x7f,
+            0x0f, 0x95, 0xc0, 0x0f, 0xb6, 0xc0, 0xc3,
+        ],
+    ),
+    // strstr(hay, needle), naive: the first match or null
+    (
+        "strstr",
+        &[
+            0x56, 0x57, 0x8b, 0x4c, 0x24, 0x0c, 0x8b, 0x54, 0x24,
+            0x10, // save; ecx hay, edx needle
+            0x89, 0xce, 0x89, 0xd7, // outer: esi = ecx, edi = edx
+            0x8a, 0x07, 0x84, 0xc0, 0x74, 0x10, // inner: al = *edi; end of needle: found
+            0x3a, 0x06, 0x75, 0x04, 0x46, 0x47, 0xeb,
+            0xf2, // mismatch: next; else step, inner
+            0x80, 0x39, 0x00, 0x74, 0x08, 0x41, 0xeb,
+            0xe6, // next: end of hay: none; ecx++, outer
+            0x89, 0xc8, 0x5f, 0x5e, 0xc3, // found: eax = ecx
+            0x31, 0xc0, 0x5f, 0x5e, 0xc3, // none: eax = 0
+        ],
+    ),
+    // WaitForSingleObject(handle, ms): WAIT_OBJECT_0 (xor eax, eax; ret 8)
+    ("WaitForSingleObject", &[0x31, 0xc0, 0xc2, 0x08, 0x00]),
+    // ReleaseMutex(handle): TRUE (mov eax, 1; ret 4)
+    (
+        "ReleaseMutex",
+        &[0xb8, 0x01, 0x00, 0x00, 0x00, 0xc2, 0x04, 0x00],
+    ),
+];
+
+/// Room in `.text` for each of `sizes`: runs of `int3` padding at least two
+/// bytes longer, as image offsets one byte in (so a stub never touches the
+/// code around it).
+fn caves(image: &[u8], pe: &goblin::pe::PE, sizes: &[usize]) -> Vec<u32> {
+    let text = pe
+        .sections
+        .iter()
+        .find(|s| s.name().ok() == Some(".text"))
+        .expect(".text");
+    let raw = text.pointer_to_raw_data as usize;
+    let data = &image[raw..raw + text.size_of_raw_data as usize];
+    let mut runs = Vec::new();
+    let mut start = None;
+    for (i, &b) in data.iter().enumerate() {
+        if b == 0xcc {
+            start.get_or_insert(i);
+        } else if let Some(s) = start.take() {
+            runs.push((s, i - s));
+        }
+    }
+    let mut used = vec![false; runs.len()];
+    sizes
+        .iter()
+        .filter_map(|&n| {
+            let k = (0..runs.len()).find(|&k| !used[k] && runs[k].1 >= n + 2)?;
+            used[k] = true;
+            Some(text.virtual_address + u32::try_from(runs[k].0 + 1).unwrap())
+        })
+        .collect()
+}
+
+/// Runs every actor of each ctrl work in use through `Script_Run` and the
+/// bridge alike, `rounds` times (as frames would), comparing the result and
+/// all memory after each worker. A run the original cannot finish in the
+/// emulator (a native reaching an import it has no stub for) ends that ctrl
+/// work's sequence; the count of compared runs is reported.
+fn run_workers(mode: u32, callbacks: u32, rounds: u32) {
+    let (Some(dir), Some(snap)) = (
+        std::env::var_os("FFX_GAME_DIR"),
+        std::env::var_os("FFX_SNAPSHOT"),
+    ) else {
+        eprintln!("FFX_GAME_DIR or FFX_SNAPSHOT is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let ctrls = {
+        let o = Oracle::from_snapshot(&exe, &pages).unwrap();
+        in_use(&o)
+    };
+    let mut compared = 0;
+    let mut executed = [0u64; 0x80];
+    for c in ctrls {
+        let (mut a, mut b) = run_pair(&pages, &exe);
+        make_current(&mut a, &mut b, c);
+        let workers = actors(&mut a, &mut b);
+        let mut stopped = None;
+        'rounds: for round in 0..rounds {
+            for (i, &w) in workers.iter().enumerate() {
+                let what = format!("ctrl {c:#x} round {round} worker {i} ({w:#x})");
+                let ra = match a.call(a.rebase(SCRIPT_RUN), Conv::Cdecl, &[w, mode, callbacks]) {
+                    Ok(r) => r.eax,
+                    Err(e) => {
+                        stopped = Some(format!("{what}: the original stops: {e}"));
+                        break 'rounds;
+                    }
+                };
+                let rb = run::script_run_traced(
+                    &mut Run(&mut b),
+                    &mut run::OriginalNatives,
+                    w,
+                    mode,
+                    callbacks,
+                    |op, _| executed[usize::from(op)] += 1,
+                );
+                assert_eq!(ra, rb, "{what}: result");
+                no_diff(&mut a, &mut b, &what);
+                compared += 1;
+            }
+        }
+        eprintln!(
+            "ctrl work {c:#x}: {} workers; {}",
+            workers.len(),
+            stopped.unwrap_or_else(|| "all rounds".into())
+        );
+    }
+    let ops: Vec<String> = (0..0x80)
+        .filter(|&o| executed[o] != 0)
+        .map(|o| format!("{o:02x}:{}", executed[o]))
+        .collect();
+    eprintln!(
+        "{compared} runs compared, {} instructions; opcodes {}",
+        executed.iter().sum::<u64>(),
+        ops.join(" ")
+    );
+    assert!(compared > 0, "nothing ran");
+}
+
+#[test]
+fn script_run_matches_the_original() {
+    run_workers(0, 1, 8);
+}
+
+#[test]
+fn script_run_without_callbacks_matches_the_original() {
+    run_workers(0, 0, 4);
+}
+
+#[test]
+fn script_run_stepping_matches_the_original() {
+    run_workers(1, 1, 6);
+}
+
+/// Starts worker `w` at entry `e` on both sides, as a request would: the
+/// running level's PC at the entry, no wait, no call, an empty stack, speed
+/// 1 (so the run goes on past empty stacks until a native or an end stops
+/// it), the run flag set.
+fn start_entry(a: &mut Oracle, b: &mut Oracle, w: u32, e: u32) {
+    let hdr = Mem::read::<u32>(b, w + worker::HEADER);
+    let blk = Mem::read::<u32>(b, w + worker::BLOCK);
+    let code = blk.wrapping_add(Mem::read::<u32>(b, blk + vm::block::CODE));
+    let entries = blk.wrapping_add(Mem::read::<u32>(b, hdr + 0x20));
+    let pc = code.wrapping_add(Mem::read::<u32>(b, entries + e * 4));
+    let lvl = i32::from(Mem::read::<u8>(b, w + worker::LEVEL));
+    let l = v::script_worker_level(b, w, lvl);
+    poke(a, b, l + vm::level::PC, pc);
+    poke(a, b, l + 0x1d, [0u8; 3]);
+    poke(a, b, w + worker::STACK, 0i32);
+    poke(a, b, w + 0x94, 1f32.to_bits());
+    poke(a, b, w + 0x98, 0u32);
+    let flags = Mem::read::<u16>(b, w + worker::FLAGS);
+    poke(a, b, w + worker::FLAGS, flags | 2);
+}
+
+/// Every entry point (up to `max_entries` a worker) of every actor of each
+/// ctrl work in use, run `frames` times from its start on both sides.
+fn run_entries(max_entries: u32, frames: u32) {
+    let (Some(dir), Some(snap)) = (
+        std::env::var_os("FFX_GAME_DIR"),
+        std::env::var_os("FFX_SNAPSHOT"),
+    ) else {
+        eprintln!("FFX_GAME_DIR or FFX_SNAPSHOT is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let ctrls = {
+        let o = Oracle::from_snapshot(&exe, &pages).unwrap();
+        in_use(&o)
+    };
+    let (mut compared, mut stops) = (0, 0);
+    let mut executed = [0u64; 0x80];
+    for c in ctrls {
+        let mut pair = None;
+        let n = {
+            let (a, b) = pair.get_or_insert_with(|| fresh_run_pair(&pages, &exe, c));
+            actors(a, b).len()
+        };
+        for i in 0..n {
+            for e in 0..max_entries {
+                let (a, b) = pair.get_or_insert_with(|| fresh_run_pair(&pages, &exe, c));
+                let w = v::atel_get_basic_work(b, i32::try_from(i).unwrap());
+                assert_eq!(
+                    orig(a, ATEL_GET_BASIC_WORK, &[u32::try_from(i).unwrap()]),
+                    w
+                );
+                let hdr = Mem::read::<u32>(b, w + worker::HEADER);
+                if e >= u32::from(Mem::read::<u16>(b, hdr + 8)) {
+                    break;
+                }
+                start_entry(a, b, w, e);
+                for frame in 0..frames {
+                    let what = format!("ctrl {c:#x} worker {i} entry {e} frame {frame}");
+                    let ra = match a.call(a.rebase(SCRIPT_RUN), Conv::Cdecl, &[w, 0, 1]) {
+                        Ok(r) => r.eax,
+                        Err(err) => {
+                            eprintln!("{what}: the original stops: {err}");
+                            stops += 1;
+                            pair = None;
+                            break;
+                        }
+                    };
+                    let rb = run::script_run_traced(
+                        &mut Run(b),
+                        &mut run::OriginalNatives,
+                        w,
+                        0,
+                        1,
+                        |op, _| executed[usize::from(op)] += 1,
+                    );
+                    assert_eq!(ra, rb, "{what}: result");
+                    no_diff(a, b, &what);
+                    compared += 1;
+                }
+                // the next entry starts from this state, which both sides share
+            }
+        }
+    }
+    let ops: Vec<String> = (0..0x80)
+        .filter(|&o| executed[o] != 0)
+        .map(|o| format!("{o:02x}:{}", executed[o]))
+        .collect();
+    eprintln!(
+        "{compared} runs compared ({stops} stopped in the original), {} instructions, {} opcodes: {}",
+        executed.iter().sum::<u64>(),
+        ops.len(),
+        ops.join(" ")
+    );
+    assert!(compared > 0, "nothing ran");
+}
+
+/// [`run_pair`] with ctrl work `c` current and the game speed at 1.
+fn fresh_run_pair(
+    pages: &std::sync::Arc<Pages>,
+    exe: &std::path::Path,
+    c: u32,
+) -> (Oracle, Oracle) {
+    let (mut a, mut b) = run_pair(pages, exe);
+    make_current(&mut a, &mut b, c);
+    let speed = a.rebase(run::GAME_SPEED.sym);
+    poke(&mut a, &mut b, speed, 1f32.to_bits());
+    (a, b)
+}
+
+#[test]
+fn script_entries_match_the_original() {
+    run_entries(6, 6);
+}
+
+/// A random program for worker `w` (its own variables, constants and
+/// labels), keeping its stack between empty and full, ended by one of the
+/// ways a run stops.
+#[allow(clippy::too_many_lines)] // one arm per kind of instruction
+fn program(rng: &mut Xorshift, b: &Oracle, w: u32) -> Vec<u8> {
+    let hdr = b.read::<u32>(w + worker::HEADER);
+    let count = |off: u32| u32::from(b.read::<u16>(hdr + off)).max(1);
+    let (vars, ints, floats, labels) = (count(2), count(4), count(6), count(0x0a));
+    let mut code = Vec::new();
+    let long = |code: &mut Vec<u8>, op: u8, x: u32| {
+        code.push(op | 0x80);
+        code.extend_from_slice(&x.to_le_bytes()[..2]);
+    };
+    let mut depth = 0i32;
+    for _ in 0..=rng.below(40) {
+        let any = rng.below(1 << 16);
+        match rng.below(12) {
+            // pushes
+            0 | 1 => {
+                let imm = [0, 1, 2, 3, 31, 32, 0xffff, 0x8000, 0x7fff, any][rng.below(10) as usize];
+                long(&mut code, 0x2e, imm);
+            }
+            2 if depth < 18 => {
+                let op = [
+                    0x28, 0x29, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x70, 0x74, 0x26, 0x2b,
+                ][rng.below(11) as usize];
+                if op == 0x2b && depth == 0 {
+                    continue;
+                }
+                code.push(op);
+            }
+            3 => match rng.below(4) {
+                0 => long(&mut code, 0x2d, rng.below(ints)),
+                1 => long(&mut code, 0x2f, rng.below(floats)),
+                2 => long(&mut code, 0x75, rng.below(8)),
+                _ => long(&mut code, 0x1f, rng.below(vars)),
+            },
+            // binary and unary operators
+            4..=6 if depth >= 2 => {
+                let op = [
+                    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
+                    0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+                ][rng.below(24) as usize];
+                code.push(op);
+                depth -= 1;
+                continue;
+            }
+            7 if depth >= 1 => code.push([0x19, 0x1a, 0x1c][rng.below(3) as usize]),
+            // pops and stores
+            8 if depth >= 1 => {
+                match rng.below(4) {
+                    0 => code.push(
+                        [0x2a, 0x2c, 0x25, 0x59, 0x5c, 0x5d, 0x63, 0x66][rng.below(8) as usize],
+                    ),
+                    1 => long(
+                        &mut code,
+                        [0x20, 0x21][rng.below(2) as usize],
+                        rng.below(vars),
+                    ),
+                    2 => {
+                        // index on top: an element push or a reference
+                        long(
+                            &mut code,
+                            [0x22, 0x27][rng.below(2) as usize],
+                            rng.below(vars),
+                        );
+                        continue;
+                    }
+                    _ if depth >= 2 => {
+                        long(
+                            &mut code,
+                            [0x23, 0x24][rng.below(2) as usize],
+                            rng.below(vars),
+                        );
+                        depth -= 2;
+                        continue;
+                    }
+                    _ => continue,
+                }
+                depth -= 1;
+                continue;
+            }
+            // the calls into other code (party requests, waits, 79, 7a)
+            9 if depth >= 3 => {
+                let op = [
+                    0x39, 0x3a, 0x3b, 0x79, 0x77, 0x78, 0x7a, 0x36, 0x37, 0x38, 0x45, 0x4a, 0x4f,
+                ][rng.below(13) as usize];
+                code.push(op);
+                depth -= match op {
+                    // pop three, push one; pop two
+                    0x39..=0x3b | 0x77 | 0x78 => 2,
+                    // the request families pop worker, level and entry
+                    0x79 | 0x36..=0x38 | 0x45..=0x53 => 3,
+                    _ => 1,
+                };
+                continue;
+            }
+            _ => continue,
+        }
+        depth += 1;
+    }
+    // how it ends, with an empty stack (an end opcode leaves the PC, so
+    // with values left the loop would run it again and again)
+    code.resize(code.len() + usize::try_from(depth.max(0)).unwrap(), 0x2a);
+    match rng.below(9) {
+        1 => code.push(0x3e),
+        2 => {
+            long(&mut code, 0x2e, 1);
+            code.push([0x3d, 0x3f][rng.below(2) as usize]);
+        }
+        3 => code.push(0x54),
+        4 | 5 => {
+            if rng.below(2) == 0 {
+                long(&mut code, 0x2e, rng.below(2));
+            }
+            long(
+                &mut code,
+                [0x30, 0x31, 0x32, 0x55, 0x56, 0x57][rng.below(6) as usize],
+                rng.below(labels),
+            );
+            code.push(0x3c);
+        }
+        _ => code.push(0x3c),
+    }
+    code
+}
+
+#[test]
+fn script_programs_match_the_original() {
+    let (Some(dir), Some(snap)) = (
+        std::env::var_os("FFX_GAME_DIR"),
+        std::env::var_os("FFX_SNAPSHOT"),
+    ) else {
+        eprintln!("FFX_GAME_DIR or FFX_SNAPSHOT is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let c = {
+        let o = Oracle::from_snapshot(&exe, &pages).unwrap();
+        ctx(&o).0
+    };
+    let mut rng = Xorshift(0x5eed_0004);
+    let (mut compared, mut stops) = (0, 0);
+    let mut executed = [0u64; 0x80];
+    let mut pair = None;
+    for k in 0..400 {
+        let (a, b) = pair.get_or_insert_with(|| fresh_run_pair(&pages, &exe, c));
+        let workers = actors(a, b);
+        let w = workers[rng.below(u32::try_from(workers.len()).unwrap()) as usize];
+        let code = program(&mut rng, b, w);
+        let at = a.alloc_bytes(&code).unwrap();
+        assert_eq!(b.alloc_bytes(&code).unwrap(), at);
+        start_entry(a, b, w, 0);
+        let lvl = i32::from(Mem::read::<u8>(b, w + worker::LEVEL));
+        let l = v::script_worker_level(b, w, lvl);
+        poke(a, b, l + vm::level::PC, at);
+        // statement by statement, on, or on with the accumulator over 1
+        let speed = [0.0f32, 1.0, 2.5][rng.below(3) as usize];
+        poke(a, b, w + 0x94, speed.to_bits());
+        let mode = u32::from(rng.below(8) == 0);
+        let what = format!("program {k} on {w:#x}, mode {mode}: {code:02x?}");
+        if std::env::var_os("ATEL_TRACE").is_some() {
+            eprintln!("{what}");
+        }
+        for frame in 0..3 {
+            let t = std::time::Instant::now();
+            let ra = match a.call(a.rebase(SCRIPT_RUN), Conv::Cdecl, &[w, mode, 1]) {
+                Ok(r) => r.eax,
+                Err(e) => {
+                    if std::env::var_os("ATEL_TRACE").is_some() {
+                        eprintln!(
+                            "  frame {frame}: the original stops after {:?}: {e}",
+                            t.elapsed()
+                        );
+                    }
+                    stops += 1;
+                    pair = None;
+                    break;
+                }
+            };
+            if std::env::var_os("ATEL_TRACE").is_some() {
+                eprintln!("  frame {frame}: original {:?}", t.elapsed());
+            }
+            let rb = run::script_run_traced(
+                &mut Run(b),
+                &mut run::OriginalNatives,
+                w,
+                mode,
+                1,
+                |op, _| {
+                    executed[usize::from(op)] += 1;
+                },
+            );
+            assert_eq!(ra, rb, "{what} frame {frame}: result");
+            no_diff(a, b, &format!("{what} frame {frame}"));
+            compared += 1;
+        }
+    }
+    let ops: Vec<String> = (0..0x80)
+        .filter(|&o| executed[o] != 0)
+        .map(|o| format!("{o:02x}"))
+        .collect();
+    eprintln!(
+        "{compared} runs compared ({stops} stopped in the original), {} instructions, {} opcodes: {}",
+        executed.iter().sum::<u64>(),
+        ops.len(),
+        ops.join(" ")
+    );
+    assert!(compared > 0, "nothing ran");
+}
+
+/// Runs `code` on the first actor `frames` times on both sides, after
+/// `setup` (given the program's address); returns the opcodes executed.
+fn run_code(
+    code: &[u8],
+    mode: u32,
+    frames: u32,
+    setup: impl Fn(&mut Oracle, &mut Oracle, u32),
+) -> Option<Vec<u8>> {
+    let (Some(dir), Some(snap)) = (
+        std::env::var_os("FFX_GAME_DIR"),
+        std::env::var_os("FFX_SNAPSHOT"),
+    ) else {
+        return None;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let c = ctx(&Oracle::from_snapshot(&exe, &pages).unwrap()).0;
+    let (mut a, mut b) = fresh_run_pair(&pages, &exe, c);
+    let w = actors(&mut a, &mut b)[0];
+    let at = a.alloc_bytes(code).unwrap();
+    assert_eq!(b.alloc_bytes(code).unwrap(), at);
+    start_entry(&mut a, &mut b, w, 0);
+    let lvl = i32::from(Mem::read::<u8>(&b, w + worker::LEVEL));
+    let l = v::script_worker_level(&b, w, lvl);
+    poke(&mut a, &mut b, l + vm::level::PC, at);
+    setup(&mut a, &mut b, at);
+    let mut ops = Vec::new();
+    for frame in 0..frames {
+        let what = format!("{code:02x?} mode {mode} frame {frame}");
+        let ra = orig(&mut a, SCRIPT_RUN, &[w, mode, 1]);
+        let rb = run::script_run_traced(
+            &mut Run(&mut b),
+            &mut run::OriginalNatives,
+            w,
+            mode,
+            1,
+            |op, _| {
+                ops.push(op);
+            },
+        );
+        assert_eq!(ra, rb, "{what}: result");
+        no_diff(&mut a, &mut b, &what);
+    }
+    Some(ops)
+}
+
+#[test]
+fn invalid_opcodes_match_the_original() {
+    // with an empty stack (else the loop never ends, in the original too):
+    // the PC stays and the run gives up after 0x10000 tries
+    for op in [0x1b, 0x41, 0x44, 0x7b, 0x7f, 0x9b, 0xc1, 0xff] {
+        if run_code(&[op, 0x3c], 0, 2, |_, _, _| {}).is_none() {
+            eprintln!("FFX_GAME_DIR or FFX_SNAPSHOT is not set; skipping");
+            return;
+        }
+    }
+}
+
+#[test]
+fn breakpoints_match_the_original() {
+    // a breakpoint replacing "pushimm 5" (0xae 05 00) with 0x40, then
+    // "pop A; end": entry 2 of the ctrl work's table at +0x64 set to it
+    let code = [0x40, 0x05, 0x00, 0x2a, 0x3c];
+    for (armed, mode, saved) in [
+        (0u8, 0, 0xae_u8),
+        (1, 0, 0xae),
+        (0, 1, 0xae),
+        (1, 1, 0xae),
+        (1, 0, 0x7c),
+        (1, 0, 0x40),
+    ] {
+        let ops = run_code(&code, mode, 3, |a, b, at| {
+            let c = ctx(b).0;
+            for e in 0..4u32 {
+                let t = c + 0x64 + e * 0x10;
+                poke(a, b, t, if e == 2 { 0 } else { -1i32 });
+                poke(a, b, t + 8, at);
+                poke(a, b, t + 0xe, [saved, armed]);
+            }
+        });
+        let Some(ops) = ops else {
+            eprintln!("FFX_GAME_DIR or FFX_SNAPSHOT is not set; skipping");
+            return;
+        };
+        eprintln!("armed {armed} mode {mode} saved {saved:#x}: ran {ops:02x?}");
+    }
+}
+
+#[test]
+fn interpreter_helpers_match_the_original() {
+    let Some((mut a, mut b)) = setup() else {
+        return;
+    };
+    let stk = a.alloc(0x80).unwrap();
+    assert_eq!(b.alloc(0x80).unwrap(), stk);
+    let mut rng = Xorshift(0x5eed_0005);
+    for c in in_use(&b) {
+        make_current(&mut a, &mut b, c);
+        for w in actors(&mut a, &mut b) {
+            let lvl = i32::from(Mem::read::<u8>(&b, w + worker::LEVEL));
+            let l = v::script_worker_level(&b, w, lvl);
+            let pc = Mem::read::<u32>(&b, l + vm::level::PC);
+            assert_eq!(
+                orig(&mut a, 0x0086_9d60, &[w, l]),
+                run::atel_fetch_command(&b, l),
+                "AtelFetchCommand {w:#x}"
+            );
+            for long in [0, 0x80, 1] {
+                assert_eq!(
+                    orig(&mut a, 0x0086_9da0, &[long, pc]),
+                    run::atel_fetch_command_main(&b, long, pc),
+                    "AtelFetchCommandMain {w:#x}"
+                );
+            }
+            // jumps to each label, outside a call and inside one to another worker
+            let hdr = Mem::read::<u32>(&b, w + worker::HEADER);
+            let labels = u32::from(Mem::read::<u16>(&b, hdr + 0x0a));
+            let saved: [u8; 0x20] = Mem::read(&b, l);
+            for depth in [0u8, 1, 2] {
+                poke(&mut a, &mut b, l + vm::level::CALL_DEPTH, depth);
+                poke(&mut a, &mut b, l + 0x10, [0u16, 0]);
+                for label in 0..labels.min(8) {
+                    orig(&mut a, 0x0087_26f0, &[w, l, label]);
+                    run::script_jump(&mut b, w, l, label);
+                    no_diff(
+                        &mut a,
+                        &mut b,
+                        &format!("Script_Jump {w:#x} {label} depth {depth}"),
+                    );
+                }
+            }
+            poke(&mut a, &mut b, l, saved);
+            poke(&mut a, &mut b, l + vm::level::PC, pc);
+        }
+    }
+    // stacks: the top two kinds, and the top as an integer, depth from -2 to 20
+    for _ in 0..2000 {
+        let depth = rng.below(23).cast_signed() - 2;
+        let kinds: Vec<u8> = (0..24)
+            .map(|_| u8::try_from(rng.below(3)).unwrap())
+            .collect();
+        let values: Vec<u32> = (0..19).map(|_| stored_value(&mut rng)).collect();
+        for o in [&mut a, &mut b] {
+            Mem::write(o, stk + stack::DEPTH, depth);
+            Mem::write_bytes(o, stk + 0x50, &kinds);
+            for (i, &x) in (0..).zip(&values) {
+                Mem::write(o, stk + stack::VALUES + i * 4, x);
+            }
+        }
+        assert_eq!(
+            orig(&mut a, 0x0086_d9e0, &[0, stk]),
+            run::script_top_two_ints(&b, stk),
+            "Script_TopTwoInts depth {depth}"
+        );
+        assert_eq!(
+            orig(&mut a, 0x0086_a000, &[0, stk]),
+            run::atel_fetch_stack_integer(&mut b, stk),
+            "AtelFetchStackInteger depth {depth}"
+        );
+        no_diff(&mut a, &mut b, "stack helpers");
     }
 }

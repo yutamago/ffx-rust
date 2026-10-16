@@ -1252,6 +1252,9 @@
 0x006f2560 function SaveDataManager_setSaveDataInfo # fh v3:exact 0x006f26a0 SaveDataManager::setSaveDataInfo
 0x006f2ce0 function SignalSema                # fh v3:bsim1.00 0x006f2e20
 0x006f2d20 function SleepThreadInMillisecond  # fh v3:exact 0x006f2e60
+0x006f2de0 function Mutex_Create              # () -> new 4-byte object holding CreateMutexW(0, 0, 0) (import 0x00b0c198); Script_Run creates g_ScriptRunMutex with it
+0x006f2ed0 function Mutex_Lock                # (mutex): WaitForSingleObject(*mutex, INFINITE) (import 0x00b0c0f8)
+0x006f2f50 function Mutex_Unlock              # (mutex): ReleaseMutex(*mutex) (import 0x00b0c1c0)
 0x006f32e0 function Pause_HideScreen             # the pause screen's Flash "hidePause" (Pause_Update calls it when Start ends the pause)
 0x006f4030 function AssetListReader_clear     # fh v3:exact 0x006f4170 AssetListReader::clear
 0x006f4170 function AssetListReader_getAssetCount # fh v3:exact 0x006f42b0 AssetListReader::getAssetCount
@@ -3489,7 +3492,7 @@
 0x00863fe0 function Script_StopTurn              # (worker, level): the same for the turn block (ctx+0x864+i*0x44, pointer at level block +0x48)
 0x008640f0 function Msg_CloseWindow              # (window): clamps 0..7; if state +0x14 is not 0 or 3, sets 3 and calls 0x008ab8f0
 0x008641c0 function AtelDecodeCommand         # fh v3:bsim1.00 0x00864160
-0x008641e0 function Script_Run                # the bytecode interpreter (docs/formats/script.md)
+0x008641e0 function Script_Run                # (worker, mode, callbacks) -> 1 when the speed accumulator (+0x98 += +0x94 * g_GameSpeed) reached 1: the bytecode interpreter under g_ScriptRunMutex; runs the level of worker +0x32 until a native, end or wait stops it with an empty stack (docs/formats/script.md 'The interpreter'); mode 1 = the debugger's step; callbacks = ctrl work +0x58/+0x5c around it; opcode byte table 0x0086536c, jump table 0x00865250
 0x0086536c label    g_ScriptOpcodeCases       # opcode -> case index byte table of Script_Run
 0x008653f0 function AtelDecodeSignal          # fh v3:exact 0x00865390
 0x008655e0 function AtelEnterMenuCallback     # fh v3:exact 0x00865580
@@ -3507,7 +3510,9 @@
 0x00867740 function AtelExecCtrlEvent         # fh v3:exact 0x008676e0
 0x008691d0 function AtelExecReturn            # fh v3:bsim1.00 0x00869170
 0x00869350 function AtelExecReturn2           # fh v3:bsim1.00 0x008692f0
-0x00869d60 function Script_Fetch              # opcode << 24 | u16 operand when the high bit is set
+0x00869d60 function AtelFetchCommand          # (worker, level) -> opcode << 24 | u16 operand when the high bit is set, from the level's PC; Switch name (alphabetical slot before AtelFetchCommandMain and AtelFetchStackInteger); was Script_Fetch
+0x00869da0 function AtelFetchCommandMain      # (long, pc): AtelFetchCommand from a PC, the operand read also when long != 0 (Script_Run's breakpoints); Switch name by its alphabetical slot?
+0x0086a000 function AtelFetchStackInteger     # (worker, stack) -> top slot as integer, not popped (opcode 2b); Switch name: between AtelFetchCommandMain and AtelFlushAlbhedDic (0x0086a040, which reads g_AtelAlbhedDic) in the alphabetical Atel layout
 0x0086a170 function AtelForceMusicAllStop     # fh switch:bsim1.00 0x71004743f0
 0x0086a1c0 function AtelFreeSepBuffer         # fh v3:exact 0x0086a150
 0x0086a290 function AtelGetActorBufferSize    # fh v3:exact 0x0086a220
@@ -3601,6 +3606,7 @@
 0x0086d670 function AtelInitSourceCodeDebugWork # fh v3:exact 0x0086d600
 0x0086d6d0 function AtelInitTotal             # registers the native function tables per group; was Script_InitNatives
 0x0086d950 function AtelIsBind                # fh v3:exact 0x0086d8e0
+0x0086d9e0 function Script_TopTwoInts         # (worker, stack) -> 1 when the top two slots are both integers (kind 1): Script_Run's integer or float choice for arithmetic and comparisons
 0x0086da10 function AtelJumpGameOver          # fh v3:exact+call.cs 0x0086d9a0 cdecl
 0x0086dc50 function AtelLinkSigWorkButtom     # fh v3:exact 0x0086dbe0
 0x0086dca0 function AtelMapLoad               # fh v3:bsim1.00 0x0086dc30
@@ -3608,7 +3614,7 @@
 0x0086ddb0 function AtelPopMember             # fh call.cs cdecl
 0x0086de50 function AtelPopStackFloat         # (worker, stack) -> top slot as float in ST0 (float slots through fld, others fild); empty: 0.0, g_AtelError = 0, dbgPrintf of worker id and PC; was Script_PopFloat
 0x0086df00 function AtelPopStackInteger       # (worker, stack) -> top slot as integer (non-integer slots through _ftol2_sse); empty: 0, g_AtelError = 0; was Script_PopInt
-0x0086df40 function AtelFetchStackInteger     # (worker, pop, stack) -> top slot as integer like AtelPopStackInteger, popped only when pop != 0; Switch name: follows AtelPopStackInteger in both builds
+0x0086df40 function Script_TopInt             # (worker, pop, stack) -> top slot as integer like AtelPopStackInteger, popped only when pop != 0 (AtelFetchStackInteger is 0x0086a000)
 0x0086dfb0 function Script_StoreVar           # (worker, stack, var, mode): opcodes 20/21/23/24; pops the value (float for f32 vars), with mode bit 0x80 an index under it, then AtelSetValueFloat/AtelSetValueInteger with clamp = bit 0; resolves the address once beforehand for nothing; returns 0
 0x0086e100 function Script_PushVarElem        # (worker, stack, var): opcode 22 (pushva): pops an index, then Script_PushVar
 0x0086e160 function Script_PushVarRef         # (worker, stack, var): opcode 27: pops an index, pushes the var's location word + index (clamped) * element size (a reference, not an address)
@@ -3679,7 +3685,7 @@
 0x008724f0 function TkRefreshSoundMode        # fh v3:exact 0x00872490
 0x00872550 function TkSoftWareReset           # fh switch:bsim1.00 0x7100471580
 0x00872650 function Script_WorkerLevel        # (worker, level) -> 0x4c-byte level block at worker+0x12c+level*0x4c, level clamped to 0..8 (types 5/6: 0..1); +0x18 PC, +0x1f request state, +0x20/+0x24 registers A/B, +0x28 float accumulator, +0x44 move block ptr, +0x48 turn block ptr
-0x008726f0 function Script_Jump               # pc = code start + labels[index]
+0x008726f0 function Script_Jump               # (worker, level, label): level PC = the worker's code start + labels[label] (worker header +0x24) of the worker running at the call depth (level +0x0e + depth*2 inside a call); level +0x1e = 0
 0x00872b50 function AtelCheckMenuOtakaraFlag  # fh switch:cg2 0x71008b8908
 0x00872b60 function AtelClearMenuOtakaraFlag  # fh v3:bsim1.00 0x00872b00
 0x00872b70 function AtelClearPauseFlag        # fh v3:bsim1.00 0x00872b10
@@ -7036,7 +7042,9 @@
 0x00c44bf0 label    g_pppSinTable                # 4096 f32 sines over a turn: pppGetRotMatrix* read [(a>>4)&0xfff] and [((a+0x4000)>>4)&0xfff] (cosine)
 0x00c49680 label g_ChrDefaultMoves           # Ch_MotionSetMoves(chr, slot, -1) stores entry [slot] (0, 1, 2, then zeros)
 0x00c4df54 label    g_GuHScale                # vertical scale of Gu_SetScissor's y bounds, 8.8 fixed point (Gu_SetHScale)
+0x00c52704 label    g_AtelConstants              # u32 table opcode 75 pushes (Script_Run)
 0x00c5273c label    g_AtelForceBattleMapId       # written by AtelSetForceBattleMapId (0x00870130)
+0x00c52740 label    g_ScriptRunMutex             # Mutex_Create's object, -1 until Script_Run's first call; held for each Script_Run
 0x00c59554 label    g_SystemConfirmButtonAssign # TOGetSystemConfirmButtonAssign returns it with -1 replaced by 0 (and stores that back)
 0x00c5955c label    g_ButtonData              # 2 words: setButtonData(a, b); resetButtonData sets both to -1
 0x00c5e350 label    g_GuideFlags                 # bit 0: the minimap may show (clear: Guide_FadeOff)
@@ -7218,6 +7226,7 @@
 0x01326b82 label    g_AtelMenuExecStatus         # i8: AtelSetMenuExecStatus; selects the bank of g_MsgWindows (AtelGetMesWinWork)
 0x01326b84 label    g_AtelBattleEndMovieFadeout  # three words written by AtelRegistBattleEndMovieFadeout (0x0086e840)
 0x01326b90 label    g_AtelLoveParamDisable       # cleared by AtelClearLoveParamDisable (0x00863ae0)
+0x01326bd8 label    g_GameSpeed                  # f32: Script_Run multiplies a worker's speed (+0x94) by it into its accumulator (+0x98)
 0x01326ce0 label    g_AtelEffectParams           # four words: AtelGetEffectParam (0x0086b050), AtelClearEffectParam (0x00863880)
 0x01326cf0 label    g_AtelMCFPInWater            # four words written by AtelSetMCFPInWater (0x00870280)
 0x01326d70 label    g_MsgWindows                 # 2 banks x 8 message windows, 0x2c bytes: +0x14 state, +0x16 Msg_Flags, +0x18 display flags, +0x1d mode flags

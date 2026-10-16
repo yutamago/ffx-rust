@@ -1,55 +1,10 @@
 //! `ffx-script`: the Atel VM's ctrl works, workers, stacks and variables.
 
-use ffx_bridge::{Mem, RawMem};
 use ffx_script::vm::bridge as atel;
 use ffx_script::vm::bridge::globals as g;
+use ffx_script::vm::bridge::run;
 
 use super::{mem, ported};
-
-/// The game as the VM bridge's host: its memory, and plain calls for the
-/// callbacks a ctrl work holds.
-struct Game(RawMem);
-
-impl Mem for Game {
-    fn read_bytes(&self, addr: u32, out: &mut [u8]) {
-        self.0.read_bytes(addr, out);
-    }
-    fn write_bytes(&mut self, addr: u32, data: &[u8]) {
-        self.0.write_bytes(addr, data);
-    }
-    fn image_base(&self) -> u32 {
-        self.0.image_base()
-    }
-}
-
-impl atel::Host for Game {
-    fn call(&mut self, addr: u32, args: &[u32]) -> u32 {
-        // SAFETY: the address is a cdecl function the game stored for this
-        // call, taking these arguments.
-        unsafe {
-            match *args {
-                [] => {
-                    let f: unsafe extern "C" fn() -> u32 = std::mem::transmute(addr as usize);
-                    f()
-                }
-                [x] => {
-                    let f: unsafe extern "C" fn(u32) -> u32 = std::mem::transmute(addr as usize);
-                    f(x)
-                }
-                [x, y] => {
-                    let f: unsafe extern "C" fn(u32, u32) -> u32 =
-                        std::mem::transmute(addr as usize);
-                    f(x, y)
-                }
-                _ => unreachable!("the VM's callbacks take at most two arguments"),
-            }
-        }
-    }
-}
-
-fn game() -> Game {
-    Game(mem())
-}
 
 ported! {
     /// `AtelGetBasicWork(index)`: a worker of the current ctrl work.
@@ -160,9 +115,9 @@ ported! {
     AtelPopStackInteger @ 0x0086_df00 => extern "C" fn atel_pop_stack_integer(_w: u32, s: u32) -> u32 {
         atel::atel_pop_stack_integer(&mut mem(), s)
     }
-    /// `AtelFetchStackInteger(worker, pop, stack)`.
-    AtelFetchStackInteger @ 0x0086_df40 => extern "C" fn atel_fetch_stack_integer(_w: u32, pop: u32, s: u32) -> u32 {
-        atel::atel_fetch_stack_integer(&mut mem(), pop, s)
+    /// `Script_TopInt(worker, pop, stack)`.
+    Script_TopInt @ 0x0086_df40 => extern "C" fn script_top_int(_w: u32, pop: u32, s: u32) -> u32 {
+        atel::script_top_int(&mut mem(), pop, s)
     }
     /// `AtelPopStackFloat(worker, stack)`.
     AtelPopStackFloat @ 0x0086_de50 => extern "C" fn atel_pop_stack_float(_w: u32, s: u32) -> f32 {
@@ -170,23 +125,23 @@ ported! {
     }
     /// `AtelGetRealVarAdrs(worker, word)`.
     AtelGetRealVarAdrs @ 0x0086_c2e0 => extern "C" fn atel_get_real_var_adrs(w: u32, word: u32) -> u32 {
-        atel::atel_get_real_var_adrs(&mut game(), w, word)
+        atel::atel_get_real_var_adrs(&mut mem(), w, word)
     }
     /// `AtelGetVarAdrs(worker, v)`.
     AtelGetVarAdrs @ 0x0086_c7d0 => extern "C" fn atel_get_var_adrs(w: u32, v: u32) -> u32 {
-        atel::atel_get_var_adrs(&mut game(), w, v)
+        atel::atel_get_var_adrs(&mut mem(), w, v)
     }
     /// `AtelGetValueAdrs(worker, v, index)`.
     AtelGetValueAdrs @ 0x0086_c570 => extern "C" fn atel_get_value_adrs(w: u32, v: u32, index: i32) -> u32 {
-        atel::atel_get_value_adrs(&mut game(), w, v, index)
+        atel::atel_get_value_adrs(&mut mem(), w, v, index)
     }
     /// `AtelGetValueInteger(worker, v, index)`.
     AtelGetValueInteger @ 0x0086_c730 => extern "C" fn atel_get_value_integer(w: u32, v: u32, index: i32) -> u32 {
-        atel::atel_get_value_integer(&mut game(), w, v, index)
+        atel::atel_get_value_integer(&mut mem(), w, v, index)
     }
     /// `AtelGetValueFloat(worker, v, index)`.
     AtelGetValueFloat @ 0x0086_c610 => extern "C" fn atel_get_value_float(w: u32, v: u32, index: i32) -> f32 {
-        f32::from_bits(atel::atel_get_value_float(&mut game(), w, v, index))
+        f32::from_bits(atel::atel_get_value_float(&mut mem(), w, v, index))
     }
     /// `AtelGetValueIncValue(type)`.
     AtelGetValueIncValue @ 0x0086_c6e0 => extern "C" fn atel_get_value_inc_value(kind: u32) -> u32 {
@@ -194,11 +149,11 @@ ported! {
     }
     /// `AtelSetValueInteger(worker, v, index, value, clamp)`.
     AtelSetValueInteger @ 0x0087_1400 => extern "C" fn atel_set_value_integer(w: u32, v: u32, index: i32, value: i32, clamp: u32) {
-        atel::atel_set_value_integer(&mut game(), w, v, index, value, clamp);
+        atel::atel_set_value_integer(&mut mem(), w, v, index, value, clamp);
     }
     /// `AtelSetValueFloat(worker, v, index, value, clamp)`, the float as its bits.
     AtelSetValueFloat @ 0x0087_12e0 => extern "C" fn atel_set_value_float(w: u32, v: u32, index: i32, bits: u32, clamp: u32) {
-        atel::atel_set_value_float(&mut game(), w, v, index, bits, clamp);
+        atel::atel_set_value_float(&mut mem(), w, v, index, bits, clamp);
     }
     /// `AtelGetVarInfoAdrs(worker, v)`.
     AtelGetVarInfoAdrs @ 0x0086_c850 => extern "C" fn atel_get_var_info_adrs(w: u32, v: u32) -> u32 {
@@ -222,15 +177,15 @@ ported! {
     }
     /// `Script_PushVar(worker, stack, v, index)`.
     Script_PushVar @ 0x0086_e440 => extern "C" fn script_push_var(w: u32, s: u32, v: u32, index: i32) {
-        atel::script_push_var(&mut game(), w, s, v, index);
+        atel::script_push_var(&mut mem(), w, s, v, index);
     }
     /// `Script_PushVarElem(worker, stack, v)`.
     Script_PushVarElem @ 0x0086_e100 => extern "C" fn script_push_var_elem(w: u32, s: u32, v: u32) {
-        atel::script_push_var_elem(&mut game(), w, s, v);
+        atel::script_push_var_elem(&mut mem(), w, s, v);
     }
     /// `Script_StoreVar(worker, stack, v, mode)`.
     Script_StoreVar @ 0x0086_dfb0 => extern "C" fn script_store_var(w: u32, s: u32, v: u32, mode: u32) -> u32 {
-        atel::script_store_var(&mut game(), w, s, v, mode)
+        atel::script_store_var(&mut mem(), w, s, v, mode)
     }
     /// `Script_PushVarRef(worker, stack, v)`.
     Script_PushVarRef @ 0x0086_e160 => extern "C" fn script_push_var_ref(w: u32, s: u32, v: u32) {
@@ -415,5 +370,31 @@ ported! {
     /// `AtelGetGideMapActorNumber()`.
     AtelGetGideMapActorNumber @ 0x0086_b710 => extern "C" fn atel_get_gide_map_actor_number() -> u32 {
         g::atel_get_gide_map_actor_number(&mem())
+    }
+
+    /// `Script_Run(worker, mode, callbacks)`: the interpreter; natives and
+    /// the request families stay original.
+    Script_Run @ 0x0086_41e0 => extern "C" fn script_run(w: u32, mode: u32, callbacks: u32) -> u32 {
+        run::script_run(&mut mem(), &mut run::OriginalNatives, w, mode, callbacks)
+    }
+    /// `AtelFetchCommand(worker, level)`.
+    AtelFetchCommand @ 0x0086_9d60 => extern "C" fn atel_fetch_command(_w: u32, l: u32) -> u32 {
+        run::atel_fetch_command(&mem(), l)
+    }
+    /// `AtelFetchCommandMain(long, pc)`.
+    AtelFetchCommandMain @ 0x0086_9da0 => extern "C" fn atel_fetch_command_main(long: u32, pc: u32) -> u32 {
+        run::atel_fetch_command_main(&mem(), long, pc)
+    }
+    /// `AtelFetchStackInteger(worker, stack)`.
+    AtelFetchStackInteger @ 0x0086_a000 => extern "C" fn atel_fetch_stack_integer(_w: u32, s: u32) -> u32 {
+        run::atel_fetch_stack_integer(&mut mem(), s)
+    }
+    /// `Script_TopTwoInts(worker, stack)`.
+    Script_TopTwoInts @ 0x0086_d9e0 => extern "C" fn script_top_two_ints(_w: u32, s: u32) -> u32 {
+        run::script_top_two_ints(&mem(), s)
+    }
+    /// `Script_Jump(worker, level, label)`.
+    Script_Jump @ 0x0087_26f0 => extern "C" fn script_jump(w: u32, l: u32, label: u32) {
+        run::script_jump(&mut mem(), w, l, label);
     }
 }

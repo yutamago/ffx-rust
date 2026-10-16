@@ -16,6 +16,7 @@
 //! [`bridge`] runs the original accessors over game memory.
 
 pub mod bridge;
+pub mod exec;
 
 /// Ctrl work fields (offsets from its start).
 pub mod ctrl {
