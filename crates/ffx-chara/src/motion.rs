@@ -106,6 +106,8 @@ pub const fn range_class(a: i32, b: i32, x: i32, y: i32) -> u32 {
 pub mod bridge {
     use ffx_bridge::Mem;
 
+    use crate::x87::Reg;
+
     use crate::layout as l;
 
     /// `Ch_MotionGetLoop(chr)` (`0x00839880`): the loops left, `i16` at
@@ -222,6 +224,167 @@ pub mod bridge {
                     tail = o;
                 }
             }
+        }
+    }
+
+    /// The motion found in the model block's lists for character `key`:
+    /// the archive's (`+0x10c`: count `i32` `+4`, pointers from `+0x10`)
+    /// or, with block bit `+0x70` 0, the block's own (`i16` count
+    /// `+0x110`, pointers at `+0x114`); each pointed-to starts with the
+    /// `i16` character. 0 when none.
+    fn find_motion(mem: &impl Mem, b: u32, key: i32) -> u32 {
+        if mem.read::<u8>(b + 0x70) & 1 == 0 {
+            let t: u32 = mem.read(b + 0x10c);
+            if t == 0 {
+                return 0;
+            }
+            let mut i = 0i32;
+            while i < mem.read::<i32>(t + 4) {
+                let at = t.wrapping_add(0x10 + 4 * i.cast_unsigned());
+                let p: u32 = mem.read(at);
+                if i32::from(mem.read::<i16>(p)) == key {
+                    return mem.read(at);
+                }
+                i += 1;
+            }
+        } else {
+            let list: u32 = mem.read(b + 0x114);
+            if list == 0 {
+                return 0;
+            }
+            let n = i32::from(mem.read::<i16>(b + 0x110));
+            for i in 0..n.max(0).cast_unsigned() {
+                let p: u32 = mem.read(list.wrapping_add(4 * i));
+                if i32::from(mem.read::<i16>(p)) == key {
+                    return p;
+                }
+            }
+        }
+        0
+    }
+
+    /// `Ch_SetSequence(chr, id)` (`0x00837ac0`): starts motion `id`
+    /// (character `<< 16 | number`). Another character's motion needs it
+    /// in the model block's lists (kept at `+0x758`). The number is looked
+    /// up in [`SEQUENCES`]' chain for the character (`u16` at `+0` of each
+    /// entry's sorted list, 16 bytes per motion from `+0xc`, count `i16`
+    /// `+8`). Returns 0 when it started; 1 when it was already playing,
+    /// or not found (then `+0x736` 0 and `+0x728` 1, and `+0x7ed` 1 when
+    /// the chain lacked it).
+    pub fn ch_set_sequence(mem: &mut impl Mem, chr: u32, id: u32) -> u32 {
+        #[allow(clippy::cast_possible_wrap)] // sar
+        let key = ((id as i32) >> 16) & 0xffff;
+        mem.write(chr + 0x758, 0u32);
+        if i32::from(mem.read::<u16>(chr + l::ID)) != key {
+            let b: u32 = mem.read(chr + l::BLK);
+            let m = find_motion(mem, b, key);
+            if m != 0 {
+                mem.write(chr + 0x758, m);
+            }
+            if mem.read::<u32>(chr + 0x758) == 0 {
+                mem.write(chr + 0x736, 0u8);
+                mem.write(chr + 0x728, 1u16);
+                return 1;
+            }
+        }
+        if mem.read::<u32>(chr + l::MOTION_ID) == id && mem.read::<u32>(chr + l::MOTION_730) == 0 {
+            return 1;
+        }
+        let d: u32 = mem.read(chr + l::DIRTY);
+        mem.write(chr + l::DIRTY, d | 2);
+        mem.write(chr + l::MOTION_730, 0u32);
+        if mem.read::<u16>(chr + l::ID) & 0xf000 == 0
+            && (mem.read::<u32>(chr + l::MOTION_ID) ^ id) & 0xffff_0000 != 0
+        {
+            mem.write(chr + l::NEXT_HOKAN, 1u16);
+        }
+        mem.write(chr + l::MOTION_ID, id);
+        crate::cloth::bridge::ch_cloth_set_atari_jimen_check(mem, chr);
+        let number = id & 0xffff;
+        let mut s = SEQUENCE_HEAD.get(mem);
+        while s != 0 && i32::from(mem.read::<i16>(s + 4)) != key {
+            s = mem.read(s + 0xc);
+        }
+        while s != 0 {
+            let d: u32 = mem.read(s);
+            let n = i32::from(mem.read::<i16>(d + 8));
+            let list: u32 = mem.read(d + 0xc);
+            for i in 0..n.max(0).cast_unsigned() {
+                if u32::from(mem.read::<u16>(list.wrapping_add(16 * i))) != number {
+                    continue;
+                }
+                mem.write(chr + 0x710, d);
+                let e = mem.read::<u32>(d + 0xc).wrapping_add(16 * i);
+                mem.write(chr + 0x70c, e);
+                let v: u32 = mem.read(e + 0xc);
+                mem.write(chr + 0x714, v);
+                mem.write(chr + 0x728, 0u32);
+                mem.write(chr + l::MOTION_LOOP, 0xffffu16);
+                let next = mem.read::<u16>(chr + l::NEXT_HOKAN);
+                mem.write(chr + 0x737, 0xffu16);
+                mem.write(chr + l::MOTION_SCRIPTED, 1u8);
+                if next == 0 {
+                    mem.write(chr + l::HOKAN, 4u16);
+                } else {
+                    mem.write(chr + l::HOKAN, next);
+                    mem.write(chr + l::NEXT_HOKAN, 0u16);
+                    let d: u32 = mem.read(chr + l::DIRTY);
+                    mem.write(chr + l::DIRTY, d | 4);
+                }
+                let v: u32 = mem.read(s + 0x10);
+                let f: u32 = mem.read(chr + l::FLAGS);
+                mem.write(chr + l::FLAGS, f | 0x0100_0000);
+                mem.write(chr + 0x7e8, v);
+                mem.write(chr + 0x7e4, u32::MAX);
+                mem.write(chr + 0x7ed, 0u16);
+                mem.write(chr + 0x73e, 1u8);
+                return 0;
+            }
+            s = mem.read(s + 8);
+        }
+        mem.write(chr + 0x7ed, 1u8);
+        mem.write(chr + 0x736, 0u8);
+        mem.write(chr + 0x728, 1u16);
+        1
+    }
+
+    /// `0.5f` (`Chr_FracStep`'s threshold).
+    pub const K_HALF_F32: ffx_bridge::Global<f32> = ffx_bridge::Global::new(0x00b9_2194);
+
+    /// The fraction of `x` in `0..1` the way `Chr_FracStep` takes it:
+    /// `x − ftol(x)` rounded to `f32`, plus 1 when negative.
+    fn frac(mem: &impl Mem, x: f32) -> f32 {
+        let i = ffx_bridge::x87::ftol(mem, f64::from(x));
+        let fi = Reg::constant(f64::from(i.cast_signed())).store();
+        let f = Reg::load(x).sub_m32(fi).store();
+        if f < 0.0 {
+            Reg::load(f).add_st(Reg::constant(1.0)).store()
+        } else {
+            f
+        }
+    }
+
+    /// `Chr_FracStep(a, b, n)` (`0x00839f50`): `fa` = the fraction of `a`,
+    /// `fb` = the fraction of `fa − b`; `fa` when `fb` is 0, else
+    /// `fa − fb / n` when `fb < 0.5`, else `fa + (1 − fb) / n` (each step
+    /// as the x87 rounds).
+    pub fn chr_frac_step(mem: &impl Mem, a: f32, b: f32, n: i32) -> f32 {
+        let fa = frac(mem, crate::x87::load(a));
+        let t = Reg::load(fa).sub_m32(b).store();
+        let fb = frac(mem, t);
+        if f64::from(fb) == 0.0 {
+            return fa;
+        }
+        let nf = Reg::constant(f64::from(n)).store();
+        let half = f64::from(crate::x87::load(K_HALF_F32.get(mem)));
+        if half > f64::from(fb) {
+            let q = Reg::load(fb).div_st(Reg::load(nf));
+            Reg::load(fa).sub_st(q).store()
+        } else {
+            let q = Reg::constant(1.0)
+                .sub_st(Reg::load(fb))
+                .div_st(Reg::load(nf));
+            Reg::load(fa).add_st(q).store()
         }
     }
 }

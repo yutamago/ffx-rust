@@ -3208,7 +3208,7 @@
 0x00831390 function Ch_TextureSetClutBase     # fh v3:bsim1.00 0x00831410
 0x008313c0 function Ch_TextureSetImageBase    # fh v3:bsim1.00 0x00831440
 0x008313f0 function Ch_TextureSetTex0        # ours: texture list +0x6e0 (count +0x6f4): +0x14 bits 0..13 = image texture (+2) +0x3a, +0x18 bits 7..20 = clut texture (+0) +0x3a
-0x008314c0 function Ch_UpdateClothMatrix      # fh v3:exact 0x00831540
+0x008314c0 function Ch_UpdateClothMatrix      # render cloth +0x834: each cloth mesh (+0x40 model) <- flip(-1,-1,1,1) x root (+0x1d0) x base element global matrix with translation x 1000; state +0xc 2; clears mesh vectors unless it was 2. fh: v3:exact 0x00831540
 0x008316d0 function Ch_UseAnchorVertex        # fh v3:exact 0x00831750
 0x00831780 function Ch_IsNotExceptionId      # ours: (id) 0 if id is one of the 9 words at 0x00b59840, else 1; used by Ch_DrawShadow
 0x008317b0 function Ch_SysSetSwitch7d8       # ours: g_ChrSwitch7d8 = v & 1, returns the old value sign-extended
@@ -3275,7 +3275,7 @@
 0x00834ff0 function Ch_NeckSetRot             # fh v3:exact 0x00835070
 0x00835020 function Ch_NeckSetSpeed           # fh v3:exact 0x008350a0
 0x00835050 function Ch_NeckSetTarget          # fh v3:exact 0x008350d0
-0x008350f0 function Ch_OptposCalc             # fh v3:exact 0x00835170
+0x008350f0 function Ch_OptposCalc             # optional positions +0x524 from the attachment points (blk +0x6c), then camera ref +0x6b4, bottom +0x694 (old at +0x684), top +0x6a4, heights +0x510/+0x514, +0x6c4. fh: v3:exact 0x00835170
 0x008354f0 function Ch_OptposGet              # fh v3:exact 0x00835570
 0x008355e0 function Ch_OptposGetBase          # fh v3:bsim1.00 0x00835660
 0x00835600 function Ch_OptposGetBottom        # (chr, out): 16 bytes from chr +0x694; Switch name, in name order after Ch_OptposGetBase
@@ -3313,7 +3313,7 @@
 0x00836ad0 function Ch_DisposeMGRP            # fh switch:bsim1.00 0x71004223e0
 0x00836af0 function Ch_GetSeqFrame            # fh v3:exact 0x00836b70
 0x00836c90 function SG_AddMotionGroup         # registers a .mgrp (50 slots, "nb mgrp err"), relocates it, adds its sequences
-0x00836d30 function SG_AddSequence            # 0x14-byte sequence -> 0x13009a08 table ("SG:AddMseq")
+0x00836d30 function SG_AddSequence            # 0x14-byte sequence -> g_ChrSequences (0x01300a08) table ("SG:AddMseq"); Ch_SeqLink relinks it
 0x00836f70 function SG_RelocateGroup          # offsets -> pointers; header +0 holds the load address
 0x00836fc0 function SG_RelocateSequence       # motion (+0x0c) and clip (+0x10) tables, 16 bytes each, pointer words +8/+0xc
 0x00837180 function Ch_MotionCancel           # fh switch:bsim1.00 0x7100423030
@@ -3366,6 +3366,7 @@
 0x00839e00 function Fixed8_ToFloat            # v / 256
 0x00839e30 function Angle12_Lerp              # 12-bit angle interpolation the short way
 0x00839e80 function AngleTurn_Lerp            # the same on floats in turns
+0x00839f50 function Chr_FracStep             # ours: (a, b, n) fa = frac(a) (x - _ftol2_sse(x), +1 if < 0), fb = frac(fa - b); fa if fb == 0, else fa - fb/n if fb < 0.5, else fa + (1 - fb)/n; called by 0x008395b0
 0x0083a270 function Sg_Capture                # fh v3:exact 0x0083a2f0
 0x0083a470 function Sg_CaptureEnable          # fh v3:exact 0x0083a4f0
 0x0083a620 function Sg_CaptureGetGuiHide      # fh v3:exact 0x0083a6a0
@@ -3529,7 +3530,7 @@
 0x008457d0 function Ch_EffectPacketStoreEND   # fh v3:exact 0x008457d0
 0x00845800 function Ch_EffectPacketStoreMAT   # (v): u16 0x01303674 = v; Switch name, in name order between Ch_EffectPacketStoreEND and Ch_EffectPacketStorePRG
 0x00845810 function Ch_EffectPacketStorePRG   # (v): u16 0x0130367c = v; Switch name, in name order before Ch_EffectPacketStorePoly
-0x00845820 function Ch_EffectPacketStorePoly  # fh v3:exact 0x00845820
+0x00845820 function Ch_EffectPacketStorePoly  # (a, b, c) u16 x, y, u, v vertices: new 32-byte block on a state change (g_ChrPacketState), 28 bytes per triangle, uv = v*4096/(size*16) chopped; measuring keeps size, count, max x/y. fh: v3:exact 0x00845820
 0x00845ca0 function sg_setvtex_and_normal     # fh v3:bsim1.00 0x00845ca0
 0x00845eb0 function sg_calcenvelope_norm      # fh v3:bsim1.00 0x00845eb0
 0x00845ec0 function sg_calcenvelope_normW     # fh v3:exact 0x00845ec0
@@ -7683,6 +7684,7 @@
 0x00b920ec label mkvparser_Track_vftable      # fh v4:imported mkvparser::Track::vftable
 0x00b92220 label    g_Vu0FixedRound           # f64 0.5: FFXVu0RotTransPers rounds to the nearest 1/16
 0x00b92288 label g_PiF64                      # f64 of pi rounded to f32 (0x400921fb60000000); MsNearRag's half turn
+0x00b92340 label g_ChrClothFlip             # f32 -1.0: Ch_UpdateClothMatrix's x and y flip
 0x00c0a000 label    g_Vu0_R                      # emulated VU0 R (random) register, f32 bits in [1,2): op_random/op_random_p step it (vrnext: low 22 fraction bits << 1, bit 4 of R^(R>>18) in) and leave draw - 1.8872414 there; 0x0075fe50 seeds it
 0x00c0a004 label g_Vu0_Vf00                  # emulated VU0 vf00 (x, y, z, w) = (0, 0, 0, 1.0f): AsmEmuInit and restoreVf00Register store exactly that
 0x00c30f94 label NvOptimusEnablement          # fh v4:imported
@@ -8019,10 +8021,15 @@
 0x013019e0 label g_ChrSpecularPackets       # two 0x40-byte GS packets (0x013019e0, 0x01301a20) Ch_TextureSendSpecular references; clut data pointers at +0x30
 0x01301af8 label g_ChrIdEffectTable          # u8, 4 per set: Ch_IdGetEffectTable
 0x01301b00 label g_ChrIdEffectTableIndex     # i8, the set (Sg_IdSetEffectTableIndex)
+0x01303654 label g_ChrPacketHead            # tag of the open effect packet block; Ch_EffectPacketStorePoly counts triangles in its u16 +2
 0x01303658 label g_ChrPacketPtr              # effect packet write pointer, 0 = only measure (Ch_EffectPacketStoreEND)
 0x0130365c label g_ChrPacketSize             # effect packet bytes (Ch_EffectPacketGetSize)
+0x01303660 label g_ChrPacketPolys           # triangles measured (Ch_EffectPacketStorePoly with g_ChrPacketPtr 0)
+0x01303664 label g_ChrPacketMax             # i32 x 2: largest x and y measured (Ch_EffectPacketStorePoly)
+0x0130366c label g_ChrPacketState           # u16 texture index (signed, into g_ChrTex0List), then MAT, PRG and one more at +8 steps, each followed (+4) by the open block's value
 0x01303674 label g_ChrPacketMat              # u16, Ch_EffectPacketStoreMAT
 0x0130367c label g_ChrPacketPrg              # u16, Ch_EffectPacketStorePRG
+0x0130368c label g_ChrPacketTex             # texture list entry of the open block, or 0
 0x013036c0 label    g_GuPacketCount           # GIF quadwords queued at g_GuPacket (Gu_SetScissor, Gu_SetTexFlush add 2)
 0x013036c4 label    g_GuPacket                # the Gu GS packet buffer, 16-byte quadwords
 0x013036c8 label    g_GuPacketData            # where Gu_SetPrim, Gu_SetRgbaq, Gu_SetTest, Gu_SetXyzf2 append (indexed by g_GuPacketCount like g_GuPacket)

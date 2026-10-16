@@ -1211,4 +1211,26 @@ ported! {
     Ch_TextureSetImage @ 0x0083_d1e0 => extern "C" fn ch_texture_set_image(img: u32, tex: u32) {
         ta::ch_texture_set_image(&mut mem(), img, tex);
     }
+
+    // ---- round 4
+    /// `Ch_OptposCalc(chr)`.
+    Ch_OptposCalc @ 0x0083_50f0 => extern "C" fn ch_optpos_calc(chr: u32) {
+        at::ch_optpos_calc(&mut mem(), chr);
+    }
+    /// `Ch_SetSequence(chr, id)`.
+    Ch_SetSequence @ 0x0083_7ac0 => extern "C" fn ch_set_sequence(chr: u32, id: u32) -> u32 {
+        mo::bridge::ch_set_sequence(&mut mem(), chr, id)
+    }
+    /// `Ch_UpdateClothMatrix(chr)`.
+    Ch_UpdateClothMatrix @ 0x0083_14c0 => extern "C" fn ch_update_cloth_matrix(chr: u32) {
+        cl::ch_update_cloth_matrix(&mut mem(), chr);
+    }
+    /// `Ch_EffectPacketStorePoly(a, b, c)`.
+    Ch_EffectPacketStorePoly @ 0x0084_5820 => extern "C" fn ch_effect_packet_store_poly(a: u32, b: u32, c: u32) {
+        sy::ch_effect_packet_store_poly(&mut mem(), a, b, c);
+    }
+    /// `Chr_FracStep(a, b, n)`.
+    Chr_FracStep @ 0x0083_9f50 => extern "C" fn chr_frac_step(a: f32, b: f32, n: i32) -> f32 {
+        mo::bridge::chr_frac_step(&mem(), a, b, n)
+    }
 }

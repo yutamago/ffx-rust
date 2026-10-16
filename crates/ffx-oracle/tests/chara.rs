@@ -231,6 +231,7 @@ fn random_block(t: &mut Twin, rng: &mut Xorshift, len: u32) -> u32 {
 /// pointer the ported functions follow aimed at random blocks: model
 /// block (with texture data), models and header, elements, textures,
 /// cluts.
+#[allow(clippy::too_many_lines)]
 fn make_character(t: &mut Twin, rng: &mut Xorshift, at: Option<u32>) -> u32 {
     let chr = at.unwrap_or_else(|| t.alloc(l::SIZE as usize));
     let mut bytes = random(rng, l::SIZE);
@@ -258,6 +259,10 @@ fn make_character(t: &mut Twin, rng: &mut Xorshift, at: Option<u32>) -> u32 {
         t.put(
             attrs + 16 * i,
             &u16::try_from(i | kind).unwrap().to_le_bytes(),
+        );
+        t.put(
+            attrs + 16 * i + 2,
+            &u16::try_from(i % 4).unwrap().to_le_bytes(),
         );
     }
     t.put_u32(arc + 0x20, attrs);
@@ -3521,6 +3526,312 @@ fn heap_relink_matches_the_original_on(t: &mut Twin) {
             0x0083_c6a0,
             &[heap],
             |m| void!(ffx_chara::mapping::bridge::ch_mem_relink_back(m, heap)),
+        );
+    }
+}
+
+#[test]
+fn optpos_calc_matches_the_original() {
+    for mut t in twins() {
+        optpos_calc_matches_the_original_on(&mut t);
+    }
+}
+
+fn optpos_calc_matches_the_original_on(t: &mut Twin) {
+    use ffx_chara::attach::bridge as at;
+    let mut rng = Xorshift(0x5eed_0401);
+    let chrs = live_characters(t, &mut rng);
+    for round in 0..4 {
+        for &chr in &chrs {
+            if round > 0 {
+                // odd heights and positions
+                for off in [l::POS + 4, l::CAM_HEIGHT, 0x6a8, 0x698] {
+                    t.put_u32(chr + off, any_float(&mut rng));
+                }
+                for off in [0x1d0u32, 0x1e0, 0x1f0, 0x200] {
+                    t.put_u32(chr + off + 4 * (rng.next() % 4), small_float(&mut rng));
+                }
+            }
+            if round == 3 {
+                let b: u32 = rd(&t.b, chr + l::BLK);
+                t.put_u32(b + l::BLK_DATA_SCALE, any_float(&mut rng));
+            }
+            t.check(
+                &format!("Ch_OptposCalc {chr:#x} {round}"),
+                0x0083_50f0,
+                &[chr],
+                |m| void!(at::ch_optpos_calc(m, chr)),
+            );
+        }
+    }
+}
+
+#[test]
+fn set_sequence_matches_the_original() {
+    for mut t in twins() {
+        set_sequence_matches_the_original_on(&mut t);
+    }
+}
+
+fn set_sequence_matches_the_original_on(t: &mut Twin) {
+    use ffx_chara::motion::bridge as mb;
+    let mut rng = Xorshift(0x5eed_0402);
+    let chrs = live_characters(t, &mut rng);
+    // what the snapshot plays now, before anything is made up
+    let real = if t.name == "snapshot" {
+        chrs.len() - 1
+    } else {
+        0
+    };
+    for &c in &chrs[..real] {
+        let id: u32 = rd(&t.b, c + l::MOTION_ID);
+        t.check(
+            &format!("Ch_SetSequence {c:#x} same"),
+            0x0083_7ac0,
+            &[c, id],
+            |m| Res::Int(mb::ch_set_sequence(m, c, id)),
+        );
+    }
+    // a made-up sequence table: keys 0..4, motions numbered 0..8
+    let base = t.a.rebase(mb::SEQUENCES.sym);
+    for i in 0..100u32 {
+        let e = base + 0x14 * i;
+        if rng.next().is_multiple_of(3) {
+            t.put_u32(e, 0);
+            continue;
+        }
+        let n = rng.next() % 4;
+        let d = random_block(t, &mut rng, 0x10);
+        let list = random_block(t, &mut rng, 16 * 4);
+        t.put(d + 8, &u16::try_from(n).unwrap().to_le_bytes());
+        t.put_u32(d + 0xc, list);
+        for k in 0..4 {
+            t.put(
+                list + 16 * k,
+                &u16::try_from(rng.next() % 9).unwrap().to_le_bytes(),
+            );
+        }
+        t.put_u32(e, d);
+        t.put(e + 4, &u16::try_from(rng.next() % 5).unwrap().to_le_bytes());
+        t.put_u32(e + 0x10, rng.next());
+    }
+    t.check("Ch_SeqLink for Ch_SetSequence", 0x0083_8170, &[], |m| {
+        void!(mb::ch_seq_link(m))
+    });
+    // the model blocks' motion lists
+    for &c in &chrs {
+        let b: u32 = rd(&t.b, c + l::BLK);
+        let motions: Vec<u32> = (0..4)
+            .map(|_| {
+                let p = t.alloc(4);
+                t.put(p, &u16::try_from(rng.next() % 5).unwrap().to_le_bytes());
+                p
+            })
+            .collect();
+        let list = t.alloc(16);
+        let table = t.alloc(0x20);
+        t.put_u32(table + 4, 3);
+        for (k, &p) in (0u32..).zip(&motions) {
+            t.put_u32(list + 4 * k, p);
+            t.put_u32(table + 0x10 + 4 * k, p);
+        }
+        let flags: u8 = rd(&t.b, b + 0x70);
+        t.put(
+            b + 0x70,
+            &[(flags & !1) | u8::try_from(rng.next() & 1).unwrap()],
+        );
+        let tbl = if rng.next().is_multiple_of(4) {
+            0
+        } else {
+            table
+        };
+        t.put_u32(b + 0x10c, tbl);
+        t.put(b + 0x110, &3u16.to_le_bytes());
+        let motion_list = if rng.next().is_multiple_of(4) {
+            0
+        } else {
+            list
+        };
+        t.put_u32(b + 0x114, motion_list);
+    }
+    for i in 0..400 {
+        let c = chrs[i % chrs.len()];
+        let own = u32::from(rd::<u16>(&t.b, c + l::ID));
+        let key = [own, rng.next() % 5, 0x8001][rng.next() as usize % 3];
+        let mut id = (key << 16) | (rng.next() % 10);
+        if i % 7 == 0 {
+            t.put_u32(c + l::MOTION_730, rng.next() & 1);
+        }
+        if i % 5 == 0 {
+            id = rd(&t.b, c + l::MOTION_ID);
+        }
+        t.check(
+            &format!("Ch_SetSequence {c:#x} {id:#x}"),
+            0x0083_7ac0,
+            &[c, id],
+            |m| Res::Int(mb::ch_set_sequence(m, c, id)),
+        );
+    }
+}
+
+#[test]
+fn cloth_matrix_matches_the_original() {
+    for mut t in twins() {
+        cloth_matrix_matches_the_original_on(&mut t);
+    }
+}
+
+fn cloth_matrix_matches_the_original_on(t: &mut Twin) {
+    use ffx_chara::cloth::bridge as cl;
+    let mut rng = Xorshift(0x5eed_0403);
+    let chrs = live_characters(t, &mut rng);
+    let made_up = *chrs.last().unwrap();
+    for round in 0..6 {
+        for &chr in &chrs {
+            let flags: u32 = rd(&t.b, chr + l::FLAGS);
+            let ready = if round == 1 { 0 } else { cl::F_CLOTH_READY };
+            t.put_u32(chr + l::FLAGS, (flags & !cl::F_CLOTH_READY) | ready);
+            let rc: u32 = rd(&t.b, chr + 0x834);
+            if round >= 2 || chr == made_up || rc == 0 || t.name == "synthetic" {
+                // a made-up render cloth: two lists of meshes of models 0..n
+                let n = u32::from(rd::<u16>(
+                    &t.b,
+                    rd::<u32>(&t.b, chr + l::MODEL_HEADER) + l::HEADER_MODELS,
+                ))
+                .min(4);
+                if n == 0 {
+                    continue;
+                }
+                let rc = random_block(t, &mut rng, 0x40);
+                t.put_u32(rc + 0xc, [0u32, 1, 2, rng.next()][round % 4]);
+                t.put_u32(rc + 0x14, 2);
+                for i in 0..2u32 {
+                    let list = random_block(t, &mut rng, 4 + 4 * 4);
+                    t.put_u32(list, 1 + rng.next() % 4);
+                    for k in 0..4u32 {
+                        let mesh = if rng.next().is_multiple_of(5) {
+                            0
+                        } else {
+                            let mesh = random_block(t, &mut rng, 0x50);
+                            let v = random_block(t, &mut rng, 16 * 4);
+                            t.put(
+                                mesh + 0x40,
+                                &u16::try_from(rng.next() % n).unwrap().to_le_bytes(),
+                            );
+                            t.put_u32(mesh + 0x44, rng.next() % 5);
+                            t.put_u32(mesh + 0x4c, v);
+                            mesh
+                        };
+                        t.put_u32(list + 4 + 4 * k, mesh);
+                    }
+                    t.put_u32(rc + 0x30 + 4 * i, list);
+                }
+                t.put_u32(chr + 0x834, rc);
+            }
+            t.check(
+                &format!("Ch_UpdateClothMatrix {chr:#x} {round}"),
+                0x0083_14c0,
+                &[chr],
+                |m| void!(cl::ch_update_cloth_matrix(m, chr)),
+            );
+        }
+    }
+}
+
+#[test]
+fn packet_poly_matches_the_original() {
+    for mut t in twins() {
+        packet_poly_matches_the_original_on(&mut t);
+    }
+}
+
+fn packet_poly_matches_the_original_on(t: &mut Twin) {
+    use ffx_chara::texanim::bridge as ta;
+    let mut rng = Xorshift(0x5eed_0404);
+    let list = random_block(t, &mut rng, 4 * 0x20);
+    for i in 0..4u32 {
+        let (w, h) =
+            [(0u16, 0u16), (1, 1), (64, 128), (256, 0), (0xffff, 3)][rng.next() as usize % 5];
+        t.put(
+            list + 0x20 * i + 8,
+            &[w.to_le_bytes(), h.to_le_bytes()].concat(),
+        );
+    }
+    let verts = t.alloc(3 * 8);
+    let buf = t.alloc(0x2000);
+    let st = t.a.rebase(sy::PACKET_STATE.sym);
+    for round in 0..600 {
+        if round % 50 == 0 {
+            let p = if round % 100 == 0 { 0 } else { buf };
+            set_global(t, sy::PACKET_PTR.sym, p);
+            set_global(
+                t,
+                ta::TEX0_LIST.sym,
+                if round % 150 == 0 { 0 } else { list },
+            );
+            set_global(t, sy::PACKET_SIZE.sym, rng.next() % 0x1000);
+            set_global(t, sy::PACKET_MAX.sym, rng.next() % 0x200);
+            set_global(
+                t,
+                sy::PACKET_MAX.sym + 4,
+                (rng.next() % 0x200).wrapping_sub(0x10),
+            );
+            // a new block first: the state differs from the block's
+            t.put(st + 4, &0xffffu16.to_le_bytes());
+        }
+        if rng.next().is_multiple_of(4) {
+            let k = rng.next() % 4;
+            let v = if k == 0 {
+                rng.next() % 4
+            } else {
+                rng.next() % 3
+            };
+            t.put(st + 8 * k, &u16::try_from(v).unwrap().to_le_bytes());
+        }
+        for i in 0..12u32 {
+            let v = [rng.next() % 0x400, rng.next() & 0xffff][rng.next() as usize % 2];
+            t.put(verts + 2 * i, &u16::try_from(v).unwrap().to_le_bytes());
+        }
+        let (a, b, c) = (verts, verts + 8, verts + 16);
+        t.check(
+            &format!("Ch_EffectPacketStorePoly {round}"),
+            0x0084_5820,
+            &[a, b, c],
+            |m| void!(sy::ch_effect_packet_store_poly(m, a, b, c)),
+        );
+    }
+}
+
+#[test]
+fn frac_step_matches_the_original() {
+    for mut t in twins() {
+        frac_step_matches_the_original_on(&mut t);
+    }
+}
+
+fn frac_step_matches_the_original_on(t: &mut Twin) {
+    use ffx_chara::motion::bridge as mb;
+    let mut rng = Xorshift(0x5eed_0405);
+    let mut cases: Vec<[u32; 3]> = Vec::new();
+    for &a in &FLOATS {
+        for &b in &FLOATS {
+            cases.push([a, b, [1u32, 3, 0, u32::MAX][rng.next() as usize % 4]]);
+        }
+    }
+    for _ in 0..4000 {
+        cases.push([
+            small_float(&mut rng),
+            small_float(&mut rng),
+            rng.next() % 64,
+        ]);
+        cases.push([any_float(&mut rng), small_float(&mut rng), rng.next()]);
+    }
+    for [a, b, n] in cases {
+        t.check(
+            &format!("Chr_FracStep {a:#x} {b:#x} {n}"),
+            0x0083_9f50,
+            &[a, b, n],
+            |m| Res::Float(mb::chr_frac_step(m, fl(a), fl(b), n.cast_signed())),
         );
     }
 }
