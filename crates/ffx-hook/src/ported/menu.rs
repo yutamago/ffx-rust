@@ -31,6 +31,14 @@ fn user_free(p: u32) -> u32 {
     )
 }
 
+/// `user_malloc(size)` (`0x00687020`), through the game's entry.
+fn user_malloc(size: u32) -> u32 {
+    call_ptr(
+        u32::try_from(crate::rebase(0x0068_7020)).expect("32-bit"),
+        &[size],
+    )
+}
+
 /// Calls a game function pointer (a menu callback, cdecl) with one to three
 /// arguments.
 fn call_ptr(f: u32, args: &[u32]) -> u32 {
@@ -2601,5 +2609,62 @@ ported! {
     /// `TkMenuDrawSp30(x, y)`.
     TkMenuDrawSp30 @ 0x008d_ca20 => extern "C" fn tk_menu_draw_sp30(x: u32, y: u32) -> u32 {
         menu_packet(|m, p| tk::menu_draw_sprites_plain(m, [p, 0, x, y, 0, 0, 0, 0x80]))
+    }
+    /// `TkMn2SeqStartScene(name)`.
+    TkMn2SeqStartScene @ 0x008c_2bf0 => extern "C" fn tk_mn2_seq_start_scene(name: u32) -> u32 {
+        tk::tk_mn2_seq_start_scene(&mut mem(), name)
+    }
+    /// `TkMn2SeqStopScene(name)`.
+    TkMn2SeqStopScene @ 0x008c_2c10 => extern "C" fn tk_mn2_seq_stop_scene(name: u32) -> u32 {
+        tk::tk_mn2_seq_stop_scene(&mut mem(), name)
+    }
+    /// `TkMn2SetMacroParam(n, b, v)`: `v`.
+    TkMn2SetMacroParam @ 0x008c_2c60 => extern "C" fn tk_mn2_set_macro_param(n: i32, b: u32, v: u32) -> u32 {
+        tk::tk_mn2_set_macro_param(&mut mem(), n, b, v)
+    }
+    /// `TkGetDebugControlerAnalog(k)`.
+    TkGetDebugControlerAnalog @ 0x0088_5190 => extern "C" fn tk_get_debug_controler_analog(k: u32) -> u32 {
+        tk::tk_get_debug_controler_analog(&mem(), k)
+    }
+    /// `TkMenuMainAllocWindow()`: the record, or 0.
+    TkMenuMainAllocWindow @ 0x008a_a1a0 => extern "C" fn tk_menu_main_alloc_window() -> u32 {
+        tk::tk_menu_main_alloc_window(&mut mem())
+    }
+    /// `TkMalloc(size)`: through the game's `user_malloc`.
+    TkMalloc @ 0x0088_e650 => extern "C" fn tk_malloc(size: u32) -> u32 {
+        tk::tk_malloc(&mut mem(), size, &mut |_, n| user_malloc(n))
+    }
+    /// `TkMn2DumpPlate(plate)`: the halfword `+6` (left in `eax`).
+    TkMn2DumpPlate @ 0x008c_18a0 => extern "C" fn tk_mn2_dump_plate(plate: u32) -> u32 {
+        tk::tk_mn2_dump_plate(&mem(), plate)
+    }
+    /// `TkMn2GetMainPos()`: the last colour.
+    TkMn2GetMainPos @ 0x008e_2630 => extern "C" fn tk_mn2_get_main_pos() -> u32 {
+        tk::tk_mn2_get_main_pos(&mut mem())
+    }
+    /// `TkMn2GetCommonPlate(plate, rect, c1, c2, a, b)`: `b`.
+    TkMn2GetCommonPlate @ 0x008c_1a60 => extern "C" fn tk_mn2_get_common_plate(plate: u32, rect: u32, c1: u32, c2: u32, a: u32, b: u32) -> u32 {
+        tk::tk_mn2_get_common_plate(&mut mem(), 1, plate, [rect, c1, c2], a, b)
+    }
+    /// `TkMn2GetCommonPlateCustom(i, plate, rect, c1, c2, a, b)`: `b`.
+    TkMn2GetCommonPlateCustom @ 0x008c_1aa0 => extern "C" fn tk_mn2_get_common_plate_custom(i: i32, plate: u32, rect: u32, c1: u32, c2: u32, a: u32, b: u32) -> u32 {
+        tk::tk_mn2_get_common_plate(&mut mem(), i, plate, [rect, c1, c2], a, b)
+    }
+    /// `Script_PcOffset(ctx, worker)`.
+    Script_PcOffset @ 0x0087_25e0 => extern "C" fn script_pc_offset(ctx: u32, worker: u32) -> u32 {
+        tk::script_pc_offset(&mem(), ctx, worker)
+    }
+    /// `Tk_NoteEternalCalm(scene)`: the check's result.
+    Tk_NoteEternalCalm @ 0x0088_ec90 => extern "C" fn tk_note_eternal_calm(scene: i32) -> u32 {
+        tk::tk_note_eternal_calm(&mut mem(), scene)
+    }
+    /// `Gu_SelectorResetNbItem(selector, n)`: through the game's
+    /// `user_free`/`user_malloc`; the data array.
+    Gu_SelectorResetNbItem @ 0x0084_9f40 => extern "C" fn gu_selector_reset_nb_item(selector: u32, n: u32) -> u32 {
+        gu::gu_selector_reset_nb_item(&mut mem(), selector, n, &mut |_, p| user_free(p), &mut |_, n| user_malloc(n))
+    }
+    /// `Gu_InitBox(box, x, y, w, h)`: 0.
+    Gu_InitBox @ 0x0084_97f0 => extern "C" fn gu_init_box(b: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
+        gu::gu_init_box(&mut mem(), b, [x, y, w, h])
     }
 }

@@ -1002,6 +1002,62 @@ pub mod bridge {
         }
         free(mem, selector)
     }
+    /// `Gu_SelectorResetNbItem(selector, n)` (`0x00849f40`): the item
+    /// arrays freed (when set) and reallocated for `n` (`u16 +4`) items:
+    /// names at `+8` all `0x00b8fbeb` (an empty string), data at `+0xc`
+    /// all 0; `+0x14` = 1. Returns the data array (left in `eax`).
+    pub fn gu_selector_reset_nb_item<M: Mem>(
+        mem: &mut M,
+        selector: u32,
+        n: u32,
+        free: &mut impl FnMut(&mut M, u32) -> u32,
+        malloc: &mut impl FnMut(&mut M, u32) -> u32,
+    ) -> u32 {
+        let s = |o: u32| selector.wrapping_add(o);
+        let items: u32 = mem.read(s(8));
+        if items != 0 {
+            free(mem, items);
+            let data = mem.read(s(0xc));
+            free(mem, data);
+            mem.write(s(8), 0u32);
+        }
+        #[allow(clippy::cast_possible_truncation)]
+        let n16 = n as u16;
+        mem.write(s(4), n16);
+        let bytes = (i32::from(n16.cast_signed()) << 2).cast_unsigned();
+        let names = malloc(mem, bytes);
+        mem.write(s(8), names);
+        let count = i32::from(mem.read::<i16>(s(4)));
+        let data = malloc(mem, (count << 2).cast_unsigned());
+        mem.write(s(0xc), data);
+        mem.write(s(0x14), 1u32);
+        let empty = mem.rebase(0x00b8_fbeb);
+        for k in 0..n.cast_signed().max(0).cast_unsigned() {
+            let names: u32 = mem.read(s(8));
+            mem.write(names.wrapping_add(4 * k), empty);
+            let data: u32 = mem.read(s(0xc));
+            mem.write(data.wrapping_add(4 * k), 0u32);
+        }
+        mem.read(s(0xc))
+    }
+
+    /// `Gu_InitBox(box, x, y, w, h)` (`0x008497f0`): the rectangle in
+    /// three copies, grey tints (`0x80808080` at `+0x18`, `0x8080` at
+    /// `+0x1c` and as a word at `+0x1e`), `+0x22` 0. Returns 0.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn gu_init_box(mem: &mut impl Mem, b: u32, rect: [u32; 4]) -> u32 {
+        let r = rect.map(|v| v as u16);
+        for k in 0..4 {
+            for c in 0..3 {
+                mem.write(b + 8 * c + 2 * k, r[k as usize]);
+            }
+        }
+        mem.write(b + 0x18, 0x8080_8080u32);
+        mem.write(b + 0x1e, 0x8080u32);
+        mem.write(b + 0x1c, 0x8080u16);
+        mem.write(b + 0x22, 0u16);
+        0
+    }
 }
 
 #[cfg(test)]

@@ -3630,6 +3630,142 @@ pub mod bridge {
             crate::scene::bridge::tk_menu_get_param_offset,
         );
     }
+    /// `TkMn2SeqStartScene(name)` (`0x008c2bf0`): `TOSeqStartScene(1,
+    /// name)`.
+    pub fn tk_mn2_seq_start_scene(mem: &mut impl Mem, name: u32) -> u32 {
+        ffx_system::scene::bridge::start_scene(
+            mem,
+            1,
+            name,
+            false,
+            crate::scene::bridge::tk_menu_get_scene_handle,
+        )
+    }
+
+    /// `TkMn2SeqStopScene(name)` (`0x008c2c10`): `TOSeqStopScene(1, name)`.
+    pub fn tk_mn2_seq_stop_scene(mem: &mut impl Mem, name: u32) -> u32 {
+        ffx_system::scene::bridge::stop_scene(mem, 1, name)
+    }
+
+    /// `TkMn2SetMacroParam(n, b, v)` (`0x008c2c60`): window 0's macro `n`
+    /// byte 1 = `b`, value = `v`. Returns `v`.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn tk_mn2_set_macro_param(mem: &mut impl Mem, n: i32, b: u32, v: u32) -> u32 {
+        ffx_system::window::bridge::macro_set_byte1(mem, 0, n, b as u8);
+        ffx_system::window::bridge::macro_set_value(mem, 0, n, v)
+    }
+
+    /// `TkGetDebugControlerAnalog(k)` (`0x00885190`): analog byte `k` of
+    /// the debug pad's (1) current frame.
+    pub fn tk_get_debug_controler_analog(mem: &impl Mem, k: u32) -> u32 {
+        tk_get_controler_analog_hist(mem, 1, 0, k, 0)
+    }
+
+    /// `TkMenuMainAllocWindow()` (`0x008aa1a0`): the first unused window
+    /// record (`+0x40` zero), reset (`MenuMain_ResetWindowRet`); 0 when
+    /// all 32 are used.
+    pub fn tk_menu_main_alloc_window(mem: &mut impl Mem) -> u32 {
+        let base = MENU_WINDOWS.ptr(mem).addr;
+        for k in 0..0x20u32 {
+            let w = base + k * 0x98;
+            if mem.read::<u8>(w + 0x40) == 0 {
+                menu_main_reset_window(mem, w);
+                return w;
+            }
+        }
+        0
+    }
+
+    /// `TkMalloc(size)` (`0x0088e650`): `Sg_MemSetAlign(0x40)`, then
+    /// `user_malloc` of `size` rounded up to 2 KiB (as the original's
+    /// signed rounding).
+    pub fn tk_malloc<M: Mem>(
+        mem: &mut M,
+        size: u32,
+        malloc: &mut impl FnMut(&mut M, u32) -> u32,
+    ) -> u32 {
+        ffx_sg::state::bridge::mem_set_align(mem, 0x40);
+        let a = size.wrapping_add(0x7ff);
+        let bias = if a.cast_signed() < 0 { 0x7ff } else { 0 };
+        let rounded = a.wrapping_add(bias) & 0xffff_f800;
+        malloc(mem, rounded)
+    }
+
+    /// `TkMn2DumpPlate(plate)` (`0x008c18a0`): six `dbgPrintf`s (a PC
+    /// stub); `eax` is left with the sign-extended halfword `+6`.
+    pub fn tk_mn2_dump_plate(mem: &impl Mem, plate: u32) -> u32 {
+        i32::from(mem.read::<i16>(plate.wrapping_add(6))).cast_unsigned()
+    }
+
+    /// `TkMn2GetMainPos()` (`0x008e2630`): the main menu's scene layout:
+    /// `rect_noactive` (`0x023cc138`), `pos_noactive` (`0x023cc144`),
+    /// `pos_nmblkline` (`0x0187168c`), the rectangle at `0x01871690`, and
+    /// two colours (`0x023cc148`, `0x023cc140`). Returns the last colour.
+    pub fn tk_mn2_get_main_pos(mem: &mut impl Mem) -> u32 {
+        let r = |mem: &mut _, a: u32| Mem::rebase(mem, a);
+        let (n0, d0) = (r(mem, 0x00b6_67ec), r(mem, 0x023c_c138));
+        tk_mn2_seq_get_rect(mem, n0, d0);
+        let (n1, d1) = (r(mem, 0x00b6_67fc), r(mem, 0x023c_c144));
+        tk_mn2_seq_get_pos(mem, n1, d1);
+        let (n2, d2) = (r(mem, 0x00b6_680c), r(mem, 0x0187_168c));
+        tk_mn2_seq_get_pos(mem, n2, d2);
+        let (n3, d3) = (r(mem, 0x00b6_681c), r(mem, 0x0187_1690));
+        tk_mn2_seq_get_rect(mem, n3, d3);
+        let n4 = r(mem, 0x00b6_682c);
+        let c0 = tk_mn2_seq_get_color(mem, 1, n4);
+        let d4 = r(mem, 0x023c_c148);
+        mem.write(d4, c0);
+        let n5 = r(mem, 0x00b6_683c);
+        let c1 = tk_mn2_seq_get_color(mem, 1, n5);
+        let d5 = r(mem, 0x023c_c140);
+        mem.write(d5, c1);
+        c1
+    }
+
+    /// `TkMn2GetCommonPlate(plate, rect, c1, c2, a, b)` (`0x008c1a60`) and
+    /// `TkMn2GetCommonPlateCustom(i, plate, rect, c1, c2, a, b)`
+    /// (`0x008c1aa0`): a menu plate from scene `i` (1 for the first): the
+    /// rectangle named `rect`, colours `c1` (`+8`) and `c2` (`+0xc`), then
+    /// `a`, `b` (`+0x10`, `+0x14`). Returns `b` (left in `eax`).
+    pub fn tk_mn2_get_common_plate(
+        mem: &mut impl Mem,
+        i: i32,
+        plate: u32,
+        names: [u32; 3],
+        a: u32,
+        b: u32,
+    ) -> u32 {
+        tk_mn2_seq_get_rect_custom(mem, i, names[0], plate);
+        let c1 = tk_mn2_seq_get_color(mem, i, names[1]);
+        mem.write(plate + 8, c1);
+        let c2 = tk_mn2_seq_get_color(mem, i, names[2]);
+        mem.write(plate + 0xc, [c2, a, b]);
+        b
+    }
+
+    /// `Script_PcOffset(ctx, worker)` (`0x008725e0`, own name): the
+    /// worker's code pointer (`+0x18`) less the script base (`ctx+4`) and
+    /// its `+0x30`.
+    pub fn script_pc_offset(mem: &impl Mem, ctx: u32, worker: u32) -> u32 {
+        let base: u32 = mem.read(ctx.wrapping_add(4));
+        let pc: u32 = mem.read(worker.wrapping_add(0x18));
+        let off: u32 = mem.read(base.wrapping_add(0x30));
+        pc.wrapping_sub(off).wrapping_sub(base)
+    }
+
+    /// `Tk_NoteEternalCalm(scene)` (`0x0088ec90`, own name): on an Eternal
+    /// Calm scene seen first, `0x018663d0` = 1 and `0x018663d4` = 0.
+    /// Returns what the original leaves in `eax`: the check's result, or
+    /// 0 after setting.
+    pub fn tk_note_eternal_calm(mem: &mut impl Mem, scene: i32) -> u32 {
+        let r = ffx_system::config::bridge::is_eternal_calm(mem, scene);
+        let flag = mem.rebase(0x0186_63d0);
+        if r != 0 && mem.read::<u8>(flag) == 0 {
+            mem.write(flag, 1u8);
+            mem.write(mem.rebase(0x0186_63d4), 0u32);
+        }
+        r
+    }
 }
 
 #[cfg(test)]

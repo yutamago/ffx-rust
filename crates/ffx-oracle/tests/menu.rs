@@ -4473,3 +4473,145 @@ fn gu_frees_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// `UserHeap_Malloc` replaced in both oracles: records the size at `*log`
+/// and returns the arena at `log + 4`'s value (`0x1000` bytes).
+fn record_mallocs(t: &mut Twins) -> (u32, u32) {
+    let buf = t.alloc(&[0; 0x1000]);
+    let arena = t.alloc(&[0; 0x1000]);
+    let log = t.alloc(&buf.to_le_bytes());
+    let l = log.to_le_bytes();
+    let ar = arena.to_le_bytes();
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0x8b, 0x44, 0x24, 0x04][..],              // mov eax, [esp + 4]
+        &[0x8b, 0x0d], &l,                          // mov ecx, [log]
+        &[0x89, 0x01],                              // mov [ecx], eax
+        &[0x83, 0x05], &l, &[0x04],                 // add dword [log], 4
+        &[0xb8], &ar, &[0xc3],                      // mov eax, arena; ret
+    ]
+    .concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x006f_b910);
+        o.write(at, &code).unwrap();
+    }
+    (log, arena)
+}
+
+#[test]
+fn tk_round7_matches_the_original() {
+    let Some(mut t) = setup_any(0x7a11_c0de) else {
+        return;
+    };
+    let snapshot = std::env::var_os("FFX_SNAPSHOT").is_some();
+    let (log, arena) = record_mallocs(&mut t);
+    let flog = record_frees(&mut t);
+    for round in 0..150u32 {
+        let size = t.rng.int();
+        t.twin("TkMalloc", 0x0088_e650, &[size], U32, |o| {
+            w(tk::tk_malloc(o, size, &mut |o, n| {
+                let _ = free_into(o, log, n);
+                arena
+            }))
+        });
+        let sel = t.alloc_random(0x20);
+        let items = t.rng.pick(&[0u32, 0x10, 0x2000]);
+        t.put(sel + 8, items);
+        let n = t.rng.pick(&[0u32, 1, 5, 0x40, 0xffff_ffff, 0xffff_0003]);
+        t.twin("Gu_SelectorResetNbItem", 0x0084_9f40, &[sel, n], U32, |o| {
+            w(gu::gu_selector_reset_nb_item(
+                o,
+                sel,
+                n,
+                &mut |o, p| free_into(o, flog, p),
+                &mut |o, n| {
+                    let _ = free_into(o, log, n);
+                    arena
+                },
+            ))
+        });
+        let bx = t.alloc_random(0x28);
+        let r4 = [t.rng.int(), t.rng.int(), t.rng.int(), t.rng.int()];
+        t.twin(
+            "Gu_InitBox",
+            0x0084_97f0,
+            &[bx, r4[0], r4[1], r4[2], r4[3]],
+            U32,
+            |o| w(gu::gu_init_box(o, bx, r4)),
+        );
+        let base = t.alloc_random(0x40);
+        let ctx = t.alloc(&[[0u8; 4], base.to_le_bytes()].concat());
+        let worker = t.alloc_random(0x20);
+        t.twin("Script_PcOffset", 0x0087_25e0, &[ctx, worker], U32, |o| {
+            w(tk::script_pc_offset(o, ctx, worker))
+        });
+        let sc = t.rng.pick(&[0u32, 1, 0x40, 0x7f, 0x80, 0x100, 0xffff_ffff]);
+        t.scramble(0x0186_63d0, 8);
+        t.twin("Tk_NoteEternalCalm", 0x0088_ec90, &[sc], U32, |o| {
+            w(tk::tk_note_eternal_calm(o, i(sc)))
+        });
+        let plate = t.alloc_random(0x10);
+        t.twin("TkMn2DumpPlate", 0x008c_18a0, &[plate], U32, |o| {
+            w(tk::tk_mn2_dump_plate(o, plate))
+        });
+        // the debug pad's analog bytes
+        let work = tk::tk_get_controler_work(&t.b, 1, 0);
+        let bytes = t.rng.bytes(0x100);
+        t.put_bytes(work, &bytes);
+        let k = t.rng.below(8);
+        t.twin("TkGetDebugControlerAnalog", 0x0088_5190, &[k], U32, |o| {
+            w(tk::tk_get_debug_controler_analog(o, k))
+        });
+        // window records
+        if round % 10 == 0 {
+            t.scramble(tk::MENU_WINDOWS.sym, 0x98 * 32);
+            let base = t.sym(tk::MENU_WINDOWS.sym);
+            let free = t.rng.below(40);
+            for j in 0..32 {
+                t.put(base + j * 0x98 + 0x40, u8::from(j != free));
+            }
+        }
+        t.twin("TkMenuMainAllocWindow", 0x008a_a1a0, &[], U32, |o| {
+            w(tk::tk_menu_main_alloc_window(o))
+        });
+        if snapshot {
+            // window 0's macros
+            let n = t.rng.below(0x40);
+            let (b, val) = (t.rng.next(), t.rng.next());
+            t.twin("TkMn2SetMacroParam", 0x008c_2c60, &[n, b, val], U32, |o| {
+                w(tk::tk_mn2_set_macro_param(o, i(n), b, val))
+            });
+            // scene layout and scenes
+            t.twin("TkMn2GetMainPos", 0x008e_2630, &[], U32, |o| {
+                w(tk::tk_mn2_get_main_pos(o))
+            });
+            let plate = t.alloc_random(0x18);
+            let names = [0x00b6_67ecu32, 0x00b6_682c, 0x00b6_683c].map(|n| t.sym(n));
+            let (pa, pb) = (t.rng.next(), t.rng.next());
+            t.twin(
+                "TkMn2GetCommonPlate",
+                0x008c_1a60,
+                &[plate, names[0], names[1], names[2], pa, pb],
+                U32,
+                |o| w(tk::tk_mn2_get_common_plate(o, 1, plate, names, pa, pb)),
+            );
+            let k = t.rng.below(4);
+            t.twin(
+                "TkMn2GetCommonPlateCustom",
+                0x008c_1aa0,
+                &[k, plate, names[0], names[1], names[2], pa, pb],
+                U32,
+                |o| w(tk::tk_mn2_get_common_plate(o, i(k), plate, names, pa, pb)),
+            );
+            let nm = t.rng.pick(&[0x00b6_67ecu32, 0x00b6_682c, 0x00b6_5e60]);
+            let name = t.sym(nm);
+            t.twin("TkMn2SeqStartScene", 0x008c_2bf0, &[name], U32, |o| {
+                w(tk::tk_mn2_seq_start_scene(o, name))
+            });
+            t.twin("TkMn2SeqStopScene", 0x008c_2c10, &[name], U32, |o| {
+                w(tk::tk_mn2_seq_stop_scene(o, name))
+            });
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}
