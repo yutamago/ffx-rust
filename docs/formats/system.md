@@ -80,3 +80,66 @@ when that level's `+0x52` is 1.
 (`0x008ef970`) writes the GS `TEST_2` register (address 0x47): fields from
 bit 0 ATE(1), ATST(3), AREF(8), AFAIL(2), DATE(1), DATM(1), ZTE(1), ZTST(2).
 Each argument is sign-extended to 64 bits and OR-ed in without masking.
+
+## The user heap's set-up and entry points
+
+`malloc_pool_init` (`0x006fb9b0`) runs on the heap's first use:
+`MemSystem_Ensure` (`0x009428a0`, sets `g_MemSystem` `0x0193cd2c` once),
+then a 0x30-byte heap object from the C runtime's `malloc`
+(`g_UserHeap`, `0x00ce901c`): a critical section, then the allocator at
+`+0x18` set up by `UserHeap_Init` (`0x00942a40`: arena size rounded to
+4 KiB, 0, the limit, no arenas, 16-byte minimum). The arena size starts at
+0x30000000 with a 0x2ff00000 limit. A first 16-byte block proves the heap
+(`0x00ce9020`). While that block fails, the object goes back to `free`
+and the arena size drops by 16 MiB. The size that worked is kept at
+`0x00ce9024`.
+
+Entry points over it, each under the heap's critical section:
+
+| Function | Behaviour |
+|---|---|
+| `user_malloc` `0x006fb910` | block filled with `0xcd` |
+| `UserHeap_Calloc` `0x006fb820` | `n * size` (32-bit), zeroed |
+| `user_aligned_malloc` `0x006fb770` | moved up to the alignment, the distance in the byte below |
+| `user_aligned_free` `0x006fb6c0` | the block filled with `0xfe`, then freed |
+| `Phyre::PhyreMalloc` `0x0042fb40` | `size + 0x14`, 16-aligned, the block kept in the word below |
+| `Phyre::PhyreMalloc` `0x0042fb80` | `size + 4 + align`, aligned, the block kept below |
+| `Phyre::PhyreFree` `0x0042fb20` | frees the block kept below |
+| `operator new`, `new[]` `0x00630310`, `0x006304c0` | `user_malloc` |
+
+## The `sce*`/`fios*` file wrappers
+
+`sceRead` (`0x0062fc00`) calls `fiosRead` and returns 0. `fiosRead`
+(`0x00679800`) returns 0 for a null stream, else
+`PStreamFile::read`. `sceFileSize` and `fiosFileSize` return 0 for null.
+Otherwise they return `PhyreFIOSStreamFile::getFileSize` (`0x006f9d50`),
+which is -1 for a closed stream (`isOpen`: handle `+0` not -1, or a
+big-file entry at `+4`). `PStreamFile::getFileSize` (`0x00607dc0`)
+returns the entry's 64-bit size, else `GetFileSizeEx` on the handle.
+
+`g_CdLib` (`0x02310c40`, `GetCD`) starts with function pointers. `+0` is
+read, `+8` wait, `+0x10` open, `+0x58` name. `TODVDFileRead` and
+`TOCDGetFileName` call them in that order. `+0x20` is the module's first
+file number, `+0x30` the PC-name switch `GetCDFileName_PC` checks.
+
+## GS register packets (`TOAdp*`)
+
+Each writer packs its fields into one 64-bit register, the first field
+lowest. Every field is sign-extended and OR-ed in without masking. The
+register address follows the value.
+
+| Function | Register | Field widths from bit 0 |
+|---|---|---|
+| `TOAdpTEX0` `0x008efa00` | 0x06 | TBP0 14, TBW 6, PSM 6, TW 4, TH 4, TCC 1, TFX 2, CBP 14, CPSM 4, CSM 1, CSA 5, CLD |
+| `TOAdpCLAMP` `0x008ef6e0` | 0x08 | WMS 2, WMT 2, MINU 10, MAXU 10, MINV 10, MAXV |
+| `TOAdpTEX1` `0x008efad0` | 0x14 | LCM 2, MXL 3, MMAG 1, MMIN 3, MTBA 10, L 13, K |
+| `TOAdpXYOFFSET` `0x008efc60` | 0x18 | OFX 32, OFY |
+| `TOAdpSCISSOR` `0x008ef910` | 0x40 | 16 each |
+| `TOAdpALPHA` `0x008ef670` | 0x42 | A 2, B 2, C 2, D (26: FIX at bit 32), FIX |
+| `TOAdpCOLCLAMP` `0x008ef760` | 0x46 | one value |
+| `TOAdpTEST` `0x008ef970` | 0x47 | ATE 1, ATST 3, AREF 8, AFAIL 2, DATE 1, DATM 1, ZTE 1, ZTST |
+| `TOAdpFBA` `0x008ef7d0` | 0x4a | one value |
+| `TOAdpFRAME` `0x008ef880` | 0x4c | FBP 16, FBW 8, PSM 8, FBMSK |
+
+`TOAdpFOG` (`0x008ef800`) puts the fog in the top byte (register 0x0a).
+`TOAdpTEXFLUSH` (`0x008efb60`) writes register 0x3f with no data.

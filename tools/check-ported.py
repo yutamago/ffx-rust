@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Checks the ported replacements (crates/ffx-hook/src/ported/*.rs) against
 the Ghidra dump: every address is a function start, of at least five bytes
-(the jump patch), not ported twice, and named alike in symbols/ffx.sym
+(the jump patch), not ported twice nor already hooked by hand in
+crates/ffx-hook/src (wrappers, mods, the harness), and named alike in symbols/ffx.sym
 (which must name it).
 With FFX_GAME_DIR set, also that the shim pops what the original's `ret`
 pops (cdecl nothing, stdcall every argument, thiscall all but `this`,
@@ -41,12 +42,21 @@ def rets(a, size):
     return {int(m.group(1) or "0", 16) for m in re.finditer(r"\tret\s*(?:\$0x([0-9a-f]+))?", out)}
 
 
+# hooks written by hand (wrappers, mods, the harness) outside the ported tables
+hand = {}
+for f in sorted((progress.REPO / "crates/ffx-hook/src").glob("*.rs")):
+    for name, addr in re.findall(r'name: "(\w+)",\s*address: 0x([0-9a-f_]+),', f.read_text(encoding="utf-8")):
+        hand[int(addr.replace("_", ""), 16)] = f"{f.name}: {name}"
+
 for f in sorted((progress.REPO / "crates/ffx-hook/src/ported").glob("*.rs")):
     for name, addr, abi, args in SHIM.findall(f.read_text(encoding="utf-8")):
         a = int(addr.replace("_", ""), 16)
         where = f"{f.name}: {name} @ {a:#010x}"
         if a in seen:
             print(f"{where}: also ported as {seen[a]}")
+            bad += 1
+        if a in hand:
+            print(f"{where}: also hooked by hand ({hand[a]})")
             bad += 1
         seen[a] = name
         if a not in rows:
