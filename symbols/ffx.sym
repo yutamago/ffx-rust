@@ -1210,6 +1210,7 @@
 0x006ebee0 function mspace_free               # fh v3:exact 0x006ec020
 0x006ec8d0 function mspace_memalign           # fh v3:exact 0x006eca10
 0x006ecc40 function Matrix__copy              # fh v3:bsim1.00 0x006ecd80 Matrix::+copy
+0x006ece60 function Matrix_Identity           # thiscall(m): stores the 4x4 identity (fld1/fldz through locals), leaves 1.0's bits in eax; FFXVu0UnitMatrix tail-jumps here
 0x006ed290 function FFXVu0AddVector           # fh v3:exact 0x006ed3d0
 0x006ed2e0 function FFXVu0ApplyMatrix         # fh v3:bsim1.00 0x006ed420
 0x006ed360 function FFXVu0CopyMatrix          # fh v3:cg31 0x6ed4a0
@@ -6379,6 +6380,7 @@
 0x00b30a60 label Phyre_PClassDataMemberArray_vftable # fh v4:imported Phyre::PClassDataMemberArray::vftable
 0x00b30a90 label Phyre_PClassDataMemberArrayFixedSize_vftable # fh v4:imported Phyre::PClassDataMemberArrayFixedSize::vftable
 0x00b30ac0 label Phyre_PSerialization_PStreamReaderFile_vftable # fh v4:imported Phyre::PSerialization::PStreamReaderFile::vftable
+0x00b313a0 label    g_Vu0FixedScale           # f64 16.0: FFXVu0RotTransPers scales to 12.4 fixed point (x * 16 + 0.5 through _ftol2_sse)
 0x00b313b4 label Phyre_PThreadPoolImmediate_vftable # fh v4:imported Phyre::PThreadPoolImmediate::vftable
 0x00b313d8 label Phyre_PThreadPoolWorkStealing_vftable # fh v4:imported Phyre::PThreadPoolWorkStealing::vftable
 0x00b313fc label Phyre_PProfiling_PProcessorProfileTimelineBase_vftable # fh v4:imported Phyre::PProfiling::PProcessorProfileTimelineBase::vftable
@@ -7308,6 +7310,7 @@
 0x00b920cc label mkvparser_SimpleBlock_vftable # fh v4:imported mkvparser::SimpleBlock::vftable
 0x00b920dc label mkvparser_BlockEntry_vftable # fh v4:imported mkvparser::BlockEntry::vftable
 0x00b920ec label mkvparser_Track_vftable      # fh v4:imported mkvparser::Track::vftable
+0x00b92220 label    g_Vu0FixedRound           # f64 0.5: FFXVu0RotTransPers rounds to the nearest 1/16
 0x00b92288 label g_PiF64                      # f64 of pi rounded to f32 (0x400921fb60000000); MsNearRag's half turn
 0x00c0a000 label    g_Vu0_R                      # emulated VU0 R (random) register, f32 bits in [1,2): op_random/op_random_p step it (vrnext: low 22 fraction bits << 1, bit 4 of R^(R>>18) in) and leave draw - 1.8872414 there; 0x0075fe50 seeds it
 0x00c0a004 label g_Vu0_Vf00                  # emulated VU0 vf00 (x, y, z, w) = (0, 0, 0, 1.0f): AsmEmuInit and restoreVf00Register store exactly that
@@ -7359,6 +7362,7 @@
 0x00c8f508 label g_Ee_Gpr                    # emulated R5900 GPRs, 32 x 16 bytes: r0 (zero) here, t0 at +0x80 (pppRandFloat: t0 = r0 - 1), sp at +0x1d0 (AsmEmuInit stores this address there); argument registers set by AsmEmuSetFuncParam0 and the setters around it
 0x00c8f728 label    g_Vu0_RSeeded                # nonzero once g_Vu0_R is seeded (0x0075fe50 sets it with R); op_random draws 1.0 while 0, then sets it
 0x00c8f788 label g_Vu0_Q                      # emulated VU0 Q (f32): MsDivVector leaves vf00.w / s there, MsVectorLen the length; the VF registers follow from 0x00c8f790, 16 bytes each (MsApplyMatrix: acc 0x00c8f790, matrix 0x00c8f7d0, vector 0x00c8f810, result 0x00c8f850)
+0x00c8fac4 label    g_Vu0_Status              # emulated VU0 status flags: setZSFlag sets 0x40 (sticky zero), setSSFlag 0x80 (sticky sign)
 0x00cc9698 label    g_BasePath
 0x00cc9c48 label BigFileStream_sBigFileStreamInstacne # was g_FileSys
 0x00cc9cf5 label    g_SteamReady              # guards every other Steam call (achievements, RunCallbacks)

@@ -214,6 +214,12 @@ impl Reg {
         Self(arith_m32(self.0, m.to_bits(), |x, y| x / y))
     }
 
+    /// `fdivr dword [m]`: `m / self`.
+    #[must_use]
+    pub fn divr_m32(self, m: f32) -> Self {
+        Self(arith_m32(self.0, m.to_bits(), |x, y| y / x))
+    }
+
     /// `fstp dword`: rounded to `f32`.
     #[must_use]
     pub fn store(self) -> f32 {
