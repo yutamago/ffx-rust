@@ -69,6 +69,81 @@ pub mod bridge {
     /// `u16` packet program (`Ch_EffectPacketStorePRG`).
     pub const PACKET_PRG: Global<u16> = Global::new(0x0130_367c);
 
+    /// `u8` set by `Sg_SetMovieGomiAvoid`, read by `Ch_DrawGetShadowSemi`.
+    pub const MOVIE_GOMI_AVOID: Global<u8> = Global::new(0x0130_08be);
+
+    /// `Ch_DrawGetShadowMode()` (`0x0082ec60`) and `Ch_DrawGetShadowSemi()`
+    /// (`0x0082ec70`): a byte setting, zero-extended.
+    pub fn get_u8(mem: &impl Mem, g: Global<u8>) -> u32 {
+        u32::from(g.get(mem))
+    }
+
+    /// The reader's entry points the character module calls through: the
+    /// sync (`Ch_ReadSync`), the kind-table callback (`Chr_TableIndex`)
+    /// and the event motion group read (`Ch_RomReadEventMGRPsync`).
+    pub const READ_SYNC_FN: Global<u32> = Global::new(0x0231_0c48);
+    pub const TABLE_FN: Global<u32> = Global::new(0x0231_0c50);
+    pub const READ_EVENT_FN: Global<u32> = Global::new(0x0231_0cc0);
+    /// Per kind (8): a table of `i16` count and `i16` ids.
+    pub const KIND_TABLES: Global<u32> = Global::new(0x012f_fab8);
+    /// Per kind: the `i16` `Chr_TableIndex` passes to [`TABLE_FN`].
+    pub const KIND_ARGS: Global<i16> = Global::new(0x00c4_9660);
+    /// The `i8` index step per table entry.
+    pub const KIND_STRIDE: Global<i8> = Global::new(0x00c4_967f);
+
+    /// `Ch_ReadSync()` (`0x0082a5e0`): a tail jump through
+    /// [`READ_SYNC_FN`]; its result.
+    pub fn ch_read_sync<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = READ_SYNC_FN.get(mem);
+        call(mem, f, &[])
+    }
+
+    /// `Ch_RomReadEventMGRPsync(p)` (`0x0082a7f0`): [`READ_EVENT_FN`]`(12,
+    /// p)`; its result.
+    pub fn ch_rom_read_event_mgrp_sync<M: Mem>(
+        mem: &mut M,
+        p: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = READ_EVENT_FN.get(mem);
+        call(mem, f, &[12, p])
+    }
+
+    /// `Chr_TableIndex(id)` (`0x0082a640`): the position of `id & 0xfff`
+    /// in its kind's table (kind `id >> 12 & 0xf`, 0..=7), counted in
+    /// [`KIND_STRIDE`] steps, after calling [`TABLE_FN`] with the kind's
+    /// [`KIND_ARGS`] entry; -1 when absent.
+    pub fn chr_table_index<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> i32 {
+        let kind = (id.cast_signed() >> 12) & 0xf;
+        if kind > 7 {
+            return -1;
+        }
+        let k = kind.cast_unsigned();
+        let table: u32 = mem.read(KIND_TABLES.ptr(mem).addr.wrapping_add(4 * k));
+        let want = (id & 0xfff).cast_signed();
+        let mut index = 0i32;
+        let mut i = 0i32;
+        while i < i32::from(mem.read::<i16>(table)) {
+            let at = table.wrapping_add(2 + 2 * i.cast_unsigned());
+            if i32::from(mem.read::<i16>(at)) == want {
+                let arg = i32::from(mem.read::<i16>(KIND_ARGS.ptr(mem).addr.wrapping_add(2 * k)));
+                let f = TABLE_FN.get(mem);
+                call(mem, f, &[arg.cast_unsigned()]);
+                return index;
+            }
+            index = index.wrapping_add(i32::from(KIND_STRIDE.get(mem)));
+            i += 1;
+        }
+        -1
+    }
+
     /// `Ch_*Get*` of an `i8` setting, sign-extended.
     pub fn get_i8(mem: &impl Mem, g: Global<i8>) -> i32 {
         i32::from(g.get(mem))

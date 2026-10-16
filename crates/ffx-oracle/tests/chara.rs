@@ -4608,3 +4608,269 @@ fn mgrp_move_on(t: &mut Twin) {
         );
     }
 }
+
+/// Round 7: the reader entry points (through a recording stand-in), the
+/// kind tables, the shadow getters, the clut load, the neck switch, the
+/// system motion group check, the first motion of a sequence and the
+/// character names and paths.
+#[test]
+fn round7_matches_the_original() {
+    for mut t in twins() {
+        round7_on(&mut t);
+    }
+}
+
+/// Code that records its first `n` (0..=2) arguments at `slot` and
+/// returns the word at `slot + 8`, at the same address in both oracles.
+fn recorder(t: &mut Twin, slot: u32, n: u32) -> u32 {
+    let mut c = Vec::new();
+    for k in 0..n {
+        #[allow(clippy::cast_possible_truncation)] // 4 or 8
+        c.extend([0x8b, 0x44, 0x24, (4 + 4 * k) as u8, 0xa3]);
+        c.extend((slot + 4 * k).to_le_bytes());
+    }
+    c.push(0xa1);
+    c.extend((slot + 8).to_le_bytes());
+    c.push(0xc3);
+    let at = t.a.alloc_code(&c).unwrap();
+    assert_eq!(t.b.alloc_code(&c).unwrap(), at);
+    at
+}
+
+/// A random motion sequence at a new allocation: skips (2, 3, 6), jumps
+/// (4) to one of `targets`, then an end, a motion (1) or an unknown code.
+fn sequence(t: &mut Twin, rng: &mut Xorshift, jumps: usize) -> Vec<u8> {
+    let mut s = Vec::new();
+    for _ in 0..rng.next() % 4 {
+        match rng.next() % 3 {
+            0 => s.push(2),
+            1 => s.extend([3, 0xaa, 0xbb]),
+            _ => s.extend([6, 0x11, 0x22]),
+        }
+    }
+    let _ = t;
+    if jumps > 0 && rng.next().is_multiple_of(3) {
+        #[allow(clippy::cast_possible_truncation)] // a small index
+        let k = (rng.next() as usize % jumps) as u8;
+        s.extend([4, k, 0]);
+    } else {
+        #[allow(clippy::cast_possible_truncation)] // random bytes
+        let r = rng.next() as u8;
+        match rng.next() % 6 {
+            0 => s.push(0),
+            1 => s.push(5),
+            2 => s.push(7),
+            3 => s.push(0x90),
+            _ => s.extend([1, r, (rng.next() % 3) as u8]),
+        }
+    }
+    s
+}
+
+#[allow(clippy::too_many_lines)]
+fn round7_on(t: &mut Twin) {
+    use ffx_chara::chr::bridge as c;
+    use ffx_chara::motion::bridge as mo;
+    use ffx_chara::sys::bridge as sy;
+    use ffx_chara::texanim::bridge as ta;
+    let mut rng = Xorshift(0x7007_0007);
+    let slot = t.alloc(12);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    for (g, n) in [(0x0231_0c48u32, 0), (0x0231_0c50, 1), (0x0231_0cc0, 2)] {
+        let rec = recorder(t, slot, n);
+        let at = t.a.rebase(g);
+        t.put_u32(at, rec);
+    }
+    for round in 0..6u32 {
+        t.put_u32(slot + 8, rng.next());
+        t.check(&format!("Ch_ReadSync {round}"), 0x0082_a5e0, &[], |m| {
+            Res::Int(sy::ch_read_sync(m, &mut |m, f, a| call(m, f, a)))
+        });
+        let p = rng.next();
+        t.check(
+            &format!("Ch_RomReadEventMGRPsync {round}"),
+            0x0082_a7f0,
+            &[p],
+            |m| {
+                Res::Int(sy::ch_rom_read_event_mgrp_sync(m, p, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+    }
+    // the kind tables: made up on the synthetic image, the game's on the
+    // snapshot (with a new one sometimes)
+    let tables = t.a.rebase(0x012f_fab8);
+    for k in 0..8u32 {
+        let have: u32 = rd(&t.b, tables + 4 * k);
+        if t.name == "synthetic" || have == 0 || rng.next().is_multiple_of(4) {
+            let n = rng.next() % 6;
+            let tab = t.alloc(2 + 2 * n as usize);
+            #[allow(clippy::cast_possible_truncation)]
+            t.put(tab, &(n as i16).to_le_bytes());
+            for i in 0..n {
+                #[allow(clippy::cast_possible_truncation)]
+                t.put(tab + 2 + 2 * i, &((rng.next() % 8) as i16).to_le_bytes());
+            }
+            t.put_u32(tables + 4 * k, tab);
+        }
+    }
+    if t.name == "synthetic" {
+        let args = t.a.rebase(0x00c4_9660);
+        t.put(args, &random(&mut rng, 16));
+        let stride = t.a.rebase(0x00c4_967f);
+        #[allow(clippy::cast_possible_truncation)]
+        t.put(stride, &[rng.next() as u8 | 1]);
+    }
+    for round in 0..40u32 {
+        let id = (rng.next() % 12) << 12 | (rng.next() % 9);
+        t.check(
+            &format!("Chr_TableIndex {id:#x} {round}"),
+            0x0082_a640,
+            &[id],
+            |m| Res::Int(sy::chr_table_index(m, id, &mut |m, f, a| call(m, f, a)).cast_unsigned()),
+        );
+    }
+    // the shadow getters
+    for round in 0..4u32 {
+        #[allow(clippy::cast_possible_truncation)]
+        let v = [rng.next() as u8, rng.next() as u8];
+        let at = t.a.rebase(0x0130_08bd);
+        t.put(at, &v);
+        t.check(
+            &format!("Ch_DrawGetShadowMode {round}"),
+            0x0082_ec60,
+            &[],
+            |m| Res::Int(sy::get_u8(m, sy::SHADOW_MODE)),
+        );
+        t.check(
+            &format!("Ch_DrawGetShadowSemi {round}"),
+            0x0082_ec70,
+            &[],
+            |m| Res::Int(sy::get_u8(m, sy::MOVIE_GOMI_AVOID)),
+        );
+    }
+    // the clut textures and the neck
+    let chrs = live_characters(t, &mut rng);
+    let made_up = *chrs.last().unwrap();
+    for &chr in &chrs {
+        if t.name == "synthetic" || chr == made_up {
+            let n = rng.next() % 4;
+            let tex = random_block(t, &mut rng, 0x40 * n.max(1));
+            let data = random_block(t, &mut rng, 0x20) + 0x10;
+            for k in 0..n {
+                t.put_u32(tex + 0x40 * k + 0x30, if k % 2 == 0 { 0 } else { data });
+                if rng.next().is_multiple_of(2) {
+                    t.put(tex + 0x40 * k + 0x38, &[0xff, 0xff]);
+                }
+            }
+            t.put_u32(chr + 0x6e4, tex);
+            #[allow(clippy::cast_possible_truncation)]
+            t.put(chr + 0x6e8, &(n as i16).to_le_bytes());
+        }
+        t.check(
+            &format!("Ch_TextureLoadClut {chr:#x}"),
+            0x0083_11d0,
+            &[chr, 0],
+            |m| {
+                ta::ch_texture_load_clut(m, chr);
+                Res::Void
+            },
+        );
+        for on in [0u32, 1, 0x100, 0xffff_ff00, 7] {
+            #[allow(clippy::cast_possible_truncation)]
+            let (x, y) = (rng.next() as u8 % 3, rng.next() as u8 % 3);
+            t.put(chr + 0x40d, &[x, y]);
+            for k in 0..12 {
+                t.put_u32(chr + 0x46c + 4 * k, small_float(&mut rng));
+            }
+            t.check(
+                &format!("Ch_NeckSetEnable {chr:#x} {on:#x}"),
+                0x0083_4f60,
+                &[chr, on],
+                |m| {
+                    c::ch_neck_set_enable(m, chr, on, ffx_sg::quat::bridge::matrix_to_quaternion);
+                    Res::Void
+                },
+            );
+        }
+    }
+    // system motion groups: keys the table holds, and others
+    let groups = t.a.rebase(0x0130_11e0);
+    let keys: Vec<u32> = (0..50)
+        .map(|i| rd::<u32>(&t.b, groups + 12 * i + 8))
+        .collect();
+    for round in 0..20u32 {
+        let key = if round % 2 == 0 {
+            keys[rng.next() as usize % keys.len()]
+        } else {
+            rng.next() % 4
+        };
+        let b = rng.next() % 3;
+        t.check(
+            &format!("ChN_ExistSystemMGRP {round}"),
+            0x0083_6850,
+            &[key, b],
+            |m| {
+                Res::Int(mo::chn_exist_system_mgrp(m, key, b, |m, x, y, k| {
+                    ffx_sg::seq::bridge::find_motion_group(m, x, y, k)
+                }))
+            },
+        );
+    }
+    // the first motion of a sequence
+    for round in 0..30u32 {
+        let chr = t.alloc(0x720);
+        let n = 1 + rng.next() as usize % 3;
+        // the jump targets, then the sequence itself
+        let base = t.alloc(0x100);
+        let mut offsets = Vec::new();
+        let mut at = 0u32;
+        for _ in 0..n {
+            let s = sequence(t, &mut rng, 0);
+            t.put(base + at, &s);
+            offsets.push(at);
+            at += u32::try_from(s.len()).unwrap();
+        }
+        let start = sequence(t, &mut rng, n);
+        let seq = t.alloc(start.len());
+        t.put(seq, &start);
+        let sg = t.alloc(0x10);
+        let tab = t.alloc(2 * n);
+        for (k, o) in offsets.iter().enumerate() {
+            t.put(
+                tab + 2 * u32::try_from(k).unwrap(),
+                &u16::try_from(*o).unwrap().to_le_bytes(),
+            );
+        }
+        t.put_u32(sg + 8, tab);
+        t.put_u32(sg + 0xc, base);
+        let mg = t.alloc(0x14);
+        t.put_u32(mg + 0x10, rng.next());
+        t.put_u32(chr + 0x70c, sg);
+        t.put_u32(chr + 0x710, mg);
+        t.put_u32(chr + 0x714, if round % 10 == 9 { 0 } else { seq });
+        t.check(
+            &format!("Ch_SeqGetFastMotion {round}"),
+            0x0083_7860,
+            &[chr],
+            |m| Res::Int(mo::ch_seq_get_fast_motion(m, chr)),
+        );
+    }
+    // names and paths
+    for round in 0..30u32 {
+        let id = ((rng.next() % 16) << 12) | (rng.next() % 0x1000);
+        t.check(
+            &format!("ch_create_chrname {id:#x} {round}"),
+            0x0083_8060,
+            &[id],
+            |m| Res::Int(ta::ch_create_chrname(m, id)),
+        );
+        t.check(
+            &format!("ch_create_chrpath {id:#x} {round}"),
+            0x0083_80b0,
+            &[id],
+            |m| Res::Int(ta::ch_create_chrpath(m, id)),
+        );
+    }
+}

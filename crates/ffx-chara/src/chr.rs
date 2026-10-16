@@ -812,6 +812,32 @@ pub mod bridge {
         }
         let _ = super::wrap_angle(a);
     }
+
+    /// `Ch_NeckSetEnable(chr, on)` (`0x00834f60`): the neck switch (byte
+    /// `+0x40c`) and its weight `+0x414` (1.0 or 0.0); turning it on with
+    /// the neck's target changed (byte `+0x40e` != `+0x40d`) restarts the
+    /// blend: `Sg_MatrixToQuaternion(chr + 0x46c, chr + 0x4ac)` (passed in)
+    /// and `+0x4bc` = 1.0. The target is then marked current.
+    pub fn ch_neck_set_enable<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        on: u32,
+        matrix_to_quaternion: impl FnOnce(&mut M, u32, u32),
+    ) {
+        #[allow(clippy::cast_possible_truncation)] // the low byte
+        mem.write(chr + 0x40c, on as u8);
+        if on == 0 {
+            mem.write(chr + 0x414, 0f32);
+        } else {
+            mem.write(chr + 0x414, 1f32);
+            if mem.read::<u8>(chr + 0x40e) != mem.read::<u8>(chr + 0x40d) {
+                matrix_to_quaternion(mem, chr + 0x46c, chr + 0x4ac);
+                mem.write(chr + 0x4bc, 1f32);
+            }
+        }
+        let t: u8 = mem.read(chr + 0x40d);
+        mem.write(chr + 0x40e, t);
+    }
 }
 
 #[cfg(test)]

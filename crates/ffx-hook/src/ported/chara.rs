@@ -1382,4 +1382,47 @@ ported! {
     Ch_AnimCopy2 @ 0x0083_9140 => extern "C" fn ch_anim_copy2(chr: u32) -> u8 {
         mo::bridge::ch_anim_copy2(&mem(), chr)
     }
+
+    // ---- round 7
+
+    /// `Ch_ReadSync()`: through the reader's sync entry.
+    Ch_ReadSync @ 0x0082_a5e0 => extern "C" fn ch_read_sync() -> u32 {
+        sy::ch_read_sync(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Chr_TableIndex(id)`.
+    Chr_TableIndex @ 0x0082_a640 => extern "C" fn chr_table_index(id: u32) -> i32 {
+        sy::chr_table_index(&mut mem(), id, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_RomReadEventMGRPsync(p)`.
+    Ch_RomReadEventMGRPsync @ 0x0082_a7f0 => extern "C" fn ch_rom_read_event_mgrp_sync(p: u32) -> u32 {
+        sy::ch_rom_read_event_mgrp_sync(&mut mem(), p, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_TextureLoadClut(chr, _)`.
+    Ch_TextureLoadClut @ 0x0083_11d0 => extern "C" fn ch_texture_load_clut(chr: u32, _x: u32) {
+        ta::ch_texture_load_clut(&mut mem(), chr);
+    }
+    /// `Ch_NeckSetEnable(chr, on)`; `Sg_MatrixToQuaternion` is the main
+    /// module's port.
+    Ch_NeckSetEnable @ 0x0083_4f60 => extern "C" fn ch_neck_set_enable(chr: u32, on: u32) {
+        c::ch_neck_set_enable(&mut mem(), chr, on, ffx_sg::quat::bridge::matrix_to_quaternion);
+    }
+    /// `ChN_ExistSystemMGRP(key, b)`; `SG_FindMotionGroup` is the main
+    /// module's port.
+    ChN_ExistSystemMGRP @ 0x0083_6850 => extern "C" fn chn_exist_system_mgrp(key: u32, b: u32) -> u32 {
+        mo::bridge::chn_exist_system_mgrp(&mut mem(), key, b, |m, x, y, k| {
+            ffx_sg::seq::bridge::find_motion_group(m, x, y, k)
+        })
+    }
+    /// `Ch_SeqGetFastMotion(chr)`.
+    Ch_SeqGetFastMotion @ 0x0083_7860 => extern "C" fn ch_seq_get_fast_motion(chr: u32) -> u32 {
+        mo::bridge::ch_seq_get_fast_motion(&mem(), chr)
+    }
+    /// `ch_create_chrname(id)`.
+    ch_create_chrname @ 0x0083_8060 => extern "C" fn ch_create_chrname(id: u32) -> u32 {
+        ta::ch_create_chrname(&mut mem(), id)
+    }
+    /// `ch_create_chrpath(id)`.
+    ch_create_chrpath @ 0x0083_80b0 => extern "C" fn ch_create_chrpath(id: u32) -> u32 {
+        ta::ch_create_chrpath(&mut mem(), id)
+    }
 }

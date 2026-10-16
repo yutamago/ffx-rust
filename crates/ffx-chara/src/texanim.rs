@@ -461,4 +461,50 @@ pub mod bridge {
         crate::handle::bridge::put_c_string(mem, at, s.as_bytes());
         at
     }
+
+    /// `Ch_TextureLoadClut(chr, _)` (`0x008311d0`): `ch_TextureLoad` on
+    /// the clut textures (`+0x6e4`, count `i16` `+0x6e8`).
+    pub fn ch_texture_load_clut(mem: &mut impl Mem, chr: u32) {
+        let t: u32 = mem.read(chr + 0x6e4);
+        let n = i32::from(mem.read::<i16>(chr + 0x6e8));
+        ch_texture_load(mem, t, n);
+    }
+
+    /// Where `ch_create_chrname` prints.
+    pub const CREATE_CHRNAME: Global<u8> = Global::new(0x0130_09f4);
+    /// Where `ch_create_chrpath` prints.
+    pub const CREATE_CHRPATH: Global<u8> = Global::new(0x0130_1758);
+
+    /// The `"<section>"`, kind letter and number of an id, as
+    /// `ch_create_chrname` and `ch_create_chrpath` print them.
+    fn name_parts(mem: &impl Mem, id: u32) -> (Vec<u8>, u8, u32) {
+        let kind = (id.cast_signed() >> 12).cast_unsigned() & 0xf;
+        let section = crate::handle::bridge::c_string(mem, ch_create_section(mem, id));
+        (section, db_type(kind), id & 0xfff)
+    }
+
+    fn print_parts(mem: &mut impl Mem, at: u32, head: &[u8], sep: u8, id: u32) -> u32 {
+        let (section, letter, n) = name_parts(mem, id);
+        let mut s = head.to_vec();
+        s.extend(section);
+        s.push(sep);
+        s.push(letter);
+        s.extend(format!("{n:03}").bytes());
+        crate::handle::bridge::put_c_string(mem, at, &s);
+        at
+    }
+
+    /// `ch_create_chrname(id)` (`0x00838060`): `sprintf("%s:%c%03d",
+    /// section, kind letter, id & 0xfff)` into its buffer; returns it.
+    pub fn ch_create_chrname(mem: &mut impl Mem, id: u32) -> u32 {
+        let at = CREATE_CHRNAME.ptr(mem).addr;
+        print_parts(mem, at, b"", b':', id)
+    }
+
+    /// `ch_create_chrpath(id)` (`0x008380b0`): `sprintf(
+    /// "/ffx/proj2/chr/data/%s/%c%03d", ...)` into its buffer; returns it.
+    pub fn ch_create_chrpath(mem: &mut impl Mem, id: u32) -> u32 {
+        let at = CREATE_CHRPATH.ptr(mem).addr;
+        print_parts(mem, at, b"/ffx/proj2/chr/data/", b'/', id)
+    }
 }
