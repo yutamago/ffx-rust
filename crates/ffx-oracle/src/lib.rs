@@ -96,6 +96,7 @@ enum Stub {
     Memmove,
     Memset,
     Crt(crt::Crt),
+    Win32(win32::Win32),
     Missing(usize),
 }
 
@@ -173,6 +174,8 @@ struct State {
     rand_seed: u32,
     /// Stub address by import name.
     imports: HashMap<String, u64>,
+    /// The single-threaded Win32 synchronisation stubs' state (`win32`).
+    win32: win32::Objects,
 }
 
 /// An emulated `FFX.exe` process.
@@ -264,6 +267,7 @@ impl Oracle {
             Mode::MODE_32,
             State {
                 rand_seed: 1,
+                win32: win32::Objects::default(),
                 ..State::default()
             },
         )?;
@@ -308,7 +312,9 @@ impl Oracle {
                 "memmove" => Stub::Memmove,
                 "memset" => Stub::Memset,
                 other => {
-                    if let Some(c) = crt::lookup(other) {
+                    if let Some(w) = win32::lookup(import.dll, other) {
+                        Stub::Win32(w)
+                    } else if let Some(c) = crt::lookup(other) {
                         Stub::Crt(c)
                     } else {
                         let state = uc.get_data_mut();
@@ -319,6 +325,7 @@ impl Oracle {
             };
             let code = match stub {
                 Stub::Crt(c) => crt::code(c, u32::try_from(next_stub).expect("32-bit")),
+                Stub::Win32(w) => win32::code(w),
                 _ => vec![0xc3],
             };
             uc.mem_write(next_stub, &code)?;
@@ -894,6 +901,7 @@ fn run_stub(uc: &mut Unicorn<State>, stub: Stub, addr: u64) -> Result<()> {
             dst
         }
         Stub::Crt(c) => crt::run(uc, c, u32::try_from(addr).expect("32-bit stub"))?,
+        Stub::Win32(w) => win32::run(uc, w)?,
         Stub::Missing(i) => return Err(Error::UnstubbedImport(uc.get_data().missing[i].clone())),
     };
     uc.reg_write(RegisterX86::EAX, u64::from(ret))?;
@@ -918,6 +926,206 @@ mod tests {
         let mut t = vec![(0x1000_0000, 0x1100_0000), (0x1180_0000, 0x1200_0000)];
         assert_eq!(gap(&mut t, 0x80_0000).unwrap(), 0x1100_0000);
         assert_eq!(gap(&mut t, 0x10_0000).unwrap(), 0x1200_0000);
+    }
+}
+
+/// KERNEL32's threading and synchronisation imports for one thread: waits
+/// are satisfied at once (`WAIT_OBJECT_0`), creations hand out fresh
+/// handles, the `Interlocked*` functions are plain read-modify-writes, and
+/// sleeps return. Semaphores keep their count so `ReleaseSemaphore` reports
+/// the previous one. These stay native whatever runs the C runtime, so they
+/// live apart from `crt`. All are stdcall; each stub's code is its `ret n`.
+mod win32 {
+    use super::{Result, State, crt};
+    use std::collections::HashMap;
+    use unicorn_engine::{RegisterX86, Unicorn};
+
+    /// One KERNEL32 import.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(super) enum Win32 {
+        WaitForSingleObject,
+        WaitForSingleObjectEx,
+        ReleaseMutex,
+        CreateMutex,
+        CreateEvent,
+        CreateSemaphore,
+        SetEvent,
+        ResetEvent,
+        ReleaseSemaphore,
+        CloseHandle,
+        InterlockedCompareExchange,
+        InterlockedExchange,
+        InterlockedExchangeAdd,
+        InterlockedIncrement,
+        InterlockedDecrement,
+        Sleep,
+        SleepEx,
+        GetLastError,
+        SetLastError,
+    }
+
+    /// The handles handed out and the semaphores' counts.
+    #[derive(Debug, Default)]
+    pub(super) struct Objects {
+        handles: u32,
+        last_error: u32,
+        semaphores: HashMap<u32, i32>,
+    }
+
+    /// First handle value (small, aligned like the kernel's).
+    const FIRST_HANDLE: u32 = 0x100;
+
+    /// The stub for a `dll!name` import, KERNEL32 only.
+    pub(super) fn lookup(dll: &str, name: &str) -> Option<Win32> {
+        if !dll.eq_ignore_ascii_case("KERNEL32.dll") {
+            return None;
+        }
+        Some(match name {
+            "WaitForSingleObject" => Win32::WaitForSingleObject,
+            "WaitForSingleObjectEx" => Win32::WaitForSingleObjectEx,
+            "ReleaseMutex" => Win32::ReleaseMutex,
+            "CreateMutexW" | "CreateMutexA" => Win32::CreateMutex,
+            "CreateEventW" | "CreateEventA" => Win32::CreateEvent,
+            "CreateSemaphoreW" | "CreateSemaphoreA" => Win32::CreateSemaphore,
+            "SetEvent" => Win32::SetEvent,
+            "ResetEvent" => Win32::ResetEvent,
+            "ReleaseSemaphore" => Win32::ReleaseSemaphore,
+            "CloseHandle" => Win32::CloseHandle,
+            "InterlockedCompareExchange" => Win32::InterlockedCompareExchange,
+            "InterlockedExchange" => Win32::InterlockedExchange,
+            "InterlockedExchangeAdd" => Win32::InterlockedExchangeAdd,
+            "InterlockedIncrement" => Win32::InterlockedIncrement,
+            "InterlockedDecrement" => Win32::InterlockedDecrement,
+            "Sleep" => Win32::Sleep,
+            "SleepEx" => Win32::SleepEx,
+            "GetLastError" => Win32::GetLastError,
+            "SetLastError" => Win32::SetLastError,
+            _ => return None,
+        })
+    }
+
+    /// The argument words each takes (the stub's `ret n`).
+    const fn args(w: Win32) -> u8 {
+        match w {
+            Win32::GetLastError => 0,
+            Win32::ReleaseMutex
+            | Win32::SetEvent
+            | Win32::ResetEvent
+            | Win32::CloseHandle
+            | Win32::InterlockedIncrement
+            | Win32::InterlockedDecrement
+            | Win32::Sleep
+            | Win32::SetLastError => 1,
+            Win32::WaitForSingleObject
+            | Win32::InterlockedExchange
+            | Win32::InterlockedExchangeAdd
+            | Win32::SleepEx => 2,
+            Win32::WaitForSingleObjectEx
+            | Win32::CreateMutex
+            | Win32::ReleaseSemaphore
+            | Win32::InterlockedCompareExchange => 3,
+            Win32::CreateEvent | Win32::CreateSemaphore => 4,
+        }
+    }
+
+    /// The code at the stub's address: `ret n` (`ret` for no arguments).
+    pub(super) fn code(w: Win32) -> Vec<u8> {
+        match args(w) {
+            0 => vec![0xc3],
+            n => vec![0xc2, 4 * n, 0],
+        }
+    }
+
+    fn word(uc: &mut Unicorn<State>, p: u32) -> Result<u32> {
+        let b = crt::read(uc, p, 4)?;
+        Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+    }
+
+    fn set_word(uc: &mut Unicorn<State>, p: u32, v: u32) -> Result<()> {
+        crt::write(uc, p, &v.to_le_bytes())
+    }
+
+    fn fresh(uc: &mut Unicorn<State>) -> u32 {
+        let o = &mut uc.get_data_mut().win32;
+        let h = FIRST_HANDLE + 4 * o.handles;
+        o.handles += 1;
+        h
+    }
+
+    /// Runs the import with the caller's arguments; its `eax`.
+    pub(super) fn run(uc: &mut Unicorn<State>, w: Win32) -> Result<u32> {
+        let esp = u32::try_from(uc.reg_read(RegisterX86::ESP)?).expect("32-bit");
+        let mut a = [0u32; 4];
+        for (k, v) in (0u32..).zip(a.iter_mut()).take(usize::from(args(w))) {
+            *v = word(uc, esp + 4 + 4 * k)?;
+        }
+        Ok(match w {
+            Win32::WaitForSingleObject | Win32::WaitForSingleObjectEx => {
+                if let Some(n) = uc.get_data_mut().win32.semaphores.get_mut(&a[0])
+                    && *n > 0
+                {
+                    *n -= 1;
+                }
+                0 // WAIT_OBJECT_0
+            }
+            Win32::CreateMutex | Win32::CreateEvent => fresh(uc),
+            Win32::CreateSemaphore => {
+                let h = fresh(uc);
+                uc.get_data_mut()
+                    .win32
+                    .semaphores
+                    .insert(h, a[1].cast_signed());
+                h
+            }
+            Win32::ReleaseMutex | Win32::SetEvent | Win32::ResetEvent => 1,
+            Win32::ReleaseSemaphore => {
+                let objects = &mut uc.get_data_mut().win32;
+                let count = objects.semaphores.entry(a[0]).or_insert(0);
+                let previous = *count;
+                *count = count.wrapping_add(a[1].cast_signed());
+                if a[2] != 0 {
+                    set_word(uc, a[2], previous.cast_unsigned())?;
+                }
+                1
+            }
+            Win32::CloseHandle => {
+                uc.get_data_mut().win32.semaphores.remove(&a[0]);
+                1
+            }
+            Win32::InterlockedCompareExchange => {
+                let old = word(uc, a[0])?;
+                if old == a[2] {
+                    set_word(uc, a[0], a[1])?;
+                }
+                old
+            }
+            Win32::InterlockedExchange => {
+                let old = word(uc, a[0])?;
+                set_word(uc, a[0], a[1])?;
+                old
+            }
+            Win32::InterlockedExchangeAdd => {
+                let old = word(uc, a[0])?;
+                set_word(uc, a[0], old.wrapping_add(a[1]))?;
+                old
+            }
+            Win32::InterlockedIncrement | Win32::InterlockedDecrement => {
+                let old = word(uc, a[0])?;
+                let new = if w == Win32::InterlockedIncrement {
+                    old.wrapping_add(1)
+                } else {
+                    old.wrapping_sub(1)
+                };
+                set_word(uc, a[0], new)?;
+                new
+            }
+            Win32::Sleep | Win32::SleepEx => 0,
+            Win32::GetLastError => uc.get_data().win32.last_error,
+            Win32::SetLastError => {
+                uc.get_data_mut().win32.last_error = a[0];
+                0
+            }
+        })
     }
 }
 
