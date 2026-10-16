@@ -311,7 +311,14 @@ pub mod bridge {
             }
         };
         if text.len() >= size as usize {
+            // MSVCR110's `sprintf_s` on a short buffer: it writes `size - 1`
+            // bytes and a NUL, then clears the first byte and calls the
+            // invalid-parameter handler (which ends the game; the oracle's
+            // returns -1).
             if size > 0 {
+                let n = size as usize - 1;
+                mem.write_bytes(out, &text[..n]);
+                mem.write(out.wrapping_add(size - 1), 0u8);
                 mem.write(out, 0u8);
             }
             return u32::MAX;
