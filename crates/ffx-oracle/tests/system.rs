@@ -2144,3 +2144,498 @@ fn round3_system_functions_match_the_original_on_the_snapshot() {
     };
     round3(&mut a, &mut b, &mut Xorshift(0x3003_0002));
 }
+
+// ---- the user heap and the page manager (ffx_system::heap) ----
+
+const USER_MALLOC: u32 = 0x0068_7020;
+const USER_FREE: u32 = 0x006f_b8b0;
+/// The import slots the heap calls through.
+const IAT_ENTER_CS: u32 = 0x00b0_c154;
+const IAT_LEAVE_CS: u32 = 0x00b0_c158;
+const IAT_VIRTUAL_ALLOC: u32 = 0x00b0_c09c;
+const IAT_VIRTUAL_FREE: u32 = 0x00b0_c098;
+/// Free image bytes after `.text` for the stand-ins.
+const HEAP_TEST_CODE: u32 = 0x00b0_bc00;
+
+/// Win32 stand-ins in both oracles: the critical sections do nothing,
+/// `VirtualFree` succeeds, `VirtualAlloc` commits in place or reserves the
+/// next 64 KiB-aligned piece of a test region (1 MiB and up: of a range
+/// nothing writes to), and fails for any size of exactly 0x3000 (to reach
+/// the flush-and-retry paths). The oracle has no TEB: every `fs:[0]`
+/// access in the image (the SEH registrations, which only touch the stack
+/// chain) becomes a no-op. Returns the two cursors' addresses.
+fn patch_heap_os(a: &mut Oracle, b: &mut Oracle) -> (u32, u32) {
+    let region = alloc(a, b, 0x220_0000);
+    let start = (region + 0xffff) & 0xffff_0000;
+    let cursors = alloc(a, b, 8);
+    put(a, b, cursors, [start, 0x8000_0000u32]);
+    for o in [a, b] {
+        let code = o.rebase(HEAP_TEST_CODE);
+        #[rustfmt::skip]
+        let mut va: Vec<u8> = vec![
+            0x8b, 0x44, 0x24, 0x04, 0x8b, 0x4c, 0x24, 0x08,             // eax = addr, ecx = size
+            0x81, 0xf9, 0x00, 0x30, 0x00, 0x00, 0x74, 0x34,             // size 0x3000: fail
+            0x85, 0xc0, 0x75, 0x32,                                     // addr: commit in place
+            0x81, 0xc1, 0xff, 0xff, 0x00, 0x00, 0x81, 0xe1, 0x00, 0x00, 0xff, 0xff,
+            0x81, 0xf9, 0x00, 0x00, 0x10, 0x00, 0x73, 0x0e,             // >= 1 MiB: big
+            0xa1, 0, 0, 0, 0, 0x01, 0x0d, 0, 0, 0, 0, 0xc2, 0x10, 0x00, // small cursor
+            0xa1, 0, 0, 0, 0, 0x01, 0x0d, 0, 0, 0, 0, 0xc2, 0x10, 0x00, // big cursor
+            0x31, 0xc0, 0xc2, 0x10, 0x00,
+        ];
+        for (at, c) in [
+            (41, cursors),
+            (47, cursors),
+            (55, cursors + 4),
+            (61, cursors + 4),
+        ] {
+            va[at..at + 4].copy_from_slice(&c.to_le_bytes());
+        }
+        o.write(code, &va).unwrap();
+        o.write(code + 0x60, &[0xb8, 1, 0, 0, 0, 0xc2, 0x0c, 0x00])
+            .unwrap();
+        o.write(code + 0x70, &[0xc2, 0x04, 0x00]).unwrap();
+        for (slot, at) in [
+            (IAT_VIRTUAL_ALLOC, code),
+            (IAT_VIRTUAL_FREE, code + 0x60),
+            (IAT_ENTER_CS, code + 0x70),
+            (IAT_LEAVE_CS, code + 0x70),
+        ] {
+            let s = o.rebase(slot);
+            Mem::write(o, s, at);
+        }
+        // fs:[0]: mov eax, fs:[0] / mov fs:[0], eax / mov fs:[0], ecx
+        let text = o.rebase(0x0040_1000);
+        let bytes = o.read(text, 0x0070_aa7b).unwrap();
+        let mut i = 0;
+        while i + 7 <= bytes.len() {
+            let w = &bytes[i..i + 7];
+            let at = text + u32::try_from(i).unwrap();
+            if w[..6] == [0x64, 0xa1, 0, 0, 0, 0] {
+                o.write(at, &[0xb8, 0, 0, 0, 0, 0x90]).unwrap();
+                i += 6;
+            } else if w[..6] == [0x64, 0xa3, 0, 0, 0, 0] {
+                o.write(at, &[0x90; 6]).unwrap();
+                i += 6;
+            } else if w == [0x64, 0x89, 0x0d, 0, 0, 0, 0] {
+                o.write(at, &[0x90; 7]).unwrap();
+                i += 7;
+            } else {
+                i += 1;
+            }
+        }
+    }
+    (cursors, cursors + 4)
+}
+
+/// The Rust side's Win32: the same stand-ins, the cursors kept here and
+/// copied into memory after each call ([`TestOs::sync`]).
+struct TestOs {
+    at: u32,
+    small: u32,
+    big: u32,
+    locks: i32,
+}
+
+impl TestOs {
+    fn new(o: &Oracle, at: u32) -> Self {
+        Self {
+            at,
+            small: Mem::read(o, at),
+            big: Mem::read(o, at + 4),
+            locks: 0,
+        }
+    }
+
+    /// Checks the cursors against `a`'s, then stores them in `b`.
+    fn sync(&self, a: &Oracle, b: &mut Oracle, what: &str) {
+        assert_eq!(
+            Mem::read::<[u32; 2]>(a, self.at),
+            [self.small, self.big],
+            "{what}: reservations"
+        );
+        Mem::write(b, self.at, [self.small, self.big]);
+    }
+
+    /// Takes `b`'s cursors after original code ran there.
+    fn reload(&mut self, b: &Oracle) {
+        self.small = Mem::read(b, self.at);
+        self.big = Mem::read(b, self.at + 4);
+    }
+}
+
+impl ffx_system::heap::Os for TestOs {
+    fn enter_critical_section(&mut self, _cs: u32) {
+        self.locks += 1;
+    }
+    fn leave_critical_section(&mut self, _cs: u32) {
+        self.locks -= 1;
+    }
+    fn virtual_alloc(&mut self, addr: u32, size: u32, _alloc_type: u32, _protect: u32) -> u32 {
+        if size == 0x3000 {
+            return 0;
+        }
+        if addr != 0 {
+            return addr;
+        }
+        let size = size.wrapping_add(0xffff) & 0xffff_0000;
+        let cursor = if size >= 0x10_0000 {
+            &mut self.big
+        } else {
+            &mut self.small
+        };
+        let r = *cursor;
+        *cursor = cursor.wrapping_add(size);
+        r
+    }
+    fn virtual_free(&mut self, _addr: u32, _size: u32, _free_type: u32) -> u32 {
+        1
+    }
+    fn report_free_failure(&mut self) {
+        panic!("VirtualFree failed");
+    }
+}
+
+/// A page manager as the game's starts: empty size lists and queue, no
+/// hash table, stamp 1.
+fn fresh_page_manager(a: &mut Oracle, b: &mut Oracle) -> u32 {
+    let mgr = alloc(a, b, 0x1c90);
+    for k in 0..0x100 {
+        let head = mgr + 0x1c * k;
+        put(a, b, head + 0xc, head);
+        put(a, b, head + 0x10, head);
+    }
+    let sentinel = mgr + 0x1c58;
+    put(a, b, sentinel + 8, sentinel);
+    put(a, b, sentinel + 0xc, sentinel);
+    put(a, b, mgr + 0x1c6c, 1u32);
+    mgr
+}
+
+/// Random mallocs (the original, in both; when `mallocs`) and frees (the
+/// original in `a`, `ffx_system::heap::user_free` in `b`); `live` starts
+/// with blocks the heap already holds. Memory compared after every free.
+#[allow(clippy::many_single_char_names)] // a, b: the oracles; n, k, p
+fn heap_rounds(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    mut live: Vec<u32>,
+    rounds: u32,
+    mallocs: bool,
+) {
+    let (cur_at, _) = patch_heap_os(a, b);
+    let mut os = TestOs::new(b, cur_at);
+    let start = os.small;
+    let (mut frees, mut nulls) = (0, 0);
+    for n in 0..rounds {
+        if live.is_empty() && !mallocs {
+            break;
+        }
+        let malloc = mallocs && (live.is_empty() || rng.next() % 5 < 2);
+        if malloc {
+            let size = match rng.next() % 4 {
+                0 => rng.next() % 0x40,
+                1 => rng.next() % 0x2000,
+                2 => rng.next() % 0x2_0000,
+                _ => 0x1000 * (rng.next() % 8),
+            };
+            let pa = eax(a, USER_MALLOC, &[size]);
+            let pb = eax(b, USER_MALLOC, &[size]);
+            assert_eq!(pa, pb, "malloc {n}");
+            os.reload(b);
+            if pa == 0 {
+                nulls += 1;
+            } else {
+                live.push(pa);
+            }
+        } else {
+            let k = (rng.next() as usize) % live.len();
+            let p = live.swap_remove(k);
+            eax(a, USER_FREE, &[p]);
+            ffx_system::heap::user_free(b, &mut os, p);
+            assert_eq!(os.locks, 0);
+            os.sync(a, b, &format!("free {n}"));
+            let d = a.diff(b).unwrap();
+            assert!(
+                d.is_empty(),
+                "free {n} of {p:#x}: {} bytes differ, first {:x?}",
+                d.len(),
+                &d[..d.len().min(8)]
+            );
+            frees += 1;
+        }
+    }
+    let mgr = ffx_system::heap::PAGE_MANAGER.get(b);
+    eprintln!(
+        "{frees} frees, {nulls} null mallocs, {} reserved, queue {:#x}, cached {:#x}, hash count {}, cache-node pages {}, queue-node pages {}",
+        (os.small - start) >> 16,
+        Mem::read::<u32>(b, mgr + 0x1c00),
+        Mem::read::<u32>(b, mgr + 0x1c08),
+        Mem::read::<u32>(b, mgr + 0x1c2c),
+        Mem::read::<u32>(b, mgr + 0x1c48),
+        Mem::read::<u32>(b, mgr + 0x1c54),
+    );
+}
+
+#[test]
+fn the_user_heap_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let (a, b) = (&mut a, &mut b);
+    // a small heap: arenas of 512 KiB, bins over 0x40..0x70000 (smaller
+    // remainders stay free without a node: 3)
+    let mgr = fresh_page_manager(a, b);
+    set(a, b, ffx_system::heap::PAGE_MANAGER, mgr);
+    let base = alloc(a, b, 0x30);
+    let heap = base + 0x18;
+    put(a, b, heap, [0x8_0000u32, 0x40, 0x7_0000, 0, 0x10, 0]);
+    set(a, b, ffx_system::heap::USER_HEAP, base);
+    heap_rounds(a, b, &mut Xorshift(0x4ea9_0001), Vec::new(), 6000, true);
+}
+
+/// The blocks in use in the game's heap, by walking its arenas.
+fn heap_blocks(o: &Oracle) -> Vec<u32> {
+    let heap = ffx_system::heap::USER_HEAP.get(o) + 0x18;
+    let size: u32 = Mem::read(o, heap);
+    let mut arena: u32 = Mem::read(o, heap + 0xc);
+    let mut out = Vec::new();
+    while arena != 0 {
+        let mut blk = arena + 0x1010;
+        while blk < arena + size {
+            let s: u32 = Mem::read(o, blk + 4);
+            if s == 0 {
+                break;
+            }
+            if Mem::read::<u32>(o, blk + 0xc) <= 2 {
+                out.push(blk + 0x10);
+            }
+            blk += s;
+        }
+        arena = Mem::read(o, arena + 0xff0);
+    }
+    out
+}
+
+/// Whether the page manager's decommit queue links both ways and its
+/// queue-node free list stays on the pool's pages. The field snapshot
+/// caught it torn (another thread inside its lock: the queue's one node
+/// points back elsewhere, the free list runs into a block's data).
+fn page_manager_consistent(o: &Oracle) -> bool {
+    let mgr = ffx_system::heap::PAGE_MANAGER.get(o);
+    let sentinel = mgr + 0x1c58;
+    let mut n: u32 = Mem::read(o, sentinel + 0xc);
+    let mut prev = sentinel;
+    for _ in 0..100_000 {
+        if Mem::read::<u32>(o, n + 8) != prev {
+            return false;
+        }
+        if n == sentinel {
+            break;
+        }
+        prev = n;
+        n = Mem::read(o, n + 0xc);
+    }
+    let mut pages = Vec::new();
+    let mut page: u32 = Mem::read(o, mgr + 0x1c50);
+    while page != 0 && pages.len() < 1000 {
+        pages.push(page);
+        page = Mem::read(o, page);
+    }
+    let mut node: u32 = Mem::read(o, mgr + 0x1c4c);
+    for _ in 0..100_000 {
+        if node == 0 {
+            return true;
+        }
+        if !pages.contains(&(node & 0xffff_f000)) {
+            return false;
+        }
+        node = Mem::read(o, node);
+    }
+    false
+}
+
+#[test]
+fn the_user_heap_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let (a, b) = (&mut a, &mut b);
+    if !page_manager_consistent(a) {
+        // an empty queue and node pool, in both
+        let mgr = ffx_system::heap::PAGE_MANAGER.get(a);
+        let sentinel = mgr + 0x1c58;
+        put(a, b, sentinel + 8, sentinel);
+        put(a, b, sentinel + 0xc, sentinel);
+        put(a, b, mgr + 0x1c00, 0u32);
+        put(a, b, mgr + 0x1c4c, [0u32; 3]);
+        eprintln!("the snapshot's page manager was torn: queue and queue nodes emptied");
+    }
+    let blocks = heap_blocks(a);
+    assert!(blocks.len() > 100, "{} blocks in use", blocks.len());
+    let mut rng = Xorshift(0x4ea9_0002);
+    // runs of neighbours (merges both ways) and scattered blocks
+    let mut live = Vec::new();
+    while live.len() < 1500 {
+        let k = (rng.next() as usize) % blocks.len();
+        let run = 1 + rng.next() as usize % 6;
+        live.extend(blocks.iter().skip(k).take(run));
+    }
+    live.sort_unstable();
+    live.dedup();
+    // frees only: a new block may need pages the snapshot does not hold
+    heap_rounds(a, b, &mut rng, live, 4000, false);
+}
+
+const PAGE_ALLOC: u32 = 0x0094_8130;
+const RELEASE_PAGES: u32 = 0x0094_7ec0;
+const QUEUE_DECOMMIT: u32 = 0x0094_7690;
+const COMMIT_PAGES: u32 = 0x0094_7590;
+const FLUSH_PAGES: u32 = 0x0094_78e0;
+const BIN_INDEX: u32 = 0x0094_32e0;
+
+/// The page manager's entry points on a fresh manager: reservations
+/// (cached and new, aligned or not, big ones, failing ones), give-backs,
+/// queued decommits, commits over queued ranges, flushes as the stamp
+/// moves; enough live reservations to grow the hash table.
+#[test]
+#[allow(clippy::too_many_lines)] // one script of page-manager operations
+fn the_page_manager_matches_the_original() {
+    use ffx_system::heap as h;
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let (a, b) = (&mut a, &mut b);
+    let mgr = fresh_page_manager(a, b);
+    set(a, b, h::PAGE_MANAGER, mgr);
+    let (cursors, _) = patch_heap_os(a, b);
+    let mut os = TestOs::new(b, cursors);
+    let mut rng = Xorshift(0x9a6e_0001);
+    let mut live: Vec<(u32, u32)> = Vec::new();
+    let mut queued: Vec<(u32, u32)> = Vec::new();
+    let mut counts = [0u32; 6];
+    for n in 0..5000u32 {
+        let op = if n < 520 { 0 } else { rng.next() % 6 };
+        counts[op as usize] += 1;
+        let what = format!("op {op} at {n}");
+        match op {
+            0 => {
+                let size = if n < 520 {
+                    0x10_0000
+                } else {
+                    [
+                        0x1000, 0x2000, 0x3000, 0x4000, 0x1_0000, 0x2_0000, 0x10_0000, 0x80_0000,
+                    ][(rng.next() % 8) as usize]
+                };
+                let align = [0x1000, 0x1000, 0x1_0000, 0x4_0000][(rng.next() % 4) as usize];
+                let ra = call(a, PAGE_ALLOC, Conv::Thiscall(mgr), &[size, align]).eax;
+                let rb = h::page_alloc(b, &mut os, mgr, size, align);
+                assert_eq!(ra, rb, "{what}");
+                if ra != 0 {
+                    assert!(live.iter().all(|&(q, _)| q != ra), "{what}: {ra:#x} twice");
+                    live.push((ra, size));
+                }
+            }
+            1 if !live.is_empty() && n >= 900 => {
+                let (p, _) = live.swap_remove((rng.next() as usize) % live.len());
+                call(a, RELEASE_PAGES, Conv::Thiscall(mgr), &[p]);
+                h::release_pages(b, &mut os, mgr, p);
+            }
+            2 | 3 if !live.is_empty() => {
+                let (p, size) = live[(rng.next() as usize) % live.len()];
+                let pages = size / 0x1000;
+                let first = rng.next() % pages;
+                let len = 1 + rng.next() % (pages - first).min(8);
+                let (mut at, mut bytes) = (p + first * 0x1000, len * 0x1000);
+                if op == 3 && !queued.is_empty() && !rng.next().is_multiple_of(4) {
+                    // over a queued range: the same, from inside, from
+                    // before, or across the next ones
+                    let (q, qlen) = queued[(rng.next() as usize) % queued.len()];
+                    (at, bytes) = match rng.next() % 4 {
+                        0 => (q, qlen),
+                        1 => (
+                            q + 0x1000 * (rng.next() % (qlen / 0x1000)),
+                            0x1000 * (1 + rng.next() % 4),
+                        ),
+                        2 => (
+                            q.saturating_sub(0x1000 * (1 + rng.next() % 3)),
+                            qlen + 0x1000,
+                        ),
+                        _ => (q, qlen + 0x1000 * (rng.next() % 16)),
+                    };
+                }
+                if op == 2 {
+                    queued.push((at, bytes));
+                    if queued.len() > 16 {
+                        queued.remove(0);
+                    }
+                    call(a, QUEUE_DECOMMIT, Conv::Thiscall(mgr), &[at, bytes]);
+                    h::queue_decommit(b, &mut os, mgr, at, bytes);
+                } else {
+                    let ra = call(a, COMMIT_PAGES, Conv::Thiscall(mgr), &[at, bytes]).eax & 0xff;
+                    let rb = h::commit(b, &mut os, mgr, at, bytes);
+                    assert_eq!(ra, u32::from(rb), "{what}");
+                }
+            }
+            4 => {
+                let force = u32::from(rng.next().is_multiple_of(4));
+                call(a, FLUSH_PAGES, Conv::Thiscall(mgr), &[force]);
+                h::flush(b, &mut os, mgr, u8::from(force != 0));
+            }
+            _ => {
+                let stamp = Mem::read::<u32>(a, mgr + 0x1c6c) + 1;
+                put(a, b, mgr + 0x1c6c, stamp);
+            }
+        }
+        assert_eq!(os.locks, 0, "{what}");
+        os.sync(a, b, &what);
+        let d = a.diff(b).unwrap();
+        assert!(
+            d.is_empty(),
+            "{what}: {} bytes differ, first {:x?}",
+            d.len(),
+            &d[..d.len().min(8)]
+        );
+    }
+    // one reservation of 256 MiB, released rather than kept
+    let ra = call(a, PAGE_ALLOC, Conv::Thiscall(mgr), &[0x1000_0000, 0x1000]).eax;
+    assert_eq!(ra, h::page_alloc(b, &mut os, mgr, 0x1000_0000, 0x1000));
+    call(a, RELEASE_PAGES, Conv::Thiscall(mgr), &[ra]);
+    h::release_pages(b, &mut os, mgr, ra);
+    os.sync(a, b, "256 MiB");
+    same_memory("256 MiB", a, b);
+    eprintln!(
+        "ops {counts:?}, hash capacity {:#x}, live {}",
+        Mem::read::<u32>(b, mgr + 0x1c24),
+        live.len()
+    );
+
+    // the bins over made-up bounds, both sides of the bend
+    let heap = alloc(a, b, 0x18);
+    for k in 0..4000u32 {
+        let lo = [0, 0x10, rng.next() % 0x1000, rng.next()][(k % 4) as usize];
+        let range = [
+            0x1000,
+            0x23dc,
+            0x23dd,
+            0x7_0000,
+            0x2ff0_0000,
+            rng.next() % 0x4000_0000 + 1,
+        ][(k % 6) as usize];
+        put(a, b, heap, [0, lo, lo.wrapping_add(range)]);
+        let size = match k % 3 {
+            0 => lo.wrapping_add(rng.next() % (range + 1)),
+            1 => rng.next(),
+            _ => lo.wrapping_add(range).wrapping_add(rng.next() % 0x100),
+        };
+        let ra = call(a, BIN_INDEX, Conv::Thiscall(heap), &[size]);
+        let rb = h::bin_index(b, heap, size);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // edx:eax
+        let (lo32, hi32) = (rb as u32, (rb >> 32) as u32);
+        assert_eq!(
+            (ra.eax, ra.edx),
+            (lo32, hi32),
+            "bin of {size:#x} over {lo:#x}+{range:#x}"
+        );
+    }
+}

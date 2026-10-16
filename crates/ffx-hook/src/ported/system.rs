@@ -5,11 +5,92 @@
 use ffx_bridge::Mem;
 use ffx_menu::scene::bridge as menu_scene;
 use ffx_system::{
-    btl, cd, config, fixup, instance, math, menu, msg, names, pad, pkt, render, save, scene, stl,
-    stub, vbf, window,
+    btl, cd, config, fixup, heap, instance, math, menu, msg, names, pad, pkt, render, save, scene,
+    stl, stub, vbf, window,
 };
 
 use super::{mem, ported};
+
+/// The heap's Win32 calls, through the game's own import slots (so they are
+/// the calls the originals make, to the same critical sections).
+struct GameOs;
+
+impl GameOs {
+    /// The function in import slot `slot`.
+    fn import(slot: u32) -> usize {
+        // SAFETY: an import slot of this build, filled by the loader.
+        unsafe { (crate::rebase(slot) as *const usize).read() }
+    }
+}
+
+impl heap::Os for GameOs {
+    fn enter_critical_section(&mut self, cs: u32) {
+        // SAFETY: EnterCriticalSection(cs), stdcall; `cs` is the game's.
+        unsafe {
+            let f: unsafe extern "stdcall" fn(u32) = std::mem::transmute(Self::import(0x00b0_c154));
+            f(cs);
+        }
+    }
+    fn leave_critical_section(&mut self, cs: u32) {
+        // SAFETY: LeaveCriticalSection(cs), stdcall.
+        unsafe {
+            let f: unsafe extern "stdcall" fn(u32) = std::mem::transmute(Self::import(0x00b0_c158));
+            f(cs);
+        }
+    }
+    fn virtual_alloc(&mut self, addr: u32, size: u32, alloc_type: u32, protect: u32) -> u32 {
+        // SAFETY: VirtualAlloc, stdcall.
+        unsafe {
+            let f: unsafe extern "stdcall" fn(u32, u32, u32, u32) -> u32 =
+                std::mem::transmute(Self::import(0x00b0_c09c));
+            f(addr, size, alloc_type, protect)
+        }
+    }
+    fn virtual_free(&mut self, addr: u32, size: u32, free_type: u32) -> u32 {
+        // SAFETY: VirtualFree, stdcall.
+        unsafe {
+            let f: unsafe extern "stdcall" fn(u32, u32, u32) -> u32 =
+                std::mem::transmute(Self::import(0x00b0_c098));
+            f(addr, size, free_type)
+        }
+    }
+    fn report_free_failure(&mut self) {
+        // As the originals: FormatMessageA(ALLOCATE_BUFFER | FROM_SYSTEM,
+        // 0, GetLastError(), 0, &message, 0x1000, &args), then the error
+        // hook at 0x0193cd4c with the message, when one is set.
+        // SAFETY: GetLastError and FormatMessageA (stdcall) through their
+        // import slots; the hook is the game's cdecl callback.
+        unsafe {
+            let last: unsafe extern "stdcall" fn() -> u32 =
+                std::mem::transmute(Self::import(0x00b0_c030));
+            let format: unsafe extern "stdcall" fn(
+                u32,
+                u32,
+                u32,
+                u32,
+                *mut u32,
+                u32,
+                *mut u32,
+            ) -> u32 = std::mem::transmute(Self::import(0x00b0_c070));
+            let mut message = 0u32;
+            let mut args = 0u32;
+            format(
+                0x1100,
+                0,
+                last(),
+                0,
+                &raw mut message,
+                0x1000,
+                &raw mut args,
+            );
+            let hook = (crate::rebase(0x0193_cd4c) as *const usize).read();
+            if hook != 0 {
+                let f: unsafe extern "C" fn(u32) = std::mem::transmute(hook);
+                f(message);
+            }
+        }
+    }
+}
 
 ported! {
     /// `set_ptr32(p)`: `p`.
@@ -720,6 +801,135 @@ ported! {
     /// `TOMenuSet_018762ee(i, v)`.
     TOMenuSet_018762ee @ 0x0090_0f60 => extern "C" fn to_menu_set_018762ee(i: i32, v: u32) {
         window::bridge::menu_set_018762ee(&mut mem(), i, v);
+    }
+    /// `user_free(p)`: the original leaves `LeaveCriticalSection`'s `eax`,
+    /// which is `RtlLeaveCriticalSection`'s `STATUS_SUCCESS`, 0 (what
+    /// `tools/check-clobber.py` sees read after `0x007783cb` is the end of a
+    /// function body Ghidra cut short; the caller clears `eax`).
+    user_free @ 0x006f_b8b0 => extern "C" fn user_free(p: u32) -> u32 {
+        heap::user_free(&mut mem(), &mut GameOs, p);
+        0
+    }
+    /// `UserHeap_Free(p)` (`this` the allocator).
+    UserHeap_Free @ 0x0094_3130 => extern "thiscall" fn user_heap_free(this: u32, p: u32) -> bool {
+        heap::heap_free(&mut mem(), &mut GameOs, this, p)
+    }
+    /// `UserHeap_InsertFree(node, arena)`.
+    UserHeap_InsertFree @ 0x0094_34c0 => extern "thiscall" fn user_heap_insert_free(this: u32, node: u32, arena: u32) {
+        heap::insert_free(&mut mem(), this, node, arena);
+    }
+    /// `UserHeap_RemoveFree(node)`: leaves `node` in eax.
+    UserHeap_RemoveFree @ 0x0094_35a0 => extern "thiscall" fn user_heap_remove_free(_this: u32, node: u32) -> u32 {
+        heap::remove_free(&mut mem(), node);
+        node
+    }
+    /// `UserHeap_BinIndex(size)`: in edx:eax.
+    UserHeap_BinIndex @ 0x0094_32e0 => extern "thiscall" fn user_heap_bin_index(this: u32, size: u32) -> i64 {
+        heap::bin_index(&mem(), this, size)
+    }
+    /// `UserHeap_ReleaseArena(arena)`.
+    UserHeap_ReleaseArena @ 0x0094_3050 => extern "thiscall" fn user_heap_release_arena(this: u32, arena: u32) {
+        heap::release_arena(&mut mem(), &mut GameOs, this, arena);
+    }
+    /// `UserHeap_NodeAlloc()` (the pool in ECX).
+    UserHeap_NodeAlloc @ 0x0094_85b0 => extern "fastcall" fn user_heap_node_alloc(pool: u32) -> u32 {
+        heap::node_alloc(&mut mem(), &mut GameOs, pool)
+    }
+    /// `UserHeap_NodeNewPage()` (the pool in ECX).
+    UserHeap_NodeNewPage @ 0x0094_85f0 => extern "fastcall" fn user_heap_node_new_page(pool: u32) -> u32 {
+        heap::node_new_page(&mut mem(), &mut GameOs, pool)
+    }
+    /// `UserHeap_NodeFree(node)` (`this` the pool).
+    UserHeap_NodeFree @ 0x0094_86a0 => extern "thiscall" fn user_heap_node_free(this: u32, node: u32) {
+        heap::node_free(&mut mem(), &mut GameOs, this, node);
+    }
+    /// `PageManager_Alloc(size, align)`.
+    PageManager_Alloc @ 0x0094_8130 => extern "thiscall" fn page_manager_alloc(this: u32, size: u32, align: u32) -> u32 {
+        heap::page_alloc(&mut mem(), &mut GameOs, this, size, align)
+    }
+    /// `PageAlloc(size, align)`: on `*g_PageManager`.
+    PageAlloc @ 0x0094_8110 => extern "C" fn page_alloc(size: u32, align: u32) -> u32 {
+        let m = &mut mem();
+        let mgr = heap::PAGE_MANAGER.get(m);
+        heap::page_alloc(m, &mut GameOs, mgr, size, align)
+    }
+    /// `PageManager_Commit(addr, size)`.
+    PageManager_Commit @ 0x0094_7590 => extern "thiscall" fn page_manager_commit(this: u32, addr: u32, size: u32) -> bool {
+        heap::commit(&mut mem(), &mut GameOs, this, addr, size)
+    }
+    /// `PageCommit(addr, size)`: on `*g_PageManager`.
+    PageCommit @ 0x0094_7570 => extern "C" fn page_commit(addr: u32, size: u32) -> bool {
+        let m = &mut mem();
+        let mgr = heap::PAGE_MANAGER.get(m);
+        heap::commit(m, &mut GameOs, mgr, addr, size)
+    }
+    /// `PageManager_CommitRange(&addr, &size)`.
+    PageManager_CommitRange @ 0x0094_83d0 => extern "thiscall" fn page_manager_commit_range(this: u32, pa: u32, ps: u32) -> bool {
+        heap::commit_range_at(&mut mem(), &mut GameOs, this, pa, ps)
+    }
+    /// `PageManager_QueueDecommit(addr, size)`.
+    PageManager_QueueDecommit @ 0x0094_7690 => extern "thiscall" fn page_manager_queue_decommit(this: u32, addr: u32, size: u32) {
+        heap::queue_decommit(&mut mem(), &mut GameOs, this, addr, size);
+    }
+    /// `PageQueueDecommit(addr, size)`: on `*g_PageManager`.
+    PageQueueDecommit @ 0x0094_7670 => extern "C" fn page_queue_decommit(addr: u32, size: u32) {
+        let m = &mut mem();
+        let mgr = heap::PAGE_MANAGER.get(m);
+        heap::queue_decommit(m, &mut GameOs, mgr, addr, size);
+    }
+    /// `PageManager_Release(addr)`.
+    PageManager_Release @ 0x0094_7ec0 => extern "thiscall" fn page_manager_release(this: u32, addr: u32) {
+        heap::release_pages(&mut mem(), &mut GameOs, this, addr);
+    }
+    /// `PageRelease(addr)`: on `*g_PageManager`.
+    PageRelease @ 0x0094_7e80 => extern "C" fn page_release(addr: u32) {
+        let m = &mut mem();
+        let mgr = heap::PAGE_MANAGER.get(m);
+        heap::release_pages(m, &mut GameOs, mgr, addr);
+    }
+    /// `PageManager_Flush(force)` (a byte).
+    PageManager_Flush @ 0x0094_78e0 => extern "thiscall" fn page_manager_flush(this: u32, force: u32) {
+        heap::flush(&mut mem(), &mut GameOs, this, force.to_le_bytes()[0]);
+    }
+    /// `PageHash_Insert(&key, &data)`.
+    PageHash_Insert @ 0x0094_7270 => extern "thiscall" fn page_hash_insert(this: u32, key: u32, data: u32) {
+        heap::hash_insert_at(&mut mem(), &mut GameOs, this, key, data);
+    }
+    /// `PageHash_Remove(&out, &key)`: returns `out`.
+    PageHash_Remove @ 0x0094_8000 => extern "thiscall" fn page_hash_remove(this: u32, out: u32, key: u32) -> u32 {
+        heap::hash_remove_at(&mut mem(), this, out, key)
+    }
+    /// `PageHash_Rehash(n)`.
+    PageHash_Rehash @ 0x0094_82c0 => extern "thiscall" fn page_hash_rehash(this: u32, n: i32) {
+        heap::hash_rehash(&mut mem(), &mut GameOs, this, n);
+    }
+    /// `PageHash_NodeAlloc()` (the table in ECX).
+    PageHash_NodeAlloc @ 0x0094_7430 => extern "fastcall" fn page_hash_node_alloc(table: u32) -> u32 {
+        heap::alloc_hash_node(&mut mem(), &mut GameOs, table)
+    }
+    /// `PageManager_QueueNodeAlloc()` (the pool in ECX).
+    PageManager_QueueNodeAlloc @ 0x0094_7350 => extern "fastcall" fn page_manager_queue_node_alloc(pool: u32) -> u32 {
+        heap::alloc_queue_node(&mut mem(), &mut GameOs, pool)
+    }
+    /// `PageManager_CacheNodeAlloc()` (the pool in ECX).
+    PageManager_CacheNodeAlloc @ 0x0094_73c0 => extern "fastcall" fn page_manager_cache_node_alloc(pool: u32) -> u32 {
+        heap::alloc_cache_node(&mut mem(), &mut GameOs, pool)
+    }
+    /// `VirtualAlloc_Commit_RW(addr, size)`.
+    VirtualAlloc_Commit_RW @ 0x0094_38b0 => extern "C" fn virtual_alloc_commit_rw(addr: u32, size: u32) -> u32 {
+        heap::commit_rw(&mut mem(), &mut GameOs, addr, size)
+    }
+    /// `VirtualFree_Decommit(addr, size)`.
+    VirtualFree_Decommit @ 0x0094_38e0 => extern "C" fn virtual_free_decommit(addr: u32, size: u32) {
+        heap::decommit(&mut mem(), &mut GameOs, addr, size);
+    }
+    /// `VirtualFree_Release(addr, size)`: returns `size`.
+    VirtualFree_Release @ 0x0094_3940 => extern "C" fn virtual_free_release(addr: u32, size: u32) -> u32 {
+        heap::release(&mut mem(), &mut GameOs, addr, size)
+    }
+    /// `VirtualAlloc_Reserve_NA(size)`.
+    VirtualAlloc_Reserve_NA @ 0x0094_39a0 => extern "C" fn virtual_alloc_reserve_na(size: u32) -> u32 {
+        heap::reserve(&mut mem(), &mut GameOs, size)
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {

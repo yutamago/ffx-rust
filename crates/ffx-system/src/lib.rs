@@ -8,6 +8,7 @@ pub mod btl;
 pub mod cd;
 pub mod config;
 pub mod fixup;
+pub mod heap;
 pub mod instance;
 pub mod math;
 pub mod menu;

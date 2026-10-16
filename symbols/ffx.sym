@@ -1304,7 +1304,7 @@
 0x006fb130 function SyncManager_syncDataChangeAsyncTask # fh v3:exact 0x006fb210 SyncManager::syncDataChangeAsyncTask
 0x006fb160 function SyncManager_syncGetData   # fh v3:exact 0x006fb240 SyncManager::syncGetData
 0x006fb6c0 function user_aligned_free         # fh v3:exact 0x006fb7a0
-0x006fb8b0 function user_free                 # fh v3:exact 0x006fb990
+0x006fb8b0 function user_free                 # cdecl(p): UserHeap_Free(*g_UserHeap + 0x18, p) under the heap's critical section (*g_UserHeap + 0); fh v3:exact 0x006fb990
 0x006fb9b0 function malloc_pool_init          # fh call.cs cdecl _malloc_pool_init
 0x00703bc0 function cdc_Vector_CanNormalize3  # thiscall(v): al = 1 when (x²+y²)+z² (stored f32) is not NaN (_isnan), finite (_finite) and > FLT_MIN (0x00b4cf60); only caller cdc_Vector_SafeNormalize3; name ours
 0x00704200 function cdc_Vector_SafeNormalize3 # fh v3:exact 0x007042f0 cdc::Vector::SafeNormalize3
@@ -5406,9 +5406,35 @@
 0x0093da30 function movieOpen                 # fh switch:bsim1.00 0x710056ae50
 0x0093e510 function chr_anim_win              # fh switch:bsim1.00 0x710056aae0
 0x00942110 function sasa_menu                 # fh v3:exact 0x00942110
+0x00942b60 function UserHeap_Alloc            # thiscall(heap, size) -> p: (size + 15 & ~15) + 16 from FUN_00943380's free node; header +0 0xabcdef12, +4 size, +8 previous size, +0xc 2 in use; name ours
+0x00943050 function UserHeap_ReleaseArena     # thiscall(heap, arena), ret 4: unchains an arena that is one free block, its node to the pool, its first two pages and last header page to PageQueueDecommit, PageRelease; name ours
+0x00943130 function UserHeap_Free             # thiscall(heap, p), ret 4 -> al: the block's arena, merges with free neighbours (node > 3 removed, 3 = free without node), one node into the bins, whole pages inside queued for decommit, an empty arena released; name ours
+0x009432e0 function UserHeap_BinIndex         # thiscall(heap, size), ret 4 -> edx:eax: x = min(size - heap[1], heap[2] - heap[1]); over 0x23dc x = r - (r - x)^3 / r^2 (64-bit, __allmul/__alldiv); x * 254 / r; name ours
+0x009434c0 function UserHeap_InsertFree       # thiscall(heap, node, arena), ret 8: node into arena's bin (16-byte heads at arena + 16 bin): by size then address, bin 254 by address; name ours
+0x009435a0 function UserHeap_RemoveFree       # thiscall(heap, node), ret 4: unlinks a free node (+4 prev, +8 next), clears them; leaves node in eax; name ours
 0x009438b0 function VirtualAlloc_Commit_RW    # fh v3:exact+call.cs 0x009438b0 cdecl _VirtualAlloc_Commit_RW
-0x009438e0 function VirtualFree_Decommit      # fh call.cs cdecl _VirtualFree_Decommit
+0x009438e0 function VirtualFree_Decommit      # cdecl(addr, size): VirtualFree(MEM_DECOMMIT); on failure GetLastError + FormatMessageA to the hook at 0x0193cd4c; g_CommittedBytes -= size; fh call.cs cdecl _VirtualFree_Decommit
+0x00943940 function VirtualFree_Release       # cdecl(addr, size) -> size: VirtualFree(addr, 0, MEM_RELEASE) (failure as VirtualFree_Decommit); g_ReservedBytes -= size; name ours
 0x009439a0 function VirtualAlloc_Reserve_NA   # fh v3:exact+call.cs 0x009439a0 cdecl _VirtualAlloc_Reserve_NA
+0x00947270 function PageHash_Insert           # thiscall(table, &key, &data), ret 8: linear probing on key[1] (address_hash); grows (PageHash_Rehash) at 0 or count == cap*0x66/256; nodes of 24 bytes (address, hash, size, reserved, base, align); name ours
+0x00947350 function PageManager_QueueNodeAlloc # fastcall(pool = mgr + 0x1c4c): 20-byte decommit-queue node; a fresh zeroed page (VirtualAlloc reserve + commit) when the free list is empty; name ours
+0x009473c0 function PageManager_CacheNodeAlloc # fastcall(pool = mgr + 0x1c40): 28-byte cached-reservation node, as PageManager_QueueNodeAlloc; name ours
+0x00947430 function PageHash_NodeAlloc        # fastcall(table): a 24-byte node (link cleared), a fresh page of 169 when none is free; name ours
+0x00947570 function PageCommit                # cdecl(addr, size) -> al: PageManager_Commit on *g_PageManager; name ours
+0x00947590 function PageManager_Commit        # thiscall(mgr, addr, size), ret 8 -> al: PageManager_CommitRange, else PageManager_Flush(1) and again; name ours
+0x00947670 function PageQueueDecommit         # cdecl(addr, size): PageManager_QueueDecommit on *g_PageManager; name ours
+0x00947690 function PageManager_QueueDecommit # thiscall(mgr, addr, size), ret 8: queues the range (sorted by address, stamp = frame stamp + 1) for PageManager_Flush to decommit; name ours
+0x009478e0 function PageManager_Flush         # thiscall(mgr, force), ret 4: decommits queued ranges and releases cached reservations whose stamp <= mgr+0x1c6c (all when force or the stamp is 0); name ours
+0x00947e80 function PageRelease               # cdecl(addr): PageManager_Release on *g_PageManager; name ours
+0x00947ec0 function PageManager_Release       # thiscall(mgr, addr), ret 4: PageHash_Remove; under 256 MiB reserved kept in list reserved >> 20 (stamped), else VirtualFree_Release; name ours
+0x00948000 function PageHash_Remove           # thiscall(table, &out, &key), ret 8 -> out: removes (backward shift over the cluster), data to out, node to the free list; name ours
+0x00948110 function PageAlloc                 # cdecl(size, align): PageManager_Alloc on *g_PageManager; name ours
+0x00948130 function PageManager_Alloc         # thiscall(mgr, size, align), ret 8 -> address: a cached reservation of that size and alignment, else VirtualAlloc_Reserve_NA (size, or size + align - 2 rounded up; PageManager_Flush(1) and again on failure); PageHash_Insert; name ours
+0x009482c0 function PageHash_Rehash           # thiscall(table, n), ret 4: capacity = smallest power of two >= n (from 2), new zeroed slots, reinserted, old slots decommitted and released; name ours
+0x009483d0 function PageManager_CommitRange   # thiscall(mgr, &addr, &size), ret 8 -> al: takes still-queued parts of the range back from the decommit queue, VirtualAlloc_Commit_RW the rest; name ours
+0x009485b0 function UserHeap_NodeAlloc        # fastcall(pool = heap + 0x10): a 16-byte free node from the pool's pages (+0 free list, +4 next page, +8 free count); UserHeap_NodeNewPage when none; name ours
+0x009485f0 function UserHeap_NodeNewPage      # fastcall(pool): PageAlloc(0x1000, 0x1000) + PageCommit, nodes from +0xc; name ours
+0x009486a0 function UserHeap_NodeFree         # thiscall(pool, node), ret 4: back to its page; an all-free page leaves the pool (PageQueueDecommit + PageRelease), a full one joins it; name ours
 0x00949162 function onexit                    # fh v3:cg3 0x949162 __onexit
 0x00949207 function atexit                    # fh v3:cg225 0x949207 _atexit
 0x0094923a function security_check_cookie     # fh v3:cg658 0x949240 __security_check_cookie
@@ -7706,6 +7732,7 @@
 0x00c5e478 label    g_GuideEnabled               # 0: Guide_Update returns at once
 0x00c5e480 label    g_RcbgChunkTags              # 13 pointers to the Yn chunk tags (rcbgChunkTag)
 0x00c5e790 label    g_GuidePacketStrides         # bytes per primitive of the minimap mesh's packet types 0-7 (0x14 0x1c 0x20 0x28 0x18 0x20 0x28 0x30); type 0: triangles, vertex indices at +0xc
+0x00c613b0 label    g_PageManager             # the page manager (PageAlloc/PageCommit/PageQueueDecommit/PageRelease pass it); ffx_system::heap has the layout
 0x00c64ca0 label    g_MagicFile_MagicId       # MagicFile_GetMagicId; -1 = none (MagicFile_GetEffectOverlayTable checks)
 0x00c64cac label    g_MagicFile_Handle        # MagicFile_GetHandle; -1 = none (MagicFile_GetEffectOverlayTable checks)
 0x00c64ce8 label g_MagicImports                # 744 slots (0xba0 bytes) handed to every magic_*.dll's InitMagicPRX: 658 FFX.exe functions (effects 278, battle 114, map 104, characters 83, ...), the overlays' only way into the game
@@ -7734,6 +7761,7 @@
 0x00cded58 label    g_LangManager
 0x00ce5176 label    g_DepthBias_Dirty         # u8: DepthBiasHooks_clearDepthBias resets the table only when set, and clears it
 0x00ce81f4 label    g_SaveDataManager         # the instance SaveDataManager_instance returns (+4 callback result, +8 state for isBusy, +0x350 ref buffer)
+0x00ce901c label    g_UserHeap                # user_malloc/user_free's heap: CRITICAL_SECTION, then the allocator at +0x18 (arena size, bin min, bin max, arenas, node pool); malloc_pool_init creates it
 0x00cec1c0 label    g_FillBufferRequests      # 12 words zeroed by JobSchedule_pppPart_clearFillBufferRequest (and initFillBufferRequest, after the 6 buffers at 0x00cec1a8)
 0x00cec1f4 label    g_FpPointLightA              # cleared by pppFpPointLightInit and pppFpLoop, read by pppFpPointLightProc
 0x00cec1fc label    g_FpPointLightB              # cleared by pppFpPointLightInit and pppFpLoop, read by pppFpPointLightProc
@@ -8145,6 +8173,9 @@
 0x0193bf7c label    g_GuideBattleSave            # the guide's +0x6c float kept over a battle (rcbgGuideBattleBegin/End)
 0x0193bf80 label    g_YnMapSystem                # Yn's field state: +0 the map (its +8: guide map list, +0x18 i16 count, +0x1a i16 shown, +0x1c models), +4 the guide (Yn_GuideMapGetMapNo, Yn_GuideMapSetMapNo, Yn_BattleBegin)
 0x0193c0f0 label    g_RcuiWork                   # rcui work area: +0xbe8 the ID dragged, +0xbec rcuiMouseMoveGetID, +0xbf0 dragging
+0x0193cd44 label    g_ReservedBytes           # VirtualAlloc_Reserve_NA adds, VirtualFree_Release subtracts
+0x0193cd48 label    g_CommittedBytes          # VirtualAlloc_Commit_RW adds, VirtualFree_Decommit subtracts
+0x0193cd4c label    g_VirtualFreeErrorHook    # cdecl(message) the VirtualFree wrappers call on failure, when set
 0x0193ed20 label g_Sse2Available             # MSVC CRT __sse2_available: _ftol2_sse picks cvttsd2si when set (0 in an image that has not run its start-up)
 0x0193fdac label    g_MagicFile_IsNexData     # MagicFile_IsNexData
 0x01942998 label    g_DepthBias_Count         # entries in use; DepthBiasHooks_clearDepthBias zeroes it
