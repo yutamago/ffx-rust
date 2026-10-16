@@ -2034,14 +2034,6 @@ ported! {
     TOSetPolyG4A_XYWH @ 0x0090_48a0 => extern "C" fn to_set_poly_g4a_xywh(p: u32, x: u32, y: u32, width: u32, height: u32) {
         window::bridge::set_poly_g4a_xywh(&mut mem(), p, x, y, width, height);
     }
-    /// `Input_KeyHeld(binding, device)` (`this` in ECX).
-    Input_KeyHeld @ 0x0062_9d50 => extern "thiscall" fn input_key_held(this: u32, binding: u32, device: u32) -> bool {
-        pad::bridge::key_held(&mem(), this, binding, device)
-    }
-    /// `Path_ToLowerAscii(s)`.
-    Path_ToLowerAscii @ 0x0060_7d50 => extern "C" fn path_to_lower_ascii(s: u32) -> u32 {
-        stl::bridge::to_lower_ascii(&mut mem(), s)
-    }
     /// `cd_size_from_table(n)`.
     cd_size_from_table @ 0x0076_dc20 => extern "C" fn cd_size_from_table(n: i32) -> u32 {
         cd::bridge::cd_size_from_table(&mem(), n)
