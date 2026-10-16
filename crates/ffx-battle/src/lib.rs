@@ -32,6 +32,7 @@ pub mod rng;
 pub mod save;
 pub mod stat;
 pub mod state;
+pub mod target;
 pub mod turn;
 pub mod util;
 pub mod vector;

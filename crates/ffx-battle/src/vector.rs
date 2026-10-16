@@ -187,6 +187,215 @@ pub mod bridge {
         f32::from_bits(r)
     }
 
+    /// `MsVectorPolar2Rect(out, base, yaw, pitch, r)` (`0x007c47c0`): the
+    /// point at distance `r.x` from `base` along `yaw`, `pitch`:
+    /// `(cos p · cos y, sin p, cos p · sin y) · r.x`, w `0 · r.x`; `base`
+    /// added unless it equals the value in `r0`'s first word (0, so null in
+    /// practice; then `r` itself is added). `_CIcos`, `_CIsin` from the
+    /// caller; VU registers 0, 1, 2 (row), 3, 4 as the VU code left them.
+    #[allow(clippy::many_single_char_names)]
+    pub fn ms_vector_polar2_rect(
+        mem: &mut impl Mem,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        out: u32,
+        base: u32,
+        yaw: u32,
+        pitch: u32,
+        r: Vec4,
+    ) {
+        use crate::pos::bridge::Trig;
+        use ffx_bridge::x87::{add, load, mul, store};
+        let cp = trig(Trig::Cos, pitch);
+        let sp = trig(Trig::Sin, pitch);
+        let cy = trig(Trig::Cos, yaw);
+        let sy = trig(Trig::Sin, yaw);
+        let zero = 0.0f32.to_bits();
+        set_vf(mem, 0, [cp, sp, zero, zero]);
+        ffx_ps2::ee::bridge::restore_vf00(mem);
+        set_vf(mem, 1, [cy, zero, sy, zero]);
+        let mut v2 = vf(mem, 2);
+        v2[0] = store(mul(load(cy), load(cp)));
+        v2[2] = store(mul(load(cp), load(sy)));
+        v2[1] = store(load(sp));
+        v2[3] = zero;
+        set_vf(mem, 2, v2);
+        let r0 = load(r[0]);
+        let mut v3 = [
+            store(mul(r0, load(v2[0]))),
+            store(mul(load(sp), r0)),
+            store(mul(load(v2[2]), r0)),
+            store(mul(r0, 0.0)),
+        ];
+        let v4 = if base == 0 { r } else { mem.read(base) };
+        set_vf(mem, 4, v4);
+        if base != crate::camera::bridge::EE_R0.get(mem)[0] {
+            for k in 0..3 {
+                v3[k] = store(add(load(v4[k]), load(v3[k])));
+            }
+        }
+        set_vf(mem, 3, v3);
+        mem.write(out, v3);
+    }
+
+    /// `MsVectorNormal2(out, a, b, s)` (`0x007c45e0`): `(a - b)` scaled to
+    /// length `s.x` (`Q` = `vf00.w / sqrt(|d|²)`, 0 for a zero vector), w
+    /// `a.w`; VU registers 0-2 and `Q` as the VU code left them.
+    #[allow(clippy::many_single_char_names)]
+    pub fn ms_vector_normal2(mem: &mut impl Mem, out: u32, a: u32, b: u32, s: Vec4) {
+        use ffx_bridge::x87::{add, div, load, mul, store, sub};
+        let va: Vec4 = mem.read(a);
+        let vb: Vec4 = mem.read(b);
+        set_vf(mem, 2, vb);
+        let mut d = va;
+        for k in 0..3 {
+            d[k] = store(sub(load(va[k]), load(vb[k])));
+        }
+        set_vf(mem, 0, d);
+        ffx_ps2::ee::bridge::restore_vf00(mem);
+        set_vf(mem, 2, s);
+        let sq = |v: u32| store(mul(load(v), load(v)));
+        let mut v1 = vf(mem, 1);
+        let (xx, yy, zz) = (sq(d[0]), sq(d[1]), sq(d[2]));
+        let xy = store(add(load(yy), load(xx)));
+        v1[0] = store(add(load(zz), load(xy)));
+        v1[1] = yy;
+        v1[2] = zz;
+        set_vf(mem, 1, v1);
+        let t = load(store(load(v1[0]).abs()));
+        let q = if t == 0.0 {
+            0.0f32.to_bits()
+        } else {
+            let w = load(Global::<u32>::new(0x00c0_a010).get(mem));
+            let root = store(ffx_bridge::x87::sqrt(t));
+            store(div(w, load(root)))
+        };
+        VU_Q.set(mem, q);
+        let lq = load(q);
+        for x in d.iter_mut().take(3) {
+            *x = store(mul(load(*x), lq));
+        }
+        let s0 = load(s[0]);
+        for x in d.iter_mut().take(3) {
+            *x = store(mul(load(*x), s0));
+        }
+        set_vf(mem, 0, d);
+        mem.write(out, d);
+    }
+
+    /// `MsVectorRect2Polar(a, b, &yaw, &pitch, &len)` (`0x007c4990`): the
+    /// polar form of `a - b` (`a` when `b` is null; VU registers 1-5, Q and
+    /// the zero and sign flags as the VU code left them): `yaw` =
+    /// `atan(z / x)` (less pi for `x` not above 0; ±pi/2 by `z`'s sign for
+    /// `x` 0), `pitch` = `atan(y / |xz|)` (less pi for `|xz|` not above 0;
+    /// ±pi/2 when the quotient is not finite), `len` = `|xyz|`, its
+    /// negation flipping `pitch` too. `_CIatan` and `_CIsqrt` as the
+    /// caller's `trig` and the CPU's square root. (A yaw beyond ±20pi only
+    /// goes to `dbgPrintf`, empty in this build.)
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn ms_vector_rect2_polar(
+        mem: &mut impl Mem,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        a: u32,
+        b: u32,
+        yaw: u32,
+        pitch: u32,
+        len: u32,
+    ) {
+        use crate::pos::bridge::Trig;
+        use ffx_bridge::x87::{add, div, load, mul, store, sub};
+        let va: Vec4 = mem.read(a);
+        set_vf(mem, 2, va);
+        let d = if b == 0 {
+            va
+        } else {
+            let vb: Vec4 = mem.read(b);
+            set_vf(mem, 1, vb);
+            let d: Vec4 = std::array::from_fn(|k| store(sub(load(va[k]), load(vb[k]))));
+            set_vf(mem, 2, d);
+            ffx_ps2::ee::bridge::restore_vf00(mem);
+            d
+        };
+        let [x, y, z, _] = d;
+        let sq = |v: u32| store(mul(load(v), load(v)));
+        let (xx, yy, zz) = (sq(x), sq(y), sq(z));
+        let xy = store(add(load(xx), load(yy)));
+        let s3 = store(add(load(zz), load(xy)));
+        let s2 = store(add(load(zz), load(xx)));
+        let mut r3 = vf(mem, 3);
+        r3[0] = s3;
+        r3[1] = yy;
+        r3[2] = zz;
+        set_vf(mem, 3, r3);
+        let mut r4 = vf(mem, 4);
+        r4[0] = s2;
+        r4[2] = zz;
+        set_vf(mem, 4, r4);
+        let root = |v: u32| store(ffx_bridge::x87::sqrt(load(store(load(v).abs()))));
+        let vf00 = |mem: &mut _, o: u32| Global::<u32>::new(o).get(mem);
+        let r = root(s3);
+        let length = store(add(load(r), load(vf00(mem, 0x00c0_a004))));
+        let q = root(s2);
+        VU_Q.set(mem, q);
+        let flat = store(add(load(vf00(mem, 0x00c0_a008)), load(q)));
+        let mut r5 = vf(mem, 5);
+        r5[0] = length;
+        r5[1] = flat;
+        set_vf(mem, 5, r5);
+        let f = load(flat);
+        if f == 0.0 {
+            ffx_ps2::ee::bridge::set_zs_flag(mem);
+        }
+        if f < 0.0 {
+            ffx_ps2::ee::bridge::set_ss_flag(mem);
+        }
+        let half_pi = Global::<u32>::new(0x00b4_3d38).get(mem);
+        let minus_half_pi = Global::<u32>::new(0x00b5_51d0).get(mem);
+        let pi = PI.get(mem);
+        let angle = |mem: &mut _, q: u32, plain: bool| {
+            let _ = &mem;
+            let t = trig(Trig::Atan, q);
+            if plain { t } else { store(sub(load(t), pi)) }
+        };
+        if yaw != 0 {
+            let (lx, lz) = (load(x), load(z));
+            let v = if lx == 0.0 {
+                // fcom: an unordered z counts as below
+                if lz < 0.0 || lz.is_nan() {
+                    minus_half_pi
+                } else {
+                    half_pi
+                }
+            } else {
+                let q = store(div(lz, lx));
+                angle(&mut *mem, q, lx > 0.0)
+            };
+            mem.write(yaw, v);
+        }
+        let mut out = 0u32;
+        if pitch != 0 {
+            let ly = load(y);
+            let q = store(div(ly, f));
+            out = if q & 0x7f80_0000 == 0x7f80_0000 {
+                if ly >= 0.0 { half_pi } else { minus_half_pi }
+            } else {
+                angle(&mut *mem, q, f > 0.0)
+            };
+            mem.write(pitch, out);
+        }
+        if len != 0 {
+            let l = load(length);
+            // fcom: an unordered length counts as below 0
+            if l < 0.0 || l.is_nan() {
+                mem.write(len, store(-l));
+                if pitch != 0 {
+                    mem.write(pitch, store(-load(out)));
+                }
+            } else {
+                mem.write(len, store(l));
+            }
+        }
+    }
+
     /// `0x00c8f7e0`, `0x00c8f7f0`, `0x00c8f800`: the registers after
     /// [`VF_M`]'s first row, as some helpers use them one by one.
     fn vf(mem: &impl Mem, i: u32) -> Vec4 {

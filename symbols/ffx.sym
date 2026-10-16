@@ -2566,6 +2566,7 @@
 0x00793e00 function MsCommandReturnChrStatusAll # fh v3:exact 0x00793e10
 0x00793ef0 function MsCommandStartChrStatusAll # fh v3:exact 0x00793f00
 0x00794020 function MsGetChr                  # index -> actor: < 0x1f at *0x011334d4 + i*0xf90, < 0x5d at *0x0113446c + (i-0x1f)*0x390; was Battle_Actor
+0x00794060 function MsGetChrInfoOne           # (i, kind, k, dir, out) -> 1/0: one actor's property kind 1-13 (position, direction, height, width, battle/bottom/camera position, move position 0x007a93e0, optional position k...) added to out; MsGetChrInfo's step; named here; ported
 0x00794330 function MsGetChrBit               # (self, selector, ...) -> bitmask of the 31 actors; selector 0x1xxx = actors with that id (+0xe), negative values = special sets (-26 self target +0xdc4, -25 ... ); was Battle_SelectActors
 0x007947f0 function Battle_FirstSelectedActor    # (self, selector, a, b) -> lowest actor index in Battle_SelectActors' mask, -1 if none
 0x00794830 function MsGetChrBottomPos         # fh v3:exact 0x00794840
@@ -2600,6 +2601,7 @@
 0x00795800 function MsGetChrStatStone         # fh v3:cg5 0x795810
 0x00795840 function MsGetChrStatWeak          # fh v3:cg2 0x795850
 0x00795880 function MsGetChrStatZombie        # fh v3:exact 0x00795890
+0x007958c0 function MsGetChrNearDir           # (i, dir) -> f32: MsNearRag(dir, actor +0x53c if +0x510 else +0x49c); MsGetChrInfoOne kind 7; named here; ported
 0x00795920 function MsGetChrTargetPos         # fh v3:cg3 0x795930
 0x00795970 function MsGetChrTop               # fh v3:bsim1.00 0x00795980
 0x00795980 function MsGetChrTopPos            # fh v3:exact 0x00795990
@@ -2656,6 +2658,7 @@
 0x00798000 function MsAtelRequestMagicCamera  # fh v3:exact 0x00798010
 0x007982a0 function MsAtelRequestSystemCheckExe # fh v3:exact 0x007982b0
 0x00798390 function MsAtelSetUp               # fh v3:exact 0x007983a0
+0x007984c0 function MsAtelChrInfoOne          # (i, kind, acc): adds script actor i's position (1, 8, 9; 0x0086b1e0), direction (2, +pi 7; 0x0086a6e0) or 18.0/10.0 (3, 10 / 4, 11) to acc; other kinds add stack garbage; named here; ported
 0x007986a0 function MsGetVoiceEventFlag       # fh v3:exact 0x007986b0
 0x00798820 function MsInitChrAbilityMap       # fh v3:bsim1.00 0x00798830
 0x00798890 function MsRandMize                # cdecl(n): seeds 0x00c42200/04 from Rng_ClockSeed * (n + 1), then fills the 68 generators; was Rng_Seed
@@ -2838,11 +2841,13 @@
 0x007a8fc0 function Battle_ScriptPlayMotion      # (ctx, ..., motion, flag): plays a motion on the script's actor (0x00837d00), returns the length in frames << 8 / speed; core of 0x7007
 0x007a9230 function MsCheckBtlPos             # fh v3:exact 0x007a9250
 0x007a92c0 function MsCheckStartEffect        # fh v3:exact 0x007a92e0
+0x007a93e0 function MsGetChrMovePos           # (i, out): where actor i is on its move: +0x425 fixed point +0x3c0, kind +0x415 7 a spline, else a step towards MsGetMoveTargetPos's point (bit 0x80 growing speed, else MsGetChrMoveAccelPos); named here; ported
 0x007a9710 function MsGetDirMode              # fh v3:exact 0x007a9730
 0x007a99b0 function MsGetEscapeDir            # fh v3:exact 0x007a99d0
 0x007a9a20 function MsMenuWeakElement         # fh switch:bsim1.00 0x710035e1b0
 0x007a9ac0 function MsGetMoveTargetPos        # fh v3:exact 0x007a9ae0
 0x007a9f30 function MsGetSummonDir            # fh switch:cg2 0x7100361020
+0x007aa050 function MsGetChrTargetInfo        # (i, kind, &pos, &width, &height) -> msCheckSameTarget: MsGetChrInfo of the actor's targets (+0xdc0 via MsEffectCheckTarget), their mean width and height; named here; ported
 0x007aa100 function MsMotionPosCheck          # fh v3:exact 0x007aa120
 0x007aa140 function MsMotionPosCheckAll       # fh v3:exact 0x007aa160
 0x007aa160 function MsMotionProcess           # fh v3:exact 0x007aa180
@@ -2850,10 +2855,12 @@
 0x007aa280 function msMoveReset               # fh switch:bsim1.00 0x71003606e0
 0x007aaae0 function MsMoveCheckFlag           # fh switch:bsim1.00 0x710035f050
 0x007aab80 function MsMoveChr                 # fh v3:exact 0x007aaba0
+0x007aac40 function MsGetChrMoveAccelPos      # (actor, n, speed, target, out) -> 1/0: frame n of an accelerated move (+0x454 accelerate, +0x456 cruise, +0x458 brake frames, +0x45c start speed; +0x4a0/+0x4a4 covered/scale); named here; ported
 0x007ab0b0 function MsMoveSplineRegist        # fh v3:exact 0x007ab0d0
 0x007ab140 function MsMoveSplineSet           # fh v3:exact 0x007ab160
 0x007ab160 function MsMoveTargetPos           # fh switch:cg2 0x71008b0578
 0x007ab170 function MsResetDirMove            # fh v3:bsim1.00 0x007ab190
+0x007ab190 function MsTurnMoveVector          # (i, actor, vec, angle): turns a move vector's x/z by angle (negated by the side of the actor's battle position); MsGetMoveTargetPos kind 9 with +0x411; named here; ported
 0x007ab300 function MsSetChrHeight            # fh v3:exact 0x007ab320
 0x007ab360 function MsSetMotion               # fh v3:exact 0x007ab380
 0x007ab500 function MsSetMotionAttackWait     # fh v3:bsim1.00 0x007ab520
@@ -9252,12 +9259,14 @@
 0x0112c9d4 label g_BtlNumbersKind12        # u8 (MsNumberCalcProcess)
 0x0112c9d5 label g_BtlNumbersShown         # u8 (MsNumberCalcProcess)
 0x0112c9d7 label g_BtlEffectCameraMode     # u8 (MsEffectCameraCall's second argument)
+0x0112c9dd label g_BtlCameraKoHeight       # u8, MsGetChrCameraPos keeps a KO'd actor's (+0xdcc 2) +0xf70 height
 0x0112c9df label g_BtlTurnActorNow           # u8, the actor whose turn it is (MsGetChrBit -18); copied to g_BtlTurnActor when a turn starts
 0x0112c9e0 label g_BtlCommandActor           # u8, the actor whose command runs, 0xff none (MsGetChrBit -2, -3: its command cue entry's targets)
 0x0112c9e2 label    g_BtlTurnActor               # ?actor index copied from 0x0112c9df when a turn starts; read by 0x708d
 0x0112c9e5 label g_BtlStealRule               # u8, 2: nothing can be stolen or mugged in this battle (Battle_Steal, Battle_StealGil)
 0x0112c9e6 label g_BtlMenuCommandSet          # u8; with the one before it (same function, ffx_battle::misc)
 0x0112c9e7 label g_BtlDirFree              # u8; set: MsSetDirThetaMode gives actors direction mode 1 (ffx_battle::minor)
+0x0112c9e8 label g_BtlSummoner             # i8, the summoner's actor index (MsGetMoveTargetPos kinds 4, 5, 18)
 0x0112c9e9 label g_BtlListSlot             # i8, a party slot MsGetBattleList kinds 9 and 0xa treat apart
 0x0112c9eb label g_BtlEndAlt               # u8 set: MsGetBattleEndStatus reports 2 instead of 4 when the monsters are gone
 0x0112c9f1 label g_BtlEndForced            # u8, when not 0 MsGetBattleEndStatus's result
@@ -9346,6 +9355,8 @@
 0x011363b4 label g_WeaponNameTable         # kernel table MsWeaponName reads: u16 name offsets at +4k (+0x1c+4k second), icons at +0x38+2k
 0x011363c0 label g_ZanmatoSepList          # 10 words cleared by resetZanmatoSepList
 0x01136418 label g_BtlMoveSplines             # [u32; 3]; The three move splines (MsMoveSplineSet).
+0x01136424 label g_BtlMoveFrame            # i32, frames into the current move (MsGetChrMovePos; MsGetMoveTargetPos kind 12 sets it)
+0x01136428 label g_BtlMoveSplines          # 0x210-byte move splines: u32 count, points from +0x10 (MsGetChrMovePos kind 7, TkMtCalcSpline)
 0x01136a58 label g_BtlMoveTarget              # u8; The move target position (MsMoveTargetPos).
 0x01136a68 label g_BtlAction                  # i32; Set to -1 by MsActionInit.
 0x01136ad8 label g_BtlEffectCameraFloats      # [u32; 16]; 16 floats MsEffectSetCameraBufFloat sets.
@@ -9591,6 +9602,7 @@
 0x01597f74 label    g_SaveData_LoadResult     # u8, 1 = the load succeeded (SaveDataIsLoadingSuccessful); SaveDataToLoad, TkMenuPreSave write it
 0x0159ec70 label    g_TkMenuSaveFiles         # 99 x 0x40-byte save file records (TkMenuGetSaveFileInfo)
 0x01640870 label    g_AbilitymapWork          # the ability map's work area (TOMenuGetAbilitymapWorkAdrs)
+0x01730870 label g_MixTable                # Rikku's mix table (MsGetExcelData layout): record max holds at 2*min what items min and max make (MsSetRikkuLimit)
 0x01840870 label    g_TkMenuMainIgnoreJoinFlag # TkMenuMainSetIgnoreJoinFlag
 0x01840874 label    g_TkMenuMainTask          # MenuMain_GetTask
 0x01840878 label    g_TkMenuHelpRatio2        # TkMenuGetHelpRatio2
