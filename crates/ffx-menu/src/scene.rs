@@ -54,6 +54,45 @@ pub mod bridge {
         p.set(mem, data);
     }
 
+    /// `TkMenuGetSceneDataAdrs(i)` (`0x00a7b910`), unchecked.
+    pub fn tk_menu_get_scene_data_adrs(mem: &impl Mem, i: i32) -> u32 {
+        block(mem, i)
+    }
+
+    /// `TkMenuGetSceneRecord(i, handle)` (`0x00a7b8f0`): the record at
+    /// `handle` in block `i`, 0 for a 0 handle or no block.
+    pub fn tk_menu_get_scene_record(mem: &impl Mem, i: i32, handle: u32) -> u32 {
+        if handle == 0 {
+            return 0;
+        }
+        let b = block(mem, i);
+        if b == 0 { 0 } else { b.wrapping_add(handle) }
+    }
+
+    /// `TkMenuGetSceneX(i, handle)` (`0x00a7b9d0`) and `TkMenuGetSceneY`
+    /// (`0x00a7ba00`): the record's `i16` at `+8` or `+0xa`, 0 without one.
+    pub fn tk_menu_get_scene_field(mem: &impl Mem, i: i32, handle: u32, field: u32) -> i32 {
+        match tk_menu_get_scene_record(mem, i, handle) {
+            0 => 0,
+            r => i32::from(mem.read::<i16>(r.wrapping_add(field))),
+        }
+    }
+
+    /// `TkMenuSetScenePos(i, handle, x, y)` (`0x00a7c810`): the record's
+    /// `+8` and `+0xa`.
+    pub fn tk_menu_set_scene_pos(mem: &mut impl Mem, i: i32, handle: u32, x: u16, y: u16) {
+        let r = tk_menu_get_scene_record(mem, i, handle);
+        if r != 0 {
+            mem.write(r.wrapping_add(8), x);
+            mem.write(r.wrapping_add(0xa), y);
+        }
+    }
+
+    /// `TkMenuSceneHash(name)` (`0x008e5cf0`): a name's bucket.
+    pub fn tk_menu_scene_hash(mem: &impl Mem, name: u32) -> u32 {
+        bucket(&c_str(mem, name))
+    }
+
     /// `TkMenuInitSeq()` (`0x00a7bb00`): no blocks.
     pub fn tk_menu_init_seq(mem: &mut impl Mem) {
         let p = SCENE_DATA.ptr(mem).addr;
