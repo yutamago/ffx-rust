@@ -149,7 +149,7 @@ type Matrix2 = fn(&mut Oracle, u32, u32);
 /// so products and sums of two NaNs come up. All NaNs quiet: the oracle's
 /// x87 mishandles signalling ones (see
 /// `the_oracle_keeps_loaded_signalling_nans_signalling`); the model's
-/// handling of them is checked against the hardware in `ffx_system::x87`.
+/// handling of them is checked against the hardware in `ffx_bridge::x87`.
 fn random_floats(rng: &mut Xorshift, n: usize) -> Vec<f32> {
     let nans = rng.next().is_multiple_of(3);
     (0..n)
@@ -827,7 +827,7 @@ fn system_state_matches_the_original_on_the_snapshot() {
 
 /// The oracle's x87 (Unicorn) keeps a signalling NaN signalling when `fld`
 /// loads it, so it then loses to any quiet NaN; the hardware quiets it on
-/// the load and the larger significand wins (`ffx_system::x87`'s
+/// the load and the larger significand wins (`ffx_bridge::x87`'s
 /// `the_model_is_the_hardware` checks the model against the machine's own
 /// x87). The float cases above therefore leave out signalling NaNs that
 /// meet another NaN; this pins the difference down.
@@ -851,8 +851,8 @@ fn the_oracle_keeps_loaded_signalling_nans_signalling() {
         Mem::read::<u32>(a, buf + 8)
     };
     let model = |x: u32, y: u32| {
-        use ffx_system::x87::load;
-        (load(f32::from_bits(x)) + load(f32::from_bits(y)))
+        use ffx_bridge::x87::Reg;
+        (Reg::load(f32::from_bits(x)) + Reg::load(f32::from_bits(y)))
             .store()
             .to_bits()
     };
