@@ -597,4 +597,33 @@ pub mod bridge {
             mem.write(a1.wrapping_add(4 * c), x);
         }
     }
+
+    /// `vfx_vec_w_add(dst, v, s)` (`0x00817cc0`): `dst.w = v.w + s`.
+    pub fn vfx_vec_w_add(mem: &mut impl Mem, dst: u32, v: u32, s: f32) {
+        let w = crate::x87::add(f(mem, v.wrapping_add(0xc)), s);
+        mem.write(dst.wrapping_add(0xc), w);
+    }
+
+    /// `vfx_vec3_scale(dst, v, s)` (`0x0075bb00`): `dst.xyz = v.xyz * s`
+    /// (x and y multiplied in registers, z by the memory operand).
+    pub fn vfx_vec3_scale(mem: &mut impl Mem, dst: u32, v: u32, s: f32) {
+        use crate::x87::{MUL, Reg};
+        let r = Reg::load_f32(s);
+        let x = Reg::load_f32(f(mem, v)).reg(MUL, r).store();
+        let y = Reg::load_f32(f(mem, v.wrapping_add(4))).reg(MUL, r).store();
+        let z = r.mem(MUL, f(mem, v.wrapping_add(8))).store();
+        mem.write(dst, x);
+        mem.write(dst.wrapping_add(4), y);
+        mem.write(dst.wrapping_add(8), z);
+    }
+
+    /// `vfx_vec4_min(dst, v, s)` (`0x00808c10`): each component of `dst`
+    /// the smaller of `v`'s and `s` (`s` unless `v`'s is less).
+    pub fn vfx_vec4_min(mem: &mut impl Mem, dst: u32, v: u32, s: f32) {
+        for i in 0..4 {
+            let c = f(mem, v.wrapping_add(4 * i));
+            let x = if c < s { c } else { crate::x87::load_f32(s) };
+            mem.write(dst.wrapping_add(4 * i), x);
+        }
+    }
 }

@@ -1316,6 +1316,8 @@
 0x0070ab90 function FmodVoice_initList        # fh call.cs thiscall
 0x0070b3f0 function FfxFmod_soundInit_setLang # fh call.cs thiscall
 0x0070d890 function FmodSfx_Start                # thiscall(sfx; seq, volume, pan): "FmodSfx::start: Fail to start sequence(%d)"; volume/127 -> 0..1, pan/127*2-1 -> -1..1 (0x0070f310)
+0x0070fd20 function vfxIntTree_Find           # thiscall (this, key) -> the node whose i32 at +0xc is *key, else 0: from the root this+0xc, child [0] when the node's key is greater, [1] when less, the header (this) ends; callers 0x00710270/0x00710290
+0x0070fda0 function vfxIntTree_Insert         # thiscall (this, node) -> 0, or the node already holding the key: node+8 (parent link, bit 0 colour) gets bit 0, children = this, linked under the search's last node ((node+8 & 1) + parent), as vfxIntTree_Find walks
 0x00710e30 function VFX_Copy16From            # (dst, src): four words copied, the last left in eax (callers: sg_calcenvelope_normW)
 0x00710e70 function VFX_Copy16To              # (src, dst): four words copied, the last left in eax
 0x00710ea0 function VFX_ScaleVec3             # (dst, v, float s): x, y, z of v times s (x87, z with v's element as the memory operand), returns dst
@@ -1401,6 +1403,8 @@
 0x007291c0 function pppFpFree                 # fh v3:exact 0x007292b0
 0x00729290 function pppFpGetHeapSize          # fh v3:exact 0x00729380
 0x007292f0 function pppFpGetMngPtr            # fh v3:exact 0x007293e0
+0x007294f0 function Fp_EndGroup               # (group) Fp_End for every g_FpData entry whose u16 at +0x66 (after the ID at +0x64) is group: g_FpRun +0x1d = 1; callers 0x0091b790, 0x00933cc0
+0x00729530 function Fp_RestartGroup           # (group) Fp_Restart for every g_FpData entry of the group (+0x66): g_FpRun +0 = 0, +0x1d = 0
 0x00729570 function pppFpIDdispOff            # (id): sets bit 0x10 in the FP (field effect) state entry (0x00d30260 + i*0x4c); the "FP Disp Status" dump (0x00729060) prints it as Disp OFF; was Fp_Hide
 0x007295b0 function pppFpIDdispOn             # (id): clears bit 0x10 of the FP state entry (Disp ON in the 0x00729060 dump); was Fp_Show
 0x00729660 function Fp_End                       # (id): sets entry +0x1d = 1; the 0x00729060 dump shows Stat END
@@ -1632,6 +1636,7 @@
 0x00740a70 function pppDrawShape0             # fh v3:exact 0x00740b30
 0x00740eb0 function pppDrawShapeCon           # ppp program table record "pppDrawShape" (0x00c3a8c8) +0x1c set-up; "pppDrawShape" (0x00c3a8c8) +0x20 second set-up; "pppDrawShape" (0x00c3bf70) +0x1c set-up and 1 more
 0x00740ed0 function pppDrawShapeX             # fh v3:bsim1.00 0x00740f90
+0x00740f60 function pppDrawShapeX0            # pppDrawShapeX's per-object draw (obj, key, entry), as pppDrawShape0 for pppDrawShape
 0x00741450 function pppDrawShapeXCon          # ppp program table record "pppDrawShapeX" (0x00c3b1b0) +0x1c set-up; "pppDrawShapeX" (0x00c3b1b0) +0x20 second set-up; "pppDrawShapeX" (0x00c3c858) +0x1c set-up and 1 more
 0x00741570 function pppDrawShapeRevCon        # ppp program table record "pppDrawShapeRev" (0x00c3b7a0) +0x1c set-up; "pppDrawShapeRev" (0x00c3b7a0) +0x20 second set-up; "pppDrawShapeRev" (0x00c3ce48) +0x1c set-up and 1 more
 0x007415a0 function pppDrawShapeRevDraw       # ppp program table record "pppDrawShapeRev" draw; not a function start in the Ghidra dump
@@ -1776,24 +1781,28 @@
 0x0075a0f0 function pppKeLnsArndTCon          # ppp program table record "pppKeLnsArndT" +0x1c set-up
 0x0075a140 function pppKeLnsArndTDes          # fh v3:cg2 0x75a230
 0x0075a190 function pppKeLnsArndTDraw         # fh v3:exact 0x0075a280
+0x0075a250 function pppKeLnsArndTOtDraw       # the g_pppOtList draw pppKeLnsArndTCon registers (node area+0x24): f(area, i, frame) from pppOtFunc_Control
 0x0075a2d0 function pppKeLnsArndUpdate        # fh v3:bsim1.00 0x0075a3c0
 0x0075a370 function pppKeLnsClmCon            # fh v3:exact 0x0075a460
 0x0075a3a0 function pppKeLnsClmDraw           # ppp program table record "pppKeLnsClm" draw; not a function start in the Ghidra dump
 0x0075a4a0 function pppKeLnsClmTCon           # fh v3:exact 0x0075a590
 0x0075a4f0 function pppKeLnsClmTDes           # fh v3:cg2 0x75a5e0
 0x0075a540 function pppKeLnsClmTDraw          # fh v3:exact 0x0075a630
+0x0075a610 function pppKeLnsClmTOtDraw        # the g_pppOtList draw pppKeLnsClmTCon registers (node area+0x40)
 0x0075a6a0 function pppKeLnsClmUpdate         # fh v3:exact 0x0075a790
 0x0075a740 function pppKeLnsCrnCon            # fh v3:bsim1.00 0x0075a830
 0x0075a760 function pppKeLnsCrnDraw           # ppp program table record "pppKeLnsCrn" draw; not a function start in the Ghidra dump
 0x0075a870 function pppKeLnsCrnTCon           # fh v3:exact 0x0075a960
 0x0075a8b0 function pppKeLnsCrnTDes           # fh v3:cg2 0x75a9a0
 0x0075a900 function pppKeLnsCrnTDraw          # fh v3:exact 0x0075a9f0
+0x0075a9e0 function pppKeLnsCrnTOtDraw        # the g_pppOtList draw pppKeLnsCrnTCon registers (node area+0x1c)
 0x0075aab0 function pppKeLnsCrnUpdate         # fh v3:exact 0x0075aba0
 0x0075ab30 function pppKeLnsFlsCon            # ppp program table record "pppKeLnsFls" +0x1c set-up: 0x0076a640(area 0 + 0xa0): set_ptr32(g_pppRandTarget), set_ptr32(0)
 0x0075ab50 function pppKeLnsFlsDraw           # ppp program table record "pppKeLnsFls" draw; not a function start in the Ghidra dump
 0x0075ac60 function pppKeLnsFlsTCon           # fh v3:cg2 0x75ad50
 0x0075acb0 function pppKeLnsFlsTDes           # fh v3:cg2 0x75ada0
 0x0075ad00 function pppKeLnsFlsTDraw          # fh v3:exact 0x0075adf0
+0x0075ade0 function pppKeLnsFlsTOtDraw        # the g_pppOtList draw pppKeLnsFlsTCon registers (node area+0x20)
 0x0075ae90 function pppKeLnsFlsUpdate         # fh v3:bsim1.00 0x0075af80
 0x0075af30 function pppKeLnsLpCon             # fh v3:exact 0x0075b020
 0x0075af60 function pppKeLnsLpCon2            # ppp program table record "pppKeLnsLp" (0x00c3aa08) +0x20 second set-up; "pppKeLnsLp" (0x00c3c0b0) +0x20 second set-up
@@ -1802,6 +1811,7 @@
 0x0075b110 function pppKeLnsLpTCon2           # ppp program table record "pppKeLnsLpT" (0x00c3bae8) +0x20 second set-up; "pppKeLnsLpT" (0x00c3d190) +0x20 second set-up
 0x0075b130 function pppKeLnsLpTDes            # ppp program table record "pppKeLnsLpT" +0x24 destructor
 0x0075b160 function pppKeLnsLpTDraw           # ppp program table record "pppKeLnsLpT" draw
+0x0075b230 function pppKeLnsLpTOtDraw         # the g_pppOtList draw pppKeLnsLpTCon registers (node area+0xb0)
 0x0075b690 function pppKeAcmCic               # ppp program table record "pppKeAcmCic" step
 0x0075b6b0 function pppKeAccSpdSv             # ppp program table record "pppKeAccSpdSv" step; not a function start in the Ghidra dump
 0x0075b6c0 function pppKeAccSpdSvCon          # ppp program table record "pppKeAccSpdSv" +0x1c set-up; not a function start in the Ghidra dump
@@ -1820,6 +1830,7 @@
 0x0075b9d0 function pppSclAcceleCon           # ppp program table record "pppSclAccele" (0x00c3a558) +0x1c set-up; "pppSclAccele" (0x00c3a558) +0x20 second set-up; "pppSclAccele" (0x00c3bc00) +0x1c set-up and 1 more
 0x0075ba40 function pppColAccele              # ppp program table record "pppColAccele" (0x00c3a580) +0x8 step; "pppColAccele" (0x00c3bc28) +0x8 step
 0x0075bac0 function pppColAcceleCon           # ppp program table record "pppColAccele" (0x00c3a580) +0x1c set-up; "pppColAccele" (0x00c3a580) +0x20 second set-up; "pppColAccele" (0x00c3bc28) +0x1c set-up and 1 more
+0x0075bb00 function vfx_vec3_scale            # (dst, v, s) dst.xyz = v.xyz * s (x87: x, y in registers, z memory operand); callers 0x0088a500, 0x0088abd0
 0x0075bb30 function pppEiWfacc                # ppp program table record "pppEiWfacc" step
 0x0075bde0 function pppMove                   # ppp program table record "pppMove" (0x00c3a5a8) +0x8 step; "pppMove" (0x00c3bc50) +0x8 step
 0x0075beb0 function pppMoveCon                # ppp program table record "pppMove" (0x00c3a5a8) +0x1c set-up; "pppMove" (0x00c3a5a8) +0x20 second set-up; "pppMove" (0x00c3bc50) +0x1c set-up and 1 more
@@ -2960,23 +2971,43 @@
 0x007fb250 function op_et_battle_init         # fh v3:exact 0x007fb170
 0x007fb290 function op_et_bindeff             # fh v3:exact 0x007fb1b0
 0x007fb360 function op_et_bindeff2            # fh v3:exact 0x007fb280
+0x007fb470 function op_et_bindeff2_breath_off # (h) g_EtChr bind flags |= 0x200; characters 1/0x65 (u16 at h) clear bit 0 of g_EtBreathFlags; between op_et_bindeff2 and op_et_bindeff2_breath_on, the off form of it
 0x007fb4c0 function op_et_bindeff2_breath_on  # fh v3:exact 0x007fb3e0
+0x007fb530 function op_et_bindeff2_draw_off   # (h) -> 8 if newly set: draw flags (g_EtChrDrawFlags2 if nonzero, else g_EtChrDrawFlags) |= 8 when bind flags & 0x10; the set form of op_et_bindeff2_draw_on
 0x007fb5a0 function op_et_bindeff2_draw_on    # fh v3:bsim1.00 0x007fb4c0
+0x007fb610 function op_et_bindeff2_draw_set   # (h, hide) op_et_bindeff2_draw_off (hide) or _draw_on, one body; returns ~old & 8
+0x007fb7f0 function op_et_bindeff2_walk_off   # (h) bind flags |= 0x100 (op_et_bindeff2_walk_on clears it)
 0x007fb830 function op_et_bindeff2_walk_on    # fh v3:bsim1.00 0x007fb750
+0x007fb870 function op_et_bind_default_water  # () u16 g_EtBindDefault = (g_EtBindDefault & 0xcbff) | 0x800, the word left in eax
+0x007fb890 function op_et_bindeff2_water_off  # (h) bind flags |= 0x3400 (op_et_bindeff2_water_on clears them)
 0x007fb8e0 function op_et_bindeff2_water_on   # fh v3:bsim1.00 0x007fb800
 0x007fba40 function op_et_bindeff_draw_off    # fh v3:bsim1.00 0x007fb960
 0x007fbab0 function op_et_bindeff_draw_on     # fh v3:bsim1.00 0x007fb9d0
+0x007fbb20 function op_et_bindeff_draw_set    # (h, hide) op_et_bindeff_draw_off (hide) or _draw_on: bit 4 when bind flags & 1; returns ~old & 4
 0x007fbb90 function op_et_bindeff_off         # fh v3:exact 0x007fbab0
 0x007fbcd0 function op_et_bindeff_off_signal  # fh v3:exact 0x007fbbf0
+0x007fc000 function op_et_chr_draw_off        # (h) -> 1 if newly set: draw flags |= 1 for any character with a record (no bind flag test)
+0x007fc060 function op_et_chr_draw_on         # (h) -> ~old & 1: draw flags &= 0xfe
+0x007fc0c0 function op_et_chr_draw_set        # (h, hide) op_et_chr_draw_off (hide) or _draw_on
 0x007fc130 function op_et_draw_flags_restore  # (h) -> u8: g_EtChrDrawFlags[i] = g_EtChrDrawFlags2[i] & 0x7f, g_EtChrDrawFlags2[i] = 0, returns the old g_EtChrDrawFlags2 (i = the record's +0xe; __report_rangecheckfailure for i >= 0xf0 after the first store); g_MagicImports slot 547
 0x007fc190 function op_et_draw_flags_save     # (h) -> u8: g_EtChrDrawFlags2[i] = g_EtChrDrawFlags[i] | 0x80, g_EtChrDrawFlags[i] = 0, returns the old g_EtChrDrawFlags2; g_MagicImports slot 548
+0x007fc200 function op_et_draw_flags_switch   # (h, restore) op_et_draw_flags_restore (restore) or op_et_draw_flags_save, one body with both range checks
+0x007fc2a0 function op_et_oef2_free           # (oef2) opu_unit_free_by_oef2(g_OpusBattle, oef2)
+0x007fc2c0 function op_et_oef2_start          # (oef2) op_oef2_set2(oef2); opu_et_unit(oef2, 0, 0, -1)
 0x007fc2e0 function op_et_eff                 # fh v3:exact 0x007fc200
 0x007fc450 function op_et_eff_off_signal      # fh v3:bsim1.00 0x007fc370
+0x007fc490 function op_et_eff_signal_and      # (id, u16 mask) the first g_EtEff record with this ID: object +0xb0 &= mask (op_et_eff_off_signal's |= form)
+0x007fc4d0 function op_et_eff_flags_and       # (id, mask) the first g_EtEff record with this ID: +0xc &= mask
+0x007fc510 function op_et_eff_flags_or        # (id, bits) the first g_EtEff record with this ID: +0xc |= bits
+0x007fc550 function op_et_eff_signal_or       # (id, u16 bits) the first g_EtEff record with this ID: object +0xb0 |= bits
 0x007fc590 function op_et_encount_effect_on   # fh v3:exact 0x007fc4b0
+0x007fc5f0 function op_et_encount_effect_free # () g_OpusEncount != 0: opu_unit_free_by_oef2(g_OpusBattle, it), cleared (op_et_encount_effect_on starts its units)
 0x007fc620 function op_et_ffx_init            # fh v3:exact 0x007fc540
 0x007fc650 function op_et_monster_free        # fh v3:exact 0x007fc570
 0x007fc780 function op_et_monster_init        # fh v3:exact 0x007fc6a0
+0x007fc8a0 function op_et_monster_add         # (oef2) -> -1 null, 0 present or no slot, 1: first free g_OpusMonsters slot, op_oef2_set2 + opu_et_unit(oef2, 0, 0, -1)
 0x007fc920 function op_et_prayeff_send_read_through # fh v3:exact 0x007fc840
+0x007fc970 function op_et_oef2_start2         # (oef2) the op_et_oef2_start body again
 0x007fca40 function op_et_weapon_afterimage_fade # fh v3:bsim1.00 0x007fc960
 0x007fca90 function op_et_weapon_free         # fh v3:exact 0x007fc9b0
 0x007fcaf0 function op_et_weapon_free_all     # fh v3:exact 0x007fca10
@@ -2992,10 +3023,14 @@
 0x007fcd60 function op_ovl_effect_free        # fh v3:exact 0x007fcc80
 0x007fcdd0 function op_ovl_effect_init        # fh v3:exact 0x007fccf0
 0x007fce10 function op_pray_effect_check      # fh v3:exact 0x007fcd30
+0x007fcf10 function opus_chr_draw_index_nth   # (n) -> the u16 +0xe (draw flag index) of opus_chr_handle_nth(n)'s g_EtChr record, 0 without one
+0x007fcf60 function opus_chr_handle_count     # () -> non-null g_EtChrHandles among 208 from index 0 in battle (MsBattleGetStatus != 0), else from 0x20
+0x007fcfb0 function opus_chr_handle_nth       # (n) -> the n-th non-null handle of those 208, else the first non-null, else 0
 0x007fd720 function opu_end_all               # fh switch:bsim0.91 0x71003f1f50
 0x007fd760 function opu_et_init               # fh v3:exact 0x007fd680
 0x007fd7f0 function opu_et_unit               # fh v3:exact 0x007fd710
 0x007fda40 function opu_et_unit_free_by_id    # fh switch:bsim1.00 0x71003ed4a0
+0x007fda60 function opu_et_oef2_free          # (oef2) the op_et_oef2_free body again
 0x007fde30 function opu_unit_free_by_id       # fh v3:exact 0x007fdd50
 0x007fdf70 function opu_unit_free_by_oef2     # fh v3:exact 0x007fde90
 0x007fe1a0 function opus_change_chrhd_battle_to_ffx # fh v3:exact 0x007fe0c0
@@ -3007,6 +3042,7 @@
 0x007fe970 function opus_get_chr_status_index # fh v3:exact 0x007fe890
 0x007feaa0 function op_et_chr_index_by_no     # (no) -> index of the first of 208 g_EtChr records whose +4 (character number) is no, else -1
 0x007feba0 function opus_get_eff_status_index # fh v3:exact 0x007feac0
+0x007fef70 function op_et_eff_init_all        # () every g_EtEff record: +0 -1, +8 0x101, +0xc 0, +0x10 0, +0x18 0, +0x1c 0xff (+4 kept); callers opu_et_init, 0x007ff960
 0x007ff090 function op_et_chr_show            # (on): g_OpEtChrShow = on, g_EtChrHidden = !on; bit 1 of the draw flags of the first 208 g_EtChr records with a handle set (on = 0) or cleared; g_MagicImports slot 568
 0x007ff100 function op_fog_param_set          # fh v3:exact 0x007ff020
 0x007ff1d0 function op_free                   # fh v3:exact 0x007ff0f0
@@ -3043,7 +3079,9 @@
 0x00800df0 function opus_fullauto_no_get      # fh v3:exact 0x00800d10
 0x00800e80 function opus_get_monster_index    # fh v3:exact 0x00800da0
 0x00800f60 function opus_get_osu_by_draw      # fh v3:exact 0x00800e80
+0x00800fd0 function opus_get_weapon_by_no     # (no) -> g_OpusWeapons[i] for the first g_OpusWeaponNos[i] == no, else 0
 0x00801000 function opus_get_weapon_index     # fh v3:exact 0x00800f20
+0x00801030 function opus_get_weapon_index_by_no # (no) -> the first i with g_OpusWeaponNos[i] == no, else -1
 0x00801200 function opus_osu_init             # fh v3:exact 0x00801120
 0x008014c0 function opus_prog_off             # fh v3:exact 0x008013e0
 0x00801700 function opus_prog_on              # fh v3:exact 0x00801620
@@ -3052,12 +3090,15 @@
 0x008044e0 function opu_motion                # fh switch:cg2 0x71003e4c60
 0x00804c90 function opu_v_en_bone             # fh switch:cg2 0x71003e5500
 0x008061a0 function opus_mdc_free             # fh v3:exact 0x008060c0
+0x00806a50 function opusTree_Next             # thiscall (it) -> it: *it = in-order successor (node +0 left, +4 parent, +8 right, byte +0xd nil), nothing at the header (MSVC tree iterator ++)
+0x00806aa0 function opusTree_Next2            # the opusTree_Next body again
 0x00807830 function yonExtMapDeleteId         # fh v3:bsim1.00 0x00807750
 0x00807860 function yonExtMapRegister         # fh v3:bsim1.00 0x00807780
 0x00807870 function op_chara_hsv              # fh v3:cg4 0x807790
 0x008079f0 function op_chara_hsv_make         # fh v3:cg4 0x807ae0
 0x00807b20 function op_chara_hsv_size_get     # fh v3:exact 0x00807c90
 0x00808a20 function opus_all_clut_dispose     # fh v3:exact 0x00808b90
+0x00808c10 function vfx_vec4_min              # (dst, v, s) dst[i] = v[i] < s ? v[i] : s; callers 0x00809180, 0x00809620, 0x0081bef0, 0x0081c2a0
 0x0080a560 function opus_chara_rgba_set       # fh v3:exact 0x0080a6c0
 0x0080aa00 function opus_chara_status_rgb_set # fh v3:exact 0x0080ab60
 0x0080abb0 function opus_ffxfocus_free        # fh v3:exact 0x0080ad10
@@ -3075,6 +3116,7 @@
 0x008161f0 function opu_en_on                 # fh switch:cg3 0x71003fc0f0
 0x008165d0 function opu_et_no                 # fh switch:bsim1.00 0x71003fbd90
 0x00817590 function opus_camera_limit         # fh switch:cg2 0x71003fcb90
+0x00817cc0 function vfx_vec_w_add             # (dst, v, s) dst.w = v.w + s; callers 0x0088a500, 0x0088abd0
 0x0081ce70 function SqsAllVoiceTerminate      # fh v3:exact 0x0081cf80
 0x0081cef0 function SqsBattleStreamingDataSend # fh v3:exact 0x0081d000
 0x0081cf40 function SqsBattleStreamingStart   # fh v3:exact 0x0081d050
@@ -8035,6 +8077,7 @@
 0x00cded58 label    g_LangManager
 0x00ce5176 label    g_DepthBias_Dirty         # u8: DepthBiasHooks_clearDepthBias resets the table only when set, and clears it
 0x00ce81f4 label    g_SaveDataManager         # the instance SaveDataManager_instance returns (+4 callback result, +8 state for isBusy, +0x350 ref buffer)
+0x00cec1a4 label    g_pppOtDrawing            # pppOtFunc_Control (0x00716ac0) sets it to 1 while it calls the g_pppOtList draws, 0 after; the KeLns draws in 0x00760000.c test it
 0x00cec1c0 label    g_FillBufferRequests      # 12 words zeroed by JobSchedule_pppPart_clearFillBufferRequest (and initFillBufferRequest, after the 6 buffers at 0x00cec1a8)
 0x00cec1f0 label    g_pppFpDisp               # the field effects' display switch: pppFpSetDisp; the field effect debug listing prints On/Off from it
 0x00cec1f4 label    g_FpPointLightA              # cleared by pppFpPointLightInit and pppFpLoop, read by pppFpPointLightProc
@@ -8044,6 +8087,7 @@
 0x00d2c258 label    g_FpData                     # current field's FP (effect) table: u16 count at +4, 0x50-byte entries with the id at +0x64; runtime state at 0x00d2c260 (0x80 each) and 0x00d30260 (0x4c each)
 0x00d2c260 label    g_FpRun                      # FP run records, 0x80 per g_FpData entry: +0 frame counter (-0x1000 not started), +0x1d status (0 run, 1 end: Fp_End, 2: Fp_RestartMode2)
 0x00d30260 label    g_FpDisp                     # FP display records, 0x4c per entry: +0 flags (0x10 hidden: pppFpIDdispOff, 2 stuck to map: pppFpSetStickMap, 8 to a display object), +4 stick target
+0x00d4b46c label    g_KeLnsLpTCount           # pppKeLnsLpTCon (0x0075b090) stores it at area +0x8c and increments it (byte)
 0x00d52398 label    g_pppRandTarget          # the float the ppp rand programs (pppRandFloat ...) add to when the key's target offset is -1
 0x010d5600 label    g_KeMdlTkClut                # three words KeMdl_MkTkClut stores (the third a float)
 0x010e7640 label    g_pppWaitDone                # set by pppClearWait, polled by pppSendWait
@@ -8243,11 +8287,14 @@
 0x01139e50 label g_BtlDebugField             # 2 x u32; MsDebugGetFieldNum (0x007c5f50) returns [0] << 16 + [1]
 0x0113f3d2 label g_BtlUcId                    # u16; The user character ID MsSaveUcID keeps.
 0x0119fe10 label    g_OpSprStack                 # op scratch stack, i32 marks: op_spr_alloc(n) pushes top + n (top index g_OpSprTop)
+0x0119fe98 label    g_OpusEncount             # the encounter effect's oef2 object: op_et_encount_effect_on runs opu_et_unit on it, op_et_encount_effect_free frees its units and clears it
+0x0119fe9c label    g_OpusWeaponNos           # 4 bytes: the weapon numbers of g_OpusWeapons (set by op_et_weapon_init, 0xff free; opus_get_weapon_by_no)
 0x0119fea0 label    g_OpusWeapons                # 4 weapon opus objects (opus_get_weapon_index)
 0x0119fed0 label    g_OpusMonsters               # 8 monster opus objects (opus_get_monster_index)
 0x011a0061 label    g_OpPrayEffect               # op_pray_effect_check returns -1 while nonzero
 0x011a0063 label    g_OpEtChrShow             # byte: the last op_et_chr_show argument
 0x011a0067 label    g_OpWotTrigger               # set by op_wot_triger, read by op_ot_draw
+0x011a0080 label    g_EtBindDefault           # u16 bind flags; op_et_bind_default_water keeps the water bits (0x3400) at 0x800
 0x011a03a0 label    g_OpOef2ClutCues             # ring of 64 CLUT masks (op_oef2_tex_clut_cue_check, op_oef2_tex_clut_cue_trans)
 0x011a04a0 label    g_OpOef2ClutCueHead          # u16 first entry of g_OpOef2ClutCues
 0x011a04a2 label    g_OpOef2ClutCueCount         # u16 entries in g_OpOef2ClutCues
@@ -8563,10 +8610,12 @@
 0x0230fd3c label    g_pppMemAllocFailed       # pppMemAlloc: 1 when neither heap had room
 0x0230fde0 label    g_pppWoodMatrix           # the billboard rotation pppDrawMatrixWoodSta builds (FFXVu0CopyMatrix from 0x0230fee0); pppDrawMatrixWood turns the scaled rows by it
 0x0230fe20 label    g_pppViewMatrixCopy       # FFXVu0CopyMatrix of g_pppViewMatrix (0x00920000.c); pppDrawMatrix multiplies the object's matrix by it
+0x0230fe60 label    g_pppScreenMatrix         # MsCopyScreenMatrix(0x0230fe60) in pppOtFunc_Control (0x00716ac0) before the g_pppOtList draws
 0x0230ff20 label    g_pppViewMatrix           # cdc_Mul4x4(g_pppViewMatrix, g_pppCameraMatrix, 0x0230ffa0) (0x00920000.c); translation at 0x0230ff50, which pppDrawMatrixNoRot adds; the pppDrawMatrix* and pppKeDMat* draws transform positions by it
 0x0230ff60 label    g_pppCameraMatrix         # MsCopyCameraMatrix(0x0230ff60) each frame; sceVu0InversMatrix4x4 of it into 0x0230fca0
 0x0230ffa0 label    g_pppWorldMatrix          # the running part's matrix: pppSetMatrix (XYZ rotation of part +0x50, rows scaled by +0x60, position +0x40); g_pppViewMatrix = it x g_pppCameraMatrix
 0x0230ffe4 label    g_pppCurrentPart             # the part pppRunPart/pppRunPartFp/pppStartPart set while they run it; +0x3c points at 16-byte object records (the object at +4), which pppPObjPoint and pppKeThTp index by the key
+0x0230fff0 label    g_pppOtList               # the draw list of the pppKeLns...T programs: their TCon pppOtFunc_Reg(0x0230fff0, node, draw, area), TDes pppOtFunc_Lev(0x0230fff0, node); +4 tail, +0xc u16 count
 0x02310000 label g_ChrTexAnim               # 64 x 0x30: source +0, work +4, u8 format +0xd (0 old, 1 new) (chr_texanim_init)
 0x02310c40 label    g_CdLib                   # function table of the PS2 CD-library emulation
 0x02310c60 label    g_CdLib_FileBase          # g_CdLib + 0x20: the current module's first PS2 file number (CDfileSize_CD, CDfileSize_CD_EX add it to theirs)

@@ -9,7 +9,7 @@ use std::sync::{Arc, OnceLock};
 
 use ffx_bridge::{Global, Mem, Value};
 use ffx_oracle::{Conv, Oracle, Pages};
-use ffx_vfx::{et, fp, heap, mat, op, opd, opus, part, ppp, prog, rand, x87};
+use ffx_vfx::{et, fp, heap, mat, op, opd, opus, part, ppp, prog, rand, tree, x87};
 
 fn exe() -> Option<PathBuf> {
     let dir = std::env::var_os("FFX_GAME_DIR").map(PathBuf::from);
@@ -591,8 +591,10 @@ type ById2 = fn(&mut Oracle, u32, u32);
 
 fn fp_calls(p: &mut Pair, rng: &mut Xorshift, ids: &[u32], outs: u32, round: u32) {
     use fp::bridge as f;
-    let by_id: [(&str, u32, ById); 6] = [
+    let by_id: [(&str, u32, ById); 8] = [
         ("Fp_Restart", FP_RESTART, f::fp_restart),
+        ("Fp_RestartGroup", 0x0072_9530, f::fp_restart_group),
+        ("Fp_EndGroup", 0x0072_94f0, f::fp_end_group),
         ("Fp_RestartMode2", FP_RESTART_MODE2, f::fp_restart_mode2),
         ("Fp_End", FP_END, f::fp_end),
         ("pppFpIDdispOff", PPP_FP_ID_DISP_OFF, f::ppp_fp_id_disp_off),
@@ -680,6 +682,9 @@ fn field_effects_match_the_original() {
             for i in 0..n {
                 let id = rng.pick(&pool);
                 p.set(table + 0x64 + 0x50 * i, id);
+                // the group (Fp_EndGroup, Fp_RestartGroup)
+                let group = rng.pick(&pool);
+                p.set(table + 0x66 + 0x50 * i, group);
                 let run = p.sym(f::RUN.sym) + 0x80 * i;
                 p.fill(run, 0x80, &mut rng);
                 if rng.chance(30) {
@@ -980,11 +985,20 @@ const OP_ET_EFF_OFF_SIGNAL: u32 = 0x007f_c450;
 const OP_ET_WEAPON_AFTERIMAGE_FADE: u32 = 0x007f_ca40;
 
 type ByHandle = fn(&mut Oracle, u32) -> u32;
+type ByHandle2 = fn(&mut Oracle, u32, u32) -> u32;
 
 /// One of each `et` function on `handles` and effect `ids`.
+#[allow(clippy::too_many_lines)] // one call of each
 fn et_calls(p: &mut Pair, rng: &mut Xorshift, handles: &[u32], ids: &[u32], out: u32, what: &str) {
     use et::bridge as e;
-    let returning: [(&str, u32, ByHandle); 3] = [
+    let returning: [(&str, u32, ByHandle); 6] = [
+        (
+            "op_et_bindeff2_draw_off",
+            0x007f_b530,
+            e::op_et_bindeff2_draw_off,
+        ),
+        ("op_et_chr_draw_off", 0x007f_c000, e::op_et_chr_draw_off),
+        ("op_et_chr_draw_on", 0x007f_c060, e::op_et_chr_draw_on),
         (
             "op_et_bindeff_draw_on",
             OP_ET_BINDEFF_DRAW_ON,
@@ -1001,7 +1015,22 @@ fn et_calls(p: &mut Pair, rng: &mut Xorshift, handles: &[u32], ids: &[u32], out:
             e::op_et_bindeff2_draw_on,
         ),
     ];
-    let void: [(&str, u32, ById); 4] = [
+    let void: [(&str, u32, ById); 7] = [
+        (
+            "op_et_bindeff2_breath_off",
+            0x007f_b470,
+            e::op_et_bindeff2_breath_off,
+        ),
+        (
+            "op_et_bindeff2_walk_off",
+            0x007f_b7f0,
+            e::op_et_bindeff2_walk_off,
+        ),
+        (
+            "op_et_bindeff2_water_off",
+            0x007f_b890,
+            e::op_et_bindeff2_water_off,
+        ),
         (
             "op_et_bindeff2_walk_on",
             OP_ET_BINDEFF2_WALK_ON,
@@ -1035,8 +1064,52 @@ fn et_calls(p: &mut Pair, rng: &mut Xorshift, handles: &[u32], ids: &[u32], out:
             e::op_et_weapon_afterimage_fade,
         ),
     ];
+    let switches: [(&str, u32, ByHandle2); 4] = [
+        (
+            "op_et_bindeff2_draw_set",
+            0x007f_b610,
+            e::op_et_bindeff2_draw_set,
+        ),
+        (
+            "op_et_bindeff_draw_set",
+            0x007f_bb20,
+            e::op_et_bindeff_draw_set,
+        ),
+        ("op_et_chr_draw_set", 0x007f_c0c0, e::op_et_chr_draw_set),
+        (
+            "op_et_draw_flags_switch",
+            0x007f_c200,
+            e::op_et_draw_flags_switch,
+        ),
+    ];
+    let masks: [(&str, u32, ById2); 4] = [
+        ("op_et_eff_signal_and", 0x007f_c490, e::op_et_eff_signal_and),
+        ("op_et_eff_flags_and", 0x007f_c4d0, e::op_et_eff_flags_and),
+        ("op_et_eff_flags_or", 0x007f_c510, e::op_et_eff_flags_or),
+        ("op_et_eff_signal_or", 0x007f_c550, e::op_et_eff_signal_or),
+    ];
     for _ in 0..8 {
         let h = rng.pick(handles);
+        let (name, sym, f) = rng.pick(&switches);
+        let on = rng.pick(&[0u32, 1, 0x100]);
+        p.check(
+            &format!("{name}({h:#x}, {on}) {what}"),
+            sym,
+            &[h, on],
+            |m| Some(f(m, h, on)),
+        );
+        let id = rng.pick(ids);
+        let (name, sym, f) = rng.pick(&masks);
+        let mask = rng.next();
+        p.check(
+            &format!("{name}({id:#x}, {mask:#x}) {what}"),
+            sym,
+            &[id, mask],
+            |m| {
+                f(m, id, mask);
+                None
+            },
+        );
         p.check(
             &format!("op_get_chr_status_stone({h:#x}) {what}"),
             OP_GET_CHR_STATUS_STONE,
@@ -4046,6 +4119,366 @@ fn parts_and_objects_match_the_original() {
                     pt::ppp_part_call(m, part, at, &mut call_original);
                     None
                 });
+            }
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::cast_possible_truncation)]
+fn lns_t_programs_match_the_original() {
+    use prog::bridge::{self as pb, LnsT};
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x1a5e_77c0);
+        let destroy = p.sym(0x0064_5280);
+        p.a.stub_return(destroy, 0).unwrap();
+        p.b.stub_return(destroy, 0).unwrap();
+        // the draws the nodes call (the renderer's side) replaced by a
+        // recorder of their arguments
+        arg_recorder(
+            &mut p,
+            &[
+                0x0075_a250,
+                0x0075_a610,
+                0x0075_a9e0,
+                0x0075_ade0,
+                0x0075_b230,
+            ],
+            3,
+        );
+        let list = p.sym(0x0230_fff0);
+        p.set(list + 4, list);
+        p.set(list + 0xc, 0u16);
+        // eight objects, each its own offsets; `None` while unregistered
+        let objs = p.alloc(8 * 0x400);
+        let ctrls = p.alloc(8 * 0x20);
+        let mut live: [Option<Option<LnsT>>; 8] = [None; 8];
+        for i in 0..8 {
+            let ctrl = ctrls + 0x20 * i;
+            p.set(ctrl + 0xc, ctrl + 0x10);
+            p.set(ctrl + 0x10, rng.below(0x40) * 4);
+        }
+        for _ in 0..2000 {
+            if rng.chance(10) {
+                p.check("pppOtFunc_Control", 0x0071_6ac0, &[list], |m| {
+                    part::bridge::ppp_ot_func_control(m, list, &mut call_original);
+                    None
+                });
+            }
+            let i = rng.below(8);
+            let (obj, ctrl) = (objs + 0x400 * i, ctrls + 0x20 * i);
+            match live[i as usize] {
+                None => {
+                    p.fill(obj, 0x400, &mut rng);
+                    p.put(part::bridge::CURRENT_PROGRAM, rng.next());
+                    p.put(pb::LNS_LP_T_COUNT, rng.next() as u8);
+                    p.set(list + 0xe, rng.next() as u16);
+                    let kinds = [
+                        Some(LnsT::Arnd),
+                        Some(LnsT::Clm),
+                        Some(LnsT::Crn),
+                        Some(LnsT::Fls),
+                        None,
+                    ];
+                    let kind = kinds[rng.below(5) as usize];
+                    match kind {
+                        Some(k) => {
+                            let at =
+                                [0x0075_a0f0, 0x0075_a4a0, 0x0075_a870, 0x0075_ac60][k as usize];
+                            p.check(&format!("{k:?}TCon"), at, &[obj, ctrl], |m| {
+                                Some(pb::ppp_ke_lns_t_con(m, k, obj, ctrl))
+                            });
+                        }
+                        None => {
+                            p.check("pppKeLnsLpTCon", 0x0075_b090, &[obj, ctrl], |m| {
+                                pb::ppp_ke_lns_lp_t_con(m, obj, ctrl);
+                                None
+                            });
+                        }
+                    }
+                    live[i as usize] = Some(kind);
+                }
+                Some(Some(k)) => {
+                    let at = [0x0075_a140, 0x0075_a4f0, 0x0075_a8b0, 0x0075_acb0][k as usize];
+                    p.check(&format!("{k:?}TDes"), at, &[obj, ctrl], |m| {
+                        Some(pb::ppp_ke_lns_t_des(m, k, obj, ctrl, &mut call_original))
+                    });
+                    live[i as usize] = None;
+                }
+                Some(None) => {
+                    p.check("pppKeLnsLpTDes", 0x0075_b130, &[obj, ctrl], |m| {
+                        Some(pb::ppp_ke_lns_lp_t_des(m, obj, ctrl))
+                    });
+                    live[i as usize] = None;
+                }
+            }
+        }
+    }
+}
+
+/// Replaces the functions at `syms` by a recorder of their first `n` (at
+/// most four) arguments (a log of 256 entries of 16 bytes after a count),
+/// so that checks compare what callers pass them; returns the log.
+fn arg_recorder(p: &mut Pair, syms: &[u32], n: u8) -> u32 {
+    let log = p.alloc(4 + 0x100 * 16);
+    let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x81, 0xe1, 0xff, 0, 0, 0]); // and ecx, 0xff
+    c.extend([0xc1, 0xe1, 0x04]); // shl ecx, 4
+    for k in 0..n {
+        c.extend([0x8b, 0x44, 0x24, 4 + 4 * k]); // mov eax, [esp + 4 + 4k]
+        c.extend([0x89, 0x81]); // mov [ecx + log + 4 + 4k], eax
+        c.extend((log + 4 + 4 * u32::from(k)).to_le_bytes());
+    }
+    c.extend([0xff, 0x05]); // inc dword [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0xb8, 0x5a, 0x5a, 0x5a, 0x5a]); // mov eax, 0x5a5a5a5a
+    c.push(0xc3);
+    for &sym in syms {
+        let at = p.sym(sym);
+        p.a.write(at, &c).unwrap();
+        p.b.write(at, &c).unwrap();
+    }
+    log
+}
+
+#[test]
+#[allow(clippy::cast_possible_truncation)]
+fn shape_runners_match_the_original() {
+    use part::bridge as pt;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x5a9e_d2a1);
+        arg_recorder(&mut p, &[pt::DRAW_SHAPE0, pt::DRAW_SHAPE_X0], 3);
+        let objs = p.alloc(8 * 0x100);
+        let keys = p.alloc(0x400);
+        let (def, prog, e) = (p.alloc(0x10), p.alloc(0x40), p.alloc(0x10));
+        for _ in 0..2000 {
+            let n = 1 + rng.below(8);
+            let c = rng.below(4);
+            p.set(prog + 0xc, u8::from(rng.chance(20)));
+            p.set(prog + 0x20, 0x20 + 4 * rng.below(8));
+            p.set(e + 4, (4 * rng.below(8)) as u16);
+            p.set(def + 4, objs);
+            p.set(def + 0xc, n as u16);
+            for k in 0..0x100 {
+                p.set(keys + 4 * k, rng.below(4));
+            }
+            for k in 0..n {
+                let o = objs + 0x100 * k;
+                p.set(o, objs + 0x100 * (k + 1));
+                p.set(o + 0xc, rng.below(4));
+                let slot = o + p.get::<u32>(prog + 0x20) + 4 * c;
+                p.set(slot, keys + 4 * rng.below(0x80));
+            }
+            let (name, at, draw) = if rng.chance(50) {
+                ("pppDrawShape", 0x0074_09e0, pt::DRAW_SHAPE0)
+            } else {
+                ("pppDrawShapeX", 0x0074_0ed0, pt::DRAW_SHAPE_X0)
+            };
+            p.check(name, at, &[def, prog, e, c], |m| {
+                Some(pt::ppp_draw_shape(
+                    m,
+                    draw,
+                    def,
+                    prog,
+                    e,
+                    c,
+                    &mut call_original,
+                ))
+            });
+        }
+    }
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::many_single_char_names,
+    clippy::cast_possible_truncation
+)]
+fn et_opus_math_and_trees_match_the_original() {
+    use et::bridge as e;
+    use tree::bridge as t;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0e75_7ee5);
+        // op_oef2_set2, opu_et_unit and opu_unit_free_by_oef2: recorded
+        arg_recorder(&mut p, &[0x007e_3e30], 1);
+        arg_recorder(&mut p, &[0x007f_d7f0], 4);
+        arg_recorder(&mut p, &[0x007f_df70], 2);
+        let btl = p.sym(0x0112_a8e0); // g_BtlStatus (MsBattleGetStatus)
+        let handles = p.sym(e::CHR_HANDLES.sym);
+        let chr_at = p.sym(e::CHR.sym);
+        let nos = p.sym(opus::bridge::WEAPON_NOS.sym);
+        let weapons = p.sym(opus::bridge::WEAPONS.sym);
+        let monsters = p.sym(opus::bridge::MONSTERS.sym);
+        let (dst, v) = (p.alloc(0x10), p.alloc(0x10));
+        let tree = p.alloc(0x10);
+        let nodes = p.alloc(0x20 * 0x40);
+        let it = p.alloc(4);
+        let key = p.alloc(4);
+        for round in 0..300 {
+            // the opus handles and characters
+            for k in 0..0xf0 {
+                let h = if rng.chance(60) {
+                    0
+                } else {
+                    0x100 + rng.below(8)
+                };
+                p.set(handles + 4 * k, h);
+            }
+            for i in 0..e::CHRS {
+                let h = if rng.chance(80) {
+                    0
+                } else {
+                    0x100 + rng.below(8)
+                };
+                p.set(chr_at + 0x20 * i, h);
+                p.set(chr_at + 0x20 * i + 0xe, rng.below(0x10000) as u16);
+            }
+            p.set(btl, rng.pick(&[0u8, 1, 0xff]));
+            p.check("opus_chr_handle_count", 0x007f_cf60, &[], |m| {
+                Some(e::opus_chr_handle_count(m, &mut call_original))
+            });
+            let n = rng.below(0x30);
+            p.check("opus_chr_handle_nth", 0x007f_cfb0, &[n], |m| {
+                Some(e::opus_chr_handle_nth(m, n, &mut call_original))
+            });
+            p.check("opus_chr_draw_index_nth", 0x007f_cf10, &[n], |m| {
+                Some(e::opus_chr_draw_index_nth(m, n, &mut call_original))
+            });
+            // weapons and monsters
+            for i in 0..4 {
+                p.set(nos + i, rng.pick(&[0u8, 1, 2, 0xff]));
+                p.set(weapons + 4 * i, rng.pick(&[0u32, 0x200, 0x300]));
+            }
+            for i in 0..8 {
+                p.set(monsters + 4 * i, rng.pick(&[0u32, 0, 0x400, 0x500]));
+            }
+            let no = rng.pick(&[0u32, 1, 2, 0xff, 0x101]);
+            p.check("opus_get_weapon_by_no", 0x0080_0fd0, &[no], |m| {
+                Some(opus::bridge::opus_get_weapon_by_no(m, no))
+            });
+            p.check("opus_get_weapon_index_by_no", 0x0080_1030, &[no], |m| {
+                Some(opus::bridge::opus_get_weapon_index_by_no(m, no).cast_unsigned())
+            });
+            let o = rng.pick(&[0u32, 0x400, 0x500, 0x600]);
+            p.check("op_et_monster_add", 0x007f_c8a0, &[o], |m| {
+                Some(e::op_et_monster_add(m, o, &mut call_original))
+            });
+            p.put(e::OPUS_BATTLE, rng.next());
+            p.check("op_et_oef2_free", 0x007f_c2a0, &[o], |m| {
+                Some(e::op_et_oef2_free(m, o, &mut call_original))
+            });
+            p.check("opu_et_oef2_free", 0x007f_da60, &[o], |m| {
+                Some(e::op_et_oef2_free(m, o, &mut call_original))
+            });
+            for at in [0x007f_c2c0, 0x007f_c970] {
+                p.check("op_et_oef2_start", at, &[o], |m| {
+                    Some(e::op_et_oef2_start(m, o, &mut call_original))
+                });
+            }
+            p.put(e::ENCOUNT, o);
+            p.check("op_et_encount_effect_free", 0x007f_c5f0, &[], |m| {
+                Some(e::op_et_encount_effect_free(m, &mut call_original))
+            });
+            p.put(e::BIND_DEFAULT, rng.next());
+            p.check("op_et_bind_default_water", 0x007f_b870, &[], |m| {
+                Some(e::op_et_bind_default_water(m))
+            });
+            if round % 50 == 0 {
+                p.check("op_et_eff_init_all", 0x007f_ef70, &[], |m| {
+                    e::op_et_eff_init_all(m);
+                    None
+                });
+            }
+            // the vector helpers (no signalling NaNs)
+            for i in 0..4 {
+                let x = finite(&mut rng);
+                p.set(v + 4 * i, x);
+            }
+            p.fill(dst, 0x10, &mut rng);
+            let sb = finite(&mut rng);
+            let s = f32::from_bits(sb);
+            p.check("vfx_vec_w_add", 0x0081_7cc0, &[dst, v, sb], |m| {
+                mat::bridge::vfx_vec_w_add(m, dst, v, s);
+                None
+            });
+            p.check("vfx_vec3_scale", 0x0075_bb00, &[dst, v, sb], |m| {
+                mat::bridge::vfx_vec3_scale(m, dst, v, s);
+                None
+            });
+            p.check("vfx_vec4_min", 0x0080_8c10, &[dst, v, sb], |m| {
+                mat::bridge::vfx_vec4_min(m, dst, v, s);
+                None
+            });
+            // the keyed tree: insert a few, find some
+            p.set(tree + 0xc, tree);
+            let count = 1 + rng.below(0x40);
+            for k in 0..count {
+                let node = nodes + 0x20 * k;
+                p.fill(node, 0x10, &mut rng);
+                p.set(node + 0xc, rng.below(0x20).cast_signed() - 0x10);
+                let r =
+                    p.a.call(p.sym(0x0070_fda0), Conv::Thiscall(tree), &[node])
+                        .unwrap();
+                let mine = t::vfx_int_tree_insert(&mut p.b, tree, node);
+                assert_eq!(r.eax, mine, "vfxIntTree_Insert");
+                p.same("vfxIntTree_Insert");
+            }
+            for _ in 0..8 {
+                p.set(key, rng.below(0x24).cast_signed() - 0x12);
+                let r =
+                    p.a.call(p.sym(0x0070_fd20), Conv::Thiscall(tree), &[key])
+                        .unwrap();
+                assert_eq!(
+                    r.eax,
+                    t::vfx_int_tree_find(&p.b, tree, key),
+                    "vfxIntTree_Find"
+                );
+            }
+            // the iterated tree: a random binary search tree (header node 0,
+            // nil; children and the root's parent the header), walked from a
+            // random node
+            let m = 1 + rng.below(0x20);
+            let node = |k: u32| nodes + 0x20 * k;
+            let (mut left, mut right, mut parent) = ([0u32; 0x21], [0u32; 0x21], [0u32; 0x21]);
+            let mut keys = [0u32; 0x21];
+            for k in 1..=m {
+                keys[k as usize] = rng.next();
+                if k == 1 {
+                    continue;
+                }
+                let mut c = 1usize;
+                loop {
+                    let next = if keys[k as usize] < keys[c] {
+                        &mut left[c]
+                    } else {
+                        &mut right[c]
+                    };
+                    if *next == 0 {
+                        *next = k;
+                        parent[k as usize] = c as u32;
+                        break;
+                    }
+                    c = *next as usize;
+                }
+            }
+            for k in 0..=m {
+                let n = node(k);
+                let ku = k as usize;
+                p.set(n, node(left[ku]));
+                p.set(n + 4, node(parent[ku]));
+                p.set(n + 8, node(right[ku]));
+                p.set(n + 0xd, u8::from(k == 0));
+            }
+            p.set(it, node(rng.below(m + 1)));
+            for at in [0x0080_6a50, 0x0080_6aa0] {
+                for _ in 0..4 {
+                    let r = p.a.call(p.sym(at), Conv::Thiscall(it), &[]).unwrap();
+                    let mine = t::opus_tree_next(&mut p.b, it);
+                    assert_eq!(r.eax, mine, "opusTree_Next");
+                    p.same("opusTree_Next");
+                }
             }
         }
     }

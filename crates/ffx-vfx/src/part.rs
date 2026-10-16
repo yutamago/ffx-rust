@@ -147,6 +147,67 @@ pub mod bridge {
         mem.write(list.wrapping_add(4), ptr32(node));
     }
 
+    /// `g_pppOtDrawing` (`0x00cec1a4`): 1 while `pppOtFunc_Control` runs
+    /// the list's draws (the `KeLns` draws test it).
+    pub const OT_DRAWING: Global<u32> = Global::new(0x00ce_c1a4);
+    /// `MsCopyScreenMatrix(out)` (`0x007bba50`), called through `call`.
+    const MS_COPY_SCREEN_MATRIX: Global<u32> = Global::new(0x007b_ba50);
+    /// `MsCopyCameraMatrix(out)` (`0x007c0070`), called through `call`.
+    const MS_COPY_CAMERA_MATRIX: Global<u32> = Global::new(0x007c_0070);
+    /// `g_pppScreenMatrix` (`0x0230fe60`).
+    const SCREEN_MATRIX: Global<u32> = Global::new(0x0230_fe60);
+    /// `g_pppCameraMatrix` (`0x0230ff60`).
+    const CAMERA_MATRIX: Global<u32> = Global::new(0x0230_ff60);
+
+    /// `pppOtFunc_Control(list)` (`0x00716ac0`): with `g_pppOtDrawing` set,
+    /// the screen and camera matrices copied (through `call`), then each
+    /// node's draw (`+8`) called as `f(data, i, frame)` (`+0xc`; `i` its
+    /// place in the list, `frame` the list's `+0xe` on entry), and the
+    /// list's `+0xe` advanced.
+    pub fn ppp_ot_func_control<M: Mem>(
+        mem: &mut M,
+        list: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        OT_DRAWING.set(mem, 1);
+        let (f, out) = (
+            MS_COPY_SCREEN_MATRIX.ptr(mem).addr,
+            SCREEN_MATRIX.ptr(mem).addr,
+        );
+        call(mem, f, &[out]);
+        let (f, out) = (
+            MS_COPY_CAMERA_MATRIX.ptr(mem).addr,
+            CAMERA_MATRIX.ptr(mem).addr,
+        );
+        call(mem, f, &[out]);
+        let mut node = ptr32(rd(mem, list));
+        let frame = u32::from(mem.read::<u16>(list.wrapping_add(0xe)));
+        let mut i = 0u32;
+        while i < u32::from(mem.read::<u16>(list.wrapping_add(0xc))) {
+            let f = ptr32(rd(mem, node.wrapping_add(8)));
+            let data = ptr32(rd(mem, node.wrapping_add(0xc)));
+            call(mem, f, &[data, i, frame]);
+            i += 1;
+            node = ptr32(rd(mem, node));
+        }
+        let n = mem.read::<u16>(list.wrapping_add(0xe)).wrapping_add(1);
+        mem.write(list.wrapping_add(0xe), n);
+        OT_DRAWING.set(mem, 0);
+    }
+
+    /// `pppOtFunc_Lev(list, node)` (`0x00716ba0`): `node` unlinked (its
+    /// neighbours, through `get_ptr32`, linked to each other) and the
+    /// list's count (`+0xc`) one less.
+    pub fn ppp_ot_func_lev(mem: &mut impl Mem, list: u32, node: u32) {
+        let next = rd(mem, node);
+        let prev = rd(mem, node.wrapping_add(4));
+        mem.write(ptr32(prev), next);
+        let next = rd(mem, node);
+        mem.write(ptr32(next).wrapping_add(4), rd(mem, node.wrapping_add(4)));
+        let n = mem.read::<u16>(list.wrapping_add(0xc)).wrapping_sub(1);
+        mem.write(list.wrapping_add(0xc), n);
+    }
+
     /// `pppPObjectCon` (`0x00712d90`, `at` 0x1c) and `pppPObjectCon2`
     /// (`0x00712d20`, `at` 0x20) `(obj)`: each of the object's programs
     /// gets its work area offset (into the offsets at `obj + [+0x20]`) and
@@ -298,7 +359,7 @@ pub mod bridge {
 
     /// `graphicVFXDestroy(lo, hi)` (`0x00645280`): the renderer's side of
     /// an effect instance, called through `call`.
-    const GRAPHIC_VFX_DESTROY: Global<u32> = Global::new(0x0064_5280);
+    pub(crate) const GRAPHIC_VFX_DESTROY: Global<u32> = Global::new(0x0064_5280);
     /// `TOGetFFXLang()` (`0x006410e0`), called through `call`.
     const TO_GET_FFX_LANG: Global<u32> = Global::new(0x0064_10e0);
     /// `g_pppUserFuncs`: the user function table `pppCallUsrFunc` indexes
@@ -432,6 +493,38 @@ pub mod bridge {
                 break;
             }
         }
+    }
+
+    /// `pppDrawShape0(obj, key, entry)` (`0x00740a70`), the shape draw.
+    pub const DRAW_SHAPE0: u32 = 0x0074_0a70;
+    /// `pppDrawShapeX`'s draw (`0x00740f60`).
+    pub const DRAW_SHAPE_X0: u32 = 0x0074_0f60;
+
+    /// `pppDrawShape` (`0x007409e0`, with [`DRAW_SHAPE0`]) and
+    /// `pppDrawShapeX` (`0x00740ed0`, with [`DRAW_SHAPE_X0`]) `(def, prog,
+    /// entry, c)`, the programs' runners: unless the program list's `+0xc`
+    /// bit 0 is set, each of the definition's objects (`+4`, `+0xc` of
+    /// them; at least one) gets the key advance and the draw called
+    /// (through `call`) as `draw(obj, key, entry)`. Returns what the
+    /// original leaves in `eax` (overlays return it): `4 c`, or the first
+    /// object when the bit is set.
+    pub fn ppp_draw_shape<M: Mem>(
+        mem: &mut M,
+        draw: u32,
+        def: u32,
+        prog: u32,
+        e: u32,
+        c: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let first = ptr32(rd(mem, def.wrapping_add(4)));
+        if mem.read::<u8>(prog.wrapping_add(0xc)) & 1 != 0 {
+            return first;
+        }
+        let count = u32::from(mem.read::<u16>(def.wrapping_add(0xc)));
+        let draw = Global::<u32>::new(draw).ptr(mem).addr;
+        run_program(mem, prog, c, e, first, count, [0, draw], false, call);
+        c.wrapping_mul(4)
     }
 
     /// `pppRunPartStd(part)` (`0x00716c40`): one frame of a part's
@@ -1216,7 +1309,8 @@ pub mod bridge {
                 || call0(mem, ATEL_GET_EFFECT_FLAG, &[7], call) != 0)
         {
             let n = f64::from(mem.read::<u16>(countdown));
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // fistp with truncation, the low half
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            // fistp with truncation, the low half
             let v = (n * f64::from(1.8f32)).trunc() as i32 as u16;
             mem.write(countdown, v);
         }

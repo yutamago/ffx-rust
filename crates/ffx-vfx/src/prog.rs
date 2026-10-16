@@ -55,6 +55,7 @@ pub mod bridge {
 
     use super::Init::{self, Copy4, Lns, LnsClm, Null, ThCp, ThRes, W8, W16, W32};
     use super::ONE;
+    use crate::part::bridge as part;
     use crate::ppp::bridge::{COLOR_CON_SHIFT, R0, STOP};
     use crate::x87;
     use ffx_field::ke::bridge as ke;
@@ -968,5 +969,126 @@ pub mod bridge {
         ke::ke_lns_lp_init(mem, w);
         mem.write(w.wrapping_add(0x9c), 0u32);
         mem.write(w.wrapping_add(0xa8), 0u32);
+    }
+
+    /// `g_pppOtList` (`0x0230fff0`): the list of draws the `...T` programs
+    /// register their work areas in (`pppOtFunc_Reg`/`pppOtFunc_Lev`).
+    pub const OT_LIST: Global<u32> = Global::new(0x0230_fff0);
+    /// `g_KeLnsLpTCount`: `pppKeLnsLpTCon` numbers its work areas with it.
+    pub const LNS_LP_T_COUNT: Global<u8> = Global::new(0x00d4_b46c);
+
+    /// The `pppKeLns...T` programs: lines drawn from the draw list.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum LnsT {
+        /// `pppKeLnsArndT`.
+        Arnd,
+        /// `pppKeLnsClmT`.
+        Clm,
+        /// `pppKeLnsCrnT`.
+        Crn,
+        /// `pppKeLnsFlsT`.
+        Fls,
+    }
+
+    impl LnsT {
+        /// The offsets in the work area of the program byte and the list
+        /// node, and the draw the node calls.
+        const fn layout(self) -> (u32, u32, u32) {
+            match self {
+                Self::Arnd => (0xb, 0x24, 0x0075_a250),
+                Self::Clm => (0xf, 0x40, 0x0075_a610),
+                Self::Crn => (0xb, 0x1c, 0x0075_a9e0),
+                Self::Fls => (0xb, 0x20, 0x0075_ade0),
+            }
+        }
+    }
+
+    /// `pppKeLnsArndTCon` (`0x0075a0f0`), `pppKeLnsClmTCon` (`0x0075a4a0`),
+    /// `pppKeLnsCrnTCon` (`0x0075a870`) and `pppKeLnsFlsTCon`
+    /// (`0x0075ac60`) `(obj, ctrl)`: area 0 (from `+0xa0`) set up as its
+    /// `KeLns..._Init` does (`Arnd` with `KeLnsFls_Init`, also storing
+    /// `set_ptr32(obj)` at `+0x10`; `Clm` then `+8` = 4; `Fls` as
+    /// `pppKeLnsFlsCon` after `set_ptr32(obj)` at `+0xc`), the current
+    /// program's low byte stored, and its node registered on `g_pppOtList`
+    /// with the program's draw and the area; returns the node
+    /// (`pppOtFunc_Reg`'s `eax`, which the original leaves).
+    pub fn ppp_ke_lns_t_con(mem: &mut impl Mem, kind: LnsT, obj: u32, ctrl: u32) -> u32 {
+        let w = area(mem, obj, ctrl, 0).wrapping_add(0xa0);
+        match kind {
+            LnsT::Arnd => {
+                mem.write(w.wrapping_add(0x10), stub::ptr32(obj));
+                ke::ke_lns_init(mem, w);
+            }
+            LnsT::Clm => {
+                ke::ke_lns_clm_init(mem, w);
+                mem.write(w.wrapping_add(8), 4u8);
+            }
+            LnsT::Crn => ke::ke_lns_init(mem, w),
+            LnsT::Fls => {
+                mem.write(w.wrapping_add(0xc), stub::ptr32(obj));
+                let target = crate::rand::bridge::TARGET.ptr(mem).addr;
+                mem.write(w, stub::ptr32(target));
+                mem.write(w + 4, stub::ptr32(0));
+            }
+        }
+        let (byte, node, draw) = kind.layout();
+        let program = part::CURRENT_PROGRAM.get(mem);
+        mem.write(w.wrapping_add(byte), program.to_le_bytes()[0]);
+        let list = OT_LIST.ptr(mem).addr;
+        let draw = Global::<u32>::new(draw).ptr(mem).addr;
+        part::ppp_ot_func_reg(mem, list, w.wrapping_add(node), draw, w);
+        w.wrapping_add(node)
+    }
+
+    /// `pppKeLnsArndTDes` (`0x0075a140`), `pppKeLnsClmTDes` (`0x0075a4f0`),
+    /// `pppKeLnsCrnTDes` (`0x0075a8b0`) and `pppKeLnsFlsTDes`
+    /// (`0x0075acb0`) `(obj, ctrl)`: `graphicVFXDestroy` (through `call`)
+    /// of the instance area:program byte (sign-extended into the high
+    /// word), then the node off `g_pppOtList`; returns the list (left in
+    /// `eax` by `pppOtFunc_Lev`).
+    pub fn ppp_ke_lns_t_des<M: Mem>(
+        mem: &mut M,
+        kind: LnsT,
+        obj: u32,
+        ctrl: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = area(mem, obj, ctrl, 0).wrapping_add(0xa0);
+        let (byte, node, _) = kind.layout();
+        let i = i32::from(mem.read::<i8>(w.wrapping_add(byte)));
+        let destroy = part::GRAPHIC_VFX_DESTROY.ptr(mem).addr;
+        let hi = w.wrapping_add((i >> 31).cast_unsigned());
+        call(mem, destroy, &[i.cast_unsigned(), hi]);
+        let list = OT_LIST.ptr(mem).addr;
+        part::ppp_ot_func_lev(mem, list, w.wrapping_add(node));
+        list
+    }
+
+    /// `pppKeLnsLpTCon(obj, ctrl)` (`0x0075b090`): as `pppKeLnsLpCon`, and
+    /// `+0x8c` the next number of `g_KeLnsLpTCount`, `+0x8d` 2, `+0xd0` 0,
+    /// the node `+0xb0` registered on `g_pppOtList` (draw `0x0075b230`)
+    /// and `+0xcc` the complement of the list's `+0xe`.
+    pub fn ppp_ke_lns_lp_t_con(mem: &mut impl Mem, obj: u32, ctrl: u32) {
+        ppp_ke_lns_lp_con(mem, obj, ctrl);
+        let w = area(mem, obj, ctrl, 0).wrapping_add(0xa0);
+        let n = LNS_LP_T_COUNT.get(mem);
+        mem.write(w.wrapping_add(0x8c), n);
+        mem.write(w.wrapping_add(0x8d), 2u8);
+        mem.write(w.wrapping_add(0xd0), 0u16);
+        let list = OT_LIST.ptr(mem).addr;
+        let draw = Global::<u32>::new(0x0075_b230).ptr(mem).addr;
+        part::ppp_ot_func_reg(mem, list, w.wrapping_add(0xb0), draw, w);
+        LNS_LP_T_COUNT.set(mem, n.wrapping_add(1));
+        let e = mem.read::<u16>(list.wrapping_add(0xe));
+        mem.write(w.wrapping_add(0xcc), !e);
+    }
+
+    /// `pppKeLnsLpTDes(obj, ctrl)` (`0x0075b130`): area 0's node (`+0x150`)
+    /// off `g_pppOtList`; returns the list.
+    pub fn ppp_ke_lns_lp_t_des(mem: &mut impl Mem, obj: u32, ctrl: u32) -> u32 {
+        let w = area(mem, obj, ctrl, 0).wrapping_add(0xa0);
+        let list = OT_LIST.ptr(mem).addr;
+        part::ppp_ot_func_lev(mem, list, w.wrapping_add(0xb0));
+        list
     }
 }
