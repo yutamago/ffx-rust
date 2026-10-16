@@ -589,6 +589,7 @@
 0x00631320 function Virtuos_InputManager_getVibrationFlag # fh v3:exact 0x006314d0 Virtuos::InputManager::getVibrationFlag
 0x00631340 function Virtuos_InputManager_isHoldButton # fh v3:exact 0x006314f0 Virtuos::InputManager::isHoldButton
 0x00631360 function Virtuos_InputManager_isPressButton # fh v3:exact 0x00631510 Virtuos::InputManager::isPressButton
+0x00631380 function Virtuos_InputManager_isReleaseButton # thiscall(this; mask), ret 4 -> bool: mask bits set in the previous word (+4) and none in the current (+0); the counterpart of isPressButton 0x00631360; name ours
 0x006313a0 function Virtuos_InputManager_isRepButton # fh v3:exact 0x00631550 Virtuos::InputManager::isRepButton
 0x00631550 function Virtuos_InputManager_setInputInfo # fh v3:exact 0x00631700 Virtuos::InputManager::setInputInfo
 0x006315c0 function Input_BuildPadMap          # pairs each key binding (settings +0x60) with its PS2 pad bit
@@ -1111,7 +1112,11 @@
 0x00686cb0 function Identity_00686cb0 # cdecl(x) -> x (frame-pointer build); name ours
 0x00686f80 function Identity_00686f80 # cdecl(x) -> x (frame-pointer build); name ours
 0x00686ff0 function user_aligned_malloc       # cdecl(size, align): jmp UserHeap_AlignedMalloc; fh v3:bsim1.00 0x00687190
+0x00687000 function user_calloc # cdecl(n, size): jmp UserHeap_Calloc 0x006fb820; name ours (after user_malloc)
+0x00687010 function user_free_thunk # cdecl(p): jmp user_free 0x006fb8b0 (Phyre_PhyreFree and operator delete call it); name ours
 0x00687020 function user_malloc               # cdecl(size): jmp UserHeap_Malloc; fh v3:bsim1.00 0x006871c0
+0x00687030 function user_heap_destroy # (): jmp UserHeap_Destroy 0x006fb9a0; name ours
+0x00687040 function malloc_pool_init_thunk # (): jmp malloc_pool_init 0x006fb9b0; name ours
 0x00687050 function user_mem_size             # cdecl(p): jmp UserHeap_MemSize; fh v3:bsim1.00 0x006871f0
 0x00687060 function user_realloc              # cdecl(p, size): jmp UserHeap_Realloc; name ours (after user_mem_size)
 0x006898c0 function TouchManager_GetInstance  # () -> [0x00ccc850]; fh switch:bsim1.00 0x710023e180 TouchManager::GetInstance
@@ -1410,8 +1415,10 @@
 0x006fb160 function SyncManager_syncGetData   # fh v3:exact 0x006fb240 SyncManager::syncGetData
 0x006fb6c0 function user_aligned_free         # fh v3:exact 0x006fb7a0
 0x006fb770 function UserHeap_AlignedMalloc    # cdecl(size, align): UserHeap_Alloc(size + align), pointer moved up to a multiple of align (__aullrem of the sign-extended pointer), the distance in the byte before; the first size bytes filled 0xcd; name ours
+0x006fb820 function UserHeap_Calloc # cdecl(n, size): malloc_pool_init on first use, UserHeap_Alloc(n * size) under the heap's critical section, memset 0; name ours
 0x006fb8b0 function user_free                 # cdecl(p): UserHeap_Free(*g_UserHeap + 0x18, p) under the heap's critical section (*g_UserHeap + 0); fh v3:exact 0x006fb990
 0x006fb910 function UserHeap_Malloc           # cdecl(size): malloc_pool_init on first use, UserHeap_Alloc under the heap's lock, the block filled 0xcd; name ours
+0x006fb9a0 function UserHeap_Destroy # (): CRT free(*g_UserHeap) (import 0x00b0c370), the pointer left; name ours
 0x006fb9b0 function malloc_pool_init          # fh call.cs cdecl _malloc_pool_init
 0x006fba90 function UserHeap_MemSize          # cdecl(p): UserHeap_BlockSize under the lock (no first-use check); name ours
 0x006fbb00 function UserHeap_Realloc          # cdecl(p, size): new block (none for 0), memcpy_s min(old, size) bytes, old freed; name ours
@@ -2117,6 +2124,7 @@
 0x0076d9c0 function dvd_cd_id_size            # fh v3:cg2 0x76dad0
 0x0076da40 function dvd_cd_unk7 # () -> 0xf: one of seven getters by MsGetSaveConfigEnglish/TkGetLang, all returning the same; name ours (the eighth/ninth of the dvd_cd_* family)
 0x0076dac0 function dvd_cd_unk8 # () -> 0x10: one of seven getters by MsGetSaveConfigEnglish/TkGetLang, all returning the same; name ours (the eighth/ninth of the dvd_cd_* family)
+0x0076dc20 function cd_size_from_table # cdecl(n): 1 when entry n + g_CdLib+0x20 of the sector table has bit 23 clear and bit 22 set (size from sizetbl.bin), else 0; name ours
 0x0076dc50 function get_read_buffer           # () -> the CD reader's buffer (0x01128ac8); Fahrenheit Switch BSim 1.00 0x710031e670
 0x0076de90 function printf_cut                # fh switch:bsim1.00 0x71003202d0
 0x0076e5e0 function read_err_disp_set         # (v): byte 0x01128a87 = v; Fahrenheit Switch BSim 1.00 0x710031ea70
@@ -5364,6 +5372,7 @@
 0x008b7fb0 function TOGetTableKind_008b7fb0 # cdecl(i) -> i8 byte 1 of entry i of the table at 0x01868a90 (see TOGetTable_01868a90); name ours
 0x008b7fd0 function TOGetTableKind2Data_008b7fd0 # cdecl(i): entry i of 0x01868a90 + 0x18 when its byte 1 is 2, else 0; name ours
 0x008b7ff0 function TOGetTableKind2Byte7_008b7ff0 # cdecl(i): i8 byte 7 of entry i of 0x01868a90 when its byte 1 is 2, else -1; name ours
+0x008b8010 function TOMessageTableByte2_008b8010 # cdecl(i): i8 byte 2 of entry i of 0x01868a90 when message window i has +0x1e == 1 and the entry's kind (byte 1) >= 1, else -1; name ours
 0x008b81d0 function TOInitMacroCmd            # fh v3:exact 0x008b8180
 0x008b8210 function TOInitMessage             # fh v3:exact 0x008b81c0
 0x008b8290 function TOIntToMes                # fh v3:exact 0x008b8240
@@ -5375,6 +5384,7 @@
 0x008b8960 function TOMacroSetType            # (win, n, t): byte 0 of macro record n of message window win (g_MsgVars; the Btl form sets byte 1 too); name ours
 0x008b8980 function TOMacroSetValue           # (win, n, v): word 1 of the record; returns v; name ours
 0x008b8af0 function TOSetMessageFunc          # fh v3:exact 0x008b8aa0
+0x008b8ca0 function TOMessageCallF8_008b8ca0 # cdecl(i): message window i's function +0xf8(window) when the byte at *(window + 0x98) is set, else that pointer; name ours
 0x008b8cd0 function TOSetRectDirect           # fh switch:bsim1.00 0x71004f0dc0
 0x008b9130 function GetU32_025d16c4 # () -> u32 at 0x025d16c4; name ours
 0x008b9140 function TOValueToMesFontL         # fh v3:exact 0x008b90f0
@@ -5395,6 +5405,7 @@
 0x008bdb70 function TkBtlEndInit              # fh v3:exact 0x008bdb30
 0x008bdf10 function BtlEnd_InitApStep         # 0x01869f14 = result 19 (AP), 0x01869f10 = its step (ap/189 | 1, +2 on a multiple of 5); own name
 0x008bdfc0 function SetTable_02310f20 # cdecl(i, v) -> i: word i of the table at 0x02310f20 = v; callers 0x008ba4e0, 0x008bb690; name ours
+0x008bdfe0 function TOSetPair_008bdfe0 # cdecl(prev, cur): 0x025cc584 = prev (or the stored 0x025cc588 for 0), 0x025cc588 = cur, u16 0x0186a178 = 0x1000 when equal else 0 (returned); callers 0x008ba660, 0x008bdb70; name ours
 0x008be320 function GetU32_00c5a084 # () -> u32 at 0x00c5a084; name ours
 0x008be330 function TOInitMenuGraph           # fh switch:bsim1.00 0x71004b1c00
 0x008be370 function TOMenuAtelReq             # fh v3:exact 0x008be340
@@ -5709,11 +5720,27 @@
 0x008ed050 function Identity_008ed050 # cdecl(x) -> x (frame-pointer build), jumps to Identity_008ed040; name ours
 0x008ed380 function TOAdpEasyShapeXYWHC2      # fh v3:exact 0x008ed380
 0x008ee240 function TOAdpFontM_ASCII          # fh v3:exact 0x008ee240
+0x008ef670 function TOAdpALPHA # cdecl(p, A, B, C, D, FIX) -> p + 0x10: GS register 0x42 from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
+0x008ef6e0 function TOAdpCLAMP # cdecl(p, WMS, WMT, MINU, MAXU, MINV, MAXV) -> p + 0x10: GS register 0x08 from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
+0x008ef760 function TOAdpCOLCLAMP # cdecl(p, value) -> p + 0x10: GS register 0x46 from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
 0x008ef790 function TOAdpGsDirectRGBA         # (p, rgba) -> p + 16: the four colour bytes as words; fh switch:bsim1.00 0x710051b230
+0x008ef7d0 function TOAdpFBA # cdecl(p, value) -> p + 0x10: GS register 0x4a from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
+0x008ef800 function TOAdpFOG # cdecl(p, fog) -> p + 0x10: GS FOG (0x0a), the value in bits 56..63; name ours
+0x008ef880 function TOAdpFRAME # cdecl(p, FBP, FBW, PSM, FBMSK) -> p + 0x10: GS register 0x4c from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
 0x008ef8e0 function TOAdpWords4               # (p, a, b, c, d) -> p + 16; name ours
+0x008ef910 function TOAdpSCISSOR # cdecl(p, SCAX0, SCAX1, SCAY0, SCAY1) -> p + 0x10: GS register 0x40 from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
 0x008ef970 function TOAdpTEST # cdecl(p, ate, atst, aref, afail, date, datm, zte, ztst) -> p + 0x10: the GS TEST_2 (0x47) register from its fields, each sign-extended and OR-ed unmasked; name ours
+0x008efa00 function TOAdpTEX0 # cdecl(p, TBP0, TBW, PSM, TW, TH, TCC, TFX, CBP, CPSM, CSM, CSA, CLD) -> p + 0x10: GS TEX0_1 (0x06) from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
+0x008efad0 function TOAdpTEX1 # cdecl(p, LCM, MXL, MMAG, MMIN, MTBA, L, K) -> p + 0x10: GS register 0x14 from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
+0x008efb60 function TOAdpTEXFLUSH # cdecl(p) -> p + 0x10: GS TEXFLUSH (0x3f), no data; name ours
 0x008efb90 function TOAdpXY2                  # (p, x, y) -> p + 16: x * 16 + 8, y * 16 + 8; name ours
+0x008efbc0 function TOAdpXYFrac # cdecl(p, x, fx, y, fy) -> p + 0x10: x * 16 + fx, y * 16 + fy into the first two words (12.4 fixed point); name ours
 0x008efbf0 function TOAdpXYZ2Offset           # (p, x, y) -> p + 16: (x + 0x700) * 16, (y + 0x730) * 16, 16, 0; name ours
+0x008efc30 function TOAdpWords2Reg10 # cdecl(p, a, b) -> p + 0x10: a, b, register 0x10; name ours
+0x008efc60 function TOAdpXYOFFSET # cdecl(p, OFX, OFY) -> p + 0x10: GS register 0x18 from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
+0x008efc90 function TOAdpXYZOffset # cdecl(p, x, y, z) -> p + 0x10: (x + 0x700) * 16, (y + 0x730) * 16, z * 16, 0; name ours
+0x008efcd0 function TOAdpWords3 # cdecl(p, a, b, c) -> p + 0x10: a, b, c, 0; name ours
+0x008efd00 function TOAdpXYZWOffset # cdecl(p, x, y, z, w) -> p + 0x10: (x + 0x700) * 16, (y + 0x730) * 16, z * 16, w * 16; name ours
 0x008f0680 function TOAdpMenuIconImportantName # fh v3:exact 0x008f0680
 0x008f0700 function TOAdpMenuIconItemAbmap    # fh v3:cg3 0x8f0700
 0x008f0770 function TOAdpMenuIconItemName     # fh v3:cg4 0x8f0770
@@ -5773,6 +5800,7 @@
 0x008fe040 function TOMakePktSeqPrimFunc      # fh v3:exact 0x008fe040
 0x008fe080 function TOMakePktSeqPrimMes       # fh v3:exact 0x008fe080
 0x008feb00 function TOMakePktShapeCursor      # fh v3:exact 0x008feb00
+0x008ff140 function TOClearEntry_008ff140 # cdecl(i): the 16-byte entry i (< 16, signed) of 0x018762e0 zeroed, returns its address; callers 0x008e3cf0, 0x008e4140; name ours
 0x00900f40 function TOMenuInitBrush           # fh switch:bsim1.00 0x71005280f0
 0x00900f60 function TOMenuSet_018762ee        # (i, v): i < 16 (signed): u16 at 0x018762ee + 16 i = v; between TOMenuInitBrush and TOMenuTransFacePlyTex; name ours
 0x00901100 function TOMenuTransFacePlyTex     # fh switch:bsim1.00 0x7100522020
@@ -5801,6 +5829,7 @@
 0x009047c0 function TOSetPktBuffAdrs          # fh v3:exact 0x009047c0
 0x009048a0 function TOSetPolyG4A_XYWH         # fh switch:bsim1.00 0x71005094e0
 0x009048e0 function TOSetRegFont1612          # fh v3:bsim1.00 0x009048e0
+0x009048f0 function TOSetScreenWH # cdecl(w, h): u16 g_TOScreenW = w, g_TOScreenH = h (the setter of TOGetScreenWH); caller 0x008fae20; name ours
 0x00904a70 function ToDrawEternalCalmCopyRight # fh v3:exact 0x00904a70
 0x00904ba0 function QuickRecoverMenuDraw      # fh switch:cg2 0x71004beaa0
 0x00905190 function ToGetBtlEasyDigitWidth    # fh v3:exact 0x00905190
@@ -6439,6 +6468,8 @@
 0x0093da30 function movieOpen                 # fh switch:bsim1.00 0x710056ae50
 0x0093e510 function chr_anim_win              # fh switch:bsim1.00 0x710056aae0
 0x00942110 function sasa_menu                 # fh v3:exact 0x00942110
+0x009428a0 function MemSystem_Ensure # (): 0x009428b0 (sets g_MemSystem = 0x0193c390) unless g_MemSystem is set; called first by malloc_pool_init; name ours
+0x00942a40 function UserHeap_Init # thiscall(heap; arena, a, b), ret 0xc -> heap: +0 arena rounded up to 4 KiB, +4 a, +8 b, +0xc 0 (arenas), +0x10 0x10, +0x14 0; malloc_pool_init passes (0x30000000, 0, 0x2ff00000); name ours
 0x00942b60 function UserHeap_Alloc            # thiscall(heap, size), ret 4 -> p: (size + 15 & ~15) + 16 from UserHeap_FindFree's node; the covered pages committed; remainder keeps the node (or is free with node 3 under heap[1], or joins the block under 16 bytes); name ours
 0x00942dc0 function UserHeap_NewArena         # fastcall(heap): PageAlloc(heap[0], 0x1000), commits its first 2 and last page; 255 bins, 16-byte in-use blocks at +0x1000 and the end, one free block from +0x1010 in bin 254; name ours
 0x00943050 function UserHeap_ReleaseArena     # thiscall(heap, arena), ret 4: unchains an arena that is one free block, its node to the pool, its first two pages and last header page to PageQueueDecommit, PageRelease; name ours
@@ -8822,6 +8853,7 @@
 0x00c58f00 label g_TOFontGlyphs # 4 bytes per glyph (x, y, flags, width), read by TOFontGlyphSprite 0x0089e360; name ours
 0x00c59554 label    g_SystemConfirmButtonAssign # TOGetSystemConfirmButtonAssign returns it with -1 replaced by 0 (and stores that back)
 0x00c5955c label    g_ButtonData              # 2 words: setButtonData(a, b); resetButtonData sets both to -1
+0x00c5a03c label g_TOControlPadLatch # u8 TOGetControlPadStatus sets for state-2 message windows and clears otherwise; name ours
 0x00c5a088 label    g_MenuHelpExtArg          # second argument of TOMenuHelpSetExtMode
 0x00c5d770 label    g_TOScreenW               # TOGetScreenWH reads its low half as the width
 0x00c5d774 label    g_TOScreenH               # TOGetScreenWH reads its low half as the height
@@ -8875,6 +8907,8 @@
 0x00ce7318 label g_SortedSaveTable # 200 x 3 words, sorted by SortSaveTable_006f0fb0; name ours
 0x00ce81f4 label    g_SaveDataManager         # the instance SaveDataManager_instance returns (+4 callback result, +8 state for isBusy, +0x350 ref buffer)
 0x00ce901c label    g_UserHeap                # user_malloc/user_free's heap: CRITICAL_SECTION, then the allocator at +0x18 (arena size, bin min, bin max, arenas, node pool); malloc_pool_init creates it
+0x00ce9020 label g_UserHeapFirstBlock # the 16-byte block malloc_pool_init allocates to prove the heap; name ours
+0x00ce9024 label g_UserHeapArenaSize # arena size malloc_pool_init settled on (0x30000000, less 16 MiB per failed try); name ours
 0x00cec1a4 label    g_pppOtDrawing            # pppOtFunc_Control (0x00716ac0) sets it to 1 while it calls the g_pppOtList draws, 0 after; the KeLns draws in 0x00760000.c test it
 0x00cec1c0 label    g_FillBufferRequests      # 12 words zeroed by JobSchedule_pppPart_clearFillBufferRequest (and initFillBufferRequest, after the 6 buffers at 0x00cec1a8)
 0x00cec1f0 label    g_pppFpDisp               # the field effects' display switch: pppFpSetDisp; the field effect debug listing prints On/Off from it
@@ -9458,6 +9492,7 @@
 0x0193bf80 label    g_YnMapSystem                # Yn's field state: +0 the map (its +8: guide map list, +0x18 i16 count, +0x1a i16 shown, +0x1c models), +4 the guide (Yn_GuideMapGetMapNo, Yn_GuideMapSetMapNo, Yn_BattleBegin)
 0x0193c0d0 label    g_RcefParKept                # particle parts rcefParCreate remembers for some magic effects: +0 0x20e, +8 0x180, +0x10 0x168, +0x18 0x217 (entry 2); +0xc 0xbf, +0x14 0x216 (entry 1)
 0x0193c0f0 label    g_RcuiWork                   # rcui work area: +0xbe8 the ID dragged, +0xbec rcuiMouseMoveGetID, +0xbf0 dragging
+0x0193cd2c label g_MemSystem # set to 0x0193c390 by 0x009428b0 (MemSystem_Ensure's slow path); name ours
 0x0193cd44 label    g_ReservedBytes           # VirtualAlloc_Reserve_NA adds, VirtualFree_Release subtracts
 0x0193cd48 label    g_CommittedBytes          # VirtualAlloc_Commit_RW adds, VirtualFree_Decommit subtracts
 0x0193cd4c label    g_VirtualFreeErrorHook    # cdecl(message) the VirtualFree wrappers call on failure, when set

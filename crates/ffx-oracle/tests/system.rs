@@ -12,8 +12,8 @@ use std::path::PathBuf;
 use ffx_bridge::{Global, Mem};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_system::{
-    accessor, btl, cd, config, daps, fixup, instance, math, menu, msg, names, pad, pkt, render,
-    save, scene, stl, stub, vbf, window,
+    accessor, btl, cd, config, daps, files, fixup, instance, math, menu, msg, names, pad, pkt,
+    render, save, scene, stl, stub, vbf, window,
 };
 
 /// The game thread's x87 control word.
@@ -2377,6 +2377,15 @@ struct TestOs {
     small: u32,
     big: u32,
     locks: i32,
+    /// What the C runtime's `malloc` returns, in order (allocated in `b`
+    /// beforehand, as `a`'s stub will).
+    mallocs: Vec<u32>,
+    /// What was handed to the C runtime's `free`.
+    freed: Vec<u32>,
+    /// Critical sections initialized.
+    inits: Vec<u32>,
+    /// `VirtualAlloc` fails above this size.
+    max_size: u32,
 }
 
 impl TestOs {
@@ -2387,6 +2396,10 @@ impl TestOs {
             small: Mem::read(o, at),
             big: Mem::read(o, at + 4),
             locks: 0,
+            mallocs: Vec::new(),
+            freed: Vec::new(),
+            inits: Vec::new(),
+            max_size: u32::MAX,
         }
     }
 
@@ -2409,7 +2422,7 @@ impl ffx_system::heap::Os for TestOs {
         self.locks -= 1;
     }
     fn virtual_alloc(&mut self, addr: u32, size: u32, _alloc_type: u32, _protect: u32) -> u32 {
-        if size == self.fail_size {
+        if size == self.fail_size || size > self.max_size {
             return 0;
         }
         if addr != 0 {
@@ -2431,9 +2444,191 @@ impl ffx_system::heap::Os for TestOs {
     fn report_free_failure(&mut self) {
         panic!("VirtualFree failed");
     }
-    fn malloc_pool_init(&mut self) {
-        panic!("the tests start with a heap");
+    fn initialize_critical_section(&mut self, cs: u32) {
+        self.inits.push(cs);
     }
+    fn crt_malloc(&mut self, _size: u32) -> u32 {
+        self.mallocs.remove(0)
+    }
+    fn crt_free(&mut self, p: u32) {
+        self.freed.push(p);
+    }
+    fn mem_system_init(&mut self) {
+        panic!("the tests set the memory system up");
+    }
+}
+
+/// The heap's entry points around the allocator: `malloc_pool_init` on a
+/// fresh heap, calloc, aligned free, the Phyre allocations, operator new,
+/// memclear, the jumps to them, the heap object's release.
+#[test]
+#[allow(clippy::too_many_lines)] // one script over the entry points
+fn heap_entry_points_match_the_original() {
+    use ffx_system::heap as h;
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let (a, b) = (&mut a, &mut b);
+    let mgr = fresh_page_manager(a, b);
+    set(a, b, h::PAGE_MANAGER, mgr);
+    let (cursors, _) = patch_heap_os(a, b, u32::MAX);
+    // big reservations into a real region (arenas are written at both
+    // ends), and VirtualAlloc failing above 16 MiB so malloc_pool_init
+    // steps its 0x30000000-byte arena down to 16 MiB (48 heap objects)
+    let region = alloc(a, b, 0x111_0000);
+    put(a, b, cursors + 4, (region + 0xffff) & 0xffff_0000);
+    for o in [&mut *a, &mut *b] {
+        let code = o.rebase(HEAP_TEST_CODE);
+        let slot = o.rebase(0x00b0_c150); // InitializeCriticalSection
+        Mem::write(o, slot, code + 0x70);
+        #[rustfmt::skip]
+        let limit = [
+            0x81, 0x7c, 0x24, 0x08, 0x00, 0x00, 0x00, 0x01, // cmp [esp+8], 16 MiB
+            0x76, 0x05, 0x31, 0xc0, 0xc2, 0x10, 0x00,       // ja: xor eax, eax; ret 0x10
+            0xe9, 0, 0, 0, 0,                               // jmp the VirtualAlloc stand-in
+        ];
+        let mut limit = limit.to_vec();
+        let at = code + 0xc0;
+        let rel = code.wrapping_sub(at + 20);
+        limit[16..20].copy_from_slice(&rel.to_le_bytes());
+        o.write(at, &limit).unwrap();
+        let slot = o.rebase(IAT_VIRTUAL_ALLOC);
+        Mem::write(o, slot, at);
+    }
+    set(a, b, h::MEM_SYSTEM, 1);
+    set(a, b, h::USER_HEAP, 0);
+    let mut os = TestOs::new(b, cursors, u32::MAX);
+    os.max_size = 0x100_0000;
+    for _ in 0..48 {
+        os.mallocs.push(b.alloc(0x30).unwrap());
+    }
+    eax(a, 0x006f_b9b0, &[]);
+    h::malloc_pool_init(b, &mut os);
+    os.sync(a, b, "malloc_pool_init");
+    assert!(
+        os.mallocs.is_empty(),
+        "{} heap objects left",
+        os.mallocs.len()
+    );
+    assert_eq!(os.freed.len(), 47);
+    assert_eq!(h::ARENA_SIZE.get(b), 0x100_0000);
+    assert_eq!(os.inits.len(), 48);
+    same_memory("malloc_pool_init", a, b);
+    assert_ne!(h::FIRST_BLOCK.get(b), 0);
+    // MemSystem_Ensure with the memory system set: nothing
+    eax(a, 0x0094_28a0, &[]);
+    h::mem_system_ensure(b, &mut os);
+    let mut rng = Xorshift(0x4005_0001);
+    let mut live: Vec<(u32, bool)> = Vec::new(); // (block, phyre)
+    for n in 0..600u32 {
+        let what = format!("heap entry op {n}");
+        let mut os = TestOs::new(b, cursors, u32::MAX);
+        os.max_size = 0x100_0000;
+        match rng.next() % 9 {
+            0 => {
+                let (k, size) = (rng.next() % 8, rng.next() % 0x200);
+                let sym = if n % 2 == 0 { 0x006f_b820 } else { 0x0068_7000 };
+                let p = eax(a, sym, &[k, size]);
+                assert_eq!(p, h::user_calloc(b, &mut os, k, size), "{what}");
+                if p != 0 {
+                    live.push((p, false));
+                }
+            }
+            1 => {
+                let size = rng.next() % 0x400;
+                let p = eax(a, 0x0042_fb40, &[size]);
+                assert_eq!(p, h::phyre_malloc(b, &mut os, size), "{what}");
+                live.push((p, true));
+            }
+            2 => {
+                let (size, align) = (rng.next() % 0x400, 1 << (2 + rng.next() % 6));
+                let p = eax(a, 0x0042_fb80, &[size, align]);
+                assert_eq!(
+                    p,
+                    h::phyre_malloc_aligned(b, &mut os, size, align),
+                    "{what}"
+                );
+                live.push((p, true));
+            }
+            3 => {
+                let size = rng.next() % 0x300;
+                let sym = if n % 2 == 0 { 0x0063_0310 } else { 0x0063_04c0 };
+                let p = eax(a, sym, &[size]);
+                assert_eq!(p, h::user_malloc(b, &mut os, size), "{what}");
+                live.push((p, false));
+            }
+            4 => {
+                let (size, align) = (rng.next() % 0x300, 1 << (2 + rng.next() % 6));
+                let p = eax(a, 0x0068_6ff0, &[size, align]);
+                assert_eq!(p, h::user_aligned_malloc(b, &mut os, size, align), "{what}");
+                eax(a, 0x006f_b6c0, &[p]);
+                h::user_aligned_free(b, &mut os, p);
+            }
+            5 | 6 if !live.is_empty() => {
+                let (p, phyre) = live.swap_remove((rng.next() as usize) % live.len());
+                if phyre {
+                    eax(a, 0x0042_fb20, &[p]);
+                    h::phyre_free(b, &mut os, p);
+                } else {
+                    eax(a, 0x0068_7010, &[p]);
+                    h::user_free(b, &mut os, p);
+                }
+            }
+            7 => {
+                eax(a, 0x0042_fb20, &[0]);
+                h::phyre_free(b, &mut os, 0);
+            }
+            _ => {
+                let (p, len) = (region + rng.next() % 0x1000, rng.next() % 0x100);
+                assert_eq!(
+                    eax(a, 0x0062_f4e0, &[p, len]),
+                    h::memclear(b, p, len),
+                    "{what}"
+                );
+            }
+        }
+        os.sync(a, b, &what);
+        same_memory(&what, a, b);
+    }
+    // BigFileStream::setStreamPrefix: a copy in a new[] block
+    let fs = random_block(a, b, &mut rng, 0x48);
+    for path in [
+        &b"\0"[..],
+        b"c:/ffx/data/\0",
+        b"a much longer prefix for the stream files/\0",
+    ] {
+        let p = alloc(a, b, path.len());
+        a.write(p, path).unwrap();
+        b.write(p, path).unwrap();
+        let mut os = TestOs::new(b, cursors, u32::MAX);
+        os.max_size = 0x100_0000;
+        let ra = call(a, 0x0061_c3a0, Conv::Thiscall(fs), &[p]).eax;
+        assert_eq!(
+            ra,
+            ffx_system::files::bridge::set_stream_prefix(b, &mut os, fs, p)
+        );
+        os.sync(a, b, "setStreamPrefix");
+        same_memory("setStreamPrefix", a, b);
+    }
+    // UserHeap_Init on a scratch object
+    let obj = random_block(a, b, &mut rng, 0x18);
+    for (arena, x, y) in [
+        (0x30_0000, 0, 0x20_0000),
+        (0x1234_5001, 7, 9),
+        (0xffff_f001, 1, 2),
+    ] {
+        let ra = call(a, 0x0094_2a40, Conv::Thiscall(obj), &[arena, x, y]).eax;
+        assert_eq!(ra, h::heap_init(b, obj, arena, x, y));
+    }
+    same_memory("UserHeap_Init", a, b);
+    // the heap object back to the C runtime (a's free stub does nothing)
+    let mut os = TestOs::new(b, cursors, u32::MAX);
+    for sym in [0x006f_b9a0, 0x0068_7030] {
+        eax(a, sym, &[]);
+        h::user_heap_destroy(b, &mut os);
+    }
+    assert_eq!(os.freed, [h::USER_HEAP.get(b); 2]);
+    same_memory("UserHeap_Destroy", a, b);
 }
 
 /// A page manager as the game's starts: empty size lists and queue, no
@@ -3682,4 +3877,448 @@ fn round4_system_functions_match_the_original_on_the_snapshot() {
     round4b(&mut a, &mut b, &mut Xorshift(0x4004_0013));
     round4c(&mut a, &mut b, &mut Xorshift(0x4004_0023));
     round4d(&mut a, &mut b, &mut Xorshift(0x4004_0033));
+}
+
+/// Free image bytes for the file-layer stand-ins (after the heap's).
+const FILE_TEST_CODE: u32 = 0x00b0_be00;
+
+/// Writes `code` at `FILE_TEST_CODE + off` in both oracles; its address.
+fn stand_in(a: &mut Oracle, b: &mut Oracle, off: u32, code: &[u8]) -> u32 {
+    let at = a.rebase(FILE_TEST_CODE) + off;
+    a.write(at, code).unwrap();
+    b.write(at, code).unwrap();
+    at
+}
+
+/// `jmp to` at the original `sym` in both oracles.
+fn redirect(a: &mut Oracle, b: &mut Oracle, sym: u32, to: u32) {
+    let at = a.rebase(sym);
+    let rel = to.wrapping_sub(at + 5);
+    let mut jmp = vec![0xe9];
+    jmp.extend_from_slice(&rel.to_le_bytes());
+    a.write(at, &jmp).unwrap();
+    b.write(at, &jmp).unwrap();
+}
+
+/// A cdecl stand-in: records its first argument at `cell` and returns it
+/// xor `key`.
+fn recorder(cell: u32, key: u32) -> Vec<u8> {
+    let mut v = vec![0x8b, 0x44, 0x24, 0x04, 0xa3];
+    v.extend_from_slice(&cell.to_le_bytes());
+    v.push(0x35);
+    v.extend_from_slice(&key.to_le_bytes());
+    v.push(0xc3);
+    v
+}
+
+/// The file layer over stand-ins for what it calls (the stream read,
+/// `File_Probe`, `0x00a42c00`, `movie_err`, `GetFileSizeEx` and the CD
+/// table's functions), so only the wrappers' own logic is compared.
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one script over the wrappers; a, b: the oracles
+fn file_layer(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use files::bridge as f;
+    let cells = alloc(a, b, 0x40);
+    put(a, b, cells, [0u8; 0x40]);
+    // PStreamFile::read (thiscall, ret 8): this ^ buf + n, recorded
+    #[rustfmt::skip]
+    let mut read = vec![
+        0x89, 0xc8, 0x33, 0x44, 0x24, 0x04, 0x03, 0x44, 0x24, 0x08, // eax = ecx ^ buf + n
+        0xa3, 0, 0, 0, 0, 0xc2, 0x08, 0x00,
+    ];
+    read[11..15].copy_from_slice(&cells.to_le_bytes());
+    let read = stand_in(a, b, 0, &read);
+    redirect(a, b, 0x0060_8090, read);
+    let probe = stand_in(a, b, 0x20, &recorder(cells + 4, 0x1234_5600));
+    redirect(a, b, 0x0060_7e00, probe);
+    let name = stand_in(a, b, 0x40, &recorder(cells + 8, 0x0bad_0000));
+    redirect(a, b, 0x00a4_2c00, name);
+    // movie_err: records all three arguments
+    #[rustfmt::skip]
+    let mut err = vec![
+        0x8b, 0x44, 0x24, 0x04, 0xa3, 0, 0, 0, 0,
+        0x8b, 0x44, 0x24, 0x08, 0xa3, 0, 0, 0, 0,
+        0x8b, 0x44, 0x24, 0x0c, 0xa3, 0, 0, 0, 0, 0xc3,
+    ];
+    for (k, at) in [(5, cells + 0xc), (14, cells + 0x10), (23, cells + 0x14)] {
+        err[k..k + 4].copy_from_slice(&u32::to_le_bytes(at));
+    }
+    let err = stand_in(a, b, 0x60, &err);
+    redirect(a, b, 0x0076_efa0, err);
+    // GetFileSizeEx(h, &size), stdcall: size = (h, h * 3), succeeds for odd h
+    #[rustfmt::skip]
+    let size_ex = [
+        0x8b, 0x44, 0x24, 0x04, 0x8b, 0x4c, 0x24, 0x08,       // eax = h, ecx = &size
+        0x89, 0x41, 0x04, 0x8d, 0x04, 0x40, 0x89, 0x01,       // hi = h, lo = h * 3
+        0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x01, 0xc2, 0x08, 0x00, // eax = h & 1
+    ];
+    let size_ex = stand_in(a, b, 0x80, &size_ex);
+    for o in [&mut *a, &mut *b] {
+        let slot = o.rebase(0x00b0_c13c);
+        Mem::write(o, slot, size_ex);
+    }
+    let scratch = alloc(a, b, 8);
+    let get_size = |m: &mut Oracle, h: u32| -> Option<u64> {
+        let ok = m.call(size_ex, Conv::Stdcall, &[h, scratch]).unwrap().eax;
+        let v: u64 = Mem::read(m, scratch);
+        Mem::write(m, scratch, 0u64);
+        (ok != 0).then_some(v)
+    };
+    let b_read = |m: &mut Oracle, s: u32, buf: u32, n: u32| {
+        m.call(read, Conv::Thiscall(s), &[buf, n]).unwrap().eax
+    };
+    let b_probe = |m: &mut Oracle, n: u32| m.call(probe, Conv::Cdecl, &[n]).unwrap().eax;
+    // streams: closed, handle-backed, entry-backed
+    let entry = random_block(a, b, rng, 0x10);
+    let rec = random_block(a, b, rng, 0x10);
+    put(a, b, entry + 0xc, rec);
+    let mut streams = Vec::new();
+    for (h, e) in [(u32::MAX, 0), (6, 0), (7, 0), (u32::MAX, entry), (9, entry)] {
+        let s = alloc(a, b, 8);
+        put(a, b, s, [h, e]);
+        streams.push(s);
+    }
+    for &s in &streams {
+        assert_eq!(
+            call(a, 0x0060_7f20, Conv::Thiscall(s), &[]).eax & 0xff,
+            u32::from(f::stream_is_open(b, s))
+        );
+        let r = call(a, 0x0060_7dc0, Conv::Thiscall(s), &[]);
+        #[allow(clippy::cast_possible_truncation)] // eax
+        let want = f::stream_file_size(b, s, get_size) as u32;
+        assert_eq!(r.eax, want);
+        let r = call(a, 0x006f_9d50, Conv::Thiscall(s), &[]);
+        #[allow(clippy::cast_possible_truncation)]
+        let want = f::fios_stream_file_size(b, s, get_size) as u32;
+        assert_eq!(r.eax, want);
+    }
+    for &s in streams.iter().chain([0].iter()) {
+        assert_eq!(eax(a, 0x0067_9570, &[s]), f::fios_file_size(b, s, get_size));
+        assert_eq!(eax(a, 0x0062_f760, &[s]), f::fios_file_size(b, s, get_size));
+        let (buf, n) = (rng.next(), rng.next() % 0x1000);
+        assert_eq!(
+            eax(a, 0x0067_9800, &[s, buf, n]),
+            f::fios_read(b, s, buf, n, b_read)
+        );
+        assert_eq!(
+            eax(a, 0x0062_fc00, &[s, buf, n]),
+            f::sce_read(b, s, buf, n, b_read)
+        );
+        same_memory("stream reads", a, b);
+    }
+    for _ in 0..20 {
+        let nm = rng.next();
+        assert_eq!(
+            eax(a, 0x0067_96f0, &[nm]),
+            f::fios_is_file_exist(b, nm, b_probe)
+        );
+    }
+    // the CD table's functions: recorders, one per slot
+    let table = cd::bridge::CD_LIB.ptr(b).addr;
+    for (k, slot) in [0u32, 8, 0x10, 0x58].into_iter().enumerate() {
+        let k = u32::try_from(k).unwrap();
+        let fun = stand_in(
+            a,
+            b,
+            0xa0 + 0x10 * k,
+            &recorder(cells + 0x18 + 4 * k, 0x100 * (k + 1)),
+        );
+        put(a, b, table + slot, fun);
+    }
+    let b_call =
+        |m: &mut Oracle, fun: u32, args: &[u32]| m.call(fun, Conv::Cdecl, args).unwrap().eax;
+    for _ in 0..10 {
+        let (x, y, z) = (rng.next(), rng.next(), rng.next());
+        assert_eq!(
+            eax(a, 0x008a_ba30, &[x, y, z]),
+            f::dvd_file_read(b, x, y, z, b_call)
+        );
+        assert_eq!(
+            eax(a, 0x008a_b7d0, &[x, y]),
+            f::cd_get_file_name(b, x, y, b_call)
+        );
+        same_memory("CD table calls", a, b);
+    }
+    let b_name = |m: &mut Oracle, n: u32| m.call(name, Conv::Cdecl, &[n]).unwrap().eax;
+    for k in 0..12u32 {
+        put(a, b, table + 0x20, rng.next() % 0x100);
+        put(a, b, table + 0x30, k % 2);
+        let n = rng.next() % 0x200;
+        assert_eq!(eax(a, 0x00a4_2830, &[n]), f::cd_file_name_pc(b, n, b_name));
+        assert_eq!(
+            eax(a, 0x00a4_29d0, &[n]),
+            f::get_cd_file_name_pc(b, n, b_name)
+        );
+        same_memory("CD names", a, b);
+    }
+    // VFile: assign, and fileRead over FileSys_Read (the read stand-in)
+    redirect(a, b, 0x0061_aa90, read);
+    for k in 0..6u32 {
+        let state = random_block(a, b, rng, 0x18);
+        let vf = random_block(a, b, rng, 0x20);
+        put(a, b, vf + 0x18, state);
+        let h = rng.next();
+        assert_eq!(
+            call(a, 0x0061_aa10, Conv::Thiscall(vf), &[h]).eax,
+            f::vfile_assign(b, vf, h)
+        );
+        put(a, b, vf + 0x10, [u32::MAX - k, rng.next()]);
+        let (buf, n) = (
+            if k == 0 { vf } else { rng.next() },
+            [0, 1, 0x800, rng.next()][(k % 4) as usize],
+        );
+        let ra = call(a, 0x0061_aa60, Conv::Thiscall(vf), &[buf, n]).eax;
+        assert_eq!(
+            ra,
+            f::vfile_file_read(b, vf, buf, n, b_read),
+            "fileRead {k}"
+        );
+        same_memory("VFile", a, b);
+    }
+    // the read-name table: fill all 16 slots, then one more (the assertion)
+    let from = cd::bridge::CHGNAME_FROM.ptr(b).addr;
+    put(a, b, from, [0u32; 33]);
+    put(a, b, from + 8, 5u32);
+    for k in 0..17u32 {
+        let (x, y) = (rng.next() | 1, rng.next());
+        let ra = eax(a, 0x00a4_3220, &[x, y]);
+        let rb = cd::bridge::set_read_chgname(b, x, y, |m, e, fl, l| {
+            m.call(err, Conv::Cdecl, &[e, fl, l]).unwrap();
+        });
+        assert_eq!(ra, rb, "set_read_chgname {k}");
+        same_memory("set_read_chgname", a, b);
+    }
+}
+
+#[test]
+fn file_layer_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    file_layer(&mut a, &mut b, &mut Xorshift(0x4005_0101));
+}
+
+#[test]
+fn file_layer_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    file_layer(&mut a, &mut b, &mut Xorshift(0x4005_0102));
+}
+
+/// Round 5's window dispatchers (over recording stand-ins), quads, key
+/// state, lower-casing and the size-table flag.
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one pass; a, b: the oracles
+fn round5(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use window::bridge as w;
+    let cells = alloc(a, b, 0x10);
+    put(a, b, cells, [0u32; 4]);
+    let fns: Vec<u32> = (0..4u32)
+        .map(|k| stand_in(a, b, 0x100 + 0x10 * k, &recorder(cells + 4 * k, 0x5000 + k)))
+        .collect();
+    let b_call = |m: &mut Oracle, f: u32, args: &[u32]| m.call(f, Conv::Cdecl, args).unwrap().eax;
+    for i in 0..8u32 {
+        let win = random_block(a, b, rng, 0x80);
+        put(a, b, win, u16::try_from(rng.next() % 2).unwrap());
+        put(a, b, win + 0x74, fns[0]);
+        put(a, b, win + 0x78, fns[1]);
+        set_entry(a, b, w::WINDOWS, i, win);
+        let msg = random_block(a, b, rng, 0x120);
+        put(a, b, msg, u16::try_from(rng.next() % 3).unwrap());
+        put(a, b, msg + 0x1e, u16::try_from(rng.next() % 2).unwrap());
+        put(a, b, msg + 0x2c, u16::try_from(1 + rng.next() % 2).unwrap());
+        let flag = alloc(a, b, 4);
+        put(a, b, flag, u32::from(rng.next().is_multiple_of(2)));
+        put(a, b, msg + 0x98, flag);
+        put(a, b, msg + 0x114, if i == 3 { 0 } else { fns[2] });
+        put(a, b, msg + 0xf8, fns[3]);
+        put(a, b, msg + 0xfc, fns[2]);
+        set_entry(a, b, w::MSG_WINDOWS, i, msg);
+        let e = random_block(a, b, rng, 0x20);
+        put(
+            a,
+            b,
+            e + 1,
+            [
+                i8::try_from(rng.next() % 3).unwrap() - 1,
+                i8::try_from(rng.next() % 200).unwrap_or(-7),
+            ],
+        );
+        set_entry(a, b, w::TABLE_01868A90, i, e);
+    }
+    for n in 0..40u32 {
+        let i = n % 8;
+        let k = i.cast_signed();
+        assert_eq!(eax(a, 0x0090_6bd0, &[i]), w::control_window(b, k, b_call));
+        assert_eq!(eax(a, 0x0090_6bf0, &[i]), w::draw_window(b, k, b_call));
+        assert_eq!(eax(a, 0x008b_5850, &[i]), w::control_message(b, k, b_call));
+        assert_eq!(eax(a, 0x008b_8ca0, &[i]), w::message_call_f8(b, k, b_call));
+        assert_eq!(
+            eax(a, 0x008b_6b70, &[i]),
+            w::control_pad_status(b, k, b_call),
+            "pad status {n}"
+        );
+        assert_eq!(
+            eax(a, 0x008b_8010, &[i]),
+            w::message_table_byte2(b, k).cast_unsigned()
+        );
+        same_memory("window dispatchers", a, b);
+    }
+    let quad = alloc(a, b, 0x10);
+    for _ in 0..20 {
+        let v: [u32; 4] = std::array::from_fn(|_| rng.next());
+        eax(a, 0x0090_48a0, &[quad, v[0], v[1], v[2], v[3]]);
+        w::set_poly_g4a_xywh(b, quad, v[0], v[1], v[2], v[3]);
+    }
+    same_memory("quads", a, b);
+    // key state: devices with blocks for some of the 7
+    let devices = alloc(a, b, 0xa0);
+    put(a, b, devices, [0u8; 0xa0]);
+    for d in 0..7u32 {
+        if d != 2 {
+            let block = random_block(a, b, rng, 0x120);
+            put(a, b, devices + 0x80 + 4 * d, block);
+        }
+    }
+    let this = alloc(a, b, 0x2bc);
+    put(a, b, this + 0x2b8, devices);
+    for binding in (0..300u32).step_by(7).chain([27, 28, 283, 284, u32::MAX]) {
+        for d in [0, 2, 6, 7, 100] {
+            let ra = call(a, 0x0062_9d50, Conv::Thiscall(this), &[binding, d]).eax & 0xff;
+            assert_eq!(
+                ra,
+                u32::from(pad::bridge::key_held(b, this, binding, d)),
+                "{binding} {d}"
+            );
+        }
+    }
+    let text = alloc(a, b, 0x40);
+    for k in 0..30u32 {
+        let len = (k % 20) as usize;
+        let mut bytes: Vec<u8> = (0..len)
+            .map(|_| u8::try_from(1 + rng.next() % 255).unwrap())
+            .collect();
+        bytes.push(0);
+        a.write(text, &bytes).unwrap();
+        b.write(text, &bytes).unwrap();
+        let p = if k == 29 { 0 } else { text };
+        assert_eq!(eax(a, 0x0060_7d50, &[p]), stl::bridge::to_lower_ascii(b, p));
+        same_memory("lowercase", a, b);
+    }
+    if cd::bridge::SECTORS.get(a) == 0 {
+        let t = random_block(a, b, rng, 0x400);
+        set(a, b, cd::bridge::SECTORS, t);
+        set(a, b, cd::bridge::FILE_BASE, 0x10);
+    }
+    for n in 0..200 {
+        assert_eq!(
+            eax(a, 0x0076_dc20, &[n]),
+            cd::bridge::cd_size_from_table(b, n.cast_signed())
+        );
+    }
+    // the TOAdp register writers and packet words
+    let packet = alloc(a, b, 0x10);
+    for n in 0..200u32 {
+        for (f, shifts, _) in pkt::bridge::ADP_REGS {
+            let count = shifts.len() + 1;
+            let fields: Vec<u32> = (0..count)
+                .map(|_| {
+                    if n % 5 == 0 {
+                        rng.next()
+                    } else {
+                        rng.next() % 1024
+                    }
+                })
+                .collect();
+            let mut args = vec![packet];
+            args.extend(&fields);
+            let ra = eax(a, f, &args);
+            let signed: Vec<i32> = fields.iter().map(|&v| v.cast_signed()).collect();
+            assert_eq!(ra, pkt::bridge::adp_reg_at(b, f, packet, &signed), "{f:#x}");
+            same_memory("TOAdp registers", a, b);
+        }
+        let v: [u32; 4] = std::array::from_fn(|_| rng.next());
+        assert_eq!(
+            eax(a, 0x008e_f800, &[packet, v[0]]),
+            pkt::bridge::adp_fog(b, packet, v[0])
+        );
+        assert_eq!(
+            eax(a, 0x008e_fb60, &[packet]),
+            pkt::bridge::adp_texflush(b, packet)
+        );
+        assert_eq!(
+            eax(a, 0x008e_fbc0, &[packet, v[0], v[1], v[2], v[3]]),
+            pkt::bridge::adp_xy_frac(b, packet, v)
+        );
+        assert_eq!(
+            eax(a, 0x008e_fc30, &[packet, v[0], v[1]]),
+            pkt::bridge::adp_words2_reg10(b, packet, v[0], v[1])
+        );
+        assert_eq!(
+            eax(a, 0x008e_fcd0, &[packet, v[0], v[1], v[2]]),
+            pkt::bridge::adp_words3(b, packet, v[0], v[1], v[2])
+        );
+        assert_eq!(
+            eax(a, 0x008e_fc90, &[packet, v[0], v[1], v[2]]),
+            pkt::bridge::adp_xyz_offset(b, packet, v[0], v[1], v[2], None)
+        );
+        assert_eq!(
+            eax(a, 0x008e_fd00, &[packet, v[0], v[1], v[2], v[3]]),
+            pkt::bridge::adp_xyz_offset(b, packet, v[0], v[1], v[2], Some(v[3]))
+        );
+        same_memory("TOAdp words", a, b);
+    }
+    // input masks, the pair flag, entry clears, the screen size
+    let input = alloc(a, b, 8);
+    for _ in 0..100 {
+        put(a, b, input, [rng.next() & 0xff, rng.next() & 0xff]);
+        let mask = 1 << (rng.next() % 8)
+            | if rng.next().is_multiple_of(4) {
+                0x30
+            } else {
+                0
+            };
+        assert_eq!(
+            call(a, 0x0063_1340, Conv::Thiscall(input), &[mask]).eax,
+            pad::bridge::is_hold_button(b, input, mask)
+        );
+        let ra = call(a, 0x0063_1360, Conv::Thiscall(input), &[mask]).eax & 0xff;
+        assert_eq!(ra, u32::from(pad::bridge::is_press_button(b, input, mask)));
+        let ra = call(a, 0x0063_1380, Conv::Thiscall(input), &[mask]).eax & 0xff;
+        assert_eq!(
+            ra,
+            u32::from(pad::bridge::is_release_button(b, input, mask))
+        );
+    }
+    for _ in 0..30 {
+        let (p, c) = (
+            [0, 1, 2, rng.next()][(rng.next() % 4) as usize],
+            rng.next() % 3,
+        );
+        assert_eq!(eax(a, 0x008b_dfe0, &[p, c]), w::set_pair(b, p, c));
+        let i = [0, 5, 15, 16, u32::MAX, 0x8000_0000][(rng.next() % 6) as usize];
+        assert_eq!(
+            eax(a, 0x008f_f140, &[i]),
+            w::clear_entry_18762e0(b, i.cast_signed())
+        );
+        let (sw, sh) = (rng.next(), rng.next());
+        eax(a, 0x0090_48f0, &[sw, sh]);
+        w::set_screen_wh(b, sw, sh);
+        same_memory("pair, entries, screen", a, b);
+    }
+}
+
+#[test]
+fn round5_system_functions_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round5(&mut a, &mut b, &mut Xorshift(0x4005_0201));
+}
+
+#[test]
+fn round5_system_functions_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round5(&mut a, &mut b, &mut Xorshift(0x4005_0202));
 }
