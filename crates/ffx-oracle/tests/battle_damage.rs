@@ -12,7 +12,10 @@ mod battle_common;
 use battle_common::*;
 use ffx_battle::actor::bridge::{CHR_TOP, WEAPON_TOP};
 use ffx_battle::damage::bridge as d;
-use ffx_oracle::Oracle;
+use ffx_oracle::{Conv, Oracle};
+
+/// `TOGetFFXLang`, which `DmgCalc_Bribe` asks (another module's).
+const TO_GET_FFX_LANG: u32 = 0x0064_10e0;
 
 /// Where the cases live: the actors, a command, a result and scratch for
 /// the out values.
@@ -673,6 +676,188 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         );
         twin("MsCheckWrongStatus", a, b, 0x0079_e340, &[cmd], ALL, |m| {
             d::ms_check_wrong_status(m, cmd).cast_unsigned()
+        });
+        let (inflicted, removed, delayed) = (out + 0x80, out + 0xa0, out + 0xc0);
+        let ids = if rng.below(4) == 0 { [i, i] } else { [i, j] };
+        twin(
+            "DmgCalc_InflictStatus",
+            a,
+            b,
+            0x0078_ae00,
+            &[
+                ids[0],
+                user,
+                ids[1],
+                target,
+                cmd,
+                inflicted,
+                removed,
+                info,
+                flags,
+                out + 0x40,
+                delayed,
+            ],
+            ALL,
+            |m| {
+                d::dmg_calc_inflict_status(
+                    m,
+                    ids[0],
+                    user,
+                    ids[1],
+                    target,
+                    cmd,
+                    inflicted,
+                    removed,
+                    info,
+                    flags,
+                    out + 0x40,
+                    delayed,
+                )
+            },
+        );
+        let s2 = if rng.below(2) == 0 {
+            rng.next()
+        } else {
+            rng.below(0x1_0000)
+        };
+        twin(
+            "DmgCalc_InflictStatus_Extra",
+            a,
+            b,
+            0x0078_b4e0,
+            &[
+                ids[0],
+                user,
+                ids[1],
+                target,
+                cmd,
+                inflicted,
+                removed,
+                info,
+                flags,
+                out + 0x40,
+                s2,
+            ],
+            ALL,
+            |m| {
+                d::dmg_calc_inflict_status_extra(
+                    m, ids[0], user, target, cmd, inflicted, removed, info, flags, s2,
+                )
+            },
+        );
+        // the result type: small counts and damage of every sign
+        let small = |rng: &mut Xorshift| -> [u8; 4] {
+            [0u32, 0, 1, 2][rng.below(4) as usize].to_le_bytes()
+        };
+        for at in (0x80..0xc0).step_by(4) {
+            let v = small(rng);
+            poke(a, b, out + at, &v);
+        }
+        for at in [0x40, 0x44, 0x48] {
+            let v = [0, 0, 5, (-3i32).cast_unsigned(), 200][rng.below(5) as usize];
+            poke(a, b, out + at, &v.to_le_bytes());
+        }
+        let args = [
+            ids[0],
+            ids[1],
+            rng.below(4),
+            rng.below(2),
+            rng.range(90, 110).cast_unsigned(),
+            rng.range(90, 110).cast_unsigned(),
+            out + 0x40,
+            inflicted,
+            removed,
+            cmd,
+            rng.next(),
+            [0, 0, 1, rng.next()][rng.below(4) as usize],
+            if rng.below(2) == 0 {
+                rng.below(8)
+            } else {
+                rng.next()
+            },
+            rng.next(),
+            out + 0xd0,
+        ];
+        twin("DmgCalc_ResultType", a, b, 0x0078_c270, &args, ALL, |m| {
+            d::dmg_calc_result_type(
+                m,
+                args[0],
+                args[1],
+                args[2].cast_signed(),
+                args[3].cast_signed(),
+                args[4].cast_signed(),
+                args[5].cast_signed(),
+                args[6],
+                args[7],
+                args[8],
+                args[10],
+                args[11].cast_signed(),
+                args[12],
+                args[14],
+            )
+        });
+        // Bribe: the language from TOGetFFXLang (fixed on the image alone,
+        // where the settings it reads do not exist)
+        if w.synthetic {
+            let lang = [1, 0xb][rng.below(2) as usize];
+            for o in [&mut *a, &mut *b] {
+                let at = o.rebase(TO_GET_FFX_LANG);
+                o.stub_return(at, lang).unwrap();
+            }
+        }
+        if rng.below(4) == 0 {
+            poke(a, b, target + 0xe, &0x10efu16.to_le_bytes());
+        }
+        if u32::from_le_bytes(a.read(target + 0x594, 4).unwrap().try_into().unwrap()) == 0 {
+            poke(a, b, target + 0x594, &1u32.to_le_bytes());
+        }
+        twin(
+            "DmgCalc_Bribe",
+            a,
+            b,
+            0x0078_bdd0,
+            &[j, target, cmd, inflicted, info],
+            ALL,
+            |m| {
+                d::dmg_calc_bribe(m, j, target, cmd, inflicted, info, |m: &mut Oracle| {
+                    let at = m.rebase(TO_GET_FFX_LANG);
+                    m.call(at, Conv::Cdecl, &[]).unwrap().eax
+                })
+            },
+        );
+        // the whole step for one target
+        fill(a, b, rng, info, 0x2c);
+        let id = match rng.below(3) {
+            0 => 0x311f,
+            1 => 0x2000 + rng.below(0x10),
+            _ => 0x3000 + rng.below(0x100),
+        };
+        let o = d::DmgCalcOut {
+            damage: if rng.below(2) == 0 { 0 } else { out + 0xe0 },
+            hits: out + 0xf0,
+            misses: out + 0xf4,
+            changed: if rng.below(2) == 0 { 0 } else { out + 0xf8 },
+        };
+        let args = [
+            ids[0], user, ids[1], target, cmd, id, info, o.damage, o.hits, o.misses, o.changed,
+        ];
+        twin("DmgCalc", a, b, 0x0078_e630, &args, ALL, |m| {
+            d::dmg_calc(
+                m,
+                ids[0],
+                user,
+                ids[1],
+                target,
+                cmd,
+                id,
+                info,
+                o,
+                |m: &mut Oracle| {
+                    let at = m.rebase(TO_GET_FFX_LANG);
+                    m.call(at, Conv::Cdecl, &[]).unwrap().eax
+                },
+            )
+            .cast_unsigned()
         });
         same("damage steps", a, b);
     }

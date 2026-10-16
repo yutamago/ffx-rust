@@ -1843,6 +1843,7 @@
 0x0078c150 function MsAdjustCTB               # (chr, ctb, haste, slow): halved, doubled, MsCheckRange 0-255; MsGetNextCTB's tail; ported
 0x0078c180 function DmgCalc_DelayImmunity     # fh v3:exact 0x0078c240 +DmgCalc_DelayImmunity
 0x0078c1d0 function DmgCalc_CheckCounter      # fh v3:exact 0x0078c290 +DmgCalc_CheckCounter
+0x0078c270 function DmgCalc_ResultType        # DmgCalc's reaction at result +0: 5 hurt, 4/3 guarded against armor or 100+ defense (target +0x447), 6/5 drains, 8/0xb/0xc by table statuses, 2 revive/heal, 7 removed, 9/0xa changes; counts failed/immune statuses; ported
 0x0078c480 function DmgCalc_NoDamageDeath     # fh v3:exact 0x0078c540 +DmgCalc_NoDamageDeath
 0x0078c530 function DmgCalc_ShieldBoost       # fh v3:exact 0x0078c5f0 +DmgCalc_ShieldBoost
 0x0078c580 function DmgCalc_MagicBooster      # fh v3:exact 0x0078c640 +DmgCalc_MagicBooster
@@ -7006,11 +7007,15 @@
 0x0112a8f5 label g_BtlExeKeep                # not 0: MsBattleExeClear keeps g_BtlExe
 0x0112a8f8 label g_BtlDebugNoDamageMonster    # u8, monsters take no damage (DebugCanTakeDamage); debug native case 2/0xc
 0x0112a8f9 label g_BtlDebugNoDamageParty      # u8, the party takes no damage (DebugCanTakeDamage); debug native case 1/2
+0x0112a906 label g_BtlDebugNoStatus           # u8, DmgCalc inflicts no statuses (skips DmgCalc_InflictStatus and _Extra)
 0x0112a908 label g_BtlDebugNoVariance         # i8, DmgCalc passes 1 - it as MsCalcDamageCommand's vary; debug native case 6
 0x0112a909 label g_BtlDebugNoCrit             # u8, DmgCalc skips DmgCalc_Crit; debug native case 7
 0x0112a90a label g_BtlDebugAlwaysHit          # u8, DmgCalc_CheckHit never misses, statuses and Bribe always land; debug native case 8
 0x0112a90c label g_BtlDebugNoCost             # u8, MsCalcMagic ignores the command's +0x26 cost; debug native case 5
 0x0112a90d label g_BtlDebugAlwaysCrit         # u8, DmgCalc_Crit always doubles; debug native case 0xd
+0x0112a90e label g_BtlDebugDamage1            # u8, DmgCalc: every HP/MP hit does 1; debug native case 0xe
+0x0112a90f label g_BtlDebugDamage10000        # u8, DmgCalc: every HP/MP hit does 10000; debug native case 0xf
+0x0112a910 label g_BtlDebugDamage100000       # u8, DmgCalc: every HP/MP hit does 100000; debug native case 0x10
 0x0112a91b label g_BtlMapCircleOn            # i8 (MsBattleGetMapCircleOn 0x007816a0)
 0x0112a91f label g_BtlDebugAllMiss            # u8, debug env flag: DmgCalc_CheckHit always misses, no status lands, MsCalcEscape fails
 0x0112a92c label    g_KernelCommand

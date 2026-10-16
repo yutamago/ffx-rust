@@ -295,6 +295,7 @@ pub fn hit_chance(
 
 /// The game's memory, through [`ffx_bridge::Mem`].
 pub mod bridge {
+    use ffx_bridge::frame::Frame;
     use ffx_bridge::{Global, Mem, Ptr};
 
     use super::{
@@ -1248,6 +1249,1058 @@ pub mod bridge {
         mem.write(info.wrapping_add(0x16), status2);
         mem.write(info.wrapping_add(6), flags);
     }
+
+    /// What `DmgCalc_InflictStatus` and `_Extra` count per target, eight
+    /// `i32` each: `[0]` statuses changed, `[1]` of those flagged 0x40 in
+    /// the status table, `[2]` 0x20, `[4]` changes made, `[5]` immune,
+    /// `[6]` failed, `[7]` flagged 0x80.
+    fn count(mem: &mut impl Mem, counts: u32, i: u32, n: u32) {
+        add_u32(mem, counts, 4 * i, n);
+    }
+
+    /// The counts by the status table's byte (`MsCheckStat`, `MsCheckStat2`,
+    /// `MsCheckStatCount`).
+    fn tally(
+        mem: &mut impl Mem,
+        kind: u8,
+        inflicted: u32,
+        removed: u32,
+        did: u32,
+        undid: u32,
+        with_20: bool,
+    ) {
+        let at = u32::from(kind & 0x40 != 0);
+        count(mem, inflicted, at, did);
+        count(mem, removed, at, undid);
+        if with_20 && kind & 0x20 != 0 {
+            count(mem, inflicted, 2, did);
+            count(mem, removed, 2, undid);
+        }
+        if kind & 0x80 != 0 {
+            count(mem, inflicted, 7, did);
+            count(mem, removed, 7, undid);
+        }
+    }
+
+    fn low16(v: u32) -> u16 {
+        let [b0, b1, ..] = v.to_le_bytes();
+        u16::from_le_bytes([b0, b1])
+    }
+
+    fn set_u16(mem: &mut impl Mem, p: u32, o: u32, v: u16) {
+        mem.write(p.wrapping_add(o), v);
+    }
+
+    /// `DmgCalc_InflictStatus(user_id, user, target_id, target, command,
+    /// inflicted, removed, info, flags, damage, &delayed)` (`0x0078ae00`):
+    /// the command's 25 status chances (`+0x2e`, the weapon's at user
+    /// `+0x5de` when the command uses it and they are higher) against the
+    /// target's resistances (`+0x641`): statuses 0-11 are bits of `info`
+    /// `+0x14`, 12-24 the counters `info` `+7`, with their durations at
+    /// `+0x47` (`+0x5f7`). A status lands when the user's status roll % 101
+    /// is below chance − resistance (always at chance 255 or 254, never at
+    /// resistance 255), or for status 11 (threaten) when roll % 100 is
+    /// below the resistance itself; removing commands (`+0x20` bit 0x20)
+    /// always reach. Returns `flags` with what immunities show (0x200-0x800,
+    /// 0x2000, 0x4000) and 4 when threaten delayed the target.
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+    pub fn dmg_calc_inflict_status(
+        mem: &mut impl Mem,
+        user_id: u32,
+        user: u32,
+        target_id: u32,
+        target: u32,
+        command: u32,
+        inflicted: u32,
+        removed: u32,
+        info: u32,
+        flags: u32,
+        damage: u32,
+        delayed: u32,
+    ) -> u32 {
+        use crate::state::bridge::{UNDERWATER, ms_check_stat};
+        let mut flags = flags;
+        let weapon = (u32_at(mem, command, 0x1c) >> 0x12) & 1 != 0;
+        let removing = u8_at(mem, command, 0x20) & 0x20 != 0;
+        for i in 0..25u32 {
+            let bit = 1u32 << i;
+            let mut chance = u8_at(mem, command, 0x2e + i);
+            if weapon {
+                chance = chance.max(u8_at(mem, user, 0x5de + i));
+            }
+            if chance == 0 {
+                continue;
+            }
+            let counter = i.checked_sub(12);
+            let mut resist = u8_at(mem, target, 0x641 + i);
+            let cbit = bit >> 12;
+            let mut hit = false;
+            if removing {
+                hit = true;
+            } else if counter.is_none() && bit & 0x800 != 0 {
+                let r = roll(mem, user_id, 2).cast_signed() % 100;
+                if r < i32::from(resist) {
+                    hit = true;
+                } else if resist == 0 {
+                    resist = 0xff;
+                }
+            } else {
+                let r = roll(mem, user_id, 2).cast_signed();
+                if i == 0 && u8_at(mem, info, 0x14) & 2 != 0 {
+                    resist = 0xfe;
+                }
+                hit = chance == 0xff
+                    || (resist != 0xff
+                        && (chance == 0xfe
+                            || r % 101 < i32::from(chance) - i32::from(resist)
+                            || DEBUG_ALWAYS_HIT.get(mem) != 0));
+            }
+            let mut kind = 0u8;
+            let mut did = 0;
+            let mut undid = 0;
+            // 0x1800 here: haste or slow failed, no CTB damage
+            let mut ctb_off = 0;
+            let mut fail = false;
+            if hit && DEBUG_ALL_MISS.get(mem) == 0 {
+                if let Some(k) = counter {
+                    let mut dur = u8_at(mem, command, 0x47 + k);
+                    if weapon {
+                        dur = dur.max(u8_at(mem, user, 0x5f7 + k));
+                    }
+                    kind = ms_check_stat_count(mem, k.cast_signed()).to_le_bytes()[0];
+                    let status = u16_at(mem, info, 0x14);
+                    if status & 4 != 0 {
+                        fail = true;
+                        ctb_off = cbit;
+                    } else if !removing {
+                        let table = STAT_COUNT_TABLE.ptr(mem).addr + 4 * k + 3;
+                        if user_id == target_id && dur < 0xfd && mem.read::<u8>(table) & 4 != 0 {
+                            dur += 1;
+                        }
+                        let free = u8_at(mem, info, 0x12) != 0xff
+                            && u8_at(mem, info, 0x13) != 0xff
+                            && status & 0x800 == 0;
+                        if u8_at(mem, target, 0x5fc + i) != 0
+                            || (cbit & (0x800 | 0x1000) != 0 && cbit & 1 == 0 && !free)
+                        {
+                            fail = true;
+                            ctb_off = cbit;
+                        } else {
+                            mem.write(info.wrapping_add(7 + k), dur);
+                            if cbit & 1 != 0 {
+                                let s2 = u16_at(mem, info, 0x16) & 0xf7ff;
+                                set_u16(mem, info, 0x16, s2);
+                            } else if cbit & 0x800 != 0 {
+                                mem.write(info.wrapping_add(0x13), 0u8);
+                                set_u16(mem, info, 0x14, u16_at(mem, info, 0x14) & 0xf7ff);
+                            } else if cbit & 0x1000 != 0 {
+                                mem.write(info.wrapping_add(0x12), 0u8);
+                                set_u16(mem, info, 0x14, u16_at(mem, info, 0x14) & 0xf7ff);
+                            }
+                            count(mem, inflicted, 4, 1);
+                            did = 1;
+                        }
+                    } else {
+                        let cur = u8_at(mem, info, 7 + k);
+                        if cur == 0 || cur == 0xff {
+                            fail = true;
+                            ctb_off = cbit;
+                        } else {
+                            undid = 1;
+                            let v = ffx_kernel::bridge::ms_check_range(
+                                i32::from(cur) - i32::from(dur),
+                                0,
+                                0xff,
+                            );
+                            mem.write(info.wrapping_add(7 + k), v.to_le_bytes()[0]);
+                            count(mem, inflicted, 4, 1);
+                        }
+                    }
+                } else {
+                    kind = ms_check_stat(mem, i.cast_signed()).to_le_bytes()[0];
+                    let status = u16_at(mem, info, 0x14);
+                    #[allow(clippy::cast_possible_truncation)] // bits 0-11
+                    let b16 = bit as u16;
+                    if !removing {
+                        if status & 4 != 0 || bit & u32::from(u16_at(mem, target, 0x606)) != 0 {
+                            fail = true;
+                        } else {
+                            let forced = u16_at(mem, target, 0x62a) & 0xf00 != 0;
+                            match bit {
+                                1 => {
+                                    match u16_at(mem, user, 0xf5c) {
+                                        0x30e2 => mem.write(target.wrapping_add(0x701), 3u8),
+                                        0x3120 => mem.write(target.wrapping_add(0x701), 4u8),
+                                        _ => {}
+                                    }
+                                    set_u16(mem, info, 0x14, u16_at(mem, info, 0x14) | b16);
+                                    count(mem, inflicted, 4, 1);
+                                    did = 1;
+                                }
+                                0x100 | 0x200 | 0x400 if forced => fail = true,
+                                0x100 => {
+                                    set_u16(mem, info, 0x14, (b16 | status) & 0xf1ff);
+                                    count(mem, inflicted, 4, 1);
+                                    did = 1;
+                                }
+                                0x200 => {
+                                    set_u16(mem, info, 0x14, (b16 | status) & 0xf2ff);
+                                    count(mem, inflicted, 4, 1);
+                                    did = 1;
+                                }
+                                0x400 => {
+                                    set_u16(mem, info, 0x14, b16 | status);
+                                    mem.write(target.wrapping_add(0x5c4), user_id.to_le_bytes()[0]);
+                                    set_u16(mem, info, 0x14, u16_at(mem, info, 0x14) & 0xf4ff);
+                                    count(mem, inflicted, 4, 1);
+                                    did = 1;
+                                }
+                                0x800 => {
+                                    let free = u8_at(mem, info, 0x12) != 0xff
+                                        && u8_at(mem, info, 0x13) != 0xff;
+                                    if forced || !free {
+                                        fail = true;
+                                    } else {
+                                        did = 1;
+                                        mem.write(delayed, 1u32);
+                                        if resist != 0 {
+                                            #[allow(clippy::cast_possible_truncation)]
+                                            // the low byte
+                                            let c = ((u32::from(resist) * 7) / 10) as u8;
+                                            mem.write(target.wrapping_add(0x641 + i), c.max(1));
+                                        }
+                                        set_u16(mem, info, 0x14, u16_at(mem, info, 0x14) | b16);
+                                        flags |= 4;
+                                        mem.write(
+                                            target.wrapping_add(0x5c5),
+                                            user_id.to_le_bytes()[0],
+                                        );
+                                        let ctb = ms_get_next_ctb(
+                                            mem,
+                                            user,
+                                            i32::from(u8_at(mem, user, 0xde8)),
+                                            i32::from(u8_at(mem, user, 0x613)),
+                                            i32::from(u8_at(mem, user, 0x614)),
+                                        );
+                                        let v = ctb
+                                            .cast_unsigned()
+                                            .wrapping_add(u32::from(u8_at(mem, user, 0x65c)))
+                                            .wrapping_sub(u32::from(u8_at(mem, target, 0x65c)));
+                                        mem.write(damage.wrapping_add(8), v);
+                                        set_u16(mem, info, 0x14, u16_at(mem, info, 0x14) & 0xf8ff);
+                                        set_u16(mem, info, 0x12, 0);
+                                        count(mem, inflicted, 4, 1);
+                                    }
+                                }
+                                4 => {
+                                    // petrified: nothing else counts
+                                    did = 1;
+                                    set_u16(mem, info, 0x14, b16);
+                                    mem.write(info.wrapping_add(7), [0u8; 13]);
+                                    set_u16(mem, info, 0x16, u16_at(mem, info, 0x16) & 0x813f);
+                                    let monster = crate::actor::bridge::ms_get_ram_chr_monster(
+                                        u32::from(u8_at(mem, target, 0xc)),
+                                    );
+                                    if monster != 0 || UNDERWATER.get(mem) != 0 {
+                                        set_u16(mem, info, 0x14, u16_at(mem, info, 0x14) | 1);
+                                        set_u16(mem, info, 0x16, u16_at(mem, info, 0x16) | 0x100);
+                                    }
+                                    count(mem, inflicted, 4, 1);
+                                }
+                                _ => {
+                                    did = 1;
+                                    set_u16(mem, info, 0x14, b16 | status);
+                                    count(mem, inflicted, 4, 1);
+                                }
+                            }
+                        }
+                    } else if status & 4 != 0 && bit & 4 == 0 {
+                        fail = true;
+                    } else if i == 0 && status & 2 != 0 {
+                        // life on a zombie
+                        if u8_at(mem, target, 0x5b8) & 4 != 0 {
+                            count(mem, inflicted, 5, 1);
+                        } else {
+                            set_u16(mem, info, 0x14, b16 | status);
+                            count(mem, inflicted, 4, 1);
+                            did = 1;
+                        }
+                    } else if bit & u32::from(status) == 0
+                        || bit & u32::from(u16_at(mem, target, 0x62a)) != 0
+                    {
+                        fail = true;
+                    } else {
+                        undid = 1;
+                        set_u16(mem, info, 0x14, !b16 & status);
+                        if bit & 1 != 0 {
+                            count(mem, removed, 3, 1);
+                        }
+                        count(mem, inflicted, 4, 1);
+                    }
+                }
+            } else {
+                if counter.is_some() {
+                    ctb_off = cbit;
+                }
+                if resist == 0xff {
+                    if counter.is_none() {
+                        if bit & 4 != 0 {
+                            flags |= 0x4000;
+                        }
+                        if bit & 2 != 0 {
+                            flags |= 0x2000;
+                        }
+                    } else {
+                        for (c, f) in [(1, 0x200), (2, 0x400), (4, 0x800)] {
+                            if cbit & c != 0 {
+                                flags |= f;
+                            }
+                        }
+                    }
+                    count(mem, inflicted, 5, 1);
+                } else {
+                    fail = true;
+                }
+            }
+            if fail {
+                count(mem, inflicted, 6, 1);
+            }
+            tally(mem, kind, inflicted, removed, did, undid, true);
+            if ctb_off & 0x1800 != 0 {
+                mem.write(damage.wrapping_add(8), 0u32);
+            }
+        }
+        flags
+    }
+
+    /// `DmgCalc_InflictStatus_Extra(user_id, user, target_id, target,
+    /// command, inflicted, removed, info, ret, damage, status2)`
+    /// (`0x0078b4e0`): the second status word's bits `status2` (the
+    /// command's `+0x54`, or the weapon's): on a petrified target first a
+    /// roll % 101 below the command's `+0x2c` adds KO and bit 0x100; then
+    /// each bit is removed (removing commands) or set unless the target is
+    /// immune (`+0x65a`), has it (`+0x616`, but KO) or two distills meet;
+    /// the distills (bits 1-5) replace each other. Returns `ret`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn dmg_calc_inflict_status_extra(
+        mem: &mut impl Mem,
+        user_id: u32,
+        user: u32,
+        target: u32,
+        command: u32,
+        inflicted: u32,
+        removed: u32,
+        info: u32,
+        ret: u32,
+        status2: u32,
+    ) -> u32 {
+        use crate::state::bridge::ms_check_stat2;
+        let mut bits = status2;
+        if u8_at(mem, info, 0x14) & 4 != 0 {
+            let r = roll(mem, user_id, 2).cast_signed() % 101;
+            if r < i32::from(u8_at(mem, command, 0x2c)) {
+                bits |= 0x100;
+                set_u16(mem, info, 0x14, u16_at(mem, info, 0x14) | 1);
+            }
+        }
+        let removing = u8_at(mem, command, 0x20) & 0x20 != 0;
+        for i in 0..16u32 {
+            let bit = 1u32 << i;
+            if bits & bit == 0 {
+                continue;
+            }
+            #[allow(clippy::cast_possible_truncation)] // 16 bits
+            let b16 = bit as u16;
+            let kind = ms_check_stat2(mem, i.cast_signed()).to_le_bytes()[0];
+            let (mut did, mut undid) = (0, 0);
+            let status = u16_at(mem, info, 0x14);
+            let s2 = u16_at(mem, info, 0x16);
+            let open = DEBUG_ALL_MISS.get(mem) == 0
+                && (status & 4 == 0 || bits & 0x100 != 0 || bits & 0x3f != 0);
+            if !open {
+                count(mem, inflicted, 6, 1);
+            } else if removing {
+                if bit & u32::from(s2) == 0 || bit & u32::from(u16_at(mem, target, 0x62e)) != 0 {
+                    count(mem, inflicted, 6, 1);
+                } else {
+                    if bit & 0x200 != 0 {
+                        mem.write(target.wrapping_add(0x5ca), 0u8);
+                    }
+                    set_u16(mem, info, 0x16, s2 & !b16);
+                    count(mem, inflicted, 4, 1);
+                    undid = 1;
+                }
+            } else if bit & u32::from(u16_at(mem, target, 0x65a)) != 0 {
+                count(mem, inflicted, 5, 1);
+            } else if (bit & u32::from(u16_at(mem, target, 0x616)) != 0 && bit & 1 == 0)
+                || (dmg_calc_is_distill(u32::from(u16_at(mem, target, 0x62e))) != 0
+                    && dmg_calc_is_distill(bit) != 0)
+            {
+                count(mem, inflicted, 6, 1);
+            } else {
+                did = 1;
+                let keep = match bit {
+                    2 => 0xffc3,
+                    4 => 0xffc5,
+                    8 => 0xffc9,
+                    0x10 => 0xffd1,
+                    0x20 => 0xffe1,
+                    _ => 0xffff,
+                };
+                if bit == 0x4000 {
+                    let v = u8_at(mem, target, 0x5c9);
+                    mem.write(target.wrapping_add(0x5c8), v);
+                } else if bit == 0x100 {
+                    set_u16(mem, info, 0x16, s2 | b16);
+                    set_u16(mem, info, 0x14, status & 0xf7ff);
+                } else if bit == 0x200 && dmg_calc_magic_booster(mem, user, command, 0, 0) != 0 {
+                    mem.write(target.wrapping_add(0x5ca), 1u8);
+                }
+                let s2 = u16_at(mem, info, 0x16);
+                set_u16(mem, info, 0x16, (s2 & keep) | b16);
+                count(mem, inflicted, 4, 1);
+            }
+            tally(mem, kind, inflicted, removed, did, undid, false);
+        }
+        ret
+    }
+
+    /// What `DmgCalc_ResultType` decides on.
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+    pub struct ResultInputs {
+        pub user_id: u32,
+        pub target_id: u32,
+        /// The command's class (`+0x20` & 3).
+        pub class: i32,
+        pub armored: i32,
+        pub defense: i32,
+        pub magic_defense: i32,
+        /// HP, MP and CTB damage.
+        pub damage: [i32; 3],
+        pub inflicted: [i32; 8],
+        pub removed: [i32; 8],
+        /// The result's status bits (`info` `+0x14`), low byte.
+        pub status: u8,
+        /// The result's first counter (`info` `+7`).
+        pub asleep: i32,
+        /// What the command hits (`+0x23`) as `DmgCalc` keeps it.
+        pub what: u32,
+        /// The target's `+0x447`: 1 guards against physical, 2 magical.
+        pub guard: u8,
+    }
+
+    /// `DmgCalc_ResultType` (`0x0078c270`): the reaction stored at `info`
+    /// `+0`. With damage: 5, or 4 (physical) or 3 (magical) when the target
+    /// guards against armored or high-defense (100+) hits; 6 or 5 for drains
+    /// (`what` 0x100). Without: 4/5 for a dodged physical hit, 8 KO'd by a
+    /// table-0x40 status, 0xb/0xc by 0x20 ones, 2 revived or healed, 7 a
+    /// status removed, 9/0xa status changes, else 0.
+    #[must_use]
+    pub fn result_type(r: &ResultInputs) -> u32 {
+        let [d0, d1, d2] = r.damage;
+        let max = d0.max(d1);
+        let min = d0.min(d1);
+        if max > 0 {
+            let mut guarded = false;
+            let mut kind = 5;
+            let high =
+                (r.magic_defense >= 100 && r.class == 2) || (r.defense >= 100 && r.class == 1);
+            if r.armored != 0 || high {
+                if r.class == 2 && r.guard & 2 != 0 && r.status & 0x80 == 0 {
+                    guarded = true;
+                    kind = 3;
+                }
+                if r.class == 1 && r.guard & 1 != 0 && r.status & 0x40 == 0 {
+                    guarded = true;
+                    kind = 4;
+                }
+            }
+            if r.what & 0x100 != 0 {
+                return 6 - u32::from(guarded);
+            }
+            return kind;
+        }
+        let hits = r.what & 3;
+        if r.class == 1 && hits != 0 {
+            return u32::from(!r.guard & 1) | 4;
+        }
+        if r.inflicted[1] != 0 {
+            return 8;
+        }
+        if r.inflicted[2] != 0 {
+            return 0xb;
+        }
+        if r.removed[2] != 0 {
+            return 0xc;
+        }
+        let me = r.user_id == r.target_id || r.asleep != 0;
+        if r.removed[3] != 0 {
+            return 2;
+        }
+        if min < 0 {
+            return if me { 0 } else { 2 };
+        }
+        if r.class == 2 && hits != 0 && r.guard & 2 != 0 {
+            return 3;
+        }
+        if hits != 0 || d2 != 0 {
+            return 0;
+        }
+        if r.removed[1] != 0 {
+            return if me { 0 } else { 7 };
+        }
+        if r.inflicted[0] != 0 {
+            9
+        } else if r.removed[0] != 0 {
+            0xa
+        } else {
+            0
+        }
+    }
+
+    /// `DmgCalc_ResultType(user_id, target_id, class, armored, defense,
+    /// magic_defense, damage, inflicted, removed, command, status, asleep,
+    /// what, _, nulls)` (`0x0078c270`): [`result_type`]; with nothing
+    /// changed, a failed status counts in `nulls[1]`, an immune one in
+    /// `nulls[0]`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn dmg_calc_result_type(
+        mem: &mut impl Mem,
+        user_id: u32,
+        target_id: u32,
+        class: i32,
+        armored: i32,
+        defense: i32,
+        magic_defense: i32,
+        damage: u32,
+        inflicted: u32,
+        removed: u32,
+        status: u32,
+        asleep: i32,
+        what: u32,
+        nulls: u32,
+    ) -> u32 {
+        let inflicted_n: [i32; 8] = mem.read(inflicted);
+        if inflicted_n[4] == 0 {
+            if inflicted_n[6] != 0 {
+                add_u32(mem, nulls, 4, 1);
+            } else if inflicted_n[5] != 0 {
+                add_u32(mem, nulls, 0, 1);
+            }
+        }
+        let r = ResultInputs {
+            user_id,
+            target_id,
+            class,
+            armored,
+            defense,
+            magic_defense,
+            damage: mem.read(damage),
+            inflicted: inflicted_n,
+            removed: mem.read(removed),
+            status: status.to_le_bytes()[0],
+            asleep,
+            what,
+            guard: u8_at(mem, ms_get_chr(mem, target_id), 0x447),
+        };
+        result_type(&r)
+    }
+
+    /// `DmgCalc_Bribe(target_id, target, command, counts, info, lang)`
+    /// (`0x0078bdd0`): for a bribe command (`+0x1c` bit 31), the gil
+    /// offered so far (target `+0x704` plus [`GIL_AMOUNT`]) against the
+    /// target's max HP: chance `256·gil / max_hp / 20 − 64` against a byte
+    /// of the target's status roll; a bribed target leaves (`+0x701` 2,
+    /// `+0x708` the chance, `info` `+0x16` bit 0x100). Not for targets
+    /// immune to it (`+0x5b8` bit 0x400) or asleep. In the Korean game
+    /// (`lang` 0xb, `TOGetFFXLang`, which the caller supplies) monster 0x10ef
+    /// needs 157000 gil first and then counts 18000 more. The offer adds up
+    /// (to 999999999). Returns 1 when bribed. (The original faults on a max
+    /// HP of 0; this divides by 1.)
+    pub fn dmg_calc_bribe<M: Mem>(
+        mem: &mut M,
+        target_id: u32,
+        target: u32,
+        command: u32,
+        counts: u32,
+        info: u32,
+        lang: impl FnOnce(&mut M) -> u32,
+    ) -> u32 {
+        if u32_at(mem, command, 0x1c) & 0x8000_0000 == 0 {
+            return 0;
+        }
+        let gil = GIL_AMOUNT.get(mem);
+        let offered = u32_at(mem, target, 0x704);
+        let x = offered.wrapping_add(gil.cast_unsigned()) << 8;
+        let chance = (x / u32_at(mem, target, 0x594).max(1) / 20)
+            .wrapping_sub(0x40)
+            .cast_signed();
+        let r = (roll(mem, target_id, 2) & 0xff).cast_signed();
+        if lang(mem) == 0xb && u16_at(mem, target, 0xe) == 0x10ef {
+            if gil.wrapping_add(offered.cast_signed()) < 0x26548 {
+                add_u32(mem, counts, 0x18, 1);
+                return 0;
+            }
+            mem.write(target.wrapping_add(0x704), offered.wrapping_add(18000));
+        }
+        let mut bribed = 0;
+        if u16_at(mem, target, 0x5b8) & 0x400 != 0 || u8_at(mem, info, 7) != 0 {
+            add_u32(mem, counts, 0x14, 1);
+        } else if (r < chance && gil > 0) || DEBUG_ALWAYS_HIT.get(mem) != 0 {
+            mem.write(target.wrapping_add(0x701), 2u8);
+            mem.write(target.wrapping_add(0x708), chance);
+            set_u16(mem, info, 0x16, u16_at(mem, info, 0x16) | 0x100);
+            bribed = 1;
+            add_u32(mem, counts, 0x10, 1);
+        } else {
+            add_u32(mem, counts, 0x18, 1);
+        }
+        let total = u32_at(mem, target, 0x704).cast_signed().wrapping_add(gil);
+        let v = ffx_kernel::bridge::ms_check_range(total, 0, 999_999_999);
+        mem.write(target.wrapping_add(0x704), v);
+        bribed
+    }
+
+    /// Debug: no statuses inflicted (`DmgCalc`).
+    pub const DEBUG_NO_STATUS: Global<u8> = Global::new(0x0112_a906);
+    /// Debug: every hit does 1, 10000 or 100000 (`DmgCalc`).
+    pub const DEBUG_DAMAGE_1: Global<u8> = Global::new(0x0112_a90e);
+    pub const DEBUG_DAMAGE_10000: Global<u8> = Global::new(0x0112_a90f);
+    pub const DEBUG_DAMAGE_100000: Global<u8> = Global::new(0x0112_a910);
+
+    /// `DmgCalc`'s locals that its callees take pointers to, in a
+    /// [`Frame`] at [`FRAME`].
+    struct Locals {
+        damage: u32,
+        inflicted: u32,
+        removed: u32,
+        nulls: u32,
+        what: u32,
+        what2: u32,
+        hit_kind: u32,
+        armored: u32,
+        delayed: u32,
+        temp: u32,
+        def: u32,
+        mdef: u32,
+    }
+
+    impl Locals {
+        fn at<M: Mem>(f: &Frame<'_, M>) -> Self {
+            Self {
+                damage: f.at(0),
+                inflicted: f.at(0x10),
+                removed: f.at(0x30),
+                nulls: f.at(0x50),
+                what: f.at(0x58),
+                what2: f.at(0x5c),
+                hit_kind: f.at(0x60),
+                armored: f.at(0x64),
+                delayed: f.at(0x68),
+                temp: f.at(0x6c),
+                def: f.at(0x70),
+                mdef: f.at(0x74),
+            }
+        }
+    }
+
+    /// Where [`dmg_calc`] keeps its locals.
+    pub const FRAME: u32 = 0xfff0_0000;
+
+    /// Where `DmgCalc`'s caller wants its counts.
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+    pub struct DmgCalcOut {
+        /// Three `i32` the damage is taken from, or null.
+        pub damage: u32,
+        /// Counts of hits and of misses (`i32`).
+        pub hits: u32,
+        pub misses: u32,
+        /// Receives the statuses changed (`inflicted[4]`), or null.
+        pub changed: u32,
+    }
+
+    /// `DmgCalc(user_id, user, target_id, target, command, command_id,
+    /// info, &damage, &hits, &misses, &changed)` (`0x0078e630`): one command
+    /// on one target, filling the result `info`: Nul statuses, the hit roll,
+    /// the HP damage chain (wake-up, formula, shield/boost, shell, protect,
+    /// critical, berserk, magic booster, alchemy, damage rates, gravity
+    /// immunity, zombie drains, elements, armor, defend, breaks, immunities,
+    /// Wakka's reels), MP and CTB damage, delays, statuses, petrified
+    /// targets, stat buffs, Bribe, the reaction, counters; then the damage
+    /// capped (9999, or 99999 with the user's `+0x6be` bit 0x800 or the
+    /// command's `+0x20` bit 0x80) and taken from the target's pending HP,
+    /// MP and CTB (`+0x6e4`) into `+0xd34`; overkill (`+0x5a4`) flags 0x80.
+    /// Returns the HP damage. `lang` is `TOGetFFXLang` (for Bribe).
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        clippy::many_single_char_names
+    )]
+    pub fn dmg_calc<M: Mem>(
+        mem: &mut M,
+        user_id: u32,
+        user: u32,
+        target_id: u32,
+        target: u32,
+        command: u32,
+        command_id: u32,
+        info: u32,
+        out: DmgCalcOut,
+        lang: impl FnOnce(&mut M) -> u32,
+    ) -> i32 {
+        // the locals the callees take pointers to (on the original's stack)
+        let mut f = Frame::new(mem, FRAME, 0x80);
+        let mem = &mut f;
+        let l = Locals::at(mem);
+        let threshold = u32_at(mem, target, 0x5a4).cast_signed();
+        let mut def = u32::from(u8_at(mem, target, 0x5a9));
+        let mut mdef = u32::from(u8_at(mem, target, 0x5ab));
+        let weapon = u32_at(mem, command, 0x1c) & 0x40000 != 0;
+        let (formula, power, elements, status2) = if weapon {
+            let mut s2 = u32::from(u16_at(mem, user, 0x604));
+            let c54 = u16_at(mem, command, 0x54);
+            if c54 & 0x3e != 0 {
+                s2 &= 0xffff_ffc1;
+            }
+            (
+                i32::from(u8_at(mem, user, 0x5c1)),
+                i32::from(u8_at(mem, user, 0x5c7)),
+                u32::from(u8_at(mem, user, 0x5d9) | u8_at(mem, command, 0x2d)),
+                s2 | u32::from(c54),
+            )
+        } else {
+            (
+                i32::from(u8_at(mem, command, 0x28)),
+                i32::from(u8_at(mem, command, 0x2a)),
+                u32::from(u8_at(mem, command, 0x2d)),
+                u32::from(u16_at(mem, command, 0x54)),
+            )
+        };
+        let class = i32::from(u16_at(mem, command, 0x20) & 3);
+        let vary = 1 - i32::from(DEBUG_NO_VARIANCE.get(mem));
+        let mut what = 0u32; // local_5c: what is hit, then the flags
+        let mut what2 = 0u32; // local_64
+        let mut flags = 0u32; // local_74
+        let mut hit_kind = 0u32; // local_6c
+        let mut miss_kind = 0u32; // local_8c
+        let mut armored = 0u32;
+        let mut delayed = 0u32;
+        let result; // local_60
+        let counter = dmg_calc_check_counter(
+            mem,
+            0,
+            user_id.cast_signed(),
+            user,
+            target_id.cast_signed(),
+            target,
+            command,
+        );
+        let mut apply_counter = false;
+        if dmg_calc_check_nuls(mem, elements, info) != 0 {
+            what = u32::from(u8_at(mem, command, 0x23));
+            mem.write(l.nulls, [1u32, 0]);
+            miss_kind = 2;
+            result = dmg_calc_result_type(
+                mem,
+                user_id,
+                target_id,
+                class,
+                0,
+                0,
+                0,
+                l.damage,
+                l.inflicted,
+                l.removed,
+                0,
+                i32::from(u8_at(mem, info, 7)),
+                what,
+                l.nulls,
+            );
+            apply_counter = counter != 0;
+        } else {
+            match dmg_calc_check_hit(mem, user, target, command, info, counter) {
+                1 => {
+                    add_u32(mem, out.misses, 0, 1);
+                    miss_kind = 1;
+                    result = if user_id == target_id && class != 2 {
+                        0x11
+                    } else {
+                        1
+                    };
+                    mem.write(l.nulls, [0u32, 1]);
+                    apply_counter = true;
+                }
+                2 => {
+                    add_u32(mem, out.misses, 0, 1);
+                    result = 0;
+                    mem.write(l.nulls, [0u32, 1]);
+                }
+                _ => {
+                    add_u32(mem, out.hits, 0, 1);
+                    what = u32::from(u8_at(mem, command, 0x23));
+                    what2 = what;
+                    mem.write(l.what, what);
+                    mem.write(l.what2, what2);
+                    if power != 0 {
+                        if what & 1 != 0 {
+                            dmg_calc_queue_remove_status_on_hit(
+                                mem, target, command, l.removed, info,
+                            );
+                            let status = u32::from(u16_at(mem, info, 0x14));
+                            mem.write(l.def, def);
+                            mem.write(l.mdef, mdef);
+                            let mut d = ms_calc_damage_command(
+                                mem, user, target, command, formula, power, status, 1, vary, l.def,
+                                l.mdef, 0,
+                            );
+                            def = mem.read(l.def);
+                            mdef = mem.read(l.mdef);
+                            d = dmg_calc_shield_boost(mem, target, l.what, d);
+                            d = dmg_calc_shell(mem, command, l.what, l.hit_kind, info, d);
+                            d = dmg_calc_protect(mem, command, l.what, l.hit_kind, info, d);
+                            if DEBUG_NO_CRIT.get(mem) == 0 {
+                                d = dmg_calc_crit(mem, user, target, command, l.what, d);
+                            }
+                            d = dmg_calc_berserk(mem, user, d);
+                            mem.write(l.temp, d);
+                            dmg_calc_magic_booster(
+                                mem,
+                                user,
+                                command,
+                                command_id.cast_signed(),
+                                l.temp,
+                            );
+                            let t: i32 = mem.read(l.temp);
+                            d = dmg_calc_alchemy(mem, user, command, command_id, formula, t);
+                            d = dmg_calc_stat_boost_ability(mem, user_id, target_id, command, d);
+                            d = dmg_calc_grav_immunity(
+                                mem, target, formula, l.what2, 1, l.nulls, d,
+                            );
+                            d = dmg_calc_apply_zombie_drain_interaction(
+                                mem, user, command, info, d,
+                            );
+                            d = dmg_calc_elem(mem, target, elements, d);
+                            d = dmg_calc_armored(mem, user, target, command, info, l.armored, d);
+                            d = dmg_calc_defend(mem, target, command, l.what, info, d);
+                            d = dmg_calc_power_magic_break(mem, user, command, d);
+                            d = dmg_calc_dmg_immunity(mem, target, command, l.what2, 1, l.nulls, d);
+                            let d0 = dmg_calc_reel_bonus(mem, user, d);
+                            mem.write(l.damage, d0);
+                            hit_kind = mem.read(l.hit_kind);
+                            miss_kind = hit_kind;
+                        }
+                        what = mem.read(l.what);
+                        if what & 2 != 0 {
+                            let status = u32::from(u16_at(mem, info, 0x14));
+                            let d = ms_calc_damage_command(
+                                mem, user, target, command, formula, power, status, 2, vary, 0, 0,
+                                0,
+                            );
+                            mem.write(l.temp, d);
+                            dmg_calc_magic_booster(
+                                mem,
+                                user,
+                                command,
+                                command_id.cast_signed(),
+                                l.temp,
+                            );
+                            let t: i32 = mem.read(l.temp);
+                            let mut d =
+                                dmg_calc_alchemy(mem, user, command, command_id, formula, t);
+                            let mp = u32_at(mem, target, 0x6e8).cast_signed();
+                            if d > 0 && mp < d {
+                                d = mp;
+                            }
+                            let d1 = dmg_calc_apply_zombie_drain_interaction(
+                                mem, user, command, info, d,
+                            );
+                            mem.write(l.damage + 4, d1);
+                        }
+                        if what & 4 != 0 {
+                            let w2: u32 = mem.read(l.what2);
+                            mem.write(l.what2, w2 & !4);
+                            let status = u32::from(u16_at(mem, info, 0x14));
+                            let d = ms_calc_damage_command(
+                                mem, user, target, command, formula, power, status, 4, vary, 0, 0,
+                                0,
+                            );
+                            let d2 = dmg_calc_apply_zombie_drain_interaction(
+                                mem, user, command, info, d,
+                            );
+                            mem.write(l.damage + 8, d2);
+                        }
+                    }
+                    let f = dmg_calc_delay(mem, target, command, what, l.damage);
+                    flags = dmg_calc_threaten(mem, info, l.what2, 4, f, l.nulls, l.damage);
+                    let status_before = u32::from(u16_at(mem, info, 0x14));
+                    hit_kind = status_before;
+                    if DEBUG_NO_STATUS.get(mem) == 0 {
+                        let f = dmg_calc_inflict_status(
+                            mem,
+                            user_id,
+                            user,
+                            target_id,
+                            target,
+                            command,
+                            l.inflicted,
+                            l.removed,
+                            info,
+                            flags,
+                            l.damage,
+                            l.delayed,
+                        );
+                        flags = dmg_calc_inflict_status_extra(
+                            mem,
+                            user_id,
+                            user,
+                            target,
+                            command,
+                            l.inflicted,
+                            l.removed,
+                            info,
+                            f,
+                            status2,
+                        );
+                        if u8_at(mem, info, 0x14) & 4 == 0 {
+                            let v = u8_at(mem, info, 6) | u8_at(mem, command, 0x5a);
+                            mem.write(info.wrapping_add(6), v);
+                        }
+                    }
+                    dmg_calc_shatter_fail(mem, info, hit_kind, l.what2, l.inflicted, l.damage);
+                    delayed = mem.read(l.delayed);
+                    dmg_calc_delay_immunity(
+                        mem,
+                        target,
+                        l.damage,
+                        l.inflicted,
+                        flags,
+                        delayed.cast_signed(),
+                    );
+                    what = dmg_calc_no_damage_death(mem, info, hit_kind, flags, l.damage);
+                    dmg_calc_apply_stat_up_buffs(mem, target, command);
+                    dmg_calc_bribe(
+                        mem,
+                        target_id,
+                        target,
+                        command,
+                        l.inflicted,
+                        info,
+                        |f: &mut Frame<M>| lang(f.inner()),
+                    );
+                    what2 = mem.read(l.what2);
+                    armored = mem.read(l.armored);
+                    result = dmg_calc_result_type(
+                        mem,
+                        user_id,
+                        target_id,
+                        class,
+                        armored.cast_signed(),
+                        def.cast_signed(),
+                        mdef.cast_signed(),
+                        l.damage,
+                        l.inflicted,
+                        l.removed,
+                        u32::from(u16_at(mem, info, 0x14)),
+                        i32::from(u8_at(mem, info, 7)),
+                        what,
+                        l.nulls,
+                    );
+                    apply_counter = true;
+                }
+            }
+        }
+        let _ = (hit_kind, delayed, armored);
+        if apply_counter {
+            dmg_calc_check_counter(
+                mem,
+                1,
+                user_id.cast_signed(),
+                user,
+                target_id.cast_signed(),
+                target,
+                command,
+            );
+        }
+        let mut damage: [i32; 3] = mem.read(l.damage);
+        for (flag, value) in [
+            (DEBUG_DAMAGE_1, 1),
+            (DEBUG_DAMAGE_10000, 10000),
+            (DEBUG_DAMAGE_100000, 100_000),
+        ] {
+            if flag.get(mem) != 0 {
+                if what & 1 != 0 {
+                    damage[0] = value;
+                }
+                if what & 2 != 0 {
+                    damage[1] = value;
+                }
+            }
+        }
+        let k = u8_at(mem, command, 0x20);
+        let cap = if k & 0x80 != 0 {
+            99_999
+        } else if k & 0x40 != 0 {
+            9999
+        } else if u16_at(mem, user, 0x6be) & 0x800 != 0 {
+            99_999
+        } else {
+            9999
+        };
+        if u8_at(mem, user, 0x640) & 8 != 0 && what & 1 != 0 {
+            let d = damage[0];
+            if d.wrapping_sub(1).cast_unsigned() <= 0x270d {
+                damage[0] = 9999;
+            } else if d.wrapping_add(0x270e).cast_unsigned() <= 0x270d {
+                damage[0] = -9999;
+            }
+        }
+        for (k, &d) in (0u32..).zip(&damage) {
+            let v = d.clamp(-cap, cap);
+            mem.write(info + 0x20 + 4 * k, v);
+            let total = target.wrapping_add(0xd34 + 4 * k);
+            let t: i32 = mem.read(total);
+            mem.write(total, t.wrapping_add(v));
+            let pending = target.wrapping_add(0x6e4 + 4 * k);
+            let p: i32 = mem.read(pending);
+            let p = p.wrapping_sub(v);
+            if out.damage != 0 {
+                let at = out.damage + 4 * k;
+                let o: i32 = mem.read(at);
+                mem.write(at, o.wrapping_sub(v));
+            }
+            mem.write(pending, p.max(0));
+        }
+        let dealt: i32 = mem.read(info + 0x20);
+        if threshold.wrapping_sub(dealt) <= 0 {
+            what |= 0x80;
+        }
+        mem.write(info, result.to_le_bytes()[0]);
+        let counts: [i32; 2] = mem.read(l.nulls);
+        let kind = if counts[1] == 0 && counts[0] != 0 {
+            2
+        } else {
+            u32::from(what2 == 0 && counts[1] != 0)
+        };
+        mem.write(info + 1, kind.to_le_bytes()[0]);
+        mem.write(info + 0x18, low16(what));
+        mem.write(info + 0x1a, low16(flags));
+        mem.write(info + 2, what2.to_le_bytes()[0]);
+        mem.write(info + 3, miss_kind.to_le_bytes()[0]);
+        let base =
+            ms_calc_damage_command(mem, user, target, command, formula, power, 0, 1, 0, 0, 0, 0);
+        mem.write(info + 0x1c, base);
+        let inflicted: [i32; 8] = mem.read(l.inflicted);
+        mem.write(info + 4, inflicted[7].to_le_bytes()[0]);
+        dmg_calc_mark_damaged(mem, user, command, info + 0x20, inflicted[4]);
+        let removed: [i32; 8] = mem.read(l.removed);
+        if removed[3] != 0 {
+            mem.write(user.wrapping_add(0xdea), 7u8);
+        }
+        if out.changed != 0 {
+            mem.write(out.changed, inflicted[4]);
+        }
+        dealt
+    }
 }
 
 #[cfg(test)]
@@ -1279,6 +2332,9 @@ mod tests {
             ..Formula::default()
         };
         // 15³/32 + 30 = 135, no defense: 135 · 730 / 730 · 15 / 15 · 16 / 16
-        assert_eq!(formula_damage(&user, &FormulaStats::default(), &f), (135, false));
+        assert_eq!(
+            formula_damage(&user, &FormulaStats::default(), &f),
+            (135, false)
+        );
     }
 }

@@ -6,6 +6,9 @@ use ffx_battle::{damage::bridge as dmg, state::bridge as state, util::bridge as 
 
 use super::{call0, mem, ported};
 
+/// `TOGetFFXLang` (system), which `DmgCalc_Bribe` asks.
+const TO_GET_FFX_LANG: u32 = 0x0064_10e0;
+
 ported! {
     /// `rnd`: the global random generator.
     rnd @ 0x0079_89a0 => extern "C" fn rnd() -> u32 {
@@ -487,13 +490,12 @@ ported! {
         camera::ms_get_camera_matrix(&mem())
     }
 
-    // Damage, hits and statuses. Not installed yet although ported and
-    // checked: DmgCalc_ApplyZombieDrainInteraction, DmgCalc_Alchemy,
-    // DmgCalc_ShatterFail, DmgCalc_NoDamageDeath, DmgCalc_HitKind (whose
-    // caller, the original DmgCalc, keeps values in ECX or EDX across them:
-    // its compiler knew they leave those alone) and DmgCalc_IsDistill (the
-    // same in DmgCalc_InflictStatus_Extra). A Rust function may clobber both,
-    // as cdecl allows; they go in with their callers.
+    // Damage, hits and statuses. DmgCalc and DmgCalc_InflictStatus_Extra
+    // keep values in ECX or EDX across some of their callees
+    // (DmgCalc_ApplyZombieDrainInteraction, DmgCalc_Alchemy,
+    // DmgCalc_ShatterFail, DmgCalc_NoDamageDeath, DmgCalc_HitKind,
+    // DmgCalc_IsDistill: their compiler knew those leave them alone); with
+    // both callers replaced too, nothing relies on that any more.
     /// `MsGetRamChrSummon(chr)`.
     MsGetRamChrSummon @ 0x0079_af60 => extern "C" fn ms_get_ram_chr_summon(chr: u32) -> u32 {
         dmg::ms_get_ram_chr_summon(&mem(), chr)
@@ -625,5 +627,51 @@ ported! {
     /// `MsCheckWrongStatus(command)`.
     MsCheckWrongStatus @ 0x0079_e340 => extern "C" fn ms_check_wrong_status(command: u32) -> i32 {
         dmg::ms_check_wrong_status(&mem(), command)
+    }
+
+    /// `DmgCalc_ApplyZombieDrainInteraction(user, command, info, damage)`.
+    DmgCalc_ApplyZombieDrainInteraction @ 0x0078_a200 => extern "C" fn dmg_calc_apply_zombie_drain_interaction(user: u32, command: u32, info: u32, damage: i32) -> i32 {
+        dmg::dmg_calc_apply_zombie_drain_interaction(&mem(), user, command, info, damage)
+    }
+    /// `DmgCalc_ShatterFail(target, info, status, &what, counts, damage)`.
+    DmgCalc_ShatterFail @ 0x0078_ba30 => extern "C" fn dmg_calc_shatter_fail(_target: u32, info: u32, status: u32, what: u32, counts: u32, damage: u32) {
+        dmg::dmg_calc_shatter_fail(&mut mem(), info, status, what, counts, damage);
+    }
+    /// `DmgCalc_NoDamageDeath(target, info, status, flags, damage)`.
+    DmgCalc_NoDamageDeath @ 0x0078_c480 => extern "C" fn dmg_calc_no_damage_death(_target: u32, info: u32, status: u32, flags: u32, damage: u32) -> u32 {
+        dmg::dmg_calc_no_damage_death(&mut mem(), info, status, flags, damage)
+    }
+    /// `DmgCalc_Alchemy(user, command, command_id, formula, damage)`.
+    DmgCalc_Alchemy @ 0x0078_c5f0 => extern "C" fn dmg_calc_alchemy(user: u32, command: u32, command_id: u32, formula: i32, damage: i32) -> i32 {
+        dmg::dmg_calc_alchemy(&mem(), user, command, command_id, formula, damage)
+    }
+    /// `DmgCalc_HitKind(flags, counts)`.
+    DmgCalc_HitKind @ 0x0078_c640 => extern "C" fn dmg_calc_hit_kind(flags: i32, counts: u32) -> u32 {
+        dmg::dmg_calc_hit_kind(&mem(), flags, counts)
+    }
+    /// `DmgCalc_IsDistill(status2)`.
+    DmgCalc_IsDistill @ 0x0078_c670 => extern "C" fn dmg_calc_is_distill(status2: u32) -> i32 {
+        dmg::dmg_calc_is_distill(status2)
+    }
+    /// `DmgCalc_InflictStatus(user_id, user, target_id, target, command, inflicted, removed, info, flags, damage, &delayed)`.
+    DmgCalc_InflictStatus @ 0x0078_ae00 => extern "C" fn dmg_calc_inflict_status(user_id: u32, user: u32, target_id: u32, target: u32, command: u32, inflicted: u32, removed: u32, info: u32, flags: u32, damage: u32, delayed: u32) -> u32 {
+        dmg::dmg_calc_inflict_status(&mut mem(), user_id, user, target_id, target, command, inflicted, removed, info, flags, damage, delayed)
+    }
+    /// `DmgCalc_InflictStatus_Extra(user_id, user, target_id, target, command, inflicted, removed, info, ret, damage, status2)`.
+    DmgCalc_InflictStatus_Extra @ 0x0078_b4e0 => extern "C" fn dmg_calc_inflict_status_extra(user_id: u32, user: u32, _target_id: u32, target: u32, command: u32, inflicted: u32, removed: u32, info: u32, ret: u32, _damage: u32, status2: u32) -> u32 {
+        dmg::dmg_calc_inflict_status_extra(&mut mem(), user_id, user, target, command, inflicted, removed, info, ret, status2)
+    }
+    /// `DmgCalc_ResultType(user_id, target_id, class, armored, def, mdef, damage, inflicted, removed, command, status, asleep, what, _, nulls)`.
+    DmgCalc_ResultType @ 0x0078_c270 => extern "C" fn dmg_calc_result_type(user_id: u32, target_id: u32, class: i32, armored: i32, def: i32, mdef: i32, damage: u32, inflicted: u32, removed: u32, _command: u32, status: u32, asleep: i32, what: u32, _what2: u32, nulls: u32) -> u32 {
+        dmg::dmg_calc_result_type(&mut mem(), user_id, target_id, class, armored, def, mdef, damage, inflicted, removed, status, asleep, what, nulls)
+    }
+    /// `DmgCalc_Bribe(target_id, target, command, counts, info)`; the language from `TOGetFFXLang`.
+    DmgCalc_Bribe @ 0x0078_bdd0 => extern "C" fn dmg_calc_bribe(target_id: u32, target: u32, command: u32, counts: u32, info: u32) -> u32 {
+        dmg::dmg_calc_bribe(&mut mem(), target_id, target, command, counts, info, |_| call0(TO_GET_FFX_LANG))
+    }
+    /// `DmgCalc(user_id, user, target_id, target, command, command_id, info, &damage, &hits, &misses, &changed)`: returns the HP damage.
+    DmgCalc @ 0x0078_e630 => extern "C" fn dmg_calc(user_id: u32, user: u32, target_id: u32, target: u32, command: u32, command_id: u32, info: u32, damage: u32, hits: u32, misses: u32, changed: u32) -> i32 {
+        let out = dmg::DmgCalcOut { damage, hits, misses, changed };
+        dmg::dmg_calc(&mut mem(), user_id, user, target_id, target, command, command_id, info, out, |_| call0(TO_GET_FFX_LANG))
     }
 }
