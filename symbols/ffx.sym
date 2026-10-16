@@ -1730,6 +1730,7 @@
 0x00757e90 function pppVertexApDisPosCon      # ppp program table record "pppVertexApDisPos" (0x00c3b778) +0x1c set-up; "pppVertexApDisPos" (0x00c3ce20) +0x1c set-up
 0x00757eb0 function pppSegmentAp              # ppp program table record "pppSegmentAp" step; not a function start in the Ghidra dump
 0x00757ec0 function pppFaceAp                 # ppp program table record "pppFaceAp" step; not a function start in the Ghidra dump
+0x00757ed0 function pppBornVertexLc           # (obj, key, short *v): a child object (birth record key +0xc) at v as floats (field key +0x10); on level 0x18cd or map 0x10e (0x0113335c 0, 0x00c3a504 not -1) the parent's program end (+0x14) moves on 0x1000 when the parent has no more frames left than the child (pppVertexApLc)
 0x00757ff0 function pppVertexApLc             # fh v3:bsim0.94 0x007580e0
 0x00758250 function pppVertexApLcCon          # ppp program table record "pppVertexApLc" (0x00c3a968) +0x1c set-up; "pppVertexApLc" (0x00c3a968) +0x20 second set-up; "pppVertexApLc" (0x00c3c010) +0x1c set-up and 1 more
 0x00758270 function pppBornShort              # (obj, key, short v): a child object (birth record key +0xc) whose i16 at key +0x10 is v (pppVertexApAt)

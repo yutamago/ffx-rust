@@ -3561,6 +3561,7 @@ fn parts_and_objects_match_the_original() {
         let start = p.alloc(0x200);
         let log = record_srand(&mut p);
         let hits_list = p.alloc(0x400);
+        // (hits_list + 0x200: the shape tables of the pppVertexAp steps)
         for i in 0..4 {
             p.set(offs + 4 * i, 0x40 * i);
         }
@@ -3919,6 +3920,81 @@ fn parts_and_objects_match_the_original() {
                 p.set(head + a0 + 0xa0, if rng.chance(10) { 0 } else { hits_list });
                 p.check("pppKeHitBorn", 0x0075_9d80, &[head, key, ctrl], |m| {
                     pt::ppp_ke_hit_born(m, head, key, ctrl, &mut call_original);
+                    None
+                });
+                // the pppVertexAp steps on a shape table of the environment
+                let shapes = hits_list + 0x200;
+                let (records, blocks, lists, verts) =
+                    (shapes, shapes + 0x40, shapes + 0x80, shapes + 0x100);
+                p.set(env + 0x28, records);
+                p.set(env + 0x20, blocks);
+                for r in 0..4 {
+                    p.set(records + 8 * r, rng.below(2) as u16);
+                    p.set(records + 8 * r + 2, rng.below(6) as u16);
+                    p.set(records + 8 * r + 4, lists + 0x10 * r);
+                }
+                for k in 0..2 {
+                    p.set(blocks + 0x20 * k + 0x14, verts + 0x40 * k);
+                }
+                for i in (0..0x40).step_by(2) {
+                    p.set(lists + i, rng.below(8) as u16);
+                }
+                p.fill(verts, 0x80, &mut rng);
+                p.set(head + 0x90, if rng.chance(20) { verts } else { 0 });
+                p.set(
+                    key + 4,
+                    if rng.chance(10) {
+                        0xffffu16
+                    } else {
+                        rng.below(4) as u16
+                    },
+                );
+                p.set(key + 6, rng.below(3) as u8);
+                p.set(key + 7, rng.below(4) as u8);
+                p.set(key + 8, rng.pick(&[0u8, 0, 1, 1, 2]));
+                p.set(
+                    key + 0xc,
+                    if rng.chance(10) {
+                        u32::MAX
+                    } else {
+                        rng.below(4)
+                    },
+                );
+                p.set(key + 0x10, rng.below(0x10) * 4);
+                let a0 = p.get::<u32>(offs);
+                p.set(head + a0 + 0xa2, rng.below(2) as u16);
+                p.set(head + a0 + 0xa0, rng.below(8) as u16);
+                let hash = p.sym(0x0064_1da0);
+                let h = rng.pick(&[0u32, 0xe6c, 0x18cd]);
+                // the story and the script's effect flags, for the
+                // localisation rule
+                let scen = p.sym(0x0078_7360);
+                let atel = p.sym(0x0086_b030);
+                let (sv, av) = (rng.pick(&[0u32, 0xcc6]), u32::from(rng.chance(50)));
+                for (at, v) in [(hash, h), (scen, sv), (atel, av)] {
+                    p.a.stub_return(at, v).unwrap();
+                    p.b.stub_return(at, v).unwrap();
+                }
+                // r0 is the zero register: draws in [0, 1) then, which the
+                // random form scales to an index
+                p.put(ppp::bridge::R0, [0, rng.next(), rng.next(), rng.next()]);
+                let form = rng.pick(&[
+                    ("pppVertexAp", 0x0075_7840, pt::VertexAp::Ap),
+                    ("pppVertexApDisPos", 0x0075_7c30, pt::VertexAp::DisPos),
+                    ("pppVertexApLc", 0x0075_7ff0, pt::VertexAp::Lc),
+                    ("pppVertexApAt", 0x0075_82e0, pt::VertexAp::At),
+                ]);
+                p.set(log, 0u32);
+                p.check(form.0, form.1, &[head, key, ctrl], |m| {
+                    pt::ppp_vertex_ap(
+                        m,
+                        head,
+                        key,
+                        ctrl,
+                        form.2,
+                        &mut call_original,
+                        &mut srand_log(log),
+                    );
                     None
                 });
                 p.put(ppp::bridge::STOP, 0);

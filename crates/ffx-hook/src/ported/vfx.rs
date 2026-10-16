@@ -1711,4 +1711,56 @@ ported! {
     pppKeHitBorn @ 0x0075_9d80 => extern "C" fn ppp_ke_hit_born(obj: u32, key: u32, ctrl: u32) {
         part::bridge::ppp_ke_hit_born(&mut mem(), obj, key, ctrl, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `pppBornVertexLc(obj, key, v)`.
+    pppBornVertexLc @ 0x0075_7ed0 => extern "C" fn ppp_born_vertex_lc(obj: u32, key: u32, v: u32) {
+        part::bridge::ppp_born_vertex_lc(&mut mem(), obj, key, v, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppVertexAp(obj, key, ctrl)`.
+    pppVertexAp @ 0x0075_7840 => extern "C" fn ppp_vertex_ap(obj: u32, key: u32, ctrl: u32) {
+        part::bridge::ppp_vertex_ap(
+            &mut mem(),
+            obj,
+            key,
+            ctrl,
+            part::bridge::VertexAp::Ap,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, seed| crt_srand(seed),
+        );
+    }
+    /// `pppVertexApDisPos(obj, key, ctrl)`.
+    pppVertexApDisPos @ 0x0075_7c30 => extern "C" fn ppp_vertex_ap_dis_pos(obj: u32, key: u32, ctrl: u32) {
+        part::bridge::ppp_vertex_ap(
+            &mut mem(),
+            obj,
+            key,
+            ctrl,
+            part::bridge::VertexAp::DisPos,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, seed| crt_srand(seed),
+        );
+    }
+    /// `pppVertexApLc(obj, key, ctrl)`.
+    pppVertexApLc @ 0x0075_7ff0 => extern "C" fn ppp_vertex_ap_lc(obj: u32, key: u32, ctrl: u32) {
+        part::bridge::ppp_vertex_ap(
+            &mut mem(),
+            obj,
+            key,
+            ctrl,
+            part::bridge::VertexAp::Lc,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, seed| crt_srand(seed),
+        );
+    }
+    /// `pppVertexApAt(obj, key, ctrl)`.
+    pppVertexApAt @ 0x0075_82e0 => extern "C" fn ppp_vertex_ap_at(obj: u32, key: u32, ctrl: u32) {
+        part::bridge::ppp_vertex_ap(
+            &mut mem(),
+            obj,
+            key,
+            ctrl,
+            part::bridge::VertexAp::At,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, seed| crt_srand(seed),
+        );
+    }
 }

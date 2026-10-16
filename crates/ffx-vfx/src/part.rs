@@ -836,6 +836,23 @@ pub mod bridge {
         relative: bool,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) {
+        let v = vertex(mem, v);
+        born_vertex(mem, obj, key, v, relative, call);
+    }
+
+    /// Three `i16` at `at`.
+    fn vertex(mem: &impl Mem, at: u32) -> [i16; 3] {
+        [0, 2, 4].map(|i| mem.read::<i16>(at.wrapping_add(i)))
+    }
+
+    fn born_vertex<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        v: [i16; 3],
+        relative: bool,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
         use ffx_bridge::x87::Reg;
         let index = rd(mem, key.wrapping_add(0xc));
         if index == u32::MAX {
@@ -844,12 +861,7 @@ pub mod bridge {
         let Some(child) = born_child(mem, obj, index, call) else {
             return;
         };
-        let p: [f32; 4] = [
-            f32::from(mem.read::<i16>(v)),
-            f32::from(mem.read::<i16>(v.wrapping_add(2))),
-            f32::from(mem.read::<i16>(v.wrapping_add(4))),
-            1.0,
-        ];
+        let p: [f32; 4] = [f32::from(v[0]), f32::from(v[1]), f32::from(v[2]), 1.0];
         let m = obj.wrapping_add(0x10);
         let q: [f32; 3] = std::array::from_fn(|c| {
             #[allow(clippy::cast_possible_truncation)] // 0..3
@@ -981,5 +993,234 @@ pub mod bridge {
             }
             node = ptr32(rd(mem, node));
         }
+    }
+
+    /// `graphicLevelGetNameHash()` (`0x00641da0`), called through `call`.
+    const GRAPHIC_LEVEL_GET_NAME_HASH: Global<u32> = Global::new(0x0064_1da0);
+    /// `getScenerioFlag()` (`0x00787360`), called through `call`.
+    const GET_SCENERIO_FLAG: Global<u32> = Global::new(0x0078_7360);
+    /// `AtelGetEffectFlag(bit)` (`0x0086b030`), called through `call`.
+    const ATEL_GET_EFFECT_FLAG: Global<u32> = Global::new(0x0086_b030);
+    /// `g_CurrentMapNo`.
+    const CURRENT_MAP_NO: Global<u32> = Global::new(0x012f_bc40);
+    /// The two words `pppBornVertexLc`'s map rule tests (`0x0113335c` is 0,
+    /// `0x00c3a504` is not -1).
+    const LC_RULE: [Global<u32>; 2] = [Global::new(0x0113_335c), Global::new(0x00c3_a504)];
+
+    fn call0<M: Mem>(
+        mem: &mut M,
+        g: Global<u32>,
+        args: &[u32],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = g.ptr(mem).addr;
+        call(mem, f, args)
+    }
+
+    /// `pppBornVertexLc(obj, key, v)` (`0x00757ed0`): a child object
+    /// (birth record key `+0xc`) at the vertex `v` as it is (floats, into
+    /// its field at key `+0x10`); on level 0x18cd or map 0x10e (with
+    /// `0x0113335c` 0 and `0x00c3a504` not -1), when the parent has no more
+    /// frames left than the child (in 0x1000 steps), the parent's
+    /// program's end (`+0x14`) moves on by 0x1000.
+    pub fn ppp_born_vertex_lc<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        v: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let v = vertex(mem, v);
+        born_lc(mem, obj, key, v, call);
+    }
+
+    fn born_lc<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        v: [i16; 3],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let index = rd(mem, key.wrapping_add(0xc));
+        if index == u32::MAX {
+            return;
+        }
+        let Some(child) = born_child(mem, obj, index, call) else {
+            return;
+        };
+        let hash = call0(mem, GRAPHIC_LEVEL_GET_NAME_HASH, &[], call);
+        if (hash == 0x18cd || CURRENT_MAP_NO.get(mem) == 0x10e)
+            && LC_RULE[0].get(mem) == 0
+            && LC_RULE[1].get(mem) != u32::MAX
+        {
+            let left = |mem: &M, o: u32| {
+                let d = ptr32(rd(mem, o.wrapping_add(8)));
+                let p = ptr32(rd(mem, d));
+                let n = rd(mem, p.wrapping_add(0x14))
+                    .wrapping_sub(rd(mem, o.wrapping_add(0xc)))
+                    .cast_signed();
+                // the original's rounding toward zero of n / 0x1000
+                (n + ((n >> 31) & 0xfff)) >> 12
+            };
+            let c = left(mem, child);
+            if left(mem, obj) <= c {
+                let d = ptr32(rd(mem, obj.wrapping_add(8)));
+                let p = ptr32(rd(mem, d));
+                let end = rd(mem, p.wrapping_add(0x14)).wrapping_add(0x1000);
+                mem.write(p.wrapping_add(0x14), end);
+            }
+        }
+        let at = rd(mem, key.wrapping_add(0x10))
+            .wrapping_add(0xa0)
+            .wrapping_add(child);
+        for (i, x) in v.into_iter().enumerate() {
+            #[allow(clippy::cast_possible_truncation)] // 0..3
+            mem.write(at.wrapping_add(4 * i as u32), f32::from(x));
+        }
+    }
+
+    /// The forms of the `pppVertexAp` steps.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum VertexAp {
+        /// `pppVertexAp` (`0x00757840`): children through the object's
+        /// matrix ([`ppp_born_vertex`]), and the localisation rule.
+        Ap,
+        /// `pppVertexApDisPos` (`0x00757c30`): less the world translation.
+        DisPos,
+        /// `pppVertexApLc` (`0x00757ff0`): the vertex itself
+        /// ([`ppp_born_vertex_lc`]).
+        Lc,
+        /// `pppVertexApAt` (`0x007582e0`): the vertex index
+        /// ([`ppp_born_short`]).
+        At,
+    }
+
+    /// The `pppVertexAp` steps `(obj, key, ctrl)`: unless stopped or the
+    /// key's shape (`i16` at `+4`) is negative, every key `+7` frames
+    /// (area 0's countdown `i16` at `+0xa2`), key `+6` children at vertices
+    /// of the shape (the current environment's shape tables, as
+    /// `pppVertexAttend` reads them; the object's own vertices at `+0x90`
+    /// when it has them): in order (area 0's cursor `u16` at `+0xa0`,
+    /// wrapping at the list's length), or with key `+8` = 1 at random
+    /// (`ftol(length d)` of a rand-program draw `d`).
+    #[allow(clippy::too_many_lines)]
+    pub fn ppp_vertex_ap<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        form: VertexAp,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        srand: &mut impl FnMut(&mut M, u32),
+    ) {
+        let a0 = area(mem, obj, ctrl, 0);
+        let shape = mem.read::<i16>(key.wrapping_add(4));
+        if STOP.get(mem) != 0 || shape < 0 {
+            return;
+        }
+        let countdown = a0.wrapping_add(0xa2);
+        if mem.read::<u16>(countdown) == 0 {
+            let env = rd(mem, ENV_SLOT.get(mem));
+            let records = rd(mem, env.wrapping_add(0x28));
+            let rec = records.wrapping_add((i32::from(shape) * 8).cast_unsigned());
+            let verts = if form == VertexAp::At {
+                0
+            } else {
+                let own = ptr32(rd(mem, obj.wrapping_add(0x90)));
+                if own != 0 {
+                    own
+                } else {
+                    let block = i32::from(mem.read::<i16>(rec));
+                    let blocks = rd(mem, env.wrapping_add(0x20));
+                    ptr32(rd(
+                        mem,
+                        blocks
+                            .wrapping_add((block * 0x20).cast_unsigned())
+                            .wrapping_add(0x14),
+                    ))
+                }
+            };
+            let n = u32::from(mem.read::<u8>(key.wrapping_add(6)));
+            let random = match mem.read::<u8>(key.wrapping_add(8)) {
+                0 => false,
+                1 => true,
+                _ => {
+                    finish(mem, obj, key, countdown, form, call);
+                    return;
+                }
+            };
+            let cursor = a0.wrapping_add(0xa0);
+            for _ in 0..n {
+                let (index, v) = if random {
+                    let d = crate::rand::bridge::draw(mem, srand);
+                    let list = ptr32(rd(mem, rec.wrapping_add(4)));
+                    let len = mem.read::<i16>(rec.wrapping_add(2));
+                    let r = ffx_bridge::x87::ftol(mem, f64::from(len) * f64::from(d));
+                    if form == VertexAp::At {
+                        #[allow(clippy::cast_possible_truncation)] // the low half
+                        (r as u16, [0; 3])
+                    } else {
+                        let k = u32::from(mem.read::<u16>(list.wrapping_add(r.wrapping_mul(2))));
+                        (0, vertex(mem, verts.wrapping_add(6 * k)))
+                    }
+                } else {
+                    let len = i32::from(mem.read::<i16>(rec.wrapping_add(2)));
+                    if len <= i32::from(mem.read::<u16>(cursor)) {
+                        mem.write(cursor, 0u16);
+                    }
+                    let c = mem.read::<u16>(cursor);
+                    if form == VertexAp::At {
+                        mem.write(cursor, c.wrapping_add(1));
+                        (c, [0; 3])
+                    } else {
+                        let list = ptr32(rd(mem, rec.wrapping_add(4)));
+                        let k = u32::from(mem.read::<u16>(list.wrapping_add(2 * u32::from(c))));
+                        let v = vertex(mem, verts.wrapping_add(6 * k));
+                        mem.write(cursor, c.wrapping_add(1));
+                        (0, v)
+                    }
+                };
+                match form {
+                    VertexAp::Ap => born_vertex(mem, obj, key, v, false, call),
+                    VertexAp::DisPos => born_vertex(mem, obj, key, v, true, call),
+                    VertexAp::Lc => born_lc(mem, obj, key, v, call),
+                    VertexAp::At => ppp_born_short(mem, obj, key, index, call),
+                }
+            }
+            finish(mem, obj, key, countdown, form, call);
+            return;
+        }
+        let c = mem.read::<u16>(countdown).wrapping_sub(1);
+        mem.write(countdown, c);
+    }
+
+    /// The end of a `pppVertexAp` frame that made children: the countdown
+    /// from key `+7` (times 1.8 for `pppVertexAp` on level 0xe6c at story
+    /// 0xcc6 during a spell with effect flag 5, 6 or 7), then one frame off.
+    fn finish<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        countdown: u32,
+        form: VertexAp,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let _ = obj;
+        mem.write(countdown, u16::from(mem.read::<u8>(key.wrapping_add(7))));
+        if form == VertexAp::Ap
+            && call0(mem, GRAPHIC_LEVEL_GET_NAME_HASH, &[], call) == 0xe6c
+            && call0(mem, GET_SCENERIO_FLAG, &[], call) & 0xffff == 0xcc6
+            && ffx_system::instance::bridge::magic_id(mem) != 0
+            && (call0(mem, ATEL_GET_EFFECT_FLAG, &[5], call) != 0
+                || call0(mem, ATEL_GET_EFFECT_FLAG, &[6], call) != 0
+                || call0(mem, ATEL_GET_EFFECT_FLAG, &[7], call) != 0)
+        {
+            let n = f64::from(mem.read::<u16>(countdown));
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // fistp with truncation, the low half
+            let v = (n * f64::from(1.8f32)).trunc() as i32 as u16;
+            mem.write(countdown, v);
+        }
+        let c = mem.read::<u16>(countdown).wrapping_sub(1);
+        mem.write(countdown, c);
     }
 }
