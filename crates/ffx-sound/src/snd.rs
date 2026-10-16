@@ -8,7 +8,7 @@
 //! the ones the Switch build's symbols have and the dump does not.
 
 /// Sound-effect ids: bit 31 set for a block SE (kind 0), clear for a
-/// separate SE (kind 1); `SndSepKind`/`SndSepId` split them for `Sqs*`.
+/// separate SE (kind 1); `SndSep_IsValidHandle`/`SndSep_HandleIndex` split them for `Sqs*`.
 #[must_use]
 pub const fn sep_kind(id: u32) -> u32 {
     !(id >> 31) & 1
@@ -362,13 +362,13 @@ pub mod bridge {
         }
     }
 
-    /// `SndSepKind(id)` (0x00885d00).
+    /// `SndSep_IsValidHandle(id)` (0x00885d00): the SE kind.
     #[must_use]
     pub fn snd_sep_kind(id: u32) -> u32 {
         sep_kind(id)
     }
 
-    /// `SndSepId(id)` (0x00885d10).
+    /// `SndSep_HandleIndex(id)` (0x00885d10).
     #[must_use]
     pub fn snd_sep_id(id: u32) -> u32 {
         sep_id(id)

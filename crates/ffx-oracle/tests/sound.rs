@@ -470,12 +470,22 @@ fn ids_and_getters() {
         let (a, b) = (&mut a, &mut b);
         for _ in 0..40 {
             let id = rng.word();
-            cdecl("SndSepKind", a, b, sym("SndSepKind"), &[id], |_| {
-                Some(s::snd_sep_kind(id))
-            });
-            cdecl("SndSepId", a, b, sym("SndSepId"), &[id], |_| {
-                Some(s::snd_sep_id(id))
-            });
+            cdecl(
+                "SndSep_IsValidHandle",
+                a,
+                b,
+                sym("SndSep_IsValidHandle"),
+                &[id],
+                |_| Some(s::snd_sep_kind(id)),
+            );
+            cdecl(
+                "SndSep_HandleIndex",
+                a,
+                b,
+                sym("SndSep_HandleIndex"),
+                &[id],
+                |_| Some(s::snd_sep_id(id)),
+            );
             let k = rng.below(20).wrapping_sub(2);
             cdecl(
                 "SndGetFootMaxVariation",

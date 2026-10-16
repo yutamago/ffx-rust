@@ -239,14 +239,6 @@ ported! {
     FfxFmod_setMusicStartSignal @ 0x0070_6b80 => extern "thiscall" fn ffx_fmod_set_music_start_signal(fmod: u32, on: u32) -> u32 {
         f::ffx_fmod_set_music_start_signal(&mut mem(), fmod, on)
     }
-    /// `SndSepKind(id)`.
-    SndSepKind @ 0x0088_5d00 => extern "C" fn snd_sep_kind(id: u32) -> u32 {
-        s::snd_sep_kind(id)
-    }
-    /// `SndSepId(id)`.
-    SndSepId @ 0x0088_5d10 => extern "C" fn snd_sep_id(id: u32) -> u32 {
-        s::snd_sep_id(id)
-    }
     /// `SndCalcVoiceWait()`.
     SndCalcVoiceWait @ 0x0088_5d20 => extern "C" fn snd_calc_voice_wait() -> u32 {
         s::snd_calc_voice_wait(&mem())
@@ -262,10 +254,6 @@ ported! {
     /// `SndClearFootSepWork(unused)`.
     SndClearFootSepWork @ 0x0088_5de0 => extern "C" fn snd_clear_foot_sep_work(_unused: u32) {
         s::snd_clear_foot_sep_work(&mut mem());
-    }
-    /// `SndClearFootStatus()`.
-    SndClearFootStatus @ 0x0088_5e50 => extern "C" fn snd_clear_foot_status() {
-        s::snd_clear_foot_status(&mut mem());
     }
     /// `SndClearNowPlayMusic(id)`.
     SndClearNowPlayMusic @ 0x0088_5e80 => extern "C" fn snd_clear_now_play_music(id: u32) {
@@ -283,17 +271,9 @@ ported! {
     SndEventClearPcToActorFoot @ 0x0088_5f10 => extern "C" fn snd_event_clear_pc_to_actor_foot() {
         s::snd_event_clear_pc_to_actor_foot(&mut mem());
     }
-    /// `SndEventSetFoot3dCtrlp(p)`.
-    SndEventSetFoot3dCtrlp @ 0x0088_5fc0 => extern "C" fn snd_event_set_foot3d_ctrlp(p: u32) -> u32 {
-        s::snd_event_set_foot3d_ctrlp(&mut mem(), p)
-    }
     /// `SndEventSetPcToActorFoot(party, actor)`.
     SndEventSetPcToActorFoot @ 0x0088_5fd0 => extern "C" fn snd_event_set_pc_to_actor_foot(party: i32, actor: u32) {
         s::snd_event_set_pc_to_actor_foot(&mut mem(), party, actor);
-    }
-    /// `SndEventSetSoundEvent(table)`.
-    SndEventSetSoundEvent @ 0x0088_5ff0 => extern "C" fn snd_event_set_sound_event(table: u32) -> u32 {
-        s::snd_event_set_sound_event(&mut mem(), table)
     }
     /// `SndExecMusicClearQue(mode, id)`.
     SndExecMusicClearQue @ 0x0088_6000 => extern "C" fn snd_exec_music_clear_que(mode: u32, id: u32) {
@@ -327,10 +307,6 @@ ported! {
     SndGetFootSepWork @ 0x0088_61e0 => extern "C" fn snd_get_foot_sep_work(kind: u32, party: i32, variation: i32) -> u32 {
         s::snd_get_foot_sep_work(&mem(), kind, party, variation)
     }
-    /// `SndGetKinuMask()`.
-    SndGetKinuMask @ 0x0088_63b0 => extern "C" fn snd_get_kinu_mask() -> u32 {
-        s::snd_get_kinu_mask(&mem())
-    }
     /// `SndGetMusicPlayState(id)`.
     SndGetMusicPlayState @ 0x0088_63c0 => extern "C" fn snd_get_music_play_state(id: u32) -> u32 {
         s::snd_get_music_play_state(&mut game(), id)
@@ -339,17 +315,9 @@ ported! {
     SndGetMusicVolume @ 0x0088_63d0 => extern "C" fn snd_get_music_volume(id: u32) -> u32 {
         s::snd_get_music_volume(&mem(), id)
     }
-    /// `SndGetNowPlayMusic()`.
-    SndGetNowPlayMusic @ 0x0088_63f0 => extern "C" fn snd_get_now_play_music() -> u32 {
-        s::snd_get_now_play_music(&mem())
-    }
     /// `SndGetSePlayState()`.
     SndGetSePlayState @ 0x0088_6400 => extern "C" fn snd_get_se_play_state() -> u32 {
         s::snd_get_se_play_state(&mut game())
-    }
-    /// `SndGetSepNumber(sep)`.
-    SndGetSepNumber @ 0x0088_6410 => extern "C" fn snd_get_sep_number(sep: u32) -> u32 {
-        s::snd_get_sep_number(&mem(), sep)
     }
     /// `SndGetSepSize(sep)`.
     SndGetSepSize @ 0x0088_6420 => extern "C" fn snd_get_sep_size(sep: u32) -> u32 {
@@ -362,10 +330,6 @@ ported! {
     /// `SndGetSpuMemorySortSwitch()`.
     SndGetSpuMemorySortSwitch @ 0x0088_6450 => extern "C" fn snd_get_spu_memory_sort_switch() -> u32 {
         s::snd_get_spu_memory_sort_switch(&mem())
-    }
-    /// `SndGetStreamState()`.
-    SndGetStreamState @ 0x0088_64b0 => extern "C" fn snd_get_stream_state() -> u32 {
-        s::snd_get_stream_state(&mut mem())
     }
     /// `SndGetWaveSize(wave)`.
     SndGetWaveSize @ 0x0088_64e0 => extern "C" fn snd_get_wave_size(wave: u32) -> u32 {
@@ -382,14 +346,6 @@ ported! {
     /// `SndIopEioErrorStatus()`.
     SndIopEioErrorStatus @ 0x0088_65e0 => extern "C" fn snd_iop_eio_error_status() -> u32 {
         s::snd_iop_eio_error_status(&mut game())
-    }
-    /// `SndIsReadShoutVoiceStatus()`.
-    SndIsReadShoutVoiceStatus @ 0x0088_6640 => extern "C" fn snd_is_read_shout_voice_status() -> u32 {
-        s::snd_is_read_shout_voice_status(&mem())
-    }
-    /// `SndIsReadVagVoiceStatus()`.
-    SndIsReadVagVoiceStatus @ 0x0088_6660 => extern "C" fn snd_is_read_vag_voice_status() -> u32 {
-        s::snd_is_read_vag_voice_status(&mem())
     }
     /// `SndIsSepPlay(id)`.
     SndIsSepPlay @ 0x0088_6680 => extern "C" fn snd_is_sep_play(id: u32) -> u32 {
@@ -470,18 +426,6 @@ ported! {
     /// `SndPlayClick(id)`.
     SndPlayClick @ 0x0088_6ba0 => extern "C" fn snd_play_click(id: u32) -> u32 {
         s::snd_play_click(&mut game(), id)
-    }
-    /// `SndPlayFootStatus()`.
-    SndPlayFootStatus @ 0x0088_6be0 => extern "C" fn snd_play_foot_status() {
-        s::snd_play_foot_status(&mut mem());
-    }
-    /// `SndPopFootStatus()`.
-    SndPopFootStatus @ 0x0088_6c10 => extern "C" fn snd_pop_foot_status() -> u32 {
-        s::snd_pop_foot_status(&mut mem())
-    }
-    /// `SndPushFootStatus()`.
-    SndPushFootStatus @ 0x0088_6c40 => extern "C" fn snd_push_foot_status() -> u32 {
-        s::snd_push_foot_status(&mut mem())
     }
     /// `SndRegistNowPlayMusic(id)`.
     SndRegistNowPlayMusic @ 0x0088_6c70 => extern "C" fn snd_regist_now_play_music(id: u32) {

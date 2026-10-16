@@ -6652,8 +6652,8 @@
 0x008859b0 function AtelOutputEncount            # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s\\t%d\\n'; Switch 0x7100487ca0 AtelOutputEncount (symbols from Fahrenheit's server export)
 0x00885a80 function AtelOutputEncountStart       # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%23---------------\\n'; Switch 0x7100487c20 AtelOutputEncountStart (symbols from Fahrenheit's server export)
 0x00885b00 function AtelSetUpSourceDebug      # fh v3:exact 0x00885a60
-0x00885d00 function SndSepKind                # (id) -> 1 for bit 31 clear (a separate SE), 0 for a block SE: the kind argument every SndSep* entry passes first to Sqs* (SqsSePlay(kind, id, ...)); SndIsSepPlay asks SqsSeBlockPlaying for kind 0 and SqsSeSeparatePlaying for 1, SndSepClear clears only kind 1; name ours (another lead had SndSep_IsValidHandle)
-0x00885d10 function SndSepId                  # (id) -> id & 0x7fffffff, the SE number without the kind bit; name ours (another lead had SndSep_HandleIndex)
+0x00885d00 function SndSep_IsValidHandle      # structure: (h) -> 1 when bit 31 of the handle is clear; name ours; it is the kind argument every SndSep* entry passes first to Sqs* (SqsSePlay(kind, id, ...)): 1 a separate SE, 0 a block SE (SndIsSepPlay asks SqsSeBlockPlaying for 0, SqsSeSeparatePlaying for 1)
+0x00885d10 function SndSep_HandleIndex        # structure: (h) -> h & 0x7fffffff, the SE number without the kind bit; name ours
 0x00885d20 function SndCalcVoiceWait          # () -> frames for g_SndVoiceSectorLength (x2048, -32, /48000, x16/28, x2016/2048, x4.97, each stored f32; ftol2_sse), 0 in video mode 0 or below 0; PC build keeps the PS2 Snd functions in alphabetical order (Switch names around it)
 0x00885db0 function SndInitNowPlayMusic       # (): g_SndNowPlayMusic = -1; name ours
 0x00885dc0 function SndClearMusicClearQue     # (): count 0, first word of each of the 17 entries 0; name ours
