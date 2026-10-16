@@ -669,7 +669,9 @@ dependencies = [
 name = "ffx-menu"
 version = "0.1.0"
 dependencies = [
+ "ffx-battle",
  "ffx-bridge",
+ "ffx-chara",
  "ffx-kernel",
 ]
 

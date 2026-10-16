@@ -71,6 +71,16 @@ pub fn scissor_packet(scale: i32, x0: i32, x1: i32, y0: i32, y1: i32) -> [[u32; 
     [[1, 0x1000_0000, 0xe, 0], [lo, hi, 0x40, 0]]
 }
 
+/// GS register fields packed the way the originals pack them: from the
+/// highest field down, `v = (v << shift) | sign_extend(field)`, so a
+/// negative field fills every bit above it.
+#[must_use]
+pub fn pack(fields: &[(i32, u32)]) -> u64 {
+    fields.iter().fold(0u64, |v, &(x, shift)| {
+        (v << shift) | i64::from(x).cast_unsigned()
+    })
+}
+
 /// The originals, on the game's windows and globals (`ffx_bridge::Mem`).
 pub mod bridge {
     use ffx_bridge::{Global, Mem};
@@ -222,6 +232,14 @@ pub mod bridge {
             let v = mem.read::<u16>(at(window, o));
             mem.write(at(window, o + 0x10), v);
         }
+        let _ = head; // read before the stores, as the original does
+        gu_window_to_front(mem, window);
+    }
+
+    /// `Gu_WindowToFront(window)` (`0x0084b770`): moves it to the front of
+    /// the open list when it is in it and not first.
+    pub fn gu_window_to_front(mem: &mut impl Mem, window: u32) {
+        let head = WINDOW_LIST.get(mem);
         let mut prev = 0;
         let mut cur = head;
         if cur == 0 {
@@ -240,6 +258,221 @@ pub mod bridge {
             mem.write(window, head);
             WINDOW_LIST.set(mem, window);
         }
+    }
+
+    /// `Gu_WindowStartMove(window)` (`0x0084a530`): notes the mouse at
+    /// `+0x1c`, zeroes `+0x20`, sets flag `0x10`, and does the same for
+    /// every open window whose parent it is (recursively).
+    pub fn gu_window_start_move(mem: &mut impl Mem, window: u32) {
+        let mut child = WINDOW_LIST.get(mem);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 16-bit stores
+        {
+            mem.write(at(window, 0x1c), MOUSE_Y.get(mem) as u16);
+            mem.write(at(window, 0x1e), MOUSE_X.get(mem) as u16);
+        }
+        mem.write(at(window, 0x20), 0u32);
+        let flags = mem.read::<u32>(at(window, 0x88));
+        mem.write(at(window, 0x88), flags | 0x10);
+        while child != 0 {
+            if mem.read::<u32>(at(child, 8)) == window {
+                gu_window_start_move(mem, child);
+            }
+            child = mem.read(child);
+        }
+    }
+
+    /// `Gu_WindowSetPos(window, y, x)` (`0x0084b220`): `+0x0c`/`+0x0e` and
+    /// their copies at `+0x14` and `+0x1c`.
+    pub fn gu_window_set_pos(mem: &mut impl Mem, window: u32, y: u16, x: u16) {
+        for o in [0xc, 0x14, 0x1c] {
+            mem.write(at(window, o), y);
+        }
+        for o in [0xe, 0x16, 0x1e] {
+            mem.write(at(window, o), x);
+        }
+    }
+
+    /// `Gu_WindowSetSize(window, w, h)` (`0x0084b720`): `+0x10`/`+0x12`
+    /// and their copies at `+0x18` and `+0x20`; the client size (`+0x84`,
+    /// `+0x86`) is what the border (`+0x80`, `+0x82`) leaves, on 16 bits.
+    pub fn gu_window_set_size(mem: &mut impl Mem, window: u32, w: u16, h: u16) {
+        for o in [0x10, 0x18, 0x20] {
+            mem.write(at(window, o), w);
+        }
+        let bx = mem.read::<u16>(at(window, 0x80));
+        mem.write(at(window, 0x84), w.wrapping_sub(bx.wrapping_add(bx)));
+        for o in [0x12, 0x1a, 0x22] {
+            mem.write(at(window, o), h);
+        }
+        let by = mem.read::<u16>(at(window, 0x82));
+        mem.write(at(window, 0x86), h.wrapping_sub(by).wrapping_sub(2));
+    }
+
+    /// `Gu_WindowSetFlag2(window, on)` (`0x0084b600`): flag bit 1 (the one
+    /// `Gu_WindowOpen` clears) from `on`'s low bit.
+    pub fn gu_window_set_flag2(mem: &mut impl Mem, window: u32, on: u32) {
+        let f = mem.read::<u32>(at(window, 0x88));
+        mem.write(at(window, 0x88), with_bits(f, 2, 1, on));
+    }
+
+    /// A signed 16-bit field of a window, widened (the `Gu_WindowGet*`).
+    pub fn gu_window_field(mem: &impl Mem, window: u32, offset: u32) -> i32 {
+        i32::from(mem.read::<i16>(at(window, offset)))
+    }
+
+    /// `Gu_SelectorGetItemValue(selector)` (`0x00849d10`): the selected
+    /// item's value.
+    pub fn gu_selector_get_item_value(mem: &impl Mem, selector: u32) -> u32 {
+        let i = i32::from(mem.read::<i16>(at(selector, 2)));
+        let values = mem.read::<u32>(at(selector, 0xc));
+        #[allow(clippy::cast_sign_loss)]
+        mem.read(values.wrapping_add((i as u32).wrapping_mul(4)))
+    }
+
+    /// The text style words (`Gu_PrintSetItalic`, `Gu_PrintSetBold`).
+    pub const PRINT_ITALIC: Global<u32> = Global::new(0x0130_3718);
+    /// See [`PRINT_ITALIC`].
+    pub const PRINT_BOLD: Global<u32> = Global::new(0x0130_3720);
+    /// The start of the text size block `Gu_PrintSetSize` fills.
+    pub const PRINT_SIZE: Global<u32> = Global::new(0x0130_36dc);
+    /// Window movement smoothing on (`Gu_WindowSetHokanEnable`).
+    pub const WINDOW_HOKAN: Global<u32> = Global::new(0x00c4_df60);
+
+    /// `Gu_PrintSetXY(x, y)` (`0x00848840`).
+    pub fn gu_print_set_xy(mem: &mut impl Mem, x: i32, y: i32) {
+        gu_print_set_x(mem, x);
+        gu_print_set_y(mem, y);
+    }
+
+    /// `Gu_PrintSetSize(size)` (`0x00848770`), `size` in 1/256: the size
+    /// itself at `0x013036dc` and `0x01303728`, `size·8/256` at `0x013036fc`
+    /// and `0x01303700`, one more at `0x013036f0` and `0x013036f4` (and as
+    /// the running maximum at `0x013036f8`), `size·4/256` at `0x0130371c`,
+    /// `size/256` at `0x01303724`.
+    pub fn gu_print_set_size(mem: &mut impl Mem, size: i32) {
+        let base = PRINT_SIZE.ptr(mem).addr;
+        let line = size.wrapping_mul(8) >> 8;
+        let w = |o: u32| base + o - 0x0130_36dc;
+        mem.write(w(0x0130_3728), size);
+        mem.write(w(0x0130_36fc), line);
+        mem.write(w(0x0130_36f0), line.wrapping_add(1));
+        mem.write(w(0x0130_371c), size.wrapping_mul(4) >> 8);
+        mem.write(w(0x0130_3700), line);
+        mem.write(w(0x0130_3724), size >> 8);
+        mem.write(w(0x0130_36dc), size);
+        mem.write(w(0x0130_36f4), line.wrapping_add(1));
+        if mem.read::<i32>(w(0x0130_36f8)) < line.wrapping_add(1) {
+            mem.write(w(0x0130_36f8), line.wrapping_add(1));
+        }
+    }
+
+    /// The packet's data buffer (`Gu_SetPrim` and its siblings write there).
+    pub const PACKET_DATA: Global<u32> = Global::new(0x0130_36c8);
+    /// The open GIF tag (`Gu_PacketBeginTag`).
+    pub const PACKET_TAG: Global<u32> = Global::new(0x0130_36cc);
+    /// The quadword index of the open GIF tag.
+    pub const PACKET_TAG_START: Global<u32> = Global::new(0x0130_36d0);
+    /// The drawing origin `Gu_PacketBeginTag` takes from a window (x, y).
+    pub const PACKET_ORIGIN: Global<[i32; 2]> = Global::new(0x0130_36d4);
+    /// The screen size the vertices are centred in (height, width).
+    pub const SCREEN_SIZE: Global<[i32; 2]> = Global::new(0x023c_bbe0);
+
+    /// Appends an A+D register write to the data buffer.
+    fn put_register(mem: &mut impl Mem, value: u64, register: u32) {
+        let n = PACKET_COUNT.get(mem);
+        let p = PACKET_DATA.get(mem).wrapping_add(n.wrapping_mul(16));
+        #[allow(clippy::cast_possible_truncation)]
+        mem.write(p, [value as u32, (value >> 32) as u32, register, 0]);
+        PACKET_COUNT.set(mem, n.wrapping_add(1));
+    }
+
+    /// `Gu_PacketBeginTag(window)` (`0x00848530`): opens a GIF tag (A+D,
+    /// count filled in by [`gu_packet_end_tag`]) and takes the drawing
+    /// origin from the window's position and border (none for null).
+    pub fn gu_packet_begin_tag(mem: &mut impl Mem, window: u32) {
+        let n = PACKET_COUNT.get(mem);
+        let tag = PACKET.get(mem).wrapping_add(n.wrapping_mul(16));
+        PACKET_TAG_START.set(mem, n);
+        PACKET_COUNT.set(mem, n.wrapping_add(1));
+        mem.write(tag, [0x4d2u32, 0x1000_0000, 0xe, 0]);
+        PACKET_TAG.set(mem, tag);
+        let origin = if window == 0 {
+            [0, 0]
+        } else {
+            let f = |o| i32::from(mem.read::<i16>(at(window, o)));
+            let x = f(0x14).wrapping_add(f(0x80));
+            let y = f(0x16).wrapping_add(f(0x82)).wrapping_mul(H_SCALE.get(mem)) >> 8;
+            [x, y]
+        };
+        PACKET_ORIGIN.set(mem, origin);
+    }
+
+    /// `Gu_PacketEndTag()` (`0x00848460`): the open tag's loop count (15
+    /// bits) set to the quadwords written since, less one.
+    pub fn gu_packet_end_tag(mem: &mut impl Mem) {
+        let tag = PACKET_TAG.get(mem);
+        let n = PACKET_COUNT
+            .get(mem)
+            .wrapping_sub(PACKET_TAG_START.get(mem))
+            .wrapping_sub(1);
+        let lo = mem.read::<u32>(tag);
+        mem.write(tag, with_bits(lo, 0x7fff, 0, n));
+    }
+
+    /// `Gu_SetPrim(prim)` (`0x00848480`): `PRIM`, sign-extended to 64 bits.
+    pub fn gu_set_prim(mem: &mut impl Mem, prim: i32) {
+        put_register(mem, i64::from(prim).cast_unsigned(), 0);
+    }
+
+    /// `Gu_SetRgbaq(r, g, b, a)` (`0x008484c0`): `RGBAQ`, `a | 0x800000`
+    /// as the top field (see [`super::pack`]).
+    pub fn gu_set_rgbaq(mem: &mut impl Mem, [red, green, blue, alpha]: [i32; 4]) {
+        let v = super::pack(&[(alpha | 0x80_0000, 0), (blue, 8), (green, 8), (red, 8)]);
+        put_register(mem, v, 1);
+    }
+
+    /// `Gu_SetTest([ate, atst, aref, afail, date, datm, zte, ztst])`
+    /// (`0x008485d0`, eight arguments): `TEST_1`.
+    pub fn gu_set_test(mem: &mut impl Mem, f: [i32; 8]) {
+        let [
+            alpha_on,
+            alpha_test,
+            alpha_ref,
+            alpha_fail,
+            dest_on,
+            dest_mode,
+            depth_on,
+            depth_test,
+        ] = f;
+        let v = super::pack(&[
+            (depth_test, 0),
+            (depth_on, 1),
+            (dest_mode, 1),
+            (dest_on, 1),
+            (alpha_fail, 2),
+            (alpha_ref, 8),
+            (alpha_test, 3),
+            (alpha_on, 1),
+        ]);
+        put_register(mem, v, 0x47);
+    }
+
+    /// `Gu_SetXyzf2(x, y)` (`0x00848680`): `XYZF2` (12.4 fixed point) at
+    /// the drawing origin, centred in the GS's 4096-pixel space; `y` in
+    /// `g_GuHScale` steps; Z and F 0.
+    pub fn gu_set_xyzf2(mem: &mut impl Mem, x: i32, y: i32) {
+        let [height, width] = SCREEN_SIZE.get(mem);
+        let [origin_x, origin_y] = PACKET_ORIGIN.get(mem);
+        let half = |size: i32| 0x1000i32.wrapping_sub(size) / 2;
+        let gs_x = half(width).wrapping_add(origin_x).wrapping_add(x) << 4;
+        let scaled = (H_SCALE.get(mem).wrapping_mul(y) >> 8).wrapping_add(origin_y);
+        let gs_y = half(height).wrapping_add(scaled) << 4;
+        let count = PACKET_COUNT.get(mem);
+        let at = PACKET_DATA.get(mem).wrapping_add(count.wrapping_mul(16));
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 16-bit fields
+        mem.write(at, [gs_x as u16, gs_y as u16]);
+        mem.write(at.wrapping_add(4), [0u32, 4, 0]);
+        PACKET_COUNT.set(mem, count.wrapping_add(1));
     }
 
     /// The first control with id `id` (compared as `u16` widened, so an

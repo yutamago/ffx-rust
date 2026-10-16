@@ -8,6 +8,8 @@ rust-version.workspace = true
 
 [dependencies]
 ffx-bridge.workspace = true
+ffx-battle.workspace = true
+ffx-chara.workspace = true
 ffx-kernel.workspace = true
 
 [lints]
