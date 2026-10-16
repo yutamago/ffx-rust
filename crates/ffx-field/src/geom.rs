@@ -186,6 +186,47 @@ pub mod bridge {
         ffx_system::math::bridge::mul4x4(mem, screen_world, screen, view);
     }
 
+    /// `rcVec3fApplyMatrix(out, v, m)` (`0x00921300`): `v` (w = 1) through
+    /// `m`, each sum kept on the x87 stack: `((m[1,k]·y + x·m[0,k]) +
+    /// m[2,k]·z) + m[3,k]` (`x` and `y` terms swap places for k > 0);
+    /// each component stored before the next is read.
+    pub fn rc_vec3f_apply_matrix(mem: &mut impl Mem, out: u32, v: u32, matrix: u32) {
+        use ffx_bridge::x87::{add, load, mul, store};
+        for k in 0..3 {
+            let [vx, vy, vz] = vec3(mem, v).map(load);
+            let e = |row: u32| load(mem.read(matrix + 4 * (4 * row + k)));
+            let r = add(add(add(mul(e(1), vy), mul(vx, e(0))), mul(e(2), vz)), e(3));
+            mem.write(out + 4 * k, store(r));
+        }
+    }
+
+    /// `a + (b - a) * t` per component, stored one at a time
+    /// (`rcVec3fLerp`, `yiLerpVec4`, `yiLerpVec2`).
+    fn lerp(mem: &mut impl Mem, out: u32, a: u32, b: u32, t: u32, n: u32) {
+        use ffx_bridge::x87::{add, load, mul, store, sub};
+        let t = load(t);
+        for i in 0..n {
+            let va = load(mem.read(a + 4 * i));
+            let vb = load(mem.read(b + 4 * i));
+            mem.write(out + 4 * i, store(add(mul(sub(vb, va), t), va)));
+        }
+    }
+
+    /// `rcVec3fLerp(out, a, b, t)` (`0x00921280`), `t` as bits.
+    pub fn rc_vec3f_lerp(mem: &mut impl Mem, out: u32, a: u32, b: u32, t: u32) {
+        lerp(mem, out, a, b, t, 3);
+    }
+
+    /// `yiLerpVec4(t, a, b, out)` (`0x009148d0`).
+    pub fn yi_lerp_vec4(mem: &mut impl Mem, t: u32, a: u32, b: u32, out: u32) {
+        lerp(mem, out, a, b, t, 4);
+    }
+
+    /// `yiLerpVec2(t, a, b, out)` (`0x009148a0`).
+    pub fn yi_lerp_vec2(mem: &mut impl Mem, t: u32, a: u32, b: u32, out: u32) {
+        lerp(mem, out, a, b, t, 2);
+    }
+
     /// `rcVec3fLength(v)` (`0x00921250`).
     pub fn rc_vec3f_length(mem: &impl Mem, v: u32) -> f32 {
         f32::from_bits(length3(vec3(mem, v)))

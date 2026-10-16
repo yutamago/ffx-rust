@@ -16,6 +16,10 @@ use ffx_oracle::{Conv, Oracle};
 
 fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let w = world(a, b, rng, synthetic);
+    for o in [&mut *a, &mut *b] {
+        let at = o.rebase(ACHIEVEMENT);
+        o.stub_return(at, 0).unwrap();
+    }
     for round in 0..2000 {
         w.shuffle(a, b, rng, round);
         let (i, j) = (rng.below(ACTORS), rng.below(ACTORS));
@@ -753,6 +757,95 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
                 0
             },
         );
+        // steals and the inventory
+        {
+            use ffx_battle::save::bridge as sv;
+            let ids: Vec<u8> = (0..0x70)
+                .flat_map(|_| {
+                    let id: u16 = match rng.below(4) {
+                        0 => 0xff,
+                        1 => 0,
+                        _ => 0x2000 + u16::try_from(rng.below(0x48)).unwrap(),
+                    };
+                    id.to_le_bytes()
+                })
+                .collect();
+            poke(a, b, sv::ITEM_IDS.ptr(b).addr, &ids);
+            let counts: Vec<u8> = (0..0x70)
+                .map(|_| [0, 1, 98, 99, 5][rng.below(5) as usize])
+                .collect();
+            poke(a, b, sv::ITEM_COUNTS.ptr(b).addr, &counts);
+            set(a, b, sv::STEAL_RULE, [0, 2][rng.below(2) as usize]);
+            set(a, b, sv::DEBUG_RARE_STEAL, u8::from(rng.below(5) == 0));
+            if rng.below(3) == 0 {
+                set(a, b, sv::STEAL_COUNT, 199);
+            }
+            let spoils = out;
+            fill(a, b, rng, spoils, 0x100); // +0x113 lies in the results block after it
+            for (at, v) in [
+                (0x24u32, 0x2000 + rng.below(0x48)),
+                (
+                    0x26,
+                    [0x2065, 0x2000 + rng.below(0x48), rng.next()][rng.below(3) as usize],
+                ),
+            ] {
+                poke(a, b, spoils + at, &v.to_le_bytes()[..2]);
+            }
+            let item = [0x2000 + rng.below(0x48), rng.next()][rng.below(2) as usize];
+            let n = rng.range(-120, 120).cast_unsigned();
+            twin("MsSaveItemUse", a, b, 0x0079_0550, &[item, n], ALL, |m| {
+                sv::ms_save_item_use(m, item, n.cast_signed()).cast_unsigned()
+            });
+            twin("MsSetItemWindow", a, b, 0x0079_06a0, &[], 0, |m| {
+                sv::ms_set_item_window(m);
+                0
+            });
+            let fail = u32::from(rng.below(4) == 0);
+            let sp = if rng.below(8) == 0 { 0 } else { spoils };
+            twin(
+                "Battle_Steal",
+                a,
+                b,
+                0x0078_b760,
+                &[user, target, sp, info, fail],
+                ALL,
+                |m| {
+                    sv::battle_steal(
+                        m,
+                        user,
+                        target,
+                        sp,
+                        info,
+                        fail.cast_signed(),
+                        |m: &mut Oracle| {
+                            let at = m.rebase(TO_GET_FFX_LANG);
+                            m.call(at, Conv::Cdecl, &[]).unwrap().eax
+                        },
+                        |m: &mut Oracle, n| {
+                            let at = m.rebase(ACHIEVEMENT);
+                            m.call(at, Conv::Cdecl, &[n]).unwrap();
+                        },
+                    )
+                },
+            );
+            twin(
+                "Battle_StealGil",
+                a,
+                b,
+                0x0078_b920,
+                &[user, target, sp, info, fail],
+                ALL,
+                |m| sv::battle_steal_gil(m, target, sp, info, fail.cast_signed()),
+            );
+            let act = w.actor(rng.below(31));
+            for k in 0..2 {
+                let v = [0xffu8, 0, 1][rng.below(3) as usize];
+                poke(a, b, act + 0x776 + k * 0x2d8, &[v]);
+            }
+            twin("MsGetActionBuffer", a, b, 0x0078_d040, &[act], ALL, |m| {
+                sv::ms_get_action_buffer(m, act)
+            });
+        }
         same("damage steps", a, b);
     }
 }

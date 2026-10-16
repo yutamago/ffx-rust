@@ -38,6 +38,17 @@ pub fn ms_check_range(x: i32, lo: i32, hi: i32) -> i32 {
 /// start there. An ID outside every segment gets the first segment's first
 /// record (and strings).
 pub fn ms_get_excel_data(mem: &mut impl Mem, id: i32, table: u32, strings: u32) -> u32 {
+    let (record, s) = excel_data(mem, id, table);
+    if strings != 0 {
+        mem.write(strings, s);
+    }
+    record
+}
+
+/// What [`ms_get_excel_data`] finds: the record of `id` and where its
+/// segment's strings start, for Rust callers that want both without a
+/// pointer to store into.
+pub fn excel_data(mem: &impl Mem, id: i32, table: u32) -> (u32, u32) {
     let count = i32::from(mem.read::<i16>(table));
     let mut seg = table + 8;
     let mut found = false;
@@ -54,23 +65,30 @@ pub fn ms_get_excel_data(mem: &mut impl Mem, id: i32, table: u32, strings: u32) 
         seg = table + 8;
     }
     let data = mem.read::<u32>(seg + 8);
-    if strings != 0 {
-        let s = u32::from(mem.read::<u16>(seg + 6))
-            .wrapping_add(data)
-            .wrapping_add(table);
-        mem.write(strings, s);
-    }
+    let strings = u32::from(mem.read::<u16>(seg + 6))
+        .wrapping_add(data)
+        .wrapping_add(table);
     if !found {
-        return data.wrapping_add(table);
+        return (data.wrapping_add(table), strings);
     }
     let first = u32::from(mem.read::<u16>(seg));
     let stride = u32::from(mem.read::<u16>(seg + 4));
     #[allow(clippy::cast_sign_loss)] // id >= first here
     let index = (id as u32).wrapping_sub(first);
-    stride
+    let record = stride
         .wrapping_mul(index)
         .wrapping_add(data)
-        .wrapping_add(table)
+        .wrapping_add(table);
+    (record, strings)
+}
+
+/// [`excel_data`] by the 12-bit ID in the low bits of `id`, on one of the
+/// tables above: a record and its strings (`MsGetRomItem` with a strings
+/// pointer, for Rust callers).
+pub fn rom_strings(mem: &impl Mem, table: Global<u32>, id: u32) -> (u32, u32) {
+    let t = table.get(mem);
+    #[allow(clippy::cast_possible_wrap)] // 12 bits
+    excel_data(mem, (id & 0xfff) as i32, t)
 }
 
 /// `MsGetExcelDataNum(table, segment)` (`0x007ab8f0`): records in segment

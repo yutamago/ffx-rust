@@ -20,4 +20,3 @@ pub mod scene;
 pub mod stub;
 pub mod vbf;
 pub mod window;
-pub mod x87;

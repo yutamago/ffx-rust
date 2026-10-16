@@ -10,7 +10,7 @@ pub const POINT_LIGHT_MAGIC: u32 = 0x207;
 pub mod bridge {
     use ffx_bridge::{Global, Mem};
 
-    use crate::x87;
+    use ffx_bridge::x87::{self, Reg};
 
     /// The alpha scale `useExtendedAlpha` sets (`f32`).
     pub const ALPHA_SCALE: Global<f32> = Global::new(0x00c3_a4d0);
@@ -57,8 +57,8 @@ pub mod bridge {
         for i in 0..DEPTH_BIAS_ENTRIES {
             let e = t.at(i).addr;
             mem.write(e, 0u32);
-            mem.write(e + 4, x87::ONE.store());
-            mem.write(e + 8, x87::ZERO.store());
+            mem.write(e + 4, Reg::ONE.store());
+            mem.write(e + 8, Reg::ZERO.store());
         }
         DEPTH_BIAS_COUNT.set(mem, 0);
     }

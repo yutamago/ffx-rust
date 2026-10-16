@@ -144,6 +144,26 @@ pub mod bridge {
         mem.read::<u32>(c + chunk::BEGIN) == 0 || mem.read::<u32>(c + chunk::SIZE) == 0
     }
 
+    /// `rcdtChunkGetSize(chunk)` (`0x0092b830`).
+    pub fn rcdt_chunk_get_size(mem: &impl Mem, c: u32) -> u32 {
+        mem.read(c + chunk::SIZE)
+    }
+
+    /// `rcdtParseGetChunk(parse)` (`0x0092bb20`).
+    pub fn rcdt_parse_get_chunk(mem: &impl Mem, p: u32) -> u32 {
+        mem.read(p + parse::CHUNK)
+    }
+
+    /// `rcdtParseGetPos(parse)` (`0x0092bda0`): the cursor.
+    pub fn rcdt_parse_get_pos(mem: &impl Mem, p: u32) -> u32 {
+        mem.read(p + parse::CURSOR)
+    }
+
+    /// `rcdtParseGetMode(parse)` (`0x0092bd10`).
+    pub fn rcdt_parse_get_mode(mem: &impl Mem, p: u32) -> u32 {
+        mem.read(p + parse::MODE)
+    }
+
     /// `rcdtTm2Init(tm2)` (`0x009237e0`): a TIM2 texture holder, `0x50`
     /// bytes, cleared.
     pub fn rcdt_tm2_init(mem: &mut impl Mem, t: u32) {

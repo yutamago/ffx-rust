@@ -172,4 +172,146 @@ pub mod bridge {
         });
         f32::from_bits(r)
     }
+
+    /// `0x00c8f7e0`, `0x00c8f7f0`, `0x00c8f800`: the registers after
+    /// [`VF_M`]'s first row, as some helpers use them one by one.
+    fn vf(mem: &impl Mem, i: u32) -> Vec4 {
+        mem.read(VF_M.ptr(mem).addr + 16 * i)
+    }
+
+    fn set_vf(mem: &mut impl Mem, i: u32, v: Vec4) {
+        let at = VF_M.ptr(mem).addr + 16 * i;
+        mem.write(at, v);
+    }
+
+    /// `MsMulMatrix(out, a, b)` (`0x007c2770`): `out = b · a`, row `i`
+    /// being `b[i]` applied to `a` as `MsApplyMatrix` does; `a` in
+    /// [`VF_M`], `b` in the four registers from [`VF_V`], the rows in the
+    /// four from [`VF_OUT`], the accumulator left from the last row.
+    pub fn ms_mul_matrix(mem: &mut impl Mem, out: u32, a: u32, b: u32) {
+        let ma: Mat4 = mem.read(a);
+        let mb: Mat4 = mem.read(b);
+        VF_M.set(mem, ma);
+        let rows = mb.map(|row| apply(&ma, row));
+        let at = VF_V.ptr(mem).addr;
+        mem.write(at, mb);
+        VF_ACC.set(mem, rows[3].1);
+        let r = rows.map(|(r, _)| r);
+        let at = VF_OUT.ptr(mem).addr;
+        mem.write(at, r);
+        mem.write(out, r);
+    }
+
+    /// `MsMiddlePoint(out, p, q, s, t, c, d, e)` (`0x007c25e0`): the point
+    /// `(t·p + s·q) / (s + t)` between `p` and `q` (x, y, z; `out.w` is
+    /// `p.w`). The divisor goes through `vf00.w / (s + t)` in Q; the float
+    /// arguments are left in two registers as the VU code had them.
+    pub fn ms_middle_point(mem: &mut impl Mem, out: u32, p: u32, q: u32, args: [u32; 5]) {
+        use ffx_bridge::x87::{add, div, load, mul, store};
+        let [s, t] = [load(args[0]), load(args[1])];
+        let sum = store(add(s, t));
+        let mut vp: Vec4 = mem.read(p);
+        let mut vq: Vec4 = mem.read(q);
+        let at = VF_V.ptr(mem).addr;
+        mem.write(at, sum);
+        let recip = div(load(VF00.get(mem)[3]), load(sum));
+        set_vf(mem, 2, [args[0], args[1], args[2], args[3]]);
+        set_vf(mem, 3, [args[1], args[2], args[3], args[4]]);
+        let qv = store(recip);
+        VU_Q.set(mem, qv);
+        vp[0] = store(mul(load(vp[0]), t));
+        vp[1] = store(mul(load(vp[1]), t));
+        vp[2] = store(mul(t, load(vp[2])));
+        vq[0] = store(mul(load(vq[0]), s));
+        vq[1] = store(mul(load(vq[1]), s));
+        vq[2] = store(mul(s, load(vq[2])));
+        for i in 0..3 {
+            vp[i] = store(add(load(vq[i]), load(vp[i])));
+        }
+        let qf = load(qv);
+        vp[0] = store(mul(load(vp[0]), qf));
+        vp[1] = store(mul(load(vp[1]), qf));
+        vp[2] = store(mul(qf, load(vp[2])));
+        set_vf(mem, 0, vp);
+        set_vf(mem, 1, vq);
+        mem.write(out, vp);
+    }
+
+    /// The squares of `v`'s components in the second register, summed (x,
+    /// then z, with y when `with_y`) into its x, the magnitude stored as
+    /// `f32`. The registers as the VU code leaves them.
+    fn square_sum(mem: &mut impl Mem, v: Vec4, with_y: bool) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, store};
+        set_vf(mem, 0, v);
+        let mut e = vf(mem, 1);
+        e[0] = store(mul(load(v[0]), load(v[0])));
+        if with_y {
+            e[1] = store(mul(load(v[1]), load(v[1])));
+        }
+        e[2] = store(mul(load(v[2]), load(v[2])));
+        if with_y {
+            e[0] = store(add(load(e[1]), load(e[0])));
+        }
+        e[0] = store(add(load(e[2]), load(e[0])));
+        set_vf(mem, 1, e);
+        e[0] & 0x7fff_ffff
+    }
+
+    /// `vf00 + q` into the second register, its x returned (`MsVectorLen`'s
+    /// tail).
+    fn length_out(mem: &mut impl Mem, q: u32) -> f32 {
+        use ffx_bridge::x87::{add, load, store};
+        VU_Q.set(mem, q);
+        let z = VF00.get(mem);
+        let qf = load(q);
+        let e = [
+            store(add(load(z[0]), qf)),
+            store(add(load(z[1]), qf)),
+            store(add(load(z[2]), qf)),
+            store(add(qf, load(z[3]))),
+        ];
+        set_vf(mem, 1, e);
+        f32::from_bits(e[0])
+    }
+
+    /// `sqrt` as the game's `_CIsqrt` does it: the x87's `fsqrt` at 53
+    /// bits (IEEE-exact, as `f64::sqrt`), stored as `f32`.
+    fn sqrt(bits: u32) -> u32 {
+        ffx_bridge::x87::store(ffx_bridge::x87::load(bits).sqrt())
+    }
+
+    /// `MsVectorLen(v)` (`0x007c4280`): `|v.xyz|`, through Q (an `f32`).
+    pub fn ms_vector_len(mem: &mut impl Mem, v: u32) -> f32 {
+        let vv: Vec4 = mem.read(v);
+        let m = square_sum(mem, vv, true);
+        length_out(mem, sqrt(m))
+    }
+
+    /// `MsVectorLen2D(v)` (`0x007c43a0`): `|v.xz|`.
+    pub fn ms_vector_len_2d(mem: &mut impl Mem, v: u32) -> f32 {
+        let vv: Vec4 = mem.read(v);
+        let m = square_sum(mem, vv, false);
+        length_out(mem, sqrt(m))
+    }
+
+    /// `MsVectorNormal(out, v)` (`0x007c44a0`): `v.xyz` scaled to length 1
+    /// (by `vf00.w / |v|`, or 0 for a zero vector, in Q); `out.w = v.w`.
+    pub fn ms_vector_normal(mem: &mut impl Mem, out: u32, v: u32) {
+        use ffx_bridge::x87::{div, load, mul, store};
+        let vv: Vec4 = mem.read(v);
+        let m = square_sum(mem, vv, true);
+        let q = if f32::from_bits(m) == 0.0 {
+            0
+        } else {
+            store(div(load(VF00.get(mem)[3]), load(sqrt(m))))
+        };
+        VU_Q.set(mem, q);
+        let qf = load(q);
+        let mut d = vv;
+        d[0] = store(mul(load(d[0]), qf));
+        d[1] = store(mul(load(d[1]), qf));
+        d[2] = store(mul(qf, load(d[2])));
+        set_vf(mem, 0, d);
+        mem.write(out, d);
+    }
 }

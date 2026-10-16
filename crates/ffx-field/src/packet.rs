@@ -39,6 +39,21 @@ pub mod bridge {
         mem.write(p + CURSOR, buffer.wrapping_add(0x10));
     }
 
+    /// `rcPacketDataSetAdr(packet, at)` (`0x00927a40`): start and cursor
+    /// at `at` (no quadword kept for a tag).
+    pub fn rc_packet_data_set_adr(mem: &mut impl Mem, p: u32, at: u32) {
+        mem.write(p + CURSOR, at);
+        mem.write(p + START, at);
+    }
+
+    /// `rcPacketDataOpen(packet, buffer)` (`0x00927a50`): as
+    /// `rcPacketDataOpenAdr` on the address a buffer object keeps at `+4`.
+    pub fn rc_packet_data_open(mem: &mut impl Mem, p: u32, buffer: u32) {
+        let at = mem.read::<u32>(buffer + 4);
+        mem.write(p + START, at);
+        mem.write(p + CURSOR, at.wrapping_add(0x10));
+    }
+
     /// `rcPacketDataCloseAdr(packet)` (`0x009275b0`): appends the end GIF
     /// tag and writes the DMA tag's first word.
     pub fn rc_packet_data_close_adr(mem: &mut impl Mem, p: u32) {

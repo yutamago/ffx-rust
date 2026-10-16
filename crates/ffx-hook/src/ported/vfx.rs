@@ -2,7 +2,7 @@
 //! original leaves a result in `eax` return the full `u32`.
 
 use super::{mem, ported};
-use ffx_vfx::rand::bridge::Spread;
+use ffx_vfx::rand::bridge::{Kind, Spread};
 use ffx_vfx::{et, fp, heap, op, opd, opus, ppp, prog, rand};
 
 /// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`), so the
@@ -16,15 +16,15 @@ fn crt_srand(seed: u32) {
     }
 }
 
-/// A float rand program with the CRT's `srand`.
-fn rand_program(obj: u32, key: u32, ctrl: u32, spread: Spread, vector: bool) {
-    rand::bridge::ppp_rand_float(
+/// A rand program with the CRT's `srand`.
+fn rand_program(obj: u32, key: u32, ctrl: u32, spread: Spread, kind: Kind) {
+    rand::bridge::ppp_rand(
         &mut mem(),
         obj,
         key,
         ctrl,
         spread,
-        vector,
+        kind,
         &mut |_, seed| {
             crt_srand(seed);
         },
@@ -48,31 +48,103 @@ ported! {
         let _ = r;
         rand::bridge::ppp_vu0_rnext(&mut mem(), out);
     }
+
     /// `pppRandFloat(obj, key, ctrl)`.
     pppRandFloat @ 0x0072_f4b0 => extern "C" fn ppp_rand_float(obj: u32, key: u32, ctrl: u32) {
-        rand_program(obj, key, ctrl, Spread::Plain, false);
+        rand_program(obj, key, ctrl, Spread::Plain, Kind::Float);
     }
     /// `pppRandUpFloat(obj, key, ctrl)`.
     pppRandUpFloat @ 0x0072_f680 => extern "C" fn ppp_rand_up_float(obj: u32, key: u32, ctrl: u32) {
-        rand_program(obj, key, ctrl, Spread::Up, false);
+        rand_program(obj, key, ctrl, Spread::Up, Kind::Float);
     }
     /// `pppRandDownFloat(obj, key, ctrl)`.
     pppRandDownFloat @ 0x0072_f850 => extern "C" fn ppp_rand_down_float(obj: u32, key: u32, ctrl: u32) {
-        rand_program(obj, key, ctrl, Spread::Down, false);
+        rand_program(obj, key, ctrl, Spread::Down, Kind::Float);
+    }
+    /// `pppRandChar(obj, key, ctrl)`.
+    pppRandChar @ 0x0072_fa20 => extern "C" fn ppp_rand_char(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Plain, Kind::Char);
+    }
+    /// `pppRandUpChar(obj, key, ctrl)`.
+    pppRandUpChar @ 0x0072_fbf0 => extern "C" fn ppp_rand_up_char(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Up, Kind::Char);
+    }
+    /// `pppRandDownChar(obj, key, ctrl)`.
+    pppRandDownChar @ 0x0072_fdc0 => extern "C" fn ppp_rand_down_char(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Down, Kind::Char);
+    }
+    /// `pppRandShort(obj, key, ctrl)`.
+    pppRandShort @ 0x0072_ffa0 => extern "C" fn ppp_rand_short(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Plain, Kind::Short);
+    }
+    /// `pppRandUpShort(obj, key, ctrl)`.
+    pppRandUpShort @ 0x0073_0170 => extern "C" fn ppp_rand_up_short(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Up, Kind::Short);
+    }
+    /// `pppRandDownShort(obj, key, ctrl)`.
+    pppRandDownShort @ 0x0073_0340 => extern "C" fn ppp_rand_down_short(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Down, Kind::Short);
+    }
+    /// `pppRandInt(obj, key, ctrl)`.
+    pppRandInt @ 0x0073_0520 => extern "C" fn ppp_rand_int(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Plain, Kind::Int);
+    }
+    /// `pppRandUpInt(obj, key, ctrl)`.
+    pppRandUpInt @ 0x0073_0700 => extern "C" fn ppp_rand_up_int(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Up, Kind::Int);
+    }
+    /// `pppRandDownInt(obj, key, ctrl)`.
+    pppRandDownInt @ 0x0073_08d0 => extern "C" fn ppp_rand_down_int(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Down, Kind::Int);
     }
     /// `pppRandFV(obj, key, ctrl)`.
     pppRandFV @ 0x0073_0ab0 => extern "C" fn ppp_rand_fv(obj: u32, key: u32, ctrl: u32) {
-        rand_program(obj, key, ctrl, Spread::Plain, true);
+        rand_program(obj, key, ctrl, Spread::Plain, Kind::FloatVec);
     }
     /// `pppRandUpFV(obj, key, ctrl)`.
     pppRandUpFV @ 0x0073_0ce0 => extern "C" fn ppp_rand_up_fv(obj: u32, key: u32, ctrl: u32) {
-        rand_program(obj, key, ctrl, Spread::Up, true);
+        rand_program(obj, key, ctrl, Spread::Up, Kind::FloatVec);
     }
     /// `pppRandDownFV(obj, key, ctrl)`.
     pppRandDownFV @ 0x0073_0ef0 => extern "C" fn ppp_rand_down_fv(obj: u32, key: u32, ctrl: u32) {
-        rand_program(obj, key, ctrl, Spread::Down, true);
+        rand_program(obj, key, ctrl, Spread::Down, Kind::FloatVec);
     }
-
+    /// `pppRandIV(obj, key, ctrl)`.
+    pppRandIV @ 0x0073_1100 => extern "C" fn ppp_rand_iv(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Plain, Kind::IntVec);
+    }
+    /// `pppRandUpIV(obj, key, ctrl)`.
+    pppRandUpIV @ 0x0073_1350 => extern "C" fn ppp_rand_up_iv(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Up, Kind::IntVec);
+    }
+    /// `pppRandDownIV(obj, key, ctrl)`.
+    pppRandDownIV @ 0x0073_1560 => extern "C" fn ppp_rand_down_iv(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Down, Kind::IntVec);
+    }
+    /// `pppRandCV(obj, key, ctrl)`.
+    pppRandCV @ 0x0073_1780 => extern "C" fn ppp_rand_cv(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Plain, Kind::CharVec);
+    }
+    /// `pppRandUpCV(obj, key, ctrl)`.
+    pppRandUpCV @ 0x0073_19f0 => extern "C" fn ppp_rand_up_cv(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Up, Kind::CharVec);
+    }
+    /// `pppRandDownCV(obj, key, ctrl)`.
+    pppRandDownCV @ 0x0073_1c50 => extern "C" fn ppp_rand_down_cv(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Down, Kind::CharVec);
+    }
+    /// `pppRandHCV(obj, key, ctrl)`.
+    pppRandHCV @ 0x0073_1ec0 => extern "C" fn ppp_rand_hcv(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Plain, Kind::ShortVec);
+    }
+    /// `pppRandUpHCV(obj, key, ctrl)`.
+    pppRandUpHCV @ 0x0073_2130 => extern "C" fn ppp_rand_up_hcv(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Up, Kind::ShortVec);
+    }
+    /// `pppRandDownHCV(obj, key, ctrl)`.
+    pppRandDownHCV @ 0x0073_2390 => extern "C" fn ppp_rand_down_hcv(obj: u32, key: u32, ctrl: u32) {
+        rand_program(obj, key, ctrl, Spread::Down, Kind::ShortVec);
+    }
     // ---- ppp programs ----
     /// `pppKeDrctCon(obj, ctrl)`.
     pppKeDrctCon @ 0x0075_e470 => extern "C" fn ppp_ke_drct_con(obj: u32, ctrl: u32) {
@@ -254,8 +326,8 @@ ported! {
         op::bridge::op_mdc_mem_transfer_cue_free_all(&mut mem());
     }
     /// `op_oef2_tex_clut_ovl_clear(mask)`.
-    op_oef2_tex_clut_ovl_clear @ 0x007e_4e40 => extern "C" fn op_oef2_tex_clut_ovl_clear(mask: u32) {
-        op::bridge::op_oef2_tex_clut_ovl_clear(&mut mem(), mask);
+    op_oef2_tex_clut_ovl_clear @ 0x007e_4e40 => extern "C" fn op_oef2_tex_clut_ovl_clear(mask: u32) -> u32 {
+        op::bridge::op_oef2_tex_clut_ovl_clear(&mut mem(), mask)
     }
     /// `op_oef2_tex_clut_cue_check(mask)`.
     op_oef2_tex_clut_cue_check @ 0x007e_46d0 => extern "C" fn op_oef2_tex_clut_cue_check(mask: u32) -> i32 {
@@ -843,5 +915,213 @@ ported! {
     /// `pppKeGrvTgt(obj, key, ctrl)`.
     pppKeGrvTgt @ 0x0075_97b0 => extern "C" fn ppp_ke_grv_tgt(obj: u32, key: u32, ctrl: u32) {
         prog::bridge::ppp_ke_grv_tgt(&mut mem(), obj, key, ctrl);
+    }
+    /// `pppKeThRes128Con(obj, ctrl)`.
+    pppKeThRes128Con @ 0x0073_6690 => extern "C" fn ppp_ke_th_res128_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res128_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes128x4Con(obj, ctrl)`.
+    pppKeThRes128x4Con @ 0x0073_66c0 => extern "C" fn ppp_ke_th_res128x4_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res128x4_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes128x8Con(obj, ctrl)`.
+    pppKeThRes128x8Con @ 0x0073_66f0 => extern "C" fn ppp_ke_th_res128x8_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res128x8_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes16Con(obj, ctrl)`.
+    pppKeThRes16Con @ 0x0073_6720 => extern "C" fn ppp_ke_th_res16_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res16_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes16x16Con(obj, ctrl)`.
+    pppKeThRes16x16Con @ 0x0073_6750 => extern "C" fn ppp_ke_th_res16x16_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res16x16_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes16x24Con(obj, ctrl)`.
+    pppKeThRes16x24Con @ 0x0073_6780 => extern "C" fn ppp_ke_th_res16x24_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res16x24_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes16x4Con(obj, ctrl)`.
+    pppKeThRes16x4Con @ 0x0073_67b0 => extern "C" fn ppp_ke_th_res16x4_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res16x4_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes16x64Con(obj, ctrl)`.
+    pppKeThRes16x64Con @ 0x0073_67e0 => extern "C" fn ppp_ke_th_res16x64_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res16x64_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes16x8Con(obj, ctrl)`.
+    pppKeThRes16x8Con @ 0x0073_6810 => extern "C" fn ppp_ke_th_res16x8_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res16x8_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes24Con(obj, ctrl)`.
+    pppKeThRes24Con @ 0x0073_6840 => extern "C" fn ppp_ke_th_res24_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res24_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes24x16Con(obj, ctrl)`.
+    pppKeThRes24x16Con @ 0x0073_6870 => extern "C" fn ppp_ke_th_res24x16_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res24x16_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes24x4Con(obj, ctrl)`.
+    pppKeThRes24x4Con @ 0x0073_68a0 => extern "C" fn ppp_ke_th_res24x4_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res24x4_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes24x8Con(obj, ctrl)`.
+    pppKeThRes24x8Con @ 0x0073_68d0 => extern "C" fn ppp_ke_th_res24x8_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res24x8_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes255Con(obj, ctrl)`.
+    pppKeThRes255Con @ 0x0073_6900 => extern "C" fn ppp_ke_th_res255_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res255_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes255x4Con(obj, ctrl)`.
+    pppKeThRes255x4Con @ 0x0073_6930 => extern "C" fn ppp_ke_th_res255x4_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res255x4_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes32Con(obj, ctrl)`.
+    pppKeThRes32Con @ 0x0073_6960 => extern "C" fn ppp_ke_th_res32_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res32_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes32x16Con(obj, ctrl)`.
+    pppKeThRes32x16Con @ 0x0073_6990 => extern "C" fn ppp_ke_th_res32x16_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res32x16_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes32x24Con(obj, ctrl)`.
+    pppKeThRes32x24Con @ 0x0073_69c0 => extern "C" fn ppp_ke_th_res32x24_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res32x24_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes32x32Con(obj, ctrl)`.
+    pppKeThRes32x32Con @ 0x0073_69f0 => extern "C" fn ppp_ke_th_res32x32_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res32x32_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes32x4Con(obj, ctrl)`.
+    pppKeThRes32x4Con @ 0x0073_6a20 => extern "C" fn ppp_ke_th_res32x4_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res32x4_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes32x8Con(obj, ctrl)`.
+    pppKeThRes32x8Con @ 0x0073_6a50 => extern "C" fn ppp_ke_th_res32x8_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res32x8_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes40Con(obj, ctrl)`.
+    pppKeThRes40Con @ 0x0073_6a80 => extern "C" fn ppp_ke_th_res40_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res40_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes40x16Con(obj, ctrl)`.
+    pppKeThRes40x16Con @ 0x0073_6ab0 => extern "C" fn ppp_ke_th_res40x16_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res40x16_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes40x4Con(obj, ctrl)`.
+    pppKeThRes40x4Con @ 0x0073_6ae0 => extern "C" fn ppp_ke_th_res40x4_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res40x4_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes40x8Con(obj, ctrl)`.
+    pppKeThRes40x8Con @ 0x0073_6b10 => extern "C" fn ppp_ke_th_res40x8_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res40x8_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes48Con(obj, ctrl)`.
+    pppKeThRes48Con @ 0x0073_6b40 => extern "C" fn ppp_ke_th_res48_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res48_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes48x16Con(obj, ctrl)`.
+    pppKeThRes48x16Con @ 0x0073_6b70 => extern "C" fn ppp_ke_th_res48x16_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res48x16_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes48x4Con(obj, ctrl)`.
+    pppKeThRes48x4Con @ 0x0073_6ba0 => extern "C" fn ppp_ke_th_res48x4_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res48x4_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes48x8Con(obj, ctrl)`.
+    pppKeThRes48x8Con @ 0x0073_6bd0 => extern "C" fn ppp_ke_th_res48x8_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res48x8_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes64Con(obj, ctrl)`.
+    pppKeThRes64Con @ 0x0073_6c00 => extern "C" fn ppp_ke_th_res64_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res64_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes64x16Con(obj, ctrl)`.
+    pppKeThRes64x16Con @ 0x0073_6c30 => extern "C" fn ppp_ke_th_res64x16_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res64x16_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes64x4Con(obj, ctrl)`.
+    pppKeThRes64x4Con @ 0x0073_6c60 => extern "C" fn ppp_ke_th_res64x4_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res64x4_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes64x8Con(obj, ctrl)`.
+    pppKeThRes64x8Con @ 0x0073_6c90 => extern "C" fn ppp_ke_th_res64x8_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res64x8_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes8Con(obj, ctrl)`.
+    pppKeThRes8Con @ 0x0073_6cc0 => extern "C" fn ppp_ke_th_res8_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res8_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes8x128Con(obj, ctrl)`.
+    pppKeThRes8x128Con @ 0x0073_6cf0 => extern "C" fn ppp_ke_th_res8x128_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res8x128_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThRes8x4Con(obj, ctrl)`.
+    pppKeThRes8x4Con @ 0x0073_6d20 => extern "C" fn ppp_ke_th_res8x4_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res8x4_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThResCon(obj, ctrl)`.
+    pppKeThResCon @ 0x0073_6d50 => extern "C" fn ppp_ke_th_res_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_res_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeLnsArndCon(obj, ctrl)`.
+    pppKeLnsArndCon @ 0x0075_9fd0 => extern "C" fn ppp_ke_lns_arnd_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_lns_arnd_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeLnsCrnCon(obj, ctrl)`.
+    pppKeLnsCrnCon @ 0x0075_a740 => extern "C" fn ppp_ke_lns_crn_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_lns_crn_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeLnsClmCon(obj, ctrl)`.
+    pppKeLnsClmCon @ 0x0075_a370 => extern "C" fn ppp_ke_lns_clm_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_lns_clm_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeThCon(obj, ctrl)`.
+    pppKeThCon @ 0x0073_6460 => extern "C" fn ppp_ke_th_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeMdlTfdUvCon(obj, ctrl)`.
+    pppKeMdlTfdUvCon @ 0x0074_98f0 => extern "C" fn ppp_ke_mdl_tfd_uv_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_mdl_tfd_uv_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeMdlTfdUv2Con(obj, ctrl)`.
+    pppKeMdlTfdUv2Con @ 0x0074_9c30 => extern "C" fn ppp_ke_mdl_tfd_uv2_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_mdl_tfd_uv2_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeMdlTfdUv3Con(obj, ctrl)`.
+    pppKeMdlTfdUv3Con @ 0x0074_9f90 => extern "C" fn ppp_ke_mdl_tfd_uv3_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_mdl_tfd_uv3_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeShpTail3Con2(obj, ctrl)`.
+    pppKeShpTail3Con2 @ 0x0075_05a0 => extern "C" fn ppp_ke_shp_tail3_con2(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_shp_tail3_con2(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeShpTail3XCon2(obj, ctrl)`.
+    pppKeShpTail3XCon2 @ 0x0075_1f40 => extern "C" fn ppp_ke_shp_tail3_x_con2(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_shp_tail3_x_con2(&mut mem(), obj, ctrl);
+    }
+    /// `pppDrawMdlInfCon(obj, ctrl)`.
+    pppDrawMdlInfCon @ 0x0073_b7b0 => extern "C" fn ppp_draw_mdl_inf_con(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_draw_mdl_inf_con(&mut mem(), obj, ctrl);
+    }
+    /// `pppDrawSprite(obj, key, ctrl)`.
+    pppDrawSprite @ 0x0075_66e0 => extern "C" fn ppp_draw_sprite(obj: u32, key: u32, ctrl: u32) {
+        prog::bridge::ppp_draw_sprite(&mut mem(), obj, key, ctrl);
+    }
+    /// `pppKeHitBall(obj, key, ctrl)`.
+    pppKeHitBall @ 0x0075_9830 => extern "C" fn ppp_ke_hit_ball(obj: u32, key: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_hit_ball(&mut mem(), obj, key, ctrl);
+    }
+    /// `pppNeiPointLight(obj, key, ctrl)`.
+    pppNeiPointLight @ 0x0075_d700 => extern "C" fn ppp_nei_point_light(obj: u32, key: u32, ctrl: u32) {
+        prog::bridge::ppp_nei_point_light(&mut mem(), obj, key, ctrl);
+    }
+    /// `pppPObjPoint(obj, key, ctrl)`.
+    pppPObjPoint @ 0x0075_d280 => extern "C" fn ppp_p_obj_point(obj: u32, key: u32, ctrl: u32) {
+        prog::bridge::ppp_p_obj_point(&mut mem(), obj, key, ctrl);
+    }
+    /// `pppKeThTp(obj, key, ctrl)`.
+    pppKeThTp @ 0x0073_6d80 => extern "C" fn ppp_ke_th_tp(obj: u32, key: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_th_tp(&mut mem(), obj, key, ctrl);
     }
 }

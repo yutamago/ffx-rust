@@ -35,6 +35,14 @@ pub enum Init {
     Copy4(u32, u32),
     /// `set_ptr32(0)`.
     Null(u32),
+    /// `KeThResHd_Init(at, count, size)` (the map module's).
+    ThRes(u32, u8, u8),
+    /// `KeThCp_Init(at)`.
+    ThCp(u32),
+    /// `KeLnsFls_Init(at)` / `KeLnsCrn_Init(at)` (one body).
+    Lns(u32),
+    /// `KeLnsClm_Init(at)`.
+    LnsClm(u32),
 }
 
 /// `f32` bits of 1.0.
@@ -45,10 +53,11 @@ pub mod bridge {
     use ffx_bridge::{Global, Mem, Ptr};
     use ffx_system::stub;
 
-    use super::Init::{self, Copy4, Null, W8, W16, W32};
+    use super::Init::{self, Copy4, Lns, LnsClm, Null, ThCp, ThRes, W8, W16, W32};
     use super::ONE;
     use crate::ppp::bridge::{COLOR_CON_SHIFT, R0, STOP};
     use crate::x87;
+    use ffx_field::ke::bridge as ke;
 
     /// `g_Vu0_Vf00`: the emulated VU0 `vf00` (0, 0, 0, 1.0).
     pub const VF00: Global<[u32; 4]> = Global::new(0x00c0_a004);
@@ -76,6 +85,12 @@ pub mod bridge {
                     mem.write(w.wrapping_add(at), v);
                 }
                 Null(at) => mem.write(w.wrapping_add(at), stub::ptr32(0)),
+                ThRes(at, count, size) => {
+                    ke::ke_th_res_hd_init(mem, w.wrapping_add(at), count, size);
+                }
+                ThCp(at) => ke::ke_th_cp_init(mem, w.wrapping_add(at)),
+                Lns(at) => ke::ke_lns_init(mem, w.wrapping_add(at)),
+                LnsClm(at) => ke::ke_lns_clm_init(mem, w.wrapping_add(at)),
             }
         }
     }
@@ -257,6 +272,100 @@ pub mod bridge {
         ppp_draw_rain_con: 1, [Null(0xa0), Null(0xa4)];
         /// `pppDrawMdlSeaCon` (`0x0073ab00`).
         ppp_draw_mdl_sea_con: 2, [Null(0x108), Null(0x10c), Null(0x110)];
+        /// `pppKeThRes128Con` (`0x00736690`).
+        ppp_ke_th_res128_con: 0, [ThRes(0xa0, 1, 128)];
+        /// `pppKeThRes128x4Con` (`0x007366c0`).
+        ppp_ke_th_res128x4_con: 0, [ThRes(0xa0, 4, 128)];
+        /// `pppKeThRes128x8Con` (`0x007366f0`).
+        ppp_ke_th_res128x8_con: 0, [ThRes(0xa0, 8, 128)];
+        /// `pppKeThRes16Con` (`0x00736720`).
+        ppp_ke_th_res16_con: 0, [ThRes(0xa0, 1, 16)];
+        /// `pppKeThRes16x16Con` (`0x00736750`).
+        ppp_ke_th_res16x16_con: 0, [ThRes(0xa0, 16, 16)];
+        /// `pppKeThRes16x24Con` (`0x00736780`).
+        ppp_ke_th_res16x24_con: 0, [ThRes(0xa0, 24, 16)];
+        /// `pppKeThRes16x4Con` (`0x007367b0`).
+        ppp_ke_th_res16x4_con: 0, [ThRes(0xa0, 4, 16)];
+        /// `pppKeThRes16x64Con` (`0x007367e0`).
+        ppp_ke_th_res16x64_con: 0, [ThRes(0xa0, 64, 16)];
+        /// `pppKeThRes16x8Con` (`0x00736810`).
+        ppp_ke_th_res16x8_con: 0, [ThRes(0xa0, 8, 16)];
+        /// `pppKeThRes24Con` (`0x00736840`).
+        ppp_ke_th_res24_con: 0, [ThRes(0xa0, 1, 24)];
+        /// `pppKeThRes24x16Con` (`0x00736870`).
+        ppp_ke_th_res24x16_con: 0, [ThRes(0xa0, 16, 24)];
+        /// `pppKeThRes24x4Con` (`0x007368a0`).
+        ppp_ke_th_res24x4_con: 0, [ThRes(0xa0, 4, 24)];
+        /// `pppKeThRes24x8Con` (`0x007368d0`).
+        ppp_ke_th_res24x8_con: 0, [ThRes(0xa0, 8, 24)];
+        /// `pppKeThRes255Con` (`0x00736900`).
+        ppp_ke_th_res255_con: 0, [ThRes(0xa0, 1, 255)];
+        /// `pppKeThRes255x4Con` (`0x00736930`).
+        ppp_ke_th_res255x4_con: 0, [ThRes(0xa0, 4, 255)];
+        /// `pppKeThRes32Con` (`0x00736960`).
+        ppp_ke_th_res32_con: 0, [ThRes(0xa0, 1, 32)];
+        /// `pppKeThRes32x16Con` (`0x00736990`).
+        ppp_ke_th_res32x16_con: 0, [ThRes(0xa0, 16, 32)];
+        /// `pppKeThRes32x24Con` (`0x007369c0`).
+        ppp_ke_th_res32x24_con: 0, [ThRes(0xa0, 24, 32)];
+        /// `pppKeThRes32x32Con` (`0x007369f0`).
+        ppp_ke_th_res32x32_con: 0, [ThRes(0xa0, 32, 32)];
+        /// `pppKeThRes32x4Con` (`0x00736a20`).
+        ppp_ke_th_res32x4_con: 0, [ThRes(0xa0, 4, 32)];
+        /// `pppKeThRes32x8Con` (`0x00736a50`).
+        ppp_ke_th_res32x8_con: 0, [ThRes(0xa0, 8, 32)];
+        /// `pppKeThRes40Con` (`0x00736a80`).
+        ppp_ke_th_res40_con: 0, [ThRes(0xa0, 1, 40)];
+        /// `pppKeThRes40x16Con` (`0x00736ab0`).
+        ppp_ke_th_res40x16_con: 0, [ThRes(0xa0, 16, 40)];
+        /// `pppKeThRes40x4Con` (`0x00736ae0`).
+        ppp_ke_th_res40x4_con: 0, [ThRes(0xa0, 4, 40)];
+        /// `pppKeThRes40x8Con` (`0x00736b10`).
+        ppp_ke_th_res40x8_con: 0, [ThRes(0xa0, 8, 40)];
+        /// `pppKeThRes48Con` (`0x00736b40`).
+        ppp_ke_th_res48_con: 0, [ThRes(0xa0, 1, 48)];
+        /// `pppKeThRes48x16Con` (`0x00736b70`).
+        ppp_ke_th_res48x16_con: 0, [ThRes(0xa0, 16, 48)];
+        /// `pppKeThRes48x4Con` (`0x00736ba0`).
+        ppp_ke_th_res48x4_con: 0, [ThRes(0xa0, 4, 48)];
+        /// `pppKeThRes48x8Con` (`0x00736bd0`).
+        ppp_ke_th_res48x8_con: 0, [ThRes(0xa0, 8, 48)];
+        /// `pppKeThRes64Con` (`0x00736c00`).
+        ppp_ke_th_res64_con: 0, [ThRes(0xa0, 1, 64)];
+        /// `pppKeThRes64x16Con` (`0x00736c30`).
+        ppp_ke_th_res64x16_con: 0, [ThRes(0xa0, 16, 64)];
+        /// `pppKeThRes64x4Con` (`0x00736c60`).
+        ppp_ke_th_res64x4_con: 0, [ThRes(0xa0, 4, 64)];
+        /// `pppKeThRes64x8Con` (`0x00736c90`).
+        ppp_ke_th_res64x8_con: 0, [ThRes(0xa0, 8, 64)];
+        /// `pppKeThRes8Con` (`0x00736cc0`).
+        ppp_ke_th_res8_con: 0, [ThRes(0xa0, 1, 8)];
+        /// `pppKeThRes8x128Con` (`0x00736cf0`).
+        ppp_ke_th_res8x128_con: 0, [ThRes(0xa0, 128, 8)];
+        /// `pppKeThRes8x4Con` (`0x00736d20`).
+        ppp_ke_th_res8x4_con: 0, [ThRes(0xa0, 4, 8)];
+        /// `pppKeThResCon` (`0x00736d50`).
+        ppp_ke_th_res_con: 0, [ThRes(0xa0, 1, 3)];
+        /// `pppKeLnsArndCon` (`0x00759fd0`).
+        ppp_ke_lns_arnd_con: 0, [Lns(0xa0)];
+        /// `pppKeLnsCrnCon` (`0x0075a740`).
+        ppp_ke_lns_crn_con: 0, [Lns(0xa0)];
+        /// `pppKeLnsClmCon` (`0x0075a370`).
+        ppp_ke_lns_clm_con: 0, [LnsClm(0xa0), W8(0xa8, 4)];
+        /// `pppKeThCon` (`0x00736460`).
+        ppp_ke_th_con: 0, [ThCp(0xa0), W32(0x10c, 0), W32(0x110, 0), W32(0x114, 0), W32(0x118, 0), W32(0x11c, 0), W32(0x120, 0), W32(0x124, 0), W32(0x128, 0), W32(0x12c, 0), W32(0xbc, 0), W32(0xd4, 0), W32(0xdc, 0)];
+        /// `pppKeMdlTfdUvCon` (`0x007498f0`).
+        ppp_ke_mdl_tfd_uv_con: 2, [W32(0xc4, 0), W32(0xc0, 0), W32(0xbc, 0), W32(0xb8, 0), W32(0xb4, 0), W32(0xb0, 0), W32(0xa8, 0), W32(0xa4, 0), W32(0xa0, 0)];
+        /// `pppKeMdlTfdUv2Con` (`0x00749c30`).
+        ppp_ke_mdl_tfd_uv2_con: 2, [W32(0xc4, 0), W32(0xc0, 0), W32(0xbc, 0), W32(0xb8, 0), W32(0xb4, 0), W32(0xb0, 0), W32(0xa8, 0), W32(0xa4, 0), W32(0xa0, 0)];
+        /// `pppKeMdlTfdUv3Con` (`0x00749f90`).
+        ppp_ke_mdl_tfd_uv3_con: 2, [W32(0xc4, 0), W32(0xc0, 0), W32(0xbc, 0), W32(0xb8, 0), W32(0xb4, 0), W32(0xb0, 0), W32(0xa8, 0), W32(0xa4, 0), W32(0xa0, 0)];
+        /// `pppKeShpTail3Con2` (`0x007505a0`).
+        ppp_ke_shp_tail3_con2: 0, [W8(0x298, 0), W16(0x294, 0), W32(0x290, 0), W32(0xa0, 0), W32(0xa4, 0), W32(0xa8, 0), W32(0xac, 0), W32(0xb0, 0), W32(0xb4, 0), W32(0xb8, 0), W32(0xbc, 0), W32(0xc0, 0), W32(0xc4, 0), W32(0xc8, 0), W32(0xcc, 0)];
+        /// `pppKeShpTail3XCon2` (`0x00751f40`).
+        ppp_ke_shp_tail3_x_con2: 0, [W8(0x298, 0), W16(0x294, 0), W32(0x290, 0), W32(0xa0, 0), W32(0xa4, 0), W32(0xa8, 0), W32(0xac, 0), W32(0xb0, 0), W32(0xb4, 0), W32(0xb8, 0), W32(0xbc, 0), W32(0xc0, 0), W32(0xc4, 0), W32(0xc8, 0), W32(0xcc, 0)];
+        /// `pppDrawMdlInfCon` (`0x0073b7b0`).
+        ppp_draw_mdl_inf_con: 2, [Null(0x170), Null(0x174), Null(0x178), Null(0x17c)];
     }
 
     /// `pppColAcceleCon` (`0x0075bac0`) and `pppColMoveCon` (`0x0075c410`):
@@ -446,6 +555,117 @@ pub mod bridge {
                 .get(mem)
                 .wrapping_sub(mem.read(k.wrapping_add(0x10 + 4 * i)));
             p.set(mem, v);
+        }
+    }
+
+    /// `g_pppCurrentPart`: the part `pppRunPart`/`pppStartPart` are
+    /// running; `+0x3c` points at its 16-byte object records (the object at
+    /// `+4`).
+    pub const CURRENT_PART: Global<u32> = Global::new(0x0230_ffe4);
+
+    /// Object `n` of the current part (`get_ptr32_func` of its record's
+    /// word at `+4`).
+    fn part_object(mem: &impl Mem, n: u32) -> u32 {
+        let records = mem.read::<u32>(CURRENT_PART.get(mem).wrapping_add(0x3c));
+        stub::ptr32(mem.read(records.wrapping_add(4).wrapping_add(n.wrapping_mul(16))))
+    }
+
+    /// A key's target: `g_pppRandTarget` for -1, else field `at` of part
+    /// object `n`.
+    fn part_target(mem: &impl Mem, n: u32, at: u32) -> u32 {
+        if n == u32::MAX {
+            crate::rand::bridge::TARGET.ptr(mem).addr
+        } else {
+            part_object(mem, n).wrapping_add(at).wrapping_add(0xa0)
+        }
+    }
+
+    /// `pppDrawSprite(obj, key, ctrl)` (`0x007566e0`): remembers the key in
+    /// area 1 when it has none.
+    pub fn ppp_draw_sprite(mem: &mut impl Mem, obj: u32, key: u32, ctrl: u32) {
+        let w1 = area(mem, obj, ctrl, 1).wrapping_add(0xa0);
+        if stub::is_ptr32_null(mem.read(w1)) != 0 {
+            mem.write(w1, stub::ptr32(key));
+        }
+    }
+
+    /// `pppKeHitBall(obj, key, ctrl)` (`0x00759830`): area 1 takes a
+    /// pointer to area 0 and the key's float at `+4`.
+    pub fn ppp_ke_hit_ball(mem: &mut impl Mem, obj: u32, key: u32, ctrl: u32) {
+        if !applies(mem, obj, key) {
+            return;
+        }
+        let w1 = area(mem, obj, ctrl, 1);
+        let w0 = area(mem, obj, ctrl, 0).wrapping_add(0xa0);
+        mem.write(w1.wrapping_add(0xa4), stub::ptr32(w0));
+        let v = x87::load(mem.read(key + 4));
+        mem.write(w1.wrapping_add(0xa0), v);
+    }
+
+    /// `pppNeiPointLight(obj, key, ctrl)` (`0x0075d700`): with its key,
+    /// pointers to areas 1 and 2 and the key's three floats added; then the
+    /// running sums `w[1] += w[0]`, `w[2] += w[1]`.
+    pub fn ppp_nei_point_light(mem: &mut impl Mem, obj: u32, key: u32, ctrl: u32) {
+        if STOP.get(mem) != 0 {
+            return;
+        }
+        let w = area(mem, obj, ctrl, 0).wrapping_add(0xa0);
+        if applies(mem, obj, key) {
+            let a1 = area(mem, obj, ctrl, 1).wrapping_add(0xa0);
+            mem.write(w + 0xc, stub::ptr32(a1));
+            let a2 = area(mem, obj, ctrl, 2).wrapping_add(0xa0);
+            mem.write(w + 0x10, stub::ptr32(a2));
+            for i in 0..3 {
+                let v = x87::add(f(mem, key + 4 + 4 * i), f(mem, w + 4 * i));
+                set_f(mem, w + 4 * i, v);
+            }
+        }
+        let s = x87::add(f(mem, w), f(mem, w + 4));
+        set_f(mem, w + 4, s);
+        let t = x87::add(s, f(mem, w + 8));
+        set_f(mem, w + 8, t);
+    }
+
+    /// `pppPObjPoint(obj, key, ctrl)` (`0x0075d280`): with its key, points
+    /// area 0's `+0x10` at a part object's field (key `+4` the object, -1
+    /// for `g_pppRandTarget`; `+8` the field); then copies the three floats
+    /// there into area 0.
+    pub fn ppp_p_obj_point(mem: &mut impl Mem, obj: u32, key: u32, ctrl: u32) {
+        if STOP.get(mem) != 0 {
+            return;
+        }
+        let w = area(mem, obj, ctrl, 0).wrapping_add(0xa0);
+        if applies(mem, obj, key) {
+            let t = part_target(mem, mem.read(key + 4), mem.read(key + 8));
+            mem.write(w + 0x10, stub::ptr32(t));
+        }
+        for i in 0..3 {
+            let src = stub::ptr32(mem.read(w + 0x10));
+            let v = x87::load(mem.read(src.wrapping_add(4 * i)));
+            mem.write(w + 4 * i, v);
+        }
+    }
+
+    /// `pppKeThTp(obj, key, ctrl)` (`0x00736d80`): with its key, three
+    /// floats into area 0 (`+0x10` from key `+8`, `+0x18` from `+4`, `+0x14`
+    /// from `+0xc`) and the target (key `+0x10` the part object, `+0x14` the
+    /// field; none for `g_pppRandTarget`) at `+0x1c`; then, unless stopped,
+    /// the object's position (`+0x40`) into area 0 (`KeVu0CopyVecXYZ`).
+    pub fn ppp_ke_th_tp(mem: &mut impl Mem, obj: u32, key: u32, ctrl: u32) {
+        let w = area(mem, obj, ctrl, 0).wrapping_add(0xa0);
+        if applies(mem, obj, key) {
+            for (to, from) in [(0x10, 8), (0x18, 4), (0x14, 0xc)] {
+                let v = x87::load(mem.read(key + from));
+                mem.write(w + to, v);
+            }
+            let t = stub::ptr32(part_target(mem, mem.read(key + 0x10), mem.read(key + 0x14)));
+            mem.write(w + 0x1c, t);
+            if stub::ptr32(t) == crate::rand::bridge::TARGET.ptr(mem).addr {
+                mem.write(w + 0x1c, stub::ptr32(0));
+            }
+        }
+        if STOP.get(mem) == 0 {
+            ffx_field::vu0::bridge::ke_vu0_copy_vec_xyz(mem, w, obj.wrapping_add(0x40));
         }
     }
 

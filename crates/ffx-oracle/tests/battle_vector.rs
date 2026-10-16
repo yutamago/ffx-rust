@@ -4,7 +4,7 @@
 //! registers they leave behind.
 
 // a and b are the two oracles throughout
-#![allow(clippy::many_single_char_names)]
+#![allow(clippy::many_single_char_names, clippy::too_many_lines)]
 
 mod battle_common;
 
@@ -54,7 +54,17 @@ fn f80_to_f32(r: [u8; 10]) -> u32 {
     sign | f.to_bits()
 }
 
+/// `_CIsqrt`'s thunk (`0x009497b8`, an import the oracle lacks) as the
+/// CPU's square root: `fsqrt; ret`.
+fn patch_sqrt(a: &mut Oracle, b: &mut Oracle) {
+    for o in [a, b] {
+        let at = o.rebase(0x0094_97b8);
+        o.write(at, &[0xd9, 0xfa, 0xc3]).unwrap();
+    }
+}
+
 fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    patch_sqrt(a, b);
     let buf = scratch(a, b, 0x100);
     for _ in 0..3000 {
         let vals: Vec<u8> = (0..0x40).flat_map(|_| float(rng).to_le_bytes()).collect();
@@ -114,6 +124,60 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
             f80_to_f32(ra.st0_raw.expect("a float")),
             rb,
             "MsNearRag {x:#x} {y:#x}"
+        );
+        twin(
+            "MsMulMatrix",
+            a,
+            b,
+            0x007c_2770,
+            &[buf + 0x60, buf + 0x80, buf + 0xc0],
+            0,
+            |m| {
+                v::ms_mul_matrix(m, buf + 0x60, buf + 0x80, buf + 0xc0);
+                0
+            },
+        );
+        let st = [float(rng), float(rng), float(rng), float(rng), float(rng)];
+        let call = [
+            buf + 0x20,
+            buf + 0x30,
+            buf + 0x40,
+            st[0],
+            st[1],
+            st[2],
+            st[3],
+            st[4],
+        ];
+        twin("MsMiddlePoint", a, b, 0x007c_25e0, &call, 0, |m| {
+            v::ms_middle_point(m, buf + 0x20, buf + 0x30, buf + 0x40, st);
+            0
+        });
+        if rng.below(4) == 0 {
+            poke(a, b, buf + 0x30, &[0; 16]);
+        }
+        for (name, sym, rust) in [
+            (
+                "MsVectorLen",
+                0x007c_4280,
+                v::ms_vector_len as fn(&mut Oracle, u32) -> f32,
+            ),
+            ("MsVectorLen2D", 0x007c_43a0, v::ms_vector_len_2d),
+        ] {
+            let ra = a.call(a.rebase(sym), Conv::Cdecl, &[buf + 0x30]).unwrap();
+            let rb = rust(b, buf + 0x30).to_bits();
+            assert_eq!(f80_to_f32(ra.st0_raw.expect("a float")), rb, "{name}");
+        }
+        twin(
+            "MsVectorNormal",
+            a,
+            b,
+            0x007c_44a0,
+            &[buf + 0x40, buf + 0x30],
+            0,
+            |m| {
+                v::ms_vector_normal(m, buf + 0x40, buf + 0x30);
+                0
+            },
         );
         same("vectors", a, b);
     }
