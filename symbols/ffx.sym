@@ -1717,19 +1717,22 @@
 0x00757240 function pppDrawFilterCon2         # ppp program table record "pppDrawFilter" +0x20 set-up; not a function start in the Ghidra dump
 0x00757250 function pppDrawFilterDes          # ppp program table record "pppDrawFilter" +0x24 destructor
 0x00757280 function pppDrawFilterDraw         # ppp program table record "pppDrawFilter" draw
-0x00757370 function pppDrawHookDraw           # ppp program table record "pppDrawHook" draw
+0x00757370 function pppDrawHookDraw           # ppp program table record "pppDrawHook" draw: area 0 +0xa0 = key +4; g_pppUserFuncs[birth record +0xe](obj, key +4) when set
 0x007573c0 function pppPointAp                # fh v3:exact 0x007574b0
 0x00757470 function pppPointApCon             # ppp program table record "pppPointAp" (0x00c3ab70) +0x1c set-up; "pppPointAp" (0x00c3c218) +0x1c set-up
 0x00757490 function pppPointRAp               # fh v3:exact 0x00757580
 0x00757750 function pppPointRApCon            # ppp program table record "pppPointRAp" (0x00c3e108) +0x1c set-up
+0x00757770 function pppBornVertex             # (obj, key, short *v): a child object (birth record key +0xc, none for -1; parent set at +4) at v through obj's matrix, into its field key +0x10 (pppVertexAp)
 0x00757840 function pppVertexAp               # fh v3:exact 0x00757930
 0x00757b30 function pppVertexApCon            # ppp program table record "pppVertexAp" (0x00c3a940) +0x1c set-up; "pppVertexAp" (0x00c3bfe8) +0x1c set-up
+0x00757b50 function pppBornVertexRel          # as pppBornVertex less g_pppWorldMatrix's translation (pppVertexApDisPos)
 0x00757c30 function pppVertexApDisPos         # ppp program table record "pppVertexApDisPos" step
 0x00757e90 function pppVertexApDisPosCon      # ppp program table record "pppVertexApDisPos" (0x00c3b778) +0x1c set-up; "pppVertexApDisPos" (0x00c3ce20) +0x1c set-up
 0x00757eb0 function pppSegmentAp              # ppp program table record "pppSegmentAp" step; not a function start in the Ghidra dump
 0x00757ec0 function pppFaceAp                 # ppp program table record "pppFaceAp" step; not a function start in the Ghidra dump
 0x00757ff0 function pppVertexApLc             # fh v3:bsim0.94 0x007580e0
 0x00758250 function pppVertexApLcCon          # ppp program table record "pppVertexApLc" (0x00c3a968) +0x1c set-up; "pppVertexApLc" (0x00c3a968) +0x20 second set-up; "pppVertexApLc" (0x00c3c010) +0x1c set-up and 1 more
+0x00758270 function pppBornShort              # (obj, key, short v): a child object (birth record key +0xc) whose i16 at key +0x10 is v (pppVertexApAt)
 0x007582e0 function pppVertexApAt             # fh v3:exact 0x007583d0
 0x007584b0 function pppVertexApAtCon          # ppp program table record "pppVertexApAt" (0x00c3b728) +0x1c set-up; "pppVertexApAt" (0x00c3b728) +0x20 second set-up; "pppVertexApAt" (0x00c3cdd0) +0x1c set-up and 1 more
 0x007584d0 function pppKeBornRnd              # ppp program table record "pppKeBornRnd" step

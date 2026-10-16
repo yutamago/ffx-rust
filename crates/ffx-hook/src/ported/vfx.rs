@@ -1671,4 +1671,44 @@ ported! {
     pppStartPart @ 0x0071_23c0 => extern "C" fn ppp_start_part(p: u32, rate: u32, data: u32, set_ups: u32) {
         part::bridge::ppp_start_part(&mut mem(), p, rate, data, set_ups, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `pppCallUsrFunc(part, table, arg)`.
+    pppCallUsrFunc @ 0x0071_6710 => extern "C" fn ppp_call_usr_func(p: u32, table: u32, arg: u32) {
+        part::bridge::ppp_call_usr_func(&mut mem(), p, table, arg, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDrawHookDraw(obj, key, ctrl)`.
+    pppDrawHookDraw @ 0x0075_7370 => extern "C" fn ppp_draw_hook(obj: u32, key: u32, ctrl: u32) {
+        part::bridge::ppp_draw_hook(&mut mem(), obj, key, ctrl, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppPointAp(obj, key, ctrl)`.
+    pppPointAp @ 0x0075_73c0 => extern "C" fn ppp_point_ap(obj: u32, key: u32, ctrl: u32) {
+        part::bridge::ppp_point_ap(&mut mem(), obj, key, ctrl, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppBornShort(obj, key, v)`.
+    pppBornShort @ 0x0075_8270 => extern "C" fn ppp_born_short(obj: u32, key: u32, v: u32) {
+        #[allow(clippy::cast_possible_truncation)] // a short argument
+        part::bridge::ppp_born_short(&mut mem(), obj, key, v as u16, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppBornVertex(obj, key, v)`.
+    pppBornVertex @ 0x0075_7770 => extern "C" fn ppp_born_vertex(obj: u32, key: u32, v: u32) {
+        part::bridge::ppp_born_vertex(&mut mem(), obj, key, v, false, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppBornVertexRel(obj, key, v)`.
+    pppBornVertexRel @ 0x0075_7b50 => extern "C" fn ppp_born_vertex_rel(obj: u32, key: u32, v: u32) {
+        part::bridge::ppp_born_vertex(&mut mem(), obj, key, v, true, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppPointRAp(obj, key, ctrl)`.
+    pppPointRAp @ 0x0075_7490 => extern "C" fn ppp_point_r_ap(obj: u32, key: u32, ctrl: u32) {
+        part::bridge::ppp_point_r_ap(
+            &mut mem(),
+            obj,
+            key,
+            ctrl,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, seed| crt_srand(seed),
+        );
+    }
+    /// `pppKeHitBorn(obj, key, ctrl)`.
+    pppKeHitBorn @ 0x0075_9d80 => extern "C" fn ppp_ke_hit_born(obj: u32, key: u32, ctrl: u32) {
+        part::bridge::ppp_ke_hit_born(&mut mem(), obj, key, ctrl, &mut |_, f, a| call_ptr(f, a));
+    }
 }

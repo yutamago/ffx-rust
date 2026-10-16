@@ -3559,6 +3559,8 @@ fn parts_and_objects_match_the_original() {
         }
         let part2 = p.alloc(0x80);
         let start = p.alloc(0x200);
+        let log = record_srand(&mut p);
+        let hits_list = p.alloc(0x400);
         for i in 0..4 {
             p.set(offs + 4 * i, 0x40 * i);
         }
@@ -3803,6 +3805,125 @@ fn parts_and_objects_match_the_original() {
                     p.set(r + at, if rng.chance(50) { set } else { 0 });
                 }
             }
+            // the user functions and the programs that make child objects
+            let table = recs + 0x10;
+            for i in 0..4 {
+                p.set(table + 4 * i, if rng.chance(50) { set } else { 0 });
+            }
+            let arg = rng.next();
+            p.check("pppCallUsrFunc", 0x0071_6710, &[part, table, arg], |m| {
+                pt::ppp_call_usr_func(m, part, table, arg, &mut call_original);
+                None
+            });
+            let head = p.get::<u32>(part + 0x30);
+            if head != 0 {
+                p.put(pt::USER_FUNCS, if rng.chance(30) { 0 } else { table });
+                let key = start + 0x180;
+                let ctrl = start + 0x1c0;
+                p.set(ctrl + 0xc, offs);
+                p.fill(key, 0x20, &mut rng);
+                p.set(
+                    key + 4,
+                    if rng.chance(10) {
+                        u32::MAX
+                    } else {
+                        rng.below(4)
+                    },
+                );
+                p.set(key + 8, rng.below(0x10) * 4);
+                p.set(
+                    key + 0xc,
+                    if rng.chance(10) {
+                        u32::MAX
+                    } else {
+                        rng.below(4)
+                    },
+                );
+                p.set(key + 0x10, rng.below(0x10) * 4);
+                p.check("pppDrawHookDraw", 0x0075_7370, &[head, key, ctrl], |m| {
+                    pt::ppp_draw_hook(m, head, key, ctrl, &mut call_original);
+                    None
+                });
+                if !p.snapshot() || round > 0 {
+                    p.put(ppp::bridge::STOP, u32::from(rng.chance(10)));
+                }
+                p.check("pppPointAp", 0x0075_73c0, &[head, key, ctrl], |m| {
+                    pt::ppp_point_ap(m, head, key, ctrl, &mut call_original);
+                    None
+                });
+                let v = rng.next() & 0xffff;
+                p.check("pppBornShort", 0x0075_8270, &[head, key, v], |m| {
+                    pt::ppp_born_short(m, head, key, v as u16, &mut call_original);
+                    None
+                });
+                let vert = start + 0x1e0;
+                p.fill(vert, 8, &mut rng);
+                for i in (0x10..0x50).step_by(4) {
+                    let x = finite(&mut rng);
+                    p.set(head + i, x);
+                }
+                for (name, sym, relative) in [
+                    ("pppBornVertex", 0x0075_7770, false),
+                    ("pppBornVertexRel", 0x0075_7b50, true),
+                ] {
+                    p.check(name, sym, &[head, key, vert], |m| {
+                        pt::ppp_born_vertex(m, head, key, vert, relative, &mut call_original);
+                        None
+                    });
+                }
+                // pppPointRAp: two rand-program draws for the direction
+                p.set(log, 0u32);
+                for at in [4u32, 8] {
+                    let v = finite(&mut rng);
+                    p.set(key + at, v);
+                }
+                p.set(key + 0x18, rng.below(0x10) * 4);
+                p.set(key + 0x1c, rng.below(4) as u8);
+                if !p.snapshot() || round > 0 {
+                    p.put(rand::bridge::R, rng.next());
+                    p.put(rand::bridge::SEEDED, u32::from(rng.chance(80)));
+                    p.put(
+                        ppp::bridge::R0,
+                        [finite(&mut rng), rng.next(), rng.next(), rng.next()],
+                    );
+                }
+                p.check("pppPointRAp", 0x0075_7490, &[head, key, ctrl], |m| {
+                    pt::ppp_point_r_ap(m, head, key, ctrl, &mut call_original, &mut srand_log(log));
+                    None
+                });
+                // pppKeHitBorn over a list of three hit nodes (key +8 the
+                // child's field again, +0xc the flag)
+                p.set(
+                    key + 4,
+                    if rng.chance(10) {
+                        u32::MAX
+                    } else {
+                        rng.below(4)
+                    },
+                );
+                p.set(key + 8, rng.below(0x10) * 4);
+                p.set(key + 0xc, u8::from(rng.chance(50)));
+                p.set(key, p.get::<u32>(head + 0xc));
+                if !p.snapshot() || round > 0 {
+                    let id = rng.pick(&[0u32, 0xcb, 0x296]);
+                    p.put(ffx_system::instance::bridge::MAGIC_ID, id);
+                }
+                let nodes = hits_list;
+                for k in 0..3u32 {
+                    let n = nodes + 0x100 * k;
+                    p.set(n, if k == 2 { 0 } else { n + 0x100 });
+                    p.set(n + 0x3e, rng.pick(&[0u16, 0x800, 0x840, 0x40]));
+                    p.set(n + 0x36, rng.below(3) as u8);
+                }
+                let a0 = p.get::<u32>(offs);
+                p.set(head + a0 + 0xa0, if rng.chance(10) { 0 } else { hits_list });
+                p.check("pppKeHitBorn", 0x0075_9d80, &[head, key, ctrl], |m| {
+                    pt::ppp_ke_hit_born(m, head, key, ctrl, &mut call_original);
+                    None
+                });
+                p.put(ppp::bridge::STOP, 0);
+            }
+
             // pppStartPart on a data block: length, loop flag, programs
             // (the records above), births (a chain of definitions)
             if round % 4 == 3 {

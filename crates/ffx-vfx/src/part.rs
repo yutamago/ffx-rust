@@ -683,4 +683,303 @@ pub mod bridge {
             mem.write(b.wrapping_add(0x14), 0x4150_0000u32);
         }
     }
+
+    /// `pppCallUsrFunc(part, table, arg)` (`0x00716710`): for each of the
+    /// part's objects, `table[k](obj, arg)` where `k` is its birth record's
+    /// index byte (`+0xe`), when that entry is set.
+    pub fn ppp_call_usr_func<M: Mem>(
+        mem: &mut M,
+        part: u32,
+        table: u32,
+        arg: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let mut o = ptr32(rd(mem, part.wrapping_add(0x30)));
+        while o != 0 {
+            let def = ptr32(rd(mem, o.wrapping_add(8)));
+            let k = u32::from(mem.read::<u8>(def.wrapping_add(0xe)));
+            let next = ptr32(rd(mem, o));
+            let f = rd(mem, table.wrapping_add(4 * k));
+            if f != 0 {
+                call(mem, f, &[o, arg]);
+            }
+            o = next;
+        }
+    }
+
+    /// Work area `i` of `obj` (`obj + offsets[i]`, the area's fields from
+    /// `+0xa0`).
+    fn area(mem: &impl Mem, obj: u32, ctrl: u32, i: u32) -> u32 {
+        let offsets = rd(mem, ctrl.wrapping_add(0xc));
+        obj.wrapping_add(rd(mem, offsets.wrapping_add(4 * i)))
+    }
+
+    /// `pppDrawHookDraw(obj, key, ctrl)` (`0x00757370`): area 0 takes the key's
+    /// `+4`, and the user function of the object's birth record (when
+    /// `g_pppUserFuncs` is set) is called as `f(obj, that)`.
+    pub fn ppp_draw_hook<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let w = area(mem, obj, ctrl, 0);
+        let def = ptr32(rd(mem, obj.wrapping_add(8)));
+        let v = rd(mem, key.wrapping_add(4));
+        mem.write(w.wrapping_add(0xa0), v);
+        let table = USER_FUNCS.get(mem);
+        if table != 0 {
+            let k = u32::from(mem.read::<u8>(def.wrapping_add(0xe)));
+            let f = rd(mem, table.wrapping_add(4 * k));
+            if f != 0 {
+                let v = rd(mem, key.wrapping_add(4));
+                call(mem, f, &[obj, v]);
+            }
+        }
+    }
+
+    /// A child object of the current part from birth record `index`
+    /// (`None` when it cannot be made; `Some(0)` for a null record, as the
+    /// originals write through it then), its parent `obj`.
+    fn born_child<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        index: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        let part = CURRENT_PART.get(mem);
+        let rec = index
+            .wrapping_mul(0x10)
+            .wrapping_add(rd(mem, part.wrapping_add(0x3c)));
+        if rec == 0 {
+            return Some(0);
+        }
+        let child = ppp_create_pobject(mem, part, rec, call);
+        if child == 0 {
+            return None;
+        }
+        mem.write(child.wrapping_add(4), ptr32(obj));
+        Some(child)
+    }
+
+    /// `pppPointAp(obj, key, ctrl)` (`0x007573c0`): every `+0xc` frames
+    /// (area 1's countdown byte `+0xa1`), a child object (birth record key
+    /// `+4`, none for -1) at area 0's position (into the child's field at
+    /// key `+8`).
+    pub fn ppp_point_ap<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let a0 = area(mem, obj, ctrl, 0);
+        let a1 = area(mem, obj, ctrl, 1);
+        if STOP.get(mem) != 0 {
+            return;
+        }
+        let count = a1.wrapping_add(0xa1);
+        if mem.read::<u8>(count) == 0 {
+            let index = rd(mem, key.wrapping_add(4));
+            if index == u32::MAX {
+                return;
+            }
+            let Some(child) = born_child(mem, obj, index, call) else {
+                return;
+            };
+            let at = rd(mem, key.wrapping_add(8)).wrapping_add(child);
+            for i in 0..3 {
+                let v = rd(mem, a0.wrapping_add(0xa0 + 4 * i));
+                mem.write(at.wrapping_add(0xa0 + 4 * i), v);
+            }
+            let n: u8 = mem.read(key.wrapping_add(0xc));
+            mem.write(count, n);
+        }
+        let n = mem.read::<u8>(count).wrapping_sub(1);
+        mem.write(count, n);
+    }
+
+    /// `pppBornShort(obj, key, v)` (`0x00758270`): a child object (birth
+    /// record key `+0xc`, none for -1) whose `i16` at key `+0x10` is `v`.
+    pub fn ppp_born_short<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        v: u16,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let index = rd(mem, key.wrapping_add(0xc));
+        if index == u32::MAX {
+            return;
+        }
+        let Some(child) = born_child(mem, obj, index, call) else {
+            return;
+        };
+        let at = rd(mem, key.wrapping_add(0x10))
+            .wrapping_add(0xa0)
+            .wrapping_add(child);
+        mem.write(at, v);
+    }
+
+    /// `pppBornVertex` (`0x00757770`, `relative` false) and
+    /// `pppBornVertexRel` (`0x00757b50`, true) `(obj, key, v)`: a child
+    /// object (birth record key `+0xc`, none for -1) at the vertex `v`
+    /// (three `i16`) through the object's matrix (`+0x10`), less the
+    /// world matrix's translation when `relative`, into its field at key
+    /// `+0x10`.
+    pub fn ppp_born_vertex<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        v: u32,
+        relative: bool,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::Reg;
+        let index = rd(mem, key.wrapping_add(0xc));
+        if index == u32::MAX {
+            return;
+        }
+        let Some(child) = born_child(mem, obj, index, call) else {
+            return;
+        };
+        let p: [f32; 4] = [
+            f32::from(mem.read::<i16>(v)),
+            f32::from(mem.read::<i16>(v.wrapping_add(2))),
+            f32::from(mem.read::<i16>(v.wrapping_add(4))),
+            1.0,
+        ];
+        let m = obj.wrapping_add(0x10);
+        let q: [f32; 3] = std::array::from_fn(|c| {
+            #[allow(clippy::cast_possible_truncation)] // 0..3
+            let c = c as u32;
+            let col = [0, 4, 8, 12].map(|r| mem.read::<f32>(m.wrapping_add(4 * (r + c))));
+            ffx_system::math::mul4x4_component(c, p, col)
+        });
+        let at = rd(mem, key.wrapping_add(0x10))
+            .wrapping_add(0xa0)
+            .wrapping_add(child);
+        let t = crate::mat::bridge::WORLD.ptr(mem).addr.wrapping_add(0x30);
+        for i in 0..3u32 {
+            let x = if relative {
+                Reg::load(q[i as usize])
+                    .sub_m32(mem.read(t.wrapping_add(4 * i)))
+                    .store()
+            } else {
+                q[i as usize]
+            };
+            mem.write(at.wrapping_add(4 * i), x);
+        }
+    }
+
+    /// `pppPointRAp(obj, key, ctrl)` (`0x00757490`): every `+0x1c` frames
+    /// (area 1's countdown byte `+0xa1`), a child object (birth record key
+    /// `+0xc`) on a random direction: two rand-program draws `d` give the
+    /// angles `ftol(d 32768 - 16384)` and `ftol(2 d 32768)` (sine table
+    /// steps); the child's position (its field at key `+0x10`) is area 0's
+    /// plus the direction times key `+4`, its velocity (field at key
+    /// `+0x18`) the same direction times key `+8`.
+    pub fn ppp_point_r_ap<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        srand: &mut impl FnMut(&mut M, u32),
+    ) {
+        use crate::x87::{add, mul};
+        let a1 = area(mem, obj, ctrl, 1);
+        if STOP.get(mem) != 0 {
+            return;
+        }
+        let count = a1.wrapping_add(0xa1);
+        if mem.read::<u8>(count) == 0 {
+            let a0 = area(mem, obj, ctrl, 0);
+            let index = rd(mem, key.wrapping_add(0xc));
+            if index == u32::MAX {
+                return;
+            }
+            let Some(child) = born_child(mem, obj, index, call) else {
+                return;
+            };
+            let sin = |mem: &M, i: u32| -> f32 {
+                let t = crate::ppp::bridge::SIN.ptr(mem);
+                f32::from_bits(t.at(i).get(mem))
+            };
+            let idx = |a: u32| (a.cast_signed() >> 4).cast_unsigned() & 0xfff;
+            let f = |mem: &M, at: u32| mem.read::<f32>(key.wrapping_add(at));
+            let d = crate::rand::bridge::draw(mem, srand);
+            let a = ffx_bridge::x87::ftol(mem, f64::from(d) * 32768.0 - 16384.0);
+            let r = f(mem, 4);
+            let c4 = mul(sin(mem, idx(a.wrapping_add(0x4000))), r);
+            let s5 = mul(sin(mem, idx(a)), r);
+            let d = crate::rand::bridge::draw(mem, srand);
+            let b = ffx_bridge::x87::ftol(mem, f64::from(d) * 32768.0 * 2.0);
+            let v6 = mul(sin(mem, idx(b)), c4);
+            let v4 = mul(c4, sin(mem, idx(b.wrapping_add(0x4000))));
+            let pos = rd(mem, key.wrapping_add(0x10)).wrapping_add(child);
+            let vel = rd(mem, key.wrapping_add(0x18)).wrapping_add(child);
+            let dir = [v6, s5, v4];
+            for i in 0..3u32 {
+                let p0: f32 = mem.read(a0.wrapping_add(0xa0 + 4 * i));
+                mem.write(pos.wrapping_add(0xa0 + 4 * i), add(p0, dir[i as usize]));
+            }
+            let k = f(mem, 8);
+            for i in 0..3u32 {
+                mem.write(vel.wrapping_add(0xa0 + 4 * i), mul(dir[i as usize], k));
+            }
+            let n: u8 = mem.read(key.wrapping_add(0x1c));
+            mem.write(count, n);
+        }
+        let n = mem.read::<u8>(count).wrapping_sub(1);
+        mem.write(count, n);
+    }
+
+    /// `pppKeHitBorn(obj, key, ctrl)` (`0x00759d80`): with its key, area 1's
+    /// flag bit 1 (`+0xa0`) from the key's byte `+0xc`. Unless stopped or
+    /// the key's birth record (`+4`) is -1: for each hit node of the list
+    /// area 0 points at (`+0xa0`, linked by the first word) with flag 0x800
+    /// (`u16` at `+0x3e`; without the bit, only those also without 0x40,
+    /// and nothing during spell 0xcb), a child object at the node's point
+    /// (`+0x40 + 0x30 [+0x36]`, into its field at key `+8`).
+    pub fn ppp_ke_hit_born<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let a1 = area(mem, obj, ctrl, 1).wrapping_add(0xa0);
+        if rd(mem, obj.wrapping_add(0xc)) == rd(mem, key) {
+            let b: u8 = mem.read(a1);
+            let on = mem.read::<u8>(key.wrapping_add(0xc)) != 0;
+            mem.write(a1, if on { b | 2 } else { b & 0xfd });
+        }
+        let index = rd(mem, key.wrapping_add(4));
+        if STOP.get(mem) != 0 || index == u32::MAX {
+            return;
+        }
+        let a0 = area(mem, obj, ctrl, 0);
+        let mut node = ptr32(rd(mem, a0.wrapping_add(0xa0)));
+        let all = mem.read::<u8>(a1) & 2 != 0;
+        while node != 0 {
+            let flags = mem.read::<u16>(node.wrapping_add(0x3e));
+            if flags & 0x800 != 0 && (all || flags & 0x40 == 0) {
+                if !all && ffx_system::instance::bridge::magic_id(mem) == 0xcb {
+                    return;
+                }
+                let Some(child) = born_child(mem, obj, index, call) else {
+                    return;
+                };
+                let n = u32::from(mem.read::<u8>(node.wrapping_add(0x36)));
+                let dst = rd(mem, key.wrapping_add(8))
+                    .wrapping_add(0xa0)
+                    .wrapping_add(child);
+                let src = node.wrapping_add(0x40).wrapping_add(0x30 * n);
+                ffx_field::vu0::bridge::ke_vu0_copy_vec_xyz(mem, dst, src);
+            }
+            node = ptr32(rd(mem, node));
+        }
+    }
 }
