@@ -731,50 +731,11 @@ pub mod bridge {
         put_f(mem, chr + 0x70, -h);
     }
 
-    /// `Chr_AddVector3(dst, a, b)` (`0x00824ce0`): x, y, z sums through
-    /// the x87.
-    pub fn chr_add_vector3(mem: &mut impl Mem, dst: u32, a: u32, b: u32) {
-        for k in 0..3 {
-            let v = x87::Reg::load(f(mem, a + 4 * k))
-                .add_m32(f(mem, b + 4 * k))
-                .store();
-            put_f(mem, dst + 4 * k, v);
-        }
-    }
-
-    /// `Chr_CopyVector4(dst, src)` (`0x00824d10`): four floats through the
-    /// x87 (signalling NaNs come out quiet).
-    pub fn chr_copy_vector4(mem: &mut impl Mem, dst: u32, src: u32) {
-        for k in 0..4 {
-            let v = x87::load(f(mem, src + 4 * k));
-            put_f(mem, dst + 4 * k, v);
-        }
-    }
-
     /// `Ch_WindSetEnable(chr, on)` (`0x00824cc0`): bit 1 of
     /// [`l::FLAGS2`] from bit 0 of `on`.
     pub fn ch_wind_set_enable(mem: &mut impl Mem, chr: u32, on: u32) {
         let w: u32 = mem.read(chr + l::FLAGS2);
         mem.write(chr + l::FLAGS2, w ^ ((on.wrapping_mul(2) ^ w) & 2));
-    }
-
-    /// `Chr_DotVector3(a, b, out)` (`0x00824d40`): `(a.y·b.y + a.x·b.x) +
-    /// a.z·b.z` into `out`.
-    pub fn chr_dot_vector3(mem: &mut impl Mem, a: u32, b: u32, out: u32) {
-        let p = |k: u32| x87::Reg::load(f(mem, a + 4 * k)).mul_m32(f(mem, b + 4 * k));
-        let v = p(1).add_st(p(0)).add_st(p(2)).store();
-        put_f(mem, out, v);
-    }
-
-    /// `Chr_ScaleVector3(dst, v, s)` (`0x00824d70`).
-    pub fn chr_scale_vector3(mem: &mut impl Mem, dst: u32, v: u32, s: f32) {
-        let k = x87::Reg::load(s);
-        let x = x87::Reg::load(f(mem, v)).mul_st(k).store();
-        put_f(mem, dst, x);
-        let y = x87::Reg::load(f(mem, v + 4)).mul_st(k).store();
-        put_f(mem, dst + 4, y);
-        let z = k.mul_m32(f(mem, v + 8)).store();
-        put_f(mem, dst + 8, z);
     }
 
     /// `Ch_WindSet(chr, a, b, c)` (`0x00824c90`): the wind (`+0x80c` = a,
@@ -784,17 +745,6 @@ pub mod bridge {
         put_f(mem, chr + 0x808, x87::load(c));
         put_f(mem, chr + 0x80c, x87::load(a));
         ch_wind_set_enable(mem, chr, 1);
-    }
-
-    /// `Chr_SubVector3(dst, a, b)` (`0x00824da0`): x, y, z differences
-    /// through the x87.
-    pub fn chr_sub_vector3(mem: &mut impl Mem, dst: u32, a: u32, b: u32) {
-        for k in 0..3 {
-            let v = x87::Reg::load(f(mem, a + 4 * k))
-                .sub_m32(f(mem, b + 4 * k))
-                .store();
-            put_f(mem, dst + 4 * k, v);
-        }
     }
 
     /// `Ch_DrawSetSituation(chr, v)` (`0x00830160`): the byte at `+0x187`,

@@ -3848,49 +3848,6 @@ fn elements_and_vectors_match_the_original_on(t: &mut Twin) {
     use ffx_chara::matrix::bridge as mx;
     use ffx_chara::texanim::bridge as ta;
     let mut rng = Xorshift(0x5eed_0406);
-    let vs = random_block(t, &mut rng, 0x40);
-    for i in 0..300 {
-        for k in 0..12u32 {
-            let v = if i % 2 == 0 {
-                any_float(&mut rng)
-            } else {
-                small_float(&mut rng)
-            };
-            t.put_u32(vs + 4 * k, v);
-        }
-        let (a, b, d) = (vs, vs + 0x10, vs + 0x20);
-        t.check(
-            &format!("Chr_AddVector3 {i}"),
-            0x0082_4ce0,
-            &[d, a, b],
-            |m| void!(c::chr_add_vector3(m, d, a, b)),
-        );
-        t.check(&format!("Chr_CopyVector4 {i}"), 0x0082_4d10, &[d, a], |m| {
-            void!(c::chr_copy_vector4(m, d, a))
-        });
-    }
-    for &bits in FLOATS
-        .iter()
-        // large values never leave the loop (x - 2pi rounds back to x)
-        .filter(|&&b| fl(b).abs() < 1.0e6 || fl(b).is_nan())
-    {
-        for x in [
-            bits,
-            small_float(&mut rng),
-            (fl(small_float(&mut rng)) * 9.0).to_bits(),
-        ] {
-            t.check(
-                &format!("Chr_WrapAngleDiscard {x:#x}"),
-                0x0083_a010,
-                &[x],
-                |_| {
-                    void!({
-                        let _ = ffx_chara::chr::wrap_angle(fl(x));
-                    })
-                },
-            );
-        }
-    }
     let chrs = live_characters(t, &mut rng);
     let out = t.alloc(64);
     let v = t.alloc(16);
@@ -3986,35 +3943,6 @@ fn wind_vectors_and_remapping_match_the_original_on(t: &mut Twin) {
     use ffx_chara::attach::bridge as at;
     use ffx_chara::texanim::bridge as ta;
     let mut rng = Xorshift(0x5eed_0407);
-    let vs = random_block(t, &mut rng, 0x40);
-    for i in 0..400 {
-        for k in 0..8u32 {
-            let v = if i % 2 == 0 {
-                any_float(&mut rng)
-            } else {
-                small_float(&mut rng)
-            };
-            t.put_u32(vs + 4 * k, v);
-        }
-        let s = if i % 3 == 0 {
-            any_float(&mut rng)
-        } else {
-            small_float(&mut rng)
-        };
-        let (a, b, d) = (vs, vs + 0x10, vs + 0x20);
-        t.check(
-            &format!("Chr_DotVector3 {i}"),
-            0x0082_4d40,
-            &[a, b, d],
-            |m| void!(c::chr_dot_vector3(m, a, b, d)),
-        );
-        t.check(
-            &format!("Chr_ScaleVector3 {i}"),
-            0x0082_4d70,
-            &[d, a, s],
-            |m| void!(c::chr_scale_vector3(m, d, a, fl(s))),
-        );
-    }
     let chrs = live_characters(t, &mut rng);
     let out = t.alloc(64);
     let off = t.alloc(16);
@@ -4098,26 +4026,6 @@ fn history_and_block_moves_match_the_original() {
 fn history_and_block_moves_match_the_original_on(t: &mut Twin) {
     use ffx_chara::mapping::bridge as mb;
     let mut rng = Xorshift(0x5eed_0408);
-    let vs = random_block(t, &mut rng, 0x30);
-    for i in 0..200 {
-        for k in 0..6u32 {
-            t.put_u32(
-                vs + 4 * k,
-                if i % 2 == 0 {
-                    any_float(&mut rng)
-                } else {
-                    small_float(&mut rng)
-                },
-            );
-        }
-        let (a, b, d) = (vs, vs + 0xc, vs + 0x18);
-        t.check(
-            &format!("Chr_SubVector3 {i}"),
-            0x0082_4da0,
-            &[d, a, b],
-            |m| void!(c::chr_sub_vector3(m, d, a, b)),
-        );
-    }
     // a model block's archive moves: every active character on the block
     // is mapped again
     let blk_base = t.a.rebase(h::CHR_BLK.sym);

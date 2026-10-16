@@ -3055,11 +3055,11 @@
 0x00824c70 function Ch_WindGetEnable         # Switch name (0x710041ee30, 3 insns): chr +0x198 bit 1
 0x00824c90 function Ch_WindSet               # Switch name (0x710041ee40, after Ch_WindGetEnable): (chr, a, b, c) +0x80c = a, +0x804 = b, +0x808 = c, then Ch_WindSetEnable(chr, 1)
 0x00824cc0 function Ch_WindSetEnable         # Switch name (0x710041ee10, 5 insns, before Ch_WindGetEnable): chr +0x198 bit 1 = on bit 0
-0x00824ce0 function Chr_AddVector3           # ours: (dst, a, b) x, y, z sums through the x87
-0x00824d10 function Chr_CopyVector4          # ours: (dst, src) four floats through fld/fstp
-0x00824d40 function Chr_DotVector3           # ours: (a, b, out) *out = (a.y*b.y + a.x*b.x) + a.z*b.z
-0x00824d70 function Chr_ScaleVector3         # ours: (dst, v, s) x, y, z times s
-0x00824da0 function Chr_SubVector3           # ours: (dst, a, b) x, y, z differences through the x87
+0x00824ce0 function Sg_VecAdd                 # (out, a, b): three floats out = a + b; helper of the cloth triangle tests (0x00822890...), inlined on Switch
+0x00824d10 function Sg_VecCopy4               # (out, v): four floats copied through the x87
+0x00824d40 function Sg_VecDot                 # (a, b, &out): (a.y b.y + a.x b.x) + a.z b.z; InsideTriangle and the cloth tests
+0x00824d70 function Sg_VecScale               # (out, v, s): three floats out = v * s
+0x00824da0 function Sg_VecSub                 # (out, a, b): three floats out = a - b
 0x00824dd0 function Sg_GlobalGetWind          # fh switch:bsim1.00 0x710041edb0
 0x00824e10 function Sg_GlobalInitWind         # (): wind (0x012fbc44) = (0.01, 0, 0); Switch name, between Sg_GlobalGetWind and Sg_GsloadSetBase
 0x00824e30 function Sg_GlobalSetWind          # fh switch:bsim1.00 0x710041ed90
@@ -3517,7 +3517,7 @@
 0x00839e30 function Angle12_Lerp              # 12-bit angle interpolation the short way
 0x00839e80 function AngleTurn_Lerp            # the same on floats in turns
 0x00839f50 function Chr_FracStep             # ours: (a, b, n) fa = frac(a) (x - _ftol2_sse(x), +1 if < 0), fb = frac(fa - b); fa if fb == 0, else fa - fb/n if fb < 0.5, else fa + (1 - fb)/n; called by 0x008395b0
-0x0083a010 function Chr_WrapAngleDiscard     # ours: wraps its float argument into +-3.141592 like Chr_WrapAngle and drops the result (no effect but the time; loops for ever on huge values)
+0x0083a010 function Angle_Wrap_0083a010       # the same code as Angle_Wrap; a copy
 0x0083a270 function Sg_Capture                # fh v3:exact 0x0083a2f0
 0x0083a470 function Sg_CaptureEnable          # fh v3:exact 0x0083a4f0
 0x0083a4f0 function Sg_CaptureEnable_Kari     # (mode, on): with on, a capture in mode hiding the GUI; Switch name (CaptureEnable, _Kari, _KariOn in this order)
