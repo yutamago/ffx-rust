@@ -3068,3 +3068,215 @@ fn oef2_env_and_draw_flags_match_the_original() {
         }
     }
 }
+
+// ---- small helpers ----------------------------------------------------
+
+#[test]
+#[allow(clippy::cast_possible_truncation)] // small random values
+#[allow(clippy::many_single_char_names)] // a, s, ...
+fn small_helpers_match_the_original() {
+    use et::bridge as e;
+    use op::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x5a11_4e1f);
+        let a = p.alloc(0x40);
+        let s = p.alloc(0x100);
+        let unit = p.alloc(0x40);
+        let list = p.alloc(0x40);
+        for round in 0..3000u32 {
+            p.fill(a, 0x40, &mut rng);
+            for i in (0..0x40).step_by(4) {
+                let v = rng.float();
+                p.set(a + i, v);
+            }
+            let (src, dst) = (a + rng.below(4) * 4, a + 0x10 + rng.below(4) * 4);
+            p.check("VFX_Copy16From", 0x0071_0e30, &[dst, src], |m| {
+                Some(o::copy16(m, dst, src))
+            });
+            p.check("VFX_Copy16To", 0x0071_0e70, &[src, dst], |m| {
+                Some(o::copy16(m, dst, src))
+            });
+            p.check("VFX_Copy16To_0072f3c0", 0x0072_f3c0, &[src, dst], |m| {
+                Some(o::copy16(m, dst, src))
+            });
+            let sc = rng.float();
+            let v = if rng.chance(20) { dst } else { src };
+            p.check("VFX_ScaleVec3", 0x0071_0ea0, &[dst, v, sc], |m| {
+                Some(o::vfx_scale_vec3(m, dst, v, f32::from_bits(sc)))
+            });
+            // a string of random bytes
+            let len = rng.below(0x40);
+            for i in 0..len {
+                let c = (rng.next() as u8).max(1);
+                p.set(s + i, c);
+            }
+            p.set(s + len, 0u8);
+            p.check("DJB_hash", 0x0067_b7d0, &[s], |m| Some(o::djb_hash(m, s)));
+            // an id list
+            let n = rng.below(12) as u16;
+            p.set(unit + 0x34, n);
+            p.set(unit + 0x1c, list);
+            for i in 0..16 {
+                let v: u16 = if rng.chance(10) {
+                    0xffff
+                } else {
+                    rng.below(8) as u16
+                };
+                p.set(list + 2 * i, v);
+            }
+            let id = rng.below(9) | (rng.next() & 0xffff_0000);
+            p.check("opu_id_list_add", 0x0080_0d60, &[unit, id], |m| {
+                Some(o::opu_id_list_add(m, unit, id as u16))
+            });
+            // g_EtChr numbers and g_EtEff parts
+            if !p.snapshot() || round > 0 {
+                let chr = p.sym(e::CHR.sym);
+                for i in 0..e::CHRS {
+                    p.set(chr + 0x20 * i + 4, rng.below(64));
+                }
+                let eff = p.sym(e::EFF.sym);
+                for i in 0..16 {
+                    let r = eff + 0x20 * i;
+                    p.set(r + 8, rng.below(10) as u8);
+                    for j in 0..8 {
+                        p.set(r + 0x10 + j, rng.below(6) as u8);
+                    }
+                }
+            }
+            let no = rng.below(70);
+            p.check("op_et_chr_index_by_no", 0x007f_eaa0, &[no], |m| {
+                Some(e::op_et_chr_index_by_no(m, no).cast_unsigned())
+            });
+            p.set(unit + 0x14, rng.below(16) as u16);
+            p.set(unit + 0x1a, rng.next() as u16);
+            p.set(unit + 0x18, rng.below(6) as u8);
+            p.check("opu_eff_part_index", 0x0080_0da0, &[unit], |m| {
+                Some(e::opu_eff_part_index(m, unit))
+            });
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one round per helper
+#[allow(clippy::many_single_char_names, clippy::cast_possible_truncation)] // v, s, k, f; small values
+fn vu0_macros_and_tables_match_the_original() {
+    use et::bridge as e;
+    use mat::bridge as b;
+    use op::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x7a0c_0de5);
+        let v = p.alloc(0x40);
+        let dst = p.alloc(0x40);
+        let s = p.alloc(0x100);
+        let out = p.alloc(0x200);
+        let acc = p.sym(b::ACC.sym);
+        for round in 0..3000u32 {
+            for at in [v, dst, acc] {
+                for i in (0..0x10).step_by(4) {
+                    let x = rng.float();
+                    p.set(at + i, x);
+                }
+            }
+            let k = rng.float();
+            let f = f32::from_bits(k);
+            let junk = rng.next();
+            p.check("pppVu0MaddaY", 0x0072_c590, &[junk, v, junk, k], |m| {
+                b::ppp_vu0_madda(m, v, f);
+                Some(v)
+            });
+            p.check(
+                "pppVu0MaddaZ",
+                0x0072_c5f0,
+                &[junk, v, junk, junk, k],
+                |m| {
+                    b::ppp_vu0_madda(m, v, f);
+                    Some(v)
+                },
+            );
+            p.check(
+                "pppVu0MaddW",
+                0x0072_c650,
+                &[dst, v, junk, junk, junk, k],
+                |m| {
+                    b::ppp_vu0_madd(m, dst, v, f);
+                    Some(dst)
+                },
+            );
+            let d = if rng.chance(20) { v + 4 } else { dst };
+            p.check("pppVu0MulX", 0x0072_c6a0, &[d, v, k], |m| {
+                b::ppp_vu0_mul(m, d, v, f);
+                Some(d)
+            });
+            p.check("pppVu0MulX_007500d0", 0x0075_00d0, &[d, v, k], |m| {
+                b::ppp_vu0_mul(m, d, v, f);
+                Some(v)
+            });
+            p.check("pppVu0AddY", 0x0074_b630, &[dst, v, junk, k], |m| {
+                b::ppp_vu0_add_x(m, dst, v, f);
+                Some(dst)
+            });
+            p.check("pppVu0AddZ", 0x0074_b650, &[dst, v, junk, junk, k], |m| {
+                b::ppp_vu0_add_x(m, dst, v, f);
+                Some(dst)
+            });
+            // strings and word copies
+            let len = rng.below(0x40);
+            for i in 0..len {
+                let c = (rng.next() as u8).max(1);
+                p.set(s + i, c);
+            }
+            p.set(s + len, 0u8);
+            let str_at = if rng.chance(10) { 0 } else { s };
+            p.check("op_strlen", 0x007e_2250, &[str_at], |m| {
+                Some(o::op_strlen(m, str_at))
+            });
+            let n = rng.below(12);
+            p.check("lmemcpy", 0x0076_b0f0, &[out, s, n], |m| {
+                Some(o::lmemcpy(m, out, s, n))
+            });
+            // setters
+            let x = rng.next();
+            p.check("pppFpSetDisp", 0x0072_9050, &[x], |m| {
+                Some(fp::bridge::ppp_fp_set_disp(m, x))
+            });
+            p.check("setVfxShapeEnlargeBufferFactor", 0x0071_7610, &[x], |m| {
+                Some(o::set_vfx_shape_enlarge_buffer_factor(m, x))
+            });
+            p.check("resetVfxShapeEnlargeBufferFactor", 0x0071_7600, &[], |m| {
+                o::set_vfx_shape_enlarge_buffer_factor(m, 1);
+                None
+            });
+            // effect records and character handles
+            if round % 20 == 1 {
+                let eff = p.sym(e::EFF.sym);
+                for i in 0..e::EFFS {
+                    p.set(eff + 0x20 * i, rng.below(8));
+                }
+                let chr = p.sym(e::CHR.sym);
+                let handles = p.sym(e::CHR_HANDLES.sym);
+                for i in 0..e::CHRS {
+                    let h = if rng.chance(50) {
+                        0
+                    } else {
+                        0x100 + rng.below(300)
+                    };
+                    p.set(chr + 0x20 * i, h);
+                    p.set(chr + 0x20 * i + 0xe, rng.below(0xf0) as u16);
+                    p.set(handles + 4 * i, 0x100 + rng.below(300));
+                }
+            }
+            let id = rng.pick(&[u32::MAX, 0, 1, 2, 3, 9]);
+            p.check("opu_eff_free_by_id", 0x007f_e920, &[id], |m| {
+                e::opu_eff_free_by_id(m, id);
+                None
+            });
+            if round % 20 == 1 {
+                // 240 x 240 compares in the emulator: now and then
+                p.check("opus_chr_index_map", 0x007f_e450, &[out], |m| {
+                    Some(e::opus_chr_index_map(m, out))
+                });
+            }
+        }
+    }
+}

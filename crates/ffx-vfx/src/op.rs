@@ -454,4 +454,106 @@ pub mod bridge {
         let data = mem.read::<u32>(oef.wrapping_add(0x3c)).wrapping_add(oef);
         op_oef2_set(mem, oef, data);
     }
+
+    /// Four words from `src` to `dst`; returns the last (the `eax` of
+    /// `VFX_Copy16From` (`0x00710e30`, `(dst, src)`), `VFX_Copy16To`
+    /// (`0x00710e70`, `(src, dst)`) and its twin `0x0072f3c0`).
+    pub fn copy16(mem: &mut impl Mem, dst: u32, src: u32) -> u32 {
+        let mut w = 0;
+        for i in 0..4 {
+            w = mem.read::<u32>(src.wrapping_add(4 * i));
+            mem.write(dst.wrapping_add(4 * i), w);
+        }
+        w
+    }
+
+    /// `VFX_ScaleVec3(dst, v, s)` (`0x00710ea0`): `v`'s x, y, z times `s`
+    /// (z with `v`'s element as the memory operand); returns `dst`.
+    pub fn vfx_scale_vec3(mem: &mut impl Mem, dst: u32, v: u32, scale: f32) -> u32 {
+        use ffx_bridge::x87::Reg;
+        let k = Reg::load(scale);
+        for i in 0..2 {
+            let e: f32 = mem.read(v.wrapping_add(4 * i));
+            mem.write(dst.wrapping_add(4 * i), (Reg::load(e) * k).store());
+        }
+        let z: f32 = mem.read(v.wrapping_add(8));
+        mem.write(dst.wrapping_add(8), k.mul_m32(z).store());
+        dst
+    }
+
+    /// `DJB_hash(s)` (`0x0067b7d0`): Bernstein's hash (`h * 33 + c`, from
+    /// 5381, the characters signed) of a C string, the top bit cleared.
+    pub fn djb_hash(mem: &impl Mem, s: u32) -> u32 {
+        let mut h: u32 = 0x1505;
+        let mut p = s;
+        loop {
+            let c: i8 = mem.read(p);
+            if c == 0 {
+                return h & 0x7fff_ffff;
+            }
+            h = h
+                .wrapping_mul(33)
+                .wrapping_add(i32::from(c).cast_unsigned());
+            p = p.wrapping_add(1);
+        }
+    }
+
+    /// `opu_id_list_add(unit, id)` (`0x00800d60`): adds `id` to the unit's
+    /// `i16` list (`+0x1c`, `u16` length `+0x34`, the last place kept)
+    /// unless it is there before the first negative entry; it goes there
+    /// (or at the end). Returns the index.
+    pub fn opu_id_list_add(mem: &mut impl Mem, unit: u32, id: u16) -> u32 {
+        let n = u32::from(mem.read::<u16>(unit.wrapping_add(0x34)).wrapping_sub(1));
+        let list = mem.read::<u32>(unit.wrapping_add(0x1c));
+        let mut i = 0;
+        while i < n {
+            let v: u16 = mem.read(list.wrapping_add(2 * i));
+            if v.cast_signed() < 0 {
+                break;
+            }
+            if v == id {
+                return i;
+            }
+            i += 1;
+        }
+        mem.write(list.wrapping_add(2 * i), id);
+        i
+    }
+
+    /// `op_strlen(s)` (`0x007e2250`): the length of a C string, 0 for
+    /// null.
+    pub fn op_strlen(mem: &impl Mem, s: u32) -> u32 {
+        if s == 0 {
+            return 0;
+        }
+        let mut n = 0;
+        while mem.read::<u8>(s.wrapping_add(n)) != 0 {
+            n += 1;
+        }
+        n
+    }
+
+    /// `lmemcpy(dst, src, n)` (`0x0076b0f0`): `n` words forward; returns
+    /// the end of `dst`.
+    pub fn lmemcpy(mem: &mut impl Mem, dst: u32, src: u32, n: u32) -> u32 {
+        let mut d = dst;
+        for i in 0..n {
+            let w: u32 = mem.read(src.wrapping_add(4 * i));
+            mem.write(d, w);
+            d = d.wrapping_add(4);
+        }
+        d
+    }
+
+    /// `g_VfxShapeEnlargeBufferFactor` (`0x00c3a4d8`): multiplies the
+    /// shape draws' vertex counts.
+    pub const SHAPE_ENLARGE: Global<u32> = Global::new(0x00c3_a4d8);
+
+    /// `setVfxShapeEnlargeBufferFactor(n)` (`0x00717610`): returns `n`
+    /// (left in `eax`); `resetVfxShapeEnlargeBufferFactor()`
+    /// (`0x00717600`) is `n` = 1 (and leaves `eax` alone).
+    pub fn set_vfx_shape_enlarge_buffer_factor(mem: &mut impl Mem, n: u32) -> u32 {
+        SHAPE_ENLARGE.set(mem, n);
+        n
+    }
 }

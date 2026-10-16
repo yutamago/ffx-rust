@@ -433,4 +433,62 @@ pub mod bridge {
         scale_by_part(mem, obj.wrapping_add(0x50), obj.wrapping_add(0x10));
         view_position(mem, obj);
     }
+
+    /// The broadcast factor of a VU0 macro helper: the stack argument at
+    /// `ebp + slot` (the shim passes it).
+    fn madd(v: f32, s: f32, acc: f32) -> f32 {
+        (Reg::load(v) * Reg::load(s) + Reg::load(acc)).store()
+    }
+
+    /// `pppVu0MaddaY` (`0x0072c590`) and `pppVu0MaddaZ` (`0x0072c5f0`)
+    /// `(_, v, ..s)`: the accumulator `+= v * s` (`vmadda` with a broadcast
+    /// factor; `w` with `v`'s element as the memory operand).
+    pub fn ppp_vu0_madda(mem: &mut impl Mem, v: u32, s: f32) {
+        let acc = ACC.ptr(mem).addr;
+        for i in 0..4 {
+            let x: f32 = mem.read(at(v, i));
+            let a: f32 = mem.read(at(acc, i));
+            let r = if i == 3 {
+                Reg::load(s).mul_m32(x).add_m32(a).store()
+            } else {
+                madd(x, s, a)
+            };
+            mem.write(at(acc, i), r);
+        }
+    }
+
+    /// `pppVu0MaddW(dst, v, ..s)` (`0x0072c650`): `dst = acc + v * s`
+    /// (`vmadd`).
+    pub fn ppp_vu0_madd(mem: &mut impl Mem, dst: u32, v: u32, s: f32) {
+        let acc = ACC.ptr(mem).addr;
+        for i in 0..4 {
+            let x: f32 = mem.read(at(v, i));
+            let a: f32 = mem.read(at(acc, i));
+            let r = if i == 3 {
+                Reg::load(s).mul_m32(x).add_m32(a).store()
+            } else {
+                madd(x, s, a)
+            };
+            mem.write(at(dst, i), r);
+        }
+    }
+
+    /// `pppVu0MulX(dst, v, s)` (`0x0072c6a0`) and `0x007500d0`: `dst = v *
+    /// s`, element by element (`w` with `v`'s as the memory operand).
+    pub fn ppp_vu0_mul(mem: &mut impl Mem, dst: u32, v: u32, s: f32) {
+        let k = Reg::load(s);
+        for i in 0..3 {
+            let x: f32 = mem.read(at(v, i));
+            mem.write(at(dst, i), (Reg::load(x) * k).store());
+        }
+        let w: f32 = mem.read(at(v, 3));
+        mem.write(at(dst, 3), k.mul_m32(w).store());
+    }
+
+    /// `pppVu0AddY` (`0x0074b630`) and `pppVu0AddZ` (`0x0074b650`)
+    /// `(dst, v, ..s)`: `dst.x = v.x + s`.
+    pub fn ppp_vu0_add_x(mem: &mut impl Mem, dst: u32, v: u32, s: f32) {
+        let x = Reg::load(f(mem, v)).add_m32(s).store();
+        mem.write(dst, x);
+    }
 }

@@ -258,4 +258,90 @@ pub mod bridge {
             mem.write(p, if on == 0 { f | 2 } else { f & 0xfd });
         }
     }
+
+    /// `op_et_chr_index_by_no(no)` (`0x007feaa0`): the first of the 208
+    /// `g_EtChr` records with character number `no` (`+4`), else -1.
+    pub fn op_et_chr_index_by_no(mem: &impl Mem, no: u32) -> i32 {
+        (0..0xd0)
+            .find(|&i| mem.read::<u32>(chr(mem, i) + 4) == no)
+            .map_or(-1, u32::cast_signed)
+    }
+
+    /// `opu_eff_part_index(unit)` (`0x00800da0`): for the `g_EtEff` record
+    /// the unit names (`+0x14`), its part (`+0x1a & 7`) when below the
+    /// record's count (`+8`); else the index of the unit's byte `+0x18` in
+    /// the record's list (`+0x10`), or the count with its low byte
+    /// cleared (0 for none).
+    pub fn opu_eff_part_index(mem: &impl Mem, unit: u32) -> u32 {
+        let rec = EFF
+            .ptr(mem)
+            .at(u32::from(mem.read::<u16>(unit.wrapping_add(0x14))))
+            .addr;
+        let part = u32::from(mem.read::<u16>(unit.wrapping_add(0x1a)) & 7);
+        let count = u32::from(mem.read::<u8>(rec + 8));
+        if part < count {
+            return part;
+        }
+        let want: u8 = mem.read(unit.wrapping_add(0x18));
+        for i in 0..count {
+            if mem.read::<u8>(rec + 0x10 + i) == want {
+                return i;
+            }
+        }
+        count & 0xffff_ff00
+    }
+
+    /// `opu_eff_free_by_id(id)` (`0x007fe920`): every `g_EtEff` record
+    /// with this ID (none for -1) emptied.
+    pub fn opu_eff_free_by_id(mem: &mut impl Mem, id: u32) {
+        if id == u32::MAX {
+            return;
+        }
+        for i in 0..EFFS {
+            let r = EFF.ptr(mem).at(i).addr;
+            if mem.read::<u32>(r) != id {
+                continue;
+            }
+            mem.write(r, u32::MAX);
+            mem.write(r + 4, 0u32);
+            mem.write(r + 8, 0x101u16);
+            mem.write(r + 0xc, 0u32);
+            mem.write(r + 0x10, 0u8);
+            mem.write(r + 0x18, 0u8);
+            mem.write(r + 0x1c, 0xffu16);
+        }
+    }
+
+    /// `g_EtChrHandles`: 240 character handles (`0x012a8100`) in the order
+    /// the draw flags were laid out.
+    pub const CHR_HANDLES: Global<u32> = Global::new(0x012a_8100);
+
+    /// `opus_chr_index_map(out)` (`0x007fe450`): `out` (240 `u16`, all
+    /// 0xffff first) maps each character's draw flag index to its place in
+    /// `g_EtChrHandles`; returns how many moved.
+    pub fn opus_chr_index_map(mem: &mut impl Mem, out: u32) -> u32 {
+        for i in 0..0x78 {
+            mem.write(out.wrapping_add(4 * i), u32::MAX);
+        }
+        let mut moved = 0u32;
+        for r in 0..CHRS {
+            let rec = chr(mem, r);
+            let h: u32 = mem.read(rec);
+            if h == 0 {
+                continue;
+            }
+            let Some(u) =
+                (0..0xf0).find(|&u| mem.read::<u32>(CHR_HANDLES.ptr(mem).addr + 4 * u) == h)
+            else {
+                continue;
+            };
+            let idx = u32::from(mem.read::<u16>(rec + 0xe));
+            if idx != u {
+                moved += 1;
+            }
+            #[allow(clippy::cast_possible_truncation)] // below 0xf0
+            mem.write(out.wrapping_add(2 * idx), u as u16);
+        }
+        moved
+    }
 }

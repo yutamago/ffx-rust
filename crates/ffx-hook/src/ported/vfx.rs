@@ -1399,4 +1399,109 @@ ported! {
     op_et_chr_show @ 0x007f_f090 => extern "C" fn op_et_chr_show(on: u32) {
         et::bridge::op_et_chr_show(&mut mem(), on);
     }
+
+    // ---- small helpers ----
+    /// `VFX_Copy16From(dst, src)`: returns the last word.
+    VFX_Copy16From @ 0x0071_0e30 => extern "C" fn vfx_copy16_from(dst: u32, src: u32) -> u32 {
+        op::bridge::copy16(&mut mem(), dst, src)
+    }
+    /// `VFX_Copy16To(src, dst)`: returns the last word.
+    VFX_Copy16To @ 0x0071_0e70 => extern "C" fn vfx_copy16_to(src: u32, dst: u32) -> u32 {
+        op::bridge::copy16(&mut mem(), dst, src)
+    }
+    /// `VFX_Copy16To_0072f3c0(src, dst)`: the same code.
+    VFX_Copy16To_0072f3c0 @ 0x0072_f3c0 => extern "C" fn vfx_copy16_to_0072f3c0(src: u32, dst: u32) -> u32 {
+        op::bridge::copy16(&mut mem(), dst, src)
+    }
+    /// `VFX_ScaleVec3(dst, v, s)`: returns `dst`.
+    VFX_ScaleVec3 @ 0x0071_0ea0 => extern "C" fn vfx_scale_vec3(dst: u32, v: u32, s: f32) -> u32 {
+        op::bridge::vfx_scale_vec3(&mut mem(), dst, v, s)
+    }
+    /// `DJB_hash(s)`.
+    DJB_hash @ 0x0067_b7d0 => extern "C" fn djb_hash(s: u32) -> u32 {
+        op::bridge::djb_hash(&mem(), s)
+    }
+    /// `opu_id_list_add(unit, id)`: returns the index.
+    opu_id_list_add @ 0x0080_0d60 => extern "C" fn opu_id_list_add(unit: u32, id: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // a short argument
+        op::bridge::opu_id_list_add(&mut mem(), unit, id as u16)
+    }
+    /// `op_et_chr_index_by_no(no)`.
+    op_et_chr_index_by_no @ 0x007f_eaa0 => extern "C" fn op_et_chr_index_by_no(no: u32) -> i32 {
+        et::bridge::op_et_chr_index_by_no(&mem(), no)
+    }
+    /// `opu_eff_part_index(unit)`.
+    opu_eff_part_index @ 0x0080_0da0 => extern "C" fn opu_eff_part_index(unit: u32) -> u32 {
+        et::bridge::opu_eff_part_index(&mem(), unit)
+    }
+
+    // ---- VU0 macro helpers ----
+    /// `pppVu0MaddaY(_, v, _, s)`: returns `v`.
+    pppVu0MaddaY @ 0x0072_c590 => extern "C" fn ppp_vu0_madda_y(a: u32, v: u32, b: u32, s: f32) -> u32 {
+        let _ = (a, b);
+        mat::bridge::ppp_vu0_madda(&mut mem(), v, s);
+        v
+    }
+    /// `pppVu0MaddaZ(_, v, _, _, s)`: returns `v`.
+    pppVu0MaddaZ @ 0x0072_c5f0 => extern "C" fn ppp_vu0_madda_z(a: u32, v: u32, b: u32, c: u32, s: f32) -> u32 {
+        let _ = (a, b, c);
+        mat::bridge::ppp_vu0_madda(&mut mem(), v, s);
+        v
+    }
+    /// `pppVu0MaddW(dst, v, _, _, _, s)`: returns `dst`.
+    pppVu0MaddW @ 0x0072_c650 => extern "C" fn ppp_vu0_madd_w(dst: u32, v: u32, a: u32, b: u32, c: u32, s: f32) -> u32 {
+        let _ = (a, b, c);
+        mat::bridge::ppp_vu0_madd(&mut mem(), dst, v, s);
+        dst
+    }
+    /// `pppVu0MulX(dst, v, s)`: returns `dst`.
+    pppVu0MulX @ 0x0072_c6a0 => extern "C" fn ppp_vu0_mul_x(dst: u32, v: u32, s: f32) -> u32 {
+        mat::bridge::ppp_vu0_mul(&mut mem(), dst, v, s);
+        dst
+    }
+    /// `pppVu0MulX_007500d0(dst, v, s)`: returns `v`.
+    pppVu0MulX_007500d0 @ 0x0075_00d0 => extern "C" fn ppp_vu0_mul_x_007500d0(dst: u32, v: u32, s: f32) -> u32 {
+        mat::bridge::ppp_vu0_mul(&mut mem(), dst, v, s);
+        v
+    }
+    /// `pppVu0AddY(dst, v, _, s)`: returns `dst`.
+    pppVu0AddY @ 0x0074_b630 => extern "C" fn ppp_vu0_add_y(dst: u32, v: u32, a: u32, s: f32) -> u32 {
+        let _ = a;
+        mat::bridge::ppp_vu0_add_x(&mut mem(), dst, v, s);
+        dst
+    }
+    /// `pppVu0AddZ(dst, v, _, _, s)`: returns `dst`.
+    pppVu0AddZ @ 0x0074_b650 => extern "C" fn ppp_vu0_add_z(dst: u32, v: u32, a: u32, b: u32, s: f32) -> u32 {
+        let _ = (a, b);
+        mat::bridge::ppp_vu0_add_x(&mut mem(), dst, v, s);
+        dst
+    }
+    /// `op_strlen(s)`.
+    op_strlen @ 0x007e_2250 => extern "C" fn op_strlen(s: u32) -> u32 {
+        op::bridge::op_strlen(&mem(), s)
+    }
+    /// `lmemcpy(dst, src, n)`: returns the end of `dst`.
+    lmemcpy @ 0x0076_b0f0 => extern "C" fn lmemcpy(dst: u32, src: u32, n: u32) -> u32 {
+        op::bridge::lmemcpy(&mut mem(), dst, src, n)
+    }
+    /// `pppFpSetDisp(on)`.
+    pppFpSetDisp @ 0x0072_9050 => extern "C" fn ppp_fp_set_disp(on: u32) -> u32 {
+        fp::bridge::ppp_fp_set_disp(&mut mem(), on)
+    }
+    /// `setVfxShapeEnlargeBufferFactor(n)`.
+    setVfxShapeEnlargeBufferFactor @ 0x0071_7610 => extern "C" fn set_vfx_shape_enlarge_buffer_factor(n: u32) -> u32 {
+        op::bridge::set_vfx_shape_enlarge_buffer_factor(&mut mem(), n)
+    }
+    /// `resetVfxShapeEnlargeBufferFactor()`.
+    resetVfxShapeEnlargeBufferFactor @ 0x0071_7600 => extern "C" fn reset_vfx_shape_enlarge_buffer_factor() {
+        op::bridge::set_vfx_shape_enlarge_buffer_factor(&mut mem(), 1);
+    }
+    /// `opu_eff_free_by_id(id)`.
+    opu_eff_free_by_id @ 0x007f_e920 => extern "C" fn opu_eff_free_by_id(id: u32) {
+        et::bridge::opu_eff_free_by_id(&mut mem(), id);
+    }
+    /// `opus_chr_index_map(out)`: how many moved.
+    opus_chr_index_map @ 0x007f_e450 => extern "C" fn opus_chr_index_map(out: u32) -> u32 {
+        et::bridge::opus_chr_index_map(&mut mem(), out)
+    }
 }
