@@ -10,16 +10,21 @@
 
 use ffx_bridge::x87;
 
+use super::atel_get_real_var_adrs;
 use super::native::{DEBUG_MODE, Native};
 use super::native_map::pop_st0;
 use super::run::NativeHost;
 use super::{
     atel_get_actor_id, atel_get_basic_work, atel_get_camera_work_adrs,
-    atel_get_event_map_camera_id, atel_pop_stack_integer,
+    atel_get_event_map_camera_id, atel_pop_stack_float, atel_pop_stack_integer,
 };
 
 fn pop(h: &mut impl NativeHost, s: u32) -> u32 {
     atel_pop_stack_integer(h, s)
+}
+
+fn popf(h: &mut impl NativeHost, s: u32) -> u32 {
+    atel_pop_stack_float(h, s)
 }
 
 fn call(h: &mut impl NativeHost, sym: u32, args: &[u32]) -> u32 {
@@ -343,6 +348,179 @@ pub fn native_cam_6064_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) 
     }
 }
 
+/// `g_c494c8` (`0x00c494c8`): counts `Native_CamMoveFinish` calls in the
+/// battle with magic `0x92`; at 2 it sets [`BTL_RANDOM_LATCH`] and stops.
+pub const CAM_FINISH_COUNT: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x00c4_94c8);
+/// `g_012fb7e0` (`0x012fb7e0`): set by that count, read (and cleared) by
+/// `Native_BtlRandom`.
+pub const BTL_RANDOM_LATCH: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x012f_b7e0);
+/// `g_01136b5c` (`0x01136b5c`): `Native_CamWait`'s debug frame count.
+pub const CAM_WAIT_FRAMES: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x0113_6b5c);
+
+/// `MagicFile_GetMagicId()` (`0x009da3b0`).
+const GET_MAGIC_ID: u32 = 0x009d_a3b0;
+
+/// `Native_CamMoveFinish` (`0x007b9b40`, `0x6016`): the eye's transition
+/// applied now (`0x007bed60(cam, 1)`); with magic `0x92` the second call
+/// sets [`BTL_RANDOM_LATCH`] (the count then -1); the handle.
+pub fn native_cam_move_finish<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    let c = cam(h, w);
+    call(h, 0x007b_ed60, &[c, 1]);
+    if call(h, GET_MAGIC_ID, &[]) == 0x92 {
+        let n = CAM_FINISH_COUNT.get(h);
+        if n.cast_signed() >= 0 {
+            let n = n.wrapping_add(1);
+            CAM_FINISH_COUNT.set(h, n);
+            if n == 2 {
+                BTL_RANDOM_LATCH.set(h, 1);
+                CAM_FINISH_COUNT.set(h, u32::MAX);
+            }
+        }
+    }
+    c
+}
+
+/// `Native_CamWait` (`0x007b9be0`, `0x601a`, poll): 5 once
+/// `Cam_IsMoving(cam, 1)` is 0, else 0; in debug mode counts the frames
+/// (printing a start line first and the count when done).
+pub fn native_cam_wait<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
+    let c = cam(h, w);
+    let r = if call(h, 0x007b_dd20, &[c, 1]) == 0 {
+        5
+    } else {
+        0
+    };
+    if DEBUG_MODE.get(h) != 1 {
+        return r;
+    }
+    let p = PRINTF_IAT.get(h);
+    if CAM_WAIT_FRAMES.get(h) == 0 {
+        let f = h.rebase(0x00b5_50c8);
+        h.call(p, &[f]);
+        if DEBUG_MODE.get(h) != 1 {
+            return r;
+        }
+    }
+    let n = CAM_WAIT_FRAMES.get(h).wrapping_add(1);
+    CAM_WAIT_FRAMES.set(h, n);
+    if r == 5 {
+        let f = h.rebase(0x00b5_50dc);
+        h.call(p, &[f, n]);
+        CAM_WAIT_FRAMES.set(h, 0);
+    }
+    r
+}
+
+/// A camera path: lists 0 and 1 are the battle spline lists (`0x01136b68 +
+/// i * 0x210`, their count in `g_BtlSplines[i]` copied in when at least 3,
+/// else none); any other index is a script variable's address.
+fn path<H: NativeHost>(h: &mut H, w: u32, i: u32) -> u32 {
+    if i <= 1 {
+        let n = h.read::<u32>(BTL_SPLINES.ptr(h).addr + i * 4);
+        let p = h.rebase(0x0113_6b68) + i * 0x210;
+        if n.cast_signed() < 3 {
+            return 0;
+        }
+        h.write(p, n);
+        p
+    } else {
+        atel_get_real_var_adrs(h, w, i)
+    }
+}
+
+/// `Native_Cam_6059` (`0x007ba020`): `(path, a)`: the focus along the
+/// path, `0x007bfe70(cam, 0, path, 0.0, a)`; 0.
+pub fn native_cam_6059<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let a = pop(h, s);
+    let i = pop(h, s);
+    let p = path(h, w, i);
+    if p != 0 {
+        let c = cam(h, w);
+        call(h, 0x007b_fe70, &[c, 0, p, x87::store(0.0), a]);
+    }
+    0
+}
+
+/// `Native_Cam_605a` (`0x007ba100`): `(path, t, a)`: as `0x6059` from `t`.
+pub fn native_cam_605a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let a = pop(h, s);
+    let f = popf(h, s);
+    let i = pop(h, s);
+    let p = path(h, w, i);
+    if p != 0 {
+        let c = cam(h, w);
+        call(h, 0x007b_fe70, &[c, 0, p, f, a]);
+    }
+    0
+}
+
+/// `Native_Cam_605b` (`0x007ba210`): `(path, a)`: the eye along the path,
+/// `0x007bfd90(cam, 1, path, a)`; 0.
+pub fn native_cam_605b<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let a = pop(h, s);
+    let i = pop(h, s);
+    let p = path(h, w, i);
+    if p != 0 {
+        let c = cam(h, w);
+        call(h, 0x007b_fd90, &[c, 1, p, a]);
+    }
+    0
+}
+
+/// Degrees as `AtelPopStackFloat` leaves them, to radians in `f32`.
+fn radians<H: NativeHost>(h: &mut H, s: u32) -> u32 {
+    let d = pop_st0(h, s);
+    let pi = h.read::<f64>(h.rebase(0x00b9_2288));
+    let k = h.read::<f64>(h.rebase(0x00b4_8378));
+    x87::store(x87::div(x87::mul(d, pi), k))
+}
+
+/// `Native_Cam_601c` (`0x007b8330`): `(var, degrees)`:
+/// `0x007bf520(cam, 1, 1, &var, radians)`; the handle.
+pub fn native_cam_601c<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let c = cam(h, w);
+    let t = radians(h, s);
+    let i = pop(h, s);
+    let p = atel_get_real_var_adrs(h, w, i);
+    call(h, 0x007b_f520, &[c, 1, 1, p, t]);
+    c
+}
+
+fn cam_601d<H: NativeHost>(h: &mut H, w: u32, s: u32, k: u32) -> u32 {
+    let c = cam(h, w);
+    let x = popf(h, s);
+    let y = popf(h, s);
+    let t = radians(h, s);
+    let i = pop(h, s);
+    let p = atel_get_real_var_adrs(h, w, i);
+    call(h, 0x007b_f600, &[c, 1, k, p, t, y, x]);
+    c
+}
+
+/// `Native_Cam_601d` (`0x007b8470`): `(var, degrees, y, x)`:
+/// `0x007bf600(cam, 1, 1, &var, radians, y, x)`; the handle.
+pub fn native_cam_601d<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    cam_601d(h, w, s, 1)
+}
+
+/// `Native_Cam_601f` (`0x007b8530`): as `0x601d` with 0 for the third.
+pub fn native_cam_601f<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    cam_601d(h, w, s, 0)
+}
+
+/// `Native_BtlRandom` (`0x007b89a0`, `0x6080`): `(b)`: `0x007988f0(14 +
+/// (b & 1))`; with magic `0x92` and [`BTL_RANDOM_LATCH`] set, the latch
+/// cleared and 2 for an odd draw, 0 for an even one.
+pub fn native_btl_random<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let b = pop(h, s) & 1;
+    if call(h, GET_MAGIC_ID, &[]) == 0x92 && BTL_RANDOM_LATCH.get(h) != 0 {
+        BTL_RANDOM_LATCH.set(h, 0);
+        let r = call(h, 0x0079_88f0, &[b + 0xe]);
+        return if r.cast_signed() % 2 != 0 { 2 } else { 0 };
+    }
+    call(h, 0x0079_88f0, &[b + 0xe])
+}
+
 /// The Rust version of a camera handler, if there is one.
 #[must_use]
 pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
@@ -353,6 +531,9 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x007b_8170 => native_cam_6035,
         0x007b_8210 => native_cam_focus_cut,
         0x007b_8270 => native_cam_focus_wait,
+        0x007b_8330 => native_cam_601c,
+        0x007b_8470 => native_cam_601d,
+        0x007b_8530 => native_cam_601f,
         0x007b_8660 => native_cam_6043,
         0x007b_86f0 => native_cam_603f,
         0x007b_8710 => native_cam_eye_orbit_scaled,
@@ -361,6 +542,7 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x007b_8770 => native_cam_focus_orbit,
         0x007b_87b0 => native_cam_604d,
         0x007b_8840 => native_cam_607d,
+        0x007b_89a0 => native_btl_random,
         0x007b_8a10 => native_cam_6087,
         0x007b_8a70 => native_cam_6088,
         0x007b_8e80 => native_cam_605c,
@@ -396,6 +578,8 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x007b_9aa0 => native_cam_6064,
         0x007b_9ac0 => native_cam_6019,
         0x007b_9b20 => native_cam_6064_poll,
+        0x007b_9b40 => native_cam_move_finish,
+        0x007b_9be0 => native_cam_wait,
         0x007b_9d00 => native_cam_ref_set_pos,
         0x007b_9d20 => native_cam_6046,
         0x007b_9d40 => native_cam_6021,
@@ -405,8 +589,11 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x007b_9eb0 => native_cam_604a,
         0x007b_9f40 => native_cam_path_add_focus,
         0x007b_9fe0 => native_cam_ref_set_target,
+        0x007b_a020 => native_cam_6059,
         0x007b_a0e0 => native_cam_6028,
+        0x007b_a100 => native_cam_605a,
         0x007b_a1d0 => native_cam_ref_add_line_area,
+        0x007b_a210 => native_cam_605b,
         0x007b_a2d0 => native_cam_ref_add_circle_area,
         0x007b_a2f0 => native_cam_ref_clear_areas,
         _ => return super::native_msg::find(sym),
@@ -414,13 +601,16 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
 }
 
 /// Every handler [`find`] has, with whether it returns a float.
-pub const PORTED: [(u32, bool); 62] = [
+pub const PORTED: [(u32, bool); 71] = [
     (0x007b_7f70, false),
     (0x007b_8050, false),
     (0x007b_8130, false),
     (0x007b_8170, false),
     (0x007b_8210, false),
     (0x007b_8270, false),
+    (0x007b_8330, false),
+    (0x007b_8470, false),
+    (0x007b_8530, false),
     (0x007b_8660, false),
     (0x007b_86f0, false),
     (0x007b_8710, false),
@@ -429,6 +619,7 @@ pub const PORTED: [(u32, bool); 62] = [
     (0x007b_8770, false),
     (0x007b_87b0, false),
     (0x007b_8840, false),
+    (0x007b_89a0, false),
     (0x007b_8a10, false),
     (0x007b_8a70, false),
     (0x007b_8e80, false),
@@ -464,6 +655,8 @@ pub const PORTED: [(u32, bool); 62] = [
     (0x007b_9aa0, false),
     (0x007b_9ac0, false),
     (0x007b_9b20, false),
+    (0x007b_9b40, false),
+    (0x007b_9be0, false),
     (0x007b_9d00, false),
     (0x007b_9d20, false),
     (0x007b_9d40, false),
@@ -473,8 +666,11 @@ pub const PORTED: [(u32, bool); 62] = [
     (0x007b_9eb0, false),
     (0x007b_9f40, false),
     (0x007b_9fe0, false),
+    (0x007b_a020, false),
     (0x007b_a0e0, false),
+    (0x007b_a100, false),
     (0x007b_a1d0, false),
+    (0x007b_a210, false),
     (0x007b_a2d0, false),
     (0x007b_a2f0, false),
 ];
