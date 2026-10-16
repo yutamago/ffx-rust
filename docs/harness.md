@@ -119,6 +119,22 @@ game state (`docs/rewrite-plan.md`):
   cargo run --release -p ffx-harness --example replay_diff -- /mnt/c/…/orig.trace /mnt/c/…/rust.trace
   ```
 
+Loading takes a varying number of frames (the asset loader runs on its own
+thread; see "Determinism" in `docs/rewrite-plan.md`), so scripts wait for
+game state where it matters (`waitfor <range> <hex> [mask] [frames]`:
+advances frame by frame until the bytes match; a battle is under way when
+`0x0112a8e0` is 1), and `tools/replay-compare.py` compares two runs by
+their events: each trace range as its sequence of distinct values, and the
+call logs (`FFX_HARNESS_CALL_LOG`, written by Rust replacements) per
+stream. `tools/replays/battle-attack.txt` gives the same events on the
+original and with the Rust random numbers and kernel lookups:
+
+```bash
+cargo run --release -p ffx-harness --example replay -- tools/replays/battle-attack.txt 'C:\…\orig.trace' original
+cargo run --release -p ffx-harness --example replay -- tools/replays/battle-attack.txt 'C:\…\rust.trace'
+tools/replay-compare.py /mnt/c/…/orig.trace /mnt/c/…/rust.trace
+```
+
 `fpucw` answers the game thread's x87 control word: `0x027f` (53-bit
 precision, round to nearest, all exceptions masked).
 

@@ -1,17 +1,18 @@
 # Battle: from the first manual save, start the first battle field's first
-# formation (cdsp00, the salvage ship's), then attack three times. Ranges:
-# both global seeds (0x00c42200), the 68 generators (0x01135ee0), the first
-# 8 actors (*0x011334d4, 0xf90 bytes each) and the party records.
+# formation (cdsp00, the salvage ship's), wait for the battle proper (phase
+# byte 0x0112a8e0 = 1, after loading 4..9, the intro 34 and 11..20), then
+# attack twice. Ranges: the HP (+0x5d0)
+# of the first 8 actors (*0x011334d4, 0xf90 bytes each); the generators are
+# compared through the call log (tools/replay-compare.py).
 load 1
 lockstep on
 wait 10
-trace 0x00c42200:8 0x01135ee0:0x110 *0x011334d4+0:0x7c80 0x0113205c:0xa68
 battle 3 0 0
-wait 400
-press circle 4 40
-press circle 4 300
-press circle 4 40
-press circle 4 300
-press circle 4 40
-press circle 4 300
-wait 200
+waitfor 0x0112a8e0:1 01 ff 4000
+trace *0x011334d4+0x5d0:4 *0x011334d4+0x1560:4 *0x011334d4+0x24f0:4 *0x011334d4+0x3480:4 *0x011334d4+0x4410:4 *0x011334d4+0x53a0:4 *0x011334d4+0x6330:4 *0x011334d4+0x72c0:4
+wait 60
+press circle 4 30
+press circle 4 400
+press circle 4 30
+press circle 4 400
+wait 100
