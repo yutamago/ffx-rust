@@ -4,12 +4,19 @@
 //! Layouts as these functions use them:
 //!
 //! - **Window:** `+0x00` next window (the open list, front first, head at
-//!   `g_GuWindowList`), `+0x08` parent, `+0x0c`/`+0x0e` y/x (`i16`),
-//!   `+0x10`/`+0x12` ?width/height, `+0x14`/`+0x16` the mouse y/x when it
-//!   opened, `+0x18` width (`i16`, 0 when it opens), `+0x1a`, `+0x1c`–`+0x22`
-//!   a copy of `+0x0c`–`+0x12`, `+0x7c` message callback, `+0x86` client
-//!   height (`i16`), `+0x88` flags (bit 1 cleared and bit 3 set on opening),
-//!   `+0x90` control count (`i32`), `+0x94` controls, `+0x98` user argument.
+//!   `g_GuWindowList`), `+0x08` parent, `+0x0c`/`+0x0e` x/y (`i16`),
+//!   `+0x10`/`+0x12` width/height, then two more copies of the rectangle at
+//!   `+0x14` and `+0x1c` (`Gu_WindowOpen` puts the mouse in the first
+//!   copy's position and zeroes its size), `+0x7c` message callback,
+//!   `+0x80`/`+0x82` left/top border, `+0x84`/`+0x86` client width/height,
+//!   `+0x88` flags (bit 1 cleared and bit 3 set on opening), `+0x90` control
+//!   count (`i32`), `+0x94` controls, `+0x98` user argument.
+//!
+//!   x comes first: `Gu_PacketBeginTag` scales only `+0x16` (the copy of
+//!   `+0x0e`) by the vertical scale, and `Gu_MouseInRect` and
+//!   `Gu_DrawRectStrip` pair `+0x0c` with the width. So `0x01325240` is the
+//!   mouse x, and Fahrenheit's (`BSim`) names `Gu_WindowGetX` (`+0x0e`),
+//!   `Gu_MouseGetWindowX` and `Gu_MouseGetWindowY` have x and y swapped.
 //! - **Control:** `0x44` bytes: `+0x2e` id (`u16`), `+0x40` flags
 //!   ([`HIDE`], [`DISABLE`], [`TOGGLE`], [`TOGGLE_VALUE`]).
 //! - **Selector:** `+0x02` selected (`i16`), `+0x04` count (`i16`), `+0x08`
@@ -113,13 +120,38 @@ pub mod bridge {
     pub const MOUSE_CAPTURE: Global<[u32; 2]> = Global::new(0x0130_3754);
     /// Whether the GUI is hidden (`Gu_Hide`).
     pub const HIDDEN: Global<u32> = Global::new(0x0130_375c);
-    /// The mouse y.
-    pub const MOUSE_Y: Global<i32> = Global::new(0x0132_5240);
     /// The mouse x.
-    pub const MOUSE_X: Global<i32> = Global::new(0x0132_5244);
+    pub const MOUSE_X: Global<i32> = Global::new(0x0132_5240);
+    /// The mouse y.
+    pub const MOUSE_Y: Global<i32> = Global::new(0x0132_5244);
 
     fn at(p: u32, o: u32) -> u32 {
         p.wrapping_add(o)
+    }
+
+    /// The text carriage-return column (`Gu_PrintSetCR`).
+    pub const PRINT_CR: Global<u32> = Global::new(0x0130_372c);
+    /// Whether the mouse is enabled (`Gu_MouseSetEnable`).
+    pub const MOUSE_ENABLE: Global<u32> = Global::new(0x0130_3760);
+
+    /// `Gu_WindowGetHScale(window)` (`0x0084af20`): the `i16` scale `+0x8e`
+    /// (`Gu_WindowCheckMouse` passes it to `Gu_SetHScale`).
+    pub fn gu_window_get_h_scale(mem: &impl Mem, window: u32) -> i32 {
+        i32::from(mem.read::<i16>(at(window, 0x8e)))
+    }
+
+    /// `Gu_WindowSetHScale(window, scale)` (`0x0084b5b0`): the window back
+    /// (left in `eax`).
+    pub fn gu_window_set_h_scale(mem: &mut impl Mem, window: u32, scale: u16) -> u32 {
+        mem.write(at(window, 0x8e), scale);
+        window
+    }
+
+    /// `Gu_WindowSetWord30(window, v)` (`0x0084b7e0`, own name): the `u16`
+    /// `+0x30`; the window back.
+    pub fn gu_window_set_word30(mem: &mut impl Mem, window: u32, v: u16) -> u32 {
+        mem.write(at(window, 0x30), v);
+        window
     }
 
     /// `Gu_PrintSetX(x)` (`0x00848820`).
@@ -156,16 +188,18 @@ pub mod bridge {
         MOUSE_CAPTURE.set(mem, [a, b]);
     }
 
-    /// `Gu_MouseGetWindowX(window)` (`0x00849ac0`): the mouse x in the window.
+    /// `Gu_MouseGetWindowX(window)` (`0x00849ac0`): the mouse y less the
+    /// window's y (`+0x0e`; the name is Fahrenheit's `BSim` guess).
     pub fn gu_mouse_get_window_x(mem: &impl Mem, window: u32) -> i32 {
-        MOUSE_X
+        MOUSE_Y
             .get(mem)
             .wrapping_sub(i32::from(mem.read::<i16>(at(window, 0xe))))
     }
 
-    /// `Gu_MouseGetWindowY(window)` (`0x00849aa0`).
+    /// `Gu_MouseGetWindowY(window)` (`0x00849aa0`): the mouse x less the
+    /// window's x (`+0x0c`).
     pub fn gu_mouse_get_window_y(mem: &impl Mem, window: u32) -> i32 {
-        MOUSE_Y
+        MOUSE_X
             .get(mem)
             .wrapping_sub(i32::from(mem.read::<i16>(at(window, 0xc))))
     }
@@ -224,8 +258,8 @@ pub mod bridge {
         let head = WINDOW_LIST.get(mem);
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 16-bit stores
         {
-            mem.write(at(window, 0x14), MOUSE_Y.get(mem) as u16);
-            mem.write(at(window, 0x16), MOUSE_X.get(mem) as u16);
+            mem.write(at(window, 0x14), MOUSE_X.get(mem) as u16);
+            mem.write(at(window, 0x16), MOUSE_Y.get(mem) as u16);
         }
         mem.write(at(window, 0x18), 0u32);
         for o in [0xc, 0xe, 0x10, 0x12] {
@@ -267,8 +301,8 @@ pub mod bridge {
         let mut child = WINDOW_LIST.get(mem);
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 16-bit stores
         {
-            mem.write(at(window, 0x1c), MOUSE_Y.get(mem) as u16);
-            mem.write(at(window, 0x1e), MOUSE_X.get(mem) as u16);
+            mem.write(at(window, 0x1c), MOUSE_X.get(mem) as u16);
+            mem.write(at(window, 0x1e), MOUSE_Y.get(mem) as u16);
         }
         mem.write(at(window, 0x20), 0u32);
         let flags = mem.read::<u32>(at(window, 0x88));
@@ -281,14 +315,150 @@ pub mod bridge {
         }
     }
 
-    /// `Gu_WindowSetPos(window, y, x)` (`0x0084b220`): `+0x0c`/`+0x0e` and
+    /// `Gu_WindowSetPos(window, x, y)` (`0x0084b220`): `+0x0c`/`+0x0e` and
     /// their copies at `+0x14` and `+0x1c`.
-    pub fn gu_window_set_pos(mem: &mut impl Mem, window: u32, y: u16, x: u16) {
-        for o in [0xc, 0x14, 0x1c] {
-            mem.write(at(window, o), y);
+    pub fn gu_window_set_pos(mem: &mut impl Mem, window: u32, x: u16, y: u16) {
+        gu_window_set_x(mem, window, x);
+        gu_window_set_y(mem, window, y);
+    }
+
+    /// The three copies of a rectangle field 8 bytes apart, from `at`.
+    fn set3(mem: &mut impl Mem, at: u32, v: u16) {
+        for k in 0..3 {
+            mem.write(at.wrapping_add(8 * k), v);
         }
-        for o in [0xe, 0x16, 0x1e] {
-            mem.write(at(window, o), x);
+    }
+
+    /// `Gu_WindowSetX(window, x)` (`0x0084b6e0`): `+0x0c` and its copies.
+    pub fn gu_window_set_x(mem: &mut impl Mem, window: u32, x: u16) {
+        set3(mem, at(window, 0xc), x);
+    }
+
+    /// `Gu_WindowSetY(window, y)` (`0x0084b700`): `+0x0e` and its copies.
+    pub fn gu_window_set_y(mem: &mut impl Mem, window: u32, y: u16) {
+        set3(mem, at(window, 0xe), y);
+    }
+
+    /// `Gu_WindowSetW(window, w)` (`0x0084b6b0`): the width and its copies;
+    /// client width = `w − 2 × left border`.
+    pub fn gu_window_set_w(mem: &mut impl Mem, window: u32, w: u16) {
+        set3(mem, at(window, 0x10), w);
+        let bx = mem.read::<u16>(at(window, 0x80));
+        mem.write(at(window, 0x84), w.wrapping_sub(bx.wrapping_add(bx)));
+    }
+
+    /// `Gu_WindowSetH(window, h)` (`0x0084b5d0`): the height and its
+    /// copies; client height = `h − top border − 2`.
+    pub fn gu_window_set_h(mem: &mut impl Mem, window: u32, h: u16) {
+        set3(mem, at(window, 0x12), h);
+        let by = mem.read::<u16>(at(window, 0x82));
+        mem.write(at(window, 0x86), h.wrapping_sub(by).wrapping_sub(2));
+    }
+
+    /// `Gu_RectSetX`/`Y`/`W`/`H(rect, v)` (`0x008492f0`, `0x00849310`,
+    /// `0x008492d0`, `0x008492b0`): field `field` (0 x, 1 y, 2 w, 3 h) of a
+    /// three-copy rectangle like a window's.
+    pub fn gu_rect_set(mem: &mut impl Mem, rect: u32, field: u32, v: u16) {
+        set3(mem, rect.wrapping_add(2 * field), v);
+    }
+
+    /// `Gu_WindowSetFlag1(window, on)` (`0x0084b680`): flag bit 0 from
+    /// `on`'s low bit.
+    pub fn gu_window_set_flag1(mem: &mut impl Mem, window: u32, on: u32) {
+        let f = mem.read::<u32>(at(window, 0x88));
+        mem.write(at(window, 0x88), with_bits(f, 1, 0, on));
+    }
+
+    /// `Gu_WindowToggleFlag1(window)` (`0x0084b7b0`): flips bit 0; returns
+    /// it as 0 or -1.
+    pub fn gu_window_toggle_flag1(mem: &mut impl Mem, window: u32) -> i32 {
+        let f = mem.read::<u32>(at(window, 0x88)) ^ 1;
+        mem.write(at(window, 0x88), f);
+        -((f & 1).cast_signed())
+    }
+
+    /// `Gu_WindowGetFlag2(window)` (`0x0084af40`): bit 1 as 0 or -1.
+    pub fn gu_window_get_flag2(mem: &impl Mem, window: u32) -> i32 {
+        -((mem.read::<u32>(at(window, 0x88)) >> 1 & 1).cast_signed())
+    }
+
+    /// `Gu_SelectorGetSelect(selector)` (`0x00849d50`), sign-extended.
+    pub fn gu_selector_get_select(mem: &impl Mem, selector: u32) -> i32 {
+        i32::from(mem.read::<i16>(at(selector, 2)))
+    }
+
+    /// Whether the mouse is strictly inside `(x, y)`–`(x + w, y + h)`.
+    fn mouse_in(mem: &impl Mem, x: i32, y: i32, w: i32, h: i32) -> bool {
+        let (mx, my) = (MOUSE_X.get(mem), MOUSE_Y.get(mem));
+        mx > x && mx < x.wrapping_add(w) && my > y && my < y.wrapping_add(h)
+    }
+
+    /// `Gu_MouseInRect(rect, dx, dy)` (`0x00849440`): an `i16` rectangle
+    /// `{x, y, w, h}` moved by `(dx, dy)`.
+    pub fn gu_mouse_in_rect(mem: &impl Mem, rect: u32, dx: i32, dy: i32) -> bool {
+        let f = |o: u32| i32::from(mem.read::<i16>(rect.wrapping_add(o)));
+        mouse_in(
+            mem,
+            f(0).wrapping_add(dx),
+            f(2).wrapping_add(dy),
+            f(4),
+            f(6),
+        )
+    }
+
+    /// `Gu_MouseInClientRect(window, dx, dy, w, h)` (`0x00849b00`): a
+    /// rectangle in the window's client area.
+    pub fn gu_mouse_in_client_rect(
+        mem: &impl Mem,
+        window: u32,
+        dx: i32,
+        dy: i32,
+        w: i32,
+        h: i32,
+    ) -> bool {
+        let field = |o: u32| i32::from(mem.read::<i16>(at(window, o)));
+        let x = field(0xc).wrapping_add(dx).wrapping_add(field(0x80));
+        let y = field(0xe).wrapping_add(dy).wrapping_add(field(0x82));
+        mouse_in(mem, x, y, w, h)
+    }
+
+    /// `Gu_DrawStart(buffer)` (`0x00847b00`): a GIF tag for one A+D
+    /// register at `buffer + 0x10` (the first quadword is left for its
+    /// DMA tag), the packet and its data both there, two quadwords used,
+    /// then `TEST_1` = (1, 1, 0, 0, 0, 0, 1, 2).
+    pub fn gu_draw_start(mem: &mut impl Mem, buffer: u32) {
+        mem.write(at(buffer, 0x10), [1u32, 0x1000_0000, 0xe]);
+        PACKET_DATA.set(mem, buffer);
+        PACKET.set(mem, buffer);
+        mem.write(at(buffer, 0x1c), 0u32);
+        PACKET_COUNT.set(mem, 2);
+        gu_set_test(mem, [1, 1, 0, 0, 0, 0, 1, 2]);
+    }
+
+    /// `Gu_DrawRectStrip(rect)` (`0x00854f60`): the outline of an `i16`
+    /// rectangle `{x, y, w, h}` as five `XYZF2` vertices, back to the start
+    /// (the rectangle read again for each, as the original does).
+    pub fn gu_draw_rect_strip(mem: &mut impl Mem, rect: u32) {
+        // per vertex: add the width?, add the height?
+        for (right, down) in [
+            (false, false),
+            (true, false),
+            (true, true),
+            (false, true),
+            (false, false),
+        ] {
+            let field = |o: u32| i32::from(mem.read::<i16>(rect.wrapping_add(o)));
+            let vx = if right {
+                field(4).wrapping_add(field(0))
+            } else {
+                field(0)
+            };
+            let vy = if down {
+                field(6).wrapping_add(field(2))
+            } else {
+                field(2)
+            };
+            gu_set_xyzf2(mem, vx, vy);
         }
     }
 
@@ -296,16 +466,8 @@ pub mod bridge {
     /// and their copies at `+0x18` and `+0x20`; the client size (`+0x84`,
     /// `+0x86`) is what the border (`+0x80`, `+0x82`) leaves, on 16 bits.
     pub fn gu_window_set_size(mem: &mut impl Mem, window: u32, w: u16, h: u16) {
-        for o in [0x10, 0x18, 0x20] {
-            mem.write(at(window, o), w);
-        }
-        let bx = mem.read::<u16>(at(window, 0x80));
-        mem.write(at(window, 0x84), w.wrapping_sub(bx.wrapping_add(bx)));
-        for o in [0x12, 0x1a, 0x22] {
-            mem.write(at(window, o), h);
-        }
-        let by = mem.read::<u16>(at(window, 0x82));
-        mem.write(at(window, 0x86), h.wrapping_sub(by).wrapping_sub(2));
+        gu_window_set_w(mem, window, w);
+        gu_window_set_h(mem, window, h);
     }
 
     /// `Gu_WindowSetFlag2(window, on)` (`0x0084b600`): flag bit 1 (the one

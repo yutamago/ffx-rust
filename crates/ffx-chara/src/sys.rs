@@ -219,6 +219,42 @@ pub mod bridge {
         #[allow(clippy::cast_possible_truncation)] // the low half
         g.set(mem, v as u16);
     }
+
+    /// `u8` icon drawing (`Ch_SetDrawIcon`).
+    pub const DRAW_ICON: Global<u8> = Global::new(0x0130_07e9);
+    /// `u8` second icon drawing (`Ch_SetDrawIcon2`).
+    pub const DRAW_ICON2: Global<u8> = Global::new(0x0130_07ea);
+    /// `u32` set by `Ch_SetAllocateErr`.
+    pub const ALLOCATE_ERR: Global<u32> = Global::new(0x012f_bd98);
+    /// `i8` switch set by `Ch_SysSetSwitch7d8` (bit 0).
+    pub const SWITCH_7D8: Global<i8> = Global::new(0x0130_07d8);
+    /// `u32` set by `Ch_SysSet7e4`.
+    pub const SYS_7E4: Global<u32> = Global::new(0x0130_07e4);
+    /// `u32` set by `Ch_SysSet6e0`.
+    pub const SYS_6E0: Global<u32> = Global::new(0x00c4_96e0);
+    /// `u32` cleared by `Ch_FunctionHistoryClear`.
+    pub const HISTORY_9E8: Global<u32> = Global::new(0x0130_09e8);
+
+    /// `Ch_SetDrawIcon(on)` (`0x00830c70`) and `Ch_SetDrawIcon2(on)`
+    /// (`0x00830c80`): bit 0.
+    pub fn set_bit0(mem: &mut impl Mem, g: Global<u8>, on: u32) {
+        #[allow(clippy::cast_possible_truncation)] // bit 0
+        g.set(mem, (on & 1) as u8);
+    }
+
+    /// `Ch_SetAllocateErr()` (`0x008285d0`).
+    pub fn ch_set_allocate_err(mem: &mut impl Mem) {
+        ALLOCATE_ERR.set(mem, 1);
+    }
+
+    /// `Ch_SysSetSwitch7d8(on)` (`0x008317b0`): bit 0; returns the old
+    /// value, sign-extended.
+    pub fn ch_sys_set_switch_7d8(mem: &mut impl Mem, on: u32) -> i32 {
+        let old = i32::from(SWITCH_7D8.get(mem));
+        #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)] // bit 0
+        SWITCH_7D8.set(mem, (on & 1) as i8);
+        old
+    }
 }
 
 #[cfg(test)]
