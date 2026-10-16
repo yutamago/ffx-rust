@@ -1022,27 +1022,43 @@
 0x00679e60 function createVsyncEmuThread      # fh v3:exact 0x0067a010
 0x00679f20 function endVsyncEmuThread         # fh v3:exact 0x0067a0d0
 0x00679f80 function VsyncEmu_Wake             # ReleaseSemaphore(vsync thread +0x1c): runs the vsync handler now instead of after the 16 ms wait
+0x00679fb0 function iFmodFinalize             # (): 0x006fa190 (deletes g_FmodManager) -> 0; Fahrenheit Switch name (a BSim lead fh-import drops as tiny), agrees with iFmodInitialize next to it
 0x00679fc0 function iFmodInitialize           # fh switch:cg2 0x7100877d48
 0x00679fe0 function iMuiscSetBgmType          # fh v3:exact 0x0067a190
 0x0067a010 function iMusicClear               # fh v3:bsim1.00 0x0067a1c0
 0x0067a030 function iMusicClearAll            # fh v3:cg2 0x67a1e0
 0x0067a040 function iMusicCrossPlay           # fh v3:bsim1.00 0x0067a1f0
 0x0067a060 function iMusicDataSend            # fh v3:bsim1.00 0x0067a210
+0x0067a090 function iMusicMultiPlay           # (id): FMOD cmd 0x21; called by SndMusicMultiStart; name by alphabetical slot (iMusicMuteSet next)
+0x0067a0b0 function iMusicMuteSet             # (a, b): FMOD cmd 0x24; SndMusicMuteSet's slot jumps here (0x008868e0)
+0x0067a0d0 function iMusicPhrasePlay          # (id, phrase): FMOD cmd 0x1b; called by SndMusicPhraseStart
+0x0067a0f0 function iMusicPitchDirect         # (a, b): FMOD cmd 0x20; SndMusicPitchDirect jumps here
+0x0067a110 function iMusicPitchTranslate      # (a, b, c): FMOD cmd 0x1f (handler 0x00707f90 -> FfxFmod stub returning 0); alphabetical slot between iMusicPitchDirect and iMusicPlayFast; Ghidra/BSim had iSfxStart, which is 0x0067a440 (cmd 0x33)
+0x0067a130 function iMusicPlayFast            # (id): FMOD cmd 0x18; SndMusicPlayFast's slot jumps here (0x00886950)
+0x0067a150 function iMusicPlayState           # (id): synchronous FMOD cmd 0x16 (Fmod_SyncCommand1); SndGetMusicPlayState jumps here
 0x0067a170 function iMusicRead                # fh v3:bsim1.00 0x0067a320
 0x0067a190 function iMusicReplayPointClear    # fh v3:bsim1.00 0x0067a340
+0x0067a1b0 function iMusicReplayPointSet      # (): FMOD cmd 0x19; SndMusicReplayPointSet's slot (0x008869f0) jumps here
+0x0067a1c0 function iMusicSetPause            # (flag): FMOD cmd 0x2f -> 0x00706a70 -> FmodMusic 0x00709000 (Event::setPaused on every loaded music); name ours by alphabetical slot
 0x0067a1e0 function iMusicStart               # fh v3:exact 0x0067a390
 0x0067a210 function iMusicStop                # fh v3:bsim1.00 0x0067a3c0
 0x0067a230 function iMusicStopAll             # fh v3:cg2 0x67a3e0
 0x0067a240 function iMusicSyncStandby         # fh v3:bsim1.00 0x0067a3f0
+0x0067a250 function iMusicTempoDirect         # (tempo): FMOD cmd 0x1e; SndMusicTempoDirect jumps here
+0x0067a270 function iMusicTempoTranslate      # (a, tempo): FMOD cmd 0x1d; SndMusicTempoTranslate jumps here
 0x0067a290 function iMusicVolumeDirect        # fh v3:exact 0x0067a440
 0x0067a2b0 function iMusicVolumeFadeOut       # fh v3:bsim1.00 0x0067a460
 0x0067a2d0 function iMusicVolumeTranslate     # fh v3:bsim1.00 0x0067a480
+0x0067a2f0 function iSfxCommand35             # (a, b, c, d): Fmod_PushCommand(0x35) directly -> 0x00706db0 -> 0x0070cc30; name ours
+0x0067a310 function iSfxCommand34             # (a, b, c): FMOD cmd 0x34 -> 0x00706dd0 -> 0x0070ccd0; name ours
+0x0067a330 function iSfxCommand41             # (): synchronous FMOD cmd 0x41 -> 0x00706e10 (a byte of FfxFmod +0x14); name ours
 0x0067a340 function iSfxIsPlaying             # fh v3:bsim1.00 0x0067a4f0
 0x0067a360 function iSfxLoadData              # fh v3:bsim1.00 0x0067a510
 0x0067a380 function iSfxPause                 # fh v3:bsim1.00 0x0067a530
 0x0067a3a0 function iSfxPlayBattleStreaming   # fh v3:bsim1.00 0x0067a550
-0x0067a3c0 function iSfxSetVolume             # fh v3:bsim1.00 0x0067a5b0
-0x0067a400 function iSfxSetPan                # fh v3:bsim1.00 0x0067a570
+0x0067a3c0 function iSfxSetPan                # (id, pan): FMOD cmd 0x3d (coalesced per id in Fmod_PushCommand); called by SqsSePanDirect 0x0081e460; was the fh BSim name iSfxSetVolume (swapped); fh: iSfxSetVolume
+0x0067a3e0 function iSfxSetPanTranslate       # (id, pan, frames): FMOD cmd 0x3e; called by SqsSePanTranslate 0x0081e480
+0x0067a400 function iSfxSetVolume             # (id, volume): FMOD cmd 0x3b (coalesced per id); called by SqsSeVolumeDirect 0x0081e820; fh: iSfxSetPan (BSim, swapped with 0x0067a3c0)
 0x0067a420 function iSfxSetVolumeTranslate    # fh v3:bsim1.00 0x0067a5d0
 0x0067a440 function iSfxStart                 # fh v3:cg2 0x67a5f0
 0x0067a460 function iSfxStop                  # fh v3:bsim1.00 0x0067a610
@@ -1050,14 +1066,19 @@
 0x0067a4a0 function iSfxStopNonBlockingSound  # fh v3:bsim1.00 0x0067a650
 0x0067a4c0 function iSfxStopNonLoopSound      # fh v3:bsim1.00 0x0067a670
 0x0067a4d0 function iSfxUnloadAllData         # fh v3:bsim1.00 0x0067a680
+0x0067a4e0 function iShoutStart               # (a, b, volume) -> 0: FMOD cmd 6; called by SndStartShoutStream; name ours by alphabetical slot (iSfxUnloadAllData..iSoundLoop)
 0x0067a570 function iSoundSetMute             # fh v3:bsim1.00 0x0067a720
 0x0067a5d0 function iSoundStageFlush          # fh v3:bsim1.00 0x0067a780
 0x0067a6a0 function iVoiceDataChange          # fh v3:exact 0x0067a850
 0x0067a6d0 function iVoicePanDirect           # fh v3:bsim1.00 0x0067a880
+0x0067a6f0 function iVoicePanTranslate        # (a, b): FMOD cmd 0xb; SndVagStreamPanTranslate's slot (0x00887980) jumps here
 0x0067a710 function iVoicePlayStatus          # fh v3:bsim1.00 0x0067a8c0
+0x0067a720 function iVoiceRead                # (id): FMOD cmd 0x10 (handler 0x00707dc0 = FfxFmod_voiceRead); called by SndStandbyStream
 0x0067a750 function iVoiceSetPaused           # fh v3:bsim1.00 0x0067a900
+0x0067a770 function iVoiceStart               # (pan, volume) -> 0: voice start signal (0x006fa6c0) then FMOD cmd 0xf; called by SndStartStream/SndStartStream2
 0x0067a7a0 function iVoiceStop                # fh v3:bsim1.00 0x0067a950
 0x0067a7b0 function iVoiceVolumeDirect        # fh v3:exact 0x0067a960
+0x0067a7d0 function iVoiceVolumeTranslate     # (frames, volume): FMOD cmd 0xd; SndVagStreamVolumeTranslate jumps here
 0x0067a8e0 function iSyncDataChange           # fh v3:bsim1.00 0x0067aa90
 0x0067a960 function iSyncInitialize           # fh v3:exact 0x0067ab10
 0x0067aa70 function getEternalCalmMgrpSize    # fh v3:bsim1.00 0x0067ac20
@@ -1404,7 +1425,16 @@
 0x006f9d50 function PhyreFIOSStreamFile_getFileSize # fh v3:exact 0x006f9e30 PhyreFIOSStreamFile::getFileSize
 0x006f9d70 function PhyreFIOS_isFileExist     # fh v3:bsim1.00 0x006f9e50 PhyreFIOS::isFileExist
 0x006f9d80 function PhyreFIOSStreamFile_seek  # fh v3:exact 0x006f9e60 PhyreFIOSStreamFile::seek
+0x006fa280 function Fmod_PushCommand0         # thiscall(mgr; cmd), ret 4: Fmod_PushCommand(cmd, 0, 0, 0, 0)
+0x006fa2a0 function Fmod_PushCommand1         # thiscall(mgr; cmd, a), ret 8: Fmod_PushCommand(cmd, a, 0, 0, 0)
+0x006fa2c0 function Fmod_PushCommand2         # thiscall(mgr; cmd, a, b), ret 0xc
+0x006fa2e0 function Fmod_PushCommand3         # thiscall(mgr; cmd, a, b, c), ret 0x10
 0x006fa300 function Fmod_PushCommand             # thiscall(mgr; cmd, a, b, c): queues an FMOD command (ring of 0x96 x 0x14 at 0x00ce8458, "Too many fmod commands at the same time!!"); dispatched through table 0x00c3a368 (0x1a music stop?, 0x27 music start, 0x28 music read, 0x33 sfx start)
+0x006fa480 function Fmod_SyncCommand0         # thiscall(mgr; cmd), ret 4: FmodManager_registCommandSync(cmd, 0, 0, 0, 0)
+0x006fa4a0 function Fmod_SyncCommand1         # thiscall(mgr; cmd, a), ret 8
+0x006fa4c0 function Fmod_SyncCommand2         # thiscall(mgr; cmd, a, b), ret 0xc
+0x006fa4e0 function Fmod_SyncCommand3         # thiscall(mgr; cmd, a, b, c), ret 0x10
+0x006fa500 function FmodManager_registCommandSync # thiscall(mgr; cmd, a, b, c, d), ret 0x14: "registCommandSync TimeOut"; cmd/args at mgr +0x30..+0x40, done +0x44, result +0x48; 0x11-0x13/0x16/0x19/0x41 run on the caller's thread, the rest wait for the FMOD thread (event +0x18/+0x1c, 2 x 5 ms); 0x3f also answers 1 for a queued 0x33 of the id
 0x006fa690 function FmodManager_signalMusicStart # fh v3:exact 0x006fa770 FmodManager::signalMusicStart
 0x006fa8b0 function SyncManager_SyncManager   # fh v3:cg2 0x6fa990 SyncManager::SyncManager
 0x006fa8d0 function SyncManager_initData      # fh v3:exact 0x006fa9b0 SyncManager::initData
@@ -1436,6 +1466,8 @@
 0x00706a00 function FfxFmod_musicVolumeFadeOut # fh switch:bsim1.00 0x710029f720 FfxFmod::musicVolumeFadeOut
 0x00706ae0 function FfxFmod_musicRead         # fh switch:bsim1.00 0x710029f820 FfxFmod::musicRead
 0x00706b50 function FfxFmod_musicSeqCheck     # fh v3:exact 0x00706c40 FfxFmod::musicSeqCheck
+0x00706b70 function FfxFmod_setMusicStartId   # thiscall(fmod; id), ret 4: FmodMusic(+0xc) +0x18 = id; name ours
+0x00706b80 function FfxFmod_setMusicStartSignal # thiscall(fmod; on), ret 4: FmodMusic(+0xc) +0x20 = on; name ours
 0x00706e20 function FfxFmod_sfxLoad           # fh switch:bsim1.00 0x710029f870 FfxFmod::sfxLoad
 0x00706e70 function FfxFmod_sfxPlayBattleStreaming # fh switch:bsim1.00 0x710029fa90 FfxFmod::sfxPlayBattleStreaming
 0x00707080 function FfxFmod_soundInit         # fh v3:exact+call.cs 0x00707170 thiscall
@@ -3363,12 +3395,22 @@
 0x0081d820 function SqsMusicDataRead          # fh v3:exact 0x0081d930
 0x0081dcd0 function SqsMusicPlay              # fh switch:bsim0.96 0x7100407bc0
 0x0081e250 function SqsReportIopSoundStatus   # fh v3:bsim1.00 0x0081e360
+0x0081e2d0 function SqsReportStandbyStatus    # (x); called by SndReportStandbyStatusDirect; alphabetical slot
 0x0081e3b0 function SndStandbyShoutStream     # fh switch:cg2 0x71008ba6a8
+0x0081e3e0 function SqsSeBlockPlaying         # (id); SndIsSepPlay for block SEs (bit 31 set); alphabetical slot before SqsSeForcePlay
+0x0081e410 function SqsSeForcePlay            # (kind, id, pan, volume); called by SndForcePlayClick; alphabetical slot
+0x0081e460 function SqsSePanDirect            # (kind, id, pan) -> iSfxSetPan (cmd 0x3d); called by SndSepPanDirect; alphabetical slot before SqsSePanTranslate; fh: SqsSeVolumeDirect (BSim; that one is 0x0081e820)
+0x0081e480 function SqsSePanTranslate         # (kind, id, pan, frames) -> iSfxSetPanTranslate; called by SndSepPanTranslate
+0x0081e4a0 function SqsSePitchDirect          # (kind, id, pitch, x); called by SndSePitchDirect
+0x0081e4c0 function SqsSePitchTranslate       # (kind, id, a, pitch, b); called by SndSePitchTranslate
 0x0081e4e0 function SqsSePlay                 # fh v3:bsim1.00 0x0081e5f0
+0x0081e530 function SqsSePlayState            # () -> 0: prints a message (stderr) on PC; SndGetSePlayState jumps here
 0x0081e5d0 function SqsSeSeparateClear        # fh v3:exact 0x0081e6e0
 0x0081e600 function SqsSeSeparateDataSend     # fh v3:exact 0x0081e710
 0x0081e750 function SqsSeSeparateMaskClear    # fh v3:exact 0x0081e860
+0x0081e7a0 function SqsSeSeparatePlaying      # (id); SndIsSepPlay for separate SEs; alphabetical slot between SqsSeSeparateMaskClear and SqsSeStop
 0x0081e7c0 function SqsSeStop                 # fh v3:exact 0x0081e8d0
+0x0081e820 function SqsSeVolumeDirect         # (kind, id, volume) -> iSfxSetVolume (cmd 0x3b); called by SndSepVolumeDirect
 0x0081e840 function SqsSeVolumeFadeOut        # fh v3:exact 0x0081e950
 0x0081e860 function SqsSeVolumeTranslate      # fh v3:bsim1.00 0x0081e970
 0x0081e900 function SqsSetCycleMode           # fh switch:bsim0.96 0x710040a8e0
@@ -3377,8 +3419,15 @@
 0x0081ec20 function SqsSetReverbPlaySwitch    # fh v3:bsim1.00 0x0081ed30
 0x0081ed40 function SqsShoutStreamingDataSend # fh v3:exact 0x0081ee50
 0x0081edf0 function SqsShoutStreamingPlayState # fh v3:exact 0x0081ef00
+0x0081ee20 function SqsShoutStreamingStart    # (a, b, volume); called by SndStartShoutStream; alphabetical slot after SqsShoutStreamingPlayState
 0x0081eeb0 function SqsSifDmaStart            # fh switch:bsim1.00 0x7100406c30
+0x0081ef40 function SqsSortCommonWave         # (list): a ret on PC; SndSortCommonWave jumps here
 0x0081ef50 function SqsSetStraightStreamAreaSize # fh switch:bsim0.93 0x710040a960
+0x0081f550 function SqsStraightStreamingDigitalModeSet # (x); called by SndSetStraightStreamingDigitalMode
+0x0081f6c0 function SqsStraightStreamingStart # SndStartStraightStream's slot (0x00887620) jumps here
+0x0081f770 function SqsStraightStreamingStop  # SndStopStraightStream's slot (0x00887770) jumps here
+0x0081f800 function SqsStraightStreamingVolumeDirect # SndSetStraightStreamVolumeDirect's slot (0x008871f0) jumps here
+0x0081f880 function SqsStraightStreamingVolumeTranslate # SndSetStraightStreamVolumeTranslate's slot (0x00887200) jumps here
 0x0081ff80 function HandleSaveDataScreen      # fh v3:cg23 0x820090
 0x008202e0 function ExportValidateInterface   # fh v3:cg2 0x8203f0
 0x00820380 function Sg_EffectRoutineEnable    # fh v3:bsim1.00+call.cs 0x00820490 cdecl
@@ -4788,6 +4837,7 @@
 0x00876390 function TkGetVibrateDefaultCurve  # (kind) -> the default curve TkGetVibrateCurve uses: 2/3 0x00c52ae8, 5 0x00c52af8, 6 0x00c52b08, else 0x00c52ad8
 0x008763e0 function TkGetVibrateCurve         # (kind, i, curve) -> u16 curve[i]; without a curve the default for kind: 2/3 0x00c52ae8, 5 0x00c52af8, 6 0x00c52b08, else 0x00c52ad8
 0x00876930 function AtelCalcSound             # fh switch:bsim1.00 0x7100478700
+0x00876950 function Snd3dFootRequest          # (req, 1, 0x100): the 3D footstep request SndKickFoot hands g_SndFoot3dCtrl +0x18 to; name ours
 0x008772e0 function AtelClearCameraMatrixFlag # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_AtelCameraMatrixFlag = -1
 0x00877330 function AtelClearSnd3dWorkAll     # fh v3:exact 0x008772b0
 0x00877420 function AtelInitCalcSound         # fh switch:bsim1.00 0x7100478a70
@@ -4826,31 +4876,63 @@
 0x00885420 function TkIsDeci2Send             # () -> i8 0x0132f580, sign-extended; Switch symbol name (BSim), in the DECI2 code beside TkCreateDECI2Header
 0x00885640 function Phyre_PRendering_PRenderInterfaceBase_GetClearMaskDescription # fh switch:bsim1.00 0x710004aa80 Phyre::PRendering::PRenderInterfaceBase::GetClearMaskDescription
 0x00885b00 function AtelSetUpSourceDebug      # fh v3:exact 0x00885a60
+0x00885d00 function SndSepKind                # (id) -> 1 for bit 31 clear (a separate SE), 0 for a block SE; inlined helper; name ours
+0x00885d10 function SndSepId                  # (id) -> id & 0x7fffffff; name ours
+0x00885d20 function SndCalcVoiceWait          # () -> frames for g_SndVoiceSectorLength (x2048, -32, /48000, x16/28, x2016/2048, x4.97, each stored f32; ftol2_sse), 0 in video mode 0 or below 0; PC build keeps the PS2 Snd functions in alphabetical order (Switch names around it)
+0x00885db0 function SndInitNowPlayMusic       # (): g_SndNowPlayMusic = -1; name ours
+0x00885dc0 function SndClearMusicClearQue     # (): count 0, first word of each of the 17 entries 0; name ours
+0x00885de0 function SndClearFootSepWork       # (unused): every footstep slot 0, kick stay 0; name ours
 0x00885e50 function SndClearFootStatus        # fh v3:bsim1.00 0x00885db0
+0x00885e80 function SndClearNowPlayMusic      # (id): g_SndNowPlayMusic = -1 if it is id; name ours
+0x00885ea0 function SndCancelMusicClear       # (id): SndExecMusicClearQue(0, id); name ours
 0x00885ec0 function SndClearWave              # fh v3:bsim1.00 0x00885e20
 0x00885ee0 function SndDataSendSync           # fh v3:bsim1.00 0x00885e40
 0x00885f10 function SndEventClearPcToActorFoot # fh v3:exact 0x00885e70
 0x00885fc0 function SndEventSetFoot3dCtrlp    # fh v3:bsim1.00 0x00885f20
 0x00885fd0 function SndEventSetPcToActorFoot  # fh v3:exact 0x00885f30
 0x00885ff0 function SndEventSetSoundEvent     # fh v3:bsim1.00 0x00885f50
+0x00886000 function SndExecMusicClearQue      # (mode, id): mode 0 cancels music id, -1 the SE id, else counts every entry down and clears/stops it at 0; then compacts; Switch name by alphabetical slot
 0x008860f0 function SndForcePlayClick         # fh switch:bsim1.00 0x710048d400
+0x00886120 function SndGetEventMask           # () -> g_SndEventMask; Switch name by alphabetical slot
+0x00886130 function SndGetFoot3dMask          # () -> g_SndFoot3dMask; Switch name by alphabetical slot
+0x00886140 function SndGetFootMaxVariation    # (kind) -> 3 (0-3, 5, 8-11, 13), 1 (4, 12), 0: the variation SndKickFoot may add; name ours
+0x00886190 function SndGetFootLastVariation   # (kind) -> 0 for the one-slot kinds (2-4, 6, 7, 10-12, 14, 15), else 3; name ours
+0x008861d0 function SndGetFootMask            # () -> g_SndFootMask; Switch name by alphabetical slot
 0x008861e0 function SndGetFootSepWork         # fh v3:exact 0x00886140
+0x008863b0 function SndGetKinuMask            # () -> g_SndKinuMask; Switch name by alphabetical slot
+0x008863c0 function SndGetMusicPlayState      # (id): jmp iMusicPlayState; Switch name by alphabetical slot
 0x008863d0 function SndGetMusicVolume         # fh v3:exact 0x00886330
 0x008863f0 function SndGetNowPlayMusic        # fh v3:bsim1.00 0x00886350
+0x00886400 function SndGetSePlayState         # (): jmp SqsSePlayState; Switch name by alphabetical slot
 0x00886410 function SndGetSepNumber           # fh v3:bsim1.00 0x00886370
+0x00886420 function SndGetSepSize             # (sep) -> sep +0xc; Switch name by alphabetical slot
+0x00886440 function SndGetSoundType           # () -> u8 g_SndSoundType; Switch name by alphabetical slot
+0x00886450 function SndGetSpuMemorySortSwitch # () -> u8 0x01330096; Switch name by alphabetical slot
 0x008864b0 function SndGetStreamState         # fh v3:exact 0x00886410
+0x008864e0 function SndGetWaveSize            # (wave) -> +4 + (+8 + 8 + +0xc * 8) * 4; Switch name by alphabetical slot
+0x00886500 function SndInitFootSepWork        # (): SndClearFootSepWork(0), 3D mask 0, the others -1, ctrl and event table 0; Switch name by alphabetical slot
+0x00886550 function SndInitWork               # (): foot work, status words, now-play, clear queue, SndSpuMemorySortSwitch(0); Switch name by alphabetical slot
+0x008865e0 function SndIopEioErrorStatus      # () -> bit 31 of SqsEeSoundErrorStatus; Switch name by alphabetical slot
 0x00886600 function TkSndIsRead               # fh switch:bsim1.00 0x710048c800
 0x00886640 function SndIsReadShoutVoiceStatus # fh v3:bsim1.00 0x008865a0
 0x00886650 function SndIsReadStatus           # fh v3:bsim1.00 0x008865b0
 0x00886660 function SndIsReadVagVoiceStatus   # fh switch:cg2 0x71008b0668
 0x00886680 function SndIsSepPlay              # fh v3:exact 0x008865e0
+0x008866b0 function SndKickFoot               # (kind, party, kick, variation): a footstep of g_SndFoot...Work (kind 0xff: sound event `variation`), via Snd3dFootRequest when the party slot is in the 3D mask; Switch name by alphabetical slot
+0x008867e0 function SndKickFootEvent          # (i) -> g_SndSoundEvent[1 + i] while i < its count, else 0; name ours
 0x00886800 function SndMusicClear             # fh v3:bsim1.00 0x00886760
 0x00886830 function SndMusicCrossStart        # fh v3:exact 0x00886790
+0x008868b0 function SndMusicMultiStart        # (id < 0x100): iMusicMultiPlay, volume 0x7f; Switch name by alphabetical slot
+0x008868f0 function SndMusicPhraseStart       # (id < 0x100, phrase): iMusicPhrasePlay, volume 0x7f; Switch name by alphabetical slot
+0x00886930 function SndMusicPitchDirect       # (pitch, b): jmp iMusicPitchDirect(pitch & 0xff, b); Switch name by alphabetical slot
+0x00886940 function SndMusicPitchTranslate    # (id, pitch, frames): jmp iMusicVolumeTranslate(id, pitch & 0xff, frames) (sic); Switch name by alphabetical slot
 0x00886960 function SndMusicRead              # (music < 0x100): waits pending requests, FMOD cmd 0x28 (FmodMusic::read) + IOP request 0x15; was Music_Load
 0x00886a00 function SndMusicStandby           # fh v3:bsim1.00 0x00886960
 0x00886a20 function SndMusicStart             # (music < 0x100): FMOD cmd 0x27 (FmodMusic start, 0x007096f0), volume 0x7f (0x00886ab0); was Music_Play
 0x00886a60 function SndMusicStop              # fh v3:bsim1.00 0x008869c0
-0x00886ab0 function Music_SetVolume              # (music, volume): volume table 0x013300e0
+0x00886a90 function SndMusicTempoDirect       # (tempo): jmp iMusicTempoDirect(tempo & 0xff); Switch name by alphabetical slot
+0x00886aa0 function SndMusicTempoTranslate    # (a, tempo): jmp iMusicTempoTranslate(a, tempo & 0xff); Switch name by alphabetical slot
+0x00886ab0 function SndMusicVolumeDirect      # (music, volume): 0 while g_SndMusicMute; iMusicVolumeDirect and the volume table 0x013300e0; Switch name by alphabetical slot; was Music_SetVolume
 0x00886af0 function SndMusicVolumeFadeOut     # (music, frames); was Music_FadeOut
 0x00886b40 function SndMusicVolumeTranslate   # fh v3:exact 0x00886aa0
 0x00886b80 function SndPlay                   # fh v3:exact 0x00886ae0
@@ -4858,33 +4940,65 @@
 0x00886be0 function SndPlayFootStatus         # fh switch:bsim1.00 0x710048cf20
 0x00886c10 function SndPopFootStatus          # fh v3:bsim1.00 0x00886b70
 0x00886c40 function SndPushFootStatus         # fh v3:bsim1.00 0x00886ba0
+0x00886c70 function SndRegistNowPlayMusic     # (id): g_SndNowPlayMusic = id (a one-entry list); name ours
 0x00886cb0 function SndRemoveFootSepWork      # fh v3:bsim1.00 0x00886c10
+0x00886d00 function SndReportStandbyStatusDirect # (x): SqsReportStandbyStatus into g_TkSndStatus and the frame status; Switch name by alphabetical slot
+0x00886d20 function SndSePitchDirect          # (id, pitch, x): SqsSePitchDirect(kind, id, pitch & 0xff, x); Switch name by alphabetical slot
+0x00886d50 function SndSePitchTranslate       # (id, a, pitch, b): SqsSePitchTranslate; Switch name by alphabetical slot
 0x00886d80 function SndSepClear               # fh v3:exact 0x00886ce0
 0x00886db0 function SndSepClearAll            # fh v3:bsim1.00 0x00886d10
 0x00886dd0 function SndSepLock                # fh v3:bsim1.00 0x00886d30
 0x00886df0 function SndSepPanDirect           # fh v3:cg2 0x886d50
+0x00886e20 function SndSepPanTranslate        # (id, pan, frames): SqsSePanTranslate; Switch name by alphabetical slot
 0x00886e50 function SndSepPlay                # (sfx, pan, volume): FMOD cmd 0x33 via 0x0081e4e0; was Sfx_Play
 0x00886e80 function SndSepPlaySimple          # (sfx): Sfx_Play(sfx, 0x3f, 0x7f); was Sfx_PlayDefault
 0x00886eb0 function SndSepStop                # fh v3:exact 0x00886e10
+0x00886ee0 function SndSepTrans               # (a, b): SqsSeSeparateDataSend(a, b, 1); Fahrenheit's Switch name (a BSim lead fh-import drops as tiny), alphabetical slot SndSepStop..SndSepTransNonblock
 0x00886f00 function SndSepTransNonblock       # fh v3:bsim1.00 0x00886e60
 0x00886f30 function SndSepTransSepOnly        # fh v3:bsim1.00 0x00886e90
 0x00886f60 function SndSepVolumeDirect        # fh v3:cg2 0x886ec0
 0x00886f90 function SndSepVolumeFadeOut       # fh v3:bsim1.00 0x00886ef0
+0x00886fc0 function SndSepVolumeFadeOut2      # (id, volume): SqsSeVolumeTranslate(kind, id, volume, 0); Switch name by alphabetical slot
 0x00886ff0 function SndSepVolumeTranslate     # fh v3:bsim1.00 0x00886f50
+0x00887020 function SndSeqIopCommandSendMain  # (): SqsIopCommandSend; a first EIO error during a CD wait switches to the HDD error mode (TkCdReadSync, TkRefreshHDDMode, set_hdd_err); Switch name by alphabetical slot
+0x00887080 function SndSetEventStatus         # (party, on): g_SndEventMask bit; Switch name by alphabetical slot
+0x008870b0 function SndSetFoot3dStatus        # (party, on): g_SndFoot3dMask bit; Switch name by alphabetical slot
 0x008870e0 function SndSetFootSep             # fh v3:exact 0x00887050
+0x00887100 function SndSetFootStatus          # (party, on): g_SndFootMask bit; Switch name by alphabetical slot
+0x00887130 function SndSetKinuStatus          # (party, on): g_SndKinuMask bit; Switch name by alphabetical slot
+0x00887160 function SndSetMusicMute           # (): g_SndMusicMute = 0; Switch name by alphabetical slot
 0x00887180 function SndSetSoundMode           # fh v3:exact 0x008870f0
+0x008871c0 function SndSetSoundType           # (t): g_SndSoundType = clamp(t, 0, 1); Switch name by alphabetical slot
+0x00887210 function SndSetStraightStreamingDigitalMode # (x): SqsStraightStreamingDigitalModeSet, status raised; Switch name by alphabetical slot
+0x00887240 function SndSetWaveData            # (list or 0 = g_SndDefaultWaves): iSfxLoadData(w, 1) for each of 16 i16 waves (-1 skipped), g_TkSndStatus = 1; Switch name by alphabetical slot
+0x00887280 function SndSortCommonWave         # (list or the default): jmp SqsSortCommonWave; Switch name by alphabetical slot
+0x008872a0 function SndSortCommonWaveWithSet  # (list): SndSortCommonWave, SndSetWaveData; Switch name by alphabetical slot
+0x008872c0 function SndSpuMemorySortSwitch    # (x): u8 0x01330096 = x; jmp SqsSetStraightStreamAreaSize; Switch name by alphabetical slot
+0x00887310 function SndSqsIopFrame            # (): SndSeqIopCommandSendMain, then this frame's status/shout/VAG words to the previous ones; name ours (slot SndSqsEeSoundSystemStatus..SndSqsIopSoundErrorStatus)
 0x00887360 function SndSqsIopSoundErrorStatus # fh v3:exact 0x008872d0
+0x008873c0 function SndSqsReportIopSoundStatus # (i) -> g_SndIopStatus[i]; Switch name by alphabetical slot
+0x008873f0 function SndSqsShoutStreamingPlayState # (): shout frame |= iVoicePlayStatus | SqsShoutStreamingPlayState(0); -> prev | frame; name ours
+0x00887420 function SndSqsVagStreamingPlayState # (): VAG frame |= iVoicePlayStatus; -> prev | frame; name ours
 0x00887450 function SndStandbyBattleWave      # fh v3:exact 0x008873c0
+0x008874d0 function SndStandbyBattleWaveBlock # (data, size < 0x30000): SndStandbyBattleWave's send, then SndSyncWaveTrans(1); Switch name by alphabetical slot
 0x00887550 function SndStandbySepWave         # fh v3:exact 0x008874c0
-0x00887570 function Voice_Prepare                # (id): 0x0067a720 (sound command 0x10), sets 0x0132ff1c = 1
+0x00887570 function SndStandbyStream          # (id): iVoiceRead(id) (FMOD cmd 0x10), status raised, g_TkSndStandbyVoice = 1; Switch name by alphabetical slot; was Voice_Prepare
 0x008875a0 function SndStartBattleStream      # fh v3:exact 0x00887510
-0x00887690 function Voice_Play                   # (a, b): sound command 0xf via 0x0067a770; clears 0x0132ff1c
+0x008875d0 function SndStartShoutStream       # (a, b, volume; 0 when voices are off): iShoutStart, SqsShoutStreamingStart, shout busy; Switch name by alphabetical slot
+0x00887630 function SndStartStream            # (): iVoiceStart(0x3f, 0x7f or 0), VAG busy; Switch name by alphabetical slot
+0x00887690 function SndStartStream2           # (pan, volume): iVoiceStart (FMOD cmd 0xf), VAG busy, g_TkSndStandbyVoice = 0; Switch name by alphabetical slot; was Voice_Play
+0x00887700 function SndStatusUpdate           # (): the VAG/shout play states into the busy words, SqsDataSendingCompleted(0) into g_SndSendingData; name ours (slot SndStatusStraightStream..SndStop)
+0x00887750 function SndStop                   # (kind, id): jmp SqsSeStop; Switch name by alphabetical slot
 0x00887760 function SndStopBattleStream       # fh v3:bsim1.00 0x008876d0
 0x00887780 function SndStopStream             # 0x00887b50(0) + 0x0067a7a0 (sound command 10); was Voice_Stop
+0x00887790 function SndStreamDVDPos           # (id) -> (group << 16) | sector in g_SndStreamTable for voice id >> 12 (three two-digit indices), -1 absent; length to g_SndVoiceSectorLength; Switch name by alphabetical slot
+0x00887870 function SndStreamPCName           # (id, buf): "ve%06d" ("vj" for languages above 6) of id >> 12, letters 0x60 + bits 6-10 and 0-4 at [8], [9], then ".vs"; Switch name by alphabetical slot
 0x00887900 function SndSyncMusicStandby       # fh v3:bsim1.00 0x00887870
 0x00887910 function SndSyncTrans              # fh v3:exact 0x00887880
 0x00887930 function SndSyncWaveTrans          # fh v3:bsim1.00 0x008878a0
+0x00887940 function SndToUpper                # (s): ASCII a-z to upper case in place; name ours (slot SndSyncWaveTrans..SndVagStreamPanDirect)
 0x00887990 function SndVagStreamVolumeDirect  # fh v3:bsim1.00 0x00887900
+0x008879b0 function SndVagStreamVolumeTranslate # (frames, volume; 0 when voices are off): jmp iVoiceVolumeTranslate; Switch name by alphabetical slot
 0x00887a90 function SsSetProjectBase          # fh v3:bsim1.00 0x00887a00
 0x00887ab0 function TkSndClearKickFlag        # fh v3:bsim1.00 0x00887a20
 0x00887ac0 function TkSndGetKickFlag          # () -> u8 g_TkSndKickFlag (TkSndClearKickFlag clears it)
@@ -9055,6 +9169,8 @@
 0x00c5273c label    g_AtelForceBattleMapId       # written by AtelSetForceBattleMapId (0x00870130)
 0x00c52740 label    g_ScriptRunMutex             # Mutex_Create's object, -1 until Script_Run's first call; held for each Script_Run
 0x00c52ad8 label    g_TkVibrateCurves         # 4 default vibration curves of 16 bytes (u16 entries), by kind (TkGetVibrateCurve)
+0x00c54db0 label    g_SndDefaultWaves         # i16[16] wave ids, -1 unused (0, 1, 0x7d5 in the image); SndSetWaveData/SndSortCommonWave default
+0x00c54dd0 label    g_SndLastFadeOutMusic     # u32, -1 in the image: SndMusicVolumeFadeOut's music; SndMusicCrossStart starts it at volume 0 when nothing plays
 0x00c54e28 label    g_PadButtonCodes          # bytes, the button codes TkFindPadButton looks up in g_PadButtonMap
 0x00c54e40 label    g_SinQuarter              # 0x2000 x u16, the first quarter of a sine wave (Math_SinTable)
 0x00c58ef8 label    g_BtlWindowControlEnable  # TOGetBtlWindowControlEnable
@@ -9114,6 +9230,7 @@
 0x00ce5176 label    g_DepthBias_Dirty         # u8: DepthBiasHooks_clearDepthBias resets the table only when set, and clears it
 0x00ce7318 label g_SortedSaveTable # 200 x 3 words, sorted by SortSaveTable_006f0fb0; name ours
 0x00ce81f4 label    g_SaveDataManager         # the instance SaveDataManager_instance returns (+4 callback result, +8 state for isBusy, +0x350 ref buffer)
+0x00ce9010 label    g_FmodManager             # FmodManager* (0x50 bytes; +8 FfxFmod, +0x10 queue mutex, +0x14 sync mutex, +0x18/+0x1c events, +0x28/+0x2c ring write/read, +0x30.. sync command); iFmodInitialize
 0x00ce901c label    g_UserHeap                # user_malloc/user_free's heap: CRITICAL_SECTION, then the allocator at +0x18 (arena size, bin min, bin max, arenas, node pool); malloc_pool_init creates it
 0x00ce9020 label g_UserHeapFirstBlock # the 16-byte block malloc_pool_init allocates to prove the heap; name ours
 0x00ce9024 label g_UserHeapArenaSize # arena size malloc_pool_init settled on (0x30000000, less 16 MiB per failed try); name ours
@@ -9513,13 +9630,43 @@
 0x01328318 label    g_AtelSnd3dWork              # 16 x 0x24 bytes; AtelClearSnd3dWorkAll (0x00877330) clears +0, +4, +0x20 (u16) of each
 0x01328558 label    g_NativeTables            # per-group native function tables
 0x0132f580 label    g_TkDeci2Send             # i8 (TkIsDeci2Send)
-0x0132ff10 label    g_TkSndVoiceFlags         # 4 words: read, VAG read, shout read voice, standby voice (g_TkSndStandbyVoice at +0xc) (TkSndIs*)
+0x0132f690 label    g_SndFootSepWork          # footstep sound tables 0x0132f690..0x0132ff10, by kind (SndGetFootSepWork): 0 f690, 1 f790, 5 f890, 8 fad0, 9 fbd0, 13 fcd0 are [16][4] u32; 2 f990, 3 f9d0, 6 fa10, 7 fa50, 4 fa90, 10 fdd0, 11 fe10, 14 fe50, 15 fe90, 12 fed0 are [16] u32
+0x0132ff10 label    g_TkSndVoiceFlags         # u32 voice read in progress; next words: shout busy (0x0132ff14), VAG stream busy (0x0132ff18), g_TkSndStandbyVoice (0x0132ff1c) (SndStartShoutStream sets ff14, SndStartStream ff18)
+0x0132ff14 label    g_TkSndShoutRead          # u32 shout stream busy (SndStartShoutStream; SndIsReadShoutVoiceStatus)
+0x0132ff18 label    g_TkSndVagRead            # u32 VAG voice stream busy (SndStartStream; SndIsReadVagVoiceStatus)
 0x0132ff1c label    g_TkSndStandbyVoice       # TkSndSetStandbyVoice
+0x0132ff20 label    g_SndSendingData          # u32 SqsDataSendingCompleted result (SndDataSendSync)
 0x0132ff24 label    g_TkSndStatus             # TkSndReportStatus returns whether it is nonzero
+0x0132ff28 label    g_SndVoiceSectorLength    # u32 set by SndStreamDVDPos, read by SndCalcVoiceWait
+0x0132ff2c label    g_SndFoot3dMask           # u32 party bits; +4 the copy SndPushFootStatus keeps
+0x0132ff34 label    g_SndFootMask             # u32 party bits; +4 pushed copy
+0x0132ff3c label    g_SndKinuMask             # u32 party bits (cloth rustle, kind 4); +4 pushed copy
+0x0132ff44 label    g_SndEventMask            # u32 party bits (kind 0xff sound events); +4 pushed copy
 0x0132ff4c label    g_TkSndFootKickStay       # TkSndSetFootKickStay
+0x0132ff50 label    g_SndFoot3dCtrl           # the 3D footstep request (SndEventSetFoot3dCtrlp): u16 flags +0, +0x18 sep, +0x1c self, +0x20 u16 actor
+0x0132ff54 label    g_SndSoundEvent           # u32 count, u32 sep[count] (SndEventSetSoundEvent, SndKickFootEvent)
+0x0132ff58 label    g_SndIopErrorStatus       # u32 last SqsIopSoundErrorStatus bits
+0x0132ff5c label    g_SndNowPlayMusic         # u32 music playing, -1 none (SndGetNowPlayMusic)
+0x0132ff60 label    g_SndIopStatus            # u32[16] SqsReportIopSoundStatus per newly raised error bit
 0x0132ffa0 label    g_PartyWorkers               # [16] worker id per party index (0x0042, FUN_00885fd0)
+0x0132ffe0 label    g_SndMusicClearQue        # 17 x {i16 music (< 0: SE), i16 frames, u32 sep} (SndExecMusicClearQue)
+0x01330068 label    g_SndMusicClearQueCount   # i32
+0x0133006c label    g_SndStatusPrev           # u32: last frame's g_SndStatusFrame (SndSqsIopFrame)
+0x01330070 label    g_SndStatusFrame          # u32 status bits raised this frame (also ORed into g_TkSndStatus)
+0x01330078 label    g_SndShoutPrev            # u32
+0x0133007c label    g_SndShoutFrame           # u32 shout play state this frame
+0x01330084 label    g_SndVagPrev              # u32
+0x01330088 label    g_SndVagFrame             # u32 VAG play state this frame
+0x01330090 label    g_SndMusicMute            # u8: music volumes become 0 (SndMusicVolumeDirect/Translate); SndSetMusicMute clears it
+0x01330091 label    g_SndSepLock              # u8: SndPlay plays nothing (SndSepLock)
+0x01330092 label    g_SndSoundMode            # u8 0..2 (SndSetSoundMode -> SqsSetPlayMode)
+0x01330093 label    g_SndSoundType            # u8 0..1 (SndSetSoundType)
 0x01330094 label    g_TkSndKickFlag           # u8, cleared by TkSndClearKickFlag
 0x01330095 label    g_TkSndLastKickId         # u8 (TkSndGetLastKickId)
+0x01330096 label    g_SndSpuMemorySortSwitch  # u8 (SndSpuMemorySortSwitch)
+0x01330097 label    g_SndHddError             # u8 set once by SndSeqIopCommandSendMain
+0x0133009c label    g_SndBattleMusicDataSize  # u32 iMusicDataSend result (SndMusicStandby)
+0x013300e0 label    g_SndMusicVolume          # u8[256] per music (SndGetMusicVolume)
 0x013301e4 label    g_TkSoundSyncVFlag        # cleared by TkClearSoundSyncVFlag
 0x013301ec label    g_TkSoundSyncVFlag3       # TkGetSoundSyncVFlag3, TkClearSoundSyncVFlag3
 0x013301f4 label    g_TkGsCsr                 # TkGetGsRegisterCSR
@@ -9783,6 +9930,7 @@
 0x023cbbf0 label    g_SgFrame                    # main loop frame counter: Sg_MainLoop increments it and passes it to sceGsSwapDBuffDc; yiGetFCount returns it * 2
 0x023cbd60 label    g_EventEbpMessages        # the .ebp's own message table (section 1), set by AtelEventSetUp; the Msg_ lookups fall back to it for offset 0
 0x023cbebc label gNeedAutoSave                # fh v4:user_defined
+0x023cbec4 label    g_SndStreamTable          # voice stream position table: u16 groups, u16 offsets; group: u16 count, u16 offsets; entry list: u16 count, u16 sectors (0xffff gaps) (SndStreamDVDPos)
 0x023cbee0 label    g_TkSinLookup             # u16 table (Math_SinLookup)
 0x023cbf6c label    g_FontWidths              # a byte per character code, two-byte codes too (TkGetStrWidth)
 0x023cc08c label    g_BtlWindowOpen           # zeroed by TOCloseBtlWindow
