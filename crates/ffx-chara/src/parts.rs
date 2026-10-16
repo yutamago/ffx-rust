@@ -366,6 +366,12 @@ pub mod bridge {
         en_flag(mem, chr, l::FLAGS, l::F_CALC_NORM, on)
     }
 
+    /// `Ch_SetCalcNorm2(chr, on)` (`0x00835780`): a debug print (a no-op in
+    /// this build), then [`l::F_CALC_NORM2`]; returns the bit that changed.
+    pub fn ch_set_calc_norm2(mem: &mut impl Mem, chr: u32, on: u32) -> u32 {
+        set_flag(mem, chr, l::FLAGS, l::F_CALC_NORM2, on)
+    }
+
     /// `Ch_ReserveCalcNorm(chr)` (`0x00835710`) and `Ch_ReserveCalcNorm2`
     /// (`0x00835730`, `bit` [`l::F_RESERVE_CALC_NORM2`]): the bit, unless
     /// the normals are recomputed every frame anyway.

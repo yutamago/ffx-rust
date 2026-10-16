@@ -172,6 +172,48 @@ pub mod bridge {
         }))
     }
 
+    /// Calls `f` on every active character, the array reread after each
+    /// (as the `Ch_All*` loops do).
+    pub fn each_active<M: Mem>(mem: &mut M, mut f: impl FnMut(&mut M, u32)) {
+        let mut c = CHR_ARRAY.get(mem);
+        loop {
+            let end = slot(mem, CHR_COUNT.get(mem));
+            if c == end {
+                break;
+            }
+            if active(mem, c) {
+                f(mem, c);
+            }
+            c = c.wrapping_add(l::SIZE);
+        }
+    }
+
+    /// `Ch_AllReserveCalcNorm()` (`0x00832550`).
+    pub fn ch_all_reserve_calc_norm(mem: &mut impl Mem) {
+        each_active(mem, |m, c| {
+            crate::parts::bridge::ch_reserve_calc_norm(m, c, l::F_RESERVE_CALC_NORM);
+        });
+    }
+
+    /// `Ch_AllSetCalcNorm(on)` (`0x008325b0`).
+    pub fn ch_all_set_calc_norm(mem: &mut impl Mem, on: u32) {
+        each_active(mem, |m, c| {
+            crate::parts::bridge::ch_set_calc_norm(m, c, on);
+        });
+    }
+
+    /// `Ch_SysGetNbUse()` (`0x008285e0`): characters in use.
+    pub fn ch_sys_get_nb_use(mem: &impl Mem) -> u32 {
+        let end = slot(mem, CHR_COUNT.get(mem));
+        let mut c = CHR_ARRAY.get(mem);
+        let mut n = 0u32;
+        while c != end {
+            n += u32::from(active(mem, c));
+            c = c.wrapping_add(l::SIZE);
+        }
+        n
+    }
+
     /// `Ch_FunctionHistoryInit()` (`0x00826a40`): count 0, each entry's
     /// first byte 0.
     pub fn ch_function_history_init(mem: &mut impl Mem) {

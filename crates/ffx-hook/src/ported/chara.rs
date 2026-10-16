@@ -1,10 +1,14 @@
 //! `ffx-chara`: finding characters and their accessors. All cdecl, the
 //! character first; floats are `f32` on the stack and in `st0`.
 
+use ffx_chara::attach::bridge as at;
 use ffx_chara::chr::bridge as c;
+use ffx_chara::cloth::bridge as cl;
 use ffx_chara::handle::bridge as h;
 use ffx_chara::id::bridge as id;
 use ffx_chara::layout as l;
+use ffx_chara::mapping::{self as mp, bridge as mb};
+use ffx_chara::motion as mo;
 use ffx_chara::parts::bridge as p;
 use ffx_chara::sys::bridge as sy;
 use ffx_chara::texture::bridge as tx;
@@ -874,5 +878,161 @@ ported! {
     /// `Ch_EffectPacketStorePRG(v)`.
     Ch_EffectPacketStorePRG @ 0x0084_5810 => extern "C" fn ch_effect_packet_store_prg(v: u32) {
         sy::set_u16(&mut mem(), sy::PACKET_PRG, v);
+    }
+
+    // ---- motion lerps
+    /// `Chr_Lerp(a, b, t)`.
+    Chr_Lerp @ 0x0083_9cb0 => extern "C" fn chr_lerp(a: f32, b: f32, t: f32) -> f32 {
+        mo::lerp(a, b, t)
+    }
+    /// `Chr_LerpAngleDamped(a, b, x, lo, k)`.
+    Chr_LerpAngleDamped @ 0x0083_9cd0 => extern "C" fn chr_lerp_angle_damped(a: f32, b: f32, x: f32, lo: f32, k: f32) -> f32 {
+        mo::lerp_angle_damped(a, b, x, lo, k)
+    }
+    /// `Chr_LerpDamped(a, b, x, lo, k)`.
+    Chr_LerpDamped @ 0x0083_9d70 => extern "C" fn chr_lerp_damped(a: f32, b: f32, x: f32, lo: f32, k: f32) -> f32 {
+        mo::lerp_damped(a, b, x, lo, k)
+    }
+    /// `AngleTurn_Lerp(a, b, t)`.
+    AngleTurn_Lerp @ 0x0083_9e80 => extern "C" fn angle_turn_lerp(a: u32, b: u32, t: u32) -> f32 {
+        mo::angle_turn_lerp(a, b, t)
+    }
+    /// `Ch_MotionGetLoop(chr)`.
+    Ch_MotionGetLoop @ 0x0083_9880 => extern "C" fn ch_motion_get_loop(chr: u32) -> i32 {
+        mo::bridge::ch_motion_get_loop(&mem(), chr)
+    }
+
+    // ---- attachment points
+    /// `Ch_BindToElem(chr, parent, id)`.
+    Ch_BindToElem @ 0x0083_2630 => extern "C" fn ch_bind_to_elem(chr: u32, parent: u32, id: u32) -> u32 {
+        at::ch_bind_to_elem(&mut mem(), chr, parent, id)
+    }
+    /// `Ch_ElemGetAttr(chr, id, &elem, &offset)`.
+    Ch_ElemGetAttr @ 0x0083_3a70 => extern "C" fn ch_elem_get_attr(chr: u32, id: u32, elem: u32, out: u32) -> u32 {
+        at::ch_elem_get_attr(&mut mem(), chr, id, elem, out)
+    }
+    /// `Ch_ElemGetDirect(chr, id)`.
+    Ch_ElemGetDirect @ 0x0083_3bf0 => extern "C" fn ch_elem_get_direct(chr: u32, id: u32) -> u32 {
+        at::ch_elem_get_direct(&mem(), chr, id)
+    }
+    /// `Ch_OptposGet(chr, i, out)`.
+    Ch_OptposGet @ 0x0083_54f0 => extern "C" fn ch_optpos_get(chr: u32, i: u32, out: u32) {
+        at::ch_optpos_get(&mut mem(), chr, i, out);
+    }
+    /// `Ch_OptposGetBase(chr, out)`.
+    Ch_OptposGetBase @ 0x0083_55e0 => extern "C" fn ch_optpos_get_base(chr: u32, out: u32) {
+        at::ch_optpos_get_base(&mut mem(), chr, out);
+    }
+    /// `Ch_OptposGetElement(chr, id, &offset)`.
+    Ch_OptposGetElement @ 0x0083_5660 => extern "C" fn ch_optpos_get_element(chr: u32, id: u32, out: u32) -> u32 {
+        at::ch_optpos_get_element(&mut mem(), chr, id, out)
+    }
+
+    // ---- cloth
+    /// `Ch_ClothReset(chr)`.
+    Ch_ClothReset @ 0x0082_4650 => extern "C" fn ch_cloth_reset(chr: u32) {
+        cl::ch_cloth_reset(&mut mem(), chr);
+    }
+    /// `Ch_ClothReset2(chr)`.
+    Ch_ClothReset2 @ 0x0082_4670 => extern "C" fn ch_cloth_reset2(chr: u32) {
+        cl::ch_cloth_reset2(&mut mem(), chr);
+    }
+    /// `Ch_ClothSetAtariJimenCheck(chr)`.
+    Ch_ClothSetAtariJimenCheck @ 0x0082_4800 => extern "C" fn ch_cloth_set_atari_jimen_check(chr: u32) {
+        cl::ch_cloth_set_atari_jimen_check(&mut mem(), chr);
+    }
+    /// `Ch_ShouldDisableClothForMotion(chr, model, part)`.
+    Ch_ShouldDisableClothForMotion @ 0x0082_4a60 => extern "C" fn ch_should_disable_cloth_for_motion(chr: u32, a: u32, b: u32) -> u32 {
+        cl::ch_should_disable_cloth_for_motion(&mem(), chr, a, b)
+    }
+    /// `Ch_UseLargeCollisionRad(chr, model, part)`.
+    Ch_UseLargeCollisionRad @ 0x0082_4b40 => extern "C" fn ch_use_large_collision_rad(chr: u32, a: u32, b: u32) -> f32 {
+        cl::ch_use_large_collision_rad(&mem(), chr, a, b)
+    }
+    /// `Ch_UseAnchorVertex(chr, model, v)`.
+    Ch_UseAnchorVertex @ 0x0083_16d0 => extern "C" fn ch_use_anchor_vertex(chr: u32, model: u32, v: u32) -> u32 {
+        cl::ch_use_anchor_vertex(&mem(), chr, model, v)
+    }
+    /// `Ch_ClothResetAll()`.
+    Ch_ClothResetAll @ 0x0083_3800 => extern "C" fn ch_cloth_reset_all() {
+        cl::ch_cloth_reset_all(&mut mem());
+    }
+    /// `Ch_ClothResetRelation(parent)`.
+    Ch_ClothResetRelation @ 0x0083_3860 => extern "C" fn ch_cloth_reset_relation(parent: u32) {
+        cl::ch_cloth_reset_relation(&mut mem(), parent);
+    }
+
+    // ---- every character, normals
+    /// `Ch_SysGetNbUse()`.
+    Ch_SysGetNbUse @ 0x0082_85e0 => extern "C" fn ch_sys_get_nb_use() -> u32 {
+        h::ch_sys_get_nb_use(&mem())
+    }
+    /// `Ch_AllReserveCalcNorm()`.
+    Ch_AllReserveCalcNorm @ 0x0083_2550 => extern "C" fn ch_all_reserve_calc_norm() {
+        h::ch_all_reserve_calc_norm(&mut mem());
+    }
+    /// `Ch_AllSetCalcNorm(on)`.
+    Ch_AllSetCalcNorm @ 0x0083_25b0 => extern "C" fn ch_all_set_calc_norm(on: u32) {
+        h::ch_all_set_calc_norm(&mut mem(), on);
+    }
+    /// `Ch_SetCalcNorm2(chr, on)`.
+    Ch_SetCalcNorm2_00835780 @ 0x0083_5780 => extern "C" fn ch_set_calc_norm2(chr: u32, on: u32) -> u32 {
+        p::ch_set_calc_norm2(&mut mem(), chr, on)
+    }
+
+    // ---- textures
+    /// `Ch_GetBigImageSize(chr, &w, &h, rows)`.
+    Ch_GetBigImageSize @ 0x0083_3e60 => extern "C" fn ch_get_big_image_size(chr: u32, w: u32, h: u32, rows: u32) {
+        tx::ch_get_big_image_size(&mut mem(), chr, w, h, rows);
+    }
+    /// `Ch_ClutDisposeCheck()`.
+    Ch_ClutDisposeCheck @ 0x0083_c910 => extern "C" fn ch_clut_dispose_check() -> u32 {
+        tx::ch_clut_dispose_check(&mem())
+    }
+    /// `Ch_TextureSendSpecular(out)`.
+    Ch_TextureSendSpecular @ 0x0083_cf80 => extern "C" fn ch_texture_send_specular(out: u32) -> u32 {
+        tx::ch_texture_send_specular(&mut mem(), out)
+    }
+
+    // ---- mapping loaded data
+    /// `Ch_ArcMapping(arc)`.
+    Ch_ArcMapping @ 0x0082_56f0 => extern "C" fn ch_arc_mapping(arc: u32) {
+        mb::ch_arc_mapping(&mut mem(), arc);
+    }
+    /// `Ch_CbArcMapping(blk, arc)`.
+    Ch_CbArcMapping @ 0x0082_5ee0 => extern "C" fn ch_cb_arc_mapping(blk: u32, arc: u32) {
+        mb::ch_cb_arc_mapping(&mut mem(), blk, arc);
+    }
+    /// `Ch_CbMapping(chr, blk)`.
+    Ch_CbMapping @ 0x0082_6070 => extern "C" fn ch_cb_mapping(chr: u32, blk: u32) {
+        mb::ch_cb_mapping(&mut mem(), chr, blk);
+    }
+    /// `Ch_ElemRemapping(chr, delta)`.
+    Ch_ElemRemapping @ 0x0082_6980 => extern "C" fn ch_elem_remapping(chr: u32, d: u32) {
+        mb::ch_elem_remapping(&mut mem(), chr, d);
+    }
+    /// `Ch_ModelMapping(header)`.
+    Ch_ModelMapping @ 0x0082_7590 => extern "C" fn ch_model_mapping(header: u32) {
+        mb::ch_model_mapping(&mut mem(), header);
+    }
+    /// `Chr_ModelEntry(i, base, version)`.
+    Chr_ModelEntry @ 0x0082_8be0 => extern "C" fn chr_model_entry(i: u32, base: u32, version: u32) -> u32 {
+        mp::model_entry(i, base, version)
+    }
+    /// `Ch_MoveMgrp(chr, delta)`.
+    Ch_MoveMgrp @ 0x0083_7590 => extern "C" fn ch_move_mgrp(chr: u32, d: u32) {
+        mb::ch_move_mgrp(&mut mem(), chr, d);
+    }
+    /// `Ch_MotionRemappingFcurve(chr, delta)`.
+    Ch_MotionRemappingFcurve @ 0x0083_9890 => extern "C" fn ch_motion_remapping_fcurve(chr: u32, d: u32) {
+        mb::ch_motion_remapping_fcurve(&mut mem(), chr, d);
+    }
+    /// `Ch_ClutMapping(chr, copy)`.
+    Ch_ClutMapping @ 0x0083_ca20 => extern "C" fn ch_clut_mapping(chr: u32, copy: u32) {
+        mb::ch_clut_mapping(&mut mem(), chr, copy);
+    }
+    /// `Ch_TexDataMapping(tex)`.
+    Ch_TexDataMapping @ 0x0083_cba0 => extern "C" fn ch_tex_data_mapping(tex: u32) {
+        mb::ch_tex_data_mapping(&mut mem(), tex);
     }
 }

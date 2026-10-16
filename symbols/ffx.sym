@@ -2936,11 +2936,14 @@
 0x00824650 function Ch_ClothReset             # fh v3:bsim1.00 0x008246e0
 0x00824670 function Ch_ClothReset2            # fh v3:exact 0x00824700
 0x00824800 function Ch_ClothSetAtariJimenCheck # fh v3:exact 0x00824890
+0x008248ac label g_ChrAtariJimenCases       # 0x6a bytes in Ch_ClothSetAtariJimenCheck's code: its case (0 motion+map, 1 map, 2 none) by character id - 2
 0x00824920 function Ch_ClothSetFast           # fh v3:exact 0x008249b0
 0x008249b4 label g_ChrClothFastCases         # 0x7a bytes in Ch_ClothSetFast's code: its case (0..4) by character id - 1
 0x00824a30 function Ch_ClothSetParaEdit       # (v): g_ChrClothParaEdit = v; Switch name, in name order after Ch_ClothSetFast
 0x00824a40 function Ch_ClothSetXZ             # (f): g_ChrClothXZ = f; Switch name, in name order (SetParaEdit < SetXZ < SetY)
 0x00824a50 function Ch_ClothSetY              # (f): g_ChrClothY = f; Switch name, in name order
+0x00824a60 function Ch_ShouldDisableClothForMotion # Switch name (0x710041f240): (chr, model, part) -> 1 where cloth is off (ids 0x66/4/2/0x20f1/0x3003 in given motions, maps, magic 0xa0; +0x87c set)
+0x00824b40 function Ch_UseLargeCollisionRad  # Switch name (0x710041ef70): (chr, model, part) -> float collision radius scale (1.03 default; 1.05/1.165/1.2/1.25 by id, map, motion)
 0x00824dd0 function Sg_GlobalGetWind          # fh switch:bsim1.00 0x710041edb0
 0x00824e30 function Sg_GlobalSetWind          # fh switch:bsim1.00 0x710041ed90
 0x00824f00 function ChN_DataDispose           # fh v3:exact 0x00824f90
@@ -2953,6 +2956,7 @@
 0x00825a40 function Ch_BlkGetHandle           # fh v3:exact 0x00825ac0
 0x00825ea0 function Ch_BlkGetHandleFast       # fh v3:exact 0x00825f20
 0x00825ee0 function Ch_CbArcMapping           # fh v3:exact 0x00825f60
+0x00826070 function Ch_CbMapping             # Switch name (0x7100410130): (chr, blk) chr takes the block's id, name, model header, model entries; c001/c101 -> g_ChrTidus
 0x008261b0 function Ch_CheckHandle            # fh v3:exact 0x00826230
 0x00826230 function Ch_ChrMemHeapSet          # fh v3:exact 0x008262b0
 0x00826260 function Ch_ClothMeshDestroy       # fh v3:exact 0x008262e0
@@ -2960,6 +2964,7 @@
 0x008266f0 function Ch_Dispose                # fh v3:exact 0x00826770
 0x008268e0 function Ch_DisposeAll             # fh v3:exact 0x00826960
 0x00826950 function Ch_DrawMainEffect         # fh v3:exact 0x008269d0
+0x00826980 function Ch_ElemRemapping         # Switch name (0x7100410410): (chr, delta) adds delta to each element's data pointer but those at chr+0x1c8
 0x008269e0 function Ch_FunctionHistoryDump    # fh v3:exact 0x00826a60
 0x00826a40 function Ch_FunctionHistoryInit    # fh v3:exact 0x00826ac0
 0x00826a60 function Ch_GetBlkDirName          # fh v3:exact 0x00826ae0
@@ -2974,13 +2979,16 @@
 0x00826fbc function Ch_MemMove                # fh switch:cg2 0x7100410460
 0x00827250 function Ch_MemMoveSetTrigger      # fh v3:bsim1.00 0x008272d0
 0x00827280 function Ch_ModelCreatePacket      # fh v3:exact 0x00827300
+0x00827590 function Ch_ModelMapping          # ours (Switch's is unnamed FUN_710040cd10, called by Ch_ArcMapping for entry 0): fixes up a moved model header (self pointer at +0) and its models
 0x00827700 function Ch_ModelPurgePacket       # fh v3:exact 0x00827780
 0x008277f0 function SG_InitBones              # allocs "%s:Elem" (0x160/bone) and "%s:Fcv" (0x18c/bone); bind pose from the .chr bone table (20 bytes: parent, rot centideg, trans /1000, scale >>12)
 0x00827d10 function Ch_OnCharacterInstanceLoaded # fh v3:exact 0x00827d90
 0x00827e90 function Ch_PreCalcActiveClothMesh # fh v3:exact 0x00827f10
 0x008283c0 function Ch_ReadMotionViewer       # fh v3:exact 0x00828440
+0x008285e0 function Ch_SysGetNbUse           # Switch name (0x710040f390): counts the active characters in g_ChrArray
 0x00828620 function Ch_WorkRestore            # fh v3:exact 0x008286a0
 0x00828b30 function Ch_WorkSwap               # fh v3:exact 0x00828bb0
+0x00828be0 function Chr_ModelEntry           # ours: (i, base, version) -> base + i * (24 for versions 0x831..0x1313, else 40)
 0x00828c10 function InsideTriangle            # fh v3:exact 0x00828c90
 0x008295e0 function characterChange           # fh switch:cg2 0x7100410c00
 0x00829870 function passThisTriangle          # fh v3:exact 0x008298f0
@@ -3194,6 +3202,7 @@
 0x00831f00 function ch_TextureLoad            # fh v3:cg6 0x831f80
 0x00832110 function Apply_Envelope            # fh v3:exact 0x00832190
 0x00832550 function Ch_AllReserveCalcNorm     # Chr_RequestBoneUpdate for every active chr in g_ChrArray; was Chr_RequestBoneUpdateAll
+0x008325b0 function Ch_AllSetCalcNorm        # Switch name (0x7100414520): Ch_SetCalcNorm(chr, on) on every active character
 0x00832610 function Ch_BindSetScale           # fh v3:bsim1.00 0x00832690
 0x00832630 function Ch_BindToElem             # fh v3:exact 0x008326b0
 0x00832680 function Ch_BindToElemDirect       # (chr, parent, elem): +0x19c = parent, +0x1b8 = parent +0x190 or -1, +0x1a0 = elem, offset +0x1a4..+0x1ac = 0, +0x1b0 = 1.0; Switch name, in name order after Ch_BindToElem
@@ -3201,14 +3210,17 @@
 0x00832760 function Ch_CalcElement            # fh v3:exact 0x008327e0
 0x00832e10 function Ch_CalcMain               # fh v3:exact+call.cs 0x00832e90 cdecl
 0x008337f0 function Ch_CheckNbBattleChr       # fh v3:bsim1.00 0x00833870
+0x00833800 function Ch_ClothResetAll         # Switch name (0x71004161d0): Ch_ClothReset on every active character
 0x00833860 function Ch_ClothResetRelation     # fh v3:exact 0x008338e0
 0x00833960 function Ch_ElemCalcQuaternion     # fh v3:exact 0x008339e0
 0x00833a70 function Ch_ElemGetAttr            # (model, point id, &bone, &offset): searches the chr def +0x6c list (16-byte entries, id & 0x3fff) -> bone index and scaled offset; was Chr_FindAttachPoint
+0x00833bf0 function Ch_ElemGetDirect         # Switch name (0x71004152e0): (chr, id) -> element of attachment point id (blk +0x6c list), 0 if none
 0x00833c30 function Ch_ElemGetMatrix          # fh v3:exact 0x00833cb0
 0x00833cf0 function Ch_ElemGetParent          # (chr, elem): element (chr +0x328, 0x160 bytes each) +0 -> +4; Switch name, the only one in name order between Ch_ElemGetMatrix and Ch_ElemGetPos
 0x00833d10 function Ch_ElemGetPos             # fh v3:exact 0x00833d90
 0x00833df0 function Ch_ElemSetQuatMatrix      # (chr, elem, matrix, w): element +0xcc = matrix, +0xe0 = w; Switch name, in name order before Ch_ElemSetReplaceMatrix (+0xc8)
 0x00833e30 function Ch_ElemSetReplaceMatrix   # fh v3:exact 0x00833eb0
+0x00833e60 function Ch_GetBigImageSize       # Switch name (0x7100417fc0): (chr, &w, &h, rows) widest image, stacked height, row starts of the archive's image list
 0x00833f30 function Ch_GetCalcNorm            # chr +0x194 bit 0 (Ch_SetCalcNorm's); Switch name, in name order before Ch_GetDumpMotEv
 0x00833f50 function Ch_GetDumpMotEv           # fh v3:bsim1.00 0x00833fd0
 0x00833f60 function Ch_GetFuka                # (i): g_ChrFuka[i] (Ch_SetFuka's); Switch name, in name order after Ch_GetDumpMotEv
@@ -3279,6 +3291,7 @@
 0x00837350 function Chr_PlayMotionMarks          # (chr, motion, -, loops, start mark, end mark): marks index the motion's mark table; SG_StartClip, +0x736 = 1
 0x008373e0 function Ch_MotionSetLow2          # (chr, motion, -, loops, start frame, end frame): raw frames (<< 8) to SG_StartClip, +0x736 = 1; was Chr_PlayMotion
 0x008374c0 function Chr_PlayMotionInclEnd        # like Chr_PlayMotion, end frame + 1 unless loops == 1
+0x00837590 function Ch_MoveMgrp              # Switch name (0x7100423e80): (chr, delta) the motion group pointers (+0x70c/710/714/7e8/7f4, node list at +0x74c) after it moved
 0x008375f0 function Chr_LoadMotionGroup          # ?(n): if resource (1, n) not cached (0x00836f10, table 0x013011e0), requests it and waits through g_CdLib slot 2
 0x008376b0 function Ch_RegMotionEntryCache    # fh switch:bsim1.00 0x71004214d0
 0x00837730 function Ch_RegMotionGetExistMem   # fh switch:bsim1.00 0x7100421550
@@ -3304,12 +3317,17 @@
 0x008394d0 function SG_StepChannels           # key stream decoder: 7-bit delta, 14-bit delta (0xc0), repeat (0x80 | n)
 0x00839860 function Ch_MotionGetFrame         # fh v3:bsim1.00 0x008398e0
 0x00839870 function Ch_MotionGetHalf          # fh v3:cg2 0x8398f0
+0x00839880 function Ch_MotionGetLoop         # Switch name (0x71004116f0): i16 +0x724 (loops left), next to Ch_MotionSetLoop's +0x726
+0x00839890 function Ch_MotionRemappingFcurve # Switch name (0x7100411180): (chr, delta) +0x74c and the 9 curves per element at +0x748 (0x2c each)
 0x008398f0 function SG_RewindChannels         # restarts every key stream
 0x00839950 function Ch_MotionSetHalf          # (v): g_ChrMotionHalf = v (Ch_MotionGetHalf's); Switch name
 0x00839960 function Ch_MotionSetLoop          # fh switch:bsim1.00 0x71004116e0
 0x00839980 function Ch_MotionSetupFcurve      # clip header, 2-bit channel types (0 zero, 1 one, 2 constant, 3 stream), nine per bone; was SG_SetClip
 0x00839b50 function Ch_SetKeepFps             # fh v3:bsim1.00+call.cs 0x00839bd0 cdecl
 0x00839b80 function Ch_SetMotionSeq           # (actor, clip, loops, start, end); was SG_StartClip
+0x00839cb0 function Chr_Lerp                 # ours: (a, b, t) -> (1 - t) * a + t * b, float
+0x00839cd0 function Chr_LerpAngleDamped      # ours: Chr_LerpDamped on radians, b moved by 2pi toward a first
+0x00839d70 function Chr_LerpDamped           # ours: (a, b, x, lo, k) -> Chr_Lerp(a, b, max(x - |a - b| * k, lo))
 0x00839dd0 function Fixed12_ToFloat           # v / 4096
 0x00839e00 function Fixed8_ToFloat            # v / 256
 0x00839e30 function Angle12_Lerp              # 12-bit angle interpolation the short way
@@ -3348,6 +3366,7 @@
 0x0083c6f0 function Ch_CalcLight              # fh v3:exact 0x0083c770
 0x0083c710 function Ch_ClutCreate             # fh v3:exact 0x0083c790
 0x0083c810 function Ch_ClutDispose            # fh v3:cg13 0x83c890
+0x0083c910 function Ch_ClutDisposeCheck      # Switch name (0x7100425220; VT implied match): 0 while g_ChrClutDisposeHold or spell effect 0x2a0 is loaded, else 1
 0x0083c940 function Ch_ClutEnable             # fh v3:exact 0x0083c940
 0x0083c9a0 function Ch_ClutGetNb              # fh v3:bsim1.00 0x0083c9a0
 0x0083c9b0 function Ch_ClutGetOrgPtr          # fh v3:exact 0x0083c9b0
@@ -3362,6 +3381,7 @@
 0x0083cd90 function Ch_TexGetNbClut           # texture data +8 (u16), 0 without data; Switch name, in name order
 0x0083cdb0 function Ch_TexGetNbImage          # texture data +0xc (u16); Switch name, in name order before Ch_TextureReMapping
 0x0083cdd0 function Ch_TextureReMapping       # fh v3:exact 0x0083cdd0
+0x0083cf80 function Ch_TextureSendSpecular   # Switch name (0x71004250b0): two DMA ref tags (g_ChrSpecularPackets) to out, returns out + 0x40
 0x0083d040 function Ch_TextureSetAnim         # fh v3:exact 0x0083d040
 0x0083d070 function Ch_TextureSetAnimTimer    # fh v3:exact 0x0083d070
 0x0083d0a0 function Ch_TextureSetup           # fh v3:exact 0x0083d0a0
@@ -6994,6 +7014,7 @@
 0x00b48438 label TextureAnimationManager_vftable # fh v4:imported TextureAnimationManager::vftable
 0x00b48630 label DebugMenuManager_vftable     # fh v4:imported DebugMenuManager::vftable
 0x00b486b8 label ViewerManager_vftable        # fh v4:imported ViewerManager::vftable
+0x00b486bc label g_ChrStrC001               # "c001", Tidus's model name (Ch_CbMapping)
 0x00b48e30 label AutoTestManager_vftable      # fh v4:imported AutoTestManager::vftable
 0x00b4a81c label Phyre_PClassDescriptorForType_Phyre_DynamicMeshDefaultImplmenetation__vftable # fh v4:imported Phyre::PClassDescriptorForType<Phyre::DynamicMeshDefaultImplmenetation>::vftable
 0x00b4a864 label Phyre_PClassDescriptorAbstract_Phyre_DynamicMeshDefaultImplmenetation__vftable # fh v4:imported Phyre::PClassDescriptorAbstract<Phyre::DynamicMeshDefaultImplmenetation>::vftable
@@ -7020,6 +7041,7 @@
 0x00b4c2e4 label FmodManager_vftable          # fh v4:imported FmodManager::vftable
 0x00b4cf30 label JobSchedule_JobWorker_vftable # fh v4:imported JobSchedule::JobWorker::vftable
 0x00b501c0 label    g_AlphaScaleNormal        # .rdata f32 256.0: useExtendedAlpha(0) copies it to g_AlphaScale
+0x00b594ec label g_ChrStrC101               # "c101", Tidus's other model name (Ch_CbMapping)
 0x00b5b9fc label    g_AtelVersion                # build date and time string AtelGetVersion returns (__DATE__ " " __TIME__ style)
 0x00b69fe0 label type_info_vftable            # fh v4:imported type_info::vftable
 0x00b6ed04 label btCollisionShape_vftable     # fh v4:imported btCollisionShape::vftable
@@ -7695,9 +7717,11 @@
 0x012a85b0 label    g_EtChrDrawFlags2            # used instead of g_EtChrDrawFlags where nonzero
 0x012f4e80 label    g_SqsIopStatus               # sound driver status words: 0 system (SqsIopSoundSystemStatus), 1 error (SqsIopSoundErrorStatus), indexed by SqsReportIopSoundStatus
 0x012fb7f0 label    g_SgVCount                   # vertical blank counter, +2 a frame (0x00821e80); Sg_MainCalcRate reads it; yiGetVCount
+0x012fbc40 label g_CurrentMapNo             # current map (field) number: Ch_UseLargeCollisionRad, Ch_ShouldDisableClothForMotion, Ch_ClothSetAtariJimenCheck, Native_MsgSetPos compare it with map numbers
 0x012fbc54 label g_ChrClothParaEdit          # i8, Ch_ClothSetParaEdit / Ch_ClothGetParaEdit
 0x012fbc58 label g_ChrClothY                 # float, Ch_ClothSetY
 0x012fbc5c label g_ChrClothXZ                # float, Ch_ClothSetXZ
+0x012fbc60 label g_ChrTidus                 # the character whose model block is c001/c101 (Ch_CbMapping)
 0x012fbd9c label g_ChrHandleCursor           # Ch_HandleGetNext's slot index into g_ChrArray; Ch_HandleRewind sets 0
 0x012fbda0 label g_ChrMemMoveTrigger         # u8, Ch_MemMoveSetTrigger sets 1
 0x012fbda4 label g_ChrFunctionHistoryCount   # Ch_FunctionHistoryInit sets 0
@@ -7717,7 +7741,9 @@
 0x013009b8 label g_ChrFuka                   # u32 by index, Ch_SetFuka / Ch_GetFuka
 0x013009e0 label g_ChrGuiCalcNormal          # 0 or 1, Ch_GuiSetCalcNormAll / Ch_GuiGetCalcNormal
 0x013017f8 label g_ChrMotionHalf             # Ch_MotionSetHalf / Ch_MotionGetHalf
+0x013019c0 label g_ChrClutDisposeHold       # non-zero holds clut disposal (Ch_ClutDisposeCheck)
 0x013019d8 label g_ChrIdMapTable             # u32 by raw map id: Ch_IdGetMap maps ids 0x30..0x3f through it (0x0083e9e0 sets entries)
+0x013019e0 label g_ChrSpecularPackets       # two 0x40-byte GS packets (0x013019e0, 0x01301a20) Ch_TextureSendSpecular references; clut data pointers at +0x30
 0x01301af8 label g_ChrIdEffectTable          # u8, 4 per set: Ch_IdGetEffectTable
 0x01301b00 label g_ChrIdEffectTableIndex     # i8, the set (Sg_IdSetEffectTableIndex)
 0x01303658 label g_ChrPacketPtr              # effect packet write pointer, 0 = only measure (Ch_EffectPacketStoreEND)
