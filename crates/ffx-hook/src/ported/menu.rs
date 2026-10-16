@@ -2727,4 +2727,44 @@ ported! {
     MenuSubCmd_OpenC @ 0x008e_3690 => extern "C" fn menu_sub_cmd_open_c(x: u32, items: u32, c: u32) -> u32 {
         tk::menu_sub_cmd_open(&mut mem(), [x, items, c, 0], true, [0, 2], &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMenuCtrlHdd(w)`.
+    TkMenuCtrlHdd @ 0x008e_2870 => extern "C" fn tk_menu_ctrl_hdd(w: u32) {
+        tk::tk_menu_ctrl_hdd(&mut mem(), w, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `Vibrate_BumpStream(k)`: the stream record.
+    Vibrate_BumpStream @ 0x0087_5af0 => extern "C" fn vibrate_bump_stream(k: i32) -> u32 {
+        tk::vibrate_bump_stream(&mut mem(), k)
+    }
+    /// `TkDebugFont_SwapBuffer()`: the buffer's start.
+    TkDebugFont_SwapBuffer @ 0x0089_0780 => extern "C" fn tk_debug_font_swap_buffer() -> u32 {
+        tk::tk_debug_font_swap_buffer(&mut mem())
+    }
+    /// `Dma_PutTagEx(p, qwc, pce, id, irq, addr)`: the end.
+    Dma_PutTagEx @ 0x0089_0860 => extern "C" fn dma_put_tag_ex(p: u32, qwc: u32, pce: u32, id: u32, irq: u32, addr: u32) -> u32 {
+        tk::dma_put_tag_ex(&mut mem(), p, qwc, [pce, id, irq], addr)
+    }
+    /// `Dma_PutTagEx2(p, qwc, pce, id, irq, addr)`: a copy; the end.
+    Dma_PutTagEx2 @ 0x0089_0d30 => extern "C" fn dma_put_tag_ex2(p: u32, qwc: u32, pce: u32, id: u32, irq: u32, addr: u32) -> u32 {
+        tk::dma_put_tag_ex(&mut mem(), p, qwc, [pce, id, irq], addr)
+    }
+    /// `Vibrate_SetStream(entry, src)`: the data pointer.
+    Vibrate_SetStream @ 0x0087_6230 => extern "C" fn vibrate_set_stream(entry: u32, src: u32) -> u32 {
+        tk::vibrate_set_stream(&mut mem(), entry, src)
+    }
+    /// `Vibrate_ResetAll()`: `0xff`.
+    Vibrate_ResetAll @ 0x0087_5e80 => extern "C" fn vibrate_reset_all() -> u32 {
+        tk::vibrate_reset_all(&mut mem())
+    }
+    /// `TkEucToSjis(src, out)`: the bytes read.
+    TkEucToSjis @ 0x0089_07e0 => extern "C" fn tk_euc_to_sjis(src: u32, out: u32) -> u32 {
+        tk::tk_euc_to_sjis(&mut mem(), src, out)
+    }
+    /// `Gu_SetAlpha(a, b, c, d, fix)`.
+    Gu_SetAlpha @ 0x0084_83e0 => extern "C" fn gu_set_alpha(a: i32, b: i32, c: i32, d: i32, fix: i32) {
+        gu::gu_set_alpha(&mut mem(), [a, b, c, d, fix]);
+    }
+    /// `Gu_FontSetupWindow(window)`.
+    Gu_FontSetupWindow @ 0x0084_8310 => extern "C" fn gu_font_setup_window(window: u32) {
+        gu::gu_font_setup_window(&mut mem(), window);
+    }
 }

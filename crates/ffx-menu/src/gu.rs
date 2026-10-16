@@ -567,6 +567,35 @@ pub mod bridge {
         }
     }
 
+    /// `Gu_FontSetupWindow(window)` (`0x00848310`): text output set to the
+    /// window's client area: the print base and cursor at client origin
+    /// (`+0x80`/`+0x82`) plus position (`+0x14`/`+0x16`), the client size
+    /// (`+0x84`/`+0x86`) at `0x01303704`/`0x01303708`, italic and bold off,
+    /// size `0x100` ([`gu_print_set_size`]), colour and line state cleared,
+    /// and the running line maximum back to the line height.
+    pub fn gu_font_setup_window(mem: &mut impl Mem, window: u32) {
+        let half = |mem: &mut _, o: u32| i32::from(Mem::read::<i16>(mem, window.wrapping_add(o)));
+        let x = half(mem, 0x80).wrapping_add(half(mem, 0x14));
+        let y = half(mem, 0x82).wrapping_add(half(mem, 0x16));
+        let (cw, ch) = (half(mem, 0x84), half(mem, 0x86));
+        let base = mem.rebase(0x0130_36f4);
+        let g = |a: u32| base + a - 0x0130_36f4;
+        PRINT_X.set(mem, x);
+        PRINT_BASE_X.set(mem, x);
+        mem.write(g(0x0130_3704), cw);
+        PRINT_Y.set(mem, y);
+        PRINT_BASE_Y.set(mem, y);
+        mem.write(g(0x0130_3708), ch);
+        mem.write(g(0x0130_3718), 0u32);
+        mem.write(g(0x0130_3720), 0u32);
+        gu_print_set_size(mem, 0x100);
+        let line: u32 = mem.read(g(0x0130_36f4));
+        for a in [0x0130_370c, 0x0130_3710, 0x0130_3714, 0x0130_372c] {
+            mem.write(g(a), 0u32);
+        }
+        mem.write(g(0x0130_36f8), line);
+    }
+
     /// The packet's data buffer (`Gu_SetPrim` and its siblings write there).
     pub const PACKET_DATA: Global<u32> = Global::new(0x0130_36c8);
     /// The open GIF tag (`Gu_PacketBeginTag`).
@@ -623,6 +652,14 @@ pub mod bridge {
     /// `Gu_SetPrim(prim)` (`0x00848480`): `PRIM`, sign-extended to 64 bits.
     pub fn gu_set_prim(mem: &mut impl Mem, prim: i32) {
         put_register(mem, i64::from(prim).cast_unsigned(), 0);
+    }
+
+    /// `Gu_SetAlpha(a, b, c, d, fix)` (`0x008483e0`, own name): `ALPHA_1`
+    /// (`0x42`) from its five fields, each sign-extended as the
+    /// original's 64-bit shifts take them.
+    pub fn gu_set_alpha(mem: &mut impl Mem, [a, b, c, d, fix]: [i32; 5]) {
+        let value = super::pack(&[(fix, 0), (d, 26), (c, 2), (b, 2), (a, 2)]);
+        put_register(mem, value, 0x42);
     }
 
     /// `Gu_SetRgbaq(r, g, b, a)` (`0x008484c0`): `RGBAQ`, `a | 0x800000`

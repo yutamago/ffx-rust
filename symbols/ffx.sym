@@ -4112,6 +4112,8 @@
 0x00847b00 function Gu_DrawStart              # (buffer): GIF tag (one A+D) at buffer+0x10, g_GuPacket = g_GuPacketData = buffer, count 2, then Gu_SetTest(1, 1, 0, 0, 0, 0, 1, 2); fh v3:exact 0x00847b00
 0x008482f0 function Gu_FontSetX               # g_GuPrintX = x; Switch name, alphabetical slot Gu_DrawStart..Gu_PacketEndTag
 0x00848300 function Gu_FontSetY               # g_GuPrintY = y; Switch name, alphabetical slot
+0x00848310 function Gu_FontSetupWindow        # (window) print base/cursor = client origin +0x80/+0x82 + position +0x14/+0x16, client size at 0x01303704/08, italic/bold off, Gu_PrintSetSize(0x100), colour/CR cleared, 0x013036f8 = 0x013036f4; Switch name, alphabetical slot Gu_FontSetY..Gu_PacketEndTag
+0x008483e0 function Gu_SetAlpha               # (a, b, c, d, fix): A+D ALPHA_1 (register 0x42) into g_GuPacketData, fields sign-extended into 64-bit shifts; no direct caller; own name (beside Gu_SetPrim/Rgbaq/Test)
 0x00848460 function Gu_PacketEndTag           # (): the open GIF tag's NLOOP (15 bits) = quadwords since Gu_PacketBeginTag - 1
 0x00848480 function Gu_SetPrim                # (prim): A+D PRIM (register 0) into g_GuPacketData, sign-extended to 64 bits
 0x008484c0 function Gu_SetRgbaq               # (r, g, b, a): A+D RGBAQ (register 1) into g_GuPacketData, a | 0x800000 as the top field
@@ -4715,16 +4717,19 @@
 0x00875430 function AtelActorRemove           # fh v3:exact 0x008753b0
 0x00875510 function AtelActorSetUp2           # (..., messages, messages2, ...): script context +0x34 = messages, +0x38 = section 5 (or messages); was Event_InitScripts
 0x008756d0 function AtelBattleSetUp           # fh v3:exact 0x00875650
+0x00875af0 function Vibrate_BumpStream        # (k) stream k (clamped 0..7) u16 counter 0x01328170 + k*0x24 += 1, byte +2 = 0; record left in eax; own name
 0x00875d30 function Vibrate_CheckDone         # (pad) state 1/2 ends when both streams +6 are 0x200/0xfffe; own name
 0x00875de0 function TkGetVibrateOn            # (pad) -> u8 g_TkVibratePads[pad].+0x22, pad clamped to 0..7 (the byte TkStopVibrate clears)
 0x00875e10 function TkGetVibrateVolume        # fh switch:bsim1.00 0x7100479c70
 0x00875e50 function TkGetVibratePad           # (pad) -> &g_TkVibratePads[pad], pad clamped to 0..7
+0x00875e80 function Vibrate_ResetAll          # () 8 streams (0x01328150, 0x24 each): counters and both 0x10-byte entries cleared; g_TkVibrateOff 0, u16 0x01328274 = 0xff; own name
 0x00875ef0 function Vibrate_ResetPad          # (pad) +0x22, u16 +0x20 cleared, both 16-byte streams reset; own name
 0x00875f30 function Vibrate_ResetStream       # (stream) +4, u16 +8, +0xa cleared; own name
 0x00875f50 function TkSetVibrateOff           # (v) g_TkVibrateOff = low byte; own name
 0x00875f60 function TkSetVibrateMask          # fh v3:exact 0x00875ee0
 0x00875fb0 function TkSetVibrateStream        # fh v3:cg2 0x875f30
 0x00876160 function Vibrate_HoldStream        # (stream) +4 = 0xfffe0000, u16 +8 = 0; own name
+0x00876230 function Vibrate_SetStream         # (entry, src) entry from curve header src: +4 0, +6 (src[1]+1)*2, +8 src[0], +9 src[2], +0 set_ptr32(src+2); null: +4 0x02000000, +8 0, +0 0; own name
 0x00876290 function TkStopVibrate             # fh v3:exact 0x00876210
 0x008762f0 function TkStopVibrateAll          # fh v3:exact 0x00876270
 0x00876350 function Vibrate_StartStream       # (stream, curve) header (level, length, flag) into +8/+6/+9, pointer = curve + 2; own name
@@ -5020,6 +5025,9 @@
 0x0088faf0 function TkSetDebugFontLocate      # fh switch:bsim1.00 0x7100492180
 0x0088fb10 function TkDebugFont_SetWord4      # (p) g_TkDebugFontBuffer word +4 = set_ptr32(p); own name
 0x008904e0 function TkSetDebugFontLocate2     # (x, y): 0x0133c8dc/e0 = x << 4, y << 4 (TkSetDebugFontLocate's pair at 0x0133c8d4)
+0x00890780 function TkDebugFont_SwapBuffer    # () g_TkDebugFontBuffer flipped between 0x0133c8c4/0x0133c8c8; write pointers +0/+4 = start +8; 0x0133c8d0..d8 = 0; own name
+0x008907e0 function TkEucToSjis               # (src, out) one EUC char to Shift-JIS for the debug font: 0 -> 0, ASCII -> 1, two-byte -> 2; own name
+0x00890860 function Dma_PutTagEx              # (p, qwc, pce, id, irq, addr) tag QWC (1 for 0), byte 3 ((irq<<3|id)<<2|pce)<<2, addr; zero quadword after for qwc 0; returns the end; own name
 0x008908c0 function Dma_PutCall               # (p, addr) call tag (id 5) QWC 1 to addr + a zero quadword; byte 2 untouched; returns p + 0x20; own name
 0x00890910 function Dma_PutEnd                # (p) end tag (id 7) + a zero quadword; returns p + 0x20; own name
 0x00890960 function Dma_PutCnt                # (p) cnt tag (id 1) + a zero quadword; own name
@@ -5029,6 +5037,7 @@
 0x00890a60 function Dma_CloseCnt              # (p, end, flags) cnt tag (0x1000) at p, QWC (end - p + 15) / 16 - 1, last word QWC | flags; returns end; own name
 0x00890aa0 function Dma_CloseCnt2             # (p, end, a, b) cnt tag, words 2-3 = a, b; returns end; own name
 0x00890ae0 function Dma_CloseNext             # (p, end, addr, a, b) next tag (0x2000) to addr; returns end; own name
+0x00890d30 function Dma_PutTagEx2             # a copy of Dma_PutTagEx; own name
 0x00890d90 function Dma_PutCall2              # (p, addr) a copy of Dma_PutCall; own name
 0x00890eb0 function TOBtlCloseHelpWin         # fh v3:bsim1.00 0x00890e20
 0x00890ee0 function TOBtlCloseSignWindow      # fh v3:bsim1.00 0x00890e50

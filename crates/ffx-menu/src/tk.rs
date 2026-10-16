@@ -3940,6 +3940,151 @@ pub mod bridge {
         tk_menu_main_regist_window(mem, w, call);
         w
     }
+    /// `TkMenuCtrlHdd(w)` (`0x008e2870`): the HDD menu's control step (the
+    /// pad reads it starts with are unused): state `+0x1c` 0 closes the
+    /// HDD menu (`MenuHdd_Close`) and moves to 1; in state 1, once
+    /// `0x023cc130` is set, menu 20 sleeps and the main menu (1) wakes.
+    pub fn tk_menu_ctrl_hdd<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        match mem.read::<u32>(w + 0x1c) {
+            0 => {
+                menu_hdd_close(mem, call);
+                mem.write(w + 0x1c, 1u32);
+            }
+            1 if mem.read::<u32>(mem.rebase(0x023c_c130)) != 0 => {
+                tk_menu_main_sleep_menu(mem, 0x14, call);
+                tk_menu_main_active_menu(mem, 1, 0, call);
+            }
+            _ => {}
+        }
+    }
+
+    /// `Vibrate_BumpStream(k)` (`0x00875af0`, own name): vibration stream
+    /// `k` (clamped to 0..=7, negative to 0): its `u16` counter
+    /// (`0x01328170 + k * 0x24`) up by one and its byte `+2` cleared.
+    /// Returns the stream's record (`0x01328150 + k * 0x24`, left in
+    /// `eax`).
+    pub fn vibrate_bump_stream(mem: &mut impl Mem, k: i32) -> u32 {
+        let k = k.clamp(0, 7).cast_unsigned();
+        let rec = mem.rebase(0x0132_8150) + k * 0x24;
+        let n: u16 = mem.read(rec + 0x20);
+        mem.write(rec + 0x20, n.wrapping_add(1));
+        mem.write(rec + 0x22, 0u8);
+        rec
+    }
+
+    /// `TkDebugFont_SwapBuffer()` (`0x00890780`, own name): the debug
+    /// font's current buffer (`g_TkDebugFontBuffer`) flipped between the
+    /// two at `0x0133c8c4`/`0x0133c8c8`; its write pointer (`+0`, `+4`)
+    /// back to its start (`+8`), the position words cleared. Returns the
+    /// start.
+    pub fn tk_debug_font_swap_buffer(mem: &mut impl Mem) -> u32 {
+        let pair: [u32; 2] = mem.read(mem.rebase(0x0133_c8c4));
+        let cur = if DEBUG_FONT_BUFFER.get(mem) == pair[0] {
+            pair[1]
+        } else {
+            pair[0]
+        };
+        DEBUG_FONT_BUFFER.set(mem, cur);
+        let start: u32 = mem.read(cur + 8);
+        mem.write(cur, [start, start]);
+        mem.write(mem.rebase(0x0133_c8d0), [0u32; 3]);
+        start
+    }
+
+    /// `Dma_PutTagEx(p, qwc, pce, id, irq, addr)` (`0x00890860`, and its
+    /// copy `0x00890d30`; own names): a DMA tag with QWC `qwc` (1 when 0),
+    /// byte 3 `((irq << 3 | id) << 2 | pce) << 2` (8-bit), `addr`, and two
+    /// zero words; for `qwc` 0 a zero quadword follows. Returns the end.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn dma_put_tag_ex(mem: &mut impl Mem, p: u32, qwc: u32, bits: [u32; 3], addr: u32) -> u32 {
+        let [pce, id, irq] = bits.map(|b| b as u8);
+        mem.write(p, if qwc == 0 { 1 } else { qwc as u16 });
+        let b = (((irq << 3) | id) << 2 | pce) << 2;
+        mem.write(p + 3, b);
+        mem.write(p + 4, [addr, 0, 0]);
+        if qwc == 0 {
+            mem.write(p + 0x10, [0u32; 4]);
+            p + 0x20
+        } else {
+            p + 0x10
+        }
+    }
+
+    /// `Vibrate_SetStream(entry, src)` (`0x00876230`, own name): a stream
+    /// entry from a curve header `src` (step 0, length `(src[1] + 1) × 2`,
+    /// bytes `src[0]` and `src[2]`, data from `src + 2`), or for null an
+    /// idle entry (`+4` = `0x02000000`, `+8` 0, no data). Returns the data
+    /// pointer (`set_ptr32`'s, left in `eax`).
+    pub fn vibrate_set_stream(mem: &mut impl Mem, entry: u32, src: u32) -> u32 {
+        if src == 0 {
+            mem.write(entry + 4, 0x0200_0000u32);
+            mem.write(entry + 8, 0u16);
+            mem.write(entry, 0u32);
+            return 0;
+        }
+        mem.write(entry + 4, 0u16);
+        let n = u16::from(mem.read::<u8>(src + 1));
+        mem.write(entry + 6, n.wrapping_add(1).wrapping_mul(2));
+        let a: u8 = mem.read(src);
+        mem.write(entry + 8, a);
+        let data = src + 2;
+        let b: u8 = mem.read(data);
+        mem.write(entry + 9, b);
+        mem.write(entry, data);
+        data
+    }
+
+    /// `Vibrate_ResetAll()` (`0x00875e80`, own name): the eight streams'
+    /// counters and both entries cleared, vibration on, every pad allowed
+    /// (`0xff`). Returns `0xff`.
+    pub fn vibrate_reset_all(mem: &mut impl Mem) -> u32 {
+        let base = mem.rebase(0x0132_8150);
+        for k in 0..8 {
+            let rec = base + k * 0x24;
+            mem.write(rec + 0x22, 0u8);
+            mem.write(rec + 0x20, 0u16);
+            for e in [rec, rec + 0x10] {
+                mem.write(e + 4, 0u32);
+                mem.write(e + 8, 0u16);
+                mem.write(e + 0xa, 0u8);
+            }
+        }
+        VIBRATE_OFF.set(mem, 0);
+        mem.write(mem.rebase(0x0132_8274), 0xffu16);
+        0xff
+    }
+
+    /// `TkEucToSjis(src, out)` (`0x008907e0`, own name): one character of
+    /// the debug font's EUC text: 0 ends (0 written, 0 returned), ASCII
+    /// passes (1), a two-byte EUC code becomes Shift-JIS (2).
+    pub fn tk_euc_to_sjis(mem: &mut impl Mem, src: u32, out: u32) -> u32 {
+        let c0: u8 = mem.read(src);
+        let d0: u8 = mem.read(src + 1);
+        if c0 == 0 {
+            mem.write(out, 0u8);
+            return 0;
+        }
+        if c0 < 0x80 {
+            mem.write(out, c0);
+            return 1;
+        }
+        let (c, d) = (c0 & 0x7f, d0 & 0x7f);
+        let lead: u8 = if c < 0x5f { 0x70 } else { 0xb0 };
+        let trail_base: u8 = if c & 1 == 0 {
+            0x7e
+        } else {
+            0x1f + u8::from(d > 0x5f)
+        };
+        #[allow(clippy::cast_possible_truncation)]
+        let first = ((u32::from(c) + 1) >> 1) as u8;
+        mem.write(out, first.wrapping_add(lead));
+        mem.write(out + 1, trail_base.wrapping_add(d));
+        2
+    }
 }
 
 #[cfg(test)]

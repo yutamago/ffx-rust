@@ -4545,6 +4545,79 @@ fn tk_round7_matches_the_original() {
         t.twin("Script_PcOffset", 0x0087_25e0, &[ctx, worker], U32, |o| {
             w(tk::script_pc_offset(o, ctx, worker))
         });
+        let k = t
+            .rng
+            .pick(&[0u32, 3, 7, 8, 0x100, 0xffff_ffff, 0x8000_0000]);
+        t.twin("Vibrate_BumpStream", 0x0087_5af0, &[k], U32, |o| {
+            w(tk::vibrate_bump_stream(o, i(k)))
+        });
+        let bufs = [t.alloc_random(0x10), t.alloc_random(0x10)];
+        t.put(t.sym(0x0133_c8c4), bufs);
+        let cur = t.rng.pick(&[bufs[0], bufs[1], 0]);
+        t.put(t.sym(tk::DEBUG_FONT_BUFFER.sym), cur);
+        t.twin("TkDebugFont_SwapBuffer", 0x0089_0780, &[], U32, |o| {
+            w(tk::tk_debug_font_swap_buffer(o))
+        });
+        let tp = t.alloc_random(0x30);
+        let qwc = t.rng.pick(&[0u32, 1, 0x1_0000, 0x1234]);
+        let bits = [t.rng.next(), t.rng.next(), t.rng.next()];
+        let addr = t.rng.next();
+        for (name, sym) in [
+            ("Dma_PutTagEx", 0x0089_0860),
+            ("Dma_PutTagEx2", 0x0089_0d30),
+        ] {
+            t.twin(
+                name,
+                sym,
+                &[tp, qwc, bits[0], bits[1], bits[2], addr],
+                U32,
+                |o| w(tk::dma_put_tag_ex(o, tp, qwc, bits, addr)),
+            );
+        }
+        let ent = t.alloc_random(0x10);
+        let src = if t.rng.below(4) == 0 {
+            0
+        } else {
+            t.alloc_random(4)
+        };
+        t.twin("Vibrate_SetStream", 0x0087_6230, &[ent, src], U32, |o| {
+            w(tk::vibrate_set_stream(o, ent, src))
+        });
+        if round % 25 == 0 {
+            t.scramble(0x0132_8150, 0x128);
+            t.twin("Vibrate_ResetAll", 0x0087_5e80, &[], U32, |o| {
+                w(tk::vibrate_reset_all(o))
+            });
+        }
+        let ch = t.alloc_random(2);
+        let c0 = t
+            .rng
+            .pick(&[0u8, 0x41, 0x7f, 0x80, 0xa4, 0xb0, 0xdf, 0xe0, 0xff]);
+        t.put(ch, c0);
+        let ob = t.alloc_random(2);
+        t.twin("TkEucToSjis", 0x0089_07e0, &[ch, ob], U32, |o| {
+            w(tk::tk_euc_to_sjis(o, ch, ob))
+        });
+        let pkt = t.alloc_random(0x100);
+        t.put(t.sym(gu::PACKET_DATA.sym), pkt);
+        let n0 = t.rng.below(8);
+        t.put(t.sym(gu::PACKET_COUNT.sym), n0);
+        let al = [
+            t.rng.int(),
+            t.rng.int(),
+            t.rng.int(),
+            t.rng.int(),
+            t.rng.int(),
+        ];
+        t.twin("Gu_SetAlpha", 0x0084_83e0, &al, VOID, |o| {
+            gu::gu_set_alpha(o, al.map(i));
+            0
+        });
+        let fw = t.alloc_random(0x98);
+        t.twin("Gu_FontSetupWindow", 0x0084_8310, &[fw], VOID, |o| {
+            gu::gu_font_setup_window(o, fw);
+            0
+        });
         let sc = t.rng.pick(&[0u32, 1, 0x40, 0x7f, 0x80, 0x100, 0xffff_ffff]);
         t.scramble(0x0186_63d0, 8);
         t.twin("Tk_NoteEternalCalm", 0x0088_ec90, &[sc], U32, |o| {
@@ -4582,6 +4655,15 @@ fn tk_round7_matches_the_original() {
                 w(tk::tk_mn2_set_macro_param(o, i(n), b, val))
             });
             // scene layout and scenes
+            let hw = t.alloc_random(0x40);
+            let st = t.rng.pick(&[0u32, 1, 1, 2]);
+            t.put(hw + 0x1c, st);
+            let fl = t.rng.pick(&[0u32, 1]);
+            t.put(t.sym(0x023c_c130), fl);
+            t.twin("TkMenuCtrlHdd", 0x008e_2870, &[hw], VOID, |o| {
+                tk::tk_menu_ctrl_hdd(o, hw, &mut callback);
+                0
+            });
             t.twin("TkMn2GetMainPos", 0x008e_2630, &[], U32, |o| {
                 w(tk::tk_mn2_get_main_pos(o))
             });
