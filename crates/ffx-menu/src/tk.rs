@@ -874,10 +874,13 @@ pub mod bridge {
             .wrapping_add(table)
     }
 
-    /// `TkMsGetRomItem(id, &name)` (`0x008ab280`): an item's name.
-    pub fn tk_ms_get_rom_item(mem: &mut impl Mem, id: u32, out: u32) {
+    /// `TkMsGetRomItem(id, &name)` (`0x008ab280`): an item's name, and
+    /// its record (left in `eax` from `MsGetRomItem`; the item menus read
+    /// its flags at `+0x1c`).
+    pub fn tk_ms_get_rom_item(mem: &mut impl Mem, id: u32, out: u32) -> u32 {
         let name = kernel_text(mem, ffx_kernel::bridge::ITEM, id, 0);
         mem.write(out, name);
+        ffx_kernel::bridge::rom(mem, ffx_kernel::bridge::ITEM, id, 0)
     }
 
     /// `TkMenuGetItemHelp(id)` (`0x008a98f0`) and `TkMn2GetItemHelp`

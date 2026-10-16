@@ -778,8 +778,8 @@ ported! {
         tk::MENU_HELP_RATIO2.get(&mem())
     }
     /// `TkMsGetRomItem(id, &name)`.
-    TkMsGetRomItem @ 0x008a_b280 => extern "C" fn tk_ms_get_rom_item(id: u32, out: u32) {
-        tk::tk_ms_get_rom_item(&mut mem(), id, out);
+    TkMsGetRomItem @ 0x008a_b280 => extern "C" fn tk_ms_get_rom_item(id: u32, out: u32) -> u32 {
+        tk::tk_ms_get_rom_item(&mut mem(), id, out)
     }
     /// `TkMsImportantGet(id)`.
     TkMsImportantGet @ 0x008a_b2c0 => extern "C" fn tk_ms_important_get(id: u32) -> u32 {

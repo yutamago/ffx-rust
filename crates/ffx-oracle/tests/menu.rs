@@ -1583,9 +1583,8 @@ fn tk_round2_matches_the_original() {
         t.put(menu, (m & !8) | hiragana);
         let out = t.alloc(&[0; 4]);
         for id in (0..0x140u32).chain([0x2000, 0x2001, 0x6000, 0x7fff, 0xffff]) {
-            t.twin("TkMsGetRomItem", 0x008a_b280, &[id, out], VOID, |o| {
-                tk::tk_ms_get_rom_item(o, id, out);
-                0
+            t.twin("TkMsGetRomItem", 0x008a_b280, &[id, out], U32, |o| {
+                w(tk::tk_ms_get_rom_item(o, id, out))
             });
             for (name, sym) in [
                 ("TkMenuGetItemHelp", 0x008a_98f0),
