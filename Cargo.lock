@@ -591,7 +591,9 @@ dependencies = [
 name = "ffx-field"
 version = "0.1.0"
 dependencies = [
+ "ffx-battle",
  "ffx-bridge",
+ "ffx-system",
 ]
 
 [[package]]

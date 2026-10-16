@@ -20,8 +20,8 @@ pub mod parse {
     pub const CHUNK: u32 = 0x0;
     /// `+0x4`: the cursor, a pointer into the chunk's data.
     pub const CURSOR: u32 = 0x4;
-    /// `+0x8`: cleared by `rcdtParseInit`.
-    pub const FIELD_8: u32 = 0x8;
+    /// `+0x8`: the mode (`rcdtParseSetMode`), 0 after `rcdtParseInit`.
+    pub const MODE: u32 = 0x8;
     /// `+0xc`: 128 bytes, one per ASCII code: non-zero for a separator.
     /// Token scanners (`0x0092bd20`, `0x0092be40`) index it with the byte
     /// at the cursor.
@@ -107,11 +107,54 @@ pub mod bridge {
         mem.write_bytes(p + parse::SEPARATORS, &table);
     }
 
+    /// `rcdtParseSetMode(parse, mode)` (`0x0092c0c0`).
+    pub fn rcdt_parse_set_mode(mem: &mut impl Mem, p: u32, mode: u32) {
+        mem.write(p + parse::MODE, mode);
+    }
+
+    /// `rcdtParseAddSeparators(parse, chars)` (`0x0092c0f0`): every byte
+    /// of the C string `chars` becomes a separator (the table is indexed
+    /// unchecked).
+    pub fn rcdt_parse_add_separators(mem: &mut impl Mem, p: u32, chars: u32) {
+        let mut at = chars;
+        loop {
+            let c = mem.read::<u8>(at);
+            if c == 0 {
+                break;
+            }
+            mem.write(p + parse::SEPARATORS + u32::from(c), 1u8);
+            at = at.wrapping_add(1);
+        }
+    }
+
+    /// `rcdtChunkSet(chunk, data, size)` (`0x0092b920`).
+    pub fn rcdt_chunk_set(mem: &mut impl Mem, c: u32, data: u32, size: u32) {
+        mem.write(c + chunk::BEGIN, data);
+        mem.write(c + chunk::SIZE, size);
+    }
+
+    /// `rcdtChunkGetEnd(chunk)` (`0x0092b820`): data + size.
+    pub fn rcdt_chunk_get_end(mem: &impl Mem, c: u32) -> u32 {
+        let size = mem.read::<u32>(c + chunk::SIZE);
+        size.wrapping_add(mem.read(c + chunk::BEGIN))
+    }
+
+    /// `rcdtChunkIsEmpty(chunk)` (`0x0092b860`): no data or no size.
+    pub fn rcdt_chunk_is_empty(mem: &impl Mem, c: u32) -> bool {
+        mem.read::<u32>(c + chunk::BEGIN) == 0 || mem.read::<u32>(c + chunk::SIZE) == 0
+    }
+
+    /// `rcdtTm2Init(tm2)` (`0x009237e0`): a TIM2 texture holder, `0x50`
+    /// bytes, cleared.
+    pub fn rcdt_tm2_init(mem: &mut impl Mem, t: u32) {
+        mem.write_bytes(t, &[0; 0x50]);
+    }
+
     /// `rcdtParseInit(parse)` (`0x0092bf50`): no chunk, default separators.
     pub fn rcdt_parse_init(mem: &mut impl Mem, p: u32) {
         mem.write(p + parse::CHUNK, 0u32);
         mem.write(p + parse::CURSOR, 0u32);
-        mem.write(p + parse::FIELD_8, 0u32);
+        mem.write(p + parse::MODE, 0u32);
         rcdt_parse_init_separators(mem, p);
     }
 }

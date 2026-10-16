@@ -4,6 +4,8 @@
 //! (the translation in the fourth row, `+0x30`). Float semantics follow
 //! the original's x87 code ([`crate::x87`]).
 
+use ffx_bridge::Global;
+
 use crate::x87;
 
 /// A bounding box (`rcBBoxInit`, 32 bytes): the minimum corner at `+0x0`,
@@ -26,6 +28,21 @@ pub mod bbox {
         0x3f80_0000,
     ];
 }
+
+/// The camera matrix (`g_CameraMatrix`, `MsGetCameraMatrix`).
+pub const CAMERA_MATRIX: Global<[f32; 16]> = Global::new(0x0231_1440);
+/// The screen matrix (`g_ScreenMatrix`, `MsGetScreenMatrix`).
+pub const SCREEN_MATRIX: Global<[f32; 16]> = Global::new(0x0231_1480);
+/// The background's world matrix (`rcbgSetWorldMatrix`).
+pub const WORLD: Global<[f32; 16]> = Global::new(0x025d_59a0);
+/// World through the camera (`rcbgUpdateMatrix`).
+pub const VIEW_WORLD: Global<[f32; 16]> = Global::new(0x025d_5960);
+/// The clip matrix (`rcbgSetClipMatrix`).
+pub const CLIP: Global<[f32; 16]> = Global::new(0x025d_58e0);
+/// [`VIEW_WORLD`] through the clip matrix (`rcbgUpdateMatrix`).
+pub const CLIP_WORLD: Global<[f32; 16]> = Global::new(0x025d_58a0);
+/// [`VIEW_WORLD`] through the screen matrix (`rcbgUpdateMatrix`).
+pub const SCREEN_WORLD: Global<[f32; 16]> = Global::new(0x025d_5920);
 
 /// Offset of a matrix's translation row.
 pub const MAT_TRANSLATE: u32 = 0x30;
@@ -71,6 +88,7 @@ pub fn length3(v: [u32; 3]) -> u32 {
 pub mod bridge {
     use ffx_bridge::Mem;
 
+    use super::{CAMERA_MATRIX, CLIP, CLIP_WORLD, SCREEN_MATRIX, SCREEN_WORLD, VIEW_WORLD, WORLD};
     use super::{MAT_TRANSLATE, bbox, center, cross_term, length3, short_convert_scale};
     use crate::x87;
 
@@ -116,6 +134,56 @@ pub mod bridge {
         mem.write(out + 4, cy);
         let cz = cross_term(at(mem, b, 1), at(mem, a, 0), at(mem, b, 0), at(mem, a, 1));
         mem.write(out + 8, cz);
+    }
+
+    /// `rcVec3fDot(a, b)` (`0x00921220`): `(a.y·b.y + a.x·b.x) + a.z·b.z`
+    /// at 53 bits, as `f32`.
+    pub fn rc_vec3f_dot(mem: &impl Mem, a: u32, b: u32) -> f32 {
+        let [ax, ay, az] = vec3(mem, a).map(x87::load);
+        let [bx, by, bz] = vec3(mem, b).map(x87::load);
+        f32::from_bits(x87::store(ay * by + ax * bx + az * bz))
+    }
+
+    /// `rcBBoxSet(box, points, n)` (`0x00921530`): the box around `n`
+    /// points (16 bytes apart); comparisons are strict, NaNs never win.
+    pub fn rc_bbox_set(mem: &mut impl Mem, b: u32, points: u32, n: i32) {
+        rc_bbox_init(mem, b);
+        let mut p = points;
+        for _ in 0..n.max(0) {
+            for i in 0..3 {
+                let v = f32::from_bits(mem.read(p + 4 * i));
+                let lo = b + bbox::MIN + 4 * i;
+                if v < f32::from_bits(mem.read(lo)) {
+                    mem.write(lo, x87::copy(v.to_bits()));
+                }
+                let hi = b + bbox::MAX + 4 * i;
+                if v > f32::from_bits(mem.read(hi)) {
+                    mem.write(hi, x87::copy(v.to_bits()));
+                }
+            }
+            p = p.wrapping_add(16);
+        }
+    }
+
+    /// `rcCalcPersMatrix(dst, m)` (`0x00920020`): `m` through the camera
+    /// matrix, then the screen matrix (`cdc_Mul4x4_007059b0` twice).
+    pub fn rc_calc_pers_matrix(mem: &mut impl Mem, dst: u32, m: u32) {
+        let camera = CAMERA_MATRIX.ptr(mem).addr;
+        let screen = SCREEN_MATRIX.ptr(mem).addr;
+        ffx_system::math::bridge::mul4x4(mem, dst, camera, m);
+        ffx_system::math::bridge::mul4x4(mem, dst, screen, dst);
+    }
+
+    /// `rcbgUpdateMatrix()` (`0x0092b160`): the background's view, clip and
+    /// screen matrices from its world matrix.
+    pub fn rcbg_update_matrix(mem: &mut impl Mem) {
+        let [world, view, clip, clip_world, screen_world] =
+            [WORLD, VIEW_WORLD, CLIP, CLIP_WORLD, SCREEN_WORLD].map(|g| g.ptr(mem).addr);
+        let camera = CAMERA_MATRIX.ptr(mem).addr;
+        let screen = SCREEN_MATRIX.ptr(mem).addr;
+        ffx_system::math::bridge::mul4x4(mem, view, camera, world);
+        ffx_system::math::bridge::mul4x4(mem, clip_world, clip, view);
+        ffx_system::math::bridge::mul4x4(mem, screen_world, screen, view);
     }
 
     /// `rcVec3fLength(v)` (`0x00921250`).
