@@ -218,6 +218,211 @@ pub mod bridge {
         update_with_type(h, lo, hi, 0);
     }
 
+    /// `graphicVFX2DUpdate(lo, hi)`: type 1.
+    pub fn update_2d(h: &mut impl Host, lo: u32, hi: u32) {
+        update_with_type(h, lo, hi, 1);
+    }
+
+    /// `graphicVFXDttUpdate(lo, hi)`: type 2.
+    pub fn update_dtt(h: &mut impl Host, lo: u32, hi: u32) {
+        update_with_type(h, lo, hi, 2);
+    }
+
+    /// `graphicVFXGetDynamicGeometryDataByInstance(lo, hi)`: 0 for the null
+    /// key.
+    pub fn get_dynamic_geometry_by_instance(m: &mut impl Mem, lo: u32, hi: u32) -> u32 {
+        if lo | hi == 0 {
+            return 0;
+        }
+        let table = TABLE.get(m);
+        get_dynamic_geometry(m, table, lo, hi)
+    }
+
+    /// The instance's geometry, for the wrappers that do nothing without
+    /// one.
+    fn geometry(h: &mut impl Host, lo: u32, hi: u32) -> Option<u32> {
+        match get_dynamic_geometry_by_instance(h, lo, hi) {
+            0 => None,
+            g => Some(g),
+        }
+    }
+
+    /// `ClassDynamicGeometry_show(this)`.
+    pub const SHOW: u32 = 0x006a_49e0;
+    /// `ClassDynamicGeometry_hide(this)`.
+    pub const HIDE: u32 = 0x006a_2370;
+    /// `VFXDynamicGeometry_setYIQEnable(this, on)`.
+    pub const SET_YIQ_ENABLE: u32 = 0x006a_3a20;
+    /// `VFXDynamicGeometry_setPointLightParameters(this, matrix, color, power)`.
+    pub const SET_POINT_LIGHT: u32 = 0x006a_2fd0;
+    /// `VFXDynamicGeometry_setTkRuntimeClutParameters(this, a, b, f)`.
+    pub const SET_CLUT: u32 = 0x006a_37f0;
+    /// `VFXDynamicGeometry_setZCorrectionValue(this, f)`.
+    pub const SET_Z_CORRECTION: u32 = 0x006a_3b20;
+    /// `VFXDynamicGeometry_setUVOffset(this, uv)`.
+    pub const SET_UV_OFFSET: u32 = 0x006a_3a00;
+    /// `VFXDynamicGeometry_setRGBAPower(this, rgba)`.
+    pub const SET_RGBA_POWER: u32 = 0x006a_30d0;
+    /// `Phyre_PString_Assign(this, text)`: a `PString`'s copy.
+    pub const PSTRING_ASSIGN: u32 = 0x0044_5cf0;
+    /// `PhyreScene_VFXSyncPath(this)`.
+    pub const SCENE_SYNC_PATH: u32 = 0x0065_4cc0;
+    /// `ClassVFXRenderDataTable_Clear(this)`.
+    pub const TABLE_CLEAR: u32 = 0x0069_f000;
+    /// `ClassVFXRenderDataTable_ClearByType(this, keep)`.
+    pub const TABLE_CLEAR_BY_TYPE: u32 = 0x0069_f110;
+    /// `ClassVFXRenderDataTable_RemoveDeletedPoolMeshInstances(this)`.
+    pub const TABLE_REMOVE_DELETED: u32 = 0x0069_fc70;
+    /// `ClassVFXRenderDataTable_UpdateDeletePool(this)`.
+    pub const TABLE_UPDATE_DELETE_POOL: u32 = 0x0069_fe50;
+    /// `PhyreScene_loadPersistentVFXTexture(this)`.
+    pub const SCENE_LOAD_PERSISTENT_TEXTURE: u32 = 0x0066_5660;
+    /// `PhyreScene_loadMapVFXTexture(this)`.
+    pub const SCENE_LOAD_MAP_TEXTURE: u32 = 0x0066_4f60;
+    /// `PhyreScene_unloadMapVFXTexture(this)`.
+    pub const SCENE_UNLOAD_MAP_TEXTURE: u32 = 0x0067_0fe0;
+    /// `PhyreScene_releaseVFXMeshes(this)` (`0x00659090`: on the scene's
+    /// `+0x10d54`).
+    pub const SCENE_RELEASE_VFX: u32 = 0x0065_9090;
+    /// `VfxShaderManager_sGetInstance()`.
+    pub const SHADER_MANAGER: u32 = 0x006c_14c0;
+    /// `VfxShaderManager_loadSpecialShaderTable(this)`: an empty method.
+    pub const SHADER_LOAD_SPECIAL: u32 = 0x006c_0fa0;
+    /// `VfxShaderManager_unloadSpecialShaderTable(this)`.
+    pub const SHADER_UNLOAD_SPECIAL: u32 = 0x006c_19b0;
+
+    /// `graphicVFXSetVisible(lo, hi, visible)`: shows or hides the
+    /// geometry; returns the method's `eax`, else 0.
+    pub fn set_visible(h: &mut impl Host, lo: u32, hi: u32, visible: u32) -> u32 {
+        let Some(g) = geometry(h, lo, hi) else {
+            return 0;
+        };
+        let f = if visible != 0 { SHOW } else { HIDE };
+        h.call_sym(f, Conv::Thiscall(g), &[])
+    }
+
+    /// `graphicVFXEnableYIQ(lo, hi)`.
+    pub fn enable_yiq(h: &mut impl Host, lo: u32, hi: u32) -> u32 {
+        let Some(g) = geometry(h, lo, hi) else {
+            return 0;
+        };
+        h.call_sym(SET_YIQ_ENABLE, Conv::Thiscall(g), &[1])
+    }
+
+    /// `graphicVFXSetPointLightParameters(lo, hi, a, b, f)` (`SET_POINT_LIGHT`)
+    /// and `graphicVFXSetClutParameters` (`SET_CLUT`): the float goes
+    /// through the x87 (`fld`/`fstp`).
+    #[allow(clippy::many_single_char_names)] // the arguments
+    pub fn set_parameters(
+        h: &mut impl Host,
+        method: u32,
+        lo: u32,
+        hi: u32,
+        a: u32,
+        b: u32,
+        f: f32,
+    ) -> u32 {
+        let Some(g) = geometry(h, lo, hi) else {
+            return 0;
+        };
+        let f = ffx_bridge::x87::round_trip(f).to_bits();
+        h.call_sym(method, Conv::Thiscall(g), &[a, b, f])
+    }
+
+    /// `graphicVFXSetZCorrectionValue(lo, hi, f)`.
+    pub fn set_z_correction(h: &mut impl Host, lo: u32, hi: u32, f: f32) -> u32 {
+        let Some(g) = geometry(h, lo, hi) else {
+            return 0;
+        };
+        let f = ffx_bridge::x87::round_trip(f).to_bits();
+        h.call_sym(SET_Z_CORRECTION, Conv::Thiscall(g), &[f])
+    }
+
+    /// `graphicVFXSetMeshInstanceName(lo, hi, name)`: the name of the
+    /// geometry's mesh instance (`+0xc`, its `PString` at `+0x2c`). The
+    /// original does not check for a missing geometry.
+    pub fn set_mesh_instance_name(h: &mut impl Host, lo: u32, hi: u32, name: u32) -> u32 {
+        if lo | hi == 0 {
+            return 0;
+        }
+        let table = TABLE.get(h);
+        let g = get_dynamic_geometry(h, table, lo, hi);
+        let mesh: u32 = h.read(g + 0xc);
+        h.call_sym(
+            PSTRING_ASSIGN,
+            Conv::Thiscall(mesh.wrapping_add(0x2c)),
+            &[name],
+        )
+    }
+
+    /// `graphicVFXUpdateParameterOnly(g, z, uv, rgba)`: shows the geometry,
+    /// sets its Z correction and, when given, its UV offset and RGBA power,
+    /// then its virtual `+0x28` with 0.
+    pub fn update_parameter_only(h: &mut impl Host, g: u32, z: f32, uv: u32, rgba: u32) {
+        if g == 0 {
+            return;
+        }
+        h.call_sym(SHOW, Conv::Thiscall(g), &[]);
+        let z = ffx_bridge::x87::round_trip(z).to_bits();
+        h.call_sym(SET_Z_CORRECTION, Conv::Thiscall(g), &[z]);
+        if uv != 0 {
+            h.call_sym(SET_UV_OFFSET, Conv::Thiscall(g), &[uv]);
+        }
+        if rgba != 0 {
+            h.call_sym(SET_RGBA_POWER, Conv::Thiscall(g), &[rgba]);
+        }
+        h.call_virtual(g, 10, &[0]);
+    }
+
+    /// `graphicVFXSyncPath()`: the scene's path sync, unless the frame is
+    /// skipped.
+    pub fn sync_path(h: &mut impl Host) {
+        if SKIP_FRAME.get(h) == 0 {
+            let scene = SCENE.get(h);
+            h.call_sym(SCENE_SYNC_PATH, Conv::Thiscall(scene), &[]);
+        }
+    }
+
+    /// The table-wide calls: `graphicVFXDestroyAll` (`TABLE_CLEAR`),
+    /// `graphicVFXRemoveDeletedPoolMeshInstances`, `graphicVFXUpdateDeletePool`.
+    pub fn table_call(h: &mut impl Host, method: u32) -> u32 {
+        let table = TABLE.get(h);
+        h.call_sym(method, Conv::Thiscall(table), &[])
+    }
+
+    /// `graphicVFXDestroyAllExceptFieldAndEternal()`: clears all but type
+    /// 0xb.
+    pub fn destroy_all_except_field_and_eternal(h: &mut impl Host) -> u32 {
+        let table = TABLE.get(h);
+        h.call_sym(TABLE_CLEAR_BY_TYPE, Conv::Thiscall(table), &[0xb])
+    }
+
+    /// `graphicVFXLoadPersistentTexture()`.
+    pub fn load_persistent_texture(h: &mut impl Host) -> u32 {
+        let scene = SCENE.get(h);
+        h.call_sym(SCENE_LOAD_PERSISTENT_TEXTURE, Conv::Thiscall(scene), &[])
+    }
+
+    /// `graphicVFXLoadLevelData()`: the map's effect textures, then the
+    /// shader manager's special table.
+    pub fn load_level_data(h: &mut impl Host) -> u32 {
+        let scene = SCENE.get(h);
+        h.call_sym(SCENE_LOAD_MAP_TEXTURE, Conv::Thiscall(scene), &[]);
+        let shaders = h.call_sym(SHADER_MANAGER, Conv::Cdecl, &[]);
+        h.call_sym(SHADER_LOAD_SPECIAL, Conv::Thiscall(shaders), &[])
+    }
+
+    /// `graphicVFXUnloadLevelData()`: the reverse, then the scene's effect
+    /// meshes.
+    pub fn unload_level_data(h: &mut impl Host) -> u32 {
+        let scene = SCENE.get(h);
+        h.call_sym(SCENE_UNLOAD_MAP_TEXTURE, Conv::Thiscall(scene), &[]);
+        let shaders = h.call_sym(SHADER_MANAGER, Conv::Cdecl, &[]);
+        h.call_sym(SHADER_UNLOAD_SPECIAL, Conv::Thiscall(shaders), &[]);
+        let scene = SCENE.get(h);
+        h.call_sym(SCENE_RELEASE_VFX, Conv::Thiscall(scene), &[])
+    }
+
     /// `graphicVFXPath3Update(lo, hi)`: with type bit 31.
     pub fn path3_update(h: &mut impl Host, lo: u32, hi: u32) {
         update_with_type(h, lo, hi, 0x8000_0000);

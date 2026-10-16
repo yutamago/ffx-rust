@@ -76,6 +76,102 @@ of the object), then `graphicVFXSetup`; on success `updateVFXRenderData`
 shape variants halve every segment's `+8` between the set-up and the
 fill, whether the set-up succeeded or not.
 
+### `updateVFXRenderData(lo, hi, part, obj)` (`0x00718610`)
+
+Fills an instance's render data from a particle part. Returns 1 (also
+when the frame is skipped), 0 when the instance or a part has no render
+data or a buffer could not be had.
+
+The part's shape (`part +0x1c`): `+4` offset of the segment headers,
+`+8`/`+0xc` offsets of default data for `obj +0x38`/`+0x3c` (set for the
+call, restored after), `+0x10` (`i16`) the primitive total. Each header is
+`0x10` bytes (`+1` type, `+2` `i16` primitive count `n`, `+8` texture word,
+`& 0x3fff`) followed by its primitives:
+
+| Type | Vertices, indices | Bytes per primitive | Per part |
+|---|---|---|---|
+| 0 | `3n`, `3n` | `0x14` | yes |
+| 1 | `3n`, `3n` | `0x1c` | yes |
+| 2 | `3n`, `3n` | `0x20` | yes |
+| 3 | `3n`, `3n` | `0x28` | no |
+| 4 | `4n`, `6n` | `0x18` | yes |
+| 5 | `4n`, `6n` | `0x20` | no |
+| 6 | `4n`, `6n` | `0x28` | yes |
+| 7 | `4n`, `6n` | `0x30` | no |
+
+Other types take no buffer and no bytes. For each header (until the
+total is used up, at most 28 segments) `graphicDynGeoMemManagerGetBufferForSegment`
+is asked for the counts. "Per part" types on a kind-1 effect ask for
+each of the four parts and clear its segment's `+4`/`+8`; on a kind-2
+effect each part reuses its segment's own `+4`/`+8` and clears its
+buffer (`+0x1c`, `+8 * 2` bytes); everything else asks for the first
+part only.
+
+The object (a particle program's draw object): `+0` flags (bit 6: point
+light), `+8` a byte (`0x48` with the alpha rule below), `+0x10`/`+0x14`
+UV offset and RGBA power words, `+0x18..0x1b` colour bytes, `+0x20` a
+16-word block, `+0x24` the light colour, `+0x28` the light matrix,
+`+0x2c` the camera matrix, `+0x44` an optional 16-word block, `+0x4d`
+the light power (0..255).
+
+- The colour is `byte * g_VfxColorScale[i]` (one `f32` rounding each).
+- `g_AlphaScale` is 512 for magic files 0x66/0x67 with texture 0x3400,
+  and for 0x203/0x29b with texture 0, object byte `0x48`, program 0xb and
+  `g_VfxPhase == 0x1f`; else 256. `g_AlphaScaleInv = 0.0078125 / it`.
+  Magic file 0x176 with textures `0x3780`/`0x3800`/`0x3880` sets the
+  colour bytes to `0x30`.
+- Magic file 0x207 with the point-light flag: the light matrix taken
+  through the inverse camera matrix row by row (`w` = 1 for the product,
+  then the light's own `w`), handed with the colour and
+  `power / 255` to `graphicVFXSetPointLightParameters` of every part.
+- With `g_VfxYiqMode != -1` on map 0x188 every part gets YIQ.
+
+The fill request (`JobSchedule_pppPart_getFillBufferRequest(total)`,
+while the fill buffer is valid):
+
+| Offset | Value |
+|---|---|
+| `0x000` | 0 (`u8`) |
+| `0x001` | `obj +0x44 != 0` |
+| `0x010` | `obj +0` |
+| `0x014` | `obj +0x38` (as set for the call) |
+| `0x018` | the shape |
+| `0x01c` | the first texture word (`u16`) |
+| `0x01e` | `obj +8` (`u8`) |
+| `0x020` | 16 words from `*(obj +0x20)` |
+| `0x060` | 16 words from `*(obj +0x44)` when set |
+| `0x0a0`, `0x0a4` | `obj +0x10`, `+0x14` |
+| `0x0b0` | the colour (4 floats) |
+| `0x0c0..0x0cc` | the parts' render data (one part: `+0xc0` only) |
+| `0x0d0..0x0ec` | the parts' geometry, twice |
+| `0x0f0..0x0fc` | the parts' geometry (one part: `+0xf0` only) |
+| `0x100` | `obj +0x3c` (point light) |
+| `0x104` | 0 |
+| `0x108` | `g_VfxPass` |
+| `0x110`, `0x150`, `0x190` | camera, light and colour blocks (point light) |
+| `0x1d0` | `obj +0x4d` (point light) |
+| `0x1d4` | 16 words of `g_pppFillMatrix` |
+
+### `updateVFXRenderDataShp(lo, hi, part, obj, segment)` (`0x0071b8a0`)
+
+The shape variant. `*(part)` is the shape; `segment` (`u16`) picks the
+segment whose `i16` offset sits at `shape + 0x10 + 8 * segment`. A few
+magic files set `obj +4..7` to `0x80` grey for one texture each (0x12e:
+`0x3960`; 0x274/0x99/0x9a: `0x3400`; 0x259/0x98/0x215: `0x39a0`;
+0x123/0x154: `0x3800`). On level `0x76f` with `g_VfxYiqMode` 3..5 a
+depth (`*(obj +0x10) +0x38`) below 300 becomes -10000. The first part's
+segments' counts are cleared; then either the whole primitive count goes
+to the first segment (`+8 += 6n`, `+4 += 4n`, kind 0), or each primitive
+(8 bytes from `segment + *(segment +4) + 4`, its first byte naming the
+part: `0x48` 1, `0x42` 2, `0x46` 3, `0x41` 4, `0x88` 5, else 0) adds
+6 and 4 to its part's first segment and its bit to the mask `+0xc8`.
+The fill request: `+0` 1, `+1` `obj +0x1c != 0`, `+0x10` the segment,
+`+0x14..+0x28` the six parts' geometry, `+0x2c..+0x40` their render data,
+`+0x44` `obj +2` (`u16`), `+0x48` 16 words from `*(obj +0x10)`, `+0x88`
+16 from `*(obj +0x1c)` when set, `+0xc8` `obj +4`, `+0xcc` the kind,
+`+0xd0`/`+0x110`/`+0x150` `g_pppFillMatrix`/`2`/`3`. Every part the mask
+names (up to `+0xc4`) then gets a buffer per segment.
+
 ## `g_PhyreScene` (`0x00ccb9d8`)
 
 The `PhyreScene` object. Fields the game's `graphic*` calls use:

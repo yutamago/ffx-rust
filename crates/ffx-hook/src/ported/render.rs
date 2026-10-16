@@ -64,6 +64,87 @@ ported! {
         vfx::bridge::init_render_data_shp(&mut mem(), [lo, hi, part, obj, shape, f], true);
     }
 
+    /// `updateVFXRenderData(lo, hi, part, obj)`.
+    updateVFXRenderData @ 0x0071_8610 => extern "C" fn update_vfx_render_data(lo: u32, hi: u32, part: u32, obj: u32) -> u32 {
+        ffx_graphic::render_data::bridge::update(&mut mem(), lo, hi, part, obj)
+    }
+    /// `updateVFXRenderDataShp(lo, hi, part, obj, segment)`.
+    updateVFXRenderDataShp @ 0x0071_b8a0 => extern "C" fn update_vfx_render_data_shp(lo: u32, hi: u32, part: u32, obj: u32, segment: u32) -> u32 {
+        ffx_graphic::render_data::bridge::update_shp(&mut mem(), lo, hi, part, obj, segment)
+    }
+    /// `graphicVFX2DUpdate(lo, hi)`.
+    graphicVFX2DUpdate @ 0x0064_4bc0 => extern "C" fn graphic_vfx_2d_update(lo: u32, hi: u32) {
+        vfx::bridge::update_2d(&mut mem(), lo, hi);
+    }
+    /// `graphicVFXDttUpdate(lo, hi)`.
+    graphicVFXDttUpdate @ 0x0064_5330 => extern "C" fn graphic_vfx_dtt_update(lo: u32, hi: u32) {
+        vfx::bridge::update_dtt(&mut mem(), lo, hi);
+    }
+    /// `graphicVFXGetDynamicGeometryDataByInstance(lo, hi)`.
+    graphicVFXGetDynamicGeometryDataByInstance @ 0x0064_5380 => extern "C" fn graphic_vfx_get_dynamic_geometry(lo: u32, hi: u32) -> u32 {
+        vfx::bridge::get_dynamic_geometry_by_instance(&mut mem(), lo, hi)
+    }
+    /// `graphicVFXSetVisible(lo, hi, visible)`.
+    graphicVFXSetVisible @ 0x0064_5710 => extern "C" fn graphic_vfx_set_visible(lo: u32, hi: u32, visible: u32) -> u32 {
+        vfx::bridge::set_visible(&mut mem(), lo, hi, visible)
+    }
+    /// `graphicVFXEnableYIQ(lo, hi)`.
+    graphicVFXEnableYIQ @ 0x0064_5350 => extern "C" fn graphic_vfx_enable_yiq(lo: u32, hi: u32) -> u32 {
+        vfx::bridge::enable_yiq(&mut mem(), lo, hi)
+    }
+    /// `graphicVFXSetPointLightParameters(lo, hi, matrix, color, power)`.
+    graphicVFXSetPointLightParameters @ 0x0064_56d0 => extern "C" fn graphic_vfx_set_point_light(lo: u32, hi: u32, a: u32, b: u32, f: f32) -> u32 {
+        vfx::bridge::set_parameters(&mut mem(), vfx::bridge::SET_POINT_LIGHT, lo, hi, a, b, f)
+    }
+    /// `graphicVFXSetClutParameters(lo, hi, a, b, f)`.
+    graphicVFXSetClutParameters @ 0x0064_5630 => extern "C" fn graphic_vfx_set_clut(lo: u32, hi: u32, a: u32, b: u32, f: f32) -> u32 {
+        vfx::bridge::set_parameters(&mut mem(), vfx::bridge::SET_CLUT, lo, hi, a, b, f)
+    }
+    /// `graphicVFXSetZCorrectionValue(lo, hi, f)`.
+    graphicVFXSetZCorrectionValue @ 0x0064_5750 => extern "C" fn graphic_vfx_set_z_correction(lo: u32, hi: u32, f: f32) -> u32 {
+        vfx::bridge::set_z_correction(&mut mem(), lo, hi, f)
+    }
+    /// `graphicVFXSetMeshInstanceName(lo, hi, name)`.
+    graphicVFXSetMeshInstanceName @ 0x0064_56a0 => extern "C" fn graphic_vfx_set_mesh_instance_name(lo: u32, hi: u32, name: u32) -> u32 {
+        vfx::bridge::set_mesh_instance_name(&mut mem(), lo, hi, name)
+    }
+    /// `graphicVFXUpdateParameterOnly(g, z, uv, rgba)`.
+    graphicVFXUpdateParameterOnly @ 0x0064_5a50 => extern "C" fn graphic_vfx_update_parameter_only(g: u32, z: f32, uv: u32, rgba: u32) {
+        vfx::bridge::update_parameter_only(&mut mem(), g, z, uv, rgba);
+    }
+    /// `graphicVFXSyncPath()`.
+    graphicVFXSyncPath @ 0x0064_5840 => extern "C" fn graphic_vfx_sync_path() {
+        vfx::bridge::sync_path(&mut mem());
+    }
+    /// `graphicVFXDestroyAll()`.
+    graphicVFXDestroyAll @ 0x0064_5310 => extern "C" fn graphic_vfx_destroy_all() -> u32 {
+        vfx::bridge::table_call(&mut mem(), vfx::bridge::TABLE_CLEAR)
+    }
+    /// `graphicVFXDestroyAllExceptFieldAndEternal()`.
+    graphicVFXDestroyAllExceptFieldAndEternal @ 0x0064_5320 => extern "C" fn graphic_vfx_destroy_all_except() -> u32 {
+        vfx::bridge::destroy_all_except_field_and_eternal(&mut mem())
+    }
+    /// `graphicVFXRemoveDeletedPoolMeshInstances()`.
+    graphicVFXRemoveDeletedPoolMeshInstances @ 0x0064_5620 => extern "C" fn graphic_vfx_remove_deleted() -> u32 {
+        vfx::bridge::table_call(&mut mem(), vfx::bridge::TABLE_REMOVE_DELETED)
+    }
+    /// `graphicVFXUpdateDeletePool()`.
+    graphicVFXUpdateDeletePool @ 0x0064_5a40 => extern "C" fn graphic_vfx_update_delete_pool() -> u32 {
+        vfx::bridge::table_call(&mut mem(), vfx::bridge::TABLE_UPDATE_DELETE_POOL)
+    }
+    /// `graphicVFXLoadPersistentTexture()`.
+    graphicVFXLoadPersistentTexture @ 0x0064_54c0 => extern "C" fn graphic_vfx_load_persistent_texture() -> u32 {
+        vfx::bridge::load_persistent_texture(&mut mem())
+    }
+    /// `graphicVFXLoadLevelData()`.
+    graphicVFXLoadLevelData @ 0x0064_54a0 => extern "C" fn graphic_vfx_load_level_data() -> u32 {
+        vfx::bridge::load_level_data(&mut mem())
+    }
+    /// `graphicVFXUnloadLevelData()`.
+    graphicVFXUnloadLevelData @ 0x0064_5860 => extern "C" fn graphic_vfx_unload_level_data() -> u32 {
+        vfx::bridge::unload_level_data(&mut mem())
+    }
+
     // ---- PhyreScene ----
     /// `graphicLevelGetNameHash()`.
     graphicLevelGetNameHash @ 0x0064_1da0 => extern "C" fn graphic_level_get_name_hash() -> u32 {

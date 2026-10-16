@@ -99,6 +99,11 @@ impl Host for G<'_> {
         };
         self.0.call(addr, conv, args).unwrap().eax
     }
+    fn scratch(&mut self) -> u32 {
+        // the bottom of the emulated stack: no call reaches that deep, and
+        // the diff leaves the stacks out, as the originals' frames are
+        self.0.stack_range().start + 0x100
+    }
 }
 
 /// What a function returns, to compare.
@@ -290,6 +295,20 @@ impl Twins {
         args: &[u32],
         bridge: impl FnOnce(&mut G) -> Out,
     ) {
+        self.check_with(what, sym, conv, args, bridge, |_| {});
+    }
+
+    /// As [`Twins::check`], with `fixup` run on both before the diff (for
+    /// bytes the original leaves undefined).
+    fn check_with(
+        &mut self,
+        what: &str,
+        sym: u32,
+        conv: Conv,
+        args: &[u32],
+        bridge: impl FnOnce(&mut G) -> Out,
+        fixup: impl FnOnce(&mut Self),
+    ) {
         let addr = self.rebase(sym);
         let ra = self
             .a
@@ -315,7 +334,45 @@ impl Twins {
                 );
             }
         }
+        fixup(self);
         self.diff(what);
+    }
+
+    /// A recording stub for a `thiscall (matrix*, a, b)` method: logs the
+    /// tag, `this`, `a` and `b` in one entry and the 16 words the matrix
+    /// pointer points at in the next two (the pointer itself differs: the
+    /// original passes its stack, the bridge its scratch).
+    fn stub_matrix(&mut self, at: u32, tag: u32, ret: u32) {
+        let log = self.log;
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(tag.to_le_bytes()); // mov [eax], tag
+        c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        c.extend([0x8b, 0x54, 0x24, 0x08, 0x89, 0x50, 0x08]); // [eax+8] = a
+        c.extend([0x8b, 0x54, 0x24, 0x0c, 0x89, 0x50, 0x0c]); // [eax+0xc] = b
+        c.extend([0x56, 0x57]); // push esi; push edi
+        c.extend([0x8b, 0x74, 0x24, 0x0c]); // mov esi, [esp+0xc] (the matrix)
+        c.extend([0x8d, 0x78, 0x20]); // lea edi, [eax+0x20]
+        c.extend([0xb9, 0x10, 0, 0, 0]); // mov ecx, 16
+        c.extend([0xf3, 0xa5]); // rep movsd
+        c.extend([0x5f, 0x5e]); // pop edi; pop esi
+        c.extend([0x83, 0x05]);
+        c.extend(log.to_le_bytes());
+        c.push(3); // add dword [log], 3
+        c.push(0xb8);
+        c.extend(ret.to_le_bytes()); // mov eax, ret
+        c.extend([0xc2, 0x0c, 0x00]); // ret 0xc
+        let addr = self.cave_next;
+        assert!(addr + c.len() as u32 <= self.cave + CAVE_LEN, "cave full");
+        self.write(addr, &c);
+        self.cave_next = addr + c.len() as u32;
+        let mut j = vec![0xe9];
+        j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
+        self.write(at, &j);
     }
 }
 
@@ -674,6 +731,481 @@ fn vfx_init_render_data_matches_the_original() {
                 Out::None
             });
         }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case per wrapper
+fn vfx_wrappers_match_the_original() {
+    use vfx::bridge as v;
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x0dd_ba11);
+    for round in 0..300 {
+        t.reset();
+        build_scene(&mut t, &mut rng);
+        t.global(v::SKIP_FRAME.sym, u32::from(rng.chance(4)));
+        t.global(v::LEVEL_FILTER.sym, 0);
+        let e = build_effect(&mut t, &mut rng);
+        // the geometry's mesh instance, for the name
+        let table = t.r32(t.rebase(v::TABLE.sym));
+        let first = v::map_find(&t.b, table, e.key);
+        if first != t.r32(table) {
+            let g = t.r32(first + 0x18);
+            let mesh = t.zeros(0x40);
+            t.w32(g + 0xc, mesh);
+            // the vtable's +0x28 for graphicVFXUpdateParameterOnly
+            let vt = t.r32(g);
+            let m28 = t.stub(None, 0x28, true, 1, 1, rng.next());
+            t.w32(vt + 0x28, m28);
+        }
+        for (sym, n) in [
+            (v::SHOW, 0),
+            (v::HIDE, 0),
+            (v::SET_YIQ_ENABLE, 1),
+            (v::SET_POINT_LIGHT, 3),
+            (v::SET_CLUT, 3),
+            (v::SET_Z_CORRECTION, 1),
+            (v::SET_UV_OFFSET, 1),
+            (v::SET_RGBA_POWER, 1),
+            (v::PSTRING_ASSIGN, 1),
+            (v::SCENE_SYNC_PATH, 0),
+            (v::TABLE_CLEAR, 0),
+            (v::TABLE_CLEAR_BY_TYPE, 1),
+            (v::TABLE_REMOVE_DELETED, 0),
+            (v::TABLE_UPDATE_DELETE_POOL, 0),
+            (v::SCENE_LOAD_PERSISTENT_TEXTURE, 0),
+            (v::SCENE_LOAD_MAP_TEXTURE, 0),
+            (v::SCENE_UNLOAD_MAP_TEXTURE, 0),
+            (v::SCENE_RELEASE_VFX, 0),
+            (v::SHADER_LOAD_SPECIAL, 0),
+            (v::SHADER_UNLOAD_SPECIAL, 0),
+        ] {
+            t.stub_sym(sym, Conv::Thiscall(0), n, rng.next());
+        }
+        t.stub_sym(v::SHADER_MANAGER, Conv::Cdecl, 0, rng.next());
+        let (lo, hi) = if rng.chance(20) { (0, 0) } else { split(e.key) };
+        let (a, b) = (rng.next(), rng.next());
+        let fl = rng.float();
+        let what = format!("round {round} key {:#x}", e.key);
+        let missing = first == t.r32(table);
+        match round % 17 {
+            0 => t.check(&what, 0x0064_4bc0, Conv::Cdecl, &[lo, hi], |g| {
+                v::update_2d(g, lo, hi);
+                Out::None
+            }),
+            1 => t.check(&what, 0x0064_5330, Conv::Cdecl, &[lo, hi], |g| {
+                v::update_dtt(g, lo, hi);
+                Out::None
+            }),
+            2 => t.check(&what, 0x0064_5380, Conv::Cdecl, &[lo, hi], |g| {
+                Out::U32(v::get_dynamic_geometry_by_instance(g, lo, hi))
+            }),
+            3 => {
+                let vis = rng.below(3);
+                t.check(&what, 0x0064_5710, Conv::Cdecl, &[lo, hi, vis], |g| {
+                    Out::U32(v::set_visible(g, lo, hi, vis))
+                });
+            }
+            4 => t.check(&what, 0x0064_5350, Conv::Cdecl, &[lo, hi], |g| {
+                Out::U32(v::enable_yiq(g, lo, hi))
+            }),
+            5 => t.check(
+                &what,
+                0x0064_56d0,
+                Conv::Cdecl,
+                &[lo, hi, a, b, fl.to_bits()],
+                |g| Out::U32(v::set_parameters(g, v::SET_POINT_LIGHT, lo, hi, a, b, fl)),
+            ),
+            6 => t.check(
+                &what,
+                0x0064_5630,
+                Conv::Cdecl,
+                &[lo, hi, a, b, fl.to_bits()],
+                |g| Out::U32(v::set_parameters(g, v::SET_CLUT, lo, hi, a, b, fl)),
+            ),
+            7 => t.check(
+                &what,
+                0x0064_5750,
+                Conv::Cdecl,
+                &[lo, hi, fl.to_bits()],
+                |g| Out::U32(v::set_z_correction(g, lo, hi, fl)),
+            ),
+            8 if !missing || lo | hi == 0 => {
+                t.check(&what, 0x0064_56a0, Conv::Cdecl, &[lo, hi, a], |g| {
+                    Out::U32(v::set_mesh_instance_name(g, lo, hi, a))
+                });
+            }
+            9 => {
+                let geo = if missing || rng.chance(5) {
+                    0
+                } else {
+                    t.r32(first + 0x18)
+                };
+                let uv = if rng.chance(2) { 0 } else { a };
+                let rgba = if rng.chance(2) { 0 } else { b };
+                t.check(
+                    &what,
+                    0x0064_5a50,
+                    Conv::Cdecl,
+                    &[geo, fl.to_bits(), uv, rgba],
+                    |g| {
+                        v::update_parameter_only(g, geo, fl, uv, rgba);
+                        Out::None
+                    },
+                );
+            }
+            10 => t.check(&what, 0x0064_5840, Conv::Cdecl, &[], |g| {
+                v::sync_path(g);
+                Out::None
+            }),
+            11 => t.check(&what, 0x0064_5310, Conv::Cdecl, &[], |g| {
+                Out::U32(v::table_call(g, v::TABLE_CLEAR))
+            }),
+            12 => t.check(&what, 0x0064_5320, Conv::Cdecl, &[], |g| {
+                Out::U32(v::destroy_all_except_field_and_eternal(g))
+            }),
+            13 => t.check(&what, 0x0064_5620, Conv::Cdecl, &[], |g| {
+                Out::U32(v::table_call(g, v::TABLE_REMOVE_DELETED))
+            }),
+            14 => t.check(&what, 0x0064_5a40, Conv::Cdecl, &[], |g| {
+                Out::U32(v::table_call(g, v::TABLE_UPDATE_DELETE_POOL))
+            }),
+            15 => t.check(&what, 0x0064_54c0, Conv::Cdecl, &[], |g| {
+                Out::U32(v::load_persistent_texture(g))
+            }),
+            _ => {
+                t.check(&what, 0x0064_54a0, Conv::Cdecl, &[], |g| {
+                    Out::U32(v::load_level_data(g))
+                });
+                t.check(&what, 0x0064_5860, Conv::Cdecl, &[], |g| {
+                    Out::U32(v::unload_level_data(g))
+                });
+            }
+        }
+    }
+}
+
+/// Sane floats for matrices (the originals invert and multiply them).
+fn matrix_bytes(rng: &mut Rng) -> Vec<u8> {
+    (0..16)
+        .flat_map(|i| {
+            let v = if i % 5 == 0 { 1.0 } else { 0.0 } + (rng.below(2000) as f32 - 1000.0) / 997.0;
+            v.to_le_bytes()
+        })
+        .collect()
+}
+
+const UPDATE_RENDER_DATA: u32 = 0x0071_8610;
+
+#[test]
+#[allow(clippy::too_many_lines)] // one set-up of every input
+fn vfx_update_render_data_matches_the_original() {
+    use ffx_graphic::render_data::bridge as rdb;
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x0c0f_fee5);
+    for round in 0..600 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        // the instance: up to four parts, each with its render data
+        let key = u64::from(rng.next()) | u64::from(rng.below(2)) << 32;
+        let kind: u8 = [0, 1, 2, 2][rng.below(4) as usize];
+        let count: u16 = match kind {
+            1 => 4,
+            2 => rng.below(5) as u16,
+            _ => 1,
+        };
+        let parts = if kind == 1 { 4 } else { count.max(1) };
+        let mut keys: Vec<u64> = (0..i32::from(parts))
+            .map(|p| vfx::part_key(key, p))
+            .collect();
+        if rng.chance(15) {
+            keys.pop();
+        }
+        let (table, entries) = build_table(&mut t, &keys, &mut rng);
+        t.global(vfx::bridge::TABLE.sym, table);
+        let yiq = t.stub(None, 0x0a20, true, 1, 1, rng.next());
+        let vtable = t.zeros(0x40);
+        let _ = yiq;
+        for (k, g) in &entries {
+            t.w32(*g, vtable);
+            if rng.chance(30) {
+                continue; // no render data
+            }
+            let rd = t.alloc(&rng.bytes(0x100));
+            t.w8(rd + 0xc0, kind);
+            t.write(rd + 0xc4, &count.to_le_bytes());
+            // 29 segments with a buffer each
+            let mut segs = rng.bytes(0x6c * 30);
+            for s in 0..30 {
+                let b = 0x6c * s;
+                let n = rng.below(64);
+                segs[b + 4..b + 8].copy_from_slice(&rng.below(64).to_le_bytes());
+                segs[b + 8..b + 12].copy_from_slice(&n.to_le_bytes());
+                let dst = t.alloc(&rng.bytes(0x100)).to_le_bytes();
+                segs[b + 0x1c..b + 0x20].copy_from_slice(&dst);
+                // the texture name the original compares with "RWTT"
+                let name: &[u8] = [&b"RWTT\0"[..], b"RWT\0", b"tex0\0"][rng.below(3) as usize];
+                let name = t.alloc(name).to_le_bytes();
+                segs[b + 0x20..b + 0x24].copy_from_slice(&name);
+            }
+            let segs = t.alloc(&segs);
+            t.w32(rd + 0x94, segs);
+            t.w32(*g + 0x24, rd);
+            let _ = k;
+        }
+        // the shape: headers of up to 6 segments
+        let shape = t.zeros(0x8000);
+        t.w32(shape + 4, 0x40);
+        t.w32(shape + 8, rng.below(0x100));
+        t.w32(shape + 0xc, rng.below(0x100));
+        let mut at = shape + 0x40;
+        let mut total = 0i32;
+        let textures = [0x3780, 0x3800, 0x3880, 0x3400, 0, 0x1234];
+        for s in 0..=rng.below(6) {
+            let ty = if rng.chance(12) {
+                [8u8, 0xff][rng.below(2) as usize]
+            } else {
+                rng.below(8) as u8
+            };
+            let n = rng.below(20) as i16;
+            t.w8(at + 1, ty);
+            t.write(at + 2, &n.to_le_bytes());
+            let tex = if s == 0 {
+                textures[rng.below(6) as usize]
+            } else {
+                rng.next()
+            };
+            t.w32(at + 8, tex | (rng.next() & 0xc000));
+            total += i32::from(n);
+            let stride =
+                ffx_graphic::render_data::segment_type(i32::from(ty as i8)).map_or(0, |s| s.stride);
+            at += 0x10 + u32::try_from(n).unwrap() * stride;
+        }
+        if rng.chance(10) {
+            total += rng.below(40) as i32 - 20;
+        }
+        t.write(shape + 0x10, &(total as i16).to_le_bytes());
+        let part = t.zeros(0x40);
+        t.w32(part + 0x1c, shape);
+        // the particle object
+        let mut o = rng.bytes(0x60);
+        o[0] = if rng.chance(2) { 0x40 } else { o[0] & !0x40 };
+        o[8] = if rng.chance(2) { 0x48 } else { o[8] };
+        let obj = t.alloc(&o);
+        for field in [0x20, 0x24, 0x28, 0x2c] {
+            let m = matrix_bytes(&mut rng);
+            let p = t.alloc(&m);
+            t.w32(obj + field, p);
+        }
+        for field in [0x38, 0x3c] {
+            let v = if rng.chance(2) { 0 } else { rng.next() };
+            t.w32(obj + field, v);
+        }
+        let p44 = if rng.chance(2) {
+            0
+        } else {
+            t.alloc(&rng.bytes(0x40))
+        };
+        t.w32(obj + 0x44, p44);
+        // the globals
+        let magic = [0x176, 0x66, 0x67, 0x203, 0x29b, 0x207, 0x207, 5][rng.below(8) as usize];
+        t.global(rdb::MAGIC_ID.sym, magic);
+        t.global(
+            rdb::PPP_CURRENT_PROGRAM.sym,
+            if rng.chance(2) { 0xb } else { 3 },
+        );
+        t.global(rdb::VFX_PHASE.sym, if rng.chance(2) { 0x1f } else { 2 });
+        t.global(
+            rdb::YIQ_MODE.sym,
+            if rng.chance(2) {
+                u32::MAX
+            } else {
+                rng.below(9)
+            },
+        );
+        t.global(
+            rdb::CURRENT_MAP.sym,
+            if rng.chance(2) { 0x188 } else { 0x41 },
+        );
+        t.global(rdb::VFX_PASS.sym, rng.next());
+        let fm = rng.bytes(0x40);
+        let at = t.rebase(rdb::FILL_MATRIX.sym);
+        t.write(at, &fm);
+        let cs: Vec<u8> = (0..4).flat_map(|_| rng.float().to_le_bytes()).collect();
+        let at = t.rebase(rdb::COLOR_SCALE.sym);
+        t.write(at, &cs);
+        t.global(vfx::bridge::SKIP_FRAME.sym, u32::from(rng.chance(30)));
+        let fill = t.alloc(&[u8::from(!rng.chance(3)), 0, 0, 0]);
+        t.global(managers::bridge::DYN_GEO_FILL_BUFFER.sym, fill);
+        // the callees
+        let buffer = t.zeros(0x10);
+        t.w32(buffer + 8, if rng.chance(2) { shape } else { rng.next() });
+        let buffer = if rng.chance(4) { 0 } else { buffer };
+        t.stub_sym(rdb::MODEL_BUFFER_GET, Conv::Cdecl, 1, buffer);
+        t.stub_sym(rdb::MODEL_BUFFER_RELEASE, Conv::Cdecl, 1, rng.next());
+        t.stub_sym(rdb::MODEL_BUFFER_ALLOCATE, Conv::Cdecl, 1, rng.next());
+        let req = t.alloc(&rng.bytes(0x220));
+        t.stub_sym(rdb::FILL_REQUEST, Conv::Cdecl, 1, req);
+        let ok = u32::from(!rng.chance(20));
+        t.stub_sym(rdb::BUFFER_FOR_SEGMENT, Conv::Cdecl, 4, ok);
+        t.stub_sym(
+            vfx::bridge::SET_YIQ_ENABLE,
+            Conv::Thiscall(0),
+            1,
+            rng.next(),
+        );
+        let pl = t.rebase(vfx::bridge::SET_POINT_LIGHT);
+        t.stub_matrix(pl, 0x2fd0, rng.next());
+        let (lo, hi) = split(key);
+        let what = format!("round {round} kind {kind} count {count} magic {magic:#x}");
+        // a kind-2 effect of fewer than four parts leaves the request's
+        // other part words to the original's uninitialised frame
+        let undefined = kind == 2 && count < 4;
+        t.check_with(
+            &what,
+            UPDATE_RENDER_DATA,
+            Conv::Cdecl,
+            &[lo, hi, part, obj],
+            |g| Out::U32(rdb::update(g, lo, hi, part, obj)),
+            |t| {
+                if undefined {
+                    for base in [0xc0, 0xd0, 0xe0, 0xf0] {
+                        for p in u32::from(count)..4 {
+                            t.w32(req + base + 4 * p, 0);
+                        }
+                    }
+                }
+            },
+        );
+    }
+}
+
+const UPDATE_RENDER_DATA_SHP: u32 = 0x0071_b8a0;
+
+#[test]
+#[allow(clippy::too_many_lines)] // one set-up of every input
+fn vfx_update_render_data_shp_matches_the_original() {
+    use ffx_graphic::render_data::bridge as rdb;
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x05ba_9e11);
+    let kinds = [0x48u8, 0x42, 0x46, 0x41, 0x88, 0x00, 0x13];
+    for round in 0..600 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let key = u64::from(rng.next()) | u64::from(rng.below(2)) << 32;
+        let kind: u8 = if rng.chance(3) {
+            0
+        } else {
+            1 + rng.below(2) as u8
+        };
+        // the shape's primitives and the parts they name
+        let n = if rng.chance(8) {
+            -(rng.below(3) as i16)
+        } else {
+            rng.below(12) as i16
+        };
+        let prims: Vec<u8> = (0..n.max(0))
+            .map(|_| kinds[rng.below(7) as usize])
+            .collect();
+        let used: Vec<u32> = prims.iter().map(|&k| rdb::shape_part(k)).collect();
+        let keys: Vec<u64> = (0..6)
+            .filter(|p| *p == 0 || used.contains(p))
+            .map(|p| vfx::part_key(key, p as i32))
+            .collect();
+        let (table, entries) = build_table(&mut t, &keys, &mut rng);
+        t.global(vfx::bridge::TABLE.sym, table);
+        let mut rd0 = 0;
+        for (k, g) in &entries {
+            let rd = t.alloc(&rng.bytes(0x100));
+            t.w8(rd + 0xc0, kind);
+            let nsegs = rng.below(4);
+            t.w32(rd + 0x90, if rng.chance(15) { u32::MAX } else { nsegs });
+            let segs = t.alloc(&rng.bytes(0x6c * 4));
+            t.w32(rd + 0x94, segs);
+            t.w32(*g + 0x24, rd);
+            if *k == key {
+                rd0 = rd;
+            }
+        }
+        // kind 0 keeps the old mask and names no other part
+        let count: u16 = if kind == 0 {
+            rng.below(2) as u16
+        } else {
+            rng.below(7) as u16
+        };
+        t.write(rd0 + 0xc4, &count.to_le_bytes());
+        // the shape: a segment table, the chosen segment, its primitives
+        let shape = t.zeros(0x400);
+        let which = rng.below(3);
+        let seg_off = 0x80 + 0x40 * which;
+        t.write(shape + 0x10 + which * 8, &(seg_off as i16).to_le_bytes());
+        if which != 0 {
+            t.write(shape + 0x10, &0x40i16.to_le_bytes());
+        }
+        let first = shape + if which == 0 { seg_off } else { 0x40 };
+        let tex = [0x3960, 0x3400, 0x39a0, 0x3800, 0x1111][rng.below(5) as usize];
+        t.w32(first + 0x10, tex | (rng.next() & 0xc000));
+        let seg = shape + seg_off;
+        t.w8(seg, if rng.chance(2) { 8 } else { 0 });
+        t.write(seg + 2, &n.to_le_bytes());
+        t.w32(seg + 4, 0x200 - seg_off);
+        for (i, &k) in prims.iter().enumerate() {
+            t.w8(shape + 0x204 + 8 * i as u32, k);
+        }
+        let part = t.zeros(4);
+        t.w32(part, shape);
+        // the object
+        let obj = t.alloc(&rng.bytes(0x40));
+        let p10 = t.alloc(&rng.bytes(0x40));
+        let depth = [100.0f32, 299.0, 300.0, 301.0, -5.0][rng.below(5) as usize];
+        t.write(p10 + 0x38, &depth.to_le_bytes());
+        t.w32(obj + 0x10, p10);
+        let p1c = if rng.chance(2) {
+            0
+        } else {
+            t.alloc(&rng.bytes(0x40))
+        };
+        t.w32(obj + 0x1c, p1c);
+        // the globals
+        let magic = [
+            0x12e, 0x274, 0x99, 0x9a, 0x259, 0x98, 0x215, 0x123, 0x154, 7,
+        ][rng.below(10) as usize];
+        t.global(rdb::MAGIC_ID.sym, magic);
+        let scene = build_scene(&mut t, &mut rng);
+        if rng.chance(2) {
+            t.w32(scene + 0xfaf4, 0x76f);
+        }
+        t.global(rdb::YIQ_MODE.sym, rng.below(7));
+        for g in [rdb::FILL_MATRIX, rdb::FILL_MATRIX_2, rdb::FILL_MATRIX_3] {
+            let v = rng.bytes(0x40);
+            let at = t.rebase(g.sym);
+            t.write(at, &v);
+        }
+        t.global(vfx::bridge::SKIP_FRAME.sym, u32::from(rng.chance(30)));
+        let fill = t.alloc(&[u8::from(!rng.chance(3)), 0, 0, 0]);
+        t.global(managers::bridge::DYN_GEO_FILL_BUFFER.sym, fill);
+        let req = t.alloc(&rng.bytes(0x200));
+        t.stub_sym(rdb::FILL_REQUEST, Conv::Cdecl, 1, req);
+        t.stub_sym(
+            rdb::BUFFER_FOR_SEGMENT,
+            Conv::Cdecl,
+            4,
+            u32::from(!rng.chance(20)),
+        );
+        let (lo, hi) = split(key);
+        let segment = which | rng.next() & 0xffff_0000;
+        let what = format!("round {round} kind {kind} count {count} n {n} magic {magic:#x}");
+        t.check(
+            &what,
+            UPDATE_RENDER_DATA_SHP,
+            Conv::Cdecl,
+            &[lo, hi, part, obj, segment],
+            |g| Out::U32(rdb::update_shp(g, lo, hi, part, obj, segment)),
+        );
     }
 }
 

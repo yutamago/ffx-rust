@@ -197,6 +197,7 @@
 0x00445630 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PString__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PString &>::Get" (its own __FUNCTION__ in an error print)
 0x00445700 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PString__Get_00445700 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PString *>::Get" (its own __FUNCTION__ in an error print)
 0x00445b40 function Phyre_PClassDescriptorForType_Phyre_PRendering_PTextureCommonBase__getPointerFromScriptContext # fh switch:bsim1.00 0x710006e270 Phyre::PClassDescriptorForType<Phyre::PRendering::PTextureCommonBase>::getPointerFromScriptContext
+0x00445cf0 function Phyre_PString_Assign      # thiscall(this, text), ret 4: copies text into a PhyreMalloc'd buffer (null for null), frees the old one unless bit 0 of the pointer is set; 0, or 0xd when the allocation fails; graphicVFXSetMeshInstanceName's callee; name ours
 0x00446490 function Phyre_PClassDataMemberDynamic_Bind # fh v3:exact 0x00446560 Phyre::PClassDataMemberDynamic::Bind
 0x004466d0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PClassDataMemberDynamic__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::PClassDataMemberDynamic *>::Get" (its own __FUNCTION__ in an error print)
 0x00446870 function Phyre_PClassDataMemberDynamic_IsDefaultInstance # fh switch:bsim1.00 0x71001739e0 Phyre::PClassDataMemberDynamic::IsDefaultInstance
@@ -1918,6 +1919,7 @@
 0x006579d0 function PhyreScene_beginRenderOpeningScreen # str-match switch: only user of 2 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/flash/OpeningScreen.swf'; Switch 0x710020bdc0 PhyreScene::beginRenderOpeningScreen (symbols from Fahrenheit's server export)
 0x00657a50 function PhyreScene_bootInit          # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71001ead10 PhyreScene::bootInit, 3 votes, round 1
 0x006587d0 function PhyreScene_change2DSceneNum  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'scene%d'; Switch 0x71001f1a80 PhyreScene::change2DSceneNum (symbols from Fahrenheit's server export)
+0x00659090 function PhyreScene_releaseVFXMeshes # thiscall(this): add ecx, 0x10d54; jmp 0x00636970 (graphicVFXUnloadLevelData's last call); name ours (the Ghidra dump's operator_new_00659090 from a Switch BSim match does not fit)
 0x00659290 function PhyreScene_convertMapPath # fh v3:exact 0x00659420 PhyreScene::convertMapPath
 0x006593d0 function PhyreScene_copyPreviousFrameBufferForDtt # fh v3:exact 0x00659560 PhyreScene::copyPreviousFrameBufferForDtt
 0x00659c30 function PhyreScene_createRWTTTarget  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'PhyreScene_colorTargetRWTT'; Switch 0x71001eba60 PhyreScene::createRWTTTarget (symbols from Fahrenheit's server export)
@@ -2292,6 +2294,7 @@
 0x0069f890 function ClassVFXRenderDataTable_Insert # fh v3:exact 0x0069f9d0 ClassVFXRenderDataTable::Insert
 0x0069f900 function ClassVFXRenderDataTable_InsertToDeletePool # fh v3:exact 0x0069fa40 ClassVFXRenderDataTable::InsertToDeletePool
 0x0069fc70 function ClassVFXRenderDataTable_RemoveDeletedPoolMeshInstances # fh v3:exact 0x0069fdb0 ClassVFXRenderDataTable::RemoveDeletedPoolMeshInstances
+0x0069fe50 function ClassVFXRenderDataTable_UpdateDeletePool # thiscall(this): counts down the delete pool's entries (+0xc keys, +0x14 counters, +0x1c geometry) and frees the expired ones' segments; name ours
 0x006a0100 function ClassChrShaderRender_VertexInstanceSetup # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Shadowmap'; Switch 0x71001e6ff0 ClassChrShaderRender::VertexInstanceSetup (symbols from Fahrenheit's server export)
 0x006a1040 function ClassDynamicGeometry_clear # fh v3:exact 0x006a1180 ClassDynamicGeometry::clear
 0x006a1200 function ClassCharacter_clearInstanceList # fh v3:exact 0x006a1340 ClassCharacter::clearInstanceList
@@ -11384,9 +11387,12 @@
 0x00c33468 label    g_EternalCalmFirstMap     # first of the 7 Eternal Calm maps (a map = PS2 file number / 18, as CDfileSize_CD asks): isEternalCalmScene/Mgrp, getEternalCalmSceneName/Size subtract it
 0x00c334b8 label    g_EternalCalmSceneNames   # 7 pointers to "host0:/ffx_master/jppc/event/obj..." paths, indexed by getEternalCalmSceneName
 0x00c34408 label    g_ShadowSize              # ShadowManager_GetShadowSize
+0x00c3a488 label    g_VfxColorScale           # four floats updateVFXRenderData multiplies the part's colour by (FFXVu0MulVector)
+0x00c3a494 label    g_AlphaScaleInv           # f32 0.0078125 / g_AlphaScale, set by updateVFXRenderData
 0x00c3a4cc label    g_pppEnvSlot              # pointer to where pppInitEnv stores the current ppp environment (rcefMainSetEnv)
 0x00c3a4d0 label    g_AlphaScale              # f32 set by useExtendedAlpha (512 extended, 256 normal)
 0x00c3a4d8 label    g_VfxShapeEnlargeBufferFactor # multiplies the shape draws' vertex counts; set/resetVfxShapeEnlargeBufferFactor
+0x00c3a504 label    g_VfxYiqMode              # -1 off; updateVFXRenderData enables YIQ on map 0x188 unless -1; updateVFXRenderDataShp pushes the depth back on level 0x76f at 3..5
 0x00c3a508 label    g_pppProgramTable            # 418 x 0x28-byte particle program records to 0x00c3e658: +0 name ("pppAccele", ...), +8 per-frame step, +0xc draw, +0x14 Sta, +0x1c set-up (Con), +0x20 second set-up (Con2), +0x24 destructor (Des); pppColor -> pppColor/pppColorCon
 0x00c3e6e0 label    g_pppKeMatSNWords         # two words pppKeMatSN copies to area 0 +0x70/+0x74
 0x00c41758 label    g_HddPassNames            # "ffxpassf" (+0) and "ffxpassr" (+0xc), written by hdd_set_pass_names
@@ -11474,6 +11480,7 @@
 0x00ccb9c2 label    g_PhyreSceneOpeningPlaying # byte PhyreScene_isOpeningScreenPlaying returns
 0x00ccb9cc label    g_pppSpecialPart          # set to 1 by pppRunPartStd for a part with 0x33 births or during spell 0x296
 0x00ccb9d0 label    g_EtChrHidden             # 1 after op_et_chr_show(0)
+0x00ccb9d4 label    g_VfxPhase                # at 0x1f updateVFXRenderData doubles the alpha (512) of magic files 0x203 and 0x29b (texture 0, object +8 == 0x48, program 0xb)
 0x00ccb9d8 label    g_PhyreScene              # the PhyreScene object: graphicLevelGetNameHash passes it to PhyreScene_getCurrentLevelNameHash (+0xfaf4); field list in docs/formats/render.md
 0x00ccc81c label    g_GraphicUi               # the remaster's UI object: graphicGetNowUIType / graphicSetNowUIType (+0x2be0)
 0x00ccc830 label    g_FreeCamera              # the free camera singleton (0x344 bytes, FreeCamera_FreeCamera), created on demand by its users, FreeCamera_destroyInstance
@@ -11688,6 +11695,7 @@
 0x01132ac4 label g_SaveCommandUse            # commands used, 18 characters x 0x16 flag words, right after g_PlySave (MsGetSaveCommandUse 0x00785140)
 0x01132ddc label g_SaveChrNames            # characters' names, 0x14 bytes each (MsGetSaveChrName)
 0x01133354 label g_BtlMuteSubtitle           # u32 (MsMuteBattleSubTitle 0x00785990)
+0x0113335c label    g_VfxPass                 # copied into every updateVFXRenderData fill request (+0x108)
 0x01133364 label g_BtlEventEffectStat        # i8 (MsEventEffectGetStat 0x00788bd0)
 0x01133390 label g_BtlDamage9999             # u32, set by MsCalcDamage when a hit of 9999+ comes from a user whose +0x50 string is empty
 0x01133394 label g_BtlDamage99999            # u32, the same for 99999+ (MsCalcDamage)
@@ -12126,6 +12134,9 @@
 0x022fb504 label    g_Settings
 0x022fb6c0 label g_CdChannelNames # CD channel names, 0x80 bytes each, cleared by cd_channel_clear 0x0076d530; name ours
 0x02305834 label    g_Abmap                      # the sphere grid data (LoadAbmap): +4 i16 link count, +0x808 nodes of 0x28 (x, y i16, +6 kind, +0x21 panel bits), +0xa816 link flags (0x14 each), +0xf834 kind sizes (0x30 each)
+0x0230fbe0 label    g_pppFillMatrix3          # 16 words updateVFXRenderDataShp copies into its fill request (+0x150)
+0x0230fc20 label    g_pppFillMatrix2          # 16 words updateVFXRenderDataShp copies into its fill request (+0x110)
+0x0230fca0 label    g_pppFillMatrix           # 16 words every updateVFXRenderData fill request takes (+0x1d4; the Shp request +0xd0)
 0x0230fd20 label    g_pppCurrentProgram       # the program index pppRunPartStd is running, 0 after
 0x0230fd24 label    g_pppObjectCount          # pppRunPartStd adds each birth record's object count
 0x0230fd2c label    g_PppPacketPos               # the VFX packet write position (pppFpLoop); KeLnsShp_Draw records it

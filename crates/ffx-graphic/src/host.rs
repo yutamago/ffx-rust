@@ -43,10 +43,33 @@ pub trait Host: Mem {
         let f: u32 = self.read(vtable + 4 * slot);
         self.call(f, Conv::Thiscall(obj), args)
     }
+
+    /// [`SCRATCH_LEN`] bytes of memory the original callees can reach,
+    /// for what the original kept in its stack frame and passed by
+    /// address (matrices handed to `PhyreEngine`). Private to the calling
+    /// thread; a bridge must not keep it across calls.
+    fn scratch(&mut self) -> u32;
+}
+
+/// The size of [`Host::scratch`].
+pub const SCRATCH_LEN: u32 = 0x200;
+
+#[cfg(target_arch = "x86")]
+thread_local! {
+    /// The game thread's scratch (`Host::scratch`).
+    static SCRATCH: std::cell::UnsafeCell<[u32; SCRATCH_LEN as usize / 4]> =
+        const { std::cell::UnsafeCell::new([0; SCRATCH_LEN as usize / 4]) };
 }
 
 #[cfg(target_arch = "x86")]
 impl Host for ffx_bridge::RawMem {
+    fn scratch(&mut self) -> u32 {
+        // the address only: the bridge reads and writes it through `Mem`,
+        // the originals through their pointers, as they would their stack
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        SCRATCH.with(|s| s.get() as usize as u32)
+    }
+
     #[allow(clippy::many_single_char_names)] // the arguments
     fn call(&mut self, addr: u32, conv: Conv, args: &[u32]) -> u32 {
         type C8 = unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32) -> u32;

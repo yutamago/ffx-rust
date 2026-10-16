@@ -19,6 +19,7 @@
 pub mod cache;
 pub mod host;
 pub mod managers;
+pub mod render_data;
 pub mod scene;
 pub mod ui;
 pub mod vfx;
