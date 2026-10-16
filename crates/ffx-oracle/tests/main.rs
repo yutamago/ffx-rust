@@ -1777,7 +1777,9 @@ fn frame_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) 
             0x0082_1750,
             &[req],
             |m| {
-                s::menu_set_reserve(m, req);
+                s::menu_set_reserve(m, req, |m| {
+                    ffx_menu::tk::bridge::tk_menu_save_load_active(m);
+                });
             },
         );
         twin("Sg_ToggleEnableTkAnti", a, b, 0x0083_b100, &[], |m| {

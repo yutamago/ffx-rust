@@ -1390,12 +1390,17 @@ pub mod bridge {
     /// (`0x40100000`) requests open it at once (`SaveDataSetScreenState(1)`,
     /// `TkMenuSaveLoadActive`, `SaveDataSetSave(1 or 0)`); any other
     /// request (`0x42000000` only while a menu runs) is kept for the main
-    /// loop.
-    pub fn menu_set_reserve(mem: &mut impl Mem, request: u32) {
+    /// loop. `save_load_active` is the menu module's `TkMenuSaveLoadActive`
+    /// (passed in: `ffx-menu` builds on this crate).
+    pub fn menu_set_reserve<M: Mem>(
+        mem: &mut M,
+        request: u32,
+        save_load_active: impl FnOnce(&mut M),
+    ) {
         use ffx_system::save::bridge as save;
         if save::is_screen_closed(mem) != 0 && (request == 0x4010_0000 || request == 0x4020_0000) {
             save::set_screen_state(mem, 1);
-            ffx_menu::tk::bridge::tk_menu_save_load_active(mem);
+            save_load_active(mem);
             save::set_save(mem, u32::from(request == 0x4020_0000));
             return;
         }

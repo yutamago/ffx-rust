@@ -898,7 +898,9 @@ ported! {
     }
     /// `Sg_MenuSetReserve(request)`.
     Sg_MenuSetReserve @ 0x0082_1750 => extern "C" fn sg_menu_set_reserve(request: u32) {
-        state::bridge::menu_set_reserve(&mut mem(), request);
+        state::bridge::menu_set_reserve(&mut mem(), request, |m| {
+            ffx_menu::tk::bridge::tk_menu_save_load_active(m);
+        });
     }
     /// `getUCStatus()`.
     getUCStatus @ 0x0082_2460 => extern "C" fn get_uc_status() -> u32 {
