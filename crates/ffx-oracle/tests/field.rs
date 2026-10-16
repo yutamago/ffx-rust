@@ -1,0 +1,1242 @@
+//! The field (`ffx_field`) against the original, on two oracles started
+//! alike: one runs `FFX.exe`'s code, the other the Rust bridge on the same
+//! memory; results and every written byte (the emulated VU0 registers
+//! included) must agree. Floats compare bit for bit, at the game thread's
+//! x87 precision (control word `0x027f`).
+//!
+//! Synthetic cases run on the image alone (`FFX_GAME_DIR`); the real
+//! state (guide map, display objects, the minimap mesh) on `FFX_SNAPSHOT`
+//! (field or battle), skipped without one.
+//!
+//! Two bytes of code are patched alike in both oracles: the import thunk
+//! of `_CIsqrt` (`0x009497b8`, which has no oracle stub) becomes
+//! `fsqrt; ret`, what the CRT computes (the correctly rounded root of
+//! `ST0` at the current precision), and `fstp st(0); ret` goes in the
+//! padding after `rcdtChunkInit` (`0x0092b856`) to pop a float result.
+
+use std::fmt::Debug;
+use std::path::PathBuf;
+
+use ffx_bridge::{Global, Mem};
+use ffx_field::{geom, guide, model, nkz, packet, rcdt, task, vu0, yi};
+use ffx_oracle::{Conv, Oracle, Pages};
+
+const SQRT_THUNK: u32 = 0x0094_97b8;
+const POP_STUB: u32 = 0x0092_b856;
+
+// rcdt
+const RCDT_CHUNK_INIT: u32 = 0x0092_b840;
+const RCDT_CHUNK_GET_BEGIN: u32 = 0x0092_b810;
+const RCDT_CHUNK_SET_BIN: u32 = 0x0092_b940;
+const RCDT_PARSE_ADVANCE: u32 = 0x0092_b960;
+const RCDT_PARSE_GET_BEGIN: u32 = 0x0092_ba70;
+const RCDT_PARSE_SET: u32 = 0x0092_c0a0;
+const RCDT_PARSE_SET_POS: u32 = 0x0092_c0d0;
+const RCDT_PARSE_GET_BIN: u32 = 0x0092_ba90;
+const RCDT_PARSE_INIT: u32 = 0x0092_bf50;
+const RCDT_PARSE_INIT_SEPARATORS: u32 = 0x0092_c000;
+// rcPacketData
+const RC_PACKET_DATA_INIT: u32 = 0x0092_7a20;
+const RC_PACKET_DATA_OPEN_ADR: u32 = 0x0092_7a70;
+const RC_PACKET_DATA_CLOSE_ADR: u32 = 0x0092_75b0;
+// geometry
+const RC_BBOX_INIT: u32 = 0x0092_14e0;
+const RC_BBOX_GET_CENTER: u32 = 0x0092_13d0;
+const RC_BBOX_GET_SHORT_CONVERT_SCALE: u32 = 0x0092_1410;
+const RC_VEC3F_MUL: u32 = 0x0092_12c0;
+const RC_VEC3F_LENGTH: u32 = 0x0092_1250;
+const RC_VEC3F_NORMALIZE: u32 = 0x0092_1360;
+const RC_MAT4F_SET_TRANSLATE: u32 = 0x0092_5850;
+const RC_MAT4F_SET_TRANSLATE_VEC3F: u32 = 0x0092_5870;
+// scene objects
+const RCBG_MODEL_CREATE_FROM_OMD: u32 = 0x0092_7d70;
+const RCBG_MODEL_GET_PRIM_HEADER: u32 = 0x0092_82c0;
+const RCBG_MODEL_GET_PRIM: u32 = 0x0092_82a0;
+const RCBG_MODEL_SET_ALPHA: u32 = 0x0092_8460;
+const RCBG_LAYER_LOAD_CALC_CENTER: u32 = 0x0092_b270;
+const RCBG_TRX_INIT: u32 = 0x0092_d510;
+const RCBG_TRX_SET_NO: u32 = 0x0092_d670;
+const RCBG_PAL_INIT: u32 = 0x0092_99b0;
+const RCBG_PAL_SET_NO: u32 = 0x0092_9ab0;
+const RCBG_ANIME_INIT: u32 = 0x0093_08a0;
+const RCBG_PSIM_SET_INIT_CNT: u32 = 0x0091_fef0;
+const RCBG_PSIM_CLEAR_OMD: u32 = 0x0091_f9b0;
+// guide map
+const GUIDE_MESH_OBJECT: u32 = 0x0091_d460;
+const GUIDE_FADE_STEP: u32 = 0x0091_d280;
+const GUIDE_FADE_OFF: u32 = 0x0091_d3a0;
+const RCBG_GUIDE_SET_DISP_PROG: u32 = 0x0091_d560;
+const RCBG_GUIDE_BATTLE_BEGIN: u32 = 0x0091_ccc0;
+const RCBG_GUIDE_BATTLE_END: u32 = 0x0091_cce0;
+const YN_BATTLE_BEGIN: u32 = 0x0091_9a20;
+const YN_BATTLE_END: u32 = 0x0091_9a40;
+const YN_GUIDE_MAP_SET_DISP_PROG: u32 = 0x0091_9d70;
+const YN_GUIDE_MAP_GET_MAP_NO: u32 = 0x0091_9c70;
+// rcef tasks
+const RCEF_TASK_INIT: u32 = 0x0092_ed10;
+const RCEF_TASK_SET_SEQ: u32 = 0x0092_ee20;
+const RCEF_TASK_SET_SEQ_CONT: u32 = 0x0092_ee40;
+const RCEF_TASK_CALL_SEQ: u32 = 0x0092_ecb0;
+const RCEF_TASK_RET_SEQ_CONT_INNER: u32 = 0x0092_ede0;
+const RCEF_TASK_RET_SEQ_CONT: u32 = 0x0092_ee00;
+const RCEF_TASK_WAIT: u32 = 0x0092_ee60;
+const RCEF_TASK_WAIT_SEQ: u32 = 0x0092_ee90;
+const RCEF_TASK_CTRL_INIT: u32 = 0x0093_0290;
+const RCEF_TASK_CTRL_IS_END: u32 = 0x0093_02e0;
+const RCEF_TASK_CTRL_ADD: u32 = 0x0093_0220;
+const RCEF_OBJ_IS_PAR_END: u32 = 0x0093_0010;
+const RCEF_OBJ_IS_ANIME_END: u32 = 0x0092_fff0;
+const RCEF_OBJ_ATTACH_CHR: u32 = 0x0092_f970;
+const RCEF_OBJ_CLEAR_MODE: u32 = 0x0093_01e0;
+const RCEF_OBJ_SET_MODE: u32 = 0x0093_0200;
+const RCEF_PAR_INIT: u32 = 0x0092_efd0;
+const RCEF_ANIME_INIT: u32 = 0x0092_f4c0;
+const RCEF_ANIME_START: u32 = 0x0092_f470;
+const RC_EFFECT_TASK_PAR_WAIT: u32 = 0x0093_0490;
+const RC_EFFECT_TASK_ANIME_WAIT: u32 = 0x0093_0350;
+const RC_EFFECT_TASK_TASK_WAIT: u32 = 0x0093_0520;
+const RC_EFFECT_TASK_FLAG_WAIT: u32 = 0x0093_03c0;
+// yi
+const YI_GET_RENDER_STATUS: u32 = 0x0090_8f10;
+const YI_RENDER_ENABLE: u32 = 0x0090_9e20;
+const YI_RENDER_DISABLE: u32 = 0x0090_9e10;
+const YI_GET_DRAW_MASK: u32 = 0x0090_8960;
+const YI_SET_DRAW_MASK: u32 = 0x0090_a2b0;
+const YI_GET_VCOUNT: u32 = 0x0090_8f70;
+const YI_GET_FCOUNT: u32 = 0x0090_8970;
+const YI_GET_MAP_STATUS: u32 = 0x0090_8dd0;
+const YI_GET_MATRIX_DOBJ: u32 = 0x0090_8df0;
+const YI_GET_MATRIX_GROUP: u32 = 0x0090_8e30;
+const YI_SET_SCALE_FACTOR: u32 = 0x0090_a950;
+const YI_RENDER_RESETTEX: u32 = 0x0090_cea0;
+const YI_SCREFF_INIT: u32 = 0x0091_3f30;
+// VU0 helpers
+const KE_VU0_COPY_VEC_XYZ: u32 = 0x0075_ede0;
+const KE_VU0_ADD_VEC_XYZ: u32 = 0x0075_eca0;
+const KE_VU0_SCALE_VEC_XYZ: u32 = 0x0075_fb50;
+const KE_VU0_VEC_LEN: u32 = 0x0075_fda0;
+const KE_VU0_VEC_LEN_XY: u32 = 0x0075_fde0;
+const KE_VU0_SQRT: u32 = 0x0075_fbf0;
+const KE_MDL_MK_TK_CLUT: u32 = 0x0076_7530;
+// Nkz, Sqs
+const NKZ_VERSION: u32 = 0x00a5_cf00;
+const NKZ_GET_LULU_LIMIT_TIME: u32 = 0x00a5_cb10;
+const NKZ_GET_AURON_LIMIT_TIME: u32 = 0x00a5_ca70;
+const NKZ_GET_TIDUS_LIMIT_TIME: u32 = 0x00a5_cbd0;
+const NKZ_GET_AURON_LIMIT_BUTTON_DATA: u32 = 0x00a5_ca60;
+const SQS_REPORT_IOP_SOUND_STATUS: u32 = 0x0081_e250;
+const SQS_IOP_SOUND_SYSTEM_STATUS: u32 = 0x0081_d710;
+const SQS_IOP_SOUND_ERROR_STATUS: u32 = 0x0081_d700;
+
+struct Xorshift(u32);
+
+impl Xorshift {
+    fn next(&mut self) -> u32 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 17;
+        self.0 ^= self.0 << 5;
+        self.0
+    }
+
+    fn below(&mut self, n: u32) -> u32 {
+        self.next() % n
+    }
+
+    fn range(&mut self, lo: i32, hi: i32) -> i32 {
+        let span = u32::try_from(hi - lo + 1).unwrap();
+        lo + i32::try_from(self.below(span)).unwrap()
+    }
+
+    /// Float bits: specials, small and large values, denormals; no NaN.
+    fn float(&mut self) -> u32 {
+        const SPECIAL: [u32; 10] = [
+            0,
+            0x8000_0000,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7f7f_ffff,
+            0x0000_0001,
+            0x807f_ffff,
+            0x0080_0000,
+        ];
+        match self.below(8) {
+            0 => SPECIAL[self.below(10) as usize],
+            1 => self.next() & 0x807f_ffff, // denormal
+            2 => {
+                let v = self.next();
+                if v & 0x7f80_0000 == 0x7f80_0000 {
+                    v & 0xbfff_ffff
+                } else {
+                    v
+                }
+            }
+            _ => {
+                #[allow(clippy::cast_precision_loss)]
+                let v = (self.range(-100_000, 100_000) as f32) / 64.0;
+                v.to_bits()
+            }
+        }
+    }
+
+    /// Float bits for copies: anything, quiet NaNs included. Not signalling
+    /// NaNs: the emulator (QEMU 5's softfloat) keeps their signalling bit
+    /// through `fld m32` / `fstp m32`, where an x87 CPU quiets them (the
+    /// masked response to #IA); the port follows the CPU (`ffx_field::x87`).
+    fn any_float(&mut self) -> u32 {
+        match self.below(4) {
+            0 => 0x7fc0_0000 | (self.next() & 0x803f_ffff),
+            _ => self.float(),
+        }
+    }
+}
+
+/// Two oracles on the same memory: `a` runs the original, `b` the bridge.
+struct Twin {
+    a: Oracle,
+    b: Oracle,
+}
+
+impl Twin {
+    fn new(mut a: Oracle, mut b: Oracle) -> Self {
+        for o in [&mut a, &mut b] {
+            o.set_fpu_control(0x027f).unwrap();
+            let at = o.rebase(SQRT_THUNK);
+            o.write(at, &[0xd9, 0xfa, 0xc3]).unwrap(); // fsqrt; ret
+            let at = o.rebase(POP_STUB);
+            o.write(at, &[0xdd, 0xd8, 0xc3]).unwrap(); // fstp st(0); ret
+        }
+        Self { a, b }
+    }
+
+    fn image() -> Option<Self> {
+        let exe = exe()?;
+        Some(Self::new(
+            Oracle::load(&exe).unwrap(),
+            Oracle::load(&exe).unwrap(),
+        ))
+    }
+
+    fn snapshot() -> Option<Self> {
+        let exe = exe()?;
+        let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+            eprintln!("FFX_SNAPSHOT is not set; skipping");
+            return None;
+        };
+        let pages = Pages::read(PathBuf::from(snap)).unwrap();
+        Some(Self::new(
+            Oracle::from_snapshot(&exe, &pages).unwrap(),
+            Oracle::from_snapshot(&exe, &pages).unwrap(),
+        ))
+    }
+
+    /// Zeroed scratch memory at the same address in both.
+    fn alloc(&mut self, len: usize) -> u32 {
+        let x = self.a.alloc(len).unwrap();
+        assert_eq!(self.b.alloc(len).unwrap(), x);
+        x
+    }
+
+    fn write(&mut self, at: u32, bytes: &[u8]) {
+        self.a.write(at, bytes).unwrap();
+        self.b.write(at, bytes).unwrap();
+    }
+
+    fn put<T: ffx_bridge::Value>(&mut self, at: u32, v: T) {
+        Mem::write(&mut self.a, at, v);
+        Mem::write(&mut self.b, at, v);
+    }
+
+    fn set<T: ffx_bridge::Value>(&mut self, g: Global<T>, v: T) {
+        let at = g.ptr(&self.b).addr;
+        self.put(at, v);
+    }
+
+    /// Random bytes at `at` in both.
+    fn fill(&mut self, at: u32, len: usize, rng: &mut Xorshift) {
+        let bytes: Vec<u8> = (0..len).map(|_| rng.next().to_le_bytes()[0]).collect();
+        self.write(at, &bytes);
+    }
+
+    /// Runs the original and the bridge; their results and memory agree.
+    fn same<R: PartialEq + Debug>(
+        &mut self,
+        what: &str,
+        original: impl FnOnce(&mut Orig) -> R,
+        rust: impl FnOnce(&mut Oracle) -> R,
+    ) {
+        let ra = original(&mut Orig(&mut self.a));
+        let rb = rust(&mut self.b);
+        assert_eq!(ra, rb, "{what}: results");
+        assert_eq!(self.a.diff(&mut self.b).unwrap(), [], "{what}: memory");
+    }
+}
+
+/// The original's side: cdecl calls by `ffx.sym` address.
+struct Orig<'a>(&'a mut Oracle);
+
+impl Orig<'_> {
+    fn call(&mut self, f: u32, args: &[u32]) -> ffx_oracle::Ret {
+        let at = self.0.rebase(f);
+        let r = self
+            .0
+            .call(at, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{f:#x}: {e}"));
+        if r.st0.is_some() {
+            let pop = self.0.rebase(POP_STUB);
+            self.0.call(pop, Conv::Cdecl, &[]).unwrap();
+        }
+        r
+    }
+
+    fn eax(&mut self, f: u32, args: &[u32]) -> u32 {
+        self.call(f, args).eax
+    }
+
+    fn void(&mut self, f: u32, args: &[u32]) {
+        self.call(f, args);
+    }
+
+    /// A float result, as bits (NaNs as one).
+    fn float(&mut self, f: u32, args: &[u32]) -> u32 {
+        let st0 = self.call(f, args).st0.expect("a float result");
+        #[allow(clippy::cast_possible_truncation)] // the value is an f32
+        bits(st0 as f32)
+    }
+}
+
+/// Float bits, NaNs as one (the oracle reads `ST0` through an `f64`).
+fn bits(x: f32) -> u32 {
+    if x.is_nan() { 0x7fc0_0000 } else { x.to_bits() }
+}
+
+fn exe() -> Option<PathBuf> {
+    let dir = std::env::var_os("FFX_GAME_DIR").map(PathBuf::from);
+    if dir.is_none() {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+    }
+    Some(dir?.join("FFX.exe"))
+}
+
+#[allow(clippy::cast_sign_loss)]
+const fn u(x: i32) -> u32 {
+    x as u32
+}
+
+#[test]
+fn rcdt_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x1357_9bdf);
+    let (c, p, data, out) = (t.alloc(8), t.alloc(0x90), t.alloc(0x100), t.alloc(0x40));
+    t.fill(data, 0x100, &mut rng);
+    for _ in 0..20 {
+        t.fill(c, 8, &mut rng);
+        t.fill(p, 0x90, &mut rng);
+        t.same(
+            "rcdtChunkInit",
+            |o| o.void(RCDT_CHUNK_INIT, &[c]),
+            |m| rcdt::bridge::rcdt_chunk_init(m, c),
+        );
+        t.same(
+            "rcdtParseInit",
+            |o| o.void(RCDT_PARSE_INIT, &[p]),
+            |m| rcdt::bridge::rcdt_parse_init(m, p),
+        );
+        t.fill(p, 0x90, &mut rng);
+        t.same(
+            "rcdtParseInitSeparators",
+            |o| o.void(RCDT_PARSE_INIT_SEPARATORS, &[p]),
+            |m| rcdt::bridge::rcdt_parse_init_separators(m, p),
+        );
+        let at = data + rng.below(0x40);
+        t.same(
+            "rcdtChunkSetBin",
+            |o| o.void(RCDT_CHUNK_SET_BIN, &[c, at]),
+            |m| rcdt::bridge::rcdt_chunk_set_bin(m, c, at),
+        );
+        t.same(
+            "rcdtChunkGetBegin",
+            |o| o.eax(RCDT_CHUNK_GET_BEGIN, &[c]),
+            |m| rcdt::bridge::rcdt_chunk_get_begin(m, c),
+        );
+        t.same(
+            "rcdtParseSet",
+            |o| o.void(RCDT_PARSE_SET, &[p, c]),
+            |m| rcdt::bridge::rcdt_parse_set(m, p, c),
+        );
+        t.same(
+            "rcdtParseGetBegin",
+            |o| o.eax(RCDT_PARSE_GET_BEGIN, &[p]),
+            |m| rcdt::bridge::rcdt_parse_get_begin(m, p),
+        );
+        let n = u(rng.range(-8, 0x20));
+        t.same(
+            "rcdtParseAdvance",
+            |o| o.void(RCDT_PARSE_ADVANCE, &[p, n]),
+            |m| rcdt::bridge::rcdt_parse_advance(m, p, n),
+        );
+        let off = rng.below(0x40);
+        t.same(
+            "rcdtParseSetPos",
+            |o| o.void(RCDT_PARSE_SET_POS, &[p, off]),
+            |m| rcdt::bridge::rcdt_parse_set_pos(m, p, off),
+        );
+        let n = rng.below(0x40);
+        t.same(
+            "rcdtParseGetBin",
+            |o| o.void(RCDT_PARSE_GET_BIN, &[p, out, n]),
+            |m| rcdt::bridge::rcdt_parse_get_bin(m, p, out, n),
+        );
+    }
+}
+
+#[test]
+fn packets_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x2468_ace0);
+    let (p, buf) = (t.alloc(8), t.alloc(0x200));
+    for _ in 0..50 {
+        t.fill(p, 8, &mut rng);
+        t.same(
+            "rcPacketDataInit",
+            |o| o.void(RC_PACKET_DATA_INIT, &[p]),
+            |m| packet::bridge::rc_packet_data_init(m, p),
+        );
+        let start = buf + 4 * rng.below(8);
+        t.same(
+            "rcPacketDataOpenAdr",
+            |o| o.void(RC_PACKET_DATA_OPEN_ADR, &[p, start]),
+            |m| packet::bridge::rc_packet_data_open_adr(m, p, start),
+        );
+        // some data written, sometimes not a whole quadword
+        let cursor = start + 0x10 + 4 * rng.below(0x30);
+        t.put(p + packet::CURSOR, cursor);
+        t.same(
+            "rcPacketDataCloseAdr",
+            |o| o.void(RC_PACKET_DATA_CLOSE_ADR, &[p]),
+            |m| packet::bridge::rc_packet_data_close_adr(m, p),
+        );
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case per function
+#[allow(clippy::many_single_char_names)] // vectors and operands
+fn geometry_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0bad_cafe);
+    let (bx, out, va, vb, m) = (
+        t.alloc(0x20),
+        t.alloc(0x10),
+        t.alloc(0x10),
+        t.alloc(0x10),
+        t.alloc(0x40),
+    );
+    t.same(
+        "rcBBoxInit",
+        |o| o.void(RC_BBOX_INIT, &[bx]),
+        |mm| geom::bridge::rc_bbox_init(mm, bx),
+    );
+    for i in 0..400 {
+        let corners: [u32; 8] = std::array::from_fn(|_| rng.float());
+        t.put(bx, corners);
+        t.same(
+            &format!("rcBBoxGetCenter {corners:x?}"),
+            |o| o.void(RC_BBOX_GET_CENTER, &[bx, out]),
+            |mm| geom::bridge::rc_bbox_get_center(mm, bx, out),
+        );
+        t.same(
+            &format!("rcBBoxGetShortConvertScale {corners:x?}"),
+            |o| o.float(RC_BBOX_GET_SHORT_CONVERT_SCALE, &[bx]),
+            |mm| bits(geom::bridge::rc_bbox_get_short_convert_scale(mm, bx)),
+        );
+        // the centre written over the box itself
+        if i % 10 == 0 {
+            t.same(
+                "rcBBoxGetCenter in place",
+                |o| o.void(RC_BBOX_GET_CENTER, &[bx, bx + 4]),
+                |mm| geom::bridge::rc_bbox_get_center(mm, bx, bx + 4),
+            );
+        }
+        let (a, b): ([u32; 4], [u32; 4]) = (
+            std::array::from_fn(|_| rng.float()),
+            std::array::from_fn(|_| rng.float()),
+        );
+        t.put(va, a);
+        t.put(vb, b);
+        let target = [out, va, vb][rng.below(3) as usize];
+        t.same(
+            &format!("rcVec3fMul {a:x?} {b:x?} into {target:#x}"),
+            |o| o.void(RC_VEC3F_MUL, &[target, va, vb]),
+            |mm| geom::bridge::rc_vec3f_mul(mm, target, va, vb),
+        );
+        let v: [u32; 4] = if i % 7 == 0 {
+            [0, 0x8000_0000, 0, rng.float()]
+        } else {
+            std::array::from_fn(|_| rng.float())
+        };
+        t.put(va, v);
+        t.same(
+            &format!("rcVec3fLength {v:x?}"),
+            |o| o.float(RC_VEC3F_LENGTH, &[va]),
+            |mm| bits(geom::bridge::rc_vec3f_length(mm, va)),
+        );
+        t.same(
+            &format!("rcVec3fNormalize {v:x?}"),
+            |o| o.void(RC_VEC3F_NORMALIZE, &[va]),
+            |mm| geom::bridge::rc_vec3f_normalize(mm, va),
+        );
+        t.fill(m, 0x40, &mut rng);
+        let (x, y, z) = (rng.any_float(), rng.any_float(), rng.any_float());
+        t.same(
+            &format!("rcMat4fSetTranslate {x:#x} {y:#x} {z:#x}"),
+            |o| o.void(RC_MAT4F_SET_TRANSLATE, &[m, x, y, z]),
+            |mm| geom::bridge::rc_mat4f_set_translate(mm, m, x, y, z),
+        );
+        t.put(vb, [rng.any_float(), rng.any_float(), rng.any_float(), 0]);
+        t.same(
+            "rcMat4fSetTranslateVec3f",
+            |o| o.void(RC_MAT4F_SET_TRANSLATE_VEC3F, &[m, vb]),
+            |mm| geom::bridge::rc_mat4f_set_translate_vec3f(mm, m, vb),
+        );
+    }
+}
+
+/// A synthetic OMD blob: packets of random types and counts from `+0x20`
+/// (its `+4` says so too), `+0x10` their total. Returns the packet count.
+fn omd(t: &mut Twin, blob: u32, rng: &mut Xorshift) -> i32 {
+    let strides = [0x14u32, 0x1c, 0x20, 0x28, 0x18, 0x20, 0x28, 0x30];
+    let n = rng.range(1, 6);
+    let mut at = blob + 0x20;
+    let mut total = 0i16;
+    for _ in 0..n {
+        let kind = rng.below(8);
+        let count = rng.range(1, 5);
+        t.fill(at, 0x10, rng);
+        t.put(at + model::packet::TYPE, u8::try_from(kind).unwrap());
+        t.put(at + model::packet::COUNT, i16::try_from(count).unwrap());
+        at += 0x10 + strides[kind as usize] * u(count);
+        total += i16::try_from(count).unwrap();
+    }
+    t.put(blob + model::omd::PACKETS, 0x20u32);
+    t.put(blob + model::omd::PRIMS, total);
+    n
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case per function
+fn scene_objects_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x7777_1234);
+    let (mdl, blob, obj) = (t.alloc(0x100), t.alloc(0x1000), t.alloc(0x100));
+    for _ in 0..50 {
+        t.fill(blob, 0x1000, &mut rng);
+        let n = omd(&mut t, blob, &mut rng);
+        t.same(
+            "rcbgModelCreateFromOMD",
+            |o| o.void(RCBG_MODEL_CREATE_FROM_OMD, &[mdl, blob]),
+            |m| model::bridge::rcbg_model_create_from_omd(m, mdl, blob),
+        );
+        for k in -1..=n {
+            t.same(
+                &format!("rcbgModelGetPrimHeader {k}"),
+                |o| o.eax(RCBG_MODEL_GET_PRIM_HEADER, &[mdl, u(k)]),
+                |m| model::bridge::rcbg_model_get_prim_header(m, mdl, k),
+            );
+            t.same(
+                &format!("rcbgModelGetPrim {k}"),
+                |o| o.eax(RCBG_MODEL_GET_PRIM, &[mdl, u(k)]),
+                |m| model::bridge::rcbg_model_get_prim(m, mdl, k),
+            );
+        }
+        let alpha = rng.next();
+        t.same(
+            "rcbgModelSetAlpha",
+            |o| o.void(RCBG_MODEL_SET_ALPHA, &[mdl, alpha]),
+            |m| model::bridge::rcbg_model_set_alpha(m, mdl, alpha.to_le_bytes()[0]),
+        );
+        t.fill(obj, 0x100, &mut rng);
+        let (w, h) = (rng.next() >> rng.below(32), rng.next() >> rng.below(32));
+        t.put(obj + model::layer::WIDTH, w);
+        t.put(obj + model::layer::HEIGHT, h);
+        t.same(
+            "rcbgLayerLoadCalcCenter",
+            |o| o.void(RCBG_LAYER_LOAD_CALC_CENTER, &[obj]),
+            |m| model::bridge::rcbg_layer_load_calc_center(m, obj),
+        );
+        t.same(
+            "rcbgTrxInit",
+            |o| o.void(RCBG_TRX_INIT, &[obj]),
+            |m| model::bridge::rcbg_trx_init(m, obj),
+        );
+        let no = rng.next();
+        t.same(
+            "rcbgTrxSetNo",
+            |o| o.void(RCBG_TRX_SET_NO, &[obj, no]),
+            |m| model::bridge::rcbg_trx_set_no(m, obj, no),
+        );
+        t.same(
+            "rcbgPalInit",
+            |o| o.void(RCBG_PAL_INIT, &[obj]),
+            |m| model::bridge::rcbg_pal_init(m, obj),
+        );
+        let no = rng.next();
+        t.same(
+            "rcbgPalSetNo",
+            |o| o.void(RCBG_PAL_SET_NO, &[obj, no]),
+            |m| model::bridge::rcbg_pal_set_no(m, obj, u16::try_from(no & 0xffff).unwrap()),
+        );
+        t.same(
+            "rcbgAnimeInit",
+            |o| o.void(RCBG_ANIME_INIT, &[obj]),
+            |m| model::bridge::rcbg_anime_init(m, obj),
+        );
+        let cnt = rng.next();
+        t.same(
+            "rcbgPSimSetInitCnt",
+            |o| o.void(RCBG_PSIM_SET_INIT_CNT, &[obj, cnt]),
+            |m| model::bridge::rcbg_psim_set_init_cnt(m, obj, cnt),
+        );
+        t.put(
+            obj + model::psim::MODEL,
+            if rng.below(2) == 0 { 0 } else { mdl },
+        );
+        t.same(
+            "rcbgPSimClearOMD",
+            |o| o.void(RCBG_PSIM_CLEAR_OMD, &[obj]),
+            |m| model::bridge::rcbg_psim_clear_omd(m, obj),
+        );
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case per function
+fn guide_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x5eed_0001);
+    let (sys, map, list, g) = (t.alloc(8), t.alloc(0x10), t.alloc(0x40), t.alloc(0x80));
+    for _ in 0..300 {
+        t.set(guide::FADE_STATE, rng.range(-1, 4));
+        t.set(guide::FADE_WAIT, rng.range(-1, 4));
+        t.set(guide::FADE_LEVEL, rng.range(-1, 8));
+        if rng.below(4) == 0 {
+            t.set(guide::FADE_DELAY, rng.range(0, 4));
+            t.set(guide::FADE_STEPS, rng.range(1, 8));
+        }
+        let show = [0, 1, 5][rng.below(3) as usize];
+        t.same(
+            &format!("Guide_FadeStep({show})"),
+            |o| o.void(GUIDE_FADE_STEP, &[show]),
+            |m| guide::bridge::guide_fade_step(m, i32::try_from(show).unwrap()),
+        );
+    }
+    t.set(guide::FADE_DELAY, 2);
+    t.set(guide::FADE_STEPS, 6);
+    t.same(
+        "Guide_FadeOff",
+        |o| o.void(GUIDE_FADE_OFF, &[]),
+        guide::bridge::guide_fade_off,
+    );
+    for _ in 0..50 {
+        t.fill(g, 0x80, &mut rng);
+        if rng.below(2) == 0 {
+            t.put(g + guide::object::MODEL, 0u32);
+        }
+        t.same(
+            "Guide_MeshObject",
+            |o| o.eax(GUIDE_MESH_OBJECT, &[g]),
+            |m| guide::bridge::guide_mesh_object(m, g),
+        );
+        let on = [0, 1, 0x100][rng.below(3) as usize];
+        t.same(
+            "rcbgGuideSetDispProg",
+            |o| o.void(RCBG_GUIDE_SET_DISP_PROG, &[g, on]),
+            |m| guide::bridge::rcbg_guide_set_disp_prog(m, g, i32::try_from(on).unwrap()),
+        );
+        t.put(g + guide::object::BATTLE_KEPT, rng.any_float());
+        t.same(
+            "rcbgGuideBattleBegin",
+            |o| o.void(RCBG_GUIDE_BATTLE_BEGIN, &[g]),
+            |m| guide::bridge::rcbg_guide_battle_begin(m, g),
+        );
+        t.set(guide::BATTLE_SAVE, rng.any_float());
+        t.same(
+            "rcbgGuideBattleEnd",
+            |o| o.void(RCBG_GUIDE_BATTLE_END, &[g]),
+            |m| guide::bridge::rcbg_guide_battle_end(m, g),
+        );
+        // Yn's field state, with each link missing in turn
+        let case = rng.below(5);
+        t.set(guide::YN_MAP_SYSTEM, if case == 0 { 0 } else { sys });
+        t.put(sys + guide::system::GUIDE, if case == 1 { 0 } else { g });
+        t.put(sys + guide::system::MAP, if case == 2 { 0 } else { map });
+        t.put(
+            map + guide::map::GUIDE_MAPS,
+            if case == 3 { 0 } else { list },
+        );
+        t.put(
+            list + guide::guide_maps::CURRENT,
+            u16::try_from(rng.below(0x10000)).unwrap(),
+        );
+        t.same(
+            &format!("Yn_GuideMapGetMapNo case {case}"),
+            |o| o.eax(YN_GUIDE_MAP_GET_MAP_NO, &[]),
+            |m| u(guide::bridge::yn_guide_map_get_map_no(m)),
+        );
+        let on = rng.below(2);
+        t.same(
+            &format!("Yn_GuideMapSetDispProg case {case}"),
+            |o| o.void(YN_GUIDE_MAP_SET_DISP_PROG, &[on]),
+            |m| guide::bridge::yn_guide_map_set_disp_prog(m, i32::try_from(on).unwrap()),
+        );
+        if case != 1 {
+            t.same(
+                "Yn_BattleBegin",
+                |o| o.void(YN_BATTLE_BEGIN, &[]),
+                guide::bridge::yn_battle_begin,
+            );
+            t.set(guide::BATTLE_SAVE, rng.any_float());
+            t.same(
+                "Yn_BattleEnd",
+                |o| o.void(YN_BATTLE_END, &[]),
+                guide::bridge::yn_battle_end,
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case per function
+fn tasks_match_the_original() {
+    use task::{bridge as tb, header};
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0xfeed_beef);
+    // room on both sides of the object for out-of-range levels
+    let area = t.alloc(0x800);
+    let o = area + 0x100;
+    for _ in 0..200 {
+        t.fill(area, 0x800, &mut rng);
+        t.same(
+            "rcefTaskInit",
+            |x| x.void(RCEF_TASK_INIT, &[o]),
+            |m| tb::rcef_task_init(m, o),
+        );
+        t.put(o + header::LEVEL, rng.range(-1, 8));
+        let seq = rng.next();
+        t.same(
+            "rcefTaskSetSeq",
+            |x| x.void(RCEF_TASK_SET_SEQ, &[o, seq]),
+            |m| tb::rcef_task_set_seq(m, o, seq),
+        );
+        t.same(
+            "rcefTaskSetSeqCont",
+            |x| x.void(RCEF_TASK_SET_SEQ_CONT, &[o, seq]),
+            |m| tb::rcef_task_set_seq_cont(m, o, seq),
+        );
+        t.same(
+            "rcefTaskCallSeq",
+            |x| x.void(RCEF_TASK_CALL_SEQ, &[o, seq]),
+            |m| tb::rcef_task_call_seq(m, o, seq),
+        );
+        t.put(o + header::LEVEL, rng.range(-1, 8));
+        t.same(
+            "rcefTaskRetSeqCont_Inner",
+            |x| x.void(RCEF_TASK_RET_SEQ_CONT_INNER, &[o]),
+            |m| tb::rcef_task_ret_seq_cont_inner(m, o),
+        );
+        t.same(
+            "rcefTaskRetSeqCont",
+            |x| x.void(RCEF_TASK_RET_SEQ_CONT, &[o]),
+            |m| tb::rcef_task_ret_seq_cont(m, o),
+        );
+        t.put(o + header::LEVEL, rng.range(-1, 8));
+        let frames = rng.range(-1, 3);
+        t.same(
+            &format!("rcefTaskWait {frames}"),
+            |x| x.void(RCEF_TASK_WAIT, &[o, u(frames)]),
+            |m| tb::rcef_task_wait(m, o, frames),
+        );
+        for _ in 0..3 {
+            t.same(
+                "rcefTaskWaitSeq",
+                |x| x.void(RCEF_TASK_WAIT_SEQ, &[o]),
+                |m| tb::rcef_task_wait_seq(m, o),
+            );
+        }
+        t.same(
+            "rcefObjIsParEnd",
+            |x| x.eax(RCEF_OBJ_IS_PAR_END, &[o]),
+            |m| u32::from(tb::rcef_obj_is_par_end(m, o)),
+        );
+        t.same(
+            "rcefObjIsAnimeEnd",
+            |x| x.eax(RCEF_OBJ_IS_ANIME_END, &[o]),
+            |m| u32::from(tb::rcef_obj_is_anime_end(m, o)),
+        );
+        t.put(o + header::LEVEL, rng.range(0, 7));
+        t.same(
+            "rcEffectTaskParWait",
+            |x| x.void(RC_EFFECT_TASK_PAR_WAIT, &[o]),
+            |m| tb::rc_effect_task_par_wait(m, o),
+        );
+        t.same(
+            "rcEffectTaskAnimeWait",
+            |x| x.void(RC_EFFECT_TASK_ANIME_WAIT, &[o]),
+            |m| tb::rc_effect_task_anime_wait(m, o),
+        );
+        let (wa, wb) = match rng.below(4) {
+            0 => (o, o),
+            1 => (o, 0),
+            2 => (0, o),
+            _ => (rng.next(), rng.next()),
+        };
+        t.set(tb::TASK_WAIT_A, wa);
+        t.set(tb::TASK_WAIT_B, wb);
+        t.same(
+            "rcEffectTaskTaskWait",
+            |x| x.void(RC_EFFECT_TASK_TASK_WAIT, &[o]),
+            |m| tb::rc_effect_task_task_wait(m, o),
+        );
+        t.set(tb::FLAG_WAIT, rng.below(2));
+        t.same(
+            "rcEffectTaskFlagWait",
+            |x| x.void(RC_EFFECT_TASK_FLAG_WAIT, &[o]),
+            |m| tb::rc_effect_task_flag_wait(m, o),
+        );
+        let (chr, el) = (rng.next(), rng.next());
+        t.same(
+            "rcefObjAttachChr",
+            |x| x.void(RCEF_OBJ_ATTACH_CHR, &[o, chr, el]),
+            |m| tb::rcef_obj_attach_chr(m, o, chr, el),
+        );
+        t.same(
+            "rcefObjClearMode",
+            |x| x.void(RCEF_OBJ_CLEAR_MODE, &[o]),
+            |m| tb::rcef_obj_clear_mode(m, o),
+        );
+        let mode = rng.next();
+        t.same(
+            "rcefObjSetMode",
+            |x| x.void(RCEF_OBJ_SET_MODE, &[o, mode]),
+            |m| tb::rcef_obj_set_mode(m, o, mode),
+        );
+        let par = o + task::obj::PAR;
+        t.same(
+            "rcefParInit",
+            |x| x.void(RCEF_PAR_INIT, &[par]),
+            |m| tb::rcef_par_init(m, par),
+        );
+        let an = o + task::obj::ANIME;
+        t.same(
+            "rcefAnimeInit",
+            |x| x.void(RCEF_ANIME_INIT, &[an]),
+            |m| tb::rcef_anime_init(m, an),
+        );
+        let (d, o0, o1) = (rng.next(), rng.next(), rng.next());
+        t.same(
+            "rcefAnimeStart",
+            |x| x.void(RCEF_ANIME_START, &[an, d, o0, o1]),
+            |m| tb::rcef_anime_start(m, an, d, o0, o1),
+        );
+    }
+    // a controller and tasks sorted into it
+    let ctrl = t.alloc(0x180);
+    let tasks: Vec<u32> = (0..8)
+        .map(|_| t.alloc(task::header::SIZE as usize))
+        .collect();
+    for round in 0..20 {
+        t.fill(ctrl, 0x180, &mut rng);
+        t.same(
+            "rcefTaskCtrlInit",
+            |x| x.void(RCEF_TASK_CTRL_INIT, &[ctrl]),
+            |m| tb::rcef_task_ctrl_init(m, ctrl),
+        );
+        t.same(
+            "rcefTaskCtrlIsEnd (empty)",
+            |x| x.eax(RCEF_TASK_CTRL_IS_END, &[ctrl]),
+            |m| u32::from(tb::rcef_task_ctrl_is_end(m, ctrl)),
+        );
+        for &k in &tasks {
+            t.same(
+                "rcefTaskInit",
+                |x| x.void(RCEF_TASK_INIT, &[k]),
+                |m| tb::rcef_task_init(m, k),
+            );
+            let p = [0, 0x10, 0x8000, 0xffff, 0x1_0000][rng.below(5) as usize];
+            t.put(k + header::PRIORITY, p);
+            let first = if round == 0 && k == tasks[0] { 0 } else { ctrl };
+            t.same(
+                &format!("rcefTaskCtrlAdd priority {p:#x}"),
+                |x| x.void(RCEF_TASK_CTRL_ADD, &[first, k]),
+                |m| tb::rcef_task_ctrl_add(m, first, k),
+            );
+            t.same(
+                "rcefTaskCtrlIsEnd",
+                |x| x.eax(RCEF_TASK_CTRL_IS_END, &[ctrl]),
+                |m| u32::from(tb::rcef_task_ctrl_is_end(m, ctrl)),
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case per function
+fn yi_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0042_4242);
+    let (out, v, map) = (t.alloc(0x40), t.alloc(0x10), t.alloc(0x10));
+    let render = t.alloc(0xc_0000);
+    for _ in 0..100 {
+        t.set(yi::RENDER_STATUS, rng.next());
+        t.same(
+            "yiGetRenderStatus",
+            |o| o.eax(YI_GET_RENDER_STATUS, &[]),
+            |m| yi::bridge::yi_get_render_status(m),
+        );
+        let bitsv = rng.next();
+        t.same(
+            "yiRenderEnable",
+            |o| o.void(YI_RENDER_ENABLE, &[bitsv]),
+            |m| yi::bridge::yi_render_enable(m, bitsv),
+        );
+        let bitsv = rng.next();
+        t.same(
+            "yiRenderDisable",
+            |o| o.void(YI_RENDER_DISABLE, &[bitsv]),
+            |m| yi::bridge::yi_render_disable(m, bitsv),
+        );
+        let mask = rng.next();
+        t.same(
+            "yiSetDrawMask",
+            |o| o.void(YI_SET_DRAW_MASK, &[mask]),
+            |m| yi::bridge::yi_set_draw_mask(m, mask),
+        );
+        t.same(
+            "yiGetDrawMask",
+            |o| o.eax(YI_GET_DRAW_MASK, &[]),
+            |m| yi::bridge::yi_get_draw_mask(m),
+        );
+        t.set(yi::SG_VCOUNT, rng.next());
+        t.set(yi::SG_FRAME, rng.next());
+        t.same(
+            "yiGetVCount",
+            |o| o.eax(YI_GET_VCOUNT, &[]),
+            |m| yi::bridge::yi_get_vcount(m),
+        );
+        t.same(
+            "yiGetFCount",
+            |o| o.eax(YI_GET_FCOUNT, &[]),
+            |m| yi::bridge::yi_get_fcount(m),
+        );
+        t.fill(map, 0x10, &mut rng);
+        t.set(yi::MAP_DATA, if rng.below(3) == 0 { 0 } else { map });
+        t.same(
+            "yiGetMapStatus",
+            |o| o.eax(YI_GET_MAP_STATUS, &[]),
+            |m| yi::bridge::yi_get_map_status(m),
+        );
+        // display objects
+        let count = rng.below(12);
+        t.set(yi::DOBJ_COUNT, count);
+        let base = yi::DOBJS.ptr(&t.b).addr;
+        t.fill(base, 12 * yi::dobj::SIZE as usize, &mut rng);
+        for i in 0..12 {
+            t.put(
+                base + i * yi::dobj::SIZE + yi::dobj::GROUP,
+                u16::try_from(rng.below(6)).unwrap(),
+            );
+        }
+        let index = rng.below(14);
+        t.same(
+            &format!("yiGetMatrixDObj {index} of {count}"),
+            |o| o.eax(YI_GET_MATRIX_DOBJ, &[index, out]),
+            |m| u(yi::bridge::yi_get_matrix_dobj(m, index, out)),
+        );
+        let group = [rng.below(7), rng.next()][rng.below(2) as usize];
+        t.same(
+            &format!("yiGetMatrixGroup {group}"),
+            |o| o.eax(YI_GET_MATRIX_GROUP, &[group, out]),
+            |m| u(yi::bridge::yi_get_matrix_group(m, group, out)),
+        );
+        t.put(v, [rng.any_float(), rng.any_float(), rng.any_float()]);
+        t.same(
+            "yiSetScaleFactor",
+            |o| o.void(YI_SET_SCALE_FACTOR, &[v]),
+            |m| yi::bridge::yi_set_scale_factor(m, v),
+        );
+    }
+    t.same(
+        "yiRender_resettex",
+        |o| o.void(YI_RENDER_RESETTEX, &[render]),
+        |m| yi::bridge::yi_render_resettex(m, render),
+    );
+    t.same(
+        "yiScreff_init",
+        |o| o.void(YI_SCREFF_INIT, &[render]),
+        |m| yi::bridge::yi_screff_init(m, render),
+    );
+}
+
+#[test]
+#[allow(clippy::many_single_char_names)] // vectors and operands
+fn vu0_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x00c8_f7a0);
+    let vs: Vec<u32> = (0..3).map(|_| t.alloc(0x10)).collect();
+    for i in 0..400 {
+        for &v in &vs {
+            let x: [u32; 4] = if i % 2 == 0 {
+                std::array::from_fn(|_| rng.any_float())
+            } else {
+                std::array::from_fn(|_| rng.float())
+            };
+            t.put(v, x);
+        }
+        let pick = |rng: &mut Xorshift| vs[rng.below(3) as usize];
+        let (d, s) = (pick(&mut rng), pick(&mut rng));
+        t.same(
+            "KeVu0CopyVecXYZ",
+            |o| o.void(KE_VU0_COPY_VEC_XYZ, &[d, s]),
+            |m| vu0::bridge::ke_vu0_copy_vec_xyz(m, d, s),
+        );
+        if i % 2 == 0 {
+            continue; // NaN operands left out of the arithmetic
+        }
+        let (d, a, b) = (pick(&mut rng), pick(&mut rng), pick(&mut rng));
+        t.same(
+            "KeVu0AddVecXYZ",
+            |o| o.void(KE_VU0_ADD_VEC_XYZ, &[d, a, b]),
+            |m| vu0::bridge::ke_vu0_add_vec_xyz(m, d, a, b),
+        );
+        let sc = [
+            rng.float(),
+            rng.any_float(),
+            rng.any_float(),
+            rng.any_float(),
+        ];
+        let (d, s) = (pick(&mut rng), pick(&mut rng));
+        t.same(
+            "KeVu0ScaleVecXYZ",
+            |o| o.void(KE_VU0_SCALE_VEC_XYZ, &[d, s, sc[0], sc[1], sc[2], sc[3]]),
+            |m| vu0::bridge::ke_vu0_scale_vec_xyz(m, d, s, sc),
+        );
+        let v = pick(&mut rng);
+        t.same(
+            "KeVu0VecLen",
+            |o| o.float(KE_VU0_VEC_LEN, &[v]),
+            |m| bits(vu0::bridge::ke_vu0_vec_len(m, v)),
+        );
+        t.same(
+            "KeVu0VecLenXY",
+            |o| o.float(KE_VU0_VEC_LEN_XY, &[v]),
+            |m| bits(vu0::bridge::ke_vu0_vec_len_xy(m, v)),
+        );
+        let x = rng.float() & 0x7fff_ffff; // the CRT's domain error left out
+        t.same(
+            &format!("KeVu0Sqrt {x:#x}"),
+            |o| o.float(KE_VU0_SQRT, &[x]),
+            |_| bits(vu0::bridge::ke_vu0_sqrt(x)),
+        );
+        let (a, b, c) = (rng.next(), rng.next(), rng.any_float());
+        t.same(
+            "KeMdl_MkTkClut",
+            |o| o.void(KE_MDL_MK_TK_CLUT, &[a, b, c]),
+            |m| vu0::bridge::ke_mdl_mk_tk_clut(m, a, b, c),
+        );
+    }
+}
+
+#[test]
+fn nkz_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    t.same(
+        "NkzVersion",
+        |o| o.eax(NKZ_VERSION, &[]),
+        |m| nkz::bridge::nkz_version(m),
+    );
+    t.same(
+        "NkzGetLuluLimitTime",
+        |o| o.float(NKZ_GET_LULU_LIMIT_TIME, &[]),
+        |m| bits(nkz::bridge::nkz_get_lulu_limit_time(m)),
+    );
+    for i in 0..8 {
+        t.same(
+            "NkzGetAuronLimitTime",
+            |o| o.float(NKZ_GET_AURON_LIMIT_TIME, &[i]),
+            |m| {
+                bits(nkz::bridge::nkz_get_auron_limit_time(
+                    m,
+                    i32::try_from(i).unwrap(),
+                ))
+            },
+        );
+        t.same(
+            "NkzGetTidusLimitTime",
+            |o| o.float(NKZ_GET_TIDUS_LIMIT_TIME, &[i]),
+            |m| {
+                bits(nkz::bridge::nkz_get_tidus_limit_time(
+                    m,
+                    i32::try_from(i).unwrap(),
+                ))
+            },
+        );
+        t.same(
+            "NkzGetAuronLimitButtonData",
+            |o| o.eax(NKZ_GET_AURON_LIMIT_BUTTON_DATA, &[i]),
+            |m| nkz::bridge::nkz_get_auron_limit_button_data(m, i),
+        );
+    }
+    let mut rng = Xorshift(0x5a5a_5a5a);
+    for _ in 0..10 {
+        let at = nkz::SQS_IOP_STATUS.ptr(&t.b).addr;
+        t.fill(at, 0x10, &mut rng);
+        for i in 0..4 {
+            t.same(
+                "SqsReportIopSoundStatus",
+                |o| o.eax(SQS_REPORT_IOP_SOUND_STATUS, &[i]),
+                |m| nkz::bridge::sqs_report_iop_sound_status(m, i),
+            );
+        }
+        t.same(
+            "SqsIopSoundSystemStatus",
+            |o| o.eax(SQS_IOP_SOUND_SYSTEM_STATUS, &[]),
+            |m| nkz::bridge::sqs_iop_sound_system_status(m),
+        );
+        t.same(
+            "SqsIopSoundErrorStatus",
+            |o| o.eax(SQS_IOP_SOUND_ERROR_STATUS, &[]),
+            |m| nkz::bridge::sqs_iop_sound_error_status(m),
+        );
+    }
+}
+
+/// The game's own state: the guide map and its minimap mesh, the display
+/// objects, the renderer's flags.
+#[test]
+#[allow(clippy::too_many_lines)] // one walk over the state
+fn field_state_matches_the_original_on_a_snapshot() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    t.same(
+        "Yn_GuideMapGetMapNo",
+        |o| o.eax(YN_GUIDE_MAP_GET_MAP_NO, &[]),
+        |m| u(guide::bridge::yn_guide_map_get_map_no(m)),
+    );
+    t.same(
+        "yiGetMapStatus",
+        |o| o.eax(YI_GET_MAP_STATUS, &[]),
+        |m| yi::bridge::yi_get_map_status(m),
+    );
+    for (name, f, rust) in [
+        (
+            "yiGetRenderStatus",
+            YI_GET_RENDER_STATUS,
+            yi::bridge::yi_get_render_status as fn(&Oracle) -> u32,
+        ),
+        (
+            "yiGetDrawMask",
+            YI_GET_DRAW_MASK,
+            yi::bridge::yi_get_draw_mask,
+        ),
+        ("yiGetVCount", YI_GET_VCOUNT, yi::bridge::yi_get_vcount),
+        ("yiGetFCount", YI_GET_FCOUNT, yi::bridge::yi_get_fcount),
+    ] {
+        t.same(name, |o| o.eax(f, &[]), |m| rust(m));
+    }
+    let out = t.alloc(0x40);
+    let count = yi::DOBJ_COUNT.get(&t.b);
+    eprintln!("{count} display objects");
+    for i in 0..=count.min(64) {
+        t.same(
+            &format!("yiGetMatrixDObj {i}"),
+            |o| o.eax(YI_GET_MATRIX_DOBJ, &[i, out]),
+            |m| u(yi::bridge::yi_get_matrix_dobj(m, i, out)),
+        );
+    }
+    for g in 0..16 {
+        t.same(
+            &format!("yiGetMatrixGroup {g}"),
+            |o| o.eax(YI_GET_MATRIX_GROUP, &[g, out]),
+            |m| u(yi::bridge::yi_get_matrix_group(m, g, out)),
+        );
+    }
+    // the fade from where the game left it, shown then hidden
+    for show in [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] {
+        t.same(
+            &format!("Guide_FadeStep({show})"),
+            |o| o.void(GUIDE_FADE_STEP, &[show]),
+            |m| guide::bridge::guide_fade_step(m, i32::try_from(show).unwrap()),
+        );
+    }
+    let sys = guide::YN_MAP_SYSTEM.get(&t.b);
+    let g = if sys == 0 {
+        0
+    } else {
+        Mem::read::<u32>(&t.b, sys + 4)
+    };
+    if g == 0 {
+        eprintln!("no guide map in this snapshot; skipping the minimap mesh");
+        return;
+    }
+    t.same(
+        "Guide_MeshObject",
+        |o| o.eax(GUIDE_MESH_OBJECT, &[g]),
+        |m| guide::bridge::guide_mesh_object(m, g),
+    );
+    let mesh = guide::bridge::guide_mesh_object(&t.b, g);
+    let blob = Mem::read::<u32>(&t.b, mesh + model::obj::OMD);
+    if blob == 0 {
+        eprintln!("the minimap mesh has no blob; skipping it");
+        return;
+    }
+    // packets up to the end marker (0xffff in the first two bytes)
+    let mut n = 0;
+    loop {
+        let h = model::bridge::rcbg_model_get_prim_header(&t.b, mesh, n);
+        t.same(
+            &format!("rcbgModelGetPrimHeader {n}"),
+            |o| o.eax(RCBG_MODEL_GET_PRIM_HEADER, &[mesh, u(n)]),
+            |m| model::bridge::rcbg_model_get_prim_header(m, mesh, n),
+        );
+        t.same(
+            &format!("rcbgModelGetPrim {n}"),
+            |o| o.eax(RCBG_MODEL_GET_PRIM, &[mesh, u(n)]),
+            |m| model::bridge::rcbg_model_get_prim(m, mesh, n),
+        );
+        if Mem::read::<u16>(&t.b, h) == 0xffff || n > 256 {
+            break;
+        }
+        n += 1;
+    }
+    let h = model::bridge::rcbg_model_get_prim_header(&t.b, mesh, 0);
+    eprintln!(
+        "minimap mesh: {n} packets (blob +4 {:#x}, +8 {:#x}, {} prims, {} vertices; first type {} x {})",
+        Mem::read::<u32>(&t.b, blob + model::omd::PACKETS),
+        Mem::read::<u32>(&t.b, blob + model::omd::VERTICES),
+        Mem::read::<i16>(&t.b, blob + model::omd::PRIMS),
+        Mem::read::<u16>(&t.b, blob + model::omd::VERTEX_COUNT),
+        Mem::read::<i8>(&t.b, h + model::packet::TYPE),
+        Mem::read::<i16>(&t.b, h + model::packet::COUNT),
+    );
+    if Mem::read::<u32>(&t.b, blob + model::omd::PACKETS) == model::omd::FIRST_PACKET {
+        for alpha in [0x40u32, 0x80] {
+            t.same(
+                "rcbgModelSetAlpha",
+                |o| o.void(RCBG_MODEL_SET_ALPHA, &[mesh, alpha]),
+                |m| model::bridge::rcbg_model_set_alpha(m, mesh, alpha.to_le_bytes()[0]),
+            );
+        }
+    }
+    t.same(
+        "rcbgGuideBattleBegin",
+        |o| o.void(RCBG_GUIDE_BATTLE_BEGIN, &[g]),
+        |m| guide::bridge::rcbg_guide_battle_begin(m, g),
+    );
+    t.same(
+        "Yn_BattleEnd",
+        |o| o.void(YN_BATTLE_END, &[]),
+        guide::bridge::yn_battle_end,
+    );
+}
