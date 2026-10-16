@@ -4737,6 +4737,20 @@ fn tk_round7_matches_the_original() {
             t.twin("Pad_RemapButton", 0x0088_8cf0, &[pp, 0, code], U32, |o| {
                 s(tk::pad_remap_button(o, i(pp), 0, i(code)))
             });
+            let sw = t.alloc_random(0x30);
+            let wh = t.rng.pick(&[0u32, 0x40, 0x100, 0xffff_fff0]);
+            t.put(sw + 0x1c, wh);
+            let smode = t.rng.pick(&[0u32, 1, 2, 3]);
+            let st = t
+                .rng
+                .pick(&[0u32, 0x800, 0x1000, 0xffff_f800, 0x8000_0000, 7]);
+            t.twin(
+                "TkMenuDrawMenuWindowScissor",
+                0x008d_d220,
+                &[sw, smode, st],
+                U32,
+                |o| w(tk::tk_menu_draw_menu_window_scissor(o, sw, i(smode), i(st))),
+            );
             t.twin("TkMn2GetMainPos", 0x008e_2630, &[], U32, |o| {
                 w(tk::tk_mn2_get_main_pos(o))
             });
@@ -5109,6 +5123,28 @@ fn tk_round8_matches_the_original() {
             &[vrec, vmode, ha, hb],
             U32,
             |o| w(tk::vibrate_set_streams_mode(o, vrec, i(vmode), ha, hb)),
+        );
+        let srec = t.alloc_random(0x24);
+        let smode = t.rng.pick(&[0u8, 1, 2]);
+        t.put(srec + 0x22, smode);
+        let sent = t.alloc_random(0x10);
+        let sdata = if t.rng.below(3) == 0 {
+            0
+        } else {
+            t.alloc_random(8)
+        };
+        t.put(sent, sdata);
+        let sstep = t.rng.pick(&[0u16, 3, 9, 0x7fff, 0xffff]);
+        t.put(sent + 4, sstep);
+        let slen6 = t.rng.pick(&[0u16, 10, 0x7fff, 0xfffe]);
+        t.put(sent + 6, slen6);
+        let slen = t.rng.pick(&[0u32, 4, 10, 0xffff_ffff]);
+        t.twin(
+            "Vibrate_StepLevel",
+            0x0087_5c90,
+            &[srec, sent, slen],
+            U32,
+            |o| w(tk::vibrate_step_level(o, srec, sent, i(slen))),
         );
         let sk = t.rng.pick(&[0u32, 2, 7, 8, 0xffff_ffff]);
         let sc = t.rng.pick(&[0u32, 1, 2, 5, 0x3f, 0x40]);

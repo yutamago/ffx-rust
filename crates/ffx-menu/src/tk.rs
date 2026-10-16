@@ -4755,6 +4755,81 @@ pub mod bridge {
         let x = g(mem, 0x0133_0858);
         mem.write(x, 0u32);
     }
+    /// `TkMenuDrawMenuWindowScissor(window, mode, t)` (`0x008dd220`): the
+    /// scissor (`TODrawScissorXYWH(0, y, 0x1ff, h)`, through the
+    /// `TkMenuDrawScissorRect` thunk) for a window's (`+0x14` y, `+0x1c`
+    /// height) inside: mode 1 opens from the bottom and mode 2 from the
+    /// top by `|t| / 4096` of the height (the other end for negative `t`),
+    /// other modes the whole inside. Returns the scissor's result.
+    pub fn tk_menu_draw_menu_window_scissor(mem: &mut impl Mem, w: u32, mode: i32, t: i32) -> u32 {
+        let wy: i32 = mem.read(w + 0x14);
+        let wh: i32 = mem.read(w + 0x1c);
+        let part = || t.wrapping_abs().wrapping_mul(wh) / 0x1000;
+        let (y, h) = match mode {
+            1 => {
+                let d = part();
+                let y = if t < 0 {
+                    wy
+                } else {
+                    wy.wrapping_sub(d).wrapping_add(3).wrapping_add(wh)
+                };
+                (y, d.wrapping_sub(6).max(0))
+            }
+            2 => {
+                let d = part();
+                let y = if t < 0 {
+                    wy.wrapping_add(3).wrapping_add(d)
+                } else {
+                    wy.wrapping_add(3)
+                };
+                (y, wh.wrapping_sub(d).wrapping_sub(6).max(0))
+            }
+            _ => (wy.wrapping_add(3), wh.wrapping_sub(6)),
+        };
+        ffx_system::pkt::bridge::draw_scissor_xywh(mem, 0, y, 0x1ff, h)
+    }
+
+    /// `Vibrate_StepLevel(rec, entry, len)` (`0x00875c90`, own name): one
+    /// frame of a stream entry: its step `+4` advanced; at `len` a curve
+    /// stream (mode 1) moves to its next part ([`vibrate_start_stream`]
+    /// from the data pointer, when set) and a level (mode 2) settles on its
+    /// target. Returns the level now: the eased value between `+8` and
+    /// `+9` over `+6` steps, or `+8` (also for a negative `len`, which
+    /// changes nothing).
+    pub fn vibrate_step_level(mem: &mut impl Mem, rec: u32, entry: u32, len: i32) -> u32 {
+        if len < 0 {
+            return u32::from(mem.read::<u8>(entry + 8));
+        }
+        let step = mem.read::<u16>(entry + 4).wrapping_add(1);
+        mem.write(entry + 4, step);
+        if i32::from(step.cast_signed()) >= len {
+            match mem.read::<u8>(rec + 0x22) {
+                1 => {
+                    let data: u32 = mem.read(entry);
+                    if data != 0 {
+                        vibrate_start_stream(mem, entry, data);
+                    }
+                }
+                2 => {
+                    let to: u8 = mem.read(entry + 9);
+                    mem.write(entry + 8, to);
+                    mem.write(entry + 6, 0xfffeu16);
+                }
+                _ => {}
+            }
+        }
+        let (from, to) = (mem.read::<u8>(entry + 8), mem.read::<u8>(entry + 9));
+        let n = mem.read::<i16>(entry + 6);
+        if from != to && n > 0 {
+            let n = i32::from(n);
+            let s = i32::from(mem.read::<i16>(entry + 4));
+            let v = (n - s)
+                .wrapping_mul(i32::from(from))
+                .wrapping_add(i32::from(to).wrapping_mul(s));
+            return (v / n).cast_unsigned();
+        }
+        u32::from(from)
+    }
 }
 
 #[cfg(test)]

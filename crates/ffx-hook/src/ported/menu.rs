@@ -2959,4 +2959,12 @@ ported! {
     TkInitSceneFromSave @ 0x0088_dd60 => extern "C" fn tk_init_scene_from_save() {
         tk::tk_init_scene_from_save(&mut mem());
     }
+    /// `TkMenuDrawMenuWindowScissor(window, mode, t)`.
+    TkMenuDrawMenuWindowScissor @ 0x008d_d220 => extern "C" fn tk_menu_draw_menu_window_scissor(window: u32, mode: i32, t: i32) -> u32 {
+        tk::tk_menu_draw_menu_window_scissor(&mut mem(), window, mode, t)
+    }
+    /// `Vibrate_StepLevel(rec, entry, len)`: the level.
+    Vibrate_StepLevel @ 0x0087_5c90 => extern "C" fn vibrate_step_level(rec: u32, entry: u32, len: i32) -> u32 {
+        tk::vibrate_step_level(&mut mem(), rec, entry, len)
+    }
 }
