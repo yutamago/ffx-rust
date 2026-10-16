@@ -3,8 +3,10 @@
 //! The `sound` module of `docs/rewrite-plan.md`: the sound data
 //! ([`fsb`] banks of [`ima`] ADPCM samples) and the ported game-side sound
 //! logic, a core and a `bridge` per original (`docs/porting.md`): the PS2
-//! sound API ([`snd`]) and the FMOD command queue's entry points ([`fmod`]).
+//! sound API ([`snd`]), the FMOD command queue's entry points ([`fmod`])
+//! and the FMOD thread's handlers and objects ([`ffxfmod`]).
 
+pub mod ffxfmod;
 pub mod fmod;
 pub mod fsb;
 pub mod ima;
