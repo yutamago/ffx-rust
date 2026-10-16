@@ -838,6 +838,27 @@ pub mod bridge {
         let t: u8 = mem.read(chr + 0x40d);
         mem.write(chr + 0x40e, t);
     }
+
+    /// `Ch_SetRotX(chr, a, speed)` (`0x008357f0`): the x turn: target
+    /// `+0x160` = the wrapped angle (`Angle_Wrap_00836720`, passed in); with
+    /// a speed (not 0; NaN counts) the step `+0x164` = speed * 3.141592 /
+    /// 180 (in double, stored as `f32`), else the current x angle `+0x15c`
+    /// too and step 0. Returns `chr` (left in EAX).
+    pub fn ch_set_rot_x(mem: &mut impl Mem, chr: u32, a: f32, speed: f32, wrap: impl FnOnce(f32) -> f32) -> u32 {
+        let w = wrap(x87::load(a));
+        mem.write(chr + 0x160, w);
+        let s = x87::load(speed);
+        if s == 0.0 {
+            mem.write(chr + 0x15c, w);
+            mem.write(chr + 0x164, 0f32);
+        } else {
+            let pi = f64::from_bits(0x4009_21fb_0000_0000); // 3.141592f
+            #[allow(clippy::cast_possible_truncation)] // the original stores f32
+            let step = (f64::from(s) * pi / 180.0) as f32;
+            mem.write(chr + 0x164, step);
+        }
+        chr
+    }
 }
 
 #[cfg(test)]

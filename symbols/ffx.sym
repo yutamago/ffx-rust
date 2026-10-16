@@ -11806,6 +11806,7 @@
 0x013033b8 label g_ChrEffectAlpha           # i32, Ch_EffectSetAlpha
 0x013033d0 label g_ChrEffectPacket          # the packet Ch_PacketRefEffect references (0x008439f0 returns its address)
 0x013034b8 label g_ChrIdShadeOn             # i8: id shades on (0x00844bb0 returns it; 0x0083e980)
+0x01303650 label    g_ChrPacketBase           # start of the effect packet being written (Ch_EffectPacketSetPtr 0x00845710 sets it and fills its 0x20-byte header)
 0x01303654 label g_ChrPacketHead            # tag of the open effect packet block; Ch_EffectPacketStorePoly counts triangles in its u16 +2
 0x01303658 label g_ChrPacketPtr              # effect packet write pointer, 0 = only measure (Ch_EffectPacketStoreEND)
 0x0130365c label g_ChrPacketSize             # effect packet bytes (Ch_EffectPacketGetSize)

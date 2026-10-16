@@ -144,6 +144,59 @@ pub mod bridge {
         -1
     }
 
+    /// The effect packet being written (`Ch_EffectPacketSetPtr`).
+    pub const PACKET_BASE: Global<u32> = Global::new(0x0130_3650);
+    /// The open block's value after each of the four packet states
+    /// (`+4` after `0x0130366c`, MAT, PRG and the fourth, 8 bytes apart).
+    pub const PACKET_STATE_VALUES: [u32; 4] = [0x0130_3670, 0x0130_3678, 0x0130_3680, 0x0130_3688];
+
+    /// `Ch_EffectPacketSetPtr(p)` (`0x00845710`): starts an effect packet
+    /// at `p`, or with 0 starts measuring one (size 0x20, nothing
+    /// counted). A packet starts with a 0x20-byte header: 0, the header
+    /// size, the vertex and normal buffers' offsets from `p`
+    /// (`sg_getvtex`/`sg_getnorm`, passed in), the measured triangles and
+    /// one more than each measured maximum (`u16`), 0. The four state
+    /// values are reset to `0xffff`. Returns what the original leaves in
+    /// EAX: the second maximum plus one, or -1 without a packet.
+    pub fn ch_effect_packet_set_ptr<M: Mem>(
+        mem: &mut M,
+        p: u32,
+        vtex: impl FnOnce(&mut M) -> u32,
+        norm: impl FnOnce(&mut M) -> u32,
+    ) -> u32 {
+        PACKET_PTR.set(mem, p);
+        let image = PACKET_PTR.ptr(mem).addr.wrapping_sub(0x0130_3658);
+        for v in PACKET_STATE_VALUES {
+            mem.write(image.wrapping_add(v), 0xffffu16);
+        }
+        if p == 0 {
+            PACKET_SIZE.set(mem, 0x20);
+            PACKET_POLYS.set(mem, 0);
+            PACKET_MAX.set(mem, [0, 0]);
+            return u32::MAX;
+        }
+        PACKET_PTR.set(mem, p.wrapping_add(0x20));
+        PACKET_BASE.set(mem, p);
+        mem.write(p, 0u32);
+        mem.write(p.wrapping_add(4), 0x20u32);
+        let v = vtex(mem);
+        let base = PACKET_BASE.get(mem);
+        mem.write(base.wrapping_add(8), v.wrapping_sub(base));
+        let n = norm(mem);
+        let base = PACKET_BASE.get(mem);
+        mem.write(base.wrapping_add(0xc), n.wrapping_sub(base));
+        #[allow(clippy::cast_possible_truncation)] // the low halves
+        {
+            let polys = PACKET_POLYS.get(mem) as u16;
+            let [mx, my] = PACKET_MAX.get(mem).map(i32::cast_unsigned);
+            mem.write(base.wrapping_add(0x10), polys);
+            mem.write(base.wrapping_add(0x12), mx.wrapping_add(1) as u16);
+            mem.write(base.wrapping_add(0x14), my.wrapping_add(1) as u16);
+            mem.write(base.wrapping_add(0x16), 0u16);
+            my.wrapping_add(1)
+        }
+    }
+
     /// `Ch_*Get*` of an `i8` setting, sign-extended.
     pub fn get_i8(mem: &impl Mem, g: Global<i8>) -> i32 {
         i32::from(g.get(mem))

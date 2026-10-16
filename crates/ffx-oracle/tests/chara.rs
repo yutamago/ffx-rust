@@ -4874,3 +4874,71 @@ fn round7_on(t: &mut Twin) {
         );
     }
 }
+
+/// Round 7, second part: the x turn and the effect packet start.
+#[test]
+fn round7b_matches_the_original() {
+    for mut t in twins() {
+        round7b_on(&mut t);
+    }
+}
+
+fn round7b_on(t: &mut Twin) {
+    use ffx_chara::chr::bridge as c;
+    use ffx_chara::sys::bridge as sy;
+    let mut rng = Xorshift(0x7b7b_0007);
+    let chrs = live_characters(t, &mut rng);
+    for (k, &chr) in chrs.iter().enumerate() {
+        for round in 0..8u32 {
+            let a = small_float(&mut rng);
+            let speed = match round % 4 {
+                0 => 0,
+                1 => 0x8000_0000,
+                2 => any_float(&mut rng),
+                _ => small_float(&mut rng),
+            };
+            // no infinities: the wrap would never end
+            let speed = if fl(speed).is_infinite() {
+                0x3f80_0000
+            } else {
+                speed
+            };
+            t.check(
+                &format!("Ch_SetRotX {k} {round}"),
+                0x0083_57f0,
+                &[chr, a, speed],
+                |m| {
+                    Res::Int(c::ch_set_rot_x(
+                        m,
+                        chr,
+                        fl(a),
+                        fl(speed),
+                        ffx_sg::vec::bridge::angle_wrap,
+                    ))
+                },
+            );
+        }
+    }
+    let at = |t: &Twin, g: u32| t.a.rebase(g);
+    for round in 0..8u32 {
+        // measured values to copy, and the buffers whose offsets it takes
+        let polys = at(t, 0x0130_3660);
+        t.put_u32(polys, rng.next() % 0x2_0000);
+        t.put_u32(polys + 4, rng.next());
+        t.put_u32(polys + 8, rng.next());
+        let p = if round % 3 == 2 { 0 } else { t.alloc(0x40) };
+        t.check(
+            &format!("Ch_EffectPacketSetPtr {round}"),
+            0x0084_5710,
+            &[p],
+            |m| {
+                Res::Int(sy::ch_effect_packet_set_ptr(
+                    m,
+                    p,
+                    |m| ffx_sg::state::bridge::get_vtex(m),
+                    |m| ffx_sg::state::bridge::get_norm(m),
+                ))
+            },
+        );
+    }
+}

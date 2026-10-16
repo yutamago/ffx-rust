@@ -1425,4 +1425,19 @@ ported! {
     ch_create_chrpath @ 0x0083_80b0 => extern "C" fn ch_create_chrpath(id: u32) -> u32 {
         ta::ch_create_chrpath(&mut mem(), id)
     }
+    /// `Ch_SetRotX(chr, a, speed)`; `Angle_Wrap_00836720` is the main
+    /// module's port.
+    Ch_SetRotX @ 0x0083_57f0 => extern "C" fn ch_set_rot_x(chr: u32, a: f32, speed: f32) -> u32 {
+        c::ch_set_rot_x(&mut mem(), chr, a, speed, ffx_sg::vec::bridge::angle_wrap)
+    }
+    /// `Ch_EffectPacketSetPtr(p)`; `sg_getvtex`/`sg_getnorm` are the main
+    /// module's ports.
+    Ch_EffectPacketSetPtr @ 0x0084_5710 => extern "C" fn ch_effect_packet_set_ptr(p: u32) -> u32 {
+        sy::ch_effect_packet_set_ptr(
+            &mut mem(),
+            p,
+            |m| ffx_sg::state::bridge::get_vtex(m),
+            |m| ffx_sg::state::bridge::get_norm(m),
+        )
+    }
 }
