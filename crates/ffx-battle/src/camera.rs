@@ -356,6 +356,98 @@ pub mod bridge {
             mem.write(s.wrapping_add(off), v);
         }
     }
+    /// `g_Cameras` (`0x01137540`), [`CAMERA_SIZE`] bytes each.
+    pub const CAMERAS: Global<u8> = Global::new(0x0113_7540);
+    /// The camera `MsDebugGetCameraMode` looks at (a byte of the first
+    /// screen, `0x011370c1`).
+    pub const DEBUG_CAMERA: Global<u8> = Global::new(0x0113_70c1);
+
+    fn camera_base(mem: &impl Mem, cam: u32) -> u32 {
+        CAMERAS.ptr(mem).addr + (cam & 0xff) * CAMERA_SIZE
+    }
+
+    /// `MsDebugGetCameraMode(side)` (`0x007cfb20`): the mode byte (`+0xf2`
+    /// of side `side`, 0x61c bytes each, channel the current slot, 0x130
+    /// each) of camera [`DEBUG_CAMERA`].
+    pub fn ms_debug_get_camera_mode(mem: &impl Mem, side: i32) -> u32 {
+        let cam = u32::from(DEBUG_CAMERA.get(mem));
+        let n = ms_camera_get_num(mem, cam);
+        let at = camera_base(mem, cam)
+            .wrapping_add(0xf2)
+            .wrapping_add(n.wrapping_mul(0x130))
+            .wrapping_add(side.cast_unsigned().wrapping_mul(0x61c));
+        u32::from(mem.read::<u8>(at))
+    }
+
+    /// `MsCopyCameraMatrix(out)` (`0x007c0070`): [`CAMERA_MATRIX`] into
+    /// `out` (`FFXVu0CopyMatrix`).
+    pub fn ms_copy_camera_matrix(mem: &mut impl Mem, out: u32) -> u32 {
+        let src = CAMERA_MATRIX.ptr(mem).addr;
+        ffx_ps2::vu0::bridge::matrix_copy(mem, out, src)
+    }
+
+    /// `MsCopyScreenMatrix(out)` (`0x007bba50`): [`SCREEN_MATRIX`] into
+    /// `out`.
+    pub fn ms_copy_screen_matrix(mem: &mut impl Mem, out: u32) -> u32 {
+        let src = SCREEN_MATRIX.ptr(mem).addr;
+        ffx_ps2::vu0::bridge::matrix_copy(mem, out, src)
+    }
+
+    /// A camera parameter by request (`MsCameraSetRoll`, `MsCameraSetScrDpt`):
+    /// for a request `id` some live slot holds ([`ms_camera_id_check`]),
+    /// channel `id >> 8 & 0xff` of camera `id & 0xff` takes `v` (at
+    /// `chan`, 0x30 bytes per channel; its `+0x713` flag, 0x130 per
+    /// channel, cleared); when `id` is the current slot's request, `v` is
+    /// the camera's target (`target`) too, and with no move running
+    /// (`u16` at `lock`) its value now (`now`) and the channel's second
+    /// copy (`chan2`).
+    #[allow(clippy::too_many_arguments)]
+    fn set_param(
+        mem: &mut impl Mem,
+        id: u32,
+        v: u32,
+        chan: u32,
+        target: u32,
+        lock: u32,
+        now: u32,
+        chan2: u32,
+    ) {
+        if ms_camera_id_check(mem, id) == 0 {
+            return;
+        }
+        let sub = (id.cast_signed() >> 8).cast_unsigned() & 0xff;
+        let cam = id & 0xff;
+        let base = camera_base(mem, cam);
+        let v = x87_copy(v);
+        mem.write(base + 0x713 + sub * 0x130, 0u8);
+        mem.write(base + chan + sub * 0x30, v);
+        let n = ms_camera_get_num(mem, cam);
+        let slot = SLOTS_AT.ptr(mem).addr + cam * CAMERA_SIZE + 8 * n;
+        let b: [u8; 6] = mem.read(slot);
+        let cur = if b[4] == 0 && b[5] == 0 {
+            u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+        } else {
+            0
+        };
+        if cur != id {
+            return;
+        }
+        mem.write(base + target, v);
+        if mem.read::<u16>(base + lock) == 0 {
+            mem.write(base + now, v);
+            mem.write(base + chan2 + sub * 0x30, v);
+        }
+    }
+
+    /// `MsCameraSetRoll(id, roll)` (`0x007bfa80`).
+    pub fn ms_camera_set_roll(mem: &mut impl Mem, id: u32, roll: u32) {
+        set_param(mem, id, roll, 0xcb8, 0xc94, 0xd84, 0xc90, 0xcd4);
+    }
+
+    /// `MsCameraSetScrDpt(id, depth)` (`0x007bfbd0`).
+    pub fn ms_camera_set_scr_dpt(mem: &mut impl Mem, id: u32, depth: u32) {
+        set_param(mem, id, depth, 0xcc0, 0xca0, 0xd94, 0xc9c, 0xcd8);
+    }
 }
 
 #[cfg(test)]

@@ -52,10 +52,11 @@ pub mod bridge {
     pub const SEP_3D: Global<u32> = Global::new(0x0113_61a0);
     /// `MsEffectCameraBufInit`: eight words.
     pub const EFFECT_CAMERA_BUF: Global<[u32; 8]> = Global::new(0x0112_c22c);
-    /// The weapon equip flags (`MsInitSaveWeaponEquipFlag`): byte `+0` of
+    /// The equipment's wearers (`MsInitSaveWeaponEquipFlag`): byte `+0` of
     /// 200 records of 0x16 bytes, the character who wears it.
     pub const WEAPON_EQUIP: Global<u8> = Global::new(0x0113_0f32);
-    /// The two equipped weapon slots of 18 characters, 0x94 bytes apart.
+    /// `g_PlySave`'s `+0x2d` (weapon slot) of the first character; the
+    /// armor slot follows, 0x94 bytes per character.
     pub const EQUIPPED: Global<u8> = Global::new(0x0113_2089);
     /// The petrified actors `MsStoneRegist` keeps (up to 31), their count
     /// [`crate::state::bridge::STONE_EFFECT`], and the actors that do not
@@ -327,8 +328,8 @@ pub mod bridge {
         EFFECT_CAMERA_BUF.set(mem, [0; 8]);
     }
 
-    /// `MsInitSaveWeaponEquipFlag` (`0x007abe30`): every weapon's wearer to
-    /// 0xff, then each of the 18 characters' two equipped weapons to that
+    /// `MsInitSaveWeaponEquipFlag` (`0x007abe30`): every equipment's wearer
+    /// to 0xff, then each of the 18 characters' weapon and armor to that
     /// character; EAX the end of the walk.
     pub fn ms_init_save_weapon_equip_flag(mem: &mut impl Mem) -> u32 {
         let w = WEAPON_EQUIP.ptr(mem).addr;
@@ -436,5 +437,20 @@ pub mod bridge {
         NUMBERS_KIND1.set(mem, k1);
         NUMBERS_SHOWN.set(mem, shown);
         0
+    }
+    /// `MsEffectResetMotionDisable(actor)` (`0x00788270`): with an effect
+    /// motion (`+0x3f3`), drops it (`+0x3f2` to 0xff, `+0xdf2` and bit 1
+    /// of `+0xf5e` cleared) and ends the motion (`MsTerminateMotion`); 1,
+    /// else 0.
+    pub fn ms_effect_reset_motion_disable(mem: &mut impl Mem, actor: u32) -> u32 {
+        if byte(mem, actor, 0x3f3) == 0 {
+            return 0;
+        }
+        let f = byte(mem, actor, 0xf5e) & 0xfd;
+        mem.write(actor.wrapping_add(0xf5e), f);
+        mem.write(actor.wrapping_add(0x3f2), 0xffu16);
+        mem.write(actor.wrapping_add(0xdf2), 0u8);
+        crate::actor::bridge::ms_terminate_motion(mem, actor);
+        1
     }
 }

@@ -7550,6 +7550,7 @@
 0x0112a911 label g_BtlDebugRareSteal          # u8, Battle_Steal always takes the rare item
 0x0112a91b label g_BtlMapCircleOn            # i8 (MsBattleGetMapCircleOn 0x007816a0)
 0x0112a91f label g_BtlDebugAllMiss            # u8, debug env flag: DmgCalc_CheckHit always misses, no status lands, MsCalcEscape fails
+0x0112a922 label g_BtlMenuSkipAll          # u8 set: MsMenuGetChrSkipCommand gives 0xff
 0x0112a929 label g_BtlRead2                # u16; with the one before it (same function, ffx_battle::misc)
 0x0112a92c label    g_KernelCommand
 0x0112a930 label    g_KernelMonMagic1
@@ -7559,6 +7560,7 @@
 0x0112a944 label    g_KernelAAbility
 0x0112a94c label g_KernelCtbBase               # battle resource 0xb (MsBattleInit 0x00781700); MsGetRomCTBbase/CTBcount
 0x0112a954 label g_BtlMotBin               # pointer to the motion binary: u16 count, u16 offsets (MsSetMotBinAddress sets actor +0x4f8 from entry i)
+0x0112a958 label g_StatusRom               # kernel table MsMenuStatusNum reads
 0x0112a960 label g_KernelSummonGrow            # battle resource 6 (MsBattleInit); MsGetRomSummonGrow
 0x0112a964 label g_KernelKaizou                # battle resource 5 (MsBattleInit); MsGetRomKaizou
 0x0112a9bc label g_BtlFont                    # u32; The battle font (MsBattleGetFontAddress).
@@ -7592,6 +7594,7 @@
 0x0112c796 label g_BtlItemWindow2             # 0x70 x u16, the same for items with flag 0x400 (MsSetItemWindow)
 0x0112c895 label g_BtlParty                  # 3 x u8 ply_save indices; MsSetSaveParty (0x00786930) copies them to g_SaveInParty
 0x0112c8c8 label g_BtlChrSet                 # u32 actor bits; MsGetChrBit selector -4 returns its present actors
+0x0112c8d4 label g_BtlMotionBusy           # bit per actor: MsCheckChrMotionAll marks the first actor found running a motion
 0x0112c8e8 label g_BtlLastMagic2              # u32; The last magic of kind 2 (MsEffectGetLastMagicNum2).
 0x0112c90c label g_BtlMessageCueInit2         # u32; with the one before it (same function, ffx_battle::misc)
 0x0112c914 label g_BtlMessageCue              # 4 battle messages of 12 bytes (+0 kind, +1, +2, +4 actor, +8 message ID), a ring (MsMessageCueRegist)
@@ -7613,7 +7616,10 @@
 0x0112c9e5 label g_BtlStealRule               # u8, 2: nothing can be stolen or mugged in this battle (Battle_Steal, Battle_StealGil)
 0x0112c9e6 label g_BtlMenuCommandSet          # u8; with the one before it (same function, ffx_battle::misc)
 0x0112c9e7 label g_BtlDirFree              # u8; set: MsSetDirThetaMode gives actors direction mode 1 (ffx_battle::minor)
+0x0112c9eb label g_BtlEndAlt               # u8 set: MsGetBattleEndStatus reports 2 instead of 4 when the monsters are gone
+0x0112c9f1 label g_BtlEndForced            # u8, when not 0 MsGetBattleEndStatus's result
 0x0112c9ff label g_BtlEscapeRule              # i8, set by battle script (0x007a77a0): 1 no escape, 2 always (MsCalcEscape)
+0x0112ca00 label g_BtlMenuSkipOn           # u8 set: actors' skip command (+0x6c8) counts (MsMenuGetChrSkipCommand)
 0x0112ca03 label g_BtlSummonLimit             # u8; Summons keep the overdrive gauge while this is set (MsSummonLimitSave).
 0x0112ca0a label g_BtlMessageCueInit          # u32; Reset by MsMessageCueInit (a u32 at 0x0112ca0a, which covers the stone effect counters from 0x0112ca0b, and the cue's count and start).
 0x0112ca0b label g_BtlStoneEffect            # 2 x i8; MsStoneEffectCheck (0x007a2670) returns their sum
@@ -7648,11 +7654,11 @@
 0x01130edc label g_SaveMonsterDefeat         # monsters defeated, flag words (MsGetSaveMonsterDefeat 0x00790b10)
 0x01130f1c label g_SaveImportant             # key items held, 8 flag words, IDs below 0x80 (MsImportantGet 0x00790800, MsImportantSet)
 0x01130f2c label    g_Equipment                # 200 x 22-byte equipment slots (docs/formats/kernel.md)
-0x01130f32 label g_WeaponEquipFlag         # byte +0 of 200 weapon records of 0x16 bytes: who wears it, 0xff none (MsInitSaveWeaponEquipFlag)
+0x01130f32 label g_EquipWearer             # byte +0 of 200 equipment records of 0x16 bytes: who wears it, 0xff none (MsInitSaveWeaponEquipFlag, from g_PlySave +0x2d/+0x2e)
 0x0113205c label    g_PlySave                  # ply_save records, 0x94 bytes each; +0x2d weapon slot, +0x2e armor slot
-0x01132089 label g_PlyEquippedWeapons      # 2 weapon slots of 18 characters, 0x94 bytes apart (MsInitSaveWeaponEquipFlag)
 0x011320b0 label g_BtlKills                   # u32 every 0x94 bytes by player character < 0x12: MsCalcDamageCommand formula 0x16 (kills x power)
 0x01132ac4 label g_SaveCommandUse            # commands used, 18 characters x 0x16 flag words, right after g_PlySave (MsGetSaveCommandUse 0x00785140)
+0x01132ddc label g_SaveChrNames            # characters' names, 0x14 bytes each (MsGetSaveChrName)
 0x01133354 label g_BtlMuteSubtitle           # u32 (MsMuteBattleSubTitle 0x00785990)
 0x01133364 label g_BtlEventEffectStat        # i8 (MsEventEffectGetStat 0x00788bd0)
 0x01133390 label g_BtlDamage9999             # u32, set by MsCalcDamage when a hit of 9999+ comes from a user whose +0x50 string is empty
@@ -7683,6 +7689,7 @@
 0x0113618c label g_BtlSepTrans               # u32 sound effect data in transfer (MsSEPtransAmount 0x007a04b0, MsSEPtransCheck)
 0x011361a0 label g_Sep3dList               # 3D sound effects: nodes with fade u16 +4/+6, next +0xc (MsSEP3DfadeOutAll)
 0x011363b0 label g_BtlItemMem3                # [u32; 2]; Reset by MsBtlInitItemMem_007a0cd0.
+0x011363b4 label g_WeaponNameTable         # kernel table MsWeaponName reads: u16 name offsets at +4k (+0x1c+4k second), icons at +0x38+2k
 0x011363c0 label g_ZanmatoSepList          # 10 words cleared by resetZanmatoSepList
 0x01136418 label g_BtlMoveSplines             # [u32; 3]; The three move splines (MsMoveSplineSet).
 0x01136a58 label g_BtlMoveTarget              # u8; The move target position (MsMoveTargetPos).
@@ -7696,6 +7703,7 @@
 0x01136fd8 label    g_CamOverrideLookAt          # override camera look-at, vec4 (game space)
 0x01136fe8 label    g_CamOverrideUp              # override camera up vector, vec4 (reset to (0,-1,0)-ish: 0x01136fec = -1.0)
 0x01137000 label g_Screens                   # 3 screens of 0x1c0 bytes right before g_Cameras: +0x30/+0x34 f32 shake offsets, +0x16c/+0x190 shake flags (MsScreenResetShake 0x007c56c0)
+0x011370c1 label g_DebugCamera             # u8 (a byte of the first screen): the camera MsDebugGetCameraMode reads (mode byte +0xf2 of side/channel)
 0x011370d0 label g_BtlScreenFocus             # i32; The three screens' focus, -1 for none (MsScreenFocusReset), 0x1c0 bytes apart.
 0x01137540 label    g_Cameras                    # ?3 cameras x 0xda0: two sides of 0x61c each (0 = ref, 1 = cam), channels of 0x130 at +0xc0, channel table at 0x011381a8
 0x011381a8 label g_CameraSlots               # g_Cameras + 0xc68: 4 request slots of 8 bytes per camera (u32 ID, byte 2 the level; +4/+5 off/done flags; +6 i8 level bonus); MsCameraGetNum 0x007bd340, MsCameraIDcheck 0x007bd560

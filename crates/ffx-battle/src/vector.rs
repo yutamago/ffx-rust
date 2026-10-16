@@ -338,4 +338,21 @@ pub mod bridge {
         VF_M.set(mem, m);
         if 0.0 > f32::from_bits(y) { -1 } else { 0 }
     }
+    /// `MsSubPoint(out, a, b)` (`0x007c40b0`): `out.xyz = a.xyz − b.xyz`
+    /// through the matrix registers (`a`, `b`, then the difference);
+    /// `out.w` is the result register's w; `vf00` restored.
+    pub fn ms_sub_point(mem: &mut impl Mem, out: u32, a: u32, b: u32) {
+        use ffx_bridge::x87::{load, store, sub};
+        let va: Vec4 = mem.read(a);
+        let vb: Vec4 = mem.read(b);
+        let mut m = VF_M.get(mem);
+        m[0] = va;
+        m[1] = vb;
+        for i in 0..3 {
+            m[2][i] = store(sub(load(va[i]), load(vb[i])));
+        }
+        VF_M.set(mem, m);
+        ffx_ps2::ee::bridge::restore_vf00(mem);
+        mem.write(out, m[2]);
+    }
 }

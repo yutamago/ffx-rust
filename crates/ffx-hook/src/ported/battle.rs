@@ -1,8 +1,8 @@
 //! `ffx-battle`: random numbers, the save block, actors, the battle camera,
 //! battle globals and helpers, damage.
 
-use ffx_battle::vector::bridge as vector;
 use ffx_battle::{actor::bridge as actor, camera::bridge as camera, command::bridge as cmd};
+use ffx_battle::{body::bridge as body, menu::bridge as menu, vector::bridge as vector};
 use ffx_battle::{damage::bridge as dmg, state::bridge as state, util::bridge as util};
 use ffx_battle::{minor::bridge as minor, misc::bridge as misc, save::bridge as save};
 
@@ -1249,5 +1249,119 @@ ported! {
     /// `MsVectorGetSide(ax, az, bx, bz)` (floats as bits).
     MsVectorGetSide @ 0x007c_4180 => extern "C" fn ms_vector_get_side(ax: u32, az: u32, bx: u32, bz: u32) -> i32 {
         vector::ms_vector_get_side(&mut mem(), [ax, az, bx, bz])
+    }
+    /// `Battle_FirstSelectedActor(chr, selector, all, any)`.
+    Battle_FirstSelectedActor @ 0x0079_47f0 => extern "C" fn battle_first_selected_actor(chr: u32, selector: u32, all: i32, any: i32) -> i32 {
+        body::battle_first_selected_actor(&mem(), chr, selector, all, any)
+    }
+    /// `msSetChrBodyHit(actor, part, on)`.
+    msSetChrBodyHit @ 0x0079_6f20 => extern "C" fn ms_set_chr_body_hit(actor: u32, part: i32, on: i32) -> u32 {
+        body::ms_set_chr_body_hit(&mut mem(), actor, part, on)
+    }
+    /// `MsGetChrHeight(i)`: on the x87 stack.
+    MsGetChrHeight @ 0x0079_50f0 => extern "C" fn ms_get_chr_height(i: u32) -> f32 {
+        body::ms_get_chr_height(&mem(), i)
+    }
+    /// `MsGetChrCamHeight(i)`: on the x87 stack.
+    MsGetChrCamHeight @ 0x0079_4a30 => extern "C" fn ms_get_chr_cam_height(i: u32) -> f32 {
+        body::ms_get_chr_cam_height(&mem(), i)
+    }
+    /// `MsGetChrCamWidth(i)`: on the x87 stack.
+    MsGetChrCamWidth @ 0x0079_4a70 => extern "C" fn ms_get_chr_cam_width(i: u32) -> f32 {
+        body::ms_get_chr_cam_width(&mem(), i)
+    }
+    /// `MsGetChrDir(i, &dir)`.
+    MsGetChrDir @ 0x0079_4d20 => extern "C" fn ms_get_chr_dir(i: u32, dir: u32) -> i32 {
+        body::ms_get_chr_dir(&mut mem(), i, dir)
+    }
+    /// `MsGetChrGround(i)`: on the x87 stack.
+    MsGetChrGround @ 0x0079_4fb0 => extern "C" fn ms_get_chr_ground(i: u32) -> f32 {
+        body::ms_get_chr_ground(&mem(), i)
+    }
+    /// `MsSetChrPos(i, pos)`.
+    MsSetChrPos @ 0x0079_6150 => extern "C" fn ms_set_chr_pos(i: u32, pos: u32) -> i32 {
+        body::ms_set_chr_pos(&mut mem(), i, pos)
+    }
+    /// `MsSetChrWeight(i, how)`.
+    MsSetChrWeight @ 0x0079_68e0 => extern "C" fn ms_set_chr_weight(i: u32, how: i32) {
+        body::ms_set_chr_weight(&mut mem(), i, how);
+    }
+    /// `msSetChrWeight(actor, w)` (a float as bits).
+    msSetChrWeight @ 0x0079_72c0 => extern "C" fn ms_set_chr_weight2(actor: u32, w: u32) {
+        body::ms_set_chr_weight2(&mut mem(), actor, w);
+    }
+    /// `MsSetChrMoveFlag(i, v)`.
+    MsSetChrMoveFlag @ 0x0079_6110 => extern "C" fn ms_set_chr_move_flag(i: u32, v: u32) -> i32 {
+        #[allow(clippy::cast_possible_truncation)] // a byte argument
+        body::ms_set_chr_move_flag(&mut mem(), i, v as u8)
+    }
+    /// `MsSetChrMotionLevel(i, v)`.
+    MsSetChrMotionLevel @ 0x0079_60d0 => extern "C" fn ms_set_chr_motion_level(i: u32, v: u32) -> i32 {
+        #[allow(clippy::cast_possible_truncation)] // a byte argument
+        body::ms_set_chr_motion_level(&mut mem(), i, v as u8)
+    }
+    /// `MsSetChrSpecular(i, v, frames)` (v a float as bits).
+    MsSetChrSpecular @ 0x0079_6360 => extern "C" fn ms_set_chr_specular(i: u32, v: u32, frames: i32) -> u32 {
+        body::ms_set_chr_specular(&mut mem(), i, v, frames)
+    }
+    /// `MsCheckChrMotionAll(mode)`.
+    MsCheckChrMotionAll @ 0x0079_1630 => extern "C" fn ms_check_chr_motion_all(mode: i32) -> u32 {
+        body::ms_check_chr_motion_all(&mut mem(), mode)
+    }
+    /// `MsEffectResetMotionDisable(actor)`.
+    MsEffectResetMotionDisable @ 0x0078_8270 => extern "C" fn ms_effect_reset_motion_disable(actor: u32) -> u32 {
+        minor::ms_effect_reset_motion_disable(&mut mem(), actor)
+    }
+    /// `MsGetNextAP(chr)`.
+    MsGetNextAP @ 0x0078_4e90 => extern "C" fn ms_get_next_ap(chr: i32) -> i32 {
+        menu::ms_get_next_ap(&mut mem(), chr)
+    }
+    /// `MsGetSaveChrName(chr)`.
+    MsGetSaveChrName @ 0x0078_4fb0 => extern "C" fn ms_get_save_chr_name(chr: u32) -> u32 {
+        menu::ms_get_save_chr_name(&mem(), chr)
+    }
+    /// `MsMenuStatusNum(id, strings)`.
+    MsMenuStatusNum @ 0x0079_0200 => extern "C" fn ms_menu_status_num(id: i32, strings: u32) -> u32 {
+        menu::ms_menu_status_num(&mut mem(), id, strings)
+    }
+    /// `MsWeaponName(id, k, second, &icon)`.
+    MsWeaponName @ 0x007a_0c50 => extern "C" fn ms_weapon_name(id: u32, k: u32, second: u32, icon: u32) -> u32 {
+        menu::ms_weapon_name(&mut mem(), id, k, second, icon)
+    }
+    /// `MsMenuGetChrSkipCommand(i)`.
+    MsMenuGetChrSkipCommand @ 0x0078_fb80 => extern "C" fn ms_menu_get_chr_skip_command(i: u32) -> u32 {
+        menu::ms_menu_get_chr_skip_command(&mem(), i)
+    }
+    /// `MsGetCheckEnglish()`: the language from `TkGetLang` (menu).
+    MsGetCheckEnglish @ 0x0078_4e60 => extern "C" fn ms_get_check_english() -> i32 {
+        menu::ms_get_check_english(ffx_menu::tk::bridge::tk_get_lang(&mem()))
+    }
+    /// `MsGetBattleEndStatus()`.
+    MsGetBattleEndStatus @ 0x0079_28d0 => extern "C" fn ms_get_battle_end_status() -> u32 {
+        menu::ms_get_battle_end_status(&mem())
+    }
+    /// `MsCameraSetRoll(id, roll)` (a float as bits).
+    MsCameraSetRoll @ 0x007b_fa80 => extern "C" fn ms_camera_set_roll(id: u32, roll: u32) {
+        camera::ms_camera_set_roll(&mut mem(), id, roll);
+    }
+    /// `MsCameraSetScrDpt(id, depth)` (a float as bits).
+    MsCameraSetScrDpt @ 0x007b_fbd0 => extern "C" fn ms_camera_set_scr_dpt(id: u32, depth: u32) {
+        camera::ms_camera_set_scr_dpt(&mut mem(), id, depth);
+    }
+    /// `MsDebugGetCameraMode(side)`.
+    MsDebugGetCameraMode @ 0x007c_fb20 => extern "C" fn ms_debug_get_camera_mode(side: i32) -> u32 {
+        camera::ms_debug_get_camera_mode(&mem(), side)
+    }
+    /// `MsCopyCameraMatrix(out)`.
+    MsCopyCameraMatrix @ 0x007c_0070 => extern "C" fn ms_copy_camera_matrix(out: u32) -> u32 {
+        camera::ms_copy_camera_matrix(&mut mem(), out)
+    }
+    /// `MsCopyScreenMatrix(out)`.
+    MsCopyScreenMatrix @ 0x007b_ba50 => extern "C" fn ms_copy_screen_matrix(out: u32) -> u32 {
+        camera::ms_copy_screen_matrix(&mut mem(), out)
+    }
+    /// `MsSubPoint(out, a, b)`.
+    MsSubPoint @ 0x007c_40b0 => extern "C" fn ms_sub_point(out: u32, a: u32, b: u32) {
+        vector::ms_sub_point(&mut mem(), out, a, b);
     }
 }
