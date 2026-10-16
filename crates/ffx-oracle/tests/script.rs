@@ -1129,9 +1129,10 @@ fn run_pair(pages: &std::sync::Arc<Pages>, exe: &std::path::Path) -> (Oracle, Or
     );
     let image = std::fs::read(exe).unwrap();
     let pe = goblin::pe::PE::parse(&image).unwrap();
-    let sizes: Vec<usize> = CRT.iter().map(|(_, c)| c.len()).collect();
+    let mut sizes: Vec<usize> = CRT.iter().map(|(_, c)| c.len()).collect();
+    sizes.push(CAM_SET_POS_W.len() + 4);
     let caves = caves(&image, &pe, &sizes);
-    assert_eq!(caves.len(), CRT.len(), "room for the CRT stubs");
+    assert_eq!(caves.len(), sizes.len(), "room for every stub");
     for o in [&mut pair.0, &mut pair.1] {
         for f in [run::MUTEX_LOCK, run::MUTEX_UNLOCK] {
             let at = o.rebase(f);
@@ -1147,9 +1148,30 @@ fn run_pair(pages: &std::sync::Arc<Pages>, exe: &std::path::Path) -> (Oracle, Or
                 Mem::write(o, slot, at);
             }
         }
+        // Native_CamSetPos's vector w: the cookie load becomes a call
+        // into a stub that zeroes it first
+        let at = o.image_base() + caves[CRT.len()];
+        let mut stub = CAM_SET_POS_W.to_vec();
+        stub[8..12].copy_from_slice(&o.rebase(0x00c6_13d8).to_le_bytes());
+        Mem::write_bytes(o, at, &stub);
+        let site = o.rebase(0x007b_b6a6);
+        let mut call = vec![0xe8];
+        call.extend_from_slice(&at.wrapping_sub(site + 5).to_le_bytes());
+        Mem::write_bytes(o, site, &call);
     }
     pair
 }
+
+/// `0x007bb6a0` (`Native_CamSetPos` and its "ref" twin) hands `Cam_SetPos`
+/// a vector of three popped floats whose fourth word (`[ebp-8]`) it never
+/// writes: `Cam_SetPos` copies it into the camera and the VU0 registers, so
+/// the original stores whatever its callers left on the stack there, which
+/// differs between `Script_Run` and the bridge's calls. Both oracles zero
+/// it: `mov dword [ebp-8], 0; mov eax, [__security_cookie]; ret`, called
+/// in place of the prologue's cookie load (5 bytes at `0x007bb6a6`).
+const CAM_SET_POS_W: [u8; 13] = [
+    0xc7, 0x45, 0xf8, 0x00, 0x00, 0x00, 0x00, 0xa1, 0, 0, 0, 0, 0xc3,
+];
 
 /// x86 for the imports natives reach that the oracle has no stub for: CRT
 /// functions (cdecl) and two Win32 waits (stdcall), the same on both sides.
@@ -1444,6 +1466,7 @@ fn program(rng: &mut Xorshift, b: &Oracle, w: u32) -> Vec<u8> {
     let hdr = b.read::<u32>(w + worker::HEADER);
     let count = |off: u32| u32::from(b.read::<u16>(hdr + off)).max(1);
     let (vars, ints, floats, labels) = (count(2), count(4), count(6), count(0x0a));
+    let actors = u32::from(b.read::<u16>(ctx(b).0 + ctrl::ACTORS)).max(1);
     let mut code = Vec::new();
     let long = |code: &mut Vec<u8>, op: u8, x: u32| {
         code.push(op | 0x80);
@@ -1518,19 +1541,36 @@ fn program(rng: &mut Xorshift, b: &Oracle, w: u32) -> Vec<u8> {
                 depth -= 1;
                 continue;
             }
-            // the calls into other code (party requests, waits, 79, 7a)
-            9 if depth >= 3 => {
+            // the calls into other code (party requests, waits, requests, 79,
+            // 7a), with arguments that are in range: party slots 0..2 (the
+            // original's party lookup reads below its own array for a
+            // negative slot, stack garbage that differs with the call
+            // depth), workers that exist, small levels and entries
+            9 if depth < 15 => {
                 let op = [
                     0x39, 0x3a, 0x3b, 0x79, 0x77, 0x78, 0x7a, 0x36, 0x37, 0x38, 0x45, 0x4a, 0x4f,
                 ][rng.below(13) as usize];
-                code.push(op);
-                depth -= match op {
-                    // pop three, push one; pop two
-                    0x39..=0x3b | 0x77 | 0x78 => 2,
-                    // the request families pop worker, level and entry
-                    0x79 | 0x36..=0x38 | 0x45..=0x53 => 3,
-                    _ => 1,
+                let args: Vec<u32> = match op {
+                    // level, party slot, entry
+                    0x39..=0x3b => vec![rng.below(9), rng.below(3), rng.below(4)],
+                    // worker, entry / party slot, entry
+                    0x77 => vec![rng.below(actors), rng.below(4)],
+                    0x78 => vec![rng.below(3), rng.below(4)],
+                    // worker, level, entry
+                    0x36..=0x38 | 0x45..=0x53 => {
+                        vec![rng.below(actors), rng.below(9), rng.below(4)]
+                    }
+                    0x79 => vec![rng.below(4), rng.below(4), rng.below(4)],
+                    _ => vec![rng.below(4), rng.below(4)],
                 };
+                for &x in &args {
+                    long(&mut code, 0x2e, x);
+                }
+                code.push(op);
+                // 39-3b and 7a push their result
+                if matches!(op, 0x39..=0x3b | 0x7a) {
+                    depth += 1;
+                }
                 continue;
             }
             _ => continue,
@@ -1597,6 +1637,15 @@ fn script_programs_match_the_original() {
         let speed = [0.0f32, 1.0, 2.5][rng.below(3) as usize];
         poke(a, b, w + 0x94, speed.to_bits());
         let mode = u32::from(rng.below(8) == 0);
+        // ATEL_ONLY=k: program k alone, on the snapshot as it is
+        if let Some(only) = std::env::var("ATEL_ONLY")
+            .ok()
+            .and_then(|s| s.parse::<u32>().ok())
+        {
+            if only != k {
+                continue;
+            }
+        }
         let what = format!("program {k} on {w:#x}, mode {mode}: {code:02x?}");
         if std::env::var_os("ATEL_TRACE").is_some() {
             eprintln!("{what}");

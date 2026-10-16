@@ -342,17 +342,13 @@ pub fn level_index(kind: u8, level: i32) -> u32 {
 }
 
 /// MSVC's `_ftol2_sse` (`0x009497e0`) on an `f32`, as the game's SSE2 path
-/// does it (`cvttsd2si`): truncation toward zero, `0x80000000` for NaN and
-/// out-of-range values.
+/// does it ([`ffx_bridge::x87::cvttsd2si`]: truncation toward zero,
+/// `0x80000000` for NaN and out-of-range values). Every CPU the game runs
+/// on has SSE2; the x87 path (`ffx_bridge::x87::ftol2`) is the oracle's on
+/// an image that has not run its start-up code.
 #[must_use]
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // range checked
 pub fn ftol(x: f32) -> u32 {
-    let t = f64::from(x).trunc();
-    if (-2_147_483_648.0..2_147_483_648.0).contains(&t) {
-        (t as i32) as u32
-    } else {
-        0x8000_0000
-    }
+    ffx_bridge::x87::cvttsd2si(f64::from(x))
 }
 
 /// An `f32` after an x87 `fld`/`fstp` round trip: signalling NaNs come back
