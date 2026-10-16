@@ -6979,6 +6979,7 @@
 0x00c5e370 label    g_GuideMarkerPalette         # 16 RGBA of floats (128 = 1), by marker flags & 0xf
 0x00c5e478 label    g_GuideEnabled               # 0: Guide_Update returns at once
 0x00c5e790 label    g_GuidePacketStrides         # bytes per primitive of the minimap mesh's packet types 0-7 (0x14 0x1c 0x20 0x28 0x18 0x20 0x28 0x30); type 0: triangles, vertex indices at +0xc
+0x00c64ce8 label g_MagicImports                # 744 slots (0xba0 bytes) handed to every magic_*.dll's InitMagicPRX: 658 FFX.exe functions (effects 278, battle 114, map 104, characters 83, ...), the overlays' only way into the game
 0x00c8f508 label g_Ee_Gpr                    # emulated R5900 GPRs, 32 x 16 bytes: r0 (zero) here, t0 at +0x80 (pppRandFloat: t0 = r0 - 1), sp at +0x1d0 (AsmEmuInit stores this address there); argument registers set by AsmEmuSetFuncParam0 and the setters around it
 0x00cc9698 label    g_BasePath
 0x00cc9c48 label BigFileStream_sBigFileStreamInstacne # was g_FileSys

@@ -46,9 +46,12 @@ unique, in about 8,100 pieces. That's an upper bound: copies differ wherever
 their relative calls point elsewhere. Each DLL exports `InitMagicPRX` and
 `GetEffectOverlayTable` and imports only the C runtime and KERNEL32. FFX.exe
 loads one (`MagicFile_Start`, `onMagicDLLLoaded` at `0x009db110`) and passes
-`InitMagicPRX` a table of its own functions (`0x00c64ce8`, starting with
-`Ch_Allocate` and 26 more character functions), so the overlays call back
-into the game only through that table. That makes them a module with one
+`InitMagicPRX` a table of its own functions (`g_MagicImports`, `0x00c64ce8`:
+744 slots, 658 of them `FFX.exe` functions: effects 278, battle 114, map
+104, characters 83, main 24, system 21, PS2 emulation 20), so the overlays
+call back into the game only through that table. Once those functions are
+Rust, the overlays already run on them (the slots point at the patched
+originals). That makes them a module with one
 clean boundary: in the hybrid phase a Rust overlay can stand in for one DLL
 behind the same two exports.
 
