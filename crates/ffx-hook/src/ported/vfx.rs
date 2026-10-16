@@ -58,7 +58,12 @@ fn call_ptr(f: u32, args: &[u32]) -> u32 {
                     std::mem::transmute(f as usize);
                 f(a, b, c, d)
             }
-            _ => unreachable!("program functions take up to four arguments"),
+            [a, b, c, d, e, g, h] => {
+                let f: unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32) -> u32 =
+                    std::mem::transmute(f as usize);
+                f(a, b, c, d, e, g, h)
+            }
+            _ => unreachable!("the functions called back take 0 to 4 or 7 arguments"),
         }
     }
 }
@@ -616,6 +621,130 @@ ported! {
     /// `opusTree_Next2(it)`: the same body.
     opusTree_Next2 @ 0x0080_6aa0 => extern "thiscall" fn opus_tree_next2(it: u32) -> u32 {
         tree::bridge::opus_tree_next(&mut mem(), it)
+    }
+    /// `op_et_bindeff2_off(h)`.
+    op_et_bindeff2_off @ 0x007f_b6d0 => extern "C" fn op_et_bindeff2_off(h: u32) -> u32 {
+        et::bridge::op_et_bindeff2_off(&mut mem(), h, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_et_unit_free_by_id(id)`.
+    opu_et_unit_free_by_id @ 0x007f_da40 => extern "C" fn opu_et_unit_free_by_id(id: u32) -> u32 {
+        et::bridge::opu_et_unit_free_by_id(&mut mem(), id, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_et_unit_ofs(oef2, a, b, c)`.
+    opu_et_unit_ofs @ 0x007f_da30 => extern "C" fn opu_et_unit_ofs(o: u32, a: u32, b: u32, c: u32) -> u32 {
+        et::bridge::opu_et_unit_ofs(&mut mem(), [o, a, b, c], &mut |_, f, x| call_ptr(f, x))
+    }
+    /// `pppEePextlh(dst, rs, rt)`.
+    pppEePextlh @ 0x0073_7450 => extern "C" fn ppp_ee_pextlh(dst: u32, rs: u32, rt: u32) {
+        mat::bridge::ppp_ee_pextlh(&mut mem(), dst, rs, rt);
+    }
+    /// `pppEePpach(dst, rs, rt)`.
+    pppEePpach @ 0x0073_76a0 => extern "C" fn ppp_ee_ppach(dst: u32, rs: u32, rt: u32) {
+        mat::bridge::ppp_ee_ppach(&mut mem(), dst, rs, rt);
+    }
+    /// `pppEePsrlw(dst, src, sa)`.
+    pppEePsrlw @ 0x0073_7700 => extern "C" fn ppp_ee_psrlw(dst: u32, src: u32, sa: u32) {
+        mat::bridge::ppp_ee_psrlw(&mut mem(), dst, src, sa);
+    }
+    /// `pppColorShiftLoad(dst, base)`.
+    pppColorShiftLoad @ 0x0073_7420 => extern "C" fn ppp_color_shift_load(dst: u32, base: u32) {
+        mat::bridge::ppp_color_shift_load(&mut mem(), dst, base);
+    }
+    /// `pppColorShiftStore(src, base)`.
+    pppColorShiftStore @ 0x0073_7750 => extern "C" fn ppp_color_shift_store(src: u32, base: u32) {
+        mat::bridge::ppp_color_shift_store(&mut mem(), src, base);
+    }
+    /// `pppVu0MoveVia(dst, src)`.
+    pppVu0MoveVia @ 0x0073_ce30 => extern "C" fn ppp_vu0_move_via(dst: u32, src: u32) {
+        mat::bridge::ppp_vu0_move_via(&mut mem(), dst, src);
+    }
+    /// `pppVu0LoadVf00(dst)`.
+    pppVu0LoadVf00 @ 0x0073_ce80 => extern "C" fn ppp_vu0_load_vf00(dst: u32) {
+        mat::bridge::ppp_vu0_load_vf00(&mut mem(), dst);
+    }
+    /// `pppVu0LoadVf00_2(dst)`.
+    pppVu0LoadVf00_2 @ 0x0073_e110 => extern "C" fn ppp_vu0_load_vf00_2(dst: u32) {
+        mat::bridge::ppp_vu0_load_vf00(&mut mem(), dst);
+    }
+    /// `pppVu0Length(v)`.
+    pppVu0Length @ 0x0073_ceb0 => extern "C" fn ppp_vu0_length(v: u32) -> f32 {
+        mat::bridge::ppp_vu0_length(&mut mem(), v)
+    }
+    /// `pppVu0Length_2(v)`.
+    pppVu0Length_2 @ 0x0073_d7c0 => extern "C" fn ppp_vu0_length_2(v: u32) -> f32 {
+        mat::bridge::ppp_vu0_length(&mut mem(), v)
+    }
+    /// `pppVu0Length_3(v)`.
+    pppVu0Length_3 @ 0x0073_e140 => extern "C" fn ppp_vu0_length_3(v: u32) -> f32 {
+        mat::bridge::ppp_vu0_length(&mut mem(), v)
+    }
+    /// `pppShapeIterInit(shape, it)`.
+    pppShapeIterInit @ 0x0073_e990 => extern "C" fn ppp_shape_iter_init(shape: u32, it: u32) {
+        mat::bridge::ppp_shape_iter_init(&mut mem(), shape, it);
+    }
+    /// `pppShapeIterInit_2(shape, it)`.
+    pppShapeIterInit_2 @ 0x0073_f180 => extern "C" fn ppp_shape_iter_init_2(shape: u32, it: u32) {
+        mat::bridge::ppp_shape_iter_init(&mut mem(), shape, it);
+    }
+    /// `pppShapeIterInit_3(shape, it)`.
+    pppShapeIterInit_3 @ 0x0073_f9a0 => extern "C" fn ppp_shape_iter_init_3(shape: u32, it: u32) {
+        mat::bridge::ppp_shape_iter_init(&mut mem(), shape, it);
+    }
+    /// `pppShapeRandFlip(def, out)`.
+    pppShapeRandFlip @ 0x0074_19e0 => extern "C" fn ppp_shape_rand_flip(def: u32, out: u32) {
+        mat::bridge::ppp_shape_rand_flip(&mut mem(), def, out);
+    }
+    /// `pppDrawMdlSeaDes(obj, ctrl)`.
+    pppDrawMdlSeaDes @ 0x0073_ab70 => extern "C" fn ppp_draw_mdl_sea_des(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_draw_mdl_sea_des(&mut mem(), obj, ctrl);
+    }
+    /// `pppDrawMdlInfDes(obj, ctrl)`.
+    pppDrawMdlInfDes @ 0x0073_b830 => extern "C" fn ppp_draw_mdl_inf_des(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_draw_mdl_inf_des(&mut mem(), obj, ctrl);
+    }
+    /// `pppDrawMdlPSimDes(obj, ctrl)`.
+    pppDrawMdlPSimDes @ 0x0073_d010 => extern "C" fn ppp_draw_mdl_psim_des(obj: u32, ctrl: u32) {
+        prog::bridge::ppp_draw_mdl_psim_des(&mut mem(), obj, ctrl, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppKeBornRnd2(obj, key, ctrl)`.
+    pppKeBornRnd2 @ 0x0075_87b0 => extern "C" fn ppp_ke_born_rnd2(obj: u32, key: u32, ctrl: u32) {
+        let kind = prog::bridge::BornRnd::Rnd2;
+        prog::bridge::ppp_ke_born_rnd(&mut mem(), kind, obj, key, ctrl, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppKeBornRnd3(obj, key, ctrl)`.
+    pppKeBornRnd3 @ 0x0075_8960 => extern "C" fn ppp_ke_born_rnd3(obj: u32, key: u32, ctrl: u32) {
+        let kind = prog::bridge::BornRnd::Rnd3;
+        prog::bridge::ppp_ke_born_rnd(&mut mem(), kind, obj, key, ctrl, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppKeBornRnd5(obj, key, ctrl)`.
+    pppKeBornRnd5 @ 0x0075_8f20 => extern "C" fn ppp_ke_born_rnd5(obj: u32, key: u32, ctrl: u32) {
+        let kind = prog::bridge::BornRnd::Rnd5;
+        prog::bridge::ppp_ke_born_rnd(&mut mem(), kind, obj, key, ctrl, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppKeBornRnd6(obj, key, ctrl)`.
+    pppKeBornRnd6 @ 0x0075_9200 => extern "C" fn ppp_ke_born_rnd6(obj: u32, key: u32, ctrl: u32) {
+        let kind = prog::bridge::BornRnd::Rnd6;
+        prog::bridge::ppp_ke_born_rnd(&mut mem(), kind, obj, key, ctrl, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_oef2_se_on(cue, pan, vol)`.
+    op_oef2_se_on @ 0x007f_fe10 => extern "C" fn op_oef2_se_on(cue: u32, pan: u32, vol: u32) -> u32 {
+        op::bridge::op_oef2_se_on(&mut mem(), cue, pan, vol, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_oef2_se_volume(cue, vol)`.
+    op_oef2_se_volume @ 0x007f_fde0 => extern "C" fn op_oef2_se_volume(cue: u32, vol: u32) -> u32 {
+        op::bridge::op_oef2_se_volume(&mut mem(), cue, vol, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_oef2_sound_cue_push(cue, arg)`.
+    op_oef2_sound_cue_push @ 0x007f_feb0 => extern "C" fn op_oef2_sound_cue_push(cue: u32, arg: u32) -> u32 {
+        op::bridge::op_oef2_sound_cue_push(&mut mem(), cue, arg, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_oef2_sound_cue_multi(oef2, from, to, arg)`.
+    op_oef2_sound_cue_multi @ 0x0080_02c0 => extern "C" fn op_oef2_sound_cue_multi(oef2: u32, from: u32, to: u32, arg: u32) -> u32 {
+        op::bridge::op_oef2_sound_cue_multi(&mut mem(), oef2, from, to, arg, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_oef2_sound_cue_check()`.
+    op_oef2_sound_cue_check @ 0x0080_00f0 => extern "C" fn op_oef2_sound_cue_check() -> u32 {
+        op::bridge::op_oef2_sound_cue_check(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
     /// `op_et_eff_off_signal(id)`.
     op_et_eff_off_signal @ 0x007f_c450 => extern "C" fn op_et_eff_off_signal(id: u32) {
@@ -1420,6 +1549,11 @@ ported! {
     pppMatrixScl @ 0x0073_4170 => extern "C" fn ppp_matrix_scl(obj: u32, key: u32, ctrl: u32) {
         let _ = key;
         mat::bridge::ppp_matrix_scl(&mut mem(), obj, ctrl);
+    }
+    /// `pppKeMatSN(obj, key, ctrl)`.
+    pppKeMatSN @ 0x0073_4020 => extern "C" fn ppp_ke_mat_sn(obj: u32, key: u32, ctrl: u32) {
+        let _ = key;
+        mat::bridge::ppp_ke_mat_sn(&mut mem(), obj, ctrl);
     }
     /// `pppKeMatPht(obj, key, ctrl)`.
     pppKeMatPht @ 0x0073_41e0 => extern "C" fn ppp_ke_mat_pht(obj: u32, key: u32, ctrl: u32) {

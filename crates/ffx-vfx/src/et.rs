@@ -627,4 +627,59 @@ pub mod bridge {
         op_et_oef2_start(mem, oef2, call);
         1
     }
+
+    /// `opu_unit_free_by_id(opus, id)` (`0x007fde30`), called through
+    /// `call`.
+    const OPU_UNIT_FREE_BY_ID: Global<u32> = Global::new(0x007f_de30);
+
+    /// `op_et_bindeff2_off(h)` (`0x007fb6d0`): the character's bind flags
+    /// lose 0x730 and its `op_et_bindeff2` unit (ID `0x50001800 + index`)
+    /// is freed (`opu_unit_free_by_id(g_OpusBattle, id)` through `call`).
+    /// Returns what the original leaves in `eax`: the free's result, the
+    /// end of `g_EtChr` for an unknown handle, 0 for null (the original's
+    /// is undefined there).
+    pub fn op_et_bindeff2_off<M: Mem>(
+        mem: &mut M,
+        h: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if h == 0 {
+            return 0;
+        }
+        let Some(i) = and_flags(mem, h, 0xf8cf) else {
+            return CHR.ptr(mem).at(CHRS).addr;
+        };
+        let f = OPU_UNIT_FREE_BY_ID.ptr(mem).addr;
+        let b = OPUS_BATTLE.get(mem);
+        call(mem, f, &[b, 0x5000_1800 + i])
+    }
+
+    /// `opu_et_unit_free_by_id(id)` (`0x007fda40`):
+    /// `opu_unit_free_by_id(g_OpusBattle, id)` through `call`; returns its
+    /// result.
+    pub fn opu_et_unit_free_by_id<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = OPU_UNIT_FREE_BY_ID.ptr(mem).addr;
+        let b = OPUS_BATTLE.get(mem);
+        call(mem, f, &[b, id])
+    }
+
+    /// `opu_et_unit_ofs(oef2, a, b, c)` (`0x007fda30`):
+    /// `opu_et_unit(oef2 + 0x10, a, b, c)` (a tail call, through `call`);
+    /// returns its result.
+    pub fn opu_et_unit_ofs<M: Mem>(
+        mem: &mut M,
+        args: [u32; 4],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = OPU_ET_UNIT.ptr(mem).addr;
+        call(
+            mem,
+            f,
+            &[args[0].wrapping_add(0x10), args[1], args[2], args[3]],
+        )
+    }
 }

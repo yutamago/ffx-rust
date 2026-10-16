@@ -4217,14 +4217,15 @@ fn lns_t_programs_match_the_original() {
 }
 
 /// Replaces the functions at `syms` by a recorder of their first `n` (at
-/// most four) arguments (a log of 256 entries of 16 bytes after a count),
-/// so that checks compare what callers pass them; returns the log.
+/// most eight) arguments (a log of 256 entries of 32 bytes after a count),
+/// so that checks compare what callers pass them; the recorder returns the
+/// low bit of the new count. Returns the log.
 fn arg_recorder(p: &mut Pair, syms: &[u32], n: u8) -> u32 {
-    let log = p.alloc(4 + 0x100 * 16);
+    let log = p.alloc(4 + 0x100 * 32);
     let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
     c.extend(log.to_le_bytes());
     c.extend([0x81, 0xe1, 0xff, 0, 0, 0]); // and ecx, 0xff
-    c.extend([0xc1, 0xe1, 0x04]); // shl ecx, 4
+    c.extend([0xc1, 0xe1, 0x05]); // shl ecx, 5
     for k in 0..n {
         c.extend([0x8b, 0x44, 0x24, 4 + 4 * k]); // mov eax, [esp + 4 + 4k]
         c.extend([0x89, 0x81]); // mov [ecx + log + 4 + 4k], eax
@@ -4232,7 +4233,9 @@ fn arg_recorder(p: &mut Pair, syms: &[u32], n: u8) -> u32 {
     }
     c.extend([0xff, 0x05]); // inc dword [count]
     c.extend(log.to_le_bytes());
-    c.extend([0xb8, 0x5a, 0x5a, 0x5a, 0x5a]); // mov eax, 0x5a5a5a5a
+    c.push(0xa1); // mov eax, [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x83, 0xe0, 0x01]); // and eax, 1
     c.push(0xc3);
     for &sym in syms {
         let at = p.sym(sym);
@@ -4305,6 +4308,7 @@ fn et_opus_math_and_trees_match_the_original() {
         arg_recorder(&mut p, &[0x007e_3e30], 1);
         arg_recorder(&mut p, &[0x007f_d7f0], 4);
         arg_recorder(&mut p, &[0x007f_df70], 2);
+        arg_recorder(&mut p, &[0x007f_de30], 2); // opu_unit_free_by_id
         let btl = p.sym(0x0112_a8e0); // g_BtlStatus (MsBattleGetStatus)
         let handles = p.sym(e::CHR_HANDLES.sym);
         let chr_at = p.sym(e::CHR.sym);
@@ -4377,6 +4381,20 @@ fn et_opus_math_and_trees_match_the_original() {
                     Some(e::op_et_oef2_start(m, o, &mut call_original))
                 });
             }
+            let args = [o, rng.next(), rng.next(), rng.next()];
+            p.check("opu_et_unit_ofs", 0x007f_da30, &args, |m| {
+                Some(e::opu_et_unit_ofs(m, args, &mut call_original))
+            });
+            let id = rng.next();
+            p.check("opu_et_unit_free_by_id", 0x007f_da40, &[id], |m| {
+                Some(e::opu_et_unit_free_by_id(m, id, &mut call_original))
+            });
+            let h = rng.pick(&[0u32, 0x100, 0x101, 0x104, 0x107, 0x999]);
+            p.check("op_et_bindeff2_off", 0x007f_b6d0, &[h], |m| {
+                let r = e::op_et_bindeff2_off(m, h, &mut call_original);
+                // (the original's eax is undefined for a null handle)
+                (h != 0).then_some(r)
+            });
             p.put(e::ENCOUNT, o);
             p.check("op_et_encount_effect_free", 0x007f_c5f0, &[], |m| {
                 Some(e::op_et_encount_effect_free(m, &mut call_original))
@@ -4480,6 +4498,305 @@ fn et_opus_math_and_trees_match_the_original() {
                     p.same("opusTree_Next");
                 }
             }
+        }
+    }
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
+fn model_draw_helpers_match_the_original() {
+    use heap::bridge as h;
+    use mat::bridge as b;
+    use prog::bridge as pb;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x3d0d_e15a);
+        // rcbgPSimClearOMD and 0x0091fd40 (another module's): recorded
+        arg_recorder(&mut p, &[0x0091_f9b0, 0x0091_fd40], 1);
+        // MSVCR110's _CIsqrt (the oracle has no stub): `fsqrt; ret` through
+        // its import slot (0x00b0c39c), as the CRT computes it at 53 bits
+        let sqrt = p.sym(0x00b0_bfe0); // code padding before the imports
+        p.a.write(sqrt, &[0xd9, 0xfa, 0xc3]).unwrap();
+        p.b.write(sqrt, &[0xd9, 0xfa, 0xc3]).unwrap();
+        let slot = p.sym(0x00b0_c39c);
+        p.set(slot, sqrt);
+        let (x, y, dst) = (p.alloc(0x40), p.alloc(0x40), p.alloc(0x40));
+        let env_slot = p.alloc(4);
+        let env = p.alloc(0x40);
+        let arena = p.alloc(0x4000);
+        let obj = p.alloc(0x400);
+        let ctrl = p.alloc(0x10);
+        let offsets = p.alloc(0x10);
+        let blocks = p.alloc(0x100);
+        let shape = p.alloc(0x200);
+        let rec = p.alloc(0x10);
+        p.set(ctrl + 0xc, offsets);
+        p.put(h::ENV_SLOT, env_slot);
+        p.set(env_slot, env);
+        p.set(env + 0x20, blocks);
+        for round in 0..2000u32 {
+            p.fill(x, 0x40, &mut rng);
+            p.fill(y, 0x40, &mut rng);
+            p.fill(dst, 0x40, &mut rng);
+            // the EE helpers (dst may be a source)
+            let d = rng.pick(&[dst, x, y]);
+            p.check("pppEePextlh", 0x0073_7450, &[d, x, y], |m| {
+                b::ppp_ee_pextlh(m, d, x, y);
+                None
+            });
+            p.check("pppEePpach", 0x0073_76a0, &[d, y, x], |m| {
+                b::ppp_ee_ppach(m, d, y, x);
+                None
+            });
+            let any = rng.next();
+            let sa = rng.pick(&[0u32, 1, 5, 16, 31, 32, 0x41, any]);
+            p.check("pppEePsrlw", 0x0073_7700, &[d, x, sa], |m| {
+                b::ppp_ee_psrlw(m, d, x, sa);
+                None
+            });
+            p.check("pppVu0MoveVia", 0x0073_ce30, &[dst, x], |m| {
+                b::ppp_vu0_move_via(m, dst, x);
+                None
+            });
+            for at in [0x0073_ce80, 0x0073_e110] {
+                p.check("pppVu0LoadVf00", at, &[dst], |m| {
+                    b::ppp_vu0_load_vf00(m, dst);
+                    None
+                });
+            }
+            // the length macro: no NaNs in
+            for i in 0..4 {
+                let v = finite(&mut rng);
+                p.set(x + 4 * i, v);
+            }
+            p.set(y, x);
+            for at in [0x0073_ceb0, 0x0073_d7c0, 0x0073_e140] {
+                let thunk = p.float_thunk(at, y, dst);
+                p.check_f32("pppVu0Length", thunk, dst, |m| b::ppp_vu0_length(m, x));
+            }
+            // the colour shift
+            p.put(ppp::bridge::COLOR_CON_SHIFT, 4 * rng.below(8));
+            p.check("pppColorShiftLoad", 0x0073_7420, &[dst, y], |m| {
+                b::ppp_color_shift_load(m, dst, y);
+                None
+            });
+            p.put(ppp::bridge::COLOR_CON_SHIFT, 4 * rng.below(8));
+            p.check("pppColorShiftStore", 0x0073_7750, &[x, dst], |m| {
+                b::ppp_color_shift_store(m, x, dst);
+                None
+            });
+            for at in [0x0073_e990, 0x0073_f180, 0x0073_f9a0] {
+                p.check("pppShapeIterInit", at, &[x, dst], |m| {
+                    b::ppp_shape_iter_init(m, x, dst);
+                    None
+                });
+            }
+            p.check("pppShapeRandFlip", 0x0074_19e0, &[x, dst], |m| {
+                b::ppp_shape_rand_flip(m, x, dst);
+                None
+            });
+            // the destructors on the environment's heaps
+            if round % 64 == 0 {
+                p.check("pppCreateHeap", 0x0072_c480, &[env, arena, 0x2000], |m| {
+                    h::ppp_create_heap(m, env, arena, 0x2000);
+                    None
+                });
+                p.check(
+                    "pppCreateHeap",
+                    0x0072_c480,
+                    &[env + 0x10, arena + 0x2000, 0x2000],
+                    |m| {
+                        h::ppp_create_heap(m, env + 0x10, arena + 0x2000, 0x2000);
+                        None
+                    },
+                );
+            }
+            p.set(offsets + 8, 4 * rng.below(0x20));
+            let off2: u32 = p.get(offsets + 8);
+            let w = obj + off2;
+            let alloc = |p: &mut Pair, rng: &mut Xorshift| -> u32 {
+                if rng.chance(30) {
+                    return 0;
+                }
+                let n = 0x10 + rng.below(0x80);
+                p.check("pppMemAlloc", 0x0071_6a30, &[env, env + 0x10, n], |m| {
+                    Some(h::ppp_mem_alloc(m, env, env + 0x10, n))
+                })
+            };
+            match round % 3 {
+                0 => {
+                    for f in [0x108, 0x10c] {
+                        let a = alloc(&mut p, &mut rng);
+                        p.set(w + f, a);
+                    }
+                    p.check("pppDrawMdlSeaDes", 0x0073_ab70, &[obj, ctrl], |m| {
+                        pb::ppp_draw_mdl_sea_des(m, obj, ctrl);
+                        None
+                    });
+                }
+                1 => {
+                    for f in [0xd0, 0xd4, 0xd8] {
+                        let a = alloc(&mut p, &mut rng);
+                        p.set(w + 0xa0 + f, a);
+                        if a != 0 {
+                            p.fill(a, 0x10, &mut rng);
+                        }
+                    }
+                    let index = rng.below(8);
+                    p.set(rec + 4, index);
+                    p.set(w + 0xa0 + 0xdc, rec);
+                    p.set(blocks + 0x20 * index + 0x1c, shape);
+                    p.set(shape + 8, 0x20u32);
+                    p.set(shape + 0x12, rng.pick(&[0u16, 1, 2, 0xffff]));
+                    p.put(pb::MDL_INF_ACTIVE, 1);
+                    p.check("pppDrawMdlInfDes", 0x0073_b830, &[obj, ctrl], |m| {
+                        pb::ppp_draw_mdl_inf_des(m, obj, ctrl);
+                        None
+                    });
+                }
+                _ => {
+                    let sim = rng.pick(&[0u32, x, y]);
+                    p.set(w + 0xa0, sim);
+                    p.check("pppDrawMdlPSimDes", 0x0073_d010, &[obj, ctrl], |m| {
+                        pb::ppp_draw_mdl_psim_des(m, obj, ctrl, &mut call_original);
+                        None
+                    });
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn born_rnd_steps_match_the_original() {
+    use prog::bridge::{self as pb, BornRnd};
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00b0_7d5e);
+        let _log = record_srand(&mut p);
+        // KeBornRnd2 (the map module's, it makes the children): recorded
+        arg_recorder(&mut p, &[0x0076_9230], 7);
+        let obj = p.alloc(0x400);
+        let key = p.alloc(0x40);
+        let ctrl = p.alloc(0x10);
+        let offsets = p.alloc(0x10);
+        p.set(ctrl + 0xc, offsets);
+        let stop = p.sym(ppp::bridge::STOP.sym);
+        for _ in 0..4000 {
+            p.set(offsets, 4 * rng.below(0x40));
+            p.fill(key, 0x40, &mut rng);
+            for at in [0xd, 7] {
+                let any = rng.next().to_le_bytes()[0];
+                p.set(key + at, rng.pick(&[0u8, 0xff, 1, 3, 0x80, any]));
+            }
+            for at in [0xc, 0x10, 0x14, 0x18] {
+                if rng.chance(20) {
+                    p.set(key + at, u32::MAX);
+                }
+            }
+            let off: u32 = p.get(offsets);
+            p.set(obj + off + 0xa2, rng.pick(&[0u8, 0, 1, 2, 9]));
+            p.set(stop, u32::from(rng.chance(10)));
+            // KeVu0RndI's state (g_Vu0_RSeeded, R, the EE register it
+            // starts from)
+            p.set(p.sym(0x00c8_f728), u32::from(rng.chance(90)));
+            p.set(p.sym(0x00c0_a000), rng.next());
+            p.set(p.sym(0x00c8_f508), rng.next());
+            let (kind, at) = rng.pick(&[
+                (BornRnd::Rnd2, 0x0075_87b0),
+                (BornRnd::Rnd3, 0x0075_8960),
+                (BornRnd::Rnd5, 0x0075_8f20),
+                (BornRnd::Rnd6, 0x0075_9200),
+            ]);
+            p.check(&format!("{kind:?}"), at, &[obj, key, ctrl], |m| {
+                pb::ppp_ke_born_rnd(m, kind, obj, key, ctrl, &mut call_original);
+                None
+            });
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::cast_possible_truncation)]
+fn oef2_sound_cues_match_the_original() {
+    use op::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x500d_c0e5);
+        // the sound module's functions: recorded with their arguments
+        arg_recorder(&mut p, &[0x0088_7760], 0); // SndStopBattleStream
+        arg_recorder(&mut p, &[0x0088_6e50, 0x0088_75a0, 0x0088_6ff0], 3);
+        arg_recorder(&mut p, &[0x0088_6f30], 2); // SndSepTransSepOnly
+        arg_recorder(&mut p, &[0x0088_5ee0], 1); // SndDataSendSync
+        let magic_id = p.sym(0x009d_a3b0);
+        let oef = p.alloc(0x400);
+        let recs = p.alloc(0x100);
+        p.set(oef + 0x18, 0x100u32);
+        let streams = [p.sym(0x023c_3520), p.sym(0x023c_3524)];
+        for _ in 0..3000 {
+            for n in 0..0x20 {
+                let cue = oef + 0x100 + 0x10 * n;
+                p.set(cue, rng.pick(&[0u8, 1, 1, 2, 3]));
+                let rec = if rng.chance(10) {
+                    0
+                } else {
+                    recs + 0x10 * rng.below(8)
+                };
+                p.set(cue + 8, rec);
+            }
+            p.fill(recs, 0x100, &mut rng);
+            p.set(oef + 0x4c, rng.below(0x22) as u16);
+            for s in streams {
+                let v = oef + 0x100 + 0x10 * rng.below(0x20);
+                p.set(s, if rng.chance(50) { v } else { 0 });
+            }
+            p.put(o::SOUND_CUE_HEAD, rng.next() as u16);
+            p.put(o::SOUND_CUE_COUNT, rng.pick(&[0u16, 1, 0x1f, 0x20, 0x21]));
+            for g in [o::OEF2_STREAM_CUES.sym, o::STREAM_CUE2.sym] {
+                p.set(p.sym(g), rng.pick(&[0u32, 0, u32::MAX, 0x1234]));
+            }
+            let id = rng.pick(&[0x1fbu32, 0, 0x100]);
+            p.a.stub_return(magic_id, id).unwrap();
+            p.b.stub_return(magic_id, id).unwrap();
+            let cue = oef + 0x100 + 0x10 * rng.below(0x20);
+            let any = rng.next();
+            let pan = rng.next();
+            let vol = rng.pick(&[0u32, 1, 0x100, 0xffff_ff00, any]);
+            // (the originals dereference a kind-1 cue's record unchecked)
+            let usable = p.get::<u8>(cue) != 1 || p.get::<u32>(cue + 8) != 0;
+            if usable {
+                p.check("op_oef2_se_on", 0x007f_fe10, &[cue, pan, vol], |m| {
+                    Some(o::op_oef2_se_on(m, cue, pan, vol, &mut call_original))
+                });
+                p.check("op_oef2_se_volume", 0x007f_fde0, &[cue, vol], |m| {
+                    Some(o::op_oef2_se_volume(m, cue, vol, &mut call_original))
+                });
+            }
+            p.check("op_oef2_sound_cue_push", 0x007f_feb0, &[cue, pan], |m| {
+                Some(o::op_oef2_sound_cue_push(m, cue, pan, &mut call_original))
+            });
+            let from = rng.below(0x24);
+            let any = rng.below(0x24);
+            let to = rng.pick(&[any, 0xffff, 0x1_0003]);
+            p.check(
+                "op_oef2_sound_cue_multi",
+                0x0080_02c0,
+                &[oef, from, to, pan],
+                |m| {
+                    Some(o::op_oef2_sound_cue_multi(
+                        m,
+                        oef,
+                        from,
+                        to,
+                        pan,
+                        &mut call_original,
+                    ))
+                },
+            );
+            p.check("op_oef2_sound_cue_check", 0x0080_00f0, &[], |m| {
+                Some(o::op_oef2_sound_cue_check(m, &mut call_original))
+            });
         }
     }
 }

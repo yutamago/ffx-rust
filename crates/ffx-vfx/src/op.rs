@@ -674,4 +674,194 @@ pub mod bridge {
                 .wrapping_add(n.cast_unsigned().wrapping_mul(size));
         }
     }
+
+    /// A sound function (the sound module's), called through `call`.
+    fn snd<M: Mem>(
+        mem: &mut M,
+        f: u32,
+        args: &[u32],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = Global::<u32>::new(f).ptr(mem).addr;
+        call(mem, f, args)
+    }
+
+    /// `SndSepPlay(id, pan, vol)`.
+    const SND_SEP_PLAY: u32 = 0x0088_6e50;
+    /// `SndStopBattleStream()`.
+    const SND_STOP_BATTLE_STREAM: u32 = 0x0088_7760;
+    /// `SndStartBattleStream(channel, pan, vol)`.
+    const SND_START_BATTLE_STREAM: u32 = 0x0088_75a0;
+    /// `SndSepVolumeTranslate(id, vol, 0)`.
+    const SND_SEP_VOLUME_TRANSLATE: u32 = 0x0088_6ff0;
+    /// `SndSepTransSepOnly(sep, +0xc)`.
+    const SND_SEP_TRANS_SEP_ONLY: u32 = 0x0088_6f30;
+    /// `SndDataSendSync(0)`.
+    const SND_DATA_SEND_SYNC: u32 = 0x0088_5ee0;
+    /// `MagicFile_GetMagicId()` (the system module's).
+    const MAGIC_FILE_GET_MAGIC_ID: u32 = 0x009d_a3b0;
+
+    /// `g_OpOef2BattleStreamPlaying` (`0x011a0083`): set by
+    /// `op_oef2_se_on` when it starts a battle stream.
+    pub const BATTLE_STREAM_ON: Global<u8> = Global::new(0x011a_0083);
+    /// `g_OpOef2SoundCueHead`/`Count` (`0x023c3640`/`0x023c3642`) and the
+    /// 32-entry ring of cues (`0x023c3540`) and their arguments
+    /// (`0x023c35c0`).
+    pub const SOUND_CUE_HEAD: Global<u16> = Global::new(0x023c_3640);
+    /// See [`SOUND_CUE_HEAD`].
+    pub const SOUND_CUE_COUNT: Global<u16> = Global::new(0x023c_3642);
+    const SOUND_CUES: Global<u32> = Global::new(0x023c_3540);
+    const SOUND_CUE_ARGS: Global<u32> = Global::new(0x023c_35c0);
+    /// The second word of `g_OpOef2StreamCues` (`0x023c364c`).
+    pub const STREAM_CUE2: Global<u32> = Global::new(0x023c_364c);
+
+    /// The separate-sound ID of a kind-1 cue (`+8` points at its record,
+    /// the ID at `+8`).
+    fn sep_id(mem: &impl Mem, cue: u32) -> u32 {
+        let rec = ffx_system::stub::ptr32(mem.read(cue.wrapping_add(8)));
+        mem.read(rec.wrapping_add(8))
+    }
+
+    /// `op_oef2_se_on(cue, pan, vol)` (`0x007ffe10`): with `vol * 127 /
+    /// 256` (rounded toward 0), a kind-1 cue plays its separate sound
+    /// (`SndSepPlay`, when its ID is not negative), a kind-2 cue sets
+    /// `g_OpOef2BattleStreamPlaying`, stops the battle stream and starts
+    /// channel 0 and/or 1 for whichever of `0x023c3520`/`0x023c3524` it is
+    /// (all through `call`); returns 1, or 0 for another kind.
+    pub fn op_oef2_se_on<M: Mem>(
+        mem: &mut M,
+        cue: u32,
+        pan: u32,
+        vol: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let v = vol.cast_signed().wrapping_mul(0x7f);
+        let v = (v.wrapping_add((v >> 31) & 0xff) >> 8).cast_unsigned();
+        match mem.read::<u8>(cue) {
+            1 => {
+                let id = sep_id(mem, cue);
+                if id.cast_signed() >= 0 {
+                    snd(mem, SND_SEP_PLAY, &[id, pan, v], call);
+                }
+                1
+            }
+            2 => {
+                BATTLE_STREAM_ON.set(mem, 1);
+                snd(mem, SND_STOP_BATTLE_STREAM, &[], call);
+                for (ch, at) in [(0u32, 0x023c_3520u32), (1, 0x023c_3524)] {
+                    if Global::<u32>::new(at).get(mem) == cue {
+                        snd(mem, SND_START_BATTLE_STREAM, &[ch, pan, v], call);
+                    }
+                }
+                1
+            }
+            _ => 0,
+        }
+    }
+
+    /// `op_oef2_se_volume(cue, vol)` (`0x007ffde0`): a kind-1 cue's
+    /// separate sound to `vol` (`SndSepVolumeTranslate(id, vol, 0)` through
+    /// `call`); returns its result, or the cue (left in `eax`) for another
+    /// kind.
+    pub fn op_oef2_se_volume<M: Mem>(
+        mem: &mut M,
+        cue: u32,
+        vol: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if mem.read::<u8>(cue) != 1 {
+            return cue;
+        }
+        let id = sep_id(mem, cue);
+        snd(mem, SND_SEP_VOLUME_TRANSLATE, &[id, vol, 0], call)
+    }
+
+    /// `op_oef2_sound_cue_push(cue, arg)` (`0x007ffeb0`): a kind-1 cue
+    /// with a record queues (after `SndSepTransSepOnly(record, record
+    /// +0xc)` through `call`) at slot `(head + count) & 31` of the ring
+    /// with `arg`, the count one more; returns 0, or -1 when the ring is
+    /// full (32) or the cue is not one.
+    pub fn op_oef2_sound_cue_push<M: Mem>(
+        mem: &mut M,
+        cue: u32,
+        arg: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let count = SOUND_CUE_COUNT.get(mem);
+        if count >= 0x20 || mem.read::<u8>(cue) != 1 || mem.read::<u32>(cue.wrapping_add(8)) == 0 {
+            return u32::MAX;
+        }
+        let rec = ffx_system::stub::ptr32(mem.read(cue.wrapping_add(8)));
+        let extra: u32 = mem.read(rec.wrapping_add(0xc));
+        snd(mem, SND_SEP_TRANS_SEP_ONLY, &[rec, extra], call);
+        let slot = u32::from(
+            SOUND_CUE_HEAD
+                .get(mem)
+                .wrapping_add(SOUND_CUE_COUNT.get(mem))
+                & 0x1f,
+        );
+        SOUND_CUES.ptr(mem).at(slot).set(mem, cue);
+        SOUND_CUE_ARGS.ptr(mem).at(slot).set(mem, arg);
+        let n = SOUND_CUE_COUNT.get(mem).wrapping_add(1);
+        SOUND_CUE_COUNT.set(mem, n);
+        0
+    }
+
+    /// `op_oef2_sound_cue_multi(oef2, from, to, arg)` (`0x008002c0`):
+    /// unless the running magic is 0x1fb (`MagicFile_GetMagicId` through
+    /// `call`), the kind-1 cues `from ..= to` (at most the block's `u16`
+    /// count at `+0x4c`) of table 6 queued with `arg`; returns 0.
+    pub fn op_oef2_sound_cue_multi<M: Mem>(
+        mem: &mut M,
+        oef2: u32,
+        from: u32,
+        to: u32,
+        arg: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if snd(mem, MAGIC_FILE_GET_MAGIC_ID, &[], call) == 0x1fb {
+            return 0;
+        }
+        let n: u16 = mem.read(oef2.wrapping_add(0x4c));
+        if n == 0 {
+            return 0;
+        }
+        #[allow(clippy::cast_possible_truncation)] // u16 arguments
+        let end = u32::from((to as u16).wrapping_add(1).min(n));
+        #[allow(clippy::cast_possible_truncation)]
+        let mut i = u32::from(from as u16);
+        while i < end {
+            let cue = op_oef2_a_get(mem, oef2, 6, i);
+            if cue != 0 && mem.read::<u8>(cue) == 1 {
+                op_oef2_sound_cue_push(mem, cue, arg, call);
+            }
+            i += 1;
+        }
+        0
+    }
+
+    /// `op_oef2_sound_cue_check()` (`0x008000f0`): for `g_OpOef2StreamCues`
+    /// then `0x023c364c`: a cue pending (not -1) gives 0x2000/0x2001; -1
+    /// waits for `SndDataSendSync(0)` (through `call`; 0x1000/0x1001 while
+    /// it is busy) and clears it; then the queued sound cue count.
+    pub fn op_oef2_sound_cue_check<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        for (g, k) in [(OEF2_STREAM_CUES.sym, 0u32), (STREAM_CUE2.sym, 1)] {
+            let g = Global::<u32>::new(g);
+            let v = g.get(mem);
+            if v == 0 {
+                continue;
+            }
+            if v != u32::MAX {
+                return 0x2000 + k;
+            }
+            if snd(mem, SND_DATA_SEND_SYNC, &[0], call) != 0 {
+                return 0x1000 + k;
+            }
+            g.set(mem, 0);
+        }
+        u32::from(SOUND_CUE_COUNT.get(mem))
+    }
 }
