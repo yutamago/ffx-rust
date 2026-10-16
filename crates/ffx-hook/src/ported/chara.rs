@@ -1297,4 +1297,40 @@ ported! {
     Ch_MoveChrBlk @ 0x0083_47a0 => extern "C" fn ch_move_chr_blk(new: u32, old: u32) {
         mb::ch_move_chr_blk(&mut mem(), new, old);
     }
+    /// `Ch_GetSeqFrame(chr)`.
+    Ch_GetSeqFrame @ 0x0083_6af0 => extern "C" fn ch_get_seq_frame(chr: u32) -> i32 {
+        mo::bridge::ch_get_seq_frame(&mem(), chr)
+    }
+    /// `Ch_MotionIsEnd(chr)`.
+    Ch_MotionIsEnd @ 0x0083_71b0 => extern "C" fn ch_motion_is_end(chr: u32) -> u32 {
+        mo::bridge::ch_motion_is_end(&mem(), chr)
+    }
+    /// `Ch_TextureSetBase(tex, n, base, i)`.
+    Ch_TextureSetBase @ 0x0083_2050 => extern "C" fn ch_texture_set_base(tex: u32, n: i32, base: u32, i: u32) -> u32 {
+        ta::ch_texture_set_base(&mut mem(), tex, n, base, i)
+    }
+    /// `Ch_TextureSetImageBase(chr, i, base)`.
+    Ch_TextureSetImageBase @ 0x0083_1390 => extern "C" fn ch_texture_set_image_base(chr: u32, i: u32, base: u32) -> u32 {
+        ta::ch_texture_set_image_base(&mut mem(), chr, i, base)
+    }
+    /// `Ch_TextureSetClutBase(chr, i, base)`.
+    Ch_TextureSetClutBase @ 0x0083_13c0 => extern "C" fn ch_texture_set_clut_base(chr: u32, i: u32, base: u32) -> u32 {
+        ta::ch_texture_set_clut_base(&mut mem(), chr, i, base)
+    }
+    /// `ch_TextureLoad(tex, n)`.
+    ch_TextureLoad @ 0x0083_1f00 => extern "C" fn ch_texture_load(tex: u32, n: i32) {
+        ta::ch_texture_load(&mut mem(), tex, n);
+    }
+    /// `Ch_TextureSpecInitAll()`.
+    Ch_TextureSpecInitAll @ 0x0083_d140 => extern "C" fn ch_texture_spec_init_all() {
+        ta::ch_texture_spec_init_all(&mut mem());
+    }
+    /// `asmAddBlock1()`: a debug print only (a no-op in this build).
+    asmAddBlock1 @ 0x0077_f1d0 => extern "C" fn asm_add_block1() {}
+    /// `asmAddBlock2()`: a debug print only.
+    asmAddBlock2 @ 0x0077_f1e0 => extern "C" fn asm_add_block2() {}
+    /// `asmClearBlock()`: a debug print only.
+    asmClearBlock @ 0x0077_f1f0 => extern "C" fn asm_clear_block() {}
+    /// `asmClearBlock0()`: a debug print only.
+    asmClearBlock0 @ 0x0077_f200 => extern "C" fn asm_clear_block0() {}
 }

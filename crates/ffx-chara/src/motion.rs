@@ -387,6 +387,82 @@ pub mod bridge {
             Reg::load(fa).add_st(q).store()
         }
     }
+
+    /// `ReadU16Unaligned(p)` (`0x00838220`) as its callers take it: the
+    /// two bytes sign-extended and or-ed (`b1 << 8 | b0`), then the low
+    /// half sign-extended (so a negative low byte fills the high one).
+    fn read_i16u(mem: &impl Mem, p: u32) -> i32 {
+        let b: [u8; 2] = mem.read(p);
+        let v = (i32::from(b[1].cast_signed()) << 8) | i32::from(b[0].cast_signed());
+        #[allow(clippy::cast_possible_truncation)] // movsx of ax
+        let r = i32::from(v as i16);
+        r
+    }
+
+    /// `Ch_GetSeqFrame(chr)` (`0x00836af0`): the frames the motion
+    /// sequence at `+0x714` adds up to, or -1 (no sequence, a bad step, an
+    /// unknown code). Codes (first byte): 0 and 5 end; 1 a motion segment
+    /// (motion `i16` +1 of the group `+0x710`, times `i16` +3, frames
+    /// between the keys `i16` +5 and +7), 9 bytes; 2 skips a byte; 3 adds
+    /// `i16` +1, 3 bytes; 4 jumps (`i16` +1 into the list at `+0x70c`);
+    /// 6 skips 3 bytes.
+    pub fn ch_get_seq_frame(mem: &impl Mem, chr: u32) -> i32 {
+        let mut p: u32 = mem.read(chr + 0x714);
+        if p == 0 {
+            return -1;
+        }
+        let mut total = 0i32;
+        loop {
+            match mem.read::<i8>(p) {
+                0 | 5 => return total,
+                1 => {
+                    let m = read_i16u(mem, p + 1).cast_unsigned() << 4;
+                    let group: u32 = mem.read(chr + 0x710);
+                    let seg = m.wrapping_add(mem.read(group + 0x10));
+                    if seg == 0 {
+                        return -1;
+                    }
+                    let k = read_i16u(mem, p + 3);
+                    if k == 0 {
+                        return -1;
+                    }
+                    let keys: u32 = mem.read(seg + 8);
+                    let key = |i: i32| -> i32 {
+                        i32::from(
+                            mem.read::<i16>(keys.wrapping_add(i.cast_unsigned().wrapping_mul(2))),
+                        )
+                    };
+                    let d = key(read_i16u(mem, p + 7)).wrapping_sub(key(read_i16u(mem, p + 5)));
+                    total = total.wrapping_add(d.wrapping_mul(k));
+                    p = p.wrapping_add(9);
+                }
+                2 => p = p.wrapping_add(1),
+                3 => {
+                    total = total.wrapping_add(read_i16u(mem, p + 1));
+                    p = p.wrapping_add(3);
+                }
+                4 => {
+                    let list: u32 = mem.read(chr + 0x70c);
+                    let i = read_i16u(mem, p + 1).cast_unsigned();
+                    let tbl: u32 = mem.read(list + 8);
+                    let off = i32::from(mem.read::<i16>(tbl.wrapping_add(i.wrapping_mul(2))));
+                    p = off.cast_unsigned().wrapping_add(mem.read(list + 0xc));
+                }
+                6 => p = p.wrapping_add(3),
+                _ => return -1,
+            }
+        }
+    }
+
+    /// `Ch_MotionIsEnd(chr)` (`0x008371b0`): with a sequence (`+0x73e`),
+    /// whether `Ch_GetSeqFrame` fails; else whether no loops are left.
+    pub fn ch_motion_is_end(mem: &impl Mem, chr: u32) -> u32 {
+        if mem.read::<u8>(chr + 0x73e) != 0 {
+            u32::from(ch_get_seq_frame(mem, chr) == -1)
+        } else {
+            u32::from(mem.read::<u16>(chr + l::MOTION_LOOPS_LEFT) == 0)
+        }
+    }
 }
 
 #[cfg(test)]

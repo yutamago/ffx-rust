@@ -285,4 +285,110 @@ pub mod bridge {
             mem.write(chr + 0x6fc, v);
         }
     }
+
+    /// `Sg_GsloadSetBase(tex)` (`0x0083d370`), the `main` module's, as the
+    /// texture functions use it: bits 0..13 of `+0x24` from `u16` `+0x3a`.
+    fn gsload_set_base(mem: &mut impl Mem, tex: u32) {
+        let b = u32::from(mem.read::<u16>(tex + 0x3a));
+        let w: u32 = mem.read(tex + 0x24);
+        mem.write(tex + 0x24, w ^ ((b ^ w) & 0x3fff));
+    }
+
+    /// `Ch_TextureSetBase(tex, n, base, i)` (`0x00832050`): texture `i`
+    /// (64 bytes each) gets base `base` (`u16` `+0x38` and `+0x3a`, then
+    /// its register); returns the next free base (`base + u16 +0x36`, or
+    /// -1 for -1). With `i` = -1 all `n` textures, one after another.
+    pub fn ch_texture_set_base(mem: &mut impl Mem, tex: u32, n: i32, base: u32, i: u32) -> u32 {
+        let set = |mem: &mut _, t: u32, b: u32| {
+            #[allow(clippy::cast_possible_truncation)] // the low half
+            let h = b as u16;
+            Mem::write(mem, t + 0x38, [h, h]);
+        };
+        if i != u32::MAX {
+            let t = tex.wrapping_add(i << 6);
+            set(mem, t, base);
+            gsload_set_base(mem, t);
+            if base == u32::MAX {
+                return base;
+            }
+            return u32::from(mem.read::<u16>(t + 0x36)).wrapping_add(base);
+        }
+        let mut base = base;
+        for k in 0..n.max(0).cast_unsigned() {
+            let t = tex.wrapping_add(0x40 * k);
+            set(mem, t, base);
+            gsload_set_base(mem, t);
+            if base != u32::MAX {
+                base = base.wrapping_add(u32::from(mem.read::<u16>(t + 0x36)));
+            }
+        }
+        base
+    }
+
+    /// `Ch_TextureSetImageBase(chr, i, base)` (`0x00831390`): on the clut
+    /// textures (`+0x6e4`, count `i16` `+0x6e8`).
+    pub fn ch_texture_set_image_base(mem: &mut impl Mem, chr: u32, i: u32, base: u32) -> u32 {
+        let t: u32 = mem.read(chr + l::CLUT_TEXTURES);
+        let n = i32::from(mem.read::<i16>(chr + l::CLUT_TEXTURE_COUNT));
+        ch_texture_set_base(mem, t, n, base, i)
+    }
+
+    /// `Ch_TextureSetClutBase(chr, i, base)` (`0x008313c0`): on the image
+    /// textures (`+0x6ec`, count `i16` `+0x6f0`).
+    pub fn ch_texture_set_clut_base(mem: &mut impl Mem, chr: u32, i: u32, base: u32) -> u32 {
+        let t: u32 = mem.read(chr + l::IMAGE_TEXTURES);
+        let n = i32::from(mem.read::<i16>(chr + l::IMAGE_TEXTURE_COUNT));
+        ch_texture_set_base(mem, t, n, base, i)
+    }
+
+    /// `ch_TextureLoad(tex, n)` (`0x00831f00`): each of the `n` textures
+    /// with a base (`u16` `+0x38` not `0xffff`) takes it as `+0x3a` and
+    /// into its register; the DMA uploads around it do nothing in this
+    /// build.
+    pub fn ch_texture_load(mem: &mut impl Mem, tex: u32, n: i32) {
+        for k in 0..n.max(0).cast_unsigned() {
+            let t = tex.wrapping_add(0x40 * k);
+            let b: u16 = mem.read(t + 0x38);
+            if b != 0xffff {
+                mem.write(t + 0x3a, b);
+                gsload_set_base(mem, t);
+            }
+        }
+    }
+
+    /// The specular texture data (`Ch_TextureSpecInitAll`).
+    pub const SPECULAR_TEX: Global<u32> = Global::new(0x00c4_deac);
+    /// The specular clut texture.
+    pub const SPECULAR_CLUT: Global<u32> = Global::new(0x0130_1a20);
+    /// The specular image texture.
+    pub const SPECULAR_IMAGE: Global<u32> = Global::new(0x0130_19e0);
+    /// The specular texture list entry.
+    pub const SPECULAR_REGS: Global<u32> = Global::new(0x0130_1a60);
+
+    /// `Ch_TextureSpecInitAll()` (`0x0083d140`): the specular texture
+    /// data mapped and set up (image, clut, list entry), with the fixed
+    /// bases `0x2ea0` and `0x2ef8`.
+    pub fn ch_texture_spec_init_all(mem: &mut impl Mem) {
+        let t = SPECULAR_TEX.get(mem);
+        crate::mapping::bridge::ch_tex_data_mapping(mem, t);
+        let clut = SPECULAR_CLUT.ptr(mem).addr;
+        let image = SPECULAR_IMAGE.ptr(mem).addr;
+        let regs = SPECULAR_REGS.ptr(mem).addr;
+        let src: u32 = mem.read(t + 0x18);
+        ch_texture_set_clut(mem, src, clut);
+        let src: u32 = mem.read(t + 0x1c);
+        ch_texture_set_image(mem, src, image);
+        let src: u32 = mem.read(t + 0x14);
+        ch_texture_set_regs(mem, src, regs);
+        mem.write(image + 0x3a, 0x2ea0u16);
+        mem.write(clut + 0x3a, 0x2ef8u16);
+        gsload_set_base(mem, image);
+        gsload_set_base(mem, clut);
+        let a = u32::from(mem.read::<u16>(image + 0x3a));
+        let w: u32 = mem.read(regs + 0x14);
+        mem.write(regs + 0x14, w ^ ((a ^ w) & 0x3fff));
+        let c = u32::from(mem.read::<u16>(clut + 0x3a)) << 7;
+        let w: u32 = mem.read(regs + 0x18);
+        mem.write(regs + 0x18, w ^ ((c ^ w) & 0x1f_ff80));
+    }
 }

@@ -3230,7 +3230,8 @@
 0x00831ba0 function Sg_PLightDispose          # fh v3:exact 0x00831c20
 0x00831bf0 function Sg_PLightSetAttenuation   # fh v3:bsim1.00 0x00831c70
 0x00831c60 function Sg_PLightSetEnable        # fh v3:bsim1.00 0x00831ce0
-0x00831f00 function ch_TextureLoad            # fh v3:cg6 0x831f80
+0x00831f00 function ch_TextureLoad            # (tex, n) each texture with a base (u16 +0x38 != -1): +0x3a = it, Sg_GsloadSetBase; the DMA calls are no-ops here. fh: v3:cg6 0x831f80
+0x00832050 function Ch_TextureSetBase        # ours: (tex, n, base, i) texture i (or all n with i = -1) gets base: u16 +0x38/+0x3a, Sg_GsloadSetBase; returns base + u16 +0x36 (base -1 stays)
 0x008320e0 function Ch_SysSet6e0             # ours: g_Chr6e0 = v (no reader found)
 0x008320f0 function Ch_CompareDrawOrder      # ours: qsort comparator (&a, &b) -> (*a)+0x6d4 - (*b)+0x6d4
 0x00832110 function Apply_Envelope            # fh v3:exact 0x00832190
@@ -3319,13 +3320,14 @@
 0x00836a50 function ChN_ReadSystemMGRPsync    # fh v3:exact 0x00836ad0
 0x00836a80 function Ch_DisposeAllMGRP         # fh v3:exact 0x00836b00
 0x00836ad0 function Ch_DisposeMGRP            # fh switch:bsim1.00 0x71004223e0
-0x00836af0 function Ch_GetSeqFrame            # fh v3:exact 0x00836b70
+0x00836af0 function Ch_GetSeqFrame            # frames of the sequence at +0x714 or -1: codes 0/5 end, 1 segment (9 B), 2 (1 B), 3 add i16 (3 B), 4 jump via +0x70c, 6 (3 B); ReadU16Unaligned sign-extends both bytes. fh: v3:exact 0x00836b70
 0x00836c90 function SG_AddMotionGroup         # registers a .mgrp (50 slots, "nb mgrp err"), relocates it, adds its sequences
 0x00836d30 function SG_AddSequence            # 0x14-byte sequence -> g_ChrSequences (0x01300a08) table ("SG:AddMseq"); Ch_SeqLink relinks it
 0x00836f70 function SG_RelocateGroup          # offsets -> pointers; header +0 holds the load address
 0x00836fc0 function SG_RelocateSequence       # motion (+0x0c) and clip (+0x10) tables, 16 bytes each, pointer words +8/+0xc
 0x00837180 function Ch_MotionCancel           # fh switch:bsim1.00 0x7100423030
 0x008371a0 function Ch_MotionGetId            # chr +0x72c, the current motion id (Native_ChrGetMotion reads it too); Switch name
+0x008371b0 function Ch_MotionIsEnd           # ours: with a sequence (+0x73e) Ch_GetSeqFrame == -1, else u16 +0x724 (loops left) == 0
 0x00837350 function Chr_PlayMotionMarks          # (chr, motion, -, loops, start mark, end mark): marks index the motion's mark table; SG_StartClip, +0x736 = 1
 0x008373e0 function Ch_MotionSetLow2          # (chr, motion, -, loops, start frame, end frame): raw frames (<< 8) to SG_StartClip, +0x736 = 1; was Chr_PlayMotion
 0x008374c0 function Chr_PlayMotionInclEnd        # like Chr_PlayMotion, end frame + 1 unless loops == 1
@@ -3430,6 +3432,7 @@
 0x0083d040 function Ch_TextureSetAnim         # fh v3:exact 0x0083d040
 0x0083d070 function Ch_TextureSetAnimTimer    # fh v3:exact 0x0083d070
 0x0083d0a0 function Ch_TextureSetup           # fh v3:exact 0x0083d0a0
+0x0083d140 function Ch_TextureSpecInitAll    # Switch name (0x7100424e60, next to Ch_TextureSendSpecular 0x71004250b0 and Ch_ClutDisposeCheck): maps the specular texture data (0x00c4deac) and sets up its clut (0x01301a20), image (0x013019e0) and list entry (0x01301a60) with bases 0x2ea0/0x2ef8
 0x0083d1e0 function Ch_TextureSetClut       # ours: (clut entry, tex) tex +0x3c = 1 (entry i32 <= 16) or 4, +0x36 its low half, +0x30 = entry data (Ch_TextureReMapping's clut loop)
 0x0083d220 function Ch_TextureSetImage        # ours: (image entry, tex) tex +0x30 = entry +0xc, +0x34 = u16 +8 >> 6, +0x36 = u16 +2 (Ch_TextureReMapping)
 0x0083d250 function Ch_TextureSetRegs        # ours: (img, tex) sizes, power-of-two sizes and the GS TEX0 fields at +0x14..+0x1f from an image header (Ch_TextureReMapping)

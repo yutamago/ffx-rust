@@ -4160,3 +4160,191 @@ fn history_and_block_moves_match_the_original_on(t: &mut Twin) {
         t.put(array, &saved);
     }
 }
+
+#[test]
+fn sequences_and_texture_bases_match_the_original() {
+    for mut t in twins() {
+        sequences_and_texture_bases_match_the_original_on(&mut t);
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+fn sequences_and_texture_bases_match_the_original_on(t: &mut Twin) {
+    use ffx_chara::motion::bridge as mb;
+    use ffx_chara::texanim::bridge as ta;
+    let mut rng = Xorshift(0x5eed_0409);
+    let chrs = live_characters(t, &mut rng);
+    // the snapshot's own sequences first
+    for &chr in &chrs {
+        if t.name == "snapshot" && chr != *chrs.last().unwrap() {
+            t.check(
+                &format!("Ch_GetSeqFrame {chr:#x} own"),
+                0x0083_6af0,
+                &[chr],
+                |m| int(mb::ch_get_seq_frame(m, chr)),
+            );
+            t.check(
+                &format!("Ch_MotionIsEnd {chr:#x} own"),
+                0x0083_71b0,
+                &[chr],
+                |m| Res::Int(mb::ch_motion_is_end(m, chr)),
+            );
+        }
+    }
+    // made-up sequences: a motion group, segments with key tables, a
+    // jump list
+    let chr = make_character(t, &mut rng, None);
+    let keys = t.alloc(2 * 16);
+    for i in 0..16u32 {
+        t.put(
+            keys + 2 * i,
+            &u16::try_from(rng.next() % 0x200).unwrap().to_le_bytes(),
+        );
+    }
+    let segs = t.alloc(16 * 8);
+    for i in 0..8u32 {
+        t.put_u32(segs + 16 * i + 8, keys);
+    }
+    let group = t.alloc(0x20);
+    t.put_u32(group + 0x10, segs);
+    t.put_u32(chr + 0x710, group);
+    let seq = t.alloc(0x100);
+    let jumps = t.alloc(8);
+    // forward only: to the end, or to one more step before it
+    t.put(jumps, &[0x30u8, 0, 0x34, 0, 0x30, 0, 0x34, 0]);
+    let list = t.alloc(0x10);
+    t.put_u32(list + 8, jumps);
+    t.put_u32(list + 0xc, seq);
+    t.put_u32(chr + 0x70c, list);
+    for round in 0..400 {
+        let mut bytes = vec![0u8; 0x40];
+        let mut at = 0usize;
+        while at < 0x30 {
+            let code = [1u8, 1, 1, 2, 3, 6, 4, 0, 5, 7, 0xff][rng.next() as usize % 11];
+            bytes[at] = code;
+            let small = |rng: &mut Xorshift, n: u32| u8::try_from(rng.next() % n).unwrap();
+            match code {
+                1 => {
+                    bytes[at + 1] = small(&mut rng, 8);
+                    bytes[at + 3] = [0u8, 1, 2, 0x80, 0xff][rng.next() as usize % 5];
+                    bytes[at + 4] = small(&mut rng, 2) * 0xff;
+                    bytes[at + 5] = small(&mut rng, 16);
+                    bytes[at + 7] = small(&mut rng, 16);
+                }
+                3 => {
+                    bytes[at + 1] = small(&mut rng, 256);
+                    bytes[at + 2] = small(&mut rng, 256);
+                }
+                4 => bytes[at + 1] = small(&mut rng, 4),
+                _ => {}
+            }
+            at += [1usize, 9, 1, 3, 3, 1, 3, 1][usize::from(code.min(7))];
+        }
+        bytes[0x30..].fill(0);
+        bytes[0x34] = 3;
+        bytes[0x35] = 0x7f;
+        t.put(seq, &bytes);
+        t.put(seq + 0x40, &[0u8; 0xc0]);
+        t.put_u32(chr + 0x714, if round % 50 == 0 { 0 } else { seq });
+        t.put(chr + 0x73e, &[u8::try_from(round % 2).unwrap()]);
+        t.put(
+            chr + l::MOTION_LOOPS_LEFT,
+            &u16::try_from(round % 3).unwrap().to_le_bytes(),
+        );
+        t.check(
+            &format!("Ch_GetSeqFrame {round} {:x?}", &bytes[..16]),
+            0x0083_6af0,
+            &[chr],
+            |m| int(mb::ch_get_seq_frame(m, chr)),
+        );
+        t.check(
+            &format!("Ch_MotionIsEnd {round}"),
+            0x0083_71b0,
+            &[chr],
+            |m| Res::Int(mb::ch_motion_is_end(m, chr)),
+        );
+    }
+    // texture bases
+    let tex = random_block(t, &mut rng, 0x40 * 6);
+    // data pointers (the DMA reads the size before them), some null
+    let data = random_block(t, &mut rng, 0x20) + 0x10;
+    for k in 0..6u32 {
+        t.put_u32(tex + 0x40 * k + 0x30, if k % 3 == 0 { 0 } else { data });
+    }
+    for round in 0..200 {
+        for k in 0..6u32 {
+            let b = [0xffffu16, 0, 0x100, 0x2ea0][rng.next() as usize % 4];
+            t.put(tex + 0x40 * k + 0x38, &b.to_le_bytes());
+        }
+        let n = [0i32, 1, 3, 6, -1][rng.next() as usize % 5];
+        let base = [u32::MAX, 0, 0x1234, rng.next()][rng.next() as usize % 4];
+        let i = [u32::MAX, 0, 2, 5][rng.next() as usize % 4];
+        let nu = n.cast_unsigned();
+        t.check(
+            &format!("Ch_TextureSetBase {round} {n} {base:#x} {i:#x}"),
+            0x0083_2050,
+            &[tex, nu, base, i],
+            |m| Res::Int(ta::ch_texture_set_base(m, tex, n, base, i)),
+        );
+        t.check(
+            &format!("ch_TextureLoad {round} {n}"),
+            0x0083_1f00,
+            &[tex, nu],
+            |m| void!(ta::ch_texture_load(m, tex, n)),
+        );
+    }
+    for &chr in &chrs {
+        for i in [u32::MAX, 0, 1] {
+            let base = rng.next() & 0x3fff;
+            t.check(
+                &format!("Ch_TextureSetImageBase {chr:#x} {i:#x}"),
+                0x0083_1390,
+                &[chr, i, base],
+                |m| Res::Int(ta::ch_texture_set_image_base(m, chr, i, base)),
+            );
+            t.check(
+                &format!("Ch_TextureSetClutBase {chr:#x} {i:#x}"),
+                0x0083_13c0,
+                &[chr, i, base],
+                |m| Res::Int(ta::ch_texture_set_clut_base(m, chr, i, base)),
+            );
+        }
+    }
+    // the specular textures: the game's data on the snapshot, made up on
+    // the image
+    if ta::SPECULAR_TEX.get(&t.b) == 0 {
+        let mut b = Blob::new(&mut rng, 0x300);
+        b.tex_data(&mut rng, 0);
+        let at = b.place(t);
+        let sizes = t.alloc(16 * 4);
+        for k in 0..4u32 {
+            t.put(sizes + 16 * k + 4, &[64u8, 0, 32, 0]);
+        }
+        // version, lists: only what the setup reads
+        t.put(at + 0x10, &0x1029u16.to_le_bytes());
+        set_global(t, ta::SPECULAR_TEX.sym, at);
+        let lists = random_block(t, &mut rng, 0x40);
+        t.put_u32(at, at);
+        t.put_u32(at + 0x14, sizes);
+        t.put_u32(at + 0x18, lists);
+        t.put_u32(at + 0x1c, lists);
+    }
+    t.check("Ch_TextureSpecInitAll", 0x0083_d140, &[], |m| {
+        void!(ta::ch_texture_spec_init_all(m))
+    });
+}
+
+#[test]
+fn debug_stubs_match_the_original() {
+    for mut t in twins() {
+        for (name, at) in [
+            ("asmAddBlock1", 0x0077_f1d0u32),
+            ("asmAddBlock2", 0x0077_f1e0),
+            ("asmClearBlock", 0x0077_f1f0),
+            ("asmClearBlock0", 0x0077_f200),
+        ] {
+            // nothing written; the result is the caller's eax
+            t.check(name, at, &[], |_| Res::Void);
+        }
+    }
+}
