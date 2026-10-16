@@ -11,10 +11,14 @@
 #   --harness P test harness on 127.0.0.1:P (see crates/ffx-hook/src/harness.rs)
 #   --background show the window without taking the focus
 #   --home DIR  the game's Documents folder (settings, saves) is DIR (harness only)
+#   --hook-disable LIST  hooks not to install (names, comma-separated;
+#               "replacements" = every pure replacement, for replay parity)
 #   --seed N    seed the random number generators with N instead of the clock
 #   --renderer  the external renderer draws the scene (ffx-render.exe, built and copied next to the game)
 #   --gfx       graphics layer on (FFX_GFX; crates/ffx-hook/src/gfx)
 #   --fast      no frame limiter: frames back to back, game time still 1/60 s each
+#   --virtual-clock  (with --fast) game time never follows real time: exactly
+#               one frame interval per frame, for replays
 #
 # The language lives in Documents\Square Enix\FINAL FANTASY X&X-2 HD
 # Remaster\GameSetting.ini, which the Steam launcher normally writes; the game
@@ -33,9 +37,11 @@ while [[ $# -gt 0 ]]; do
         --background) export FFX_HARNESS_BACKGROUND=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_BACKGROUND" ;;
         --home) home="$2"; shift ;;
         --fast) export FFX_HARNESS_FAST=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_FAST" ;;
+        --virtual-clock) export FFX_HARNESS_VIRTUAL_CLOCK=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_VIRTUAL_CLOCK" ;;
         --renderer) export FFX_RENDERER=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_RENDERER:FFX_RENDER_TEST:FFX_GFX_REDIRECT:FFX_GFX_SHARE:FFX_GFX_FENCE:FFX_RENDER_BACKEND:FFX_RENDERER_SKIP:FFX_RENDER_EXPORT_MATERIALS:FFX_RENDER_GLOW_DUMP/p"; renderer=1 ;;
         --gfx) export FFX_GFX="${FFX_GFX:-1}"; export WSLENV="${WSLENV:+$WSLENV:}FFX_GFX:FFX_GFX_REDIRECT" ;;
         --seed) export FFX_HARNESS_SEED="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_SEED"; shift ;;
+        --hook-disable) export FFX_HOOK_DISABLE="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HOOK_DISABLE"; shift ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
     esac
     shift

@@ -58,7 +58,11 @@ pub unsafe fn install(
     Ok(hooks
         .iter()
         .map(|hook| {
-            let outcome = if disabled.contains(&hook.name) {
+            // "replacements": every hook that replaces its function outright
+            // (no trampoline), so a replay can run the original code.
+            let off = disabled.contains(&hook.name)
+                || (hook.original.is_none() && disabled.contains(&"replacements"));
+            let outcome = if off {
                 Outcome::Disabled
             } else {
                 // SAFETY: the build check passed, so the site is inside the

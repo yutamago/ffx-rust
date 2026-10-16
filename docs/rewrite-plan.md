@@ -152,6 +152,11 @@ order their interfaces get narrower.
 
 ### M0: tooling (before porting at scale)
 
+Status (2026-10-16): done except the naming push, which goes on with
+every module. `tools/progress.py`, `tools/ownership.py`,
+`tools/cg-match.py`, `ffx-bridge`, snapshot parity (`ffx-oracle`) and replay
+parity (`ffx_harness::replay`) work; the control word is `0x027f`.
+
 - `tools/progress.py`: named % and ported % per module, from `ffx.sym`, the
   hook table and the dump. Replaces the estimates above with tracked numbers.
 - **Ownership map.** A Ghidra script over xrefs lists, for each global and

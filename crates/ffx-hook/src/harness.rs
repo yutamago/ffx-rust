@@ -19,6 +19,10 @@
 //!   `Time_Sleep` (`0x0066b345`, the logos) return at once and add their
 //!   time to the game's clock (`Phyre_PTimerWin32_GetTime`, `0x0042fd80`), so the game still
 //!   sees its usual frame rate;
+//! - with `FFX_HARNESS_VIRTUAL_CLOCK=1` (and fast mode), the game's clock is
+//!   its start time plus the skipped sleeps only, never real time, so every
+//!   frame advances it by exactly one frame interval; with `lockstep on`
+//!   frames then advance only as far as `wait` and `press` say (replays);
 //! - with `FFX_HARNESS_BACKGROUND=1`, shows the window without activating
 //!   it and makes the keyboard a background device, so the game neither
 //!   takes the focus nor stops reading input without it; the real devices
@@ -201,6 +205,14 @@ pub unsafe extern "C" fn clock_seed() -> u32 {
 
 /// Trampoline to the original `Phyre_PTimerWin32_GetTime`.
 pub static TIME_NOW_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
+/// The virtual clock is on (`FFX_HARNESS_VIRTUAL_CLOCK=1`).
+static VIRTUAL: AtomicBool = AtomicBool::new(false);
+/// The clock's first reading, as `f64` bits (0: not read yet).
+static VIRTUAL_START: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// Frames advance only up to [`ALLOWED`] (`lockstep on`).
+static LOCKSTEP: AtomicBool = AtomicBool::new(false);
+/// The last frame the game may present in lockstep.
+static ALLOWED: AtomicU32 = AtomicU32::new(0);
 /// Seconds the frame limiter skipped, as `f64` bits.
 static SKIPPED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 /// The limiter's replacement `Sleep`, called through this pointer by the
@@ -213,17 +225,36 @@ static FAST_SLEEP: unsafe extern "system" fn(u32) = fast_sleep;
 /// Called by the game.
 #[must_use]
 pub unsafe extern "C" fn time_now() -> f64 {
+    let skipped = f64::from_bits(SKIPPED.load(Ordering::Acquire));
+    if VIRTUAL.load(Ordering::Acquire) {
+        let start = VIRTUAL_START.load(Ordering::Acquire);
+        if start != 0 {
+            return f64::from_bits(start) + skipped;
+        }
+    }
     // SAFETY: the trampoline runs the original, which returns in st(0).
     let now = unsafe {
         let original: unsafe extern "C" fn() -> f64 =
             std::mem::transmute(TIME_NOW_ORIGINAL.load(Ordering::Acquire));
         original()
     };
-    now + f64::from_bits(SKIPPED.load(Ordering::Acquire))
+    if VIRTUAL.load(Ordering::Acquire) {
+        let _ =
+            VIRTUAL_START.compare_exchange(0, now.to_bits(), Ordering::AcqRel, Ordering::Acquire);
+        return f64::from_bits(VIRTUAL_START.load(Ordering::Acquire)) + skipped;
+    }
+    now + skipped
 }
 
 /// The frame limiter's `Sleep(ms)` in fast mode: no wait, the clock moves.
 unsafe extern "system" fn fast_sleep(ms: u32) {
+    // On the virtual clock nothing else moves time: a Sleep(0) in a wait
+    // loop would spin for ever.
+    let ms = if VIRTUAL.load(Ordering::Relaxed) {
+        ms.max(1)
+    } else {
+        ms
+    };
     let mut bits = SKIPPED.load(Ordering::Acquire);
     loop {
         let next = (f64::from_bits(bits) + f64::from(ms) / 1000.0).to_bits();
@@ -497,6 +528,75 @@ enum Job {
 }
 
 static JOBS: Mutex<VecDeque<(Job, Sender<String>)>> = Mutex::new(VecDeque::new());
+
+/// A memory range a trace hashes each frame: `addr:len` (an `ffx.sym`
+/// address) or `*addr+off:len` (through the pointer stored at `addr`).
+struct TraceRange {
+    addr: u32,
+    deref: bool,
+    off: u32,
+    len: usize,
+}
+
+struct Trace {
+    out: std::io::BufWriter<std::fs::File>,
+    ranges: Vec<TraceRange>,
+}
+
+static TRACE: Mutex<Option<Trace>> = Mutex::new(None);
+
+fn parse_trace_range(spec: &str) -> Result<TraceRange, String> {
+    let (at, len) = spec
+        .split_once(':')
+        .ok_or_else(|| format!("{spec}: want addr:len"))?;
+    let len = parse_u32(len)? as usize;
+    let (deref, at) = at.strip_prefix('*').map_or((false, at), |a| (true, a));
+    let (addr, off) = match at.split_once('+') {
+        Some((a, o)) => (parse_u32(a)?, parse_u32(o)?),
+        None => (parse_u32(at)?, 0),
+    };
+    Ok(TraceRange {
+        addr,
+        deref,
+        off,
+        len,
+    })
+}
+
+/// FNV-1a over the range, or `-` when it is not readable.
+fn trace_hash(r: &TraceRange) -> String {
+    let at = crate::rebase(r.addr);
+    let at = if r.deref {
+        match read_memory(at, 4) {
+            Ok(p) => u32::from_le_bytes(p.try_into().expect("4 bytes")) as usize + r.off as usize,
+            Err(_) => return "-".into(),
+        }
+    } else {
+        at + r.off as usize
+    };
+    match read_memory(at, r.len) {
+        Ok(bytes) => {
+            let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+            for b in bytes {
+                h ^= u64::from(b);
+                h = h.wrapping_mul(0x100_0000_01b3);
+            }
+            format!("{h:016x}")
+        }
+        Err(_) => "-".into(),
+    }
+}
+
+/// Writes this frame's line of an active trace.
+fn trace_frame(frame: u32) {
+    use std::io::Write as _;
+    if let Ok(mut t) = TRACE.lock()
+        && let Some(t) = t.as_mut()
+    {
+        let hashes: Vec<String> = t.ranges.iter().map(trace_hash).collect();
+        let _ = writeln!(t.out, "{frame} {}", hashes.join(" "));
+    }
+}
 static EVENTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 /// Records an event for the `events` command.
@@ -689,8 +789,11 @@ unsafe extern "system" fn create_device_and_swap_chain(
 }
 
 /// Replaces `IDXGISwapChain::Present`: runs due jobs, then presents.
-unsafe extern "system" fn present(swap_chain: *mut c_void, interval: u32, flags: u32) -> i32 {
-    let frame = FRAME.fetch_add(1, Ordering::AcqRel) + 1;
+/// Runs the jobs due at `frame`.
+///
+/// # Safety
+/// Inside the swap chain's own `Present`, on the game thread.
+unsafe fn run_due_jobs(frame: u32, swap_chain: *mut c_void) {
     let due: Vec<(Job, Sender<String>)> = JOBS.lock().map_or_else(
         |_| Vec::new(),
         |mut jobs| {
@@ -745,6 +848,20 @@ unsafe extern "system" fn present(swap_chain: *mut c_void, interval: u32, flags:
                     .send(r.map_or_else(|e| format!("err {e}"), |(w, h)| format!("ok {w} {h}")));
             }
         }
+    }
+}
+
+unsafe extern "system" fn present(swap_chain: *mut c_void, interval: u32, flags: u32) -> i32 {
+    let frame = FRAME.fetch_add(1, Ordering::AcqRel) + 1;
+    trace_frame(frame);
+    // SAFETY: forwarded: inside the swap chain's own Present.
+    unsafe { run_due_jobs(frame, swap_chain) };
+    // Lockstep: hold the game here until the script allows more frames,
+    // still answering jobs (calls, snapshots, shots) meanwhile.
+    while LOCKSTEP.load(Ordering::Acquire) && frame >= ALLOWED.load(Ordering::Acquire) {
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        // SAFETY: as above.
+        unsafe { run_due_jobs(frame, swap_chain) };
     }
     // SAFETY: the address came from the vtable.
     let original: unsafe extern "system" fn(*mut c_void, u32, u32) -> i32 =
@@ -1047,9 +1164,20 @@ fn command(line: &str) -> Result<String, String> {
             let gap = words.get(3).map_or(Ok(hold), |w| parse_u32(w))?;
             set_keys(&codes);
             let release = now() + hold;
+            ALLOWED.fetch_max(release + gap, Ordering::AcqRel);
             on_game_thread(Job::Release(release, release + gap))
         }
-        "wait" => on_game_thread(Job::WaitUntil(now() + parse_u32(arg(1)?)?)),
+        "wait" => {
+            let until = now() + parse_u32(arg(1)?)?;
+            ALLOWED.fetch_max(until, Ordering::AcqRel);
+            on_game_thread(Job::WaitUntil(until))
+        }
+        "lockstep" => {
+            let on = arg(1)? == "on";
+            ALLOWED.store(now(), Ordering::Release);
+            LOCKSTEP.store(on, Ordering::Release);
+            format!("ok {}", now())
+        }
         "read" => {
             let at = crate::rebase(parse_u32(arg(1)?)?);
             format!(
@@ -1096,6 +1224,7 @@ fn command(line: &str) -> Result<String, String> {
             let gap = words.get(3).map_or(Ok(hold), |w| parse_u32(w))?;
             BUTTONS.store(buttons, Ordering::Release);
             let release = now() + hold;
+            ALLOWED.fetch_max(release + gap, Ordering::AcqRel);
             on_game_thread(Job::Release(release, release + gap))
         }
         "call" => {
@@ -1112,6 +1241,30 @@ fn command(line: &str) -> Result<String, String> {
         "shot" => on_game_thread(Job::Shot(words[1..].join(" "))),
         "snapshot" => on_game_thread(Job::Snapshot(words[1..].join(" "))),
         "fpucw" => on_game_thread(Job::FpuControl),
+        "trace" => {
+            // trace off | trace <windows path> <range>...
+            let mut t = TRACE
+                .lock()
+                .map_err(|_| "trace lock poisoned".to_string())?;
+            if arg(1)? == "off" {
+                if let Some(mut old) = t.take() {
+                    use std::io::Write as _;
+                    old.out.flush().map_err(|e| e.to_string())?;
+                }
+                "ok".into()
+            } else {
+                let ranges = words[2..]
+                    .iter()
+                    .map(|w| parse_trace_range(w))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let file = std::fs::File::create(arg(1)?).map_err(|e| e.to_string())?;
+                *t = Some(Trace {
+                    out: std::io::BufWriter::new(file),
+                    ranges,
+                });
+                "ok".into()
+            }
+        }
         "gfxcapture" => crate::gfx::capture(&words[1..].join(" ")),
         "overlay" => format!("ok {}", crate::gfx::live::toggle_overlay()),
         "editor" => {
@@ -1248,6 +1401,10 @@ pub unsafe fn install(module: usize) {
     );
     if std::env::var("FFX_HARNESS_FAST").is_ok_and(|v| v == "1") {
         FAST.store(true, Ordering::Release);
+        VIRTUAL.store(
+            std::env::var("FFX_HARNESS_VIRTUAL_CLOCK").is_ok_and(|v| v == "1"),
+            Ordering::Release,
+        );
         // SAFETY: forwarded from the caller.
         let patched = unsafe { patch_frame_limiter(module) && patch_boot_limiter(module) };
         log(&format!(

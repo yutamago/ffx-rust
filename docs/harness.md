@@ -89,6 +89,39 @@ with `key` (arrows `c8`/`d0`/`cb`/`cd`, Enter `1c`, Esc `01`).
   reports whether the game read it and survived; it found that grown PS2
   files were cut at their original size (`docs/hooking.md`).
 
+## Snapshots and replays
+
+Two tools for checking Rust replacements against the original code on real
+game state (`docs/rewrite-plan.md`):
+
+- `snapshot <windows path>` writes the game's memory (private regions and
+  `FFX.exe`'s image, in 1 MiB LZ4 blocks; `ffx_bridge::snapshot`) on the
+  game thread between frames. `ffx-oracle` loads it (`Oracle::from_snapshot`)
+  and runs original functions on it; a field snapshot is 461 regions, 395 MB,
+  61 MB on disk.
+
+  ```bash
+  cargo run --release -p ffx-harness --example snapshot -- 'C:\Users\…\Temp\field.snap' 1 120
+  FFX_SNAPSHOT=~/ffx-work/snapshots/field.snap cargo test --release -p ffx-oracle --test snapshot
+  ```
+- Replays (`ffx_harness::replay`): a script of harness commands played
+  twice, once with `--hook-disable replacements` (the original code) and
+  once with the Rust replacements, each tracing hashes of chosen memory
+  ranges every frame (`trace`). With `--virtual-clock` the game's clock
+  never follows real time, and after `lockstep on` frames advance only as
+  far as `wait` and `press` say, so the same inputs land on the same frames:
+  two runs of `tools/replays/field-walk.txt` on the original code agree on
+  every frame.
+
+  ```bash
+  cargo run --release -p ffx-harness --example replay -- tools/replays/field-walk.txt 'C:\…\orig.trace' original
+  cargo run --release -p ffx-harness --example replay -- tools/replays/field-walk.txt 'C:\…\rust.trace'
+  cargo run --release -p ffx-harness --example replay_diff -- /mnt/c/…/orig.trace /mnt/c/…/rust.trace
+  ```
+
+`fpucw` answers the game thread's x87 control word: `0x027f` (53-bit
+precision, round to nearest, all exceptions masked).
+
 ## One game at a time
 
 `Game_Main` (`0x0062ee50`) takes the named mutex

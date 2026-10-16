@@ -12,6 +12,7 @@
 //! # Ok::<(), ffx_harness::Error>(())
 //! ```
 
+pub mod replay;
 pub mod screens;
 
 use std::io::{BufRead, BufReader, Write};
@@ -62,6 +63,11 @@ pub struct Options {
     pub gfx: Option<String>,
     /// Run the external renderer (`--renderer`).
     pub renderer: bool,
+    /// Game time never follows real time (`--virtual-clock`, with `fast`).
+    pub virtual_clock: bool,
+    /// Hooks not to install (`--hook-disable`): names, or `replacements`
+    /// for every pure replacement (the original code runs).
+    pub hook_disable: Option<String>,
 }
 
 impl Default for Options {
@@ -80,6 +86,10 @@ impl Default for Options {
             fast: true,
             gfx: std::env::var("FFX_GFX").ok().filter(|v| !v.is_empty()),
             renderer: std::env::var("FFX_RENDERER").is_ok_and(|v| v == "1"),
+            virtual_clock: false,
+            hook_disable: std::env::var("FFX_HOOK_DISABLE")
+                .ok()
+                .filter(|v| !v.is_empty()),
         }
     }
 }
@@ -324,6 +334,12 @@ impl Game {
         }
         if let Some(seed) = options.seed {
             cmd.arg("--seed").arg(seed.to_string());
+        }
+        if options.virtual_clock {
+            cmd.arg("--virtual-clock");
+        }
+        if let Some(list) = &options.hook_disable {
+            cmd.arg("--hook-disable").arg(list);
         }
         if let Some(home) = &options.home {
             prepare_home(home, options.copy_user_data)?;
