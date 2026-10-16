@@ -323,13 +323,13 @@ pub mod bridge {
         let abil = half(mem, actor, 0x6be);
         let mut v = if abil & 2 != 0 {
             n.wrapping_mul(3)
-        } else if abil & 1 != 0 {
-            n.wrapping_mul(2)
-        } else if abil & 4 != 0 && {
-            let hp: i32 = mem.read(actor.wrapping_add(0x5d0));
-            let max: i32 = mem.read(actor.wrapping_add(0x594));
-            crate::actor::bridge::ms_calc_weak_level(hp, max).cast_signed() >= 1
-        } {
+        } else if abil & 1 != 0
+            || abil & 4 != 0 && {
+                let hp: i32 = mem.read(actor.wrapping_add(0x5d0));
+                let max: i32 = mem.read(actor.wrapping_add(0x594));
+                crate::actor::bridge::ms_calc_weak_level(hp, max).cast_signed() >= 1
+            }
+        {
             n.wrapping_mul(2)
         } else {
             n
@@ -351,7 +351,7 @@ pub mod bridge {
         if byte(mem, actor, 0x6be) & 8 != 0 {
             let next = crate::menu::bridge::ms_get_next_ap(mem, chr.cast_signed());
             let q = next.wrapping_mul(v) / i32::from(byte(mem, actor, 0x5bd));
-            #[allow(clippy::cast_possible_truncation)] // fild then fstp dword
+            #[allow(clippy::cast_precision_loss)] // fild then fstp dword
             let f = store(f64::from(q as f32));
             let rate: u32 = mem.read(actor.wrapping_add(0x70c));
             let f = store(mul(load(f), load(rate)));
