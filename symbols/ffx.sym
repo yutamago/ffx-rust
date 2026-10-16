@@ -2450,6 +2450,8 @@
 0x006b1c30 function TextureAnimationInfoChar_active # thiscall(this): byte +0x34 = 0; name Fahrenheit's (Switch BSim)
 0x006b1cc0 function TextureAnimation_GetFloatPair24 # thiscall(this, out), ret 4: out[0..2] = floats +0x24, +0x28 (fld/fstp); returns out; name ours
 0x006b1ce0 function TextureAnimation_GetFloatPair2c # thiscall(this, out), ret 4: out[0..2] = floats +0x2c, +0x30; returns out; name ours
+0x006b1d10 function TextureAnimation_FindByName # thiscall(this, name), ret 4: the first of +0x7c entries (0x20 bytes from +0x80, PString name at +4) whose name is the pointer or (name set) equal text; 0 otherwise; name ours
+0x006b1e40 function TextureAnimation_FindMaterial # thiscall(this, list, index, name), ret 0xc: slot index of list (+8 count, +0xc slots, -1 none) in the first texture set (+0x64 count, 0x20 bytes from +0x68: +0 count, +4 materials, +0x18 PString name) named name; 0 when missing; name ours
 0x006b2070 function TextureAnimationManager_getMaterialByLayNum # fh v3:exact 0x006b21c0 TextureAnimationManager::getMaterialByLayNum
 0x006b22c0 function TextureAnimation_NextFrame # thiscall(this): v = +0x18 + 1 + count (+8 & 0x7fffffff); +0x18 = v % count; eax = v / count, edx = the frame; name ours
 0x006b2380 function TextureAnimation_PrevFrame # thiscall(this): as TextureAnimation_NextFrame with -1; name ours

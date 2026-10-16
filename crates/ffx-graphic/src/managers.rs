@@ -391,4 +391,77 @@ pub mod bridge {
         m.write(parent + if right { 4 } else { 0 }, node);
         0
     }
+
+    /// Whether the C strings at `a` and `b` are equal (the inlined
+    /// `strcmp` of the originals, two bytes at a time; only equality is
+    /// used).
+    #[allow(clippy::many_single_char_names)]
+    pub fn str_eq(m: &impl Mem, a: u32, b: u32) -> bool {
+        let mut i = 0u32;
+        loop {
+            let (x, y): (u8, u8) = (m.read(a.wrapping_add(i)), m.read(b.wrapping_add(i)));
+            if x != y {
+                return false;
+            }
+            if x == 0 {
+                return true;
+            }
+            i += 1;
+        }
+    }
+
+    /// The `PString` at `at`: its pointer without the flag bit.
+    fn pstring(m: &impl Mem, at: u32) -> u32 {
+        let p: u32 = m.read(at);
+        p.wrapping_sub(p & 1)
+    }
+
+    /// `TextureAnimation_FindByName(this, name)` (`FUN_006b1d10`): the first
+    /// of the `+0x7c` entries (`0x20` bytes from `+0x80`, the name a
+    /// `PString` at `+4`) named `name` (the same pointer, or equal text
+    /// when `name` is set); 0 when none is.
+    pub fn find_by_name(m: &impl Mem, this: u32, name: u32) -> u32 {
+        let count = m.read::<u32>(this + 0x7c) & 0x7fff_ffff;
+        let base: u32 = m.read(this + 0x80);
+        for i in 0..count {
+            let entry = base.wrapping_add(i * 0x20);
+            let own = pstring(m, entry + 4);
+            if own != 0 && (own == name || (name != 0 && str_eq(m, own, name))) {
+                return entry;
+            }
+        }
+        0
+    }
+
+    /// `TextureAnimation_FindMaterial(this, list, index, name)`
+    /// (`FUN_006b1e40`): slot `index` of `list` (`+8` count with a flag
+    /// bit, `+0xc` the slots; -1 for none) looked up in the first of the
+    /// `+0x64` texture sets (`0x20` bytes from `+0x68`: `+0` count, `+4`
+    /// materials, `+0x18` the name) named `name`; 0 when anything is
+    /// missing.
+    pub fn find_material(m: &impl Mem, this: u32, list: u32, index: u32, name: u32) -> u32 {
+        if list == 0 || index >= m.read::<u32>(list + 8) & 0x7fff_ffff {
+            return 0;
+        }
+        let slot: u32 = m.read(
+            m.read::<u32>(list + 0xc)
+                .wrapping_add(index.wrapping_mul(4)),
+        );
+        if slot == u32::MAX {
+            return 0;
+        }
+        let count = m.read::<u32>(this + 0x64) & 0x7fff_ffff;
+        let base: u32 = m.read(this + 0x68);
+        for i in 0..count {
+            let set = base.wrapping_add(i * 0x20);
+            let own = pstring(m, set + 0x18);
+            if own != 0 && str_eq(m, own, name) {
+                if slot >= m.read::<u32>(set) & 0x7fff_ffff {
+                    return 0;
+                }
+                return m.read(m.read::<u32>(set + 4).wrapping_add(slot.wrapping_mul(4)));
+            }
+        }
+        0
+    }
 }

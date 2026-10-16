@@ -170,6 +170,22 @@ ported! {
     PhyreScene_getMinimapViewportY @ 0x0065_e560 => extern "thiscall" fn scene_minimap_viewport_y(this: u32) -> u32 {
         sc::minimap_viewport_y(&mem(), this)
     }
+    /// `graphicUiElementRemap(element, kind)`.
+    graphicUiElementRemap @ 0x0064_4320 => extern "C" fn graphic_ui_element_remap(element: u32, kind: u32) {
+        ui::bridge::element_remap(&mut mem(), element, kind);
+    }
+    /// `tex_anim_pos_set_old(i, which, v)`.
+    tex_anim_pos_set_old @ 0x0078_08f0 => extern "C" fn tex_anim_pos_set_old(i: u32, which: u32, v: u32) {
+        ta::pos_set_old(&mut mem(), i, which, v);
+    }
+    /// `TextureAnimation_FindByName(this, name)`.
+    TextureAnimation_FindByName @ 0x006b_1d10 => extern "thiscall" fn texture_animation_find_by_name(this: u32, name: u32) -> u32 {
+        mg::find_by_name(&mem(), this, name)
+    }
+    /// `TextureAnimation_FindMaterial(this, list, index, name)`.
+    TextureAnimation_FindMaterial @ 0x006b_1e40 => extern "thiscall" fn texture_animation_find_material(this: u32, list: u32, index: u32, name: u32) -> u32 {
+        mg::find_material(&mem(), this, list, index, name)
+    }
     /// `graphicVFX2DUpdate(lo, hi)`.
     graphicVFX2DUpdate @ 0x0064_4bc0 => extern "C" fn graphic_vfx_2d_update(lo: u32, hi: u32) {
         vfx::bridge::update_2d(&mut mem(), lo, hi);

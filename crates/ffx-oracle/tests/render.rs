@@ -315,6 +315,12 @@ impl Twins {
             .call(addr, conv, args)
             .unwrap_or_else(|e| panic!("{what}: the original: {e}"));
         let out = bridge(&mut G(&mut self.b));
+        // an original that leaves a float in ST0 needs a port returning one
+        assert!(
+            matches!(out, Out::F32(_)) || ra.st0_raw.is_none(),
+            "{what}: the original leaves ST0 set ({:?}); the port returns {out:?}",
+            ra.st0
+        );
         match out {
             Out::None => {}
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
@@ -1580,6 +1586,186 @@ fn round2_more_matches_the_original() {
                 }
             }
         }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case per function
+fn round3_matches_the_original() {
+    use ffx_graphic::texanim::bridge as ta;
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x3003_0003);
+    for round in 0..4000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        match round % 4 {
+            0 => {
+                // a UI element: corner points, the 500 tag
+                let ui_obj = t.alloc(&rng.bytes(0x5c00));
+                t.global(ui::bridge::UI.sym, ui_obj);
+                t.w32(ui_obj + 0x5ba0, u32::from(!rng.chance(8)));
+                t.w32(ui_obj + 0x5ba4, u32::from(rng.chance(2)));
+                let f = |rng: &mut Rng| -> f32 {
+                    if rng.chance(20) {
+                        rng.float()
+                    } else {
+                        rng.below(1000) as f32 - 200.0
+                    }
+                };
+                for off in [0x5ba8, 0x5bac] {
+                    let s = if rng.chance(10) {
+                        rng.float()
+                    } else {
+                        (rng.below(400) as f32 - 100.0) / 97.0
+                    };
+                    t.write(ui_obj + off, &s.to_le_bytes());
+                }
+                for off in [0x5bb0, 0x5bb4] {
+                    let v = f(&mut rng);
+                    t.write(ui_obj + off, &v.to_le_bytes());
+                }
+                let lo = rng.below(400) as f32;
+                let hi = lo + rng.below(500) as f32;
+                for (off, v) in [(0x5bb8, lo), (0x5bbc, hi), (0x5bc0, lo), (0x5bc4, hi)] {
+                    t.write(ui_obj + off, &v.to_le_bytes());
+                }
+                let mut e = rng.bytes(0x90);
+                for i in 0..8 {
+                    let at = 0x20 * (i / 2) + 4 * (i % 2);
+                    e[at..at + 4].copy_from_slice(&f(&mut rng).to_le_bytes());
+                }
+                if rng.chance(2) {
+                    e[0x80..0x84].copy_from_slice(&500u32.to_le_bytes());
+                }
+                let el = t.alloc(&e);
+                let kind = rng.below(6);
+                t.check(&what, 0x0064_4320, Conv::Cdecl, &[el, kind], |g| {
+                    ui::bridge::element_remap(g, el, kind);
+                    Out::None
+                });
+            }
+            1 => {
+                let i = rng.below(64);
+                let e = t.rebase(ta::CHR_TEXANIM.sym) + 0x30 * i;
+                let work = t.alloc(&rng.bytes(0x800));
+                t.w8(work + 0x5a9, rng.below(3) as u8);
+                t.w32(e, u32::from(!rng.chance(5)));
+                t.w32(e + 4, work);
+                let (which, v) = (rng.below(4), rng.next());
+                t.check(&what, 0x0078_08f0, Conv::Cdecl, &[i, which, v], |g| {
+                    ta::pos_set_old(g, i, which, v);
+                    Out::None
+                });
+            }
+            _ => {
+                // texture sets with names, some shared, some equal text
+                let names: Vec<u32> = ["tex_a", "tex_b", "tex_a", "c"]
+                    .iter()
+                    .map(|s| t.alloc(&[s.as_bytes(), &[0]].concat()))
+                    .collect();
+                let n = rng.below(5);
+                let mut entries = Vec::new();
+                for _ in 0..n {
+                    let mut ent = rng.bytes(0x20);
+                    let name = if rng.chance(5) {
+                        0
+                    } else {
+                        names[rng.below(4) as usize] | rng.below(2)
+                    };
+                    let count = rng.below(4);
+                    let mats: Vec<u8> = (0..4).flat_map(|_| rng.next().to_le_bytes()).collect();
+                    let mats = t.alloc(&mats);
+                    ent[0..4].copy_from_slice(&(count | (rng.next() & 0x8000_0000)).to_le_bytes());
+                    ent[4..8].copy_from_slice(&mats.to_le_bytes());
+                    if round % 4 == 2 {
+                        ent[4..8].copy_from_slice(&name.to_le_bytes());
+                    }
+                    ent[0x18..0x1c].copy_from_slice(&name.to_le_bytes());
+                    entries.extend(ent);
+                }
+                entries.extend([0; 0x20]);
+                let base = t.alloc(&entries);
+                let this = t.zeros(0x90);
+                let probe = if rng.chance(6) {
+                    0
+                } else {
+                    names[rng.below(4) as usize]
+                };
+                if round % 4 == 2 {
+                    t.w32(this + 0x7c, n | (rng.next() & 0x8000_0000));
+                    t.w32(this + 0x80, base);
+                    t.check(&what, 0x006b_1d10, Conv::Thiscall(this), &[probe], |g| {
+                        Out::U32(managers::bridge::find_by_name(g, this, probe))
+                    });
+                } else {
+                    t.w32(this + 0x64, n);
+                    t.w32(this + 0x68, base);
+                    let slots: Vec<u8> = (0..4)
+                        .flat_map(|_| {
+                            (if rng.chance(5) {
+                                u32::MAX
+                            } else {
+                                rng.below(5)
+                            })
+                            .to_le_bytes()
+                        })
+                        .collect();
+                    let slots = t.alloc(&slots);
+                    let list = if rng.chance(8) { 0 } else { t.zeros(0x10) };
+                    if list != 0 {
+                        t.w32(list + 8, rng.below(5));
+                        t.w32(list + 0xc, slots);
+                    }
+                    let index = rng.below(5);
+                    let probe = names[rng.below(4) as usize];
+                    t.check(
+                        &what,
+                        0x006b_1e40,
+                        Conv::Thiscall(this),
+                        &[list, index, probe],
+                        |g| Out::U32(managers::bridge::find_material(g, this, list, index, probe)),
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn snapshot_ui_remap_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x3003_0004);
+    if t.r32(t.rebase(ui::bridge::UI.sym)) == 0 {
+        return;
+    }
+    for round in 0..500 {
+        // elements across the PS2 screen, on the game's own remap
+        let mut e = vec![0u8; 0x90];
+        for i in 0..8 {
+            let at = 0x20 * (i / 2) + 4 * (i % 2);
+            let v = rng.below(640) as f32 - 64.0;
+            e[at..at + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        if rng.chance(2) {
+            e[0x80..0x84].copy_from_slice(&500u32.to_le_bytes());
+        }
+        let el = t.alloc(&e);
+        let kind = rng.below(5);
+        t.check(
+            &format!("snapshot round {round}"),
+            0x0064_4320,
+            Conv::Cdecl,
+            &[el, kind],
+            |g| {
+                ui::bridge::element_remap(g, el, kind);
+                Out::None
+            },
+        );
     }
 }
 
