@@ -149,9 +149,11 @@ replacements and compares. A recorded original run can itself be off (one
 field-walk recording had other party records from the first frame on,
 which no later run reproduced): when a comparison fails, record the
 original again before suspecting a replacement. All three replays give the
-original's events and screenshots with every replacement in (1395
+original's events and screenshots with every replacement in (1593
 functions, 2026-10-16); the menu screenshots keep a few dozen pixels on the
-animated cursor that the two original runs happen to agree on.
+animated cursor that the two original runs happen to agree on, so
+`tools/shot-compare.py` leaves out 12 pixels around every animated one
+(the cursor icon is about 25 pixels wide); with that, 0 pixels differ.
 
 `fpucw` answers the game thread's x87 control word: `0x027f` (53-bit
 precision, round to nearest, all exceptions masked).

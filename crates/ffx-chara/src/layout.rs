@@ -258,8 +258,9 @@ pub const NECK_LIMIT: u32 = 0x424;
 pub const MOUTH_AUTO_TALK: u32 = 0x4d4;
 /// `f32`, 1234 after `Ch_MouthInit`.
 pub const MOUTH_4D8: u32 = 0x4d8;
-/// Optional positions, 16 bytes each; one exists when its x is not 0
-/// (`Ch_OptposGetExist`).
+/// The w of the optional positions (x, y, z, w, 16 bytes each from
+/// `0x524`); one exists when its w is not 0 (`Ch_OptposGetExist`;
+/// `ffx_chara::attach` has the positions).
 pub const OPTPOS: u32 = 0x530;
 /// 16 bytes, the bottom position (`Ch_OptposGetBottom`).
 pub const OPTPOS_BOTTOM: u32 = 0x694;
@@ -282,6 +283,8 @@ pub const IMAGE_TEXTURE_COUNT: u32 = 0x6f0;
 pub const CLUTS: u32 = 0x704;
 /// `u8`, which clut `Ch_ClutEnable` put in the textures.
 pub const CLUT_ENABLED: u32 = 0x708;
+/// `i16` loops left of the motion (`Ch_MotionGetLoop`).
+pub const MOTION_LOOPS_LEFT: u32 = 0x724;
 /// `u16` loop of the motion (`Ch_MotionSetLoop`).
 pub const MOTION_LOOP: u32 = 0x726;
 /// `u32` current motion id (`Ch_MotionGetId`).
@@ -302,6 +305,8 @@ pub const PID: u32 = 0x828;
 
 /// [`FLAGS`]: recompute the normals every frame (`Ch_SetCalcNorm`).
 pub const F_CALC_NORM: u32 = 1 << 0;
+/// [`FLAGS`]: the second kind of normal computation (`Ch_SetCalcNorm2`).
+pub const F_CALC_NORM2: u32 = 1 << 2;
 /// [`FLAGS`]: one budgeted normal update (`Ch_ReserveCalcNorm`).
 pub const F_RESERVE_CALC_NORM: u32 = 1 << 3;
 /// [`FLAGS`]: the second kind (`Ch_ReserveCalcNorm2`).

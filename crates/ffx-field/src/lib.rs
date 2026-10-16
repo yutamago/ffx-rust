@@ -7,6 +7,7 @@
 //!
 //! - [`rcdt`]: data chunks and the text parser.
 //! - [`packet`]: PS2 DMA packets (`rcPacketData`).
+//! - [`abmap`]: sphere grid helpers (`Abmap`).
 //! - [`geom`]: bounding boxes, vectors, matrices (`rcBBox`, `rcVec3f`,
 //!   `rcMat4f`).
 //! - [`model`]: scene objects (`rcbgModel` and its primitive packets,
@@ -21,6 +22,9 @@
 //! - [`nkz`]: overdrive tables (`Nkz`) and sound status (`Sqs`).
 //! - [`x87`]: what the original's x87 code does to floats.
 
+#![allow(clippy::many_single_char_names)] // registers, pointers and vector parts, as the originals
+
+pub mod abmap;
 pub mod geom;
 pub mod guide;
 pub mod ke;

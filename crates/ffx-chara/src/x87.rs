@@ -177,6 +177,36 @@ impl Reg {
     pub fn mul_m32(self, m: f32) -> Self {
         self.op(Self::mem(m), |x, y| x * y)
     }
+
+    /// `fsub` with another register: `self - b`.
+    #[must_use]
+    pub fn sub_st(self, b: Self) -> Self {
+        self.op(Self::reg(b), |x, y| x - y)
+    }
+
+    /// `fdiv m32`: `self / m`.
+    #[must_use]
+    pub fn div_m32(self, m: f32) -> Self {
+        self.op(Self::mem(m), |x, y| x / y)
+    }
+
+    /// `fdiv` with another register: `self / b`.
+    #[must_use]
+    pub fn div_st(self, b: Self) -> Self {
+        self.op(Self::reg(b), |x, y| x / y)
+    }
+
+    /// `fabs`.
+    #[must_use]
+    pub fn abs(self) -> Self {
+        Self(f64::from_bits(self.0.to_bits() & !(1 << 63)))
+    }
+
+    /// The value, for comparisons.
+    #[must_use]
+    pub const fn get(self) -> f64 {
+        self.0
+    }
 }
 
 /// `fld m32 a; fadd m32 b; fstp m32`.
@@ -328,6 +358,27 @@ mod tests {
             out
         }
 
+        /// `fld a; fdivr m64 c; fdiv m32 b; fstp`: `c / a / b`.
+        fn fdivr_fdiv(a: u32, c: f64, b: u32) -> u32 {
+            let mut out = 0u32;
+            // SAFETY: as above.
+            unsafe {
+                asm!(
+                    "fldcw word ptr [{cw}]",
+                    "fld dword ptr [{a}]",
+                    "fdivr qword ptr [{c}]",
+                    "fdiv dword ptr [{b}]",
+                    "fstp dword ptr [{o}]",
+                    cw = in(reg) &raw const CW,
+                    a = in(reg) &raw const a,
+                    c = in(reg) &raw const c,
+                    b = in(reg) &raw const b,
+                    o = in(reg) &raw mut out,
+                );
+            }
+            out
+        }
+
         fn fmul64(a: u32, c: f64) -> u32 {
             let mut out = 0u32;
             // SAFETY: as above.
@@ -385,6 +436,17 @@ mod tests {
                 }
                 let c = f64::from_bits(0x3fa9_9999_a000_0000);
                 assert_eq!(mul_f64(f(a), c).to_bits(), fmul64(a, c), "{a:#x} * 0.05");
+                for &b in &v[..40] {
+                    let r = Reg::constant(1.0e4)
+                        .div_st(Reg::load(f(a)))
+                        .div_m32(f(b))
+                        .store();
+                    assert_eq!(
+                        r.to_bits(),
+                        fdivr_fdiv(a, 1.0e4, b),
+                        "1e4 / {a:#x} / {b:#x}"
+                    );
+                }
             }
         }
     }
