@@ -823,13 +823,7 @@ pub mod bridge {
     /// second, 5 the third, 6 the fourth, others the first).
     pub fn tk_get_vibrate_curve(mem: &impl Mem, kind: u32, i: i32, curve: u32) -> u16 {
         let curve = if curve == 0 {
-            let k = match kind {
-                2 | 3 => 1,
-                5 => 2,
-                6 => 3,
-                _ => 0,
-            };
-            VIBRATE_CURVES[k].ptr(mem).addr
+            tk_get_vibrate_default_curve(mem, kind)
         } else {
             curve
         };
@@ -1053,7 +1047,6 @@ pub mod bridge {
     /// character its table width + 2 when `proportional`, else 9 (one
     /// byte) or 13 (two).
     pub fn tk_get_str_width(mem: &impl Mem, proportional: i32, s: u32) -> i32 {
-        let widths = FONT_WIDTHS.ptr(mem).addr;
         let mut p = s;
         let mut total = 0i32;
         loop {
@@ -1066,12 +1059,7 @@ pub mod bridge {
                 c = (c << 8) + u32::from(mem.read::<u8>(p));
                 p = p.wrapping_add(1);
             }
-            let w = if proportional == 0 {
-                if c >= 0x100 { 13 } else { 9 }
-            } else {
-                i32::from(mem.read::<u8>(widths.wrapping_add(c))) + 2
-            };
-            total = total.wrapping_add(w << 4);
+            total = total.wrapping_add(tk_get_char_width(mem, proportional, c) << 4);
         }
     }
 
@@ -1100,6 +1088,476 @@ pub mod bridge {
         #[allow(clippy::cast_sign_loss)]
         let i = a.wrapping_add(b) as u32;
         mem.rebase(0x0133_04c0).wrapping_add(i.wrapping_mul(0x20))
+    }
+
+    /// `TkGetCharWidth(proportional, c)` (`0x00890a00`): one character's
+    /// width as [`tk_get_str_width`] counts it (before the ×16).
+    pub fn tk_get_char_width(mem: &impl Mem, proportional: i32, c: u32) -> i32 {
+        if proportional == 0 {
+            if c.cast_signed() >= 0x100 { 13 } else { 9 }
+        } else {
+            i32::from(mem.read::<u8>(FONT_WIDTHS.ptr(mem).addr.wrapping_add(c))) + 2
+        }
+    }
+
+    /// `TkGetVibrateDefaultCurve(kind)` (`0x00876390`): 2 and 3 the second
+    /// default curve, 5 the third, 6 the fourth, others the first.
+    pub fn tk_get_vibrate_default_curve(mem: &impl Mem, kind: u32) -> u32 {
+        let k = match kind {
+            2 | 3 => 1,
+            5 => 2,
+            6 => 3,
+            _ => 0,
+        };
+        VIBRATE_CURVES[k].ptr(mem).addr
+    }
+
+    /// `TkGetVibratePad(pad)` (`0x00875e50`): pad `pad`'s record, clamped
+    /// to 0..=7.
+    pub fn tk_get_vibrate_pad(mem: &impl Mem, pad: i32) -> u32 {
+        #[allow(clippy::cast_sign_loss)]
+        VIBRATE_PADS
+            .ptr(mem)
+            .addr
+            .wrapping_add(pad.clamp(0, 7) as u32 * VIBRATE_PAD)
+    }
+
+    /// `TkGetSyncVCallbackPtr(i)` (`0x00888650`): `i` clamped to 0..=2.
+    pub fn tk_get_sync_v_callback_ptr(mem: &impl Mem, i: i32) -> u32 {
+        #[allow(clippy::cast_sign_loss)]
+        SYNC_V_CALLBACK_PTRS
+            .ptr(mem)
+            .at(i.clamp(0, 2) as u32)
+            .get(mem)
+    }
+
+    /// `TkSetPadButtonMap(a, b, i, to)` (`0x008894f0`): entry `i` of row
+    /// `a + b` of the button maps.
+    pub fn tk_set_pad_button_map(mem: &mut impl Mem, a: i32, b: i32, i: i32, to: u8) {
+        #[allow(clippy::cast_sign_loss)]
+        let at = PAD_BUTTON_MAP
+            .ptr(mem)
+            .addr
+            .wrapping_add((a.wrapping_add(b) as u32).wrapping_mul(16))
+            .wrapping_add(i as u32);
+        mem.write(at, to);
+    }
+
+    /// The buttons `TkFindPadButton` looks up (`0x00c54e28`, bytes).
+    pub const PAD_BUTTON_CODES: Global<u8> = Global::new(0x00c5_4e28);
+
+    /// `TkFindPadButton(a, b, k)` (`0x00889ac0`): where in row `a + b` of
+    /// the button maps the code `PAD_BUTTON_CODES[k]` is, -1 if nowhere.
+    pub fn tk_find_pad_button(mem: &impl Mem, a: i32, b: i32, k: i32) -> i32 {
+        #[allow(clippy::cast_sign_loss)]
+        let code = mem.read::<u8>(PAD_BUTTON_CODES.ptr(mem).addr.wrapping_add(k as u32));
+        #[allow(clippy::cast_sign_loss)]
+        let row: [u8; 16] = PAD_BUTTON_MAP
+            .ptr(mem)
+            .at(a.wrapping_add(b) as u32)
+            .get(mem);
+        row.iter()
+            .position(|&c| c == code)
+            .map_or(-1, |i| i32::try_from(i).unwrap_or(-1))
+    }
+
+    /// `TkSetControlerActuatorMode(a, b, mode)` (`0x008894d0`): byte
+    /// `+0x9d` of pad `a + b`'s work; returns the work (left in `eax`).
+    pub fn tk_set_controler_actuator_mode(mem: &mut impl Mem, a: i32, b: i32, mode: u8) -> u32 {
+        let work = tk_get_controler_work(mem, a, b);
+        mem.write(work.wrapping_add(0x9d), mode);
+        work
+    }
+
+    /// `TkUpdateControlerActuator(work)` (`0x00889410`): with the actuator
+    /// mode on (`+0x9d`), the two motor bytes `+0xf8`/`+0xf9` are `+0xfe`
+    /// and `+0xff` shifted right by `+0xf6`/`+0xf7`; off, both 0.
+    pub fn tk_update_controler_actuator(mem: &mut impl Mem, work: u32) {
+        let at = |o: u32| work.wrapping_add(o);
+        if mem.read::<u8>(at(0x9d)) == 0 {
+            mem.write(at(0xf8), 0u16);
+            return;
+        }
+        for k in 0..2 {
+            let shift = u32::from(mem.read::<u8>(at(0xf6 + k))) & 0x1f;
+            let v = u32::from(mem.read::<u8>(at(0xfe + k))) >> shift;
+            #[allow(clippy::cast_possible_truncation)]
+            mem.write(at(0xf8 + k), v as u8);
+        }
+    }
+
+    /// `TkGetControlerFrame(work, i)` (`0x00888b60`): input frame `i` after
+    /// the newest (`+0x9c`) of a pad's 4 × `0x20` ring at `work`.
+    pub fn tk_get_controler_frame(mem: &impl Mem, work: u32, i: i32) -> u32 {
+        #[allow(clippy::cast_sign_loss)]
+        let slot = u32::from(mem.read::<u8>(work.wrapping_add(0x9c))).wrapping_add(i as u32) & 3;
+        work.wrapping_add(slot * 0x20)
+    }
+
+    /// The second debug font position, ×16 (`TkSetDebugFontLocate2`).
+    pub const DEBUG_FONT_POS2: Global<[i32; 2]> = Global::new(0x0133_c8dc);
+
+    /// `TkSetDebugFontLocate2(x, y)` (`0x008904e0`).
+    pub fn tk_set_debug_font_locate2(mem: &mut impl Mem, x: i32, y: i32) {
+        DEBUG_FONT_POS2.set(mem, [x.wrapping_shl(4), y.wrapping_shl(4)]);
+    }
+
+    /// `TkMenuClearDummyControler()` (`0x008ca540`): its buttons, pending
+    /// buttons and flag.
+    pub fn tk_menu_clear_dummy_controler(mem: &mut impl Mem) {
+        let p = MENU_DUMMY_CONTROLER.ptr(mem).addr;
+        mem.write(p, [0u32, 0]);
+        MENU_DUMMY_CONTROLER_FLAG.set(mem, 0);
+    }
+
+    /// `TkSetDebugDrawFlag(on)`'s byte.
+    pub const DEBUG_DRAW_FLAG: Global<u8> = Global::new(0x0133_0872);
+    /// `TkIsDeci2Send`'s byte.
+    pub const DECI2_SEND: Global<i8> = Global::new(0x0132_f580);
+
+    /// `TkParseLast2Digits(s)` (`0x00888280`): the last two characters of a
+    /// string as a decimal number (signed bytes, no checks).
+    pub fn tk_parse_last_2_digits(mem: &impl Mem, s: u32) -> i32 {
+        let mut end = s;
+        while mem.read::<u8>(end) != 0 {
+            end = end.wrapping_add(1);
+        }
+        let c = |k: u32| i32::from(mem.read::<i8>(end.wrapping_sub(k)));
+        (c(2) * 10).wrapping_add(c(1)) - 0x210
+    }
+
+    /// `TkBackupEventJump(event)` (`0x0088e800`): the first six `u16` of the
+    /// event block to `+0xc0`, bytes `+0xc` and `+0xd` widened to `+0xcc`
+    /// and `+0xce` (what `TkSetEventJumpMapNo` and the restores read back).
+    pub fn tk_backup_event_jump(mem: &mut impl Mem, event: u32) {
+        let at = |o: u32| event.wrapping_add(o);
+        for o in (0..0xc).step_by(2) {
+            let v = mem.read::<u16>(at(o));
+            mem.write(at(0xc0 + o), v);
+        }
+        for o in [0xc, 0xd] {
+            let v = u16::from(mem.read::<u8>(at(o)));
+            mem.write(at(0xc0 + 2 * o - 0xc), v);
+        }
+    }
+
+    /// `TkRestoreEventJumpPrev(event)` (`0x0088e7c0`): the previous map and
+    /// entrance (`+6`, `+0xa`) from the backup.
+    pub fn tk_restore_event_jump_prev(mem: &mut impl Mem, event: u32) {
+        let at = |o: u32| event.wrapping_add(o);
+        let v = mem.read::<u16>(at(0xc6));
+        mem.write(at(6), v);
+        let v = mem.read::<u16>(at(0xca));
+        mem.write(at(0xa), v);
+    }
+
+    /// `TkRestoreEventJumpMapIndex(event)` (`0x0088e7e0`): `+2` and the
+    /// byte `+0xd` from the backup.
+    pub fn tk_restore_event_jump_map_index(mem: &mut impl Mem, event: u32) {
+        let at = |o: u32| event.wrapping_add(o);
+        let v = mem.read::<u16>(at(0xc2));
+        mem.write(at(2), v);
+        let v = mem.read::<u8>(at(0xce));
+        mem.write(at(0xd), v);
+    }
+
+    /// `TkMenuGetSaveFileInfo(i)` (`0x008b4e40`): the `0x40`-byte record of
+    /// save file `i`, clamped to the 99 of them.
+    pub fn tk_menu_get_save_file_info(mem: &impl Mem, i: i32) -> u32 {
+        #[allow(clippy::cast_sign_loss)]
+        mem.rebase(0x0159_ec70)
+            .wrapping_add(i.clamp(0, 0x62) as u32 * 0x40)
+    }
+
+    /// `TkMn2SeqGetPos(name, &pos)` (`0x008c2b50`): `TOSeqGetPoint` in the
+    /// menu's scene data 1, into two `i16`.
+    pub fn tk_mn2_seq_get_pos(mem: &mut impl Mem, name: u32, out: u32) {
+        ffx_system::scene::bridge::get_point(
+            mem,
+            1,
+            name,
+            [out, out.wrapping_add(2)],
+            crate::scene::bridge::tk_menu_get_param_handle,
+            crate::scene::bridge::tk_menu_get_param_offset,
+        );
+    }
+
+    /// `TkMn2SeqGetRect(name, &rect)` (`0x008c2b90`): `TOSeqGetRect`, into
+    /// four `i16`.
+    pub fn tk_mn2_seq_get_rect(mem: &mut impl Mem, name: u32, out: u32) {
+        let outs = [0, 2, 4, 6].map(|o| out.wrapping_add(o));
+        ffx_system::scene::bridge::get_rect(
+            mem,
+            1,
+            name,
+            outs,
+            crate::scene::bridge::tk_menu_get_param_handle,
+            crate::scene::bridge::tk_menu_get_param_offset,
+        );
+    }
+
+    /// A menu window: `+0x10` cleared on some closes, `+0x28` its state (0
+    /// idle, 1 restart, 6 select), `+0x2c` and `+0x48` the cursor, `+0x41`
+    /// the close request, `+0x45` busy, `+0x52`/`+0x54` fade and step.
+    ///
+    /// The `Close` helpers: request the close, optionally zero `+0x10`, and
+    /// forget the window; they return what was there (left in `eax`).
+    pub fn close_window(
+        mem: &mut impl Mem,
+        global: Global<u32>,
+        zero_10: bool,
+        forget: bool,
+    ) -> u32 {
+        let w = global.get(mem);
+        if w != 0 {
+            mem.write(w.wrapping_add(0x41), 1u8);
+            if zero_10 {
+                mem.write(w.wrapping_add(0x10), 0u32);
+            }
+            if forget {
+                global.set(mem, 0);
+            }
+        }
+        w
+    }
+
+    /// The `Clear` helpers: busy off and state idle; the window back.
+    pub fn clear_window(mem: &mut impl Mem, global: Global<u32>) -> u32 {
+        let w = global.get(mem);
+        if w != 0 {
+            mem.write(w.wrapping_add(0x45), 0u8);
+            mem.write(w.wrapping_add(0x28), 0u32);
+        }
+        w
+    }
+
+    /// `TkMenuRestartWindow(window)` (`0x008d1b90`): state 1, busy off.
+    pub fn tk_menu_restart_window(mem: &mut impl Mem, window: u32) -> u32 {
+        if window != 0 {
+            mem.write(window.wrapping_add(0x28), 1u32);
+            mem.write(window.wrapping_add(0x45), 0u8);
+        }
+        window
+    }
+
+    /// The save/load menu's window (`TkMenuCtrlSaveLoad`).
+    pub const SAVE_LOAD_WINDOW: Global<u32> = Global::new(0x0186_6254);
+    /// The save/load menu's second window.
+    pub const SAVE_LOAD_WINDOW2: Global<u32> = Global::new(0x0186_6258);
+    /// The item menu's fourth window.
+    pub const ITEM_WINDOW4: Global<u32> = Global::new(0x0186_a37c);
+    /// The item menu's window (`TkMenuCtrlItem`).
+    pub const ITEM_WINDOW: Global<u32> = Global::new(0x0186_a394);
+    /// The item menu's third window.
+    pub const ITEM_WINDOW3: Global<u32> = Global::new(0x0186_a398);
+    /// The item menu's second window.
+    pub const ITEM_WINDOW2: Global<u32> = Global::new(0x0186_a39c);
+    /// The aeon menu's window (`TkMenuCtrlSummon`).
+    pub const SUMMON_WINDOW: Global<u32> = Global::new(0x0186_a5a0);
+    /// The aeon growth window (`TkMn2OpenSummonGrowWindow`).
+    pub const SUMMON_GROW_WINDOW: Global<u32> = Global::new(0x0186_a5a8);
+    /// The aeon menu's second window.
+    pub const SUMMON_WINDOW2: Global<u32> = Global::new(0x0186_a5ac);
+    /// The equipment menu's window (`TkMenuCtrlEquip`).
+    pub const EQUIP_WINDOW: Global<u32> = Global::new(0x0186_a61c);
+    /// The overdrive menu's window (`TkMenuCtrlLimit`).
+    pub const LIMIT_WINDOW: Global<u32> = Global::new(0x0186_a714);
+    /// The overdrive menu's second window.
+    pub const LIMIT_WINDOW2: Global<u32> = Global::new(0x0186_a718);
+    /// The customize menu's window (`TkMenuCtrlKaizou`).
+    pub const KAIZOU_WINDOW: Global<u32> = Global::new(0x0186_aa30);
+    /// The customize menu's second window.
+    pub const KAIZOU_WINDOW2: Global<u32> = Global::new(0x0186_aa34);
+    /// The weapon shop's third window.
+    pub const WSHOP_WINDOW3: Global<u32> = Global::new(0x0186_ac30);
+    /// The weapon shop's window (`TkMenuCtrlWShop`).
+    pub const WSHOP_WINDOW: Global<u32> = Global::new(0x0186_ac3c);
+    /// The weapon shop's second window.
+    pub const WSHOP_WINDOW2: Global<u32> = Global::new(0x0186_ac40);
+    /// The second sub-command window (`TkMenuCloseSubCmdWindow1`).
+    pub const MENU_SUB_CMD_WINDOW1: Global<u32> = Global::new(0x023c_c124);
+
+    /// `TkMenuRestartSubCmdWindow1()` (`0x008e49f0`).
+    pub fn tk_menu_restart_sub_cmd_window1(mem: &mut impl Mem) -> u32 {
+        let w = MENU_SUB_CMD_WINDOW1.get(mem);
+        if w != 0 {
+            mem.write(w.wrapping_add(0x45), 0u8);
+            mem.write(w.wrapping_add(0x28), 1u32);
+        }
+        w
+    }
+
+    /// `TkMenuSetSubCmdWindowCursor(i)` (`0x008e3b80`): busy, the cursor at
+    /// `i` (`+0x2c`, `+0x48`), state 6.
+    pub fn tk_menu_set_sub_cmd_window_cursor(mem: &mut impl Mem, i: u16) -> u32 {
+        let w = MENU_SUB_CMD_WINDOW.get(mem);
+        if w != 0 {
+            mem.write(w.wrapping_add(0x45), 1u8);
+            mem.write(w.wrapping_add(0x2c), i);
+            mem.write(w.wrapping_add(0x48), i);
+            mem.write(w.wrapping_add(0x28), 6u32);
+        }
+        w
+    }
+
+    /// `TkMenuWindowStepFade(window)` (`0x008ab1f0`): `+0x52 += +0x54`
+    /// (16-bit), kept in 0..=0x1000; returns `0x1000` (left in `eax`).
+    pub fn tk_menu_window_step_fade(mem: &mut impl Mem, window: u32) -> u32 {
+        let at = |o: u32| window.wrapping_add(o);
+        let v = mem
+            .read::<i16>(at(0x52))
+            .wrapping_add(mem.read::<i16>(at(0x54)))
+            .clamp(0, 0x1000);
+        mem.write(at(0x52), v);
+        0x1000
+    }
+
+    /// `TkMn2WindowStepFade(window)` (`0x008d26d0`): the same when the step
+    /// is not 0, the result at most 0x1000 then at least 0; returns the
+    /// window.
+    pub fn tk_mn2_window_step_fade(mem: &mut impl Mem, window: u32) -> u32 {
+        let at = |o: u32| window.wrapping_add(o);
+        let step = mem.read::<i16>(at(0x54));
+        if step != 0 {
+            let v = mem
+                .read::<i16>(at(0x52))
+                .wrapping_add(step)
+                .clamp(0, 0x1000);
+            mem.write(at(0x52), v);
+        }
+        window
+    }
+
+    /// `TkMenuWindowFadedOut(window)` (`0x008d3200`): whether `+0x52` is 0.
+    pub fn tk_menu_window_faded_out(mem: &impl Mem, window: u32) -> bool {
+        mem.read::<i16>(window.wrapping_add(0x52)) == 0
+    }
+
+    /// The menu's item list (`TkMenuItemRefresh`): `0x200` entries
+    /// `{u16 id, u8 count, u8 usable}`.
+    pub const MENU_ITEM_LIST: Global<u32> = Global::new(0x0159_7770);
+    /// Item counts by the id's low byte, `0x200` `u16` (cleared in full).
+    pub const MENU_ITEM_COUNTS: Global<u16> = Global::new(0x0159_7370);
+    /// Entries in [`MENU_ITEM_LIST`].
+    pub const MENU_ITEM_LIST_COUNT: Global<u32> = Global::new(0x0186_a384);
+    /// The first usable item's inventory slot (`i16`, -1 for none).
+    pub const MENU_ITEM_FIRST_USABLE: Global<i16> = Global::new(0x0186_a3b0);
+
+    /// `TkMenuItemRefresh(mode)` (`0x008c8e60`): the item list from the
+    /// inventory. Modes 0 and 4 list every slot (empty ones leave their
+    /// entry zero) and mark the usable items (kernel flags `+0x1c` bit 0;
+    /// `+0x22` bit 7 needs bit 6 or an aeon); mode 4 counts every item as
+    /// usable for the first-usable slot. Mode 6 lists only the items with
+    /// an ability map id (`+0x5d` not `0xff`). Other modes list nothing.
+    pub fn tk_menu_item_refresh(mem: &mut impl Mem, mode: i32) {
+        let list = MENU_ITEM_LIST.ptr(mem).addr;
+        let counts = MENU_ITEM_COUNTS.ptr(mem).addr;
+        mem.write(list, [0u32; 0x200]);
+        mem.write(counts, [0u16; 0x200]);
+        let ids = ffx_battle::save::bridge::ITEM_IDS.ptr(mem);
+        let nums = ffx_battle::save::bridge::ITEM_COUNTS.ptr(mem);
+        MENU_ITEM_LIST_COUNT.set(mem, 0);
+        MENU_ITEM_FIRST_USABLE.set(mem, -1);
+        let mut entry = list;
+        for slot in 0..ffx_battle::save::ITEM_SLOTS {
+            let id = ids.at(slot).get(mem);
+            let n = nums.at(slot).get(mem);
+            let rec = ffx_kernel::bridge::rom(mem, ffx_kernel::bridge::ITEM, u32::from(id), 0);
+            let usable = match mode {
+                0 | 4 => {
+                    if n == 0 {
+                        entry = entry.wrapping_add(4);
+                        continue;
+                    }
+                    let usable = mode == 4 || item_usable(mem, rec);
+                    if usable && MENU_ITEM_FIRST_USABLE.get(mem) < 0 {
+                        #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+                        MENU_ITEM_FIRST_USABLE.set(mem, slot as i16);
+                    }
+                    usable
+                }
+                6 if n != 0 && mem.read::<u8>(rec.wrapping_add(0x5d)) != 0xff => false,
+                _ => continue,
+            };
+            mem.write(entry, id);
+            mem.write(entry.wrapping_add(2), n);
+            mem.write(entry.wrapping_add(3), u8::from(usable));
+            mem.write(counts.wrapping_add(2 * u32::from(id & 0xff)), u16::from(n));
+            entry = entry.wrapping_add(4);
+        }
+        MENU_ITEM_LIST_COUNT.set(mem, entry.wrapping_sub(list) >> 2);
+    }
+
+    /// An item's menu use: kernel flag `+0x1c` bit 0; with `+0x22` bit 7
+    /// also bit 6 or an aeon (`TkMenuSummonEnableMask`).
+    fn item_usable(mem: &impl Mem, rec: u32) -> bool {
+        if mem.read::<u8>(rec.wrapping_add(0x1c)) & 1 == 0 {
+            return false;
+        }
+        let f = mem.read::<u8>(rec.wrapping_add(0x22));
+        f & 0x80 == 0 || f & 0x40 != 0 || MENU_SUMMON_ENABLE_MASK.get(mem) != 0
+    }
+
+    /// The key items by their list slot (`TkMenuItemImportantRefresh`), `u16`
+    /// ids.
+    pub const MENU_IMPORTANT_LIST: Global<u16> = Global::new(0x0159_6f70);
+
+    /// `TkMenuItemImportantRefresh()` (`0x008c8ba0`): the key items owned,
+    /// each at its list slot (kernel byte `+0x13`); the counter becomes the
+    /// highest slot + 1.
+    pub fn tk_menu_item_important_refresh(mem: &mut impl Mem) {
+        let n = MENU_IMPORTANT_LIST_MAX.get(mem).cast_signed();
+        let list = MENU_IMPORTANT_LIST.ptr(mem);
+        for k in 0..n.max(0).cast_unsigned() {
+            list.at(k).set(mem, 0);
+        }
+        MENU_IMPORTANT_COUNTER.set(mem, 0);
+        for k in 0..n.max(0).cast_unsigned() {
+            let id = 0xa000u32.wrapping_add(k);
+            if save::ms_important_get(mem, id) == 0 {
+                continue;
+            }
+            let rec = save::ms_important_ptr(mem, id, 0);
+            let slot = u32::from(mem.read::<u8>(rec.wrapping_add(0x13)));
+            #[allow(clippy::cast_possible_truncation)]
+            list.at(slot).set(mem, id as u16);
+            let top = slot + 1;
+            if MENU_IMPORTANT_COUNTER.get(mem).cast_signed() < top.cast_signed() {
+                MENU_IMPORTANT_COUNTER.set(mem, top);
+            }
+        }
+    }
+
+    /// `TkGetAbilityMapIdFromItemId(id)` (`0x008c67e0`): an item's sphere
+    /// grid ability map id (kernel byte `+0x5d`).
+    pub fn tk_get_ability_map_id_from_item_id(mem: &mut impl Mem, id: u32) -> u8 {
+        let rec = ffx_kernel::bridge::rom(mem, ffx_kernel::bridge::ITEM, id, 0);
+        mem.read(rec.wrapping_add(0x5d))
+    }
+
+    /// `Cmd_HealAmount(command, chr)` (`0x008c6920`): what a healing
+    /// command restores by its formula (`+0x28`) and power (`+0x2a`): 6
+    /// `power × 50`, 7 `(stat + power) / 2 × power` with the character's
+    /// stat `+0x31`, 8 `max HP × power / 16`; 0 otherwise.
+    pub fn cmd_heal_amount(mem: &mut impl Mem, command: u32, chr: u32) -> i32 {
+        let rec = ffx_kernel::bridge::rom(mem, ffx_kernel::bridge::COMMAND, command, 0);
+        let power = i32::from(mem.read::<u8>(rec.wrapping_add(0x2a)));
+        match mem.read::<u8>(rec.wrapping_add(0x28)) {
+            6 => power * 0x32,
+            7 => {
+                let ply = save::ms_get_save_player_ptr(mem, chr);
+                let stat = i32::from(mem.read::<u8>(ply.wrapping_add(0x31)));
+                #[allow(clippy::manual_midpoint)] // the original divides the sum
+                ((stat + power) / 2).wrapping_mul(power)
+            }
+            8 => {
+                tk_menu_get_ply(mem, chr, 0x24)
+                    .cast_signed()
+                    .wrapping_mul(power)
+                    / 16
+            }
+            _ => 0,
+        }
     }
 }
 

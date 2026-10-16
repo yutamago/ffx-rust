@@ -675,6 +675,7 @@ dependencies = [
  "ffx-bridge",
  "ffx-chara",
  "ffx-kernel",
+ "ffx-system",
 ]
 
 [[package]]

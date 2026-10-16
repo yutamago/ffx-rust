@@ -85,12 +85,48 @@ pub fn sin_table(angle: u32, quarter: impl Fn(u32) -> u16) -> i32 {
     sign * i32::from(quarter(i))
 }
 
+/// `Math_UnitMatrix(m)`'s result: a 4×4 float identity.
+pub const UNIT_MATRIX: [f32; 16] = [
+    1.0, 0.0, 0.0, 0.0, //
+    0.0, 1.0, 0.0, 0.0, //
+    0.0, 0.0, 1.0, 0.0, //
+    0.0, 0.0, 0.0, 1.0,
+];
+
+/// `Math_Det3Points(x1, y1, x2, y2, x3, y3)` (`0x0088bc70`): twice the
+/// signed area of the triangle, `x1·y2 + x2·y3 + x3·y1 − x1·y3 − x2·y1 −
+/// x3·y2` summed in that order in doubles, rounded to a float.
+#[must_use]
+pub fn det3_points(x1: f32, y1: f32, x2: f32, y2: f32, x3: f32, y3: f32) -> f32 {
+    let p = |a: f32, b: f32| f64::from(a) * f64::from(b);
+    let v = p(x1, y2) + p(x2, y3) + p(x3, y1) - p(x1, y3) - p(x2, y1) - p(x3, y2);
+    #[allow(clippy::cast_possible_truncation)]
+    {
+        v as f32
+    }
+}
+
+/// `TkScreenToMenuX(x)` (`0x008e2690`) and `TkScreenToMenuY(y)`
+/// (`0x008e26b0`): a 1920×1080 coordinate in the menu's 512×416 space;
+/// the integer goes through a float first.
+#[must_use]
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+pub fn screen_to_menu(v: i32, menu: f64, screen: f64) -> f32 {
+    (f64::from(v as f32) * menu / screen) as f32
+}
+
 /// The originals with game data (`ffx_bridge::Mem`).
 pub mod bridge {
     use ffx_bridge::{Global, Mem};
 
     /// The quarter sine wave, `0x2000` `u16`.
     pub const SIN_QUARTER: Global<u16> = Global::new(0x00c5_4e40);
+
+    /// `Math_UnitMatrix(m)` (`0x0088c510`): zeroes then the diagonal.
+    pub fn math_unit_matrix(mem: &mut impl Mem, m: u32) {
+        mem.write(m, [0f32; 16]);
+        mem.write(m, super::UNIT_MATRIX);
+    }
 
     /// `Math_SinTable(angle)` (`0x0088c690`).
     pub fn math_sin_table(mem: &impl Mem, angle: u32) -> i32 {
