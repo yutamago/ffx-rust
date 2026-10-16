@@ -523,6 +523,7 @@ name = "ffx-battle"
 version = "0.1.0"
 dependencies = [
  "ffx-bridge",
+ "ffx-kernel",
  "ffx-vbf",
  "thiserror",
  "toml",
