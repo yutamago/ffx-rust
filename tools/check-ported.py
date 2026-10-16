@@ -2,8 +2,14 @@
 """Checks the ported replacements (crates/ffx-hook/src/ported/*.rs) against
 the Ghidra dump: every address is a function start, of at least five bytes
 (the jump patch), not ported twice, and named alike in symbols/ffx.sym.
+With FFX_GAME_DIR set, also that the shim pops what the original's `ret`
+pops (cdecl nothing, stdcall every argument, thiscall all but `this`,
+fastcall all but the first two): a mismatch unbalances the caller's stack.
 Exits 1 on problems."""
+import os
 import pathlib
+import re
+import subprocess
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -13,9 +19,29 @@ rows = {a: (n, size) for a, n, size in progress.functions()}
 names = progress.symbols()
 bad = 0
 seen = {}
+game = os.environ.get("FFX_GAME_DIR")
+exe = pathlib.Path(game).expanduser() / "FFX.exe" if game else None
+SHIM = re.compile(r'^\s*(\w+) @ 0x([0-9a-f_]+) =>\s*extern "([\w-]+)" fn \w+\(([^)]*)\)', re.M)
+
+
+def popped(abi, args):
+    """Bytes the callee pops for a shim's signature."""
+    sizes = [8 if t.split(":", 1)[1].strip() in ("u64", "i64", "f64") else 4
+             for t in args.split(",") if ":" in t]
+    skip = {"C": len(sizes), "stdcall": 0, "thiscall": 1, "fastcall": 2}[abi]
+    return sum(sizes[skip:])
+
+
+def rets(a, size):
+    """The byte counts the original's `ret` instructions pop."""
+    out = subprocess.run(["objdump", "-d", "--no-show-raw-insn", f"--start-address={a:#x}",
+                          f"--stop-address={a + size:#x}", str(exe)],
+                         capture_output=True, text=True, check=True).stdout
+    return {int(m.group(1) or "0", 16) for m in re.finditer(r"\tret\s*(?:\$0x([0-9a-f]+))?", out)}
+
+
 for f in sorted((progress.REPO / "crates/ffx-hook/src/ported").glob("*.rs")):
-    import re
-    for name, addr in re.findall(r"^\s*(\w+) @ 0x([0-9a-f_]+) =>", f.read_text(encoding="utf-8"), re.M):
+    for name, addr, abi, args in SHIM.findall(f.read_text(encoding="utf-8")):
         a = int(addr.replace("_", ""), 16)
         where = f"{f.name}: {name} @ {a:#010x}"
         if a in seen:
@@ -29,6 +55,11 @@ for f in sorted((progress.REPO / "crates/ffx-hook/src/ported").glob("*.rs")):
         if rows[a][1] < 5:
             print(f"{where}: only {rows[a][1]} bytes, too small for the jump")
             bad += 1
+        if exe:
+            r = rets(a, rows[a][1])
+            if r and r != {popped(abi, args)}:
+                print(f"{where}: the shim pops {popped(abi, args)} bytes, the original's ret {sorted(r)}")
+                bad += 1
         if names.get(a) and names[a] != name:
             print(f"{where}: ffx.sym calls it {names[a]}")
             bad += 1
