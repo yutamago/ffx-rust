@@ -5505,3 +5505,114 @@ fn former_hidden_slots_match_the_original() {
         }
     }
 }
+
+/// A recorder like [`arg_recorder`] that, for argument `k` with
+/// `words[k]` not 0, logs that many words it points at instead of the
+/// pointer (16 words per entry); returns the log.
+fn deref_recorder(p: &mut Pair, sym: u32, words: &[u8]) -> u32 {
+    let log = p.alloc(4 + 0x100 * 64);
+    let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x81, 0xe1, 0xff, 0, 0, 0]); // and ecx, 0xff
+    c.extend([0xc1, 0xe1, 0x06]); // shl ecx, 6
+    let mut pos = 0u32;
+    for (k, &n) in (0u8..).zip(words) {
+        c.extend([0x8b, 0x44, 0x24, 4 + 4 * k]); // mov eax, [esp + 4 + 4k]
+        if n == 0 {
+            c.extend([0x89, 0x81]); // mov [ecx + slot], eax
+            c.extend((log + 4 + 4 * pos).to_le_bytes());
+            pos += 1;
+        } else {
+            for j in 0..n {
+                c.extend([0x8b, 0x50, 4 * j]); // mov edx, [eax + 4j]
+                c.extend([0x89, 0x91]); // mov [ecx + slot], edx
+                c.extend((log + 4 + 4 * pos).to_le_bytes());
+                pos += 1;
+            }
+        }
+    }
+    assert!(pos <= 15);
+    c.extend([0xff, 0x05]); // inc dword [count]
+    c.extend(log.to_le_bytes());
+    c.push(0xa1); // mov eax, [count]
+    c.extend(log.to_le_bytes());
+    c.push(0xc3);
+    let at = p.sym(sym);
+    p.a.write(at, &c).unwrap();
+    p.b.write(at, &c).unwrap();
+    log
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn opp_draw_part_matches_the_original() {
+    use slots::bridge as s;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a7_4d30);
+        // every callee recorded; the rectangle and the two corner vectors
+        // by their contents (the original keeps them on its stack, the
+        // bridge at the same addresses in the second oracle's stack)
+        for (sym, words) in [
+            (0x0090_8420u32, &[0u8, 0][..]),
+            (0x007e_a700, &[0, 0]),
+            (0x007e_9850, &[0, 0, 0, 0]),
+            (0x0080_1f00, &[0, 0]),
+            (0x007e_83b0, &[0, 0, 0]),
+            (0x00a6_9300, &[0, 0, 0]),
+            (0x007f_f1d0, &[0, 0]),
+            (0x007f_f780, &[0, 0]),
+            (0x0078_2ae0, &[0]),
+            (0x007e_a850, &[0, 0, 0]),
+            (0x007e_a550, &[0, 0, 0]),
+            (0x007e_4540, &[4, 0]),
+            (0x0064_2fe0, &[0, 0, 4, 4, 0]),
+            (0x007e_4420, &[4, 0]),
+            (0x0064_38c0, &[0]),
+        ] {
+            deref_recorder(&mut p, sym, words);
+        }
+        let magic = p.sym(0x009d_a3b0);
+        let end = p.b.stack_range().end;
+        // the original's frame pointer for a two-argument call
+        let frame = (end - 0x100 - 8 - 4 - 12) & !15;
+        let obj = p.alloc(0x400);
+        let rec = p.alloc(0x100);
+        let cmd = p.alloc(0x40);
+        for _ in 0..2000 {
+            p.fill(obj, 0x400, &mut rng);
+            p.fill(rec, 0x100, &mut rng);
+            p.fill(cmd, 0x40, &mut rng);
+            p.set(obj + 0x220, rec);
+            let kind = rng.pick(&[0u16, 0x1000, 0x2000, 0x3000, 0x4000, 0x2800]);
+            let low: u16 = p.get(obj + 0x21a);
+            p.set(obj + 0x21a, (low & 0x0fff) | kind);
+            for at in [0x3c, 0x40, 0x48] {
+                let x = finite(&mut rng);
+                p.set(rec + at, x);
+            }
+            p.set(cmd + 2, u16::try_from(8 + 2 * rng.below(8)).unwrap());
+            let id = rng.pick(&[0xaau32, 0x25f, 7]);
+            p.a.stub_return(magic, id).unwrap();
+            p.b.stub_return(magic, id).unwrap();
+            p.check("opp_draw_part_a74d30", 0x00a7_4d30, &[obj, cmd], |m| {
+                Some(s::opp_draw_part(m, obj, cmd, frame, &mut call_original))
+            });
+        }
+    }
+}
+
+#[test]
+fn libra_rects_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0089_7dc0);
+        arg_recorder(&mut p, &[0x008a_e450], 4);
+        deref_recorder(&mut p, 0x008a_e4b0, &[0, 0, 0, 0, 0, 0]);
+        let block = p.sym(0x0133_f6a4);
+        for _ in 0..50 {
+            p.fill(block, 0xd4, &mut rng);
+            p.check("TOBtlLibraGetRects", 0x0089_7dc0, &[], |m| {
+                Some(slots::bridge::to_btl_libra_get_rects(m, &mut call_original))
+            });
+        }
+    }
+}

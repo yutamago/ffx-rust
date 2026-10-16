@@ -364,4 +364,236 @@ pub mod bridge {
             go(mem, 0x007e_3b70, &[o0, o1], call);
         }
     }
+
+    /// The texture rectangle `opp_draw_part_a74d30` builds for
+    /// `op_gs_store`/`0x007e4420` from a GS register pair (`lo`, `hi`):
+    /// `u16` base (`lo & 0x3fff`), width / 64 (`1 << (lo >> 26 & 15)`,
+    /// signed), the `u16` bits 20..25, a zero word and 0x01000100 (14
+    /// bytes, unaligned words).
+    fn gs_rect(mem: &mut impl Mem, at: u32, lo: u32) {
+        let w = 1i32.wrapping_shl((lo >> 26) & 0xf);
+        let w = w.wrapping_add((w >> 31) & 0x3f) >> 6;
+        #[allow(clippy::cast_possible_truncation)] // the u16 fields
+        {
+            mem.write(at, (lo & 0x3fff) as u16);
+            mem.write(at + 2, w.cast_unsigned() as u16);
+            mem.write(at + 4, ((lo >> 20) & 0x3f) as u16);
+        }
+        mem.write(at + 6, 0u32);
+        mem.write(at + 0xa, 0x0100_0100u32);
+    }
+
+    /// The four `u16` at `cmd + (i16) cmd[+2]` into the object's first
+    /// eight bytes; returns its first word.
+    fn load_gs(mem: &mut impl Mem, obj: u32, cmd: u32) -> u32 {
+        let src = cmd.wrapping_add(i32::from(mem.read::<i16>(cmd.wrapping_add(2))).cast_unsigned());
+        for k in 0..4 {
+            let v: u16 = mem.read(src.wrapping_add(2 * k));
+            mem.write(obj.wrapping_add(2 * k), v);
+        }
+        mem.read(obj)
+    }
+
+    fn f64_at(mem: &impl Mem, sym: u32) -> f64 {
+        mem.read(addr(mem, sym))
+    }
+
+    /// `opp_draw_part_a74d30(obj, cmd)` (`0x00a74d30`, the overlays'
+    /// shared draw command; aligned stack): by the object's kind (`u16`
+    /// `+0x21a & 0xf000`; `rec` = the part at `+0x220`):
+    /// - 0: `yiDObjToOMD(0x6800000, 0)`; returns `cmd + 2`.
+    /// - 0x1000: the matrix at `obj + 0x80` scaled by `rec +0x3c` / 1024
+    ///   (`op_unit_m_scale`), `0x007e9850(m, m, rec + 0x30, rec + 0x90)`,
+    ///   times the part's (`0x00801f00(obj, rec)`, `op_mul_m`), `obj +
+    ///   0xc0` = `obj + 0x2c0` times it, `0x00a69300(0x6800000, obj +
+    ///   0xc0, 0x1f00000)`; returns `cmd + 2`.
+    /// - 0x2000: the part's buffer (`rec +0xbc`) freed and a 0x40000 one
+    ///   taken (`op_free`, `0x007ff780` on `obj +0x3a8`); the GS pair from
+    ///   the command into the object; a local matrix scaled by `rec +0x3c`
+    ///   / 256 / 10 and moved by the map centre / 10 (`MsGetMapCenter`,
+    ///   `0x007ea850`, `0x007ea550`); the rectangle ±`rec +0x40`/2560,
+    ///   ±`rec +0x48`/2560 (times 10 for magic 0xaa and 0x25f); the
+    ///   new buffer freed again, the texture stored (`op_gs_store` with a
+    ///   fresh 0x40000 one), `movie_disp2(1, matrix, min, max, 0)`;
+    ///   returns `cmd + 4`.
+    /// - 0x3000: the GS pair into the object, `0x007e4420(rect, rec
+    ///   +0xbc)`, `0x006438c0(rect base)`; returns `cmd + 4`.
+    /// - else `cmd`.
+    ///
+    /// All callees through `call`. The locals the original keeps on its
+    /// stack (frame pointer `frame`; down to `frame - 0x90`) are at
+    /// `frame`, which the caller provides.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn opp_draw_part<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        cmd: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use crate::x87::{MUL, Reg};
+        let div: crate::x87::Op = |a, b| a / b;
+        let rec: u32 = mem.read(obj.wrapping_add(0x220));
+        let f = |mem: &M, at: u32| mem.read::<f32>(at);
+        match mem.read::<u16>(obj.wrapping_add(0x21a)) & 0xf000 {
+            0 => {
+                go(mem, 0x0090_8420, &[0x0680_0000, 0], call);
+                cmd.wrapping_add(2)
+            }
+            0x1000 => {
+                let k = f64_at(mem, 0x00b5_8b50);
+                let sc = Reg::load_f32(f(mem, rec.wrapping_add(0x3c)))
+                    .constant(MUL, k)
+                    .store();
+                let m = obj.wrapping_add(0x80);
+                go(mem, 0x007e_a700, &[m, sc.to_bits()], call);
+                go(
+                    mem,
+                    0x007e_9850,
+                    &[m, m, rec.wrapping_add(0x30), rec.wrapping_add(0x90)],
+                    call,
+                );
+                let part = go(mem, 0x0080_1f00, &[obj, rec], call);
+                go(mem, 0x007e_83b0, &[m, part, m], call);
+                let w = obj.wrapping_add(0xc0);
+                go(mem, 0x007e_83b0, &[w, obj.wrapping_add(0x2c0), m], call);
+                go(mem, 0x00a6_9300, &[0x0680_0000, w, 0x01f0_0000], call);
+                cmd.wrapping_add(2)
+            }
+            0x2000 => {
+                let heap = |mem: &M| mem.read::<u32>(obj.wrapping_add(0x3a8));
+                let (h, b) = (heap(mem), mem.read::<u32>(rec.wrapping_add(0xbc)));
+                go(mem, 0x007f_f1d0, &[h, b], call);
+                let h = heap(mem);
+                let nb = go(mem, 0x007f_f780, &[h, 0x40000], call);
+                mem.write(rec.wrapping_add(0xbc), nb);
+                let lo = load_gs(mem, obj, cmd);
+                let (c1, c2) = (f64_at(mem, 0x00b5_0198), f64_at(mem, 0x00b9_22b0));
+                let (mtx, centre, lo_v, hi_v, rect) = (
+                    frame.wrapping_sub(0x48),
+                    frame.wrapping_sub(0x90),
+                    frame.wrapping_sub(0x80),
+                    frame.wrapping_sub(0x70),
+                    frame.wrapping_sub(0x58),
+                );
+                let sc = Reg::load_f32(f(mem, rec.wrapping_add(0x3c)))
+                    .constant(MUL, c1)
+                    .constant(div, c2)
+                    .store();
+                go(mem, 0x007e_a700, &[mtx, sc.to_bits()], call);
+                go(mem, 0x0078_2ae0, &[centre], call);
+                let tenth: f32 = mem.read(addr(mem, 0x00b1_0f38));
+                go(
+                    mem,
+                    0x007e_a850,
+                    &[centre, centre, crate::x87::load_f32(tenth).to_bits()],
+                    call,
+                );
+                go(mem, 0x007e_a550, &[mtx, mtx, centre], call);
+                let vf: [u32; 4] = crate::prog::bridge::VF00.get(mem);
+                let half = |mem: &M, at: u32| {
+                    Reg::load_f32(f(mem, rec.wrapping_add(at)))
+                        .constant(MUL, c1)
+                        .constant(div, c2)
+                };
+                let (a, bz) = (half(mem, 0x40), half(mem, 0x48));
+                let neg = |r: Reg| match r {
+                    Reg::Num(x) => Reg::Num(-x),
+                    Reg::Nan(b) => Reg::Nan(b ^ 0x8000_0000),
+                };
+                let lo_vec = [
+                    neg(a).store().to_bits(),
+                    vf[1],
+                    neg(bz).store().to_bits(),
+                    vf[3],
+                ];
+                let hi_vec = [a.store().to_bits(), vf[1], bz.store().to_bits(), vf[3]];
+                mem.write(lo_v, lo_vec);
+                mem.write(hi_v, hi_vec);
+                let (h, b) = (heap(mem), mem.read::<u32>(rec.wrapping_add(0xbc)));
+                go(mem, 0x007f_f1d0, &[h, b], call);
+                gs_rect(mem, rect, lo);
+                let h = heap(mem);
+                let nb = go(mem, 0x007f_f780, &[h, 0x40000], call);
+                go(mem, 0x007e_4540, &[rect, nb], call);
+                let id = go(mem, 0x009d_a3b0, &[], call);
+                if id == 0xaa || go(mem, 0x009d_a3b0, &[], call) == 0x25f {
+                    for at in [lo_v, lo_v + 4, lo_v + 8, hi_v, hi_v + 4, hi_v + 8] {
+                        let v = Reg::load_f32(f(mem, at)).constant(MUL, c2).store();
+                        mem.write(at, v);
+                    }
+                }
+                go(mem, 0x0064_2fe0, &[1, mtx, lo_v, hi_v, 0], call);
+                cmd.wrapping_add(4)
+            }
+            0x3000 => {
+                let lo = load_gs(mem, obj, cmd);
+                let rect = frame.wrapping_sub(0x58);
+                gs_rect(mem, rect, lo);
+                let b: u32 = mem.read(rec.wrapping_add(0xbc));
+                go(mem, 0x007e_4420, &[rect, b], call);
+                let base = i32::from(mem.read::<i16>(rect)).cast_unsigned();
+                go(mem, 0x0064_38c0, &[base], call);
+                cmd.wrapping_add(4)
+            }
+            _ => cmd,
+        }
+    }
+
+    /// `TOBtlLibraGetRects()` (`0x00897dc0`): the Libra window's layout
+    /// from scene 2: rectangles (`TOSeqGetRect(2, name, &x, &y, &w, &h)`)
+    /// for four names and positions for seven (the names at
+    /// `0x00b5ec5c`.. in `.rdata`), positions (`0x008ae450(2, name, &x,
+    /// &y)`), into `0x0133f6a4`..`0x0133f774` (through
+    /// `call`); then the Libra state block (`0x0133f6a8`, 0x5c bytes)
+    /// cleared. Returns 0.
+    pub fn to_btl_libra_get_rects<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        // (name, first output, rectangle)
+        let layout: [(u32, [u32; 4], bool); 11] = [
+            (
+                0x00b5_ec5c,
+                [0x0133_f6a4, 0x0133_f704, 0x0133_f708, 0x0133_f70c],
+                true,
+            ),
+            (
+                0x00b5_ec64,
+                [0x0133_f710, 0x0133_f714, 0x0133_f718, 0x0133_f71c],
+                true,
+            ),
+            (0x00b5_ec6c, [0x0133_f720, 0x0133_f724, 0, 0], false),
+            (0x00b5_ec74, [0x0133_f728, 0x0133_f72c, 0, 0], false),
+            (0x00b5_ec7c, [0x0133_f730, 0x0133_f734, 0, 0], false),
+            (0x00b5_ec84, [0x0133_f738, 0x0133_f73c, 0, 0], false),
+            (0x00b5_ec8c, [0x0133_f740, 0x0133_f744, 0, 0], false),
+            (0x00b5_ec94, [0x0133_f748, 0x0133_f74c, 0, 0], false),
+            (0x00b5_ec9c, [0x0133_f750, 0x0133_f754, 0, 0], false),
+            (
+                0x00b5_eca4,
+                [0x0133_f758, 0x0133_f75c, 0x0133_f760, 0x0133_f764],
+                true,
+            ),
+            (
+                0x00b5_ecac,
+                [0x0133_f768, 0x0133_f76c, 0x0133_f770, 0x0133_f774],
+                true,
+            ),
+        ];
+        for (name, outs, rect) in layout {
+            let n = addr(mem, name);
+            let o = outs.map(|a| if a == 0 { 0 } else { addr(mem, a) });
+            if rect {
+                go(mem, 0x008a_e4b0, &[2, n, o[0], o[1], o[2], o[3]], call);
+            } else {
+                go(mem, 0x008a_e450, &[2, n, o[0], o[1]], call);
+            }
+        }
+        let block = addr(mem, 0x0133_f6a8);
+        for k in 0..0x17 {
+            mem.write(block + 4 * k, 0u32);
+        }
+        0
+    }
 }

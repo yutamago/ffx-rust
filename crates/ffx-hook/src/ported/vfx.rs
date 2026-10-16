@@ -83,12 +83,22 @@ fn call_ptr(f: u32, args: &[u32]) -> u32 {
                     std::mem::transmute(f as usize);
                 f(a, b, c, d)
             }
+            [a, b, c, d, e] => {
+                let f: unsafe extern "C" fn(u32, u32, u32, u32, u32) -> u32 =
+                    std::mem::transmute(f as usize);
+                f(a, b, c, d, e)
+            }
+            [a, b, c, d, e, g] => {
+                let f: unsafe extern "C" fn(u32, u32, u32, u32, u32, u32) -> u32 =
+                    std::mem::transmute(f as usize);
+                f(a, b, c, d, e, g)
+            }
             [a, b, c, d, e, g, h] => {
                 let f: unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32) -> u32 =
                     std::mem::transmute(f as usize);
                 f(a, b, c, d, e, g, h)
             }
-            _ => unreachable!("the functions called back take 0 to 4 or 7 arguments"),
+            _ => unreachable!("the functions called back take 0 to 7 arguments"),
         }
     }
 }
@@ -1051,6 +1061,20 @@ ported! {
     /// `opu_debug_reload()`.
     opu_debug_reload @ 0x007f_dc80 => extern "C" fn opu_debug_reload() {
         slots::bridge::opu_debug_reload(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opp_draw_part_a74d30(obj, cmd)`: its stack locals in a 16-aligned
+    /// buffer on this shim's stack (the frame pointer at its end).
+    opp_draw_part_a74d30 @ 0x00a7_4d30 => extern "C" fn opp_draw_part_a74d30(obj: u32, cmd: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xa0]);
+        let mut locals = Locals([0; 0xa0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xa0;
+        slots::bridge::opp_draw_part(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TOBtlLibraGetRects()`.
+    TOBtlLibraGetRects @ 0x0089_7dc0 => extern "C" fn to_btl_libra_get_rects() -> u32 {
+        slots::bridge::to_btl_libra_get_rects(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
     /// `op_et_eff_off_signal(id)`.
     op_et_eff_off_signal @ 0x007f_c450 => extern "C" fn op_et_eff_off_signal(id: u32) {
