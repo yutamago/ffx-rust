@@ -54,6 +54,12 @@ pub const DEFAULT_PRIORITY: u32 = 0x8000;
 pub const NO_DESTRUCTOR: u32 = 0x0092_ed00;
 /// `rcefTaskWaitSeq` (`0x0092ee90`), the sequence `rcefTaskWait` calls.
 pub const WAIT_SEQ: u32 = 0x0092_ee90;
+/// `pppMemFree(heap, spare, p)` (`0x00716a90`).
+pub const PPP_MEM_FREE: u32 = 0x0071_6a90;
+/// `Sg_LightGetColorMatrixPtr()` (`0x008361b0`).
+pub const LIGHT_COLOR_MATRIX: u32 = 0x0083_61b0;
+/// `Sg_LightGetNormalMatrixPtr()` (`0x00836240`).
+pub const LIGHT_NORMAL_MATRIX: u32 = 0x0083_6240;
 
 /// Offsets in a controller (`rcefTaskCtrlInit`).
 pub mod ctrl {
@@ -703,6 +709,81 @@ pub mod bridge {
             o.wrapping_add(0x160),
             o.wrapping_add(0x170),
         )
+    }
+
+    /// `rcefTaskKill(t)` (`0x0092ed50`): `t` unlinked from its list, its
+    /// destructor run ([`rcef_task_destruct`]) and its memory returned to
+    /// the current effect heap (`pppMemFree(heap, heap + 0x10, t)`).
+    pub fn rcef_task_kill<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        t: u32,
+        call: &mut C,
+    ) -> u32 {
+        let (prev, next) = (mem.read::<u32>(t + 4), mem.read::<u32>(t + 8));
+        mem.write(prev.wrapping_add(8), next);
+        let (prev, next) = (mem.read::<u32>(t + 4), mem.read::<u32>(t + 8));
+        mem.write(next.wrapping_add(4), prev);
+        rcef_task_destruct(mem, t, |m, f, a| call(m, f, &[a]));
+        let heap = mem.read::<u32>(super::main::ENV_SLOT.get(mem));
+        let f = mem.rebase(super::PPP_MEM_FREE);
+        call(mem, f, &[heap, heap.wrapping_add(0x10), t])
+    }
+
+    /// `rcefChrInit(c)` (`0x00930770`): an effect's character draw block:
+    /// no character, a reference GIF tag (`+0x10` 0x1c, `+0x14` from
+    /// `0x00c498dc`, `+0x18` 0x44), grey, its two matrices (`+0x80`,
+    /// `+0xc0`, the identity) and the light's colour and normal matrices
+    /// (`Sg_LightGet*MatrixPtr`). Returns the identity's `eax` (1.0).
+    pub fn rcef_chr_init<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        c: u32,
+        call: &mut C,
+    ) -> u32 {
+        mem.write(c, 0u32);
+        mem.write(c + 4, 0u32);
+        mem.write(c + 8, 0u32);
+        mem.write_bytes(c + 0x10, &[0; 0x70]);
+        mem.write(c + 0x10, 0x1cu32);
+        let tag = mem.read::<u32>(mem.rebase(crate::model::REF_GIF_TAG));
+        mem.write(c + 0x14, tag);
+        mem.write(c + 0x18, 0x44u8);
+        mem.write(c + 0x28, 0x8080_8080u32);
+        mem.write(c + 0x30, c + 0x80);
+        let f = mem.rebase(super::LIGHT_COLOR_MATRIX);
+        let m = call(mem, f, &[]);
+        mem.write(c + 0x34, m);
+        let f = mem.rebase(super::LIGHT_NORMAL_MATRIX);
+        let m = call(mem, f, &[]);
+        mem.write(c + 0x38, m);
+        mem.write(c + 0x3c, c + 0xc0);
+        mem.write(c + 0x5c, 0x8080u16);
+        ffx_ps2::vu0::bridge::matrix_identity(mem, c + 0x80);
+        ffx_ps2::vu0::bridge::matrix_identity(mem, c + 0xc0)
+    }
+
+    /// `rcefWorkSwap(w)` (`0x00925530`): the quadwords at `+0x1c4` and
+    /// `+0x1d4` swapped (`rcCopyQword` through `tmp`, the original's 16
+    /// stack bytes), `+0x1e8` 0, `+0x1f0` 1.
+    pub fn rcef_work_swap(mem: &mut impl Mem, w: u32, tmp: u32) {
+        use crate::vu0::bridge::rc_copy_qword;
+        rc_copy_qword(mem, tmp, w + 0x1d4);
+        rc_copy_qword(mem, w + 0x1d4, w + 0x1c4);
+        rc_copy_qword(mem, w + 0x1c4, tmp);
+        mem.write(w + 0x1e8, 0u32);
+        mem.write(w + 0x1f0, 1u32);
+    }
+
+    /// `rcefWorkSet(w, a, b, v)` (`0x00925630`): `+0x1c0` 1, `a` and `b`
+    /// to `+0x1c4`/`+0x1d4` (`rcCopyQword`), `v` at `+0x1e4`, `+0x1e8` 0,
+    /// `+0x1f0` 1.
+    pub fn rcef_work_set(mem: &mut impl Mem, w: u32, a: u32, b: u32, v: u32) {
+        use crate::vu0::bridge::rc_copy_qword;
+        mem.write(w + 0x1c0, 1u32);
+        rc_copy_qword(mem, w + 0x1c4, a);
+        rc_copy_qword(mem, w + 0x1d4, b);
+        mem.write(w + 0x1e4, v);
+        mem.write(w + 0x1e8, 0u32);
+        mem.write(w + 0x1f0, 1u32);
     }
 }
 

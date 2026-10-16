@@ -20,12 +20,14 @@
 //! - [`yi`]: the field renderer's state and display objects.
 //! - [`vu0`]: the VU0-style vector helpers (`KeVu0*`).
 //! - [`nkz`]: overdrive tables (`Nkz`) and sound status (`Sqs`).
+//! - [`camera`]: the map camera's projection and view matrices.
 //! - [`freecam`]: the free (debug) camera (`FreeCamera`).
 //! - [`x87`]: what the original's x87 code does to floats.
 
 #![allow(clippy::many_single_char_names)] // registers, pointers and vector parts, as the originals
 
 pub mod abmap;
+pub mod camera;
 pub mod freecam;
 pub mod geom;
 pub mod guide;

@@ -211,6 +211,20 @@ fn no_diff(a: &mut Oracle, b: &mut Oracle, what: &str) {
     assert_eq!(d, [], "{what}: memory");
 }
 
+/// Zeroes the top 64 KiB of both oracles' stacks, where the frames of the
+/// next call go: a native called by the test and the same native's helper
+/// called by the Rust version sit at different depths, so a word original
+/// code reads before writing would otherwise hold different leftovers
+/// (`0x007bcb80` reads a spline position and tangent that
+/// `TkMtCalcSpline` leaves unwritten for short paths, for one).
+fn clear_stacks(a: &mut Oracle, b: &mut Oracle) {
+    let r = a.stack_range();
+    let zero = vec![0u8; 0x1_0000];
+    for o in [a, b] {
+        Mem::write_bytes(o, r.end - 0x1_0000, &zero);
+    }
+}
+
 /// Writes `value` at `addr` in both oracles.
 fn poke<T: ffx_bridge::Value>(a: &mut Oracle, b: &mut Oracle, addr: u32, value: T) {
     Mem::write(a, addr, value);
@@ -1492,7 +1506,7 @@ const ZEROED: [(u32, &[u8]); 3] = [
     (0x0086_ea8a, &[0x31, 0xf6, 0x90]),
 ];
 
-const UNINIT: [Uninit; 2] = [
+const UNINIT: [Uninit; 3] = [
     // 0x007bb6a0 (Native_CamSetPos and its "ref" twin) hands Cam_SetPos a
     // vector of three popped floats whose w ([ebp-8]) it never writes;
     // Cam_SetPos copies it into the camera and the VU0 registers. Site: the
@@ -1500,6 +1514,16 @@ const UNINIT: [Uninit; 2] = [
     // [__security_cookie]; ret
     Uninit {
         site: 0x007b_b6a6,
+        site_len: 5,
+        stub: &[
+            0xc7, 0x45, 0xf8, 0x00, 0x00, 0x00, 0x00, 0xa1, 0, 0, 0, 0, 0xc3,
+        ],
+        fixup: Some((8, 0x00c6_13d8)),
+    },
+    // 0x007bab90 (Native_CamRefSetTarget's) does the same with the vector
+    // at [ebp-0x14] it hands 0x007beeb0: w at [ebp-8]. Same site and stub.
+    Uninit {
+        site: 0x007b_ab96,
         site_len: 5,
         stub: &[
             0xc7, 0x45, 0xf8, 0x00, 0x00, 0x00, 0x00, 0xa1, 0, 0, 0, 0, 0xc3,
@@ -1524,7 +1548,7 @@ const UNINIT: [Uninit; 2] = [
 
 /// x86 for the imports natives reach that the oracle has no stub for: CRT
 /// functions (cdecl) and two Win32 waits (stdcall), the same on both sides.
-const CRT: [(&str, &[u8]); 11] = [
+const CRT: [(&str, &[u8]); 12] = [
     // fld1; fpatan; ret
     ("_CIatan", &[0xd9, 0xe8, 0xd9, 0xf3, 0xc3]),
     // the _CI* helpers take and return ST0 (ST1 too for atan2): one x87
@@ -1569,6 +1593,8 @@ const CRT: [(&str, &[u8]); 11] = [
             0x31, 0xc0, 0x5f, 0x5e, 0xc3, // none: eax = 0
         ],
     ),
+    // printf(fmt, ...): the debug lines of the natives; 0 (xor eax, eax; ret)
+    ("printf", &[0x31, 0xc0, 0xc3]),
     // WaitForSingleObject(handle, ms): WAIT_OBJECT_0 (xor eax, eax; ret 8)
     ("WaitForSingleObject", &[0x31, 0xc0, 0xc2, 0x08, 0x00]),
     // ReleaseMutex(handle): TRUE (mov eax, 1; ret 4)
@@ -2340,6 +2366,432 @@ fn synthetic_script_matches_the_original() {
     );
 }
 
+/// The native paths the random arguments of [`natives_match_the_original`]
+/// do not reach: `Native_MsgSetPos`'s three moved windows, the voice waits'
+/// countdowns and debug counting, `Native_MsgClose` on each window state,
+/// `Native_CamSetScreenDepth` in debug mode.
+#[test]
+#[allow(clippy::too_many_lines)] // one block per case family
+fn native_special_cases_match_the_original() {
+    use ffx_script::vm::bridge::{native, native_msg};
+    let (Some(dir), Some(snap)) = (
+        std::env::var_os("FFX_GAME_DIR"),
+        std::env::var_os("FFX_SNAPSHOT"),
+    ) else {
+        eprintln!("FFX_GAME_DIR or FFX_SNAPSHOT is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let c = in_use(&Oracle::from_snapshot(&exe, &pages).unwrap())[0];
+    let (mut a, mut b) = fresh_run_pair(&pages, &exe, c);
+    let (a, b) = (&mut a, &mut b);
+    let w = v::atel_get_basic_work(b, 0);
+    orig(a, ATEL_GET_BASIC_WORK, &[0]);
+    let s = w + worker::STACK;
+    let lvl = i32::from(Mem::read::<u8>(b, w + worker::LEVEL));
+    let args = v::script_worker_level(b, w, lvl) + 0x2c;
+    let set = |a: &mut Oracle, b: &mut Oracle, sym: u32, x: u32| {
+        let at = b.rebase(sym);
+        poke(a, b, at, x);
+    };
+    let run = |a: &mut Oracle, b: &mut Oracle, sym: u32, push: &[(u8, u32)], what: &str| {
+        poke(a, b, s, 0i32);
+        for &(k, x) in push {
+            push_both(a, b, s, k, x);
+        }
+        clear_stacks(a, b);
+        let ra = a
+            .call(a.rebase(sym), Conv::Cdecl, &[w, args, s])
+            .unwrap_or_else(|e| panic!("{what}: {e}"));
+        let Some(native::Native::Int(f)) = native::find::<Run>(sym) else {
+            panic!("{what}: not an integer native");
+        };
+        let rb = f(&mut Run(b), w, args, s);
+        assert_eq!(ra.eax, rb, "{what}: EAX");
+        no_diff(a, b, what);
+    };
+    let int = |x: u32| (stack::INT, x);
+    let map = native_msg::CURRENT_MAP_NO.sym;
+    for (m, x, y) in [
+        (0x17, 0x1e6, 0x104),
+        (0x17, 0x1e6, 0x105),
+        (0xab, 0x100, 0x14f),
+        (0xd4, 0x16, 0xdc),
+        (0xd4, 0x17, 0xdc),
+        (0x01, 0x1e6, 0x104),
+    ] {
+        set(a, b, map, m);
+        run(
+            a,
+            b,
+            0x0085_80c0,
+            &[int(1), int(x), int(y), int(2)],
+            &format!("MsgSetPos map {m:#x} ({x:#x}, {y:#x})"),
+        );
+    }
+    let debug = native::DEBUG_MODE.sym;
+    for mode in [0, 1] {
+        set(a, b, debug, mode);
+        for (count, flag, left) in [
+            (0, 1, 2),
+            (3, 1, 1),
+            (0, 1, 0),
+            (5, 1, -1i32),
+            (0, 0, 0),
+            (2, 0, 0),
+        ] {
+            for (sym, base) in [(0x0085_e1d0, 0x0132_5acc_u32), (0x0085_e4a0, 0x0132_5afc)] {
+                let (cnt, fl, lf) = if base == 0x0132_5acc {
+                    (0x0132_5acc, 0x0132_5ae4, 0x0132_5ae0)
+                } else {
+                    (0x0132_5afc, 0x0132_5aec, 0x0132_5ae8)
+                };
+                set(a, b, cnt, count);
+                set(a, b, fl, flag);
+                set(a, b, lf, left.cast_unsigned());
+                for i in 0..3 {
+                    run(
+                        a,
+                        b,
+                        sym,
+                        &[],
+                        &format!("voice {sym:#x} debug {mode} ({count}, {flag}, {left}) call {i}"),
+                    );
+                }
+            }
+        }
+        run(
+            a,
+            b,
+            0x007b_90b0,
+            &[(stack::FLOAT, 404.75f32.to_bits())],
+            &format!("CamSetScreenDepth debug {mode}"),
+        );
+    }
+    set(a, b, debug, 0);
+    for st in [0u16, 1, 2, 3, 4] {
+        // out of range only where nothing is closed: TOCloseMessageWindow
+        // gets the window number unclamped
+        let far: &[i32] = if st == 0 || st == 3 {
+            &[0, 3, 9]
+        } else {
+            &[0, 3]
+        };
+        for &i in far {
+            let win = v::atel_get_mes_win_work(b, i.min(7));
+            poke(a, b, win + 0x14, st);
+            run(
+                a,
+                b,
+                0x0085_9060,
+                &[int(i.cast_unsigned())],
+                &format!("MsgClose {i} state {st}"),
+            );
+        }
+    }
+}
+
+/// Calls native `sym` on both sides with `push` on the worker's stack and
+/// compares the result (`EAX`, or `ST0` for a float handler) and memory.
+fn native_case(a: &mut Oracle, b: &mut Oracle, w: u32, sym: u32, push: &[(u8, u32)], what: &str) {
+    use ffx_script::vm::bridge::native::{self, Native};
+    let s = w + worker::STACK;
+    let lvl = i32::from(Mem::read::<u8>(b, w + worker::LEVEL));
+    let args = v::script_worker_level(b, w, lvl) + 0x2c;
+    poke(a, b, s, 0i32);
+    for &(k, x) in push {
+        push_both(a, b, s, k, x);
+    }
+    clear_stacks(a, b);
+    let ra = a
+        .call(a.rebase(sym), Conv::Cdecl, &[w, args, s])
+        .unwrap_or_else(|e| panic!("{what}: {e}"));
+    match native::find::<Run>(sym) {
+        Some(Native::Int(f)) => {
+            let rb = f(&mut Run(b), w, args, s);
+            assert_eq!(ra.eax, rb, "{what}: EAX");
+        }
+        Some(Native::Float(f)) => {
+            let raw = ra.st0_raw.expect("ST0");
+            orig(a, FTOL2, &[]);
+            let rb = f(&mut Run(b), w, args, s);
+            let x = f80_to_f64(raw);
+            assert!(
+                x.to_bits() == rb.to_bits() || (x.is_nan() && rb.is_nan()),
+                "{what}: ST0 {x} vs {rb}"
+            );
+        }
+        None => panic!("{what}: not in find"),
+    }
+    no_diff(a, b, what);
+}
+
+/// The move and turn starts on every mode with set-up blocks, the message
+/// opens and waits on each window state, `Msg_ShowSetup`, the frame wait
+/// counted by time, the camera paths from the battle lists, `Native_CamWait`
+/// in debug mode and `Native_BtlRandom` with its latch.
+#[test]
+#[allow(clippy::too_many_lines)] // one block per native family
+fn move_and_message_cases_match_the_original() {
+    use ffx_script::vm::bridge::{native, native_cam, native_move};
+    let (Some(dir), Some(snap)) = (
+        std::env::var_os("FFX_GAME_DIR"),
+        std::env::var_os("FFX_SNAPSHOT"),
+    ) else {
+        eprintln!("FFX_GAME_DIR or FFX_SNAPSHOT is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let c = in_use(&Oracle::from_snapshot(&exe, &pages).unwrap())[0];
+    let (mut a, mut b) = fresh_run_pair(&pages, &exe, c);
+    let (a, b) = (&mut a, &mut b);
+    let n = actors(a, b).len().min(4);
+    eprintln!("{n} actors of ctrl work {c:#x}");
+    let int = |x: u32| (stack::INT, x);
+    let flt = |x: f32| (stack::FLOAT, x.to_bits());
+    let set = |a: &mut Oracle, b: &mut Oracle, sym: u32, x: u32| {
+        let at = b.rebase(sym);
+        poke(a, b, at, x);
+    };
+    for i in 0..n {
+        let w = v::atel_get_basic_work(b, i32::try_from(i).unwrap());
+        orig(a, ATEL_GET_BASIC_WORK, &[u32::try_from(i).unwrap()]);
+        let lvl = u32::from(Mem::read::<u8>(b, w + worker::LEVEL));
+        let mb = w + 0x5b8 + lvl * 0x4c;
+        let tb = Mem::read::<u32>(
+            b,
+            v::script_worker_level(b, w, i32::try_from(lvl).unwrap()) + 0x48,
+        );
+        let fields: [(f32, f32, f32, f32, f32); 5] = [
+            (3.0, 1.0, 2.0, 0.5, 0.0),
+            (-4.0, 6.0, 1.5, 0.0, 1.0),
+            (1.0, 1.0, -2.5, 4.0, 0.0),
+            (10.0, -2.0, 0.25, -3.0, 2.0),
+            (-1.0, -7.5, -1.0, 8.0, 0.0),
+        ];
+        for (k, &(p2c, p20, p18, pc, p38)) in fields.iter().enumerate() {
+            for mode in [5u32, 6, 7, 8, 9, 0x809, 1, 0x10005] {
+                for (o, x) in [
+                    (0x2c, p2c),
+                    (0x20, p20),
+                    (0x18, p18),
+                    (0xc, pc),
+                    (0x38, p38),
+                ] {
+                    poke(a, b, mb + o, x.to_bits());
+                }
+                native_case(
+                    a,
+                    b,
+                    w,
+                    0x0085_6c30,
+                    &[int(1), int(mode), int(2)],
+                    &format!("MoveStart worker {i} mode {mode:#x} fields {k}"),
+                );
+            }
+            if tb != 0 {
+                for mode in [2u32, 0x802, 0x402, 0xc02, 1, 3, 4, 5] {
+                    for (o, x) in [(0x2c, p2c * 40.0), (0x10, p20), (0xc, pc)] {
+                        poke(a, b, tb + o, x.to_bits());
+                    }
+                    native_case(
+                        a,
+                        b,
+                        w,
+                        0x0085_7520,
+                        &[int(1), int(mode), int(2)],
+                        &format!("TurnStart worker {i} mode {mode:#x} fields {k}"),
+                    );
+                }
+            }
+        }
+        for sym in [
+            0x0085_a5c0,
+            0x0085_a2a0,
+            0x0085_a480,
+            0x0085_7f40,
+            0x0085_8020,
+        ] {
+            native_case(
+                a,
+                b,
+                w,
+                sym,
+                &[flt(2.5)],
+                &format!("speed {sym:#x} worker {i}"),
+            );
+        }
+        native_case(
+            a,
+            b,
+            w,
+            0x0085_7180,
+            &[flt(37.75)],
+            &format!("SetTalkRange worker {i}"),
+        );
+        native_case(
+            a,
+            b,
+            w,
+            0x0087_7b70,
+            &[flt(2.0)],
+            &format!("Sqrt worker {i}"),
+        );
+        native_case(
+            a,
+            b,
+            w,
+            0x0085_8970,
+            &[flt(5.0), flt(1.0), flt(-3.0)],
+            &format!("AngleToPoint worker {i}"),
+        );
+    }
+    let w = v::atel_get_basic_work(b, 0);
+    orig(a, ATEL_GET_BASIC_WORK, &[0]);
+    // the frame wait counted by time
+    set(a, b, native_move::WAIT_FRAMES_BY_TIME.sym, 1);
+    native_case(a, b, w, 0x0085_c4e0, &[int(10)], "WaitFrames start");
+    for k in 0..3 {
+        native_case(
+            a,
+            b,
+            w,
+            0x0085_c6b0,
+            &[],
+            &format!("WaitFrames poll by time {k}"),
+        );
+    }
+    set(a, b, native_move::WAIT_FRAMES_BY_TIME.sym, 0);
+    // message opens and waits on each state
+    for mode in [0u32, 2, 4, 8, 0x40, 66] {
+        native_case(
+            a,
+            b,
+            w,
+            0x0085_7870,
+            &[int(1), int(0)],
+            "MsgSetText before MsgOpen",
+        );
+        native_case(
+            a,
+            b,
+            w,
+            0x0085_8b50,
+            &[int(1), int(mode)],
+            &format!("MsgOpen mode {mode}"),
+        );
+    }
+    for st in [0u16, 1, 2, 3, 4, 5] {
+        let win = v::atel_get_mes_win_work(b, 1);
+        for (start, poll, end) in [
+            (0x0085_abd0, 0x0085_ae90, 0x0085_b6d0),
+            (0x0085_b7c0, 0x0085_b980, 0x0085_ba80),
+            (0x0085_9710, 0x0085_9c50, 0x0085_a6f0),
+        ] {
+            let push: &[(u8, u32)] = if start == 0x0085_abd0 {
+                &[int(1), int(1)]
+            } else if start == 0x0085_9710 {
+                &[int(7), int(9), int(1)]
+            } else {
+                &[int(1)]
+            };
+            native_case(
+                a,
+                b,
+                w,
+                start,
+                push,
+                &format!("wait start {start:#x} state {st}"),
+            );
+            poke(a, b, win + 0x14, st);
+            native_case(
+                a,
+                b,
+                w,
+                poll,
+                &[],
+                &format!("wait poll {poll:#x} state {st}"),
+            );
+            native_case(a, b, w, end, &[], &format!("wait end {end:#x} state {st}"));
+        }
+    }
+    native_case(
+        a,
+        b,
+        w,
+        0x0086_02a0,
+        &[int(2), int(3), int(1), int(0), int(40), int(60), int(4)],
+        "MsgShowWait start",
+    );
+    // camera paths from the battle lists
+    for (n0, n1) in [(0u32, 0u32), (3, 2), (5, 7)] {
+        set(a, b, native_cam::BTL_SPLINES.sym, n0);
+        set(a, b, native_cam::BTL_SPLINES.sym + 4, n1);
+        for list in [0u32, 1] {
+            native_case(
+                a,
+                b,
+                w,
+                0x007b_a020,
+                &[int(list), int(4)],
+                &format!("Cam_6059 list {list} ({n0}, {n1})"),
+            );
+            native_case(
+                a,
+                b,
+                w,
+                0x007b_a100,
+                &[int(list), flt(0.5), int(4)],
+                &format!("Cam_605a list {list} ({n0}, {n1})"),
+            );
+            native_case(
+                a,
+                b,
+                w,
+                0x007b_a210,
+                &[int(list), int(4)],
+                &format!("Cam_605b list {list} ({n0}, {n1})"),
+            );
+        }
+    }
+    for mode in [0, 1] {
+        set(a, b, native::DEBUG_MODE.sym, mode);
+        for frames in [0u32, 2] {
+            set(a, b, native_cam::CAM_WAIT_FRAMES.sym, frames);
+            native_case(
+                a,
+                b,
+                w,
+                0x007b_9be0,
+                &[],
+                &format!("CamWait debug {mode} frames {frames}"),
+            );
+        }
+    }
+    set(a, b, native::DEBUG_MODE.sym, 0);
+    for latch in [0, 1] {
+        set(a, b, native_cam::BTL_RANDOM_LATCH.sym, latch);
+        native_case(
+            a,
+            b,
+            w,
+            0x007b_89a0,
+            &[int(3)],
+            &format!("BtlRandom latch {latch}"),
+        );
+        native_case(
+            a,
+            b,
+            w,
+            0x007b_9b40,
+            &[],
+            &format!("CamMoveFinish latch {latch}"),
+        );
+    }
+}
+
 /// Every Rust native against the original on each actor of each ctrl work
 /// in use, with small integer and float arguments on the worker's stack
 /// (the same on both sides): the result (`EAX`, or `ST0` for the float
@@ -2371,6 +2823,9 @@ fn natives_match_the_original() {
             for &(sym, float) in PORTED
                 .iter()
                 .chain(&ffx_script::vm::bridge::native_map::PORTED)
+                .chain(&ffx_script::vm::bridge::native_cam::PORTED)
+                .chain(&ffx_script::vm::bridge::native_msg::PORTED)
+                .chain(&ffx_script::vm::bridge::native_move::PORTED)
             {
                 let (a, b) = pair.get_or_insert_with(|| fresh_run_pair(&pages, &exe, c));
                 let w = v::atel_get_basic_work(b, i32::try_from(i).unwrap());
@@ -2390,6 +2845,7 @@ fn natives_match_the_original() {
                 let lvl = i32::from(Mem::read::<u8>(b, w + worker::LEVEL));
                 let args = v::script_worker_level(b, w, lvl) + 0x2c;
                 let what = format!("native {sym:#x} on worker {i} of {c:#x}");
+                clear_stacks(a, b);
                 let ra = match a.call(a.rebase(sym), Conv::Cdecl, &[w, args, s]) {
                     Ok(r) => r,
                     Err(e) => {
@@ -2431,6 +2887,9 @@ fn natives_match_the_original() {
     let never: Vec<String> = PORTED
         .iter()
         .chain(&ffx_script::vm::bridge::native_map::PORTED)
+        .chain(&ffx_script::vm::bridge::native_cam::PORTED)
+        .chain(&ffx_script::vm::bridge::native_msg::PORTED)
+        .chain(&ffx_script::vm::bridge::native_move::PORTED)
         .filter(|(sym, _)| !seen.contains(sym))
         .map(|(sym, _)| format!("{sym:#x}"))
         .collect();

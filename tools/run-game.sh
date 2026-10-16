@@ -72,8 +72,12 @@ fi
 # Windows only loads images from the WSL filesystem if they are executable.
 chmod +x "$game"/*.exe "$game"/*.dll
 # The WSL filesystem is case-sensitive; FFX.exe imports these in upper case.
-ln -f "$game/msvcr110.dll" "$game/MSVCR110.dll"
-ln -f "$game/msvcp110.dll" "$game/MSVCP110.dll"
+# (On a Windows drive both names are the same file already.)
+for dll in msvcr110 msvcp110; do
+    if [[ ! "$game/$dll.dll" -ef "$game/${dll^^}.dll" ]]; then
+        ln -f "$game/$dll.dll" "$game/${dll^^}.dll"
+    fi
+done
 
 if [[ $hooks == 0 ]]; then
     rm -f "$game/DINPUT8.dll"
@@ -98,6 +102,14 @@ fi
 running="$(powershell.exe -NoProfile -Command '@(Get-Process FFX -ErrorAction SilentlyContinue).Count' | tr -d '\r')"
 if [[ "$running" != "0" ]]; then
     echo "FFX.exe is already running (or stuck exiting); not starting another" >&2
+    exit 1
+fi
+
+# The game slot (crates/ffx-harness/src/slot.rs): tests and agents queue
+# for the game there; don't start one under a running test.
+slot_lock="${FFX_GAME_SLOT_DIR:-$HOME/ffx-work/game-slot}/lock"
+if [[ "${FFX_GAME_SLOT_HELD:-}" != 1 && -f "$slot_lock" ]] && ! flock -n "$slot_lock" true; then
+    echo "the game slot is in use ($(cat "$slot_lock")); queue with: target/release/game-slot run -- $0 $*" >&2
     exit 1
 fi
 

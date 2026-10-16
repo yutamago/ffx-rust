@@ -3,7 +3,10 @@
 use ffx_script::vm::bridge as atel;
 use ffx_script::vm::bridge::globals as g;
 use ffx_script::vm::bridge::native;
+use ffx_script::vm::bridge::native_cam;
 use ffx_script::vm::bridge::native_map;
+use ffx_script::vm::bridge::native_move;
+use ffx_script::vm::bridge::native_msg;
 use ffx_script::vm::bridge::run;
 use ffx_script::vm::bridge::signal as sig;
 
@@ -1265,5 +1268,555 @@ ported! {
     /// `Native_BltzSetObjModels(worker, args, stack)`.
     Native_BltzSetObjModels @ 0x0091_c810 => extern "C" fn n_91c810(w: u32, a: u32, s: u32) -> u32 {
         native_map::native_bltz_set_obj_models(&mut mem(), w, a, s)
+    }
+
+    // the camera natives (ffx_script::vm::bridge::native_cam);
+    // Native_Cam_6076 (0x007b8fe0), which the dump has no function start
+    // for, runs in Rust only through Script_Run's dispatch
+    /// `Native_CamFocusTimeLinear(worker, args, stack)`.
+    Native_CamFocusTimeLinear @ 0x007b_7f70 => extern "C" fn n_7b7f70(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_focus_time_linear(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6030(worker, args, stack)`.
+    Native_Cam_6030 @ 0x007b_8050 => extern "C" fn n_7b8050(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6030(&mut mem(), w, a, s)
+    }
+    /// `Native_CamFocusTimeEase(worker, args, stack)`.
+    Native_CamFocusTimeEase @ 0x007b_8130 => extern "C" fn n_7b8130(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_focus_time_ease(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6035(worker, args, stack)`.
+    Native_Cam_6035 @ 0x007b_8170 => extern "C" fn n_7b8170(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6035(&mut mem(), w, a, s)
+    }
+    /// `Native_CamFocusCut(worker, args, stack)`.
+    Native_CamFocusCut @ 0x007b_8210 => extern "C" fn n_7b8210(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_focus_cut(&mut mem(), w, a, s)
+    }
+    /// `Native_CamFocusWait(worker, args, stack)`.
+    Native_CamFocusWait @ 0x007b_8270 => extern "C" fn n_7b8270(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_focus_wait(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6043(worker, args, stack)`.
+    Native_Cam_6043 @ 0x007b_8660 => extern "C" fn n_7b8660(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6043(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_603f(worker, args, stack)`.
+    Native_Cam_603f @ 0x007b_86f0 => extern "C" fn n_7b86f0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_603f(&mut mem(), w, a, s)
+    }
+    /// `Native_CamEyeOrbitScaled(worker, args, stack)`.
+    Native_CamEyeOrbitScaled @ 0x007b_8710 => extern "C" fn n_7b8710(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_eye_orbit_scaled(&mut mem(), w, a, s)
+    }
+    /// `Native_CamFocusOrbitScaled(worker, args, stack)`.
+    Native_CamFocusOrbitScaled @ 0x007b_8730 => extern "C" fn n_7b8730(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_focus_orbit_scaled(&mut mem(), w, a, s)
+    }
+    /// `Native_CamEyeOrbit(worker, args, stack)`.
+    Native_CamEyeOrbit @ 0x007b_8750 => extern "C" fn n_7b8750(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_eye_orbit(&mut mem(), w, a, s)
+    }
+    /// `Native_CamFocusOrbit(worker, args, stack)`.
+    Native_CamFocusOrbit @ 0x007b_8770 => extern "C" fn n_7b8770(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_focus_orbit(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_604d(worker, args, stack)`.
+    Native_Cam_604d @ 0x007b_87b0 => extern "C" fn n_7b87b0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_604d(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_607d(worker, args, stack)`.
+    Native_Cam_607d @ 0x007b_8840 => extern "C" fn n_7b8840(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_607d(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6087(worker, args, stack)`.
+    Native_Cam_6087 @ 0x007b_8a10 => extern "C" fn n_7b8a10(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6087(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6088(worker, args, stack)`.
+    Native_Cam_6088 @ 0x007b_8a70 => extern "C" fn n_7b8a70(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6088(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_605c(worker, args, stack)`.
+    Native_Cam_605c @ 0x007b_8e80 => extern "C" fn n_7b8e80(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_605c(&mut mem(), w, a, s)
+    }
+    /// `Native_CamSuspend(worker, args, stack)`.
+    Native_CamSuspend @ 0x007b_8ea0 => extern "C" fn n_7b8ea0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_suspend(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_605d(worker, args, stack)`.
+    Native_Cam_605d @ 0x007b_8f10 => extern "C" fn n_7b8f10(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_605d(&mut mem(), w, a, s)
+    }
+    /// `Native_CamResume(worker, args, stack)`.
+    Native_CamResume @ 0x007b_8f30 => extern "C" fn n_7b8f30(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_resume(&mut mem(), w, a, s)
+    }
+    /// `Native_CamSetRoll(worker, args, stack)`.
+    Native_CamSetRoll @ 0x007b_9010 => extern "C" fn n_7b9010(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_set_roll(&mut mem(), w, a, s)
+    }
+    /// `Native_CamSetScreenDepth(worker, args, stack)`.
+    Native_CamSetScreenDepth @ 0x007b_90b0 => extern "C" fn n_7b90b0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_set_screen_depth(&mut mem(), w, a, s)
+    }
+    /// `Native_CamSetPos(worker, args, stack)`.
+    Native_CamSetPos @ 0x007b_9220 => extern "C" fn n_7b9220(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_set_pos(&mut mem(), w, a, s)
+    }
+    /// `Native_CamGetPos(worker, args, stack)`.
+    Native_CamGetPos @ 0x007b_9260 => extern "C" fn n_7b9260(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_get_pos(&mut mem(), w, a, s)
+    }
+    /// `Native_CamSetPolar(worker, args, stack)`.
+    Native_CamSetPolar @ 0x007b_92e0 => extern "C" fn n_7b92e0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_set_polar(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6005(worker, args, stack)`.
+    Native_Cam_6005 @ 0x007b_9320 => extern "C" fn n_7b9320(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6005(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6083(worker, args, stack)`.
+    Native_Cam_6083 @ 0x007b_9340 => extern "C" fn n_7b9340(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6083(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6006(worker, args, stack)`.
+    Native_Cam_6006 @ 0x007b_9360 => extern "C" fn n_7b9360(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6006(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6084(worker, args, stack)`.
+    Native_Cam_6084 @ 0x007b_9380 => extern "C" fn n_7b9380(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6084(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6007(worker, args, stack)`.
+    Native_Cam_6007 @ 0x007b_93a0 => extern "C" fn n_7b93a0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6007(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6008(worker, args, stack)`.
+    Native_Cam_6008 @ 0x007b_93c0 => extern "C" fn n_7b93c0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6008(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_603c(worker, args, stack)`.
+    Native_Cam_603c @ 0x007b_9400 => extern "C" fn n_7b9400(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_603c(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_606b(worker, args, stack)`.
+    Native_Cam_606b @ 0x007b_94a0 => extern "C" fn n_7b94a0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_606b(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_600f(worker, args, stack)`.
+    Native_Cam_600f @ 0x007b_9520 => extern "C" fn n_7b9520(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_600f(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6071(worker, args, stack)`.
+    Native_Cam_6071 @ 0x007b_9580 => extern "C" fn n_7b9580(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6071(&mut mem(), w, a, s)
+    }
+    /// `Native_CamMove(worker, args, stack)`.
+    Native_CamMove @ 0x007b_96c0 => extern "C" fn n_7b96c0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_move(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6011(worker, args, stack)`.
+    Native_Cam_6011 @ 0x007b_9730 => extern "C" fn n_7b9730(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6011(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_605f(worker, args, stack)`.
+    Native_Cam_605f @ 0x007b_97a0 => extern "C" fn n_7b97a0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_605f(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6012(worker, args, stack)`.
+    Native_Cam_6012 @ 0x007b_9800 => extern "C" fn n_7b9800(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6012(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6060(worker, args, stack)`.
+    Native_Cam_6060 @ 0x007b_98e0 => extern "C" fn n_7b98e0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6060(&mut mem(), w, a, s)
+    }
+    /// `Native_CamMoveEased(worker, args, stack)`.
+    Native_CamMoveEased @ 0x007b_9940 => extern "C" fn n_7b9940(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_move_eased(&mut mem(), w, a, s)
+    }
+    /// `Native_CamMoveEased1(worker, args, stack)`.
+    Native_CamMoveEased1 @ 0x007b_9980 => extern "C" fn n_7b9980(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_move_eased1(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6063(worker, args, stack)`.
+    Native_Cam_6063 @ 0x007b_99a0 => extern "C" fn n_7b99a0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6063(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6017(worker, args, stack)`.
+    Native_Cam_6017 @ 0x007b_9a00 => extern "C" fn n_7b9a00(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6017(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6062(worker, args, stack)`.
+    Native_Cam_6062 @ 0x007b_9a20 => extern "C" fn n_7b9a20(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6062(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6064(worker, args, stack)`.
+    Native_Cam_6064 @ 0x007b_9aa0 => extern "C" fn n_7b9aa0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6064(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6019(worker, args, stack)`.
+    Native_Cam_6019 @ 0x007b_9ac0 => extern "C" fn n_7b9ac0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6019(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6064_Poll(worker, args, stack)`.
+    Native_Cam_6064_Poll @ 0x007b_9b20 => extern "C" fn n_7b9b20(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6064_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_CamRefSetPos(worker, args, stack)`.
+    Native_CamRefSetPos @ 0x007b_9d00 => extern "C" fn n_7b9d00(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_ref_set_pos(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6046(worker, args, stack)`.
+    Native_Cam_6046 @ 0x007b_9d20 => extern "C" fn n_7b9d20(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6046(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6021(worker, args, stack)`.
+    Native_Cam_6021 @ 0x007b_9d40 => extern "C" fn n_7b9d40(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6021(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6047(worker, args, stack)`.
+    Native_Cam_6047 @ 0x007b_9d60 => extern "C" fn n_7b9d60(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6047(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6048(worker, args, stack)`.
+    Native_Cam_6048 @ 0x007b_9da0 => extern "C" fn n_7b9da0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6048(&mut mem(), w, a, s)
+    }
+    /// `Native_CamPathAddEye(worker, args, stack)`.
+    Native_CamPathAddEye @ 0x007b_9e30 => extern "C" fn n_7b9e30(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_path_add_eye(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_604a(worker, args, stack)`.
+    Native_Cam_604a @ 0x007b_9eb0 => extern "C" fn n_7b9eb0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_604a(&mut mem(), w, a, s)
+    }
+    /// `Native_CamPathAddFocus(worker, args, stack)`.
+    Native_CamPathAddFocus @ 0x007b_9f40 => extern "C" fn n_7b9f40(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_path_add_focus(&mut mem(), w, a, s)
+    }
+    /// `Native_CamRefSetTarget(worker, args, stack)`.
+    Native_CamRefSetTarget @ 0x007b_9fe0 => extern "C" fn n_7b9fe0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_ref_set_target(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6028(worker, args, stack)`.
+    Native_Cam_6028 @ 0x007b_a0e0 => extern "C" fn n_7ba0e0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6028(&mut mem(), w, a, s)
+    }
+    /// `Native_CamRefAddLineArea(worker, args, stack)`.
+    Native_CamRefAddLineArea @ 0x007b_a1d0 => extern "C" fn n_7ba1d0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_ref_add_line_area(&mut mem(), w, a, s)
+    }
+    /// `Native_CamRefAddCircleArea(worker, args, stack)`.
+    Native_CamRefAddCircleArea @ 0x007b_a2d0 => extern "C" fn n_7ba2d0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_ref_add_circle_area(&mut mem(), w, a, s)
+    }
+    /// `Native_CamRefClearAreas(worker, args, stack)`.
+    Native_CamRefClearAreas @ 0x007b_a2f0 => extern "C" fn n_7ba2f0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_ref_clear_areas(&mut mem(), w, a, s)
+    }
+
+    // the message and voice natives (ffx_script::vm::bridge::native_msg);
+    // the dump gives the two voice waits (0x0085e1d0, 0x0085e4a0) one byte,
+    // so they run in Rust only through Script_Run's dispatch
+    /// `Native_MsgSetValue(worker, args, stack)`.
+    Native_MsgSetValue @ 0x0085_5c70 => extern "C" fn n_855c70(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_msg_set_value(&mut mem(), w, a, s)
+    }
+    /// `Native_MacroDicText(worker, args, stack)`.
+    Native_MacroDicText @ 0x0085_6a00 => extern "C" fn n_856a00(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_macro_dic_text(&mut mem(), w, a, s)
+    }
+    /// `Native_MsgSetText(worker, args, stack)`.
+    Native_MsgSetText @ 0x0085_7870 => extern "C" fn n_857870(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_msg_set_text(&mut mem(), w, a, s)
+    }
+    /// `Native_BitIndex(worker, args, stack)`.
+    Native_BitIndex @ 0x0085_78c0 => extern "C" fn n_8578c0(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_bit_index(&mut mem(), w, a, s)
+    }
+    /// `Native_MsgSetPos(worker, args, stack)`.
+    Native_MsgSetPos @ 0x0085_80c0 => extern "C" fn n_8580c0(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_msg_set_pos(&mut mem(), w, a, s)
+    }
+    /// `Native_MsgClose(worker, args, stack)`.
+    Native_MsgClose @ 0x0085_9060 => extern "C" fn n_859060(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_msg_close(&mut mem(), w, a, s)
+    }
+    /// `Msg_Text(i)`.
+    Msg_Text @ 0x0086_bf30 => extern "C" fn msg_text(i: u32) -> u32 {
+        native_msg::msg_text(&mut mem(), i)
+    }
+
+    // the move, turn, worker, character-motion and screen natives (ffx_script::vm::bridge::native_move)
+    /// `Native_MoveStart(worker, args, stack)`.
+    Native_MoveStart @ 0x0085_6c30 => extern "C" fn n_856c30(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_move_start(&mut mem(), w, a, s)
+    }
+    /// `Native_TurnStart(worker, args, stack)`.
+    Native_TurnStart @ 0x0085_7520 => extern "C" fn n_857520(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_turn_start(&mut mem(), w, a, s)
+    }
+    /// `Native_MoveSetTarget(worker, args, stack)`.
+    Native_MoveSetTarget @ 0x0086_02f0 => extern "C" fn n_8602f0(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_move_set_target(&mut mem(), w, a, s)
+    }
+    /// `Native_TurnSetSpeed2(worker, args, stack)`.
+    Native_TurnSetSpeed2 @ 0x0085_a5c0 => extern "C" fn n_85a5c0(w: u32, a: u32, s: u32) -> f64 {
+        native_move::native_turn_set_speed2(&mut mem(), w, a, s)
+    }
+    /// `Native_TurnSetSpeed(worker, args, stack)`.
+    Native_TurnSetSpeed @ 0x0085_a2a0 => extern "C" fn n_85a2a0(w: u32, a: u32, s: u32) -> f64 {
+        native_move::native_turn_set_speed(&mut mem(), w, a, s)
+    }
+    /// `Native_SetTurnSpeed(worker, args, stack)`.
+    Native_SetTurnSpeed @ 0x0085_a480 => extern "C" fn n_85a480(w: u32, a: u32, s: u32) -> f64 {
+        native_move::native_set_turn_speed(&mut mem(), w, a, s)
+    }
+    /// `Native_SetMoveSpeed(worker, args, stack)`.
+    Native_SetMoveSpeed @ 0x0085_7f40 => extern "C" fn n_857f40(w: u32, a: u32, s: u32) -> f64 {
+        native_move::native_set_move_speed(&mut mem(), w, a, s)
+    }
+    /// `Native_MoveSetSpeed(worker, args, stack)`.
+    Native_MoveSetSpeed @ 0x0085_7da0 => extern "C" fn n_857da0(w: u32, a: u32, s: u32) -> f64 {
+        native_move::native_move_set_speed(&mut mem(), w, a, s)
+    }
+    /// `Native_SetArriveRadiusAll(worker, args, stack)`.
+    Native_SetArriveRadiusAll @ 0x0085_8020 => extern "C" fn n_858020(w: u32, a: u32, s: u32) -> f64 {
+        native_move::native_set_arrive_radius_all(&mut mem(), w, a, s)
+    }
+    /// `Native_SetArriveRadius(worker, args, stack)`.
+    Native_SetArriveRadius @ 0x0085_f040 => extern "C" fn n_85f040(w: u32, a: u32, s: u32) -> f64 {
+        native_move::native_set_arrive_radius(&mut mem(), w, a, s)
+    }
+    /// `Native_SetYaw(worker, args, stack)`.
+    Native_SetYaw @ 0x0085_f170 => extern "C" fn n_85f170(w: u32, a: u32, s: u32) -> f64 {
+        native_move::native_set_yaw(&mut mem(), w, a, s)
+    }
+    /// `Native_GetYawToMoveTarget(worker, args, stack)`.
+    Native_GetYawToMoveTarget @ 0x0085_87a0 => extern "C" fn n_8587a0(w: u32, a: u32, s: u32) -> f64 {
+        native_move::native_get_yaw_to_move_target(&mut mem(), w, a, s)
+    }
+    /// `Native_AngleToPoint(worker, args, stack)`.
+    Native_AngleToPoint @ 0x0085_8970 => extern "C" fn n_858970(w: u32, a: u32, s: u32) -> f64 {
+        native_move::native_angle_to_point(&mut mem(), w, a, s)
+    }
+    /// `Native_SetTalkRange(worker, args, stack)`.
+    Native_SetTalkRange @ 0x0085_7180 => extern "C" fn n_857180(w: u32, a: u32, s: u32) -> f64 {
+        native_move::native_set_talk_range(&mut mem(), w, a, s)
+    }
+    /// `Native_GetEntranceZ(worker, args, stack)`.
+    Native_GetEntranceZ @ 0x0085_cb20 => extern "C" fn n_85cb20(w: u32, a: u32, s: u32) -> f64 {
+        native_move::native_get_entrance_z(&mut mem(), w, a, s)
+    }
+    /// `Native_GetEntranceYaw(worker, args, stack)`.
+    Native_GetEntranceYaw @ 0x0085_cce0 => extern "C" fn n_85cce0(w: u32, a: u32, s: u32) -> f64 {
+        native_move::native_get_entrance_yaw(&mut mem(), w, a, s)
+    }
+    /// `AtelCall_Math_Sqrt_RF(worker, args, stack)`.
+    AtelCall_Math_Sqrt_RF @ 0x0087_7b70 => extern "C" fn n_877b70(w: u32, a: u32, s: u32) -> f64 {
+        native_move::native_math_sqrt(&mut mem(), w, a, s)
+    }
+    /// `Native_WaitFrames_0000(worker, args, stack)`.
+    Native_WaitFrames_0000 @ 0x0085_c4e0 => extern "C" fn n_85c4e0(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_wait_frames(&mut mem(), w, a, s)
+    }
+    /// `Native_WaitFrames_Poll_0000(worker, args, stack)`.
+    Native_WaitFrames_Poll_0000 @ 0x0085_c6b0 => extern "C" fn n_85c6b0(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_wait_frames_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_MapChange(worker, args, stack)`.
+    Native_MapChange @ 0x0085_81c0 => extern "C" fn n_8581c0(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_map_change(&mut mem(), w, a, s)
+    }
+    /// `Native_MapJump(worker, args, stack)`.
+    Native_MapJump @ 0x0085_8460 => extern "C" fn n_858460(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_map_jump(&mut mem(), w, a, s)
+    }
+    /// `Native_WorkerDetach(worker, args, stack)`.
+    Native_WorkerDetach @ 0x0085_cdc0 => extern "C" fn n_85cdc0(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_worker_detach(&mut mem(), w, a, s)
+    }
+    /// `Native_ChrLoadAlias(worker, args, stack)`.
+    Native_ChrLoadAlias @ 0x0085_d3c0 => extern "C" fn n_85d3c0(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_chr_load_alias(&mut mem(), w, a, s)
+    }
+    /// `Native_BitFlagSet(worker, args, stack)`.
+    Native_BitFlagSet @ 0x0085_c3b0 => extern "C" fn n_85c3b0(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_bit_flag_set(&mut mem(), w, a, s)
+    }
+    /// `CT_0060_ret(worker, args, stack)`.
+    CT_0060_ret @ 0x0085_6920 => extern "C" fn n_856920(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_0060(&mut mem(), w, a, s)
+    }
+    /// `Native_FootstepHookEnable(worker, args, stack)`.
+    Native_FootstepHookEnable @ 0x0085_9410 => extern "C" fn n_859410(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_footstep_hook_enable(&mut mem(), w, a, s)
+    }
+    /// `Native_003d(worker, args, stack)`.
+    Native_003d @ 0x0085_c3e0 => extern "C" fn n_85c3e0(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_003d(&mut mem(), w, a, s)
+    }
+    /// `Native_SetMoveMOT(worker, args, stack)`.
+    Native_SetMoveMOT @ 0x0085_bdc0 => extern "C" fn n_85bdc0(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_set_move_mot(&mut mem(), w, a, s)
+    }
+    /// `Native_LineGetCrossSide(worker, args, stack)`.
+    Native_LineGetCrossSide @ 0x0085_d410 => extern "C" fn n_85d410(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_line_get_cross_side(&mut mem(), w, a, s)
+    }
+    /// `Native_0036(worker, args, stack)`.
+    Native_0036 @ 0x0085_b4e0 => extern "C" fn n_85b4e0(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_0036(&mut mem(), w, a, s)
+    }
+    /// `Native_GetWorkerPos(worker, args, stack)`.
+    Native_GetWorkerPos @ 0x0085_6e20 => extern "C" fn n_856e20(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_get_worker_pos(&mut mem(), w, a, s)
+    }
+    /// `Native_PartySwapIn(worker, args, stack)`.
+    Native_PartySwapIn @ 0x0085_bdf0 => extern "C" fn n_85bdf0(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_party_swap_in(&mut mem(), w, a, s)
+    }
+    /// `Native_SetActorProperty(worker, args, stack)`.
+    Native_SetActorProperty @ 0x007a_5360 => extern "C" fn n_7a5360(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_set_actor_property(&mut mem(), w, a, s)
+    }
+    /// `Native_ActorPlayMotion(worker, args, stack)`.
+    Native_ActorPlayMotion @ 0x007a_35a0 => extern "C" fn n_7a35a0(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_actor_play_motion(&mut mem(), w, a, s)
+    }
+    /// `Native_ChrPlayMotion(worker, args, stack)`.
+    Native_ChrPlayMotion @ 0x00a7_9270 => extern "C" fn n_a79270(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_chr_play_motion(&mut mem(), w, a, s)
+    }
+    /// `Native_ChrPlayMotion2(worker, args, stack)`.
+    Native_ChrPlayMotion2 @ 0x00a7_a780 => extern "C" fn n_a7a780(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_chr_play_motion(&mut mem(), w, a, s)
+    }
+    /// `Native_ChrPlayDefaultMotion(worker, args, stack)`.
+    Native_ChrPlayDefaultMotion @ 0x00a7_9e60 => extern "C" fn n_a79e60(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_chr_play_default_motion(&mut mem(), w, a, s)
+    }
+    /// `Native_ChrSetMotion2(worker, args, stack)`.
+    Native_ChrSetMotion2 @ 0x00a7_a610 => extern "C" fn n_a7a610(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_chr_set_motion2(&mut mem(), w, a, s)
+    }
+    /// `Native_ChrSetMotionSeqLevel(worker, args, stack)`.
+    Native_ChrSetMotionSeqLevel @ 0x00a7_9550 => extern "C" fn n_a79550(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_chr_set_motion_seq_level(&mut mem(), w, a, s)
+    }
+    /// `Native_ChrLoad(worker, args, stack)`.
+    Native_ChrLoad @ 0x00a7_9800 => extern "C" fn n_a79800(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_chr_load(&mut mem(), w, a, s)
+    }
+    /// `Native_FadeIn(worker, args, stack)`.
+    Native_FadeIn @ 0x00a7_7d80 => extern "C" fn n_a77d80(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_fade_in(&mut mem(), w, a, s)
+    }
+    /// `Native_FadeOut(worker, args, stack)`.
+    Native_FadeOut @ 0x00a7_7da0 => extern "C" fn n_a77da0(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_fade_out(&mut mem(), w, a, s)
+    }
+    /// `Native_MotionBlur(worker, args, stack)`.
+    Native_MotionBlur @ 0x00a7_7e00 => extern "C" fn n_a77e00(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_motion_blur(&mut mem(), w, a, s)
+    }
+
+    // the message waits and opens (native_msg)
+    /// `Native_MsgOpen(worker, args, stack)`.
+    Native_MsgOpen @ 0x0085_8b50 => extern "C" fn n_858b50(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_msg_open(&mut mem(), w, a, s)
+    }
+    /// `Native_MsgSelect(worker, args, stack)`.
+    Native_MsgSelect @ 0x0085_9710 => extern "C" fn n_859710(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_msg_select(&mut mem(), w, a, s)
+    }
+    /// `Native_MsgSelect_Poll(worker, args, stack)`.
+    Native_MsgSelect_Poll @ 0x0085_9c50 => extern "C" fn n_859c50(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_msg_select_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_MsgShowWait_Poll(worker, args, stack)`.
+    Native_MsgShowWait_Poll @ 0x0086_03d0 => extern "C" fn n_8603d0(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_msg_select_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_MsgSelect_Result(worker, args, stack)`.
+    Native_MsgSelect_Result @ 0x0085_a6f0 => extern "C" fn n_85a6f0(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_msg_select_result(&mut mem(), w, a, s)
+    }
+    /// `Native_MsgShowWait_Result(worker, args, stack)`.
+    Native_MsgShowWait_Result @ 0x0086_0760 => extern "C" fn n_860760(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_msg_select_result(&mut mem(), w, a, s)
+    }
+    /// `Native_MsgWaitEx(worker, args, stack)`.
+    Native_MsgWaitEx @ 0x0085_abd0 => extern "C" fn n_85abd0(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_msg_wait_ex(&mut mem(), w, a, s)
+    }
+    /// `Native_MsgWaitEx_Poll(worker, args, stack)`.
+    Native_MsgWaitEx_Poll @ 0x0085_ae90 => extern "C" fn n_85ae90(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_msg_wait_ex_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_MsgWait_Poll(worker, args, stack)`.
+    Native_MsgWait_Poll @ 0x0085_b980 => extern "C" fn n_85b980(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_msg_wait_ex_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_MsgWaitEx_End(worker, args, stack)`.
+    Native_MsgWaitEx_End @ 0x0085_b6d0 => extern "C" fn n_85b6d0(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_msg_wait_ex_end(&mut mem(), w, a, s)
+    }
+    /// `Native_MsgWait_End(worker, args, stack)`.
+    Native_MsgWait_End @ 0x0085_ba80 => extern "C" fn n_85ba80(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_msg_wait_ex_end(&mut mem(), w, a, s)
+    }
+    /// `Native_MsgWait(worker, args, stack)`.
+    Native_MsgWait @ 0x0085_b7c0 => extern "C" fn n_85b7c0(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_msg_wait(&mut mem(), w, a, s)
+    }
+    /// `Native_MsgShowWait(worker, args, stack)`.
+    Native_MsgShowWait @ 0x0086_02a0 => extern "C" fn n_8602a0(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_msg_show_wait(&mut mem(), w, a, s)
+    }
+
+    // more camera natives (native_cam)
+    /// `Native_Cam_601c(worker, args, stack)`.
+    Native_Cam_601c @ 0x007b_8330 => extern "C" fn n_7b8330(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_601c(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_601d(worker, args, stack)`.
+    Native_Cam_601d @ 0x007b_8470 => extern "C" fn n_7b8470(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_601d(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_601f(worker, args, stack)`.
+    Native_Cam_601f @ 0x007b_8530 => extern "C" fn n_7b8530(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_601f(&mut mem(), w, a, s)
+    }
+    /// `Native_BtlRandom(worker, args, stack)`.
+    Native_BtlRandom @ 0x007b_89a0 => extern "C" fn n_7b89a0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_btl_random(&mut mem(), w, a, s)
+    }
+    /// `Native_CamMoveFinish(worker, args, stack)`.
+    Native_CamMoveFinish @ 0x007b_9b40 => extern "C" fn n_7b9b40(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_move_finish(&mut mem(), w, a, s)
+    }
+    /// `Native_CamWait(worker, args, stack)`.
+    Native_CamWait @ 0x007b_9be0 => extern "C" fn n_7b9be0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_wait(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_6059(worker, args, stack)`.
+    Native_Cam_6059 @ 0x007b_a020 => extern "C" fn n_7ba020(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6059(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_605a(worker, args, stack)`.
+    Native_Cam_605a @ 0x007b_a100 => extern "C" fn n_7ba100(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_605a(&mut mem(), w, a, s)
+    }
+    /// `Native_Cam_605b(worker, args, stack)`.
+    Native_Cam_605b @ 0x007b_a210 => extern "C" fn n_7ba210(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_605b(&mut mem(), w, a, s)
+    }
+    /// `Msg_ShowSetup(worker, args, stack, mode)`.
+    Msg_ShowSetup @ 0x0086_07a0 => extern "C" fn msg_show_setup(w: u32, a: u32, s: u32, mode: u32) -> u32 {
+        native_msg::msg_show_setup(&mut mem(), w, a, s, mode)
     }
 }

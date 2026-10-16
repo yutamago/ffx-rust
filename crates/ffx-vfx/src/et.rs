@@ -784,4 +784,13 @@ pub mod bridge {
         call(mem, f, &[obj, 0, 9, id]);
         id
     }
+
+    /// `opus_chr_handles_clear()` (`0x007fedf0`): the 240 `g_EtChrHandles`
+    /// zeroed.
+    pub fn opus_chr_handles_clear(mem: &mut impl Mem) {
+        let at = CHR_HANDLES.ptr(mem).addr;
+        for i in 0..0xf0 {
+            mem.write(at + 4 * i, 0u32);
+        }
+    }
 }

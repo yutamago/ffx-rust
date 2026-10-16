@@ -68,6 +68,9 @@ pub const RND_SCALE: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b5_15
 /// The emulated VU0 register (`vf31`, 16 bytes) the `rcCopyQword_*`
 /// copies go through.
 pub const VU0_COPY_REG: u32 = 0x00c8_f980;
+/// The emulated VU0 register the `VFX_ScaleVec3` callers pass their
+/// scale through (`0x00c8f970`).
+pub const VU0_SCALE: u32 = 0x00c8_f970;
 
 /// [`ffx_bridge::Mem`].
 pub mod bridge {
@@ -215,6 +218,100 @@ pub mod bridge {
             mem.write(dst.wrapping_add(4 * i), w);
         }
         w
+    }
+
+    /// `rcbgScaleVector(dst, v, s)` (`0x009200a0`) and its twin
+    /// `rcbgModelScaleVector` (`0x00927b00`): `v` through
+    /// [`super::VU0_COPY_REG`], its x, y, z times `s` (`VFX_ScaleVec3`,
+    /// z with the element as the memory operand), the quadword out to `dst`;
+    /// returns the last word copied (`v`'s w). The originals also copy their
+    /// argument area from `s` on (16 bytes, three of them the caller's stack)
+    /// to `0x00c8f970`; only `s` is written there.
+    pub fn rcbg_scale_vector(mem: &mut impl Mem, dst: u32, v: u32, s: u32) -> u32 {
+        let vf = mem.rebase(super::VU0_COPY_REG);
+        for i in 0..4u32 {
+            let w = mem.read::<u32>(v.wrapping_add(4 * i));
+            mem.write(vf + 4 * i, w);
+        }
+        mem.write(mem.rebase(super::VU0_SCALE), s);
+        let k = Reg::load(f32::from_bits(s));
+        for i in 0..2u32 {
+            let e: f32 = mem.read(vf + 4 * i);
+            mem.write(vf + 4 * i, (Reg::load(e) * k).store());
+        }
+        let z: f32 = mem.read(vf + 8);
+        mem.write(vf + 8, k.mul_m32(z).store());
+        let mut w = 0;
+        for i in 0..4u32 {
+            w = mem.read::<u32>(vf + 4 * i);
+            mem.write(dst.wrapping_add(4 * i), w);
+        }
+        w
+    }
+
+    /// `rcbgModelVectorToInt(dst, v)` (`0x00927b60`): `v` through
+    /// [`super::VU0_COPY_REG`], each of its four floats truncated to an
+    /// integer (`0x00808b00`: `_ftol2_sse` per element, the source read
+    /// first), the quadword out to `dst`; returns the last word.
+    pub fn rcbg_model_vector_to_int(mem: &mut impl Mem, dst: u32, v: u32) -> u32 {
+        let vf = mem.rebase(super::VU0_COPY_REG);
+        let src = mem.read::<[f32; 4]>(v);
+        for (i, e) in (0u32..).zip(src) {
+            mem.write(vf + 4 * i, e);
+        }
+        for (i, e) in (0u32..).zip(src) {
+            let n = ftol(mem, Reg::load(e).value());
+            mem.write(vf + 4 * i, n);
+        }
+        let mut w = 0;
+        for i in 0..4u32 {
+            w = mem.read::<u32>(vf + 4 * i);
+            mem.write(dst.wrapping_add(4 * i), w);
+        }
+        w
+    }
+
+    /// `rcbgScaleVector4_*(dst, v, s)` (`0x0091cb70`, `0x00925040`): as
+    /// [`rcbg_scale_vector`], all four elements times `s`
+    /// (`pppVu0MulX_007500d0`: w with the element as the memory operand).
+    pub fn rcbg_scale_vector4(mem: &mut impl Mem, dst: u32, v: u32, s: u32) -> u32 {
+        let vf = mem.rebase(super::VU0_COPY_REG);
+        for i in 0..4u32 {
+            let w = mem.read::<u32>(v.wrapping_add(4 * i));
+            mem.write(vf + 4 * i, w);
+        }
+        mem.write(mem.rebase(super::VU0_SCALE), s);
+        let k = Reg::load(f32::from_bits(s));
+        for i in 0..3u32 {
+            let e: f32 = mem.read(vf + 4 * i);
+            mem.write(vf + 4 * i, (Reg::load(e) * k).store());
+        }
+        let w: f32 = mem.read(vf + 0xc);
+        mem.write(vf + 0xc, k.mul_m32(w).store());
+        let mut last = 0;
+        for i in 0..4u32 {
+            last = mem.read::<u32>(vf + 4 * i);
+            mem.write(dst.wrapping_add(4 * i), last);
+        }
+        last
+    }
+
+    /// `rcVectorToFixed_*(dst, v)` (`0x009273e0`, `0x00927ac0`): `v`
+    /// through [`super::VU0_COPY_REG`] as 12.4 fixed point
+    /// (`rcVec4fToFixed` in place), out to `dst`; returns the last word.
+    pub fn rc_vector_to_fixed(mem: &mut impl Mem, dst: u32, v: u32) -> u32 {
+        let vf = mem.rebase(super::VU0_COPY_REG);
+        for i in 0..4u32 {
+            let w = mem.read::<u32>(v.wrapping_add(4 * i));
+            mem.write(vf + 4 * i, w);
+        }
+        crate::model::bridge::rc_vec4f_to_fixed(mem, vf, vf);
+        let mut last = 0;
+        for i in 0..4u32 {
+            last = mem.read::<u32>(vf + 4 * i);
+            mem.write(dst.wrapping_add(4 * i), last);
+        }
+        last
     }
 }
 
