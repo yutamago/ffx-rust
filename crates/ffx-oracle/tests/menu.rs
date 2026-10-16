@@ -5457,3 +5457,105 @@ fn gu_lists_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// Code space for x87 stand-ins: the body of `pppFpLoop` (`0x00729ab0`),
+/// which the menu tests never reach.
+const X87_CODE: u32 = 0x0072_9ab0;
+/// `_CIcos`, `_CIsin`, `_CItan`, `_CIatan2` import slots (MSVCR110) and
+/// their stand-ins, the CPU's own instructions on `ST0`/`ST1`: `fcos`,
+/// `fsin`, `fptan; fstp st0`, `fpatan`, each then `ret`.
+const X87_SLOTS: [(u32, &[u8]); 4] = [
+    (0x00b0_c3b4, &[0xd9, 0xff, 0xc3]),
+    (0x00b0_c3b8, &[0xd9, 0xfe, 0xc3]),
+    (0x00b0_c3a0, &[0xd9, 0xf2, 0xdd, 0xd8, 0xc3]),
+    (0x00b0_c3b0, &[0xd9, 0xf3, 0xc3]),
+];
+/// For the bridge's side: `fld qword [esp + 4]`, `fld qword [esp + 0xc]`
+/// when the fifth word is set, then a jump to the sixth word.
+const X87_CALL: [u8; 25] = [
+    0xdd, 0x44, 0x24, 0x04, // fld qword [esp + 4]
+    0x83, 0x7c, 0x24, 0x14, 0x00, // cmp dword [esp + 0x14], 0
+    0x74, 0x04, // je +4
+    0xdd, 0x44, 0x24, 0x0c, // fld qword [esp + 0xc]
+    0x8b, 0x44, 0x24, 0x18, // mov eax, [esp + 0x18]
+    0xff, 0xe0, // jmp eax
+    0x90, 0x90, 0x90, 0x90,
+];
+/// `fstp st0; ret`, after reading a result.
+const X87_POP: [u8; 3] = [0xdd, 0xd8, 0xc3];
+
+/// The stand-ins in both oracles.
+fn install_x87(t: &mut Twins) {
+    for o in [&mut t.a, &mut t.b] {
+        for (k, (slot, code)) in (0u32..).zip(X87_SLOTS) {
+            let at = o.rebase(X87_CODE + 0x10 * k);
+            o.write(at, code).unwrap();
+            let s = o.rebase(slot);
+            o.write(s, &at.to_le_bytes()).unwrap();
+        }
+        let at = o.rebase(X87_CODE + 0x40);
+        o.write(at, &X87_CALL).unwrap();
+        let at = o.rebase(X87_CODE + 0x60);
+        o.write(at, &X87_POP).unwrap();
+    }
+}
+
+/// An intrinsic stand-in run in `o` on `a` (and `b`): the result.
+fn x87_call(o: &mut Oracle, slot: u32, a: f64, b: Option<f64>) -> f64 {
+    let f: u32 = Mem::read(o, o.rebase(slot));
+    let (x, y) = (a.to_bits(), b.unwrap_or(0.0).to_bits());
+    #[allow(clippy::cast_possible_truncation)]
+    let w = [
+        x as u32,
+        (x >> 32) as u32,
+        y as u32,
+        (y >> 32) as u32,
+        u32::from(b.is_some()),
+        f,
+    ];
+    let at = o.rebase(X87_CODE + 0x40);
+    let r = o.call(at, Conv::Cdecl, &w).unwrap();
+    let pop = o.rebase(X87_CODE + 0x60);
+    o.call(pop, Conv::Cdecl, &[]).unwrap();
+    r.st0.expect("a float result")
+}
+
+#[test]
+fn ci_wrappers_match_the_original() {
+    let Some(mut t) = setup_any(0xc1c1_0009) else {
+        return;
+    };
+    install_x87(&mut t);
+    let floats = [
+        0.0f32, -0.0, 0.5, 1.0, -1.0, 2.5, 3.0, -3.1, 10.0, 100.5, 1e-5, -7.25, 1e6,
+    ];
+    for x in floats {
+        for (name, sym, slot) in [
+            ("CIcos", 0x0088_b3e0u32, 0x00b0_c3b4u32),
+            ("CIsin", 0x0088_c3a0, 0x00b0_c3b8),
+            ("CItan", 0x0088_c420, 0x00b0_c3a0),
+        ] {
+            let r =
+                t.a.call(t.a.rebase(sym), Conv::Cdecl, &[x.to_bits()])
+                    .unwrap();
+            let pop = t.a.rebase(X87_CODE + 0x60);
+            t.a.call(pop, Conv::Cdecl, &[]).unwrap();
+            let want = ffx_menu::math::ci_unary(x, |v| x87_call(&mut t.b, slot, v, None));
+            same_float(name, r.st0, want);
+        }
+        for y in floats {
+            let r =
+                t.a.call(
+                    t.a.rebase(0x0088_9e70),
+                    Conv::Cdecl,
+                    &[y.to_bits(), x.to_bits()],
+                )
+                .unwrap();
+            let pop = t.a.rebase(X87_CODE + 0x60);
+            t.a.call(pop, Conv::Cdecl, &[]).unwrap();
+            let want =
+                ffx_menu::math::ci_atan2(y, x, |a, b| x87_call(&mut t.b, 0x00b0_c3b0, a, Some(b)));
+            same_float("CIatan2", r.st0, want);
+        }
+    }
+}

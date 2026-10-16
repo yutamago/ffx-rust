@@ -22,6 +22,46 @@ fn menu_packet(build: impl FnOnce(&mut super::RawMem, u32) -> u32) -> u32 {
     end
 }
 
+/// An MSVCR110 x87 intrinsic through the game's import slot `slot`:
+/// `a` in `ST0` (with `b` set, `a` in `ST1` and `b` in `ST0`), the result
+/// read back from `ST0` as a double.
+fn crt_x87(slot: u32, a: f64, b: Option<f64>) -> f64 {
+    // SAFETY: the slot holds the address of a CRT intrinsic taking its
+    // operands in ST0/ST1 and returning in ST0 (eax, ecx, edx, x87 and SSE
+    // clobbered). Every input operand is used before the call.
+    #[cfg(target_arch = "x86")]
+    unsafe {
+        let f = (crate::rebase(slot) as *const usize).read();
+        let ops = [a, b.unwrap_or(0.0)];
+        let two = u32::from(b.is_some());
+        let (lo, hi): (u32, u32);
+        std::arch::asm!(
+            "fld qword ptr [{ops}]",
+            "test {two}, {two}",
+            "jz 2f",
+            "fld qword ptr [{ops} + 8]",
+            "2:",
+            "call {f}",
+            "sub esp, 8",
+            "fstp qword ptr [esp]",
+            "pop eax",
+            "pop edx",
+            ops = in(reg) ops.as_ptr(),
+            two = in(reg) two,
+            f = in(reg) f,
+            lateout("eax") lo,
+            lateout("edx") hi,
+            clobber_abi("C"),
+        );
+        f64::from_bits(u64::from(lo) | (u64::from(hi) << 32))
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = (slot, a, b);
+        unreachable!("the CRT's intrinsics: this runs in the 32-bit game")
+    }
+}
+
 /// `user_free(p)` (`0x006fb8b0`), through the game's entry (the system
 /// module's port when hooked).
 fn user_free(p: u32) -> u32 {
@@ -2949,5 +2989,21 @@ ported! {
     /// `Vibrate_EntryLevel(rec, e)`.
     Vibrate_EntryLevel @ 0x0087_5c20 => extern "C" fn vibrate_entry_level(rec: u32, e: u32) -> u32 {
         tk::vibrate_entry_level(&mut mem(), rec, e)
+    }
+    /// `CIcos(x)`: `_CIcos`, in `st0`.
+    CIcos @ 0x0088_b3e0 => extern "C" fn ci_cos(x: f32) -> f32 {
+        ffx_menu::math::ci_unary(x, |v| crt_x87(0x00b0_c3b4, v, None))
+    }
+    /// `CIsin(x)`: `_CIsin`, in `st0`.
+    CIsin @ 0x0088_c3a0 => extern "C" fn ci_sin(x: f32) -> f32 {
+        ffx_menu::math::ci_unary(x, |v| crt_x87(0x00b0_c3b8, v, None))
+    }
+    /// `CItan(x)`: `_CItan`, in `st0`.
+    CItan @ 0x0088_c420 => extern "C" fn ci_tan(x: f32) -> f32 {
+        ffx_menu::math::ci_unary(x, |v| crt_x87(0x00b0_c3a0, v, None))
+    }
+    /// `CIatan2(y, x)`: `_CIatan2`, in `st0`.
+    CIatan2 @ 0x0088_9e70 => extern "C" fn ci_atan2(y: f32, x: f32) -> f32 {
+        ffx_menu::math::ci_atan2(y, x, |a, b| crt_x87(0x00b0_c3b0, a, Some(b)))
     }
 }
