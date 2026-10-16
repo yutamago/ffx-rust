@@ -14,6 +14,7 @@ thiserror.workspace = true
 unicorn-engine.workspace = true
 
 [dev-dependencies]
+ffx-auto.workspace = true
 ffx-battle.workspace = true
 ffx-chara.workspace = true
 ffx-core.workspace = true

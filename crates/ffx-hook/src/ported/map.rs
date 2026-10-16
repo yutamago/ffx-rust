@@ -2496,8 +2496,8 @@ ported! {
         let lc = u32::try_from((&raw mut local).expose_provenance()).unwrap_or(0);
         yi::bridge::yi_map_read_master(&mut mem(), map, file, cd_map, cd_file, alarm, im, wk, lc, &mut |_, f, a| call_cdecl(f, a))
     }
-    /// `yiMapReadHost(map)`.
-    yiMapReadHost @ 0x0090_9680 => extern "C" fn shim_yi_map_read_host(map: u32) -> u32 {
+    /// `yiMapSetup(map)`.
+    yiMapSetup @ 0x0090_9680 => extern "C" fn shim_yi_map_read_host(map: u32) -> u32 {
         let mut work = Host([0; 0x1000]);
         let wk = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
         let mut image = Image([0; 0x60]);
@@ -2614,8 +2614,8 @@ ported! {
         let h16 = |v: u32| (v as u16).cast_signed();
         model::bridge::rcbg_trx_alloc_entries(&mut mem(), t, h16(format), h16(w), h16(h), n, &mut |_, f, a| call_cdecl(f, a));
     }
-    /// `rcbgTrxMakePacket(t, out)`.
-    rcbgTrxMakePacket @ 0x0092_d5a0 => extern "C" fn shim_rcbg_trx_make_packet(t: u32, out: u32) -> u32 {
+    /// `rcbgTrxPacketMake(t, out)`.
+    rcbgTrxPacketMake @ 0x0092_d5a0 => extern "C" fn shim_rcbg_trx_make_packet(t: u32, out: u32) -> u32 {
         model::bridge::rcbg_trx_make_packet(&mut mem(), t, out)
     }
     /// `rcdtTm2Fini(tm2)`.
@@ -2680,7 +2680,7 @@ struct CameraWork([u8; camera::WORK as usize]);
 #[repr(C, align(16))]
 struct Swizzle([u8; 0x200]);
 
-/// `yiMapReadHost`'s four path strings.
+/// `yiMapSetup`'s four path strings.
 #[repr(C, align(16))]
 struct Host([u8; 0x1000]);
 
@@ -2728,7 +2728,7 @@ fn st0_call(f: u32, x: f64) -> f64 {
     #[cfg(not(target_arch = "x86"))]
     {
         let _ = (f, x);
-        unreachable!("the CRT's intrinsics run in the 32-bit game")
+        unreachable!("the CRT intrinsics: this runs in the 32-bit game")
     }
 }
 

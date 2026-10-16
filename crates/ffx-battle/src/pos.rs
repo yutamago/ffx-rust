@@ -441,7 +441,7 @@ pub mod bridge {
         mem.write(vec.wrapping_add(12), 1.0f32.to_bits());
     }
 
-    /// `msGetChrPosNoChr(actor, vec)` (`0x00795ac0`): an actor's position
+    /// `MsGetTransChrPos(actor, vec)` (`0x00795ac0`): an actor's position
     /// without a character of its own: the optional position `+0x441` of
     /// actor `+0x43f`'s character (nothing when that has none), or with
     /// `+0x43f` 0xff its battle position ([`ms_get_chr_btl_pos`] of its

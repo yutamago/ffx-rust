@@ -2284,7 +2284,7 @@ pub mod bridge {
         mem.write(t + 0x38, p);
     }
 
-    /// `rcbgTrxMakePacket(t, out)` (`0x0092d5a0`): the transfer's GS image
+    /// `rcbgTrxPacketMake(t, out)` (`0x0092d5a0`): the transfer's GS image
     /// upload at `out`: a GIF tag of four A+D registers (BITBLTBUF, TRXPOS,
     /// TRXREG from `+0x18..+0x2c`, TRXDIR 0), then an image tag of
     /// `+0x34 / 16` quadwords (`0x3000`) pointing at the current entry
