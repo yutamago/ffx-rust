@@ -17,6 +17,121 @@ pub const FOG_255: u32 = 0x00b1_70c0;
 pub const FOG_255_F32: u32 = 0x00b4_80d4;
 /// The window handlers by kind (`yiWindowSetHandlers`): 6 words a kind.
 pub const WINDOW_HANDLERS: u32 = 0x00c5_d788;
+/// `pppSetFpPdt` (`0x0072a7f0`): takes a map file's `ppp` section.
+pub const PPP_SET_FP_PDT: u32 = 0x0072_a7f0;
+/// `MsBattleGetMapCircleOn` (`0x007816a0`).
+pub const MAP_CIRCLE_ON: u32 = 0x0078_16a0;
+/// `0x018ded30`: `+0x18` of the last map read taken in.
+pub const READ_DONE: Global<u32> = Global::new(0x018d_ed30);
+/// `TkRestartSyncH` (`0x0088c7f0`).
+pub const TK_RESTART_SYNC_H: u32 = 0x0088_c7f0;
+/// `TkGetSyncH` (`0x0088c800`).
+pub const TK_GET_SYNC_H: u32 = 0x0088_c800;
+/// `0x0088c820(5)`, the third call of `yiResetObj`'s sync steps.
+pub const TK_SYNC_H_WAIT: u32 = 0x0088_c820;
+/// `TkClearAlarm` (`0x00845000`).
+pub const TK_CLEAR_ALARM: u32 = 0x0084_5000;
+/// `pppFpFree` (`0x007291c0`).
+pub const PPP_FP_FREE: u32 = 0x0072_91c0;
+/// `graphicEnableChrClusterDelayRelease` and `Cache_Clear`: run when a 2D
+/// map was loaded.
+pub const GRAPHIC_CLUSTER_DELAY_RELEASE: u32 = 0x0064_0090;
+/// See [`GRAPHIC_CLUSTER_DELAY_RELEASE`].
+pub const CACHE_CLEAR: u32 = 0x0084_0030;
+/// `graphicFieldMapShutdown`, `graphicFieldMapUnload` and
+/// `graphicVFXUnloadLevelData`, `yiResetObj`'s last calls.
+pub const GRAPHIC_FIELD_MAP_SHUTDOWN: u32 = 0x0064_03b0;
+/// See [`GRAPHIC_FIELD_MAP_SHUTDOWN`].
+pub const GRAPHIC_FIELD_MAP_UNLOAD: u32 = 0x0064_03c0;
+/// See [`GRAPHIC_FIELD_MAP_SHUTDOWN`].
+pub const GRAPHIC_VFX_UNLOAD: u32 = 0x0064_5860;
+/// `0x0072aa40`: takes a map file's section 2 (`yiObjReadFinish`).
+pub const MAP_SECTION2_HANDLER: u32 = 0x0072_aa40;
+/// The map's background section (`0x0191389c`, set by `yiMapReadMaster`).
+pub const MAP_SECTION: Global<u32> = Global::new(0x0191_389c);
+/// The map read buffer `yiResetObj` frees (`0x019138a4`).
+pub const MAP_READ_BUFFER: Global<u32> = Global::new(0x0191_38a4);
+/// The 2D maps loaded (`0x01934ec4`, `yiMapReadMaster`).
+pub const MAP2D_LOADS: Global<u32> = Global::new(0x0193_4ec4);
+/// Two camera ids reset to -1 (`0x01934ed4`).
+pub const CAMERA_IDS: Global<[u32; 2]> = Global::new(0x0193_4ed4);
+/// `0x018ded34`: `+0x18` of the last finished map read.
+pub const READ_TAIL: Global<u32> = Global::new(0x018d_ed34);
+/// `Sg_GetKeepFps` (`0x008205a0`).
+pub const SG_GET_KEEP_FPS: u32 = 0x0082_05a0;
+/// `g_YiAnimUseVCount`: animations time by `yiGetVCount` when set.
+pub const ANIM_USE_VCOUNT: Global<u32> = Global::new(0x0193_bb08);
+/// `graphicFFXApplicationEnableKeyframeAnim` (`0x006401e0`).
+pub const ENABLE_KEYFRAME_ANIM: u32 = 0x0064_01e0;
+/// `yiRender_setupparamVU1` (`0x0090da90`).
+pub const RENDER_SETUP_VU1: u32 = 0x0090_da90;
+/// `0x0090e0b0`: swizzles a format-0x13 image into the scene's VRAM copy
+/// (`yiLoadVramImage` calls it; not ported).
+pub const YI_SWIZZLE_IMAGE: u32 = 0x0090_e0b0;
+/// `Sg_MFIFOSync` (`0x00843360`).
+pub const SG_MFIFO_SYNC: u32 = 0x0084_3360;
+/// `sceGsSyncPath` (`0x0062f880`).
+pub const GS_SYNC_PATH: u32 = 0x0062_f880;
+/// `sceGsSetDefLoadImage` (`0x0062f820`, eight arguments).
+pub const GS_SET_DEF_LOAD_IMAGE: u32 = 0x0062_f820;
+/// `sceGsExecLoadImage` (`0x0062f7a0`).
+pub const GS_EXEC_LOAD_IMAGE: u32 = 0x0062_f7a0;
+/// `FlushCache` (`0x0062f4c0`).
+pub const FLUSH_CACHE: u32 = 0x0062_f4c0;
+/// `graphicObjectSetTranslation` (`0x006426c0`).
+pub const GRAPHIC_OBJECT_SET_TRANSLATION: u32 = 0x0064_26c0;
+/// `graphicObjectSetRotation` (`0x006426a0`).
+pub const GRAPHIC_OBJECT_SET_ROTATION: u32 = 0x0064_26a0;
+/// `FFXVu0RotMatrixX` (`0x006ed780`).
+pub const VU0_ROT_MATRIX_X: u32 = 0x006e_d780;
+/// `FFXVu0RotMatrixY` (`0x006ed7c0`).
+pub const VU0_ROT_MATRIX_Y: u32 = 0x006e_d7c0;
+/// 180.0 and pi (`f64`s, `.rdata`): the fog angles in degrees to radians.
+pub const DEG_180: u32 = 0x00b4_8378;
+/// See [`DEG_180`].
+pub const PI_F64: u32 = 0x00b6_7118;
+/// `TODrawScissorXYWH` (`0x008f9230`).
+pub const TO_DRAW_SCISSOR_XYWH: u32 = 0x008f_9230;
+/// `0x008f9a40(x, y, w, h)`: the window plate (`yiWindowDrawPlate`).
+pub const TO_DRAW_PLATE: u32 = 0x008f_9a40;
+/// `TODrawScissor` (`0x008f91f0`).
+pub const TO_DRAW_SCISSOR: u32 = 0x008f_91f0;
+/// `TOMakePktScissor` (`0x008fdee0`).
+pub const TO_MAKE_PKT_SCISSOR: u32 = 0x008f_dee0;
+/// `TODrawMenuPlateXYWHType` (`0x008f5f70`, four `f32`s and a type).
+pub const TO_DRAW_MENU_PLATE: u32 = 0x008f_5f70;
+/// `0x008ac2f0()`: non-zero moves the kind 0 menu plate up a pixel.
+pub const WINDOW_MENU_SHIFT: u32 = 0x008a_c2f0;
+/// `TOGetWindowStructAdrs` (`0x00906fb0`).
+pub const TO_GET_WINDOW: u32 = 0x0090_6fb0;
+/// `0x008f5e90`: a sprite of the help bar (seven arguments).
+pub const TO_DRAW_SPRITE: u32 = 0x008f_5e90;
+/// `TOMkpShapeXY` (`0x00903a10`).
+pub const TO_MKP_SHAPE_XY: u32 = 0x0090_3a10;
+/// The help bar's layout (`i16` positions and two words,
+/// `0x025d1618..=0x025d1631`).
+pub const WINDOW_BAR_LAYOUT: u32 = 0x025d_1618;
+/// `g_CurrentMapNo`: the pop window's scissor special case is map 0x15b.
+pub const CURRENT_MAP: Global<u32> = Global::new(0x012f_bc40);
+/// 65.0 and 290.0 (`f32`s): the pop window position of that case.
+pub const POP_WINDOW_X: u32 = 0x00b5_eeb8;
+/// See [`POP_WINDOW_X`].
+pub const POP_WINDOW_Y: u32 = 0x00b5_f38c;
+/// 38.0 (`f32`) and 115.0 (`f64`): the `TO` window it clips to.
+pub const POP_TARGET_X: u32 = 0x00b5_9830;
+/// See [`POP_TARGET_X`].
+pub const POP_TARGET_Y: u32 = 0x00b6_6ec8;
+/// 4.0 and 12.0 (`f64`s): the plate's scissor insets.
+pub const WINDOW_PLATE_INSET_Y: u32 = 0x00b4_3d80;
+/// See [`WINDOW_PLATE_INSET_Y`].
+pub const WINDOW_PLATE_INSET_X: u32 = 0x00b4_b468;
+/// 8.0, 1.0 and 5.0 (`f64`s): the menu plate's width inset, its shift
+/// and the scissor's left inset.
+pub const WINDOW_MENU_INSET_W: u32 = 0x00b9_22a8;
+/// See [`WINDOW_MENU_INSET_W`].
+pub const WINDOW_MENU_SHIFT_Y: u32 = 0x00b9_2248;
+/// See [`WINDOW_MENU_INSET_W`].
+pub const WINDOW_MENU_INSET_X: u32 = 0x00b4_1d20;
 /// The idle window handler (`0x00907e50`) the window finishers set.
 pub const WINDOW_IDLE: u32 = 0x0090_7e50;
 /// The handler of an open window (`0x00907d70`, returns 0).
@@ -1855,5 +1970,1008 @@ pub mod bridge {
         let h = mem.rebase(super::WINDOW_FINISH_ALL);
         mem.write(w.wrapping_add(0x74), h);
         1
+    }
+
+    /// `yiObjInit(obj)` (`0x0090ff40`): a map object (`0xb4` bytes)
+    /// cleared: the scale (`+0x5c`, `+0x6c`, `+0x7c`) 1.0, the rest of
+    /// `+0x50..+0x7c` 0.0, `+0x80..+0x98` and `+0xac` 0, `+0xc` the GS tag
+    /// word `0x6c040014`, `+0x10` the identity (`FFXVu0UnitMatrix` into a
+    /// local, then copied).
+    pub fn yi_obj_init(mem: &mut impl Mem, obj: u32) {
+        mem.write(obj.wrapping_add(0x82), 0u32);
+        mem.write(obj.wrapping_add(0x80), 0u16);
+        for off in [0x70u32, 0x60, 0x50, 0x74, 0x64, 0x54, 0x78, 0x68, 0x58] {
+            mem.write(obj.wrapping_add(off), 0u32);
+        }
+        for off in [0x7cu32, 0x6c, 0x5c] {
+            mem.write(obj.wrapping_add(off), 1.0f32.to_bits());
+        }
+        mem.write(obj.wrapping_add(0xac), 0u32);
+        mem.write(obj.wrapping_add(0x86), 0u16);
+        mem.write(obj.wrapping_add(0x8c), 0u32);
+        mem.write(obj.wrapping_add(0x98), 0u32);
+        mem.write(obj.wrapping_add(0x90), 0u32);
+        mem.write(obj.wrapping_add(0x94), 0u32);
+        for off in [0u32, 4, 8] {
+            mem.write(obj.wrapping_add(off), 0u32);
+        }
+        mem.write(obj.wrapping_add(0xc), 0x6c04_0014u32);
+        ffx_ps2::vu0::bridge::matrix_identity(mem, obj.wrapping_add(0x10));
+    }
+
+    /// `yiLoadVramImage(scene, entry, data)` (`0x0090e5d0`): an image
+    /// meant for GS memory at or above `0x3c00` (entry `+4`) kept in the
+    /// scene's copy from `+0x276a4` (64 bytes a page step): format 0
+    /// (`+0xc`) copies `w * h / 8` quadwords (`+0x10`, `+0x14`), 0x14
+    /// `w * h / 32`, 0x13 goes through `0x0090e0b0` (a swizzle, through
+    /// `call`). Returns that call's `eax`, else 0.
+    pub fn yi_load_vram_image<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        scene: u32,
+        entry: u32,
+        data: u32,
+        call: &mut C,
+    ) -> u32 {
+        let page = mem
+            .read::<u32>(entry.wrapping_add(4))
+            .wrapping_sub(0x3c00)
+            .wrapping_mul(0x40)
+            .cast_signed()
+            / 4;
+        let dst = scene
+            .wrapping_add(0x276a4)
+            .wrapping_add(page.cast_unsigned().wrapping_mul(0x10));
+        let w = mem.read::<i32>(entry.wrapping_add(0x10));
+        let h = mem.read::<i32>(entry.wrapping_add(0x14));
+        let n = match mem.read::<u32>(entry.wrapping_add(0xc)) {
+            0 => w.wrapping_mul(h) / 8,
+            0x13 => {
+                let f = mem.rebase(super::YI_SWIZZLE_IMAGE);
+                return call(mem, f, &[w.cast_unsigned(), h.cast_unsigned(), data, dst]);
+            }
+            0x14 => w.wrapping_mul(h) / 32,
+            _ => 0,
+        };
+        let mut i = 0;
+        while i < n {
+            let k = i.cast_unsigned().wrapping_mul(16);
+            for j in 0..4u32 {
+                let v = mem.read::<u32>(data.wrapping_add(k).wrapping_add(4 * j));
+                mem.write(dst.wrapping_add(k).wrapping_add(4 * j), v);
+            }
+            i += 1;
+        }
+        0
+    }
+
+    /// `yiMapFileRead(scene, file, image)` (`0x0090f900`): reads a map
+    /// render file (magic `0x214365`, version `0x110`; `+0xc` the record
+    /// count, decremented as read; records of a `0x40`-byte header, `+0`
+    /// kind, `+4` length, then data): 0 an object ([`yi_obj_init`],
+    /// [`yi_obj_load`], `graphicObjectSetTranslation`/`Rotation`), 1 a
+    /// camera of the last object ([`yi_camera_load`], linked to the
+    /// previous; stops when its key count `+0x48` disagrees with the
+    /// length), 2 a texture (into the scene's table from `+0x9c19c`, `0x24`
+    /// bytes each; uploaded with `sceGsSetDefLoadImage` into `image` and
+    /// `sceGsExecLoadImage`, or kept by [`yi_load_vram_image`] at or above
+    /// `0x3c00`), 3 the CLUTs ([`yi_clut_alloc_makepacket`], kinds 2..=4
+    /// to `+0x67f20`), 4 the fog ([`yi_fog_load`], the fog matrix
+    /// `+0x68078` from its angles), 5 and 8 packet lists, 6 animation
+    /// tracks (`0x720` bytes a set from `+0x9d9d0`), 7 the matrix chunk
+    /// ([`yi_load_matrix_chunk`]); other kinds are skipped without their
+    /// data. `image` stands for the original's 0x60-byte stack buffer;
+    /// the original leaves the current object and camera uninitialised,
+    /// so files start with an object. The engine calls go through
+    /// `call`. Returns 0.
+    #[allow(clippy::too_many_lines)] // one case after another, as the original
+    pub fn yi_map_file_read<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        scene: u32,
+        file: u32,
+        image: u32,
+        call: &mut C,
+    ) -> u32 {
+        let c = |mem: &M, f: u32| mem.rebase(f);
+        let sync = |mem: &mut M, call: &mut C| {
+            let f = c(mem, super::SG_MFIFO_SYNC);
+            call(mem, f, &[]);
+            let f = c(mem, super::GS_SYNC_PATH);
+            call(mem, f, &[0, 0]);
+        };
+        sync(mem, call);
+        if mem.read::<u32>(file) != 0x0021_4365
+            || mem.read::<u32>(file.wrapping_add(4)) != 0x110
+            || mem.read::<u32>(file.wrapping_add(0xc)) == 0
+        {
+            return 0;
+        }
+        let (mut obj, mut cam, mut index) = (0u32, 0u32, 0u32);
+        let mut rec = file.wrapping_add(0x40);
+        loop {
+            let mut data = rec.wrapping_add(0x40);
+            match mem.read::<u32>(rec) {
+                0 => {
+                    index = mem.read::<u32>(scene.wrapping_add(0x68788));
+                    obj = index
+                        .wrapping_mul(0xb4)
+                        .wrapping_add(0x6878c)
+                        .wrapping_add(scene);
+                    mem.write(scene.wrapping_add(0x68788), index.wrapping_add(1));
+                    yi_obj_init(mem, obj);
+                    yi_obj_load(mem, obj, data);
+                    let n = mem.read::<u32>(scene.wrapping_add(0x68788)).wrapping_sub(1);
+                    let f = c(mem, super::GRAPHIC_OBJECT_SET_TRANSLATION);
+                    call(mem, f, &[n, obj.wrapping_add(0x60)]);
+                    let angle = u32::from(mem.read::<u16>(obj.wrapping_add(0x86)));
+                    let n = mem.read::<u32>(scene.wrapping_add(0x68788)).wrapping_sub(1);
+                    let f = c(mem, super::GRAPHIC_OBJECT_SET_ROTATION);
+                    call(mem, f, &[n, obj.wrapping_add(0x50), angle]);
+                    data = data.wrapping_add(mem.read::<u32>(rec.wrapping_add(4)));
+                    mem.write(obj.wrapping_add(0xac), 0u32);
+                    cam = 0;
+                }
+                1 => {
+                    let n = mem.read::<u32>(scene.wrapping_add(0x6e18c));
+                    mem.write(scene.wrapping_add(0x6e18c), n.wrapping_add(1));
+                    let k = n
+                        .wrapping_mul(0x5c)
+                        .wrapping_add(0x6e190)
+                        .wrapping_add(scene);
+                    mem.write(k.wrapping_add(0x30), 0u32);
+                    mem.write(k.wrapping_add(0x36), 0u16);
+                    for off in [0x48u32, 0x44, 0x54, 0x58, 0x4c, 0x50] {
+                        mem.write(k.wrapping_add(off), 0u32);
+                    }
+                    let keys = mem.read::<u32>(obj.wrapping_add(0xac));
+                    mem.write(obj.wrapping_add(0xac), keys.wrapping_add(1));
+                    yi_camera_load(mem, k, data);
+                    data = data.wrapping_add(0x40);
+                    mem.write(k.wrapping_add(0x44), data);
+                    let prev = cam;
+                    cam = k;
+                    if prev == 0 {
+                        mem.write(obj.wrapping_add(0xa8), k);
+                        mem.write(k.wrapping_add(0x50), 0u32);
+                    } else {
+                        mem.write(prev.wrapping_add(0x4c), k);
+                        mem.write(k.wrapping_add(0x50), prev);
+                    }
+                    #[allow(clippy::cast_possible_truncation)] // the u16 index
+                    mem.write(k.wrapping_add(0x34), index as u16);
+                    mem.write(k.wrapping_add(0x54), 0u32);
+                    let count = mem.read::<u32>(rec.wrapping_add(4)).wrapping_sub(0x40) >> 4;
+                    data = data.wrapping_add(count << 4);
+                    if mem.read::<u32>(k.wrapping_add(0x48)) != count {
+                        return 0;
+                    }
+                }
+                2 => {
+                    data = data.wrapping_add(0x3c);
+                    let n = mem.read::<u32>(scene.wrapping_add(0x9c198));
+                    let e =
+                        scene.wrapping_add(n.wrapping_mul(9).wrapping_add(0x27067).wrapping_mul(4));
+                    for i in 0..6u32 {
+                        let v = mem.read::<u32>(data.wrapping_sub(0x3c).wrapping_add(4 * i));
+                        mem.write(e.wrapping_add(4 * i), v);
+                    }
+                    let v = mem.read::<u32>(data.wrapping_sub(4));
+                    mem.write(e.wrapping_add(0x20), v);
+                    sync(mem, call);
+                    let rd = |mem: &M, off: u32| mem.read::<u32>(e.wrapping_add(off));
+                    let args = if rd(mem, 0xc) == 0x14 {
+                        [
+                            image,
+                            rd(mem, 4) & 0xffff,
+                            rd(mem, 8) >> 1,
+                            0,
+                            0,
+                            0,
+                            rd(mem, 0x10) >> 1,
+                            rd(mem, 0x14) >> 2,
+                        ]
+                    } else {
+                        [
+                            image,
+                            rd(mem, 4) & 0xffff,
+                            rd(mem, 8) & 0xffff,
+                            rd(mem, 0xc) & 0xffff,
+                            0,
+                            0,
+                            rd(mem, 0x10) & 0xffff,
+                            rd(mem, 0x14) & 0xffff,
+                        ]
+                    };
+                    let f = c(mem, super::GS_SET_DEF_LOAD_IMAGE);
+                    call(mem, f, &args);
+                    if rd(mem, 4) >= 0x3c00 {
+                        yi_load_vram_image(mem, scene, e, data, call);
+                    } else {
+                        let f = c(mem, super::GS_SYNC_PATH);
+                        call(mem, f, &[0, 0]);
+                        let f = c(mem, super::FLUSH_CACHE);
+                        call(mem, f, &[0]);
+                        let f = c(mem, super::GS_EXEC_LOAD_IMAGE);
+                        call(mem, f, &[image, data]);
+                    }
+                    data =
+                        data.wrapping_add(mem.read::<u32>(rec.wrapping_add(4)).wrapping_sub(0x3c));
+                    let n = mem.read::<u32>(scene.wrapping_add(0x9c198));
+                    mem.write(scene.wrapping_add(0x9c198), n.wrapping_add(1));
+                }
+                3 => {
+                    let kind = mem.read::<u32>(rec.wrapping_add(0x24));
+                    if (2..=4).contains(&kind) {
+                        mem.write(scene.wrapping_add(0x67f20), kind);
+                        yi_clut_alloc_makepacket(mem, scene, data, 0x48);
+                    }
+                    data = data.wrapping_add(mem.read::<u32>(rec.wrapping_add(4)));
+                }
+                4 => {
+                    yi_fog_load(mem, scene, data);
+                    let m = scene.wrapping_add(0x68078);
+                    ffx_ps2::vu0::bridge::matrix_identity(mem, m);
+                    for (off, f) in [
+                        (0xba400u32, super::VU0_ROT_MATRIX_X),
+                        (0xba404, super::VU0_ROT_MATRIX_Y),
+                    ] {
+                        let deg = ffx_bridge::x87::load(mem.read::<u32>(scene.wrapping_add(off)));
+                        let at = c(mem, super::DEG_180);
+                        let d = mem.read::<f64>(at);
+                        let at = c(mem, super::PI_F64);
+                        let pi = mem.read::<f64>(at);
+                        let a = x87::store(deg / d * pi);
+                        let f = c(mem, f);
+                        call(mem, f, &[m, m, a]);
+                    }
+                    data = data.wrapping_add(mem.read::<u32>(rec.wrapping_add(4)));
+                }
+                kind @ (5 | 8) => {
+                    let list = if kind == 5 { 0x9d4c4u32 } else { 0x9d5c4 };
+                    let shift = if kind == 5 { 7 } else { 5 };
+                    let count = scene.wrapping_add(0x9d4c0);
+                    if mem.read::<u32>(rec.wrapping_add(0x20)) == 0 {
+                        let n = mem.read::<u32>(count);
+                        mem.write(
+                            scene.wrapping_add(list).wrapping_add(n.wrapping_mul(4)),
+                            data,
+                        );
+                        let v = mem.read::<u32>(rec.wrapping_add(4)) >> shift;
+                        let n = mem.read::<u32>(count);
+                        mem.write(
+                            scene.wrapping_add(0x9d6c4).wrapping_add(n.wrapping_mul(4)),
+                            v,
+                        );
+                    } else {
+                        let i = mem.read::<u32>(rec.wrapping_add(0x24));
+                        mem.write(
+                            scene.wrapping_add(list).wrapping_add(i.wrapping_mul(4)),
+                            data,
+                        );
+                        let i = mem.read::<u32>(rec.wrapping_add(0x24));
+                        let v = mem.read::<u32>(rec.wrapping_add(0x28));
+                        mem.write(
+                            scene.wrapping_add(0x9d6c4).wrapping_add(i.wrapping_mul(4)),
+                            v,
+                        );
+                    }
+                    let n = mem.read::<u32>(count);
+                    mem.write(count, n.wrapping_add(1));
+                    data = data.wrapping_add(mem.read::<u32>(rec.wrapping_add(4)));
+                }
+                6 => {
+                    track_record(mem, scene, data);
+                    data = data.wrapping_add(mem.read::<u32>(rec.wrapping_add(4)));
+                }
+                7 => {
+                    yi_load_matrix_chunk(mem, scene, data);
+                    data = data.wrapping_add(mem.read::<u32>(rec.wrapping_add(4)));
+                }
+                _ => {}
+            }
+            let left = mem.read::<u32>(file.wrapping_add(0xc)).wrapping_sub(1);
+            mem.write(file.wrapping_add(0xc), left);
+            if left == 0 {
+                return 0;
+            }
+            rec = data;
+        }
+    }
+
+    /// The track set `data[0]` names (`0x720` bytes a set from the
+    /// scene's `+0x9d9d0`), read again for every store as the original
+    /// does.
+    fn track_set(mem: &impl Mem, scene: u32, data: u32) -> u32 {
+        scene.wrapping_add(mem.read::<u32>(data).wrapping_mul(0x720))
+    }
+
+    /// Record kind 6 of [`yi_map_file_read`]: a track (`0x1c` bytes from
+    /// `+0x9d9e8` of the set, its count at `+0x9d9e4`) added to set
+    /// `data[0]` (the highest set + 1 at `+0x9d9c4`), with its key table
+    /// at `+(n + 0x5a12) * 0x1c`; a non-zero `data[1]` sets the set's
+    /// five words at `+0x9d9d0`.
+    fn track_record<M0: Mem>(mem: &mut M0, scene: u32, data: u32) {
+        let k = mem.read::<u32>(data);
+        if mem.read::<u32>(scene.wrapping_add(0x9d9c4)) <= k {
+            mem.write(scene.wrapping_add(0x9d9c4), k.wrapping_add(1));
+        }
+        let n = mem.read::<u32>(track_set(mem, scene, data).wrapping_add(0x9d9e4));
+        let e = n.wrapping_mul(0x1c);
+        let at = |mem: &M0, off: u32| {
+            track_set(mem, scene, data)
+                .wrapping_add(off)
+                .wrapping_add(e)
+        };
+        let a = at(mem, 0x9d9e8);
+        mem.write(a, 0u32);
+        let a = at(mem, 0x9d9ec);
+        mem.write(a, 0u32);
+        let v = mem.read::<u32>(data.wrapping_add(0x18));
+        let a = at(mem, 0x9d9f4);
+        mem.write(a, v);
+        let a = at(mem, 0x9d9f0);
+        mem.write(a, data.wrapping_add(0x40));
+        let keys = |mem: &M0| {
+            track_set(mem, scene, data).wrapping_add(n.wrapping_add(0x5a12).wrapping_mul(0x1c))
+        };
+        let on = mem.read::<u32>(data.wrapping_add(0x24)) != 0;
+        let (step, table) = if on {
+            (
+                mem.read::<u16>(data.wrapping_add(0x24)).wrapping_shl(2),
+                mem.read::<u32>(data.wrapping_add(0x18))
+                    .wrapping_add(4)
+                    .wrapping_shl(4)
+                    .wrapping_add(data),
+            )
+        } else {
+            (0, 0)
+        };
+        let a = at(mem, 0x9da00);
+        mem.write(a, step);
+        let a = keys(mem);
+        mem.write(a, table);
+        for (off, src) in [(0x9d9fcu32, 0x1cu32), (0x9d9fe, 0x20), (0x9da02, 0x28)] {
+            let v = if on {
+                mem.read::<u16>(data.wrapping_add(src))
+            } else {
+                0
+            };
+            let a = at(mem, off);
+            mem.write(a, v);
+        }
+        let b = track_set(mem, scene, data);
+        let c = mem.read::<u32>(b.wrapping_add(0x9d9e4));
+        mem.write(b.wrapping_add(0x9d9e4), c.wrapping_add(1));
+        if mem.read::<u32>(data.wrapping_add(4)) != 0 {
+            for i in 0..5u32 {
+                let v = mem.read::<u32>(data.wrapping_add(4 + 4 * i));
+                let b = track_set(mem, scene, data);
+                mem.write(b.wrapping_add(0x9d9d0 + 4 * i), v);
+            }
+        }
+    }
+
+    /// The full-screen scissor every window draw starts with:
+    /// `TODrawScissorXYWH(0, 0, 512, 416)`.
+    fn win_full_scissor<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(mem: &mut M, call: &mut C) {
+        let f = mem.rebase(super::TO_DRAW_SCISSOR_XYWH);
+        call(mem, f, &[0, 0, 0x200, 0x1a0]);
+    }
+
+    /// `_ftol2_sse` of an x87 value.
+    fn win_int(mem: &impl Mem, x: f64) -> u32 {
+        ffx_bridge::x87::ftol(mem, x)
+    }
+
+    /// `yiWindowDrawPlate(w)` (`0x00907390`, `0x009075d0`, `0x00907800`,
+    /// `0x00907a40`: the same code, kinds 3..=9): the drawn rectangle as a
+    /// plate (`0x008f9a40(x0, y0, x1 - x0, y1 - y0)`, truncated), then the
+    /// scissor `TODrawScissor(x0 + 12, y0 + 4, x1 - 12, y1 - 4)`. Returns 0.
+    pub fn yi_window_draw_plate<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        w: u32,
+        call: &mut C,
+    ) -> u32 {
+        let x0 = win_ld(mem, w, 0x48);
+        let y0 = win_ld(mem, w, 0x4c);
+        let x1 = win_ld(mem, w, 0x50);
+        let y1 = win_ld(mem, w, 0x54);
+        win_full_scissor(mem, call);
+        let h = win_int(mem, y1 - y0);
+        let wd = win_int(mem, x1 - x0);
+        let y = win_int(mem, y0);
+        let x = win_int(mem, x0);
+        let f = mem.rebase(super::TO_DRAW_PLATE);
+        call(mem, f, &[x, y, wd, h]);
+        let four = win_f64(mem, super::WINDOW_PLATE_INSET_Y);
+        let twelve = win_f64(mem, super::WINDOW_PLATE_INSET_X);
+        let a = win_int(mem, y1 - four);
+        let b = win_int(mem, x1 - twelve);
+        let c = win_int(mem, y0 + four);
+        let d = win_int(mem, x0 + twelve);
+        let f = mem.rebase(super::TO_DRAW_SCISSOR);
+        call(mem, f, &[d, c, b, a]);
+        0
+    }
+
+    /// `yiWindowDrawMenu(w)` (`0x00907060`, kind 0): a menu plate
+    /// (`TODrawMenuPlateXYWHType(x0 + 4, y0 [- 1], x1 - x0 - 8, y1 - y0,
+    /// 10)`, `f32`s; `y0 - 1` when `0x008ac2f0` says so), then the scissor
+    /// `TODrawScissor(x0 - 5, y0, x1 - 6, y1)`. Returns 0.
+    pub fn yi_window_draw_menu<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        w: u32,
+        call: &mut C,
+    ) -> u32 {
+        win_full_scissor(mem, call);
+        let f = mem.rebase(super::WINDOW_MENU_SHIFT);
+        let shift = call(mem, f, &[]) != 0;
+        let h = x87::store(win_ld(mem, w, 0x54) - win_ld(mem, w, 0x4c));
+        let wd = x87::store(
+            win_ld(mem, w, 0x50) - win_ld(mem, w, 0x48) - win_f64(mem, super::WINDOW_MENU_INSET_W),
+        );
+        let y = if shift {
+            x87::store(win_ld(mem, w, 0x4c) - win_f64(mem, super::WINDOW_MENU_SHIFT_Y))
+        } else {
+            x87::copy(mem.read::<u32>(w.wrapping_add(0x4c)))
+        };
+        let x = x87::store(win_ld(mem, w, 0x48) + win_f64(mem, super::WINDOW_PLATE_INSET_Y));
+        let f = mem.rebase(super::TO_DRAW_MENU_PLATE);
+        call(mem, f, &[x, y, wd, h, 10]);
+        let a = win_int(mem, win_ld(mem, w, 0x54));
+        let b = win_int(
+            mem,
+            win_ld(mem, w, 0x50) - win_f64(mem, super::WINDOW_FRAMES),
+        );
+        let c = win_int(mem, win_ld(mem, w, 0x4c));
+        let d = win_int(
+            mem,
+            win_ld(mem, w, 0x48) - win_f64(mem, super::WINDOW_MENU_INSET_X),
+        );
+        let f = mem.rebase(super::TO_DRAW_SCISSOR);
+        call(mem, f, &[d, c, b, a]);
+        0
+    }
+
+    /// `yiWindowDrawPop(w)` (`0x00907210`, kinds 1 and 2): on map 0x15b
+    /// with the window at (65, 290), the scissor of the first of the eight
+    /// `TO` windows (`TOGetWindowStructAdrs`) at (38, 115):
+    /// `TODrawScissor(x0 - 5, y0, x1 - 0, y1)`; otherwise the full scissor
+    /// packet
+    /// (`TOMakePktScissor(0, 0, 512, 416)`). Returns 0.
+    pub fn yi_window_draw_pop<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        w: u32,
+        call: &mut C,
+    ) -> u32 {
+        #[allow(clippy::float_cmp)] // fucompp: exact
+        let found = if super::CURRENT_MAP.get(mem) == 0x15b
+            && win_ld(mem, w, 0x28)
+                == f64::from(f32::from_bits(win_const(mem, super::POP_WINDOW_X)))
+            && win_ld(mem, w, 0x2c)
+                == f64::from(f32::from_bits(win_const(mem, super::POP_WINDOW_Y)))
+        {
+            let mut hit = None;
+            for i in 0..8u32 {
+                let f = mem.rebase(super::TO_GET_WINDOW);
+                let p = call(mem, f, &[i]);
+                if win_ld(mem, p, 0x28)
+                    == f64::from(f32::from_bits(win_const(mem, super::POP_TARGET_X)))
+                    && win_ld(mem, p, 0x2c) == win_f64(mem, super::POP_TARGET_Y)
+                {
+                    hit = Some(p);
+                    break;
+                }
+            }
+            hit
+        } else {
+            None
+        };
+        if let Some(p) = found {
+            let a = win_int(mem, win_ld(mem, p, 0x54));
+            let b = win_int(mem, win_ld(mem, p, 0x50) - win_f64(mem, super::WINDOW_ZERO));
+            let c = win_int(mem, win_ld(mem, p, 0x4c));
+            let d = win_int(
+                mem,
+                win_ld(mem, p, 0x48) - win_f64(mem, super::WINDOW_MENU_INSET_X),
+            );
+            let f = mem.rebase(super::TO_DRAW_SCISSOR);
+            call(mem, f, &[d, c, b, a]);
+        } else {
+            let f = mem.rebase(super::TO_MAKE_PKT_SCISSOR);
+            call(mem, f, &[0, 0, 0x200, 0x1a0]);
+        }
+        0
+    }
+
+    /// `yiWindowDrawBar(w)` (`0x00907c10`, kind 10): the help bar: two
+    /// sprites (`0x008f5e90`) from the bar layout at `0x025d1618`..
+    /// (`i16` positions, two words), its text (`TOMkpShapeXY(0x106, x +
+    /// 0x50, y)`) and the scissor packet `(0, 8, 512, 28)`. The window is
+    /// not read. Returns 0.
+    pub fn yi_window_draw_bar<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        _w: u32,
+        call: &mut C,
+    ) -> u32 {
+        win_full_scissor(mem, call);
+        let l = mem.rebase(super::WINDOW_BAR_LAYOUT);
+        let s = |mem: &M, off: u32| i32::from(mem.read::<i16>(l + off)).cast_unsigned();
+        let wd = |mem: &M, off: u32| mem.read::<u32>(l + off);
+        let f = mem.rebase(super::TO_DRAW_SPRITE);
+        let args = [
+            0x10d,
+            0x10e,
+            s(mem, 0x18),
+            s(mem, 0x16),
+            s(mem, 0x14),
+            wd(mem, 0x10),
+            wd(mem, 0xc),
+        ];
+        call(mem, f, &args);
+        let args = [
+            0xce,
+            0xcf,
+            s(mem, 4),
+            s(mem, 2),
+            s(mem, 0),
+            0x4000_0000,
+            0x4000_0000,
+        ];
+        call(mem, f, &args);
+        let f = mem.rebase(super::TO_MKP_SHAPE_XY);
+        let args = [0x106, s(mem, 0x18).wrapping_add(0x50), s(mem, 0x16)];
+        call(mem, f, &args);
+        let f = mem.rebase(super::TO_MAKE_PKT_SCISSOR);
+        call(mem, f, &[0, 8, 0x200, 0x1c]);
+        0
+    }
+
+    /// `yiArc_readmem(scene, file)` (`0x0090f8e0`): [`yi_map_file_read`]
+    /// when the file is version `0x110`. Returns 0.
+    pub fn yi_arc_readmem<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        scene: u32,
+        file: u32,
+        image: u32,
+        call: &mut C,
+    ) -> u32 {
+        if mem.read::<u32>(file.wrapping_add(4)) == 0x110 {
+            yi_map_file_read(mem, scene, file, image, call);
+        }
+        0
+    }
+
+    /// `yiAnimInfo_init(info)` (`0x00914310`): `g_YiAnimUseVCount` from
+    /// `Sg_GetKeepFps` (through `call`), the 64 animation slots (`0x28`
+    /// bytes from `+8`) and the five 64-word tables from `+0xa0c`
+    /// cleared, `+4` and `+0xa08` 0.
+    pub fn yi_anim_info_init<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        info: u32,
+        call: &mut C,
+    ) {
+        let f = mem.rebase(super::SG_GET_KEEP_FPS);
+        let v = call(mem, f, &[]);
+        super::ANIM_USE_VCOUNT.set(mem, v);
+        mem.write(info.wrapping_add(4), 0u32);
+        for i in 0..0x40u32 {
+            let e = info.wrapping_add(0xc + 0x28 * i);
+            for d in [-4i32, 0, 0x10, 0x14, 4, 0x20] {
+                mem.write(e.wrapping_add_signed(d), 0u32);
+            }
+        }
+        mem.write(info.wrapping_add(0xa08), 0u32);
+        for i in 0..0x40u32 {
+            let e = info.wrapping_add(0xb0c + 4 * i);
+            for d in [-0x100i32, 0, 0x100, 0x200, 0x300] {
+                mem.write(e.wrapping_add_signed(d), 0u32);
+            }
+        }
+    }
+
+    /// `yiAnimDetach(scene, obj, kind)` (`0x00914920`): every active
+    /// animation slot (`0x28` bytes from `+0x9cac0`, 64) of `obj` (`+6`)
+    /// and `kind` (`+4`) cleared and the count (`+0x9cabc`) lowered; kind
+    /// 2 turns the keyframe animation off first
+    /// (`graphicFFXApplicationEnableKeyframeAnim(0)`). Stops after as many
+    /// active slots as the count. Returns 0.
+    pub fn yi_anim_detach<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        scene: u32,
+        obj: u32,
+        kind: u32,
+        call: &mut C,
+    ) -> u32 {
+        let mut seen = 0u32;
+        for i in 0..0x40u32 {
+            let e = scene.wrapping_add(0x9cac0 + 0x28 * i);
+            if mem.read::<u8>(e) & 1 == 0 {
+                continue;
+            }
+            if u32::from(mem.read::<u16>(e.wrapping_add(6))) == obj
+                && u32::from(mem.read::<u16>(e.wrapping_add(4))) == kind
+            {
+                if mem.read::<u16>(e.wrapping_add(4)) == 2 {
+                    let f = mem.rebase(super::ENABLE_KEYFRAME_ANIM);
+                    call(mem, f, &[0]);
+                }
+                mem.write(e, 0u16);
+                mem.write(e.wrapping_add(0x14), 0u32);
+                mem.write(e.wrapping_add(0x18), 0u32);
+                mem.write(e.wrapping_add(8), 0u32);
+                mem.write(e.wrapping_add(6), 0u16);
+                let n = mem.read::<u32>(scene.wrapping_add(0x9cabc));
+                mem.write(scene.wrapping_add(0x9cabc), n.wrapping_sub(1));
+            }
+            seen += 1;
+            if seen >= mem.read::<u32>(scene.wrapping_add(0x9cabc)) {
+                return 0;
+            }
+        }
+        0
+    }
+
+    /// `yiKeyFrame_attachDObj(scene, obj, anim, arg)` (`0x009144a0`): puts
+    /// animation `anim` on display object `obj` in the first free slot:
+    /// with a keyframe record (`+0x9d4c4` list) its kind (`+8`; kind 2
+    /// turns keyframe animation on) and the record at `+0x24`, else (a
+    /// `+0x9d5c4` packet list entry) kind 5; the start count (`yiGetFCount`,
+    /// or `yiGetVCount` with `g_YiAnimUseVCount`) at `+0x14`/`+0x18`. Any
+    /// earlier slot of that object and kind goes first ([`yi_anim_detach`]).
+    /// Returns 0.
+    pub fn yi_key_frame_attach_dobj<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        scene: u32,
+        obj: u32,
+        anim: u32,
+        arg: u16,
+        call: &mut C,
+    ) -> u32 {
+        let now = if super::ANIM_USE_VCOUNT.get(mem) == 0 {
+            yi_get_fcount(mem)
+        } else {
+            yi_get_vcount(mem)
+        };
+        let slot = scene.wrapping_add(anim.wrapping_add(0x27531).wrapping_mul(4));
+        let packets = mem.read::<u32>(slot) == 0;
+        if packets
+            && mem.read::<u32>(
+                scene
+                    .wrapping_add(0x9d5c4)
+                    .wrapping_add(anim.wrapping_mul(4)),
+            ) == 0
+        {
+            return 0;
+        }
+        if obj >= mem.read::<u32>(scene.wrapping_add(0x68788)) {
+            return 0;
+        }
+        let Some(i) =
+            (0..0x40u32).find(|i| mem.read::<u8>(scene.wrapping_add(0x9cac0 + 0x28 * i)) & 1 == 0)
+        else {
+            return 0;
+        };
+        let (kind, record) = if packets {
+            yi_anim_detach(mem, scene, obj, 5, call);
+            (5u16, None)
+        } else {
+            let k = mem.read::<u32>(mem.read::<u32>(slot).wrapping_add(8));
+            yi_anim_detach(mem, scene, obj, k, call);
+            if mem.read::<u32>(mem.read::<u32>(slot).wrapping_add(8)) == 2 {
+                let f = mem.rebase(super::ENABLE_KEYFRAME_ANIM);
+                call(mem, f, &[1]);
+            }
+            (0, Some(()))
+        };
+        let e = scene.wrapping_add(0x28 * i);
+        mem.write(e.wrapping_add(0x9cac0), 1u16);
+        mem.write(e.wrapping_add(0x9cac2), arg);
+        let kind = if record.is_some() {
+            mem.read::<u16>(mem.read::<u32>(slot).wrapping_add(8))
+        } else {
+            kind
+        };
+        mem.write(e.wrapping_add(0x9cac4), kind);
+        #[allow(clippy::cast_possible_truncation)] // the u16 fields
+        {
+            mem.write(e.wrapping_add(0x9cac8), anim as u16);
+            mem.write(e.wrapping_add(0x9caca), 0u16);
+            mem.write(e.wrapping_add(0x9cac6), obj as u16);
+        }
+        mem.write(e.wrapping_add(0x9cad4), now);
+        mem.write(e.wrapping_add(0x9cad8), now);
+        let r = if record.is_some() {
+            mem.read::<u32>(slot)
+        } else {
+            0
+        };
+        mem.write(e.wrapping_add(0x9cae4), r);
+        let n = mem.read::<u32>(scene.wrapping_add(0x9cabc));
+        mem.write(scene.wrapping_add(0x9cabc), n.wrapping_add(1));
+        0
+    }
+
+    /// `yiAnimAttachDefault(scene)` (`0x00914250`): each object's default
+    /// animations (`u16` ids after the count at `+0x8c` of each
+    /// `0xb4`-byte object) attached ([`yi_key_frame_attach_dobj`]), then
+    /// each track set's characters (`+0x9d9d0`, `0x720` bytes a set)
+    /// ([`yi_key_frame_attach_chr`]).
+    pub fn yi_anim_attach_all<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        scene: u32,
+        call: &mut C,
+    ) {
+        let mut i = 0u32;
+        while i < mem.read::<u32>(scene.wrapping_add(0x68788)) {
+            let e = scene.wrapping_add(0x68818 + 0xb4 * i);
+            let mut j = 0u32;
+            while j < mem.read::<u32>(e) {
+                let a = u32::from(mem.read::<u16>(e.wrapping_add(4 + 2 * j)));
+                yi_key_frame_attach_dobj(mem, scene, i, a, 0, call);
+                j += 1;
+            }
+            i += 1;
+        }
+        let mut k = 0u32;
+        while k < mem.read::<u32>(scene.wrapping_add(0x9d9c4)) {
+            let set = scene.wrapping_add(0x9d9d0 + 0x720 * k);
+            let mut j = 0u32;
+            while j < mem.read::<u32>(set) {
+                let kf = mem.read::<u32>(set.wrapping_add(4 + 4 * j));
+                yi_key_frame_attach_chr(mem, scene, k, kf, 0);
+                j += 1;
+            }
+            k += 1;
+        }
+    }
+
+    /// `yiFree(p)` (`0x0090bbc0`): a jump to `user_free`.
+    pub fn yi_free<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        p: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(crate::model::USER_FREE);
+        call(mem, f, &[p])
+    }
+
+    /// `yiRender_resetobj(r)` (`0x0090cd90`): the render state reset for a
+    /// new map: the packet block `+0x9caa8` freed ([`yi_free`]), the
+    /// object and camera counts 0, flags `+0x67f08` `0x10000`, colour scales
+    /// 1.0 and shifts 0.0, the background colour 0, the matrix `+0x68038`
+    /// the identity, then the VU1 (`yiRender_setupparamVU1`, through
+    /// `call`) and GS set-ups, [`yi_anim_info_init`], [`yi_tex_swap_init`],
+    /// `+0x67f30` -1.
+    pub fn yi_render_resetobj<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        r: u32,
+        call: &mut C,
+    ) {
+        let p = mem.read::<u32>(r.wrapping_add(0x9caa8));
+        if p != 0 {
+            yi_free(mem, p, call);
+            mem.write(r.wrapping_add(0x9caa8), 0u32);
+        }
+        let v = mem.read::<u32>(r.wrapping_add(0xba3cc));
+        mem.write(r.wrapping_add(0xba3d0), v);
+        let v = mem.read::<u32>(r.wrapping_add(0xba3dc));
+        mem.write(r.wrapping_add(0xba3e0), v);
+        mem.write(r.wrapping_add(0x68788), 0u32);
+        mem.write(r.wrapping_add(0x6e18c), 0u32);
+        mem.write(r.wrapping_add(0x67f0c), 0u32);
+        mem.write(r.wrapping_add(0x67f08), 0x1_0000u32);
+        for off in [0x68204u32, 0x68200, 0x681fc, 0x681f8] {
+            mem.write(r.wrapping_add(off), 1.0f32.to_bits());
+        }
+        for off in [
+            0x68378u32, 0x6837c, 0x68380, 0x68228, 0x68224, 0x68220, 0x6821c,
+        ] {
+            mem.write(r.wrapping_add(off), 0u32);
+        }
+        for off in [0x68218u32, 0x68214, 0x68210, 0x6820c] {
+            mem.write(r.wrapping_add(off), 1.0f32.to_bits());
+        }
+        ffx_ps2::vu0::bridge::matrix_identity(mem, r.wrapping_add(0x68038));
+        let f = mem.rebase(super::RENDER_SETUP_VU1);
+        call(mem, f, &[r]);
+        yi_render_setupparam_gs(mem, r);
+        yi_anim_info_init(mem, r.wrapping_add(0x9cab8), call);
+        yi_tex_swap_init(mem, r);
+        mem.write(r.wrapping_add(0x67f30), u32::MAX);
+    }
+
+    /// The three-call sync step `yiResetObj` repeats: `TkRestartSyncH(5)`,
+    /// `TkGetSyncH(5)` (unless `restart_only`), `0x0088c820(5)`.
+    fn sync_step<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+        get: bool,
+    ) {
+        let f = mem.rebase(super::TK_RESTART_SYNC_H);
+        call(mem, f, &[5]);
+        if get {
+            let f = mem.rebase(super::TK_GET_SYNC_H);
+            call(mem, f, &[5]);
+        }
+        let f = mem.rebase(super::TK_SYNC_H_WAIT);
+        call(mem, f, &[5]);
+    }
+
+    /// `yiResetObj()` (`0x00909ea0`): the field map torn down for the next
+    /// one: GS path sync, `TkClearAlarm(0)`, `Yn_MapSystemFini` and a new
+    /// background system (`Yn_RcbgInit` → `rcbgInit`), the map section
+    /// pointer cleared, the `ppp` data (`pppFpFree`) and the map read
+    /// buffer (`0x019138a4`, [`yi_free`]) released, [`yi_render_resetobj`]
+    /// of `g_YiRender`, the camera ids -1, the cluster cache cleared once a
+    /// 2D map was loaded, and the graphics map and VFX level unloaded. The
+    /// engine calls go through `call`.
+    pub fn yi_reset_obj<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(mem: &mut M, call: &mut C) {
+        let c = |mem: &M, f: u32| mem.rebase(f);
+        let f = c(mem, super::GS_SYNC_PATH);
+        call(mem, f, &[0, 0]);
+        sync_step(mem, call, false);
+        let f = c(mem, super::TK_CLEAR_ALARM);
+        call(mem, f, &[0]);
+        crate::guide::bridge::yn_map_system_fini(mem, call);
+        crate::guide::bridge::rcbg_init(mem, call);
+        let f = c(mem, super::TK_CLEAR_ALARM);
+        call(mem, f, &[0]);
+        sync_step(mem, call, true);
+        sync_step(mem, call, true);
+        super::MAP_SECTION.set(mem, 0);
+        if super::state::MAP_READ.get(mem) != 0 {
+            let f = c(mem, super::PPP_FP_FREE);
+            call(mem, f, &[]);
+            super::state::MAP_READ.set(mem, 0);
+        }
+        let b = super::MAP_READ_BUFFER.get(mem);
+        if b != 0 {
+            yi_free(mem, b, call);
+            super::MAP_READ_BUFFER.set(mem, 0);
+        }
+        sync_step(mem, call, true);
+        let r = super::state::RENDER.ptr(mem).addr;
+        yi_render_resetobj(mem, r, call);
+        sync_step(mem, call, true);
+        let loaded = super::MAP2D_LOADS.get(mem).cast_signed();
+        super::CAMERA_IDS.set(mem, [u32::MAX; 2]);
+        if loaded > 0 {
+            for f in [super::GRAPHIC_CLUSTER_DELAY_RELEASE, super::CACHE_CLEAR] {
+                let f = c(mem, f);
+                call(mem, f, &[]);
+            }
+        }
+        super::MAP2D_LOADS.set(mem, 0);
+        for f in [
+            super::GRAPHIC_FIELD_MAP_SHUTDOWN,
+            super::GRAPHIC_FIELD_MAP_UNLOAD,
+            super::GRAPHIC_VFX_UNLOAD,
+        ] {
+            let f = c(mem, f);
+            call(mem, f, &[]);
+        }
+    }
+
+    /// `yiObjReadFinish(read)` (`0x0090a9e0`): with a `MAP1` file
+    /// (`read +0x10`): its render section (`+0x14`) read
+    /// ([`yi_arc_readmem`] into `g_YiRender`), section 2 handed to
+    /// `0x0072aa40` (through `call`) and the file freed; then render
+    /// status bits 6 and 7 cleared and `read +0x18` to `0x018ded34`.
+    pub fn yi_obj_read_finish<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        read: u32,
+        image: u32,
+        call: &mut C,
+    ) {
+        let file = mem.read::<u32>(read.wrapping_add(0x10));
+        let mut tag = [0u8; 4];
+        mem.read_bytes(file, &mut tag);
+        if &tag == b"MAP1" {
+            let s = mem.read::<u32>(file.wrapping_add(0x14));
+            if s != 0 && s.wrapping_add(file) != 0 {
+                let r = super::state::RENDER.ptr(mem).addr;
+                yi_arc_readmem(mem, r, s.wrapping_add(file), image, call);
+            }
+        }
+        let sec = yi_map_get_section(mem, file, 2);
+        if sec != 0 {
+            let f = mem.rebase(super::MAP_SECTION2_HANDLER);
+            call(mem, f, &[sec]);
+        }
+        yi_free(mem, file, call);
+        let st = super::RENDER_STATUS.get(mem);
+        super::RENDER_STATUS.set(mem, st & 0xffff_ff3f);
+        let v = mem.read::<u32>(read.wrapping_add(0x18));
+        super::READ_TAIL.set(mem, v);
+    }
+
+    /// The section of a `MAP1` file at the offset in `+off` (as a
+    /// pointer), or `None` for another tag or an empty offset.
+    fn map1_section(mem: &impl Mem, file: u32, off: u32) -> Option<u32> {
+        let mut tag = [0u8; 4];
+        mem.read_bytes(file, &mut tag);
+        if &tag != b"MAP1" {
+            return None;
+        }
+        let o = mem.read::<u32>(file.wrapping_add(off));
+        (o != 0 && o.wrapping_add(file) != 0).then(|| o.wrapping_add(file))
+    }
+
+    /// `yiObjReadCallback(read)` (`0x009097c0`): a field map file
+    /// (`read +0x10`, `MAP1`) taken in, a sync step between each part: the
+    /// background (`+0x10`: [`crate::guide::bridge::yn_pre_bg_set_data`],
+    /// render status bit 14), the render data (`+0x14`:
+    /// [`yi_arc_readmem`]), the alarm of section `read +0x14` + 2
+    /// (`TkClearAlarm`), the `ppp` data (`+0x38`: `g_YiMapRead`,
+    /// `pppSetFpPdt`), two more background parts (`+0x40`, `+0x3c`: jumps
+    /// to `Yn_PreBgSetData`); then render status bits 0 and 4, the draw
+    /// mask (-9, -1 with the battle map circle), the default animations
+    /// ([`yi_anim_attach_all`]), `read +0x18` to `0x018ded30` and status
+    /// bits 5 and 7 cleared. `work` and `image` stand for the stack
+    /// buffers of the callees; the engine calls go through `call`.
+    pub fn yi_obj_read_callback<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        read: u32,
+        work: u32,
+        image: u32,
+        call: &mut C,
+    ) {
+        let c = |mem: &M, f: u32| mem.rebase(f);
+        let f = c(mem, super::TK_RESTART_SYNC_H);
+        call(mem, f, &[5]);
+        let ext = mem.read::<u32>(read.wrapping_add(0x14));
+        let file = mem.read::<u32>(read.wrapping_add(0x10));
+        super::MAP_DATA.set(mem, file);
+        sync_step(mem, call, false);
+        if let Some(p) = map1_section(mem, file, 0x10) {
+            super::MAP_SECTION.set(mem, p);
+            crate::guide::bridge::yn_pre_bg_set_data(mem, p, work, call);
+            let s = super::RENDER_STATUS.get(mem);
+            super::RENDER_STATUS.set(mem, s | 0x4000);
+        }
+        sync_step(mem, call, true);
+        if let Some(p) = map1_section(mem, file, 0x14) {
+            let r = super::state::RENDER.ptr(mem).addr;
+            yi_arc_readmem(mem, r, p, image, call);
+        }
+        sync_step(mem, call, true);
+        let sec = yi_map_get_section(mem, file, ext.wrapping_add(2));
+        if sec != 0 {
+            let f = c(mem, super::TK_CLEAR_ALARM);
+            call(mem, f, &[sec]);
+        }
+        sync_step(mem, call, true);
+        if let Some(p) = map1_section(mem, file, 0x38) {
+            super::state::MAP_READ.set(mem, p);
+            let f = c(mem, super::PPP_SET_FP_PDT);
+            call(mem, f, &[p]);
+        }
+        sync_step(mem, call, true);
+        // `0x00919b90` and `0x00919d30` are jumps to `Yn_PreBgSetData`
+        for off in [0x40u32, 0x3c] {
+            if let Some(p) = map1_section(mem, file, off) {
+                crate::guide::bridge::yn_pre_bg_set_data(mem, p, work, call);
+            }
+            sync_step(mem, call, true);
+        }
+        let s = super::RENDER_STATUS.get(mem);
+        super::RENDER_STATUS.set(mem, s | 0x11);
+        let f = c(mem, super::MAP_CIRCLE_ON);
+        let on = call(mem, f, &[]) != 0;
+        super::DRAW_MASK.set(
+            mem,
+            if on {
+                0u32.wrapping_sub(1)
+            } else {
+                0u32.wrapping_sub(9)
+            },
+        );
+        let r = super::state::RENDER.ptr(mem).addr;
+        yi_anim_attach_all(mem, r, call);
+        let v = mem.read::<u32>(read.wrapping_add(0x18));
+        let s = super::RENDER_STATUS.get(mem);
+        super::RENDER_STATUS.set(mem, s & 0xffff_ff5f);
+        super::READ_DONE.set(mem, v);
+        sync_step(mem, call, true);
     }
 }

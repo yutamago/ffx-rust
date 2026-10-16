@@ -8,6 +8,21 @@ const PI: f64 = std::f32::consts::PI as f64;
 /// 2π likewise (`0x00b39378`).
 const TAU: f64 = std::f32::consts::TAU as f64;
 
+/// `Math_ClampPi(a)` (`0x0088b800`, own name): `a` clamped to
+/// [−π, π] (π rounded to a float); a NaN passes through.
+#[must_use]
+pub fn clamp_pi(a: f32) -> f32 {
+    let pi = core::f32::consts::PI;
+    let mut a = a;
+    if a < -pi {
+        a = -pi;
+    }
+    if a > pi {
+        a = pi;
+    }
+    a
+}
+
 /// `Math_WrapAngle(a)`: `a` moved into [−π, π] by whole turns, one turn at
 /// a time (each step rounded to a float). Like the original it never ends
 /// for an infinity or a magnitude where a turn no longer changes the float.

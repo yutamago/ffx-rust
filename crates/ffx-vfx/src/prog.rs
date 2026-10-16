@@ -1091,4 +1091,243 @@ pub mod bridge {
         part::ppp_ot_func_lev(mem, list, w.wrapping_add(0xb0));
         list
     }
+
+    /// The current environment and its spare heap (`pppMemFree`'s first
+    /// two arguments).
+    fn env_heaps(mem: &impl Mem) -> (u32, u32) {
+        let env: u32 = mem.read(crate::heap::bridge::ENV_SLOT.get(mem));
+        (env, env.wrapping_add(0x10))
+    }
+
+    /// `pppMemFree` of the block a pointer field holds, when it holds one.
+    fn free_field(mem: &mut impl Mem, at: u32) {
+        let data = stub::ptr32(mem.read(at));
+        if data != 0 {
+            let (env, spare) = env_heaps(mem);
+            crate::heap::bridge::ppp_mem_free(mem, env, spare, data);
+        }
+    }
+
+    /// `pppDrawMdlSeaDes(obj, ctrl)` (`0x0073ab70`): area 2's blocks at
+    /// `+0x108` and `+0x10c` back to the environment's heaps (the fields
+    /// kept).
+    pub fn ppp_draw_mdl_sea_des(mem: &mut impl Mem, obj: u32, ctrl: u32) {
+        let w = area(mem, obj, ctrl, 2);
+        free_field(mem, w.wrapping_add(0x108));
+        free_field(mem, w.wrapping_add(0x10c));
+    }
+
+    /// `g_pppDrawMdlInfActive` (`0x00d4b464`): `pppDrawMdlInfDes` clears it.
+    pub const MDL_INF_ACTIVE: Global<u32> = Global::new(0x00d4_b464);
+
+    /// `pppDrawMdlInfDes(obj, ctrl)` (`0x0073b830`): with a saved vertex
+    /// copy at area 2 `+0xa0+0xd0`, its `i16` count (the shape's `+0x12`)
+    /// of 6-byte vertices goes back into the shape (the record at `+0xdc`
+    /// names it by its `+4` index into the environment's shape blocks,
+    /// `+0x1c` of 0x20-byte entries at env `+0x20`; vertices at shape +
+    /// shape `+8`); then the blocks at `+0xd0`, `+0xd4`, `+0xd8` are freed
+    /// and cleared, and `g_pppDrawMdlInfActive` 0.
+    pub fn ppp_draw_mdl_inf_des(mem: &mut impl Mem, obj: u32, ctrl: u32) {
+        let w = area(mem, obj, ctrl, 2).wrapping_add(0xa0);
+        if stub::is_ptr32_null(mem.read(w.wrapping_add(0xd0))) == 0 {
+            let rec = stub::ptr32(mem.read(w.wrapping_add(0xdc)));
+            let index: u32 = mem.read(rec.wrapping_add(4));
+            let (env, _) = env_heaps(mem);
+            let blocks: u32 = mem.read(env.wrapping_add(0x20));
+            let shape = stub::ptr32(mem.read(blocks.wrapping_add(index << 5).wrapping_add(0x1c)));
+            let verts = shape.wrapping_add(mem.read(shape.wrapping_add(8)));
+            let mut k = 0i32;
+            while k < i32::from(mem.read::<i16>(shape.wrapping_add(0x12))) {
+                let off = 6 * k.cast_unsigned();
+                for h in [0u32, 2, 4] {
+                    let saved = stub::ptr32(mem.read(w.wrapping_add(0xd0)));
+                    let v: u16 = mem.read(saved.wrapping_add(off + h));
+                    mem.write(verts.wrapping_add(off + h), v);
+                }
+                k += 1;
+            }
+        }
+        for f in [0xd0u32, 0xd4, 0xd8] {
+            free_field(mem, w.wrapping_add(f));
+            mem.write(w.wrapping_add(f), stub::ptr32(0));
+        }
+        MDL_INF_ACTIVE.set(mem, 0);
+    }
+
+    /// `rcbgPSimClearOMD(sim)` (`0x0091f9b0`), called through `call`.
+    const PSIM_CLEAR_OMD: u32 = 0x0091_f9b0;
+    /// `0x0091fd40(sim)` (releases the simulation and `rcFree`s it),
+    /// called through `call`.
+    const PSIM_FREE: u32 = 0x0091_fd40;
+
+    /// `pppDrawMdlPSimDes(obj, ctrl)` (`0x0073d010`): with a simulation at
+    /// area 2 `+0xa0`, `rcbgPSimClearOMD(sim)` and `0x0091fd40(sim)`
+    /// (through `call`), then the field cleared.
+    pub fn ppp_draw_mdl_psim_des<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        ctrl: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = area(mem, obj, ctrl, 2).wrapping_add(0xa0);
+        if stub::is_ptr32_null(mem.read(at)) != 0 {
+            return;
+        }
+        for f in [PSIM_CLEAR_OMD, PSIM_FREE] {
+            let sim = stub::ptr32(mem.read(at));
+            let f = Global::<u32>::new(f).ptr(mem).addr;
+            call(mem, f, &[sim]);
+        }
+        mem.write(at, stub::ptr32(0));
+    }
+
+    /// `KeVu0RndI()` (`0x0075f920`, the map module's), called through
+    /// `call`.
+    const KE_VU0_RND_I: u32 = 0x0075_f920;
+    /// `KeBornRnd2(obj, key, born, area, shape, random, count)`
+    /// (`0x00769230`, the map module's), called through `call`.
+    const KE_BORN_RND2: u32 = 0x0076_9230;
+
+    /// The `pppKeBornRnd2/3/5/6` steps: where their keys keep the fields,
+    /// and the child-making function each passes `KeBornRnd2`.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum BornRnd {
+        /// `pppKeBornRnd2` (`0x007587b0`): a random mask at `+0xd`.
+        Rnd2,
+        /// `pppKeBornRnd3` (`0x00758960`): the mask at `+7`.
+        Rnd3,
+        /// `pppKeBornRnd5` (`0x00758f20`): a countdown from `+0xd`.
+        Rnd5,
+        /// `pppKeBornRnd6` (`0x00759200`): the countdown from `+7`.
+        Rnd6,
+    }
+
+    impl BornRnd {
+        /// The key offsets of the mask/period, the two definitions that
+        /// must not be -1, the shape (`u16`), the random byte and the
+        /// count byte; and the born function.
+        const fn layout(self) -> ([u32; 6], u32) {
+            match self {
+                Self::Rnd2 => ([0xd, 0x10, 0x18, 4, 0xe, 0xc], 0x0075_8840),
+                Self::Rnd3 => ([7, 0xc, 0x14, 4, 8, 6], 0x0075_89f0),
+                Self::Rnd5 => ([0xd, 0x10, 0x18, 4, 0xe, 0xc], 0x0075_8fc0),
+                Self::Rnd6 => ([7, 0xc, 0x14, 4, 8, 6], 0x0075_92a0),
+            }
+        }
+    }
+
+    /// `pppKeBornRnd2/3/5/6(obj, key, ctrl)`: unless stopped, children
+    /// through `KeBornRnd2(obj, key, born, area 0 + 0xa0, shape, random,
+    /// count)` (through `call`). `Rnd2`/`Rnd3` skip when the mask byte is
+    /// 0xff or shares a bit with bits 8.. of `KeVu0RndI()`; `Rnd5`/`Rnd6`
+    /// count down area byte `+2` from the key's period (0 never), making
+    /// children when it is reloaded and leaving it reloaded only when
+    /// `KeBornRnd2` makes none. Both need the two definitions not -1.
+    pub fn ppp_ke_born_rnd<M: Mem>(
+        mem: &mut M,
+        kind: BornRnd,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if STOP.get(mem) != 0 {
+            return;
+        }
+        let ([m, d1, d2, shape, random, count], born) = kind.layout();
+        let mask: u8 = mem.read(key.wrapping_add(m));
+        let w = area(mem, obj, ctrl, 0).wrapping_add(0xa0);
+        let countdown = matches!(kind, BornRnd::Rnd5 | BornRnd::Rnd6);
+        if countdown {
+            if mask == 0 {
+                return;
+            }
+            if mem.read::<u8>(w.wrapping_add(2)) != 0 {
+                let c: u8 = mem.read(w.wrapping_add(2));
+                mem.write(w.wrapping_add(2), c.wrapping_sub(1));
+                return;
+            }
+            mem.write(w.wrapping_add(2), mask);
+        } else {
+            if mask == 0xff {
+                return;
+            }
+            let f = Global::<u32>::new(KE_VU0_RND_I).ptr(mem).addr;
+            let r = call(mem, f, &[]);
+            if mask & (r.cast_signed() >> 8).to_le_bytes()[0] != 0 {
+                return;
+            }
+        }
+        if mem.read::<u32>(key.wrapping_add(d1)) == u32::MAX
+            || mem.read::<u32>(key.wrapping_add(d2)) == u32::MAX
+        {
+            return;
+        }
+        let args = [
+            obj,
+            key,
+            Global::<u32>::new(born).ptr(mem).addr,
+            w,
+            u32::from(mem.read::<u16>(key.wrapping_add(shape))),
+            u32::from(mem.read::<u8>(key.wrapping_add(random))),
+            u32::from(mem.read::<u8>(key.wrapping_add(count))),
+        ];
+        let f = Global::<u32>::new(KE_BORN_RND2).ptr(mem).addr;
+        let made = call(mem, f, &args);
+        if countdown && made != 0 {
+            let c: u8 = mem.read(w.wrapping_add(2));
+            mem.write(w.wrapping_add(2), c.wrapping_sub(1));
+        }
+    }
+
+    /// `pppKeOfsPt(obj, key, ctrl)` (`0x0075cd30`): unless stopped, on the
+    /// key's frame: at frame 0, with a shape (key `+0x2c`, not 0xffff; the
+    /// environment's shape blocks) `0x0075c660(area 0 + 0xb0, shape)`
+    /// through `call`; then area 0 `+0xa0..+0xa8` += key `+0x10..+0x18`
+    /// (`f32`) and `+0xc0..+0xc8` = key `+0x20..+0x28`.
+    pub fn ppp_ke_ofs_pt<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let w = area(mem, obj, ctrl, 0);
+        if STOP.get(mem) != 0 || !applies(mem, obj, key) {
+            return;
+        }
+        if mem.read::<u32>(obj.wrapping_add(0xc)) == 0 {
+            let s: u32 = mem.read(key.wrapping_add(0x2c));
+            if s == 0xffff {
+                return;
+            }
+            let (env, _) = env_heaps(mem);
+            let blocks: u32 = mem.read(env.wrapping_add(0x20));
+            let shape = stub::ptr32(mem.read(blocks.wrapping_add(s << 5).wrapping_add(0x1c)));
+            let f = Global::<u32>::new(0x0075_c660).ptr(mem).addr;
+            call(mem, f, &[w.wrapping_add(0xb0), shape]);
+        }
+        for i in 0..3 {
+            let at = w.wrapping_add(0xa0 + 4 * i);
+            let v = x87::add(mem.read(key.wrapping_add(0x10 + 4 * i)), mem.read(at));
+            mem.write(at, v);
+        }
+        for i in 0..3 {
+            let v = x87::load(mem.read(key.wrapping_add(0x20 + 4 * i)));
+            mem.write(w.wrapping_add(0xc0 + 4 * i), v);
+        }
+    }
+
+    /// `pppKeAcmCic(obj, key)` (`0x0075b690`): unless the key's byte `+4`
+    /// is 2, `0x00644be0(0, 1)` (the renderer's) through `call`.
+    pub fn ppp_ke_acm_cic<M: Mem>(
+        mem: &mut M,
+        key: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if mem.read::<u8>(key.wrapping_add(4)) != 2 {
+            let f = Global::<u32>::new(0x0064_4be0).ptr(mem).addr;
+            call(mem, f, &[0, 1]);
+        }
+    }
 }

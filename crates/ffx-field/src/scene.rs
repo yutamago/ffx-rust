@@ -72,6 +72,11 @@ pub const LANG_OVERRIDES: [(u32, [u32; 9]); 2] = [
     (0x199f, [2, 0, 6, 8, 7, 5, 2, 2, 8]),
 ];
 
+/// `rcbgTrxDraw` (`0x0092d230`): sends a transfer's image to GS memory.
+pub const RCBG_TRX_DRAW: u32 = 0x0092_d230;
+/// `rcbgSceneSetMatrix` (`0x00920c00`).
+pub const SCENE_SET_MATRIX: u32 = 0x0092_0c00;
+
 /// The scene where the game keeps it, through [`ffx_bridge::Mem`].
 pub mod bridge {
     use ffx_bridge::Mem;
@@ -239,5 +244,252 @@ pub mod bridge {
         }
         mem.write(s.wrapping_add(0x18), 0u16);
         0
+    }
+
+    /// `rcbgSceneAddObject(scene, obj)` (`0x00920540`): the object table
+    /// (`+0x10`, count `+0xc`) grown by one ([`model::bridge::rc_realloc`])
+    /// and `obj` appended.
+    pub fn rcbg_scene_add_object<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        s: u32,
+        obj: u32,
+        call: &mut C,
+    ) {
+        let n = mem.read::<u32>(s.wrapping_add(0xc)).wrapping_add(1);
+        mem.write(s.wrapping_add(0xc), n);
+        let old = mem.read::<u32>(s.wrapping_add(0x10));
+        let t = model::bridge::rc_realloc(mem, call, old, n.wrapping_mul(4));
+        mem.write(s.wrapping_add(0x10), t);
+        let n = mem.read::<u32>(s.wrapping_add(0xc));
+        mem.write(t.wrapping_add(n.wrapping_mul(4)).wrapping_sub(4), obj);
+    }
+
+    /// `rcbgSceneModelLoad(scene, parse)` (`0x0092b6b0`): a model loaded
+    /// and added to the scene.
+    pub fn rcbg_scene_model_load<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        s: u32,
+        p: u32,
+        call: &mut C,
+    ) {
+        let m = model::bridge::rcbg_model_new(mem, call);
+        model::bridge::rcbg_model_load(mem, m, p, call);
+        rcbg_scene_add_object(mem, s, m, call);
+    }
+
+    /// `rcbgSceneTrxLoad(scene, parse)` (`0x0092b6e0`): a transfer loaded
+    /// and added to the scene.
+    pub fn rcbg_scene_trx_load<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        s: u32,
+        p: u32,
+        call: &mut C,
+    ) {
+        let t = model::bridge::rcbg_trx_new(mem, call);
+        model::bridge::rcbg_trx_load(mem, t, p);
+        rcbg_scene_add_object(mem, s, t, call);
+    }
+
+    /// `rcbgLayerLoad(layer, parse)` (`0x0092b1a0`): the layer
+    /// ([`rcbg_layer_init`], its first `0x90` bytes), the animation frames
+    /// when it has any (`+0x90`: [`model::bridge::rcbg_anime_set_data_cnt`],
+    /// the words padded to 16 bytes, a transfer at `+0xa0`), two bytes
+    /// (`+0xba`, `+0xbb`), 14 skipped, the image transfer `+0xbc`, the
+    /// centre.
+    pub fn rcbg_layer_load<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        l: u32,
+        p: u32,
+        call: &mut C,
+    ) {
+        use crate::rcdt::bridge::{rcdt_parse_advance, rcdt_parse_get_bin};
+        rcbg_layer_init(mem, l);
+        rcdt_parse_get_bin(mem, p, l, 0x90);
+        let at = mem.read::<u32>(p.wrapping_add(4));
+        let n = mem.read::<i32>(at);
+        rcdt_parse_advance(mem, p, 4);
+        rcdt_parse_advance(mem, p, 0xc);
+        if n > 0 {
+            model::bridge::rcbg_anime_set_data_cnt(mem, l.wrapping_add(0x90), n, call);
+            let frames = mem.read::<u32>(l.wrapping_add(0x9c));
+            let count = mem.read::<u32>(l.wrapping_add(0x98));
+            rcdt_parse_get_bin(mem, p, frames, count.wrapping_shl(2));
+            let rest = mem.read::<u32>(l.wrapping_add(0x98)) & 3;
+            if rest != 0 {
+                rcdt_parse_advance(mem, p, 0x10u32.wrapping_sub(rest.wrapping_mul(4)));
+            }
+            let t = model::bridge::rcbg_trx_new(mem, call);
+            mem.write(l.wrapping_add(0xa0), t);
+            model::bridge::rcbg_trx_load(mem, t, p);
+        }
+        rcdt_parse_get_bin(mem, p, l.wrapping_add(0xba), 1);
+        rcdt_parse_get_bin(mem, p, l.wrapping_add(0xbb), 1);
+        rcdt_parse_advance(mem, p, 0xe);
+        let t = model::bridge::rcbg_trx_new(mem, call);
+        mem.write(l.wrapping_add(0xbc), t);
+        model::bridge::rcbg_trx_load(mem, t, p);
+        model::bridge::rcbg_layer_load_calc_center(mem, l);
+    }
+
+    /// `rcbgTrxDrawPending(trx)` (`0x0092d470`): a transfer with an entry
+    /// pending (`+0x3c` not -1) drawn (`rcbgTrxDraw`, through `call`) and
+    /// marked done.
+    pub fn rcbg_trx_draw_pending<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        t: u32,
+        call: &mut C,
+    ) {
+        if mem.read::<u32>(t.wrapping_add(0x3c)) != u32::MAX {
+            let f = mem.rebase(super::RCBG_TRX_DRAW);
+            call(mem, f, &[t]);
+            mem.write(t.wrapping_add(0x3c), u32::MAX);
+        }
+    }
+
+    /// `rcbgSceneChkSortLayer(scene)` (`0x0092b460`): GS memory for the
+    /// scene's image layers (flag 0x10): each layer's image at `+0x34`
+    /// (in 64-word pages, the size of its 128x64-rounded image, a quarter
+    /// once past `0x68000`, where the images restart at page 0x2f00 and
+    /// `0xbc000`), then each CLUT at `+0x36` (`0x100` words each, from
+    /// `0xbc000` unless the images moved there); the two transfers
+    /// (`+0xa0`, `+0xbc`) get their `BITBLTBUF` words, entry 0, and are
+    /// drawn when pending ([`rcbg_trx_draw_pending`]).
+    pub fn rcbg_scene_chk_sort_layer<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        s: u32,
+        call: &mut C,
+    ) {
+        let layers = mem.read::<u32>(s.wrapping_add(8));
+        let count = mem.read::<i32>(s.wrapping_add(4));
+        let mut words = 0i32;
+        let mut moved = false;
+        let mut l = layers;
+        for _ in 0..count.max(0) {
+            if mem.read::<u8>(l) & 0x10 != 0 {
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // the u16 page
+                mem.write(l.wrapping_add(0x34), (words / 64) as u16);
+                let w = mem.read::<i32>(l.wrapping_add(4)).wrapping_add(0x7f) & !0x7f;
+                let h = mem.read::<i32>(l.wrapping_add(8)).wrapping_add(0x3f) & !0x3f;
+                let mut size = w.wrapping_mul(h);
+                if moved {
+                    size /= 4;
+                }
+                words = words.wrapping_add(size);
+                if !moved && words >= 0x68000 {
+                    mem.write(l.wrapping_add(0x34), 0x2f00u16);
+                    words = 0xbc000;
+                    moved = true;
+                }
+            }
+            l = l.wrapping_add(0xc0);
+        }
+        if !moved {
+            words = 0xbc000;
+        }
+        let mut l = mem.read::<u32>(s.wrapping_add(8));
+        for _ in 0..count.max(0) {
+            if mem.read::<u8>(l) & 0x10 != 0 {
+                let t0 = mem.read::<u32>(l.wrapping_add(0xa0));
+                let t1 = mem.read::<u32>(l.wrapping_add(0xbc));
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // the u16 page
+                mem.write(l.wrapping_add(0x36), (words / 64) as u16);
+                words = words.wrapping_add(0x100);
+                let n = mem.read::<i32>(l.wrapping_add(4)).wrapping_add(0x3f);
+                let mut tbw = n.wrapping_add((n >> 31) & 0x3f) >> 6;
+                if tbw & 1 != 0 {
+                    tbw = tbw.wrapping_add(1);
+                }
+                let page = u32::from(mem.read::<u16>(l.wrapping_add(0x34)));
+                mem.write(t0.wrapping_add(0x18), 0u32);
+                mem.write(
+                    t0.wrapping_add(0x1c),
+                    tbw.cast_unsigned().wrapping_shl(16) | page | 0x1b00_0000,
+                );
+                let clut = u32::from(mem.read::<u16>(l.wrapping_add(0x36)));
+                mem.write(t1.wrapping_add(0x18), 0u32);
+                mem.write(t1.wrapping_add(0x1c), clut | 0x1_0000);
+                model::bridge::rcbg_trx_set_no(mem, t0, 0);
+                model::bridge::rcbg_pal_set_no(mem, l.wrapping_add(0xb0), 0);
+                rcbg_trx_draw_pending(mem, t0, call);
+                rcbg_trx_draw_pending(mem, t1, call);
+            }
+            l = l.wrapping_add(0xc0);
+        }
+    }
+
+    /// `rcbgSceneChkLayers(scene)` (`0x0092b400`): `+0xf8` set when a
+    /// layer is 448 or more high (`+8`), `+0xfc` when one has an image
+    /// (flag 0x10); then [`rcbg_scene_chk_sort_layer`] (a too-high layer
+    /// only prints in debug builds).
+    pub fn rcbg_scene_chk_layers<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        s: u32,
+        call: &mut C,
+    ) {
+        let n = mem.read::<i32>(s.wrapping_add(4));
+        let mut l = mem.read::<u32>(s.wrapping_add(8));
+        for _ in 0..n.max(0) {
+            if mem.read::<i32>(l.wrapping_add(8)) >= 0x1c0 {
+                mem.write(s.wrapping_add(0xf8), 1u32);
+            }
+            if mem.read::<u8>(l) & 0x10 != 0 {
+                mem.write(s.wrapping_add(0xfc), 1u32);
+            }
+            l = l.wrapping_add(0xc0);
+        }
+        rcbg_scene_chk_sort_layer(mem, s, call);
+    }
+
+    /// `rcbgSceneLoad(scene, parse)` (`0x0092b5e0`): the layer count
+    /// (`+4`), 12 bytes skipped, the layers (`0xc0` bytes each,
+    /// [`rcbg_layer_load`]), the colours and fog (`+0x68`, `+0x78`,
+    /// `+0x88`, `+0xa8`, `+0x64`), [`rcbg_scene_chk_layers`] and
+    /// `rcbgSceneSetMatrix` (through `call`).
+    pub fn rcbg_scene_load<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        s: u32,
+        p: u32,
+        call: &mut C,
+    ) {
+        use crate::rcdt::bridge::{rcdt_parse_advance, rcdt_parse_get_bin};
+        rcdt_parse_get_bin(mem, p, s.wrapping_add(4), 4);
+        rcdt_parse_advance(mem, p, 0xc);
+        let n = mem.read::<i32>(s.wrapping_add(4));
+        if n > 0 {
+            let t = model::bridge::rc_alloc(mem, call, n.cast_unsigned().wrapping_mul(0xc0));
+            mem.write(s.wrapping_add(8), t);
+            let mut i = 0;
+            while i < mem.read::<i32>(s.wrapping_add(4)) {
+                let l = mem
+                    .read::<u32>(s.wrapping_add(8))
+                    .wrapping_add(i.cast_unsigned().wrapping_mul(0xc0));
+                rcbg_layer_load(mem, l, p, call);
+                i += 1;
+            }
+        }
+        for (off, n) in [
+            (0x68u32, 0x10u32),
+            (0x78, 0x10),
+            (0x88, 0x10),
+            (0xa8, 4),
+            (0x64, 4),
+        ] {
+            rcdt_parse_get_bin(mem, p, s.wrapping_add(off), n);
+        }
+        rcbg_scene_chk_layers(mem, s, call);
+        let f = mem.rebase(super::SCENE_SET_MATRIX);
+        call(mem, f, &[s]);
+    }
+
+    /// `rcbgTrxTexDraw(tex)` (`0x00922100`): its CLUT transfer (`+0x60`)
+    /// then image transfer (`+0x20`) drawn when pending
+    /// ([`rcbg_trx_draw_pending`]).
+    pub fn rcbg_trx_tex_draw<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        t: u32,
+        call: &mut C,
+    ) {
+        rcbg_trx_draw_pending(mem, t.wrapping_add(0x60), call);
+        rcbg_trx_draw_pending(mem, t.wrapping_add(0x20), call);
     }
 }

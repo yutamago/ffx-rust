@@ -56,6 +56,26 @@ pub const TARGETS: [(u32, [u32; 2]); 5] = [
 ];
 
 /// Offsets in Yn's field state.
+/// `0x0086c1f0()`: the map the current event jumps to
+/// (`rcbgGuideSetWalkFog`).
+pub const EVENT_MAP_NO: u32 = 0x0086_c1f0;
+/// `MsGetSaveWalkMap` (`0x00785400`): the saved walk maps.
+pub const SAVE_WALK_MAP: u32 = 0x0078_5400;
+/// 350.0 (`f32`, `.rdata`): a new guide's view limit (`rcbgGuideInit`).
+pub const GUIDE_DEFAULT_LIMIT: u32 = 0x00b5_ef50;
+/// The background matrices `rcbgInit` resets: `g_RcbgWorldMatrix`,
+/// `g_RcbgScreenWorldMatrix`, `g_RcbgClipMatrix`, `g_RcbgClipWorldMatrix`.
+pub const RCBG_MATRICES: [u32; 4] = [0x025d_59a0, 0x025d_5920, 0x025d_58e0, 0x025d_58a0];
+/// `0x0092cef0`, where `rcbgInit` goes on in debug builds.
+pub const RCBG_DEBUG_INIT: u32 = 0x0092_cef0;
+/// `rcbgGuideSetModelSub` (`0x0091d880`).
+pub const GUIDE_SET_MODEL_SUB: u32 = 0x0091_d880;
+/// `rcbgGuideSetModelFromIdMap` (`0x0091d5e0`).
+pub const GUIDE_SET_MODEL_FROM_ID_MAP: u32 = 0x0091_d5e0;
+/// `0x00639d90(n)`: tells the renderer the scene number.
+pub const GRAPHIC_SCENE_NO: u32 = 0x0063_9d90;
+/// `graphicSet2DStartLayer` (`0x00642d90`).
+pub const GRAPHIC_SET_2D_START_LAYER: u32 = 0x0064_2d90;
 /// The low word of the guide's VFX instance handle (`rcbgGuideFini`).
 pub const GUIDE_VFX: Global<u32> = Global::new(0x0230_fd20);
 /// `graphicVFXGetRenderDataByInstance` (cdecl, a 64-bit handle).
@@ -1086,6 +1106,371 @@ pub mod bridge {
             return 0;
         }
         rcbg_fini(mem, call)
+    }
+
+    /// The map (`*g_YnMapSystem`), 0 without a system.
+    fn the_map(mem: &impl Mem) -> u32 {
+        let s = YN_MAP_SYSTEM.get(mem);
+        if s == 0 { 0 } else { mem.read::<u32>(s) }
+    }
+
+    /// `rcbgPreLoad(parse)` (`0x0092b390`): the scene count into the map,
+    /// the scenes (`0x110` bytes each, `rcbgSceneInit`), the current one
+    /// the first.
+    pub fn rcbg_pre_load<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        p: u32,
+        call: &mut C,
+    ) {
+        let map = the_map(mem);
+        crate::rcdt::bridge::rcdt_parse_get_bin(mem, p, map, 4);
+        let n = mem.read::<u32>(map);
+        let t = crate::model::bridge::rc_alloc(mem, call, n.wrapping_mul(0x110));
+        mem.write(map.wrapping_add(4), t);
+        mem.write(map.wrapping_add(8), t);
+        let mut i = 0;
+        while i < mem.read::<i32>(map) {
+            let s = mem
+                .read::<u32>(map.wrapping_add(4))
+                .wrapping_add(i.cast_unsigned().wrapping_mul(0x110));
+            scene::bridge::rcbg_scene_init(mem, s);
+            i += 1;
+        }
+    }
+
+    /// `rcbgPreInit()` (`0x00921770`): [`rcbg_pre_fini`], a new map
+    /// (`0x14` bytes, zeroed) with a `0x10000`-byte work block at `+0xc`.
+    pub fn rcbg_pre_init<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(mem: &mut M, call: &mut C) {
+        rcbg_pre_fini(mem, call);
+        let m = crate::model::bridge::rc_calloc(mem, call, 1, 0x14);
+        let s = YN_MAP_SYSTEM.get(mem);
+        if s != 0 {
+            mem.write(s, m);
+        }
+        let w = crate::model::bridge::rc_alloc(mem, call, 0x1_0000);
+        mem.write(m.wrapping_add(0xc), w);
+    }
+
+    /// `rcbgPreDummyInit()` (`0x00921640`): a map when there is none, and
+    /// one empty scene when it has none.
+    pub fn rcbg_pre_dummy_init<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) {
+        let mut m = the_map(mem);
+        if m == 0 {
+            m = crate::model::bridge::rc_calloc(mem, call, 1, 0x14);
+            let s = YN_MAP_SYSTEM.get(mem);
+            if s != 0 {
+                mem.write(s, m);
+            }
+        }
+        if mem.read::<u32>(m) == 0 {
+            mem.write(m, 1u32);
+            let sc = crate::model::bridge::rc_alloc(mem, call, 0x110);
+            mem.write(m.wrapping_add(4), sc);
+            scene::bridge::rcbg_scene_init(mem, sc);
+            let first = mem.read::<u32>(m.wrapping_add(4));
+            mem.write(m.wrapping_add(8), first);
+        }
+    }
+
+    /// `rcbgPreAddObject(obj)` (`0x009218c0`): `obj` added to the current
+    /// scene ([`rcbg_pre_dummy_init`] first when there is no map).
+    pub fn rcbg_pre_add_object<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        obj: u32,
+        call: &mut C,
+    ) {
+        if the_map(mem) == 0 {
+            rcbg_pre_dummy_init(mem, call);
+        }
+        let m = the_map(mem);
+        let s = if m == 0 {
+            0
+        } else {
+            mem.read::<u32>(m.wrapping_add(8))
+        };
+        scene::bridge::rcbg_scene_add_object(mem, s, obj, call);
+    }
+
+    /// `rcbgGuideInit(guide)` (`0x0091d490`): the guide (`0x78` bytes)
+    /// cleared, the view limit `+0x6c` 350.0, bit 8 of `g_GuideFlags` set,
+    /// then [`guide_fade_off`].
+    pub fn rcbg_guide_init(mem: &mut impl Mem, g: u32) {
+        mem.write_bytes(g, &[0; 0x78]);
+        let at = mem.rebase(super::GUIDE_DEFAULT_LIMIT);
+        let v = x87::copy(mem.read::<u32>(at));
+        mem.write(g.wrapping_add(object::LIMIT), v);
+        let f = super::FLAGS.get(mem);
+        super::FLAGS.set(mem, f | 0x100);
+        guide_fade_off(mem);
+    }
+
+    /// `rcbgGuideNew()` (`0x0091d4e0`): a guide ([`rcbg_guide_init`]).
+    pub fn rcbg_guide_new<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let g = crate::model::bridge::rc_alloc(mem, call, 0x78);
+        rcbg_guide_init(mem, g);
+        g
+    }
+
+    /// `rcbgInit()` (`0x00921ce0`): [`rcbg_fini`] of an old system, a new
+    /// one (`0x1c` bytes) with its guide, the four matrices
+    /// `g_RcbgWorldMatrix`, `g_RcbgScreenWorldMatrix`, `g_RcbgClipMatrix`,
+    /// `g_RcbgClipWorldMatrix` the identity; debug builds go on to
+    /// `0x0092cef0`.
+    pub fn rcbg_init<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(mem: &mut M, call: &mut C) {
+        if YN_MAP_SYSTEM.get(mem) != 0 {
+            rcbg_fini(mem, call);
+        }
+        let s = crate::model::bridge::rc_calloc(mem, call, 1, 0x1c);
+        YN_MAP_SYSTEM.set(mem, s);
+        let g = rcbg_guide_new(mem, call);
+        let s = YN_MAP_SYSTEM.get(mem);
+        mem.write(s.wrapping_add(system::GUIDE), g);
+        for m in super::RCBG_MATRICES {
+            let at = mem.rebase(m);
+            ffx_ps2::vu0::bridge::matrix_identity(mem, at);
+        }
+        if ffx_system::config::bridge::is_debug(mem) != 0
+            && ffx_system::config::bridge::gs_set_def_draw_env2(mem) != 0
+        {
+            let f = mem.rebase(super::RCBG_DEBUG_INIT);
+            call(mem, f, &[]);
+        }
+    }
+
+    /// `rcbgGuideSetModel(guide, model)` (`0x0091d590`): the walk model
+    /// (`+8`) deleted; with `model` it becomes the minimap model (`+0`,
+    /// `+4` 0, `rcbgGuideSetModelSub`), else the model comes from the id
+    /// map (`rcbgGuideSetModelFromIdMap`); both through `call`.
+    pub fn rcbg_guide_set_model<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        g: u32,
+        model: u32,
+        call: &mut C,
+    ) -> u32 {
+        let w = mem.read::<u32>(g.wrapping_add(object::WALK_MODEL));
+        if w != 0 {
+            crate::model::bridge::rcbg_model_delete(mem, w, call);
+            mem.write(g.wrapping_add(object::WALK_MODEL), 0u32);
+        }
+        if model != 0 {
+            mem.write(g, model);
+            mem.write(g.wrapping_add(4), 0u32);
+            let f = mem.rebase(super::GUIDE_SET_MODEL_SUB);
+            call(mem, f, &[g])
+        } else {
+            let f = mem.rebase(super::GUIDE_SET_MODEL_FROM_ID_MAP);
+            call(mem, f, &[g])
+        }
+    }
+
+    /// `rcbgPreSetSceneNo(n)` (`0x009217e0`): with a map and `n` one of its
+    /// scenes: `0x00639d90(n)`, `graphicSet2DStartLayer` the layers of the
+    /// scenes before it, the current scene `n`
+    /// ([`scene::bridge::rcbg_scene_chk_sort_layer`]), and the guide's
+    /// model the last model of the first scene (of scene `n` when there is
+    /// only one) ([`rcbg_guide_set_model`]).
+    pub fn rcbg_pre_set_scene_no<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        n: i32,
+        call: &mut C,
+    ) {
+        let m = the_map(mem);
+        if m == 0 || n < 0 || n >= mem.read::<i32>(m) {
+            return;
+        }
+        let f = mem.rebase(super::GRAPHIC_SCENE_NO);
+        call(mem, f, &[n.cast_unsigned()]);
+        let scenes = mem.read::<u32>(m.wrapping_add(4));
+        let mut sum = 0u32;
+        for i in 0..n.cast_unsigned() {
+            sum = sum.wrapping_add(
+                mem.read::<u32>(scenes.wrapping_add(i.wrapping_mul(0x110)).wrapping_add(4)),
+            );
+        }
+        let f = mem.rebase(super::GRAPHIC_SET_2D_START_LAYER);
+        call(mem, f, &[sum]);
+        let s = mem
+            .read::<u32>(m.wrapping_add(4))
+            .wrapping_add(n.cast_unsigned().wrapping_mul(0x110));
+        mem.write(m.wrapping_add(8), s);
+        scene::bridge::rcbg_scene_chk_sort_layer(mem, s, call);
+        let src = if mem.read::<i32>(m) > 1 {
+            mem.read::<u32>(m.wrapping_add(4))
+        } else {
+            mem.read::<u32>(m.wrapping_add(8))
+        };
+        let k = i32::from(mem.read::<i16>(src.wrapping_add(0x1a)));
+        let model = mem.read::<u32>(
+            src.wrapping_add(0x1c)
+                .wrapping_add(k.cast_unsigned().wrapping_mul(4)),
+        );
+        let g = mem.read::<u32>(YN_MAP_SYSTEM.get(mem).wrapping_add(system::GUIDE));
+        rcbg_guide_set_model(mem, g, model, call);
+    }
+
+    /// `rcbgLoadBin(data)` (`0x00921d60`): a background file (an `RCBG`
+    /// chunk, id 0, then chunks of a 16-byte header, `+4` the length in
+    /// 16-byte units): 1 the map ([`rcbg_pre_init`], [`rcbg_pre_load`]),
+    /// 2 the next scene ([`scene::bridge::rcbg_scene_load`]), 5 a model
+    /// and 6 a transfer of that scene, 8 and 10 texture transfers of the
+    /// current scene ([`rcbg_pre_add_object`]), 11 a model replacing the
+    /// last of the scene named at `+0xa`, 12 the end; 7 and unknown ids
+    /// are skipped. `work` stands for the original's stack chunk (8
+    /// bytes) and parser (`0x8c`).
+    pub fn rcbg_load_bin<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        data: u32,
+        work: u32,
+        call: &mut C,
+    ) {
+        use crate::model::bridge as mb;
+        use crate::rcdt::bridge as rb;
+        if mb::rcbg_chk_id(mem, data) != 0 {
+            return;
+        }
+        let (chunk, p) = (work, work.wrapping_add(0x14));
+        let (mut sc, mut offset) = (0u32, 0u32);
+        let mut rec = data.wrapping_add(0x10);
+        loop {
+            let id = mb::rcbg_chk_id(mem, rec);
+            let len = mem.read::<u32>(rec.wrapping_add(4)).wrapping_shl(4);
+            let body = rec.wrapping_add(0x10);
+            rb::rcdt_chunk_set_bin(mem, chunk, body);
+            rb::rcdt_parse_init(mem, p);
+            rb::rcdt_parse_set(mem, p, chunk);
+            match id {
+                1 => {
+                    rcbg_pre_init(mem, call);
+                    rcbg_pre_load(mem, p, call);
+                }
+                2 => {
+                    let m = the_map(mem);
+                    sc = mem.read::<u32>(m.wrapping_add(4)).wrapping_add(offset);
+                    scene::bridge::rcbg_scene_load(mem, sc, p, call);
+                    offset = offset.wrapping_add(0x110);
+                }
+                5 => scene::bridge::rcbg_scene_model_load(mem, sc, p, call),
+                6 => scene::bridge::rcbg_scene_trx_load(mem, sc, p, call),
+                8 | 10 => {
+                    let t = if id == 8 {
+                        mb::rcbg_trx_tex_new(mem, call)
+                    } else {
+                        mb::rcbg_fp_trx_tex_new(mem, call)
+                    };
+                    mb::rcbg_trx_tex_load(mem, t, p);
+                    rcbg_pre_add_object(mem, t, call);
+                }
+                11 => {
+                    if the_map(mem) == 0 {
+                        rcbg_pre_dummy_init(mem, call);
+                    }
+                    let m = the_map(mem);
+                    let s = u32::from(mem.read::<u16>(rec.wrapping_add(0xa)))
+                        .wrapping_mul(0x110)
+                        .wrapping_add(mem.read::<u32>(m.wrapping_add(4)));
+                    let k = i32::from(mem.read::<i16>(s.wrapping_add(0x18)));
+                    let old = mem.read::<u32>(
+                        s.wrapping_add(0x1c)
+                            .wrapping_add(k.cast_unsigned().wrapping_mul(4)),
+                    );
+                    if old != 0 {
+                        mb::rcbg_model_delete(mem, old, call);
+                    }
+                    let model = mb::rcbg_model_new(mem, call);
+                    mb::rcbg_model_load(mem, model, p, call);
+                    let k = i32::from(mem.read::<i16>(s.wrapping_add(0x18)));
+                    mem.write(
+                        s.wrapping_add(0x1c)
+                            .wrapping_add(k.cast_unsigned().wrapping_mul(4)),
+                        model,
+                    );
+                    let k = mem.read::<i16>(s.wrapping_add(0x18));
+                    mem.write(s.wrapping_add(0x18), k.wrapping_add(1));
+                }
+                12 => return,
+                _ => {}
+            }
+            rec = body.wrapping_add(len);
+        }
+    }
+
+    /// `Yn_PreBgSetData(data)` (`0x0091aa60`): with a map system and data,
+    /// [`rcbg_load_bin`] and [`rcbg_pre_set_scene_no`] 0.
+    pub fn yn_pre_bg_set_data<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        data: u32,
+        work: u32,
+        call: &mut C,
+    ) {
+        if YN_MAP_SYSTEM.get(mem) == 0 || data == 0 {
+            return;
+        }
+        rcbg_load_bin(mem, data, work, call);
+        rcbg_pre_set_scene_no(mem, 0, call);
+    }
+
+    /// `rcbgGuideSetWalkFog(guide)` (`0x0091ce50`): on the maps 0x246,
+    /// 0x248, 0x24e and 0x24f (`0x0086c1f0`, through `call`), the guide's
+    /// mesh object loses flag bit 1 and the fog of war (`+0x70`) points at
+    /// that map's 0x200 bytes of the saved walk maps (`MsGetSaveWalkMap`).
+    pub fn rcbg_guide_set_walk_fog<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        g: u32,
+        call: &mut C,
+    ) {
+        let f = mem.rebase(super::EVENT_MAP_NO);
+        let map = call(mem, f, &[]);
+        let Some(i) = [0x246u32, 0x248, 0x24e, 0x24f]
+            .iter()
+            .position(|&m| m == map)
+        else {
+            return;
+        };
+        let o = guide_mesh_object(mem, g);
+        if o != 0 {
+            let fl = mem.read::<u32>(o.wrapping_add(0x10));
+            mem.write(o.wrapping_add(0x10), fl & !2);
+        }
+        let f = mem.rebase(super::SAVE_WALK_MAP);
+        let base = call(mem, f, &[]);
+        let i = u32::try_from(i).unwrap_or(0);
+        mem.write(g.wrapping_add(object::FOG), base.wrapping_add(i << 9));
+    }
+
+    /// `rcbgGuideSetModelSub(guide)` (`0x0091d880`): the minimap model
+    /// drawn from the guide's matrix (`+0x40` = `+0x10`), alpha 0x80, its
+    /// centre to `+0x50`, the bounding box's width and depth to `+0x64`
+    /// and `+0x68`, the larger to `+0x60`; then
+    /// [`rcbg_guide_set_walk_fog`].
+    pub fn rcbg_guide_set_model_sub<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        g: u32,
+        call: &mut C,
+    ) {
+        let o = guide_mesh_object(mem, g);
+        mem.write(o.wrapping_add(0x40), g.wrapping_add(0x10));
+        crate::model::bridge::rcbg_model_set_alpha(mem, o, 0x80);
+        let b = o.wrapping_add(0x90);
+        crate::geom::bridge::rc_bbox_get_center(mem, b, g.wrapping_add(0x50));
+        let ld = |mem: &M, at: u32| ffx_bridge::x87::load(mem.read::<u32>(at));
+        let w = x87::store(ld(mem, b.wrapping_add(0x10)) - ld(mem, b));
+        mem.write(g.wrapping_add(0x64), w);
+        let d = x87::store(ld(mem, b.wrapping_add(0x18)) - ld(mem, b.wrapping_add(8)));
+        mem.write(g.wrapping_add(0x68), d);
+        let a = ld(mem, g.wrapping_add(0x64));
+        let m = if a > f64::from(f32::from_bits(d)) {
+            x87::copy(mem.read::<u32>(g.wrapping_add(0x64)))
+        } else {
+            d
+        };
+        mem.write(g.wrapping_add(0x60), m);
+        rcbg_guide_set_walk_fog(mem, g, call);
     }
 }
 

@@ -1349,4 +1349,32 @@ ported! {
     Ch_EffectSetAlpha @ 0x0084_2c60 => extern "C" fn ch_effect_set_alpha(a: f32) {
         sy::ch_effect_set_alpha(&mut mem(), a);
     }
+    /// `Ch_FunctionHistory(file, line)`.
+    Ch_FunctionHistory @ 0x0083_3770 => extern "C" fn ch_function_history(file: u32, line: u32) {
+        h::ch_function_history(&mut mem(), file, line);
+    }
+    /// `Ch_SetRot(chr, a)`.
+    Ch_SetRot @ 0x0082_b520 => extern "C" fn ch_set_rot(chr: u32, a: f32) {
+        c::ch_set_rot(&mut mem(), chr, a);
+    }
+    /// `Ch_SetDirF(chr, a)`.
+    Ch_SetDirF @ 0x0082_b1b0 => extern "C" fn ch_set_dir_f(chr: u32, a: f32) {
+        c::ch_set_dir_f(&mut mem(), chr, a);
+    }
+    /// `Ch_CheckRadian(a)`.
+    Ch_CheckRadian @ 0x0083_6790 => extern "C" fn ch_check_radian(a: f32) {
+        c::ch_check_radian(&mut mem(), a);
+    }
+    /// `ch_create_name(id)`.
+    ch_create_name @ 0x0083_8100 => extern "C" fn ch_create_name(id: u32) -> u32 {
+        ta::ch_create_name(&mut mem(), id)
+    }
+    /// `Ch_AnalysisChrNum(src, dst)`.
+    Ch_AnalysisChrNum @ 0x0082_9e60 => extern "C" fn ch_analysis_chr_num(src: u32, dst: u32) -> u32 {
+        mb::ch_analysis_chr_num(&mut mem(), src, dst)
+    }
+    /// `Ch_AnimCopy2(chr)`: the result in `al`.
+    Ch_AnimCopy2 @ 0x0083_9140 => extern "C" fn ch_anim_copy2(chr: u32) -> u8 {
+        mo::bridge::ch_anim_copy2(&mem(), chr)
+    }
 }

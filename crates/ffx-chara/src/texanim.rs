@@ -427,4 +427,38 @@ pub mod bridge {
         let i = DB_INDEX.ptr(mem).at(kind).get(mem);
         Global::<u8>::new(DB_NAMES[usize::from(i)]).ptr(mem).addr
     }
+
+    /// Where `ch_create_name` prints.
+    pub const CREATE_NAME: Global<u8> = Global::new(0x0130_0a00);
+    /// `"0000"`, `ch_create_name`'s name for id 0.
+    pub const NAME_0000: Global<u8> = Global::new(0x00b5_9a08);
+
+    /// `sg_getdbtype(kind)` (`0x00829e10`, the main module's): the letter
+    /// of a character kind, `-` past 6.
+    const fn db_type(kind: u32) -> u8 {
+        match kind {
+            0 => b'c',
+            1 => b'm',
+            2 => b'n',
+            3 => b's',
+            4 => b'w',
+            5 => b'f',
+            6 => b'k',
+            _ => b'-',
+        }
+    }
+
+    /// `ch_create_name(id)` (`0x00838100`): `"0000"` for 0, else
+    /// `sprintf("%c%03d", kind letter, id & 0xfff)` into its buffer; returns
+    /// the string.
+    pub fn ch_create_name(mem: &mut impl Mem, id: u32) -> u32 {
+        if id == 0 {
+            return NAME_0000.ptr(mem).addr;
+        }
+        let kind = (id.cast_signed() >> 12).cast_unsigned() & 0xf;
+        let s = format!("{}{:03}", char::from(db_type(kind)), id & 0xfff);
+        let at = CREATE_NAME.ptr(mem).addr;
+        crate::handle::bridge::put_c_string(mem, at, s.as_bytes());
+        at
+    }
 }
