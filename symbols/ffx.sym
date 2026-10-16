@@ -3954,6 +3954,7 @@
 0x0085c420 function Native_WaitForever           # 0x005f poll: returns 0 forever (never done), parks the entry until it is interrupted; 14636 calls in 1555 scripts
 0x0085c4c0 function Native_SpriteHide            # 0x011c (slot) -> slot; sprite +0 = 0 (slot < 0 clears slot 0) (0x008747f0)
 0x0085c4e0 function Native_WaitFrames_0000       # 0x0000: args (frames) -> frames; start slot stores the count in *result (40 instead of 10 when 0x00782970()==0x610000 && *0x00c64ca0==0x290, a one-off timing patch); scripts: "pushimm 1; func 0x0000"
+0x0085c590 function Native_TurnGetField38     # 0x003f: () -> float, the turn block's +0x38
 0x0085c5b0 function CT_01D1_ret               # 0x00d1: args () -> 0; Script_StopMove(own worker (ctx+0x2e), level) for levels 0-8; was Native_StopMoveAllLevels
 0x0085c680 function Native_CharRestoreHp         # 0x0171 (chr) -> HP; Party_GetChar(chr): +0x1c = max(+0x1c, +0x24), clears +0x3d; ?HP fields
 0x0085c6b0 function Native_WaitFrames_Poll_0000  # 0x0000 poll: count -= 1 per frame (or -= FUN_00645d90() elapsed frames when *0x0112a008 && FUN_0076efc0()); done when count < 1
@@ -4015,12 +4016,17 @@
 0x00862700 function AtelBindEff2On            # fh v3:exact 0x008626a0
 0x00862780 function AtelBindElemOff           # fh v3:exact 0x00862720
 0x00862800 function Fp_BindToWorker              # (worker, fp id, bone): records the id in the worker's 4 FP slots (+0xb18) and attaches the effect to the worker's model (0x0072a530) or other object kinds (0x0072a590/0x0072a5e0)
+0x00862c60 function AtelChangeLevelHeader     # (worker, level): AtelChangeBinaryHeader from the level's ctrl work tables (+0x1f8/+0x1fc) by its +0x3c/+0x3e/+0x40
 0x00862cc0 function AtelChangeBinaryHeader    # fh v3:exact 0x00862c60
 0x00862d30 function AtelChangeCurrentCtrl     # fh v3:exact 0x00862cd0
 0x008632b0 function Script_LineActorSide         # (worker, key): types 5/6 only; status byte of the worker[0xb9] entry matching the actor id; 3 or not found -> -1
+0x00863570 function AtelIsSignalQueued        # (worker index, entry) -> 1 when a request for entry is queued (opcodes 77/78, wait state 2)
+0x008635c0 function AtelSearchReplySignal     # (worker, level) -> the last reply matching the level's wait (+0x2c entry, +0x2e worker, +0x30 level); Script_Run wait state 1
 0x00863620 function AtelClearAllMenuMask      # fh v3:cg2 0x8635c0
+0x00863750 function AtelInitLevelMove         # (worker, level, n): type 1 workers' move (+0x5b8+n*0x4c) and turn (+0x864+n*0x44) blocks reset from the position
 0x00863880 function AtelClearEffectParam      # fh v3:cg2 0x863820
 0x008638b0 function AtelClearForcePlaceId     # fh v3:bsim1.00 0x00863850
+0x008639e0 function AtelResetLevel            # (worker, n): level back to entry 0 (call depth, header, PC, state, float accumulator 0.0)
 0x00863ae0 function AtelClearLoveParamDisable # fh v3:cg2 0x863a80
 0x00863b10 function AtelClearMesWinWork       # fh v3:exact 0x00863ab0
 0x00863e10 function Script_StopMove              # (worker, level or -1 = current): levels sharing that level's move block get their own block at ctx+0x5b8+i*0x4c with flags +2 = 0, keeping its fields; also stops turning if flag 0x4000
@@ -4031,6 +4037,7 @@
 0x008641e0 function Script_Run                # (worker, mode, callbacks) -> 1 when the speed accumulator (+0x98 += +0x94 * g_GameSpeed) reached 1: the bytecode interpreter under g_ScriptRunMutex; runs the level of worker +0x32 until a native, end or wait stops it with an empty stack (docs/formats/script.md 'The interpreter'); mode 1 = the debugger's step; callbacks = ctrl work +0x58/+0x5c around it; opcode byte table 0x0086536c, jump table 0x00865250
 0x0086536c label    g_ScriptOpcodeCases       # opcode -> case index byte table of Script_Run
 0x008653f0 function AtelDecodeSignal          # fh v3:exact 0x00865390
+0x008654c0 function AtelFreeSignal            # (worker index, node): back to the free list
 0x008655e0 function AtelEnterMenuCallback     # fh v3:exact 0x00865580
 0x00865890 function AtelEventGetMotionIndex   # fh switch:bsim1.00 0x7100473870
 0x008658b0 function AtelEventGetNowCtrlTopId  # fh switch:bsim1.00 0x710046fdd0
@@ -4043,7 +4050,11 @@
 0x00866210 function AtelEventSetUpFoot3d      # fh v3:exact 0x008661b0
 0x00866240 function AtelEventSetUpForBattleMusic # fh v3:exact 0x008661e0
 0x00866490 function AtelEventSetupGuideMap    # fh v3:exact 0x00866430
+0x00867230 function Script_OpReq              # (op, level, worker, stack): opcodes 36, 45-49 (REQ): pops entry, worker, level; 47-49 gated by the ctrl work's +0x60 callback; calls 0x0067a9b0 first
+0x008673d0 function Script_OpReqEw            # (op, worker, level, stack) -> 0: opcodes 38, 4f-53 (REQEW, kind 2)
+0x00867570 function Script_OpReqSw            # (op, worker, level, stack) -> 0: opcodes 37, 4a-4e (REQSW, kind 1); the level waits (+0x1f = 1)
 0x00867740 function AtelExecCtrlEvent         # fh v3:exact 0x008676e0
+0x008690a0 function AtelStartSignal           # (worker, node): starts a queued request at its level and entry
 0x008691d0 function AtelExecReturn            # fh v3:bsim1.00 0x00869170
 0x00869350 function AtelExecReturn2           # fh v3:bsim1.00 0x008692f0
 0x00869d60 function AtelFetchCommand          # (worker, level) -> opcode << 24 | u16 operand when the high bit is set, from the level's PC; Switch name (alphabetical slot before AtelFetchCommandMain and AtelFetchStackInteger); was Script_Fetch
@@ -4055,7 +4066,9 @@
 0x0086a2f0 function Script_GetWorkerPos          # (worker, &x, &y, &z): transform position; types 2/5 give the midpoint of +0 and +0x30
 0x0086a390 function AtelGetActorEndPos        # fh v3:exact 0x0086a320
 0x0086a420 function AtelGetActorExecspaceID   # fh v3:exact 0x0086a3b0
+0x0086a470 function AtelFindActorByChar       # (chr) -> the first actor whose worker +0x40 (bound character) is chr, or -1
 0x0086a5d0 function AtelGetActorId            # fh v3:bsim1.00 0x0086a560
+0x0086a5e0 function AtelGetPartyWorker        # (slot) -> the actor of g_SaveInParty[slot], -1 (empty, slot >= 3); a negative slot reads below its locals
 0x0086a650 function AtelGetActorNumber        # fh v3:cg4 0x86a5e0
 0x0086a720 function AtelGetActorStartPos      # fh v3:exact 0x0086a6b0
 0x0086a7b0 function AtelGetActorType          # (index) -> type byte of the worker header, or 7 if the index is out of range; was Script_GetWorkerType
@@ -4162,6 +4175,8 @@
 0x0086d9d0 function AtelGetSave20             # ours: the Switch BSim name TkGetLastEventJumpIndex belongs to 0x0088d610 (its alphabetical Tk slot, menu module): g_SaveData +0x20 (u8)
 0x0086d9e0 function Script_TopTwoInts         # (worker, stack) -> 1 when the top two slots are both integers (kind 1): Script_Run's integer or float choice for arithmetic and comparisons
 0x0086da10 function AtelJumpGameOver          # fh v3:exact+call.cs 0x0086d9a0 cdecl
+0x0086dc10 function AtelLinkSigWorkNext       # (at, node): links a signal node after node/list head at (ffx_script::vm::bridge::signal)
+0x0086dc30 function AtelLinkSigWorkPrev       # (at, node): links a signal node before node at
 0x0086dc50 function AtelLinkSigWorkButtom     # fh v3:exact 0x0086dbe0
 0x0086dca0 function AtelMapLoad               # fh v3:bsim1.00 0x0086dc30
 0x0086dd30 function AtelMapLoadNoCache        # fh v3:bsim1.00 0x0086dcc0
@@ -4180,8 +4195,13 @@
 0x0086e700 function AtelRecoverFromMenuCallback # fh v3:exact 0x0086e690
 0x0086e820 function AtelRegistAlbhedDic       # fh v3:bsim1.00 0x0086e7b0
 0x0086e840 function AtelRegistBattleEndMovieFadeout # fh v3:bsim1.00 0x0086e7d0
+0x0086e990 function AtelRegistSignal          # (from, to, kind, level, entry) -> AtelRegistSignalMain
 0x0086e9e0 function AtelRegistSignal2         # fh v3:exact 0x0086e970
+0x0086ea00 function AtelRegistSignalMain      # (request {from, to, kind, level, entry, header words x3}, -1) -> 1/0: takes a free node of the receiver (+0x88), queues it (+0x80) by level, replies (kind 3) last; reads the header words only while the current ctrl work has tables (+0x1f8), and every caller leaves them unwritten
+0x0086eba0 function AtelRegistSignalWithoutSameLevel# (from, to, kind, level, entry): opcodes 39-3b (PREQ)
+0x0086ebe0 function AtelRegistSignalWithoutSameLevel2# (request) -> 0 when the receiver has a request queued at that level, else AtelRegistSignalMain
 0x0086ec40 function AtelRegistSignalWithoutSameTag # fh switch:cg2 0x71008b9018
+0x0086ec80 function AtelRegistSignalWithoutSameTag2# (request) -> 0 when a request for that entry is queued, else AtelRegistSignalMain
 0x0086ed40 function AtelRemoveCtrlWork        # fh v3:exact 0x0086ecd0
 0x0086ed80 function AtelRequestMapCamera      # fh v3:exact 0x0086ed10
 0x0086ee10 function AtelRequireCtrlWork       # fh v3:cg3 0x86eda0
@@ -4193,6 +4213,7 @@
 0x0086fa40 function AtelSetEffectFlag         # fh v3:bsim1.00 0x0086f9d0
 0x0086fa60 function AtelSetEffectParam        # g_AtelEffectParams[i] = v, no bound; native 0x0085a250
 0x0086fa80 function AtelSetEffectState        # g_AtelEffectState = v; native 0x0085e9e0 sets 1 after AtelAllClearEffectFlag
+0x0086fab0 function Script_Op7a               # (worker, key, value) -> 1/0: opcode 7a, types 5/6: (key, value, 3) into the 8-slot table at worker +0x2e4
 0x0086fc20 function AtelSetEncountBattleEndStatus # fh v3:bsim1.00 0x0086fbb0
 0x0086fc40 function AtelSetEventActorLinkWork # fh v3:exact 0x0086fbd0
 0x0086fd60 function AtelSetEventCharHandleFromID # fh v3:exact 0x0086fcf0
@@ -4213,6 +4234,7 @@
 0x008708e0 function AtelSetNowEventJumpMapNo  # fh switch:bsim1.00 0x7100461a10
 0x00870900 function AtelSetOverlayStatus      # fh v3:bsim1.00 0x008708a0
 0x00870b20 function AtelSetPos3d              # (worker, x, y, z, snap): position + model/?camera; player worker updates ctx+0x218/0x228; was Worker_SetPos
+0x00870d30 function Script_Op79               # (worker, var, index, value): opcode 79, the worker's vibration curve (+0x44) in an 8 x u16 variable
 0x00870ef0 function AtelSetSaveDicIndex       # fh v3:exact 0x00870e90
 0x00870f60 function AtelSetShopRatio          # fh v3:bsim1.00 0x00870f00
 0x00871190 function AtelSetUpCtrlWork         # fh v3:exact 0x00871130
@@ -4221,6 +4243,7 @@
 0x00871400 function AtelSetValueInteger       # (worker, var, index, value, clamp): u8/i8/u16/i16 truncated or saturated (clamp), u32/i32 stored, f32 converted; nothing past type 6; Switch name (see AtelSetValueFloat)
 0x008715e0 function AtelSetVibrateStreamExt   # fh v3:bsim1.00 0x00871580
 0x008715f0 function AtelSetWaterBattleEffect  # fh v3:bsim1.00 0x00871590
+0x00871650 function AtelSignalReply           # (worker, node): the reply a REQSW sender waits for once its request starts
 0x00871730 function AtelSkipReqLevel2         # fh v3:bsim1.00 0x008716d0
 0x00871750 function AtelSndTransSepSPKDataGroup # fh switch:bsim1.00 0x71004728a0
 0x00871890 function AtelStopSoundAll          # fh v3:exact 0x00871830
@@ -4247,6 +4270,7 @@
 0x008725c0 function Table_PairWord            # (table, i, second) word 0/1 of 8-byte entry i; own name
 0x00872650 function Script_WorkerLevel        # (worker, level) -> 0x4c-byte level block at worker+0x12c+level*0x4c, level clamped to 0..8 (types 5/6: 0..1); +0x18 PC, +0x1f request state, +0x20/+0x24 registers A/B, +0x28 float accumulator, +0x44 move block ptr, +0x48 turn block ptr
 0x008726f0 function Script_Jump               # (worker, level, label): level PC = the worker's code start + labels[label] (worker header +0x24) of the worker running at the call depth (level +0x0e + depth*2 inside a call); level +0x1e = 0
+0x00872860 function AtelCancelSignals         # (worker, level, mode): drops queued signals above level, replying to waiting REQSW/REQEW senders
 0x00872b50 function AtelCheckMenuOtakaraFlag  # fh switch:cg2 0x71008b8908
 0x00872b60 function AtelClearMenuOtakaraFlag  # fh v3:bsim1.00 0x00872b00
 0x00872b70 function AtelClearPauseFlag        # fh v3:bsim1.00 0x00872b10
@@ -6084,6 +6108,7 @@
 0x00a78d70 function Native_ChrSetNextMotionBlend # 0x505c: args (frames; -1 = 0, 0 = 1) -> 0; chr +0x73c "nexthokan" (interpolation frames, CHRINFO debug text)
 0x00a78da0 function Native_ChrSetBodyHit         # 0x500f: args (on) -> 0; on clears chr +0x194 bit 8 ("bodyhit=" = !bit 8 in the CHRINFO debug text), 0 disables chr collision (0x0082a9f0)
 0x00a78dd0 function Native_ChrGetMotion          # 0x505d: no args -> current motion id (chr +0x72c, "Motion : %x" in CHRINFO)
+0x00a790b0 function Native_ChrSetOffset       # 0x5016: (x, y, z) floats -> 0; Ch_SetOffset
 0x00a79130 function Native_ChrSetGroundMode      # 0x5017: args (mode) -> 0; chr +0x182: 0 clamp to ground, 1 snap to ground, 2 float/bob (water) (height update in 0x00832f..)
 0x00a79270 function Native_ChrPlayMotion         # 0x501a: args (motion, unused, loops, start frame, end frame; -1 = end) -> 0; Native_PlayMotionCommon mode 1 (Chr_PlayMotion); scripts push e.g. (0x1109e, 0, 1, 0, 20)
 0x00a792d0 function Native_ChrSetMotion_501b     # 0x501b: args (motion) -> 0; SG_SetMotion on the worker's chr
@@ -6100,8 +6125,10 @@
 0x00a79980 function Native_ChrLoadSystemMgrp_Result # 0x5010 int result: prints "chReadSystemMGRP %04x %x fin", calls Chr_LoadSystemMgrp(chr id, n); -> 0
 0x00a799b0 function Native_ChrLoadMotionGroup    # 0x5001 start (n) -> result slot; poll 0x00a79a10 returns 5
 0x00a79a20 function Native_ChrLoadMotionGroup_Result # 0x5001 int: Chr_LoadMotionGroup(n) 0x008375f0 -> 0; ?
+0x00a79a40 function Native_ChrSetShadowMode   # 0x5029: (mode) -> Ch_SetShadowMode's result
 0x00a79af0 function Native_ChrSetDistanceCull    # 0x502a: args (on) -> previous; chr +0x194 bit 11: hide past clip Z (+0x174) or off screen ("Z"/"Disp" hide bits, 0x0082e2..)
 0x00a79c50 function Native_ChrAttach             # 0x502d: args (worker, point) -> 0; attaches the chr to another worker's chr at attach point id (+0x19c, 0x00833a70 looks up the model's point table); worker -1 detaches
+0x00a79dd0 function Native_ChrGetMotionFrameOf# 0x5075: (worker) -> Ch_MotionGetFrame of that worker's character
 0x00a79e60 function Native_ChrPlayDefaultMotion  # 0x5032: no args -> 0; SG_PlaySlotMotion(chr, chr +0x185, 0)
 0x00a79ea0 function Native_ChrFadeAlpha          # 0x5033: args (alpha float, frames) -> 0; shade alpha at chr +0x354 ("shadeRGBA" in CHRINFO): target + frames, frames 0 = immediate (0x0082b990); scripts push (0, 60)
 0x00a79f40 function Native_ChrSetMotionBlend     # 0x5034: args (frames) -> 0; chr +0x73a, copied to "hokan" (+0x752) when the next clip starts (SG_StartClip); 0 marks dirty (+0x820 |= 4)
@@ -8795,6 +8822,7 @@
 0x0228615c label    g_OpdNumPal                  # byte palette of the number printer (opd_num_pal_set/default)
 0x022881d4 label    g_OpdNumFrames               # u16 counted up by opd_num_vdisp
 0x022c9760 label    g_OpdHeapDisplay             # 4 x 0x40 heap gauges: +0 flags (0xffff none, bits 8-11 priority, 0x8000 ppp heap at +4), +8 used, +0xc total (opd_heap_display_*)
+0x022fb4d8 label    g_ChrWaitMotionFrames     # frames Native_ChrWaitMotion_Poll_501e waited, counted while 0x012fb80c is 1
 0x022fb4dc label    g_TkMenuSceneData         # 8 menu scene data blocks (TkMenuSetSceneDataAdrs, TkMenuInitSeq zeroes them; layout in crates/ffx-menu/src/scene.rs)
 0x022fb504 label    g_Settings
 0x02305834 label    g_Abmap                      # the sphere grid data (LoadAbmap): +4 i16 link count, +0x808 nodes of 0x28 (x, y i16, +6 kind, +0x21 panel bits), +0xa816 link flags (0x14 each), +0xf834 kind sizes (0x30 each)
