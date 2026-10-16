@@ -1813,4 +1813,8 @@ ported! {
     MsTestCheckMotion @ 0x0079_0260 => extern "C" fn ms_test_check_motion(i: u32) -> i32 {
         flow::ms_effect_check_motion(&mut mem(), i)
     }
+    /// `MsLimitUp(chr, actor, n)`.
+    MsLimitUp @ 0x007b_1590 => extern "C" fn ms_limit_up(chr: u32, actor: u32, n: i32) -> i32 {
+        turn::ms_limit_up(&mut mem(), chr, actor, n)
+    }
 }

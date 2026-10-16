@@ -25,6 +25,8 @@ fn dress(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World) {
             (0x65c, 2),
             (0x6bc, 4),
             (0xdc8, 8),
+            (0x640, 1),
+            (0x6be, 2),
         ] {
             fill(a, b, rng, p + at, len);
         }
@@ -121,6 +123,27 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World) {
         ALL,
         |m| t::ms_ap_up(m, who, actor, ap, ret),
     );
+    // the overdrive gauge (MsLimitUp): a maximum of at least 1 (the AP
+    // path divides by it) and rates that are ordinary floats
+    let actor = w.actor(rng.below(ACTORS));
+    poke(
+        a,
+        b,
+        actor + 0x5bc,
+        &[rng.byte(), u8::try_from(1 + rng.below(255)).unwrap()],
+    );
+    let rate = (f32::from(i16::try_from(rng.range(1, 3000)).unwrap()) / 100.0).to_bits();
+    poke(a, b, actor + 0x70c, &rate.to_le_bytes());
+    let (who, n) = (rng.below(18), rng.range(-10, 300));
+    twin(
+        "MsLimitUp",
+        a,
+        b,
+        0x007b_1590,
+        &[who, actor, n.cast_unsigned()],
+        ALL,
+        |m| t::ms_limit_up(m, who, actor, n).cast_unsigned(),
+    );
     let spoils = w.out + 0x20;
     let item = if rng.below(6) == 0 {
         0
@@ -147,6 +170,11 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let w = world(a, b, rng, synthetic);
     if w.synthetic || !readable(a, ffx_battle::actor::bridge::MON_TOP.get(b), ACTOR as usize) {
         set(a, b, ffx_battle::actor::bridge::MON_TOP, w.actor(0x14));
+    }
+    let rom = ffx_battle::menu::bridge::PLY_ROM;
+    if w.synthetic || !readable(a, rom.get(b), 0x20) {
+        let t = battle_common::world::fake_records(a, b, rng, 0x20, 0x40);
+        set(a, b, rom, t);
     }
     for round in 0..800 {
         if w.synthetic || round % 2 == 1 {

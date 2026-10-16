@@ -297,4 +297,80 @@ pub mod bridge {
             mem.write(spoils + 0xd0, c);
         }
     }
+    /// Set: overdrive gauges do not fill (`MsLimitUp`).
+    pub const LIMIT_FROZEN: Global<u8> = Global::new(0x0112_a916);
+    /// 0.9 as the `f64` `MsLimitUp` scales the overdrive-to-AP rate by.
+    pub const AP_RATE_DECAY: Global<f64> = Global::new(0x00b4_9958);
+
+    /// `MsLimitUp(chr, actor, n)` (`0x007b1590`): fills the overdrive gauge
+    /// (`+0x5bc`, at most `+0x5bd`) by `n`, ×3 with ability bit 2 of
+    /// `+0x6be`, else ×2 with bit 1 or (bit 4) when weak; ×1.5 and ×2 with
+    /// bits 0x20 and 0x40 of `+0x640`; none under status 2 bit 0x40, ×2 with
+    /// bit 0x80. With ability bit 8 (Overdrive → AP) the fill becomes AP
+    /// instead (`MsGetNextAP · n / max · rate`, `+0x70c` then ×0.9, both
+    /// `f32`) and is 0. A gauge just filled counts a record
+    /// (`MsSaveAddInfoData(chr, 3)`). Returns the fill; `n` unchanged when
+    /// frozen, under status 2 bit 0x400 or out.
+    pub fn ms_limit_up(mem: &mut impl Mem, chr: u32, actor: u32, n: i32) -> i32 {
+        use ffx_bridge::x87::{load, mul, store};
+        if LIMIT_FROZEN.get(mem) != 0
+            || half(mem, actor, 0x616) & 0x400 != 0
+            || byte(mem, actor, 0xdcc) != 0
+            || byte(mem, actor, 0xdce) != 0
+        {
+            return n;
+        }
+        let abil = half(mem, actor, 0x6be);
+        let mut v = if abil & 2 != 0 {
+            n.wrapping_mul(3)
+        } else if abil & 1 != 0 {
+            n.wrapping_mul(2)
+        } else if abil & 4 != 0 && {
+            let hp: i32 = mem.read(actor.wrapping_add(0x5d0));
+            let max: i32 = mem.read(actor.wrapping_add(0x594));
+            crate::actor::bridge::ms_calc_weak_level(hp, max).cast_signed() >= 1
+        } {
+            n.wrapping_mul(2)
+        } else {
+            n
+        };
+        let st = byte(mem, actor, 0x640);
+        if st & 0x20 != 0 {
+            v = v.wrapping_mul(3) / 2;
+        }
+        if st & 0x40 != 0 {
+            v = v.wrapping_mul(2);
+        }
+        let s2 = half(mem, actor, 0x616);
+        if s2 & 0x40 != 0 {
+            v = 0;
+        }
+        if s2 & 0x80 != 0 {
+            v = v.wrapping_mul(2);
+        }
+        if byte(mem, actor, 0x6be) & 8 != 0 {
+            let next = crate::menu::bridge::ms_get_next_ap(mem, chr.cast_signed());
+            let q = next.wrapping_mul(v) / i32::from(byte(mem, actor, 0x5bd));
+            #[allow(clippy::cast_possible_truncation)] // fild then fstp dword
+            let f = store(f64::from(q as f32));
+            let rate: u32 = mem.read(actor.wrapping_add(0x70c));
+            let f = store(mul(load(f), load(rate)));
+            let ap = ffx_bridge::x87::ftol(mem, load(f));
+            ms_ap_up(mem, chr, actor, ap, 0);
+            let rate: u32 = mem.read(actor.wrapping_add(0x70c));
+            mem.write(
+                actor.wrapping_add(0x70c),
+                store(mul(load(rate), AP_RATE_DECAY.get(mem))),
+            );
+            v = 0;
+        }
+        let old = i32::from(byte(mem, actor, 0x5bc));
+        let max = byte(mem, actor, 0x5bd);
+        let g = ms_check_range(old.wrapping_add(v), 0, i32::from(max));
+        mem.write(actor.wrapping_add(0x5bc), g.to_le_bytes()[0]);
+        if old < g && g == i32::from(max) {
+            crate::flow::bridge::ms_save_add_info_data(mem, chr.cast_signed(), 3);
+        }
+        v
+    }
 }
