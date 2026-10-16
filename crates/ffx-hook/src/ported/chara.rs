@@ -3,7 +3,11 @@
 
 use ffx_chara::chr::bridge as c;
 use ffx_chara::handle::bridge as h;
+use ffx_chara::id::bridge as id;
 use ffx_chara::layout as l;
+use ffx_chara::parts::bridge as p;
+use ffx_chara::sys::bridge as sy;
+use ffx_chara::texture::bridge as tx;
 
 use super::{mem, ported};
 
@@ -394,5 +398,481 @@ ported! {
     /// `Ch_SetWeight(chr, w)` -> old.
     Ch_SetWeight @ 0x0082_b940 => extern "C" fn ch_set_weight(chr: u32, w: f32) -> f32 {
         c::ch_set_weight(&mut mem(), chr, w)
+    }
+
+    // ---- cloth and position
+    /// `Ch_ClothEnableGrav(chr, on)`.
+    Ch_ClothEnableGrav @ 0x0082_45f0 => extern "C" fn ch_cloth_enable_grav(chr: u32, on: u32) -> u32 {
+        p::ch_cloth_enable_grav(&mut mem(), chr, on)
+    }
+    /// `Ch_ClothGetParaEdit()`.
+    Ch_ClothGetParaEdit @ 0x0082_4610 => extern "C" fn ch_cloth_get_para_edit() -> i32 {
+        sy::get_i8(&mem(), sy::CLOTH_PARA_EDIT)
+    }
+    /// `Ch_ClothMeshMappingOffset(chr)`.
+    Ch_ClothMeshMappingOffset @ 0x0082_4620 => extern "C" fn ch_cloth_mesh_mapping_offset(chr: u32) {
+        p::ch_cloth_mesh_mapping_offset(&mut mem(), chr);
+    }
+    /// `Ch_ClothSetFast(chr)`: settle frames by id.
+    Ch_ClothSetFast @ 0x0082_4920 => extern "C" fn ch_cloth_set_fast(chr: u32) {
+        p::ch_cloth_set_fast(&mut mem(), chr);
+    }
+    /// `Ch_ClothSetParaEdit(v)`.
+    Ch_ClothSetParaEdit @ 0x0082_4a30 => extern "C" fn ch_cloth_set_para_edit(v: u32) {
+        sy::set_i8(&mut mem(), sy::CLOTH_PARA_EDIT, v);
+    }
+    /// `Ch_ClothSetXZ(v)`.
+    Ch_ClothSetXZ @ 0x0082_4a40 => extern "C" fn ch_cloth_set_xz(v: f32) {
+        sy::set_f32(&mut mem(), sy::CLOTH_XZ, v);
+    }
+    /// `Ch_ClothSetY(v)`.
+    Ch_ClothSetY @ 0x0082_4a50 => extern "C" fn ch_cloth_set_y(v: f32) {
+        sy::set_f32(&mut mem(), sy::CLOTH_Y, v);
+    }
+    /// `Ch_MemMoveSetTrigger()`.
+    Ch_MemMoveSetTrigger @ 0x0082_7250 => extern "C" fn ch_mem_move_set_trigger() {
+        sy::ch_mem_move_set_trigger(&mut mem());
+    }
+    /// `Ch_WorkSwap(chr)`: the copy's address.
+    Ch_WorkSwap @ 0x0082_8b30 => extern "C" fn ch_work_swap(chr: u32) -> u32 {
+        p::ch_work_swap(&mut mem(), chr)
+    }
+    /// `Ch_IsLoadingClothFile(key)`.
+    Ch_IsLoadingClothFile @ 0x0082_a100 => extern "C" fn ch_is_loading_cloth_file(key: u32) -> u32 {
+        h::ch_is_loading_cloth_file(&mem(), key)
+    }
+    /// `Ch_AddY(chr, dy)`.
+    Ch_AddY @ 0x0082_a8b0 => extern "C" fn ch_add_y(chr: u32, dy: f32) {
+        p::ch_add_y(&mut mem(), chr, dy);
+    }
+    /// `Ch_AllSetThicknessEvent(t)`.
+    Ch_AllSetThicknessEvent @ 0x0082_a8d0 => extern "C" fn ch_all_set_thickness_event(t: f32) {
+        p::ch_all_set_thickness_event(&mut mem(), t);
+    }
+    /// `Ch_ClothSetEnable(chr, on)`.
+    Ch_ClothSetEnable @ 0x0082_a930 => extern "C" fn ch_cloth_set_enable(chr: u32, on: u32) -> u32 {
+        p::ch_cloth_set_enable(&mut mem(), chr, on)
+    }
+    /// `Ch_DisableBodyHit(chr, off)`.
+    Ch_DisableBodyHit @ 0x0082_a950 => extern "C" fn ch_disable_body_hit(chr: u32, off: u32) -> u32 {
+        p::ch_disable_body_hit(&mut mem(), chr, off)
+    }
+    /// `Ch_DisableID(chr, off)`.
+    Ch_DisableID @ 0x0082_a980 => extern "C" fn ch_disable_id(chr: u32, off: u32) -> u32 {
+        p::ch_disable_id(&mut mem(), chr, off)
+    }
+
+    // ---- drawing
+    /// `Ch_DrawCalcShade(chr, &r, &g, &b)`.
+    Ch_DrawCalcShade @ 0x0082_eaf0 => extern "C" fn ch_draw_calc_shade(chr: u32, r: u32, g: u32, b: u32) {
+        p::ch_draw_calc_shade(&mut mem(), chr, r, g, b);
+    }
+    /// `Ch_DrawEnEffect(chr, on)`.
+    Ch_DrawEnEffect @ 0x0082_eb60 => extern "C" fn ch_draw_en_effect(chr: u32, on: u32) -> u32 {
+        p::ch_draw_en_effect(&mut mem(), chr, on)
+    }
+    /// `Ch_DrawGetDisableSpec()`.
+    Ch_DrawGetDisableSpec @ 0x0082_eb80 => extern "C" fn ch_draw_get_disable_spec() -> i32 {
+        sy::get_i8(&mem(), sy::DRAW_DISABLE_SPEC)
+    }
+    /// `Ch_DrawGetFourceSpec()`.
+    Ch_DrawGetFourceSpec @ 0x0082_eb90 => extern "C" fn ch_draw_get_fource_spec() -> i32 {
+        sy::get_i8(&mem(), sy::DRAW_FOURCE_SPEC)
+    }
+    /// `Ch_DrawGetModelAlpha(chr, model)`.
+    Ch_DrawGetModelAlpha @ 0x0082_eba0 => extern "C" fn ch_draw_get_model_alpha(chr: u32, model: u32) -> f32 {
+        p::ch_draw_get_model_alpha(&mem(), chr, model)
+    }
+    /// `Ch_DrawGetParaEdit()`.
+    Ch_DrawGetParaEdit @ 0x0082_ebe0 => extern "C" fn ch_draw_get_para_edit() -> i32 {
+        sy::get_i8(&mem(), sy::DRAW_PARA_EDIT)
+    }
+    /// `Ch_DrawGetShadowColor(&r, &g, &b)`.
+    Ch_DrawGetShadowColor @ 0x0082_ebf0 => extern "C" fn ch_draw_get_shadow_color(r: u32, g: u32, b: u32) {
+        sy::ch_draw_get_shadow_color(&mut mem(), [r, g, b]);
+    }
+    /// `Ch_DrawGetShadowDir(&a, &b)`.
+    Ch_DrawGetShadowDir @ 0x0082_ec30 => extern "C" fn ch_draw_get_shadow_dir(a: u32, b: u32) {
+        sy::ch_draw_get_shadow_dir(&mut mem(), [a, b]);
+    }
+    /// `Ch_DrawSetCull(chr, on)`.
+    Ch_DrawSetCull @ 0x0083_00b0 => extern "C" fn ch_draw_set_cull(chr: u32, on: u32) -> u32 {
+        p::ch_draw_set_cull(&mut mem(), chr, on)
+    }
+    /// `Ch_DrawSetDisableSpec(v)`.
+    Ch_DrawSetDisableSpec @ 0x0083_00d0 => extern "C" fn ch_draw_set_disable_spec(v: u32) {
+        sy::set_i8(&mut mem(), sy::DRAW_DISABLE_SPEC, v);
+    }
+    /// `Ch_DrawSetFourceSpec(v)`.
+    Ch_DrawSetFourceSpec @ 0x0083_00e0 => extern "C" fn ch_draw_set_fource_spec(v: u32) {
+        sy::set_i8(&mut mem(), sy::DRAW_FOURCE_SPEC, v);
+    }
+    /// `Ch_DrawSetParaEdit(v)`.
+    Ch_DrawSetParaEdit @ 0x0083_00f0 => extern "C" fn ch_draw_set_para_edit(v: u32) {
+        sy::set_i8(&mut mem(), sy::DRAW_PARA_EDIT, v);
+    }
+    /// `Ch_DrawSetShadowColor(r, g, b)`.
+    Ch_DrawSetShadowColor @ 0x0083_0100 => extern "C" fn ch_draw_set_shadow_color(r: u32, g: u32, b: u32) {
+        sy::ch_draw_set_shadow_color(&mut mem(), [r, g, b]);
+    }
+    /// `Ch_DrawSetShadowDir(a, b)`.
+    Ch_DrawSetShadowDir @ 0x0083_0120 => extern "C" fn ch_draw_set_shadow_dir(a: u32, b: u32) {
+        sy::ch_draw_set_shadow_dir(&mut mem(), [a, b]);
+    }
+    /// `Ch_DrawSetShadowMode(mode)`.
+    Ch_DrawSetShadowMode @ 0x0083_0140 => extern "C" fn ch_draw_set_shadow_mode(mode: u32) {
+        sy::ch_draw_set_shadow_mode(&mut mem(), mode);
+    }
+    /// `Ch_EnableGetTexture()`.
+    Ch_EnableGetTexture @ 0x0083_0320 => extern "C" fn ch_enable_get_texture() -> i32 {
+        sy::get_i8(&mem(), sy::ENABLE_TEXTURE)
+    }
+
+    // ---- models, lights, shadow, textures
+    /// `Ch_GetNbElem(chr)`.
+    Ch_GetNbElem @ 0x0083_03f0 => extern "C" fn ch_get_nb_elem(chr: u32) -> u32 {
+        p::ch_get_nb_elem(&mem(), chr)
+    }
+    /// `Ch_GetNbModel(chr)`.
+    Ch_GetNbModel @ 0x0083_0410 => extern "C" fn ch_get_nb_model(chr: u32) -> u32 {
+        p::ch_get_nb_model(&mem(), chr)
+    }
+    /// `Ch_GetShadowDirH(chr)`.
+    Ch_GetShadowDirH @ 0x0083_0440 => extern "C" fn ch_get_shadow_dir_h(chr: u32) -> u32 {
+        p::ch_get_shadow_dir_h(&mem(), chr)
+    }
+    /// `Ch_PLightGetEnable(chr)`.
+    Ch_PLightGetEnable @ 0x0083_0ad0 => extern "C" fn ch_plight_get_enable(chr: u32) -> i32 {
+        p::ch_plight_get_enable(&mem(), chr)
+    }
+    /// `Ch_PLightSetEnable(chr, bits)`.
+    Ch_PLightSetEnable @ 0x0083_0ae0 => extern "C" fn ch_plight_set_enable(chr: u32, bits: u32) {
+        p::ch_plight_set_enable(&mut mem(), chr, bits);
+    }
+    /// `Ch_PLightSetEnableMask(chr, bits, mask)`.
+    Ch_PLightSetEnableMask @ 0x0083_0b00 => extern "C" fn ch_plight_set_enable_mask(chr: u32, bits: u32, mask: u32) {
+        p::ch_plight_set_enable_mask(&mut mem(), chr, bits, mask);
+    }
+    /// `Ch_SetShadowDirH(chr, dir)`.
+    Ch_SetShadowDirH @ 0x0083_0c90 => extern "C" fn ch_set_shadow_dir_h(chr: u32, dir: u32) {
+        p::ch_set_shadow_dir_h(&mut mem(), chr, dir);
+    }
+    /// `Ch_ShadowSetHeight(chr, h)`.
+    Ch_ShadowSetHeight @ 0x0083_0cb0 => extern "C" fn ch_shadow_set_height(chr: u32, h: f32) {
+        p::ch_shadow_set_height(&mut mem(), chr, h);
+    }
+    /// `Ch_TextureAnimSetEnable(chr, on)`.
+    Ch_TextureAnimSetEnable @ 0x0083_0d10 => extern "C" fn ch_texture_anim_set_enable(chr: u32, on: u32) -> u32 {
+        tx::ch_texture_anim_set_enable(&mut mem(), chr, on)
+    }
+    /// `Ch_TextureGetClutAddr(chr, i)`.
+    Ch_TextureGetClutAddr @ 0x0083_0d30 => extern "C" fn ch_texture_get_clut_addr(chr: u32, i: i32) -> u32 {
+        tx::ch_texture_get_clut_addr(&mem(), chr, i)
+    }
+    /// `Ch_TextureGetClutBase(chr, i)`.
+    Ch_TextureGetClutBase @ 0x0083_0d60 => extern "C" fn ch_texture_get_clut_base(chr: u32, i: i32) -> u32 {
+        tx::ch_texture_get_clut_base(&mem(), chr, i)
+    }
+    /// `Ch_TextureGetImageAddr(chr, i)`.
+    Ch_TextureGetImageAddr @ 0x0083_0d90 => extern "C" fn ch_texture_get_image_addr(chr: u32, i: i32) -> u32 {
+        tx::ch_texture_get_image_addr(&mem(), chr, i)
+    }
+    /// `Ch_TextureGetImageBase(chr, i)`.
+    Ch_TextureGetImageBase @ 0x0083_0dc0 => extern "C" fn ch_texture_get_image_base(chr: u32, i: i32) -> u32 {
+        tx::ch_texture_get_image_base(&mem(), chr, i)
+    }
+
+    // ---- binding and elements
+    /// `Ch_BindSetScale(chr, s)`.
+    Ch_BindSetScale @ 0x0083_2610 => extern "C" fn ch_bind_set_scale(chr: u32, s: f32) {
+        p::ch_bind_set_scale(&mut mem(), chr, s);
+    }
+    /// `Ch_BindToElemDirect(chr, parent, elem)`.
+    Ch_BindToElemDirect @ 0x0083_2680 => extern "C" fn ch_bind_to_elem_direct(chr: u32, parent: u32, elem: u32) {
+        p::ch_bind_to_elem_direct(&mut mem(), chr, parent, elem);
+    }
+    /// `Ch_BindToElemDirectOfs(chr, parent, elem, x, y, z)`.
+    Ch_BindToElemDirectOfs @ 0x0083_26e0 => extern "C" fn ch_bind_to_elem_direct_ofs(chr: u32, parent: u32, elem: u32, x: f32, y: f32, z: f32) {
+        p::ch_bind_to_elem_direct_ofs(&mut mem(), chr, parent, elem, [x, y, z]);
+    }
+    /// `Ch_ElemGetParent(chr, elem)`.
+    Ch_ElemGetParent @ 0x0083_3cf0 => extern "C" fn ch_elem_get_parent(chr: u32, elem: u32) -> u32 {
+        p::ch_elem_get_parent(&mem(), chr, elem)
+    }
+    /// `Ch_ElemSetQuatMatrix(chr, elem, matrix, weight)`.
+    Ch_ElemSetQuatMatrix @ 0x0083_3df0 => extern "C" fn ch_elem_set_quat_matrix(chr: u32, elem: u32, matrix: u32, w: f32) {
+        p::ch_elem_set_quat_matrix(&mut mem(), chr, elem, matrix, w);
+    }
+    /// `Ch_ElemSetReplaceMatrix(chr, elem, matrix)`.
+    Ch_ElemSetReplaceMatrix @ 0x0083_3e30 => extern "C" fn ch_elem_set_replace_matrix(chr: u32, elem: u32, matrix: u32) {
+        p::ch_elem_set_replace_matrix(&mut mem(), chr, elem, matrix);
+    }
+    /// `Ch_RelElemMapping(list, delta)`.
+    Ch_RelElemMapping @ 0x0083_77a0 => extern "C" fn ch_rel_elem_mapping(list: u32, delta: u32) {
+        p::ch_rel_elem_mapping(&mut mem(), list, delta);
+    }
+
+    // ---- normals, motion, mouth and neck
+    /// `Ch_GetCalcNorm(chr)`.
+    Ch_GetCalcNorm @ 0x0083_3f30 => extern "C" fn ch_get_calc_norm(chr: u32) -> u32 {
+        p::ch_get_calc_norm(&mem(), chr)
+    }
+    /// `Ch_GetDumpMotEv()`.
+    Ch_GetDumpMotEv @ 0x0083_3f50 => extern "C" fn ch_get_dump_mot_ev() -> i32 {
+        sy::get_i8(&mem(), sy::DUMP_MOT_EV)
+    }
+    /// `Ch_GetFuka(i)`.
+    Ch_GetFuka @ 0x0083_3f60 => extern "C" fn ch_get_fuka(i: u32) -> u32 {
+        sy::ch_get_fuka(&mem(), i)
+    }
+    /// `Ch_GetMotionType(chr)`.
+    Ch_GetMotionType @ 0x0083_3f70 => extern "C" fn ch_get_motion_type(chr: u32) -> i32 {
+        p::ch_get_motion_type(&mem(), chr)
+    }
+    /// `Ch_GetVel(chr, out)`.
+    Ch_GetVel @ 0x0083_4000 => extern "C" fn ch_get_vel(chr: u32, out: u32) {
+        p::ch_get_vel(&mut mem(), chr, out);
+    }
+    /// `Ch_GetVel2(chr, out)`.
+    Ch_GetVel2 @ 0x0083_4030 => extern "C" fn ch_get_vel2(chr: u32, out: u32) {
+        p::ch_get_vel2(&mut mem(), chr, out);
+    }
+    /// `Ch_GuiGetCalcNormal()`.
+    Ch_GuiGetCalcNormal @ 0x0083_4060 => extern "C" fn ch_gui_get_calc_normal() -> u32 {
+        sy::ch_gui_get_calc_normal(&mem())
+    }
+    /// `Ch_GuiSetCalcNormAll(on)`.
+    Ch_GuiSetCalcNormAll @ 0x0083_4090 => extern "C" fn ch_gui_set_calc_norm_all(on: u32) {
+        sy::ch_gui_set_calc_norm_all(&mut mem(), on);
+    }
+    /// `Ch_GuiSetMouthTh(v)`.
+    Ch_GuiSetMouthTh @ 0x0083_40a0 => extern "C" fn ch_gui_set_mouth_th(v: i32) -> i32 {
+        sy::ch_gui_set_mouth_th(&mut mem(), v)
+    }
+    /// `Ch_GuiSetTalk(a, b)`.
+    Ch_GuiSetTalk @ 0x0083_40d0 => extern "C" fn ch_gui_set_talk(a: u32, b: u32) {
+        sy::ch_gui_set_talk(&mut mem(), a, b);
+    }
+    /// `Ch_MouthGetAutoTalk(chr)`.
+    Ch_MouthGetAutoTalk @ 0x0083_4740 => extern "C" fn ch_mouth_get_auto_talk(chr: u32) -> i32 {
+        p::ch_mouth_get_auto_talk(&mem(), chr)
+    }
+    /// `Ch_MouthInit(chr)`.
+    Ch_MouthInit @ 0x0083_4750 => extern "C" fn ch_mouth_init(chr: u32) {
+        p::ch_mouth_init(&mut mem(), chr);
+    }
+    /// `Ch_MouthSetAutoTalk(chr, on)`.
+    Ch_MouthSetAutoTalk @ 0x0083_4770 => extern "C" fn ch_mouth_set_auto_talk(chr: u32, on: u32) {
+        p::ch_mouth_set_auto_talk(&mut mem(), chr, on);
+    }
+    /// `Ch_NeckSetLimit(chr, a, b)`.
+    Ch_NeckSetLimit @ 0x0083_4fd0 => extern "C" fn ch_neck_set_limit(chr: u32, a: f32, b: f32) {
+        p::ch_neck_set_limit(&mut mem(), chr, a, b);
+    }
+    /// `Ch_NeckSetSpeed(chr, speed)`.
+    Ch_NeckSetSpeed @ 0x0083_5020 => extern "C" fn ch_neck_set_speed(chr: u32, speed: f32) {
+        p::ch_neck_set_speed(&mut mem(), chr, speed);
+    }
+    /// `Ch_OptposGetBottom(chr, out)`.
+    Ch_OptposGetBottom @ 0x0083_5600 => extern "C" fn ch_optpos_get_bottom(chr: u32, out: u32) {
+        p::ch_optpos_copy(&mut mem(), chr, l::OPTPOS_BOTTOM, out);
+    }
+    /// `Ch_OptposGetCameraRef(chr, out)`.
+    Ch_OptposGetCameraRef @ 0x0083_5630 => extern "C" fn ch_optpos_get_camera_ref(chr: u32, out: u32) {
+        p::ch_optpos_copy(&mut mem(), chr, l::OPTPOS_CAMERA_REF, out);
+    }
+    /// `Ch_OptposGetExist(chr, i)`.
+    Ch_OptposGetExist @ 0x0083_5680 => extern "C" fn ch_optpos_get_exist(chr: u32, i: u32) -> u32 {
+        p::ch_optpos_get_exist(&mem(), chr, i)
+    }
+    /// `Ch_OptposGetTop(chr, out)`.
+    Ch_OptposGetTop @ 0x0083_56e0 => extern "C" fn ch_optpos_get_top(chr: u32, out: u32) {
+        p::ch_optpos_copy(&mut mem(), chr, l::OPTPOS_TOP, out);
+    }
+    /// `Ch_ReserveCalcNorm(chr)`.
+    Ch_ReserveCalcNorm @ 0x0083_5710 => extern "C" fn ch_reserve_calc_norm(chr: u32) {
+        p::ch_reserve_calc_norm(&mut mem(), chr, l::F_RESERVE_CALC_NORM);
+    }
+    /// `Ch_ReserveCalcNorm2(chr)`.
+    Ch_ReserveCalcNorm2 @ 0x0083_5730 => extern "C" fn ch_reserve_calc_norm2(chr: u32) {
+        p::ch_reserve_calc_norm(&mut mem(), chr, l::F_RESERVE_CALC_NORM2);
+    }
+    /// `Ch_SetCalcNorm(chr, on)` -> old bit.
+    Ch_SetCalcNorm @ 0x0083_5750 => extern "C" fn ch_set_calc_norm(chr: u32, on: u32) -> u32 {
+        p::ch_set_calc_norm(&mut mem(), chr, on)
+    }
+    /// `Ch_SetDumpMotEv(v)`.
+    Ch_SetDumpMotEv @ 0x0083_57c0 => extern "C" fn ch_set_dump_mot_ev(v: u32) {
+        sy::set_i8(&mut mem(), sy::DUMP_MOT_EV, v);
+    }
+    /// `Ch_SetFuka(i, v)`.
+    Ch_SetFuka @ 0x0083_57d0 => extern "C" fn ch_set_fuka(i: u32, v: u32) {
+        sy::ch_set_fuka(&mut mem(), i, v);
+    }
+    /// `Ch_SoundSetId(chr, id)`.
+    Ch_SoundSetId @ 0x0083_5b50 => extern "C" fn ch_sound_set_id(chr: u32, id: u32) {
+        p::ch_sound_set_id(&mut mem(), chr, id);
+    }
+    /// `Ch_SysGetScreenMatrixPtr()`.
+    Ch_SysGetScreenMatrixPtr @ 0x0083_5b70 => extern "C" fn ch_sys_get_screen_matrix_ptr() -> u32 {
+        sy::ch_sys_get_screen_matrix_ptr(&mem())
+    }
+    /// `Ch_SysGetCameraMatrixPtr()`.
+    Ch_SysGetCameraMatrixPtr @ 0x0083_5ba0 => extern "C" fn ch_sys_get_camera_matrix_ptr() -> u32 {
+        sy::ch_sys_get_camera_matrix_ptr(&mem())
+    }
+    /// `Ch_SysSetScreenMatrix(m)`.
+    Ch_SysSetScreenMatrix @ 0x0083_5e90 => extern "C" fn ch_sys_set_screen_matrix(m: u32) {
+        sy::set_matrix(&mut mem(), sy::SCREEN_MATRIX, m);
+    }
+    /// `Ch_SysSetCameraMatrix(m)`.
+    Ch_SysSetCameraMatrix @ 0x0083_5eb0 => extern "C" fn ch_sys_set_camera_matrix(m: u32) {
+        sy::set_matrix(&mut mem(), sy::CAMERA_MATRIX, m);
+    }
+    /// `Ch_TextureAnimGetHandle(id)`.
+    Ch_TextureAnimGetHandle @ 0x0083_5ed0 => extern "C" fn ch_texture_anim_get_handle(id: u32) -> u32 {
+        h::ch_texture_anim_get_handle(&mem(), id)
+    }
+    /// `Ch_MotionGetId(chr)`.
+    Ch_MotionGetId @ 0x0083_71a0 => extern "C" fn ch_motion_get_id(chr: u32) -> u32 {
+        p::ch_motion_get_id(&mem(), chr)
+    }
+    /// `Ch_GetKeepFps(chr)`.
+    Ch_GetKeepFps @ 0x0083_92a0 => extern "C" fn ch_get_keep_fps(chr: u32) -> u32 {
+        p::ch_get_keep_fps(&mem(), chr)
+    }
+    /// `Ch_GetWaitMotion(chr)`.
+    Ch_GetWaitMotion @ 0x0083_92c0 => extern "C" fn ch_get_wait_motion(chr: u32) -> i32 {
+        p::ch_get_wait_motion(&mem(), chr)
+    }
+    /// `Ch_MotionGetFrame(chr)`.
+    Ch_MotionGetFrame @ 0x0083_9860 => extern "C" fn ch_motion_get_frame(chr: u32) -> u32 {
+        p::ch_motion_get_frame(&mem(), chr)
+    }
+    /// `Ch_MotionGetHalf()`.
+    Ch_MotionGetHalf @ 0x0083_9870 => extern "C" fn ch_motion_get_half() -> u32 {
+        sy::ch_motion_get_half(&mem())
+    }
+    /// `Ch_MotionSetHalf(v)`.
+    Ch_MotionSetHalf @ 0x0083_9950 => extern "C" fn ch_motion_set_half(v: u32) {
+        sy::ch_motion_set_half(&mut mem(), v);
+    }
+    /// `Ch_MotionSetLoop(chr, n)`.
+    Ch_MotionSetLoop @ 0x0083_9960 => extern "C" fn ch_motion_set_loop(chr: u32, n: u32) {
+        p::ch_motion_set_loop(&mut mem(), chr, n);
+    }
+    /// `Ch_SetKeepFps(chr, on)` -> old bit.
+    Ch_SetKeepFps @ 0x0083_9b50 => extern "C" fn ch_set_keep_fps(chr: u32, on: u32) -> u32 {
+        p::ch_set_keep_fps(&mut mem(), chr, on)
+    }
+    /// `Fixed12_ToFloat(v)`: 4.12 fixed to float.
+    Fixed12_ToFloat @ 0x0083_9dd0 => extern "C" fn fixed12_to_float(v: u32) -> f32 {
+        ffx_chara::fixed::fixed12_to_float(v)
+    }
+    /// `Fixed8_ToFloat(v)`: 8.8 fixed to float.
+    Fixed8_ToFloat @ 0x0083_9e00 => extern "C" fn fixed8_to_float(v: u32) -> f32 {
+        ffx_chara::fixed::fixed8_to_float(v)
+    }
+    /// `Angle12_Lerp(a, b, t)`: 12-bit angles the short way.
+    Angle12_Lerp @ 0x0083_9e30 => extern "C" fn angle12_lerp(a: i32, b: i32, t: i32) -> i32 {
+        ffx_chara::fixed::angle12_lerp(a, b, t)
+    }
+
+    // ---- cluts and texture data
+    /// `Ch_ClutEnable(chr, on)`.
+    Ch_ClutEnable @ 0x0083_c940 => extern "C" fn ch_clut_enable(chr: u32, on: u32) {
+        tx::ch_clut_enable(&mut mem(), chr, on);
+    }
+    /// `Ch_ClutGetNb(chr)`.
+    Ch_ClutGetNb @ 0x0083_c9a0 => extern "C" fn ch_clut_get_nb(chr: u32) -> i32 {
+        tx::ch_clut_get_nb(&mem(), chr)
+    }
+    /// `Ch_ClutGetOrgPtr(chr, i)`.
+    Ch_ClutGetOrgPtr @ 0x0083_c9b0 => extern "C" fn ch_clut_get_org_ptr(chr: u32, i: u32) -> u32 {
+        tx::ch_clut_get_org_ptr(&mem(), chr, i)
+    }
+    /// `Ch_ClutGetPtr(chr, i)`.
+    Ch_ClutGetPtr @ 0x0083_c9d0 => extern "C" fn ch_clut_get_ptr(chr: u32, i: u32) -> u32 {
+        tx::ch_clut_get_ptr(&mem(), chr, i)
+    }
+    /// `Ch_ClutGetSize(chr, i)`.
+    Ch_ClutGetSize @ 0x0083_c9f0 => extern "C" fn ch_clut_get_size(chr: u32, i: u32) -> i32 {
+        tx::ch_clut_get_size(&mem(), chr, i)
+    }
+    /// `Ch_GetLightValue(chr)`.
+    Ch_GetLightValue @ 0x0083_cb90 => extern "C" fn ch_get_light_value(chr: u32) -> u32 {
+        tx::ch_get_light_value(chr)
+    }
+    /// `Ch_TexGetClut(chr, i, &out)`.
+    Ch_TexGetClut @ 0x0083_cd20 => extern "C" fn ch_tex_get_clut(chr: u32, i: u32, out: u32) -> u32 {
+        tx::ch_tex_get_clut(&mut mem(), chr, i, out)
+    }
+    /// `Ch_TexGetImage(chr, i, &w, &h)`.
+    Ch_TexGetImage @ 0x0083_cd50 => extern "C" fn ch_tex_get_image(chr: u32, i: u32, w: u32, h: u32) -> u32 {
+        tx::ch_tex_get_image(&mut mem(), chr, i, w, h)
+    }
+    /// `Ch_TexGetNbClut(chr)`.
+    Ch_TexGetNbClut @ 0x0083_cd90 => extern "C" fn ch_tex_get_nb_clut(chr: u32) -> u32 {
+        tx::ch_tex_get_nb_clut(&mem(), chr)
+    }
+    /// `Ch_TexGetNbImage(chr)`.
+    Ch_TexGetNbImage @ 0x0083_cdb0 => extern "C" fn ch_tex_get_nb_image(chr: u32) -> u32 {
+        tx::ch_tex_get_nb_image(&mem(), chr)
+    }
+
+    // ---- map ids
+    /// `Ch_IdGetDictionary(chr)`.
+    Ch_IdGetDictionary @ 0x0083_d7a0 => extern "C" fn ch_id_get_dictionary(chr: u32) -> u32 {
+        id::ch_id_get_field(&mem(), chr, 11)
+    }
+    /// `Ch_IdGetEffect(chr)`.
+    Ch_IdGetEffect @ 0x0083_d7c0 => extern "C" fn ch_id_get_effect(chr: u32) -> u32 {
+        id::ch_id_get_field(&mem(), chr, 9)
+    }
+    /// `Ch_IdGetEffectTable(chr)`.
+    Ch_IdGetEffectTable @ 0x0083_d7e0 => extern "C" fn ch_id_get_effect_table(chr: u32) -> u32 {
+        id::ch_id_get_effect_table(&mem(), chr)
+    }
+    /// `Ch_IdGetEncount(chr)`.
+    Ch_IdGetEncount @ 0x0083_d820 => extern "C" fn ch_id_get_encount(chr: u32) -> u32 {
+        id::ch_id_get_field(&mem(), chr, 7)
+    }
+    /// `Ch_IdGetMap(chr)`.
+    Ch_IdGetMap @ 0x0083_d840 => extern "C" fn ch_id_get_map(chr: u32) -> u32 {
+        id::ch_id_get_map(&mem(), chr)
+    }
+    /// `Ch_IdGetMapB(chr)`.
+    Ch_IdGetMapB @ 0x0083_d860 => extern "C" fn ch_id_get_map_b(chr: u32) -> u32 {
+        id::ch_id_get_map_b(&mem(), chr)
+    }
+    /// `Ch_IdGetSound(chr)`.
+    Ch_IdGetSound @ 0x0083_d900 => extern "C" fn ch_id_get_sound(chr: u32) -> u32 {
+        id::ch_id_get_field(&mem(), chr, 15)
+    }
+    /// `Ch_IdGetWater(chr)`.
+    Ch_IdGetWater @ 0x0083_d920 => extern "C" fn ch_id_get_water(chr: u32) -> u32 {
+        id::ch_id_get_field(&mem(), chr, 13)
+    }
+    /// `Ch_IdSetDefPid(chr)`.
+    Ch_IdSetDefPid @ 0x0083_d940 => extern "C" fn ch_id_set_def_pid(chr: u32) {
+        id::ch_id_set_def_pid(&mut mem(), chr);
+    }
+
+    // ---- effect packets
+    /// `Ch_EffectPacketGetSize()`.
+    Ch_EffectPacketGetSize @ 0x0084_5700 => extern "C" fn ch_effect_packet_get_size() -> u32 {
+        sy::ch_effect_packet_get_size(&mem())
+    }
+    /// `Ch_EffectPacketStoreEND()`.
+    Ch_EffectPacketStoreEND @ 0x0084_57d0 => extern "C" fn ch_effect_packet_store_end() {
+        sy::ch_effect_packet_store_end(&mut mem());
+    }
+    /// `Ch_EffectPacketStoreMAT(v)`.
+    Ch_EffectPacketStoreMAT @ 0x0084_5800 => extern "C" fn ch_effect_packet_store_mat(v: u32) {
+        sy::set_u16(&mut mem(), sy::PACKET_MAT, v);
+    }
+    /// `Ch_EffectPacketStorePRG(v)`.
+    Ch_EffectPacketStorePRG @ 0x0084_5810 => extern "C" fn ch_effect_packet_store_prg(v: u32) {
+        sy::set_u16(&mut mem(), sy::PACKET_PRG, v);
     }
 }

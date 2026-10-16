@@ -1,6 +1,6 @@
 //! Singletons and small object accessors of the PC port's managers
 //! (clusters, the asset loader, the archive stream, the magic file, asset
-//! lists).
+//! lists, the ability map, the character cache, the loading screen).
 
 /// `AssetListReader::getAssetCount` for an asset vector `[begin, end)`:
 /// the 24-byte records between them (a signed division, toward zero).
@@ -70,5 +70,127 @@ pub mod bridge {
             mem.read(this.wrapping_add(0x14)),
             mem.read(this.wrapping_add(0x18)),
         )
+    }
+
+    /// An MSVC `std::string` at `s`: its characters, inline while the
+    /// capacity (`+0x14`) is under 16, else through the pointer at `+0`.
+    fn string_chars(mem: &impl Mem, s: u32) -> u32 {
+        if mem.read::<u32>(s.wrapping_add(0x14)) < 0x10 {
+            s
+        } else {
+            mem.read(s)
+        }
+    }
+
+    /// `AssetListReader::getAssetPath(i)` (`0x006f41b0`, thiscall): asset
+    /// `i`'s path (a `std::string` first in each 24-byte record), or null
+    /// out of range.
+    pub fn asset_path(mem: &impl Mem, this: u32, i: i32) -> u32 {
+        if i < 0 || i >= asset_count(mem, this) {
+            return 0;
+        }
+        let begin: u32 = mem.read(this.wrapping_add(0x14));
+        string_chars(mem, begin.wrapping_add(i.cast_unsigned().wrapping_mul(24)))
+    }
+
+    /// `AssetListReader::isModel(id)` (`0x006f46b0`, thiscall): `id` is in
+    /// the model ID vector at `+8`.
+    pub fn is_model(mem: &impl Mem, this: u32, id: u32) -> bool {
+        let mut p: u32 = mem.read(this.wrapping_add(8));
+        let end: u32 = mem.read(this.wrapping_add(0xc));
+        while p != end {
+            if mem.read::<u32>(p) == id {
+                return true;
+            }
+            p = p.wrapping_add(4);
+        }
+        false
+    }
+
+    /// `AssetListReader::getSymbolById(id)` (`0x006f42d0`, thiscall): the
+    /// name of symbol `id` in the `std::map` whose head `this` points to
+    /// (nodes: left `+0`, parent `+4`, right `+8`, nil flag `+0xd`, name
+    /// `+0x10`, ID `+0x28`), walked in order; null when absent.
+    pub fn symbol_by_id(mem: &impl Mem, this: u32, id: u32) -> u32 {
+        let head: u32 = mem.read(this);
+        let nil = |n: u32| mem.read::<u8>(n.wrapping_add(0xd)) != 0;
+        let mut node: u32 = mem.read(head);
+        while node != head {
+            if mem.read::<u32>(node.wrapping_add(0x28)) == id {
+                return string_chars(mem, node.wrapping_add(0x10));
+            }
+            if !nil(node) {
+                let right: u32 = mem.read(node.wrapping_add(8));
+                if nil(right) {
+                    // up while coming from the right
+                    let mut child = node;
+                    let mut up: u32 = mem.read(node.wrapping_add(4));
+                    while !nil(up) && child == mem.read::<u32>(up.wrapping_add(8)) {
+                        child = up;
+                        up = mem.read(up.wrapping_add(4));
+                    }
+                    node = up;
+                } else {
+                    // the leftmost below the right child
+                    node = right;
+                    loop {
+                        let left: u32 = mem.read(node);
+                        if nil(left) {
+                            break;
+                        }
+                        node = left;
+                    }
+                }
+            }
+        }
+        0
+    }
+
+    /// `AbmapManager::ToDestroy()` (`0x006857b0`, `this` in ECX): state 2.
+    pub fn abmap_to_destroy(mem: &mut impl Mem, this: u32) {
+        mem.write(this.wrapping_add(4), 2u32);
+    }
+
+    /// `ChrResourceCacheManager::isChrDelayedRelease()` (`0x0069b7b0`,
+    /// `this` in ECX): the mode at `+0` is not 2.
+    pub fn is_chr_delayed_release(mem: &impl Mem, this: u32) -> u32 {
+        u32::from(mem.read::<u32>(this) != 2)
+    }
+
+    /// The new-character load counter (`AsyncLoadNewCharacter`; negative
+    /// = off).
+    pub const NEW_CHARACTERS: Global<i32> = Global::new(0x00c4_21dc);
+
+    /// `AsyncLoadNewCharacter()` (`0x00782f80`): counts one when the
+    /// counter is on; returns 0.
+    pub fn async_load_new_character(mem: &mut impl Mem) -> u32 {
+        let n = NEW_CHARACTERS.get(mem);
+        if n >= 0 {
+            NEW_CHARACTERS.set(mem, n.wrapping_add(1));
+        }
+        0
+    }
+
+    /// `LoadingScreen::setParameterManually(&a, &b, &c)` (`0x006e4ff0`,
+    /// thiscall): each non-null one into `+4` (`f32`), `+0x10` (copied
+    /// whole), `+0x14` (`f32`).
+    pub fn loading_screen_set_parameter(mem: &mut impl Mem, this: u32, a: u32, b: u32, c: u32) {
+        if a != 0 {
+            let v = crate::x87::round_trip(mem.read(a));
+            mem.write(this.wrapping_add(4), v);
+        }
+        if b != 0 {
+            let v: u32 = mem.read(b);
+            mem.write(this.wrapping_add(0x10), v);
+        }
+        if c != 0 {
+            let v = crate::x87::round_trip(mem.read(c));
+            mem.write(this.wrapping_add(0x14), v);
+        }
+    }
+
+    /// `abmCalcChrMoveCurMoveCheck(chr)` (`0x00a45000`): bit 0 of `+0x22`.
+    pub fn chr_move_cur_move_check(mem: &impl Mem, chr: u32) -> u32 {
+        u32::from(mem.read::<u8>(chr.wrapping_add(0x22)) & 1)
     }
 }

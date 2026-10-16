@@ -95,11 +95,14 @@ pub mod bridge {
     }
 
     /// `opus_fullauto_no_get(obj)` (`0x00800df0`): steps the `i16` at `+2`,
-    /// which wraps to -0x8000 from -16 up.
-    pub fn opus_fullauto_no_get(mem: &mut impl Mem, obj: u32) {
+    /// which wraps to -0x8000 from -16 up, and returns the value before
+    /// the step, zero-extended (`opu_et_unit` takes it as its number).
+    pub fn opus_fullauto_no_get(mem: &mut impl Mem, obj: u32) -> u32 {
         let p = Ptr::<i16>::new(obj.wrapping_add(2));
-        let v = p.get(mem).wrapping_add(1);
+        let old = p.get(mem);
+        let v = old.wrapping_add(1);
         p.set(mem, if v >= -16 { i16::MIN } else { v });
+        u32::from(old.cast_unsigned())
     }
 
     /// `opu_wait(obj, cmd)` (`0x0080c500`): `+0x210` = the `u16` at

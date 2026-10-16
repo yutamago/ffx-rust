@@ -8,6 +8,13 @@ pub const fn is_busy(state: i32) -> bool {
     !matches!(state, -1 | 0 | 2 | 4 | 6..=10)
 }
 
+/// Bytes of a save the CRC covers, from [`CRC_DATA`] (`TkCRC`'s length).
+pub const CRC_LEN: i32 = 0x64b8;
+/// Where the CRC'd bytes of a save start.
+pub const CRC_DATA: u32 = 0x40;
+/// The CRC as a word, inside the CRC'd bytes (cleared while computing).
+pub const CRC_WORD: u32 = 0x64f4;
+
 /// The originals over game memory (`ffx_bridge::Mem`).
 pub mod bridge {
     use ffx_bridge::{Global, Mem};
@@ -85,5 +92,98 @@ pub mod bridge {
     /// `SaveDataIsLoadingSuccessful()` (`0x006480a0`).
     pub fn is_loading_successful(mem: &impl Mem) -> u32 {
         u32::from(LOAD_RESULT.get(mem) == 1)
+    }
+
+    /// Set: `SaveDataCheckCrc` passes every save without checking.
+    pub const CRC_CHECK_OFF: Global<u32> = Global::new(0x00cc_b9a4);
+    /// The Al Bhed fade value `SaveDataSetAlbhedFade` sets.
+    pub const ALBHED_FADE: Global<u32> = Global::new(0x00c3_2308);
+
+    /// `SaveDataIsBusy()` (`0x00648040`): the manager's `isBusy`, 0 without
+    /// a manager.
+    pub fn is_busy_now(mem: &impl Mem) -> u32 {
+        match manager_instance(mem) {
+            0 => 0,
+            m => is_busy(mem, m),
+        }
+    }
+
+    /// `SaveDataSetScreenState(state)` (`0x006486e0`): closing (0) also
+    /// clears the dialog state and the manager's callback result.
+    pub fn set_screen_state(mem: &mut impl Mem, state: u32) {
+        SCREEN_STATE.set(mem, state);
+        if state == 0 {
+            DIALOG_STATE.set(mem, 0);
+            let m = manager_instance(mem);
+            set_cb_result(mem, m, 0);
+        }
+    }
+
+    /// `SaveDataIsOperationCanceled()` (`0x006480c0`): the manager's
+    /// `+0x358`.
+    pub fn is_operation_canceled(mem: &impl Mem) -> u32 {
+        mem.read(manager_instance(mem).wrapping_add(0x358))
+    }
+
+    /// `SaveDataIsLoadingAlbhed()` (`0x00648070`): the manager's `+0x360`
+    /// is set.
+    pub fn is_loading_albhed(mem: &impl Mem) -> u32 {
+        u32::from(mem.read::<u32>(manager_instance(mem).wrapping_add(0x360)) != 0)
+    }
+
+    /// `SaveDataSetAlbhedFade(v)` (`0x006485e0`): only with a manager.
+    pub fn set_albhed_fade(mem: &mut impl Mem, v: u32) {
+        if manager_instance(mem) != 0 {
+            ALBHED_FADE.set(mem, v);
+        }
+    }
+
+    /// `SetLocalDataSlotAndTime(_, slot, a, b)` (`0x00648fa0`): into the
+    /// manager (`+0x376` slot, `+0x380`, `+0x384`, `+0x388` = 2).
+    pub fn set_local_data_slot_and_time(mem: &mut impl Mem, slot: u16, a: u32, b: u32) {
+        let m = manager_instance(mem);
+        mem.write(m.wrapping_add(0x376), slot);
+        mem.write(m.wrapping_add(0x380), a);
+        mem.write(m.wrapping_add(0x384), b);
+        mem.write(m.wrapping_add(0x388), 2u16);
+    }
+
+    /// `SaveDataGetCrc(save)` (`0x00647e80`): clears the stored CRC word
+    /// (`+0x64f4`) and returns the save's CRC, given `TkCRC(len, data)` (in
+    /// `ffx-menu`; only `AX` is defined, as there).
+    pub fn get_crc<M: Mem>(mem: &mut M, save: u32, crc: impl Fn(&M, i32, u32) -> u16) -> u16 {
+        mem.write(save.wrapping_add(super::CRC_WORD), 0u32);
+        crc(mem, super::CRC_LEN, save.wrapping_add(super::CRC_DATA))
+    }
+
+    /// `SaveDataWriteCrc(save)` (`0x00648f20`): the save's CRC, given
+    /// `TkCRC(len, data)` (in `ffx-menu`), into `+0x1a` and the CRC word;
+    /// returns 0.
+    pub fn write_crc<M: Mem>(mem: &mut M, save: u32, crc: impl Fn(&M, i32, u32) -> u16) -> u32 {
+        mem.write(save.wrapping_add(super::CRC_WORD), 0u32);
+        mem.write(save.wrapping_add(super::CRC_WORD), 0u32);
+        let c = crc(mem, super::CRC_LEN, save.wrapping_add(super::CRC_DATA));
+        mem.write(save.wrapping_add(0x1a), c);
+        mem.write(save.wrapping_add(super::CRC_WORD), u32::from(c));
+        0
+    }
+
+    /// `SaveDataCheckCrc()` (`0x00647d70`): whether the manager's buffer
+    /// holds a save whose CRC (`+0x1a`) matches, also left in its byte
+    /// `+4`; given `TkCRC`.
+    pub fn check_crc<M: Mem>(mem: &mut M, crc: impl Fn(&M, i32, u32) -> u16) -> u32 {
+        let m = manager_instance(mem);
+        let buf = get_ref_buffer(mem, m);
+        let stored: u16 = mem.read(buf.wrapping_add(0x1a));
+        mem.write(buf.wrapping_add(4), 0u8);
+        let ok = CRC_CHECK_OFF.get(mem) != 0
+            || (u32::from(stored) == mem.read::<u32>(buf.wrapping_add(super::CRC_WORD)) && {
+                mem.write(buf.wrapping_add(super::CRC_WORD), 0u32);
+                crc(mem, super::CRC_LEN, buf.wrapping_add(super::CRC_DATA)) == stored
+            });
+        if ok {
+            mem.write(buf.wrapping_add(4), 1u8);
+        }
+        u32::from(ok)
     }
 }

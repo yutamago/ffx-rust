@@ -1,7 +1,13 @@
-//! `ffx-system`: the PS2 CD layer, save-data flags, singletons,
-//! configuration, text codes, the `cdc` matrix math.
+//! `ffx-system`: the PS2 CD layer, save data, singletons, configuration,
+//! text codes, the `TO` window, pad, battle-window and scene accessors,
+//! the archive digest map, the `cdc` matrix math.
 
-use ffx_system::{cd, config, instance, math, msg, save, stub};
+use ffx_bridge::Mem;
+use ffx_menu::scene::bridge as menu_scene;
+use ffx_system::{
+    btl, cd, config, fixup, instance, math, menu, msg, pad, pkt, render, save, scene, stub, vbf,
+    window,
+};
 
 use super::{mem, ported};
 
@@ -219,16 +225,18 @@ ported! {
     }
 
     /// `cdc::Mul4x4(dst, m, v)`: a 4-vector times a matrix.
-    cdc_Mul4x4 @ 0x0070_58f0 => extern "C" fn cdc_mul4x4(dst: u32, m: u32, v: u32) {
+    cdc_Mul4x4 @ 0x0070_58f0 => extern "C" fn cdc_mul4x4(dst: u32, m: u32, v: u32) -> u32 {
         math::bridge::mul4x4_vector(&mut mem(), dst, m, v);
+        dst // left in eax; FFXVu0ApplyMatrix returns it
     }
     /// `cdc::Mul4x4(dst, a, b)`: `b × a`.
     cdc_Mul4x4_007059b0 @ 0x0070_59b0 => extern "C" fn cdc_mul4x4_matrix(dst: u32, a: u32, b: u32) {
         math::bridge::mul4x4(&mut mem(), dst, a, b);
     }
     /// `cdc::Mul3x4(dst, m, v)`: a point transformed.
-    cdc_Mul3x4 @ 0x0070_5850 => extern "C" fn cdc_mul3x4(dst: u32, m: u32, v: u32) {
+    cdc_Mul3x4 @ 0x0070_5850 => extern "C" fn cdc_mul3x4(dst: u32, m: u32, v: u32) -> u32 {
         math::bridge::mul3x4(&mut mem(), dst, m, v);
+        dst // left in eax; FFXVu0RotTransPers and the envelope code use it
     }
     /// `cdc::Transpose(dst, m)`.
     cdc_Transpose @ 0x0070_63f0 => extern "C" fn cdc_transpose(dst: u32, m: u32) {
@@ -250,4 +258,334 @@ ported! {
     sceVu0VectorLengthSquared @ 0x006e_d9b0 => extern "C" fn sce_vu0_vector_length_squared(v: u32) -> f32 {
         math::bridge::length_squared(&mem(), v)
     }
+
+    /// `TOGetWindowStructAdrs(i)`.
+    TOGetWindowStructAdrs @ 0x0090_6fb0 => extern "C" fn to_get_window_struct_adrs(i: i32) -> u32 {
+        window::bridge::window(&mem(), i)
+    }
+    /// `TOGetWindowType(i)`.
+    TOGetWindowType @ 0x0090_6c40 => extern "C" fn to_get_window_type(i: i32) -> i32 {
+        window::bridge::window_type(&mem(), i)
+    }
+    /// `TOGetWindowStatus(i)`.
+    TOGetWindowStatus @ 0x0090_6c20 => extern "C" fn to_get_window_status(i: i32) -> i32 {
+        window::bridge::window_status(&mem(), i)
+    }
+    /// `TOCloseWindow(i)`.
+    TOCloseWindow @ 0x0090_6ba0 => extern "C" fn to_close_window(i: i32) {
+        window::bridge::close_window(&mut mem(), i);
+    }
+    /// `TOGetMessageStatus(i)`.
+    TOGetMessageStatus @ 0x008b_7ca0 => extern "C" fn to_get_message_status(i: i32) -> i32 {
+        window::bridge::message_status(&mem(), i)
+    }
+    /// `TOCloseMessage(i)`.
+    TOCloseMessage @ 0x008b_5810 => extern "C" fn to_close_message(i: i32) {
+        window::bridge::close_message(&mut mem(), i);
+    }
+    /// `TOSetMessageFunc(i, n)`.
+    TOSetMessageFunc @ 0x008b_8af0 => extern "C" fn to_set_message_func(i: i32, n: i32) {
+        window::bridge::set_message_func(&mut mem(), i, n);
+    }
+    /// `TOBtlSetMacroCommandType(i, n, type)` (a byte).
+    TOBtlSetMacroCommandType @ 0x008b_57c0 => extern "C" fn to_btl_set_macro_command_type(i: i32, n: i32, ty: u32) {
+        #[allow(clippy::cast_possible_truncation)] // the original stores CL
+        window::bridge::set_macro_command_type(&mut mem(), i, n, ty as u8);
+    }
+    /// `TOBtlSetMacroCommandValue(i, n, value)`.
+    TOBtlSetMacroCommandValue @ 0x008b_57f0 => extern "C" fn to_btl_set_macro_command_value(i: i32, n: i32, value: u32) {
+        window::bridge::set_macro_command_value(&mut mem(), i, n, value);
+    }
+    /// `TOInitMacroCmd(i)`.
+    TOInitMacroCmd @ 0x008b_81d0 => extern "C" fn to_init_macro_cmd(i: i32) {
+        window::bridge::init_macro_cmd(&mut mem(), i);
+    }
+    /// `MacroDic_Section(n, table)`.
+    MacroDic_Section @ 0x008b_70a0 => extern "C" fn macro_dic_section(n: i32, table: i32) -> u32 {
+        window::bridge::macro_dic_section(&mem(), n, table)
+    }
+    /// `TOGetSaveDicAdrs(table)`.
+    TOGetSaveDicAdrs @ 0x008b_7f60 => extern "C" fn to_get_save_dic_adrs(table: i32) -> u32 {
+        window::bridge::save_dic(&mem(), table)
+    }
+
+    /// `TOMenuGetControlPad()`.
+    TOMenuGetControlPad @ 0x008b_e410 => extern "C" fn to_menu_get_control_pad() -> u32 {
+        let flag = ffx_menu::tk::bridge::tk_menu_get_dummy_controler_flag(&mem());
+        u32::from(pad::bridge::control_pad(&mem(), 0, flag))
+    }
+    /// `TOMenuGetControlPadTrg()`.
+    TOMenuGetControlPadTrg @ 0x008b_e4b0 => extern "C" fn to_menu_get_control_pad_trg() -> u32 {
+        let flag = ffx_menu::tk::bridge::tk_menu_get_dummy_controler_flag(&mem());
+        u32::from(pad::bridge::control_pad(&mem(), 1, flag))
+    }
+    /// `TOMenuGetControlPadRep()`.
+    TOMenuGetControlPadRep @ 0x008b_e470 => extern "C" fn to_menu_get_control_pad_rep() -> u32 {
+        let flag = ffx_menu::tk::bridge::tk_menu_get_dummy_controler_flag(&mem());
+        u32::from(pad::bridge::control_pad(&mem(), 2, flag))
+    }
+    /// `TOMenuGetControlPad2()` (only `AX` defined).
+    TOMenuGetControlPad2 @ 0x008b_e440 => extern "C" fn to_menu_get_control_pad2() -> u32 {
+        u32::from(pad::bridge::control_pad2(&mem()))
+    }
+    /// `TOMenuGetDummyAnalogControler(axis)` (only `AL` defined).
+    TOMenuGetDummyAnalogControler @ 0x008c_a320 => extern "C" fn to_menu_get_dummy_analog_controler(axis: u32) -> u32 {
+        u32::from(pad::bridge::dummy_analog(&mem(), axis))
+    }
+    /// `SetTOPadGetCtrl(v)` (a byte).
+    SetTOPadGetCtrl @ 0x008a_b580 => extern "C" fn set_to_pad_get_ctrl(v: u32) {
+        #[allow(clippy::cast_possible_truncation)] // the original stores AL
+        pad::bridge::set_get_ctrl(&mut mem(), v as u8);
+    }
+    /// `TODebugAddPadPrintFlag()`.
+    TODebugAddPadPrintFlag @ 0x008a_bd00 => extern "C" fn to_debug_add_pad_print_flag() {
+        pad::bridge::add_print_flag(&mut mem());
+    }
+
+    /// `TOBtlCloseHelpWin()`.
+    TOBtlCloseHelpWin @ 0x0089_0eb0 => extern "C" fn to_btl_close_help_win() {
+        btl::bridge::close_help_win(&mut mem());
+    }
+    /// `TOBtlInitAnm()`.
+    TOBtlInitAnm @ 0x008a_0cd0 => extern "C" fn to_btl_init_anm() {
+        btl::bridge::init_anm(&mut mem());
+    }
+    /// `TOBtlCloseSignWindow()`.
+    TOBtlCloseSignWindow @ 0x0089_0ee0 => extern "C" fn to_btl_close_sign_window() {
+        btl::bridge::close_sign_window(&mut mem());
+    }
+    /// `TOBtlCloseSimpleHelpMes()`.
+    TOBtlCloseSimpleHelpMes @ 0x0089_0ef0 => extern "C" fn to_btl_close_simple_help_mes() {
+        btl::bridge::close_simple_help(&mut mem());
+    }
+    /// `TOGetBtlWindowControlEnable()`.
+    TOGetBtlWindowControlEnable @ 0x0089_b590 => extern "C" fn to_get_btl_window_control_enable() -> u32 {
+        btl::bridge::window_control_enable(&mem())
+    }
+    /// `TOBtlSetCurPos(x, y, z)` (16-bit each).
+    TOBtlSetCurPos @ 0x0089_99f0 => extern "C" fn to_btl_set_cur_pos(x: u32, y: u32, z: u32) {
+        #[allow(clippy::cast_possible_truncation)] // the original stores AX
+        btl::bridge::set_cur_pos(&mut mem(), x as u16, y as u16, z as u16);
+    }
+    /// `TOBtlSetLuluLimitTbl(digits)`.
+    TOBtlSetLuluLimitTbl @ 0x0089_a2f0 => extern "C" fn to_btl_set_lulu_limit_tbl(digits: u32) {
+        btl::bridge::set_lulu_limit_table(&mut mem(), digits);
+    }
+    /// `TOBtlSetTargetCallback(w)`.
+    TOBtlSetTargetCallback @ 0x008a_1090 => extern "C" fn to_btl_set_target_callback(w: u32) {
+        btl::bridge::set_target_callback(&mut mem(), w);
+    }
+
+    /// `TOSeqGetNum(i, name, &n)`.
+    TOSeqGetNum @ 0x008a_e410 => extern "C" fn to_seq_get_num(i: i32, name: u32, out: u32) {
+        scene::bridge::get_num(&mut mem(), i, name, out, menu_scene::tk_menu_get_param_handle, menu_scene::tk_menu_get_param_offset);
+    }
+    /// `TOSeqGetColor(i, name, &rgba)`.
+    TOSeqGetColor @ 0x008a_e360 => extern "C" fn to_seq_get_color(i: i32, name: u32, out: u32) {
+        scene::bridge::get_color(&mut mem(), i, name, out, menu_scene::tk_menu_get_param_handle, menu_scene::tk_menu_get_param_offset);
+    }
+    /// `TOSeqGetPoint(i, name, &x, &y)`.
+    TOSeqGetPoint @ 0x008a_e450 => extern "C" fn to_seq_get_point(i: i32, name: u32, x: u32, y: u32) {
+        scene::bridge::get_point(&mut mem(), i, name, [x, y], menu_scene::tk_menu_get_param_handle, menu_scene::tk_menu_get_param_offset);
+    }
+    /// `TOSeqGetRect(i, name, &x, &y, &w, &h)`.
+    TOSeqGetRect @ 0x008a_e4b0 => extern "C" fn to_seq_get_rect(i: i32, name: u32, x: u32, y: u32, w: u32, h: u32) {
+        scene::bridge::get_rect(&mut mem(), i, name, [x, y, w, h], menu_scene::tk_menu_get_param_handle, menu_scene::tk_menu_get_param_offset);
+    }
+
+    /// `TOMenuGetFirstReadEndFlag()`.
+    TOMenuGetFirstReadEndFlag @ 0x008a_8e50 => extern "C" fn to_menu_get_first_read_end_flag() -> i32 {
+        menu::bridge::first_read_end(&mem())
+    }
+    /// `TOMenuHelpSetExtMode(mode, arg)`.
+    TOMenuHelpSetExtMode @ 0x008b_ef10 => extern "C" fn to_menu_help_set_ext_mode(mode: u32, arg: u32) {
+        menu::bridge::help_set_ext_mode(&mut mem(), mode, arg);
+    }
+    /// `TOMenuGetAbilitymapWorkAdrs()`.
+    TOMenuGetAbilitymapWorkAdrs @ 0x008b_ea30 => extern "C" fn to_menu_get_abilitymap_work_adrs() -> u32 {
+        menu::bridge::abilitymap_work(&mem())
+    }
+    /// `TOAmapGetItemListMax()`.
+    TOAmapGetItemListMax @ 0x008c_8c30 => extern "C" fn to_amap_get_item_list_max() -> u32 {
+        menu::bridge::amap_item_list_max(&mem())
+    }
+    /// `TOAmapGetItemType(i)`.
+    TOAmapGetItemType @ 0x008c_6710 => extern "C" fn to_amap_get_item_type(i: i32) -> u32 {
+        u32::from(menu::bridge::amap_item_type(&mem(), i))
+    }
+    /// `IsInTkMenuPause()`.
+    IsInTkMenuPause @ 0x008a_8e10 => extern "C" fn is_in_tk_menu_pause() -> u32 {
+        menu::bridge::is_in_pause(&mem())
+    }
+    /// `SetInvokedFromSelectCursor(v)`.
+    SetInvokedFromSelectCursor @ 0x008e_89c0 => extern "C" fn set_invoked_from_select_cursor(v: u32) {
+        menu::bridge::set_invoked_from_select_cursor(&mut mem(), v);
+    }
+    /// `TOGetMessageWindowMode()`.
+    TOGetMessageWindowMode @ 0x008a_c7b0 => extern "C" fn to_get_message_window_mode() -> u32 {
+        menu::bridge::message_window_mode(&mem())
+    }
+    /// `TOGetFFXToAlbhedTblAdrs()`.
+    TOGetFFXToAlbhedTblAdrs @ 0x0090_6b20 => extern "C" fn to_get_ffx_to_albhed_tbl_adrs() -> u32 {
+        menu::bridge::albhed_table(&mem())
+    }
+    /// `TOGetFontWidthTblAdrs(font)`.
+    TOGetFontWidthTblAdrs @ 0x008a_c3d0 => extern "C" fn to_get_font_width_tbl_adrs(font: i32) -> u32 {
+        menu::bridge::font_width_table(&mem(), font)
+    }
+    /// `TOGetLineFeedHeight()`: 16.
+    TOGetLineFeedHeight @ 0x008b_7c60 => extern "C" fn to_get_line_feed_height() -> u32 {
+        stub::LINE_FEED_HEIGHT
+    }
+    /// `TOFFXToSJIS(text, out)`.
+    TOFFXToSJIS @ 0x008b_6200 => extern "C" fn to_ffx_to_sjis(_text: u32, out: u32) {
+        menu::bridge::ffx_to_sjis(&mut mem(), out);
+    }
+    /// `TOMenuGetGetImportantName(id)`.
+    TOMenuGetGetImportantName @ 0x008d_dee0 => extern "C" fn to_menu_get_get_important_name(id: u32) -> u32 {
+        important_text(id, 0)
+    }
+    /// `TOMenuGetGetImportantHelp(id)`.
+    TOMenuGetGetImportantHelp @ 0x008d_dea0 => extern "C" fn to_menu_get_get_important_help(id: u32) -> u32 {
+        important_text(id, 8)
+    }
+
+    /// `TOInitAddPkt()`.
+    TOInitAddPkt @ 0x0090_4650 => extern "C" fn to_init_add_pkt() {
+        pkt::bridge::init_add_pkt(&mut mem());
+    }
+    /// `TOSetAddPkt()`.
+    TOSetAddPkt @ 0x008f_ae10 => extern "C" fn to_set_add_pkt() {
+        pkt::bridge::set_add_pkt(&mut mem());
+    }
+    /// `TOSetPktBuffAdrs(base, a, b)`.
+    TOSetPktBuffAdrs @ 0x0090_47c0 => extern "C" fn to_set_pkt_buff_adrs(base: u32, a: u32, b: u32) {
+        pkt::bridge::set_pkt_buff(&mut mem(), base, a, b);
+    }
+    /// `TOGetScreenWH(&w, &h)`.
+    TOGetScreenWH @ 0x008f_a900 => extern "C" fn to_get_screen_wh(w: u32, h: u32) {
+        pkt::bridge::screen_wh(&mut mem(), w, h);
+    }
+
+    /// `Fixup_ReadLeb128(&cursor)`.
+    Fixup_ReadLeb128 @ 0x0060_ac00 => extern "C" fn fixup_read_leb128(cursor: u32) -> u32 {
+        fixup::bridge::read_leb128(&mut mem(), cursor)
+    }
+    /// `Fixup_SetObject(record, index)`.
+    Fixup_SetObject @ 0x0060_ae40 => extern "C" fn fixup_set_object(record: u32, index: u32) {
+        fixup::bridge::set_object(&mut mem(), record, index);
+    }
+    /// `Fixup_SetArrayObject(record, index)`.
+    Fixup_SetArrayObject @ 0x0060_ae30 => extern "C" fn fixup_set_array_object(record: u32, index: u32) {
+        fixup::bridge::set_object(&mut mem(), record, index);
+    }
+    /// `Md5Digest_Less(b)`.
+    Md5Digest_Less @ 0x0061_d6e0 => extern "thiscall" fn md5_digest_less(this: u32, b: u32) -> bool {
+        vbf::bridge::less(&mem(), this, b)
+    }
+    /// `Vbf_MapLookup(digest)`.
+    Vbf_MapLookup @ 0x0061_d140 => extern "thiscall" fn vbf_map_lookup(this: u32, digest: u32) -> u32 {
+        vbf::bridge::map_lookup(&mem(), this, digest)
+    }
+
+    /// `AssetListReader::getAssetPath(i)`.
+    AssetListReader_getAssetPath @ 0x006f_41b0 => extern "thiscall" fn asset_list_reader_get_asset_path(this: u32, i: i32) -> u32 {
+        instance::bridge::asset_path(&mem(), this, i)
+    }
+    /// `AssetListReader::isModel(id)`.
+    AssetListReader_isModel @ 0x006f_46b0 => extern "thiscall" fn asset_list_reader_is_model(this: u32, id: u32) -> bool {
+        instance::bridge::is_model(&mem(), this, id)
+    }
+    /// `AssetListReader::getSymbolById(id)`.
+    AssetListReader_getSymbolById @ 0x006f_42d0 => extern "thiscall" fn asset_list_reader_get_symbol_by_id(this: u32, id: u32) -> u32 {
+        instance::bridge::symbol_by_id(&mem(), this, id)
+    }
+    /// `AbmapManager::ToDestroy()`.
+    AbmapManager_ToDestroy @ 0x0068_57b0 => extern "thiscall" fn abmap_manager_to_destroy(this: u32) {
+        instance::bridge::abmap_to_destroy(&mut mem(), this);
+    }
+    /// `ChrResourceCacheManager::isChrDelayedRelease()`.
+    ChrResourceCacheManager_isChrDelayedRelease @ 0x0069_b7b0 => extern "thiscall" fn chr_resource_cache_manager_is_chr_delayed_release(this: u32) -> u32 {
+        instance::bridge::is_chr_delayed_release(&mem(), this)
+    }
+    /// `AsyncLoadNewCharacter()`.
+    AsyncLoadNewCharacter @ 0x0078_2f80 => extern "C" fn async_load_new_character() -> u32 {
+        instance::bridge::async_load_new_character(&mut mem())
+    }
+    /// `LoadingScreen::setParameterManually(&a, &b, &c)`.
+    LoadingScreen_setParameterManually @ 0x006e_4ff0 => extern "thiscall" fn loading_screen_set_parameter_manually(this: u32, a: u32, b: u32, c: u32) {
+        instance::bridge::loading_screen_set_parameter(&mut mem(), this, a, b, c);
+    }
+    /// `abmCalcChrMoveCurMoveCheck(chr)`.
+    abmCalcChrMoveCurMoveCheck @ 0x00a4_5000 => extern "C" fn abm_calc_chr_move_cur_move_check(chr: u32) -> u32 {
+        instance::bridge::chr_move_cur_move_check(&mem(), chr)
+    }
+
+    /// `useExtendedAlpha(on)`.
+    useExtendedAlpha @ 0x0071_e460 => extern "C" fn use_extended_alpha(on: u32) {
+        render::bridge::use_extended_alpha(&mut mem(), on);
+    }
+    /// `useShaderPointLight()`.
+    useShaderPointLight @ 0x0071_e6f0 => extern "C" fn use_shader_point_light() -> u32 {
+        render::bridge::use_shader_point_light(&mem())
+    }
+    /// `DepthBiasHooks::clearDepthBias()`.
+    DepthBiasHooks_clearDepthBias @ 0x006e_40b0 => extern "C" fn depth_bias_hooks_clear_depth_bias() {
+        render::bridge::clear_depth_bias(&mut mem());
+    }
+    /// `JobSchedule::pppPart::clearFillBufferRequest()`.
+    JobSchedule_pppPart_clearFillBufferRequest @ 0x0071_ecd0 => extern "C" fn job_schedule_ppp_part_clear_fill_buffer_request() {
+        render::bridge::clear_fill_buffer_request(&mut mem());
+    }
+
+    /// `SaveDataIsBusy()`.
+    SaveDataIsBusy @ 0x0064_8040 => extern "C" fn save_data_is_busy() -> u32 {
+        save::bridge::is_busy_now(&mem())
+    }
+    /// `SaveDataSetScreenState(state)`.
+    SaveDataSetScreenState @ 0x0064_86e0 => extern "C" fn save_data_set_screen_state(state: u32) {
+        save::bridge::set_screen_state(&mut mem(), state);
+    }
+    /// `SaveDataIsOperationCanceled()`.
+    SaveDataIsOperationCanceled @ 0x0064_80c0 => extern "C" fn save_data_is_operation_canceled() -> u32 {
+        save::bridge::is_operation_canceled(&mem())
+    }
+    /// `SaveDataIsLoadingAlbhed()`.
+    SaveDataIsLoadingAlbhed @ 0x0064_8070 => extern "C" fn save_data_is_loading_albhed() -> u32 {
+        save::bridge::is_loading_albhed(&mem())
+    }
+    /// `SaveDataSetAlbhedFade(v)`.
+    SaveDataSetAlbhedFade @ 0x0064_85e0 => extern "C" fn save_data_set_albhed_fade(v: u32) {
+        save::bridge::set_albhed_fade(&mut mem(), v);
+    }
+    /// `SetLocalDataSlotAndTime(_, slot, a, b)` (slot 16-bit).
+    SetLocalDataSlotAndTime @ 0x0064_8fa0 => extern "C" fn set_local_data_slot_and_time(_unused: u32, slot: u32, a: u32, b: u32) {
+        #[allow(clippy::cast_possible_truncation)] // the original stores CX
+        save::bridge::set_local_data_slot_and_time(&mut mem(), slot as u16, a, b);
+    }
+    /// `SaveDataGetCrc(save)`.
+    SaveDataGetCrc @ 0x0064_7e80 => extern "C" fn save_data_get_crc(save_buf: u32) -> u32 {
+        u32::from(save::bridge::get_crc(&mut mem(), save_buf, ffx_menu::tk::bridge::tk_crc))
+    }
+    /// `SaveDataWriteCrc(save)`.
+    SaveDataWriteCrc @ 0x0064_8f20 => extern "C" fn save_data_write_crc(save_buf: u32) -> u32 {
+        save::bridge::write_crc(&mut mem(), save_buf, ffx_menu::tk::bridge::tk_crc)
+    }
+    /// `SaveDataCheckCrc()`.
+    SaveDataCheckCrc @ 0x0064_7d70 => extern "C" fn save_data_check_crc() -> u32 {
+        save::bridge::check_crc(&mut mem(), ffx_menu::tk::bridge::tk_crc)
+    }
+}
+
+/// `TOMenuGetGetImportant*`: the key item's text at `field`, with the
+/// callees in `ffx-battle` (`MsImportantPtr` stores the strings base into a
+/// local, as the original's).
+fn important_text(id: u32, field: u32) -> u32 {
+    let hiragana = ffx_battle::save::bridge::ms_get_save_config_hiragana(&mem());
+    let mut strings = 0u32;
+    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    let out = std::ptr::from_mut(&mut strings) as usize as u32;
+    let record = ffx_battle::save::bridge::ms_important_ptr(&mut mem(), id, out);
+    let strings = mem().read::<u32>(out);
+    menu::bridge::important_text(&mem(), field, hiragana, record, strings)
 }

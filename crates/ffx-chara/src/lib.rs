@@ -9,9 +9,21 @@
 //! - [`handle`]: finding characters (`Ch_CheckHandle`, `Ch_HandleGetNext`,
 //!   `Ch_BlkGetHandleFast`, ...).
 //! - [`chr`]: the accessors (`Ch_Get*`, `Ch_Set*`, `Ch_En*`).
-//! - [`x87`]: what the game's x87 code does to the floats it moves.
+//! - [`parts`]: cloth, binding, elements, shade, lights, mouth and neck,
+//!   optional positions, motion state.
+//! - [`texture`]: textures and cluts.
+//! - [`id`]: the map id word.
+//! - [`sys`]: the module's own settings (drawing, shadow, matrices,
+//!   effect packets).
+//! - [`fixed`]: fixed-point and 12-bit angle helpers.
+//! - [`x87`]: what the game's x87 code does to the floats it computes.
 
 pub mod chr;
+pub mod fixed;
 pub mod handle;
+pub mod id;
 pub mod layout;
+pub mod parts;
+pub mod sys;
+pub mod texture;
 pub mod x87;

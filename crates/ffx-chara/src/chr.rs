@@ -136,16 +136,16 @@ pub mod bridge {
     /// The default motions by slot, for `Ch_MotionSetMoves(chr, slot, -1)`.
     pub const DEFAULT_MOVES: Global<u32> = Global::new(0x00c4_9680);
 
-    fn f(mem: &impl Mem, at: u32) -> f32 {
+    pub(crate) fn f(mem: &impl Mem, at: u32) -> f32 {
         mem.read(at)
     }
 
     /// A float as the original loads it into `st0` and stores it.
-    fn put_f(mem: &mut impl Mem, at: u32, v: f32) {
+    pub(crate) fn put_f(mem: &mut impl Mem, at: u32, v: f32) {
         mem.write(at, x87::load(v));
     }
 
-    fn blk(mem: &impl Mem, chr: u32) -> u32 {
+    pub(crate) fn blk(mem: &impl Mem, chr: u32) -> u32 {
         mem.read(chr + l::BLK)
     }
 
@@ -154,19 +154,19 @@ pub mod bridge {
         models.wrapping_add(index.wrapping_mul(l::MODEL_SIZE))
     }
 
-    fn flag(mem: &impl Mem, chr: u32, word: u32, bit: u32) -> u32 {
+    pub(crate) fn flag(mem: &impl Mem, chr: u32, word: u32, bit: u32) -> u32 {
         u32::from(mem.read::<u32>(chr + word) & bit != 0)
     }
 
     /// Sets a flag; the bit that changed.
-    fn set_flag(mem: &mut impl Mem, chr: u32, word: u32, bit: u32, on: u32) -> u32 {
+    pub(crate) fn set_flag(mem: &mut impl Mem, chr: u32, word: u32, bit: u32, on: u32) -> u32 {
         let (w, diff) = put_bit(mem.read(chr + word), bit, on);
         mem.write(chr + word, w);
         diff
     }
 
     /// Sets a flag; what it was.
-    fn en_flag(mem: &mut impl Mem, chr: u32, word: u32, bit: u32, on: u32) -> u32 {
+    pub(crate) fn en_flag(mem: &mut impl Mem, chr: u32, word: u32, bit: u32, on: u32) -> u32 {
         let was = flag(mem, chr, word, bit);
         set_flag(mem, chr, word, bit, on);
         was
@@ -243,7 +243,7 @@ pub mod bridge {
         let alpha = f(mem, chr + l::FADE_ALPHA);
         u32::from(
             mem.read::<u8>(chr + l::HIDE_CALC) != 0
-                || flag(mem, chr, l::FLAGS, l::F_HIDE_CALC) != 0
+                || flag(mem, chr, l::FLAGS, l::F_DRAW_EFFECT) != 0
                 || alpha == 0.0,
         )
     }
@@ -581,7 +581,7 @@ pub mod bridge {
     /// After a new position: the copy, the flag, [`l::PNUM`] = -1.
     fn pos_set(mem: &mut impl Mem, chr: u32) {
         let p: [u32; 4] = mem.read(chr + l::POS);
-        mem.write(chr + l::POS_COPY, p);
+        mem.write(chr + l::POS_NEXT, p);
         let w: u32 = mem.read(chr + l::FLAGS);
         mem.write(chr + l::FLAGS, w | l::F_POS_SET);
         mem.write(chr + l::PNUM, -1i16);

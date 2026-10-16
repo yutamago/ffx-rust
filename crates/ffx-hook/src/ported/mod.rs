@@ -74,8 +74,72 @@ fn call0(sym: u32) -> u32 {
     }
 }
 
+/// The scratch registers a shim's thunk saves for the caller, by the
+/// shim's return type: what it returns in stays the shim's, the rest keeps
+/// the caller's value.
+///
+/// The originals were compiled with whole-program optimisation, which lets
+/// a caller keep `eax`, `ecx` or `edx` live across a call to a function it
+/// knows leaves them alone (`tools/check-clobber.py`: `op_spline_xyz_table`
+/// returns the `eax` of a call before `op_spr_free`, which only decrements
+/// a byte). A Rust function clobbers all three, as the ABI allows, so every
+/// replacement goes through a thunk that keeps them.
+pub(crate) trait Saved {
+    /// Whether `eax` is saved (nothing returned in it).
+    const EAX: bool;
+    /// Whether `edx` is saved (no 64-bit result).
+    const EDX: bool;
+}
+
+macro_rules! saved {
+    ($($t:ty => $eax:literal, $edx:literal;)*) => {
+        $(impl Saved for $t {
+            const EAX: bool = $eax;
+            const EDX: bool = $edx;
+        })*
+    };
+}
+saved! {
+    () => true, true;
+    f32 => true, true;
+    f64 => true, true;
+    bool => false, true;
+    u8 => false, true;
+    i8 => false, true;
+    u16 => false, true;
+    i16 => false, true;
+    u32 => false, true;
+    i32 => false, true;
+    u64 => false, false;
+    i64 => false, false;
+}
+
+/// The stack words a shim's caller pushed: every argument for cdecl and
+/// stdcall, all but `this` for thiscall (`ecx`), all but the first two for
+/// fastcall (`ecx`, `edx`).
+pub(crate) const fn stack_words(abi: &str, sizes: &[usize]) -> usize {
+    let skip = match abi.as_bytes() {
+        b"thiscall" => 1,
+        b"fastcall" => 2,
+        _ => 0,
+    };
+    let mut words = 0;
+    let mut i = skip;
+    while i < sizes.len() {
+        words += sizes[i].div_ceil(4);
+        i += 1;
+    }
+    words
+}
+
+/// Whether the callee pops its stack arguments (everything but cdecl).
+pub(crate) const fn callee_pops(abi: &str) -> bool {
+    !matches!(abi.as_bytes(), b"C" | b"cdecl")
+}
+
 /// `ported! { /// doc  Name @ 0xADDR => extern "C" fn shim(args) -> ret { body } ... }`:
-/// the shims and the module's `hooks()`.
+/// the shims, a register-saving thunk for each ([`Saved`]), and the
+/// module's `hooks()`.
 macro_rules! ported {
     ($( $(#[$doc:meta])* $name:ident @ $addr:literal => extern $abi:literal fn $shim:ident($($arg:ident: $ty:ty),*) $(-> $ret:ty)? $body:block )*) => {
         $(
@@ -90,7 +154,7 @@ macro_rules! ported {
                 name: stringify!($name),
                 address: $addr,
                 prologue: &[],
-                replacement: $shim as *const () as usize,
+                replacement: $crate::ported::thunk!($abi, $shim, ($($ty),*), ($($ret)?)),
                 original: None,
                 steal: 0,
             }),*]
@@ -98,3 +162,51 @@ macro_rules! ported {
     };
 }
 use ported;
+
+/// The address of `$shim`'s thunk: saves the scratch registers its return
+/// type leaves alone, copies the caller's stack arguments, calls the shim
+/// and returns as the original did (`ret n` for the callee-pops ABIs).
+#[cfg(target_arch = "x86")]
+macro_rules! thunk {
+    ($abi:literal, $shim:ident, ($($ty:ty),*), ($($ret:ty)?)) => {{
+        type Ret = $crate::ported::thunk!(@ret $($ret)?);
+        const WORDS: usize = $crate::ported::stack_words($abi, &[$(::core::mem::size_of::<$ty>()),*]);
+        const EAX: usize = <Ret as $crate::ported::Saved>::EAX as usize;
+        const EDX: usize = <Ret as $crate::ported::Saved>::EDX as usize;
+        const SAVED: usize = 1 + EAX + EDX;
+        const POPS: usize = $crate::ported::callee_pops($abi) as usize;
+        #[unsafe(naked)]
+        unsafe extern "C" fn thunk() {
+            ::core::arch::naked_asm!(
+                ".if {eax}", "push eax", ".endif",
+                "push ecx",
+                ".if {edx}", "push edx", ".endif",
+                ".rept {words}", "push dword ptr [esp + {from}]", ".endr",
+                "call {shim}",
+                ".if {pops} == 0", ".if {words}", "add esp, {bytes}", ".endif", ".endif",
+                ".if {edx}", "pop edx", ".endif",
+                "pop ecx",
+                ".if {eax}", "pop eax", ".endif",
+                ".if {pops}", "ret {bytes}", ".else", "ret", ".endif",
+                eax = const EAX,
+                edx = const EDX,
+                words = const WORDS,
+                from = const 4 * (SAVED + WORDS),
+                bytes = const 4 * WORDS,
+                pops = const POPS,
+                shim = sym $shim,
+            )
+        }
+        thunk as *const () as usize
+    }};
+    (@ret) => { () };
+    (@ret $ret:ty) => { $ret };
+}
+/// Off the game's architecture (host builds, clippy) the shim itself.
+#[cfg(not(target_arch = "x86"))]
+macro_rules! thunk {
+    ($abi:literal, $shim:ident, ($($ty:ty),*), ($($ret:ty)?)) => {
+        $shim as *const () as usize
+    };
+}
+pub(crate) use thunk;

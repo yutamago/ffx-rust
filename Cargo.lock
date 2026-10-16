@@ -591,7 +591,9 @@ dependencies = [
 name = "ffx-field"
 version = "0.1.0"
 dependencies = [
+ "ffx-battle",
  "ffx-bridge",
+ "ffx-system",
 ]
 
 [[package]]
@@ -669,7 +671,9 @@ dependencies = [
 name = "ffx-menu"
 version = "0.1.0"
 dependencies = [
+ "ffx-battle",
  "ffx-bridge",
+ "ffx-chara",
  "ffx-kernel",
 ]
 
@@ -847,6 +851,7 @@ name = "ffx-vfx"
 version = "0.1.0"
 dependencies = [
  "ffx-bridge",
+ "ffx-system",
 ]
 
 [[package]]
