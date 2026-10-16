@@ -6009,7 +6009,7 @@
 0x00907ba0 function yiWindowBarOpen           # (window): state 2, handler 0x00907d70 (open, returns 0); 1 (kind 10)
 0x00907bd0 function yiWindowBarClose          # (window): state 4, handler yiWindowFinishAll; 1 (kind 10)
 0x00907bf0 function yiWindowFinishAll_00907bf0 # (window): the same code as yiWindowFinishAll (kind 10 slot +0x70)
-0x00907c10 label    yiWindowDrawBar           # not a function start in the dump (no hook); ported for the rewrite: (window): the help bar: two sprites (0x008f5e90) and its text (TOMkpShapeXY 0x106) from the layout at 0x025d1618, scissor packet (0, 8, 512, 28) (kind 10)
+0x00907c10 function yiWindowDrawBar           # (window): the help bar: two sprites (0x008f5e90) and its text (TOMkpShapeXY 0x106) from the layout at 0x025d1618, scissor packet (0, 8, 512, 28) (kind 10)
 0x00907cc0 function yiWindowGrowInit         # (window): progress +6 = 0, drawn (x0, y0, x0, y1) (kind 0 slot +0x60; table g_YiWindowHandlers)
 0x00907cf0 function yiWindowGrowOpen         # (window): progress += 0x2aa (<= 0x1000), drawn x1 from it; at x1: state 2, handler 0x00907d70 (kind 0)
 0x00907d80 function yiWindowSetHandlers       # (window): +0x60..+0x70, +0x78 = the six handlers of kind +4 (i16) from the table 0x00c5d788 (6 words a kind)
@@ -6051,6 +6051,7 @@
 0x00909030 function yiInit                    # fh v3:exact 0x00909030
 0x00909190 function yiLoadFieldParticle       # fh switch:bsim0.97 0x710052c850
 0x009093b0 function yiMapReadMaster           # fh v3:exact 0x009093b0
+0x00909680 function yiMapReadHost             # (map): debug loader: host0:<dir><name>.vpa (path parts 0x009161d0) read with sceOpen/sceRead into yiArc_readmem; Sg_MapInit
 0x009097c0 function yiObjReadCallback         # fh v3:exact 0x009097c0
 0x00909a20 function yiObjReadNB               # fh v3:exact 0x00909a20
 0x00909b90 function yiPopRenderState          # fh v3:exact 0x00909b90
@@ -6086,17 +6087,23 @@
 0x0090ae50 function yiAssert                  # fh v3:exact 0x0090ae50
 0x0090bbd0 function yiMalloc                  # fh v3:cg20 0x90bbd0
 0x0090bbe0 function yiMalloc64                # fh v3:cg4 0x90bbe0
+0x0090bc10 function yiMallocQuiet             # (size): Sg_MemSetErrorIgnore(1), then user_malloc (tail call)
 0x0090bc40 function yiPkAddGsAD_0090bc40         # the same code as yiPkAddGsAD
 0x0090bee0 function yiRender_destroy          # fh switch:bsim1.00 0x7100539700
 0x0090c1f0 function yiRender_addRef              # (render, addr, qwc u16): DMA ref tag (0x30000000 | qwc, addr) at render +0xba3f0, which moves 16 on; render +0xba3f8 counts tags
 0x0090c230 function yiRender_addRefData          # (render, block): yiRender_addRef of block +0x10 for block's u16 quadword count
 0x0090ccb0 function yiPkUnpackMatrixDma          # (m, out, addr): DMA tag 0x20000005, VIF FLUSH, STCYCL 1,1, UNPACK V4-32 x4 to addr, then the matrix
 0x0090cd10 function yiPkUnpackMatrix             # (m, out, addr): VIF UNPACK V4-32 x4 to addr (0x6c040000 | addr), then the matrix
+0x0090cd50 function yiRender_resetall         # (r): yiRender_resetobj, +0x9c198/+0xbe0ac/+0xbe0b0 = 0, +0x67f34 = -1; yiInit
 0x0090cd90 function yiRender_resetobj         # fh v3:exact 0x0090cd90
 0x0090cea0 function yiRender_resettex         # fh v3:exact 0x0090cea0
+0x0090cf00 function yiRender_initpacket       # (r): the fixed GS packet at +0x27624 (32 words); returns 0
 0x0090d1b0 function yiRender_setupFogParam    # (scene): +0x68350 = -255 / (far - near) from +0x681f8 * 1/32 * 32 and +0x68348/+0x6834c; +0x68354 = 255 - +0x68344 (255 with +0x67f08 bit 3); called by yiRender_setupparamVU1
 0x0090d260 function yiRender_setupparamGS     # fh v3:exact 0x0090d260
 0x0090da90 function yiRender_setupparamVU1    # fh v3:exact 0x0090da90
+0x0090e000 function yiSwizzleColumns          # (src, dst): a 16x16 8-bit block's four column groups reordered by the table at 0x00c5da80; yiSwizzlePage
+0x0090e0b0 function yiSwizzleImage            # (w, h, src, dst): a format-0x13 image swizzled in 128x64 tiles; "Error : width is not 2^n" to stderr; yiLoadVramImage
+0x0090e2e0 function yiSwizzlePage             # (w, h, src, dst): 8-bit lines of 0x80 bytes to GS block order (tables 0x00c5db40, 0x00c5db60); yiSwizzleImage
 0x0090e5d0 function yiLoadVramImage           # (scene, entry, data): an image above GS 0x3c00 kept in the scene's copy from +0x276a4: format 0 w*h/8 quadwords, 0x14 w*h/32, 0x13 swizzled by 0x0090e0b0 (yiMapFileRead)
 0x0090e6d0 function TextUtilList_TextUtilList # fh switch:bsim1.00 0x71002190e0 TextUtilList::TextUtilList
 0x0090e6f0 function yiArcPrintSize            # fh switch:bsim1.00 0x7100532640
@@ -6115,6 +6122,7 @@
 0x00911970 function yiPolyBufClear            # (buf): zeroes 0x4000 bytes and the counters at +0x4000..+0x4084
 0x009131d0 function yiScreff_entry            # fh v3:exact 0x009131d0
 0x00913f30 function yiScreff_init             # fh switch:bsim1.00 0x7100534af0
+0x00913f50 function yiRender_initfog          # (r): the fog block at +0xbe07c (0x60, grey, 0.03/0.02/0.005, 64.0)
 0x00914250 function yiAnimAttachDefault       # fh v3:exact 0x00914250
 0x00914310 function yiAnimInfo_init           # fh v3:exact 0x00914310
 0x009143c0 function yiAnimAttachDefault_009143c0 # fh switch:cg2 0x710052d7b0
@@ -6272,7 +6280,9 @@
 0x0091c7e0 function Native_MapSpriteWaitEnd   # 0x8005: start): `(a, b)` into the args words (`+0` a, `+4` b); returns `a`. (ffx_script::vm::bridge::native_map)
 0x0091c810 function Native_BltzSetObjModels      # ?0x8067: args (worker a, worker b, mode, unused) -> 1; Blitzball only (bltz000x); first map object of type 0x20008 gets both workers' models (+0x9c via 0x0086b3a0) and mode (0x00922ef0)
 0x0091c860 function Native_MapSpriteWaitEnd_Poll# 0x8005: the state of sprite object `+0` (`0x0072a760`): 1 not done, 2 done unless `+4` is set, others done (5). (ffx_script::vm::bridge::native_map)
+0x0091cae0 function rcbgScaleVector_0091cae0  # the same code as rcbgScaleVector 0x009200a0; rcbgGuideUpdateEx
 0x0091cb40 function rcCopyQword_0091cb40      # (dst, src): VFX_Copy16From(vf31 0x00c8f980, src), VFX_Copy16To(vf31, dst): a quadword copied through the emulated VU0 register (lqc2/sqc2); rcbgGuideUpdateEx
+0x0091cb70 function rcbgScaleVector4_0091cb70 # (dst, v, s): as rcbgScaleVector, all four elements (pppVu0MulX_007500d0); rcbgGuideUpdateEx
 0x0091cbd0 function rcCopyQword_0091cbd0      # (dst, src): as rcCopyQword_0091cb40; rcbgGuideUpdateEx, rcbgGuideUpdateWalk
 0x0091cc00 function Yn_NearestOnLine2D        # (out, a, b, p, clamp): a + t (b - a), t = -((a - p) . d) / |d|^2 (0 if |d|^2 <= 0), clamped to 0..1 when clamp
 0x0091ccc0 function rcbgGuideBattleBegin      # fh v3:exact 0x0091ccc0
@@ -6305,6 +6315,7 @@
 0x0091ecb0 function rcbgGuideUpdateWalk       # fh v3:exact 0x0091ecb0
 0x0091f420 function Guide_RevealFog              # (guide, x, z): clears the fog of war around the player (four maps, g_SaveData + 0x350c)
 0x0091f640 function Guide_SetEnabled             # (on): g_GuideEnabled; from BasicDebugTweakUtil_handleInput
+0x0091f6b0 function rcbgScaleVector_0091f6b0  # the same code as rcbgScaleVector 0x009200a0
 0x0091f710 function rcCopyQword_0091f710      # (dst, src): as rcCopyQword_0091cb40
 0x0091f7a0 function rcbgPSimAddDamp           # fh switch:bsim1.00 0x7100546310
 0x0091f980 function rcbgPSimAddWind           # fh switch:bsim1.00 0x7100546400
@@ -6321,6 +6332,7 @@
 0x0091ffb0 function rcbgPSimSetReady          # fh switch:bsim0.98 0x7100546520
 0x00920020 function rcCalcPersMatrix          # fh switch:bsim1.00 0x7100541240
 0x00920050 function rcbgTexGetLog2Size           # (w, h, &lw, &lh, &tbw): rcLog2Ceil of each; tbw = ceil(w / 64) rounded up to even; outputs optional; rcbgLayerDraw, rcbgSceneChkSortLayer
+0x009200a0 function rcbgScaleVector           # (dst, v, s): v through vf31, x y z times s (VFX_ScaleVec3), out to dst; rcbgSetViewMatrix scales eye/at by the scene's +0xf4
 0x009201a0 function Yn_DepthToScreen          # (depth): the screen depth of a fog depth through the screen matrix and the scene's +0xf4 (FOG_SCALE 10.0)
 0x00920250 function rcbgRestoreReg            # fh v3:exact 0x00920250
 0x009202a0 function rcbgIdentity              # (x) -> x; rcbgRestoreReg's register conversion
@@ -6329,6 +6341,7 @@
 0x009204b0 function rcbgSetViewMatrix         # fh v3:exact 0x009204b0
 0x00920540 function rcbgSceneAddObject        # fh v3:exact 0x00920540
 0x00920650 function rcbgSceneWaveDCStop          # (scene): +0xac = 0.0, +0xdc = 0: ends the wave Yn_SceneSetDC starts (its update 0x00920580 calls it when +0xf0 reaches +0xe4)
+0x00920670 function rcbgSceneDelObject        # (scene, obj): the object's delete function, the table shifted and shrunk (rcRealloc rcbgScene.c 0xba)
 0x00920740 function rcbgSceneDraw             # fh v3:exact 0x00920740
 0x00920830 function rcbgSceneDrawLayer        # fh switch:bsim1.00 0x7100547250
 0x00920870 function rcbgSceneFini             # fh v3:exact 0x00920870
@@ -6356,10 +6369,13 @@
 0x009218c0 function rcbgPreAddObject          # (obj): rcbgSceneAddObject to the map's current scene (+8), rcbgPreDummyInit without a map (rcbgLoadBin YNTT/YNFT)
 0x00921910 function Yn_BattleCaptureNum          # (): while g_YnMapSystem +0xc is 0 takes a non-zero MsBattleGetNum and clears +8; 0x0091a8c0
 0x00921940 function rcbgChkId                 # fh v3:exact 0x00921940
+0x00921a50 function rcbgPreAddFp              # (map): rcbgFPm097New (0x61), rcbgFPm173New (0xad), rcbgFPm565New (0x235/0x236) to rcbgPreAddObject
 0x00921aa0 function rcbgFini                  # fh v3:exact 0x00921aa0
 0x00921b90 function rcbgChunkTag                 # (i) -> 0x00c5e480[i]: the Yn data chunk tag strings YNDT YNPR YNSC YNTX YNTM YNSM YNST YNSP YNTT YNSE YNFT YNGM YNED
+0x00921ba0 function rcbgPreGetMapNo           # (): the map of a battle's field program (MsBattleGetNum 0x610000/0x2350000/0x2360000) or TkGetNowEventJumpMapNo
 0x00921be0 function Yn_SceneGetObject            # (kind, n) -> rcbgSceneGetObject of the Yn scene, 0 without one
 0x00921c20 function Yn_SceneCountObjects         # (kind) -> rcbgSceneCountObjects of the Yn scene, 0 without one
+0x00921c60 function Yn_SceneFindObject        # (kind, n): rcbgSceneGetObject in the current scene, then in each of the map's; Yn_FpTrxTexGet
 0x00921ce0 function rcbgInit                  # fh v3:exact 0x00921ce0
 0x00921d60 function rcbgLoadBin               # (data): an RCBG background (YNDT, then YNPR map, YNSC scenes, YNSM models, YNST transfers, YNTT/YNFT texture transfers, YNGM a scene's guide model, YNED end); parse on the stack (Yn_PreBgSetData)
 0x009220c0 function rcbgFpTrxTexNew           # fh v3:exact 0x009220c0
@@ -6369,6 +6385,8 @@
 0x00922140 function rcbgEmbeddedTrxGetCnt     # (obj) -> rcbgTrxGetCnt(obj + 0x20)
 0x00922160 function rcbgTrxTexInit            # (tex): kind 0x20003, rcbgTrxTexDelete, rcbgTrxTexDraw, +0x14 -1, two transfers +0x20/+0x60 (rcbgTrxTexNew)
 0x009221b0 function rcbgTrxTexNew             # fh v3:bsim1.00 0x009221b0
+0x00922210 function rcbgTrxTexSetAddr         # (tex, image, clut): GS addresses at +0x18/+0x1c, rcbgTrxSetRegs for the image (+0x20, psm 0x13) and CLUT (+0x60, 16x16)
+0x009224b0 function rcbgScaleVector_009224b0  # the same code as rcbgScaleVector 0x009200a0
 0x00922510 function rcCopyQword_00922510      # (dst, src): as rcCopyQword_0091cb40
 0x00922560 function rcbgFPm097Init            # fh switch:bsim1.00 0x71005524e0
 0x009225a0 function rcbgFPm097New             # (): rcAlloc 0x40 (rcbgFP.c), rcbgFPm097Init
@@ -6387,8 +6405,11 @@
 0x00923800 function rcdtTm2Load               # fh switch:bsim1.00 0x710054b0c0
 0x00923960 function rcdtTm2LoadEff            # fh switch:bsim1.00 0x710054b330
 0x00923ae0 function rcdtTm2CopyRect           # (tm2, dst, x, y, n, rows): copies a rectangle of a TIM2 image's pixels
+0x00923b40 function rcdtTm2New                # (): rcAlloc(0x50, rcdtTm2.c 0x26) + rcdtTm2Init
+0x009242f0 function rcdtListsFini             # (l): rcFree +0x4, +0xc, +0x14, the +0x18 entries of +0x1c and the table
 0x00924390 function rcdtRsd2Init                 # (rsd): 8 words cleared (rcdtRsd2.c, 0x00924750)
 0x00924750 function rcdtRsd2New               # (): rcAlloc 0x20 (rcdtRsd2.c), rcdtRsd2Init
+0x009247d0 function rcbgScaleVector_009247d0  # the same code as rcbgScaleVector 0x009200a0
 0x00924830 function rcCopyQword_00924830      # (dst, src): as rcCopyQword_0091cb40
 0x009249a0 function rcefGetFloat25d5ea4       # g_MagicImports slot 515 (3 overlays), after rcAngleDiff: fld 0x025d5ea4; hidden from the dump
 0x009249c0 function rcefTargetGetHeight          # (i) -> float +0x10 of effect target i (0x025d5c60, 0x24 bytes each, filled by 0x00924a20); g_MagicImports
@@ -6399,6 +6420,7 @@
 0x00924be0 function rcefTargetSetDelay           # (u16): 0x025d5ea2, the delay 0x009248c0 gives a reached target
 0x00924f30 function rcbgChrHandleIndex           # (handle) -> battle slot 0..14 or 20..27 whose MsGetChrHandle is handle, else -1; 0x00935340
 0x00924f90 function rcCopyQword_00924f90      # (dst, src): as rcCopyQword_0091cb40
+0x00925040 function rcbgScaleVector4_00925040 # the same code as rcbgScaleVector4_0091cb70
 0x009250a0 function rcCopyQword_009250a0      # (dst, src): as rcCopyQword_0091cb40
 0x00925130 function rcefWorkCall_00924c70     # g_MagicImports slot 526 (1 overlay): 0x00924c70(0x025d5a20); hidden from the dump
 0x00925140 function rcefMainCreateObj         # fh v3:exact 0x00925140
@@ -6408,6 +6430,8 @@
 0x00925440 function rcefMainProcRunAfter      # fh v3:exact 0x00925440
 0x009254f0 function rcefMainSetEnv               # (main): *(0x00c3a4cc) = main +0x10 (the ppp memory environment of rcefMainInit); g_MagicImports
 0x00925510 function rcefMainSetEnv_00925510      # the same code; g_MagicImports
+0x00925530 function rcefWorkSwap              # (w): the quadwords at +0x1c4/+0x1d4 swapped, +0x1e8 = 0, +0x1f0 = 1; rcefWorkCall_00925530
+0x00925630 function rcefWorkSet               # (w, a, b, v): +0x1c0 = 1, a/b to +0x1c4/+0x1d4, v at +0x1e4, +0x1e8 = 0, +0x1f0 = 1
 0x009256d0 function rcefMainSetPar            # fh v3:exact 0x009256d0
 0x00925710 function rcefSetStream             # (s) -> s: 0x025d5c14 = s, with s 0x025d5be0 = 3; entry of the table at 0x00c65500; ?meaning
 0x00925730 function rcbgIDLoad                # fh switch:cg2 0x71005537a0
@@ -6427,6 +6451,7 @@
 0x00926c00 function rcPrimLine                # fh v3:exact 0x00926c00
 0x009270c0 function rcPrimTri                 # fh v3:exact 0x009270c0
 0x009273b0 function rcCopyQword_009273b0      # (dst, src): as rcCopyQword_0091cb40
+0x009273e0 function rcVectorToFixed_009273e0  # (dst, v): v through vf31 as 12.4 fixed point (rcVec4fToFixed); rcPrimDraw2D
 0x00927550 function rcPrint                   # fh v3:bsim1.00+call.cs 0x00927550
 0x00927570 function rcPacketDataAlloc         # fh switch:bsim1.00 0x71005506b0
 0x009275b0 function rcPacketDataCloseAdr      # fh v3:exact 0x009275b0
@@ -6436,6 +6461,9 @@
 0x00927a50 function rcPacketDataOpen             # (packet, buffer): rcPacketDataOpenAdr on buffer +4
 0x00927a70 function rcPacketDataOpenAdr       # fh v3:exact 0x00927a70
 0x00927a90 function rcCopyQword_00927a90      # (dst, src): as rcCopyQword_0091cb40
+0x00927ac0 function rcVectorToFixed_00927ac0  # the same code as rcVectorToFixed_009273e0
+0x00927b00 function rcbgModelScaleVector      # (dst, v, s): the same code as rcbgScaleVector 0x009200a0; rcbgModelFToS0
+0x00927b60 function rcbgModelVectorToInt      # (dst, v): v through vf31, four floats truncated by 0x00808b00 (_ftol2_sse each); rcbgModelFToS0
 0x00927be0 function rcbgModelCreate           # fh v3:exact 0x00927be0
 0x00927d70 function rcbgModelCreateFromOMD    # fh switch:cg2 0x71008bf5f8
 0x00927d80 function rcbgModelCreateMesh       # fh switch:cg2 0x7100545130
@@ -6452,6 +6480,9 @@
 0x009283b0 function rcbgModelNew              # fh v3:bsim1.00 0x009283b0
 0x00928460 function rcbgModelSetAlpha         # fh v3:exact 0x00928460
 0x00928540 function rcbgModelSetScale         # fh v3:exact 0x00928540
+0x00928600 function rcbgScaleVector_00928600  # the same code as rcbgScaleVector 0x009200a0
+0x00928660 function rcfxParticleAddForce      # (ps, force): inserted before the first force of greater priority (+0x18); rcRealloc rcfxParticle.c 0x61/0x6e; rcbgPSimAddDamp/AddWind
+0x00928800 function rcfxParticleFiniForces    # (ps): each force's delete (+0x4), then the table (+0x38) freed
 0x009288e0 function rcfxParticleInit          # (fx): rcfxParticle.c defaults (+8 0.03 f64, +0x18 0.001, +0x20 0.1); 0x00928950 allocates 0x40 bytes for it
 0x00928950 function rcfxParticleNew           # (): rcAlloc 0x40 (rcfxParticle.c), rcfxParticleInit
 0x00928970 function rcfxParticleResetForce    # fh v3:exact 0x00928970
@@ -6459,23 +6490,35 @@
 0x009289f0 function rcfxParticleSetCnt        # fh switch:bsim1.00 0x710054f3f0
 0x00928a60 function rcfxParticleSetTime       # fh switch:bsim1.00 0x710054f8b0
 0x00928c80 function rcfxSpringFini            # fh switch:bsim0.91 0x710054fa80
+0x00928ce0 function rcfxSpringInit            # (s): kind 0x30005, functions 0x00928c60/0x00928d70/0x00928aa0, 0.8 and 0.4
+0x00928d80 function rcfxSpringSetCnt          # (s, n): +0x1c = n, +0x20 (8 n) and +0x24 (4 n) reallocated (rcfxSpring.c 0x42/0x43)
+0x00928e50 function rcbgScaleVector_00928e50  # the same code as rcbgScaleVector 0x009200a0
 0x00928eb0 function rcCopyQword_00928eb0      # (dst, src): as rcCopyQword_0091cb40
+0x00929090 function rcfxNailFini              # (nail): rcFree +0x20..+0x2c
 0x00929100 function rcfxNailInit              # (fx): kind 0x30004 and callbacks 0x00929070/0x00929190/0x00928f40; 0x00929170 allocates it (rcfxNail.c)
 0x00929170 function rcfxNailNew               # (): rcAlloc 0x40 (rcfxNail.c), rcfxNailInit
+0x00929230 function rcfxNailSetCnt            # (nail, n): +0x1c = n, +0x20 (4 n) and three quadword buffers reallocated (rcfxNail.c 0x45..0x48)
+0x009292a0 function rcbgScaleVector_009292a0  # the same code as rcbgScaleVector 0x009200a0
 0x009293d0 function rcfxDampInit                 # (damp) -> damp: type 0x30003, functions 0x009293c0 (+4), 0x00929360 (+0x14), +0x1c = 0.0001f (0x00b92154); rcfxDamp.c (0x00929420)
 0x00929420 function rcfxDampNew               # (): rcAlloc 0x20 (rcfxDamp.c), rcfxDampInit (rcbgPSimAddDamp)
+0x009294a0 function rcbgScaleVector_009294a0  # the same code as rcbgScaleVector 0x009200a0
 0x00929570 function rcfxGravityInit           # (fx): kind 0x30002 and callbacks 0x00929560/0x00929500; 0x009295c0 allocates it (rcfxGravity.c)
 0x009295c0 function rcfxGravityNew            # (): rcAlloc 0x2c (rcfxGravity.c), rcfxGravityInit
+0x00929640 function rcbgScaleVector_00929640  # the same code as rcbgScaleVector 0x009200a0
 0x009296a0 function rcCopyQword_009296a0      # (dst, src): as rcCopyQword_0091cb40
 0x00929850 function rcfxWindInit              # (fx): kind 0x30006 and callbacks 0x00929840/0x009296d0, +0x1c 1.0, +0x34 0.1, +0x40 1.0 f64; 0x009298c0 allocates it (rcfxWind.c)
 0x009298c0 function rcfxWindNew               # (): rcAlloc 0x60 (rcfxWind.c), rcfxWindInit
+0x009298e0 function rcfxWindSet               # (wind, dir, pos, power): two vectors to +0x1c/+0x2c, power as a double at +0x40; rcbgPSimAddWind
 0x00929910 function rcLog2Ceil                   # (n) -> smallest k in 1..16 with n <= 1 << k (16 when none); from 0x00920050
 0x00929930 function rcbgPalGetLastEntryData      # (pal) -> rcbgTrxGetEntryData(pal +0xc, its count +0x30 - 1)
 0x00929950 function rcbgPalAlloc              # fh switch:bsim1.00 0x71005551c0
 0x00929990 function rcbgPalGetEntryData          # (pal, n) -> rcbgTrxGetEntryData(pal +0xc, n)
 0x009299b0 function rcbgPalInit               # fh v3:exact 0x009299b0
 0x009299d0 function rcbgPalCopyToLast         # (pal): copies a CLUT's 16 or 256 entries into the transfer's last slot (map round 6)
+0x00929a10 function rcbgPalRotate             # (pal): the entry (+0x8) rotated by +0x6 into the last entry (rcbgTrxSetNo), stepped by the speed +0xb
 0x00929ab0 function rcbgPalSetNo              # fh v3:bsim1.00 0x00929ab0
+0x00929ac0 function rcbgPalShift              # (pal): as rcbgPalRotate, zeros shifted in
+0x00929ba0 function rcbgPalWhite              # (pal): the entry with every colour white (alpha kept) into the last entry
 0x00929bf0 function rcbgLayerDraw             # fh switch:cg8 0x7100553a70
 0x0092ac90 function rcbgLayerFini             # (layer): rcbgTrxDelete of +0xa0 and +0xbc, rcbgLayerAnimeFini(+0x90), rcbgPalFini(+0xb0) (0x00929980, empty); rcbgSceneFini
 0x0092acf0 function rcbgLayerGetTexData          # (layer) -> rcbgTrxGetEntryData(layer +0xbc, 0), 0 without a texture transfer
@@ -6509,6 +6552,7 @@
 0x0092b920 function rcdtChunkSet                 # (chunk, data, size)
 0x0092b940 function rcdtChunkSetBin           # fh v3:exact 0x0092b940
 0x0092b960 function rcdtParseAdvance          # fh v3:exact 0x0092b960
+0x0092b970 function rcdtParseSkipLine         # (parse): rcdtParseSeekChar(10), then past it
 0x0092b990 function rcdtParseSeekChar         # (parse, c): cursor = rcdtParseFindChar(parse, c)
 0x0092ba30 function rcdtParseNextToken        # (parse): cursor past the token (rcdtParseSkipToken) and the separators (rcdtParseSkipSeparators)
 0x0092ba60 function rcdtParseFini             # fh v3:bsim1.00 0x0092ba60
@@ -6517,6 +6561,7 @@
 0x0092bae0 function rcdtParseFindChar         # (parse, c): the cursor advanced to c or the chunk end (rcdtChunkHandleGetEnd)
 0x0092bb20 function rcdtParseGetChunk            # (parse) -> parse +0
 0x0092bb90 function rcdtChunkHandleGetEnd        # (&chunk) -> rcdtChunkGetEnd(*handle)
+0x0092bc50 function rcdtParseGetInt           # (parse): binary: the word at the cursor; text: atoi and rcdtParseNextToken
 0x0092bd10 function rcdtParseGetMode             # (parse) -> parse +8 (rcdtParseSetMode)
 0x0092bd20 function rcdtParseSkipToken        # (parse): the cursor past non-separators
 0x0092bd60 function rcdtParseSkipSeparators   # (parse): the cursor past separators
@@ -6525,6 +6570,7 @@
 0x0092bf30 function rcdtParseTokenLen         # (parse) -> rcdtParseSkipToken - cursor
 0x0092bf50 function rcdtParseInit             # fh v3:exact 0x0092bf50
 0x0092bfb0 function rcdtParseIsEnd            # (parse) -> 1 once the cursor reaches the chunk end
+0x0092bfd0 function rcdtParseNew              # (): rcAlloc(0x8c, rcdtParse.c 0x1c) + rcdtParseInit
 0x0092c000 function rcdtParseInitSeparators      # (parse): parse +0xc, 128 bytes per ASCII code, = 1 for 0x00..0x20 (whitespace), 0 else; read by the token scanners 0x0092bd20, 0x0092be40; rcdtParseInit tail-calls it
 0x0092c0a0 function rcdtParseSet              # fh v3:exact 0x0092c0a0
 0x0092c0c0 function rcdtParseSetMode          # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
@@ -6532,6 +6578,7 @@
 0x0092c0f0 function rcdtParseAddSeparators       # (parse, chars): parse +0xc[c] = 1 for every byte of the C string
 0x0092d230 function rcbgTrxDraw               # fh switch:cg3 0x71005557c0
 0x0092d360 function rcbgTrxSetRegs               # (t, a..g i16) -> g: +0x1c = ((c << 8 | b) << 16) | a, +0x24 = e << 16 | d, +0x28 = f, +0x2c = g | f >> 31, +0x18 = +0x20 = 0 (sign-extended); 0x0092d320 (rcbgPalAlloc)
+0x0092d3e0 function rcbgTrxAllocEntries       # (t, format, w, h, n): entry size (4wh+16 or wh+16), n entries rcAlloc'ed to +0x38 (rcbgTrx.c 0x72), +0x10 |= 1
 0x0092d450 function rcbgTrxDelete             # fh v3:bsim1.00 0x0092d450
 0x0092d470 function rcbgTrxDraw_0092d470      # fh v3:exact 0x0092d470
 0x0092d490 function rcbgTrxFini               # fh v3:exact 0x0092d490
@@ -6540,9 +6587,12 @@
 0x0092d4f0 function rcbgTrxGetEntryData          # (trx, n) -> rcbgTrxGetEntry + 0x10 (palettes 0x00929930, 0x00929990)
 0x0092d510 function rcbgTrxInit               # fh v3:exact 0x0092d510
 0x0092d580 function rcbgTrxNew                # fh v3:bsim1.00 0x0092d580
+0x0092d5a0 function rcbgTrxMakePacket         # (t, out): GIF A+D BITBLTBUF/TRXPOS/TRXREG/TRXDIR from +0x18..+0x2c and an image tag of +0x34/16 qwords; returns out + 0x60; rcbgLayerDraw
 0x0092d670 function rcbgTrxSetNo              # fh v3:bsim1.00 0x0092d670
 0x0092d680 function rcbgTrxSetTag             # fh v3:bsim1.00 0x0092d680
+0x0092d690 function rcbgScaleVector_0092d690  # the same code as rcbgScaleVector 0x009200a0
 0x0092d6f0 function rcCopyQword_0092d6f0      # (dst, src): as rcCopyQword_0091cb40 (6 callers)
+0x0092d780 function rcbgScaleVector_0092d780  # the same code as rcbgScaleVector 0x009200a0
 0x0092d860 function op_et_bindeff_draw_off_thunk # g_MagicImports slot 454 (1 overlay): jmp op_et_bindeff_draw_off; hidden from the dump
 0x0092d870 function op_et_bindeff_draw_on_thunk # g_MagicImports slot 455 (1 overlay): jmp op_et_bindeff_draw_on; hidden from the dump
 0x0092dd30 function rcefChgChrClut            # fh switch:cg2 0x7100557340
@@ -6591,6 +6641,7 @@
 0x0092f710 function rcefModelFini             # fh v3:exact 0x0092f710
 0x0092f750 function rcefModelInit             # fh v3:exact 0x0092f750
 0x0092f770 function rcefModelProc_0092f770    # fh v3:exact 0x0092f770
+0x0092f7f0 function rcbgScaleVector_0092f7f0  # the same code as rcbgScaleVector 0x009200a0
 0x0092f850 function rcCopyQword_0092f850      # (dst, src): as rcCopyQword_0091cb40; rcefObjCalcLocalMatrix, rcefObjCalcParentMatrix
 0x0092f920 function rcefObjLinkLast              # (obj, child): child after the last of obj's chain (+0xcc next, child +0xc8 = previous)
 0x0092f970 function rcefObjAttachChr          # fh v3:exact 0x0092f970
