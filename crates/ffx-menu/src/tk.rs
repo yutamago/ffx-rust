@@ -3141,6 +3141,238 @@ pub mod bridge {
         let v = (f64::from(v) / div) as f32;
         crate::math::wrap_angle(v)
     }
+
+    // ---- round 7: menu sprite packets and the main option dispatch ----
+
+    /// A GS `XYZ`/`UV` pair as the packet builders store it: `x` and `y`
+    /// each sign-extended to 64 bits, `y` shifted 16 (the `or`s
+    /// overlapping, as `cdq`/`shld` produce it).
+    #[must_use]
+    pub const fn gs_xy(x: i32, y: i32) -> u64 {
+        (x as i64).cast_unsigned() | ((y as i64).cast_unsigned() << 16)
+    }
+
+    fn put_u64(mem: &mut impl Mem, at: u32, v: u64) {
+        mem.write(at, v);
+    }
+
+    /// The header of a menu sprite (`0x8001`, `0x64000000`, the GIF
+    /// register list `gif`, `0x156` or `0x1c9`). The original stores the
+    /// list's address as a literal (no relocation), so it is stored as is.
+    fn sprite_header(mem: &mut impl Mem, p: u32, first: u32, gif: u32, prim: u32) {
+        mem.write(p, [first, 0x6400_0000, gif, 0, prim, 0]);
+    }
+
+    /// A menu font/sprite cell: `u8 u`, `u8 v`, `i8 dx`, `i8 dy`, `u16 w`,
+    /// `u16 h`, `u16 sw`, `u16 sh` (12 bytes; `TkMenuDrawSprite`).
+    fn cell(mem: &impl Mem, e: u32) -> ([i32; 2], [i32; 2], [i32; 4]) {
+        let b = |o| i32::from(mem.read::<u8>(e + o));
+        let s = |o| i32::from(mem.read::<i8>(e + o));
+        let h = |o| i32::from(mem.read::<u16>(e + o));
+        ([b(0), b(1)], [s(2), s(3)], [h(4), h(6), h(8), h(10)])
+    }
+
+    /// `MenuDraw_Sprites(p, _, x, y, entry, ox, oy, alpha)` (`0x008dc1b0`,
+    /// own name): `MenuDraw_GifTag` (the GS word from `TOGetGsRegWord`,
+    /// tint `alpha << 24 | 0x808080`) and one sprite per cell of table
+    /// entry `entry` (`TkMenuGetTableEntry` of `0x00c5a900`): texture from
+    /// (`u × 16 − 8`, not negative; `v × 16 + 8`), screen from the cell's
+    /// offset back from `(x + 0x700, y + 0x730) × 16` (x mirrored). Returns
+    /// the packet end.
+    #[allow(clippy::many_single_char_names, clippy::too_many_arguments)]
+    pub fn menu_draw_sprites(mem: &mut impl Mem, args: [u32; 8], mirror: bool) -> u32 {
+        let [p, _, x, y, entry, ox, oy, alpha] = args;
+        let sx = x.wrapping_add(0x700) << 4;
+        let sy = y.wrapping_add(0x730) << 4;
+        let table = tk_menu_get_table_entry(mem, entry, mem.rebase(0x00c5_a900));
+        let gs = ffx_system::pkt::bridge::GS_WORD_008FA7B0;
+        #[allow(clippy::cast_possible_truncation)]
+        let mut q = menu_draw_gif_tag(mem, p, gs as u32, 0, (alpha << 24) | 0x0080_8080);
+        if table == 0 {
+            return q;
+        }
+        let mut k = 0u32;
+        while k < mem.read::<u32>(table) {
+            let e = table + 4 + 12 * k;
+            let ([u, v], [dx, dy], [w, h, sw, sh]) = cell(mem, e);
+            let (sx, sy, ox, oy) = (
+                sx.cast_signed(),
+                sy.cast_signed(),
+                ox.cast_signed(),
+                oy.cast_signed(),
+            );
+            sprite_header(mem, q, 0x8001, 0x00f5_3530, 0x156);
+            if mirror {
+                let u0 = u * 16 + 8;
+                let v0 = (v * 16 - 8).max(0);
+                let mut u1 = w * 16 + u0;
+                let v1 = h * 16 - 8 + v0;
+                let xa = dx * 16 + sx + ox;
+                let mut xb = sw * 16 + xa;
+                let ya = dy * 16 + sy + oy;
+                let yb = sh * 16 + ya;
+                if u1 > 0xff0 {
+                    xb -= u1 - 0xff0;
+                    u1 = 0xff0;
+                }
+                put_u64(mem, q + 0x18, gs_xy(u0, v0));
+                put_u64(mem, q + 0x20, gs_xy(xa, yb));
+                put_u64(mem, q + 0x28, gs_xy(u1, v1));
+                put_u64(mem, q + 0x30, gs_xy(xb, ya));
+            } else {
+                let v0 = v * 16 + 8;
+                let u0 = (u * 16 - 8).max(0);
+                let u1 = w * 16 + u0;
+                let v1 = h * 16 + v0;
+                let xa = sx.wrapping_sub(dx * 16).wrapping_add(ox);
+                let xb = xa.wrapping_sub(sw * 16);
+                let ya = (dy * 16).wrapping_add(sy).wrapping_add(oy);
+                let yb = (sh * 16).wrapping_add(ya);
+                put_u64(mem, q + 0x18, gs_xy(u0, v0));
+                put_u64(mem, q + 0x20, gs_xy(xa, ya));
+                put_u64(mem, q + 0x28, gs_xy(u1, v1));
+                put_u64(mem, q + 0x30, gs_xy(xb, yb));
+            }
+            q += 0x40;
+            k += 1;
+        }
+        q
+    }
+
+    /// The three bar sprites (`MenuDraw_Bar`, `0x008dc360`;
+    /// `MenuDraw_BarV`, `0x008dc480`; `MenuDraw_Bar2`, `0x008dc5a0`, own
+    /// names): one sprite of cell `cell` at `(x + 0x700, y + 0x730) × 16`
+    /// stretched to `n` pixels (`Bar`: down, ending at the cell width; `V`:
+    /// vertical texture, along x; `Bar2`: `n` down and `m` across), nothing
+    /// for `n <= 0`. Returns the packet end.
+    #[allow(clippy::many_single_char_names, clippy::too_many_arguments)]
+    pub fn menu_draw_bar(
+        mem: &mut impl Mem,
+        kind: u8,
+        p: u32,
+        n: i32,
+        m: i32,
+        c: u32,
+        x: i32,
+        y: i32,
+    ) -> u32 {
+        if n <= 0 {
+            return p;
+        }
+        let [b4, b5] = [4, 5].map(|o| i32::from(mem.read::<u8>(c + o)));
+        let [h8, ha, hc, he] = [8, 0xa, 0xc, 0xe].map(|o| i32::from(mem.read::<u16>(c + o)));
+        let (bx, by) = (x.wrapping_add(0x700), y.wrapping_add(0x730));
+        sprite_header(mem, p, 0x8001, 0x00f5_3530, 0x156);
+        match kind {
+            0 | 2 => {
+                let u0 = b4 * 16 + 8;
+                let v = (ha + b5) * 16 - 8;
+                let u1 = h8 * 16 + u0;
+                let x1 = if kind == 0 {
+                    hc.wrapping_add(bx) << 4
+                } else {
+                    bx.wrapping_add(m) << 4
+                };
+                put_u64(mem, p + 0x18, gs_xy(u0, v));
+                put_u64(mem, p + 0x20, gs_xy(bx << 4, by << 4));
+                put_u64(mem, p + 0x28, gs_xy(u1, v));
+                put_u64(mem, p + 0x30, gs_xy(x1, by.wrapping_add(n) << 4));
+            }
+            _ => {
+                let v0 = b5 * 16 + 8;
+                let u = (hc + b4) * 16 - 8;
+                let v1 = ha * 16 + v0;
+                put_u64(mem, p + 0x18, gs_xy(u, v0));
+                put_u64(mem, p + 0x20, gs_xy(bx << 4, by << 4));
+                put_u64(mem, p + 0x28, gs_xy(u, v1));
+                put_u64(
+                    mem,
+                    p + 0x30,
+                    gs_xy(bx.wrapping_add(n) << 4, he.wrapping_add(by) << 4),
+                );
+            }
+        }
+        p + 0x40
+    }
+
+    /// `MenuDraw_Line(p, x, y, w, a, b)` (`0x008ca580`, own name): a
+    /// horizontal line primitive (GIF list `0x00f51510`, `0x1c9`) from
+    /// `(x, y)` to `(x + w, y)` with registers `a`, `b`; the packet end.
+    #[allow(clippy::many_single_char_names, clippy::too_many_arguments)]
+    pub fn menu_draw_line(mem: &mut impl Mem, p: u32, args: [i32; 5]) -> u32 {
+        let [x, y, w, a, b] = args;
+        sprite_header(mem, p, 1, 0x00f5_1510, 0x1c9);
+        mem.write(p + 0x18, [a.cast_unsigned(), 0]);
+        put_u64(mem, p + 0x20, gs_xy(x, y));
+        mem.write(p + 0x28, [b.cast_unsigned(), 0]);
+        put_u64(mem, p + 0x30, gs_xy(x.wrapping_add(w), y));
+        mem.write(p + 0x38, [0u32, 0]);
+        p + 0x40
+    }
+
+    /// `MenuDraw_Strip(p, x, y, xs, n, dx, tag)` (`0x008ca610`) and
+    /// `MenuDraw_StripR` (`0x008ca6f0`, own names): a GIF packet of `n`
+    /// `XYZ2` points, point `k` at (`x ± xs[k] + dx`, `y + 16k`) (`xs`
+    /// `u16`s; subtracted for `R`), padded to a quadword. Returns the end.
+    #[allow(clippy::many_single_char_names, clippy::too_many_arguments)]
+    pub fn menu_draw_strip(mem: &mut impl Mem, p: u32, args: [u32; 6], reverse: bool) -> u32 {
+        let [x, y, xs, n, dx, tag] = args;
+        mem.write(p, [1u32, 0x2400_0000, 0x10, 0, 0x1ca, 0, tag, 0]);
+        let sign = if n.cast_signed() < 0 { u32::MAX } else { 0 };
+        mem.write(p + 0x20, [n | 0x8000, sign | 0x1400_0000]);
+        mem.write(p + 0x28, [5u32, 0]);
+        let mut q = p + 0x30;
+        let mut y = y;
+        for k in 0..n.cast_signed().max(0).cast_unsigned() {
+            let v = u32::from(mem.read::<u16>(xs.wrapping_add(2 * k)));
+            let px = if reverse {
+                x.wrapping_sub(v).wrapping_add(dx)
+            } else {
+                v.wrapping_add(dx.wrapping_add(x))
+            };
+            put_u64(mem, q, gs_xy(px.cast_signed(), y.cast_signed()));
+            y = y.wrapping_add(0x10);
+            q += 8;
+        }
+        if n & 1 != 0 {
+            mem.write(q, [0u32, 0]);
+            q += 8;
+        }
+        q
+    }
+
+    /// The main menu's last chosen option (`TkMenuMainOpenOption` resets
+    /// it).
+    pub const MENU_MAIN_CHOICE: Global<i32> = Global::new(0x0187_154c);
+
+    /// `TkMenuMainOpenOption(i)` (`0x008e24c0`, own name): option `i`'s
+    /// menu (`TkMenuMainGetOptionMenu`) activated and the main menu (slot 1)
+    /// put to sleep; menus 0..20 map to slots 3, 2, 4, -, 6, 7, -, 9, 10,
+    /// -, 15, ..., 21 (15), 20 (20). Returns the menu.
+    pub fn tk_menu_main_open_option<M: Mem>(
+        mem: &mut M,
+        i: i32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        MENU_MAIN_CHOICE.set(mem, -1);
+        let menu = tk_menu_main_get_option_menu(mem, i);
+        let slot = match menu {
+            0 => 3,
+            1 => 2,
+            2 => 4,
+            4 => 6,
+            5 => 7,
+            7 => 9,
+            8 => 10,
+            10 => 15,
+            15 => 21,
+            20 => 20,
+            _ => return menu,
+        };
+        tk_menu_main_active_menu(mem, slot, 0, call);
+        tk_menu_main_sleep_menu(mem, 1, call);
+        menu
+    }
 }
 
 #[cfg(test)]

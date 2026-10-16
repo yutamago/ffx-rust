@@ -3927,3 +3927,190 @@ fn tk_round6b_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_sprite_packets_match_the_original() {
+    let Some(mut t) = setup(0x4d72_19b3) else {
+        return;
+    };
+    let table = t.sym(0x00c5_a900);
+    let entries = Mem::read::<u32>(&t.b, table);
+    for round in 0..300u32 {
+        let p = t.alloc_random(0x1000);
+        let entry = t.rng.below(entries + 2);
+        let x = t.rng.below(0x280).wrapping_sub(0x40);
+        let y = t.rng.below(0x200).wrapping_sub(0x40);
+        let (ox, oy) = (t.rng.below(0x100), t.rng.below(0x100));
+        let alpha = t.rng.below(0x100);
+        let args = [p, 0, x, y, entry, ox, oy, alpha];
+        t.twin("MenuDraw_Sp3RBody", 0x008d_c1b0, &args, U32, |o| {
+            w(tk::menu_draw_sprites(o, args, false))
+        });
+        t.twin("MenuDraw_Sp3UBody", 0x008d_c710, &args, U32, |o| {
+            w(tk::menu_draw_sprites(o, args, true))
+        });
+        for (name, sym, z, ox, al, mirror) in [
+            ("MenuDraw_Sprite", 0x008d_c0f0, 0, 0, None, false),
+            ("MenuDraw_SpriteA", 0x008d_c120, 0, 0, Some(alpha), false),
+            ("MenuDraw_Sprite1", 0x008d_c150, 1, 0, None, false),
+            ("MenuDraw_Sprite2", 0x008d_c180, 2, 0, None, false),
+            ("MenuDraw_SpriteV", 0x008d_c6b0, 0, 0, None, true),
+            ("MenuDraw_SpriteV8", 0x008d_c6e0, 0, 8, None, true),
+            ("MenuDraw_SpriteVA", 0x008d_bdd0, 0, 0, Some(alpha), true),
+            ("MenuDraw_SpriteV8A", 0x008d_be00, 0, 8, Some(alpha), true),
+        ] {
+            let mut a = vec![p, x, y, entry];
+            a.extend(al);
+            let all = [p, z, x, y, entry, ox, 0, al.unwrap_or(0x80)];
+            t.twin(name, sym, &a, U32, |o| {
+                w(tk::menu_draw_sprites(o, all, mirror))
+            });
+        }
+        // bars from a random cell
+        let cell = t.alloc_random(0x10);
+        let n = t.rng.pick(&[0u32, 1, 5, 0x40, 0xffff_fff0]);
+        let m = t.rng.below(0x80);
+        t.twin("MenuDraw_Bar", 0x008d_c360, &[p, n, cell, x, y], U32, |o| {
+            w(tk::menu_draw_bar(o, 0, p, i(n), 0, cell, i(x), i(y)))
+        });
+        t.twin(
+            "MenuDraw_BarV",
+            0x008d_c480,
+            &[p, n, cell, x, y],
+            U32,
+            |o| w(tk::menu_draw_bar(o, 1, p, i(n), 0, cell, i(x), i(y))),
+        );
+        t.twin(
+            "MenuDraw_Bar2",
+            0x008d_c5a0,
+            &[p, m, n, cell, x, y],
+            U32,
+            |o| w(tk::menu_draw_bar(o, 2, p, i(n), i(m), cell, i(x), i(y))),
+        );
+        let (a, b, w0) = (t.rng.next(), t.rng.next(), t.rng.int());
+        t.twin(
+            "MenuDraw_Line",
+            0x008c_a580,
+            &[p, x, y, w0, a, b],
+            U32,
+            |o| w(tk::menu_draw_line(o, p, [i(x), i(y), i(w0), i(a), i(b)])),
+        );
+        let xs = t.alloc_random(0x40);
+        let k = t.rng.pick(&[0u32, 1, 2, 7, 16, 0xffff_ffff]);
+        let dx = t.rng.int();
+        for (name, sym, rev) in [
+            ("MenuDraw_Strip", 0x008c_a610, false),
+            ("MenuDraw_StripR", 0x008c_a6f0, true),
+        ] {
+            t.twin(name, sym, &[p, x, y, xs, k, dx, a], U32, |o| {
+                w(tk::menu_draw_strip(o, p, [x, y, xs, k, dx, a], rev))
+            });
+        }
+        // the g_TkMenuPacket wrappers
+        let pk = t.alloc_random(0x1000);
+        t.put(t.sym(tk::MENU_PACKET.sym), pk);
+        let pp = pk + 0x10;
+        let adv = |o: &mut Oracle, end: u32| {
+            tk::MENU_PACKET.set(o, end);
+            w(end)
+        };
+        t.twin("TkMenuDrawSp3R", 0x008d_d7d0, &[x, y, entry], U32, |o| {
+            let e = tk::menu_draw_sprites(o, [pp, 0, x, y, entry, 0, 0, 0x80], false);
+            adv(o, e)
+        });
+        let pp = tk::MENU_PACKET.get(&t.b) + 0x10;
+        t.twin(
+            "TkMenuDrawSp3RA",
+            0x008d_d800,
+            &[x, y, entry, alpha],
+            U32,
+            |o| {
+                let e = tk::menu_draw_sprites(o, [pp, 0, x, y, entry, 0, 0, alpha], false);
+                adv(o, e)
+            },
+        );
+        let pk = t.alloc_random(0x1000);
+        t.put(t.sym(tk::MENU_PACKET.sym), pk);
+        let pp = pk + 0x10;
+        t.twin(
+            "TkMenuDrawSp3StretchD",
+            0x008d_d830,
+            &[cell, x, y, n],
+            U32,
+            |o| {
+                let e = tk::menu_draw_bar(o, 0, pp, i(n), 0, cell, i(x), i(y));
+                adv(o, e)
+            },
+        );
+        let pp = tk::MENU_PACKET.get(&t.b) + 0x10;
+        t.twin(
+            "TkMenuDrawSp3StretchR",
+            0x008d_d860,
+            &[cell, x, y, n],
+            U32,
+            |o| {
+                let e = tk::menu_draw_bar(o, 1, pp, i(n), 0, cell, i(x), i(y));
+                adv(o, e)
+            },
+        );
+        let pp = tk::MENU_PACKET.get(&t.b) + 0x10;
+        t.twin(
+            "TkMenuDrawSp3StretchRD",
+            0x008d_d890,
+            &[cell, x, y, m, n],
+            U32,
+            |o| {
+                let e = tk::menu_draw_bar(o, 2, pp, i(n), i(m), cell, i(x), i(y));
+                adv(o, e)
+            },
+        );
+        let pp = tk::MENU_PACKET.get(&t.b) + 0x10;
+        t.twin("TkMenuDrawSp3Tex0", 0x008d_d8c0, &[a, b, x], U32, |o| {
+            let e = tk::menu_draw_gif_tag(o, pp, a, b, x);
+            adv(o, e)
+        });
+        let pk = t.alloc_random(0x1000);
+        t.put(t.sym(tk::MENU_PACKET.sym), pk);
+        let pp = pk + 0x10;
+        t.twin("TkMenuDrawSp3UR", 0x008d_d8f0, &[x, y, entry], U32, |o| {
+            let e = tk::menu_draw_sprites(o, [pp, 0, x, y, entry, 0, 0, 0x80], true);
+            adv(o, e)
+        });
+        let pp = tk::MENU_PACKET.get(&t.b) + 0x10;
+        t.twin(
+            "TkMenuDrawSp3URHalf",
+            0x008d_d920,
+            &[x, y, entry],
+            U32,
+            |o| {
+                let e = tk::menu_draw_sprites(o, [pp, 0, x, y, entry, 8, 0, 0x80], true);
+                adv(o, e)
+            },
+        );
+        // the option dispatch
+        if round < 100 {
+            t.scramble(tk::MN2_MENU_MODE.sym, 4);
+            t.scramble(tk::MENU_MAIN_ACTIVE_MASK.sym, 4);
+            for s0 in 0..25 {
+                let w0 = if t.rng.below(4) == 0 {
+                    0
+                } else {
+                    menu_window(&mut t)
+                };
+                t.put(t.sym(tk::MENU_SLOTS.sym) + 4 * s0, w0);
+            }
+            let opts = t.sym(tk::MENU_MAIN_OPTIONS.sym);
+            let mut v = t.rng.bytes(0x100);
+            for k in 0..16 {
+                let m: u32 = t.rng.pick(&[0, 1, 2, 3, 4, 5, 7, 8, 10, 15, 20, 21]);
+                v[8 * k..8 * k + 4].copy_from_slice(&m.to_le_bytes());
+            }
+            t.put_bytes(opts, &v);
+            let opt = t.rng.below(16);
+            t.twin("TkMenuMainOpenOption", 0x008e_24c0, &[opt], U32, |o| {
+                w(tk::tk_menu_main_open_option(o, i(opt), &mut callback))
+            });
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}

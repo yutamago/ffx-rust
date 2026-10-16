@@ -2209,4 +2209,136 @@ ported! {
     Gu_MouseSetWindow @ 0x0084_9b90 => extern "C" fn gu_mouse_set_window(window: u32) -> i32 {
         gu::gu_mouse_set_window(&mut mem(), window)
     }
+    /// `MenuDraw_Sp3RBody(p, _, x, y, entry, ox, oy, alpha)`: the packet end.
+    MenuDraw_Sp3RBody @ 0x008d_c1b0 => extern "C" fn menu_draw_sp3_r_body(p: u32, z: u32, x: u32, y: u32, entry: u32, ox: u32, oy: u32, alpha: u32) -> u32 {
+        tk::menu_draw_sprites(&mut mem(), [p, z, x, y, entry, ox, oy, alpha], false)
+    }
+    /// `MenuDraw_Sp3UBody(p, _, x, y, entry, ox, oy, alpha)`: the packet end.
+    MenuDraw_Sp3UBody @ 0x008d_c710 => extern "C" fn menu_draw_sp3_u_body(p: u32, z: u32, x: u32, y: u32, entry: u32, ox: u32, oy: u32, alpha: u32) -> u32 {
+        tk::menu_draw_sprites(&mut mem(), [p, z, x, y, entry, ox, oy, alpha], true)
+    }
+    /// `MenuDraw_Bar(p, n, cell, x, y)`: the packet end.
+    MenuDraw_Bar @ 0x008d_c360 => extern "C" fn menu_draw_bar(p: u32, n: i32, c: u32, x: i32, y: i32) -> u32 {
+        tk::menu_draw_bar(&mut mem(), 0, p, n, 0, c, x, y)
+    }
+    /// `MenuDraw_BarV(p, n, cell, x, y)`: the packet end.
+    MenuDraw_BarV @ 0x008d_c480 => extern "C" fn menu_draw_bar_v(p: u32, n: i32, c: u32, x: i32, y: i32) -> u32 {
+        tk::menu_draw_bar(&mut mem(), 1, p, n, 0, c, x, y)
+    }
+    /// `MenuDraw_Bar2(p, m, n, cell, x, y)`: the packet end.
+    MenuDraw_Bar2 @ 0x008d_c5a0 => extern "C" fn menu_draw_bar2(p: u32, m: i32, n: i32, c: u32, x: i32, y: i32) -> u32 {
+        tk::menu_draw_bar(&mut mem(), 2, p, n, m, c, x, y)
+    }
+    /// `MenuDraw_Line(p, x, y, w, a, b)`: the packet end.
+    MenuDraw_Line @ 0x008c_a580 => extern "C" fn menu_draw_line(p: u32, x: i32, y: i32, w: i32, a: i32, b: i32) -> u32 {
+        tk::menu_draw_line(&mut mem(), p, [x, y, w, a, b])
+    }
+    /// `MenuDraw_Strip(p, x, y, xs, n, dx, tag)`: the packet end.
+    MenuDraw_Strip @ 0x008c_a610 => extern "C" fn menu_draw_strip(p: u32, x: u32, y: u32, xs: u32, n: u32, dx: u32, tag: u32) -> u32 {
+        tk::menu_draw_strip(&mut mem(), p, [x, y, xs, n, dx, tag], false)
+    }
+    /// `MenuDraw_StripR(p, x, y, xs, n, dx, tag)`: the packet end.
+    MenuDraw_StripR @ 0x008c_a6f0 => extern "C" fn menu_draw_strip_r(p: u32, x: u32, y: u32, xs: u32, n: u32, dx: u32, tag: u32) -> u32 {
+        tk::menu_draw_strip(&mut mem(), p, [x, y, xs, n, dx, tag], true)
+    }
+    /// `TkMenuMainOpenOption(i)`: the option's menu.
+    TkMenuMainOpenOption @ 0x008e_24c0 => extern "C" fn tk_menu_main_open_option(i: i32) -> u32 {
+        tk::tk_menu_main_open_option(&mut mem(), i, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuDraw_Sprite(p, x, y, entry)`: the packet end.
+    MenuDraw_Sprite @ 0x008d_c0f0 => extern "C" fn menu_draw_sprite(p: u32, x: u32, y: u32, entry: u32) -> u32 {
+        tk::menu_draw_sprites(&mut mem(), [p, 0, x, y, entry, 0, 0, 0x80], false)
+    }
+    /// `MenuDraw_SpriteA(p, x, y, entry, alpha)`: the packet end.
+    MenuDraw_SpriteA @ 0x008d_c120 => extern "C" fn menu_draw_sprite_a(p: u32, x: u32, y: u32, entry: u32, alpha: u32) -> u32 {
+        tk::menu_draw_sprites(&mut mem(), [p, 0, x, y, entry, 0, 0, alpha], false)
+    }
+    /// `MenuDraw_Sprite1(p, x, y, entry)`: the packet end.
+    MenuDraw_Sprite1 @ 0x008d_c150 => extern "C" fn menu_draw_sprite1(p: u32, x: u32, y: u32, entry: u32) -> u32 {
+        tk::menu_draw_sprites(&mut mem(), [p, 1, x, y, entry, 0, 0, 0x80], false)
+    }
+    /// `MenuDraw_Sprite2(p, x, y, entry)`: the packet end.
+    MenuDraw_Sprite2 @ 0x008d_c180 => extern "C" fn menu_draw_sprite2(p: u32, x: u32, y: u32, entry: u32) -> u32 {
+        tk::menu_draw_sprites(&mut mem(), [p, 2, x, y, entry, 0, 0, 0x80], false)
+    }
+    /// `MenuDraw_SpriteV(p, x, y, entry)`: the packet end.
+    MenuDraw_SpriteV @ 0x008d_c6b0 => extern "C" fn menu_draw_sprite_v(p: u32, x: u32, y: u32, entry: u32) -> u32 {
+        tk::menu_draw_sprites(&mut mem(), [p, 0, x, y, entry, 0, 0, 0x80], true)
+    }
+    /// `MenuDraw_SpriteV8(p, x, y, entry)`: the packet end.
+    MenuDraw_SpriteV8 @ 0x008d_c6e0 => extern "C" fn menu_draw_sprite_v8(p: u32, x: u32, y: u32, entry: u32) -> u32 {
+        tk::menu_draw_sprites(&mut mem(), [p, 0, x, y, entry, 8, 0, 0x80], true)
+    }
+    /// `MenuDraw_SpriteVA(p, x, y, entry, alpha)`: the packet end.
+    MenuDraw_SpriteVA @ 0x008d_bdd0 => extern "C" fn menu_draw_sprite_v_a(p: u32, x: u32, y: u32, entry: u32, alpha: u32) -> u32 {
+        tk::menu_draw_sprites(&mut mem(), [p, 0, x, y, entry, 0, 0, alpha], true)
+    }
+    /// `MenuDraw_SpriteV8A(p, x, y, entry, alpha)`: the packet end.
+    MenuDraw_SpriteV8A @ 0x008d_be00 => extern "C" fn menu_draw_sprite_v8_a(p: u32, x: u32, y: u32, entry: u32, alpha: u32) -> u32 {
+        tk::menu_draw_sprites(&mut mem(), [p, 0, x, y, entry, 8, 0, alpha], true)
+    }
+    /// `TkMenuDrawSp3R(x, y, entry)`: a new packet at `g_TkMenuPacket + 0x10`; the menu packet and the result are its end.
+    TkMenuDrawSp3R @ 0x008d_d7d0 => extern "C" fn tk_menu_draw_sp3_r(x: u32, y: u32, entry: u32) -> u32 {
+        let mut m = mem();
+        let p = tk::MENU_PACKET.get(&m).wrapping_add(0x10);
+        let end = tk::menu_draw_sprites(&mut m, [p, 0, x, y, entry, 0, 0, 0x80], false);
+        tk::MENU_PACKET.set(&mut m, end);
+        end
+    }
+    /// `TkMenuDrawSp3RA(x, y, entry, alpha)`: a new packet at `g_TkMenuPacket + 0x10`; the menu packet and the result are its end.
+    TkMenuDrawSp3RA @ 0x008d_d800 => extern "C" fn tk_menu_draw_sp3_ra(x: u32, y: u32, entry: u32, alpha: u32) -> u32 {
+        let mut m = mem();
+        let p = tk::MENU_PACKET.get(&m).wrapping_add(0x10);
+        let end = tk::menu_draw_sprites(&mut m, [p, 0, x, y, entry, 0, 0, alpha], false);
+        tk::MENU_PACKET.set(&mut m, end);
+        end
+    }
+    /// `TkMenuDrawSp3StretchD(cell, x, y, n)`: a new packet at `g_TkMenuPacket + 0x10`; the menu packet and the result are its end.
+    TkMenuDrawSp3StretchD @ 0x008d_d830 => extern "C" fn tk_menu_draw_sp3_stretch_d(c: u32, x: i32, y: i32, n: i32) -> u32 {
+        let mut m = mem();
+        let p = tk::MENU_PACKET.get(&m).wrapping_add(0x10);
+        let end = tk::menu_draw_bar(&mut m, 0, p, n, 0, c, x, y);
+        tk::MENU_PACKET.set(&mut m, end);
+        end
+    }
+    /// `TkMenuDrawSp3StretchR(cell, x, y, n)`: a new packet at `g_TkMenuPacket + 0x10`; the menu packet and the result are its end.
+    TkMenuDrawSp3StretchR @ 0x008d_d860 => extern "C" fn tk_menu_draw_sp3_stretch_r(c: u32, x: i32, y: i32, n: i32) -> u32 {
+        let mut m = mem();
+        let p = tk::MENU_PACKET.get(&m).wrapping_add(0x10);
+        let end = tk::menu_draw_bar(&mut m, 1, p, n, 0, c, x, y);
+        tk::MENU_PACKET.set(&mut m, end);
+        end
+    }
+    /// `TkMenuDrawSp3StretchRD(cell, x, y, m, n)`: a new packet at `g_TkMenuPacket + 0x10`; the menu packet and the result are its end.
+    TkMenuDrawSp3StretchRD @ 0x008d_d890 => extern "C" fn tk_menu_draw_sp3_stretch_rd(c: u32, x: i32, y: i32, m2: i32, n: i32) -> u32 {
+        let mut m = mem();
+        let p = tk::MENU_PACKET.get(&m).wrapping_add(0x10);
+        let end = tk::menu_draw_bar(&mut m, 2, p, n, m2, c, x, y);
+        tk::MENU_PACKET.set(&mut m, end);
+        end
+    }
+    /// `TkMenuDrawSp3Tex0(a, b, c)`: a new packet at `g_TkMenuPacket + 0x10`; the menu packet and the result are its end.
+    TkMenuDrawSp3Tex0 @ 0x008d_d8c0 => extern "C" fn tk_menu_draw_sp3_tex0(a: u32, b: u32, c: u32) -> u32 {
+        let mut m = mem();
+        let p = tk::MENU_PACKET.get(&m).wrapping_add(0x10);
+        let end = tk::menu_draw_gif_tag(&mut m, p, a, b, c);
+        tk::MENU_PACKET.set(&mut m, end);
+        end
+    }
+    /// `TkMenuDrawSp3UR(x, y, entry)`: a new packet at `g_TkMenuPacket + 0x10`; the menu packet and the result are its end.
+    TkMenuDrawSp3UR @ 0x008d_d8f0 => extern "C" fn tk_menu_draw_sp3_ur(x: u32, y: u32, entry: u32) -> u32 {
+        let mut m = mem();
+        let p = tk::MENU_PACKET.get(&m).wrapping_add(0x10);
+        let end = tk::menu_draw_sprites(&mut m, [p, 0, x, y, entry, 0, 0, 0x80], true);
+        tk::MENU_PACKET.set(&mut m, end);
+        end
+    }
+    /// `TkMenuDrawSp3URHalf(x, y, entry)`: a new packet at `g_TkMenuPacket + 0x10`; the menu packet and the result are its end.
+    TkMenuDrawSp3URHalf @ 0x008d_d920 => extern "C" fn tk_menu_draw_sp3_ur_half(x: u32, y: u32, entry: u32) -> u32 {
+        let mut m = mem();
+        let p = tk::MENU_PACKET.get(&m).wrapping_add(0x10);
+        let end = tk::menu_draw_sprites(&mut m, [p, 0, x, y, entry, 8, 0, 0x80], true);
+        tk::MENU_PACKET.set(&mut m, end);
+        end
+    }
 }

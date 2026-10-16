@@ -5030,6 +5030,9 @@
 0x008ca530 function TkMenuGetDummyControlerT  # g_TkMenuDummyControler (same word on PC); Switch name, alphabetical slot
 0x008ca560 function TkMenuSetDummyControlerPending # (buttons): g_TkMenuDummyControler +4 (what TkMenuFlushDummyControler makes current)
 0x008ca570 function TkMenuSetDummyControlerFlag # fh v3:bsim1.00 0x008ca540
+0x008ca580 function MenuDraw_Line             # (p, x, y, w, a, b) line primitive (GIF list 0x00f51510); no caller; own name
+0x008ca610 function MenuDraw_Strip            # (p, x, y, xs, n, dx, tag) n XYZ2 points (x + xs[k] + dx, y + 16k); own name
+0x008ca6f0 function MenuDraw_StripR           # (p, x, y, xs, n, dx, tag) the same with x - xs[k]; own name
 0x008cad80 function Gs_Pack5d                 # copy of Gs_Pack5; own name
 0x008cadb0 function MenuConfig_SetBit9        # (option) +0xc = bit 8; bit 9 set when +8 is 0; config table callback; own name
 0x008cade0 function MenuConfig_GetBit5        # (option) +8 = !bit 5, +0xc = bit 8; own name
@@ -5116,6 +5119,19 @@
 0x008db7a0 function MenuTuto_SetChoice        # (window, i) 0x025d16bc = 1, 0x01871528 = i; own name
 0x008db840 function MenuTuto_GetChoice        # 0x01871528 when 0x025d16bc is set, else -1; own name
 0x008db870 function DrawBlackBackGround       # fh v3:exact 0x008db850
+0x008dbdd0 function MenuDraw_SpriteVA         # (p, x, y, entry, alpha); own name
+0x008dbe00 function MenuDraw_SpriteV8A        # (p, x, y, entry, alpha) ox = 8; own name
+0x008dc0f0 function MenuDraw_Sprite           # (p, x, y, entry) MenuDraw_Sp3RBody tint 0x80; own name
+0x008dc120 function MenuDraw_SpriteA          # (p, x, y, entry, alpha); own name
+0x008dc150 function MenuDraw_Sprite1          # (p, x, y, entry) unused arg 1; no caller; own name
+0x008dc180 function MenuDraw_Sprite2          # (p, x, y, entry) unused arg 2; no caller; own name
+0x008dc1b0 function MenuDraw_Sp3RBody         # (p, _, x, y, entry, ox, oy, alpha) GifTag (TOGetGsRegWord, tint) + one sprite per 12-byte cell of TkMenuGetTableEntry(entry, 0x00c5a900), x mirrored; own name
+0x008dc360 function MenuDraw_Bar              # (p, n, cell, x, y) one sprite stretched n down; own name
+0x008dc480 function MenuDraw_BarV             # (p, n, cell, x, y) one sprite stretched n right; own name
+0x008dc5a0 function MenuDraw_Bar2             # (p, m, n, cell, x, y) stretched m right and n down; own name
+0x008dc6b0 function MenuDraw_SpriteV          # (p, x, y, entry) MenuDraw_Sp3UBody; own name
+0x008dc6e0 function MenuDraw_SpriteV8         # (p, x, y, entry) ox = 8; own name
+0x008dc710 function MenuDraw_Sp3UBody         # (p, _, x, y, entry, ox, oy, alpha) the same flipped vertically, u clamped to 0xff0; own name
 0x008dc9b0 function TkMenuConfigMes           # fh switch:bsim1.00 0x71004c3490
 0x008dc9e0 function TkMenuDraw1612Width       # fh call.cs cdecl
 0x008dc9f0 function TkMenuDraw1612WidthHeight # fh switch:bsim1.00 0x71004bfde0
@@ -5139,6 +5155,24 @@
 0x008dd440 function TkMenuDrawScissorClear    # fh switch:bsim1.00 0x71004bfe20
 0x008dd460 function TkMenuDrawScissorRect     # 5-byte jmp TODrawScissorXYWH thunk (not a function in the dump, left original); Switch name, after TkMenuDrawScissorClear
 0x008dd4f0 function TkMenuDrawShape           # fh switch:bsim1.00 0x71004c3910
+0x008dd520 function TkMenuDrawSp3             # g_TkMenuPacket += 0x10, = 0x008dbd40(...); Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd550 function TkMenuDrawSp3A            # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd580 function TkMenuDrawSp3AHalf        # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd5b0 function TkMenuDrawSp3AUR          # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd5e0 function TkMenuDrawSp3AURHalf      # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd610 function TkMenuDrawSp3FaceA        # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd6a0 function TkMenuDrawSp3FaceAA       # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd740 function TkMenuDrawSp3FaceB        # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd770 function TkMenuDrawSp3FaceBA       # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd7a0 function TkMenuDrawSp3Half         # ox 8 variant; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd7d0 function TkMenuDrawSp3R            # (x, y, entry) MenuDraw_Sprite at g_TkMenuPacket + 0x10; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd800 function TkMenuDrawSp3RA           # (x, y, entry, alpha); Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd830 function TkMenuDrawSp3StretchD     # (cell, x, y, n) MenuDraw_Bar; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd860 function TkMenuDrawSp3StretchR     # (cell, x, y, n) MenuDraw_BarV; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd890 function TkMenuDrawSp3StretchRD    # (cell, x, y, m, n) MenuDraw_Bar2; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd8c0 function TkMenuDrawSp3Tex0         # (a, b, c) MenuDraw_GifTag (the TEX0 setup); Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd8f0 function TkMenuDrawSp3UR           # (x, y, entry) MenuDraw_SpriteV; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd920 function TkMenuDrawSp3URHalf       # (x, y, entry) MenuDraw_SpriteV8; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
 0x008ddc60 function TkMenuEquipWin            # fh switch:bsim1.00 0x71004c1280
 0x008dde10 function TkMenuGetCommandHelp      # fh v3:cg3 0x8dddf0
 0x008ddea0 function TOMenuGetGetImportantHelp # fh v3:cg3 0x8dde80
@@ -5166,6 +5200,7 @@
 0x008e2270 function TkMenuMainGetOptionMenu   # fh v3:bsim1.00 0x008e2270 +TkMenuMainGetOptionMenu
 0x008e2280 function TkMenuMainGetMaxOptions   # fh v3:bsim1.00 0x008e2280 +TkMenuMainGetMaxOptions
 0x008e2290 function TkMenuMainGetOptionEnabled # fh v3:bsim1.00 0x008e2290 +TkMenuMainGetOptionEnabled
+0x008e24c0 function TkMenuMainOpenOption      # (i) option i (TkMenuMainGetOptionMenu): its menu slot activated, main menu (1) slept; 0x0187154c = -1; own name
 0x008e2630 function TkMn2GetMainPos           # fh switch:bsim1.00 0x71004d55d0
 0x008e2690 function TkScreenToMenuX           # (x) -> float(x) * 512 / 1920 (a 1920-wide coordinate in the 512-wide menu)
 0x008e26b0 function TkScreenToMenuY           # (y) -> float(y) * 416 / 1080
@@ -8683,6 +8718,7 @@
 0x0186ac34 label    g_TkMenuTutoWindows       # 2 tutorial windows (MenuTuto_RestartWindow/2)
 0x01871528 label    g_TkMenuTutoChoice        # MenuTuto_GetChoice/SetChoice
 0x01871530 label    g_TkMenuPacket            # menu GS packet pointer; TkMenuDrawEnv writes 0x50 bytes at +0x10 and moves it 0x60 on
+0x0187154c label    g_TkMenuMainChoice        # reset to -1 by TkMenuMainOpenOption
 0x01871568 label    g_TkMenuMainOptions       # 8-byte entries: +0 menu (TkMenuMainGetOptionMenu), +4 i16 enabled (TkMenuMainGetOptionEnabled)
 0x01871688 label    g_TkMenuMainMaxOptions    # TkMenuMainGetMaxOptions
 0x01871698 label    g_TkMenuWorldMapWindow    # MenuWorldMap_CloseWindow
