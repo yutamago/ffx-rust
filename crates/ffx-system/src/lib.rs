@@ -7,6 +7,8 @@
 pub mod cd;
 pub mod config;
 pub mod instance;
+pub mod math;
 pub mod msg;
 pub mod save;
 pub mod stub;
+pub mod x87;

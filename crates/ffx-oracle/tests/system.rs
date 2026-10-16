@@ -3,12 +3,15 @@
 //! the same memory; results and every written byte must agree. Synthetic
 //! cases need `FFX_GAME_DIR`; the snapshot cases also `FFX_SNAPSHOT`
 //! (both kept snapshots: `field.snap`, `battle.snap`).
+//!
+//! The float cases run at the game's control word (`0x027f`, 53-bit) and
+//! compare bits, NaNs included.
 
 use std::path::PathBuf;
 
 use ffx_bridge::{Global, Mem};
 use ffx_oracle::{Conv, Oracle, Pages};
-use ffx_system::{cd, config, instance, msg, save, stub};
+use ffx_system::{cd, config, instance, math, msg, save, stub};
 
 /// The game thread's x87 control word.
 const GAME_FPU: u32 = 0x027f;
@@ -54,6 +57,31 @@ impl Xorshift {
         self.0 ^= self.0 << 5;
         self.0
     }
+
+    /// Mostly ordinary floats of mixed magnitudes, sometimes any bit
+    /// pattern (NaNs, infinities, denormals) or a special value.
+    fn float(&mut self) -> f32 {
+        const SPECIAL: [u32; 10] = [
+            0x0000_0000, // 0
+            0x8000_0000, // -0
+            0x7f80_0000, // inf
+            0xff80_0000, // -inf
+            0x7fc0_0000, // quiet NaN
+            0x7f80_0001, // signalling NaN
+            0xffc1_2345, // negative NaN with a payload
+            0x0000_0001, // smallest denormal
+            0x7f7f_ffff, // largest finite
+            0x3f80_0000, // 1
+        ];
+        match self.next() % 16 {
+            0 => f32::from_bits(self.next()),
+            1 => f32::from_bits(SPECIAL[(self.next() % 10) as usize]),
+            _ => {
+                let e = self.next() % 40 + 107; // 2^-20 .. 2^20
+                f32::from_bits(self.next() & 0x807f_ffff | e << 23)
+            }
+        }
+    }
 }
 
 /// Calls `sym` in `o`.
@@ -86,6 +114,12 @@ fn set<T: ffx_bridge::Value>(a: &mut Oracle, b: &mut Oracle, g: Global<T>, value
     g.set(b, value);
 }
 
+fn floats(m: &Oracle, addr: u32, n: usize) -> Vec<u32> {
+    (0..n)
+        .map(|i| Mem::read::<f32>(m, addr + 4 * u32::try_from(i).unwrap()).to_bits())
+        .collect()
+}
+
 /// Both oracles' memory agrees.
 fn same_memory(what: &str, a: &mut Oracle, b: &mut Oracle) {
     assert_eq!(a.diff(b).unwrap(), [], "{what}: memory");
@@ -93,6 +127,220 @@ fn same_memory(what: &str, a: &mut Oracle, b: &mut Oracle) {
 
 /// A Rust getter.
 type Getter = fn(&Oracle) -> u32;
+
+const CDC_MUL4X4: u32 = 0x0070_58f0;
+const CDC_MUL4X4_MATRIX: u32 = 0x0070_59b0;
+const CDC_MUL3X4: u32 = 0x0070_5850;
+const CDC_TRANSPOSE: u32 = 0x0070_63f0;
+const CDC_ORTHONORMAL_INVERSE3X4: u32 = 0x0070_5db0;
+const CDC_ROT_X: u32 = 0x0070_5ed0;
+const CDC_ROT_Z: u32 = 0x0070_6070;
+const SCE_VU0_VECTOR_LENGTH_SQUARED: u32 = 0x006e_d9b0;
+
+/// A Rust matrix function `f(dst, x, y)`.
+type Matrix3 = fn(&mut Oracle, u32, u32, u32);
+/// A Rust matrix function `f(dst, x)`.
+type Matrix2 = fn(&mut Oracle, u32, u32);
+
+/// Every third case NaN-heavy: half the inputs NaNs with random payloads,
+/// so products and sums of two NaNs come up. All NaNs quiet: the oracle's
+/// x87 mishandles signalling ones (see
+/// `the_oracle_keeps_loaded_signalling_nans_signalling`); the model's
+/// handling of them is checked against the hardware in `ffx_system::x87`.
+fn random_floats(rng: &mut Xorshift, n: usize) -> Vec<f32> {
+    let nans = rng.next().is_multiple_of(3);
+    (0..n)
+        .map(|_| {
+            let x = if nans && rng.next().is_multiple_of(2) {
+                f32::from_bits(rng.next() | 0x7f80_0000)
+            } else {
+                rng.float()
+            };
+            if x.is_nan() {
+                f32::from_bits(x.to_bits() | 0x0040_0000)
+            } else {
+                x
+            }
+        })
+        .collect()
+}
+
+fn write_floats(a: &mut Oracle, b: &mut Oracle, at: u32, v: &[f32]) {
+    for (i, &x) in v.iter().enumerate() {
+        put(a, b, at + 4 * u32::try_from(i).unwrap(), x);
+    }
+}
+
+#[test]
+fn matrix_products_match_the_original_bit_for_bit() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_cdc0);
+    // one block: [dst 64][x 64][y 64], dst moved around to overlap the inputs
+    let block = alloc(&mut a, &mut b, 0x100);
+    let cases: [(&str, u32, Matrix3); 3] = [
+        ("cdc_Mul4x4", CDC_MUL4X4, |m, d, x, y| {
+            math::bridge::mul4x4_vector(m, d, x, y);
+        }),
+        ("cdc_Mul3x4", CDC_MUL3X4, |m, d, x, y| {
+            math::bridge::mul3x4(m, d, x, y);
+        }),
+        ("cdc_Mul4x4_007059b0", CDC_MUL4X4_MATRIX, |m, d, x, y| {
+            math::bridge::mul4x4(m, d, x, y);
+        }),
+    ];
+    for (name, sym, rust) in cases {
+        for n in 0..3000 {
+            let inputs = random_floats(&mut rng, 32);
+            write_floats(&mut a, &mut b, block + 0x40, &inputs);
+            // apart, then dst on x, on y, and half-overlapping each
+            let dst = block
+                + match n % 6 {
+                    0..=1 => 0,
+                    2 => 0x40,
+                    3 => 0x80,
+                    4 => 0x44,
+                    _ => 0x3c,
+                };
+            let (x, y) = (block + 0x40, block + 0x80);
+            eax(&mut a, sym, &[dst, x, y]);
+            rust(&mut b, dst, x, y);
+            assert_eq!(
+                floats(&a, block, 48),
+                floats(&b, block, 48),
+                "{name} case {n} dst +{:#x}: {inputs:?}",
+                dst - block
+            );
+        }
+        same_memory(name, &mut a, &mut b);
+    }
+}
+
+#[test]
+fn matrix_copies_match_the_original_bit_for_bit() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_cdc1);
+    let block = alloc(&mut a, &mut b, 0x100);
+    let unary: [(&str, u32, Matrix2); 2] = [
+        ("cdc_Transpose", CDC_TRANSPOSE, |m, d, x| {
+            math::bridge::transpose(m, d, x);
+        }),
+        (
+            "cdc_OrthonormalInverse3x4",
+            CDC_ORTHONORMAL_INVERSE3X4,
+            |m, d, x| math::bridge::orthonormal_inverse3x4(m, d, x),
+        ),
+    ];
+    for (name, sym, rust) in unary {
+        for n in 0..3000 {
+            let inputs = random_floats(&mut rng, 16);
+            write_floats(&mut a, &mut b, block + 0x40, &inputs);
+            let dst = block + if n % 3 == 0 { 0x40 } else { 0 };
+            eax(&mut a, sym, &[dst, block + 0x40]);
+            rust(&mut b, dst, block + 0x40);
+            assert_eq!(
+                floats(&a, block, 32),
+                floats(&b, block, 32),
+                "{name} case {n}: {inputs:?}"
+            );
+        }
+        same_memory(name, &mut a, &mut b);
+    }
+}
+
+#[test]
+fn rotations_and_lengths_match_the_original_bit_for_bit() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_cdc2);
+    let block = alloc(&mut a, &mut b, 0x100);
+    for (name, sym, first) in [("RotX", CDC_ROT_X, 1), ("RotZ", CDC_ROT_Z, 0)] {
+        for n in 0..3000 {
+            let inputs = random_floats(&mut rng, 18);
+            write_floats(&mut a, &mut b, block, &inputs[..16]);
+            let (s, c) = (inputs[16], inputs[17]);
+            let ra = call(
+                &mut a,
+                sym,
+                Conv::Thiscall(block),
+                &[s.to_bits(), c.to_bits()],
+            )
+            .eax;
+            let rb = math::bridge::rotate(&mut b, block, first, s, c);
+            assert_eq!(ra, rb, "{name}: returns this");
+            assert_eq!(
+                floats(&a, block, 16),
+                floats(&b, block, 16),
+                "{name} case {n}: {inputs:?}"
+            );
+        }
+        same_memory(name, &mut a, &mut b);
+    }
+
+    for n in 0..5000 {
+        let v = random_floats(&mut rng, 3);
+        write_floats(&mut a, &mut b, block, &v);
+        let st0 = call(&mut a, SCE_VU0_VECTOR_LENGTH_SQUARED, Conv::Cdecl, &[block])
+            .st0
+            .expect("a float result");
+        let r = math::bridge::length_squared(&b, block);
+        // ST0 comes back as an f64 (exact for an f32), NaN payloads lost
+        if r.is_nan() {
+            assert!(st0.is_nan(), "length² case {n}: {v:?}");
+        } else {
+            #[allow(clippy::cast_possible_truncation)] // exact: an f32 value
+            let st0 = st0 as f32;
+            assert_eq!(st0.to_bits(), r.to_bits(), "length² case {n}: {v:?}");
+        }
+    }
+}
+
+#[test]
+fn the_precision_the_matrix_math_assumes_is_the_games() {
+    // v (1, 1, 1, 0) times a column (1, 2^-24, 2^-60, 0): at 53 bits the sum
+    // is 1 + 2^-24, a tie that rounds to 1.0; at 64 bits it rounds up.
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let block = alloc(&mut a, &mut b, 0x100);
+    let (vec, mat) = (block + 0x40, block + 0x80);
+    let mut col = [0.0f32; 16];
+    col[0] = 1.0;
+    col[4] = 2f32.powi(-24);
+    col[8] = 2f32.powi(-60);
+    write_floats(&mut a, &mut b, mat, &col);
+    write_floats(&mut a, &mut b, vec, &[1.0, 1.0, 1.0, 0.0]);
+    math::bridge::mul4x4_vector(&mut b, block, mat, vec);
+    eax(&mut a, CDC_MUL4X4, &[block, mat, vec]);
+    assert_eq!(Mem::read::<f32>(&a, block), 1.0);
+    assert_eq!(Mem::read::<f32>(&b, block), 1.0);
+    a.set_fpu_control(0x037f).unwrap();
+    eax(&mut a, CDC_MUL4X4, &[block, mat, vec]);
+    assert_eq!(
+        Mem::read::<f32>(&a, block),
+        1.0 + 2f32.powi(-23),
+        "the oracle honours the precision control"
+    );
+    a.set_fpu_control(GAME_FPU).unwrap();
+
+    // x² - y for x = 1 + 2^-23, y = 1 + 2^-22: f32 arithmetic gives 0
+    let x = 1.0 + 2f32.powi(-23);
+    let y = 1.0 + 2f32.powi(-22);
+    let mut col = [0.0f32; 16];
+    col[0] = x;
+    col[4] = y;
+    write_floats(&mut a, &mut b, mat, &col);
+    write_floats(&mut a, &mut b, vec, &[x, -1.0, 0.0, 0.0]);
+    eax(&mut a, CDC_MUL4X4, &[block, mat, vec]);
+    math::bridge::mul4x4_vector(&mut b, block, mat, vec);
+    assert_eq!(Mem::read::<f32>(&a, block), 2f32.powi(-46));
+    assert_eq!(Mem::read::<f32>(&b, block), 2f32.powi(-46));
+    assert_eq!(x * x - y, 0.0, "f32 steps lose it");
+}
 
 const SET_PTR32: u32 = 0x00a4_4700;
 const GET_PTR32_FUNC: u32 = 0x00a4_4650;
@@ -568,4 +816,50 @@ fn system_state_matches_the_original_on_the_snapshot() {
     save_data(&mut a, &mut b, &mut rng);
     instances(&mut a, &mut b, &mut rng);
     configuration(&mut a, &mut b, &mut rng);
+}
+
+/// The oracle's x87 (Unicorn) keeps a signalling NaN signalling when `fld`
+/// loads it, so it then loses to any quiet NaN; the hardware quiets it on
+/// the load and the larger significand wins (`ffx_system::x87`'s
+/// `the_model_is_the_hardware` checks the model against the machine's own
+/// x87). The float cases above therefore leave out signalling NaNs that
+/// meet another NaN; this pins the difference down.
+#[test]
+fn the_oracle_keeps_loaded_signalling_nans_signalling() {
+    let Some((mut a, _)) = synthetic() else {
+        return;
+    };
+    // over CdEnvInit, which nothing here calls:
+    // mov eax, [esp+4]; fld dword [eax]; fld dword [eax+4]; faddp st(1), st;
+    // fstp dword [eax+8]; ret
+    let code = [
+        0x8b, 0x44, 0x24, 0x04, 0xd9, 0x00, 0xd9, 0x40, 0x04, 0xde, 0xc1, 0xd9, 0x58, 0x08, 0xc3,
+    ];
+    let at = a.rebase(0x0076_c560);
+    a.write(at, &code).unwrap();
+    let buf = a.alloc(16).unwrap();
+    let add = |a: &mut Oracle, x: u32, y: u32| {
+        Mem::write(a, buf, [x, y]);
+        a.call(at, Conv::Cdecl, &[buf]).unwrap();
+        Mem::read::<u32>(a, buf + 8)
+    };
+    let model = |x: u32, y: u32| {
+        use ffx_system::x87::load;
+        (load(f32::from_bits(x)) + load(f32::from_bits(y)))
+            .store()
+            .to_bits()
+    };
+    // quiet NaNs: larger significand, then the positive one, as the hardware
+    for (x, y) in [
+        (0x7ff1_eb3f, 0xffec_cf72),
+        (0xffec_cf72, 0x7ff1_eb3f),
+        (0x7fc0_0005, 0xffc0_0005),
+        (0xffc0_0005, 0x7fc0_0005),
+    ] {
+        assert_eq!(add(&mut a, x, y), model(x, y), "{x:08x} + {y:08x}");
+    }
+    // a signalling NaN with a larger significand: the hardware (and the
+    // model) 0x7fffffff, the oracle the quiet one
+    assert_eq!(model(0x7fbf_ffff, 0x7fc0_0001), 0x7fff_ffff);
+    assert_eq!(add(&mut a, 0x7fbf_ffff, 0x7fc0_0001), 0x7fc0_0001);
 }

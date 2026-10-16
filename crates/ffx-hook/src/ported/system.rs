@@ -1,7 +1,7 @@
 //! `ffx-system`: the PS2 CD layer, save-data flags, singletons,
-//! configuration, text codes.
+//! configuration, text codes, the `cdc` matrix math.
 
-use ffx_system::{cd, config, instance, msg, save, stub};
+use ffx_system::{cd, config, instance, math, msg, save, stub};
 
 use super::{mem, ported};
 
@@ -216,5 +216,38 @@ ported! {
     /// `TOGetGroup(code)`.
     TOGetGroup @ 0x008d_f610 => extern "C" fn to_get_group(code: u32) -> u32 {
         msg::group(code)
+    }
+
+    /// `cdc::Mul4x4(dst, m, v)`: a 4-vector times a matrix.
+    cdc_Mul4x4 @ 0x0070_58f0 => extern "C" fn cdc_mul4x4(dst: u32, m: u32, v: u32) {
+        math::bridge::mul4x4_vector(&mut mem(), dst, m, v);
+    }
+    /// `cdc::Mul4x4(dst, a, b)`: `b × a`.
+    cdc_Mul4x4_007059b0 @ 0x0070_59b0 => extern "C" fn cdc_mul4x4_matrix(dst: u32, a: u32, b: u32) {
+        math::bridge::mul4x4(&mut mem(), dst, a, b);
+    }
+    /// `cdc::Mul3x4(dst, m, v)`: a point transformed.
+    cdc_Mul3x4 @ 0x0070_5850 => extern "C" fn cdc_mul3x4(dst: u32, m: u32, v: u32) {
+        math::bridge::mul3x4(&mut mem(), dst, m, v);
+    }
+    /// `cdc::Transpose(dst, m)`.
+    cdc_Transpose @ 0x0070_63f0 => extern "C" fn cdc_transpose(dst: u32, m: u32) {
+        math::bridge::transpose(&mut mem(), dst, m);
+    }
+    /// `cdc::OrthonormalInverse3x4(dst, m)`.
+    cdc_OrthonormalInverse3x4 @ 0x0070_5db0 => extern "C" fn cdc_orthonormal_inverse3x4(dst: u32, m: u32) {
+        math::bridge::orthonormal_inverse3x4(&mut mem(), dst, m);
+    }
+    /// `cdc::Matrix::RotX(sin, cos)`.
+    cdc_Matrix_RotX @ 0x0070_5ed0 => extern "thiscall" fn cdc_matrix_rot_x(this: u32, sin: f32, cos: f32) -> u32 {
+        math::bridge::rotate(&mut mem(), this, 1, sin, cos)
+    }
+    /// `cdc::Matrix::RotZ(sin, cos)`.
+    cdc_Matrix_RotZ @ 0x0070_6070 => extern "thiscall" fn cdc_matrix_rot_z(this: u32, sin: f32, cos: f32) -> u32 {
+        math::bridge::rotate(&mut mem(), this, 0, sin, cos)
+    }
+    /// `sceVu0VectorLengthSquared(v)`.
+    sceVu0VectorLengthSquared @ 0x006e_d9b0 => extern "C" fn sce_vu0_vector_length_squared(v: u32) -> f32 {
+        math::bridge::length_squared(&mem(), v)
     }
 }
