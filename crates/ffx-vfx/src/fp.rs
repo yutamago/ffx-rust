@@ -280,7 +280,7 @@ pub mod bridge {
     /// The getters of [`STATS`]: `pppFpGetPacketSize` (`0x007293e0`),
     /// `pppFpGetPacketUsed` (`0x007293f0`), `pppFpGetPacketPeak`
     /// (`0x007293d0`), `pppFpGetHeapUsed` (`0x007292d0`),
-    /// `pppFpGetHeapPeak` (`0x00729280`).
+    /// `pppFpGetHeapMaxUseSize` (`0x00729280`).
     pub fn ppp_fp_stat(mem: &impl Mem, i: usize) -> u32 {
         Global::<u32>::new(STATS[i]).get(mem)
     }

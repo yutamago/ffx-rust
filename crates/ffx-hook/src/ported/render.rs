@@ -150,30 +150,6 @@ ported! {
     graphicLevelGetNameHash @ 0x0064_1da0 => extern "C" fn graphic_level_get_name_hash() -> u32 {
         sc::level_get_name_hash(&mem())
     }
-    /// `PhyreScene_getCurrentLevelNameHash(this)`.
-    PhyreScene_getCurrentLevelNameHash @ 0x0065_de90 => extern "thiscall" fn scene_get_current_level_name_hash(this: u32) -> u32 {
-        sc::current_level_name_hash(&mem(), this)
-    }
-    /// `PhyreScene_getPreviousLevelNameHash(this)`.
-    PhyreScene_getPreviousLevelNameHash @ 0x0065_e310 => extern "thiscall" fn scene_get_previous_level_name_hash(this: u32) -> u32 {
-        sc::previous_level_name_hash(&mem(), this)
-    }
-    /// `PhyreScene_setCurrentLevelNameHash(this, hash)`.
-    PhyreScene_setCurrentLevelNameHash @ 0x0066_cf90 => extern "thiscall" fn scene_set_current_level_name_hash(this: u32, hash: u32) -> u32 {
-        sc::set_current_level_name_hash(&mut mem(), this, hash)
-    }
-    /// `PhyreScene_getCurrentLevelName(this)`.
-    PhyreScene_getCurrentLevelName @ 0x0065_de70 => extern "thiscall" fn scene_get_current_level_name(this: u32) -> u32 {
-        sc::current_level_name(&mem(), this)
-    }
-    /// `PhyreScene_getCurrentMagicPath(this)`.
-    PhyreScene_getCurrentMagicPath @ 0x0065_dea0 => extern "thiscall" fn scene_get_current_magic_path(this: u32) -> u32 {
-        sc::current_magic_path(&mem(), this)
-    }
-    /// `PhyreScene_getToBeDeleteMagicPath(this)`.
-    PhyreScene_getToBeDeleteMagicPath @ 0x0065_e5e0 => extern "thiscall" fn scene_get_to_be_delete_magic_path(this: u32) -> u32 {
-        sc::to_be_delete_magic_path(&mem(), this)
-    }
     /// `PhyreScene_GetSplitScreenStat(this)`.
     PhyreScene_GetSplitScreenStat @ 0x0065_17d0 => extern "thiscall" fn scene_get_split_screen_stat(this: u32) -> u32 {
         sc::field(&mem(), this, 0x10d8c)
@@ -230,10 +206,6 @@ ported! {
     PhyreScene_isDrawingNonUI2DScene @ 0x0066_0350 => extern "thiscall" fn scene_is_drawing_non_ui_2d_scene(this: u32) -> u32 {
         sc::is_drawing_non_ui_2d_scene(&mem(), this)
     }
-    /// `PhyreScene_is3DScene()`.
-    PhyreScene_is3DScene @ 0x0066_01d0 => extern "C" fn scene_is_3d_scene() -> u32 {
-        u32::from(sc::IS_3D.get(&mem()))
-    }
     /// `PhyreScene_isOpeningScreenPlaying()`.
     PhyreScene_isOpeningScreenPlaying @ 0x0066_0400 => extern "C" fn scene_is_opening_screen_playing() -> u8 {
         sc::OPENING_PLAYING.get(&mem())
@@ -244,18 +216,6 @@ ported! {
     }
 
     // ---- graphic* over the scene ----
-    /// `graphicGetMiniMapType()`.
-    graphicGetMiniMapType @ 0x0064_1320 => extern "C" fn graphic_get_mini_map_type() -> u32 {
-        sc::scene_u32(&mem(), 0x74)
-    }
-    /// `graphicSetMiniMapType(v)`.
-    graphicSetMiniMapType @ 0x0064_3720 => extern "C" fn graphic_set_mini_map_type(v: u32) -> u32 {
-        sc::set_scene_u32(&mut mem(), 0x74, v)
-    }
-    /// `graphicIsInLucaTheater()`.
-    graphicIsInLucaTheater @ 0x0064_1c10 => extern "C" fn graphic_is_in_luca_theater() -> u32 {
-        sc::scene_byte(&mem(), 0x10d2e)
-    }
     /// `graphicIsFieldMapLoading()`.
     graphicIsFieldMapLoading @ 0x0064_1bf0 => extern "C" fn graphic_is_field_map_loading() -> u32 {
         sc::scene_byte(&mem(), 0x1195)
@@ -280,10 +240,6 @@ ported! {
     graphicSetSceneFlagFb45 @ 0x0064_2fa0 => extern "C" fn graphic_set_scene_flag_fb45() -> u32 {
         sc::set_scene_byte(&mut mem(), 0xfb45, 1)
     }
-    /// `graphicIsMiniMapInBlitzBall()`.
-    graphicIsMiniMapInBlitzBall @ 0x0064_1c70 => extern "C" fn graphic_is_mini_map_in_blitz_ball() -> u32 {
-        sc::scene_byte(&mem(), 0)
-    }
     /// `graphicGetMagic0146Key()`.
     graphicGetMagic0146Key @ 0x0064_1310 => extern "C" fn graphic_get_magic_0146_key() -> u32 {
         sc::scene_byte(&mem(), 3)
@@ -295,18 +251,6 @@ ported! {
     /// `graphicIsAnyBattleMap()`.
     graphicIsAnyBattleMap @ 0x0064_1bd0 => extern "C" fn graphic_is_any_battle_map() -> u32 {
         sc::is_any_battle_map(&mem())
-    }
-    /// `graphicMinimapFogSetEnable(v)`.
-    graphicMinimapFogSetEnable @ 0x0064_25d0 => extern "C" fn graphic_minimap_fog_set_enable(v: u32) -> u32 {
-        sc::set_scene_flag(&mut mem(), 0x79, v)
-    }
-    /// `graphicMinimapSetEnable(v)`.
-    graphicMinimapSetEnable @ 0x0064_25f0 => extern "C" fn graphic_minimap_set_enable(v: u32) -> u32 {
-        sc::set_scene_flag(&mut mem(), 0x78, v)
-    }
-    /// `graphicSetMapAlphaFast(v)`.
-    graphicSetMapAlphaFast @ 0x0064_3610 => extern "C" fn graphic_set_map_alpha_fast(v: u32) -> u32 {
-        sc::set_scene_flag(&mut mem(), 0xd4, v)
     }
     /// `graphicScreenSetOffset(x, y)`.
     graphicScreenSetOffset @ 0x0064_2d60 => extern "C" fn graphic_screen_set_offset(x: f32, y: f32) -> u32 {
@@ -336,15 +280,6 @@ ported! {
     graphicCharacterInstanceSetDrawSituation @ 0x0063_b7d0 => extern "C" fn graphic_character_instance_set_draw_situation(chr: u32, v: u32) {
         sc::character_set_draw_situation(&mut mem(), chr, v);
     }
-    /// `graphicIsMagicFileAsyncLoadAvailable()`.
-    graphicIsMagicFileAsyncLoadAvailable @ 0x0064_1c60 => extern "C" fn graphic_is_magic_file_async_load_available() -> u32 {
-        sc::MAGIC_ASYNC_LOAD.get(&mem())
-    }
-    /// `graphicSetGameOverNotify(v)`.
-    graphicSetGameOverNotify @ 0x0064_3260 => extern "C" fn graphic_set_game_over_notify(v: u32) -> u32 {
-        sc::GAME_OVER_NOTIFY.set(&mut mem(), v);
-        v
-    }
     /// `graphicGetTextureVideoInfo()`.
     graphicGetTextureVideoInfo @ 0x0064_1400 => extern "C" fn graphic_get_texture_video_info() -> u16 {
         sc::TEXTURE_VIDEO_INFO.get(&mem())
@@ -352,19 +287,6 @@ ported! {
     /// `graphicIsCharacterLoadingOrInstanciating()`.
     graphicIsCharacterLoadingOrInstanciating @ 0x0064_1bc0 => extern "C" fn graphic_is_character_loading() -> u32 {
         sc::CHARACTER_LOADING.get(&mem()) & 0x7fff_ffff
-    }
-    /// `graphicGetNowUIType()`.
-    graphicGetNowUIType @ 0x0064_1350 => extern "C" fn graphic_get_now_ui_type() -> u32 {
-        let m = mem();
-        sc::field(&m, ui::bridge::UI.get(&m), 0x2be0)
-    }
-    /// `graphicSetNowUIType(v)`.
-    graphicSetNowUIType @ 0x0064_37c0 => extern "C" fn graphic_set_now_ui_type(v: u32) -> u32 {
-        ui::bridge::set_now_ui_type(&mut mem(), v)
-    }
-    /// `cgraphicSetNowUIType(v)`.
-    cgraphicSetNowUIType @ 0x0063_8d90 => extern "C" fn cgraphic_set_now_ui_type(v: u32) -> u32 {
-        ui::bridge::set_now_ui_type(&mut mem(), v)
     }
     /// `graphicGetAbmap()`.
     graphicGetAbmap @ 0x0064_1060 => extern "C" fn graphic_get_abmap() -> u32 {
@@ -392,39 +314,19 @@ ported! {
     graphicGetScreenRatio @ 0x0064_13f0 => extern "C" fn graphic_get_screen_ratio() -> f32 {
         ui::SCREEN_RATIO
     }
-    /// `graphicFontGetScreenWH(&w, &h)`.
-    graphicFontGetScreenWH @ 0x0064_0db0 => extern "C" fn graphic_font_get_screen_wh(w: u32, h: u32) -> u32 {
-        ui::bridge::font_get_screen_wh(&mut mem(), w, h)
-    }
     /// `graphicFontGetEdgeRatio()`.
     graphicFontGetEdgeRatio @ 0x0064_0d70 => extern "C" fn graphic_font_get_edge_ratio() -> f32 {
         ui::bridge::font_get_edge_ratio(&mem())
     }
 
     // ---- managers ----
-    /// `PostProcessManager_GetInstance()`.
-    PostProcessManager_GetInstance @ 0x0069_2be0 => extern "C" fn post_process_manager_get_instance() -> u32 {
-        instance(mg::POST_PROCESS)
-    }
     /// `PostProcessTweakUtil_GetInstance()`.
     PostProcessTweakUtil_GetInstance @ 0x0069_2bf0 => extern "C" fn post_process_tweak_util_get_instance() -> u32 {
         instance(mg::POST_PROCESS_TWEAK)
     }
-    /// `TextureAnimationManager_GetInstance()`.
-    TextureAnimationManager_GetInstance @ 0x006b_02e0 => extern "C" fn texture_animation_manager_get_instance() -> u32 {
-        instance(mg::TEXTURE_ANIMATION)
-    }
-    /// `ShadowManager_getInstance()`.
-    ShadowManager_getInstance @ 0x006d_2390 => extern "C" fn shadow_manager_get_instance() -> u32 {
-        instance(mg::SHADOW)
-    }
     /// `ShadowManager_GetShadowSize()`.
     ShadowManager_GetShadowSize @ 0x006c_cd00 => extern "C" fn shadow_manager_get_shadow_size() -> u32 {
         instance(mg::SHADOW_SIZE)
-    }
-    /// `SpecularMapParamsManager_GetInstance()`.
-    SpecularMapParamsManager_GetInstance @ 0x006c_57e0 => extern "C" fn specular_map_params_manager_get_instance() -> u32 {
-        instance(mg::SPECULAR_MAP_PARAMS)
     }
     /// `DebugMenuManager_GetInstance()`.
     DebugMenuManager_GetInstance @ 0x006b_49b0 => extern "C" fn debug_menu_manager_get_instance() -> u32 {
@@ -445,10 +347,6 @@ ported! {
     /// `graphicPauseGameDestroy()`.
     graphicPauseGameDestroy @ 0x006b_cc70 => extern "C" fn graphic_pause_game_destroy() {
         mg::destroy_singleton(&mut mem(), mg::PAUSE_GAME);
-    }
-    /// `graphicDynGeoFillBufferIsValid()`.
-    graphicDynGeoFillBufferIsValid @ 0x0063_fd70 => extern "C" fn graphic_dyn_geo_fill_buffer_is_valid() -> u32 {
-        mg::dyn_geo_fill_buffer_is_valid(&mem())
     }
     /// `DynGeoMemManager_getCurrentBufferId(this)`.
     DynGeoMemManager_getCurrentBufferId @ 0x006d_e9f0 => extern "thiscall" fn dyn_geo_get_current_buffer_id(this: u32) -> u32 {
@@ -513,14 +411,6 @@ ported! {
     /// `PostProcessManager_SetByte123bb(this, v)`.
     PostProcessManager_SetByte123bb @ 0x0069_8480 => extern "thiscall" fn post_process_set_byte_123bb(this: u32, v: u32) -> u8 {
         mg::set_byte_field(&mut mem(), this, 0x123bb, v)
-    }
-    /// `PostProcessManager_setCrossFadeWeight(this, v)`.
-    PostProcessManager_setCrossFadeWeight @ 0x0069_84b0 => extern "thiscall" fn post_process_set_cross_fade_weight(this: u32, v: u32) -> u32 {
-        mg::set_field(&mut mem(), this, 0x123bc, v)
-    }
-    /// `PostProcessManager_setCrossFadeTime(this, v)`.
-    PostProcessManager_setCrossFadeTime @ 0x0069_84a0 => extern "thiscall" fn post_process_set_cross_fade_time(this: u32, v: u32) -> u32 {
-        mg::set_field(&mut mem(), this, 0x123c0, v)
     }
     /// `PostProcessManager_isEffectAllowed(id)`.
     PostProcessManager_isEffectAllowed @ 0x0069_8730 => extern "stdcall" fn post_process_is_effect_allowed(id: u32) -> u8 {

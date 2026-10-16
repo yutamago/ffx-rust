@@ -22,7 +22,7 @@ const BY_INDEX: [ByIndex; 21] = [
     ("MsGetRamChrHP", 0x0079_add0, |m, i| {
         act::ms_get_ram_chr_hp(m, i)
     }),
-    ("MsGetRamChrHP_0079adf0", 0x0079_adf0, |m, i| {
+    ("MsGetRamChrHPmax", 0x0079_adf0, |m, i| {
         act::ms_get_ram_chr_hp_max(m, i)
     }),
     ("MsGetRamChrMP", 0x0079_ae50, |m, i| {

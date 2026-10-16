@@ -5,6 +5,7 @@
 #   tools/replays/run-all.sh --record
 # (twice for the menu, whose screenshots need two original runs).
 set -u
+source "$(dirname "$0")/../in-game-slot.sh"
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$repo"
 export FFX_GAME_DIR="${FFX_GAME_DIR:-$HOME/steam-games/FFX-X2-HD}"

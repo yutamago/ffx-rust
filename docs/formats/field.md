@@ -542,7 +542,7 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   `yiArc_readmem`), `alarm + 2` the alarms, 10 effect data
   (`pppSetFpPdt`), 12 and 11 more backgrounds; the CD ids go to
   `0x01934ed4`. Then status `| 0x11`, the draw mask (-1 with the battle
-  map circle, else -9) and the default animations. `yiMapReadHost`
+  map circle, else -9) and the default animations. `yiMapSetup`
   (`0x00909680`) is the debug path: `host0:<dir><name>.vpa` read whole
   through `sceOpen`/`sceRead`.
 - Smaller pieces: `rcbgSceneDelObject`, `Yn_SceneFindObject` (the
