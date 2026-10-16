@@ -5168,10 +5168,10 @@ fn tk_round8_matches_the_original() {
         let lmode = t.rng.pick(&[0u8, 1, 2, 3]);
         t.put(lrec + 0x22, lmode);
         let le = t.rng.below(2);
-        let lent = lrec + 0x10 * le;
-        let llen = t.rng.pick(&[0u16, 5, 0x1ff, 0x200, 0xfffe]);
-        t.put(lent + 6, llen);
-        t.put(lent, 0u32);
+        let lentry = lrec + 0x10 * le;
+        let lsize = t.rng.pick(&[0u16, 5, 0x1ff, 0x200, 0xfffe]);
+        t.put(lentry + 6, lsize);
+        t.put(lentry, 0u32);
         t.twin("Vibrate_EntryLevel", 0x0087_5c20, &[lrec, le], U32, |o| {
             w(tk::vibrate_entry_level(o, lrec, le))
         });
