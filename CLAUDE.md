@@ -9,7 +9,12 @@ Rust reimplementation of Final Fantasy X (Steam HD Remaster), recovered from
   decompilation dump. Tests find the game through `FFX_GAME_DIR` and skip
   when it is unset.
 - Fahrenheit and VBFExtract are references for facts only. Do not copy or
-  port their code; derive implementations from FFX.exe and the data.
+  port their code; derive implementations from FFX.exe and the data. The
+  license stays MIT OR Apache-2.0.
+- Fahrenheit's names, symbols and findings may be used (written permission
+  from peppy, their lead, 2026-10-16). `tools/fh-import.py` merges their
+  names into `symbols/ffx.sym` as `fh` lines; prefer their name when naming
+  something new, and cite Fahrenheit when a fact comes from them.
 - Every recovered name goes into `symbols/ffx.sym` (sorted by address, with
   the evidence in the comment). REA sessions lose names on close; reapply
   them with `tools/sym2json.py` → `set_addresses_names`.

@@ -31,6 +31,28 @@ sessions are ephemeral and forget renames when they close, so:
    persistent project in `$FFX_WORK/ghidra` and regenerates the dump with the
    new names.
 
+### Fahrenheit names
+
+The [Fahrenheit](https://github.com/fahrenheit-crew/fahrenheit) team let us
+use their names and findings (permission from peppy, 2026-10-16); their code
+stays theirs, we don't copy it. `tools/fh-import.py` merges into
+`symbols/ffx.sym`:
+
+- `~/ffx-work/ghidra-remote/export/leads.tsv`, built by `merge.py` there from
+  their Ghidra server (read-only; their databases load FFX.exe at 0, so their
+  address + `0x400000` is ours): names in their database of this build,
+  names carried over from their older Steam build and from the Switch build's
+  symbols through their version-tracking sessions;
+- the names, addresses and calling conventions in their hand-checked FhCall
+  tables (`src/core/call.cs`, `src/core/ffx/call.cs`, pinned commit in the
+  script, copied to `~/ffx-work/fahrenheit/<commit>/`).
+
+Their `A::B::c` becomes `A_B_c`, the convention their own FhCall tables use.
+Our names are never replaced; their name for the same address is appended to
+our comment as `fh: <name>`. Rerun the script after refreshing either source.
+When naming something new, use their name if they have one, so both projects
+mean the same function by the same word.
+
 ## Bulk dump
 
 ```bash

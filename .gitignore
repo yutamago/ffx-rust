@@ -13,3 +13,4 @@
 /app/ui/dist/
 /app/src-tauri/target/
 /app/src-tauri/gen/
+__pycache__/

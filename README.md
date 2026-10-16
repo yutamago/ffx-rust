@@ -25,7 +25,7 @@ data, and never will: binaries, archives and extracted files stay out of git.
 | Function replacement | `dinput8.dll` proxy patches 2 functions (`zlib_uncompress`, `Path_ToLowerAscii`) with parity-tested Rust; runs in the game |
 | Mods | `mods/<mod>/<archive path>` replaces archive files in the running game, also files that grew (the PS2 file layer's sizes are hooked) |
 | In-game tests (`ffx-harness`) | The game runs in the background under a TCP harness (buttons, keys, memory, screenshots, file events); tests play into the first scene with an edited event script (grown and relocated; its write read back from memory), a resized model and edited motions, start a battle to check monster, formation and encounter-table mods, and check a kernel mod in memory; saves and settings are sandboxed, randomness seeded, frames run back to back |
-| Symbol map (`symbols/ffx.sym`) | file system, archive, zlib, text, kernel, settings, PhyreEngine fixups and motion code |
+| Symbol map (`symbols/ffx.sym`) | file system, archive, zlib, text, kernel, settings, PhyreEngine fixups and motion code; plus about 6,400 names from the [Fahrenheit](https://github.com/fahrenheit-crew/fahrenheit) team (used with permission, `tools/fh-import.py`) |
 
 ## Layout
 
