@@ -3,21 +3,18 @@
 //! original, with its arguments as the original takes them (addresses as
 //! `u32`) and its full `EAX` (or `f32` bits for `ST0`) as the result.
 
+/// How the VM reaches original code: the ctrl work's callbacks, and the
+/// callees not ported yet.
+pub use ffx_bridge::Host;
 use ffx_bridge::{Global, Mem};
+
+pub mod globals;
+pub mod run;
 
 use super::{
     Classes, block, buffer_size, ctrl, header, is_small, level, level_index, slot_float, slot_int,
     stack, store_float, store_int, value_float, value_int, var, worker, worker_offset,
 };
-
-/// Calls into original code the VM reaches through function pointers (the
-/// ctrl work's callbacks). In the game this is a plain call; in the oracle,
-/// the emulator.
-pub trait Host: Mem {
-    /// Calls the cdecl function at `addr` (an address in this process) and
-    /// returns its `EAX`.
-    fn call(&mut self, addr: u32, args: &[u32]) -> u32;
-}
 
 /// `g_ScriptContext`: the current ctrl work.
 pub const CONTEXT: Global<u32> = Global::new(0x0132_6b28);
@@ -31,8 +28,9 @@ pub const CACHE_CTRL: Global<u16> = Global::new(0x0132_70dc);
 pub const CACHE_INDEX: Global<u16> = Global::new(0x0132_70e0);
 /// `g_AtelBasicWorkCache`: the cached worker, 0 for none.
 pub const CACHE_WORK: Global<u32> = Global::new(0x0132_70e4);
-/// `g_MsgWindows`: two banks of eight message windows.
-pub const MSG_WINDOWS: Global<u8> = Global::new(0x0132_6d70);
+/// `g_AtelMsgWindows`: two banks of eight message windows (not the
+/// system's `g_MsgWindows` at `0x018676f0`).
+pub const ATEL_MSG_WINDOWS: Global<u8> = Global::new(0x0132_6d70);
 /// `g_AtelMenuExecStatus`: the message window bank in use.
 pub const MENU_EXEC_STATUS: Global<i8> = Global::new(0x0132_6b82);
 /// The build date `AtelGetVersion` returns.
@@ -246,7 +244,7 @@ pub fn atel_get_event_actor_total(mem: &impl Mem) -> u32 {
 
 /// `AtelGetEventMapCameraId()` (`0x0086b5d0`).
 pub fn atel_get_event_map_camera_id(mem: &impl Mem) -> u32 {
-    let m = mem.read::<u32>(CTRL_WORKS.ptr(mem).addr + ctrl::EVENT_MAP);
+    let m = mem.read::<u32>(CTRL_WORKS.ptr(mem).addr + ctrl::BLOCK);
     u32::from(mem.read::<u16>(m + 0x18))
 }
 
@@ -266,7 +264,7 @@ pub fn atel_remove_ctrl_work(mem: &mut impl Mem, i: u32) {
 pub fn atel_get_mes_win_work(mem: &impl Mem, i: i32) -> u32 {
     let bank = i32::from(MENU_EXEC_STATUS.get(mem));
     let n = i.clamp(0, 7).wrapping_add(bank.wrapping_mul(8)) as u32;
-    MSG_WINDOWS
+    ATEL_MSG_WINDOWS
         .ptr(mem)
         .addr
         .wrapping_add(n.wrapping_mul(MSG_WINDOW_SIZE))
@@ -322,12 +320,12 @@ fn top(mem: &mut impl Mem, s: u32) -> Option<(u8, u32, i32)> {
 /// `AtelPopStackInteger(worker, stack)` (`0x0086df00`): the top as an
 /// integer ([`super::slot_int`]); 0 from an empty stack.
 pub fn atel_pop_stack_integer(mem: &mut impl Mem, s: u32) -> u32 {
-    atel_fetch_stack_integer(mem, 1, s)
+    script_top_int(mem, 1, s)
 }
 
-/// `AtelFetchStackInteger(worker, pop, stack)` (`0x0086df40`): the top as
+/// `Script_TopInt(worker, pop, stack)` (`0x0086df40`): the top as
 /// an integer, popped only when `pop` is not 0.
-pub fn atel_fetch_stack_integer(mem: &mut impl Mem, pop: u32, s: u32) -> u32 {
+pub fn script_top_int(mem: &mut impl Mem, pop: u32, s: u32) -> u32 {
     let Some((kind, raw, d)) = top(mem, s) else {
         return 0;
     };

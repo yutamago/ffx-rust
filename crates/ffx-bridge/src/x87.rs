@@ -146,6 +146,20 @@ pub fn div(a: f64, b: f64) -> f64 {
     arith(a, b, |x, y| x / y)
 }
 
+/// `fsqrt` on the x87 at 53 bits (as the C runtime's `_CIsqrt`, whose SSE2
+/// path's `sqrtsd` rounds the same): IEEE-exact, a NaN passes through, -0
+/// stays -0, anything else negative gives the indefinite NaN.
+#[must_use]
+pub fn sqrt(a: f64) -> f64 {
+    if a.is_nan() {
+        a
+    } else if a < 0.0 {
+        f64::from_bits(INDEFINITE)
+    } else {
+        a.sqrt()
+    }
+}
+
 /// `op` with a memory operand `m` (`f32` bits).
 fn arith_m32(a: f64, m: u32, op: fn(f64, f64) -> f64) -> f64 {
     if is_snan(m) && a.is_nan() {
@@ -218,6 +232,12 @@ impl Reg {
     #[must_use]
     pub fn divr_m32(self, m: f32) -> Self {
         Self(arith_m32(self.0, m.to_bits(), |x, y| y / x))
+    }
+
+    /// `fsqrt` ([`sqrt`]).
+    #[must_use]
+    pub fn sqrt(self) -> Self {
+        Self(sqrt(self.0))
     }
 
     /// `fstp dword`: rounded to `f32`.
@@ -510,5 +530,59 @@ mod tests {
         let b = [1.0, 2f32.powi(-24), 2f32.powi(-60), 0.0];
         assert_eq!(hardware(&a, &b), 1.0);
         assert_eq!(model(&a, &b), 1.0);
+    }
+    /// `fsqrt` against this machine's x87 at the game's control word: every
+    /// kind of `f32` (signs, zeros, infinities, NaNs), stored as `f32`.
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn sqrt_is_the_hardware() {
+        fn hardware(x: f32) -> f32 {
+            let cw: u16 = 0x027f;
+            let mut old: u16 = 0;
+            let mut out = 0f32;
+            // SAFETY: one push, one pop; the control word is restored; the
+            // pointers are to locals.
+            unsafe {
+                std::arch::asm!(
+                    "fnstcw word ptr [{old}]",
+                    "fldcw word ptr [{cw}]",
+                    "fld dword ptr [{x}]",
+                    "fsqrt",
+                    "fstp dword ptr [{out}]",
+                    "fldcw word ptr [{old}]",
+                    old = in(reg) &raw mut old,
+                    cw = in(reg) &raw const cw,
+                    x = in(reg) &raw const x,
+                    out = in(reg) &raw mut out,
+                    out("st(0)") _,
+                );
+            }
+            out
+        }
+        let mut seed = 0x0bad_5eedu32;
+        for n in 0..200_000 {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            let bits = match n % 4 {
+                0 => seed,
+                1 => [
+                    0,
+                    0x8000_0000,
+                    0x7f80_0000,
+                    0xff80_0000,
+                    1,
+                    0x8000_0001,
+                    0x7fc0_0000,
+                ][n % 7],
+                _ => seed & 0x007f_ffff | (seed >> 23 & 0x3f) << 23 | 0x2000_0000,
+            };
+            let x = f32::from_bits(bits);
+            assert_eq!(
+                hardware(x).to_bits(),
+                Reg::load(x).sqrt().store().to_bits(),
+                "{bits:#010x}"
+            );
+        }
     }
 }

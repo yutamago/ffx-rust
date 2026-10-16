@@ -138,6 +138,34 @@ pub mod psim {
     pub const MODEL: u32 = 0x14;
     /// `+0xa4`: the initial count (`rcbgPSimSetInitCnt`).
     pub const INIT_CNT: u32 = 0xa4;
+    /// `+0x4c`: a position (`rcbgPSimGetPos` 0).
+    pub const POS: u32 = 0x4c;
+    /// `+0x8c`: the other position (`rcbgPSimGetPos` 1).
+    pub const POS2: u32 = 0x8c;
+}
+
+/// The chunk tags `rcbgChkId` looks up: a null-terminated table of
+/// pointers to 4-character ids.
+pub const CHUNK_IDS: u32 = 0x00c5_e480;
+/// The GS pixel format per TIM2 image type (`rcdtTm2GetPsm`).
+pub const TM2_PSM: u32 = 0x00c5_e754;
+/// The draw function `rcbgSceneDrawLayer` queues.
+pub const DRAW_LAYER_FUNC: u32 = 0x0092_0850;
+
+/// The per-map scene parts of `rcbgFP.c` (`rcbgFPm*Init`) and `rcfxDamp`.
+pub mod fp {
+    /// The parts' object type.
+    pub const KIND: u32 = 0x0002_0008;
+    /// `rcbgFPm097Init`'s functions.
+    pub const M097: [u32; 2] = [0x0092_2540, 0x0092_25d0];
+    /// `rcbgFPm173Init`'s functions.
+    pub const M173: [u32; 2] = [0x0092_2b40, 0x0092_2be0];
+    /// `rcbgFPm565Init`'s functions.
+    pub const M565: [u32; 2] = [0x0092_2f30, 0x0092_2fb0];
+    /// `rcfxDampInit`'s functions (`+4`, `+0x14`).
+    pub const DAMP_FUNCTIONS: [u32; 2] = [0x0092_93c0, 0x0092_9360];
+    /// Its factor, an `f32` in `.rdata`.
+    pub const DAMP_FACTOR: u32 = 0x00b9_2154;
 }
 
 /// A model's scale (`rcbgModelSetScale` stores ten times it on the
@@ -173,6 +201,7 @@ pub fn log2_ceil(n: i32) -> u32 {
 /// The scene objects where the game keeps them, through [`ffx_bridge::Mem`].
 pub mod bridge {
     use ffx_bridge::Mem;
+    use ffx_system::stub::ptr32;
 
     use super::{
         PACKET_STRIDES, anime, half, layer, obj, omd, packet, packet_size, pal, psim, trx,
@@ -355,6 +384,512 @@ pub mod bridge {
         if m != 0 {
             mem.write(m + obj::OMD, 0u32);
         }
+    }
+
+    // ---- round 4: particle positions, scene palettes, FP parts, TIM2 ----
+
+    /// `rcbgPSimGetPos(psim, which, out)` (`0x0091fdd0`): the position at
+    /// `+0x4c` (`which` 0) or `+0x8c`; returns `FFXVu0CopyVector`'s `eax`.
+    pub fn rcbg_psim_get_pos(mem: &mut impl Mem, p: u32, which: u32, out: u32) -> u32 {
+        let at = p.wrapping_add(if which == 0 { psim::POS } else { psim::POS2 });
+        ffx_ps2::vu0::bridge::copy_vector(mem, out, at)
+    }
+
+    /// `rcbgSceneSetPal(scene)` (`0x009210a0`): every layer's palette back
+    /// to number 0 (`rcbgPalSetNo` on `+0xb0` of each `0xc0`-byte layer).
+    pub fn rcbg_scene_set_pal(mem: &mut impl Mem, s: u32) {
+        let layers = mem.read::<u32>(s.wrapping_add(8));
+        let mut i = 0i32;
+        while i < mem.read::<i32>(s.wrapping_add(4)) {
+            #[allow(clippy::cast_sign_loss)] // i >= 0
+            let l = layers.wrapping_add(i as u32 * 0xc0);
+            rcbg_pal_set_no(mem, l.wrapping_add(0xb0), 0);
+            i += 1;
+        }
+    }
+
+    /// `rcbgChkId(id)` (`0x00921940`): the index of the chunk tag that
+    /// `strncmp(id, tag, 4)` matches in the null-terminated table at
+    /// `0x00c5e480`, or -1.
+    pub fn rcbg_chk_id(mem: &impl Mem, id: u32) -> i32 {
+        let table = mem.rebase(super::CHUNK_IDS);
+        let mut i = 0u32;
+        loop {
+            let tag = mem.read::<u32>(table + 4 * i);
+            if tag == 0 {
+                return -1;
+            }
+            if strncmp4(mem, id, tag) {
+                #[allow(clippy::cast_possible_wrap)]
+                return i as i32;
+            }
+            i += 1;
+        }
+    }
+
+    /// Whether `strncmp(a, b, 4)` is 0.
+    fn strncmp4(mem: &impl Mem, a: u32, b: u32) -> bool {
+        for k in 0..4 {
+            let (x, y) = (mem.read::<u8>(a + k), mem.read::<u8>(b + k));
+            if x != y {
+                return false;
+            }
+            if x == 0 {
+                return true;
+            }
+        }
+        true
+    }
+
+    /// Writes an FP part's header: type `0x20008`, its functions (rebased),
+    /// and 0.
+    fn fp_header(mem: &mut impl Mem, p: u32, functions: [u32; 2]) {
+        mem.write(p, super::fp::KIND);
+        let [a, b] = functions.map(|f| mem.rebase(f));
+        mem.write(p.wrapping_add(4), a);
+        mem.write(p.wrapping_add(8), b);
+        mem.write(p.wrapping_add(0xc), 0u32);
+    }
+
+    /// `rcbgFPm097Init(part)` (`0x00922560`, map 0x61's part): cleared (64
+    /// bytes, `memset`), then the header; returns the part.
+    pub fn rcbg_fpm097_init(mem: &mut impl Mem, p: u32) -> u32 {
+        mem.write(p, [0u32; 16]);
+        fp_header(mem, p, super::fp::M097);
+        p
+    }
+
+    /// `rcbgFPm173Init(part)` (`0x00922b70`, map 0xad's part): `+0x10..+0x28`
+    /// cleared, the header; returns the part.
+    pub fn rcbg_fpm173_init(mem: &mut impl Mem, p: u32) -> u32 {
+        mem.write(p.wrapping_add(0x10), [0u32; 6]);
+        fp_header(mem, p, super::fp::M173);
+        p
+    }
+
+    /// `rcbgFPm565Init(part)` (`0x00922f50`, maps 0x235 and 0x236's part):
+    /// the header; returns the part.
+    pub fn rcbg_fpm565_init(mem: &mut impl Mem, p: u32) -> u32 {
+        fp_header(mem, p, super::fp::M565);
+        p
+    }
+
+    /// `rcfxDampInit(damp)` (`0x009293d0`, `rcfxDamp.c`): type `0x30003`,
+    /// its two functions, the factor at `+0x1c` (an `f32` in `.rdata`,
+    /// 0.0001); returns the object.
+    pub fn rcfx_damp_init(mem: &mut impl Mem, p: u32) -> u32 {
+        let k = mem.read::<u32>(mem.rebase(super::fp::DAMP_FACTOR));
+        mem.write(p.wrapping_add(0x1c), crate::x87::copy(k));
+        mem.write(p, 0x0003_0003u32);
+        let a = mem.rebase(super::fp::DAMP_FUNCTIONS[0]);
+        mem.write(p.wrapping_add(4), a);
+        mem.write(p.wrapping_add(8), [0u32; 3]);
+        let b = mem.rebase(super::fp::DAMP_FUNCTIONS[1]);
+        mem.write(p.wrapping_add(0x14), b);
+        mem.write(p.wrapping_add(0x18), 0u32);
+        p
+    }
+
+    /// `rcbgFpGetWork(id, part, index)` (`0x00923100`): through the VFX
+    /// run record of `id` (`pppFpGetMngPtr`, `run_of`), its data's part
+    /// table: `index`'s work offset plus `0xa0` from the data; 0 when a
+    /// pointer on the way is null.
+    pub fn rcbg_fp_get_work<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        part: u32,
+        index: u32,
+        run_of: impl FnOnce(&mut M, u32) -> u32,
+    ) -> u32 {
+        let run = run_of(mem, id);
+        if run == 0 {
+            return 0;
+        }
+        let data = ptr32(mem.read::<u32>(run.wrapping_add(0x30)));
+        if data == 0 {
+            return 0;
+        }
+        let parts = ptr32(mem.read::<u32>(data.wrapping_add(8)));
+        if parts == 0 {
+            return 0;
+        }
+        let table = ptr32(mem.read::<u32>(parts));
+        if table == 0 {
+            return 0;
+        }
+        let entry = (part << 4).wrapping_add(0x28).wrapping_add(table);
+        if entry == 0 {
+            return 0;
+        }
+        let works = ptr32(mem.read::<u32>(entry.wrapping_add(0xc)));
+        mem.read::<u32>(works.wrapping_add(index.wrapping_mul(4)))
+            .wrapping_add(0xa0)
+            .wrapping_add(data)
+    }
+
+    /// `rcbgSceneDrawLayer(layer)` (`0x00920830`):
+    /// `op_func_after_ot3d_set(0x00920850, layer, 0, 1)` (`after_set` with
+    /// the rebased function and the layer); returns its result.
+    pub fn rcbg_scene_draw_layer<M: Mem>(
+        mem: &mut M,
+        layer: u32,
+        after_set: impl FnOnce(&mut M, u32, u32) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(super::DRAW_LAYER_FUNC);
+        after_set(mem, f, layer)
+    }
+
+    /// `rcbgSceneWaveDCStop(scene)` (`0x00920650`): the wave
+    /// `Yn_SceneSetDC` starts ends (`+0xac` 0.0, `+0xdc` 0).
+    pub fn rcbg_scene_wave_dc_stop(mem: &mut impl Mem, s: u32) {
+        mem.write(s.wrapping_add(0xac), 0f32);
+        mem.write(s.wrapping_add(0xdc), 0u32);
+    }
+
+    /// `rcbgSceneWaveC0Stop(scene)` (`0x00921200`): the wave
+    /// `Yn_SceneSetC0` starts ends (`+0xbc`, `+0xb8` 0.0, `+0xc0` 0).
+    pub fn rcbg_scene_wave_c0_stop(mem: &mut impl Mem, s: u32) {
+        mem.write(s.wrapping_add(0xbc), 0f32);
+        mem.write(s.wrapping_add(0xb8), 0f32);
+        mem.write(s.wrapping_add(0xc0), 0u32);
+    }
+
+    /// `rcfxParticleClearForces(p)` (`0x009289b0`, from
+    /// `rcfxParticleResetForce`): each of the `+0x1c` particles' force
+    /// (16 bytes in the array at `+0x2c`) zeroed.
+    pub fn rcfx_particle_clear_forces(mem: &mut impl Mem, p: u32) {
+        let mut i = 0i32;
+        while i < mem.read::<i32>(p.wrapping_add(0x1c)) {
+            #[allow(clippy::cast_sign_loss)] // i >= 0
+            let off = i as u32 * 0x10;
+            for k in [0xc, 8, 4, 0] {
+                let a = mem.read::<u32>(p.wrapping_add(0x2c));
+                mem.write(a.wrapping_add(off + k), 0f32);
+            }
+            i += 1;
+        }
+    }
+
+    /// `rcdtTm2GetPsm(picture)` (`0x00923280`): the GS pixel format of a
+    /// TIM2 picture header's image type (`+0x13`) from the table at
+    /// `0x00c5e754` (1 → PSMCT16, 2 → PSMCT24, 3 → PSMCT32, 4 → PSMT4,
+    /// 5 → PSMT8); 0 for type 0.
+    pub fn rcdt_tm2_get_psm(mem: &impl Mem, pic: u32) -> u32 {
+        match mem.read::<u8>(pic.wrapping_add(0x13)) {
+            0 => 0,
+            t => mem.read(mem.rebase(super::TM2_PSM) + 4 * u32::from(t)),
+        }
+    }
+
+    /// `rcdtTm2ClutAlphaToPs2(clut)` (`0x00923240`): 256 RGBA entries'
+    /// alpha from 0..=255 to the GS's 0..=128 (`a * 128 / 255`, rounded
+    /// down); an entry with alpha 0 becomes all 0.
+    pub fn rcdt_tm2_clut_alpha_to_ps2(mem: &mut impl Mem, clut: u32) {
+        for i in 0..256 {
+            let at = clut.wrapping_add(4 * i);
+            let a = u32::from(mem.read::<u8>(at.wrapping_add(3)));
+            if a == 0 {
+                mem.write(at, 0u32);
+            } else {
+                mem.write(at.wrapping_add(3), 0u8);
+                let w = mem.read::<u32>(at);
+                mem.write(at, w | ((a * 128 / 255) << 24));
+            }
+        }
+    }
+
+    /// `rcdtRsd2Init(rsd)` (`0x00924390`, `rcdtRsd2.c`): eight words
+    /// cleared.
+    pub fn rcdt_rsd2_init(mem: &mut impl Mem, p: u32) {
+        mem.write(p, [0u32; 8]);
+    }
+
+    /// `rcbgTrxSetRegs(t, a..g)` (`0x0092d360`, from `rcbgPalAlloc`'s
+    /// set-up): the low words of two GS register values built from
+    /// sign-extended `i16`s, `+0x1c` = `((c << 8 | b) << 16) | a`, `+0x24`
+    /// = `e << 16 | d`, `+0x28` = `f`, `+0x2c` = `g | f >> 31`, `+0x18` and
+    /// `+0x20` 0. Returns `f`.
+    #[allow(clippy::too_many_arguments, clippy::cast_sign_loss)]
+    pub fn rcbg_trx_set_regs(
+        mem: &mut impl Mem,
+        t: u32,
+        a: i16,
+        b: i16,
+        c: i16,
+        d: i16,
+        e: i16,
+        f: i16,
+        g: i16,
+    ) -> u32 {
+        let x = |v: i16| i32::from(v) as u32;
+        let w1c = ((x(c) << 8 | x(b)) << 16) | x(a);
+        mem.write(t.wrapping_add(0x1c), w1c);
+        mem.write(t.wrapping_add(0x24), (x(e) << 16) | x(d));
+        mem.write(t.wrapping_add(0x2c), x(g) | (i32::from(f) >> 31) as u32);
+        mem.write(t.wrapping_add(0x18), 0u32);
+        mem.write(t.wrapping_add(0x20), 0u32);
+        mem.write(t.wrapping_add(0x28), x(f));
+        x(f)
+    }
+
+    /// `rcbgClipCodeAnd(out, a, b, c, d)` (`0x0092aed0`, from
+    /// `rcbgClipVertex`): `out = (a & c, b & d)`; returns `out`.
+    pub fn rcbg_clip_code_and(mem: &mut impl Mem, out: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
+        mem.write(out, [a & c, b & d]);
+        out
+    }
+
+    /// `rcfxParticleResetForce(p)` (`0x00928970`): each of its `+0x34`
+    /// forces (array at `+0x38`) with a reset function (`+0x10`) gets
+    /// `call(mem, function, force, p)`, then [`rcfx_particle_clear_forces`].
+    pub fn rcfx_particle_reset_force<M: Mem>(
+        mem: &mut M,
+        p: u32,
+        mut call: impl FnMut(&mut M, u32, u32, u32),
+    ) {
+        let mut i = 0i32;
+        while i < mem.read::<i32>(p.wrapping_add(0x34)) {
+            #[allow(clippy::cast_sign_loss)] // i >= 0
+            let at = mem
+                .read::<u32>(p.wrapping_add(0x38))
+                .wrapping_add(i as u32 * 4);
+            let force = mem.read::<u32>(at);
+            let f = mem.read::<u32>(force.wrapping_add(0x10));
+            if f != 0 {
+                call(mem, f, force, p);
+            }
+            i += 1;
+        }
+        rcfx_particle_clear_forces(mem, p);
+    }
+
+    /// `rcbgSceneDraw(scene)` (`0x00920740`): each of its `+0xc` objects
+    /// (array at `+0x10`) with a draw function (`+0xc`) gets
+    /// `call(mem, function, object)`, then the layers are queued
+    /// ([`rcbg_scene_draw_layer`]); returns that result.
+    pub fn rcbg_scene_draw<M: Mem>(
+        mem: &mut M,
+        s: u32,
+        mut call: impl FnMut(&mut M, u32, u32),
+        after_set: impl FnOnce(&mut M, u32, u32) -> u32,
+    ) -> u32 {
+        let mut i = 0i32;
+        while i < mem.read::<i32>(s.wrapping_add(0xc)) {
+            #[allow(clippy::cast_sign_loss)] // i >= 0
+            let at = mem
+                .read::<u32>(s.wrapping_add(0x10))
+                .wrapping_add(i as u32 * 4);
+            let o = mem.read::<u32>(at);
+            let f = mem.read::<u32>(o.wrapping_add(0xc));
+            if f != 0 {
+                call(mem, f, o);
+            }
+            i += 1;
+        }
+        rcbg_scene_draw_layer(mem, s, after_set)
+    }
+
+    /// `Yn_PSimGetHandle(n)` (`0x009199f0`): the word at
+    /// [`rcbg_fp_get_work`]`(n + 0x5b, 6, 2)` (FP work of map part 6).
+    pub fn yn_psim_get_handle<M: Mem>(
+        mem: &mut M,
+        n: u32,
+        run_of: impl FnOnce(&mut M, u32) -> u32,
+    ) -> u32 {
+        let w = rcbg_fp_get_work(mem, n.wrapping_add(0x5b), 6, 2, run_of);
+        ptr32(mem.read::<u32>(w))
+    }
+
+    /// `rcbgPSimSetReady(psim)` (`0x0091ffb0`): its particle system's
+    /// forces reset ([`rcfx_particle_reset_force`] on `+0x18`), then flag
+    /// bit 0 (`+0x10`).
+    pub fn rcbg_psim_set_ready<M: Mem>(
+        mem: &mut M,
+        p: u32,
+        call: impl FnMut(&mut M, u32, u32, u32),
+    ) {
+        let sys = mem.read::<u32>(p.wrapping_add(0x18));
+        rcfx_particle_reset_force(mem, sys, call);
+        let f = mem.read::<u32>(p.wrapping_add(0x10));
+        mem.write(p.wrapping_add(0x10), f | 1);
+    }
+
+    /// `rcbgPSimSetPos(psim, which, v)` (`0x0091ff10`): position `which`
+    /// (0: `+0x4c`, else `+0x8c`) from `v`'s x, y, z; the first time each
+    /// is set (`+0x9c`, `+0xa0`) the initial count (`+0xa4`) drops, and
+    /// when it reaches 0 the simulation is made ready
+    /// ([`rcbg_psim_set_ready`]).
+    pub fn rcbg_psim_set_pos<M: Mem>(
+        mem: &mut M,
+        p: u32,
+        which: u32,
+        v: u32,
+        call: impl FnMut(&mut M, u32, u32, u32),
+    ) {
+        let (pos, set) = if which == 0 {
+            (psim::POS, 0x9c)
+        } else {
+            (psim::POS2, 0xa0)
+        };
+        let xyz = mem.read::<[u32; 3]>(v).map(crate::x87::copy);
+        mem.write(p.wrapping_add(pos), xyz);
+        if mem.read::<u32>(p.wrapping_add(set)) != 0 {
+            return;
+        }
+        let mut ready = false;
+        let n = mem.read::<u32>(p.wrapping_add(psim::INIT_CNT));
+        if n != 0 {
+            mem.write(p.wrapping_add(psim::INIT_CNT), n.wrapping_sub(1));
+            ready = n == 1;
+        }
+        mem.write(p.wrapping_add(set), 1u32);
+        if ready {
+            rcbg_psim_set_ready(mem, p, call);
+        }
+    }
+
+    /// `Yn_SeaGetWork()` (`0x00919a10`): [`rcbg_fp_get_work`]`(0x5a, 6,
+    /// 2)`, the sea's FP work (`Yn_SeaSetAng`, `Yn_SeaSetPos`,
+    /// `Yn_SeaSetUvSpd`).
+    pub fn yn_sea_get_work<M: Mem>(mem: &mut M, run_of: impl FnOnce(&mut M, u32) -> u32) -> u32 {
+        rcbg_fp_get_work(mem, 0x5a, 6, 2, run_of)
+    }
+
+    // ---- round 5: palettes, layers, scene objects, FP parts, characters ----
+
+    /// `rcbgPalGetEntryData(pal, n)` (`0x00929990`): entry `n`'s data of
+    /// the palette's transfer (`+0xc`, [`rcbg_trx_get_entry_data`]).
+    pub fn rcbg_pal_get_entry_data(mem: &impl Mem, pal: u32, n: u32) -> u32 {
+        let t = mem.read::<u32>(pal.wrapping_add(0xc));
+        rcbg_trx_get_entry_data(mem, t, n)
+    }
+
+    /// `rcbgPalGetLastEntryData(pal)` (`0x00929930`): the last entry's
+    /// (the transfer's count at `+0x30`, less 1).
+    pub fn rcbg_pal_get_last_entry_data(mem: &impl Mem, pal: u32) -> u32 {
+        let t = mem.read::<u32>(pal.wrapping_add(0xc));
+        let n = mem.read::<u32>(t.wrapping_add(0x30)).wrapping_sub(1);
+        rcbg_trx_get_entry_data(mem, t, n)
+    }
+
+    /// `rcbgLayerGetTexData(layer)` (`0x0092acf0`): entry 0's data of the
+    /// layer's texture transfer (`+0xbc`), 0 without one.
+    pub fn rcbg_layer_get_tex_data(mem: &impl Mem, layer: u32) -> u32 {
+        match mem.read::<u32>(layer.wrapping_add(0xbc)) {
+            0 => 0,
+            t => rcbg_trx_get_entry_data(mem, t, 0),
+        }
+    }
+
+    /// `rcbgTexGetLog2Size(w, h, &lw, &lh, &tbw)` (`0x00920050`): the
+    /// GS log2 sizes (`rcLog2Ceil`) and the buffer width in 64-pixel units,
+    /// rounded up to even; each output optional.
+    pub fn rcbg_tex_get_log2_size(mem: &mut impl Mem, w: i32, h: i32, lw: u32, lh: u32, tbw: u32) {
+        if lw != 0 {
+            mem.write(lw, super::log2_ceil(w));
+        }
+        if lh != 0 {
+            mem.write(lh, super::log2_ceil(h));
+        }
+        if tbw != 0 {
+            let n = w.wrapping_add(0x3f);
+            let mut v = n.wrapping_add((n >> 31) & 0x3f) >> 6;
+            mem.write(tbw, v);
+            if v & 1 != 0 {
+                v = v.wrapping_add(1);
+                mem.write(tbw, v);
+            }
+        }
+    }
+
+    /// The scene, when Yn's field state, its map and the scene exist.
+    fn yn_scene(mem: &impl Mem) -> Option<u32> {
+        let s = crate::guide::YN_MAP_SYSTEM.get(mem);
+        if s == 0 {
+            return None;
+        }
+        let m = mem.read::<u32>(s);
+        if m == 0 {
+            return None;
+        }
+        Some(mem.read::<u32>(m.wrapping_add(8))).filter(|&c| c != 0)
+    }
+
+    /// `Yn_SceneGetObject(kind, n)` (`0x00921be0`): the scene's
+    /// `rcbgSceneGetObject`, 0 without a scene.
+    pub fn yn_scene_get_object(mem: &impl Mem, kind: u32, n: u32) -> u32 {
+        yn_scene(mem).map_or(0, |s| {
+            crate::scene::bridge::rcbg_scene_get_object(mem, s, kind, n)
+        })
+    }
+
+    /// `Yn_SceneCountObjects(kind)` (`0x00921c20`): the scene's
+    /// `rcbgSceneCountObjects`, 0 without a scene.
+    pub fn yn_scene_count_objects(mem: &impl Mem, kind: u32) -> u32 {
+        yn_scene(mem).map_or(0, |s| {
+            crate::scene::bridge::rcbg_scene_count_objects(mem, s, kind)
+        })
+    }
+
+    /// `Yn_BattleCaptureNum()` (`0x00921910`): while Yn's battle number
+    /// (`+0xc`) is 0, takes `MsBattleGetNum` when non-zero and clears
+    /// `+8`.
+    pub fn yn_battle_capture_num(mem: &mut impl Mem) {
+        let s = crate::guide::YN_MAP_SYSTEM.get(mem);
+        if mem.read::<u32>(s.wrapping_add(0xc)) != 0 {
+            return;
+        }
+        let n = ffx_battle::state::bridge::ms_battle_get_num(mem);
+        if n != 0 {
+            let s = crate::guide::YN_MAP_SYSTEM.get(mem);
+            mem.write(s.wrapping_add(0xc), n);
+            let s = crate::guide::YN_MAP_SYSTEM.get(mem);
+            mem.write(s.wrapping_add(8), 0u32);
+        }
+    }
+
+    /// `rcbgFpFadeInit(fade, id, step, frames)` (`0x00922930`, from
+    /// `rcbgFPm097`'s process): hides FP `id` (`pppFpIDdispOff`,
+    /// `hide`) and sets up its fade: 0, the id, the step (a float), the
+    /// frames, 0.
+    pub fn rcbg_fp_fade_init<M: Mem>(
+        mem: &mut M,
+        fade: u32,
+        id: u32,
+        step: u32,
+        frames: u32,
+        hide: impl FnOnce(&mut M, u32),
+    ) {
+        hide(mem, id);
+        mem.write(fade.wrapping_add(8), crate::x87::copy(step));
+        mem.write(fade.wrapping_add(4), id);
+        mem.write(fade, 0u32);
+        mem.write(fade.wrapping_add(0xc), frames);
+        mem.write(fade.wrapping_add(0x10), 0u32);
+    }
+
+    /// `rcbgChrFindById(id)` (`0x0092e1e0`): the first character whose
+    /// `Ch_GetId` is `id`, through the character handle cursor; 0 for none.
+    pub fn rcbg_chr_find_by_id(mem: &mut impl Mem, id: u32) -> u32 {
+        use ffx_chara::handle::bridge as h;
+        h::ch_handle_rewind(mem);
+        let mut c = h::ch_handle_get_next(mem);
+        while c != 0 {
+            if h::ch_get_id(mem, c) == id {
+                return c;
+            }
+            c = h::ch_handle_get_next(mem);
+        }
+        0
+    }
+
+    /// `rcbgChrHandleIndex(handle)` (`0x00924f30`): the battle slot
+    /// (`MsGetChrHandle`, 0..=14 then 20..=27) holding `handle`, or -1.
+    pub fn rcbg_chr_handle_index(mem: &impl Mem, handle: u32) -> u32 {
+        (0..=14u32)
+            .chain(20..=27)
+            .find(|&i| ffx_battle::actor::bridge::ms_get_chr_handle(mem, i) == handle)
+            .unwrap_or(u32::MAX)
     }
 }
 

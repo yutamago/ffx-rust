@@ -147,4 +147,43 @@ pub mod bridge {
         let v = FULL_ARENA_LOCALIZATION.get(mem);
         FULL_ARENA_LOCALIZATION.set(mem, u32::from(v == 0));
     }
+
+    /// The two words `hdd_state_clear` zeroes (before [`HDD_MOUNTED`]).
+    pub const HDD_STATE: Global<[u32; 2]> = Global::new(0x0112_a4fc);
+    /// The HDD status bytes: `+0` (`0x0112a509`) and the error `+1`
+    /// (`0x0112a50a`), after [`HDD_MOUNTED`].
+    pub const HDD_STATUS: Global<i8> = Global::new(0x0112_a509);
+    /// The HDD error byte (`get_hdd_err`).
+    pub const HDD_ERR: Global<i8> = Global::new(0x0112_a50a);
+    /// The two 8-character names `hdd_set_pass_names` writes (12 bytes
+    /// apart).
+    pub const HDD_PASS_NAMES: Global<[u32; 2]> = Global::new(0x00c4_1758);
+
+    /// `hdd_state_clear()` (`0x00777420`).
+    pub fn hdd_state_clear(mem: &mut impl Mem) {
+        HDD_STATE.set(mem, [0, 0]);
+    }
+
+    /// `get_hdd_err()` (`0x00777e80`): the error byte, sign-extended.
+    pub fn hdd_err(mem: &impl Mem) -> i32 {
+        i32::from(HDD_ERR.get(mem))
+    }
+
+    /// `get_hdd_status()` (`0x00777e90`): 2 on an error, else the status
+    /// byte, sign-extended.
+    pub fn hdd_status(mem: &impl Mem) -> i32 {
+        if HDD_ERR.get(mem) != 0 {
+            2
+        } else {
+            i32::from(HDD_STATUS.get(mem))
+        }
+    }
+
+    /// `hdd_set_pass_names()` (`0x00777940`): `"ffxpassf"` and `"ffxpassr"`
+    /// (as the four words the original stores).
+    pub fn hdd_set_pass_names(mem: &mut impl Mem) {
+        let p = HDD_PASS_NAMES.ptr(mem).addr;
+        mem.write(p, *b"ffxpassf");
+        mem.write(p + 12, *b"ffxpassr");
+    }
 }
