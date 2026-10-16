@@ -14,6 +14,7 @@
 //! (the game runs with ASLR). Heap addresses are used as they are.
 
 pub mod snapshot;
+pub mod x87;
 
 use std::marker::PhantomData;
 

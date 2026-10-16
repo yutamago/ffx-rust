@@ -1,8 +1,8 @@
 //! `ffx-battle`: random numbers, the save block, actors, the battle camera,
-//! battle globals and helpers.
+//! battle globals and helpers, damage.
 
 use ffx_battle::{actor::bridge as actor, camera::bridge as camera, save::bridge as save};
-use ffx_battle::{state::bridge as state, util::bridge as util};
+use ffx_battle::{damage::bridge as dmg, state::bridge as state, util::bridge as util};
 
 use super::{call0, mem, ported};
 
@@ -485,5 +485,145 @@ ported! {
     /// `MsGetCameraMatrix`.
     MsGetCameraMatrix @ 0x007c_04b0 => extern "C" fn ms_get_camera_matrix() -> u32 {
         camera::ms_get_camera_matrix(&mem())
+    }
+
+    // Damage, hits and statuses. Not installed yet although ported and
+    // checked: DmgCalc_ApplyZombieDrainInteraction, DmgCalc_Alchemy,
+    // DmgCalc_ShatterFail, DmgCalc_NoDamageDeath, DmgCalc_HitKind (whose
+    // caller, the original DmgCalc, keeps values in ECX or EDX across them:
+    // its compiler knew they leave those alone) and DmgCalc_IsDistill (the
+    // same in DmgCalc_InflictStatus_Extra). A Rust function may clobber both,
+    // as cdecl allows; they go in with their callers.
+    /// `MsGetRamChrSummon(chr)`.
+    MsGetRamChrSummon @ 0x0079_af60 => extern "C" fn ms_get_ram_chr_summon(chr: u32) -> u32 {
+        dmg::ms_get_ram_chr_summon(&mem(), chr)
+    }
+    /// `MsGetRndChr(chr, kind)`: the generator for an actor's rolls.
+    MsGetRndChr @ 0x0078_d210 => extern "C" fn ms_get_rnd_chr(chr: u32, kind: i32) -> u32 {
+        dmg::ms_get_rnd_chr(&mem(), chr, kind)
+    }
+    /// `MsCalcDamageCommand(user, target, command, formula, power, status, stat, vary, &def, &mdef, fallback)`.
+    MsCalcDamageCommand @ 0x0078_9bf0 => extern "C" fn ms_calc_damage_command(user: u32, target: u32, command: u32, formula: i32, power: i32, status: u32, stat: i32, vary: i32, def: u32, mdef: u32, fallback: i32) -> i32 {
+        dmg::ms_calc_damage_command(&mut mem(), user, target, command, formula, power, status, stat, vary, def, mdef, fallback)
+    }
+    /// `MsCalcEscape(chr)`.
+    MsCalcEscape @ 0x0078_a780 => extern "C" fn ms_calc_escape(chr: u32) -> u32 {
+        dmg::ms_calc_escape(&mut mem(), chr)
+    }
+    /// `DmgCalc_StatBoostAbility(user_id, target_id, command, damage)`.
+    DmgCalc_StatBoostAbility @ 0x0078_91e0 => extern "C" fn dmg_calc_stat_boost_ability(user_id: u32, target_id: u32, command: u32, damage: i32) -> i32 {
+        dmg::dmg_calc_stat_boost_ability(&mem(), user_id, target_id, command, damage)
+    }
+    /// `DmgCalc_PowerMagicBreak(user, command, damage)`.
+    DmgCalc_PowerMagicBreak @ 0x0078_9290 => extern "C" fn dmg_calc_power_magic_break(user: u32, command: u32, damage: i32) -> i32 {
+        dmg::dmg_calc_power_magic_break(&mem(), user, command, damage)
+    }
+    /// `DmgCalc_Crit(user, target, command, &flags, damage)`.
+    DmgCalc_Crit @ 0x0078_9690 => extern "C" fn dmg_calc_crit(user: u32, target: u32, command: u32, flags: u32, damage: i32) -> i32 {
+        dmg::dmg_calc_crit(&mut mem(), user, target, command, flags, damage)
+    }
+    /// `DmgCalc_Elem(target, command, elements, damage)`.
+    DmgCalc_Elem @ 0x0078_a360 => extern "C" fn dmg_calc_elem(target: u32, _command: u32, elements: u32, damage: i32) -> i32 {
+        dmg::dmg_calc_elem(&mem(), target, elements, damage)
+    }
+    /// `DmgCalc_Defend(target, command, &flags, info, damage)`.
+    DmgCalc_Defend @ 0x0078_a7d0 => extern "C" fn dmg_calc_defend(target: u32, command: u32, flags: u32, info: u32, damage: i32) -> i32 {
+        dmg::dmg_calc_defend(&mut mem(), target, command, flags, info, damage)
+    }
+    /// `DmgCalc_Armored(user, target, command, info, &armored, damage)`.
+    DmgCalc_Armored @ 0x0078_a830 => extern "C" fn dmg_calc_armored(user: u32, target: u32, command: u32, info: u32, armored: u32, damage: i32) -> i32 {
+        dmg::dmg_calc_armored(&mut mem(), user, target, command, info, armored, damage)
+    }
+    /// `DmgCalc_CheckHit(user, target, command, info, counter)`: 0 hit, 1 miss, 2 none.
+    DmgCalc_CheckHit @ 0x0078_a890 => extern "C" fn dmg_calc_check_hit(user: u32, target: u32, command: u32, info: u32, counter: i32) -> u32 {
+        dmg::dmg_calc_check_hit(&mut mem(), user, target, command, info, counter)
+    }
+    /// `DmgCalc_DmgImmunity(target, command, &what, mask, &nulled, damage)`.
+    DmgCalc_DmgImmunity @ 0x0078_aac0 => extern "C" fn dmg_calc_dmg_immunity(target: u32, command: u32, what: u32, mask: u32, nulled: u32, damage: i32) -> i32 {
+        dmg::dmg_calc_dmg_immunity(&mut mem(), target, command, what, mask, nulled, damage)
+    }
+    /// `DmgCalc_Protect(command, &flags, &hit, info, damage)`.
+    DmgCalc_Protect @ 0x0078_ad40 => extern "C" fn dmg_calc_protect(command: u32, flags: u32, hit: u32, info: u32, damage: i32) -> i32 {
+        dmg::dmg_calc_protect(&mut mem(), command, flags, hit, info, damage)
+    }
+    /// `DmgCalc_GravImmunity(target, formula, &what, mask, &nulled, damage)`.
+    DmgCalc_GravImmunity @ 0x0078_ad80 => extern "C" fn dmg_calc_grav_immunity(target: u32, formula: i32, what: u32, mask: u32, nulled: u32, damage: i32) -> i32 {
+        dmg::dmg_calc_grav_immunity(&mut mem(), target, formula, what, mask, nulled, damage)
+    }
+    /// `DmgCalc_Shell(command, &flags, &hit, info, damage)`.
+    DmgCalc_Shell @ 0x0078_adc0 => extern "C" fn dmg_calc_shell(command: u32, flags: u32, hit: u32, info: u32, damage: i32) -> i32 {
+        dmg::dmg_calc_shell(&mut mem(), command, flags, hit, info, damage)
+    }
+    /// `DmgCalc_Threaten(target, info, &what, mask, flags, counts, damage)`.
+    DmgCalc_Threaten @ 0x0078_bd50 => extern "C" fn dmg_calc_threaten(_target: u32, info: u32, what: u32, mask: u32, flags: u32, counts: u32, damage: u32) -> u32 {
+        dmg::dmg_calc_threaten(&mut mem(), info, what, mask, flags, counts, damage)
+    }
+    /// `DmgCalc_ReelBonus(user, damage)`: Wakka's reels.
+    DmgCalc_ReelBonus @ 0x0078_bd90 => extern "C" fn dmg_calc_reel_bonus(user: u32, damage: i32) -> u32 {
+        dmg::dmg_calc_reel_bonus(&mem(), user, damage)
+    }
+    /// `DmgCalc_MarkDamaged(user_id, user, command, damage, always)`.
+    DmgCalc_MarkDamaged @ 0x0078_bf50 => extern "C" fn dmg_calc_mark_damaged(_user_id: u32, user: u32, command: u32, damage: u32, always: i32) -> u32 {
+        dmg::dmg_calc_mark_damaged(&mut mem(), user, command, damage, always)
+    }
+    /// `DmgCalc_CheckNuls(command, elements, info)`.
+    DmgCalc_CheckNuls @ 0x0078_bfb0 => extern "C" fn dmg_calc_check_nuls(_command: u32, elements: u32, info: u32) -> i32 {
+        dmg::dmg_calc_check_nuls(&mut mem(), elements, info)
+    }
+    /// `DmgCalc_Berserk(user, damage)`.
+    DmgCalc_Berserk @ 0x0078_c0b0 => extern "C" fn dmg_calc_berserk(user: u32, damage: i32) -> i32 {
+        dmg::dmg_calc_berserk(&mem(), user, damage)
+    }
+    /// `DmgCalc_QueueRemoveStatusOnHit(target_id, target, command, removed, counts, info)`.
+    DmgCalc_QueueRemoveStatusOnHit @ 0x0078_c0f0 => extern "C" fn dmg_calc_queue_remove_status_on_hit(_target_id: u32, target: u32, command: u32, _removed: u32, counts: u32, info: u32) {
+        dmg::dmg_calc_queue_remove_status_on_hit(&mut mem(), target, command, counts, info);
+    }
+    /// `MsAdjustCTB(chr, ctb, haste, slow)`.
+    MsAdjustCTB @ 0x0078_c150 => extern "C" fn ms_adjust_ctb(_chr: u32, ctb: i32, haste: i32, slow: i32) -> i32 {
+        dmg::ms_adjust_ctb(ctb, haste, slow)
+    }
+    /// `DmgCalc_DelayImmunity(target, damage, counts, _, flags, delayed)`.
+    DmgCalc_DelayImmunity @ 0x0078_c180 => extern "C" fn dmg_calc_delay_immunity(target: u32, damage: u32, counts: u32, _unused: u32, flags: u32, delayed: i32) -> u32 {
+        dmg::dmg_calc_delay_immunity(&mut mem(), target, damage, counts, flags, delayed)
+    }
+    /// `DmgCalc_CheckCounter(apply, user_id, user, target_id, target, command)`.
+    DmgCalc_CheckCounter @ 0x0078_c1d0 => extern "C" fn dmg_calc_check_counter(apply: i32, user_id: i32, user: u32, target_id: i32, target: u32, command: u32) -> i32 {
+        dmg::dmg_calc_check_counter(&mut mem(), apply, user_id, user, target_id, target, command)
+    }
+    /// `DmgCalc_ShieldBoost(target, &flags, damage)`.
+    DmgCalc_ShieldBoost @ 0x0078_c530 => extern "C" fn dmg_calc_shield_boost(target: u32, flags: u32, damage: i32) -> i32 {
+        dmg::dmg_calc_shield_boost(&mut mem(), target, flags, damage)
+    }
+    /// `DmgCalc_MagicBooster(user, command, command_id, &damage)`.
+    DmgCalc_MagicBooster @ 0x0078_c580 => extern "C" fn dmg_calc_magic_booster(user: u32, command: u32, command_id: i32, damage: u32) -> i32 {
+        dmg::dmg_calc_magic_booster(&mut mem(), user, command, command_id, damage)
+    }
+    /// `MsGetNextCTB(chr, rank, haste, slow)`.
+    MsGetNextCTB @ 0x0078_d1d0 => extern "C" fn ms_get_next_ctb(chr: u32, rank: i32, haste: i32, slow: i32) -> i32 {
+        dmg::ms_get_next_ctb(&mut mem(), chr, rank, haste, slow)
+    }
+    /// `DebugCanTakeDamage(chr)`.
+    DebugCanTakeDamage @ 0x0078_d3a0 => extern "C" fn debug_can_take_damage(chr: u32) -> u32 {
+        dmg::debug_can_take_damage(&mem(), chr)
+    }
+    /// `DmgCalc_ApplyStatUpBuffs(user, target, command)`.
+    DmgCalc_ApplyStatUpBuffs @ 0x0078_d730 => extern "C" fn dmg_calc_apply_stat_up_buffs(_user: u32, target: u32, command: u32) {
+        dmg::dmg_calc_apply_stat_up_buffs(&mut mem(), target, command);
+    }
+    /// `SetUpDamageInfo(info, parent, target)`.
+    SetUpDamageInfo @ 0x0078_dae0 => extern "C" fn set_up_damage_info(info: u32, parent: u32, target: u32) {
+        dmg::set_up_damage_info(&mut mem(), info, parent, target);
+    }
+    /// `DmgCalc_Delay(target, command, flags, damage)`.
+    DmgCalc_Delay @ 0x0078_e0f0 => extern "C" fn dmg_calc_delay(target: u32, command: u32, flags: u32, damage: u32) -> u32 {
+        dmg::dmg_calc_delay(&mut mem(), target, command, flags, damage)
+    }
+    /// `MsCheckStatCount(i)`.
+    MsCheckStatCount @ 0x0079_e330 => extern "C" fn ms_check_stat_count(i: i32) -> u32 {
+        dmg::ms_check_stat_count(&mem(), i)
+    }
+    /// `MsCheckWrongStatus(command)`.
+    MsCheckWrongStatus @ 0x0079_e340 => extern "C" fn ms_check_wrong_status(command: u32) -> i32 {
+        dmg::ms_check_wrong_status(&mem(), command)
     }
 }

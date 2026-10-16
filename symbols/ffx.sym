@@ -1825,23 +1825,30 @@
 0x0078aac0 function DmgCalc_DmgImmunity       # fh v3:exact 0x0078ab80 +DmgCalc_DmgImmunity
 0x0078ab20 function MsCalcMagic               # fh v3:exact 0x0078abe0
 0x0078ac20 function MsCalcMotionSpeed         # fh v3:exact 0x0078ace0
+0x0078ad40 function DmgCalc_Protect           # Fahrenheit's v3 name (+DmgCalc_Protect, 0x0078ae00); physical damage halved when the result's +0xb (protect) is set, flag 0x40; ported (ffx_battle::damage)
 0x0078ad80 function DmgCalc_GravImmunity      # fh v3:exact 0x0078ae40 +DmgCalc_GravImmunity
+0x0078adc0 function DmgCalc_Shell             # Fahrenheit's v3 name (+DmgCalc_Shell, 0x0078ae80); magic damage halved when the result's +0xa (shell) is set, flag 0x20; ported
 0x0078ae00 function DmgCalc_InflictStatus     # fh v3:exact 0x0078aec0 +DmgCalc_InflictStatus
 0x0078b4e0 function DmgCalc_InflictStatus_Extra # fh v3:exact 0x0078b5a0 +DmgCalc_InflictStatus_Extra
 0x0078b760 function Battle_Steal              # steal chance spoils+0x0a, items +0x24/+0x26, counts +0x28/+0x29
 0x0078ba30 function DmgCalc_ShatterFail       # fh v3:exact 0x0078baf0 +DmgCalc_ShatterFail
 0x0078bd50 function DmgCalc_Threaten          # fh v3:exact 0x0078be10 +DmgCalc_Threaten
+0x0078bd90 function DmgCalc_ReelBonus         # damage x (time + 2 start) / (2 start) while actor +0xd26 is set; +0xd2c/+0xd30 are the floats MsSetReelResult stores for Wakka ("time", "start_time" in its debug text); ported
 0x0078bdd0 function DmgCalc_Bribe             # fh v3:exact 0x0078be90 +DmgCalc_Bribe
 0x0078bf00 function MsCalcWeakLevel           # fh v3:exact+call.cs 0x0078bfc0 stdcall
+0x0078bf50 function DmgCalc_MarkDamaged       # DmgCalc's last step: user +0x715 = 1 when a damage value hurts (heals, for a healing command) or arg 5 is set; ported
 0x0078bfb0 function DmgCalc_CheckNuls         # fh v3:exact 0x0078c070 +DmgCalc_CheckNuls
 0x0078c0b0 function DmgCalc_Berserk           # fh v3:exact 0x0078c170 +DmgCalc_Berserk
 0x0078c0f0 function DmgCalc_QueueRemoveStatusOnHit # fh v3:exact 0x0078c1b0 +DmgCalc_QueueRemoveStatusOnHit
+0x0078c150 function MsAdjustCTB               # (chr, ctb, haste, slow): halved, doubled, MsCheckRange 0-255; MsGetNextCTB's tail; ported
 0x0078c180 function DmgCalc_DelayImmunity     # fh v3:exact 0x0078c240 +DmgCalc_DelayImmunity
 0x0078c1d0 function DmgCalc_CheckCounter      # fh v3:exact 0x0078c290 +DmgCalc_CheckCounter
 0x0078c480 function DmgCalc_NoDamageDeath     # fh v3:exact 0x0078c540 +DmgCalc_NoDamageDeath
 0x0078c530 function DmgCalc_ShieldBoost       # fh v3:exact 0x0078c5f0 +DmgCalc_ShieldBoost
 0x0078c580 function DmgCalc_MagicBooster      # fh v3:exact 0x0078c640 +DmgCalc_MagicBooster
 0x0078c5f0 function DmgCalc_Alchemy           # fh v3:exact 0x0078c6b0 +DmgCalc_Alchemy
+0x0078c640 function DmgCalc_HitKind           # (flags, counts): DmgCalc's result +1: 1 when counts[1] and no flags, 2 when only counts[0]; ported
+0x0078c670 function DmgCalc_IsDistill         # -1 when (u8)arg & 0x3e: the distill statuses (status bits 2, 1-5; InflictStatus_Extra clears the others when one lands); ported
 0x0078c690 function MsCheckUseCommand         # fh v3:exact 0x0078c750
 0x0078c740 function MsDamageCheckDeath        # fh v3:exact+call.cs 0x0078c800 cdecl
 0x0078ca20 function MsDamageSetMotion         # fh v3:exact+call.cs 0x0078cae0 cdecl
@@ -2139,6 +2146,7 @@
 0x0079de60 function MsBattleSpecialInit       # fh v3:exact 0x0079de80
 0x0079e310 function MsCheckStat               # fh v3:cg2 0x79e330
 0x0079e320 function MsCheckStat2              # fh v3:bsim1.00 0x0079e340
+0x0079e330 function MsCheckStatCount          # byte 3 of entry i of the counter statuses' table 0x00c42464; Switch MsCheckStatCount sits with MsCheckStat, MsCheckStat2, MsCheckWrongStatus; ported
 0x0079e340 function MsCheckWrongStatus        # fh v3:exact 0x0079e360
 0x0079e3d0 function MsDeathEffectStart        # fh v3:exact 0x0079e3f0
 0x0079e4d0 function MsDeathSEfadeAll          # fh switch:bsim1.00 0x7100353a90
@@ -4744,6 +4752,7 @@
 0x0094966a function eh_vector_constructor_iterator # fh v3:cg7 0x94966a `eh_vector_constructor_iterator'
 0x009496d2 function eh_vector_destructor_iterator # fh v3:cg3 0x9496d2 `eh_vector_destructor_iterator'
 0x0094975a function ArrayUnwind               # fh v3:cg2 0x94975a __ArrayUnwind
+0x009497e0 function ftol2_sse                 # MSVC CRT: ST0 to int toward zero; cvttsd2si when __sse2_available (0x0193ed20), else the x87 _ftol2 path (64-bit fistp + correction); ffx_bridge::x87::ftol
 0x00949890 function alloca_probe_16           # fh v3:cg5 0x949890 __alloca_probe_16
 0x009498a6 function alloca_probe_8            # fh v3:cg2 0x9498a6 __alloca_probe_8
 0x00949910 function allshl                    # fh v3:cg2 0x949910 __allshl
@@ -6975,8 +6984,10 @@
 0x00c0a004 label g_Vu0_Vf00                  # emulated VU0 vf00 (x, y, z, w) = (0, 0, 0, 1.0f): AsmEmuInit and restoreVf00Register store exactly that
 0x00c30f94 label NvOptimusEnablement          # fh v4:imported
 0x00c30f98 label AmdPowerXpressRequestHighPerformance # fh v4:imported
+0x00c421f0 label g_BtlAccuracyTable           # 9 x i8, DmgCalc_CheckHit's chance by clamp(accuracy*2/5 - evasion + 10, 0, 8)
 0x00c423e8 label g_StatusTable               # 4 bytes per status; MsCheckStat (0x0079e310) returns byte 3 of entry i
 0x00c42420 label g_StatusTable2              # entry 14 of g_StatusTable on; MsCheckStat2 (0x0079e320) returns byte 3 of entry i
+0x00c42464 label g_BtlStatCountTable          # 13 x 4 bytes, the counter statuses (MsCheckStatCount; MsCheckWrongStatus reads byte 3 bit 7: harmful)
 0x00c5e350 label    g_GuideFlags                 # bit 0: the minimap may show (clear: Guide_FadeOff)
 0x00c5e370 label    g_GuideMarkerPalette         # 16 RGBA of floats (128 = 1), by marker flags & 0xf
 0x00c5e478 label    g_GuideEnabled               # 0: Guide_Update returns at once
@@ -6993,7 +7004,15 @@
 0x0112a8e0 label g_BtlStatus                 # i8, not 0 in battle (MsBattleGetStatus 0x007816f0 sign-extends it; MsGetBattleScene 0x00782970 tests it)
 0x0112a8e2 label g_BtlExe                    # i8; MsBattleExeClear (0x00781530) returns it and clears it unless g_BtlExeKeep
 0x0112a8f5 label g_BtlExeKeep                # not 0: MsBattleExeClear keeps g_BtlExe
+0x0112a8f8 label g_BtlDebugNoDamageMonster    # u8, monsters take no damage (DebugCanTakeDamage); debug native case 2/0xc
+0x0112a8f9 label g_BtlDebugNoDamageParty      # u8, the party takes no damage (DebugCanTakeDamage); debug native case 1/2
+0x0112a908 label g_BtlDebugNoVariance         # i8, DmgCalc passes 1 - it as MsCalcDamageCommand's vary; debug native case 6
+0x0112a909 label g_BtlDebugNoCrit             # u8, DmgCalc skips DmgCalc_Crit; debug native case 7
+0x0112a90a label g_BtlDebugAlwaysHit          # u8, DmgCalc_CheckHit never misses, statuses and Bribe always land; debug native case 8
+0x0112a90c label g_BtlDebugNoCost             # u8, MsCalcMagic ignores the command's +0x26 cost; debug native case 5
+0x0112a90d label g_BtlDebugAlwaysCrit         # u8, DmgCalc_Crit always doubles; debug native case 0xd
 0x0112a91b label g_BtlMapCircleOn            # i8 (MsBattleGetMapCircleOn 0x007816a0)
+0x0112a91f label g_BtlDebugAllMiss            # u8, debug env flag: DmgCalc_CheckHit always misses, no status lands, MsCalcEscape fails
 0x0112a92c label    g_KernelCommand
 0x0112a930 label    g_KernelMonMagic1
 0x0112a934 label g_KernelMonMagic2             # monmagic2 (Kernel_LoadTables 0x00781d40); read by MsGetRomMonCommand2
@@ -7011,6 +7030,7 @@
 0x0112ac70 label g_BtlCommandCue             # 0x48-byte entries: +0 actor, +1 command, +7 high nibble kind (MsCheckCommandCue 0x007b0720, MsCheckCommandCue2, MsGetCommandCue)
 0x0112bde0 label g_BtlInputCueCount          # i8 entries in g_BtlInputCue
 0x0112bde1 label g_BtlCommandCueCount        # i8 entries in g_BtlCommandCue
+0x0112be90 label g_BtlGilAmount               # i32, gil offered (DmgCalc_Bribe) or thrown (MsCalcDamageCommand formula 0x15: gil / 10)
 0x0112c021 label g_BtlReadCueLevel           # u8, MsBtlReadCueLevel (0x007ad180)
 0x0112c526 label g_BtlWeaponList             # u16 list MsGetSaveWeaponList (0x007abd10) fills with 0x5000 + equipment slot
 0x0112c895 label g_BtlParty                  # 3 x u8 ply_save indices; MsSetSaveParty (0x00786930) copies them to g_SaveInParty
@@ -7018,7 +7038,9 @@
 0x0112c9cd label    g_BtlPadOrientation          # 0-3, set by 0x7099; read by 0x00780ce0 for the d-pad remap
 0x0112c9ce label g_BtlUnderwater             # i8, the formation's byte 3 (underwater fields); MsBattleWater (0x007821e0) returns it, MsGetVoiceEventFlag returns 0 while it is set
 0x0112c9e2 label    g_BtlTurnActor               # ?actor index copied from 0x0112c9df when a turn starts; read by 0x708d
+0x0112c9ff label g_BtlEscapeRule              # i8, set by battle script (0x007a77a0): 1 no escape, 2 always (MsCalcEscape)
 0x0112ca0b label g_BtlStoneEffect            # 2 x i8; MsStoneEffectCheck (0x007a2670) returns their sum
+0x0112ca12 label g_BtlCounterOn               # u8, set by battle script (0x007a8430): counterattacks happen only while set (DmgCalc_CheckCounter)
 0x0112ca6c label    g_KernelMonster1
 0x0112ca70 label    g_KernelMonster2
 0x0112ca74 label    g_KernelMonster3
@@ -7046,6 +7068,7 @@
 0x01130f1c label g_SaveImportant             # key items held, 8 flag words, IDs below 0x80 (MsImportantGet 0x00790800, MsImportantSet)
 0x01130f2c label    g_Equipment                # 200 x 22-byte equipment slots (docs/formats/kernel.md)
 0x0113205c label    g_PlySave                  # ply_save records, 0x94 bytes each; +0x2d weapon slot, +0x2e armor slot
+0x011320b0 label g_BtlKills                   # u32 every 0x94 bytes by player character < 0x12: MsCalcDamageCommand formula 0x16 (kills x power)
 0x01132ac4 label g_SaveCommandUse            # commands used, 18 characters x 0x16 flag words, right after g_PlySave (MsGetSaveCommandUse 0x00785140)
 0x01133354 label g_BtlMuteSubtitle           # u32 (MsMuteBattleSubTitle 0x00785990)
 0x01133364 label g_BtlEventEffectStat        # i8 (MsEventEffectGetStat 0x00788bd0)
@@ -7082,9 +7105,11 @@
 0x01869ab0 label    g_MsgVars                    # per window 32 pointers to text variable records {u8 default type, u8 type, i32 value}; text code 0x12
 0x01869eb0 label    g_MacroDic                   # macrodic section pointer table (MacroDic_Load)
 0x0193bf78 label    g_GuideFade                  # the minimap's alpha, 0..128 (Guide_FadeStep)
+0x0193ed20 label g_Sse2Available             # MSVC CRT __sse2_available: _ftol2_sse picks cvttsd2si when set (0 in an image that has not run its start-up)
 0x022fb504 label    g_Settings
 0x02310c40 label    g_CdLib                   # function table of the PS2 CD-library emulation
 0x023110a0 label g_DefaultChrNames           # 0x14 bytes per character (getDefaultChrName 0x00787320)
+0x02311240 label g_BtlDamageRates             # 4 bytes per actor: physical, magic damage dealt bonus %, physical, magic damage taken reduction % (DmgCalc_StatBoostAbility)
 0x02311424 label g_CameraPriorityMask        # not 0: MsCameraPriority (0x007be0a0) changes nothing (MsCameraPriorityMask 0x007be100)
 0x02311428 label    g_CamOverrideScreenDepth     # override projection distance (default 1024.0; Native_CamSetScreenDepth's units)
 0x0231142c label    g_CamOverrideOn              # nonzero: the view comes from the override camera (Cam_OverrideSet), else from the active channel
