@@ -53,3 +53,182 @@ codes in alternating 4-byte words (left, right, left, ...). The step and
 index tables are the IMA standard's. Decoded with whole 0x24-byte blocks per
 channel instead, a stereo bank is noise (mean step between samples 84 and
 983 against 23).
+
+# The game's sound layers
+
+From the game's side down (`crates/ffx-sound`: `snd`, `fmod`):
+
+1. **`Snd*`** (`0x00885d00..0x008879d0`), the PS2 sound API the game code
+   calls. The PC build keeps these functions in alphabetical order (as the
+   PS2 object file had them), which names most of them against the Switch
+   build's symbols. Ported in `ffx_sound::snd`.
+2. **`Sqs*`** (`0x0081ce70..0x0081f900`), the PS2 sequencer layer; on PC
+   mostly thin calls into 3 (`SqsSePlay(kind, id, pan, volume)` ->
+   `iSfxStart(id, volume & 0x7f, pan & 0x7f)`), some stubs that print "not
+   implemented" (`SqsSePitchDirect`, `SqsSePlayState`).
+3. **`i*`** (`0x00679fb0..0x0067a7d0`): `iMusic*`, `iSfx*`, `iVoice*`,
+   `iSound*`; each queues one FMOD command. Ported in `ffx_sound::fmod`.
+4. **The FMOD thread**: `FmodManager` runs the queue at 30 Hz (33.3 ms,
+   `0x006fa700`) through the handler table at `0x00c3a368` (70 commands),
+   each calling a `FfxFmod` method, which drives `FmodMusic`, `FmodSfx`
+   (`SfxBank`, `SfxEvent`), `FmodVoice` and `FmodShout` over FMOD Designer
+   events. Left original (FMOD calls).
+
+## FMOD command queue (`Fmod_PushCommand` 0x006fa300)
+
+`g_FmodManager` (`0x00ce9010`) is a 0x50-byte object: `+8` the `FfxFmod`,
+`+0x10` the queue mutex, `+0x14` the sync mutex, `+0x18`/`+0x1c` events,
+`+0x28`/`+0x2c` the ring's write/read index, `+0x30` the sync command,
+`+0x34..+0x40` its four arguments, `+0x44` (u8) done, `+0x48` its result.
+
+The ring is 150 entries of 0x14 bytes at `0x00ce8458`: `u32 cmd, a, b, c,
+d`. `Fmod_PushCommand(mgr; cmd, a, b, c, d)` appends one; commands 0x3b
+(sfx volume) and 0x3d (sfx pan) replace a queued one with the same `a`
+(the sfx id) instead; 0x31 (unload all sfx) is dropped while `0x01325b7c`
+is set; a full ring prints every queued command ("Too many fmod commands at
+the same time!!"). `FmodManager_registCommandAsync1/./3/4`
+(`0x006fa280..0x006fa2e0`) pass 1-4 words and zeros.
+
+`FmodManager_registCommandSync(mgr; cmd, ...)` (`0x006fa500`) runs a
+command and returns its result: 0x11-0x13, 0x16, 0x19 and 0x41 on the
+calling thread, the others by waking the FMOD thread and waiting twice 5
+ms ("registCommandSync TimeOut"); 0x3f also answers 1 while a 0x33 start
+for that id is still queued. Wrappers `FmodManager_registCommandSync1..4`
+(`0x006fa480..0x006fa4e0`).
+
+| cmd | queued by | | cmd | queued by |
+|---|---|---|---|---|
+| 0x0b | `iVoicePanTranslate` | | 0x23 | `iMusicVolumeDirect(id, v, 1)` |
+| 0x0c | `iVoicePanDirect` | | 0x24 | `iMusicMuteSet` |
+| 0x0d | `iVoiceVolumeTranslate` | | 0x25 | `iMusicClear` |
+| 0x0e | `iVoiceVolumeDirect(v, 1)` | | 0x26 | `iMusicStop` |
+| 0x0f | `iVoiceStart(pan, v)` | | 0x27 | `iMusicStart` |
+| 0x10 | `iVoiceRead(id)` | | 0x28 | `iMusicRead` |
+| 0x11 | `iVoicePlayStatus` (sync) | | 0x2c | `iMusicStopAll` |
+| 0x14 | `iMusicSyncStandby` (sync) | | 0x2d | `iMusicClearAll` |
+| 0x15 | `iMusicDataSend(id, id >> 31)` | | 0x2e | `iMuiscSetBgmType(0/1)` |
+| 0x16 | `iMusicPlayState` (sync) | | 0x2f | `iMusicSetPaused` |
+| 0x17 | `iMusicCrossPlay(id, frames)` | | 0x30 | `iSfxLoadData(id, 1)` |
+| 0x18 | `iMusicPlayFast` | | 0x31 | `iSfxUnloadAllData` |
+| 0x19 | `iMusicReplayPointSet` | | 0x33 | `iSfxStart(id, volume, pan)` |
+| 0x1a | `iMusicReplayPointClear` | | 0x34 | `iSfxForceStart` |
+| 0x1b | `iMusicPhrasePlay` | | 0x35 | `iSfxDelayStart` |
+| 0x1c | `iMusicVolumeFadeOut(id, frames)` | | 0x3a | `iSfxPause` |
+| 0x1d | `iMusicTempoTranslate` | | 0x3b | `iSfxSetVolume(id, v)` |
+| 0x1e | `iMusicTempoDirect` | | 0x3d | `iSfxSetPan(id, pan)` |
+| 0x1f | `iMusicPitchTranslate` | | 0x3e | `iSfxSetPanTranslate` |
+| 0x20 | `iMusicPitchDirect` | | 0x3f | `iSfxIsPlaying` (sync) |
+| 0x21 | `iMusicMultiPlay` | | 0x40 | `iSfxPlayBattleStreaming` |
+| 0x22 | `iMusicVolumeTranslate(id, frames, v)` | | 0x41 | `iSfxIsPaused` (sync) |
+
+Volumes and pans are 0..127 on the game side; the FMOD side makes volume
+`v / 127` clamped to 0..1 (`0x0070f1a0`) and pan `v/127 + v/127 - 1`
+clamped to -1..1 (`0x0070ef80`); a volume translation over `n` frames runs
+`n / 30` seconds (`0x0070f000`). `iMusicStart` first records the id at
+`FmodMusic +0x18` and raises the start signal at `+0x20`
+(`FmodManager_signalMusicStart`, for music ids below 0xb6).
+
+## Snd state
+
+| Address | | |
+|---|---|---|
+| `0x0132f690..0x0132ff10` | `g_SndFootSepWork` | footstep sound ids by kind, below |
+| `0x0132ff10` | u32 | voice read in progress (`g_TkSndVoiceFlags`) |
+| `0x0132ff14` | u32 | shout stream busy (`SndStartShoutStream`) |
+| `0x0132ff18` | u32 | VAG voice stream busy (`SndStartStream`) |
+| `0x0132ff1c` | u32 | standby voice |
+| `0x0132ff20` | u32 | `SqsDataSendingCompleted` result |
+| `0x0132ff24` | u32 | `g_TkSndStatus` (busy bits) |
+| `0x0132ff28` | u32 | voice sector length (`SndStreamDVDPos`) |
+| `0x0132ff2c`, `34`, `3c`, `44` | u32 each | party bit masks: 3D footsteps, footsteps, cloth (kind 4), events (kind 0xff); each followed by its pushed copy |
+| `0x0132ff4c` | u32 | kick stay: kinds 0-7 become 8-15 |
+| `0x0132ff50` | ptr | 3D footstep request (`+0` u16 flags, `+0x18` sound, `+0x1c` self, `+0x20` u16 actor) |
+| `0x0132ff54` | ptr | sound event table: `u32 count, u32 sound[count]` |
+| `0x0132ff58`, `0x0132ff60` | u32, u32[16] | IOP error bits, a status per newly raised bit |
+| `0x0132ff5c` | u32 | music playing, -1 none |
+| `0x0132ffa0` | i32[16] | actor per party slot |
+| `0x0132ffe0`, `0x01330068` | 17 x 8 bytes, i32 | music clear queue, count |
+| `0x0133006c..0x01330088` | u32 | status/shout/VAG words: previous and this frame (`SndSqsIopFrame` moves them) |
+| `0x01330090..0x01330097` | u8 | music mute, SE lock, sound mode (0-2), sound type (0-1), kick flag, last kick, SPU sort switch, HDD error |
+| `0x0133009c` | u32 | battle music data size |
+| `0x013300e0` | u8[256] | volume per music |
+| `0x00c54dd0` | u32 | last faded-out music (-1 in the image) |
+| `0x00c54db0` | i16[16] | default common waves (0, 1, 0x7d5, then -1) |
+
+**Sound-effect ids**: bit 31 clear is a separate SE (kind 1), set a block SE
+(kind 0); every `SndSep*` entry passes `(kind, id & 0x7fffffff)` to `Sqs*`.
+`SndSepClear` clears only separate SEs.
+
+**Footsteps** (`SndGetFootSepWork(kind, party, variation)`): 16 kinds;
+kinds 0, 1, 5, 8, 9, 13 have `[16][4]` u32 slots (four variations), the
+others `[16]`. Party clamps to 0..15, variation to 0..3. `SndKickFoot(kind,
+party, kick, variation)` plays slot + variation (at most 3; 1 for kinds
+4/12; 0 for 6/7/14/15) when the party bit is in the kind's mask; kind 0xff
+plays sound event `variation` under the event mask. A party slot in the 3D
+mask with a non-negative actor goes through the 3D request instead.
+
+**Music clear queue** (`SndExecMusicClearQue(mode, id)`, every frame with
+mode 1): entries `{i16 music (< 0: an SE), i16 frames, u32 sep}` count down
+and clear the music (`SndMusicClear`) or stop the SE (`SndSepStop`) at 0;
+mode 0 cancels music `id`, -1 SE `id`. The compaction keeps the original's
+shift (it copies `count - i` entries past each removed one).
+
+**Music**: ids below 0x100 (0xb6 on the FMOD side). Starting a music sets
+its volume byte to 0x7f and registers it as playing; `SndMusicCrossStart`
+starts at volume 0 when it is the music last faded out and nothing plays;
+every volume is 0 while muted.
+
+**Voice streams**: `SndStreamDVDPos(id)` looks voice `id >> 12` up as three
+two-digit indices (`/10000`, `/100`, `%100`) in `g_SndStreamTable`
+(`0x023cbec4`: u16 group count and offsets; per group a u16 count and
+offsets; per list a u16 count and sectors, 0xffff gaps), returning `(group
+<< 16) | sector` and the length to the next sector. `SndStreamPCName(id)`
+names the file: `ve%06d` (`vj` for languages above 6) of `id >> 12`, then
+`0x60 +` bits 6-10 and 0-4 as two letters over characters 8 and 9, then
+`.vs`. `SndCalcVoiceWait` turns the sector length into frames (x2048, -32,
+/48000, x16/28, x2016/2048, x4.97, each stored as f32), 0 in video mode 0.
+
+# FMOD Designer event projects (`*.fev`)
+
+Not decoded yet; this is what the game reads from them, through
+`fmod_event.dll`. A host without FMOD needs these facts; the samples
+themselves are in the FSB banks above.
+
+**Container.** RIFF, form `FEV `: `FMT ` (4 bytes, `00 00 45 00`: version
+4.45), then `LIST PROJ` with `OBCT` (0x10c bytes: 33 pairs `u32 type, u32
+count`), `PROP` (`u32 length`, the project name: `0303`, `ffx_music`),
+`LGCY` (the FMOD Designer 4 project body: bank names (`0303_bank00`), the
+category tree (`master`, `music`), event groups, events and sound
+definitions with their properties and wave paths (`0303/9003.wav`)),
+`EPRP` (4 bytes), `STRR` (`u32 count, u32 offset[count]`, zero-terminated
+strings: group and event names, sound definition paths
+`/__simpleevent_sounddef__/9003_0`), `LANG` (`default`). Every SFX project
+seen has two groups, `loop` and `nonloop`, and simple events named by
+their sequence number.
+
+**Sound effects.** `FfxFmod::sfxLoad(n)` loads `SFX/US/%04d.fev` (`JP` by
+the voice language) as an `SfxBank` (`0x0070f760`), then two side files in
+the same folder: `%04d_common.txt`, binary pairs `u32 sequence, u32 event
+index` for group `nonloop`, and `%04d_loop.txt`, records `u32 sequence,
+u32 count, u32 index[count]` for group `loop` (a looping sound is several
+events started together). `FmodSfx_Start(seq, volume, pan)` searches the
+loaded banks for the sequence and creates the event by index in its group
+(`EventGroup::getEventByIndex`); at most 5 instances per sequence (30 for
+sequence 114). The index order is the group's event order (the STRR order:
+`1010, 1011, 1012, 2001, 40001, 4010, ...`), and the FSB sample of a simple
+event has the event's name: sequence 9003 is sample `9003` of
+`0303_bank00.fsb`.
+
+**Music.** `ffx_music.fev` (project `ffx_music`, group `music`); a music id
+below 0xb6 maps to an event index through the table at `0x00b4f1c8` (92 ids
+mapped, -1 otherwise; `0x00708be0`); the events are the named tracks
+(`1_09_battle_theme`). `FmodMusic` keeps 0xb6 records of 0x3c bytes (`+0`
+event, `+8` state, `+0x24..+0x38` volume translation: active, frames left,
+current, target, step). The PC build also tries `Music/MusicIDMapper.txt`
+(`FmodMusic_initList`, never called; not in the data).
+
+**Voice.** `Voice/VoiceIDMapper.txt` and `Voice/US/VoiceFevMapper.txt`
+(`JP`) are `ML` files: `"ML\0\0", u32 count, count x {u32 key, u32
+offset}`, zero-terminated strings at the offsets: voice id -> event name
+(`210101td`), and key -> project (`ffx_us_voice20`,
+`ffx_us_voice_nagisetsu`).

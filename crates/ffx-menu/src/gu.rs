@@ -1095,6 +1095,207 @@ pub mod bridge {
         mem.write(b + 0x22, 0u16);
         0
     }
+    /// `Gu_SelectorAllocate()` (`0x00849bb0`): `user_malloc(0x2c)`, cleared
+    /// (`memclear`). Returns it.
+    pub fn gu_selector_allocate<M: Mem>(
+        mem: &mut M,
+        malloc: &mut impl FnMut(&mut M, u32) -> u32,
+    ) -> u32 {
+        let p = malloc(mem, 0x2c);
+        ffx_system::heap::memclear(mem, p, 0x2c)
+    }
+
+    /// `Gu_ControlInit(control)` (`0x008495e0`, own name): `0x44` bytes
+    /// cleared, the text pointer `+0x28` at its own buffer `+0x30` (empty),
+    /// flags bits 0-1 of `+0x40` and the length `+0x26` zero. Returns 0.
+    pub fn gu_control_init(mem: &mut impl Mem, c: u32) -> u32 {
+        ffx_system::heap::memclear(mem, c, 0x44);
+        mem.write(c + 0x28, c + 0x30);
+        mem.write(c + 0x30, 0u8);
+        let f: u32 = mem.read(c + 0x40);
+        mem.write(c + 0x40, f & !3);
+        mem.write(c + 0x26, 0u16);
+        0
+    }
+
+    /// `Yi_StrLower(s)` (`0x00916290`) and `Yi_StrUpper(s)` (`0x009162c0`,
+    /// own names): the string's ASCII letters lowered or raised in place
+    /// (the C locale's `tolower`/`toupper`).
+    pub fn yi_str_case(mem: &mut impl Mem, s: u32, upper: bool) {
+        let mut p = s;
+        loop {
+            let c: u8 = mem.read(p);
+            if c == 0 {
+                return;
+            }
+            let c = if upper {
+                c.to_ascii_uppercase()
+            } else {
+                c.to_ascii_lowercase()
+            };
+            mem.write(p, c);
+            p = p.wrapping_add(1);
+        }
+    }
+    /// `Gu_ControlSetText(control, s)` (`0x00849610`, own name): the text
+    /// copied in: null clears it (freeing a heap buffer) back to the inline
+    /// buffer `+0x30`; under 15 characters it goes inline (a heap buffer
+    /// freed first); longer ones get a heap buffer of `len + 0x11`
+    /// (capacity `len + 0x10` in `+0x26`), reused while big enough.
+    pub fn gu_control_set_text<M: Mem>(
+        mem: &mut M,
+        c: u32,
+        s: u32,
+        free: &mut impl FnMut(&mut M, u32) -> u32,
+        malloc: &mut impl FnMut(&mut M, u32) -> u32,
+    ) {
+        let cap = |mem: &M| mem.read::<i16>(c + 0x26);
+        if s == 0 {
+            if cap(mem) != 0 {
+                let p = mem.read(c + 0x28);
+                free(mem, p);
+            }
+            mem.write(c + 0x26, 0u16);
+            mem.write(c + 0x28, c + 0x30);
+            mem.write(c + 0x30, 0u8);
+            return;
+        }
+        let mut len = 0i32;
+        while mem.read::<u8>(s.wrapping_add(len.cast_unsigned())) != 0 {
+            len += 1;
+        }
+        if len < 0xf {
+            if cap(mem) != 0 {
+                let p = mem.read(c + 0x28);
+                free(mem, p);
+                mem.write(c + 0x28, c + 0x30);
+                mem.write(c + 0x26, 0u16);
+            }
+        } else if cap(mem) == 0 || i32::from(cap(mem)) < len {
+            if cap(mem) != 0 {
+                let p = mem.read(c + 0x28);
+                free(mem, p);
+            }
+            let p = malloc(mem, (len + 0x11).cast_unsigned());
+            mem.write(c + 0x28, p);
+            #[allow(clippy::cast_possible_truncation)]
+            mem.write(c + 0x26, (len + 0x10).cast_unsigned() as u16);
+        }
+        let dst: u32 = mem.read(c + 0x28);
+        for k in 0..=len.cast_unsigned() {
+            let ch: u8 = mem.read(s.wrapping_add(k));
+            mem.write(dst.wrapping_add(k), ch);
+        }
+    }
+
+    /// `Gu_WindowControlSetText(window, id, s)` (`0x0084a710`):
+    /// [`gu_control_set_text`] on the window's first control with `id`.
+    pub fn gu_window_control_set_text<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        id: u32,
+        s: u32,
+        free: &mut impl FnMut(&mut M, u32) -> u32,
+        malloc: &mut impl FnMut(&mut M, u32) -> u32,
+    ) {
+        if let Some(c) = find_control(mem, window, id) {
+            gu_control_set_text(mem, c, s, free, malloc);
+        }
+    }
+    /// `Gu_WindowFreeClosed()` (`0x0084abd0`, own name): every window in
+    /// `g_GuWindowList` flagged closed (bit 2 of `+0x88`) unlinked and
+    /// freed (`user_free`) with its controls' heap texts, the controls
+    /// array, and its own heap buffer `+0x5c` (when `+0x5a` is set).
+    pub fn gu_window_free_closed<M: Mem>(mem: &mut M, free: &mut impl FnMut(&mut M, u32) -> u32) {
+        loop {
+            let mut prev = 0u32;
+            let mut w = WINDOW_LIST.get(mem);
+            loop {
+                if w == 0 {
+                    return;
+                }
+                if mem.read::<u8>(at(w, 0x88)) & 4 != 0 {
+                    break;
+                }
+                prev = w;
+                w = mem.read(w);
+            }
+            let next: u32 = mem.read(w);
+            if prev == 0 {
+                WINDOW_LIST.set(mem, next);
+            } else {
+                mem.write(prev, next);
+            }
+            let controls: u32 = mem.read(at(w, 0x94));
+            if controls != 0 {
+                let mut k = 0i32;
+                while k < mem.read::<i32>(at(w, 0x90)) {
+                    let c = controls.wrapping_add(k.cast_unsigned().wrapping_mul(CONTROL));
+                    if mem.read::<u16>(at(c, 0x26)) != 0 {
+                        let text = mem.read(at(c, 0x28));
+                        free(mem, text);
+                    }
+                    k += 1;
+                }
+                let controls = mem.read(at(w, 0x94));
+                free(mem, controls);
+            }
+            if mem.read::<u16>(at(w, 0x5a)) != 0 {
+                let buf = mem.read(at(w, 0x5c));
+                free(mem, buf);
+            }
+            free(mem, w);
+        }
+    }
+
+    /// `Gu_SelectorFitWindow(window, selector)` (`0x0084a000`, own name):
+    /// the selector's visible rows (`+0x10`) from the window height / 9;
+    /// a short list shrinks the window to it (`+0x12`, `+0x1a`, `+0x22`,
+    /// client `+0x86`), a long one scrolls (`+0`) to centre the cursor
+    /// (`+2`) within `+4` items; `+0` then in eighths. The mouse goes to
+    /// the cursor's row. Returns `Sg_SetMouse`'s result.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn gu_selector_fit_window(mem: &mut impl Mem, w: u32, sel: u32) -> i32 {
+        let rows = i32::from(mem.read::<i16>(at(w, 0x12))) / 9;
+        let total: i16 = mem.read(at(sel, 4));
+        let cur: i16 = mem.read(at(sel, 2));
+        mem.write(at(sel, 0x10), rows);
+        let y = if i32::from(total) < rows {
+            mem.write(at(sel, 0x10), i32::from(total));
+            let h = total.cast_unsigned().wrapping_mul(9).wrapping_add(2);
+            for o in [0x12, 0x1a, 0x22] {
+                mem.write(at(w, o), h);
+            }
+            let top: u16 = mem.read(at(w, 0x82));
+            mem.write(at(w, 0x86), h.wrapping_sub(top).wrapping_sub(2));
+            i32::from(cur)
+        } else {
+            let mut top = cur
+                .cast_unsigned()
+                .wrapping_sub((rows / 2).cast_unsigned() as u16)
+                .cast_signed();
+            if top < 0 {
+                top = 0;
+            }
+            if i32::from(top) > i32::from(total) - mem.read::<i32>(at(sel, 0x10)) {
+                top = total
+                    .cast_unsigned()
+                    .wrapping_sub(mem.read::<u16>(at(sel, 0x10)))
+                    .cast_signed();
+            }
+            mem.write(at(sel, 0), top);
+            i32::from(cur) - i32::from(top)
+        };
+        let first: u16 = mem.read(at(sel, 0));
+        mem.write(at(sel, 0), first.wrapping_shl(3));
+        let x =
+            i32::from(mem.read::<i16>(at(w, 0x10))) / 2 + i32::from(mem.read::<i16>(at(w, 0xc)));
+        let my = y
+            .wrapping_mul(9)
+            .wrapping_add(i32::from(mem.read::<i16>(at(w, 0xe))))
+            .wrapping_add(4);
+        ffx_sg::state::bridge::set_mouse(mem, x, my)
+    }
 }
 
 #[cfg(test)]

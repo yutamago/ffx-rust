@@ -3,6 +3,7 @@
 
 #![allow(dead_code)] // each test file uses its own share
 
+pub mod crt;
 pub mod world;
 
 use std::path::PathBuf;

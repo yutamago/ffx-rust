@@ -1366,9 +1366,9 @@ ported! {
     Ch_SetDirF @ 0x0082_b1b0 => extern "C" fn ch_set_dir_f(chr: u32, a: f32) {
         c::ch_set_dir_f(&mut mem(), chr, a);
     }
-    /// `Ch_CheckRadian(a)`.
-    Ch_CheckRadian @ 0x0083_6790 => extern "C" fn ch_check_radian(a: f32) {
-        c::ch_check_radian(&mut mem(), a);
+    /// `Ch_CheckRadian(a)`: the wrapped angle in `ST0`.
+    Ch_CheckRadian @ 0x0083_6790 => extern "C" fn ch_check_radian(a: f32) -> f32 {
+        c::ch_check_radian(&mut mem(), a)
     }
     /// `ch_create_name(id)`.
     ch_create_name @ 0x0083_8100 => extern "C" fn ch_create_name(id: u32) -> u32 {

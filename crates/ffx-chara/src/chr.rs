@@ -799,9 +799,10 @@ pub mod bridge {
 
     /// `Ch_CheckRadian(a)` (`0x00836790`): for an angle of ten turns or more
     /// (or NaN), `sprintf(debug line, "radian value error =%f", a)`; then
-    /// it wraps a copy of the angle like `Chr_WrapAngle` and drops it (for
-    /// ever on infinities, as the original).
-    pub fn ch_check_radian(mem: &mut impl Mem, a: f32) {
+    /// it wraps the angle like `Chr_WrapAngle` (for ever on infinities, as
+    /// the original) and returns it in `ST0`: callers rotate characters by
+    /// it, and dropping it hid every model in the game.
+    pub fn ch_check_radian(mem: &mut impl Mem, a: f32) -> f32 {
         let x = f64::from(x87::load(a));
         let [hi, lo] = RADIAN_LIMITS.map(|g| g.get(mem));
         if x.partial_cmp(&hi) != Some(core::cmp::Ordering::Less) || x <= lo {
@@ -810,7 +811,7 @@ pub mod bridge {
             let at = crate::handle::bridge::DEBUG_LINE.ptr(mem).addr;
             crate::handle::bridge::put_c_string(mem, at, &s);
         }
-        let _ = super::wrap_angle(a);
+        super::wrap_angle(a)
     }
 
     /// `Ch_NeckSetEnable(chr, on)` (`0x00834f60`): the neck switch (byte

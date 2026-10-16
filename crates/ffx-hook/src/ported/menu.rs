@@ -39,8 +39,29 @@ fn user_malloc(size: u32) -> u32 {
     )
 }
 
-/// Calls a game function pointer (a menu callback, cdecl) with one to three
-/// arguments.
+/// `graphicGetAbmap()` (`0x00641060`), the renderer's.
+fn graphic_get_abmap() -> u32 {
+    call_ptr(
+        u32::try_from(crate::rebase(0x0064_1060)).expect("32-bit"),
+        &[],
+    )
+}
+
+/// `graphicDrawUIElement(element, 0, 1, 0, 0)` (`0x0063eee0`), the
+/// renderer's, on an element built from `fields` (the rest zero).
+fn graphic_draw_ui_element(fields: &[(u32, u32)]) -> u32 {
+    let mut element = [0u32; 0x26];
+    for &(o, v) in fields {
+        element[(o / 4) as usize] = v;
+    }
+    let p = u32::try_from(element.as_mut_ptr() as usize).expect("32-bit");
+    call_ptr(
+        u32::try_from(crate::rebase(0x0063_eee0)).expect("32-bit"),
+        &[p, 0, 1, 0, 0],
+    )
+}
+
+/// Calls a game function pointer (a menu callback, cdecl).
 fn call_ptr(f: u32, args: &[u32]) -> u32 {
     super::call_cdecl(f, args)
 }
@@ -2748,5 +2769,185 @@ ported! {
     /// `Gu_FontSetupWindow(window)`.
     Gu_FontSetupWindow @ 0x0084_8310 => extern "C" fn gu_font_setup_window(window: u32) {
         gu::gu_font_setup_window(&mut mem(), window);
+    }
+    /// `TkNormalFVector(v)`.
+    TkNormalFVector @ 0x0088_c5a0 => extern "C" fn tk_normal_f_vector(v: u32) {
+        tk::tk_normal_f_vector(&mut mem(), v);
+    }
+    /// `hardCodeToFixTheWrongData(_, kind)`: see the bridge for `eax`.
+    hardCodeToFixTheWrongData @ 0x008e_02f0 => extern "C" fn hard_code_to_fix_the_wrong_data(_a: u32, kind: i32) -> u32 {
+        tk::hard_code_to_fix_the_wrong_data(&mut mem(), kind)
+    }
+    /// `TkMenuDrawRect(x, y, w, h, c0, c1)`: through the renderer.
+    TkMenuDrawRect @ 0x008d_d340 => extern "C" fn tk_menu_draw_rect(x: i32, y: i32, w: i32, h: i32, c0: u32, c1: u32) -> u32 {
+        tk::tk_menu_draw_rect(&mut mem(), [x, y, w, h], [c0, c1], &mut |_| graphic_get_abmap(), &mut |_, f| graphic_draw_ui_element(f))
+    }
+    /// `TkMenuDrawSp3FaceA(x, y, entry)`: the last rectangle's result.
+    TkMenuDrawSp3FaceA @ 0x008d_d610 => extern "C" fn tk_menu_draw_sp3_face_a(x: u32, y: u32, entry: u32) -> u32 {
+        tk::tk_menu_draw_sp3_face(&mut mem(), [x, y, entry, 0x80], &mut |_| graphic_get_abmap(), &mut |_, f| graphic_draw_ui_element(f))
+    }
+    /// `TkMenuDrawSp3FaceAA(x, y, entry, alpha)`: the last rectangle's result.
+    TkMenuDrawSp3FaceAA @ 0x008d_d6a0 => extern "C" fn tk_menu_draw_sp3_face_aa(x: u32, y: u32, entry: u32, alpha: u32) -> u32 {
+        tk::tk_menu_draw_sp3_face(&mut mem(), [x, y, entry, alpha], &mut |_| graphic_get_abmap(), &mut |_, f| graphic_draw_ui_element(f))
+    }
+    /// `TkMenuGetCommandName(id)`.
+    TkMenuGetCommandName @ 0x008d_de50 => extern "C" fn tk_menu_get_command_name(id: u32) -> u32 {
+        tk::tk_menu_get_command_name(&mem(), id)
+    }
+    /// `Math_StoreMax(dst, src, v)`.
+    Math_StoreMax @ 0x0088_9b00 => extern "C" fn math_store_max(dst: u32, src: u32, v: f32) {
+        tk::math_store_max(&mut mem(), dst, src, v);
+    }
+    /// `Math_StoreMin(dst, src, _, _, _, v)`.
+    Math_StoreMin @ 0x0088_9b40 => extern "C" fn math_store_min(dst: u32, src: u32, _a: u32, _b: u32, _c: u32, v: f32) {
+        tk::math_store_min(&mut mem(), dst, src, v);
+    }
+    /// `TkDeci2Send(a, n)`: 1, or -1 when busy.
+    TkDeci2Send @ 0x0088_5470 => extern "C" fn tk_deci2_send(a: u32, n: i32) -> i32 {
+        tk::tk_deci2_send(&mut mem(), a, n)
+    }
+    /// `TkCh_SetPos(chr, x, y, z)`.
+    TkCh_SetPos @ 0x0087_2310 => extern "C" fn tk_ch_set_pos(chr: u32, x: f32, y: f32, z: f32) {
+        tk::tk_ch_set_pos(&mut mem(), chr, [x, y, z]);
+    }
+    /// `CIsqrt(x)`: in `st0`.
+    CIsqrt @ 0x0088_c400 => extern "C" fn ci_sqrt(x: f32) -> f32 {
+        ffx_menu::math::ci_sqrt(x)
+    }
+    /// `Math_WrapAngleFloor(a)`: in `st0`.
+    Math_WrapAngleFloor @ 0x0088_c630 => extern "C" fn math_wrap_angle_floor(a: f32) -> f32 {
+        ffx_menu::math::wrap_angle_floor(a)
+    }
+    /// `Gu_SelectorAllocate()`: through the game's `user_malloc`.
+    Gu_SelectorAllocate @ 0x0084_9bb0 => extern "C" fn gu_selector_allocate() -> u32 {
+        gu::gu_selector_allocate(&mut mem(), &mut |_, n| user_malloc(n))
+    }
+    /// `Gu_ControlInit(control)`: 0.
+    Gu_ControlInit @ 0x0084_95e0 => extern "C" fn gu_control_init(control: u32) -> u32 {
+        gu::gu_control_init(&mut mem(), control)
+    }
+    /// `Yi_StrLower(s)`.
+    Yi_StrLower @ 0x0091_6290 => extern "C" fn yi_str_lower(s: u32) {
+        gu::yi_str_case(&mut mem(), s, false);
+    }
+    /// `Yi_StrUpper(s)`.
+    Yi_StrUpper @ 0x0091_62c0 => extern "C" fn yi_str_upper(s: u32) {
+        gu::yi_str_case(&mut mem(), s, true);
+    }
+    /// `Math_AngleTo12Bits(a)`.
+    Math_AngleTo12Bits @ 0x0088_bfe0 => extern "C" fn math_angle_to12_bits(a: f32) -> u32 {
+        tk::math_angle_to_bits(&mem(), a, 0x00b5_15c8, 0xfff)
+    }
+    /// `Math_AngleTo15Bits(a)`.
+    Math_AngleTo15Bits @ 0x0088_c040 => extern "C" fn math_angle_to15_bits(a: f32) -> u32 {
+        tk::math_angle_to_bits(&mem(), a, 0x00b5_1588, 0x7fff)
+    }
+    /// `Math_AngleToDegrees(a)`: in `st0`.
+    Math_AngleToDegrees @ 0x0088_c5c0 => extern "C" fn math_angle_to_degrees(a: f32) -> f32 {
+        tk::math_angle_to_degrees(a)
+    }
+    /// `Math_AngleStepTo(a, target, step)`: in `st0`.
+    Math_AngleStepTo @ 0x0088_b6b0 => extern "C" fn math_angle_step_to(a: f32, target: f32, step: f32) -> f32 {
+        tk::math_angle_step_to(a, target, step)
+    }
+    /// `Vibrate_SetStreams(rec, a, b)`: the second data pointer.
+    Vibrate_SetStreams @ 0x0087_6180 => extern "C" fn vibrate_set_streams(rec: u32, a: u32, b: u32) -> u32 {
+        tk::vibrate_set_streams(&mut mem(), rec, a, b)
+    }
+    /// `Vibrate_StartLevel(k, e, from, to, len)`: the length.
+    Vibrate_StartLevel @ 0x0087_6050 => extern "C" fn vibrate_start_level(k: i32, e: i32, from: i32, to: i32, len: i32) -> i32 {
+        tk::vibrate_start_level(&mut mem(), k, e, from, to, len)
+    }
+    /// `Vibrate_CurveData(k, n, table)`.
+    Vibrate_CurveData @ 0x0087_5d70 => extern "C" fn vibrate_curve_data(k: u32, n: i32, table: u32) -> u32 {
+        tk::vibrate_curve_data(&mem(), k, n, table)
+    }
+    /// `yiClutAlloc_init(mode)`: 0.
+    yiClutAlloc_init @ 0x0091_6e60 => extern "C" fn yi_clut_alloc_init(mode: i32) -> u32 {
+        tk::yi_clut_alloc_init(&mut mem(), mode)
+    }
+    /// `yiClutAlloc_get256idx()`.
+    yiClutAlloc_get256idx @ 0x0091_6e50 => extern "C" fn yi_clut_alloc_get256idx() -> u32 {
+        tk::yi_clut_alloc_get256idx(&mem())
+    }
+    /// `yiClutAlloc_copy256(clut, src, k)`: 0.
+    yiClutAlloc_copy256 @ 0x0091_6d40 => extern "C" fn yi_clut_alloc_copy256(clut: u32, src: u32, k: i32) -> u32 {
+        tk::yi_clut_alloc_copy256(&mut mem(), clut, src, k)
+    }
+    /// `yiClutAlloc_copy16(clut, src, k, i)`: 0.
+    yiClutAlloc_copy16 @ 0x0091_6c80 => extern "C" fn yi_clut_alloc_copy16(clut: u32, src: u32, k: i32, i: i32) -> u32 {
+        tk::yi_clut_alloc_copy16(&mut mem(), clut, src, k, i)
+    }
+    /// `Gu_ControlSetText(control, s)`: through the game's heap entries.
+    Gu_ControlSetText @ 0x0084_9610 => extern "C" fn gu_control_set_text(control: u32, s: u32) {
+        gu::gu_control_set_text(&mut mem(), control, s, &mut |_, p| user_free(p), &mut |_, n| user_malloc(n));
+    }
+    /// `Gu_WindowControlSetText(window, id, s)`.
+    Gu_WindowControlSetText @ 0x0084_a710 => extern "C" fn gu_window_control_set_text(window: u32, id: u32, s: u32) {
+        gu::gu_window_control_set_text(&mut mem(), window, id, s, &mut |_, p| user_free(p), &mut |_, n| user_malloc(n));
+    }
+    /// `TkMn2GetStatusPos()`.
+    TkMn2GetStatusPos @ 0x008d_4920 => extern "C" fn tk_mn2_get_status_pos() {
+        tk::tk_mn2_get_status_pos(&mut mem());
+    }
+    /// `Gu_WindowSetTitle(window, s)`: the title control (`+0x34`).
+    Gu_WindowSetTitle @ 0x0084_b6a0 => extern "C" fn gu_window_set_title(window: u32, s: u32) {
+        gu::gu_control_set_text(&mut mem(), window.wrapping_add(0x34), s, &mut |_, p| user_free(p), &mut |_, n| user_malloc(n));
+    }
+    /// `Vibrate_SetStreamsMode(rec, mode, a, b)`.
+    Vibrate_SetStreamsMode @ 0x0087_6130 => extern "C" fn vibrate_set_streams_mode(rec: u32, mode: i32, a: u32, b: u32) -> u32 {
+        tk::vibrate_set_streams_mode(&mut mem(), rec, mode, a, b)
+    }
+    /// `TkSetVibrateStream(k, curve, table)`.
+    TkSetVibrateStream @ 0x0087_5fb0 => extern "C" fn tk_set_vibrate_stream(k: i32, curve: u32, table: u32) -> u32 {
+        tk::tk_set_vibrate_stream(&mut mem(), k, curve, table)
+    }
+    /// `TkGetSavedLang()`.
+    TkGetSavedLang @ 0x0088_c850 => extern "C" fn tk_get_saved_lang() -> u32 {
+        tk::get_byte(&mem(), 0x0133_0874)
+    }
+    /// `Ch_RequestCalcNormal()`.
+    Ch_RequestCalcNormal @ 0x0083_2540 => extern "C" fn ch_request_calc_normal() {
+        tk::ch_request_calc_normal(&mut mem());
+    }
+    /// `TkGetControlerBindAnalogIndex(pad, port, code)`.
+    TkGetControlerBindAnalogIndex @ 0x0088_8cf0 => extern "C" fn tk_get_controler_bind_analog_index(pad: i32, port: i32, code: i32) -> i32 {
+        tk::tk_get_controler_bind_analog_index(&mem(), pad, port, code)
+    }
+    /// `Atel_FindWorkerByOwner(owner)`: `u16 +0x2e`, or -1.
+    Atel_FindWorkerByOwner @ 0x0087_6440 => extern "C" fn atel_find_worker_by_owner(owner: u32) -> i32 {
+        tk::atel_find_worker_by_owner(&mut mem(), owner)
+    }
+    /// `TkInitSceneFromSave()`.
+    TkInitSceneFromSave @ 0x0088_dd60 => extern "C" fn tk_init_scene_from_save() {
+        tk::tk_init_scene_from_save(&mut mem());
+    }
+    /// `TkMenuDrawMenuWindowScissor(window, mode, t)`.
+    TkMenuDrawMenuWindowScissor @ 0x008d_d220 => extern "C" fn tk_menu_draw_menu_window_scissor(window: u32, mode: i32, t: i32) -> u32 {
+        tk::tk_menu_draw_menu_window_scissor(&mut mem(), window, mode, t)
+    }
+    /// `Vibrate_StepLevel(rec, entry, len)`: the level.
+    Vibrate_StepLevel @ 0x0087_5c90 => extern "C" fn vibrate_step_level(rec: u32, entry: u32, len: i32) -> u32 {
+        tk::vibrate_step_level(&mut mem(), rec, entry, len)
+    }
+    /// `Gu_WindowFreeClosed()`: through the game's `user_free`.
+    Gu_WindowFreeClosed @ 0x0084_abd0 => extern "C" fn gu_window_free_closed() {
+        gu::gu_window_free_closed(&mut mem(), &mut |_, p| user_free(p));
+    }
+    /// `Gu_SelectorFitWindow(window, selector)`.
+    Gu_SelectorFitWindow @ 0x0084_a000 => extern "C" fn gu_selector_fit_window(window: u32, selector: u32) -> i32 {
+        gu::gu_selector_fit_window(&mut mem(), window, selector)
+    }
+    /// `TkEucToSjisString(src, dst, n)`.
+    TkEucToSjisString @ 0x0088_ed10 => extern "C" fn tk_euc_to_sjis_string(src: u32, dst: u32, n: i32) -> u32 {
+        tk::tk_euc_to_sjis_string(&mut mem(), src, dst, n)
+    }
+    /// `TkMenuDrawMenuWindowScissorWithLabel(window, mode, t)`.
+    TkMenuDrawMenuWindowScissorWithLabel @ 0x008d_d2d0 => extern "C" fn tk_menu_draw_menu_window_scissor_with_label(window: u32, mode: i32, t: i32) -> u32 {
+        tk::tk_menu_draw_menu_window_scissor_with_label(&mut mem(), window, mode, t)
+    }
+    /// `Vibrate_EntryLevel(rec, e)`.
+    Vibrate_EntryLevel @ 0x0087_5c20 => extern "C" fn vibrate_entry_level(rec: u32, e: u32) -> u32 {
+        tk::vibrate_entry_level(&mut mem(), rec, e)
     }
 }

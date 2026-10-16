@@ -64,6 +64,8 @@ pub const TARGETS: [(u32, [u32; 2]); 5] = [
 pub const EVENT_MAP_NO: u32 = 0x0086_c1f0;
 /// `MsBattleGetNum()` (`0x007816b0`).
 pub const MS_BATTLE_GET_NUM: u32 = 0x0078_16b0;
+/// `MsDebugDrawBoard()` (`0x0092cf00`).
+pub const MS_DEBUG_DRAW_BOARD: u32 = 0x0092_cf00;
 /// `MsGetSaveWalkMap` (`0x00785400`): the saved walk maps.
 pub const SAVE_WALK_MAP: u32 = 0x0078_5400;
 /// 350.0 (`f32`, `.rdata`): a new guide's view limit (`rcbgGuideInit`).
@@ -1705,6 +1707,88 @@ pub mod bridge {
             }
         }
         0
+    }
+
+    /// `Yn_FpTrxTexGet(n)` (`0x00919ba0`): the `n`th field-program texture
+    /// (kind `0x20006`, [`yn_scene_find_object`]).
+    pub fn yn_fp_trx_tex_get(mem: &impl Mem, n: u32) -> u32 {
+        yn_scene_find_object(mem, 0x0002_0006, n)
+    }
+
+    /// `Yn_FpTrxTexSetAddr(tex, image, clut)` (`0x00919be0`):
+    /// `rcbgTrxTexSetAddr`.
+    pub fn yn_fp_trx_tex_set_addr(mem: &mut impl Mem, t: u32, image: u32, clut: u32) {
+        crate::model::bridge::rcbg_trx_tex_set_addr(mem, t, image, clut);
+    }
+
+    /// `Yn_PreBgSetScrBank(roll)` (`0x0091ad10`): with a current scene,
+    /// its roll (`+0xac`) set and `rcbgSceneSetMatrix` run (a tail call).
+    pub fn yn_pre_bg_set_scr_bank<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        roll: u32,
+        call: &mut C,
+    ) {
+        if let Some(c) = yn_scene(mem) {
+            mem.write(c + 0xac, x87::copy(roll));
+            let f = mem.rebase(scene::SCENE_SET_MATRIX);
+            call(mem, f, &[c]);
+        }
+    }
+
+    /// `Yn_PreBgSetScrOffset(x, y)` (`0x0091ad40`): with a current scene,
+    /// its screen offsets (`+0xb8`, `+0xbc`) set and `rcbgSceneSetMatrix`
+    /// run.
+    pub fn yn_pre_bg_set_scr_offset<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        x: u32,
+        y: u32,
+        call: &mut C,
+    ) {
+        if let Some(c) = yn_scene(mem) {
+            mem.write(c + 0xb8, x87::copy(x));
+            mem.write(c + 0xbc, x87::copy(y));
+            let f = mem.rebase(scene::SCENE_SET_MATRIX);
+            call(mem, f, &[c]);
+        }
+    }
+
+    /// `rcbgPreAddFpObjects()` (`0x00922010`): a map (the dummy one when
+    /// there is none, `rcbgPreDummyInit`), the debug board drawn once in a
+    /// debug build (`FFXIsDebug`, `sceGsSetDefDrawEnv2`, `MsDebugDrawBoard`
+    /// while the system's `+0x8` is 0), the field program objects of the
+    /// map ([`rcbg_pre_add_fp`] of [`rcbg_pre_get_map_no`]), `+0x8` = 1.
+    pub fn rcbg_pre_add_fp_objects<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) {
+        if the_map(mem) == 0 {
+            rcbg_pre_dummy_init(mem, call);
+        }
+        if ffx_system::config::bridge::is_debug(mem) != 0
+            && ffx_system::config::bridge::gs_set_def_draw_env2(mem) != 0
+        {
+            let s = YN_MAP_SYSTEM.get(mem);
+            if mem.read::<u32>(s + 8) == 0 {
+                let f = mem.rebase(super::MS_DEBUG_DRAW_BOARD);
+                call(mem, f, &[]);
+            }
+        }
+        let no = rcbg_pre_get_map_no(mem, call);
+        rcbg_pre_add_fp(mem, no.cast_signed(), call);
+        let s = YN_MAP_SYSTEM.get(mem);
+        mem.write(s + 8, 1u32);
+    }
+
+    /// `rcbgDelObjects(kind)` (`0x009219e0`): with a current scene,
+    /// `rcbgSceneDelObjects(scene, kind)`.
+    pub fn rcbg_del_objects<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        kind: u32,
+        call: &mut C,
+    ) {
+        if let Some(c) = yn_scene(mem) {
+            scene::bridge::rcbg_scene_del_objects(mem, c, kind, call);
+        }
     }
 }
 

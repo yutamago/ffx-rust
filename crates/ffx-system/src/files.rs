@@ -8,7 +8,7 @@
 
 /// The originals over game memory (`ffx_bridge::Mem`).
 pub mod bridge {
-    use ffx_bridge::Mem;
+    use ffx_bridge::{Global, Mem};
 
     use crate::cd::bridge::get_cd;
 
@@ -311,7 +311,14 @@ pub mod bridge {
             }
         };
         if text.len() >= size as usize {
+            // MSVCR110's `sprintf_s` on a short buffer: it writes `size - 1`
+            // bytes and a NUL, then clears the first byte and calls the
+            // invalid-parameter handler (which ends the game; the oracle's
+            // returns -1).
             if size > 0 {
+                let n = size as usize - 1;
+                mem.write_bytes(out, &text[..n]);
+                mem.write(out.wrapping_add(size - 1), 0u8);
                 mem.write(out, 0u8);
             }
             return u32::MAX;
@@ -355,5 +362,60 @@ pub mod bridge {
             return u32::MAX;
         }
         mem.read(at)
+    }
+
+    /// `0x008aba60(file, name)`: through `g_CdLib`'s table, `+0x10(file)`
+    /// (open) and `+0x14(name)` (the size); for a non-zero size a block of
+    /// it from `malloc` (`user_malloc`), read into with
+    /// [`dvd_file_read`]`(file, name, block)`. The block, or 0.
+    pub fn dvd_file_load<M: Mem>(
+        mem: &mut M,
+        file: u32,
+        name: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        malloc: impl FnOnce(&mut M, u32) -> u32,
+    ) -> u32 {
+        let table = get_cd(mem);
+        let open: u32 = mem.read(table.wrapping_add(0x10));
+        call(mem, open, &[file]);
+        let size_of: u32 = mem.read(table.wrapping_add(0x14));
+        let size = call(mem, size_of, &[name]);
+        if size == 0 {
+            return 0;
+        }
+        let block = malloc(mem, size);
+        if block == 0 {
+            return 0;
+        }
+        dvd_file_read(mem, file, name, block, call);
+        block
+    }
+
+    /// The CD table `0x008abab0` keeps (`0x01865f04`).
+    pub const CD_TABLE_008ABAB0: Global<u32> = Global::new(0x0186_5f04);
+
+    /// `0x008abab0(file, name, buf)`: `g_CdLib`'s table kept in
+    /// [`CD_TABLE_008ABAB0`]; `+0x10(file)`, `+0x14(name)` (the size), and
+    /// for a non-zero size `+0(name, buf, 0, 0)` (read), what that returns
+    /// (0 for no size).
+    pub fn dvd_file_start_read<M: Mem>(
+        mem: &mut M,
+        file: u32,
+        name: u32,
+        buf: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table = get_cd(mem);
+        CD_TABLE_008ABAB0.set(mem, table);
+        let open: u32 = mem.read(table.wrapping_add(0x10));
+        call(mem, open, &[file]);
+        let table = CD_TABLE_008ABAB0.get(mem);
+        let size_of: u32 = mem.read(table.wrapping_add(0x14));
+        if call(mem, size_of, &[name]) == 0 {
+            return 0;
+        }
+        let table = CD_TABLE_008ABAB0.get(mem);
+        let read: u32 = mem.read(table);
+        call(mem, read, &[name, buf, 0, 0])
     }
 }

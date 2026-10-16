@@ -493,7 +493,8 @@ fn cam_601d<H: NativeHost>(h: &mut H, w: u32, s: u32, k: u32) -> u32 {
     let t = radians(h, s);
     let i = pop(h, s);
     let p = atel_get_real_var_adrs(h, w, i);
-    call(h, 0x007b_f600, &[c, 1, k, p, t, y, x]);
+    let f = h.rebase(0x007b_f600);
+    h.call_n(f, &[c, 1, k, p, t, y, x]);
     c
 }
 

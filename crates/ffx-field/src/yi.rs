@@ -81,6 +81,41 @@ pub const RAM_INUSE_TEXT: u32 = 0x00b6_6f0c;
 pub const MAP_PATH_PARTS: u32 = 0x0091_61d0;
 /// MSVCR110's `sprintf` import slot (`0x00b0c3dc`).
 pub const CRT_SPRINTF: u32 = 0x00b0_c3dc;
+/// `yiMapReadMaster` (`0x009093b0`).
+pub const YI_MAP_READ_MASTER: u32 = 0x0090_93b0;
+/// `FFXVu0MulMatrix(out, a, b)` (`0x006ed5c0`).
+pub const VU0_MUL_MATRIX: u32 = 0x006e_d5c0;
+/// The three battle view matrices (`0x018ded78`, `0x018dedb8`, `0x018dedf8`).
+pub const BATTLE_VIEWS: [u32; 3] = [0x018d_ed78, 0x018d_edb8, 0x018d_edf8];
+/// `MsCameraGetScrDpt()` (`0x007bd510`): the screen depth in `ST0`.
+pub const MS_CAMERA_GET_SCR_DPT: u32 = 0x007b_d510;
+/// Where the screen depth is kept (`0x018df160`).
+pub const SCREEN_DEPTH: u32 = 0x018d_f160;
+/// `Sg_LightGetDir(i, out)` (`0x008361c0`).
+pub const SG_LIGHT_GET_DIR: u32 = 0x0083_61c0;
+/// `Sg_LightGetColor(i, out)` (`0x008360f0`).
+pub const SG_LIGHT_GET_COLOR: u32 = 0x0083_60f0;
+/// `FFXVu0NormalLightMatrix(out, a, b, c)` (`0x006ed620`).
+pub const VU0_NORMAL_LIGHT_MATRIX: u32 = 0x006e_d620;
+/// `FFXVu0LightColorMatrix(out, a, b, c, ambient)` (`0x006ed4f0`).
+pub const VU0_LIGHT_COLOR_MATRIX: u32 = 0x006e_d4f0;
+/// The renderer's normal light matrix (`0x018deeb8`).
+pub const NORMAL_LIGHT: u32 = 0x018d_eeb8;
+/// The renderer's light colour matrix (`0x018deef8`).
+pub const LIGHT_COLOR: u32 = 0x018d_eef8;
+/// The cached 0x14-format image page (`0x025d17a4`, -1 when none).
+pub const IMAGE_PAGE_CACHE: Global<u32> = Global::new(0x025d_17a4);
+/// The map name table (`0x025d5888`): 16-byte entries, the name, the map
+/// number at `+0xc`.
+pub const MAP_NAMES: Global<u32> = Global::new(0x025d_5888);
+/// Its entry count (`0x01934ec8`).
+pub const MAP_NAME_COUNT: Global<u32> = Global::new(0x0193_4ec8);
+/// The name without a current map (`0x00b424c8`).
+pub const MAP_NAME_NONE: u32 = 0x00b4_24c8;
+/// The name of a map not in the table (`0x00b66fd4`).
+pub const MAP_NAME_UNKNOWN: u32 = 0x00b6_6fd4;
+/// "%s" (`0x00b0e160`).
+pub const FORMAT_S: u32 = 0x00b0_e160;
 /// "host0:%s%s.vpa" (`0x00b66efc`).
 pub const HOST_VPA_FORMAT: u32 = 0x00b6_6efc;
 /// `sceOpen(path, mode)` (`0x0062fa30`).
@@ -157,6 +192,9 @@ pub const RENDER_PACKET: [u32; 32] = [
 /// The `.rdata` floats of the fog block (`yiRender_initfog`): 0.03,
 /// 0.02, 0.005 and 64.0.
 pub const FOG_DEFAULTS: [u32; 4] = [0x00b6_7120, 0x00b4_82d8, 0x00b3_eb3c, 0x00b5_83dc];
+/// The largest finite float and its negation (`f32`s, `.rdata`):
+/// `yiBoundsMinMax`'s starting minimum and maximum.
+pub const BOUNDS_INIT: [u32; 2] = [0x00b1_7504, 0x00b1_f2d0];
 /// `FFXVu0RotMatrixX/Y/Z(dst, src, angle)` (`0x006ed780`, `0x006ed7c0`,
 /// `0x006ed800`).
 pub const VU0_ROT_MATRIX: [u32; 3] = [0x006e_d780, 0x006e_d7c0, 0x006e_d800];
@@ -3513,5 +3551,314 @@ pub mod bridge {
             call(mem, f, &[m, m, a]);
         }
         0
+    }
+
+    /// `yiFieldMapRead(map, alarm)` (`0x009085d0`): `yiMapReadMaster(0x13,
+    /// 2 map, 0x13, 2 map + 1, alarm)` (through `call`), status bit 0x2000.
+    pub fn yi_field_map_read<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        map: u32,
+        alarm: u32,
+        call: &mut C,
+    ) {
+        map_read(mem, 0x13, map, alarm, 0x2000, call);
+    }
+
+    /// `yiBattleMapRead(map, alarm)` (`0x00908370`): the same with CD
+    /// directory 0x1a, status bit 0x1000.
+    pub fn yi_battle_map_read<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        map: u32,
+        alarm: u32,
+        call: &mut C,
+    ) {
+        map_read(mem, 0x1a, map, alarm, 0x1000, call);
+    }
+
+    fn map_read<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        dir: u32,
+        map: u32,
+        alarm: u32,
+        bit: u32,
+        call: &mut C,
+    ) {
+        let n = map.wrapping_mul(2);
+        let f = mem.rebase(super::YI_MAP_READ_MASTER);
+        call(mem, f, &[dir, n, dir, n.wrapping_add(1), alarm]);
+        let st = RENDER_STATUS.get(mem);
+        RENDER_STATUS.set(mem, st | bit);
+    }
+
+    /// `yiGetMapName(out)` (`0x00907e70`): the current map's name
+    /// (`sprintf(out, "%s", …)`: the entry of the name table `0x025d5888`,
+    /// `0x01934ec8` entries of 16 bytes with the map at `+0xc`, whose map
+    /// is `g_CurrentMapNo`; a default string without one, another without
+    /// a map).
+    pub fn yi_get_map_name<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        out: u32,
+        call: &mut C,
+    ) -> u32 {
+        let cur = super::CURRENT_MAP.get(mem);
+        let name = if cur == 0 {
+            mem.rebase(super::MAP_NAME_NONE)
+        } else {
+            let n = super::MAP_NAME_COUNT.get(mem).cast_signed();
+            let table = super::MAP_NAMES.get(mem);
+            (0..n.max(0).cast_unsigned())
+                .find(|&i| mem.read::<u32>(table.wrapping_add(16 * i + 0xc)) == cur)
+                .map_or_else(
+                    || mem.rebase(super::MAP_NAME_UNKNOWN),
+                    |i| table.wrapping_add(16 * i),
+                )
+        };
+        let sprintf = mem.read::<u32>(mem.rebase(super::CRT_SPRINTF));
+        let fmt = mem.rebase(super::FORMAT_S);
+        call(mem, sprintf, &[out, fmt, name])
+    }
+
+    /// The battle view set-up of `yiSetBattleView`/`yiSetViewMatrices`:
+    /// `view * g_YiViewAdjust` (`FFXVu0MulMatrix` into `work`, 0x40 bytes)
+    /// copied to the three view matrices (`0x018ded78`, `0x018dedb8`,
+    /// `0x018dedf8`), their translation words `0x018dede8..f0` zero, and the
+    /// screen depth (`MsCameraGetScrDpt`, `ST0`) to `0x018df160`.
+    fn battle_view<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        view: u32,
+        work: u32,
+        call: &mut C,
+        fcall: &mut impl FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    ) {
+        let adjust = VIEW_ADJUST.ptr(mem).addr;
+        let f = mem.rebase(super::VU0_MUL_MATRIX);
+        call(mem, f, &[work, view, adjust]);
+        for m in super::BATTLE_VIEWS {
+            let at = mem.rebase(m);
+            ffx_ps2::vu0::bridge::matrix_copy(mem, at, work);
+        }
+        for o in [0x018d_edec, 0x018d_edf0, 0x018d_ede8] {
+            let at = mem.rebase(o);
+            mem.write(at, 0u32);
+        }
+        let f = mem.rebase(super::MS_CAMERA_GET_SCR_DPT);
+        let d = fcall(mem, f, crate::camera::FArgs::Stack(&[]));
+        let at = mem.rebase(super::SCREEN_DEPTH);
+        mem.write(at, ffx_bridge::x87::Reg::constant(d).store());
+    }
+
+    /// `yiSetBattleView(view)` (`0x0090a140`): unless status bit 0x800 is
+    /// set or `view` is null, the battle view set-up ([`battle_view`]).
+    pub fn yi_set_battle_view<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        view: u32,
+        work: u32,
+        call: &mut C,
+        fcall: &mut impl FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    ) {
+        if RENDER_STATUS.get(mem) & 0x800 == 0 && view != 0 {
+            battle_view(mem, view, work, call, fcall);
+        }
+    }
+
+    /// `yiSetViewMatrices(m, view)` (`0x0090a640`): with `m`, the view
+    /// matrix (`0x018ded38`) and the two floats after it from `m + 0x20`;
+    /// with `view`, the battle view set-up ([`battle_view`]).
+    pub fn yi_set_view_matrices<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        m: u32,
+        view: u32,
+        work: u32,
+        call: &mut C,
+        fcall: &mut impl FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    ) {
+        if m != 0 {
+            let at = super::state::VIEW_MATRIX.ptr(mem).addr;
+            ffx_ps2::vu0::bridge::matrix_copy(mem, at, m);
+            let a = x87::copy(mem.read::<u32>(m + 0x20));
+            let b = x87::copy(mem.read::<u32>(m + 0x24));
+            super::state::VIEW_EXTRA.set(mem, [a, b]);
+        }
+        if view != 0 {
+            battle_view(mem, view, work, call, fcall);
+        }
+    }
+
+    /// `yiSetLightMatrices()` (`0x00908d00`): the three light directions
+    /// (`Sg_LightGetDir(i, …)`, normalised) and four colours
+    /// (`Sg_LightGetColor`) into the normal light matrix (`0x018deeb8`,
+    /// `FFXVu0NormalLightMatrix`) and the light colour matrix
+    /// (`0x018deef8`, `FFXVu0LightColorMatrix`). `work` holds the seven
+    /// vectors (0x70 bytes). Returns 0.
+    pub fn yi_set_light_matrices<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        // the original's frame from ebp - 0x74: colours 0, 1, 2, 3 at
+        // 0x00, 0x20, 0x10, 0x30; directions 0, 2, 1 at 0x40, 0x50, 0x60
+        let (c0, c2, c1, c3) = (work, work + 0x10, work + 0x20, work + 0x30);
+        let (d0, d2, d1) = (work + 0x40, work + 0x50, work + 0x60);
+        let f = mem.rebase(super::SG_LIGHT_GET_DIR);
+        for (i, d) in [(0u32, d0), (1, d1), (2, d2)] {
+            call(mem, f, &[i, d]);
+        }
+        for d in [d0, d1, d2] {
+            ffx_ps2::vu0::bridge::normalize(mem, d, d);
+        }
+        let f = mem.rebase(super::SG_LIGHT_GET_COLOR);
+        for (i, c) in [(0u32, c0), (1, c1), (2, c2), (3, c3)] {
+            call(mem, f, &[i, c]);
+        }
+        let f = mem.rebase(super::VU0_NORMAL_LIGHT_MATRIX);
+        let m = mem.rebase(super::NORMAL_LIGHT);
+        call(mem, f, &[m, d0, d1, d2]);
+        let f = mem.rebase(super::VU0_LIGHT_COLOR_MATRIX);
+        let m = mem.rebase(super::LIGHT_COLOR);
+        call(mem, f, &[m, c0, c1, c2, c3]);
+        0
+    }
+
+    /// `yiImageVramAlloc(img)` (`0x00917d80`): GS memory for an image by its
+    /// format (`+0xc`): 0 and 1 0x10000 bytes, 2 0x8000, 0x13 0x4000 (below
+    /// page 0x2e00 it becomes 0x1b), 0x14 the cached page `0x025d17a4` when
+    /// set (format 0x24, the cache cleared) else 0x2000 (below 0x2e00 format
+    /// 0x2c and cached); the address to `+0x4` (`yiVramAllocPsm`). Other
+    /// formats nothing. Returns 0.
+    pub fn yi_image_vram_alloc(mem: &mut impl Mem, img: u32) -> u32 {
+        let (bytes, psm) = match mem.read::<u32>(img + 0xc) {
+            0 | 1 => (0x10000, 0),
+            2 => (0x8000, 2),
+            0x13 => (0x4000, 0x13),
+            0x14 => {
+                let c = super::IMAGE_PAGE_CACHE.get(mem);
+                if c != u32::MAX {
+                    mem.write(img + 4, c);
+                    mem.write(img + 0xc, 0x24u32);
+                    super::IMAGE_PAGE_CACHE.set(mem, u32::MAX);
+                    return 0;
+                }
+                (0x2000, 0x14)
+            }
+            _ => return 0,
+        };
+        let a = yi_vram_alloc_psm(mem, bytes, psm);
+        mem.write(img + 4, a);
+        if a < 0x2e00 {
+            match psm {
+                0x13 => mem.write(img + 0xc, 0x1bu32),
+                0x14 => {
+                    mem.write(img + 0xc, 0x2cu32);
+                    super::IMAGE_PAGE_CACHE.set(mem, a);
+                }
+                _ => {}
+            }
+        }
+        0
+    }
+
+    // ---- round 12 ----
+
+    /// `yiImage_dumpall(rman)` (`0x00918680`): prints every page's images
+    /// through `dbgPrintf`, a bare `ret` on PC; returns 0.
+    #[must_use]
+    pub fn yi_image_dumpall(_rman: u32) -> u32 {
+        0
+    }
+
+    /// `yiRender_addDirectBlock(render, src, n)` (`0x0090c120`): aligns
+    /// the data pointer (`+0xba3e0`) to 64 bytes (in 16-byte steps), adds
+    /// a DMA ref tag (`0x30000000 | (n + 1)`, the block) at `+0xba3f0`
+    /// (counted at `+0xba3f8`), then the block: VIF FLUSH, STMOD 0,
+    /// STCYCL 1,1, DIRECTHL `n`, and `n` quadwords from `src`. Returns
+    /// `src + 16n`.
+    pub fn yi_render_add_direct_block(mem: &mut impl Mem, r: u32, src: u32, n: u32) -> u32 {
+        let data = r.wrapping_add(0xba3e0);
+        let tags = mem.read::<u32>(r.wrapping_add(0xba3f0));
+        let d = mem.read::<u32>(data);
+        if d & 0x3f != 0 {
+            mem.write(data, ((0x40 - (d & 0x3f)) & 0xffff_fff0).wrapping_add(d));
+        }
+        let block = mem.read::<u32>(data);
+        mem.write(data, n.wrapping_add(1).wrapping_shl(4).wrapping_add(block));
+        mem.write(tags, (n.wrapping_add(1) & 0xffff) | 0x3000_0000);
+        mem.write(tags.wrapping_add(4), block);
+        mem.write(tags.wrapping_add(8), 0u32);
+        mem.write(tags.wrapping_add(0xc), 0u32);
+        let at = r.wrapping_add(0xba3f0);
+        let v = mem.read::<u32>(at).wrapping_add(0x10);
+        mem.write(at, v);
+        let at = r.wrapping_add(0xba3f8);
+        let v = mem.read::<u32>(at).wrapping_add(1);
+        mem.write(at, v);
+        mem.write(block.wrapping_add(0xc), n | 0x5100_0000);
+        mem.write(block, 0x1100_0000u32);
+        mem.write(block.wrapping_add(4), 0x0500_0000u32);
+        mem.write(block.wrapping_add(8), 0x0100_0404u32);
+        let (mut s, mut d) = (src, block.wrapping_add(0x10));
+        for _ in 0..n {
+            let q = mem.read::<[u32; 4]>(s);
+            mem.write(d, q);
+            s = s.wrapping_add(0x10);
+            d = d.wrapping_add(0x10);
+        }
+        s
+    }
+
+    /// `yiTriContainsXZ(tri, p)` (`0x00910270`): 1 when `p`'s x, z lie
+    /// inside the triangle of the three vectors at `tri` (projected on
+    /// x, z), by two edge cross products (`f32`) against the full one
+    /// (their sum at 53 bits), for either winding; else 0.
+    pub fn yi_tri_contains_xz(mem: &impl Mem, tri: u32, p: u32) -> u32 {
+        let f = |o: u32| x87::load(mem.read(tri.wrapping_add(o)));
+        let a = f(0x28) - f(0x8);
+        let b = f(0x10) - f(0);
+        let c = f(0x18) - f(0x8);
+        let d = f(0x20) - f(0);
+        let full = x87::load(x87::store(b * a - d * c));
+        let e = x87::load(mem.read(p)) - f(0);
+        let g = x87::load(mem.read(p.wrapping_add(8))) - f(0x8);
+        let s1 = x87::load(x87::store(a * e - d * g));
+        let s3 = x87::load(x87::store(-c * e + b * g));
+        if 0.0 < s1 && 0.0 < s3 && s3 + s1 < full {
+            return 1;
+        }
+        u32::from(s1 < 0.0 && s3 < 0.0 && full < s1 + s3)
+    }
+
+    /// `yiBoundsMinMax(obj, min, max)` (`0x009130f0`): `min` and `max`
+    /// start at the largest finite floats ([`super::BOUNDS_INIT`]) with w
+    /// 1.0, then take each of the `+0x12` (`i16`) vectors at `obj + +8`
+    /// (16 bytes apart), x, y, z in turn. Returns the count when there are
+    /// vectors, else 0.
+    pub fn yi_bounds_min_max(mem: &mut impl Mem, obj: u32, min: u32, max: u32) -> u32 {
+        let first = mem.read::<u32>(obj.wrapping_add(8));
+        let hi = x87::copy(mem.read(mem.rebase(super::BOUNDS_INIT[0])));
+        let lo = x87::copy(mem.read(mem.rebase(super::BOUNDS_INIT[1])));
+        for i in 0..3u32 {
+            mem.write(min.wrapping_add(4 * i), hi);
+            mem.write(max.wrapping_add(4 * i), lo);
+        }
+        mem.write(min.wrapping_add(0xc), 1f32);
+        mem.write(max.wrapping_add(0xc), 1f32);
+        let mut v = obj.wrapping_add(first);
+        let mut n = 0i32;
+        let mut r = 0u32;
+        while i32::from(mem.read::<i16>(obj.wrapping_add(0x12))) > n {
+            for i in 0..3u32 {
+                let x = mem.read::<f32>(v.wrapping_add(4 * i));
+                if x < mem.read::<f32>(min.wrapping_add(4 * i)) {
+                    mem.write(min.wrapping_add(4 * i), x87::copy(x.to_bits()));
+                }
+                let x = mem.read::<f32>(v.wrapping_add(4 * i));
+                if x > mem.read::<f32>(max.wrapping_add(4 * i)) {
+                    mem.write(max.wrapping_add(4 * i), x87::copy(x.to_bits()));
+                }
+            }
+            r = i32::from(mem.read::<i16>(obj.wrapping_add(0x12))).cast_unsigned();
+            n += 1;
+            v = v.wrapping_add(0x10);
+        }
+        r
     }
 }

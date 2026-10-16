@@ -151,6 +151,31 @@ def live_after(code, site, keep):
     return found
 
 
+X87_LOADS = ("fld", "fild", "fldz", "fld1", "fldpi", "fldl2e", "fldln2", "fldlg2", "fldl2t",
+             "fnstcw", "fldcw", "fninit", "fwait", "fnclex", "fnstsw", "ffree")
+
+
+# Originals whose x87 code is balanced (every load stored back), checked by
+# hand: their callers keep their own floats across the call.
+X87_BALANCED = {
+    "useExtendedAlpha",  # 0x0071e460: fld constant, fstp g_ExtendedAlpha
+}
+
+
+def reads_st0(code, site):
+    """Whether the first x87 instruction after the call at `site` reads the
+    x87 stack it left (a float result), before any load, jump or call."""
+    after = sorted(a for a in code if a > site)[:16]
+    for a in after:
+        insn = code[a]
+        op = insn.split()[0] if insn else ""
+        if op.startswith(("j", "call", "ret")):
+            return False
+        if op.startswith("f"):
+            return not op.startswith(X87_LOADS)
+    return False
+
+
 def main():
     rows = {a: (n, s) for a, n, s in progress.functions()}
     starts = sorted(rows)
@@ -161,7 +186,7 @@ def main():
             caller, site, callee = line.rstrip("\n").split("\t")
             if "EXTERNAL" not in callee:
                 sites[int(callee, 16)].append((int(caller, 16), int(site, 16)))
-    shim = re.compile(r"^\s*(\w+) @ 0x([0-9a-f_]+) =>\s*extern \"([\w-]+)\" fn \w+\([^)]*\)\s*(->)?", re.M)
+    shim = re.compile(r"^\s*(\w+) @ 0x([0-9a-f_]+) =>\s*extern \"([\w-]+)\" fn \w+\([^)]*\)\s*(->\s*[\w:]+)?", re.M)
     bad = dropped_n = 0
     for f in sorted((progress.REPO / "crates/ffx-hook/src/ported").glob("*.rs")):
         for name, addr, _abi, ret in shim.findall(f.read_text(encoding="utf-8")):
@@ -175,7 +200,12 @@ def main():
             # a shim that returns nothing where the original leaves a value
             # in eax its callers read (Ghidra calls many of those void)
             dropped = {"eax"} if not ret and "eax" in changed else set()
-            if not kept and not dropped:
+            floats = ret.replace("->", "").strip() in ("f32", "f64")
+            # without x87 code of its own the original leaves the x87 stack
+            # alone, and callers may keep a float on it across the call
+            # (whole-program optimisation); a shim without x87 code does too
+            x87 = any(i.split()[0].startswith("f") for i in disasm(a, rows[a][1]).values() if i)
+            if not kept and not dropped and (floats or not x87):
                 continue
             for caller, site in sites[a]:
                 code = disasm(caller, rows[caller][1])
@@ -185,6 +215,9 @@ def main():
                 if live:
                     print(f"{f.name}: {name}: {rows[caller][0]} ({site:#x}) keeps {', '.join(sorted(live))} across the call")
                     bad += 1
+                if not floats and x87 and name not in X87_BALANCED and reads_st0(code, site):
+                    print(f"{f.name}: {name}: {rows[caller][0]} ({site:#x}) reads the float the original returns in ST0; the shim returns none")
+                    dropped_n += 1
                 used = {r for r in live_after(code, site, dropped) if r == "eax"} if dropped else set()
                 if used:
                     print(f"{f.name}: {name}: {rows[caller][0]} ({site:#x}) reads the eax the original returns; the shim returns nothing")

@@ -54,9 +54,28 @@ pub const PMCOM_END: u32 = 0x00f5_24f0;
 pub const PMCOM_QUEUE: u32 = 0x010d_4d28;
 /// Its write index.
 pub const PMCOM_QUEUE_INDEX: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x010d_552c);
+/// `op_random(x)` (`0x007e6700`): a draw in `[-x, x)`, `f32` in, `ST0` out.
+pub const OP_RANDOM: u32 = 0x007e_6700;
+/// `op_random_p(x)` (`0x007e6780`): a draw in `[0, x)`.
+pub const OP_RANDOM_P: u32 = 0x007e_6780;
+/// `pppAllFreePObject(block)` (`0x00711f20`).
+pub const PPP_ALL_FREE_POBJECT: u32 = 0x0071_1f20;
+/// `pppInitEnv(env, a, heap, size)` (`0x007169d0`).
+pub const PPP_INIT_ENV: u32 = 0x0071_69d0;
+/// The object block count `pppFreeAllEnvObjects` walks (`i32`).
+pub const PPP_OBJECT_COUNT: u32 = 0x00d4_b4cc;
+/// The object blocks, 0x80 bytes each.
+pub const PPP_OBJECTS: u32 = 0x00d4_e390;
+/// The pmcom environment (`pppInitEnv`'s first argument).
+pub const PMCOM_ENV: u32 = 0x010d_4cfc;
+/// Its heap, 0x100000 bytes.
+pub const PMCOM_HEAP: u32 = 0x00fd_24f0;
+/// The pmcom free pointer, set to `+8` past itself (`pppInitPmcomEnv`).
+pub const PMCOM_FREE: u32 = 0x00d5_24a0;
 
 /// The `Ke` objects where the game keeps them, through [`ffx_bridge::Mem`].
 pub mod bridge {
+    use crate::camera::FArgs;
     use crate::x87;
     use ffx_bridge::Mem;
     use ffx_bridge::x87::Reg;
@@ -547,6 +566,185 @@ pub mod bridge {
                 mem.write(at, 0u32);
             }
         }
+    }
+
+    // ---- round 12: random vectors, the pmcom environment, KeThBP_Init ----
+
+    /// `KeVecAddRandom(dst, range, scaled)` (`0x00766f10`): for x, y, z,
+    /// `dst[i] += op_random(range[i])`, times `op_random_p(1.0)` when
+    /// `scaled` (the first draw rounded to `f64`, the sum at 53 bits).
+    pub fn ke_vec_add_random<M: Mem, F: FnMut(&mut M, u32, FArgs<'_>) -> f64>(
+        mem: &mut M,
+        dst: u32,
+        range: u32,
+        scaled: u32,
+        fcall: &mut F,
+    ) {
+        let (rnd, rnd_p) = (mem.rebase(super::OP_RANDOM), mem.rebase(super::OP_RANDOM_P));
+        for i in 0..3u32 {
+            let r = x87::copy(mem.read(range.wrapping_add(4 * i)));
+            let v = if scaled == 0 {
+                fcall(mem, rnd, FArgs::Stack(&[r]))
+            } else {
+                let a = fcall(mem, rnd, FArgs::Stack(&[r]));
+                let b = fcall(mem, rnd_p, FArgs::Stack(&[1.0f32.to_bits()]));
+                b * a
+            };
+            let at = dst.wrapping_add(4 * i);
+            let d = x87::load(mem.read(at));
+            mem.write(at, x87::store(v + d));
+        }
+    }
+
+    /// `KeVecScaleRandom(dst, v, pair)` (`0x00766f70`): `s = r + r` for
+    /// one `op_random(1.0)` draw `r` (`f32`), or `r + op_random(1.0)` when
+    /// `pair`; then `dst[i] += v[i] * s - v[i]` for x, y, z. Returns
+    /// `dst`.
+    pub fn ke_vec_scale_random<M: Mem, F: FnMut(&mut M, u32, FArgs<'_>) -> f64>(
+        mem: &mut M,
+        dst: u32,
+        v: u32,
+        pair: u32,
+        fcall: &mut F,
+    ) -> u32 {
+        let rnd = mem.rebase(super::OP_RANDOM);
+        let one = 1.0f32.to_bits();
+        let r = x87::store(fcall(mem, rnd, FArgs::Stack(&[one])));
+        let s = if pair == 0 {
+            x87::load(r) + x87::load(r)
+        } else {
+            fcall(mem, rnd, FArgs::Stack(&[one])) + x87::load(r)
+        };
+        let s = x87::load(x87::store(s));
+        for i in 0..3u32 {
+            let vi = x87::load(mem.read(v.wrapping_add(4 * i)));
+            let at = dst.wrapping_add(4 * i);
+            let d = x87::load(mem.read(at));
+            mem.write(at, x87::store(s * vi - vi + d));
+        }
+        dst
+    }
+
+    /// `pppFreeAllEnvObjects()` (`0x007605d0`): for each of the
+    /// [`super::PPP_OBJECT_COUNT`] object blocks (0x80 bytes from
+    /// [`super::PPP_OBJECTS`]), the environment slot set to the pmcom
+    /// environment and `pppAllFreePObject(block)`.
+    pub fn ppp_free_all_env_objects<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) {
+        let count = mem.rebase(super::PPP_OBJECT_COUNT);
+        let mut block = mem.rebase(super::PPP_OBJECTS);
+        let env = mem.rebase(super::PMCOM_ENV);
+        let f = mem.rebase(super::PPP_ALL_FREE_POBJECT);
+        let mut i = 0i32;
+        while i < mem.read::<i32>(count) {
+            let slot = mem.read::<u32>(mem.rebase(super::VFX_DATA));
+            mem.write(slot, env);
+            call(mem, f, &[block]);
+            i += 1;
+            block = block.wrapping_add(0x80);
+        }
+    }
+
+    /// `pppInitPmcomEnv()` (`0x00760610`): the pmcom free pointers
+    /// (`0x00d524a0` to `0x00d524a8`, the arena's next to its base) and
+    /// `pppInitEnv(env, 0, heap, 0x100000)`; returns that.
+    pub fn ppp_init_pmcom_env<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let (env, heap) = (mem.rebase(super::PMCOM_ENV), mem.rebase(super::PMCOM_HEAP));
+        let at = mem.rebase(super::PMCOM_FREE);
+        let v = mem.rebase(super::PMCOM_FREE + 8);
+        mem.write(at, v);
+        let base = mem.rebase(super::PMCOM_BASE);
+        super::PMCOM_NEXT.set(mem, base);
+        let f = mem.rebase(super::PPP_INIT_ENV);
+        call(mem, f, &[env, 0, heap, 0x10_0000])
+    }
+
+    /// `KeResampleRgbaToRgb(src, sw, sh, dst, dw, dh)` (`0x00760640`):
+    /// nearest-neighbour scaling of a `sw` x `sh` RGBA image to `dw` x
+    /// `dh` BGR bytes, the destination filled bottom row first, by
+    /// Bresenham error terms (half the source size to start). Returns the
+    /// final row error.
+    #[allow(clippy::many_single_char_names)] // the original's terms
+    pub fn ke_resample_rgba_to_rgb(
+        mem: &mut impl Mem,
+        src: u32,
+        sw: i32,
+        sh: i32,
+        dst: u32,
+        dw: i32,
+        dh: i32,
+    ) -> u32 {
+        let mut ey = sh >> 1;
+        if sh <= 0 {
+            return ey.cast_unsigned();
+        }
+        let mut row = dh.wrapping_sub(1).wrapping_mul(dw);
+        let mut line = 0i32;
+        for _ in 0..sh {
+            ey = ey.wrapping_sub(dh);
+            if ey < 0 {
+                ey = ey.wrapping_add(sh);
+                row = row.wrapping_sub(dw);
+                let mut ex = sw >> 1;
+                let mut x = 0i32;
+                for i in 0..sw.max(0) {
+                    ex = ex.wrapping_sub(dw);
+                    if ex < 0 {
+                        x = x.wrapping_add(1);
+                        ex = ex.wrapping_add(sw);
+                        let s =
+                            src.wrapping_add(line.wrapping_add(i).wrapping_mul(4).cast_unsigned());
+                        let d =
+                            dst.wrapping_add(row.wrapping_add(x).wrapping_mul(3).cast_unsigned());
+                        let p = mem.read::<[u8; 3]>(s);
+                        mem.write(d.wrapping_add(2), p[0]);
+                        mem.write(d.wrapping_add(1), p[1]);
+                        mem.write(d, p[2]);
+                    }
+                }
+            }
+            line = line.wrapping_add(sw);
+        }
+        ey.cast_unsigned()
+    }
+
+    /// `KeThBP_Init(args)` (`0x00763030`): the object at `args[0]` with
+    /// `args[1]`'s byte as its segment count `n` (`+0x37`): itself at
+    /// `+0x10`, its links, counters and `+0x18` cleared, `+0x4c` 1.0,
+    /// `+0x23` 0x70, `+0x20` `3n + 2`, `+0x28` 0x40000b0, and a GIF tag
+    /// (0, 0x11000000, 0x14000000, 0x11000000) at `+0x40 + 0x30n`.
+    /// Returns `6n`.
+    pub fn ke_th_bp_init(mem: &mut impl Mem, args: u32) -> u32 {
+        let o = mem.read::<u32>(args);
+        mem.write(o.wrapping_add(0x3e), 0u16);
+        mem.write(o.wrapping_add(0x10), ptr32(o));
+        mem.write(o.wrapping_add(0x18), 0f32);
+        let n = mem.read::<u8>(args.wrapping_add(4));
+        mem.write(o.wrapping_add(0x37), n);
+        mem.write(o.wrapping_add(0x1c), 0u16);
+        mem.write(o.wrapping_add(0x34), 0u16);
+        mem.write(o.wrapping_add(0x36), 0u8);
+        mem.write(o.wrapping_add(0x3c), 0u16);
+        mem.write(o.wrapping_add(0x38), 0u16);
+        mem.write(o.wrapping_add(0x1e), 0u8);
+        for off in [0x14u32, 0x4, 0x0, 0xc, 0x8, 0x58] {
+            mem.write(o.wrapping_add(off), ptr32(0));
+        }
+        mem.write(o.wrapping_add(0x4c), 1f32);
+        mem.write(o.wrapping_add(0x23), 0x70u8);
+        let n = u32::from(mem.read::<u8>(o.wrapping_add(0x37)));
+        #[allow(clippy::cast_possible_truncation)] // the low half
+        mem.write(o.wrapping_add(0x20), (n * 3 + 2) as u16);
+        mem.write(o.wrapping_add(0x28), 0x0400_00b0u32);
+        let n = u32::from(mem.read::<u8>(o.wrapping_add(0x37)));
+        let tag = o.wrapping_add(0x40 + n * 0x30);
+        mem.write(tag, [0u32, 0x1100_0000, 0x1400_0000, 0x1100_0000]);
+        n * 6
     }
 }
 

@@ -119,6 +119,12 @@ impl Twin {
             .call(at, Conv::Cdecl, args)
             .unwrap_or_else(|e| panic!("{what}: {e}"));
         let rb = rust(&mut self.b);
+        // A float the original leaves in ST0 is a result its callers use.
+        assert!(
+            ra.st0.is_none() || matches!(rb, Res::Float(_)),
+            "{what}: the original returns {:?} in ST0",
+            ra.st0
+        );
         if ra.st0.is_some() {
             let pop = self.a.rebase(FPU_POP);
             while self.a.call(pop, Conv::Cdecl, &[]).unwrap().st0.is_some() {}
@@ -4447,7 +4453,7 @@ fn crt_users_match_the_original_on(t: &mut Twin) {
     angles.extend((0..200).map(|_| small_float(&mut rng)));
     for a in angles {
         t.check(&format!("Ch_CheckRadian {a:#x}"), 0x0083_6790, &[a], |m| {
-            void!(c::ch_check_radian(m, fl(a)))
+            Res::Float(c::ch_check_radian(m, fl(a)))
         });
     }
     // names
