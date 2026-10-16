@@ -257,4 +257,131 @@ pub mod bridge {
         }
         dropped
     }
+    /// The two damage buffers of an actor (`+0x774`, `+0xa4c`, 0x2d8 bytes
+    /// each: `+0` the next result, `+1` the count, `+2` the user, `+3` the
+    /// command; results of 0x2c bytes from `+0x18`).
+    const BUFFERS: [u32; 2] = [0x774, 0xa4c];
+
+    /// `MsGetDamageResult(chr, target, &damage, &kind, &more)`
+    /// (`0x0079a920`): in `target`'s buffers for `chr`'s (low byte) running
+    /// command (`+2` of `MsGetChrCommand`), the next result (or the last):
+    /// damage (`+0x32`, `u16`), kind (`+0x1a`) and its signed `+0x18`
+    /// returned; `more` counts the buffers with results left. The second
+    /// buffer wins; all 0 for no actor.
+    pub fn ms_get_damage_result(
+        mem: &mut impl Mem,
+        chr: u32,
+        target: u32,
+        damage: u32,
+        kind: u32,
+        more: u32,
+    ) -> i32 {
+        let c = chr & 0xff;
+        let (mut d, mut k, mut r, mut m) = (0u32, 0u32, 0i32, 0u32);
+        if ms_btl_chr_num_check(c) != 0 {
+            let id = byte(mem, crate::actor::bridge::ms_get_chr_command(mem, c), 2);
+            let t = ms_get_chr(mem, target);
+            for o in BUFFERS {
+                let b = t.wrapping_add(o);
+                if u32::from(byte(mem, b, 2)) != c || byte(mem, b, 3) != id {
+                    continue;
+                }
+                let (next, count) = (i32::from(byte(mem, b, 0)), i32::from(byte(mem, b, 1)));
+                let idx = if next < count {
+                    m += 1;
+                    next
+                } else {
+                    count - 1
+                };
+                let e = b.wrapping_add(idx.wrapping_mul(0x2c).cast_unsigned());
+                d = u32::from(mem.read::<u16>(e.wrapping_add(0x32)));
+                r = i32::from(byte(mem, e, 0x18).cast_signed());
+                k = u32::from(byte(mem, e, 0x1a));
+            }
+        }
+        for (p, v) in [(damage, d), (more, m), (kind, k)] {
+            if p != 0 {
+                mem.write(p, v);
+            }
+        }
+        r
+    }
+
+    /// `MsGetDamageInfo(chr, target, &a, &b, &c)` (`0x0079a680`): over
+    /// `target`'s buffers for `chr`'s running command, the sums of the
+    /// results left (words `+0x20`, `+0x24`, `+0x28`), and how many are left
+    /// (returned).
+    pub fn ms_get_damage_info(mem: &mut impl Mem, chr: u32, target: u32, out: [u32; 3]) -> i32 {
+        let c = chr & 0xff;
+        let mut sums = [0i32; 3];
+        let mut left = 0i32;
+        if ms_btl_chr_num_check(c) != 0 {
+            let id = byte(mem, crate::actor::bridge::ms_get_chr_command(mem, c), 2);
+            let t = ms_get_chr(mem, target);
+            for o in BUFFERS {
+                let b = t.wrapping_add(o);
+                if u32::from(byte(mem, b, 2)) != c || byte(mem, b, 3) != id {
+                    continue;
+                }
+                let (next, count) = (i32::from(byte(mem, b, 0)), i32::from(byte(mem, b, 1)));
+                left = left.wrapping_add(count - next);
+                for k in next..count {
+                    let e = b.wrapping_add(k.cast_unsigned() * 0x2c);
+                    for (s, f) in sums.iter_mut().zip([0x38u32, 0x3c, 0x40]) {
+                        *s = s.wrapping_add(mem.read(e.wrapping_add(f)));
+                    }
+                }
+            }
+        }
+        for (p, v) in out.into_iter().zip(sums) {
+            if p != 0 {
+                mem.write(p, v);
+            }
+        }
+        left
+    }
+
+    /// `MsGetTargetList(chr, &n)` (`0x007b7090`): `chr`'s (low byte) target
+    /// list (`+0xd40`, 31 bytes): its running command's targets (`+0x10`
+    /// words after its `+2`, else the actor's `+0xdc0`), party members
+    /// first in party order, then the rest by index, 0xff after; `n` their
+    /// number. Null, and `n` 0, for no actor.
+    pub fn ms_get_target_list(mem: &mut impl Mem, chr: u32, n: u32) -> u32 {
+        let c = chr & 0xff;
+        let mut count = 0u32;
+        let mut list = 0;
+        if ms_btl_chr_num_check(c) != 0 {
+            let a = ms_get_chr(mem, c);
+            list = a.wrapping_add(0xd40);
+            let cmd = crate::actor::bridge::ms_get_chr_command2(mem, c);
+            let set: u32 = if cmd == 0 {
+                mem.read(a.wrapping_add(0xdc0))
+            } else {
+                let k = u32::from(byte(mem, cmd, 2)) + 1;
+                mem.read(cmd.wrapping_add(k * 0x10))
+            };
+            let set = set.cast_signed();
+            let mut party = 0i32;
+            for p in crate::menu::bridge::PARTY.get(mem) {
+                if p != 0xff && (set >> (p & 31)) & 1 != 0 {
+                    mem.write(list.wrapping_add(count), p);
+                    party |= 1 << (p & 31);
+                    count += 1;
+                }
+            }
+            for i in 0u8..0x1f {
+                if (set >> i) & 1 != 0 && (party >> i) & 1 == 0 {
+                    mem.write(list.wrapping_add(count), i);
+                    count += 1;
+                }
+            }
+            for k in count..0x1f {
+                mem.write(list.wrapping_add(k), 0xffu8);
+            }
+        }
+        if n != 0 {
+            mem.write(n, count);
+        }
+        list
+    }
 }

@@ -54,10 +54,23 @@ fn randomize(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, actors: u32) {
         let fields = [own(rng, 0x40), own(rng, 0x30), rng.byte(), rng.byte()];
         poke(a, b, p + 0xde4, &fields);
         fill(a, b, rng, p + 0x65c, 1);
+        fill(a, b, rng, p + 0xd40, 0x20);
+        fill(a, b, rng, p + 0xdc0, 4);
+        // the damage buffers: next, count, user, command; results
+        for o in [0x774, 0xa4c] {
+            let head = [
+                u8::try_from(rng.below(6)).unwrap(),
+                u8::try_from(rng.below(6)).unwrap(),
+                u8::try_from(rng.below(ACTORS + 1)).unwrap(),
+                u8::try_from(rng.below(4)).unwrap(),
+            ];
+            poke(a, b, p + o, &head);
+            fill(a, b, rng, p + o + 4, 0x2c * 6);
+        }
     }
 }
 
-fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, out: u32) {
     let c = chr(rng);
     twin("MsCheckInputCueExe", a, b, 0x007b_1fd0, &[c], ALL, |m| {
         cue::ms_check_input_cue_exe(m, c)
@@ -142,19 +155,65 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         ALL,
         |m| cue::ms_delete_command_cue(m, c, slot, keep).cast_unsigned(),
     );
+    // the damage buffers and target lists
+    let (c, t) = (chr(rng), chr(rng));
+    let outs = [
+        if rng.below(4) == 0 { 0 } else { out },
+        if rng.below(4) == 0 { 0 } else { out + 4 },
+        if rng.below(4) == 0 { 0 } else { out + 8 },
+    ];
+    twin(
+        "MsGetDamageResult",
+        a,
+        b,
+        0x0079_a920,
+        &[c, t, outs[0], outs[1], outs[2]],
+        ALL,
+        |m| cue::ms_get_damage_result(m, c, t, outs[0], outs[1], outs[2]).cast_unsigned(),
+    );
+    twin(
+        "MsGetDamageInfo",
+        a,
+        b,
+        0x0079_a680,
+        &[c, t, outs[0], outs[1], outs[2]],
+        ALL,
+        |m| cue::ms_get_damage_info(m, c, t, outs).cast_unsigned(),
+    );
+    twin(
+        "MsGetTargetList",
+        a,
+        b,
+        0x007b_7090,
+        &[c, outs[1]],
+        ALL,
+        |m| cue::ms_get_target_list(m, c, outs[1]),
+    );
     same("cue", a, b);
 }
 
 fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let w = world(a, b, rng, synthetic);
+    let out = w.out;
+    // the party, sometimes with bytes past the actors
+    let party: Vec<u8> = (0..7)
+        .map(|_| match rng.below(6) {
+            0 => 0xff,
+            1 => rng.byte(),
+            _ => u8::try_from(rng.below(ACTORS)).unwrap(),
+        })
+        .collect();
+    if w.synthetic {
+        poke(a, b, ffx_battle::menu::bridge::PARTY.ptr(b).addr, &party);
+    }
     if !w.synthetic {
         for _ in 0..30 {
-            calls(a, b, rng);
+            calls(a, b, rng, out);
         }
     }
     for _ in 0..2000 {
         randomize(a, b, rng, w.actors);
-        calls(a, b, rng);
+        calls(a, b, rng, out);
     }
 }
 

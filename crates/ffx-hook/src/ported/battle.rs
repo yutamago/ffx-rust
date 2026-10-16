@@ -1543,4 +1543,16 @@ ported! {
     MsDeleteCommandCue @ 0x007b_0860 => extern "C" fn ms_delete_command_cue(chr: u32, slot: u32, keep: u32) -> i32 {
         cue::ms_delete_command_cue(&mut mem(), chr, slot, keep)
     }
+    /// `MsGetDamageResult(chr, target, &damage, &kind, &more)`.
+    MsGetDamageResult @ 0x0079_a920 => extern "C" fn ms_get_damage_result(chr: u32, target: u32, damage: u32, kind: u32, more: u32) -> i32 {
+        cue::ms_get_damage_result(&mut mem(), chr, target, damage, kind, more)
+    }
+    /// `MsGetDamageInfo(chr, target, &a, &b, &c)`.
+    MsGetDamageInfo @ 0x0079_a680 => extern "C" fn ms_get_damage_info(chr: u32, target: u32, a: u32, b: u32, c: u32) -> i32 {
+        cue::ms_get_damage_info(&mut mem(), chr, target, [a, b, c])
+    }
+    /// `MsGetTargetList(chr, &n)`.
+    MsGetTargetList @ 0x007b_7090 => extern "C" fn ms_get_target_list(chr: u32, n: u32) -> u32 {
+        cue::ms_get_target_list(&mut mem(), chr, n)
+    }
 }
