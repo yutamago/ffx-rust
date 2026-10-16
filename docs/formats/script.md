@@ -330,12 +330,79 @@ themselves in the original. A camera native (group 6) sets worker `+0x36`
 bit `0x20` unless `0x10` is set; a missing poll means "done, run on" (5);
 a float result is stored as `f32` (`fstp m32`) before it is pushed.
 
-Still original, called through `ffx_bridge::Host` (a cdecl call into the
-game): the natives, the three request families (`0x00867230`,
-`0x00867570`, `0x008673d0`; opcodes `36`-`38`, `45`-`53`), `AtelExecReturn`
-(`0x008691d0`), the wait checks (`0x008635c0`, `0x008654c0`, `0x00863570`),
-the party lookup (`0x0086a5e0`), the request call (`0x0086eba0`), opcodes
-`79` and `7a`, and the mutex.
+What stays original, called through `ffx_bridge::Host` (a cdecl call
+into the game, so the hooked Rust version where another module has one):
+the run lock (`Mutex_*`), `MsBattleCheck`, the ctrl work's callbacks
+(`+0x28` end, `+0x58`/`+0x5c` around a run, `+0x60` the `REQ` gate), the
+debug hook `0x0067a9b0` that `REQ` calls first, and the natives not yet
+ported (below).
+
+### Signals
+
+Workers ask each other to run entry points through signals
+(`ffx_script::vm::bridge::signal`): 24-byte nodes in two doubly linked
+lists of the receiving worker, its queue (`+0x80`) and its free nodes
+(`+0x88`); `+0x90` is the one it runs. A node's `prev` points at the
+`next` field before it (another node's or the list head), so unlinking is
+`*prev = next; next.prev = prev`.
+
+| Offset | Type | Meaning |
+|---|---|---|
+| `0x00`, `0x04` | `u32` | next, prev |
+| `0x08` | `u16` | the entry point to run (in a reply: the one that ran) |
+| `0x0a`, `0x0c` | `u16` | sender and receiver index (`0xffff` none) |
+| `0x0e` | `u8` | bits 0-3 the level, 4-6 state (1 queued, 2 running), 7 new |
+| `0x0f` | `u8` | 0 `REQ`, 1 `REQSW` (the sender waits for it to start), 2 `REQEW` (to end), 3 reply |
+| `0x10`-`0x14` | `u16` × 3 | the header the entry runs from: binary header index, table index, ctrl work |
+
+`AtelRegistSignalMain` (`0x0086ea00`) takes a free node, fills it and
+queues it before the first reply or lower level (replies last). The
+header words come from the sender's level 0 (`+0x168`), or from the
+request while the current ctrl work has header tables (`+0x1f8`, battle
+ctrl works 2 and 3); every caller in the game leaves those three request
+words unwritten on its stack, so the original stores stack garbage there.
+The Rust callers pass 0 (the oracle tests patch the three loads to 0 on
+both sides). `REQ`, `REQSW` and `REQEW` (`Script_OpReq`/`Sw`/`Ew`,
+`0x00867230`, `0x00867570`, `0x008673d0`) pop entry, worker and level and
+register through one of three forms by opcode: any, without the same tag
+(entry), without the same level; `PREQ` (`39`-`3b`) goes through
+`AtelGetPartyWorker` and the same-level form. A `REQSW`/`REQEW` level then
+waits (`+0x1f` 1) for the reply (`AtelSearchReplySignal`); opcodes
+`77`/`78` wait (`+0x1f` 2) while a request is queued
+(`AtelIsSignalQueued`).
+
+`AtelDecodeSignal` (`0x008653f0`) starts the head of the queue when it is
+a request above the running level: a queued one through
+`AtelStartSignal` (`0x008690a0`: entry, level, header, PC; a `REQSW`
+sender gets its reply), a running one by switching back to its level.
+`AtelExecReturn` (`0x008691d0`, the ends `3c`-`3f`, `54`) replies to a
+`REQEW` sender, frees the node, cancels what was queued above the given
+level (`AtelCancelSignals`, `0x00872860`), decodes the next and, for
+`3e`/`3f`, resets the level to entry 1.
+
+Opcode `79` (`0x00870d30`) writes the worker's vibration curve, eight
+`u16` in a variable (`+0x44` points at it, filled from
+`TkGetVibrateDefaultCurve` the first time); `7a` (`0x0086fab0`) sets a
+`(key, value)` slot in the table at `+0x2e4` of types 5 and 6.
+
+### Natives in Rust
+
+`ffx_script::vm::bridge::native` has the natives that only pop arguments,
+touch the worker, the VM's globals and the save data, and call code kept
+elsewhere: 66 handlers (message windows, character motion and display
+calls, worker ids and positions, turn and move blocks and their waits,
+triggers, the minimap marker, random, the pad, fades, HP/MP restore, the
+field programs `Fp_*`, ...). `native::find` maps a handler address to its
+Rust version; `OriginalNatives`' dispatch uses it before calling the
+original, so `Script_Run` in Rust runs them in Rust. Nine of them are
+under the five bytes a hook jump needs (`Native_WaitForever` is `xor eax,
+eax; ret`) and run in Rust only that way; the rest are in the hook table. The choice is by
+static use in the shipped scripts (`cargo run -p ffx-script --example
+native_counts` lists every native with its call count and handlers) and
+by whether every callee is ported. Float handlers return `ST0` as `f64`.
+Where a Ghidra signature says `void`, the `EAX` the handler leaves is what
+`Script_FinishNative` pushes (`Native_EnableTrigger` returns the kind it
+popped, `Native_TurnSetFrames` the elapsed value).
 
 ### Verification
 
@@ -343,8 +410,13 @@ the party lookup (`0x0086a5e0`), the request call (`0x0086eba0`), opcodes
 Rust one on two copies of each snapshot and compares the result and every
 byte written: every worker as it stands, every entry point of every actor
 for several frames (about 400,000 instructions in the battle snapshot),
-400 random programs over 85 opcodes with arguments kept in range, invalid
-opcodes and breakpoints. Two oracle stubs make the comparison possible:
+400 random programs over 97 opcodes with arguments kept in range (in the
+battle on ctrl work 2, whose header tables take the signals' other path),
+invalid opcodes and breakpoints. `natives_match_the_original` calls every
+Rust native on each actor with small arguments on its stack, and
+`synthetic_script_matches_the_original` runs a hand-built worker (block,
+header, variables, constants, a counting loop, the end) in an image-only
+oracle, so the interpreter is checked without a snapshot too. Two oracle stubs make the comparison possible:
 the run lock and the CRT and Win32 imports natives reach are short x86
 stubs written into `int3` padding of `.text` (the test asserts every one
 found room), and two natives read stack words nothing wrote, which both
@@ -357,19 +429,20 @@ the tests reach.
 
 ### Plan
 
-1. Done: the accessors, the dispatch loop, every opcode, native dispatch.
-2. Next: the request families and `AtelExecReturn` (they start and end
-   requests between workers: the `+0x1f` request state and the level
-   queue), then the waits, so that `Script_Run` calls no original code
-   but natives.
-3. Then the natives, group by group (see "Native functions" above), each
-   behind the `Natives` trait so the interpreter can run
-   outside the game.
+1. Done: the accessors, the dispatch loop, every opcode, native dispatch,
+   the signals (request families, `AtelExecReturn`, the waits, opcodes
+   `79`/`7a`): `Script_Run` calls no original script code but natives.
+2. Now: the natives, most used first. Next: the ones the field module
+   made ready (`0x0091b240`-`0x0091c6b0`, `0x008574c0`, `0x008591d0`,
+   `0x00858c90`, and the map-part natives `0x8012`-`0x8056` from
+   `0x00c5dc9c`), then the message and sound natives with debug output
+   (`Native_SoundWait_Poll`, `Native_VoiceIsPlaying`: `printf` in debug
+   mode).
+3. Then a `Natives` implementation with no original code behind it, so
+   the interpreter runs outside the game.
 
 ## Open questions
 
 - The meaning of most native functions.
-- The three worker request families (`0x00867230`, `0x00867570`,
-  `0x008673d0`) and opcodes `40`, `54`, `77`–`7a` (ported as calls, not
-  understood).
+- Opcode `40` and what the `+0x2e4` table of opcode `7a` drives.
 - The block header words `0x04`–`0x2c` and the tables they point to.
