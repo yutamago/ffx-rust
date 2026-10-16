@@ -1316,6 +1316,9 @@
 0x0070ab90 function FmodVoice_initList        # fh call.cs thiscall
 0x0070b3f0 function FfxFmod_soundInit_setLang # fh call.cs thiscall
 0x0070d890 function FmodSfx_Start                # thiscall(sfx; seq, volume, pan): "FmodSfx::start: Fail to start sequence(%d)"; volume/127 -> 0..1, pan/127*2-1 -> -1..1 (0x0070f310)
+0x00710e30 function VFX_Copy16From            # (dst, src): four words copied, the last left in eax (callers: sg_calcenvelope_normW)
+0x00710e70 function VFX_Copy16To              # (src, dst): four words copied, the last left in eax
+0x00710ea0 function VFX_ScaleVec3             # (dst, v, float s): x, y, z of v times s (x87, z with v's element as the memory operand), returns dst
 0x00710ed0 function InitGuildMapRenderData    # fh v3:exact 0x00710fb0
 0x00710fd0 function InitVFXPath3RenderData    # fh v3:cg5 0x7110b0
 0x00711030 function InitVFXPath3RenderDataShp # fh v3:bsim1.00 0x00711110
@@ -1387,6 +1390,7 @@
 0x007287b0 function JobSchedule_pppPart_fillBuffer_drawShp_007287b0 # fh v3:exact 0x007288a0
 0x00728e40 function hideDisplayOffParticle    # fh v3:exact+call.cs 0x00728f30 cdecl
 0x00728f10 function pppCheckViewCylinder      # fh v3:cg4 0x729000
+0x00729050 function pppFpSetDisp              # (on): g_pppFpDisp = on (eax = on)
 0x007291c0 function pppFpFree                 # fh v3:exact 0x007292b0
 0x00729290 function pppFpGetHeapSize          # fh v3:exact 0x00729380
 0x007292f0 function pppFpGetMngPtr            # fh v3:exact 0x007293e0
@@ -1421,6 +1425,10 @@
 0x0072c480 function pppCreateHeap             # fh v3:exact 0x0072c570
 0x0072c4d0 function pppDumpHeap               # fh switch:bsim1.00 0x71002d5140
 0x0072c510 function pppFree                   # fh v3:exact 0x0072c600
+0x0072c590 function pppVu0MaddaY              # (_, v, vec by value: .y at +0x14): VU0 vmadda: acc (0x00c8f790) += v * y, x87 (w with v's element as the memory operand); leaves v in eax (rcbgClipVertex, 0x0088a500)
+0x0072c5f0 function pppVu0MaddaZ              # as pppVu0MaddaY with the z of the by-value vector (+0x18)
+0x0072c650 function pppVu0MaddW               # (dst, v, vec by value: .w at +0x1c): VU0 vmadd: dst = acc + v * w; leaves dst in eax
+0x0072c6a0 function pppVu0MulX                # (dst, v, x): dst = v * x element by element; leaves dst in eax
 0x0072c730 function pppGetRotMatrixX          # fh v3:exact 0x0072c820
 0x0072c800 function pppGetRotMatrixXYZ        # fh v3:cg5 0x72c8f0
 0x0072c890 function pppGetRotMatrixXZY        # fh v3:cg5 0x72c980
@@ -1430,16 +1438,23 @@
 0x0072cb10 function pppGetRotMatrixZ          # fh v3:exact 0x0072cc00
 0x0072cbe0 function pppGetRotMatrixZXY        # fh v3:cg4 0x72ccd0
 0x0072cc70 function pppGetRotMatrixZYX        # fh v3:cg5 0x72cd60
+0x0072d1b0 function pppMatrixLoop             # ppp program table record "pppMatrixLoop" step; the same code as pppMatrixXYZ (0x0072d390): pppGetRotMatrixXYZ of area 1's angles into obj+0x10, rows scaled by area 2 through VF 0x00c8f820/0x00c8f830.., position from area 0
+0x0072d390 function pppMatrixXYZ              # ppp program table records "pppMatrixXYZ" and "pppMatrix" step: obj+0x10 = pppGetRotMatrixXYZ(area 1) rows scaled by area 2 (VF 0x00c8f820 scale, 0x00c8f830.. rows, w copied), obj+0x40 = area 0's position (z through the FPU)
 0x0072d570 function pppMatrixXZY              # fh v3:bsim1.00 0x0072d650
+0x0072d750 function pppMatrixYXZ              # ppp program table record "pppMatrixYXZ" step: as pppMatrixXYZ with pppGetRotMatrixYXZ
 0x0072d930 function pppMatrixYZX              # fh v3:bsim1.00 0x0072da10
+0x0072db10 function pppMatrixZXY              # ppp program table record "pppMatrixZXY" step: as pppMatrixXYZ with pppGetRotMatrixZXY
 0x0072dcf0 function pppMatrixZYX              # fh v3:bsim1.00 0x0072ddd0
 0x0072ded0 function KeDttMdl_MkGifPk          # fh v3:cg16 0x72dfb0
 0x0072e6d0 function KeDttMdl_UseSingleInstance # fh v3:exact 0x0072e7b0
+0x0072e730 function pppKeMdlDttCon            # ppp program table record "pppKeMdlDtt" +0x1c set-up: area 0 +0xa8/+0xa0/+0xa4 = 0
+0x0072e760 function pppKeMdlDttCon2           # ppp program table record "pppKeMdlDtt" +0x20 set-up: area 0 +0xa8/+0xa0/+0xa4 = 0 (as pppKeMdlDttCon)
 0x0072eb20 function pppVtMime                 # fh v3:exact 0x0072ec00
 0x0072ed70 function pppVtMimeCon              # fh v3:exact 0x0072ee50
 0x0072edb0 function pppVtMimeCon2             # ppp program table record "pppVtMime" (0x00c3b278) +0x20 second set-up; "pppVtMime" (0x00c3c920) +0x20 second set-up
 0x0072ede0 function pppVtMimeDes              # fh v3:exact 0x0072eec0
 0x0072ee20 function pppKeTkFadeCon            # ppp program table record "pppKeTkFade" (0x00c3d758) +0x1c set-up; "pppKeTkFade" (0x00c3d758) +0x20 second set-up
+0x0072f3c0 function VFX_Copy16To_0072f3c0     # the same code as VFX_Copy16To (callers: op_shape_draw, sg_calcenvelope_normW)
 0x0072f420 function pppVu0RNext              # vrnext as the PC port emulates it: *out = g_Vu0_R stepped (when g_Vu0_RSeeded, which it does not set) else 1.0; the rand programs' draws (pppRandFloat ...) call it after srand
 0x0072f4b0 function pppRandFloat              # fh v3:exact 0x0072f590
 0x0072f680 function pppRandUpFloat           # ppp program table record "pppRandUpFloat" (0x00c3d780) +0x8 step: d1 or (d2 + d1) * 0.5, target += k w
@@ -1468,18 +1483,36 @@
 0x00732130 function pppRandUpHCV              # fh v3:exact 0x00732200
 0x00732390 function pppRandDownHCV            # fh v3:exact 0x00732460
 0x007325f0 function pppSRandFV                # fh v3:exact 0x007326c0
+0x007326e0 function pppSRandFV_Draw           # pppSRandFV's draw: the rand programs' srand + vrnext draw, twice when the key's flag (+0x20) is set; 2 d1 or d2 + d1
+0x007328b0 function pppSRandUpFV              # ppp program table record "pppSRandUpFV" step: as pppSRandFV, d1 or (d2 + d1) / 2, target[i] += k[i] w[i]
+0x00732970 function pppSRandUpFV_Draw         # pppSRandUpFV's draw
+0x00732b40 function pppSRandDownFV            # ppp program table record "pppSRandDownFV" step: as pppSRandUpFV with -d1 or (-d1 - d2) / 2
+0x00732c00 function pppSRandDownFV_Draw       # pppSRandDownFV's draw
+0x00732dd0 function pppSRandCV                # ppp program table record "pppSRandCV" step: four draws whenever the key applies (flag +0xc), i8 factors at +8, byte targets += ftol(w k - k)
+0x00732f30 function pppSRandCV_Draw           # pppSRandCV's draw
+0x007330e0 function pppSRandUpCV              # ppp program table record "pppSRandUpCV" step: as pppSRandCV, ftol(k w)
+0x007333e0 function pppSRandDownCV            # ppp program table record "pppSRandDownCV" step
 0x007336e0 function pppSRandHCV               # fh v3:exact 0x007337b0
+0x00733a00 function pppSRandUpHCV             # ppp program table record "pppSRandUpHCV" step: as pppSRandHCV, cbw(ftol(k w))
+0x00733d10 function pppSRandDownHCV           # ppp program table record "pppSRandDownHCV" step
+0x00734020 function pppKeMatSN                # ppp program table record "pppKeMatSN" step (aligned-stack prologue): area 0 +0x80 takes area 1's three angles; pppGetRotMatrixXYZ(area0 + 0x40, old - new as i32); +0x70/+0x74 from 0x00c3e6e0
 0x007340f0 function pppKeMatSNCon             # fh v3:exact 0x007341c0
 0x00734130 function pppMatrixLoc              # fh v3:exact 0x00734200
 0x00734170 function pppMatrixScl              # fh v3:exact 0x00734240
+0x007341e0 function pppKeMatPht               # ppp program table record "pppKeMatPht" step: area 3 = pppGetRotMatrixZYX(area 1) rows scaled by area 2 (one row at a time through VF 0x00c8f820.x and 0x00c8f830), position area 0; obj+0x10 = identity with area 2's scale, obj+0x40 = area 3's position
+0x00734400 function pppKeOfsMatXYZ            # ppp program table record "pppKeOfsMatXYZ" step: obj+0x10 = XYZ rotation of area 1 scaled by area 2 about the pivot p = area0[+0x10] + area0[+0x20]: position = area0 + p - M p
 0x00734640 function pppParMatrix              # fh v3:exact 0x00734710
 0x00734880 function pppKeParMatR              # fh v3:exact 0x00734950
+0x00734b70 function pppDrawMatrix             # ppp program table record "pppDrawMatrix" draw: obj+0x9c = 0, then tail-jumps to FFXVu0MulMatrix(obj+0x50, g_pppViewMatrixCopy, obj+0x10)
+0x00734ba0 function pppDrawMatrixLoop         # ppp program table record "pppDrawMatrixLoop" draw: the same code as pppDrawMatrix
 0x00734bd0 function pppDrawMatrixFront        # fh v3:exact 0x00734ca0
 0x00734c50 function pppDrawMatrixNoRot        # fh v3:exact 0x00734d20
 0x00734cf0 function pppDrawMatrixWood         # fh v3:exact 0x00734dc0
 0x00734d90 function pppDrawMatrixWoodSta      # fh v3:exact 0x00734e60
 0x00734eb0 function pppKeDMatDraw             # fh v3:exact 0x00734f80
 0x00734ef0 function pppKeDMatFrDraw           # fh v3:exact 0x00734fc0
+0x00734f80 function pppKeDMatPhtDraw          # ppp program table record "pppKeDMatPht" draw: area 1 = cdc_Mul4x4(g_pppViewMatrix, area 0), then pppDrawMatrixFront's scaling without the mode byte
+0x00735020 function pppKeDMatPhtFrDraw        # ppp program table record "pppKeDMatPhtFr" draw: area 0's rows scaled by the part's scale (+0x60) into area 1, its position through g_pppViewMatrix, then the same for the object's matrix
 0x00735160 function pppKeZCrctDraw            # fh v3:exact 0x00735230
 0x007354c0 function pppKeZCrctShpDraw         # fh v3:exact 0x00735590
 0x00736460 function pppKeThCon                # fh v3:exact 0x00736520
@@ -1564,15 +1597,27 @@
 0x00749f90 function pppKeMdlTfdUv3Con         # ppp program table record "pppKeMdlTfdUv3" (0x00c3dde8) +0x1c set-up; "pppKeMdlTfdUv3" (0x00c3dde8) +0x20 second set-up
 0x00749ff0 function pppKeMdlTfdUv3Draw        # fh v3:exact 0x0074a0c0
 0x0074b500 function pppNeiDrawMdlTsPointLightCon # ppp program table record "pppNeiDrawMdlTsPointLight" (0x00c3de60) +0x1c set-up; "pppNeiDrawMdlTsPointLight" (0x00c3de60) +0x20 second set-up
+0x0074b630 function pppVu0AddY                # (dst, v, vec by value: .y at +0x14): dst.x = v.x + y (vaddy.x); leaves dst in eax
+0x0074b650 function pppVu0AddZ                # as pppVu0AddY with the z (+0x18)
 0x0074b9a0 function pppNeiDrawShapePointLightCon # ppp program table record "pppNeiDrawShapePointLight" (0x00c3de88) +0x1c set-up; "pppNeiDrawShapePointLight" (0x00c3de88) +0x20 second set-up
+0x0074c490 function pppKeShpTail              # ppp program table record "pppKeShpTail" step: area 0 a ring of positions (+0 length, +1 index, slots from +0x10), the object's +0x40 into the next slot (KeVu0CopyVecXYZ), every slot at frame 0 (w = 1.0)
 0x0074c540 function pppKeShpTailCon           # ppp program table record "pppKeShpTail" (0x00c3a8f0) +0x1c set-up; "pppKeShpTail" (0x00c3bf98) +0x1c set-up
+0x0074d490 function pppKeShpTailX             # ppp program table record "pppKeShpTailX" step: the same code as pppKeShpTail
 0x0074d540 function pppKeShpTailXCon          # ppp program table record "pppKeShpTailX" (0x00c3b228) +0x1c set-up; "pppKeShpTailX" (0x00c3c8d0) +0x1c set-up
+0x0074e490 function pppKeShpTail2             # ppp program table record "pppKeShpTail2" step: the same code as pppKeShpTail
 0x0074e540 function pppKeShpTail2Con          # ppp program table record "pppKeShpTail2" (0x00c3a918) +0x1c set-up; "pppKeShpTail2" (0x00c3bfc0) +0x1c set-up
+0x0074f4d0 function pppKeShpTail2X            # ppp program table record "pppKeShpTail2X" step: the same code as pppKeShpTail
 0x0074f580 function pppKeShpTail2XCon         # ppp program table record "pppKeShpTail2X" (0x00c3b480) +0x1c set-up; "pppKeShpTail2X" (0x00c3cb28) +0x1c set-up
+0x007500d0 function pppVu0MulX_007500d0       # the same arithmetic as pppVu0MulX, leaves v in eax (0x0091cb70, 0x00925040)
 0x007502c0 function pppKeShpTail3             # fh v3:exact 0x00750390
+0x00750510 function pppKeShpTail3Con          # ppp program table record "pppKeShpTail3" +0x1c set-up: ring index +0x298, +0x294/+0x290 cleared, CRT rand() low half at +0x296, +0xa0..+0xcc cleared
 0x007505a0 function pppKeShpTail3Con2         # ppp program table record "pppKeShpTail3" (0x00c3ac38) +0x20 second set-up; "pppKeShpTail3" (0x00c3c2e0) +0x20 second set-up
 0x00751ca0 function pppKeShpTail3X            # fh v3:exact 0x00751d80
+0x00751eb0 function pppKeShpTail3XCon         # ppp program table record "pppKeShpTail3X" +0x1c set-up: the same code as pppKeShpTail3Con
 0x00751f40 function pppKeShpTail3XCon2        # ppp program table record "pppKeShpTail3X" (0x00c3b868) +0x20 second set-up; "pppKeShpTail3X" (0x00c3cf10) +0x20 second set-up
+0x00753f10 function pppKeShpTailPht           # ppp program table record "pppKeShpTailPht" step: as pppKeShpTail3X (velocity, then position) with 27 slots, index +0x1f4, f32 motion at +0x1e0/+0x1e4/+0x1e8, key's halves at +0x30 and floats at +0x1c
+0x00754180 function pppKeShpTailPhtCon        # ppp program table record "pppKeShpTailPht" +0x1c set-up: as pppKeShpTail3Con, index +0x294, CRT rand() at +0x292, float motion +0x280.. cleared
+0x00754260 function pppKeShpTailPhtCon2       # ppp program table record "pppKeShpTailPht" +0x20 set-up: clears the ring index, seed and motion (no rand)
 0x00754fc0 function pppKeShpTailLcCon         # ppp program table record "pppKeShpTailLc" (0x00c3ded8) +0x1c set-up
 0x00755010 function pppKeShpDttCon            # ppp program table record "pppKeShpDtt" (0x00c3ac10) +0x1c set-up; "pppKeShpDtt" (0x00c3ac10) +0x20 second set-up; "pppKeShpDtt" (0x00c3c2b8) +0x1c set-up and 1 more
 0x00756240 function pppDrawRainCon            # ppp program table record "pppDrawRain" (0x00c3b430) +0x1c set-up; "pppDrawRain" (0x00c3cad8) +0x1c set-up
@@ -1630,6 +1675,7 @@
 0x0075a8b0 function pppKeLnsCrnTDes           # fh v3:cg2 0x75a9a0
 0x0075a900 function pppKeLnsCrnTDraw          # fh v3:exact 0x0075a9f0
 0x0075aab0 function pppKeLnsCrnUpdate         # fh v3:exact 0x0075aba0
+0x0075ab30 function pppKeLnsFlsCon            # ppp program table record "pppKeLnsFls" +0x1c set-up: 0x0076a640(area 0 + 0xa0): set_ptr32(g_pppRandTarget), set_ptr32(0)
 0x0075ac60 function pppKeLnsFlsTCon           # fh v3:cg2 0x75ad50
 0x0075acb0 function pppKeLnsFlsTDes           # fh v3:cg2 0x75ada0
 0x0075ad00 function pppKeLnsFlsTDraw          # fh v3:exact 0x0075adf0
@@ -2695,6 +2741,7 @@
 0x007dd890 function Ms_Gui_BattleChr1Proc     # fh v3:exact 0x007dd7a0
 0x007de790 function Ms_Gui_BattleChr2Proc     # fh v3:exact 0x007de6a0
 0x007dfde0 function Ms_Gui_ShakeProc          # fh v3:exact 0x007dfcf0
+0x007e2250 function op_strlen                 # (s) -> length of the C string, 0 for null (op layer string helpers 0x007e1d50..)
 0x007e3810 function op_oef2_a_get             # fh v3:exact 0x007e3720
 0x007e38a0 function op_oef2_a_set             # fh v3:exact 0x007e37b0
 0x007e3b40 function op_oef2_obj_a_get         # fh v3:exact 0x007e3a50
@@ -2772,6 +2819,8 @@
 0x007fbab0 function op_et_bindeff_draw_on     # fh v3:bsim1.00 0x007fb9d0
 0x007fbb90 function op_et_bindeff_off         # fh v3:exact 0x007fbab0
 0x007fbcd0 function op_et_bindeff_off_signal  # fh v3:exact 0x007fbbf0
+0x007fc130 function op_et_draw_flags_restore  # (h) -> u8: g_EtChrDrawFlags[i] = g_EtChrDrawFlags2[i] & 0x7f, g_EtChrDrawFlags2[i] = 0, returns the old g_EtChrDrawFlags2 (i = the record's +0xe; __report_rangecheckfailure for i >= 0xf0 after the first store); g_MagicImports slot 547
+0x007fc190 function op_et_draw_flags_save     # (h) -> u8: g_EtChrDrawFlags2[i] = g_EtChrDrawFlags[i] | 0x80, g_EtChrDrawFlags[i] = 0, returns the old g_EtChrDrawFlags2; g_MagicImports slot 548
 0x007fc2e0 function op_et_eff                 # fh v3:exact 0x007fc200
 0x007fc450 function op_et_eff_off_signal      # fh v3:bsim1.00 0x007fc370
 0x007fc590 function op_et_encount_effect_on   # fh v3:exact 0x007fc4b0
@@ -2803,9 +2852,13 @@
 0x007fe1a0 function opus_change_chrhd_battle_to_ffx # fh v3:exact 0x007fe0c0
 0x007fe200 function opus_change_chrhd_ffx_to_battle # fh v3:exact 0x007fe120
 0x007fe340 function opus_change_osu_en_by_chr_status # fh v3:exact 0x007fe260
+0x007fe450 function opus_chr_index_map        # (out) -> moved: out = 240 u16 0xffff, then out[record +0xe] = the record handle's place in g_EtChrHandles; counts the places that differ from +0xe
 0x007fe6c0 function opus_end_all_sub          # fh v3:exact 0x007fe5e0
+0x007fe920 function opu_eff_free_by_id        # (id): every g_EtEff record with this ID emptied (id -1, +4 0, +8 0x101, +0xc 0, +0x10/+0x18 0, +0x1c 0xff); nothing for -1 (opu_unit_free_by_id, opu_unit_free_by_oef2, opus_end_all_sub)
 0x007fe970 function opus_get_chr_status_index # fh v3:exact 0x007fe890
+0x007feaa0 function op_et_chr_index_by_no     # (no) -> index of the first of 208 g_EtChr records whose +4 (character number) is no, else -1
 0x007feba0 function opus_get_eff_status_index # fh v3:exact 0x007feac0
+0x007ff090 function op_et_chr_show            # (on): g_OpEtChrShow = on, g_EtChrHidden = !on; bit 1 of the draw flags of the first 208 g_EtChr records with a handle set (on = 0) or cleared; g_MagicImports slot 568
 0x007ff100 function op_fog_param_set          # fh v3:exact 0x007ff020
 0x007ff1d0 function op_free                   # fh v3:exact 0x007ff0f0
 0x007ff260 function op_heap_display_clear     # fh v3:bsim1.00 0x007ff180
@@ -2836,6 +2889,8 @@
 0x00800bb0 function opus_clip_off_all_in_battle # fh v3:bsim1.00 0x00800ad0
 0x00800be0 function opus_clip_on_all_in_battle # fh v3:bsim1.00 0x00800b00
 0x00800d10 function opus_draw_off             # fh v3:exact 0x00800c30
+0x00800d60 function opu_id_list_add           # (unit, short id) -> index: adds id to the i16 list at unit+0x1c (u16 length +0x34, the last place kept) unless found before the first negative entry (opu_et_ovl)
+0x00800da0 function opu_eff_part_index        # (unit) -> the g_EtEff record (+0x14)'s part: +0x1a & 7 when below its count (+8), else the index of +0x18 in its byte list (+0x10), else count & ~0xff
 0x00800df0 function opus_fullauto_no_get      # fh v3:exact 0x00800d10
 0x00800e80 function opus_get_monster_index    # fh v3:exact 0x00800da0
 0x00800f60 function opus_get_osu_by_draw      # fh v3:exact 0x00800e80
@@ -7753,8 +7808,11 @@
 0x00c32308 label    g_SaveData_AlbhedFade     # SaveDataSetAlbhedFade stores it, only while a SaveDataManager exists
 0x00c33468 label    g_EternalCalmFirstMap     # first of the 7 Eternal Calm maps (a map = PS2 file number / 18, as CDfileSize_CD asks): isEternalCalmScene/Mgrp, getEternalCalmSceneName/Size subtract it
 0x00c334b8 label    g_EternalCalmSceneNames   # 7 pointers to "host0:/ffx_master/jppc/event/obj..." paths, indexed by getEternalCalmSceneName
+0x00c3a4cc label    g_pppEnvSlot              # pointer to where pppInitEnv stores the current ppp environment (rcefMainSetEnv)
 0x00c3a4d0 label    g_AlphaScale              # f32 set by useExtendedAlpha (512 extended, 256 normal)
+0x00c3a4d8 label    g_VfxShapeEnlargeBufferFactor # multiplies the shape draws' vertex counts; set/resetVfxShapeEnlargeBufferFactor
 0x00c3a508 label    g_pppProgramTable            # 418 x 0x28-byte particle program records to 0x00c3e658: +0 name ("pppAccele", ...), +8 per-frame step, +0xc draw, +0x14 Sta, +0x1c set-up (Con), +0x20 second set-up (Con2), +0x24 destructor (Des); pppColor -> pppColor/pppColorCon
+0x00c3e6e0 label    g_pppKeMatSNWords         # two words pppKeMatSN copies to area 0 +0x70/+0x74
 0x00c42130 label g_ChrTexAnimSwizzle        # two 64-byte index tables (0x00c42130, 0x00c42170) for chr_texanim_clut_swizzle
 0x00c421cc label    g_BattleEnable            # set by setBattleEnable, read by MsBattleEncountExe
 0x00c421dc label    g_NewCharacterLoads       # AsyncLoadNewCharacter counts it up while non-negative
@@ -7818,12 +7876,14 @@
 0x00ccb998 label    g_SaveData_DialogState    # SaveDataGet/SetDialogState; also written by SaveDataSetScreenState, SaveDataToLoad
 0x00ccb99c label    g_SaveData_IsSave         # SaveDataSetSave writes, SaveDataIsSave: == 1
 0x00ccb9a4 label    g_SaveData_CrcCheckOff    # nonzero: SaveDataCheckCrc passes every save without computing TkCRC
+0x00ccb9d0 label    g_EtChrHidden             # 1 after op_et_chr_show(0)
 0x00ccc88c label    g_AsyncLoadManager        # the instance AsyncLoadManager_sGetInstance returns
 0x00ccca4c label    g_ClusterManager          # the instance ClusterManager_GetInstance returns
 0x00cded58 label    g_LangManager
 0x00ce5176 label    g_DepthBias_Dirty         # u8: DepthBiasHooks_clearDepthBias resets the table only when set, and clears it
 0x00ce81f4 label    g_SaveDataManager         # the instance SaveDataManager_instance returns (+4 callback result, +8 state for isBusy, +0x350 ref buffer)
 0x00cec1c0 label    g_FillBufferRequests      # 12 words zeroed by JobSchedule_pppPart_clearFillBufferRequest (and initFillBufferRequest, after the 6 buffers at 0x00cec1a8)
+0x00cec1f0 label    g_pppFpDisp               # the field effects' display switch: pppFpSetDisp; the field effect debug listing prints On/Off from it
 0x00cec1f4 label    g_FpPointLightA              # cleared by pppFpPointLightInit and pppFpLoop, read by pppFpPointLightProc
 0x00cec1fc label    g_FpPointLightB              # cleared by pppFpPointLightInit and pppFpLoop, read by pppFpPointLightProc
 0x00cec22c label    g_pppFpHeap                  # the field effects' ppp heap {cur, first, last, used}: pppFpGetHeapSize adds last - first + 16; 0x007296a0 makes it current
@@ -8033,6 +8093,7 @@
 0x0119fea0 label    g_OpusWeapons                # 4 weapon opus objects (opus_get_weapon_index)
 0x0119fed0 label    g_OpusMonsters               # 8 monster opus objects (opus_get_monster_index)
 0x011a0061 label    g_OpPrayEffect               # op_pray_effect_check returns -1 while nonzero
+0x011a0063 label    g_OpEtChrShow             # byte: the last op_et_chr_show argument
 0x011a0067 label    g_OpWotTrigger               # set by op_wot_triger, read by op_ot_draw
 0x011a03a0 label    g_OpOef2ClutCues             # ring of 64 CLUT masks (op_oef2_tex_clut_cue_check, op_oef2_tex_clut_cue_trans)
 0x011a04a0 label    g_OpOef2ClutCueHead          # u16 first entry of g_OpOef2ClutCues
@@ -8046,6 +8107,7 @@
 0x012a22c0 label    g_EtChr                      # 240 x 0x20 effect character records: +0 handle, +4 chr number, +0xc u16 bind flags, +0xe draw flag index, +0x17 bit 0 stone (op_et_*, op_get_chr*)
 0x012a40c0 label    g_OpusBattle                 # the battle's opus object: +0x1c draw list, +0x20 parts, +0x3a genko counter (opus_get_osu_by_draw default, op_et_battle_genko_counter_get)
 0x012a4100 label    g_EtEff                      # 512 x 0x20 effect records: +0 ID (bind effects 0x40000400/500/600/700 + chr record), +4 object (u16 signals at +0xb0: 0x4000 off, 0x8000 fade)
+0x012a8100 label    g_EtChrHandles            # 240 character handles in draw flag layout order (opus_chr_index_map)
 0x012a84c0 label    g_EtChrDrawFlags             # byte per draw flag index: 4 hides the bind effect, 8 the second one (op_et_bindeff_draw_on/off)
 0x012a85b0 label    g_EtChrDrawFlags2            # used instead of g_EtChrDrawFlags where nonzero
 0x012f4e80 label    g_SqsIopStatus               # sound driver status words: 0 system (SqsIopSoundSystemStatus), 1 error (SqsIopSoundErrorStatus), indexed by SqsReportIopSoundStatus
@@ -8342,6 +8404,11 @@
 0x02305834 label    g_Abmap                      # the sphere grid data (LoadAbmap): +4 i16 link count, +0x808 nodes of 0x28 (x, y i16, +6 kind, +0x21 panel bits), +0xa816 link flags (0x14 each), +0xf834 kind sizes (0x30 each)
 0x0230fd2c label    g_PppPacketPos               # the VFX packet write position (pppFpLoop); KeLnsShp_Draw records it
 0x0230fd34 label    g_pppStopStatus              # set by pppFpStopStatus; the ppp per-frame steps (pppColor, pppAngle, ...) do nothing while nonzero
+0x0230fd3c label    g_pppMemAllocFailed       # pppMemAlloc: 1 when neither heap had room
+0x0230fde0 label    g_pppWoodMatrix           # the billboard rotation pppDrawMatrixWoodSta builds (FFXVu0CopyMatrix from 0x0230fee0); pppDrawMatrixWood turns the scaled rows by it
+0x0230fe20 label    g_pppViewMatrixCopy       # FFXVu0CopyMatrix of g_pppViewMatrix (0x00920000.c); pppDrawMatrix multiplies the object's matrix by it
+0x0230ff20 label    g_pppViewMatrix           # cdc_Mul4x4(g_pppViewMatrix, g_pppCameraMatrix, 0x0230ffa0) (0x00920000.c); translation at 0x0230ff50, which pppDrawMatrixNoRot adds; the pppDrawMatrix* and pppKeDMat* draws transform positions by it
+0x0230ff60 label    g_pppCameraMatrix         # MsCopyCameraMatrix(0x0230ff60) each frame; sceVu0InversMatrix4x4 of it into 0x0230fca0
 0x0230ffe4 label    g_pppCurrentPart             # the part pppRunPart/pppRunPartFp/pppStartPart set while they run it; +0x3c points at 16-byte object records (the object at +4), which pppPObjPoint and pppKeThTp index by the key
 0x02310000 label g_ChrTexAnim               # 64 x 0x30: source +0, work +4, u8 format +0xd (0 old, 1 new) (chr_texanim_init)
 0x02310c40 label    g_CdLib                   # function table of the PS2 CD-library emulation
@@ -8389,6 +8456,5 @@
 0x025d5920 label    g_RcbgScreenWorldMatrix      # g_RcbgViewWorldMatrix through g_ScreenMatrix (rcbgUpdateMatrix)
 0x025d5960 label    g_RcbgViewWorldMatrix        # g_RcbgWorldMatrix through g_CameraMatrix (rcbgUpdateMatrix)
 0x025d59a0 label    g_RcbgWorldMatrix            # rcbgSetWorldMatrix
-
 0x025d5a24 label    g_RcefPrayEffect             # the pray effect rcEffectTaskPrayWait passes to op_pray_effect_check
 0x025d5c60 label    g_RcefTargets                # up to 16 effect targets, 0x24 bytes: u16 flags, +4 character, +8 distance, +0xc angle, +0x10 height, +0x14 direction (0x00924a20)

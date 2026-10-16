@@ -223,6 +223,16 @@ pub mod bridge {
         super::save_stat(entries, &mut bytes);
         mem.write_bytes(out, &bytes);
     }
+
+    /// `g_pppFpDisp`: the field effects' display switch (`pppFpSetDisp`,
+    /// the field effect debug listing reads it).
+    pub const FP_DISP: Global<u32> = Global::new(0x00ce_c1f0);
+
+    /// `pppFpSetDisp(on)` (`0x00729050`): returns `on` (left in `eax`).
+    pub fn ppp_fp_set_disp(mem: &mut impl Mem, on: u32) -> u32 {
+        FP_DISP.set(mem, on);
+        on
+    }
 }
 
 #[cfg(test)]
