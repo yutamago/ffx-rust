@@ -5124,9 +5124,9 @@ fn tk_round8_matches_the_original() {
             U32,
             |o| w(tk::vibrate_set_streams_mode(o, vrec, i(vmode), ha, hb)),
         );
-        let srec = t.alloc_random(0x24);
+        let vrec2 = t.alloc_random(0x24);
         let smode = t.rng.pick(&[0u8, 1, 2]);
-        t.put(srec + 0x22, smode);
+        t.put(vrec2 + 0x22, smode);
         let sent = t.alloc_random(0x10);
         let sdata = if t.rng.below(3) == 0 {
             0
@@ -5142,9 +5142,9 @@ fn tk_round8_matches_the_original() {
         t.twin(
             "Vibrate_StepLevel",
             0x0087_5c90,
-            &[srec, sent, slen],
+            &[vrec2, sent, slen],
             U32,
-            |o| w(tk::vibrate_step_level(o, srec, sent, i(slen))),
+            |o| w(tk::vibrate_step_level(o, vrec2, sent, i(slen))),
         );
         let sk = t.rng.pick(&[0u32, 2, 7, 8, 0xffff_ffff]);
         let sc = t.rng.pick(&[0u32, 1, 2, 5, 0x3f, 0x40]);
@@ -5361,6 +5361,69 @@ fn gu_texts_match_the_original() {
                 );
                 0
             },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn gu_lists_match_the_original() {
+    let Some(mut t) = setup_any(0x91e5_7001) else {
+        return;
+    };
+    let flog = record_frees(&mut t);
+    for _ in 0..100 {
+        // a window list with some closed
+        let n = t.rng.below(5);
+        let mut next = 0u32;
+        for _ in 0..n {
+            let w0 = t.alloc_random(0xa0);
+            t.put(w0, next);
+            let fl = t.rng.pick(&[0u32, 4, 0, 0xff]);
+            t.put(w0 + 0x88, fl);
+            let nc = t.rng.pick(&[0i32, 1, 3, -1]);
+            t.put(w0 + 0x90, nc);
+            let ctrls = if t.rng.below(4) == 0 {
+                0
+            } else {
+                t.alloc_random(0x44 * 3)
+            };
+            t.put(w0 + 0x94, ctrls);
+            let big = t.rng.pick(&[0u16, 0, 5]);
+            t.put(w0 + 0x5a, big);
+            next = w0;
+        }
+        t.put(t.sym(gu::WINDOW_LIST.sym), next);
+        t.twin("Gu_WindowFreeClosed", 0x0084_abd0, &[], VOID, |o| {
+            gu::gu_window_free_closed(o, &mut |o, p| free_into(o, flog, p));
+            0
+        });
+        // a selector fitted to a window
+        let win = t.alloc_random(0xa0);
+        let h = t.rng.pick(&[0u16, 9, 40, 90, 200, 0xfff0]);
+        t.put(win + 0x12, h);
+        let sel = t.alloc_random(0x20);
+        let total = t.rng.pick(&[0u16, 1, 3, 10, 30, 0xffff]);
+        let cur = t.rng.pick(&[0u16, 1, 5, 20, 0xfffe]);
+        t.put(sel + 4, total);
+        t.put(sel + 2, cur);
+        t.twin("Gu_SelectorFitWindow", 0x0084_a000, &[win, sel], U32, |o| {
+            s(gu::gu_selector_fit_window(o, win, sel))
+        });
+        // EUC text
+        let len = t.rng.below(12) as usize;
+        let mut text: Vec<u8> = t.rng.bytes(len).into_iter().map(|c| c.max(1)).collect();
+        text.extend([0, 0]);
+        let src = t.alloc(&text);
+        let dst = t.alloc_random(0x20);
+        let cnt = t.rng.pick(&[0u32, 1, 2, 5, 16, 0xffff_ffff]);
+        let src = if t.rng.below(8) == 0 { 0 } else { src };
+        t.twin(
+            "TkEucToSjisString",
+            0x0088_ed10,
+            &[src, dst, cnt],
+            U32,
+            |o| w(tk::tk_euc_to_sjis_string(o, src, dst, i(cnt))),
         );
     }
     eprintln!("{} calls", t.calls);

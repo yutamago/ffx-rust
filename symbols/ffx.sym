@@ -4223,6 +4223,7 @@
 0x00849f40 function Gu_SelectorResetNbItem    # fh v3:exact 0x00849f40
 0x00849fc0 function Gu_SelectorSetCallback    # fh v3:bsim1.00 0x00849fc0
 0x00849fd0 function Gu_SelectorSetItem        # fh v3:exact 0x00849fd0
+0x0084a000 function Gu_SelectorFitWindow      # (window, selector) visible rows = height / 9 (+0x10); short lists shrink the window, long ones scroll +0 to centre cursor +2; +0 <<= 3; Sg_SetMouse at the cursor row; own name
 0x0084a0d0 function Gu_SelectorSetMouseFukki  # fh v3:bsim1.00 0x0084a0d0
 0x0084a0e0 function Gu_SelectorSetSelect      # fh v3:exact 0x0084a0e0
 0x0084a110 function Gu_SelectorSetSelectSTR   # fh v3:exact 0x0084a110
@@ -4240,6 +4241,7 @@
 0x0084a710 function Gu_WindowControlSetText   # fh v3:exact 0x0084a710
 0x0084a920 function Gu_WindowCreate           # fh v3:exact 0x0084a920
 0x0084ab80 function Gu_WindowCloseTree        # (window) handler +0x7c (window, 0x8003, 0), flag 4, children recursively; own name
+0x0084abd0 function Gu_WindowFreeClosed       # () windows flagged closed (+0x88 bit 2) unlinked from g_GuWindowList and user_free-d with their controls' heap texts, controls array and +0x5c buffer (when +0x5a); own name (the gap's Switch names DelControl/Dispose are unproven)
 0x0084aec0 function Gu_WindowGetArg           # fh v3:bsim1.00 0x0084aec0
 0x0084aed0 function Gu_WindowGetClientH       # (window) -> i16 +0x86 (Gu_WindowSetClientH, Gu_WindowSetSize)
 0x0084aee0 function Gu_WindowGetClientW       # (window) -> i16 +0x84 (Gu_WindowSetSize: width - 2 * border +0x80)
@@ -5093,6 +5095,7 @@
 0x0088ec60 function TkVU1SyncPath             # fh v3:bsim1.00+call.cs 0x0088ebd0 cdecl
 0x0088ec90 function Tk_NoteEternalCalm        # (scene) isEternalCalmScene; first time: byte 0x018663d0 = 1, 0x018663d4 = 0; own name
 0x0088ecf0 function TkDebugPrint              # (fmt) dbgPrintf (a PC stub), returns 1; no caller; own name
+0x0088ed10 function TkEucToSjisString         # (src, dst, n) TkEucToSjis per character for up to n bytes, terminated; returns the source end, 0 when the text ended first; own name
 0x0088edc0 function TkGetDebugFontBuffer      # None
 0x0088edf0 function TkGetDebugFontStringWidth # (proportional, s) TkGetStrWidth >> 4; Switch name, the only slot TkGetDebugFontBuffer..TkGetStrWidth (picked by behaviour among its names)
 0x0088ee70 function TkGetStrWidth             # (proportional, s) -> width in 1/16: per character (lead byte >= 0x80: two bytes) g_FontWidths[c] + 2, or 9 / 13 for one / two bytes

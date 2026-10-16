@@ -2967,4 +2967,16 @@ ported! {
     Vibrate_StepLevel @ 0x0087_5c90 => extern "C" fn vibrate_step_level(rec: u32, entry: u32, len: i32) -> u32 {
         tk::vibrate_step_level(&mut mem(), rec, entry, len)
     }
+    /// `Gu_WindowFreeClosed()`: through the game's `user_free`.
+    Gu_WindowFreeClosed @ 0x0084_abd0 => extern "C" fn gu_window_free_closed() {
+        gu::gu_window_free_closed(&mut mem(), &mut |_, p| user_free(p));
+    }
+    /// `Gu_SelectorFitWindow(window, selector)`.
+    Gu_SelectorFitWindow @ 0x0084_a000 => extern "C" fn gu_selector_fit_window(window: u32, selector: u32) -> i32 {
+        gu::gu_selector_fit_window(&mut mem(), window, selector)
+    }
+    /// `TkEucToSjisString(src, dst, n)`.
+    TkEucToSjisString @ 0x0088_ed10 => extern "C" fn tk_euc_to_sjis_string(src: u32, dst: u32, n: i32) -> u32 {
+        tk::tk_euc_to_sjis_string(&mut mem(), src, dst, n)
+    }
 }

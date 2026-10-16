@@ -4830,6 +4830,30 @@ pub mod bridge {
         }
         u32::from(from)
     }
+    /// `TkEucToSjisString(src, dst, n)` (`0x0088ed10`, own name): up to `n`
+    /// bytes of EUC text converted ([`tk_euc_to_sjis`] a character at a
+    /// time) and terminated. Returns where the source stopped, or 0 when
+    /// the text ended first (or `src` is null).
+    pub fn tk_euc_to_sjis_string(mem: &mut impl Mem, src: u32, dst: u32, n: i32) -> u32 {
+        if src == 0 {
+            return 0;
+        }
+        let (mut s, mut d, mut n) = (src, dst, n);
+        loop {
+            let k = tk_euc_to_sjis(mem, s, d);
+            n = n.wrapping_sub(k.cast_signed());
+            s = s.wrapping_add(k);
+            d = d.wrapping_add(k);
+            if n < 1 {
+                break;
+            }
+            if k == 0 {
+                return 0;
+            }
+        }
+        mem.write(d, 0u8);
+        s
+    }
 }
 
 #[cfg(test)]

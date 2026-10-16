@@ -1202,6 +1202,100 @@ pub mod bridge {
             gu_control_set_text(mem, c, s, free, malloc);
         }
     }
+    /// `Gu_WindowFreeClosed()` (`0x0084abd0`, own name): every window in
+    /// `g_GuWindowList` flagged closed (bit 2 of `+0x88`) unlinked and
+    /// freed (`user_free`) with its controls' heap texts, the controls
+    /// array, and its own heap buffer `+0x5c` (when `+0x5a` is set).
+    pub fn gu_window_free_closed<M: Mem>(mem: &mut M, free: &mut impl FnMut(&mut M, u32) -> u32) {
+        loop {
+            let mut prev = 0u32;
+            let mut w = WINDOW_LIST.get(mem);
+            loop {
+                if w == 0 {
+                    return;
+                }
+                if mem.read::<u8>(at(w, 0x88)) & 4 != 0 {
+                    break;
+                }
+                prev = w;
+                w = mem.read(w);
+            }
+            let next: u32 = mem.read(w);
+            if prev == 0 {
+                WINDOW_LIST.set(mem, next);
+            } else {
+                mem.write(prev, next);
+            }
+            let controls: u32 = mem.read(at(w, 0x94));
+            if controls != 0 {
+                let mut k = 0i32;
+                while k < mem.read::<i32>(at(w, 0x90)) {
+                    let c = controls.wrapping_add(k.cast_unsigned().wrapping_mul(CONTROL));
+                    if mem.read::<u16>(at(c, 0x26)) != 0 {
+                        let text = mem.read(at(c, 0x28));
+                        free(mem, text);
+                    }
+                    k += 1;
+                }
+                let controls = mem.read(at(w, 0x94));
+                free(mem, controls);
+            }
+            if mem.read::<u16>(at(w, 0x5a)) != 0 {
+                let buf = mem.read(at(w, 0x5c));
+                free(mem, buf);
+            }
+            free(mem, w);
+        }
+    }
+
+    /// `Gu_SelectorFitWindow(window, selector)` (`0x0084a000`, own name):
+    /// the selector's visible rows (`+0x10`) from the window height / 9;
+    /// a short list shrinks the window to it (`+0x12`, `+0x1a`, `+0x22`,
+    /// client `+0x86`), a long one scrolls (`+0`) to centre the cursor
+    /// (`+2`) within `+4` items; `+0` then in eighths. The mouse goes to
+    /// the cursor's row. Returns `Sg_SetMouse`'s result.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn gu_selector_fit_window(mem: &mut impl Mem, w: u32, sel: u32) -> i32 {
+        let rows = i32::from(mem.read::<i16>(at(w, 0x12))) / 9;
+        let total: i16 = mem.read(at(sel, 4));
+        let cur: i16 = mem.read(at(sel, 2));
+        mem.write(at(sel, 0x10), rows);
+        let y = if i32::from(total) < rows {
+            mem.write(at(sel, 0x10), i32::from(total));
+            let h = total.cast_unsigned().wrapping_mul(9).wrapping_add(2);
+            for o in [0x12, 0x1a, 0x22] {
+                mem.write(at(w, o), h);
+            }
+            let top: u16 = mem.read(at(w, 0x82));
+            mem.write(at(w, 0x86), h.wrapping_sub(top).wrapping_sub(2));
+            i32::from(cur)
+        } else {
+            let mut top = cur
+                .cast_unsigned()
+                .wrapping_sub((rows / 2).cast_unsigned() as u16)
+                .cast_signed();
+            if top < 0 {
+                top = 0;
+            }
+            if i32::from(top) > i32::from(total) - mem.read::<i32>(at(sel, 0x10)) {
+                top = total
+                    .cast_unsigned()
+                    .wrapping_sub(mem.read::<u16>(at(sel, 0x10)))
+                    .cast_signed();
+            }
+            mem.write(at(sel, 0), top);
+            i32::from(cur) - i32::from(top)
+        };
+        let first: u16 = mem.read(at(sel, 0));
+        mem.write(at(sel, 0), first.wrapping_shl(3));
+        let x =
+            i32::from(mem.read::<i16>(at(w, 0x10))) / 2 + i32::from(mem.read::<i16>(at(w, 0xc)));
+        let my = y
+            .wrapping_mul(9)
+            .wrapping_add(i32::from(mem.read::<i16>(at(w, 0xe))))
+            .wrapping_add(4);
+        ffx_sg::state::bridge::set_mouse(mem, x, my)
+    }
 }
 
 #[cfg(test)]
