@@ -5660,6 +5660,7 @@
 0x008d3220 function MenuStatus_OffsetRect     # (dx, dy, out, rect, sized) 24-byte rect copy moved; size from 0x0186a8a4 when sized; own name
 0x008d3280 function TkMn2StepStatusBG         # (): i16 0x0186aa00 += step (0x0186a9fc), kept in 0..0x1000
 0x008d4910 function TkMn2GetStatusBG          # () -> i16 0x0186aa00, sign-extended
+0x008d4920 function MenuStatus_LoadLayout     # () the status screen layout from scene 1 (51 TkMn2SeqGet*/TkMn2GetCommonPlate fetches), the 4 weapon plates copied to 0x0186a930/948/960/990 and moved down by num_wpnplt (0x0186a9d4); own name
 0x008d4e30 function MenuStatus_GetPos         # (out, alt) u16 pair 0x0186a900 (alt 0x0186a948) + status origin 0x0186a86c; own name
 0x008d4e80 function MenuStatus_GetPos2        # (out, alt) u16 pair 0x0186a918 (alt 0x0186a960) + status origin; own name
 0x008d4ed0 function TkMn2InitStatusBG         # (): both i16 of g_TkMn2StatusBG = 0; Switch symbol name (BSim)

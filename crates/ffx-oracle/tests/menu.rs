@@ -4704,6 +4704,12 @@ fn tk_round7_matches_the_original() {
                 tk::tk_menu_ctrl_hdd(o, hw, &mut callback);
                 0
             });
+            if round % 10 == 0 {
+                t.twin("MenuStatus_LoadLayout", 0x008d_4920, &[], VOID, |o| {
+                    tk::menu_status_load_layout(o);
+                    0
+                });
+            }
             t.twin("TkMn2GetMainPos", 0x008e_2630, &[], U32, |o| {
                 w(tk::tk_mn2_get_main_pos(o))
             });

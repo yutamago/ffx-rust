@@ -1179,7 +1179,7 @@ pub mod bridge {
             let p = malloc(mem, (len + 0x11).cast_unsigned());
             mem.write(c + 0x28, p);
             #[allow(clippy::cast_possible_truncation)]
-            mem.write(c + 0x26, (len + 0x10) as u16);
+            mem.write(c + 0x26, (len + 0x10).cast_unsigned() as u16);
         }
         let dst: u32 = mem.read(c + 0x28);
         for k in 0..=len.cast_unsigned() {

@@ -2915,4 +2915,8 @@ ported! {
     Gu_WindowControlSetText @ 0x0084_a710 => extern "C" fn gu_window_control_set_text(window: u32, id: u32, s: u32) {
         gu::gu_window_control_set_text(&mut mem(), window, id, s, &mut |_, p| user_free(p), &mut |_, n| user_malloc(n));
     }
+    /// `MenuStatus_LoadLayout()`.
+    MenuStatus_LoadLayout @ 0x008d_4920 => extern "C" fn menu_status_load_layout() {
+        tk::menu_status_load_layout(&mut mem());
+    }
 }

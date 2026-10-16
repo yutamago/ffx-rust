@@ -4438,6 +4438,185 @@ pub mod bridge {
         }
         0
     }
+    /// One step of a menu layout loader: a scene parameter (scene 1)
+    /// fetched into a global.
+    #[derive(Clone, Copy)]
+    enum SeqOp {
+        /// `TkMn2SeqGetPos(name, out)`.
+        Pos(u32, u32),
+        /// `TkMn2SeqGetRect(name, out)`.
+        Rect(u32, u32),
+        /// `TkMn2SeqGetColor(name)` stored at `out`.
+        Color(u32, u32),
+        /// `TkMn2SeqGetNum(name)` stored at `out`.
+        Num(u32, u32),
+        /// `TkMn2GetCommonPlate(out, rect, c1, c2, a, b)`.
+        Plate(u32, [u32; 3], u32, u32),
+    }
+
+    fn run_seq_ops(mem: &mut impl Mem, ops: &[SeqOp]) {
+        for &op in ops {
+            match op {
+                SeqOp::Pos(name, out) => {
+                    let (n, o) = (mem.rebase(name), mem.rebase(out));
+                    tk_mn2_seq_get_pos(mem, n, o);
+                }
+                SeqOp::Rect(name, out) => {
+                    let (n, o) = (mem.rebase(name), mem.rebase(out));
+                    tk_mn2_seq_get_rect(mem, n, o);
+                }
+                SeqOp::Color(name, out) => {
+                    let v = tk_mn2_seq_get_color(mem, 1, mem.rebase(name));
+                    mem.write(mem.rebase(out), v);
+                }
+                SeqOp::Num(name, out) => {
+                    let v = tk_mn2_seq_get_num(mem, 1, mem.rebase(name));
+                    mem.write(mem.rebase(out), v);
+                }
+                SeqOp::Plate(out, names, a, b) => {
+                    let o = mem.rebase(out);
+                    let names = names.map(|n| mem.rebase(n));
+                    tk_mn2_get_common_plate(mem, 1, o, names, a, b);
+                }
+            }
+        }
+    }
+
+    /// The status screen's layout before `num_wpnplt`
+    /// ([`menu_status_load_layout`]).
+    const STATUS_LAYOUT_A: &[SeqOp] = &[
+        SeqOp::Color(0x00b6_2884, 0x023c_c41c),
+        SeqOp::Color(0x00b6_2890, 0x023c_c418),
+        SeqOp::Rect(0x00b6_5f24, 0x0186_a83c),
+        SeqOp::Pos(0x00b6_5f34, 0x0186_a844),
+        SeqOp::Rect(0x00b6_5f44, 0x0186_a848),
+        SeqOp::Rect(0x00b6_5f54, 0x023c_c3d8),
+        SeqOp::Rect(0x00b6_5f64, 0x023c_c3d0),
+        SeqOp::Rect(0x00b6_5f74, 0x0186_a864),
+        SeqOp::Pos(0x00b6_5f84, 0x0186_a9f8),
+        SeqOp::Rect(0x00b6_5f90, 0x0186_a9c0),
+        SeqOp::Pos(0x00b6_5f98, 0x0186_a9c8),
+        SeqOp::Color(0x00b6_5fa0, 0x0186_a9cc),
+        SeqOp::Color(0x00b6_5fac, 0x0186_a9d0),
+        SeqOp::Color(0x00b6_5fb8, 0x0186_a850),
+        SeqOp::Color(0x00b6_5fc4, 0x0186_a854),
+        SeqOp::Color(0x00b6_5fd4, 0x0186_a858),
+        SeqOp::Color(0x00b6_5fe4, 0x0186_a85c),
+        SeqOp::Color(0x00b6_5ff4, 0x0186_a860),
+        SeqOp::Color(0x00b6_6004, 0x0186_a9bc),
+        SeqOp::Pos(0x00b6_6010, 0x0186_a87c),
+        SeqOp::Pos(0x00b6_601c, 0x0186_a880),
+        SeqOp::Pos(0x00b6_6028, 0x023c_c420),
+        SeqOp::Num(0x00b6_6034, 0x0186_a884),
+        SeqOp::Plate(
+            0x0186_a888,
+            [0x00b6_6058, 0x00b6_604c, 0x00b6_6040],
+            0xd8,
+            0xd9,
+        ),
+        SeqOp::Plate(
+            0x0186_a8a0,
+            [0x00b6_607c, 0x00b6_6070, 0x00b6_6064],
+            0xd8,
+            0xd9,
+        ),
+        SeqOp::Plate(
+            0x0186_a8b8,
+            [0x00b6_60a0, 0x00b6_6094, 0x00b6_6088],
+            0x109,
+            0xd9,
+        ),
+        SeqOp::Plate(
+            0x0186_a8d0,
+            [0x00b6_60b8, 0x00b6_60ac, 0x00b6_60ac],
+            0x109,
+            0xd9,
+        ),
+        SeqOp::Plate(
+            0x0186_a8e8,
+            [0x00b6_5f44, 0x00b6_5fb8, 0x00b6_5fb8],
+            0x0,
+            0x0,
+        ),
+        SeqOp::Plate(
+            0x0186_a900,
+            [0x00b6_5f54, 0x00b6_5fc4, 0x00b6_5fd4],
+            0xda,
+            0xdb,
+        ),
+        SeqOp::Plate(
+            0x0186_a918,
+            [0x00b6_5f64, 0x00b6_5fe4, 0x00b6_5ff4],
+            0x0,
+            0x0,
+        ),
+        SeqOp::Plate(
+            0x0186_a978,
+            [0x00b6_5f74, 0x00b6_5fb8, 0x00b6_5fb8],
+            0xde,
+            0xdf,
+        ),
+        SeqOp::Plate(
+            0x023c_c400,
+            [0x00b6_60c4, 0x00b6_27e0, 0x00b6_27f0],
+            0xd8,
+            0xd9,
+        ),
+        SeqOp::Pos(0x00b6_60d0, 0x023c_c3e8),
+        SeqOp::Pos(0x00b6_60dc, 0x023c_c3e4),
+        SeqOp::Pos(0x00b6_5f34, 0x0186_a9b8),
+    ];
+
+    /// The status screen's layout after the weapon plates.
+    const STATUS_LAYOUT_B: &[SeqOp] = &[
+        SeqOp::Pos(0x00b6_60f4, 0x0186_a9a8),
+        SeqOp::Pos(0x00b6_6104, 0x0186_a9ac),
+        SeqOp::Pos(0x00b6_6110, 0x0186_a9b0),
+        SeqOp::Pos(0x00b6_611c, 0x0186_a9b4),
+        SeqOp::Pos(0x00b6_612c, 0x0186_a86c),
+        SeqOp::Pos(0x00b6_6138, 0x0186_a870),
+        SeqOp::Pos(0x00b6_6144, 0x0186_a874),
+        SeqOp::Pos(0x00b6_6104, 0x0186_a878),
+        SeqOp::Num(0x00b6_6150, 0x0186_a9e8),
+        SeqOp::Num(0x00b6_615c, 0x0186_a9ec),
+        SeqOp::Num(0x00b6_6168, 0x0186_a9f0),
+        SeqOp::Pos(0x00b6_6174, 0x0186_a9f4),
+        SeqOp::Rect(0x00b6_6180, 0x0186_a9d8),
+        SeqOp::Pos(0x00b6_6190, 0x0186_a9e0),
+        SeqOp::Pos(0x00b6_619c, 0x0186_a9e4),
+        SeqOp::Pos(0x00b6_61a8, 0x023c_c3e0),
+    ];
+
+    /// The weapon plates and where `MenuStatus_LoadLayout` copies them.
+    const WEAPON_PLATE_COPIES: [(u32, u32); 4] = [
+        (0x0186_a8e8, 0x0186_a930),
+        (0x0186_a900, 0x0186_a948),
+        (0x0186_a918, 0x0186_a960),
+        (0x0186_a978, 0x0186_a990),
+    ];
+
+    /// `MenuStatus_LoadLayout()` (`0x008d4920`, own name): the status
+    /// screen's layout from scene 1 (menu background colours, name and
+    /// weapon plates, limit gauge, faces, ...); the four weapon plates are
+    /// then copied (24 bytes each, [`WEAPON_PLATE_COPIES`]), the copies
+    /// moved down by `num_wpnplt`
+    /// (also kept at `0x0186a9d4`).
+    pub fn menu_status_load_layout(mem: &mut impl Mem) {
+        run_seq_ops(mem, STATUS_LAYOUT_A);
+        let dy = tk_mn2_seq_get_num(mem, 1, mem.rebase(0x00b6_60e8)).cast_unsigned();
+        mem.write(mem.rebase(0x0186_a9d4), dy);
+        for (src, dst) in WEAPON_PLATE_COPIES {
+            let (s, d) = (mem.rebase(src), mem.rebase(dst));
+            let v: [u32; 6] = mem.read(s);
+            mem.write(d, v);
+        }
+        for (src, dst) in WEAPON_PLATE_COPIES {
+            let y: u16 = mem.read(mem.rebase(src + 2));
+            #[allow(clippy::cast_possible_truncation)]
+            mem.write(mem.rebase(dst + 2), y.wrapping_add(dy as u16));
+        }
+        run_seq_ops(mem, STATUS_LAYOUT_B);
+    }
 }
 
 #[cfg(test)]
