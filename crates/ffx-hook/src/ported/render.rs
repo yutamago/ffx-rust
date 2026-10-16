@@ -186,6 +186,99 @@ ported! {
     TextureAnimation_FindMaterial @ 0x006b_1e40 => extern "thiscall" fn texture_animation_find_material(this: u32, list: u32, index: u32, name: u32) -> u32 {
         mg::find_material(&mem(), this, list, index, name)
     }
+    // ---- round 4 ----
+    /// `Cache_Init()`.
+    Cache_Init @ 0x0084_0910 => extern "C" fn cache_init() {
+        cache::bridge::init(&mut mem());
+    }
+    /// `Cache_ClearCheck()`.
+    Cache_ClearCheck @ 0x0084_0120 => extern "C" fn cache_clear_check() {
+        cache::bridge::clear_check(&mut mem());
+    }
+    /// `Cache_Lock(kind, id)`.
+    Cache_Lock @ 0x0084_0960 => extern "C" fn cache_lock(kind: i32, id: u32) {
+        cache::bridge::lock(&mut mem(), kind, id);
+    }
+    /// `Cache_Exist_RenderData(kind, id)`.
+    Cache_Exist_RenderData @ 0x0084_0890 => extern "C" fn cache_exist_render_data(kind: i32, id: u32) -> u32 {
+        cache::bridge::exist_field(&mem(), kind, id, 0x10)
+    }
+    /// `Cache_Exist_ShadowMeshData(kind, id)`.
+    Cache_Exist_ShadowMeshData @ 0x0084_08d0 => extern "C" fn cache_exist_shadow_mesh_data(kind: i32, id: u32) -> u32 {
+        cache::bridge::exist_field(&mem(), kind, id, 0x14)
+    }
+    /// `graphicScreenGetOffset(&x, &y)`.
+    graphicScreenGetOffset @ 0x0064_2d10 => extern "C" fn graphic_screen_get_offset(x: u32, y: u32) -> u32 {
+        sc::screen_get_offset(&mut mem(), x, y)
+    }
+    /// `PhyreScene_setTextureVideoInfo(this, info, playing)`.
+    PhyreScene_setTextureVideoInfo @ 0x0066_e800 => extern "thiscall" fn scene_set_texture_video_info(this: u32, info: u32, playing: u32) -> u32 {
+        sc::set_texture_video_info(&mut mem(), this, info, playing)
+    }
+    /// `PostProcessManager_setFocusDepth(this, which, depth)`.
+    PostProcessManager_setFocusDepth @ 0x0069_8550 => extern "thiscall" fn post_process_set_focus_depth(this: u32, which: u32, depth: f32) -> u32 {
+        mg::set_focus_depth(&mut mem(), this, which, depth)
+    }
+    /// `SpecularMapParamsManager_needDrawSpecularPass(this)`.
+    SpecularMapParamsManager_needDrawSpecularPass @ 0x006c_59a0 => extern "thiscall" fn specular_need_draw_pass(this: u32) -> u32 {
+        mg::need_draw_specular_pass(&mem(), this)
+    }
+    /// `ShadowManager_AlreadyinShadowMap(this, obj, &col, &row)`.
+    ShadowManager_AlreadyinShadowMap @ 0x006c_8040 => extern "thiscall" fn shadow_already_in_map(this: u32, obj: u32, col: u32, row: u32) -> u8 {
+        mg::already_in_shadow_map(&mut mem(), this, obj, col, row)
+    }
+    /// `PhyreCursor_IsValid_00660240(this)`.
+    PhyreCursor_IsValid_00660240 @ 0x0066_0240 => extern "thiscall" fn cursor_valid_660240(this: u32) -> u8 {
+        mg::cursor_valid(&mem(), this)
+    }
+    /// `PhyreCursor_IsValid_00660270(this)`.
+    PhyreCursor_IsValid_00660270 @ 0x0066_0270 => extern "thiscall" fn cursor_valid_660270(this: u32) -> u8 {
+        mg::cursor_valid(&mem(), this)
+    }
+    /// `PhyreCursor_IsValid_006602a0(this)`.
+    PhyreCursor_IsValid_006602a0 @ 0x0066_02a0 => extern "thiscall" fn cursor_valid_6602a0(this: u32) -> u8 {
+        mg::cursor_valid(&mem(), this)
+    }
+    /// `PhyreCursor_IsValid_006602d0(this)`.
+    PhyreCursor_IsValid_006602d0 @ 0x0066_02d0 => extern "thiscall" fn cursor_valid_6602d0(this: u32) -> u8 {
+        mg::cursor_valid(&mem(), this)
+    }
+    /// `PhyreCursor_IsValid_00660300(this)`.
+    PhyreCursor_IsValid_00660300 @ 0x0066_0300 => extern "thiscall" fn cursor_valid_660300(this: u32) -> u8 {
+        mg::cursor_valid(&mem(), this)
+    }
+    /// `PhyreCursor_IsValid_006b28f0(this)`.
+    PhyreCursor_IsValid_006b28f0 @ 0x006b_28f0 => extern "thiscall" fn cursor_valid_6b28f0(this: u32) -> u8 {
+        mg::cursor_valid(&mem(), this)
+    }
+    /// `PhyreScene_SetByte01(this, v)`.
+    PhyreScene_SetByte01 @ 0x0066_cfe0 => extern "thiscall" fn scene_set_byte_01(this: u32, v: u32) -> u8 {
+        sc::set_byte_field(&mut mem(), this, 1, v)
+    }
+    /// `PhyreScene_SetByte03(this, v)`.
+    PhyreScene_SetByte03 @ 0x0066_d1b0 => extern "thiscall" fn scene_set_byte_03(this: u32, v: u32) -> u8 {
+        sc::set_byte_field(&mut mem(), this, 3, v)
+    }
+    /// `PostProcessManager_setAllSwitches(this, v)`.
+    PostProcessManager_setAllSwitches @ 0x0069_89c0 => extern "thiscall" fn post_process_set_all_switches(this: u32, v: u32) -> u8 {
+        mg::set_all_switches(&mut mem(), this, v)
+    }
+    /// `PostProcessManager_resetCrossFade(this)`.
+    PostProcessManager_resetCrossFade @ 0x0069_8f70 => extern "thiscall" fn post_process_reset_cross_fade(this: u32) {
+        mg::reset_cross_fade(&mut mem(), this);
+    }
+    /// `BlurEffect_SetFloats74(this, a, b, c, d)`.
+    BlurEffect_SetFloats74 @ 0x006c_46e0 => extern "thiscall" fn blur_effect_set_floats_74(this: u32, a: f32, b: f32, c: f32, d: f32) {
+        mg::set_floats4(&mut mem(), this, [a, b, c, d]);
+    }
+    /// `Distortion_updateDistortionVertex(this, i, j, x, y, z, w, u, v)`.
+    Distortion_updateDistortionVertex @ 0x006c_3240 => extern "thiscall" fn distortion_update_vertex(this: u32, i: u32, j: u32, x: f32, y: f32, z: f32, w: f32, u: f32, v: f32) -> u32 {
+        mg::distortion_update_vertex(&mut mem(), this, i, j, [x, y, z, w, u, v])
+    }
+    /// `graphicCharacterInstanceGetMaxiumBoundingBox(inst, &x, &z, &y)`.
+    graphicCharacterInstanceGetMaxiumBoundingBox @ 0x0063_b1b0 => extern "C" fn graphic_character_max_bounding_box(inst: u32, x: u32, z: u32, y: u32) {
+        sc::character_max_bounding_box(&mut mem(), inst, x, z, y);
+    }
     /// `graphicVFX2DUpdate(lo, hi)`.
     graphicVFX2DUpdate @ 0x0064_4bc0 => extern "C" fn graphic_vfx_2d_update(lo: u32, hi: u32) {
         vfx::bridge::update_2d(&mut mem(), lo, hi);

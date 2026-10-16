@@ -438,4 +438,46 @@ pub mod bridge {
         };
         scaled(target_height(m, scene), base)
     }
+
+    /// `graphicScreenGetOffset(&x, &y)`: the scene's screen offset, through
+    /// the x87. Returns `y`'s pointer (`eax`).
+    pub fn screen_get_offset(m: &mut impl Mem, x: u32, y: u32) -> u32 {
+        let scene = SCENE.get(m);
+        let vx = x87::round_trip(f32::from_bits(m.read(scene + 0xfa34)));
+        m.write(x, vx.to_bits());
+        let scene = SCENE.get(m);
+        let vy = x87::round_trip(f32::from_bits(m.read(scene + 0xfa38)));
+        m.write(y, vy.to_bits());
+        y
+    }
+
+    /// `PhyreScene_setTextureVideoInfo(this, info, playing)`: unless `info`
+    /// is 0x6b, the video info (`+0x10c4`) and its flag (`+0x10c8`).
+    /// Returns `eax` (`info`, with the flag in `al` when stored).
+    pub fn set_texture_video_info(m: &mut impl Mem, scene: u32, info: u32, playing: u32) -> u32 {
+        if info == 0x6b {
+            return info;
+        }
+        m.write(scene + 0x10c4, info);
+        let flag = u8::from(playing != 0);
+        m.write(scene + 0x10c8, flag);
+        (info & !0xff) | u32::from(flag)
+    }
+
+    /// `graphicCharacterInstanceGetMaxiumBoundingBox(inst, &x, &z, &y)`: the
+    /// first mesh's (`*(+4)[0] + 0x1c`) bounding-box maximum, `+0x10` to
+    /// `x`, `+0x18` to `z`, `+0x14` to `y`, for an instance with meshes.
+    #[allow(clippy::many_single_char_names, clippy::verbose_bit_mask)]
+    pub fn character_max_bounding_box(m: &mut impl Mem, inst: u32, x: u32, z: u32, y: u32) {
+        if inst == 0 || m.read::<u32>(inst) & 0x7fff_ffff == 0 {
+            return;
+        }
+        for (off, to) in [(0x10, x), (0x14, y), (0x18, z)] {
+            let meshes: u32 = m.read(inst + 4);
+            let mesh: u32 = m.read(meshes);
+            let bounds: u32 = m.read(mesh + 0x1c);
+            let v = x87::round_trip(f32::from_bits(m.read(bounds + off)));
+            m.write(to, v.to_bits());
+        }
+    }
 }

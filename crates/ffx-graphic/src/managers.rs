@@ -464,4 +464,119 @@ pub mod bridge {
         }
         0
     }
+
+    /// `PostProcessManager_setFocusDepth(this, which, depth)`: the near (0,
+    /// `+0x123c8`) or far (1, `+0x123cc`) focus depth, through the x87.
+    /// Returns `eax` (`which - 1`, 0 for 0).
+    pub fn set_focus_depth(m: &mut impl Mem, this: u32, which: u32, depth: f32) -> u32 {
+        match which {
+            0 => set_float(m, this, 0x123c8, depth),
+            1 => set_float(m, this, 0x123cc, depth),
+            _ => {}
+        }
+        which.saturating_sub(1)
+    }
+
+    /// `SpecularMapParamsManager_needDrawSpecularPass(this)`: whether one of
+    /// the four maps (`+0`) is set and not hidden (`+0x5b0 + i`).
+    pub fn need_draw_specular_pass(m: &impl Mem, this: u32) -> u32 {
+        u32::from(
+            (0..4).any(|i| m.read::<u32>(this + 4 * i) != 0 && m.read::<u8>(this + 0x5b0 + i) == 0),
+        )
+    }
+
+    /// `ShadowManager_AlreadyinShadowMap(this, obj, &col, &row)`: where
+    /// `obj` sits among the 8 x 8 shadow-map slots; 1 (`al`) and the
+    /// position when found, else 0.
+    pub fn already_in_shadow_map(m: &mut impl Mem, this: u32, obj: u32, col: u32, row: u32) -> u8 {
+        for r in 0..8u32 {
+            for c in 0..8u32 {
+                if m.read::<u32>(this + 0xde8 + 4 * (8 * r + c)) == obj {
+                    m.write(row, r);
+                    m.write(col, c);
+                    return 1;
+                }
+            }
+        }
+        0
+    }
+
+    /// The cursor checks (`FUN_00660240`, `FUN_00660270`, `FUN_006602a0`,
+    /// `FUN_006602d0`, `FUN_00660300`, `FUN_006b28f0`: copies of one
+    /// template): a cursor (`this`) over a list (`+0x18`, first node
+    /// `+0x2c`, nodes linked at `+0x40`) pointing at `+0x1c` is valid when
+    /// it has no list, or when its node is still in the list and the list's
+    /// `+0x40` is set. In `al`.
+    pub fn cursor_valid(m: &impl Mem, this: u32) -> u8 {
+        let list: u32 = m.read(this + 0x18);
+        if list == 0 {
+            return 1;
+        }
+        let at: u32 = m.read(this + 0x1c);
+        let mut node: u32 = m.read(list + 0x2c);
+        while node != 0 {
+            if node == at {
+                return u8::from(m.read::<u32>(list + 0x40) != 0);
+            }
+            node = m.read(node + 0x40);
+        }
+        0
+    }
+
+    /// `PostProcessManager_setAllSwitches(this, v)` (`FUN_006989c0`): the four
+    /// bytes `+0x123b0..+0x123b3`. Returns `v` (`al`).
+    pub fn set_all_switches(m: &mut impl Mem, this: u32, v: u32) -> u8 {
+        #[allow(clippy::cast_possible_truncation)] // the byte argument
+        let b = v as u8;
+        for i in 0..4 {
+            m.write(this + 0x123b0 + i, b);
+        }
+        b
+    }
+
+    /// `PostProcessManager_resetCrossFade(this)` (`FUN_00698f70`): unless
+    /// `+0x123a0` is set, and while the manager's `+0x123a8` is 1, clears
+    /// `+0x1239c` and the float `+0x12398`.
+    pub fn reset_cross_fade(m: &mut impl Mem, this: u32) {
+        if m.read::<u8>(this + 0x123a0) == 0 {
+            let pp = POST_PROCESS.get(m);
+            if m.read::<u8>(pp + 0x123a8) == 1 {
+                m.write(this + 0x1239c, 0u32);
+                m.write(this + 0x12398, 0u32);
+            }
+        }
+    }
+
+    /// `BlurEffect_SetFloats74(this, a, b, c, d)` (`FUN_006c46e0`): four
+    /// floats from `+0x74`, through the x87.
+    pub fn set_floats4(m: &mut impl Mem, this: u32, v: [f32; 4]) {
+        for (i, x) in (0u32..).zip(v) {
+            set_float(m, this, 0x74 + 4 * i, x);
+        }
+    }
+
+    /// `Distortion_updateDistortionVertex(this, i, j, x, y, z, w, u, v)`:
+    /// vertex `9i - j` (16 bytes from `*(+0x6c) + 0x80`) gets `x, y, z, w`
+    /// and its UV (8 bytes from `*(+0x70) + 0x40`) `u, 1 - v`. Returns 0.
+    #[allow(clippy::many_single_char_names)]
+    pub fn distortion_update_vertex(
+        m: &mut impl Mem,
+        this: u32,
+        i: u32,
+        j: u32,
+        f: [f32; 6],
+    ) -> u32 {
+        let k = i.wrapping_mul(9).wrapping_sub(j);
+        let verts: u32 = m.read(this + 0x6c);
+        let at = verts.wrapping_add(k.wrapping_add(8).wrapping_mul(16));
+        for (n, x) in (0u32..).zip(&f[..4]) {
+            m.write(at + 4 * n, x87::round_trip(*x).to_bits());
+        }
+        let uvs: u32 = m.read(this + 0x70);
+        let at = uvs.wrapping_add(k.wrapping_mul(8)).wrapping_add(0x40);
+        m.write(at, x87::round_trip(f[4]).to_bits());
+        let v = x87::store(x87::sub(1.0, x87::load(f[5].to_bits())));
+        m.write(at + 4, v);
+        0
+    }
 }
