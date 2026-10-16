@@ -1627,4 +1627,65 @@ ported! {
     MsSetCameraMatrix @ 0x007c_06d0 => extern "C" fn ms_set_camera_matrix(on: u32, screen: u32, cam: u32, look_at: u32, eye: u32, roll: u32) -> u32 {
         camera::ms_set_camera_matrix(&mut mem(), on, screen, cam, look_at, eye, roll)
     }
+    /// `MsSetChrImageDamageAttack`.
+    MsSetChrImageDamageAttack @ 0x0078_d790 => extern "C" fn ms_set_chr_image_damage_attack(actor: u32) -> i32 {
+        flow::ms_set_chr_image_damage_attack(&mut mem(), actor)
+    }
+    /// `MsSetChrHeight`.
+    MsSetChrHeight @ 0x007a_b300 => extern "C" fn ms_set_chr_height(i: u32) {
+        flow::ms_set_chr_height(&mut mem(), i);
+    }
+    /// `MsGetScreenData`.
+    MsGetScreenData @ 0x007b_bd00 => extern "C" fn ms_get_screen_data(a: u32, b: u32, c: u32, d: u32) -> u32 {
+        flow::ms_get_screen_data(&mut mem(), [a, b, c, d])
+    }
+    /// `MsBtlPosInit`.
+    MsBtlPosInit @ 0x007c_93d0 => extern "C" fn ms_btl_pos_init() {
+        flow::ms_btl_pos_init(&mut mem());
+    }
+    /// `MsAtelRegistInit`.
+    MsAtelRegistInit @ 0x0079_7ae0 => extern "C" fn ms_atel_regist_init() {
+        flow::ms_atel_regist_init(&mut mem());
+    }
+    /// `MsSetChrMotionInfo`.
+    MsSetChrMotionInfo @ 0x007b_4a90 => extern "C" fn ms_set_chr_motion_info(i: u32, k: u32, value: u32) {
+        flow::ms_set_chr_motion_info(&mut mem(), i, k, value);
+    }
+    /// `MsExchangeParty`.
+    MsExchangeParty @ 0x007a_de10 => extern "C" fn ms_exchange_party() {
+        flow::ms_exchange_party(&mut mem());
+    }
+    /// `MsChrSEfoot`.
+    MsChrSEfoot @ 0x0079_fd20 => extern "C" fn ms_chr_se_foot(i: u32, v: u32) {
+        #[allow(clippy::cast_possible_truncation)] // a byte argument
+        flow::ms_chr_se_foot(&mut mem(), i, v as u8);
+    }
+    /// `MsSEP3Dinit`.
+    MsSEP3Dinit @ 0x007a_0910 => extern "C" fn ms_sep3d_init() {
+        flow::ms_sep3d_init(&mut mem());
+    }
+    /// `MsEffectLimitSync`.
+    MsEffectLimitSync @ 0x007a_fde0 => extern "C" fn ms_effect_limit_sync(i: u32) -> i32 {
+        flow::ms_effect_limit_sync(&mem(), i)
+    }
+    /// `MsMenuInitText`.
+    MsMenuInitText @ 0x0078_fe60 => extern "C" fn ms_menu_init_text() {
+        flow::ms_menu_init_text(&mut mem());
+    }
+    /// `MsAddYoujinbouCom`.
+    MsAddYoujinbouCom @ 0x007b_2950 => extern "C" fn ms_add_youjinbou_com(n: i32) -> i32 {
+        flow::ms_add_youjinbou_com(&mut mem(), n)
+    }
+    /// `MsMagicEffectSet`.
+    MsMagicEffectSet @ 0x0079_e890 => extern "C" fn ms_magic_effect_set(chr: u32, actor: u32) {
+        flow::ms_magic_effect_set(&mut mem(), chr, actor);
+    }
+    /// `MsMenuCheckChrLook`.
+    MsMenuCheckChrLook @ 0x0078_f990 => extern "C" fn ms_menu_check_chr_look(i: u32) -> u32 {
+        flow::ms_menu_check_chr_look(&mem(), i)
+    }
+    /// `MsSetChrMoveFlagAll`.
+    MsSetChrMoveFlagAll @ 0x0078_8e90 => extern "C" fn ms_set_chr_move_flag_all(on: u32) {
+        flow::ms_set_chr_move_flag_all(&mut mem(), on);
+    }
 }

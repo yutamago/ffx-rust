@@ -50,7 +50,15 @@ fn dress(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, chars: u
             }
         }
     }
-    fill(a, b, rng, chars, 0x1000);
+    // characters' words without signalling NaNs (the CPU quiets them)
+    let v: Vec<u8> = (0..0x400)
+        .flat_map(|_| battle_common::world::quiet(rng.next()).to_le_bytes())
+        .collect();
+    poke(a, b, chars, &v);
+    // each character's block (Ch_SetThickness reads its default there)
+    for k in 0..4 {
+        poke(a, b, chars + 0x400 * k + 0x1c4, &chars.to_le_bytes());
+    }
 }
 
 fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World) {
@@ -160,6 +168,102 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World) {
     same("flow", a, b);
 }
 
+fn more(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World) {
+    let i = rng.below(ACTORS);
+    let actor = w.actor(i);
+    twin(
+        "MsSetChrImageDamageAttack",
+        a,
+        b,
+        0x0078_d790,
+        &[actor],
+        ALL,
+        |m| f::ms_set_chr_image_damage_attack(m, actor).cast_unsigned(),
+    );
+    poke(a, b, actor + 0x50c, &[u8::try_from(rng.below(3)).unwrap()]);
+    twin("MsSetChrHeight", a, b, 0x007a_b300, &[i], 0, |m| {
+        f::ms_set_chr_height(m, i);
+        0
+    });
+    let out: [u32; 4] = std::array::from_fn(|k| {
+        if rng.below(4) == 0 {
+            0
+        } else {
+            w.out + 0xc0 + 4 * u32::try_from(k).unwrap()
+        }
+    });
+    twin("MsGetScreenData", a, b, 0x007b_bd00, &out, ALL, |m| {
+        f::ms_get_screen_data(m, out)
+    });
+    let (k, v) = (rng.below(11), battle_common::world::quiet(rng.next()));
+    twin(
+        "MsSetChrMotionInfo",
+        a,
+        b,
+        0x007b_4a90,
+        &[i, k, v],
+        0,
+        |m| {
+            f::ms_set_chr_motion_info(m, i, k, v);
+            0
+        },
+    );
+    let v = rng.next();
+    twin("MsChrSEfoot", a, b, 0x0079_fd20, &[i, v], 0, |m| {
+        f::ms_chr_se_foot(m, i, v.to_le_bytes()[0]);
+        0
+    });
+    twin("MsEffectLimitSync", a, b, 0x007a_fde0, &[i], ALL, |m| {
+        f::ms_effect_limit_sync(m, i).cast_unsigned()
+    });
+    let n = rng.range(-300, 300);
+    twin(
+        "MsAddYoujinbouCom",
+        a,
+        b,
+        0x007b_2950,
+        &[n.cast_unsigned()],
+        ALL,
+        |m| f::ms_add_youjinbou_com(m, n).cast_unsigned(),
+    );
+    let c = rng.below(0x22);
+    twin("MsMagicEffectSet", a, b, 0x0079_e890, &[c, actor], 0, |m| {
+        f::ms_magic_effect_set(m, c, actor);
+        0
+    });
+    twin(
+        "MsMenuCheckChrLook",
+        a,
+        b,
+        0x0078_f990,
+        &[c | (rng.next() & !0xff)],
+        ALL,
+        |m| f::ms_menu_check_chr_look(m, c),
+    );
+    let on = if rng.below(2) == 0 { 0 } else { rng.next() };
+    twin("MsSetChrMoveFlagAll", a, b, 0x0078_8e90, &[on], 0, |m| {
+        f::ms_set_chr_move_flag_all(m, on);
+        0
+    });
+    for (name, sym, rust) in [
+        (
+            "MsBtlPosInit",
+            0x007c_93d0,
+            f::ms_btl_pos_init as fn(&mut Oracle),
+        ),
+        ("MsAtelRegistInit", 0x0079_7ae0, f::ms_atel_regist_init),
+        ("MsExchangeParty", 0x007a_de10, f::ms_exchange_party),
+        ("MsSEP3Dinit", 0x007a_0910, f::ms_sep3d_init),
+        ("MsMenuInitText", 0x0078_fe60, f::ms_menu_init_text),
+    ] {
+        twin(name, a, b, sym, &[], 0, |m| {
+            rust(m);
+            0
+        });
+    }
+    same("more", a, b);
+}
+
 fn globals(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     for (g, len) in [
         (f::EFFECT_WAIT.ptr(b).addr, 2),
@@ -169,10 +273,34 @@ fn globals(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         (f::RECORDS_OFF.ptr(b).addr, 1),
         (ffx_battle::minor::bridge::DIR_FREE.ptr(b).addr, 1),
         (ffx_battle::save::bridge::PLY_SAVE.ptr(b).addr + 0x50, 0x10),
+        (f::YOJIMBO_COMMANDS.ptr(b).addr, 4),
+        (f::GROUND.ptr(b).addr, 4),
+        (ffx_battle::minor::bridge::ATEL_MANAGERS.ptr(b).addr, 0x1900),
+        (f::MENU_TEXT.ptr(b).addr, 0xcc),
+        (f::BTL_POS.ptr(b).addr, 0x50),
     ] {
         fill(a, b, rng, g, len);
     }
     set(a, b, f::MENU_LOOK, u8::from(rng.below(4) == 0));
+    set(
+        a,
+        b,
+        ffx_battle::misc::bridge::SCREEN,
+        ffx_battle::camera::bridge::SCREENS.ptr(b).addr,
+    );
+    let floats: Vec<u8> = (0..0x10)
+        .flat_map(|_| {
+            (f32::from(i16::try_from(rng.range(-30000, 30000)).unwrap()) / 7.0).to_le_bytes()
+        })
+        .collect();
+    poke(
+        a,
+        b,
+        ffx_battle::camera::bridge::SCREENS.ptr(b).addr + 0x40,
+        &floats,
+    );
+    let g = (f32::from(i16::try_from(rng.range(-3000, 3000)).unwrap()) / 7.0).to_bits();
+    set(a, b, f::GROUND, g);
     set(a, b, f::RECORDS_OFF, u8::try_from(rng.below(3)).unwrap());
 }
 
@@ -188,6 +316,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         }
         fill(a, b, rng, w.out, 0x100);
         calls(a, b, rng, &w);
+        more(a, b, rng, &w);
     }
 }
 

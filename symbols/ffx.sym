@@ -7642,6 +7642,7 @@
 0x00c42464 label g_BtlStatCountTable          # 13 x 4 bytes, the counter statuses (MsCheckStatCount; MsCheckWrongStatus reads byte 3 bit 7: harmful)
 0x00c4423c label g_CameraSelected          # u8: the camera whose slots MsGetNowSelectedCamraLevel weighs
 0x00c44240 label g_BtlScreenSize              # [u32; 2]; The screen size MsScreenInit stores.
+0x00c44270 label g_BtlPosHashList          # name list MsBtlPosInit hashes ("StartData", ...)
 0x00c44bf0 label    g_pppSinTable                # 4096 f32 sines over a turn: pppGetRotMatrix* read [(a>>4)&0xfff] and [((a+0x4000)>>4)&0xfff] (cosine)
 0x00c49680 label g_ChrDefaultMoves           # Ch_MotionSetMoves(chr, slot, -1) stores entry [slot] (0, 1, 2, then zeros)
 0x00c496ea label g_ChrShadeByLight           # i8: Ch_DrawCalcShade multiplies the shade fade by the light value fade (+0x36c) when set
@@ -7769,6 +7770,7 @@
 0x0112ac70 label g_BtlCommandCue             # 0x48-byte entries: +0 actor, +1 command, +7 high nibble kind (MsCheckCommandCue 0x007b0720, MsCheckCommandCue2, MsGetCommandCue)
 0x0112bde0 label g_BtlInputCueCount          # i8 entries in g_BtlInputCue
 0x0112bde1 label g_BtlCommandCueCount        # i8 entries in g_BtlCommandCue
+0x0112bde8 label g_BtlGround               # f32 ground height: MsSetChrHeight puts mode-0 actors at ground - height/2 + actor +0x538
 0x0112bdf0 label g_BtlMenuCommand             # [u32; 0x12]; The menu command MsSetMenuCommand copies (0x48 bytes) and its flag.
 0x0112be38 label g_BtlMimic                # 0x48 bytes cleared by MsInitMimic
 0x0112be90 label g_BtlGilAmount               # i32, gil offered (DmgCalc_Bribe) or thrown (MsCalcDamageCommand formula 0x15: gil / 10)
@@ -7862,6 +7864,7 @@
 0x01133394 label g_BtlDamage99999            # u32, the same for 99999+ (MsCalcDamage)
 0x011333c0 label g_BtlOrderCount             # i32 queued action orders (MsOrderInit 0x0078d4b0, MsOrderRegist)
 0x011333c4 label g_BtlOrders                 # 31 x u8 actor indices (MsOrderRegist 0x0078d4c0)
+0x011333f0 label g_BtlMenuText             # 17 x 12 bytes cleared by MsMenuInitText
 0x011334c0 label g_KernelImportant           # key item kernel table (MsImportantPtr 0x007908a0 looks IDs up in it with MsGetExcelData)
 0x011334c8 label g_BtlDebugCameraSleep        # i32; Set to -1 by MsDebugCameraSleepInit.
 0x011334d4 label g_BtlChrTop                 # pointer to the 0x1f battle actors of 0xf90 bytes (MsGetChr 0x00794020, MsGetChrTop)
@@ -7909,6 +7912,7 @@
 0x01139e24 label g_CameraMatrixLookAt      # vec4 (MsSetCameraMatrix)
 0x01139e34 label g_CameraMatrixEye         # vec4 (MsSetCameraMatrix)
 0x01139e50 label g_BtlDebugField             # 2 x u32; MsDebugGetFieldNum (0x007c5f50) returns [0] << 16 + [1]
+0x0113e23c label g_BtlPosState             # 0x34 bytes (three 1.0 scales at +0x10) and 6 words after it (+0x3c points back here), reset by MsBtlPosInit
 0x0113f3d2 label g_BtlUcId                    # u16; The user character ID MsSaveUcID keeps.
 0x0119fe10 label    g_OpSprStack                 # op scratch stack, i32 marks: op_spr_alloc(n) pushes top + n (top index g_OpSprTop)
 0x0119fea0 label    g_OpusWeapons                # 4 weapon opus objects (opus_get_weapon_index)
@@ -8181,6 +8185,7 @@
 0x02311480 label g_ScreenMatrix              # MsGetScreenMatrix (0x007bbd70)
 0x023114c0 label g_BtlScreen                  # u32; Pointer to the screen in use (MsScreenOffset: its offset at +0x30).
 0x023114c4 label g_CameraMatrixOn          # u32 bit 0 (MsSetCameraMatrix)
+0x023114f4 label g_BtlPosFocus             # i32, -1 after MsBtlPosInit
 0x02321548 label    g_OpPadInput                 # byte: while 0, op_pad_set takes no buttons
 0x02322790 label    g_OpDebugMode                # byte set by pppInitPartRender: op_pad_set and op_heap_display_set_par do nothing while 0; read by the op debug functions around 0x007e5bd0
 0x02332ea1 label    g_OpSprTop                   # i8 top index of g_OpSprStack (op_spr_alloc, op_spr_free)

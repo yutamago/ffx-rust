@@ -255,4 +255,222 @@ pub mod bridge {
         let x = PARTY_EXTRA_SAVED.get(mem);
         PARTY_EXTRA.set(mem, x);
     }
+    /// `MsSetChrImageDamageAttack(actor)` (`0x0078d790`): the larger of the
+    /// actor's damage to itself with formulas 0xe and 0x14 (power 0x10,
+    /// `MsCalcDamageCommand`), kept at `+0x6f4` and returned.
+    pub fn ms_set_chr_image_damage_attack(mem: &mut impl Mem, actor: u32) -> i32 {
+        use crate::damage::bridge::ms_calc_damage_command;
+        let a = ms_calc_damage_command(mem, actor, actor, 0, 0xe, 0x10, 0, 1, 0, 0, 0, 0);
+        let b = ms_calc_damage_command(mem, actor, actor, 0, 0x14, 0x10, 0, 1, 0, 0, 0, 0);
+        let v = if a > b { a } else { b };
+        mem.write(actor.wrapping_add(0x6f4), v);
+        v
+    }
+
+    /// The battle ground's height (`MsSetChrHeight`), an `f32`, and 0.5 as
+    /// the `f64` constant it multiplies by.
+    pub const GROUND: Global<u32> = Global::new(0x0112_bde8);
+    pub const HALF: Global<f64> = Global::new(0x00b9_2220);
+
+    /// `MsSetChrHeight(i)` (`0x007ab300`): the actor's float height
+    /// (`+0x534`) by its height mode (`+0x50c`): 0, the ground less half
+    /// its height (`MsGetChrHeight`) plus `+0x538` (x87, stored as `f32`);
+    /// 1, zero; else unchanged.
+    pub fn ms_set_chr_height(mem: &mut impl Mem, i: u32) {
+        use ffx_bridge::x87::{add, load, mul, store, sub};
+        let a = ms_get_chr(mem, i);
+        match byte(mem, a, 0x50c) {
+            0 => {
+                let g = load(GROUND.get(mem));
+                let h = crate::body::bridge::ms_get_chr_height(mem, i).to_bits();
+                let v = add(
+                    sub(g, mul(load(h), HALF.get(mem))),
+                    load(word(mem, a, 0x538)),
+                );
+                mem.write(a.wrapping_add(0x534), store(v));
+            }
+            1 => mem.write(a.wrapping_add(0x534), 0u32),
+            _ => {}
+        }
+    }
+
+    /// `MsGetScreenData(&a, &b, &c, &d)` (`0x007bbd00`): the screen's
+    /// `+0x40`-`+0x4c` floats truncated to integers (`_ftol2_sse`) into the
+    /// pointers that are not null; returns its `+0xc4`.
+    pub fn ms_get_screen_data(mem: &mut impl Mem, out: [u32; 4]) -> u32 {
+        let screen = crate::misc::bridge::SCREEN;
+        for (k, p) in (0u32..).zip(out) {
+            if p != 0 {
+                let v = ffx_bridge::x87::load(word(mem, screen.get(mem), 0x40 + 4 * k));
+                let n = ffx_bridge::x87::ftol(mem, v);
+                mem.write(p, n);
+            }
+        }
+        word(mem, screen.get(mem), 0xc4)
+    }
+
+    /// The battle positions' state `MsBtlPosInit` resets: a block of 0x34
+    /// bytes (three scales of 1.0 at `+0x10`), the words after it (one
+    /// pointing back at it), the hash list it names, and -1 at
+    /// `0x023114f4`.
+    pub const BTL_POS: Global<u8> = Global::new(0x0113_e23c);
+    pub const BTL_POS_LIST: Global<u8> = Global::new(0x00c4_4270);
+    pub const BTL_POS_FOCUS: Global<i32> = Global::new(0x0231_14f4);
+
+    /// `MsBtlPosInit()` (`0x007c93d0`).
+    pub fn ms_btl_pos_init(mem: &mut impl Mem) {
+        let l = BTL_POS_LIST.ptr(mem).addr;
+        crate::util::bridge::ms_set_hash_value(mem, l);
+        let p = BTL_POS.ptr(mem).addr;
+        crate::util::bridge::ms_struct_clear(mem, p, 0x34);
+        for o in [0x10, 0x14, 0x18] {
+            mem.write(p + o, 1.0f32.to_bits());
+        }
+        mem.write(p + 0x34, [0u32, 0, p, 0, 0, 0]);
+        BTL_POS_FOCUS.set(mem, -1);
+    }
+
+    /// `MsAtelRegistInit()` (`0x00797ae0`): the script managers' first
+    /// words, their 0x1000 and 0x800 bytes of work, and the requests
+    /// (`MsAtelRequestInit`).
+    pub fn ms_atel_regist_init(mem: &mut impl Mem) {
+        let m = crate::minor::bridge::ATEL_MANAGERS.ptr(mem).addr;
+        mem.write(m, [0u32; 5]);
+        mem.write(m + 0x54, [0u32; 5]);
+        crate::util::bridge::ms_struct_clear(mem, m + 0x100, 0x1000);
+        crate::util::bridge::ms_struct_clear(mem, m + 0x1100, 0x800);
+        crate::state::bridge::ms_atel_request_init(mem);
+    }
+
+    /// `MsSetChrMotionInfo(i, k, value)` (`0x007b4a90`): one of the actor's
+    /// motion floats (k 0-8: `+0x4bc`, `+0x4c0`, `+0x4c8`, `+0x4d4`,
+    /// `+0x4d8`, `+0x4cc`, `+0x4d0`, `+0x4dc`, `+0x4c4`); 9 is its width
+    /// (`+0x4e4`, flag `+0x44c`), given to its character too
+    /// (`Ch_SetThickness`).
+    pub fn ms_set_chr_motion_info(mem: &mut impl Mem, i: u32, k: u32, value: u32) {
+        let a = ms_get_chr(mem, i);
+        let c = word(mem, a, 0);
+        let v = ffx_bridge::x87::store(ffx_bridge::x87::load(value));
+        let o = match k {
+            0 => 0x4bc,
+            1 => 0x4c0,
+            2 => 0x4c8,
+            3 => 0x4d4,
+            4 => 0x4d8,
+            5 => 0x4cc,
+            6 => 0x4d0,
+            7 => 0x4dc,
+            8 => 0x4c4,
+            9 => {
+                mem.write(a.wrapping_add(0x44c), 1u8);
+                mem.write(a.wrapping_add(0x4e4), v);
+                if c != 0 {
+                    ffx_chara::chr::bridge::ch_set_thickness(mem, c, f32::from_bits(v));
+                }
+                return;
+            }
+            _ => return,
+        };
+        mem.write(a.wrapping_add(o), v);
+    }
+
+    /// `MsExchangeParty()` (`0x007ade10`): the party and the saved party
+    /// swap, the 17 bytes after them too, and the first 18 actors' "can
+    /// act" (`+0xdc8`) and its saved copy (`+0xdc9`).
+    pub fn ms_exchange_party(mem: &mut impl Mem) {
+        let party = crate::menu::bridge::PARTY;
+        let (p, q) = (party.get(mem), PARTY_SAVED.get(mem));
+        PARTY_SAVED.set(mem, p);
+        party.set(mem, q);
+        let (x, y) = (PARTY_EXTRA.get(mem), PARTY_EXTRA_SAVED.get(mem));
+        PARTY_EXTRA_SAVED.set(mem, x);
+        PARTY_EXTRA.set(mem, y);
+        for i in 0..0x12 {
+            let a = ms_get_chr(mem, i);
+            let (s, t) = (byte(mem, a, 0xdc8), byte(mem, a, 0xdc9));
+            mem.write(a.wrapping_add(0xdc9), s);
+            mem.write(a.wrapping_add(0xdc8), t);
+        }
+    }
+
+    /// `MsChrSEfoot(i, v)` (`0x0079fd20`): the actor's footstep sound
+    /// (`+0x40f`).
+    pub fn ms_chr_se_foot(mem: &mut impl Mem, i: u32, v: u8) {
+        let a = ms_get_chr(mem, i & 0xff);
+        mem.write(a.wrapping_add(0x40f), v);
+    }
+
+    /// `MsSEP3Dinit()` (`0x007a0910`): the 3D sound list and its 0x200
+    /// bytes of nodes.
+    pub fn ms_sep3d_init(mem: &mut impl Mem) {
+        crate::minor::bridge::SEP_3D.set(mem, 0);
+        let p = crate::minor::bridge::SEP_3D.ptr(mem).addr + 0x10;
+        crate::util::bridge::ms_struct_clear(mem, p, 0x200);
+    }
+
+    /// `MsEffectLimitSync(i)` (`0x007afde0`): -1 while the actor's
+    /// overdrive effect syncs (`+0xd24`), else 0.
+    pub fn ms_effect_limit_sync(mem: &impl Mem, i: u32) -> i32 {
+        -i32::from(byte(mem, ms_get_chr(mem, i & 0xff), 0xd24) != 0)
+    }
+
+    /// The menu's texts `MsMenuInitText` clears (17 of 12 bytes).
+    pub const MENU_TEXT: Global<u8> = Global::new(0x0113_33f0);
+
+    /// `MsMenuInitText()` (`0x0078fe60`).
+    pub fn ms_menu_init_text(mem: &mut impl Mem) {
+        let p = MENU_TEXT.ptr(mem).addr;
+        for k in 0..17 {
+            crate::util::bridge::ms_struct_clear(mem, p + 12 * k, 12);
+        }
+    }
+
+    /// `g_SaveYoujinbouCom`: Yojimbo's command counter (`MsAddYoujinbouCom`), 0-255.
+    pub const YOJIMBO_COMMANDS: Global<i32> = Global::new(0x0113_0834);
+
+    /// `MsAddYoujinbouCom(n)` (`0x007b2950`): the new count.
+    pub fn ms_add_youjinbou_com(mem: &mut impl Mem, n: i32) -> i32 {
+        let v = ms_check_range(YOJIMBO_COMMANDS.get(mem).wrapping_add(n), 0, 0xff);
+        YOJIMBO_COMMANDS.set(mem, v);
+        v
+    }
+
+    /// `MsMagicEffectSet(chr, actor)` (`0x0079e890`): the actor's magic
+    /// effect pair (`+0xe10`): 0x3837 for a monster, else 0x1f1e.
+    pub fn ms_magic_effect_set(mem: &mut impl Mem, chr: u32, actor: u32) {
+        let v: u16 = if crate::actor::bridge::ms_get_ram_chr_monster(chr) != 0 {
+            0x3837
+        } else {
+            0x1f1e
+        };
+        mem.write(actor.wrapping_add(0xe10), v);
+    }
+
+    /// `MsMenuCheckChrLook(i)` (`0x0078f990`): 1 when the menu always looks
+    /// or `i` is a monster not hidden from Scan (`+0x5b8` bit 3); else 0.
+    pub fn ms_menu_check_chr_look(mem: &impl Mem, i: u32) -> u32 {
+        if MENU_LOOK.get(mem) != 0 {
+            return 1;
+        }
+        let i = i & 0xff;
+        let a = ms_get_chr(mem, i);
+        u32::from(
+            crate::actor::bridge::ms_get_ram_chr_monster(i) != 0 && byte(mem, a, 0x5b8) & 8 == 0,
+        )
+    }
+
+    /// `MsSetChrMoveFlagAll(on)` (`0x00788e90`): every actor's move flag
+    /// (`+0x412`, low byte), `+0x404` cleared, specular faded to 0 over 30
+    /// frames, and with `on` part 2 of its body hit off.
+    pub fn ms_set_chr_move_flag_all(mem: &mut impl Mem, on: u32) {
+        for i in 0..0x1f {
+            let a = ms_get_chr(mem, i);
+            mem.write(a.wrapping_add(0x412), on.to_le_bytes()[0]);
+            mem.write(a.wrapping_add(0x404), 0u8);
+            crate::body::bridge::ms_set_chr_specular(mem, i, 0, 0x1e);
+            if on != 0 {
+                crate::body::bridge::ms_set_chr_body_hit(mem, a, 2, 0);
+            }
+        }
+    }
 }
