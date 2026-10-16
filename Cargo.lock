@@ -523,7 +523,9 @@ name = "ffx-battle"
 version = "0.1.0"
 dependencies = [
  "ffx-bridge",
+ "ffx-chara",
  "ffx-kernel",
+ "ffx-ps2",
  "ffx-vbf",
  "thiserror",
  "toml",
@@ -674,7 +676,9 @@ dependencies = [
  "ffx-battle",
  "ffx-bridge",
  "ffx-chara",
+ "ffx-field",
  "ffx-kernel",
+ "ffx-system",
 ]
 
 [[package]]

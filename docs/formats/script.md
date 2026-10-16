@@ -292,7 +292,7 @@ thunk at `0x0088c830`):
 | `0x10` | `u8` | `AtelGet`/`SetBattleSceneGroup` |
 | `0x11`, `0x12` | `u8` | `AtelSetMapFadeType`, `AtelSetMapFadeFrames` (`0x008700c0`, `0x008700d0`) |
 | `0x13` | `u8` | battle status: bit 1 `AtelGetBattleStatusSys`, bit 2 `AtelGetBattleStatusDummyEnc` |
-| `0x20` | `u8` | `TkGetLastEventJumpIndex` |
+| `0x20` | `u8` | `AtelGetSave20` |
 | `0xb4`, `0xb6` | `u16` | the map marker (`AtelGetMapMarkerX`/`Y`, `0x00873ae0`/`0x00873af0`) |
 | `0xd1` | `u8` | `AtelGetAlbhedRikku` |
 | `0xd6` | `u8` | `AtelClearForcePlaceId` |

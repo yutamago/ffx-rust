@@ -401,8 +401,8 @@ pub mod save {
     pub const MAP_FADE_FRAMES: u32 = 0x12;
     /// `u8`: battle status bits (bit 1 `Sys`, bit 2 `DummyEnc`).
     pub const BATTLE_STATUS: u32 = 0x13;
-    /// `u8`: `TkGetLastEventJumpIndex`.
-    pub const LAST_EVENT_JUMP_INDEX: u32 = 0x20;
+    /// `u8`: `AtelGetSave20`.
+    pub const BYTE_20: u32 = 0x20;
     /// `u16`, `u16`: the map marker position (`Native_SetMapMarkerPos`).
     pub const MAP_MARKER: u32 = 0xb4;
     /// `u8`: Rikku speaks Al Bhed.
@@ -612,9 +612,9 @@ pub fn atel_get_battle_status_sys(mem: &impl Mem) -> u32 {
     battle_status_bit(mem, 1)
 }
 
-/// `TkGetLastEventJumpIndex()` (`0x0086d9d0`).
-pub fn tk_get_last_event_jump_index(mem: &impl Mem) -> u32 {
-    u32::from(mem.read::<u8>(save_at(mem, save::LAST_EVENT_JUMP_INDEX)))
+/// `AtelGetSave20()` (`0x0086d9d0`).
+pub fn atel_get_save20(mem: &impl Mem) -> u32 {
+    u32::from(mem.read::<u8>(save_at(mem, save::BYTE_20)))
 }
 
 /// `AtelGetOnMemoryMovieFileNo()` (`0x00873b10`).
