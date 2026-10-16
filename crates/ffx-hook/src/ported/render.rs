@@ -6,6 +6,7 @@ use super::{mem, ported};
 use ffx_bridge::Global;
 use ffx_graphic::{cache, managers, scene, ui, vfx};
 
+use ffx_graphic::texanim::bridge as ta;
 use managers::bridge as mg;
 use scene::bridge as sc;
 
@@ -71,6 +72,103 @@ ported! {
     /// `updateVFXRenderDataShp(lo, hi, part, obj, segment)`.
     updateVFXRenderDataShp @ 0x0071_b8a0 => extern "C" fn update_vfx_render_data_shp(lo: u32, hi: u32, part: u32, obj: u32, segment: u32) -> u32 {
         ffx_graphic::render_data::bridge::update_shp(&mut mem(), lo, hi, part, obj, segment)
+    }
+    /// `DynGeoMemManager_getBufferFromDynGeoMemory(this, size)`.
+    DynGeoMemManager_getBufferFromDynGeoMemory @ 0x006d_e940 => extern "thiscall" fn dyn_geo_get_buffer(this: u32, size: u32) -> u32 {
+        mg::dyn_geo_get_buffer(&mut mem(), this, size)
+    }
+    /// `graphicDynGeoMemManagerGetBufferForSegment(data, segment, vertices, indices)`.
+    graphicDynGeoMemManagerGetBufferForSegment @ 0x0063_fdb0 => extern "C" fn graphic_dyn_geo_get_buffer_for_segment(data: u32, segment: u32, vertices: u32, indices: u32) -> u32 {
+        mg::get_buffer_for_segment(&mut mem(), data, segment, vertices, indices)
+    }
+    /// `PhyreScene_getYIQParam(this, &y0, &y1, &y2, &o0, &o1, &o2)`.
+    PhyreScene_getYIQParam @ 0x0065_e9e0 => extern "thiscall" fn scene_get_yiq_param(this: u32, a: u32, b: u32, c: u32, d: u32, e: u32, f: u32) -> u32 {
+        sc::yiq_param(&mut mem(), this, [a, b, c, d, e, f])
+    }
+    /// `PhyreScene_removeChrFromPipeline(this, chr)`.
+    PhyreScene_removeChrFromPipeline @ 0x0066_8640 => extern "thiscall" fn scene_remove_chr_from_pipeline(this: u32, chr: u32) -> u32 {
+        sc::remove_chr_from_pipeline(&mut mem(), this, chr)
+    }
+    /// `graphicCharacterInstanceSetMeshSegmentHide(inst, id, hide)`.
+    graphicCharacterInstanceSetMeshSegmentHide @ 0x0063_bdf0 => extern "C" fn graphic_character_set_mesh_segment_hide(inst: u32, id: u32, hide: u32) -> u32 {
+        sc::set_mesh_segment_hide(&mut mem(), inst, id, hide)
+    }
+    /// `graphicIsEscMenuActive()`.
+    graphicIsEscMenuActive @ 0x0063_da80 => extern "C" fn graphic_is_esc_menu_active() -> u32 {
+        sc::is_esc_menu_active(&mem())
+    }
+    /// `ShadowManager_RemoveFromShadowMap(this, obj)`.
+    ShadowManager_RemoveFromShadowMap @ 0x006c_e9d0 => extern "thiscall" fn shadow_remove_from_shadow_map(this: u32, obj: u32) -> u8 {
+        mg::remove_from_shadow_map(&mut mem(), this, obj)
+    }
+    /// `DynGeoTree_Find(this, &key)`.
+    DynGeoTree_Find @ 0x006d_edd0 => extern "thiscall" fn dyn_geo_tree_find(this: u32, key: u32) -> u32 {
+        mg::tree_find(&mem(), this, key)
+    }
+    // ---- texture animation ----
+    /// `loadImage(addr, bytes)`.
+    loadImage @ 0x0077_e730 => extern "C" fn load_image(addr: u32, bytes: u32) -> u32 {
+        ta::load_image(&mut mem(), addr, bytes, 0x100)
+    }
+    /// `TexAnim_LoadImage101(addr, bytes)`.
+    TexAnim_LoadImage101 @ 0x0077_e7c0 => extern "C" fn tex_anim_load_image_101(addr: u32, bytes: u32) -> u32 {
+        ta::load_image(&mut mem(), addr, bytes, 0x101)
+    }
+    /// `TexAnim_LoadImageRegs(a, b, bytes)`.
+    TexAnim_LoadImageRegs @ 0x0077_e770 => extern "C" fn tex_anim_load_image_regs(a: u32, b: u32, bytes: u32) -> u32 {
+        ta::load_image_regs(&mut mem(), a, b, bytes)
+    }
+    /// `TexAnim_SyncPath(a)`.
+    TexAnim_SyncPath @ 0x0077_e800 => extern "C" fn tex_anim_sync_path(a: u32) -> u32 {
+        ta::sync_path(&mut mem(), a)
+    }
+    /// `TexAnim_SyncPath2(a)`.
+    TexAnim_SyncPath2 @ 0x0077_eaa0 => extern "C" fn tex_anim_sync_path2(a: u32) -> u32 {
+        ta::sync_path(&mut mem(), a)
+    }
+    /// `TexAnim_SetQword(q, a, b, c)`.
+    TexAnim_SetQword @ 0x0077_ebc0 => extern "C" fn tex_anim_set_qword(q: u32, a: u32, b: u32, c: u32) -> u32 {
+        ta::qword(&mut mem(), q, a, b, c)
+    }
+    /// `TexAnim_SetDmaTag(q, a, b, c, d, e, f)`.
+    TexAnim_SetDmaTag @ 0x0077_eb70 => extern "C" fn tex_anim_set_dma_tag(q: u32, a: u32, b: u32, c: u32, d: u32, e: u32, f: u32) -> u32 {
+        ta::dma_tag(&mut mem(), q, [a, b, c, d, e, f])
+    }
+    /// `TexAnim_SetGifTag(q, p2..p9)`.
+    TexAnim_SetGifTag @ 0x0077_ebe0 => extern "C" fn tex_anim_set_gif_tag(q: u32, p2: u32, p3: u32, p4: u32, p5: u32, p6: u32, p7: u32, p8: u32, p9: u32) -> u32 {
+        ta::gif_tag(&mut mem(), q, [p2, p3, p4, p5, p6, p7, p8, p9])
+    }
+    /// `TexAnim_GetWork(i)`.
+    TexAnim_GetWork @ 0x0077_e9f0 => extern "C" fn tex_anim_get_work(i: u32) -> u32 {
+        ta::work(&mem(), i)
+    }
+    /// `tex_anim_no_set(i, a, b, c, d)`.
+    tex_anim_no_set @ 0x0077_e940 => extern "C" fn tex_anim_no_set(i: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
+        ta::no_set(&mut mem(), i, a, b, c, d)
+    }
+    /// `tex_anim_dlg(arg)`.
+    tex_anim_dlg @ 0x0077_e920 => extern "C" fn tex_anim_dlg(arg: u32) -> u32 {
+        ta::dlg(&mut mem(), arg)
+    }
+    /// `TexAnim_ResetPos(i, which, v)`.
+    TexAnim_ResetPos @ 0x0077_fda0 => extern "C" fn tex_anim_reset_pos(i: u32, which: u32, v: u32) {
+        ta::reset_pos(&mut mem(), i, which, v);
+    }
+    /// `DynGeoTree_Insert(this, node)`.
+    DynGeoTree_Insert @ 0x006d_ee50 => extern "thiscall" fn dyn_geo_tree_insert(this: u32, node: u32) -> u32 {
+        mg::tree_insert(&mut mem(), this, node)
+    }
+    /// `PhyreScene_getMinimapViewportSize(this)`.
+    PhyreScene_getMinimapViewportSize @ 0x0065_e320 => extern "thiscall" fn scene_minimap_viewport_size(this: u32) -> u32 {
+        sc::minimap_viewport_size(&mem(), this)
+    }
+    /// `PhyreScene_getMinimapViewportX(this)`.
+    PhyreScene_getMinimapViewportX @ 0x0065_e3f0 => extern "thiscall" fn scene_minimap_viewport_x(this: u32) -> u32 {
+        sc::minimap_viewport_x(&mem(), this)
+    }
+    /// `PhyreScene_getMinimapViewportY(this)`.
+    PhyreScene_getMinimapViewportY @ 0x0065_e560 => extern "thiscall" fn scene_minimap_viewport_y(this: u32) -> u32 {
+        sc::minimap_viewport_y(&mem(), this)
     }
     /// `graphicVFX2DUpdate(lo, hi)`.
     graphicVFX2DUpdate @ 0x0064_4bc0 => extern "C" fn graphic_vfx_2d_update(lo: u32, hi: u32) {

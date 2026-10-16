@@ -263,6 +263,54 @@ it 4. `Cache_Entry` takes the first free entry with flags 5, calling
 
 A `DynGeoMemManager` holds a buffer set at `+0`: `+0` the current
 buffer's fill pointer, `+4` its index, `+8` the count, `+0x10` the
-buffers (each `+4` start, `+8` fill position), `+0x14` a mutex.
+buffers (each `+0` size, `+4` start, `+8` fill position, an address),
+`+0x14` a mutex.
+`DynGeoMemManager_getBufferFromDynGeoMemory(size)` (`0x006de940`) rounds
+the fill position up to 16 and hands out `size` bytes there; past the
+buffer's end it prints to `stderr`, leaves the rounded position and
+returns 0.
+
+`graphicDynGeoMemManagerGetBufferForSegment(data, segment, vertices,
+indices)` (`0x0063fdb0`) takes one block from the fill buffer's manager
+for five arrays: 12, 16, 12 and 8 bytes a vertex and 2 an index, each
+rounded to 16, in that order. The segment (`0x6c` bytes) records them:
+
+| Offset | Value |
+|---|---|
+| `0x04`, `0x08` | vertex and index counts |
+| `0x0c` | the first array (the block) |
+| `0x14` | the second |
+| `0x10` | the third |
+| `0x18` | the fourth |
+| `0x1c` | the indices |
+| `0x2c + 0x1c n` ... `0x44 + 0x1c n` | the same counts and arrays again in buffer `n`'s slot (`n` the current buffer: counts `+0x2c`/`+0x30`, arrays `+0x34`, `+0x3c`, `+0x38`, `+0x40`, `+0x44`) |
+
+`DynGeoTree_Find`/`_Insert` (`0x006dedd0`/`0x006dee50`) keep a search
+tree under a head (root at head `+0xc`; nodes `+0` lower, `+4` higher,
+`+8` parent with a colour bit, `+0xc` the `u32` key).
+
 A texture animation steps its frame (`+0x18`) modulo its frame count
 (`+8`, bit 31 a flag).
+
+## The minimap viewport
+
+`PhyreScene_getMinimapViewportSize`/`X`/`Y` (`0x0065e320`, `0x0065e3f0`,
+`0x0065e560`) scale with the render target's height `h` (`+0x1c` of the
+live pointer at `*(scene +0x10cc) +0x8c`), truncating:
+size `h * 120.25 * 9 / 16 / 416` in blitzball (scene byte 0), else
+`f32(104 h) * 9 / 16 / 416`; x `f32(h) * base / 512` with base 39 for
+minimap types 1 and 2, 368.75 (blitzball) or 377 for 3 and 4, else 0;
+y `f32(h) * (111 in blitzball, else 96) / 512`.
+
+## Texture-animation packets (`tex_anim_*`)
+
+The PS2 code writes GS registers; in the remaster every write lands in
+one word, `g_GsRegisterSink` (`0x023056e8`). `loadImage(addr, bytes)`
+writes the address (minus `0x80000000` from `0x70000000` up), `bytes /
+16` and the command `0x100`; `TexAnim_LoadImage101` the same with
+`0x101`; `TexAnim_SyncPath`/`2` `a, 0, 0x105`. `TexAnim_SetDmaTag` packs
+`(((((a << 31) | (b & ~0xf)) << 1 | c) << 3 | d) << 2 | e) << 26 | f`;
+`TexAnim_SetGifTag` writes `[p8 << 15 | p9, ((((p4 << 2 | p5) << 11 | p6)
+<< 1 | p7) << 14, p2, p3]`. `g_ChrTexAnim` (64 x `0x30`): `+0` loaded,
+`+4` the work buffer (64 animations of `0x34` bytes, active bytes at
+`+0xd08`), `+0xd` the format (0 old, 1 new), `+0xe` the timer.
