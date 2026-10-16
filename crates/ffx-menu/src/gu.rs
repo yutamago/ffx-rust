@@ -1,0 +1,424 @@
+//! The `Gu_` GUI layer: windows, their controls and selectors, the text
+//! cursor, and the GS packets it queues.
+//!
+//! Layouts as these functions use them:
+//!
+//! - **Window:** `+0x00` next window (the open list, front first, head at
+//!   `g_GuWindowList`), `+0x08` parent, `+0x0c`/`+0x0e` y/x (`i16`),
+//!   `+0x10`/`+0x12` ?width/height, `+0x14`/`+0x16` the mouse y/x when it
+//!   opened, `+0x18` width (`i16`, 0 when it opens), `+0x1a`, `+0x1c`–`+0x22`
+//!   a copy of `+0x0c`–`+0x12`, `+0x7c` message callback, `+0x86` client
+//!   height (`i16`), `+0x88` flags (bit 1 cleared and bit 3 set on opening),
+//!   `+0x90` control count (`i32`), `+0x94` controls, `+0x98` user argument.
+//! - **Control:** `0x44` bytes: `+0x2e` id (`u16`), `+0x40` flags
+//!   ([`HIDE`], [`DISABLE`], [`TOGGLE`], [`TOGGLE_VALUE`]).
+//! - **Selector:** `+0x02` selected (`i16`), `+0x04` count (`i16`), `+0x08`
+//!   item names (pointers), `+0x0c` item values, `+0x14` "mouse fukki"
+//!   (return-to-mouse), `+0x28` callback.
+//! - **Packet:** 16-byte GIF quadwords at `g_GuPacket`, `g_GuPacketCount`
+//!   of them used.
+
+/// Control flag: hidden.
+pub const HIDE: u32 = 1;
+/// Control flag: disabled.
+pub const DISABLE: u32 = 2;
+/// Control flag: a toggle button.
+pub const TOGGLE: u32 = 4;
+/// Control flag: the toggle's state.
+pub const TOGGLE_VALUE: u32 = 8;
+
+/// Bytes per control.
+pub const CONTROL: u32 = 0x44;
+
+/// `flags` with the bits of `mask` taken from `value << shift`, as the
+/// originals write it: `flags ^ ((value << shift) ^ flags) & mask`.
+#[must_use]
+pub const fn with_bits(flags: u32, mask: u32, shift: u32, value: u32) -> u32 {
+    flags ^ (((value << shift) ^ flags) & mask)
+}
+
+/// `Gu_SelectorSetSelect`'s clamp: negative to 0; above `count` to
+/// `count − 1`. `count` itself is kept (the original compares `>`).
+#[must_use]
+pub fn clamp_select(i: i32, count: i16) -> i16 {
+    let i = i.max(0);
+    let count = i32::from(count);
+    #[allow(clippy::cast_possible_truncation)] // stored as i16 like the original
+    if i > count {
+        (count - 1) as i16
+    } else {
+        i as i16
+    }
+}
+
+/// The two quadwords of `Gu_SetScissor`: a GIF tag (one A+D register) and
+/// `SCISSOR_1` with x from `x0` to `x1` and y from `y0` to `y1`, the y
+/// values in `scale / 256` steps. Low bounds below 0 become 0, high bounds
+/// are capped at `0x1fd` and `0x19e`; the four fields are sign-extended
+/// and combined with OR, so a negative high bound fills the bits above it.
+#[must_use]
+pub fn scissor_packet(scale: i32, x0: i32, x1: i32, y0: i32, y1: i32) -> [[u32; 4]; 2] {
+    let y1 = scale.wrapping_mul(y1) >> 8;
+    let y0 = scale.wrapping_mul(y0) >> 8;
+    let x0 = x0.max(0);
+    let x1 = x1.min(0x1fd);
+    let y0 = y0.max(0);
+    let y1 = y1.min(0x19e);
+    let s = |v: i32| i64::from(v).cast_unsigned();
+    let v = (((((s(y1) << 16) | s(y0)) << 16) | s(x1)) << 16) | s(x0);
+    #[allow(clippy::cast_possible_truncation)]
+    let (lo, hi) = (v as u32, (v >> 32) as u32);
+    [[1, 0x1000_0000, 0xe, 0], [lo, hi, 0x40, 0]]
+}
+
+/// The originals, on the game's windows and globals (`ffx_bridge::Mem`).
+pub mod bridge {
+    use ffx_bridge::{Global, Mem};
+
+    use super::{
+        CONTROL, DISABLE, HIDE, TOGGLE, TOGGLE_VALUE, clamp_select, scissor_packet, with_bits,
+    };
+
+    /// The text cursor's origin x (`Gu_PrintSetX` adds to it).
+    pub const PRINT_BASE_X: Global<i32> = Global::new(0x0130_36e0);
+    /// The text cursor x.
+    pub const PRINT_X: Global<i32> = Global::new(0x0130_36e4);
+    /// The text cursor's origin y.
+    pub const PRINT_BASE_Y: Global<i32> = Global::new(0x0130_36e8);
+    /// The text cursor y.
+    pub const PRINT_Y: Global<i32> = Global::new(0x0130_36ec);
+    /// The text colour, three `u32` (`Gu_PrintSetColor`).
+    pub const PRINT_COLOR: Global<[u32; 3]> = Global::new(0x0130_370c);
+    /// The vertical scale of scissor rectangles, 8.8 fixed point.
+    pub const H_SCALE: Global<i32> = Global::new(0x00c4_df54);
+    /// Quadwords queued in [`PACKET`].
+    pub const PACKET_COUNT: Global<u32> = Global::new(0x0130_36c0);
+    /// The GS packet buffer.
+    pub const PACKET: Global<u32> = Global::new(0x0130_36c4);
+    /// The open windows, front first.
+    pub const WINDOW_LIST: Global<u32> = Global::new(0x0130_3734);
+    /// The window being dragged.
+    pub const DRAG_WINDOW: Global<u32> = Global::new(0x0130_3738);
+    /// The mouse capture (two words, `Gu_MouseSetCapture`).
+    pub const MOUSE_CAPTURE: Global<[u32; 2]> = Global::new(0x0130_3754);
+    /// Whether the GUI is hidden (`Gu_Hide`).
+    pub const HIDDEN: Global<u32> = Global::new(0x0130_375c);
+    /// The mouse y.
+    pub const MOUSE_Y: Global<i32> = Global::new(0x0132_5240);
+    /// The mouse x.
+    pub const MOUSE_X: Global<i32> = Global::new(0x0132_5244);
+
+    fn at(p: u32, o: u32) -> u32 {
+        p.wrapping_add(o)
+    }
+
+    /// `Gu_PrintSetX(x)` (`0x00848820`).
+    pub fn gu_print_set_x(mem: &mut impl Mem, x: i32) {
+        let v = PRINT_BASE_X.get(mem).wrapping_add(x);
+        PRINT_X.set(mem, v);
+    }
+
+    /// `Gu_PrintSetY(y)` (`0x00848860`).
+    pub fn gu_print_set_y(mem: &mut impl Mem, y: i32) {
+        let v = PRINT_BASE_Y.get(mem).wrapping_add(y);
+        PRINT_Y.set(mem, v);
+    }
+
+    /// `Gu_PrintSetColor(r, g, b)` (`0x00848740`).
+    pub fn gu_print_set_color(mem: &mut impl Mem, r: u32, g: u32, b: u32) {
+        PRINT_COLOR.set(mem, [r, g, b]);
+    }
+
+    /// `Gu_SetHScale(scale)` (`0x00848b30`).
+    pub fn gu_set_h_scale(mem: &mut impl Mem, scale: i32) {
+        H_SCALE.set(mem, scale);
+    }
+
+    /// `Gu_Hide(on)` (`0x00849780`): sets the flag, returns the old one.
+    pub fn gu_hide(mem: &mut impl Mem, on: u32) -> u32 {
+        let old = HIDDEN.get(mem);
+        HIDDEN.set(mem, on);
+        old
+    }
+
+    /// `Gu_MouseSetCapture(a, b)` (`0x00849b60`).
+    pub fn gu_mouse_set_capture(mem: &mut impl Mem, a: u32, b: u32) {
+        MOUSE_CAPTURE.set(mem, [a, b]);
+    }
+
+    /// `Gu_MouseGetWindowX(window)` (`0x00849ac0`): the mouse x in the window.
+    pub fn gu_mouse_get_window_x(mem: &impl Mem, window: u32) -> i32 {
+        MOUSE_X
+            .get(mem)
+            .wrapping_sub(i32::from(mem.read::<i16>(at(window, 0xe))))
+    }
+
+    /// `Gu_MouseGetWindowY(window)` (`0x00849aa0`).
+    pub fn gu_mouse_get_window_y(mem: &impl Mem, window: u32) -> i32 {
+        MOUSE_Y
+            .get(mem)
+            .wrapping_sub(i32::from(mem.read::<i16>(at(window, 0xc))))
+    }
+
+    /// `Gu_WindowIsDrag(window)` (`0x0084b200`).
+    pub fn gu_window_is_drag(mem: &impl Mem, window: u32) -> bool {
+        DRAG_WINDOW.get(mem) == window
+    }
+
+    /// `Gu_WindowGetX(window)` (`0x0084afc0`).
+    pub fn gu_window_get_x(mem: &impl Mem, window: u32) -> i32 {
+        i32::from(mem.read::<i16>(at(window, 0xe)))
+    }
+
+    /// `Gu_WindowGetWidth(window)` (`0x0084afa0`).
+    pub fn gu_window_get_width(mem: &impl Mem, window: u32) -> i32 {
+        i32::from(mem.read::<i16>(at(window, 0x18)))
+    }
+
+    /// `Gu_WindowGetArg(window)` (`0x0084aec0`).
+    pub fn gu_window_get_arg(mem: &impl Mem, window: u32) -> u32 {
+        mem.read(at(window, 0x98))
+    }
+
+    /// `Gu_WindowSetArg(window, arg)` (`0x0084b560`).
+    pub fn gu_window_set_arg(mem: &mut impl Mem, window: u32, arg: u32) {
+        mem.write(at(window, 0x98), arg);
+    }
+
+    /// `Gu_WindowSetParent(window, parent)` (`0x0084b660`).
+    pub fn gu_window_set_parent(mem: &mut impl Mem, window: u32, parent: u32) {
+        mem.write(at(window, 8), parent);
+    }
+
+    /// `Gu_WindowSetClientH(window, h)` (`0x0084b580`): the client height,
+    /// and the window's heights (`+0x12`, `+0x1a`, `+0x22`) moved by as much.
+    pub fn gu_window_set_client_h(mem: &mut impl Mem, window: u32, h: i32) {
+        let old = i32::from(mem.read::<i16>(at(window, 0x86)));
+        let d = i32::from(mem.read::<i16>(at(window, 0x12))).wrapping_sub(old);
+        #[allow(clippy::cast_possible_truncation)] // 16-bit stores
+        {
+            mem.write(at(window, 0x86), h as i16);
+            let n = h.wrapping_add(d) as i16;
+            for o in [0x12, 0x1a, 0x22] {
+                mem.write(at(window, o), n);
+            }
+        }
+    }
+
+    /// `Gu_WindowOpen(window)` (`0x0084b250`): marks it open, notes the
+    /// mouse, zeroes its width, copies its rectangle to `+0x1c`, and moves
+    /// it to the front of the open list (when it is in it, not first).
+    pub fn gu_window_open(mem: &mut impl Mem, window: u32) {
+        let flags = mem.read::<u32>(at(window, 0x88));
+        mem.write(at(window, 0x88), (flags & !2) | 8);
+        let head = WINDOW_LIST.get(mem);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 16-bit stores
+        {
+            mem.write(at(window, 0x14), MOUSE_Y.get(mem) as u16);
+            mem.write(at(window, 0x16), MOUSE_X.get(mem) as u16);
+        }
+        mem.write(at(window, 0x18), 0u32);
+        for o in [0xc, 0xe, 0x10, 0x12] {
+            let v = mem.read::<u16>(at(window, o));
+            mem.write(at(window, o + 0x10), v);
+        }
+        let mut prev = 0;
+        let mut cur = head;
+        if cur == 0 {
+            return;
+        }
+        while cur != window {
+            prev = cur;
+            cur = mem.read(cur);
+            if cur == 0 {
+                return;
+            }
+        }
+        if prev != 0 {
+            let next = mem.read::<u32>(window);
+            mem.write(prev, next);
+            mem.write(window, head);
+            WINDOW_LIST.set(mem, window);
+        }
+    }
+
+    /// The first control with id `id` (compared as `u16` widened, so an
+    /// `id` above `0xffff` matches none): its address.
+    fn find_control(mem: &impl Mem, window: u32, id: u32) -> Option<u32> {
+        let count = mem.read::<i32>(at(window, 0x90));
+        let controls = mem.read::<u32>(at(window, 0x94));
+        #[allow(clippy::cast_sign_loss)] // count > 0 here
+        (0..count.max(0) as u32)
+            .map(|i| controls.wrapping_add(i.wrapping_mul(CONTROL)))
+            .find(|&c| u32::from(mem.read::<u16>(at(c, 0x2e))) == id)
+    }
+
+    fn set_first(mem: &mut impl Mem, window: u32, id: u32, mask: u32, shift: u32, value: u32) {
+        if let Some(c) = find_control(mem, window, id) {
+            let f = mem.read::<u32>(at(c, 0x40));
+            mem.write(at(c, 0x40), with_bits(f, mask, shift, value));
+        }
+    }
+
+    /// `Gu_ButtonGetToggleValue(window, id)` (`0x00849330`).
+    pub fn gu_button_get_toggle_value(mem: &impl Mem, window: u32, id: u32) -> u32 {
+        find_control(mem, window, id)
+            .map_or(0, |c| (mem.read::<u32>(at(c, 0x40)) & TOGGLE_VALUE) >> 3)
+    }
+
+    /// `Gu_ButtonSetToggleValue(window, id, on)` (`0x008493e0`).
+    pub fn gu_button_set_toggle_value(mem: &mut impl Mem, window: u32, id: u32, on: u32) {
+        set_first(mem, window, id, TOGGLE_VALUE, 3, on);
+    }
+
+    /// `Gu_ButtonSetToggle(window, id, on)` (`0x00849380`).
+    pub fn gu_button_set_toggle(mem: &mut impl Mem, window: u32, id: u32, on: u32) {
+        set_first(mem, window, id, TOGGLE, 2, on);
+    }
+
+    /// `Gu_WindowControlSetHide(window, id, on)` (`0x0084a670`).
+    pub fn gu_window_control_set_hide(mem: &mut impl Mem, window: u32, id: u32, on: u32) {
+        set_first(mem, window, id, HIDE, 0, on);
+    }
+
+    /// `Gu_WindowControlSetDisable(window, id, on)` (`0x0084a620`): unlike
+    /// its siblings, every control with the id (compared on 16 bits).
+    pub fn gu_window_control_set_disable(mem: &mut impl Mem, window: u32, id: u32, on: u32) {
+        let mut i = 0i32;
+        let mut c = 0u32;
+        while i < mem.read::<i32>(at(window, 0x90)) {
+            let controls = mem.read::<u32>(at(window, 0x94));
+            let p = controls.wrapping_add(c);
+            #[allow(clippy::cast_possible_truncation)]
+            if mem.read::<u16>(at(p, 0x2e)) == id as u16 {
+                let f = mem.read::<u32>(at(p, 0x40));
+                mem.write(at(p, 0x40), with_bits(f, DISABLE, 1, on));
+            }
+            i += 1;
+            c = c.wrapping_add(CONTROL);
+        }
+    }
+
+    /// `Gu_SelectorGetItemName(selector)` (`0x00849d30`): the selected item's name.
+    pub fn gu_selector_get_item_name(mem: &impl Mem, selector: u32) -> u32 {
+        let i = i32::from(mem.read::<i16>(at(selector, 2)));
+        let names = mem.read::<u32>(at(selector, 8));
+        #[allow(clippy::cast_sign_loss)]
+        mem.read(names.wrapping_add((i as u32).wrapping_mul(4)))
+    }
+
+    /// `Gu_SelectorSetItem(selector, i, name, value)` (`0x00849fd0`).
+    pub fn gu_selector_set_item(mem: &mut impl Mem, selector: u32, i: i32, name: u32, value: u32) {
+        #[allow(clippy::cast_sign_loss)]
+        let o = (i as u32).wrapping_mul(4);
+        let names = mem.read::<u32>(at(selector, 8));
+        mem.write(names.wrapping_add(o), name);
+        let values = mem.read::<u32>(at(selector, 0xc));
+        mem.write(values.wrapping_add(o), value);
+    }
+
+    /// `Gu_SelectorSetSelect(selector, i)` (`0x0084a0e0`): see [`clamp_select`].
+    pub fn gu_selector_set_select(mem: &mut impl Mem, selector: u32, i: i32) {
+        let count = mem.read::<i16>(at(selector, 4));
+        mem.write(at(selector, 2), clamp_select(i, count));
+    }
+
+    /// Whether the C strings at `a` and `b` are equal.
+    pub(crate) fn str_eq(mem: &impl Mem, a: u32, b: u32) -> bool {
+        let mut i = 0u32;
+        loop {
+            let x = mem.read::<u8>(a.wrapping_add(i));
+            if x != mem.read::<u8>(b.wrapping_add(i)) {
+                return false;
+            }
+            if x == 0 {
+                return true;
+            }
+            i = i.wrapping_add(1);
+        }
+    }
+
+    /// `Gu_SelectorSetSelectSTR(selector, name)` (`0x0084a110`): selects
+    /// the first item named `name` (null names skipped); nothing when none
+    /// is, or `name` is null.
+    pub fn gu_selector_set_select_str(mem: &mut impl Mem, selector: u32, name: u32) {
+        if name == 0 {
+            return;
+        }
+        let count = i32::from(mem.read::<i16>(at(selector, 4)));
+        let names = mem.read::<u32>(at(selector, 8));
+        for i in 0..count.max(0) {
+            #[allow(clippy::cast_sign_loss)]
+            let item = mem.read::<u32>(names.wrapping_add(i as u32 * 4));
+            if item != 0 && str_eq(mem, item, name) {
+                #[allow(clippy::cast_possible_truncation)]
+                mem.write(at(selector, 2), i as i16);
+                return;
+            }
+        }
+    }
+
+    /// `Gu_SelectorSetMouseFukki(selector, on)` (`0x0084a0d0`).
+    pub fn gu_selector_set_mouse_fukki(mem: &mut impl Mem, selector: u32, on: u32) {
+        mem.write(at(selector, 0x14), on);
+    }
+
+    /// `Gu_SelectorSetCallback(selector, callback)` (`0x00849fc0`).
+    pub fn gu_selector_set_callback(mem: &mut impl Mem, selector: u32, callback: u32) {
+        mem.write(at(selector, 0x28), callback);
+    }
+
+    fn put_quad(mem: &mut impl Mem, packet: u32, index: u32, q: [u32; 4]) {
+        mem.write(packet.wrapping_add(index.wrapping_mul(16)), q);
+    }
+
+    /// `Gu_SetScissor(x0, x1, y0, y1)` (`0x00848b40`): queues
+    /// [`scissor_packet`].
+    pub fn gu_set_scissor(mem: &mut impl Mem, x0: i32, x1: i32, y0: i32, y1: i32) {
+        let n = PACKET_COUNT.get(mem);
+        let packet = PACKET.get(mem);
+        let [tag, data] = scissor_packet(H_SCALE.get(mem), x0, x1, y0, y1);
+        put_quad(mem, packet, n, tag);
+        put_quad(mem, packet, n.wrapping_add(1), data);
+        PACKET_COUNT.set(mem, n.wrapping_add(2));
+    }
+
+    /// `Gu_SetTexFlush()` (`0x00848d10`): queues a GIF tag and `TEXFLUSH`;
+    /// the register's data half is left as it was.
+    pub fn gu_set_tex_flush(mem: &mut impl Mem) {
+        let n = PACKET_COUNT.get(mem);
+        let packet = PACKET.get(mem);
+        put_quad(mem, packet, n, [1, 0x1000_0000, 0xe, 0]);
+        let reg = packet
+            .wrapping_add(n.wrapping_add(1).wrapping_mul(16))
+            .wrapping_add(8);
+        mem.write(reg, [0x3fu32, 0]);
+        PACKET_COUNT.set(mem, n.wrapping_add(2));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bits_and_clamps() {
+        assert_eq!(with_bits(0xff, TOGGLE_VALUE, 3, 0), 0xf7);
+        assert_eq!(with_bits(0, TOGGLE_VALUE, 3, 3), 8);
+        assert_eq!(with_bits(1, HIDE, 0, 2), 0);
+        assert_eq!(clamp_select(-3, 5), 0);
+        assert_eq!(clamp_select(5, 5), 5);
+        assert_eq!(clamp_select(6, 5), 4);
+    }
+
+    #[test]
+    fn scissor() {
+        let [tag, data] = scissor_packet(0x100, 10, 300, 20, 400);
+        assert_eq!(tag, [1, 0x1000_0000, 0xe, 0]);
+        // SCAX0 10, SCAX1 300, SCAY0 20, SCAY1 400
+        assert_eq!(data, [0xa | 0x12c << 16, 0x14 | 0x190 << 16, 0x40, 0]);
+        // a negative high bound fills the fields above it
+        let [_, data] = scissor_packet(0x100, 0, -1, 0, 0);
+        assert_eq!(data[..2], [0xffff_0000, 0xffff_ffff]);
+    }
+}
