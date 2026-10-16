@@ -1,0 +1,158 @@
+//! Menu scene data (`TkMenu*Scene*`, `TkMenu*Param*`): up to eight loaded
+//! blocks (`g_TkMenuSceneData`), each with two name-hashed tables:
+//!
+//! - `+0x00`: 16 offsets of parameter buckets; a bucket is a `u32` count
+//!   and that many records, each a word `(extra << 24) | name offset`
+//!   followed by `extra` more words;
+//! - `+0x40`: 16 offsets of scene buckets; a bucket is a `u32` count and
+//!   12-byte records whose first word is the name's offset.
+//!
+//! Offsets are from the block's start; 0 is an empty bucket. A name's
+//! bucket is the XOR of its bytes, low four bits. Handles are offsets of
+//! records from the block's start.
+
+/// The bucket of a name: the XOR of its bytes, low nibble.
+#[must_use]
+pub fn bucket(name: &[u8]) -> u32 {
+    u32::from(name.iter().fold(0u8, |h, &b| h ^ b) & 0xf)
+}
+
+/// The originals, on the loaded blocks (`ffx_bridge::Mem`).
+pub mod bridge {
+    use ffx_bridge::{Global, Mem};
+
+    use super::bucket;
+    use crate::gu::bridge::str_eq;
+
+    /// The loaded scene data blocks, eight pointers.
+    pub const SCENE_DATA: Global<u32> = Global::new(0x022f_b4dc);
+
+    /// Blocks.
+    pub const SCENES: u32 = 8;
+
+    fn block(mem: &impl Mem, i: i32) -> u32 {
+        #[allow(clippy::cast_sign_loss)]
+        SCENE_DATA.ptr(mem).at(i as u32).get(mem)
+    }
+
+    /// The bytes of the C string at `p` (without the 0).
+    fn c_str(mem: &impl Mem, p: u32) -> Vec<u8> {
+        let mut v = Vec::new();
+        loop {
+            let b = mem.read::<u8>(p.wrapping_add(u32::try_from(v.len()).unwrap_or(u32::MAX)));
+            if b == 0 {
+                return v;
+            }
+            v.push(b);
+        }
+    }
+
+    /// `TkMenuSetSceneDataAdrs(i, data)` (`0x00a7c7f0`), unchecked.
+    pub fn tk_menu_set_scene_data_adrs(mem: &mut impl Mem, i: i32, data: u32) {
+        #[allow(clippy::cast_sign_loss)]
+        let p = SCENE_DATA.ptr(mem).at(i as u32);
+        p.set(mem, data);
+    }
+
+    /// `TkMenuInitSeq()` (`0x00a7bb00`): no blocks.
+    pub fn tk_menu_init_seq(mem: &mut impl Mem) {
+        let p = SCENE_DATA.ptr(mem).addr;
+        mem.write(p, [0u32; SCENES as usize]);
+    }
+
+    /// `TkMenuGetParamOffset(i, offset, n)` (`0x00a7b8c0`): word `n + 1`
+    /// from `offset` in block `i` (unchecked), 0 for a negative offset or
+    /// no block.
+    pub fn tk_menu_get_param_offset(mem: &impl Mem, i: i32, offset: i32, n: i32) -> u32 {
+        if offset < 0 {
+            return 0;
+        }
+        let b = block(mem, i);
+        if b == 0 {
+            return 0;
+        }
+        #[allow(clippy::cast_sign_loss)]
+        let at = b
+            .wrapping_add((n as u32).wrapping_mul(4))
+            .wrapping_add(4)
+            .wrapping_add(offset as u32);
+        mem.read(at)
+    }
+
+    /// `TkMenuIsTermScene(i, handle)` (`0x00a7bb90`): the scene record at
+    /// `handle` in block `i` (unchecked) when its word `+4` lacks bit 30,
+    /// else 0 (also for a 0 handle or no block).
+    pub fn tk_menu_is_term_scene(mem: &impl Mem, i: i32, handle: u32) -> u32 {
+        if handle == 0 {
+            return 0;
+        }
+        let b = block(mem, i);
+        if b == 0 {
+            return 0;
+        }
+        let p = b.wrapping_add(handle);
+        if p == 0 || mem.read::<u32>(p.wrapping_add(4)) & 0x4000_0000 != 0 {
+            return 0;
+        }
+        p
+    }
+
+    /// `TkMenuGetParamHandle(i, name)` (`0x00a7b7d0`): the parameter
+    /// record named `name` in block `i` (clamped to 0..=7), 0 when none.
+    pub fn tk_menu_get_param_handle(mem: &impl Mem, i: i32, name: u32) -> u32 {
+        let base = block(mem, i.clamp(0, 7));
+        if base == 0 {
+            return 0;
+        }
+        let hash = bucket(&c_str(mem, name));
+        let offset = mem.read::<u32>(base.wrapping_add(hash * 4));
+        if offset == 0 {
+            return 0;
+        }
+        let mut record = base.wrapping_add(offset).wrapping_add(4);
+        let mut left = mem.read::<u32>(base.wrapping_add(offset));
+        while left != 0 {
+            let word = mem.read::<u32>(record);
+            if str_eq(mem, base.wrapping_add(word & 0x00ff_ffff), name) {
+                return record.wrapping_sub(base);
+            }
+            record = record.wrapping_add((word >> 24) * 4 + 4);
+            left -= 1;
+        }
+        0
+    }
+
+    /// `TkMenuGetSceneHandle(i, name)` (`0x00a7b920`): the scene record
+    /// named `name` in block `i` (clamped to 0..=7), 0 when none.
+    pub fn tk_menu_get_scene_handle(mem: &impl Mem, i: i32, name: u32) -> u32 {
+        let base = block(mem, i.clamp(0, 7));
+        if base == 0 {
+            return 0;
+        }
+        let hash = bucket(&c_str(mem, name));
+        let offset = mem.read::<u32>(base.wrapping_add(0x40 + hash * 4));
+        if offset == 0 {
+            return 0;
+        }
+        let mut record = base.wrapping_add(offset).wrapping_add(4);
+        let mut left = mem.read::<u32>(base.wrapping_add(offset));
+        while left != 0 {
+            let name_at = base.wrapping_add(mem.read::<u32>(record));
+            if str_eq(mem, name_at, name) {
+                return record.wrapping_sub(base);
+            }
+            record = record.wrapping_add(12);
+            left -= 1;
+        }
+        0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn buckets() {
+        assert_eq!(super::bucket(b""), 0);
+        assert_eq!(super::bucket(b"ab"), u32::from((b'a' ^ b'b') & 0xf));
+    }
+}

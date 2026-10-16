@@ -784,9 +784,9 @@
 0x00645eb0 function setLuluODKeyboardInput    # fh v3:exact 0x00646060
 0x00645f00 function setNearPlane              # fh v3:bsim1.00 0x006460b0
 0x00645f30 function ConvertGameCodeToUTF8     # fh v3:bsim1.00 0x006460e0
-0x00645f50 function Text_ToUtf8               # FFX text -> UTF-8; defines the byte grammar (docs/formats/text.md)
-0x006460a0 function DecodingGamecodeJPCHKR    # character code -> UTF-8 via the jp/kr/ch table; was Text_DecodeCharCjk
-0x006461f0 function Text_DecodeCharWestern    # character code -> UTF-8 via ffxsjistbl_us.bin
+0x00645f50 function Text_ToUtf8               # (src, out, lang): FFX text -> UTF-8, 03 as \r\n, controls dropped; defines the byte grammar (docs/formats/text.md)
+0x006460a0 function DecodingGamecodeJPCHKR    # (src, pos, out, lang) -> pos + bytes: character code -> UTF-8 via the jp/kr/ch table (3 bytes, 2 for 17 and 40); was Text_DecodeCharCjk
+0x006461f0 function Text_DecodeCharWestern    # (src, pos, out) -> pos + bytes: character code -> UTF-8 via ffxsjistbl_us.bin, codes < 0xc0 only (a jump table of offsets)
 0x00646920 function MallocAndReadGamecode     # loads ffx_encoding/ffxsjistbl_<lang>.bin into g_CharsetCjk/g_CharsetWestern; was Text_LoadCharset
 0x00647d70 function SaveDataCheckCrc          # fh call.cs cdecl
 0x00647e80 function SaveDataGetCrc            # fh switch:bsim1.00 0x7100224890
@@ -3539,6 +3539,7 @@
 0x0086b030 function AtelGetEffectFlag         # fh v3:exact 0x0086afc0
 0x0086b050 function AtelGetEffectParam        # fh v3:bsim1.00 0x0086afe0
 0x0086b150 function AtelGetElemId             # fh v3:exact 0x0086b0e0
+0x0086b170 function Msg_Text1                 # (i): entry i's text (+0) in the script context's second table (+0x38, .ebp section 5); offset 0 falls back to the .ebp's section 1 (0x023cbd60); = Msg_Get(i, 0, 1)
 0x0086b1b0 function AtelGetEventActorLinkWork # fh v3:exact 0x0086b140
 0x0086b300 function AtelGetEventActorTotal    # fh v3:exact 0x0086b290
 0x0086b370 function AtelGetEventBindIdFromID  # fh v3:exact 0x0086b300
@@ -3554,12 +3555,14 @@
 0x0086b9a0 function AtelGetGuideMapAngEx      # fh v3:exact 0x0086b930
 0x0086b9e0 function AtelGetHelpEventFlag      # fh v3:exact 0x0086b970
 0x0086ba40 function AtelGetHideStatusFromID   # fh v3:bsim1.00 0x0086b9d0
+0x0086ba60 function Msg_TableTextAlt          # (table, i): entry i's alternate text (+4) in table; offset 0 falls back to entry i's text in the .ebp's section 1; no callers
 0x0086ba90 function Msg_TextAlt                # (i): entry i's alternate text (+4) in the event's message table (script context +0x34); offset 0 falls back to the .ebp's own table (0x023cbd60)
 0x0086bb80 function AtelGetIndexWork          # fh v3:exact 0x0086bb10
 0x0086bbf0 function AtelGetKeepBattlePartyFromID # fh v3:exact 0x0086bb80
 0x0086bd90 function AtelGetMapIndex           # fh v3:exact 0x0086bd20
 0x0086be50 function AtelGetMenuMask           # fh switch:cg2 0x71008bcd08
 0x0086be90 function AtelGetMesWinWork         # (i): message window i (<0 or >7 clamped), 0x2c bytes at 0x01326d70 + (i + *0x01326b82*8)*0x2c; was Msg_Window
+0x0086bed0 function Msg_TableText             # (table, i): entry i's text (+0) in table; offset 0 falls back to the .ebp's section 1; no callers
 0x0086bf10 function Msg_Flags                  # (i): entry i's flags (+2); high byte = choice count; kept at message window +0x16 (0x008607a0)
 0x0086bf30 function Msg_Text                   # (i): entry i's text (+0) in the event's message table; offset 0 falls back to the .ebp's section 1
 0x0086bf70 function Msg_Get                    # (i, alternate, table): like Msg_Text/Msg_TextAlt; table 1 = script context +0x38 (.ebp section 5)
@@ -4058,6 +4061,7 @@
 0x008aa1e0 function TkMenuMainClearSelectWindow # fh switch:bsim1.00 0x71004ba0e0
 0x008aa3f0 function TkMenuMainFreeWindow      # fh v3:exact 0x008aa3a0
 0x008aa410 function TkMenuMainFreeWindowGroup # fh v3:exact 0x008aa3c0
+0x008aa450 function TkMenuMainGetIgnoreJoinFlag # () -> g_TkMenuMainIgnoreJoinFlag; the getter beside TkMenuMainSetIgnoreJoinFlag (TkMenuGetPlayerListMax picks the list by it)
 0x008aa460 function TkMenuMainGetMenuActiveMask # fh v3:bsim1.00 0x008aa410
 0x008aab00 function TkMenuMainRegistWindow    # fh switch:bsim1.00+call.cs 0x71004ba0f0 cdecl
 0x008aab20 function TkMenuMainRemoveMenu      # fh v3:exact 0x008aaad0
@@ -4318,7 +4322,7 @@
 0x008e36f0 function TkMenuCloseSubCmdWindow   # fh switch:bsim1.00 0x71004e9140
 0x008e49d0 function TkMenuRestartSubCmdWindow2 # fh switch:bsim1.00 0x71004e9120
 0x008e5280 function AdjustButtonIconY         # fh v3:exact 0x008e5280
-0x008e5a20 function BeginScissor_XYUV         # fh v3:exact 0x008e5a20
+0x008e5a20 function BeginScissor_XYUV         # (&x0, &y0, &x1, &y1, &u0, &v0, &u1, &v1) -> 0 when outside g_TkMenuScissorBox, else 1 with the rectangle and its texture coordinates clipped; x87 at 53 bits, ratios rounded to float; fh v3:exact 0x008e5a20
 0x008e5cd0 function CloseScissor              # fh v3:bsim1.00 0x008e5cd0
 0x008e6070 function DrawCrossButtonIconRGBA   # fh v3:exact 0x008e6070
 0x008e6970 function DrawCrossMenuIconWeaponName2 # fh v3:exact+call.cs 0x008e6970 cdecl
@@ -7021,7 +7025,9 @@
 0x00c423e8 label g_StatusTable               # 4 bytes per status; MsCheckStat (0x0079e310) returns byte 3 of entry i
 0x00c42420 label g_StatusTable2              # entry 14 of g_StatusTable on; MsCheckStat2 (0x0079e320) returns byte 3 of entry i
 0x00c49680 label g_ChrDefaultMoves           # Ch_MotionSetMoves(chr, slot, -1) stores entry [slot] (0, 1, 2, then zeros)
+0x00c4df54 label    g_GuHScale                # vertical scale of Gu_SetScissor's y bounds, 8.8 fixed point (Gu_SetHScale)
 0x00c59554 label    g_SystemConfirmButtonAssign # TOGetSystemConfirmButtonAssign returns it with -1 replaced by 0 (and stores that back)
+0x00c5955c label    g_ButtonData              # 2 words: setButtonData(a, b); resetButtonData sets both to -1
 0x00c5e350 label    g_GuideFlags                 # bit 0: the minimap may show (clear: Guide_FadeOff)
 0x00c5e370 label    g_GuideMarkerPalette         # 16 RGBA of floats (128 = 1), by marker flags & 0xf
 0x00c5e478 label    g_GuideEnabled               # 0: Guide_Update returns at once
@@ -7033,8 +7039,8 @@
 0x00cc9698 label    g_BasePath
 0x00cc9c48 label BigFileStream_sBigFileStreamInstacne # was g_FileSys
 0x00cc9cf5 label    g_SteamReady              # guards every other Steam call (achievements, RunCallbacks)
-0x00ccb95c label    g_CharsetCjk
-0x00ccb960 label    g_CharsetWestern
+0x00ccb95c label    g_CharsetCjk              # ffxsjistbl_jp/kr/ch.bin as loaded by MallocAndReadGamecode (null in a western game); read by DecodingGamecodeJPCHKR
+0x00ccb960 label    g_CharsetWestern          # ffxsjistbl_us.bin as loaded by MallocAndReadGamecode (null in a jp/kr/ch game); read by Text_DecodeCharWestern
 0x00ccb990 label    g_SaveData_EventId        # written by SaveDataSetEventId; no absolute reads
 0x00ccb994 label    g_SaveData_ScreenState    # SaveDataSetScreenState writes, SaveDataGetScreenState reads, SaveDataIsScreenClosed: == 0
 0x00ccb998 label    g_SaveData_DialogState    # SaveDataGet/SetDialogState; also written by SaveDataSetScreenState, SaveDataToLoad
@@ -7135,6 +7141,21 @@
 0x012fbda4 label g_ChrFunctionHistoryCount   # Ch_FunctionHistoryInit sets 0
 0x012fbda8 label g_ChrFunctionHistory        # 127 entries of 16 bytes (to 0x012fc598); Ch_FunctionHistoryInit clears byte 0 of each
 0x012ffad8 label g_ChrSkipSetPos3            # set by Ch_GetPosSg; Ch_SetPos3 clears it instead of moving the character
+0x013036c0 label    g_GuPacketCount           # GIF quadwords queued at g_GuPacket (Gu_SetScissor, Gu_SetTexFlush add 2)
+0x013036c4 label    g_GuPacket                # the Gu GS packet buffer, 16-byte quadwords
+0x013036e0 label    g_GuPrintBaseX            # text cursor origin x; Gu_PrintSetX(x) sets g_GuPrintX = this + x
+0x013036e4 label    g_GuPrintX                # text cursor x (Gu_PrintSetX)
+0x013036e8 label    g_GuPrintBaseY            # text cursor origin y (Gu_PrintSetY)
+0x013036ec label    g_GuPrintY                # text cursor y (Gu_PrintSetY)
+0x0130370c label    g_GuPrintColor            # 3 x u32 (Gu_PrintSetColor r, g, b)
+0x01303734 label    g_GuWindowList            # open Gu windows, linked through window +0, front first (Gu_WindowOpen moves a window to the front)
+0x01303738 label    g_GuDragWindow            # the window being dragged (Gu_WindowIsDrag)
+0x01303754 label    g_GuMouseCapture          # 2 words (Gu_MouseSetCapture)
+0x0130375c label    g_GuHidden                # Gu_Hide(on) sets it and returns the old value
+0x01325240 label    g_GuMouseY                # mouse y as the Gu layer reads it (Gu_MouseGetWindowY: minus window +0x0c; copied to window +0x14 on Gu_WindowOpen)
+0x01325244 label    g_GuMouseX                # mouse x (Gu_MouseGetWindowX: minus window +0x0e; window +0x16 on open)
+0x01325b70 label    g_MsgLastIndex            # last message index looked up (written by Msg_Text, Msg_TextAlt, Msg_Text1, Msg_Get)
+0x01325b74 label    g_MsgNone                 # what the Msg_ lookups return without a message table (an empty string)
 0x01325ba0 label    g_AtelCtrlWorks              # 7 ctrl works x 0x238 (AtelGetCtrlWork); g_ScriptContext follows; layout in ffx_script::vm::ctrl
 0x01326b28 label    g_ScriptContext              # current ctrl work (AtelGetCurCtrlWork, AtelSetCurrentCtrl): +0x0a player worker, +0x0c actor count, +0x10 worker count, +0x1c workers, +0x2c/+0x30 variable storage 0/1, +0x218 player position, +0x1e4/0x1f0 talk state (ffx_script::vm::ctrl)
 0x01326b82 label    g_AtelMenuExecStatus         # i8: AtelSetMenuExecStatus; selects the bank of g_MsgWindows (AtelGetMesWinWork)
@@ -7145,24 +7166,78 @@
 0x013270e0 label    g_AtelBasicWorkCacheIndex    # u16: index of the worker AtelGetBasicWork cached
 0x013270e4 label    g_AtelBasicWorkCache         # worker AtelGetBasicWork returned last; 0 = none (AtelRemoveCtrlWork and AtelInitTotal clear it; AtelRequireCtrlWork counts a loop down to 0 in it)
 0x01327148 label    g_EventSprites               # 128 x 0x1c: +0 active, +1 alpha, +4/+6 x/y, +8/+0xa scale*256, +0xc frame, +0x10 rgb, +0x14 data; drawn by 0x00874420
+0x01328150 label    g_TkVibratePads           # 8 pads x 0x24: two 16-byte channels (+0 pointer, +4 u32, +8 u16, +0xa u8), +0x22 on; TkStopVibrate(All) zero all but the pointers
+0x01328270 label    g_TkVibrateVolume         # 2 x u8 (TkGetVibrateVolume reports them, 0 when g_TkVibrateOff)
+0x01328272 label    g_TkVibrateOff            # nonzero: TkGetVibrateVolume reports 0, 0
+0x01328274 label    g_TkVibrateMask           # u16, pads allowed to vibrate (TkSetVibrateMask: bit per pad; pad < 0: 0xff or 0)
 0x01328558 label    g_NativeTables            # per-group native function tables
+0x0132ff1c label    g_TkSndStandbyVoice       # TkSndSetStandbyVoice
+0x0132ff24 label    g_TkSndStatus             # TkSndReportStatus returns whether it is nonzero
 0x0132ffa0 label    g_PartyWorkers               # [16] worker id per party index (0x0042, FUN_00885fd0)
+0x01330094 label    g_TkSndKickFlag           # u8, cleared by TkSndClearKickFlag
+0x013301e4 label    g_TkSoundSyncVFlag        # cleared by TkClearSoundSyncVFlag
+0x01330210 label    g_TkTotalSyncVCounter     # TkGetTotalSyncVCounter (returned as 64 bits, high half 0)
+0x01330254 label    g_TkBGThreadFunc          # TkRegistBGThreadFunc(f) sets it, returns the old one
+0x0133025c label    g_TkSyncVCallbackHandles  # 3 words (TkGetSyncVCallbackHandle, index clamped to 0..2)
+0x0133026c label    g_TkSyncVCallbackPtrs     # 3 words (TkSetSyncVCallbackPtr: index < 0 is 0, >= 3 ignored)
+0x01330280 label    g_TkControlerWork         # 2 words, zeroed by TkInitControlerWork
+0x01330488 label    g_PadButtonMap            # 16-byte rows: Pad_MapButtons(a, b, buttons) moves bit i of buttons to bit row[a + b][i]
+0x0133080c label    g_TkSyncH                 # words, TkGetSyncH(i) (unchecked)
+0x01330830 label    g_TkLang                  # i8, FFXSetLang / TkGetLang (sign-extended)
+0x01330832 label    g_TkTGS                   # u8 (TkGetTGS)
 0x01330833 label    g_FFXAsiaMode             # u8: FFXGetAsiaMode / FFXSetAsiaMode
+0x01330850 label    g_TkFadeOut               # 2 words, both set by TkSetFadeOut
+0x0133086c label    g_TkEncountCounterEventStart # TkGetEncountCounterEventStart
+0x01330870 label    g_TkDebugMenuStatus       # u8 0/1 (TkSetDebugMenuStatus)
+0x01330880 label    g_TkBattleMusicSize       # TkGetBattleMusicSize returns its address
+0x01338880 label    g_FFXConfig               # the FFX configuration block (TkGetFFXCofingAdrs returns its address)
+0x0133c8c0 label    g_TkBattleMusicBuffer     # TkGetBattleMusicBuffer
+0x0133c8d4 label    g_TkDebugFontPos          # 2 x i32, x and y x16 (TkSetDebugFontLocate)
 0x0133c910 label    g_FFXIsDebug              # i8: FFXIsDebug
 0x01340828 label    g_PauseOn                    # nonzero: Game_Frame runs the pause instead of the world; set alone, Pause_Update enters the pause
 0x01340838 label    g_PauseFade                  # the pause's dimming, 0x40 (paused) to 0x80 (running)
 0x0134083c label    g_PauseFadeStep              # added to g_PauseFade each frame: -4 entering, +4 leaving
 0x0134084c label    g_PauseEntered               # 1 once Pause_Enter ran
 0x01597f74 label    g_SaveData_LoadResult     # u8, 1 = the load succeeded (SaveDataIsLoadingSuccessful); SaveDataToLoad, TkMenuPreSave write it
+0x01840870 label    g_TkMenuMainIgnoreJoinFlag # TkMenuMainSetIgnoreJoinFlag
+0x0184087c label    g_TkMenuDrawShadeRatio    # TkMenuGetDrawShadeRatio; TkMenuDrawShadeRatioDiff sets it (fh bsim names)
+0x01840886 label    g_TkMenuPlayerStep        # u8, the last change of menu character: 1 (TkMenuSetNextPlayer2), 0xff (TkMenuSetPrevPlayer2)
+0x018408ec label    g_TkMenuMainActiveMask    # bit per main menu (TkMenuMainGetMenuActiveMask; TkMenuMainActiveMenu sets, TkMenuMainSleepMenu clears)
+0x018408f8 label    g_TkMn2MenuMode           # TkMn2GetMenuMode; TkMenuMainActiveMenu tests its high half for 0x80
+0x01841c00 label    g_TkMenuHelpMessage       # 3 x i32: current help message, the previous one, a timer (TkMenuSetHelpMessage resets it on a change)
+0x01841c14 label    g_TkMenuPlayers           # u8 character ids, indexed by g_TkMenuCurrentPlayerPos (TkMenuGetCurrentPlayer)
+0x01841c1c label    g_TkMenuPlayerListMax     # TkMenuGetPlayerListMax without the ignore-join flag (with it: g_TkMenuPlayerListMax2)
+0x01841c20 label    g_TkMenuPlayerListMax2    # TkMenuGetPlayerListMax2
+0x01841c28 label    g_TkMenuCurrentPlayerPos  # TkMenuGetCurrentPlayerPos / TkMenuSetCurrentPlayerPos
+0x01841c38 label    g_TkMenuSummons           # u8 aeon ids, indexed by g_TkMenuCurrentSummonPos (TkMenuGetCurrentSummon)
+0x01841c50 label    g_TkMenuSummonListMax     # TkMenuGetSummonListMax
+0x01841c54 label    g_TkMenuCurrentSummonPos  # index into g_TkMenuSummons
+0x01841c5c label    g_TkMenuSummonEnableMask  # TkMenuSummonEnableMask
+0x01841c64 label    g_TkMn2MainFrameRatioDiff # TkMn2SetMainFrameRatioDiff
+0x01841c68 label    g_TkMn2MainFrameRatio     # TkMn2GetMainFrameRatio
 0x01865cdc label    g_FFXLangSwapFlag         # TOGetFFXLangSwapFlag
 0x01865f00 label    g_FFXVideoMode            # TOGetFFXVideoMode
+0x018663c4 label    g_TkMenuSaveLoadActive    # cleared by TkMenuSaveLoadActive
 0x01869ab0 label    g_MsgVars                    # per window 32 pointers to text variable records {u8 default type, u8 type, i32 value}; text code 0x12
 0x01869eb0 label    g_MacroDic                   # macrodic section pointer table (MacroDic_Load)
+0x0186a23c label    g_TkMenuSummonGrowMax     # SetSummonGrowMax, once: summon growth records (8 bytes) before the first with byte +7 set
+0x0186a380 label    g_TkMenuImportantCounter  # TkMenuGetImportantCounter
+0x0186a388 label    g_TkMenuImportantListMax  # TkMenuImportantListMax
+0x0186a420 label    g_TkMenuDummyControler    # +0 buttons, +4 pending buttons, +8..+0xf current/pending stick byte pairs (TkMenuFlushDummyControler: pending -> current, pending -> released, 0x80)
+0x0186a430 label    g_TkMenuDummyControlerFlag # u8 (TkMenuGetDummyControlerFlag / TkMenuSetDummyControlerFlag)
+0x01871530 label    g_TkMenuPacket            # menu GS packet pointer; TkMenuDrawEnv writes 0x50 bytes at +0x10 and moves it 0x60 on
+0x01871568 label    g_TkMenuMainOptions       # 8-byte entries: +0 menu (TkMenuMainGetOptionMenu), +4 i16 enabled (TkMenuMainGetOptionEnabled)
+0x01871688 label    g_TkMenuMainMaxOptions    # TkMenuMainGetMaxOptions
+0x018716a8 label    g_TkMenuScissorScales     # 2 x f32 a, b: in XYUV mode BeginScissor_XYUV scales x1 from x0 by b / a, clips, scales back by a / b
+0x018716d0 label    g_TkMenuScissorOn         # 1: BeginScissor_XYUV clips; cleared by CloseScissor
+0x018716d4 label    g_TkMenuScissorXyuv       # u8, BeginScissor_XYUV's scaled mode; cleared by CloseScissor
+0x018716f8 label    g_TkMenuScissorBox        # 4 x f32 left, top, right, bottom (BeginScissor_XYUV; an edge counts as outside)
 0x0193bf78 label    g_GuideFade                  # the minimap's alpha, 0..128 (Guide_FadeStep)
 0x0193fdac label    g_MagicFile_IsNexData     # MagicFile_IsNexData
 0x01a85ba8 label    g_FullArenaLocalization   # toggled (non-zero -> 0, 0 -> 1) by setFullArenaLocalizationEnable; read by 0x00a42c00, 0x00a42fa0
 0x01a85bb0 label    g_ReadChgName_From        # 16 u32 (FILE_NAME_CHG_TBL_CNT, read_debug.c): set_read_chgname(a, b) puts a in the first zero slot, b in g_ReadChgName_To; clear_read_chgname zeroes both
 0x01a85bf0 label    g_ReadChgName_To          # 16 u32: the b of set_read_chgname(a, b), beside g_ReadChgName_From
+0x022fb4dc label    g_TkMenuSceneData         # 8 menu scene data blocks (TkMenuSetSceneDataAdrs, TkMenuInitSeq zeroes them; layout in crates/ffx-menu/src/scene.rs)
 0x022fb504 label    g_Settings
 0x02310c40 label    g_CdLib                   # function table of the PS2 CD-library emulation
 0x02310c60 label    g_CdLib_FileBase          # g_CdLib + 0x20: the current module's first PS2 file number (CDfileSize_CD, CDfileSize_CD_EX add it to theirs)
@@ -7177,4 +7252,7 @@
 0x023c44e0 label    g_ChrCount                   # number of field characters in g_ChrArray
 0x023c44e4 label    g_ChrArray                   # field characters, 0x880 bytes each (byte +2 = active)
 0x023c8d00 label g_ChrBlk                    # 40 character model blocks of 0x12c bytes (Ch_BlkGetHandleFast); chr +0x1c4 points at one: +0x1c thickness, +0x30 scale, +0x71 name, +0xb8 directory, +0x124/+0x128 resident data
+0x023cbd60 label    g_EventEbpMessages        # the .ebp's own message table (section 1), set by AtelEventSetUp; the Msg_ lookups fall back to it for offset 0
 0x023cbebc label gNeedAutoSave                # fh v4:user_defined
+0x023cc128 label    g_TkMenuSubCmdWindow      # the open sub-command window (TkMenuCloseSubCmdWindow sets its +0x41 and clears this; TkMenuRestartSubCmdWindow2)
+0x023cc458 label    g_TkMn2FontShade          # 4 words 8 bytes apart, stored downwards: TkMn2SetFontShade(s0..s3) puts s0 at 0x023cc470, s3 here
