@@ -165,6 +165,18 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, actor: u32, area: u
         ALL,
         |m| g::ms_btl_list_encount(m, i),
     );
+    if rng.below(4) != 0 {
+        let gr = rng.range(-1, 10);
+        twin(
+            "MsBtlListGroup",
+            a,
+            b,
+            0x0079_d210,
+            &[i.cast_unsigned(), gr.cast_unsigned()],
+            ALL,
+            |m| ffx_battle::flow::bridge::ms_btl_list_group(m, i, gr),
+        );
+    }
     let all = rng.below(2);
     twin("ResetEncountExe", a, b, 0x0078_0ff0, &[all], 0, |m| {
         g::reset_encount_exe(m, all);
@@ -361,6 +373,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     let area = scratch(a, b, 0x1000);
     let actor = scratch(a, b, 0xf90);
     let fields = scratch(a, b, 14 * 40);
+    let blocks = scratch(a, b, 0x2000);
     let motions = scratch(a, b, 0x800);
     for round in 0..1500 {
         randomize(a, b, rng);
@@ -377,6 +390,20 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
             poke(a, b, fields + 14 * k, &m.to_le_bytes());
         }
         set(a, b, ffx_battle::state::bridge::FIELD_RECORDS, fields);
+        // the encounter blocks: small bytes, so that a group walk stays in
+        for k in 0..40u32 {
+            poke(
+                a,
+                b,
+                fields + 14 * k + 2,
+                &u16::try_from(rng.below(0x400)).unwrap().to_le_bytes(),
+            );
+        }
+        let bytes: Vec<u8> = (0..0x2000)
+            .map(|_| u8::try_from(rng.below(8)).unwrap())
+            .collect();
+        poke(a, b, blocks, &bytes);
+        set(a, b, ffx_battle::misc::bridge::FIELD_TABLE2, blocks);
         // a motion binary, sometimes none
         let bin = if rng.below(5) == 0 { 0 } else { area + 0x100 };
         poke(a, b, area + 0x100, &rng.below(0x30).to_le_bytes()[..2]);

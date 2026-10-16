@@ -39,6 +39,14 @@ fn dress(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, chars: u
             (0x640, 1),
             (0x6bc, 4),
             (0xdc8, 0x20),
+            (0x38, 1),
+            (0x3f9, 1),
+            (0x426, 1),
+            (0x43e, 1),
+            (0x5bc, 4),
+            (0x65e, 6),
+            (0x6cc, 2),
+            (0xde4, 4),
             (0xe30, 0x60),
             (0xea8, 4),
         ] {
@@ -459,6 +467,86 @@ fn fourth(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World) {
     same("fourth", a, b);
 }
 
+fn fifth(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World) {
+    let i = rng.below(ACTORS);
+    let actor = w.actor(i);
+    // a battle position whose escape kind (+3) is 3-8 (no summoner here)
+    let pos = [rng.below(3), rng.below(6), rng.below(3)].map(|x| u8::try_from(x).unwrap());
+    poke(a, b, actor + 0x4fc, &pos);
+    let vec = if rng.below(4) == 0 { 0 } else { w.out + 0xe0 };
+    twin(
+        "MsGetChrEscapePos",
+        a,
+        b,
+        0x0079_4ec0,
+        &[i | (rng.next() & !0xff), vec],
+        ALL,
+        |m| f::ms_get_chr_escape_pos(m, i, vec, |_, _, _, _, _| unreachable!()).cast_unsigned(),
+    );
+    twin("MsUseChrMpLimit", a, b, 0x0078_e5a0, &[i], 0, |m| {
+        f::ms_use_chr_mp_limit(m, i);
+        0
+    });
+    twin("MsBtlGetTerm", a, b, 0x0079_8b70, &[], 0, |m| {
+        f::ms_btl_get_term(m);
+        0
+    });
+    let keep = rng.next();
+    twin("MsClearStatus", a, b, 0x0079_a190, &[i, keep], 0, |m| {
+        f::ms_clear_status(
+            m,
+            i,
+            keep.to_le_bytes()[..2]
+                .try_into()
+                .map_or(0, u16::from_le_bytes),
+        );
+        0
+    });
+    // cues for MsMoveCheckFlag: a few entries of real actors
+    {
+        use ffx_battle::state::bridge as st;
+        set(
+            a,
+            b,
+            st::COMMAND_CUE_COUNT,
+            i8::try_from(rng.below(6)).unwrap(),
+        );
+        set(
+            a,
+            b,
+            st::INPUT_CUE_COUNT,
+            i8::try_from(rng.below(6)).unwrap(),
+        );
+        for k in 0..6 {
+            let e = st::COMMAND_CUE.ptr(b).addr + st::CUE_SIZE * k;
+            poke(a, b, e, &[u8::try_from(rng.below(ACTORS)).unwrap()]);
+            poke(a, b, e + 7, &[rng.byte()]);
+            let e = st::INPUT_CUE.ptr(b).addr + 8 * k;
+            poke(
+                a,
+                b,
+                e,
+                &[
+                    u8::try_from(rng.below(ACTORS)).unwrap(),
+                    0,
+                    0,
+                    0,
+                    rng.byte(),
+                ],
+            );
+        }
+        let id = u8::try_from(i).unwrap();
+        poke(a, b, actor + 0xc, &[id]);
+    }
+    twin("MsMoveCheckFlag", a, b, 0x007a_aae0, &[actor], ALL, |m| {
+        f::ms_move_check_flag(m, actor)
+    });
+    twin("MsTestCheckMotion", a, b, 0x0079_0260, &[i], ALL, |m| {
+        f::ms_effect_check_motion(m, i).cast_unsigned()
+    });
+    same("fifth", a, b);
+}
+
 fn globals(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     for (g, len) in [
         (f::EFFECT_WAIT.ptr(b).addr, 2),
@@ -474,6 +562,9 @@ fn globals(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         (f::MENU_TEXT.ptr(b).addr, 0xcc),
         (f::BTL_POS.ptr(b).addr, 0x50),
         (f::TIDUS_LIMIT_USES.ptr(b).addr, 4),
+        (f::COUNTS_BATTLE.ptr(b).addr, 0x50),
+        (f::TERM_WORD.ptr(b).addr, 4),
+        (ffx_battle::misc::bridge::START_AP.ptr(b).addr, 0x90),
         (f::RANDOM_TARGETS.ptr(b).addr, 1),
         (ffx_battle::minor::bridge::ATEL_CAM_ON.ptr(b).addr, 1),
         (ffx_battle::save::bridge::MENU.ptr(b).addr, 4),
@@ -532,6 +623,26 @@ fn globals(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
 fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let w = world(a, b, rng, synthetic);
     let chars = scratch(a, b, 0x1000);
+    // room for the last character's fields past 0x400
+    let _pad = scratch(a, b, 0x1000);
+    // a position file: three groups, tables at 0x400 (MsGetChrEscapePos)
+    let posf = scratch(a, b, 0x800);
+    let mut f = vec![0u8; 0x800];
+    for (k, c) in f.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+        let v = if k < 0x100 {
+            0x400u32
+        } else {
+            0x4120_0000 + u32::try_from(k).unwrap()
+        };
+        c.copy_from_slice(&v.to_le_bytes());
+    }
+    for g in 0..3 {
+        f[g * 0x60 + 2..g * 0x60 + 10].copy_from_slice(&[2, 2, 3, 3, 3, 0, 0, 2]);
+    }
+    f[0] = 0;
+    f[1] = 3;
+    poke(a, b, posf, &f);
+    set(a, b, ffx_battle::pos::bridge::POS_FILE, posf);
     for round in 0..800 {
         if w.synthetic {
             dress(a, b, rng, &w, chars);
@@ -544,6 +655,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         more(a, b, rng, &w);
         third(a, b, rng, &w);
         fourth(a, b, rng, &w);
+        fifth(a, b, rng, &w);
     }
     // MsBtlChrInit clears every actor: last
     if w.synthetic {

@@ -1768,4 +1768,49 @@ ported! {
             call4(MS_GET_SUMMONER_POS, actor, index.cast_unsigned(), k.cast_unsigned(), vec);
         })
     }
+    /// `MsRegistCommandCue(chr, command, turn, kind, flag)`.
+    MsRegistCommandCue @ 0x007b_0b90 => extern "C" fn ms_regist_command_cue(chr: u32, command: u32, turn: u32, kind: u32, flag: u32) -> i32 {
+        #[allow(clippy::cast_possible_truncation)] // byte arguments
+        cue::ms_regist_command_cue(&mut mem(), chr, command, turn as u8, kind as u8, flag as u8)
+    }
+    /// `MsInsertCommandCue(chr, command, turn, kind, flag, on, after)`.
+    MsInsertCommandCue @ 0x007b_0a30 => extern "C" fn ms_insert_command_cue(chr: u32, command: u32, turn: u32, kind: u32, flag: u32, on: u32, after: u32) -> i32 {
+        #[allow(clippy::cast_possible_truncation)] // byte arguments
+        cue::ms_insert_command_cue(&mut mem(), chr, command, turn as u8, kind, flag as u8, on as u8, after)
+    }
+    /// `MsCleanCommandCue(chr, keep)`.
+    MsCleanCommandCue @ 0x007b_0830 => extern "C" fn ms_clean_command_cue(chr: u32, keep: u32) -> i32 {
+        cue::ms_clean_command_cue(&mut mem(), chr, keep)
+    }
+    /// `MsBtlListGroup(field, group)`.
+    MsBtlListGroup @ 0x0079_d210 => extern "C" fn ms_btl_list_group(field: i32, group: i32) -> u32 {
+        flow::ms_btl_list_group(&mem(), field, group)
+    }
+    /// `MsGetChrEscapePos(i, vec)`.
+    MsGetChrEscapePos @ 0x0079_4ec0 => extern "C" fn ms_get_chr_escape_pos(i: u32, vec: u32) -> i32 {
+        flow::ms_get_chr_escape_pos(&mut mem(), i, vec, |_, actor, index, k, vec| {
+            call4(MS_GET_SUMMONER_POS, actor, index.cast_unsigned(), k.cast_unsigned(), vec);
+        })
+    }
+    /// `MsUseChrMpLimit(i)`.
+    MsUseChrMpLimit @ 0x0078_e5a0 => extern "C" fn ms_use_chr_mp_limit(i: u32) {
+        flow::ms_use_chr_mp_limit(&mut mem(), i);
+    }
+    /// `MsBtlGetTerm()`.
+    MsBtlGetTerm @ 0x0079_8b70 => extern "C" fn ms_btl_get_term() {
+        flow::ms_btl_get_term(&mut mem());
+    }
+    /// `MsClearStatus(i, keep)`.
+    MsClearStatus @ 0x0079_a190 => extern "C" fn ms_clear_status(i: u32, keep: u32) {
+        #[allow(clippy::cast_possible_truncation)] // a u16 argument
+        flow::ms_clear_status(&mut mem(), i, keep as u16);
+    }
+    /// `MsMoveCheckFlag(actor)`.
+    MsMoveCheckFlag @ 0x007a_aae0 => extern "C" fn ms_move_check_flag(actor: u32) -> u32 {
+        flow::ms_move_check_flag(&mem(), actor)
+    }
+    /// `MsTestCheckMotion(i)`: `MsEffectCheckMotion`.
+    MsTestCheckMotion @ 0x0079_0260 => extern "C" fn ms_test_check_motion(i: u32) -> i32 {
+        flow::ms_effect_check_motion(&mut mem(), i)
+    }
 }

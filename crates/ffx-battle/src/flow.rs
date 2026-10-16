@@ -828,4 +828,134 @@ pub mod bridge {
         };
         pair[usize::from(k != 0)]
     }
+    /// `MsBtlListGroup(field, group)` (`0x0079d210`): encounter group
+    /// `group` (the first when out of range) of the field's block
+    /// (`MsBtlListEncount`): groups follow each other from `+2`, each `5 +
+    /// 2·n` bytes for its first byte `n`.
+    pub fn ms_btl_list_group(mem: &impl Mem, field: i32, group: i32) -> u32 {
+        let block = crate::minor::bridge::ms_btl_list_encount(mem, field);
+        let group = if group < 0 || group >= i32::from(byte(mem, block, 1)) {
+            0
+        } else {
+            group
+        };
+        let mut p = block.wrapping_add(2);
+        for _ in 0..group.max(0) {
+            p = p.wrapping_add(u32::from(byte(mem, p, 0)) * 2 + 5);
+        }
+        p
+    }
+
+    /// `MsGetChrEscapePos(i, vec)` (`0x00794ec0`): the actor's escape
+    /// position (`MsBtlGetPos` of its battle position, kind +3); -1, or 0
+    /// for no actor.
+    pub fn ms_get_chr_escape_pos<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        vec: u32,
+        summoner: impl FnOnce(&mut M, u32, i32, i32, u32),
+    ) -> i32 {
+        let i = i & 0xff;
+        if crate::actor::bridge::ms_btl_chr_num_check(i) == 0 {
+            return 0;
+        }
+        let a = ms_get_chr(mem, i);
+        let s = |o: u32| i32::from(byte(mem, a, o).cast_signed());
+        let (g, k, x) = (s(0x4fc), s(0x4fd) + 3, s(0x4fe));
+        crate::pos::bridge::ms_btl_get_pos(mem, 0, a, g, k, x, vec, summoner);
+        -1
+    }
+
+    /// `MsUseChrMpLimit(i)` (`0x0078e5a0`): pays a command's MP (`+0x6cc`,
+    /// MP kept within 0-9999) and overdrive (`+0x6cd` off the gauge
+    /// `+0x5bc`, within its maximum `+0x5bd`); an overdrive also gives back
+    /// a summon's kept gauge (`MsSummonLimitLoad`) and counts for Tidus
+    /// (`MsLimitTidusLearn`). Both costs cleared.
+    pub fn ms_use_chr_mp_limit(mem: &mut impl Mem, i: u32) {
+        let a = ms_get_chr(mem, i);
+        let mp: i32 = mem.read(a.wrapping_add(0x5d4));
+        let mp = ms_check_range(mp.wrapping_sub(i32::from(byte(mem, a, 0x6cc))), 0, 9999);
+        mem.write(a.wrapping_add(0x5d4), mp);
+        let g = i32::from(byte(mem, a, 0x5bc)) - i32::from(byte(mem, a, 0x6cd));
+        let g = ms_check_range(g, 0, i32::from(byte(mem, a, 0x5bd)));
+        mem.write(a.wrapping_add(0x5bc), g.to_le_bytes()[0]);
+        if byte(mem, a, 0x6cd) != 0 {
+            crate::misc::bridge::ms_summon_limit_load(mem, a);
+            ms_limit_tidus_learn(mem, i.cast_signed());
+        }
+        mem.write(a.wrapping_add(0x6cc), 0u16);
+    }
+
+    /// Per character at the battle's end (`MsBtlGetTerm`): took part (keeps
+    /// its AP), and counts a battle; and a word cleared after.
+    pub const TOOK_PART: Global<[u8; 18]> = Global::new(0x0231_0ec4);
+    pub const COUNTS_BATTLE: Global<[u8; 18]> = Global::new(0x0231_0ea0);
+    pub const TERM_WORD: Global<u32> = Global::new(0x0231_0f68);
+
+    /// `MsBtlGetTerm()` (`0x00798b70`): characters who did not take part or
+    /// are out (`+0xdcc`/`+0xdce`) get back their AP from the start; the
+    /// ones flagged count a battle (`MsSaveAddInfoData(chr, 0)`).
+    pub fn ms_btl_get_term(mem: &mut impl Mem) {
+        let start = crate::misc::bridge::START_AP.ptr(mem).addr;
+        let ap = crate::turn::bridge::AP.ptr(mem).addr;
+        let (part, count) = (TOOK_PART.get(mem), COUNTS_BATTLE.get(mem));
+        for i in 0..18u32 {
+            let a = ms_get_chr(mem, i);
+            if part[i as usize] == 0 || byte(mem, a, 0xdcc) != 0 || byte(mem, a, 0xdce) != 0 {
+                let v: u32 = mem.read(start + 4 * i);
+                mem.write(ap + 4 * i, v);
+            }
+            if count[i as usize] != 0 {
+                ms_save_add_info_data(mem, i.cast_signed(), 0);
+            }
+        }
+        TERM_WORD.set(mem, 0);
+    }
+
+    /// `MsClearStatus(i, keep)` (`0x0079a190`): every status, counter and
+    /// overdrive status cleared (`MsLimitStatusProcess(.., 0)`); bit 0 of
+    /// the status (KO) becomes `keep`'s.
+    pub fn ms_clear_status(mem: &mut impl Mem, i: u32, keep: u16) {
+        let a = ms_get_chr(mem, i);
+        mem.write(a.wrapping_add(0x606), 0u16);
+        mem.write(a.wrapping_add(0x608), [0u32; 3]);
+        mem.write(a.wrapping_add(0x614), 0u8);
+        mem.write(a.wrapping_add(0x616), 0u16);
+        mem.write(a.wrapping_add(0x65e), 0u32);
+        mem.write(a.wrapping_add(0x662), 0u16);
+        ms_limit_status_process(mem, a, 0);
+        let s = half(mem, a, 0x606);
+        mem.write(a.wrapping_add(0x606), s ^ ((s ^ keep) & 1));
+    }
+
+    /// `MsMoveCheckFlag(actor)` (`0x007aaae0`): 1 when an actor that is
+    /// nobody's follower, shown (`+0x38`) and free (`+0x43e`, `+0x426`
+    /// clear) may move: one in the fight (or out but with a cue entry still
+    /// running for it).
+    pub fn ms_move_check_flag(mem: &impl Mem, actor: u32) -> u32 {
+        if byte(mem, actor, 0x43f) != 0xff {
+            return 0;
+        }
+        let out = byte(mem, actor, 0xdcc) == 2
+            || byte(mem, actor, 0xdce) != 0
+            || (byte(mem, actor, 0xdc8) == 0
+                && byte(mem, actor, 0xdcb) == 0
+                && byte(mem, actor, 0x3f9) == 0);
+        if out {
+            if byte(mem, actor, 0xde6) == 0 && byte(mem, actor, 0xde7) == 0 {
+                return 0;
+            }
+            let c = u32::from(byte(mem, actor, 0xc));
+            if crate::cue::bridge::ms_check_input_cue_exe(mem, c) == 0
+                && crate::cue::bridge::ms_check_command_cue_exe(mem, c) == 0
+            {
+                return 0;
+            }
+        }
+        u32::from(
+            byte(mem, actor, 0x38) != 0
+                && byte(mem, actor, 0x43e) == 0
+                && byte(mem, actor, 0x426) == 0,
+        )
+    }
 }
