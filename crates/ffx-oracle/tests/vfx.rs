@@ -6388,3 +6388,91 @@ fn opus_0582_commands_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn opus_0437_commands_match_the_original() {
+    use slots::bridge as s;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_dbe0);
+        let (unit, buf, entry, set, mt) = (
+            p.alloc(0x100),
+            p.alloc(0x100),
+            p.alloc(0x40),
+            p.alloc(0x100),
+            p.alloc(0x40),
+        );
+        // what the unit, buffer, entry, size, bone-set and matrix
+        // stand-ins return
+        let cells = p.alloc(24);
+        for (k, v) in [unit, buf, entry, 0, set, mt].into_iter().enumerate() {
+            p.set(cells + 4 * u32::try_from(k).unwrap(), v);
+        }
+        for (sym, words, ret) in [
+            (0x0080_1060u32, &[0u8, 0, 0][..], Some(cells)),
+            (0x007f_f780, &[0, 0], Some(cells + 4)),
+            (0x007e_3810, &[0, 0, 0], Some(cells + 8)),
+            (0x00a6_a2b0, &[0], Some(cells + 12)),
+            (0x0080_e160, &[0, 0, 0, 0, 0], Some(cells + 16)),
+            (0x00a4_4650, &[0], Some(cells + 20)),
+            (0x00a6_e540, &[0, 0], None),
+            (0x007e_a850, &[0, 0, 0], None),
+            (0x00a6_e5d0, &[0, 0, 0], None),
+            (0x0080_1f00, &[0, 0], None),
+            (0x007e_8010, &[0, 0], None),
+            (0x00a6_e2e0, &[0, 0], None),
+            (0x0080_62c0, &[0, 0, 0, 0, 0, 0], None),
+            (0x00a6_e1b0, &[0, 0, 0, 0], None),
+            (0x00a6_ed40, &[0, 0, 0, 0, 0, 0], None),
+            (0x00a6_e260, &[0], None),
+            (0x0094_964c, &[0, 0, 0], None),
+            (0x0080_e900, &[0, 0, 0, 0, 0], None),
+            (0x007e_83b0, &[0, 0, 0], None),
+            (0x00a6_e650, &[0, 0, 0, 0, 0, 0, 0], None),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        let obj = p.alloc(0x400);
+        let rec = p.alloc(0x100);
+        let cmd = p.alloc(0x10);
+        for _ in 0..1500 {
+            for (at, len) in [
+                (obj, 0x400),
+                (rec, 0x100),
+                (cmd, 0x10),
+                (unit, 0x100),
+                (buf, 0x100),
+            ] {
+                p.fill(at, len, &mut rng);
+            }
+            for i in 0..0x10 {
+                let x = finite(&mut rng);
+                p.set(mt + 4 * i, x);
+            }
+            for at in [0x34, 0x3c] {
+                let x = finite(&mut rng);
+                p.set(rec + at, x);
+            }
+            for at in [0x14, 0x24] {
+                let x = finite(&mut rng);
+                p.set(buf + at, x);
+            }
+            let x = finite(&mut rng);
+            p.set(unit + 0x44, x);
+            p.set(obj + 0x220, rec);
+            p.set(rec + 0xbc, buf);
+            let kind = u16::try_from(rng.below(8)).unwrap() << 12;
+            let low: u16 = p.get(obj + 0x21a);
+            p.set(obj + 0x21a, (low & 0x0fff) | kind);
+            p.set(set + 4, u16::try_from(rng.below(4)).unwrap());
+            p.set(cells + 12, rng.below(0x400));
+            check_deep(
+                &mut p,
+                "opp_0437_cmd_a6dbe0",
+                0x00a6_dbe0,
+                [obj, cmd],
+                |m, frame| s::opp_0437_cmd_a6dbe0(m, obj, cmd, frame, &mut call_original),
+            );
+        }
+    }
+}

@@ -1795,4 +1795,218 @@ pub mod bridge {
             _ => cmd,
         }
     }
+
+    /// `obj[0..4]` = the emulated r0 (`0x00c8f508`), `obj +4` = `rec
+    /// +0x34`, and `obj + 0x80` = the part matrix at `obj`.
+    fn r0_matrix<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        rec: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let r0: [u32; 4] = mem.read(addr(mem, 0x00c8_f508));
+        mem.write(obj, r0);
+        let y = crate::x87::load_f32(mem.read(rec.wrapping_add(0x34)));
+        mem.write(obj.wrapping_add(4), y);
+        part_matrix(mem, obj, rec, obj.wrapping_add(0x80), obj, call);
+    }
+
+    /// `opp_0437_cmd_a6dbe0(obj, cmd)` (`0x00a6dbe0`), the `opus_0437_*`
+    /// effect's command on the part `rec` (`obj +0x220`), its oef2
+    /// (`obj +0x360[rec +0x1e]`) and the unit list `obj + 0x300`:
+    /// - 0: a buffer of `n` = `i16 cmd[2]` 32-byte entries plus 0x10 into
+    ///   `rec +0xbc`, `0x00a6e540(buffer, n)`; `cmd + 4`.
+    /// - 0x1000: `op_xyz_scale(obj, rec + 0x30, 0x00b5895c)`,
+    ///   `0x00a6e5d0(rec +0xbc, rec + 0x90, obj)`; `cmd + 2`.
+    /// - 0x2000: `op_m_copy(obj, part matrix)`, `opus_0437_dot_draw(rec
+    ///   +0xbc, obj)`; `cmd + 2`.
+    /// - 0x4000: the oef2 entry `i16 cmd[2]`, a buffer of `((0x00a6a2b0
+    ///   (entry) + 48 * k) * 2 + 0x3f) & !0xf` bytes (`k` = `i16 cmd[4]`)
+    ///   into `rec +0xbc`, `obj` = r0 and `obj + 0x80` its part matrix,
+    ///   `0x00a6e1b0(buffer, entry, obj + 0x80, k)`; `cmd + 6`.
+    /// - 0x5000: on `d` = `rec +0xbc`, the units `u16 cmd[6]` and `cmd[2]`:
+    ///   the r0 matrix as for 0x6000, the depth `d +0x24 - (d +0x24 - d
+    ///   +0x14) * unit +0x44 / 256`, `0x00a6ed40(entry cmd[4], d, unit6
+    ///   +0xbc, obj + 0x80, depth, 0x1f80000)`, `0x00a6e260(d)`, and the
+    ///   character `g_EtChrHandles[rec +0x18]` into `0x022fb3dc`; `cmd + 8`.
+    /// - 0x6000: `obj + 0x80` = the r0 matrix (`obj +4` = `rec +0x34`),
+    ///   `obj + 0x100` cleared (0x70 bytes) and given the bone set
+    ///   (`0x0080e160`, `0x0080e900` with `cmd + 4`) and three local
+    ///   matrices; `obj + 0x40` = `obj +0x2c0` times the part's matrix
+    ///   (also into `0x02332ea4`); for each bone: its matrix's translation
+    ///   times 1000, `L` = `obj + 0x80` times it, back / 1000, `obj + 0xc0`
+    ///   = `obj + 0x40` times `L`, and `opus_0437_draw(bone, obj + 0x100,
+    ///   rec, unit u16 cmd[2], rec +0xbc, previous, i)`; `cmd + 0xe`.
+    /// - else `cmd`.
+    ///
+    /// The locals are below `frame` (the original's frame pointer; down
+    /// to `frame - 0xc4`), which the caller provides.
+    #[allow(clippy::too_many_lines)]
+    pub fn opp_0437_cmd_a6dbe0<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        cmd: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use crate::x87::{MUL, Reg, SUB};
+        let div: crate::x87::Op = |a, b| a / b;
+        let (kind, rec) = kind_rec(mem, obj);
+        let g = u32::from(mem.read::<u8>(rec.wrapping_add(0x1e)));
+        let oef: u32 = mem.read(obj.wrapping_add(0x360).wrapping_add(4 * g));
+        let list = obj.wrapping_add(0x300);
+        let heap = |mem: &M| mem.read::<u32>(obj.wrapping_add(0x3a8));
+        match kind {
+            0 => {
+                let n = sw(mem, cmd, 2);
+                let h = heap(mem);
+                let b = go(
+                    mem,
+                    0x007f_f780,
+                    &[h, n.wrapping_shl(5).wrapping_add(0x10)],
+                    call,
+                );
+                mem.write(rec.wrapping_add(0xbc), b);
+                go(mem, 0x00a6_e540, &[b, n], call);
+                cmd.wrapping_add(4)
+            }
+            0x1000 => {
+                let k: u32 = mem.read(addr(mem, 0x00b5_895c));
+                go(
+                    mem,
+                    0x007e_a850,
+                    &[obj, rec.wrapping_add(0x30), crate::x87::load(k)],
+                    call,
+                );
+                let b: u32 = mem.read(rec.wrapping_add(0xbc));
+                go(mem, 0x00a6_e5d0, &[b, rec.wrapping_add(0x90), obj], call);
+                cmd.wrapping_add(2)
+            }
+            0x2000 => {
+                let m = go(mem, 0x0080_1f00, &[obj, rec], call);
+                go(mem, 0x007e_8010, &[obj, m], call);
+                let b: u32 = mem.read(rec.wrapping_add(0xbc));
+                go(mem, 0x00a6_e2e0, &[b, obj], call);
+                cmd.wrapping_add(2)
+            }
+            0x4000 => {
+                let no = sw(mem, cmd, 2);
+                let e = go(mem, 0x007e_3810, &[oef, 4, no], call);
+                let k = sw(mem, cmd, 4);
+                let sz = go(mem, 0x00a6_a2b0, &[e], call);
+                let size = sz
+                    .wrapping_add(k.wrapping_mul(48))
+                    .wrapping_mul(2)
+                    .wrapping_add(0x3f)
+                    & !0xf;
+                let h = heap(mem);
+                let b = go(mem, 0x007f_f780, &[h, size], call);
+                mem.write(rec.wrapping_add(0xbc), b);
+                let r0: [u32; 4] = mem.read(addr(mem, 0x00c8_f508));
+                mem.write(obj, r0);
+                part_matrix(mem, obj, rec, obj.wrapping_add(0x80), obj, call);
+                go(mem, 0x00a6_e1b0, &[b, e, obj.wrapping_add(0x80), k], call);
+                cmd.wrapping_add(6)
+            }
+            0x5000 => {
+                let d: u32 = mem.read(rec.wrapping_add(0xbc));
+                let no = w(mem, cmd, 6);
+                let u6 = go(mem, 0x0080_1060, &[list, rec, no], call);
+                let b6: u32 = mem.read(u6.wrapping_add(0xbc));
+                let no = w(mem, cmd, 2);
+                let u = go(mem, 0x0080_1060, &[list, rec, no], call);
+                r0_matrix(mem, obj, rec, call);
+                let far = Reg::load_f32(mem.read(d.wrapping_add(0x24)));
+                let x = far
+                    .reg(SUB, Reg::load_f32(mem.read(d.wrapping_add(0x14))))
+                    .store();
+                let t = Reg::load_f32(x)
+                    .mem(MUL, mem.read(u.wrapping_add(0x44)))
+                    .constant(MUL, f64_at(mem, 0x00b5_0198));
+                let depth = far.reg(SUB, t).store();
+                let no = sw(mem, cmd, 4);
+                let e = go(mem, 0x007e_3810, &[oef, 4, no], call);
+                go(
+                    mem,
+                    0x00a6_ed40,
+                    &[
+                        e,
+                        d,
+                        b6,
+                        obj.wrapping_add(0x80),
+                        depth.to_bits(),
+                        0x01f8_0000,
+                    ],
+                    call,
+                );
+                go(mem, 0x00a6_e260, &[d], call);
+                let slot = u32::from(mem.read::<u8>(rec.wrapping_add(0x18)));
+                let chr: u32 = mem.read(addr(mem, 0x012a_8100).wrapping_add(4 * slot));
+                mem.write(addr(mem, 0x022f_b3dc), chr);
+                cmd.wrapping_add(8)
+            }
+            0x6000 => {
+                r0_matrix(mem, obj, rec, call);
+                let bones = obj.wrapping_add(0x100);
+                go(mem, 0x0094_964c, &[bones, 0, 0x70], call);
+                let n = sw(mem, cmd, 4);
+                let set = go(mem, 0x0080_e160, &[bones, obj, list, rec, n], call);
+                mem.write(bones.wrapping_add(0x28), frame.wrapping_sub(0xc4));
+                mem.write(bones.wrapping_add(0x24), frame.wrapping_sub(0x84));
+                let l = frame.wrapping_sub(0x44);
+                mem.write(bones.wrapping_add(0x2c), l);
+                go(
+                    mem,
+                    0x0080_e900,
+                    &[bones, obj, list, rec, cmd.wrapping_add(4)],
+                    call,
+                );
+                let m = go(mem, 0x0080_1f00, &[obj, rec], call);
+                mem.write(addr(mem, 0x0233_2ea4), m);
+                let base = obj.wrapping_add(0x40);
+                go(mem, 0x007e_83b0, &[base, obj.wrapping_add(0x2c0), m], call);
+                let no = w(mem, cmd, 2);
+                let u = go(mem, 0x0080_1060, &[list, rec, no], call);
+                let d: u32 = mem.read(rec.wrapping_add(0xbc));
+                let thousand = f64_at(mem, 0x00b0_dba0);
+                let mut acc = 0u32;
+                let mut i = 0u32;
+                let mut p = set.wrapping_add(0x10);
+                while i < u32::from(mem.read::<u16>(set.wrapping_add(4))) {
+                    let id = |mem: &M| mem.read::<u32>(p.wrapping_add(4));
+                    // the translation scaled by 1000, the next id read
+                    // before each result is stored
+                    let mut next = id(mem);
+                    for (op, last) in [(MUL, false), (div, true)] {
+                        let mut mt = go(mem, 0x00a4_4650, &[next], call);
+                        for at in [0x30u32, 0x34, 0x38] {
+                            let v = Reg::load_f32(mem.read(mt.wrapping_add(at)))
+                                .constant(op, thousand)
+                                .store();
+                            if at != 0x38 || !last {
+                                next = id(mem);
+                            }
+                            mem.write(mt.wrapping_add(at), v);
+                            if at != 0x38 {
+                                mt = go(mem, 0x00a4_4650, &[next], call);
+                            }
+                        }
+                        if !last {
+                            let mt = go(mem, 0x00a4_4650, &[next], call);
+                            go(mem, 0x007e_83b0, &[l, obj.wrapping_add(0x80), mt], call);
+                            next = id(mem);
+                        }
+                    }
+                    go(mem, 0x007e_83b0, &[obj.wrapping_add(0xc0), base, l], call);
+                    let b: u32 = mem.read(p);
+                    let x = go(mem, 0x00a4_4650, &[b], call);
+                    acc = go(mem, 0x00a6_e650, &[x, bones, rec, u, d, acc, i], call);
+                    i += 1;
+                    p = p.wrapping_add(0x10);
+                }
+                cmd.wrapping_add(0xe)
+            }
+            _ => cmd,
+        }
+    }
 }

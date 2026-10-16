@@ -9189,6 +9189,7 @@
 0x00a6cf10 function op_normal_light44_ffx     # fh v3:exact 0x00a6cf10
 0x00a6cfb0 function op_refrection_st_float    # fh v3:cg7 0xa6cfb0
 0x00a6d380 function op_vertex_normal_point44_ffx # fh v3:exact 0x00a6d380
+0x00a6dbe0 function opp_0437_cmd_a6dbe0         # ours (g_MagicImports slot used by every overlay): (obj, cmd) by kind 0..0x6000 sets up the part's buffers and calls opus_0437_dot_draw, opus_0437_draw (per bone, bone set 0x0080e160/0x0080e900), 0x00a6ed40 and op_m_copy; ported in crates/ffx-vfx slots
 0x00a6e2e0 function opus_0437_dot_draw        # fh switch:cg2 0x7100870250
 0x00a6e650 function opus_0437_draw            # fh switch:cg2 0x7100870ea0
 0x00a70910 function opp_0582_cmd_a70910         # ours (g_MagicImports slot used by every overlay): (obj, cmd) by kind 0..0x8000 allocates the part's tables, calls opus_0582_dot_draw / _break_make / _draw / _break_draw, the character texture bases (Ch_TextureSetClutBase 0x3c00, Ch_TextureSetImageBase 0x2ee0) and Sg_FadeOutW(1); ported in crates/ffx-vfx slots

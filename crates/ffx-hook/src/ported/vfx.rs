@@ -1098,6 +1098,16 @@ ported! {
     opp_0582_cmd_a70910 @ 0x00a7_0910 => extern "C" fn opp_0582_cmd_a70910(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opp_0582_cmd_a70910(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opp_0437_cmd_a6dbe0(obj, cmd)`: its stack locals in a buffer on
+    /// this shim's stack (the frame pointer at its end).
+    opp_0437_cmd_a6dbe0 @ 0x00a6_dbe0 => extern "C" fn opp_0437_cmd_a6dbe0(obj: u32, cmd: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xf0]);
+        let mut locals = Locals([0; 0xf0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xf0;
+        slots::bridge::opp_0437_cmd_a6dbe0(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))
