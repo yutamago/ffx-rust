@@ -5,8 +5,8 @@
 use ffx_bridge::Mem;
 use ffx_menu::scene::bridge as menu_scene;
 use ffx_system::{
-    btl, cd, config, fixup, heap, instance, math, menu, msg, names, pad, pkt, render, save, scene,
-    stl, stub, vbf, window,
+    accessor, btl, cd, config, daps, fixup, heap, instance, math, menu, msg, names, pad, pkt,
+    render, save, scene, stl, stub, vbf, window,
 };
 
 use super::{call0, mem, ported};
@@ -1001,6 +1001,810 @@ ported! {
     /// `TOGetFFXLang()`.
     TOGetFFXLang @ 0x0064_10e0 => extern "C" fn to_get_ffx_lang() -> u32 {
         instance::bridge::ffx_lang(&mem(), &mut phyre_printf)
+    }
+    /// `BufferAt8_dtor_00633b70()` (`this` in ECX).
+    BufferAt8_dtor_00633b70 @ 0x0063_3b70 => extern "thiscall" fn buffer_at8_dtor_00633b70(this: u32) -> u32 {
+        heap::free_member8(&mut mem(), &mut GameOs, this)
+    }
+    /// `BufferAt8_dtor_00633b80()` (`this` in ECX).
+    BufferAt8_dtor_00633b80 @ 0x0063_3b80 => extern "thiscall" fn buffer_at8_dtor_00633b80(this: u32) -> u32 {
+        heap::free_member8(&mut mem(), &mut GameOs, this)
+    }
+    /// `BufferAt8_dtor_00633b90()` (`this` in ECX).
+    BufferAt8_dtor_00633b90 @ 0x0063_3b90 => extern "thiscall" fn buffer_at8_dtor_00633b90(this: u32) -> u32 {
+        heap::free_member8(&mut mem(), &mut GameOs, this)
+    }
+    /// `BufferAt8_dtor_00633ba0()` (`this` in ECX).
+    BufferAt8_dtor_00633ba0 @ 0x0063_3ba0 => extern "thiscall" fn buffer_at8_dtor_00633ba0(this: u32) -> u32 {
+        heap::free_member8(&mut mem(), &mut GameOs, this)
+    }
+    /// `BufferAt8_dtor_00633bb0()` (`this` in ECX).
+    BufferAt8_dtor_00633bb0 @ 0x0063_3bb0 => extern "thiscall" fn buffer_at8_dtor_00633bb0(this: u32) -> u32 {
+        heap::free_member8(&mut mem(), &mut GameOs, this)
+    }
+    /// `BufferAt8_dtor_00633bc0()` (`this` in ECX).
+    BufferAt8_dtor_00633bc0 @ 0x0063_3bc0 => extern "thiscall" fn buffer_at8_dtor_00633bc0(this: u32) -> u32 {
+        heap::free_member8(&mut mem(), &mut GameOs, this)
+    }
+    /// `BufferAt8_dtor_00633bd0()` (`this` in ECX).
+    BufferAt8_dtor_00633bd0 @ 0x0063_3bd0 => extern "thiscall" fn buffer_at8_dtor_00633bd0(this: u32) -> u32 {
+        heap::free_member8(&mut mem(), &mut GameOs, this)
+    }
+    /// `BufferAt8_dtor_00633bf0()` (`this` in ECX).
+    BufferAt8_dtor_00633bf0 @ 0x0063_3bf0 => extern "thiscall" fn buffer_at8_dtor_00633bf0(this: u32) -> u32 {
+        heap::free_member8(&mut mem(), &mut GameOs, this)
+    }
+    /// `BufferAt8_dtor_00633c00()` (`this` in ECX).
+    BufferAt8_dtor_00633c00 @ 0x0063_3c00 => extern "thiscall" fn buffer_at8_dtor_00633c00(this: u32) -> u32 {
+        heap::free_member8(&mut mem(), &mut GameOs, this)
+    }
+    /// `BufferAt8_dtor_00633c10()` (`this` in ECX).
+    BufferAt8_dtor_00633c10 @ 0x0063_3c10 => extern "thiscall" fn buffer_at8_dtor_00633c10(this: u32) -> u32 {
+        heap::free_member8(&mut mem(), &mut GameOs, this)
+    }
+    /// `BufferAt8_dtor_00633c20()` (`this` in ECX).
+    BufferAt8_dtor_00633c20 @ 0x0063_3c20 => extern "thiscall" fn buffer_at8_dtor_00633c20(this: u32) -> u32 {
+        heap::free_member8(&mut mem(), &mut GameOs, this)
+    }
+    /// `BufferAt8_dtor_00633c30()` (`this` in ECX).
+    BufferAt8_dtor_00633c30 @ 0x0063_3c30 => extern "thiscall" fn buffer_at8_dtor_00633c30(this: u32) -> u32 {
+        heap::free_member8(&mut mem(), &mut GameOs, this)
+    }
+    /// `BufferAt8_dtor_00690a20()` (`this` in ECX).
+    BufferAt8_dtor_00690a20 @ 0x0069_0a20 => extern "thiscall" fn buffer_at8_dtor_00690a20(this: u32) -> u32 {
+        heap::free_member8(&mut mem(), &mut GameOs, this)
+    }
+    /// `Identity_008f2f70(x)`.
+    Identity_008f2f70 @ 0x008f_2f70 => extern "C" fn identity_008f2f70(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// `Identity_008ed040(x)`.
+    Identity_008ed040 @ 0x008e_d040 => extern "C" fn identity_008ed040(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// `TOAdpWords4(p, a, b, c, d)`.
+    TOAdpWords4 @ 0x008e_f8e0 => extern "C" fn to_adp_words4(p: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
+        pkt::bridge::adp_words4(&mut mem(), p, [a, b, c, d])
+    }
+    /// `TOAdpXY2(p, x, y)`.
+    TOAdpXY2 @ 0x008e_fb90 => extern "C" fn to_adp_xy2(p: u32, x: u32, y: u32) -> u32 {
+        pkt::bridge::adp_xy2(&mut mem(), p, x, y)
+    }
+    /// `TOAdpXYZ2Offset(p, x, y)`.
+    TOAdpXYZ2Offset @ 0x008e_fbf0 => extern "C" fn to_adp_xyz2_offset(p: u32, x: u32, y: u32) -> u32 {
+        pkt::bridge::adp_xyz2_offset(&mut mem(), p, x, y)
+    }
+    /// `TOAdpGsDirectRGBA(p, rgba)`.
+    TOAdpGsDirectRGBA @ 0x008e_f790 => extern "C" fn to_adp_gs_direct_rgba(p: u32, rgba: u32) -> u32 {
+        pkt::bridge::adp_gs_direct_rgba(&mut mem(), p, rgba)
+    }
+    /// `OpenFontScissor(x0, y0, x1, y1)`.
+    OpenFontScissor @ 0x008e_8940 => extern "C" fn open_font_scissor(x0: f32, y0: f32, x1: f32, y1: f32) {
+        pkt::bridge::open_font_scissor(&mut mem(), [x0, y0, x1, y1]);
+    }
+    /// `TOGetBtlMenuTexAdrs()`.
+    TOGetBtlMenuTexAdrs @ 0x008a_c2c0 => extern "C" fn to_get_btl_menu_tex_adrs() -> u32 {
+        instance::bridge::word(&mem(), instance::bridge::BTL_MENU_TEX)
+    }
+    /// `TOMenuGetYesNoWindow()`.
+    TOMenuGetYesNoWindow @ 0x008a_9b60 => extern "C" fn to_menu_get_yes_no_window() -> u32 {
+        instance::bridge::word(&mem(), instance::bridge::YES_NO_WINDOW)
+    }
+    /// `TOMacroSetType(win, n, t)`.
+    TOMacroSetType @ 0x008b_8960 => extern "C" fn to_macro_set_type(win: i32, n: i32, t: u32) {
+        window::bridge::macro_set_type(&mut mem(), win, n, t.to_le_bytes()[0]);
+    }
+    /// `TOMacroSetValue(win, n, v)`.
+    TOMacroSetValue @ 0x008b_8980 => extern "C" fn to_macro_set_value(win: i32, n: i32, v: u32) -> u32 {
+        window::bridge::macro_set_value(&mut mem(), win, n, v)
+    }
+    /// `TOGetTable_01868a90(i)`.
+    TOGetTable_01868a90 @ 0x008b_7c40 => extern "C" fn to_get_table_01868a90(i: i32) -> u32 {
+        window::bridge::table_01868a90(&mem(), i)
+    }
+    /// `TOCloseBtlWindow()`.
+    TOCloseBtlWindow @ 0x0089_ade0 => extern "C" fn to_close_btl_window() -> u32 {
+        btl::bridge::close_btl_window(&mut mem())
+    }
+    /// `hdd_set_pass_names_x()`.
+    hdd_set_pass_names_x @ 0x0077_9a80 => extern "C" fn hdd_set_pass_names_x() {
+        cd::bridge::hdd_set_pass_names_x(&mut mem());
+    }
+    /// `cd_module_file_sector(m, n)`.
+    cd_module_file_sector @ 0x0076_c270 => extern "C" fn cd_module_file_sector(m: i32, n: i32) -> u32 {
+        cd::bridge::module_file_sector(&mem(), m, n)
+    }
+    /// `std::_Uninitialized_copy` of 12-byte elements.
+    std_Uninitialized_copy12_0059e830 @ 0x0059_e830 => extern "C" fn uninitialized_copy12(first: u32, last: u32, dest: u32) -> u32 {
+        stl::bridge::uninitialized_copy12(&mut mem(), first, last, dest)
+    }
+    /// `memcmp` as compiled into the game.
+    memcmp_00401020 @ 0x0040_1020 => extern "C" fn memcmp_00401020(a: u32, b: u32, n: u32) -> i32 {
+        stl::bridge::memcmp(&mem(), a, b, n)
+    }
+    /// `SetWordAt_00402a00(i, v)` (`this` in ECX).
+    SetWordAt_00402a00 @ 0x0040_2a00 => extern "thiscall" fn set_word_at(this: u32, i: u32, v: u32) -> u32 {
+        stl::bridge::set_word(&mut mem(), this, i, v)
+    }
+    /// `MapFindU32_0062fe50(&key)` (`this` in ECX).
+    MapFindU32_0062fe50 @ 0x0062_fe50 => extern "thiscall" fn map_find_u32(this: u32, key: u32) -> u32 {
+        stl::bridge::map_find_u32(&mem(), this, key)
+    }
+    /// `cd_channel_clear(n)`.
+    cd_channel_clear @ 0x0076_d530 => extern "C" fn cd_channel_clear(n: u32) {
+        cd::bridge::cd_channel_clear(&mut mem(), n);
+    }
+    /// `hdd_install_find(archive, n)`.
+    hdd_install_find @ 0x0076_d600 => extern "C" fn hdd_install_find(archive: u32, n: u32) -> u32 {
+        cd::bridge::hdd_install_find(&mem(), archive, n)
+    }
+    /// `TOSetWindowRGBA(i, r, g, b, a)`.
+    TOSetWindowRGBA @ 0x0090_6d90 => extern "C" fn to_set_window_rgba(i: i32, r: u32, g: u32, b: u32, a: u32) {
+        window::bridge::set_window_rgba(&mut mem(), i, [r, g, b, a].map(|v| v.to_le_bytes()[0]));
+    }
+    /// `dvd_cd_unk8_lang3()`.
+    dvd_cd_unk8_lang3 @ 0x0077_a600 => extern "C" fn dvd_cd_unk8_lang3() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a600)]
+    }
+    /// `dvd_cd_fat_data_size_lang2()`.
+    dvd_cd_fat_data_size_lang2 @ 0x0077_a610 => extern "C" fn dvd_cd_fat_data_size_lang2() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a610)]
+    }
+    /// `dvd_cd_fat_sector_lang2()`.
+    dvd_cd_fat_sector_lang2 @ 0x0077_a620 => extern "C" fn dvd_cd_fat_sector_lang2() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a620)]
+    }
+    /// `dvd_cd_fat_size_lang2()`.
+    dvd_cd_fat_size_lang2 @ 0x0077_a630 => extern "C" fn dvd_cd_fat_size_lang2() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a630)]
+    }
+    /// `dvd_cd_fid_sector_lang2()`.
+    dvd_cd_fid_sector_lang2 @ 0x0077_a640 => extern "C" fn dvd_cd_fid_sector_lang2() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a640)]
+    }
+    /// `dvd_cd_fid_size_lang2()`.
+    dvd_cd_fid_size_lang2 @ 0x0077_a650 => extern "C" fn dvd_cd_fid_size_lang2() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a650)]
+    }
+    /// `dvd_cd_id_sector_lang2()`.
+    dvd_cd_id_sector_lang2 @ 0x0077_a660 => extern "C" fn dvd_cd_id_sector_lang2() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a660)]
+    }
+    /// `dvd_cd_id_size_lang2()`.
+    dvd_cd_id_size_lang2 @ 0x0077_a670 => extern "C" fn dvd_cd_id_size_lang2() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a670)]
+    }
+    /// `dvd_cd_unk7_lang2()`.
+    dvd_cd_unk7_lang2 @ 0x0077_a680 => extern "C" fn dvd_cd_unk7_lang2() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a680)]
+    }
+    /// `dvd_cd_unk8_lang2()`.
+    dvd_cd_unk8_lang2 @ 0x0077_a690 => extern "C" fn dvd_cd_unk8_lang2() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a690)]
+    }
+    /// `dvd_cd_fat_data_size_lang5()`.
+    dvd_cd_fat_data_size_lang5 @ 0x0077_a6a0 => extern "C" fn dvd_cd_fat_data_size_lang5() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a6a0)]
+    }
+    /// `dvd_cd_fat_sector_lang5()`.
+    dvd_cd_fat_sector_lang5 @ 0x0077_a6b0 => extern "C" fn dvd_cd_fat_sector_lang5() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a6b0)]
+    }
+    /// `dvd_cd_fat_size_lang5()`.
+    dvd_cd_fat_size_lang5 @ 0x0077_a6c0 => extern "C" fn dvd_cd_fat_size_lang5() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a6c0)]
+    }
+    /// `dvd_cd_fid_sector_lang5()`.
+    dvd_cd_fid_sector_lang5 @ 0x0077_a6d0 => extern "C" fn dvd_cd_fid_sector_lang5() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a6d0)]
+    }
+    /// `dvd_cd_fid_size_lang5()`.
+    dvd_cd_fid_size_lang5 @ 0x0077_a6e0 => extern "C" fn dvd_cd_fid_size_lang5() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a6e0)]
+    }
+    /// `dvd_cd_id_sector_lang5()`.
+    dvd_cd_id_sector_lang5 @ 0x0077_a6f0 => extern "C" fn dvd_cd_id_sector_lang5() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a6f0)]
+    }
+    /// `dvd_cd_id_size_lang5()`.
+    dvd_cd_id_size_lang5 @ 0x0077_a700 => extern "C" fn dvd_cd_id_size_lang5() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a700)]
+    }
+    /// `dvd_cd_unk7_lang5()`.
+    dvd_cd_unk7_lang5 @ 0x0077_a710 => extern "C" fn dvd_cd_unk7_lang5() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a710)]
+    }
+    /// `dvd_cd_unk8_lang5()`.
+    dvd_cd_unk8_lang5 @ 0x0077_a720 => extern "C" fn dvd_cd_unk8_lang5() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a720)]
+    }
+    /// `dvd_cd_fat_data_size_lang_other()`.
+    dvd_cd_fat_data_size_lang_other @ 0x0077_a730 => extern "C" fn dvd_cd_fat_data_size_lang_other() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a730)]
+    }
+    /// `dvd_cd_fat_sector_lang_other()`.
+    dvd_cd_fat_sector_lang_other @ 0x0077_a740 => extern "C" fn dvd_cd_fat_sector_lang_other() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a740)]
+    }
+    /// `dvd_cd_fat_size_lang_other()`.
+    dvd_cd_fat_size_lang_other @ 0x0077_a750 => extern "C" fn dvd_cd_fat_size_lang_other() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a750)]
+    }
+    /// `dvd_cd_fid_sector_lang_other()`.
+    dvd_cd_fid_sector_lang_other @ 0x0077_a760 => extern "C" fn dvd_cd_fid_sector_lang_other() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a760)]
+    }
+    /// `dvd_cd_fid_size_lang_other()`.
+    dvd_cd_fid_size_lang_other @ 0x0077_a770 => extern "C" fn dvd_cd_fid_size_lang_other() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a770)]
+    }
+    /// `dvd_cd_id_sector_lang_other()`.
+    dvd_cd_id_sector_lang_other @ 0x0077_a780 => extern "C" fn dvd_cd_id_sector_lang_other() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a780)]
+    }
+    /// `dvd_cd_id_size_lang_other()`.
+    dvd_cd_id_size_lang_other @ 0x0077_a790 => extern "C" fn dvd_cd_id_size_lang_other() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a790)]
+    }
+    /// `dvd_cd_unk7_lang_other()`.
+    dvd_cd_unk7_lang_other @ 0x0077_a7a0 => extern "C" fn dvd_cd_unk7_lang_other() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a7a0)]
+    }
+    /// `dvd_cd_unk8_lang_other()`.
+    dvd_cd_unk8_lang_other @ 0x0077_a7b0 => extern "C" fn dvd_cd_unk8_lang_other() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a7b0)]
+    }
+    /// `dvd_cd_fat_data_size_lang18()`.
+    dvd_cd_fat_data_size_lang18 @ 0x0077_a7c0 => extern "C" fn dvd_cd_fat_data_size_lang18() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a7c0)]
+    }
+    /// `dvd_cd_fat_sector_lang18()`.
+    dvd_cd_fat_sector_lang18 @ 0x0077_a7d0 => extern "C" fn dvd_cd_fat_sector_lang18() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a7d0)]
+    }
+    /// `dvd_cd_fat_size_lang18()`.
+    dvd_cd_fat_size_lang18 @ 0x0077_a7e0 => extern "C" fn dvd_cd_fat_size_lang18() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a7e0)]
+    }
+    /// `dvd_cd_fid_sector_lang18()`.
+    dvd_cd_fid_sector_lang18 @ 0x0077_a7f0 => extern "C" fn dvd_cd_fid_sector_lang18() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a7f0)]
+    }
+    /// `dvd_cd_fid_size_lang18()`.
+    dvd_cd_fid_size_lang18 @ 0x0077_a800 => extern "C" fn dvd_cd_fid_size_lang18() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a800)]
+    }
+    /// `dvd_cd_id_sector_lang18()`.
+    dvd_cd_id_sector_lang18 @ 0x0077_a810 => extern "C" fn dvd_cd_id_sector_lang18() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a810)]
+    }
+    /// `dvd_cd_id_size_lang18()`.
+    dvd_cd_id_size_lang18 @ 0x0077_a820 => extern "C" fn dvd_cd_id_size_lang18() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a820)]
+    }
+    /// `dvd_cd_unk7_lang18()`.
+    dvd_cd_unk7_lang18 @ 0x0077_a830 => extern "C" fn dvd_cd_unk7_lang18() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a830)]
+    }
+    /// `dvd_cd_unk8_lang18()`.
+    dvd_cd_unk8_lang18 @ 0x0077_a840 => extern "C" fn dvd_cd_unk8_lang18() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a840)]
+    }
+    /// `dvd_cd_fat_data_size_english()`.
+    dvd_cd_fat_data_size_english @ 0x0077_a850 => extern "C" fn dvd_cd_fat_data_size_english() -> u32 {
+        cd::DVD_CD_LAYOUT[cd::dvd_cd_getter_kind(0x0077_a850)]
+    }
+    /// `dvd_cd_fat_data_size()`: the same for every language.
+    dvd_cd_fat_data_size @ 0x0076_d6c0 => extern "C" fn dvd_cd_fat_data_size() -> u32 {
+        cd::DVD_CD_LAYOUT[0]
+    }
+    /// `dvd_cd_fat_sector()`: the same for every language.
+    dvd_cd_fat_sector @ 0x0076_d740 => extern "C" fn dvd_cd_fat_sector() -> u32 {
+        cd::DVD_CD_LAYOUT[1]
+    }
+    /// `dvd_cd_fat_size()`: the same for every language.
+    dvd_cd_fat_size @ 0x0076_d7c0 => extern "C" fn dvd_cd_fat_size() -> u32 {
+        cd::DVD_CD_LAYOUT[2]
+    }
+    /// `dvd_cd_fid_sector()`: the same for every language.
+    dvd_cd_fid_sector @ 0x0076_d840 => extern "C" fn dvd_cd_fid_sector() -> u32 {
+        cd::DVD_CD_LAYOUT[3]
+    }
+    /// `dvd_cd_fid_size()`: the same for every language.
+    dvd_cd_fid_size @ 0x0076_d8c0 => extern "C" fn dvd_cd_fid_size() -> u32 {
+        cd::DVD_CD_LAYOUT[4]
+    }
+    /// `dvd_cd_id_sector()`: the same for every language.
+    dvd_cd_id_sector @ 0x0076_d940 => extern "C" fn dvd_cd_id_sector() -> u32 {
+        cd::DVD_CD_LAYOUT[5]
+    }
+    /// `dvd_cd_id_size()`: the same for every language.
+    dvd_cd_id_size @ 0x0076_d9c0 => extern "C" fn dvd_cd_id_size() -> u32 {
+        cd::DVD_CD_LAYOUT[6]
+    }
+    /// `dvd_cd_unk7()`: the same for every language.
+    dvd_cd_unk7 @ 0x0076_da40 => extern "C" fn dvd_cd_unk7() -> u32 {
+        cd::DVD_CD_LAYOUT[7]
+    }
+    /// `dvd_cd_unk8()`: the same for every language.
+    dvd_cd_unk8 @ 0x0076_dac0 => extern "C" fn dvd_cd_unk8() -> u32 {
+        cd::DVD_CD_LAYOUT[8]
+    }
+    /// `() -> 0x80`.
+    ReturnConst_00405ba0 @ 0x0040_5ba0 => extern "C" fn returnconst_00405ba0() -> u32 {
+        accessor::lookup(&accessor::CONSTANTS, 0x0040_5ba0)
+    }
+    /// `() -> 0x4`.
+    ReturnConst_0059e5c0 @ 0x0059_e5c0 => extern "C" fn returnconst_0059e5c0() -> u32 {
+        accessor::lookup(&accessor::CONSTANTS, 0x0059_e5c0)
+    }
+    /// `() -> 0x6900`.
+    ReturnConst_00647cb0 @ 0x0064_7cb0 => extern "C" fn returnconst_00647cb0() -> u32 {
+        accessor::lookup(&accessor::CONSTANTS, 0x0064_7cb0)
+    }
+    /// `() -> 0x98`.
+    ReturnConst_006f1580 @ 0x006f_1580 => extern "C" fn returnconst_006f1580() -> u32 {
+        accessor::lookup(&accessor::CONSTANTS, 0x006f_1580)
+    }
+    /// `() -> 0x18`.
+    ReturnConst_006f1590 @ 0x006f_1590 => extern "C" fn returnconst_006f1590() -> u32 {
+        accessor::lookup(&accessor::CONSTANTS, 0x006f_1590)
+    }
+    /// `() -> 0x10`.
+    ReturnConst_006f15a0 @ 0x006f_15a0 => extern "C" fn returnconst_006f15a0() -> u32 {
+        accessor::lookup(&accessor::CONSTANTS, 0x006f_15a0)
+    }
+    /// `() -> 0x640064`.
+    ReturnConst_008b7cc0 @ 0x008b_7cc0 => extern "C" fn returnconst_008b7cc0() -> u32 {
+        accessor::lookup(&accessor::CONSTANTS, 0x008b_7cc0)
+    }
+    /// `() -> &0x00b7c79c`.
+    ReturnAddress_004013a0 @ 0x0040_13a0 => extern "C" fn returnaddress_004013a0() -> u32 {
+        accessor::bridge::address(&mem(), 0x0040_13a0)
+    }
+    /// `() -> &0x00b7c7b4`.
+    ReturnAddress_00401480 @ 0x0040_1480 => extern "C" fn returnaddress_00401480() -> u32 {
+        accessor::bridge::address(&mem(), 0x0040_1480)
+    }
+    /// `() -> &0x00b7c7d8`.
+    ReturnAddress_00401530 @ 0x0040_1530 => extern "C" fn returnaddress_00401530() -> u32 {
+        accessor::bridge::address(&mem(), 0x0040_1530)
+    }
+    /// `() -> &0x00b42a34`.
+    ReturnAddress_00679a00 @ 0x0067_9a00 => extern "C" fn returnaddress_00679a00() -> u32 {
+        accessor::bridge::address(&mem(), 0x0067_9a00)
+    }
+    /// `() -> &0x00c41748`.
+    ReturnAddress_00777230 @ 0x0077_7230 => extern "C" fn returnaddress_00777230() -> u32 {
+        accessor::bridge::address(&mem(), 0x0077_7230)
+    }
+    /// `() -> &0x023cc480`.
+    ReturnAddress_008bec70 @ 0x008b_ec70 => extern "C" fn returnaddress_008bec70() -> u32 {
+        accessor::bridge::address(&mem(), 0x008b_ec70)
+    }
+    /// `() -> *0x01325ac4`.
+    GetU32_01325ac4 @ 0x0064_7c90 => extern "C" fn getu32_01325ac4() -> u32 {
+        accessor::bridge::global(&mem(), 0x0064_7c90)
+    }
+    /// `() -> *0x01128ac8`.
+    GetU32_01128ac8 @ 0x0076_dc50 => extern "C" fn getu32_01128ac8() -> u32 {
+        accessor::bridge::global(&mem(), 0x0076_dc50)
+    }
+    /// `() -> *0x0112a010`.
+    GetU32_0112a010 @ 0x0077_4670 => extern "C" fn getu32_0112a010() -> u32 {
+        accessor::bridge::global(&mem(), 0x0077_4670)
+    }
+    /// `() -> *0x01841d30`.
+    GetU32_01841d30 @ 0x008a_cf20 => extern "C" fn getu32_01841d30() -> u32 {
+        accessor::bridge::global(&mem(), 0x008a_cf20)
+    }
+    /// `() -> *0x025d16c4`.
+    GetU32_025d16c4 @ 0x008b_9130 => extern "C" fn getu32_025d16c4() -> u32 {
+        accessor::bridge::global(&mem(), 0x008b_9130)
+    }
+    /// `() -> *0x00c5a084`.
+    GetU32_00c5a084 @ 0x008b_e320 => extern "C" fn getu32_00c5a084() -> u32 {
+        accessor::bridge::global(&mem(), 0x008b_e320)
+    }
+    /// `() -> *0x018763e0`.
+    GetU32_018763e0 @ 0x0090_6730 => extern "C" fn getu32_018763e0() -> u32 {
+        accessor::bridge::global(&mem(), 0x0090_6730)
+    }
+    /// `() -> *0x01940ab4`.
+    GetU32_01940ab4 @ 0x009d_a2c0 => extern "C" fn getu32_01940ab4() -> u32 {
+        accessor::bridge::global(&mem(), 0x009d_a2c0)
+    }
+    /// `() -> *0x00c64ca4`.
+    GetU32_00c64ca4 @ 0x009d_a3a0 => extern "C" fn getu32_00c64ca4() -> u32 {
+        accessor::bridge::global(&mem(), 0x009d_a3a0)
+    }
+    /// `() -> *0x01a85ba8`.
+    GetFullArenaLocalization @ 0x00a4_2fa0 => extern "C" fn getfullarenalocalization() -> u32 {
+        accessor::bridge::global(&mem(), 0x00a4_2fa0)
+    }
+    /// `() -> *0x023cbeb0`.
+    GetU32_023cbeb0 @ 0x00a7_ae90 => extern "C" fn getu32_023cbeb0() -> u32 {
+        accessor::bridge::global(&mem(), 0x00a7_ae90)
+    }
+    /// `ret 0xc`, returns -1.
+    ReturnMinus1_0061a110 @ 0x0061_a110 => extern "stdcall" fn returnminus1_0061a110(_a: u32, _b: u32, _c: u32) -> i32 {
+        -1
+    }
+    /// `ret 0xc`, returns -1.
+    ReturnMinus1_006765d0 @ 0x0067_65d0 => extern "stdcall" fn returnminus1_006765d0(_a: u32, _b: u32, _c: u32) -> i32 {
+        -1
+    }
+    /// `ret 0xc`, returns -1.
+    ReturnMinus1_00677080 @ 0x0067_7080 => extern "stdcall" fn returnminus1_00677080(_a: u32, _b: u32, _c: u32) -> i32 {
+        -1
+    }
+    /// `ret 0xc`, returns -1.
+    ReturnMinus1_00677c30 @ 0x0067_7c30 => extern "stdcall" fn returnminus1_00677c30(_a: u32, _b: u32, _c: u32) -> i32 {
+        -1
+    }
+    /// `ret 0xc`, returns -1.
+    ReturnMinus1_00678b50 @ 0x0067_8b50 => extern "stdcall" fn returnminus1_00678b50(_a: u32, _b: u32, _c: u32) -> i32 {
+        -1
+    }
+    /// `ret 0xc`, returns -1.
+    ReturnMinus1_00a42490 @ 0x00a4_2490 => extern "stdcall" fn returnminus1_00a42490(_a: u32, _b: u32, _c: u32) -> i32 {
+        -1
+    }
+    /// Its argument.
+    Identity_0060ab50 @ 0x0060_ab50 => extern "C" fn identity_0060ab50(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_0060ab60 @ 0x0060_ab60 => extern "C" fn identity_0060ab60(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_0060b850 @ 0x0060_b850 => extern "C" fn identity_0060b850(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_0060b860 @ 0x0060_b860 => extern "C" fn identity_0060b860(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_0060c010 @ 0x0060_c010 => extern "C" fn identity_0060c010(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_0060c020 @ 0x0060_c020 => extern "C" fn identity_0060c020(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_0060c700 @ 0x0060_c700 => extern "C" fn identity_0060c700(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_0060c710 @ 0x0060_c710 => extern "C" fn identity_0060c710(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_0060c720 @ 0x0060_c720 => extern "C" fn identity_0060c720(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_0060c730 @ 0x0060_c730 => extern "C" fn identity_0060c730(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_0060c870 @ 0x0060_c870 => extern "C" fn identity_0060c870(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_0060c880 @ 0x0060_c880 => extern "C" fn identity_0060c880(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_0061e720 @ 0x0061_e720 => extern "C" fn identity_0061e720(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_0061e730 @ 0x0061_e730 => extern "C" fn identity_0061e730(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_006332d0 @ 0x0063_32d0 => extern "C" fn identity_006332d0(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_006332e0 @ 0x0063_32e0 => extern "C" fn identity_006332e0(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_006332f0 @ 0x0063_32f0 => extern "C" fn identity_006332f0(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_00633300 @ 0x0063_3300 => extern "C" fn identity_00633300(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_00633310 @ 0x0063_3310 => extern "C" fn identity_00633310(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_00633320 @ 0x0063_3320 => extern "C" fn identity_00633320(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_00633330 @ 0x0063_3330 => extern "C" fn identity_00633330(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_00686cb0 @ 0x0068_6cb0 => extern "C" fn identity_00686cb0(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_00686f80 @ 0x0068_6f80 => extern "C" fn identity_00686f80(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_0069a3d0 @ 0x0069_a3d0 => extern "C" fn identity_0069a3d0(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_0069bda0 @ 0x0069_bda0 => extern "C" fn identity_0069bda0(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_006f4870 @ 0x006f_4870 => extern "C" fn identity_006f4870(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_006f4880 @ 0x006f_4880 => extern "C" fn identity_006f4880(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_008ed020 @ 0x008e_d020 => extern "C" fn identity_008ed020(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_008ed030 @ 0x008e_d030 => extern "C" fn identity_008ed030(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_008ed050 @ 0x008e_d050 => extern "C" fn identity_008ed050(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_00a41900 @ 0x00a4_1900 => extern "C" fn identity_00a41900(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument.
+    Identity_00a41910 @ 0x00a4_1910 => extern "C" fn identity_00a41910(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument (`ret 4`).
+    IdentityStd_00686c50 @ 0x0068_6c50 => extern "stdcall" fn identitystd_00686c50(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument (`ret 4`).
+    IdentityStd_0069a350 @ 0x0069_a350 => extern "stdcall" fn identitystd_0069a350(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument (`ret 4`).
+    IdentityStd_0069a360 @ 0x0069_a360 => extern "stdcall" fn identitystd_0069a360(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument (`ret 4`).
+    IdentityStd_0069a390 @ 0x0069_a390 => extern "stdcall" fn identitystd_0069a390(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument (`ret 4`).
+    IdentityStd_00a41850 @ 0x00a4_1850 => extern "stdcall" fn identitystd_00a41850(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument (`ret 4`).
+    IdentityStd_00a41860 @ 0x00a4_1860 => extern "stdcall" fn identitystd_00a41860(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument (`ret 4`).
+    IdentityStd_00a41870 @ 0x00a4_1870 => extern "stdcall" fn identitystd_00a41870(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its argument (`ret 4`).
+    IdentityStd_00a418f0 @ 0x00a4_18f0 => extern "stdcall" fn identitystd_00a418f0(x: u32) -> u32 {
+        stub::ptr32(x)
+    }
+    /// Its second argument.
+    Second_00401000 @ 0x0040_1000 => extern "C" fn second_00401000(a: u32, b: u32) -> u32 {
+        accessor::second(a, b)
+    }
+    /// Its argument's low byte (only `al` set).
+    IdentityU8_0060ab40 @ 0x0060_ab40 => extern "C" fn identityu8_0060ab40(x: u8) -> u8 {
+        accessor::first_u8(x)
+    }
+    /// Its argument's low half (only `ax` set).
+    IdentityU16_0061e710 @ 0x0061_e710 => extern "C" fn identityu16_0061e710(x: u16) -> u16 {
+        accessor::first_u16(x)
+    }
+    /// Its argument as a `u64`.
+    ZeroExtend64_0060ab70 @ 0x0060_ab70 => extern "C" fn zeroextend64_0060ab70(x: u32) -> u64 {
+        accessor::zero_extend(x)
+    }
+    /// `a + b`.
+    Add_0060ab80 @ 0x0060_ab80 => extern "C" fn add_0060ab80(a: u32, b: u32) -> u32 {
+        accessor::add(a, b)
+    }
+    /// `a + b`.
+    Add_0061d110 @ 0x0061_d110 => extern "C" fn add_0061d110(a: u32, b: u32) -> u32 {
+        accessor::add(a, b)
+    }
+    /// `b - a`.
+    Difference_0061e6e0 @ 0x0061_e6e0 => extern "C" fn difference_0061e6e0(a: u32, b: u32) -> u32 {
+        accessor::difference(a, b)
+    }
+    /// `() -> 0x18` (`ret 4`).
+    ReturnConstStd_006770b0 @ 0x0067_70b0 => extern "stdcall" fn returnconststd_006770b0(_a: u32) -> u32 {
+        accessor::SIZE_0X18
+    }
+    /// Stores `Phyre::PInputs::PInputSource::vftable` in `this`.
+    PInputSource_setVftable @ 0x009e_24f0 => extern "thiscall" fn pinputsource_setvftable(this: u32) {
+        accessor::bridge::set_vftable(&mut mem(), this, accessor::bridge::PINPUT_SOURCE_VFTABLE);
+    }
+    /// Stores `Phyre::PWorldMatrixController::vftable` in `this`.
+    PWorldMatrixController_setVftable @ 0x0061_a730 => extern "thiscall" fn pworldmatrixcontroller_setvftable(this: u32) {
+        accessor::bridge::set_vftable(&mut mem(), this, accessor::bridge::PWORLD_MATRIX_CONTROLLER_VFTABLE);
+    }
+    /// `this[0] = 1`.
+    SetWord0_006f1db0 @ 0x006f_1db0 => extern "thiscall" fn setword0_006f1db0(this: u32) {
+        accessor::bridge::set_word0(&mut mem(), this);
+    }
+    /// Byte `+0x364` of `this` set.
+    SetByte364_006f1dc0 @ 0x006f_1dc0 => extern "thiscall" fn setbyte364_006f1dc0(this: u32) {
+        accessor::bridge::set_byte364(&mut mem(), this);
+    }
+    /// Whether the state (`+8`) is 6.
+    SaveDataManager_isDeletingFinished @ 0x006f_20d0 => extern "thiscall" fn savedatamanager_isdeletingfinished(this: u32) -> u32 {
+        accessor::bridge::state_is(&mem(), this, 6)
+    }
+    /// Whether the state (`+8`) is 4.
+    SaveDataManager_isLoadingFinished @ 0x006f_2150 => extern "thiscall" fn savedatamanager_isloadingfinished(this: u32) -> u32 {
+        accessor::bridge::state_is(&mem(), this, 4)
+    }
+    /// Whether the state (`+8`) is 2.
+    SaveDataManager_isSavingFinished @ 0x006f_21a0 => extern "thiscall" fn savedatamanager_issavingfinished(this: u32) -> u32 {
+        accessor::bridge::state_is(&mem(), this, 2)
+    }
+    /// The 64-bit size at `+8` of `*(this + 0xc)`.
+    PStreamFile_entrySize64 @ 0x0061_acb0 => extern "thiscall" fn pstreamfile_entrysize64(this: u32) -> u64 {
+        accessor::bridge::entry_size64(&mem(), this)
+    }
+    /// `this + 0x8c`.
+    Virtuos_InputManager_getStickInfo @ 0x0063_1310 => extern "thiscall" fn getstickinfo_00631310(this: u32) -> u32 {
+        accessor::bridge::stick_info(this)
+    }
+    /// Word `+0x64` of `g_TkMenuWorldMapWindow`.
+    TkMenuWorldMapWindowWord64 @ 0x008e_2d50 => extern "C" fn tkmenuworldmapwindowword64() -> u32 {
+        accessor::bridge::world_map_window_word64(&mem())
+    }
+    /// `TODapsInit()`.
+    TODapsInit @ 0x0089_dc40 => extern "C" fn to_daps_init() -> u32 {
+        daps::bridge::init(&mut mem())
+    }
+    /// `TODapsDraw()`: the same code as `TODapsInit`.
+    TODapsDraw @ 0x0089_dc10 => extern "C" fn to_daps_draw() -> u32 {
+        daps::bridge::init(&mut mem())
+    }
+    /// `TODapsString(s)`.
+    TODapsString @ 0x0089_dec0 => extern "C" fn to_daps_string(s: u32) -> u32 {
+        daps::bridge::string(&mut mem(), s)
+    }
+    /// `TODapsSetPos(x, y)`.
+    TODapsSetPos @ 0x0089_de30 => extern "C" fn to_daps_set_pos(x: i32, y: i32) -> u32 {
+        daps::bridge::set_pos(&mut mem(), x, y)
+    }
+    /// `TOAdpTEST(p, ate, atst, aref, afail, date, datm, zte, ztst)`.
+    TOAdpTEST @ 0x008e_f970 => extern "C" fn to_adp_test(p: u32, ate: i32, atst: i32, aref: i32, afail: i32, date: i32, datm: i32, zte: i32, ztst: i32) -> u32 {
+        pkt::bridge::adp_test(&mut mem(), p, [ate, atst, aref, afail, date, datm, zte, ztst])
+    }
+    /// `TouchRecords_Init(base, n)`.
+    TouchRecords_Init @ 0x0068_9a10 => extern "C" fn touch_records_init(base: u32, n: u32) {
+        pad::bridge::touch_records_init(&mut mem(), base, n);
+    }
+    /// `std::map<u32>::equal_range(&out, &key)` (`this` in ECX).
+    std_map_u32_equal_range_0069a250 @ 0x0069_a250 => extern "thiscall" fn map_u32_equal_range(this: u32, out: u32, key: u32) -> u32 {
+        stl::bridge::equal_range_u32(&mut mem(), this, out, key)
+    }
+    /// `TOFontGlyphSprite(s, out)`.
+    TOFontGlyphSprite @ 0x0089_e360 => extern "C" fn to_font_glyph_sprite(s: u32, out: u32) -> u32 {
+        msg::bridge::glyph_sprite(&mut mem(), s, out)
+    }
+    /// `TOSeqCheckTermScene(i, name)`.
+    TOSeqCheckTermScene @ 0x008a_e070 => extern "C" fn to_seq_check_term_scene(i: i32, name: u32) -> u32 {
+        scene::bridge::check_term_scene(&mut mem(), i, name, menu_scene::tk_menu_is_term_scene)
+    }
+    /// `Fixup_ReadRecord(&cursor, flags)` (the record in ECX).
+    Fixup_ReadRecord @ 0x0060_e730 => extern "thiscall" fn fixup_read_record(record: u32, cursor: u32, flags: u32) -> u32 {
+        fixup::bridge::read_record(&mut mem(), record, cursor, flags)
+    }
+    /// `SortSaveTable_006f0fb0()`.
+    SortSaveTable_006f0fb0 @ 0x006f_0fb0 => extern "C" fn sort_save_table() -> u32 {
+        save::bridge::sort_table(&mut mem())
+    }
+    /// `ResetRecords_00774740()`.
+    ResetRecords_00774740 @ 0x0077_4740 => extern "C" fn reset_records_00774740() -> u32 {
+        instance::bridge::reset_records(&mut mem())
+    }
+    /// `TOSeqStartScene(i, name)`.
+    TOSeqStartScene @ 0x008a_f0d0 => extern "C" fn to_seq_start_scene(i: i32, name: u32) -> u32 {
+        scene::bridge::start_scene(&mut mem(), i, name, false, menu_scene::tk_menu_get_scene_handle)
+    }
+    /// `TOSeqStartSceneDrawContinue(i, name)`.
+    TOSeqStartSceneDrawContinue @ 0x008a_f1b0 => extern "C" fn to_seq_start_scene_draw_continue(i: i32, name: u32) -> u32 {
+        scene::bridge::start_scene(&mut mem(), i, name, true, menu_scene::tk_menu_get_scene_handle)
+    }
+    /// `TOSeqStopScene(i, name)`.
+    TOSeqStopScene @ 0x008a_f4f0 => extern "C" fn to_seq_stop_scene(i: i32, name: u32) -> u32 {
+        scene::bridge::stop_scene(&mut mem(), i, name)
+    }
+    /// `TOSeqInitAllScene(i)`.
+    TOSeqInitAllScene @ 0x008a_e5a0 => extern "C" fn to_seq_init_all_scene(i: i32) -> u32 {
+        scene::bridge::init_all_scene(&mut mem(), i)
+    }
+    /// `TOBtlSetPrevAction()`.
+    TOBtlSetPrevAction @ 0x0089_a630 => extern "C" fn to_btl_set_prev_action() -> u32 {
+        btl::bridge::set_prev_action(&mut mem())
+    }
+    /// `JobSchedule_pppPart_getFillBufferRequest(size)`.
+    JobSchedule_pppPart_getFillBufferRequest @ 0x0072_8660 => extern "C" fn get_fill_buffer_request(size: i32) -> u32 {
+        render::bridge::get_fill_buffer_request(&mut mem(), size)
+    }
+    /// `TouchTracks_Init(base, n)`.
+    TouchTracks_Init @ 0x0068_98d0 => extern "C" fn touch_tracks_init(base: u32, n: u32) -> u32 {
+        pad::bridge::touch_tracks_init(&mut mem(), base, n)
+    }
+    /// `std_map_cstr_find_006dc010(&key)` (`this` in ECX).
+    std_map_cstr_find_006dc010 @ 0x006d_c010 => extern "thiscall" fn map_cstr_find(this: u32, key: u32) -> u32 {
+        stl::bridge::map_find_cstr(&mem(), this, key)
+    }
+    /// `GetTable_00c8a538(i)` (`ret 4`).
+    GetTable_00c8a538 @ 0x0040_2be0 => extern "stdcall" fn get_table_00c8a538(i: u32) -> u32 {
+        instance::bridge::table_00c8a538(&mem(), i)
+    }
+    /// `LocalizationManager_GetWord0()`.
+    LocalizationManager_GetWord0 @ 0x0064_1100 => extern "C" fn localization_manager_get_word0() -> u32 {
+        instance::bridge::localization_manager_word0(&mem(), &mut phyre_printf)
+    }
+    /// `SetTable_02310f20(i, v)`.
+    SetTable_02310f20 @ 0x008b_dfc0 => extern "C" fn set_table_02310f20(i: u32, v: u32) -> u32 {
+        instance::bridge::set_table_02310f20(&mut mem(), i, v)
+    }
+    /// `SaveDataManager_SetWord360(v)`.
+    SaveDataManager_SetWord360 @ 0x0064_8640 => extern "C" fn save_data_manager_set_word360(v: u32) -> u32 {
+        save::bridge::set_manager_word360(&mut mem(), v)
+    }
+    /// `TOGetTableKind_008b7fb0(i)`.
+    TOGetTableKind_008b7fb0 @ 0x008b_7fb0 => extern "C" fn to_get_table_kind(i: i32) -> i32 {
+        window::bridge::table_kind(&mem(), i)
+    }
+    /// `TOGetTableKind2Data_008b7fd0(i)`.
+    TOGetTableKind2Data_008b7fd0 @ 0x008b_7fd0 => extern "C" fn to_get_table_kind2_data(i: i32) -> u32 {
+        window::bridge::table_kind2_data(&mem(), i)
+    }
+    /// `TOGetTableKind2Byte7_008b7ff0(i)`.
+    TOGetTableKind2Byte7_008b7ff0 @ 0x008b_7ff0 => extern "C" fn to_get_table_kind2_byte7(i: i32) -> i32 {
+        window::bridge::table_kind2_byte7(&mem(), i)
+    }
+    /// `cd_module_file_sector_rel(n)`.
+    cd_module_file_sector_rel @ 0x0076_c250 => extern "C" fn cd_module_file_sector_rel(n: i32) -> u32 {
+        cd::bridge::cd_module_file_sector_rel(&mem(), n)
+    }
+    /// `TOMacroSetByte1(win, n, v)`.
+    TOMacroSetByte1 @ 0x008b_84f0 => extern "C" fn to_macro_set_byte1(win: i32, n: i32, v: u8) {
+        window::bridge::macro_set_byte1(&mut mem(), win, n, v);
+    }
+    /// `TOMacroSetValue_008b8510(win, n, v)`: the same code as `TOMacroSetValue`.
+    TOMacroSetValue_008b8510 @ 0x008b_8510 => extern "C" fn to_macro_set_value_008b8510(win: i32, n: i32, v: u32) -> u32 {
+        window::bridge::macro_set_value(&mut mem(), win, n, v)
+    }
+    /// `TOAllCloseMessageWindow()`.
+    TOAllCloseMessageWindow @ 0x008a_b7b0 => extern "C" fn to_all_close_message_window() {
+        window::bridge::all_close_message_window(&mut mem());
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {

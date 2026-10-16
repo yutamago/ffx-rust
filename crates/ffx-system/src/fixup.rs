@@ -79,6 +79,36 @@ pub mod bridge {
     pub fn set_object(mem: &mut impl Mem, record: u32, index: u32) {
         mem.write(record.wrapping_add(4), index);
     }
+
+    /// `Fixup_ReadRecord(&cursor, flags)` (`0x0060e730`, `thiscall` on the
+    /// record, `ret 8`): LEB128 words at the cursor into the record's
+    /// words: 6 (minus one, -1 for 0) unless flag 0x10, and when that word
+    /// was 0 or skipped, 2, then 3 unless 0x20 and 4 unless 0x40; always 5
+    /// unless 0x08. Returns what `eax` ends as (the last word read, or word
+    /// 6's value).
+    pub fn read_record(mem: &mut impl Mem, record: u32, cursor: u32, flags: u32) -> u32 {
+        let mut eax = 0;
+        let mut rest = true;
+        if flags & 0x10 == 0 {
+            let v = read_leb128(mem, cursor);
+            eax = v.wrapping_sub(1) | if v == 0 { u32::MAX } else { 0 };
+            mem.write(record.wrapping_add(0x18), eax);
+            rest = v == 0;
+        }
+        if rest {
+            for (word, skip) in [(8, 0), (0xc, 0x20), (0x10, 0x40)] {
+                if flags & skip == 0 {
+                    eax = read_leb128(mem, cursor);
+                    mem.write(record.wrapping_add(word), eax);
+                }
+            }
+        }
+        if flags & 0x08 == 0 {
+            eax = read_leb128(mem, cursor);
+            mem.write(record.wrapping_add(0x14), eax);
+        }
+        eax
+    }
 }
 
 #[cfg(test)]

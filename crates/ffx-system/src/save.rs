@@ -186,4 +186,52 @@ pub mod bridge {
         }
         u32::from(ok)
     }
+
+    /// The table `0x006f0fb0` sorts (`0x00ce7318`): 200 entries of three
+    /// words (an id, then the two sort keys).
+    pub const SORTED_TABLE: Global<[u32; 3]> = Global::new(0x00ce_7318);
+
+    /// `0x006f0fb0()`: entries 1..200 of [`SORTED_TABLE`] selection-sorted
+    /// by their second and third words, largest first (signed; on a tie the
+    /// first found stays); entry 0 is left alone. Returns what `eax` ends
+    /// as (from the last pass: the swapped entry's id, or the index found).
+    pub fn sort_table(mem: &mut impl Mem) -> u32 {
+        let base = SORTED_TABLE.ptr(mem).addr;
+        let at = |i: i32| base.wrapping_add(i.cast_unsigned() * 12);
+        let mut eax = 0;
+        for i in 1..200 {
+            let (mut best, mut best_id, mut best_b, mut best_c) = (-1i32, u32::MAX, -1i32, -1i32);
+            for j in i..200 {
+                let e = at(j);
+                let b: i32 = mem.read(e + 4);
+                let c: i32 = mem.read(e + 8);
+                if b > best_b || (b == best_b && c > best_c) {
+                    best_id = mem.read(e);
+                    best_c = c;
+                    best = j;
+                    best_b = b;
+                }
+            }
+            eax = best.cast_unsigned();
+            if best > i {
+                let (src, dest) = (at(i), at(best));
+                let entry: [u32; 3] = mem.read(src);
+                mem.write(dest, entry);
+                mem.write(
+                    src,
+                    [best_id, best_b.cast_unsigned(), best_c.cast_unsigned()],
+                );
+                eax = best_id;
+            }
+        }
+        eax
+    }
+
+    /// `0x00648640(v)`: word `+0x360` of the save-data manager set;
+    /// returns the manager.
+    pub fn set_manager_word360(mem: &mut impl Mem, v: u32) -> u32 {
+        let m = manager_instance(mem);
+        mem.write(m.wrapping_add(0x360), v);
+        m
+    }
 }
