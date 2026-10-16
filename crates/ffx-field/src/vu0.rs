@@ -440,6 +440,43 @@ pub mod bridge {
         mem.write(out + 8, (-Reg::load(c)).store());
         mem.write(out + 0xc, 0f32);
     }
+
+    // ---- round 12 ----
+
+    /// `KeVu0ScaleVecXY(dst, src, s)` (`0x0075fab0`): `dst.x` set to `s`
+    /// first (the VU0 register A takes `dst` with it), then
+    /// `dst = (src.x * s, s * src.y, src.z, src.w)` through register B.
+    /// Returns `src.w`.
+    pub fn ke_vu0_scale_vec_xy(mem: &mut impl Mem, dst: u32, src: u32, s: u32) -> u32 {
+        mem.write(dst, x87::copy(s));
+        let a = mem.read::<[u32; 4]>(dst);
+        VF_A.set(mem, a);
+        let mut b = mem.read::<[u32; 4]>(src);
+        VF_B.set(mem, b);
+        b[0] = x87::store(x87::load(b[0]) * x87::load(a[0]));
+        b[1] = x87::store(x87::load(a[0]) * x87::load(b[1]));
+        VF_B.set(mem, b);
+        mem.write(dst, b);
+        b[3]
+    }
+
+    /// `KeVu0SubVecXYZ(dst, a, b)` (`0x0075fcd0`): `dst.xyz = a.xyz -
+    /// b.xyz`, `dst.w` kept, through registers A, B and C; restores
+    /// `vf00` before the store. Returns `dst.w`.
+    pub fn ke_vu0_sub_vec_xyz(mem: &mut impl Mem, dst: u32, a: u32, b: u32) -> u32 {
+        let va = mem.read::<[u32; 4]>(a);
+        VF_A.set(mem, va);
+        let vb = mem.read::<[u32; 4]>(b);
+        VF_B.set(mem, vb);
+        let d = mem.read::<[u32; 4]>(dst);
+        let s = |i: usize| x87::store(x87::load(va[i]) - x87::load(vb[i]));
+        let r = [s(0), s(1), s(2), d[3]];
+        VF_C.set(mem, r);
+        ffx_ps2::ee::bridge::restore_vf00(mem);
+        let r = VF_C.get(mem);
+        mem.write(dst, r);
+        r[3]
+    }
 }
 
 #[cfg(test)]

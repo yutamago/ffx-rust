@@ -271,4 +271,79 @@ pub mod bridge {
         PACKET_CURSOR.set(mem, p.wrapping_add(0x20));
         x
     }
+
+    /// One of the `TOAdp*` writers by address over `p` with its arguments
+    /// as words; the advanced packet pointer.
+    pub fn adp_call(mem: &mut impl Mem, function: u32, p: u32, a: &[u32]) -> u32 {
+        let signed: Vec<i32> = a.iter().map(|&w| w.cast_signed()).collect();
+        match function {
+            0x008e_f8e0 => adp_words4(mem, p, [a[0], a[1], a[2], a[3]]),
+            0x008e_fbf0 => adp_xyz2_offset(mem, p, a[0], a[1]),
+            0x008e_fb90 => adp_xy2(mem, p, a[0], a[1]),
+            0x008e_f970 => adp_test(mem, p, signed.try_into().expect("eight fields")),
+            0x008e_fb60 => adp_texflush(mem, p),
+            0x008e_fc90 => adp_xyz_offset(mem, p, a[0], a[1], a[2], None),
+            0x008e_fd00 => adp_xyz_offset(mem, p, a[0], a[1], a[2], Some(a[3])),
+            0x008e_f790 => adp_gs_direct_rgba(mem, p, a[0]),
+            0x008e_f800 => adp_fog(mem, p, a[0]),
+            0x008e_fc30 => adp_words2_reg10(mem, p, a[0], a[1]),
+            0x008e_fcd0 => adp_words3(mem, p, a[0], a[1], a[2]),
+            0x008e_fbc0 => adp_xy_frac(mem, p, [a[0], a[1], a[2], a[3]]),
+            f => adp_reg_at(mem, f, p, &signed),
+        }
+    }
+
+    /// The `TOAdp*` writers' cursor forms (`0x008faa20..0x008fade0`, copies
+    /// at `0x009023b0..0x00902620`), (address, writer, argument count): the
+    /// writer called on [`PACKET_CURSOR`], which takes what it returns.
+    pub const ADP_AT_CURSOR: [(u32, u32, usize); 39] = [
+        (0x008f_aa20, 0x008e_f670, 5),
+        (0x008f_aa50, 0x008e_f6e0, 6),
+        (0x008f_aa80, 0x008e_f760, 1),
+        (0x008f_aaa0, 0x008e_f790, 1),
+        (0x008f_aac0, 0x008e_f7d0, 1),
+        (0x008f_aae0, 0x008e_f800, 1),
+        (0x008f_ab00, 0x008e_f830, 3),
+        (0x008f_ab30, 0x008e_f880, 4),
+        (0x008f_ab60, 0x008e_f790, 1),
+        (0x008f_ab80, 0x008e_f8e0, 4),
+        (0x008f_abb0, 0x008e_f910, 4),
+        (0x008f_abe0, 0x008e_f970, 8),
+        (0x008f_ac10, 0x008e_fa00, 12),
+        (0x008f_ac50, 0x008e_fad0, 7),
+        (0x008f_ac80, 0x008e_fb60, 0),
+        (0x008f_aca0, 0x008e_fb90, 2),
+        (0x008f_acc0, 0x008e_fbc0, 4),
+        (0x008f_acf0, 0x008e_fbf0, 2),
+        (0x008f_ad10, 0x008e_fc30, 2),
+        (0x008f_ad30, 0x008e_fc60, 2),
+        (0x008f_ad50, 0x008e_fc90, 3),
+        (0x008f_ad80, 0x008e_fcd0, 3),
+        (0x008f_adb0, 0x008e_fd00, 4),
+        (0x008f_ade0, 0x008e_fd40, 3),
+        (0x0090_23b0, 0x008e_f670, 5),
+        (0x0090_23e0, 0x008e_f6e0, 6),
+        (0x0090_2410, 0x008e_f760, 1),
+        (0x0090_2430, 0x008e_f790, 1),
+        (0x0090_2450, 0x008e_f7d0, 1),
+        (0x0090_2470, 0x008e_f880, 4),
+        (0x0090_24a0, 0x008e_f8e0, 4),
+        (0x0090_24d0, 0x008e_f910, 4),
+        (0x0090_2500, 0x008e_f970, 8),
+        (0x0090_2530, 0x008e_fa00, 12),
+        (0x0090_2570, 0x008e_fad0, 7),
+        (0x0090_25c0, 0x008e_fb90, 2),
+        (0x0090_25e0, 0x008e_fbf0, 2),
+        (0x0090_2600, 0x008e_fc60, 2),
+        (0x0090_2620, 0x008e_fc90, 3),
+    ];
+
+    /// A cursor form of [`ADP_AT_CURSOR`]: `writer(cursor, args...)` stored
+    /// back into the cursor and returned.
+    pub fn adp_at_cursor(mem: &mut impl Mem, writer: u32, args: &[u32]) -> u32 {
+        let p = PACKET_CURSOR.get(mem);
+        let next = adp_call(mem, writer, p, args);
+        PACKET_CURSOR.set(mem, next);
+        next
+    }
 }

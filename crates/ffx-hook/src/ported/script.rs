@@ -3,6 +3,7 @@
 use ffx_script::vm::bridge as atel;
 use ffx_script::vm::bridge::globals as g;
 use ffx_script::vm::bridge::native;
+use ffx_script::vm::bridge::native_btl;
 use ffx_script::vm::bridge::native_cam;
 use ffx_script::vm::bridge::native_map;
 use ffx_script::vm::bridge::native_move;
@@ -1818,5 +1819,203 @@ ported! {
     /// `Msg_ShowSetup(worker, args, stack, mode)`.
     Msg_ShowSetup @ 0x0086_07a0 => extern "C" fn msg_show_setup(w: u32, a: u32, s: u32, mode: u32) -> u32 {
         native_msg::msg_show_setup(&mut mem(), w, a, s, mode)
+    }
+
+    // round 8 (native_msg)
+    /// `Native_0267_Poll(worker, args, stack)`.
+    Native_0267_Poll @ 0x0085_a540 => extern "C" fn n_85a540(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_0267_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_0267_Result(worker, args, stack)`.
+    Native_0267_Result @ 0x0085_a620 => extern "C" fn n_85a620(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_msg_select_result(&mut mem(), w, a, s)
+    }
+    /// `Native_VoiceStandby(worker, args, stack)`.
+    Native_VoiceStandby @ 0x0085_cd00 => extern "C" fn n_85cd00(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_voice_standby(&mut mem(), w, a, s)
+    }
+    /// `Native_VoiceStandby_End(worker, args, stack)`.
+    Native_VoiceStandby_End @ 0x0085_d360 => extern "C" fn n_85d360(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_voice_standby_end(&mut mem(), w, a, s)
+    }
+    /// `Native_VoiceStart(worker, args, stack)`.
+    Native_VoiceStart @ 0x0085_d6b0 => extern "C" fn n_85d6b0(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_voice_start(&mut mem(), w, a, s)
+    }
+    /// `Native_VoiceStart_Poll(worker, args, stack)`.
+    Native_VoiceStart_Poll @ 0x0085_d9d0 => extern "C" fn n_85d9d0(w: u32, a: u32, s: u32) -> u32 {
+        native_msg::native_voice_start_poll(&mut mem(), w, a, s)
+    }
+
+    // round 8 (native_move)
+    /// `Native_SpriteSetPos(worker, args, stack)`.
+    Native_SpriteSetPos @ 0x0085_cc50 => extern "C" fn n_85cc50(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_sprite_set_pos(&mut mem(), w, a, s)
+    }
+    /// `Native_LightSet(worker, args, stack)`.
+    Native_LightSet @ 0x00a7_8030 => extern "C" fn n_a78030(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_light_set(&mut mem(), w, a, s)
+    }
+    /// `Native_SetModel(worker, args, stack)`.
+    Native_SetModel @ 0x0085_d000 => extern "C" fn n_85d000(w: u32, a: u32, s: u32) -> u32 {
+        native_move::native_set_model(&mut mem(), w, a, s)
+    }
+
+    // round 8 (native_btl)
+    /// `Native_SetActorsProperty(worker, args, stack)`.
+    Native_SetActorsProperty @ 0x007a_50c0 => extern "C" fn n_7a50c0(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_set_actors_property(&mut mem(), w, a, s)
+    }
+    /// `Native_SetSelfFloatProperty(worker, args, stack)`.
+    Native_SetSelfFloatProperty @ 0x007a_5930 => extern "C" fn n_7a5930(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_set_self_float_property(&mut mem(), w, a, s)
+    }
+    /// `Native_GetActorProperty(worker, args, stack)`.
+    Native_GetActorProperty @ 0x007a_4d50 => extern "C" fn n_7a4d50(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_get_actor_property(&mut mem(), w, a, s)
+    }
+    /// `Native_GetSelfProperty(worker, args, stack)`.
+    Native_GetSelfProperty @ 0x007a_4ea0 => extern "C" fn n_7a4ea0(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_get_self_property(&mut mem(), w, a, s)
+    }
+    /// `Native_BtlUseCommand(worker, args, stack)`.
+    Native_BtlUseCommand @ 0x007a_44b0 => extern "C" fn n_7a44b0(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_btl_use_command(&mut mem(), w, a, s)
+    }
+    /// `Native_ActorWaitMotion(worker, args, stack)`.
+    Native_ActorWaitMotion @ 0x007a_3980 => extern "C" fn n_7a3980(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_actor_wait_motion(&mut mem(), w, a, s)
+    }
+    /// `Native_BtlSelectTarget(worker, args, stack)`.
+    Native_BtlSelectTarget @ 0x007a_5af0 => extern "C" fn n_7a5af0(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_btl_select_target(&mut mem(), w, a, s)
+    }
+    /// `Native_BtlCountActorsInBoth(worker, args, stack)`.
+    Native_BtlCountActorsInBoth @ 0x007a_6870 => extern "C" fn n_7a6870(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_btl_count_actors_in_both(&mut mem(), w, a, s)
+    }
+    /// `Native_ActorGetSlotRef(worker, args, stack)`.
+    Native_ActorGetSlotRef @ 0x007a_6b40 => extern "C" fn n_7a6b40(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_actor_get_slot_ref(&mut mem(), w, a, s)
+    }
+    /// `Native_7002(worker, args, stack)`.
+    Native_7002 @ 0x007a_3530 => extern "C" fn n_7a3530(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_7002(&mut mem(), w, a, s)
+    }
+    /// `Native_BtlRunEvent(worker, args, stack)`.
+    Native_BtlRunEvent @ 0x007a_5df0 => extern "C" fn n_7a5df0(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_btl_run_event(&mut mem(), w, a, s)
+    }
+    /// `Native_BtlRunEvent_Poll(worker, args, stack)`.
+    Native_BtlRunEvent_Poll @ 0x007a_5ec0 => extern "C" fn n_7a5ec0(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_btl_run_event_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_7097_Poll(worker, args, stack)`.
+    Native_7097_Poll @ 0x007a_58c0 => extern "C" fn n_7a58c0(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_btl_run_event_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_ActorQueueMotion(worker, args, stack)`.
+    Native_ActorQueueMotion @ 0x007a_2a20 => extern "C" fn n_7a2a20(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_actor_queue_motion(&mut mem(), w, a, s)
+    }
+    /// `Native_70ac(worker, args, stack)`.
+    Native_70ac @ 0x007a_5650 => extern "C" fn n_7a5650(w: u32, a: u32, s: u32) -> f64 {
+        native_btl::native_70ac(&mut mem(), w, a, s)
+    }
+    /// `Native_700c(worker, args, stack)`.
+    Native_700c @ 0x007a_4310 => extern "C" fn n_7a4310(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_700c(&mut mem(), w, a, s)
+    }
+    /// `Native_7085(worker, args, stack)`.
+    Native_7085 @ 0x007a_43a0 => extern "C" fn n_7a43a0(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_7085(&mut mem(), w, a, s)
+    }
+    /// `Native_7000(worker, args, stack)`.
+    Native_7000 @ 0x007a_8620 => extern "C" fn n_7a8620(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_7000(&mut mem(), w, a, s)
+    }
+    /// `Native_7006(worker, args, stack)`.
+    Native_7006 @ 0x007a_3f50 => extern "C" fn n_7a3f50(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_7006(&mut mem(), w, a, s)
+    }
+    /// `Native_7003(worker, args, stack)`.
+    Native_7003 @ 0x007a_3d90 => extern "C" fn n_7a3d90(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_7003(&mut mem(), w, a, s)
+    }
+    /// `Native_707b(worker, args, stack)`.
+    Native_707b @ 0x007a_7470 => extern "C" fn n_7a7470(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_707b(&mut mem(), w, a, s)
+    }
+    /// `Native_7048(worker, args, stack)`.
+    Native_7048 @ 0x007a_53f0 => extern "C" fn n_7a53f0(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_7048(&mut mem(), w, a, s)
+    }
+    /// `Native_ActorGetId(worker, args, stack)`.
+    Native_ActorGetId @ 0x007a_6a80 => extern "C" fn n_7a6a80(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_actor_get_id(&mut mem(), w, a, s)
+    }
+    /// `Native_70a2(worker, args, stack)`.
+    Native_70a2 @ 0x007a_7440 => extern "C" fn n_7a7440(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_70a2(&mut mem(), w, a, s)
+    }
+    /// `Native_702b(worker, args, stack)`.
+    Native_702b @ 0x007a_3c50 => extern "C" fn n_7a3c50(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_702b(&mut mem(), w, a, s)
+    }
+    /// `Native_ActorSetFlag36(worker, args, stack)`.
+    Native_ActorSetFlag36 @ 0x007a_51e0 => extern "C" fn n_7a51e0(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_actor_set_flag36(&mut mem(), w, a, s)
+    }
+    /// `Native_7097(worker, args, stack)`.
+    Native_7097 @ 0x007a_5780 => extern "C" fn n_7a5780(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_7097(&mut mem(), w, a, s)
+    }
+    /// `Native_7026(worker, args, stack)`.
+    Native_7026 @ 0x007a_5d80 => extern "C" fn n_7a5d80(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_7026(&mut mem(), w, a, s)
+    }
+    /// `Native_702e(worker, args, stack)`.
+    Native_702e @ 0x007a_6d70 => extern "C" fn n_7a6d70(w: u32, a: u32, s: u32) -> f64 {
+        native_btl::native_702e(&mut mem(), w, a, s)
+    }
+    /// `Native_702d(worker, args, stack)`.
+    Native_702d @ 0x007a_4e60 => extern "C" fn n_7a4e60(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_702d(&mut mem(), w, a, s)
+    }
+    /// `Native_7019(worker, args, stack)`.
+    Native_7019 @ 0x007a_62d0 => extern "C" fn n_7a62d0(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_7019(&mut mem(), w, a, s)
+    }
+    /// `Native_704a(worker, args, stack)`.
+    Native_704a @ 0x007a_58d0 => extern "C" fn n_7a58d0(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_704a(&mut mem(), w, a, s)
+    }
+    /// `Native_701d(worker, args, stack)`.
+    Native_701d @ 0x007a_5bf0 => extern "C" fn n_7a5bf0(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_701d(&mut mem(), w, a, s)
+    }
+    /// `Native_700a(worker, args, stack)`.
+    Native_700a @ 0x007a_4100 => extern "C" fn n_7a4100(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_700a(&mut mem(), w, a, s)
+    }
+    /// `Native_701a(worker, args, stack)`.
+    Native_701a @ 0x007a_6390 => extern "C" fn n_7a6390(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_701a(&mut mem(), w, a, s)
+    }
+    /// `Native_7037(worker, args, stack)`.
+    Native_7037 @ 0x007a_6d30 => extern "C" fn n_7a6d30(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_7037(&mut mem(), w, a, s)
+    }
+    /// `Native_706f(worker, args, stack)`.
+    Native_706f @ 0x007a_36c0 => extern "C" fn n_7a36c0(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_706f(&mut mem(), w, a, s)
+    }
+    /// `Native_7104(worker, args, stack)`.
+    Native_7104 @ 0x007a_6600 => extern "C" fn n_7a6600(w: u32, a: u32, s: u32) -> u32 {
+        native_btl::native_7104(&mut mem(), w, a, s)
+    }
+    /// `Msg_ChoicePoll(worker, args, handlers)`.
+    Msg_ChoicePoll @ 0x0086_0990 => extern "C" fn msg_choice_poll(_w: u32, a: u32, t: u32) -> u32 {
+        native_msg::msg_choice_poll(&mut mem(), a, t)
     }
 }

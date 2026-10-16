@@ -12,11 +12,23 @@
 //!   runs against a second oracle on the same snapshot through
 //!   [`ffx_bridge::Mem`]; [`Oracle::diff`] then compares what both wrote.
 //!
-//! Imports are bound to stubs: the CRT functions the game uses (`malloc`,
-//! `memcpy`, the string functions, the `sprintf` family, `floor`,
-//! `_CIsqrt`, `rand`, ...) and the Win32 critical sections are implemented
-//! natively (`crt`), and calling any other import stops the emulation with
-//! [`Error::UnstubbedImport`]. [`Oracle::missing_imports`] lists those.
+//! The C runtime is the game's own: `MSVCR110.dll` from beside `FFX.exe`
+//! is mapped next to it, relocated, its `KERNEL32` imports bound to
+//! deterministic single-threaded stand-ins (`win32`), and initialised with
+//! `DllMain(DLL_PROCESS_ATTACH)` once per oracle ([`Runtime::Dll`]).
+//! `FFX.exe`'s MSVCR110 imports call its exports, except `malloc`,
+//! `calloc`, `free`, `memcpy`, `memmove`, `memset` and `_wassert`, kept
+//! native. Two emulator gaps are closed for it: the x87 transcendental instructions, which the
+//! emulator computes through host `double`s, are redone as the FPU does
+//! them (`x87`, trapped through `int3` patched over them), the CPU model
+//! has no SSE4.2, whose string instructions the emulator gets wrong, and
+//! MXCSR starts as on Windows (`0x1f80`), so the runtime takes its SSE2
+//! math paths as it does in the game. [`Runtime::Native`] (or
+//! `FFX_ORACLE_RUNTIME=native`) uses native stubs instead (`crt`). Calling
+//! an import with neither stops the emulation with
+//! [`Error::UnstubbedImport`]; [`Oracle::missing_imports`] lists those.
+//! [`Oracle::bind_import`] points an import at a test's own code or back
+//! at its native stub.
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
@@ -26,11 +38,26 @@ use ffx_bridge::snapshot::{BLOCK, Snapshot};
 use goblin::pe::PE;
 use unicorn_engine::{Arch, HookType, MemType, Mode, Prot, RegisterX86, Unicorn};
 
+mod win32;
+mod x87;
+
 const PAGE: u64 = 0x1000;
 const PAGE_BYTES: usize = 0x1000;
 const STACK_SIZE: u64 = 0x10_0000;
 const HEAP_SIZE: u64 = 0x400_0000;
 const STUB_SIZE: u64 = 0x100_0000;
+/// `UC_CPU_X86_CORE2DUO`.
+const CPU_CORE2DUO: i32 = 2;
+/// The runtime DLL's own heap (`HeapAlloc`).
+const CRT_HEAP_SIZE: u64 = 0x100_0000;
+/// MSVCR110 imports that stay native even with the DLL loaded: the heap is
+/// the oracle's either way, and the copies are faster natively (the
+/// runtime's `memcpy` also allows overlap, as the native one does).
+/// `_wassert` stays native too, so a failed assertion stops the call with
+/// [`Error::Assertion`] instead of the runtime's abort path.
+const KEPT_NATIVE: [&str; 7] = [
+    "malloc", "calloc", "free", "memcpy", "memmove", "memset", "_wassert",
+];
 /// Upper bound on instructions per call, against runaway loops.
 const MAX_INSTRUCTIONS: usize = 200_000_000;
 
@@ -52,6 +79,18 @@ pub enum Error {
     OutOfMemory,
     #[error("no free range of {0:#x} bytes for the oracle's own memory")]
     NoRoom(u64),
+    #[error("interrupt {0} at {1:#010x}")]
+    Interrupt(u32, u64),
+    #[error("MSVCR110.dll did not initialise: {0}")]
+    RuntimeInit(String),
+    #[error("assertion failed in the emulated code: {message} ({file}:{line})")]
+    Assertion {
+        message: String,
+        file: String,
+        line: u32,
+    },
+    #[error("the C runtime gave up: it called {0} (an invalid parameter, abort() or an exception)")]
+    RuntimeAbort(&'static str),
 }
 
 impl From<unicorn_engine::uc_error> for Error {
@@ -96,6 +135,7 @@ enum Stub {
     Memmove,
     Memset,
     Crt(crt::Crt),
+    /// A `KERNEL32` function the runtime DLL calls.
     Win32(win32::Win32),
     Missing(usize),
 }
@@ -160,7 +200,11 @@ fn lz4_flex_unpack(block: &[u8]) -> Vec<u8> {
 #[derive(Default)]
 struct State {
     stubs: HashMap<u64, Stub>,
+    /// Imports with nothing to run: `DLL!name`.
     missing: Vec<String>,
+    /// Imports with no native stub (`Stub::Missing` indexes this), whether
+    /// or not the runtime DLL has them.
+    unstubbed: Vec<String>,
     heap_base: u64,
     heap_next: u64,
     stack_base: u64,
@@ -172,10 +216,31 @@ struct State {
     image_base: u32,
     /// The CRT's `rand` state (`srand`; 1 at start).
     rand_seed: u32,
-    /// Stub address by import name.
+    /// What each import is bound to (stub or runtime export), by name.
     imports: HashMap<String, u64>,
-    /// The single-threaded Win32 synchronisation stubs' state (`win32`).
+    /// The native stub of every import that has one, by name.
+    natives: HashMap<String, u64>,
+    /// The import address table slot of every import, by name.
+    slots: HashMap<String, u64>,
+    /// The runtime DLL's exports, by name.
+    exports: HashMap<String, u32>,
+    /// Where `MSVCR110.dll` is loaded (0: not loaded).
+    dll_base: u32,
+    /// The CRT heap (`HeapAlloc`): next free address and end. Not reset by
+    /// [`Oracle::reset_heap`].
+    crt_heap: (u64, u64),
+    /// Block sizes for `HeapSize`/`HeapReAlloc`, by address (both heaps).
+    heap_sizes: HashMap<u32, u32>,
+    /// Thread-local slots (`TlsAlloc`).
+    tls: Vec<u32>,
+    /// The `KERNEL32` stand-ins' handles, last error and semaphores.
     win32: win32::Objects,
+    /// The runtime DLL's private memory, left out of [`Oracle::diff`].
+    private: Vec<std::ops::Range<u64>>,
+    /// Free space for [`Oracle::alloc_code`], in the stub area.
+    code_next: u64,
+    /// Strings handed out once (command line, environment).
+    constants: HashMap<&'static str, u32>,
 }
 
 /// An emulated `FFX.exe` process.
@@ -196,8 +261,17 @@ impl Oracle {
     /// Fails if the file cannot be read or parsed, or the emulator refuses a
     /// mapping.
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
-        let bytes = std::fs::read(path)?;
-        Self::build(&bytes, None, None)
+        Self::load_with(path, Runtime::from_env())
+    }
+
+    /// [`Oracle::load`] with a choice of C runtime.
+    ///
+    /// # Errors
+    /// As [`Oracle::load`]; also when the runtime DLL fails to initialise.
+    pub fn load_with(path: impl AsRef<Path>, runtime: Runtime) -> Result<Self> {
+        let bytes = std::fs::read(path.as_ref())?;
+        let dll = runtime.dll_beside(path.as_ref());
+        Self::build(&bytes, None, None, dll.as_deref())
     }
 
     /// Loads `FFX.exe` where the snapshot's game had it, with the
@@ -207,12 +281,36 @@ impl Oracle {
     /// As [`Oracle::load`]; also when the snapshot leaves no room for the
     /// oracle's own stack, heap and stubs.
     pub fn from_snapshot(exe: impl AsRef<Path>, pages: &Arc<Pages>) -> Result<Self> {
-        let bytes = std::fs::read(exe)?;
-        Self::build(&bytes, Some(pages.snapshot.image_base), Some(pages.clone()))
+        Self::from_snapshot_with(exe, pages, Runtime::from_env())
+    }
+
+    /// [`Oracle::from_snapshot`] with a choice of C runtime.
+    ///
+    /// # Errors
+    /// As [`Oracle::from_snapshot`]; also when the runtime DLL fails to
+    /// initialise.
+    pub fn from_snapshot_with(
+        exe: impl AsRef<Path>,
+        pages: &Arc<Pages>,
+        runtime: Runtime,
+    ) -> Result<Self> {
+        let bytes = std::fs::read(exe.as_ref())?;
+        let dll = runtime.dll_beside(exe.as_ref());
+        Self::build(
+            &bytes,
+            Some(pages.snapshot.image_base),
+            Some(pages.clone()),
+            dll.as_deref(),
+        )
     }
 
     #[allow(clippy::too_many_lines)] // one setup, in order
-    fn build(bytes: &[u8], at: Option<u32>, pages: Option<Arc<Pages>>) -> Result<Self> {
+    fn build(
+        bytes: &[u8],
+        at: Option<u32>,
+        pages: Option<Arc<Pages>>,
+        dll: Option<&[u8]>,
+    ) -> Result<Self> {
         let pe = PE::parse(bytes)?;
         let preferred = u32::try_from(pe.image_base)
             .map_err(|_| goblin::error::Error::Malformed("base".into()))?;
@@ -267,10 +365,14 @@ impl Oracle {
             Mode::MODE_32,
             State {
                 rand_seed: 1,
-                win32: win32::Objects::default(),
                 ..State::default()
             },
         )?;
+        // A Core 2: SSE2 and SSE3, no SSE4.2. MSVCR110 picks its string
+        // routines by CPUID, and the emulator's SSE4.2 string instructions
+        // (`pcmpistri`) give wrong answers (its strstr found nothing);
+        // the SSE2 routines compute the same functions.
+        uc.ctl_set_cpu_model(CPU_CORE2DUO)?;
         uc.mem_map(u64::from(base), image_size, Prot::ALL)?;
         uc.mem_write(u64::from(base), &image)?;
 
@@ -299,48 +401,76 @@ impl Oracle {
             s.image_base = base;
             s.pages = pages;
         }
+        // The game's C runtime, its imports bound to `win32` stubs.
+        let mut next_stub = stub_base;
+        let runtime = match dll {
+            Some(dll) => {
+                let crt_heap = gap(&mut taken, CRT_HEAP_SIZE)?;
+                uc.mem_map(crt_heap, CRT_HEAP_SIZE, Prot::READ | Prot::WRITE)?;
+                uc.get_data_mut().crt_heap = (crt_heap, crt_heap + CRT_HEAP_SIZE);
+                Some(load_runtime(&mut uc, dll, &mut taken, &mut next_stub)?)
+            }
+            None => None,
+        };
 
         // Bind every import to its own stub address, filled with `ret` so a
-        // stray execution cannot fall through.
-        let mut next_stub = stub_base;
+        // stray execution cannot fall through; MSVCR110 imports to the
+        // runtime's exports when it is loaded, except the few kept native.
         for import in &pe.imports {
-            let stub = match import.name.as_ref() {
-                "malloc" => Stub::Malloc,
-                "calloc" => Stub::Calloc,
-                "free" => Stub::Free,
-                "memcpy" => Stub::Memcpy,
-                "memmove" => Stub::Memmove,
-                "memset" => Stub::Memset,
-                other => {
-                    if let Some(w) = win32::lookup(import.dll, other) {
-                        Stub::Win32(w)
-                    } else if let Some(c) = crt::lookup(other) {
-                        Stub::Crt(c)
-                    } else {
-                        let state = uc.get_data_mut();
-                        state.missing.push(format!("{}!{other}", import.dll));
-                        Stub::Missing(state.missing.len() - 1)
-                    }
-                }
+            let name = import.name.as_ref();
+            let export = runtime.as_ref().and_then(|r| {
+                (import.dll.eq_ignore_ascii_case("msvcr110.dll") && !KEPT_NATIVE.contains(&name))
+                    .then(|| r.exports.get(name).copied())
+                    .flatten()
+            });
+            let stub = match name {
+                "malloc" => Some(Stub::Malloc),
+                "calloc" => Some(Stub::Calloc),
+                "free" => Some(Stub::Free),
+                "memcpy" => Some(Stub::Memcpy),
+                "memmove" => Some(Stub::Memmove),
+                "memset" => Some(Stub::Memset),
+                other => crt::lookup(other).map(Stub::Crt),
             };
-            let code = match stub {
-                Stub::Crt(c) => crt::code(c, u32::try_from(next_stub).expect("32-bit")),
-                Stub::Win32(w) => win32::code(w),
+            // FFX.exe's own KERNEL32 calls: the runtime's stand-ins
+            let win = stub
+                .is_none()
+                .then(|| win32::lookup(import.dll, name))
+                .flatten();
+            let stub = stub.or(win.map(|(api, _)| Stub::Win32(api)));
+            let stub = stub.unwrap_or_else(|| {
+                let state = uc.get_data_mut();
+                state.unstubbed.push(format!("{}!{name}", import.dll));
+                if export.is_none() {
+                    state.missing.push(format!("{}!{name}", import.dll));
+                }
+                Stub::Missing(state.unstubbed.len() - 1)
+            });
+            let code = match (stub, win) {
+                (Stub::Crt(c), _) => crt::code(c, u32::try_from(next_stub).expect("32-bit")),
+                (_, Some((_, n))) => win32::code(n),
                 _ => vec![0xc3],
             };
             uc.mem_write(next_stub, &code)?;
+            let bound = export.map_or(next_stub, u64::from);
             uc.mem_write(
                 u64::from(base) + import.offset as u64,
-                &u32::try_from(next_stub).expect("32-bit").to_le_bytes(),
+                &u32::try_from(bound).expect("32-bit").to_le_bytes(),
             )?;
-            uc.get_data_mut().stubs.insert(next_stub, stub);
-            uc.get_data_mut()
-                .imports
-                .insert(import.name.to_string(), next_stub);
+            let state = uc.get_data_mut();
+            state.stubs.insert(next_stub, stub);
+            if !matches!(stub, Stub::Missing(_)) {
+                state.natives.insert(name.to_string(), next_stub);
+            }
+            state.imports.insert(name.to_string(), bound);
+            state
+                .slots
+                .insert(name.to_string(), u64::from(base) + import.offset as u64);
             next_stub += 0x10;
         }
         let sentinel = uc.get_data().sentinel;
         uc.mem_write(sentinel, &[0xc3])?;
+        uc.get_data_mut().code_next = next_stub.max(stub_base + STUB_SIZE / 2);
 
         uc.add_code_hook(stub_base, stub_base + STUB_SIZE - 1, |uc, addr, _| {
             if addr == uc.get_data().sentinel {
@@ -385,6 +515,35 @@ impl Oracle {
                 true
             },
         )?;
+        if let Some(r) = runtime.as_ref().filter(|r| r.x87_exact) {
+            // int3 at each, one interrupt hook for all
+            let sites: HashMap<u64, x87::Op> = r.x87_sites.iter().copied().collect();
+            for &at in sites.keys() {
+                uc.mem_write(at, &[0xcc])?;
+            }
+            uc.add_intr_hook(move |uc, intno| {
+                let at = uc
+                    .reg_read(RegisterX86::EIP)
+                    .map_or(0, |e| e.wrapping_sub(1));
+                let r = match sites.get(&at) {
+                    Some(&op) if intno == 3 => x87_hook(uc, at, op),
+                    _ => Err(Error::Interrupt(intno, at)),
+                };
+                if let Err(e) = r {
+                    uc.get_data_mut().fault = Some(e);
+                    let _ = uc.emu_stop();
+                }
+            })?;
+        } else if let Some(r) = &runtime {
+            for &(at, op) in &r.x87_sites {
+                uc.add_code_hook(at, at, move |uc, addr, _| {
+                    if let Err(e) = x87_hook(uc, addr, op) {
+                        uc.get_data_mut().fault = Some(e);
+                        let _ = uc.emu_stop();
+                    }
+                })?;
+            }
+        }
         let mut o = Self { uc };
         // The game thread's x87 control word (53-bit precision, docs/porting.md);
         // the emulator starts at 64-bit, where chained float code rounds
@@ -394,6 +553,39 @@ impl Oracle {
                 .pages
                 .as_ref()
                 .map_or(GAME_FPU_CONTROL, |p| p.snapshot.fpu_control);
+        if let Some(r) = runtime {
+            o.uc.get_data_mut().exports.clone_from(&r.exports);
+            // DllMain(module, DLL_PROCESS_ATTACH, 0) on the game thread's x87
+            // setting; its work is not part of any later comparison.
+            o.set_fpu_control(GAME_FPU_CONTROL)?;
+            let ok = o
+                .call(r.entry, Conv::Stdcall, &[r.base, 1, 0])
+                .map_err(|e| Error::RuntimeInit(e.to_string()))?;
+            if ok.eax == 0 {
+                return Err(Error::RuntimeInit("DllMain returned FALSE".into()));
+            }
+            // An invalid-parameter handler that returns: a call the runtime
+            // rejects (sprintf_s into too small a buffer, ...) takes the
+            // CRT's error path (an empty string, -1, errno) instead of
+            // ending the process. The game installs none and would end;
+            // tests can still compare what the original does up to there.
+            let handler = o.alloc_code(&[0xc3])?;
+            if let Some(set) = o.runtime_export("_set_invalid_parameter_handler") {
+                o.call(set, Conv::Cdecl, &[handler])
+                    .map_err(|e| Error::RuntimeInit(e.to_string()))?;
+            }
+            // The runtime's own state (its image, and what it allocated to
+            // start: per-thread data with errno, locale, stdio tables) is
+            // left out of comparisons; later blocks start on a fresh page.
+            let s = o.uc.get_data_mut();
+            s.crt_heap.0 = s.crt_heap.0.next_multiple_of(PAGE);
+            let heap_start = s.crt_heap.1 - CRT_HEAP_SIZE;
+            s.private = vec![
+                u64::from(r.base)..u64::from(r.base) + r.size,
+                heap_start..s.crt_heap.0,
+            ];
+            o.clear_dirty();
+        }
         o.set_fpu_control(cw)?;
         Ok(o)
     }
@@ -441,6 +633,8 @@ impl Oracle {
     pub fn reset_heap(&mut self) {
         let s = self.uc.get_data_mut();
         s.heap_next = s.heap_base;
+        let heap = s.heap_base..s.heap_base + HEAP_SIZE;
+        s.heap_sizes.retain(|&a, _| !heap.contains(&u64::from(a)));
     }
 
     /// Allocates `len` zeroed bytes in emulated memory.
@@ -449,6 +643,23 @@ impl Oracle {
     /// Fails when the emulated heap is exhausted.
     pub fn alloc(&mut self, len: usize) -> Result<u32> {
         alloc(&mut self.uc, len as u64)
+    }
+
+    /// Copies machine code into executable emulated memory (a test's own
+    /// thunks); it stays until the oracle is dropped.
+    ///
+    /// # Errors
+    /// When the code area is full.
+    pub fn alloc_code(&mut self, code: &[u8]) -> Result<u32> {
+        let s = self.uc.get_data_mut();
+        let at = s.code_next;
+        let end = at + (code.len() as u64).next_multiple_of(16);
+        if end > s.sentinel {
+            return Err(Error::OutOfMemory);
+        }
+        s.code_next = end;
+        self.uc.mem_write(at, code)?;
+        Ok(u32::try_from(at).expect("32-bit"))
     }
 
     /// Copies `bytes` into newly allocated emulated memory.
@@ -525,7 +736,8 @@ impl Oracle {
         &self.uc.get_data().missing
     }
 
-    /// The stub an import is bound to (call it with [`Oracle::call`]).
+    /// What an import is bound to: the runtime DLL's export, or a native
+    /// stub (call it with [`Oracle::call`]).
     #[must_use]
     pub fn import_stub(&self, name: &str) -> Option<u32> {
         self.uc
@@ -533,6 +745,56 @@ impl Oracle {
             .imports
             .get(name)
             .map(|&a| u32::try_from(a).expect("32-bit stub"))
+    }
+
+    /// The native stub of an import, if it has one, whatever the import is
+    /// bound to.
+    #[must_use]
+    pub fn native_stub(&self, name: &str) -> Option<u32> {
+        self.uc
+            .get_data()
+            .natives
+            .get(name)
+            .map(|&a| u32::try_from(a).expect("32-bit stub"))
+    }
+
+    /// An export of the loaded runtime DLL (`MSVCR110.dll`), if loaded.
+    #[must_use]
+    pub fn runtime_export(&self, name: &str) -> Option<u32> {
+        self.uc.get_data().exports.get(name).copied()
+    }
+
+    /// Where the runtime DLL is loaded, if it is.
+    #[must_use]
+    pub fn runtime_base(&self) -> Option<u32> {
+        Some(self.uc.get_data().dll_base).filter(|&b| b != 0)
+    }
+
+    /// Rebinds an import's slot in `FFX.exe`'s import table to `target`
+    /// (a test's own code), or to its native stub when `target` is `None`.
+    /// Returns the previous binding.
+    ///
+    /// # Errors
+    /// When the import is unknown or has no native stub.
+    pub fn bind_import(&mut self, name: &str, target: Option<u32>) -> Result<u32> {
+        let s = self.uc.get_data();
+        let slot = *s
+            .slots
+            .get(name)
+            .ok_or_else(|| Error::UnstubbedImport(name.to_string()))?;
+        let to = match target {
+            Some(t) => t,
+            None => self
+                .native_stub(name)
+                .ok_or_else(|| Error::UnstubbedImport(name.to_string()))?,
+        };
+        let old = self.uc.mem_read_as_vec(slot, 4)?;
+        self.uc.mem_write(slot, &to.to_le_bytes())?;
+        self.uc
+            .get_data_mut()
+            .imports
+            .insert(name.to_string(), u64::from(to));
+        Ok(u32::from_le_bytes(old.try_into().expect("4 bytes")))
     }
 
     /// The oracle's own stack, which differs between runs by construction.
@@ -543,7 +805,8 @@ impl Oracle {
     }
 
     /// Bytes that differ between two oracles over the pages either wrote,
-    /// outside both stacks: `(address, ours, theirs)`.
+    /// outside both stacks and the runtime DLL's own state (its image and
+    /// the blocks it allocated to start): `(address, ours, theirs)`.
     ///
     /// # Errors
     /// On emulator errors.
@@ -554,10 +817,21 @@ impl Oracle {
             .copied()
             .collect();
         let (s1, s2) = (self.stack_range(), other.stack_range());
+        let private: Vec<_> = self
+            .uc
+            .get_data()
+            .private
+            .iter()
+            .chain(&other.uc.get_data().private)
+            .cloned()
+            .collect();
         let mut out = Vec::new();
         for p in pages {
             let a = p << 12;
-            if s1.contains(&a) || s2.contains(&a) {
+            if s1.contains(&a)
+                || s2.contains(&a)
+                || private.iter().any(|r| r.contains(&u64::from(a)))
+            {
                 continue;
             }
             let x = self.read(a, PAGE_BYTES)?;
@@ -628,6 +902,11 @@ impl Oracle {
         for (reg, _, value) in SAVED {
             self.uc.reg_write(reg, value)?;
         }
+        // The x87 stack is empty at a call, as the calling conventions
+        // require: drop what earlier calls returned in ST0.
+        let sw = self.uc.reg_read(RegisterX86::FPSW)?;
+        self.uc.reg_write(RegisterX86::FPSW, sw & !0x3800)?;
+        self.uc.reg_write(RegisterX86::FPTAG, 0xffff)?;
         self.uc.get_data_mut().fault = None;
 
         let run = self.uc.emu_start(u64::from(addr), 0, 0, MAX_INSTRUCTIONS);
@@ -707,6 +986,231 @@ impl ffx_bridge::Mem for Oracle {
     }
 }
 
+/// Which C runtime the emulated code calls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Runtime {
+    /// The game's own `MSVCR110.dll` from beside `FFX.exe`, loaded into
+    /// the emulator and initialised, its `KERNEL32` imports bound to
+    /// native stand-ins (`win32`). `FFX.exe`'s MSVCR110 imports call its
+    /// exports, except the heap and copy functions and `_wassert`. Without
+    /// the file this is [`Runtime::Native`].
+    #[default]
+    Dll,
+    /// Native stubs only (`crt`): faster to start, re-implemented
+    /// semantics. `FFX_ORACLE_RUNTIME=native` makes it the default.
+    Native,
+}
+
+impl Runtime {
+    /// [`Runtime::Native`] when `FFX_ORACLE_RUNTIME` is `native`, else
+    /// [`Runtime::Dll`].
+    #[must_use]
+    pub fn from_env() -> Self {
+        match std::env::var("FFX_ORACLE_RUNTIME") {
+            Ok(v) if v.eq_ignore_ascii_case("native") => Self::Native,
+            _ => Self::Dll,
+        }
+    }
+
+    /// The runtime DLL's bytes, for [`Runtime::Dll`] when it is beside the
+    /// executable.
+    fn dll_beside(self, exe: &Path) -> Option<Vec<u8>> {
+        if self == Self::Native {
+            return None;
+        }
+        let dir = exe.parent()?;
+        ["MSVCR110.dll", "msvcr110.dll"]
+            .iter()
+            .find_map(|n| std::fs::read(dir.join(n)).ok())
+    }
+}
+
+/// The loaded runtime DLL.
+struct LoadedDll {
+    base: u32,
+    size: u64,
+    entry: u32,
+    exports: HashMap<String, u32>,
+    /// Where the x87 instructions [`x87`] computes are, and whether those
+    /// are exactly the instruction starts.
+    x87_sites: Vec<(u64, x87::Op)>,
+    x87_exact: bool,
+}
+
+/// The x87 instructions [`x87`] computes in the game's `MSVCR110.dll`
+/// (11.0.51106.1: PE timestamp `0x5098858e`, checksum `0xe396c`), as RVAs
+/// of their first byte from a linear disassembly. These are patched to
+/// `int3` and trapped by one interrupt hook. Any other build of the DLL
+/// gets a code hook on every `0xd9 xx` pair that could be one, which is
+/// exact as well but makes the emulator about four times slower (a code
+/// hook costs at every translated instruction).
+const MSVCR110_X87: [u32; 22] = [
+    0x323f5, 0x32538, 0x3266d, 0x32793, 0x327c0, 0x327ca, 0x328ed, 0x329bb, 0x32b0a, 0x32c80,
+    0x32ecc, 0x32ef9, 0x32f03, 0x330ae, 0x330dd, 0x330e7, 0x3854a, 0x424e2, 0x447ff, 0x45e51,
+    0x46dda, 0xb182a,
+];
+
+/// The sections of a PE file laid out as in memory (unrelocated).
+fn lay_out(bytes: &[u8], pe: &PE) -> Result<Vec<u8>> {
+    let opt = pe
+        .header
+        .optional_header
+        .ok_or(goblin::error::Error::Malformed("no optional header".into()))?;
+    let size = u64::from(opt.windows_fields.size_of_image).next_multiple_of(PAGE);
+    let mut image = vec![0u8; usize::try_from(size).expect("image size")];
+    let headers = usize::try_from(opt.windows_fields.size_of_headers)
+        .unwrap_or(0)
+        .min(bytes.len());
+    image[..headers].copy_from_slice(&bytes[..headers]);
+    for section in &pe.sections {
+        let raw = section.pointer_to_raw_data as usize;
+        let len = (section.size_of_raw_data as usize).min(bytes.len().saturating_sub(raw));
+        let va = section.virtual_address as usize;
+        let len = len.min(image.len().saturating_sub(va));
+        image[va..va + len].copy_from_slice(&bytes[raw..raw + len]);
+    }
+    Ok(image)
+}
+
+/// Maps `MSVCR110.dll` into a free range, relocated, its imports bound to
+/// `win32` stubs (or missing ones that stop the emulation, named
+/// `KERNEL32.dll!X (MSVCR110)`).
+fn load_runtime(
+    uc: &mut Unicorn<'static, State>,
+    bytes: &[u8],
+    taken: &mut Vec<(u64, u64)>,
+    next_stub: &mut u64,
+) -> Result<LoadedDll> {
+    let pe = PE::parse(bytes)?;
+    let mut image = lay_out(bytes, &pe)?;
+    let base = gap(taken, image.len() as u64)?;
+    let base32 = u32::try_from(base).expect("32-bit");
+    let preferred =
+        u32::try_from(pe.image_base).map_err(|_| goblin::error::Error::Malformed("base".into()))?;
+    relocate(&mut image, &pe, base32.wrapping_sub(preferred));
+    uc.mem_map(base, image.len() as u64, Prot::ALL)?;
+    uc.mem_write(base, &image)?;
+    uc.get_data_mut().dll_base = base32;
+    for import in &pe.imports {
+        let name = import.name.as_ref();
+        let (stub, code) = if let Some((api, n)) = win32::lookup(import.dll, name) {
+            (Stub::Win32(api), win32::code(n))
+        } else {
+            let state = uc.get_data_mut();
+            state
+                .unstubbed
+                .push(format!("{}!{name} (MSVCR110)", import.dll));
+            (Stub::Missing(state.unstubbed.len() - 1), vec![0xc3])
+        };
+        uc.mem_write(*next_stub, &code)?;
+        uc.mem_write(
+            base + import.offset as u64,
+            &u32::try_from(*next_stub).expect("32-bit").to_le_bytes(),
+        )?;
+        uc.get_data_mut().stubs.insert(*next_stub, stub);
+        *next_stub += 0x10;
+    }
+    let exports = pe
+        .exports
+        .iter()
+        .filter(|e| e.reexport.is_none())
+        .filter_map(|e| Some((e.name?.to_string(), base32 + u32::try_from(e.rva).ok()?)))
+        .collect();
+    let entry = base32
+        + pe.header
+            .optional_header
+            .map_or(0, |o| o.standard_fields.address_of_entry_point);
+    let known = pe.header.coff_header.time_date_stamp == 0x5098_858e
+        && pe
+            .header
+            .optional_header
+            .is_some_and(|o| o.windows_fields.check_sum == 0x000e_396c);
+    let listed: Option<Vec<(u64, x87::Op)>> = known
+        .then(|| {
+            MSVCR110_X87
+                .iter()
+                .map(|&rva| {
+                    let i = rva as usize;
+                    (image.get(i) == Some(&0xd9))
+                        .then(|| x87::Op::decode(*image.get(i + 1)?))
+                        .flatten()
+                        .map(|op| (base + u64::from(rva), op))
+                })
+                .collect()
+        })
+        .flatten();
+    let x87_exact = listed.is_some();
+    let mut x87_sites = listed.unwrap_or_default();
+    for section in pe.sections.iter().filter(|_| !x87_exact) {
+        if section.characteristics & 0x2000_0000 == 0 {
+            continue; // not executable
+        }
+        let va = section.virtual_address as usize;
+        let end = (va + section.virtual_size as usize).min(image.len());
+        for i in va..end.saturating_sub(1) {
+            if image[i] == 0xd9
+                && let Some(op) = x87::Op::decode(image[i + 1])
+            {
+                x87_sites.push((base + i as u64, op));
+            }
+        }
+    }
+    Ok(LoadedDll {
+        base: base32,
+        size: image.len() as u64,
+        entry,
+        exports,
+        x87_sites,
+        x87_exact,
+    })
+}
+
+/// Runs one of the x87 instructions [`x87`] computes in place of the
+/// emulator's own version, then continues after it.
+fn x87_hook(uc: &mut Unicorn<State>, addr: u64, op: x87::Op) -> Result<()> {
+    let st = |uc: &Unicorn<State>, r| -> Result<x87::Ext> {
+        let v = uc.reg_read_long(r)?;
+        let mut b = [0u8; 10];
+        b.copy_from_slice(&v[..10]);
+        Ok(x87::Ext::from_bytes(&b))
+    };
+    let (st0, st1) = (st(uc, RegisterX86::ST0)?, st(uc, RegisterX86::ST1)?);
+    let cw = u16::try_from(uc.reg_read(RegisterX86::FPCW)? & 0xffff).expect("16 bits");
+    let mut sw = u16::try_from(uc.reg_read(RegisterX86::FPSW)? & 0xffff).expect("16 bits");
+    let e = x87::execute(op, st0, st1, cw);
+    // condition codes C0, C1, C2 (bits 8..10) and C3 (bit 14)
+    for (k, bit) in [8u16, 9, 10, 14].into_iter().enumerate() {
+        if let Some(v) = e.c[k] {
+            sw = (sw & !(1 << bit)) | (u16::from(v) << bit);
+        }
+    }
+    sw |= e.flags;
+    let top = (sw >> 11) & 7;
+    let mut tag = u16::try_from(uc.reg_read(RegisterX86::FPTAG)? & 0xffff).expect("16 bits");
+    let set_top = |sw: u16, t: u16| (sw & !0x3800) | ((t & 7) << 11);
+    if e.push {
+        let t = top.wrapping_sub(1) & 7;
+        uc.reg_write(RegisterX86::FPSW, u64::from(set_top(sw, t)))?;
+        tag &= !(3 << (2 * t)); // the new ST0 is in use
+        uc.reg_write(RegisterX86::FPTAG, u64::from(tag))?;
+    } else {
+        uc.reg_write(RegisterX86::FPSW, u64::from(sw))?;
+    }
+    if let Some(v) = e.st0 {
+        uc.reg_write_long(RegisterX86::ST0, &v.to_bytes())?;
+    }
+    if let Some(v) = e.st1 {
+        uc.reg_write_long(RegisterX86::ST1, &v.to_bytes())?;
+    }
+    if e.pop {
+        tag |= 3 << (2 * top); // the old ST0 is empty
+        uc.reg_write(RegisterX86::FPTAG, u64::from(tag))?;
+        uc.reg_write(RegisterX86::FPSW, u64::from(set_top(sw, top + 1)))?;
+    }
+    uc.reg_write(RegisterX86::EIP, addr + 2)?;
+    Ok(())
+}
+
 /// Applies the image's base relocations for a load `delta` away.
 fn relocate(image: &mut [u8], pe: &PE, delta: u32) {
     let Some(dir) = pe
@@ -783,6 +1287,13 @@ fn thread_block(uc: &mut Unicorn<'static, State>, at: u64, stack_base: u64) -> R
     uc.reg_write_long(RegisterX86::GDTR, &gdtr)?;
     let cr0 = uc.reg_read(RegisterX86::CR0)?;
     uc.reg_write(RegisterX86::CR0, cr0 | 1)?;
+    // SSE on, as an OS enables it (OSFXSR, OSXMMEXCPT)
+    let cr4 = uc.reg_read(RegisterX86::CR4)?;
+    uc.reg_write(RegisterX86::CR4, cr4 | 0x600)?;
+    // MXCSR as Windows starts a thread: all exceptions masked, round to
+    // nearest (the emulator starts at 0, which made MSVCR110 leave its
+    // SSE2 math for the x87 paths)
+    uc.reg_write(RegisterX86::MXCSR, 0x1f80)?;
     uc.reg_write(RegisterX86::CS, 0x10)?;
     for seg in [RegisterX86::SS, RegisterX86::DS, RegisterX86::ES] {
         uc.reg_write(seg, 0x18)?;
@@ -835,7 +1346,8 @@ fn map_from_snapshot(uc: &mut Unicorn<State>, addr: u64) -> bool {
 }
 
 /// An x87 80-bit extended value (little-endian bytes) as f64.
-fn f80_to_f64(b: &[u8]) -> f64 {
+#[must_use]
+pub fn f80_to_f64(b: &[u8]) -> f64 {
     if b.len() < 10 {
         return f64::NAN;
     }
@@ -868,6 +1380,10 @@ fn alloc(uc: &mut Unicorn<State>, len: u64) -> Result<u32> {
         return Err(Error::OutOfMemory);
     }
     state.heap_next = end;
+    let a32 = u32::try_from(addr).expect("32-bit heap");
+    state
+        .heap_sizes
+        .insert(a32, u32::try_from(len).unwrap_or(u32::MAX));
     uc.mem_write(
         addr,
         &vec![0; usize::try_from(end - addr).expect("heap size")],
@@ -901,8 +1417,8 @@ fn run_stub(uc: &mut Unicorn<State>, stub: Stub, addr: u64) -> Result<()> {
             dst
         }
         Stub::Crt(c) => crt::run(uc, c, u32::try_from(addr).expect("32-bit stub"))?,
-        Stub::Win32(w) => win32::run(uc, w)?,
-        Stub::Missing(i) => return Err(Error::UnstubbedImport(uc.get_data().missing[i].clone())),
+        Stub::Win32(api) => win32::run(uc, api)?,
+        Stub::Missing(i) => return Err(Error::UnstubbedImport(uc.get_data().unstubbed[i].clone())),
     };
     uc.reg_write(RegisterX86::EAX, u64::from(ret))?;
     Ok(())
@@ -926,206 +1442,6 @@ mod tests {
         let mut t = vec![(0x1000_0000, 0x1100_0000), (0x1180_0000, 0x1200_0000)];
         assert_eq!(gap(&mut t, 0x80_0000).unwrap(), 0x1100_0000);
         assert_eq!(gap(&mut t, 0x10_0000).unwrap(), 0x1200_0000);
-    }
-}
-
-/// KERNEL32's threading and synchronisation imports for one thread: waits
-/// are satisfied at once (`WAIT_OBJECT_0`), creations hand out fresh
-/// handles, the `Interlocked*` functions are plain read-modify-writes, and
-/// sleeps return. Semaphores keep their count so `ReleaseSemaphore` reports
-/// the previous one. These stay native whatever runs the C runtime, so they
-/// live apart from `crt`. All are stdcall; each stub's code is its `ret n`.
-mod win32 {
-    use super::{Result, State, crt};
-    use std::collections::HashMap;
-    use unicorn_engine::{RegisterX86, Unicorn};
-
-    /// One KERNEL32 import.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub(super) enum Win32 {
-        WaitForSingleObject,
-        WaitForSingleObjectEx,
-        ReleaseMutex,
-        CreateMutex,
-        CreateEvent,
-        CreateSemaphore,
-        SetEvent,
-        ResetEvent,
-        ReleaseSemaphore,
-        CloseHandle,
-        InterlockedCompareExchange,
-        InterlockedExchange,
-        InterlockedExchangeAdd,
-        InterlockedIncrement,
-        InterlockedDecrement,
-        Sleep,
-        SleepEx,
-        GetLastError,
-        SetLastError,
-    }
-
-    /// The handles handed out and the semaphores' counts.
-    #[derive(Debug, Default)]
-    pub(super) struct Objects {
-        handles: u32,
-        last_error: u32,
-        semaphores: HashMap<u32, i32>,
-    }
-
-    /// First handle value (small, aligned like the kernel's).
-    const FIRST_HANDLE: u32 = 0x100;
-
-    /// The stub for a `dll!name` import, KERNEL32 only.
-    pub(super) fn lookup(dll: &str, name: &str) -> Option<Win32> {
-        if !dll.eq_ignore_ascii_case("KERNEL32.dll") {
-            return None;
-        }
-        Some(match name {
-            "WaitForSingleObject" => Win32::WaitForSingleObject,
-            "WaitForSingleObjectEx" => Win32::WaitForSingleObjectEx,
-            "ReleaseMutex" => Win32::ReleaseMutex,
-            "CreateMutexW" | "CreateMutexA" => Win32::CreateMutex,
-            "CreateEventW" | "CreateEventA" => Win32::CreateEvent,
-            "CreateSemaphoreW" | "CreateSemaphoreA" => Win32::CreateSemaphore,
-            "SetEvent" => Win32::SetEvent,
-            "ResetEvent" => Win32::ResetEvent,
-            "ReleaseSemaphore" => Win32::ReleaseSemaphore,
-            "CloseHandle" => Win32::CloseHandle,
-            "InterlockedCompareExchange" => Win32::InterlockedCompareExchange,
-            "InterlockedExchange" => Win32::InterlockedExchange,
-            "InterlockedExchangeAdd" => Win32::InterlockedExchangeAdd,
-            "InterlockedIncrement" => Win32::InterlockedIncrement,
-            "InterlockedDecrement" => Win32::InterlockedDecrement,
-            "Sleep" => Win32::Sleep,
-            "SleepEx" => Win32::SleepEx,
-            "GetLastError" => Win32::GetLastError,
-            "SetLastError" => Win32::SetLastError,
-            _ => return None,
-        })
-    }
-
-    /// The argument words each takes (the stub's `ret n`).
-    const fn args(w: Win32) -> u8 {
-        match w {
-            Win32::GetLastError => 0,
-            Win32::ReleaseMutex
-            | Win32::SetEvent
-            | Win32::ResetEvent
-            | Win32::CloseHandle
-            | Win32::InterlockedIncrement
-            | Win32::InterlockedDecrement
-            | Win32::Sleep
-            | Win32::SetLastError => 1,
-            Win32::WaitForSingleObject
-            | Win32::InterlockedExchange
-            | Win32::InterlockedExchangeAdd
-            | Win32::SleepEx => 2,
-            Win32::WaitForSingleObjectEx
-            | Win32::CreateMutex
-            | Win32::ReleaseSemaphore
-            | Win32::InterlockedCompareExchange => 3,
-            Win32::CreateEvent | Win32::CreateSemaphore => 4,
-        }
-    }
-
-    /// The code at the stub's address: `ret n` (`ret` for no arguments).
-    pub(super) fn code(w: Win32) -> Vec<u8> {
-        match args(w) {
-            0 => vec![0xc3],
-            n => vec![0xc2, 4 * n, 0],
-        }
-    }
-
-    fn word(uc: &mut Unicorn<State>, p: u32) -> Result<u32> {
-        let b = crt::read(uc, p, 4)?;
-        Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-    }
-
-    fn set_word(uc: &mut Unicorn<State>, p: u32, v: u32) -> Result<()> {
-        crt::write(uc, p, &v.to_le_bytes())
-    }
-
-    fn fresh(uc: &mut Unicorn<State>) -> u32 {
-        let o = &mut uc.get_data_mut().win32;
-        let h = FIRST_HANDLE + 4 * o.handles;
-        o.handles += 1;
-        h
-    }
-
-    /// Runs the import with the caller's arguments; its `eax`.
-    pub(super) fn run(uc: &mut Unicorn<State>, w: Win32) -> Result<u32> {
-        let esp = u32::try_from(uc.reg_read(RegisterX86::ESP)?).expect("32-bit");
-        let mut a = [0u32; 4];
-        for (k, v) in (0u32..).zip(a.iter_mut()).take(usize::from(args(w))) {
-            *v = word(uc, esp + 4 + 4 * k)?;
-        }
-        Ok(match w {
-            Win32::WaitForSingleObject | Win32::WaitForSingleObjectEx => {
-                if let Some(n) = uc.get_data_mut().win32.semaphores.get_mut(&a[0])
-                    && *n > 0
-                {
-                    *n -= 1;
-                }
-                0 // WAIT_OBJECT_0
-            }
-            Win32::CreateMutex | Win32::CreateEvent => fresh(uc),
-            Win32::CreateSemaphore => {
-                let h = fresh(uc);
-                uc.get_data_mut()
-                    .win32
-                    .semaphores
-                    .insert(h, a[1].cast_signed());
-                h
-            }
-            Win32::ReleaseMutex | Win32::SetEvent | Win32::ResetEvent => 1,
-            Win32::ReleaseSemaphore => {
-                let objects = &mut uc.get_data_mut().win32;
-                let count = objects.semaphores.entry(a[0]).or_insert(0);
-                let previous = *count;
-                *count = count.wrapping_add(a[1].cast_signed());
-                if a[2] != 0 {
-                    set_word(uc, a[2], previous.cast_unsigned())?;
-                }
-                1
-            }
-            Win32::CloseHandle => {
-                uc.get_data_mut().win32.semaphores.remove(&a[0]);
-                1
-            }
-            Win32::InterlockedCompareExchange => {
-                let old = word(uc, a[0])?;
-                if old == a[2] {
-                    set_word(uc, a[0], a[1])?;
-                }
-                old
-            }
-            Win32::InterlockedExchange => {
-                let old = word(uc, a[0])?;
-                set_word(uc, a[0], a[1])?;
-                old
-            }
-            Win32::InterlockedExchangeAdd => {
-                let old = word(uc, a[0])?;
-                set_word(uc, a[0], old.wrapping_add(a[1]))?;
-                old
-            }
-            Win32::InterlockedIncrement | Win32::InterlockedDecrement => {
-                let old = word(uc, a[0])?;
-                let new = if w == Win32::InterlockedIncrement {
-                    old.wrapping_add(1)
-                } else {
-                    old.wrapping_sub(1)
-                };
-                set_word(uc, a[0], new)?;
-                new
-            }
-            Win32::Sleep | Win32::SleepEx => 0,
-            Win32::GetLastError => uc.get_data().win32.last_error,
-            Win32::SetLastError => {
-                uc.get_data_mut().win32.last_error = a[0];
-                0
-            }
-        })
     }
 }
 
@@ -1194,6 +1510,8 @@ mod crt {
         /// returning this.
         Lock(u8, u32),
         GetCurrentThreadId,
+        /// `_wassert(message, file, line)`: stops with [`Error::Assertion`].
+        Wassert,
     }
 
     /// `_ctype` bits.
@@ -1267,6 +1585,7 @@ mod crt {
             "InitializeCriticalSectionAndSpinCount" => Crt::Lock(2, 1),
             "InitializeCriticalSectionEx" => Crt::Lock(3, 1),
             "GetCurrentThreadId" => Crt::GetCurrentThreadId,
+            "_wassert" => Crt::Wassert,
             _ => return None,
         })
     }
@@ -1371,10 +1690,12 @@ mod crt {
 
     fn ctype(c: u8) -> u16 {
         match c {
-            b'A'..=b'F' => UPPER | HEX | ALPHA,
-            b'G'..=b'Z' => UPPER | ALPHA,
-            b'a'..=b'f' => LOWER | HEX | ALPHA,
-            b'g'..=b'z' => LOWER | ALPHA,
+            // the "C" table has no separate alpha bit for letters, so
+            // isalpha('a') is 2 (checked against MSVCR110.dll)
+            b'A'..=b'F' => UPPER | HEX,
+            b'G'..=b'Z' => UPPER,
+            b'a'..=b'f' => LOWER | HEX,
+            b'g'..=b'z' => LOWER,
             b'0'..=b'9' => DIGIT | HEX,
             b' ' => SPACE | BLANK,
             0x09..=0x0d => SPACE | CONTROL,
@@ -2127,8 +2448,11 @@ mod crt {
                 let f = cstr(uc, fmt)?;
                 let s = format(uc, &f, &mut Args { at: esp + 16 })?;
                 if s.len() >= size as usize {
-                    // the invalid-parameter path: an empty string, -1
+                    // the invalid-parameter path: what fits (size - 1 bytes
+                    // and a NUL) is written, then the first byte cleared;
+                    // -1 (as MSVCR110.dll does, with a returning handler)
                     if size > 0 {
+                        put_cstr(uc, buf, &s[..size as usize - 1])?;
                         write(uc, buf, &[0])?;
                     }
                     u32::MAX
@@ -2220,6 +2544,24 @@ mod crt {
             }
             Crt::Lock(_, r) => r,
             Crt::GetCurrentThreadId => 1,
+            Crt::Wassert => {
+                let mut text = |p: u32| -> Result<String> {
+                    let mut w = Vec::new();
+                    for k in 0..4096u32 {
+                        let b = read(uc, p.wrapping_add(2 * k), 2)?;
+                        match u16::from_le_bytes([b[0], b[1]]) {
+                            0 => break,
+                            c => w.push(c),
+                        }
+                    }
+                    Ok(String::from_utf16_lossy(&w))
+                };
+                return Err(Error::Assertion {
+                    message: text(a[0])?,
+                    file: text(a[1])?,
+                    line: a[2],
+                });
+            }
         })
     }
 
@@ -2273,7 +2615,7 @@ mod crt {
 
         #[test]
         fn classes() {
-            assert_eq!(ctype(b'A') & (ALPHA | UPPER | LOWER), 0x101);
+            assert_eq!(ctype(b'A') & (ALPHA | UPPER | LOWER), 1);
             assert_eq!(ctype(b'7') & DIGIT, DIGIT);
             assert_eq!(icmp(b"ABC", b"abd"), -1);
         }

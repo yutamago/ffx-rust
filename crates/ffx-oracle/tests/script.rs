@@ -225,6 +225,32 @@ fn clear_stacks(a: &mut Oracle, b: &mut Oracle) {
     }
 }
 
+/// The emulated VU0 registers (`g_Vu0_Q` `0x00c8f788` and the VF registers
+/// from `0x00c8f790`): battle helpers load vectors with an unwritten `w`
+/// into them (`0x007a9150`, behind `0x700c`/`0x7085`), whose stack
+/// leftovers differ between a native the test calls and the same helper
+/// called from Rust, one frame higher. They are scratch registers that
+/// every use reloads.
+const EE_GPR: std::ops::Range<u32> = 0x00c8_f788..0x00c8_f890;
+
+/// [`no_diff`], leaving out [`EE_GPR`].
+fn native_no_diff(a: &mut Oracle, b: &mut Oracle, what: &str) {
+    let stack = a.stack_range();
+    let ee = a.rebase(EE_GPR.start)..a.rebase(EE_GPR.end);
+    let d: Vec<_> = a
+        .diff(b)
+        .unwrap()
+        .into_iter()
+        .filter(|&(at, _, _)| {
+            let w = at & !3;
+            let on_stack =
+                stack.contains(&Mem::read::<u32>(a, w)) && stack.contains(&Mem::read::<u32>(b, w));
+            !(ee.contains(&at) || on_stack)
+        })
+        .collect();
+    assert_eq!(d, [], "{what}: memory");
+}
+
 /// Writes `value` at `addr` in both oracles.
 fn poke<T: ffx_bridge::Value>(a: &mut Oracle, b: &mut Oracle, addr: u32, value: T) {
     Mem::write(a, addr, value);
@@ -1506,7 +1532,7 @@ const ZEROED: [(u32, &[u8]); 3] = [
     (0x0086_ea8a, &[0x31, 0xf6, 0x90]),
 ];
 
-const UNINIT: [Uninit; 3] = [
+const UNINIT: [Uninit; 6] = [
     // 0x007bb6a0 (Native_CamSetPos and its "ref" twin) hands Cam_SetPos a
     // vector of three popped floats whose w ([ebp-8]) it never writes;
     // Cam_SetPos copies it into the camera and the VU0 registers. Site: the
@@ -1529,6 +1555,46 @@ const UNINIT: [Uninit; 3] = [
             0xc7, 0x45, 0xf8, 0x00, 0x00, 0x00, 0x00, 0xa1, 0, 0, 0, 0, 0xc3,
         ],
         fixup: Some((8, 0x00c6_13d8)),
+    },
+    // MsGetTargetDist (0x007a9a40, behind Native_702e) takes the target
+    // and actor positions into [ebp-0x28..-0x8] and reads words of them
+    // the callees leave unwritten. Same site; the stub zeroes the nine
+    // words: push edi; lea edi, [ebp-0x28]; xor eax, eax; push ecx;
+    // mov ecx, 9; rep stosd; pop ecx; pop edi; mov eax, [cookie]; ret
+    Uninit {
+        site: 0x007a_9a46,
+        site_len: 5,
+        stub: &[
+            0x57, 0x8d, 0x7d, 0xd8, 0x31, 0xc0, 0x51, 0xb9, 0x09, 0, 0, 0, 0xf3, 0xab, 0x59, 0x5f,
+            0xa1, 0, 0, 0, 0, 0xc3,
+        ],
+        fixup: Some((17, 0x00c6_13d8)),
+    },
+    // Native_702c (0x007a45c0) reads the pair 0x00794d20 fills at
+    // [ebp-0x34]/[ebp-0x30] (unwritten for some actors) into the actor's
+    // +0x490/+0x494; the stub zeroes [ebp-0x54..-0x8], 19 words, the same
+    // way as the one above.
+    Uninit {
+        site: 0x007a_45c6,
+        site_len: 5,
+        stub: &[
+            0x57, 0x8d, 0x7d, 0xac, 0x31, 0xc0, 0x51, 0xb9, 0x13, 0, 0, 0, 0xf3, 0xab, 0x59, 0x5f,
+            0xa1, 0, 0, 0, 0, 0xc3,
+        ],
+        fixup: Some((17, 0x00c6_13d8)),
+    },
+    // MsSetChrDirTarget (0x00795eb0, behind Native_7003/7006 and others)
+    // stores the angle 0x00794d20 leaves at [ebp-0x18] into the actor's
+    // +0x490, unwritten for some targets; the stub zeroes [ebp-0x1c..-0x8],
+    // 6 words.
+    Uninit {
+        site: 0x0079_5eb6,
+        site_len: 5,
+        stub: &[
+            0x57, 0x8d, 0x7d, 0xe4, 0x31, 0xc0, 0x51, 0xb9, 0x06, 0, 0, 0, 0xf3, 0xab, 0x59, 0x5f,
+            0xa1, 0, 0, 0, 0, 0xc3,
+        ],
+        fixup: Some((17, 0x00c6_13d8)),
     },
     // Light_Set (0x00836520, Native_LightSet's) hands Sg_LightSetColor and
     // Sg_LightSetDir a vector at [ebp-0x1c] whose w ([ebp-0x10]) it never
@@ -2409,7 +2475,7 @@ fn native_special_cases_match_the_original() {
         };
         let rb = f(&mut Run(b), w, args, s);
         assert_eq!(ra.eax, rb, "{what}: EAX");
-        no_diff(a, b, what);
+        native_no_diff(a, b, what);
     };
     let int = |x: u32| (stack::INT, x);
     let map = native_msg::CURRENT_MAP_NO.sym;
@@ -2524,7 +2590,7 @@ fn native_case(a: &mut Oracle, b: &mut Oracle, w: u32, sym: u32, push: &[(u8, u3
         }
         None => panic!("{what}: not in find"),
     }
-    no_diff(a, b, what);
+    native_no_diff(a, b, what);
 }
 
 /// The move and turn starts on every mode with set-up blocks, the message
@@ -2717,6 +2783,89 @@ fn move_and_message_cases_match_the_original() {
             native_case(a, b, w, end, &[], &format!("wait end {end:#x} state {st}"));
         }
     }
+    // the 0x0267 choice poll on each state
+    for st in [0u16, 1, 2, 3, 4] {
+        let win = v::atel_get_mes_win_work(b, 1);
+        native_case(a, b, w, 0x0085_9710, &[int(1)], "0x0267 start");
+        poke(a, b, win + 0x14, st);
+        native_case(
+            a,
+            b,
+            w,
+            0x0085_a540,
+            &[],
+            &format!("0x0267 poll state {st}"),
+        );
+        native_case(
+            a,
+            b,
+            w,
+            0x0085_a620,
+            &[],
+            &format!("0x0267 result state {st}"),
+        );
+    }
+    // the voice standby and start, armed and not, in and out of debug mode
+    for mode in [0u32, 1] {
+        set(a, b, native::DEBUG_MODE.sym, mode);
+        for (cnt, left, hold) in [(0u32, 2u32, 0u32), (3, 0, 0), (0, 0, 2)] {
+            for c in [0x0132_5acc_u32, 0x0132_5af4, 0x0132_5af8] {
+                set(a, b, c, cnt);
+            }
+            set(a, b, 0x012f_b808, hold);
+            for (start, poll, end, f, l) in [
+                (
+                    0x0085_cd00u32,
+                    0x0085_cec0u32,
+                    0x0085_d360u32,
+                    0x0132_5ad4u32,
+                    0x0132_5ad0u32,
+                ),
+                (
+                    0x0085_d6b0,
+                    0x0085_d9d0,
+                    0x0085_de80,
+                    0x0132_5adc,
+                    0x0132_5ad8,
+                ),
+            ] {
+                native_case(
+                    a,
+                    b,
+                    w,
+                    start,
+                    &[int(7)],
+                    &format!("voice start {start:#x} debug {mode}"),
+                );
+                for armed in [1u32, 0] {
+                    set(a, b, f, armed);
+                    set(a, b, l, left);
+                    for k in 0..3 {
+                        native_case(
+                            a,
+                            b,
+                            w,
+                            poll,
+                            &[],
+                            &format!(
+                                "voice poll {poll:#x} debug {mode} armed {armed} left {left} hold {hold} call {k}"
+                            ),
+                        );
+                    }
+                }
+                native_case(
+                    a,
+                    b,
+                    w,
+                    end,
+                    &[],
+                    &format!("voice end {end:#x} debug {mode}"),
+                );
+            }
+        }
+    }
+    set(a, b, native::DEBUG_MODE.sym, 0);
+    set(a, b, 0x012f_b808, 0);
     native_case(
         a,
         b,
@@ -2798,6 +2947,7 @@ fn move_and_message_cases_match_the_original() {
 /// ones) and all memory. A call the original cannot finish in the emulator
 /// (an import with no stub) is skipped and counted.
 #[test]
+#[allow(clippy::too_many_lines)] // the loop over every native and its checks
 fn natives_match_the_original() {
     use ffx_script::vm::bridge::native::{self, Native, PORTED};
     let (Some(dir), Some(snap)) = (
@@ -2826,6 +2976,7 @@ fn natives_match_the_original() {
                 .chain(&ffx_script::vm::bridge::native_cam::PORTED)
                 .chain(&ffx_script::vm::bridge::native_msg::PORTED)
                 .chain(&ffx_script::vm::bridge::native_move::PORTED)
+                .chain(&ffx_script::vm::bridge::native_btl::PORTED)
             {
                 let (a, b) = pair.get_or_insert_with(|| fresh_run_pair(&pages, &exe, c));
                 let w = v::atel_get_basic_work(b, i32::try_from(i).unwrap());
@@ -2878,7 +3029,7 @@ fn natives_match_the_original() {
                     }
                     None => panic!("{what}: not in find"),
                 }
-                no_diff(a, b, &what);
+                native_no_diff(a, b, &what);
                 compared += 1;
                 seen.insert(sym);
             }
@@ -2890,6 +3041,7 @@ fn natives_match_the_original() {
         .chain(&ffx_script::vm::bridge::native_cam::PORTED)
         .chain(&ffx_script::vm::bridge::native_msg::PORTED)
         .chain(&ffx_script::vm::bridge::native_move::PORTED)
+        .chain(&ffx_script::vm::bridge::native_btl::PORTED)
         .filter(|(sym, _)| !seen.contains(sym))
         .map(|(sym, _)| format!("{sym:#x}"))
         .collect();

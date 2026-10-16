@@ -621,6 +621,45 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   is the x87's `atan2(sqrt(1 - x²), x)` in both oracles, and `_CIfmod` is
   the oracle's `fprem` stub.
 
+## Random vectors, the pmcom environment and the renderer's bounds (round 12)
+
+- `KeVecAddRandom` (`0x00766f10`) adds `op_random(range[i])` to x, y, z
+  (times `op_random_p(1.0)` when its third argument is set, the first
+  draw stored as a `double`); `KeVecScaleRandom` (`0x00766f70`) adds
+  `v[i] * s - v[i]` for `s = r + r` or `r + r'` (`op_random(1.0)` draws,
+  `s` stored as `f32`). Both read the draws from `ST0`, so the port calls
+  `op_random` through the float path (`FArgs::Stack`) and keeps the
+  original's rounding points.
+- The pmcom environment: `pppInitPmcomEnv` (`0x00760610`) resets the
+  arena pointers and calls `pppInitEnv(0x010d4cfc, 0, 0x00fd24f0,
+  0x100000)`; `pppFreeAllEnvObjects` (`0x007605d0`) frees the object
+  blocks at `0x00d4e390` (0x80 bytes, count `0x00d4b4cc`) in it.
+  `KeResampleRgbaToRgb` (`0x00760640`) scales an RGBA image to BGR
+  bytes, filling the destination bottom row first; its last row lands
+  one row before the buffer, one pixel to the right.
+- `KeThBP_Init` (`0x00763030`, the Switch build's name: it calls
+  `set_ptr32` seven times, as this does) sets up a `KeThBP` object with
+  its GIF tag at `+0x40 + 0x30n`.
+- Sphere grid: `AbmapResetCursorCamera` (`0x00a5b030`) puts the cursor
+  256 units from the current character (`+0x115bc`), 32 below it, then
+  pulses it; `AbmapStoreSave` (`0x00a5bb70`) copies node bytes, link
+  flags and the characters' `u16`s into `MsGetSaveAbilityMap`'s block;
+  `AbmapScaledLevelValue` (`0x00a5cbe0`) is `ftol(T[i] * (level + 50) *
+  T[j])` for `T` = 1, 1, 1.5, 3, 5 (100000 for `j` 4).
+- `rcbgSceneLoadTextCameraCalcRef` (`0x0093b110`, the Switch name in its
+  sorted place before `rcbgSceneLoadTextModel`): the reference point
+  `+0x78 = +0x68 + +0xf4 * row 2` of the rotation built from the degrees
+  at `+0x98`.. and the direction `+0x88 = -row 1`. It returns
+  `FFXVu0RotMatrixZ`'s `eax`, the address of its stack matrix; the test
+  leaves that out.
+- Renderer: `yiRender_addDirectBlock` (`0x0090c120`) aligns the data
+  pointer to 64 bytes and adds a ref tag to a VIF FLUSH, STMOD, STCYCL,
+  DIRECTHL block; `yiTriContainsXZ` (`0x00910270`) tests a point against
+  a triangle on x, z (two edge products stored as `f32`, their sum kept
+  at 53 bits); `yiBoundsMinMax` (`0x009130f0`) starts from ±FLT_MAX.
+  `yiImage_dumpall` (`0x00918680`) only prints, through `dbgPrintf` (a
+  bare `ret`).
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

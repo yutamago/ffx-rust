@@ -3,6 +3,12 @@
 
 use ffx_bridge::Global;
 
+/// Degrees to radians (`f64`, `.rdata`, `0x00b11330`).
+pub const DEG: Global<f64> = Global::new(0x00b1_1330);
+/// `FFXVu0RotMatrixX/Y/Z(dst, src, angle)` (`0x006ed780`, `0x006ed7c0`,
+/// `0x006ed800`).
+pub const VU0_ROT: [u32; 3] = [0x006e_d780, 0x006e_d7c0, 0x006e_d800];
+
 /// Offsets in a scene (`rcbgSceneInit`, `0x110` bytes).
 pub mod layout {
     /// Size.
@@ -82,7 +88,7 @@ pub mod bridge {
     use ffx_bridge::Mem;
 
     use super::{CHUNK_TAGS, layer, layout};
-    use crate::model;
+    use crate::{model, x87};
 
     /// `rcbgSceneInit(scene)` (`0x009209e0`).
     pub fn rcbg_scene_init(mem: &mut impl Mem, s: u32) {
@@ -542,5 +548,39 @@ pub mod bridge {
             let o = rcbg_scene_get_object(mem, s, kind, 0);
             rcbg_scene_del_object(mem, s, o, call);
         }
+    }
+
+    /// `rcbgSceneLoadTextCameraCalcRef(cam, work, call)` (`0x0093b110`):
+    /// a rotation matrix (in `work`, 0x40 bytes) from the angles in
+    /// degrees at `+0x98`/`+0x9c`/`+0xa0` (`FFXVu0RotMatrixX`, `Y`, `Z` on
+    /// the unit matrix), then the reference point `+0x78 = +0x68 + +0xf4 *`
+    /// row 2 and the direction `+0x88 = -`row 1. Returns
+    /// `FFXVu0RotMatrixZ`'s `eax`, the matrix's address.
+    pub fn rcbg_scene_load_text_camera_calc_ref<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        cam: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        ffx_ps2::vu0::bridge::matrix_identity(mem, work);
+        let deg = super::DEG.get(mem);
+        let mut r = 0;
+        for (i, &rot) in super::VU0_ROT.iter().enumerate() {
+            let off = 0x98 + 4 * u32::try_from(i).unwrap_or(0);
+            let a = x87::store(x87::load(mem.read(cam.wrapping_add(off))) * deg);
+            let f = mem.rebase(rot);
+            r = call(mem, f, &[work, work, a]);
+        }
+        for i in 0..3u32 {
+            let k = x87::load(mem.read(cam.wrapping_add(0xf4)));
+            let m = x87::load(mem.read(work.wrapping_add(0x20 + 4 * i)));
+            let p = x87::load(mem.read(cam.wrapping_add(0x68 + 4 * i)));
+            mem.write(cam.wrapping_add(0x78 + 4 * i), x87::store(k * m + p));
+        }
+        for i in 0..3u32 {
+            let m = x87::load(mem.read(work.wrapping_add(0x10 + 4 * i)));
+            mem.write(cam.wrapping_add(0x88 + 4 * i), x87::store(-m));
+        }
+        r
     }
 }
