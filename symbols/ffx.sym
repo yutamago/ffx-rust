@@ -2083,9 +2083,9 @@
 0x0067a360 function iSfxLoadData              # fh v3:bsim1.00 0x0067a510
 0x0067a380 function iSfxPause                 # fh v3:bsim1.00 0x0067a530
 0x0067a3a0 function iSfxPlayBattleStreaming   # fh v3:bsim1.00 0x0067a550
-0x0067a3c0 function iSfxSetPan                # (id, pan): FMOD cmd 0x3d (coalesced per id in Fmod_PushCommand); called by SqsSePanDirect 0x0081e460; was the fh BSim name iSfxSetVolume (swapped); fh: iSfxSetVolume
+0x0067a3c0 function iSfxSetPan                # (id, pan): FMOD cmd 0x3d (coalesced per id in Fmod_PushCommand); handler 0x00708340 -> 0x00706e90 -> 0x0070d640 -> 0x0070ef80: pan/127*2-1 clamped to -1..1; called by SqsSePanDirect 0x0081e460; was the fh BSim name iSfxSetVolume (swapped); fh: iSfxSetVolume
 0x0067a3e0 function iSfxSetPanTranslate       # (id, pan, frames): FMOD cmd 0x3e; called by SqsSePanTranslate 0x0081e480
-0x0067a400 function iSfxSetVolume             # (id, volume): FMOD cmd 0x3b (coalesced per id); called by SqsSeVolumeDirect 0x0081e820; fh: iSfxSetPan (BSim, swapped with 0x0067a3c0)
+0x0067a400 function iSfxSetVolume             # (id, volume): FMOD cmd 0x3b (coalesced per id); handler 0x00708300 -> 0x00706ed0 -> 0x0070d6e0 -> 0x0070f1a0: volume/127 clamped to 0..1; called by SqsSeVolumeDirect 0x0081e820; fh: iSfxSetPan (BSim, swapped with 0x0067a3c0)
 0x0067a420 function iSfxSetVolumeTranslate    # fh v3:bsim1.00 0x0067a5d0
 0x0067a440 function iSfxStart                 # fh v3:cg2 0x67a5f0
 0x0067a460 function iSfxStop                  # fh v3:bsim1.00 0x0067a610
