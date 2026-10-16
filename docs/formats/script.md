@@ -404,6 +404,23 @@ Where a Ghidra signature says `void`, the `EAX` the handler leaves is what
 `Script_FinishNative` pushes (`Native_EnableTrigger` returns the kind it
 popped, `Native_TurnSetFrames` the elapsed value).
 
+`ffx_script::vm::bridge::native_map` has group 8 (`0x8000`-`0x806b`, 65
+handlers: map parts, the field programs, the map's sprite objects, fog and
+back colours and parameters) and the field natives `0x01a5`, `0x01e4`,
+`0x01e6`. Most pop their arguments, call the map module and return 1.
+The colour and fog ones hand the map module the address of a stack
+buffer (`yiGetFogColor(&rgba)`); the Rust ones use `NativeHost::scratch`,
+a 64-byte buffer of the game thread (in the oracle, the bottom of the
+emulated stack). On stage `0x140` setting a fog colour also feeds the
+renderer the colour over 255, each component truncated by `_ftol2_sse`
+and passed back as a float; the fog setters skip maps `0xca2`, `0x1e38`
+and `0x699`. `Native_FpBindPos` truncates its fp id from `ST0` as
+`AtelPopStackFloat` leaves it (an integer slot exactly), and its
+`dbgPrintf` is an empty function. Six of them (`0x0091b040`, `0x0091b050`,
+`0x0091b060`, `0x0091b680`, `0x0091b690`, `0x0091c4a0`) have no function
+start in the Ghidra dump the hook checks use and run in Rust only through
+the dispatch.
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the
@@ -432,12 +449,13 @@ the tests reach.
 1. Done: the accessors, the dispatch loop, every opcode, native dispatch,
    the signals (request families, `AtelExecReturn`, the waits, opcodes
    `79`/`7a`): `Script_Run` calls no original script code but natives.
-2. Now: the natives, most used first. Next: the ones the field module
-   made ready (`0x0091b240`-`0x0091c6b0`, `0x008574c0`, `0x008591d0`,
-   `0x00858c90`, and the map-part natives `0x8012`-`0x8056` from
-   `0x00c5dc9c`), then the message and sound natives with debug output
-   (`Native_SoundWait_Poll`, `Native_VoiceIsPlaying`: `printf` in debug
-   mode).
+2. Now: the natives, most used first. Done: the field module's ready
+   ones (group 8, `0x01a5`, `0x01e4`, `0x01e6`) and the sprite, sound
+   effect and stop natives. Next: the message natives (`Native_MsgOpen`,
+   `Native_MsgSetText`, the waits), the camera group 6 (each starts by
+   resolving the worker's camera handle like `Native_CamSetPos`), the
+   move and turn starts, and `Native_SoundWait_Poll` /
+   `Native_VoiceIsPlaying` once the oracle stubs `printf`.
 3. Then a `Natives` implementation with no original code behind it, so
    the interpreter runs outside the game.
 

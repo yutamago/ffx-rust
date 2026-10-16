@@ -3,6 +3,7 @@
 use ffx_script::vm::bridge as atel;
 use ffx_script::vm::bridge::globals as g;
 use ffx_script::vm::bridge::native;
+use ffx_script::vm::bridge::native_map;
 use ffx_script::vm::bridge::run;
 use ffx_script::vm::bridge::signal as sig;
 
@@ -975,5 +976,294 @@ ported! {
     /// `Native_FieldSetMaskBit(worker, args, stack)`.
     Native_FieldSetMaskBit @ 0x0091_c530 => extern "C" fn n_91c530(w: u32, a: u32, s: u32) -> u32 {
         native::native_field_set_mask_bit(&mut mem(), w, a, s)
+    }
+
+    /// `Native_SpriteShow(worker, args, stack)`.
+    Native_SpriteShow @ 0x0085_c370 => extern "C" fn n_85c370(w: u32, a: u32, s: u32) -> u32 {
+        native::native_sprite_show(&mut mem(), w, a, s)
+    }
+    /// `Native_SpriteHide(worker, args, stack)`.
+    Native_SpriteHide @ 0x0085_c4c0 => extern "C" fn n_85c4c0(w: u32, a: u32, s: u32) -> u32 {
+        native::native_sprite_hide(&mut mem(), w, a, s)
+    }
+    /// `Native_SpriteSetColor(worker, args, stack)`.
+    Native_SpriteSetColor @ 0x0085_c760 => extern "C" fn n_85c760(w: u32, a: u32, s: u32) -> u32 {
+        native::native_sprite_set_color(&mut mem(), w, a, s)
+    }
+    /// `Native_SpriteSetScale(worker, args, stack)`.
+    Native_SpriteSetScale @ 0x0085_cde0 => extern "C" fn n_85cde0(w: u32, a: u32, s: u32) -> u32 {
+        native::native_sprite_set_scale(&mut mem(), w, a, s)
+    }
+    /// `Native_WorkerStopMove(worker, args, stack)`.
+    Native_WorkerStopMove @ 0x0085_b620 => extern "C" fn n_85b620(w: u32, a: u32, s: u32) -> u32 {
+        native::native_worker_stop_move(&mut mem(), w, a, s)
+    }
+    /// `Native_WorkerStopTurn(worker, args, stack)`.
+    Native_WorkerStopTurn @ 0x0085_b950 => extern "C" fn n_85b950(w: u32, a: u32, s: u32) -> u32 {
+        native::native_worker_stop_turn(&mut mem(), w, a, s)
+    }
+    /// `Native_SfxPlayEx(worker, args, stack)`.
+    Native_SfxPlayEx @ 0x0085_ff30 => extern "C" fn n_85ff30(w: u32, a: u32, s: u32) -> u32 {
+        native::native_sfx_play_ex(&mut mem(), w, a, s)
+    }
+    /// `Native_SfxPlay(worker, args, stack)`.
+    Native_SfxPlay @ 0x0085_f310 => extern "C" fn n_85f310(w: u32, a: u32, s: u32) -> u32 {
+        native::native_sfx_play(&mut mem(), w, a, s)
+    }
+    /// `CT_0013_setPosition(worker, args, stack)`.
+    CT_0013_setPosition @ 0x0085_faa0 => extern "C" fn n_85faa0(w: u32, a: u32, s: u32) -> u32 {
+        native::ct_0013_set_position(&mut mem(), w, a, s)
+    }
+    /// `Native_ChrSetMotion_5000(worker, args, stack)`.
+    Native_ChrSetMotion_5000 @ 0x00a7_8770 => extern "C" fn n_a78770(w: u32, a: u32, s: u32) -> u32 {
+        native::native_chr_set_motion(&mut mem(), w, a, s)
+    }
+    /// `Native_ChrSetMotion_501b(worker, args, stack)`.
+    Native_ChrSetMotion_501b @ 0x00a7_92d0 => extern "C" fn n_a792d0(w: u32, a: u32, s: u32) -> u32 {
+        native::native_chr_set_motion(&mut mem(), w, a, s)
+    }
+    /// `Native_ChrHide(worker, args, stack)`.
+    Native_ChrHide @ 0x00a7_8ac0 => extern "C" fn n_a78ac0(w: u32, a: u32, s: u32) -> u32 {
+        native::native_chr_hide(&mut mem(), w, a, s)
+    }
+
+    // the map natives (ffx_script::vm::bridge::native_map); six that the
+    // dump has no function start for (0x0091b040, ...) run in Rust only
+    // through Script_Run's dispatch
+    /// `Native_01a5(worker, args, stack)`.
+    Native_01a5 @ 0x0085_74c0 => extern "C" fn n_8574c0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_01a5(&mut mem(), w, a, s)
+    }
+    /// `Native_01e4(worker, args, stack)`.
+    Native_01e4 @ 0x0085_8c90 => extern "C" fn n_858c90(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_01e4(&mut mem(), w, a, s)
+    }
+    /// `Native_01e6(worker, args, stack)`.
+    Native_01e6 @ 0x0085_91d0 => extern "C" fn n_8591d0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_01e6(&mut mem(), w, a, s)
+    }
+    /// `Native_MapSpriteWait(worker, args, stack)`.
+    Native_MapSpriteWait @ 0x0091_af60 => extern "C" fn n_91af60(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8004(&mut mem(), w, a, s)
+    }
+    /// `Native_MapSpriteWait_Poll(worker, args, stack)`.
+    Native_MapSpriteWait_Poll @ 0x0091_afa0 => extern "C" fn n_91afa0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8004_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_MapSpriteWaitEnd(worker, args, stack)`.
+    Native_MapSpriteWaitEnd @ 0x0091_c7e0 => extern "C" fn n_91c7e0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8005(&mut mem(), w, a, s)
+    }
+    /// `Native_MapSpriteWaitEnd_Poll(worker, args, stack)`.
+    Native_MapSpriteWaitEnd_Poll @ 0x0091_c860 => extern "C" fn n_91c860(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8005_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_806a(worker, args, stack)`.
+    Native_806a @ 0x0091_af80 => extern "C" fn n_91af80(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_806a(&mut mem(), w, a, s)
+    }
+    /// `Native_806b(worker, args, stack)`.
+    Native_806b @ 0x0091_afc0 => extern "C" fn n_91afc0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_806b(&mut mem(), w, a, s)
+    }
+    /// `Native_8006(worker, args, stack)`.
+    Native_8006 @ 0x0091_aff0 => extern "C" fn n_91aff0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8006(&mut mem(), w, a, s)
+    }
+    /// `Native_FpBind(worker, args, stack)`.
+    Native_FpBind @ 0x0091_b070 => extern "C" fn n_91b070(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_fp_bind(&mut mem(), w, a, s)
+    }
+    /// `Native_FpBindPos(worker, args, stack)`.
+    Native_FpBindPos @ 0x0091_b0a0 => extern "C" fn n_91b0a0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_fp_bind_pos(&mut mem(), w, a, s)
+    }
+    /// `Native_FpUnbind(worker, args, stack)`.
+    Native_FpUnbind @ 0x0091_b130 => extern "C" fn n_91b130(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_fp_unbind(&mut mem(), w, a, s)
+    }
+    /// `Native_800c(worker, args, stack)`.
+    Native_800c @ 0x0091_b160 => extern "C" fn n_91b160(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_800c(&mut mem(), w, a, s)
+    }
+    /// `Native_MapPartShow(worker, args, stack)`.
+    Native_MapPartShow @ 0x0091_b1a0 => extern "C" fn n_91b1a0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_map_part_show(&mut mem(), w, a, s)
+    }
+    /// `Native_MapPartHide(worker, args, stack)`.
+    Native_MapPartHide @ 0x0091_b1e0 => extern "C" fn n_91b1e0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_map_part_hide(&mut mem(), w, a, s)
+    }
+    /// `Native_8011(worker, args, stack)`.
+    Native_8011 @ 0x0091_b200 => extern "C" fn n_91b200(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8011(&mut mem(), w, a, s)
+    }
+    /// `Native_8014(worker, args, stack)`.
+    Native_8014 @ 0x0091_b280 => extern "C" fn n_91b280(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8014(&mut mem(), w, a, s)
+    }
+    /// `Native_801d(worker, args, stack)`.
+    Native_801d @ 0x0091_b400 => extern "C" fn n_91b400(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_801d(&mut mem(), w, a, s)
+    }
+    /// `Native_801e(worker, args, stack)`.
+    Native_801e @ 0x0091_b430 => extern "C" fn n_91b430(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_801e(&mut mem(), w, a, s)
+    }
+    /// `Native_801f(worker, args, stack)`.
+    Native_801f @ 0x0091_b450 => extern "C" fn n_91b450(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_801f(&mut mem(), w, a, s)
+    }
+    /// `Native_8020(worker, args, stack)`.
+    Native_8020 @ 0x0091_b470 => extern "C" fn n_91b470(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8020(&mut mem(), w, a, s)
+    }
+    /// `Native_8021(worker, args, stack)`.
+    Native_8021 @ 0x0091_b490 => extern "C" fn n_91b490(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8021(&mut mem(), w, a, s)
+    }
+    /// `Native_8022(worker, args, stack)`.
+    Native_8022 @ 0x0091_b4b0 => extern "C" fn n_91b4b0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8022(&mut mem(), w, a, s)
+    }
+    /// `Native_8026(worker, args, stack)`.
+    Native_8026 @ 0x0091_b550 => extern "C" fn n_91b550(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8026(&mut mem(), w, a, s)
+    }
+    /// `Native_802e(worker, args, stack)`.
+    Native_802e @ 0x0091_b6a0 => extern "C" fn n_91b6a0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_802e(&mut mem(), w, a, s)
+    }
+    /// `Native_802f(worker, args, stack)`.
+    Native_802f @ 0x0091_b6d0 => extern "C" fn n_91b6d0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_802f(&mut mem(), w, a, s)
+    }
+    /// `Native_8030(worker, args, stack)`.
+    Native_8030 @ 0x0091_b6f0 => extern "C" fn n_91b6f0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8030(&mut mem(), w, a, s)
+    }
+    /// `Native_8032(worker, args, stack)`.
+    Native_8032 @ 0x0091_b740 => extern "C" fn n_91b740(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8032(&mut mem(), w, a, s)
+    }
+    /// `Native_8035(worker, args, stack)`.
+    Native_8035 @ 0x0091_b790 => extern "C" fn n_91b790(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8035(&mut mem(), w, a, s)
+    }
+    /// `Native_8036(worker, args, stack)`.
+    Native_8036 @ 0x0091_b7d0 => extern "C" fn n_91b7d0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8036(&mut mem(), w, a, s)
+    }
+    /// `Native_FogSetParams(worker, args, stack)`.
+    Native_FogSetParams @ 0x0091_b810 => extern "C" fn n_91b810(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8037(&mut mem(), w, a, s)
+    }
+    /// `Native_FogSetParam0(worker, args, stack)`.
+    Native_FogSetParam0 @ 0x0091_b8b0 => extern "C" fn n_91b8b0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8038(&mut mem(), w, a, s)
+    }
+    /// `Native_FogGetParam0(worker, args, stack)`.
+    Native_FogGetParam0 @ 0x0091_b930 => extern "C" fn n_91b930(w: u32, a: u32, s: u32) -> f64 {
+        native_map::native_8039(&mut mem(), w, a, s)
+    }
+    /// `Native_FogSetParam1(worker, args, stack)`.
+    Native_FogSetParam1 @ 0x0091_b960 => extern "C" fn n_91b960(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_803a(&mut mem(), w, a, s)
+    }
+    /// `Native_FogGetParam1(worker, args, stack)`.
+    Native_FogGetParam1 @ 0x0091_b9e0 => extern "C" fn n_91b9e0(w: u32, a: u32, s: u32) -> f64 {
+        native_map::native_803b(&mut mem(), w, a, s)
+    }
+    /// `Native_FogSetParam2(worker, args, stack)`.
+    Native_FogSetParam2 @ 0x0091_ba10 => extern "C" fn n_91ba10(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_803c(&mut mem(), w, a, s)
+    }
+    /// `Native_FogGetParam2(worker, args, stack)`.
+    Native_FogGetParam2 @ 0x0091_baa0 => extern "C" fn n_91baa0(w: u32, a: u32, s: u32) -> f64 {
+        native_map::native_803d(&mut mem(), w, a, s)
+    }
+    /// `Native_FogSetColor(worker, args, stack)`.
+    Native_FogSetColor @ 0x0091_bad0 => extern "C" fn n_91bad0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_803e(&mut mem(), w, a, s)
+    }
+    /// `Native_FogSetRed(worker, args, stack)`.
+    Native_FogSetRed @ 0x0091_bbb0 => extern "C" fn n_91bbb0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_803f(&mut mem(), w, a, s)
+    }
+    /// `Native_FogSetGreen(worker, args, stack)`.
+    Native_FogSetGreen @ 0x0091_bc80 => extern "C" fn n_91bc80(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8040(&mut mem(), w, a, s)
+    }
+    /// `Native_FogSetBlue(worker, args, stack)`.
+    Native_FogSetBlue @ 0x0091_bd50 => extern "C" fn n_91bd50(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8041(&mut mem(), w, a, s)
+    }
+    /// `Native_FogGetRed(worker, args, stack)`.
+    Native_FogGetRed @ 0x0091_be20 => extern "C" fn n_91be20(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8042(&mut mem(), w, a, s)
+    }
+    /// `Native_FogGetGreen(worker, args, stack)`.
+    Native_FogGetGreen @ 0x0091_be50 => extern "C" fn n_91be50(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8043(&mut mem(), w, a, s)
+    }
+    /// `Native_FogGetBlue(worker, args, stack)`.
+    Native_FogGetBlue @ 0x0091_be80 => extern "C" fn n_91be80(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8044(&mut mem(), w, a, s)
+    }
+    /// `Native_BackSetColor(worker, args, stack)`.
+    Native_BackSetColor @ 0x0091_beb0 => extern "C" fn n_91beb0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8045(&mut mem(), w, a, s)
+    }
+    /// `Native_BackGetRed(worker, args, stack)`.
+    Native_BackGetRed @ 0x0091_c000 => extern "C" fn n_91c000(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8049(&mut mem(), w, a, s)
+    }
+    /// `Native_BackGetGreen(worker, args, stack)`.
+    Native_BackGetGreen @ 0x0091_c030 => extern "C" fn n_91c030(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_804a(&mut mem(), w, a, s)
+    }
+    /// `Native_BackGetBlue(worker, args, stack)`.
+    Native_BackGetBlue @ 0x0091_c060 => extern "C" fn n_91c060(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_804b(&mut mem(), w, a, s)
+    }
+    /// `Native_804f(worker, args, stack)`.
+    Native_804f @ 0x0091_c150 => extern "C" fn n_91c150(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_804f(&mut mem(), w, a, s)
+    }
+    /// `Native_8059(worker, args, stack)`.
+    Native_8059 @ 0x0091_c3c0 => extern "C" fn n_91c3c0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8059(&mut mem(), w, a, s)
+    }
+    /// `Native_FpSetStickPos(worker, args, stack)`.
+    Native_FpSetStickPos @ 0x0091_c410 => extern "C" fn n_91c410(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_805b(&mut mem(), w, a, s)
+    }
+    /// `Native_805c(worker, args, stack)`.
+    Native_805c @ 0x0091_c470 => extern "C" fn n_91c470(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_805c(&mut mem(), w, a, s)
+    }
+    /// `Native_805e(worker, args, stack)`.
+    Native_805e @ 0x0091_c4d0 => extern "C" fn n_91c4d0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_805e(&mut mem(), w, a, s)
+    }
+    /// `Native_805f(worker, args, stack)`.
+    Native_805f @ 0x0091_c4f0 => extern "C" fn n_91c4f0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_805f(&mut mem(), w, a, s)
+    }
+    /// `Native_8060(worker, args, stack)`.
+    Native_8060 @ 0x0091_c510 => extern "C" fn n_91c510(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8060(&mut mem(), w, a, s)
+    }
+    /// `Native_8001(worker, args, stack)`.
+    Native_8001 @ 0x0091_c5b0 => extern "C" fn n_91c5b0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8001(&mut mem(), w, a, s)
+    }
+    /// `Native_8066(worker, args, stack)`.
+    Native_8066 @ 0x0091_c7c0 => extern "C" fn n_91c7c0(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_8066(&mut mem(), w, a, s)
+    }
+    /// `Native_BltzSetObjModels(worker, args, stack)`.
+    Native_BltzSetObjModels @ 0x0091_c810 => extern "C" fn n_91c810(w: u32, a: u32, s: u32) -> u32 {
+        native_map::native_bltz_set_obj_models(&mut mem(), w, a, s)
     }
 }

@@ -10,6 +10,7 @@ use ffx_bridge::{Global, Mem};
 
 pub mod globals;
 pub mod native;
+pub mod native_map;
 pub mod run;
 pub mod signal;
 

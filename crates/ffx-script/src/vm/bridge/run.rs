@@ -100,6 +100,15 @@ pub trait NativeHost: Host {
     /// Calls the cdecl function at `addr` (rebased) and returns `ST0` as
     /// an `fstp m64` stores it (exact at the game's 53-bit precision).
     fn call_float(&mut self, addr: u32, args: &[u32]) -> f64;
+    /// 64 bytes of memory the game can read and write for the duration of
+    /// a native: what the originals' stack locals are when they pass their
+    /// address to a callee (`yiGetFogColor(&rgba)`).
+    fn scratch(&mut self) -> u32;
+}
+
+#[cfg(target_pointer_width = "32")]
+thread_local! {
+    static SCRATCH: core::cell::UnsafeCell<[u32; 16]> = const { core::cell::UnsafeCell::new([0; 16]) };
 }
 
 #[cfg(target_pointer_width = "32")]
@@ -115,6 +124,12 @@ impl NativeHost for ffx_bridge::RawMem {
             let f: F6 = std::mem::transmute(addr as usize);
             f(a[0], a[1], a[2], a[3], a[4], a[5])
         }
+    }
+    fn scratch(&mut self) -> u32 {
+        // the game thread's own buffer: a 32-bit process, so the address
+        // fits; natives do not nest
+        #[allow(clippy::cast_possible_truncation)]
+        SCRATCH.with(|s| s.get() as usize as u32)
     }
 }
 
