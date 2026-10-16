@@ -104,6 +104,11 @@ pub trait NativeHost: Host {
     /// a native: what the originals' stack locals are when they pass their
     /// address to a callee (`yiGetFogColor(&rgba)`).
     fn scratch(&mut self) -> u32;
+    /// [`Host::call`] for up to 12 arguments (the game's own `Host::call`
+    /// takes six); the default is `Host::call`.
+    fn call_n(&mut self, addr: u32, args: &[u32]) -> u32 {
+        self.call(addr, args)
+    }
 }
 
 #[cfg(target_pointer_width = "32")]
@@ -123,6 +128,23 @@ impl NativeHost for ffx_bridge::RawMem {
         unsafe {
             let f: F6 = std::mem::transmute(addr as usize);
             f(a[0], a[1], a[2], a[3], a[4], a[5])
+        }
+    }
+    #[allow(clippy::many_single_char_names)]
+    fn call_n(&mut self, addr: u32, args: &[u32]) -> u32 {
+        type F12 =
+            unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32) -> u32;
+        // no panic: the natives run inside the game
+        let mut a = [0u32; 12];
+        let n = args.len().min(12);
+        a[..n].copy_from_slice(&args[..n]);
+        // SAFETY: a cdecl function of the game taking at most 12 word
+        // arguments; the extra words sit on the caller's side, which pops.
+        unsafe {
+            let f: F12 = std::mem::transmute(addr as usize);
+            f(
+                a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], a[9], a[10], a[11],
+            )
         }
     }
     fn scratch(&mut self) -> u32 {
