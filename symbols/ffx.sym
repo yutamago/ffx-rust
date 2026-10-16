@@ -2857,11 +2857,16 @@
 0x00822760 function trophyCheckDefeatMonster  # fh v3:exact 0x008227f0
 0x00822840 function updateFFX                 # fh v3:exact 0x008228d0
 0x008245f0 function Ch_ClothEnableGrav        # fh v3:bsim1.00 0x00824680
+0x00824610 function Ch_ClothGetParaEdit       # movsx g_ChrClothParaEdit; Switch name, this file's functions are in name order: between Ch_ClothEnableGrav and Ch_ClothMeshMappingOffset, pairs with Ch_ClothSetParaEdit
 0x00824620 function Ch_ClothMeshMappingOffset # fh v3:exact 0x008246b0
 0x00824650 function Ch_ClothReset             # fh v3:bsim1.00 0x008246e0
 0x00824670 function Ch_ClothReset2            # fh v3:exact 0x00824700
 0x00824800 function Ch_ClothSetAtariJimenCheck # fh v3:exact 0x00824890
 0x00824920 function Ch_ClothSetFast           # fh v3:exact 0x008249b0
+0x008249b4 label g_ChrClothFastCases         # 0x7a bytes in Ch_ClothSetFast's code: its case (0..4) by character id - 1
+0x00824a30 function Ch_ClothSetParaEdit       # (v): g_ChrClothParaEdit = v; Switch name, in name order after Ch_ClothSetFast
+0x00824a40 function Ch_ClothSetXZ             # (f): g_ChrClothXZ = f; Switch name, in name order (SetParaEdit < SetXZ < SetY)
+0x00824a50 function Ch_ClothSetY              # (f): g_ChrClothY = f; Switch name, in name order
 0x00824dd0 function Sg_GlobalGetWind          # fh switch:bsim1.00 0x710041edb0
 0x00824e30 function Sg_GlobalSetWind          # fh switch:bsim1.00 0x710041ed90
 0x00824f00 function ChN_DataDispose           # fh v3:exact 0x00824f90
@@ -2924,7 +2929,11 @@
 0x0082a7d0 function Ch_RomReadEventMGRPcb     # fh switch:bsim1.00 0x71004190f0
 0x0082a7f0 function Ch_RomReadEventMGRPsync   # fh switch:bsim1.00 0x7100419100
 0x0082a890 function Ch_AddGrav                # fh switch:bsim1.00 0x710041dc20
+0x0082a8b0 function Ch_AddY                   # (chr, dy): chr +0x10 (position y) += dy; Switch name, in name order right after Ch_AddGrav
+0x0082a8d0 function Ch_AllSetThicknessEvent   # (t): Ch_SetThickness(chr, t) on every active character; Switch name, in name order between Ch_AddY and Ch_ClothSetEnable
 0x0082a930 function Ch_ClothSetEnable         # fh v3:cg2 0x82a9b0
+0x0082a950 function Ch_DisableBodyHit         # (chr, off): tail call Ch_EnBodyHit(chr, 1 - (off & 1)); Switch name, in name order between Ch_ClothSetEnable and Ch_DisableID
+0x0082a980 function Ch_DisableID              # (chr, off): tail call Ch_EnMapID(chr, 1 - (off & 1)); Switch name, in name order before Ch_EffectGetEffectLevel
 0x0082a9a0 function Ch_EffectGetEffectLevel   # fh v3:bsim1.00 0x0082aa20
 0x0082a9b0 function Ch_EffectGetResidentPtr   # fh v3:exact 0x0082aa30
 0x0082a9d0 function Ch_EffectSetEffectLevel   # fh v3:bsim1.00 0x0082aa50
@@ -3056,11 +3065,18 @@
 0x0082db50 function Angle_Wrap                   # float radians wrapped into [-pi, pi]
 0x0082eaf0 function Ch_DrawCalcShade          # fh v3:exact 0x0082eb70
 0x0082eb60 function Ch_DrawEnEffect           # fh v3:bsim1.00 0x0082ebe0
+0x0082eb80 function Ch_DrawGetDisableSpec     # movsx g_ChrDrawDisableSpec (Ch_DrawSetDisableSpec's); Switch name, in name order after Ch_DrawEnEffect
+0x0082eb90 function Ch_DrawGetFourceSpec      # movsx g_ChrDrawFourceSpec (Ch_DrawSetFourceSpec's); Switch name, in name order
+0x0082eba0 function Ch_DrawGetModelAlpha      # (chr, model) -> float: alpha fade +0x354, times model +0x14 unless model == -1; Switch name, in name order
+0x0082ebe0 function Ch_DrawGetParaEdit        # movsx g_ChrDrawParaEdit (Ch_DrawSetParaEdit's); Switch name, in name order before Ch_DrawGetShadowColor
 0x0082ebf0 function Ch_DrawGetShadowColor     # fh switch:bsim1.00 0x7100419950
 0x0082ec30 function Ch_DrawGetShadowDir       # fh switch:bsim1.00 0x71004199a0
 0x0082ed30 function Ch_DrawInitAll            # fh v3:bsim1.00 0x0082edb0
 0x0082fe00 function Ch_DrawMainForSituation   # fh v3:exact 0x0082fe80
 0x008300b0 function Ch_DrawSetCull            # fh v3:cg2 0x830130
+0x008300d0 function Ch_DrawSetDisableSpec     # (v): g_ChrDrawDisableSpec = v; Switch name, in name order after Ch_DrawSetCull
+0x008300e0 function Ch_DrawSetFourceSpec      # (v): g_ChrDrawFourceSpec = v; Switch name, in name order
+0x008300f0 function Ch_DrawSetParaEdit        # (v): g_ChrDrawParaEdit = v; Switch name, in name order before Ch_DrawSetShadowColor
 0x00830100 function Ch_DrawSetShadowColor     # fh switch:bsim1.00 0x7100419930
 0x00830120 function Ch_DrawSetShadowDir       # fh switch:bsim1.00 0x7100419990
 0x00830140 function Ch_DrawSetShadowMode      # fh v3:bsim1.00 0x008301c0
@@ -3070,13 +3086,20 @@
 0x00830370 function Ch_EngineSetFast          # fh v3:bsim1.00 0x008303f0
 0x008303f0 function Ch_GetNbElem              # fh v3:exact 0x00830470
 0x00830410 function Ch_GetNbModel             # fh v3:exact 0x00830490
+0x00830440 function Ch_GetShadowDirH          # chr +0x6d8 (Ch_SetShadowDirH's); Switch name, in name order after Ch_GetNbModel
 0x00830450 function Ch_ModelCalcSizeEffectPacket # fh v3:exact 0x008304d0
 0x00830490 function Ch_ModelCreateEffectPacket # fh v3:exact 0x00830510
 0x00830500 function Ch_ModelGetBaseMatrix     # fh v3:exact 0x00830580
+0x00830ad0 function Ch_PLightGetEnable        # movsx chr +0x188 (Ch_PLightSetEnable's); Switch name, in name order before Ch_PLightSetEnable
 0x00830ae0 function Ch_PLightSetEnable        # fh v3:bsim1.00 0x00830b60
+0x00830b00 function Ch_PLightSetEnableMask    # (chr, bits, mask): chr +0x188 = (+0x188 & ~mask) | bits; Switch name, in name order after Ch_PLightSetEnable
+0x00830c90 function Ch_SetShadowDirH          # (chr, dir): chr +0x6d8 = dir; Switch name, in name order before Ch_ShadowSetHeight
 0x00830cb0 function Ch_ShadowSetHeight        # fh v3:bsim1.00 0x00830d30
 0x00830cd0 function Ch_SysDrawSetSituation    # fh v3:exact 0x00830d50
 0x00830d10 function Ch_TextureAnimSetEnable   # fh v3:bsim1.00 0x00830d90
+0x00830d30 function Ch_TextureGetClutAddr     # (chr, i): clut texture i (chr +0x6e4, 0x40 bytes each, count i16 +0x6e8) +0x30, 0 past the count; Switch name, in name order after Ch_TextureAnimSetEnable
+0x00830d60 function Ch_TextureGetClutBase     # (chr, i): clut texture i +0x3a (u16); Switch name, in name order
+0x00830d90 function Ch_TextureGetImageAddr    # (chr, i): image texture i (chr +0x6ec, count +0x6f0) +0x30; Switch name, in name order before Ch_TextureGetImageBase
 0x00830dc0 function Ch_TextureGetImageBase    # fh v3:bsim1.00 0x00830e40
 0x008311d0 function Ch_TextureLoadClut        # fh v3:exact 0x00831250
 0x00831300 function Ch_TextureLoadImage       # fh v3:exact 0x00831380
@@ -3099,6 +3122,8 @@
 0x00832550 function Ch_AllReserveCalcNorm     # Chr_RequestBoneUpdate for every active chr in g_ChrArray; was Chr_RequestBoneUpdateAll
 0x00832610 function Ch_BindSetScale           # fh v3:bsim1.00 0x00832690
 0x00832630 function Ch_BindToElem             # fh v3:exact 0x008326b0
+0x00832680 function Ch_BindToElemDirect       # (chr, parent, elem): +0x19c = parent, +0x1b8 = parent +0x190 or -1, +0x1a0 = elem, offset +0x1a4..+0x1ac = 0, +0x1b0 = 1.0; Switch name, in name order after Ch_BindToElem
+0x008326e0 function Ch_BindToElemDirectOfs    # (chr, parent, elem, x, y, z): as Ch_BindToElemDirect with the offset (x, y, z) * 100.0 * model block +0x38; Switch name, in name order
 0x00832760 function Ch_CalcElement            # fh v3:exact 0x008327e0
 0x00832e10 function Ch_CalcMain               # fh v3:exact+call.cs 0x00832e90 cdecl
 0x008337f0 function Ch_CheckNbBattleChr       # fh v3:bsim1.00 0x00833870
@@ -3106,38 +3131,54 @@
 0x00833960 function Ch_ElemCalcQuaternion     # fh v3:exact 0x008339e0
 0x00833a70 function Ch_ElemGetAttr            # (model, point id, &bone, &offset): searches the chr def +0x6c list (16-byte entries, id & 0x3fff) -> bone index and scaled offset; was Chr_FindAttachPoint
 0x00833c30 function Ch_ElemGetMatrix          # fh v3:exact 0x00833cb0
+0x00833cf0 function Ch_ElemGetParent          # (chr, elem): element (chr +0x328, 0x160 bytes each) +0 -> +4; Switch name, the only one in name order between Ch_ElemGetMatrix and Ch_ElemGetPos
 0x00833d10 function Ch_ElemGetPos             # fh v3:exact 0x00833d90
+0x00833df0 function Ch_ElemSetQuatMatrix      # (chr, elem, matrix, w): element +0xcc = matrix, +0xe0 = w; Switch name, in name order before Ch_ElemSetReplaceMatrix (+0xc8)
 0x00833e30 function Ch_ElemSetReplaceMatrix   # fh v3:exact 0x00833eb0
+0x00833f30 function Ch_GetCalcNorm            # chr +0x194 bit 0 (Ch_SetCalcNorm's); Switch name, in name order before Ch_GetDumpMotEv
 0x00833f50 function Ch_GetDumpMotEv           # fh v3:bsim1.00 0x00833fd0
+0x00833f60 function Ch_GetFuka                # (i): g_ChrFuka[i] (Ch_SetFuka's); Switch name, in name order after Ch_GetDumpMotEv
+0x00833f70 function Ch_GetMotionType          # movsx chr +0x186 (Ch_SetMotionType's); Switch name, in name order
 0x00833f80 function Ch_GetRootGlobalMatrix    # fh v3:bsim1.00 0x00834000
 0x00833fc0 function Ch_GetRootLightMatrix     # fh v3:bsim1.00 0x00834040
 0x00834000 function Ch_GetVel                 # fh switch:bsim1.00 0x71004162e0
+0x00834030 function Ch_GetVel2                # (chr, out): chr +0x2c..+0x34 minus the position; Switch name, in name order after Ch_GetVel
 0x00834060 function Ch_GuiGetCalcNormal       # fh v3:cg2 0x8340e0
 0x00834090 function Ch_GuiSetCalcNormAll      # fh v3:exact 0x00834110
+0x008340a0 function Ch_GuiSetMouthTh          # (v): i16 0x00c49718 = v clamped to 0..200; Switch name, in name order after Ch_GuiSetCalcNormAll
+0x008340d0 function Ch_GuiSetTalk             # (a, b): bytes 0x013008d9 = a, 0x013008da = b; Switch name, in name order before Ch_IdEnableShade
 0x008340f0 function Ch_IdEnableShade          # fh v3:bsim1.00 0x00834170
+0x00834740 function Ch_MouthGetAutoTalk       # movsx chr +0x4d4 (Ch_MouthSetAutoTalk's); Switch name, in name order before Ch_MouthInit; the dump's fh Ch_PLightGetEnable was a BSim miss
 0x00834750 function Ch_MouthInit              # fh v3:exact 0x008347d0
 0x00834770 function Ch_MouthSetAutoTalk       # fh switch:bsim1.00 0x7100416e40
 0x008347a0 function Ch_MoveChrBlk             # fh switch:cg2 0x7100416020
 0x008348d0 function Ch_Neck                   # fh switch:cg2 0x7100417500
 0x00834e60 function Ch_NeckInit               # fh v3:exact 0x00834ee0
 0x00834f60 function Ch_NeckSetEnable          # fh v3:exact 0x00834fe0
-0x00834fd0 function TextUtil_setPosOffset     # fh switch:bsim1.00 0x7100219d10 TextUtil::setPosOffset
+0x00834fd0 function Ch_NeckSetLimit           # (chr, a, b): chr +0x424 = a, +0x428 = b; Switch name, the only one in name order between Ch_NeckSetEnable and Ch_NeckSetRot; was fh switch:bsim1.00 0x7100219d10 TextUtil::setPosOffset (a BSim miss)
 0x00834ff0 function Ch_NeckSetRot             # fh v3:exact 0x00835070
 0x00835020 function Ch_NeckSetSpeed           # fh v3:exact 0x008350a0
 0x00835050 function Ch_NeckSetTarget          # fh v3:exact 0x008350d0
 0x008350f0 function Ch_OptposCalc             # fh v3:exact 0x00835170
 0x008354f0 function Ch_OptposGet              # fh v3:exact 0x00835570
 0x008355e0 function Ch_OptposGetBase          # fh v3:bsim1.00 0x00835660
+0x00835600 function Ch_OptposGetBottom        # (chr, out): 16 bytes from chr +0x694; Switch name, in name order after Ch_OptposGetBase
+0x00835630 function Ch_OptposGetCameraRef     # (chr, out): 16 bytes from chr +0x6b4; Switch name, in name order before Ch_OptposGetElement
 0x00835660 function Ch_OptposGetElement       # fh v3:exact 0x008356e0
+0x00835680 function Ch_OptposGetExist         # (chr, i): 1 unless float chr +0x530 + 16 i == 0; Switch name, the only one in name order between Ch_OptposGetElement and Ch_OptposGetMatrix
 0x008356b0 function Ch_OptposGetMatrix        # fh v3:exact 0x00835730
+0x008356e0 function Ch_OptposGetTop           # (chr, out): 16 bytes from chr +0x6a4; Switch name, in name order after Ch_OptposGetMatrix
 0x00835710 function Ch_ReserveCalcNorm        # (chr): sets +0x194 bit 3 (one budgeted bone update in 0x00832110) unless bit 0 is set; was Chr_RequestBoneUpdate
 0x00835730 function Ch_ReserveCalcNorm2       # fh v3:bsim1.00 0x008357b0
 0x00835750 function Ch_SetCalcNorm            # fh v3:exact 0x008357d0
 0x00835780 function Ch_SetCalcNorm2_00835780  # fh v3:exact 0x00835800
 0x008357c0 function Ch_SetDumpMotEv           # fh v3:cg2 0x835840
+0x008357d0 function Ch_SetFuka                # (i, v): g_ChrFuka[i] = v; Switch name, in name order after Ch_SetDumpMotEv
 0x00835b50 function Ch_SoundSetId             # fh v3:bsim1.00 0x00835bd0
 0x00835b70 function Ch_SysGetScreenMatrixPtr  # fh v3:bsim1.00 0x00835bf0
 0x00835ba0 function Ch_SysGetCameraMatrixPtr  # fh v3:bsim1.00 0x00835c20
+0x00835e90 function Ch_SysSetScreenMatrix     # (m): 64 bytes from m to g_ChrScreenMatrix (Ch_SysGetScreenMatrixPtr's); Switch name
+0x00835eb0 function Ch_SysSetCameraMatrix     # (m): 64 bytes from m to g_ChrCameraMatrix (Ch_SysGetCameraMatrixPtr's); Switch name
 0x00835ed0 function Ch_TextureAnimGetHandle   # fh v3:exact 0x00835f50
 0x008360b0 function Sg_InitLight              # fh v3:exact 0x00836130
 0x008360f0 function Sg_LightGetColor          # fh v3:exact 0x00836170
@@ -3160,6 +3201,7 @@
 0x00836f70 function SG_RelocateGroup          # offsets -> pointers; header +0 holds the load address
 0x00836fc0 function SG_RelocateSequence       # motion (+0x0c) and clip (+0x10) tables, 16 bytes each, pointer words +8/+0xc
 0x00837180 function Ch_MotionCancel           # fh switch:bsim1.00 0x7100423030
+0x008371a0 function Ch_MotionGetId            # chr +0x72c, the current motion id (Native_ChrGetMotion reads it too); Switch name
 0x00837350 function Chr_PlayMotionMarks          # (chr, motion, -, loops, start mark, end mark): marks index the motion's mark table; SG_StartClip, +0x736 = 1
 0x008373e0 function Ch_MotionSetLow2          # (chr, motion, -, loops, start frame, end frame): raw frames (<< 8) to SG_StartClip, +0x736 = 1; was Chr_PlayMotion
 0x008374c0 function Chr_PlayMotionInclEnd        # like Chr_PlayMotion, end frame + 1 unless loops == 1
@@ -3182,12 +3224,14 @@
 0x00838c90 function SG_UpdateMotion           # per-frame motion update of an actor
 0x00838f70 function SG_ApplyBones             # scale = character def +0x38 * 0.001; calls SG_ApplyBone per bone
 0x00839140 function Ch_AnimCopy2              # fh switch:cg2 0x7100412100
+0x008392a0 function Ch_GetKeepFps             # chr +0x194 bit 20 (Ch_SetKeepFps's); Switch name
 0x008392c0 function Ch_GetWaitMotion          # fh v3:bsim1.00 0x00839340
 0x008393c0 function SG_SampleChannels         # steps the key streams to the frame, interpolates (angles wrap at 1 turn)
 0x008394d0 function SG_StepChannels           # key stream decoder: 7-bit delta, 14-bit delta (0xc0), repeat (0x80 | n)
 0x00839860 function Ch_MotionGetFrame         # fh v3:bsim1.00 0x008398e0
 0x00839870 function Ch_MotionGetHalf          # fh v3:cg2 0x8398f0
 0x008398f0 function SG_RewindChannels         # restarts every key stream
+0x00839950 function Ch_MotionSetHalf          # (v): g_ChrMotionHalf = v (Ch_MotionGetHalf's); Switch name
 0x00839960 function Ch_MotionSetLoop          # fh switch:bsim1.00 0x71004116e0
 0x00839980 function Ch_MotionSetupFcurve      # clip header, 2-bit channel types (0 zero, 1 one, 2 constant, 3 stream), nine per bone; was SG_SetClip
 0x00839b50 function Ch_SetKeepFps             # fh v3:bsim1.00+call.cs 0x00839bd0 cdecl
@@ -3239,12 +3283,23 @@
 0x0083caf0 function op_chara_hsv_make_0083caf0 # fh switch:cg2 0x7100403e90
 0x0083cb90 function Ch_GetLightValue          # fh v3:bsim1.00 0x0083cb90
 0x0083cba0 function Ch_TexDataMapping         # fh v3:exact 0x0083cba0
+0x0083cd20 function Ch_TexGetClut             # (chr, i, &out): model block (chr +0x1c4) +0x14 texture data, clut i (8 bytes from its +0x18): out = word 0, returns word 1; 0 without data; Switch name, in name order after Ch_TexDataMapping
+0x0083cd50 function Ch_TexGetImage            # (chr, i, &w, &h): image i (16 bytes from texture data +0x1c): w = u16 +8, h = u16 +0xa, returns +0xc; Switch name, in name order
+0x0083cd90 function Ch_TexGetNbClut           # texture data +8 (u16), 0 without data; Switch name, in name order
+0x0083cdb0 function Ch_TexGetNbImage          # texture data +0xc (u16); Switch name, in name order before Ch_TextureReMapping
 0x0083cdd0 function Ch_TextureReMapping       # fh v3:exact 0x0083cdd0
 0x0083d040 function Ch_TextureSetAnim         # fh v3:exact 0x0083d040
 0x0083d070 function Ch_TextureSetAnimTimer    # fh v3:exact 0x0083d070
 0x0083d0a0 function Ch_TextureSetup           # fh v3:exact 0x0083d0a0
 0x0083d370 function Sg_GsloadSetBase          # fh v3:exact 0x0083d370
+0x0083d7a0 function Ch_IdGetDictionary        # chr +0x828 bits 11-12; Switch name: the 13 functions 0x0083d7a0..0x0083d940 match the 13 Switch Ch_IdGet*/Ch_IdSetDefPid names of that file in name order
+0x0083d7c0 function Ch_IdGetEffect            # chr +0x828 bits 9-10; Switch name, in name order (Ch_IdGetEffectTable calls it)
+0x0083d7e0 function Ch_IdGetEffectTable       # motion type (chr +0x186) 2: 8 | !(+0x194 bit 29); else byte 0x01301af8[effect + 4 * (i8) 0x01301b00] (Sg_IdSetEffectTableIndex's); Switch name, in name order
 0x0083d820 function Ch_IdGetEncount           # fh v3:bsim1.00 0x0083d820
+0x0083d840 function Ch_IdGetMap               # chr +0x828 & 0x7f; 0x30..0x3f through the table 0x013019d8; Switch name, in name order
+0x0083d860 function Ch_IdGetMapB              # chr +0x828 & 0x7f; Switch name, in name order
+0x0083d900 function Ch_IdGetSound             # chr +0x828 bits 15-16; Switch name, in name order
+0x0083d920 function Ch_IdGetWater             # chr +0x828 bits 13-14; Switch name, in name order before Ch_IdSetDefPid
 0x0083d940 function Ch_IdSetDefPid            # fh v3:bsim1.00 0x0083d940
 0x0083e5c0 function Sg_Debug                  # fh switch:bsim0.93 0x7100429320
 0x0083e970 function Sg_IdGetPtr               # fh v3:bsim1.00 0x0083e970
@@ -3342,6 +3397,8 @@
 0x00845700 function Ch_EffectPacketGetSize    # fh v3:bsim1.00 0x00845700
 0x00845710 function Ch_EffectPacketSetPtr     # fh v3:exact 0x00845710
 0x008457d0 function Ch_EffectPacketStoreEND   # fh v3:exact 0x008457d0
+0x00845800 function Ch_EffectPacketStoreMAT   # (v): u16 0x01303674 = v; Switch name, in name order between Ch_EffectPacketStoreEND and Ch_EffectPacketStorePRG
+0x00845810 function Ch_EffectPacketStorePRG   # (v): u16 0x0130367c = v; Switch name, in name order before Ch_EffectPacketStorePoly
 0x00845820 function Ch_EffectPacketStorePoly  # fh v3:exact 0x00845820
 0x00845ca0 function sg_setvtex_and_normal     # fh v3:bsim1.00 0x00845ca0
 0x00845eb0 function sg_calcenvelope_norm      # fh v3:bsim1.00 0x00845eb0
@@ -7255,6 +7312,8 @@
 0x00c42420 label g_StatusTable2              # entry 14 of g_StatusTable on; MsCheckStat2 (0x0079e320) returns byte 3 of entry i
 0x00c44bf0 label    g_pppSinTable                # 4096 f32 sines over a turn: pppGetRotMatrix* read [(a>>4)&0xfff] and [((a+0x4000)>>4)&0xfff] (cosine)
 0x00c49680 label g_ChrDefaultMoves           # Ch_MotionSetMoves(chr, slot, -1) stores entry [slot] (0, 1, 2, then zeros)
+0x00c496ea label g_ChrShadeByLight           # i8: Ch_DrawCalcShade multiplies the shade fade by the light value fade (+0x36c) when set
+0x00c49718 label g_ChrMouthTh                # i16, Ch_GuiSetMouthTh (0..200)
 0x00c4df54 label    g_GuHScale                # vertical scale of Gu_SetScissor's y bounds, 8.8 fixed point (Gu_SetHScale)
 0x00c4df60 label    g_GuWindowHokan           # window movement smoothing on (Gu_WindowSetHokanEnable)
 0x00c52ad8 label    g_TkVibrateCurves         # 4 default vibration curves of 16 bytes (u16 entries), by kind (TkGetVibrateCurve)
@@ -7420,10 +7479,35 @@
 0x012a85b0 label    g_EtChrDrawFlags2            # used instead of g_EtChrDrawFlags where nonzero
 0x012f4e80 label    g_SqsIopStatus               # sound driver status words: 0 system (SqsIopSoundSystemStatus), 1 error (SqsIopSoundErrorStatus), indexed by SqsReportIopSoundStatus
 0x012fb7f0 label    g_SgVCount                   # vertical blank counter, +2 a frame (0x00821e80); Sg_MainCalcRate reads it; yiGetVCount
+0x012fbc54 label g_ChrClothParaEdit          # i8, Ch_ClothSetParaEdit / Ch_ClothGetParaEdit
+0x012fbc58 label g_ChrClothY                 # float, Ch_ClothSetY
+0x012fbc5c label g_ChrClothXZ                # float, Ch_ClothSetXZ
 0x012fbd9c label g_ChrHandleCursor           # Ch_HandleGetNext's slot index into g_ChrArray; Ch_HandleRewind sets 0
+0x012fbda0 label g_ChrMemMoveTrigger         # u8, Ch_MemMoveSetTrigger sets 1
 0x012fbda4 label g_ChrFunctionHistoryCount   # Ch_FunctionHistoryInit sets 0
 0x012fbda8 label g_ChrFunctionHistory        # 127 entries of 16 bytes (to 0x012fc598); Ch_FunctionHistoryInit clears byte 0 of each
+0x012fc6a0 label g_ChrClothLoads             # 50 cloth file loads of 0x110 bytes (to 0x012ffbc0): +0 state (1 = loading), +4 key (Ch_IsLoadingClothFile)
 0x012ffad8 label g_ChrSkipSetPos3            # set by Ch_GetPosSg; Ch_SetPos3 clears it instead of moving the character
+0x013007d9 label g_ChrDrawParaEdit           # i8, Ch_DrawSetParaEdit / Ch_DrawGetParaEdit
+0x013007da label g_ChrDrawFourceSpec         # i8, Ch_DrawSetFourceSpec / Ch_DrawGetFourceSpec
+0x013007db label g_ChrDrawDisableSpec        # i8, Ch_DrawSetDisableSpec / Ch_DrawGetDisableSpec
+0x013007e8 label g_ChrEnableTexture          # i8, Ch_EnableGetTexture
+0x013008bd label g_ChrShadowMode             # u8, Ch_DrawSetShadowMode
+0x013008bf label g_ChrShadowColor            # u8 r, g, b, Ch_DrawSetShadowColor / Ch_DrawGetShadowColor
+0x013008c4 label g_ChrShadowDir              # 2 words, Ch_DrawSetShadowDir / Ch_DrawGetShadowDir
+0x013008db label g_ChrDumpMotEv              # i8, Ch_SetDumpMotEv / Ch_GetDumpMotEv
+0x013008f8 label g_ChrCameraMatrix           # 64 bytes, Ch_SysGetCameraMatrixPtr / Ch_SysSetCameraMatrix
+0x01300938 label g_ChrScreenMatrix           # 64 bytes, Ch_SysGetScreenMatrixPtr / Ch_SysSetScreenMatrix
+0x013009b8 label g_ChrFuka                   # u32 by index, Ch_SetFuka / Ch_GetFuka
+0x013009e0 label g_ChrGuiCalcNormal          # 0 or 1, Ch_GuiSetCalcNormAll / Ch_GuiGetCalcNormal
+0x013017f8 label g_ChrMotionHalf             # Ch_MotionSetHalf / Ch_MotionGetHalf
+0x013019d8 label g_ChrIdMapTable             # u32 by raw map id: Ch_IdGetMap maps ids 0x30..0x3f through it (0x0083e9e0 sets entries)
+0x01301af8 label g_ChrIdEffectTable          # u8, 4 per set: Ch_IdGetEffectTable
+0x01301b00 label g_ChrIdEffectTableIndex     # i8, the set (Sg_IdSetEffectTableIndex)
+0x01303658 label g_ChrPacketPtr              # effect packet write pointer, 0 = only measure (Ch_EffectPacketStoreEND)
+0x0130365c label g_ChrPacketSize             # effect packet bytes (Ch_EffectPacketGetSize)
+0x01303674 label g_ChrPacketMat              # u16, Ch_EffectPacketStoreMAT
+0x0130367c label g_ChrPacketPrg              # u16, Ch_EffectPacketStorePRG
 0x013036c0 label    g_GuPacketCount           # GIF quadwords queued at g_GuPacket (Gu_SetScissor, Gu_SetTexFlush add 2)
 0x013036c4 label    g_GuPacket                # the Gu GS packet buffer, 16-byte quadwords
 0x013036c8 label    g_GuPacketData            # where Gu_SetPrim, Gu_SetRgbaq, Gu_SetTest, Gu_SetXyzf2 append (indexed by g_GuPacketCount like g_GuPacket)
