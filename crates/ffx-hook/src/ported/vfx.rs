@@ -53,7 +53,7 @@ fn crt_rand() -> u32 {
 }
 
 /// A function the originals call through a pointer (the program table's
-/// `+4`..`+0x24`, `TOGetFFXLang`, `graphicVFXDestroy`): cdecl, up to four
+/// `+4`..`+0x24`, `TOGetFFXLang`, `graphicVFXDestroy`, ...): cdecl, up to eight
 /// arguments; returns `eax`.
 fn call_ptr(f: u32, args: &[u32]) -> u32 {
     super::call_cdecl(f, args)
@@ -807,7 +807,7 @@ ported! {
         fp::bridge::ppp_fp_stat(&mem(), 3)
     }
     /// `pppFpGetHeapPeak()`.
-    pppFpGetHeapPeak @ 0x0072_9280 => extern "C" fn ppp_fp_get_heap_peak() -> u32 {
+    pppFpGetHeapMaxUseSize @ 0x0072_9280 => extern "C" fn ppp_fp_get_heap_peak() -> u32 {
         fp::bridge::ppp_fp_stat(&mem(), 4)
     }
     /// `MsSet01130838(v)`; returns `v` (left in `eax`).
@@ -890,7 +890,7 @@ ported! {
         op::bridge::op_color_shift_load16(&mut mem(), dst, base);
     }
     /// `op_oef2_clut_pos_set(rec, pos)`.
-    op_oef2_clut_pos_set @ 0x007e_45e0 => extern "C" fn op_oef2_clut_pos_set(rec: u32, pos: u32) -> u32 {
+    op_oef2_clut_change_monster @ 0x007e_45e0 => extern "C" fn op_oef2_clut_pos_set(rec: u32, pos: u32) -> u32 {
         op::bridge::op_oef2_clut_pos_set(&mut mem(), rec, pos)
     }
     /// `op_oef2_tex_pos_set(rec, pos)`.
@@ -911,7 +911,7 @@ ported! {
         opus::bridge::opus_monster_tex_pos(&mem(), slot)
     }
     /// `opus_parts_clear(i, n)`.
-    opus_parts_clear @ 0x0080_1480 => extern "C" fn opus_parts_clear(i: u32, n: u32) {
+    opus_osu_init_group @ 0x0080_1480 => extern "C" fn opus_parts_clear(i: u32, n: u32) {
         opus::bridge::opus_parts_clear(&mut mem(), i, n);
     }
     /// `op_oef2_sound_wait()`.
@@ -1031,6 +1031,52 @@ ported! {
     /// `TOBtlLibraGetRects()`.
     TOBtlLibraGetRects @ 0x0089_7dc0 => extern "C" fn to_btl_libra_get_rects() -> u32 {
         slots::bridge::to_btl_libra_get_rects(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_part_a76720(obj, cmd)`.
+    opp_part_a76720 @ 0x00a7_6720 => extern "C" fn opp_part_a76720(obj: u32, cmd: u32) -> u32 {
+        slots::bridge::opp_part_a76720(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_map_draw_a74c60(obj, cmd)`.
+    opp_map_draw_a74c60 @ 0x00a7_4c60 => extern "C" fn opp_map_draw_a74c60(obj: u32, cmd: u32) -> u32 {
+        slots::bridge::opp_map_draw_a74c60(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_md_break_init_a74410(obj, cmd)`.
+    opp_md_break_init_a74410 @ 0x00a7_4410 => extern "C" fn opp_md_break_init_a74410(obj: u32, cmd: u32) -> u32 {
+        slots::bridge::opp_md_break_init_a74410(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_wave_cmd_7f5f70(obj, cmd)`: its stack locals in a buffer on
+    /// this shim's stack (the frame pointer at its end).
+    opus_wave_cmd_7f5f70 @ 0x007f_5f70 => extern "C" fn opus_wave_cmd_7f5f70(obj: u32, cmd: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x40]);
+        let mut locals = Locals([0; 0x40]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x40;
+        slots::bridge::opus_wave_cmd_7f5f70(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_chr_center_a756e0(obj, cmd)`: its stack locals in a buffer on
+    /// this shim's stack (the frame pointer at its end).
+    opp_chr_center_a756e0 @ 0x00a7_56e0 => extern "C" fn opp_chr_center_a756e0(obj: u32, cmd: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x60]);
+        let mut locals = Locals([0; 0x60]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x60;
+        slots::bridge::opp_chr_center_a756e0(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_chr_fade_center_a76b60(obj, cmd)`: its stack locals in a
+    /// buffer on this shim's stack (the frame pointer at its end).
+    opp_chr_fade_center_a76b60 @ 0x00a7_6b60 => extern "C" fn opp_chr_fade_center_a76b60(obj: u32, cmd: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x1f0]);
+        let mut locals = Locals([0; 0x1f0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x1f0;
+        slots::bridge::opp_chr_fade_center_a76b60(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu2_part(obj, cmd)`.
+    opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
+        slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))
     }
     /// `op_char_table_set`.
     op_char_table_set @ 0x007e_13e0 => extern "C" fn op_char_table_set(table: u32, chars: u32, v: u32)  {

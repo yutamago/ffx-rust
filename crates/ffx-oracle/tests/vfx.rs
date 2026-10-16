@@ -5510,6 +5510,12 @@ fn former_hidden_slots_match_the_original() {
 /// `words[k]` not 0, logs that many words it points at instead of the
 /// pointer (16 words per entry); returns the log.
 fn deref_recorder(p: &mut Pair, sym: u32, words: &[u8]) -> u32 {
+    deref_recorder_with(p, sym, words, None)
+}
+
+/// [`deref_recorder`] that returns the dword at `ret` (when given)
+/// instead of the count.
+fn deref_recorder_with(p: &mut Pair, sym: u32, words: &[u8], ret: Option<u32>) -> u32 {
     let log = p.alloc(4 + 0x100 * 64);
     let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
     c.extend(log.to_le_bytes());
@@ -5534,8 +5540,8 @@ fn deref_recorder(p: &mut Pair, sym: u32, words: &[u8]) -> u32 {
     assert!(pos <= 15);
     c.extend([0xff, 0x05]); // inc dword [count]
     c.extend(log.to_le_bytes());
-    c.push(0xa1); // mov eax, [count]
-    c.extend(log.to_le_bytes());
+    c.push(0xa1); // mov eax, [count] or [ret]
+    c.extend(ret.unwrap_or(log).to_le_bytes());
     c.push(0xc3);
     let at = p.sym(sym);
     p.a.write(at, &c).unwrap();
@@ -5860,6 +5866,287 @@ fn small_op_helpers_match_the_original() {
             p.check("opusPlus0c", 0x0080_6b50, &[v], |_| {
                 Some(v.wrapping_add(0xc))
             });
+        }
+    }
+}
+
+/// Runs the original two-argument `sym` in `a` with 0x200 more bytes of
+/// stack (through a trampoline at [`THUNK`], so its locals lie below the
+/// stack the oracle gives the bridge's own calls) and `rust` in `b` with
+/// the original's frame pointer (for a `push ebp; mov ebp, esp` frame);
+/// checks the result and the memory.
+fn check_deep(
+    p: &mut Pair,
+    what: &str,
+    sym: u32,
+    args: [u32; 2],
+    rust: impl FnOnce(&mut Oracle, u32) -> u32,
+) {
+    let at = p.sym(THUNK);
+    let mut c = vec![0x81, 0xec, 0, 2, 0, 0]; // sub esp, 0x200
+    for _ in 0..2 {
+        c.extend([0xff, 0xb4, 0x24, 0x08, 0x02, 0, 0]); // push [esp + 0x208]
+    }
+    c.push(0xe8); // call sym
+    let call_end = at + u32::try_from(c.len()).unwrap() + 4;
+    c.extend(p.sym(sym).wrapping_sub(call_end).to_le_bytes());
+    c.extend([0x81, 0xc4, 0x08, 0x02, 0, 0]); // add esp, 0x208
+    c.push(0xc3);
+    p.a.write(at, &c).unwrap();
+    p.b.write(at, &c).unwrap();
+    // the trampoline's entry: 0x100 below the stack's end, the arguments
+    // and the return address; then 0x200, two arguments, a return address
+    // and the saved ebp
+    let frame = p.b.stack_range().end - 0x100 - 8 - 4 - 0x200 - 8 - 4 - 4;
+    let r =
+        p.a.call(at, Conv::Cdecl, &args)
+            .unwrap_or_else(|e| panic!("{}: {what}: {e}", p.name));
+    let mine = rust(&mut p.b, frame);
+    assert_eq!(r.eax, mine, "{}: {what}: result", p.name);
+    p.same(what);
+}
+
+/// A `dbgPrintf` stand-in at `0x0062f500` that logs the format and, for
+/// the format at `two` (one with a double), the two words after it;
+/// returns the log (16-byte entries after the count).
+fn dbg_printf_recorder(p: &mut Pair, two: u32) -> u32 {
+    let log = p.alloc(4 + 0x100 * 16);
+    let mut c = vec![0xa1]; // mov eax, [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x25, 0xff, 0, 0, 0]); // and eax, 0xff
+    c.extend([0xc1, 0xe0, 0x04]); // shl eax, 4
+    c.extend([0x8b, 0x4c, 0x24, 0x04]); // mov ecx, [esp + 4]
+    c.extend([0x89, 0x88]); // mov [eax + slot], ecx
+    c.extend((log + 4).to_le_bytes());
+    c.extend([0x81, 0xf9]); // cmp ecx, two
+    c.extend(two.to_le_bytes());
+    c.extend([0x75, 0x14]); // jne +20
+    for k in 1..3u8 {
+        c.extend([0x8b, 0x4c, 0x24, 4 + 4 * k]); // mov ecx, [esp + 4 + 4k]
+        c.extend([0x89, 0x88]); // mov [eax + slot], ecx
+        c.extend((log + 4 + 4 * u32::from(k)).to_le_bytes());
+    }
+    c.extend([0xff, 0x05]); // inc dword [count]
+    c.extend(log.to_le_bytes());
+    c.push(0xc3);
+    let at = p.sym(0x0062_f500);
+    p.a.write(at, &c).unwrap();
+    p.b.write(at, &c).unwrap();
+    log
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round9_handlers_match_the_original() {
+    use slots::bridge as s;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a7_4a00);
+        let unit = p.alloc(0x100);
+        let entry = p.alloc(0x40);
+        let buf = p.alloc(0x100);
+        // what the buffer, oef2-entry, unit and mesh-break stand-ins return
+        let cells = p.alloc(16);
+        p.set(cells, buf);
+        p.set(cells + 4, entry);
+        p.set(cells + 8, unit);
+        for (sym, words, ret) in [
+            (0x00a7_6770u32, &[0u8, 0][..], None),
+            (0x007f_f780, &[0, 0], Some(cells)),
+            (0x00a7_53f0, &[0, 4], None),
+            (0x00a7_5170, &[4, 0, 0, 0, 0], None),
+            (0x007e_3810, &[0, 0, 0], Some(cells + 4)),
+            (0x00a7_44e0, &[0, 0, 0], None),
+            (0x0080_0d60, &[0, 0], None),
+            (0x00a7_3c20, &[0, 0, 0, 0], Some(cells + 12)),
+            (0x0064_5780, &[0, 0], None),
+            (0x0080_1060, &[0, 0, 0], Some(cells + 8)),
+            (0x007e_5260, &[0, 0, 0], None),
+            (0x007e_a700, &[0, 0], None),
+            (0x0080_1f00, &[0, 0], None),
+            (0x0063_df50, &[], None),
+            (0x0064_2fa0, &[], None),
+            // the 10 copied bytes at frame - 0x10: two whole words
+            (0x007f_65d0, &[0, 0, 0, 0, 2, 0, 0, 0], None),
+            (0x0063_d810, &[0, 0], None),
+            (0x0079_66a0, &[0, 0], None),
+            (0x0063_a2b0, &[0, 0, 0], None),
+            (0x0082_6a80, &[0, 0], None),
+            (0x007e_79a0, &[0, 0, 3], None),
+            (0x0063_d880, &[0, 0, 1], None),
+            (0x007e_a730, &[0, 0], None),
+            (0x007e_9970, &[0, 0, 0, 0], None),
+            (0x007e_a850, &[0, 0, 0], None),
+            (0x007e_a6d0, &[0], None),
+            // stands in for the unit list's handler (obj +0x350, +0x64)
+            (0x00a7_0910, &[0, 0, 0, 0], None),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        // 0x0063d870 has 16 bytes before 0x0063d880: a call counter
+        let restored = p.alloc(4);
+        let mut c = vec![0xff, 0x05];
+        c.extend(restored.to_le_bytes());
+        c.push(0xc3);
+        let at = p.sym(0x0063_d870);
+        p.a.write(at, &c).unwrap();
+        p.b.write(at, &c).unwrap();
+        let two = p.sym(0x00b7_c520);
+        dbg_printf_recorder(&mut p, two);
+        let chain = p.sym(0x0078_8dd0);
+        let handler = p.sym(0x00a7_0910);
+        let wave_off = p.sym(0x012f_b7d0);
+        let obj = p.alloc(0x800);
+        let rec = p.alloc(0x200);
+        let cmd = p.alloc(0x200);
+        let t = p.alloc(0x40);
+        let pp = p.alloc(0x80);
+        let pts = p.alloc(0x20);
+        let vt = p.alloc(0x80);
+        for _ in 0..1500 {
+            for (at, len) in [(obj, 0x800), (rec, 0x200), (cmd, 0x200), (unit, 0x100)] {
+                p.fill(at, len, &mut rng);
+            }
+            p.fill(entry, 0x40, &mut rng);
+            p.fill(pts, 0x20, &mut rng);
+            p.set(obj + 0x220, rec);
+            let kind = rng.pick(&[0u16, 0x1000, 0x2000, 0x3000, 0x4000, 0x0800]);
+            let low: u16 = p.get(obj + 0x21a);
+            p.set(obj + 0x21a, (low & 0x0fff) | kind);
+            let tv = if rng.chance(15) { 0 } else { t };
+            p.set(obj + 0x3b4, tv);
+            p.set(t, if rng.chance(15) { 0 } else { pp });
+            p.set(t + 8, pts);
+            p.set(t + 0x14, pts);
+            p.set(t + 0x20, pts + 4 * rng.below(3));
+            for i in 0..3 {
+                let x = finite(&mut rng);
+                p.set(pts + 4 * i, x);
+            }
+            let scl = if rng.chance(30) { 0 } else { finite(&mut rng) };
+            p.set(pp + 0x60, scl);
+            for off in [2u32, 4, 6] {
+                let v = if rng.chance(20) {
+                    0
+                } else {
+                    4 * rng.below(0x7c)
+                };
+                p.set(cmd + off, u16::try_from(v).unwrap());
+            }
+            for at in (0xd0..0xf0).step_by(4) {
+                let x = finite(&mut rng);
+                p.set(rec + at, x);
+            }
+            let v = finite(&mut rng);
+            p.set(unit + 0x44, v);
+            p.set(unit + 0xbb, rng.pick(&[3u8, 0x82, 0]));
+            p.set(entry + 0x10, u16::try_from(rng.below(0x100)).unwrap());
+            p.set(obj + 0x350, vt);
+            p.set(vt + 0x64, handler);
+            p.set(cells + 12, rng.pick(&[0u32, 1, 0x8000_0000]));
+            p.set(wave_off, u32::from(rng.chance(30)));
+            let on = rng.pick(&[0u32, 1]);
+            p.a.stub_return(chain, on).unwrap();
+            p.b.stub_return(chain, on).unwrap();
+            p.check("opp_part_a76720", 0x00a7_6720, &[obj, cmd], |m| {
+                Some(s::opp_part_a76720(m, obj, cmd, &mut call_original))
+            });
+            p.check("opp_map_draw_a74c60", 0x00a7_4c60, &[obj, cmd], |m| {
+                Some(s::opp_map_draw_a74c60(m, obj, cmd, &mut call_original))
+            });
+            p.check("opp_md_break_init_a74410", 0x00a7_4410, &[obj, cmd], |m| {
+                Some(s::opp_md_break_init_a74410(m, obj, cmd, &mut call_original))
+            });
+            check_deep(
+                &mut p,
+                "opus_wave_cmd_7f5f70",
+                0x007f_5f70,
+                [obj, cmd],
+                |m, frame| s::opus_wave_cmd_7f5f70(m, obj, cmd, frame, &mut call_original),
+            );
+            check_deep(
+                &mut p,
+                "opp_chr_center_a756e0",
+                0x00a7_56e0,
+                [obj, cmd],
+                |m, frame| s::opp_chr_center_a756e0(m, obj, cmd, frame, &mut call_original),
+            );
+            p.check("opu2_part", 0x00a7_4a00, &[obj, cmd], |m| {
+                Some(s::opu2_part(m, obj, cmd, &mut call_original))
+            });
+        }
+    }
+}
+
+#[test]
+fn fade_centres_match_the_original() {
+    use slots::bridge as s;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a7_6b60);
+        let (unit, set, u, bone) = (
+            p.alloc(0x100),
+            p.alloc(0x100),
+            p.alloc(0x100),
+            p.alloc(0x40),
+        );
+        let entry = p.alloc(0x400);
+        // what the unit, bone-set, entry, unit-by-name and bone-record
+        // stand-ins return
+        let cells = p.alloc(20);
+        for (k, v) in [unit, set, entry, u, bone].into_iter().enumerate() {
+            p.set(cells + 4 * u32::try_from(k).unwrap(), v);
+        }
+        for (sym, words, ret) in [
+            (0x0080_1060u32, &[0u8, 0, 0][..], Some(cells)),
+            (0x0080_e160, &[0, 0, 0, 0, 0], Some(cells + 4)),
+            (0x0080_e900, &[0, 0, 0, 0, 0], None),
+            (0x0080_1f00, &[0, 0], None),
+            (0x007e_83b0, &[0, 0, 0], None),
+            (0x0080_62c0, &[0, 0, 0, 0, 0, 0], None),
+            (0x00a4_4650, &[0], None),
+            (0x0083_3f80, &[0, 0], None),
+            (0x006e_d460, &[0, 0], None),
+            (0x006e_d2e0, &[4, 0, 0], None),
+            (0x0063_b5d0, &[0, 0, 0], None),
+            (0x0080_b520, &[0, 0, 0, 0, 0], Some(cells + 12)),
+            (0x007e_3810, &[0, 0, 0], Some(cells + 8)),
+            (0x0080_3200, &[0, 0], Some(cells + 16)),
+            (0x007e_79a0, &[0, 0, 0], None),
+            (0x007e_a850, &[0, 0, 0], None),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        let obj = p.alloc(0x800);
+        let rec = p.alloc(0x200);
+        let cmd = p.alloc(0x200);
+        for _ in 0..1000 {
+            for (at, len) in [(obj, 0x800), (rec, 0x200), (cmd, 0x200), (unit, 0x100)] {
+                p.fill(at, len, &mut rng);
+            }
+            p.fill(bone, 0x40, &mut rng);
+            p.set(obj + 0x220, rec);
+            let kind = rng.pick(&[0x1000u16, 0x2000, 0x2000, 0x3000]);
+            let low: u16 = p.get(obj + 0x21a);
+            p.set(obj + 0x21a, (low & 0x0fff) | kind);
+            p.set(set + 4, u16::try_from(rng.below(4)).unwrap());
+            for k in 0..3 {
+                let x = finite(&mut rng);
+                p.set(unit + 0x90 + 4 * k, x);
+            }
+            p.set(obj + 0x212, u16::from(rng.chance(20)));
+            p.set(
+                rec + 0xa8,
+                u16::from(!rng.chance(20)) * u16::try_from(rng.below(0x40)).unwrap(),
+            );
+            p.set(rec + 0xaa, u16::try_from(rng.below(0x30)).unwrap());
+            p.set(cells + 12, if rng.chance(20) { 0 } else { u });
+            p.set(cmd + 2, u16::try_from(rng.below(0x100)).unwrap());
+            check_deep(
+                &mut p,
+                "opp_chr_fade_center_a76b60",
+                0x00a7_6b60,
+                [obj, cmd],
+                |m, frame| s::opp_chr_fade_center_a76b60(m, obj, cmd, frame, &mut call_original),
+            );
         }
     }
 }
