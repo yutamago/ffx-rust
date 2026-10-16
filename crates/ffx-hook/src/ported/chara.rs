@@ -1233,17 +1233,9 @@ ported! {
     Chr_FracStep @ 0x0083_9f50 => extern "C" fn chr_frac_step(a: f32, b: f32, n: i32) -> f32 {
         mo::bridge::chr_frac_step(&mem(), a, b, n)
     }
-    /// `Chr_AddVector3(dst, a, b)`.
-    Chr_AddVector3 @ 0x0082_4ce0 => extern "C" fn chr_add_vector3(dst: u32, a: u32, b: u32) {
-        c::chr_add_vector3(&mut mem(), dst, a, b);
-    }
     /// `Ch_WindSetEnable(chr, on)`.
     Ch_WindSetEnable @ 0x0082_4cc0 => extern "C" fn ch_wind_set_enable(chr: u32, on: u32) {
         c::ch_wind_set_enable(&mut mem(), chr, on);
-    }
-    /// `Chr_CopyVector4(dst, src)`.
-    Chr_CopyVector4 @ 0x0082_4d10 => extern "C" fn chr_copy_vector4(dst: u32, src: u32) {
-        c::chr_copy_vector4(&mut mem(), dst, src);
     }
     /// `Ch_ElemGetBaseMatrix(chr, e, out)`.
     Ch_ElemGetBaseMatrix @ 0x0083_3b80 => extern "C" fn ch_elem_get_base_matrix(chr: u32, e: u32, out: u32) -> u32 {
@@ -1257,10 +1249,6 @@ ported! {
     Ch_ElemGetPos @ 0x0083_3d10 => extern "C" fn ch_elem_get_pos(chr: u32, e: u32, v: u32, out: u32) {
         mx::ch_elem_get_pos(&mut mem(), chr, e, v, out);
     }
-    /// `Chr_WrapAngleDiscard(a)`: wraps a copy and drops it.
-    Chr_WrapAngleDiscard @ 0x0083_a010 => extern "C" fn chr_wrap_angle_discard(a: f32) {
-        let _ = ffx_chara::chr::wrap_angle(a);
-    }
     /// `Ch_TextureSetImage(clut, tex)`.
     Ch_TextureSetImage @ 0x0083_d220 => extern "C" fn ch_texture_set_image(clut: u32, tex: u32) {
         ta::ch_texture_set_image(&mut mem(), clut, tex);
@@ -1273,14 +1261,6 @@ ported! {
     Ch_WindSet @ 0x0082_4c90 => extern "C" fn ch_wind_set(chr: u32, a: f32, b: f32, c: f32) {
         c::ch_wind_set(&mut mem(), chr, a, b, c);
     }
-    /// `Chr_DotVector3(a, b, out)`.
-    Chr_DotVector3 @ 0x0082_4d40 => extern "C" fn chr_dot_vector3(a: u32, b: u32, out: u32) {
-        c::chr_dot_vector3(&mut mem(), a, b, out);
-    }
-    /// `Chr_ScaleVector3(dst, v, s)`.
-    Chr_ScaleVector3 @ 0x0082_4d70 => extern "C" fn chr_scale_vector3(dst: u32, v: u32, s: f32) {
-        c::chr_scale_vector3(&mut mem(), dst, v, s);
-    }
     /// `Ch_OptposGetMatrix(chr, id, offset, out)`.
     Ch_OptposGetMatrix @ 0x0083_56b0 => extern "C" fn ch_optpos_get_matrix(chr: u32, id: u32, offset: u32, out: u32) {
         at::ch_optpos_get_matrix(&mut mem(), chr, id, offset, out);
@@ -1288,10 +1268,6 @@ ported! {
     /// `Ch_TextureReMapping(chr)`.
     Ch_TextureReMapping @ 0x0083_cdd0 => extern "C" fn ch_texture_re_mapping(chr: u32) {
         ta::ch_texture_re_mapping(&mut mem(), chr);
-    }
-    /// `Chr_SubVector3(dst, a, b)`.
-    Chr_SubVector3 @ 0x0082_4da0 => extern "C" fn chr_sub_vector3(dst: u32, a: u32, b: u32) {
-        c::chr_sub_vector3(&mut mem(), dst, a, b);
     }
     /// `Ch_MoveChrBlk(new, old)`.
     Ch_MoveChrBlk @ 0x0083_47a0 => extern "C" fn ch_move_chr_blk(new: u32, old: u32) {
