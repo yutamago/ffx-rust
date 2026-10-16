@@ -2,7 +2,8 @@
 //! loop, point lights, the GS packet writers, small vector helpers,
 //! `crossAssertIsValidFloat`.
 
-use ffx_sg::{camera, gs, light, seq, state, vec};
+use ffx_sg::quat::Crt;
+use ffx_sg::{camera, chpacket, gs, light, quat, seq, state, vec};
 
 use super::{mem, ported};
 
@@ -865,6 +866,273 @@ ported! {
     Sg_SetMouse @ 0x0085_1ae0 => extern "C" fn sg_set_mouse(x: i32, y: i32) -> i32 {
         state::bridge::set_mouse(&mut mem(), x, y)
     }
+
+    // Round 3.
+    /// `eidprintfPrint()`.
+    eidprintfPrint @ 0x0076_b8d0 => extern "C" fn eidprintf_print() {
+        state::bridge::eid_printf_print(&mut mem());
+    }
+    /// `SPAD_CALL()`: never implemented on PC.
+    SPAD_CALL @ 0x0077_a480 => extern "C" fn spad_call() {
+        // Only a warning through the empty `dbgPrintf`.
+    }
+    /// `rgb32_to_24_asm()`: never implemented on PC.
+    rgb32_to_24_asm @ 0x0077_a490 => extern "C" fn rgb32_to_24_asm() {
+        // Only a warning through the empty `dbgPrintf`.
+    }
+    /// `sa_printf_set()`: never implemented on PC.
+    sa_printf_set @ 0x0077_a4a0 => extern "C" fn sa_printf_set() {
+        // Only a warning through the empty `dbgPrintf`.
+    }
+    /// `Cam_IsMoving(cam, side)`.
+    Cam_IsMoving @ 0x007b_dd20 => extern "C" fn cam_is_moving(cam: u32, side: u32) -> u32 {
+        camera::bridge::cam_is_moving(&mem(), cam, side)
+    }
+    /// `Sg_GetUserName2()`.
+    Sg_GetUserName2 @ 0x0082_0620 => extern "C" fn sg_get_user_name2() -> u32 {
+        state::bridge::get_user_name2(&mem())
+    }
+    /// `Sg_MainCalcRate()`.
+    Sg_MainCalcRate @ 0x0082_06c0 => extern "C" fn sg_main_calc_rate() -> i32 {
+        state::bridge::main_calc_rate(&mut mem())
+    }
+    /// `Sg_MenuSetReserve(request)`.
+    Sg_MenuSetReserve @ 0x0082_1750 => extern "C" fn sg_menu_set_reserve(request: u32) {
+        state::bridge::menu_set_reserve(&mut mem(), request);
+    }
+    /// `getUCStatus()`.
+    getUCStatus @ 0x0082_2460 => extern "C" fn get_uc_status() -> u32 {
+        state::bridge::get_uc_status(&mem())
+    }
+    /// `set0434isDarkYojimbo(id)`.
+    set0434isDarkYojimbo @ 0x0082_9c60 => extern "C" fn set0434is_dark_yojimbo(id: u32) {
+        state::bridge::set_dark_yojimbo(&mut mem(), id);
+    }
+    /// `Sg_FadeIn(time)`.
+    Sg_FadeIn @ 0x0082_cb80 => extern "C" fn sg_fade_in(time: u32) -> u32 {
+        state::bridge::fade_in(&mut mem(), time)
+    }
+    /// `Sg_FadeInW(time)`.
+    Sg_FadeInW @ 0x0082_cba0 => extern "C" fn sg_fade_in_w(time: u32) -> u32 {
+        state::bridge::fade_in_w(&mut mem(), time)
+    }
+    /// `Sg_FadeOut(time)`.
+    Sg_FadeOut @ 0x0082_cbc0 => extern "C" fn sg_fade_out(time: u32) -> u32 {
+        state::bridge::fade_out(&mut mem(), time)
+    }
+    /// `Sg_FadeOutW(time)`.
+    Sg_FadeOutW @ 0x0082_cbe0 => extern "C" fn sg_fade_out_w(time: u32) -> u32 {
+        state::bridge::fade_out_w(&mut mem(), time)
+    }
+    /// `Sg_FilterSub(r, g, b, time)`.
+    Sg_FilterSub @ 0x0082_cc80 => extern "C" fn sg_filter_sub(r: u32, g: u32, b: u32, time: u32) -> u32 {
+        state::bridge::filter_sub(&mut mem(), r, g, b, time)
+    }
+    /// `Sg_FocusReset()`.
+    Sg_FocusReset @ 0x0082_ccf0 => extern "C" fn sg_focus_reset() -> u32 {
+        state::bridge::focus_reset(&mut mem())
+    }
+    /// `Sg_ToggleFocus()`.
+    Sg_ToggleFocus @ 0x0082_cd80 => extern "C" fn sg_toggle_focus() {
+        state::bridge::toggle_focus(&mut mem());
+    }
+    /// `Sg_DrawSetFrame()`.
+    Sg_DrawSetFrame @ 0x0082_cf80 => extern "C" fn sg_draw_set_frame() {
+        gs::bridge::draw_set_frame(&mut mem());
+    }
+    /// `Sg_PlayerSetDirFix(on, degrees)`.
+    Sg_PlayerSetDirFix @ 0x0082_d990 => extern "C" fn sg_player_set_dir_fix(on: u32, degrees: f32) {
+        state::bridge::player_set_dir_fix(&mut mem(), on, degrees);
+    }
+    /// `Sg_AngleApproach(cur, target, step)`.
+    Sg_AngleApproach @ 0x0083_5f80 => extern "C" fn sg_angle_approach(cur: f32, target: f32, step: f32) -> f32 {
+        vec::bridge::angle_approach(cur, target, step)
+    }
+    /// `Sg_VectorGetLength2(a, b)`.
+    Sg_VectorGetLength2 @ 0x0083_66a0 => extern "C" fn sg_vector_get_length2(a: u32, b: u32) -> f32 {
+        vec::bridge::vector_get_length2(&mem(), a, b)
+    }
+    /// `SG_RemoveMotionGroup(group)`.
+    SG_RemoveMotionGroup @ 0x0083_6da0 => extern "C" fn sg_remove_motion_group(group: u32) {
+        seq::bridge::remove_motion_group(&mut mem(), group);
+    }
+    /// `SG_RemoveSequence(seq)`.
+    SG_RemoveSequence @ 0x0083_6de0 => extern "C" fn sg_remove_sequence(seq: u32) {
+        seq::bridge::remove_sequence(&mut mem(), seq);
+    }
+    /// `SG_FindMotionGroup(a, b, key)`.
+    SG_FindMotionGroup @ 0x0083_6f10 => extern "C" fn sg_find_motion_group(a: i32, b: i32, key: u32) -> u32 {
+        seq::bridge::find_motion_group(&mem(), a, b, key)
+    }
+    /// `SG_RelocateGroup(group)`.
+    SG_RelocateGroup @ 0x0083_6f70 => extern "C" fn sg_relocate_group(group: u32) {
+        seq::bridge::relocate_group(&mut mem(), group);
+    }
+    /// `SG_RawToRad(x)`.
+    SG_RawToRad @ 0x0083_8c60 => extern "C" fn sg_raw_to_rad(x: f32) -> f32 {
+        vec::bridge::raw_to_rad(&mem(), x)
+    }
+    /// `SG_RewindChannels(obj)`.
+    SG_RewindChannels @ 0x0083_98f0 => extern "C" fn sg_rewind_channels(obj: u32) {
+        seq::bridge::rewind_channels(&mut mem(), obj);
+    }
+    /// `Sg_ToggleEnableTkAnti()`.
+    Sg_ToggleEnableTkAnti @ 0x0083_b100 => extern "C" fn sg_toggle_enable_tk_anti() {
+        state::bridge::toggle_enable_tk_anti(&mut mem());
+    }
+    /// `Sg_MemCache(p)`.
+    Sg_MemCache @ 0x0083_b700 => extern "C" fn sg_mem_cache(p: u32) -> u32 {
+        state::bridge::mem_cache(p)
+    }
+    /// `Sg_MemCache_SerchFree(p)`.
+    Sg_MemCache_SerchFree @ 0x0083_b770 => extern "C" fn sg_mem_cache_serch_free(p: u32) -> u32 {
+        state::bridge::mem_cache_serch_free(&mem(), p)
+    }
+    /// `Sg_MemClearStr(p)`.
+    Sg_MemClearStr @ 0x0083_bab0 => extern "C" fn sg_mem_clear_str(p: u32) {
+        state::bridge::mem_clear_str(&mut mem(), p);
+    }
+    /// `Sg_MemGetStr(p)`.
+    Sg_MemGetStr @ 0x0083_c070 => extern "C" fn sg_mem_get_str(p: u32) -> u32 {
+        state::bridge::mem_get_str(&mem(), p)
+    }
+    /// `Sg_MemGetSum(header)`.
+    Sg_MemGetSum @ 0x0083_c0b0 => extern "C" fn sg_mem_get_sum(header: u32) -> u16 {
+        state::bridge::mem_get_sum(&mem(), header)
+    }
+    /// `Sg_MemIsFree(p)`.
+    Sg_MemIsFree @ 0x0083_c320 => extern "C" fn sg_mem_is_free(p: u32) -> u32 {
+        state::bridge::mem_is_free(&mem(), p)
+    }
+    /// `Sg_MemSetAlign(align)`.
+    Sg_MemSetAlign @ 0x0083_c4a0 => extern "C" fn sg_mem_set_align(align: u32) -> u32 {
+        state::bridge::mem_set_align(&mut mem(), align)
+    }
+    /// `Sg_MemSetRtAddr(a)`.
+    Sg_MemSetRtAddr @ 0x0083_c560 => extern "C" fn sg_mem_set_rt_addr(a: u32) -> u32 {
+        state::bridge::mem_set_rt_addr(&mut mem(), a)
+    }
+    /// `Sg_VectorGetLengthXZ(a, b)`.
+    Sg_VectorGetLengthXZ @ 0x0083_e3e0 => extern "C" fn sg_vector_get_length_xz(a: u32, b: u32) -> f32 {
+        vec::bridge::vector_get_length_xz(&mem(), a, b)
+    }
+    /// `Sg_Debug(what, v)`.
+    Sg_Debug @ 0x0083_e5c0 => extern "C" fn sg_debug(what: u32, v: u32) {
+        state::bridge::debug(&mut mem(), what, v);
+    }
+    /// `Sg_IdEventInitAll()`.
+    Sg_IdEventInitAll @ 0x0083_e8d0 => extern "C" fn sg_id_event_init_all() {
+        state::bridge::id_event_init_all(&mut mem());
+    }
+    /// `Sg_IdGetMapTable(i)`.
+    Sg_IdGetMapTable @ 0x0083_e960 => extern "C" fn sg_id_get_map_table(i: u32) -> u32 {
+        state::bridge::id_get_map_table(&mem(), i)
+    }
+    /// `Sg_IdGetShade(c)`.
+    Sg_IdGetShade @ 0x0083_e980 => extern "C" fn sg_id_get_shade(c: u32) -> u32 {
+        state::bridge::id_get_shade(&mem(), c)
+    }
+    /// `Sg_IdSetMapTable(i, v)`.
+    Sg_IdSetMapTable @ 0x0083_e9e0 => extern "C" fn sg_id_set_map_table(i: u32, v: u32) -> u32 {
+        state::bridge::id_set_map_table(&mut mem(), i, v)
+    }
+    /// `Sg_IdSetPtr(id)`.
+    Sg_IdSetPtr @ 0x0083_ea00 => extern "C" fn sg_id_set_ptr(id: u32) {
+        state::bridge::id_set_ptr(&mut mem(), id);
+    }
+    /// `Sg_DbColor8(c)`.
+    Sg_DbColor8 @ 0x0084_1270 => extern "C" fn sg_db_color8(c: u32) {
+        gs::bridge::db_color8(&mut mem(), c);
+    }
+    /// `Sg_CreateVectorFromHV(out, h, v)`.
+    Sg_CreateVectorFromHV @ 0x0084_50d0 => extern "C" fn sg_create_vector_from_hv(out: u32, h: f32, v: f32) {
+        quat::bridge::create_vector_from_hv(&mut mem(), out, h, v, &mut crt);
+    }
+    /// `Sg_MatrixToQuaternion(m, q)`.
+    Sg_MatrixToQuaternion @ 0x0084_5170 => extern "C" fn sg_matrix_to_quaternion(m: u32, q: u32) {
+        quat::bridge::matrix_to_quaternion(&mut mem(), m, q);
+    }
+    /// `Sg_QuaternionSlerp(a, b, t, out)`.
+    Sg_QuaternionSlerp @ 0x0084_5310 => extern "C" fn sg_quaternion_slerp(a: u32, b: u32, t: f32, out: u32) -> u32 {
+        quat::bridge::quaternion_slerp(&mut mem(), a, b, t, out, &mut crt)
+    }
+    /// `Sg_QuaternionToMatrix(q, m)`.
+    Sg_QuaternionToMatrix @ 0x0084_5450 => extern "C" fn sg_quaternion_to_matrix(q: u32, m: u32) {
+        quat::bridge::quaternion_to_matrix(&mut mem(), q, m);
+    }
+    /// `Sg_VectorToMatrix2(m, v)`.
+    Sg_VectorToMatrix2 @ 0x0084_5560 => extern "C" fn sg_vector_to_matrix2(m: u32, v: u32) -> u32 {
+        quat::bridge::vector_to_matrix2(&mut mem(), m, v)
+    }
+    /// `sg_normalize(v, n)`.
+    sg_normalize @ 0x0084_6710 => extern "C" fn sg_normalize(v: u32, n: u32) {
+        quat::bridge::normalize(&mut mem(), v, n);
+    }
+    /// `SgGu_LightDump()`: nothing (its output goes to the empty `dbgPrintf`).
+    SgGu_LightDump @ 0x0084_e870 => extern "C" fn sg_gu_light_dump() {
+        // Only `dbgPrintf` (empty) of the light table.
+    }
+    /// `Sg_MouseButtonMain()`.
+    Sg_MouseButtonMain @ 0x0085_17c0 => extern "C" fn sg_mouse_button_main() -> u32 {
+        state::bridge::mouse_button_main(&mut mem())
+    }
+    /// `sa_meth01dec2_ex()`: never implemented on PC; 0.
+    sa_meth01dec2_ex @ 0x00a4_3ca0 => extern "C" fn sa_meth01dec2_ex() -> u32 {
+        state::bridge::not_implemented()
+    }
+    /// `sa_meth01dec_ex()`: never implemented on PC; 0.
+    sa_meth01dec_ex @ 0x00a4_3cb0 => extern "C" fn sa_meth01dec_ex() -> u32 {
+        state::bridge::not_implemented()
+    }
+    // Round 3: the character packet setters.
+    /// `Ch_PacketSetName(v)`.
+    Ch_PacketSetName @ 0x0084_3000 => extern "C" fn ch_packet_set_name(v: u32) -> u32 {
+        chpacket::bridge::set_name(&mut mem(), v)
+    }
+    /// `Ch_PacketSetCull(v)`.
+    Ch_PacketSetCull @ 0x0084_3010 => extern "C" fn ch_packet_set_cull(v: u32) {
+        chpacket::bridge::set_cull(&mut mem(), v);
+    }
+    /// `Ch_PacketSetFSpecular(v)`.
+    Ch_PacketSetFSpecular @ 0x0084_3020 => extern "C" fn ch_packet_set_fspecular(v: u32) {
+        chpacket::bridge::set_fspecular(&mut mem(), v);
+    }
+    /// `Ch_PacketSetShadow(v)`.
+    Ch_PacketSetShadow @ 0x0084_3040 => extern "C" fn ch_packet_set_shadow(v: u32) {
+        chpacket::bridge::set_shadow(&mut mem(), v);
+    }
+    /// `Ch_PacketSetShadowColor(r, g, b)`.
+    Ch_PacketSetShadowColor @ 0x0084_3050 => extern "C" fn ch_packet_set_shadow_color(r: u32, g: u32, b: u32) {
+        chpacket::bridge::set_shadow_color(&mut mem(), r, g, b);
+    }
+    /// `Ch_PacketSetShadowSemi(v)`.
+    Ch_PacketSetShadowSemi @ 0x0084_3070 => extern "C" fn ch_packet_set_shadow_semi(v: u32) {
+        chpacket::bridge::set_shadow_semi(&mut mem(), v);
+    }
+    /// `Ch_PacketSetShadowTexture(v)`.
+    Ch_PacketSetShadowTexture @ 0x0084_3080 => extern "C" fn ch_packet_set_shadow_texture(v: u32) {
+        chpacket::bridge::set_shadow_texture(&mut mem(), v);
+    }
+    /// `Ch_PacketSetSpecCoefficient(x)`.
+    Ch_PacketSetSpecCoefficient @ 0x0084_3090 => extern "C" fn ch_packet_set_spec_coefficient(x: f32) {
+        chpacket::bridge::set_spec_coefficient(&mut mem(), x);
+    }
+    /// `Ch_PacketSetSpecColor(r, g, b, a)`.
+    Ch_PacketSetSpecColor @ 0x0084_30a0 => extern "C" fn ch_packet_set_spec_color(r: u32, g: u32, b: u32, a: u32) {
+        chpacket::bridge::set_spec_color(&mut mem(), r, g, b, a);
+    }
+    /// `Ch_PacketSetSpecSize(x)`.
+    Ch_PacketSetSpecSize @ 0x0084_30d0 => extern "C" fn ch_packet_set_spec_size(x: f32) {
+        chpacket::bridge::set_spec_size(&mut mem(), x);
+    }
+    /// `Ch_PacketSetSpecular(v)`.
+    Ch_PacketSetSpecular @ 0x0084_30e0 => extern "C" fn ch_packet_set_specular(v: u32) {
+        chpacket::bridge::set_specular(&mut mem(), v);
+    }
+    /// `Ch_PacketSetTexture(v)`.
+    Ch_PacketSetTexture @ 0x0084_30f0 => extern "C" fn ch_packet_set_texture(v: u32) {
+        chpacket::bridge::set_texture(&mut mem(), v);
+    }
 }
 
 /// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in
@@ -876,5 +1144,42 @@ fn app_clock() -> f64 {
     unsafe {
         let f: unsafe extern "C" fn() -> f64 = std::mem::transmute(crate::rebase(0x0042_fd80));
         f()
+    }
+}
+
+/// MSVCR110's `_CIsin`, `_CIcos` or `_CIacos` through the game's import
+/// thunks (`0x009498c8`, `0x009498c2`, `0x009498da`): the argument in
+/// `ST0` at full precision (`fld qword`), the result stored as `fstp
+/// dword` stores it, as the originals do right after the call.
+fn crt(c: Crt, x: f64) -> f32 {
+    let thunk = match c {
+        Crt::Sin => 0x0094_98c8,
+        Crt::Cos => 0x0094_98c2,
+        Crt::Acos => 0x0094_98da,
+    };
+    // SAFETY: the thunk jumps to the CRT's intrinsic, which takes its
+    // argument in ST0 and returns in ST0 (eax, ecx, edx, the x87 and SSE
+    // registers clobbered).
+    #[cfg(target_arch = "x86")]
+    unsafe {
+        let f = crate::rebase(thunk);
+        let bits: u32;
+        std::arch::asm!(
+            "fld qword ptr [{x}]",
+            "call {f}",
+            "sub esp, 4",
+            "fstp dword ptr [esp]",
+            "pop eax",
+            x = in(reg) &raw const x,
+            f = in(reg) f,
+            lateout("eax") bits,
+            clobber_abi("C"),
+        );
+        f32::from_bits(bits)
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = (thunk, x);
+        unreachable!("the CRT's trigonometry runs in the 32-bit game")
     }
 }

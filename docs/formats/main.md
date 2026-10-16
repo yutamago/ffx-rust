@@ -130,3 +130,71 @@ moves by the delta; with no wait pending the next stream byte first sets:
 
 `sg_getdbname` accepts the number or the letter; another value gives the
 empty string.
+
+## Memory blocks (`Sg_Mem*`)
+
+The `Sg` heap (first block at `0x01301978`) chains 16-byte headers, each
+right before its data:
+
+| Offset (from the header) | Field |
+|---|---|
+| `+0x0` | next header |
+| `+0x4` | previous header (`Sg_MemCache_SerchFree` walks this way) |
+| `+0xc` | owner bits in the low nibble, 0 when free (`Sg_MemIsFree`) |
+| `+0xa` (data `-6`) | `u16`: debug name id in the low 11 bits (`Sg_MemGetStr`, `Sg_MemClearStr`) |
+
+Debug names are 32-byte slots at `0x05fb0000 + id * 32` (only in debug
+builds). `Sg_MemGetSum(header)` sums the data's halfwords into `AX`;
+`Sg_MemSetRtAddr(a)` stores `((a - 8) >> 2) & 0x7fffff` at `0x013019b0`.
+
+## Motion groups and sequences (`SG_*MotionGroup`, `SG_RemoveSequence`)
+
+Loaded motion groups: 50 entries of 12 bytes at `0x013011e0`,
+`{group, i16 a, i16 b, key}`; `SG_FindMotionGroup(a, b, key)` returns the
+first match. `g_ChrSequences` (`0x01300a08`) holds 100 entries of 20
+bytes, the sequence pointer first; removing one clears its slot and
+relinks the table (`Ch_SeqLink`).
+
+## Quaternions (`Sg_Quaternion*`, `Sg_MatrixToQuaternion`)
+
+`(x, y, z, w)`, row-vector matrices. `Sg_QuaternionSlerp` negates `b` for
+a negative dot product and interpolates linearly within `0.0001`
+(`f64` in `.rdata`). Sine, cosine and arc cosine come from MSVCR110's
+`_CIsin`, `_CIcos`, `_CIacos` (thunks `0x009498c8`, `0x009498c2`,
+`0x009498da`); the port calls the game's own import, and the oracle test
+replaces all three on both sides by exact stand-ins (`x²`, `2x`, `x + 1`)
+so the surrounding arithmetic is compared bit for bit.
+`Sg_CreateVectorFromHV(out, h, v)` gives `(sin h cos v, sin v, cos h cos v, 1)`
+for degrees; `Sg_VectorToMatrix2` builds a frame along `v` with up
+`(0, -1, 0)`.
+
+## Mouse buttons (`Sg_MouseButtonMain`)
+
+Per button: held, pressed this frame (`<< 1`), released this frame
+(`<< 2`); left at bit 0, right at bit 8, middle at bit 16; bit 3 is a
+left double click.
+
+## Character packet settings (`Ch_PacketSet*`)
+
+The character draw sets these before building a model's VU1 packet:
+
+| Address | Type | Setter | Source in the draw |
+|---|---|---|---|
+| `0x013033a8` | u32 | `Ch_PacketSetName` | model header `+0x18` |
+| `0x01303342` | u8 | `Ch_PacketSetCull` | character flag bit 19 |
+| `0x01303343` | u8 | `Ch_PacketSetShadow` | shadow mode 2 or 3 |
+| `0x01303372` | u8 | `Ch_PacketSetSpecular` | `!g_ChrDrawDisableSpec` |
+| `0x01303373` | u8 | `Ch_PacketSetShadowTexture` | model `+0x65` |
+| `0x01303374` | u8 | `Ch_PacketSetTexture` | `Ch_EnableGetTexture()` |
+| `0x01303375` | u8 | `Ch_PacketSetFSpecular` | `g_ChrDrawFourceSpec` |
+| `0x01303376` | 3 × u8 | `Ch_PacketSetShadowColor` | `g_ChrShadowColor` and neighbours |
+| `0x01303379` | u8 | `Ch_PacketSetShadowSemi` | `Sg_SetMovieGomiAvoid`'s byte |
+| `0x0130337a`, `0x01303384` | 2 + 2 × u8 | `Ch_PacketSetSpecColor` | model `+0x60..0x63` |
+| `0x0130337c` | f32 | `Ch_PacketSetSpecSize` | model `+0x58` |
+| `0x01303380` | f32 | `Ch_PacketSetSpecCoefficient` | model `+0x5c` |
+
+Names follow the Switch build's order (Name, Cull, Texture, Shadow,
+ShadowSemi, ShadowColor, ShadowTexture, FSpecular, Specular, SpecSize,
+SpecCoefficient, SpecColor) matched by argument counts and sources; the
+texture and shadow-texture bytes are both cleared when no texture list is
+loaded.
