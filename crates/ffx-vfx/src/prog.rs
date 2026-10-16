@@ -1279,4 +1279,55 @@ pub mod bridge {
             mem.write(w.wrapping_add(2), c.wrapping_sub(1));
         }
     }
+
+    /// `pppKeOfsPt(obj, key, ctrl)` (`0x0075cd30`): unless stopped, on the
+    /// key's frame: at frame 0, with a shape (key `+0x2c`, not 0xffff; the
+    /// environment's shape blocks) `0x0075c660(area 0 + 0xb0, shape)`
+    /// through `call`; then area 0 `+0xa0..+0xa8` += key `+0x10..+0x18`
+    /// (`f32`) and `+0xc0..+0xc8` = key `+0x20..+0x28`.
+    pub fn ppp_ke_ofs_pt<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let w = area(mem, obj, ctrl, 0);
+        if STOP.get(mem) != 0 || !applies(mem, obj, key) {
+            return;
+        }
+        if mem.read::<u32>(obj.wrapping_add(0xc)) == 0 {
+            let s: u32 = mem.read(key.wrapping_add(0x2c));
+            if s == 0xffff {
+                return;
+            }
+            let (env, _) = env_heaps(mem);
+            let blocks: u32 = mem.read(env.wrapping_add(0x20));
+            let shape = stub::ptr32(mem.read(blocks.wrapping_add(s << 5).wrapping_add(0x1c)));
+            let f = Global::<u32>::new(0x0075_c660).ptr(mem).addr;
+            call(mem, f, &[w.wrapping_add(0xb0), shape]);
+        }
+        for i in 0..3 {
+            let at = w.wrapping_add(0xa0 + 4 * i);
+            let v = x87::add(mem.read(key.wrapping_add(0x10 + 4 * i)), mem.read(at));
+            mem.write(at, v);
+        }
+        for i in 0..3 {
+            let v = x87::load(mem.read(key.wrapping_add(0x20 + 4 * i)));
+            mem.write(w.wrapping_add(0xc0 + 4 * i), v);
+        }
+    }
+
+    /// `pppKeAcmCic(obj, key)` (`0x0075b690`): unless the key's byte `+4`
+    /// is 2, `0x00644be0(0, 1)` (the renderer's) through `call`.
+    pub fn ppp_ke_acm_cic<M: Mem>(
+        mem: &mut M,
+        key: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if mem.read::<u8>(key.wrapping_add(4)) != 2 {
+            let f = Global::<u32>::new(0x0064_4be0).ptr(mem).addr;
+            call(mem, f, &[0, 1]);
+        }
+    }
 }

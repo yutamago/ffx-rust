@@ -4309,6 +4309,7 @@ fn et_opus_math_and_trees_match_the_original() {
         arg_recorder(&mut p, &[0x007f_d7f0], 4);
         arg_recorder(&mut p, &[0x007f_df70], 2);
         arg_recorder(&mut p, &[0x007f_de30], 2); // opu_unit_free_by_id
+        arg_recorder(&mut p, &[0x007f_c2e0], 4); // op_et_eff
         let btl = p.sym(0x0112_a8e0); // g_BtlStatus (MsBattleGetStatus)
         let handles = p.sym(e::CHR_HANDLES.sym);
         let chr_at = p.sym(e::CHR.sym);
@@ -4394,6 +4395,26 @@ fn et_opus_math_and_trees_match_the_original() {
                 let r = e::op_et_bindeff2_off(m, h, &mut call_original);
                 // (the original's eax is undefined for a null handle)
                 (h != 0).then_some(r)
+            });
+            // op_et_bindeff on records whose oef2 objects may be monsters
+            for i in 0..e::CHRS {
+                let r = chr_at + 0x20 * i;
+                p.set(r + 8, rng.pick(&[0u32, 0x400, 0x500, 0x700]));
+                p.set(r + 0xc, rng.next() as u16);
+            }
+            p.put(e::BIND_OFF, u8::from(rng.chance(10)));
+            p.check("op_et_bindeff", 0x007f_b290, &[h], |m| {
+                e::op_et_bindeff(m, h, &mut call_original)
+            });
+            p.check("op_et_bindeff_off", 0x007f_bb90, &[h], |m| {
+                e::op_et_bindeff_off(m, h, &mut call_original);
+                None
+            });
+            for i in 0..e::CHRS {
+                p.set(chr_at + 0x20 * i + 0xe, rng.pick(&[0u16, 1, 2, 0xff]));
+            }
+            p.check("op_et_weapon_unit", 0x007f_c9b0, &[h], |m| {
+                Some(e::op_et_weapon_unit(m, h, &mut call_original))
             });
             p.put(e::ENCOUNT, o);
             p.check("op_et_encount_effect_free", 0x007f_c5f0, &[], |m| {
@@ -4796,6 +4817,91 @@ fn oef2_sound_cues_match_the_original() {
             );
             p.check("op_oef2_sound_cue_check", 0x0080_00f0, &[], |m| {
                 Some(o::op_oef2_sound_cue_check(m, &mut call_original))
+            });
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::cast_possible_truncation)]
+fn chara_sizes_and_offset_steps_match_the_original() {
+    use op::bridge as o;
+    use prog::bridge as pb;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0c5a_0f57);
+        // 0x0075c660 and the renderer's 0x00644be0: recorded
+        arg_recorder(&mut p, &[0x0075_c660, 0x0064_4be0], 2);
+        let chara = [
+            0x0083_c9a0, // Ch_ClutGetNb
+            0x0083_c9f0, // Ch_ClutGetSize
+            0x0080_f630, // opus_mimic_check
+            0x0080_f580,
+            0x0083_0410, // Ch_GetNbModel
+            0x0082_add0, // Ch_ModelGetHide
+            0x0083_0450, // Ch_ModelCalcSizeEffectPacket
+        ];
+        let env_slot = p.alloc(4);
+        let env = p.alloc(0x40);
+        let blocks = p.alloc(0x400);
+        let (obj, key, ctrl, offsets) =
+            (p.alloc(0x400), p.alloc(0x40), p.alloc(0x10), p.alloc(0x10));
+        p.set(ctrl + 0xc, offsets);
+        p.put(heap::bridge::ENV_SLOT, env_slot);
+        p.set(env_slot, env);
+        p.set(env + 0x20, blocks);
+        let stop = p.sym(ppp::bridge::STOP.sym);
+        for _ in 0..800 {
+            for &f in &chara {
+                let any = rng.below(0x10000);
+                let v = rng.pick(&[0u32, 0, 1, 3, 0x123, 0xffff_ffff, any]);
+                let at = p.sym(f);
+                p.a.stub_return(at, v).unwrap();
+                p.b.stub_return(at, v).unwrap();
+            }
+            let chr = rng.next();
+            p.check("op_chara_hsv_size_get", 0x0080_7b20, &[chr], |m| {
+                Some(o::op_chara_hsv_size_get(m, chr, &mut call_original))
+            });
+            let (mode, visible) = (rng.pick(&[0u32, 1, 2]), rng.below(2));
+            p.check(
+                "op_chara_packet_size_get",
+                0x0080_37c0,
+                &[chr, mode, visible],
+                |m| {
+                    Some(o::op_chara_packet_size_get(
+                        m,
+                        chr,
+                        mode,
+                        visible,
+                        &mut call_original,
+                    ))
+                },
+            );
+            // pppKeOfsPt and pppKeAcmCic
+            p.set(offsets, 4 * rng.below(0x40));
+            p.fill(key, 0x40, &mut rng);
+            for i in 0..3 {
+                let (a, b) = (finite(&mut rng), finite(&mut rng));
+                p.set(key + 0x10 + 4 * i, a);
+                // (no signalling NaNs: the copies go through the FPU)
+                let c = finite(&mut rng);
+                p.set(key + 0x20 + 4 * i, c);
+                let off: u32 = p.get(offsets);
+                p.set(obj + off + 0xa0 + 4 * i, b);
+            }
+            let frame = rng.below(3);
+            p.set(obj + 0xc, frame);
+            p.set(key, if rng.chance(80) { frame } else { 7 });
+            p.set(key + 0x2c, rng.pick(&[0xffffu32, 0, 3]));
+            p.set(stop, u32::from(rng.chance(10)));
+            p.check("pppKeOfsPt", 0x0075_cd30, &[obj, key, ctrl], |m| {
+                pb::ppp_ke_ofs_pt(m, obj, key, ctrl, &mut call_original);
+                None
+            });
+            p.set(key + 4, rng.pick(&[0u8, 2, 3]));
+            p.check("pppKeAcmCic", 0x0075_b690, &[obj, key], |m| {
+                pb::ppp_ke_acm_cic(m, key, &mut call_original);
+                None
             });
         }
     }

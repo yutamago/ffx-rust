@@ -864,4 +864,81 @@ pub mod bridge {
         }
         u32::from(SOUND_CUE_COUNT.get(mem))
     }
+
+    /// A character module function, called through `call`.
+    fn ch<M: Mem>(
+        mem: &mut M,
+        f: u32,
+        args: &[u32],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        snd(mem, f, args, call)
+    }
+
+    /// `op_chara_hsv_size_get(chr)` (`0x00807b20`): 8 bytes per entry of
+    /// each of the character's CLUTs (`Ch_ClutGetNb`, `Ch_ClutGetSize`
+    /// through `call`), rounded up to 16, plus 0x20; 0 when that is 0.
+    pub fn op_chara_hsv_size_get<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let n = ch(mem, 0x0083_c9a0, &[chr], call).cast_signed();
+        if n == 0 {
+            return 0;
+        }
+        let mut total = 0u32;
+        let mut k = 0i32;
+        while k < n {
+            let s = ch(mem, 0x0083_c9f0, &[chr, k.cast_unsigned()], call);
+            total = total.wrapping_add(s.wrapping_mul(8));
+            k += 1;
+        }
+        let t = total.wrapping_add(0xf) & !0xf;
+        if t == 0 { 0 } else { t + 0x20 }
+    }
+
+    /// `op_chara_packet_size_get(chr, mode, visible)` (`0x008037c0`): for
+    /// a mimic (`opus_mimic_check`) what `0x0080f580(mode, visible)`
+    /// gives; else per model (`Ch_GetNbModel`; with `visible`, hidden
+    /// ones, `Ch_ModelGetHide`, are skipped) its effect packet size
+    /// (`Ch_ModelCalcSizeEffectPacket`) rounded up to 16 (masked to 28
+    /// bits), with mode 2 also `(size / 28) * 12` rounded the same way;
+    /// plus 0x10 per model and one more; 0 without models. All through
+    /// `call`.
+    pub fn op_chara_packet_size_get<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        mode: u32,
+        visible: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if ch(mem, 0x0080_f630, &[chr], call) != 0 {
+            return ch(mem, 0x0080_f580, &[mode, visible], call);
+        }
+        let models = ch(mem, 0x0083_0410, &[chr], call);
+        if models == 0 {
+            return 0;
+        }
+        let mut total = 0u32;
+        let mut model = 0i32;
+        while model < models.cast_signed() {
+            let hidden = ch(mem, 0x0082_add0, &[chr, model.cast_unsigned()], call);
+            if hidden == 0 || visible == 0 {
+                let size = ch(mem, 0x0083_0450, &[chr, model.cast_unsigned()], call);
+                let rounded = size.wrapping_add(0xf) & 0x0fff_fff0;
+                let extra = if mode == 2 {
+                    #[allow(clippy::cast_possible_truncation)] // the high word
+                    let hi = ((u64::from(rounded) * 0x2492_4925) >> 32) as u32;
+                    let q = (((rounded - hi) >> 1) + hi) >> 4;
+                    (q * 0xc + 0xf) & 0x0fff_fff0
+                } else {
+                    0
+                };
+                total = total.wrapping_add(extra).wrapping_add(rounded);
+            }
+            model += 1;
+        }
+        models.wrapping_add(1).wrapping_shl(4).wrapping_add(total)
+    }
 }

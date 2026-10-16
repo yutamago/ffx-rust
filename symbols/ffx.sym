@@ -3224,6 +3224,7 @@
 0x007fc970 function op_et_oef2_start2         # (oef2) the op_et_oef2_start body again
 0x007fc990 function op_et_flag1_on            # g_MagicImports slot 633 (1 overlay): byte 0x011a006e |= 1; hidden from the dump
 0x007fc9a0 function op_et_flag1_off           # g_MagicImports slot 631 (1 overlay): byte 0x011a006e &= 0xfe; hidden from the dump
+0x007fc9b0 function op_et_weapon_unit         # (h) -> unit ID: weapon object by the record's u16 +0xe (opus_get_weapon_by_no; else record +8, slot 0), opu_et_unit(obj, 0, 9, (0x300000 + g_OpusWeaponEffCount[slot]++) << 8 | index); g_MagicImports slot 623
 0x007fca40 function op_et_weapon_afterimage_fade # fh v3:bsim1.00 0x007fc960
 0x007fca90 function op_et_weapon_free         # fh v3:exact 0x007fc9b0
 0x007fcaf0 function op_et_weapon_free_all     # fh v3:exact 0x007fca10
@@ -3309,6 +3310,7 @@
 0x00801700 function opus_prog_on              # fh v3:exact 0x00801620
 0x00803730 function op_mdc_mem_transfer_cue_free # fh v3:exact 0x00803650
 0x00803760 function op_mdc_mem_transfer_cue_free_all # fh v3:bsim1.00 0x00803680
+0x008037c0 function op_chara_packet_size_get  # (chr, mode, visible) -> bytes: mimic: 0x0080f580(mode, visible); else per model (Ch_GetNbModel, hidden skipped with visible) Ch_ModelCalcSizeEffectPacket rounded to 16 (+ size/28 * 12 rounded for mode 2), + 0x10 per model + 0x10; g_MagicImports slot 363
 0x008044e0 function opu_motion                # fh switch:cg2 0x71003e4c60
 0x00804c90 function opu_v_en_bone             # fh switch:cg2 0x71003e5500
 0x008061a0 function opus_mdc_free             # fh v3:exact 0x008060c0
@@ -9115,8 +9117,10 @@
 0x0119fe9c label    g_OpusWeaponNos           # 4 bytes: the weapon numbers of g_OpusWeapons (set by op_et_weapon_init, 0xff free; opus_get_weapon_by_no)
 0x0119fea0 label    g_OpusWeapons                # 4 weapon opus objects (opus_get_weapon_index)
 0x0119fed0 label    g_OpusMonsters               # 8 monster opus objects (opus_get_monster_index)
+0x0119fef8 label    g_OpusWeaponEffCount      # byte per g_OpusWeapons slot: op_et_weapon_unit numbers unit IDs with it (op_et_weapon_init clears it)
 0x011a0061 label    g_OpPrayEffect               # op_pray_effect_check returns -1 while nonzero
 0x011a0063 label    g_OpEtChrShow             # byte: the last op_et_chr_show argument
+0x011a0065 label    g_OpEtBindOff             # byte: while set op_et_bindeff (and op_et_bindeff2's encounter part) do nothing
 0x011a0067 label    g_OpWotTrigger               # set by op_wot_triger, read by op_ot_draw
 0x011a0080 label    g_EtBindDefault           # u16 bind flags; op_et_bind_default_water keeps the water bits (0x3400) at 0x800
 0x011a0083 label    g_OpOef2BattleStreamPlaying # byte, op_oef2_se_on / op_oef2_se_3d_on set it to 1 before starting a battle stream

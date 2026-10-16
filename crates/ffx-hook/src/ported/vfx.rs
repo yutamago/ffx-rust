@@ -746,6 +746,35 @@ ported! {
     op_oef2_sound_cue_check @ 0x0080_00f0 => extern "C" fn op_oef2_sound_cue_check() -> u32 {
         op::bridge::op_oef2_sound_cue_check(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `op_et_bindeff(h)`; returns what the original leaves in `eax`.
+    op_et_bindeff @ 0x007f_b290 => extern "C" fn op_et_bindeff(h: u32) -> u32 {
+        et::bridge::op_et_bindeff(&mut mem(), h, &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
+    }
+    /// `op_et_bindeff_off(h)`.
+    op_et_bindeff_off @ 0x007f_bb90 => extern "C" fn op_et_bindeff_off(h: u32) {
+        et::bridge::op_et_bindeff_off(&mut mem(), h, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_et_weapon_unit(h)`.
+    op_et_weapon_unit @ 0x007f_c9b0 => extern "C" fn op_et_weapon_unit(h: u32) -> u32 {
+        et::bridge::op_et_weapon_unit(&mut mem(), h, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_chara_hsv_size_get(chr)`.
+    op_chara_hsv_size_get @ 0x0080_7b20 => extern "C" fn op_chara_hsv_size_get(chr: u32) -> u32 {
+        op::bridge::op_chara_hsv_size_get(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_chara_packet_size_get(chr, mode, visible)`.
+    op_chara_packet_size_get @ 0x0080_37c0 => extern "C" fn op_chara_packet_size_get(chr: u32, mode: u32, visible: u32) -> u32 {
+        op::bridge::op_chara_packet_size_get(&mut mem(), chr, mode, visible, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeOfsPt(obj, key, ctrl)`.
+    pppKeOfsPt @ 0x0075_cd30 => extern "C" fn ppp_ke_ofs_pt(obj: u32, key: u32, ctrl: u32) {
+        prog::bridge::ppp_ke_ofs_pt(&mut mem(), obj, key, ctrl, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppKeAcmCic(obj, key)`.
+    pppKeAcmCic @ 0x0075_b690 => extern "C" fn ppp_ke_acm_cic(obj: u32, key: u32) {
+        let _ = obj;
+        prog::bridge::ppp_ke_acm_cic(&mut mem(), key, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `op_et_eff_off_signal(id)`.
     op_et_eff_off_signal @ 0x007f_c450 => extern "C" fn op_et_eff_off_signal(id: u32) {
         et::bridge::op_et_eff_off_signal(&mut mem(), id);
