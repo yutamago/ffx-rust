@@ -32,7 +32,20 @@ pub fn play(game: &mut Game, script: &str, trace: &str) -> Result<Vec<String>> {
         let words: Vec<&str> = line.split_whitespace().collect();
         let reply = match words[0] {
             "load" => {
-                screens::load_save(game, words.get(1).map_or(Ok(1), |w| w.parse()).unwrap_or(1))?
+                // `load <entry> [script]`: fails when another scene starts
+                // (a lost key press loads a different save).
+                let opened = screens::load_save(
+                    game,
+                    words.get(1).map_or(Ok(1), |w| w.parse()).unwrap_or(1),
+                )?;
+                if let Some(want) = words.get(2)
+                    && !opened.contains(want)
+                {
+                    return Err(crate::Error::Harness(format!(
+                        "load: {opened} started, not {want}"
+                    )));
+                }
+                opened
             }
             "battle" => {
                 let n = |i: usize| {

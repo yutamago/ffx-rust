@@ -2664,7 +2664,9 @@ fn snapshot_render_data_and_scene_match_the_original() {
     let owner = t.r32(scene + 0x10cc);
     if owner != 0 && t.r32(owner + 0x8c) != 0 {
         let fs: [(u32, Vp); 3] = [
-            (0x0065_e320, |g, s| scene::bridge::minimap_viewport_size(g, s)),
+            (0x0065_e320, |g, s| {
+                scene::bridge::minimap_viewport_size(g, s)
+            }),
             (0x0065_e3f0, |g, s| scene::bridge::minimap_viewport_x(g, s)),
             (0x0065_e560, |g, s| scene::bridge::minimap_viewport_y(g, s)),
         ];
@@ -2676,9 +2678,13 @@ fn snapshot_render_data_and_scene_match_the_original() {
     }
     let yiq = t.zeros(0x20);
     let p: [u32; 6] = std::array::from_fn(|i| yiq + 4 * i as u32);
-    t.check("snapshot yiq", 0x0065_e9e0, Conv::Thiscall(scene), &p, |g| {
-        Out::U32(scene::bridge::yiq_param(g, scene, p))
-    });
+    t.check(
+        "snapshot yiq",
+        0x0065_e9e0,
+        Conv::Thiscall(scene),
+        &p,
+        |g| Out::U32(scene::bridge::yiq_param(g, scene, p)),
+    );
     let table = t.r32(t.rebase(vfx::bridge::TABLE.sym));
     if table == 0 {
         eprintln!("no effect table in this snapshot");
