@@ -242,6 +242,25 @@ pub mod bridge {
         FLAGS.set(mem, if on != 0 { f | 8 } else { f & !8 });
     }
 
+    /// `rcbgGuideSetFlag8(guide, on)` (`0x0091d530`): flag bit 8 (read by
+    /// `rcbgGuideUpdateEx`).
+    pub fn rcbg_guide_set_flag8(mem: &mut impl Mem, _guide: u32, on: i32) {
+        let f = FLAGS.get(mem);
+        FLAGS.set(mem, if on != 0 { f | 0x100 } else { f & !0x100 });
+    }
+
+    /// `rcbgGuideGetScreen(guide, scale, offset)` (`0x0091da30`): the
+    /// minimap's scale (size / 256) and its centre's offset from the
+    /// screen centre (256, 208), as floats.
+    pub fn rcbg_guide_get_screen(mem: &mut impl Mem, _guide: u32, scale: u32, offset: u32) {
+        #[allow(clippy::cast_precision_loss)] // fild, then fstp m32
+        let f = |v: u32| f64::from(v.cast_signed() as f32);
+        let size = f(SIZE.get(mem));
+        mem.write(scale, x87::store(size * (1.0 / 256.0)));
+        let [x, y] = POS.get(mem).map(f);
+        mem.write(offset, [x87::store(x - 256.0), x87::store(y - 208.0)]);
+    }
+
     /// `rcbgGuideGetLimit(guide)` (`0x0091d450`).
     pub fn rcbg_guide_get_limit(mem: &impl Mem, g: u32) -> f32 {
         f32::from_bits(mem.read(g + object::LIMIT))
@@ -308,6 +327,77 @@ pub mod bridge {
     pub fn yn_guide_map_set_size(mem: &mut impl Mem, size: u32) {
         if let Some(g) = yn_guide(mem) {
             rcbg_guide_set_size(mem, g, size);
+        }
+    }
+
+    /// The scene, or 0 when Yn's field state has a map without one (the
+    /// setters below then write near address 0, as the original).
+    fn yn_scene_or_null(mem: &impl Mem) -> Option<u32> {
+        let s = YN_MAP_SYSTEM.get(mem);
+        if s == 0 {
+            return None;
+        }
+        let m = mem.read::<u32>(s + system::MAP);
+        Some(if m == 0 {
+            0
+        } else {
+            mem.read::<u32>(m + map::SCENE)
+        })
+    }
+
+    fn yn_scene_float(mem: &impl Mem, offset: u32) -> f32 {
+        yn_scene(mem).map_or(0.0, |c| f32::from_bits(x87::copy(mem.read(c + offset))))
+    }
+
+    /// `Yn_SceneGetAC()` (`0x0091a6d0`): the scene's float at `+0xac`, 0.0
+    /// without a scene.
+    pub fn yn_scene_get_ac(mem: &impl Mem) -> f32 {
+        yn_scene_float(mem, 0xac)
+    }
+
+    /// `Yn_SceneGetB8()` (`0x0091a700`): `+0xb8`.
+    pub fn yn_scene_get_b8(mem: &impl Mem) -> f32 {
+        yn_scene_float(mem, 0xb8)
+    }
+
+    /// `Yn_SceneGetBC()` (`0x0091a730`): `+0xbc`.
+    pub fn yn_scene_get_bc(mem: &impl Mem) -> f32 {
+        yn_scene_float(mem, 0xbc)
+    }
+
+    /// `Yn_SceneSetC0(a, b, c, d, e)` (`0x0091ad80`, script native
+    /// `0x0091b550`), as `args`: scene `+0xc0..=+0xd0`, `b` a float; `+0xd4` = 0.0,
+    /// `+0xd8` = 0.
+    pub fn yn_scene_set_c0(mem: &mut impl Mem, args: [u32; 5]) {
+        if let Some(sc) = yn_scene_or_null(mem) {
+            mem.write(sc.wrapping_add(0xc0), args[0]);
+            mem.write(sc.wrapping_add(0xc4), x87::copy(args[1]));
+            mem.write(sc.wrapping_add(0xc8), args[2]);
+            mem.write(sc.wrapping_add(0xd4), 0u32);
+            mem.write(sc.wrapping_add(0xcc), args[3]);
+            mem.write(sc.wrapping_add(0xd0), args[4]);
+            mem.write(sc.wrapping_add(0xd8), 0u32);
+        }
+    }
+
+    /// `Yn_SceneSetDC(a, b, c, d)` (`0x0091aa00`, script native
+    /// `0x0091b610`): scene `+0xdc..=+0xe8`, `b` and `d` floats; `+0xec` =
+    /// 0.0, `+0xf0` = 0.
+    pub fn yn_scene_set_dc(mem: &mut impl Mem, a: u32, b: u32, c: u32, d: u32) {
+        if let Some(sc) = yn_scene_or_null(mem) {
+            mem.write(sc.wrapping_add(0xe0), x87::copy(b));
+            mem.write(sc.wrapping_add(0xdc), a);
+            mem.write(sc.wrapping_add(0xe8), x87::copy(d));
+            mem.write(sc.wrapping_add(0xe4), c);
+            mem.write(sc.wrapping_add(0xf0), 0u32);
+            mem.write(sc.wrapping_add(0xec), 0u32);
+        }
+    }
+
+    /// `Yn_SceneSet104(v)` (`0x0091a260`, script native `0x0091af80`).
+    pub fn yn_scene_set_104(mem: &mut impl Mem, v: u32) {
+        if let Some(sc) = yn_scene_or_null(mem) {
+            mem.write(sc.wrapping_add(0x104), v);
         }
     }
 

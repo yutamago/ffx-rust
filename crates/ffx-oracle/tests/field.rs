@@ -1909,3 +1909,573 @@ fn more_field_state_matches_the_original_on_a_snapshot() {
         );
     }
 }
+
+// Round 3: rcdt/packet getters, yi display objects and helpers, the guide
+// screen and scene parameters, rcef targets, lerps, rcui values.
+const RCDT_CHUNK_GET_SIZE: u32 = 0x0092_b830;
+const RCDT_PARSE_GET_CHUNK: u32 = 0x0092_bb20;
+const RCDT_PARSE_GET_POS: u32 = 0x0092_bda0;
+const RCDT_PARSE_GET_MODE: u32 = 0x0092_bd10;
+const RC_PACKET_DATA_SET_ADR: u32 = 0x0092_7a40;
+const RC_PACKET_DATA_OPEN: u32 = 0x0092_7a50;
+const YI_SET_MATRIX_DOBJ: u32 = 0x0090_a520;
+const YI_SET_MATRIX_GROUP: u32 = 0x0090_a560;
+const YI_GET_DOBJ_GROUP: u32 = 0x0090_8c50;
+const YI_GET_COLOR_DOBJ: u32 = 0x0090_8e90;
+const YI_SET_COLOR_DOBJ: u32 = 0x0090_a5c0;
+const YI_GET_VIEW_ADJUST: u32 = 0x0090_8f20;
+const YI_SET_VIEW_ADJUST: u32 = 0x0090_a730;
+const YI_SET_COLOR_OFFSET: u32 = 0x0090_9ff0;
+const YI_PK_ADD_GS_AD: [u32; 3] = [0x0090_ae20, 0x0090_bc40, 0x0091_0040];
+const YI_POW2_CEIL: u32 = 0x0091_7460;
+const YI_HIGHEST_BIT: u32 = 0x0091_0580;
+const YI_LOG2_CEIL16: u32 = 0x0091_7430;
+const YI_IS_POW2: u32 = 0x0091_73e0;
+const YI_VRAM_ALLOC: u32 = 0x0091_8130;
+const YI_VRAM_SET_LIMIT: u32 = 0x0091_9630;
+const RCBG_GUIDE_SET_FLAG8: u32 = 0x0091_d530;
+const RCBG_GUIDE_GET_SCREEN: u32 = 0x0091_da30;
+const YN_SCENE_GET: [(u32, u32); 3] = [
+    (0x0091_a6d0, 0xac),
+    (0x0091_a700, 0xb8),
+    (0x0091_a730, 0xbc),
+];
+const YN_SCENE_SET_C0: u32 = 0x0091_ad80;
+const YN_SCENE_SET_DC: u32 = 0x0091_aa00;
+const YN_SCENE_SET_104: u32 = 0x0091_a260;
+const RC_ANGLE_DIFF: u32 = 0x0092_e400;
+const RCEF_TARGET_IS_DONE: u32 = 0x0092_4ba0;
+const RCEF_TARGET_CLEAR: u32 = 0x0092_4bc0;
+const RCEF_TARGET_GET_DIST: u32 = 0x0092_4a00;
+const RCEF_TARGET_GET_ANGLE: u32 = 0x0092_49e0;
+const RCEF_TARGET_GET_HEIGHT: u32 = 0x0092_49c0;
+const RCEF_TARGET_SET_DELAY: u32 = 0x0092_4be0;
+const RCEF_MAIN_SET_ENV: [u32; 2] = [0x0092_54f0, 0x0092_5510];
+const RCEF_OBJ_LINK_LAST: u32 = 0x0092_f920;
+const RCBG_ANIME_GET_FRAME: u32 = 0x0093_0860;
+const RCBG_ANIME_GET_CURRENT: u32 = 0x0093_0880;
+const RC_VEC3F_APPLY_MATRIX: u32 = 0x0092_1300;
+const RC_VEC3F_LERP: u32 = 0x0092_1280;
+const YI_LERP_VEC4: u32 = 0x0091_48d0;
+const YI_LERP_VEC2: u32 = 0x0091_48a0;
+const RCUI_VALUE_GET: u32 = 0x0093_c210;
+const RCUI_VALUE_SET: u32 = 0x0093_c270;
+const RCUI_TAKE: [(u32, u32); 3] = [
+    (0x0093_c800, 0x18),
+    (0x0093_c820, 0x1c),
+    (0x0093_c840, 0x14),
+];
+const RCUI_ITEM_INIT: u32 = 0x0093_c2c0;
+const RCUI_ADD_VECTOR: u32 = 0x0093_cbc0;
+const RCUI_MUL_VECTOR: u32 = 0x0093_d290;
+const RCUI_ITOF: u32 = 0x0093_d030;
+const RCUI_DOT: u32 = 0x0093_d060;
+const RCUI_VU0_COPY_VECTOR: u32 = 0x0093_82e0;
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case per function
+fn round3_getters_and_yi_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0003_0001);
+    let (c, p, buf, m, a, b) = (
+        t.alloc(8),
+        t.alloc(0x90),
+        t.alloc(8),
+        t.alloc(0x40),
+        t.alloc(0x10),
+        t.alloc(0x10),
+    );
+    for _ in 0..200 {
+        t.fill(c, 8, &mut rng);
+        t.fill(p, 0x90, &mut rng);
+        t.fill(buf, 8, &mut rng);
+        t.same(
+            "rcdtChunkGetSize",
+            |o| o.eax(RCDT_CHUNK_GET_SIZE, &[c]),
+            |mm| rcdt::bridge::rcdt_chunk_get_size(mm, c),
+        );
+        t.same(
+            "rcdtParseGetChunk",
+            |o| o.eax(RCDT_PARSE_GET_CHUNK, &[p]),
+            |mm| rcdt::bridge::rcdt_parse_get_chunk(mm, p),
+        );
+        t.same(
+            "rcdtParseGetPos",
+            |o| o.eax(RCDT_PARSE_GET_POS, &[p]),
+            |mm| rcdt::bridge::rcdt_parse_get_pos(mm, p),
+        );
+        t.same(
+            "rcdtParseGetMode",
+            |o| o.eax(RCDT_PARSE_GET_MODE, &[p]),
+            |mm| rcdt::bridge::rcdt_parse_get_mode(mm, p),
+        );
+        let at = rng.next();
+        t.same(
+            "rcPacketDataSetAdr",
+            |o| o.void(RC_PACKET_DATA_SET_ADR, &[c, at]),
+            |mm| packet::bridge::rc_packet_data_set_adr(mm, c, at),
+        );
+        t.same(
+            "rcPacketDataOpen",
+            |o| o.void(RC_PACKET_DATA_OPEN, &[c, buf]),
+            |mm| packet::bridge::rc_packet_data_open(mm, c, buf),
+        );
+        // display objects
+        let count = rng.below(12);
+        t.set(yi::DOBJ_COUNT, count);
+        let base = yi::DOBJS.ptr(&t.b).addr;
+        t.fill(base, 12 * yi::dobj::SIZE as usize, &mut rng);
+        for i in 0..12 {
+            t.put(
+                base + i * yi::dobj::SIZE + yi::dobj::GROUP,
+                u16::try_from(rng.below(6)).unwrap(),
+            );
+        }
+        t.fill(m, 0x40, &mut rng);
+        let i = rng.below(14);
+        t.same(
+            &format!("yiSetMatrixDObj {i} of {count}"),
+            |o| o.eax(YI_SET_MATRIX_DOBJ, &[i, m]),
+            |mm| u(yi::bridge::yi_set_matrix_dobj(mm, i, m)),
+        );
+        let g = [rng.below(7), rng.next()][rng.below(2) as usize];
+        t.same(
+            &format!("yiSetMatrixGroup {g}"),
+            |o| o.eax(YI_SET_MATRIX_GROUP, &[g, m]),
+            |mm| u(yi::bridge::yi_set_matrix_group(mm, g, m)),
+        );
+        t.same(
+            "yiGetDObjGroup",
+            |o| o.eax(YI_GET_DOBJ_GROUP, &[i]),
+            |mm| yi::bridge::yi_get_dobj_group(mm, i),
+        );
+        t.fill(a, 0x10, &mut rng);
+        t.fill(b, 0x10, &mut rng);
+        t.same(
+            "yiSetColorDObj",
+            |o| o.eax(YI_SET_COLOR_DOBJ, &[i, a, b]),
+            |mm| u(yi::bridge::yi_set_color_dobj(mm, i, a, b)),
+        );
+        t.same(
+            "yiGetColorDObj",
+            |o| o.eax(YI_GET_COLOR_DOBJ, &[i, a, b]),
+            |mm| u(yi::bridge::yi_get_color_dobj(mm, i, a, b)),
+        );
+        t.same(
+            "yiSetViewAdjust",
+            |o| o.void(YI_SET_VIEW_ADJUST, &[m]),
+            |mm| yi::bridge::yi_set_view_adjust(mm, m),
+        );
+        t.fill(m, 0x40, &mut rng);
+        t.same(
+            "yiGetViewAdjust",
+            |o| o.void(YI_GET_VIEW_ADJUST, &[m]),
+            |mm| yi::bridge::yi_get_view_adjust(mm, m),
+        );
+        let ints: [u32; 4] = std::array::from_fn(|_| rng.next() >> rng.below(32));
+        t.put(a, ints);
+        t.same(
+            "yiSetColorOffset",
+            |o| o.void(YI_SET_COLOR_OFFSET, &[a]),
+            |mm| yi::bridge::yi_set_color_offset(mm, a),
+        );
+        let (reg, data) = (rng.next(), rng.next());
+        let f = YI_PK_ADD_GS_AD[rng.below(3) as usize];
+        t.same(
+            "yiPkAddGsAD",
+            |o| o.void(f, &[b, reg, data]),
+            |mm| yi::bridge::yi_pk_add_gs_ad(mm, b, reg, data),
+        );
+        let x = [
+            rng.next() >> rng.below(32),
+            rng.next() & 0xffff,
+            1 << rng.below(17),
+        ][rng.below(3) as usize];
+        t.same(
+            &format!("yiPow2Ceil {x:#x}"),
+            |o| o.eax(YI_POW2_CEIL, &[x]),
+            |_| u(yi::pow2_ceil(x.cast_signed())),
+        );
+        t.same(
+            &format!("yiHighestBit {x:#x}"),
+            |o| o.eax(YI_HIGHEST_BIT, &[x]),
+            |_| u(yi::highest_bit(x)),
+        );
+        t.same(
+            &format!("yiLog2Ceil16 {x:#x}"),
+            |o| o.eax(YI_LOG2_CEIL16, &[x]),
+            |_| u(yi::log2_ceil16(x)),
+        );
+        t.same(
+            &format!("yiIsPow2 {x:#x}"),
+            |o| o.eax(YI_IS_POW2, &[x]),
+            |_| u32::from(yi::is_pow2(x)),
+        );
+        let pages = rng.below(0x40);
+        t.same(
+            "yiVramSetLimit",
+            |o| o.eax(YI_VRAM_SET_LIMIT, &[pages]),
+            |mm| yi::bridge::yi_vram_set_limit(mm, pages),
+        );
+        t.set(yi::VRAM_NEXT, rng.next() >> rng.below(32));
+        let bytes = u(rng.range(-0x100, 0x1_0000));
+        t.same(
+            &format!("yiVramAlloc {bytes:#x}"),
+            |o| o.eax(YI_VRAM_ALLOC, &[bytes]),
+            |mm| yi::bridge::yi_vram_alloc(mm, bytes.cast_signed()),
+        );
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case per function
+fn round3_guide_and_rcef_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0003_0002);
+    let (sys, map, sc, out) = (t.alloc(8), t.alloc(0x10), t.alloc(0x110), t.alloc(0x10));
+    let (main, env_slot) = (t.alloc(0x20), t.alloc(4));
+    let objs: Vec<u32> = (0..6).map(|_| t.alloc(0x100)).collect();
+    let (anime, frames) = (t.alloc(0x20), t.alloc(0x40));
+    for _ in 0..200 {
+        let on = [0, 1, 0x100][rng.below(3) as usize];
+        t.same(
+            "rcbgGuideSetFlag8",
+            |o| o.void(RCBG_GUIDE_SET_FLAG8, &[0, on]),
+            |m| guide::bridge::rcbg_guide_set_flag8(m, 0, i32::try_from(on).unwrap()),
+        );
+        t.set(guide::SIZE, rng.next() >> rng.below(32));
+        t.set(
+            guide::POS,
+            [rng.next() >> rng.below(32), rng.next() >> rng.below(32)],
+        );
+        t.same(
+            "rcbgGuideGetScreen",
+            |o| o.void(RCBG_GUIDE_GET_SCREEN, &[0, out, out + 4]),
+            |m| guide::bridge::rcbg_guide_get_screen(m, 0, out, out + 4),
+        );
+        // Yn's scene parameters: no state, or the whole chain
+        let full = rng.below(3) != 0;
+        t.set(guide::YN_MAP_SYSTEM, if full { sys } else { 0 });
+        t.put(sys + guide::system::MAP, map);
+        t.put(map + guide::map::SCENE, sc);
+        t.fill(sc + 0xa0, 0x70, &mut rng);
+        for (f, offset) in YN_SCENE_GET {
+            t.same(
+                &format!("Yn_SceneGet {offset:#x}"),
+                |o| o.float(f, &[]),
+                |m| {
+                    bits(match offset {
+                        0xac => guide::bridge::yn_scene_get_ac(m),
+                        0xb8 => guide::bridge::yn_scene_get_b8(m),
+                        _ => guide::bridge::yn_scene_get_bc(m),
+                    })
+                },
+            );
+        }
+        let args = [
+            rng.next(),
+            rng.any_float(),
+            rng.next(),
+            rng.next(),
+            rng.next(),
+        ];
+        t.same(
+            "Yn_SceneSetC0",
+            |o| o.void(YN_SCENE_SET_C0, &args),
+            |m| guide::bridge::yn_scene_set_c0(m, args),
+        );
+        let (x0, x1, x2, x3) = (rng.next(), rng.any_float(), rng.next(), rng.any_float());
+        t.same(
+            "Yn_SceneSetDC",
+            |o| o.void(YN_SCENE_SET_DC, &[x0, x1, x2, x3]),
+            |m| guide::bridge::yn_scene_set_dc(m, x0, x1, x2, x3),
+        );
+        let v = rng.next();
+        t.same(
+            "Yn_SceneSet104",
+            |o| o.void(YN_SCENE_SET_104, &[v]),
+            |m| guide::bridge::yn_scene_set_104(m, v),
+        );
+        // rcef
+        let (x, y) = (rng.float(), rng.float());
+        t.same(
+            &format!("rcAngleDiff {x:#x} {y:#x}"),
+            |o| o.float(RC_ANGLE_DIFF, &[x, y]),
+            |m| bits(task::bridge::rc_angle_diff(m, x, y)),
+        );
+        let table = task::target::TABLE.ptr(&t.b).addr;
+        t.fill(table, 0x24 * 16, &mut rng);
+        let i = rng.below(16);
+        t.same(
+            "rcefTargetIsDone",
+            |o| o.eax(RCEF_TARGET_IS_DONE, &[i]),
+            |m| task::bridge::rcef_target_is_done(m, i),
+        );
+        for (f, which) in [
+            (RCEF_TARGET_GET_DIST, 0),
+            (RCEF_TARGET_GET_ANGLE, 1),
+            (RCEF_TARGET_GET_HEIGHT, 2),
+        ] {
+            let at = table + 0x24 * i + [8, 0xc, 0x10][which];
+            t.put(at, rng.float());
+            t.same(
+                "rcefTargetGet*",
+                |o| o.float(f, &[i]),
+                |m| {
+                    bits(match which {
+                        0 => task::bridge::rcef_target_get_dist(m, i),
+                        1 => task::bridge::rcef_target_get_angle(m, i),
+                        _ => task::bridge::rcef_target_get_height(m, i),
+                    })
+                },
+            );
+        }
+        t.same(
+            "rcefTargetClear",
+            |o| o.void(RCEF_TARGET_CLEAR, &[i]),
+            |m| task::bridge::rcef_target_clear(m, i),
+        );
+        let d = rng.next();
+        t.same(
+            "rcefTargetSetDelay",
+            |o| o.void(RCEF_TARGET_SET_DELAY, &[d]),
+            |m| task::bridge::rcef_target_set_delay(m, u16::try_from(d & 0xffff).unwrap()),
+        );
+        t.set(task::main::ENV_SLOT, env_slot);
+        t.fill(main, 0x20, &mut rng);
+        let f = RCEF_MAIN_SET_ENV[rng.below(2) as usize];
+        t.same(
+            "rcefMainSetEnv",
+            |o| o.void(f, &[main]),
+            |m| task::bridge::rcef_main_set_env(m, main),
+        );
+        // a chain of objects, then one more linked at its end
+        for (k, &o) in objs.iter().enumerate() {
+            t.fill(o, 0x100, &mut rng);
+            let next = if k + 1 < objs.len() - 1 && rng.below(4) != 0 {
+                objs[k + 1]
+            } else {
+                0
+            };
+            t.put(o + 0xcc, next);
+        }
+        t.same(
+            "rcefObjLinkLast",
+            |x| x.void(RCEF_OBJ_LINK_LAST, &[objs[0], objs[5]]),
+            |m| task::bridge::rcef_obj_link_last(m, objs[0], objs[5]),
+        );
+        t.fill(anime, 0x20, &mut rng);
+        t.put(anime + model::anime::FRAMES, frames);
+        t.put(anime + model::anime::COUNT, rng.range(-1, 8));
+        t.put(
+            anime + model::anime::CURRENT,
+            i16::try_from(rng.range(-2, 9)).unwrap(),
+        );
+        let n = rng.range(-2, 10);
+        t.same(
+            "rcbgAnimeGetFrame",
+            |o| o.eax(RCBG_ANIME_GET_FRAME, &[anime, u(n)]),
+            |m| model::bridge::rcbg_anime_get_frame(m, anime, n),
+        );
+        t.same(
+            "rcbgAnimeGetCurrent",
+            |o| o.eax(RCBG_ANIME_GET_CURRENT, &[anime]),
+            |m| model::bridge::rcbg_anime_get_current(m, anime),
+        );
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case per function
+fn round3_vectors_and_rcui_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0003_0003);
+    let (va, vb, mtx, out, item) = (
+        t.alloc(0x10),
+        t.alloc(0x10),
+        t.alloc(0x40),
+        t.alloc(0x10),
+        t.alloc(0x40),
+    );
+    for _ in 0..300 {
+        // quiet NaNs too: ffx_bridge::x87 picks the one the x87 propagates
+        let fa: [u32; 4] = std::array::from_fn(|_| rng.any_float());
+        let fb: [u32; 4] = std::array::from_fn(|_| rng.any_float());
+        let fm: [u32; 16] = std::array::from_fn(|_| rng.any_float());
+        t.put(va, fa);
+        t.put(vb, fb);
+        t.put(mtx, fm);
+        let target = [out, va][rng.below(2) as usize];
+        t.same(
+            "rcVec3fApplyMatrix",
+            |o| o.void(RC_VEC3F_APPLY_MATRIX, &[target, va, mtx]),
+            |m| geom::bridge::rc_vec3f_apply_matrix(m, target, va, mtx),
+        );
+        let tt = rng.float();
+        let target = [out, va, vb][rng.below(3) as usize];
+        t.same(
+            "rcVec3fLerp",
+            |o| o.void(RC_VEC3F_LERP, &[target, va, vb, tt]),
+            |m| geom::bridge::rc_vec3f_lerp(m, target, va, vb, tt),
+        );
+        t.same(
+            "yiLerpVec4",
+            |o| o.void(YI_LERP_VEC4, &[tt, va, vb, target]),
+            |m| geom::bridge::yi_lerp_vec4(m, tt, va, vb, target),
+        );
+        t.same(
+            "yiLerpVec2",
+            |o| o.void(YI_LERP_VEC2, &[tt, va, vb, target]),
+            |m| geom::bridge::yi_lerp_vec2(m, tt, va, vb, target),
+        );
+        t.same(
+            "rcuiAddVector",
+            |o| o.void(RCUI_ADD_VECTOR, &[target, va, vb]),
+            |m| rcui::bridge::rcui_add_vector(m, target, va, vb),
+        );
+        t.same(
+            "rcuiMulVector",
+            |o| o.void(RCUI_MUL_VECTOR, &[target, va, vb]),
+            |m| rcui::bridge::rcui_mul_vector(m, target, va, vb),
+        );
+        t.same(
+            "rcuiDot",
+            |o| o.float(RCUI_DOT, &[va, vb]),
+            |m| bits(rcui::bridge::rcui_dot(m, va, vb)),
+        );
+        let ints: [u32; 4] = std::array::from_fn(|_| rng.next() >> rng.below(32));
+        t.put(vb, ints);
+        t.same(
+            "rcuiItoF",
+            |o| o.void(RCUI_ITOF, &[out, vb]),
+            |m| rcui::bridge::rcui_itof(m, out, vb),
+        );
+        t.same(
+            "rcuiVu0CopyVector",
+            |o| o.void(RCUI_VU0_COPY_VECTOR, &[out, va]),
+            |m| rcui::bridge::rcui_vu0_copy_vector(m, out, va),
+        );
+        t.fill(item, 0x40, &mut rng);
+        let kind = rng.below(8);
+        t.same(
+            &format!("rcuiValueGet {kind}"),
+            |o| o.eax(RCUI_VALUE_GET, &[item, kind]),
+            |m| rcui::bridge::rcui_value_get(m, item, kind),
+        );
+        let v = rng.next();
+        t.same(
+            &format!("rcuiValueSet {kind}"),
+            |o| o.void(RCUI_VALUE_SET, &[item, kind, v]),
+            |m| rcui::bridge::rcui_value_set(m, item, kind, v),
+        );
+        for (f, offset) in RCUI_TAKE {
+            t.same(
+                &format!("rcuiTake {offset:#x}"),
+                |o| o.eax(f, &[item]),
+                |m| rcui::bridge::rcui_take(m, item, offset),
+            );
+        }
+        t.same(
+            "rcuiItemInit",
+            |o| o.void(RCUI_ITEM_INIT, &[item]),
+            |m| rcui::bridge::rcui_item_init(m, item),
+        );
+    }
+}
+
+const YI_RENDER_ADD_REF: u32 = 0x0090_c1f0;
+const YI_RENDER_ADD_REF_DATA: u32 = 0x0090_c230;
+const YI_PK_UNPACK_MATRIX: u32 = 0x0090_cd10;
+const YI_PK_UNPACK_MATRIX_DMA: u32 = 0x0090_ccb0;
+
+#[test]
+fn round3_render_packets_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0003_0004);
+    let render = t.alloc(0xc_0000);
+    let (pk, block, m, out) = (t.alloc(0x200), t.alloc(0x20), t.alloc(0x40), t.alloc(0x80));
+    for _ in 0..100 {
+        t.put(render + yi::render::PACKET, pk + 0x10 * rng.below(16));
+        t.put(render + yi::render::PACKET_COUNT, rng.next());
+        let (addr, qwc) = (rng.next(), rng.next());
+        t.same(
+            "yiRender_addRef",
+            |o| o.void(YI_RENDER_ADD_REF, &[render, addr, qwc]),
+            |mm| {
+                let [lo, hi, _, _] = qwc.to_le_bytes();
+                yi::bridge::yi_render_add_ref(mm, render, addr, u16::from_le_bytes([lo, hi]));
+            },
+        );
+        t.fill(block, 0x20, &mut rng);
+        t.same(
+            "yiRender_addRefData",
+            |o| o.void(YI_RENDER_ADD_REF_DATA, &[render, block]),
+            |mm| yi::bridge::yi_render_add_ref_data(mm, render, block),
+        );
+        t.fill(m, 0x40, &mut rng);
+        let a = rng.next() & 0xffff;
+        t.same(
+            "yiPkUnpackMatrix",
+            |o| o.void(YI_PK_UNPACK_MATRIX, &[m, out, a]),
+            |mm| yi::bridge::yi_pk_unpack_matrix(mm, m, out, a),
+        );
+        t.same(
+            "yiPkUnpackMatrixDma",
+            |o| o.void(YI_PK_UNPACK_MATRIX_DMA, &[m, out, a]),
+            |mm| yi::bridge::yi_pk_unpack_matrix_dma(mm, m, out, a),
+        );
+    }
+}
+
+/// Round 3 on the game's own state: display objects, the view matrix,
+/// the scene's parameters, the guide screen.
+#[test]
+fn round3_field_state_matches_the_original_on_a_snapshot() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let (a, b, m) = (t.alloc(0x10), t.alloc(0x10), t.alloc(0x40));
+    let count = yi::DOBJ_COUNT.get(&t.b);
+    for i in 0..=count.min(64) {
+        t.same(
+            &format!("yiGetDObjGroup {i}"),
+            |o| o.eax(YI_GET_DOBJ_GROUP, &[i]),
+            |mm| yi::bridge::yi_get_dobj_group(mm, i),
+        );
+        t.same(
+            &format!("yiGetColorDObj {i}"),
+            |o| o.eax(YI_GET_COLOR_DOBJ, &[i, a, b]),
+            |mm| u(yi::bridge::yi_get_color_dobj(mm, i, a, b)),
+        );
+    }
+    t.same(
+        "yiGetViewAdjust",
+        |o| o.void(YI_GET_VIEW_ADJUST, &[m]),
+        |mm| yi::bridge::yi_get_view_adjust(mm, m),
+    );
+    for (f, offset) in YN_SCENE_GET {
+        t.same(
+            &format!("Yn_SceneGet {offset:#x}"),
+            |o| o.float(f, &[]),
+            |mm| {
+                bits(match offset {
+                    0xac => guide::bridge::yn_scene_get_ac(mm),
+                    0xb8 => guide::bridge::yn_scene_get_b8(mm),
+                    _ => guide::bridge::yn_scene_get_bc(mm),
+                })
+            },
+        );
+    }
+    t.same(
+        "rcbgGuideGetScreen",
+        |o| o.void(RCBG_GUIDE_GET_SCREEN, &[0, a, b]),
+        |mm| guide::bridge::rcbg_guide_get_screen(mm, 0, a, b),
+    );
+    for i in 0..16 {
+        t.same(
+            "rcefTargetIsDone",
+            |o| o.eax(RCEF_TARGET_IS_DONE, &[i]),
+            |mm| task::bridge::rcef_target_is_done(mm, i),
+        );
+    }
+}

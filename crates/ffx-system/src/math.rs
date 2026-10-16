@@ -1,13 +1,17 @@
 //! The `cdc` matrix helpers and the VU0 vector length (`cdc::Mul4x4` and
 //! friends, `sceVu0VectorLengthSquared`), with the game's x87 rounding
-//! ([`crate::x87`]).
+//! ([`ffx_bridge::x87`]).
 //!
 //! Matrices are 16 `f32`s, row-major, rows `[x, y, z, w]`: a point is a row
 //! vector multiplied from the left, the translation is the fourth row.
 //! Every element passes through the x87 stack, so a signalling NaN comes out
 //! quiet even where an element is only copied.
 
-use crate::x87::{self, Reg, load};
+use ffx_bridge::x87::{self, Reg};
+
+fn load(x: f32) -> Reg {
+    Reg::load(x)
+}
 
 /// A 4×4 matrix, row-major.
 pub type Matrix = [f32; 16];

@@ -146,6 +146,16 @@ impl Reg {
         }
     }
 
+    /// The register as an `f64` (any NaN for a NaN), for the integer
+    /// conversions.
+    #[must_use]
+    pub fn value(self) -> f64 {
+        match self {
+            Self::Num(x) => x,
+            Self::Nan(_) => f64::NAN,
+        }
+    }
+
     /// `fstp m32`.
     #[must_use]
     pub fn store(self) -> f32 {

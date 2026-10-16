@@ -96,11 +96,16 @@ impl Pair {
     /// On the image alone, and on the snapshot when there is one.
     fn all() -> Vec<Pair> {
         let Some(exe) = exe() else { return Vec::new() };
-        let mut v = vec![Pair {
+        let mut image = Pair {
             name: "image",
             a: Oracle::load(&exe).unwrap(),
             b: Oracle::load(&exe).unwrap(),
-        }];
+        };
+        // the game thread's control word (53-bit precision), as the
+        // snapshot oracle has it
+        image.a.set_fpu_control(0x027f).unwrap();
+        image.b.set_fpu_control(0x027f).unwrap();
+        let mut v = vec![image];
         if let Some(p) = pages() {
             v.push(Pair {
                 name: "snapshot",
@@ -913,10 +918,7 @@ fn op_services_match_the_original() {
                 "op_oef2_tex_clut_ovl_clear",
                 OP_OEF2_TEX_CLUT_OVL_CLEAR,
                 &[mask],
-                |m| {
-                    o::op_oef2_tex_clut_ovl_clear(m, mask);
-                    None
-                },
+                |m| Some(o::op_oef2_tex_clut_ovl_clear(m, mask)),
             );
             let mask = 1u32 << rng.below(32);
             p.check(
@@ -1809,6 +1811,237 @@ const PROG_CONS: &[(&str, u32, Con)] = &[
         prog::bridge::ppp_draw_mdl_sea_con,
     ),
     (
+        "pppKeThRes128Con",
+        0x0073_6690,
+        prog::bridge::ppp_ke_th_res128_con,
+    ),
+    (
+        "pppKeThRes128x4Con",
+        0x0073_66c0,
+        prog::bridge::ppp_ke_th_res128x4_con,
+    ),
+    (
+        "pppKeThRes128x8Con",
+        0x0073_66f0,
+        prog::bridge::ppp_ke_th_res128x8_con,
+    ),
+    (
+        "pppKeThRes16Con",
+        0x0073_6720,
+        prog::bridge::ppp_ke_th_res16_con,
+    ),
+    (
+        "pppKeThRes16x16Con",
+        0x0073_6750,
+        prog::bridge::ppp_ke_th_res16x16_con,
+    ),
+    (
+        "pppKeThRes16x24Con",
+        0x0073_6780,
+        prog::bridge::ppp_ke_th_res16x24_con,
+    ),
+    (
+        "pppKeThRes16x4Con",
+        0x0073_67b0,
+        prog::bridge::ppp_ke_th_res16x4_con,
+    ),
+    (
+        "pppKeThRes16x64Con",
+        0x0073_67e0,
+        prog::bridge::ppp_ke_th_res16x64_con,
+    ),
+    (
+        "pppKeThRes16x8Con",
+        0x0073_6810,
+        prog::bridge::ppp_ke_th_res16x8_con,
+    ),
+    (
+        "pppKeThRes24Con",
+        0x0073_6840,
+        prog::bridge::ppp_ke_th_res24_con,
+    ),
+    (
+        "pppKeThRes24x16Con",
+        0x0073_6870,
+        prog::bridge::ppp_ke_th_res24x16_con,
+    ),
+    (
+        "pppKeThRes24x4Con",
+        0x0073_68a0,
+        prog::bridge::ppp_ke_th_res24x4_con,
+    ),
+    (
+        "pppKeThRes24x8Con",
+        0x0073_68d0,
+        prog::bridge::ppp_ke_th_res24x8_con,
+    ),
+    (
+        "pppKeThRes255Con",
+        0x0073_6900,
+        prog::bridge::ppp_ke_th_res255_con,
+    ),
+    (
+        "pppKeThRes255x4Con",
+        0x0073_6930,
+        prog::bridge::ppp_ke_th_res255x4_con,
+    ),
+    (
+        "pppKeThRes32Con",
+        0x0073_6960,
+        prog::bridge::ppp_ke_th_res32_con,
+    ),
+    (
+        "pppKeThRes32x16Con",
+        0x0073_6990,
+        prog::bridge::ppp_ke_th_res32x16_con,
+    ),
+    (
+        "pppKeThRes32x24Con",
+        0x0073_69c0,
+        prog::bridge::ppp_ke_th_res32x24_con,
+    ),
+    (
+        "pppKeThRes32x32Con",
+        0x0073_69f0,
+        prog::bridge::ppp_ke_th_res32x32_con,
+    ),
+    (
+        "pppKeThRes32x4Con",
+        0x0073_6a20,
+        prog::bridge::ppp_ke_th_res32x4_con,
+    ),
+    (
+        "pppKeThRes32x8Con",
+        0x0073_6a50,
+        prog::bridge::ppp_ke_th_res32x8_con,
+    ),
+    (
+        "pppKeThRes40Con",
+        0x0073_6a80,
+        prog::bridge::ppp_ke_th_res40_con,
+    ),
+    (
+        "pppKeThRes40x16Con",
+        0x0073_6ab0,
+        prog::bridge::ppp_ke_th_res40x16_con,
+    ),
+    (
+        "pppKeThRes40x4Con",
+        0x0073_6ae0,
+        prog::bridge::ppp_ke_th_res40x4_con,
+    ),
+    (
+        "pppKeThRes40x8Con",
+        0x0073_6b10,
+        prog::bridge::ppp_ke_th_res40x8_con,
+    ),
+    (
+        "pppKeThRes48Con",
+        0x0073_6b40,
+        prog::bridge::ppp_ke_th_res48_con,
+    ),
+    (
+        "pppKeThRes48x16Con",
+        0x0073_6b70,
+        prog::bridge::ppp_ke_th_res48x16_con,
+    ),
+    (
+        "pppKeThRes48x4Con",
+        0x0073_6ba0,
+        prog::bridge::ppp_ke_th_res48x4_con,
+    ),
+    (
+        "pppKeThRes48x8Con",
+        0x0073_6bd0,
+        prog::bridge::ppp_ke_th_res48x8_con,
+    ),
+    (
+        "pppKeThRes64Con",
+        0x0073_6c00,
+        prog::bridge::ppp_ke_th_res64_con,
+    ),
+    (
+        "pppKeThRes64x16Con",
+        0x0073_6c30,
+        prog::bridge::ppp_ke_th_res64x16_con,
+    ),
+    (
+        "pppKeThRes64x4Con",
+        0x0073_6c60,
+        prog::bridge::ppp_ke_th_res64x4_con,
+    ),
+    (
+        "pppKeThRes64x8Con",
+        0x0073_6c90,
+        prog::bridge::ppp_ke_th_res64x8_con,
+    ),
+    (
+        "pppKeThRes8Con",
+        0x0073_6cc0,
+        prog::bridge::ppp_ke_th_res8_con,
+    ),
+    (
+        "pppKeThRes8x128Con",
+        0x0073_6cf0,
+        prog::bridge::ppp_ke_th_res8x128_con,
+    ),
+    (
+        "pppKeThRes8x4Con",
+        0x0073_6d20,
+        prog::bridge::ppp_ke_th_res8x4_con,
+    ),
+    (
+        "pppKeThResCon",
+        0x0073_6d50,
+        prog::bridge::ppp_ke_th_res_con,
+    ),
+    (
+        "pppKeLnsArndCon",
+        0x0075_9fd0,
+        prog::bridge::ppp_ke_lns_arnd_con,
+    ),
+    (
+        "pppKeLnsCrnCon",
+        0x0075_a740,
+        prog::bridge::ppp_ke_lns_crn_con,
+    ),
+    (
+        "pppKeLnsClmCon",
+        0x0075_a370,
+        prog::bridge::ppp_ke_lns_clm_con,
+    ),
+    ("pppKeThCon", 0x0073_6460, prog::bridge::ppp_ke_th_con),
+    (
+        "pppKeMdlTfdUvCon",
+        0x0074_98f0,
+        prog::bridge::ppp_ke_mdl_tfd_uv_con,
+    ),
+    (
+        "pppKeMdlTfdUv2Con",
+        0x0074_9c30,
+        prog::bridge::ppp_ke_mdl_tfd_uv2_con,
+    ),
+    (
+        "pppKeMdlTfdUv3Con",
+        0x0074_9f90,
+        prog::bridge::ppp_ke_mdl_tfd_uv3_con,
+    ),
+    (
+        "pppKeShpTail3Con2",
+        0x0075_05a0,
+        prog::bridge::ppp_ke_shp_tail3_con2,
+    ),
+    (
+        "pppKeShpTail3XCon2",
+        0x0075_1f40,
+        prog::bridge::ppp_ke_shp_tail3_x_con2,
+    ),
+    (
+        "pppDrawMdlInfCon",
+        0x0073_b7b0,
+        prog::bridge::ppp_draw_mdl_inf_con,
+    ),
+    (
         "pppColAcceleCon",
         0x0075_bac0,
         prog::bridge::ppp_col_accele_con,
@@ -1857,20 +2090,39 @@ const PROG_STEPS: &[(&str, u32, Step)] = &[
     ("pppPointLoop", 0x0075_c500, prog::bridge::ppp_point_loop),
     ("pppScaleLoop", 0x0075_d090, prog::bridge::ppp_point_loop),
     ("pppAngleLoop", 0x0075_cec0, prog::bridge::ppp_angle_loop),
+    ("pppDrawSprite", 0x0075_66e0, prog::bridge::ppp_draw_sprite),
+    ("pppKeHitBall", 0x0075_9830, prog::bridge::ppp_ke_hit_ball),
+    (
+        "pppNeiPointLight",
+        0x0075_d700,
+        prog::bridge::ppp_nei_point_light,
+    ),
+    ("pppPObjPoint", 0x0075_d280, prog::bridge::ppp_p_obj_point),
+    ("pppKeThTp", 0x0073_6d80, prog::bridge::ppp_ke_th_tp),
     ("pppKeGrvTgt", 0x0075_97b0, prog::bridge::ppp_ke_grv_tgt),
 ];
 
 #[test]
+#[allow(clippy::too_many_lines)] // one setup, the random rounds, then each in order
 fn program_table_matches_the_original() {
     use prog::bridge as g;
     for mut p in Pair::all() {
         let mut rng = Xorshift(0x0c0d_e0f1);
-        let obj = p.alloc(0x400);
+        let obj = p.alloc(0x1_0000);
         let key = p.alloc(0x40);
         let key2 = p.alloc(0x40);
         let ctrl = p.alloc(0x10);
         let offsets = p.alloc(6 * 4);
         p.set(ctrl + 0xc, offsets);
+        // a current part with eight objects (pppPObjPoint, pppKeThTp)
+        let part = p.alloc(0x40);
+        let records = p.alloc(8 * 16);
+        p.set(part + 0x3c, records);
+        for i in 0..8 {
+            let o = p.alloc(0x200);
+            p.set(records + 16 * i + 4, o);
+        }
+        p.put(prog::bridge::CURRENT_PART, part);
         for round in 0..1500 {
             for i in (0..0x400).step_by(4) {
                 let v = if rng.chance(70) {
@@ -1897,6 +2149,16 @@ fn program_table_matches_the_original() {
             p.set(obj + 0xc, frame);
             let kf = if rng.chance(70) { frame } else { frame ^ 1 };
             p.set(key, kf);
+            // part object targets: -1 or one of the eight, a field in it
+            for (n, at) in [(4, 8), (0x10, 0x14)] {
+                let o = if rng.chance(20) {
+                    u32::MAX
+                } else {
+                    rng.below(8)
+                };
+                p.set(key + n, o);
+                p.set(key + at, rng.below(0x40) * 4);
+            }
             // the remembered key of the Loop programs: none, or a real one
             let off0: u32 = p.get(offsets);
             let remembered = rng.pick(&[0, key, key2]);
@@ -1919,6 +2181,10 @@ fn program_table_matches_the_original() {
             });
             p.set(obj + off0 + 0xb0, remembered);
             let (name, sym, f) = rng.pick(PROG_STEPS);
+            if name == "pppPObjPoint" {
+                // it reads through its pointer every frame
+                p.set(obj + off0 + 0xb0, held);
+            }
             p.check(
                 &format!("{name} round {round}"),
                 sym,
@@ -1941,7 +2207,8 @@ fn program_table_matches_the_original() {
         p.put(ppp::bridge::STOP, 0);
         for &(name, sym, f) in PROG_STEPS {
             let off0: u32 = p.get(offsets);
-            p.set(obj + off0 + 0xb0, 0u32);
+            let remembered = if name == "pppPObjPoint" { key2 } else { 0 };
+            p.set(obj + off0 + 0xb0, remembered);
             p.check(name, sym, &[obj, key, ctrl], |m| {
                 f(m, obj, key, ctrl);
                 None
@@ -2090,34 +2357,152 @@ fn srand_log(log: u32) -> impl FnMut(&mut Oracle, u32) {
     }
 }
 
-type RandProg = (&'static str, u32, rand::bridge::Spread, bool);
+type RandProg = (&'static str, u32, rand::bridge::Spread, rand::bridge::Kind);
 
-const RAND_PROGS: [RandProg; 6] = [
+const RAND_PROGS: [RandProg; 24] = [
     (
         "pppRandFloat",
         0x0072_f4b0,
         rand::bridge::Spread::Plain,
-        false,
+        rand::bridge::Kind::Float,
     ),
     (
         "pppRandUpFloat",
         0x0072_f680,
         rand::bridge::Spread::Up,
-        false,
+        rand::bridge::Kind::Float,
     ),
     (
         "pppRandDownFloat",
         0x0072_f850,
         rand::bridge::Spread::Down,
-        false,
+        rand::bridge::Kind::Float,
     ),
-    ("pppRandFV", 0x0073_0ab0, rand::bridge::Spread::Plain, true),
-    ("pppRandUpFV", 0x0073_0ce0, rand::bridge::Spread::Up, true),
+    (
+        "pppRandChar",
+        0x0072_fa20,
+        rand::bridge::Spread::Plain,
+        rand::bridge::Kind::Char,
+    ),
+    (
+        "pppRandUpChar",
+        0x0072_fbf0,
+        rand::bridge::Spread::Up,
+        rand::bridge::Kind::Char,
+    ),
+    (
+        "pppRandDownChar",
+        0x0072_fdc0,
+        rand::bridge::Spread::Down,
+        rand::bridge::Kind::Char,
+    ),
+    (
+        "pppRandShort",
+        0x0072_ffa0,
+        rand::bridge::Spread::Plain,
+        rand::bridge::Kind::Short,
+    ),
+    (
+        "pppRandUpShort",
+        0x0073_0170,
+        rand::bridge::Spread::Up,
+        rand::bridge::Kind::Short,
+    ),
+    (
+        "pppRandDownShort",
+        0x0073_0340,
+        rand::bridge::Spread::Down,
+        rand::bridge::Kind::Short,
+    ),
+    (
+        "pppRandInt",
+        0x0073_0520,
+        rand::bridge::Spread::Plain,
+        rand::bridge::Kind::Int,
+    ),
+    (
+        "pppRandUpInt",
+        0x0073_0700,
+        rand::bridge::Spread::Up,
+        rand::bridge::Kind::Int,
+    ),
+    (
+        "pppRandDownInt",
+        0x0073_08d0,
+        rand::bridge::Spread::Down,
+        rand::bridge::Kind::Int,
+    ),
+    (
+        "pppRandFV",
+        0x0073_0ab0,
+        rand::bridge::Spread::Plain,
+        rand::bridge::Kind::FloatVec,
+    ),
+    (
+        "pppRandUpFV",
+        0x0073_0ce0,
+        rand::bridge::Spread::Up,
+        rand::bridge::Kind::FloatVec,
+    ),
     (
         "pppRandDownFV",
         0x0073_0ef0,
         rand::bridge::Spread::Down,
-        true,
+        rand::bridge::Kind::FloatVec,
+    ),
+    (
+        "pppRandIV",
+        0x0073_1100,
+        rand::bridge::Spread::Plain,
+        rand::bridge::Kind::IntVec,
+    ),
+    (
+        "pppRandUpIV",
+        0x0073_1350,
+        rand::bridge::Spread::Up,
+        rand::bridge::Kind::IntVec,
+    ),
+    (
+        "pppRandDownIV",
+        0x0073_1560,
+        rand::bridge::Spread::Down,
+        rand::bridge::Kind::IntVec,
+    ),
+    (
+        "pppRandCV",
+        0x0073_1780,
+        rand::bridge::Spread::Plain,
+        rand::bridge::Kind::CharVec,
+    ),
+    (
+        "pppRandUpCV",
+        0x0073_19f0,
+        rand::bridge::Spread::Up,
+        rand::bridge::Kind::CharVec,
+    ),
+    (
+        "pppRandDownCV",
+        0x0073_1c50,
+        rand::bridge::Spread::Down,
+        rand::bridge::Kind::CharVec,
+    ),
+    (
+        "pppRandHCV",
+        0x0073_1ec0,
+        rand::bridge::Spread::Plain,
+        rand::bridge::Kind::ShortVec,
+    ),
+    (
+        "pppRandUpHCV",
+        0x0073_2130,
+        rand::bridge::Spread::Up,
+        rand::bridge::Kind::ShortVec,
+    ),
+    (
+        "pppRandDownHCV",
+        0x0073_2390,
+        rand::bridge::Spread::Down,
+        rand::bridge::Kind::ShortVec,
     ),
 ];
 
@@ -2133,7 +2518,7 @@ fn rand_programs_match_the_original() {
         let offsets = p.alloc(8);
         let out = p.alloc(4);
         p.set(ctrl + 0xc, offsets);
-        for round in 0..3000 {
+        for round in 0..10000 {
             // the log wraps like the Rust side's
             let n: u32 = p.get(log);
             if n >= 0x3f0 {
@@ -2183,15 +2568,16 @@ fn rand_programs_match_the_original() {
                 rng.below(0x50) * 4
             };
             p.set(key + 4, target);
-            p.set(key + 0xc, u8::from(rng.chance(50)));
-            p.set(key + 0x20, u8::from(rng.chance(50)));
-            let (name, sym, spread, vector) = rng.pick(&RAND_PROGS);
+            for flag in [9, 0xa, 0xc, 0x10, 0x20] {
+                p.set(key + flag, u8::from(rng.chance(50)));
+            }
+            let (name, sym, spread, kind) = rng.pick(&RAND_PROGS);
             p.check(
                 &format!("{name} round {round}"),
                 sym,
                 &[obj, key, ctrl],
                 |m| {
-                    r::ppp_rand_float(m, obj, key, ctrl, spread, vector, &mut srand_log(log));
+                    r::ppp_rand(m, obj, key, ctrl, spread, kind, &mut srand_log(log));
                     None
                 },
             );

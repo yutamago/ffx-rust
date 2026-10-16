@@ -1210,6 +1210,7 @@
 0x006ebee0 function mspace_free               # fh v3:exact 0x006ec020
 0x006ec8d0 function mspace_memalign           # fh v3:exact 0x006eca10
 0x006ecc40 function Matrix__copy              # fh v3:bsim1.00 0x006ecd80 Matrix::+copy
+0x006ece60 function Matrix_Identity           # thiscall(m): stores the 4x4 identity (fld1/fldz through locals), leaves 1.0's bits in eax; FFXVu0UnitMatrix tail-jumps here
 0x006ed290 function FFXVu0AddVector           # fh v3:exact 0x006ed3d0
 0x006ed2e0 function FFXVu0ApplyMatrix         # fh v3:bsim1.00 0x006ed420
 0x006ed360 function FFXVu0CopyMatrix          # fh v3:cg31 0x6ed4a0
@@ -1443,12 +1444,26 @@
 0x0072f4b0 function pppRandFloat              # fh v3:exact 0x0072f590
 0x0072f680 function pppRandUpFloat           # ppp program table record "pppRandUpFloat" (0x00c3d780) +0x8 step: d1 or (d2 + d1) * 0.5, target += k w
 0x0072f850 function pppRandDownFloat         # ppp program table record "pppRandDownFloat" (0x00c3b3e0) +0x8 step: -d1 or (-d1 - d2) * 0.5, target += k w
+0x0072fa20 function pppRandChar               # ppp program table record "pppRandChar" (0x00c3d7a8) +0x8 step: u8 factor at +8, byte target, ftol
+0x0072fbf0 function pppRandUpChar             # ppp program table record "pppRandUpChar" (0x00c3d7d0) +0x8 step: u8 factor at +8, byte target, ftol
+0x0072fdc0 function pppRandDownChar           # ppp program table record "pppRandDownChar" (0x00c3d7f8) +0x8 step: u8 factor at +8, byte target, ftol
+0x0072ffa0 function pppRandShort              # ppp program table record "pppRandShort" (0x00c3d820) +0x8 step: u16 factor at +8, half-word target, ftol
+0x00730170 function pppRandUpShort            # ppp program table record "pppRandUpShort" (0x00c3d848) +0x8 step: u16 factor at +8, half-word target, ftol
+0x00730340 function pppRandDownShort          # ppp program table record "pppRandDownShort" (0x00c3d870) +0x8 step: u16 factor at +8, half-word target, ftol
+0x00730520 function pppRandInt                # ppp program table record "pppRandInt" (0x00c3d898) +0x8 step: u32 factor at +8 (as f32), word target, ftol
+0x00730700 function pppRandUpInt              # ppp program table record "pppRandUpInt" (0x00c3d8c0) +0x8 step: u32 factor at +8 (as f32), word target, ftol
+0x007308d0 function pppRandDownInt            # ppp program table record "pppRandDownInt" (0x00c3d8e8) +0x8 step: u32 factor at +8 (as f32), word target, ftol
 0x00730ab0 function pppRandFV                 # fh v3:exact 0x00730ba0
 0x00730ce0 function pppRandUpFV               # fh v3:exact 0x00730dd0
 0x00730ef0 function pppRandDownFV             # fh v3:exact 0x00730fd0
 0x00731100 function pppRandIV                 # fh v3:exact 0x007311e0
 0x00731330 function op_mdc_all_make_delhide   # fh switch:bsim1.00 0x71003e6990
+0x00731350 function pppRandUpIV               # ppp program table record "pppRandUpIV" (0x00c3d910) +0x8 step: i32 factors at +0x10 (as f32), 3 word targets, ftol; draws whenever the key applies
 0x00731540 function op_mdc_size_get           # fh switch:bsim1.00 0x71003e6960
+0x00731560 function pppRandDownIV             # ppp program table record "pppRandDownIV" (0x00c3ab48) +0x8 step: i32 factors at +0x10 (as f32), 3 word targets, ftol; draws whenever the key applies
+0x00731780 function pppRandCV                 # ppp program table record "pppRandCV" (0x00c3d938) +0x8 step: i8 factors at +8, 4 byte targets, ftol; draws whenever the key applies
+0x007319f0 function pppRandUpCV               # ppp program table record "pppRandUpCV" (0x00c3d960) +0x8 step: i8 factors at +8, 4 byte targets, ftol; draws whenever the key applies
+0x00731c50 function pppRandDownCV             # ppp program table record "pppRandDownCV" (0x00c3d988) +0x8 step: i8 factors at +8, 4 byte targets, ftol; draws whenever the key applies
 0x00731ec0 function pppRandHCV                # fh v3:exact 0x00731f90
 0x00732130 function pppRandUpHCV              # fh v3:exact 0x00732200
 0x00732390 function pppRandDownHCV            # fh v3:exact 0x00732460
@@ -1470,6 +1485,43 @@
 0x00736460 function pppKeThCon                # fh v3:exact 0x00736520
 0x007364e0 function pppKeThCon2               # fh v3:exact 0x007365a0
 0x00736580 function pppKeThDraw               # fh v3:exact 0x00736640
+0x00736690 function pppKeThRes128Con          # ppp program table record "pppKeThRes128" (0x00c3d370) +0x1c set-up
+0x007366c0 function pppKeThRes128x4Con        # ppp program table record "pppKeThRes128x4" (0x00c3d398) +0x1c set-up
+0x007366f0 function pppKeThRes128x8Con        # ppp program table record "pppKeThRes128x8" (0x00c3d3c0) +0x1c set-up
+0x00736720 function pppKeThRes16Con           # ppp program table record "pppKeThRes16" (0x00c3adc8) +0x1c set-up; "pppKeThRes16" (0x00c3c470) +0x1c set-up
+0x00736750 function pppKeThRes16x16Con        # ppp program table record "pppKeThRes16x16" (0x00c3d460) +0x1c set-up
+0x00736780 function pppKeThRes16x24Con        # ppp program table record "pppKeThRes16x24" (0x00c3d488) +0x1c set-up
+0x007367b0 function pppKeThRes16x4Con         # ppp program table record "pppKeThRes16x4" (0x00c3b098) +0x1c set-up; "pppKeThRes16x4" (0x00c3c740) +0x1c set-up
+0x007367e0 function pppKeThRes16x64Con        # ppp program table record "pppKeThRes16x64" (0x00c3d2d0) +0x1c set-up
+0x00736810 function pppKeThRes16x8Con         # ppp program table record "pppKeThRes16x8" (0x00c3d438) +0x1c set-up
+0x00736840 function pppKeThRes24Con           # ppp program table record "pppKeThRes24" (0x00c3b318) +0x1c set-up; "pppKeThRes24" (0x00c3c9c0) +0x1c set-up
+0x00736870 function pppKeThRes24x16Con        # ppp program table record "pppKeThRes24x16" (0x00c3d4d8) +0x1c set-up
+0x007368a0 function pppKeThRes24x4Con         # ppp program table record "pppKeThRes24x4" (0x00c3b070) +0x1c set-up; "pppKeThRes24x4" (0x00c3c718) +0x1c set-up
+0x007368d0 function pppKeThRes24x8Con         # ppp program table record "pppKeThRes24x8" (0x00c3d4b0) +0x1c set-up
+0x00736900 function pppKeThRes255Con          # ppp program table record "pppKeThRes255" (0x00c3d3e8) +0x1c set-up
+0x00736930 function pppKeThRes255x4Con        # ppp program table record "pppKeThRes255x4" (0x00c3d410) +0x1c set-up
+0x00736960 function pppKeThRes32Con           # ppp program table record "pppKeThRes32" (0x00c3af30) +0x1c set-up; "pppKeThRes32" (0x00c3c5d8) +0x1c set-up
+0x00736990 function pppKeThRes32x16Con        # ppp program table record "pppKeThRes32x16" (0x00c3d528) +0x1c set-up
+0x007369c0 function pppKeThRes32x24Con        # ppp program table record "pppKeThRes32x24" (0x00c3d550) +0x1c set-up
+0x007369f0 function pppKeThRes32x32Con        # ppp program table record "pppKeThRes32x32" (0x00c3d2f8) +0x1c set-up
+0x00736a20 function pppKeThRes32x4Con         # ppp program table record "pppKeThRes32x4" (0x00c3ba48) +0x1c set-up; "pppKeThRes32x4" (0x00c3d0f0) +0x1c set-up
+0x00736a50 function pppKeThRes32x8Con         # ppp program table record "pppKeThRes32x8" (0x00c3d500) +0x1c set-up
+0x00736a80 function pppKeThRes40Con           # ppp program table record "pppKeThRes40" (0x00c3afa8) +0x1c set-up; "pppKeThRes40" (0x00c3c650) +0x1c set-up
+0x00736ab0 function pppKeThRes40x16Con        # ppp program table record "pppKeThRes40x16" (0x00c3d5a0) +0x1c set-up
+0x00736ae0 function pppKeThRes40x4Con         # ppp program table record "pppKeThRes40x4" (0x00c3d320) +0x1c set-up
+0x00736b10 function pppKeThRes40x8Con         # ppp program table record "pppKeThRes40x8" (0x00c3d578) +0x1c set-up
+0x00736b40 function pppKeThRes48Con           # ppp program table record "pppKeThRes48" (0x00c3b908) +0x1c set-up; "pppKeThRes48" (0x00c3cfb0) +0x1c set-up
+0x00736b70 function pppKeThRes48x16Con        # ppp program table record "pppKeThRes48x16" (0x00c3d5f0) +0x1c set-up
+0x00736ba0 function pppKeThRes48x4Con         # ppp program table record "pppKeThRes48x4" (0x00c3b0e8) +0x1c set-up; "pppKeThRes48x4" (0x00c3c790) +0x1c set-up
+0x00736bd0 function pppKeThRes48x8Con         # ppp program table record "pppKeThRes48x8" (0x00c3d5c8) +0x1c set-up
+0x00736c00 function pppKeThRes64Con           # ppp program table record "pppKeThRes64" (0x00c3d348) +0x1c set-up
+0x00736c30 function pppKeThRes64x16Con        # ppp program table record "pppKeThRes64x16" (0x00c3b0c0) +0x1c set-up; "pppKeThRes64x16" (0x00c3c768) +0x1c set-up
+0x00736c60 function pppKeThRes64x4Con         # ppp program table record "pppKeThRes64x4" (0x00c3afd0) +0x1c set-up; "pppKeThRes64x4" (0x00c3c678) +0x1c set-up
+0x00736c90 function pppKeThRes64x8Con         # ppp program table record "pppKeThRes64x8" (0x00c3d618) +0x1c set-up
+0x00736cc0 function pppKeThRes8Con            # ppp program table record "pppKeThRes8" (0x00c3b340) +0x1c set-up; "pppKeThRes8" (0x00c3c9e8) +0x1c set-up
+0x00736cf0 function pppKeThRes8x128Con        # ppp program table record "pppKeThRes8x128" (0x00c3d2a8) +0x1c set-up
+0x00736d20 function pppKeThRes8x4Con          # ppp program table record "pppKeThRes8x4" (0x00c3d280) +0x1c set-up
+0x00736d50 function pppKeThResCon             # ppp program table record "pppKeThRes" (0x00c3d258) +0x1c set-up
 0x00736d80 function pppKeThTp                 # fh v3:exact 0x00736e40
 0x00736e30 function pppKeThTp2Con             # ppp program table record "pppKeThTp2" (0x00c3dc80) +0x1c set-up
 0x00736e60 function pppKeThTpCon              # fh v3:exact 0x00736f20
@@ -1480,6 +1532,7 @@
 0x0073aac0 function pppDrawMdlTs3Con          # ppp program table record "pppDrawMdlTs3" (0x00c3b138) +0x1c set-up; "pppDrawMdlTs3" (0x00c3b138) +0x20 second set-up; "pppDrawMdlTs3" (0x00c3c7e0) +0x1c set-up and 1 more
 0x0073ab00 function pppDrawMdlSeaCon          # ppp program table record "pppDrawMdlSea" (0x00c3ad00) +0x1c set-up; "pppDrawMdlSea" (0x00c3c3a8) +0x1c set-up
 0x0073ab40 function pppDrawMdlSeaCon2         # ppp program table record "pppDrawMdlSea" (0x00c3ad00) +0x20 second set-up; "pppDrawMdlSea" (0x00c3c3a8) +0x20 second set-up
+0x0073b7b0 function pppDrawMdlInfCon          # ppp program table record "pppDrawMdlInf" (0x00c3b2c8) +0x1c set-up; "pppDrawMdlInf" (0x00c3c970) +0x1c set-up
 0x0073b800 function pppDrawMdlInfCon2         # ppp program table record "pppDrawMdlInf" (0x00c3b2c8) +0x20 second set-up; "pppDrawMdlInf" (0x00c3c970) +0x20 second set-up
 0x0073cfb0 function pppDrawMdlPSimCon         # ppp program table record "pppDrawMdlPSim" (0x00c3b4d0) +0x1c set-up; "pppDrawMdlPSim" (0x00c3cb78) +0x1c set-up
 0x0073cfe0 function pppDrawMdlPSimCon2        # ppp program table record "pppDrawMdlPSim" (0x00c3b4d0) +0x20 second set-up; "pppDrawMdlPSim" (0x00c3cb78) +0x20 second set-up
@@ -1502,10 +1555,13 @@
 0x00741570 function pppDrawShapeRevCon        # ppp program table record "pppDrawShapeRev" (0x00c3b7a0) +0x1c set-up; "pppDrawShapeRev" (0x00c3b7a0) +0x20 second set-up; "pppDrawShapeRev" (0x00c3ce48) +0x1c set-up and 1 more
 0x007497e0 function pppKeMdlTfdCon            # ppp program table record "pppKeMdlTfd" (0x00c3ab98) +0x1c set-up; "pppKeMdlTfd" (0x00c3ab98) +0x20 second set-up; "pppKeMdlTfd" (0x00c3c240) +0x1c set-up and 1 more
 0x00749810 function pppKeMdlTfdDraw           # fh v3:exact 0x007498e0
+0x007498f0 function pppKeMdlTfdUvCon          # ppp program table record "pppKeMdlTfdUv" (0x00c3dd48) +0x1c set-up; "pppKeMdlTfdUv" (0x00c3dd48) +0x20 second set-up
 0x00749950 function pppKeMdlTfdUvDraw         # fh v3:exact 0x00749a20
 0x00749b10 function pppKeMdlTfd2Con           # ppp program table record "pppKeMdlTfd2" (0x00c3dd70) +0x1c set-up; "pppKeMdlTfd2" (0x00c3dd70) +0x20 second set-up
+0x00749c30 function pppKeMdlTfdUv2Con         # ppp program table record "pppKeMdlTfdUv2" (0x00c3dd98) +0x1c set-up; "pppKeMdlTfdUv2" (0x00c3dd98) +0x20 second set-up
 0x00749e60 function pppKeMdlTfd3Con           # ppp program table record "pppKeMdlTfd3" (0x00c3ddc0) +0x1c set-up; "pppKeMdlTfd3" (0x00c3ddc0) +0x20 second set-up
 0x00749e90 function pppKeMdlTfd3Draw          # fh v3:exact 0x00749f60
+0x00749f90 function pppKeMdlTfdUv3Con         # ppp program table record "pppKeMdlTfdUv3" (0x00c3dde8) +0x1c set-up; "pppKeMdlTfdUv3" (0x00c3dde8) +0x20 second set-up
 0x00749ff0 function pppKeMdlTfdUv3Draw        # fh v3:exact 0x0074a0c0
 0x0074b500 function pppNeiDrawMdlTsPointLightCon # ppp program table record "pppNeiDrawMdlTsPointLight" (0x00c3de60) +0x1c set-up; "pppNeiDrawMdlTsPointLight" (0x00c3de60) +0x20 second set-up
 0x0074b9a0 function pppNeiDrawShapePointLightCon # ppp program table record "pppNeiDrawShapePointLight" (0x00c3de88) +0x1c set-up; "pppNeiDrawShapePointLight" (0x00c3de88) +0x20 second set-up
@@ -1514,11 +1570,14 @@
 0x0074e540 function pppKeShpTail2Con          # ppp program table record "pppKeShpTail2" (0x00c3a918) +0x1c set-up; "pppKeShpTail2" (0x00c3bfc0) +0x1c set-up
 0x0074f580 function pppKeShpTail2XCon         # ppp program table record "pppKeShpTail2X" (0x00c3b480) +0x1c set-up; "pppKeShpTail2X" (0x00c3cb28) +0x1c set-up
 0x007502c0 function pppKeShpTail3             # fh v3:exact 0x00750390
+0x007505a0 function pppKeShpTail3Con2         # ppp program table record "pppKeShpTail3" (0x00c3ac38) +0x20 second set-up; "pppKeShpTail3" (0x00c3c2e0) +0x20 second set-up
 0x00751ca0 function pppKeShpTail3X            # fh v3:exact 0x00751d80
+0x00751f40 function pppKeShpTail3XCon2        # ppp program table record "pppKeShpTail3X" (0x00c3b868) +0x20 second set-up; "pppKeShpTail3X" (0x00c3cf10) +0x20 second set-up
 0x00754fc0 function pppKeShpTailLcCon         # ppp program table record "pppKeShpTailLc" (0x00c3ded8) +0x1c set-up
 0x00755010 function pppKeShpDttCon            # ppp program table record "pppKeShpDtt" (0x00c3ac10) +0x1c set-up; "pppKeShpDtt" (0x00c3ac10) +0x20 second set-up; "pppKeShpDtt" (0x00c3c2b8) +0x1c set-up and 1 more
 0x00756240 function pppDrawRainCon            # ppp program table record "pppDrawRain" (0x00c3b430) +0x1c set-up; "pppDrawRain" (0x00c3cad8) +0x1c set-up
 0x007566a0 function pppDrawSpriteCon          # ppp program table record "pppDrawSprite" (0x00c3df00) +0x1c set-up
+0x007566e0 function pppDrawSprite             # ppp program table record "pppDrawSprite" (0x00c3df00) +0xc draw
 0x00757210 function pppDrawFilterCon          # ppp program table record "pppDrawFilter" (0x00c3ba98) +0x1c set-up; "pppDrawFilter" (0x00c3d140) +0x1c set-up
 0x007573c0 function pppPointAp                # fh v3:exact 0x007574b0
 0x00757470 function pppPointApCon             # ppp program table record "pppPointAp" (0x00c3ab70) +0x1c set-up; "pppPointAp" (0x00c3c218) +0x1c set-up
@@ -1549,6 +1608,7 @@
 0x00759650 function pppKeGrvEff               # fh v3:exact 0x00759740
 0x007597b0 function pppKeGrvTgt               # fh v3:exact 0x007598a0
 0x00759800 function pppKeGrvTgtCon            # ppp program table record "pppKeGrvTgt" (0x00c3b368) +0x1c set-up; "pppKeGrvTgt" (0x00c3ca10) +0x1c set-up
+0x00759830 function pppKeHitBall              # ppp program table record "pppKeHitBall" (0x00c3ad50) +0x8 step; "pppKeHitBall" (0x00c3c3f8) +0x8 step
 0x00759990 function pppKeHitBornCon           # ppp program table record "pppKeHitBorn" (0x00c3e1f8) +0x1c set-up
 0x00759bc0 function pppKeHitChkPxBCon         # ppp program table record "pppKeHitChkPxB" (0x00c3ad78) +0x1c set-up; "pppKeHitChkPxB" (0x00c3c420) +0x1c set-up
 0x00759bf0 function pppKeHmgEff               # fh v3:exact 0x00759ce0
@@ -1556,6 +1616,7 @@
 0x00759f10 function pppKeThHitBornCon         # ppp program table record "pppKeThHitBorn" (0x00c3e220) +0x1c set-up
 0x00759f30 function pppKeLnsLpSft             # fh v3:exact 0x0075a020
 0x00759fb0 function pppKeLnsLpSftCon          # ppp program table record "pppKeLnsLpSft" (0x00c3ac60) +0x1c set-up; "pppKeLnsLpSft" (0x00c3ac60) +0x20 second set-up; "pppKeLnsLpSft" (0x00c3c308) +0x1c set-up and 1 more
+0x00759fd0 function pppKeLnsArndCon           # ppp program table record "pppKeLnsArnd" (0x00c3aa30) +0x1c set-up; "pppKeLnsArnd" (0x00c3c0d8) +0x1c set-up
 0x0075a140 function pppKeLnsArndTDes          # fh v3:cg2 0x75a230
 0x0075a190 function pppKeLnsArndTDraw         # fh v3:exact 0x0075a280
 0x0075a2d0 function pppKeLnsArndUpdate        # fh v3:bsim1.00 0x0075a3c0
@@ -1620,6 +1681,7 @@
 0x0075d160 function pppScaleLoopCon2          # ppp program table record "pppScaleLoop" (0x00c3b5c0) +0x20 second set-up; "pppScaleLoop" (0x00c3cc68) +0x20 second set-up
 0x0075d1f0 function pppColor                  # fh v3:exact 0x0075d2e0
 0x0075d240 function pppColorCon               # fh v3:exact 0x0075d330
+0x0075d280 function pppPObjPoint              # ppp program table record "pppPObjPoint" (0x00c3d730) +0x8 step
 0x0075d340 function pppVertexAttend           # fh v3:exact 0x0075d430
 0x0075d590 function pppEiWindFunCon           # ppp program table record "pppEiWindFun" (0x00c3b048) +0x1c set-up; "pppEiWindFun" (0x00c3c6f0) +0x1c set-up
 0x0075d5d0 function pppNeiLightEikyo          # fh v3:exact 0x0075d6c0
@@ -1938,6 +2000,7 @@
 0x0078ae00 function DmgCalc_InflictStatus     # fh v3:exact 0x0078aec0 +DmgCalc_InflictStatus
 0x0078b4e0 function DmgCalc_InflictStatus_Extra # fh v3:exact 0x0078b5a0 +DmgCalc_InflictStatus_Extra
 0x0078b760 function Battle_Steal              # steal chance spoils+0x0a, items +0x24/+0x26, counts +0x28/+0x29
+0x0078b920 function Battle_StealGil           # Mug's gil: spoils +0x113 x (100 + roll%101) x 100/200 x target +0x712 / 255 into the result's +0x10; +0x712 halved per success; brnd(10); ported
 0x0078ba30 function DmgCalc_ShatterFail       # fh v3:exact 0x0078baf0 +DmgCalc_ShatterFail
 0x0078bd50 function DmgCalc_Threaten          # fh v3:exact 0x0078be10 +DmgCalc_Threaten
 0x0078bd90 function DmgCalc_ReelBonus         # damage x (time + 2 start) / (2 start) while actor +0xd26 is set; +0xd2c/+0xd30 are the floats MsSetReelResult stores for Wakka ("time", "start_time" in its debug text); ported
@@ -1964,6 +2027,7 @@
 0x0078cce0 function MsGetChrVigor             # fh v3:exact 0x0078cda0
 0x0078ce50 function MsGetCommand              # fh v3:exact+call.cs 0x0078cf10 cdecl
 0x0078cf70 function MsGetCommandMP            # fh v3:exact+call.cs 0x0078d030 cdecl
+0x0078d040 function MsGetActionBuffer         # the first of an actor's two 0x2d8-byte buffers at +0x774 whose +2 is 0xff, MsStructClear'ed; MsCalcCommand's only callee of it; ported
 0x0078d090 function MsGetFirstAttack          # fh v3:exact 0x0078d150
 0x0078d1d0 function MsGetNextCTB              # fh v3:exact 0x0078d290
 0x0078d210 function MsGetRndChr               # fh v3:exact 0x0078d2d0
@@ -1997,6 +2061,7 @@
 0x0078e460 function MsThreatProcess           # fh v3:exact+call.cs 0x0078e4b0 cdecl
 0x0078e5a0 function MsUseChrMpLimit           # fh v3:exact 0x0078e5f0
 0x0078e630 function DmgCalc                   # fh v3:exact 0x0078e680 +DmgCalc
+0x0078eef0 function MsGetGuardChr             # (user, target) -> who takes target's hit: the side's guard/sentinel actor (status 2 0x1000/0x2000, MsAutoCommandStatusCheck) with most HP (x2 sentinel, + half Tidus' affection), else target; called by MsCalcCommand's target step 0x0078ba70; ported
 0x0078f060 function AfterDamageProcess        # fh call.cs cdecl
 0x0078f700 function MsCheckLeftWindow         # fh v3:exact 0x0078f750
 0x0078f7c0 function MsGetMenuChrInfo          # fh v3:exact 0x0078f810
@@ -4723,10 +4788,13 @@
 0x00908980 function yiGetFogColor             # fh v3:exact 0x00908980
 0x00908bb0 function yiGetFogParam             # fh v3:exact 0x00908bb0
 0x00908c30 function yiSetColorShift           # fh switch:bsim1.00 0x710052b7b0
+0x00908c50 function yiGetDObjGroup               # (index) -> u16 group of display object index (g_YiDObjs +0x74), -1 when index >= g_YiDObjCount
 0x00908dd0 function yiGetMapStatus            # fh v3:exact 0x00908dd0
 0x00908df0 function yiGetMatrixDObj           # fh v3:bsim1.00 0x00908df0
 0x00908e30 function yiGetMatrixGroup          # fh v3:exact 0x00908e30
+0x00908e90 function yiGetColorDObj               # (index, a, b) -> 0/-1: the object's two RGBA byte colours (+0x90, +0x94) widened to four words each
 0x00908f10 function yiGetRenderStatus         # fh v3:bsim1.00 0x00908f10
+0x00908f20 function yiGetViewAdjust              # (out): copies g_YiViewAdjust (16 words)
 0x00908f70 function yiGetVCount               # fh v3:bsim1.00 0x00908f70
 0x00908f90 function yiGui_setfogparam         # fh v3:cg4 0x908f90
 0x00909030 function yiInit                    # fh v3:exact 0x00909030
@@ -4741,19 +4809,30 @@
 0x00909e20 function yiRenderEnable            # fh v3:bsim1.00 0x00909e20
 0x00909e60 function yiReset                   # fh v3:exact 0x00909e60
 0x00909ea0 function yiResetObj                # fh v3:exact 0x00909ea0
+0x00909ff0 function yiSetColorOffset             # (rgba ints): g_YiColorOffset = channel - 128 as floats (fild); in g_MagicImports
 0x0090a040 function yiSetBackColor            # fh v3:exact 0x0090a040
 0x0090a0e0 function yiSetBattleCenter         # fh switch:bsim1.00 0x710052c5b0
 0x0090a270 function yiSetColorScale           # fh v3:bsim1.00 0x0090a270
 0x0090a2b0 function yiSetDrawMask             # fh v3:bsim1.00 0x0090a2b0
 0x0090a400 function yiSetColor3                  # (r, g, b) -> 0: the low bytes to 0x01934ea4..a6; script native 0x00859000 (three ints)
 0x0090a4a0 function yiSetIDPage               # fh v3:exact 0x0090a4a0
+0x0090a520 function yiSetMatrixDObj              # (index, m) -> 0/-1: m into display object index's matrix (counterpart of yiGetMatrixDObj)
+0x0090a560 function yiSetMatrixGroup             # (group, m) -> 0/-1: m into the first object of the group (counterpart of yiGetMatrixGroup)
+0x0090a5c0 function yiSetColorDObj               # (index, a, b) -> 0/-1: the low bytes of a's and b's four words into the object's colours (+0x90..+0x97)
 0x0090a6f0 function yiSetPreBgPage            # fh v3:exact 0x0090a6f0
+0x0090a730 function yiSetViewAdjust              # (m): g_YiViewAdjust = m
 0x0090a750 function yiSetRotTransDObj         # fh v3:exact 0x0090a750
 0x0090a950 function yiSetScaleFactor          # fh switch:bsim1.00 0x710052b260
+0x0090ae20 function yiPkAddGsAD                  # (q, reg, data): the A+D quadword (data, 0, reg, 0) of a GS register write
 0x0090ae50 function yiAssert                  # fh v3:exact 0x0090ae50
 0x0090bbd0 function yiMalloc                  # fh v3:cg20 0x90bbd0
 0x0090bbe0 function yiMalloc64                # fh v3:cg4 0x90bbe0
+0x0090bc40 function yiPkAddGsAD_0090bc40         # the same code as yiPkAddGsAD
 0x0090bee0 function yiRender_destroy          # fh switch:bsim1.00 0x7100539700
+0x0090c1f0 function yiRender_addRef              # (render, addr, qwc u16): DMA ref tag (0x30000000 | qwc, addr) at render +0xba3f0, which moves 16 on; render +0xba3f8 counts tags
+0x0090c230 function yiRender_addRefData          # (render, block): yiRender_addRef of block +0x10 for block's u16 quadword count
+0x0090ccb0 function yiPkUnpackMatrixDma          # (m, out, addr): DMA tag 0x20000005, VIF FLUSH, STCYCL 1,1, UNPACK V4-32 x4 to addr, then the matrix
+0x0090cd10 function yiPkUnpackMatrix             # (m, out, addr): VIF UNPACK V4-32 x4 to addr (0x6c040000 | addr), then the matrix
 0x0090cd90 function yiRender_resetobj         # fh v3:exact 0x0090cd90
 0x0090cea0 function yiRender_resettex         # fh v3:exact 0x0090cea0
 0x0090d260 function yiRender_setupparamGS     # fh v3:exact 0x0090d260
@@ -4761,6 +4840,8 @@
 0x0090e6d0 function TextUtilList_TextUtilList # fh switch:bsim1.00 0x71002190e0 TextUtilList::TextUtilList
 0x0090e6f0 function yiArcPrintSize            # fh switch:bsim1.00 0x7100532640
 0x0090f8e0 function yiArc_readmem             # fh v3:exact 0x0090f8e0
+0x00910040 function yiPkAddGsAD_00910040         # the same code as yiPkAddGsAD
+0x00910580 function yiHighestBit                 # (bits) -> index of the highest of the low 16 bits set, -1 none
 0x009131d0 function yiScreff_entry            # fh v3:exact 0x009131d0
 0x00913f30 function yiScreff_init             # fh switch:bsim1.00 0x7100534af0
 0x00914250 function yiAnimAttachDefault       # fh v3:exact 0x00914250
@@ -4768,12 +4849,19 @@
 0x009143c0 function yiAnimAttachDefault_009143c0 # fh switch:cg2 0x710052d7b0
 0x009144a0 function yiKeyFrame_attachDObj     # fh v3:exact 0x009144a0
 0x00914630 function yiKeyFrame_attachChr      # fh switch:cg2 0x710052dfb0
+0x009148a0 function yiLerpVec2                   # (t, a, b, out): out = a + (b - a) * t, two floats
+0x009148d0 function yiLerpVec4                   # (t, a, b, out): four floats; from 0x009147b0
 0x00914a10 function yiKeyFrame_main           # fh switch:cg2 0x710052e1e0
 0x009151c0 function yiRotMatrixSeq            # fh v3:exact 0x009151c0
 0x009152d0 function yiTexSwap_init            # fh v3:exact 0x009152d0
 0x00917050 function yiClutAlloc_makepacket    # fh v3:exact 0x00917050
+0x009173e0 function yiIsPow2                     # (bits) -> 1 when at most one of the low 16 bits is set
+0x00917430 function yiLog2Ceil16                 # (bits) -> the only set bit's index, else the highest one's + 1; -1 none (low 16 bits)
+0x00917460 function yiPow2Ceil                   # (n) -> smallest 1 << k (k < 16) >= n, else 0
 0x00917b70 function yiImageRman_serch         # fh switch:bsim0.92 0x710053ccf0
+0x00918130 function yiVramAlloc                  # (bytes) -> g_YiVramNext >> 6 and moves it on by bytes rounded to 64, or -1 past g_YiVramLimit
 0x009188c0 function yiImage_init              # fh switch:bsim0.97 0x710053c8e0
+0x00919630 function yiVramSetLimit               # (pages) -> 0: g_YiVramLimit = (0x38 - pages) << 14
 0x009199f0 function Yn_PSimGetHandle          # fh v3:exact 0x009199f0
 0x00919a20 function Yn_BattleBegin            # fh v3:bsim1.00 0x00919a20
 0x00919a40 function Yn_BattleEnd              # fh v3:bsim1.00 0x00919a40
@@ -4797,10 +4885,16 @@
 0x00919f40 function Yn_MapPartAnimeOff           # (part): clears bit 1 of map part (scene layer, 0xc0 bytes) part's animation word (+0x90) when part < Yn_MapPartCount; script native 0x0091b490
 0x00919f90 function Yn_MapPartAnimeOn            # (part): sets that bit; script native 0x0091b470
 0x0091a0d0 function Yn_PreBgChangeStage       # fh v3:exact 0x0091a0d0
+0x0091a260 function Yn_SceneSet104               # (v): scene +0x104 (g_YnMapSystem map +8); script native 0x0091af80
 0x0091a3d0 function Yn_MapPartCount             # () -> the scene's layer count (g_YnMapSystem map +8 scene +4), 0 without one; 33 callers
+0x0091a6d0 function Yn_SceneGetAC                # () -> float scene +0xac, 0.0 without a scene
+0x0091a700 function Yn_SceneGetB8                # () -> float scene +0xb8
+0x0091a730 function Yn_SceneGetBC                # () -> float scene +0xbc
 0x0091a770 function Yn_PreBgLayerDispGet      # fh v3:exact 0x0091a770
+0x0091aa00 function Yn_SceneSetDC                # (a, float b, c, float d): scene +0xdc..+0xe8, +0xec = 0.0, +0xf0 = 0; script native 0x0091b610
 0x0091aa60 function Yn_PreBgSetData           # fh v3:exact 0x0091aa60
 0x0091ad10 function Yn_PreBgSetScrBank        # fh switch:bsim1.00 0x7100548410
+0x0091ad80 function Yn_SceneSetC0                # (a, float b, c, d, e): scene +0xc0..+0xd0, +0xd4 = 0.0, +0xd8 = 0; script native 0x0091b550
 0x0091ae30 function Yn_SeaResetMatrix         # fh v3:bsim1.00 0x0091ae30
 0x0091ae40 function Yn_SeaSetAng              # fh v3:cg4 0x91ae40
 0x0091ae60 function Yn_SeaSetMatrix           # fh v3:bsim1.00 0x0091ae60
@@ -4827,6 +4921,7 @@
 0x0091d480 function rcbgGuideGetTarget           # () -> g_GuideTarget (0x00934110 reads it)
 0x0091d4e0 function rcbgGuideNew              # fh v3:bsim1.00 0x0091d4e0
 0x0091d510 function rcbgGuideSetFlag3            # (guide, on): g_GuideFlags bit 3 (no reader found in FFX.exe)
+0x0091d530 function rcbgGuideSetFlag8            # (guide, on): g_GuideFlags bit 8 (rcbgGuideUpdateEx reads it)
 0x0091d560 function rcbgGuideSetDispProg      # fh v3:bsim1.00 0x0091d560
 0x0091d580 function rcbgGuideSetLimit            # (guide, float): guide +0x6c
 0x0091d590 function rcbgGuideSetModel         # fh v3:exact 0x0091d590
@@ -4836,6 +4931,7 @@
 0x0091d920 function rcbgGuideSetSize             # (guide, size): g_GuideSize (0x80 at a corner, 0x100 centred; rcbgGuideSetTarget)
 0x0091d930 function rcbgGuideSetTarget        # fh v3:exact 0x0091d930
 0x0091da10 function rcbgGuideUpdate           # fh switch:bsim1.00 0x7100541de0
+0x0091da30 function rcbgGuideGetScreen           # (guide, &scale, &offset): g_GuideSize / 256 and g_GuidePos - (256, 208) as floats; from rcbgGuideUpdateEx
 0x0091da80 function rcbgGuideUpdateEx         # cdecl (guide, show): the field minimap: fade (Guide_FadeStep), markers (Minimap_GetWorkerMarker; flags 0xf palette, 0x100 square, 0x200 triangle, 0x20000 diamond, 0x10000 exit line, 0x400 ring, 0x1000 blink, 0x800 player, 0x2000 destination), fog of war (Guide_RevealFog when guide +0x70), blink counter guide +0x74, mesh drawn by 0x00928020; nothing when g_GuideEnabled is 0; was Guide_Update
 0x0091ecb0 function rcbgGuideUpdateWalk       # fh v3:exact 0x0091ecb0
 0x0091f420 function Guide_RevealFog              # (guide, x, z): clears the fog of war around the player (four maps, g_SaveData + 0x350c)
@@ -4867,7 +4963,9 @@
 0x009210a0 function rcbgSceneSetPal           # fh switch:bsim1.00 0x71005472b0
 0x00921220 function rcVec3fDot                   # (a, b) -> float: (a.y*b.y + a.x*b.x) + a.z*b.z on the x87 stack, stored as f32
 0x00921250 function rcVec3fLength                # (v) -> float: sqrt((x*x + y*y) + z*z) through _CIsqrt, stored as f32; rcVec3fNormalize divides by it
+0x00921280 function rcVec3fLerp                  # (out, a, b, float t): out = a + (b - a) * t, x y z
 0x009212c0 function rcVec3fMul                # fh v3:bsim1.00 0x009212c0
+0x00921300 function rcVec3fApplyMatrix           # (out, v, m): v (w = 1) through m, sums on the x87 stack; 2 callers
 0x00921360 function rcVec3fNormalize          # fh v3:exact 0x00921360
 0x009213d0 function rcBBoxGetCenter           # fh v3:exact 0x009213d0
 0x00921410 function rcBBoxGetShortConvertScale # fh v3:exact 0x00921410
@@ -4892,11 +4990,19 @@
 0x009237e0 function rcdtTm2Init               # fh switch:bsim1.00 0x710054aff0
 0x00923800 function rcdtTm2Load               # fh switch:bsim1.00 0x710054b0c0
 0x00923960 function rcdtTm2LoadEff            # fh switch:bsim1.00 0x710054b330
+0x009249c0 function rcefTargetGetHeight          # (i) -> float +0x10 of effect target i (0x025d5c60, 0x24 bytes each, filled by 0x00924a20); g_MagicImports
+0x009249e0 function rcefTargetGetAngle           # (i) -> float +0xc, the target's direction; g_MagicImports
+0x00924a00 function rcefTargetGetDist            # (i) -> float +8, horizontal distance (rcVec3fLength before the normalize); g_MagicImports
+0x00924ba0 function rcefTargetIsDone             # (i) -> bit 1 of target i's u16 flags
+0x00924bc0 function rcefTargetClear              # (i): its flags = 0
+0x00924be0 function rcefTargetSetDelay           # (u16): 0x025d5ea2, the delay 0x009248c0 gives a reached target
 0x00925140 function rcefMainCreateObj         # fh v3:exact 0x00925140
 0x00925170 function rcefMainCreateTask        # fh v3:exact 0x00925170
 0x009251c0 function rcefMainFini              # fh v3:exact 0x009251c0
 0x00925210 function rcefMainInit              # fh v3:exact 0x00925210
 0x00925440 function rcefMainProcRunAfter      # fh v3:exact 0x00925440
+0x009254f0 function rcefMainSetEnv               # (main): *(0x00c3a4cc) = main +0x10 (the ppp memory environment of rcefMainInit); g_MagicImports
+0x00925510 function rcefMainSetEnv_00925510      # the same code; g_MagicImports
 0x009256d0 function rcefMainSetPar            # fh v3:exact 0x009256d0
 0x00925730 function rcbgIDLoad                # fh switch:cg2 0x71005537a0
 0x009257f0 function rcMat4fSetScale           # fh v3:exact 0x009257f0
@@ -4917,6 +5023,8 @@
 0x009275b0 function rcPacketDataCloseAdr      # fh v3:exact 0x009275b0
 0x00927600 function rcPacketDataDraw          # fh v3:exact 0x00927600
 0x00927a20 function rcPacketDataInit          # fh v3:exact 0x00927a20
+0x00927a40 function rcPacketDataSetAdr           # (packet, at): start = cursor = at (no tag quadword)
+0x00927a50 function rcPacketDataOpen             # (packet, buffer): rcPacketDataOpenAdr on buffer +4
 0x00927a70 function rcPacketDataOpenAdr       # fh v3:exact 0x00927a70
 0x00927be0 function rcbgModelCreate           # fh v3:exact 0x00927be0
 0x00927d70 function rcbgModelCreateFromOMD    # fh switch:cg2 0x71008bf5f8
@@ -4959,6 +5067,7 @@
 0x0092b7d0 function rcdtChunkDelete           # fh v3:bsim1.00 0x0092b7d0
 0x0092b810 function rcdtChunkGetBegin         # fh v3:bsim1.00 0x0092b810
 0x0092b820 function rcdtChunkGetEnd              # (chunk) -> chunk +0 + chunk +4 (data + size)
+0x0092b830 function rcdtChunkGetSize             # (chunk) -> chunk +4
 0x0092b840 function rcdtChunkInit             # fh switch:bsim1.00 0x7100549250
 0x0092b860 function rcdtChunkIsEmpty             # (chunk) -> 1 when data or size is 0
 0x0092b920 function rcdtChunkSet                 # (chunk, data, size)
@@ -4967,6 +5076,9 @@
 0x0092ba60 function rcdtParseFini             # fh v3:bsim1.00 0x0092ba60
 0x0092ba70 function rcdtParseGetBegin         # fh switch:bsim1.00 0x71005495d0
 0x0092ba90 function rcdtParseGetBin           # fh v3:exact 0x0092ba90
+0x0092bb20 function rcdtParseGetChunk            # (parse) -> parse +0
+0x0092bd10 function rcdtParseGetMode             # (parse) -> parse +8 (rcdtParseSetMode)
+0x0092bda0 function rcdtParseGetPos              # (parse) -> parse +4, the cursor
 0x0092bf50 function rcdtParseInit             # fh v3:exact 0x0092bf50
 0x0092c000 function rcdtParseInitSeparators      # (parse): parse +0xc, 128 bytes per ASCII code, = 1 for 0x00..0x20 (whitespace), 0 else; read by the token scanners 0x0092bd20, 0x0092be40; rcdtParseInit tail-calls it
 0x0092c0a0 function rcdtParseSet              # fh v3:exact 0x0092c0a0
@@ -4987,6 +5099,7 @@
 0x0092dfb0 function rcefEffectReady           # fh v3:exact 0x0092dfb0
 0x0092e1c0 function rcefGetChrHandle          # fh v3:exact 0x0092e1c0
 0x0092e240 function rcefGetChrMatrix          # fh v3:exact 0x0092e240
+0x0092e400 function rcAngleDiff                  # (float a, float b) -> |a - b| as f32, 2pi - it past pi (doubles 0x00b92288, 0x00b39378); g_MagicImports
 0x0092e620 function rcefIsBattle              # fh v3:bsim1.00 0x0092e620
 0x0092e680 function rcefPlaySE                # fh v3:exact 0x0092e680
 0x0092e6b0 function rcefPlayStream            # fh v3:exact 0x0092e6b0
@@ -5016,6 +5129,7 @@
 0x0092f710 function rcefModelFini             # fh v3:exact 0x0092f710
 0x0092f750 function rcefModelInit             # fh v3:exact 0x0092f750
 0x0092f770 function rcefModelProc_0092f770    # fh v3:exact 0x0092f770
+0x0092f920 function rcefObjLinkLast              # (obj, child): child after the last of obj's chain (+0xcc next, child +0xc8 = previous)
 0x0092f970 function rcefObjAttachChr          # fh v3:exact 0x0092f970
 0x0092f9a0 function rcefObjAttachChrOpt       # fh v3:exact 0x0092f9a0
 0x0092f9d0 function rcefObjCalcLocalMatrix    # fh v3:exact 0x0092f9d0
@@ -5042,6 +5156,8 @@
 0x00930520 function rcEffectTaskTaskWait      # fh v3:exact 0x00930520
 0x00930710 function rcefChrFini               # fh switch:bsim1.00 0x7100555f00
 0x00930770 function rcefChrInit               # fh switch:bsim0.91 0x7100555e10
+0x00930860 function rcbgAnimeGetFrame            # (anime, n) -> anime +0xc + 4n when n < anime +8, else 0
+0x00930880 function rcbgAnimeGetCurrent          # (anime) -> anime +0xc + 4 * i16 anime +6
 0x009308a0 function rcbgAnimeInit             # fh v3:exact 0x009308a0
 0x009308d0 function rcbgAnimeSetDataCnt       # fh v3:exact 0x009308d0
 0x00930d80 function Gui_YanagiInit            # fh v3:exact 0x00930d80
@@ -5054,14 +5170,25 @@
 0x00937b20 function rcuiMakeFullPath          # fh switch:bsim1.00 0x7100563880
 0x00937b70 function rcuiResetChrPos           # fh switch:cg2 0x7100563b40
 0x00937ef0 function rcuiWindowCreate          # fh v3:exact 0x00937ef0
+0x009382e0 function rcuiVu0CopyVector            # (dst, src): through the VU0 register at 0x00c8f980, which keeps the copy
 0x00939950 function rcbgTrxSave               # fh switch:bsim0.99 0x71005625c0
 0x0093a280 function rcbgModelCreateFromFile   # fh switch:cg3 0x7100560ba0
 0x0093b3e0 function rcbgSceneLoadTextSub      # fh switch:bsim0.92 0x710055f800
 0x0093c110 function rcuiMouseMoveReset           # (): g_RcuiWork +0xbf0 = 0, the same code as rcuiMouseMoveEnd
 0x0093c120 function rcuiMouseMoveIsID            # (id) -> 1 when g_RcuiWork +0xbe8 == id and +0xbf0 (dragging) is set
+0x0093c210 function rcuiValueGet                 # (p, kind) -> 1 i8, 2 u8, 3 i16, 4 u16, 5/6 u32, else 0
+0x0093c270 function rcuiValueSet                 # (p, kind, v): the low 1/2/4 bytes by the same kinds
+0x0093c2c0 function rcuiItemInit                 # (item): +0xc u16 = 0x30, +0x1c and +0x24 cleared
 0x0093c3d0 function rcuiNumberIsOK            # fh switch:bsim1.00 0x71005645f0
+0x0093c800 function rcuiTake18                   # (item) -> item +0x18, cleared (as rcuiNumberIsOK for +0x28)
+0x0093c820 function rcuiTake1C                   # (item) -> item +0x1c, cleared
+0x0093c840 function rcuiTake14                   # (item) -> item +0x14, cleared
+0x0093cbc0 function rcuiAddVector                # (out, a, b): four floats
 0x0093ce10 function rcuiCopyMatrix               # (dst, src): 16 floats through the x87 stack, in order
 0x0093ce50 function rcuiCopyVector               # (dst, src): 4 floats through the x87 stack
+0x0093d030 function rcuiItoF                     # (out, ints): four i32 to floats
+0x0093d060 function rcuiDot                      # (a, b) -> float, the same code as rcVec3fDot
+0x0093d290 function rcuiMulVector                # (out, a, b): four floats, per component
 0x0093d830 function FFXSamp0TransMatrix       # fh v3:exact 0x0093d830
 0x0093d900 function FFXSamp0UnitMatrix        # fh v3:exact 0x0093d900
 0x0093d960 function FFXSamp0ViewScreenMatrix  # fh v3:exact 0x0093d960
@@ -6385,6 +6512,7 @@
 0x00b30a60 label Phyre_PClassDataMemberArray_vftable # fh v4:imported Phyre::PClassDataMemberArray::vftable
 0x00b30a90 label Phyre_PClassDataMemberArrayFixedSize_vftable # fh v4:imported Phyre::PClassDataMemberArrayFixedSize::vftable
 0x00b30ac0 label Phyre_PSerialization_PStreamReaderFile_vftable # fh v4:imported Phyre::PSerialization::PStreamReaderFile::vftable
+0x00b313a0 label    g_Vu0FixedScale           # f64 16.0: FFXVu0RotTransPers scales to 12.4 fixed point (x * 16 + 0.5 through _ftol2_sse)
 0x00b313b4 label Phyre_PThreadPoolImmediate_vftable # fh v4:imported Phyre::PThreadPoolImmediate::vftable
 0x00b313d8 label Phyre_PThreadPoolWorkStealing_vftable # fh v4:imported Phyre::PThreadPoolWorkStealing::vftable
 0x00b313fc label Phyre_PProfiling_PProcessorProfileTimelineBase_vftable # fh v4:imported Phyre::PProfiling::PProcessorProfileTimelineBase::vftable
@@ -7314,6 +7442,7 @@
 0x00b920cc label mkvparser_SimpleBlock_vftable # fh v4:imported mkvparser::SimpleBlock::vftable
 0x00b920dc label mkvparser_BlockEntry_vftable # fh v4:imported mkvparser::BlockEntry::vftable
 0x00b920ec label mkvparser_Track_vftable      # fh v4:imported mkvparser::Track::vftable
+0x00b92220 label    g_Vu0FixedRound           # f64 0.5: FFXVu0RotTransPers rounds to the nearest 1/16
 0x00b92288 label g_PiF64                      # f64 of pi rounded to f32 (0x400921fb60000000); MsNearRag's half turn
 0x00c0a000 label    g_Vu0_R                      # emulated VU0 R (random) register, f32 bits in [1,2): op_random/op_random_p step it (vrnext: low 22 fraction bits << 1, bit 4 of R^(R>>18) in) and leave draw - 1.8872414 there; 0x0075fe50 seeds it
 0x00c0a004 label g_Vu0_Vf00                  # emulated VU0 vf00 (x, y, z, w) = (0, 0, 0, 1.0f): AsmEmuInit and restoreVf00Register store exactly that
@@ -7330,6 +7459,7 @@
 0x00c423e8 label g_StatusTable               # 4 bytes per status; MsCheckStat (0x0079e310) returns byte 3 of entry i
 0x00c42420 label g_StatusTable2              # entry 14 of g_StatusTable on; MsCheckStat2 (0x0079e320) returns byte 3 of entry i
 0x00c42464 label g_BtlStatCountTable          # 13 x 4 bytes, the counter statuses (MsCheckStatCount; MsCheckWrongStatus reads byte 3 bit 7: harmful)
+0x00c44240 label g_BtlScreenSize              # [u32; 2]; The screen size MsScreenInit stores.
 0x00c44bf0 label    g_pppSinTable                # 4096 f32 sines over a turn: pppGetRotMatrix* read [(a>>4)&0xfff] and [((a+0x4000)>>4)&0xfff] (cosine)
 0x00c49680 label g_ChrDefaultMoves           # Ch_MotionSetMoves(chr, slot, -1) stores entry [slot] (0, 1, 2, then zeros)
 0x00c496ea label g_ChrShadeByLight           # i8: Ch_DrawCalcShade multiplies the shade fade by the light value fade (+0x36c) when set
@@ -7368,6 +7498,7 @@
 0x00c8f508 label g_Ee_Gpr                    # emulated R5900 GPRs, 32 x 16 bytes: r0 (zero) here, t0 at +0x80 (pppRandFloat: t0 = r0 - 1), sp at +0x1d0 (AsmEmuInit stores this address there); argument registers set by AsmEmuSetFuncParam0 and the setters around it
 0x00c8f728 label    g_Vu0_RSeeded                # nonzero once g_Vu0_R is seeded (0x0075fe50 sets it with R); op_random draws 1.0 while 0, then sets it
 0x00c8f788 label g_Vu0_Q                      # emulated VU0 Q (f32): MsDivVector leaves vf00.w / s there, MsVectorLen the length; the VF registers follow from 0x00c8f790, 16 bytes each (MsApplyMatrix: acc 0x00c8f790, matrix 0x00c8f7d0, vector 0x00c8f810, result 0x00c8f850)
+0x00c8fac4 label    g_Vu0_Status              # emulated VU0 status flags: setZSFlag sets 0x40 (sticky zero), setSSFlag 0x80 (sticky sign)
 0x00cc9698 label    g_BasePath
 0x00cc9c48 label BigFileStream_sBigFileStreamInstacne # was g_FileSys
 0x00cc9cf5 label    g_SteamReady              # guards every other Steam call (achievements, RunCallbacks)
@@ -7405,6 +7536,9 @@
 0x0112a528 label    g_Hdd_Heads               # 51 entries of 12 bytes (hdd_head_reset runs to 0x0112a790 and sets +0, +4 to 0, +8 to 1): +8 = read mode (i8, hdd_rmode_get)
 0x0112a8e0 label g_BtlStatus                 # i8, not 0 in battle (MsBattleGetStatus 0x007816f0 sign-extends it; MsGetBattleScene 0x00782970 tests it)
 0x0112a8e2 label g_BtlExe                    # i8; MsBattleExeClear (0x00781530) returns it and clears it unless g_BtlExeKeep
+0x0112a8e7 label g_BtlSpecialCamera           # u8; with the one before it (same function, ffx_battle::misc)
+0x0112a8e8 label g_BtlSpecialCameraOn         # u8; The special camera: on, saved camera, camera (MsBattleSpecialCamera*).
+0x0112a8e9 label g_BtlSpecialCameraSaved      # u8; with the one before it (same function, ffx_battle::misc)
 0x0112a8f5 label g_BtlExeKeep                # not 0: MsBattleExeClear keeps g_BtlExe
 0x0112a8f8 label g_BtlDebugNoDamageMonster    # u8, monsters take no damage (DebugCanTakeDamage); debug native case 2/0xc
 0x0112a8f9 label g_BtlDebugNoDamageParty      # u8, the party takes no damage (DebugCanTakeDamage); debug native case 1/2
@@ -7418,8 +7552,10 @@
 0x0112a90e label g_BtlDebugDamage1            # u8, DmgCalc: every HP/MP hit does 1; debug native case 0xe
 0x0112a90f label g_BtlDebugDamage10000        # u8, DmgCalc: every HP/MP hit does 10000; debug native case 0xf
 0x0112a910 label g_BtlDebugDamage100000       # u8, DmgCalc: every HP/MP hit does 100000; debug native case 0x10
+0x0112a911 label g_BtlDebugRareSteal          # u8, Battle_Steal always takes the rare item
 0x0112a91b label g_BtlMapCircleOn            # i8 (MsBattleGetMapCircleOn 0x007816a0)
 0x0112a91f label g_BtlDebugAllMiss            # u8, debug env flag: DmgCalc_CheckHit always misses, no status lands, MsCalcEscape fails
+0x0112a929 label g_BtlRead2                # u16; with the one before it (same function, ffx_battle::misc)
 0x0112a92c label    g_KernelCommand
 0x0112a930 label    g_KernelMonMagic1
 0x0112a934 label g_KernelMonMagic2             # monmagic2 (Kernel_LoadTables 0x00781d40); read by MsGetRomMonCommand2
@@ -7429,8 +7565,12 @@
 0x0112a94c label g_KernelCtbBase               # battle resource 0xb (MsBattleInit 0x00781700); MsGetRomCTBbase/CTBcount
 0x0112a960 label g_KernelSummonGrow            # battle resource 6 (MsBattleInit); MsGetRomSummonGrow
 0x0112a964 label g_KernelKaizou                # battle resource 5 (MsBattleInit); MsGetRomKaizou
+0x0112a9bc label g_BtlFont                    # u32; The battle font (MsBattleGetFontAddress).
 0x0112a9c0 label g_BtlVoiceEvent             # pointer to a byte flag; MsGetVoiceEventFlag (0x007986a0) is 1 when it is set and g_BtlVoiceMute is not
+0x0112a9c4 label g_BtlFieldList               # u32; The battle field list (MsBtlListInit): the loaded file, its records' count and the two tables in it.
 0x0112a9c8 label g_BtlFieldRecords           # pointer to the battle fields' 14-byte records (i16 ID first); MsBattleGetNum reads record g_BtlFieldIndex
+0x0112a9cc label g_BtlFieldTable2             # u32; with the one before it (same function, ffx_battle::misc)
+0x0112a9d0 label g_BtlFieldCount              # u16; with the one before it (same function, ffx_battle::misc)
 0x0112a9d4 label g_BtlEncountType            # u8 (MsGetEncountType 0x00782a10)
 0x0112a9f0 label g_BtlSceneField             # pointer to the battle field's i16 ID; MsGetBattleScene returns it << 16 + *g_BtlSceneGroup
 0x0112a9fc label g_BtlSceneGroup             # pointer to the encounter group's u8 ID (MsGetBattleScene)
@@ -7438,25 +7578,45 @@
 0x0112ac70 label g_BtlCommandCue             # 0x48-byte entries: +0 actor, +1 command, +7 high nibble kind (MsCheckCommandCue 0x007b0720, MsCheckCommandCue2, MsGetCommandCue)
 0x0112bde0 label g_BtlInputCueCount          # i8 entries in g_BtlInputCue
 0x0112bde1 label g_BtlCommandCueCount        # i8 entries in g_BtlCommandCue
+0x0112bdf0 label g_BtlMenuCommand             # [u32; 0x12]; The menu command MsSetMenuCommand copies (0x48 bytes) and its flag.
 0x0112be90 label g_BtlGilAmount               # i32, gil offered (DmgCalc_Bribe) or thrown (MsCalcDamageCommand formula 0x15: gil / 10)
+0x0112be98 label g_BtlEffectBuffer            # u32; The effect buffer and its size (MsEffectGetBufferAddress).
+0x0112be9c label g_BtlEffectBufferSize        # u32; with the one before it (same function, ffx_battle::misc)
+0x0112bea0 label g_BtlReadCue                 # u8; The read cue: entries of 12 bytes from 0x0112bea0, the current one (MsBtlReadStatusComplete marks its +2 done).
+0x0112c020 label g_BtlReadCueIndex            # u8; with the one before it (same function, ffx_battle::misc)
 0x0112c021 label g_BtlReadCueLevel           # u8, MsBtlReadCueLevel (0x007ad180)
 0x0112c256 label g_BtlFieldIndex             # i16, the current battle field's record (MsBattleGetNum: its ID << 16 + the group ID)
 0x0112c526 label g_BtlWeaponList             # u16 list MsGetSaveWeaponList (0x007abd10) fills with 0x5000 + equipment slot
+0x0112c6b6 label g_BtlItemWindow              # 0x70 x u16, battle-usable items (kernel flag 2, not 0x400) in inventory order, 0xff after (MsSetItemWindow)
+0x0112c796 label g_BtlItemWindow2             # 0x70 x u16, the same for items with flag 0x400 (MsSetItemWindow)
 0x0112c895 label g_BtlParty                  # 3 x u8 ply_save indices; MsSetSaveParty (0x00786930) copies them to g_SaveInParty
+0x0112c8c8 label g_BtlChrSet                 # u32 actor bits; MsGetChrBit selector -4 returns its present actors
+0x0112c8e8 label g_BtlLastMagic2              # u32; The last magic of kind 2 (MsEffectGetLastMagicNum2).
+0x0112c90c label g_BtlMessageCueInit2         # u32; with the one before it (same function, ffx_battle::misc)
 0x0112c914 label g_BtlMessageCue              # 4 battle messages of 12 bytes (+0 kind, +1, +2, +4 actor, +8 message ID), a ring (MsMessageCueRegist)
 0x0112c944 label g_BtlMessageCueCount         # u8, messages queued (at most 4)
 0x0112c945 label g_BtlMessageCueStart         # u8, the ring's first entry
 0x0112c948 label g_BtlUseItem                # u16 item being used (MsSetUseItem 0x00790790); MsGetSaveItemNum counts one less of it
 0x0112c9cd label    g_BtlPadOrientation          # 0-3, set by 0x7099; read by 0x00780ce0 for the d-pad remap
 0x0112c9ce label g_BtlUnderwater             # i8, the formation's byte 3 (underwater fields); MsBattleWater (0x007821e0) returns it, MsGetVoiceEventFlag returns 0 while it is set
+0x0112c9cf label g_BtlRegMotionFlag           # u8; with the one before it (same function, ffx_battle::misc)
 0x0112c9d1 label g_BtlTitleWindow             # 2 x i8, the battle title window's position bytes (MsMenuCloseTitleWindow moves or clears them)
+0x0112c9df label g_BtlTurnActorNow           # u8, the actor whose turn it is (MsGetChrBit -18); copied to g_BtlTurnActor when a turn starts
+0x0112c9e0 label g_BtlCommandActor           # u8, the actor whose command runs, 0xff none (MsGetChrBit -2, -3: its command cue entry's targets)
 0x0112c9e2 label    g_BtlTurnActor               # ?actor index copied from 0x0112c9df when a turn starts; read by 0x708d
+0x0112c9e5 label g_BtlStealRule               # u8, 2: nothing can be stolen or mugged in this battle (Battle_Steal, Battle_StealGil)
+0x0112c9e6 label g_BtlMenuCommandSet          # u8; with the one before it (same function, ffx_battle::misc)
 0x0112c9ff label g_BtlEscapeRule              # i8, set by battle script (0x007a77a0): 1 no escape, 2 always (MsCalcEscape)
+0x0112ca03 label g_BtlSummonLimit             # u8; Summons keep the overdrive gauge while this is set (MsSummonLimitSave).
+0x0112ca0a label g_BtlMessageCueInit          # u32; Reset by MsMessageCueInit (a u32 at 0x0112ca0a, which covers the stone effect counters from 0x0112ca0b, and the cue's count and start).
 0x0112ca0b label g_BtlStoneEffect            # 2 x i8; MsStoneEffectCheck (0x007a2670) returns their sum
 0x0112ca12 label g_BtlCounterOn               # u8, set by battle script (0x007a8430): counterattacks happen only while set (DmgCalc_CheckCounter)
+0x0112ca60 label g_BtlRead3                # u32; with the one before it (same function, ffx_battle::misc)
+0x0112ca68 label g_BtlMapRead                 # u32; Reset by FinishReadPhyreBattleMap.
 0x0112ca6c label    g_KernelMonster1
 0x0112ca70 label    g_KernelMonster2
 0x0112ca74 label    g_KernelMonster3
+0x0112ca80 label g_BtlRead                 # u32; Reset by MsBtlReadInit.
 0x0112ca90 label    g_SaveData                   # 0x68c0-byte block copied from/to the save (0x00870000.c:7810, 0x008d0000.c:6884); +0 current map
 0x0112cabc label g_SaveLove                  # save +0x2c: u32 affection by character; MsAddLoveParam (0x007845e0) adds for 1-7 unless the sum passes 0x0ffffffe
 0x0112d67c label g_SaveScenario              # save +0xbec: u16 story progress (getScenerioFlag 0x00787360)
@@ -7470,6 +7630,7 @@
 0x011307eb label g_SaveOutParty              # 0x11 x u8 reserve members (MsGetSaveOutParty 0x007852d0, count 0x11)
 0x011307fc label g_SaveSharedCommands        # flag words of commands 0x3060-0x3fff for everybody, bit of cmd - 0x60 (MsGetSaveCommand 0x00785020); below 0x3060 they are in ply_save +0x3e
 0x01130834 label g_SaveYoujinbouCom          # save +0x3da4: u32 Yojimbo's command (MsGetYoujinbouCom 0x007b2b20)
+0x01130840 label g_StealCount                 # u32, items stolen from monster kind 6 (+0xded); achievementUnlockAchievement(4) from 200 (Battle_Steal)
 0x0113085c label g_SaveEventFlags            # MsGetSaveEventFlag (0x00785250)
 0x0113095c label g_SaveItemIds               # 0x70 x u16 inventory item IDs (MsSaveItemTypeBuffer 0x00790530, count 0x70; MsGetSaveItemNum)
 0x01130b5c label g_SaveItemCounts            # 0x70 x u8 inventory counts (MsSaveItemNumBuffer 0x00790510)
@@ -7490,6 +7651,7 @@
 0x011333c0 label g_BtlOrderCount             # i32 queued action orders (MsOrderInit 0x0078d4b0, MsOrderRegist)
 0x011333c4 label g_BtlOrders                 # 31 x u8 actor indices (MsOrderRegist 0x0078d4c0)
 0x011334c0 label g_KernelImportant           # key item kernel table (MsImportantPtr 0x007908a0 looks IDs up in it with MsGetExcelData)
+0x011334c8 label g_BtlDebugCameraSleep        # i32; Set to -1 by MsDebugCameraSleepInit.
 0x011334d4 label g_BtlChrTop                 # pointer to the 0x1f battle actors of 0xf90 bytes (MsGetChr 0x00794020, MsGetChrTop)
 0x011334d8 label g_BtlChrSpare               # what MsGetChr returns for an index from 0x5d on
 0x01134468 label g_BtlMonTop                 # pointer to the monster actors, 0xf90 bytes each (MsGetMon 0x00795aa0)
@@ -7498,15 +7660,29 @@
 0x01135d70 label g_BtlAtelRequests           # 16 x 4 u16 effect requests (MsAtelRequestAdd 0x00797b70)
 0x01136000 label g_BtlMemCheck               # i32 work memory booked, from 0x40; MsMemCheckRegist (0x00799f00) adds size + 0x4f rounded to 64
 0x01136004 label g_BtlMemCheck2              # cleared by MsMemCheckInit (0x00799ee0)
+0x01136068 label g_BtlItemMem                 # u32; Reset by MsBtlInitItemMem.
+0x0113606c label g_BtlRegMotion               # u32; Reset by MsRegMotionInit, with [REG_MOTION_FLAG].
+0x01136070 label g_BtlComBuf                  # u32; Reset by MsComBufInit.
+0x011360a8 label g_BtlEtEffectRead            # u32; Reset by MsEtEffectReadInit; MsEtEffectStop stops an effect while it is set.
+0x011360b8 label g_BtlNumbers                 # u32; Reset by MsNumberInit (the damage numbers).
 0x0113618c label g_BtlSepTrans               # u32 sound effect data in transfer (MsSEPtransAmount 0x007a04b0, MsSEPtransCheck)
+0x011363b0 label g_BtlItemMem3                # [u32; 2]; Reset by MsBtlInitItemMem_007a0cd0.
+0x01136418 label g_BtlMoveSplines             # [u32; 3]; The three move splines (MsMoveSplineSet).
+0x01136a58 label g_BtlMoveTarget              # u8; The move target position (MsMoveTargetPos).
+0x01136a68 label g_BtlAction                  # i32; Set to -1 by MsActionInit.
+0x01136ad8 label g_BtlEffectCameraFloats      # [u32; 16]; 16 floats MsEffectSetCameraBufFloat sets.
+0x01136b60 label g_BtlSplines                 # [u32; 2]; Reset by MsSplineInit.
+0x01136fb8 label g_BtlScreenOffset            # [u32; 2]; The offset MsScreenResetOffset keeps (x, y).
 0x01136fc4 label    g_CamOverrideRoll            # override camera roll (Cam_OverrideSet param 4)
 0x01136fc8 label    g_CamOverrideEye             # override camera eye, vec4 (game space)
 0x01136fd8 label    g_CamOverrideLookAt          # override camera look-at, vec4 (game space)
 0x01136fe8 label    g_CamOverrideUp              # override camera up vector, vec4 (reset to (0,-1,0)-ish: 0x01136fec = -1.0)
 0x01137000 label g_Screens                   # 3 screens of 0x1c0 bytes right before g_Cameras: +0x30/+0x34 f32 shake offsets, +0x16c/+0x190 shake flags (MsScreenResetShake 0x007c56c0)
+0x011370d0 label g_BtlScreenFocus             # i32; The three screens' focus, -1 for none (MsScreenFocusReset), 0x1c0 bytes apart.
 0x01137540 label    g_Cameras                    # ?3 cameras x 0xda0: two sides of 0x61c each (0 = ref, 1 = cam), channels of 0x130 at +0xc0, channel table at 0x011381a8
 0x011381a8 label g_CameraSlots               # g_Cameras + 0xc68: 4 request slots of 8 bytes per camera (u32 ID, byte 2 the level; +4/+5 off/done flags; +6 i8 level bonus); MsCameraGetNum 0x007bd340, MsCameraIDcheck 0x007bd560
 0x01139e50 label g_BtlDebugField             # 2 x u32; MsDebugGetFieldNum (0x007c5f50) returns [0] << 16 + [1]
+0x0113f3d2 label g_BtlUcId                    # u16; The user character ID MsSaveUcID keeps.
 0x0119fe10 label    g_OpSprStack                 # op scratch stack, i32 marks: op_spr_alloc(n) pushes top + n (top index g_OpSprTop)
 0x0119fea0 label    g_OpusWeapons                # 4 weapon opus objects (opus_get_weapon_index)
 0x0119fed0 label    g_OpusMonsters               # 8 monster opus objects (opus_get_monster_index)
@@ -7711,7 +7887,9 @@
 0x018ded08 label    g_YiRenderStatus             # field renderer flags: yiRenderEnable/Disable; |= 0x11 once a map is read (yiMapReadMaster); bit 0 gates yiCallFieldParticle
 0x018ded0c label    g_YiDrawMask                 # yiGetDrawMask/yiSetDrawMask; -9 after a map is read, -1 with the battle map circle on (yiMapReadMaster); script native 0x8000 sets its bits
 0x018ded2c label    g_YiRenderParam              # yiSetRenderParam's value
+0x018dee38 label    g_YiViewAdjust               # 16 floats 0x0090a140 multiplies into the camera matrix (cdc_Mul4x4(out, camera, it)); yiGetViewAdjust / yiSetViewAdjust
 0x018deff8 label    g_YiScaleFactor              # x, y, z floats (yiSetScaleFactor)
+0x018df01c label    g_YiColorOffset              # four floats, channel - 128 (yiSetColorOffset); saved and restored by yiPushRenderState / yiPopRenderState
 0x018df588 label    g_YiDObjCount                # display objects in use (yiGetMatrixDObj bound)
 0x018df59c label    g_YiDObjs                    # display objects, 0xb4 bytes each: +0 matrix, +0x40 rotation, +0x50 translation, +0x74 u16 group (yiGetMatrixGroup), +0x76 u16 rotation order (yiRotMatrixSeq; 0x00908190)
 0x019138a8 label    g_YiMapData                  # the map data read (yiMapReadMaster, yiObjReadCallback); +4 its status (yiGetMapStatus)
@@ -7741,9 +7919,12 @@
 0x022fb4dc label    g_TkMenuSceneData         # 8 menu scene data blocks (TkMenuSetSceneDataAdrs, TkMenuInitSeq zeroes them; layout in crates/ffx-menu/src/scene.rs)
 0x022fb504 label    g_Settings
 0x0230fd34 label    g_pppStopStatus              # set by pppFpStopStatus; the ppp per-frame steps (pppColor, pppAngle, ...) do nothing while nonzero
+0x0230ffe4 label    g_pppCurrentPart             # the part pppRunPart/pppRunPartFp/pppStartPart set while they run it; +0x3c points at 16-byte object records (the object at +4), which pppPObjPoint and pppKeThTp index by the key
 0x02310c40 label    g_CdLib                   # function table of the PS2 CD-library emulation
 0x02310c60 label    g_CdLib_FileBase          # g_CdLib + 0x20: the current module's first PS2 file number (CDfileSize_CD, CDfileSize_CD_EX add it to theirs)
 0x02310c68 label    g_CdLib_SectorTable       # g_CdLib + 0x28: cdrom.mdg (CdEnvInit), u32 per file: start sector in bits 0-21, bit 22 size from sizetbl.bin, bit 23 absent, top byte the unused bytes at the end / 8 (CDfileSize_CD, cd_file_sector)
+0x02310cd8 label g_BtlItemMem2                # u32; with the one before it (same function, ffx_battle::misc)
+0x02310ed8 label g_BtlStartAp                 # [u32; 18]; The AP of 18 actors at battle start (MsBtlStartAP copies the current ones, 0x48 bytes on, here).
 0x023110a0 label g_DefaultChrNames           # 0x14 bytes per character (getDefaultChrName 0x00787320)
 0x02311240 label g_BtlDamageRates             # 4 bytes per actor: physical, magic damage dealt bonus %, physical, magic damage taken reduction % (DmgCalc_StatBoostAbility)
 0x02311424 label g_CameraPriorityMask        # not 0: MsCameraPriority (0x007be0a0) changes nothing (MsCameraPriorityMask 0x007be100)
@@ -7752,6 +7933,7 @@
 0x02311430 label    g_Camera                     # pointer to the active camera channel (FUN_007bd470 reads its sides): +0x50 look-at point (ref, side 0) xyz, +0x66c eye (side 1) xyz; live: the look-at follows the player at chest height on the S.S. Winno deck
 0x02311440 label g_CameraMatrix              # MsGetCameraMatrix (0x007c04b0)
 0x02311480 label g_ScreenMatrix              # MsGetScreenMatrix (0x007bbd70)
+0x023114c0 label g_BtlScreen                  # u32; Pointer to the screen in use (MsScreenOffset: its offset at +0x30).
 0x02321548 label    g_OpPadInput                 # byte: while 0, op_pad_set takes no buttons
 0x02322790 label    g_OpDebugMode                # byte set by pppInitPartRender: op_pad_set and op_heap_display_set_par do nothing while 0; read by the op debug functions around 0x007e5bd0
 0x02332ea1 label    g_OpSprTop                   # i8 top index of g_OpSprStack (op_spr_alloc, op_spr_free)
@@ -7767,13 +7949,16 @@
 0x023cc120 label    g_TkMn2ListMax2           # TkMn2GetListMax2
 0x023cc128 label    g_TkMenuSubCmdWindow      # the open sub-command window (TkMenuCloseSubCmdWindow sets its +0x41 and clears this; TkMenuRestartSubCmdWindow2)
 0x023cc458 label    g_TkMn2FontShade          # 4 words 8 bytes apart, stored downwards: TkMn2SetFontShade(s0..s3) puts s0 at 0x023cc470, s3 here
-
 0x025d09c0 label    g_TOPadGetCtrl            # u8: SetTOPadGetCtrl
 0x025d09d2 label    g_TOMenuPad               # 3 u16 (held, trg, rep): TOMenuGetControlPad/Trg/Rep return these when the dummy controller is on or held & 0xf000, else g_TOMenuPadAlt
 0x025d09d8 label    g_TOMenuPad2              # u16: TOMenuGetControlPad2
 0x025d09e2 label    g_TOMenuPadAlt            # 3 u16 (held, trg, rep), the other choice of TOMenuGetControlPad/Trg/Rep
+0x025d17ac label    g_YiVramLimit                # end of the image VRAM allocator (yiVramSetLimit)
+0x025d17bc label    g_YiVramNext                 # its next free address, in bytes (yiVramAlloc)
 0x025d58a0 label    g_RcbgClipWorldMatrix        # g_RcbgViewWorldMatrix through g_RcbgClipMatrix (rcbgUpdateMatrix)
 0x025d58e0 label    g_RcbgClipMatrix             # rcbgSetClipMatrix
 0x025d5920 label    g_RcbgScreenWorldMatrix      # g_RcbgViewWorldMatrix through g_ScreenMatrix (rcbgUpdateMatrix)
 0x025d5960 label    g_RcbgViewWorldMatrix        # g_RcbgWorldMatrix through g_CameraMatrix (rcbgUpdateMatrix)
 0x025d59a0 label    g_RcbgWorldMatrix            # rcbgSetWorldMatrix
+
+0x025d5c60 label    g_RcefTargets                # up to 16 effect targets, 0x24 bytes: u16 flags, +4 character, +8 distance, +0xc angle, +0x10 height, +0x14 direction (0x00924a20)

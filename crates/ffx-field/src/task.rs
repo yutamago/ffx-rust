@@ -130,6 +130,39 @@ pub mod anime {
 /// nearest it, widened).
 pub const THREE_HALF_PI: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b6_7e18);
 
+/// π, the `.rdata` double `rcAngleDiff` compares with (`0x00b92288`).
+pub const PI: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b9_2288);
+/// 2π, the `.rdata` double it wraps with (`0x00b39378`).
+pub const TWO_PI: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b3_9378);
+
+/// The effect targets (`0x00924a20` fills them, up to 16): `0x24` bytes
+/// each.
+pub mod target {
+    /// The table.
+    pub const TABLE: ffx_bridge::Global<u8> = ffx_bridge::Global::new(0x025d_5c60);
+    /// Bytes per entry.
+    pub const SIZE: u32 = 0x24;
+    /// `+0x0`: flags (`u16`): bit 0 reached (`0x009248c0`), bit 1 done.
+    pub const FLAGS: u32 = 0x0;
+    /// `+0x8`: horizontal distance to the target.
+    pub const DIST: u32 = 0x8;
+    /// `+0xc`: its direction, an angle.
+    pub const ANGLE: u32 = 0xc;
+    /// `+0x10`: its height difference.
+    pub const HEIGHT: u32 = 0x10;
+    /// The delay a reached target waits (`u16`, `rcefTargetSetDelay`).
+    pub const DELAY: ffx_bridge::Global<u16> = ffx_bridge::Global::new(0x025d_5ea2);
+}
+
+/// Offsets in the effect main object (`rcefMainInit`).
+pub mod main {
+    /// `+0x10`: its effect memory environment (the `ppp` allocator's).
+    pub const ENV: u32 = 0x10;
+    /// Where the current `ppp` environment pointer lives: `.data`
+    /// `0x00c3a4cc` holds its address.
+    pub const ENV_SLOT: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x00c3_a4cc);
+}
+
 /// The stack level after `rcefTaskCallSeq`, or `None` when the stack is
 /// full (nothing changes).
 #[must_use]
@@ -372,6 +405,84 @@ pub mod bridge {
     pub fn rcef_dir_to_angle(mem: &impl Mem, dir: u32) -> f32 {
         let k = super::THREE_HALF_PI.get(mem);
         f32::from_bits(crate::x87::store(k - crate::x87::load(dir)))
+    }
+
+    /// `rcAngleDiff(a, b)` (`0x0092e400`): `|a - b|` as `f32`, wrapped to
+    /// `2π - d` past π; floats as bits.
+    pub fn rc_angle_diff(mem: &impl Mem, a: u32, b: u32) -> f32 {
+        use ffx_bridge::x87;
+        let d = x87::load(x87::store(x87::sub(x87::load(a), x87::load(b)).abs()));
+        if d > super::PI.get(mem) {
+            f32::from_bits(x87::store(x87::sub(super::TWO_PI.get(mem), d)))
+        } else {
+            f32::from_bits(x87::store(d))
+        }
+    }
+
+    fn target_at(mem: &impl Mem, i: u32, offset: u32) -> u32 {
+        super::target::TABLE
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.wrapping_mul(super::target::SIZE))
+            .wrapping_add(offset)
+    }
+
+    /// `rcefTargetIsDone(i)` (`0x00924ba0`): flag bit 1 of target `i`.
+    pub fn rcef_target_is_done(mem: &impl Mem, i: u32) -> u32 {
+        u32::from(mem.read::<u8>(target_at(mem, i, super::target::FLAGS)) >> 1 & 1)
+    }
+
+    /// `rcefTargetClear(i)` (`0x00924bc0`): its flags.
+    pub fn rcef_target_clear(mem: &mut impl Mem, i: u32) {
+        let at = target_at(mem, i, super::target::FLAGS);
+        mem.write(at, 0u16);
+    }
+
+    fn target_float(mem: &impl Mem, i: u32, offset: u32) -> f32 {
+        f32::from_bits(mem.read(target_at(mem, i, offset)))
+    }
+
+    /// `rcefTargetGetDist(i)` (`0x00924a00`).
+    pub fn rcef_target_get_dist(mem: &impl Mem, i: u32) -> f32 {
+        target_float(mem, i, super::target::DIST)
+    }
+
+    /// `rcefTargetGetAngle(i)` (`0x009249e0`).
+    pub fn rcef_target_get_angle(mem: &impl Mem, i: u32) -> f32 {
+        target_float(mem, i, super::target::ANGLE)
+    }
+
+    /// `rcefTargetGetHeight(i)` (`0x009249c0`).
+    pub fn rcef_target_get_height(mem: &impl Mem, i: u32) -> f32 {
+        target_float(mem, i, super::target::HEIGHT)
+    }
+
+    /// `rcefTargetSetDelay(frames)` (`0x00924be0`).
+    pub fn rcef_target_set_delay(mem: &mut impl Mem, frames: u16) {
+        super::target::DELAY.set(mem, frames);
+    }
+
+    /// `rcefMainSetEnv(main)` (`0x009254f0`, an identical copy at
+    /// `0x00925510`): makes the effect's memory environment current.
+    pub fn rcef_main_set_env(mem: &mut impl Mem, m: u32) {
+        let env = mem.read::<u32>(m + super::main::ENV);
+        let slot = super::main::ENV_SLOT.get(mem);
+        mem.write(slot, env);
+    }
+
+    /// `rcefObjLinkLast(obj, child)` (`0x0092f920`): `child` after the last
+    /// object of `obj`'s chain (`+0xcc` next, `+0xc8` previous).
+    pub fn rcef_obj_link_last(mem: &mut impl Mem, o: u32, child: u32) {
+        let mut last = o;
+        loop {
+            let next = mem.read::<u32>(last + 0xcc);
+            if next == 0 {
+                break;
+            }
+            last = next;
+        }
+        mem.write(last + 0xcc, child);
+        mem.write(child + 0xc8, last);
     }
 
     /// `rcEffectTaskParWait(obj)` (`0x00930490`): a sequence that returns

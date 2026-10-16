@@ -154,7 +154,23 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   (`u16`), `+4` the first free block; blocks from `+0x10`, each one's
   first word pointing at the next, the last 0.
 - `rcui` work (`g_RcuiWork`, `0x0193c0f0`): `+0xbe8` the ID dragged,
-  `+0xbec` `rcuiMouseMoveGetID`, `+0xbf0` dragging.
+  `+0xbec` `rcuiMouseMoveGetID`, `+0xbf0` dragging. UI values carry a
+  type: 1 `i8`, 2 `u8`, 3 `i16`, 4 `u16`, 5 and 6 32 bits
+  (`rcuiValueGet`/`Set`, `0x0093c210`/`0x0093c270`).
+- Display object colours: two RGBA byte colours at `+0x90`
+  (`yiGetColorDObj`/`yiSetColorDObj`, `0x00908e90`/`0x0090a5c0`).
+- Effect targets (`g_RcefTargets`, `0x025d5c60`, up to 16, `0x24` bytes,
+  filled by `0x00924a20`): `u16` flags (bit 0 reached, bit 1 done), `+4`
+  character, `+8` horizontal distance, `+0xc` direction angle, `+0x10`
+  height difference, `+0x14` direction (`rcefTarget*`, `0x009249c0`..).
+- Field renderer packets: the DMA write position at render `+0xba3f0`
+  and the tag count at `+0xba3f8` (`yiRender_addRef`, `0x0090c1f0`: DMA
+  `ref` tags, ID 3); matrices go to VU memory as VIF `UNPACK V4-32` of 4
+  quadwords (`yiPkUnpackMatrix`, `0x0090cd10`); GS registers as A+D
+  quadwords (data, 0, register, 0; `yiPkAddGsAD`, `0x0090ae20`).
+- Image VRAM: a bump allocator in 64-byte blocks, next at `0x025d17bc`,
+  end `(0x38 − pages) << 14` at `0x025d17ac` (`yiVramAlloc`,
+  `yiVramSetLimit`).
 - DMA packet (`rcPacketData*`): `+0` start, `+4` cursor; opening reserves
   a quadword for the DMA tag, closing appends a GIF tag with EOP
   (`0x8000, 0x10000000, 0, 0`) and writes the tag `0x70000000 | (qwords

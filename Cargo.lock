@@ -756,6 +756,7 @@ name = "ffx-ps2"
 version = "0.1.0"
 dependencies = [
  "ffx-bridge",
+ "ffx-system",
 ]
 
 [[package]]
@@ -851,6 +852,7 @@ name = "ffx-vfx"
 version = "0.1.0"
 dependencies = [
  "ffx-bridge",
+ "ffx-field",
  "ffx-system",
 ]
 
