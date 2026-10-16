@@ -397,4 +397,221 @@ ported! {
     Script_Jump @ 0x0087_26f0 => extern "C" fn script_jump(w: u32, l: u32, label: u32) {
         run::script_jump(&mut mem(), w, l, label);
     }
+
+    /// `AtelGetControlerT()`.
+    AtelGetControlerT @ 0x0086_af30 => extern "C" fn atel_get_controler_t() -> u16 {
+        g::atel_get_controler_t(&mem())
+    }
+    /// `AtelGetControlerRept()`.
+    AtelGetControlerRept @ 0x0086_af50 => extern "C" fn atel_get_controler_rept() -> u16 {
+        g::atel_get_controler_rept(&mem())
+    }
+    /// `AtelGetControlerHist1c()`.
+    AtelGetControlerHist1c @ 0x0086_af60 => extern "C" fn atel_get_controler_hist1c() -> u16 {
+        g::atel_get_controler_hist1c(&mem())
+    }
+    /// `AtelGetControler()`.
+    AtelGetControler @ 0x0086_af70 => extern "C" fn atel_get_controler() -> u16 {
+        g::atel_get_controler(&mem())
+    }
+    /// `AtelGetControlerHist08()`.
+    AtelGetControlerHist08 @ 0x0086_af80 => extern "C" fn atel_get_controler_hist08() -> u16 {
+        g::atel_get_controler_hist08(&mem())
+    }
+    /// `AtelGetHalfTurnAngle()`.
+    AtelGetHalfTurnAngle @ 0x0087_3ad0 => extern "C" fn atel_get_half_turn_angle() -> f32 {
+        f32::from_bits(g::atel_get_half_turn_angle(&mem()))
+    }
+    /// `AtelGetOverlayStatus()`.
+    AtelGetOverlayStatus @ 0x0086_c200 => extern "C" fn atel_get_overlay_status() -> u32 {
+        g::atel_get_overlay_status(&mem())
+    }
+    /// `AtelGetVoicePan()`.
+    AtelGetVoicePan @ 0x0087_3b80 => extern "C" fn atel_get_voice_pan() -> u32 {
+        g::atel_get_voice_pan(&mem())
+    }
+    /// `AtelGetVagStreamVolume()`.
+    AtelGetVagStreamVolume @ 0x0087_3b90 => extern "C" fn atel_get_vag_stream_volume() -> u32 {
+        g::atel_get_vag_stream_volume(&mem())
+    }
+    /// `AtelGetBattleStatus()`.
+    AtelGetBattleStatus @ 0x0086_a9b0 => extern "C" fn atel_get_battle_status() -> u32 {
+        g::atel_get_battle_status(&mem())
+    }
+    /// `AtelGetKeepPlayStatusWhiteInOut()`.
+    AtelGetKeepPlayStatusWhiteInOut @ 0x0086_bc30 => extern "C" fn atel_get_keep_play_status_white_in_out() -> u32 {
+        g::atel_get_keep_play_status_white_in_out(&mem())
+    }
+    /// `AtelGetKeepPlayStatusNoStopFanfare()`.
+    AtelGetKeepPlayStatusNoStopFanfare @ 0x0086_bc60 => extern "C" fn atel_get_keep_play_status_no_stop_fanfare() -> u32 {
+        g::atel_get_keep_play_status_no_stop_fanfare(&mem())
+    }
+    /// `AtelIsKeepPlayStatusClear12()`.
+    AtelIsKeepPlayStatusClear12 @ 0x0086_bc10 => extern "C" fn atel_is_keep_play_status_clear12() -> u32 {
+        g::atel_is_keep_play_status_clear12(&mem())
+    }
+    /// `AtelIsKeepPlayStatusClear8()`.
+    AtelIsKeepPlayStatusClear8 @ 0x0086_bc20 => extern "C" fn atel_is_keep_play_status_clear8() -> u32 {
+        g::atel_is_keep_play_status_clear8(&mem())
+    }
+    /// `AtelIsKeepPlayStatusClear11()`.
+    AtelIsKeepPlayStatusClear11 @ 0x0086_bc50 => extern "C" fn atel_is_keep_play_status_clear11() -> u32 {
+        g::atel_is_keep_play_status_clear11(&mem())
+    }
+    /// `AtelIsBattleEndStatusClear8()`.
+    AtelIsBattleEndStatusClear8 @ 0x0086_c280 => extern "C" fn atel_is_battle_end_status_clear8() -> u32 {
+        g::atel_is_battle_end_status_clear8(&mem())
+    }
+    /// `AtelIsBattleEndStatusClear9()`.
+    AtelIsBattleEndStatusClear9 @ 0x0086_c290 => extern "C" fn atel_is_battle_end_status_clear9() -> u32 {
+        g::atel_is_battle_end_status_clear9(&mem())
+    }
+    /// `AtelGetBattleSceneGroup()`.
+    AtelGetBattleSceneGroup @ 0x0086_a9a0 => extern "C" fn atel_get_battle_scene_group() -> u32 {
+        g::atel_get_battle_scene_group(&mem())
+    }
+    /// `AtelGetBattleStatusDummyEnc()`.
+    AtelGetBattleStatusDummyEnc @ 0x0086_a9c0 => extern "C" fn atel_get_battle_status_dummy_enc() -> u32 {
+        g::atel_get_battle_status_dummy_enc(&mem())
+    }
+    /// `AtelGetBattleStatusSys()`.
+    AtelGetBattleStatusSys @ 0x0086_a9d0 => extern "C" fn atel_get_battle_status_sys() -> u32 {
+        g::atel_get_battle_status_sys(&mem())
+    }
+    /// `TkGetLastEventJumpIndex()`.
+    TkGetLastEventJumpIndex @ 0x0086_d9d0 => extern "C" fn tk_get_last_event_jump_index() -> u32 {
+        g::tk_get_last_event_jump_index(&mem())
+    }
+    /// `AtelGetOnMemoryMovieFileNo()`.
+    AtelGetOnMemoryMovieFileNo @ 0x0087_3b10 => extern "C" fn atel_get_on_memory_movie_file_no() -> u32 {
+        g::atel_get_on_memory_movie_file_no(&mem())
+    }
+    /// `AtelGetSaveD8()`.
+    AtelGetSaveD8 @ 0x0087_3b20 => extern "C" fn atel_get_save_d8() -> u32 {
+        g::atel_get_save_d8(&mem())
+    }
+    /// `AtelGetSaveDC()`.
+    AtelGetSaveDC @ 0x0087_3b30 => extern "C" fn atel_get_save_dc() -> u32 {
+        g::atel_get_save_dc(&mem())
+    }
+    /// `AtelGetRandomEncountStatus()`.
+    AtelGetRandomEncountStatus @ 0x0087_3b40 => extern "C" fn atel_get_random_encount_status() -> u32 {
+        g::atel_get_random_encount_status(&mem())
+    }
+    /// `AtelGetScenarioFlag()`.
+    AtelGetScenarioFlag @ 0x0086_c470 => extern "C" fn atel_get_scenario_flag() -> u32 {
+        g::atel_get_scenario_flag(&mem())
+    }
+    /// `AtelGetAlbhedRikku()`.
+    AtelGetAlbhedRikku @ 0x0086_a7e0 => extern "C" fn atel_get_albhed_rikku() -> u32 {
+        g::atel_get_albhed_rikku(&mem())
+    }
+    /// `AtelGetSphereMonitor()`.
+    AtelGetSphereMonitor @ 0x0086_c4b0 => extern "C" fn atel_get_sphere_monitor() -> u32 {
+        g::atel_get_sphere_monitor(&mem())
+    }
+    /// `AtelGetWaterBattleEffect()`.
+    AtelGetWaterBattleEffect @ 0x0086_c8a0 => extern "C" fn atel_get_water_battle_effect() -> u32 {
+        g::atel_get_water_battle_effect(&mem())
+    }
+    /// `AtelGetBattleEndTagAlways()`.
+    AtelGetBattleEndTagAlways @ 0x0087_3a90 => extern "C" fn atel_get_battle_end_tag_always() -> u32 {
+        g::atel_get_battle_end_tag_always(&mem())
+    }
+    /// `AtelGetMapMarkerX()`.
+    AtelGetMapMarkerX @ 0x0087_3ae0 => extern "C" fn atel_get_map_marker_x() -> u32 {
+        g::atel_get_map_marker_x(&mem())
+    }
+    /// `AtelGetMapMarkerY()`.
+    AtelGetMapMarkerY @ 0x0087_3af0 => extern "C" fn atel_get_map_marker_y() -> u32 {
+        g::atel_get_map_marker_y(&mem())
+    }
+    /// `AtelClearCameraMatrixFlag()`.
+    AtelClearCameraMatrixFlag @ 0x0087_72e0 => extern "C" fn atel_clear_camera_matrix_flag() {
+        g::atel_clear_camera_matrix_flag(&mut mem());
+    }
+    /// `AtelClearForcePlaceId()`.
+    AtelClearForcePlaceId @ 0x0086_38b0 => extern "C" fn atel_clear_force_place_id() {
+        g::atel_clear_force_place_id(&mut mem());
+    }
+    /// `AtelSetMenuOtakaraFlag()`.
+    AtelSetMenuOtakaraFlag @ 0x0087_3e80 => extern "C" fn atel_set_menu_otakara_flag() -> u32 {
+        g::atel_set_menu_otakara_flag(&mut mem())
+    }
+    /// `AtelClearMenuOtakaraFlag()`.
+    AtelClearMenuOtakaraFlag @ 0x0087_2b60 => extern "C" fn atel_clear_menu_otakara_flag() -> u32 {
+        g::atel_clear_menu_otakara_flag(&mut mem())
+    }
+    /// `AtelInitActor()`.
+    AtelInitActor @ 0x0086_cae0 => extern "C" fn atel_init_actor() -> u32 {
+        g::atel_init_actor(&mut mem())
+    }
+    /// `AtelSetHalfTurnAngle(deg)`.
+    AtelSetHalfTurnAngle @ 0x0087_3e50 => extern "C" fn atel_set_half_turn_angle(deg: f32) {
+        g::atel_set_half_turn_angle(&mut mem(), deg.to_bits());
+    }
+    /// `AtelSetVoicePan(pan)`.
+    AtelSetVoicePan @ 0x0087_3d10 => extern "C" fn atel_set_voice_pan(pan: u32) {
+        g::atel_set_voice_pan(&mut mem(), pan.to_le_bytes()[0]);
+    }
+    /// `AtelSetVagStreamVolume(v)`.
+    AtelSetVagStreamVolume @ 0x0087_3d20 => extern "C" fn atel_set_vag_stream_volume(v: u32) {
+        g::atel_set_vag_stream_volume(&mut mem(), v.to_le_bytes()[0]);
+    }
+    /// `AtelRegistExpandFTCAdrs(adrs)`.
+    AtelRegistExpandFTCAdrs @ 0x0087_3cf0 => extern "C" fn atel_regist_expand_ftc_adrs(adrs: u32) {
+        g::atel_regist_expand_ftc_adrs(&mut mem(), adrs);
+    }
+    /// `AtelSetEventMode(mode)`.
+    AtelSetEventMode @ 0x0087_3e40 => extern "C" fn atel_set_event_mode(mode: u32) {
+        g::atel_set_event_mode(&mut mem(), mode.to_le_bytes()[0]);
+    }
+    /// `setMegasAdding(v)`.
+    setMegasAdding @ 0x0086_0f20 => extern "C" fn set_megas_adding(v: u32) {
+        g::set_megas_adding(&mut mem(), v);
+    }
+    /// `AtelSetEffectParam(i, v)`.
+    AtelSetEffectParam @ 0x0086_fa60 => extern "C" fn atel_set_effect_param(i: u32, v: u32) {
+        g::atel_set_effect_param(&mut mem(), i, v);
+    }
+    /// `AtelSetEffectState(v)`.
+    AtelSetEffectState @ 0x0086_fa80 => extern "C" fn atel_set_effect_state(v: u32) {
+        g::atel_set_effect_state(&mut mem(), v);
+    }
+    /// `AtelSetBattleSceneGroup(group)`.
+    AtelSetBattleSceneGroup @ 0x0086_f3c0 => extern "C" fn atel_set_battle_scene_group(grp: u32) {
+        g::atel_set_battle_scene_group(&mut mem(), grp.to_le_bytes()[0]);
+    }
+    /// `AtelSetMapFadeType(type)`.
+    AtelSetMapFadeType @ 0x0087_00c0 => extern "C" fn atel_set_map_fade_type(t: u32) {
+        g::atel_set_map_fade_type(&mut mem(), t.to_le_bytes()[0]);
+    }
+    /// `AtelSetMapFadeFrames(frames)`.
+    AtelSetMapFadeFrames @ 0x0087_00d0 => extern "C" fn atel_set_map_fade_frames(n: u32) {
+        g::atel_set_map_fade_frames(&mut mem(), n.to_le_bytes()[0]);
+    }
+    /// `AtelSetOnMemoryMovie(n)`.
+    AtelSetOnMemoryMovie @ 0x0087_3e90 => extern "C" fn atel_set_on_memory_movie(n: u32) {
+        g::atel_set_on_memory_movie(&mut mem(), n);
+    }
+    /// `AtelGetBindPCFromID(index)`.
+    AtelGetBindPCFromID @ 0x0086_ae00 => extern "C" fn atel_get_bind_pc_from_id(index: i32) -> u32 {
+        g::atel_get_bind_pc_from_id(&mut mem(), index)
+    }
+    /// `Script_NativeEntry(id)`.
+    Script_NativeEntry @ 0x0087_7770 => extern "C" fn script_native_entry(id: u32) -> u32 {
+        run::script_native_entry(&mem(), id)
+    }
+    /// `Script_CallNative(id, worker, args, stack)`.
+    Script_CallNative @ 0x0087_77a0 => extern "C" fn script_call_native(id: u32, w: u32, args: u32, s: u32) -> u32 {
+        run::script_call_native(&mut mem(), id, w, args, s)
+    }
+    /// `Script_PollNative(id, worker, args)`.
+    Script_PollNative @ 0x0087_7730 => extern "C" fn script_poll_native(id: u32, w: u32, args: u32) -> u32 {
+        run::script_poll_native(&mut mem(), id, w, args)
+    }
+    /// `Script_FinishNative(id, worker, args, stack)`.
+    Script_FinishNative @ 0x0087_77f0 => extern "C" fn script_finish_native(id: u32, w: u32, args: u32, s: u32) {
+        run::script_finish_native(&mut mem(), id, w, args, s);
+    }
 }

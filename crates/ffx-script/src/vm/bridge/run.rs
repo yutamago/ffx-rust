@@ -74,7 +74,9 @@ pub trait Natives<H: Host> {
     fn finish(&mut self, host: &mut H, id: u32, worker: u32, args: u32, stack: u32);
 }
 
-/// The game's own native dispatch.
+/// The game's own native dispatch: [`script_call_native`],
+/// [`script_poll_native`] and [`script_finish_native`] over the tables
+/// `AtelInitTotal` registers, the natives themselves original.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct OriginalNatives;
 
@@ -84,20 +86,101 @@ pub const CALL_NATIVE: u32 = 0x0087_77a0;
 pub const POLL_NATIVE: u32 = 0x0087_7730;
 /// `Script_FinishNative`.
 pub const FINISH_NATIVE: u32 = 0x0087_77f0;
+/// `g_NativeTables`: per group (the id's bits 12 and up) a table of
+/// `0x10`-byte entries (the low 12 bits): start, poll, float result, int
+/// result, each a cdecl function or null.
+pub const NATIVE_TABLES: Global<u32> = Global::new(0x0132_8558);
 
-impl<H: Host> Natives<H> for OriginalNatives {
+/// What [`script_finish_native`] needs beyond [`Host`]: a call whose result
+/// comes back in `ST0` (the float natives).
+pub trait NativeHost: Host {
+    /// Calls the cdecl function at `addr` (rebased) and returns `ST0` as
+    /// an `fstp m64` stores it (exact at the game's 53-bit precision).
+    fn call_float(&mut self, addr: u32, args: &[u32]) -> f64;
+}
+
+#[cfg(target_pointer_width = "32")]
+impl NativeHost for ffx_bridge::RawMem {
+    fn call_float(&mut self, addr: u32, args: &[u32]) -> f64 {
+        type F6 = unsafe extern "C" fn(u32, u32, u32, u32, u32, u32) -> f64;
+        assert!(args.len() <= 6, "at most six arguments");
+        let mut a = [0u32; 6];
+        a[..args.len()].copy_from_slice(args);
+        // SAFETY: the address is a cdecl native of the game returning in
+        // ST0 and taking at most these arguments; the caller pops them.
+        unsafe {
+            let f: F6 = std::mem::transmute(addr as usize);
+            f(a[0], a[1], a[2], a[3], a[4], a[5])
+        }
+    }
+}
+
+impl<H: NativeHost> Natives<H> for OriginalNatives {
     fn start(&mut self, host: &mut H, id: u32, worker: u32, args: u32, stack: u32) {
-        let f = host.rebase(CALL_NATIVE);
-        host.call(f, &[id, worker, args, stack]);
+        script_call_native(host, id, worker, args, stack);
     }
     fn poll(&mut self, host: &mut H, id: u32, worker: u32, args: u32) -> u8 {
-        let f = host.rebase(POLL_NATIVE);
-        host.call(f, &[id, worker, args]).to_le_bytes()[0]
+        script_poll_native(host, id, worker, args).to_le_bytes()[0]
     }
     fn finish(&mut self, host: &mut H, id: u32, worker: u32, args: u32, stack: u32) {
-        let f = host.rebase(FINISH_NATIVE);
-        host.call(f, &[id, worker, args, stack]);
+        script_finish_native(host, id, worker, args, stack);
     }
+}
+
+/// `Script_NativeEntry(id)` (`0x00877770`): the table entry of native
+/// `id` (no bound on the group or the index).
+pub fn script_native_entry(mem: &impl Mem, id: u32) -> u32 {
+    let t: u32 = mem.read(NATIVE_TABLES.ptr(mem).addr.wrapping_add((id >> 12) * 4));
+    t.wrapping_add((id & 0xfff) << 4)
+}
+
+/// `Script_CallNative(id, worker, args, stack)` (`0x008777a0`): a group 6
+/// (camera) native sets the worker's flag `0x20` unless it has `0x10`;
+/// then the entry's start function `(worker, args, stack)`, whose `EAX` it
+/// returns (0 without one).
+pub fn script_call_native(host: &mut impl Host, id: u32, w: u32, args: u32, s: u32) -> u32 {
+    if id >> 12 == 6 {
+        let f = host.read::<u16>(w + worker::FLAGS2);
+        if f & 0x10 == 0 {
+            host.write(w + worker::FLAGS2, f | 0x20);
+        }
+    }
+    let f: u32 = host.read(script_native_entry(host, id));
+    if f == 0 {
+        return 0;
+    }
+    host.call(f, &[w, args, s])
+}
+
+/// `Script_PollNative(id, worker, args)` (`0x00877730`): the entry's poll
+/// function `(worker, args)`, or 5 (done, run on) without one.
+pub fn script_poll_native(host: &mut impl Host, id: u32, w: u32, args: u32) -> u32 {
+    let f: u32 = host.read(script_native_entry(host, id) + 4);
+    if f == 0 {
+        return 5;
+    }
+    host.call(f, &[w, args])
+}
+
+/// `Script_FinishNative(id, worker, args, stack)` (`0x008777f0`): pushes
+/// the entry's float result (`ST0` stored as `f32`) or else its integer
+/// result, or 0 without either.
+pub fn script_finish_native(host: &mut impl NativeHost, id: u32, w: u32, args: u32, s: u32) {
+    let e = script_native_entry(host, id);
+    let f: u32 = host.read(e + 8);
+    if f != 0 {
+        let x = host.call_float(f, &[w, args, s]);
+        // fstp m32, then fld/fstp of that f32 (a quiet NaN stays as it is)
+        atel_push_stack_float(host, s, ffx_bridge::x87::store(x));
+        return;
+    }
+    let f: u32 = host.read(e + 0xc);
+    let v = if f == 0 {
+        0
+    } else {
+        host.call(f, &[w, args, s])
+    };
+    atel_push_stack_integer(host, s, v);
 }
 
 fn call(host: &mut impl Host, sym: u32, args: &[u32]) -> u32 {

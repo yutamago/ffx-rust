@@ -73,6 +73,9 @@ pub mod ctrl {
     pub const RUN_END: u32 = 0x5c;
     /// `u32`: cleared by `AtelRemoveCtrlWork`.
     pub const REMOVE_CLEARS: u32 = 0x1f4;
+    /// `u32`: field state bits; bit 0 is `AtelGetBattleStatus`
+    /// (`0x0086a9b0`), bit 3 native `0x0241`.
+    pub const FIELD_STATE: u32 = 0x210;
 }
 
 /// Script block fields the VM reads (`docs/formats/script.md`, "Script
@@ -129,6 +132,9 @@ pub mod worker {
     pub const FLAGS2: u32 = 0x36;
     /// Camera handle cache of the group 6 natives (`AtelGetCameraWorkAdrs`).
     pub const CAMERA: u32 = 0x3c;
+    /// `u32`: the bound program counter (`AtelGetBindPC`, `0x0086adf0`;
+    /// `AtelGetBindPCFromID`).
+    pub const BIND_PC: u32 = 0x40;
     /// Storage 5 variables: inside the worker itself.
     pub const STORAGE5: u32 = 0x48;
     /// `u32`: field character object (`AtelGetCharHandle`).

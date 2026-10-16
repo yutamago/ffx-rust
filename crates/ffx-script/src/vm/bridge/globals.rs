@@ -4,7 +4,7 @@
 use ffx_bridge::{Global, Mem};
 
 use super::{CONTEXT, CTRL_WORKS};
-use crate::vm::{block, ctrl, through_x87};
+use crate::vm::{block, ctrl, through_x87, worker};
 
 /// `g_AtelMusicNumber`.
 pub const MUSIC_NUMBER: Global<u32> = Global::new(0x0132_7130);
@@ -368,4 +368,357 @@ pub fn atel_get_gide_map_actor_number(mem: &impl Mem) -> u32 {
         return 0;
     }
     mem.read(t.wrapping_add(b))
+}
+
+/// `g_AtelPadHeld`: buttons held over the frames since the last update
+/// (`TkGetControlerHist` of pad 0, or-ed together;
+/// `AtelExec_Internal_871d10`). The update's other words follow: `+4` pad
+/// 1 held, `+8` repeat, `+0xc` the history's `+0x1c` word, `+0x10` pressed
+/// (`g_PadPressed`), `+0x14` the history's `+8` word.
+pub const PAD_HELD: Global<u16> = Global::new(0x0132_70c0);
+/// `g_AtelHalfTurnAngle` (`f32`, degrees): `Native_GetTurnKind`'s threshold.
+pub const HALF_TURN_ANGLE: Global<u32> = Global::new(0x0132_7124);
+/// `g_AtelVagStreamVolume` (`u8`, `0x7f` after an event set-up).
+pub const VAG_STREAM_VOLUME: Global<u8> = Global::new(0x0132_7134);
+/// `g_AtelVoicePan` (`u8`, `0x3f` after an event set-up).
+pub const VOICE_PAN: Global<u8> = Global::new(0x0132_7135);
+/// `g_AtelEffectState`: set to 1 by native `0x0085e9e0` after it clears
+/// the effect flags.
+pub const EFFECT_STATE: Global<u32> = Global::new(0x0132_6b58);
+/// `g_AtelCameraMatrixFlag`: -1 when cleared.
+pub const CAMERA_MATRIX_FLAG: Global<u32> = Global::new(0x0132_8308);
+/// `g_SaveData` (`MsGetSaveEventAddress`): the game state saved with the
+/// game.
+pub const SAVE_DATA: Global<u8> = Global::new(0x0112_ca90);
+
+/// Offsets in `g_SaveData` the Atel accessors read and write.
+pub mod save {
+    /// `u8`: the battle scene group (`AtelSetBattleSceneGroup`).
+    pub const BATTLE_SCENE_GROUP: u32 = 0x10;
+    /// `u8`: the map fade type.
+    pub const MAP_FADE_TYPE: u32 = 0x11;
+    /// `u8`: the map fade frames.
+    pub const MAP_FADE_FRAMES: u32 = 0x12;
+    /// `u8`: battle status bits (bit 1 `Sys`, bit 2 `DummyEnc`).
+    pub const BATTLE_STATUS: u32 = 0x13;
+    /// `u8`: `TkGetLastEventJumpIndex`.
+    pub const LAST_EVENT_JUMP_INDEX: u32 = 0x20;
+    /// `u16`, `u16`: the map marker position (`Native_SetMapMarkerPos`).
+    pub const MAP_MARKER: u32 = 0xb4;
+    /// `u8`: Rikku speaks Al Bhed.
+    pub const ALBHED_RIKKU: u32 = 0xd1;
+    /// `u8`: the forced place id (`AtelClearForcePlaceId`).
+    pub const FORCE_PLACE_ID: u32 = 0xd6;
+    /// `u8`: `AtelGetWaterBattleEffect`.
+    pub const WATER_BATTLE_EFFECT: u32 = 0xd7;
+    /// `u32`, `u32`: read by `0x008807b0`.
+    pub const WORD_D8: u32 = 0xd8;
+    /// `u32`: the on-memory movie file (`AtelSetOnMemoryMovie`).
+    pub const ON_MEMORY_MOVIE: u32 = 0xe0;
+    /// `u32`: the random encounter status.
+    pub const RANDOM_ENCOUNT: u32 = 0xe4;
+    /// `u16`: `AtelGetBattleEndTagAlways`.
+    pub const BATTLE_END_TAG_ALWAYS: u32 = 0xe8;
+    /// `u16`: the sphere monitor.
+    pub const SPHERE_MONITOR: u32 = 0xea;
+    /// `u16`: the scenario flag (story progress).
+    pub const SCENARIO_FLAG: u32 = 0xbec;
+}
+
+fn save_at(mem: &impl Mem, off: u32) -> u32 {
+    SAVE_DATA.ptr(mem).addr + off
+}
+
+fn pad_word(mem: &impl Mem, i: u32) -> u16 {
+    mem.read(PAD_HELD.ptr(mem).addr + 4 * i)
+}
+
+/// `AtelGetControlerT()` (`0x0086af30`): the buttons held (`AX` only; the
+/// upper half of `EAX` is the caller's).
+pub fn atel_get_controler_t(mem: &impl Mem) -> u16 {
+    pad_word(mem, 0)
+}
+
+/// `AtelGetControlerRept()` (`0x0086af50`): the repeat buttons.
+pub fn atel_get_controler_rept(mem: &impl Mem) -> u16 {
+    pad_word(mem, 2)
+}
+
+/// `AtelGetControlerHist1c()` (`0x0086af60`): the history's `+0x1c` word.
+pub fn atel_get_controler_hist1c(mem: &impl Mem) -> u16 {
+    pad_word(mem, 3)
+}
+
+/// `AtelGetControler()` (`0x0086af70`): the buttons newly pressed.
+pub fn atel_get_controler(mem: &impl Mem) -> u16 {
+    pad_word(mem, 4)
+}
+
+/// `AtelGetControlerHist08()` (`0x0086af80`): the history's `+8` word.
+pub fn atel_get_controler_hist08(mem: &impl Mem) -> u16 {
+    pad_word(mem, 5)
+}
+
+/// `AtelGetHalfTurnAngle()` (`0x00873ad0`): the `f32` (as bits) it loads
+/// into `ST0`.
+pub fn atel_get_half_turn_angle(mem: &impl Mem) -> u32 {
+    HALF_TURN_ANGLE.get(mem)
+}
+
+/// `AtelSetHalfTurnAngle(deg)` (`0x00873e50`), through the x87.
+pub fn atel_set_half_turn_angle(mem: &mut impl Mem, bits: u32) {
+    HALF_TURN_ANGLE.set(mem, through_x87(bits));
+}
+
+/// `AtelGetOverlayStatus()` (`0x0086c200`).
+pub fn atel_get_overlay_status(mem: &impl Mem) -> u32 {
+    u32::from(OVERLAY_STATUS.get(mem))
+}
+
+/// `AtelGetVoicePan()` (`0x00873b80`).
+pub fn atel_get_voice_pan(mem: &impl Mem) -> u32 {
+    u32::from(VOICE_PAN.get(mem))
+}
+
+/// `AtelSetVoicePan(pan)` (`0x00873d10`).
+pub fn atel_set_voice_pan(mem: &mut impl Mem, pan: u8) {
+    VOICE_PAN.set(mem, pan);
+}
+
+/// `AtelGetVagStreamVolume()` (`0x00873b90`).
+pub fn atel_get_vag_stream_volume(mem: &impl Mem) -> u32 {
+    u32::from(VAG_STREAM_VOLUME.get(mem))
+}
+
+/// `AtelSetVagStreamVolume(v)` (`0x00873d20`).
+pub fn atel_set_vag_stream_volume(mem: &mut impl Mem, v: u8) {
+    VAG_STREAM_VOLUME.set(mem, v);
+}
+
+/// `AtelGetBattleStatus()` (`0x0086a9b0`): bit 0 of ctrl work 0's
+/// `+0x210`.
+pub fn atel_get_battle_status(mem: &impl Mem) -> u32 {
+    mem.read::<u32>(CTRL_WORKS.ptr(mem).addr + ctrl::FIELD_STATE) & 1
+}
+
+fn keep_play_status(mem: &impl Mem) -> u32 {
+    mem.read(word(BATTLE_END_STATUS, mem, 1))
+}
+
+/// `AtelGetKeepPlayStatusWhiteInOut()` (`0x0086bc30`): bit 17 of the
+/// battle end status `+4`.
+pub fn atel_get_keep_play_status_white_in_out(mem: &impl Mem) -> u32 {
+    keep_play_status(mem) >> 17 & 1
+}
+
+/// `AtelGetKeepPlayStatusNoStopFanfare()` (`0x0086bc60`): bit 13.
+pub fn atel_get_keep_play_status_no_stop_fanfare(mem: &impl Mem) -> u32 {
+    keep_play_status(mem) >> 13 & 1
+}
+
+/// `AtelIsKeepPlayStatusClear12()` (`0x0086bc10`): 1 when bit 12 of the
+/// battle end status `+4` is clear.
+pub fn atel_is_keep_play_status_clear12(mem: &impl Mem) -> u32 {
+    !(keep_play_status(mem) >> 12) & 1
+}
+
+/// `AtelIsKeepPlayStatusClear8()` (`0x0086bc20`).
+pub fn atel_is_keep_play_status_clear8(mem: &impl Mem) -> u32 {
+    !(keep_play_status(mem) >> 8) & 1
+}
+
+/// `AtelIsKeepPlayStatusClear11()` (`0x0086bc50`): with it clear the
+/// battle's end keeps the music (`0x008bdf60`).
+pub fn atel_is_keep_play_status_clear11(mem: &impl Mem) -> u32 {
+    !(keep_play_status(mem) >> 11) & 1
+}
+
+/// `AtelIsBattleEndStatusClear8()` (`0x0086c280`): 1 when bit 8 of the
+/// battle end status is clear.
+pub fn atel_is_battle_end_status_clear8(mem: &impl Mem) -> u32 {
+    !(BATTLE_END_STATUS.get(mem) >> 8) & 1
+}
+
+/// `AtelIsBattleEndStatusClear9()` (`0x0086c290`).
+pub fn atel_is_battle_end_status_clear9(mem: &impl Mem) -> u32 {
+    !(BATTLE_END_STATUS.get(mem) >> 9) & 1
+}
+
+/// `AtelClearCameraMatrixFlag()` (`0x008772e0`).
+pub fn atel_clear_camera_matrix_flag(mem: &mut impl Mem) {
+    CAMERA_MATRIX_FLAG.set(mem, u32::MAX);
+}
+
+/// `AtelRegistExpandFTCAdrs(adrs)` (`0x00873cf0`).
+pub fn atel_regist_expand_ftc_adrs(mem: &mut impl Mem, adrs: u32) {
+    EXPAND_FTC_ADRS.set(mem, adrs);
+}
+
+/// `AtelSetEventMode(mode)` (`0x00873e40`): `g_AtelMapIdPage + 3`.
+pub fn atel_set_event_mode(mem: &mut impl Mem, mode: u8) {
+    MAP_ID_PAGE.ptr(mem).at(3).set(mem, mode);
+}
+
+/// `setMegasAdding(v)` (`0x00860f20`).
+pub fn set_megas_adding(mem: &mut impl Mem, v: u32) {
+    MEGAS_ADDING.set(mem, v);
+}
+
+/// `AtelSetEffectParam(i, v)` (`0x0086fa60`): no bound on `i`.
+pub fn atel_set_effect_param(mem: &mut impl Mem, i: u32, v: u32) {
+    let at = EFFECT_PARAMS.ptr(mem).addr.wrapping_add(i.wrapping_mul(4));
+    mem.write(at, v);
+}
+
+/// `AtelSetEffectState(v)` (`0x0086fa80`).
+pub fn atel_set_effect_state(mem: &mut impl Mem, v: u32) {
+    EFFECT_STATE.set(mem, v);
+}
+
+/// `AtelGetBattleSceneGroup()` (`0x0086a9a0`).
+pub fn atel_get_battle_scene_group(mem: &impl Mem) -> u32 {
+    u32::from(mem.read::<u8>(save_at(mem, save::BATTLE_SCENE_GROUP)))
+}
+
+/// `AtelSetBattleSceneGroup(g)` (`0x0086f3c0`).
+pub fn atel_set_battle_scene_group(mem: &mut impl Mem, g: u8) {
+    let at = save_at(mem, save::BATTLE_SCENE_GROUP);
+    mem.write(at, g);
+}
+
+/// `AtelSetMapFadeType(t)` (`0x008700c0`).
+pub fn atel_set_map_fade_type(mem: &mut impl Mem, t: u8) {
+    let at = save_at(mem, save::MAP_FADE_TYPE);
+    mem.write(at, t);
+}
+
+/// `AtelSetMapFadeFrames(n)` (`0x008700d0`).
+pub fn atel_set_map_fade_frames(mem: &mut impl Mem, n: u8) {
+    let at = save_at(mem, save::MAP_FADE_FRAMES);
+    mem.write(at, n);
+}
+
+fn battle_status_bit(mem: &impl Mem, bit: u32) -> u32 {
+    u32::from(mem.read::<u8>(save_at(mem, save::BATTLE_STATUS))) >> bit & 1
+}
+
+/// `AtelGetBattleStatusDummyEnc()` (`0x0086a9c0`): bit 2.
+pub fn atel_get_battle_status_dummy_enc(mem: &impl Mem) -> u32 {
+    battle_status_bit(mem, 2)
+}
+
+/// `AtelGetBattleStatusSys()` (`0x0086a9d0`): bit 1.
+pub fn atel_get_battle_status_sys(mem: &impl Mem) -> u32 {
+    battle_status_bit(mem, 1)
+}
+
+/// `TkGetLastEventJumpIndex()` (`0x0086d9d0`).
+pub fn tk_get_last_event_jump_index(mem: &impl Mem) -> u32 {
+    u32::from(mem.read::<u8>(save_at(mem, save::LAST_EVENT_JUMP_INDEX)))
+}
+
+/// `AtelGetOnMemoryMovieFileNo()` (`0x00873b10`).
+pub fn atel_get_on_memory_movie_file_no(mem: &impl Mem) -> u32 {
+    mem.read(save_at(mem, save::ON_MEMORY_MOVIE))
+}
+
+/// `AtelSetOnMemoryMovie(n)` (`0x00873e90`).
+pub fn atel_set_on_memory_movie(mem: &mut impl Mem, n: u32) {
+    let at = save_at(mem, save::ON_MEMORY_MOVIE);
+    mem.write(at, n);
+}
+
+/// `AtelGetSaveD8()` (`0x00873b20`).
+pub fn atel_get_save_d8(mem: &impl Mem) -> u32 {
+    mem.read(save_at(mem, save::WORD_D8))
+}
+
+/// `AtelGetSaveDC()` (`0x00873b30`).
+pub fn atel_get_save_dc(mem: &impl Mem) -> u32 {
+    mem.read(save_at(mem, save::WORD_D8 + 4))
+}
+
+/// `AtelGetRandomEncountStatus()` (`0x00873b40`).
+pub fn atel_get_random_encount_status(mem: &impl Mem) -> u32 {
+    mem.read(save_at(mem, save::RANDOM_ENCOUNT))
+}
+
+/// `AtelGetScenarioFlag()` (`0x0086c470`).
+pub fn atel_get_scenario_flag(mem: &impl Mem) -> u32 {
+    u32::from(mem.read::<u16>(save_at(mem, save::SCENARIO_FLAG)))
+}
+
+/// `AtelGetAlbhedRikku()` (`0x0086a7e0`).
+pub fn atel_get_albhed_rikku(mem: &impl Mem) -> u32 {
+    u32::from(mem.read::<u8>(save_at(mem, save::ALBHED_RIKKU)))
+}
+
+/// `AtelGetSphereMonitor()` (`0x0086c4b0`): `mov ax`, so `EAX` keeps the
+/// upper half of `&g_SaveData`.
+pub fn atel_get_sphere_monitor(mem: &impl Mem) -> u32 {
+    let s = save_at(mem, 0);
+    s & 0xffff_0000 | u32::from(mem.read::<u16>(s + save::SPHERE_MONITOR))
+}
+
+/// `AtelGetWaterBattleEffect()` (`0x0086c8a0`).
+pub fn atel_get_water_battle_effect(mem: &impl Mem) -> u32 {
+    u32::from(mem.read::<u8>(save_at(mem, save::WATER_BATTLE_EFFECT)))
+}
+
+/// `AtelGetBattleEndTagAlways()` (`0x00873a90`).
+pub fn atel_get_battle_end_tag_always(mem: &impl Mem) -> u32 {
+    u32::from(mem.read::<u16>(save_at(mem, save::BATTLE_END_TAG_ALWAYS)))
+}
+
+/// `AtelGetMapMarkerX()` (`0x00873ae0`).
+pub fn atel_get_map_marker_x(mem: &impl Mem) -> u32 {
+    u32::from(mem.read::<u16>(save_at(mem, save::MAP_MARKER)))
+}
+
+/// `AtelGetMapMarkerY()` (`0x00873af0`).
+pub fn atel_get_map_marker_y(mem: &impl Mem) -> u32 {
+    u32::from(mem.read::<u16>(save_at(mem, save::MAP_MARKER + 2)))
+}
+
+/// `AtelClearForcePlaceId()` (`0x008638b0`).
+pub fn atel_clear_force_place_id(mem: &mut impl Mem) {
+    let at = save_at(mem, save::FORCE_PLACE_ID);
+    mem.write(at, 0u8);
+}
+
+/// `graphicSetForceNoVsync` (`0x00643200`), which the menu treasure flag
+/// toggles.
+pub const GRAPHIC_SET_FORCE_NO_VSYNC: u32 = 0x0064_3200;
+
+/// `AtelSetMenuOtakaraFlag()` (`0x00873e80`): the flag, then
+/// `graphicSetForceNoVsync(1)`, whose `EAX` it returns.
+pub fn atel_set_menu_otakara_flag(host: &mut impl super::Host) -> u32 {
+    MENU_OTAKARA_FLAG.set(host, 1);
+    let f = host.rebase(GRAPHIC_SET_FORCE_NO_VSYNC);
+    host.call(f, &[1])
+}
+
+/// `AtelClearMenuOtakaraFlag()` (`0x00872b60`): as
+/// [`atel_set_menu_otakara_flag`] with 0.
+pub fn atel_clear_menu_otakara_flag(host: &mut impl super::Host) -> u32 {
+    MENU_OTAKARA_FLAG.set(host, 0);
+    let f = host.rebase(GRAPHIC_SET_FORCE_NO_VSYNC);
+    host.call(f, &[0])
+}
+
+/// `AtelInitActor()` (`0x0086cae0`): the current ctrl work's `+0x50`
+/// callback with the ctrl work; without one `EAX` is the ctrl work.
+pub fn atel_init_actor(host: &mut impl super::Host) -> u32 {
+    let c = CONTEXT.get(host);
+    let f = host.read::<u32>(c + ctrl::INIT_ACTOR);
+    if f == 0 {
+        return c;
+    }
+    host.call(f, &[c])
+}
+
+/// `AtelGetBindPCFromID(index)` (`0x0086ae00`): worker `+0x40`.
+pub fn atel_get_bind_pc_from_id(mem: &mut impl Mem, index: i32) -> u32 {
+    let w = super::atel_get_basic_work(mem, index);
+    mem.read(w + worker::BIND_PC)
 }

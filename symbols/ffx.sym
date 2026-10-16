@@ -3737,6 +3737,7 @@
 0x00860760 function Native_MsgShowWait_Result    # 0x013b int: tail call to 0x0085a6f0 -> chosen option (-1 none)
 0x00860a60 function debugSetRikkuName         # fh switch:cg2 0x71008aefb8
 0x00860a90 function getMegasAdding            # fh v3:bsim1.00 0x00860a30
+0x00860f20 function setMegasAdding            # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_MegasAdding = v (getMegasAdding 0x00860a90)
 0x00860f50 function AtelAllClearBindMask      # fh v3:exact 0x00860ef0
 0x00860fd0 function AtelAllClearEffectFlag    # fh v3:bsim1.00 0x00860f70
 0x00861000 function AtelBGSepFade             # fh v3:bsim1.00 0x00860fa0
@@ -3792,7 +3793,10 @@
 0x0086a830 function AtelGetBasicWork          # worker index -> worker object (0xb58/0x558/0x5b8 sizes); was Script_GetWorker
 0x0086a970 function AtelGetBattleIdAdrs       # fh v3:bsim1.00 0x0086a900
 0x0086a990 function AtelGetBattleIdAdrs2      # fh switch:cg2 0x71008af3c8
+0x0086a9a0 function AtelGetBattleSceneGroup   # g_SaveData +0x10 (u8), what AtelSetBattleSceneGroup writes; read by 0x008848a0
+0x0086a9b0 function AtelGetBattleStatus       # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): bit 0 of ctrl work 0 +0x210 (0x01325db0)
 0x0086a9c0 function AtelGetBattleStatusDummyEnc # fh v3:bsim1.00 0x0086a950
+0x0086a9d0 function AtelGetBattleStatusSys    # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): bit 1 of g_SaveData +0x13 (AtelGetBattleStatusDummyEnc: bit 2)
 0x0086aa20 function AtelGetBinHdrExpandAddChr # fh v3:bsim1.00 0x0086a9b0
 0x0086ad20 function AtelGetBinHdrExpandSoundEvent # fh v3:exact 0x0086acb0
 0x0086adc0 function AtelGetBinHdrExpandSpFlags # fh v3:bsim1.00 0x0086ad50
@@ -3801,6 +3805,11 @@
 0x0086ae80 function AtelGetCharHandle         # (worker) -> field character object (worker + 0x9c); used by every chr native of group 5; was Script_WorkerChr
 0x0086ae90 function AtelGetCharHandleFromBindPC # fh v3:bsim1.00 0x0086ae20
 0x0086aee0 function AtelGetCharHandleFromBindPC2 # fh v3:bsim1.00 0x0086ae70
+0x0086af30 function AtelGetControlerT         # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): AX = g_AtelPadHeld (upper EAX is the caller's); ffx_script::vm::bridge::globals
+0x0086af50 function AtelGetControlerRept      # AX = g_AtelPadRepeat; read by the natives at 0x0085e3c0/0x0085eda0
+0x0086af60 function AtelGetControlerHist1c    # AX = g_AtelPadHist1c; natives 0x0085e5e0/0x0085ef50
+0x0086af70 function AtelGetControler          # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): AX = g_PadPressed
+0x0086af80 function AtelGetControlerHist08    # AX = g_AtelPadHist08; natives 0x0085ea80/0x0085f2a0
 0x0086afa0 function AtelGetCtrlWork           # fh v3:exact 0x0086af30
 0x0086afc0 function AtelGetCtrlWorkStatus     # fh v3:exact 0x0086af50
 0x0086afe0 function AtelGetCtrlworkActorTotal # fh v3:bsim1.00 0x0086af70
@@ -3829,6 +3838,11 @@
 0x0086ba90 function Msg_TextAlt                # (i): entry i's alternate text (+4) in the event's message table (script context +0x34); offset 0 falls back to the .ebp's own table (0x023cbd60)
 0x0086bb80 function AtelGetIndexWork          # fh v3:exact 0x0086bb10
 0x0086bbf0 function AtelGetKeepBattlePartyFromID # fh v3:exact 0x0086bb80
+0x0086bc10 function AtelIsKeepPlayStatusClear12# !(g_AtelBattleEndStatus +4 bit 12); TkBtlEndCtrl
+0x0086bc20 function AtelIsKeepPlayStatusClear8# !(g_AtelBattleEndStatus +4 bit 8); TkBtlEndCtrl
+0x0086bc30 function AtelGetKeepPlayStatusWhiteInOut# Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_AtelBattleEndStatus +4 bit 17
+0x0086bc50 function AtelIsKeepPlayStatusClear11# !(g_AtelBattleEndStatus +4 bit 11): 0x008bdf60 stops the music (AtelRegistMusicNumber(-1)) when clear
+0x0086bc60 function AtelGetKeepPlayStatusNoStopFanfare# Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_AtelBattleEndStatus +4 bit 13
 0x0086bd90 function AtelGetMapIndex           # fh v3:exact 0x0086bd20
 0x0086be50 function AtelGetMenuMask           # fh switch:cg2 0x71008bcd08
 0x0086be90 function AtelGetMesWinWork         # (i): message window i (<0 or >7 clamped), 0x2c bytes at 0x01326d70 + (i + *0x01326b82*8)*0x2c; was Msg_Window
@@ -3841,6 +3855,9 @@
 0x0086c160 function AtelGetMyWorkSize         # fh v3:exact 0x0086c0f0
 0x0086c190 function AtelGetNamespaceNumber    # fh v3:cg4 0x86c120
 0x0086c1a0 function AtelGetNowCtrlTopId       # fh v3:exact 0x0086c130
+0x0086c200 function AtelGetOverlayStatus      # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_AtelOverlayStatus (u8, AtelSetOverlayStatus)
+0x0086c280 function AtelIsBattleEndStatusClear8# !(g_AtelBattleEndStatus bit 8); 0x007917d0
+0x0086c290 function AtelIsBattleEndStatusClear9# !(g_AtelBattleEndStatus bit 9); 0x007917d0
 0x0086c2b0 function AtelGetPosWorkAdrs        # (worker): type 4 -> null, types 5/6 -> worker+0x284, else worker+0x558 (x,y,z +0; +0x30 pitch?, +0x34 yaw; +0x3c talk angle, +0x40 talk range); was Worker_PosBlock
 0x0086c2e0 function AtelGetRealVarAdrs        # (worker, location word) -> address: offset (bits 0-23) into the area of storage bits 25-27: 0 ctrl work +0x2c (save data in the field), 1 ctrl +0x30, 2/3/4 worker header +0x28/+0x2c/+0x30 (block-relative), 3 through the ctrl +0x54 callback when set, 5 worker +0x48, 6 block +0x20; 7 -> 0 (jump table 0x0086c3c8); was Script_VarAddress
 0x0086c3f0 function AtelGetRequestLevel       # fh v3:bsim1.00 0x0086c380
@@ -3871,6 +3888,7 @@
 0x0086d670 function AtelInitSourceCodeDebugWork # fh v3:exact 0x0086d600
 0x0086d6d0 function AtelInitTotal             # registers the native function tables per group; was Script_InitNatives
 0x0086d950 function AtelIsBind                # fh v3:exact 0x0086d8e0
+0x0086d9d0 function TkGetLastEventJumpIndex   # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_SaveData +0x20 (u8)
 0x0086d9e0 function Script_TopTwoInts         # (worker, stack) -> 1 when the top two slots are both integers (kind 1): Script_Run's integer or float choice for arithmetic and comparisons
 0x0086da10 function AtelJumpGameOver          # fh v3:exact+call.cs 0x0086d9a0 cdecl
 0x0086dc50 function AtelLinkSigWorkButtom     # fh v3:exact 0x0086dbe0
@@ -3902,6 +3920,8 @@
 0x0086f6a0 function Event_SetPlayer              # (worker id): ctx+0x0a = id; copies its position to ctx+0x218 and +0x228
 0x0086f730 function AtelSetCurrentCtrl        # fh v3:bsim1.00 0x0086f6c0
 0x0086fa40 function AtelSetEffectFlag         # fh v3:bsim1.00 0x0086f9d0
+0x0086fa60 function AtelSetEffectParam        # g_AtelEffectParams[i] = v, no bound; native 0x0085a250
+0x0086fa80 function AtelSetEffectState        # g_AtelEffectState = v; native 0x0085e9e0 sets 1 after AtelAllClearEffectFlag
 0x0086fc20 function AtelSetEncountBattleEndStatus # fh v3:bsim1.00 0x0086fbb0
 0x0086fc40 function AtelSetEventActorLinkWork # fh v3:exact 0x0086fbd0
 0x0086fd60 function AtelSetEventCharHandleFromID # fh v3:exact 0x0086fcf0
@@ -3910,6 +3930,8 @@
 0x0086fe20 function AtelSetEventElemPosFromID # fh v3:bsim1.00 0x0086fdb0
 0x0086fe60 function AtelSetEventElemStatus    # fh v3:exact 0x0086fdf0
 0x0086ff40 function AtelSetEventJump2         # (map, entrance, flag): drops control, 0x0088ea60, ctx byte 0 &= 0x7f, ctx+0x210 |= 2, fade (FUN_0088eb50); was Event_ChangeMap
+0x008700c0 function AtelSetMapFadeType        # g_SaveData +0x11 (u8); Native_SetMapFadeType
+0x008700d0 function AtelSetMapFadeFrames      # g_SaveData +0x12 (u8); Native_SetMapFadeFrames
 0x00870130 function AtelSetForceBattleMapId   # fh v3:bsim1.00 0x008700d0
 0x00870140 function AtelSetForcePlaceId       # fh switch:bsim1.00 0x7100472300
 0x008701f0 function AtelSetHelpEventFlag      # fh v3:exact 0x00870190
@@ -3962,11 +3984,25 @@
 0x00873a90 function AtelGetBattleEndTagAlways # fh v3:bsim1.00 0x00873a30
 0x00873aa0 function AtelGetEventMode          # fh v3:exact 0x00873a40
 0x00873ac0 function AtelGetExpandFTCAdrs      # fh v3:bsim1.00 0x00873a60
+0x00873ad0 function AtelGetHalfTurnAngle      # ST0 = g_AtelHalfTurnAngle (f32); Native_GetTurnKind
+0x00873ae0 function AtelGetMapMarkerX         # g_SaveData +0xb4 (u16, Native_SetMapMarkerPos); the menu at 0x008e2b60
+0x00873af0 function AtelGetMapMarkerY         # g_SaveData +0xb6 (u16)
 0x00873b00 function AtelGetMusicNumber        # fh v3:bsim1.00 0x00873aa0
+0x00873b10 function AtelGetOnMemoryMovieFileNo# Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_SaveData +0xe0, what AtelSetOnMemoryMovie writes
+0x00873b20 function AtelGetSaveD8             # g_SaveData +0xd8; read by 0x008807b0 (the Switch BSim name AtelGetBindPCFromID belongs to 0x0086ae00)
+0x00873b30 function AtelGetSaveDC             # g_SaveData +0xdc; read by 0x008807b0
+0x00873b40 function AtelGetRandomEncountStatus# Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_SaveData +0xe4
+0x00873b80 function AtelGetVoicePan           # g_AtelVoicePan (u8)
+0x00873b90 function AtelGetVagStreamVolume    # g_AtelVagStreamVolume (u8)
 0x00873c70 function AtelPs2DebugString        # fh v3:bsim1.00+call.cs 0x00873c10
 0x00873c80 function AtelPs2DebugString2       # fh call.cs
 0x00873cc0 function AtelRecoverPreBgPage      # fh v3:exact 0x00873c60
+0x00873cf0 function AtelRegistExpandFTCAdrs   # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_AtelExpandFTCAdrs = adrs
 0x00873d00 function AtelRegistMusicNumber     # fh v3:bsim1.00 0x00873ca0
+0x00873d10 function AtelSetVoicePan           # g_AtelVoicePan = pan (u8); native 0x0085f330 then iVoicePanDirect
+0x00873d20 function AtelSetVagStreamVolume    # g_AtelVagStreamVolume = v (u8); native 0x0085f110 then SndVagStreamVolumeDirect
+0x00873e40 function AtelSetEventMode          # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_AtelMapIdPage +3 (the event mode AtelGetEventMode reads)
+0x00873e50 function AtelSetHalfTurnAngle      # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_AtelHalfTurnAngle = deg (fld/fstp)
 0x00873e60 function AtelSetMapIdPage          # fh v3:exact 0x00873e00
 0x00873e80 function AtelSetMenuOtakaraFlag    # fh v3:bsim1.00 0x00873e20
 0x00873e90 function AtelSetOnMemoryMovie      # fh v3:bsim1.00 0x00873e30
@@ -3991,11 +4027,13 @@
 0x008762f0 function TkStopVibrateAll          # fh v3:exact 0x00876270
 0x008763e0 function TkGetVibrateCurve         # (kind, i, curve) -> u16 curve[i]; without a curve the default for kind: 2/3 0x00c52ae8, 5 0x00c52af8, 6 0x00c52b08, else 0x00c52ad8
 0x00876930 function AtelCalcSound             # fh switch:bsim1.00 0x7100478700
+0x008772e0 function AtelClearCameraMatrixFlag # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_AtelCameraMatrixFlag = -1
 0x00877330 function AtelClearSnd3dWorkAll     # fh v3:exact 0x008772b0
 0x00877420 function AtelInitCalcSound         # fh switch:bsim1.00 0x7100478a70
 0x00877450 function AtelSetSnd3dVolumeDiffRatio # fh v3:bsim1.00 0x008773d0
 0x00877460 function AtelSetSnd3dVolumeTotalRatio # fh v3:bsim1.00 0x008773e0
 0x00877730 function Script_PollNative         # slot 1; no handler = done
+0x00877770 function Script_NativeEntry        # (id) -> g_NativeTables[id >> 12] + (id & 0xfff) * 16; ffx_script::vm::bridge::run
 0x008777a0 function Script_CallNative         # slot 0 (start) of the native table entry
 0x008777f0 function Script_FinishNative       # slot 2 (float) or 3 (int) result, pushed
 0x00877880 function AtelSetUpCallFunc         # (group, table); was Script_SetNativeTable
@@ -7760,20 +7798,25 @@
 0x01325ba0 label    g_AtelCtrlWorks              # 7 ctrl works x 0x238 (AtelGetCtrlWork); g_ScriptContext follows; layout in ffx_script::vm::ctrl
 0x01326b28 label    g_ScriptContext              # current ctrl work (AtelGetCurCtrlWork, AtelSetCurrentCtrl): +0x0a player worker, +0x0c actor count, +0x10 worker count, +0x1c workers, +0x2c/+0x30 variable storage 0/1, +0x218 player position, +0x1e4/0x1f0 talk state (ffx_script::vm::ctrl)
 0x01326b48 label    g_AtelBattleEndStatus        # +0 status (AtelInitBattleEndStatus: 0x10001; bit 16 clear = AtelGetStatusWinFadeOut), +4 keep-recover type (AtelSetBattleEndKeepRecoverType, low byte cleared), +8/+0xc (AtelSetEncountBattleEndStatus writes +0, +8, +0xc)
+0x01326b58 label    g_AtelEffectState         # u32: AtelSetEffectState (0x0086fa80)
 0x01326b5c label    g_AtelMotionRequest          # three words; AtelInitMotionRequest (0x0086d4c0) sets -1, -1, 0
 0x01326b6c label    g_AtelShopRatio              # written by AtelSetShopRatio (0x00870f60)
 0x01326b70 label    g_AtelEffectFlags            # 32 flags: AtelGetEffectFlag/AtelSetEffectFlag (bit mod 32), AtelAllClearEffectFlag
 0x01326b74 label    g_AtelMenuMask               # AtelGetMenuMask (0x0086be50), AtelClearAllMenuMask (0x00863620)
 0x01326b80 label    g_AtelOverlayStatus          # u8: AtelSetOverlayStatus (0x00870900)
 0x01326b81 label    g_AtelNotAuronPatchFlag      # u8: cleared by AtelClearNotAuronPatchFlag (0x00863f90)
-0x01326b82 label    g_AtelMenuExecStatus         # i8: AtelSetMenuExecStatus; selects the bank of g_MsgWindows (AtelGetMesWinWork)
+0x01326b82 label    g_AtelMenuExecStatus         # i8: AtelSetMenuExecStatus; selects the bank of g_AtelMsgWindows (AtelGetMesWinWork)
 0x01326b84 label    g_AtelBattleEndMovieFadeout  # three words written by AtelRegistBattleEndMovieFadeout (0x0086e840)
 0x01326b90 label    g_AtelLoveParamDisable       # cleared by AtelClearLoveParamDisable (0x00863ae0)
 0x01326bd8 label    g_GameSpeed                  # f32: Script_Run multiplies a worker's speed (+0x94) by it into its accumulator (+0x98)
 0x01326ce0 label    g_AtelEffectParams           # four words: AtelGetEffectParam (0x0086b050), AtelClearEffectParam (0x00863880)
 0x01326cf0 label    g_AtelMCFPInWater            # four words written by AtelSetMCFPInWater (0x00870280)
-0x01326d70 label    g_MsgWindows                 # 2 banks x 8 message windows, 0x2c bytes: +0x14 state, +0x16 Msg_Flags, +0x18 display flags, +0x1d mode flags
+0x01326d70 label    g_AtelMsgWindows             # 2 banks x 8 message windows, 0x2c bytes: +0x14 state, +0x16 Msg_Flags, +0x18 display flags, +0x1d mode flags
+0x013270c0 label    g_AtelPadHeld             # u16 words every 4 bytes, ORed over the frames since the update (AtelExec_Internal_871d10): +0 pad 0 held (TkGetControlerHist), +4 pad 1 held, +8 repeat, +0xc history +0x1c, +0x10 g_PadPressed, +0x14 history +8
+0x013270c8 label    g_AtelPadRepeat           # u16: TkGetControlerReptHist ORed (AtelGetControlerRept)
+0x013270cc label    g_AtelPadHist1c           # u16: the pad history's +0x1c word ORed (AtelGetControlerHist1c)
 0x013270d0 label    g_PadPressed                 # buttons newly pressed this frame, OR over pads (0x00871d70)
+0x013270d4 label    g_AtelPadHist08           # u16: the pad history's +8 word ORed (AtelGetControlerHist08)
 0x013270d8 label    g_AtelError                  # set to 0 where the PS2 code reported a script error (stack over/underflow, bad request); AtelGetBasicWork adds 1 (mod 256) for an index past the end; saved and restored around calls by 0x008630c0 and 0x0086a470
 0x013270dc label    g_AtelBasicWorkCacheCtrl     # u16: ctrl work number (+0x1a) of the worker AtelGetBasicWork cached
 0x013270e0 label    g_AtelBasicWorkCacheIndex    # u16: index of the worker AtelGetBasicWork cached
@@ -7781,7 +7824,10 @@
 0x013270f0 label    g_AtelMenuOtakaraFlag        # i8 read by AtelCheckMenuOtakaraFlag (0x00872b50)
 0x0132711c label    g_AtelMapIdPage              # bytes: +0 state (AtelSetMapIdPage 2, AtelClearPreBgPage 0), +1 (0xff when cleared), +2 page, +3 event mode (AtelGetEventMode; 0xff reads as 1)
 0x01327120 label    g_AtelExpandFTCAdrs          # read by AtelGetExpandFTCAdrs (0x00873ac0)
+0x01327124 label    g_AtelHalfTurnAngle       # f32 degrees: AtelSetHalfTurnAngle; Native_GetTurnKind's threshold
 0x01327130 label    g_AtelMusicNumber            # AtelGetMusicNumber (0x00873b00), AtelRegistMusicNumber (0x00873d00)
+0x01327134 label    g_AtelVagStreamVolume     # u8: AtelSetVagStreamVolume; 0x7f after an event set-up (0x00872ef0)
+0x01327135 label    g_AtelVoicePan            # u8: AtelSetVoicePan; 0x3f after an event set-up (0x00872ef0)
 0x01327138 label    g_AtelPauseFlag              # two words cleared by AtelClearPauseFlag (0x00872b70)
 0x01327148 label    g_EventSprites               # 128 x 0x1c: +0 active, +1 alpha, +4/+6 x/y, +8/+0xa scale*256, +0xc frame, +0x10 rgb, +0x14 data; drawn by 0x00874420
 0x01327f50 label    g_AtelCallbackQue            # entries of 0x100 bytes, first word non-zero = queued: AtelCheckCallbackQue(i) (0x00875000), AtelIsCallbackQue (entry 0)
@@ -7789,6 +7835,7 @@
 0x01328270 label    g_TkVibrateVolume         # 2 x u8 (TkGetVibrateVolume reports them, 0 when g_TkVibrateOff)
 0x01328272 label    g_TkVibrateOff            # nonzero: TkGetVibrateVolume reports 0, 0
 0x01328274 label    g_TkVibrateMask           # u16, pads allowed to vibrate (TkSetVibrateMask: bit per pad; pad < 0: 0xff or 0)
+0x01328308 label    g_AtelCameraMatrixFlag    # u32: -1 when cleared (AtelClearCameraMatrixFlag 0x008772e0)
 0x0132830c label    g_AtelSnd3dVolumeTotalRatio  # f32: AtelSetSnd3dVolumeTotalRatio (0x00877460); zeroed by AtelClearSnd3dWorkAll
 0x01328310 label    g_AtelSnd3dVolumeDiffRatio   # f32: AtelSetSnd3dVolumeDiffRatio (0x00877450); zeroed by AtelClearSnd3dWorkAll
 0x01328318 label    g_AtelSnd3dWork              # 16 x 0x24 bytes; AtelClearSnd3dWorkAll (0x00877330) clears +0, +4, +0x20 (u16) of each

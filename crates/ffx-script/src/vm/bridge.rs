@@ -28,8 +28,9 @@ pub const CACHE_CTRL: Global<u16> = Global::new(0x0132_70dc);
 pub const CACHE_INDEX: Global<u16> = Global::new(0x0132_70e0);
 /// `g_AtelBasicWorkCache`: the cached worker, 0 for none.
 pub const CACHE_WORK: Global<u32> = Global::new(0x0132_70e4);
-/// `g_MsgWindows`: two banks of eight message windows.
-pub const MSG_WINDOWS: Global<u8> = Global::new(0x0132_6d70);
+/// `g_AtelMsgWindows`: two banks of eight message windows (not the
+/// system's `g_MsgWindows` at `0x018676f0`).
+pub const ATEL_MSG_WINDOWS: Global<u8> = Global::new(0x0132_6d70);
 /// `g_AtelMenuExecStatus`: the message window bank in use.
 pub const MENU_EXEC_STATUS: Global<i8> = Global::new(0x0132_6b82);
 /// The build date `AtelGetVersion` returns.
@@ -263,7 +264,7 @@ pub fn atel_remove_ctrl_work(mem: &mut impl Mem, i: u32) {
 pub fn atel_get_mes_win_work(mem: &impl Mem, i: i32) -> u32 {
     let bank = i32::from(MENU_EXEC_STATUS.get(mem));
     let n = i.clamp(0, 7).wrapping_add(bank.wrapping_mul(8)) as u32;
-    MSG_WINDOWS
+    ATEL_MSG_WINDOWS
         .ptr(mem)
         .addr
         .wrapping_add(n.wrapping_mul(MSG_WINDOW_SIZE))

@@ -112,6 +112,37 @@ impl v::Host for Run<'_> {
     }
 }
 
+impl run::NativeHost for Run<'_> {
+    fn call_float(&mut self, addr: u32, args: &[u32]) -> f64 {
+        let r = self.0.call(addr, Conv::Cdecl, args).unwrap();
+        let raw = r.st0_raw.expect("a float native leaves ST0");
+        // pop it, as the original's fstp does
+        let ftol = self.0.rebase(FTOL2);
+        self.0.call(ftol, Conv::Cdecl, &[]).unwrap();
+        f80_to_f64(raw)
+    }
+}
+
+/// An 80-bit x87 value as `fstp m64` stores it, NaN payloads kept (the
+/// values natives leave are already rounded to 53 bits).
+fn f80_to_f64(raw: [u8; 10]) -> f64 {
+    let mant = u64::from_le_bytes(raw[..8].try_into().unwrap());
+    let se = u16::from_le_bytes([raw[8], raw[9]]);
+    let sign = u64::from(se >> 15) << 63;
+    if se & 0x7fff == 0x7fff && mant << 1 != 0 {
+        // NaN: quiet, the top 52 fraction bits kept
+        return f64::from_bits(sign | 0x7ff8_0000_0000_0000 | (mant << 1) >> 12);
+    }
+    let x = if se.trailing_zeros() >= 15 && mant == 0 {
+        0.0
+    } else {
+        #[allow(clippy::cast_precision_loss)] // exact for 53-bit values
+        let m = mant as f64;
+        m * 2f64.powi(i32::from(se & 0x7fff) - 16383 - 63)
+    };
+    f64::from_bits(sign | x.to_bits())
+}
+
 struct Xorshift(u32);
 
 impl Xorshift {
@@ -1117,6 +1148,263 @@ fn globals_match_the_original() {
     }
 }
 
+/// A getter of the second batch: address, name, the bridge.
+type Getter = (u32, &'static str, fn(&mut Oracle) -> u32);
+
+/// The second batch of global accessors: the pad words, the battle end
+/// and keep-play bits, the save data fields, the sound bytes.
+#[allow(clippy::too_many_lines)] // a table
+fn getters() -> Vec<Getter> {
+    use ffx_script::vm::bridge::globals as g;
+    vec![
+        (0x0086_af30, "AtelGetControlerT", |b| {
+            u32::from(g::atel_get_controler_t(b))
+        }),
+        (0x0086_af50, "AtelGetControlerRept", |b| {
+            u32::from(g::atel_get_controler_rept(b))
+        }),
+        (0x0086_af60, "AtelGetControlerHist1c", |b| {
+            u32::from(g::atel_get_controler_hist1c(b))
+        }),
+        (0x0086_af70, "AtelGetControler", |b| {
+            u32::from(g::atel_get_controler(b))
+        }),
+        (0x0086_af80, "AtelGetControlerHist08", |b| {
+            u32::from(g::atel_get_controler_hist08(b))
+        }),
+        (0x0086_c200, "AtelGetOverlayStatus", |b| {
+            g::atel_get_overlay_status(b)
+        }),
+        (0x0087_3b80, "AtelGetVoicePan", |b| g::atel_get_voice_pan(b)),
+        (0x0087_3b90, "AtelGetVagStreamVolume", |b| {
+            g::atel_get_vag_stream_volume(b)
+        }),
+        (0x0086_a9b0, "AtelGetBattleStatus", |b| {
+            g::atel_get_battle_status(b)
+        }),
+        (0x0086_bc30, "AtelGetKeepPlayStatusWhiteInOut", |b| {
+            g::atel_get_keep_play_status_white_in_out(b)
+        }),
+        (0x0086_bc60, "AtelGetKeepPlayStatusNoStopFanfare", |b| {
+            g::atel_get_keep_play_status_no_stop_fanfare(b)
+        }),
+        (0x0086_bc10, "AtelIsKeepPlayStatusClear12", |b| {
+            g::atel_is_keep_play_status_clear12(b)
+        }),
+        (0x0086_bc20, "AtelIsKeepPlayStatusClear8", |b| {
+            g::atel_is_keep_play_status_clear8(b)
+        }),
+        (0x0086_bc50, "AtelIsKeepPlayStatusClear11", |b| {
+            g::atel_is_keep_play_status_clear11(b)
+        }),
+        (0x0086_c280, "AtelIsBattleEndStatusClear8", |b| {
+            g::atel_is_battle_end_status_clear8(b)
+        }),
+        (0x0086_c290, "AtelIsBattleEndStatusClear9", |b| {
+            g::atel_is_battle_end_status_clear9(b)
+        }),
+        (0x0086_a9a0, "AtelGetBattleSceneGroup", |b| {
+            g::atel_get_battle_scene_group(b)
+        }),
+        (0x0086_a9c0, "AtelGetBattleStatusDummyEnc", |b| {
+            g::atel_get_battle_status_dummy_enc(b)
+        }),
+        (0x0086_a9d0, "AtelGetBattleStatusSys", |b| {
+            g::atel_get_battle_status_sys(b)
+        }),
+        (0x0086_d9d0, "TkGetLastEventJumpIndex", |b| {
+            g::tk_get_last_event_jump_index(b)
+        }),
+        (0x0087_3b10, "AtelGetOnMemoryMovieFileNo", |b| {
+            g::atel_get_on_memory_movie_file_no(b)
+        }),
+        (0x0087_3b20, "AtelGetSaveD8", |b| g::atel_get_save_d8(b)),
+        (0x0087_3b30, "AtelGetSaveDC", |b| g::atel_get_save_dc(b)),
+        (0x0087_3b40, "AtelGetRandomEncountStatus", |b| {
+            g::atel_get_random_encount_status(b)
+        }),
+        (0x0086_c470, "AtelGetScenarioFlag", |b| {
+            g::atel_get_scenario_flag(b)
+        }),
+        (0x0086_a7e0, "AtelGetAlbhedRikku", |b| {
+            g::atel_get_albhed_rikku(b)
+        }),
+        (0x0086_c4b0, "AtelGetSphereMonitor", |b| {
+            g::atel_get_sphere_monitor(b)
+        }),
+        (0x0086_c8a0, "AtelGetWaterBattleEffect", |b| {
+            g::atel_get_water_battle_effect(b)
+        }),
+        (0x0087_3a90, "AtelGetBattleEndTagAlways", |b| {
+            g::atel_get_battle_end_tag_always(b)
+        }),
+        (0x0087_3ae0, "AtelGetMapMarkerX", |b| {
+            g::atel_get_map_marker_x(b)
+        }),
+        (0x0087_3af0, "AtelGetMapMarkerY", |b| {
+            g::atel_get_map_marker_y(b)
+        }),
+    ]
+}
+
+/// A setter of the second batch: address, name, the bridge with the
+/// argument.
+type Setter = (u32, &'static str, fn(&mut Oracle, u32));
+
+fn setters() -> Vec<Setter> {
+    use ffx_script::vm::bridge::globals as g;
+    vec![
+        (0x0087_3e50, "AtelSetHalfTurnAngle", |b, x| {
+            g::atel_set_half_turn_angle(b, x);
+        }),
+        (0x0087_3d10, "AtelSetVoicePan", |b, x| {
+            g::atel_set_voice_pan(b, x.to_le_bytes()[0]);
+        }),
+        (0x0087_3d20, "AtelSetVagStreamVolume", |b, x| {
+            g::atel_set_vag_stream_volume(b, x.to_le_bytes()[0]);
+        }),
+        (0x0087_3cf0, "AtelRegistExpandFTCAdrs", |b, x| {
+            g::atel_regist_expand_ftc_adrs(b, x);
+        }),
+        (0x0087_3e40, "AtelSetEventMode", |b, x| {
+            g::atel_set_event_mode(b, x.to_le_bytes()[0]);
+        }),
+        (0x0086_0f20, "setMegasAdding", |b, x| {
+            g::set_megas_adding(b, x);
+        }),
+        (0x0086_fa80, "AtelSetEffectState", |b, x| {
+            g::atel_set_effect_state(b, x);
+        }),
+        (0x0086_f3c0, "AtelSetBattleSceneGroup", |b, x| {
+            g::atel_set_battle_scene_group(b, x.to_le_bytes()[0]);
+        }),
+        (0x0087_00c0, "AtelSetMapFadeType", |b, x| {
+            g::atel_set_map_fade_type(b, x.to_le_bytes()[0]);
+        }),
+        (0x0087_00d0, "AtelSetMapFadeFrames", |b, x| {
+            g::atel_set_map_fade_frames(b, x.to_le_bytes()[0]);
+        }),
+        (0x0087_3e90, "AtelSetOnMemoryMovie", |b, x| {
+            g::atel_set_on_memory_movie(b, x);
+        }),
+        (0x0087_72e0, "AtelClearCameraMatrixFlag", |b, _| {
+            g::atel_clear_camera_matrix_flag(b);
+        }),
+        (0x0086_38b0, "AtelClearForcePlaceId", |b, _| {
+            g::atel_clear_force_place_id(b);
+        }),
+    ]
+}
+
+#[test]
+fn more_globals_match_the_original() {
+    use ffx_script::vm::bridge::globals as g;
+    let Some((mut a, mut b)) = setup() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0004);
+    let save = a.rebase(g::SAVE_DATA.sym);
+    let pads = a.rebase(g::PAD_HELD.sym);
+    let status = a.rebase(g::BATTLE_END_STATUS.sym);
+    for round in 0..40 {
+        // random state where the getters read
+        if round > 0 {
+            for off in (0..0x100).step_by(4).chain([0xbec]) {
+                poke(&mut a, &mut b, save + off, rng.next());
+            }
+            for i in 0..6 {
+                poke(&mut a, &mut b, pads + 4 * i, rng.next());
+            }
+            for i in 0..2 {
+                poke(&mut a, &mut b, status + 4 * i, rng.next());
+            }
+            let fs = a.rebase(0x0132_5ba0) + vm::ctrl::FIELD_STATE;
+            poke(&mut a, &mut b, fs, rng.next());
+        }
+        for (f, name, set) in setters() {
+            let x = stored_value(&mut rng);
+            orig(&mut a, f, &[x]);
+            set(&mut b, x);
+            no_diff(&mut a, &mut b, name);
+        }
+        for (f, name, get) in getters() {
+            let ra = orig(&mut a, f, &[]);
+            let rb = get(&mut b);
+            // the pad getters load AX only: the rest of EAX is the caller's
+            let ra = if name.contains("Controler") {
+                ra & 0xffff
+            } else {
+                ra
+            };
+            assert_eq!(ra, rb, "{name} round {round}");
+            no_diff(&mut a, &mut b, name);
+        }
+        let st0 = orig_float(&mut a, 0x0087_3ad0, &[]);
+        assert!(
+            same_float(st0, g::atel_get_half_turn_angle(&b)),
+            "AtelGetHalfTurnAngle round {round}"
+        );
+        for _ in 0..4 {
+            let (i, x) = (rng.below(4), rng.next());
+            orig(&mut a, 0x0086_fa60, &[i, x]);
+            g::atel_set_effect_param(&mut b, i, x);
+            no_diff(&mut a, &mut b, "AtelSetEffectParam");
+        }
+    }
+    // the ones that call original code
+    for set in [true, false] {
+        let (f, rb) = if set {
+            (0x0087_3e80, g::atel_set_menu_otakara_flag(&mut Run(&mut b)))
+        } else {
+            (
+                0x0087_2b60,
+                g::atel_clear_menu_otakara_flag(&mut Run(&mut b)),
+            )
+        };
+        assert_eq!(orig(&mut a, f, &[]), rb, "{f:#x}");
+        no_diff(&mut a, &mut b, "menu otakara flag");
+    }
+    for i in 0..20i32 {
+        assert_eq!(
+            orig(&mut a, 0x0086_ae00, &[i.cast_unsigned()]),
+            g::atel_get_bind_pc_from_id(&mut b, i),
+            "AtelGetBindPCFromID({i})"
+        );
+        no_diff(&mut a, &mut b, "AtelGetBindPCFromID");
+    }
+    // natives' table entries, in range and past it
+    for _ in 0..200 {
+        let id = rng.below(16) << 12 | rng.below(0x1000);
+        assert_eq!(
+            orig(&mut a, 0x0087_7770, &[id]),
+            run::script_native_entry(&b, id),
+            "Script_NativeEntry({id:#x})"
+        );
+    }
+}
+
+#[test]
+fn atel_init_actor_matches_the_original() {
+    let (Some(dir), Some(snap)) = (
+        std::env::var_os("FFX_GAME_DIR"),
+        std::env::var_os("FFX_SNAPSHOT"),
+    ) else {
+        eprintln!("FFX_GAME_DIR or FFX_SNAPSHOT is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let ctrls = in_use(&Oracle::from_snapshot(&exe, &pages).unwrap());
+    for c in ctrls {
+        // the callbacks take the run lock and reach CRT imports
+        let (mut a, mut b) = fresh_run_pair(&pages, &exe, c);
+        let ra = orig(&mut a, 0x0086_cae0, &[]);
+        let rb = ffx_script::vm::bridge::globals::atel_init_actor(&mut Run(&mut b));
+        assert_eq!(ra, rb, "AtelInitActor on {c:#x}");
+        no_diff(&mut a, &mut b, "AtelInitActor");
+    }
+}
+
 const SCRIPT_RUN: u32 = 0x0086_41e0;
 
 /// A pair of oracles on the snapshot with the run lock stubbed (the mutex
@@ -1130,7 +1418,7 @@ fn run_pair(pages: &std::sync::Arc<Pages>, exe: &std::path::Path) -> (Oracle, Or
     let image = std::fs::read(exe).unwrap();
     let pe = goblin::pe::PE::parse(&image).unwrap();
     let mut sizes: Vec<usize> = CRT.iter().map(|(_, c)| c.len()).collect();
-    sizes.push(CAM_SET_POS_W.len() + 4);
+    sizes.extend(UNINIT.iter().map(|u| u.stub.len()));
     let caves = caves(&image, &pe, &sizes);
     assert_eq!(caves.len(), sizes.len(), "room for every stub");
     for o in [&mut pair.0, &mut pair.1] {
@@ -1148,29 +1436,67 @@ fn run_pair(pages: &std::sync::Arc<Pages>, exe: &std::path::Path) -> (Oracle, Or
                 Mem::write(o, slot, at);
             }
         }
-        // Native_CamSetPos's vector w: the cookie load becomes a call
-        // into a stub that zeroes it first
-        let at = o.image_base() + caves[CRT.len()];
-        let mut stub = CAM_SET_POS_W.to_vec();
-        stub[8..12].copy_from_slice(&o.rebase(0x00c6_13d8).to_le_bytes());
-        Mem::write_bytes(o, at, &stub);
-        let site = o.rebase(0x007b_b6a6);
-        let mut call = vec![0xe8];
-        call.extend_from_slice(&at.wrapping_sub(site + 5).to_le_bytes());
-        Mem::write_bytes(o, site, &call);
+        // the stack words natives read before writing: a call at each
+        // site into a stub that zeroes them, then does what the site did
+        for (u, &cave) in UNINIT.iter().zip(&caves[CRT.len()..]) {
+            let at = o.image_base() + cave;
+            let mut stub = u.stub.to_vec();
+            if let Some((off, sym)) = u.fixup {
+                stub[off..off + 4].copy_from_slice(&o.rebase(sym).to_le_bytes());
+            }
+            Mem::write_bytes(o, at, &stub);
+            let site = o.rebase(u.site);
+            let mut call = vec![0xe8];
+            call.extend_from_slice(&at.wrapping_sub(site + 5).to_le_bytes());
+            call.resize(u.site_len, 0x90);
+            Mem::write_bytes(o, site, &call);
+        }
     }
     pair
 }
 
-/// `0x007bb6a0` (`Native_CamSetPos` and its "ref" twin) hands `Cam_SetPos`
-/// a vector of three popped floats whose fourth word (`[ebp-8]`) it never
-/// writes: `Cam_SetPos` copies it into the camera and the VU0 registers, so
-/// the original stores whatever its callers left on the stack there, which
-/// differs between `Script_Run` and the bridge's calls. Both oracles zero
-/// it: `mov dword [ebp-8], 0; mov eax, [__security_cookie]; ret`, called
-/// in place of the prologue's cookie load (5 bytes at `0x007bb6a6`).
-const CAM_SET_POS_W: [u8; 13] = [
-    0xc7, 0x45, 0xf8, 0x00, 0x00, 0x00, 0x00, 0xa1, 0, 0, 0, 0, 0xc3,
+/// A stack word original code reads before anything writes it: what it
+/// holds is whatever earlier calls left there, which differs between
+/// `Script_Run` and the bridge's calls (another depth, other callers). Both
+/// oracles zero it through a stub called in place of `site_len` bytes at
+/// `site`; the stub ends by doing what those bytes did.
+struct Uninit {
+    site: u32,
+    site_len: usize,
+    stub: &'static [u8],
+    /// An absolute address to rebase into the stub: offset, `ffx.sym`
+    /// address.
+    fixup: Option<(usize, u32)>,
+}
+
+const UNINIT: [Uninit; 2] = [
+    // 0x007bb6a0 (Native_CamSetPos and its "ref" twin) hands Cam_SetPos a
+    // vector of three popped floats whose w ([ebp-8]) it never writes;
+    // Cam_SetPos copies it into the camera and the VU0 registers. Site: the
+    // prologue's cookie load. Stub: mov dword [ebp-8], 0; mov eax,
+    // [__security_cookie]; ret
+    Uninit {
+        site: 0x007b_b6a6,
+        site_len: 5,
+        stub: &[
+            0xc7, 0x45, 0xf8, 0x00, 0x00, 0x00, 0x00, 0xa1, 0, 0, 0, 0, 0xc3,
+        ],
+        fixup: Some((8, 0x00c6_13d8)),
+    },
+    // Light_Set (0x00836520, Native_LightSet's) hands Sg_LightSetColor and
+    // Sg_LightSetDir a vector at [ebp-0x1c] whose w ([ebp-0x10]) it never
+    // writes. Site: sub esp, 0x1c; fild dword [ebp+0xc]. Stub: mov dword
+    // [ebp-0x10], 0; pop eax; sub esp, 0x1c; fild dword [ebp+0xc]; jmp eax
+    // (EAX is free until the lea that follows)
+    Uninit {
+        site: 0x0083_6523,
+        site_len: 6,
+        stub: &[
+            0xc7, 0x45, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x58, 0x83, 0xec, 0x1c, 0xdb, 0x45, 0x0c,
+            0xff, 0xe0,
+        ],
+        fixup: None,
+    },
 ];
 
 /// x86 for the imports natives reach that the oracle has no stub for: CRT
