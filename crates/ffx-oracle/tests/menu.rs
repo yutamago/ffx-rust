@@ -114,7 +114,30 @@ fn setup_any(seed: u32) -> Option<Twins> {
     })
 }
 
+/// `fstp st0; ret`, placed in code space no menu test reaches (the body of
+/// `pppFpLoop`, past the x87 stand-ins).
+const FPU_POP: u32 = 0x0072_9ab0 + 0x70;
+
 impl Twins {
+    /// Empties the original side's x87 stack (results earlier calls left),
+    /// so the next call's `ST0` is its own.
+    fn drain_x87(&mut self) {
+        let at = self.a.rebase(FPU_POP);
+        if Mem::read::<[u8; 3]>(&self.a, at) != [0xdd, 0xd8, 0xc3] {
+            self.a.write(at, &[0xdd, 0xd8, 0xc3]).unwrap();
+            self.b
+                .write(self.b.rebase(FPU_POP), &[0xdd, 0xd8, 0xc3])
+                .unwrap();
+        }
+        for _ in 0..8 {
+            if self.a.call(at, Conv::Cdecl, &[]).unwrap().st0.is_none() {
+                break;
+            }
+        }
+        self.a.clear_dirty();
+        self.b.clear_dirty();
+    }
+
     fn sym(&self, sym: u32) -> u32 {
         self.b.rebase(sym)
     }
@@ -159,10 +182,18 @@ impl Twins {
         mask: u64,
         rust: impl FnOnce(&mut Oracle) -> u64,
     ) {
+        self.drain_x87();
         let r = self
             .a
             .call(self.a.rebase(sym), Conv::Cdecl, args)
             .unwrap_or_else(|e| panic!("{what} {args:x?}: {e}"));
+        // an integer or void port of a function that leaves a float in ST0
+        // drops the caller's result (a void Ch_CheckRadian hid every model)
+        assert!(
+            r.st0.is_none(),
+            "{what} {args:x?}: the original returns {:?} in ST0; the port must return a float",
+            r.st0
+        );
         let ra = u64::from(r.eax) | (u64::from(r.edx) << 32);
         let rb = rust(&mut self.b);
         assert_eq!(ra & mask, rb & mask, "{what} {args:x?}: result");
@@ -4769,6 +4800,11 @@ fn tk_round7_matches_the_original() {
                 U32,
                 |o| w(tk::tk_menu_draw_menu_window_scissor(o, sw, i(smode), i(st))),
             );
+            let kw = t.alloc_random(0x40);
+            t.twin("MenuKaizou_InitList", 0x008d_55e0, &[kw], VOID, |o| {
+                tk::menu_kaizou_init_list(o, kw);
+                0
+            });
             t.twin("TkMn2GetMainPos", 0x008e_2630, &[], U32, |o| {
                 w(tk::tk_mn2_get_main_pos(o))
             });
@@ -5454,6 +5490,275 @@ fn gu_lists_match_the_original() {
             U32,
             |o| w(tk::tk_euc_to_sjis_string(o, src, dst, i(cnt))),
         );
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+/// Code space for x87 stand-ins: the body of `pppFpLoop` (`0x00729ab0`),
+/// which the menu tests never reach.
+const X87_CODE: u32 = 0x0072_9ab0;
+/// `_CIcos`, `_CIsin`, `_CItan`, `_CIatan2` import slots (MSVCR110) and
+/// their stand-ins, the CPU's own instructions on `ST0`/`ST1`: `fcos`,
+/// `fsin`, `fptan; fstp st0`, `fpatan`, each then `ret`.
+const X87_SLOTS: [(u32, &[u8]); 4] = [
+    (0x00b0_c3b4, &[0xd9, 0xff, 0xc3]),
+    (0x00b0_c3b8, &[0xd9, 0xfe, 0xc3]),
+    (0x00b0_c3a0, &[0xd9, 0xf2, 0xdd, 0xd8, 0xc3]),
+    (0x00b0_c3b0, &[0xd9, 0xf3, 0xc3]),
+];
+/// For the bridge's side: `fld qword [esp + 4]`, `fld qword [esp + 0xc]`
+/// when the fifth word is set, then a jump to the sixth word.
+const X87_CALL: [u8; 25] = [
+    0xdd, 0x44, 0x24, 0x04, // fld qword [esp + 4]
+    0x83, 0x7c, 0x24, 0x14, 0x00, // cmp dword [esp + 0x14], 0
+    0x74, 0x04, // je +4
+    0xdd, 0x44, 0x24, 0x0c, // fld qword [esp + 0xc]
+    0x8b, 0x44, 0x24, 0x18, // mov eax, [esp + 0x18]
+    0xff, 0xe0, // jmp eax
+    0x90, 0x90, 0x90, 0x90,
+];
+/// `fstp st0; ret`, after reading a result.
+const X87_POP: [u8; 3] = [0xdd, 0xd8, 0xc3];
+
+/// The stand-ins in both oracles.
+fn install_x87(t: &mut Twins) {
+    for o in [&mut t.a, &mut t.b] {
+        for (k, (slot, code)) in (0u32..).zip(X87_SLOTS) {
+            let at = o.rebase(X87_CODE + 0x10 * k);
+            o.write(at, code).unwrap();
+            let s = o.rebase(slot);
+            o.write(s, &at.to_le_bytes()).unwrap();
+        }
+        let at = o.rebase(X87_CODE + 0x40);
+        o.write(at, &X87_CALL).unwrap();
+        let at = o.rebase(X87_CODE + 0x60);
+        o.write(at, &X87_POP).unwrap();
+    }
+}
+
+/// An intrinsic stand-in run in `o` on `a` (and `b`): the result.
+fn x87_call(o: &mut Oracle, slot: u32, a: f64, b: Option<f64>) -> f64 {
+    let f: u32 = Mem::read(o, o.rebase(slot));
+    let (x, y) = (a.to_bits(), b.unwrap_or(0.0).to_bits());
+    #[allow(clippy::cast_possible_truncation)]
+    let w = [
+        x as u32,
+        (x >> 32) as u32,
+        y as u32,
+        (y >> 32) as u32,
+        u32::from(b.is_some()),
+        f,
+    ];
+    let at = o.rebase(X87_CODE + 0x40);
+    let r = o.call(at, Conv::Cdecl, &w).unwrap();
+    let pop = o.rebase(X87_CODE + 0x60);
+    o.call(pop, Conv::Cdecl, &[]).unwrap();
+    r.st0.expect("a float result")
+}
+
+#[test]
+fn ci_wrappers_match_the_original() {
+    let Some(mut t) = setup_any(0xc1c1_0009) else {
+        return;
+    };
+    install_x87(&mut t);
+    let floats = [
+        0.0f32, -0.0, 0.5, 1.0, -1.0, 2.5, 3.0, -3.1, 10.0, 100.5, 1e-5, -7.25, 1e6,
+    ];
+    for x in floats {
+        for (name, sym, slot) in [
+            ("CIcos", 0x0088_b3e0u32, 0x00b0_c3b4u32),
+            ("CIsin", 0x0088_c3a0, 0x00b0_c3b8),
+            ("CItan", 0x0088_c420, 0x00b0_c3a0),
+        ] {
+            let r =
+                t.a.call(t.a.rebase(sym), Conv::Cdecl, &[x.to_bits()])
+                    .unwrap();
+            let pop = t.a.rebase(X87_CODE + 0x60);
+            t.a.call(pop, Conv::Cdecl, &[]).unwrap();
+            let want = ffx_menu::math::ci_unary(x, |v| x87_call(&mut t.b, slot, v, None));
+            same_float(name, r.st0, want);
+        }
+        for y in floats {
+            let r =
+                t.a.call(
+                    t.a.rebase(0x0088_9e70),
+                    Conv::Cdecl,
+                    &[y.to_bits(), x.to_bits()],
+                )
+                .unwrap();
+            let pop = t.a.rebase(X87_CODE + 0x60);
+            t.a.call(pop, Conv::Cdecl, &[]).unwrap();
+            let want =
+                ffx_menu::math::ci_atan2(y, x, |a, b| x87_call(&mut t.b, 0x00b0_c3b0, a, Some(b)));
+            same_float("CIatan2", r.st0, want);
+        }
+    }
+}
+
+/// MSVCR110 `sprintf`'s import slot.
+const SPRINTF_SLOT: u32 = 0x00b0_c3dc;
+
+#[test]
+fn printf_matches_the_runtime() {
+    let Some(mut t) = setup_any(0x9f9f_0001) else {
+        return;
+    };
+    let formats: &[&[u8]] = &[
+        b"%d",
+        b"%5d",
+        b"%-5d|",
+        b"%05d",
+        b"%+d",
+        b"% d",
+        b"%u",
+        b"%x",
+        b"%#x",
+        b"%X",
+        b"%08X",
+        b"%o",
+        b"%#o",
+        b"%.3d",
+        b"%.0d",
+        b"%c",
+        b"%s",
+        b"%.2s",
+        b"%10s",
+        b"%-10s|",
+        b"%hd",
+        b"%hhx",
+        b"%hu",
+        b"%ld",
+        b"%%",
+        b"%d.%02d",
+        b"%d.%d",
+        b"%p",
+        b"%*d",
+        b"%.*d",
+        b"%-*d|",
+        b"%3c",
+        b"%I64d",
+        b"%lld",
+        b"%5.3d",
+        b"%-08x|",
+        b"%+05d",
+        b"FF0906%02d",
+        b"010906%02d.ico",
+        b"",
+    ];
+    let text = t.alloc(b"hello\0");
+    for round in 0..400u32 {
+        let fmt = formats[(round as usize) % formats.len()];
+        let mut fb = fmt.to_vec();
+        fb.push(0);
+        let f = t.alloc(&fb);
+        let mut args: Vec<u32> = (0..4).map(|_| t.rng.int()).collect();
+        if fmt
+            .windows(2)
+            .any(|w| w == b"%s" || w == b".2" || w == b"0s")
+            || fmt.ends_with(b"s|")
+        {
+            args[0] = if round % 7 == 0 { 0 } else { text };
+        }
+        if fmt.contains(&b'*') {
+            args[0] = t.rng.pick(&[0u32, 3, 12, 0xffff_fffb, 0xffff_ffff]);
+        }
+        let buf = t.alloc(&[0u8; 0x80]);
+        let stub: u32 = Mem::read(&t.a, t.a.rebase(SPRINTF_SLOT));
+        let mut call = vec![buf, f];
+        call.extend(&args);
+        let r =
+            t.a.call(stub, Conv::Cdecl, &call)
+                .unwrap_or_else(|e| panic!("{:?} {args:x?}: {e}", String::from_utf8_lossy(fmt)));
+        let n = ffx_text::printf::sprintf(&mut t.b, buf, f, &args).expect("supported");
+        assert_eq!(
+            r.eax,
+            n,
+            "{:?} {args:x?}: length",
+            String::from_utf8_lossy(fmt)
+        );
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{:?} {args:x?}: text",
+            String::from_utf8_lossy(fmt)
+        );
+        t.a.clear_dirty();
+        t.b.clear_dirty();
+    }
+}
+
+#[test]
+fn save_paths_match_the_original() {
+    let Some(mut t) = setup_any(0x5a5e_0002) else {
+        return;
+    };
+    let codes: [&[u8]; 3] = [
+        b"BISLPS-25088FF0906%02d\0",
+        b"BESCES-50490FF0906%02d\0",
+        b"BKSLPM-67513FF0906%02d\0",
+    ];
+    let flog = record_frees(&mut t);
+    let (mlog, arena) = record_mallocs(&mut t);
+    for round in 0..150u32 {
+        let code = codes[(round % 3) as usize];
+        t.put_bytes(t.sym(0x023c_c0a0), code);
+        let n = t.rng.pick(&[0u32, 1, 9, 10, 99, 100, 0xffff_ffff]);
+        let out = t.alloc_random(0x80);
+        for (name, sym, kind) in [
+            ("MenuSave_PathDir", 0x008b_3ff0u32, 0u8),
+            ("MenuSave_PathData", 0x008b_4060, 1),
+            ("MenuSave_PathIcon", 0x008b_4110, 2),
+            ("MenuSave_PathIconSys", 0x008b_4230, 3),
+        ] {
+            t.twin(name, sym, &[out, n], VOID, |o| {
+                assert!(tk::menu_save_path(o, out, n, kind));
+                0
+            });
+        }
+        t.twin("MenuSave_IconName", 0x008b_41e0, &[out, n], VOID, |o| {
+            tk::menu_save_icon_name(o, out, n);
+            0
+        });
+        // a formatted control text
+        let win = window(&mut t);
+        let controls: u32 = Mem::read(&t.b, win + 0x94);
+        for k in 0..6 {
+            let ck = controls + k * 0x44;
+            let hk = t.alloc_random(0x40);
+            let capk = t.rng.pick(&[0u16, 0x20]);
+            t.put(ck + 0x26, capk);
+            t.put(ck + 0x28, if capk == 0 { ck + 0x30 } else { hk });
+        }
+        let fmt = t.rng.pick(&[0u32, 1, 2, 3]);
+        let fmts: [&[u8]; 4] = [
+            b"%d.%02d\0",
+            b"%d.%d\0",
+            b"%s and %d %s\0",
+            b"%08X-%-6d|%c\0",
+        ];
+        let f = t.alloc(fmts[fmt as usize]);
+        let s1 = t.alloc(b"a fairly long label text\0");
+        let args = [t.rng.int(), t.rng.int(), s1, 0x41];
+        let args = if fmt == 2 { [s1, args[1], s1, 0] } else { args };
+        let id = t.rng.pick(&[1u32, 2, 3, 0x1_0001]);
+        let mut call = vec![win, id, f];
+        call.extend(args);
+        t.twin("Gu_WindowControlSetTextf", 0x0084_a810, &call, VOID, |o| {
+            assert!(gu::gu_window_control_set_textf(
+                o,
+                win,
+                id,
+                f,
+                &args,
+                &mut |o, p| free_into(o, flog, p),
+                &mut |o, n| {
+                    let _ = free_into(o, mlog, n);
+                    arena
+                },
+            ));
+            0
+        });
     }
     eprintln!("{} calls", t.calls);
 }

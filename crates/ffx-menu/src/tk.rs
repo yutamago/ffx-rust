@@ -4899,6 +4899,83 @@ pub mod bridge {
         mem.write(entry.wrapping_add(0xa), r as u8);
         r
     }
+    /// The save file names' format (`0x023cc0a0`: the product code and
+    /// `FF0906%02d`, set by `TOMenuMakeSaveFileName`'s caller) applied to
+    /// `n`; `None` when it holds a conversion the formatter lacks.
+    fn save_name(mem: &impl Mem, n: u32) -> Option<Vec<u8>> {
+        let f = ffx_text::printf::c_string(mem, mem.rebase(0x023c_c0a0));
+        ffx_text::printf::format(mem, &f, &mut || n)
+    }
+
+    /// The icon file name `010906%02d.ico` (`0x00c5b3fc`) for `n`.
+    fn icon_name(mem: &impl Mem, n: u32) -> Vec<u8> {
+        let f = ffx_text::printf::c_string(mem, mem.rebase(0x00c5_b3fc));
+        ffx_text::printf::format(mem, &f, &mut || n).unwrap_or_default()
+    }
+
+    /// The memory-card paths the save menu builds into `out` for slot
+    /// `n` (`S` the save name): `/S` (`MenuSave_PathDir`, `0x008b3ff0`),
+    /// `/S/S` (`MenuSave_PathData`, `0x008b4060`), `/S/010906nn.ico`
+    /// (`MenuSave_PathIcon`, `0x008b4110`) and `/S/icon.sys`
+    /// (`MenuSave_PathIconSys`, `0x008b4230`); own names. The original
+    /// builds them with `sprintf` and `strcat`s, ending with the text and
+    /// its terminator. `false` (nothing written) when the save name's
+    /// format is beyond [`ffx_text::printf`].
+    pub fn menu_save_path(mem: &mut impl Mem, out: u32, n: u32, kind: u8) -> bool {
+        let Some(name) = save_name(mem, n) else {
+            return false;
+        };
+        let mut p = vec![b'/'];
+        p.extend(&name);
+        match kind {
+            1 => {
+                p.push(b'/');
+                p.extend(&name);
+            }
+            2 => {
+                p.push(b'/');
+                p.extend(icon_name(mem, n));
+            }
+            3 => p.extend(b"/icon.sys"),
+            _ => {}
+        }
+        p.push(0);
+        mem.write_bytes(out, &p);
+        true
+    }
+
+    /// `MenuSave_IconName(out, n)` (`0x008b41e0`, own name):
+    /// `010906%02d.ico` for `n` copied to `out`.
+    pub fn menu_save_icon_name(mem: &mut impl Mem, out: u32, n: u32) {
+        let mut s = icon_name(mem, n);
+        s.push(0);
+        mem.write_bytes(out, &s);
+    }
+    /// `MenuKaizou_InitList(w)` (`0x008d55e0`, own name): the
+    /// customise menu's weapon list (`MsGetSaveWeaponList(-1, -1, 0)` at
+    /// `0x0186aa38`) and its length up to the last entry whose slot byte
+    /// `+2` is set (`0x0186aa3c`); `+0x1c` cleared, the status background
+    /// set up. (The original counts into its own argument slot; the port
+    /// borrows `+0x1c`, which it clears anyway.)
+    pub fn menu_kaizou_init_list(mem: &mut impl Mem, w: u32) {
+        mem.write(w + 0x1c, 0u32);
+        let list = ffx_battle::save::bridge::ms_get_save_weapon_list(mem, -1, -1, 0, w + 0x1c);
+        let n: i32 = mem.read(w + 0x1c);
+        mem.write(w + 0x1c, 0u32);
+        mem.write(mem.rebase(0x0186_aa38), list);
+        let mut k = n - 1;
+        while k > 0 {
+            let id = u32::from(mem.read::<u16>(list.wrapping_add((2 * k).cast_unsigned())));
+            let slot = ffx_battle::save::bridge::ms_get_save_weapon(mem, id, 0);
+            if mem.read::<u8>(slot + 2) != 0 {
+                k += 1;
+                break;
+            }
+            k -= 1;
+        }
+        mem.write(mem.rebase(0x0186_aa3c), k);
+        tk_mn2_init_status_bg(mem);
+    }
 }
 
 #[cfg(test)]

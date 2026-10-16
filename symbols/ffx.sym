@@ -6439,6 +6439,7 @@
 0x0084a670 function Gu_WindowControlSetHide   # fh v3:exact 0x0084a670
 0x0084a6c0 function Gu_WindowControlSetLeftText# (window, id, on) control flag 0x10 = on; Switch name, the slot between Gu_WindowControlSetHide and Gu_WindowControlSetText
 0x0084a710 function Gu_WindowControlSetText   # fh v3:exact 0x0084a710
+0x0084a810 function Gu_WindowControlSetTextf  # (window, id, fmt, ...) vsprintf into a 1 KiB local, then the Gu_WindowControlSetText logic on the first control with id; Switch name, alphabetical slot Gu_WindowControlSetText..Gu_WindowCreate
 0x0084a920 function Gu_WindowCreate           # fh v3:exact 0x0084a920
 0x0084ab80 function Gu_WindowCloseTree        # (window) handler +0x7c (window, 0x8003, 0), flag 4, children recursively; own name
 0x0084abd0 function Gu_WindowFreeClosed       # () windows flagged closed (+0x88 bit 2) unlinked from g_GuWindowList and user_free-d with their controls' heap texts, controls array and +0x5c buffer (when +0x5a); own name (the gap's Switch names DelControl/Dispose are unproven)
@@ -7312,6 +7313,7 @@
 0x00889b00 function Math_StoreMax             # (dst, src, v) *dst = v < *src ? *src : v (x87); own name
 0x00889b40 function Math_StoreMin             # (dst, src, _, _, _, v) *dst = v > *src ? *src : v; own name
 0x00889b80 function TkDegtoRad                # fh v3:exact 0x00889af0
+0x00889e70 function CIatan2                   # (y, x) _CIatan2 (y in ST1, x in ST0) stored to a float; own name beside CIcos/CIsin/CItan
 0x0088a4a0 function TkMtCalcSpline            # fh v3:bsim1.00 0x0088a410
 0x0088a4d0 function TkMtCalcSpline3           # fh v3:bsim1.00 0x0088a440
 0x0088b3b0 function TkMtCalcSplineTangent     # fh v3:bsim1.00 0x0088b320
@@ -7775,6 +7777,11 @@
 0x008b3d90 function TkMenuSaveLoadCloseWindow2 # (): close request (+0x41 = 1) for 0x01866258 and forget it; save/load menu (TkMenuCtrlSaveLoad area)
 0x008b3db0 function TkMenuCloseSaveLoadScreen # fh v3:exact 0x008b3d60
 0x008b3e40 function TkMenuSaveLoadCloseWindow # (): close request for g_TkMenuSaveLoadWindow (TkMenuCtrlSaveLoad reads it) and forget it
+0x008b3ff0 function MenuSave_PathDir          # (out, n) "/" + sprintf(0x023cc0a0 = product code + "FF0906%02d", n); own name
+0x008b4060 function MenuSave_PathData         # (out, n) "/S/S" with S the save name of slot n; own name
+0x008b4110 function MenuSave_PathIcon         # (out, n) "/S/" + "010906%02d.ico"; own name
+0x008b41e0 function MenuSave_IconName         # (out, n) sprintf "010906%02d.ico"; own name
+0x008b4230 function MenuSave_PathIconSys      # (out, n) "/S/icon.sys"; own name
 0x008b4e40 function TkMenuGetSaveFileInfo     # (i) -> &0x0159ec70[i * 0x40], i clamped to 0..0x62: the 99 save files (save/load menu code)
 0x008b4e70 function MenuSaveLoad_Reset        # (v) save/load flags cleared, second window +0x58 = v; own name
 0x008b4eb0 function MenuSaveLoad_ResetToggles # u8 0x0186626a, 0x0186626b = 0; own name
@@ -8064,6 +8071,7 @@
 0x008d4e80 function MenuStatus_GetPos2        # (out, alt) u16 pair 0x0186a918 (alt 0x0186a960) + status origin; own name
 0x008d4ed0 function TkMn2InitStatusBG         # (): both i16 of g_TkMn2StatusBG = 0; Switch symbol name (BSim)
 0x008d5540 function TkMenuCtrlKaizou          # fh v3:exact 0x008d5510
+0x008d55e0 function MenuKaizou_InitList       # (w) +0x1c = 0; 0x0186aa38 = MsGetSaveWeaponList(-1, -1, 0, &n); 0x0186aa3c = n trimmed to the last entry whose slot byte +2 is set; TkMn2InitStatusBG; own name
 0x008d56d0 function MenuKaizou_WindowIdle     # (window) +0x28 = 0; own name
 0x008d5730 function MenuKaizou_ItemUsable     # (list, i) item list byte +3 != 0xff; own name
 0x008d57d0 function TkMenuKaizouCloseWindow2  # (): close request for 0x0186aa34 (customize menu: UpdateGearCustomizationMenuState reads it), forget it

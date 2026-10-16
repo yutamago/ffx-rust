@@ -1149,8 +1149,20 @@ pub mod bridge {
         free: &mut impl FnMut(&mut M, u32) -> u32,
         malloc: &mut impl FnMut(&mut M, u32) -> u32,
     ) {
+        let text = (s != 0).then(|| ffx_text::printf::c_string(mem, s));
+        control_set_bytes(mem, c, text.as_deref(), free, malloc);
+    }
+
+    /// [`gu_control_set_text`] on text already in hand (`None` clears).
+    fn control_set_bytes<M: Mem>(
+        mem: &mut M,
+        c: u32,
+        text: Option<&[u8]>,
+        free: &mut impl FnMut(&mut M, u32) -> u32,
+        malloc: &mut impl FnMut(&mut M, u32) -> u32,
+    ) {
         let cap = |mem: &M| mem.read::<i16>(c + 0x26);
-        if s == 0 {
+        let Some(text) = text else {
             if cap(mem) != 0 {
                 let p = mem.read(c + 0x28);
                 free(mem, p);
@@ -1159,11 +1171,8 @@ pub mod bridge {
             mem.write(c + 0x28, c + 0x30);
             mem.write(c + 0x30, 0u8);
             return;
-        }
-        let mut len = 0i32;
-        while mem.read::<u8>(s.wrapping_add(len.cast_unsigned())) != 0 {
-            len += 1;
-        }
+        };
+        let len = i32::try_from(text.len()).unwrap_or(i32::MAX);
         if len < 0xf {
             if cap(mem) != 0 {
                 let p = mem.read(c + 0x28);
@@ -1182,10 +1191,37 @@ pub mod bridge {
             mem.write(c + 0x26, (len + 0x10).cast_unsigned() as u16);
         }
         let dst: u32 = mem.read(c + 0x28);
-        for k in 0..=len.cast_unsigned() {
-            let ch: u8 = mem.read(s.wrapping_add(k));
-            mem.write(dst.wrapping_add(k), ch);
+        mem.write_bytes(dst, text);
+        mem.write(dst.wrapping_add(len.cast_unsigned()), 0u8);
+    }
+
+    /// `Gu_WindowControlSetTextf(window, id, fmt, ...)` (`0x0084a810`):
+    /// `fmt` and `args` formatted (`vsprintf`, [`ffx_text::printf`]) and
+    /// set as the text of the window's first control with `id` (as
+    /// [`gu_control_set_text`]). `false` (nothing done) when the format
+    /// holds a conversion the formatter lacks.
+    pub fn gu_window_control_set_textf<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        id: u32,
+        fmt: u32,
+        args: &[u32],
+        free: &mut impl FnMut(&mut M, u32) -> u32,
+        malloc: &mut impl FnMut(&mut M, u32) -> u32,
+    ) -> bool {
+        let f = ffx_text::printf::c_string(mem, fmt);
+        let mut k = 0;
+        let Some(text) = ffx_text::printf::format(mem, &f, &mut || {
+            let v = args.get(k).copied().unwrap_or(0);
+            k += 1;
+            v
+        }) else {
+            return false;
+        };
+        if let Some(c) = find_control(mem, window, id) {
+            control_set_bytes(mem, c, Some(&text), free, malloc);
         }
+        true
     }
 
     /// `Gu_WindowControlSetText(window, id, s)` (`0x0084a710`):

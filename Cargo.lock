@@ -694,6 +694,7 @@ dependencies = [
  "ffx-script",
  "ffx-sg",
  "ffx-system",
+ "ffx-text",
 ]
 
 [[package]]
