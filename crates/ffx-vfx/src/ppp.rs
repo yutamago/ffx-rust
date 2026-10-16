@@ -288,11 +288,21 @@ pub mod bridge {
         WAIT_DONE.set(mem, 1);
     }
 
-    fn rot(mem: &mut impl Mem, out: u32, angle: i32, f: fn([u32; 4], u32, u32) -> [u32; 16]) {
+    /// The rotation `f` (`rot_x`, `rot_y`, `rot_z`) by `angle`, from
+    /// `g_pppSinTable` and `r0`.
+    pub fn rotation(
+        mem: &impl Mem,
+        angle: i32,
+        f: fn([u32; 4], u32, u32) -> [u32; 16],
+    ) -> [u32; 16] {
         let (si, ci) = super::sin_cos_index(angle);
         let table = SIN.ptr(mem);
         let (s, c) = (table.at(si).get(mem), table.at(ci).get(mem));
-        let m = f(R0.get(mem), s, c);
+        f(R0.get(mem), s, c)
+    }
+
+    fn rot(mem: &mut impl Mem, out: u32, angle: i32, f: fn([u32; 4], u32, u32) -> [u32; 16]) {
+        let m = rotation(mem, angle, f);
         mem.write(out, m);
     }
 

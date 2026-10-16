@@ -292,3 +292,40 @@ fn pointer_and_array_fixups_unpack_like_original() {
     eprintln!("{checked} clusters unpack their pointer and array fixups like the original");
     assert!(checked > 1500, "{checked}");
 }
+
+/// `fs` reaches a thread block as on Windows: the exception chain at
+/// `fs:[0]` starts empty, `fs:[0x18]` is the block, and a frame linked the
+/// way an SEH prologue does it comes back unlinked.
+#[test]
+fn fs_points_at_a_thread_block() {
+    let Some(mut o) = oracle() else {
+        return;
+    };
+    // .text padding past the last function
+    let at = 0x00b0_bf40;
+    #[rustfmt::skip]
+    let code = [
+        0x64, 0xa1, 0x18, 0, 0, 0,       // mov eax, fs:[0x18]
+        0x8b, 0x00,                      // mov eax, [eax]        (the chain through the block)
+        0x64, 0x8b, 0x0d, 0, 0, 0, 0,    // mov ecx, fs:[0]
+        0x39, 0xc8,                      // cmp eax, ecx
+        0x75, 0x1a,                      // jne fail
+        0x6a, 0x00,                      // push 0                 (handler)
+        0x51,                            // push ecx               (next)
+        0x64, 0x89, 0x25, 0, 0, 0, 0,    // mov fs:[0], esp        (link)
+        0x59,                            // pop ecx
+        0x64, 0x89, 0x0d, 0, 0, 0, 0,    // mov fs:[0], ecx        (unlink)
+        0x59,                            // pop ecx
+        0x64, 0xa1, 0, 0, 0, 0,          // mov eax, fs:[0]
+        0xc3,                            // ret
+        0x31, 0xc0,                      // fail: xor eax, eax
+        0xc3,                            // ret
+    ];
+    o.write(at, &code).unwrap();
+    let r = o.call(at, ffx_oracle::Conv::Cdecl, &[]).unwrap();
+    assert_eq!(
+        r.eax,
+        u32::MAX,
+        "the exception chain starts empty and comes back so"
+    );
+}
