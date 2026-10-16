@@ -1440,12 +1440,26 @@
 0x0072f4b0 function pppRandFloat              # fh v3:exact 0x0072f590
 0x0072f680 function pppRandUpFloat           # ppp program table record "pppRandUpFloat" (0x00c3d780) +0x8 step: d1 or (d2 + d1) * 0.5, target += k w
 0x0072f850 function pppRandDownFloat         # ppp program table record "pppRandDownFloat" (0x00c3b3e0) +0x8 step: -d1 or (-d1 - d2) * 0.5, target += k w
+0x0072fa20 function pppRandChar               # ppp program table record "pppRandChar" (0x00c3d7a8) +0x8 step: u8 factor at +8, byte target, ftol
+0x0072fbf0 function pppRandUpChar             # ppp program table record "pppRandUpChar" (0x00c3d7d0) +0x8 step: u8 factor at +8, byte target, ftol
+0x0072fdc0 function pppRandDownChar           # ppp program table record "pppRandDownChar" (0x00c3d7f8) +0x8 step: u8 factor at +8, byte target, ftol
+0x0072ffa0 function pppRandShort              # ppp program table record "pppRandShort" (0x00c3d820) +0x8 step: u16 factor at +8, half-word target, ftol
+0x00730170 function pppRandUpShort            # ppp program table record "pppRandUpShort" (0x00c3d848) +0x8 step: u16 factor at +8, half-word target, ftol
+0x00730340 function pppRandDownShort          # ppp program table record "pppRandDownShort" (0x00c3d870) +0x8 step: u16 factor at +8, half-word target, ftol
+0x00730520 function pppRandInt                # ppp program table record "pppRandInt" (0x00c3d898) +0x8 step: u32 factor at +8 (as f32), word target, ftol
+0x00730700 function pppRandUpInt              # ppp program table record "pppRandUpInt" (0x00c3d8c0) +0x8 step: u32 factor at +8 (as f32), word target, ftol
+0x007308d0 function pppRandDownInt            # ppp program table record "pppRandDownInt" (0x00c3d8e8) +0x8 step: u32 factor at +8 (as f32), word target, ftol
 0x00730ab0 function pppRandFV                 # fh v3:exact 0x00730ba0
 0x00730ce0 function pppRandUpFV               # fh v3:exact 0x00730dd0
 0x00730ef0 function pppRandDownFV             # fh v3:exact 0x00730fd0
 0x00731100 function pppRandIV                 # fh v3:exact 0x007311e0
 0x00731330 function op_mdc_all_make_delhide   # fh switch:bsim1.00 0x71003e6990
+0x00731350 function pppRandUpIV               # ppp program table record "pppRandUpIV" (0x00c3d910) +0x8 step: i32 factors at +0x10 (as f32), 3 word targets, ftol; draws whenever the key applies
 0x00731540 function op_mdc_size_get           # fh switch:bsim1.00 0x71003e6960
+0x00731560 function pppRandDownIV             # ppp program table record "pppRandDownIV" (0x00c3ab48) +0x8 step: i32 factors at +0x10 (as f32), 3 word targets, ftol; draws whenever the key applies
+0x00731780 function pppRandCV                 # ppp program table record "pppRandCV" (0x00c3d938) +0x8 step: i8 factors at +8, 4 byte targets, ftol; draws whenever the key applies
+0x007319f0 function pppRandUpCV               # ppp program table record "pppRandUpCV" (0x00c3d960) +0x8 step: i8 factors at +8, 4 byte targets, ftol; draws whenever the key applies
+0x00731c50 function pppRandDownCV             # ppp program table record "pppRandDownCV" (0x00c3d988) +0x8 step: i8 factors at +8, 4 byte targets, ftol; draws whenever the key applies
 0x00731ec0 function pppRandHCV                # fh v3:exact 0x00731f90
 0x00732130 function pppRandUpHCV              # fh v3:exact 0x00732200
 0x00732390 function pppRandDownHCV            # fh v3:exact 0x00732460
@@ -1467,6 +1481,43 @@
 0x00736460 function pppKeThCon                # fh v3:exact 0x00736520
 0x007364e0 function pppKeThCon2               # fh v3:exact 0x007365a0
 0x00736580 function pppKeThDraw               # fh v3:exact 0x00736640
+0x00736690 function pppKeThRes128Con          # ppp program table record "pppKeThRes128" (0x00c3d370) +0x1c set-up
+0x007366c0 function pppKeThRes128x4Con        # ppp program table record "pppKeThRes128x4" (0x00c3d398) +0x1c set-up
+0x007366f0 function pppKeThRes128x8Con        # ppp program table record "pppKeThRes128x8" (0x00c3d3c0) +0x1c set-up
+0x00736720 function pppKeThRes16Con           # ppp program table record "pppKeThRes16" (0x00c3adc8) +0x1c set-up; "pppKeThRes16" (0x00c3c470) +0x1c set-up
+0x00736750 function pppKeThRes16x16Con        # ppp program table record "pppKeThRes16x16" (0x00c3d460) +0x1c set-up
+0x00736780 function pppKeThRes16x24Con        # ppp program table record "pppKeThRes16x24" (0x00c3d488) +0x1c set-up
+0x007367b0 function pppKeThRes16x4Con         # ppp program table record "pppKeThRes16x4" (0x00c3b098) +0x1c set-up; "pppKeThRes16x4" (0x00c3c740) +0x1c set-up
+0x007367e0 function pppKeThRes16x64Con        # ppp program table record "pppKeThRes16x64" (0x00c3d2d0) +0x1c set-up
+0x00736810 function pppKeThRes16x8Con         # ppp program table record "pppKeThRes16x8" (0x00c3d438) +0x1c set-up
+0x00736840 function pppKeThRes24Con           # ppp program table record "pppKeThRes24" (0x00c3b318) +0x1c set-up; "pppKeThRes24" (0x00c3c9c0) +0x1c set-up
+0x00736870 function pppKeThRes24x16Con        # ppp program table record "pppKeThRes24x16" (0x00c3d4d8) +0x1c set-up
+0x007368a0 function pppKeThRes24x4Con         # ppp program table record "pppKeThRes24x4" (0x00c3b070) +0x1c set-up; "pppKeThRes24x4" (0x00c3c718) +0x1c set-up
+0x007368d0 function pppKeThRes24x8Con         # ppp program table record "pppKeThRes24x8" (0x00c3d4b0) +0x1c set-up
+0x00736900 function pppKeThRes255Con          # ppp program table record "pppKeThRes255" (0x00c3d3e8) +0x1c set-up
+0x00736930 function pppKeThRes255x4Con        # ppp program table record "pppKeThRes255x4" (0x00c3d410) +0x1c set-up
+0x00736960 function pppKeThRes32Con           # ppp program table record "pppKeThRes32" (0x00c3af30) +0x1c set-up; "pppKeThRes32" (0x00c3c5d8) +0x1c set-up
+0x00736990 function pppKeThRes32x16Con        # ppp program table record "pppKeThRes32x16" (0x00c3d528) +0x1c set-up
+0x007369c0 function pppKeThRes32x24Con        # ppp program table record "pppKeThRes32x24" (0x00c3d550) +0x1c set-up
+0x007369f0 function pppKeThRes32x32Con        # ppp program table record "pppKeThRes32x32" (0x00c3d2f8) +0x1c set-up
+0x00736a20 function pppKeThRes32x4Con         # ppp program table record "pppKeThRes32x4" (0x00c3ba48) +0x1c set-up; "pppKeThRes32x4" (0x00c3d0f0) +0x1c set-up
+0x00736a50 function pppKeThRes32x8Con         # ppp program table record "pppKeThRes32x8" (0x00c3d500) +0x1c set-up
+0x00736a80 function pppKeThRes40Con           # ppp program table record "pppKeThRes40" (0x00c3afa8) +0x1c set-up; "pppKeThRes40" (0x00c3c650) +0x1c set-up
+0x00736ab0 function pppKeThRes40x16Con        # ppp program table record "pppKeThRes40x16" (0x00c3d5a0) +0x1c set-up
+0x00736ae0 function pppKeThRes40x4Con         # ppp program table record "pppKeThRes40x4" (0x00c3d320) +0x1c set-up
+0x00736b10 function pppKeThRes40x8Con         # ppp program table record "pppKeThRes40x8" (0x00c3d578) +0x1c set-up
+0x00736b40 function pppKeThRes48Con           # ppp program table record "pppKeThRes48" (0x00c3b908) +0x1c set-up; "pppKeThRes48" (0x00c3cfb0) +0x1c set-up
+0x00736b70 function pppKeThRes48x16Con        # ppp program table record "pppKeThRes48x16" (0x00c3d5f0) +0x1c set-up
+0x00736ba0 function pppKeThRes48x4Con         # ppp program table record "pppKeThRes48x4" (0x00c3b0e8) +0x1c set-up; "pppKeThRes48x4" (0x00c3c790) +0x1c set-up
+0x00736bd0 function pppKeThRes48x8Con         # ppp program table record "pppKeThRes48x8" (0x00c3d5c8) +0x1c set-up
+0x00736c00 function pppKeThRes64Con           # ppp program table record "pppKeThRes64" (0x00c3d348) +0x1c set-up
+0x00736c30 function pppKeThRes64x16Con        # ppp program table record "pppKeThRes64x16" (0x00c3b0c0) +0x1c set-up; "pppKeThRes64x16" (0x00c3c768) +0x1c set-up
+0x00736c60 function pppKeThRes64x4Con         # ppp program table record "pppKeThRes64x4" (0x00c3afd0) +0x1c set-up; "pppKeThRes64x4" (0x00c3c678) +0x1c set-up
+0x00736c90 function pppKeThRes64x8Con         # ppp program table record "pppKeThRes64x8" (0x00c3d618) +0x1c set-up
+0x00736cc0 function pppKeThRes8Con            # ppp program table record "pppKeThRes8" (0x00c3b340) +0x1c set-up; "pppKeThRes8" (0x00c3c9e8) +0x1c set-up
+0x00736cf0 function pppKeThRes8x128Con        # ppp program table record "pppKeThRes8x128" (0x00c3d2a8) +0x1c set-up
+0x00736d20 function pppKeThRes8x4Con          # ppp program table record "pppKeThRes8x4" (0x00c3d280) +0x1c set-up
+0x00736d50 function pppKeThResCon             # ppp program table record "pppKeThRes" (0x00c3d258) +0x1c set-up
 0x00736d80 function pppKeThTp                 # fh v3:exact 0x00736e40
 0x00736e30 function pppKeThTp2Con             # ppp program table record "pppKeThTp2" (0x00c3dc80) +0x1c set-up
 0x00736e60 function pppKeThTpCon              # fh v3:exact 0x00736f20
@@ -1477,6 +1528,7 @@
 0x0073aac0 function pppDrawMdlTs3Con          # ppp program table record "pppDrawMdlTs3" (0x00c3b138) +0x1c set-up; "pppDrawMdlTs3" (0x00c3b138) +0x20 second set-up; "pppDrawMdlTs3" (0x00c3c7e0) +0x1c set-up and 1 more
 0x0073ab00 function pppDrawMdlSeaCon          # ppp program table record "pppDrawMdlSea" (0x00c3ad00) +0x1c set-up; "pppDrawMdlSea" (0x00c3c3a8) +0x1c set-up
 0x0073ab40 function pppDrawMdlSeaCon2         # ppp program table record "pppDrawMdlSea" (0x00c3ad00) +0x20 second set-up; "pppDrawMdlSea" (0x00c3c3a8) +0x20 second set-up
+0x0073b7b0 function pppDrawMdlInfCon          # ppp program table record "pppDrawMdlInf" (0x00c3b2c8) +0x1c set-up; "pppDrawMdlInf" (0x00c3c970) +0x1c set-up
 0x0073b800 function pppDrawMdlInfCon2         # ppp program table record "pppDrawMdlInf" (0x00c3b2c8) +0x20 second set-up; "pppDrawMdlInf" (0x00c3c970) +0x20 second set-up
 0x0073cfb0 function pppDrawMdlPSimCon         # ppp program table record "pppDrawMdlPSim" (0x00c3b4d0) +0x1c set-up; "pppDrawMdlPSim" (0x00c3cb78) +0x1c set-up
 0x0073cfe0 function pppDrawMdlPSimCon2        # ppp program table record "pppDrawMdlPSim" (0x00c3b4d0) +0x20 second set-up; "pppDrawMdlPSim" (0x00c3cb78) +0x20 second set-up
@@ -1499,10 +1551,13 @@
 0x00741570 function pppDrawShapeRevCon        # ppp program table record "pppDrawShapeRev" (0x00c3b7a0) +0x1c set-up; "pppDrawShapeRev" (0x00c3b7a0) +0x20 second set-up; "pppDrawShapeRev" (0x00c3ce48) +0x1c set-up and 1 more
 0x007497e0 function pppKeMdlTfdCon            # ppp program table record "pppKeMdlTfd" (0x00c3ab98) +0x1c set-up; "pppKeMdlTfd" (0x00c3ab98) +0x20 second set-up; "pppKeMdlTfd" (0x00c3c240) +0x1c set-up and 1 more
 0x00749810 function pppKeMdlTfdDraw           # fh v3:exact 0x007498e0
+0x007498f0 function pppKeMdlTfdUvCon          # ppp program table record "pppKeMdlTfdUv" (0x00c3dd48) +0x1c set-up; "pppKeMdlTfdUv" (0x00c3dd48) +0x20 second set-up
 0x00749950 function pppKeMdlTfdUvDraw         # fh v3:exact 0x00749a20
 0x00749b10 function pppKeMdlTfd2Con           # ppp program table record "pppKeMdlTfd2" (0x00c3dd70) +0x1c set-up; "pppKeMdlTfd2" (0x00c3dd70) +0x20 second set-up
+0x00749c30 function pppKeMdlTfdUv2Con         # ppp program table record "pppKeMdlTfdUv2" (0x00c3dd98) +0x1c set-up; "pppKeMdlTfdUv2" (0x00c3dd98) +0x20 second set-up
 0x00749e60 function pppKeMdlTfd3Con           # ppp program table record "pppKeMdlTfd3" (0x00c3ddc0) +0x1c set-up; "pppKeMdlTfd3" (0x00c3ddc0) +0x20 second set-up
 0x00749e90 function pppKeMdlTfd3Draw          # fh v3:exact 0x00749f60
+0x00749f90 function pppKeMdlTfdUv3Con         # ppp program table record "pppKeMdlTfdUv3" (0x00c3dde8) +0x1c set-up; "pppKeMdlTfdUv3" (0x00c3dde8) +0x20 second set-up
 0x00749ff0 function pppKeMdlTfdUv3Draw        # fh v3:exact 0x0074a0c0
 0x0074b500 function pppNeiDrawMdlTsPointLightCon # ppp program table record "pppNeiDrawMdlTsPointLight" (0x00c3de60) +0x1c set-up; "pppNeiDrawMdlTsPointLight" (0x00c3de60) +0x20 second set-up
 0x0074b9a0 function pppNeiDrawShapePointLightCon # ppp program table record "pppNeiDrawShapePointLight" (0x00c3de88) +0x1c set-up; "pppNeiDrawShapePointLight" (0x00c3de88) +0x20 second set-up
@@ -1511,11 +1566,14 @@
 0x0074e540 function pppKeShpTail2Con          # ppp program table record "pppKeShpTail2" (0x00c3a918) +0x1c set-up; "pppKeShpTail2" (0x00c3bfc0) +0x1c set-up
 0x0074f580 function pppKeShpTail2XCon         # ppp program table record "pppKeShpTail2X" (0x00c3b480) +0x1c set-up; "pppKeShpTail2X" (0x00c3cb28) +0x1c set-up
 0x007502c0 function pppKeShpTail3             # fh v3:exact 0x00750390
+0x007505a0 function pppKeShpTail3Con2         # ppp program table record "pppKeShpTail3" (0x00c3ac38) +0x20 second set-up; "pppKeShpTail3" (0x00c3c2e0) +0x20 second set-up
 0x00751ca0 function pppKeShpTail3X            # fh v3:exact 0x00751d80
+0x00751f40 function pppKeShpTail3XCon2        # ppp program table record "pppKeShpTail3X" (0x00c3b868) +0x20 second set-up; "pppKeShpTail3X" (0x00c3cf10) +0x20 second set-up
 0x00754fc0 function pppKeShpTailLcCon         # ppp program table record "pppKeShpTailLc" (0x00c3ded8) +0x1c set-up
 0x00755010 function pppKeShpDttCon            # ppp program table record "pppKeShpDtt" (0x00c3ac10) +0x1c set-up; "pppKeShpDtt" (0x00c3ac10) +0x20 second set-up; "pppKeShpDtt" (0x00c3c2b8) +0x1c set-up and 1 more
 0x00756240 function pppDrawRainCon            # ppp program table record "pppDrawRain" (0x00c3b430) +0x1c set-up; "pppDrawRain" (0x00c3cad8) +0x1c set-up
 0x007566a0 function pppDrawSpriteCon          # ppp program table record "pppDrawSprite" (0x00c3df00) +0x1c set-up
+0x007566e0 function pppDrawSprite             # ppp program table record "pppDrawSprite" (0x00c3df00) +0xc draw
 0x00757210 function pppDrawFilterCon          # ppp program table record "pppDrawFilter" (0x00c3ba98) +0x1c set-up; "pppDrawFilter" (0x00c3d140) +0x1c set-up
 0x007573c0 function pppPointAp                # fh v3:exact 0x007574b0
 0x00757470 function pppPointApCon             # ppp program table record "pppPointAp" (0x00c3ab70) +0x1c set-up; "pppPointAp" (0x00c3c218) +0x1c set-up
@@ -1546,6 +1604,7 @@
 0x00759650 function pppKeGrvEff               # fh v3:exact 0x00759740
 0x007597b0 function pppKeGrvTgt               # fh v3:exact 0x007598a0
 0x00759800 function pppKeGrvTgtCon            # ppp program table record "pppKeGrvTgt" (0x00c3b368) +0x1c set-up; "pppKeGrvTgt" (0x00c3ca10) +0x1c set-up
+0x00759830 function pppKeHitBall              # ppp program table record "pppKeHitBall" (0x00c3ad50) +0x8 step; "pppKeHitBall" (0x00c3c3f8) +0x8 step
 0x00759990 function pppKeHitBornCon           # ppp program table record "pppKeHitBorn" (0x00c3e1f8) +0x1c set-up
 0x00759bc0 function pppKeHitChkPxBCon         # ppp program table record "pppKeHitChkPxB" (0x00c3ad78) +0x1c set-up; "pppKeHitChkPxB" (0x00c3c420) +0x1c set-up
 0x00759bf0 function pppKeHmgEff               # fh v3:exact 0x00759ce0
@@ -1553,6 +1612,7 @@
 0x00759f10 function pppKeThHitBornCon         # ppp program table record "pppKeThHitBorn" (0x00c3e220) +0x1c set-up
 0x00759f30 function pppKeLnsLpSft             # fh v3:exact 0x0075a020
 0x00759fb0 function pppKeLnsLpSftCon          # ppp program table record "pppKeLnsLpSft" (0x00c3ac60) +0x1c set-up; "pppKeLnsLpSft" (0x00c3ac60) +0x20 second set-up; "pppKeLnsLpSft" (0x00c3c308) +0x1c set-up and 1 more
+0x00759fd0 function pppKeLnsArndCon           # ppp program table record "pppKeLnsArnd" (0x00c3aa30) +0x1c set-up; "pppKeLnsArnd" (0x00c3c0d8) +0x1c set-up
 0x0075a140 function pppKeLnsArndTDes          # fh v3:cg2 0x75a230
 0x0075a190 function pppKeLnsArndTDraw         # fh v3:exact 0x0075a280
 0x0075a2d0 function pppKeLnsArndUpdate        # fh v3:bsim1.00 0x0075a3c0
@@ -1617,6 +1677,7 @@
 0x0075d160 function pppScaleLoopCon2          # ppp program table record "pppScaleLoop" (0x00c3b5c0) +0x20 second set-up; "pppScaleLoop" (0x00c3cc68) +0x20 second set-up
 0x0075d1f0 function pppColor                  # fh v3:exact 0x0075d2e0
 0x0075d240 function pppColorCon               # fh v3:exact 0x0075d330
+0x0075d280 function pppPObjPoint              # ppp program table record "pppPObjPoint" (0x00c3d730) +0x8 step
 0x0075d340 function pppVertexAttend           # fh v3:exact 0x0075d430
 0x0075d590 function pppEiWindFunCon           # ppp program table record "pppEiWindFun" (0x00c3b048) +0x1c set-up; "pppEiWindFun" (0x00c3c6f0) +0x1c set-up
 0x0075d5d0 function pppNeiLightEikyo          # fh v3:exact 0x0075d6c0
@@ -7709,6 +7770,7 @@
 0x022fb4dc label    g_TkMenuSceneData         # 8 menu scene data blocks (TkMenuSetSceneDataAdrs, TkMenuInitSeq zeroes them; layout in crates/ffx-menu/src/scene.rs)
 0x022fb504 label    g_Settings
 0x0230fd34 label    g_pppStopStatus              # set by pppFpStopStatus; the ppp per-frame steps (pppColor, pppAngle, ...) do nothing while nonzero
+0x0230ffe4 label    g_pppCurrentPart             # the part pppRunPart/pppRunPartFp/pppStartPart set while they run it; +0x3c points at 16-byte object records (the object at +4), which pppPObjPoint and pppKeThTp index by the key
 0x02310c40 label    g_CdLib                   # function table of the PS2 CD-library emulation
 0x02310c60 label    g_CdLib_FileBase          # g_CdLib + 0x20: the current module's first PS2 file number (CDfileSize_CD, CDfileSize_CD_EX add it to theirs)
 0x02310c68 label    g_CdLib_SectorTable       # g_CdLib + 0x28: cdrom.mdg (CdEnvInit), u32 per file: start sector in bits 0-21, bit 22 size from sizetbl.bin, bit 23 absent, top byte the unused bytes at the end / 8 (CDfileSize_CD, cd_file_sector)

@@ -258,8 +258,8 @@ pub mod bridge {
 
     /// `op_oef2_tex_clut_ovl_clear(mask)` (`0x007e4e40`): frees the
     /// overlay CLUTs that share a bit with `mask`; the count becomes one
-    /// past the last one left.
-    pub fn op_oef2_tex_clut_ovl_clear(mem: &mut impl Mem, mask: u32) {
+    /// past the last one left, which it also returns (in `eax`, as a word).
+    pub fn op_oef2_tex_clut_ovl_clear(mem: &mut impl Mem, mask: u32) -> u32 {
         let ovl = OEF2_CLUT_OVL.ptr(mem);
         let mut last: i32 = -1;
         for i in 0..64 {
@@ -274,8 +274,10 @@ pub mod bridge {
                 last = i.cast_signed();
             }
         }
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 0..=64
-        OEF2_CLUT_OVL_COUNT.set(mem, (last + 1) as u16);
+        let count = (last + 1).cast_unsigned();
+        #[allow(clippy::cast_possible_truncation)] // 0..=64
+        OEF2_CLUT_OVL_COUNT.set(mem, count as u16);
+        count
     }
 
     /// `op_oef2_tex_clut_cue_check(mask)` (`0x007e46d0`): -1 when a queued
