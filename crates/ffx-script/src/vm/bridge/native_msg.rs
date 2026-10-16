@@ -516,6 +516,247 @@ pub fn native_sound_wait_poll<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u3
     r
 }
 
+/// `Msg_ChoicePoll(worker, args, handlers)` (`0x00860990`): as
+/// [`native_msg_select_poll`], but when the text box reports status 1 the
+/// handler for its choice (`0x008b8010(window)`, read from `handlers`) runs
+/// with it, if not null.
+pub fn msg_choice_poll<H: NativeHost>(h: &mut H, a: u32, handlers: u32) -> u32 {
+    let win = h.read::<u32>(a);
+    let m = atel_get_mes_win_work(h, win.cast_signed());
+    match h.read::<u16>(m + 0x14) {
+        0 | 4 => {
+            store_choice(h, a, win);
+            1
+        }
+        2 => {
+            if call(h, TO_GET_MESSAGE_STATUS, &[win]) == 3 {
+                match call(h, 0x008b_7fb0, &[win]) {
+                    1 => {
+                        let i = call(h, 0x008b_8010, &[win]);
+                        let f = h.read::<u32>(handlers.wrapping_add(i.wrapping_mul(4)));
+                        if f != 0 {
+                            h.call(f, &[i]);
+                        }
+                    }
+                    2 => {
+                        store_choice(h, a, win);
+                        call(h, MSG_CLOSE_WINDOW, &[win]);
+                    }
+                    _ => {}
+                }
+            }
+            0
+        }
+        _ => 0,
+    }
+}
+
+/// `Native_0267_Poll` (`0x0085a540`): [`msg_choice_poll`] with both
+/// choices handled by `0x008cc150` (the original's two-word table on its
+/// stack; here in [`NativeHost::scratch`]).
+pub fn native_0267_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u32 {
+    let t = h.scratch();
+    let f = h.rebase(0x008c_c150);
+    h.write(t, f);
+    h.write(t + 4, f);
+    msg_choice_poll(h, a, t)
+}
+
+/// `g_AtelVoiceId` (`0x01325af0`): the voice `Native_VoiceStandby` set.
+pub const VOICE_ID: Global<u32> = Global::new(0x0132_5af0);
+
+/// `Native_VoiceStandby` (`0x0085cd00`, `0x00d5`, start): `(voice)` into
+/// the args word and [`VOICE_ID`]; in debug mode prints the last wait's
+/// count and a start line; the standby countdown (`0x01325ad0`, flag
+/// `0x01325ad4`) from `0x0067a9d0(voice, 1)`; its `EAX`.
+pub fn native_voice_standby<H: NativeHost>(h: &mut H, _w: u32, a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    h.write(a, v);
+    VOICE_ID.set(h, v);
+    if DEBUG_MODE.get(h) == 1 {
+        let c = VOICE_PLAYING.count.get(h);
+        if c != 0 {
+            printf(h, 0x00b5_ba34, &[c]);
+            VOICE_PLAYING.count.set(h, 0);
+        }
+        printf(h, 0x00b5_ba6c, &[]);
+    }
+    countdown(h, &STANDBY, v, 1)
+}
+
+/// The countdown and its flag a voice step arms: `0x0067a9d0(voice, k)`
+/// frames, the flag set when not 0; returns the frames.
+fn countdown(h: &mut impl Host, v: &VoiceWait, voice: u32, k: u32) -> u32 {
+    let r = call(h, 0x0067_a9d0, &[voice, k]);
+    v.left.set(h, r.cast_signed());
+    v.flag.set(h, u32::from(r != 0));
+    r
+}
+
+/// `Native_VoiceStandby`'s countdown and debug count.
+const STANDBY: VoiceWait = VoiceWait {
+    count: Global::new(0x0132_5af4),
+    flag: Global::new(0x0132_5ad4),
+    left: Global::new(0x0132_5ad0),
+};
+/// `Native_VoiceStart`'s.
+const START: VoiceWait = VoiceWait {
+    count: Global::new(0x0132_5af8),
+    flag: Global::new(0x0132_5adc),
+    left: Global::new(0x0132_5ad8),
+};
+/// `g_012fb808` (`0x012fb808`): above 1 the standby wait never ends.
+pub const VOICE_HOLD: Global<u32> = Global::new(0x012f_b808);
+
+/// `Native_VoiceStandby_Poll` (`0x0085cec0`): counts frames in debug mode;
+/// with the countdown armed, 0 while it runs, then (unless [`VOICE_HOLD`]
+/// is above 1) disarmed and 5; else 5 once no movie runs and
+/// [`VOICE_HOLD`] allows, and `AtelGetBindMaskStatus()` is 0.
+pub fn native_voice_standby_poll<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    call(h, 0x0076_d0d0, &[]);
+    let d = DEBUG_MODE.get(h);
+    let mut c = STANDBY.count.get(h);
+    if d == 1 {
+        c = c.wrapping_add(1);
+        STANDBY.count.set(h, c);
+    }
+    if STANDBY.flag.get(h) == 1 {
+        let n = STANDBY.left.get(h);
+        if n > 0 {
+            STANDBY.left.set(h, n - 1);
+            return 0;
+        }
+        if d == 1 {
+            printf(h, 0x00b5_ba80, &[c]);
+            STANDBY.count.set(h, 0);
+        }
+        if VOICE_HOLD.get(h).cast_signed() > 1 {
+            return 0;
+        }
+        STANDBY.left.set(h, 0);
+        STANDBY.flag.set(h, 0);
+        return 5;
+    }
+    let mut r = 0;
+    if call(h, 0x0076_f060, &[]) == 0 {
+        if DEBUG_MODE.get(h) == 1 {
+            let n = STANDBY.count.get(h);
+            printf(h, 0x00b5_ba80, &[n]);
+            STANDBY.count.set(h, 0);
+        }
+        if VOICE_HOLD.get(h).cast_signed() > 1 {
+            return 0;
+        }
+        r = 5;
+    }
+    if call(h, 0x0086_ade0, &[]) == 0 { r } else { 0 }
+}
+
+/// `Native_VoiceStandby_End` (`0x0085d360`, int): unless a voice is
+/// already on standby (`TkSndIsStandbyVoice`), `Voice_Prepare(voice)`; 0.
+pub fn native_voice_standby_end<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u32 {
+    let v = h.read::<u32>(a);
+    if call(h, 0x0088_7b20, &[]) == 0 {
+        if DEBUG_MODE.get(h) == 1 {
+            printf(h, 0x00b5_baa0, &[]);
+        }
+        call(h, 0x0088_7570, &[v]);
+    }
+    0
+}
+
+/// `Native_VoiceStart` (`0x0085d6b0`, `0x00d6`, start): the start countdown
+/// from `0x0067a9d0(voice, 2)`; `+4` = 0 and the args word = the ctrl
+/// work's pending frames (`+0x214`, then reset to -1): `0x00885d20()` when
+/// negative, 0 when `FFXGetVideoMode()` is 0; that value.
+pub fn native_voice_start<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u32 {
+    let c = call(h, 0x0086_aff0, &[]);
+    let v = VOICE_ID.get(h);
+    countdown(h, &START, v, 2);
+    if DEBUG_MODE.get(h) == 1 {
+        printf(h, 0x00b5_bab8, &[]);
+    }
+    h.write(a + 4, 0_u32);
+    let p = h.read::<u32>(c + 0x214);
+    let r = if p.cast_signed() < 0 {
+        call(h, 0x0088_5d20, &[])
+    } else if call(h, 0x0088_7c40, &[]) == 0 {
+        0
+    } else {
+        h.read::<u32>(c + 0x214)
+    };
+    h.write(a, r);
+    h.write(c + 0x214, u32::MAX);
+    r
+}
+
+/// `Native_VoiceStart_Poll` (`0x0085d9d0`): counts frames in debug mode;
+/// with the countdown armed, 0 while it runs, then disarmed and 5; else
+/// (after `GetCD`) waits for the stream (`0x008873b0` bit 16 clear) and no
+/// movie, then counts the args word down: 5 at 0.
+pub fn native_voice_start_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u32 {
+    let d = DEBUG_MODE.get(h);
+    let mut c = START.count.get(h);
+    if d == 1 {
+        c = c.wrapping_add(1);
+        START.count.set(h, c);
+    }
+    if START.flag.get(h) == 1 {
+        let n = START.left.get(h);
+        if n > 0 {
+            START.left.set(h, n - 1);
+            return 0;
+        }
+        if d == 1 {
+            printf(h, 0x00b5_bacc, &[c]);
+            START.count.set(h, 0);
+        }
+        START.left.set(h, 0);
+        START.flag.set(h, 0);
+        return 5;
+    }
+    call(h, 0x0076_d0d0, &[]);
+    let e = call(h, 0x0088_73b0, &[]);
+    match h.read::<u32>(a + 4) {
+        0 => {
+            if e & 0x1_0000 != 0 || call(h, 0x0076_f060, &[]) != 0 {
+                return 0;
+            }
+            h.write(a + 4, 1_u32);
+        }
+        1 => {}
+        _ => return 0,
+    }
+    let n = h.read::<u32>(a);
+    if n.cast_signed() > 0 {
+        h.write(a, n - 1);
+        return 0;
+    }
+    if DEBUG_MODE.get(h) == 1 {
+        let k = START.count.get(h);
+        printf(h, 0x00b5_bacc, &[k]);
+        START.count.set(h, 0);
+    }
+    5
+}
+
+/// `Native_VoiceStart_End` (`0x0085de80`, int): `0x00887690(volume
+/// 0x00873b80(), AtelGetVagStreamVolume())`, the voice-playing flag from
+/// its countdown, the sync countdown from `0x0067a9d0(voice, 3)`; 0.
+pub fn native_voice_start_end<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    if DEBUG_MODE.get(h) == 1 {
+        printf(h, 0x00b5_baec, &[]);
+    }
+    let v = call(h, 0x0087_3b90, &[]);
+    let u = call(h, 0x0087_3b80, &[]);
+    call(h, 0x0088_7690, &[u, v]);
+    let left = VOICE_PLAYING.left.get(h);
+    VOICE_PLAYING.flag.set(h, u32::from(left != 0));
+    let voice = VOICE_ID.get(h);
+    countdown(h, &SOUND_WAIT, voice, 3);
+    0
+}
+
 /// The Rust version of a message or voice handler, if there is one.
 #[must_use]
 pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
@@ -529,7 +770,7 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x0085_9060 => native_msg_close,
         0x0085_9710 => native_msg_select,
         0x0085_9c50 | 0x0086_03d0 => native_msg_select_poll,
-        0x0085_a6f0 | 0x0086_0760 => native_msg_select_result,
+        0x0085_a6f0 | 0x0086_0760 | 0x0085_a620 => native_msg_select_result,
         0x0085_abd0 => native_msg_wait_ex,
         0x0085_ae90 | 0x0085_b980 => native_msg_wait_ex_poll,
         0x0085_b6d0 | 0x0085_ba80 => native_msg_wait_ex_end,
@@ -537,12 +778,27 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x0085_e1d0 => native_voice_is_playing,
         0x0085_e4a0 => native_sound_wait_poll,
         0x0086_02a0 => native_msg_show_wait,
+        0x0085_a540 => native_0267_poll,
+        0x0085_cd00 => native_voice_standby,
+        0x0085_cec0 => native_voice_standby_poll,
+        0x0085_d360 => native_voice_standby_end,
+        0x0085_d6b0 => native_voice_start,
+        0x0085_d9d0 => native_voice_start_poll,
+        0x0085_de80 => native_voice_start_end,
         _ => return super::native_move::find(sym),
     }))
 }
 
 /// Every handler [`find`] has, with whether it returns a float.
-pub const PORTED: [(u32, bool); 21] = [
+pub const PORTED: [(u32, bool); 29] = [
+    (0x0085_a540, false),
+    (0x0085_a620, false),
+    (0x0085_cd00, false),
+    (0x0085_cec0, false),
+    (0x0085_d360, false),
+    (0x0085_d6b0, false),
+    (0x0085_d9d0, false),
+    (0x0085_de80, false),
     (0x0085_5c70, false),
     (0x0085_6a00, false),
     (0x0085_7870, false),

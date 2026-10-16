@@ -478,6 +478,21 @@ speed). `native_msg` now also has `Native_MsgOpen`, the message waits
 arguments and re-pushes them for `MsgSetPos`, `MsgSetText`, `MsgOpen` and
 `MsgSelect` in turn.
 
+`ffx_script::vm::bridge::native_btl` has 38 battle natives (group 7):
+actor properties through `MsGetChrStatInfo`/`MsSetChrStatInfo`, commands,
+targets, motions and counts on the worker's battle actor (its index in the
+battle id byte, `0xff` for none). Where the original passes the address of
+a stack local for a result (`&out`), the Rust version uses
+`NativeHost::scratch`, zeroed first; a callee that writes nothing leaves 0
+there instead of the original's stack leftovers. Calls with more than six
+arguments (`0x007acd40`, `0x00797bc0`, `0x007bf600`) go through
+`NativeHost::call_n` (12 words in the game); round 7's `Native_Cam_601d`
+called the six-argument `Host::call` with seven, which would have
+panicked in the game. Round 8 also added the 0x0267 choice poll
+(`Msg_ChoicePoll` `0x00860990`, which calls a handler for status 1),
+`Native_VoiceStandby` and `Native_VoiceStart` with their polls and ends,
+`Native_SpriteSetPos`, `Native_LightSet` and `Native_SetModel`.
+
 #### The ported natives
 
 Every native with a Rust handler, by ID: the arguments in push order
@@ -490,6 +505,7 @@ API is generated from this table. `-`: none.
 | ID | Name | Arguments (push order) | Result | Waits | Handlers (module) |
 |---|---|---|---|---|---|
 | `0x0000` | `Native_WaitFrames_0000` | frames int (10 becomes 40 in battle scene 0x610000 with magic 0x290) | 1 when done | the frames (counted by real frames when g_WaitFramesByTime is set) | start `0x0085c4e0`, poll `0x0085c6b0` (native_move) |
+| `0x0001` | `Native_SetModel` | model int | 0 (the worker's character allocated and placed) | - | int `0x0085d000` (native_move) |
 | `0x0005` | `Native_WorkerDetach` | pushes 0, then as Worker_Detach (0x019d) | Worker_Detach's result | - | int `0x0085cdc0` (native_move) |
 | `0x0011` | `Native_MapChange` | map int, entrance int: map change | 0 | - | int `0x008581c0` (native_move) |
 | `0x0013` | `CT_0013_setPosition` | x f, y f, z f: the worker's position | 0 | - | int `0x0085faa0` (native) |
@@ -552,6 +568,8 @@ API is generated from this table. `-`: none.
 | `0x00c5` | `Native_SetTurnMotions` | m0 int, m1 int, m2 int, m3 int: turn motions | 0 | - | int `0x0085a4e0` (native) |
 | `0x00c6` | `Native_GetTurnKind` | - | int: bit 0 remaining yaw > 0, bit 1 at least the half-turn angle | - | int `0x0085a670` (native) |
 | `0x00c7` | `Native_GetTurnMotion` | kind int (from 0x00c6) | int: the motion 0x00c5 set for it | - | int `0x0085abb0` (native) |
+| `0x00d5` | `Native_VoiceStandby_End` | voice int | the standby frames; int slot 0 (Voice_Prepare unless a voice is on standby) | until the standby countdown runs out, or no movie runs (and g_VoiceHold allows) | start `0x0085cd00`, poll `0x0085cec0`, int `0x0085d360` (native_msg) |
+| `0x00d6` | `Native_VoiceStart_End` | - | the pending frames; int slot 0 (volume, play flag, sync countdown) | until the start countdown runs out, or the stream is ready and the frames counted down | start `0x0085d6b0`, poll `0x0085d9d0`, int `0x0085de80` (native_msg) |
 | `0x00d7` | `Native_VoiceStop` | - | 0 (stops the voice) | - | int `0x0085e090` (native) |
 | `0x00d8` | `Native_VoiceIsPlaying` | - | 1 while the voice plays, else 0 | no (scripts loop on it) | int `0x0085e1d0` (native_msg) |
 | `0x00d9` | `Native_SoundWait_Poll` | - | 1 when done | until the voice has stopped (or the voice-sync countdown runs out) | poll `0x0085e4a0` (native_msg) |
@@ -564,6 +582,7 @@ API is generated from this table. `-`: none.
 | `0x0116` | `Native_WorkerSetFlag0200` | worker int | int: worker (+0x36: 0x400 cleared, 0x200 set) | - | int `0x0085b9b0` (native) |
 | `0x011b` | `Native_SpriteShow` | sprite int (0-127), data var: variable reference | int: sprite | - | int `0x0085c370` (native) |
 | `0x011c` | `Native_SpriteHide` | sprite int | int: sprite | - | int `0x0085c4c0` (native) |
+| `0x011f` | `Native_SpriteSetPos` | sprite int, x int, y int | int: sprite | - | int `0x0085cc50` (native_move) |
 | `0x0120` | `Native_SpriteSetScale` | sprite int, sx f, sy f (1.0 normal) | int: sprite | - | int `0x0085cde0` (native) |
 | `0x0129` | `Native_SpriteSetColor` | sprite int, r int, b int, g int | int: sprite | - | int `0x0085c760` (native) |
 | `0x0134` | `Native_ChrLoadAlias` | as Native_SetModel (0x0001) | SetModel's result | - | int `0x0085d3c0` (native_move) |
@@ -581,11 +600,12 @@ API is generated from this table. `-`: none.
 | `0x01e6` | `Native_01e6` | on int, a f, b f: yiSetFieldPair | int: on | - | int `0x008591d0` (native_map) |
 | `0x0210` | `Native_BitFlagSet` | bit int | int: bit (set) | - | int `0x0085c3b0` (native_move) |
 | `0x0241` | `CT_0241_ret` | on int: field state bit 3 | int: on != 0 | - | int `0x00856ad0` (native) |
-| `0x0267` | `?` | as 0x013b | start as 0x013b (its poll 0x0085a540 and result 0x0085a620 not ported) | its own poll | start `0x008602a0`, poll `0x0085a540`, int `0x0085a620` (native_msg) |
+| `0x0267` | `Native_0267_Result` | as 0x013b | 1 when done; int slot: the choice (-1 none) | as 0x013b; a choice with status 1 calls 0x008cc150 | start `0x008602a0`, poll `0x0085a540`, int `0x0085a620` (native_msg) |
 | `0x1006` | `AtelCall_Math_Sqrt_RF` | x f | float: sqrt(x) as f32 | - | float `0x00877b70` (native_move) |
 | `0x4004` | `Native_FadeIn` | frames int | 0 (fade in) | - | int `0x00a77d80` (native_move) |
 | `0x4005` | `Native_FadeOut` | frames int | 0 (fade out) | - | int `0x00a77da0` (native_move) |
 | `0x400a` | `Native_MotionBlur` | v int | 0 (motion blur) | - | int `0x00a77e00` (native_move) |
+| `0x4013` | `Native_LightSet` | light int (0-3), r int, g int, b int, pitch int (deg), yaw int (deg) | 0 | - | int `0x00a78030` (native_move) |
 | `0x5000` | `Native_ChrSetMotion_5000` | motion int | 0 | - | int `0x00a78770` (native) |
 | `0x5003` | `Native_ChrWaitMotion_5003` | - | 5 when done | until the character's motion has ended (+0x736) | start `0x00a787d0`, poll `0x00a788a0` (native) |
 | `0x5005` | `Native_ChrReleaseMotion` | - | 0 (automatic motions take over) | - | int `0x00a78940` (native) |
@@ -688,8 +708,45 @@ API is generated from this table. `-`: none.
 | `0x6084` | `Native_Cam_6084` | as 0x605d, flags 8 | int: camera handle | - | int `0x007b9380` (native_cam) |
 | `0x6087` | `Native_Cam_6087` | - | int: camera handle (0x007beae0(cam, 0)) | - | int `0x007b8a10` (native_cam) |
 | `0x6088` | `Native_Cam_6088` | - | int: camera handle (0x007beae0(cam, 1)) | - | int `0x007b8a70` (native_cam) |
+| `0x7000` | `Native_7000` | - | 0 (actor +0xdf2 = 0) | - | int `0x007a8620` (native_btl) |
+| `0x7002` | `Native_7002` | a int, b int | the start's result; poll returns 1 at once | no | start `0x007a3530`, poll `0x007a35c0` (native_btl) |
+| `0x7003` | `Native_7003` | a int, b int | 0 (0x00795eb0(actor, 2, 0, -1, b, a)) | - | int `0x007a3d90` (native_btl) |
+| `0x7006` | `Native_7006` | a int, b int | 0 (as 0x7003 with 1, when actor +0x41d) | - | int `0x007a3f50` (native_btl) |
 | `0x7007` | `Native_ActorPlayMotion` | as 0x007a8fc0(worker, args, stack, 0) | its result | - | int `0x007a35a0` (native_move) |
+| `0x7008` | `Native_ActorWaitMotion` | - | 5 when done | until the actor's motion ends (no actor/model: at once) | poll `0x007a3980` (native_btl) |
+| `0x700a` | `Native_700a` | b int, f f | 0 (actor +0x50c = b, +0x538 = f) | - | int `0x007a4100` (native_btl) |
+| `0x700b` | `Native_BtlUseCommand` | targets int (selector), command int | 1 if used, else 0 (actor cannot act) | - | int `0x007a44b0` (native_btl) |
+| `0x700c` | `Native_700c` | - | 0 (0x007a9150(worker, args, stack, 0.0)) | - | int `0x007a4310` (native_btl) |
+| `0x700f` | `Native_GetActorProperty` | selector int, property int | int: MsGetChrStatInfo's value | - | int `0x007a4d50` (native_btl) |
+| `0x7010` | `Native_BtlSelectTarget` | a int, b int, c int, d int | int: the selected target | - | int `0x007a5af0` (native_btl) |
+| `0x7016` | `Native_ActorQueueMotion` | motion int | 0 (queued on the actor) | - | int `0x007a2a20` (native_btl) |
+| `0x7018` | `Native_SetActorsProperty` | selector int, property int, value int | int: MsSetChrStatInfo's result | - | int `0x007a50c0` (native_btl) |
+| `0x7019` | `Native_7019` | - | int: 0x007acc90(actor) | - | int `0x007a62d0` (native_btl) |
+| `0x701a` | `Native_701a` | a int, b int | int: 0x0078cd30(actor, a, b) | - | int `0x007a6390` (native_btl) |
+| `0x701d` | `Native_701d` | - | int: actor +0x420 (signed) | - | int `0x007a5bf0` (native_btl) |
+| `0x701e` | `Native_BtlCountActorsInBoth` | a int, b int: selectors | int: actors both pick | - | int `0x007a6870` (native_btl) |
+| `0x7021` | `Native_ActorGetId` | selector int | int: the picked actor's id, -1 for none | - | int `0x007a6a80` (native_btl) |
+| `0x7024` | `Native_BtlGetBattleId` | - | int: MsGetBattleScene() | - | int `0x007a4e90` (native_btl) |
+| `0x7026` | `Native_7026` | v int | 0 (actor +0x44f = v) | - | int `0x007a5d80` (native_btl) |
+| `0x702b` | `Native_702b` | - | int: -1 while the actor's model is busy, else 0 | - | int `0x007a3c50` (native_btl) |
+| `0x702d` | `Native_702d` | - | 0 | - | int `0x007a4e60` (native_btl) |
+| `0x702e` | `Native_702e` | v int: target | float: distance to the target (MsGetTargetDist) | - | float `0x007a6d70` (native_btl) |
+| `0x7037` | `Native_7037` | b int, a int | int: 0x007ac840(actor, a, b, 1) | - | int `0x007a6d30` (native_btl) |
+| `0x703f` | `Native_BtlRunEvent` | event int, a int | the event handle; poll its 0x007a8700 | until the event ends | start `0x007a5df0`, poll `0x007a5ec0` (native_btl) |
+| `0x7048` | `Native_7048` | i int, x f, y f, z f | 0 | - | int `0x007a53f0` (native_btl) |
+| `0x704a` | `Native_704a` | selector int | int: picked actors with +0x415 set | - | int `0x007a58d0` (native_btl) |
+| `0x705d` | `Native_ActorSetFlag36` | a int, b int (dropped) | int: the actor index (+0x36 = 1) | - | int `0x007a51e0` (native_btl) |
+| `0x706f` | `Native_706f` | as 0x007a8fc0(worker, args, stack, 1) | its result | - | int `0x007a36c0` (native_btl) |
+| `0x707b` | `Native_707b` | selector int, k int | int: 0x0079fd40(picked, k) | - | int `0x007a7470` (native_btl) |
+| `0x7085` | `Native_7085` | - | 0 (as 0x700c, record +0x418 = 1) | - | int `0x007a43a0` (native_btl) |
+| `0x7097` | `Native_7097` | v int | the handle; poll 0x007a8700 | until it ends | start `0x007a5780`, poll `0x007a58c0` (native_btl) |
+| `0x70a1` | `Native_ActorGetSlotRef` | selector int | int: the picked actor's +0xc, -6 - slot, or 0xff | - | int `0x007a6b40` (native_btl) |
+| `0x70a2` | `Native_70a2` | v int | the start's result (poll not ported) | its own poll | start `0x007a7440`, poll `0x007a7500` (native_btl) |
+| `0x70aa` | `Native_GetSelfProperty` | property int | int: the actor's own property | - | int `0x007a4ea0` (native_btl) |
 | `0x70ab` | `Native_SetActorProperty` | property int, value int | int: 0x007b4b70(actor, property, -13, value) | - | int `0x007a5360` (native_move) |
+| `0x70ac` | `Native_70ac` | i int | float: actor float property i | - | float `0x007a5650` (native_btl) |
+| `0x70b2` | `Native_SetSelfFloatProperty` | property int, value f | 0 (MsSetChrMotionInfo) | - | int `0x007a5930` (native_btl) |
+| `0x7104` | `Native_7104` | a int, b int, c int | int: 0x0079d2a0(a, b, c) | - | int `0x007a6600` (native_btl) |
 | `0x8000` | `Native_FieldSetMaskBit` | group int, on int: map draw group (TkSetMapGroupDrawStatus) | int: group | - | int `0x0091c530` (native) |
 | `0x8001` | `Native_8001` | on int: rendering on/off (yiRenderEnable bit 0x10, 0x00643df0) | int: on | - | int `0x0091c5b0` (native_map) |
 | `0x8002` | `Native_FpRun` | fp int: field program, restart int (0 ends it) | int: restart | - | int `0x0091c670` (native) |
@@ -786,7 +843,15 @@ on each window state, `Native_CamSetScreenDepth` in debug mode. `move_and_messag
 every mode with prepared blocks, the message opens and the three waits on
 each window state, `Msg_ShowSetup`, the time-counted frame wait, the
 camera paths from the battle lists with 0, 3 and more points,
-`Native_CamWait` in debug mode and `Native_BtlRandom` with its latch. In the game those words hold whatever
+`Native_CamWait` in debug mode and `Native_BtlRandom` with its latch. The natives tests leave the
+emulated VU0 registers (`0x00c8f788`-`0x00c8f890`) out of the memory
+comparison: battle helpers load vectors with an unwritten `w` into them
+(`0x007a9150`). Three more uninitialised-stack stubs zero the frames of
+`MsGetTargetDist` (`0x007a9a40`), `Native_702c` (`0x007a45c0`) and
+`MsSetChrDirTarget` (`0x00795eb0`): each copies a position or angle that
+`0x00794d20` and friends leave unwritten for some actors into the actor
+(`+0x490`). Once the Rust battle natives ran in `Script_Run`, the
+leftovers there came from different frames than the original's. In the game those words hold whatever
 earlier calls left at that depth, so the Rust interpreter (whose frames
 differ) can store different garbage there; nothing reads it back as far as
 the tests reach.
@@ -796,12 +861,9 @@ the tests reach.
 1. Done: the accessors, the dispatch loop, every opcode, native dispatch,
    the signals (request families, `AtelExecReturn`, the waits, opcodes
    `79`/`7a`): `Script_Run` calls no original script code but natives.
-2. Now: the natives, most used first. Done: group 8, the sprites, sound
-   effects, stops, 71 camera natives, the message setters, opens and
-   waits, the voice waits, the move and turn starts and setters, the
-   frame wait, map jumps, fades. Next: the voice standby/start natives
-   (`0x00d5`, `0x00d6`), `Native_SpriteSetPos`, `Native_LightSet`,
-   `Native_SetModel`, the battle actor natives (`0x7018`, `0x700f`, ...).
+2. Now: the natives, most used first. Done: about 340 handlers (see
+   the table). Next: the remaining battle natives by call count, `0x0006`,
+   `0x00f5`, `0x00cb`, the menu natives (`CT_401D_init`).
 3. Then a `Natives` implementation with no original code behind it, so
    the interpreter runs outside the game.
 
