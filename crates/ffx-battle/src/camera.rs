@@ -197,6 +197,25 @@ pub mod bridge {
     pub fn ms_get_camera_matrix(mem: &impl Mem) -> u32 {
         CAMERA_MATRIX.ptr(mem).addr
     }
+
+    /// `MsCameraGetID(cam)` (`0x007bd300`): the request ID of camera
+    /// `cam & 0xff`'s current slot ([`ms_camera_get_num`]), 0 when that slot
+    /// is off or done.
+    pub fn ms_camera_get_id(mem: &impl Mem, cam: u32) -> u32 {
+        let cam = cam & 0xff;
+        let n = ms_camera_get_num(mem, cam);
+        let at = SLOTS_AT
+            .ptr(mem)
+            .addr
+            .wrapping_add(cam.wrapping_mul(CAMERA_SIZE))
+            .wrapping_add(n.wrapping_mul(8));
+        let b: [u8; 6] = mem.read(at);
+        if b[4] != 0 || b[5] != 0 {
+            0
+        } else {
+            u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+        }
+    }
 }
 
 #[cfg(test)]

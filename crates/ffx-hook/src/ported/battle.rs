@@ -1033,4 +1033,61 @@ ported! {
     MsEffectSetCameraBufFloat @ 0x007b_7f50 => extern "C" fn ms_effect_set_camera_buf_float(i: u32, f: u32) {
         misc::ms_effect_set_camera_buf_float(&mut mem(), i, f);
     }
+
+    /// `MsGetChrBit(chr, selector, all, any)`: a set of actors as bits.
+    MsGetChrBit @ 0x0079_4330 => extern "C" fn ms_get_chr_bit(chr: u32, selector: u32, all: i32, any: i32) -> u32 {
+        actor::ms_get_chr_bit(&mem(), chr, selector, all, any)
+    }
+    /// `MsGetChrWidth(i)`: on the x87 stack.
+    MsGetChrWidth @ 0x0079_5a20 => extern "C" fn ms_get_chr_width(i: u32) -> f32 {
+        actor::ms_get_chr_width(&mem(), i)
+    }
+    /// `MsGetChrScale(i, out)`.
+    MsGetChrScale @ 0x0079_5720 => extern "C" fn ms_get_chr_scale(i: u32, out: u32) -> i32 {
+        actor::ms_get_chr_scale(&mut mem(), i, out)
+    }
+    /// `MsGetChrDist(i)`.
+    MsGetChrDist @ 0x0079_4e00 => extern "C" fn ms_get_chr_dist(i: u32) -> u32 {
+        actor::ms_get_chr_dist(&mem(), i)
+    }
+    /// `MsGetChrBtlDir(i)`: on the x87 stack.
+    MsGetChrBtlDir @ 0x0079_48a0 => extern "C" fn ms_get_chr_btl_dir(i: u32) -> f32 {
+        actor::ms_get_chr_btl_dir(&mem(), i)
+    }
+    /// `MsGetChrGroundPos(i, &x, &y)`: EAX as the original leaves it.
+    MsGetChrGroundPos @ 0x0079_4ff0 => extern "C" fn ms_get_chr_ground_pos(i: u32, x: u32, y: u32) -> u32 {
+        actor::ms_get_chr_ground_pos(&mut mem(), i, x, y)
+    }
+    /// `MsGetChrTargetPos(i, &x, &y)`: EAX as the original leaves it.
+    MsGetChrTargetPos @ 0x0079_5920 => extern "C" fn ms_get_chr_target_pos(i: u32, x: u32, y: u32) -> u32 {
+        actor::ms_get_chr_target_pos(&mut mem(), i, x, y)
+    }
+    /// `MsGetChrEventFlag(i, event)`.
+    MsGetChrEventFlag @ 0x0079_4f20 => extern "C" fn ms_get_chr_event_flag(i: u32, event: u32) -> u32 {
+        actor::ms_get_chr_event_flag(&mem(), i, event)
+    }
+    /// `MsGetChrMotionSignal(i)`.
+    MsGetChrMotionSignal @ 0x0079_5660 => extern "C" fn ms_get_chr_motion_signal(i: u32) -> u32 {
+        actor::ms_get_chr_motion_signal(&mem(), i)
+    }
+    /// `MsGetChrModelID(i)`.
+    MsGetChrModelID @ 0x0079_5610 => extern "C" fn ms_get_chr_model_id(i: u32) -> u32 {
+        actor::ms_get_chr_model_id(&mem(), i)
+    }
+    /// `MsGetChrMotionSpeed(i)`.
+    MsGetChrMotionSpeed @ 0x0079_56a0 => extern "C" fn ms_get_chr_motion_speed(i: u32) -> u32 {
+        actor::ms_get_chr_motion_speed(&mem(), i)
+    }
+    /// `MsGetWeaponHandle(i, second)`.
+    MsGetWeaponHandle @ 0x0079_5b40 => extern "C" fn ms_get_weapon_handle(i: u32, second: i32) -> u32 {
+        actor::ms_get_weapon_handle(&mem(), i, second)
+    }
+    /// `MsGetWeaponSpecial(id, k)`.
+    MsGetWeaponSpecial @ 0x0079_5bb0 => extern "C" fn ms_get_weapon_special(id: u32, k: u32) -> u32 {
+        actor::ms_get_weapon_special(&mem(), id, k)
+    }
+    /// `MsCameraGetID(cam)`.
+    MsCameraGetID @ 0x007b_d300 => extern "C" fn ms_camera_get_id(cam: u32) -> u32 {
+        camera::ms_camera_get_id(&mem(), cam)
+    }
 }

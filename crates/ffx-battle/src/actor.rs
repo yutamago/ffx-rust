@@ -677,6 +677,282 @@ pub mod bridge {
         use crate::state::bridge::{COMMAND_CUE, CUE_SIZE};
         COMMAND_CUE.ptr(mem).addr + u32::from(n) * CUE_SIZE
     }
+
+    /// The actor whose command runs (`MsGetChrBit` -2, -3), `0xff` none.
+    pub const COMMAND_ACTOR: Global<u8> = Global::new(0x0112_c9e0);
+    /// The actor whose turn it is (`MsGetChrBit` -18).
+    pub const TURN_ACTOR: Global<u8> = Global::new(0x0112_c9df);
+    /// A set of actors (`MsGetChrBit` -4).
+    pub const CHR_SET: Global<u32> = Global::new(0x0112_c8c8);
+
+    /// Whether actor `a` takes part (`+0xdc8` set, `+0xdcd` clear).
+    fn present(mem: &impl Mem, a: u32) -> bool {
+        byte(mem, a, 0xdc8) != 0 && byte(mem, a, 0xdcd) == 0
+    }
+
+    /// The actors (as bits) for which `keep(index, actor)` holds.
+    fn select(mem: &impl Mem, mut keep: impl FnMut(u32, u32) -> bool) -> u32 {
+        (0..ACTORS)
+            .filter(|&i| keep(i, ms_get_chr(mem, i)))
+            .fold(0, |m, i| m | (1 << i))
+    }
+
+    /// Bit `i` when `i & 0xff` is an actor, else 0.
+    fn bit_of(i: u32) -> u32 {
+        if ms_btl_chr_num_check(i) != 0 {
+            1 << (i & 0x1f)
+        } else {
+            0
+        }
+    }
+
+    /// `MsGetChrBit(chr, selector, all, any)` (`0x00794330`): a set of
+    /// actors as bits, for scripts and commands: `0x1xxx` the present
+    /// actors of that kind (`+0xe`); an index its own bit; and the special
+    /// sets -26 (`chr`'s `+0xdc4`), -25 present living party, -24 party
+    /// but summons, -23 party, -22 `chr`'s `+0x14`, -21 all 31, -20 present
+    /// summons, -19 present party but summons, -18 the turn's actor, -17
+    /// `chr`'s `+0xded`, -16 `chr`'s `+0xdc0`, -15 present monsters, -14
+    /// present party, -13 `chr`, -12..-6 the battle party slots
+    /// (`0x0112c895` on), -5 the present (all with `all`), -4 [`CHR_SET`]'s
+    /// present (or all with `any`), -3 the running command's targets, -2
+    /// its actor.
+    #[allow(clippy::too_many_lines)]
+    pub fn ms_get_chr_bit(mem: &impl Mem, chr: u32, selector: u32, all: i32, any: i32) -> u32 {
+        use crate::damage::bridge::ms_get_ram_chr_summon;
+        let monster = |i: u32| ms_get_ram_chr_monster(i);
+        let summon = |i: u32| ms_get_ram_chr_summon(mem, i) != 0;
+        let command_actor = COMMAND_ACTOR.get(mem);
+        if selector & 0xffff_f000 == 0x1000 {
+            return select(mem, |_, a| {
+                present(mem, a)
+                    && u32::from(Ptr::<u8>::new(a).field::<u16>(0xe).get(mem)) == selector
+            });
+        }
+        let field = |o: u32| {
+            Ptr::<u8>::new(ms_get_chr(mem, chr))
+                .field::<u32>(o)
+                .get(mem)
+        };
+        match selector.cast_signed() {
+            -26 => field(0xdc4),
+            -25 => select(mem, |i, a| {
+                present(mem, a)
+                    && monster(i) == 0
+                    && ms_get_chr_stat_death(mem, i) == 0
+                    && ms_get_chr_stat_stone(mem, i) == 0
+            }),
+            -24 => select(mem, |i, _| monster(i) == 0 && !summon(i)),
+            -23 => select(mem, |i, _| monster(i) == 0),
+            -22 => bit_of(u32::from(byte(mem, ms_get_chr(mem, chr), 0x14))),
+            -21 => 0x7fff_ffff,
+            -20 => select(mem, |i, a| present(mem, a) && summon(i)),
+            -19 => select(mem, |i, a| present(mem, a) && monster(i) == 0 && !summon(i)),
+            -18 => bit_of(u32::from(TURN_ACTOR.get(mem))),
+            -17 => 1 << (byte(mem, ms_get_chr(mem, chr), 0xded) & 0x1f),
+            -16 => field(0xdc0),
+            -15 => select(mem, |i, a| present(mem, a) && monster(i) == 1),
+            -14 => select(mem, |i, a| present(mem, a) && monster(i) == 0),
+            -13 => bit_of(chr),
+            n @ -12..=-6 => {
+                let at = crate::save::bridge::BATTLE_PARTY
+                    .ptr(mem)
+                    .addr
+                    .wrapping_sub(6);
+                bit_of(u32::from(mem.read::<u8>(at.wrapping_add(n.unsigned_abs()))))
+            }
+            -5 => select(mem, |_, a| present(mem, a) || all != 0),
+            -4 => {
+                let set = CHR_SET.get(mem);
+                select(mem, |i, a| {
+                    (set >> i) & 1 != 0 && (present(mem, a) || any != 0)
+                })
+            }
+            -3 => {
+                let mut targets = 0i32;
+                if command_actor != 0xff
+                    && byte(mem, ms_get_chr(mem, u32::from(command_actor)), 0xdf0) != 0
+                {
+                    let c = ms_get_chr_command(mem, u32::from(command_actor));
+                    let k = u32::from(byte(mem, c, 2));
+                    targets = mem.read(c.wrapping_add((k + 1) * 16));
+                }
+                select(mem, |i, a| {
+                    (targets >> i) & 1 != 0 && (present(mem, a) || any != 0)
+                })
+            }
+            -2 => {
+                if command_actor != 0xff
+                    && byte(mem, ms_get_chr(mem, u32::from(command_actor)), 0xdf0) != 0
+                {
+                    1 << (command_actor & 0x1f)
+                } else {
+                    0
+                }
+            }
+            _ => bit_of(selector),
+        }
+    }
+
+    fn f32_field(mem: &impl Mem, a: u32, o: u32) -> u32 {
+        Ptr::<u8>::new(a).field::<u32>(o).get(mem)
+    }
+
+    /// `MsGetChrWidth(i)` (`0x00795a20`): the model's width (`+0x4e4`)
+    /// times its x scale (`+0x3a8`), 0 without a model (an `f32`).
+    pub fn ms_get_chr_width(mem: &impl Mem, i: u32) -> f32 {
+        use ffx_bridge::x87::{load, mul, store};
+        let a = ms_get_chr(mem, i & 0xff);
+        if Ptr::<u32>::new(a).get(mem) == 0 {
+            return 0.0;
+        }
+        f32::from_bits(store(mul(
+            load(f32_field(mem, a, 0x4e4)),
+            load(f32_field(mem, a, 0x3a8)),
+        )))
+    }
+
+    /// `MsGetChrScale(i, out)` (`0x00795720`): the actor's scale (`+0x3a0`,
+    /// three floats) into `out`; -1, or 0 for no actor or no `out`.
+    pub fn ms_get_chr_scale(mem: &mut impl Mem, i: u32, out: u32) -> i32 {
+        let i = i & 0xff;
+        if ms_btl_chr_num_check(i) == 0 || out == 0 {
+            return 0;
+        }
+        let a = ms_get_chr(mem, i);
+        for k in 0..3 {
+            let v = ffx_bridge::x87::store(ffx_bridge::x87::load(f32_field(mem, a, 0x3a0 + 4 * k)));
+            mem.write(out + 4 * k, v);
+        }
+        -1
+    }
+
+    /// `MsGetChrDist(i)` (`0x00794e00`): `+0x4ff`, signed.
+    pub fn ms_get_chr_dist(mem: &impl Mem, i: u32) -> u32 {
+        actor_only(mem, i, |a| {
+            i32::from(byte(mem, a, 0x4ff).cast_signed()).cast_unsigned()
+        })
+    }
+
+    /// `MsGetChrBtlDir(i)` (`0x007948a0`): direction `+0x511` (signed) of
+    /// `+0x514` (an `f32`), 0 for no actor.
+    pub fn ms_get_chr_btl_dir(mem: &impl Mem, i: u32) -> f32 {
+        let i = i & 0xff;
+        if ms_btl_chr_num_check(i) == 0 {
+            return 0.0;
+        }
+        let a = ms_get_chr(mem, i);
+        let k = i32::from(byte(mem, a, 0x511).cast_signed()).cast_unsigned();
+        let bits: u32 = mem.read(a.wrapping_add(0x514).wrapping_add(k.wrapping_mul(4)));
+        f32::from_bits(ffx_bridge::x87::store(ffx_bridge::x87::load(bits)))
+    }
+
+    /// Two words of an actor (`+o`, `+o + 4`) into `x` and `y` when not
+    /// null (`MsGetChrGroundPos`, `MsGetChrTargetPos`); EAX as the original
+    /// leaves it: 0 for no actor, else the second word or the actor.
+    #[allow(clippy::many_single_char_names)]
+    fn pair(mem: &mut impl Mem, i: u32, x: u32, y: u32, o: u32) -> u32 {
+        let i = i & 0xff;
+        if ms_btl_chr_num_check(i) == 0 {
+            return 0;
+        }
+        let a = ms_get_chr(mem, i);
+        if x != 0 {
+            let v = f32_field(mem, a, o);
+            mem.write(x, v);
+        }
+        if y == 0 {
+            return a;
+        }
+        let v = f32_field(mem, a, o + 4);
+        mem.write(y, v);
+        v
+    }
+
+    /// `MsGetChrGroundPos(i, &x, &y)` (`0x00794ff0`): `+0xf54`, `+0xf58`.
+    pub fn ms_get_chr_ground_pos(mem: &mut impl Mem, i: u32, x: u32, y: u32) -> u32 {
+        pair(mem, i, x, y, 0xf54)
+    }
+
+    /// `MsGetChrTargetPos(i, &x, &y)` (`0x00795920`): `+0xf34`, `+0xf38`.
+    pub fn ms_get_chr_target_pos(mem: &mut impl Mem, i: u32, x: u32, y: u32) -> u32 {
+        pair(mem, i, x, y, 0xf34)
+    }
+
+    /// `MsGetChrEventFlag(i, event)` (`0x00794f20`): 2 while the actor waits
+    /// on an event (`+0xddd`) other than `event` and 0xff (`+0xdde`); its
+    /// `+0xddd` (signed) when that is `event` or 0xff; 0 for none.
+    pub fn ms_get_chr_event_flag(mem: &impl Mem, i: u32, event: u32) -> u32 {
+        actor_only(mem, i, |a| {
+            let on = i32::from(byte(mem, a, 0xddd).cast_signed()).cast_unsigned();
+            let e = u32::from(Ptr::<u8>::new(a).field::<u16>(0xdde).get(mem));
+            if on == 0 || e == 0xff || e == event {
+                on
+            } else {
+                2
+            }
+        })
+    }
+
+    /// `MsGetChrMotionSignal(i)` (`0x00795660`): `+0x39c`.
+    pub fn ms_get_chr_motion_signal(mem: &impl Mem, i: u32) -> u32 {
+        actor_only(mem, i, |a| f32_field(mem, a, 0x39c))
+    }
+
+    /// `MsGetChrModelID(i)` (`0x00795610`): `+4`.
+    pub fn ms_get_chr_model_id(mem: &impl Mem, i: u32) -> u32 {
+        actor_only(mem, i, |a| f32_field(mem, a, 4))
+    }
+
+    /// `MsGetChrMotionSpeed(i)` (`0x007956a0`): `+0x400`.
+    pub fn ms_get_chr_motion_speed(mem: &impl Mem, i: u32) -> u32 {
+        actor_only(mem, i, |a| {
+            u32::from(Ptr::<u8>::new(a).field::<u16>(0x400).get(mem))
+        })
+    }
+
+    /// `MsGetWeaponHandle(i, second)` (`0x00795b40`): the handle of actor
+    /// `i`'s weapon record; a record without one but with `+0x440` set
+    /// takes that of the `second`-th (from 0) actor whose `+0x43f` is `i`
+    /// (the last such when there are fewer).
+    #[allow(clippy::many_single_char_names)]
+    pub fn ms_get_weapon_handle(mem: &impl Mem, i: u32, second: i32) -> u32 {
+        let i = i & 0xff;
+        let w = ms_get_weapon(mem, i, second);
+        if w == 0 {
+            return 0;
+        }
+        let mut h = Ptr::<u32>::new(w).get(mem);
+        if h != 0 || byte(mem, w, 0x440) == 0 {
+            return h;
+        }
+        let mut n = 0;
+        for k in 0..ACTORS {
+            let a = ms_get_chr(mem, k);
+            if u32::from(byte(mem, a, 0x43f)) == i {
+                h = Ptr::<u32>::new(a).get(mem);
+                n += 1;
+                if n > second {
+                    break;
+                }
+            }
+        }
+        h
+    }
+
+    /// `MsGetWeaponSpecial(id, k)` (`0x00795bb0`): the special weapon actors
+    /// 0x1c-0x1e for weapons 4, 5 and 14 (with `k` 0), else null.
+    pub fn ms_get_weapon_special(mem: &impl Mem, id: u32, k: u32) -> u32 {
+        if k != 0 {
+            return 0;
+        }
+        match id {
+            4 => ms_get_chr(mem, 0x1c),
+            5 => ms_get_chr(mem, 0x1d),
+            14 => ms_get_chr(mem, 0x1e),
+            _ => 0,
+        }
+    }
 }
 
 #[cfg(test)]
