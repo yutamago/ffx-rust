@@ -2544,6 +2544,7 @@
 0x007b2b20 function MsGetYoujinbouCom         # fh v3:bsim1.00 0x007b2b30
 0x007b2c10 function msVoiceCheckStanby        # fh v3:exact 0x007b2c20
 0x007b2dc0 function MsGetChrStatInfo          # switch over ~340 actor properties; was Battle_GetActorProperty
+0x007b4a70 function Battle_ChrMoveFlags       # (actor) -> u32 actor +0x4ac (bits 0-1: a move under way), | 8 while +0x3fb; used by MsGetChrStatInfo and 0x007a4f80
 0x007b4a90 function MsSetChrMotionInfo        # (actor, property 0-9, float): writes actor dwords 0x12f-0x139; was Battle_SetActorFloatProperty
 0x007b4b70 function MsSetChrStatInfo          # switch over ~320 actor properties; was Battle_SetActorProperty
 0x007b6c50 function MsGetBattleList           # fh v3:exact 0x007b6bd0
@@ -7528,6 +7529,7 @@
 0x01128ae4 label    g_Cd_HddInstall           # HDD-install table, 0x34-byte entries: archive (u8) +0, PS2 file number +8, size +0x10 (check_ex_file_size)
 0x0112a508 label    g_Hdd_Mounted             # i8: hdd_mount/hdd_unmount set it, hdd_mount_flg_get returns it
 0x0112a528 label    g_Hdd_Heads               # 51 entries of 12 bytes (hdd_head_reset runs to 0x0112a790 and sets +0, +4 to 0, +8 to 1): +8 = read mode (i8, hdd_rmode_get)
+0x0112a8d0 label g_BtlMem                  # 0x2150 bytes of battle globals cleared by MsBattleMemInit (the kernel table pointers 0x0112a92c.. among them)
 0x0112a8e0 label g_BtlStatus                 # i8, not 0 in battle (MsBattleGetStatus 0x007816f0 sign-extends it; MsGetBattleScene 0x00782970 tests it)
 0x0112a8e2 label g_BtlExe                    # i8; MsBattleExeClear (0x00781530) returns it and clears it unless g_BtlExeKeep
 0x0112a8e7 label g_BtlSpecialCamera           # u8; with the one before it (same function, ffx_battle::misc)
@@ -7570,6 +7572,7 @@
 0x0112a9cc label g_BtlFieldTable2             # u32; with the one before it (same function, ffx_battle::misc)
 0x0112a9d0 label g_BtlFieldCount              # u16; with the one before it (same function, ffx_battle::misc)
 0x0112a9d4 label g_BtlEncountType            # u8 (MsGetEncountType 0x00782a10)
+0x0112a9d7 label g_BtlEncountOn            # u8: 0 when a joined character has g_PlySave +0x4e bit 1 (MsSaveEncountCheck)
 0x0112a9d8 label g_BtlEncountSteps         # 2 x f32 encounter counters, 0 after ResetEncountExe (which writes g_BtlEncountType as u16)
 0x0112a9e0 label g_BtlEncountRates         # 2 x f32, 1.0 after ResetEncountExe
 0x0112a9f0 label g_BtlSceneField             # pointer to the battle field's i16 ID; MsGetBattleScene returns it << 16 + *g_BtlSceneGroup
@@ -7579,6 +7582,7 @@
 0x0112bde0 label g_BtlInputCueCount          # i8 entries in g_BtlInputCue
 0x0112bde1 label g_BtlCommandCueCount        # i8 entries in g_BtlCommandCue
 0x0112bdf0 label g_BtlMenuCommand             # [u32; 0x12]; The menu command MsSetMenuCommand copies (0x48 bytes) and its flag.
+0x0112be38 label g_BtlMimic                # 0x48 bytes cleared by MsInitMimic
 0x0112be90 label g_BtlGilAmount               # i32, gil offered (DmgCalc_Bribe) or thrown (MsCalcDamageCommand formula 0x15: gil / 10)
 0x0112be98 label g_BtlEffectBuffer            # u32; The effect buffer and its size (MsEffectGetBufferAddress).
 0x0112be9c label g_BtlEffectBufferSize        # u32; with the one before it (same function, ffx_battle::misc)
@@ -7624,6 +7628,7 @@
 0x0112ca0a label g_BtlMessageCueInit          # u32; Reset by MsMessageCueInit (a u32 at 0x0112ca0a, which covers the stone effect counters from 0x0112ca0b, and the cue's count and start).
 0x0112ca0b label g_BtlStoneEffect            # 2 x i8; MsStoneEffectCheck (0x007a2670) returns their sum
 0x0112ca12 label g_BtlCounterOn               # u8, set by battle script (0x007a8430): counterattacks happen only while set (DmgCalc_CheckCounter)
+0x0112ca30 label g_BtlMemWord              # u32 zeroed by MsBattleMemInit
 0x0112ca60 label g_BtlRead3                # u32; with the one before it (same function, ffx_battle::misc)
 0x0112ca68 label g_BtlMapRead                 # u32; Reset by FinishReadPhyreBattleMap.
 0x0112ca6c label    g_KernelMonster1
@@ -7676,6 +7681,7 @@
 0x0113456c label g_BtlAtelCount              # i32 queued effect requests (MsAtelRequestInit 0x00797ff0, MsAtelRequestAdd)
 0x01135d70 label g_BtlAtelRequests           # 16 x 4 u16 effect requests (MsAtelRequestAdd 0x00797b70)
 0x01135df0 label g_AtelCamOn               # u8; with 2 words after and 5 at 0x01134518, cleared by MsAtelCamInit
+0x01135e00 label g_BtlAbilityMap           # 8 x 0x1c bytes cleared by MsInitChrAbilityMap
 0x01136000 label g_BtlMemCheck               # i32 work memory booked, from 0x40; MsMemCheckRegist (0x00799f00) adds size + 0x4f rounded to 64
 0x01136004 label g_BtlMemCheck2              # cleared by MsMemCheckInit (0x00799ee0)
 0x01136068 label g_BtlItemMem                 # u32; Reset by MsBtlInitItemMem.

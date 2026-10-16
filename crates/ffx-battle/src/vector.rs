@@ -355,4 +355,33 @@ pub mod bridge {
         ffx_ps2::ee::bridge::restore_vf00(mem);
         mem.write(out, m[2]);
     }
+    /// `MsPointLen(a, b)` (`0x007c2ec0`) and `MsPointLen2D` (`0x007c3030`,
+    /// without y): `|a − b|` as `MsVectorLen` takes it, the difference in
+    /// the first register (y and w `a`'s in 2D, w `a`'s in 3D), `b` in the
+    /// third, `vf00` restored before the squares; an `f32`.
+    fn point_len(mem: &mut impl Mem, a: u32, b: u32, with_y: bool) -> f32 {
+        use ffx_bridge::x87::{load, store, sub};
+        let va: Vec4 = mem.read(a);
+        let vb: Vec4 = mem.read(b);
+        let mut d = va;
+        d[0] = store(sub(load(va[0]), load(vb[0])));
+        if with_y {
+            d[1] = store(sub(load(va[1]), load(vb[1])));
+        }
+        d[2] = store(sub(load(va[2]), load(vb[2])));
+        set_vf(mem, 2, vb);
+        ffx_ps2::ee::bridge::restore_vf00(mem);
+        let m = square_sum(mem, d, with_y);
+        length_out(mem, sqrt(m))
+    }
+
+    /// `MsPointLen(a, b)` (`0x007c2ec0`): see [`point_len`].
+    pub fn ms_point_len(mem: &mut impl Mem, a: u32, b: u32) -> f32 {
+        point_len(mem, a, b, true)
+    }
+
+    /// `MsPointLen2D(a, b)` (`0x007c3030`): see [`point_len`].
+    pub fn ms_point_len_2d(mem: &mut impl Mem, a: u32, b: u32) -> f32 {
+        point_len(mem, a, b, false)
+    }
 }

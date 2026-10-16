@@ -453,4 +453,295 @@ pub mod bridge {
         crate::actor::bridge::ms_terminate_motion(mem, actor);
         1
     }
+    fn actor_of(mem: &impl Mem, i: u32) -> u32 {
+        crate::actor::bridge::ms_get_chr(mem, i)
+    }
+
+    /// `MsMenuCountStatus(i)` (`0x0078fa80`): the actor's status counters
+    /// (`+0x608`).
+    pub fn ms_menu_count_status(mem: &impl Mem, i: u32) -> u32 {
+        actor_of(mem, i & 0xff).wrapping_add(0x608)
+    }
+
+    /// `MsMenuDefCountStatus(i)` (`0x0078faa0`): `+0x641`.
+    pub fn ms_menu_def_count_status(mem: &impl Mem, i: u32) -> u32 {
+        actor_of(mem, i & 0xff).wrapping_add(0x641)
+    }
+
+    /// `MsMenuHalfElement(i)` (`0x0078fe40`): byte `+0x5dc`, in AL over the
+    /// actor's address (EAX as the original leaves it).
+    pub fn ms_menu_half_element(mem: &impl Mem, i: u32) -> u32 {
+        let a = actor_of(mem, i & 0xff);
+        (a & !0xff) | u32::from(byte(mem, a, 0x5dc))
+    }
+
+    /// `MsMenuBitStatus(i)` (`0x0078f950`): `u16` `+0x616` in AX over the
+    /// actor's address.
+    pub fn ms_menu_bit_status(mem: &impl Mem, i: u32) -> u32 {
+        let a = actor_of(mem, i & 0xff);
+        (a & !0xffff) | u32::from(half(mem, a, 0x616))
+    }
+
+    /// `MsGetSummonerNum(i)` (`0x00788e10`): `+0x6d1`.
+    pub fn ms_get_summoner_num(mem: &impl Mem, i: u32) -> u32 {
+        u32::from(byte(mem, actor_of(mem, i & 0xff), 0x6d1))
+    }
+
+    /// `MsMenuWeakElement(i)` (`0x007a9a20`): `+0x3f0`.
+    pub fn ms_menu_weak_element(mem: &impl Mem, i: u32) -> u32 {
+        u32::from(byte(mem, actor_of(mem, i & 0xff), 0x3f0))
+    }
+
+    /// `MsMenuCheckChrLive(i)` (`0x0078f970`): bit 0 of `+0x616`.
+    pub fn ms_menu_check_chr_live(mem: &impl Mem, i: u32) -> u32 {
+        u32::from(half(mem, actor_of(mem, i & 0xff), 0x616) & 1)
+    }
+
+    /// `MsGetSummonEnergy(i)` (`0x007b2b00`): `+0x6e1`.
+    pub fn ms_get_summon_energy(mem: &impl Mem, i: u32) -> u32 {
+        u32::from(byte(mem, actor_of(mem, i), 0x6e1))
+    }
+
+    /// `MsEffectGetTargetFlag(i)` (`0x00787c10`): `+0xdda`, signed.
+    pub fn ms_effect_get_target_flag(mem: &impl Mem, i: u32) -> i32 {
+        i32::from(byte(mem, actor_of(mem, i & 0xff), 0xdda).cast_signed())
+    }
+
+    /// The motion phase (`+0xdfb`) of actor `i`; EAX the actor
+    /// (`MsSetMotionAttackWait`: 0xf, `MsSetMotionReturn`: 7).
+    fn set_phase(mem: &mut impl Mem, i: u32, phase: u8) -> u32 {
+        let a = actor_of(mem, i);
+        mem.write(a.wrapping_add(0xdfb), phase);
+        a
+    }
+
+    /// `MsSetMotionAttackWait(i)` (`0x007ab500`).
+    pub fn ms_set_motion_attack_wait(mem: &mut impl Mem, i: u32) -> u32 {
+        set_phase(mem, i, 0xf)
+    }
+
+    /// `MsSetMotionReturn(i)` (`0x007ab520`).
+    pub fn ms_set_motion_return(mem: &mut impl Mem, i: u32) -> u32 {
+        set_phase(mem, i, 7)
+    }
+
+    /// `MsDefensePosOff(actor)` (`0x007af880`): no defense position
+    /// (`+0x6d3` 0xffff), then [`ms_set_dir_theta_mode`].
+    pub fn ms_defense_pos_off(mem: &mut impl Mem, actor: u32) -> u32 {
+        mem.write(actor.wrapping_add(0x6d3), 0xffffu16);
+        ms_set_dir_theta_mode(mem, actor)
+    }
+
+    /// `MsPushBtlPosAll()` (`0x007ac680`): `MsPushBtlPos` on every actor.
+    pub fn ms_push_btl_pos_all(mem: &mut impl Mem) {
+        for i in 0..0x1f {
+            let a = actor_of(mem, i);
+            crate::actor::bridge::ms_push_btl_pos(mem, a);
+        }
+    }
+
+    /// `g_BtlDamageRates`, which `MsInitParamData` clears: 4 bytes per
+    /// actor (31), the damage bonuses and reductions of
+    /// `DmgCalc_StatBoostAbility`.
+    pub const DAMAGE_RATES: Global<u8> = Global::new(0x0231_1240);
+    /// The mimic state `MsInitMimic` clears (0x48 bytes).
+    pub const MIMIC: Global<u8> = Global::new(0x0112_be38);
+    /// The abilities map `MsInitChrAbilityMap` clears (8 × 0x1c bytes).
+    pub const ABILITY_MAP: Global<u8> = Global::new(0x0113_5e00);
+    /// The battle's memory `MsBattleMemInit` clears (0x2150 bytes), and a
+    /// word after it.
+    pub const BATTLE_MEM: Global<u8> = Global::new(0x0112_a8d0);
+    pub const BATTLE_MEM_WORD: Global<u32> = Global::new(0x0112_ca30);
+
+    /// `MsInitParamData()` (`0x00785960`): [`DAMAGE_RATES`] cleared.
+    pub fn ms_init_param_data(mem: &mut impl Mem) {
+        let p = DAMAGE_RATES.ptr(mem).addr;
+        crate::util::bridge::ms_struct_clear(mem, p, 0x7c);
+    }
+
+    /// `MsInitMimic()` (`0x00799ab0`).
+    pub fn ms_init_mimic(mem: &mut impl Mem) {
+        let p = MIMIC.ptr(mem).addr;
+        crate::util::bridge::ms_struct_clear(mem, p, 0x48);
+    }
+
+    /// `MsInitChrAbilityMap()` (`0x00798820`).
+    pub fn ms_init_chr_ability_map(mem: &mut impl Mem) {
+        let p = ABILITY_MAP.ptr(mem).addr;
+        for k in 0..8 {
+            crate::util::bridge::ms_struct_clear(mem, p + 0x1c * k, 0x1c);
+        }
+    }
+
+    /// `MsBattleMemInit()` (`0x00781d00`): the word, the battle's memory,
+    /// then `MsEtEffectReadInit`.
+    pub fn ms_battle_mem_init(mem: &mut impl Mem) {
+        BATTLE_MEM_WORD.set(mem, 0);
+        let p = BATTLE_MEM.ptr(mem).addr;
+        crate::util::bridge::ms_struct_clear(mem, p, 0x2150);
+        crate::misc::bridge::ms_et_effect_read_init(mem);
+    }
+
+    /// `frnd()` (`0x00798930`): a float in [1, 2) from `rnd`'s low 23
+    /// bits.
+    pub fn frnd(mem: &mut impl Mem) -> f32 {
+        f32::from_bits((crate::rng::bridge::rnd(mem) & 0x7f_ffff) + 0x3f80_0000)
+    }
+
+    /// `MsGetStatusThreat(i)` (`0x0079afc0`): 1 under status bit 0x800
+    /// with no provoker (`+0x5c6` 0xff).
+    pub fn ms_get_status_threat(mem: &impl Mem, i: u32) -> u32 {
+        let a = actor_of(mem, i);
+        u32::from(half(mem, a, 0x606) & 0x800 != 0 && byte(mem, a, 0x5c6) == 0xff)
+    }
+
+    /// `MsCheckChrHitMotionAll()` (`0x007af2b0`): -1 while an actor that
+    /// can act (`+0xdc8`) plays a hit motion (`+0x433`) with `+0x612` set.
+    pub fn ms_check_chr_hit_motion_all(mem: &impl Mem) -> i32 {
+        let hit = (0..0x1f).any(|i| {
+            let a = actor_of(mem, i);
+            byte(mem, a, 0xdc8) != 0 && byte(mem, a, 0x433) != 0 && byte(mem, a, 0x612) != 0
+        });
+        if hit { -1 } else { 0 }
+    }
+
+    /// `MsSetPartyRelifeTime()` (`0x0078e0a0`): each party member's HP
+    /// (`+0x5d0`) to 0 and `+0x6d8` to `+0x6d9` + 1.
+    pub fn ms_set_party_relife_time(mem: &mut impl Mem) {
+        for i in crate::menu::bridge::PARTY.get(mem) {
+            if i == 0xff {
+                continue;
+            }
+            let a = actor_of(mem, u32::from(i));
+            let t = byte(mem, a, 0x6d9).wrapping_add(1);
+            mem.write(a.wrapping_add(0x5d0), 0u32);
+            mem.write(a.wrapping_add(0x6d8), t);
+        }
+    }
+
+    /// `MsCheckPlyBtlPosAll()` (`0x00792170`): 1 while the read cue runs,
+    /// or while one of the first 18 actors is busy (`+0x508`, marked in
+    /// [`crate::body::bridge::MOTION_BUSY`]); else 0.
+    pub fn ms_check_ply_btl_pos_all(mem: &mut impl Mem) -> u32 {
+        if crate::state::bridge::ms_btl_read_cue_level(mem) != 0 {
+            return 1;
+        }
+        for i in 0..0x12 {
+            if byte(mem, actor_of(mem, i), 0x508) != 0 {
+                let busy = crate::body::bridge::MOTION_BUSY;
+                let m = busy.get(mem);
+                busy.set(mem, m | 1 << i);
+                return 1;
+            }
+        }
+        0
+    }
+
+    /// `MsCommandStartChrStatusAll()` (`0x00793ef0`): every actor's motion
+    /// signal (`+0x39c`) cleared.
+    pub fn ms_command_start_chr_status_all(mem: &mut impl Mem) {
+        for i in 0..0x1f {
+            let a = actor_of(mem, i);
+            mem.write(a.wrapping_add(0x39c), 0u32);
+        }
+    }
+
+    /// `MsEffectCheck()` (`0x00787810`): how many actors are in a motion
+    /// phase (`+0xdfb`).
+    pub fn ms_effect_check(mem: &impl Mem) -> u32 {
+        let n = (0..0x1f)
+            .filter(|&i| byte(mem, actor_of(mem, i), 0xdfb) != 0)
+            .count();
+        #[allow(clippy::cast_possible_truncation)] // at most 31
+        {
+            n as u32
+        }
+    }
+
+    /// `MsEffectMotionLevel(id)` (`0x00787ca0`): for effect kinds (byte 1)
+    /// 2, 4 and 7 actor `id & 0xff`'s motion level (`+0xe0d`, signed), 1
+    /// for kind 0x80, else 0.
+    pub fn ms_effect_motion_level(mem: &impl Mem, id: u32) -> i32 {
+        match (id >> 8) & 0xff {
+            2 | 4 | 7 => i32::from(byte(mem, actor_of(mem, id & 0xff), 0xe0d).cast_signed()),
+            0x80 => 1,
+            _ => 0,
+        }
+    }
+
+    /// `MsMenuStatusNumSize()` (`0x00790220`): the status table's first
+    /// segment's record count.
+    pub fn ms_menu_status_num_size(mem: &impl Mem) -> i32 {
+        let t = crate::menu::bridge::STATUS_ROM.get(mem);
+        ffx_kernel::bridge::ms_get_excel_data_num(mem, t, 0)
+    }
+
+    /// `MsProvOff(chr)` (`0x0078d4e0`): ends provoke (status bit 0x400) on
+    /// every actor provoked by `chr` (`+0x5c4`).
+    pub fn ms_prov_off(mem: &mut impl Mem, chr: u32) {
+        for i in 0..0x1f {
+            let a = actor_of(mem, i);
+            let s = half(mem, a, 0x606);
+            if s & 0x400 != 0 && u32::from(byte(mem, a, 0x5c4)) == chr {
+                mem.write(a.wrapping_add(0x606), s & 0xfbff);
+            }
+        }
+    }
+
+    /// Encounters on (`MsSaveEncountCheck`): a byte.
+    pub const ENCOUNT_ON: Global<u8> = Global::new(0x0112_a9d7);
+
+    /// `MsSaveEncountCheck()` (`0x00785b10`): encounters stay on unless a
+    /// joined character (`MsGetSavePlyJoin`) has bit 1 of `g_PlySave`
+    /// `+0x4e`; kept in [`ENCOUNT_ON`] and returned.
+    pub fn ms_save_encount_check(mem: &mut impl Mem) -> u32 {
+        ENCOUNT_ON.set(mem, 1);
+        let mut on = 1u8;
+        let base = crate::save::bridge::PLY_SAVE.ptr(mem).addr + 0x4e;
+        for c in 0..18 {
+            if crate::save::bridge::ms_get_save_ply_join(mem, c) != 0
+                && byte(mem, base, 0x94 * c) & 2 != 0
+            {
+                on = 0;
+            }
+        }
+        ENCOUNT_ON.set(mem, on);
+        u32::from(on)
+    }
+
+    /// The important items' kernel table (`MsImportantName`).
+    pub const IMPORTANT_ROM: Global<u32> = Global::new(0x0113_34c0);
+
+    /// `MsImportantName(id)` (`0x00790860`): the key item's name (12
+    /// bits), in kana when the save says so.
+    pub fn ms_important_name(mem: &impl Mem, id: u32) -> u32 {
+        let t = IMPORTANT_ROM.get(mem);
+        #[allow(clippy::cast_possible_wrap)] // 12 bits
+        let (r, strings) = ffx_kernel::bridge::excel_data(mem, (id & 0xfff) as i32, t);
+        let k = crate::save::bridge::ms_get_save_config_hiragana(mem);
+        u32::from(half(mem, r, k.wrapping_mul(4))).wrapping_add(strings)
+    }
+
+    /// `MsSetSaveConfigEnglish(on)` (`0x00785ed0`): the save's English bit
+    /// (16 of the menu config) to `on` (bit 0) unless the language
+    /// (`TkGetLang`, from the caller) is English (1) or 0x12, which clear it.
+    pub fn ms_set_save_config_english(mem: &mut impl Mem, on: u32, lang: i32) {
+        let m = crate::save::bridge::MENU;
+        let v = m.get(mem);
+        if crate::menu::bridge::ms_get_check_english(lang) != 0 && lang != 0x12 {
+            m.set(mem, v ^ ((on << 16 ^ v) & 0x1_0000));
+        } else {
+            m.set(mem, v & 0xfffe_ffff);
+        }
+    }
+
+    /// `MsBtlListEncount(i)` (`0x0079d170`): field `i`'s encounter block
+    /// (its `i16` `+2` into the second table).
+    pub fn ms_btl_list_encount(mem: &impl Mem, i: i32) -> u32 {
+        let f = ms_btl_list_field(mem, i);
+        let o: i16 = mem.read(f.wrapping_add(2));
+        i32::from(o)
+            .cast_unsigned()
+            .wrapping_add(crate::misc::bridge::FIELD_TABLE2.get(mem))
+    }
 }

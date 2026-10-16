@@ -156,6 +156,15 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, actor: u32, area: u
         ALL,
         |m| g::ms_btl_list_field_num(m, map).cast_unsigned(),
     );
+    twin(
+        "MsBtlListEncount",
+        a,
+        b,
+        0x0079_d170,
+        &[i.cast_unsigned()],
+        ALL,
+        |m| g::ms_btl_list_encount(m, i),
+    );
     let all = rng.below(2);
     twin("ResetEncountExe", a, b, 0x0078_0ff0, &[all], 0, |m| {
         g::reset_encount_exe(m, all);

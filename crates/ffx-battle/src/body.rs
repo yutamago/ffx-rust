@@ -235,4 +235,14 @@ pub mod bridge {
         }
         0
     }
+    /// `Battle_ChrMoveFlags(actor)` (`0x007b4a70`): the actor's move flags
+    /// (`+0x4ac`; bits 0-1 a move under way), with 8 while `+0x3fb` is set.
+    pub fn battle_chr_move_flags(mem: &impl Mem, actor: u32) -> u32 {
+        let f: u32 = mem.read(actor.wrapping_add(0x4ac));
+        if mem.read::<u8>(actor.wrapping_add(0x3fb)) != 0 {
+            f | 8
+        } else {
+            f
+        }
+    }
 }

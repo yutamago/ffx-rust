@@ -341,6 +341,202 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, out: u32) {
     same("body", a, b);
 }
 
+type One = (&'static str, u32, fn(&mut Oracle, u32) -> u32);
+type None0 = (&'static str, u32, u32, fn(&mut Oracle) -> u32);
+
+/// The actor scans and getters of `ffx_battle::minor`.
+fn scans(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, v: u32) {
+    use ffx_battle::minor::bridge as g;
+    let i = if rng.below(6) == 0 {
+        rng.next()
+    } else {
+        rng.below(0x22)
+    };
+    let k = i % 0x1f;
+    let ones: [One; 14] = [
+        ("MsMenuCountStatus", 0x0078_fa80, |m, i| {
+            g::ms_menu_count_status(m, i)
+        }),
+        ("MsMenuDefCountStatus", 0x0078_faa0, |m, i| {
+            g::ms_menu_def_count_status(m, i)
+        }),
+        ("MsMenuHalfElement", 0x0078_fe40, |m, i| {
+            g::ms_menu_half_element(m, i)
+        }),
+        ("MsMenuBitStatus", 0x0078_f950, |m, i| {
+            g::ms_menu_bit_status(m, i)
+        }),
+        ("MsGetSummonerNum", 0x0078_8e10, |m, i| {
+            g::ms_get_summoner_num(m, i)
+        }),
+        ("MsMenuWeakElement", 0x007a_9a20, |m, i| {
+            g::ms_menu_weak_element(m, i)
+        }),
+        ("MsMenuCheckChrLive", 0x0078_f970, |m, i| {
+            g::ms_menu_check_chr_live(m, i)
+        }),
+        ("MsGetSummonEnergy", 0x007b_2b00, |m, i| {
+            g::ms_get_summon_energy(m, i)
+        }),
+        ("MsEffectGetTargetFlag", 0x0078_7c10, |m, i| {
+            g::ms_effect_get_target_flag(m, i).cast_unsigned()
+        }),
+        ("MsSetMotionAttackWait", 0x007a_b500, |m, i| {
+            g::ms_set_motion_attack_wait(m, i)
+        }),
+        ("MsSetMotionReturn", 0x007a_b520, |m, i| {
+            g::ms_set_motion_return(m, i)
+        }),
+        ("MsGetStatusThreat", 0x0079_afc0, |m, i| {
+            g::ms_get_status_threat(m, i)
+        }),
+        ("MsEffectMotionLevel", 0x0078_7ca0, |m, i| {
+            g::ms_effect_motion_level(m, i).cast_unsigned()
+        }),
+        ("MsProvOff", 0x0078_d4e0, |m, i| {
+            g::ms_prov_off(m, i);
+            0
+        }),
+    ];
+    for (name, sym, rust) in ones {
+        let x = match name {
+            "MsEffectMotionLevel" => {
+                [2, 4, 7, 0x80, 3, 0][rng.below(6) as usize] << 8 | k | (rng.next() & 0xffff_0000)
+            }
+            "MsSetMotionAttackWait"
+            | "MsSetMotionReturn"
+            | "MsGetSummonEnergy"
+            | "MsGetStatusThreat" => k,
+            "MsProvOff" => {
+                if rng.below(4) == 0 {
+                    rng.next()
+                } else {
+                    rng.below(0x20)
+                }
+            }
+            _ => i,
+        };
+        let mask = if name == "MsProvOff" { 0 } else { ALL };
+        twin(name, a, b, sym, &[x], mask, |m| rust(m, x));
+    }
+    let actor = ffx_battle::actor::bridge::ms_get_chr(b, k);
+    twin("MsDefensePosOff", a, b, 0x007a_f880, &[actor], ALL, |m| {
+        g::ms_defense_pos_off(m, actor)
+    });
+    let none: [None0; 13] = [
+        ("MsPushBtlPosAll", 0x007a_c680, 0, |m| {
+            g::ms_push_btl_pos_all(m);
+            0
+        }),
+        ("MsInitParamData", 0x0078_5960, 0, |m| {
+            g::ms_init_param_data(m);
+            0
+        }),
+        ("MsInitMimic", 0x0079_9ab0, 0, |m| {
+            g::ms_init_mimic(m);
+            0
+        }),
+        ("MsInitChrAbilityMap", 0x0079_8820, 0, |m| {
+            g::ms_init_chr_ability_map(m);
+            0
+        }),
+        ("MsBattleMemInit", 0x0078_1d00, 0, |m| {
+            g::ms_battle_mem_init(m);
+            0
+        }),
+        ("MsCheckChrHitMotionAll", 0x007a_f2b0, ALL, |m| {
+            g::ms_check_chr_hit_motion_all(m).cast_unsigned()
+        }),
+        ("MsSetPartyRelifeTime", 0x0078_e0a0, 0, |m| {
+            g::ms_set_party_relife_time(m);
+            0
+        }),
+        ("MsCheckPlyBtlPosAll", 0x0079_2170, ALL, |m| {
+            g::ms_check_ply_btl_pos_all(m)
+        }),
+        ("MsCommandStartChrStatusAll", 0x0079_3ef0, 0, |m| {
+            g::ms_command_start_chr_status_all(m);
+            0
+        }),
+        ("MsEffectCheck", 0x0078_7810, ALL, |m| g::ms_effect_check(m)),
+        ("MsMenuStatusNumSize", 0x0079_0220, ALL, |m| {
+            g::ms_menu_status_num_size(m).cast_unsigned()
+        }),
+        ("MsSaveEncountCheck", 0x0078_5b10, ALL, |m| {
+            g::ms_save_encount_check(m)
+        }),
+        ("MsSetSaveConfigEnglish", 0x0078_5ed0, 0, |m| {
+            let lang = ffx_menu::tk::bridge::tk_get_lang(m);
+            g::ms_set_save_config_english(m, 1, lang);
+            0
+        }),
+    ];
+    for (name, sym, mask, rust) in none {
+        // MsBattleMemInit clears the kernel tables' pointers too: last
+        if name == "MsBattleMemInit" {
+            continue;
+        }
+        let args: &[u32] = if name == "MsSetSaveConfigEnglish" {
+            &[1]
+        } else {
+            &[]
+        };
+        twin(name, a, b, sym, args, mask, rust);
+    }
+    let actor = ffx_battle::actor::bridge::ms_get_chr(b, k);
+    twin(
+        "Battle_ChrMoveFlags",
+        a,
+        b,
+        0x007b_4a70,
+        &[actor],
+        ALL,
+        |m| body::battle_chr_move_flags(m, actor),
+    );
+    // MsPointLen(2D): _CIsqrt patched to fsqrt in both (see battle_vector.rs)
+    floats(a, b, rng, v, 0x20);
+    for (name, sym, rust) in [
+        (
+            "MsPointLen",
+            0x007c_2ec0,
+            ffx_battle::vector::bridge::ms_point_len as fn(&mut Oracle, u32, u32) -> f32,
+        ),
+        (
+            "MsPointLen2D",
+            0x007c_3030,
+            ffx_battle::vector::bridge::ms_point_len_2d,
+        ),
+    ] {
+        let ra = a
+            .call(a.rebase(sym), ffx_oracle::Conv::Cdecl, &[v, v + 0x10])
+            .unwrap()
+            .st0
+            .expect("a float");
+        let rb = f64::from(rust(b, v, v + 0x10));
+        assert!(
+            ra.to_bits() == rb.to_bits() || (ra.is_nan() && rb.is_nan()),
+            "{name}: {ra} {rb}"
+        );
+    }
+    let ra = a
+        .call(a.rebase(0x0079_8930), ffx_oracle::Conv::Cdecl, &[])
+        .unwrap()
+        .st0
+        .expect("a float");
+    let rb = g::frnd(b);
+    assert_eq!(ra.to_bits(), f64::from(rb).to_bits(), "frnd");
+    let id = rng.below(0x40);
+    twin(
+        "MsImportantName",
+        a,
+        b,
+        0x0079_0860,
+        &[id | (rng.next() & 0xf000)],
+        ALL,
+        |m| g::ms_important_name(m, id),
+    );
+}
+
 fn globals(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     for (g, len) in [
         (menu::SKIP_ALL.ptr(b).addr, 1),
@@ -413,13 +609,19 @@ fn globals(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
 
 fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let w = world(a, b, rng, synthetic);
-    let out = scratch(a, b, 0x100);
+    let out = scratch(a, b, 0x120);
+    // _CIsqrt (an import the oracle lacks) as the CPU's fsqrt, in both
+    for o in [&mut *a, &mut *b] {
+        let p = o.rebase(0x0094_97b8);
+        o.write(p, &[0xd9, 0xfa, 0xc3]).unwrap();
+    }
     let chars = scratch(a, b, 0x400 * 8);
     // kernel tables where there are none
     for (g, stride) in [
         (menu::PLY_ROM, 0x40),
         (menu::STATUS_ROM, 0x20),
         (menu::WEAPON_NAMES, 0x60),
+        (ffx_battle::minor::bridge::IMPORTANT_ROM, 0x10),
     ] {
         if synthetic || !readable(a, g.get(b), 0x20) {
             let t = fake_records(a, b, rng, 0x40, stride);
@@ -438,7 +640,13 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         }
         fill(a, b, rng, out, 0x100);
         calls(a, b, rng, out);
+        scans(a, b, rng, out + 0x100);
     }
+    twin("MsBattleMemInit", a, b, 0x0078_1d00, &[], 0, |m| {
+        ffx_battle::minor::bridge::ms_battle_mem_init(m);
+        0
+    });
+    same("MsBattleMemInit", a, b);
 }
 
 #[test]

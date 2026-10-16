@@ -1,6 +1,7 @@
 //! `ffx-battle`: random numbers, the save block, actors, the battle camera,
 //! battle globals and helpers, damage.
 
+use ffx_battle::cue::bridge as cue;
 use ffx_battle::{actor::bridge as actor, camera::bridge as camera, command::bridge as cmd};
 use ffx_battle::{body::bridge as body, menu::bridge as menu, vector::bridge as vector};
 use ffx_battle::{damage::bridge as dmg, state::bridge as state, util::bridge as util};
@@ -1363,5 +1364,183 @@ ported! {
     /// `MsSubPoint(out, a, b)`.
     MsSubPoint @ 0x007c_40b0 => extern "C" fn ms_sub_point(out: u32, a: u32, b: u32) {
         vector::ms_sub_point(&mut mem(), out, a, b);
+    }
+    /// `MsPointLen(a, b)`: on the x87 stack.
+    MsPointLen @ 0x007c_2ec0 => extern "C" fn ms_point_len(a: u32, b: u32) -> f32 {
+        vector::ms_point_len(&mut mem(), a, b)
+    }
+    /// `MsPointLen2D(a, b)`: on the x87 stack.
+    MsPointLen2D @ 0x007c_3030 => extern "C" fn ms_point_len_2d(a: u32, b: u32) -> f32 {
+        vector::ms_point_len_2d(&mut mem(), a, b)
+    }
+    /// `Battle_ChrMoveFlags(actor)`.
+    Battle_ChrMoveFlags @ 0x007b_4a70 => extern "C" fn battle_chr_move_flags(actor: u32) -> u32 {
+        body::battle_chr_move_flags(&mem(), actor)
+    }
+    /// `MsMenuCountStatus(i)`.
+    MsMenuCountStatus @ 0x0078_fa80 => extern "C" fn ms_menu_count_status(i: u32) -> u32 {
+        minor::ms_menu_count_status(&mem(), i)
+    }
+    /// `MsMenuDefCountStatus(i)`.
+    MsMenuDefCountStatus @ 0x0078_faa0 => extern "C" fn ms_menu_def_count_status(i: u32) -> u32 {
+        minor::ms_menu_def_count_status(&mem(), i)
+    }
+    /// `MsMenuHalfElement(i)`.
+    MsMenuHalfElement @ 0x0078_fe40 => extern "C" fn ms_menu_half_element(i: u32) -> u32 {
+        minor::ms_menu_half_element(&mem(), i)
+    }
+    /// `MsMenuBitStatus(i)`.
+    MsMenuBitStatus @ 0x0078_f950 => extern "C" fn ms_menu_bit_status(i: u32) -> u32 {
+        minor::ms_menu_bit_status(&mem(), i)
+    }
+    /// `MsGetSummonerNum(i)`.
+    MsGetSummonerNum @ 0x0078_8e10 => extern "C" fn ms_get_summoner_num(i: u32) -> u32 {
+        minor::ms_get_summoner_num(&mem(), i)
+    }
+    /// `MsMenuWeakElement(i)`.
+    MsMenuWeakElement @ 0x007a_9a20 => extern "C" fn ms_menu_weak_element(i: u32) -> u32 {
+        minor::ms_menu_weak_element(&mem(), i)
+    }
+    /// `MsMenuCheckChrLive(i)`.
+    MsMenuCheckChrLive @ 0x0078_f970 => extern "C" fn ms_menu_check_chr_live(i: u32) -> u32 {
+        minor::ms_menu_check_chr_live(&mem(), i)
+    }
+    /// `MsGetSummonEnergy(i)`.
+    MsGetSummonEnergy @ 0x007b_2b00 => extern "C" fn ms_get_summon_energy(i: u32) -> u32 {
+        minor::ms_get_summon_energy(&mem(), i)
+    }
+    /// `MsEffectGetTargetFlag(i)`.
+    MsEffectGetTargetFlag @ 0x0078_7c10 => extern "C" fn ms_effect_get_target_flag(i: u32) -> i32 {
+        minor::ms_effect_get_target_flag(&mem(), i)
+    }
+    /// `MsSetMotionAttackWait(i)`.
+    MsSetMotionAttackWait @ 0x007a_b500 => extern "C" fn ms_set_motion_attack_wait(i: u32) -> u32 {
+        minor::ms_set_motion_attack_wait(&mut mem(), i)
+    }
+    /// `MsSetMotionReturn(i)`.
+    MsSetMotionReturn @ 0x007a_b520 => extern "C" fn ms_set_motion_return(i: u32) -> u32 {
+        minor::ms_set_motion_return(&mut mem(), i)
+    }
+    /// `MsDefensePosOff(actor)`.
+    MsDefensePosOff @ 0x007a_f880 => extern "C" fn ms_defense_pos_off(actor: u32) -> u32 {
+        minor::ms_defense_pos_off(&mut mem(), actor)
+    }
+    /// `MsPushBtlPosAll()`.
+    MsPushBtlPosAll @ 0x007a_c680 => extern "C" fn ms_push_btl_pos_all() {
+        minor::ms_push_btl_pos_all(&mut mem());
+    }
+    /// `MsInitParamData()`.
+    MsInitParamData @ 0x0078_5960 => extern "C" fn ms_init_param_data() {
+        minor::ms_init_param_data(&mut mem());
+    }
+    /// `MsInitMimic()`.
+    MsInitMimic @ 0x0079_9ab0 => extern "C" fn ms_init_mimic() {
+        minor::ms_init_mimic(&mut mem());
+    }
+    /// `MsInitChrAbilityMap()`.
+    MsInitChrAbilityMap @ 0x0079_8820 => extern "C" fn ms_init_chr_ability_map() {
+        minor::ms_init_chr_ability_map(&mut mem());
+    }
+    /// `MsBattleMemInit()`.
+    MsBattleMemInit @ 0x0078_1d00 => extern "C" fn ms_battle_mem_init() {
+        minor::ms_battle_mem_init(&mut mem());
+    }
+    /// `frnd()`: a float in [1, 2) on the x87 stack.
+    frnd @ 0x0079_8930 => extern "C" fn frnd() -> f32 {
+        minor::frnd(&mut mem())
+    }
+    /// `MsGetStatusThreat(i)`.
+    MsGetStatusThreat @ 0x0079_afc0 => extern "C" fn ms_get_status_threat(i: u32) -> u32 {
+        minor::ms_get_status_threat(&mem(), i)
+    }
+    /// `MsCheckChrHitMotionAll()`.
+    MsCheckChrHitMotionAll @ 0x007a_f2b0 => extern "C" fn ms_check_chr_hit_motion_all() -> i32 {
+        minor::ms_check_chr_hit_motion_all(&mem())
+    }
+    /// `MsSetPartyRelifeTime()`.
+    MsSetPartyRelifeTime @ 0x0078_e0a0 => extern "C" fn ms_set_party_relife_time() {
+        minor::ms_set_party_relife_time(&mut mem());
+    }
+    /// `MsCheckPlyBtlPosAll()`.
+    MsCheckPlyBtlPosAll @ 0x0079_2170 => extern "C" fn ms_check_ply_btl_pos_all() -> u32 {
+        minor::ms_check_ply_btl_pos_all(&mut mem())
+    }
+    /// `MsCommandStartChrStatusAll()`.
+    MsCommandStartChrStatusAll @ 0x0079_3ef0 => extern "C" fn ms_command_start_chr_status_all() {
+        minor::ms_command_start_chr_status_all(&mut mem());
+    }
+    /// `MsEffectCheck()`.
+    MsEffectCheck @ 0x0078_7810 => extern "C" fn ms_effect_check() -> u32 {
+        minor::ms_effect_check(&mem())
+    }
+    /// `MsEffectMotionLevel(id)`.
+    MsEffectMotionLevel @ 0x0078_7ca0 => extern "C" fn ms_effect_motion_level(id: u32) -> i32 {
+        minor::ms_effect_motion_level(&mem(), id)
+    }
+    /// `MsMenuStatusNumSize()`.
+    MsMenuStatusNumSize @ 0x0079_0220 => extern "C" fn ms_menu_status_num_size() -> i32 {
+        minor::ms_menu_status_num_size(&mem())
+    }
+    /// `MsProvOff(chr)`.
+    MsProvOff @ 0x0078_d4e0 => extern "C" fn ms_prov_off(chr: u32) {
+        minor::ms_prov_off(&mut mem(), chr);
+    }
+    /// `MsSaveEncountCheck()`.
+    MsSaveEncountCheck @ 0x0078_5b10 => extern "C" fn ms_save_encount_check() -> u32 {
+        minor::ms_save_encount_check(&mut mem())
+    }
+    /// `MsImportantName(id)`.
+    MsImportantName @ 0x0079_0860 => extern "C" fn ms_important_name(id: u32) -> u32 {
+        minor::ms_important_name(&mem(), id)
+    }
+    /// `MsSetSaveConfigEnglish(on)`: the language from `TkGetLang` (menu).
+    MsSetSaveConfigEnglish @ 0x0078_5ed0 => extern "C" fn ms_set_save_config_english(on: u32) {
+        let m = &mut mem();
+        let lang = ffx_menu::tk::bridge::tk_get_lang(m);
+        minor::ms_set_save_config_english(m, on, lang);
+    }
+    /// `MsBtlListEncount(i)`.
+    MsBtlListEncount @ 0x0079_d170 => extern "C" fn ms_btl_list_encount(i: i32) -> u32 {
+        minor::ms_btl_list_encount(&mem(), i)
+    }
+    /// `MsCheckInputCueExe(chr)`.
+    MsCheckInputCueExe @ 0x007b_1fd0 => extern "C" fn ms_check_input_cue_exe(chr: u32) -> u32 {
+        cue::ms_check_input_cue_exe(&mem(), chr)
+    }
+    /// `MsCheckCommandCueExe(chr)`.
+    MsCheckCommandCueExe @ 0x007b_07d0 => extern "C" fn ms_check_command_cue_exe(chr: u32) -> u32 {
+        cue::ms_check_command_cue_exe(&mem(), chr)
+    }
+    /// `MsCheckInputCuePos(chr)`.
+    MsCheckInputCuePos @ 0x007b_2020 => extern "C" fn ms_check_input_cue_pos(chr: u32) {
+        cue::ms_check_input_cue_pos(&mut mem(), chr);
+    }
+    /// `MsCheckTurnInputCue(chr)`.
+    MsCheckTurnInputCue @ 0x007b_2060 => extern "C" fn ms_check_turn_input_cue(chr: u32) -> u32 {
+        cue::ms_check_turn_input_cue(&mem(), chr)
+    }
+    /// `MsExeInputCue(chr, on)`.
+    MsExeInputCue @ 0x007b_2290 => extern "C" fn ms_exe_input_cue(chr: u32, on: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // a byte argument
+        cue::ms_exe_input_cue(&mut mem(), chr, on as u8)
+    }
+    /// `MsExeComandCue(chr, on)`.
+    MsExeComandCue @ 0x007b_0960 => extern "C" fn ms_exe_comand_cue(chr: u32, on: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // a byte argument
+        cue::ms_exe_comand_cue(&mut mem(), chr, on as u8)
+    }
+    /// `MsRegistInputCue(chr, prio, turn, flag)`.
+    MsRegistInputCue @ 0x007b_2430 => extern "C" fn ms_regist_input_cue(chr: u32, prio: u32, turn: u32, flag: u32) -> i32 {
+        #[allow(clippy::cast_possible_truncation)] // byte arguments
+        cue::ms_regist_input_cue(&mut mem(), chr, prio as u8, turn as u8, flag as u8)
+    }
+    /// `MsInsertInputCue(chr, prio, turn, flag, after, on)`.
+    MsInsertInputCue @ 0x007b_2300 => extern "C" fn ms_insert_input_cue(chr: u32, prio: u32, turn: u32, flag: u32, after: u32, on: u32) -> i32 {
+        #[allow(clippy::cast_possible_truncation)] // byte arguments
+        cue::ms_insert_input_cue(&mut mem(), chr, prio, turn as u8, flag, after, on as u8)
+    }
+    /// `MsDeleteCommandCue(chr, slot, keep)`.
+    MsDeleteCommandCue @ 0x007b_0860 => extern "C" fn ms_delete_command_cue(chr: u32, slot: u32, keep: u32) -> i32 {
+        cue::ms_delete_command_cue(&mut mem(), chr, slot, keep)
     }
 }
