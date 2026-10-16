@@ -1929,23 +1929,31 @@
 0x0078aac0 function DmgCalc_DmgImmunity       # fh v3:exact 0x0078ab80 +DmgCalc_DmgImmunity
 0x0078ab20 function MsCalcMagic               # fh v3:exact 0x0078abe0
 0x0078ac20 function MsCalcMotionSpeed         # fh v3:exact 0x0078ace0
+0x0078ad40 function DmgCalc_Protect           # Fahrenheit's v3 name (+DmgCalc_Protect, 0x0078ae00); physical damage halved when the result's +0xb (protect) is set, flag 0x40; ported (ffx_battle::damage)
 0x0078ad80 function DmgCalc_GravImmunity      # fh v3:exact 0x0078ae40 +DmgCalc_GravImmunity
+0x0078adc0 function DmgCalc_Shell             # Fahrenheit's v3 name (+DmgCalc_Shell, 0x0078ae80); magic damage halved when the result's +0xa (shell) is set, flag 0x20; ported
 0x0078ae00 function DmgCalc_InflictStatus     # fh v3:exact 0x0078aec0 +DmgCalc_InflictStatus
 0x0078b4e0 function DmgCalc_InflictStatus_Extra # fh v3:exact 0x0078b5a0 +DmgCalc_InflictStatus_Extra
 0x0078b760 function Battle_Steal              # steal chance spoils+0x0a, items +0x24/+0x26, counts +0x28/+0x29
 0x0078ba30 function DmgCalc_ShatterFail       # fh v3:exact 0x0078baf0 +DmgCalc_ShatterFail
 0x0078bd50 function DmgCalc_Threaten          # fh v3:exact 0x0078be10 +DmgCalc_Threaten
+0x0078bd90 function DmgCalc_ReelBonus         # damage x (time + 2 start) / (2 start) while actor +0xd26 is set; +0xd2c/+0xd30 are the floats MsSetReelResult stores for Wakka ("time", "start_time" in its debug text); ported
 0x0078bdd0 function DmgCalc_Bribe             # fh v3:exact 0x0078be90 +DmgCalc_Bribe
 0x0078bf00 function MsCalcWeakLevel           # fh v3:exact+call.cs 0x0078bfc0 stdcall
+0x0078bf50 function DmgCalc_MarkDamaged       # DmgCalc's last step: user +0x715 = 1 when a damage value hurts (heals, for a healing command) or arg 5 is set; ported
 0x0078bfb0 function DmgCalc_CheckNuls         # fh v3:exact 0x0078c070 +DmgCalc_CheckNuls
 0x0078c0b0 function DmgCalc_Berserk           # fh v3:exact 0x0078c170 +DmgCalc_Berserk
 0x0078c0f0 function DmgCalc_QueueRemoveStatusOnHit # fh v3:exact 0x0078c1b0 +DmgCalc_QueueRemoveStatusOnHit
+0x0078c150 function MsAdjustCTB               # (chr, ctb, haste, slow): halved, doubled, MsCheckRange 0-255; MsGetNextCTB's tail; ported
 0x0078c180 function DmgCalc_DelayImmunity     # fh v3:exact 0x0078c240 +DmgCalc_DelayImmunity
 0x0078c1d0 function DmgCalc_CheckCounter      # fh v3:exact 0x0078c290 +DmgCalc_CheckCounter
+0x0078c270 function DmgCalc_ResultType        # DmgCalc's reaction at result +0: 5 hurt, 4/3 guarded against armor or 100+ defense (target +0x447), 6/5 drains, 8/0xb/0xc by table statuses, 2 revive/heal, 7 removed, 9/0xa changes; counts failed/immune statuses; ported
 0x0078c480 function DmgCalc_NoDamageDeath     # fh v3:exact 0x0078c540 +DmgCalc_NoDamageDeath
 0x0078c530 function DmgCalc_ShieldBoost       # fh v3:exact 0x0078c5f0 +DmgCalc_ShieldBoost
 0x0078c580 function DmgCalc_MagicBooster      # fh v3:exact 0x0078c640 +DmgCalc_MagicBooster
 0x0078c5f0 function DmgCalc_Alchemy           # fh v3:exact 0x0078c6b0 +DmgCalc_Alchemy
+0x0078c640 function DmgCalc_HitKind           # (flags, counts): DmgCalc's result +1: 1 when counts[1] and no flags, 2 when only counts[0]; ported
+0x0078c670 function DmgCalc_IsDistill         # -1 when (u8)arg & 0x3e: the distill statuses (status bits 2, 1-5; InflictStatus_Extra clears the others when one lands); ported
 0x0078c690 function MsCheckUseCommand         # fh v3:exact 0x0078c750
 0x0078c740 function MsDamageCheckDeath        # fh v3:exact+call.cs 0x0078c800 cdecl
 0x0078ca20 function MsDamageSetMotion         # fh v3:exact+call.cs 0x0078cae0 cdecl
@@ -2243,6 +2251,7 @@
 0x0079de60 function MsBattleSpecialInit       # fh v3:exact 0x0079de80
 0x0079e310 function MsCheckStat               # fh v3:cg2 0x79e330
 0x0079e320 function MsCheckStat2              # fh v3:bsim1.00 0x0079e340
+0x0079e330 function MsCheckStatCount          # byte 3 of entry i of the counter statuses' table 0x00c42464; Switch MsCheckStatCount sits with MsCheckStat, MsCheckStat2, MsCheckWrongStatus; ported
 0x0079e340 function MsCheckWrongStatus        # fh v3:exact 0x0079e360
 0x0079e3d0 function MsDeathEffectStart        # fh v3:exact 0x0079e3f0
 0x0079e4d0 function MsDeathSEfadeAll          # fh switch:bsim1.00 0x7100353a90
@@ -5065,6 +5074,7 @@
 0x0094966a function eh_vector_constructor_iterator # fh v3:cg7 0x94966a `eh_vector_constructor_iterator'
 0x009496d2 function eh_vector_destructor_iterator # fh v3:cg3 0x9496d2 `eh_vector_destructor_iterator'
 0x0094975a function ArrayUnwind               # fh v3:cg2 0x94975a __ArrayUnwind
+0x009497e0 function ftol2_sse                 # MSVC CRT: ST0 to int toward zero; cvttsd2si when __sse2_available (0x0193ed20), else the x87 _ftol2 path (64-bit fistp + correction); ffx_bridge::x87::ftol
 0x00949890 function alloca_probe_16           # fh v3:cg5 0x949890 __alloca_probe_16
 0x009498a6 function alloca_probe_8            # fh v3:cg2 0x9498a6 __alloca_probe_8
 0x00949910 function allshl                    # fh v3:cg2 0x949910 __allshl
@@ -6566,6 +6576,7 @@
 0x00b38f34 label Phyre_PClassDescriptorConcrete_Phyre_PScripting_PScript__vftable # fh v4:imported Phyre::PClassDescriptorConcrete<Phyre::PScripting::PScript>::vftable
 0x00b39098 label Phyre_PScripting_PUtilityScripting_vftable # fh v4:imported Phyre::PScripting::PUtilityScripting::vftable
 0x00b39348 label Phyre_PWorldMatrixFlyController_vftable # fh v4:imported Phyre::PWorldMatrixFlyController::vftable
+0x00b39378 label g_TwoPiF64                   # f64 of 2pi rounded to f32 (0x401921fb60000000); MsNearRag's turn
 0x00b39384 label Phyre_PPhysics_PUtilityPhysics_vftable # fh v4:imported Phyre::PPhysics::PUtilityPhysics::vftable
 0x00b39394 label Phyre_PClassDescriptorForType_Phyre_PPhysics_PPhysicsMaterial__vftable # fh v4:imported Phyre::PClassDescriptorForType<Phyre::PPhysics::PPhysicsMaterial>::vftable
 0x00b393dc label Phyre_PClassDescriptorAbstract_Phyre_PPhysics_PPhysicsMaterial__vftable # fh v4:imported Phyre::PClassDescriptorAbstract<Phyre::PPhysics::PPhysicsMaterial>::vftable
@@ -7297,6 +7308,7 @@
 0x00b920cc label mkvparser_SimpleBlock_vftable # fh v4:imported mkvparser::SimpleBlock::vftable
 0x00b920dc label mkvparser_BlockEntry_vftable # fh v4:imported mkvparser::BlockEntry::vftable
 0x00b920ec label mkvparser_Track_vftable      # fh v4:imported mkvparser::Track::vftable
+0x00b92288 label g_PiF64                      # f64 of pi rounded to f32 (0x400921fb60000000); MsNearRag's half turn
 0x00c0a000 label    g_Vu0_R                      # emulated VU0 R (random) register, f32 bits in [1,2): op_random/op_random_p step it (vrnext: low 22 fraction bits << 1, bit 4 of R^(R>>18) in) and leave draw - 1.8872414 there; 0x0075fe50 seeds it
 0x00c0a004 label g_Vu0_Vf00                  # emulated VU0 vf00 (x, y, z, w) = (0, 0, 0, 1.0f): AsmEmuInit and restoreVf00Register store exactly that
 0x00c30f94 label NvOptimusEnablement          # fh v4:imported
@@ -7308,8 +7320,10 @@
 0x00c3a508 label    g_pppProgramTable            # 418 x 0x28-byte particle program records to 0x00c3e658: +0 name ("pppAccele", ...), +8 per-frame step, +0xc draw, +0x14 Sta, +0x1c set-up (Con), +0x20 second set-up (Con2), +0x24 destructor (Des); pppColor -> pppColor/pppColorCon
 0x00c421cc label    g_BattleEnable            # set by setBattleEnable, read by MsBattleEncountExe
 0x00c421dc label    g_NewCharacterLoads       # AsyncLoadNewCharacter counts it up while non-negative
+0x00c421f0 label g_BtlAccuracyTable           # 9 x i8, DmgCalc_CheckHit's chance by clamp(accuracy*2/5 - evasion + 10, 0, 8)
 0x00c423e8 label g_StatusTable               # 4 bytes per status; MsCheckStat (0x0079e310) returns byte 3 of entry i
 0x00c42420 label g_StatusTable2              # entry 14 of g_StatusTable on; MsCheckStat2 (0x0079e320) returns byte 3 of entry i
+0x00c42464 label g_BtlStatCountTable          # 13 x 4 bytes, the counter statuses (MsCheckStatCount; MsCheckWrongStatus reads byte 3 bit 7: harmful)
 0x00c44bf0 label    g_pppSinTable                # 4096 f32 sines over a turn: pppGetRotMatrix* read [(a>>4)&0xfff] and [((a+0x4000)>>4)&0xfff] (cosine)
 0x00c49680 label g_ChrDefaultMoves           # Ch_MotionSetMoves(chr, slot, -1) stores entry [slot] (0, 1, 2, then zeros)
 0x00c496ea label g_ChrShadeByLight           # i8: Ch_DrawCalcShade multiplies the shade fade by the light value fade (+0x36c) when set
@@ -7344,6 +7358,7 @@
 0x00c8b500 label    g_pppColorConShift           # added once to pppColorCon's work offset, then cleared there; also RW by pppDrawShape0
 0x00c8f508 label g_Ee_Gpr                    # emulated R5900 GPRs, 32 x 16 bytes: r0 (zero) here, t0 at +0x80 (pppRandFloat: t0 = r0 - 1), sp at +0x1d0 (AsmEmuInit stores this address there); argument registers set by AsmEmuSetFuncParam0 and the setters around it
 0x00c8f728 label    g_Vu0_RSeeded                # nonzero once g_Vu0_R is seeded (0x0075fe50 sets it with R); op_random draws 1.0 while 0, then sets it
+0x00c8f788 label g_Vu0_Q                      # emulated VU0 Q (f32): MsDivVector leaves vf00.w / s there, MsVectorLen the length; the VF registers follow from 0x00c8f790, 16 bytes each (MsApplyMatrix: acc 0x00c8f790, matrix 0x00c8f7d0, vector 0x00c8f810, result 0x00c8f850)
 0x00cc9698 label    g_BasePath
 0x00cc9c48 label BigFileStream_sBigFileStreamInstacne # was g_FileSys
 0x00cc9cf5 label    g_SteamReady              # guards every other Steam call (achievements, RunCallbacks)
@@ -7382,7 +7397,20 @@
 0x0112a8e0 label g_BtlStatus                 # i8, not 0 in battle (MsBattleGetStatus 0x007816f0 sign-extends it; MsGetBattleScene 0x00782970 tests it)
 0x0112a8e2 label g_BtlExe                    # i8; MsBattleExeClear (0x00781530) returns it and clears it unless g_BtlExeKeep
 0x0112a8f5 label g_BtlExeKeep                # not 0: MsBattleExeClear keeps g_BtlExe
+0x0112a8f8 label g_BtlDebugNoDamageMonster    # u8, monsters take no damage (DebugCanTakeDamage); debug native case 2/0xc
+0x0112a8f9 label g_BtlDebugNoDamageParty      # u8, the party takes no damage (DebugCanTakeDamage); debug native case 1/2
+0x0112a901 label g_BtlDebugFreeMp             # u8, MsCheckUseCommand charges no MP (as for monsters); debug native case 4
+0x0112a906 label g_BtlDebugNoStatus           # u8, DmgCalc inflicts no statuses (skips DmgCalc_InflictStatus and _Extra)
+0x0112a908 label g_BtlDebugNoVariance         # i8, DmgCalc passes 1 - it as MsCalcDamageCommand's vary; debug native case 6
+0x0112a909 label g_BtlDebugNoCrit             # u8, DmgCalc skips DmgCalc_Crit; debug native case 7
+0x0112a90a label g_BtlDebugAlwaysHit          # u8, DmgCalc_CheckHit never misses, statuses and Bribe always land; debug native case 8
+0x0112a90c label g_BtlDebugNoCost             # u8, MsCalcMagic ignores the command's +0x26 cost; debug native case 5
+0x0112a90d label g_BtlDebugAlwaysCrit         # u8, DmgCalc_Crit always doubles; debug native case 0xd
+0x0112a90e label g_BtlDebugDamage1            # u8, DmgCalc: every HP/MP hit does 1; debug native case 0xe
+0x0112a90f label g_BtlDebugDamage10000        # u8, DmgCalc: every HP/MP hit does 10000; debug native case 0xf
+0x0112a910 label g_BtlDebugDamage100000       # u8, DmgCalc: every HP/MP hit does 100000; debug native case 0x10
 0x0112a91b label g_BtlMapCircleOn            # i8 (MsBattleGetMapCircleOn 0x007816a0)
+0x0112a91f label g_BtlDebugAllMiss            # u8, debug env flag: DmgCalc_CheckHit always misses, no status lands, MsCalcEscape fails
 0x0112a92c label    g_KernelCommand
 0x0112a930 label    g_KernelMonMagic1
 0x0112a934 label g_KernelMonMagic2             # monmagic2 (Kernel_LoadTables 0x00781d40); read by MsGetRomMonCommand2
@@ -7393,6 +7421,7 @@
 0x0112a960 label g_KernelSummonGrow            # battle resource 6 (MsBattleInit); MsGetRomSummonGrow
 0x0112a964 label g_KernelKaizou                # battle resource 5 (MsBattleInit); MsGetRomKaizou
 0x0112a9c0 label g_BtlVoiceEvent             # pointer to a byte flag; MsGetVoiceEventFlag (0x007986a0) is 1 when it is set and g_BtlVoiceMute is not
+0x0112a9c8 label g_BtlFieldRecords           # pointer to the battle fields' 14-byte records (i16 ID first); MsBattleGetNum reads record g_BtlFieldIndex
 0x0112a9d4 label g_BtlEncountType            # u8 (MsGetEncountType 0x00782a10)
 0x0112a9f0 label g_BtlSceneField             # pointer to the battle field's i16 ID; MsGetBattleScene returns it << 16 + *g_BtlSceneGroup
 0x0112a9fc label g_BtlSceneGroup             # pointer to the encounter group's u8 ID (MsGetBattleScene)
@@ -7400,14 +7429,22 @@
 0x0112ac70 label g_BtlCommandCue             # 0x48-byte entries: +0 actor, +1 command, +7 high nibble kind (MsCheckCommandCue 0x007b0720, MsCheckCommandCue2, MsGetCommandCue)
 0x0112bde0 label g_BtlInputCueCount          # i8 entries in g_BtlInputCue
 0x0112bde1 label g_BtlCommandCueCount        # i8 entries in g_BtlCommandCue
+0x0112be90 label g_BtlGilAmount               # i32, gil offered (DmgCalc_Bribe) or thrown (MsCalcDamageCommand formula 0x15: gil / 10)
 0x0112c021 label g_BtlReadCueLevel           # u8, MsBtlReadCueLevel (0x007ad180)
+0x0112c256 label g_BtlFieldIndex             # i16, the current battle field's record (MsBattleGetNum: its ID << 16 + the group ID)
 0x0112c526 label g_BtlWeaponList             # u16 list MsGetSaveWeaponList (0x007abd10) fills with 0x5000 + equipment slot
 0x0112c895 label g_BtlParty                  # 3 x u8 ply_save indices; MsSetSaveParty (0x00786930) copies them to g_SaveInParty
+0x0112c914 label g_BtlMessageCue              # 4 battle messages of 12 bytes (+0 kind, +1, +2, +4 actor, +8 message ID), a ring (MsMessageCueRegist)
+0x0112c944 label g_BtlMessageCueCount         # u8, messages queued (at most 4)
+0x0112c945 label g_BtlMessageCueStart         # u8, the ring's first entry
 0x0112c948 label g_BtlUseItem                # u16 item being used (MsSetUseItem 0x00790790); MsGetSaveItemNum counts one less of it
 0x0112c9cd label    g_BtlPadOrientation          # 0-3, set by 0x7099; read by 0x00780ce0 for the d-pad remap
 0x0112c9ce label g_BtlUnderwater             # i8, the formation's byte 3 (underwater fields); MsBattleWater (0x007821e0) returns it, MsGetVoiceEventFlag returns 0 while it is set
+0x0112c9d1 label g_BtlTitleWindow             # 2 x i8, the battle title window's position bytes (MsMenuCloseTitleWindow moves or clears them)
 0x0112c9e2 label    g_BtlTurnActor               # ?actor index copied from 0x0112c9df when a turn starts; read by 0x708d
+0x0112c9ff label g_BtlEscapeRule              # i8, set by battle script (0x007a77a0): 1 no escape, 2 always (MsCalcEscape)
 0x0112ca0b label g_BtlStoneEffect            # 2 x i8; MsStoneEffectCheck (0x007a2670) returns their sum
+0x0112ca12 label g_BtlCounterOn               # u8, set by battle script (0x007a8430): counterattacks happen only while set (DmgCalc_CheckCounter)
 0x0112ca6c label    g_KernelMonster1
 0x0112ca70 label    g_KernelMonster2
 0x0112ca74 label    g_KernelMonster3
@@ -7435,9 +7472,12 @@
 0x01130f1c label g_SaveImportant             # key items held, 8 flag words, IDs below 0x80 (MsImportantGet 0x00790800, MsImportantSet)
 0x01130f2c label    g_Equipment                # 200 x 22-byte equipment slots (docs/formats/kernel.md)
 0x0113205c label    g_PlySave                  # ply_save records, 0x94 bytes each; +0x2d weapon slot, +0x2e armor slot
+0x011320b0 label g_BtlKills                   # u32 every 0x94 bytes by player character < 0x12: MsCalcDamageCommand formula 0x16 (kills x power)
 0x01132ac4 label g_SaveCommandUse            # commands used, 18 characters x 0x16 flag words, right after g_PlySave (MsGetSaveCommandUse 0x00785140)
 0x01133354 label g_BtlMuteSubtitle           # u32 (MsMuteBattleSubTitle 0x00785990)
 0x01133364 label g_BtlEventEffectStat        # i8 (MsEventEffectGetStat 0x00788bd0)
+0x01133390 label g_BtlDamage9999             # u32, set by MsCalcDamage when a hit of 9999+ comes from a user whose +0x50 string is empty
+0x01133394 label g_BtlDamage99999            # u32, the same for 99999+ (MsCalcDamage)
 0x011333c0 label g_BtlOrderCount             # i32 queued action orders (MsOrderInit 0x0078d4b0, MsOrderRegist)
 0x011333c4 label g_BtlOrders                 # 31 x u8 actor indices (MsOrderRegist 0x0078d4c0)
 0x011334c0 label g_KernelImportant           # key item kernel table (MsImportantPtr 0x007908a0 looks IDs up in it with MsGetExcelData)
@@ -7652,6 +7692,7 @@
 0x0193bf7c label    g_GuideBattleSave            # the guide's +0x6c float kept over a battle (rcbgGuideBattleBegin/End)
 0x0193bf80 label    g_YnMapSystem                # Yn's field state: +0 the map (its +8: guide map list, +0x18 i16 count, +0x1a i16 shown, +0x1c models), +4 the guide (Yn_GuideMapGetMapNo, Yn_GuideMapSetMapNo, Yn_BattleBegin)
 0x0193c0f0 label    g_RcuiWork                   # rcui work area: +0xbe8 the ID dragged, +0xbec rcuiMouseMoveGetID, +0xbf0 dragging
+0x0193ed20 label g_Sse2Available             # MSVC CRT __sse2_available: _ftol2_sse picks cvttsd2si when set (0 in an image that has not run its start-up)
 0x0193fdac label    g_MagicFile_IsNexData     # MagicFile_IsNexData
 0x01942998 label    g_DepthBias_Count         # entries in use; DepthBiasHooks_clearDepthBias zeroes it
 0x0194299c label    g_DepthBias               # 256 entries of 12 bytes (u32, f32 scale, f32): DepthBiasHooks_clearDepthBias resets them to (0, 1.0, 0.0)
@@ -7672,6 +7713,7 @@
 0x02310c60 label    g_CdLib_FileBase          # g_CdLib + 0x20: the current module's first PS2 file number (CDfileSize_CD, CDfileSize_CD_EX add it to theirs)
 0x02310c68 label    g_CdLib_SectorTable       # g_CdLib + 0x28: cdrom.mdg (CdEnvInit), u32 per file: start sector in bits 0-21, bit 22 size from sizetbl.bin, bit 23 absent, top byte the unused bytes at the end / 8 (CDfileSize_CD, cd_file_sector)
 0x023110a0 label g_DefaultChrNames           # 0x14 bytes per character (getDefaultChrName 0x00787320)
+0x02311240 label g_BtlDamageRates             # 4 bytes per actor: physical, magic damage dealt bonus %, physical, magic damage taken reduction % (DmgCalc_StatBoostAbility)
 0x02311424 label g_CameraPriorityMask        # not 0: MsCameraPriority (0x007be0a0) changes nothing (MsCameraPriorityMask 0x007be100)
 0x02311428 label    g_CamOverrideScreenDepth     # override projection distance (default 1024.0; Native_CamSetScreenDepth's units)
 0x0231142c label    g_CamOverrideOn              # nonzero: the view comes from the override camera (Cam_OverrideSet), else from the active channel

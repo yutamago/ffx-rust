@@ -518,6 +518,165 @@ pub mod bridge {
         let r = (f64::from(d) + f64::from(std::f32::consts::PI)) as f32;
         mem.write(actor.wrapping_add(0x49c), r);
     }
+
+    fn u32_field(mem: &impl Mem, i: u32, offset: u32) -> u32 {
+        Ptr::<u8>::new(ms_get_chr(mem, i))
+            .field::<u32>(offset)
+            .get(mem)
+    }
+
+    fn u8_field(mem: &impl Mem, i: u32, offset: u32) -> u8 {
+        byte(mem, ms_get_chr(mem, i), offset)
+    }
+
+    /// `MsGetRamChrHP(i)` (`0x0079add0`): HP (`+0x5d0`).
+    pub fn ms_get_ram_chr_hp(mem: &impl Mem, i: u32) -> u32 {
+        u32_field(mem, i, 0x5d0)
+    }
+
+    /// `MsGetRamChrHP_0079adf0(i)` (`0x0079adf0`): max HP (`+0x594`).
+    pub fn ms_get_ram_chr_hp_max(mem: &impl Mem, i: u32) -> u32 {
+        u32_field(mem, i, 0x594)
+    }
+
+    /// `MsGetRamChrMP(i)` (`0x0079ae50`): MP (`+0x5d4`).
+    pub fn ms_get_ram_chr_mp(mem: &impl Mem, i: u32) -> u32 {
+        u32_field(mem, i, 0x5d4)
+    }
+
+    /// `MsGetRamChrMPmax(i)` (`0x0079ae70`): max MP (`+0x598`).
+    pub fn ms_get_ram_chr_mp_max(mem: &impl Mem, i: u32) -> u32 {
+        u32_field(mem, i, 0x598)
+    }
+
+    /// `MsGetRamChrMag(i)` (`0x0079ae90`): magic (`+0x5aa`).
+    pub fn ms_get_ram_chr_mag(mem: &impl Mem, i: u32) -> u32 {
+        u32::from(u8_field(mem, i, 0x5aa))
+    }
+
+    /// `MsGetRamChrName(i)` (`0x0079af10`): the name at `+0x540`.
+    pub fn ms_get_ram_chr_name(mem: &impl Mem, i: u32) -> u32 {
+        ms_get_chr(mem, i).wrapping_add(0x540)
+    }
+
+    /// `MsGetRamChrIconNumber(i)` (`0x0079ae10`): `+0x5c3`.
+    pub fn ms_get_ram_chr_icon_number(mem: &impl Mem, i: u32) -> u32 {
+        u32::from(u8_field(mem, i, 0x5c3))
+    }
+
+    /// `MsGetRamChrIconType(i)` (`0x0079ae30`): `+0x5c2`.
+    pub fn ms_get_ram_chr_icon_type(mem: &impl Mem, i: u32) -> u32 {
+        u32::from(u8_field(mem, i, 0x5c2))
+    }
+
+    /// `MsGetRamChrMegas(i)` (`0x0079aed0`): bit 3 of `+0x590`.
+    pub fn ms_get_ram_chr_megas(mem: &impl Mem, i: u32) -> u32 {
+        u32::from(u8_field(mem, i, 0x590) >> 3) & 1
+    }
+
+    /// `MsGetRamChrDisableZan(i)` (`0x0079ad90`): bit 9 of `+0x5b8` (no
+    /// Zanmato), for actor `i & 0xff`.
+    pub fn ms_get_ram_chr_disable_zan(mem: &impl Mem, i: u32) -> u32 {
+        let a = ms_get_chr(mem, i & 0xff);
+        u32::from(Ptr::<u8>::new(a).field::<u16>(0x5b8).get(mem) >> 9) & 1
+    }
+
+    /// `MsGetRamChrCTBmax(i)` (`0x0079ad10`): `+0x65d`.
+    pub fn ms_get_ram_chr_ctb_max(mem: &impl Mem, i: u32) -> u32 {
+        u32::from(u8_field(mem, i, 0x65d))
+    }
+
+    /// An actor's field for `i & 0xff` when it is one of the 31 actors,
+    /// else 0 (`MsGetChrStat*`, `MsGetChrHandle` and the like).
+    fn actor_only(mem: &impl Mem, i: u32, get: impl FnOnce(u32) -> u32) -> u32 {
+        let i = i & 0xff;
+        if ms_btl_chr_num_check(i) == 0 {
+            return 0;
+        }
+        get(ms_get_chr(mem, i))
+    }
+
+    /// `MsGetChrStatDeath(i)` (`0x00795780`): 1 when `+0xdcc` is set.
+    pub fn ms_get_chr_stat_death(mem: &impl Mem, i: u32) -> u32 {
+        actor_only(mem, i, |a| u32::from(byte(mem, a, 0xdcc) != 0))
+    }
+
+    /// `MsGetChrStatStone(i)` (`0x00795800`): `+0xdce`, signed.
+    pub fn ms_get_chr_stat_stone(mem: &impl Mem, i: u32) -> u32 {
+        actor_only(mem, i, |a| {
+            i32::from(byte(mem, a, 0xdce).cast_signed()).cast_unsigned()
+        })
+    }
+
+    /// `MsGetChrStatWeak(i)` (`0x00795840`): `+0x63d`.
+    pub fn ms_get_chr_stat_weak(mem: &impl Mem, i: u32) -> u32 {
+        actor_only(mem, i, |a| u32::from(byte(mem, a, 0x63d)))
+    }
+
+    /// `MsGetChrStatZombie(i)` (`0x00795880`): status bit 1.
+    pub fn ms_get_chr_stat_zombie(mem: &impl Mem, i: u32) -> u32 {
+        actor_only(mem, i, |a| {
+            u32::from(Ptr::<u8>::new(a).field::<u16>(0x606).get(mem) >> 1) & 1
+        })
+    }
+
+    /// `MsGetChrStatPoison(i)` (`0x007957c0`): status bit 3.
+    pub fn ms_get_chr_stat_poison(mem: &impl Mem, i: u32) -> u32 {
+        actor_only(mem, i, |a| {
+            u32::from(Ptr::<u8>::new(a).field::<u16>(0x606).get(mem) >> 3) & 1
+        })
+    }
+
+    /// `MsGetChrLimitGauge(i)` (`0x00795550`): the overdrive gauge
+    /// (`+0x5bc`).
+    pub fn ms_get_chr_limit_gauge(mem: &impl Mem, i: u32) -> u32 {
+        actor_only(mem, i, |a| u32::from(byte(mem, a, 0x5bc)))
+    }
+
+    /// `MsGetChrLimitGaugeMax(i)` (`0x00795590`): its maximum (`+0x5bd`).
+    pub fn ms_get_chr_limit_gauge_max(mem: &impl Mem, i: u32) -> u32 {
+        actor_only(mem, i, |a| u32::from(byte(mem, a, 0x5bd)))
+    }
+
+    /// `MsGetChrHandle(i)` (`0x00795080`): the character handle (`+0`).
+    pub fn ms_get_chr_handle(mem: &impl Mem, i: u32) -> u32 {
+        actor_only(mem, i, |a| Ptr::<u32>::new(a).get(mem))
+    }
+
+    /// `MsGetChrGroup(i)` (`0x00795040`): `+0x504` & 7.
+    pub fn ms_get_chr_group(mem: &impl Mem, i: u32) -> u32 {
+        actor_only(mem, i, |a| u32::from(byte(mem, a, 0x504)) & 7)
+    }
+
+    /// `MsGetChrCursorFlag(i)` (`0x00794ca0`): `+0xdd9`, signed.
+    pub fn ms_get_chr_cursor_flag(mem: &impl Mem, i: u32) -> u32 {
+        actor_only(mem, i, |a| {
+            i32::from(byte(mem, a, 0xdd9).cast_signed()).cast_unsigned()
+        })
+    }
+
+    /// `MsGetChrCommand(i)` (`0x007b09b0`): the actor's command cue entry
+    /// (`+0xde5`), or its own at `+0x72c` without one.
+    pub fn ms_get_chr_command(mem: &impl Mem, i: u32) -> u32 {
+        let a = ms_get_chr(mem, i);
+        match byte(mem, a, 0xde5) {
+            0xff => a.wrapping_add(0x72c),
+            n => cue_entry(mem, n),
+        }
+    }
+
+    /// `MsGetChrCommand2(i)` (`0x007b09e0`): the same, null without one.
+    pub fn ms_get_chr_command2(mem: &impl Mem, i: u32) -> u32 {
+        match byte(mem, ms_get_chr(mem, i), 0xde5) {
+            0xff => 0,
+            n => cue_entry(mem, n),
+        }
+    }
+
+    fn cue_entry(mem: &impl Mem, n: u8) -> u32 {
+        use crate::state::bridge::{COMMAND_CUE, CUE_SIZE};
+        COMMAND_CUE.ptr(mem).addr + u32::from(n) * CUE_SIZE
+    }
 }
 
 #[cfg(test)]
