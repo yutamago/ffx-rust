@@ -847,6 +847,7 @@ name = "ffx-vfx"
 version = "0.1.0"
 dependencies = [
  "ffx-bridge",
+ "ffx-system",
 ]
 
 [[package]]

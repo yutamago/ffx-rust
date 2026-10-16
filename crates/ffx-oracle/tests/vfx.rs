@@ -9,7 +9,7 @@ use std::sync::{Arc, OnceLock};
 
 use ffx_bridge::{Global, Mem, Value};
 use ffx_oracle::{Conv, Oracle, Pages};
-use ffx_vfx::{et, fp, heap, op, opd, opus, ppp, rand, x87};
+use ffx_vfx::{et, fp, heap, op, opd, opus, ppp, prog, rand, x87};
 
 fn exe() -> Option<PathBuf> {
     let dir = std::env::var_os("FFX_GAME_DIR").map(PathBuf::from);
@@ -834,7 +834,7 @@ fn op_services_match_the_original() {
             });
             // pads
             if state {
-                p.put(o::PAD_ACTIVE, u8::from(rng.chance(90)));
+                p.put(o::DEBUG_MODE, u8::from(rng.chance(90)));
                 p.put(o::PAD_INPUT, rng.pick(&[0u8, 1, 0x80]));
                 let pads = p.sym(o::PADS.sym);
                 for i in 0..4 {
@@ -1439,6 +1439,618 @@ fn debug_display_matches_the_original() {
                     None
                 });
             }
+        }
+    }
+}
+
+// ---- program table ----------------------------------------------------
+
+/// The set-ups of the program table: `(name, address, bridge)`.
+const PROG_CONS: &[(&str, u32, Con)] = &[
+    (
+        "pppDrawShapeCon",
+        0x0074_0eb0,
+        prog::bridge::ppp_draw_shape_con,
+    ),
+    (
+        "pppDrawShapeXCon",
+        0x0074_1450,
+        prog::bridge::ppp_draw_shape_x_con,
+    ),
+    (
+        "pppNeiDrawShapePointLightCon",
+        0x0074_b9a0,
+        prog::bridge::ppp_nei_draw_shape_point_light_con,
+    ),
+    (
+        "pppVertexApCon",
+        0x0075_7b30,
+        prog::bridge::ppp_vertex_ap_con,
+    ),
+    (
+        "pppVertexApDisPosCon",
+        0x0075_7e90,
+        prog::bridge::ppp_vertex_ap_dis_pos_con,
+    ),
+    (
+        "pppVertexApLcCon",
+        0x0075_8250,
+        prog::bridge::ppp_vertex_ap_lc_con,
+    ),
+    (
+        "pppVertexApAtCon",
+        0x0075_84b0,
+        prog::bridge::ppp_vertex_ap_at_con,
+    ),
+    ("pppPointApCon", 0x0075_7470, prog::bridge::ppp_point_ap_con),
+    (
+        "pppPointRApCon",
+        0x0075_7750,
+        prog::bridge::ppp_point_r_ap_con,
+    ),
+    (
+        "pppKeHitBornCon",
+        0x0075_9990,
+        prog::bridge::ppp_ke_hit_born_con,
+    ),
+    (
+        "pppKeThHitBornCon",
+        0x0075_9f10,
+        prog::bridge::ppp_ke_th_hit_born_con,
+    ),
+    (
+        "pppKeBornRndCon",
+        0x0075_8790,
+        prog::bridge::ppp_ke_born_rnd_con,
+    ),
+    (
+        "pppKeBornRnd2Con",
+        0x0075_8820,
+        prog::bridge::ppp_ke_born_rnd2_con,
+    ),
+    (
+        "pppKeBornRnd3Con",
+        0x0075_89d0,
+        prog::bridge::ppp_ke_born_rnd3_con,
+    ),
+    (
+        "pppKeBornRnd4Con",
+        0x0075_8dd0,
+        prog::bridge::ppp_ke_born_rnd4_con,
+    ),
+    (
+        "pppDrawMdlRevCon",
+        0x0074_03f0,
+        prog::bridge::ppp_draw_mdl_rev_con,
+    ),
+    (
+        "pppKeLnsLpSftCon",
+        0x0075_9fb0,
+        prog::bridge::ppp_ke_lns_lp_sft_con,
+    ),
+    (
+        "pppKeLnsLpCon2",
+        0x0075_af60,
+        prog::bridge::ppp_ke_lns_lp_con2,
+    ),
+    (
+        "pppKeLnsLpTCon2",
+        0x0075_b110,
+        prog::bridge::ppp_ke_lns_lp_t_con2,
+    ),
+    (
+        "pppKeBornRnd5Con",
+        0x0075_8f90,
+        prog::bridge::ppp_ke_born_rnd5_con,
+    ),
+    (
+        "pppKeBornRnd6Con",
+        0x0075_9270,
+        prog::bridge::ppp_ke_born_rnd6_con,
+    ),
+    (
+        "pppKeHitChkPxBCon",
+        0x0075_9bc0,
+        prog::bridge::ppp_ke_hit_chk_px_b_con,
+    ),
+    (
+        "pppKeShpTailCon",
+        0x0074_c540,
+        prog::bridge::ppp_ke_shp_tail_con,
+    ),
+    (
+        "pppKeShpTailXCon",
+        0x0074_d540,
+        prog::bridge::ppp_ke_shp_tail_x_con,
+    ),
+    (
+        "pppKeShpTail2Con",
+        0x0074_e540,
+        prog::bridge::ppp_ke_shp_tail2_con,
+    ),
+    (
+        "pppKeShpTail2XCon",
+        0x0074_f580,
+        prog::bridge::ppp_ke_shp_tail2_x_con,
+    ),
+    (
+        "pppKeShpTailLcCon",
+        0x0075_4fc0,
+        prog::bridge::ppp_ke_shp_tail_lc_con,
+    ),
+    (
+        "pppDrawShapeRevCon",
+        0x0074_1570,
+        prog::bridge::ppp_draw_shape_rev_con,
+    ),
+    ("pppVtMimeCon2", 0x0072_edb0, prog::bridge::ppp_vt_mime_con2),
+    (
+        "pppNeiPointLightCon",
+        0x0075_d7c0,
+        prog::bridge::ppp_nei_point_light_con,
+    ),
+    (
+        "pppKeTkFadeCon",
+        0x0072_ee20,
+        prog::bridge::ppp_ke_tk_fade_con,
+    ),
+    (
+        "pppKeMdlTfdCon",
+        0x0074_97e0,
+        prog::bridge::ppp_ke_mdl_tfd_con,
+    ),
+    (
+        "pppKeMdlTfd2Con",
+        0x0074_9b10,
+        prog::bridge::ppp_ke_mdl_tfd2_con,
+    ),
+    (
+        "pppKeMdlTfd3Con",
+        0x0074_9e60,
+        prog::bridge::ppp_ke_mdl_tfd3_con,
+    ),
+    (
+        "pppMoveLoopCon",
+        0x0075_c150,
+        prog::bridge::ppp_move_loop_con,
+    ),
+    (
+        "pppMoveLoopCon2",
+        0x0075_c180,
+        prog::bridge::ppp_move_loop_con2,
+    ),
+    (
+        "pppSclMoveLoopCon",
+        0x0075_c330,
+        prog::bridge::ppp_scl_move_loop_con,
+    ),
+    (
+        "pppSclMoveLoopCon2",
+        0x0075_c360,
+        prog::bridge::ppp_scl_move_loop_con2,
+    ),
+    (
+        "pppAngMoveLoopCon",
+        0x0075_c210,
+        prog::bridge::ppp_ang_move_loop_con,
+    ),
+    (
+        "pppAngMoveLoopCon2",
+        0x0075_c250,
+        prog::bridge::ppp_ang_move_loop_con2,
+    ),
+    (
+        "pppKeOfsPtCon",
+        0x0075_cdf0,
+        prog::bridge::ppp_ke_ofs_pt_con,
+    ),
+    (
+        "pppDrawMdlSeaCon2",
+        0x0073_ab40,
+        prog::bridge::ppp_draw_mdl_sea_con2,
+    ),
+    (
+        "pppDrawMdlInfCon2",
+        0x0073_b800,
+        prog::bridge::ppp_draw_mdl_inf_con2,
+    ),
+    (
+        "pppDrawMdlPSimCon2",
+        0x0073_cfe0,
+        prog::bridge::ppp_draw_mdl_p_sim_con2,
+    ),
+    (
+        "pppDrawMdlLoopCon2",
+        0x0073_e270,
+        prog::bridge::ppp_draw_mdl_loop_con2,
+    ),
+    (
+        "pppDrawMdlLoopZCon2",
+        0x0073_ea00,
+        prog::bridge::ppp_draw_mdl_loop_z_con2,
+    ),
+    (
+        "pppDrawMdlLoopDisPosCon2",
+        0x0073_f1f0,
+        prog::bridge::ppp_draw_mdl_loop_dis_pos_con2,
+    ),
+    (
+        "pppDrawMdlCameraLoopCon2",
+        0x0073_fa10,
+        prog::bridge::ppp_draw_mdl_camera_loop_con2,
+    ),
+    (
+        "pppDrawMdlCameraCon2",
+        0x0073_d8f0,
+        prog::bridge::ppp_draw_mdl_camera_con2,
+    ),
+    (
+        "pppKeShpDttCon",
+        0x0075_5010,
+        prog::bridge::ppp_ke_shp_dtt_con,
+    ),
+    (
+        "pppEiWindFunCon",
+        0x0075_d590,
+        prog::bridge::ppp_ei_wind_fun_con,
+    ),
+    (
+        "pppDrawMdlTsCon",
+        0x0073_84f0,
+        prog::bridge::ppp_draw_mdl_ts_con,
+    ),
+    (
+        "pppDrawMdlTs2Con",
+        0x0073_9480,
+        prog::bridge::ppp_draw_mdl_ts2_con,
+    ),
+    (
+        "pppDrawMdlTs3Con",
+        0x0073_aac0,
+        prog::bridge::ppp_draw_mdl_ts3_con,
+    ),
+    (
+        "pppNeiDrawMdlTsPointLightCon",
+        0x0074_b500,
+        prog::bridge::ppp_nei_draw_mdl_ts_point_light_con,
+    ),
+    ("pppPointCon", 0x0075_c4c0, prog::bridge::ppp_point_con),
+    ("pppScaleCon", 0x0075_d050, prog::bridge::ppp_scale_con),
+    ("pppAngleCon", 0x0075_ce80, prog::bridge::ppp_angle_con),
+    ("pppAcceleCon", 0x0075_b810, prog::bridge::ppp_accele_con),
+    (
+        "pppSclAcceleCon",
+        0x0075_b9d0,
+        prog::bridge::ppp_scl_accele_con,
+    ),
+    ("pppMoveCon", 0x0075_beb0, prog::bridge::ppp_move_con),
+    ("pppSclMoveCon", 0x0075_c070, prog::bridge::ppp_scl_move_con),
+    (
+        "pppAngAcceleCon",
+        0x0075_b8c0,
+        prog::bridge::ppp_ang_accele_con,
+    ),
+    ("pppAngMoveCon", 0x0075_bf60, prog::bridge::ppp_ang_move_con),
+    (
+        "pppKeBornPtCmplCon",
+        0x0075_9620,
+        prog::bridge::ppp_ke_born_pt_cmpl_con,
+    ),
+    (
+        "pppPointLoopCon",
+        0x0075_c5a0,
+        prog::bridge::ppp_point_loop_con,
+    ),
+    (
+        "pppAngleLoopCon",
+        0x0075_cf40,
+        prog::bridge::ppp_angle_loop_con,
+    ),
+    (
+        "pppScaleLoopCon",
+        0x0075_d130,
+        prog::bridge::ppp_scale_loop_con,
+    ),
+    (
+        "pppDrawMdlCameraCon",
+        0x0073_d8c0,
+        prog::bridge::ppp_draw_mdl_camera_con,
+    ),
+    (
+        "pppDrawMdlLoopCon",
+        0x0073_e240,
+        prog::bridge::ppp_draw_mdl_loop_con,
+    ),
+    (
+        "pppDrawMdlLoopZCon",
+        0x0073_e9d0,
+        prog::bridge::ppp_draw_mdl_loop_z_con,
+    ),
+    (
+        "pppDrawMdlLoopDisPosCon",
+        0x0073_f1c0,
+        prog::bridge::ppp_draw_mdl_loop_dis_pos_con,
+    ),
+    (
+        "pppDrawMdlCameraLoopCon",
+        0x0073_f9e0,
+        prog::bridge::ppp_draw_mdl_camera_loop_con,
+    ),
+    (
+        "pppDrawSpriteCon",
+        0x0075_66a0,
+        prog::bridge::ppp_draw_sprite_con,
+    ),
+    (
+        "pppDrawFilterCon",
+        0x0075_7210,
+        prog::bridge::ppp_draw_filter_con,
+    ),
+    (
+        "pppKeGrvTgtCon",
+        0x0075_9800,
+        prog::bridge::ppp_ke_grv_tgt_con,
+    ),
+    (
+        "pppKeThTp2Con",
+        0x0073_6e30,
+        prog::bridge::ppp_ke_th_tp2_con,
+    ),
+    ("pppKeThTpCon", 0x0073_6e60, prog::bridge::ppp_ke_th_tp_con),
+    (
+        "pppDrawMdlPSimCon",
+        0x0073_cfb0,
+        prog::bridge::ppp_draw_mdl_p_sim_con,
+    ),
+    (
+        "pppDrawRainCon",
+        0x0075_6240,
+        prog::bridge::ppp_draw_rain_con,
+    ),
+    (
+        "pppDrawMdlSeaCon",
+        0x0073_ab00,
+        prog::bridge::ppp_draw_mdl_sea_con,
+    ),
+    (
+        "pppColAcceleCon",
+        0x0075_bac0,
+        prog::bridge::ppp_col_accele_con,
+    ),
+    (
+        "pppColMoveCon",
+        0x0075_c410,
+        prog::bridge::ppp_col_accele_con,
+    ),
+    (
+        "pppPointLoopCon2",
+        0x0075_c5d0,
+        prog::bridge::ppp_point_loop_con2,
+    ),
+    (
+        "pppScaleLoopCon2",
+        0x0075_d160,
+        prog::bridge::ppp_point_loop_con2,
+    ),
+    (
+        "pppAngleLoopCon2",
+        0x0075_cf70,
+        prog::bridge::ppp_angle_loop_con2,
+    ),
+];
+
+/// The per-frame steps.
+const PROG_STEPS: &[(&str, u32, Step)] = &[
+    ("pppAccele", 0x0075_b740, prog::bridge::ppp_accele),
+    ("pppSclAccele", 0x0075_b900, prog::bridge::ppp_accele),
+    ("pppMove", 0x0075_bde0, prog::bridge::ppp_accele),
+    ("pppSclMove", 0x0075_bfa0, prog::bridge::ppp_accele),
+    ("pppAngAccele", 0x0075_b850, prog::bridge::ppp_ang_accele),
+    ("pppAngMove", 0x0075_bef0, prog::bridge::ppp_ang_accele),
+    ("pppColAccele", 0x0075_ba40, prog::bridge::ppp_col_accele),
+    ("pppColMove", 0x0075_c390, prog::bridge::ppp_col_accele),
+    ("pppMoveLoop", 0x0075_c0b0, prog::bridge::ppp_move_loop),
+    ("pppSclMoveLoop", 0x0075_c290, prog::bridge::ppp_move_loop),
+    (
+        "pppAngMoveLoop",
+        0x0075_c1b0,
+        prog::bridge::ppp_ang_move_loop,
+    ),
+    ("pppPoint", 0x0075_c450, prog::bridge::ppp_point),
+    ("pppScale", 0x0075_cfe0, prog::bridge::ppp_point),
+    ("pppPointLoop", 0x0075_c500, prog::bridge::ppp_point_loop),
+    ("pppScaleLoop", 0x0075_d090, prog::bridge::ppp_point_loop),
+    ("pppAngleLoop", 0x0075_cec0, prog::bridge::ppp_angle_loop),
+    ("pppKeGrvTgt", 0x0075_97b0, prog::bridge::ppp_ke_grv_tgt),
+];
+
+#[test]
+fn program_table_matches_the_original() {
+    use prog::bridge as g;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0c0d_e0f1);
+        let obj = p.alloc(0x400);
+        let key = p.alloc(0x40);
+        let key2 = p.alloc(0x40);
+        let ctrl = p.alloc(0x10);
+        let offsets = p.alloc(6 * 4);
+        p.set(ctrl + 0xc, offsets);
+        for round in 0..1500 {
+            for i in (0..0x400).step_by(4) {
+                let v = if rng.chance(70) {
+                    rng.float()
+                } else {
+                    rng.next()
+                };
+                p.set(obj + i, v);
+            }
+            for k in [key, key2] {
+                for i in (0..0x40).step_by(4) {
+                    let v = if rng.chance(70) {
+                        rng.float()
+                    } else {
+                        rng.next()
+                    };
+                    p.set(k + i, v);
+                }
+            }
+            for i in 0..6 {
+                p.set(offsets + 4 * i, rng.below(0x40) * 4);
+            }
+            let frame = rng.pick(&[0u32, 1, 7, 0x8000_0000]);
+            p.set(obj + 0xc, frame);
+            let kf = if rng.chance(70) { frame } else { frame ^ 1 };
+            p.set(key, kf);
+            // the remembered key of the Loop programs: none, or a real one
+            let off0: u32 = p.get(offsets);
+            let remembered = rng.pick(&[0, key, key2]);
+            // a set-up that takes the key back off has one
+            let held = rng.pick(&[key, key2]);
+            p.set(obj + off0 + 0xb0, held);
+            if !p.snapshot() || round > 0 {
+                p.put(ppp::bridge::STOP, u32::from(rng.chance(15)));
+                p.put(ppp::bridge::COLOR_CON_SHIFT, rng.below(0x10) * 4);
+                p.put(
+                    ppp::bridge::R0,
+                    [rng.next(), rng.next(), rng.next(), rng.next()],
+                );
+                p.put(g::VF00, [rng.next(), rng.next(), rng.next(), rng.next()]);
+            }
+            let (name, sym, f) = rng.pick(PROG_CONS);
+            p.check(&format!("{name} round {round}"), sym, &[obj, ctrl], |m| {
+                f(m, obj, ctrl);
+                None
+            });
+            p.set(obj + off0 + 0xb0, remembered);
+            let (name, sym, f) = rng.pick(PROG_STEPS);
+            p.check(
+                &format!("{name} round {round}"),
+                sym,
+                &[obj, key, ctrl],
+                |m| {
+                    f(m, obj, key, ctrl);
+                    None
+                },
+            );
+        }
+        // every one at least once, in order
+        for &(name, sym, f) in PROG_CONS {
+            let off0: u32 = p.get(offsets);
+            p.set(obj + off0 + 0xb0, key2);
+            p.check(name, sym, &[obj, ctrl], |m| {
+                f(m, obj, ctrl);
+                None
+            });
+        }
+        p.put(ppp::bridge::STOP, 0);
+        for &(name, sym, f) in PROG_STEPS {
+            let off0: u32 = p.get(offsets);
+            p.set(obj + off0 + 0xb0, 0u32);
+            p.check(name, sym, &[obj, key, ctrl], |m| {
+                f(m, obj, key, ctrl);
+                None
+            });
+        }
+    }
+}
+
+const OP_FUNC_BEFORE_OT_SET: u32 = 0x007e_b370;
+const OP_FUNC_AFTER_OT3D_SET: u32 = 0x007e_b320;
+const OP_FUNC_BEFORE_WOT_SET: u32 = 0x007e_b3c0;
+const OP_FUNC_BEFORE_OT_FREE: u32 = 0x007e_b350;
+const OP_FUNC_AFTER_OT3D_FREE: u32 = 0x007e_b300;
+const OP_FUNC_BEFORE_WOT_FREE: u32 = 0x007e_b3a0;
+const OP_HEAP_DISPLAY_SET_PAR: u32 = 0x007f_f2b0;
+
+type OtSet = fn(&mut Oracle, u32, u32, u32, u32) -> i32;
+
+#[test]
+fn op_wrappers_match_the_original() {
+    use op::bridge as o;
+    let sets: [(&str, u32, OtSet); 3] = [
+        (
+            "op_func_before_ot_set",
+            OP_FUNC_BEFORE_OT_SET,
+            o::op_func_before_ot_set,
+        ),
+        (
+            "op_func_after_ot3d_set",
+            OP_FUNC_AFTER_OT3D_SET,
+            o::op_func_after_ot3d_set,
+        ),
+        (
+            "op_func_before_wot_set",
+            OP_FUNC_BEFORE_WOT_SET,
+            o::op_func_before_wot_set,
+        ),
+    ];
+    let frees: [(&str, u32, ById); 3] = [
+        (
+            "op_func_before_ot_free",
+            OP_FUNC_BEFORE_OT_FREE,
+            o::op_func_before_ot_free,
+        ),
+        (
+            "op_func_after_ot3d_free",
+            OP_FUNC_AFTER_OT3D_FREE,
+            o::op_func_after_ot3d_free,
+        ),
+        (
+            "op_func_before_wot_free",
+            OP_FUNC_BEFORE_WOT_FREE,
+            o::op_func_before_wot_free,
+        ),
+    ];
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0ffe_0ffe);
+        for round in 0..300 {
+            if !p.snapshot() || round > 0 {
+                let order = p.sym(o::FUNC_OT_ORDER.sym);
+                for i in 0..0x80 {
+                    let v = if rng.chance(40) {
+                        -1i8
+                    } else {
+                        i8::try_from(rng.below(32)).unwrap()
+                    };
+                    p.set(order + i, v);
+                }
+                let slots = p.sym(o::FUNC_OT.sym);
+                for i in 0..0x80 {
+                    let f = if rng.chance(50) { 0 } else { rng.next() };
+                    p.set(slots + 16 * i, f);
+                }
+                p.put(o::DEBUG_MODE, u8::from(rng.chance(70)));
+            }
+            let args = [rng.next(), rng.next(), rng.next(), rng.next()];
+            let (name, sym, f) = rng.pick(&sets);
+            p.check(&format!("{name} round {round}"), sym, &args, |m| {
+                Some(f(m, args[0], args[1], args[2], args[3]).cast_unsigned())
+            });
+            let r = rng.below(32);
+            let slot = rng.pick(&[0u32, 1, 31, 0x7f, 0x80, r]);
+            let (name, sym, f) = rng.pick(&frees);
+            p.check(
+                &format!("{name}({slot}) round {round}"),
+                sym,
+                &[slot],
+                |m| {
+                    f(m, slot);
+                    None
+                },
+            );
+            let gauges = p.sym(opd::bridge::HEAP_DISPLAY.sym);
+            p.fill(gauges, 0x100, &mut rng);
+            let flags = rng.pick(&[0u32, 1, 0x102, 0x8203, 0xf00]);
+            let heap_at = if rng.chance(20) { 0 } else { rng.next() };
+            p.check(
+                "op_heap_display_set_par",
+                OP_HEAP_DISPLAY_SET_PAR,
+                &[heap_at, flags],
+                |m| {
+                    o::op_heap_display_set_par(m, heap_at, flags);
+                    None
+                },
+            );
         }
     }
 }

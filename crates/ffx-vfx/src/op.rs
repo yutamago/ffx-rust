@@ -59,8 +59,9 @@ pub mod bridge {
     pub const WOT_TRIGGER: Global<u8> = Global::new(0x011a_0067);
     /// `g_OpPrayEffect`.
     pub const PRAY_EFFECT: Global<u8> = Global::new(0x011a_0061);
-    /// `g_OpPadActive`: `op_pad_set` does nothing while 0.
-    pub const PAD_ACTIVE: Global<u8> = Global::new(0x0232_2790);
+    /// `g_OpDebugMode`: while 0, `op_pad_set` and `op_heap_display_set_par`
+    /// do nothing.
+    pub const DEBUG_MODE: Global<u8> = Global::new(0x0232_2790);
     /// `g_OpPadInput`: while 0, `op_pad_set` takes no buttons.
     pub const PAD_INPUT: Global<u8> = Global::new(0x0232_1548);
     /// `g_OpPads`: 0x20-byte pad records ([`super::Pad`]).
@@ -160,6 +161,46 @@ pub mod bridge {
         order.at(31).set(mem, -1);
     }
 
+    /// `op_func_before_ot_set(func, a, b, c)` (`0x007eb370`): list 0.
+    pub fn op_func_before_ot_set(mem: &mut impl Mem, func: u32, a: u32, b: u32, c: u32) -> i32 {
+        op_func_ot_set(mem, func, a, b, c, 0)
+    }
+
+    /// `op_func_after_ot3d_set(func, a, b, c)` (`0x007eb320`): list 0x20.
+    pub fn op_func_after_ot3d_set(mem: &mut impl Mem, func: u32, a: u32, b: u32, c: u32) -> i32 {
+        op_func_ot_set(mem, func, a, b, c, 0x20)
+    }
+
+    /// `op_func_before_wot_set(func, a, b, c)` (`0x007eb3c0`): list 0x40.
+    pub fn op_func_before_wot_set(mem: &mut impl Mem, func: u32, a: u32, b: u32, c: u32) -> i32 {
+        op_func_ot_set(mem, func, a, b, c, 0x40)
+    }
+
+    /// `op_func_before_ot_free(slot)` (`0x007eb350`): list 0.
+    pub fn op_func_before_ot_free(mem: &mut impl Mem, slot: u32) {
+        op_func_ot_free(mem, slot, 0);
+    }
+
+    /// `op_func_after_ot3d_free(slot)` (`0x007eb300`): list 0x20.
+    pub fn op_func_after_ot3d_free(mem: &mut impl Mem, slot: u32) {
+        op_func_ot_free(mem, slot, 0x20);
+    }
+
+    /// `op_func_before_wot_free(slot)` (`0x007eb3a0`): list 0x40.
+    pub fn op_func_before_wot_free(mem: &mut impl Mem, slot: u32) {
+        op_func_ot_free(mem, slot, 0x40);
+    }
+
+    /// `op_heap_display_set_par(heap, flags)` (`0x007ff2b0`): in debug
+    /// mode, clears gauge `flags & 3` and shows the ppp heap there.
+    pub fn op_heap_display_set_par(mem: &mut impl Mem, heap: u32, flags: u32) {
+        if DEBUG_MODE.get(mem) == 0 {
+            return;
+        }
+        crate::opd::bridge::opd_heap_display_clear(mem, flags);
+        crate::opd::bridge::opd_heap_display_set_par(mem, heap, flags);
+    }
+
     /// `op_wot_triger(on)` (`0x007ec7d0`).
     pub fn op_wot_triger(mem: &mut impl Mem, on: u32) {
         WOT_TRIGGER.set(mem, u8::from(on != 0));
@@ -174,7 +215,7 @@ pub mod bridge {
     /// `op_pad_set(pad, _, input)` (`0x007e6610`): one update of pad
     /// record `pad` ([`super::Pad::update`]).
     pub fn op_pad_set(mem: &mut impl Mem, pad: u32, input: u32) {
-        if PAD_ACTIVE.get(mem) == 0 {
+        if DEBUG_MODE.get(mem) == 0 {
             return;
         }
         let input = if PAD_INPUT.get(mem) != 0 {

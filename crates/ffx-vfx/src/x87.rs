@@ -86,6 +86,15 @@ pub fn add(st: f32, mem: f32) -> f32 {
     }
 }
 
+/// `fld st; fsub m32; fstp m32`: `st - mem`.
+#[must_use]
+pub fn sub(st: f32, mem: f32) -> f32 {
+    match propagate(st.to_bits(), mem.to_bits()) {
+        Some(n) => f32::from_bits(n),
+        None => finish(f64::from(st) - f64::from(mem)),
+    }
+}
+
 /// `fld st; fmul m32; fstp m32`: `st * mem`.
 #[must_use]
 pub fn mul(st: f32, mem: f32) -> f32 {
