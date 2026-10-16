@@ -23,6 +23,26 @@ pub fn clamp_pi(a: f32) -> f32 {
     a
 }
 
+/// `CIsqrt(x)` (`0x0088c400`): `_CIsqrt` (`fsqrt` at 53 bits) stored to a
+/// float; the double rounding equals one rounding for a square root.
+#[must_use]
+#[allow(clippy::cast_possible_truncation)]
+pub fn ci_sqrt(x: f32) -> f32 {
+    f64::from(x).sqrt() as f32
+}
+
+/// `Math_WrapAngleFloor(a)` (`0x0088c630`, own name): `a` moved into
+/// [−π, π) by whole turns with `floor`, each step stored as a float.
+#[must_use]
+#[allow(clippy::cast_possible_truncation)]
+pub fn wrap_angle_floor(a: f32) -> f32 {
+    let a = (f64::from(a) + PI) as f32;
+    let t = (f64::from(a) / TAU) as f32;
+    let turns = f64::from(t).floor() as f32;
+    let r = (f64::from(a) - f64::from(turns) * TAU) as f32;
+    (f64::from(r) - PI) as f32
+}
+
 /// `Math_WrapAngle(a)`: `a` moved into [−π, π] by whole turns, one turn at
 /// a time (each step rounded to a float). Like the original it never ends
 /// for an infinity or a magnitude where a turn no longer changes the float.

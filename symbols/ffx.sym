@@ -5557,8 +5557,8 @@
 0x0082ebe0 function Ch_DrawGetParaEdit        # movsx g_ChrDrawParaEdit (Ch_DrawSetParaEdit's); Switch name, in name order before Ch_DrawGetShadowColor
 0x0082ebf0 function Ch_DrawGetShadowColor     # fh switch:bsim1.00 0x7100419950
 0x0082ec30 function Ch_DrawGetShadowDir       # fh switch:bsim1.00 0x71004199a0
-0x0082ec60 function Ch_DrawGetShadowMode         # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008b6528 Ch_DrawGetShadowMode, 2 votes, round 2
-0x0082ec70 function Ch_DrawGetShadowSemi         # layout: alphabetical run between Ch_DrawGetShadowMode and Ch_DrawInitAll (2 unnamed in the gap); Switch 0x7100419900 Ch_DrawGetShadowSemi is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0082ec60 function Ch_DrawGetShadowMode      # () g_ChrShadowMode zero-extended; Switch name, the two slots Ch_DrawGetShadowDir..Ch_DrawInitAll before Ch_DrawIcons in order
+0x0082ec70 function Ch_DrawGetShadowSemi      # () byte 0x013008be (Sg_SetMovieGomiAvoid sets it) zero-extended; Switch name, the two slots Ch_DrawGetShadowDir..Ch_DrawInitAll before Ch_DrawIcons in order
 0x0082ec80 function Ch_DrawIcons                 # layout: alphabetical run between Ch_DrawGetShadowMode and Ch_DrawInitAll (2 unnamed in the gap); Switch 0x7100419a80 Ch_DrawIcons is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0082ed30 function Ch_DrawInitAll            # fh v3:bsim1.00 0x0082edb0
 0x0082ed50 function Ch_DrawMain                  # layout: alphabetical run between Ch_DrawInitAll and Ch_DrawMainForSituation (1 unnamed in the gap); Switch 0x710041ae90 Ch_DrawMain is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -5636,6 +5636,7 @@
 0x008320e0 function Ch_SysSet6e0             # ours: g_Chr6e0 = v (no reader found)
 0x008320f0 function Ch_CompareDrawOrder      # ours: qsort comparator (&a, &b) -> (*a)+0x6d4 - (*b)+0x6d4
 0x00832110 function Apply_Envelope            # fh v3:exact 0x00832190
+0x00832540 function Ch_RequestCalcNormal      # () byte 0x013009e4 = 1 (the draw takes deferred normal recalculations off it); own name
 0x00832550 function Ch_AllReserveCalcNorm     # Chr_RequestBoneUpdate for every active chr in g_ChrArray; was Chr_RequestBoneUpdateAll
 0x008325b0 function Ch_AllSetCalcNorm        # Switch name (0x7100414520): Ch_SetCalcNorm(chr, on) on every active character
 0x00832610 function Ch_BindSetScale           # fh v3:bsim1.00 0x00832690
@@ -6123,6 +6124,8 @@
 0x00849440 function Gu_MouseInRect            # (rect {i16 x, y, w, h}, dx, dy) -> 1 when g_GuMouseX/Y is strictly inside the moved rectangle
 0x00849490 function Gu_WindowMouseIn          # (window) Gu_SetHScale(+0x8e); mouse strictly inside the i16 rect +0xc; own name
 0x008494f0 function Gu_ControlFreeText        # (control) user_free(+0x28) when u16 +0x26 != 0; no direct caller; own name
+0x008495e0 function Gu_ControlInit            # (control) memclear 0x44, +0x28 = +0x30 (empty text), +0x40 &= ~3, u16 +0x26 = 0; own name
+0x00849610 function Gu_ControlSetText         # (control, s) text into the control: null/short (< 15) inline at +0x30, longer in a user_malloc(len + 0x11) buffer (capacity len + 0x10 at +0x26, reused while big enough); own name (the core of Gu_WindowControlSetText)
 0x008496d0 function Gu_WindowControlSetRect   # (window, id, x, y, w, h) the control rects (x, y + client origin +0x80), -1 kept; own name
 0x00849780 function Gu_Hide                   # fh switch:bsim1.00 0x7100440810
 0x008497f0 function Gu_InitBox                # (box, x, y, w, h) three rect copies, tints 0x80808080/0x8080, +0x22 = 0; Switch name, alphabetical slot Gu_Hide..Gu_Main (Gu_HoseiClock, Gu_Init, Gu_InitBox)
@@ -6147,6 +6150,7 @@
 0x00849f40 function Gu_SelectorResetNbItem    # fh v3:exact 0x00849f40
 0x00849fc0 function Gu_SelectorSetCallback    # fh v3:bsim1.00 0x00849fc0
 0x00849fd0 function Gu_SelectorSetItem        # fh v3:exact 0x00849fd0
+0x0084a000 function Gu_SelectorFitWindow      # (window, selector) visible rows = height / 9 (+0x10); short lists shrink the window, long ones scroll +0 to centre cursor +2; +0 <<= 3; Sg_SetMouse at the cursor row; own name
 0x0084a0d0 function Gu_SelectorSetMouseFukki  # fh v3:bsim1.00 0x0084a0d0
 0x0084a0e0 function Gu_SelectorSetSelect      # fh v3:exact 0x0084a0e0
 0x0084a110 function Gu_SelectorSetSelectSTR   # fh v3:exact 0x0084a110
@@ -6166,6 +6170,7 @@
 0x0084a710 function Gu_WindowControlSetText   # fh v3:exact 0x0084a710
 0x0084a920 function Gu_WindowCreate           # fh v3:exact 0x0084a920
 0x0084ab80 function Gu_WindowCloseTree        # (window) handler +0x7c (window, 0x8003, 0), flag 4, children recursively; own name
+0x0084abd0 function Gu_WindowFreeClosed       # () windows flagged closed (+0x88 bit 2) unlinked from g_GuWindowList and user_free-d with their controls' heap texts, controls array and +0x5c buffer (when +0x5a); own name (the gap's Switch names DelControl/Dispose are unproven)
 0x0084aec0 function Gu_WindowGetArg           # fh v3:bsim1.00 0x0084aec0
 0x0084aed0 function Gu_WindowGetClientH       # (window) -> i16 +0x86 (Gu_WindowSetClientH, Gu_WindowSetSize)
 0x0084aee0 function Gu_WindowGetClientW       # (window) -> i16 +0x84 (Gu_WindowSetSize: width - 2 * border +0x80)
@@ -6668,6 +6673,7 @@
 0x00872210 function TkCh_Allocate2            # fh v3:exact 0x008721b0
 0x008722b0 function TkCh_BindToElem           # fh switch:bsim1.00 0x7100473ff0
 0x008722f0 function TkCh_Dispose              # fh v3:exact 0x00872290
+0x00872310 function TkCh_SetPos               # (chr, x, y, z) Ch_SetPos3 with the floats through x87; own name
 0x00872340 function TkCheckPlayVoice          # fh v3:exact 0x008722e0
 0x00872350 function TkCheckSoftWareReset      # fh v3:bsim1.00 0x008722f0
 0x00872360 function Tk_GetScale               # (which) f32 0x01325b98[which != 0]; own name
@@ -6733,7 +6739,10 @@
 0x00875510 function AtelActorSetUp2           # (..., messages, messages2, ...): script context +0x34 = messages, +0x38 = section 5 (or messages); was Event_InitScripts
 0x008756d0 function AtelBattleSetUp           # fh v3:exact 0x00875650
 0x00875af0 function Vibrate_BumpStream        # (k) stream k (clamped 0..7) u16 counter 0x01328170 + k*0x24 += 1, byte +2 = 0; record left in eax; own name
+0x00875c20 function Vibrate_EntryLevel        # (rec, e) entry e level for this frame into +0xa: 0 outside modes 1/2, start level for negative length, 0 for curve parts >= 0x200, else Vibrate_StepLevel; own name
+0x00875c90 function Vibrate_StepLevel         # (rec, entry, len) step +4 += 1; at len: mode 1 -> Vibrate_StartStream(entry, data), mode 2 -> level = target, +6 = 0xfffe; returns ((n - s) * from + to * s) / n or from; own name
 0x00875d30 function Vibrate_CheckDone         # (pad) state 1/2 ends when both streams +6 are 0x200/0xfffe; own name
+0x00875d70 function Vibrate_CurveData         # (k, n, table) curve k (< 0x40) data: table + table[k] + 4 + its first n u16 lengths, when halfword n is non-zero; else 0; own name
 0x00875de0 function TkGetVibrateOn            # (pad) -> u8 g_TkVibratePads[pad].+0x22, pad clamped to 0..7 (the byte TkStopVibrate clears)
 0x00875e10 function TkGetVibrateVolume        # fh switch:bsim1.00 0x7100479c70
 0x00875e50 function TkGetVibratePad           # (pad) -> &g_TkVibratePads[pad], pad clamped to 0..7
@@ -6743,13 +6752,17 @@
 0x00875f50 function TkSetVibrateOff           # (v) g_TkVibrateOff = low byte; own name
 0x00875f60 function TkSetVibrateMask          # fh v3:exact 0x00875ee0
 0x00875fb0 function TkSetVibrateStream        # fh v3:cg2 0x875f30
+0x00876050 function Vibrate_StartLevel        # (k, e, from, to, len) stream k entry e restarted as a level easing from -> to over len (clamped 0..0x7f; from = +0xa when negative); counter bumped, mode +0x22 = 2; returns len; own name
+0x00876130 function Vibrate_SetStreamsMode    # (rec, mode, a, b) mode 1: Vibrate_SetStreams + mode byte +0x22 = 1; else +0x22 = 0 (record left in eax); own name
 0x00876160 function Vibrate_HoldStream        # (stream) +4 = 0xfffe0000, u16 +8 = 0; own name
+0x00876180 function Vibrate_SetStreams        # (rec, a, b) Vibrate_SetStream for both 0x10-byte entries; second data pointer left in eax; own name
 0x00876230 function Vibrate_SetStream         # (entry, src) entry from curve header src: +4 0, +6 (src[1]+1)*2, +8 src[0], +9 src[2], +0 set_ptr32(src+2); null: +4 0x02000000, +8 0, +0 0; own name
 0x00876290 function TkStopVibrate             # fh v3:exact 0x00876210
 0x008762f0 function TkStopVibrateAll          # fh v3:exact 0x00876270
 0x00876350 function Vibrate_StartStream       # (stream, curve) header (level, length, flag) into +8/+6/+9, pointer = curve + 2; own name
 0x00876390 function TkGetVibrateDefaultCurve  # (kind) -> the default curve TkGetVibrateCurve uses: 2/3 0x00c52ae8, 5 0x00c52af8, 6 0x00c52b08, else 0x00c52ad8
 0x008763e0 function TkGetVibrateCurve         # (kind, i, curve) -> u16 curve[i]; without a curve the default for kind: 2/3 0x00c52ae8, 5 0x00c52af8, 6 0x00c52b08, else 0x00c52ad8
+0x00876440 function Atel_FindWorkerByOwner    # (owner) first active (+0xaa 1) worker of the current control with +0x9c == owner: u16 +0x2e, else -1; own name
 0x00876930 function AtelCalcSound             # fh switch:bsim1.00 0x7100478700
 0x00876950 function Snd3dFootRequest          # (req, 1, 0x100): the 3D footstep request SndKickFoot hands g_SndFoot3dCtrl +0x18 to; name ours
 0x008772e0 function AtelClearCameraMatrixFlag # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_AtelCameraMatrixFlag = -1
@@ -6798,6 +6811,7 @@
 0x008851f0 function TkGetDebugControlerTrigHist# (i) TkGetControlerTrigHist(1, 0, i); Switch name, alphabetical slot
 0x00885240 function TkInitDeci2               # fh v3:exact 0x008851a0
 0x00885420 function TkIsDeci2Send             # () -> i8 0x0132f580, sign-extended; Switch symbol name (BSim), in the DECI2 code beside TkCreateDECI2Header
+0x00885470 function TkDeci2Send               # (a, n) when idle: u16 0x0132f57e = (n - 0x81) truncated to 128s, 0x0132f578 = a | 0x20000000, 1; busy -1; own name
 0x00885640 function Phyre_PRendering_PRenderInterfaceBase_GetClearMaskDescription # fh switch:bsim1.00 0x710004aa80 Phyre::PRendering::PRenderInterfaceBase::GetClearMaskDescription
 0x008856b0 function AtelGetDebugSubCodeString    # str-match switch: only user of 2 string(s) held once by both builds, e.g. '(0x%08x)'; Switch 0x71004879d0 AtelGetDebugSubCodeString (symbols from Fahrenheit's server export)
 0x008859b0 function AtelOutputEncount            # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s\\t%d\\n'; Switch 0x7100487ca0 AtelOutputEncount (symbols from Fahrenheit's server export)
@@ -7021,6 +7035,8 @@
 0x008894f0 function TkSetPadButtonMap         # (a, b, i, to): g_PadButtonMap[a + b][i] = to (Pad_MapButtons reads it)
 0x00889a80 function TkUpdateScanControler     # fh v3:exact 0x008899f0
 0x00889ac0 function TkFindPadButton           # (a, b, k) -> where in g_PadButtonMap[a + b] the code g_PadButtonCodes[k] is, -1 if nowhere
+0x00889b00 function Math_StoreMax             # (dst, src, v) *dst = v < *src ? *src : v (x87); own name
+0x00889b40 function Math_StoreMin             # (dst, src, _, _, _, v) *dst = v > *src ? *src : v; own name
 0x00889b80 function TkDegtoRad                # fh v3:exact 0x00889af0
 0x0088a4a0 function TkMtCalcSpline            # fh v3:bsim1.00 0x0088a410
 0x0088a4d0 function TkMtCalcSpline3           # fh v3:bsim1.00 0x0088a440
@@ -7029,19 +7045,25 @@
 0x0088b400 function Math_MinAbs               # (a, b) -> float: |a| when b is greater, else b
 0x0088b430 function Math_Atan2XZ                 # (x0, z0, x1, z1) -> angle with axis special cases
 0x0088b4d0 function Math_YawPitchTo              # (*yaw, *pitch, from xyz, to xyz)
+0x0088b6b0 function Math_AngleStepTo          # (a, target, step) a + step unless (a - t)(a + step - t) <= 0, then target; Math_WrapAngle; own name
 0x0088b730 function Math_InRadius                # (r, dx, dy, dz) -> dx^2+dy^2+dz^2 <= r^2
 0x0088b800 function Math_ClampPi              # (a) a clamped to [-pi, pi] (float pi); NaN passes; own name
 0x0088bc20 function Math_WrapAngle               # wraps to [-pi, pi]
 0x0088bc70 function Math_Det3Points           # (x1, y1, x2, y2, x3, y3) -> float twice the signed triangle area (sums in doubles, rounded to float)
+0x0088bfe0 function Math_AngleTo12Bits        # (a) Math_WrapAngle, +2pi when negative, * 4096 / 2pi, _ftol2_sse & 0xfff (inverse of Math_AngleFrom12Bits); own name
+0x0088c040 function Math_AngleTo15Bits        # (a) the same * 32768 & 0x7fff; own name
 0x0088c0a0 function Math_AngleFrom12Bits      # (a) Math_WrapAngle((a & 0xfff) * 2pi / 4096), f32 steps; own name
 0x0088c0e0 function Math_AngleFrom15Bits      # (a) Math_WrapAngle((a & 0x7fff) * 2pi / 32768), f32 steps; own name
 0x0088c120 function Math_CosTable             # (angle) Math_SinTable(angle + 0x2000); own name
 0x0088c380 function Math_SinTable2            # (angle) Math_SinTable(angle); own name
 0x0088c3a0 function CIsin                     # fh v3:bsim1.00 0x0088c310 +_CIsin
 0x0088c3c0 function Math_LengthSq3            # (x, y, z) -> float x*x + y*y + z*z (squares rounded to float)
+0x0088c400 function CIsqrt                    # (x) _CIsqrt stored to a float; own name beside CIsin/CItan
 0x0088c420 function CItan                     # fh v3:bsim1.00 0x0088c390 +_CItan
 0x0088c510 function Math_UnitMatrix           # (m): a 4x4 float identity (zeroes, then the diagonal 1.0)
 0x0088c5a0 function TkNormalFVector           # fh switch:bsim1.00 0x7100488080
+0x0088c5c0 function Math_AngleToDegrees       # (a) Math_WrapAngle * 57.2957763671875, then into [0, 360] by turns; own name
+0x0088c630 function Math_WrapAngleFloor       # (a) (a + pi) - floor((a + pi) / 2pi) * 2pi - pi, float steps; own name
 0x0088c690 function Math_SinTable             # (angle in 1/0x8000 turns) -> i32 from the quarter-wave u16 table g_SinQuarter
 0x0088c710 function TkResetClip               # fh v3:exact 0x0088c680
 0x0088c740 function TkRemove                     # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x710048fd90 TkRemove, 2 votes, round 1
@@ -7049,6 +7071,7 @@
 0x0088c7f0 function TkRestartSyncH            # fh v3:bsim1.00 0x0088c790
 0x0088c800 function TkGetSyncH                # fh v3:bsim1.00 0x0088c770
 0x0088c810 function TkInitAlarm               # fh v3:bsim1.00 0x0088c780
+0x0088c850 function TkGetSavedLang            # () byte 0x01330874 (stored from TkGetLang at init) zero-extended; own name
 0x0088c860 function TKMallocAndReadEventFTC   # fh v3:exact 0x0088c7d0
 0x0088cac0 function TKMallocAndReadEventMessage # (name): new_<lang>pc/event/obj_ps3/<xx>/<name>.bin, battle/btl/<name>/<name>.bin (name with _), battle/kernel (monster*), menu/*.dcp (macro*); was Msg_LoadFile
 0x0088ccf0 function TKMallocAndReadMenuMessage   # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100491220 TKMallocAndReadMenuMessage, 6 votes, round 1
@@ -7087,6 +7110,7 @@
 0x0088d6c0 function TkGetStartMapEventIndex   # 0x01330860 (TkSetStartMapIndex arg 2); Switch name, alphabetical slot
 0x0088d6d0 function TkGetTGS                  # fh v3:bsim1.00 0x0088d640
 0x0088d710 function TkInit                    # fh v3:exact 0x0088d680
+0x0088dd60 function TkInitSceneFromSave       # () fade/0x01330854 cleared; no load pending (0x00c33480 -1): 0x01327108 = 1; else the save event block restores map/entrance (+0xba->+0, +0xc2->+2, +0xb8->+0xc then 0, +0xce->+0xd), 0x0133084c = 1; own name
 0x0088df40 function TkInitSaveWork            # fh v3:cg6 0x88deb0
 0x0088e070 function TkInitScene               # fh v3:exact 0x0088dfe0
 0x0088e610 function TkLoadVibrate             # fh switch:bsim1.00 0x7100490400
@@ -7117,6 +7141,7 @@
 0x0088ec60 function TkVU1SyncPath             # fh v3:bsim1.00+call.cs 0x0088ebd0 cdecl
 0x0088ec90 function Tk_NoteEternalCalm        # (scene) isEternalCalmScene; first time: byte 0x018663d0 = 1, 0x018663d4 = 0; own name
 0x0088ecf0 function TkDebugPrint              # (fmt) dbgPrintf (a PC stub), returns 1; no caller; own name
+0x0088ed10 function TkEucToSjisString         # (src, dst, n) TkEucToSjis per character for up to n bytes, terminated; returns the source end, 0 when the text ended first; own name
 0x0088edc0 function TkGetDebugFontBuffer      # None
 0x0088edf0 function TkGetDebugFontStringWidth # (proportional, s) TkGetStrWidth >> 4; Switch name, the only slot TkGetDebugFontBuffer..TkGetStrWidth (picked by behaviour among its names)
 0x0088ee70 function TkGetStrWidth             # (proportional, s) -> width in 1/16: per character (lead byte >= 0x80: two bytes) g_FontWidths[c] + 2, or 9 / 13 for one / two bytes
@@ -7848,8 +7873,10 @@
 0x008dd160 function TkMenuDrawMenuStdTex         # layout: alphabetical run between TkMenuDrawMenuInfoWindow2 and TkMenuDrawMenuWeapon (4 unnamed in the gap); Switch 0x71004c2220 TkMenuDrawMenuStdTex is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008dd190 function TkMenuDrawMenuSummon         # layout: alphabetical run between TkMenuDrawMenuInfoWindow2 and TkMenuDrawMenuWeapon (4 unnamed in the gap); Switch 0x71004c1bd0 TkMenuDrawMenuSummon is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008dd1c0 function TkMenuDrawMenuWeapon      # fh switch:bsim1.00 0x71004c1b10
+0x008dd220 function TkMenuDrawMenuWindowScissor# (window, mode, t) TkMenuDrawScissorRect(0, y, 0x1ff, h) for the window inside (+0x14 y, +0x1c h), mode 1/2 opening by |t|/4096 of the height; Switch name, alphabetical slot TkMenuDrawMenuWeapon..TkMenuDrawMes1208Clut (3 names, 2 functions; picked by behaviour)
+0x008dd2d0 function TkMenuDrawMenuWindowScissorWithLabel# (window, mode, t) TkMenuDrawMenuWindowScissor with +0x14 += 10, +0x1c -= 10 for the call (restored); Switch name, the one name left in its slot
 0x008dd310 function TkMenuDrawMes1208Clut     # fh switch:bsim1.00 0x71004c19f0
-0x008dd340 function TkMenuDrawRect               # layout: alphabetical run between TkMenuDrawMes1208Clut and TkMenuDrawScissorClear (1 unnamed in the gap); Switch 0x71004c0340 TkMenuDrawRect is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x008dd340 function TkMenuDrawRect            # (x, y, w, h, c0, c1) PC: graphicDrawUIElement(element, 0, 1, 0, 0) unless graphicGetAbmap() == 1; corners (x, y), (x + w, y + h) as floats with c0/c1 bytes, depth 1000; Switch name, the one name for the slot TkMenuDrawMes1208Clut..TkMenuDrawScissorClear
 0x008dd440 function TkMenuDrawScissorClear    # fh switch:bsim1.00 0x71004bfe20
 0x008dd460 function TkMenuDrawScissorRect     # 5-byte jmp TODrawScissorXYWH thunk (not a function in the dump, left original); Switch name, after TkMenuDrawScissorClear
 0x008dd470 function TkMenuDrawScrollWindow       # layout: alphabetical run between TkMenuDrawScissorClear and TkMenuDrawShape (1 unnamed in the gap); Switch 0x71004c32b0 TkMenuDrawScrollWindow is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -7874,6 +7901,7 @@
 0x008dd920 function TkMenuDrawSp3URHalf       # (x, y, entry) MenuDraw_SpriteV8; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
 0x008ddc60 function TkMenuEquipWin            # fh switch:bsim1.00 0x71004c1280
 0x008dde10 function TkMenuGetCommandHelp      # fh v3:cg3 0x8dddf0
+0x008dde50 function TkMenuGetCommandName      # (id) MsGetRomPlyCommand strings + u16 [record + 4*hiragana]; no direct caller; own name
 0x008ddea0 function TOMenuGetGetImportantHelp # fh v3:cg3 0x8dde80
 0x008ddee0 function TOMenuGetGetImportantName # fh v3:cg2 0x8ddec0
 0x008ddf20 function TkMenuSaveMes             # fh switch:bsim1.00 0x71004c3430
@@ -8347,8 +8375,15 @@
 0x00914a10 function yiKeyFrame_main           # fh switch:cg2 0x710052e1e0
 0x009151c0 function yiRotMatrixSeq            # fh v3:exact 0x009151c0
 0x009152d0 function yiTexSwap_init            # fh v3:exact 0x009152d0
+0x00916290 function Yi_StrLower               # (s) tolower in place; own name
+0x009162c0 function Yi_StrUpper               # (s) toupper in place; own name
 0x009162f0 function yiGui_setfogparam_proc       # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'Fog parameter'; Switch 0x710053ad90 yiGui_setfogparam_proc (symbols from Fahrenheit's server export)
 0x00916ad0 function Yi_PutRef                 # (p, a, b) {b, 0, a, 0}; a left in eax; own name
+0x00916c80 function yiClutAlloc_copy16        # (clut, src, k, i) 16 colours as two rows of 8 (+0x70, +0xb0) of slot (i%2 + k*0x23 + i/2*4)*0x20; Switch name by role (the yiClutAlloc_* family: PC order differs from Switch source order)
+0x00916d40 function yiClutAlloc_copy256       # (clut, src, k) 0x400 bytes into clut + 0x70 + k*0x460; Switch name by role (the yiClutAlloc_* family: PC order differs from Switch source order)
+0x00916da0 function yiClutAlloc_get256        # (mode; ecx the offset table, caller-popped) next 256-colour CLUT VRAM address / 64 (-1 past 0x48): four per 0x800 block at table offsets (0x00c5dbd0 for mode 2, 0x00c5dbe0 for 3/4), then from 0xb8000 by 0x100; Switch name by role (the yiClutAlloc_* family: PC order differs from Switch source order)
+0x00916e50 function yiClutAlloc_get256idx     # () 0x0193bb18, the CLUTs handed out; Switch name by role (the yiClutAlloc_* family: PC order differs from Switch source order); the dump label TkGetStartMapEventIndex is an fh BSim mismatch
+0x00916e60 function yiClutAlloc_init          # (mode) 2: 0xb4000/split 32, 3: 0x18000/32, 4: 0x82000/16; count 0x0193bb18 and sub-slot 0x0193bb1c cleared; Switch name by role (the yiClutAlloc_* family: PC order differs from Switch source order)
 0x00917050 function yiClutAlloc_makepacket    # fh v3:exact 0x00917050
 0x009173e0 function yiIsPow2                     # (bits) -> 1 when at most one of the low 16 bits is set
 0x00917430 function yiLog2Ceil16                 # (bits) -> the only set bit's index, else the highest one's + 1; -1 none (low 16 bits)
