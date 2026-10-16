@@ -784,9 +784,9 @@
 0x00645eb0 function setLuluODKeyboardInput    # fh v3:exact 0x00646060
 0x00645f00 function setNearPlane              # fh v3:bsim1.00 0x006460b0
 0x00645f30 function ConvertGameCodeToUTF8     # fh v3:bsim1.00 0x006460e0
-0x00645f50 function Text_ToUtf8               # FFX text -> UTF-8; defines the byte grammar (docs/formats/text.md)
-0x006460a0 function DecodingGamecodeJPCHKR    # character code -> UTF-8 via the jp/kr/ch table; was Text_DecodeCharCjk
-0x006461f0 function Text_DecodeCharWestern    # character code -> UTF-8 via ffxsjistbl_us.bin
+0x00645f50 function Text_ToUtf8               # (src, out, lang): FFX text -> UTF-8, 03 as \r\n, controls dropped; defines the byte grammar (docs/formats/text.md)
+0x006460a0 function DecodingGamecodeJPCHKR    # (src, pos, out, lang) -> pos + bytes: character code -> UTF-8 via the jp/kr/ch table (3 bytes, 2 for 17 and 40); was Text_DecodeCharCjk
+0x006461f0 function Text_DecodeCharWestern    # (src, pos, out) -> pos + bytes: character code -> UTF-8 via ffxsjistbl_us.bin, codes < 0xc0 only (a jump table of offsets)
 0x00646920 function MallocAndReadGamecode     # loads ffx_encoding/ffxsjistbl_<lang>.bin into g_CharsetCjk/g_CharsetWestern; was Text_LoadCharset
 0x00647d70 function SaveDataCheckCrc          # fh call.cs cdecl
 0x00647e80 function SaveDataGetCrc            # fh switch:bsim1.00 0x7100224890
@@ -6983,8 +6983,8 @@
 0x00cc9698 label    g_BasePath
 0x00cc9c48 label BigFileStream_sBigFileStreamInstacne # was g_FileSys
 0x00cc9cf5 label    g_SteamReady              # guards every other Steam call (achievements, RunCallbacks)
-0x00ccb95c label    g_CharsetCjk
-0x00ccb960 label    g_CharsetWestern
+0x00ccb95c label    g_CharsetCjk              # ffxsjistbl_jp/kr/ch.bin as loaded by MallocAndReadGamecode (null in a western game); read by DecodingGamecodeJPCHKR
+0x00ccb960 label    g_CharsetWestern          # ffxsjistbl_us.bin as loaded by MallocAndReadGamecode (null in a jp/kr/ch game); read by Text_DecodeCharWestern
 0x00cded58 label    g_LangManager
 0x00d2c258 label    g_FpData                     # current field's FP (effect) table: u16 count at +4, 0x50-byte entries with the id at +0x64; runtime state at 0x00d2c260 (0x80 each) and 0x00d30260 (0x4c each)
 0x0112a92c label    g_KernelCommand

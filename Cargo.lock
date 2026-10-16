@@ -821,6 +821,7 @@ dependencies = [
 name = "ffx-text"
 version = "0.1.0"
 dependencies = [
+ "ffx-bridge",
  "ffx-vbf",
  "thiserror",
  "toml",

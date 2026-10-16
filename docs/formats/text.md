@@ -14,11 +14,28 @@ language. The file is UTF-8 text listing the characters in code order:
 character index *n* is the *n*th character (`ffxsjistbl_us.bin` starts
 `0123456789 !”#$%&’()…`).
 
-The decoders (`0x006460a0` for jp/kr/ch, `0x006461f0` for western
-languages) hard-code byte offsets into the table, which only track UTF-8
-character widths; they agree with "the *n*th character" everywhere checked.
+The decoders (`DecodingGamecodeJPCHKR`, `0x006460a0`, for jp/kr/ch;
+`Text_DecodeCharWestern`, `0x006461f0`, for western languages) hard-code
+byte offsets into the table, which only track UTF-8 character widths; they
+agree with "the *n*th character" everywhere checked. Both return the output
+position plus the bytes they wrote (`ffx_text::gamecode`, checked against
+the originals on every code in `crates/ffx-oracle/tests/text.rs`):
+
+- jp/kr/ch: every character is 3 bytes except characters 17 and 40
+  (2 bytes); Chinese has no 2-byte character 40, so its offsets past 17
+  are all `3n − 1`. A `04` prefix adds `0x410` (second bank).
+- western: only codes `0x00`–`0xbf` (the first 192 characters, 1 to 3
+  bytes each, back to back: `0x136` bytes); any other code, so every
+  two-byte code, writes nothing.
+- Codes below the first lead byte (`2b` and lower, never passed by
+  `Text_ToUtf8`) come out negative and read before the table.
+
 Two display substitutions exist: in Japanese, codes `0x5c`–`0x5e` show
 character 10; in Korean, character 10 is shown as an ASCII space.
+`Text_ToUtf8` picks the jp/kr/ch decoder for languages 0 and 9–11
+(`TOGetFFXLang`), the western one otherwise; a `04` always goes to the
+jp/kr/ch decoder, whatever the language. `ConvertGameCodeToUTF8`
+(`0x00645f30`) is `Text_ToUtf8` in the game's language.
 
 ## Byte grammar
 
@@ -35,6 +52,10 @@ From `Text_ToUtf8` (`0x00645f50`):
 | `30`–`ff` | Character `byte − 0x30` |
 
 So `0x30` = "0", `0x3a` = space, `0x50` = "A", `0x70` = "a".
+
+`Text_ToUtf8` writes a line break as `\r\n`, drops control codes and
+their arguments, and skips an argument byte even when it is `00` (a string
+ending in a bare control code runs on past its terminator).
 
 ## Readable form
 

@@ -35,6 +35,8 @@
 use std::collections::HashMap;
 use std::fmt::Write;
 
+pub mod bridge;
+pub mod gamecode;
 pub mod messages;
 
 /// A language the game ships text for.
