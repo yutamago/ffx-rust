@@ -144,6 +144,26 @@ pub mod psim {
     pub const POS2: u32 = 0x8c;
 }
 
+/// `user_malloc` (`0x00687020`), through which `rcAlloc` and `yiMalloc`
+/// allocate.
+pub const USER_MALLOC: u32 = 0x0068_7020;
+/// `user_free`'s jump (`0x00687010`), which `rcRealloc` calls directly.
+pub const USER_FREE: u32 = 0x0068_7010;
+/// `Sg_MemGetSize` (`0x0083c050`): a heap block's size.
+pub const SG_MEM_GET_SIZE: u32 = 0x0083_c050;
+/// `Sg_MemSetAlign` (`0x0083c4a0`): the next allocation's alignment.
+pub const SG_MEM_SET_ALIGN: u32 = 0x0083_c4a0;
+/// `rcbgTrxTexDelete` and `rcbgTrxTexDraw`, the texture transfer's slots.
+pub const TRX_TEX_DELETE: u32 = 0x0092_20e0;
+/// See [`TRX_TEX_DELETE`].
+pub const TRX_TEX_DRAW: u32 = 0x0092_2100;
+/// `rcbgModelDelete`, `0x009283e0` and `rcbgModelDraw`, the model's
+/// slots.
+pub const MODEL_DELETE: u32 = 0x0092_8000;
+/// See [`MODEL_DELETE`].
+pub const MODEL_UPDATE: u32 = 0x0092_83e0;
+/// See [`MODEL_DELETE`].
+pub const MODEL_DRAW: u32 = 0x0092_8020;
 /// `rcFree` (`0x009258e0`): a jump to `user_free`; the `rcbg*Fini`
 /// functions free through it.
 pub const RC_FREE: u32 = 0x0092_58e0;
@@ -1354,6 +1374,379 @@ pub mod bridge {
             return r;
         }
         call(mem, f, r)
+    }
+
+    /// `rcAlloc(size, file, line)` (`0x009258a0`): `user_malloc(size)`
+    /// (the file and line are for debug builds). Returns the block.
+    pub fn rc_alloc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+        size: u32,
+    ) -> u32 {
+        let f = mem.rebase(super::USER_MALLOC);
+        call(mem, f, &[size])
+    }
+
+    /// `rcCalloc(n, size, file, line)` (`0x009258b0`): [`rc_alloc`] of `n *
+    /// size` bytes, zeroed.
+    pub fn rc_calloc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+        n: u32,
+        size: u32,
+    ) -> u32 {
+        let len = n.wrapping_mul(size);
+        let p = rc_alloc(mem, call, len);
+        mem.write_bytes(p, &vec![0u8; len as usize]);
+        p
+    }
+
+    /// `rcRealloc(p, size, file, line)` (`0x009258f0`): [`rc_alloc`] without
+    /// a block; the same block when its size (`Sg_MemGetSize`) is already
+    /// `size`; else a new block with the smaller of the two sizes copied
+    /// and the old one freed (`user_free`).
+    pub fn rc_realloc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+        p: u32,
+        size: u32,
+    ) -> u32 {
+        if p == 0 {
+            return rc_alloc(mem, call, size);
+        }
+        let f = mem.rebase(super::SG_MEM_GET_SIZE);
+        let old = call(mem, f, &[p]);
+        if size == old {
+            return p;
+        }
+        let n = if size.cast_signed() < old.cast_signed() {
+            size
+        } else {
+            old
+        };
+        let f = mem.rebase(super::USER_MALLOC);
+        let q = call(mem, f, &[size]);
+        let mut bytes = vec![0u8; n as usize];
+        mem.read_bytes(p, &mut bytes);
+        mem.write_bytes(q, &bytes);
+        let f = mem.rebase(super::USER_FREE);
+        call(mem, f, &[p]);
+        q
+    }
+
+    /// `yiMalloc(size)` (`0x0090bbd0`): a jump to `user_malloc`.
+    pub fn yi_malloc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+        size: u32,
+    ) -> u32 {
+        rc_alloc(mem, call, size)
+    }
+
+    /// `yiMalloc64(size)` (`0x0090bbe0`): `Sg_MemSetAlign(0x40)`, then
+    /// `user_malloc(size)`.
+    pub fn yi_malloc64<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+        size: u32,
+    ) -> u32 {
+        let f = mem.rebase(super::SG_MEM_SET_ALIGN);
+        call(mem, f, &[0x40]);
+        rc_alloc(mem, call, size)
+    }
+
+    /// `rcbgTrxNew()` (`0x0092d580`): a transfer (`0x40` bytes,
+    /// [`rcbg_trx_init`]).
+    pub fn rcbg_trx_new<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let t = rc_alloc(mem, call, 0x40);
+        rcbg_trx_init(mem, t);
+        t
+    }
+
+    /// `rcbgTrxTexInit(tex)` (`0x00922160`): a texture transfer object:
+    /// kind `0x20003`, delete `rcbgTrxTexDelete`, draw `rcbgTrxTexDraw`,
+    /// `+0x14` -1, two transfers at `+0x20` and `+0x60` ([`rcbg_trx_init`]).
+    pub fn rcbg_trx_tex_init(mem: &mut impl Mem, t: u32) {
+        for off in [0x10u32, 0x18, 0x1c] {
+            mem.write(t.wrapping_add(off), 0u32);
+        }
+        mem.write(t, 0x0002_0003u32);
+        let d = mem.rebase(super::TRX_TEX_DELETE);
+        mem.write(t.wrapping_add(4), d);
+        mem.write(t.wrapping_add(8), 0u32);
+        let d = mem.rebase(super::TRX_TEX_DRAW);
+        mem.write(t.wrapping_add(0xc), d);
+        mem.write(t.wrapping_add(0x14), u32::MAX);
+        rcbg_trx_init(mem, t.wrapping_add(0x20));
+        rcbg_trx_init(mem, t.wrapping_add(0x60));
+    }
+
+    /// `rcbgTrxTexNew()` (`0x009221b0`): a texture transfer object (`0xa0`
+    /// bytes, [`rcbg_trx_tex_init`]).
+    pub fn rcbg_trx_tex_new<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let t = rc_alloc(mem, call, 0xa0);
+        rcbg_trx_tex_init(mem, t);
+        t
+    }
+
+    /// `rcbgFpTrxTexNew()` (`0x009220c0`): [`rcbg_trx_tex_new`] of kind
+    /// `0x20006`.
+    pub fn rcbg_fp_trx_tex_new<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let t = rcbg_trx_tex_new(mem, call);
+        mem.write(t, 0x0002_0006u32);
+        t
+    }
+
+    /// `rcbgModelInit(model)` (`0x00928320`): kind `0x20001`, delete
+    /// `rcbgModelDelete`, `0x009283e0`, draw `rcbgModelDraw`; `+0x20` (0x70
+    /// bytes) cleared, the bounding box `+0x90` empty, `+0xb0..` 0.0, the
+    /// matrices `+0xc0` and `+0x100` the identity.
+    pub fn rcbg_model_init(mem: &mut impl Mem, m: u32) {
+        mem.write(m, 0x0002_0001u32);
+        for (off, f) in [
+            (4u32, super::MODEL_DELETE),
+            (8, super::MODEL_UPDATE),
+            (0xc, super::MODEL_DRAW),
+        ] {
+            let a = mem.rebase(f);
+            mem.write(m.wrapping_add(off), a);
+        }
+        mem.write(m.wrapping_add(0x10), 0u32);
+        mem.write(m.wrapping_add(0x14), 0u32);
+        mem.write_bytes(m.wrapping_add(0x20), &[0; 0x70]);
+        crate::geom::bridge::rc_bbox_init(mem, m.wrapping_add(0x90));
+        for off in [0xbcu32, 0xb8, 0xb4, 0xb0] {
+            mem.write(m.wrapping_add(off), 0u32);
+        }
+        ffx_ps2::vu0::bridge::matrix_identity(mem, m.wrapping_add(0xc0));
+        ffx_ps2::vu0::bridge::matrix_identity(mem, m.wrapping_add(0x100));
+    }
+
+    /// `rcbgModelNew()` (`0x009283b0`): a model (`0x140` bytes,
+    /// [`rcbg_model_init`]).
+    pub fn rcbg_model_new<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let m = rc_alloc(mem, call, 0x140);
+        rcbg_model_init(mem, m);
+        m
+    }
+
+    /// `rcbgModelLoad(model, parse)` (`0x0092b2f0`): `+0x10`, then a sized
+    /// block (its own allocation at `+0x14`), `+0x20` (0x70 bytes), `+0x90`
+    /// (0x20), `+0xb0` (0x10) and the two matrices from the parser.
+    pub fn rcbg_model_load<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        m: u32,
+        p: u32,
+        call: &mut C,
+    ) {
+        use crate::rcdt::bridge::{rcdt_parse_advance, rcdt_parse_get_bin};
+        rcdt_parse_get_bin(mem, p, m.wrapping_add(0x10), 4);
+        let at = mem.read::<u32>(p.wrapping_add(4));
+        let size = mem.read::<u32>(at);
+        rcdt_parse_advance(mem, p, 4);
+        let block = rc_alloc(mem, call, size);
+        mem.write(m.wrapping_add(0x14), block);
+        rcdt_parse_get_bin(mem, p, block, size);
+        for (off, n) in [
+            (0x20u32, 0x70u32),
+            (0x90, 0x20),
+            (0xb0, 0x10),
+            (0xc0, 0x40),
+            (0x100, 0x40),
+        ] {
+            rcdt_parse_get_bin(mem, p, m.wrapping_add(off), n);
+        }
+    }
+
+    /// `rcbgTrxTexLoad(tex, parse)` (`0x0092b780`): two `u16`s (`+0x10`,
+    /// `+0x12`), 12 bytes skipped, the two transfers ([`rcbg_trx_load`]).
+    pub fn rcbg_trx_tex_load(mem: &mut impl Mem, t: u32, p: u32) {
+        use crate::rcdt::bridge::{rcdt_parse_advance, rcdt_parse_get_bin};
+        rcdt_parse_get_bin(mem, p, t.wrapping_add(0x10), 2);
+        rcdt_parse_get_bin(mem, p, t.wrapping_add(0x12), 2);
+        rcdt_parse_advance(mem, p, 0xc);
+        rcbg_trx_load(mem, t.wrapping_add(0x20), p);
+        rcbg_trx_load(mem, t.wrapping_add(0x60), p);
+    }
+
+    /// `rcbgAnimeSetDataCnt(anime, n)` (`0x009308d0`): the frame table
+    /// (`+0xc`, [`rc_realloc`]) resized to `n` words, new words cleared;
+    /// the count to `+8`.
+    pub fn rcbg_anime_set_data_cnt<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        a: u32,
+        n: i32,
+        call: &mut C,
+    ) {
+        let old = mem.read::<u32>(a.wrapping_add(0xc));
+        let t = rc_realloc(mem, call, old, n.cast_unsigned().wrapping_mul(4));
+        let have = mem.read::<i32>(a.wrapping_add(8));
+        mem.write(a.wrapping_add(0xc), t);
+        if n > have {
+            let len = n.wrapping_sub(have).cast_unsigned().wrapping_mul(4);
+            mem.write_bytes(
+                t.wrapping_add(have.cast_unsigned().wrapping_mul(4)),
+                &vec![0u8; len as usize],
+            );
+        }
+        mem.write(a.wrapping_add(8), n);
+    }
+
+    /// `rcbgTrxTexFini(tex)` (`0x00922120`): its two transfers finished
+    /// ([`rcbg_trx_fini`]).
+    pub fn rcbg_trx_tex_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        t: u32,
+        call: &mut C,
+    ) {
+        rcbg_trx_fini(mem, t.wrapping_add(0x20), call);
+        rcbg_trx_fini(mem, t.wrapping_add(0x60), call);
+    }
+
+    /// `rcbgTrxTexDelete(tex)` (`0x009220e0`): [`rcbg_trx_tex_fini`], then
+    /// the object freed. Returns `rcFree`'s `eax`.
+    pub fn rcbg_trx_tex_delete<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        t: u32,
+        call: &mut C,
+    ) -> u32 {
+        rcbg_trx_tex_fini(mem, t, call);
+        rc_free(mem, call, t)
+    }
+
+    /// The `*New` constructors of the `rc` modules: [`rc_alloc`] of the
+    /// object's size, then its init. Each returns the object.
+    fn rc_new<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+        size: u32,
+        init: impl FnOnce(&mut M, u32),
+    ) -> u32 {
+        let p = rc_alloc(mem, call, size);
+        init(mem, p);
+        p
+    }
+
+    /// `rcfxParticleNew()` (`0x00928950`): `0x40` bytes,
+    /// [`rcfx_particle_init`].
+    pub fn rcfx_particle_new<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        rc_new(mem, call, 0x40, |m, p| {
+            rcfx_particle_init(m, p);
+        })
+    }
+
+    /// `rcfxNailNew()` (`0x00929170`): `0x40` bytes, [`rcfx_nail_init`].
+    pub fn rcfx_nail_new<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        rc_new(mem, call, 0x40, |m, p| {
+            rcfx_nail_init(m, p);
+        })
+    }
+
+    /// `rcfxGravityNew()` (`0x009295c0`): `0x2c` bytes,
+    /// [`rcfx_gravity_init`].
+    pub fn rcfx_gravity_new<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        rc_new(mem, call, 0x2c, |m, p| {
+            rcfx_gravity_init(m, p);
+        })
+    }
+
+    /// `rcfxWindNew()` (`0x009298c0`): `0x60` bytes, [`rcfx_wind_init`].
+    pub fn rcfx_wind_new<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        rc_new(mem, call, 0x60, |m, p| {
+            rcfx_wind_init(m, p);
+        })
+    }
+
+    /// `rcfxDampNew()` (`0x00929420`): `0x20` bytes, [`rcfx_damp_init`].
+    pub fn rcfx_damp_new<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        rc_new(mem, call, 0x20, |m, p| {
+            rcfx_damp_init(m, p);
+        })
+    }
+
+    /// `rcbgPSimNew()` (`0x0091fe40`): `0xb0` bytes, [`rcbg_psim_init`].
+    pub fn rcbg_psim_new<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        rc_new(mem, call, 0xb0, rcbg_psim_init)
+    }
+
+    /// `rcbgFPm097New()` (`0x009225a0`): `0x40` bytes,
+    /// [`rcbg_fpm097_init`].
+    pub fn rcbg_fpm097_new<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        rc_new(mem, call, 0x40, |m, p| {
+            rcbg_fpm097_init(m, p);
+        })
+    }
+
+    /// `rcbgFPm173New()` (`0x00922bb0`): `0x28` bytes,
+    /// [`rcbg_fpm173_init`].
+    pub fn rcbg_fpm173_new<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        rc_new(mem, call, 0x28, |m, p| {
+            rcbg_fpm173_init(m, p);
+        })
+    }
+
+    /// `rcbgFPm565New()` (`0x00922f80`): `0x10` bytes,
+    /// [`rcbg_fpm565_init`].
+    pub fn rcbg_fpm565_new<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        rc_new(mem, call, 0x10, |m, p| {
+            rcbg_fpm565_init(m, p);
+        })
+    }
+
+    /// `rcdtRsd2New()` (`0x00924750`): `0x20` bytes, [`rcdt_rsd2_init`].
+    pub fn rcdt_rsd2_new<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        rc_new(mem, call, 0x20, rcdt_rsd2_init)
+    }
+
+    /// `rcdtChunkNew()` (`0x0092b900`): 8 bytes,
+    /// `rcdtChunkInit`.
+    pub fn rcdt_chunk_new<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        rc_new(mem, call, 8, crate::rcdt::bridge::rcdt_chunk_init)
     }
 }
 

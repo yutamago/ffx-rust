@@ -404,6 +404,82 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   `0x0090ff40`/`0x0090e5d0`, not ported yet); the window draw handlers;
   `0x006e9250` (a UI movie loader registering `getLocByStr` etc.).
 
+## Map file reader, background loading, window drawing (round 8)
+
+- Map render file (`yiMapFileRead` `0x0090f900`, through `yiArc_readmem`
+  `0x0090f8e0`, which checks version `0x110`): magic `0x214365`, version
+  `0x110`, the record count at `+0xc` (decremented as records are read),
+  records from `+0x40`, each a `0x40`-byte header (`+0` kind, `+4` the
+  data length) and its data:
+  - 0 an object (`0xb4` bytes at `+0x6878c`, count `+0x68788`;
+    `yiObjInit`, `yiObjLoad`, `graphicObjectSetTranslation` and
+    `SetRotation`), the current object for the cameras that follow;
+  - 1 a camera key list (`0x5c` bytes at `+0x6e190`, count `+0x6e18c`),
+    linked to the previous camera (`+0x4c` next, `+0x50` previous; the
+    first goes to the object's `+0xa8`), its keys after a further `0x40`
+    bytes; a key count (`+0x48`) that disagrees with the length ends the
+    file;
+  - 2 a texture (`0x24`-byte entries from `+0x9c19c`, count `+0x9c198`):
+    uploaded with `sceGsSetDefLoadImage`/`sceGsExecLoadImage` (format
+    0x14: halved width and quartered height, PSM 0), or kept in the
+    scene's VRAM copy from `+0x276a4` when its GS address is `0x3c00` or
+    above (`yiLoadVramImage`; format 0x13 is swizzled by `0x0090e0b0`);
+  - 3 the CLUTs (kinds 2..=4 at `+0x24`; `yiClutAlloc_makepacket`);
+  - 4 the fog (`yiFogLoad`; the matrix `+0x68078` turned by the fog
+    angles `+0xba400`/`+0xba404`, degrees);
+  - 5 and 8 packet lists (`+0x9d4c4`, `+0x9d5c4`, sizes at `+0x9d6c4`,
+    count `+0x9d4c0`; by index `+0x24` when `+0x20` is set, else
+    appended with the length / 128 or / 32);
+  - 6 animation tracks (`0x720`-byte sets from `+0x9d9d0`);
+  - 7 the matrix chunk (`yiLoadMatrixChunk`).
+  The original leaves the current object and camera uninitialised, so
+  files start with an object. Its load-image packet is a 16-byte aligned
+  stack buffer; the port takes it as a parameter.
+- Background files (`rcbgLoadBin` `0x00921d60`, from `Yn_PreBgSetData`):
+  a `YNDT` chunk, then chunks with a 16-byte header (the tag from the
+  `rcbgChkId` table, `+4` the length in 16-byte units, `+0xa` a scene
+  index): `YNPR` the map (`rcbgPreInit`, `rcbgPreLoad`), `YNSC` the next
+  scene (`rcbgSceneLoad`: layers, colours, `rcbgSceneChkLayers` /
+  `rcbgSceneChkSortLayer`, `rcbgSceneSetMatrix`), `YNSM`/`YNST` a model or
+  transfer of that scene, `YNTT`/`YNFT` texture transfers of the current
+  scene, `YNGM` a model replacing the last one of scene `+0xa`, `YNED`
+  the end. Then `rcbgPreSetSceneNo(0)`.
+- GS memory for image layers (`rcbgSceneChkSortLayer`): each layer with
+  flag 0x10 gets its image page at `+0x34` (64-word units, the 128x64
+  rounded size; past `0x68000` words the images move to page `0x2f00`
+  and count a quarter), then its CLUT page at `+0x36` (`0x100` words each
+  from `0xbc000`); the transfers' `BITBLTBUF` words follow, and pending
+  transfers are drawn. Image layers always have their CLUT transfer at
+  `+0xa0`.
+- The `rc` allocator (`rcAlloc`/`rcCalloc`/`rcRealloc`, `yiMalloc`,
+  `yiMalloc64`) sits on `user_malloc`; `rcRealloc` keeps a block of the
+  same size (`Sg_MemGetSize`) and copies the smaller size otherwise. The
+  `*New` constructors allocate and run the matching `*Init`.
+- Map (re)set-up: `yiResetObj` (teardown, a new `rcbgInit`,
+  `yiRender_resetobj`, graphics unloads), `yiObjReadCallback` (a `MAP1`
+  file's background `+0x10`, render data `+0x14`, alarm, `ppp` data
+  `+0x38`, two more backgrounds `+0x40`/`+0x3c`; then the draw mask and
+  the default animations), `yiObjReadFinish`. Animation slots:
+  `yiAnimInfo_init`, `yiAnimDetach`, `yiKeyFrame_attachDObj` (keyframe
+  records from `+0x9d4c4`, kind 5 for packet lists), `yiAnimAttachDefault`.
+- Window draw handlers (slot `+0x78`): plates (`0x008f9a40`) and menu
+  plates (`TODrawMenuPlateXYWHType`) with their scissors; the pop window
+  of map 0x15b clips to the `TO` window at (38, 115); the help bar draws
+  two sprites and a text shape from the layout at `0x025d1618`
+  (`0x00907c10` is not a function start in the dump, so its port has no
+  hook).
+- Testing: the allocator is a bump allocator in both oracles (its size
+  below each block for `Sg_MemGetSize`); frees and the engine calls are
+  logging stand-ins in a code cave (the body of `0x00764de0`). The CRT
+  stubs (critical sections) are not on main yet, so the round 7 teardown
+  tests still log `rcFree` instead of using the real allocator.
+- Not ported: `rcbgSceneSetMatrix` (projection, `_CIatan`, camera calls on
+  stack matrices), `rcbgGuideSetModelFromIdMap`, `yiMapReadMaster` (CD
+  function table, `fprintf`), `0x00909680` (host file loading), the jump
+  thunks `yiFree` (`0x0090bbc0`), `Yn_RcbgInit` (`0x00919a70`) and the two
+  `Yn_PreBgSetData` jumps (`0x00919b90`, `0x00919d30`), which are not
+  functions of their own in the dump.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single
