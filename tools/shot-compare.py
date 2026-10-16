@@ -25,7 +25,7 @@ import sys
 
 RADIUS = 12
 BLOCK = 40
-COARSE = 12
+COARSE = 25
 
 
 def block_means(w, h, px):

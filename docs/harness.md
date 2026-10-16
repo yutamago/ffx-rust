@@ -139,8 +139,9 @@ The field replay's screenshots are compared coarsely (`shot-compare.py
 --coarse field-walk`): the ship's sway runs on a timer the replay does not
 pin down, so four runs of the original differ by 110,000 to 200,000 pixels
 there, a sub-pixel shift of the whole picture. Blocks of 40x40 pixels then
-move by up to about 7 brightness levels, while a missing character model
-moves its blocks by about 50; the limit is 12. Battle and menu screenshots
+move by up to about 14 brightness levels (the light beams at the top),
+while a missing character model moves its blocks by about 50; the limit
+is 25. Battle and menu screenshots
 stay exact.
 
 `tools/replays/menu-browse.txt` opens the main menu and takes screenshots
