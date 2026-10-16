@@ -213,6 +213,20 @@ menus of a save run on Rust logic and replay identically.
 
 ### M4: the 64-bit side takes the platform
 
+The original look is preserved first (user's decision, 2026-10-17): the
+renderer's original mode (the game's own shaders and draw state, no
+enhancements) is the default and must match the original game; the
+enhanced mode (PBR materials, new lighting, upscaling) is always an option
+the player turns on. Each part the renderer takes over (scene, effects,
+glow and post-processing, the UI, movies) switches from the old engine only
+when its original mode passes:
+
+- a draw-stream comparison: the draws the Rust scene builder makes (meshes,
+  order, shaders, constants, state) against the ones PhyreEngine makes for
+  the same frame, draw by draw;
+- screenshot comparisons against the original game (`tools/shot-compare.py`
+  and the replays), within the rounding that different graphics APIs bring.
+
 - Effects (`ppp`) and the remaster renderer (`graphic*`) are rewritten into
   the scene stream: the Rust side builds the scene instead of reading it out
   of PhyreEngine's.

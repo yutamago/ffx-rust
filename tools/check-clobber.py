@@ -155,6 +155,13 @@ X87_LOADS = ("fld", "fild", "fldz", "fld1", "fldpi", "fldl2e", "fldln2", "fldlg2
              "fnstcw", "fldcw", "fninit", "fwait", "fnclex", "fnstsw", "ffree")
 
 
+# Originals whose x87 code is balanced (every load stored back), checked by
+# hand: their callers keep their own floats across the call.
+X87_BALANCED = {
+    "useExtendedAlpha",  # 0x0071e460: fld constant, fstp g_ExtendedAlpha
+}
+
+
 def reads_st0(code, site):
     """Whether the first x87 instruction after the call at `site` reads the
     x87 stack it left (a float result), before any load, jump or call."""
@@ -208,7 +215,7 @@ def main():
                 if live:
                     print(f"{f.name}: {name}: {rows[caller][0]} ({site:#x}) keeps {', '.join(sorted(live))} across the call")
                     bad += 1
-                if not floats and x87 and reads_st0(code, site):
+                if not floats and x87 and name not in X87_BALANCED and reads_st0(code, site):
                     print(f"{f.name}: {name}: {rows[caller][0]} ({site:#x}) reads the float the original returns in ST0; the shim returns none")
                     dropped_n += 1
                 used = {r for r in live_after(code, site, dropped) if r == "eax"} if dropped else set()

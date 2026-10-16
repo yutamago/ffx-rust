@@ -337,10 +337,25 @@ impl Game {
                 && g.command("ping").is_ok()
         }) {
             if Instant::now() > deadline {
-                return Err(Error::Launch(format!(
-                    "a game already answers on port {}; quit it first",
-                    options.port
-                )));
+                // The slot is ours, so a harness game still answering is an
+                // orphan (its test was stopped before it could end it): end
+                // it the way `Game::end` does. Games started without the
+                // harness never answer on the port and are left alone.
+                if let Ok(mut orphan) = Self::connect(options.port) {
+                    eprintln!(
+                        "game slot: ending an orphaned game on port {}",
+                        options.port
+                    );
+                    let _ = orphan.command("quit");
+                }
+                std::thread::sleep(Duration::from_secs(3));
+                if Self::connect(options.port).is_ok() {
+                    return Err(Error::Launch(format!(
+                        "a game already answers on port {} and did not quit",
+                        options.port
+                    )));
+                }
+                break;
             }
             std::thread::sleep(Duration::from_millis(500));
         }
