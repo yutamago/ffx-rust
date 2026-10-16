@@ -2009,6 +2009,11 @@
 0x0065f050 function PhyreScene_hide2DLayer    # fh v3:exact 0x0065f1d0 PhyreScene::hide2DLayer
 0x0065f450 function PhyreScene_initScene         # str-match switch: only user of 2 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/flash/pausemenu.swf'; Switch 0x71001f2610 PhyreScene::initScene (symbols from Fahrenheit's server export)
 0x006601d0 function PhyreScene_is3DScene      # fh v3:bsim1.00 0x00660350 PhyreScene::is3DScene
+0x00660240 function PhyreCursor_IsValid_00660240 # thiscall(this) -> al: valid without a list (+0x18), else when the list's nodes (+0x2c, linked at +0x40) still hold +0x1c and the list's +0x40 is set; one of six identical template copies (0x00660270, 0x006602a0, 0x006602d0, 0x00660300, 0x006b28f0); name ours
+0x00660270 function PhyreCursor_IsValid_00660270 # as PhyreCursor_IsValid_00660240; name ours
+0x006602a0 function PhyreCursor_IsValid_006602a0 # as PhyreCursor_IsValid_00660240; name ours
+0x006602d0 function PhyreCursor_IsValid_006602d0 # as PhyreCursor_IsValid_00660240; name ours
+0x00660300 function PhyreCursor_IsValid_00660300 # as PhyreCursor_IsValid_00660240; name ours
 0x00660330 function PhyreScene_isAnyBattleMap # thiscall(this) -> al: byte +0x1196 or +0x1197 set (graphicSetIsBattleMap's flags); name ours
 0x00660350 function PhyreScene_isDrawingNonUI2DScene # fh v3:exact 0x006604d0 PhyreScene::isDrawingNonUI2DScene
 0x00660400 function PhyreScene_isOpeningScreenPlaying # () -> al = g_PhyreSceneOpeningPlaying; name Fahrenheit's (Switch BSim)
@@ -2068,7 +2073,9 @@
 0x0066ce70 function PhyreScene_setCameraWorldMatrix # fh v3:exact 0x0066d000 PhyreScene::setCameraWorldMatrix
 0x0066cf80 function PhyreScene_setCurrentLevelName # fh v3:bsim1.00 0x0066d110 PhyreScene::setCurrentLevelName
 0x0066cf90 function PhyreScene_setCurrentLevelNameHash # fh v3:exact 0x0066d120 PhyreScene::setCurrentLevelNameHash
+0x0066cfe0 function PhyreScene_SetByte01      # thiscall(this, v), ret 4: byte +1 = v; name ours
 0x0066d000 function PhyreScene_setEnableRenderWorldToTexture # fh v3:cg2 0x66d190 PhyreScene::setEnableRenderWorldToTexture
+0x0066d1b0 function PhyreScene_SetByte03      # thiscall(this, v), ret 4: byte +3 = v (the magic 0146 key graphicGetMagic0146Key reads; 0x00641e40 sets it with g_GraphicLevelFilter); name ours
 0x0066d1d0 function PhyreScene_setMaterialColourScale2 # fh v3:exact 0x0066d360 PhyreScene::setMaterialColourScale2
 0x0066d5c0 function PhyreScene_setMaterialVisibilityBySetAlpha # fh v3:exact 0x0066d750 PhyreScene::setMaterialVisibilityBySetAlpha
 0x0066d810 function PhyreScene_setMeshInstanceWorldMatrix # fh v3:exact 0x0066d9a0 PhyreScene::setMeshInstanceWorldMatrix
@@ -2342,6 +2349,8 @@
 0x006985d0 function PostProcessManager_setHDAOSetting # fh v3:exact 0x00698710 PostProcessManager::setHDAOSetting
 0x00698730 function PostProcessManager_isEffectAllowed # stdcall(id), ret 4 -> al: false for 0x17 and 0x15c; name ours
 0x00698750 function PostProcessManager_setNon16By9Viewport # fh v3:exact 0x00698890 PostProcessManager::setNon16By9Viewport
+0x006989c0 function PostProcessManager_setAllSwitches # thiscall(this, v), ret 4: bytes +0x123b0..+0x123b3 = v; name ours
+0x00698f70 function PostProcessManager_resetCrossFade # thiscall(this): unless +0x123a0, while g_PostProcessManager +0x123a8 == 1: +0x1239c = 0, float +0x12398 = 0; name ours
 0x006996ba function Catch_All_006997fa        # fh v3:cg2 0x6997fa Catch_All@006997fa
 0x00699ee0 function std_Tree_const_iterator_inc_00699ee0 # same bytes as std_Tree_const_iterator_inc_006352b0
 0x0069a130 function FreeOwnedArray_0069a130 # cdecl(items, n): non-null items: each 8-byte entry +4 with low bit clear PhyreFree(d), then PhyreFree(items); name ours
@@ -2450,9 +2459,12 @@
 0x006b1c30 function TextureAnimationInfoChar_active # thiscall(this): byte +0x34 = 0; name Fahrenheit's (Switch BSim)
 0x006b1cc0 function TextureAnimation_GetFloatPair24 # thiscall(this, out), ret 4: out[0..2] = floats +0x24, +0x28 (fld/fstp); returns out; name ours
 0x006b1ce0 function TextureAnimation_GetFloatPair2c # thiscall(this, out), ret 4: out[0..2] = floats +0x2c, +0x30; returns out; name ours
+0x006b1d10 function TextureAnimation_FindByName # thiscall(this, name), ret 4: the first of +0x7c entries (0x20 bytes from +0x80, PString name at +4) whose name is the pointer or (name set) equal text; 0 otherwise; name ours
+0x006b1e40 function TextureAnimation_FindMaterial # thiscall(this, list, index, name), ret 0xc: slot index of list (+8 count, +0xc slots, -1 none) in the first texture set (+0x64 count, 0x20 bytes from +0x68: +0 count, +4 materials, +0x18 PString name) named name; 0 when missing; name ours
 0x006b2070 function TextureAnimationManager_getMaterialByLayNum # fh v3:exact 0x006b21c0 TextureAnimationManager::getMaterialByLayNum
 0x006b22c0 function TextureAnimation_NextFrame # thiscall(this): v = +0x18 + 1 + count (+8 & 0x7fffffff); +0x18 = v % count; eax = v / count, edx = the frame; name ours
 0x006b2380 function TextureAnimation_PrevFrame # thiscall(this): as TextureAnimation_NextFrame with -1; name ours
+0x006b28f0 function PhyreCursor_IsValid_006b28f0 # as PhyreCursor_IsValid_00660240; name ours
 0x006b29c0 function TextureAnimationManager_registerCharacterInstance # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'register(%s, %u)\\n'; Switch 0x710028dfb0 TextureAnimationManager::registerCharacterInstance (symbols from Fahrenheit's server export)
 0x006b2f50 function TextureAnimationManager_sceenTextureAnimationClear # fh v3:cg2 0x6b30a0 TextureAnimationManager::sceenTextureAnimationClear
 0x006b3060 function TextureAnimationManager_setAnimatedMaterialsChar # fh v3:exact 0x006b31b0 TextureAnimationManager::setAnimatedMaterialsChar
@@ -2506,6 +2518,7 @@
 0x006c35a0 function BlurEffect_activate       # fh switch:bsim1.00 0x710024d870 BlurEffect::activate
 0x006c35d0 function BlurEffect_doOnShaderClusterLoaded # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'BlurEffect_frontBuffer'; Switch 0x710024d3e0 BlurEffect::doOnShaderClusterLoaded (symbols from Fahrenheit's server export)
 0x006c44d0 function BlurEffect_SetField84 # thiscall(this, v), ret 4: +0x84 = v (BlurEffect_activate zeroes it); name ours
+0x006c46e0 function BlurEffect_SetFloats74     # thiscall(this, a, b, c, d), ret 0x10: floats +0x74..+0x80; name ours
 0x006c4710 function BlurEffect_SetFloats6c # thiscall(this, a, b), ret 8: floats +0x6c, +0x70; name ours
 0x006c49a0 function BlurEffectEx_CreateInstance  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'BlurEffectEx: BlurEffect singleton is not created yet.'; Switch 0x710024e270 BlurEffectEx::CreateInstance (symbols from Fahrenheit's server export)
 0x006c4a70 function BlurEffectEx_GetInstance     # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a08a8 BlurEffectEx::GetInstance, 3 votes, round 1
@@ -12492,7 +12505,9 @@
 0x013019e0 label g_ChrSpecularPackets       # two 0x40-byte GS packets (0x013019e0, 0x01301a20) Ch_TextureSendSpecular references; clut data pointers at +0x30
 0x01301af8 label g_ChrIdEffectTable          # u8, 4 per set: Ch_IdGetEffectTable
 0x01301b00 label g_ChrIdEffectTableIndex     # i8, the set (Sg_IdSetEffectTableIndex)
+0x01301ff8 label    g_CacheEntries            # the model cache's 100 entries (0x28 bytes) Cache_Init points g_CacheSlots at
 0x01302f98 label    g_CacheSlots              # the model cache's 100 entry pointers, least recently used first (Cache_*; layout in docs/formats/render.md)
+0x013032b8 label    g_CacheState              # a word Cache_Init clears
 0x013033ac label g_ChrEffectColor           # f32 x 3, Ch_EffectSetColor
 0x013033b8 label g_ChrEffectAlpha           # i32, Ch_EffectSetAlpha
 0x013033d0 label g_ChrEffectPacket          # the packet Ch_PacketRefEffect references (0x008439f0 returns its address)
