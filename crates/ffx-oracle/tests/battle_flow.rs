@@ -359,6 +359,106 @@ fn third(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World) {
     same("third", a, b);
 }
 
+fn fourth(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World) {
+    let i = rng.below(ACTORS);
+    let actor = w.actor(i);
+    let cmd = w.command;
+    fill(a, b, rng, cmd, 0x60);
+    for k in 0..4 {
+        let ids: Vec<u8> = (0..2)
+            .flat_map(|_| {
+                let id: u16 = match rng.below(4) {
+                    0 => 0x3118,
+                    1 => u16::try_from(0x3000 + rng.below(0x40)).unwrap(),
+                    _ => rng.next().to_le_bytes()[..2]
+                        .try_into()
+                        .map_or(0, u16::from_le_bytes),
+                };
+                id.to_le_bytes()
+            })
+            .collect();
+        poke(a, b, cmd + 8 + 0x10 * k, &ids);
+    }
+    let (x, k) = (rng.next(), rng.below(4));
+    twin(
+        "MsLimitCommandProcess",
+        a,
+        b,
+        0x007b_03e0,
+        &[x, actor, cmd, k],
+        ALL,
+        |m| f::ms_limit_command_process(m, actor, cmd, k),
+    );
+    let chr = rng.below(ACTORS + 2);
+    twin(
+        "MsSetLimitParty",
+        a,
+        b,
+        0x007b_1aa0,
+        &[chr, actor],
+        0,
+        |m| {
+            f::ms_set_limit_party(m, chr, actor);
+            0
+        },
+    );
+    let (al, fr) = (battle_common::world::quiet(rng.next()), rng.range(-1, 40));
+    twin(
+        "MsSetChrTransparent",
+        a,
+        b,
+        0x0079_6480,
+        &[i | (rng.next() & !0xff), al, fr.cast_unsigned()],
+        ALL,
+        |m| f::ms_set_chr_transparent(m, i, al, fr),
+    );
+    let j = rng.below(0x22);
+    twin("MsEffectSetMotionFlag", a, b, 0x0078_83f0, &[j], 0, |m| {
+        f::ms_effect_set_motion_flag(m, j);
+        0
+    });
+    let n = if rng.below(4) == 0 { 0 } else { w.out + 0xf0 };
+    twin(
+        "MsGetTargetRandomList2",
+        a,
+        b,
+        0x007b_7280,
+        &[j, n],
+        ALL,
+        |m| f::ms_get_target_random_list2(m, j, n),
+    );
+    twin("MsAtelCamFree", a, b, 0x0079_74e0, &[], 0, |m| {
+        f::ms_atel_cam_free(m, ffx_script::vm::bridge::atel_remove_ctrl_work);
+        0
+    });
+    // magic effects: the underwater flag 0 or 1 (other values index the stack)
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::UNDERWATER,
+        i8::try_from(rng.below(2)).unwrap(),
+    );
+    poke(a, b, cmd + 0x19, &[u8::try_from(rng.below(0x14)).unwrap()]);
+    poke(
+        a,
+        b,
+        cmd + 0x58,
+        &[[0x24, 0x34, 0x44, 0x54, 0x25, 0][rng.below(6) as usize]],
+    );
+    let id = 0x3000 + rng.below(0x10);
+    let who = rng.range(-1, 20);
+    twin(
+        "MsGetMagicEffNum",
+        a,
+        b,
+        0x0079_d2f0,
+        &[who.cast_unsigned(), id, cmd],
+        ALL,
+        |m| f::ms_get_magic_eff_num(m, who, id, cmd, |m| ffx_menu::tk::bridge::tk_get_lang(m)),
+    );
+    same("fourth", a, b);
+}
+
 fn globals(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     for (g, len) in [
         (f::EFFECT_WAIT.ptr(b).addr, 2),
@@ -374,12 +474,39 @@ fn globals(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         (f::MENU_TEXT.ptr(b).addr, 0xcc),
         (f::BTL_POS.ptr(b).addr, 0x50),
         (f::TIDUS_LIMIT_USES.ptr(b).addr, 4),
+        (f::RANDOM_TARGETS.ptr(b).addr, 1),
+        (ffx_battle::minor::bridge::ATEL_CAM_ON.ptr(b).addr, 1),
+        (ffx_battle::save::bridge::MENU.ptr(b).addr, 4),
+        (
+            ffx_battle::save::bridge::PLY_SAVE.ptr(b).addr + 0xa60,
+            0x2c * 18,
+        ),
+        (f::EFFECT_SUBST.ptr(b).addr, 6 * 8),
         (f::LIMIT_LEARNT.ptr(b).addr, 1),
         (ffx_battle::camera::bridge::SLOTS_AT.ptr(b).addr, 0xda0 * 3),
     ] {
         fill(a, b, rng, g, len);
     }
     set(a, b, f::MENU_LOOK, u8::from(rng.below(4) == 0));
+    set(a, b, f::EFFECT_SUBST_COUNT, rng.range(-1, 9));
+    set(
+        a,
+        b,
+        ffx_menu::tk::bridge::LANG,
+        rng.range(-1, 7).to_le_bytes()[0].cast_signed(),
+    );
+    let subst: Vec<u8> = (0..8)
+        .flat_map(|_| {
+            let id = u16::try_from(0x3000 + rng.below(0x10)).unwrap();
+            [
+                id.to_le_bytes(),
+                rng.next().to_le_bytes()[..2].try_into().unwrap(),
+                rng.next().to_le_bytes()[..2].try_into().unwrap(),
+            ]
+            .concat()
+        })
+        .collect();
+    poke(a, b, f::EFFECT_SUBST.ptr(b).addr, &subst);
     set(
         a,
         b,
@@ -416,6 +543,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         calls(a, b, rng, &w);
         more(a, b, rng, &w);
         third(a, b, rng, &w);
+        fourth(a, b, rng, &w);
     }
     // MsBtlChrInit clears every actor: last
     if w.synthetic {

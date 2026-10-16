@@ -1716,4 +1716,32 @@ ported! {
     MsCheckStatusBeforeActionDamage @ 0x007a_f770 => extern "C" fn ms_check_status_before_action_damage(actor: u32) -> u32 {
         flow::ms_check_status_before_action_damage(&mem(), actor)
     }
+    /// `MsLimitCommandProcess(chr, actor, command, k)`.
+    MsLimitCommandProcess @ 0x007b_03e0 => extern "C" fn ms_limit_command_process(_chr: u32, actor: u32, command: u32, k: u32) -> u32 {
+        flow::ms_limit_command_process(&mut mem(), actor, command, k)
+    }
+    /// `MsSetLimitParty(chr, actor)`.
+    MsSetLimitParty @ 0x007b_1aa0 => extern "C" fn ms_set_limit_party(chr: u32, actor: u32) {
+        flow::ms_set_limit_party(&mut mem(), chr, actor);
+    }
+    /// `MsSetChrTransparent(i, alpha, frames)` (alpha a float as bits).
+    MsSetChrTransparent @ 0x0079_6480 => extern "C" fn ms_set_chr_transparent(i: u32, alpha: u32, frames: i32) -> u32 {
+        flow::ms_set_chr_transparent(&mut mem(), i, alpha, frames)
+    }
+    /// `MsEffectSetMotionFlag(i)`.
+    MsEffectSetMotionFlag @ 0x0078_83f0 => extern "C" fn ms_effect_set_motion_flag(i: u32) {
+        flow::ms_effect_set_motion_flag(&mut mem(), i);
+    }
+    /// `MsGetTargetRandomList2(i, &n)`.
+    MsGetTargetRandomList2 @ 0x007b_7280 => extern "C" fn ms_get_target_random_list2(i: u32, n: u32) -> u32 {
+        flow::ms_get_target_random_list2(&mut mem(), i, n)
+    }
+    /// `MsAtelCamFree()`: `AtelRemoveCtrlWork` (script).
+    MsAtelCamFree @ 0x0079_74e0 => extern "C" fn ms_atel_cam_free() {
+        flow::ms_atel_cam_free(&mut mem(), ffx_script::vm::bridge::atel_remove_ctrl_work);
+    }
+    /// `MsGetMagicEffNum(chr, id, command)`: `TkGetLang` (menu).
+    MsGetMagicEffNum @ 0x0079_d2f0 => extern "C" fn ms_get_magic_eff_num(chr: i32, id: u32, command: u32) -> u32 {
+        flow::ms_get_magic_eff_num(&mut mem(), chr, id, command, |m| ffx_menu::tk::bridge::tk_get_lang(m))
+    }
 }

@@ -7821,10 +7821,11 @@
 0x0112c9f1 label g_BtlEndForced            # u8, when not 0 MsGetBattleEndStatus's result
 0x0112c9ff label g_BtlEscapeRule              # i8, set by battle script (0x007a77a0): 1 no escape, 2 always (MsCalcEscape)
 0x0112ca00 label g_BtlMenuSkipOn           # u8 set: actors' skip command (+0x6c8) counts (MsMenuGetChrSkipCommand)
-0x0112ca03 label g_BtlSummonLimit             # u8; Summons keep the overdrive gauge while this is set (MsSummonLimitSave).
+0x0112ca03 label g_BtlSummonLimit             # u8; Summons keep the overdrive gauge while this is set (MsSummonLimitSave). MsLimitCommandProcess sets it for command 0x3118 and clears it otherwise.
 0x0112ca08 label g_BtlEffectWait           # 2 x u8: the actor an effect waits on and its motion (0xff any) (MsEffectCheckMotion, MsCheckStartEffect)
 0x0112ca0a label g_BtlMessageCueInit          # u32; Reset by MsMessageCueInit (a u32 at 0x0112ca0a, which covers the stone effect counters from 0x0112ca0b, and the cue's count and start).
 0x0112ca0b label g_BtlStoneEffect            # 2 x i8; MsStoneEffectCheck (0x007a2670) returns their sum
+0x0112ca0e label g_BtlRandomTargets        # i8 count of the random targets (MsGetTargetRandomList2)
 0x0112ca12 label g_BtlCounterOn               # u8, set by battle script (0x007a8430): counterattacks happen only while set (DmgCalc_CheckCounter)
 0x0112ca30 label g_BtlMemWord              # u32 zeroed by MsBattleMemInit
 0x0112ca60 label g_BtlRead3                # u32; with the one before it (same function, ffx_battle::misc)
@@ -7887,6 +7888,7 @@
 0x01136068 label g_BtlItemMem                 # u32; Reset by MsBtlInitItemMem.
 0x0113606c label g_BtlRegMotion               # u32; Reset by MsRegMotionInit, with [REG_MOTION_FLAG].
 0x01136070 label g_BtlComBuf                  # u32; Reset by MsComBufInit.
+0x01136074 label g_BtlComBufEntries        # entries of 3 x u16 (command, effect, underwater effect) after the g_BtlComBuf count; MsGetMagicEffNum's substitutions
 0x011360a8 label g_BtlEtEffectRead            # u32; Reset by MsEtEffectReadInit; MsEtEffectStop stops an effect while it is set.
 0x011360b8 label g_BtlNumbers                 # u32; Reset by MsNumberInit (the damage numbers).
 0x011360bc label g_BtlNumberList           # damage numbers on screen: +0 kind, +5 delay, +6 age, +7 life, +0x10 next (MsNumberCalcProcess)

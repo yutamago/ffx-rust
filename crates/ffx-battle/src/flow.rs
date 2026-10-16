@@ -643,4 +643,189 @@ pub mod bridge {
             u32::from(without != 0)
         }
     }
+
+    /// `MsLimitCommandProcess(chr, actor, command, k)` (`0x007b03e0`): the
+    /// overdrive level (`+0x6cd`) of entry `k`'s two command IDs (their
+    /// record's `+0x26`, when set; `g_BtlSummonLimit` set for command
+    /// 0x3118, else cleared), back to the
+    /// gauge's (`+0x5bd`) once `+0x6cf` asks for it. 0.
+    pub fn ms_limit_command_process(mem: &mut impl Mem, actor: u32, command: u32, k: u32) -> u32 {
+        let mut mix = 0u8;
+        let list = command.wrapping_add(8).wrapping_add(k.wrapping_mul(0x10));
+        for j in 0..2 {
+            let id = u32::from(half(mem, list, 2 * j));
+            let (r, id) = crate::command::bridge::get_command(mem, u32::MAX, 0, id);
+            if r != 0 {
+                let level = byte(mem, r, 0x26);
+                if level != 0 {
+                    if id == 0x3118 {
+                        mix = 1;
+                    }
+                    mem.write(actor.wrapping_add(0x6cd), level);
+                }
+            }
+        }
+        if byte(mem, actor, 0x6cf) != 0 {
+            let g = byte(mem, actor, 0x5bd);
+            mem.write(actor.wrapping_add(0x6cf), 0u8);
+            mem.write(actor.wrapping_add(0x6cd), g);
+        }
+        crate::misc::bridge::SUMMON_LIMIT.set(mem, mix);
+        0
+    }
+
+    /// `MsSetLimitParty(chr, actor)` (`0x007b1aa0`): the actor's turn is now
+    /// (`+0x65c` 0) and every other party member takes its targets
+    /// (`+0xdc0`), `+0x451`, `+0x5c0`, `+0x6cc`, `+0x6cd`, and a next turn at
+    /// its rank (`+0xde8`, `MsGetNextCTB`).
+    pub fn ms_set_limit_party(mem: &mut impl Mem, chr: u32, actor: u32) {
+        mem.write(actor.wrapping_add(0x65c), 0u8);
+        for p in crate::menu::bridge::PARTY.get(mem) {
+            if p == 0xff || u32::from(p) == chr {
+                continue;
+            }
+            let a = ms_get_chr(mem, u32::from(p));
+            let t = word(mem, actor, 0xdc0);
+            mem.write(a.wrapping_add(0xdc0), t);
+            for o in [0x451, 0x5c0, 0x6cc, 0x6cd] {
+                let v = byte(mem, actor, o);
+                mem.write(a.wrapping_add(o), v);
+            }
+            let ctb = crate::damage::bridge::ms_get_next_ctb(
+                mem,
+                a,
+                i32::from(byte(mem, actor, 0xde8)),
+                i32::from(byte(mem, a, 0x613)),
+                i32::from(byte(mem, a, 0x614)),
+            );
+            mem.write(a.wrapping_add(0x65c), ctb.to_le_bytes()[0]);
+        }
+    }
+
+    /// `MsSetChrTransparent(i, alpha, frames)` (`0x00796480`): the alpha
+    /// (`+0x40`) and fade (`Ch_SetTransparent`) of actor `i & 0xff`, its
+    /// two weapons and, with followers, theirs; 1 when it has a character.
+    pub fn ms_set_chr_transparent(mem: &mut impl Mem, i: u32, alpha: u32, frames: i32) -> u32 {
+        use ffx_chara::{chr::bridge::ch_set_fade, layout::FADE_ALPHA};
+        let i = i & 0xff;
+        let a = ms_get_chr(mem, i);
+        let v = ffx_bridge::x87::store(ffx_bridge::x87::load(alpha));
+        mem.write(a.wrapping_add(0x40), v);
+        let c = word(mem, a, 0);
+        if c != 0 {
+            ch_set_fade(mem, c, FADE_ALPHA, f32::from_bits(v), frames);
+        }
+        for k in 0..2 {
+            let w = crate::actor::bridge::ms_get_weapon(mem, i, k);
+            if w != 0 {
+                mem.write(w.wrapping_add(0x40), v);
+                let wc = word(mem, w, 0);
+                if wc != 0 {
+                    ch_set_fade(mem, wc, FADE_ALPHA, f32::from_bits(v), frames);
+                }
+            }
+        }
+        if byte(mem, a, 0x440) != 0 {
+            for k in 0..0x1f {
+                if u32::from(byte(mem, ms_get_chr(mem, k), 0x43f)) == i {
+                    ms_set_chr_transparent(mem, k, alpha, frames);
+                }
+            }
+        }
+        u32::from(c != 0)
+    }
+
+    /// `MsEffectSetMotionFlag(i)` (`0x007883f0`): an effect motion
+    /// (`+0x3f3` 1, motion `+0x3f0` 0xff) for an actor.
+    pub fn ms_effect_set_motion_flag(mem: &mut impl Mem, i: u32) {
+        let i = i & 0xff;
+        if crate::actor::bridge::ms_btl_chr_num_check(i) != 0 {
+            let a = ms_get_chr(mem, i);
+            mem.write(a.wrapping_add(0x3f3), 1u8);
+            mem.write(a.wrapping_add(0x3f0), 0xffu8);
+        }
+    }
+
+    /// The random targets' count (`MsGetTargetRandomList2`), an `i8`.
+    pub const RANDOM_TARGETS: Global<i8> = Global::new(0x0112_ca0e);
+
+    /// `MsGetTargetRandomList2(i, &n)` (`0x007b7280`): the actor's random
+    /// target list (`+0xd80`, null for no actor); `n` the count.
+    pub fn ms_get_target_random_list2(mem: &mut impl Mem, i: u32, n: u32) -> u32 {
+        let i = i & 0xff;
+        let list = if crate::actor::bridge::ms_btl_chr_num_check(i) != 0 {
+            ms_get_chr(mem, i).wrapping_add(0xd80)
+        } else {
+            0
+        };
+        if n != 0 {
+            let c = i32::from(RANDOM_TARGETS.get(mem));
+            mem.write(n, c);
+        }
+        list
+    }
+
+    /// `MsAtelCamFree()` (`0x007974e0`): with the script camera on,
+    /// `MsAtelCamInit` and `AtelRemoveCtrlWork(4)` (from the caller).
+    pub fn ms_atel_cam_free<M: Mem>(mem: &mut M, remove: impl FnOnce(&mut M, u32)) {
+        if crate::minor::bridge::ATEL_CAM_ON.get(mem) != 0 {
+            crate::minor::bridge::ms_atel_cam_init(mem);
+            remove(mem, 4);
+        }
+    }
+
+    /// The magic effect substitutions (`MsGetMagicEffNum`): a count
+    /// (`g_BtlComBuf`, which `MsComBufInit` resets), then entries of three
+    /// `u16` (a command, its two effects).
+    pub const EFFECT_SUBST_COUNT: Global<i32> = Global::new(0x0113_6070);
+    pub const EFFECT_SUBST: Global<u8> = Global::new(0x0113_6074);
+
+    /// `MsGetMagicEffNum(chr, id, command)` (`0x0079d2f0`): which of the
+    /// command's two effects (`+0x10`, `+0x12`) plays. Black magic (kind
+    /// `+0x19` 8-17) takes the second once `chr` has used `id` (and the
+    /// config's bit 0x800 is off), others the underwater one (the second
+    /// under water). Effect groups 0x24, 0x34, 0x44, 0x54 (`+0x58`) use the
+    /// language's pair (`TkGetLang`, from the caller), the rest the
+    /// substitution table's last match. The index is 0 or 1 in the game;
+    /// other underwater values read the original's stack.
+    pub fn ms_get_magic_eff_num<M: Mem>(
+        mem: &mut M,
+        chr: i32,
+        id: u32,
+        command: u32,
+        lang: impl FnOnce(&mut M) -> i32,
+    ) -> u32 {
+        let kind = byte(mem, command, 0x19);
+        let k: i32 = if (8..=0x11).contains(&kind) {
+            i32::from(
+                crate::save::bridge::MENU.get(mem) & 0x800 == 0
+                    && crate::save::bridge::ms_get_save_command_use(mem, chr, id) != 0,
+            )
+        } else {
+            i32::from(crate::state::bridge::UNDERWATER.get(mem))
+        };
+        let ku = k.cast_unsigned();
+        let mut e = u32::from(half(mem, command, ku.wrapping_mul(2).wrapping_add(0x10)));
+        if !matches!(byte(mem, command, 0x58), 0x24 | 0x34 | 0x44 | 0x54) {
+            let at = EFFECT_SUBST.ptr(mem).addr;
+            for j in 0..EFFECT_SUBST_COUNT.get(mem).max(0).cast_unsigned() {
+                let entry = at + 6 * j;
+                if u32::from(half(mem, entry, 0)) == id {
+                    e = u32::from(half(mem, entry, ku.wrapping_mul(2).wrapping_add(2)));
+                }
+            }
+            return e;
+        }
+        let pair = match lang(mem) {
+            0 | 2 => [0x2b9, 0x2ba],
+            3 => [0x2b5, 0x2b6],
+            4 => [0x2b3, 0x2b4],
+            5 => [0x2b7, 0x2b8],
+            _ => [
+                u32::from(half(mem, command, 0x10)),
+                u32::from(half(mem, command, 0x12)),
+            ],
+        };
+        pair[usize::from(k != 0)]
+    }
 }
