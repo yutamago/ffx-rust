@@ -362,6 +362,22 @@ impl Oracle {
             .wrapping_add(self.image_base())
     }
 
+    /// Makes the function at `addr` (rebased) return `value` at once
+    /// (`mov eax, value; ret`), for callees a test wants fixed (clocks).
+    ///
+    /// # Errors
+    /// On emulator errors.
+    pub fn stub_return(&mut self, addr: u32, value: u32) -> Result<()> {
+        let mut code = vec![0xb8];
+        code.extend_from_slice(&value.to_le_bytes());
+        code.push(0xc3);
+        self.uc.mem_write(u64::from(addr), &code)?;
+        // Unicorn keeps translated code; drop what it had for these bytes.
+        self.uc
+            .ctl_remove_cache(u64::from(addr), u64::from(addr) + code.len() as u64)?;
+        Ok(())
+    }
+
     /// Sets the x87 control word (precision and rounding) for later calls.
     ///
     /// # Errors
@@ -424,6 +440,12 @@ impl Oracle {
     pub fn write(&mut self, addr: u32, bytes: &[u8]) -> Result<()> {
         self.touch(addr, bytes.len());
         self.uc.mem_write(u64::from(addr), bytes)?;
+        let base = self.uc.get_data().image_base;
+        if addr >= base && addr < base.saturating_add(0x0080_0000) && !bytes.is_empty() {
+            // into the code: drop translations of it
+            self.uc
+                .ctl_remove_cache(u64::from(addr), u64::from(addr) + bytes.len() as u64)?;
+        }
         if !bytes.is_empty() {
             let d = &mut self.uc.get_data_mut().dirty;
             for p in

@@ -50,6 +50,7 @@ pub fn play(game: &mut Game, script: &str, trace: &str) -> Result<Vec<String>> {
         replies.push(format!("{line} -> {reply}"));
     }
     game.command("trace off")?;
+    game.command("calllog off")?;
     Ok(replies)
 }
 

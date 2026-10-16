@@ -11,6 +11,7 @@
 
 mod encounters;
 mod formation;
+pub mod rng;
 
 pub use encounters::{EncounterTable, Field, Formation, Group};
 pub use formation::{FORMATION, FormationFile, MONSTER_SLOTS};

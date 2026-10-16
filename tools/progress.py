@@ -76,7 +76,8 @@ def symbols():
 
 
 def hooks():
-    """address -> 'replaced' | 'wrapped', from the hook table."""
+    """address -> 'replaced' | 'wrapped': the hook table (crates/ffx-hook/src/lib.rs)
+    and the ported replacements (crates/ffx-hook/src/ported/*.rs)."""
     text = (REPO / "crates/ffx-hook/src/lib.rs").read_text(encoding="utf-8")
     out = {}
     for block in re.findall(r"Hook \{(.*?)\n\s*\},", text, re.S):
@@ -84,6 +85,17 @@ def hooks():
         if addr:
             wrapped = re.search(r"original:\s*Some", block)
             out[int(addr[1].replace("_", ""), 16)] = "wrapped" if wrapped else "replaced"
+    for a in ported():
+        out[a] = "replaced"
+    return out
+
+
+def ported():
+    """name by address of every `ported!` entry."""
+    out = {}
+    for f in sorted((REPO / "crates/ffx-hook/src/ported").glob("*.rs")):
+        for name, addr in re.findall(r"^\s*(\w+) @ 0x([0-9a-f_]+) =>", f.read_text(encoding="utf-8"), re.M):
+            out[int(addr.replace("_", ""), 16)] = name
     return out
 
 

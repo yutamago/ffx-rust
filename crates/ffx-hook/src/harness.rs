@@ -69,7 +69,7 @@ use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{Sender, channel};
 use std::sync::{Mutex, OnceLock};
 
@@ -103,7 +103,7 @@ const INPUT: u32 = 0x00cc_b170;
 
 /// Wraps `Input_KeyHeld` (`0x00629d50`, `thiscall(devices, binding,
 /// device)`): for each pad bit the test holds, the first keyboard binding
-/// (≥ 28) paired with it reads as held, as if its key were pressed. `Input_UpdatePad` (`0x00632a30`) asks this for every
+/// (≥ 28) paired with it reads as held, as if its key were pressed. `Virtuos_InputManager_updateInput` (`0x00632a30`) asks this for every
 /// binding when it builds the pad word, for the game and for the Flash
 /// menus alike.
 ///
@@ -215,6 +215,113 @@ static LOCKSTEP: AtomicBool = AtomicBool::new(false);
 static ALLOWED: AtomicU32 = AtomicU32::new(0);
 /// Seconds the frame limiter skipped, as `f64` bits.
 static SKIPPED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// The PS2 vsync handler `createVsyncEmuThread` (`0x00679e60`) was given,
+/// on the virtual clock: run from `Present` instead of a real-time thread.
+static VSYNC_CALLBACK: AtomicUsize = AtomicUsize::new(0);
+/// Vsync ticks run so far (1/59.94 s of game time each).
+static VSYNC_TICKS: AtomicU64 = AtomicU64::new(0);
+
+/// `createVsyncEmuThread(callback)` on the virtual clock: no thread (which
+/// would call `callback` every 16 ms of real time); [`run_vsync`] calls it
+/// from the game thread as game time passes.
+unsafe extern "C" fn virtual_vsync_start(callback: usize) {
+    VSYNC_TICKS.store(vsync_ticks_now(), Ordering::Release);
+    VSYNC_CALLBACK.store(callback, Ordering::Release);
+}
+
+/// `endVsyncEmuThread` on the virtual clock.
+unsafe extern "C" fn virtual_vsync_end() {
+    VSYNC_CALLBACK.store(0, Ordering::Release);
+}
+
+/// `VsyncEmu_Wake` (`0x00679f80`) on the virtual clock: there is no thread
+/// to wake.
+unsafe extern "C" fn virtual_vsync_wake() {}
+
+fn vsync_ticks_now() -> u64 {
+    // SAFETY: the wrapped clock, as the game reads it.
+    let t = unsafe { time_now() };
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // positive seconds
+    let ticks = (t * 59.94) as u64;
+    ticks
+}
+
+/// Whether `AsyncLoadManager` (`*0x00ccc88c`) is idle: its thread
+/// (`0x00691360`) swaps the two request lists (count, capacity, items at
+/// `+0x20` and `+0x2c`; `+0x38` is the one being filled), works through the
+/// other one and empties it. New requests wait in the filling list until the
+/// game wakes the thread, so only the list being worked on counts.
+fn async_loader_idle() -> bool {
+    let word = |at: usize| {
+        read_memory(at, 4).map_or(0, |b| u32::from_le_bytes(b.try_into().expect("4 bytes")))
+    };
+    let inst = word(crate::rebase(0x00cc_c88c)) as usize;
+    if inst == 0 {
+        return true;
+    }
+    let filling = word(inst + 0x38) & 1;
+    let working = 1 - filling as usize;
+    word(inst + 0x20 + 0xc * working) == 0
+}
+
+/// In lockstep, before a frame ends: lets the asset loader finish the work
+/// it was given, so a load takes the same number of frames every run (at
+/// most 10 s of real time, against a loader that never finishes). Idle must
+/// hold twice, 1 ms apart: a wake-up the game just sent may not have
+/// reached the thread yet.
+fn wait_for_loads() {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let mut steady = 0;
+    while steady < 2 && std::time::Instant::now() < deadline {
+        if async_loader_idle() {
+            steady += 1;
+        } else {
+            steady = 0;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
+/// Calls the vsync handler once per vsync of game time since the last call.
+fn run_vsync() {
+    let cb = VSYNC_CALLBACK.load(Ordering::Acquire);
+    if cb == 0 {
+        return;
+    }
+    let now = vsync_ticks_now();
+    let mut done = VSYNC_TICKS.load(Ordering::Acquire);
+    while done < now {
+        // SAFETY: the game's own vsync handler, cdecl without arguments,
+        // as its thread called it.
+        unsafe {
+            let f: unsafe extern "C" fn() = std::mem::transmute(cb);
+            f();
+        }
+        done += 1;
+    }
+    VSYNC_TICKS.store(done, Ordering::Release);
+}
+
+/// `FileSys_SubmitRead` (`0x0061c220`) on the virtual clock: runs the read
+/// and its decompression on the game thread at once, as `BigFileStream_readVFile`
+/// (`0x0061bfe0`) does, instead of on the thread pool, so a load takes the
+/// same number of frames every run.
+///
+/// # Safety
+/// Called by the game with a read request.
+unsafe extern "C" fn sync_submit_read(request: usize) {
+    type Read = unsafe extern "system" fn(usize, usize, usize);
+    type Inflate = unsafe extern "system" fn(usize, usize, usize, u32);
+    // SAFETY: the game's own thread-pool callbacks, called as
+    // BigFileStream_readVFile calls them.
+    unsafe {
+        let read: Read = std::mem::transmute(crate::rebase(0x0061_b8d0));
+        let inflate: Inflate = std::mem::transmute(crate::rebase(0x0061_ba80));
+        read(0, request, 0);
+        inflate(0, request, 0, 0);
+    }
+}
+
 /// The limiter's replacement `Sleep`, called through this pointer by the
 /// patched `call [ptr]` at `0x0062f3bb`.
 static FAST_SLEEP: unsafe extern "system" fn(u32) = fast_sleep;
@@ -854,6 +961,12 @@ unsafe fn run_due_jobs(frame: u32, swap_chain: *mut c_void) {
 unsafe extern "system" fn present(swap_chain: *mut c_void, interval: u32, flags: u32) -> i32 {
     let frame = FRAME.fetch_add(1, Ordering::AcqRel) + 1;
     trace_frame(frame);
+    if VIRTUAL.load(Ordering::Acquire) {
+        if LOCKSTEP.load(Ordering::Acquire) {
+            wait_for_loads();
+        }
+        run_vsync();
+    }
     // SAFETY: forwarded: inside the swap chain's own Present.
     unsafe { run_due_jobs(frame, swap_chain) };
     // Lockstep: hold the game here until the script allows more frames,
@@ -1116,6 +1229,102 @@ pub fn read_memory(address: usize, len: usize) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
+/// Call log (`FFX_HARNESS_CALL_LOG=<windows path>`): Rust replacements can
+/// note each call (frame, thread, caller, a value), to find where two runs
+/// that should agree part ways.
+static CALL_LOG: Mutex<Option<std::io::BufWriter<std::fs::File>>> = Mutex::new(None);
+static CALL_LOG_ON: AtomicBool = AtomicBool::new(false);
+
+/// Notes a call in the call log, if there is one.
+pub fn log_call(tag: &str, value: u32) {
+    use std::io::Write as _;
+    if !CALL_LOG_ON.load(Ordering::Relaxed) {
+        return;
+    }
+    let mut frames = [std::ptr::null_mut::<c_void>(); 4];
+    // SAFETY: a buffer of four frame slots.
+    let n = unsafe {
+        windows_sys::Win32::System::Diagnostics::Debug::RtlCaptureStackBackTrace(
+            2,
+            4,
+            frames.as_mut_ptr(),
+            std::ptr::null_mut(),
+        )
+    };
+    let base = crate::GAME_BASE.load(Ordering::Relaxed);
+    let callers: Vec<String> = frames[..usize::from(n)]
+        .iter()
+        .map(|f| *f as usize)
+        .filter(|&a| a >= base && a < base + crate::SIZE_OF_IMAGE as usize)
+        .map(|a| format!("{:08x}", a - base + crate::IMAGE_BASE as usize))
+        .collect();
+    // SAFETY: plain call.
+    let thread = unsafe { windows_sys::Win32::System::Threading::GetCurrentThreadId() };
+    if let Ok(mut log) = CALL_LOG.lock()
+        && let Some(w) = log.as_mut()
+    {
+        let _ = writeln!(
+            w,
+            "{} {thread} {tag} {value:#x} {}",
+            FRAME.load(Ordering::Relaxed),
+            callers.join(",")
+        );
+    }
+}
+
+/// Every thread of the game: `id:start` with the start address as an
+/// `ffx.sym` address when it is in `FFX.exe`, else as `module+offset`.
+fn list_threads() -> String {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
+    };
+    use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
+    use windows_sys::Win32::System::Threading::{
+        GetCurrentProcessId, OpenThread, THREAD_QUERY_INFORMATION,
+    };
+    type Query = unsafe extern "system" fn(isize, u32, *mut c_void, u32, *mut u32) -> i32;
+    // SAFETY: plain Win32 calls; every pointer is local.
+    unsafe {
+        let ntdll = GetModuleHandleA(c"ntdll.dll".as_ptr().cast());
+        let Some(query) = GetProcAddress(ntdll, c"NtQueryInformationThread".as_ptr().cast()) else {
+            return "err no NtQueryInformationThread".into();
+        };
+        let query: Query = std::mem::transmute(query);
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+        let pid = GetCurrentProcessId();
+        let mut te: THREADENTRY32 = std::mem::zeroed();
+        te.dwSize = u32::try_from(size_of::<THREADENTRY32>()).unwrap_or(0);
+        let base = crate::GAME_BASE.load(Ordering::Relaxed);
+        let mut out = Vec::new();
+        let mut ok = Thread32First(snap, &raw mut te) != 0;
+        while ok {
+            if te.th32OwnerProcessID == pid {
+                let h = OpenThread(THREAD_QUERY_INFORMATION, 0, te.th32ThreadID);
+                let mut start: usize = 0;
+                // ThreadQuerySetWin32StartAddress = 9
+                query(
+                    h as isize,
+                    9,
+                    (&raw mut start).cast(),
+                    4,
+                    std::ptr::null_mut(),
+                );
+                CloseHandle(h);
+                let at = if start >= base && start < base + crate::SIZE_OF_IMAGE as usize {
+                    format!("{:08x}", start - base + crate::IMAGE_BASE as usize)
+                } else {
+                    format!("{start:#x}")
+                };
+                out.push(format!("{}:{at}", te.th32ThreadID));
+            }
+            ok = Thread32Next(snap, &raw mut te) != 0;
+        }
+        CloseHandle(snap);
+        format!("ok {}", out.join(" "))
+    }
+}
+
 /// Runs a job on the game thread and waits for its reply.
 fn on_game_thread(job: Job) -> String {
     if PRESENT.load(Ordering::Acquire) == 0 {
@@ -1241,6 +1450,18 @@ fn command(line: &str) -> Result<String, String> {
         "shot" => on_game_thread(Job::Shot(words[1..].join(" "))),
         "snapshot" => on_game_thread(Job::Snapshot(words[1..].join(" "))),
         "fpucw" => on_game_thread(Job::FpuControl),
+        "threads" => list_threads(),
+        "calllog" => {
+            // calllog off: flush and close
+            if let Ok(mut log) = CALL_LOG.lock()
+                && let Some(mut w) = log.take()
+            {
+                use std::io::Write as _;
+                let _ = w.flush();
+            }
+            CALL_LOG_ON.store(false, Ordering::Release);
+            "ok".into()
+        }
         "trace" => {
             // trace off | trace <windows path> <range>...
             let mut t = TRACE
@@ -1405,6 +1626,50 @@ pub unsafe fn install(module: usize) {
             std::env::var("FFX_HARNESS_VIRTUAL_CLOCK").is_ok_and(|v| v == "1"),
             Ordering::Release,
         );
+        if VIRTUAL.load(Ordering::Acquire) {
+            let hook = |name, address, prologue, replacement| crate::Hook {
+                name,
+                address,
+                prologue,
+                replacement,
+                original: None,
+                steal: 0,
+            };
+            let hooks = [
+                // push ebp; mov ebp, esp; push esi
+                hook(
+                    "FileSys_SubmitRead",
+                    0x0061_c220,
+                    &[0x55, 0x8b, 0xec, 0x56][..],
+                    sync_submit_read as *const () as usize,
+                ),
+                // push ebp; mov ebp, esp; sub esp, 0x68
+                hook(
+                    "createVsyncEmuThread",
+                    0x0067_9e60,
+                    &[0x55, 0x8b, 0xec, 0x83, 0xec, 0x68][..],
+                    virtual_vsync_start as *const () as usize,
+                ),
+                hook(
+                    "endVsyncEmuThread",
+                    0x0067_9f20,
+                    &[][..],
+                    virtual_vsync_end as *const () as usize,
+                ),
+                hook(
+                    "VsyncEmu_Wake",
+                    0x0067_9f80,
+                    &[][..],
+                    virtual_vsync_wake as *const () as usize,
+                ),
+            ];
+            // SAFETY: the game has not started loading yet (we are in its
+            // start-up, before the main loop).
+            let r = unsafe { crate::install(module, &hooks, &[]) };
+            log(&format!(
+                "  harness: virtual clock: synchronous reads, vsync on the game thread {r:?}"
+            ));
+        }
         // SAFETY: forwarded from the caller.
         let patched = unsafe { patch_frame_limiter(module) && patch_boot_limiter(module) };
         log(&format!(
@@ -1415,6 +1680,13 @@ pub unsafe fn install(module: usize) {
                 "not available (unexpected code)"
             }
         ));
+    }
+    if let Ok(path) = std::env::var("FFX_HARNESS_CALL_LOG")
+        && let Ok(f) = std::fs::File::create(&path)
+        && let Ok(mut log) = CALL_LOG.lock()
+    {
+        *log = Some(std::io::BufWriter::new(f));
+        CALL_LOG_ON.store(true, Ordering::Release);
     }
     if let Some(seed) = std::env::var("FFX_HARNESS_SEED")
         .ok()

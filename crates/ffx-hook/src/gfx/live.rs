@@ -124,10 +124,10 @@ fn game_pause() {
     }
 }
 
-/// The trampoline to the original `Cam_Update` (`0x007bc110`).
+/// The trampoline to the original `MsScreenProcess` (`0x007bc110`).
 pub static CAM_UPDATE_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
 
-/// Wraps `Cam_Update` (`0x007bc110`, `cdecl(camera)`, which builds the view
+/// Wraps `MsScreenProcess` (`0x007bc110`, `cdecl(camera)`, which builds the view
 /// matrix): while the renderer has a free camera, the game's override
 /// camera (`MsEffectCameraSet`) holds it right before, whatever the scene's
 /// camera scripts set since; and after, the view goes to the renderer as

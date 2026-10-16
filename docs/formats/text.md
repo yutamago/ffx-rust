@@ -7,7 +7,7 @@ Codec: [`crates/ffx-text`](../../crates/ffx-text).
 
 ## Character tables
 
-`Text_LoadCharset` (`0x00646920`) loads
+`MallocAndReadGamecode` (`0x00646920`) loads
 `ffx_ps2/ffx/master/jppc/ffx_encoding/ffxsjistbl_<t>.bin`, with *t* = `jp`
 for Japanese, `kr` for Korean, `ch` for Chinese and `us` for every western
 language. The file is UTF-8 text listing the characters in code order:

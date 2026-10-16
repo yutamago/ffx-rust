@@ -88,7 +88,7 @@ impl Language {
         })
     }
 
-    /// Archive path of the charset table (`Text_LoadCharset`, `0x00646920`).
+    /// Archive path of the charset table (`MallocAndReadGamecode`, `0x00646920`).
     /// Western languages share the `us` table.
     #[must_use]
     pub fn charset_path(self) -> String {

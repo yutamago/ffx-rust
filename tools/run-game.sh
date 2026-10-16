@@ -18,7 +18,10 @@
 #   --gfx       graphics layer on (FFX_GFX; crates/ffx-hook/src/gfx)
 #   --fast      no frame limiter: frames back to back, game time still 1/60 s each
 #   --virtual-clock  (with --fast) game time never follows real time: exactly
-#               one frame interval per frame, for replays
+#               one frame interval per frame, and reads are synchronous; implies
+#               --fixed-addresses (for replays)
+#   --fixed-addresses  start through ffx-launch.exe with bottom-up ASLR off, so
+#               heap and VirtualAlloc addresses repeat between runs
 #
 # The language lives in Documents\Square Enix\FINAL FANTASY X&X-2 HD
 # Remaster\GameSetting.ini, which the Steam launcher normally writes; the game
@@ -37,7 +40,9 @@ while [[ $# -gt 0 ]]; do
         --background) export FFX_HARNESS_BACKGROUND=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_BACKGROUND" ;;
         --home) home="$2"; shift ;;
         --fast) export FFX_HARNESS_FAST=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_FAST" ;;
-        --virtual-clock) export FFX_HARNESS_VIRTUAL_CLOCK=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_VIRTUAL_CLOCK" ;;
+        --virtual-clock) export FFX_HARNESS_VIRTUAL_CLOCK=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_VIRTUAL_CLOCK"; fixed=1 ;;
+        --fixed-addresses) fixed=1 ;;
+        --call-log) export FFX_HARNESS_CALL_LOG="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_CALL_LOG"; shift ;;
         --renderer) export FFX_RENDERER=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_RENDERER:FFX_RENDER_TEST:FFX_GFX_REDIRECT:FFX_GFX_SHARE:FFX_GFX_FENCE:FFX_RENDER_BACKEND:FFX_RENDERER_SKIP:FFX_RENDER_EXPORT_MATERIALS:FFX_RENDER_GLOW_DUMP/p"; renderer=1 ;;
         --gfx) export FFX_GFX="${FFX_GFX:-1}"; export WSLENV="${WSLENV:+$WSLENV:}FFX_GFX:FFX_GFX_REDIRECT" ;;
         --seed) export FFX_HARNESS_SEED="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_SEED"; shift ;;
@@ -97,5 +102,13 @@ if [[ "$running" != "0" ]]; then
 fi
 
 cd "$game"
-./FFX.exe > /dev/null 2>&1 &
-echo "FFX.exe started (language $lang, pid $!)"
+if [[ -n "${fixed:-}" ]]; then
+    PATH="$repo/tools/shims:$PATH" XWIN_ARCH=x86,x86_64 cargo xwin build -q --release \
+        --manifest-path "$repo/Cargo.toml" --target x86_64-pc-windows-msvc -p ffx-launch >/dev/null
+    install -m 755 "$repo/target/x86_64-pc-windows-msvc/release/ffx-launch.exe" "$game/ffx-launch.exe"
+    pid="$(./ffx-launch.exe FFX.exe | tr -d '\r')"
+    echo "FFX.exe started (language $lang, pid $pid, fixed addresses)"
+else
+    ./FFX.exe > /dev/null 2>&1 &
+    echo "FFX.exe started (language $lang, pid $!)"
+fi

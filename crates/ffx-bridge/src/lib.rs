@@ -281,13 +281,13 @@ impl Mem for RawMem {
         // SAFETY: replacements only touch what the original would; the
         // address is the game's own, valid in this process.
         unsafe {
-            std::ptr::copy_nonoverlapping(addr as usize as *const u8, out.as_mut_ptr(), out.len())
+            std::ptr::copy_nonoverlapping(addr as usize as *const u8, out.as_mut_ptr(), out.len());
         }
     }
     fn write_bytes(&mut self, addr: u32, data: &[u8]) {
         // SAFETY: as above.
         unsafe {
-            std::ptr::copy_nonoverlapping(data.as_ptr(), addr as usize as *mut u8, data.len())
+            std::ptr::copy_nonoverlapping(data.as_ptr(), addr as usize as *mut u8, data.len());
         }
     }
     fn image_base(&self) -> u32 {

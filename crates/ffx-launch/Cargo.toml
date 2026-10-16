@@ -1,0 +1,14 @@
+[package]
+name = "ffx-launch"
+description = "Starts FFX.exe with bottom-up ASLR off, so heap and allocation addresses repeat between runs (replays, snapshots)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_System_Threading"] }
+
+[lints]
+workspace = true

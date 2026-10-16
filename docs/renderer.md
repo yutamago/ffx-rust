@@ -262,7 +262,7 @@ game's view matrix (render space's handedness). "zoom" narrows or widens
 the game's field of view. The overlay keeps the keyboard meanwhile (Alt
 keys too, but Alt+F4). The renderer's answer carries it (flag 64: eye and
 look-at in game space, the field of view, the roll); the hook wraps
-`Cam_Update` (`0x007bc110`): right before, the game's own override camera
+`MsScreenProcess` (`0x007bc110`): right before, the game's own override camera
 (`MsEffectCameraSet`) holds it, and after, the view and field of view go to
 the game's renderer as `Cam_Apply` would send them (`graphicCameraSetFOVy`,
 `graphicCameraSetWorldMatrix`), which the override's branch skips. The game then draws

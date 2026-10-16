@@ -99,6 +99,8 @@ pub mod mods;
 #[cfg(all(windows, target_arch = "x86"))]
 mod patch;
 #[cfg(all(windows, target_arch = "x86"))]
+pub mod ported;
+#[cfg(all(windows, target_arch = "x86"))]
 pub mod replacements;
 #[cfg(all(windows, target_arch = "x86"))]
 pub mod snapshot;
@@ -111,8 +113,8 @@ pub use patch::{check_build, install};
 /// The hook table.
 #[cfg(all(windows, target_arch = "x86"))]
 #[must_use]
-pub fn hooks() -> [Hook; 10] {
-    [
+pub fn hooks() -> Vec<Hook> {
+    let mut all = vec![
         Hook {
             name: "zlib_uncompress",
             address: 0x0040_5e20,
@@ -167,7 +169,7 @@ pub fn hooks() -> [Hook; 10] {
             steal: 0,
         },
         Hook {
-            name: "Cam_Update",
+            name: "MsScreenProcess",
             address: 0x007b_c110,
             // push ebp; mov ebp, esp; sub esp, 0x20
             prologue: &[0x55, 0x8b, 0xec, 0x83, 0xec, 0x20],
@@ -203,5 +205,7 @@ pub fn hooks() -> [Hook; 10] {
             original: Some(&mods::CD_FILE_SIZE_PC_ORIGINAL),
             steal: 0,
         },
-    ]
+    ];
+    all.extend(ported::hooks());
+    all
 }

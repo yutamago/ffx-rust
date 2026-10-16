@@ -7,6 +7,7 @@
 //!
 //! The format is described in `docs/formats/kernel.md`.
 
+pub mod bridge;
 mod export;
 pub mod record;
 pub mod schema;

@@ -427,8 +427,9 @@
 0x0061bdd0 function BigFileStream_ctor        # fh v4:user_defined+call.cs thiscall
 0x0061be40 function FileSys_Exists            # MD5 of the path (root prefix skipped), asks each mounted archive
 0x0061bf10 function BigFileStream_openFile    # like FileSys_Exists but returns the entry; was FileSys_FindEntry
-0x0061bfe0 function FileSys_ReadSync          # NewReadRequest + ReadBlocks + Inflate; fh: BigFileStream::readVFile
+0x0061bfe0 function BigFileStream_readVFile   # NewReadRequest + ReadBlocks + Inflate; was FileSys_ReadSync
 0x0061c150 function BigFileStream_registerBigFile # this=FileSys; mounts an archive into the first free of 5 slots at +0x10; was FileSys_MountVbf
+0x0061c220 function FileSys_SubmitRead          # cdecl(request): thread-pool work BigFileStream_fileTaskRead(request), and a wait on the request's event (+0x48) running BigFileStream_fileTaskUncompress; made synchronous by the harness on the virtual clock
 0x0061c3a0 function BigFileStream_setStreamPrefix # this=FileSys; copies path to +0x40, length to +0x3c; was FileSys_SetRootPath
 0x0061d140 function Vbf_MapLookup             # digest -> map node; entry pointer at node+0x20
 0x0061d460 function BigFileHandle_BigFileHandle # this=Vbf (0x60 bytes); hash map of entries + critical section at +0x44; was Vbf_Construct
@@ -545,7 +546,7 @@
 0x00631550 function Virtuos_InputManager_setInputInfo # fh v3:exact 0x00631700 Virtuos::InputManager::setInputInfo
 0x006315c0 function Input_BuildPadMap          # pairs each key binding (settings +0x60) with its PS2 pad bit
 0x006329c0 function Virtuos_InputManager_setVibration # fh v3:exact 0x00632b70 Virtuos::InputManager::setVibration
-0x00632a30 function Input_UpdatePad            # fastcall(input 0x00ccb170): ORs the bits of held bindings into the pad word (+0), previous at +4; fh: Virtuos::InputManager::updateInput
+0x00632a30 function Virtuos_InputManager_updateInput # fastcall(input 0x00ccb170): ORs the bits of held bindings into the pad word (+0), previous at +4; was Input_UpdatePad
 0x00634610 function AssetListReader_dtor_AssetListReader # fh v3:exact 0x006347c0 AssetListReader::~AssetListReader
 0x00636410 function asyncFFXInitialize        # fh switch:bsim1.00 0x71001cbb10
 0x00637860 function graphicAsyncTaskCallback  # fh v3:exact 0x00637a10
@@ -786,7 +787,7 @@
 0x00645f50 function Text_ToUtf8               # FFX text -> UTF-8; defines the byte grammar (docs/formats/text.md)
 0x006460a0 function DecodingGamecodeJPCHKR    # character code -> UTF-8 via the jp/kr/ch table; was Text_DecodeCharCjk
 0x006461f0 function Text_DecodeCharWestern    # character code -> UTF-8 via ffxsjistbl_us.bin
-0x00646920 function Text_LoadCharset          # loads ffx_encoding/ffxsjistbl_<lang>.bin into g_CharsetCjk/g_CharsetWestern; fh: MallocAndReadGamecode
+0x00646920 function MallocAndReadGamecode     # loads ffx_encoding/ffxsjistbl_<lang>.bin into g_CharsetCjk/g_CharsetWestern; was Text_LoadCharset
 0x00647d70 function SaveDataCheckCrc          # fh call.cs cdecl
 0x00647e80 function SaveDataGetCrc            # fh switch:bsim1.00 0x7100224890
 0x00647ee0 function SaveDataGetDialogState    # fh v3:cg3 0x648090
@@ -937,8 +938,10 @@
 0x00679730 function fiosOpen                  # allocates a File and calls File_Construct/File_Open; MessageBoxW on failure; was PcFile_Open
 0x00679800 function fiosRead                  # fh v3:exact 0x006799b0
 0x00679820 function fiosUnifyFilename         # fh v4:imported+call.cs cdecl
+0x00679c60 function VsyncThreadImpl_run       # thread body (vtable +4): while running (+0x18) call the handler (+0x10), WaitForSingleObject(semaphore +0x1c, 16 ms); the PS2 vsync interrupt on real time
 0x00679e60 function createVsyncEmuThread      # fh v3:exact 0x0067a010
 0x00679f20 function endVsyncEmuThread         # fh v3:exact 0x0067a0d0
+0x00679f80 function VsyncEmu_Wake             # ReleaseSemaphore(vsync thread +0x1c): runs the vsync handler now instead of after the 16 ms wait
 0x00679fc0 function iFmodInitialize           # fh switch:cg2 0x7100877d48
 0x00679fe0 function iMuiscSetBgmType          # fh v3:exact 0x0067a190
 0x0067a010 function iMusicClear               # fh v3:bsim1.00 0x0067a1c0
@@ -1921,7 +1924,7 @@
 0x007909c0 function MsGetRomCTBcount          # fh v3:exact 0x00790a10
 0x007909f0 function MsGetRomItem              # id & 0xfff in g_KernelItem; was Item_FindRecord
 0x00790a10 function MsGetRomKaizou            # fh switch:bsim1.00+call.cs 0x710036fc80 cdecl
-0x00790a50 function MonMagic1_FindRecord  # fh: MsGetRomMonCommand1
+0x00790a50 function MsGetRomMonCommand1       # named after its sibling MsGetRomMonCommand2 (0x00790a70); was MonMagic1_FindRecord
 0x00790a70 function MsGetRomMonCommand2       # fh v3:bsim1.00 0x00790ac0
 0x00790a90 function MsGetRomPlyCommand        # id & 0xfff in g_KernelCommand; was Command_FindRecord
 0x00790ab0 function MsGetRomSummonGrow        # fh v3:bsim1.00+call.cs 0x00790b00 cdecl
@@ -2362,8 +2365,8 @@
 0x007b2b00 function MsGetSummonEnergy         # fh v3:cg4 0x7b2b10
 0x007b2b20 function MsGetYoujinbouCom         # fh v3:bsim1.00 0x007b2b30
 0x007b2c10 function msVoiceCheckStanby        # fh v3:exact 0x007b2c20
-0x007b2dc0 function Battle_GetActorProperty   # switch over ~340 actor properties; fh: MsGetChrStatInfo
-0x007b4a90 function Battle_SetActorFloatProperty # (actor, property 0-9, float): writes actor dwords 0x12f-0x139; fh: MsSetChrMotionInfo
+0x007b2dc0 function MsGetChrStatInfo          # switch over ~340 actor properties; was Battle_GetActorProperty
+0x007b4a90 function MsSetChrMotionInfo        # (actor, property 0-9, float): writes actor dwords 0x12f-0x139; was Battle_SetActorFloatProperty
 0x007b4b70 function MsSetChrStatInfo          # switch over ~320 actor properties; was Battle_SetActorProperty
 0x007b6c50 function MsGetBattleList           # fh v3:exact 0x007b6bd0
 0x007b6fb0 function MsGetTargetLinkList       # fh v3:exact 0x007b6f30
@@ -2422,7 +2425,7 @@
 0x007bbd80 function MsScreenFocusReset        # fh v3:bsim1.00 0x007bbd00
 0x007bbda0 function MsScreenFocusResetAll     # fh v3:exact 0x007bbd20
 0x007bc0c0 function MsScreenOffset            # fh v3:exact 0x007bc040
-0x007bc110 function Cam_Update                   # cdecl(camera 0-2) -> 1 when camera > 2: per frame, picks the active channel (g_Camera), moves it, builds the view matrix 0x02311440 with FUN_007c1be0 from the channel's eye (+0x65c) and look-at (+0x40), or from the override camera when g_CamOverrideOn; fh: MsScreenProcess
+0x007bc110 function MsScreenProcess           # cdecl(camera 0-2) -> 1 when camera > 2: per frame, picks the active channel (g_Camera), moves it, builds the view matrix 0x02311440 with FUN_007c1be0 from the channel's eye (+0x65c) and look-at (+0x40), or from the override camera when g_CamOverrideOn; was Cam_Update
 0x007bc720 function MsScreenResetOffset       # fh v3:exact 0x007bc6a0
 0x007bc7f0 function MsSetScreen               # fh v3:exact 0x007bc770
 0x007bc980 function Cam_Apply                    # cdecl(camera): field of view from the camera's screen depth (448 / (2 d), atan) into the renderer, then Render_SetView(0x02311440); Cam_Update calls it only for channel cameras, not the override
@@ -2799,7 +2802,7 @@
 0x00829c90 function sg_getdbname              # kind (0-6 or its letter) -> chr folder name; was Chr_KindDir
 0x00829e10 function sg_getdbtype              # id >> 12 -> 'c','m','n','s','w','f','k'; was Chr_KindLetter
 0x00829e60 function Ch_AnalysisChrNum         # fh v3:exact 0x00829ee0
-0x00829ef0 function Chr_LoadData                 # (chr id): queues "[%s:%s]CHRDATA" (prints "SG:RomRead:%s %x"); fh: Ch_DataRead
+0x00829ef0 function Ch_DataRead               # (chr id): queues "[%s:%s]CHRDATA" (prints "SG:RomRead:%s %x"); was Chr_LoadData
 0x0082a040 function Ch_DataReadSync           # (chr id): ChrData_State(1, id); error "CH Data Read Sync" / "%s does not read.(can't sync)"; was Chr_IsLoaded
 0x0082a080 function Ch_GetCharID              # fh v3:exact 0x0082a100
 0x0082a100 function Ch_IsLoadingClothFile     # fh v3:exact 0x0082a180
@@ -2841,7 +2844,7 @@
 0x0082ae30 function Ch_ModelSetAlpha          # fh v3:exact 0x0082aeb0
 0x0082aea0 function Ch_ModelSetHide           # fh v3:exact 0x0082af20
 0x0082afb0 function Ch_MotionSetHokan         # fh v3:exact 0x0082b030
-0x0082afe0 function Chr_SetAutoMotion            # (chr, slot, motion): chr +0x75c[slot]; -1 = default table 0x00c49680; fh: Ch_MotionSetMoves
+0x0082afe0 function Ch_MotionSetMoves         # (chr, slot, motion): chr +0x75c[slot]; -1 = default table 0x00c49680; was Chr_SetAutoMotion
 0x0082b010 function Ch_MotionSetNextHokan     # fh v3:exact 0x0082b090
 0x0082b040 function Ch_MoveSetChgRun          # fh v3:exact 0x0082b0c0
 0x0082b080 function Ch_ResetMotion            # (chr): +0x730 = 1, scripted motion flag +0x736 = 0, +0x728 = 0; called before every play; was Chr_ReleaseMotion
@@ -3136,7 +3139,7 @@
 0x0083fd60 function Sg_SaveVramResource       # fh v3:exact 0x0083fd60
 0x0083fe10 function Sg_SetResource            # fh v3:exact 0x0083fe10
 0x0083fe60 function Sg_SetResourceSTR         # fh v3:exact 0x0083fe60
-0x0083ffe0 function ChrData_State                # (kind, id): 2 = not registered, else whether loaded (table 0x01302f98); fh: Cache_CheckYet
+0x0083ffe0 function Cache_CheckYet            # (kind, id): 2 = not registered, else whether loaded (table 0x01302f98); was ChrData_State
 0x00840030 function Cache_Clear               # fh v3:exact 0x00840030
 0x00840250 function Cache_Dispose             # fh v3:exact 0x00840250
 0x00840510 function Cache_Dump                # fh v3:exact 0x00840510
@@ -3389,7 +3392,7 @@
 0x0085c420 function Native_WaitForever           # 0x005f poll: returns 0 forever (never done), parks the entry until it is interrupted; 14636 calls in 1555 scripts
 0x0085c4c0 function Native_SpriteHide            # 0x011c (slot) -> slot; sprite +0 = 0 (slot < 0 clears slot 0) (0x008747f0)
 0x0085c4e0 function Native_WaitFrames_0000       # 0x0000: args (frames) -> frames; start slot stores the count in *result (40 instead of 10 when 0x00782970()==0x610000 && *0x00c64ca0==0x290, a one-off timing patch); scripts: "pushimm 1; func 0x0000"
-0x0085c5b0 function Native_StopMoveAllLevels     # 0x00d1: args () -> 0; Script_StopMove(own worker (ctx+0x2e), level) for levels 0-8; fh: +CT_01D1_ret
+0x0085c5b0 function CT_01D1_ret               # 0x00d1: args () -> 0; Script_StopMove(own worker (ctx+0x2e), level) for levels 0-8; was Native_StopMoveAllLevels
 0x0085c680 function Native_CharRestoreHp         # 0x0171 (chr) -> HP; Party_GetChar(chr): +0x1c = max(+0x1c, +0x24), clears +0x3d; ?HP fields
 0x0085c6b0 function Native_WaitFrames_Poll_0000  # 0x0000 poll: count -= 1 per frame (or -= FUN_00645d90() elapsed frames when *0x0112a008 && FUN_0076efc0()); done when count < 1
 0x0085c760 function Native_SpriteSetColor        # 0x0129 (slot, c0, c2, c1) -> slot; bytes +0x10/+0x12/+0x11 clamped 0-255; drawn as R,G,B (+0x10,+0x11,+0x12), so the push order is r, b, g
@@ -3687,7 +3690,7 @@
 0x00877ad0 function AtelCall_Math_Tan_RF      # fh v3:cg2 0x877a50 +AtelCall_Math_Tan_RF
 0x00877b00 function AtelCall_Math_ATan_RF     # fh v3:cg2 0x877a80 +AtelCall_Math_ATan_RF
 0x00877b30 function AtelCall_Math_ATan2_RF    # fh v3:exact 0x00877ab0 +AtelCall_Math_ATan2_RF
-0x00877b70 function Native_MathSqrt              # 0x1006 float (x) -> sqrt(x); fh: +AtelCall_Math_Sqrt_RF
+0x00877b70 function AtelCall_Math_Sqrt_RF     # 0x1006 float (x) -> sqrt(x); was Native_MathSqrt
 0x00877ba0 function AtelCall_Math_InvSqrt_RF  # fh v3:exact 0x00877b20 +AtelCall_Math_InvSqrt_RF
 0x00877fd0 function AtelCall_Math_Abs_RF      # fh v3:exact 0x00877f50 +AtelCall_Math_Abs_RF
 0x008795b0 function AtelEventGetFilePath2     # fh v3:exact 0x00879530
@@ -3776,6 +3779,7 @@
 0x00887d10 function TkIsDebug                 # fh v3:bsim1.00 0x00887c80
 0x00887d20 function FFXSetLang                # fh v3:bsim1.00 0x00887c90
 0x00887d30 function TkClearSoundSyncVFlag     # fh v3:bsim1.00 0x00887ca0
+0x00887d60 label VsyncHandler                 # the vsync handler createVsyncEmuThread gets (from 0x00888680, TkInitAllSyncVCallback): runs the TkSetSyncVCallbackPtr callbacks
 0x00887dc0 function TkGetLastSyncVCounter     # fh v3:bsim1.00 0x00887d30
 0x00887dd0 function TkGetSoundSyncVFlag       # fh v3:bsim1.00 0x00887d40
 0x00887e10 function TkGetTotalSyncVCounter    # fh v3:bsim1.00 0x00887d80
@@ -3793,6 +3797,7 @@
 0x008883c0 function TkMcRename                # fh switch:bsim1.00 0x710048a0f0
 0x00888440 function TkMcSetFileInfo           # fh switch:bsim1.00 0x710048a020
 0x00888620 function TkGetSyncVCallbackHandle  # fh v3:bsim1.00 0x00888590
+0x00888680 function TkSetVsyncHandler         # cdecl(handler): ends the vsync thread, starts a new one with handler (0: none)
 0x008886f0 function TkInitAllSyncVCallback    # fh v3:exact 0x00888660
 0x00888740 function TkRegistBGThreadFunc      # fh v3:bsim1.00 0x008886b0
 0x00888790 function TkSetSyncVCallbackPtr     # fh v3:exact 0x00888700
@@ -4966,7 +4971,7 @@
 0x00a79e60 function Native_ChrPlayDefaultMotion  # 0x5032: no args -> 0; SG_PlaySlotMotion(chr, chr +0x185, 0)
 0x00a79ea0 function Native_ChrFadeAlpha          # 0x5033: args (alpha float, frames) -> 0; shade alpha at chr +0x354 ("shadeRGBA" in CHRINFO): target + frames, frames 0 = immediate (0x0082b990); scripts push (0, 60)
 0x00a79f40 function Native_ChrSetMotionBlend     # 0x5034: args (frames) -> 0; chr +0x73a, copied to "hokan" (+0x752) when the next clip starts (SG_StartClip); 0 marks dirty (+0x820 |= 4)
-0x00a7a210 function Native_ChrSetTalking         # 0x507e: args (worker, on) -> 0; chr +0x4d4 of another worker's chr turns on random rotation of bone 13 (0x00834..); ?mouth flapping while a voice line plays (used around 0x00d5 calls); fh: +CT_507E_ret
+0x00a7a210 function CT_507E_ret               # 0x507e: args (worker, on) -> 0; chr +0x4d4 of another worker's chr turns on random rotation of bone 13 (0x00834..); ?mouth flapping while a voice line plays (used around 0x00d5 calls); was Native_ChrSetTalking
 0x00a7a340 function Native_ChrSetHitRadiusScale  # 0x5039: args (scale float; <= 0 = model default +0x1c4->+0x1c) -> previous; chr +0x4e4, collision radius +0x4e8 = mean bbox width * scale; scripts push 6.0, 8.0
 0x00a7a610 function Native_ChrSetMotion2         # 0x5040: same body as 0x501b (SG_SetMotion)
 0x00a7a6a0 function Native_ChrRefreshAllBones    # 0x5087: no args -> 0; Chr_RequestBoneUpdateAll; ?one-time skeleton refresh of every chr
@@ -6984,9 +6989,13 @@
 0x00d2c258 label    g_FpData                     # current field's FP (effect) table: u16 count at +4, 0x50-byte entries with the id at +0x64; runtime state at 0x00d2c260 (0x80 each) and 0x00d30260 (0x4c each)
 0x0112a92c label    g_KernelCommand
 0x0112a930 label    g_KernelMonMagic1
+0x0112a934 label g_KernelMonMagic2             # monmagic2 (Kernel_LoadTables 0x00781d40); read by MsGetRomMonCommand2
 0x0112a938 label    g_KernelPlyRom
 0x0112a940 label    g_KernelItem
 0x0112a944 label    g_KernelAAbility
+0x0112a94c label g_KernelCtbBase               # battle resource 0xb (MsBattleInit 0x00781700); MsGetRomCTBbase/CTBcount
+0x0112a960 label g_KernelSummonGrow            # battle resource 6 (MsBattleInit); MsGetRomSummonGrow
+0x0112a964 label g_KernelKaizou                # battle resource 5 (MsBattleInit); MsGetRomKaizou
 0x0112c9cd label    g_BtlPadOrientation          # 0-3, set by 0x7099; read by 0x00780ce0 for the d-pad remap
 0x0112c9e2 label    g_BtlTurnActor               # ?actor index copied from 0x0112c9df when a turn starts; read by 0x708d
 0x0112ca6c label    g_KernelMonster1

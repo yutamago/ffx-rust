@@ -522,6 +522,7 @@ checksum = "b97b65636e5b9ef369943878ac74335ba1c55c1cb6adbf1e2c293c624248d693"
 name = "ffx-battle"
 version = "0.1.0"
 dependencies = [
+ "ffx-bridge",
  "ffx-vbf",
  "thiserror",
  "toml",
@@ -600,9 +601,11 @@ dependencies = [
 name = "ffx-hook"
 version = "0.1.0"
 dependencies = [
+ "ffx-battle",
  "ffx-bridge",
  "ffx-core",
  "ffx-gfx",
+ "ffx-kernel",
  "windows-sys",
 ]
 
@@ -610,10 +613,18 @@ dependencies = [
 name = "ffx-kernel"
 version = "0.1.0"
 dependencies = [
+ "ffx-bridge",
  "ffx-text",
  "ffx-vbf",
  "thiserror",
  "toml",
+]
+
+[[package]]
+name = "ffx-launch"
+version = "0.1.0"
+dependencies = [
+ "windows-sys",
 ]
 
 [[package]]
@@ -639,6 +650,7 @@ dependencies = [
 name = "ffx-oracle"
 version = "0.1.0"
 dependencies = [
+ "ffx-battle",
  "ffx-bridge",
  "ffx-core",
  "ffx-kernel",
