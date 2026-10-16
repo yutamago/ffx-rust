@@ -9,6 +9,8 @@ use super::{call0, mem, ported};
 
 /// `TOGetFFXLang` (system), which `DmgCalc_Bribe` asks.
 const TO_GET_FFX_LANG: u32 = 0x0064_10e0;
+/// `TOBtlCloseSignWindow` (system), which the message cue calls.
+const TO_BTL_CLOSE_SIGN_WINDOW: u32 = 0x0089_0ee0;
 
 ported! {
     /// `rnd`: the global random generator.
@@ -842,5 +844,26 @@ ported! {
     /// `MsNearRag(a, b)`: an angle, on the x87 stack.
     MsNearRag @ 0x007c_04c0 => extern "C" fn ms_near_rag(a: u32, b: u32) -> f32 {
         vector::ms_near_rag(&mem(), a, b)
+    }
+
+    // Battle messages.
+    /// `MsMenuCloseTitleWindow(keep)`.
+    MsMenuCloseTitleWindow @ 0x0078_fa30 => extern "C" fn ms_menu_close_title_window(keep: i32) {
+        state::ms_menu_close_title_window(&mut mem(), keep, |_| {
+            call0(TO_BTL_CLOSE_SIGN_WINDOW);
+        });
+    }
+    /// `MsMessageCueRegist(kind, actor, message, b, c)`.
+    MsMessageCueRegist @ 0x0079_cfd0 => extern "C" fn ms_message_cue_regist(kind: u32, actor: u32, message: u32, b: u32, c: u32) -> u32 {
+        let extra = [b.to_le_bytes()[0], c.to_le_bytes()[0]];
+        state::ms_message_cue_regist(&mut mem(), kind.to_le_bytes()[0], actor, message, extra, |_| {
+            call0(TO_BTL_CLOSE_SIGN_WINDOW);
+        })
+    }
+    /// `MsMonsterCapture(chr, monster)`.
+    MsMonsterCapture @ 0x0079_0b30 => extern "C" fn ms_monster_capture(chr: u32, monster: u32) -> u32 {
+        state::ms_monster_capture(&mut mem(), chr, monster, |_| {
+            call0(TO_BTL_CLOSE_SIGN_WINDOW);
+        })
     }
 }

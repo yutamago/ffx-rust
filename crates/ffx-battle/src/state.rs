@@ -325,6 +325,89 @@ pub mod bridge {
         let g = Ptr::<u8>::new(SCENE_GROUP.get(mem)).get(mem);
         (f << 16).wrapping_add(u32::from(g))
     }
+
+    /// The title window's two position bytes (`MsMenuCloseTitleWindow`).
+    pub const TITLE_WINDOW: Global<[i8; 2]> = Global::new(0x0112_c9d1);
+    /// The message cue: 4 entries of 12 bytes (`+0` kind, `+1`, `+2`,
+    /// `+4` actor, `+8` message), a ring from [`MESSAGE_CUE_START`].
+    pub const MESSAGE_CUE: Global<u8> = Global::new(0x0112_c914);
+    /// Messages in the cue.
+    pub const MESSAGE_CUE_COUNT: Global<u8> = Global::new(0x0112_c944);
+    /// The cue's first entry.
+    pub const MESSAGE_CUE_START: Global<u8> = Global::new(0x0112_c945);
+    /// Entries the message cue holds.
+    pub const MESSAGE_CUE_SIZE: u8 = 4;
+
+    /// `MsMenuCloseTitleWindow(keep)` (`0x0078fa30`): with `keep`, moves the
+    /// title window's first byte by `45 − second` when it is past
+    /// `second − 45`; else clears both and closes the sign window
+    /// (`TOBtlCloseSignWindow`, another module's, which the caller
+    /// supplies).
+    pub fn ms_menu_close_title_window<M: Mem>(
+        mem: &mut M,
+        keep: i32,
+        close_sign: impl FnOnce(&mut M),
+    ) {
+        let [pos, top] = TITLE_WINDOW.get(mem);
+        if keep != 0 && i32::from(pos) > i32::from(top) - 0x2d {
+            let p = pos.wrapping_add(0x2d_i8.wrapping_sub(top));
+            TITLE_WINDOW.set(mem, [p, top]);
+            return;
+        }
+        TITLE_WINDOW.set(mem, [0, 0]);
+        close_sign(mem);
+    }
+
+    /// `MsMessageCueRegist(kind, actor, message, b, c)` (`0x0079cfd0`):
+    /// queues a battle message (1) unless 4 are queued (0); closes the
+    /// title window first.
+    pub fn ms_message_cue_regist<M: Mem>(
+        mem: &mut M,
+        kind: u8,
+        actor: u32,
+        message: u32,
+        extra: [u8; 2],
+        close_sign: impl FnOnce(&mut M),
+    ) -> u32 {
+        let n = MESSAGE_CUE_COUNT.get(mem);
+        if n >= MESSAGE_CUE_SIZE {
+            return 0;
+        }
+        ms_menu_close_title_window(mem, 0, close_sign);
+        let slot =
+            (u32::from(MESSAGE_CUE_START.get(mem)) + u32::from(MESSAGE_CUE_COUNT.get(mem))) & 3;
+        let e = MESSAGE_CUE.ptr(mem).addr + 12 * slot;
+        mem.write(e, kind);
+        mem.write(e + 4, actor);
+        mem.write(e + 8, message);
+        mem.write(e + 1, extra);
+        let n = MESSAGE_CUE_COUNT.get(mem).wrapping_add(1);
+        MESSAGE_CUE_COUNT.set(mem, n);
+        1
+    }
+
+    /// `MsMonsterCapture(chr, monster)` (`0x00790b30`): Rikku's capture of a
+    /// monster (1 when it counts: fewer than 10 of it so far), with its
+    /// message (0x300a captured, 0x300b full, 0x300c not capturable: monster
+    /// 0xff).
+    pub fn ms_monster_capture<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        monster: u32,
+        close_sign: impl FnOnce(&mut M),
+    ) -> u32 {
+        use crate::save::bridge::{add_monster_capture, ms_get_monster_capture};
+        let (ok, message) = if monster == 0xff {
+            (0, 0x300c)
+        } else if ms_get_monster_capture(mem, monster).cast_signed() < 10 {
+            add_monster_capture(mem, monster, 1);
+            (1, 0x300a)
+        } else {
+            (0, 0x300b)
+        };
+        ms_message_cue_regist(mem, 5, chr, message, [0x1b, 0x23], close_sign);
+        ok
+    }
 }
 
 #[cfg(test)]

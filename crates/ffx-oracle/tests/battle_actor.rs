@@ -1,15 +1,18 @@
 //! The actor and battle getters (`ffx_battle::actor`, `ffx_battle::state`)
 //! against the original, as in `battle.rs`, on the shared battle world.
 
-// a and b are the two oracles throughout
-#![allow(clippy::many_single_char_names)]
+// a and b are the two oracles throughout; the checks are long lists
+#![allow(clippy::many_single_char_names, clippy::too_many_lines)]
 
 mod battle_common;
 
 use battle_common::world::*;
 use battle_common::*;
 use ffx_battle::{actor::bridge as act, state::bridge as st};
-use ffx_oracle::Oracle;
+use ffx_oracle::{Conv, Oracle};
+
+/// `TOBtlCloseSignWindow` (system), which the message cue calls.
+const TO_BTL_CLOSE_SIGN_WINDOW: u32 = 0x0089_0ee0;
 
 /// A getter by actor index: name, `ffx.sym` address, the Rust.
 type ByIndex = (&'static str, u32, fn(&Oracle, u32) -> u32);
@@ -133,6 +136,60 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         twin("MsBattleGetNum", a, b, 0x0078_16b0, &[], ALL, |m| {
             st::ms_battle_get_num(m)
         });
+        // the message cue and Rikku's captures; TOBtlCloseSignWindow (the
+        // system module's) runs as the original in both
+        let close = |m: &mut Oracle| {
+            let at = m.rebase(TO_BTL_CLOSE_SIGN_WINDOW);
+            m.call(at, Conv::Cdecl, &[]).unwrap();
+        };
+        let title = [rng.byte().cast_signed(), rng.byte().cast_signed()];
+        set(a, b, st::TITLE_WINDOW, title);
+        let keep = rng.below(2);
+        twin(
+            "MsMenuCloseTitleWindow",
+            a,
+            b,
+            0x0078_fa30,
+            &[keep],
+            0,
+            |m| {
+                st::ms_menu_close_title_window(m, keep.cast_signed(), close);
+                0
+            },
+        );
+        set(a, b, st::MESSAGE_CUE_COUNT, rng.below(6).to_le_bytes()[0]);
+        set(a, b, st::MESSAGE_CUE_START, rng.byte());
+        let args = [rng.next(), rng.next(), rng.next(), rng.next(), rng.next()];
+        twin("MsMessageCueRegist", a, b, 0x0079_cfd0, &args, ALL, |m| {
+            let [k, actor, msg, x, y] = args;
+            st::ms_message_cue_regist(
+                m,
+                k.to_le_bytes()[0],
+                actor,
+                msg,
+                [x.to_le_bytes()[0], y.to_le_bytes()[0]],
+                close,
+            )
+        });
+        let monster = match rng.below(3) {
+            0 => 0xff,
+            1 => rng.next(),
+            _ => rng.below(0x140),
+        };
+        if rng.below(2) == 0 {
+            let caps = ffx_battle::save::bridge::CAPTURES.ptr(b).addr;
+            fill(a, b, rng, caps, 0x2c0);
+        }
+        let chr = rng.below(0x20);
+        twin(
+            "MsMonsterCapture",
+            a,
+            b,
+            0x0079_0b30,
+            &[chr, monster],
+            ALL,
+            |m| st::ms_monster_capture(m, chr, monster, close),
+        );
         set(a, b, act::CHR_TOP, w.actors);
         same("getters", a, b);
     }

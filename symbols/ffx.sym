@@ -7139,9 +7139,13 @@
 0x0112c256 label g_BtlFieldIndex             # i16, the current battle field's record (MsBattleGetNum: its ID << 16 + the group ID)
 0x0112c526 label g_BtlWeaponList             # u16 list MsGetSaveWeaponList (0x007abd10) fills with 0x5000 + equipment slot
 0x0112c895 label g_BtlParty                  # 3 x u8 ply_save indices; MsSetSaveParty (0x00786930) copies them to g_SaveInParty
+0x0112c914 label g_BtlMessageCue              # 4 battle messages of 12 bytes (+0 kind, +1, +2, +4 actor, +8 message ID), a ring (MsMessageCueRegist)
+0x0112c944 label g_BtlMessageCueCount         # u8, messages queued (at most 4)
+0x0112c945 label g_BtlMessageCueStart         # u8, the ring's first entry
 0x0112c948 label g_BtlUseItem                # u16 item being used (MsSetUseItem 0x00790790); MsGetSaveItemNum counts one less of it
 0x0112c9cd label    g_BtlPadOrientation          # 0-3, set by 0x7099; read by 0x00780ce0 for the d-pad remap
 0x0112c9ce label g_BtlUnderwater             # i8, the formation's byte 3 (underwater fields); MsBattleWater (0x007821e0) returns it, MsGetVoiceEventFlag returns 0 while it is set
+0x0112c9d1 label g_BtlTitleWindow             # 2 x i8, the battle title window's position bytes (MsMenuCloseTitleWindow moves or clears them)
 0x0112c9e2 label    g_BtlTurnActor               # ?actor index copied from 0x0112c9df when a turn starts; read by 0x708d
 0x0112c9ff label g_BtlEscapeRule              # i8, set by battle script (0x007a77a0): 1 no escape, 2 always (MsCalcEscape)
 0x0112ca0b label g_BtlStoneEffect            # 2 x i8; MsStoneEffectCheck (0x007a2670) returns their sum
