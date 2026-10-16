@@ -389,7 +389,7 @@ Opcode `79` (`0x00870d30`) writes the worker's vibration curve, eight
 
 `ffx_script::vm::bridge::native` has the natives that only pop arguments,
 touch the worker, the VM's globals and the save data, and call code kept
-elsewhere: 66 handlers (message windows, character motion and display
+elsewhere: 79 handlers (message windows, character motion and display
 calls, worker ids and positions, turn and move blocks and their waits,
 triggers, the minimap marker, random, the pad, fades, HP/MP restore, the
 field programs `Fp_*`, ...). `native::find` maps a handler address to its
@@ -421,6 +421,257 @@ and `0x699`. `Native_FpBindPos` truncates its fp id from `ST0` as
 start in the Ghidra dump the hook checks use and run in Rust only through
 the dispatch.
 
+`ffx_script::vm::bridge::native_cam` has 62 camera handlers of group 6.
+Most hand `(worker, args, stack)` to a camera helper (`0x007bb6a0`,
+`0x007badb0`, ...) with one or two constants: the half (0 the focus or
+"ref" point, 1 the eye) and a mode; the helper pops the arguments. The
+others first take the worker's camera handle, cached in the worker's
+`+0x3c` and otherwise asked of `MsAtelGetCameraID(5, worker is the event
+map's camera actor, 0)` (`native_cam::cam`), then pop what they need.
+`Native_CamSetRoll` converts degrees with the `f32` pi as a double
+(`(deg * pi) / 180`, rounded to `f32` once). `Native_CamSetScreenDepth`
+prints its depth through the `printf` import in debug mode
+(`g_DebugMode` 1). `0x6048`/`0x604a` clear `g_BtlSplines[1]`/`[0]` only
+when `MsCameraGetID(cam)` is the handle itself. The polls (`0x6038`,
+`0x6062`, `0x6063`, `0x6064`) return 5 once their test is 0
+(`~-(v != 0) & 5`). `Native_Cam_6076` (`0x007b8fe0`) has no function
+start in the dump and runs in Rust only through the dispatch.
+
+`ffx_script::vm::bridge::native_msg` has `Native_MsgSetText`,
+`Native_MsgSetPos`, `Native_MsgSetValue`, `Native_MsgClose`,
+`Native_MacroDicText`, `Native_BitIndex` (`0x0142`) and the voice waits
+`Native_VoiceIsPlaying` (`0x00d8`) / `Native_SoundWait_Poll` (`0x00d9`),
+with `Msg_Text` (`0x0086bf30`). `Native_MsgSetPos` moves three windows on
+three maps (map `0x17` at (0x1e6, 0x104) to (0x1c7, 0xc7); map `0xab` at
+(0x100, 0x14f) to y 0x140 when `0x008ac2f0()` is 2 or 3; map `0xd4` at
+(0x16, 0xdc) to y 0x82 when it is 4). `Msg_CloseWindow` (the menu
+module's) passes `TOCloseMessageWindow` the window number unclamped, so a
+number above 7 closes past the windows when the window is open. The voice
+waits share a shape: in debug mode the first call prints a start line and
+every call counts; with the flag (`0x01325ae4`/`0x01325aec`) set, a
+countdown (`0x01325ae0`/`0x01325ae8`) decides, else `SndGetStreamState`;
+when done, debug mode prints the count. The dump gives both one byte, so
+they run in Rust only through the dispatch.
+
+#### The ported natives
+
+Every native with a Rust handler, by ID: the arguments in push order
+(the last pushed is popped first; `int`, `f` a float, `var` a variable
+reference), the result (`EAX` for an integer handler, `ST0` for a float
+one; a start/poll pair's poll returns 5, or for some 1, when done and 0 to
+be called again next frame) and what a poll waits for. The modders' Lua
+API is generated from this table. `-`: none.
+
+| ID | Name | Arguments (push order) | Result | Waits | Handlers (module) |
+|---|---|---|---|---|---|
+| `0x0013` | `CT_0013_setPosition` | x f, y f, z f: the worker's position | 0 | - | int `0x0085faa0` (native) |
+| `0x001a` | `Native_MoveWait` | - | 5 when done | until the move block's mode (+2 & 0x7f) is 0 (the move started by MoveStart ends) | poll `0x008579a0` (native) |
+| `0x001b` | `Native_TurnWait` | - | 5 when done | until the turn block's mode (+2 & 0x1f) is 0 | poll `0x00857b30` (native) |
+| `0x001c` | `Native_MoveSetFrames` | elapsed int, frames int: the move block's timer (+0xc, +8) | float: elapsed | - | float `0x00855f10` (native) |
+| `0x001d` | `Native_TurnSetFrames` | elapsed int, frames int: the turn block's timer (frames <= 0 become 1) | float: elapsed | - | float `0x008560d0` (native) |
+| `0x0028` | `Native_TurnSetYaw` | yaw f (radians) | float: the wrapped yaw (turn target +0x20, remaining +0x2c) | - | float `0x00859640` (native) |
+| `0x0029` | `Native_TurnSetPitch` | angle f (radians, pitch) | float: the wrapped angle (+0x24, remaining +0x30) | - | float `0x00859880` (native) |
+| `0x0033` | `Native_GetWorkerId` | worker int (-1 = self) | int: its id (+0x2e) | - | int `0x0085ba50` (native) |
+| `0x0034` | `Native_EnableTrigger` | kind int: trigger bit (0 talk) | int: kind (worker +0xab gets the bit) | - | int `0x0085c060` (native) |
+| `0x0035` | `Native_DisableTrigger` | kind int | 0 (clears worker +0xab's bit) | - | int `0x0085c280` (native) |
+| `0x0038` | `Native_GetWorkerX` | worker int | float: its x | - | float `0x0085bb80` (native) |
+| `0x0039` | `Native_GetWorkerY` | worker int | float: its y | - | float `0x0085bd40` (native) |
+| `0x003a` | `Native_GetWorkerZ` | worker int | float: its z | - | float `0x0085bf10` (native) |
+| `0x003f` | `Native_TurnGetField38` | - | float: the turn block's +0x38 | - | float `0x0085c590` (native) |
+| `0x0046` | `Native_PadPressed` | - | int: buttons pressed this frame, remapped | - | int `0x0085d9b0` (native) |
+| `0x0056` | `Native_TriggerSetActive` | on int | 1 for trigger workers (types 2, 3, 5, 6: +0x34 bit 7 = on), else 0 | - | int `0x0085fbf0` (native) |
+| `0x005c` | `Native_TriggerSetActive2` | on int | as 0x0056 | - | int `0x008600c0` (native) |
+| `0x005d` | `Native_ControlEnable` | - | 1 (player control on) | - | int `0x008566b0` (native) |
+| `0x005e` | `Native_ControlDisable` | - | 0 (player control off) | - | int `0x008567c0` (native) |
+| `0x005f` | `Native_WaitForever` | - | 0 | forever (until the entry is interrupted) | poll `0x0085c420` (native) |
+| `0x0064` | `Native_MsgSetText` | window int, msg int: message index in the event's table | 0 (window text and flags set) | - | int `0x00857870` (native_msg) |
+| `0x0065` | `Native_MsgSetPos` | window int, x int, y int, anchor int | 0 (three windows of maps 0x17, 0xab, 0xd4 are moved) | - | int `0x008580c0` (native_msg) |
+| `0x0066` | `Native_MsgSetStyle` | window int, style int | int: window | - | int `0x00858360` (native) |
+| `0x006b` | `Native_MsgClose` | window int | int: window (closes it) | - | int `0x00859060` (native_msg) |
+| `0x0077` | `Native_WorkerStopMove` | worker int | 0 (stops its move) | - | int `0x0085b620` (native) |
+| `0x0078` | `Native_WorkerStopTurn` | worker int | 0 (stops its turn) | - | int `0x0085b950` (native) |
+| `0x008f` | `Native_MsgIsReady` | window int | 1 when closed, in state 4, or open with its text done; else 0 | - | int `0x0085de10` (native) |
+| `0x0097` | `Native_MsgGetState` | window int | int: state (0 closed, 1 opening, 2 open, 3 closing, 4) | - | int `0x0085fa80` (native) |
+| `0x009d` | `Native_MsgSetFlags` | window int, flags int | int: window | - | int `0x008584d0` (native) |
+| `0x009e` | `Native_MsgSetValue` | window int, slot int, type int, value int: inline text variable | int: window | - | int `0x00855c70` (native_msg) |
+| `0x00a6` | `Native_Random` | n int | int: random 0..n-1 | - | int `0x00857400` (native) |
+| `0x00bb` | `Native_SetMapFadeFrames` | frames int: fade length for the next map jump | int: frames | - | int `0x008596b0` (native) |
+| `0x00bc` | `Native_SetMapFadeType` | type int: fade kind for the next map jump (0, 1) | int: type | - | int `0x00859590` (native) |
+| `0x00c5` | `Native_SetTurnMotions` | m0 int, m1 int, m2 int, m3 int: turn motions | 0 | - | int `0x0085a4e0` (native) |
+| `0x00c6` | `Native_GetTurnKind` | - | int: bit 0 remaining yaw > 0, bit 1 at least the half-turn angle | - | int `0x0085a670` (native) |
+| `0x00c7` | `Native_GetTurnMotion` | kind int (from 0x00c6) | int: the motion 0x00c5 set for it | - | int `0x0085abb0` (native) |
+| `0x00d7` | `Native_VoiceStop` | - | 0 (stops the voice) | - | int `0x0085e090` (native) |
+| `0x00d8` | `Native_VoiceIsPlaying` | - | 1 while the voice plays, else 0 | no (scripts loop on it) | int `0x0085e1d0` (native_msg) |
+| `0x00d9` | `Native_SoundWait_Poll` | - | 1 when done | until the voice has stopped (or the voice-sync countdown runs out) | poll `0x0085e4a0` (native_msg) |
+| `0x00df` | `Native_SfxPlay` | sfx int | int: sfx | - | int `0x0085f310` (native) |
+| `0x00fd` | `Native_SfxPlayEx` | sfx int, pan int, volume int (0-127) | int: sfx | - | int `0x0085ff30` (native) |
+| `0x0116` | `Native_WorkerSetFlag0200` | worker int | int: worker (+0x36: 0x400 cleared, 0x200 set) | - | int `0x0085b9b0` (native) |
+| `0x011b` | `Native_SpriteShow` | sprite int (0-127), data var: variable reference | int: sprite | - | int `0x0085c370` (native) |
+| `0x011c` | `Native_SpriteHide` | sprite int | int: sprite | - | int `0x0085c4c0` (native) |
+| `0x0120` | `Native_SpriteSetScale` | sprite int, sx f, sy f (1.0 normal) | int: sprite | - | int `0x0085cde0` (native) |
+| `0x0129` | `Native_SpriteSetColor` | sprite int, r int, b int, g int | int: sprite | - | int `0x0085c760` (native) |
+| `0x013f` | `Native_MacroDicText` | dict int, entry int | int: text pointer | - | int `0x00856a00` (native_msg) |
+| `0x0142` | `Native_BitIndex` | mask int, n int | int: index of the nth set bit, 0 if fewer | - | int `0x008578c0` (native_msg) |
+| `0x0148` | `Native_MinimapSetMarker` | marker int (0 default), worker int | int: the stored value | - | int `0x008583b0` (native) |
+| `0x0171` | `Native_CharRestoreHp` | chr int: party character | int (HP restored to the maximum) | - | int `0x0085c680` (native) |
+| `0x0172` | `Native_CharRestoreMp` | chr int | int (MP restored to the maximum) | - | int `0x0085c860` (native) |
+| `0x019c` | `Native_AlwaysTrue019c` | - | 1 | - | int `0x00856630` (native) |
+| `0x01a5` | `Native_01a5` | a int, b int | 1 | - | int `0x008574c0` (native_map) |
+| `0x01d1` | `Native_WaitFrames_01d1` | frames int | 1 when done | for frames frames (at once when skipping) | start `0x0085fd20`, poll `0x0085ff70` (native) |
+| `0x01e4` | `Native_01e4` | x f, y f, z f, n int | int: the map module's result | - | int `0x00858c90` (native_map) |
+| `0x01e6` | `Native_01e6` | n int, x f, y f | int: n | - | int `0x008591d0` (native_map) |
+| `0x0241` | `CT_0241_ret` | on int: field state bit 3 | int: on != 0 | - | int `0x00856ad0` (native) |
+| `0x5000` | `Native_ChrSetMotion_5000` | motion int | 0 | - | int `0x00a78770` (native) |
+| `0x5003` | `Native_ChrWaitMotion_5003` | - | 5 when done | until the character's motion has ended (+0x736) | start `0x00a787d0`, poll `0x00a788a0` (native) |
+| `0x5005` | `Native_ChrReleaseMotion` | - | 0 (automatic motions take over) | - | int `0x00a78940` (native) |
+| `0x5008` | `Native_ChrHide` | hide int (0, 1) | 0 | - | int `0x00a78ac0` (native) |
+| `0x5009` | `Native_ChrSetPushWeight` | weight f (push weight) | float: previous weight | - | float `0x00a78b30` (native) |
+| `0x500e` | `Native_ChrSetGroundFollow` | on int: stick to the ground | 0 | - | int `0x00a78cb0` (native) |
+| `0x500f` | `Native_ChrSetBodyHit` | on int: collide with characters | 0 | - | int `0x00a78da0` (native) |
+| `0x5016` | `Native_ChrSetOffset` | x f, y f, z f: model offset | 0 | - | int `0x00a790b0` (native) |
+| `0x5017` | `Native_ChrSetGroundMode` | mode int (0 clamp, 1 snap, 2 float) | 0 | - | int `0x00a79130` (native) |
+| `0x501b` | `Native_ChrSetMotion_501b` | motion int | 0 | - | int `0x00a792d0` (native) |
+| `0x501e` | `Native_ChrWaitMotion_501e` | - | 5 when done | until the scripted motion has ended | start `0x00a79370`, poll `0x00a793c0` (native) |
+| `0x5020` | `Native_ChrReleaseMotion2` | - | 0 (as 0x5005) | - | int `0x00a794b0` (native) |
+| `0x5021` | `Native_ChrSetMotionSpeed` | speed int (8.8, 256 = 1x) | 0 | - | int `0x00a79510` (native) |
+| `0x5025` | `Native_ChrSetAutoMotion` | slot int, motion int (-1 default) | 0 | - | int `0x00a79670` (native) |
+| `0x5029` | `Native_ChrSetShadowMode` | mode int | int: Ch_SetShadowMode's result | - | int `0x00a79a40` (native) |
+| `0x502a` | `Native_ChrSetDistanceCull` | on int | int: previous | - | int `0x00a79af0` (native) |
+| `0x5033` | `Native_ChrFadeAlpha` | alpha f, frames int (0 at once) | 0 | - | int `0x00a79ea0` (native) |
+| `0x5034` | `Native_ChrSetMotionBlend` | frames int: blend into the next motion | 0 | - | int `0x00a79f40` (native) |
+| `0x5051` | `Native_ChrGetMotionFrame` | - | int: motion frame (8.8) | - | int `0x00a78750` (native) |
+| `0x5057` | `Native_ChrSetBoneUpdate` | worker int, on int | int: previous | - | int `0x00a78af0` (native) |
+| `0x505c` | `Native_ChrSetNextMotionBlend` | frames int (-1 = 0, 0 = 1) | 0 | - | int `0x00a78d70` (native) |
+| `0x505d` | `Native_ChrGetMotion` | - | int: motion id | - | int `0x00a78dd0` (native) |
+| `0x5068` | `Native_WaitCdIdle` | - | 1 when done | until the CD reads are idle | poll `0x00a795d0` (native) |
+| `0x5075` | `Native_ChrGetMotionFrameOf` | worker int | int: its motion frame | - | int `0x00a79dd0` (native) |
+| `0x507e` | `CT_507E_ret` | worker int, on int: mouth flapping | 0 | - | int `0x00a7a210` (native) |
+| `0x5087` | `Native_ChrRefreshAllBones` | - | 0 | - | int `0x00a7a6a0` (native) |
+| `0x6000` | `Native_CamSuspend` | worker int | int: camera handle (channel suspended) | - | int `0x007b8ea0` (native_cam) |
+| `0x6001` | `Native_CamResume` | worker int | int: camera handle (channel resumed) | - | int `0x007b8f30` (native_cam) |
+| `0x6002` | `Native_CamSetPos` | x f, y f, z f: eye position | 0 | - | int `0x007b9220` (native_cam) |
+| `0x6003` | `Native_CamGetPos` | x var, y var, z var: variable references | 0 (the eye position stored) | - | int `0x007b9260` (native_cam) |
+| `0x6004` | `Native_CamSetPolar` | theta f (deg), phi f (deg), len f: eye around the reference | 0 | - | int `0x007b92e0` (native_cam) |
+| `0x6005` | `Native_Cam_6005` | theta f (deg), phi f (deg), len f: added to the eye's polar position | 0 | - | int `0x007b9320` (native_cam) |
+| `0x6006` | `Native_Cam_6006` | six floats a..f: eye half; the first three as theta, phi (deg), len (helper 0x007bb410 mode -1) | 0 | - | int `0x007b9360` (native_cam) |
+| `0x6007` | `Native_Cam_6007` | six floats: as 0x6006, mode 0 | 0 | - | int `0x007b93a0` (native_cam) |
+| `0x6008` | `Native_Cam_6008` | six floats: as 0x6006, mode 1 | 0 | - | int `0x007b93c0` (native_cam) |
+| `0x600f` | `Native_Cam_600f` | - | int: camera handle (0x007bed10(cam, 1), eye half) | - | int `0x007b9520` (native_cam) |
+| `0x6010` | `Native_CamMove` | frames int: eye moves to its set position, linear | 0 | no (0x601a waits) | int `0x007b96c0` (native_cam) |
+| `0x6011` | `Native_Cam_6011` | frames int: eye move, mode 1, type 1 | 0 | - | int `0x007b9730` (native_cam) |
+| `0x6012` | `Native_Cam_6012` | frames int: eye move, type 3 | 0 | - | int `0x007b9800` (native_cam) |
+| `0x6014` | `Native_CamMoveEased` | accel int, hold int, decel int, curve int: eased eye move | 0 | - | int `0x007b9940` (native_cam) |
+| `0x6015` | `Native_CamMoveEased1` | accel int, hold int, decel int, curve int: as 0x6014, mode 1 | 0 | - | int `0x007b9980` (native_cam) |
+| `0x6017` | `Native_Cam_6017` | four floats: eye half (0x007bdde0) | 0 | - | int `0x007b9a00` (native_cam) |
+| `0x6019` | `Native_Cam_6019` | - | int: camera handle (0x007bec90(cam, 1)) | - | int `0x007b9ac0` (native_cam) |
+| `0x6020` | `Native_CamRefSetPos` | x f, y f, z f: reference (look-at) position | 0 | - | int `0x007b9d00` (native_cam) |
+| `0x6021` | `Native_Cam_6021` | x var, y var, z var: variable references | 0 (the reference position stored) | - | int `0x007b9d40` (native_cam) |
+| `0x6027` | `Native_CamRefSetTarget` | target int, bone int, y f: reference follows a target | 0 | - | int `0x007b9fe0` (native_cam) |
+| `0x6028` | `Native_Cam_6028` | five floats: reference constraint, kind 0 | 0 | - | int `0x007ba0e0` (native_cam) |
+| `0x6029` | `Native_CamRefAddLineArea` | x1 f, z1 f, x2 f, z2 f, r f: reference kept near a segment | 0 | - | int `0x007ba1d0` (native_cam) |
+| `0x602b` | `Native_CamRefAddCircleArea` | x f, z f, r f: reference kept by a circle | 0 | - | int `0x007ba2d0` (native_cam) |
+| `0x602d` | `Native_CamRefClearAreas` | - | int: camera handle (reference constraints cleared) | - | int `0x007ba2f0` (native_cam) |
+| `0x602e` | `Native_CamFocusTimeLinear` | frames int: focus move, linear | 0 | - | int `0x007b7f70` (native_cam) |
+| `0x6030` | `Native_Cam_6030` | frames int: focus move, type 3 | 0 | - | int `0x007b8050` (native_cam) |
+| `0x6032` | `Native_CamFocusTimeEase` | accel int, hold int, decel int, curve int: eased focus move | 0 | - | int `0x007b8130` (native_cam) |
+| `0x6034` | `Native_CamFocusCut` | - | int: camera handle (focus jumps to its target) | - | int `0x007b8210` (native_cam) |
+| `0x6035` | `Native_Cam_6035` | four floats: focus half (0x007bdde0) | 0 | - | int `0x007b8170` (native_cam) |
+| `0x6038` | `Native_CamFocusWait` | - | 5 when done | until the focus half stops moving | poll `0x007b8270` (native_cam) |
+| `0x603a` | `Native_CamSetRoll` | degrees f: eye roll | int: camera handle | - | int `0x007b9010` (native_cam) |
+| `0x603b` | `Native_CamSetScreenDepth` | depth f: screen depth (zoom) | int: camera handle | - | int `0x007b90b0` (native_cam) |
+| `0x603c` | `Native_Cam_603c` | angle f (deg), three floats: eye half (0x007befc0) | 0 | - | int `0x007b9400` (native_cam) |
+| `0x603f` | `Native_Cam_603f` | a int, b int, c f (/100): focus (0x007c5c60) | 0 | - | int `0x007b86f0` (native_cam) |
+| `0x6040` | `Native_CamEyeOrbitScaled` | actor a int, actor b int, height f, yaw f (deg), pitch f (deg), distance f: eye orbit scaled by actor size | 0 | - | int `0x007b8710` (native_cam) |
+| `0x6041` | `Native_CamFocusOrbitScaled` | as 0x6040 for the focus | 0 | - | int `0x007b8730` (native_cam) |
+| `0x6043` | `Native_Cam_6043` | v int | int: camera handle (0x007bdf90(cam, 1, v ^ 0xffff)) | - | int `0x007b8660` (native_cam) |
+| `0x6044` | `Native_CamEyeOrbit` | as 0x6040, distance absolute | 0 | - | int `0x007b8750` (native_cam) |
+| `0x6045` | `Native_CamFocusOrbit` | as 0x6044 for the focus | 0 | - | int `0x007b8770` (native_cam) |
+| `0x6046` | `Native_Cam_6046` | path int (0, 1), a f, b f, c int: eye along a camera path | int: camera handle | - | int `0x007b9d20` (native_cam) |
+| `0x6047` | `Native_Cam_6047` | as 0x6046 for the focus | int: camera handle | - | int `0x007b9d60` (native_cam) |
+| `0x6048` | `Native_Cam_6048` | - | int: camera handle (the eye path list is cleared) | - | int `0x007b9da0` (native_cam) |
+| `0x6049` | `Native_CamPathAddEye` | - | int: camera handle (the eye appended to path list 1) | - | int `0x007b9e30` (native_cam) |
+| `0x604a` | `Native_Cam_604a` | - | int: camera handle (the focus path list is cleared) | - | int `0x007b9eb0` (native_cam) |
+| `0x604b` | `Native_CamPathAddFocus` | - | int: camera handle (the focus appended to path list 0) | - | int `0x007b9f40` (native_cam) |
+| `0x604d` | `Native_Cam_604d` | as 0x6040, mode 4 | 0 | - | int `0x007b87b0` (native_cam) |
+| `0x605c` | `Native_Cam_605c` | a int, b f, c int, d int, e int: focus (0x007c4fc0, 1) | int: camera handle | - | int `0x007b8e80` (native_cam) |
+| `0x605d` | `Native_Cam_605d` | as 0x605c for the eye | int: camera handle | - | int `0x007b8f10` (native_cam) |
+| `0x605f` | `Native_Cam_605f` | - | 0 (0x007c4f50(cam, 0)) | - | int `0x007b97a0` (native_cam) |
+| `0x6060` | `Native_Cam_6060` | - | 0 (0x007c4f50(cam, 1)) | - | int `0x007b98e0` (native_cam) |
+| `0x6062` | `Native_Cam_6062` | - | 5 when done | until 0x007c4f10(cam, 0) is 0 | poll `0x007b9a20` (native_cam) |
+| `0x6063` | `Native_Cam_6063` | - | 5 when done | until 0x007c4f10(cam, 1) is 0 | poll `0x007b99a0` (native_cam) |
+| `0x6064` | `Native_Cam_6064` | id int: camera channel (0-2) | 5 when done | until that channel is idle (0x007c5680) | start `0x007b9aa0`, poll `0x007b9b20` (native_cam) |
+| `0x606b` | `Native_Cam_606b` | a int, b int, c f, d int, e int, f int: (0x007c56f0, 3) | 0 | - | int `0x007b94a0` (native_cam) |
+| `0x6071` | `Native_Cam_6071` | as 0x606b, kind 5 | 0 | - | int `0x007b9580` (native_cam) |
+| `0x6076` | `Native_Cam_6076` | - | 0 (the battle cameras freed) | - | int `0x007b8fe0` (native_cam) |
+| `0x607d` | `Native_Cam_607d` | v int | int: camera handle (0x007bcdd0(cam, v)) | - | int `0x007b8840` (native_cam) |
+| `0x6083` | `Native_Cam_6083` | as 0x605c, kind 8 | int: camera handle | - | int `0x007b9340` (native_cam) |
+| `0x6084` | `Native_Cam_6084` | as 0x605d, kind 8 | int: camera handle | - | int `0x007b9380` (native_cam) |
+| `0x6087` | `Native_Cam_6087` | - | int: camera handle (0x007beae0(cam, 0)) | - | int `0x007b8a10` (native_cam) |
+| `0x6088` | `Native_Cam_6088` | - | int: camera handle (0x007beae0(cam, 1)) | - | int `0x007b8a70` (native_cam) |
+| `0x8000` | `Native_FieldSetMaskBit` | bit int, on int | int: bit | - | int `0x0091c530` (native) |
+| `0x8001` | `Native_8001` | on int | int: on | - | int `0x0091c5b0` (native_map) |
+| `0x8002` | `Native_FpRun` | fp int: field program, restart int (0 ends it) | int: restart | - | int `0x0091c670` (native) |
+| `0x8003` | `Native_FpRunMode2` | fp int | 1 | - | int `0x0091c7a0` (native) |
+| `0x8004` | `Native_MapSpriteWait` | sprite int: map sprite object | 5 when done | until the object is done | start `0x0091af60`, poll `0x0091afa0` (native_map) |
+| `0x8005` | `Native_MapSpriteWaitEnd` | sprite int, keep int | 5 when done | until the object is done (state 2 counts unless keep) | start `0x0091c7e0`, poll `0x0091c860` (native_map) |
+| `0x8006` | `Native_8006` | n int | int | no (the poll is done at once) | start `0x0091aff0`, poll `0x0091b040` (native_map) |
+| `0x8007` | `Native_8007` | - | 1 | - | int `0x0091b050` (native_map) |
+| `0x8008` | `Native_8008` | - | 1 | - | int `0x0091b060` (native_map) |
+| `0x8009` | `Native_FpBind` | fp int, bone int: bind to the worker | 1 | - | int `0x0091b070` (native_map) |
+| `0x800a` | `Native_FpBindPos` | fp int, x f, y f, z f: bind to a position | 1 | - | int `0x0091b0a0` (native_map) |
+| `0x800b` | `Native_FpUnbind` | fp int (<= 0 all) | 1 | - | int `0x0091b130` (native_map) |
+| `0x800c` | `Native_800c` | on int | int: on != 0 | - | int `0x0091b160` (native_map) |
+| `0x800d` | `Native_FpShow` | fp int, show int | int: show | - | int `0x0091c740` (native) |
+| `0x800f` | `Native_MapPartShow` | part int: map part | 1 | - | int `0x0091b1a0` (native_map) |
+| `0x8010` | `Native_MapPartHide` | part int | 1 | - | int `0x0091b1e0` (native_map) |
+| `0x8011` | `Native_8011` | a int, b int, c int | 1 | - | int `0x0091b200` (native_map) |
+| `0x8014` | `Native_8014` | n int, x int | 1 | - | int `0x0091b280` (native_map) |
+| `0x801d` | `Native_801d` | a int, b int | 1 | - | int `0x0091b400` (native_map) |
+| `0x801e` | `Native_801e` | x int | 1 | - | int `0x0091b430` (native_map) |
+| `0x801f` | `Native_801f` | x int | 1 | - | int `0x0091b450` (native_map) |
+| `0x8020` | `Native_8020` | x int | 1 | - | int `0x0091b470` (native_map) |
+| `0x8021` | `Native_8021` | x int | 1 | - | int `0x0091b490` (native_map) |
+| `0x8022` | `Native_8022` | a int, b int | 1 | - | int `0x0091b4b0` (native_map) |
+| `0x8026` | `Native_8026` | a int, x f, b int, c int, d int | 1 | - | int `0x0091b550` (native_map) |
+| `0x802c` | `Native_802c` | - | 1 | - | int `0x0091b680` (native_map) |
+| `0x802d` | `Native_802d` | - | 1 | - | int `0x0091b690` (native_map) |
+| `0x802e` | `Native_802e` | a int, b int | 1 | - | int `0x0091b6a0` (native_map) |
+| `0x802f` | `Native_802f` | x int | 1 | - | int `0x0091b6d0` (native_map) |
+| `0x8030` | `Native_8030` | a int, b int | 1 | - | int `0x0091b6f0` (native_map) |
+| `0x8032` | `Native_8032` | x int | 1 | - | int `0x0091b740` (native_map) |
+| `0x8035` | `Native_8035` | on int | 1 | - | int `0x0091b790` (native_map) |
+| `0x8036` | `Native_8036` | on int | 1 | - | int `0x0091b7d0` (native_map) |
+| `0x8037` | `Native_FogSetParams` | a f, b f, c f: fog parameters | 1 | - | int `0x0091b810` (native_map) |
+| `0x8038` | `Native_FogSetParam0` | x f: fog parameter 0 | 1 | - | int `0x0091b8b0` (native_map) |
+| `0x8039` | `Native_FogGetParam0` | - | float: fog parameter 0 | - | float `0x0091b930` (native_map) |
+| `0x803a` | `Native_FogSetParam1` | x f: fog parameter 1 | 1 | - | int `0x0091b960` (native_map) |
+| `0x803b` | `Native_FogGetParam1` | - | float: fog parameter 1 | - | float `0x0091b9e0` (native_map) |
+| `0x803c` | `Native_FogSetParam2` | x f: fog parameter 2 | 1 | - | int `0x0091ba10` (native_map) |
+| `0x803d` | `Native_FogGetParam2` | - | float: fog parameter 2 | - | float `0x0091baa0` (native_map) |
+| `0x803e` | `Native_FogSetColor` | r int, g int, b int: fog colour | 1 | - | int `0x0091bad0` (native_map) |
+| `0x803f` | `Native_FogSetRed` | r int | 1 | - | int `0x0091bbb0` (native_map) |
+| `0x8040` | `Native_FogSetGreen` | g int | 1 | - | int `0x0091bc80` (native_map) |
+| `0x8041` | `Native_FogSetBlue` | b int | 1 | - | int `0x0091bd50` (native_map) |
+| `0x8042` | `Native_FogGetRed` | - | int: fog red | - | int `0x0091be20` (native_map) |
+| `0x8043` | `Native_FogGetGreen` | - | int: fog green | - | int `0x0091be50` (native_map) |
+| `0x8044` | `Native_FogGetBlue` | - | int: fog blue | - | int `0x0091be80` (native_map) |
+| `0x8045` | `Native_BackSetColor` | r int, g int, b int: back colour | 1 | - | int `0x0091beb0` (native_map) |
+| `0x8049` | `Native_BackGetRed` | - | int: back red | - | int `0x0091c000` (native_map) |
+| `0x804a` | `Native_BackGetGreen` | - | int: back green | - | int `0x0091c030` (native_map) |
+| `0x804b` | `Native_BackGetBlue` | - | int: back blue | - | int `0x0091c060` (native_map) |
+| `0x804f` | `Native_804f` | a int, x f, b int | 1 | - | int `0x0091c150` (native_map) |
+| `0x8059` | `Native_8059` | a int, b int | 1 | - | int `0x0091c3c0` (native_map) |
+| `0x805b` | `Native_FpSetStickPos` | n int, x f, y f, z f | 1 | - | int `0x0091c410` (native_map) |
+| `0x805c` | `Native_805c` | on int | 1 | - | int `0x0091c470` (native_map) |
+| `0x805d` | `Native_805d` | - | 1 | - | int `0x0091c4a0` (native_map) |
+| `0x805e` | `Native_805e` | map int: guide map number | 1 | - | int `0x0091c4d0` (native_map) |
+| `0x805f` | `Native_805f` | x int | 1 | - | int `0x0091c4f0` (native_map) |
+| `0x8060` | `Native_8060` | x int | 1 | - | int `0x0091c510` (native_map) |
+| `0x8066` | `Native_8066` | x int | 1 | - | int `0x0091c7c0` (native_map) |
+| `0x8067` | `Native_BltzSetObjModels` | worker a int, worker b int, mode int, unused int (Blitzball) | 1 | - | int `0x0091c810` (native_map) |
+| `0x806a` | `Native_806a` | x int | 1 | - | int `0x0091af80` (native_map) |
+| `0x806b` | `Native_806b` | on int | 1 | - | int `0x0091afc0` (native_map) |
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the
@@ -439,7 +690,17 @@ stubs written into `int3` padding of `.text` (the test asserts every one
 found room), and two natives read stack words nothing wrote, which both
 oracles zero: `0x007bb6a0` (`Native_CamSetPos`) hands `Cam_SetPos` a
 vector whose `w` is uninitialised, as does `Light_Set` (`0x00836520`) to
-`Sg_LightSetColor`/`Sg_LightSetDir`. In the game those words hold whatever
+`Sg_LightSetColor`/`Sg_LightSetDir`, and `0x007bab90`
+(`Native_CamRefSetTarget`) to `0x007beeb0`. `printf` is stubbed (it
+returns 0) for the debug lines. Before each native call the natives tests
+zero the top 64 KiB of both stacks: the test calls a native, the Rust
+version calls that native's helper one frame higher, so a word the
+original reads before writing would hold different leftovers (the camera
+path start `0x007bcb80` uses a spline position and tangent that
+`TkMtCalcSpline` leaves unwritten for paths of fewer than three points). `native_special_cases_match_the_original`
+covers what small random arguments miss: `Native_MsgSetPos`'s moved
+windows, the voice waits' countdowns and debug counting, `Native_MsgClose`
+on each window state, `Native_CamSetScreenDepth` in debug mode. In the game those words hold whatever
 earlier calls left at that depth, so the Rust interpreter (whose frames
 differ) can store different garbage there; nothing reads it back as far as
 the tests reach.
@@ -450,12 +711,11 @@ the tests reach.
    the signals (request families, `AtelExecReturn`, the waits, opcodes
    `79`/`7a`): `Script_Run` calls no original script code but natives.
 2. Now: the natives, most used first. Done: the field module's ready
-   ones (group 8, `0x01a5`, `0x01e4`, `0x01e6`) and the sprite, sound
-   effect and stop natives. Next: the message natives (`Native_MsgOpen`,
-   `Native_MsgSetText`, the waits), the camera group 6 (each starts by
-   resolving the worker's camera handle like `Native_CamSetPos`), the
-   move and turn starts, and `Native_SoundWait_Poll` /
-   `Native_VoiceIsPlaying` once the oracle stubs `printf`.
+   ones (group 8, `0x01a5`, `0x01e4`, `0x01e6`), the sprite, sound
+   effect and stop natives, 62 camera natives, the message setters and the
+   voice waits. Next: `Native_MsgOpen` and the message waits, the move and
+   turn starts, the camera natives with variable or path tables
+   (`0x007ba020`, `0x007ba100`, `0x007ba210`, `Native_CamWait`).
 3. Then a `Natives` implementation with no original code behind it, so
    the interpreter runs outside the game.
 
