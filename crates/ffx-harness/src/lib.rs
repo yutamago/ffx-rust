@@ -14,6 +14,7 @@
 
 pub mod replay;
 pub mod screens;
+pub mod slot;
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
@@ -213,6 +214,8 @@ pub struct Game {
     shot_dir: PathBuf,
     owned: bool,
     log: Vec<String>,
+    /// The game slot while this launched the game ([`slot`]).
+    slot: Option<slot::Slot>,
 }
 
 impl Drop for Game {
@@ -303,6 +306,12 @@ fn windows_path(path: &Path) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
 }
 
+/// Whether a parent process holds the game slot for this one
+/// (`FFX_GAME_SLOT_HELD=1`, set by `game-slot run`).
+fn slot_held() -> bool {
+    std::env::var("FFX_GAME_SLOT_HELD").is_ok_and(|v| v == "1")
+}
+
 impl Game {
     /// Starts the game (installing the hook DLL) and connects.
     ///
@@ -310,6 +319,14 @@ impl Game {
     /// Fails when the launcher fails or the harness does not answer in
     /// time.
     pub fn launch(options: &Options) -> Result<Self> {
+        // One game at a time: queue for it unless a caller already holds
+        // the slot for us (`game-slot run`).
+        let held = slot_held();
+        let slot = if held {
+            None
+        } else {
+            Some(slot::Slot::acquire()?)
+        };
         // A game that is still shutting down frees the port within seconds.
         let deadline = Instant::now() + Duration::from_secs(15);
         while Self::connect(options.port).is_ok_and(|mut g| {
@@ -329,6 +346,8 @@ impl Game {
         }
         let mut cmd = Command::new(options.repo.join("tools/run-game.sh"));
         cmd.arg("--harness").arg(options.port.to_string());
+        // The launcher refuses to start a game when someone else has the slot.
+        cmd.env("FFX_GAME_SLOT_HELD", "1");
         if options.fast {
             cmd.arg("--fast");
         }
@@ -366,6 +385,7 @@ impl Game {
                 && game.frame().is_ok_and(|f| f > 0)
             {
                 game.owned = true;
+                game.slot = slot;
                 return Ok(game);
             }
             if start.elapsed() > options.startup {
@@ -393,6 +413,7 @@ impl Game {
             shot_dir,
             owned: false,
             log: Vec::new(),
+            slot: None,
         })
     }
 
