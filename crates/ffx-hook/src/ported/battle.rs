@@ -1,9 +1,9 @@
 //! `ffx-battle`: random numbers, the save block, actors, the battle camera,
 //! battle globals and helpers, damage.
 
-use ffx_battle::cue::bridge as cue;
 use ffx_battle::{actor::bridge as actor, camera::bridge as camera, command::bridge as cmd};
 use ffx_battle::{body::bridge as body, menu::bridge as menu, vector::bridge as vector};
+use ffx_battle::{cue::bridge as cue, flow::bridge as flow, turn::bridge as turn};
 use ffx_battle::{damage::bridge as dmg, state::bridge as state, util::bridge as util};
 use ffx_battle::{minor::bridge as minor, misc::bridge as misc, save::bridge as save};
 
@@ -1554,5 +1554,77 @@ ported! {
     /// `MsGetTargetList(chr, &n)`.
     MsGetTargetList @ 0x007b_7090 => extern "C" fn ms_get_target_list(chr: u32, n: u32) -> u32 {
         cue::ms_get_target_list(&mut mem(), chr, n)
+    }
+    /// `MsSetFirstCTB(mode)`.
+    MsSetFirstCTB @ 0x0078_ded0 => extern "C" fn ms_set_first_ctb(mode: i32) -> i32 {
+        turn::ms_set_first_ctb(&mut mem(), mode)
+    }
+    /// `MsUseItem(chr, command, n)`.
+    MsUseItem @ 0x007b_0c20 => extern "C" fn ms_use_item(chr: u32, command: u32, n: i32) -> i32 {
+        turn::ms_use_item(&mut mem(), chr, command, n)
+    }
+    /// `MsCheckStatus()`.
+    MsCheckStatus @ 0x0079_a0e0 => extern "C" fn ms_check_status() {
+        turn::ms_check_status(&mut mem());
+    }
+    /// `MsGetDamageStatus(chr, target, &added, &on, &added2, &removed, &off, &removed2)`.
+    MsGetDamageStatus @ 0x0079_aa50 => extern "C" fn ms_get_damage_status(chr: u32, target: u32, p0: u32, p1: u32, p2: u32, p3: u32, p4: u32, p5: u32) -> u32 {
+        turn::ms_get_damage_status(&mut mem(), chr, target, [p0, p1, p2, p3, p4, p5])
+    }
+    /// `MsApUp(chr, actor, ap, ret)`.
+    MsApUp @ 0x0079_8a00 => extern "C" fn ms_ap_up(chr: u32, actor: u32, ap: u32, ret: u32) -> u32 {
+        turn::ms_ap_up(&mut mem(), chr, actor, ap, ret)
+    }
+    /// `BattleRewards_AddItem(item, n, spoils)`.
+    BattleRewards_AddItem @ 0x0079_8ac0 => extern "C" fn battle_rewards_add_item(item: u32, n: i32, spoils: u32) {
+        turn::battle_rewards_add_item(&mut mem(), item, n, spoils);
+    }
+    /// `MsStatusEffectClear(i)`: `op_et_eff_off_signal` (vfx) for each.
+    MsStatusEffectClear @ 0x0079_f110 => extern "C" fn ms_status_effect_clear(i: u32) -> u32 {
+        flow::ms_status_effect_clear(&mut mem(), i, ffx_vfx::et::bridge::op_et_eff_off_signal)
+    }
+    /// `MsResetBindEffect(i)`: `op_et_bindeff_off_signal` (vfx).
+    MsResetBindEffect @ 0x0078_8e60 => extern "C" fn ms_reset_bind_effect(i: u32) {
+        flow::ms_reset_bind_effect(&mut mem(), i, ffx_vfx::et::bridge::op_et_bindeff_off_signal);
+    }
+    /// `MsResetAfterImage(actor)`: `op_et_weapon_afterimage_fade` (vfx).
+    MsResetAfterImage @ 0x0078_8e30 => extern "C" fn ms_reset_after_image(actor: u32) {
+        flow::ms_reset_after_image(&mut mem(), actor, ffx_vfx::et::bridge::op_et_weapon_afterimage_fade);
+    }
+    /// `MsEffectCheckMotion(i)`.
+    MsEffectCheckMotion @ 0x0078_7840 => extern "C" fn ms_effect_check_motion(i: u32) -> i32 {
+        flow::ms_effect_check_motion(&mut mem(), i)
+    }
+    /// `MsCheckStartEffect(chr, set)`.
+    MsCheckStartEffect @ 0x007a_92c0 => extern "C" fn ms_check_start_effect(chr: u32, set: u32) -> u32 {
+        flow::ms_check_start_effect(&mut mem(), chr, set)
+    }
+    /// `MsSetHeadTarget(chr, set)`.
+    MsSetHeadTarget @ 0x007b_1e80 => extern "C" fn ms_set_head_target(chr: u32, set: u32) -> u32 {
+        flow::ms_set_head_target(&mut mem(), chr, set)
+    }
+    /// `MsSaveAddInfoData(chr, kind)`.
+    MsSaveAddInfoData @ 0x0078_5a00 => extern "C" fn ms_save_add_info_data(chr: i32, kind: u32) -> i32 {
+        flow::ms_save_add_info_data(&mut mem(), chr, kind)
+    }
+    /// `MsLimitStatusProcess(_, actor, flags)`.
+    MsLimitStatusProcess @ 0x0078_d270 => extern "C" fn ms_limit_status_process(_x: u32, actor: u32, flags: i32) -> u32 {
+        flow::ms_limit_status_process(&mut mem(), actor, flags)
+    }
+    /// `MsMenuCheckLook()`.
+    MsMenuCheckLook @ 0x0078_f9e0 => extern "C" fn ms_menu_check_look() -> i32 {
+        flow::ms_menu_check_look(&mem())
+    }
+    /// `MsEffectCheckTarget(set)`.
+    MsEffectCheckTarget @ 0x0078_7900 => extern "C" fn ms_effect_check_target(set: u32) -> u32 {
+        flow::ms_effect_check_target(&mem(), set)
+    }
+    /// `MsReturnParty()`.
+    MsReturnParty @ 0x007a_eec0 => extern "C" fn ms_return_party() {
+        flow::ms_return_party(&mut mem());
+    }
+    /// `MsSetCameraMatrix(on, screen, camera, look_at, eye, roll)` (roll a float as bits).
+    MsSetCameraMatrix @ 0x007c_06d0 => extern "C" fn ms_set_camera_matrix(on: u32, screen: u32, cam: u32, look_at: u32, eye: u32, roll: u32) -> u32 {
+        camera::ms_set_camera_matrix(&mut mem(), on, screen, cam, look_at, eye, roll)
     }
 }

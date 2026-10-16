@@ -7736,9 +7736,11 @@
 0x0112a90f label g_BtlDebugDamage10000        # u8, DmgCalc: every HP/MP hit does 10000; debug native case 0xf
 0x0112a910 label g_BtlDebugDamage100000       # u8, DmgCalc: every HP/MP hit does 100000; debug native case 0x10
 0x0112a911 label g_BtlDebugRareSteal          # u8, Battle_Steal always takes the rare item
+0x0112a915 label g_BtlMenuLook             # u8 set: MsMenuCheckLook always reports a looker
 0x0112a91b label g_BtlMapCircleOn            # i8 (MsBattleGetMapCircleOn 0x007816a0)
 0x0112a91f label g_BtlDebugAllMiss            # u8, debug env flag: DmgCalc_CheckHit always misses, no status lands, MsCalcEscape fails
 0x0112a922 label g_BtlMenuSkipAll          # u8 set: MsMenuGetChrSkipCommand gives 0xff
+0x0112a926 label g_BtlNoHeadTarget         # u8 set: MsSetHeadTarget does nothing
 0x0112a929 label g_BtlRead2                # u16; with the one before it (same function, ffx_battle::misc)
 0x0112a92c label    g_KernelCommand
 0x0112a930 label    g_KernelMonMagic1
@@ -7783,6 +7785,9 @@
 0x0112c6b6 label g_BtlItemWindow              # 0x70 x u16, battle-usable items (kernel flag 2, not 0x400) in inventory order, 0xff after (MsSetItemWindow)
 0x0112c796 label g_BtlItemWindow2             # 0x70 x u16, the same for items with flag 0x400 (MsSetItemWindow)
 0x0112c895 label g_BtlParty                  # 3 x u8 ply_save indices; MsSetSaveParty (0x00786930) copies them to g_SaveInParty
+0x0112c89c label g_BtlPartySaved           # 7 bytes: the party MsReturnParty restores into g_BtlParty
+0x0112c8a3 label g_BtlPartyExtra           # 17 bytes after the party, restored from 0x0112c8b4 by MsReturnParty
+0x0112c8b4 label g_BtlPartyExtraSaved      # 17 bytes (MsReturnParty)
 0x0112c8c8 label g_BtlChrSet                 # u32 actor bits; MsGetChrBit selector -4 returns its present actors
 0x0112c8d4 label g_BtlMotionBusy           # bit per actor: MsCheckChrMotionAll marks the first actor found running a motion
 0x0112c8e8 label g_BtlLastMagic2              # u32; The last magic of kind 2 (MsEffectGetLastMagicNum2).
@@ -7811,6 +7816,7 @@
 0x0112c9ff label g_BtlEscapeRule              # i8, set by battle script (0x007a77a0): 1 no escape, 2 always (MsCalcEscape)
 0x0112ca00 label g_BtlMenuSkipOn           # u8 set: actors' skip command (+0x6c8) counts (MsMenuGetChrSkipCommand)
 0x0112ca03 label g_BtlSummonLimit             # u8; Summons keep the overdrive gauge while this is set (MsSummonLimitSave).
+0x0112ca08 label g_BtlEffectWait           # 2 x u8: the actor an effect waits on and its motion (0xff any) (MsEffectCheckMotion, MsCheckStartEffect)
 0x0112ca0a label g_BtlMessageCueInit          # u32; Reset by MsMessageCueInit (a u32 at 0x0112ca0a, which covers the stone effect counters from 0x0112ca0b, and the cue's count and start).
 0x0112ca0b label g_BtlStoneEffect            # 2 x i8; MsStoneEffectCheck (0x007a2670) returns their sum
 0x0112ca12 label g_BtlCounterOn               # u8, set by battle script (0x007a8430): counterattacks happen only while set (DmgCalc_CheckCounter)
@@ -7899,6 +7905,9 @@
 0x011370d0 label g_BtlScreenFocus             # i32; The three screens' focus, -1 for none (MsScreenFocusReset), 0x1c0 bytes apart.
 0x01137540 label    g_Cameras                    # ?3 cameras x 0xda0: two sides of 0x61c each (0 = ref, 1 = cam), channels of 0x130 at +0xc0, channel table at 0x011381a8
 0x011381a8 label g_CameraSlots               # g_Cameras + 0xc68: 4 request slots of 8 bytes per camera (u32 ID, byte 2 the level; +4/+5 off/done flags; +6 i8 level bonus); MsCameraGetNum 0x007bd340, MsCameraIDcheck 0x007bd560
+0x01139e20 label g_CameraMatrixRoll        # f32 (MsSetCameraMatrix)
+0x01139e24 label g_CameraMatrixLookAt      # vec4 (MsSetCameraMatrix)
+0x01139e34 label g_CameraMatrixEye         # vec4 (MsSetCameraMatrix)
 0x01139e50 label g_BtlDebugField             # 2 x u32; MsDebugGetFieldNum (0x007c5f50) returns [0] << 16 + [1]
 0x0113f3d2 label g_BtlUcId                    # u16; The user character ID MsSaveUcID keeps.
 0x0119fe10 label    g_OpSprStack                 # op scratch stack, i32 marks: op_spr_alloc(n) pushes top + n (top index g_OpSprTop)
@@ -8161,7 +8170,7 @@
 0x02310c68 label    g_CdLib_SectorTable       # g_CdLib + 0x28: cdrom.mdg (CdEnvInit), u32 per file: start sector in bits 0-21, bit 22 size from sizetbl.bin, bit 23 absent, top byte the unused bytes at the end / 8 (CDfileSize_CD, cd_file_sector)
 0x02310cd8 label g_BtlItemMem2                # u32; with the one before it (same function, ffx_battle::misc)
 0x02310ed8 label g_BtlStartAp                 # [u32; 18]; The AP of 18 actors at battle start (MsBtlStartAP copies the current ones, 0x48 bytes on, here).
-0x02310f20 label    g_TkBtlEndResults         # battle-end words (BtlEnd_GetResult)
+0x02310f20 label    g_TkBtlEndResults         # battle-end words (BtlEnd_GetResult); the first 18 are the AP each character gained (MsApUp)
 0x023110a0 label g_DefaultChrNames           # 0x14 bytes per character (getDefaultChrName 0x00787320)
 0x02311240 label g_BtlDamageRates             # 4 bytes per actor: physical, magic damage dealt bonus %, physical, magic damage taken reduction % (DmgCalc_StatBoostAbility)
 0x02311424 label g_CameraPriorityMask        # not 0: MsCameraPriority (0x007be0a0) changes nothing (MsCameraPriorityMask 0x007be100)
@@ -8171,6 +8180,7 @@
 0x02311440 label g_CameraMatrix              # MsGetCameraMatrix (0x007c04b0)
 0x02311480 label g_ScreenMatrix              # MsGetScreenMatrix (0x007bbd70)
 0x023114c0 label g_BtlScreen                  # u32; Pointer to the screen in use (MsScreenOffset: its offset at +0x30).
+0x023114c4 label g_CameraMatrixOn          # u32 bit 0 (MsSetCameraMatrix)
 0x02321548 label    g_OpPadInput                 # byte: while 0, op_pad_set takes no buttons
 0x02322790 label    g_OpDebugMode                # byte set by pppInitPartRender: op_pad_set and op_heap_display_set_par do nothing while 0; read by the op debug functions around 0x007e5bd0
 0x02332ea1 label    g_OpSprTop                   # i8 top index of g_OpSprStack (op_spr_alloc, op_spr_free)

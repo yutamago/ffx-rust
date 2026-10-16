@@ -448,6 +448,44 @@ pub mod bridge {
     pub fn ms_camera_set_scr_dpt(mem: &mut impl Mem, id: u32, depth: u32) {
         set_param(mem, id, depth, 0xcc0, 0xca0, 0xd94, 0xc9c, 0xcd8);
     }
+    /// The camera matrices' source (`MsSetCameraMatrix`): on, the roll,
+    /// and two vectors (the look-at and the eye).
+    pub const MATRIX_ON: Global<u32> = Global::new(0x0231_14c4);
+    pub const MATRIX_ROLL: Global<u32> = Global::new(0x0113_9e20);
+    pub const MATRIX_LOOK_AT: Global<[u32; 4]> = Global::new(0x0113_9e24);
+    pub const MATRIX_EYE: Global<[u32; 4]> = Global::new(0x0113_9e34);
+
+    /// `MsSetCameraMatrix(on, screen, camera, look_at, eye, roll)`
+    /// (`0x007c06d0`): with `on` (bit 0), the screen and camera matrices
+    /// from `screen` and `camera` and the vectors and roll kept; EAX `eye`'s
+    /// w, else 0.
+    pub fn ms_set_camera_matrix(
+        mem: &mut impl Mem,
+        on: u32,
+        screen: u32,
+        camera: u32,
+        look_at: u32,
+        eye: u32,
+        roll: u32,
+    ) -> u32 {
+        let on = on & 1;
+        MATRIX_ON.set(mem, on);
+        if on == 0 {
+            return 0;
+        }
+        let s = SCREEN_MATRIX.ptr(mem).addr;
+        ffx_ps2::vu0::bridge::matrix_copy(mem, s, screen);
+        let c = CAMERA_MATRIX.ptr(mem).addr;
+        ffx_ps2::vu0::bridge::matrix_copy(mem, c, camera);
+        MATRIX_ROLL.set(mem, x87_copy(roll));
+        let v: [u32; 4] = mem.read(look_at);
+        EE_MOVE.set(mem, v);
+        MATRIX_LOOK_AT.set(mem, v);
+        let v: [u32; 4] = mem.read(eye);
+        EE_MOVE.set(mem, v);
+        MATRIX_EYE.set(mem, v);
+        v[3]
+    }
 }
 
 #[cfg(test)]
