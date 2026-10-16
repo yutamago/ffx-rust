@@ -237,4 +237,123 @@ pub mod bridge {
             }
         }
     }
+
+    /// The stream path prefix (`g_BasePath`, `0x00cc9698`).
+    pub const STREAM_PREFIX: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x00cc_9698);
+
+    /// `PStreamFile::GetStreamPrefix()` (`0x00607d30`).
+    pub fn stream_prefix(mem: &impl Mem) -> u32 {
+        STREAM_PREFIX.get(mem)
+    }
+
+    fn c_str(mem: &impl Mem, p: u32) -> Vec<u8> {
+        let mut v = Vec::new();
+        loop {
+            let c: u8 = mem.read(p.wrapping_add(u32::try_from(v.len()).unwrap_or(u32::MAX)));
+            if c == 0 {
+                return v;
+            }
+            v.push(c);
+        }
+    }
+
+    fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
+        if needle.is_empty() {
+            return Some(0);
+        }
+        hay.windows(needle.len()).position(|w| w == needle)
+    }
+
+    /// `fiosUnifyFilename(src, out, size)` (`0x00679820`): `out` cleared
+    /// (`size` bytes), an overflow message printed (`Phyre_PhyrePrintf(1,
+    /// fmt, src)`, passed in) when `src` is longer than `size`; then the
+    /// PC path: `.cgfx.phyre` becomes `.fx.phyre`, `GCM` becomes `D3D11`,
+    /// and the stream prefix goes in front unless the path already holds it
+    /// (`sprintf_s(out, size, ...)`: an empty `out` and -1 when it does not
+    /// fit). Returns the length written.
+    pub fn unify_filename<M: Mem>(
+        mem: &mut M,
+        src: u32,
+        out: u32,
+        size: u32,
+        print: impl FnOnce(&mut M, u32, u32, u32),
+    ) -> u32 {
+        mem.write_bytes(out, &vec![0; size as usize]);
+        let path = c_str(mem, src);
+        if size.cast_signed() < i32::try_from(path.len()).unwrap_or(i32::MAX) {
+            let fmt = mem.rebase(0x00b4_4dbc);
+            print(mem, 1, fmt, src);
+        }
+        let mut buf = match find(&path, b".cgfx.phyre") {
+            Some(at) => {
+                let mut v = path[..at].to_vec();
+                v.extend_from_slice(b".fx.phyre");
+                v
+            }
+            None => path.clone(),
+        };
+        let prefix_at = stream_prefix(mem);
+        let prefix = c_str(mem, prefix_at);
+        let has_prefix = find(&buf, &prefix).is_some();
+        let pre = if has_prefix { Vec::new() } else { prefix };
+        let text = match find(&buf, b"GCM") {
+            Some(at) => {
+                let mut v = pre;
+                v.extend_from_slice(&buf[..at]);
+                v.extend_from_slice(b"D3D11");
+                v.extend_from_slice(&buf[at + 3..]);
+                v
+            }
+            None => {
+                let mut v = pre;
+                v.append(&mut buf);
+                v
+            }
+        };
+        if text.len() >= size as usize {
+            if size > 0 {
+                mem.write(out, 0u8);
+            }
+            return u32::MAX;
+        }
+        mem.write_bytes(out, &text);
+        mem.write(
+            out.wrapping_add(u32::try_from(text.len()).unwrap_or(0)),
+            0u8,
+        );
+        u32::try_from(text.len()).unwrap_or(u32::MAX)
+    }
+
+    /// `VFile::fileSeek(offset, whence)` (`0x0061ac30`, `thiscall`, `ret 8`):
+    /// the 64-bit position (`+0x10`) set from the start (0), the current
+    /// position (1) or the end (2, the size at `*(this + 0xc) + 8`); -1 for
+    /// another `whence` (nothing moved), a negative `offset` or an `offset`
+    /// past the size (both after moving). Returns the position's low word.
+    /// (The bound is checked on `offset` itself, as the original does.)
+    pub fn vfile_seek(mem: &mut impl Mem, this: u32, offset: i32, whence: u32) -> u32 {
+        let off = i64::from(offset);
+        let at = this.wrapping_add(0x10);
+        let entry: u32 = mem.read(this.wrapping_add(0xc));
+        match whence {
+            0 => mem.write(at, off.cast_unsigned()),
+            1 => {
+                let pos: u64 = mem.read(at);
+                mem.write(at, pos.wrapping_add(off.cast_unsigned()));
+            }
+            2 => {
+                let size: u64 = mem.read(entry.wrapping_add(8));
+                mem.write(at, size.wrapping_sub(off.cast_unsigned()));
+            }
+            _ => return u32::MAX,
+        }
+        if offset < 0 {
+            return u32::MAX;
+        }
+        let entry: u32 = mem.read(this.wrapping_add(0xc));
+        let size: u64 = mem.read(entry.wrapping_add(8));
+        if off.cast_unsigned() > size {
+            return u32::MAX;
+        }
+        mem.read(at)
+    }
 }

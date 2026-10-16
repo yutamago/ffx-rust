@@ -212,4 +212,23 @@ pub mod bridge {
         }
         i.cast_unsigned().wrapping_shl(8)
     }
+
+    /// `0x008adf20()`: the slots of the first three scenes cleared (state
+    /// and name's first byte); returns the end (`0x01866228`).
+    pub fn clear_slots(mem: &mut impl Mem) -> u32 {
+        for i in 0..3 {
+            for j in 0..8 {
+                let s = slot(mem, i, j);
+                mem.write(s, 0u16);
+                mem.write(s.wrapping_add(8), 0u8);
+            }
+        }
+        mem.rebase(0x0186_6228)
+    }
+
+    /// `0x008ae530(i, name)`: the state of the slot of scene `i` named
+    /// `name` (sign-extended), 0 when none.
+    pub fn scene_state(mem: &impl Mem, i: i32, name: u32) -> i32 {
+        find(mem, i, name).map_or(0, |s| i32::from(mem.read::<i16>(s)))
+    }
 }
