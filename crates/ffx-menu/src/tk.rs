@@ -3766,6 +3766,180 @@ pub mod bridge {
         }
         r
     }
+    /// `MenuTuto_CloseWindow(k)` (`0x008d9b30` for 0, `0x008d9b60` for 1,
+    /// own names): tutorial window `k` closed (`+0x41` = 1, `+0x10` = 0,
+    /// `+0x3e` = 2) and forgotten, then its scene stopped (`scene18`, for
+    /// the first always; `scene9`, for the second only after a close).
+    /// Returns what the original leaves in `eax`: the stop's result, or 0.
+    pub fn menu_tuto_close_window(mem: &mut impl Mem, k: usize) -> u32 {
+        let w = TUTO_WINDOWS[k].get(mem);
+        if w != 0 {
+            mem.write(w + 0x41, 1u8);
+            mem.write(w + 0x10, 0u32);
+            mem.write(w + 0x3e, 2u8);
+            TUTO_WINDOWS[k].set(mem, 0);
+        } else if k == 1 {
+            return 0;
+        }
+        let name = mem.rebase(if k == 0 { 0x00b6_6708 } else { 0x00b6_5a94 });
+        tk_mn2_seq_stop_scene(mem, name)
+    }
+
+    /// The window openers' common start: a window from
+    /// [`tk_menu_main_alloc_window`] (the original faults when none is
+    /// free).
+    fn open_window(mem: &mut impl Mem) -> u32 {
+        tk_menu_main_alloc_window(mem)
+    }
+
+    fn put_code(mem: &mut impl Mem, at: u32, f: u32) {
+        let f = mem.rebase(f);
+        mem.write(at, f);
+    }
+
+    /// `MenuSave_OpenWindow2(arg)` (`0x008b4fb0`, own name): the save
+    /// menu's second window (`0x01866258`): callbacks `+0x10` =
+    /// `0x008b4920`, mode `+0x3e` 4, `+0x58` = `arg`; registered. Returns
+    /// the window.
+    pub fn menu_save_open_window2<M: Mem>(
+        mem: &mut M,
+        arg: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = open_window(mem);
+        mem.write(w + 8, [0u32, 0]);
+        put_code(mem, w + 0x10, 0x008b_4920);
+        mem.write(w + 0x14, 0u32);
+        mem.write(w + 0x1c, 0u32);
+        mem.write(w + 0x3e, 4u8);
+        SAVE_LOAD_WINDOW2.set(mem, w);
+        mem.write(w + 0x58, arg);
+        tk_menu_main_regist_window(mem, w, call);
+        w
+    }
+
+    /// `MenuWorldMap_OpenWindow()` (`0x008e2d60`, own name): the world map
+    /// window (`0x01871698`): callbacks `0x008e2b00`, `0x008e2b30`,
+    /// `0x008e2b60`, mode 7, tint `0x80` ×3, `+0x64` 0, `+0x68` 6;
+    /// registered. Returns the window.
+    pub fn menu_world_map_open_window<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = open_window(mem);
+        put_code(mem, w + 8, 0x008e_2b00);
+        put_code(mem, w + 0xc, 0x008e_2b30);
+        put_code(mem, w + 0x10, 0x008e_2b60);
+        mem.write(w + 0x14, 0u32);
+        mem.write(w + 0x1c, 0u32);
+        mem.write(w + 0x3e, 7u8);
+        WORLD_MAP_WINDOW.set(mem, w);
+        mem.write(w + 0x58, [0x80u32, 0x80, 0x80, 0, 6]);
+        tk_menu_main_regist_window(mem, w, call);
+        w
+    }
+
+    /// `TkMn2OpenSummonGrowWindow()` (`0x008ced30`): callbacks
+    /// `0x008cd2e0`, `0x008cd460`, `0x008cdba0`, `0x008ceed0`; mode 2, rows
+    /// from `TkMn2GetSummonGrowMax`, 9 visible, 3 columns, `+0x54` `0xaa`;
+    /// registered, kept at `0x0186a5a8`, the status background set up.
+    /// Returns the window.
+    pub fn tk_mn2_open_summon_grow_window<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = open_window(mem);
+        put_code(mem, w + 8, 0x008c_d2e0);
+        put_code(mem, w + 0xc, 0x008c_d460);
+        put_code(mem, w + 0x10, 0x008c_dba0);
+        put_code(mem, w + 0x14, 0x008c_eed0);
+        mem.write(w + 0x3e, 2u8);
+        mem.write(w + 0x48, 0u16);
+        mem.write(w + 0x32, 0u32);
+        mem.write(w + 0x42, 1u8);
+        #[allow(clippy::cast_possible_truncation)]
+        let rows = tk_mn2_get_summon_grow_max(mem) as u16;
+        mem.write(w + 0x30, rows);
+        mem.write(w + 0x3a, 9u16);
+        mem.write(w + 0x36, 3u16);
+        mem.write(w + 0x54, 0xaau16);
+        tk_menu_main_regist_window(mem, w, call);
+        SUMMON_GROW_WINDOW.set(mem, w);
+        tk_mn2_init_status_bg(mem);
+        w
+    }
+
+    /// `MenuLimit_OpenWindow(arg)` (`0x008d0d50`, own name): the limit
+    /// menu's window (`0x0186a714`): callbacks `MenuLimit_WindowIdle`,
+    /// `0x008d0e90`, `0x008d16f0`, `0x008d1bb0`; `+0x3e` `0x201`, rows from
+    /// `TkMn2GetListMax`, `+0x36` `0x103`, 7 visible, `+0x58` = `arg`.
+    /// Returns what the registration returns (left in `eax`).
+    pub fn menu_limit_open_window<M: Mem>(
+        mem: &mut M,
+        arg: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = open_window(mem);
+        mem.write(w + 0x48, 0u16);
+        mem.write(w + 0x32, 0u32);
+        put_code(mem, w + 0xc, 0x008d_0e90);
+        put_code(mem, w + 0x10, 0x008d_16f0);
+        put_code(mem, w + 0x14, 0x008d_1bb0);
+        mem.write(w + 0x3e, 0x201u16);
+        mem.write(w + 0x42, 1u8);
+        mem.write(w + 0x58, arg);
+        mem.write(w + 0x45, 0xffu8);
+        mem.write(w + 0x5c, 1u32);
+        put_code(mem, w + 8, 0x008d_0e80);
+        #[allow(clippy::cast_possible_truncation)]
+        let rows = tk_mn2_get_list_max(mem) as u16;
+        mem.write(w + 0x30, rows);
+        mem.write(w + 0x36, 0x103u16);
+        mem.write(w + 0x3a, 7u16);
+        let r = tk_menu_main_regist_window(mem, w, call);
+        LIMIT_WINDOW.set(mem, w);
+        r
+    }
+
+    /// The sub-command window openers (`0x008e33d0`
+    /// `TkMenuOpenSubCmdWindowMain`, `0x008e3470`, `0x008e3510`,
+    /// `0x008e35b0`): kept in `0x023cc120`; 2 rows of 2, cursor 1, `+0x37`
+    /// 1 (`b37`), mode 2 (3 for `items` 0), `+0x24` = `x`, callbacks
+    /// `0x008e2e20`, `0x008e2f80`, `0x008e36b0`, `+0x58..` = `items`, `c`,
+    /// `d`, `+0x90`/`+0x94` the variant's pair; registered. Returns the
+    /// window.
+    #[allow(clippy::too_many_arguments)]
+    pub fn menu_sub_cmd_open<M: Mem>(
+        mem: &mut M,
+        args: [u32; 4],
+        b37: bool,
+        pair: [u32; 2],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [x, items, c, d] = args;
+        let w = open_window(mem);
+        MN2_LIST_MAX2.set(mem, w);
+        mem.write(w + 0x30, 2u16);
+        mem.write(w + 0x3a, 2u16);
+        mem.write(w + 0x48, 1u16);
+        mem.write(w + 0x42, 1u8);
+        if b37 {
+            mem.write(w + 0x37, 1u8);
+        }
+        mem.write(w + 0x3e, u8::from(items == 0) + 2);
+        mem.write(w + 0x24, x);
+        mem.write(w + 8, 0u32);
+        put_code(mem, w + 0xc, 0x008e_2e20);
+        put_code(mem, w + 0x10, 0x008e_2f80);
+        put_code(mem, w + 0x14, 0x008e_36b0);
+        mem.write(w + 0x1c, 0u32);
+        mem.write(w + 0x5c, c);
+        mem.write(w + 0x58, items);
+        mem.write(w + 0x60, d);
+        mem.write(w + 0x90, pair);
+        tk_menu_main_regist_window(mem, w, call);
+        w
+    }
 }
 
 #[cfg(test)]

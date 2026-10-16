@@ -2667,4 +2667,64 @@ ported! {
     Gu_InitBox @ 0x0084_97f0 => extern "C" fn gu_init_box(b: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
         gu::gu_init_box(&mut mem(), b, [x, y, w, h])
     }
+    /// `MenuTuto_CloseWindow()`: the stop's result.
+    MenuTuto_CloseWindow @ 0x008d_9b30 => extern "C" fn menu_tuto_close_window() -> u32 {
+        tk::menu_tuto_close_window(&mut mem(), 0)
+    }
+    /// `MenuTuto_CloseWindow2()`: the stop's result, or 0.
+    MenuTuto_CloseWindow2 @ 0x008d_9b60 => extern "C" fn menu_tuto_close_window2() -> u32 {
+        tk::menu_tuto_close_window(&mut mem(), 1)
+    }
+    /// `MenuSave_OpenWindow2(arg)`: the window.
+    MenuSave_OpenWindow2 @ 0x008b_4fb0 => extern "C" fn menu_save_open_window2(arg: u32) -> u32 {
+        tk::menu_save_open_window2(&mut mem(), arg, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWorldMap_OpenWindow()`: the window.
+    MenuWorldMap_OpenWindow @ 0x008e_2d60 => extern "C" fn menu_world_map_open_window() -> u32 {
+        tk::menu_world_map_open_window(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2OpenSummonGrowWindow()`: the window.
+    TkMn2OpenSummonGrowWindow @ 0x008c_ed30 => extern "C" fn tk_mn2_open_summon_grow_window() -> u32 {
+        tk::tk_mn2_open_summon_grow_window(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuLimit_OpenWindow(arg)`: the registration's result.
+    MenuLimit_OpenWindow @ 0x008d_0d50 => extern "C" fn menu_limit_open_window(arg: u32) -> u32 {
+        tk::menu_limit_open_window(&mut mem(), arg, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuOpenSubCmdWindowMain(x, items, c, d)`: the window.
+    TkMenuOpenSubCmdWindowMain @ 0x008e_33d0 => extern "C" fn tk_menu_open_sub_cmd_window_main(x: u32, items: u32, c: u32, d: u32) -> u32 {
+        tk::menu_sub_cmd_open(&mut mem(), [x, items, c, d], true, [1, 1], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSubCmd_OpenMainA(x, items, c, d)`: the window.
+    MenuSubCmd_OpenMainA @ 0x008e_3470 => extern "C" fn menu_sub_cmd_open_main_a(x: u32, items: u32, c: u32, d: u32) -> u32 {
+        tk::menu_sub_cmd_open(&mut mem(), [x, items, c, d], false, [0, 1], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSubCmd_OpenMainB(x, items, c, d)`: the window.
+    MenuSubCmd_OpenMainB @ 0x008e_3510 => extern "C" fn menu_sub_cmd_open_main_b(x: u32, items: u32, c: u32, d: u32) -> u32 {
+        tk::menu_sub_cmd_open(&mut mem(), [x, items, c, d], true, [1, 2], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSubCmd_OpenMainC(x, items, c, d)`: the window.
+    MenuSubCmd_OpenMainC @ 0x008e_35b0 => extern "C" fn menu_sub_cmd_open_main_c(x: u32, items: u32, c: u32, d: u32) -> u32 {
+        tk::menu_sub_cmd_open(&mut mem(), [x, items, c, d], true, [0, 2], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuOpenSubCmdWindow(x, items, c)`: `d` 0.
+    TkMenuOpenSubCmdWindow @ 0x008e_33a0 => extern "C" fn tk_menu_open_sub_cmd_window(x: u32, items: u32, c: u32) -> u32 {
+        tk::menu_sub_cmd_open(&mut mem(), [x, items, c, 0], true, [1, 1], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuOpenSubCmdWindow2(x, items, c, d)`: a jump to the main opener.
+    TkMenuOpenSubCmdWindow2 @ 0x008e_33c0 => extern "C" fn tk_menu_open_sub_cmd_window2(x: u32, items: u32, c: u32, d: u32) -> u32 {
+        tk::menu_sub_cmd_open(&mut mem(), [x, items, c, d], true, [1, 1], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSubCmd_OpenA(x, items, c)`: `d` 0.
+    MenuSubCmd_OpenA @ 0x008e_3650 => extern "C" fn menu_sub_cmd_open_a(x: u32, items: u32, c: u32) -> u32 {
+        tk::menu_sub_cmd_open(&mut mem(), [x, items, c, 0], false, [0, 1], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSubCmd_OpenB(x, items, c)`: `d` 0.
+    MenuSubCmd_OpenB @ 0x008e_3670 => extern "C" fn menu_sub_cmd_open_b(x: u32, items: u32, c: u32) -> u32 {
+        tk::menu_sub_cmd_open(&mut mem(), [x, items, c, 0], true, [1, 2], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSubCmd_OpenC(x, items, c)`: `d` 0.
+    MenuSubCmd_OpenC @ 0x008e_3690 => extern "C" fn menu_sub_cmd_open_c(x: u32, items: u32, c: u32) -> u32 {
+        tk::menu_sub_cmd_open(&mut mem(), [x, items, c, 0], true, [0, 2], &mut |_, f, a| call_ptr(f, a))
+    }
 }

@@ -5315,6 +5315,7 @@
 0x008b4e70 function MenuSaveLoad_Reset        # (v) save/load flags cleared, second window +0x58 = v; own name
 0x008b4eb0 function MenuSaveLoad_ResetToggles # u8 0x0186626a, 0x0186626b = 0; own name
 0x008b4ec0 function TkMenuJumpToLoadedScene   # fh v3:cg14 0x8b4e70
+0x008b4fb0 function MenuSave_OpenWindow2      # (arg) window 0x01866258: +0x10 0x008b4920, mode 4, +0x58 arg; registered; own name
 0x008b50b0 function TkMenuPreSave             # fh v3:exact 0x008b5060
 0x008b54c0 function MenuSaveLoad_MarkSlots    # (free, need) 99 slot states at 0x01866290: marks (3) while free < need, used flag 0x01866278; own name
 0x008b5530 function TkMenuRestartSelFileWindow # fh switch:bsim1.00 0x71004db0a0
@@ -5552,6 +5553,7 @@
 0x008d0460 function TkMenuCtrlLimit           # fh v3:exact 0x008d0430
 0x008d0c90 function TkMenuLimitCloseWindow    # (): close request for 0x0186a714 (TkMenuCtrlLimit's), forget it
 0x008d0cb0 function TkMenuLimitCloseWindow2   # (): close request for 0x0186a718 (TkMenuCtrlLimit's), forget it
+0x008d0d50 function MenuLimit_OpenWindow      # (arg) window 0x0186a714: MenuLimit_WindowIdle, 0x008d0e90, 0x008d16f0, 0x008d1bb0; rows TkMn2GetListMax, 7 visible; own name
 0x008d0e80 function MenuLimit_WindowIdle      # (window) +0x28 = 0; own name
 0x008d1b50 function TkMenuLimitClearWindow    # (): 0x0186a714 +0x28 = 0, +0x45 = 0
 0x008d1b70 function TkMenuLimitClearWindow2   # (): 0x0186a718 +0x28 = 0, +0x45 = 0
@@ -5590,6 +5592,8 @@
 0x008d9600 function TkMenuCtrlWShop           # fh v3:exact 0x008d95d0
 0x008d9b00 function MenuWShop_UsableByte      # (list, i) copy of MenuItem_UsableByte; own name
 0x008d9b10 function TkMenuWShopCloseWindow    # (): close request for 0x0186ac3c (TkMenuCtrlWShop's), +0x10 = 0, forget it
+0x008d9b30 function MenuTuto_CloseWindow      # () tutorial window 0x0186ac34 closed (+0x41 1, +0x10 0, +0x3e 2), forgotten; TkMn2SeqStopScene("scene18") always; own name
+0x008d9b60 function MenuTuto_CloseWindow2     # () tutorial window 0x0186ac38 the same, then TkMn2SeqStopScene("scene9") only after a close; own name
 0x008d9b90 function TkMenuWShopCloseWindow3   # (): the same for 0x0186ac30 (weapon shop code)
 0x008d9bb0 function TkMenuWShopCloseWindow2   # (): the same for 0x0186ac40 (TkMenuCtrlWShop's)
 0x008daaa0 function MenuTuto_RestartWindow    # TkMenuRestartSelFileWindow(0x0186ac34); own name
@@ -5706,8 +5710,18 @@
 0x008e2960 function TkMenuCtrlWorldMap        # fh v3:exact 0x008e2960
 0x008e2b10 function MenuWorldMap_CloseWindow  # close request for 0x01871698, forget it; own name
 0x008e2d50 function TkMenuWorldMapWindowWord64 # () -> word +0x64 of *g_TkMenuWorldMapWindow (caller TkMenuCtrlWorldMap); name ours
+0x008e2d60 function MenuWorldMap_OpenWindow   # () g_TkMenuWorldMapWindow: callbacks 0x008e2b00/0x008e2b30/0x008e2b60, mode 7, tint 0x80 x3, +0x68 6; own name
 0x008e2de0 function TOMenuCloseYesNoWindow    # fh switch:bsim1.00 0x71004e7cb0
 0x008e3390 function TkMn2GetListMax2          # () -> 0x023cc120; Switch symbol name (BSim)
+0x008e33a0 function TkMenuOpenSubCmdWindow    # (x, items, c) TkMenuOpenSubCmdWindowMain with d 0; Switch name of the TkMenuOpenSubCmdWindow family (Main, plain, 2), by role: no alphabetical slot here
+0x008e33c0 function TkMenuOpenSubCmdWindow2   # (x, items, c, d) a jump to TkMenuOpenSubCmdWindowMain; Switch name of the TkMenuOpenSubCmdWindow family (Main, plain, 2), by role: no alphabetical slot here
+0x008e33d0 function TkMenuOpenSubCmdWindowMain# (x, items, c, d) window into 0x023cc120: 2x2, mode 2 (3 for items 0), callbacks 0x008e2e20/0x008e2f80/0x008e36b0, +0x37 1, +0x90/+0x94 1/1; Switch name of the TkMenuOpenSubCmdWindow family (Main, plain, 2), by role: no alphabetical slot here
+0x008e3470 function MenuSubCmd_OpenMainA      # (x, items, c, d) as TkMenuOpenSubCmdWindowMain without +0x37, +0x90/+0x94 0/1; own name
+0x008e3510 function MenuSubCmd_OpenMainB      # (x, items, c, d) +0x90/+0x94 1/2; own name
+0x008e35b0 function MenuSubCmd_OpenMainC      # (x, items, c, d) +0x90/+0x94 0/2; own name
+0x008e3650 function MenuSubCmd_OpenA          # (x, items, c) MenuSubCmd_OpenMainA with d 0; own name
+0x008e3670 function MenuSubCmd_OpenB          # (x, items, c) MenuSubCmd_OpenMainB with d 0; own name
+0x008e3690 function MenuSubCmd_OpenC          # (x, items, c) MenuSubCmd_OpenMainC with d 0; own name
 0x008e36f0 function TkMenuCloseSubCmdWindow   # fh switch:bsim1.00 0x71004e9140
 0x008e3710 function TkMenuCloseSubCmdWindow1  # (): close request for 0x023cc124 and forget it (TkMenuCloseSubCmdWindow does 0x023cc128)
 0x008e3b80 function TkMenuSetSubCmdWindowCursor # (i): g_TkMenuSubCmdWindow busy (+0x45 = 1), cursor +0x2c/+0x48 = i, state +0x28 = 6

@@ -4615,3 +4615,89 @@ fn tk_round7_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_openers_match_the_original() {
+    let Some(mut t) = setup(0x0be2_0be2) else {
+        return;
+    };
+    for round in 0..120u32 {
+        // a free window record somewhere among used ones
+        let base = t.sym(tk::MENU_WINDOWS.sym);
+        if round % 10 == 0 {
+            t.scramble(tk::MENU_WINDOWS.sym, 0x98 * 32);
+        }
+        let free = t.rng.below(32);
+        for j in 0..32 {
+            t.put(base + j * 0x98 + 0x40, u8::from(j != free));
+        }
+        let arg = t.rng.next();
+        let pick = t.rng.below(14);
+        let args4 = [
+            t.rng.next(),
+            t.rng.pick(&[0u32, 1, 5]),
+            t.rng.next(),
+            t.rng.next(),
+        ];
+        let a3 = [args4[0], args4[1], args4[2]];
+        for k in 0..2usize {
+            let w0 = t.rng.pick(&[0u32, 0, 1]);
+            let w0 = if w0 == 0 { 0 } else { t.alloc_random(0x98) };
+            t.put(t.sym(tk::TUTO_WINDOWS[k].sym), w0);
+        }
+        match pick {
+            0 => t.twin("MenuTuto_CloseWindow", 0x008d_9b30, &[], U32, |o| {
+                w(tk::menu_tuto_close_window(o, 0))
+            }),
+            1 => t.twin("MenuTuto_CloseWindow2", 0x008d_9b60, &[], U32, |o| {
+                w(tk::menu_tuto_close_window(o, 1))
+            }),
+            2 => t.twin("MenuSave_OpenWindow2", 0x008b_4fb0, &[arg], U32, |o| {
+                w(tk::menu_save_open_window2(o, arg, &mut callback))
+            }),
+            3 => t.twin("MenuWorldMap_OpenWindow", 0x008e_2d60, &[], U32, |o| {
+                w(tk::menu_world_map_open_window(o, &mut callback))
+            }),
+            4 => t.twin("TkMn2OpenSummonGrowWindow", 0x008c_ed30, &[], U32, |o| {
+                w(tk::tk_mn2_open_summon_grow_window(o, &mut callback))
+            }),
+            5 => t.twin("MenuLimit_OpenWindow", 0x008d_0d50, &[arg], U32, |o| {
+                w(tk::menu_limit_open_window(o, arg, &mut callback))
+            }),
+            _ => {
+                let (name, sym, b37, pair, n): (&str, u32, bool, [u32; 2], usize) = match pick {
+                    6 => ("TkMenuOpenSubCmdWindowMain", 0x008e_33d0, true, [1, 1], 4),
+                    7 => ("MenuSubCmd_OpenMainA", 0x008e_3470, false, [0, 1], 4),
+                    8 => ("MenuSubCmd_OpenMainB", 0x008e_3510, true, [1, 2], 4),
+                    9 => ("MenuSubCmd_OpenMainC", 0x008e_35b0, true, [0, 2], 4),
+                    10 => ("TkMenuOpenSubCmdWindow", 0x008e_33a0, true, [1, 1], 3),
+                    11 => ("TkMenuOpenSubCmdWindow2", 0x008e_33c0, true, [1, 1], 4),
+                    12 => ("MenuSubCmd_OpenA", 0x008e_3650, false, [0, 1], 3),
+                    _ => ("MenuSubCmd_OpenC", 0x008e_3690, true, [0, 2], 3),
+                };
+                let args: &[u32] = if n == 4 { &args4 } else { &a3 };
+                let full = if n == 4 {
+                    args4
+                } else {
+                    [a3[0], a3[1], a3[2], 0]
+                };
+                t.twin(name, sym, args, U32, |o| {
+                    w(tk::menu_sub_cmd_open(o, full, b37, pair, &mut callback))
+                });
+            }
+        }
+    }
+    // MenuSubCmd_OpenB once directly
+    let base = t.sym(tk::MENU_WINDOWS.sym);
+    t.put(base + 0x40, 0u8);
+    t.twin("MenuSubCmd_OpenB", 0x008e_3670, &[1, 2, 3], U32, |o| {
+        w(tk::menu_sub_cmd_open(
+            o,
+            [1, 2, 3, 0],
+            true,
+            [1, 2],
+            &mut callback,
+        ))
+    });
+    eprintln!("{} calls", t.calls);
+}
