@@ -1642,6 +1642,7 @@
 0x0063d550 function graphicCharacterRestoreSummonTexture # fh v3:exact 0x0063d700
 0x0063d710 function graphicCharacterSetClipPlane # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'clipPlane'; Switch 0x71001d8d50 graphicCharacterSetClipPlane (symbols from Fahrenheit's server export)
 0x0063d9c0 function graphicCheckChrClusterRelationship # fh v3:exact 0x0063db70
+0x0063da80 function graphicIsEscMenuActive    # () -> 1 when g_FFEscMenu exists and is open (+0x70) or has a selection (+0xe4 >= 0); the frame loop's callers around graphicRender test it; name ours
 0x0063ddc0 function graphicClothMemPrintStats # fh v3:cg2 0x63df70
 0x0063dde0 function graphicClothMemoryInit    # fh switch:bsim1.00 0x71001cb500
 0x0063de10 function graphicConvertScreenCoords # fh switch:bsim1.00 0x71001d75e0
@@ -1996,6 +1997,9 @@
 0x0065e200 function PhyreScene_getMonsterEtTextureName # fh v3:exact 0x0065e380 PhyreScene::getMonsterEtTextureName
 0x0065e2f0 function PhyreScene_GetLivePointer1232c # thiscall(this): as PhyreScene_GetLivePointer00ac on +0x1232c; name ours
 0x0065e310 function PhyreScene_getPreviousLevelNameHash # fh v3:bsim1.00 0x0065e490 PhyreScene::getPreviousLevelNameHash
+0x0065e320 function PhyreScene_getMinimapViewportSize # thiscall(scene): h = the render target's +0x1c (live pointer of *(scene+0x10cc)+0x8c); blitzball (scene[0]): trunc(h * 120.25 * 0.0625 * 9 / 416), else trunc(f32(h * 104) * 0.0625 * 9 / 416); used beside the next two by the minimap draw; name ours
+0x0065e3f0 function PhyreScene_getMinimapViewportX # thiscall(scene): trunc(f32(h) * base / 512), base by the minimap type +0x74 (1, 2: 39; 3, 4: 368.75 in blitzball else 377; else 0); name ours
+0x0065e560 function PhyreScene_getMinimapViewportY # thiscall(scene): trunc(f32(h) * (111 in blitzball else 96) / 512); name ours
 0x0065e5e0 function PhyreScene_getToBeDeleteMagicPath # fh v3:bsim1.00 0x0065e760 PhyreScene::getToBeDeleteMagicPath
 0x0065e630 function PhyreScene_GetField0ddc # thiscall(this): u32 at +0xddc (beside getVideoTexture +0xde0); name ours
 0x0065e640 function PhyreScene_getVideoTexture # thiscall(this): u32 +0xde0; name Fahrenheit's (Switch BSim)
@@ -2571,6 +2575,8 @@
 0x006dec90 function DynGeoMemManager_selectBuffer # thiscall(this, i), ret 4: this[0] = this[i + 1], returns it; name ours
 0x006ded40 function DynGeoMemManager_swapDynGeoMemory # fh v3:exact 0x006dee70 DynGeoMemManager::swapDynGeoMemory
 0x006ded50 function DynGeoMemManager_unlockForRecordNumInKeLns # fh v3:bsim1.00 0x006dee80 DynGeoMemManager::unlockForRecordNumInKeLns
+0x006dedd0 function DynGeoTree_Find           # thiscall(this, &key), ret 4: search tree with head this (root +0xc; node +0 lower, +4 higher, +0xc u32 key); the node or 0; callers 0x006df2f0, 0x006df5f0; name ours
+0x006dee50 function DynGeoTree_Insert         # thiscall(this, node), ret 4: links node (key +0xc) under DynGeoTree_Find's tree; node +8 = parent | colour bit; the node already holding the key, else 0; name ours
 0x006e0f30 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_ClothInstancingDynamicMesh__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::ClothInstancingDynamicMesh &>::Get" (its own __FUNCTION__ in an error print)
 0x006e1010 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_DynamicMeshDefaultImplmenetation__Get # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::DynamicMeshDefaultImplmenetation &>::Get" (its own __FUNCTION__ in an error print)
 0x006e10f0 function Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_ClothInstancingDynamicMesh__Get_006e10f0 # str: the only user of the string "Phyre::PScripting::PScriptAccessors::PObjectAccessor<class Phyre::ClothInstancingDynamicMesh *>::Get" (its own __FUNCTION__ in an error print)
@@ -3713,10 +3719,18 @@
 0x0077dab0 function mpegstrendsub                # str-match switch: only user of 7 string(s) held once by both builds, e.g. 'mpegstrendsub(%d)\\n'; Switch 0x7100325dc0 mpegstrendsub (symbols from Fahrenheit's server export)
 0x0077df00 function print_sound_debug_info       # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'ee  %d %d'; Switch 0x7100326180 print_sound_debug_info (symbols from Fahrenheit's server export)
 0x0077e730 function loadImage                 # fh switch:bsim1.00 0x7100336e30
+0x0077e770 function TexAnim_LoadImageRegs     # cdecl(a, b, bytes): g_GsRegisterSink gets 0xff0000, & 0x7cf, a, b, bytes / 16 (toward zero), then 0x100; returns bytes / 16; name ours
+0x0077e7c0 function TexAnim_LoadImage101      # cdecl(addr, bytes): as loadImage with command 0x101 (addr >= 0x70000000 less 0x80000000, bytes / 16); name ours
+0x0077e800 function TexAnim_SyncPath          # cdecl(a): g_GsRegisterSink gets a, 0, 0x105; returns a; name ours
 0x0077e8e0 function syncStrCheckPC_HDD        # fh switch:bsim1.00 0x7100323e60
 0x0077e920 function tex_anim_dlg              # fh switch:cg2 0x71008b62a8
 0x0077e940 function tex_anim_no_set           # fh v3:exact 0x0077ea30
+0x0077e9f0 function TexAnim_GetWork           # cdecl(i): g_ChrTexAnim[i] +4 (the work buffer); name ours
 0x0077ea10 function texanim_malloc_memory_set    # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Sa:Movie Malloc Move %x\\n'; Switch 0x7100326d60 texanim_malloc_memory_set (symbols from Fahrenheit's server export)
+0x0077eaa0 function TexAnim_SyncPath2         # cdecl(a): the same writes as TexAnim_SyncPath (a, 0, 0x105); name ours
+0x0077eb70 function TexAnim_SetDmaTag         # cdecl(q, a, b, c, d, e, f): u64 at q = (((((a << 31) | (b & ~0xf)) << 1 | c) << 3 | d) << 2 | e) << 26 | f (PS2 DMA tag); returns q; name ours
+0x0077ebc0 function TexAnim_SetQword          # cdecl(q, a, b, c): q = [b, c, a, 0]; returns a; name ours
+0x0077ebe0 function TexAnim_SetGifTag         # cdecl(q, p2..p9): q = [p8 << 15 | p9, ((((p4 << 2 | p5) << 11 | p6) << 1 | p7) << 14, p2, p3] (PS2 GIF tag); returns p3; name ours
 0x0077eff0 function setLoadImageTagsTexAnim   # fh v3:exact 0x0077f0e0
 0x0077f1d0 function asmAddBlock1              # fh v3:cg2 0x77f2c0
 0x0077f1e0 function asmAddBlock2              # fh v3:cg2 0x77f2d0
@@ -3726,6 +3740,7 @@
 0x0077f970 function chr_texanim_memory_move_new # Switch name (0x7100330d60): in the new-format file (between chr_texanim_draw_sub_new and _set_new); entry source, record words into work +0xd28
 0x0077f9c0 function chr_texanim_set_new       # fh v3:exact 0x0077fa90
 0x0077fce0 function tex_anim_no_set_new       # fh v3:exact 0x0077fdb0
+0x0077fda0 function TexAnim_ResetPos          # cdecl(i, which, v): g_ChrTexAnim[i]'s work animation which (0x34 bytes: +0xc = v, +0x1c, +0x20, floats +0x2c..0x38 = 0), or every active one (+0xd08 + n == 1) for which 1; name ours
 0x0077fe30 function tex_anim_timer            # fh v3:exact 0x0077ff00
 0x0077fe50 function chr_texanim_draw_sub_old  # fh v3:exact 0x0077ff20
 0x007803a0 function chr_texanim_memory_move_old # Switch name (0x71003328f0): in the old-format file (between chr_texanim_draw_sub_old and _set_old); work +0x5b8
@@ -11855,6 +11870,7 @@
 0x00ccc81c label    g_GraphicUi               # the remaster's UI object: graphicGetNowUIType / graphicSetNowUIType (+0x2be0)
 0x00ccc830 label    g_FreeCamera              # the free camera singleton (0x344 bytes, FreeCamera_FreeCamera), created on demand by its users, FreeCamera_destroyInstance
 0x00ccc838 label    g_GraphicAbmap            # the sphere grid's render object: graphicGetAbmap (+4 state < 2)
+0x00ccc870 label    g_FFEscMenu               # the PC escape menu (FFEscMenu_vftable); graphicIsEscMenuActive
 0x00ccc88c label    g_AsyncLoadManager        # the instance AsyncLoadManager_sGetInstance returns
 0x00ccc89c label    g_PostProcessTweakUtil    # PostProcessTweakUtil_GetInstance; PostProcessTweakUtil_Destroy
 0x00ccc8a0 label    g_PostProcessManager      # PostProcessManager_GetInstance
@@ -12549,6 +12565,7 @@
 0x022fb4dc label    g_TkMenuSceneData         # 8 menu scene data blocks (TkMenuSetSceneDataAdrs, TkMenuInitSeq zeroes them; layout in crates/ffx-menu/src/scene.rs)
 0x022fb504 label    g_Settings
 0x022fb6c0 label g_CdChannelNames # CD channel names, 0x80 bytes each, cleared by cd_channel_clear 0x0076d530; name ours
+0x023056e8 label    g_GsRegisterSink          # the one word every PS2 GS register write of the texture-animation code lands in (loadImage and the TexAnim_* tag helpers)
 0x02305834 label    g_Abmap                      # the sphere grid data (LoadAbmap): +4 i16 link count, +0x808 nodes of 0x28 (x, y i16, +6 kind, +0x21 panel bits), +0xa816 link flags (0x14 each), +0xf834 kind sizes (0x30 each)
 0x0230fbe0 label    g_pppFillMatrix3          # 16 words updateVFXRenderDataShp copies into its fill request (+0x150)
 0x0230fc20 label    g_pppFillMatrix2          # 16 words updateVFXRenderDataShp copies into its fill request (+0x110)
