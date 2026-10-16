@@ -2367,6 +2367,7 @@
 0x0079a920 function MsGetDamageResult         # fh v3:exact 0x0079a930
 0x0079aa50 function MsGetDamageStatus         # fh v3:exact 0x0079aa60
 0x0079ad10 function MsGetRamChrCTBmax         # fh v3:bsim1.00 0x0079ad20 +MsGetRamChrCTBmax
+0x0079ad30 function MsGetChrCommandFlag       # (chr, id) -> bit 0: actor +0x664 bit of command id (usable), bit 1: its +0x690 bit; named here; ported
 0x0079ad90 function MsGetRamChrDisableZan     # fh switch:bsim1.00 0x710036cbd0
 0x0079add0 function MsGetRamChrHP             # fh v3:bsim1.00+call.cs 0x0079ae00 cdecl
 0x0079adf0 function MsGetRamChrHP_0079adf0    # fh v3:bsim1.00 0x0079ade0
@@ -2384,6 +2385,7 @@
 0x0079b290 function MsSetAutoStatus           # fh v3:exact 0x0079b2a0
 0x0079b4f0 function MsSetRamChr               # copies the stat record (section 2) into the battle actor; was Mon_InitActor
 0x0079bb50 function MsSetRamChrAbility        # equipment checks per character (weapon/armor in inventory, flag 0x02 skipped); was Battle_CheckEquipment
+0x0079c070 function MsSetChrCommandFlag       # (chr, id, on): sets/clears actor +0x664 bit of command id; named here; ported
 0x0079c110 function MsSetRamChrData           # monster slot i (actor via 0x00795aa0) gets id = formation +0x0c + 2i (0xffff: empty); was Battle_SetUpActors
 0x0079c5f0 function MsSetRamChrParam          # party actor from ply_save and equipment: weapon formula/power -> +0x5c1/+0x5c7, crit -> +0x5d8, a_ability records applied; was Battle_InitPartyActor
 0x0079cb10 function MsSetRamMonData           # fh v3:exact 0x0079cb30
@@ -2555,6 +2557,7 @@
 0x007ad750 function MsWeaponDispose           # fh v3:exact 0x007ad760
 0x007ad820 function MsWeaponRead              # fh v3:exact 0x007ad830
 0x007ad940 function MsWeaponReadSet           # fh v3:exact 0x007ad950
+0x007ad970 function MsSortCommandList         # (list, keys, n): bubble sort of n u16 command IDs by their records' +0x5c (0x100 for 0xff / non-0x3xxx); named here; ported
 0x007ada40 function MsCheckMegas              # fh v3:exact 0x007ada50
 0x007ada60 function MsEscapeAll               # fh v3:exact 0x007ada70
 0x007adae0 function MsExchangeChr             # fh v3:exact 0x007adaf0
@@ -8255,6 +8258,7 @@
 0x0112c526 label g_BtlWeaponList             # u16 list MsGetSaveWeaponList (0x007abd10) fills with 0x5000 + equipment slot
 0x0112c6b6 label g_BtlItemWindow              # 0x70 x u16, battle-usable items (kernel flag 2, not 0x400) in inventory order, 0xff after (MsSetItemWindow)
 0x0112c796 label g_BtlItemWindow2             # 0x70 x u16, the same for items with flag 0x400 (MsSetItemWindow)
+0x0112c876 label g_BtlBattleList           # 31 bytes, MsGetBattleList's actor list (0xff after the last)
 0x0112c895 label g_BtlParty                  # 3 x u8 ply_save indices; MsSetSaveParty (0x00786930) copies them to g_SaveInParty
 0x0112c89c label g_BtlPartySaved           # 7 bytes: the party MsReturnParty restores into g_BtlParty
 0x0112c8a3 label g_BtlPartyExtra           # 17 bytes after the party, restored from 0x0112c8b4 by MsReturnParty
@@ -8283,6 +8287,7 @@
 0x0112c9e5 label g_BtlStealRule               # u8, 2: nothing can be stolen or mugged in this battle (Battle_Steal, Battle_StealGil)
 0x0112c9e6 label g_BtlMenuCommandSet          # u8; with the one before it (same function, ffx_battle::misc)
 0x0112c9e7 label g_BtlDirFree              # u8; set: MsSetDirThetaMode gives actors direction mode 1 (ffx_battle::minor)
+0x0112c9e9 label g_BtlListSlot             # i8, a party slot MsGetBattleList kinds 9 and 0xa treat apart
 0x0112c9eb label g_BtlEndAlt               # u8 set: MsGetBattleEndStatus reports 2 instead of 4 when the monsters are gone
 0x0112c9f1 label g_BtlEndForced            # u8, when not 0 MsGetBattleEndStatus's result
 0x0112c9fa label g_BtlReflected            # u8, set by MsCalcCommandTarget when a target reflected the command
@@ -8330,6 +8335,7 @@
 0x01130f32 label g_EquipWearer             # byte +0 of 200 equipment records of 0x16 bytes: who wears it, 0xff none (MsInitSaveWeaponEquipFlag, from g_PlySave +0x2d/+0x2e)
 0x0113205c label    g_PlySave                  # ply_save records, 0x94 bytes each; +0x2d weapon slot, +0x2e armor slot
 0x011320b0 label g_BtlKills                   # u32 every 0x94 bytes by player character < 0x12: MsCalcDamageCommand formula 0x16 (kills x power)
+0x01132528 label g_SaveSummons             # 10 x 0x94-byte aeon save records; bit 0 of +0: available (MsSetRamChrAbility group 5)
 0x01132ac4 label g_SaveCommandUse            # commands used, 18 characters x 0x16 flag words, right after g_PlySave (MsGetSaveCommandUse 0x00785140)
 0x01132ddc label g_SaveChrNames            # characters' names, 0x14 bytes each (MsGetSaveChrName)
 0x01133354 label g_BtlMuteSubtitle           # u32 (MsMuteBattleSubTitle 0x00785990)

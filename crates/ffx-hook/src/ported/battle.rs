@@ -1818,6 +1818,34 @@ ported! {
             call1(ACHIEVEMENT_UNLOCK, n);
         })
     }
+    /// `MsGetChrCommandFlag(chr, id)`.
+    MsGetChrCommandFlag @ 0x0079_ad30 => extern "C" fn ms_get_chr_command_flag(chr: u32, id: u32) -> u32 {
+        ffx_battle::ability::bridge::ms_get_chr_command_flag(&mem(), chr, id)
+    }
+    /// `MsSetChrCommandFlag(chr, id, on)`.
+    MsSetChrCommandFlag @ 0x0079_c070 => extern "C" fn ms_set_chr_command_flag(chr: u32, id: u32, on: u32) {
+        ffx_battle::ability::bridge::ms_set_chr_command_flag(&mut mem(), chr, id, on);
+    }
+    /// `MsSortCommandList(list, keys, n)`.
+    MsSortCommandList @ 0x007a_d970 => extern "C" fn ms_sort_command_list(list: u32, keys: u32, n: i32) {
+        ffx_battle::ability::bridge::ms_sort_command_list(&mut mem(), list, keys, n);
+    }
+    /// `MsSortCommand(lists)`.
+    MsSortCommand @ 0x007a_efb0 => extern "C" fn ms_sort_command(lists: u32) {
+        ffx_battle::ability::bridge::ms_sort_command(&mut mem(), lists);
+    }
+    /// `MsGetBattleList(kind, &count)`.
+    MsGetBattleList @ 0x007b_6c50 => extern "C" fn ms_get_battle_list(kind: i32, count: u32) -> u32 {
+        ffx_battle::ability::bridge::ms_get_battle_list(&mut mem(), kind, count)
+    }
+    /// `MsSetRamChrAbility(chr, actor)`.
+    MsSetRamChrAbility @ 0x0079_bb50 => extern "C" fn ms_set_ram_chr_ability(chr: u32, actor: u32) {
+        ffx_battle::ability::bridge::ms_set_ram_chr_ability(&mut mem(), chr, actor);
+    }
+    /// `MsSetSaveCommand(chr, id, on)`.
+    MsSetSaveCommand @ 0x0078_5c50 => extern "C" fn ms_set_save_command(chr: u32, id: u32, on: u32) -> u32 {
+        ffx_battle::ability::bridge::ms_set_save_command(&mut mem(), chr, id, on)
+    }
     /// `MsGetComData(id, &name)`.
     MsGetComData @ 0x0079_a4b0 => extern "C" fn ms_get_com_data(id: u32, name: u32) -> u32 {
         ffx_battle::stat::bridge::ms_get_com_data(&mut mem(), id, name)
