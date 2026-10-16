@@ -4992,6 +4992,7 @@
 0x00906c40 function TOGetWindowType           # fh v3:bsim1.00 0x00906c40
 0x00906ce0 function TOSetExeWindowArea        # fh v3:exact 0x00906ce0
 0x00906fb0 function TOGetWindowStructAdrs     # fh v3:bsim1.00 0x00906fb0 _TOGetWindowStructAdrs
+0x00907f00 function yiMapGetSection              # (map, index) -> map + section offset (+0x10 + 4 index) for data tagged MAP1, else 0; loadPhyreFieldMap, yiMapReadMaster, yiObjReadCallback, yiSetIDPage, yiSetPreBgPage
 0x00907f50 function initEventList             # fh v3:exact 0x00907f50
 0x00908000 function loadPhyreFieldMap         # fh v3:exact 0x00908000
 0x00908330 function yiAttachAnimDObj          # fh switch:bsim1.00 0x710052c6c0
@@ -5036,14 +5037,20 @@
 0x00909dd0 function yiRectToOMD_old           # fh switch:bsim1.00 0x710052bda0
 0x00909e10 function yiRenderDisable           # fh v3:bsim1.00 0x00909e10
 0x00909e20 function yiRenderEnable            # fh v3:bsim1.00 0x00909e20
+0x00909e30 function yiTexSwapSetFrame            # (index, frame) -> 0: texture swap entry (g_YiRender + 0x9d9c8, 0x720 each) bit 0 and frame (+4) when index < count (+0x9d9c4) and frame < its frame count (+0x1c); script native 0x008574c0
 0x00909e60 function yiReset                   # fh v3:exact 0x00909e60
 0x00909ea0 function yiResetObj                # fh v3:exact 0x00909ea0
 0x00909ff0 function yiSetColorOffset             # (rgba ints): g_YiColorOffset = channel - 128 as floats (fild); in g_MagicImports
 0x0090a040 function yiSetBackColor            # fh v3:exact 0x0090a040
 0x0090a0e0 function yiSetBattleCenter         # fh switch:bsim1.00 0x710052c5b0
+0x0090a1d0 function yiSetFieldVec4i              # (a, b, c, d): four ints as floats to g_YiFieldVec4
+0x0090a200 function yiSetFieldVec4               # (a, b, c, d): four floats to g_YiFieldVec4; script native 0x0091c600; ?meaning
+0x0090a230 function yiSetFieldVec6               # (a..f): six floats to 0x01931218; script native 0x0091c6b0; ?meaning
 0x0090a270 function yiSetColorScale           # fh v3:bsim1.00 0x0090a270
 0x0090a2b0 function yiSetDrawMask             # fh v3:bsim1.00 0x0090a2b0
 0x0090a400 function yiSetColor3                  # (r, g, b) -> 0: the low bytes to 0x01934ea4..a6; script native 0x00859000 (three ints)
+0x0090a430 function yiSetFieldPair               # (on, a, b) -> 0: floats to 0x01934e7c, 0x01934e9c; flags 0x01934e78 |= on ? 3 : 1; script native 0x008591d0; ?meaning
+0x0090a470 function yiSetFieldVec3Int            # (a, b, c, n) -> 0: floats to 0x01934e90..98, n to 0x01934ea0; script native 0x00858c90; ?meaning
 0x0090a4a0 function yiSetIDPage               # fh v3:exact 0x0090a4a0
 0x0090a520 function yiSetMatrixDObj              # (index, m) -> 0/-1: m into display object index's matrix (counterpart of yiGetMatrixDObj)
 0x0090a560 function yiSetMatrixGroup             # (group, m) -> 0/-1: m into the first object of the group (counterpart of yiGetMatrixGroup)
@@ -5088,6 +5095,7 @@
 0x00917430 function yiLog2Ceil16                 # (bits) -> the only set bit's index, else the highest one's + 1; -1 none (low 16 bits)
 0x00917460 function yiPow2Ceil                   # (n) -> smallest 1 << k (k < 16) >= n, else 0
 0x00917b70 function yiImageRman_serch         # fh switch:bsim0.92 0x710053ccf0
+0x00918090 function yiVramAllocPsm               # (bytes, psm) -> address >> 6 or -1: as yiVramAlloc from regions 0, 1 (0x025d17bc/ac, 17b8/a8); PSMT8 (0x13) / PSMT4 (0x14) 4x / 8x the size from regions 2, 3 (17c0/b0, 17c4/b4)
 0x00918130 function yiVramAlloc                  # (bytes) -> g_YiVramNext >> 6 and moves it on by bytes rounded to 64, or -1 past g_YiVramLimit
 0x009188c0 function yiImage_init              # fh switch:bsim0.97 0x710053c8e0
 0x00919630 function yiVramSetLimit               # (pages) -> 0: g_YiVramLimit = (0x38 - pages) << 14
@@ -5181,6 +5189,7 @@
 0x00920450 function rcbgSetReg                # fh v3:bsim1.00 0x00920450
 0x009204b0 function rcbgSetViewMatrix         # fh v3:exact 0x009204b0
 0x00920540 function rcbgSceneAddObject        # fh v3:exact 0x00920540
+0x00920650 function rcbgSceneWaveDCStop          # (scene): +0xac = 0.0, +0xdc = 0: ends the wave Yn_SceneSetDC starts (its update 0x00920580 calls it when +0xf0 reaches +0xe4)
 0x00920740 function rcbgSceneDraw             # fh v3:exact 0x00920740
 0x00920830 function rcbgSceneDrawLayer        # fh switch:bsim1.00 0x7100547250
 0x00920870 function rcbgSceneFini             # fh v3:exact 0x00920870
@@ -5190,6 +5199,7 @@
 0x00920c00 function rcbgSceneSetMatrix        # fh v3:exact 0x00920c00
 0x00920e40 function rcbgSceneSetMatrix_Cross  # fh switch:cg2 0x7100547310
 0x009210a0 function rcbgSceneSetPal           # fh switch:bsim1.00 0x71005472b0
+0x00921200 function rcbgSceneWaveC0Stop          # (scene): +0xb8, +0xbc = 0.0, +0xc0 = 0: ends the wave Yn_SceneSetC0 starts (update 0x009210e0)
 0x00921220 function rcVec3fDot                   # (a, b) -> float: (a.y*b.y + a.x*b.x) + a.z*b.z on the x87 stack, stored as f32
 0x00921250 function rcVec3fLength                # (v) -> float: sqrt((x*x + y*y) + z*z) through _CIsqrt, stored as f32; rcVec3fNormalize divides by it
 0x00921280 function rcVec3fLerp                  # (out, a, b, float t): out = a + (b - a) * t, x y z
@@ -5213,12 +5223,17 @@
 0x00922100 function rcbgTrxTexDraw            # fh v3:bsim1.00 0x00922100
 0x009221b0 function rcbgTrxTexNew             # fh v3:bsim1.00 0x009221b0
 0x00922560 function rcbgFPm097Init            # fh switch:bsim1.00 0x71005524e0
+0x00922b70 function rcbgFPm173Init               # (part) -> part: +0x10..0x24 cleared, type 0x20008, functions 0x00922b40, 0x00922be0; map 0xad's part (0x00921a50)
 0x00922ef0 function rcbgFPm173Start           # fh switch:bsim0.96 0x7100553480
+0x00922f50 function rcbgFPm565Init               # (part) -> part: type 0x20008, functions 0x00922f30, 0x00922fb0; maps 0x235, 0x236 (0x00921a50)
 0x00923100 function rcbgFpGetWork             # fh v3:exact 0x00923100
+0x00923240 function rcdtTm2ClutAlphaToPs2        # (clut): 256 RGBA entries, alpha a -> a * 128 / 255, alpha 0 -> entry 0; rcdtTm2 load (0x009232a0) when asked
+0x00923280 function rcdtTm2GetPsm                # (picture header) -> GS PSM of its image type (+0x13) from 0x00c5e754 (1 CT16, 2 CT24, 3 CT32, 4 T4, 5 T8), 0 for 0
 0x00923470 function rcdtTm2Fini               # fh switch:bsim0.91 0x710054b060
 0x009237e0 function rcdtTm2Init               # fh switch:bsim1.00 0x710054aff0
 0x00923800 function rcdtTm2Load               # fh switch:bsim1.00 0x710054b0c0
 0x00923960 function rcdtTm2LoadEff            # fh switch:bsim1.00 0x710054b330
+0x00924390 function rcdtRsd2Init                 # (rsd): 8 words cleared (rcdtRsd2.c, 0x00924750)
 0x009249c0 function rcefTargetGetHeight          # (i) -> float +0x10 of effect target i (0x025d5c60, 0x24 bytes each, filled by 0x00924a20); g_MagicImports
 0x009249e0 function rcefTargetGetAngle           # (i) -> float +0xc, the target's direction; g_MagicImports
 0x00924a00 function rcefTargetGetDist            # (i) -> float +8, horizontal distance (rcVec3fLength before the normalize); g_MagicImports
@@ -5268,9 +5283,11 @@
 0x00928460 function rcbgModelSetAlpha         # fh v3:exact 0x00928460
 0x00928540 function rcbgModelSetScale         # fh v3:exact 0x00928540
 0x00928970 function rcfxParticleResetForce    # fh v3:exact 0x00928970
+0x009289b0 function rcfxParticleClearForces      # (p): 16 bytes per particle (+0x2c array, +0x1c count) zeroed; rcfxParticleResetForce
 0x009289f0 function rcfxParticleSetCnt        # fh switch:bsim1.00 0x710054f3f0
 0x00928a60 function rcfxParticleSetTime       # fh switch:bsim1.00 0x710054f8b0
 0x00928c80 function rcfxSpringFini            # fh switch:bsim0.91 0x710054fa80
+0x009293d0 function rcfxDampInit                 # (damp) -> damp: type 0x30003, functions 0x009293c0 (+4), 0x00929360 (+0x14), +0x1c = 0.0001f (0x00b92154); rcfxDamp.c (0x00929420)
 0x00929910 function rcLog2Ceil                   # (n) -> smallest k in 1..16 with n <= 1 << k (16 when none); from 0x00920050
 0x00929950 function rcbgPalAlloc              # fh switch:bsim1.00 0x71005551c0
 0x009299b0 function rcbgPalInit               # fh v3:exact 0x009299b0
@@ -5278,6 +5295,7 @@
 0x00929bf0 function rcbgLayerDraw             # fh switch:cg8 0x7100553a70
 0x0092ad20 function rcbgLayerInit             # fh v3:exact 0x0092ad20
 0x0092ad80 function rcbgLayerProc             # fh switch:bsim1.00 0x7100553930
+0x0092aed0 function rcbgClipCodeAnd              # (out, a, b, c, d) -> out: out = (a & c, b & d); rcbgClipVertex
 0x0092af60 function rcbgClipVertex            # fh v3:cg2 0x92af60
 0x0092b0d0 function rcbgSetClipMatrix         # fh v3:exact 0x0092b0d0
 0x0092b140 function rcbgSetWorldMatrix        # fh v3:bsim1.00 0x0092b140
@@ -5314,6 +5332,7 @@
 0x0092c0d0 function rcdtParseSetPos           # fh switch:cg2 0x71008bfbc8
 0x0092c0f0 function rcdtParseAddSeparators       # (parse, chars): parse +0xc[c] = 1 for every byte of the C string
 0x0092d230 function rcbgTrxDraw               # fh switch:cg3 0x71005557c0
+0x0092d360 function rcbgTrxSetRegs               # (t, a..g i16) -> g: +0x1c = ((c << 8 | b) << 16) | a, +0x24 = e << 16 | d, +0x28 = f, +0x2c = g | f >> 31, +0x18 = +0x20 = 0 (sign-extended); 0x0092d320 (rcbgPalAlloc)
 0x0092d450 function rcbgTrxDelete             # fh v3:bsim1.00 0x0092d450
 0x0092d470 function rcbgTrxDraw_0092d470      # fh v3:exact 0x0092d470
 0x0092d490 function rcbgTrxFini               # fh v3:exact 0x0092d490
@@ -7727,6 +7746,7 @@
 0x00c5e370 label    g_GuideMarkerPalette         # 16 RGBA of floats (128 = 1), by marker flags & 0xf
 0x00c5e478 label    g_GuideEnabled               # 0: Guide_Update returns at once
 0x00c5e480 label    g_RcbgChunkTags              # 13 pointers to the Yn chunk tags (rcbgChunkTag)
+0x00c5e754 label    g_RcdtTm2Psm                 # GS pixel format per TIM2 image type, 8 words (rcdtTm2GetPsm): 0, 2, 1, 0, 0x14, 0x13
 0x00c5e790 label    g_GuidePacketStrides         # bytes per primitive of the minimap mesh's packet types 0-7 (0x14 0x1c 0x20 0x28 0x18 0x20 0x28 0x30); type 0: triangles, vertex indices at +0xc
 0x00c64ca0 label    g_MagicFile_MagicId       # MagicFile_GetMagicId; -1 = none (MagicFile_GetEffectOverlayTable checks)
 0x00c64cac label    g_MagicFile_Handle        # MagicFile_GetHandle; -1 = none (MagicFile_GetEffectOverlayTable checks)
@@ -8192,16 +8212,29 @@
 0x018716f8 label    g_TkMenuScissorBox        # 4 x f32 left, top, right, bottom (BeginScissor_XYUV; an edge counts as outside)
 0x018763e8 label    g_FFXToAlbhedTbl          # the Al Bhed character table (TOGetFFXToAlbhedTblAdrs)
 0x01876da8 label    g_Windows                 # TO window pointers: +0 in use (i16), +4 type, +8 state, +0x60 handler per state, +0x74 current handler (TOGetWindowType/Status, TOCloseWindow, TOControlWindow)
+0x01876e00 label    g_YiRender                   # the field renderer object (yiRender_*'s this): +0x68788 animation id bound, +0x9cac0 64 animation slots of 0x28, +0x9d4c4 keyframe data, +0x9d9c4 texture swap count, +0x9d9c8 64 swaps of 0x720 (yiAttachChrDObj, yiTexSwapSetFrame)
 0x018ded08 label    g_YiRenderStatus             # field renderer flags: yiRenderEnable/Disable; |= 0x11 once a map is read (yiMapReadMaster); bit 0 gates yiCallFieldParticle
 0x018ded0c label    g_YiDrawMask                 # yiGetDrawMask/yiSetDrawMask; -9 after a map is read, -1 with the battle map circle on (yiMapReadMaster); script native 0x8000 sets its bits
 0x018ded2c label    g_YiRenderParam              # yiSetRenderParam's value
 0x018dee38 label    g_YiViewAdjust               # 16 floats 0x0090a140 multiplies into the camera matrix (cdc_Mul4x4(out, camera, it)); yiGetViewAdjust / yiSetViewAdjust
 0x018deff8 label    g_YiScaleFactor              # x, y, z floats (yiSetScaleFactor)
+0x018df00c label    g_YiColorScale               # four floats (yiGetColorScale, yiSetColorScale; yiGetBackColor multiplies by it); saved with the render state
 0x018df01c label    g_YiColorOffset              # four floats, channel - 128 (yiSetColorOffset); saved and restored by yiPushRenderState / yiPopRenderState
+0x018df02c label    g_YiBattleCenter             # four floats, divided by g_YiScaleFactor (yiSetBattleCenter, yiGetBattleCenter)
+0x018df140 label    g_YiRenderWord               # a word saved with the render state (yiPushRenderState); ?meaning
+0x018df144 label    g_YiRenderFloats             # three floats saved with the render state (yiPushRenderState); ?meaning
+0x018df150 label    g_YiColorShift               # four floats; yiSetColorShift copies them out; saved with the render state
+0x018df178 label    g_YiBackColor                # background RGBA bytes (yiGetBackColor: scaled by g_YiColorScale plus g_YiColorOffset when render status bits 0 and 2)
 0x018df588 label    g_YiDObjCount                # display objects in use (yiGetMatrixDObj bound)
 0x018df59c label    g_YiDObjs                    # display objects, 0xb4 bytes each: +0 matrix, +0x40 rotation, +0x50 translation, +0x74 u16 group (yiGetMatrixGroup), +0x76 u16 rotation order (yiRotMatrixSeq; 0x00908190)
+0x019138a0 label    g_YiMapRead                  # non-zero once a map is read: gates yiCallFieldParticle
 0x019138a8 label    g_YiMapData                  # the map data read (yiMapReadMaster, yiObjReadCallback); +4 its status (yiGetMapStatus)
+0x01931208 label    g_YiFieldVec4                # four floats (yiSetFieldVec4, yiSetFieldVec4i); ?meaning
+0x01931218 label    g_YiFieldVec6                # six floats (yiSetFieldVec6); ?meaning
+0x01931230 label    g_YiRenderSave               # yiPushRenderState's save area: status, colour scale, offset, word, three floats, shift, then 128 x 100 bytes of display object transforms (+0x88 float, rotation, translation, matrix)
+0x01934e78 label    g_YiFieldFlags               # bit 0 set by yiSetFieldPair, bit 1 when its first argument is non-zero; floats at +4, +0x18..+0x24, int at +0x28 (yiSetFieldVec3Int); ?meaning
 0x01934ea4 label    g_YiColor3                   # three bytes (yiSetColor3)
+0x0193bb08 label    g_YiAnimUseVCount            # animations time by yiGetVCount when set, else yiGetFCount (yiAnimAttachDefault, yiKeyFrame_attachChr)
 0x0193bf28 label    g_YnSeaMatrix                # the sea's matrix (Yn_SeaGetMatrix, Yn_SeaSetMatrix, Yn_SeaResetMatrix)
 0x0193bf6c label    g_GuideFadeState             # Guide_FadeStep: 0 hidden (waiting), 1 fading in, 2 shown, 3 fading out; Guide_FadeOff clears it
 0x0193bf70 label    g_GuideFadeWait              # frames waited (Guide_FadeStep)
@@ -8209,6 +8242,7 @@
 0x0193bf78 label    g_GuideFade                  # the minimap's alpha, 0..128 (Guide_FadeStep)
 0x0193bf7c label    g_GuideBattleSave            # the guide's +0x6c float kept over a battle (rcbgGuideBattleBegin/End)
 0x0193bf80 label    g_YnMapSystem                # Yn's field state: +0 the map (its +8: guide map list, +0x18 i16 count, +0x1a i16 shown, +0x1c models), +4 the guide (Yn_GuideMapGetMapNo, Yn_GuideMapSetMapNo, Yn_BattleBegin)
+0x0193c0d0 label    g_RcefParKept                # particle parts rcefParCreate remembers for some magic effects: +0 0x20e, +8 0x180, +0x10 0x168, +0x18 0x217 (entry 2); +0xc 0xbf, +0x14 0x216 (entry 1)
 0x0193c0f0 label    g_RcuiWork                   # rcui work area: +0xbe8 the ID dragged, +0xbec rcuiMouseMoveGetID, +0xbf0 dragging
 0x0193ed20 label g_Sse2Available             # MSVC CRT __sse2_available: _ftol2_sse picks cvttsd2si when set (0 in an image that has not run its start-up)
 0x0193fdac label    g_MagicFile_IsNexData     # MagicFile_IsNexData
@@ -8226,6 +8260,8 @@
 0x022c9760 label    g_OpdHeapDisplay             # 4 x 0x40 heap gauges: +0 flags (0xffff none, bits 8-11 priority, 0x8000 ppp heap at +4), +8 used, +0xc total (opd_heap_display_*)
 0x022fb4dc label    g_TkMenuSceneData         # 8 menu scene data blocks (TkMenuSetSceneDataAdrs, TkMenuInitSeq zeroes them; layout in crates/ffx-menu/src/scene.rs)
 0x022fb504 label    g_Settings
+0x02305834 label    g_Abmap                      # the sphere grid data (LoadAbmap): +4 i16 link count, +0x808 nodes of 0x28 (x, y i16, +6 kind, +0x21 panel bits), +0xa816 link flags (0x14 each), +0xf834 kind sizes (0x30 each)
+0x0230fd2c label    g_PppPacketPos               # the VFX packet write position (pppFpLoop); KeLnsShp_Draw records it
 0x0230fd34 label    g_pppStopStatus              # set by pppFpStopStatus; the ppp per-frame steps (pppColor, pppAngle, ...) do nothing while nonzero
 0x0230ffe4 label    g_pppCurrentPart             # the part pppRunPart/pppRunPartFp/pppStartPart set while they run it; +0x3c points at 16-byte object records (the object at +4), which pppPObjPoint and pppKeThTp index by the key
 0x02310000 label g_ChrTexAnim               # 64 x 0x30: source +0, work +4, u8 format +0xd (0 old, 1 new) (chr_texanim_init)
@@ -8266,6 +8302,7 @@
 0x025d09d8 label    g_TOMenuPad2              # u16: TOMenuGetControlPad2
 0x025d09e2 label    g_TOMenuPadAlt            # 3 u16 (held, trg, rep), the other choice of TOMenuGetControlPad/Trg/Rep
 0x025d16bc label    g_TkMenuTutoChosen        # set by MenuTuto_SetChoice
+0x025d17a8 label    g_YiVramRegions              # image VRAM allocator: limits +0 (region 1), +4 (0 = g_YiVramLimit), +8, +0xc; next addresses +0x10, +0x14 (g_YiVramNext), +0x18, +0x1c (yiVramAllocPsm)
 0x025d17ac label    g_YiVramLimit                # end of the image VRAM allocator (yiVramSetLimit)
 0x025d17bc label    g_YiVramNext                 # its next free address, in bytes (yiVramAlloc)
 0x025d58a0 label    g_RcbgClipWorldMatrix        # g_RcbgViewWorldMatrix through g_RcbgClipMatrix (rcbgUpdateMatrix)
@@ -8273,4 +8310,6 @@
 0x025d5920 label    g_RcbgScreenWorldMatrix      # g_RcbgViewWorldMatrix through g_ScreenMatrix (rcbgUpdateMatrix)
 0x025d5960 label    g_RcbgViewWorldMatrix        # g_RcbgWorldMatrix through g_CameraMatrix (rcbgUpdateMatrix)
 0x025d59a0 label    g_RcbgWorldMatrix            # rcbgSetWorldMatrix
+
+0x025d5a24 label    g_RcefPrayEffect             # the pray effect rcEffectTaskPrayWait passes to op_pray_effect_check
 0x025d5c60 label    g_RcefTargets                # up to 16 effect targets, 0x24 bytes: u16 flags, +4 character, +8 distance, +0xc angle, +0x10 height, +0x14 direction (0x00924a20)
