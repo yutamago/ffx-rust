@@ -473,4 +473,174 @@ pub mod bridge {
             }
         }
     }
+    /// `MsGetFirstAttack(chance)` (`0x0078d090`): a first strike by the
+    /// party (1: a random byte below `chance`; with First Strike on an
+    /// acting party member, `g_PlySave` `+0x4a` bit 2, always) or an
+    /// ambush (2: at least `255 − chance`), else 0.
+    pub fn ms_get_first_attack(mem: &mut impl Mem, chance: i32) -> u32 {
+        let mut r = (crate::rng::bridge::brnd(mem, 1) & 0xff).cast_signed();
+        for i in 0..0x12 {
+            if byte(mem, ms_get_chr(mem, i), 0xdc8) != 0
+                && byte(
+                    mem,
+                    crate::save::bridge::ms_get_save_player_ptr(mem, i),
+                    0x4a,
+                ) & 4
+                    != 0
+            {
+                r = r.wrapping_add((-1i32).wrapping_sub(chance));
+                break;
+            }
+        }
+        if r >= 0xff_i32.wrapping_sub(chance) {
+            2
+        } else {
+            u32::from(r < chance)
+        }
+    }
+
+    /// `MsDefenseProcess()` (`0x007af8a0`): 0 while an acting actor with a
+    /// defense partner (`+0x6d4`) or that partner is still busy
+    /// (`+0x508`), both marked in [`crate::body::bridge::MOTION_BUSY`];
+    /// else 1.
+    pub fn ms_defense_process(mem: &mut impl Mem) -> u32 {
+        let busy = crate::body::bridge::MOTION_BUSY;
+        for i in 0..0x1f {
+            let a = ms_get_chr(mem, i);
+            let d = byte(mem, a, 0x6d4);
+            if d == 0xff || byte(mem, a, 0xdc8) == 0 {
+                continue;
+            }
+            let m = busy.get(mem);
+            busy.set(mem, m | (1 << (d & 31)) | (1 << i));
+            if byte(mem, a, 0x508) != 0 || byte(mem, ms_get_chr(mem, u32::from(d)), 0x508) != 0 {
+                return 0;
+            }
+        }
+        1
+    }
+
+    /// `MsBtlChrInit()` (`0x007935b0`): clears the 31 actors, the spare
+    /// record, the 62 weapon records and the 0x24 bytes at `*0x02311050`.
+    pub const CHR_EXTRA: Global<u32> = Global::new(0x0231_1050);
+
+    /// See [`CHR_EXTRA`].
+    pub fn ms_btl_chr_init(mem: &mut impl Mem) {
+        use crate::actor::bridge::{CHR_SPARE, CHR_TOP, WEAPON_TOP};
+        use crate::util::bridge::ms_struct_clear;
+        for k in 0..0x1f {
+            let p = CHR_TOP.get(mem).wrapping_add(k * 0xf90);
+            ms_struct_clear(mem, p, 0xf90);
+        }
+        let p = CHR_SPARE.ptr(mem).addr;
+        ms_struct_clear(mem, p, 0xf90);
+        for k in 0..0x3e {
+            let p = WEAPON_TOP.get(mem).wrapping_add(k * 0x390);
+            ms_struct_clear(mem, p, 0x390);
+        }
+        let p = CHR_EXTRA.get(mem);
+        ms_struct_clear(mem, p, 0x24);
+    }
+
+    /// Tidus' overdrive learning (`MsLimitTidusLearn`): how often he has
+    /// used one, the 4 overdrives with the uses each needs, and the one
+    /// just learnt.
+    pub const TIDUS_LIMIT_USES: Global<i32> = Global::new(0x0113_083c);
+    pub const TIDUS_LIMITS: Global<[u16; 4]> = Global::new(0x00c4_3948);
+    pub const TIDUS_LIMIT_NEEDS: Global<[i32; 4]> = Global::new(0x00c4_3950);
+    pub const LIMIT_LEARNT: Global<u8> = Global::new(0x0112_c02b);
+    pub const LIMIT_LEARNT_ID: Global<u16> = Global::new(0x0112_c94a);
+
+    /// `MsLimitTidusLearn(chr)` (`0x007b0cd0`): for Tidus (0), unless
+    /// records are off, one more use; each overdrive he lacks whose need
+    /// is met is learnt (the last in [`LIMIT_LEARNT_ID`]); 1 when one was.
+    pub fn ms_limit_tidus_learn(mem: &mut impl Mem, chr: i32) -> u32 {
+        if chr != 0 || RECORDS_OFF.get(mem) == 2 {
+            return 0;
+        }
+        let uses = TIDUS_LIMIT_USES.get(mem).wrapping_add(1);
+        TIDUS_LIMIT_USES.set(mem, uses);
+        let mut learnt = 0;
+        for (id, need) in TIDUS_LIMITS
+            .get(mem)
+            .into_iter()
+            .zip(TIDUS_LIMIT_NEEDS.get(mem))
+        {
+            if crate::save::bridge::ms_get_save_command(mem, 0, u32::from(id)) == 0 && uses >= need
+            {
+                learnt = 1;
+                LIMIT_LEARNT.set(mem, 1);
+                LIMIT_LEARNT_ID.set(mem, id);
+            }
+        }
+        learnt
+    }
+
+    /// `MsBattleCameraFree()` (`0x007ba950`): frees the script cameras'
+    /// third and fourth requests (`MsCameraFree`), then the screens' focus.
+    pub fn ms_battle_camera_free(mem: &mut impl Mem) {
+        let at = crate::minor::bridge::ATEL_CAMERA.ptr(mem).addr;
+        for k in 0..3 {
+            for o in [0x18, 0x24] {
+                let p = at + o + 4 * k;
+                let id: u32 = mem.read(p);
+                crate::camera::bridge::ms_camera_free(mem, id);
+                mem.write(p, 0u32);
+            }
+        }
+        crate::misc::bridge::ms_screen_focus_reset(mem);
+    }
+
+    /// `MsBindOffCamera(w)` (`0x007ba9c0`): the script worker's camera
+    /// (`AtelGetCameraWorkAdrs`, from the caller) leaves the script cameras
+    /// and is freed (`MsCameraFree`).
+    pub fn ms_bind_off_camera<M: Mem>(mem: &mut M, w: u32, work: impl FnOnce(&mut M, u32) -> u32) {
+        let slot = work(mem, w);
+        let id: u32 = mem.read(slot);
+        if id == 0 {
+            return;
+        }
+        let at = crate::minor::bridge::ATEL_CAMERA.ptr(mem).addr;
+        for k in 0..3 {
+            for o in [0, 0xc, 0x18, 0x24] {
+                let p = at + o + 4 * k;
+                if mem.read::<u32>(p) == id {
+                    mem.write(p, 0u32);
+                }
+            }
+        }
+        crate::camera::bridge::ms_camera_free(mem, id);
+        mem.write(slot, 0u32);
+    }
+
+    /// `MsCheckStatusBeforeActionDamage(actor)` (`0x007af770`): for an
+    /// acting actor without `+0x716`, 2 when an acting actor with a
+    /// counter running (`+0x612`) and `(+0x6d2 · max HP) >> 8` above -100
+    /// has status bit 2, 1 when some do without it, else 0.
+    pub fn ms_check_status_before_action_damage(mem: &impl Mem, actor: u32) -> u32 {
+        if byte(mem, actor, 0xdc8) == 0 || byte(mem, actor, 0x716) != 0 {
+            return 0;
+        }
+        let (mut with, mut without) = (0, 0);
+        for i in 0..0x1f {
+            let a = ms_get_chr(mem, i);
+            if byte(mem, a, 0xdc8) == 0 || byte(mem, a, 0x612) == 0 {
+                continue;
+            }
+            let p = u32::from(byte(mem, a, 0x6d2)).wrapping_mul(word(mem, a, 0x594));
+            if ((p >> 8).wrapping_add(100)).cast_signed() <= 0 {
+                continue;
+            }
+            if byte(mem, a, 0x606) & 2 != 0 {
+                with += 1;
+            } else {
+                without += 1;
+            }
+        }
+        if with != 0 {
+            2
+        } else {
+            u32::from(without != 0)
+        }
+    }
 }

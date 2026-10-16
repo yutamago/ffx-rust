@@ -7640,6 +7640,8 @@
 0x00c423e8 label g_StatusTable               # 4 bytes per status; MsCheckStat (0x0079e310) returns byte 3 of entry i
 0x00c42420 label g_StatusTable2              # entry 14 of g_StatusTable on; MsCheckStat2 (0x0079e320) returns byte 3 of entry i
 0x00c42464 label g_BtlStatCountTable          # 13 x 4 bytes, the counter statuses (MsCheckStatCount; MsCheckWrongStatus reads byte 3 bit 7: harmful)
+0x00c43948 label g_TidusLimits             # 4 x u16 overdrive command IDs Tidus learns (MsLimitTidusLearn)
+0x00c43950 label g_TidusLimitNeeds         # 4 x i32 uses each of g_TidusLimits needs
 0x00c4423c label g_CameraSelected          # u8: the camera whose slots MsGetNowSelectedCamraLevel weighs
 0x00c44240 label g_BtlScreenSize              # [u32; 2]; The screen size MsScreenInit stores.
 0x00c44270 label g_BtlPosHashList          # name list MsBtlPosInit hashes ("StartData", ...)
@@ -7780,6 +7782,7 @@
 0x0112c020 label g_BtlReadCueIndex            # u8; with the one before it (same function, ffx_battle::misc)
 0x0112c021 label g_BtlReadCueLevel           # u8, MsBtlReadCueLevel (0x007ad180)
 0x0112c029 label g_SepTransFlag            # u16 cleared by MsSEPtransInit
+0x0112c02b label g_BtlLimitLearnt          # u8 set when MsLimitTidusLearn teaches an overdrive
 0x0112c02c label g_SepTransTable           # 0x80 words cleared by MsSEPtransInit
 0x0112c22c label g_EffectCameraBuf         # 8 words cleared by MsEffectCameraBufInit
 0x0112c256 label g_BtlFieldIndex             # i16, the current battle field's record (MsBattleGetNum: its ID << 16 + the group ID)
@@ -7798,6 +7801,7 @@
 0x0112c944 label g_BtlMessageCueCount         # u8, messages queued (at most 4)
 0x0112c945 label g_BtlMessageCueStart         # u8, the ring's first entry
 0x0112c948 label g_BtlUseItem                # u16 item being used (MsSetUseItem 0x00790790); MsGetSaveItemNum counts one less of it
+0x0112c94a label g_BtlLimitLearntId        # u16 the overdrive just learnt
 0x0112c950 label g_BtlStoneList            # up to 31 petrified actors (u32), count g_BtlStoneEffect (MsStoneRegist)
 0x0112c9cd label    g_BtlPadOrientation          # 0-3, set by 0x7099; read by 0x00780ce0 for the d-pad remap
 0x0112c9ce label g_BtlUnderwater             # i8, the formation's byte 3 (underwater fields); MsBattleWater (0x007821e0) returns it, MsGetVoiceEventFlag returns 0 while it is set
@@ -7842,6 +7846,7 @@
 0x011307eb label g_SaveOutParty              # 0x11 x u8 reserve members (MsGetSaveOutParty 0x007852d0, count 0x11)
 0x011307fc label g_SaveSharedCommands        # flag words of commands 0x3060-0x3fff for everybody, bit of cmd - 0x60 (MsGetSaveCommand 0x00785020); below 0x3060 they are in ply_save +0x3e
 0x01130834 label g_SaveYoujinbouCom          # save +0x3da4: u32 Yojimbo's command (MsGetYoujinbouCom 0x007b2b20)
+0x0113083c label g_SaveTidusLimitUses      # i32: Tidus' overdrive uses, counted by MsLimitTidusLearn
 0x01130840 label g_StealCount                 # u32, items stolen from monster kind 6 (+0xded); achievementUnlockAchievement(4) from 200 (Battle_Steal)
 0x0113085c label g_SaveEventFlags            # MsGetSaveEventFlag (0x00785250)
 0x0113095c label g_SaveItemIds               # 0x70 x u16 inventory item IDs (MsSaveItemTypeBuffer 0x00790530, count 0x70; MsGetSaveItemNum)
@@ -8175,6 +8180,7 @@
 0x02310cd8 label g_BtlItemMem2                # u32; with the one before it (same function, ffx_battle::misc)
 0x02310ed8 label g_BtlStartAp                 # [u32; 18]; The AP of 18 actors at battle start (MsBtlStartAP copies the current ones, 0x48 bytes on, here).
 0x02310f20 label    g_TkBtlEndResults         # battle-end words (BtlEnd_GetResult); the first 18 are the AP each character gained (MsApUp)
+0x02311050 label g_BtlChrExtra             # pointer to 0x24 bytes MsBtlChrInit clears
 0x023110a0 label g_DefaultChrNames           # 0x14 bytes per character (getDefaultChrName 0x00787320)
 0x02311240 label g_BtlDamageRates             # 4 bytes per actor: physical, magic damage dealt bonus %, physical, magic damage taken reduction % (DmgCalc_StatBoostAbility)
 0x02311424 label g_CameraPriorityMask        # not 0: MsCameraPriority (0x007be0a0) changes nothing (MsCameraPriorityMask 0x007be100)

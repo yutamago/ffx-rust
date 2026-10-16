@@ -264,6 +264,101 @@ fn more(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World) {
     same("more", a, b);
 }
 
+fn third(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World) {
+    let chance = rng.range(-10, 300);
+    for c in 0..18 {
+        let at = ffx_battle::save::bridge::PLY_SAVE.ptr(b).addr + 0x94 * c + 0x4a;
+        poke(a, b, at, &[u8::from(rng.below(8) == 0) << 2]);
+    }
+    twin(
+        "MsGetFirstAttack",
+        a,
+        b,
+        0x0078_d090,
+        &[chance.cast_unsigned()],
+        ALL,
+        |m| f::ms_get_first_attack(m, chance),
+    );
+    for i in 0..ACTORS {
+        let d = if rng.below(3) == 0 {
+            0xff
+        } else {
+            u8::try_from(rng.below(ACTORS)).unwrap()
+        };
+        poke(a, b, w.actor(i) + 0x6d4, &[d]);
+    }
+    twin("MsDefenseProcess", a, b, 0x007a_f8a0, &[], ALL, |m| {
+        f::ms_defense_process(m)
+    });
+    let chr = if rng.below(3) == 0 {
+        rng.range(-1, 3)
+    } else {
+        0
+    };
+    twin(
+        "MsLimitTidusLearn",
+        a,
+        b,
+        0x007b_0cd0,
+        &[chr.cast_unsigned()],
+        ALL,
+        |m| f::ms_limit_tidus_learn(m, chr),
+    );
+    // camera requests: the slots' own IDs often, so that some are freed
+    let at = ffx_battle::minor::bridge::ATEL_CAMERA.ptr(b).addr;
+    for k in 0..12 {
+        let id = if rng.below(2) == 0 {
+            let slot = ffx_battle::camera::bridge::SLOTS_AT.ptr(b).addr
+                + ffx_battle::camera::bridge::CAMERA_SIZE * rng.below(3)
+                + 8 * rng.below(4);
+            u32::from_le_bytes(b.read(slot, 4).unwrap().try_into().unwrap())
+        } else {
+            rng.below(4)
+        };
+        poke(a, b, at + 4 * k, &id.to_le_bytes());
+    }
+    twin("MsBattleCameraFree", a, b, 0x007b_a950, &[], 0, |m| {
+        f::ms_battle_camera_free(m);
+        0
+    });
+    // the table again (MsBattleCameraFree cleared half of it)
+    for k in 0..12 {
+        let id = rng.below(4) << 16 | rng.below(3);
+        poke(a, b, at + 4 * k, &id.to_le_bytes());
+    }
+    let worker = w.out + 0x40;
+    let slot = ffx_script::vm::bridge::atel_get_camera_work_adrs(worker);
+    let id = u32::from_le_bytes(
+        b.read(at + 4 * rng.below(12), 4)
+            .unwrap()
+            .try_into()
+            .unwrap(),
+    );
+    poke(
+        a,
+        b,
+        slot,
+        &if rng.below(4) == 0 { 0 } else { id }.to_le_bytes(),
+    );
+    twin("MsBindOffCamera", a, b, 0x007b_a9c0, &[worker], 0, |m| {
+        f::ms_bind_off_camera(m, worker, |_, w| {
+            ffx_script::vm::bridge::atel_get_camera_work_adrs(w)
+        });
+        0
+    });
+    let actor = w.actor(rng.below(ACTORS));
+    twin(
+        "MsCheckStatusBeforeActionDamage",
+        a,
+        b,
+        0x007a_f770,
+        &[actor],
+        ALL,
+        |m| f::ms_check_status_before_action_damage(m, actor),
+    );
+    same("third", a, b);
+}
+
 fn globals(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     for (g, len) in [
         (f::EFFECT_WAIT.ptr(b).addr, 2),
@@ -278,6 +373,9 @@ fn globals(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         (ffx_battle::minor::bridge::ATEL_MANAGERS.ptr(b).addr, 0x1900),
         (f::MENU_TEXT.ptr(b).addr, 0xcc),
         (f::BTL_POS.ptr(b).addr, 0x50),
+        (f::TIDUS_LIMIT_USES.ptr(b).addr, 4),
+        (f::LIMIT_LEARNT.ptr(b).addr, 1),
+        (ffx_battle::camera::bridge::SLOTS_AT.ptr(b).addr, 0xda0 * 3),
     ] {
         fill(a, b, rng, g, len);
     }
@@ -317,6 +415,17 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         fill(a, b, rng, w.out, 0x100);
         calls(a, b, rng, &w);
         more(a, b, rng, &w);
+        third(a, b, rng, &w);
+    }
+    // MsBtlChrInit clears every actor: last
+    if w.synthetic {
+        let extra = w.out + 0x80;
+        set(a, b, f::CHR_EXTRA, extra);
+        twin("MsBtlChrInit", a, b, 0x0079_35b0, &[], 0, |m| {
+            f::ms_btl_chr_init(m);
+            0
+        });
+        same("MsBtlChrInit", a, b);
     }
 }
 

@@ -1688,4 +1688,32 @@ ported! {
     MsSetChrMoveFlagAll @ 0x0078_8e90 => extern "C" fn ms_set_chr_move_flag_all(on: u32) {
         flow::ms_set_chr_move_flag_all(&mut mem(), on);
     }
+    /// `MsGetFirstAttack`.
+    MsGetFirstAttack @ 0x0078_d090 => extern "C" fn ms_get_first_attack(chance: i32) -> u32 {
+        flow::ms_get_first_attack(&mut mem(), chance)
+    }
+    /// `MsDefenseProcess`.
+    MsDefenseProcess @ 0x007a_f8a0 => extern "C" fn ms_defense_process() -> u32 {
+        flow::ms_defense_process(&mut mem())
+    }
+    /// `MsBtlChrInit`.
+    MsBtlChrInit @ 0x0079_35b0 => extern "C" fn ms_btl_chr_init() {
+        flow::ms_btl_chr_init(&mut mem());
+    }
+    /// `MsLimitTidusLearn`.
+    MsLimitTidusLearn @ 0x007b_0cd0 => extern "C" fn ms_limit_tidus_learn(chr: i32) -> u32 {
+        flow::ms_limit_tidus_learn(&mut mem(), chr)
+    }
+    /// `MsBattleCameraFree`.
+    MsBattleCameraFree @ 0x007b_a950 => extern "C" fn ms_battle_camera_free() {
+        flow::ms_battle_camera_free(&mut mem());
+    }
+    /// `MsBindOffCamera(w)`: `AtelGetCameraWorkAdrs` (script) for the worker.
+    MsBindOffCamera @ 0x007b_a9c0 => extern "C" fn ms_bind_off_camera(w: u32) {
+        flow::ms_bind_off_camera(&mut mem(), w, |_, w| ffx_script::vm::bridge::atel_get_camera_work_adrs(w));
+    }
+    /// `MsCheckStatusBeforeActionDamage`.
+    MsCheckStatusBeforeActionDamage @ 0x007a_f770 => extern "C" fn ms_check_status_before_action_damage(actor: u32) -> u32 {
+        flow::ms_check_status_before_action_damage(&mem(), actor)
+    }
 }
