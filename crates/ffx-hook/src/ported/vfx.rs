@@ -4,7 +4,7 @@
 use super::{mem, ported};
 use ffx_vfx::mat::{self, order};
 use ffx_vfx::rand::bridge::{Kind, Spread};
-use ffx_vfx::{et, fp, heap, op, opd, opus, part, ppp, prog, rand, slots, tree};
+use ffx_vfx::{et, fp, heap, op, opd, opus, part, ppp, prog, rand, slots, small, tree};
 
 /// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`), so the
 /// CRT's state moves as it does with the originals.
@@ -1075,6 +1075,260 @@ ported! {
     /// `TOBtlLibraGetRects()`.
     TOBtlLibraGetRects @ 0x0089_7dc0 => extern "C" fn to_btl_libra_get_rects() -> u32 {
         slots::bridge::to_btl_libra_get_rects(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_char_table_set`.
+    op_char_table_set @ 0x007e_13e0 => extern "C" fn op_char_table_set(table: u32, chars: u32, v: u32)  {
+        small::bridge::op_char_table_set(&mut mem(), table, chars, v);
+    }
+    /// `op_str_unquote`.
+    op_str_unquote @ 0x007e_1b50 => extern "C" fn op_str_unquote(s: u32)  {
+        small::bridge::op_str_unquote(&mut mem(), s);
+    }
+    /// `op_and64`.
+    op_and64 @ 0x007e_3040 => extern "C" fn op_and64(dst: u32, a: u32, b: u32)  {
+        small::bridge::op_logic64(&mut mem(), dst, a, b, false);
+    }
+    /// `op_or64`.
+    op_or64 @ 0x007e_6c80 => extern "C" fn op_or64(dst: u32, a: u32, b: u32)  {
+        small::bridge::op_logic64(&mut mem(), dst, a, b, true);
+    }
+    /// `op_word_copy3`.
+    op_word_copy3 @ 0x007e_3060 => extern "C" fn op_word_copy3(dst: u32, src: u32)  {
+        op::bridge::op_word_copy(&mut mem(), dst, src);
+    }
+    /// `op_word_copy4`.
+    op_word_copy4 @ 0x007e_6c70 => extern "C" fn op_word_copy4(dst: u32, src: u32)  {
+        op::bridge::op_word_copy(&mut mem(), dst, src);
+    }
+    /// `op_float_scale`.
+    op_float_scale @ 0x007e_3070 => extern "C" fn op_float_scale(dst: u32, v: u32, s: f32)  {
+        small::bridge::op_float_step(&mut mem(), dst, v, s, 0, '*');
+    }
+    /// `op_float_scale2`.
+    op_float_scale2 @ 0x0080_2080 => extern "C" fn op_float_scale2(dst: u32, v: u32, s: f32)  {
+        small::bridge::op_float_step(&mut mem(), dst, v, s, 0, '*');
+    }
+    /// `op_float_add`.
+    op_float_add @ 0x007e_5950 => extern "C" fn op_float_add(dst: u32, v: u32, s: f32)  {
+        small::bridge::op_float_step(&mut mem(), dst, v, s, 0, '+');
+    }
+    /// `op_float_sub`.
+    op_float_sub @ 0x007e_59a0 => extern "C" fn op_float_sub(dst: u32, v: u32, s: f32)  {
+        small::bridge::op_float_step(&mut mem(), dst, v, s, 0, '-');
+    }
+    /// `op_vec_w_sub`.
+    op_vec_w_sub @ 0x007e_31c0 => extern "C" fn op_vec_w_sub(dst: u32, v: u32, s: f32)  {
+        small::bridge::op_float_step(&mut mem(), dst, v, s, 0xc, '-');
+    }
+    /// `op_vec_z_scale`.
+    op_vec_z_scale @ 0x007e_cea0 => extern "C" fn op_vec_z_scale(dst: u32, v: u32, s: f32)  {
+        small::bridge::op_float_step(&mut mem(), dst, v, s, 8, '*');
+    }
+    /// `op_vec_w_add2`.
+    op_vec_w_add2 @ 0x007e_cc00 => extern "C" fn op_vec_w_add2(dst: u32, v: u32, a: u32, b: u32, c: u32, s: f32)  {
+        let _ = (a, b, c);
+        small::bridge::op_float_step(&mut mem(), dst, v, s, 0xc, '+');
+    }
+    /// `op_or16_64`.
+    op_or16_64 @ 0x007e_30a0 => extern "C" fn op_or16_64(dst: u32, src: u32, v: u32)  {
+        small::bridge::op_or16_64(&mut mem(), dst, src, v);
+    }
+    /// `op_mask16_64`.
+    op_mask16_64 @ 0x007e_ca00 => extern "C" fn op_mask16_64(dst: u32, a: u32, b: u32)  {
+        small::bridge::op_mask16_64(&mut mem(), dst, a, b);
+    }
+    /// `op_add64_2`.
+    op_add64_2 @ 0x007e_ca20 => extern "C" fn op_add64_2(dst: u32, src: u32, n: u32)  {
+        op::bridge::op_add64(&mut mem(), dst, src, n);
+    }
+    /// `op_color_shift_store_word`.
+    op_color_shift_store_word @ 0x007e_30c0 => extern "C" fn op_color_shift_store_word(src: u32, base: u32)  {
+        small::bridge::op_color_shift(&mut mem(), src, base, false, false);
+    }
+    /// `op_color_shift_store_half`.
+    op_color_shift_store_half @ 0x007e_aa60 => extern "C" fn op_color_shift_store_half(src: u32, base: u32)  {
+        small::bridge::op_color_shift(&mut mem(), src, base, true, false);
+    }
+    /// `op_color_shift_load_word`.
+    op_color_shift_load_word @ 0x007e_cac0 => extern "C" fn op_color_shift_load_word(dst: u32, base: u32)  {
+        small::bridge::op_color_shift(&mut mem(), dst, base, false, true);
+    }
+    /// `op_color_shift_load16_2`.
+    op_color_shift_load16_2 @ 0x007e_ca90 => extern "C" fn op_color_shift_load16_2(dst: u32, base: u32)  {
+        op::bridge::op_color_shift_load16(&mut mem(), dst, base);
+    }
+    /// `op_pow2`.
+    op_pow2 @ 0x007e_31e0 => extern "C" fn op_pow2(n: u32) -> u32 {
+        small::bridge::op_pow2(n)
+    }
+    /// `op_log2_ceil`.
+    op_log2_ceil @ 0x007e_aa90 => extern "C" fn op_log2_ceil(n: u32) -> u32 {
+        small::bridge::op_log2_ceil(n)
+    }
+    /// `op_fabs`.
+    op_fabs @ 0x007e_3360 => extern "C" fn op_fabs(x: f32) -> f32 {
+        small::bridge::op_fabs(x)
+    }
+    /// `op_table2_get`.
+    op_table2_get @ 0x007e_37b0 => extern "C" fn op_table2_get(t: u32, i: u32, j: u32) -> u32 {
+        small::bridge::op_table2_get(&mem(), t, i, j)
+    }
+    /// `op_vec_splat`.
+    op_vec_splat @ 0x007e_37f0 => extern "C" fn op_vec_splat(dst: u32, v: f32)  {
+        small::bridge::op_vec_splat(&mut mem(), dst, v);
+    }
+    /// `op_vec4_move`.
+    op_vec4_move @ 0x007e_3f60 => extern "C" fn op_vec4_move(dst: u32, src: u32)  {
+        small::bridge::op_vec4_move(&mut mem(), dst, src);
+    }
+    /// `op_oef2_tex_pos_replace`.
+    op_oef2_tex_pos_replace @ 0x007e_4fc0 => extern "C" fn op_oef2_tex_pos_replace(rec: u32, pos: u32) -> u32 {
+        small::bridge::op_oef2_tex_pos_replace(&mut mem(), rec, pos)
+    }
+    /// `op_vec_zero`.
+    op_vec_zero @ 0x007e_5660 => extern "C" fn op_vec_zero(dst: u32)  {
+        small::bridge::op_vec_zero(&mut mem(), dst);
+    }
+    /// `op_vec_xz_add`.
+    op_vec_xz_add @ 0x007e_6ca0 => extern "C" fn op_vec_xz_add(dst: u32, v: u32, x: f32, y: u32, z: f32)  {
+        let _ = y;
+        small::bridge::op_vec_xz_add(&mut mem(), dst, v, x, z);
+    }
+    /// `op_unit_m`.
+    op_unit_m @ 0x007e_a6d0 => extern "C" fn op_unit_m(dst: u32)  {
+        small::bridge::op_unit_m(&mut mem(), dst);
+    }
+    /// `op_word_copy_z`.
+    op_word_copy_z @ 0x007e_ce80 => extern "C" fn op_word_copy_z(dst: u32, src: u32)  {
+        small::bridge::op_word_copy_at(&mut mem(), dst, src, 8);
+    }
+    /// `op_spr_cmd_size`.
+    op_spr_cmd_size @ 0x007f_5ed0 => extern "C" fn op_spr_cmd_size(cmd: u32) -> u32 {
+        small::bridge::op_spr_cmd_size(&mem(), cmd)
+    }
+    /// `op_is_not_0119fe90`.
+    op_is_not_0119fe90 @ 0x007f_e430 => extern "C" fn op_is_not_0119fe90(x: u32) -> u32 {
+        small::bridge::op_is_not(&mem(), x, 0x0119_fe90)
+    }
+    /// `op_is_not_encount`.
+    op_is_not_encount @ 0x007f_e4c0 => extern "C" fn op_is_not_encount(x: u32) -> u32 {
+        small::bridge::op_is_not(&mem(), x, 0x0119_fe98)
+    }
+    /// `opus_draw_slot_clear`.
+    opus_draw_slot_clear @ 0x007f_e690 => extern "C" fn opus_draw_slot_clear(obj: u32, v: u32)  {
+        small::bridge::opus_draw_slot_clear(&mut mem(), obj, v);
+    }
+    /// `op_et_eff_index`.
+    op_et_eff_index @ 0x007f_ed60 => extern "C" fn op_et_eff_index(id: u32) -> i32 {
+        small::bridge::op_et_eff_index(&mem(), id)
+    }
+    /// `op_oef2_sep_number_get`.
+    op_oef2_sep_number_get @ 0x007f_ff80 => extern "C" fn op_oef2_sep_number_get(cue: u32) -> u32 {
+        small::bridge::op_oef2_sep_number_get(&mem(), cue)
+    }
+    /// `opus_part_kind`.
+    opus_part_kind @ 0x0080_0410 => extern "C" fn opus_part_kind(p: u32) -> u32 {
+        small::bridge::opus_part_kind(&mem(), p)
+    }
+    /// `opusIdentity_00806450`.
+    opusIdentity_00806450 @ 0x0080_6450 => extern "C" fn opus_identity_00806450(v: u32) -> u32 {
+        v
+    }
+    /// `opusIdentity_00806460`.
+    opusIdentity_00806460 @ 0x0080_6460 => extern "C" fn opus_identity_00806460(v: u32) -> u32 {
+        v
+    }
+    /// `opusIdentity_00806470`.
+    opusIdentity_00806470 @ 0x0080_6470 => extern "C" fn opus_identity_00806470(v: u32) -> u32 {
+        v
+    }
+    /// `opusIdentity_00806480`.
+    opusIdentity_00806480 @ 0x0080_6480 => extern "C" fn opus_identity_00806480(v: u32) -> u32 {
+        v
+    }
+    /// `opusIdentity_00806610`.
+    opusIdentity_00806610 @ 0x0080_6610 => extern "C" fn opus_identity_00806610(v: u32) -> u32 {
+        v
+    }
+    /// `opusIdentity_00806620`.
+    opusIdentity_00806620 @ 0x0080_6620 => extern "C" fn opus_identity_00806620(v: u32) -> u32 {
+        v
+    }
+    /// `opusCopyIf_00806490`.
+    opusCopyIf_00806490 @ 0x0080_6490 => extern "stdcall" fn opus_copy_if_00806490(dst: u32, src: u32)  {
+        small::bridge::copy_if(&mut mem(), dst, src);
+    }
+    /// `opusCopyIf_008064b0`.
+    opusCopyIf_008064b0 @ 0x0080_64b0 => extern "stdcall" fn opus_copy_if_008064b0(dst: u32, src: u32)  {
+        small::bridge::copy_if(&mut mem(), dst, src);
+    }
+    /// `opusCopyIf_008064f0`.
+    opusCopyIf_008064f0 @ 0x0080_64f0 => extern "stdcall" fn opus_copy_if_008064f0(dst: u32, src: u32)  {
+        small::bridge::copy_if(&mut mem(), dst, src);
+    }
+    /// `opusCopyIf_00806510`.
+    opusCopyIf_00806510 @ 0x0080_6510 => extern "stdcall" fn opus_copy_if_00806510(dst: u32, src: u32)  {
+        small::bridge::copy_if(&mut mem(), dst, src);
+    }
+    /// `opusCopyIf_008064d0`.
+    opusCopyIf_008064d0 @ 0x0080_64d0 => extern "C" fn opus_copy_if_008064d0(al: u32, dst: u32, src: u32)  {
+        let _ = al;
+        small::bridge::copy_if(&mut mem(), dst, src);
+    }
+    /// `opusCopyIf_00806530`.
+    opusCopyIf_00806530 @ 0x0080_6530 => extern "C" fn opus_copy_if_00806530(al: u32, dst: u32, src: u32)  {
+        let _ = al;
+        small::bridge::copy_if(&mut mem(), dst, src);
+    }
+    /// `opusSetThis_00806730`.
+    opusSetThis_00806730 @ 0x0080_6730 => extern "thiscall" fn opus_set_this_00806730(this: u32, v: u32, x: u32) -> u32 {
+        let _ = x;
+        small::bridge::set_this(&mut mem(), this, v)
+    }
+    /// `opusSetThis_00806740`.
+    opusSetThis_00806740 @ 0x0080_6740 => extern "thiscall" fn opus_set_this_00806740(this: u32, v: u32, x: u32) -> u32 {
+        let _ = x;
+        small::bridge::set_this(&mut mem(), this, v)
+    }
+    /// `opusSetThis_00806750`.
+    opusSetThis_00806750 @ 0x0080_6750 => extern "thiscall" fn opus_set_this_00806750(this: u32, v: u32, x: u32) -> u32 {
+        let _ = x;
+        small::bridge::set_this(&mut mem(), this, v)
+    }
+    /// `opusSetThis_00806760`.
+    opusSetThis_00806760 @ 0x0080_6760 => extern "thiscall" fn opus_set_this_00806760(this: u32, v: u32, x: u32) -> u32 {
+        let _ = x;
+        small::bridge::set_this(&mut mem(), this, v)
+    }
+    /// `opusSetThis_00806770`.
+    opusSetThis_00806770 @ 0x0080_6770 => extern "thiscall" fn opus_set_this_00806770(this: u32, v: u32, x: u32) -> u32 {
+        let _ = x;
+        small::bridge::set_this(&mut mem(), this, v)
+    }
+    /// `opusSetThis_00806780`.
+    opusSetThis_00806780 @ 0x0080_6780 => extern "thiscall" fn opus_set_this_00806780(this: u32, v: u32, x: u32) -> u32 {
+        let _ = x;
+        small::bridge::set_this(&mut mem(), this, v)
+    }
+    /// `opusIterEq_00806970`.
+    opusIterEq_00806970 @ 0x0080_6970 => extern "thiscall" fn opus_iter_eq_00806970(this: u32, other: u32) -> u32 {
+        small::bridge::iter_eq(&mem(), this, other, false)
+    }
+    /// `opusIterEq_00806990`.
+    opusIterEq_00806990 @ 0x0080_6990 => extern "thiscall" fn opus_iter_eq_00806990(this: u32, other: u32) -> u32 {
+        small::bridge::iter_eq(&mem(), this, other, false)
+    }
+    /// `opusIterNe_008069b0`.
+    opusIterNe_008069b0 @ 0x0080_69b0 => extern "thiscall" fn opus_iter_ne_008069b0(this: u32, other: u32) -> u32 {
+        small::bridge::iter_eq(&mem(), this, other, true)
+    }
+    /// `opusIterNe_008069d0`.
+    opusIterNe_008069d0 @ 0x0080_69d0 => extern "thiscall" fn opus_iter_ne_008069d0(this: u32, other: u32) -> u32 {
+        small::bridge::iter_eq(&mem(), this, other, true)
+    }
+    /// `opusPlus0c`.
+    opusPlus0c @ 0x0080_6b50 => extern "C" fn opus_plus0c(p: u32) -> u32 {
+        p.wrapping_add(0xc)
     }
     /// `op_et_eff_off_signal(id)`.
     op_et_eff_off_signal @ 0x007f_c450 => extern "C" fn op_et_eff_off_signal(id: u32) {

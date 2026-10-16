@@ -30,5 +30,6 @@ pub mod ppp;
 pub mod prog;
 pub mod rand;
 pub mod slots;
+pub mod small;
 pub mod tree;
 pub mod x87;

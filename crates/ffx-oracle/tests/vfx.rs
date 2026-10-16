@@ -9,7 +9,7 @@ use std::sync::{Arc, OnceLock};
 
 use ffx_bridge::{Global, Mem, Value};
 use ffx_oracle::{Conv, Oracle, Pages};
-use ffx_vfx::{et, fp, heap, mat, op, opd, opus, part, ppp, prog, rand, slots, tree, x87};
+use ffx_vfx::{et, fp, heap, mat, op, opd, opus, part, ppp, prog, rand, slots, small, tree, x87};
 
 fn exe() -> Option<PathBuf> {
     let dir = std::env::var_os("FFX_GAME_DIR").map(PathBuf::from);
@@ -5612,6 +5612,253 @@ fn libra_rects_match_the_original() {
             p.fill(block, 0xd4, &mut rng);
             p.check("TOBtlLibraGetRects", 0x0089_7dc0, &[], |m| {
                 Some(slots::bridge::to_btl_libra_get_rects(m, &mut call_original))
+            });
+        }
+    }
+}
+
+/// [`Pair::check`] with a calling convention.
+fn check_conv(
+    p: &mut Pair,
+    what: &str,
+    sym: u32,
+    conv: Conv,
+    args: &[u32],
+    rust: impl FnOnce(&mut Oracle) -> Option<u32>,
+) {
+    let at = p.sym(sym);
+    let r =
+        p.a.call(at, conv, args)
+            .unwrap_or_else(|e| panic!("{}: {what}: {e:?}", p.name));
+    if let Some(m) = rust(&mut p.b) {
+        assert_eq!(r.eax, m, "{}: {what}: result", p.name);
+    }
+    p.same(what);
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn small_op_helpers_match_the_original() {
+    use small::bridge as s;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0007_e3a0);
+        let (a, b, c) = (p.alloc(0x100), p.alloc(0x100), p.alloc(0x100));
+        let out = p.alloc(4);
+        let eff = p.sym(et::bridge::EFF.sym);
+        for _ in 0..300 {
+            p.fill(a, 0x100, &mut rng);
+            p.fill(b, 0x100, &mut rng);
+            p.fill(c, 0x100, &mut rng);
+            // a string of a few letters, quotes and a terminator at b
+            for i in 0..12 {
+                let ch = rng.pick(&[b'a', b'\'', b'"', b'Z', 0xc1, b'q']);
+                p.set(b + i, ch);
+            }
+            p.set(b + 12, 0u8);
+            let v = rng.next();
+            p.check("op_char_table_set", 0x007e_13e0, &[a + 0x80, b, v], |m| {
+                s::op_char_table_set(m, a + 0x80, b, v);
+                None
+            });
+            p.check("op_str_unquote", 0x007e_1b50, &[b], |m| {
+                s::op_str_unquote(m, b);
+                None
+            });
+            for (at, or) in [(0x007e_3040u32, false), (0x007e_6c80, true)] {
+                p.check("op_logic64", at, &[c, a, a + 8], |m| {
+                    s::op_logic64(m, c, a, a + 8, or);
+                    None
+                });
+            }
+            for at in [0x007e_3060u32, 0x007e_6c70] {
+                p.check("op_word_copy", at, &[c + 0x10, a + 4], |m| {
+                    op::bridge::op_word_copy(m, c + 0x10, a + 4);
+                    None
+                });
+            }
+            for i in 0..16 {
+                let x = finite(&mut rng);
+                p.set(a + 4 * i, x);
+            }
+            let sb = finite(&mut rng);
+            let sf = f32::from_bits(sb);
+            for (at, off, op) in [
+                (0x007e_3070u32, 0u32, '*'),
+                (0x0080_2080, 0, '*'),
+                (0x007e_5950, 0, '+'),
+                (0x007e_59a0, 0, '-'),
+                (0x007e_31c0, 0xc, '-'),
+                (0x007e_cea0, 8, '*'),
+            ] {
+                p.check("op_float_step", at, &[c, a, sb], |m| {
+                    s::op_float_step(m, c, a, sf, off, op);
+                    None
+                });
+            }
+            p.check("op_vec_w_add2", 0x007e_cc00, &[c, a, 0, 0, 0, sb], |m| {
+                s::op_float_step(m, c, a, sf, 0xc, '+');
+                None
+            });
+            let z = finite(&mut rng);
+            p.check("op_vec_xz_add", 0x007e_6ca0, &[c, a, sb, 0, z], |m| {
+                s::op_vec_xz_add(m, c, a, sf, f32::from_bits(z));
+                None
+            });
+            let w = rng.next();
+            p.check("op_or16_64", 0x007e_30a0, &[c, a, w], |m| {
+                s::op_or16_64(m, c, a, w);
+                None
+            });
+            let (x, y) = (rng.next(), rng.next());
+            p.check("op_mask16_64", 0x007e_ca00, &[c, x, y], |m| {
+                s::op_mask16_64(m, c, x, y);
+                None
+            });
+            p.check("op_add64_2", 0x007e_ca20, &[c, a, x], |m| {
+                op::bridge::op_add64(m, c, a, x);
+                None
+            });
+            for (at, half, load) in [
+                (0x007e_30c0u32, false, false),
+                (0x007e_aa60, true, false),
+                (0x007e_cac0, false, true),
+            ] {
+                p.put(ppp::bridge::COLOR_CON_SHIFT, 2 * rng.below(8));
+                p.check("op_color_shift", at, &[c + 0x40, b + 0x40], |m| {
+                    s::op_color_shift(m, c + 0x40, b + 0x40, half, load);
+                    None
+                });
+            }
+            p.put(ppp::bridge::COLOR_CON_SHIFT, 2 * rng.below(8));
+            p.check("op_color_shift_load16_2", 0x007e_ca90, &[c, b], |m| {
+                op::bridge::op_color_shift_load16(m, c, b);
+                None
+            });
+            let n = rng.pick(&[0u32, 1, 5, 31, 32, 33, 0xffff_ffff, 0x8000_0000]);
+            p.check("op_pow2", 0x007e_31e0, &[n], |_| Some(s::op_pow2(n)));
+            // (above 2^30 the original never ends)
+            let n2 = rng.pick(&[0u32, 1, 2, 3, 100, 0x4000_0000, 0xffff_fff0]);
+            p.check("op_log2_ceil", 0x007e_aa90, &[n2], |_| {
+                Some(s::op_log2_ceil(n2))
+            });
+            let fx = rng.pick(&[
+                sb,
+                sb | 0x8000_0000,
+                0,
+                0x8000_0000,
+                0x7fc0_0000,
+                0xffc0_0001,
+            ]);
+            let t = float_call(&mut p, 0x007e_3360, &[fx], out);
+            p.check_f32("op_fabs", t, out, |_| s::op_fabs(f32::from_bits(fx)));
+            for i in 0..4 {
+                p.set(c + 0x80 + 4 * i, 4 * rng.below(8));
+            }
+            let (i, j) = (32 + rng.below(4), rng.below(8));
+            p.check("op_table2_get", 0x007e_37b0, &[c, i, j], |m| {
+                Some(s::op_table2_get(m, c, i, j))
+            });
+            p.check("op_vec_splat", 0x007e_37f0, &[c, sb], |m| {
+                s::op_vec_splat(m, c, sf);
+                None
+            });
+            p.check("op_vec4_move", 0x007e_3f60, &[c, b], |m| {
+                s::op_vec4_move(m, c, b);
+                None
+            });
+            p.check("op_oef2_tex_pos_replace", 0x007e_4fc0, &[c, w], |m| {
+                Some(s::op_oef2_tex_pos_replace(m, c, w))
+            });
+            p.check("op_vec_zero", 0x007e_5660, &[c + 0x20], |m| {
+                s::op_vec_zero(m, c + 0x20);
+                None
+            });
+            p.check("op_unit_m", 0x007e_a6d0, &[c + 0x40], |m| {
+                s::op_unit_m(m, c + 0x40);
+                None
+            });
+            p.check("op_word_copy_z", 0x007e_ce80, &[c, b], |m| {
+                s::op_word_copy_at(m, c, b, 8);
+                None
+            });
+            p.check("op_spr_cmd_size", 0x007f_5ed0, &[b], |m| {
+                Some(s::op_spr_cmd_size(m, b))
+            });
+            for (at, g) in [(0x007f_e430u32, 0x0119_fe90u32), (0x007f_e4c0, 0x0119_fe98)] {
+                let gv = rng.pick(&[0u32, 7]);
+                p.set(p.sym(g), gv);
+                let xv = rng.pick(&[0u32, 7]);
+                p.check("op_is_not", at, &[xv], |m| Some(s::op_is_not(m, xv, g)));
+            }
+            for k in 0..16 {
+                p.set(c + 0x60 + 4 * k, rng.pick(&[1u32, 2]));
+            }
+            p.check("opus_draw_slot_clear", 0x007f_e690, &[c, 2], |m| {
+                s::opus_draw_slot_clear(m, c, 2);
+                None
+            });
+            let id = rng.pick(&[0x55u32, 0x66, 0x77]);
+            p.set(eff + 0x20 * rng.below(512), 0x66u32);
+            p.check("op_et_eff_index", 0x007f_ed60, &[id], |m| {
+                Some(s::op_et_eff_index(m, id).cast_unsigned())
+            });
+            p.set(b + 8, c);
+            p.check("op_oef2_sep_number_get", 0x007f_ff80, &[b], |m| {
+                Some(s::op_oef2_sep_number_get(m, b))
+            });
+            p.set(b + 0xc, a);
+            p.check("opus_part_kind", 0x0080_0410, &[b], |m| {
+                Some(s::opus_part_kind(m, b))
+            });
+            for at in [
+                0x0080_6450u32,
+                0x0080_6460,
+                0x0080_6470,
+                0x0080_6480,
+                0x0080_6610,
+                0x0080_6620,
+            ] {
+                p.check("opusIdentity", at, &[v], |_| Some(v));
+            }
+            let dst = rng.pick(&[0u32, c + 0x90]);
+            for at in [0x0080_6490u32, 0x0080_64b0, 0x0080_64f0, 0x0080_6510] {
+                check_conv(&mut p, "opusCopyIf", at, Conv::Stdcall, &[dst, a], |m| {
+                    s::copy_if(m, dst, a);
+                    None
+                });
+            }
+            for at in [0x0080_64d0u32, 0x0080_6530] {
+                p.check("opusCopyIf3", at, &[0, dst, a + 4], |m| {
+                    s::copy_if(m, dst, a + 4);
+                    None
+                });
+            }
+            for at in [
+                0x0080_6730u32,
+                0x0080_6740,
+                0x0080_6750,
+                0x0080_6760,
+                0x0080_6770,
+                0x0080_6780,
+            ] {
+                check_conv(&mut p, "opusSetThis", at, Conv::Thiscall(c), &[v, 0], |m| {
+                    Some(s::set_this(m, c, v))
+                });
+            }
+            p.set(a, rng.pick(&[1u32, 2]));
+            p.set(b, rng.pick(&[1u32, 2]));
+            for (at, ne) in [
+                (0x0080_6970u32, false),
+                (0x0080_6990, false),
+                (0x0080_69b0, true),
+                (0x0080_69d0, true),
+            ] {
+                check_conv(&mut p, "opusIter", at, Conv::Thiscall(a), &[b], |m| {
+                    Some(s::iter_eq(m, a, b, ne))
+                });
+            }
+            p.check("opusPlus0c", 0x0080_6b50, &[v], |_| {
+                Some(v.wrapping_add(0xc))
             });
         }
     }

@@ -3130,12 +3130,25 @@
 0x007dd890 function Ms_Gui_BattleChr1Proc     # fh v3:exact 0x007dd7a0
 0x007de790 function Ms_Gui_BattleChr2Proc     # fh v3:exact 0x007de6a0
 0x007dfde0 function Ms_Gui_ShakeProc          # fh v3:exact 0x007dfcf0
+0x007e13e0 function op_char_table_set         # (table, chars, v) table[(i8) c] = v for each byte of the string chars
+0x007e1b50 function op_str_unquote            # (s) the string's ' and " taken out in place
 0x007e2250 function op_strlen                 # (s) -> length of the C string, 0 for null (op layer string helpers 0x007e1d50..)
+0x007e3040 function op_and64                  # (dst, a, b) 64-bit dst = *a & *b
+0x007e3060 function op_word_copy3             # the op_word_copy body again
+0x007e3070 function op_float_scale            # (dst, v, s) *dst = *v * s (f32)
+0x007e30a0 function op_or16_64                # (dst, src, u16 v) 64-bit dst = *src | v
+0x007e30c0 function op_color_shift_store_word # (src, base) dword base + g_pppColorConShift = *src; the shift cleared
+0x007e31c0 function op_vec_w_sub              # (dst, v, s) dst.w = v.w - s
+0x007e31e0 function op_pow2                   # (n) -> 2^n (1 for n <= 0)
+0x007e3360 function op_fabs                   # (x) -> |x| (-x when x < 0, through the FPU)
+0x007e37b0 function op_table2_get             # (t, i, j) -> word j of t + t[i]
+0x007e37f0 function op_vec_splat              # (dst, v) dst = (v, v, v, 1.0)
 0x007e3810 function op_oef2_a_get             # fh v3:exact 0x007e3720
 0x007e38a0 function op_oef2_a_set             # fh v3:exact 0x007e37b0
 0x007e3b40 function op_oef2_obj_a_get         # fh v3:exact 0x007e3a50
 0x007e3b70 function op_oef2_set               # fh v3:exact 0x007e3a80
 0x007e3e30 function op_oef2_set2              # fh v3:exact 0x007e3d40
+0x007e3f60 function op_vec4_move              # (dst, src) four words
 0x007e4540 function op_gs_store               # fh switch:bsim1.00 0x71003d8890
 0x007e45c0 function op_oef2_clut_change       # fh switch:bsim1.00 0x71003d8c20
 0x007e45e0 function op_oef2_clut_pos_set      # (rec, pos) -> new u16: table-3 record u16 = (pos & 0x3fff) + (old & 0x3c), byte +0xf = 1 (the monster CLUT position, 0x00808640)
@@ -3146,9 +3159,13 @@
 0x007e4c30 function op_oef2_tex_clut_cue_trans # fh v3:exact 0x007e4b40
 0x007e4e40 function op_oef2_tex_clut_ovl_clear # fh v3:exact 0x007e4d50
 0x007e4e80 function op_oef2_tex_clut_ovl_trans # fh v3:exact 0x007e4d90
+0x007e4fc0 function op_oef2_tex_pos_replace   # (rec, pos) -> old low 14 bits: table-2 record low 14 bits = pos's, byte +0x1f = 1
 0x007e4ff0 function op_oef2_tex_pos_set       # (rec, pos) -> new low half: table-2 record low 14 bits = (pos & 0x3fff) + (old & 0xfc), byte +0x1f = 1
 0x007e5030 function op_oef2_texture_load      # fh v3:exact 0x007e4f40
 0x007e5210 function op_tex_vdisp_load_triger  # (on) byte 0x011a0066 = on (name from the dump's import of an older symbol)
+0x007e5660 function op_vec_zero               # (dst) four zero words
+0x007e5950 function op_float_add              # (dst, v, s) *dst = *v + s
+0x007e59a0 function op_float_sub              # (dst, v, s) *dst = *v - s
 0x007e63a0 function op_num                    # fh v3:bsim1.00 0x007e62b0
 0x007e63b0 function op_num_char_256           # fh v3:bsim1.00 0x007e62c0
 0x007e6440 function op_num_display            # fh v3:bsim1.00 0x007e6350
@@ -3164,6 +3181,9 @@
 0x007e6a60 function op_spr_free               # fh v3:bsim1.00 0x007e6970
 0x007e6c30 function ops_init_spr              # fh v3:exact 0x007e6b40
 0x007e6c60 function op_word_copy2             # the op_word_copy body again
+0x007e6c70 function op_word_copy4             # the op_word_copy body again
+0x007e6c80 function op_or64                   # (dst, a, b) 64-bit dst = *a | *b
+0x007e6ca0 function op_vec_xz_add             # (dst, v, x, _, z) dst.x = v.x + x, dst.z = v.z + z
 0x007e79a0 function op_apply_m_w1             # fh v3:exact 0x007e78b0
 0x007e7ed0 function op_deg_get                # fh v3:exact 0x007e7de0
 0x007e7fc0 function op_length_get             # fh v3:bsim1.00 0x007e7ed0
@@ -3176,7 +3196,10 @@
 0x007e9f20 function op_spline_table           # fh v3:cg4 0x7e9e30
 0x007ea120 function op_spline_xyz             # fh v3:exact 0x007ea030
 0x007ea2d0 function op_spline_xyz_table       # fh v3:exact 0x007ea1e0
+0x007ea6d0 function op_unit_m                 # (dst) the identity matrix (memset 0, diagonal 1.0)
 0x007ea700 function op_unit_m_scale           # fh v3:exact 0x007ea610
+0x007eaa60 function op_color_shift_store_half # (src, base) u16 base + g_pppColorConShift = *src; the shift cleared
+0x007eaa90 function op_log2_ceil              # (n) -> the smallest k with 2^k >= n (0 for n <= 1)
 0x007eaac0 function magic_ret0_007eaac0       # g_MagicImports slot 252 (2 overlays): xor eax, eax; ret; hidden from the dump
 0x007eaad0 function op_flash_path3            # fh v3:exact 0x007ea9e0
 0x007eb300 function op_func_after_ot3d_free   # op_func_ot_free(slot, 0x20): the free of op_func_after_ot3d_set's list
@@ -3195,10 +3218,18 @@
 0x007ec7d0 function op_wot_triger             # fh v3:exact 0x007ec6f0
 0x007ec7e0 function op_zbuf_clear             # fh v3:exact 0x007ec700
 0x007ec890 function ops_init_draw_work        # fh v3:exact 0x007ec7b0
+0x007eca00 function op_mask16_64              # (dst, a, b) 64-bit dst = a & b & 0xffff
+0x007eca20 function op_add64_2                # the op_add64 body again
 0x007eca60 function op_color_shift_load16     # (dst, base) u16 at base + g_pppColorConShift; the shift cleared
+0x007eca90 function op_color_shift_load16_2   # the op_color_shift_load16 body again
+0x007ecac0 function op_color_shift_load_word  # (dst, base) *dst = dword base + g_pppColorConShift; the shift cleared
+0x007ecc00 function op_vec_w_add2             # (dst, v, _, _, _, s) dst.w = v.w + s (s the sixth argument)
+0x007ece80 function op_word_copy_z            # (dst, src) the word at +8
+0x007ecea0 function op_vec_z_scale            # (dst, v, s) dst.z = v.z * s
 0x007ecec0 function op_vec_w_scale            # (dst, v, s) dst.w = v.w * s
 0x007ecf30 function op_anm_tex0_reset         # fh v3:bsim1.00 0x007ece50
 0x007ed0c0 function op_shape_draw             # fh v3:cg2 0x7ecfe0
+0x007f5ed0 function op_spr_cmd_size           # (cmd) -> ((i16) cmd[+2] * (14 if cmd[0] bit 3 else 7) + 7) * 16
 0x007f67c0 function opus_0154_wave_omd_make   # fh switch:cg2 0x71003e2830
 0x007f8930 function opus_encount4_init        # fh switch:cg2 0x71003e9590
 0x007f94e0 function opus_wave_omd_make        # fh switch:cg2 0x71003eaaf0
@@ -3284,14 +3315,18 @@
 0x007fe1a0 function opus_change_chrhd_battle_to_ffx # fh v3:exact 0x007fe0c0
 0x007fe200 function opus_change_chrhd_ffx_to_battle # fh v3:exact 0x007fe120
 0x007fe340 function opus_change_osu_en_by_chr_status # fh v3:exact 0x007fe260
+0x007fe430 function op_is_not_0119fe90        # (x) -> -1 unless x is the word at 0x0119fe90, else 0
 0x007fe450 function opus_chr_index_map        # (out) -> moved: out = 240 u16 0xffff, then out[record +0xe] = the record handle's place in g_EtChrHandles; counts the places that differ from +0xe
+0x007fe4c0 function op_is_not_encount         # (x) -> -1 unless x is g_OpusEncount, else 0
 0x007fe540 function opus_monster_index        # (obj) -> slot among the 8 g_OpusMonsters (no null check, unlike opus_get_monster_index), else -1
 0x007fe570 function opus_weapon_index         # (obj) -> the opus_get_weapon_index body again
+0x007fe690 function opus_draw_slot_clear      # (obj, v) the 16 words at obj + 0x60 equal to v zeroed
 0x007fe6c0 function opus_end_all_sub          # fh v3:exact 0x007fe5e0
 0x007fe920 function opu_eff_free_by_id        # (id): every g_EtEff record with this ID emptied (id -1, +4 0, +8 0x101, +0xc 0, +0x10/+0x18 0, +0x1c 0xff); nothing for -1 (opu_unit_free_by_id, opu_unit_free_by_oef2, opus_end_all_sub)
 0x007fe970 function opus_get_chr_status_index # fh v3:exact 0x007fe890
 0x007feaa0 function op_et_chr_index_by_no     # (no) -> index of the first of 208 g_EtChr records whose +4 (character number) is no, else -1
 0x007feba0 function opus_get_eff_status_index # fh v3:exact 0x007feac0
+0x007fed60 function op_et_eff_index           # (id) -> the first g_EtEff record with this ID, or -1
 0x007fedf0 function opus_chr_handles_clear    # () the 240 g_EtChrHandles zeroed
 0x007fef70 function op_et_eff_init_all        # () every g_EtEff record: +0 -1, +8 0x101, +0xc 0, +0x10 0, +0x18 0, +0x1c 0xff (+4 kept); callers opu_et_init, 0x007ff960
 0x007ff090 function op_et_chr_show            # (on): g_OpEtChrShow = on, g_EtChrHidden = !on; bit 1 of the draw flags of the first 208 g_EtChr records with a handle set (on = 0) or cleared; g_MagicImports slot 568
@@ -3318,6 +3353,7 @@
 0x008002c0 function op_oef2_sound_cue_multi   # fh v3:exact 0x008001e0
 0x00800330 function op_oef2_sound_wait        # g_MagicImports slot 550 (100 overlays), between op_oef2_sound_cue_check and op_oef2_stream_cue: loops op_oef2_sound_cue_loop until 0x023c3648/0x023c364c are clear (SndDataSendSync(0) for -1) and u16 0x023c3642 is 0; hidden from the dump
 0x00800390 function op_oef2_stream_cue        # fh v3:exact 0x008002b0
+0x00800410 function opus_part_kind            # (p) -> (i16) at *(p + 0xc) + 2
 0x00800580 function op_effect_init            # fh v3:exact 0x008004a0
 0x00800610 function op_effect_run_before      # fh v3:exact 0x00800530
 0x00800670 function op_effect_run_after       # fh v3:exact 0x00800590
@@ -3342,14 +3378,38 @@
 0x00801480 function opus_parts_clear          # (u16 i, u16 n) the first 16 bytes of n 0x100-byte parts (+0x20) of opus object i (table at g_OpusBattle) zeroed
 0x008014c0 function opus_prog_off             # fh v3:exact 0x008013e0
 0x00801700 function opus_prog_on              # fh v3:exact 0x00801620
+0x00802080 function op_float_scale2           # the op_float_scale body again
 0x00803730 function op_mdc_mem_transfer_cue_free # fh v3:exact 0x00803650
 0x00803760 function op_mdc_mem_transfer_cue_free_all # fh v3:bsim1.00 0x00803680
 0x008037c0 function op_chara_packet_size_get  # (chr, mode, visible) -> bytes: mimic: 0x0080f580(mode, visible); else per model (Ch_GetNbModel, hidden skipped with visible) Ch_ModelCalcSizeEffectPacket rounded to 16 (+ size/28 * 12 rounded for mode 2), + 0x10 per model + 0x10; g_MagicImports slot 363
 0x008044e0 function opu_motion                # fh switch:cg2 0x71003e4c60
 0x00804c90 function opu_v_en_bone             # fh switch:cg2 0x71003e5500
 0x008061a0 function opus_mdc_free             # fh v3:exact 0x008060c0
+0x00806450 function opusIdentity_00806450     # (v) -> v (an MSVC container accessor)
+0x00806460 function opusIdentity_00806460     # (v) -> v (an MSVC container accessor)
+0x00806470 function opusIdentity_00806470     # (v) -> v (an MSVC container accessor)
+0x00806480 function opusIdentity_00806480     # (v) -> v (an MSVC container accessor)
+0x00806490 function opusCopyIf_00806490       # stdcall (dst, src) *dst = *src unless dst is null (an MSVC allocator construct)
+0x008064b0 function opusCopyIf_008064b0       # stdcall (dst, src) *dst = *src unless dst is null (an MSVC allocator construct)
+0x008064d0 function opusCopyIf_008064d0       # (_, dst, src) *dst = *src unless dst is null
+0x008064f0 function opusCopyIf_008064f0       # stdcall (dst, src) *dst = *src unless dst is null (an MSVC allocator construct)
+0x00806510 function opusCopyIf_00806510       # stdcall (dst, src) *dst = *src unless dst is null (an MSVC allocator construct)
+0x00806530 function opusCopyIf_00806530       # (_, dst, src) *dst = *src unless dst is null
+0x00806610 function opusIdentity_00806610     # (v) -> v (an MSVC container accessor)
+0x00806620 function opusIdentity_00806620     # (v) -> v (an MSVC container accessor)
+0x00806730 function opusSetThis_00806730      # thiscall (v, _) *this = v; returns this (pops two arguments)
+0x00806740 function opusSetThis_00806740      # thiscall (v, _) *this = v; returns this (pops two arguments)
+0x00806750 function opusSetThis_00806750      # thiscall (v, _) *this = v; returns this (pops two arguments)
+0x00806760 function opusSetThis_00806760      # thiscall (v, _) *this = v; returns this (pops two arguments)
+0x00806770 function opusSetThis_00806770      # thiscall (v, _) *this = v; returns this (pops two arguments)
+0x00806780 function opusSetThis_00806780      # thiscall (v, _) *this = v; returns this (pops two arguments)
+0x00806970 function opusIterEq_00806970       # thiscall (other) -> *this == *other as 1/0 (an MSVC iterator compare)
+0x00806990 function opusIterEq_00806990       # thiscall (other) -> *this == *other as 1/0 (an MSVC iterator compare)
+0x008069b0 function opusIterNe_008069b0       # thiscall (other) -> *this != *other as 1/0 (an MSVC iterator compare)
+0x008069d0 function opusIterNe_008069d0       # thiscall (other) -> *this != *other as 1/0 (an MSVC iterator compare)
 0x00806a50 function opusTree_Next             # thiscall (it) -> it: *it = in-order successor (node +0 left, +4 parent, +8 right, byte +0xd nil), nothing at the header (MSVC tree iterator ++)
 0x00806aa0 function opusTree_Next2            # the opusTree_Next body again
+0x00806b50 function opusPlus0c                # (p) -> p + 0xc
 0x00806d70 function opusTree_Max              # (node) the rightmost node below node (+8 until the next is nil)
 0x00806db0 function opusTree_Min              # (node) the leftmost node below node (+0 until the next is nil)
 0x00807830 function yonExtMapDeleteId         # fh v3:bsim1.00 0x00807750
