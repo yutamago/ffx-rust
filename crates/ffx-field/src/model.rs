@@ -113,6 +113,12 @@ pub mod pal {
 
 /// An animation (`rcbgAnimeInit`, 32 bytes).
 pub mod anime {
+    /// `+0x6`: the current frame (`i16`).
+    pub const CURRENT: u32 = 0x6;
+    /// `+0x8`: frames (`i32`).
+    pub const COUNT: u32 = 0x8;
+    /// `+0xc`: the frame entries, 4 bytes each.
+    pub const FRAMES: u32 = 0xc;
     /// `+0x14`: set to `0x100` by `rcbgAnimeInit` (the rest is cleared).
     pub const RATE: u32 = 0x14;
 }
@@ -321,6 +327,26 @@ pub mod bridge {
     /// `rcbgFPm173End(fp)` (`0x00922b50`): `+0x24` = 1.
     pub fn rcbg_fpm173_end(mem: &mut impl Mem, f: u32) {
         mem.write(f + 0x24, 1u32);
+    }
+
+    /// `rcbgAnimeGetFrame(anime, n)` (`0x00930860`): frame `n`'s entry (4
+    /// bytes from `+0xc`), or null when `n` is not below the count at `+8`.
+    pub fn rcbg_anime_get_frame(mem: &impl Mem, a: u32, n: i32) -> u32 {
+        if n >= mem.read::<i32>(a + anime::COUNT) {
+            return 0;
+        }
+        #[allow(clippy::cast_sign_loss)] // negative indexes back, as the original
+        mem.read::<u32>(a + anime::FRAMES)
+            .wrapping_add((n as u32).wrapping_mul(4))
+    }
+
+    /// `rcbgAnimeGetCurrent(anime)` (`0x00930880`): the entry of the frame
+    /// at `+6` (`i16`).
+    pub fn rcbg_anime_get_current(mem: &impl Mem, a: u32) -> u32 {
+        let n = i32::from(mem.read::<i16>(a + anime::CURRENT));
+        #[allow(clippy::cast_sign_loss)]
+        mem.read::<u32>(a + anime::FRAMES)
+            .wrapping_add((n as u32).wrapping_mul(4))
     }
 
     /// `rcbgPSimClearOMD(psim)` (`0x0091f9b0`): detaches its model's blob.
