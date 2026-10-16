@@ -195,7 +195,7 @@ The `PhyreScene` object. Fields the game's `graphic*` calls use:
 | `0xf9c7` | `u8` | drawing a UI 2D scene |
 | `0xf9cc` | `u32` | forced shadow solution |
 | `0xfa34`, `0xfa38` | `f32` | screen offset |
-| `0xfaa8`, `0xfacc` | object | two render targets (`PhyreScene_getRenderTarget(2)` is the second) |
+| `0xfaa8`, `0xfacc` | object | two sampler states (`PhyreScene_getLinearSampler(2)` is the second) |
 | `0xfaf0` | `PString` | current level name (pointer; bit 0 a flag, masked off) |
 | `0xfaf4` | `u32` | current level name hash |
 | `0xfaf8` | `u32` | previous level name hash |
@@ -221,7 +221,7 @@ The remaps take a remaster coordinate to the PS2 screen (512 x 416):
 ## The model cache (`Cache_*`)
 
 `g_CacheSlots` (`0x01302f98`): 100 pointers to entries, least recently
-used first. `Cache_Touch` (`0x00840cf0`) moves an entry to the last slot
+used first. `Cache_ToTop` (`0x00840cf0`) moves an entry to the last slot
 and sets its age to 5 unless it is pinned (7).
 
 | Offset | Type | Meaning |

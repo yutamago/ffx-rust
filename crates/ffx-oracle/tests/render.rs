@@ -1308,10 +1308,10 @@ const SCENE_ACCESSORS: &[Accessor] = {
             |g, s, a, _| Out::U32(sc::set_if_changed(g, s, 0x10d90, a)),
         ),
         (
-            "PhyreScene_getRenderTarget",
+            "PhyreScene_getLinearSampler",
             0x0065_e050,
             Kind::T1,
-            |_, s, a, _| Out::U32(sc::render_target(s, a)),
+            |_, s, a, _| Out::U32(sc::linear_sampler(s, a)),
         ),
         (
             "PhyreScene_getVideoTexture",
@@ -1726,7 +1726,7 @@ const OBJECT_ACCESSORS: &[Accessor] = {
             |g, s, a, _| Out::U8(mg::set_byte_field(g, s, 0x123b3, a)),
         ),
         (
-            "PostProcessManager_SetByte123ba",
+            "PostProcessManager_setCrossFadeCaptureEnable",
             0x0069_8490,
             Kind::T1,
             |g, s, a, _| Out::U8(mg::set_byte_field(g, s, 0x123ba, a)),
@@ -1744,7 +1744,7 @@ const OBJECT_ACCESSORS: &[Accessor] = {
             |g, s, a, _| Out::U32(mg::set_field(g, s, 0x123bc, a)),
         ),
         (
-            "PostProcessManager_SetField123c0",
+            "PostProcessManager_setCrossFadeTime",
             0x0069_84a0,
             Kind::T1,
             |g, s, a, _| Out::U32(mg::set_field(g, s, 0x123c0, a)),

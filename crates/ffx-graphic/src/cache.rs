@@ -3,7 +3,7 @@
 //! each entry (`docs/formats/render.md`).
 //!
 //! `g_CacheSlots` holds 100 pointers to entries, least recently used
-//! first (`Cache_Touch` moves an entry to the end). An entry:
+//! first (`Cache_ToTop` moves an entry to the end). An entry:
 //!
 //! | offset | type  | field                                          |
 //! |--------|-------|------------------------------------------------|
@@ -158,7 +158,7 @@ pub mod bridge {
         }
     }
 
-    /// `Cache_Touch(kind, id)` (`FUN_00840cf0`): moves the entry to the
+    /// `Cache_ToTop(kind, id)` (`FUN_00840cf0`): moves the entry to the
     /// last slot (most recently used) and ages it to 5 unless pinned; 1
     /// when absent, else 0.
     pub fn touch(m: &mut impl Mem, kind: i32, id: u32) -> u32 {

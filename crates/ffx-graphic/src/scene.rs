@@ -209,10 +209,10 @@ pub mod bridge {
         b
     }
 
-    /// `PhyreScene_getRenderTarget(this, which)` (`FUN_0065e050`): the
+    /// `PhyreScene_getLinearSampler(this, which)` (`FUN_0065e050`): the
     /// embedded object at `+0xfacc` for 2, else `+0xfaa8`.
     #[must_use]
-    pub fn render_target(scene: u32, which: u32) -> u32 {
+    pub fn linear_sampler(scene: u32, which: u32) -> u32 {
         scene.wrapping_add(if which == 2 { 0xfacc } else { 0xfaa8 })
     }
 

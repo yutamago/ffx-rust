@@ -128,8 +128,8 @@ ported! {
     graphicVFXRemoveDeletedPoolMeshInstances @ 0x0064_5620 => extern "C" fn graphic_vfx_remove_deleted() -> u32 {
         vfx::bridge::table_call(&mut mem(), vfx::bridge::TABLE_REMOVE_DELETED)
     }
-    /// `graphicVFXUpdateDeletePool()`.
-    graphicVFXUpdateDeletePool @ 0x0064_5a40 => extern "C" fn graphic_vfx_update_delete_pool() -> u32 {
+    /// `graphicVFXUpdateDeletedPool()`.
+    graphicVFXUpdateDeletedPool @ 0x0064_5a40 => extern "C" fn graphic_vfx_update_deleted_pool() -> u32 {
         vfx::bridge::table_call(&mut mem(), vfx::bridge::TABLE_UPDATE_DELETE_POOL)
     }
     /// `graphicVFXLoadPersistentTexture()`.
@@ -186,9 +186,9 @@ ported! {
     PhyreScene_SetSplitScreenType @ 0x0065_4570 => extern "thiscall" fn scene_set_split_screen_type(this: u32, v: u32) -> u32 {
         sc::set_if_changed(&mut mem(), this, 0x10d90, v)
     }
-    /// `PhyreScene_getRenderTarget(this, which)`.
-    PhyreScene_getRenderTarget @ 0x0065_e050 => extern "thiscall" fn scene_get_render_target(this: u32, which: u32) -> u32 {
-        sc::render_target(this, which)
+    /// `PhyreScene_getLinearSampler(this, which)`.
+    PhyreScene_getLinearSampler @ 0x0065_e050 => extern "thiscall" fn scene_get_linear_sampler(this: u32, which: u32) -> u32 {
+        sc::linear_sampler(this, which)
     }
     /// `PhyreScene_getVideoTexture(this)`.
     PhyreScene_getVideoTexture @ 0x0065_e640 => extern "thiscall" fn scene_get_video_texture(this: u32) -> u32 {
@@ -506,8 +506,8 @@ ported! {
     PostProcessManager_SetByte123b3 @ 0x0069_85b0 => extern "thiscall" fn post_process_set_byte_123b3(this: u32, v: u32) -> u8 {
         mg::set_byte_field(&mut mem(), this, 0x123b3, v)
     }
-    /// `PostProcessManager_SetByte123ba(this, v)`.
-    PostProcessManager_SetByte123ba @ 0x0069_8490 => extern "thiscall" fn post_process_set_byte_123ba(this: u32, v: u32) -> u8 {
+    /// `PostProcessManager_setCrossFadeCaptureEnable(this, v)`.
+    PostProcessManager_setCrossFadeCaptureEnable @ 0x0069_8490 => extern "thiscall" fn post_process_set_cross_fade_capture_enable(this: u32, v: u32) -> u8 {
         mg::set_byte_field(&mut mem(), this, 0x123ba, v)
     }
     /// `PostProcessManager_SetByte123bb(this, v)`.
@@ -518,8 +518,8 @@ ported! {
     PostProcessManager_setCrossFadeWeight @ 0x0069_84b0 => extern "thiscall" fn post_process_set_cross_fade_weight(this: u32, v: u32) -> u32 {
         mg::set_field(&mut mem(), this, 0x123bc, v)
     }
-    /// `PostProcessManager_SetField123c0(this, v)`.
-    PostProcessManager_SetField123c0 @ 0x0069_84a0 => extern "thiscall" fn post_process_set_field_123c0(this: u32, v: u32) -> u32 {
+    /// `PostProcessManager_setCrossFadeTime(this, v)`.
+    PostProcessManager_setCrossFadeTime @ 0x0069_84a0 => extern "thiscall" fn post_process_set_cross_fade_time(this: u32, v: u32) -> u32 {
         mg::set_field(&mut mem(), this, 0x123c0, v)
     }
     /// `PostProcessManager_isEffectAllowed(id)`.
@@ -604,8 +604,8 @@ ported! {
     Cache_SetLock @ 0x0084_0ac0 => extern "C" fn cache_set_lock(kind: i32, id: u32, lock: u32) {
         cache::bridge::set_lock(&mut mem(), kind, id, lock);
     }
-    /// `Cache_Touch(kind, id)`.
-    Cache_Touch @ 0x0084_0cf0 => extern "C" fn cache_touch(kind: i32, id: u32) -> u32 {
+    /// `Cache_ToTop(kind, id)`.
+    Cache_ToTop @ 0x0084_0cf0 => extern "C" fn cache_to_top(kind: i32, id: u32) -> u32 {
         cache::bridge::touch(&mut mem(), kind, id)
     }
     /// `Cache_Use(kind, id)`.

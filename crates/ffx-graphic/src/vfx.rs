@@ -384,7 +384,7 @@ pub mod bridge {
     }
 
     /// The table-wide calls: `graphicVFXDestroyAll` (`TABLE_CLEAR`),
-    /// `graphicVFXRemoveDeletedPoolMeshInstances`, `graphicVFXUpdateDeletePool`.
+    /// `graphicVFXRemoveDeletedPoolMeshInstances`, `graphicVFXUpdateDeletedPool`.
     pub fn table_call(h: &mut impl Host, method: u32) -> u32 {
         let table = TABLE.get(h);
         h.call_sym(method, Conv::Thiscall(table), &[])

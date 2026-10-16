@@ -119,7 +119,11 @@ pub mod bridge {
     /// `createVFXRenderDataBuffer` splits at most four) would overwrite its
     /// other locals there, and one of fewer than four leaves the fill
     /// request's other part words uninitialised. Both are zero here.
-    #[allow(clippy::too_many_lines, clippy::similar_names, clippy::many_single_char_names)] // one original, in its order
+    #[allow(
+        clippy::too_many_lines,
+        clippy::similar_names,
+        clippy::many_single_char_names
+    )] // one original, in its order
     pub fn update(h: &mut impl Host, lo: u32, hi: u32, part: u32, obj: u32) -> u32 {
         // get_ptr32_func is the identity
         let shape: u32 = h.read(part + 0x1c);
@@ -343,7 +347,8 @@ pub mod bridge {
                 } else if t.per_part && kind == 2 {
                     let mut p = 0usize;
                     let mut ok = true;
-                    #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)] // the counter
+                    #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
+                    // the counter
                     while ok && (p as i32) < i32::from(h.read::<u16>(rd + 0xc4)) {
                         let r = rds.get(p).copied().unwrap_or(0);
                         let segs: u32 = h.read(r + 0x94);
@@ -413,7 +418,11 @@ pub mod bridge {
     /// The original keeps the parts in a 17-word array of its frame (six
     /// geometries, the kind, six render data, ...); a part count above 6
     /// would read its other locals. Those parts are 0 here.
-    #[allow(clippy::too_many_lines, clippy::similar_names, clippy::many_single_char_names)] // one original, in its order
+    #[allow(
+        clippy::too_many_lines,
+        clippy::similar_names,
+        clippy::many_single_char_names
+    )] // one original, in its order
     pub fn update_shp(
         h: &mut impl Host,
         lo: u32,
