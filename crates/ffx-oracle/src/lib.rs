@@ -80,6 +80,9 @@ pub struct Ret {
     pub edx: u32,
     /// `ST0` when the x87 stack is not empty (float and double results).
     pub st0: Option<f64>,
+    /// `ST0`'s 80 bits (mantissa, then sign and exponent), to tell NaNs
+    /// apart: [`Ret::st0`] makes every NaN the same.
+    pub st0_raw: Option<[u8; 10]>,
 }
 
 #[derive(Clone, Copy)]
@@ -583,15 +586,17 @@ impl Oracle {
         }
         let eax = u32::try_from(self.uc.reg_read(RegisterX86::EAX)?).expect("32-bit register");
         let edx = u32::try_from(self.uc.reg_read(RegisterX86::EDX)?).expect("32-bit register");
+        let st0_raw = self.st0_raw()?;
         Ok(Ret {
             eax,
             edx,
-            st0: self.st0()?,
+            st0: st0_raw.map(|r| f80_to_f64(&r)),
+            st0_raw,
         })
     }
 
-    /// `ST0`, if the x87 stack holds anything.
-    fn st0(&mut self) -> Result<Option<f64>> {
+    /// `ST0`'s bytes, if the x87 stack holds anything.
+    fn st0_raw(&mut self) -> Result<Option<[u8; 10]>> {
         let tag = self.uc.reg_read(RegisterX86::FPTAG)?;
         let sw = self.uc.reg_read(RegisterX86::FPSW)?;
         let top = (sw >> 11) & 7;
@@ -600,7 +605,9 @@ impl Oracle {
             return Ok(None);
         }
         let raw = self.uc.reg_read_long(RegisterX86::ST0)?;
-        Ok(Some(f80_to_f64(&raw)))
+        let mut out = [0u8; 10];
+        out.copy_from_slice(&raw[..10]);
+        Ok(Some(out))
     }
 }
 

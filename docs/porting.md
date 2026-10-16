@@ -56,7 +56,11 @@ written) must agree.
 - `Oracle::stub_return(addr, value)` fixes a callee (a clock) for the test.
 - Floats: the game thread runs x87 at 53-bit precision (`0x027f`); the
   snapshot oracle sets that control word. Results compare exactly unless
-  a tolerance is stated and justified.
+  a tolerance is stated and justified. `Ret::st0_raw` has `ST0`'s 80 bits
+  (`Ret::st0` makes every NaN the same). The emulator differs from the
+  hardware on one point: a signalling NaN loaded with `flds` stays
+  signalling there, while the CPU quiets it; replacements follow the
+  hardware, and their tests leave signalling NaNs out.
 
 ## 4. Install it
 
