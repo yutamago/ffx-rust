@@ -205,6 +205,20 @@ Linux and the Steam Deck first (wgpu and our platform layer already cover
 them), then macOS, then whatever else. Controller mappings and the PC UI
 screens need a per-platform pass.
 
+## The PS2 emulation registers
+
+Some of the PS2 code was hand-written R5900 and VU0 assembly; the PC port
+turned it into C that keeps the registers in globals: `g_Ee_Gpr`
+(`0x00c8f508`, 32 registers of 16 bytes, `sp` among them) and VU0's `vf00`
+(`g_Vu0_Vf00`, `0x00c0a004`) and the rest of the VF file after the GPRs.
+Callers pass arguments through them (`AsmEmuSetFuncParam0` and its siblings
+write the argument registers), and 78 functions across battle, map, effects
+and scripts write `t0`. For parity these registers are part of a function's
+outputs: a Rust replacement must leave the same values in them as long as an
+original caller may read one, and the bridge carries them until the last
+emulated caller is gone. `tools/ownership.py global 0x00c8f508` lists who
+touches them.
+
 ## Modding
 
 Each module that moves into Rust gets extension points as it lands, not

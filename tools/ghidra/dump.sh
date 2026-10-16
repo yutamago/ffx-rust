@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Imports FFX.exe into a persistent Ghidra project (first run only), applies
-# symbols/ffx.sym and dumps decompiled code to $FFX_WORK/decomp.
+# symbols/ffx.sym and dumps decompiled code and data references to
+# $FFX_WORK/decomp.
 # Usage: tools/ghidra/dump.sh [path/to/FFX.exe]
 set -euo pipefail
 
@@ -15,6 +16,7 @@ mkdir -p "$work/ghidra" "$work/decomp"
 common=(-scriptPath "$repo/tools/ghidra"
         -postScript ApplySymbols.java "$repo/symbols/ffx.sym"
         -postScript DumpDecomp.java "$work/decomp"
+        -postScript DumpDataRefs.java "$work/decomp"
         -max-cpu "$(nproc)")
 
 if [[ -d "$work/ghidra/ffx.rep" ]]; then

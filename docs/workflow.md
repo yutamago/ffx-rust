@@ -55,6 +55,24 @@ appended to our comment as `fh: <name>`. Rerun the script after refreshing
 either source. When naming something new, use their name if they have one,
 so both projects mean the same function by the same word.
 
+## Progress and ownership
+
+```bash
+tools/progress.py             # named and replaced, per module (game and library)
+tools/progress.py --unknown   # named functions no module rule places
+tools/ownership.py summary    # globals per module: its own, and shared with whom
+tools/ownership.py shared 40  # the globals the most modules touch
+tools/ownership.py function MsCalcDamageCommand
+tools/ownership.py global 0x00c8f508
+```
+
+Both read the dump below (`functions.tsv`, `data_refs.tsv`). Modules come
+from name prefixes (the original PS2 ones the Switch symbols carry, listed in
+`tools/progress.py`); unnamed functions take their named neighbours' module,
+so module sizes are estimates until most of the code is named. Ownership only
+sees absolute references into `.data`: state reached through pointers is
+invisible to it.
+
 ## Bulk dump
 
 ```bash

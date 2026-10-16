@@ -20,9 +20,18 @@ names for ours on 2026-10-16 (the old name follows "was" in the comment).
 Where Fahrenheit names one of our addresses differently, their name is
 appended to our comment as "fh: <name>".
 
-Usage: tools/fh-import.py [--leads PATH] [--calls DIR] [--dry-run]
+Two kinds of BSim (similarity) match are dropped, using the Ghidra dump's
+function sizes ($FFX_WORK/decomp/functions.tsv):
+  switch BSim matches on functions of 16 bytes or less: tiny functions look
+      alike (register setters, getters), and the Switch build can't be lined
+      up by address to check them;
+  v3 BSim matches whose v3 address is off from the exact matches around it
+      by more than 0x40 (the two Steam builds keep nearly the same layout).
+
+Usage: tools/fh-import.py [--leads PATH] [--calls DIR] [--dump PATH] [--dry-run]
 """
 import argparse
+import bisect
 import csv
 import pathlib
 import re
@@ -69,6 +78,31 @@ def read_leads(path):
     return out
 
 
+def drop_unlikely(fh, sizes):
+    """Removes the BSim matches the module docstring describes; returns the count."""
+    exact = sorted((a, int(r["from_addr"], 16) - a) for a, r in fh.items()
+                   if r["origin"].startswith("v3:exact") and r["from_addr"])
+    keys = [a for a, _ in exact]
+
+    def expected(a):
+        i = bisect.bisect(keys, a)
+        near = [d for _, d in exact[max(0, i - 3):i + 3]]
+        return Counter(near).most_common(1)[0][0] if near else None
+
+    drop = []
+    for a, r in fh.items():
+        o = r["origin"]
+        if o.startswith("switch:bsim") and sizes.get(a, 0) <= 16:
+            drop.append(a)
+        elif o.startswith("v3:bsim") and r["from_addr"]:
+            e = expected(a)
+            if e is not None and abs(int(r["from_addr"], 16) - a - e) > 0x40:
+                drop.append(a)
+    for a in drop:
+        del fh[a]
+    return len(drop)
+
+
 def read_calls(root):
     """Named FFX.exe entries of their FhCall tables (FUN_ placeholders skipped)."""
     out = {}
@@ -89,10 +123,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--leads", type=pathlib.Path, default=WORK / "ghidra-remote/export/leads.tsv")
     ap.add_argument("--calls", type=pathlib.Path, default=WORK / "fahrenheit" / COMMIT)
+    ap.add_argument("--dump", type=pathlib.Path, default=WORK / "decomp/functions.tsv")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
     fh = read_leads(args.leads)
+    with open(args.dump, encoding="utf-8") as f:
+        next(f)
+        sizes = {int(p[0], 16): int(p[2]) for p in (line.split("\t") for line in f)}
+    dropped = drop_unlikely(fh, sizes)
     for addr, c in read_calls(args.calls).items():
         if addr in fh:  # their hand-checked name wins; keep the convention
             fh[addr].update(name=c["name"] if fh[addr]["name"].replace("::", "_") != c["name"]
@@ -146,7 +185,8 @@ def main():
     body = [entries[a] for a in sorted(entries)]
     counts = Counter(entries[a].split("# fh ")[1].split(":")[0].split()[0] for a in entries if a not in ours)
     print(f"ours {len(ours)} (with a Fahrenheit name {sum(a in fh for a in ours)}), "
-          f"imported {len(entries) - len(ours)} {dict(counts)}, suffixed duplicates {renamed}")
+          f"imported {len(entries) - len(ours)} {dict(counts)}, suffixed duplicates {renamed}, "
+          f"unlikely BSim matches dropped {dropped}")
     if not args.dry_run:
         SYM.write_text("\n".join(head + body) + "\n", encoding="utf-8")
 
