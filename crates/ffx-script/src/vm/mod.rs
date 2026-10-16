@@ -16,6 +16,7 @@
 //! [`bridge`] runs the original accessors over game memory.
 
 pub mod bridge;
+pub mod exec;
 
 /// Ctrl work fields (offsets from its start).
 pub mod ctrl {
@@ -56,9 +57,11 @@ pub mod ctrl {
     pub const STORAGE1: u32 = 0x30;
     /// `u32`: `AtelSetVibrateStreamExt`'s value.
     pub const VIBRATE_STREAM_EXT: u32 = 0x44;
-    /// `u32`: pointer whose `+0x18` (`u16`) is the map camera
-    /// (`AtelGetEventMapCameraId` reads ctrl work 0's).
-    pub const EVENT_MAP: u32 = 0x48;
+    /// `u32`: the event's script block (the workers'
+    /// [`super::worker::BLOCK`]) in ctrl work 0, null in the battle's other
+    /// ctrl works (snapshots); `AtelGetEventMapCameraId` reads its `+0x18`
+    /// (`u16`), `AtelGetGideMapActorNumber` its expansion header.
+    pub const BLOCK: u32 = 0x48;
     /// `u32`: `AtelInitActor`'s callback, `(ctrl)`.
     pub const INIT_ACTOR: u32 = 0x50;
     /// `u32`: storage 3's address callback, `(worker, offset) -> address`
@@ -70,6 +73,9 @@ pub mod ctrl {
     pub const RUN_END: u32 = 0x5c;
     /// `u32`: cleared by `AtelRemoveCtrlWork`.
     pub const REMOVE_CLEARS: u32 = 0x1f4;
+    /// `u32`: field state bits; bit 0 is `AtelGetBattleStatus`
+    /// (`0x0086a9b0`), bit 3 native `0x0241`.
+    pub const FIELD_STATE: u32 = 0x210;
 }
 
 /// Script block fields the VM reads (`docs/formats/script.md`, "Script
@@ -126,6 +132,9 @@ pub mod worker {
     pub const FLAGS2: u32 = 0x36;
     /// Camera handle cache of the group 6 natives (`AtelGetCameraWorkAdrs`).
     pub const CAMERA: u32 = 0x3c;
+    /// `u32`: the bound program counter (`AtelGetBindPC`, `0x0086adf0`;
+    /// `AtelGetBindPCFromID`).
+    pub const BIND_PC: u32 = 0x40;
     /// Storage 5 variables: inside the worker itself.
     pub const STORAGE5: u32 = 0x48;
     /// `u32`: field character object (`AtelGetCharHandle`).
@@ -339,17 +348,13 @@ pub fn level_index(kind: u8, level: i32) -> u32 {
 }
 
 /// MSVC's `_ftol2_sse` (`0x009497e0`) on an `f32`, as the game's SSE2 path
-/// does it (`cvttsd2si`): truncation toward zero, `0x80000000` for NaN and
-/// out-of-range values.
+/// does it ([`ffx_bridge::x87::cvttsd2si`]: truncation toward zero,
+/// `0x80000000` for NaN and out-of-range values). Every CPU the game runs
+/// on has SSE2; the x87 path (`ffx_bridge::x87::ftol2`) is the oracle's on
+/// an image that has not run its start-up code.
 #[must_use]
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // range checked
 pub fn ftol(x: f32) -> u32 {
-    let t = f64::from(x).trunc();
-    if (-2_147_483_648.0..2_147_483_648.0).contains(&t) {
-        (t as i32) as u32
-    } else {
-        0x8000_0000
-    }
+    ffx_bridge::x87::cvttsd2si(f64::from(x))
 }
 
 /// An `f32` after an x87 `fld`/`fstp` round trip: signalling NaNs come back

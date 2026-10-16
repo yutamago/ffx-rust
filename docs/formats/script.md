@@ -230,8 +230,9 @@ A push onto a full stack is dropped; a pop from an empty one gives 0 (or
 checked. Popping converts: `AtelPopStackInteger` (`0x0086df00`) truncates a
 non-integer slot with `_ftol2_sse` (`cvttsd2si`: `0x80000000` for NaN and
 out of range); `AtelPopStackFloat` (`0x0086de50`) converts a non-float slot
-from `i32`. `AtelFetchStackInteger` (`0x0086df40`) reads the top and pops it
-only when asked.
+from `i32`. `Script_TopInt` (`0x0086df40`) reads the top and pops it only
+when asked; `AtelFetchStackInteger` (`0x0086a000`) is the interpreter's
+pop-an-integer.
 
 ### Variables
 
@@ -265,9 +266,110 @@ on hardware (the game masks the invalid exception); Unicorn, which the
 oracle runs on, keeps them signalling, so the parity tests leave sNaNs out
 of stored values.
 
+### Globals and the save data
+
+The small accessors (`ffx_script::vm::bridge::globals`) are one load or
+store each. The ones on the Atel globals: the music number, the effect
+flags and parameters (`AtelSetEffectParam`, `0x0086fa60`, has no bound on
+the index), the 3D sound ratios, the battle end status (`0x01326b48`: `+0`
+the status, whose bits 8, 9 and 16 the `AtelIs...Clear`/`AtelGetStatusWinFadeOut`
+getters read inverted; `+4` the keep-play status, bits 8, 11, 12, 13 and
+17), the map id page and event mode, the menu mask, the voice pan
+(`0x01327135`) and VAG stream volume (`0x01327134`) that an event set-up
+resets to `0x3f` and `0x7f`, the half-turn angle (`0x01327124`, an `f32` in
+degrees that `Native_GetTurnKind` compares against), and the pad words the
+interpreter's update ORs over the frames since the last one (`0x013270c0`,
+six `u16` four bytes apart: held, pad 1 held, repeat, two history words,
+pressed). The pad getters load `AX` only (the rest of `EAX` is the
+caller's); `AtelGetSphereMonitor` (`0x0086c4b0`) does too, so its `EAX`
+keeps the upper half of `&g_SaveData`.
+
+Others read `g_SaveData` (`0x0112ca90`, through `MsGetSaveEventAddress`'s
+thunk at `0x0088c830`):
+
+| Offset | Type | Accessors |
+|---|---|---|
+| `0x10` | `u8` | `AtelGet`/`SetBattleSceneGroup` |
+| `0x11`, `0x12` | `u8` | `AtelSetMapFadeType`, `AtelSetMapFadeFrames` (`0x008700c0`, `0x008700d0`) |
+| `0x13` | `u8` | battle status: bit 1 `AtelGetBattleStatusSys`, bit 2 `AtelGetBattleStatusDummyEnc` |
+| `0x20` | `u8` | `TkGetLastEventJumpIndex` |
+| `0xb4`, `0xb6` | `u16` | the map marker (`AtelGetMapMarkerX`/`Y`, `0x00873ae0`/`0x00873af0`) |
+| `0xd1` | `u8` | `AtelGetAlbhedRikku` |
+| `0xd6` | `u8` | `AtelClearForcePlaceId` |
+| `0xd7` | `u8` | `AtelGetWaterBattleEffect` |
+| `0xd8`, `0xdc` | `u32` | read by `0x008807b0` |
+| `0xe0` | `u32` | `AtelGetOnMemoryMovieFileNo`, `AtelSetOnMemoryMovie` |
+| `0xe4` | `u32` | `AtelGetRandomEncountStatus` |
+| `0xe8`, `0xea` | `u16` | `AtelGetBattleEndTagAlways`, `AtelGetSphereMonitor` |
+| `0xbec` | `u16` | `AtelGetScenarioFlag` |
+
+## The interpreter
+
+`Script_Run(worker, mode, callbacks)` (`0x008641e0`) runs in Rust
+(`ffx_script::vm::bridge::run`, the arithmetic in `ffx_script::vm::exec`).
+It takes the run lock (`g_ScriptRunMutex`, `0x00c52740`, created on first
+use), skips workers whose flags say so (worker `+0x34` bit 1 clear; bit 2
+clear with `+0x36` bit `0x40` clear while `MsBattleCheck`; the ctrl work's
+run mode), adds speed × `g_GameSpeed` to the worker's accumulator (`+0x94`;
+the result's bit 0 says it reached 1), checks the level's wait states, then
+fetches and executes instructions until one yields, ends the level or the
+stack empties.
+
+Every opcode handler is ported: integer arithmetic and comparisons, float
+arithmetic at the x87's precision with its NaN rules (the larger
+significand wins, not the first operand as in SSE), pushes and pops,
+registers A, B and the float accumulator, variables (`1f`-`27`), jumps,
+calls and returns between levels (the three return slots at level `+0`),
+request opcodes `39`-`3b`, the ends, breakpoints and the debugger's step
+mode. Natives (`35`, `58`) go through the `Natives` trait:
+`OriginalNatives` dispatches in Rust (`Script_CallNative` `0x008777a0`,
+`Script_PollNative` `0x00877730`, `Script_FinishNative` `0x008777f0`,
+`Script_NativeEntry` `0x00877770` over `g_NativeTables`, 16-byte entries of
+start, poll, float result and int result) and calls the natives
+themselves in the original. A camera native (group 6) sets worker `+0x36`
+bit `0x20` unless `0x10` is set; a missing poll means "done, run on" (5);
+a float result is stored as `f32` (`fstp m32`) before it is pushed.
+
+Still original, called through `ffx_bridge::Host` (a cdecl call into the
+game): the natives, the three request families (`0x00867230`,
+`0x00867570`, `0x008673d0`; opcodes `36`-`38`, `45`-`53`), `AtelExecReturn`
+(`0x008691d0`), the wait checks (`0x008635c0`, `0x008654c0`, `0x00863570`),
+the party lookup (`0x0086a5e0`), the request call (`0x0086eba0`), opcodes
+`79` and `7a`, and the mutex.
+
+### Verification
+
+`crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the
+Rust one on two copies of each snapshot and compares the result and every
+byte written: every worker as it stands, every entry point of every actor
+for several frames (about 400,000 instructions in the battle snapshot),
+400 random programs over 85 opcodes with arguments kept in range, invalid
+opcodes and breakpoints. Two oracle stubs make the comparison possible:
+the run lock and the CRT and Win32 imports natives reach are short x86
+stubs written into `int3` padding of `.text` (the test asserts every one
+found room), and two natives read stack words nothing wrote, which both
+oracles zero: `0x007bb6a0` (`Native_CamSetPos`) hands `Cam_SetPos` a
+vector whose `w` is uninitialised, as does `Light_Set` (`0x00836520`) to
+`Sg_LightSetColor`/`Sg_LightSetDir`. In the game those words hold whatever
+earlier calls left at that depth, so the Rust interpreter (whose frames
+differ) can store different garbage there; nothing reads it back as far as
+the tests reach.
+
+### Plan
+
+1. Done: the accessors, the dispatch loop, every opcode, native dispatch.
+2. Next: the request families and `AtelExecReturn` (they start and end
+   requests between workers: the `+0x1f` request state and the level
+   queue), then the waits, so that `Script_Run` calls no original code
+   but natives.
+3. Then the natives, group by group (see "Native functions" above), each
+   behind the `Natives` trait so the interpreter can run
+   outside the game.
+
 ## Open questions
 
 - The meaning of most native functions.
 - The three worker request families (`0x00867230`, `0x00867570`,
-  `0x008673d0`) and opcodes `39`–`3b`, `40`, `54`, `77`–`7a`.
+  `0x008673d0`) and opcodes `40`, `54`, `77`–`7a` (ported as calls, not
+  understood).
 - The block header words `0x04`–`0x2c` and the tables they point to.
