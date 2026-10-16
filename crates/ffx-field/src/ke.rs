@@ -39,10 +39,22 @@ pub const SINGLE_INSTANCE_MAGIC: [u32; 10] = [
     0x203, 0x15c, 0x15e, 0x182, 0x241, 0x20a, 0x23a, 0x29b, 0x1db, 0x46,
 ];
 
+/// The `pmcom` arena's next address (`KePmcomAlloc`).
+pub const PMCOM_NEXT: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x00d5_24a4);
+/// Its base.
+pub const PMCOM_BASE: u32 = 0x00e5_24f0;
+/// Its end.
+pub const PMCOM_END: u32 = 0x00f5_24f0;
+/// The `pmcom` queue: 256 entries of (kind, pointer) (`KePmcomQueuePush`).
+pub const PMCOM_QUEUE: u32 = 0x010d_4d28;
+/// Its write index.
+pub const PMCOM_QUEUE_INDEX: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x010d_552c);
+
 /// The `Ke` objects where the game keeps them, through [`ffx_bridge::Mem`].
 pub mod bridge {
     use ffx_bridge::Mem;
-    use ffx_system::stub::ptr32;
+    use ffx_bridge::x87::Reg;
+    use ffx_system::stub::{is_ptr32_null, ptr32};
 
     use super::{LNS_DEFAULT, res_hd, res_stride};
 
@@ -212,6 +224,106 @@ pub mod bridge {
     pub fn ke_dtt_mdl_use_single_instance(mem: &impl Mem) -> u32 {
         let id = ffx_system::instance::bridge::magic_id(mem);
         u32::from(super::SINGLE_INSTANCE_MAGIC.contains(&id))
+    }
+
+    /// `KeThBP_Quit(bp)` (`0x007636c0`): every object on the lists of the
+    /// `+0x3c` buckets (`0x30` bytes from `+0x58`) and of the `+0x38`
+    /// buckets from bucket `+0x34` is flagged to end (`+0x3e` |= 8 and the
+    /// owner's bit 5) and loses its `+0xc`; then the owner is unlinked
+    /// from its list (`+8` next, `+0xc` previous).
+    pub fn ke_th_bp_quit(mem: &mut impl Mem, bp: u32) {
+        let bits = (mem.read::<u16>(bp.wrapping_add(0x3e)) & 0x20) | 8;
+        let first = u32::from(mem.read::<u16>(bp.wrapping_add(0x34)));
+        let ranges = [
+            (0, mem.read::<u16>(bp.wrapping_add(0x3c))),
+            (first, mem.read::<u16>(bp.wrapping_add(0x38))),
+        ];
+        for (start, n) in ranges {
+            for k in 0..u32::from(n) {
+                let head = bp.wrapping_add(0x58 + (start + k) * 0x30);
+                let mut o = ptr32(mem.read::<u32>(head));
+                while o != 0 {
+                    let f = mem.read::<u16>(o.wrapping_add(0x3e));
+                    mem.write(o.wrapping_add(0x3e), f | bits);
+                    mem.write(o.wrapping_add(0xc), ptr32(0));
+                    o = ptr32(mem.read::<u32>(o.wrapping_add(8)));
+                }
+            }
+        }
+        let prev = mem.read::<u32>(bp.wrapping_add(0xc));
+        if is_ptr32_null(prev) == 0 {
+            let next = mem.read::<u32>(bp.wrapping_add(8));
+            if is_ptr32_null(next) == 0 {
+                let prev = mem.read::<u32>(bp.wrapping_add(0xc));
+                mem.write(ptr32(next).wrapping_add(0xc), prev);
+            }
+            let prev = ptr32(mem.read::<u32>(bp.wrapping_add(0xc)));
+            let next = mem.read::<u32>(bp.wrapping_add(8));
+            mem.write(prev, next);
+        }
+    }
+
+    /// `KePmcomAlloc(bytes)` (`0x00762f50`): bytes + 15 rounded down to 8
+    /// from the `pmcom` arena (`0x00d524a4` next; `0x00e524f0` up to
+    /// `0x00f524f0`); past its end it restarts at the base (and spins
+    /// forever if the request alone does not fit, as the original).
+    pub fn ke_pmcom_alloc(mem: &mut impl Mem, bytes: u32) -> u32 {
+        let n = bytes.wrapping_add(0xf) & !7;
+        let at = super::PMCOM_NEXT.get(mem);
+        let end = at.wrapping_add(n);
+        super::PMCOM_NEXT.set(mem, end);
+        let (base, top) = (mem.rebase(super::PMCOM_BASE), mem.rebase(super::PMCOM_END));
+        if end < top {
+            return at;
+        }
+        let again = n.wrapping_add(base);
+        super::PMCOM_NEXT.set(mem, again);
+        while super::PMCOM_NEXT.get(mem) >= top {
+            std::hint::spin_loop(); // the original spins here forever
+        }
+        base
+    }
+
+    /// `KePmcomQueuePush(kind, p)` (`0x00762fa0`): appends `(kind, p)` to
+    /// the 256-entry ring at `0x010d4d28` (index `0x010d552c`, back to 0
+    /// past 255).
+    pub fn ke_pmcom_queue_push(mem: &mut impl Mem, kind: u32, p: u32) {
+        let i = super::PMCOM_QUEUE_INDEX.get(mem);
+        let e = mem
+            .rebase(super::PMCOM_QUEUE)
+            .wrapping_add(i.wrapping_mul(8));
+        let i = i.wrapping_add(1);
+        super::PMCOM_QUEUE_INDEX.set(mem, i);
+        mem.write(e, kind);
+        mem.write(e.wrapping_add(4), ptr32(p));
+        let i = super::PMCOM_QUEUE_INDEX.get(mem);
+        let keep = if i.cast_signed() >= 0x100 {
+            0
+        } else {
+            u32::MAX
+        };
+        super::PMCOM_QUEUE_INDEX.set(mem, i & keep);
+    }
+
+    /// `KeLnsDefault_Init(obj)` (`0x0076a640`, `KeLnsFls_Init`'s code):
+    /// the default shapes, no data; returns `set_ptr32(0)`.
+    pub fn ke_lns_default_init(mem: &mut impl Mem, o: u32) -> u32 {
+        ke_lns_init(mem, o);
+        0
+    }
+
+    /// `KeVu0MulX(dst, src, s)` (`0x007676c0`): `dst.x = src.x * s`.
+    pub fn ke_vu0_mul_x(mem: &mut impl Mem, dst: u32, src: u32, s: f32) {
+        let x = mem.read::<f32>(src);
+        mem.write(dst, Reg::load(x).mul_m32(s).store());
+    }
+
+    /// `KeVu0SubX(dst, src, s)` (`0x00767720`): `dst.x = src.x - s`, then
+    /// `restoreVf00Register` (a tail call).
+    pub fn ke_vu0_sub_x(mem: &mut impl Mem, dst: u32, src: u32, s: f32) {
+        let x = mem.read::<f32>(src);
+        mem.write(dst, Reg::load(x).sub_m32(s).store());
+        ffx_ps2::ee::bridge::restore_vf00(mem);
     }
 }
 

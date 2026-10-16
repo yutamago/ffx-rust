@@ -713,6 +713,184 @@ pub mod bridge {
         let f = mem.read::<u32>(p.wrapping_add(0x10));
         mem.write(p.wrapping_add(0x10), f | 1);
     }
+
+    /// `rcbgPSimSetPos(psim, which, v)` (`0x0091ff10`): position `which`
+    /// (0: `+0x4c`, else `+0x8c`) from `v`'s x, y, z; the first time each
+    /// is set (`+0x9c`, `+0xa0`) the initial count (`+0xa4`) drops, and
+    /// when it reaches 0 the simulation is made ready
+    /// ([`rcbg_psim_set_ready`]).
+    pub fn rcbg_psim_set_pos<M: Mem>(
+        mem: &mut M,
+        p: u32,
+        which: u32,
+        v: u32,
+        call: impl FnMut(&mut M, u32, u32, u32),
+    ) {
+        let (pos, set) = if which == 0 {
+            (psim::POS, 0x9c)
+        } else {
+            (psim::POS2, 0xa0)
+        };
+        let xyz = mem.read::<[u32; 3]>(v).map(crate::x87::copy);
+        mem.write(p.wrapping_add(pos), xyz);
+        if mem.read::<u32>(p.wrapping_add(set)) != 0 {
+            return;
+        }
+        let mut ready = false;
+        let n = mem.read::<u32>(p.wrapping_add(psim::INIT_CNT));
+        if n != 0 {
+            mem.write(p.wrapping_add(psim::INIT_CNT), n.wrapping_sub(1));
+            ready = n == 1;
+        }
+        mem.write(p.wrapping_add(set), 1u32);
+        if ready {
+            rcbg_psim_set_ready(mem, p, call);
+        }
+    }
+
+    /// `Yn_SeaGetWork()` (`0x00919a10`): [`rcbg_fp_get_work`]`(0x5a, 6,
+    /// 2)`, the sea's FP work (`Yn_SeaSetAng`, `Yn_SeaSetPos`,
+    /// `Yn_SeaSetUvSpd`).
+    pub fn yn_sea_get_work<M: Mem>(mem: &mut M, run_of: impl FnOnce(&mut M, u32) -> u32) -> u32 {
+        rcbg_fp_get_work(mem, 0x5a, 6, 2, run_of)
+    }
+
+    // ---- round 5: palettes, layers, scene objects, FP parts, characters ----
+
+    /// `rcbgPalGetEntryData(pal, n)` (`0x00929990`): entry `n`'s data of
+    /// the palette's transfer (`+0xc`, [`rcbg_trx_get_entry_data`]).
+    pub fn rcbg_pal_get_entry_data(mem: &impl Mem, pal: u32, n: u32) -> u32 {
+        let t = mem.read::<u32>(pal.wrapping_add(0xc));
+        rcbg_trx_get_entry_data(mem, t, n)
+    }
+
+    /// `rcbgPalGetLastEntryData(pal)` (`0x00929930`): the last entry's
+    /// (the transfer's count at `+0x30`, less 1).
+    pub fn rcbg_pal_get_last_entry_data(mem: &impl Mem, pal: u32) -> u32 {
+        let t = mem.read::<u32>(pal.wrapping_add(0xc));
+        let n = mem.read::<u32>(t.wrapping_add(0x30)).wrapping_sub(1);
+        rcbg_trx_get_entry_data(mem, t, n)
+    }
+
+    /// `rcbgLayerGetTexData(layer)` (`0x0092acf0`): entry 0's data of the
+    /// layer's texture transfer (`+0xbc`), 0 without one.
+    pub fn rcbg_layer_get_tex_data(mem: &impl Mem, layer: u32) -> u32 {
+        match mem.read::<u32>(layer.wrapping_add(0xbc)) {
+            0 => 0,
+            t => rcbg_trx_get_entry_data(mem, t, 0),
+        }
+    }
+
+    /// `rcbgTexGetLog2Size(w, h, &lw, &lh, &tbw)` (`0x00920050`): the
+    /// GS log2 sizes (`rcLog2Ceil`) and the buffer width in 64-pixel units,
+    /// rounded up to even; each output optional.
+    pub fn rcbg_tex_get_log2_size(mem: &mut impl Mem, w: i32, h: i32, lw: u32, lh: u32, tbw: u32) {
+        if lw != 0 {
+            mem.write(lw, super::log2_ceil(w));
+        }
+        if lh != 0 {
+            mem.write(lh, super::log2_ceil(h));
+        }
+        if tbw != 0 {
+            let n = w.wrapping_add(0x3f);
+            let mut v = n.wrapping_add((n >> 31) & 0x3f) >> 6;
+            mem.write(tbw, v);
+            if v & 1 != 0 {
+                v = v.wrapping_add(1);
+                mem.write(tbw, v);
+            }
+        }
+    }
+
+    /// The scene, when Yn's field state, its map and the scene exist.
+    fn yn_scene(mem: &impl Mem) -> Option<u32> {
+        let s = crate::guide::YN_MAP_SYSTEM.get(mem);
+        if s == 0 {
+            return None;
+        }
+        let m = mem.read::<u32>(s);
+        if m == 0 {
+            return None;
+        }
+        Some(mem.read::<u32>(m.wrapping_add(8))).filter(|&c| c != 0)
+    }
+
+    /// `Yn_SceneGetObject(kind, n)` (`0x00921be0`): the scene's
+    /// `rcbgSceneGetObject`, 0 without a scene.
+    pub fn yn_scene_get_object(mem: &impl Mem, kind: u32, n: u32) -> u32 {
+        yn_scene(mem).map_or(0, |s| {
+            crate::scene::bridge::rcbg_scene_get_object(mem, s, kind, n)
+        })
+    }
+
+    /// `Yn_SceneCountObjects(kind)` (`0x00921c20`): the scene's
+    /// `rcbgSceneCountObjects`, 0 without a scene.
+    pub fn yn_scene_count_objects(mem: &impl Mem, kind: u32) -> u32 {
+        yn_scene(mem).map_or(0, |s| {
+            crate::scene::bridge::rcbg_scene_count_objects(mem, s, kind)
+        })
+    }
+
+    /// `Yn_BattleCaptureNum()` (`0x00921910`): while Yn's battle number
+    /// (`+0xc`) is 0, takes `MsBattleGetNum` when non-zero and clears
+    /// `+8`.
+    pub fn yn_battle_capture_num(mem: &mut impl Mem) {
+        let s = crate::guide::YN_MAP_SYSTEM.get(mem);
+        if mem.read::<u32>(s.wrapping_add(0xc)) != 0 {
+            return;
+        }
+        let n = ffx_battle::state::bridge::ms_battle_get_num(mem);
+        if n != 0 {
+            let s = crate::guide::YN_MAP_SYSTEM.get(mem);
+            mem.write(s.wrapping_add(0xc), n);
+            let s = crate::guide::YN_MAP_SYSTEM.get(mem);
+            mem.write(s.wrapping_add(8), 0u32);
+        }
+    }
+
+    /// `rcbgFpFadeInit(fade, id, step, frames)` (`0x00922930`, from
+    /// `rcbgFPm097`'s process): hides FP `id` (`pppFpIDdispOff`,
+    /// `hide`) and sets up its fade: 0, the id, the step (a float), the
+    /// frames, 0.
+    pub fn rcbg_fp_fade_init<M: Mem>(
+        mem: &mut M,
+        fade: u32,
+        id: u32,
+        step: u32,
+        frames: u32,
+        hide: impl FnOnce(&mut M, u32),
+    ) {
+        hide(mem, id);
+        mem.write(fade.wrapping_add(8), crate::x87::copy(step));
+        mem.write(fade.wrapping_add(4), id);
+        mem.write(fade, 0u32);
+        mem.write(fade.wrapping_add(0xc), frames);
+        mem.write(fade.wrapping_add(0x10), 0u32);
+    }
+
+    /// `rcbgChrFindById(id)` (`0x0092e1e0`): the first character whose
+    /// `Ch_GetId` is `id`, through the character handle cursor; 0 for none.
+    pub fn rcbg_chr_find_by_id(mem: &mut impl Mem, id: u32) -> u32 {
+        use ffx_chara::handle::bridge as h;
+        h::ch_handle_rewind(mem);
+        let mut c = h::ch_handle_get_next(mem);
+        while c != 0 {
+            if h::ch_get_id(mem, c) == id {
+                return c;
+            }
+            c = h::ch_handle_get_next(mem);
+        }
+        0
+    }
+
+    /// `rcbgChrHandleIndex(handle)` (`0x00924f30`): the battle slot
+    /// (`MsGetChrHandle`, 0..=14 then 20..=27) holding `handle`, or -1.
+    pub fn rcbg_chr_handle_index(mem: &impl Mem, handle: u32) -> u32 {
+        (0..=14u32)
+            .chain(20..=27)
+            .find(|&i| ffx_battle::actor::bridge::ms_get_chr_handle(mem, i) == handle)
+            .unwrap_or(u32::MAX)
+    }
 }
 
 #[cfg(test)]

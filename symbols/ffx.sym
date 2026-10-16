@@ -128,7 +128,7 @@
 0x00440b70 function Phyre_PCluster_allocateInstanceList # fh v3:exact 0x00440c40 Phyre::PCluster::allocateInstanceList
 0x00440ba0 function Phyre_PCluster_allocateInstanceListForSize # fh v3:exact 0x00440c70 Phyre::PCluster::allocateInstanceListForSize
 0x00440eb0 function Phyre_PClusterBase_clear  # fh v3:exact 0x00440f80 Phyre::PClusterBase::clear
-0x00441010 function Phyre_PCluster_create     # fh v3:exact 0x004410e0 Phyre::PCluster::create
+0x00441010 function Phyre_PCluster_create     # stdcall (count, class descriptor, flags) -> objects or 0: Phyre::PCluster::create (fh v3:exact 0x004410e0); not folded: one body, the typed wrappers 0x0064b770..0x0064b800 call it with a descriptor each (PhyreEngine library code, not game logic); prints "...is abstract" (0xb0f248) for descriptor flag 8 at +0x90
 0x00441240 function Phyre_PCluster_deleteObject # fh v3:exact 0x00441310 Phyre::PCluster::deleteObject
 0x00441620 function Phyre_PCluster_fixupInstances # fh v3:exact 0x004416f0 Phyre::PCluster::fixupInstances
 0x00441ac0 function Phyre_PClassDescriptorForType_Phyre_PAssetReference__getPointerFromScriptContext # fh switch:bsim1.00 0x71000ae950 Phyre::PClassDescriptorForType<Phyre::PAssetReference>::getPointerFromScriptContext
@@ -831,9 +831,9 @@
 0x00648ff0 function TrophyGetError            # fh switch:cg2 0x7100877d38
 0x006492c0 function debugSavedataLoadAll      # fh switch:bsim1.00 0x7100223fe0
 0x00649d53 function Catch_All_00649f03        # fh v3:cg2 0x649f03 Catch_All@00649f03
-0x0064b7a0 function yiGetRootMatrix           # fh switch:bsim1.00 0x710052c6a0
-0x0064b7e0 function yiSetRootMatrix           # fh switch:bsim1.00 0x710052c670
-0x0064b800 function SqsEeSoundCreateTime      # fh switch:bsim1.00 0x7100409e70
+0x0064b7a0 function Phyre_PCluster_create_PMaterialSet # stdcall (count): Phyre_PCluster_create(count, 0x00c998e8 PMaterialSet descriptor, 0); a template instance, PhyreEngine code, left original. fh: yiGetRootMatrix (switch bsim1.00 0x710052c6a0, a wrong match: no callers here, the body is not yi code)
+0x0064b7e0 function Phyre_PCluster_create_PTexture2D # stdcall (count): Phyre_PCluster_create(count, 0x00ca37d0 PTexture2D descriptor, 0); PhyreEngine code, left original. fh: yiSetRootMatrix (switch bsim1.00, a wrong match)
+0x0064b800 function Phyre_PCluster_create_PWorldMatrix # stdcall (count): Phyre_PCluster_create(count, 0x00c92090 PWorldMatrix descriptor, 0); PhyreEngine code, left original. fh: SqsEeSoundCreateTime (switch bsim1.00, a wrong match)
 0x0064dc00 function PhyreScene_PhyreScene     # fh v3:exact 0x0064ddb0 PhyreScene::PhyreScene
 0x0064faa0 function PhyreScene_ChangeToHSVPass # fh v3:bsim1.00 0x0064fc50 PhyreScene::ChangeToHSVPass
 0x00650670 function PhyreScene_DrawMostVFX    # fh v3:exact 0x00650820 PhyreScene::DrawMostVFX
@@ -1773,6 +1773,8 @@
 0x00761e20 function pppPartDraw               # fh switch:cg4 0x71002d37e0
 0x00762240 function pppPartLoop               # fh v3:exact+call.cs 0x00762330 cdecl
 0x00762550 function pppSetPartMatrix          # fh switch:cg2 0x71008b5328
+0x00762f50 function KePmcomAlloc                 # (bytes) -> block: bytes + 15 rounded down to 8 from the pmcom arena 0x00e524f0..0x00f524f0 (next 0x00d524a4); past the end restarts at the base (spins forever when it still does not fit); 0x00760080 ("pmcom_data_init")
+0x00762fa0 function KePmcomQueuePush             # (kind, p): (kind, set_ptr32(p)) into the 256-entry ring at 0x010d4d28, index 0x010d552c back to 0 past 255; 0x0075ff00
 0x00763100 function KeThBP_MkGifPk            # fh v3:exact 0x007631f0
 0x007636c0 function KeThBP_Quit               # fh v3:exact 0x007637b0
 0x007637f0 function KeThBP_Update             # fh v3:bsim0.93 0x007638e0
@@ -1788,6 +1790,8 @@
 0x00766c20 function prcPacketDataDrawPtr      # fh switch:bsim1.00 0x71003069f0
 0x00766ff0 function KeMdl_Draw                # fh v3:exact 0x007670d0
 0x00767530 function KeMdl_MkTkClut            # fh v3:exact 0x00767610
+0x007676c0 function KeVu0MulX                    # (dst, src, s): dst.x = src.x * s (a VU macro helper); 0x0088a040
+0x00767720 function KeVu0SubX                    # (dst, src, s): dst.x = src.x - s, then restoreVf00Register (tail call); 0x0088a040
 0x00767790 function KeDttSpr_MkGifPk          # fh v3:exact 0x00767870
 0x00768d30 function KeDttSpr_MkGifPk_Pre      # fh v3:exact 0x00768e40
 0x00769230 function KeBornRnd2                # fh v3:exact 0x00769340
@@ -1801,6 +1805,7 @@
 0x0076a1a0 function KeLnsCrn_SetShp           # fh v3:exact 0x0076a2b0
 0x0076a1d0 function KeLnsFlr_Init             # fh switch:bsim1.00 0x710031c850
 0x0076a1f0 function KeLnsFls_Draw             # fh v3:exact 0x0076a300
+0x0076a640 function KeLnsDefault_Init            # (obj) -> 0: KeLnsFls_Init's code (default shapes 0x00d52398, no data); 0x0075ab30, pppKeLnsFlsTCon
 0x0076a670 function KeLnsLp_Init              # fh v3:exact 0x0076a780
 0x0076a690 function KeLnsLp_Update            # fh v3:exact 0x0076a7a0
 0x0076ab90 function KeLnsShp_Draw             # fh switch:bsim1.00 0x710031c940
@@ -5324,6 +5329,7 @@
 0x009188c0 function yiImage_init              # fh switch:bsim0.97 0x710053c8e0
 0x00919630 function yiVramSetLimit               # (pages) -> 0: g_YiVramLimit = (0x38 - pages) << 14
 0x009199f0 function Yn_PSimGetHandle          # fh v3:exact 0x009199f0
+0x00919a10 function Yn_SeaGetWork                # () -> rcbgFpGetWork(0x5a, 6, 2), the sea's FP work (Yn_SeaSetAng, Yn_SeaSetPos, Yn_SeaSetUvSpd)
 0x00919a20 function Yn_BattleBegin            # fh v3:bsim1.00 0x00919a20
 0x00919a40 function Yn_BattleEnd              # fh v3:bsim1.00 0x00919a40
 0x00919ba0 function Yn_FpTrxTexGet            # fh switch:bsim1.00 0x7100548ce0
@@ -5345,15 +5351,40 @@
 0x00919f10 function Yn_PSimSetPos             # fh v3:exact 0x00919f10
 0x00919f40 function Yn_MapPartAnimeOff           # (part): clears bit 1 of map part (scene layer, 0xc0 bytes) part's animation word (+0x90) when part < Yn_MapPartCount; script native 0x0091b490
 0x00919f90 function Yn_MapPartAnimeOn            # (part): sets that bit; script native 0x0091b470
+0x00919fe0 function Yn_MapPartAnimeSetMode       # (part, bits): map part animation word (+0x90) & ~0xf00 | bits, part below Yn_MapPartCount; script native 0x8022 (0x0091b4b0)
+0x0091a030 function Yn_MapPartAnimeFlag0Off      # (part): clears bit 0 of the animation word; native 0x801f (0x0091b450)
+0x0091a080 function Yn_MapPartAnimeFlag0On       # (part): sets it; native 0x801e (0x0091b430)
 0x0091a0d0 function Yn_PreBgChangeStage       # fh v3:exact 0x0091a0d0
+0x0091a0f0 function Yn_MapPartMoveTo             # (part, x, y, frames): move from the position (+0x64 = +0x4c, +0x6c = +0x50) to x, y (+0x68, +0x70) over frames (+0x7c), counter +0x80 = 0; native 0x8055 (0x0091c2d0)
+0x0091a150 function Yn_MapPartScaleTo            # (part, sx, sy, frames): scale from +0x44/+0x48 (into +0x54/+0x5c) to sx, sy (+0x58/+0x60; 0.0 keeps it) over frames (+0x74), counter +0x78; native 0x804f (0x0091c150, one value for both)
 0x0091a260 function Yn_SceneSet104               # (v): scene +0x104 (g_YnMapSystem map +8); script native 0x0091af80
+0x0091a2a0 function Yn_MapPartAnimeGetCount      # (part) -> the animation's frame count (+0x98), 0 past the count; native 0x801c slot 0 (0x0091b3e0)
+0x0091a2e0 function Yn_MapPartGetAlpha           # (part) -> the colour's alpha byte (+0x43); native 0x8031 (0x0091b720)
+0x0091a330 function Yn_MapPartGetPosX            # (part) -> float +0x4c (0.0 past the count); natives 0x8055 slot 0xc (0x0091c330), 0x8054 (0x0091c280)
+0x0091a380 function Yn_MapPartGetPosY            # (part) -> float +0x50; natives 0x8056 slot 0xc (0x0091c350), 0x8053 (0x0091c230)
 0x0091a3d0 function Yn_MapPartCount             # () -> the scene's layer count (g_YnMapSystem map +8 scene +4), 0 without one; 33 callers
+0x0091a3f0 function Yn_MapPartGetHeight          # (part) -> +8 (layer height); native 0x801b (0x0091b3c0)
+0x0091a440 function Yn_MapPartGet0C              # (part) -> +0xc; native 0x8012 (0x0091b240); ?meaning
+0x0091a490 function Yn_MapPartGet10              # (part) -> +0x10; native 0x8013 (0x0091b260); ?meaning
+0x0091a4e0 function Yn_MapPartGetScaleY          # (part) -> float +0x48; native 0x8050 slot 0xc (0x0091c1c0)
+0x0091a530 function Yn_MapPartGetScaleX          # (part) -> float +0x44; native 0x804f slot 0xc (0x0091c1a0)
+0x0091a580 function Yn_MapPartGet24              # (part) -> +0x24; native 0x8017 (0x0091b320); ?meaning
+0x0091a5d0 function Yn_MapPartGet28              # (part) -> +0x28; native 0x8018 (0x0091b340); ?meaning
+0x0091a620 function Yn_MapPartGetWidth           # (part) -> +4 (layer width); native 0x801a (0x0091b3a0)
+0x0091a670 function Yn_MapPartGet14              # (part) -> float +0x14; native 0x8014 slot 0xc (0x0091b2c0); ?meaning
 0x0091a6d0 function Yn_SceneGetAC                # () -> float scene +0xac, 0.0 without a scene
 0x0091a700 function Yn_SceneGetB8                # () -> float scene +0xb8
 0x0091a730 function Yn_SceneGetBC                # () -> float scene +0xbc
 0x0091a770 function Yn_PreBgLayerDispGet      # fh v3:exact 0x0091a770
+0x0091a930 function Yn_MapPartAnimeSetFrame      # (part, frame): the animation's current frame (u16 +0x96); native 0x801d (0x0091b400)
+0x0091a970 function Yn_MapPartAnimeSetLastFrame  # (part): current frame = count (+0x98) - 1; native 0x802f (0x0091b6d0)
+0x0091a9c0 function Yn_MapPartAnimeSetRate       # (part, rate): +0xa4; native 0x802e (0x0091b6a0)
 0x0091aa00 function Yn_SceneSetDC                # (a, float b, c, float d): scene +0xdc..+0xe8, +0xec = 0.0, +0xf0 = 0; script native 0x0091b610
 0x0091aa60 function Yn_PreBgSetData           # fh v3:exact 0x0091aa60
+0x0091aae0 function Yn_MapPartSetPos             # (part, x, y): +0x4c, +0x50, move counters +0x7c, +0x80 = 0; natives 0x8052 (0x0091c1e0), 0x8053, 0x8054
+0x0091ac40 function Yn_MapPartSet24              # (part, a, b): +0x24, +0x28; native 0x8016 (0x0091b2e0)
+0x0091ac80 function Yn_MapPartSetSize            # (part, w, h): +4, +8; native 0x8019 (0x0091b360)
+0x0091acc0 function Yn_MapPartSet14              # (part, v): float +0x14; native 0x8014 (0x0091b280)
 0x0091ad10 function Yn_PreBgSetScrBank        # fh switch:bsim1.00 0x7100548410
 0x0091ad80 function Yn_SceneSetC0                # (a, float b, c, d, e): scene +0xc0..+0xd0, +0xd4 = 0.0, +0xd8 = 0; script native 0x0091b550
 0x0091ae30 function Yn_SeaResetMatrix         # fh v3:bsim1.00 0x0091ae30
@@ -5408,6 +5439,7 @@
 0x0091ff10 function rcbgPSimSetPos            # fh v3:exact 0x0091ff10
 0x0091ffb0 function rcbgPSimSetReady          # fh switch:bsim0.98 0x7100546520
 0x00920020 function rcCalcPersMatrix          # fh switch:bsim1.00 0x7100541240
+0x00920050 function rcbgTexGetLog2Size           # (w, h, &lw, &lh, &tbw): rcLog2Ceil of each; tbw = ceil(w / 64) rounded up to even; outputs optional; rcbgLayerDraw, rcbgSceneChkSortLayer
 0x00920250 function rcbgRestoreReg            # fh v3:exact 0x00920250
 0x009202e0 function rcbgSetProjectionMatrixSub # fh v3:exact 0x009202e0
 0x00920450 function rcbgSetReg                # fh v3:bsim1.00 0x00920450
@@ -5438,15 +5470,19 @@
 0x009216b0 function rcbgPreFini               # fh v3:exact 0x009216b0
 0x00921770 function rcbgPreInit               # fh v3:exact 0x00921770
 0x009217e0 function rcbgPreSetSceneNo         # fh v3:exact 0x009217e0
+0x00921910 function Yn_BattleCaptureNum          # (): while g_YnMapSystem +0xc is 0 takes a non-zero MsBattleGetNum and clears +8; 0x0091a8c0
 0x00921940 function rcbgChkId                 # fh v3:exact 0x00921940
 0x00921aa0 function rcbgFini                  # fh v3:exact 0x00921aa0
 0x00921b90 function rcbgChunkTag                 # (i) -> 0x00c5e480[i]: the Yn data chunk tag strings YNDT YNPR YNSC YNTX YNTM YNSM YNST YNSP YNTT YNSE YNFT YNGM YNED
+0x00921be0 function Yn_SceneGetObject            # (kind, n) -> rcbgSceneGetObject of the Yn scene, 0 without one
+0x00921c20 function Yn_SceneCountObjects         # (kind) -> rcbgSceneCountObjects of the Yn scene, 0 without one
 0x00921ce0 function rcbgInit                  # fh v3:exact 0x00921ce0
 0x009220c0 function rcbgFpTrxTexNew           # fh v3:exact 0x009220c0
 0x009220e0 function rcbgTrxTexDelete          # fh v3:bsim1.00 0x009220e0
 0x00922100 function rcbgTrxTexDraw            # fh v3:bsim1.00 0x00922100
 0x009221b0 function rcbgTrxTexNew             # fh v3:bsim1.00 0x009221b0
 0x00922560 function rcbgFPm097Init            # fh switch:bsim1.00 0x71005524e0
+0x00922930 function rcbgFpFadeInit               # (fade, id, step, frames): pppFpIDdispOff(id), then 0, id, step (float), frames, 0; rcbgFPm097's process (0x00922600)
 0x00922b70 function rcbgFPm173Init               # (part) -> part: +0x10..0x24 cleared, type 0x20008, functions 0x00922b40, 0x00922be0; map 0xad's part (0x00921a50)
 0x00922ef0 function rcbgFPm173Start           # fh switch:bsim0.96 0x7100553480
 0x00922f50 function rcbgFPm565Init               # (part) -> part: type 0x20008, functions 0x00922f30, 0x00922fb0; maps 0x235, 0x236 (0x00921a50)
@@ -5464,6 +5500,7 @@
 0x00924ba0 function rcefTargetIsDone             # (i) -> bit 1 of target i's u16 flags
 0x00924bc0 function rcefTargetClear              # (i): its flags = 0
 0x00924be0 function rcefTargetSetDelay           # (u16): 0x025d5ea2, the delay 0x009248c0 gives a reached target
+0x00924f30 function rcbgChrHandleIndex           # (handle) -> battle slot 0..14 or 20..27 whose MsGetChrHandle is handle, else -1; 0x00935340
 0x00925140 function rcefMainCreateObj         # fh v3:exact 0x00925140
 0x00925170 function rcefMainCreateTask        # fh v3:exact 0x00925170
 0x009251c0 function rcefMainFini              # fh v3:exact 0x009251c0
@@ -5513,10 +5550,13 @@
 0x00928c80 function rcfxSpringFini            # fh switch:bsim0.91 0x710054fa80
 0x009293d0 function rcfxDampInit                 # (damp) -> damp: type 0x30003, functions 0x009293c0 (+4), 0x00929360 (+0x14), +0x1c = 0.0001f (0x00b92154); rcfxDamp.c (0x00929420)
 0x00929910 function rcLog2Ceil                   # (n) -> smallest k in 1..16 with n <= 1 << k (16 when none); from 0x00920050
+0x00929930 function rcbgPalGetLastEntryData      # (pal) -> rcbgTrxGetEntryData(pal +0xc, its count +0x30 - 1)
 0x00929950 function rcbgPalAlloc              # fh switch:bsim1.00 0x71005551c0
+0x00929990 function rcbgPalGetEntryData          # (pal, n) -> rcbgTrxGetEntryData(pal +0xc, n)
 0x009299b0 function rcbgPalInit               # fh v3:exact 0x009299b0
 0x00929ab0 function rcbgPalSetNo              # fh v3:bsim1.00 0x00929ab0
 0x00929bf0 function rcbgLayerDraw             # fh switch:cg8 0x7100553a70
+0x0092acf0 function rcbgLayerGetTexData          # (layer) -> rcbgTrxGetEntryData(layer +0xbc, 0), 0 without a texture transfer
 0x0092ad20 function rcbgLayerInit             # fh v3:exact 0x0092ad20
 0x0092ad80 function rcbgLayerProc             # fh switch:bsim1.00 0x7100553930
 0x0092aed0 function rcbgClipCodeAnd              # (out, a, b, c, d) -> out: out = (a & c, b & d); rcbgClipVertex
@@ -5548,6 +5588,7 @@
 0x0092ba70 function rcdtParseGetBegin         # fh switch:bsim1.00 0x71005495d0
 0x0092ba90 function rcdtParseGetBin           # fh v3:exact 0x0092ba90
 0x0092bb20 function rcdtParseGetChunk            # (parse) -> parse +0
+0x0092bb90 function rcdtChunkHandleGetEnd        # (&chunk) -> rcdtChunkGetEnd(*handle)
 0x0092bd10 function rcdtParseGetMode             # (parse) -> parse +8 (rcdtParseSetMode)
 0x0092bda0 function rcdtParseGetPos              # (parse) -> parse +4, the cursor
 0x0092bf50 function rcdtParseInit             # fh v3:exact 0x0092bf50
@@ -5568,8 +5609,11 @@
 0x0092d680 function rcbgTrxSetTag             # fh v3:bsim1.00 0x0092d680
 0x0092dd30 function rcefChgChrClut            # fh switch:cg2 0x7100557340
 0x0092de30 function rcefDirToAngle               # (float) -> 3pi/2 (double 0x00b67e18) - x, as f32; from 0x00924a20 (g_MagicImports)
+0x0092de50 function rcMat4fSetScale001           # (m) -> identity scaled by 0.01 (0x00b1f2b0); FFXVu0UnitMatrix's eax
+0x0092de80 function rcMat4fSetScale0001          # (m) -> identity scaled by 0.001 (0x00b368a4)
 0x0092dfb0 function rcefEffectReady           # fh v3:exact 0x0092dfb0
 0x0092e1c0 function rcefGetChrHandle          # fh v3:exact 0x0092e1c0
+0x0092e1e0 function rcbgChrFindById              # (id) -> first character (Ch_HandleRewind / Ch_HandleGetNext) whose Ch_GetId is id, else 0; rcbgFPm097's process
 0x0092e240 function rcefGetChrMatrix          # fh v3:exact 0x0092e240
 0x0092e400 function rcAngleDiff                  # (float a, float b) -> |a - b| as f32, 2pi - it past pi (doubles 0x00b92288, 0x00b39378); g_MagicImports
 0x0092e620 function rcefIsBattle              # fh v3:bsim1.00 0x0092e620
@@ -5633,6 +5677,7 @@
 0x009308a0 function rcbgAnimeInit             # fh v3:exact 0x009308a0
 0x009308d0 function rcbgAnimeSetDataCnt       # fh v3:exact 0x009308d0
 0x00930d80 function Gui_YanagiInit            # fh v3:exact 0x00930d80
+0x00932570 function rcuiCollectChrHandles        # (): every character's index and handle into the rcui work's lists (+0x830, +0x870; count +0x824)
 0x00933c80 function Yn_FpMemWinOpen           # fh v3:exact 0x00933c80
 0x00934390 function rcuiInit                  # fh switch:bsim0.92 0x7100558860
 0x009364a0 function rcuiPreMemWinOpen         # fh switch:bsim1.00 0x710055e6c0
@@ -5807,6 +5852,9 @@
 0x00a45000 function abmCalcChrMoveCurMoveCheck # fh v3:exact 0x00a45000
 0x00a454a0 function AbmapSetHelpMessage       # fh v3:cg2 0xa454a0 +AbmapSetHelpMessage
 0x00a45570 function LoadAbmap                 # fh v3:exact 0x00a45570 +LoadAbmap
+0x00a457d0 function abmap_test_panel             # (bit, node) -> node panel bits (+0x829) & 1 << bit; 0x00a5d120
+0x00a45800 function abmap_other_has_panel        # (chr, node) -> 1 when another of the first seven characters who has joined (MsGetSavePlyJoined 1) has its panel bit on the node; 0x00a5d120
+0x00a45870 function abmap_chr_node               # (chr) -> the character's node (u16 at g_Abmap +0x110cc + 0x50 chr) once joined, else -1; 0x00a5d120
 0x00a458a0 function abmap_get_panel           # fh v3:exact+call.cs 0x00a458a0 cdecl
 0x00a458c0 function abmap_lost_panel          # fh v3:exact 0x00a458c0
 0x00a458f0 function abmap_set_chr_pos         # fh v3:exact 0x00a458f0
@@ -7982,6 +8030,7 @@
 0x00c4423c label g_CameraSelected          # u8: the camera whose slots MsGetNowSelectedCamraLevel weighs
 0x00c44240 label g_BtlScreenSize              # [u32; 2]; The screen size MsScreenInit stores.
 0x00c44bf0 label    g_pppSinTable                # 4096 f32 sines over a turn: pppGetRotMatrix* read [(a>>4)&0xfff] and [((a+0x4000)>>4)&0xfff] (cosine)
+0x00c49498 label    g_SqsBattleStream            # the battle streaming sound's id (SqsBattleStreamingDataSend: a +8, else b +8, else -1)
 0x00c49680 label g_ChrDefaultMoves           # Ch_MotionSetMoves(chr, slot, -1) stores entry [slot] (0, 1, 2, then zeros)
 0x00c496e0 label g_Chr6e0                   # u32, Ch_SysSet6e0
 0x00c496ea label g_ChrShadeByLight           # i8: Ch_DrawCalcShade multiplies the shade fade by the light value fade (+0x36c) when set
@@ -8054,6 +8103,9 @@
 0x00d2c260 label    g_FpRun                      # FP run records, 0x80 per g_FpData entry: +0 frame counter (-0x1000 not started), +0x1d status (0 run, 1 end: Fp_End, 2: Fp_RestartMode2)
 0x00d30260 label    g_FpDisp                     # FP display records, 0x4c per entry: +0 flags (0x10 hidden: pppFpIDdispOff, 2 stuck to map: pppFpSetStickMap, 8 to a display object), +4 stick target
 0x00d52398 label    g_pppRandTarget          # the float the ppp rand programs (pppRandFloat ...) add to when the key's target offset is -1
+0x00d524a4 label    g_KePmcomNext                # next free address of the pmcom arena 0x00e524f0..0x00f524f0 (KePmcomAlloc)
+0x010d4d28 label    g_KePmcomQueue               # 256 entries of (kind, pointer) (KePmcomQueuePush)
+0x010d552c label    g_KePmcomQueueIndex          # its write index, back to 0 past 255
 0x010d5600 label    g_KeMdlTkClut                # three words KeMdl_MkTkClut stores (the third a float)
 0x010e7640 label    g_pppWaitDone                # set by pppClearWait, polled by pppSendWait
 0x01128a90 label    g_Cd_ExSizes              # u32 per PS2 file number: pc_sizetbl_set_Ex() (CdEnvInit); CDfileSize_CD_EX indexes it with number + g_CdLib_FileBase
@@ -8544,6 +8596,7 @@
 0x01934e78 label    g_YiFieldFlags               # bit 0 set by yiSetFieldPair, bit 1 when its first argument is non-zero; floats at +4, +0x18..+0x24, int at +0x28 (yiSetFieldVec3Int); ?meaning
 0x01934ea4 label    g_YiColor3                   # three bytes (yiSetColor3)
 0x0193bb08 label    g_YiAnimUseVCount            # animations time by yiGetVCount when set, else yiGetFCount (yiAnimAttachDefault, yiKeyFrame_attachChr)
+0x0193bb14 label    g_YiClutSplit                # CLUTs in the first VRAM area: 32, or 16 for texture mode 4 (yiClutAlloc_makepacket)
 0x0193bf28 label    g_YnSeaMatrix                # the sea's matrix (Yn_SeaGetMatrix, Yn_SeaSetMatrix, Yn_SeaResetMatrix)
 0x0193bf6c label    g_GuideFadeState             # Guide_FadeStep: 0 hidden (waiting), 1 fading in, 2 shown, 3 fading out; Guide_FadeOff clears it
 0x0193bf70 label    g_GuideFadeWait              # frames waited (Guide_FadeStep)
@@ -8563,6 +8616,10 @@
 0x01a85ba8 label    g_FullArenaLocalization   # toggled (non-zero -> 0, 0 -> 1) by setFullArenaLocalizationEnable; read by 0x00a42c00, 0x00a42fa0
 0x01a85bb0 label    g_ReadChgName_From        # 16 u32 (FILE_NAME_CHG_TBL_CNT, read_debug.c): set_read_chgname(a, b) puts a in the first zero slot, b in g_ReadChgName_To; clear_read_chgname zeroes both
 0x01a85bf0 label    g_ReadChgName_To          # 16 u32: the b of set_read_chgname(a, b), beside g_ReadChgName_From
+0x01a860fc label    g_AbmapMoveLimit             # the highest cost AbmapCalcMoveCost walks to (the cost's low 16 bits compared)
+0x01a86100 label    g_AbmapMoveStep              # the cost of the next step (1 when the link byte matches g_AbmapMoveMask, else 4)
+0x01a86104 label    g_AbmapMoveMask              # the link byte mask for cheap steps
+0x01a86108 label    g_AbmapPad                   # pad state AbmapCtrlTilt reads (+0x2700 i16, negative when the tilt buttons count)
 0x02286148 label    g_OpdNumHome                 # u16 x, y where opd_num_vdisp puts the number cursor back (opd_num_init)
 0x0228614c label    g_OpdNumPos                  # u16 x, y of the number printer's cursor (opd_num_xy_set, opd_num)
 0x02286150 label    g_OpdNumColumn               # u16 characters on the line, cleared by opd_num_xy_set and opd_num_vdisp

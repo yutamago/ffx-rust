@@ -258,6 +258,55 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   `+0x12`, bit 7 of `+0x14` loops); `KeLnsClm_SetShp` seeds element
   phases with `s = s * 0x80d + 7` (16 bits) over 65535.0.
 
+## Map parts, sphere grid moves, render set-up (round 5)
+
+- Map part (scene layer, `0xc0` bytes) fields the script natives read and
+  write through `Yn_MapPart*` (`0x00919fe0`..`0x0091acc0`; each checks the
+  part against `Yn_MapPartCount`): `+4`/`+8` width and height, `+0xc`,
+  `+0x10`, `+0x14` (float), `+0x24`, `+0x28`, colour alpha `+0x43`, scale
+  `+0x44`/`+0x48`, position `+0x4c`/`+0x50`; a scale change from
+  `+0x54`/`+0x5c` to `+0x58`/`+0x60` over `+0x74` frames (counter
+  `+0x78`; `Yn_MapPartScaleTo`, a 0.0 target keeps the scale), a move from
+  `+0x64`/`+0x6c` to `+0x68`/`+0x70` over `+0x7c` frames (counter `+0x80`;
+  `Yn_MapPartMoveTo`); the animation word `+0x90` (bit 0, bit 1, mode bits
+  8..11), current frame `+0x96`, frame count `+0x98`, rate `+0xa4`.
+  Natives `0x8012`..`0x8056` (entries of 16 bytes from `0x00c5dc9c`;
+  setters at slot 0, getters at slot `0xc`).
+- Sphere grid (`g_Abmap`): node links at `+0x814` (five pointers per
+  node), the cheapest cost at `+0x82c` (`AbmapCalcMoveCost` `0x00a47560`:
+  a depth-first walk, step 1 when the link's `+0xc` byte matches the mask
+  `0x01a86104`, else 4; limit `0x01a860fc`); the camera at `+0x112b8`
+  (copied to `+0x11308`), zoom `+0x112f4`; homing state at
+  `+0x11620`..`+0x11648` (`AbmapInitHoming`, `AbmapState_HomeOnNode`:
+  `FFXVu0InterVectorXYZ` from the start toward the node); state functions
+  at `+0x115a8` (saved at `+0x115b0`); tilt level `+0x115cb` (0, -3640,
+  -7281) eased over 30 frames through the sine table `0x00c44bf0` into
+  `+0x11340` (`AbmapCtrlTilt`); zoom level `+0x115cc` (1, 0.5, 0.25,
+  0.125); the characters' nodes every `0x50` bytes from `+0x110cc`. The
+  save (`MsGetSaveAbilityMap`): node kinds and panel bits (2 bytes per
+  node), link flags from `+0xa00`, nodes from `+0xf00`, tilt and zoom at
+  `+0xf18`, `+0xf19` (`LoadSaveAbmap`).
+- GS set-up packets of the renderer (`yiRender_setupparamGS` `0x0090d260`,
+  `+0x677a8` and `+0x678a8`): DMA 12 quadwords, VIF `FLUSH`, `DIRECT` 11,
+  an A+D tag of 10 registers; the background colour is `b << 16 | g << 8
+  | r` from `+0x68340`, through the renderer's own colour scale and offset
+  (`+0x6820c`, `+0x6821c`) when flag bit 2 is set (clamped to 0..255,
+  `_ftol2`); the frame register from `+0x9cab4 >> 11` unless flag bit 25.
+- CLUT upload packet (`yiClutAlloc_makepacket` `0x00917050`): 72 transfers
+  of `0x460` bytes (A+D `BITBLTBUF`/`TRXPOS`/`TRXREG`/`TRXDIR` left 0 by
+  the PC build, an `IMAGE` tag, 256 colours), double-buffered at
+  `+0x13b14`.
+- `KeVu0RndI` (`0x0075f920`): two VU0 random steps through the emulated
+  EE/VU0 registers (`0x00c8f5xx`, `g_Vu0_R`), each `srand`ing the CRT.
+- `NkzSetLuluLimitTbl` (`0x00a5cc70`): one of 17 Lulu digit tables
+  (`0x14` bytes from `0x00b7b7f4`) by battle group and her magic.
+- `0x00441010` is `Phyre::PCluster::create(count, descriptor, flags)`, one
+  body (not folded); `0x0064b7a0`, `0x0064b7e0`, `0x0064b800` are its
+  typed wrappers for `PMaterialSet`, `PTexture2D` and `PWorldMatrix`
+  (descriptors `0x00c998e8`, `0x00ca37d0`, `0x00c92090`), PhyreEngine
+  code; Fahrenheit's Switch BSim names for them (`yiGetRootMatrix`,
+  `yiSetRootMatrix`, `SqsEeSoundCreateTime`) are wrong matches.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

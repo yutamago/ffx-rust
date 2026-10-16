@@ -56,12 +56,22 @@ pub fn length2(x: u32, y: u32) -> u32 {
 }
 
 /// The VU0 helpers where the game keeps their state, through
+/// The emulated R5900's `r0` (`g_Ee_Gpr`).
+pub const EE_GPR: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x00c8_f508);
+/// The emulated VU0 R register (`g_Vu0_R`), `f32` bits.
+pub const VU0_R: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x00c0_a000);
+/// Non-zero once R is seeded (`g_Vu0_RSeeded`).
+pub const VU0_R_SEEDED: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x00c8_f728);
+/// The scale `KeVu0RndI` applies before converting (an `f64` in `.rdata`).
+pub const RND_SCALE: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b5_1588);
+
 /// [`ffx_bridge::Mem`].
 pub mod bridge {
     use ffx_bridge::Mem;
 
     use super::{TK_CLUT, VF_A, VF_B, VF_C, VF_D, add_xyz, copy_xyz, length2, scale_xyz};
     use crate::{geom, x87};
+    use ffx_bridge::x87::{Reg, ftol};
 
     /// `KeVu0CopyVecXYZ(dst, src)` (`0x0075ede0`): x, y, z of `src` into
     /// `dst`.
@@ -118,6 +128,70 @@ pub mod bridge {
     /// float, through the x87 stack).
     pub fn ke_mdl_mk_tk_clut(mem: &mut impl Mem, a: u32, b: u32, c: u32) {
         TK_CLUT.set(mem, [a, b, x87::copy(c)]);
+    }
+
+    /// `vrnext` on the emulated VU0 R register: the low 22 fraction bits
+    /// shifted up with bit 4 of `R ^ (R >> 18)` in, exponent of 1.0.
+    #[must_use]
+    pub const fn vrnext(r: u32) -> u32 {
+        (((r >> 18) ^ r) >> 4 & 1) | ((r & 0x003f_ffff) | 0x1fc0_0000).wrapping_shl(1)
+    }
+
+    /// One half of `KeVu0RndI`: `rN = r0 - 1` into the move register at
+    /// `gpr` and `vf` (its high words from `src`), R ^= the low 23 bits of
+    /// that word read as a float, `srand(R & 0x7fffff)`, then `vf.x` the
+    /// value as a float. Returns the R-derived term: 1.0 until R is
+    /// seeded, else the next R as a float.
+    fn rnd_half<M: Mem>(
+        mem: &mut M,
+        gpr: u32,
+        vf: u32,
+        src: u32,
+        srand: &mut impl FnMut(&mut M, u32),
+    ) -> f32 {
+        let (gpr, vf, src) = (mem.rebase(gpr), mem.rebase(vf), mem.rebase(src));
+        let r0 = super::EE_GPR.get(mem);
+        let a = r0.wrapping_sub(1);
+        let sign = (a.cast_signed() >> 31).cast_unsigned();
+        let r = super::VU0_R.ptr(mem).addr;
+        let old = mem.read::<u32>(r);
+        mem.write(gpr, a);
+        mem.write(vf, a);
+        let hi = mem.read::<[u32; 2]>(src);
+        mem.write(vf.wrapping_add(8), hi);
+        let bits = x87::copy(a);
+        let nr = old ^ (bits & 0x007f_ffff);
+        mem.write(r, nr);
+        mem.write(gpr.wrapping_add(4), sign);
+        mem.write(vf.wrapping_add(4), sign);
+        srand(mem, nr & 0x007f_ffff);
+        let v = mem.read::<i32>(vf);
+        mem.write(vf, x87::store(f64::from(v)));
+        if super::VU0_R_SEEDED.get(mem) == 0 {
+            return 1.0;
+        }
+        let cur = mem.read::<u32>(r);
+        let next = vrnext(cur);
+        mem.write(r, next);
+        f32::from_bits(next)
+    }
+
+    /// `KeVu0RndI()` (`0x0075f920`): two VU0-style random steps through
+    /// the emulated registers (each `srand`s the CRT, `srand`), leaving
+    /// `vf.x + R` at `0x00c8f7a0` and `0x00c8f970`; returns the second
+    /// times an `f64` in `.rdata` (`0x00b51588`) through `_ftol2_sse`.
+    pub fn ke_vu0_rnd_i<M: Mem>(mem: &mut M, mut srand: impl FnMut(&mut M, u32)) -> u32 {
+        let t1 = rnd_half(mem, 0x00c8_f588, 0x00c8_f7b0, 0x00c8_f590, &mut srand);
+        let x = mem.read::<f32>(mem.rebase(0x00c8_f7b0));
+        let s1 = Reg::load(x).add_m32(t1).store();
+        mem.write(mem.rebase(0x00c8_f7a0), s1);
+        let t2 = rnd_half(mem, 0x00c8_f528, 0x00c8_f980, 0x00c8_f530, &mut srand);
+        let y = mem.read::<f32>(mem.rebase(0x00c8_f980));
+        let s2 = Reg::load(t2).add_m32(y).store();
+        mem.write(mem.rebase(0x00c8_f970), s2);
+        let k = super::RND_SCALE.get(mem);
+        let v = Reg::load(f32::from_bits(x87::copy(s2.to_bits()))) * Reg::constant(k);
+        ftol(mem, v.value())
     }
 }
 
