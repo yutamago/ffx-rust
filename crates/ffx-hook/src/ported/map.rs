@@ -651,4 +651,254 @@ ported! {
     KeLnsFlr_Init @ 0x0076_a1d0 => extern "C" fn ke_lns_flr_init(o: u32, src: u32) {
         ke::bridge::ke_lns_flr_init(&mut mem(), o, src);
     }
+    /// `rcdtChunkGetSize(chunk)`.
+    rcdtChunkGetSize @ 0x0092_b830 => extern "C" fn rcdt_chunk_get_size(c: u32) -> u32 {
+        rcdt::bridge::rcdt_chunk_get_size(&mem(), c)
+    }
+    /// `rcdtParseGetChunk(parse)`.
+    rcdtParseGetChunk @ 0x0092_bb20 => extern "C" fn rcdt_parse_get_chunk(p: u32) -> u32 {
+        rcdt::bridge::rcdt_parse_get_chunk(&mem(), p)
+    }
+    /// `rcdtParseGetPos(parse)`.
+    rcdtParseGetPos @ 0x0092_bda0 => extern "C" fn rcdt_parse_get_pos(p: u32) -> u32 {
+        rcdt::bridge::rcdt_parse_get_pos(&mem(), p)
+    }
+    /// `rcdtParseGetMode(parse)`.
+    rcdtParseGetMode @ 0x0092_bd10 => extern "C" fn rcdt_parse_get_mode(p: u32) -> u32 {
+        rcdt::bridge::rcdt_parse_get_mode(&mem(), p)
+    }
+    /// `rcPacketDataSetAdr(packet, at)`.
+    rcPacketDataSetAdr @ 0x0092_7a40 => extern "C" fn rc_packet_data_set_adr(p: u32, at: u32) {
+        packet::bridge::rc_packet_data_set_adr(&mut mem(), p, at);
+    }
+    /// `rcPacketDataOpen(packet, buffer)`.
+    rcPacketDataOpen @ 0x0092_7a50 => extern "C" fn rc_packet_data_open(p: u32, buffer: u32) {
+        packet::bridge::rc_packet_data_open(&mut mem(), p, buffer);
+    }
+    /// `yiSetMatrixDObj(index, m)`.
+    yiSetMatrixDObj @ 0x0090_a520 => extern "C" fn yi_set_matrix_dobj(index: u32, m: u32) -> i32 {
+        yi::bridge::yi_set_matrix_dobj(&mut mem(), index, m)
+    }
+    /// `yiSetMatrixGroup(group, m)`.
+    yiSetMatrixGroup @ 0x0090_a560 => extern "C" fn yi_set_matrix_group(group: u32, m: u32) -> i32 {
+        yi::bridge::yi_set_matrix_group(&mut mem(), group, m)
+    }
+    /// `yiGetDObjGroup(index)`.
+    yiGetDObjGroup @ 0x0090_8c50 => extern "C" fn yi_get_dobj_group(index: u32) -> u32 {
+        yi::bridge::yi_get_dobj_group(&mem(), index)
+    }
+    /// `yiGetColorDObj(index, a, b)`.
+    yiGetColorDObj @ 0x0090_8e90 => extern "C" fn yi_get_color_dobj(index: u32, a: u32, b: u32) -> i32 {
+        yi::bridge::yi_get_color_dobj(&mut mem(), index, a, b)
+    }
+    /// `yiSetColorDObj(index, a, b)`.
+    yiSetColorDObj @ 0x0090_a5c0 => extern "C" fn yi_set_color_dobj(index: u32, a: u32, b: u32) -> i32 {
+        yi::bridge::yi_set_color_dobj(&mut mem(), index, a, b)
+    }
+    /// `yiGetViewAdjust(out)`.
+    yiGetViewAdjust @ 0x0090_8f20 => extern "C" fn yi_get_view_adjust(out: u32) {
+        yi::bridge::yi_get_view_adjust(&mut mem(), out);
+    }
+    /// `yiSetViewAdjust(m)`.
+    yiSetViewAdjust @ 0x0090_a730 => extern "C" fn yi_set_view_adjust(m: u32) {
+        yi::bridge::yi_set_view_adjust(&mut mem(), m);
+    }
+    /// `yiSetColorOffset(rgba)`.
+    yiSetColorOffset @ 0x0090_9ff0 => extern "C" fn yi_set_color_offset(rgba: u32) {
+        yi::bridge::yi_set_color_offset(&mut mem(), rgba);
+    }
+    /// `yiPkAddGsAD(q, reg, data)`.
+    yiPkAddGsAD @ 0x0090_ae20 => extern "C" fn yi_pk_add_gs_ad(q: u32, reg: u32, data: u32) {
+        yi::bridge::yi_pk_add_gs_ad(&mut mem(), q, reg, data);
+    }
+    /// `yiPkAddGsAD_0090bc40(q, reg, data)`: the same code.
+    yiPkAddGsAD_0090bc40 @ 0x0090_bc40 => extern "C" fn yi_pk_add_gs_ad2(q: u32, reg: u32, data: u32) {
+        yi::bridge::yi_pk_add_gs_ad(&mut mem(), q, reg, data);
+    }
+    /// `yiPkAddGsAD_00910040(q, reg, data)`: the same code.
+    yiPkAddGsAD_00910040 @ 0x0091_0040 => extern "C" fn yi_pk_add_gs_ad3(q: u32, reg: u32, data: u32) {
+        yi::bridge::yi_pk_add_gs_ad(&mut mem(), q, reg, data);
+    }
+    /// `yiPow2Ceil(n)`.
+    yiPow2Ceil @ 0x0091_7460 => extern "C" fn yi_pow2_ceil(n: i32) -> i32 {
+        yi::pow2_ceil(n)
+    }
+    /// `yiHighestBit(bits)`.
+    yiHighestBit @ 0x0091_0580 => extern "C" fn yi_highest_bit(bits: u32) -> i32 {
+        yi::highest_bit(bits)
+    }
+    /// `yiLog2Ceil16(bits)`.
+    yiLog2Ceil16 @ 0x0091_7430 => extern "C" fn yi_log2_ceil16(bits: u32) -> i32 {
+        yi::log2_ceil16(bits)
+    }
+    /// `yiIsPow2(bits)`.
+    yiIsPow2 @ 0x0091_73e0 => extern "C" fn yi_is_pow2(bits: u32) -> u32 {
+        u32::from(yi::is_pow2(bits))
+    }
+    /// `yiVramAlloc(bytes)`.
+    yiVramAlloc @ 0x0091_8130 => extern "C" fn yi_vram_alloc(bytes: i32) -> u32 {
+        yi::bridge::yi_vram_alloc(&mut mem(), bytes)
+    }
+    /// `yiVramSetLimit(pages)`.
+    yiVramSetLimit @ 0x0091_9630 => extern "C" fn yi_vram_set_limit(pages: u32) -> u32 {
+        yi::bridge::yi_vram_set_limit(&mut mem(), pages)
+    }
+    /// `rcbgGuideSetFlag8(guide, on)`.
+    rcbgGuideSetFlag8 @ 0x0091_d530 => extern "C" fn rcbg_guide_set_flag8(g: u32, on: i32) {
+        guide::bridge::rcbg_guide_set_flag8(&mut mem(), g, on);
+    }
+    /// `rcbgGuideGetScreen(guide, scale, offset)`.
+    rcbgGuideGetScreen @ 0x0091_da30 => extern "C" fn rcbg_guide_get_screen(g: u32, scale: u32, offset: u32) {
+        guide::bridge::rcbg_guide_get_screen(&mut mem(), g, scale, offset);
+    }
+    /// `Yn_SceneGetAC()`.
+    Yn_SceneGetAC @ 0x0091_a6d0 => extern "C" fn yn_scene_get_ac() -> f32 {
+        guide::bridge::yn_scene_get_ac(&mem())
+    }
+    /// `Yn_SceneGetB8()`.
+    Yn_SceneGetB8 @ 0x0091_a700 => extern "C" fn yn_scene_get_b8() -> f32 {
+        guide::bridge::yn_scene_get_b8(&mem())
+    }
+    /// `Yn_SceneGetBC()`.
+    Yn_SceneGetBC @ 0x0091_a730 => extern "C" fn yn_scene_get_bc() -> f32 {
+        guide::bridge::yn_scene_get_bc(&mem())
+    }
+    /// `Yn_SceneSetC0(a, b, c, d, e)`.
+    Yn_SceneSetC0 @ 0x0091_ad80 => extern "C" fn yn_scene_set_c0(a: u32, b: u32, c: u32, d: u32, e: u32) {
+        guide::bridge::yn_scene_set_c0(&mut mem(), [a, b, c, d, e]);
+    }
+    /// `Yn_SceneSetDC(a, b, c, d)`.
+    Yn_SceneSetDC @ 0x0091_aa00 => extern "C" fn yn_scene_set_dc(a: u32, b: u32, c: u32, d: u32) {
+        guide::bridge::yn_scene_set_dc(&mut mem(), a, b, c, d);
+    }
+    /// `Yn_SceneSet104(v)`.
+    Yn_SceneSet104 @ 0x0091_a260 => extern "C" fn yn_scene_set_104(v: u32) {
+        guide::bridge::yn_scene_set_104(&mut mem(), v);
+    }
+    /// `rcAngleDiff(a, b)`.
+    rcAngleDiff @ 0x0092_e400 => extern "C" fn rc_angle_diff(a: u32, b: u32) -> f32 {
+        task::bridge::rc_angle_diff(&mem(), a, b)
+    }
+    /// `rcefTargetIsDone(i)`.
+    rcefTargetIsDone @ 0x0092_4ba0 => extern "C" fn rcef_target_is_done(i: u32) -> u32 {
+        task::bridge::rcef_target_is_done(&mem(), i)
+    }
+    /// `rcefTargetClear(i)`.
+    rcefTargetClear @ 0x0092_4bc0 => extern "C" fn rcef_target_clear(i: u32) {
+        task::bridge::rcef_target_clear(&mut mem(), i);
+    }
+    /// `rcefTargetGetDist(i)`.
+    rcefTargetGetDist @ 0x0092_4a00 => extern "C" fn rcef_target_get_dist(i: u32) -> f32 {
+        task::bridge::rcef_target_get_dist(&mem(), i)
+    }
+    /// `rcefTargetGetAngle(i)`.
+    rcefTargetGetAngle @ 0x0092_49e0 => extern "C" fn rcef_target_get_angle(i: u32) -> f32 {
+        task::bridge::rcef_target_get_angle(&mem(), i)
+    }
+    /// `rcefTargetGetHeight(i)`.
+    rcefTargetGetHeight @ 0x0092_49c0 => extern "C" fn rcef_target_get_height(i: u32) -> f32 {
+        task::bridge::rcef_target_get_height(&mem(), i)
+    }
+    /// `rcefTargetSetDelay(frames)`: the low 16 bits.
+    rcefTargetSetDelay @ 0x0092_4be0 => extern "C" fn rcef_target_set_delay(frames: u32) {
+        let [lo, hi, _, _] = frames.to_le_bytes();
+        task::bridge::rcef_target_set_delay(&mut mem(), u16::from_le_bytes([lo, hi]));
+    }
+    /// `rcefMainSetEnv(main)`.
+    rcefMainSetEnv @ 0x0092_54f0 => extern "C" fn rcef_main_set_env(m: u32) {
+        task::bridge::rcef_main_set_env(&mut mem(), m);
+    }
+    /// `rcefMainSetEnv_00925510(main)`: the same code.
+    rcefMainSetEnv_00925510 @ 0x0092_5510 => extern "C" fn rcef_main_set_env2(m: u32) {
+        task::bridge::rcef_main_set_env(&mut mem(), m);
+    }
+    /// `rcefObjLinkLast(obj, child)`.
+    rcefObjLinkLast @ 0x0092_f920 => extern "C" fn rcef_obj_link_last(o: u32, child: u32) {
+        task::bridge::rcef_obj_link_last(&mut mem(), o, child);
+    }
+    /// `rcbgAnimeGetFrame(anime, n)`.
+    rcbgAnimeGetFrame @ 0x0093_0860 => extern "C" fn rcbg_anime_get_frame(a: u32, n: i32) -> u32 {
+        model::bridge::rcbg_anime_get_frame(&mem(), a, n)
+    }
+    /// `rcbgAnimeGetCurrent(anime)`.
+    rcbgAnimeGetCurrent @ 0x0093_0880 => extern "C" fn rcbg_anime_get_current(a: u32) -> u32 {
+        model::bridge::rcbg_anime_get_current(&mem(), a)
+    }
+    /// `rcVec3fApplyMatrix(out, v, m)`.
+    rcVec3fApplyMatrix @ 0x0092_1300 => extern "C" fn rc_vec3f_apply_matrix(out: u32, v: u32, m: u32) {
+        geom::bridge::rc_vec3f_apply_matrix(&mut mem(), out, v, m);
+    }
+    /// `rcVec3fLerp(out, a, b, t)`.
+    rcVec3fLerp @ 0x0092_1280 => extern "C" fn rc_vec3f_lerp(out: u32, a: u32, b: u32, t: u32) {
+        geom::bridge::rc_vec3f_lerp(&mut mem(), out, a, b, t);
+    }
+    /// `yiLerpVec4(t, a, b, out)`.
+    yiLerpVec4 @ 0x0091_48d0 => extern "C" fn yi_lerp_vec4(t: u32, a: u32, b: u32, out: u32) {
+        geom::bridge::yi_lerp_vec4(&mut mem(), t, a, b, out);
+    }
+    /// `yiLerpVec2(t, a, b, out)`.
+    yiLerpVec2 @ 0x0091_48a0 => extern "C" fn yi_lerp_vec2(t: u32, a: u32, b: u32, out: u32) {
+        geom::bridge::yi_lerp_vec2(&mut mem(), t, a, b, out);
+    }
+    /// `rcuiValueGet(p, kind)`.
+    rcuiValueGet @ 0x0093_c210 => extern "C" fn rcui_value_get(p: u32, kind: u32) -> u32 {
+        rcui::bridge::rcui_value_get(&mem(), p, kind)
+    }
+    /// `rcuiValueSet(p, kind, v)`.
+    rcuiValueSet @ 0x0093_c270 => extern "C" fn rcui_value_set(p: u32, kind: u32, v: u32) {
+        rcui::bridge::rcui_value_set(&mut mem(), p, kind, v);
+    }
+    /// `rcuiTake18(item)`.
+    rcuiTake18 @ 0x0093_c800 => extern "C" fn rcui_take18(item: u32) -> u32 {
+        rcui::bridge::rcui_take(&mut mem(), item, 0x18)
+    }
+    /// `rcuiTake1C(item)`.
+    rcuiTake1C @ 0x0093_c820 => extern "C" fn rcui_take1c(item: u32) -> u32 {
+        rcui::bridge::rcui_take(&mut mem(), item, 0x1c)
+    }
+    /// `rcuiTake14(item)`.
+    rcuiTake14 @ 0x0093_c840 => extern "C" fn rcui_take14(item: u32) -> u32 {
+        rcui::bridge::rcui_take(&mut mem(), item, 0x14)
+    }
+    /// `rcuiItemInit(item)`.
+    rcuiItemInit @ 0x0093_c2c0 => extern "C" fn rcui_item_init(item: u32) {
+        rcui::bridge::rcui_item_init(&mut mem(), item);
+    }
+    /// `rcuiAddVector(out, a, b)`.
+    rcuiAddVector @ 0x0093_cbc0 => extern "C" fn rcui_add_vector(out: u32, a: u32, b: u32) {
+        rcui::bridge::rcui_add_vector(&mut mem(), out, a, b);
+    }
+    /// `rcuiMulVector(out, a, b)`.
+    rcuiMulVector @ 0x0093_d290 => extern "C" fn rcui_mul_vector(out: u32, a: u32, b: u32) {
+        rcui::bridge::rcui_mul_vector(&mut mem(), out, a, b);
+    }
+    /// `rcuiItoF(out, ints)`.
+    rcuiItoF @ 0x0093_d030 => extern "C" fn rcui_itof(out: u32, ints: u32) {
+        rcui::bridge::rcui_itof(&mut mem(), out, ints);
+    }
+    /// `rcuiDot(a, b)`.
+    rcuiDot @ 0x0093_d060 => extern "C" fn rcui_dot(a: u32, b: u32) -> f32 {
+        rcui::bridge::rcui_dot(&mem(), a, b)
+    }
+    /// `rcuiVu0CopyVector(dst, src)`.
+    rcuiVu0CopyVector @ 0x0093_82e0 => extern "C" fn rcui_vu0_copy_vector(dst: u32, src: u32) {
+        rcui::bridge::rcui_vu0_copy_vector(&mut mem(), dst, src);
+    }
+    /// `yiRender_addRef(render, addr, qwc)`: the low 16 bits of `qwc`.
+    yiRender_addRef @ 0x0090_c1f0 => extern "C" fn yi_render_add_ref(r: u32, addr: u32, qwc: u32) {
+        let [lo, hi, _, _] = qwc.to_le_bytes();
+        yi::bridge::yi_render_add_ref(&mut mem(), r, addr, u16::from_le_bytes([lo, hi]));
+    }
+    /// `yiRender_addRefData(render, block)`.
+    yiRender_addRefData @ 0x0090_c230 => extern "C" fn yi_render_add_ref_data(r: u32, block: u32) {
+        yi::bridge::yi_render_add_ref_data(&mut mem(), r, block);
+    }
+    /// `yiPkUnpackMatrix(m, out, addr)`.
+    yiPkUnpackMatrix @ 0x0090_cd10 => extern "C" fn yi_pk_unpack_matrix(m: u32, out: u32, addr: u32) {
+        yi::bridge::yi_pk_unpack_matrix(&mut mem(), m, out, addr);
+    }
+    /// `yiPkUnpackMatrixDma(m, out, addr)`.
+    yiPkUnpackMatrixDma @ 0x0090_ccb0 => extern "C" fn yi_pk_unpack_matrix_dma(m: u32, out: u32, addr: u32) {
+        yi::bridge::yi_pk_unpack_matrix_dma(&mut mem(), m, out, addr);
+    }
 }
