@@ -4951,6 +4951,31 @@ pub mod bridge {
         s.push(0);
         mem.write_bytes(out, &s);
     }
+    /// `MenuKaizou_InitList(w)` (`0x008d55e0`, own name): the
+    /// customise menu's weapon list (`MsGetSaveWeaponList(-1, -1, 0)` at
+    /// `0x0186aa38`) and its length up to the last entry whose slot byte
+    /// `+2` is set (`0x0186aa3c`); `+0x1c` cleared, the status background
+    /// set up. (The original counts into its own argument slot; the port
+    /// borrows `+0x1c`, which it clears anyway.)
+    pub fn menu_kaizou_init_list(mem: &mut impl Mem, w: u32) {
+        mem.write(w + 0x1c, 0u32);
+        let list = ffx_battle::save::bridge::ms_get_save_weapon_list(mem, -1, -1, 0, w + 0x1c);
+        let n: i32 = mem.read(w + 0x1c);
+        mem.write(w + 0x1c, 0u32);
+        mem.write(mem.rebase(0x0186_aa38), list);
+        let mut k = n - 1;
+        while k > 0 {
+            let id = u32::from(mem.read::<u16>(list.wrapping_add((2 * k).cast_unsigned())));
+            let slot = ffx_battle::save::bridge::ms_get_save_weapon(mem, id, 0);
+            if mem.read::<u8>(slot + 2) != 0 {
+                k += 1;
+                break;
+            }
+            k -= 1;
+        }
+        mem.write(mem.rebase(0x0186_aa3c), k);
+        tk_mn2_init_status_bg(mem);
+    }
 }
 
 #[cfg(test)]

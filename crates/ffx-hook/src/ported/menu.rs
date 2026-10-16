@@ -3043,4 +3043,8 @@ ported! {
             gu::gu_window_control_set_text(&mut m, window, id, at, &mut |_, p| user_free(p), &mut |_, n| user_malloc(n));
         }
     }
+    /// `MenuKaizou_InitList(w)`.
+    MenuKaizou_InitList @ 0x008d_55e0 => extern "C" fn menu_kaizou_init_list(w: u32) {
+        tk::menu_kaizou_init_list(&mut mem(), w);
+    }
 }

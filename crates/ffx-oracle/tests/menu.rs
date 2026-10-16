@@ -4800,6 +4800,11 @@ fn tk_round7_matches_the_original() {
                 U32,
                 |o| w(tk::tk_menu_draw_menu_window_scissor(o, sw, i(smode), i(st))),
             );
+            let kw = t.alloc_random(0x40);
+            t.twin("MenuKaizou_InitList", 0x008d_55e0, &[kw], VOID, |o| {
+                tk::menu_kaizou_init_list(o, kw);
+                0
+            });
             t.twin("TkMn2GetMainPos", 0x008e_2630, &[], U32, |o| {
                 w(tk::tk_mn2_get_main_pos(o))
             });
