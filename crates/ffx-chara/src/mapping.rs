@@ -509,6 +509,34 @@ pub mod bridge {
             }
         });
     }
+
+    /// `Ch_AnalysisChrNum(src, dst)` (`0x00829e60`): a `.chr` path's
+    /// `.cah` name: `src` up to its `.chr` dot copied over `dst` (no NUL:
+    /// `strncpy`), `"ah"` appended at the first NUL in `dst` from there,
+    /// then the first `mdl/` in it removed. Nothing without `.chr`.
+    /// Returns 0.
+    pub fn ch_analysis_chr_num(mem: &mut impl Mem, src: u32, dst: u32) -> u32 {
+        use crate::handle::bridge::c_string;
+        let s = c_string(mem, src);
+        let Some(dot) = s.windows(4).position(|w| w == b".chr") else {
+            return 0;
+        };
+        mem.write_bytes(dst, &s[..=dot]);
+        let mut end = dst;
+        while mem.read::<u8>(end) != 0 {
+            end = end.wrapping_add(1);
+        }
+        mem.write_bytes(end, b"ah\0");
+        let d = c_string(mem, dst);
+        if let Some(q) = d.windows(4).position(|w| w == b"mdl/") {
+            let rest = &d[q + 4..];
+            let at = dst + u32::try_from(q).unwrap_or(0);
+            let mut v = rest.to_vec();
+            v.push(0);
+            mem.write_bytes(at, &v);
+        }
+        0
+    }
 }
 
 #[cfg(test)]
