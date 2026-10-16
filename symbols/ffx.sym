@@ -6987,6 +6987,9 @@
 0x00ccb960 label    g_CharsetWestern
 0x00cded58 label    g_LangManager
 0x00d2c258 label    g_FpData                     # current field's FP (effect) table: u16 count at +4, 0x50-byte entries with the id at +0x64; runtime state at 0x00d2c260 (0x80 each) and 0x00d30260 (0x4c each)
+0x0112a8e0 label g_BtlStatus                 # i8, not 0 in battle (MsBattleGetStatus 0x007816f0 sign-extends it; MsGetBattleScene 0x00782970 tests it)
+0x0112a8e2 label g_BtlExe                    # i8; MsBattleExeClear (0x00781530) returns it and clears it unless g_BtlExeKeep
+0x0112a8f5 label g_BtlExeKeep                # not 0: MsBattleExeClear keeps g_BtlExe
 0x0112a92c label    g_KernelCommand
 0x0112a930 label    g_KernelMonMagic1
 0x0112a934 label g_KernelMonMagic2             # monmagic2 (Kernel_LoadTables 0x00781d40); read by MsGetRomMonCommand2
@@ -6996,19 +6999,59 @@
 0x0112a94c label g_KernelCtbBase               # battle resource 0xb (MsBattleInit 0x00781700); MsGetRomCTBbase/CTBcount
 0x0112a960 label g_KernelSummonGrow            # battle resource 6 (MsBattleInit); MsGetRomSummonGrow
 0x0112a964 label g_KernelKaizou                # battle resource 5 (MsBattleInit); MsGetRomKaizou
+0x0112a9c0 label g_BtlVoiceEvent             # pointer to a byte flag; MsGetVoiceEventFlag (0x007986a0) is 1 when it is set and g_BtlVoiceMute is not
+0x0112a9f0 label g_BtlSceneField             # pointer to the battle field's i16 ID; MsGetBattleScene returns it << 16 + *g_BtlSceneGroup
+0x0112a9fc label g_BtlSceneGroup             # pointer to the encounter group's u8 ID (MsGetBattleScene)
+0x0112c021 label g_BtlReadCueLevel           # u8, MsBtlReadCueLevel (0x007ad180)
+0x0112c526 label g_BtlWeaponList             # u16 list MsGetSaveWeaponList (0x007abd10) fills with 0x5000 + equipment slot
+0x0112c895 label g_BtlParty                  # 3 x u8 ply_save indices; MsSetSaveParty (0x00786930) copies them to g_SaveInParty
+0x0112c948 label g_BtlUseItem                # u16 item being used (MsSetUseItem 0x00790790); MsGetSaveItemNum counts one less of it
 0x0112c9cd label    g_BtlPadOrientation          # 0-3, set by 0x7099; read by 0x00780ce0 for the d-pad remap
+0x0112c9ce label g_BtlVoiceMute              # not 0: MsGetVoiceEventFlag returns 0
 0x0112c9e2 label    g_BtlTurnActor               # ?actor index copied from 0x0112c9df when a turn starts; read by 0x708d
 0x0112ca6c label    g_KernelMonster1
 0x0112ca70 label    g_KernelMonster2
 0x0112ca74 label    g_KernelMonster3
 0x0112ca90 label    g_SaveData                   # 0x68c0-byte block copied from/to the save (0x00870000.c:7810, 0x008d0000.c:6884); +0 current map
+0x0112cabc label g_SaveLove                  # save +0x2c: u32 affection by character; MsAddLoveParam (0x007845e0) adds for 1-7 unless the sum passes 0x0ffffffe
+0x0112d67c label g_SaveScenario              # save +0xbec: u16 story progress (getScenerioFlag 0x00787360)
+0x0112d719 label g_SaveInterValefor          # save +0xc89: u8 (getInterValefor 0x00787340)
+0x0112ec7c label g_SaveAbilityMap            # save +0x21ec: the sphere grid block (MsGetSaveAbilityMap 0x00784f40)
+0x0112ff9c label g_SaveWalkMap               # save +0x350c: minimap fog of war (MsGetSaveWalkMap 0x00785400; Guide_RevealFog)
+0x0113079c label g_SaveMenu                  # save +0x3d0c: menu settings word; bit 1 cursor memory (MsGetSaveConfigCursorSave), bit 3 hiragana (MsGetSaveConfigHiragana); MsGetSaveMenu returns it
+0x011307a4 label g_SaveBattleCount           # save +0x3d14: u32 battles fought (MsGetSaveBattleCount 0x00784f50)
+0x011307d8 label g_SaveGil                   # save +0x3d48: u32 gil (MsGetGIL 0x00784e80); MsDebugAddGill caps it at 999999899, MsDebugFullGill sets 999999999
+0x011307e8 label g_SaveInParty               # save +0x3d58: 3 x u8 ply_save indices of the battle party (MsGetSaveInParty 0x00785270, count 3; MsGetSavePartyMember)
+0x011307eb label g_SaveOutParty              # 0x11 x u8 reserve members (MsGetSaveOutParty 0x007852d0, count 0x11)
+0x011307fc label g_SaveSharedCommands        # flag words of commands 0x3060-0x3fff for everybody, bit of cmd - 0x60 (MsGetSaveCommand 0x00785020); below 0x3060 they are in ply_save +0x3e
+0x0113085c label g_SaveEventFlags            # MsGetSaveEventFlag (0x00785250)
+0x0113095c label g_SaveItemIds               # 0x70 x u16 inventory item IDs (MsSaveItemTypeBuffer 0x00790530, count 0x70; MsGetSaveItemNum)
+0x01130b5c label g_SaveItemCounts            # 0x70 x u8 inventory counts (MsSaveItemNumBuffer 0x00790510)
+0x01130c5c label g_SaveItemCheck             # item flag words (MsGetItemCheck 0x007904a0)
+0x01130c7c label g_SaveItemUse               # item used flag words (MsGetSaveItemUse 0x00790500)
+0x01130c9c label g_SaveCaptures              # u8 times each monster was captured, by ID & 0xfff, at most 10 (MsGetMonsterCapture, AddMonsterCapture)
+0x01130e9c label g_SaveMonsterMeet           # monsters met, flag words (MsGetSaveMonsterMeet 0x00790b20)
+0x01130edc label g_SaveMonsterDefeat         # monsters defeated, flag words (MsGetSaveMonsterDefeat 0x00790b10)
+0x01130f1c label g_SaveImportant             # key items held, 8 flag words, IDs below 0x80 (MsImportantGet 0x00790800, MsImportantSet)
 0x01130f2c label    g_Equipment                # 200 x 22-byte equipment slots (docs/formats/kernel.md)
 0x0113205c label    g_PlySave                  # ply_save records, 0x94 bytes each; +0x2d weapon slot, +0x2e armor slot
+0x01132ac4 label g_SaveCommandUse            # commands used, 18 characters x 0x16 flag words, right after g_PlySave (MsGetSaveCommandUse 0x00785140)
+0x01133364 label g_BtlEventEffectStat        # i8 (MsEventEffectGetStat 0x00788bd0)
+0x011334c0 label g_KernelImportant           # key item kernel table (MsImportantPtr 0x007908a0 looks IDs up in it with MsGetExcelData)
+0x011334d4 label g_BtlChrTop                 # pointer to the 0x1f battle actors of 0xf90 bytes (MsGetChr 0x00794020, MsGetChrTop)
+0x011334d8 label g_BtlChrSpare               # what MsGetChr returns for an index from 0x5d on
+0x01134468 label g_BtlMonTop                 # pointer to the monster actors, 0xf90 bytes each (MsGetMon 0x00795aa0)
+0x0113446c label g_BtlWeaponTop              # pointer to 0x3e records of 0x390 bytes, two per actor (MsGetWeapon 0x00795b10; MsGetChr indices 0x1f-0x5c)
+0x0113456c label g_BtlAtelCount              # i32 queued effect requests (MsAtelRequestInit 0x00797ff0, MsAtelRequestAdd)
+0x01135d70 label g_BtlAtelRequests           # 16 x 4 u16 effect requests (MsAtelRequestAdd 0x00797b70)
+0x01136000 label g_BtlMemCheck               # i32 work memory booked, from 0x40; MsMemCheckRegist (0x00799f00) adds size + 0x4f rounded to 64
+0x01136004 label g_BtlMemCheck2              # cleared by MsMemCheckInit (0x00799ee0)
 0x01136fc4 label    g_CamOverrideRoll            # override camera roll (Cam_OverrideSet param 4)
 0x01136fc8 label    g_CamOverrideEye             # override camera eye, vec4 (game space)
 0x01136fd8 label    g_CamOverrideLookAt          # override camera look-at, vec4 (game space)
 0x01136fe8 label    g_CamOverrideUp              # override camera up vector, vec4 (reset to (0,-1,0)-ish: 0x01136fec = -1.0)
 0x01137540 label    g_Cameras                    # ?3 cameras x 0xda0: two sides of 0x61c each (0 = ref, 1 = cam), channels of 0x130 at +0xc0, channel table at 0x011381a8
+0x011381a8 label g_CameraSlots               # g_Cameras + 0xc68: 4 request slots of 8 bytes per camera (u32 ID, byte 2 the level; +4/+5 off/done flags; +6 i8 level bonus); MsCameraGetNum 0x007bd340, MsCameraIDcheck 0x007bd560
 0x01326b28 label    g_ScriptContext              # event/script context pointer (FUN_0086aff0): +0x0a player worker, +0x0c worker count, +0x218 player position, +0x1e4/0x1f0 talk state
 0x01326d70 label    g_MsgWindows                 # 2 banks x 8 message windows, 0x2c bytes: +0x14 state, +0x16 Msg_Flags, +0x18 display flags, +0x1d mode flags
 0x013270d0 label    g_PadPressed                 # buttons newly pressed this frame, OR over pads (0x00871d70)
@@ -7024,9 +7067,11 @@
 0x0193bf78 label    g_GuideFade                  # the minimap's alpha, 0..128 (Guide_FadeStep)
 0x022fb504 label    g_Settings
 0x02310c40 label    g_CdLib                   # function table of the PS2 CD-library emulation
+0x023110a0 label g_DefaultChrNames           # 0x14 bytes per character (getDefaultChrName 0x00787320)
 0x02311428 label    g_CamOverrideScreenDepth     # override projection distance (default 1024.0; Native_CamSetScreenDepth's units)
 0x0231142c label    g_CamOverrideOn              # nonzero: the view comes from the override camera (Cam_OverrideSet), else from the active channel
 0x02311430 label    g_Camera                     # pointer to the active camera channel (FUN_007bd470 reads its sides): +0x50 look-at point (ref, side 0) xyz, +0x66c eye (side 1) xyz; live: the look-at follows the player at chest height on the S.S. Winno deck
+0x02311440 label g_CameraMatrix              # MsGetCameraMatrix (0x007c04b0)
 0x023c44e0 label    g_ChrCount                   # number of field characters in g_ChrArray
 0x023c44e4 label    g_ChrArray                   # field characters, 0x880 bytes each (byte +2 = active)
 0x023cbebc label gNeedAutoSave                # fh v4:user_defined
