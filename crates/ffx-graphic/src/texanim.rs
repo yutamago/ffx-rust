@@ -207,4 +207,29 @@ pub mod bridge {
             reset_one(m, work.wrapping_add(which.wrapping_mul(0x34)), v);
         }
     }
+
+    /// `tex_anim_pos_set_old(i, which, v)`: the old format's
+    /// `TexAnim_ResetPos`, its animations from `+0x400` of the work buffer.
+    /// For `which == 1` the original's "every active one" loop was unrolled
+    /// with its index folded to 1: it resets animation 1, when the byte
+    /// `+0x5a9` is 1, eight times over.
+    pub fn pos_set_old(m: &mut impl Mem, i: u32, which: u32, v: u32) {
+        let e = entry(m, i);
+        if m.read::<u32>(e) == 0 {
+            return;
+        }
+        let work: u32 = m.read(e + 4);
+        if which == 1 {
+            if m.read::<u8>(work + 0x5a9) == 1 {
+                reset_one(m, work + 0x400 + 0x34, v);
+            }
+        } else {
+            reset_one(
+                m,
+                work.wrapping_add(0x400)
+                    .wrapping_add(which.wrapping_mul(0x34)),
+                v,
+            );
+        }
+    }
 }

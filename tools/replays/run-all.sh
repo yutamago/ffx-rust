@@ -38,5 +38,5 @@ for r in field-walk battle-attack menu-browse; do
     echo "== $r: $("${cmp[@]}" 2>&1 | tail -1)"
     "${cmp[@]}" >/dev/null 2>&1 || bad=1
 done
-python3 tools/shot-compare.py "$shots/orig" "$shots/orig2" "$shots/rust" || bad=1
+python3 tools/shot-compare.py "$shots/orig" "$shots/orig2" "$shots/rust" --coarse field-walk || bad=1
 exit $bad

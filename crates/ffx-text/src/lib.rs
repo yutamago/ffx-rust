@@ -38,6 +38,7 @@ use std::fmt::Write;
 pub mod bridge;
 pub mod gamecode;
 pub mod messages;
+pub mod printf;
 
 /// A language the game ships text for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

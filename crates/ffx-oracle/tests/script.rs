@@ -164,11 +164,19 @@ impl Xorshift {
     }
 }
 
-/// `EAX` of the original at `f` (an `ffx.sym` address).
+/// `EAX` of the original at `f` (an `ffx.sym` address). Fails when the
+/// original leaves a float in `ST0`: that is a result its callers read, so
+/// the port must return it (a void port of a float function breaks them).
 fn orig(a: &mut Oracle, f: u32, args: &[u32]) -> u32 {
-    a.call(a.rebase(f), Conv::Cdecl, args)
-        .unwrap_or_else(|e| panic!("{f:#x}{args:x?}: {e}"))
-        .eax
+    let r = a
+        .call(a.rebase(f), Conv::Cdecl, args)
+        .unwrap_or_else(|e| panic!("{f:#x}{args:x?}: {e}"));
+    assert!(
+        r.st0_raw.is_none(),
+        "{f:#x}{args:x?}: the original returns {:?} in ST0",
+        r.st0
+    );
+    r.eax
 }
 
 /// `ST0` of the original at `f`, popped.
@@ -1532,7 +1540,7 @@ const ZEROED: [(u32, &[u8]); 3] = [
     (0x0086_ea8a, &[0x31, 0xf6, 0x90]),
 ];
 
-const UNINIT: [Uninit; 6] = [
+const UNINIT: [Uninit; 7] = [
     // 0x007bb6a0 (Native_CamSetPos and its "ref" twin) hands Cam_SetPos a
     // vector of three popped floats whose w ([ebp-8]) it never writes;
     // Cam_SetPos copies it into the camera and the VU0 registers. Site: the
@@ -1595,6 +1603,20 @@ const UNINIT: [Uninit; 6] = [
             0xa1, 0, 0, 0, 0, 0xc3,
         ],
         fixup: Some((17, 0x00c6_13d8)),
+    },
+    // 0x007a8720 (MsGetTargetDir, behind Native_708f) reads the angle
+    // 0x00794d20 leaves at [ebp-4] (unwritten for some actors), and
+    // [ebp-8]. Site: sub esp, 8; push edi; push dword [ebp+8]. Stub: pop
+    // eax; mov dword [ebp-4], 0; mov dword [ebp-8], 0; then those three;
+    // jmp eax (EAX is free until the call that follows)
+    Uninit {
+        site: 0x007a_8723,
+        site_len: 7,
+        stub: &[
+            0x58, 0xc7, 0x45, 0xfc, 0, 0, 0, 0, 0xc7, 0x45, 0xf8, 0, 0, 0, 0, 0x83, 0xec, 0x08,
+            0x57, 0xff, 0x75, 0x08, 0xff, 0xe0,
+        ],
+        fixup: None,
     },
     // Light_Set (0x00836520, Native_LightSet's) hands Sg_LightSetColor and
     // Sg_LightSetDir a vector at [ebp-0x1c] whose w ([ebp-0x10]) it never
@@ -2473,6 +2495,11 @@ fn native_special_cases_match_the_original() {
         let Some(native::Native::Int(f)) = native::find::<Run>(sym) else {
             panic!("{what}: not an integer native");
         };
+        assert!(
+            ra.st0_raw.is_none(),
+            "{what}: the original returns {:?} in ST0",
+            ra.st0
+        );
         let rb = f(&mut Run(b), w, args, s);
         assert_eq!(ra.eax, rb, "{what}: EAX");
         native_no_diff(a, b, what);
@@ -2575,6 +2602,11 @@ fn native_case(a: &mut Oracle, b: &mut Oracle, w: u32, sym: u32, push: &[(u8, u3
         .unwrap_or_else(|e| panic!("{what}: {e}"));
     match native::find::<Run>(sym) {
         Some(Native::Int(f)) => {
+            assert!(
+                ra.st0_raw.is_none(),
+                "{what}: the original returns {:?} in ST0",
+                ra.st0
+            );
             let rb = f(&mut Run(b), w, args, s);
             assert_eq!(ra.eax, rb, "{what}: EAX");
         }
@@ -3009,6 +3041,11 @@ fn natives_match_the_original() {
                 match native::find::<Run>(sym) {
                     Some(Native::Int(f)) => {
                         assert!(!float, "{what}");
+                        assert!(
+                            ra.st0_raw.is_none(),
+                            "{what}: the original returns {:?} in ST0",
+                            ra.st0
+                        );
                         let rb = f(&mut Run(b), w, args, s);
                         // Native_ChrWaitMotion_501e is a bare ret: EAX is
                         // the caller's (and the dispatch ignores a start's)

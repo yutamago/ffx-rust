@@ -43,6 +43,25 @@ pub fn wrap_angle_floor(a: f32) -> f32 {
     (f64::from(r) - PI) as f32
 }
 
+/// The `CI*` float wrappers (`CIcos` `0x0088b3e0`, `CIsin` `0x0088c3a0`,
+/// `CItan` `0x0088c420`): `x` loaded as a float, the C runtime's x87
+/// intrinsic (`intrinsic`, on the widened value), the result stored as a
+/// float.
+#[must_use]
+#[allow(clippy::cast_possible_truncation)]
+pub fn ci_unary(x: f32, intrinsic: impl FnOnce(f64) -> f64) -> f32 {
+    intrinsic(f64::from(ffx_bridge::x87::round_trip(x))) as f32
+}
+
+/// `CIatan2(y, x)` (`0x00889e70`, own name): `_CIatan2` with `y` in `ST1`
+/// and `x` in `ST0`, stored as a float.
+#[must_use]
+#[allow(clippy::cast_possible_truncation)]
+pub fn ci_atan2(y: f32, x: f32, intrinsic: impl FnOnce(f64, f64) -> f64) -> f32 {
+    let r = ffx_bridge::x87::round_trip;
+    intrinsic(f64::from(r(y)), f64::from(r(x))) as f32
+}
+
 /// `Math_WrapAngle(a)`: `a` moved into [−π, π] by whole turns, one turn at
 /// a time (each step rounded to a float). Like the original it never ends
 /// for an infinity or a magnitude where a turn no longer changes the float.
