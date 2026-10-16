@@ -5467,6 +5467,7 @@
 0x008ca510 function TkMenuGetDummyControlerFlag # fh v3:bsim1.00 0x008ca4e0
 0x008ca520 function TkMenuGetDummyControlerR  # g_TkMenuDummyControler (same word on PC); Switch name, alphabetical slot
 0x008ca530 function TkMenuGetDummyControlerT  # g_TkMenuDummyControler (same word on PC); Switch name, alphabetical slot
+0x008ca540 function TkMenuClearDummyControler # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-menu port shows the behaviour it names (crates/ffx-hook/src/ported/menu.rs)
 0x008ca560 function TkMenuSetDummyControlerPending # (buttons): g_TkMenuDummyControler +4 (what TkMenuFlushDummyControler makes current)
 0x008ca570 function TkMenuSetDummyControlerFlag # fh v3:bsim1.00 0x008ca540
 0x008cad80 function Gs_Pack5d                 # copy of Gs_Pack5; own name
@@ -5946,6 +5947,7 @@
 0x00919e20 function Yn_GuideMapSetMode        # fh v3:bsim1.00 0x00919e20
 0x00919e50 function Yn_GuideMapSetPos            # (x, y): rcbgGuideSetPos on the guide, if any; script native 0x0091b790
 0x00919e80 function Yn_GuideMapSetSize           # (size): rcbgGuideSetSize on the guide, if any; script native 0x008581a0
+0x00919ef0 function Yn_PSimGetCnt             # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
 0x00919f00 function Yn_PSimGetHandle_00919f00 # fh switch:cg3 0x71008af228
 0x00919f10 function Yn_PSimSetPos             # fh v3:exact 0x00919f10
 0x00919f40 function Yn_MapPartAnimeOff           # (part): clears bit 1 of map part (scene layer, 0xc0 bytes) part's animation word (+0x90) when part < Yn_MapPartCount; script native 0x0091b490
@@ -5987,6 +5989,7 @@
 0x0091ad10 function Yn_PreBgSetScrBank        # fh switch:bsim1.00 0x7100548410
 0x0091ad80 function Yn_SceneSetC0                # (a, float b, c, d, e): scene +0xc0..+0xd0, +0xd4 = 0.0, +0xd8 = 0; script native 0x0091b550
 0x0091adf0 function Yn_SeaGetAngPtr           # () -> the sea's angle vector, 0 without a sea
+0x0091ae00 function Yn_SeaGetMatrix           # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
 0x0091ae10 function Yn_SeaGetPosPtr           # () -> the sea's position vector, 0 without a sea
 0x0091ae30 function Yn_SeaResetMatrix         # fh v3:bsim1.00 0x0091ae30
 0x0091ae40 function Yn_SeaSetAng              # fh v3:cg4 0x91ae40
@@ -6040,6 +6043,7 @@
 0x0091f9b0 function rcbgPSimClearOMD          # fh switch:bsim1.00 0x71005460e0
 0x0091fd00 function rcbgPSimCreateFromOMD     # fh switch:bsim1.00 0x7100546080
 0x0091fd60 function rcbgRunRecordHook         # (obj): the hook at +0xc of record +0x14 called on the record when set (tail call); set by 0x0091fe2e
+0x0091fdc0 function rcbgPSimGetOmdIn          # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
 0x0091fdd0 function rcbgPSimGetPos            # fh switch:bsim1.00 0x7100546550
 0x0091fe00 function rcbgPSimInit              # fh switch:bsim1.00 0x7100545a90
 0x0091fe70 function rcbgPSimProc              # fh switch:cg2 0x7100545b70
@@ -6095,6 +6099,7 @@
 0x00922510 function rcCopyQword_00922510      # (dst, src): as rcCopyQword_0091cb40
 0x00922560 function rcbgFPm097Init            # fh switch:bsim1.00 0x71005524e0
 0x00922930 function rcbgFpFadeInit               # (fade, id, step, frames): pppFpIDdispOff(id), then 0, id, step (float), frames, 0; rcbgFPm097's process (0x00922600)
+0x00922b50 function rcbgFPm173End             # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
 0x00922b70 function rcbgFPm173Init               # (part) -> part: +0x10..0x24 cleared, type 0x20008, functions 0x00922b40, 0x00922be0; map 0xad's part (0x00921a50)
 0x00922ef0 function rcbgFPm173Start           # fh switch:bsim0.96 0x7100553480
 0x00922f50 function rcbgFPm565Init               # (part) -> part: type 0x20008, functions 0x00922f30, 0x00922fb0; maps 0x235, 0x236 (0x00921a50)
@@ -6163,6 +6168,7 @@
 0x00928270 function rcMeshPastIndices         # (obj) -> mesh (+0x14) data (+0xc) past its index triples (+0x14 count * 6, 16-byte aligned)
 0x009282a0 function rcbgModelGetPrim          # fh v3:exact 0x009282a0
 0x009282c0 function rcbgModelGetPrimHeader    # fh switch:bsim1.00 0x7100545490
+0x00928300 function rcbgModelGetScale         # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
 0x009283b0 function rcbgModelNew              # fh v3:bsim1.00 0x009283b0
 0x00928460 function rcbgModelSetAlpha         # fh v3:exact 0x00928460
 0x00928540 function rcbgModelSetScale         # fh v3:exact 0x00928540
@@ -6234,6 +6240,7 @@
 0x0092bfb0 function rcdtParseIsEnd            # (parse) -> 1 once the cursor reaches the chunk end
 0x0092c000 function rcdtParseInitSeparators      # (parse): parse +0xc, 128 bytes per ASCII code, = 1 for 0x00..0x20 (whitespace), 0 else; read by the token scanners 0x0092bd20, 0x0092be40; rcdtParseInit tail-calls it
 0x0092c0a0 function rcdtParseSet              # fh v3:exact 0x0092c0a0
+0x0092c0c0 function rcdtParseSetMode          # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
 0x0092c0d0 function rcdtParseSetPos           # fh switch:cg2 0x71008bfbc8
 0x0092c0f0 function rcdtParseAddSeparators       # (parse, chars): parse +0xc[c] = 1 for every byte of the C string
 0x0092d230 function rcbgTrxDraw               # fh switch:cg3 0x71005557c0
@@ -6241,6 +6248,7 @@
 0x0092d450 function rcbgTrxDelete             # fh v3:bsim1.00 0x0092d450
 0x0092d470 function rcbgTrxDraw_0092d470      # fh v3:exact 0x0092d470
 0x0092d490 function rcbgTrxFini               # fh v3:exact 0x0092d490
+0x0092d4c0 function rcbgTrxGetCnt             # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
 0x0092d4d0 function rcbgTrxGetEntry              # (trx, n) -> trx +0x38 + trx +0x34 * n (rcbgTrxDraw, rcbgTrxNew)
 0x0092d4f0 function rcbgTrxGetEntryData          # (trx, n) -> rcbgTrxGetEntry + 0x10 (palettes 0x00929930, 0x00929990)
 0x0092d510 function rcbgTrxInit               # fh v3:exact 0x0092d510
@@ -6338,6 +6346,8 @@
 0x00939950 function rcbgTrxSave               # fh switch:bsim0.99 0x71005625c0
 0x0093a280 function rcbgModelCreateFromFile   # fh switch:cg3 0x7100560ba0
 0x0093b3e0 function rcbgSceneLoadTextSub      # fh switch:bsim0.92 0x710055f800
+0x0093c050 function rcuiMouseMoveEnd          # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
+0x0093c100 function rcuiMouseMoveGetID        # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
 0x0093c110 function rcuiMouseMoveReset           # (): g_RcuiWork +0xbf0 = 0, the same code as rcuiMouseMoveEnd
 0x0093c120 function rcuiMouseMoveIsID            # (id) -> 1 when g_RcuiWork +0xbe8 == id and +0xbf0 (dragging) is set
 0x0093c150 function rcuiMouseMoveBegin        # (id, arg): starts a drag: mouse capture (GuMouseSetCapture), the start position and id in g_RcuiWork
@@ -6580,6 +6590,7 @@
 0x00a5ca60 function NkzGetAuronLimitButtonData # fh v3:exact 0x00a5ca60
 0x00a5ca70 function NkzGetAuronLimitTime      # fh v3:bsim1.00 0x00a5ca70
 0x00a5cb10 function NkzGetLuluLimitTime       # fh v3:bsim1.00 0x00a5cb10
+0x00a5cb20 function NkzGetMonsterListNum      # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
 0x00a5cbd0 function NkzGetTidusLimitTime      # fh v3:bsim1.00 0x00a5cbd0
 0x00a5cc70 function NkzSetLuluLimitTbl        # fh v3:exact 0x00a5cc70
 0x00a5cee0 function AbmapQuarterOrOne_a5cee0  # (_, n) -> n / 4, or 1 when 0 (identical to 0x00a5cf10; called by 0x008db400)
