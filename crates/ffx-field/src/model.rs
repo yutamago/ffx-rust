@@ -201,6 +201,7 @@ pub fn log2_ceil(n: i32) -> u32 {
 /// The scene objects where the game keeps them, through [`ffx_bridge::Mem`].
 pub mod bridge {
     use ffx_bridge::Mem;
+    use ffx_bridge::x87::Reg;
     use ffx_system::stub::ptr32;
 
     use super::{
@@ -890,6 +891,157 @@ pub mod bridge {
             .chain(20..=27)
             .find(|&i| ffx_battle::actor::bridge::ms_get_chr_handle(mem, i) == handle)
             .unwrap_or(u32::MAX)
+    }
+
+    // ---- round 6 ----
+
+    /// `rcbgTrxLoad(trx, parse)` (`0x0092b710`): three 8-byte GS register
+    /// values (`+0x18`, `+0x20`, `+0x28`), the entry count and size
+    /// (`+0x30`, `+0x34`) from the parser, the entries at its position
+    /// (`+0x38`), then past them (`rcbgTrxSetTag` is empty on PC).
+    pub fn rcbg_trx_load(mem: &mut impl Mem, t: u32, p: u32) {
+        use crate::rcdt::bridge::{rcdt_parse_advance, rcdt_parse_get_bin};
+        rcdt_parse_get_bin(mem, p, t.wrapping_add(0x18), 8);
+        rcdt_parse_get_bin(mem, p, t.wrapping_add(0x20), 8);
+        rcdt_parse_get_bin(mem, p, t.wrapping_add(0x28), 8);
+        rcdt_parse_get_bin(mem, p, t.wrapping_add(trx::COUNT), 4);
+        rcdt_parse_get_bin(mem, p, t.wrapping_add(trx::ENTRY_SIZE), 4);
+        let at = mem.read::<u32>(p.wrapping_add(4));
+        mem.write(t.wrapping_add(trx::ENTRIES), at);
+        let n = mem.read::<u32>(t.wrapping_add(trx::COUNT));
+        let size = mem.read::<u32>(t.wrapping_add(trx::ENTRY_SIZE));
+        rcdt_parse_advance(mem, p, n.wrapping_mul(size));
+    }
+
+    /// `Yn_SeaSetAng(v)` (`0x0091ae40`): the sea's angle (`+0x50` of its
+    /// FP work, `FFXVu0CopyVectorXYZ`); returns that `eax`, 0 without the
+    /// work.
+    pub fn yn_sea_set_ang<M: Mem>(
+        mem: &mut M,
+        v: u32,
+        run_of: impl FnOnce(&mut M, u32) -> u32,
+    ) -> u32 {
+        match yn_sea_get_work(mem, run_of) {
+            0 => 0,
+            w => ffx_ps2::vu0::bridge::copy_vector_xyz(mem, w.wrapping_add(0x50), v),
+        }
+    }
+
+    /// `Yn_SeaSetPos(v)` (`0x0091ae80`): its position (`+0x40`).
+    pub fn yn_sea_set_pos<M: Mem>(
+        mem: &mut M,
+        v: u32,
+        run_of: impl FnOnce(&mut M, u32) -> u32,
+    ) -> u32 {
+        match yn_sea_get_work(mem, run_of) {
+            0 => 0,
+            w => ffx_ps2::vu0::bridge::copy_vector_xyz(mem, w.wrapping_add(0x40), v),
+        }
+    }
+
+    /// `Yn_SeaSetUvSpd(u, v)` (`0x0091aea0`): the texture scroll speeds
+    /// (`+0x60`, `+0x64`) and their flag (`+0xe4`).
+    pub fn yn_sea_set_uv_spd<M: Mem>(
+        mem: &mut M,
+        u: u32,
+        v: u32,
+        run_of: impl FnOnce(&mut M, u32) -> u32,
+    ) {
+        let w = yn_sea_get_work(mem, run_of);
+        if w != 0 {
+            mem.write(w.wrapping_add(0xe4), 1u8);
+            mem.write(w.wrapping_add(0x60), crate::x87::copy(u));
+            mem.write(w.wrapping_add(0x64), crate::x87::copy(v));
+        }
+    }
+
+    /// `Yn_PSimSetPos(psim, which, v)` (`0x00919f10`):
+    /// [`rcbg_psim_set_pos`] for a simulation and `which` below 2.
+    pub fn yn_psim_set_pos<M: Mem>(
+        mem: &mut M,
+        p: u32,
+        which: i32,
+        v: u32,
+        call: impl FnMut(&mut M, u32, u32, u32),
+    ) {
+        if p != 0 && which < 2 {
+            rcbg_psim_set_pos(mem, p, which.cast_unsigned(), v, call);
+        }
+    }
+
+    /// `Yn_SeaGetAngPtr()` (`0x0091adf0`): the sea's angle (`+0x50` of its
+    /// FP work), 0 without the work.
+    pub fn yn_sea_get_ang_ptr<M: Mem>(mem: &mut M, run_of: impl FnOnce(&mut M, u32) -> u32) -> u32 {
+        match yn_sea_get_work(mem, run_of) {
+            0 => 0,
+            w => w.wrapping_add(0x50),
+        }
+    }
+
+    /// `Yn_SeaGetPosPtr()` (`0x0091ae10`): its position (`+0x40`).
+    pub fn yn_sea_get_pos_ptr<M: Mem>(mem: &mut M, run_of: impl FnOnce(&mut M, u32) -> u32) -> u32 {
+        match yn_sea_get_work(mem, run_of) {
+            0 => 0,
+            w => w.wrapping_add(0x40),
+        }
+    }
+
+    /// `rcbgPalCopyToLast(pal)` (`0x009299d0`): the palette's current
+    /// entry (`i16` at `+8`) copied into the last (256 words), which is
+    /// then made the transfer to run (`rcbgTrxSetNo`).
+    pub fn rcbg_pal_copy_to_last(mem: &mut impl Mem, pal: u32) {
+        let no = i32::from(mem.read::<i16>(pal.wrapping_add(8))).cast_unsigned();
+        let src = rcbg_pal_get_entry_data(mem, pal, no);
+        let dst = rcbg_pal_get_last_entry_data(mem, pal);
+        for i in 0..256u32 {
+            let v = mem.read::<u32>(src.wrapping_add(4 * i));
+            mem.write(dst.wrapping_add(4 * i), v);
+        }
+        let t = mem.read::<u32>(pal.wrapping_add(0xc));
+        let n = mem.read::<u32>(t.wrapping_add(trx::COUNT)).wrapping_sub(1);
+        rcbg_trx_set_no(mem, t, n);
+    }
+
+    /// `rcdtTm2CopyRect(tm2, dst, x, y, bytes, rows)` (`0x00923ae0`): rows
+    /// of `bytes` from the image data (`+0x40`, row stride `u16` at
+    /// `+0x24`) at byte `x` of row `y`, each to the next 8-byte boundary
+    /// of `dst` (`memcpy`).
+    pub fn rcdt_tm2_copy_rect(
+        mem: &mut impl Mem,
+        tm2: u32,
+        dst: u32,
+        x: u32,
+        y: u32,
+        bytes: u32,
+        rows: i32,
+    ) {
+        let data = ptr32(mem.read::<u32>(tm2.wrapping_add(0x40)));
+        let stride = u32::from(mem.read::<u16>(tm2.wrapping_add(0x24)));
+        let mut src = stride.wrapping_mul(y).wrapping_add(data.wrapping_add(x));
+        let step = bytes.wrapping_add(7) & !7;
+        let mut d = dst;
+        let mut buf = vec![0u8; bytes as usize];
+        for _ in 0..rows.max(0) {
+            mem.read_bytes(src, &mut buf);
+            mem.write_bytes(d, &buf);
+            d = d.wrapping_add(step);
+            let stride = u32::from(mem.read::<u16>(tm2.wrapping_add(0x24)));
+            src = src.wrapping_add(stride);
+        }
+    }
+
+    /// `rcVec4fToFixed(out, v)` (`0x00925950`): `v`'s four floats times 16
+    /// (`FFXVu0RotTransPers`'s `f64`) through `_ftol2_sse`, as 12.4 fixed
+    /// point; returns the last.
+    pub fn rc_vec4f_to_fixed(mem: &mut impl Mem, out: u32, v: u32) -> u32 {
+        let k = Reg::constant(ffx_ps2::vu0::bridge::FIXED_SCALE.get(mem));
+        let src = mem.read::<[f32; 4]>(v);
+        let mut r = 0;
+        for (i, x) in (0u32..).zip(src) {
+            r = ffx_bridge::x87::ftol(mem, (Reg::load(x) * k).value());
+            mem.write(out.wrapping_add(4 * i), r);
+        }
+        r
     }
 }
 

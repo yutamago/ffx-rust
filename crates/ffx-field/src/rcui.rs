@@ -42,6 +42,7 @@ pub mod bridge {
 
     use super::{NUMBER_OK, WORK, work};
     use crate::x87;
+    use ffx_bridge::x87::Reg;
 
     /// `rcuiMouseMoveEnd()` (`0x0093c050`); `rcuiMouseMoveReset`
     /// (`0x0093c110`) is the same code.
@@ -190,5 +191,100 @@ pub mod bridge {
             mem.write(w.wrapping_add(0x824), n.wrapping_add(1));
             c = h::ch_handle_get_next(mem);
         }
+    }
+
+    // ---- round 6: vectors, matrices, mouse drag ----
+
+    /// `rcuiVecToInt(out, v)` (`0x0093cff0`): four floats through
+    /// `_ftol2_sse`; returns the last.
+    pub fn rcui_vec_to_int(mem: &mut impl Mem, out: u32, v: u32) -> u32 {
+        let mut r = 0;
+        for i in 0..4 {
+            let x = mem.read::<u32>(v + 4 * i);
+            r = ffx_bridge::x87::ftol(mem, x87::load(x));
+            mem.write(out + 4 * i, r);
+        }
+        r
+    }
+
+    /// `rcuiApplyMatrix(out, m, v)` (`0x0093cbf0`): row `i` of `m` dotted
+    /// with `v` (`((m1 v1 + m0 v0) + m2 v2) + m3 v3`, rounded once), then
+    /// `rcuiCopyVector`.
+    pub fn rcui_apply_matrix(mem: &mut impl Mem, out: u32, m: u32, v: u32) {
+        let mv = mem.read::<[f32; 16]>(m);
+        let vv = mem.read::<[f32; 4]>(v);
+        let r: [f32; 4] = std::array::from_fn(|i| {
+            let row = &mv[4 * i..4 * i + 4];
+            let p = |k: usize| Reg::load(row[k]).mul_m32(vv[k]);
+            (((p(1) + p(0)) + p(2)) + p(3)).store()
+        });
+        mem.write(out, r);
+    }
+
+    /// `rcuiMulMatrix(out, b, a)` (`0x0093d1b0`): `out[r][c] = ((a[r][1]
+    /// b[1][c] + a[r][0] b[0][c]) + a[r][2] b[2][c]) + a[r][3] b[3][c]`,
+    /// into a local, then `rcuiCopyMatrix` (so `out` may be an input).
+    pub fn rcui_mul_matrix(mem: &mut impl Mem, out: u32, b: u32, a: u32) {
+        let bm = mem.read::<[f32; 16]>(b);
+        let am = mem.read::<[f32; 16]>(a);
+        let r: [f32; 16] = std::array::from_fn(|k| {
+            let (row, c) = (k / 4, k % 4);
+            let p = |j: usize| Reg::load(am[4 * row + j]).mul_m32(bm[4 * j + c]);
+            (((p(1) + p(0)) + p(2)) + p(3)).store()
+        });
+        mem.write(out, r);
+    }
+
+    /// `rcuiNormalize(out, v)` (`0x0093d3d0`): `v`'s x, y, z divided by its
+    /// length (`_CIsqrt` of `(x² + y²) + z²`, stored as `f32`; the
+    /// reciprocal stored too), w copied; nothing when the length is not
+    /// above 0.
+    pub fn rcui_normalize(mem: &mut impl Mem, out: u32, v: u32) {
+        let [x, y, z, w] = mem.read::<[f32; 4]>(v);
+        let (rx, ry, rz) = (Reg::load(x), Reg::load(y), Reg::load(z));
+        let len = Reg::constant(((rx * rx + ry * ry) + rz * rz).value().sqrt()).store();
+        let above = x87::load(len.to_bits()) > 0.0; // fcom: false when unordered
+        if !above {
+            return;
+        }
+        let inv = (Reg::constant(1.0) / Reg::load(len)).store();
+        let r = Reg::load(inv);
+        mem.write(out, (rx * r).store());
+        mem.write(out + 4, r.mul_m32(y).store());
+        mem.write(out + 8, r.mul_m32(z).store());
+        mem.write(out + 0xc, x87::copy(w.to_bits()));
+    }
+
+    /// `rcuiMouseMoveBegin(id, arg)` (`0x0093c150`): starts dragging: the
+    /// id and its argument (`+0xbe8`, `+0xbec`), the mouse captured
+    /// (`Gu_MouseSetCapture`, `capture`), the dragging flag (`+0xbf0`) and
+    /// where the drag started (`Gu_MouseGetX`/`Y`, `+0xbf4`, `+0xbf8`).
+    pub fn rcui_mouse_move_begin<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        arg: u32,
+        capture: impl FnOnce(&mut M, u32, u32),
+        get_x: impl FnOnce(&mut M, u32) -> u32,
+        get_y: impl FnOnce(&mut M, u32) -> u32,
+    ) {
+        let w = WORK.get(mem);
+        mem.write(w + work::MOVE_ID, id);
+        let w = WORK.get(mem);
+        mem.write(w + work::GET_ID, arg);
+        let w = WORK.get(mem);
+        let id = mem.read::<u32>(w + work::MOVE_ID);
+        capture(mem, id, arg);
+        let w = WORK.get(mem);
+        mem.write(w + work::MOVING, 1u32);
+        let w = WORK.get(mem);
+        let id = mem.read::<u32>(w + work::MOVE_ID);
+        let x = get_x(mem, id);
+        let w = WORK.get(mem);
+        mem.write(w + 0xbf4, x);
+        let w = WORK.get(mem);
+        let id = mem.read::<u32>(w + work::MOVE_ID);
+        let y = get_y(mem, id);
+        let w = WORK.get(mem);
+        mem.write(w + 0xbf8, y);
     }
 }

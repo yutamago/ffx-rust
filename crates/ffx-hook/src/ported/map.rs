@@ -1387,14 +1387,7 @@ ported! {
     }
     /// `KeVu0RndI()`.
     KeVu0RndI @ 0x0075_f920 => extern "C" fn ke_vu0_rnd_i() -> u32 {
-        vu0::bridge::ke_vu0_rnd_i(&mut mem(), |_, seed| {
-            // SAFETY: the import slot holds MSVCR110's cdecl srand(seed).
-            unsafe {
-                let f: unsafe extern "C" fn(u32) =
-                    std::mem::transmute(*(crate::rebase(0x00b0_c484) as *const usize));
-                f(seed);
-            }
-        })
+        vu0::bridge::ke_vu0_rnd_i(&mut mem(), |_, seed| crt_srand(seed))
     }
     /// `NkzSetLuluLimitTbl(group)`.
     NkzSetLuluLimitTbl @ 0x00a5_cc70 => extern "C" fn nkz_set_lulu_limit_tbl(group: u32) {
@@ -1482,6 +1475,155 @@ ported! {
     NkzGetMonsterListNum @ 0x00a5_cb20 => extern "C" fn nkz_get_monster_list_num() -> u32 {
         nkz::bridge::nkz_get_monster_list_num()
     }
+    // ---- round 6 ----
+    /// `rcbgTrxLoad(trx, parse)`.
+    rcbgTrxLoad @ 0x0092_b710 => extern "C" fn rcbg_trx_load(t: u32, p: u32) {
+        model::bridge::rcbg_trx_load(&mut mem(), t, p);
+    }
+    /// `Yn_SeaSetAng(v)`.
+    Yn_SeaSetAng @ 0x0091_ae40 => extern "C" fn yn_sea_set_ang(v: u32) -> u32 {
+        model::bridge::yn_sea_set_ang(&mut mem(), v, fp_run)
+    }
+    /// `Yn_SeaSetPos(v)`.
+    Yn_SeaSetPos @ 0x0091_ae80 => extern "C" fn yn_sea_set_pos(v: u32) -> u32 {
+        model::bridge::yn_sea_set_pos(&mut mem(), v, fp_run)
+    }
+    /// `Yn_SeaSetUvSpd(u, v)`.
+    Yn_SeaSetUvSpd @ 0x0091_aea0 => extern "C" fn yn_sea_set_uv_spd(u: u32, v: u32) {
+        model::bridge::yn_sea_set_uv_spd(&mut mem(), u, v, fp_run);
+    }
+    /// `Yn_PSimSetPos(psim, which, v)`.
+    Yn_PSimSetPos @ 0x0091_9f10 => extern "C" fn yn_psim_set_pos(p: u32, which: i32, v: u32) {
+        model::bridge::yn_psim_set_pos(&mut mem(), p, which, v, |_, f, a, b| call_ptr2(f, a, b));
+    }
+    /// `SqsShoutStreamingPlayState()`.
+    SqsShoutStreamingPlayState @ 0x0081_edf0 => extern "C" fn sqs_shout_streaming_play_state() -> u32 {
+        nkz::bridge::sqs_shout_streaming_play_state(&mut mem())
+    }
+    /// `SqsSifDmaStart(_, src, dst, size)`.
+    SqsSifDmaStart @ 0x0081_eeb0 => extern "C" fn sqs_sif_dma_start(_a: u32, src: u32, dst: u32, size: u32) -> u32 {
+        nkz::bridge::sqs_sif_dma_start(&mut mem(), src, dst, size)
+    }
+    /// `SqsShoutStreamingDataSend(src, size)`.
+    SqsShoutStreamingDataSend @ 0x0081_ed40 => extern "C" fn sqs_shout_streaming_data_send(src: u32, size: i32) {
+        nkz::bridge::sqs_shout_streaming_data_send(&mut mem(), src, size);
+    }
+    /// `AbmapTransitionToHoming(node, t)`.
+    AbmapTransitionToHoming @ 0x00a4_8d20 => extern "C" fn abmap_transition_to_homing(node: u32, t: u32) {
+        abmap::bridge::abmap_transition_to_homing(&mut mem(), node, t);
+    }
+    /// `yiArcPrintSize()`.
+    yiArcPrintSize @ 0x0090_e6f0 => extern "C" fn yi_arc_print_size() -> u32 {
+        yi::bridge::yi_arc_print_size()
+    }
+    /// `KeBornRnd2(obj, arg, born, &index, shape, random, n)`.
+    KeBornRnd2 @ 0x0076_9230 => extern "C" fn ke_born_rnd2(o: u32, arg: u32, born: u32, index: u32, shape: u32, random: u32, n: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the low parts
+        ke::bridge::ke_born_rnd2(
+            &mut mem(),
+            o,
+            arg,
+            born,
+            index,
+            (shape as u16).cast_signed(),
+            random as u8,
+            n as u8,
+            |m| vu0::bridge::ke_vu0_rnd_i(m, |_, seed| crt_srand(seed)),
+            |_, f, a, b, at| {
+                let mut more = 0u32;
+                #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+                let p = (&raw mut more).expose_provenance() as u32;
+                // SAFETY: the born callback is a cdecl function of (obj, arg, vertex, &more).
+                unsafe {
+                    let f: unsafe extern "C" fn(u32, u32, u32, u32) -> u32 = std::mem::transmute(f as usize);
+                    f(a, b, at, p);
+                }
+                more
+            },
+        )
+    }
+    /// `KeDttSpr_MkGifPk_Pre(spr)`.
+    KeDttSpr_MkGifPk_Pre @ 0x0076_8d30 => extern "C" fn ke_dtt_spr_mk_gif_pk_pre(o: u32) {
+        ke::bridge::ke_dtt_spr_mk_gif_pk_pre(
+            &mut mem(),
+            o,
+            |m| ffx_vfx::op::bridge::op_spr_alloc(m, 0x90),
+            ffx_vfx::op::bridge::op_spr_free,
+        );
+    }
+    /// `rcdtParseIsEnd(parse)`.
+    rcdtParseIsEnd @ 0x0092_bfb0 => extern "C" fn rcdt_parse_is_end(p: u32) -> u32 {
+        rcdt::bridge::rcdt_parse_is_end(&mem(), p)
+    }
+    /// `rcdtParseSkipSeparators(parse)`.
+    rcdtParseSkipSeparators @ 0x0092_bd60 => extern "C" fn rcdt_parse_skip_separators(p: u32) -> u32 {
+        rcdt::bridge::rcdt_parse_skip_separators(&mem(), p)
+    }
+    /// `rcdtParseSkipToken(parse)`.
+    rcdtParseSkipToken @ 0x0092_bd20 => extern "C" fn rcdt_parse_skip_token(p: u32) -> u32 {
+        rcdt::bridge::rcdt_parse_skip_token(&mem(), p)
+    }
+    /// `rcdtParseFindChar(parse, c)`.
+    rcdtParseFindChar @ 0x0092_bae0 => extern "C" fn rcdt_parse_find_char(p: u32, c: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the low byte
+        rcdt::bridge::rcdt_parse_find_char(&mem(), p, (c as u8).cast_signed())
+    }
+    /// `rcuiVecToInt(out, v)`.
+    rcuiVecToInt @ 0x0093_cff0 => extern "C" fn rcui_vec_to_int(out: u32, v: u32) -> u32 {
+        rcui::bridge::rcui_vec_to_int(&mut mem(), out, v)
+    }
+    /// `rcuiApplyMatrix(out, m, v)`.
+    rcuiApplyMatrix @ 0x0093_cbf0 => extern "C" fn rcui_apply_matrix(out: u32, m: u32, v: u32) {
+        rcui::bridge::rcui_apply_matrix(&mut mem(), out, m, v);
+    }
+    /// `rcuiMulMatrix(out, b, a)`.
+    rcuiMulMatrix @ 0x0093_d1b0 => extern "C" fn rcui_mul_matrix(out: u32, b: u32, a: u32) {
+        rcui::bridge::rcui_mul_matrix(&mut mem(), out, b, a);
+    }
+    /// `rcuiNormalize(out, v)`.
+    rcuiNormalize @ 0x0093_d3d0 => extern "C" fn rcui_normalize(out: u32, v: u32) {
+        rcui::bridge::rcui_normalize(&mut mem(), out, v);
+    }
+    /// `rcuiMouseMoveBegin(id, arg)`.
+    rcuiMouseMoveBegin @ 0x0093_c150 => extern "C" fn rcui_mouse_move_begin(id: u32, arg: u32) {
+        use ffx_menu::gu::bridge as gu;
+        rcui::bridge::rcui_mouse_move_begin(
+            &mut mem(),
+            id,
+            arg,
+            gu::gu_mouse_set_capture,
+            |m, _| gu::MOUSE_X.get(m).cast_unsigned(),
+            |m, _| gu::MOUSE_Y.get(m).cast_unsigned(),
+        );
+    }
+    /// `Yn_SeaGetAngPtr()`.
+    Yn_SeaGetAngPtr @ 0x0091_adf0 => extern "C" fn yn_sea_get_ang_ptr() -> u32 {
+        model::bridge::yn_sea_get_ang_ptr(&mut mem(), fp_run)
+    }
+    /// `Yn_SeaGetPosPtr()`.
+    Yn_SeaGetPosPtr @ 0x0091_ae10 => extern "C" fn yn_sea_get_pos_ptr() -> u32 {
+        model::bridge::yn_sea_get_pos_ptr(&mut mem(), fp_run)
+    }
+    /// `rcbgPalCopyToLast(pal)`.
+    rcbgPalCopyToLast @ 0x0092_99d0 => extern "C" fn rcbg_pal_copy_to_last(pal: u32) {
+        model::bridge::rcbg_pal_copy_to_last(&mut mem(), pal);
+    }
+    /// `rcdtTm2CopyRect(tm2, dst, x, y, bytes, rows)`.
+    rcdtTm2CopyRect @ 0x0092_3ae0 => extern "C" fn rcdt_tm2_copy_rect(tm2: u32, dst: u32, x: u32, y: u32, bytes: u32, rows: i32) {
+        model::bridge::rcdt_tm2_copy_rect(&mut mem(), tm2, dst, x, y, bytes, rows);
+    }
+    /// `rcVec4fToFixed(out, v)`.
+    rcVec4fToFixed @ 0x0092_5950 => extern "C" fn rc_vec4f_to_fixed(out: u32, v: u32) -> u32 {
+        model::bridge::rc_vec4f_to_fixed(&mut mem(), out, v)
+    }
+    /// `Yn_DepthToScreen(d)`.
+    Yn_DepthToScreen @ 0x0092_01a0 => extern "C" fn yn_depth_to_screen(d: u32) -> u32 {
+        guide::bridge::yn_depth_to_screen(&mem(), f32::from_bits(d))
+    }
+    /// `yiSetViewMatrix(m)`.
+    yiSetViewMatrix @ 0x0090_a980 => extern "C" fn yi_set_view_matrix(m: u32) {
+        yi::bridge::yi_set_view_matrix(&mut mem(), m);
+    }
 }
 
 /// Calls a game function pointer (an absolute address, cdecl) with one
@@ -1511,4 +1653,14 @@ fn fp_run(m: &mut super::RawMem, id: u32) -> u32 {
     let at = (&raw mut run).expose_provenance() as u32;
     ffx_vfx::fp::bridge::ppp_fp_get_mng_ptr(m, id, at, 0);
     run
+}
+
+/// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`).
+fn crt_srand(seed: u32) {
+    // SAFETY: the import slot holds MSVCR110's cdecl srand(seed).
+    unsafe {
+        let f: unsafe extern "C" fn(u32) =
+            std::mem::transmute(*(crate::rebase(0x00b0_c484) as *const usize));
+        f(seed);
+    }
 }

@@ -4312,3 +4312,396 @@ fn round5_state_matches_the_original_on_a_snapshot() {
         }
     }
 }
+
+// ---- round 6 ----
+
+/// A born function: counts calls in `obj +0x40`, sums the vertex
+/// pointers in `+0x44`, asks for more until the fifth.
+const BORN_STUB: [u8; 30] = [
+    0x8b, 0x44, 0x24, 0x04, 0xff, 0x40, 0x40, 0x8b, 0x4c, 0x24, 0x0c, 0x01, 0x48, 0x44, 0x31, 0xc9,
+    0x83, 0x78, 0x40, 0x05, 0x0f, 0x9c, 0xc1, 0x8b, 0x54, 0x24, 0x10, 0x89, 0x0a, 0xc3,
+];
+
+/// Sea and particle simulation settings, Sqs DMA, transfers, the sprite
+/// packet's VU0 registers, particle birth.
+#[test]
+#[allow(clippy::too_many_lines)] // one case after another
+fn round6_ke_sqs_and_sea_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    t.install_round4_code();
+    let log = t.record_srand();
+    let mut rng = Xorshift(0x0006_0001);
+    // transfers loaded through a parser
+    let (trx, c, p, data) = (t.alloc(0x40), t.alloc(8), t.alloc(0x90), t.alloc(0x200));
+    for _ in 0..30 {
+        t.fill(data, 0x200, &mut rng);
+        t.put(data + 0x20, rng.below(4));
+        t.put(data + 0x24, rng.below(0x20));
+        t.fill(trx, 0x40, &mut rng);
+        t.same(
+            "rcdtChunkSetBin",
+            |o| o.void(RCDT_CHUNK_SET_BIN, &[c, data]),
+            |m| rcdt::bridge::rcdt_chunk_set_bin(m, c, data),
+        );
+        t.same(
+            "rcdtParseSet",
+            |o| o.void(RCDT_PARSE_SET, &[p, c]),
+            |m| rcdt::bridge::rcdt_parse_set(m, p, c),
+        );
+        t.same(
+            "rcbgTrxLoad",
+            |o| o.void(0x0092_b710, &[trx, p]),
+            |m| model::bridge::rcbg_trx_load(m, trx, p),
+        );
+    }
+    // the sea (no FP data in the image: nothing to set) and simulations
+    let v = t.alloc(0x10);
+    let scratch = t.alloc(4);
+    let run_of = move |mm: &mut Oracle, id: u32| {
+        ffx_vfx::fp::bridge::ppp_fp_get_mng_ptr(mm, id, scratch, 0);
+        let run = Mem::read::<u32>(mm, scratch);
+        Mem::write(mm, scratch, 0u32);
+        run
+    };
+    t.same(
+        "Yn_SeaSetAng",
+        |o| o.eax(0x0091_ae40, &[v]),
+        |m| model::bridge::yn_sea_set_ang(m, v, run_of),
+    );
+    t.same(
+        "Yn_SeaSetPos",
+        |o| o.eax(0x0091_ae80, &[v]),
+        |m| model::bridge::yn_sea_set_pos(m, v, run_of),
+    );
+    t.same(
+        "Yn_SeaSetUvSpd",
+        |o| o.void(0x0091_aea0, &[1, 2]),
+        |m| model::bridge::yn_sea_set_uv_spd(m, 1, 2, run_of),
+    );
+    let (ps, sys) = (t.alloc(0xb0), t.alloc(0x40));
+    for _ in 0..30 {
+        t.fill(ps, 0xb0, &mut rng);
+        t.floats(v, 4, &mut rng);
+        t.put(ps + 0x18, sys);
+        t.put(ps + 0xa4, rng.below(2));
+        t.put(ps + 0x9c, 0u32);
+        t.put(ps + 0xa0, 0u32);
+        t.put(sys + 0x34, 0u32);
+        t.put(sys + 0x1c, 0u32);
+        let which = rng.range(-1, 3);
+        let p = if rng.below(4) == 0 { 0 } else { ps };
+        t.same(
+            "Yn_PSimSetPos",
+            |o| o.void(0x0091_9f10, &[p, u(which), v]),
+            |m| {
+                model::bridge::yn_psim_set_pos(m, p, which, v, |_, _, _, _| panic!("no forces"));
+            },
+        );
+    }
+    // Sqs: shout DMA records
+    for _ in 0..30 {
+        t.set(nkz::SHOUT_SKIPPED, rng.below(2));
+        t.same(
+            "SqsShoutStreamingPlayState",
+            |o| o.eax(0x0081_edf0, &[]),
+            nkz::bridge::sqs_shout_streaming_play_state,
+        );
+        let (a, b, cc) = (rng.next(), rng.next(), rng.next());
+        t.same(
+            "SqsSifDmaStart",
+            |o| o.eax(0x0081_eeb0, &[0, a, b, cc]),
+            |m| nkz::bridge::sqs_sif_dma_start(m, a, b, cc),
+        );
+        t.set(nkz::SHOUT_BUFFER, rng.next());
+        let src = if rng.below(4) == 0 { 0 } else { rng.next() };
+        let size = rng.range(0, 0x14_0000);
+        t.same(
+            "SqsShoutStreamingDataSend",
+            |o| o.void(0x0081_ed40, &[src, u(size)]),
+            |m| {
+                nkz::bridge::sqs_shout_streaming_data_send(m, src, size);
+            },
+        );
+    }
+    t.same(
+        "yiArcPrintSize",
+        |o| o.eax(0x0090_e6f0, &[]),
+        |_| yi::bridge::yi_arc_print_size(),
+    );
+    // the sprite packet's registers
+    let (spr, m20, m28) = (t.alloc(0x60), t.alloc(0x20), t.alloc(0x40));
+    t.put(spr + 0x20, m20);
+    t.put(spr + 0x28, m28);
+    let spr_base = t.alloc(0x400);
+    t.set(ffx_vfx::op::bridge::SPR_TOP, 0);
+    let stack = ffx_vfx::op::bridge::SPR_STACK.ptr(&t.b).addr;
+    t.put(stack, spr_base);
+    for _ in 0..50 {
+        t.floats(spr + 0x30, 0x30 / 4, &mut rng);
+        t.floats(m20, 8, &mut rng);
+        t.floats(m28, 16, &mut rng);
+        t.floats(t.b.rebase(0x00c0_a000), 5, &mut rng);
+        t.floats(t.b.rebase(0x00c8_f500), 0x500 / 4, &mut rng);
+        // a scratchpad stack with one free block, random contents
+        t.fill(spr_base, 0x100, &mut rng);
+        t.same(
+            "KeDttSpr_MkGifPk_Pre",
+            |o| o.void(0x0076_8d30, &[spr]),
+            |m| {
+                ke::bridge::ke_dtt_spr_mk_gif_pk_pre(
+                    m,
+                    spr,
+                    |mm| ffx_vfx::op::bridge::op_spr_alloc(mm, 0x90),
+                    ffx_vfx::op::bridge::op_spr_free,
+                );
+            },
+        );
+    }
+    // particle birth through a test function
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(CODE_AREA + 0xc0);
+        o.write(at, &BORN_STUB).unwrap();
+    }
+    let born = t.b.rebase(CODE_AREA + 0xc0);
+    let (cell, vdata, shapes, models, pts, obj, idx, more) = (
+        t.alloc(4),
+        t.alloc(0x40),
+        t.alloc(0x40),
+        t.alloc(0x40),
+        t.alloc(0x40),
+        t.alloc(0xa0),
+        t.alloc(4),
+        t.alloc(4),
+    );
+    t.put(t.b.rebase(ke::VFX_DATA), cell);
+    t.put(cell, vdata);
+    t.put(vdata + 0x28, shapes);
+    t.put(vdata + 0x20, models);
+    for k in 0..4 {
+        t.put(
+            shapes + 8 * k,
+            if k == 3 {
+                0x9018u16
+            } else {
+                u16::try_from(k).unwrap()
+            },
+        );
+        t.put(shapes + 8 * k + 2, u16::try_from(1 + rng.below(6)).unwrap());
+        t.put(shapes + 8 * k + 4, pts);
+        t.put(models + 0x20 * k + 0x14, 0x1000 * (k + 1));
+    }
+    for _ in 0..60 {
+        t.fill(pts, 0x40, &mut rng);
+        t.put(obj + 0x40, u(rng.range(0, 6)));
+        t.put(obj + 0x90, if rng.below(2) == 0 { 0 } else { 0x2000 });
+        t.put(idx, u16::try_from(rng.below(6)).unwrap());
+        let (shape, random, n) = (rng.below(4), rng.below(2), rng.below(8));
+        t.put(log, log + 4);
+        t.same(
+            "KeBornRnd2",
+            |o| o.eax(0x0076_9230, &[obj, 7, born, idx, shape, random, n]),
+            |m| {
+                let mut srand = srand_log(log);
+                ke::bridge::ke_born_rnd2(
+                    m,
+                    obj,
+                    7,
+                    born,
+                    idx,
+                    i16::try_from(shape).unwrap(),
+                    u8::try_from(random).unwrap(),
+                    u8::try_from(n).unwrap(),
+                    |mm| vu0::bridge::ke_vu0_rnd_i(mm, &mut srand),
+                    |mm, f, a, b, at| {
+                        mm.call(f, Conv::Cdecl, &[a, b, at, more]).unwrap();
+                        let v = Mem::read::<u32>(mm, more);
+                        Mem::write(mm, more, 0u32);
+                        v
+                    },
+                )
+            },
+        );
+    }
+}
+
+/// Parser scans, rcui vectors and matrices, palettes, TIM2 rectangles,
+/// fixed point, screen depth, the view matrix.
+#[test]
+#[allow(clippy::too_many_lines)] // one case after another
+fn round6_parse_rcui_and_view_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0006_0002);
+    // parser scans over random text with random separators
+    let (c, p, data) = (t.alloc(8), t.alloc(0x110), t.alloc(0x100));
+    for _ in 0..100 {
+        let text: Vec<u8> = (0..0x100)
+            .map(|_| [b'a', b' ', b'\n', b',', b'x', 0][rng.below(6) as usize])
+            .collect();
+        t.write(data, &text);
+        t.same(
+            "rcdtChunkSetBin",
+            |o| o.void(RCDT_CHUNK_SET_BIN, &[c, data]),
+            |m| rcdt::bridge::rcdt_chunk_set_bin(m, c, data),
+        );
+        t.put(c + 4, 0x80 + rng.below(0x80));
+        t.same(
+            "rcdtParseSet",
+            |o| o.void(RCDT_PARSE_SET, &[p, c]),
+            |m| rcdt::bridge::rcdt_parse_set(m, p, c),
+        );
+        t.same(
+            "rcdtParseInitSeparators",
+            |o| o.void(RCDT_PARSE_INIT_SEPARATORS, &[p]),
+            |m| rcdt::bridge::rcdt_parse_init_separators(m, p),
+        );
+        let start = Mem::read::<u32>(&t.b, p + 4);
+        t.put(p + 4, start + rng.below(0x90));
+        t.same(
+            "rcdtParseIsEnd",
+            |o| o.eax(0x0092_bfb0, &[p]),
+            |m| rcdt::bridge::rcdt_parse_is_end(m, p),
+        );
+        t.same(
+            "rcdtParseSkipSeparators",
+            |o| o.eax(0x0092_bd60, &[p]),
+            |m| rcdt::bridge::rcdt_parse_skip_separators(m, p),
+        );
+        t.same(
+            "rcdtParseSkipToken",
+            |o| o.eax(0x0092_bd20, &[p]),
+            |m| rcdt::bridge::rcdt_parse_skip_token(m, p),
+        );
+        let ch = [u32::from(b','), u32::from(b'x'), 0xff, 0x41][rng.below(4) as usize];
+        t.same(
+            "rcdtParseFindChar",
+            |o| o.eax(0x0092_bae0, &[p, ch]),
+            |m| rcdt::bridge::rcdt_parse_find_char(m, p, u8::try_from(ch).unwrap().cast_signed()),
+        );
+    }
+    // rcui vectors and matrices
+    let (a, b, out) = (t.alloc(0x40), t.alloc(0x40), t.alloc(0x40));
+    for _ in 0..200 {
+        t.floats(a, 16, &mut rng);
+        t.floats(b, 16, &mut rng);
+        t.same(
+            "rcuiVecToInt",
+            |o| o.eax(0x0093_cff0, &[out, a]),
+            |m| rcui::bridge::rcui_vec_to_int(m, out, a),
+        );
+        t.same(
+            "rcuiApplyMatrix",
+            |o| o.void(0x0093_cbf0, &[out, a, b]),
+            |m| rcui::bridge::rcui_apply_matrix(m, out, a, b),
+        );
+        t.same(
+            "rcuiMulMatrix",
+            |o| o.void(0x0093_d1b0, &[out, a, b]),
+            |m| rcui::bridge::rcui_mul_matrix(m, out, a, b),
+        );
+        t.same(
+            "rcuiMulMatrix in place",
+            |o| o.void(0x0093_d1b0, &[a, a, b]),
+            |m| rcui::bridge::rcui_mul_matrix(m, a, a, b),
+        );
+        for i in 0..4 {
+            let v = rng.float();
+            t.put(b + 4 * i, v);
+        }
+        t.same(
+            "rcuiNormalize",
+            |o| o.void(0x0093_d3d0, &[out, b]),
+            |m| rcui::bridge::rcui_normalize(m, out, b),
+        );
+        t.same(
+            "rcVec4fToFixed",
+            |o| o.eax(0x0092_5950, &[out, b]),
+            |m| model::bridge::rc_vec4f_to_fixed(m, out, b),
+        );
+    }
+    // mouse drag start
+    let work = t.alloc(0xc00);
+    t.set(rcui::WORK, work);
+    for _ in 0..10 {
+        t.put(t.b.rebase(0x0132_5240), rng.next());
+        t.put(t.b.rebase(0x0132_5244), rng.next());
+        let (id, arg) = (rng.next(), rng.below(4));
+        t.same(
+            "rcuiMouseMoveBegin",
+            |o| o.void(0x0093_c150, &[id, arg]),
+            |m| {
+                use ffx_menu::gu::bridge as gu;
+                rcui::bridge::rcui_mouse_move_begin(
+                    m,
+                    id,
+                    arg,
+                    gu::gu_mouse_set_capture,
+                    |mm, _| gu::MOUSE_X.get(mm).cast_unsigned(),
+                    |mm, _| gu::MOUSE_Y.get(mm).cast_unsigned(),
+                );
+            },
+        );
+    }
+    // palettes and TIM2 rectangles
+    let (pal, trx, entries, tm2, dst, img) = (
+        t.alloc(0x20),
+        t.alloc(0x40),
+        t.alloc(0x1100 * 4),
+        t.alloc(0x50),
+        t.alloc(0x800),
+        t.alloc(0x2000),
+    );
+    for _ in 0..20 {
+        t.fill(entries, 0x4400, &mut rng);
+        t.put(trx + 0x30, 2 + rng.below(3));
+        t.put(trx + 0x34, 0x410u32);
+        t.put(trx + 0x38, entries);
+        t.put(pal + 0xc, trx);
+        t.put(pal + 8, u16::try_from(rng.below(2)).unwrap());
+        t.same(
+            "rcbgPalCopyToLast",
+            |o| o.void(0x0092_99d0, &[pal]),
+            |m| model::bridge::rcbg_pal_copy_to_last(m, pal),
+        );
+        t.fill(img, 0x2000, &mut rng);
+        t.put(tm2 + 0x40, img);
+        t.put(tm2 + 0x24, u16::try_from(0x40 + rng.below(0x40)).unwrap());
+        let (x, y, n, rows) = (
+            rng.below(0x20),
+            rng.below(8),
+            rng.below(0x30),
+            rng.range(-1, 8),
+        );
+        t.same(
+            "rcdtTm2CopyRect",
+            |o| o.void(0x0092_3ae0, &[tm2, dst, x, y, n, u(rows)]),
+            |m| {
+                model::bridge::rcdt_tm2_copy_rect(m, tm2, dst, x, y, n, rows);
+            },
+        );
+    }
+    // screen depth (with and without a scene), the view matrix
+    let screen = geom::SCREEN_MATRIX.ptr(&t.b).addr;
+    let (sys, map, scene) = (t.alloc(0x10), t.alloc(0x10), t.alloc(0x110));
+    for k in 0..100 {
+        t.floats(screen, 16, &mut rng);
+        #[allow(clippy::cast_precision_loss)]
+        let d = (rng.range(-5000, 5000) as f32 / 8.0).to_bits();
+        t.set(guide::YN_MAP_SYSTEM, if k % 2 == 0 { 0 } else { sys });
+        t.put(sys, map);
+        t.put(map + 8, scene);
+        t.put(scene + 0xf4, rng.float());
+        t.same(
+            "Yn_DepthToScreen",
+            |o| o.eax(0x0092_01a0, &[d]),
+            |m| guide::bridge::yn_depth_to_screen(m, f32::from_bits(d)),
+        );
+        t.floats(a, 16, &mut rng);
+        t.set(yi::RENDER_STATUS, rng.next() & 0x800);
+        let mm = if rng.below(4) == 0 { 0 } else { a };
+        t.same(
+            "yiSetViewMatrix",
+            |o| o.void(0x0090_a980, &[mm]),
+            |m| yi::bridge::yi_set_view_matrix(m, mm),
+        );
+    }
+}

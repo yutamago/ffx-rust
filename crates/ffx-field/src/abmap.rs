@@ -12,6 +12,8 @@ pub const ABMAP: Global<u32> = Global::new(0x0230_5834);
 pub const HOMING_MARGIN: Global<f64> = Global::new(0x00b2_c5c8);
 /// `AbmapState_MovingToTarget`, the state `AbmapInitMovingToTarget` sets.
 pub const STATE_MOVING_TO_TARGET: u32 = 0x00a5_9990;
+/// `AbmapState_HomeOnNode`, the state `AbmapTransitionToHoming` sets.
+pub const STATE_HOME_ON_NODE: u32 = 0x00a5_9e80;
 /// The step `AbmapCalcMoveCost` adds to the next node (1 or 4).
 pub const MOVE_STEP: Global<u32> = Global::new(0x01a8_6100);
 /// The highest cost it walks to (`i32`, the low 16 bits of the cost
@@ -464,5 +466,20 @@ pub mod bridge {
         }
         let g = ABMAP.get(mem);
         u32::from(mem.read::<u16>(g.wrapping_add(0x110cc).wrapping_add(chr.wrapping_mul(0x50))))
+    }
+
+    /// `AbmapTransitionToHoming(node, t)` (`0x00a48d20`):
+    /// [`abmap_init_homing`], then with no state saved the homing state
+    /// (`AbmapState_HomeOnNode`) replaces the current one, which is saved.
+    pub fn abmap_transition_to_homing(mem: &mut impl Mem, node: u32, t: u32) {
+        abmap_init_homing(mem, node, x87::copy(t));
+        let g = ABMAP.get(mem);
+        if mem.read::<u32>(g.wrapping_add(0x115b0)) == 0 {
+            let s = mem.read::<u32>(g.wrapping_add(0x115a8));
+            mem.write(g.wrapping_add(0x115b0), s);
+            let f = mem.rebase(super::STATE_HOME_ON_NODE);
+            let g = ABMAP.get(mem);
+            mem.write(g.wrapping_add(0x115a8), f);
+        }
     }
 }

@@ -758,6 +758,34 @@ pub mod bridge {
         }
     }
 
+    /// `Yn_DepthToScreen(d)` (`0x009201a0`): the screen depth of a point
+    /// `d` in front: `(0, 0, d * scale, 1)` (the scene's guide scale at
+    /// `+0xf4`, or 10.0 without a scene) through the screen matrix
+    /// (`FFXVu0ApplyMatrix`), `z / w` truncated (`fistp` with the rounding
+    /// mode set to chop), the low 32 bits.
+    pub fn yn_depth_to_screen(mem: &impl Mem, d: f32) -> u32 {
+        let z = match yn_scene(mem) {
+            Some(sc) => Reg::load(mem.read::<f32>(sc + 0xf4)).mul_m32(d).store(),
+            None => (Reg::load(d) * Reg::constant(super::FOG_SCALE.get(mem))).store(),
+        };
+        let v = [0.0, 0.0, z, 1.0];
+        let m = crate::geom::SCREEN_MATRIX.get(mem);
+        let col = |i: usize| [m[i], m[4 + i], m[8 + i], m[12 + i]];
+        let rz = ffx_system::math::mul4x4_component(2, v, col(2));
+        let rw = ffx_system::math::mul4x4_component(3, v, col(3));
+        let q = Reg::load(rz).div_m32(rw).value();
+        // fistp m64 under round-toward-zero: the integer indefinite past
+        // the range
+        if q.is_nan() || q >= 9_223_372_036_854_775_808.0 || q < -9_223_372_036_854_775_808.0 {
+            return 0;
+        }
+        #[allow(clippy::cast_possible_truncation)] // in range, then the low half
+        let wide = q.trunc() as i64;
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let low = wide as u32;
+        low
+    }
+
     /// `Guide_MeshObject(guide)` (`0x0091d460`): the map's own minimap
     /// model, else the one made from the walk mesh.
     pub fn guide_mesh_object(mem: &impl Mem, g: u32) -> u32 {

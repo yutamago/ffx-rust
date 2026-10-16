@@ -212,6 +212,10 @@ pub mod state {
     /// Flags and floats two script natives set (`yiSetFieldPair`,
     /// `yiSetFieldVec3Int`).
     pub const FIELD_FLAGS: Global<u32> = Global::new(0x0193_4e78);
+    /// The view matrix (`yiSetViewMatrix`).
+    pub const VIEW_MATRIX: Global<[u32; 16]> = Global::new(0x018d_ed38);
+    /// Two floats `yiSetViewMatrix` takes from `+0x20` of its matrix.
+    pub const VIEW_EXTRA: Global<[u32; 2]> = Global::new(0x018d_f168);
     /// CLUTs in the first VRAM area (`yiClutAlloc_makepacket`: 32, or 16
     /// for texture mode 4).
     pub const CLUT_SPLIT: Global<u32> = Global::new(0x0193_bb14);
@@ -1128,5 +1132,27 @@ pub mod bridge {
             ];
             mem.write(r.wrapping_add(at), words);
         }
+    }
+
+    /// `yiArcPrintSize()` (`0x0090e6f0`): prints the archive section sizes
+    /// through `dbgPrintf`, empty on PC; returns 0.
+    #[must_use]
+    pub const fn yi_arc_print_size() -> u32 {
+        0
+    }
+
+    /// `yiSetViewMatrix(m)` (`0x0090a980`): unless render status bit 11 is
+    /// set, the view matrix (`0x018ded38`, `FFXVu0CopyMatrix`) and the
+    /// floats at `m +0x20`, `+0x24` into `0x018df168`.
+    pub fn yi_set_view_matrix(mem: &mut impl Mem, m: u32) {
+        if RENDER_STATUS.get(mem) & 0x800 != 0 || m == 0 {
+            return;
+        }
+        let at = state::VIEW_MATRIX.ptr(mem).addr;
+        ffx_ps2::vu0::bridge::matrix_copy(mem, at, m);
+        let a = mem.read::<u32>(m + 0x20);
+        let b = mem.read::<u32>(m + 0x24);
+        let at = state::VIEW_EXTRA.ptr(mem).addr;
+        mem.write(at, [x87::copy(a), x87::copy(b)]);
     }
 }
