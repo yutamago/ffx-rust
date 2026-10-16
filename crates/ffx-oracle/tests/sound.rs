@@ -22,9 +22,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use ffx_bridge::{Global, Host, Mem, Value};
+use ffx_bridge::{Global, Mem, Value};
+use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
-use ffx_sound::fmod::{self, FmodHost, bridge as f};
+use ffx_sound::fmod::{self, bridge as f};
 use ffx_sound::snd::bridge as s;
 
 fn exe() -> Option<PathBuf> {
@@ -99,20 +100,23 @@ impl Mem for Run<'_> {
 }
 
 impl Host for Run<'_> {
-    fn call(&mut self, addr: u32, args: &[u32]) -> u32 {
+    fn call(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> u32 {
+        let conv = match conv {
+            host::Conv::Cdecl => Conv::Cdecl,
+            host::Conv::Stdcall => Conv::Stdcall,
+            host::Conv::Thiscall(t) => Conv::Thiscall(t),
+            host::Conv::Fastcall => Conv::Fastcall,
+        };
         self.0
-            .call(addr, Conv::Cdecl, args)
+            .call(addr, conv, args)
             .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"))
             .eax
     }
-}
 
-impl FmodHost for Run<'_> {
-    fn call_this5(&mut self, addr: u32, this: u32, args: [u32; 5]) -> u32 {
-        self.0
-            .call(addr, Conv::Thiscall(this), &args)
-            .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"))
-            .eax
+    fn scratch(&mut self) -> u32 {
+        // the bottom of the emulated stack: no call reaches that deep, and
+        // the diff leaves the stacks out, as the originals' frames are
+        self.0.stack_range().start + 0x100
     }
 }
 

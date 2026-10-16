@@ -1,49 +1,16 @@
 //! `ffx-sound`: the PS2 sound API (`Snd*`), the FMOD queue's `i*` entry
 //! points and the `FmodManager` command helpers.
 
-use ffx_bridge::{Host, Mem, RawMem};
-use ffx_sound::fmod::{FmodHost, bridge as f};
+use ffx_bridge::RawMem;
+use ffx_sound::fmod::bridge as f;
 use ffx_sound::snd::bridge as s;
 
-use super::{call_cdecl, mem, ported};
+use super::{mem, ported};
 
-/// The game as the sound bridges' host: its memory, cdecl calls
-/// ([`call_cdecl`]) and the thiscall `FmodManager` commands.
-struct Game(RawMem);
-
-impl Mem for Game {
-    fn read_bytes(&self, addr: u32, out: &mut [u8]) {
-        self.0.read_bytes(addr, out);
-    }
-    fn write_bytes(&mut self, addr: u32, data: &[u8]) {
-        self.0.write_bytes(addr, data);
-    }
-    fn image_base(&self) -> u32 {
-        self.0.image_base()
-    }
-}
-
-impl Host for Game {
-    fn call(&mut self, addr: u32, args: &[u32]) -> u32 {
-        call_cdecl(addr, args)
-    }
-}
-
-impl FmodHost for Game {
-    fn call_this5(&mut self, addr: u32, this: u32, a: [u32; 5]) -> u32 {
-        type F = unsafe extern "thiscall" fn(u32, u32, u32, u32, u32, u32) -> u32;
-        // SAFETY: the bridges pass `Fmod_PushCommand` and
-        // `FmodManager_registCommandSync`, thiscall functions of exactly
-        // five stack arguments (`ret 0x14`).
-        unsafe {
-            let g: F = std::mem::transmute::<usize, F>(addr as usize);
-            g(this, a[0], a[1], a[2], a[3], a[4])
-        }
-    }
-}
-
-fn game() -> Game {
-    Game(mem())
+/// The game as the sound bridges' host (`ffx_graphic::host::Host`: memory
+/// and calls into the original code by convention).
+fn game() -> RawMem {
+    mem()
 }
 
 ported! {

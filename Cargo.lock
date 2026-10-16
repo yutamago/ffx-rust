@@ -824,6 +824,7 @@ name = "ffx-sound"
 version = "0.1.0"
 dependencies = [
  "ffx-bridge",
+ "ffx-graphic",
  "ffx-vbf",
  "thiserror",
 ]
