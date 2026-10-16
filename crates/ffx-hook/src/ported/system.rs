@@ -5,8 +5,8 @@
 use ffx_bridge::Mem;
 use ffx_menu::scene::bridge as menu_scene;
 use ffx_system::{
-    accessor, btl, cd, config, daps, files, fixup, heap, instance, math, menu, msg, names, pad,
-    pkt, render, save, scene, stl, stub, vbf, window,
+    accessor, btl, cd, config, container, daps, dtor, files, fixup, heap, instance, math, menu,
+    msg, names, pad, pkt, render, save, scene, stl, stub, sync, vbf, window,
 };
 
 use super::{call0, mem, ported};
@@ -86,6 +86,29 @@ fn red_black_remove<M>(_mem: &mut M, tree: u32, node: u32) {
     }
 }
 
+/// A `Phyre::PClassDescriptorForType<T>` destructor: the vtable, then the
+/// parent's destructor (`0x0043b3e0`, thiscall, not ported).
+fn class_descriptor_dtor(this: u32, vtable: u32) -> u32 {
+    dtor::bridge::chain(&mut mem(), this, vtable, |_, this| {
+        // SAFETY: the engine's thiscall PClassDescriptor destructor.
+        unsafe {
+            let f: unsafe extern "thiscall" fn(u32) -> u32 =
+                std::mem::transmute(crate::rebase(dtor::CLASS_DESCRIPTOR_DTOR));
+            f(this)
+        }
+    })
+}
+
+/// `operator delete(p)` (ported), for the container helpers.
+fn delete<M: Mem>(m: &mut M, p: u32) {
+    heap::operator_delete(m, &mut GameOs, p, red_black_remove);
+}
+
+/// `PhyreFree(p)` (ported), for the container helpers.
+fn phyre_free_cb<M: Mem>(m: &mut M, p: u32) {
+    heap::phyre_free(m, &mut GameOs, p);
+}
+
 /// The heap's Win32 calls, through the game's own import slots (so they are
 /// the calls the originals make, to the same critical sections).
 struct GameOs;
@@ -95,6 +118,76 @@ impl GameOs {
     fn import(slot: u32) -> usize {
         // SAFETY: an import slot of this build, filled by the loader.
         unsafe { (crate::rebase(slot) as *const usize).read() }
+    }
+
+    /// The one-argument stdcall import in `slot`; its `eax` (what a `void`
+    /// import leaves is read as a `u32`, as the originals pass it on).
+    fn stdcall1(slot: u32, x: u32) -> u32 {
+        // SAFETY: a one-argument stdcall KERNEL32 import of this build.
+        unsafe {
+            let f: unsafe extern "stdcall" fn(u32) -> u32 = std::mem::transmute(Self::import(slot));
+            f(x)
+        }
+    }
+}
+
+/// The thread and synchronisation wrappers' KERNEL32 calls, through the
+/// same import slots; each returns the import's `eax`.
+impl<M> sync::Kernel<M> for GameOs {
+    fn sleep(&mut self, _mem: &mut M, ms: u32) -> u32 {
+        Self::stdcall1(0x00b0_c100, ms)
+    }
+    fn wait(&mut self, _mem: &mut M, handle: u32, ms: u32) -> u32 {
+        // SAFETY: WaitForSingleObject(handle, ms), stdcall.
+        unsafe {
+            let f: unsafe extern "stdcall" fn(u32, u32) -> u32 =
+                std::mem::transmute(Self::import(0x00b0_c0f8));
+            f(handle, ms)
+        }
+    }
+    fn release_semaphore(&mut self, _mem: &mut M, handle: u32, count: u32, previous: u32) -> u32 {
+        // SAFETY: ReleaseSemaphore(handle, count, previous), stdcall.
+        unsafe {
+            let f: unsafe extern "stdcall" fn(u32, u32, u32) -> u32 =
+                std::mem::transmute(Self::import(0x00b0_c0f4));
+            f(handle, count, previous)
+        }
+    }
+    fn create_semaphore(
+        &mut self,
+        _mem: &mut M,
+        attributes: u32,
+        initial: u32,
+        maximum: u32,
+        name: u32,
+    ) -> u32 {
+        // SAFETY: CreateSemaphoreW(attributes, initial, maximum, name), stdcall.
+        unsafe {
+            let f: unsafe extern "stdcall" fn(u32, u32, u32, u32) -> u32 =
+                std::mem::transmute(Self::import(0x00b0_c1e0));
+            f(attributes, initial, maximum, name)
+        }
+    }
+    fn close_handle(&mut self, _mem: &mut M, handle: u32) -> u32 {
+        Self::stdcall1(0x00b0_c0dc, handle)
+    }
+    fn set_event(&mut self, _mem: &mut M, handle: u32) -> u32 {
+        Self::stdcall1(0x00b0_c0ec, handle)
+    }
+    fn reset_event(&mut self, _mem: &mut M, handle: u32) -> u32 {
+        Self::stdcall1(0x00b0_c0f0, handle)
+    }
+    fn initialize_critical_section(&mut self, _mem: &mut M, cs: u32) -> u32 {
+        Self::stdcall1(0x00b0_c150, cs)
+    }
+    fn enter_critical_section(&mut self, _mem: &mut M, cs: u32) -> u32 {
+        Self::stdcall1(0x00b0_c154, cs)
+    }
+    fn leave_critical_section(&mut self, _mem: &mut M, cs: u32) -> u32 {
+        Self::stdcall1(0x00b0_c158, cs)
+    }
+    fn delete_critical_section(&mut self, _mem: &mut M, cs: u32) -> u32 {
+        Self::stdcall1(0x00b0_c15c, cs)
     }
 }
 
@@ -2891,6 +2984,547 @@ ported! {
     /// `SetByte_00c58ef4`.
     SetByte_00c58ef4 @ 0x0089_bc60 => extern "C" fn setbyte_00c58ef4(v: u8) {
         accessor::bridge::set_byte_global(&mut mem(), 0x0089_bc60, v);
+    }
+    /// `SleepThreadInMillisecond(ms)`: `Sleep(ms)`, 0.
+    SleepThreadInMillisecond @ 0x006f_2d20 => extern "C" fn sleep_thread_in_millisecond(ms: u32) -> u32 {
+        sync::bridge::sleep_ms(&mut mem(), &mut GameOs, ms)
+    }
+    /// `SleepThread()`: `Sleep(10)`, 0.
+    SleepThread @ 0x006f_2d10 => extern "C" fn sleep_thread() -> u32 {
+        sync::bridge::sleep_thread(&mut mem(), &mut GameOs)
+    }
+    /// `Thread_Sleep(ms)`: `Sleep(ms)`.
+    Thread_Sleep @ 0x006f_2a40 => extern "C" fn thread_sleep(ms: u32) -> u32 {
+        sync::bridge::sleep(&mut mem(), &mut GameOs, ms)
+    }
+    /// `MutexHandle_Close()`: `CloseHandle(*this)`.
+    MutexHandle_Close @ 0x0063_4830 => extern "thiscall" fn mutex_handle_close(this: u32) -> u32 {
+        sync::bridge::close_member(&mut mem(), &mut GameOs, this, 0)
+    }
+    /// `Worker_CloseSemaphore()`: `CloseHandle(this->+0x2c)`.
+    Worker_CloseSemaphore @ 0x006d_b6e0 => extern "thiscall" fn worker_close_semaphore(this: u32) -> u32 {
+        sync::bridge::close_member(&mut mem(), &mut GameOs, this, 0x2c)
+    }
+    /// `CriticalSection_Init()`: returns `this`.
+    CriticalSection_Init @ 0x006f_b500 => extern "thiscall" fn critical_section_init(this: u32) -> u32 {
+        sync::bridge::cs_init(&mut mem(), &mut GameOs, this)
+    }
+    /// `CsLock_Construct(cs)`: returns `this`.
+    CsLock_Construct @ 0x006f_b510 => extern "thiscall" fn cs_lock_construct(this: u32, cs: u32) -> u32 {
+        sync::bridge::cs_guard(&mut mem(), &mut GameOs, this, cs)
+    }
+    /// `CriticalSection_Delete()`.
+    CriticalSection_Delete @ 0x006f_b530 => extern "thiscall" fn critical_section_delete(this: u32) -> u32 {
+        sync::bridge::cs_delete(&mut mem(), &mut GameOs, this)
+    }
+    /// `CsLock_Destruct()`.
+    CsLock_Destruct @ 0x006f_b540 => extern "thiscall" fn cs_lock_destruct(this: u32) -> u32 {
+        sync::bridge::cs_guard_drop(&mut mem(), &mut GameOs, this)
+    }
+    /// `Event_Reset(&event)`.
+    Event_Reset @ 0x006f_2be0 => extern "C" fn event_reset(event: u32) -> u32 {
+        sync::bridge::event_set(&mut mem(), &mut GameOs, event, false)
+    }
+    /// `Event_Set(&event)`.
+    Event_Set @ 0x006f_2bf0 => extern "C" fn event_set(event: u32) -> u32 {
+        sync::bridge::event_set(&mut mem(), &mut GameOs, event, true)
+    }
+    /// `SignalSema(&sema)`.
+    SignalSema @ 0x006f_2ce0 => extern "C" fn signal_sema(sema: u32) -> u32 {
+        sync::bridge::signal_sema(&mut mem(), &mut GameOs, sema)
+    }
+    /// `WaitSema(&sema)`: without end.
+    WaitSema @ 0x006f_2d80 => extern "C" fn wait_sema(sema: u32) -> u32 {
+        sync::bridge::wait_sema(&mut mem(), &mut GameOs, sema, sync::INFINITE)
+    }
+    /// `WaitSemaTimeout(&sema, ms)`.
+    WaitSemaTimeout @ 0x006f_2da0 => extern "C" fn wait_sema_timeout(sema: u32, ms: u32) -> u32 {
+        sync::bridge::wait_sema(&mut mem(), &mut GameOs, sema, ms)
+    }
+    /// `Queue_PostRequest(request)`.
+    Queue_PostRequest @ 0x0061_b500 => extern "thiscall" fn queue_post_request(this: u32, request: u32) -> u32 {
+        sync::bridge::queue_post(&mut mem(), &mut GameOs, this, request)
+    }
+    /// `Request_Wait(request)` (`this` unused).
+    Request_Wait @ 0x0061_ba60 => extern "thiscall" fn request_wait(_this: u32, request: u32) -> u32 {
+        sync::bridge::request_wait(&mut mem(), &mut GameOs, request)
+    }
+    /// `MutexLock_Construct(mutex)`: returns `this`.
+    MutexLock_Construct @ 0x0063_3a80 => extern "thiscall" fn mutex_lock_construct(this: u32, mutex: u32) -> u32 {
+        sync::bridge::mutex_guard(&mut mem(), &mut GameOs, this, mutex)
+    }
+    /// `Semaphore_Construct(n)`: returns `this`.
+    Semaphore_Construct @ 0x0067_9ab0 => extern "thiscall" fn semaphore_construct(this: u32, n: u32) -> u32 {
+        sync::bridge::semaphore_ctor(&mut mem(), &mut GameOs, this, n)
+    }
+    /// `Worker_ResetCounters()`.
+    Worker_ResetCounters @ 0x006d_b7a0 => extern "thiscall" fn worker_reset_counters(this: u32) -> u32 {
+        sync::bridge::reset_counters(&mut mem(), &mut GameOs, this)
+    }
+    /// `Thread_JoinClose()`.
+    Thread_JoinClose @ 0x0070_3a90 => extern "thiscall" fn thread_join_close(this: u32) -> u32 {
+        sync::bridge::join_close(&mut mem(), &mut GameOs, this)
+    }
+    /// `Phyre::PClassDescriptorForType<RadialLineDynamicMesh>` destructor.
+    PClassDescriptorForType_RadialLineDynamicMesh_Destruct @ 0x0067_5f30 => extern "thiscall" fn cd_dtor_00675f30(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b4_466c)
+    }
+    /// `Phyre::PClassDescriptorForType<BrokenScreenPolygonDynamicMeshInstance>` destructor.
+    PClassDescriptorForType_BrokenScreenPolygonDynamicMeshInstance_Destruct @ 0x0067_6ba0 => extern "thiscall" fn cd_dtor_00676ba0(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b4_483c)
+    }
+    /// `Phyre::PClassDescriptorForType<BrokenScreenPolygonDynamicMesh>` destructor.
+    PClassDescriptorForType_BrokenScreenPolygonDynamicMesh_Destruct @ 0x0067_7590 => extern "thiscall" fn cd_dtor_00677590(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b4_49bc)
+    }
+    /// `Phyre::PClassDescriptorForType<ShadowDynamicMesh>` destructor.
+    PClassDescriptorForType_ShadowDynamicMesh_Destruct @ 0x0067_82f0 => extern "thiscall" fn cd_dtor_006782f0(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b4_4ba4)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PArray_Phyre_PInputs_PInputAction_4>` destructor.
+    PClassDescriptorForType_Phyre_PArray_Phyre_PInputs_PInputAction_4_Destruct @ 0x009e_2160 => extern "thiscall" fn cd_dtor_009e2160(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_3a2c)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PArray_Phyre_PInputs_PInputSource_4>` destructor.
+    PClassDescriptorForType_Phyre_PArray_Phyre_PInputs_PInputSource_4_Destruct @ 0x009e_2170 => extern "thiscall" fn cd_dtor_009e2170(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_38f4)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputAction>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputAction_Destruct @ 0x009e_2180 => extern "thiscall" fn cd_dtor_009e2180(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_1fac)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputMap>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputMap_Destruct @ 0x009e_2190 => extern "thiscall" fn cd_dtor_009e2190(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_209c)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSource>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSource_Destruct @ 0x009e_21a0 => extern "thiscall" fn cd_dtor_009e21a0(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_08ac)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSourceJoypadAxis>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSourceJoypadAxis_Destruct @ 0x009e_21b0 => extern "thiscall" fn cd_dtor_009e21b0(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_0b54)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSourceJoypadButton>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSourceJoypadButton_Destruct @ 0x009e_21c0 => extern "thiscall" fn cd_dtor_009e21c0(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_0a54)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSourceKey>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSourceKey_Destruct @ 0x009e_21d0 => extern "thiscall" fn cd_dtor_009e21d0(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_095c)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSourceMotionAngularVelocityX>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSourceMotionAngularVelocityX_Destruct @ 0x009e_21e0 => extern "thiscall" fn cd_dtor_009e21e0(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_1964)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSourceMotionAngularVelocityY>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSourceMotionAngularVelocityY_Destruct @ 0x009e_21f0 => extern "thiscall" fn cd_dtor_009e21f0(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_1a6c)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSourceMotionAngularVelocityZ>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSourceMotionAngularVelocityZ_Destruct @ 0x009e_2200 => extern "thiscall" fn cd_dtor_009e2200(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_1b74)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSourceMotionLinearAccelerationX>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSourceMotionLinearAccelerationX_Destruct @ 0x009e_2210 => extern "thiscall" fn cd_dtor_009e2210(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_1c7c)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSourceMotionLinearAccelerationY>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSourceMotionLinearAccelerationY_Destruct @ 0x009e_2220 => extern "thiscall" fn cd_dtor_009e2220(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_1d8c)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSourceMotionLinearAccelerationZ>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSourceMotionLinearAccelerationZ_Destruct @ 0x009e_2230 => extern "thiscall" fn cd_dtor_009e2230(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_1e9c)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSourceMotionQuatW>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSourceMotionQuatW_Destruct @ 0x009e_2240 => extern "thiscall" fn cd_dtor_009e2240(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_1864)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSourceMotionQuatX>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSourceMotionQuatX_Destruct @ 0x009e_2250 => extern "thiscall" fn cd_dtor_009e2250(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_1564)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSourceMotionQuatY>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSourceMotionQuatY_Destruct @ 0x009e_2260 => extern "thiscall" fn cd_dtor_009e2260(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_1664)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSourceMotionQuatZ>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSourceMotionQuatZ_Destruct @ 0x009e_2270 => extern "thiscall" fn cd_dtor_009e2270(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_1764)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSourceMouseButton>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSourceMouseButton_Destruct @ 0x009e_2280 => extern "thiscall" fn cd_dtor_009e2280(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_0c54)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSourceMouseDeltaX>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSourceMouseDeltaX_Destruct @ 0x009e_2290 => extern "thiscall" fn cd_dtor_009e2290(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_0d54)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSourceMouseDeltaY>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSourceMouseDeltaY_Destruct @ 0x009e_22a0 => extern "thiscall" fn cd_dtor_009e22a0(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_0e54)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSourceTouchDragX>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSourceTouchDragX_Destruct @ 0x009e_22b0 => extern "thiscall" fn cd_dtor_009e22b0(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_1364)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSourceTouchDragY>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSourceTouchDragY_Destruct @ 0x009e_22c0 => extern "thiscall" fn cd_dtor_009e22c0(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_1464)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSourceTouchPinch>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSourceTouchPinch_Destruct @ 0x009e_22d0 => extern "thiscall" fn cd_dtor_009e22d0(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_1054)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSourceTouchRotate>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSourceTouchRotate_Destruct @ 0x009e_22e0 => extern "thiscall" fn cd_dtor_009e22e0(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_0f54)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSourceTouchTwoFingerDragX>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSourceTouchTwoFingerDragX_Destruct @ 0x009e_22f0 => extern "thiscall" fn cd_dtor_009e22f0(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_1154)
+    }
+    /// `Phyre::PClassDescriptorForType<Phyre_PInputs_PInputSourceTouchTwoFingerDragY>` destructor.
+    PClassDescriptorForType_Phyre_PInputs_PInputSourceTouchTwoFingerDragY_Destruct @ 0x009e_2300 => extern "thiscall" fn cd_dtor_009e2300(this: u32) -> u32 {
+        class_descriptor_dtor(this, 0x00b7_125c)
+    }
+    /// `TOAdpALPHA_AtCursor(...)`: `TOAdpALPHA` on the packet cursor.
+    TOAdpALPHA_AtCursor @ 0x008f_aa20 => extern "C" fn adp_cursor_008faa20(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_f670, &[a0, a1, a2, a3, a4])
+    }
+    /// `TOAdpCLAMP_AtCursor(...)`: `TOAdpCLAMP` on the packet cursor.
+    TOAdpCLAMP_AtCursor @ 0x008f_aa50 => extern "C" fn adp_cursor_008faa50(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_f6e0, &[a0, a1, a2, a3, a4, a5])
+    }
+    /// `TOAdpCOLCLAMP_AtCursor(...)`: `TOAdpCOLCLAMP` on the packet cursor.
+    TOAdpCOLCLAMP_AtCursor @ 0x008f_aa80 => extern "C" fn adp_cursor_008faa80(a0: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_f760, &[a0])
+    }
+    /// `TOAdpGsDirectRGBA_AtCursor(...)`: `TOAdpGsDirectRGBA` on the packet cursor.
+    TOAdpGsDirectRGBA_AtCursor @ 0x008f_aaa0 => extern "C" fn adp_cursor_008faaa0(a0: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_f790, &[a0])
+    }
+    /// `TOAdpFBA_AtCursor(...)`: `TOAdpFBA` on the packet cursor.
+    TOAdpFBA_AtCursor @ 0x008f_aac0 => extern "C" fn adp_cursor_008faac0(a0: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_f7d0, &[a0])
+    }
+    /// `TOAdpFOG_AtCursor(...)`: `TOAdpFOG` on the packet cursor.
+    TOAdpFOG_AtCursor @ 0x008f_aae0 => extern "C" fn adp_cursor_008faae0(a0: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_f800, &[a0])
+    }
+    /// `TOAdpFOGCOL_AtCursor(...)`: `TOAdpFOGCOL` on the packet cursor.
+    TOAdpFOGCOL_AtCursor @ 0x008f_ab00 => extern "C" fn adp_cursor_008fab00(a0: u32, a1: u32, a2: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_f830, &[a0, a1, a2])
+    }
+    /// `TOAdpFRAME_AtCursor(...)`: `TOAdpFRAME` on the packet cursor.
+    TOAdpFRAME_AtCursor @ 0x008f_ab30 => extern "C" fn adp_cursor_008fab30(a0: u32, a1: u32, a2: u32, a3: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_f880, &[a0, a1, a2, a3])
+    }
+    /// `TOAdpGsDirectRGBA_AtCursor_008fab60(...)`: `TOAdpGsDirectRGBA` on the packet cursor.
+    TOAdpGsDirectRGBA_AtCursor_008fab60 @ 0x008f_ab60 => extern "C" fn adp_cursor_008fab60(a0: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_f790, &[a0])
+    }
+    /// `TOAdpWords4_AtCursor(...)`: `TOAdpWords4` on the packet cursor.
+    TOAdpWords4_AtCursor @ 0x008f_ab80 => extern "C" fn adp_cursor_008fab80(a0: u32, a1: u32, a2: u32, a3: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_f8e0, &[a0, a1, a2, a3])
+    }
+    /// `TOAdpSCISSOR_AtCursor(...)`: `TOAdpSCISSOR` on the packet cursor.
+    TOAdpSCISSOR_AtCursor @ 0x008f_abb0 => extern "C" fn adp_cursor_008fabb0(a0: u32, a1: u32, a2: u32, a3: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_f910, &[a0, a1, a2, a3])
+    }
+    /// `TOAdpTEST_AtCursor(...)`: `TOAdpTEST` on the packet cursor.
+    TOAdpTEST_AtCursor @ 0x008f_abe0 => extern "C" fn adp_cursor_008fabe0(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_f970, &[a0, a1, a2, a3, a4, a5, a6, a7])
+    }
+    /// `TOAdpTEX0_AtCursor(...)`: `TOAdpTEX0` on the packet cursor.
+    TOAdpTEX0_AtCursor @ 0x008f_ac10 => extern "C" fn adp_cursor_008fac10(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32, a9: u32, a10: u32, a11: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_fa00, &[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11])
+    }
+    /// `TOAdpTEX1_AtCursor(...)`: `TOAdpTEX1` on the packet cursor.
+    TOAdpTEX1_AtCursor @ 0x008f_ac50 => extern "C" fn adp_cursor_008fac50(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_fad0, &[a0, a1, a2, a3, a4, a5, a6])
+    }
+    /// `TOAdpTEXFLUSH_AtCursor(...)`: `TOAdpTEXFLUSH` on the packet cursor.
+    TOAdpTEXFLUSH_AtCursor @ 0x008f_ac80 => extern "C" fn adp_cursor_008fac80() -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_fb60, &[])
+    }
+    /// `TOAdpXY2_AtCursor(...)`: `TOAdpXY2` on the packet cursor.
+    TOAdpXY2_AtCursor @ 0x008f_aca0 => extern "C" fn adp_cursor_008faca0(a0: u32, a1: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_fb90, &[a0, a1])
+    }
+    /// `TOAdpXYFrac_AtCursor(...)`: `TOAdpXYFrac` on the packet cursor.
+    TOAdpXYFrac_AtCursor @ 0x008f_acc0 => extern "C" fn adp_cursor_008facc0(a0: u32, a1: u32, a2: u32, a3: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_fbc0, &[a0, a1, a2, a3])
+    }
+    /// `TOAdpXYZ2Offset_AtCursor(...)`: `TOAdpXYZ2Offset` on the packet cursor.
+    TOAdpXYZ2Offset_AtCursor @ 0x008f_acf0 => extern "C" fn adp_cursor_008facf0(a0: u32, a1: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_fbf0, &[a0, a1])
+    }
+    /// `TOAdpWords2Reg10_AtCursor(...)`: `TOAdpWords2Reg10` on the packet cursor.
+    TOAdpWords2Reg10_AtCursor @ 0x008f_ad10 => extern "C" fn adp_cursor_008fad10(a0: u32, a1: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_fc30, &[a0, a1])
+    }
+    /// `TOAdpXYOFFSET_AtCursor(...)`: `TOAdpXYOFFSET` on the packet cursor.
+    TOAdpXYOFFSET_AtCursor @ 0x008f_ad30 => extern "C" fn adp_cursor_008fad30(a0: u32, a1: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_fc60, &[a0, a1])
+    }
+    /// `TOAdpXYZOffset_AtCursor(...)`: `TOAdpXYZOffset` on the packet cursor.
+    TOAdpXYZOffset_AtCursor @ 0x008f_ad50 => extern "C" fn adp_cursor_008fad50(a0: u32, a1: u32, a2: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_fc90, &[a0, a1, a2])
+    }
+    /// `TOAdpWords3_AtCursor(...)`: `TOAdpWords3` on the packet cursor.
+    TOAdpWords3_AtCursor @ 0x008f_ad80 => extern "C" fn adp_cursor_008fad80(a0: u32, a1: u32, a2: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_fcd0, &[a0, a1, a2])
+    }
+    /// `TOAdpXYZWOffset_AtCursor(...)`: `TOAdpXYZWOffset` on the packet cursor.
+    TOAdpXYZWOffset_AtCursor @ 0x008f_adb0 => extern "C" fn adp_cursor_008fadb0(a0: u32, a1: u32, a2: u32, a3: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_fd00, &[a0, a1, a2, a3])
+    }
+    /// `TOAdpZBUF_AtCursor(...)`: `TOAdpZBUF` on the packet cursor.
+    TOAdpZBUF_AtCursor @ 0x008f_ade0 => extern "C" fn adp_cursor_008fade0(a0: u32, a1: u32, a2: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_fd40, &[a0, a1, a2])
+    }
+    /// `TOAdpALPHA_AtCursor_009023b0(...)`: `TOAdpALPHA` on the packet cursor.
+    TOAdpALPHA_AtCursor_009023b0 @ 0x0090_23b0 => extern "C" fn adp_cursor_009023b0(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_f670, &[a0, a1, a2, a3, a4])
+    }
+    /// `TOAdpCLAMP_AtCursor_009023e0(...)`: `TOAdpCLAMP` on the packet cursor.
+    TOAdpCLAMP_AtCursor_009023e0 @ 0x0090_23e0 => extern "C" fn adp_cursor_009023e0(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_f6e0, &[a0, a1, a2, a3, a4, a5])
+    }
+    /// `TOAdpCOLCLAMP_AtCursor_00902410(...)`: `TOAdpCOLCLAMP` on the packet cursor.
+    TOAdpCOLCLAMP_AtCursor_00902410 @ 0x0090_2410 => extern "C" fn adp_cursor_00902410(a0: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_f760, &[a0])
+    }
+    /// `TOAdpGsDirectRGBA_AtCursor_00902430(...)`: `TOAdpGsDirectRGBA` on the packet cursor.
+    TOAdpGsDirectRGBA_AtCursor_00902430 @ 0x0090_2430 => extern "C" fn adp_cursor_00902430(a0: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_f790, &[a0])
+    }
+    /// `TOAdpFBA_AtCursor_00902450(...)`: `TOAdpFBA` on the packet cursor.
+    TOAdpFBA_AtCursor_00902450 @ 0x0090_2450 => extern "C" fn adp_cursor_00902450(a0: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_f7d0, &[a0])
+    }
+    /// `TOAdpFRAME_AtCursor_00902470(...)`: `TOAdpFRAME` on the packet cursor.
+    TOAdpFRAME_AtCursor_00902470 @ 0x0090_2470 => extern "C" fn adp_cursor_00902470(a0: u32, a1: u32, a2: u32, a3: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_f880, &[a0, a1, a2, a3])
+    }
+    /// `TOAdpWords4_AtCursor_009024a0(...)`: `TOAdpWords4` on the packet cursor.
+    TOAdpWords4_AtCursor_009024a0 @ 0x0090_24a0 => extern "C" fn adp_cursor_009024a0(a0: u32, a1: u32, a2: u32, a3: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_f8e0, &[a0, a1, a2, a3])
+    }
+    /// `TOAdpSCISSOR_AtCursor_009024d0(...)`: `TOAdpSCISSOR` on the packet cursor.
+    TOAdpSCISSOR_AtCursor_009024d0 @ 0x0090_24d0 => extern "C" fn adp_cursor_009024d0(a0: u32, a1: u32, a2: u32, a3: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_f910, &[a0, a1, a2, a3])
+    }
+    /// `TOAdpTEST_AtCursor_00902500(...)`: `TOAdpTEST` on the packet cursor.
+    TOAdpTEST_AtCursor_00902500 @ 0x0090_2500 => extern "C" fn adp_cursor_00902500(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_f970, &[a0, a1, a2, a3, a4, a5, a6, a7])
+    }
+    /// `TOAdpTEX0_AtCursor_00902530(...)`: `TOAdpTEX0` on the packet cursor.
+    TOAdpTEX0_AtCursor_00902530 @ 0x0090_2530 => extern "C" fn adp_cursor_00902530(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32, a9: u32, a10: u32, a11: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_fa00, &[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11])
+    }
+    /// `TOAdpTEX1_AtCursor_00902570(...)`: `TOAdpTEX1` on the packet cursor.
+    TOAdpTEX1_AtCursor_00902570 @ 0x0090_2570 => extern "C" fn adp_cursor_00902570(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_fad0, &[a0, a1, a2, a3, a4, a5, a6])
+    }
+    /// `TOAdpXY2_AtCursor_009025c0(...)`: `TOAdpXY2` on the packet cursor.
+    TOAdpXY2_AtCursor_009025c0 @ 0x0090_25c0 => extern "C" fn adp_cursor_009025c0(a0: u32, a1: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_fb90, &[a0, a1])
+    }
+    /// `TOAdpXYZ2Offset_AtCursor_009025e0(...)`: `TOAdpXYZ2Offset` on the packet cursor.
+    TOAdpXYZ2Offset_AtCursor_009025e0 @ 0x0090_25e0 => extern "C" fn adp_cursor_009025e0(a0: u32, a1: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_fbf0, &[a0, a1])
+    }
+    /// `TOAdpXYOFFSET_AtCursor_00902600(...)`: `TOAdpXYOFFSET` on the packet cursor.
+    TOAdpXYOFFSET_AtCursor_00902600 @ 0x0090_2600 => extern "C" fn adp_cursor_00902600(a0: u32, a1: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_fc60, &[a0, a1])
+    }
+    /// `TOAdpXYZOffset_AtCursor_00902620(...)`: `TOAdpXYZOffset` on the packet cursor.
+    TOAdpXYZOffset_AtCursor_00902620 @ 0x0090_2620 => extern "C" fn adp_cursor_00902620(a0: u32, a1: u32, a2: u32) -> u32 {
+        pkt::bridge::adp_at_cursor(&mut mem(), 0x008e_fc90, &[a0, a1, a2])
+    }
+    /// `std::string::_Tidy(true)` copy.
+    StdString_Tidy_00402da0 @ 0x0040_2da0 => extern "thiscall" fn string_tidy_00402da0(this: u32) {
+        container::bridge::string_tidy(&mut mem(), this, delete);
+    }
+    /// `std::string::_Tidy(true)` copy.
+    StdString_Tidy_00634410 @ 0x0063_4410 => extern "thiscall" fn string_tidy_00634410(this: u32) {
+        container::bridge::string_tidy(&mut mem(), this, delete);
+    }
+    /// `std::string::_Tidy(true)` copy.
+    StdString_Tidy_00634440 @ 0x0063_4440 => extern "thiscall" fn string_tidy_00634440(this: u32) {
+        container::bridge::string_tidy(&mut mem(), this, delete);
+    }
+    /// `std::vector::_Tidy` copy.
+    StdVector_Tidy_00634470 @ 0x0063_4470 => extern "thiscall" fn vector_tidy_00634470(this: u32) {
+        container::bridge::vector_tidy(&mut mem(), this, delete);
+    }
+    /// `std::vector::_Tidy` copy.
+    StdVector_Tidy_006344a0 @ 0x0063_44a0 => extern "thiscall" fn vector_tidy_006344a0(this: u32) {
+        container::bridge::vector_tidy(&mut mem(), this, delete);
+    }
+    /// `std::vector::_Tidy` copy.
+    StdVector_Tidy_006344d0 @ 0x0063_44d0 => extern "thiscall" fn vector_tidy_006344d0(this: u32) {
+        container::bridge::vector_tidy(&mut mem(), this, delete);
+    }
+    /// Phyre owned array reset.
+    PArray_Reset_00633c40 @ 0x0063_3c40 => extern "thiscall" fn owned_reset_00633c40(this: u32) {
+        container::bridge::owned_reset(&mut mem(), this, false, phyre_free_cb);
+    }
+    /// Phyre owned array reset.
+    PArray_Reset_00633c70 @ 0x0063_3c70 => extern "thiscall" fn owned_reset_00633c70(this: u32) {
+        container::bridge::owned_reset(&mut mem(), this, false, phyre_free_cb);
+    }
+    /// Phyre owned array reset.
+    PArray_Reset_00633ca0 @ 0x0063_3ca0 => extern "thiscall" fn owned_reset_00633ca0(this: u32) {
+        container::bridge::owned_reset(&mut mem(), this, false, phyre_free_cb);
+    }
+    /// Phyre owned array reset.
+    PArray_Reset_00633cd0 @ 0x0063_3cd0 => extern "thiscall" fn owned_reset_00633cd0(this: u32) {
+        container::bridge::owned_reset(&mut mem(), this, false, phyre_free_cb);
+    }
+    /// Phyre owned array reset.
+    PArray_Reset_00633d00 @ 0x0063_3d00 => extern "thiscall" fn owned_reset_00633d00(this: u32) {
+        container::bridge::owned_reset(&mut mem(), this, false, phyre_free_cb);
+    }
+    /// Phyre owned array reset.
+    PArray_Reset_00633d30 @ 0x0063_3d30 => extern "thiscall" fn owned_reset_00633d30(this: u32) {
+        container::bridge::owned_reset(&mut mem(), this, false, phyre_free_cb);
+    }
+    /// Phyre owned array reset.
+    PArray_Reset_00633d60 @ 0x0063_3d60 => extern "thiscall" fn owned_reset_00633d60(this: u32) {
+        container::bridge::owned_reset(&mut mem(), this, false, phyre_free_cb);
+    }
+    /// Phyre owned array reset.
+    PArray_Reset_00633d90 @ 0x0063_3d90 => extern "thiscall" fn owned_reset_00633d90(this: u32) {
+        container::bridge::owned_reset(&mut mem(), this, true, phyre_free_cb);
+    }
+    /// Phyre owned array reset.
+    PArray_Reset_0067b1d0 @ 0x0067_b1d0 => extern "thiscall" fn owned_reset_0067b1d0(this: u32) {
+        container::bridge::owned_reset(&mut mem(), this, false, phyre_free_cb);
+    }
+    /// Phyre owned array reset.
+    PArray_Reset_0067b200 @ 0x0067_b200 => extern "thiscall" fn owned_reset_0067b200(this: u32) {
+        container::bridge::owned_reset(&mut mem(), this, true, phyre_free_cb);
+    }
+    /// Phyre owned array reset.
+    PArray_Reset_006895c0 @ 0x0068_95c0 => extern "thiscall" fn owned_reset_006895c0(this: u32) {
+        container::bridge::owned_reset(&mut mem(), this, true, phyre_free_cb);
+    }
+    /// Phyre owned array reset.
+    PArray_Reset_006895f0 @ 0x0068_95f0 => extern "thiscall" fn owned_reset_006895f0(this: u32) {
+        container::bridge::owned_reset(&mut mem(), this, true, phyre_free_cb);
+    }
+    /// Phyre owned array reset.
+    PArray_Reset_006fbca0 @ 0x006f_bca0 => extern "thiscall" fn owned_reset_006fbca0(this: u32) {
+        container::bridge::owned_reset(&mut mem(), this, true, phyre_free_cb);
+    }
+    /// Phyre owned array reset.
+    PArray_Reset_006fbcd0 @ 0x006f_bcd0 => extern "thiscall" fn owned_reset_006fbcd0(this: u32) {
+        container::bridge::owned_reset(&mut mem(), this, true, phyre_free_cb);
+    }
+    /// Phyre owned array reset.
+    PArray_Reset_009e1d70 @ 0x009e_1d70 => extern "thiscall" fn owned_reset_009e1d70(this: u32) {
+        container::bridge::owned_reset(&mut mem(), this, false, phyre_free_cb);
+    }
+    /// Phyre owned array reset.
+    PArray_Reset_009e1da0 @ 0x009e_1da0 => extern "thiscall" fn owned_reset_009e1da0(this: u32) {
+        container::bridge::owned_reset(&mut mem(), this, false, phyre_free_cb);
+    }
+    /// `0x0069a130(items, n)`.
+    FreeOwnedArray_0069a130 @ 0x0069_a130 => extern "C" fn free_owned_array_0069a130(items: u32, n: u32) {
+        container::bridge::free_owned_array(&mut mem(), items, n, phyre_free_cb);
+    }
+    /// `std::list<std::string>::clear`.
+    StdStringList_Clear @ 0x0068_6da0 => extern "thiscall" fn string_list_clear(this: u32) {
+        container::bridge::string_list_clear(&mut mem(), this, delete);
+    }
+    /// A `std::map` head node.
+    StdMap_NewHead_0069a1b0 @ 0x0069_a1b0 => extern "C" fn map_head_new_0069a1b0() -> u32 {
+        container::bridge::map_head_new(
+            &mut mem(),
+            |m, size| heap::user_malloc(m, &mut GameOs, size),
+            |_| {
+                // SAFETY: std::_Xbad_alloc through its MSVCP110 import slot; it throws.
+                unsafe {
+                    let f: unsafe extern "C" fn() -> u32 = std::mem::transmute(GameOs::import(0x00b0_c2a0));
+                    f()
+                }
+            },
+        )
+    }
+    /// `0x0061c270()`.
+    Parser_Reset_0061c270 @ 0x0061_c270 => extern "thiscall" fn parser_reset_0061c270(this: u32) {
+        container::bridge::parser_reset(&mut mem(), this, delete);
+    }
+    /// `TOAllClearMessageWindow()`.
+    TOAllClearMessageWindow @ 0x008a_b590 => extern "C" fn to_all_clear_message_window() -> u32 {
+        window::bridge::all_clear_message_windows(&mut mem())
+    }
+    /// `TOOpenWindowAndMessage(i)`.
+    TOOpenWindowAndMessage @ 0x008a_de10 => extern "C" fn to_open_window_and_message(i: i32) -> u32 {
+        window::bridge::open_window_and_message(&mut mem(), i, call_ptr)
+    }
+    /// `TOMenuCloseYesNoWindow()`.
+    TOMenuCloseYesNoWindow @ 0x008e_2de0 => extern "C" fn to_menu_close_yes_no_window() -> u32 {
+        window::bridge::menu_close_yes_no_window(&mut mem())
+    }
+    /// `TkMenuAddHPCapped(chr, delta)`.
+    TkMenuAddHPCapped @ 0x008c_8d10 => extern "C" fn tk_menu_add_hp_capped(chr: u32, delta: u32) -> u32 {
+        menu::bridge::add_hp_capped(
+            &mut mem(),
+            chr,
+            delta,
+            |m, c| ffx_menu::tk::bridge::tk_menu_get_ply(m, c, 0x1c),
+            |m, c| ffx_menu::tk::bridge::tk_menu_get_ply(m, c, 0x24),
+            ffx_menu::tk::bridge::tk_menu_set_hp,
+        )
+    }
+    /// `TOMenuGetControlPadAnalogHist(pad, port, k, i)`.
+    TOMenuGetControlPadAnalogHist @ 0x008b_e450 => extern "C" fn to_menu_get_control_pad_analog_hist(pad: u32, port: u32, k: u32, i: u32) -> u32 {
+        menu::bridge::control_pad_analog_hist(
+            &mut mem(),
+            [pad, port, k, i],
+            |m| ffx_menu::tk::bridge::tk_menu_get_dummy_controler_flag(m),
+            |m, [pad, port, k, i]| {
+                ffx_menu::tk::bridge::tk_get_controler_analog_hist(m, pad.cast_signed(), port.cast_signed(), k, i.cast_signed())
+            },
+        )
+    }
+    /// `GetSaveProductCode()`: by `TkGetLang()`.
+    GetSaveProductCode @ 0x0077_9ca0 => extern "C" fn get_save_product_code() -> u32 {
+        let m = mem();
+        menu::bridge::save_product_code(&m, ffx_menu::tk::bridge::tk_get_lang(&m))
+    }
+    /// `TOSwapInternationalEnvInit(english)`.
+    TOSwapInternationalEnvInit @ 0x008b_0920 => extern "C" fn to_swap_international_env_init(english: u32) {
+        menu::bridge::swap_international_env_init(&mut mem(), english, |m, e| call_sym(m, 0x0078_5ed0, &[e]));
+    }
+    /// `TOSkipCodesAbove2(p)`.
+    TOSkipCodesAbove2 @ 0x008b_7f40 => extern "C" fn to_skip_codes_above_2(p: u32) -> u32 {
+        msg::bridge::skip_codes_above_2(&mem(), p)
+    }
+    /// `TODVDFileLoad(file, name)`.
+    TODVDFileLoad @ 0x008a_ba60 => extern "C" fn to_dvd_file_load(file: u32, name: u32) -> u32 {
+        files::bridge::dvd_file_load(&mut mem(), file, name, call_ptr, |m, size| heap::user_malloc(m, &mut GameOs, size))
+    }
+    /// `TODVDFileStartRead(file, name, buf)`.
+    TODVDFileStartRead @ 0x008a_bab0 => extern "C" fn to_dvd_file_start_read(file: u32, name: u32, buf: u32) -> u32 {
+        files::bridge::dvd_file_start_read(&mut mem(), file, name, buf, call_ptr)
+    }
+    /// `RatioSquared(a, b)`.
+    RatioSquared @ 0x008f_38c0 => extern "C" fn ratio_squared(a: i32, b: i32) -> f32 {
+        math::bridge::ratio_squared(a, b)
+    }
+    /// `Counters_Flush(k)`.
+    Counters_Flush @ 0x0082_1a40 => extern "C" fn counters_flush(k: i32) -> u32 {
+        save::bridge::counters_flush(&mut mem(), k)
+    }
+    /// `Counters_Snapshot()`.
+    Counters_Snapshot @ 0x0082_1a70 => extern "C" fn counters_snapshot() -> u32 {
+        save::bridge::counters_snapshot(&mut mem())
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {

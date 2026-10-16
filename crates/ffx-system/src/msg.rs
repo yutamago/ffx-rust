@@ -142,6 +142,15 @@ pub mod bridge {
         }
         mem.write(out, 0u8);
     }
+
+    /// `0x008b7f40(p)`: `p` moved past control codes ([`skip_code`]) while
+    /// its byte is above 2; where it stops.
+    pub fn skip_codes_above_2(mem: &impl Mem, mut p: u32) -> u32 {
+        while mem.read::<u8>(p) > 2 {
+            p = skip_code(mem, p);
+        }
+        p
+    }
 }
 
 #[cfg(test)]

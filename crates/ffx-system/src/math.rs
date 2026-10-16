@@ -421,6 +421,17 @@ pub mod bridge {
     pub fn length_squared(mem: &impl Mem, v: u32) -> f32 {
         super::length_squared(mem.read(v))
     }
+
+    /// `0x008f38c0(a, b)`: `(a / b)²` in single precision: both integers
+    /// rounded to `f32`, the quotient stored as `f32`, then squared and
+    /// stored again; returned in `st(0)`.
+    #[must_use]
+    pub fn ratio_squared(a: i32, b: i32) -> f32 {
+        #[allow(clippy::cast_precision_loss)] // fild, fstp dword
+        let (a, b) = (a as f32, b as f32);
+        let q = ffx_bridge::x87::Reg::load(a).div_m32(b).store();
+        ffx_bridge::x87::Reg::load(q).mul_m32(q).store()
+    }
 }
 
 #[cfg(test)]

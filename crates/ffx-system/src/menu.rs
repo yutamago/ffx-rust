@@ -111,4 +111,76 @@ pub mod bridge {
         let off = field + if hiragana != 0 { 4 } else { 0 };
         strings.wrapping_add(u32::from(mem.read::<u16>(record.wrapping_add(off))))
     }
+
+    /// `0x008c8d10(chr, delta)`: character `chr`'s HP (`TkMenuGetHP`) plus
+    /// `delta`, capped (signed) at its maximum (`TkMenuGetMaxHP`, asked
+    /// again for the cap), set with `TkMenuSetHP`; what that returns. The
+    /// three are the menu's, passed in.
+    pub fn add_hp_capped<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        delta: u32,
+        get_hp: impl FnOnce(&mut M, u32) -> u32,
+        mut get_max_hp: impl FnMut(&mut M, u32) -> u32,
+        set_hp: impl FnOnce(&mut M, u32, u32) -> u32,
+    ) -> u32 {
+        let mut hp = get_hp(mem, chr).wrapping_add(delta);
+        if hp.cast_signed() >= get_max_hp(mem, chr).cast_signed() {
+            hp = get_max_hp(mem, chr);
+        }
+        set_hp(mem, chr, hp)
+    }
+
+    /// `TOMenuGetControlPadAnalogHist(pad, port, k, i)` (`0x008be450`): with
+    /// the dummy controller on (`TkMenuGetDummyControlerFlag` 1) the dummy
+    /// analog axis `k` ([`crate::pad::bridge::dummy_analog`]), else (a tail
+    /// call) `TkGetControlerAnalogHist(pad, port, k, i)`.
+    pub fn control_pad_analog_hist<M: Mem>(
+        mem: &mut M,
+        args: [u32; 4],
+        dummy_flag: impl FnOnce(&mut M) -> u32,
+        analog_hist: impl FnOnce(&mut M, [u32; 4]) -> u32,
+    ) -> u32 {
+        if dummy_flag(mem) == 1 {
+            u32::from(crate::pad::bridge::dummy_analog(mem, args[2]))
+        } else {
+            analog_hist(mem, args)
+        }
+    }
+
+    /// The PS2 product codes `0x00779ca0` picks the save directory name
+    /// from, by `TkGetLang()`: 1 `SLUS-20312`, 2 `SCES-50491`, 3
+    /// `SCES-50494`, 4 `SCES-50492`, 5 `SCES-50493`, 18 `SCES-50490`, any
+    /// other `SLPS-25088` (Japanese).
+    pub fn save_product_code(mem: &impl Mem, lang: i32) -> u32 {
+        mem.rebase(match lang {
+            1 => 0x00b5_39c8,
+            2 => 0x00b5_39f8,
+            3 => 0x00b5_3a28,
+            4 => 0x00b5_39e0,
+            5 => 0x00b5_3a10,
+            18 => 0x00b5_3a40,
+            _ => 0x00b5_3a58,
+        })
+    }
+
+    /// The save-region flag `TOSwapInternationalEnvInit` sets (`0x00c59564`).
+    pub const SAVE_REGION: Global<u32> = Global::new(0x00c5_9564);
+    /// Four words it clears (`0x01841d28`).
+    pub const INTERNATIONAL_ENV: Global<[u32; 4]> = Global::new(0x0184_1d28);
+
+    /// `TOSwapInternationalEnvInit(english)` (`0x008b0920`):
+    /// `MsSetSaveConfigEnglish(english)` (the battle module's, passed in),
+    /// then [`SAVE_REGION`] 4 for `english` 1 and 0x12 otherwise, and
+    /// [`INTERNATIONAL_ENV`] zeroed; the call's `eax`.
+    pub fn swap_international_env_init<M: Mem>(
+        mem: &mut M,
+        english: u32,
+        set_english: impl FnOnce(&mut M, u32) -> u32,
+    ) -> u32 {
+        let r = set_english(mem, english);
+        SAVE_REGION.set(mem, if english == 1 { 4 } else { 0x12 });
+        INTERNATIONAL_ENV.set(mem, [0; 4]);
+        r
+    }
 }

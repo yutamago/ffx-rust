@@ -744,4 +744,55 @@ pub mod bridge {
             mem.write(e + 0xc, (d / 14 + 2) as u16);
         }
     }
+
+    /// `TOAllClearMessageWindow()` (`0x008ab590`): [`clear_message_slot`]
+    /// for the eight slots in order (inlined); returns the last third part.
+    pub fn all_clear_message_windows(mem: &mut impl Mem) -> u32 {
+        let mut last = 0;
+        for i in 0..8 {
+            last = clear_message_slot(mem, i);
+        }
+        last
+    }
+
+    /// `0x008ade10(i)`: message-window slot `i`'s object (`0x01865b3c`)
+    /// marked (`u16` 1 at `+0`), then [`open_window`] and [`open_message`]
+    /// for `i`; what the latter returns.
+    pub fn open_window_and_message<M: Mem>(
+        mem: &mut M,
+        i: i32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = MSG_WINDOW_SLOTS
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.cast_unsigned().wrapping_mul(4));
+        let slot: u32 = mem.read(at);
+        mem.write(slot, 1u16);
+        open_window(mem, i, &mut call);
+        open_message(mem, i, call)
+    }
+
+    /// The open yes/no window `TOMenuCloseYesNoWindow` closes
+    /// (`0x023cc120`, labelled `g_TkMn2ListMax2` after its other reader).
+    pub const YES_NO_WINDOW: Global<u32> = Global::new(0x023c_c120);
+
+    /// `TOMenuCloseYesNoWindow()` (`0x008e2de0`): with a window open, in
+    /// state 2 (`+0x94`) its scene `0x00b66904` stopped on layer 1
+    /// (`TOSeqStopScene`), then `+0x41` = 1 and the pointer cleared. Returns
+    /// the window (0 with none open).
+    pub fn menu_close_yes_no_window(mem: &mut impl Mem) -> u32 {
+        let w = YES_NO_WINDOW.get(mem);
+        if w == 0 {
+            return 0;
+        }
+        if mem.read::<u32>(w.wrapping_add(0x94)) == 2 {
+            let name = mem.rebase(0x00b6_6904);
+            crate::scene::bridge::stop_scene(mem, 1, name);
+        }
+        let w = YES_NO_WINDOW.get(mem);
+        mem.write(w.wrapping_add(0x41), 1u8);
+        YES_NO_WINDOW.set(mem, 0);
+        w
+    }
 }

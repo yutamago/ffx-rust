@@ -26,6 +26,7 @@
 0x00402b00 function Settings_CopyDefaultTables # thiscall(settings) -> 0: the 0x51-word tables 0x00c8a538, 0x00c8a3f0, 0x00c8a2a8 to +0x60, +0x1a4, +0x2e8, +0x42c = 0x51; caller Settings_Load; name ours
 0x00402b50 function CopyTable_00c8a538 # thiscall(this): the 0x51 words at 0x00c8a538 to +0x60, +0x42c = 0x51; caller 0x0065f450; name ours
 0x00402be0 function GetTable_00c8a538 # stdcall(i), ret 4: word i of the table at 0x00c8a538; callers 0x00700da0, 0x00701fa0; name ours
+0x00402da0 function StdString_Tidy_00402da0 # thiscall: std::string _Tidy(true): capacity +0x14 >= 16: operator delete(+0); capacity 15, size +0x10 0, first byte 0; name ours
 0x00405ba0 function ReturnConst_00405ba0 # () -> 0x80; name ours
 0x00405e20 function zlib_uncompress           # zlib 1.2.x uncompress(dst, &dst_len, src, src_len), cdecl; replaced by ffx-hook
 0x00406000 function zlib_inflateInit_         # called first by zlib_uncompress; stream ptr in ECX
@@ -107,6 +108,7 @@
 0x0043a1e0 function Phyre_PClassMember_Bind   # fh v3:cg7 0x43a2d0 Phyre::PClassMember::Bind
 0x0043afb0 function Phyre_PClassDescriptor_PClassDescriptor # fh v3:exact 0x0043b0a0 Phyre::PClassDescriptor::PClassDescriptor
 0x0043b0a0 function Phyre_PClassDescriptor_PClassDescriptor_0043b0a0 # fh v3:exact 0x0043b190 Phyre::PClassDescriptor::PClassDescriptor
+0x0043b3e0 function Phyre_PClassDescriptor_Destruct # thiscall: first stores Phyre_PClassDescriptor_vftable 0x00b0ea9c; the parent the 0x009e2160.. PClassDescriptorForType<T> destructors jump to; name ours
 0x0043b8b0 function Phyre_PClassDescriptor_Bind # fh v3:exact 0x0043b9a0 Phyre::PClassDescriptor::Bind
 0x0043be70 function Phyre_PClassDescriptor_SortClassDescriptors # fh v3:exact 0x0043bf60 Phyre::PClassDescriptor::SortClassDescriptors
 0x0043c140 function Phyre_PClassDescriptor_addToNamespace # fh v3:exact 0x0043c230 Phyre::PClassDescriptor::addToNamespace
@@ -466,9 +468,11 @@
 0x0061acb0 function PStreamFile_entrySize64 # thiscall(this) -> edx:eax = u64 at +8 of *(this+0xc) (called by Phyre_PSerialization_PStreamFile_getFileSize); name ours
 0x0061acc0 function VbfStream_Open            # fopen(path, "rb") for one of 15 reader streams
 0x0061acf0 function VFile_reset # thiscall(this): +0xc, +0x10, +0x14 and byte +0 zeroed (the VFile released); caller BigFileHandle_releaseVFile; name ours
+0x0061b500 function Queue_PostRequest # thiscall(queue, request), ret 4: request+0x58 = 0, ReleaseSemaphore(*queue, 1, 0); 0 for no request; name ours
 0x0061b590 function BigFileStream_createInstance # allocates the 0x44-byte FileSys into g_FileSys; was FileSys_CreateSingleton
 0x0061b7e0 function FileSys_NewReadRequest    # finds the first block and its file offset for a read at a 64-bit position
 0x0061b8d0 function BigFileStream_fileTaskRead # freads the stored blocks; stored size 0 means 0x10000; was ReadRequest_ReadBlocks
+0x0061ba60 function Request_Wait # thiscall(_, request), ret 4: WaitForSingleObject(request+0x4c, INFINITE); name ours
 0x0061ba80 function BigFileStream_fileTaskUncompress # raw blocks are memcpy'd, others go through zlib_uncompress; error text id 0x7836; was ReadRequest_Inflate
 0x0061bdb0 function BigFileStream_get         # returns g_FileSys; was FileSys_Get
 0x0061bdd0 function BigFileStream_ctor        # fh v4:user_defined+call.cs thiscall
@@ -477,6 +481,7 @@
 0x0061bfe0 function BigFileStream_readVFile   # NewReadRequest + ReadBlocks + Inflate; was FileSys_ReadSync
 0x0061c150 function BigFileStream_registerBigFile # this=FileSys; mounts an archive into the first free of 5 slots at +0x10; was FileSys_MountVbf
 0x0061c220 function FileSys_SubmitRead          # cdecl(request): thread-pool work BigFileStream_fileTaskRead(request), and a wait on the request's event (+0x48) running BigFileStream_fileTaskUncompress; made synchronous by the harness on the virtual clock
+0x0061c270 function Parser_Reset_0061c270 # thiscall: byte +0 and *(+8), *(+0xc), *(+0x10) = 0, +0x14/+0x18 = 0, +0x1c set: operator delete(+0x20); +0x1c/+0x50/+0x24 = 0; name ours
 0x0061c3a0 function BigFileStream_setStreamPrefix # this=FileSys; copies path to +0x40, length to +0x3c; was FileSys_SetRootPath
 0x0061d110 function Add_0061d110 # cdecl(a, b) -> a + b; name ours
 0x0061d120 function AddU8_0061d120 # cdecl(a, b) -> a + (u8)b (no direct callers); name ours
@@ -630,6 +635,7 @@
 0x00633940 function StoreRetThis_00633940 # thiscall(this; v, unused), ret 8: *this = v, returns this (vtable only); name ours
 0x00633950 function StoreRetThis_00633950 # thiscall(this; v, unused), ret 8: *this = v, returns this (vtable only); name ours
 0x00633960 function StoreRetThis_00633960 # thiscall(this; v, unused), ret 8: *this = v, returns this (vtable only); name ours
+0x00633a80 function MutexLock_Construct # thiscall(this, mutex), ret 4 -> this: *this = mutex, WaitForSingleObject(*mutex, INFINITE); name ours
 0x00633b70 function BufferAt8_dtor_00633b70 # thiscall(this): user_free(this[2]) when set (a destructor run by exception unwinding, called from 0x00acf9xx funclets); returns 0; name ours
 0x00633b80 function BufferAt8_dtor_00633b80 # thiscall(this): user_free(this[2]) when set (a destructor run by exception unwinding, called from 0x00acf9xx funclets); returns 0; name ours
 0x00633b90 function BufferAt8_dtor_00633b90 # thiscall(this): user_free(this[2]) when set (a destructor run by exception unwinding, called from 0x00acf9xx funclets); returns 0; name ours
@@ -642,7 +648,21 @@
 0x00633c10 function BufferAt8_dtor_00633c10 # thiscall(this): user_free(this[2]) when set (a destructor run by exception unwinding, called from 0x00acf9xx funclets); returns 0; name ours
 0x00633c20 function BufferAt8_dtor_00633c20 # thiscall(this): user_free(this[2]) when set (a destructor run by exception unwinding, called from 0x00acf9xx funclets); returns 0; name ours
 0x00633c30 function BufferAt8_dtor_00633c30 # thiscall(this): user_free(this[2]) when set (a destructor run by exception unwinding, called from 0x00acf9xx funclets); returns 0; name ours
+0x00633c40 function PArray_Reset_00633c40 # thiscall: count +0 top bit clear: PhyreFree(+4); +0, +4 = 0; name ours
+0x00633c70 function PArray_Reset_00633c70 # thiscall: count +0 top bit clear: PhyreFree(+4); +0, +4 = 0; name ours
+0x00633ca0 function PArray_Reset_00633ca0 # thiscall: count +0 top bit clear: PhyreFree(+4); +0, +4 = 0; name ours
+0x00633cd0 function PArray_Reset_00633cd0 # thiscall: count +0 top bit clear: PhyreFree(+4); +0, +4 = 0; name ours
+0x00633d00 function PArray_Reset_00633d00 # thiscall: count +0 top bit clear: PhyreFree(+4); +0, +4 = 0; name ours
+0x00633d30 function PArray_Reset_00633d30 # thiscall: count +0 top bit clear: PhyreFree(+4); +0, +4 = 0; name ours
+0x00633d60 function PArray_Reset_00633d60 # thiscall: count +0 top bit clear: PhyreFree(+4); +0, +4 = 0; name ours
+0x00633d90 function PArray_Reset_00633d90 # thiscall: count +0 top bit clear and buffer non-null: PhyreFree(+4); +0, +4 = 0; name ours
+0x00634410 function StdString_Tidy_00634410 # thiscall: std::string _Tidy(true): capacity +0x14 >= 16: operator delete(+0); capacity 15, size +0x10 0, first byte 0; name ours
+0x00634440 function StdString_Tidy_00634440 # thiscall: std::string _Tidy(true): capacity +0x14 >= 16: operator delete(+0); capacity 15, size +0x10 0, first byte 0; name ours
+0x00634470 function StdVector_Tidy_00634470 # thiscall: std::vector _Tidy: storage +0 non-null: operator delete, first/last/end 0; name ours
+0x006344a0 function StdVector_Tidy_006344a0 # thiscall: std::vector _Tidy: storage +0 non-null: operator delete, first/last/end 0; name ours
+0x006344d0 function StdVector_Tidy_006344d0 # thiscall: std::vector _Tidy: storage +0 non-null: operator delete, first/last/end 0; name ours
 0x00634610 function AssetListReader_dtor_AssetListReader # fh v3:exact 0x006347c0 AssetListReader::~AssetListReader
+0x00634830 function MutexHandle_Close # thiscall: CloseHandle(*this) through 0x00b0c0dc; name ours
 0x006352b0 function std_Tree_const_iterator_inc_006352b0 # fastcall(it*) -> it: std::map iterator ++ (in-order successor; left +0, parent +4, right +8, _Isnil +0xd); same bytes at 0x00635300, 0x00635350, 0x00699ee0 (and in other modules)
 0x00635300 function std_Tree_const_iterator_inc_00635300 # same bytes as std_Tree_const_iterator_inc_006352b0
 0x00635350 function std_Tree_const_iterator_inc_00635350 # same bytes as std_Tree_const_iterator_inc_006352b0
@@ -1035,16 +1055,20 @@
 0x006720c0 function Phyre_PCamera_updateViewMatrices # fh v3:exact 0x00672260 Phyre::PCamera::updateViewMatrices
 0x00673b20 function ClassDynamicMeshInstance_populatePreprocessData # fh switch:bsim1.00 0x71001c46d0 ClassDynamicMeshInstance::populatePreprocessData
 0x00675c70 function Difference_00675c70 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x00675f30 function PClassDescriptorForType_RadialLineDynamicMesh_Destruct # thiscall: *this = vtable 0x00b4466c, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
 0x006765c0 function ReturnZeroStd_006765c0 # stdcall(1 arg), ret 4 -> 0 (vtable only); name ours
 0x006765d0 function ReturnMinus1_006765d0 # stdcall(3 args), ret 0xc: returns -1 (vtable only); name ours
 0x00676960 function Difference_00676960 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x00676ba0 function PClassDescriptorForType_BrokenScreenPolygonDynamicMeshInstance_Destruct # thiscall: *this = vtable 0x00b4483c, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
 0x00677060 function ReturnZeroStd_00677060 # stdcall(1 arg), ret 4 -> 0 (vtable only); name ours
 0x00677080 function ReturnMinus1_00677080 # stdcall(3 args), ret 0xc: returns -1 (vtable only); name ours
 0x006770b0 function ReturnConstStd_006770b0 # stdcall(1 arg) -> 0x18, ret 4 (vtable only); name ours
 0x006772d0 function Difference_006772d0 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x00677590 function PClassDescriptorForType_BrokenScreenPolygonDynamicMesh_Destruct # thiscall: *this = vtable 0x00b449bc, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
 0x00677c20 function ReturnZeroStd_00677c20 # stdcall(1 arg), ret 4 -> 0 (vtable only); name ours
 0x00677c30 function ReturnMinus1_00677c30 # stdcall(3 args), ret 0xc: returns -1 (vtable only); name ours
 0x00678010 function Difference_00678010 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x006782f0 function PClassDescriptorForType_ShadowDynamicMesh_Destruct # thiscall: *this = vtable 0x00b44ba4, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
 0x00678b40 function ReturnZeroStd_00678b40 # stdcall(1 arg), ret 4 -> 0 (vtable only); name ours
 0x00678b50 function ReturnMinus1_00678b50 # stdcall(3 args), ret 0xc: returns -1 (vtable only); name ours
 0x006793e0 function PhyreFIOS_LoadMagicfilePrx # fh v3:exact 0x00679590 PhyreFIOS::LoadMagicfilePrx
@@ -1061,6 +1085,7 @@
 0x00679800 function fiosRead                  # fh v3:exact 0x006799b0
 0x00679820 function fiosUnifyFilename         # fh v4:imported+call.cs cdecl
 0x00679a00 function ReturnAddress_00679a00 # () -> 0x00b42a34 (an address in the image); name ours
+0x00679ab0 function Semaphore_Construct # thiscall(this, n), ret 4 -> this: *this = CreateSemaphoreW(0, n, n, 0) through 0x00b0c1e0; name ours
 0x00679c60 function VsyncThreadImpl_run       # thread body (vtable +4): while running (+0x18) call the handler (+0x10), WaitForSingleObject(semaphore +0x1c, 16 ms); the PS2 vsync interrupt on real time
 0x00679e60 function createVsyncEmuThread      # fh v3:exact 0x0067a010
 0x00679f20 function endVsyncEmuThread         # fh v3:exact 0x0067a0d0
@@ -1111,6 +1136,8 @@
 0x0067ab50 function isEternalCalmScene        # fh v3:bsim1.00 0x0067ad00
 0x0067ac90 function TrophyManager_Instance    # () -> [0x00ccc7cc] (set by 0x0067ac10); fh switch:bsim1.00 0x710023fce0 TrophyManager::Instance (BSim, getter-shaped)
 0x0067acc0 function TrophyManager_IsInstallCompleted # fh switch:cg2 0x710089f9a8 TrophyManager::IsInstallCompleted
+0x0067b1d0 function PArray_Reset_0067b1d0 # thiscall: count +0 top bit clear: PhyreFree(+4); +0, +4 = 0; name ours
+0x0067b200 function PArray_Reset_0067b200 # thiscall: count +0 top bit clear and buffer non-null: PhyreFree(+4); +0, +4 = 0; name ours
 0x0067b7d0 function DJB_hash                  # fh v3:bsim1.00 0x0067b980
 0x0067b800 function op_vertex_normal_point4   # fh switch:bsim1.00 0x71003df230
 0x0067b970 function MenuManager_GetMenuCount  # fh v3:exact 0x0067bb20 MenuManager::GetMenuCount
@@ -1156,6 +1183,7 @@
 0x00686c50 function IdentityStd_00686c50 # stdcall(x) -> x, ret 4; name ours
 0x00686cb0 function Identity_00686cb0 # cdecl(x) -> x (frame-pointer build); name ours
 0x00686ce0 function CopyThisTo_00686ce0 # thiscall(this; p), ret 4: *p = *this, returns p (vtable only); name ours
+0x00686da0 function StdStringList_Clear # thiscall: std::list<std::string> clear: head emptied, size +4 = 0, each node: string at +8 tidied, operator delete(node); name ours
 0x00686e80 function CopyThisTo_00686e80 # thiscall(this; p), ret 4: *p = *this, returns p (vtable only); name ours
 0x00686f80 function Identity_00686f80 # cdecl(x) -> x (frame-pointer build); name ours
 0x00686ff0 function user_aligned_malloc       # cdecl(size, align): jmp UserHeap_AlignedMalloc; fh v3:bsim1.00 0x00687190
@@ -1168,6 +1196,8 @@
 0x00687060 function user_realloc              # cdecl(p, size): jmp UserHeap_Realloc; name ours (after user_mem_size)
 0x00687190 function Init68_00687190 # thiscall(this; a, b), ret 8 -> this: +0 a, +8 b, +4 and +0xc..+0x40 zeroed; callers 0x006870b0, 0x00687130; name ours
 0x00689510 function TouchRecord_Reset # thiscall(rec) -> rec: one TouchRecords_Init record reset; callers 0x00689580, 0x006897d0; name ours
+0x006895c0 function PArray_Reset_006895c0 # thiscall: count +0 top bit clear and buffer non-null: PhyreFree(+4); +0, +4 = 0; name ours
+0x006895f0 function PArray_Reset_006895f0 # thiscall: count +0 top bit clear and buffer non-null: PhyreFree(+4); +0, +4 = 0; name ours
 0x006898c0 function TouchManager_GetInstance  # () -> [0x00ccc850]; fh switch:bsim1.00 0x710023e180 TouchManager::GetInstance
 0x006898d0 function TouchTracks_Init # cdecl(base, n): n 0x1c8-byte records reset (+0 u16, eight 0x38-byte points from +4: bytes +0/+0x14, floats +4..+0x14; +0x1c4; null skipped); returns the last record; callers 0x00689750/0x0068a660/0x0068ad60 beside TouchRecords_Init; name ours
 0x00689a10 function TouchRecords_Init # cdecl(base, n): n 0x150-byte records reset (+0 u16 0, +4 -1, +8 0, 32 ten-byte points from +0xc, +0x14c 0; null record skipped); callers 0x00689790/0x0068a660/0x0068ade0 next to TouchManager_GetInstance; name ours
@@ -1201,7 +1231,9 @@
 0x00698750 function PostProcessManager_setNon16By9Viewport # fh v3:exact 0x00698890 PostProcessManager::setNon16By9Viewport
 0x006996ba function Catch_All_006997fa        # fh v3:cg2 0x6997fa Catch_All@006997fa
 0x00699ee0 function std_Tree_const_iterator_inc_00699ee0 # same bytes as std_Tree_const_iterator_inc_006352b0
+0x0069a130 function FreeOwnedArray_0069a130 # cdecl(items, n): non-null items: each 8-byte entry +4 with low bit clear PhyreFree(d), then PhyreFree(items); name ours
 0x0069a1a0 function ClusterManager_GetInstance # fh v3:bsim1.00 0x0069a2e0 ClusterManager::GetInstance
+0x0069a1b0 function StdMap_NewHead_0069a1b0 # (): operator new(0x18), links +0/+4/+8 to itself, +0xc = 0x101 (colour, nil); null: jmp std::_Xbad_alloc; name ours
 0x0069a250 function std_map_u32_equal_range_0069a250 # thiscall(this; out*, key*), ret 8: lower and upper bound of *key in the tree at *this (key +0x10, nil flag +0xd); used by ChrResourceCacheManager (0x0069a6b0, 0x0069af40, 0x0069b270); name ours
 0x0069a350 function IdentityStd_0069a350 # stdcall(x) -> x, ret 4; name ours
 0x0069a360 function IdentityStd_0069a360 # stdcall(x) -> x, ret 4; name ours
@@ -1328,6 +1360,8 @@
 0x006db090 function LocalizationManager_Initialize # settings language index -> game language id; was LangManager_FromSettings
 0x006db1f0 function LocalizationManager_getText # fh v3:exact 0x006db320 LocalizationManager::getText
 0x006db2f0 function LocalizationManager_readLocalizationKit # fh v3:exact 0x006db420 LocalizationManager::readLocalizationKit
+0x006db6e0 function Worker_CloseSemaphore # thiscall: CloseHandle(this+0x2c); name ours
+0x006db7a0 function Worker_ResetCounters # thiscall: wait on the semaphore at +0x2c, +0x28/+0x24/+0x20 = 0, release it; name ours
 0x006db870 function EighthAtLeastOne          # stdcall(n, unused), ret 8: n / 8 (signed) above 8, else 1; name ours
 0x006dbf30 function RecordStateIs8_006dbf30 # thiscall(this; i), ret 4: word +0x1f8 of 0x1e8-byte record i == 8; caller graphicInitScene; name ours
 0x006dbf50 function JobSchedule_JobScheduler_waitForComplete # fh v3:exact 0x006dc080 JobSchedule::JobScheduler::waitForComplete
@@ -1442,8 +1476,14 @@
 0x006f2520 function SetMember394_006f2520 # thiscall(this; v), ret 4: this+0x394 = v, returns v; caller 0x00648f80 (save data); name ours
 0x006f2530 function SaveDataManager_setSaveDataIconString # fh v3:exact 0x006f2670 SaveDataManager::setSaveDataIconString
 0x006f2560 function SaveDataManager_setSaveDataInfo # fh v3:exact 0x006f26a0 SaveDataManager::setSaveDataInfo
-0x006f2ce0 function SignalSema                # fh v3:bsim1.00 0x006f2e20
-0x006f2d20 function SleepThreadInMillisecond  # fh v3:exact 0x006f2e60
+0x006f2a40 function Thread_Sleep # cdecl(ms): Sleep(ms), its eax left; name ours
+0x006f2be0 function Event_Reset # cdecl(&event): ResetEvent(*event) through 0x00b0c0f0; name ours
+0x006f2bf0 function Event_Set # cdecl(&event): SetEvent(*event) through 0x00b0c0ec; name ours
+0x006f2ce0 function SignalSema                # fh v3:bsim1.00 0x006f2e20; cdecl(&sema) -> 1 (0 for null): ReleaseSemaphore(**sema, 1, 0)
+0x006f2d10 function SleepThread # () -> 0: Sleep(10) through 0x00b0c100; name ours (the PS2 libkernel call it stands for)
+0x006f2d20 function SleepThreadInMillisecond  # fh v3:exact 0x006f2e60; cdecl(ms) -> 0: Sleep(ms) through 0x00b0c100
+0x006f2d80 function WaitSema # cdecl(&sema) -> 1 (0 for null): WaitForSingleObject(**sema, INFINITE); name ours (PS2 libkernel)
+0x006f2da0 function WaitSemaTimeout # cdecl(&sema, ms) -> 1 (0 for null): WaitForSingleObject(**sema, ms); name ours
 0x006f2de0 function Mutex_Create              # () -> new 4-byte object holding CreateMutexW(0, 0, 0) (import 0x00b0c198); Script_Run creates g_ScriptRunMutex with it
 0x006f2ed0 function Mutex_Lock                # (mutex): WaitForSingleObject(*mutex, INFINITE) (import 0x00b0c0f8)
 0x006f2f50 function Mutex_Unlock              # (mutex): ReleaseMutex(*mutex) (import 0x00b0c1c0)
@@ -1494,6 +1534,10 @@
 0x006fb130 function SyncManager_syncDataChangeAsyncTask # fh v3:exact 0x006fb210 SyncManager::syncDataChangeAsyncTask
 0x006fb160 function SyncManager_syncGetData   # fh v3:exact 0x006fb240 SyncManager::syncGetData
 0x006fb320 function SelectId_006fb320 # thiscall(this; n), ret 4: for n in 1..=500 not already +0xc: +0xc = n, +8 = +0x1c = 0, +0x1c = 1 when n is in the +0x18 words at *(this + 0x40); returns 0; caller 0x0067a990; name ours
+0x006fb500 function CriticalSection_Init # thiscall -> this: InitializeCriticalSection(this) through 0x00b0c150; name ours
+0x006fb510 function CsLock_Construct # thiscall(this, cs), ret 4 -> this: *this = cs, EnterCriticalSection(cs); name ours
+0x006fb530 function CriticalSection_Delete # thiscall: DeleteCriticalSection(this) through 0x00b0c15c; name ours
+0x006fb540 function CsLock_Destruct # thiscall: LeaveCriticalSection(*this); name ours
 0x006fb6c0 function user_aligned_free         # fh v3:exact 0x006fb7a0
 0x006fb770 function UserHeap_AlignedMalloc    # cdecl(size, align): UserHeap_Alloc(size + align), pointer moved up to a multiple of align (__aullrem of the sign-extended pointer), the distance in the byte before; the first size bytes filled 0xcd; name ours
 0x006fb820 function UserHeap_Calloc # cdecl(n, size): malloc_pool_init on first use, UserHeap_Alloc(n * size) under the heap's critical section, memset 0; name ours
@@ -1503,6 +1547,8 @@
 0x006fb9b0 function malloc_pool_init          # fh call.cs cdecl _malloc_pool_init
 0x006fba90 function UserHeap_MemSize          # cdecl(p): UserHeap_BlockSize under the lock (no first-use check); name ours
 0x006fbb00 function UserHeap_Realloc          # cdecl(p, size): new block (none for 0), memcpy_s min(old, size) bytes, old freed; name ours
+0x006fbca0 function PArray_Reset_006fbca0 # thiscall: count +0 top bit clear and buffer non-null: PhyreFree(+4); +0, +4 = 0; name ours
+0x006fbcd0 function PArray_Reset_006fbcd0 # thiscall: count +0 top bit clear and buffer non-null: PhyreFree(+4); +0, +4 = 0; name ours
 0x006fbdc0 function ResetRecords18_006fbdc0 # cdecl(base, n): n 0x18-byte records reset (byte +0, floats +8..+0x18; null skipped), returns the last; callers 0x006fbd50, 0x006fc2c0; name ours
 0x006fc340 function SetMember8_006fc340 # thiscall(this; v), ret 4: this[2] = v, returns v; name ours
 0x006fc390 function ReleaseSlots_006fc390 # thiscall(this; key), ret 4 -> 0: every 0x18-byte slot (count in +0 low 31 bits, array *(this + 4)) with byte 1 and +4 == key gets byte 0; caller 0x0068bfa0; name ours
@@ -1510,6 +1556,7 @@
 0x00702fe0 function AddU16_00702fe0 # cdecl(a, b) -> a + (u16)b (no direct callers); name ours
 0x00703750 function CopyFloats4_00703750 # thiscall(this; src), ret 4: 4 floats from src to this+4 through the x87 stack, returns src; caller 0x006c3970; name ours
 0x007037e0 function CopyFloats2_007037e0 # thiscall(this; src), ret 4: 2 floats from src to this+0x14 through the x87 stack, returns src; caller 0x006c3970; name ours
+0x00703a90 function Thread_JoinClose # thiscall: with a handle at +4: WaitForSingleObject(it, INFINITE), CloseHandle, +4 = +8 = 0; name ours
 0x00703bc0 function cdc_Vector_CanNormalize3  # thiscall(v): al = 1 when (x²+y²)+z² (stored f32) is not NaN (_isnan), finite (_finite) and > FLT_MIN (0x00b4cf60); only caller cdc_Vector_SafeNormalize3; name ours
 0x00704200 function cdc_Vector_SafeNormalize3 # fh v3:exact 0x007042f0 cdc::Vector::SafeNormalize3
 0x00704dd0 function cdc_Inverse4x4            # cdecl(dst, m): the general 4x4 inverse by cofactors (f32 stores between steps), 1/det or 0; leaves dst+0x48 in eax; only caller sceVu0InversMatrix4x4; name ours (cdc_ like its neighbours)
@@ -2262,6 +2309,7 @@
 0x007795b0 function hdd_thread_main           # fh v3:exact 0x007796a0
 0x00779730 function hdd_unmount               # fh v3:exact 0x00779820
 0x00779a80 function hdd_set_pass_names_x      # (): the two names at g_HddPassNames from scrambled words, byte i raised by 0xcd - i; name ours
+0x00779ca0 function GetSaveProductCode # () -> PS2 product code string by TkGetLang (SLUS-20312, SCES-5049x, SLPS-25088); name ours
 0x00779f70 function set_hdd_err               # fh v3:bsim1.00 0x0077a060
 0x0077a180 function sa_task_buff_size_get     # fh switch:bsim1.00 0x7100330040
 0x0077a2c0 function sa_task_start             # fh switch:bsim1.00 0x710032ff90
@@ -3508,6 +3556,8 @@
 0x00821750 function Sg_MenuSetReserve         # (menu id): g_012fbc38 = id, result 0x012fbc3c = -1; 0x40100000/0x40200000 handled separately; was Menu_Request
 0x00821a20 function SetByte_012fb8fb # cdecl(v): byte 0x012fb8fb = v; name ours
 0x00821a30 function SetByte_012fb8fc # cdecl(v): byte 0x012fb8fc = v; name ours
+0x00821a40 function Counters_Flush # cdecl(k): pending 0x023056e8 added to 0x012fbbbc and (k != -1) 0x012fbbbc[k]; pending = 0; returns 0; name ours
+0x00821a70 function Counters_Snapshot # (): pending added to 0x012fbbbc; the 14 words copied to 0x012fbbf4; name ours
 0x00821aa0 function TOInitFont1208            # fh switch:bsim1.00 0x71004b0f20
 0x00821ae0 function Sg_SetKeepFps             # fh v3:exact+call.cs 0x00821c00 cdecl
 0x00821b00 function Sg_SetMapAlphaFast        # fh v3:bsim1.00 0x00821c20
@@ -5424,13 +5474,15 @@
 0x008ab550 function EventFontTextureArrayReset # fh v3:exact 0x008ab500
 0x008ab570 function SetGlobal_00c59f38 # cdecl(v): *0x00c59f38 = v, returns v; name ours
 0x008ab580 function SetTOPadGetCtrl           # fh v3:bsim1.00 0x008ab530
-0x008ab590 function TOAllClearMessageWindow   # fh v3:bsim1.00 0x008ab540
+0x008ab590 function TOAllClearMessageWindow   # fh v3:bsim1.00 0x008ab540; 0x008ab800 inlined for the 8 slots
 0x008ab7b0 function TOAllCloseMessageWindow   # fh v3:bsim1.00 0x008ab760
 0x008ab7d0 function TOCDGetFileName           # fh v3:bsim1.00 0x008ab780
 0x008ab800 function TOClearMessageSlot_008ab800 # cdecl(i): g_TOMessageWindowSlots[i]: halves +0, +8 of *(slot+0x10), +0, +0x2c of *(slot+0x14), bytes +0, +1 of *(slot+0x18) zeroed; caller 0x008ab860; name ours
 0x008ab8f0 function TOCloseMessageWindow      # (i): TOCloseWindow(i), then jmp TOCloseMessage(i); fh v3:bsim1.00 0x008ab8a0
 0x008ab9a0 function TOControlMessageWindowForMenu # fh v3:exact 0x008ab950
 0x008aba30 function TODVDFileRead             # fh switch:bsim1.00 0x71004f4c70
+0x008aba60 function TODVDFileLoad # cdecl(file, name): CdLib +0x10(file), size = +0x14(name), user_malloc(size), TODVDFileRead(file, name, block); block or 0; name ours
+0x008abab0 function TODVDFileStartRead # cdecl(file, name, buf): CdLib kept in 0x01865f04; +0x10(file); +0x14(name) non-zero: +0(name, buf, 0, 0); name ours
 0x008abd00 function TODebugAddPadPrintFlag    # fh switch:cg2 0x71008bb6d8
 0x008abd20 function TODebugGetPadPrintFlag    # fh v3:bsim1.00 0x008abcd0
 0x008abd30 function TODrawMessageWindow       # fh v3:exact+call.cs 0x008abce0 stdcall
@@ -5458,6 +5510,7 @@
 0x008ad840 function TOInitEventFontPath       # fh v3:bsim0.92 0x008ad7f0
 0x008adbd0 function TOInitPadData             # fh v3:bsim1.00 0x008adb80
 0x008adbf0 function TOInitSceneMessageWindow  # fh v3:bsim1.00 0x008adba0
+0x008ade10 function TOOpenWindowAndMessage # cdecl(i): *(u16*)g_TOMessageWindowSlots[i] = 1; 0x00906c80(i); 0x008b8560(i); name ours
 0x008ade50 function TOReset1                  # fh v3:exact 0x008ade00
 0x008adee0 function TOReset2                  # fh v3:exact 0x008ade90
 0x008adf20 function TOSeqClearSlots_008adf20 # (): state and name byte of the 8 slots of scenes 0..2 in g_TOSeqSlots cleared; callers 0x008ad4d0, 0x008adee0; name ours
@@ -5486,7 +5539,7 @@
 0x008b00a0 function TOSortMessageWindowPriority # fh v3:exact 0x008b0050
 0x008b0340 function TOSwapInternationalEnvExec # fh v3:exact 0x008b02f0
 0x008b0500 function TOSwapInternationalEnvExecNonBlock # fh v3:exact 0x008b04b0
-0x008b0920 function TOSwapInternationalEnvInit # fh v3:exact 0x008b08d0
+0x008b0920 function TOSwapInternationalEnvInit # fh v3:exact 0x008b08d0; MsSetSaveConfigEnglish(on); 0x00c59564 = on == 1 ? 4 : 0x12; 0x01841d28..+0x10 = 0
 0x008b1020 function TOTransTexture            # fh v3:exact 0x008b0fd0
 0x008b1330 function resetButtonData           # fh v3:bsim1.00 0x008b12e0
 0x008b1350 function setButtonData             # fh v3:bsim1.00 0x008b1300
@@ -5528,6 +5581,7 @@
 0x008b7c60 function TOGetLineFeedHeight       # fh v3:bsim1.00 0x008b7c10
 0x008b7ca0 function TOGetMessageStatus        # fh v3:bsim1.00 0x008b7c50
 0x008b7cc0 function ReturnConst_008b7cc0 # () -> 0x640064; name ours
+0x008b7f40 function TOSkipCodesAbove2 # cdecl(p): TOSkipCode while *p > 2; name ours
 0x008b7f60 function TOGetSaveDicAdrs          # fh v3:exact 0x008b7f10
 0x008b7fb0 function TOGetTableKind_008b7fb0 # cdecl(i) -> i8 byte 1 of entry i of the table at 0x01868a90 (see TOGetTable_01868a90); name ours
 0x008b7fd0 function TOGetTableKind2Data_008b7fd0 # cdecl(i): entry i of 0x01868a90 + 0x18 when its byte 1 is 2, else 0; name ours
@@ -5578,7 +5632,7 @@
 0x008be3d0 function TOMenuClearControlPadBuff # fh v3:bsim1.00 0x008be3a0
 0x008be410 function TOMenuGetControlPad       # fh v3:exact 0x008be3e0
 0x008be440 function TOMenuGetControlPad2      # fh v3:bsim1.00 0x008be410
-0x008be450 function TOMenuGetControlPadAnalogHist # fh v3:exact 0x008be420
+0x008be450 function TOMenuGetControlPadAnalogHist # fh v3:exact 0x008be420; dummy controller flag 1: TOMenuGetDummyAnalogControler(k), else jmp TkGetControlerAnalogHist
 0x008be470 function TOMenuGetControlPadRep    # fh v3:bsim1.00 0x008be440
 0x008be4b0 function TOMenuGetControlPadTrg    # fh v3:bsim1.00 0x008be480
 0x008be800 function TOMenuInit                # fh v3:exact 0x008be7d0
@@ -5689,6 +5743,7 @@
 0x008c8a20 function TkMenuImportantListMax    # fh v3:bsim1.00 0x008c89f0
 0x008c8ba0 function TkMenuItemImportantRefresh # fh v3:exact 0x008c8b70
 0x008c8c30 function TOAmapGetItemListMax      # fh v3:bsim1.00 0x008c8c00
+0x008c8d10 function TkMenuAddHPCapped # cdecl(chr, delta): TkMenuSetHP(chr, min(TkMenuGetHP + delta, TkMenuGetMaxHP)) (signed); name ours
 0x008c8e20 function MenuItem_AddMP            # (chr, n) TkMenuSetMP(min(MP + n, max MP)); own name
 0x008c8e60 function TkMenuItemRefresh         # fh v3:exact 0x008c8e30
 0x008c9120 function MenuItem_IsUsable         # (window, list) list 3: TkMenuGetImportantCounter != 0, else 1; own name
@@ -5908,7 +5963,7 @@
 0x008e2d50 function TkMenuWorldMapWindowWord64 # () -> word +0x64 of *g_TkMenuWorldMapWindow (caller TkMenuCtrlWorldMap); name ours
 0x008e2d60 function MenuWorldMap_OpenWindow   # () g_TkMenuWorldMapWindow: callbacks 0x008e2b00/0x008e2b30/0x008e2b60, mode 7, tint 0x80 x3, +0x68 6; own name
 0x008e2dd0 function TkMenuWorldMapWindowSetWord68 # cdecl(v): word +0x68 of *g_TkMenuWorldMapWindow = v, returns the window; caller TkMenuCtrlWorldMap; name ours
-0x008e2de0 function TOMenuCloseYesNoWindow    # fh switch:bsim1.00 0x71004e7cb0
+0x008e2de0 function TOMenuCloseYesNoWindow    # fh switch:bsim1.00 0x71004e7cb0; window 0x023cc120: state +0x94 == 2: TOSeqStopScene(1, 0x00b66904); +0x41 = 1; pointer cleared
 0x008e3390 function TkMn2GetListMax2          # () -> 0x023cc120; Switch symbol name (BSim)
 0x008e33a0 function TkMenuOpenSubCmdWindow    # (x, items, c) TkMenuOpenSubCmdWindowMain with d 0; Switch name of the TkMenuOpenSubCmdWindow family (Main, plain, 2), by role: no alphabetical slot here
 0x008e33c0 function TkMenuOpenSubCmdWindow2   # (x, items, c, d) a jump to TkMenuOpenSubCmdWindowMain; Switch name of the TkMenuOpenSubCmdWindow family (Main, plain, 2), by role: no alphabetical slot here
@@ -5989,6 +6044,7 @@
 0x008f2f70 function Identity_008f2f70         # cdecl(x) -> x; TOMkpSetEnvSubFont and 0x008ed320.. call it; name ours
 0x008f34c0 function TOBtlDrawWeaponAbilityWindow # fh v3:exact 0x008f34c0
 0x008f3820 function TOBtlInitGS               # fh v3:bsim1.00 0x008f3820
+0x008f38c0 function RatioSquared # cdecl(a, b) -> float: ((float)a / (float)b)^2, f32 stores between; name ours
 0x008f3930 function TOClosePktbuff            # fh v3:bsim1.00 0x008f3930
 0x008f3a50 function TODrawAlphaBG             # fh v3:exact 0x008f3a50
 0x008f3db0 function TODrawBoxXYWHC2           # fh v3:exact 0x008f3db0
@@ -6019,6 +6075,30 @@
 0x008fa800 function TOGetScaleButtonIconWidth # fh v3:exact 0x008fa800
 0x008fa900 function TOGetScreenWH             # fh switch:bsim1.00 0x7100502fb0
 0x008fa920 function TOGetWidthMacro_help      # fh v3:exact 0x008fa920
+0x008faa20 function TOAdpALPHA_AtCursor # cdecl(5 args): g_TOPktCursor 0x018716cc = TOAdpALPHA(cursor, args...), returned; name ours
+0x008faa50 function TOAdpCLAMP_AtCursor # cdecl(6 args): g_TOPktCursor 0x018716cc = TOAdpCLAMP(cursor, args...), returned; name ours
+0x008faa80 function TOAdpCOLCLAMP_AtCursor # cdecl(1 args): g_TOPktCursor 0x018716cc = TOAdpCOLCLAMP(cursor, args...), returned; name ours
+0x008faaa0 function TOAdpGsDirectRGBA_AtCursor # cdecl(1 args): g_TOPktCursor 0x018716cc = TOAdpGsDirectRGBA(cursor, args...), returned; name ours
+0x008faac0 function TOAdpFBA_AtCursor # cdecl(1 args): g_TOPktCursor 0x018716cc = TOAdpFBA(cursor, args...), returned; name ours
+0x008faae0 function TOAdpFOG_AtCursor # cdecl(1 args): g_TOPktCursor 0x018716cc = TOAdpFOG(cursor, args...), returned; name ours
+0x008fab00 function TOAdpFOGCOL_AtCursor # cdecl(3 args): g_TOPktCursor 0x018716cc = TOAdpFOGCOL(cursor, args...), returned; name ours
+0x008fab30 function TOAdpFRAME_AtCursor # cdecl(4 args): g_TOPktCursor 0x018716cc = TOAdpFRAME(cursor, args...), returned; name ours
+0x008fab60 function TOAdpGsDirectRGBA_AtCursor_008fab60 # cdecl(1 args): g_TOPktCursor 0x018716cc = TOAdpGsDirectRGBA(cursor, args...), returned; name ours
+0x008fab80 function TOAdpWords4_AtCursor # cdecl(4 args): g_TOPktCursor 0x018716cc = TOAdpWords4(cursor, args...), returned; name ours
+0x008fabb0 function TOAdpSCISSOR_AtCursor # cdecl(4 args): g_TOPktCursor 0x018716cc = TOAdpSCISSOR(cursor, args...), returned; name ours
+0x008fabe0 function TOAdpTEST_AtCursor # cdecl(8 args): g_TOPktCursor 0x018716cc = TOAdpTEST(cursor, args...), returned; name ours
+0x008fac10 function TOAdpTEX0_AtCursor # cdecl(12 args): g_TOPktCursor 0x018716cc = TOAdpTEX0(cursor, args...), returned; name ours
+0x008fac50 function TOAdpTEX1_AtCursor # cdecl(7 args): g_TOPktCursor 0x018716cc = TOAdpTEX1(cursor, args...), returned; name ours
+0x008fac80 function TOAdpTEXFLUSH_AtCursor # cdecl(0 args): g_TOPktCursor 0x018716cc = TOAdpTEXFLUSH(cursor, args...), returned; name ours
+0x008faca0 function TOAdpXY2_AtCursor # cdecl(2 args): g_TOPktCursor 0x018716cc = TOAdpXY2(cursor, args...), returned; name ours
+0x008facc0 function TOAdpXYFrac_AtCursor # cdecl(4 args): g_TOPktCursor 0x018716cc = TOAdpXYFrac(cursor, args...), returned; name ours
+0x008facf0 function TOAdpXYZ2Offset_AtCursor # cdecl(2 args): g_TOPktCursor 0x018716cc = TOAdpXYZ2Offset(cursor, args...), returned; name ours
+0x008fad10 function TOAdpWords2Reg10_AtCursor # cdecl(2 args): g_TOPktCursor 0x018716cc = TOAdpWords2Reg10(cursor, args...), returned; name ours
+0x008fad30 function TOAdpXYOFFSET_AtCursor # cdecl(2 args): g_TOPktCursor 0x018716cc = TOAdpXYOFFSET(cursor, args...), returned; name ours
+0x008fad50 function TOAdpXYZOffset_AtCursor # cdecl(3 args): g_TOPktCursor 0x018716cc = TOAdpXYZOffset(cursor, args...), returned; name ours
+0x008fad80 function TOAdpWords3_AtCursor # cdecl(3 args): g_TOPktCursor 0x018716cc = TOAdpWords3(cursor, args...), returned; name ours
+0x008fadb0 function TOAdpXYZWOffset_AtCursor # cdecl(4 args): g_TOPktCursor 0x018716cc = TOAdpXYZWOffset(cursor, args...), returned; name ours
+0x008fade0 function TOAdpZBUF_AtCursor # cdecl(3 args): g_TOPktCursor 0x018716cc = TOAdpZBUF(cursor, args...), returned; name ours
 0x008fae10 function TOSetAddPkt               # fh v3:cg2 0x8fae10
 0x008fae40 function TOMakeBtlEasyFontEdge     # fh v3:exact 0x008fae40
 0x008fb150 function TOMakePktBoxXYWHRGBA      # fh v3:exact 0x008fb150
@@ -6057,6 +6137,21 @@
 0x00901c50 function TOMkpEasyMesFontLCenter   # fh v3:exact 0x00901c50
 0x00901f40 function TOMkpEasyStrFontM         # fh v3:bsim1.00 0x00901f40
 0x00902040 function TOMkpEasyStrFontS         # fh v3:exact 0x00902040
+0x009023b0 function TOAdpALPHA_AtCursor_009023b0 # cdecl(5 args): g_TOPktCursor 0x018716cc = TOAdpALPHA(cursor, args...), returned; name ours
+0x009023e0 function TOAdpCLAMP_AtCursor_009023e0 # cdecl(6 args): g_TOPktCursor 0x018716cc = TOAdpCLAMP(cursor, args...), returned; name ours
+0x00902410 function TOAdpCOLCLAMP_AtCursor_00902410 # cdecl(1 args): g_TOPktCursor 0x018716cc = TOAdpCOLCLAMP(cursor, args...), returned; name ours
+0x00902430 function TOAdpGsDirectRGBA_AtCursor_00902430 # cdecl(1 args): g_TOPktCursor 0x018716cc = TOAdpGsDirectRGBA(cursor, args...), returned; name ours
+0x00902450 function TOAdpFBA_AtCursor_00902450 # cdecl(1 args): g_TOPktCursor 0x018716cc = TOAdpFBA(cursor, args...), returned; name ours
+0x00902470 function TOAdpFRAME_AtCursor_00902470 # cdecl(4 args): g_TOPktCursor 0x018716cc = TOAdpFRAME(cursor, args...), returned; name ours
+0x009024a0 function TOAdpWords4_AtCursor_009024a0 # cdecl(4 args): g_TOPktCursor 0x018716cc = TOAdpWords4(cursor, args...), returned; name ours
+0x009024d0 function TOAdpSCISSOR_AtCursor_009024d0 # cdecl(4 args): g_TOPktCursor 0x018716cc = TOAdpSCISSOR(cursor, args...), returned; name ours
+0x00902500 function TOAdpTEST_AtCursor_00902500 # cdecl(8 args): g_TOPktCursor 0x018716cc = TOAdpTEST(cursor, args...), returned; name ours
+0x00902530 function TOAdpTEX0_AtCursor_00902530 # cdecl(12 args): g_TOPktCursor 0x018716cc = TOAdpTEX0(cursor, args...), returned; name ours
+0x00902570 function TOAdpTEX1_AtCursor_00902570 # cdecl(7 args): g_TOPktCursor 0x018716cc = TOAdpTEX1(cursor, args...), returned; name ours
+0x009025c0 function TOAdpXY2_AtCursor_009025c0 # cdecl(2 args): g_TOPktCursor 0x018716cc = TOAdpXY2(cursor, args...), returned; name ours
+0x009025e0 function TOAdpXYZ2Offset_AtCursor_009025e0 # cdecl(2 args): g_TOPktCursor 0x018716cc = TOAdpXYZ2Offset(cursor, args...), returned; name ours
+0x00902600 function TOAdpXYOFFSET_AtCursor_00902600 # cdecl(2 args): g_TOPktCursor 0x018716cc = TOAdpXYOFFSET(cursor, args...), returned; name ours
+0x00902620 function TOAdpXYZOffset_AtCursor_00902620 # cdecl(3 args): g_TOPktCursor 0x018716cc = TOAdpXYZOffset(cursor, args...), returned; name ours
 0x00902840 function TOMkpMovieMessageImage    # fh switch:cg2 0x71008bdad8
 0x009029b0 function TOMkpPadButtonData        # fh v3:exact 0x009029b0
 0x00902ef0 function TOMkpRotateShapeXYWHUVC2  # fh v3:cg12 0x902ef0
@@ -6938,6 +7033,35 @@
 0x009ddcd0 function Difference_009ddcd0 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
 0x009ddce0 function Add_009ddce0 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
 0x009ddcf0 function Add_009ddcf0 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
+0x009e1d70 function PArray_Reset_009e1d70 # thiscall: count +0 top bit clear: PhyreFree(+4); +0, +4 = 0; name ours
+0x009e1da0 function PArray_Reset_009e1da0 # thiscall: count +0 top bit clear: PhyreFree(+4); +0, +4 = 0; name ours
+0x009e2160 function PClassDescriptorForType_Phyre_PArray_Phyre_PInputs_PInputAction_4_Destruct # thiscall: *this = vtable 0x00b73a2c, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e2170 function PClassDescriptorForType_Phyre_PArray_Phyre_PInputs_PInputSource_4_Destruct # thiscall: *this = vtable 0x00b738f4, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e2180 function PClassDescriptorForType_Phyre_PInputs_PInputAction_Destruct # thiscall: *this = vtable 0x00b71fac, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e2190 function PClassDescriptorForType_Phyre_PInputs_PInputMap_Destruct # thiscall: *this = vtable 0x00b7209c, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e21a0 function PClassDescriptorForType_Phyre_PInputs_PInputSource_Destruct # thiscall: *this = vtable 0x00b708ac, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e21b0 function PClassDescriptorForType_Phyre_PInputs_PInputSourceJoypadAxis_Destruct # thiscall: *this = vtable 0x00b70b54, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e21c0 function PClassDescriptorForType_Phyre_PInputs_PInputSourceJoypadButton_Destruct # thiscall: *this = vtable 0x00b70a54, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e21d0 function PClassDescriptorForType_Phyre_PInputs_PInputSourceKey_Destruct # thiscall: *this = vtable 0x00b7095c, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e21e0 function PClassDescriptorForType_Phyre_PInputs_PInputSourceMotionAngularVelocityX_Destruct # thiscall: *this = vtable 0x00b71964, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e21f0 function PClassDescriptorForType_Phyre_PInputs_PInputSourceMotionAngularVelocityY_Destruct # thiscall: *this = vtable 0x00b71a6c, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e2200 function PClassDescriptorForType_Phyre_PInputs_PInputSourceMotionAngularVelocityZ_Destruct # thiscall: *this = vtable 0x00b71b74, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e2210 function PClassDescriptorForType_Phyre_PInputs_PInputSourceMotionLinearAccelerationX_Destruct # thiscall: *this = vtable 0x00b71c7c, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e2220 function PClassDescriptorForType_Phyre_PInputs_PInputSourceMotionLinearAccelerationY_Destruct # thiscall: *this = vtable 0x00b71d8c, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e2230 function PClassDescriptorForType_Phyre_PInputs_PInputSourceMotionLinearAccelerationZ_Destruct # thiscall: *this = vtable 0x00b71e9c, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e2240 function PClassDescriptorForType_Phyre_PInputs_PInputSourceMotionQuatW_Destruct # thiscall: *this = vtable 0x00b71864, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e2250 function PClassDescriptorForType_Phyre_PInputs_PInputSourceMotionQuatX_Destruct # thiscall: *this = vtable 0x00b71564, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e2260 function PClassDescriptorForType_Phyre_PInputs_PInputSourceMotionQuatY_Destruct # thiscall: *this = vtable 0x00b71664, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e2270 function PClassDescriptorForType_Phyre_PInputs_PInputSourceMotionQuatZ_Destruct # thiscall: *this = vtable 0x00b71764, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e2280 function PClassDescriptorForType_Phyre_PInputs_PInputSourceMouseButton_Destruct # thiscall: *this = vtable 0x00b70c54, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e2290 function PClassDescriptorForType_Phyre_PInputs_PInputSourceMouseDeltaX_Destruct # thiscall: *this = vtable 0x00b70d54, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e22a0 function PClassDescriptorForType_Phyre_PInputs_PInputSourceMouseDeltaY_Destruct # thiscall: *this = vtable 0x00b70e54, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e22b0 function PClassDescriptorForType_Phyre_PInputs_PInputSourceTouchDragX_Destruct # thiscall: *this = vtable 0x00b71364, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e22c0 function PClassDescriptorForType_Phyre_PInputs_PInputSourceTouchDragY_Destruct # thiscall: *this = vtable 0x00b71464, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e22d0 function PClassDescriptorForType_Phyre_PInputs_PInputSourceTouchPinch_Destruct # thiscall: *this = vtable 0x00b71054, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e22e0 function PClassDescriptorForType_Phyre_PInputs_PInputSourceTouchRotate_Destruct # thiscall: *this = vtable 0x00b70f54, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e22f0 function PClassDescriptorForType_Phyre_PInputs_PInputSourceTouchTwoFingerDragX_Destruct # thiscall: *this = vtable 0x00b71154, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e2300 function PClassDescriptorForType_Phyre_PInputs_PInputSourceTouchTwoFingerDragY_Destruct # thiscall: *this = vtable 0x00b7125c, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
 0x009e24f0 function PInputSource_setVftable # thiscall(this): *this = Phyre_PInputs_PInputSource_vftable (base part of three constructors at 0x00ada8c0..); eax untouched; name ours
 0x009e2cb0 function Index4At4_009e2cb0 # thiscall(this; i), ret 4 -> this[1] + 4 i (vtable only); name ours
 0x009e2cc0 function Index4At4_009e2cc0 # thiscall(this; i), ret 4 -> this[1] + 4 i (vtable only); name ours
