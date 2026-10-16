@@ -379,4 +379,29 @@ pub mod bridge {
         mem.write(at, v);
         i
     }
+
+    /// `0x009dad70(id, &out)`: with the magic PRX preload table on
+    /// (`0x0193fd40`), the first of the 12 entries (12 bytes from
+    /// `0x00c64c18`) with a positive count (`0x0193fd44 + 4 i`) whose id is
+    /// `id` (any id when `id` is negative) is found: its count's address to
+    /// `*out` (when given), 1. Else 0.
+    pub fn find_preloaded(mem: &mut impl Mem, id: i32, out: u32) -> u32 {
+        if Global::<u32>::new(0x0193_fd40).get(mem) == 0 {
+            return 0;
+        }
+        let ids = mem.rebase(0x00c6_4c18);
+        let counts = mem.rebase(0x0193_fd44);
+        for i in 0..12u32 {
+            if id >= 0 && mem.read::<i32>(ids + 12 * i) != id {
+                continue;
+            }
+            if mem.read::<i32>(counts + 4 * i) > 0 {
+                if out != 0 {
+                    mem.write(out, counts + 4 * i);
+                }
+                return 1;
+            }
+        }
+        0
+    }
 }

@@ -114,7 +114,11 @@ pub mod bridge {
     /// `+0` (smaller) and `+4`; the node with the key, or 0 when the walk
     /// reaches the head.
     pub fn map_find_u32(mem: &impl Mem, head: u32, key: u32) -> u32 {
-        let k: u32 = mem.read(key);
+        map_find_u32_value(mem, head, mem.read(key))
+    }
+
+    /// [`map_find_u32`] with the key itself.
+    pub fn map_find_u32_value(mem: &impl Mem, head: u32, k: u32) -> u32 {
         let mut n: u32 = mem.read(head + 0xc);
         while n != head {
             let v: u32 = mem.read(n + 0xc);
@@ -227,5 +231,89 @@ pub mod bridge {
                 return p;
             }
         }
+    }
+
+    /// `std::_Tree::_Lrotate(node)` (`0x00a41930`, `thiscall` on the tree,
+    /// `ret 4`; nodes: left `+0`, parent `+4`, right `+8`, nil `+0xd`; the
+    /// head at `*this`, its parent link the root).
+    pub fn tree_rotate_left(mem: &mut impl Mem, tree: u32, x: u32) {
+        let y: u32 = mem.read(x.wrapping_add(8));
+        let yl: u32 = mem.read(y);
+        mem.write(x.wrapping_add(8), yl);
+        if mem.read::<u8>(yl.wrapping_add(0xd)) == 0 {
+            mem.write(yl.wrapping_add(4), x);
+        }
+        let xp: u32 = mem.read(x.wrapping_add(4));
+        mem.write(y.wrapping_add(4), xp);
+        let head: u32 = mem.read(tree);
+        if x == mem.read::<u32>(head.wrapping_add(4)) {
+            mem.write(head.wrapping_add(4), y);
+        } else {
+            let p: u32 = mem.read(x.wrapping_add(4));
+            if x == mem.read::<u32>(p) {
+                mem.write(p, y);
+            } else {
+                mem.write(p.wrapping_add(8), y);
+            }
+        }
+        mem.write(y, x);
+        mem.write(x.wrapping_add(4), y);
+    }
+
+    /// `std::_Tree::_Rrotate(node)` (`0x00a41b40`): the mirror of
+    /// [`tree_rotate_left`].
+    pub fn tree_rotate_right(mem: &mut impl Mem, tree: u32, x: u32) {
+        let y: u32 = mem.read(x);
+        let yr: u32 = mem.read(y.wrapping_add(8));
+        mem.write(x, yr);
+        if mem.read::<u8>(yr.wrapping_add(0xd)) == 0 {
+            mem.write(yr.wrapping_add(4), x);
+        }
+        let xp: u32 = mem.read(x.wrapping_add(4));
+        mem.write(y.wrapping_add(4), xp);
+        let head: u32 = mem.read(tree);
+        if x == mem.read::<u32>(head.wrapping_add(4)) {
+            mem.write(head.wrapping_add(4), y);
+        } else {
+            let p: u32 = mem.read(x.wrapping_add(4));
+            if x == mem.read::<u32>(p.wrapping_add(8)) {
+                mem.write(p.wrapping_add(8), y);
+            } else {
+                mem.write(p, y);
+            }
+        }
+        mem.write(y.wrapping_add(8), x);
+        mem.write(x.wrapping_add(4), y);
+    }
+
+    /// A tagged-parent tree insert (`0x0060c990` and the same code at
+    /// `0x00691e60`, `thiscall(head, node)`, `ret 4`): `node`'s key at `+0xc`,
+    /// children `+0`/`+4` (set to `head`), bit 0 of `+8` set; walking from
+    /// the root (`head + 0xc`), an equal key returns that node; otherwise
+    /// `node` hangs under the last node (its `+8` becomes that address plus
+    /// the tag bit) and 0 is returned.
+    pub fn tagged_tree_insert(mem: &mut impl Mem, head: u32, node: u32) -> u32 {
+        let tag: u32 = mem.read(node.wrapping_add(8));
+        mem.write(node.wrapping_add(8), tag.wrapping_add(1 - (tag & 1)));
+        mem.write(node, head);
+        mem.write(node.wrapping_add(4), head);
+        let mut slot = head.wrapping_add(0xc);
+        let mut cur: u32 = mem.read(slot);
+        let mut right = false;
+        let k: u32 = mem.read(node.wrapping_add(0xc));
+        while cur != head {
+            let v: u32 = mem.read(cur.wrapping_add(0xc));
+            slot = cur;
+            match v.cmp(&k) {
+                std::cmp::Ordering::Greater => right = false,
+                std::cmp::Ordering::Less => right = true,
+                std::cmp::Ordering::Equal => return cur,
+            }
+            cur = mem.read(cur.wrapping_add(if right { 4 } else { 0 }));
+        }
+        let tag = u32::from(mem.read::<u8>(node.wrapping_add(8)) & 1);
+        mem.write(node.wrapping_add(8), tag.wrapping_add(slot));
+        mem.write(slot.wrapping_add(if right { 4 } else { 0 }), node);
+        0
     }
 }

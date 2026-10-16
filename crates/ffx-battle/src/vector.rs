@@ -116,22 +116,36 @@ pub mod bridge {
     /// `MsDivVector(v, s, b1, b2, b3)` (`0x007c2520`): `v *= 1 / s`
     /// (`vf00.w / s`, stored as `f32` in Q first).
     pub fn ms_div_vector(mem: &mut impl Mem, v: u32, args: Vec4) {
-        use ffx_bridge::x87::{div, load, store};
         let a: Vec4 = mem.read(v);
+        let r = div_vector(mem, a, args);
+        mem.write(v, r);
+    }
+
+    /// [`ms_div_vector`] on a value: the registers as it leaves them, the
+    /// result returned.
+    pub fn div_vector(mem: &mut impl Mem, a: Vec4, args: Vec4) -> Vec4 {
+        use ffx_bridge::x87::{div, load, store};
         VF_B.set(mem, args);
         let q = store(div(load(VF00.get(mem)[3]), load(args[0])));
         VU_Q.set(mem, q);
         let r = scale(a, load(q));
         VF_A.set(mem, r);
-        mem.write(v, r);
+        r
     }
 
     /// `MsAddPoint(out, a, b)` (`0x007c1480`): `out.xyz = a.xyz + b.xyz`;
     /// `out.w` is whatever the result register's w held.
     pub fn ms_add_point(mem: &mut impl Mem, out: u32, a: u32, b: u32) {
-        use ffx_bridge::x87::{add, load, store};
         let va: Vec4 = mem.read(a);
         let vb: Vec4 = mem.read(b);
+        let r = add_point(mem, va, vb);
+        mem.write(out, r);
+    }
+
+    /// [`ms_add_point`] on values: the registers as it leaves them, the
+    /// result returned.
+    pub fn add_point(mem: &mut impl Mem, va: Vec4, vb: Vec4) -> Vec4 {
+        use ffx_bridge::x87::{add, load, store};
         let mut m = VF_M.get(mem);
         m[0] = va;
         m[1] = vb;
@@ -139,7 +153,7 @@ pub mod bridge {
             m[2][i] = store(add(load(va[i]), load(vb[i])));
         }
         VF_M.set(mem, m);
-        mem.write(out, m[2]);
+        m[2]
     }
 
     /// `MsSetNormalUpVector(v)` (`0x007c0ab0`): (0, -1, 0, 1), the up

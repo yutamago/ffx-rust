@@ -137,6 +137,34 @@ pub(crate) const fn callee_pops(abi: &str) -> bool {
     !matches!(abi.as_bytes(), b"C" | b"cdecl")
 }
 
+/// Calls an original cdecl function by absolute address with 0 to 12 word
+/// arguments, returning `eax`. cdecl leaves the stack to the caller, so
+/// the call is the same for any count; more than 8 is a bug in the bridge
+/// that asked.
+#[allow(clippy::many_single_char_names)] // the arguments, in order
+pub(crate) fn call_cdecl(f: u32, a: &[u32]) -> u32 {
+    type F12 =
+        unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32) -> u32;
+    // No panic here: a panic in a function the game calls ends the process.
+    if a.len() > 12 {
+        crate::log::log(&format!(
+            "call_cdecl: {} arguments, only 12 passed",
+            a.len()
+        ));
+    }
+    let mut w = [0u32; 12];
+    let n = a.len().min(12);
+    w[..n].copy_from_slice(&a[..n]);
+    // SAFETY: a cdecl function of at most 12 word arguments; the extra
+    // zero words it doesn't read sit on the caller's side of the stack.
+    unsafe {
+        let g: F12 = std::mem::transmute::<usize, F12>(f as usize);
+        g(
+            w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[9], w[10], w[11],
+        )
+    }
+}
+
 /// `ported! { /// doc  Name @ 0xADDR => extern "C" fn shim(args) -> ret { body } ... }`:
 /// the shims, a register-saving thunk for each ([`Saved`]), and the
 /// module's `hooks()`.

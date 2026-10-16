@@ -42,25 +42,7 @@ fn user_malloc(size: u32) -> u32 {
 /// Calls a game function pointer (a menu callback, cdecl) with one to three
 /// arguments.
 fn call_ptr(f: u32, args: &[u32]) -> u32 {
-    // SAFETY: `f` is a callback the game stored in a menu window; the
-    // originals call it as cdecl with these arguments.
-    unsafe {
-        match *args {
-            [a] => {
-                let f: unsafe extern "C" fn(u32) -> u32 = std::mem::transmute(f as usize);
-                f(a)
-            }
-            [a, b] => {
-                let f: unsafe extern "C" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
-                f(a, b)
-            }
-            [a, b, c] => {
-                let f: unsafe extern "C" fn(u32, u32, u32) -> u32 = std::mem::transmute(f as usize);
-                f(a, b, c)
-            }
-            _ => unreachable!("menu callbacks take one to three arguments"),
-        }
-    }
+    super::call_cdecl(f, args)
 }
 
 ported! {

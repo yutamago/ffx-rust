@@ -100,4 +100,24 @@ pub mod bridge {
         mem.write(it, p);
         it
     }
+
+    /// `opusTree_Min(node)` (`0x00806db0`): the leftmost node below
+    /// `node` (following `+0` until the next is nil).
+    pub fn opus_tree_min(mem: &impl Mem, node: u32) -> u32 {
+        extreme(mem, node, 0)
+    }
+
+    /// `opusTree_Max(node)` (`0x00806d70`): the rightmost (`+8`).
+    pub fn opus_tree_max(mem: &impl Mem, node: u32) -> u32 {
+        extreme(mem, node, 8)
+    }
+
+    fn extreme(mem: &impl Mem, mut node: u32, side: u32) -> u32 {
+        let mut next = rd(mem, node.wrapping_add(side));
+        while !nil(mem, next) {
+            node = next;
+            next = rd(mem, node.wrapping_add(side));
+        }
+        node
+    }
 }

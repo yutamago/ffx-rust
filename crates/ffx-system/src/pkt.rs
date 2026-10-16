@@ -138,6 +138,24 @@ pub mod bridge {
         SCISSOR_BOX.set(mem, b.map(ffx_bridge::x87::round_trip));
     }
 
+    /// `OpenScissor(x, y, w, h)` (`0x008e8980`): as [`open_font_scissor`]
+    /// with the XYUV mode off.
+    pub fn open_scissor(mem: &mut impl Mem, b: [f32; 4]) {
+        SCISSOR_ON.set(mem, 1);
+        SCISSOR_XYUV.set(mem, 0);
+        SCISSOR_BOX.set(mem, b.map(ffx_bridge::x87::round_trip));
+    }
+
+    /// `TOSetRectDirect(p, x, y, w, h)` (`0x008b8cd0`): the floats `x`, `y`,
+    /// `x + w`, `y + h` (32-bit sums). Returns `y + h`.
+    #[allow(clippy::cast_precision_loss)] // fild then fstp dword
+    pub fn set_rect_direct(mem: &mut impl Mem, p: u32, r: [i32; 4]) -> u32 {
+        let right = r[0].wrapping_add(r[2]);
+        let bottom = r[1].wrapping_add(r[3]);
+        mem.write(p, [r[0] as f32, r[1] as f32, right as f32, bottom as f32]);
+        bottom.cast_unsigned()
+    }
+
     /// A GS register packet from its fields (`fields[0]` lowest): each
     /// field sign-extended to 64 bits and OR-ed in unmasked after the value
     /// so far is shifted by `shifts[k]` (the width of field `k`), as the
@@ -156,7 +174,7 @@ pub mod bridge {
 
     /// The register writers of `0x008ef670..0x008efc60` by address: their
     /// field shifts and GS register.
-    pub const ADP_REGS: [(u32, &[u32], u64); 9] = [
+    pub const ADP_REGS: [(u32, &[u32], u64); 11] = [
         (0x008e_f670, &[2, 2, 2, 0x1a], 0x42), // TOAdpALPHA: A, B, C, D, FIX
         (0x008e_f6e0, &[2, 2, 10, 10, 10], 0x08), // TOAdpCLAMP: WMS, WMT, MINU, MAXU, MINV, MAXV
         (0x008e_f760, &[], 0x46),              // TOAdpCOLCLAMP
@@ -167,6 +185,8 @@ pub mod bridge {
         (0x008e_fc60, &[32], 0x18),            // TOAdpXYOFFSET: OFX, OFY
         // TOAdpTEX0: TBP0, TBW, PSM, TW, TH, TCC, TFX, CBP, CPSM, CSM, CSA, CLD
         (0x008e_fa00, &[14, 6, 6, 4, 4, 1, 2, 14, 4, 1, 5], 0x06),
+        (0x008e_f830, &[8, 8], 0x3d),  // TOAdpFOGCOL: FCR, FCG, FCB
+        (0x008e_fd40, &[24, 8], 0x4e), // TOAdpZBUF: ZBP, PSM, ZMSK
     ];
 
     /// A register writer of [`ADP_REGS`] by its address.
@@ -232,5 +252,23 @@ pub mod bridge {
         ];
         mem.write(p, words);
         p.wrapping_add(0x10)
+    }
+
+    /// The packet cursor `0x008ff020` writes at (`0x018716cc`).
+    pub const PACKET_CURSOR: Global<u32> = Global::new(0x0187_16cc);
+
+    /// `0x008ff020(x, y)`: at the packet cursor, a GIF tag for one A+D
+    /// register (`0x8001`, `0x10000000`, `0xe`) and `XYOFFSET_1` (0x18) with
+    /// `x` low and `y` high (OR-ed with `x`'s sign); the cursor moves 0x20.
+    /// Returns `x`.
+    pub fn xyoffset_packet(mem: &mut impl Mem, x: u32, y: u32) -> u32 {
+        let p = PACKET_CURSOR.get(mem);
+        mem.write(p, [0x8001u32, 0x1000_0000, 0xe, 0]);
+        let sign = if x.cast_signed() < 0 { u32::MAX } else { 0 };
+        mem.write(p.wrapping_add(0x14), y | sign);
+        mem.write(p.wrapping_add(0x10), x);
+        mem.write(p.wrapping_add(0x18), [0x18u32, 0]);
+        PACKET_CURSOR.set(mem, p.wrapping_add(0x20));
+        x
     }
 }

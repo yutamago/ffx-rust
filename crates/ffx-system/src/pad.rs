@@ -161,6 +161,46 @@ pub mod bridge {
     pub fn is_release_button(mem: &impl Mem, this: u32, mask: u32) -> bool {
         mem.read::<u32>(this.wrapping_add(4)) & mask != 0 && mem.read::<u32>(this) & mask == 0
     }
+
+    /// `Virtuos::InputManager::isRepButton(mask)` (`0x006313a0`, `thiscall`,
+    /// `ret 4`): a fresh press (none of `mask` before, any now) is true;
+    /// otherwise the first of the 29 buttons in `mask` whose held time (f32
+    /// at `+8 + 4 i`) is past the double at `0x00b41380` (0.2333) restarts
+    /// at the float `0x00b41378` (0.1333) and counts as a repeat.
+    pub fn is_rep_button(mem: &mut impl Mem, this: u32, mask: u32) -> bool {
+        if mem.read::<u32>(this.wrapping_add(4)) & mask == 0 && mem.read::<u32>(this) & mask != 0 {
+            return true;
+        }
+        let limit = Global::<f64>::new(0x00b4_1380).get(mem);
+        for i in 0..0x1d {
+            if mask & (1 << i) == 0 {
+                continue;
+            }
+            let at = this.wrapping_add(8 + 4 * i);
+            if f64::from(mem.read::<f32>(at)) > limit {
+                let restart = Global::<f32>::new(0x00b4_1378).get(mem);
+                mem.write(at, ffx_bridge::x87::round_trip(restart));
+                return true;
+            }
+        }
+        false
+    }
+
+    /// `0x00689510()` (`thiscall`): one touch record reset (as
+    /// [`touch_records_init`] does each); returns it.
+    pub fn touch_record_reset(mem: &mut impl Mem, rec: u32) -> u32 {
+        mem.write(rec, 0u16);
+        mem.write(rec.wrapping_add(4), u32::MAX);
+        mem.write(rec.wrapping_add(8), 0u32);
+        for k in 0..32u32 {
+            let p = rec.wrapping_add(0xc + 10 * k);
+            mem.write(p, 0u8);
+            mem.write(p.wrapping_add(2), 0u32);
+            mem.write(p.wrapping_add(6), 0u32);
+        }
+        mem.write(rec.wrapping_add(0x14c), 0u32);
+        rec
+    }
 }
 
 #[cfg(test)]
