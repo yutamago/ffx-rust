@@ -14,6 +14,7 @@
 //! (`docs/porting.md`): [`rng`], [`save`], [`actor`], [`camera`],
 //! [`state`], [`util`], [`damage`], [`command`], [`vector`], [`misc`], [`minor`], [`body`], [`menu`], [`cue`], [`turn`], [`flow`] and [`pos`].
 
+pub mod ability;
 pub mod actor;
 pub mod body;
 pub mod camera;
@@ -29,6 +30,7 @@ pub mod misc;
 pub mod pos;
 pub mod rng;
 pub mod save;
+pub mod stat;
 pub mod state;
 pub mod turn;
 pub mod util;
