@@ -110,6 +110,8 @@ pub mod dobj {
     pub const ROTATION: u32 = 0x40;
     /// `+0x50`: translation.
     pub const TRANSLATION: u32 = 0x50;
+    /// `+0x88`: a float kept with the transform by `yiPushRenderState`.
+    pub const WORD_88: u32 = 0x88;
     /// `+0x74`: the group (`u16`, `yiGetMatrixGroup`).
     pub const GROUP: u32 = 0x74;
     /// `+0x76`: the rotation order for `yiRotMatrixSeq` (`u16`).
@@ -130,6 +132,108 @@ pub mod render {
     pub const PACKET_COUNT: u32 = 0xba3f8;
     /// The word `yiScreff_init` clears.
     pub const SCREFF: u32 = 0xbe078;
+    /// The objects that can take an animation (`yiAnimAttachDefault`'s
+    /// bound).
+    pub const ANIM_IDS: u32 = 0x68788;
+    /// Animations in use.
+    pub const ANIM_COUNT: u32 = 0x9cabc;
+    /// The animation slots: `+0` flags (bit 0 in use; `u16` type at `+0`
+    /// for keyframes), `+2` `u16` argument, `+4` `u16` kind, `+6` `u16`
+    /// object id, `+8` keyframe index, `+0xc`/`+0x10` arguments, `+0x14`
+    /// and `+0x18` the start time, `+0x24` the keyframe data.
+    pub const ANIM: u32 = 0x9cac0;
+    /// Bytes per slot.
+    pub const ANIM_SIZE: u32 = 0x28;
+    /// Slots.
+    pub const ANIMS: u32 = 0x40;
+    /// The keyframe data pointers, one per keyframe index
+    /// (`yiKeyFrame_attachChr`).
+    pub const KEYFRAMES: u32 = 0x9d4c4;
+    /// Texture swaps in use (`yiTexSwap_init` clears it).
+    pub const TEX_SWAP_COUNT: u32 = 0x9d9c4;
+    /// The texture swap entries.
+    pub const TEX_SWAP: u32 = 0x9d9c8;
+    /// Bytes per entry.
+    pub const TEX_SWAP_SIZE: u32 = 0x720;
+    /// Entries.
+    pub const TEX_SWAPS: u32 = 0x40;
+
+    /// Offsets in a texture swap entry.
+    pub mod tex_swap {
+        /// `+0x4`: the frame shown (`yiTexSwapSetFrame`, with bit 0 of
+        /// `+0`).
+        pub const FRAME: u32 = 0x4;
+        /// `+0x1c`: its frame count.
+        pub const FRAMES: u32 = 0x1c;
+    }
+}
+
+/// More renderer state (round 4: colours, the render state save area).
+pub mod state {
+    use ffx_bridge::Global;
+
+    /// The renderer object (`yiRender_*`'s `this`; the texture swaps of
+    /// `yiTexSwapSetFrame`).
+    pub const RENDER: Global<u32> = Global::new(0x0187_6e00);
+    /// The colour scale, four floats (`yiGetColorScale`, `yiSetColorScale`).
+    pub const COLOR_SCALE: Global<[f32; 4]> = Global::new(0x018d_f00c);
+    /// The battle centre, four floats divided by the scale factor
+    /// (`yiSetBattleCenter`).
+    pub const BATTLE_CENTER: Global<[u32; 4]> = Global::new(0x018d_f02c);
+    /// A word saved with the render state (`0x018df140`).
+    pub const RENDER_WORD: Global<u32> = Global::new(0x018d_f140);
+    /// Three floats saved with the render state (`0x018df144`).
+    pub const RENDER_FLOATS: Global<[u32; 3]> = Global::new(0x018d_f144);
+    /// The colour shift, four floats (`yiSetColorShift` copies it out).
+    pub const COLOR_SHIFT: Global<[u32; 4]> = Global::new(0x018d_f150);
+    /// The background colour, RGBA bytes (`yiGetBackColor`).
+    pub const BACK_COLOR: Global<[u8; 4]> = Global::new(0x018d_f178);
+    /// 255.0 as an `f64` (`.rdata`, `yiGetBackColor`'s bound).
+    pub const BACK_MAX: Global<f64> = Global::new(0x00b1_70c0);
+    /// 255.0 as an `f32` (`.rdata`, what it stores past the bound).
+    pub const BACK_MAX_F32: Global<f32> = Global::new(0x00b4_80d4);
+    /// The render state save area (`yiPushRenderState`).
+    pub const SAVED: Global<u32> = Global::new(0x0193_1230);
+    /// Four floats a script native sets (`yiSetFieldVec4`).
+    pub const FIELD_VEC4: Global<[u32; 4]> = Global::new(0x0193_1208);
+    /// Six floats a script native sets (`yiSetFieldVec6`).
+    pub const FIELD_VEC6: Global<[u32; 6]> = Global::new(0x0193_1218);
+    /// Flags and floats two script natives set (`yiSetFieldPair`,
+    /// `yiSetFieldVec3Int`).
+    pub const FIELD_FLAGS: Global<u32> = Global::new(0x0193_4e78);
+    /// Non-zero once a map is read (`yiCallFieldParticle`'s gate).
+    pub const MAP_READ: Global<u32> = Global::new(0x0191_38a0);
+    /// Non-zero: animations time by the vertical blank counter, else by
+    /// fields (`yiAnimAttachDefault`).
+    pub const USE_VCOUNT: Global<u32> = Global::new(0x0193_bb08);
+    /// The image VRAM regions' limits and next addresses (`0x025d17a8`).
+    pub const VRAM_REGIONS: Global<u32> = Global::new(0x025d_17a8);
+    /// Per region (`yiVramAllocPsm` order): next and limit offsets from
+    /// [`VRAM_REGIONS`]; region 0 is `yiVramAlloc`'s.
+    pub const VRAM_REGION: [(u32, u32); 4] = [(0x14, 0x4), (0x10, 0x0), (0x18, 0x8), (0x1c, 0xc)];
+
+    /// Offsets in the save area.
+    pub mod saved {
+        /// The render status.
+        pub const STATUS: u32 = 0x0;
+        /// The colour scale.
+        pub const SCALE: u32 = 0x4;
+        /// The colour offset.
+        pub const OFFSET: u32 = 0x14;
+        /// The word.
+        pub const WORD: u32 = 0x24;
+        /// The three floats.
+        pub const FLOATS: u32 = 0x28;
+        /// The colour shift.
+        pub const SHIFT: u32 = 0x34;
+        /// The display objects: per object its `+0x88` float, rotation,
+        /// translation and matrix.
+        pub const DOBJS: u32 = 0x44;
+        /// Bytes per object.
+        pub const DOBJ_SIZE: u32 = 100;
+        /// Objects saved.
+        pub const DOBJ_COUNT: u32 = 128;
+    }
 }
 
 /// The renderer state where the game keeps it, through [`ffx_bridge::Mem`].
@@ -434,5 +538,409 @@ pub mod bridge {
     /// `yiScreff_init(render)` (`0x00913f30`).
     pub fn yi_screff_init(mem: &mut impl Mem, r: u32) {
         mem.write(r.wrapping_add(render::SCREFF), 0u32);
+    }
+
+    // ---- round 4: colours, render state, textures ----
+
+    use super::state;
+    use ffx_bridge::x87::{Reg, ftol};
+    use ffx_ps2::vu0::bridge::copy_vector;
+
+    /// `yiGetColorScale(out)` (`0x009088d0`): returns `FFXVu0CopyVector`'s
+    /// `eax` (the last word).
+    pub fn yi_get_color_scale(mem: &mut impl Mem, out: u32) -> u32 {
+        let s = state::COLOR_SCALE.ptr(mem).addr;
+        copy_vector(mem, out, s)
+    }
+
+    /// `yiSetColorScale(v)` (`0x0090a270`).
+    pub fn yi_set_color_scale(mem: &mut impl Mem, v: u32) -> u32 {
+        let s = state::COLOR_SCALE.ptr(mem).addr;
+        copy_vector(mem, s, v)
+    }
+
+    /// `yiSetColorShift(out)` (`0x00908c30`, Fahrenheit's name): copies the
+    /// colour shift *out*.
+    pub fn yi_set_color_shift(mem: &mut impl Mem, out: u32) -> u32 {
+        let s = state::COLOR_SHIFT.ptr(mem).addr;
+        copy_vector(mem, out, s)
+    }
+
+    /// `yiSetBattleCenter(v)` (`0x0090a0e0`): `v` divided by the scale
+    /// factor (four words from `g_YiScaleFactor`), each `fld; fdiv m32;
+    /// fstp`.
+    pub fn yi_set_battle_center(mem: &mut impl Mem, v: u32) -> u32 {
+        let c = state::BATTLE_CENTER.ptr(mem).addr;
+        let r = copy_vector(mem, c, v);
+        let s = SCALE_FACTOR.ptr(mem).addr;
+        for i in 0..4 {
+            let x = mem.read::<f32>(c + 4 * i);
+            let k = mem.read::<f32>(s + 4 * i);
+            mem.write(c + 4 * i, Reg::load(x).div_m32(k).store());
+        }
+        r
+    }
+
+    /// `yiGetBattleCenter(out)` (`0x009087f0`): the centre times the scale
+    /// factor.
+    pub fn yi_get_battle_center(mem: &mut impl Mem, out: u32) -> u32 {
+        let c = state::BATTLE_CENTER.ptr(mem).addr;
+        let r = copy_vector(mem, out, c);
+        let s = SCALE_FACTOR.ptr(mem).addr;
+        for i in 0..4 {
+            let x = mem.read::<f32>(out + 4 * i);
+            let k = mem.read::<f32>(s + 4 * i);
+            mem.write(out + 4 * i, Reg::load(x).mul_m32(k).store());
+        }
+        r
+    }
+
+    fn copy_float(mem: &mut impl Mem, dst: u32, src: u32) {
+        let v = mem.read::<u32>(src);
+        mem.write(dst, x87::copy(v));
+    }
+
+    fn copy_word(mem: &mut impl Mem, dst: u32, src: u32) {
+        let v = mem.read::<u32>(src);
+        mem.write(dst, v);
+    }
+
+    /// `yiPushRenderState()` (`0x00909c60`): the render status, colours and
+    /// every display object's transform into the save area; returns the
+    /// `eax` of the last `FFXVu0CopyVector`.
+    pub fn yi_push_render_state(mem: &mut impl Mem) -> u32 {
+        render_state(mem, true)
+    }
+
+    /// `yiPopRenderState()` (`0x00909b90`): the reverse.
+    pub fn yi_pop_render_state(mem: &mut impl Mem) -> u32 {
+        render_state(mem, false)
+    }
+
+    fn render_state(mem: &mut impl Mem, push: bool) -> u32 {
+        let live = [
+            state::RENDER_FLOATS.ptr(mem).addr,
+            RENDER_STATUS.ptr(mem).addr,
+            state::RENDER_WORD.ptr(mem).addr,
+            state::COLOR_SHIFT.ptr(mem).addr,
+            state::COLOR_SCALE.ptr(mem).addr,
+            COLOR_OFFSET.ptr(mem).addr,
+            DOBJS.ptr(mem).addr,
+        ];
+        let save = state::SAVED.ptr(mem).addr;
+        let saved = [
+            save + state::saved::FLOATS,
+            save + state::saved::STATUS,
+            save + state::saved::WORD,
+            save + state::saved::SHIFT,
+            save + state::saved::SCALE,
+            save + state::saved::OFFSET,
+            save + state::saved::DOBJS,
+        ];
+        let (src, dst) = if push { (live, saved) } else { (saved, live) };
+        for i in 0..3 {
+            copy_float(mem, dst[0] + 4 * i, src[0] + 4 * i);
+        }
+        copy_word(mem, dst[1], src[1]);
+        copy_word(mem, dst[2], src[2]);
+        let mut r = 0;
+        for k in 3..6 {
+            r = copy_vector(mem, dst[k], src[k]);
+        }
+        for i in 0..state::saved::DOBJ_COUNT {
+            let o = live[6] + i * dobj::SIZE;
+            let s = saved[6] + i * state::saved::DOBJ_SIZE;
+            let pairs = [
+                (s, o + dobj::WORD_88),
+                (s + 4, o + dobj::ROTATION),
+                (s + 0x14, o + dobj::TRANSLATION),
+                (s + 0x24, o + dobj::MATRIX),
+            ];
+            let at = |p: (u32, u32), to_save: bool| if to_save { p } else { (p.1, p.0) };
+            let (d, f) = at(pairs[0], push);
+            copy_float(mem, d, f);
+            let (d, f) = at(pairs[1], push);
+            copy_vector(mem, d, f);
+            let (d, f) = at(pairs[2], push);
+            r = copy_vector(mem, d, f);
+            let (d, f) = at(pairs[3], push);
+            for w in 0..16 {
+                copy_word(mem, d + 4 * w, f + 4 * w);
+            }
+        }
+        r
+    }
+
+    /// `yiGetBackColor(out)` (`0x009086d0`): the background colour, four
+    /// ints. With render status bits 0 and 2 each channel is
+    /// `channel * scale + offset` (each step stored as `f32`), below 0 made
+    /// 0, above 255.0 (an `f64` in `.rdata`) made 255.0 (an `f32` there),
+    /// through `_ftol2_sse`; else the raw bytes. Returns the last word.
+    pub fn yi_get_back_color(mem: &mut impl Mem, out: u32) -> u32 {
+        let c = state::BACK_COLOR.get(mem);
+        let status = RENDER_STATUS.get(mem);
+        if status & 1 == 0 || status & 4 == 0 {
+            let w = c.map(u32::from);
+            mem.write(out, w);
+            return w[3];
+        }
+        let mut v = c.map(f32::from);
+        let top = state::BACK_MAX.get(mem);
+        let top_f = state::BACK_MAX_F32.get(mem);
+        let scale = state::COLOR_SCALE.get(mem);
+        let offset = COLOR_OFFSET.get(mem);
+        let mut last = 0;
+        for i in 0..4 {
+            let x = Reg::load(scale[i]).mul_m32(v[i]).store();
+            let x = Reg::load(x).add_m32(f32::from_bits(offset[i])).store();
+            v[i] = x;
+            let lx = ffx_bridge::x87::load(x.to_bits());
+            // fcomp with 0.0: below (not unordered) stores +0.0
+            if lx < 0.0 {
+                v[i] = 0.0;
+            }
+            let lv = ffx_bridge::x87::load(v[i].to_bits());
+            // fcomp with 255.0: above (not equal, not unordered) stores 255.0f
+            if lv > top {
+                v[i] = top_f;
+            }
+            last = ftol(mem, ffx_bridge::x87::load(v[i].to_bits()));
+            mem.write(out + 4 * u32::try_from(i).unwrap_or(0), last);
+        }
+        last
+    }
+
+    /// `yiImage_init(image)` (`0x009188c0`): returns `set_ptr32(0)`, 0.
+    pub fn yi_image_init(mem: &mut impl Mem, im: u32) -> u32 {
+        mem.write(im, 0u32);
+        mem.write(im + 0x114, 0u32);
+        mem.write(im + 0x110, 0u32);
+        mem.write(im + 4, 0u8);
+        mem.write(im + 0x144, 0u32);
+        mem.write(im + 0x124, u32::MAX);
+        mem.write(im + 0x160, 0u32);
+        mem.write(im + 0x15c, 0u32);
+        0
+    }
+
+    /// `yiTexSwap_init(render)` (`0x009152d0`): clears the texture swap
+    /// count and its 64 entries (each eight words and 64 four-word slots
+    /// of `0x1c` bytes); returns the pointer the loop ends on.
+    pub fn yi_tex_swap_init(mem: &mut impl Mem, r: u32) -> u32 {
+        mem.write(r.wrapping_add(render::TEX_SWAP_COUNT), 0u32);
+        let mut end = 0;
+        for i in 0..render::TEX_SWAPS {
+            let e = r.wrapping_add(render::TEX_SWAP + i * render::TEX_SWAP_SIZE);
+            mem.write(e, [0u32; 8]);
+            for k in 0..64 {
+                mem.write(e.wrapping_add(0x20 + k * 0x1c), [0u32; 4]);
+            }
+            end = e.wrapping_add(4 + 0x20 + 64 * 0x1c);
+        }
+        end
+    }
+
+    /// `yiTexSwapSetFrame(index, frame)` (`0x00909e30`, script native
+    /// `0x008574c0`): for an entry below the count and a frame below its
+    /// frame count, sets its bit 0 and the frame; returns 0.
+    pub fn yi_tex_swap_set_frame(mem: &mut impl Mem, index: u32, frame: u32) -> u32 {
+        let r = state::RENDER.ptr(mem).addr;
+        if index < mem.read::<u32>(r + render::TEX_SWAP_COUNT) {
+            let e = r.wrapping_add(render::TEX_SWAP + index.wrapping_mul(render::TEX_SWAP_SIZE));
+            if frame < mem.read::<u32>(e.wrapping_add(render::tex_swap::FRAMES)) {
+                let f = mem.read::<u32>(e);
+                mem.write(e, f | 1);
+                mem.write(e.wrapping_add(render::tex_swap::FRAME), frame);
+            }
+        }
+        0
+    }
+
+    fn clock(mem: &impl Mem) -> u32 {
+        if state::USE_VCOUNT.get(mem) == 0 {
+            yi_get_fcount(mem)
+        } else {
+            yi_get_vcount(mem)
+        }
+    }
+
+    fn free_anim(mem: &impl Mem, r: u32) -> Option<u32> {
+        (0..render::ANIMS).find(|&i| {
+            let a = r.wrapping_add(render::ANIM + i * render::ANIM_SIZE);
+            mem.read::<u8>(a) & 1 == 0
+        })
+    }
+
+    /// `yiAnimAttachDefault_009143c0(render, id, a, b)`: for an id below
+    /// the object count not attached yet, the first free animation slot
+    /// (type 4, flags 5, both times the current clock); always returns 0.
+    pub fn yi_anim_attach_default(mem: &mut impl Mem, r: u32, id: u32, a: u32, b: u32) -> u32 {
+        if id >= mem.read::<u32>(r.wrapping_add(render::ANIM_IDS)) {
+            return 0;
+        }
+        for i in 0..render::ANIMS {
+            let s = r.wrapping_add(render::ANIM + i * render::ANIM_SIZE);
+            if mem.read::<u8>(s) & 1 != 0 && u32::from(mem.read::<u16>(s + 6)) == id {
+                return 0;
+            }
+        }
+        let now = clock(mem);
+        let Some(i) = free_anim(mem, r) else { return 0 };
+        let s = r.wrapping_add(render::ANIM + i * render::ANIM_SIZE);
+        mem.write(s + 4, 4u16);
+        mem.write(s + 0xc, a);
+        mem.write(s + 0x10, b);
+        mem.write(s + 0x14, now);
+        mem.write(s + 0x18, now);
+        mem.write(s, 5u32);
+        #[allow(clippy::cast_possible_truncation)] // the low 16 bits
+        mem.write(s + 6, id as u16);
+        mem.write(s + 8, 0u32);
+        mem.write(s + 0x24, 0u32);
+        let n = mem.read::<u32>(r.wrapping_add(render::ANIM_COUNT));
+        mem.write(r.wrapping_add(render::ANIM_COUNT), n.wrapping_add(1));
+        0
+    }
+
+    /// `yiKeyFrame_attachChr(render, id, keyframe, arg)` (`0x00914630`):
+    /// with keyframe data `keyframe` and an id below the texture swap
+    /// count, the first free animation slot (type 1); returns the `eax` it
+    /// ends with: the clock, 64 when no slot is free, else the keyframe
+    /// data.
+    pub fn yi_key_frame_attach_chr(mem: &mut impl Mem, r: u32, id: u32, kf: u32, arg: u16) -> u32 {
+        let now = clock(mem);
+        let table = r.wrapping_add(render::KEYFRAMES + kf.wrapping_mul(4));
+        let data = mem.read::<u32>(table);
+        if data == 0 || id >= mem.read::<u32>(r.wrapping_add(render::TEX_SWAP_COUNT)) {
+            return now;
+        }
+        let Some(i) = free_anim(mem, r) else {
+            return render::ANIMS;
+        };
+        let s = r.wrapping_add(render::ANIM + i * render::ANIM_SIZE);
+        mem.write(s, 1u16);
+        mem.write(s + 2, arg);
+        let ty = mem.read::<u16>(data.wrapping_add(8));
+        mem.write(s + 4, ty);
+        #[allow(clippy::cast_possible_truncation)] // the low 16 bits
+        {
+            mem.write(s + 6, id as u16);
+            mem.write(s + 8, kf as u16);
+        }
+        mem.write(s + 0xa, 0u16);
+        mem.write(s + 0x14, now);
+        mem.write(s + 0x18, now);
+        let data = mem.read::<u32>(table);
+        mem.write(s + 0x24, data);
+        let n = mem.read::<u32>(r.wrapping_add(render::ANIM_COUNT));
+        mem.write(r.wrapping_add(render::ANIM_COUNT), n.wrapping_add(1));
+        data
+    }
+
+    /// `yiSetFieldVec4i(a, b, c, d)` (`0x0090a1d0`): four ints as floats
+    /// (`fild; fstp`).
+    pub fn yi_set_field_vec4i(mem: &mut impl Mem, v: [i32; 4]) {
+        let at = state::FIELD_VEC4.ptr(mem).addr;
+        #[allow(clippy::cast_precision_loss)] // fild rounds to f32 on the store
+        mem.write(at, v.map(|x| x87::store(f64::from(x))));
+    }
+
+    /// `yiSetFieldVec4(a, b, c, d)` (`0x0090a200`, script native
+    /// `0x0091c600`): four floats.
+    pub fn yi_set_field_vec4(mem: &mut impl Mem, v: [u32; 4]) {
+        let at = state::FIELD_VEC4.ptr(mem).addr;
+        mem.write(at, v.map(x87::copy));
+    }
+
+    /// `yiSetFieldVec6(a..f)` (`0x0090a230`, script native `0x0091c6b0`):
+    /// six floats.
+    pub fn yi_set_field_vec6(mem: &mut impl Mem, v: [u32; 6]) {
+        let at = state::FIELD_VEC6.ptr(mem).addr;
+        mem.write(at, v.map(x87::copy));
+    }
+
+    /// `yiSetFieldPair(on, a, b)` (`0x0090a430`, script native
+    /// `0x008591d0`): two floats; flags bit 0, and bit 1 when `on`;
+    /// returns 0.
+    pub fn yi_set_field_pair(mem: &mut impl Mem, on: u32, a: u32, b: u32) -> u32 {
+        let base = state::FIELD_FLAGS.ptr(mem).addr;
+        let f = mem.read::<u32>(base);
+        mem.write(base + 4, x87::copy(a));
+        mem.write(base + 0x24, x87::copy(b));
+        mem.write(base, f | if on == 0 { 1 } else { 3 });
+        0
+    }
+
+    /// `yiSetFieldVec3Int(a, b, c, n)` (`0x0090a470`, script native
+    /// `0x00858c90`): three floats and an int; returns 0.
+    pub fn yi_set_field_vec3_int(mem: &mut impl Mem, a: u32, b: u32, c: u32, n: u32) -> u32 {
+        let base = state::FIELD_FLAGS.ptr(mem).addr;
+        mem.write(base + 0x18, x87::copy(a));
+        mem.write(base + 0x28, n);
+        mem.write(base + 0x1c, x87::copy(b));
+        mem.write(base + 0x20, x87::copy(c));
+        0
+    }
+
+    /// `yiMapGetSection(map, index)` (`0x00907f00`): for data starting
+    /// with `MAP1`, its section `index` (an offset at `+0x10 + 4 * index`)
+    /// as a pointer; 0 for another tag or an empty offset.
+    pub fn yi_map_get_section(mem: &impl Mem, map: u32, index: u32) -> u32 {
+        if mem.read::<[u8; 4]>(map) != *b"MAP1" {
+            return 0;
+        }
+        match mem.read::<u32>(map.wrapping_add(0x10).wrapping_add(index.wrapping_mul(4))) {
+            0 => 0,
+            o => o.wrapping_add(map),
+        }
+    }
+
+    /// `yiVramAllocPsm(bytes, psm)` (`0x00918090`): like `yiVramAlloc`
+    /// from the main region, then the second; for PSMT8 (`0x13`) and PSMT4
+    /// (`0x14`) images four or eight times the size from the third or the
+    /// fourth (in their units); -1 when none fits.
+    pub fn yi_vram_alloc_psm(mem: &mut impl Mem, bytes: i32, psm: u32) -> u32 {
+        let size = super::vram_end(0, bytes);
+        if let Some(a) = vram_take(mem, 0, size).or_else(|| vram_take(mem, 1, size)) {
+            return a;
+        }
+        let n = match psm {
+            0x13 => size.wrapping_shl(2),
+            0x14 => size.wrapping_shl(3),
+            _ => return u32::MAX,
+        };
+        vram_take(mem, 2, n)
+            .or_else(|| vram_take(mem, 3, n))
+            .unwrap_or(u32::MAX)
+    }
+
+    /// Takes `n` bytes from VRAM region `i`: its old next address `>> 6`.
+    fn vram_take(mem: &mut impl Mem, i: u32, n: u32) -> Option<u32> {
+        let regions = state::VRAM_REGIONS.ptr(mem).addr;
+        let (next, limit) = state::VRAM_REGION[i as usize];
+        let (next, limit) = (regions + next, regions + limit);
+        let at = mem.read::<u32>(next);
+        let end = at.wrapping_add(n);
+        if end > mem.read::<u32>(limit) {
+            return None;
+        }
+        mem.write(next, end);
+        Some(at >> 6)
+    }
+
+    /// `yiAttachChrDObj(id, a, b)` (`0x00908350`):
+    /// [`yi_anim_attach_default`] on the renderer; returns 0.
+    pub fn yi_attach_chr_dobj(mem: &mut impl Mem, id: u32, a: u32, b: u32) -> u32 {
+        let r = state::RENDER.ptr(mem).addr;
+        yi_anim_attach_default(mem, r, id, a, b)
+    }
+
+    /// `yiCallFieldParticle()` (`0x009083e0`): with a map read
+    /// (`0x019138a0`) and render status bit 0, the field particles run
+    /// (`pppFpLoop`, `fp_loop`, a tail jump).
+    pub fn yi_call_field_particle<M: Mem>(mem: &mut M, fp_loop: impl FnOnce(&mut M)) {
+        if state::MAP_READ.get(mem) != 0 && RENDER_STATUS.get(mem) & 1 != 0 {
+            fp_loop(mem);
+        }
     }
 }
