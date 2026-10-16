@@ -284,4 +284,34 @@ pub mod bridge {
     pub const fn eighth_at_least_one(n: i32) -> i32 {
         if n > 8 { n / 8 } else { 1 }
     }
+
+    /// `LocalizationManager_GetInstance`'s object pointer.
+    pub const LOCALIZATION_MANAGER: Global<u32> = Global::new(0x00cd_ed58);
+    /// "sLanguageManager singleton is not created yet." (`.rdata`).
+    pub const NOT_CREATED_MESSAGE: Global<u8> = Global::new(0x00b4_a1dc);
+
+    /// `LocalizationManager_GetInstance()` (`0x006db070`): the language
+    /// manager; while it is null, first `Phyre_PhyrePrintf(1, "...not
+    /// created yet.")` through `print(level, format)` (the host's printf),
+    /// then read again.
+    pub fn localization_manager(mem: &impl Mem, print: &mut impl FnMut(u32, u32)) -> u32 {
+        let m = LOCALIZATION_MANAGER.get(mem);
+        if m != 0 {
+            return m;
+        }
+        print(1, NOT_CREATED_MESSAGE.ptr(mem).addr);
+        LOCALIZATION_MANAGER.get(mem)
+    }
+
+    /// `TOGetFFXLang()` (`0x006410e0`): the language (`+4` of the language
+    /// manager: 0 jp, 1 us, 2 fr, 3 sp, 4 de, 5 it, 9 kr, 10 ch), 0 while
+    /// there is no manager; the manager is asked twice, as the original
+    /// does.
+    pub fn ffx_lang(mem: &impl Mem, print: &mut impl FnMut(u32, u32)) -> u32 {
+        if localization_manager(mem, print) == 0 {
+            return 0;
+        }
+        let m = localization_manager(mem, print);
+        mem.read(m.wrapping_add(4))
+    }
 }

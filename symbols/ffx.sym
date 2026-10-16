@@ -635,7 +635,7 @@
 0x00640dd0 function graphicFontSetUiShadowType # fh v3:cg15 0x640f80
 0x00641060 function graphicGetAbmap           # fh v3:exact 0x00641210
 0x006410d0 function graphicGetCurrentFrame    # fh v3:cg3 0x641280
-0x006410e0 function TOGetFFXLang              # 0 jp, 1 us, 2 fr, 3 sp, 4 de, 5 it, 9 kr, 10 ch; was Lang_Get
+0x006410e0 function TOGetFFXLang              # () -> [LocalizationManager_GetInstance()+4]: 0 jp, 1 us, 2 fr, 3 sp, 4 de, 5 it, 9 kr, 10 ch; 0 without a manager (asks twice); was Lang_Get
 0x00641130 function graphicGetCut2DSceneBias  # fh v3:bsim1.00 0x006412e0
 0x00641150 function graphicGetFileReadSemaId  # fh v3:cg2 0x641300
 0x00641160 function graphicGetFogColor        # fh v3:cg2 0x641310
@@ -1170,7 +1170,7 @@
 0x006da4b0 function PhyFMVPlayerManager_pauseMovie # fh v3:exact 0x006da5e0 PhyFMVPlayerManager::pauseMovie
 0x006da550 function PhyFMVPlayerManager_readCreditsText # fh switch:cg2 0x7100268970 PhyFMVPlayerManager::readCreditsText
 0x006dae00 function PhyFMVPlayerManager_updateVideoCallback # fh v3:exact 0x006daf30 PhyFMVPlayerManager::updateVideoCallback
-0x006db070 function LocalizationManager_GetInstance # was LangManager_Get
+0x006db070 function LocalizationManager_GetInstance # () -> g_LocalizationManager; while null Phyre_PhyrePrintf(1, "sLanguageManager singleton is not created yet.") first; was LangManager_Get
 0x006db090 function LocalizationManager_Initialize # settings language index -> game language id; was LangManager_FromSettings
 0x006db1f0 function LocalizationManager_getText # fh v3:exact 0x006db320 LocalizationManager::getText
 0x006db2f0 function LocalizationManager_readLocalizationKit # fh v3:exact 0x006db420 LocalizationManager::readLocalizationKit
@@ -7252,6 +7252,7 @@
 0x00b48630 label DebugMenuManager_vftable     # fh v4:imported DebugMenuManager::vftable
 0x00b486b8 label ViewerManager_vftable        # fh v4:imported ViewerManager::vftable
 0x00b48e30 label AutoTestManager_vftable      # fh v4:imported AutoTestManager::vftable
+0x00b4a1dc label    s_LanguageManagerNotCreated # "sLanguageManager singleton is not created yet." (LocalizationManager_GetInstance)
 0x00b4a81c label Phyre_PClassDescriptorForType_Phyre_DynamicMeshDefaultImplmenetation__vftable # fh v4:imported Phyre::PClassDescriptorForType<Phyre::DynamicMeshDefaultImplmenetation>::vftable
 0x00b4a864 label Phyre_PClassDescriptorAbstract_Phyre_DynamicMeshDefaultImplmenetation__vftable # fh v4:imported Phyre::PClassDescriptorAbstract<Phyre::DynamicMeshDefaultImplmenetation>::vftable
 0x00b4a8ac label Phyre_PClassDescriptorConcrete_Phyre_DynamicMeshDefaultImplmenetation__vftable # fh v4:imported Phyre::PClassDescriptorConcrete<Phyre::DynamicMeshDefaultImplmenetation>::vftable
@@ -7766,7 +7767,7 @@
 0x00ccb9a4 label    g_SaveData_CrcCheckOff    # nonzero: SaveDataCheckCrc passes every save without computing TkCRC
 0x00ccc88c label    g_AsyncLoadManager        # the instance AsyncLoadManager_sGetInstance returns
 0x00ccca4c label    g_ClusterManager          # the instance ClusterManager_GetInstance returns
-0x00cded58 label    g_LangManager
+0x00cded58 label    g_LocalizationManager     # the language manager (+4 language, TOGetFFXLang)
 0x00ce5176 label    g_DepthBias_Dirty         # u8: DepthBiasHooks_clearDepthBias resets the table only when set, and clears it
 0x00ce81f4 label    g_SaveDataManager         # the instance SaveDataManager_instance returns (+4 callback result, +8 state for isBusy, +0x350 ref buffer)
 0x00ce901c label    g_UserHeap                # user_malloc/user_free's heap: CRITICAL_SECTION, then the allocator at +0x18 (arena size, bin min, bin max, arenas, node pool); malloc_pool_init creates it

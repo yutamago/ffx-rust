@@ -2122,7 +2122,37 @@ fn small_state2(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     }
 }
 
+/// The language manager and `TOGetFFXLang`, with and without a manager
+/// (`Phyre_PhyrePrintf` stubbed in the original; the Rust side counts the
+/// message).
+fn languages(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use instance::bridge as i;
+    let printf = a.rebase(0x0043_52f0);
+    a.stub_return(printf, 0x5555).unwrap();
+    let saved = i::LOCALIZATION_MANAGER.get(a);
+    let fake = random_block(a, b, rng, 16);
+    for m in [saved, 0, fake, saved] {
+        set(a, b, i::LOCALIZATION_MANAGER, m);
+        let mut printed = Vec::new();
+        let ra = eax(a, 0x006d_b070, &[]);
+        let rb = i::localization_manager(b, &mut |level, format| printed.push((level, format)));
+        assert_eq!(ra, rb);
+        let ra = eax(a, 0x0064_10e0, &[]);
+        let rb = i::ffx_lang(b, &mut |level, format| printed.push((level, format)));
+        assert_eq!(ra, rb, "TOGetFFXLang with {m:#x}");
+        let message = i::NOT_CREATED_MESSAGE.ptr(b).addr;
+        let want = if m == 0 {
+            vec![(1, message); 2]
+        } else {
+            vec![]
+        };
+        assert_eq!(printed, want);
+    }
+    same_memory("languages", a, b);
+}
+
 fn round3(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    languages(a, b, rng);
     leb128_and_stubs(a, b, rng);
     trees_and_names(a, b, rng);
     small_state(a, b, rng);

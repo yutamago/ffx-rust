@@ -11,6 +11,16 @@ use ffx_system::{
 
 use super::{call0, mem, ported};
 
+/// `Phyre_PhyrePrintf(level, format)` (`0x004352f0`, cdecl, varargs), the
+/// engine's printf, for bridges that print.
+fn phyre_printf(level: u32, format: u32) {
+    // SAFETY: the engine's cdecl printf, a format without arguments.
+    unsafe {
+        let f: unsafe extern "C" fn(u32, u32) = std::mem::transmute(crate::rebase(0x0043_52f0));
+        f(level, format);
+    }
+}
+
 /// The heap's Win32 calls, through the game's own import slots (so they are
 /// the calls the originals make, to the same critical sections).
 struct GameOs;
@@ -983,6 +993,14 @@ ported! {
     /// `UserHeap_BlockSize(p)`.
     UserHeap_BlockSize @ 0x0094_3480 => extern "thiscall" fn user_heap_block_size(this: u32, p: u32) -> u32 {
         heap::block_size(&mem(), this, p)
+    }
+    /// `LocalizationManager_GetInstance()`.
+    LocalizationManager_GetInstance @ 0x006d_b070 => extern "C" fn localization_manager_get_instance() -> u32 {
+        instance::bridge::localization_manager(&mem(), &mut phyre_printf)
+    }
+    /// `TOGetFFXLang()`.
+    TOGetFFXLang @ 0x0064_10e0 => extern "C" fn to_get_ffx_lang() -> u32 {
+        instance::bridge::ffx_lang(&mem(), &mut phyre_printf)
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
