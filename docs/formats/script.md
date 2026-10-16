@@ -692,7 +692,12 @@ oracles zero: `0x007bb6a0` (`Native_CamSetPos`) hands `Cam_SetPos` a
 vector whose `w` is uninitialised, as does `Light_Set` (`0x00836520`) to
 `Sg_LightSetColor`/`Sg_LightSetDir`, and `0x007bab90`
 (`Native_CamRefSetTarget`) to `0x007beeb0`. `printf` is stubbed (it
-returns 0) for the debug lines. `native_special_cases_match_the_original`
+returns 0) for the debug lines. Before each native call the natives tests
+zero the top 64 KiB of both stacks: the test calls a native, the Rust
+version calls that native's helper one frame higher, so a word the
+original reads before writing would hold different leftovers (the camera
+path start `0x007bcb80` uses a spline position and tangent that
+`TkMtCalcSpline` leaves unwritten for paths of fewer than three points). `native_special_cases_match_the_original`
 covers what small random arguments miss: `Native_MsgSetPos`'s moved
 windows, the voice waits' countdowns and debug counting, `Native_MsgClose`
 on each window state, `Native_CamSetScreenDepth` in debug mode. In the game those words hold whatever

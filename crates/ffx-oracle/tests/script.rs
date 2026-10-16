@@ -211,6 +211,20 @@ fn no_diff(a: &mut Oracle, b: &mut Oracle, what: &str) {
     assert_eq!(d, [], "{what}: memory");
 }
 
+/// Zeroes the top 64 KiB of both oracles' stacks, where the frames of the
+/// next call go: a native called by the test and the same native's helper
+/// called by the Rust version sit at different depths, so a word original
+/// code reads before writing would otherwise hold different leftovers
+/// (`0x007bcb80` reads a spline position and tangent that
+/// `TkMtCalcSpline` leaves unwritten for short paths, for one).
+fn clear_stacks(a: &mut Oracle, b: &mut Oracle) {
+    let r = a.stack_range();
+    let zero = vec![0u8; 0x1_0000];
+    for o in [a, b] {
+        Mem::write_bytes(o, r.end - 0x1_0000, &zero);
+    }
+}
+
 /// Writes `value` at `addr` in both oracles.
 fn poke<T: ffx_bridge::Value>(a: &mut Oracle, b: &mut Oracle, addr: u32, value: T) {
     Mem::write(a, addr, value);
@@ -2386,6 +2400,7 @@ fn native_special_cases_match_the_original() {
         for &(k, x) in push {
             push_both(a, b, s, k, x);
         }
+        clear_stacks(a, b);
         let ra = a
             .call(a.rebase(sym), Conv::Cdecl, &[w, args, s])
             .unwrap_or_else(|e| panic!("{what}: {e}"));
@@ -2529,6 +2544,7 @@ fn natives_match_the_original() {
                 let lvl = i32::from(Mem::read::<u8>(b, w + worker::LEVEL));
                 let args = v::script_worker_level(b, w, lvl) + 0x2c;
                 let what = format!("native {sym:#x} on worker {i} of {c:#x}");
+                clear_stacks(a, b);
                 let ra = match a.call(a.rebase(sym), Conv::Cdecl, &[w, args, s]) {
                     Ok(r) => r,
                     Err(e) => {
