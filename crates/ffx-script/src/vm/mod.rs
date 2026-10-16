@@ -56,9 +56,11 @@ pub mod ctrl {
     pub const STORAGE1: u32 = 0x30;
     /// `u32`: `AtelSetVibrateStreamExt`'s value.
     pub const VIBRATE_STREAM_EXT: u32 = 0x44;
-    /// `u32`: pointer whose `+0x18` (`u16`) is the map camera
-    /// (`AtelGetEventMapCameraId` reads ctrl work 0's).
-    pub const EVENT_MAP: u32 = 0x48;
+    /// `u32`: the event's script block (the workers'
+    /// [`super::worker::BLOCK`]) in ctrl work 0, null in the battle's other
+    /// ctrl works (snapshots); `AtelGetEventMapCameraId` reads its `+0x18`
+    /// (`u16`), `AtelGetGideMapActorNumber` its expansion header.
+    pub const BLOCK: u32 = 0x48;
     /// `u32`: `AtelInitActor`'s callback, `(ctrl)`.
     pub const INIT_ACTOR: u32 = 0x50;
     /// `u32`: storage 3's address callback, `(worker, offset) -> address`

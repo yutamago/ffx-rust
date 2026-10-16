@@ -5,6 +5,8 @@
 
 use ffx_bridge::{Global, Mem};
 
+pub mod globals;
+
 use super::{
     Classes, block, buffer_size, ctrl, header, is_small, level, level_index, slot_float, slot_int,
     stack, store_float, store_int, value_float, value_int, var, worker, worker_offset,
@@ -246,7 +248,7 @@ pub fn atel_get_event_actor_total(mem: &impl Mem) -> u32 {
 
 /// `AtelGetEventMapCameraId()` (`0x0086b5d0`).
 pub fn atel_get_event_map_camera_id(mem: &impl Mem) -> u32 {
-    let m = mem.read::<u32>(CTRL_WORKS.ptr(mem).addr + ctrl::EVENT_MAP);
+    let m = mem.read::<u32>(CTRL_WORKS.ptr(mem).addr + ctrl::BLOCK);
     u32::from(mem.read::<u16>(m + 0x18))
 }
 

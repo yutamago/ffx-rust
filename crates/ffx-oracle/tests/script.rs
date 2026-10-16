@@ -253,6 +253,9 @@ fn check_workers(a: &mut Oracle, b: &mut Oracle) {
     let w0 = v::atel_get_basic_work(b, 0);
     orig(a, ATEL_GET_BASIC_WORK, &[0]);
     let blk = Mem::read::<u32>(b, w0 + worker::BLOCK);
+    let own = Mem::read::<u32>(b, c + ctrl::BLOCK);
+    eprintln!("ctrl work {c:#x}: block {blk:#x}, +0x48 {own:#x}");
+    assert!(own == 0 || own == blk, "ctrl +0x48: the block or null");
     for (f, rust) in [
         (ATEL_GET_ACTOR_NUMBER, v::atel_get_actor_number(b, blk)),
         (
@@ -738,4 +741,361 @@ fn every_storage_and_type_matches_the_original() {
     }
     assert_eq!(orig(&mut a, ATEL_GET_VERSION, &[]), v::atel_get_version(&b));
     no_diff(&mut a, &mut b, "storages");
+}
+
+/// One small accessor: its address, and the bridge doing the same to `b`.
+type Small = (u32, &'static str, fn(&mut Oracle, &[u32]) -> u32);
+
+/// The small global accessors, with how many arguments each takes.
+#[allow(clippy::too_many_lines)] // a table
+fn smalls() -> Vec<(Small, usize)> {
+    use ffx_script::vm::bridge::globals as g;
+    let all: Vec<(Small, usize)> = vec![
+        (
+            (0x0087_3b00, "AtelGetMusicNumber", |b, _| {
+                g::atel_get_music_number(b)
+            }),
+            0,
+        ),
+        (
+            (0x0087_3d00, "AtelRegistMusicNumber", |b, x| {
+                g::atel_regist_music_number(b, x[0]);
+                0
+            }),
+            1,
+        ),
+        (
+            (0x0086_b030, "AtelGetEffectFlag", |b, x| {
+                g::atel_get_effect_flag(b, x[0])
+            }),
+            1,
+        ),
+        (
+            (0x0086_fa40, "AtelSetEffectFlag", |b, x| {
+                g::atel_set_effect_flag(b, x[0]);
+                0
+            }),
+            1,
+        ),
+        (
+            (0x0086_0fd0, "AtelAllClearEffectFlag", |b, _| {
+                g::atel_all_clear_effect_flag(b);
+                0
+            }),
+            0,
+        ),
+        (
+            (0x0086_b050, "AtelGetEffectParam", |b, x| {
+                g::atel_get_effect_param(b, x[0])
+            }),
+            1,
+        ),
+        (
+            (0x0086_3880, "AtelClearEffectParam", |b, _| {
+                g::atel_clear_effect_param(b);
+                0
+            }),
+            0,
+        ),
+        (
+            (0x0087_7450, "AtelSetSnd3dVolumeDiffRatio", |b, x| {
+                g::atel_set_snd3d_volume_diff_ratio(b, x[0]);
+                0
+            }),
+            1,
+        ),
+        (
+            (0x0087_7460, "AtelSetSnd3dVolumeTotalRatio", |b, x| {
+                g::atel_set_snd3d_volume_total_ratio(b, x[0]);
+                0
+            }),
+            1,
+        ),
+        (
+            (0x0087_7330, "AtelClearSnd3dWorkAll", |b, _| {
+                g::atel_clear_snd3d_work_all(b);
+                0
+            }),
+            0,
+        ),
+        (
+            (0x0086_e820, "AtelRegistAlbhedDic", |b, x| {
+                g::atel_regist_albhed_dic(b, x[0], x[1]);
+                0
+            }),
+            2,
+        ),
+        (
+            (0x0087_0130, "AtelSetForceBattleMapId", |b, x| {
+                g::atel_set_force_battle_map_id(b, x[0]);
+                0
+            }),
+            1,
+        ),
+        (
+            (0x0087_15e0, "AtelSetVibrateStreamExt", |b, x| {
+                g::atel_set_vibrate_stream_ext(b, x[0]);
+                0
+            }),
+            1,
+        ),
+        (
+            (0x0087_5000, "AtelCheckCallbackQue", |b, x| {
+                g::atel_check_callback_que(b, x[0])
+            }),
+            1,
+        ),
+        (
+            (0x0087_5180, "AtelIsCallbackQue", |b, _| {
+                g::atel_is_callback_que(b)
+            }),
+            0,
+        ),
+        (
+            (0x0086_fc20, "AtelSetEncountBattleEndStatus", |b, x| {
+                g::atel_set_encount_battle_end_status(b, x[0], x[1], x[2]);
+                0
+            }),
+            3,
+        ),
+        (
+            (0x0086_cff0, "AtelInitBattleEndStatus", |b, _| {
+                g::atel_init_battle_end_status(b);
+                0
+            }),
+            0,
+        ),
+        (
+            (0x0086_f3a0, "AtelSetBattleEndKeepRecoverType", |b, x| {
+                g::atel_set_battle_end_keep_recover_type(b, x[0]);
+                0
+            }),
+            1,
+        ),
+        (
+            (0x0086_c4d0, "AtelGetStatusWinFadeOut", |b, _| {
+                g::atel_get_status_win_fade_out(b)
+            }),
+            0,
+        ),
+        (
+            (0x0087_0280, "AtelSetMCFPInWater", |b, x| {
+                g::atel_set_mcfp_in_water(b, x[0], x[1], x[2], x[3]);
+                0
+            }),
+            4,
+        ),
+        (
+            (0x0087_0f60, "AtelSetShopRatio", |b, x| {
+                g::atel_set_shop_ratio(b, x[0]);
+                0
+            }),
+            1,
+        ),
+        (
+            (0x0086_5890, "AtelEventGetMotionIndex", |_, x| {
+                g::atel_event_get_motion_index(x[0], x[1])
+            }),
+            2,
+        ),
+        (
+            (0x0087_2b90, "AtelClearPreBgPage", |b, _| {
+                g::atel_clear_pre_bg_page(b);
+                0
+            }),
+            0,
+        ),
+        (
+            (0x0087_3aa0, "AtelGetEventMode", |b, _| {
+                g::atel_get_event_mode(b)
+            }),
+            0,
+        ),
+        (
+            (0x0087_2b70, "AtelClearPauseFlag", |b, _| {
+                g::atel_clear_pause_flag(b);
+                0
+            }),
+            0,
+        ),
+        (
+            (0x0086_e840, "AtelRegistBattleEndMovieFadeout", |b, x| {
+                g::atel_regist_battle_end_movie_fadeout(b, x[0], x[1], x[2]);
+                0
+            }),
+            3,
+        ),
+        (
+            (0x0086_d4c0, "AtelInitMotionRequest", |b, _| {
+                g::atel_init_motion_request(b);
+                0
+            }),
+            0,
+        ),
+        (
+            (0x0086_0a90, "getMegasAdding", |b, _| g::get_megas_adding(b)),
+            0,
+        ),
+        (
+            (0x0087_2b50, "AtelCheckMenuOtakaraFlag", |b, _| {
+                g::atel_check_menu_otakara_flag(b)
+            }),
+            0,
+        ),
+        (
+            (0x0086_be50, "AtelGetMenuMask", |b, _| {
+                g::atel_get_menu_mask(b)
+            }),
+            0,
+        ),
+        (
+            (0x0086_3620, "AtelClearAllMenuMask", |b, _| {
+                g::atel_clear_all_menu_mask(b);
+                0
+            }),
+            0,
+        ),
+        (
+            (0x0087_3ac0, "AtelGetExpandFTCAdrs", |b, _| {
+                g::atel_get_expand_ftc_adrs(b)
+            }),
+            0,
+        ),
+        (
+            (0x0086_3f90, "AtelClearNotAuronPatchFlag", |b, _| {
+                g::atel_clear_not_auron_patch_flag(b);
+                0
+            }),
+            0,
+        ),
+        (
+            (0x0086_3ae0, "AtelClearLoveParamDisable", |b, _| {
+                g::atel_clear_love_param_disable(b);
+                0
+            }),
+            0,
+        ),
+        (
+            (0x0086_58b0, "AtelEventGetNowCtrlTopId", |b, _| {
+                g::atel_event_get_now_ctrl_top_id(b)
+            }),
+            0,
+        ),
+        (
+            (0x0086_b000, "AtelGetCurrentActorTotal", |b, _| {
+                g::atel_get_current_actor_total(b)
+            }),
+            0,
+        ),
+        (
+            (0x0086_afc0, "AtelGetCtrlWorkStatus", |b, x| {
+                g::atel_get_ctrl_work_status(b, x[0])
+            }),
+            1,
+        ),
+        (
+            (0x0086_b710, "AtelGetGideMapActorNumber", |b, _| {
+                g::atel_get_gide_map_actor_number(b)
+            }),
+            0,
+        ),
+        (
+            (0x0087_02e0, "AtelSetMenuExecStatus", |b, x| {
+                g::atel_set_menu_exec_status(b, x[0].to_le_bytes()[0]);
+                0
+            }),
+            1,
+        ),
+        (
+            (0x0087_3e60, "AtelSetMapIdPage", |b, x| {
+                g::atel_set_map_id_page(b, x[0].to_le_bytes()[0]);
+                0
+            }),
+            1,
+        ),
+        (
+            (0x0087_0900, "AtelSetOverlayStatus", |b, x| {
+                g::atel_set_overlay_status(b, x[0].to_le_bytes()[0]);
+                0
+            }),
+            1,
+        ),
+    ];
+    all
+}
+
+/// Arguments kept to the tables' sizes (indices into small tables), so
+/// both sides read memory that is there.
+fn masked(name: &str, x: u32) -> u32 {
+    match name {
+        "AtelGetEffectParam" => x & 3,
+        "AtelCheckCallbackQue" => x & 7,
+        "AtelGetCtrlWorkStatus" => x % 7,
+        _ => x,
+    }
+}
+
+#[test]
+fn globals_match_the_original() {
+    let Some((mut a, mut b)) = setup() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0003);
+    for round in 0..40 {
+        for ((f, name, rust), n) in smalls() {
+            let args: Vec<u32> = (0..n)
+                .map(|_| masked(name, stored_value(&mut rng)))
+                .collect();
+            let ra = orig(&mut a, f, &args);
+            let rb = rust(&mut b, &args);
+            // the setters return whatever EAX held; compare the getters only
+            if !name.contains("Set")
+                && !name.contains("Regist")
+                && !name.contains("Clear")
+                && !name.contains("Init")
+            {
+                assert_eq!(ra, rb, "{name}{args:x?} round {round}");
+            }
+            no_diff(&mut a, &mut b, name);
+        }
+    }
+    // the worker one, on every actor
+    for w in actors(&mut a, &mut b) {
+        assert_eq!(
+            orig(&mut a, 0x0086_a420, &[w]),
+            ffx_script::vm::bridge::globals::atel_get_actor_execspace_id(&b, w),
+            "AtelGetActorExecspaceID({w:#x})"
+        );
+    }
+    // strings: overlapping and not
+    let buf = a.alloc(0x100).unwrap();
+    assert_eq!(b.alloc(0x100).unwrap(), buf);
+    for (dst, src, text) in [
+        (0, 0x80, &b"hello"[..]),
+        (0, 3, b"ab"),
+        (0x10, 0x12, b"xyzw"),
+        (0x40, 0x40, b""),
+    ] {
+        for (f, cpy) in [(0x0087_1950u32, false), (0x0087_1980, true)] {
+            for o in [&mut a, &mut b] {
+                let mut init = vec![0u8; 0x100];
+                init[..3].copy_from_slice(b"ab\0");
+                init[0x80..0x80 + text.len()].copy_from_slice(text);
+                init[src..src + text.len()].copy_from_slice(text);
+                Mem::write_bytes(o, buf, &init);
+            }
+            let (d, s) = (
+                buf + u32::try_from(dst).unwrap(),
+                buf + u32::try_from(src).unwrap(),
+            );
+            let ra = orig(&mut a, f, &[d, s]);
+            let rb = if cpy {
+                ffx_script::vm::bridge::globals::atel_strcpy(&mut b, d, s)
+            } else {
+                ffx_script::vm::bridge::globals::atel_strcat(&mut b, d, s)
+            };
+            assert_eq!(ra, rb, "{f:#x}({dst:#x}, {src:#x})");
+            no_diff(&mut a, &mut b, "strings");
+        }
+    }
 }

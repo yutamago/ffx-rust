@@ -7036,6 +7036,7 @@
 0x00c44bf0 label    g_pppSinTable                # 4096 f32 sines over a turn: pppGetRotMatrix* read [(a>>4)&0xfff] and [((a+0x4000)>>4)&0xfff] (cosine)
 0x00c49680 label g_ChrDefaultMoves           # Ch_MotionSetMoves(chr, slot, -1) stores entry [slot] (0, 1, 2, then zeros)
 0x00c4df54 label    g_GuHScale                # vertical scale of Gu_SetScissor's y bounds, 8.8 fixed point (Gu_SetHScale)
+0x00c5273c label    g_AtelForceBattleMapId       # written by AtelSetForceBattleMapId (0x00870130)
 0x00c59554 label    g_SystemConfirmButtonAssign # TOGetSystemConfirmButtonAssign returns it with -1 replaced by 0 (and stores that back)
 0x00c5955c label    g_ButtonData              # 2 words: setButtonData(a, b); resetButtonData sets both to -1
 0x00c5e350 label    g_GuideFlags                 # bit 0: the minimap may show (clear: Guide_FadeOff)
@@ -7201,22 +7202,44 @@
 0x0130375c label    g_GuHidden                # Gu_Hide(on) sets it and returns the old value
 0x01325240 label    g_GuMouseY                # mouse y as the Gu layer reads it (Gu_MouseGetWindowY: minus window +0x0c; copied to window +0x14 on Gu_WindowOpen)
 0x01325244 label    g_GuMouseX                # mouse x (Gu_MouseGetWindowX: minus window +0x0e; window +0x16 on open)
+0x01325ac8 label    g_MegasAdding                # read by getMegasAdding (0x00860a90)
 0x01325b70 label    g_MsgLastIndex            # last message index looked up (written by Msg_Text, Msg_TextAlt, Msg_Text1, Msg_Get)
 0x01325b74 label    g_MsgNone                 # what the Msg_ lookups return without a message table (an empty string)
+0x01325b90 label    g_AtelAlbhedDic              # two words written by AtelRegistAlbhedDic (0x0086e820)
 0x01325ba0 label    g_AtelCtrlWorks              # 7 ctrl works x 0x238 (AtelGetCtrlWork); g_ScriptContext follows; layout in ffx_script::vm::ctrl
 0x01326b28 label    g_ScriptContext              # current ctrl work (AtelGetCurCtrlWork, AtelSetCurrentCtrl): +0x0a player worker, +0x0c actor count, +0x10 worker count, +0x1c workers, +0x2c/+0x30 variable storage 0/1, +0x218 player position, +0x1e4/0x1f0 talk state (ffx_script::vm::ctrl)
+0x01326b48 label    g_AtelBattleEndStatus        # +0 status (AtelInitBattleEndStatus: 0x10001; bit 16 clear = AtelGetStatusWinFadeOut), +4 keep-recover type (AtelSetBattleEndKeepRecoverType, low byte cleared), +8/+0xc (AtelSetEncountBattleEndStatus writes +0, +8, +0xc)
+0x01326b5c label    g_AtelMotionRequest          # three words; AtelInitMotionRequest (0x0086d4c0) sets -1, -1, 0
+0x01326b6c label    g_AtelShopRatio              # written by AtelSetShopRatio (0x00870f60)
+0x01326b70 label    g_AtelEffectFlags            # 32 flags: AtelGetEffectFlag/AtelSetEffectFlag (bit mod 32), AtelAllClearEffectFlag
+0x01326b74 label    g_AtelMenuMask               # AtelGetMenuMask (0x0086be50), AtelClearAllMenuMask (0x00863620)
+0x01326b80 label    g_AtelOverlayStatus          # u8: AtelSetOverlayStatus (0x00870900)
+0x01326b81 label    g_AtelNotAuronPatchFlag      # u8: cleared by AtelClearNotAuronPatchFlag (0x00863f90)
 0x01326b82 label    g_AtelMenuExecStatus         # i8: AtelSetMenuExecStatus; selects the bank of g_MsgWindows (AtelGetMesWinWork)
+0x01326b84 label    g_AtelBattleEndMovieFadeout  # three words written by AtelRegistBattleEndMovieFadeout (0x0086e840)
+0x01326b90 label    g_AtelLoveParamDisable       # cleared by AtelClearLoveParamDisable (0x00863ae0)
+0x01326ce0 label    g_AtelEffectParams           # four words: AtelGetEffectParam (0x0086b050), AtelClearEffectParam (0x00863880)
+0x01326cf0 label    g_AtelMCFPInWater            # four words written by AtelSetMCFPInWater (0x00870280)
 0x01326d70 label    g_MsgWindows                 # 2 banks x 8 message windows, 0x2c bytes: +0x14 state, +0x16 Msg_Flags, +0x18 display flags, +0x1d mode flags
 0x013270d0 label    g_PadPressed                 # buttons newly pressed this frame, OR over pads (0x00871d70)
 0x013270d8 label    g_AtelError                  # set to 0 where the PS2 code reported a script error (stack over/underflow, bad request); AtelGetBasicWork adds 1 (mod 256) for an index past the end; saved and restored around calls by 0x008630c0 and 0x0086a470
 0x013270dc label    g_AtelBasicWorkCacheCtrl     # u16: ctrl work number (+0x1a) of the worker AtelGetBasicWork cached
 0x013270e0 label    g_AtelBasicWorkCacheIndex    # u16: index of the worker AtelGetBasicWork cached
 0x013270e4 label    g_AtelBasicWorkCache         # worker AtelGetBasicWork returned last; 0 = none (AtelRemoveCtrlWork and AtelInitTotal clear it; AtelRequireCtrlWork counts a loop down to 0 in it)
+0x013270f0 label    g_AtelMenuOtakaraFlag        # i8 read by AtelCheckMenuOtakaraFlag (0x00872b50)
+0x0132711c label    g_AtelMapIdPage              # bytes: +0 state (AtelSetMapIdPage 2, AtelClearPreBgPage 0), +1 (0xff when cleared), +2 page, +3 event mode (AtelGetEventMode; 0xff reads as 1)
+0x01327120 label    g_AtelExpandFTCAdrs          # read by AtelGetExpandFTCAdrs (0x00873ac0)
+0x01327130 label    g_AtelMusicNumber            # AtelGetMusicNumber (0x00873b00), AtelRegistMusicNumber (0x00873d00)
+0x01327138 label    g_AtelPauseFlag              # two words cleared by AtelClearPauseFlag (0x00872b70)
 0x01327148 label    g_EventSprites               # 128 x 0x1c: +0 active, +1 alpha, +4/+6 x/y, +8/+0xa scale*256, +0xc frame, +0x10 rgb, +0x14 data; drawn by 0x00874420
+0x01327f50 label    g_AtelCallbackQue            # entries of 0x100 bytes, first word non-zero = queued: AtelCheckCallbackQue(i) (0x00875000), AtelIsCallbackQue (entry 0)
 0x01328150 label    g_TkVibratePads           # 8 pads x 0x24: two 16-byte channels (+0 pointer, +4 u32, +8 u16, +0xa u8), +0x22 on; TkStopVibrate(All) zero all but the pointers
 0x01328270 label    g_TkVibrateVolume         # 2 x u8 (TkGetVibrateVolume reports them, 0 when g_TkVibrateOff)
 0x01328272 label    g_TkVibrateOff            # nonzero: TkGetVibrateVolume reports 0, 0
 0x01328274 label    g_TkVibrateMask           # u16, pads allowed to vibrate (TkSetVibrateMask: bit per pad; pad < 0: 0xff or 0)
+0x0132830c label    g_AtelSnd3dVolumeTotalRatio  # f32: AtelSetSnd3dVolumeTotalRatio (0x00877460); zeroed by AtelClearSnd3dWorkAll
+0x01328310 label    g_AtelSnd3dVolumeDiffRatio   # f32: AtelSetSnd3dVolumeDiffRatio (0x00877450); zeroed by AtelClearSnd3dWorkAll
+0x01328318 label    g_AtelSnd3dWork              # 16 x 0x24 bytes; AtelClearSnd3dWorkAll (0x00877330) clears +0, +4, +0x20 (u16) of each
 0x01328558 label    g_NativeTables            # per-group native function tables
 0x0132ff1c label    g_TkSndStandbyVoice       # TkSndSetStandbyVoice
 0x0132ff24 label    g_TkSndStatus             # TkSndReportStatus returns whether it is nonzero
