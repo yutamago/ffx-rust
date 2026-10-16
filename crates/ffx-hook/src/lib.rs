@@ -101,6 +101,8 @@ mod patch;
 #[cfg(all(windows, target_arch = "x86"))]
 pub mod replacements;
 #[cfg(all(windows, target_arch = "x86"))]
+pub mod snapshot;
+#[cfg(all(windows, target_arch = "x86"))]
 pub mod world;
 
 #[cfg(all(windows, target_arch = "x86"))]

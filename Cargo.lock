@@ -528,6 +528,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffx-bridge"
+version = "0.1.0"
+dependencies = [
+ "lz4_flex",
+]
+
+[[package]]
 name = "ffx-cli"
 version = "0.1.0"
 dependencies = [
@@ -593,6 +600,7 @@ dependencies = [
 name = "ffx-hook"
 version = "0.1.0"
 dependencies = [
+ "ffx-bridge",
  "ffx-core",
  "ffx-gfx",
  "windows-sys",
@@ -631,6 +639,7 @@ dependencies = [
 name = "ffx-oracle"
 version = "0.1.0"
 dependencies = [
+ "ffx-bridge",
  "ffx-core",
  "ffx-phyre",
  "ffx-vbf",

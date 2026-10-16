@@ -8,6 +8,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+ffx-bridge.workspace = true
 goblin.workspace = true
 thiserror.workspace = true
 unicorn-engine.workspace = true

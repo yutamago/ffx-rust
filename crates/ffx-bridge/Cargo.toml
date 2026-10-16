@@ -1,0 +1,13 @@
+[package]
+name = "ffx-bridge"
+description = "Game memory as Rust replacements see it: 32-bit addresses behind a trait, raw pointers in the game, emulator memory in the oracle"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+lz4_flex.workspace = true
+
+[lints]
+workspace = true

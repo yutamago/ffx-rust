@@ -36,8 +36,23 @@ split the game code like this:
 | Movies | `movie`, `PhyFMV` | 70 KB | 5% | `.webm` playback |
 | Sound | `Snd`, `Fmod*` | 63 KB | 7% | music, sound effects, voice through FMOD Ex |
 | PS2 emulation | `AsmEmu`, `FFXVu` | 15 KB | 11% | VU instructions emulated on the CPU |
+| Spell overlays | `magic_*.dll` | ≤3.8 MB unique | 0% | spell and summon effects, one DLL each (below) |
 
-Outside the exe, the game loads `fmodex.dll` and `fmod_event.dll` (FMOD Ex),
+Next to the exe are the spell and summon effects: 581 DLLs in
+`magicFiles/FFX/` (`magic_0003.dll` … `magic_0710.dll`), the PS2's effect
+overlays compiled for Windows. Together they have 10 MB of code; with
+relocations masked and pieces deduplicated by hash, at most 3.8 MB of it is
+unique, in about 8,100 pieces. That's an upper bound: copies differ wherever
+their relative calls point elsewhere. Each DLL exports `InitMagicPRX` and
+`GetEffectOverlayTable` and imports only the C runtime and KERNEL32. FFX.exe
+loads one (`MagicFile_Start`, `onMagicDLLLoaded` at `0x009db110`) and passes
+`InitMagicPRX` a table of its own functions (`0x00c64ce8`, starting with
+`Ch_Allocate` and 26 more character functions), so the overlays call back
+into the game only through that table. That makes them a module with one
+clean boundary: in the hybrid phase a Rust overlay can stand in for one DLL
+behind the same two exports.
+
+Outside the exe, the game also loads `fmodex.dll` and `fmod_event.dll` (FMOD Ex),
 `iggy_w32.dll` (Flash UI), `steam_api.dll`, `d3d11.dll`, XInput and DInput.
 
 In Rust so far:
@@ -175,6 +190,11 @@ rewards, plus their natives. The formats are done and the battle is
 deterministic under a seeded RNG, so replay parity fits it best. It is done
 when a recorded battle replays identically with no original `Ms` function
 left.
+
+The spell overlays go with M2 as far as battle logic needs them (their
+calls into the game), and with M4 for what they draw: first the shared
+runtime that most DLLs contain a copy of, then the overlays one by one,
+each checked by recording its spell in a battle replay.
 
 ### M3: field, events, characters, menus
 

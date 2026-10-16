@@ -492,6 +492,8 @@ enum Job {
     Release(u32, u32),
     Call(usize, Vec<u32>),
     Shot(String),
+    Snapshot(String),
+    FpuControl,
 }
 
 static JOBS: Mutex<VecDeque<(Job, Sender<String>)>> = Mutex::new(VecDeque::new());
@@ -697,7 +699,7 @@ unsafe extern "system" fn present(swap_chain: *mut c_void, interval: u32, flags:
             while let Some(job) = jobs.pop_front() {
                 let ready = match job.0 {
                     Job::WaitUntil(f) | Job::Release(f, _) => frame >= f,
-                    Job::Call(..) | Job::Shot(_) => true,
+                    Job::Call(..) | Job::Shot(_) | Job::Snapshot(_) | Job::FpuControl => true,
                 };
                 if ready {
                     due.push(job);
@@ -725,6 +727,16 @@ unsafe extern "system" fn present(swap_chain: *mut c_void, interval: u32, flags:
                 // SAFETY: the test asked for this call, on the game thread.
                 let eax = unsafe { call(address, &args) };
                 let _ = reply.send(format!("ok {eax:#x}"));
+            }
+            Job::Snapshot(path) => {
+                let r = crate::snapshot::take(&path);
+                let _ = reply.send(r.map_or_else(
+                    |e| format!("err {e}"),
+                    |(n, bytes)| format!("ok {n} regions {bytes} bytes"),
+                ));
+            }
+            Job::FpuControl => {
+                let _ = reply.send(format!("ok {:#06x}", crate::snapshot::fpu_control()));
             }
             Job::Shot(path) => {
                 // SAFETY: the swap chain is live inside its own Present.
@@ -1098,6 +1110,8 @@ fn command(line: &str) -> Result<String, String> {
             on_game_thread(Job::Call(address, args))
         }
         "shot" => on_game_thread(Job::Shot(words[1..].join(" "))),
+        "snapshot" => on_game_thread(Job::Snapshot(words[1..].join(" "))),
+        "fpucw" => on_game_thread(Job::FpuControl),
         "gfxcapture" => crate::gfx::capture(&words[1..].join(" ")),
         "overlay" => format!("ok {}", crate::gfx::live::toggle_overlay()),
         "editor" => {

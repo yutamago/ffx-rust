@@ -17,6 +17,7 @@ common=(-scriptPath "$repo/tools/ghidra"
         -postScript ApplySymbols.java "$repo/symbols/ffx.sym"
         -postScript DumpDecomp.java "$work/decomp"
         -postScript DumpDataRefs.java "$work/decomp"
+        -postScript DumpCallSites.java "$work/decomp"
         -max-cpu "$(nproc)")
 
 if [[ -d "$work/ghidra/ffx.rep" ]]; then
