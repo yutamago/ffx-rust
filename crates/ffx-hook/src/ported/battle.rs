@@ -866,4 +866,25 @@ ported! {
             call0(TO_BTL_CLOSE_SIGN_WINDOW);
         })
     }
+
+    /// `MsMulMatrix(out, a, b)`.
+    MsMulMatrix @ 0x007c_2770 => extern "C" fn ms_mul_matrix(out: u32, a: u32, b: u32) {
+        vector::ms_mul_matrix(&mut mem(), out, a, b);
+    }
+    /// `MsMiddlePoint(out, p, q, s, t, c, d, e)` (floats as bits).
+    MsMiddlePoint @ 0x007c_25e0 => extern "C" fn ms_middle_point(out: u32, p: u32, q: u32, s: u32, t: u32, c: u32, d: u32, e: u32) {
+        vector::ms_middle_point(&mut mem(), out, p, q, [s, t, c, d, e]);
+    }
+    /// `MsVectorLen(v)`: on the x87 stack.
+    MsVectorLen @ 0x007c_4280 => extern "C" fn ms_vector_len(v: u32) -> f32 {
+        vector::ms_vector_len(&mut mem(), v)
+    }
+    /// `MsVectorLen2D(v)`: on the x87 stack.
+    MsVectorLen2D @ 0x007c_43a0 => extern "C" fn ms_vector_len_2d(v: u32) -> f32 {
+        vector::ms_vector_len_2d(&mut mem(), v)
+    }
+    /// `MsVectorNormal(out, v)`.
+    MsVectorNormal @ 0x007c_44a0 => extern "C" fn ms_vector_normal(out: u32, v: u32) {
+        vector::ms_vector_normal(&mut mem(), out, v);
+    }
 }
