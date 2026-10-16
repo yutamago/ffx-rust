@@ -307,6 +307,53 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   code; Fahrenheit's Switch BSim names for them (`yiGetRootMatrix`,
   `yiSetRootMatrix`, `SqsEeSoundCreateTime`) are wrong matches.
 
+## Sprite packets, sphere grid helpers, map file records (round 6)
+
+- `KeDttSpr_MkGifPk_Pre` (`0x00768d30`): the sprite pre-packet, a chain
+  of VU0 float products kept on the x87 stack (each step rounded to 53
+  bits, stored as `f32` only where the original stores), the constants
+  at `0x00b51b9c`, `0x00b921e0`, `0x00b50224`, `0x00b515c8`; its packet
+  space from `op_spr_alloc(0x90)`.
+- Sphere grid: node visitors `AbmapForEachNode` (`0x00a59710`, over the
+  `+2` node count, kind -1 skipped) and `AbmapForNodeAndLinked`
+  (`0x00a59760`: the node, then the other end of each link, two `u16`s at
+  the start of the `0x14`-byte links from `+0xa808`, link count `+4`),
+  both stopping at the first non-zero result; node and link matrices
+  (`0x00a5ad30`, `0x00a5a360`) built from the emulated zero register
+  (`g_Ee_Gpr`) with the scale on the diagonal and the `i16` position as
+  translation; character markers (`0x50` bytes from `+0x11088`, node
+  `+0x44`); the cursor pulse `+0x115c5` from the sine table
+  (`AbmapPulseCursor` `0x00a47440`, truncating `fistp`); the help state
+  (`AbmapResetHelp`); `AbmapVu0LoadMatrix1`/`2` load 64 bytes into the
+  emulated `vf01`..`vf04` / `vf05`..`vf08` (`0x00c8f7a0`, `0x00c8f7e0`).
+- Map file records (reader `0x0090f900`, magic `0x214365`, version
+  `0x110`): object records of `0x40` bytes (`yiObjSave`/`yiObjLoad`,
+  object `+0x80..+0x96` and the floats `+0x50..+0x6c`), camera records
+  (`yiCameraLoad`), the fog record (`yiFogLoad`: `+0x68340..+0x6834c`,
+  `+0xba400`, colour `+0x68378`, `+0x6822c`), the matrix chunk
+  (`yiLoadMatrixChunk`). The fog parameters for VU1
+  (`yiRender_setupFogParam` `0x0090d1b0`): `+0x68350 = -255 / (far -
+  near)` (0 when equal), `+0x68354 = 255 - +0x68344` (255 with
+  `+0x67f08` bit 3), `+0x68358 = -near`.
+- `rcfx` initialisers: kinds `0x30002` gravity, `0x30004` nail, `0x30006`
+  wind, each with its callbacks; `rcfxParticleInit` (0.03, 0.001, 0.1).
+- `rcefAnimeStep` (`0x0092f400`): time `+0x40` += speed `+0x44`; past
+  the key's length (`+0x12` of the 8-byte keys at `+4`) to the next key;
+  past the last (table `+6`) loops with key flag 0x80, else stops (bit 0
+  of `+0` cleared).
+- `rcuiClearSelect`/`rcuiSetSelect` (`0x00934af0`, `0x00934b50`): the
+  layer selection bits (`+0xb0` bit 0 of the selected layer in mode 1,
+  bit 1 of each layer's first word in mode 2).
+- Functions that do not return a value often leave something in `eax`
+  that a caller could read; the ports return the same (`check-clobber`
+  checks the callers). `yiRender_setupFogParam` and `KeAddScaledColor`
+  end with `fnstsw ax` over an untouched upper half (the caller's `eax`),
+  so they are `void`.
+- Skipped: `0x00915bb0` stores uninitialised stack words (`local_24`
+  etc.), so its output is not deterministic; `0x00919a60` is a guard
+  jumping into `rcbgFini`; `0x0083bdb0` (a free-block helper beside the
+  `Sg_`/`Ch_` code, writing `0x01301968`) is left to its module.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

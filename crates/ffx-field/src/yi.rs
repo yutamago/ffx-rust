@@ -7,6 +7,16 @@ use ffx_bridge::Global;
 /// 0 and 4 are set once a map is read (`yiMapReadMaster`), bit 0 gates the
 /// field particles (`yiCallFieldParticle`).
 pub const RENDER_STATUS: Global<u32> = Global::new(0x018d_ed08);
+/// 1/32 and 32.0 (`f64`s in `.rdata`): `yiRender_setupFogParam`'s scale.
+pub const FOG_EIGHTH: u32 = 0x00b5_01a0;
+/// See [`FOG_EIGHTH`].
+pub const FOG_SCALE32: u32 = 0x00b4_12f8;
+/// 255.0 as an `f64` (`.rdata`).
+pub const FOG_255: u32 = 0x00b1_70c0;
+/// 255.0 as an `f32` (`.rdata`).
+pub const FOG_255_F32: u32 = 0x00b4_80d4;
+/// The window handlers by kind (`yiWindowSetHandlers`): 6 words a kind.
+pub const WINDOW_HANDLERS: u32 = 0x00c5_d788;
 /// The draw mask (`yiSetDrawMask`): -9 after a map is read, -1 when the
 /// battle map circle is on (`yiMapReadMaster`); script native 0x8000 sets
 /// its bits.
@@ -212,6 +222,10 @@ pub mod state {
     /// Flags and floats two script natives set (`yiSetFieldPair`,
     /// `yiSetFieldVec3Int`).
     pub const FIELD_FLAGS: Global<u32> = Global::new(0x0193_4e78);
+    /// The view matrix (`yiSetViewMatrix`).
+    pub const VIEW_MATRIX: Global<[u32; 16]> = Global::new(0x018d_ed38);
+    /// Two floats `yiSetViewMatrix` takes from `+0x20` of its matrix.
+    pub const VIEW_EXTRA: Global<[u32; 2]> = Global::new(0x018d_f168);
     /// CLUTs in the first VRAM area (`yiClutAlloc_makepacket`: 32, or 16
     /// for texture mode 4).
     pub const CLUT_SPLIT: Global<u32> = Global::new(0x0193_bb14);
@@ -1128,5 +1142,288 @@ pub mod bridge {
             ];
             mem.write(r.wrapping_add(at), words);
         }
+    }
+
+    /// `yiArcPrintSize()` (`0x0090e6f0`): prints the archive section sizes
+    /// through `dbgPrintf`, empty on PC; returns 0.
+    #[must_use]
+    pub const fn yi_arc_print_size() -> u32 {
+        0
+    }
+
+    /// `yiSetViewMatrix(m)` (`0x0090a980`): unless render status bit 11 is
+    /// set, the view matrix (`0x018ded38`, `FFXVu0CopyMatrix`) and the
+    /// floats at `m +0x20`, `+0x24` into `0x018df168`.
+    pub fn yi_set_view_matrix(mem: &mut impl Mem, m: u32) {
+        if RENDER_STATUS.get(mem) & 0x800 != 0 || m == 0 {
+            return;
+        }
+        let at = state::VIEW_MATRIX.ptr(mem).addr;
+        ffx_ps2::vu0::bridge::matrix_copy(mem, at, m);
+        let a = mem.read::<u32>(m + 0x20);
+        let b = mem.read::<u32>(m + 0x24);
+        let at = state::VIEW_EXTRA.ptr(mem).addr;
+        mem.write(at, [x87::copy(a), x87::copy(b)]);
+    }
+
+    /// `yiPolyBufClear(buf)` (`0x00911970`): zeroes the first `0x4000`
+    /// bytes, the counters at `+0x4000`/`+0x4008` and the words
+    /// `+0x4048..=+0x4080`, and the `u16` at `+0x4084`. Returns `buf`.
+    pub fn yi_poly_buf_clear(mem: &mut impl Mem, buf: u32) -> u32 {
+        for row in 0..0x400u32 {
+            let at = buf.wrapping_add(8 + 16 * row);
+            for d in [4u32, 0, 0u32.wrapping_sub(4), 0u32.wrapping_sub(8)] {
+                mem.write(at.wrapping_add(d), 0u32);
+            }
+        }
+        for off in [
+            0x4000u32, 0x4008, 0x4054, 0x4050, 0x404c, 0x4048, 0x4064, 0x4060, 0x405c, 0x4058,
+            0x4074, 0x4078, 0x406c, 0x4070, 0x407c, 0x4080,
+        ] {
+            mem.write(buf.wrapping_add(off), 0u32);
+        }
+        mem.write(buf.wrapping_add(0x4084), 0u16);
+        buf
+    }
+
+    /// The colour bytes of three GIF `RGBAQ` quadwords from `gif + 16 *
+    /// first` (`r g b a` each) to `out`, the alphas first set to `alpha`
+    /// (none when `first + 3` wraps); `+0x12` cleared. Returns the last.
+    fn tri_colors(mem: &mut impl Mem, out: u32, gif: u32, first: u32, alpha: u32) -> u32 {
+        mem.write(out.wrapping_add(0x12), 0u16);
+        let end = first.wrapping_add(3);
+        if first < end {
+            let mut at = first.wrapping_mul(16).wrapping_add(0xc).wrapping_add(gif);
+            for _ in first..end {
+                mem.write(at, alpha);
+                at = at.wrapping_add(16);
+            }
+        }
+        let q = first.wrapping_mul(16).wrapping_add(gif);
+        let mut last = 0;
+        for i in 0..12u32 {
+            last = mem.read::<u8>(q.wrapping_add(4 * i));
+            mem.write(out.wrapping_add(i), last);
+        }
+        u32::from(last)
+    }
+
+    /// `yiTriColorsFromGif(out, gif, first)` (`0x00910340`): a triangle's
+    /// three colours (`r g b a`, 12 bytes) from the GIF packet's `RGBAQ`
+    /// quadwords at `first`, their alphas first set to 0x80; `+0x12`
+    /// cleared. Returns the last byte copied.
+    pub fn yi_tri_colors_from_gif(mem: &mut impl Mem, out: u32, gif: u32, first: u32) -> u32 {
+        tri_colors(mem, out, gif, first, 0x80)
+    }
+
+    /// `yiTriColorsUvFromGif(out, gif, first, uv)` (`0x009103e0`): as
+    /// [`yi_tri_colors_from_gif`] with alpha 0x7f, then the three `UV`
+    /// quadwords at `uv` (`u16` u and v each) to `+0x14`. Returns the last
+    /// `u16` copied.
+    pub fn yi_tri_colors_uv_from_gif(
+        mem: &mut impl Mem,
+        out: u32,
+        gif: u32,
+        first: u32,
+        uv: u32,
+    ) -> u32 {
+        tri_colors(mem, out, gif, first, 0x7f);
+        let q = uv.wrapping_mul(16).wrapping_add(gif);
+        let mut last = 0;
+        for (i, off) in [0u32, 4, 0x10, 0x14, 0x20, 0x24].into_iter().enumerate() {
+            last = mem.read::<u16>(q.wrapping_add(off));
+            mem.write(
+                out.wrapping_add(0x14 + 2 * u32::try_from(i).unwrap_or(0)),
+                last,
+            );
+        }
+        u32::from(last)
+    }
+
+    /// `yiLoadMatrixChunk(scene, chunk)` (`0x0090ed10`): `+4` of the chunk
+    /// to `+0x6823c`, then 64 floats from `+0x40` to `+0x68240` (`fld` /
+    /// `fstp`, so [`x87::copy`]).
+    pub fn yi_load_matrix_chunk(mem: &mut impl Mem, scene: u32, chunk: u32) {
+        let w = mem.read::<u32>(chunk.wrapping_add(4));
+        mem.write(scene.wrapping_add(0x6823c), w);
+        for i in 0..64u32 {
+            let v = mem.read::<u32>(chunk.wrapping_add(0x40 + 4 * i));
+            mem.write(scene.wrapping_add(0x68240 + 4 * i), x87::copy(v));
+        }
+    }
+
+    /// `yiRender_setupFogParam(scene)` (`0x0090d1b0`): from the fog scale
+    /// (`+0x681f8`, times 1/32 and 32) and the near/far (`+0x68348`,
+    /// `+0x6834c`): `+0x68350` = -255 / (far - near) (0 when equal),
+    /// `+0x68354` = 255 - `+0x68344` (255 with flag 8 at `+0x67f08`),
+    /// `+0x68358` = -near, `+0x6835c` = 0.
+    pub fn yi_render_setup_fog_param(mem: &mut impl Mem, scene: u32) {
+        let ld = |mem: &_, off: u32| {
+            ffx_bridge::x87::load(Mem::read::<u32>(mem, scene.wrapping_add(off)))
+        };
+        let k = |mem: &_, at: u32| {
+            let a = Mem::rebase(mem, at);
+            Mem::read::<f64>(mem, a)
+        };
+        let s = ld(&*mem, 0x681f8) * k(&*mem, super::FOG_EIGHTH) * k(&*mem, super::FOG_SCALE32);
+        let far = f64::from(f32::from_bits(x87::store(ld(&*mem, 0x6834c) * s)));
+        let near = f64::from(f32::from_bits(x87::store(s * ld(&*mem, 0x68348))));
+        let c255 = k(&*mem, super::FOG_255);
+        #[allow(clippy::float_cmp)] // fucomp: exact
+        let r = if near == far {
+            0
+        } else {
+            x87::store(-(c255 / (far - near)))
+        };
+        mem.write(scene.wrapping_add(0x68350), r);
+        let p = ld(&*mem, 0x68344);
+        mem.write(scene.wrapping_add(0x68354), x87::store(c255 - p));
+        mem.write(scene.wrapping_add(0x68358), x87::store(-near));
+        mem.write(scene.wrapping_add(0x6835c), 0u32);
+        if mem.read::<u8>(scene.wrapping_add(0x67f08)) & 8 != 0 {
+            let a = mem.rebase(super::FOG_255_F32);
+            let v = mem.read::<u32>(a);
+            mem.write(scene.wrapping_add(0x68354), x87::copy(v));
+        }
+    }
+
+    /// The fields `yiObjSave`/`yiObjLoad` copy: (object offset, record
+    /// offset, size: 2 a `u16`, 4 a word, 0 a float through `fld`/`fstp`).
+    const OBJ_RECORD: [(u32, u32, u8); 18] = [
+        (0x80, 0, 2),
+        (0x82, 2, 2),
+        (0x84, 4, 2),
+        (0x88, 8, 4),
+        (0x86, 0x30, 2),
+        (0x50, 0x10, 0),
+        (0x54, 0x14, 0),
+        (0x58, 0x18, 0),
+        (0x5c, 0x1c, 0),
+        (0x60, 0x20, 0),
+        (0x64, 0x24, 0),
+        (0x68, 0x28, 0),
+        (0x6c, 0x2c, 0),
+        (0x8c, 0x34, 4),
+        (0x90, 0x38, 2),
+        (0x92, 0x3a, 2),
+        (0x94, 0x3c, 2),
+        (0x96, 0x3e, 2),
+    ];
+
+    /// `yiObjSave(record, obj)` (`0x0090ee60`): the object's state to a
+    /// record ([`OBJ_RECORD`]; `+0x84` widened to a word). Returns the
+    /// last `u16`.
+    pub fn yi_obj_save(mem: &mut impl Mem, rec: u32, obj: u32) -> u32 {
+        let mut last = 0;
+        for (o, r, size) in OBJ_RECORD {
+            let (from, to) = (obj.wrapping_add(o), rec.wrapping_add(r));
+            match (size, o) {
+                (2, 0x84) => mem.write(to, u32::from(mem.read::<u16>(from))),
+                (2, _) => {
+                    let v = mem.read::<u16>(from);
+                    last = u32::from(v);
+                    mem.write(to, v);
+                }
+                (4, _) => mem.write(to, mem.read::<u32>(from)),
+                _ => mem.write(to, x87::copy(mem.read::<u32>(from))),
+            }
+        }
+        last
+    }
+
+    /// `yiObjLoad(obj, record)` (`0x0090edb0`): the reverse of
+    /// [`yi_obj_save`] (`+0x84` from the record's low half). Returns the
+    /// last `u16`.
+    pub fn yi_obj_load(mem: &mut impl Mem, obj: u32, rec: u32) -> u32 {
+        let mut last = 0;
+        for (o, r, size) in OBJ_RECORD {
+            let (from, to) = (rec.wrapping_add(r), obj.wrapping_add(o));
+            match size {
+                2 => {
+                    let v = mem.read::<u16>(from);
+                    last = u32::from(v);
+                    mem.write(to, v);
+                }
+                4 => mem.write(to, mem.read::<u32>(from)),
+                _ => mem.write(to, x87::copy(mem.read::<u32>(from))),
+            }
+        }
+        last
+    }
+
+    /// `yiWindowSetHandlers(window)` (`0x00907d80`): the six handlers of
+    /// the window's kind (`+4`, `i16`; 6 words a kind from `0x00c5d788`) to
+    /// `+0x60`..`+0x70` and `+0x78`. Returns the last.
+    pub fn yi_window_set_handlers(mem: &mut impl Mem, window: u32) -> u32 {
+        let mut last = 0;
+        for (i, off) in [0x60u32, 0x64, 0x68, 0x6c, 0x70, 0x78]
+            .into_iter()
+            .enumerate()
+        {
+            let kind = i32::from(mem.read::<i16>(window.wrapping_add(4))).cast_unsigned();
+            let table = mem.rebase(super::WINDOW_HANDLERS);
+            let at = kind
+                .wrapping_mul(0x18)
+                .wrapping_add(table)
+                .wrapping_add(4 * u32::try_from(i).unwrap_or(0));
+            last = mem.read::<u32>(at);
+            mem.write(window.wrapping_add(off), last);
+        }
+        last
+    }
+
+    /// `yiCameraLoad(camera, record)` (`0x0090ef10`): a camera record from
+    /// the map file: `u16`s to `+0x30`, `+0x32`, `+0x36`, `+0x34`, `+0x38`
+    /// a float, `+0x48` a word, and twelve floats (`+0x10..`) to `+0`.
+    /// Returns the last `u16` (`+6`).
+    pub fn yi_camera_load(mem: &mut impl Mem, cam: u32, rec: u32) -> u32 {
+        let h = |mem: &mut _, d: u32, s: u32| {
+            let v = Mem::read::<u16>(mem, rec.wrapping_add(s));
+            Mem::write(mem, cam.wrapping_add(d), v);
+            u32::from(v)
+        };
+        h(mem, 0x30, 0);
+        h(mem, 0x32, 2);
+        h(mem, 0x36, 4);
+        let f = x87::copy(mem.read::<u32>(rec.wrapping_add(8)));
+        mem.write(cam.wrapping_add(0x38), f);
+        let w = mem.read::<u32>(rec.wrapping_add(0xc));
+        mem.write(cam.wrapping_add(0x48), w);
+        let last = h(mem, 0x34, 6);
+        for i in 0..12u32 {
+            let f = x87::copy(mem.read::<u32>(rec.wrapping_add(0x10 + 4 * i)));
+            mem.write(cam.wrapping_add(4 * i), f);
+        }
+        last
+    }
+
+    /// `yiFogLoad(scene, record)` (`0x0090f090`): the fog record: `+0xc`
+    /// to `+0x68340`, the floats `+0x10..=+0x18` to `+0x68344..`, `+0x1c`
+    /// and `+0x20` to `+0xba400`/`+0xba404`, the colour words `+0..=+8` to
+    /// `+0x68378..`, the floats `+0x30..=+0x3c` to `+0x6822c..`. Returns
+    /// the colour's last word.
+    pub fn yi_fog_load(mem: &mut impl Mem, scene: u32, rec: u32) -> u32 {
+        let w = mem.read::<u32>(rec.wrapping_add(0xc));
+        mem.write(scene.wrapping_add(0x68340), w);
+        for (d, s) in [
+            (0x68344u32, 0x10u32),
+            (0x68348, 0x14),
+            (0x6834c, 0x18),
+            (0xba400, 0x1c),
+            (0xba404, 0x20),
+        ] {
+            let f = x87::copy(mem.read::<u32>(rec.wrapping_add(s)));
+            mem.write(scene.wrapping_add(d), f);
+        }
+        let mut last = 0;
+        for i in 0..3u32 {
+            last = mem.read::<u32>(rec.wrapping_add(4 * i));
+            mem.write(scene.wrapping_add(0x68378 + 4 * i), last);
+        }
+        for i in 0..4u32 {
+            let f = x87::copy(mem.read::<u32>(rec.wrapping_add(0x30 + 4 * i)));
+            mem.write(scene.wrapping_add(0x6822c + 4 * i), f);
+        }
+        last
     }
 }
