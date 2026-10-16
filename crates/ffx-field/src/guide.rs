@@ -890,6 +890,43 @@ pub mod bridge {
             l => i32::from(mem.read::<i16>(l + scene::layout::GUIDE_CURRENT)),
         }
     }
+
+    /// `Yn_NearestOnLine2D(out, a, b, p, clamp)` (`0x0091cc00`): the point
+    /// of the line `a`→`b` (x, y) nearest `p`: `t = -((a - p) . d) / |d|^2`
+    /// (0 when `|d|^2 <= 0`), clamped to 0..=1 with `clamp`, `out = a + t
+    /// d`. The squared length, the dot product and `t` are stored as
+    /// `f32` on the way. Returns `out`.
+    pub fn yn_nearest_on_line_2d(
+        mem: &mut impl Mem,
+        out: u32,
+        a: u32,
+        b: u32,
+        p: u32,
+        clamp: u32,
+    ) -> u32 {
+        let ld = |mem: &_, at: u32| ffx_bridge::x87::load(Mem::read::<u32>(mem, at));
+        let st = |x: f64| f64::from(f32::from_bits(x87::store(x)));
+        let dx = st(ld(&*mem, b) - ld(&*mem, a));
+        let dy = st(ld(&*mem, b.wrapping_add(4)) - ld(&*mem, a.wrapping_add(4)));
+        let len = st(dx * dx + dy * dy);
+        let mut t = if len > 0.0 {
+            let s = st(
+                (ld(&*mem, a.wrapping_add(4)) - ld(&*mem, p.wrapping_add(4))) * dy
+                    + (ld(&*mem, a) - ld(&*mem, p)) * dx,
+            );
+            st(-s / len)
+        } else {
+            0.0
+        };
+        if clamp != 0 {
+            t = t.clamp(0.0, 1.0);
+        }
+        let x = dx * t + ld(&*mem, a);
+        mem.write(out, x87::store(x));
+        let y = dy * t + ld(&*mem, a.wrapping_add(4));
+        mem.write(out.wrapping_add(4), x87::store(y));
+        out
+    }
 }
 
 #[cfg(test)]

@@ -4705,3 +4705,350 @@ fn round6_parse_rcui_and_view_match_the_original() {
         );
     }
 }
+
+/// A sphere grid visitor `f(node, log)`: counts the call in `log[0]`,
+/// records the node at `log[count]`, returns -1 when the node's `+0x20`
+/// byte is at least 0xf0, else 0.
+const VISIT_STUB: [u8; 29] = [
+    0x8b, 0x44, 0x24, 0x04, 0x8b, 0x4c, 0x24, 0x08, 0xff, 0x01, 0x8b, 0x11, 0x89, 0x04, 0x91, 0x0f,
+    0xb6, 0x40, 0x20, 0x3d, 0xf0, 0x00, 0x00, 0x00, 0x19, 0xc0, 0xf7, 0xd0, 0xc3,
+];
+
+/// Finite float words (no NaN) at `at`, for arithmetic.
+fn finite_floats(t: &mut Twin, at: u32, words: u32, rng: &mut Xorshift) {
+    for i in 0..words {
+        let v = rng.float();
+        t.put(at + 4 * i, v);
+    }
+}
+
+/// Sphere grid visitors and matrices, `yi` records, rcfx initialisers,
+/// rcui selection, Ke colours.
+#[test]
+#[allow(clippy::too_many_lines)] // one case after another
+fn round6_grid_records_and_rcfx_match_the_original() {
+    use ffx_field::abmap::{self, bridge as ab};
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0006_0003);
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(CODE_AREA + 0xe0);
+        o.write(at, &VISIT_STUB).unwrap();
+    }
+    let visit = t.b.rebase(CODE_AREA + 0xe0);
+    let g = t.alloc(0x1_2000);
+    t.set(abmap::ABMAP, g);
+    let (out, pos, pos2, log) = (t.alloc(0x40), t.alloc(8), t.alloc(8), t.alloc(0x400));
+    let call =
+        |m: &mut Oracle, f: u32, n: u32, a: u32| m.call(f, Conv::Cdecl, &[n, a]).unwrap().eax;
+    for _ in 0..200 {
+        // nodes, links, kinds, markers
+        t.fill(g, 0x1_2000, &mut rng);
+        let nodes = rng.range(-1, 40);
+        t.put(g + 2, i16::try_from(nodes).unwrap());
+        t.put(g + 4, i16::try_from(rng.range(-1, 30)).unwrap());
+        for k in 0..64u32 {
+            let kind = if rng.below(5) == 0 {
+                0xffff
+            } else {
+                rng.below(16)
+            };
+            t.put(g + 0x808 + 0x28 * k + 6, u16::try_from(kind).unwrap());
+            t.put(
+                g + 0x808 + 0x28 * k + 0x20,
+                u8::try_from(rng.below(0x100)).unwrap(),
+            );
+        }
+        for l in 0..30u32 {
+            t.put(g + 0xa808 + 0x14 * l, u16::try_from(rng.below(12)).unwrap());
+            t.put(g + 0xa80a + 0x14 * l, u16::try_from(rng.below(12)).unwrap());
+        }
+        for c in 0..7u32 {
+            t.put(
+                g + 0x11088 + 0x50 * c + 0x44,
+                u16::try_from(rng.below(40)).unwrap(),
+            );
+        }
+        t.fill(pos, 8, &mut rng);
+        t.fill(pos2, 8, &mut rng);
+        let s = rng.any_float();
+        t.same(
+            "AbmapMakeNodeMatrix",
+            |o| o.eax(0x00a5_ad30, &[out, pos, s]),
+            |m| ab::abmap_make_node_matrix(m, out, pos, s),
+        );
+        t.same(
+            "AbmapMakeLinkMatrix",
+            |o| o.eax(0x00a5_a360, &[out, pos, pos2, s]),
+            |m| ab::abmap_make_link_matrix(m, out, pos, pos2, s),
+        );
+        if nodes >= 0 {
+            t.put(log, 0u32);
+            t.same(
+                "AbmapForEachNode",
+                |o| o.eax(0x00a5_9710, &[visit, log]),
+                |m| ab::abmap_for_each_node(m, visit, log, call),
+            );
+        }
+        t.put(log, 0u32);
+        let node = rng.below(12);
+        t.same(
+            "AbmapForNodeAndLinked",
+            |o| o.eax(0x00a5_9760, &[node, visit, log]),
+            |m| ab::abmap_for_node_and_linked(m, u16::try_from(node).unwrap(), visit, log, call),
+        );
+        t.same(
+            "AbmapResetHelp",
+            |o| o.eax(0x00a5_b930, &[]),
+            ab::abmap_reset_help,
+        );
+        t.same(
+            "AbmapPulseCursor",
+            |o| o.eax(0x00a4_7440, &[]),
+            ab::abmap_pulse_cursor,
+        );
+        let c = rng.below(7);
+        t.same(
+            "AbmapSetChrMarker",
+            |o| o.eax(0x00a5_a990, &[c]),
+            |m| ab::abmap_set_chr_marker(m, c),
+        );
+        let n = rng.next() >> rng.below(32);
+        for f in [0x00a5_cee0, 0x00a5_cf10] {
+            t.same(
+                "AbmapQuarterOrOne",
+                |o| o.eax(f, &[0, n]),
+                |_| ab::abmap_quarter_or_one(n.cast_signed()),
+            );
+        }
+        t.floats(out, 16, &mut rng);
+        t.same(
+            "AbmapVu0LoadMatrix1",
+            |o| o.eax(0x00a5_be30, &[out]),
+            |m| ab::abmap_vu0_load_matrix1(m, out),
+        );
+        t.same(
+            "AbmapVu0LoadMatrix2",
+            |o| o.eax(0x00a5_bec0, &[out]),
+            |m| ab::abmap_vu0_load_matrix2(m, out),
+        );
+    }
+    // yi: polygon buffers, GIF colours, records, fog
+    let (buf, gif, tri, scene, rec) = (
+        t.alloc(0x4090),
+        t.alloc(0x200),
+        t.alloc(0x20),
+        t.alloc(0xba410),
+        t.alloc(0x100),
+    );
+    t.fill(buf, 0x4090, &mut rng);
+    t.same(
+        "yiPolyBufClear",
+        |o| o.eax(0x0091_1970, &[buf]),
+        |m| yi::bridge::yi_poly_buf_clear(m, buf),
+    );
+    for _ in 0..100 {
+        t.fill(gif, 0x200, &mut rng);
+        t.fill(tri, 0x20, &mut rng);
+        let (first, uv) = (rng.below(16), rng.below(16));
+        let first = if rng.below(10) == 0 {
+            first.wrapping_sub(2)
+        } else {
+            first
+        };
+        t.same(
+            "yiTriColorsFromGif",
+            |o| o.eax(0x0091_0340, &[tri, gif, first]),
+            |m| yi::bridge::yi_tri_colors_from_gif(m, tri, gif, first),
+        );
+        t.same(
+            "yiTriColorsUvFromGif",
+            |o| o.eax(0x0091_03e0, &[tri, gif, first, uv]),
+            |m| yi::bridge::yi_tri_colors_uv_from_gif(m, tri, gif, first, uv),
+        );
+        t.floats(rec, 0x40, &mut rng);
+        t.same(
+            "yiLoadMatrixChunk",
+            |o| o.void(0x0090_ed10, &[scene, rec]),
+            |m| yi::bridge::yi_load_matrix_chunk(m, scene, rec),
+        );
+        t.same(
+            "yiObjSave",
+            |o| o.eax(0x0090_ee60, &[rec, scene]),
+            |m| yi::bridge::yi_obj_save(m, rec, scene),
+        );
+        t.floats(rec, 0x40, &mut rng);
+        t.same(
+            "yiObjLoad",
+            |o| o.eax(0x0090_edb0, &[scene, rec]),
+            |m| yi::bridge::yi_obj_load(m, scene, rec),
+        );
+        t.same(
+            "yiCameraLoad",
+            |o| o.eax(0x0090_ef10, &[scene, rec]),
+            |m| yi::bridge::yi_camera_load(m, scene, rec),
+        );
+        t.same(
+            "yiFogLoad",
+            |o| o.eax(0x0090_f090, &[scene, rec]),
+            |m| yi::bridge::yi_fog_load(m, scene, rec),
+        );
+        finite_floats(&mut t, scene + 0x681f8, 1, &mut rng);
+        finite_floats(&mut t, scene + 0x68344, 3, &mut rng);
+        if rng.below(4) == 0 {
+            let v = Mem::read::<u32>(&t.b, scene + 0x68348);
+            t.put(scene + 0x6834c, v);
+        }
+        t.put(scene + 0x67f08, u8::try_from(rng.below(0x100)).unwrap());
+        t.same(
+            "yiRender_setupFogParam",
+            |o| o.void(0x0090_d1b0, &[scene]),
+            |m| yi::bridge::yi_render_setup_fog_param(m, scene),
+        );
+        t.put(rec + 4, i16::try_from(rng.range(-2, 12)).unwrap());
+        t.same(
+            "yiWindowSetHandlers",
+            |o| o.eax(0x0090_7d80, &[rec]),
+            |m| yi::bridge::yi_window_set_handlers(m, rec),
+        );
+    }
+    // nearest point on a line, cross product, Ke colours
+    let (a, b, p, q) = (t.alloc(0x10), t.alloc(0x10), t.alloc(0x10), t.alloc(0x10));
+    for k in 0..300u32 {
+        for v in [a, b, p, q] {
+            finite_floats(&mut t, v, 4, &mut rng);
+        }
+        if k % 5 == 0 {
+            let x = Mem::read::<u64>(&t.b, a);
+            t.put(b, x);
+        }
+        let clamp = rng.below(2);
+        t.same(
+            "Yn_NearestOnLine2D",
+            |o| o.eax(0x0091_cc00, &[out, a, b, p, clamp]),
+            |m| guide::bridge::yn_nearest_on_line_2d(m, out, a, b, p, clamp),
+        );
+        t.same(
+            "rcuiCrossProduct",
+            |o| o.eax(0x0093_d440, &[out, a, b]),
+            |m| rcui::bridge::rcui_cross_product(m, out, a, b),
+        );
+        for i in 0..4 {
+            #[allow(clippy::cast_precision_loss)]
+            let (x, y) = (
+                rng.range(-300, 600) as f32 / 2.0,
+                rng.range(-300, 300) as f32 / 4.0,
+            );
+            t.put(a + 4 * i, x.to_bits());
+            t.put(b + 4 * i, y.to_bits());
+        }
+        let kk = if k % 3 == 0 {
+            rng.float()
+        } else {
+            (f32::from_bits(rng.below(0x100)) + f32::from(i16::try_from(rng.range(-2, 3)).unwrap()))
+                .to_bits()
+        };
+        t.same(
+            "KeAddScaledColor",
+            |o| o.void(0x0076_4c40, &[out, a, b, kk]),
+            |m| ke::bridge::ke_add_scaled_color(m, out, a, b, kk),
+        );
+    }
+    // rc meshes, rcfx initialisers, rcef animation and draw records
+    let (obj, mesh, fx, anim, keys) = (
+        t.alloc(0x20),
+        t.alloc(0x20),
+        t.alloc(0x60),
+        t.alloc(0x50),
+        t.alloc(0x100),
+    );
+    for _ in 0..200 {
+        t.fill(mesh, 0x20, &mut rng);
+        t.put(obj + 0x14, mesh);
+        t.same(
+            "rcMeshPastIndices",
+            |o| o.eax(0x0092_8270, &[obj]),
+            |m| model::bridge::rc_mesh_past_indices(m, obj),
+        );
+        let x = rng.next();
+        t.same(
+            "rcbgIdentity",
+            |o| o.eax(0x0092_02a0, &[x]),
+            |_| model::bridge::rcbg_identity(x),
+        );
+        for (name, f) in [
+            ("rcfxGravityInit", 0x0092_9570u32),
+            ("rcfxParticleInit", 0x0092_88e0),
+            ("rcfxNailInit", 0x0092_9100),
+            ("rcfxWindInit", 0x0092_9850),
+        ] {
+            t.fill(fx, 0x60, &mut rng);
+            t.same(
+                name,
+                |o| o.eax(f, &[fx]),
+                |m| match f {
+                    0x0092_9570 => model::bridge::rcfx_gravity_init(m, fx),
+                    0x0092_88e0 => model::bridge::rcfx_particle_init(m, fx),
+                    0x0092_9100 => model::bridge::rcfx_nail_init(m, fx),
+                    _ => model::bridge::rcfx_wind_init(m, fx),
+                },
+            );
+        }
+        t.fill(keys, 0x100, &mut rng);
+        t.put(keys + 6, i16::try_from(rng.range(-1, 10)).unwrap());
+        for k in 0..16u32 {
+            t.put(
+                keys + 8 * k + 0x12,
+                i16::try_from(rng.range(-5, 40)).unwrap(),
+            );
+        }
+        t.put(anim + 4, keys);
+        t.put(anim + 0x40, i16::try_from(rng.range(-10, 40)).unwrap());
+        t.put(anim + 0x42, u16::try_from(rng.below(12)).unwrap());
+        t.put(anim + 0x44, i16::try_from(rng.range(-3, 20)).unwrap());
+        t.same(
+            "rcefAnimeStep",
+            |o| o.eax(0x0092_f400, &[anim]),
+            |m| model::bridge::rcef_anime_step(m, anim),
+        );
+        let (tex, aa, bb) = (rng.next(), rng.next(), rng.next());
+        t.same(
+            "rcefSetupDraw",
+            |o| o.eax(0x0092_f6b0, &[fx, tex, aa, bb]),
+            |m| model::bridge::rcef_setup_draw(m, fx, tex, aa, bb),
+        );
+    }
+    // rcui selection over the map system's layers
+    let (sys, map, table, layers, work) = (
+        t.alloc(0x10),
+        t.alloc(0x10),
+        t.alloc(0x10),
+        t.alloc(0xc0 * 8),
+        t.alloc(0x300),
+    );
+    t.set(rcui::WORK, work);
+    for k in 0..60 {
+        t.set(guide::YN_MAP_SYSTEM, if k % 7 == 0 { 0 } else { sys });
+        t.put(sys, if k % 11 == 0 { 0 } else { map });
+        t.put(map + 8, table);
+        t.put(table + 4, rng.range(-1, 8));
+        t.put(table + 8, layers);
+        t.fill(layers, 0xc0 * 8, &mut rng);
+        t.put(work + 0x28c, rng.below(4));
+        t.put(work + 0x288, rng.below(8));
+        let sys_ok = k % 7 != 0 && k % 11 != 0;
+        let mode = Mem::read::<u32>(&t.b, work + 0x28c);
+        if !sys_ok && (mode == 1 || mode == 2) {
+            continue; // reads from address 0
+        }
+        t.same(
+            "rcuiClearSelect",
+            |o| o.eax(0x0093_4af0, &[]),
+            rcui::bridge::rcui_clear_select,
+        );
+        t.same(
+            "rcuiSetSelect",
+            |o| o.eax(0x0093_4b50, &[]),
+            rcui::bridge::rcui_set_select,
+        );
+    }
+}

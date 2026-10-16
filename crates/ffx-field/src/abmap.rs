@@ -30,6 +30,19 @@ pub const TILT_LEVELS: u32 = 0x00b7_b728;
 pub const ZOOM_LEVELS: [u32; 3] = [0x00b9_2194, 0x00b9_2180, 0x00b4_9368];
 /// 0.375 (`.rdata`): at most this zoom `+0x116b0` is -2.
 pub const ZOOM_NEAR: u32 = 0x00b4_936c;
+/// The help screen's state (`0x00a45010`), set by `AbmapResetHelp`.
+pub const STATE_HELP: u32 = 0x00a4_5010;
+/// `AbmapSetHelpMessage`, the message hook `AbmapResetHelp` sets.
+pub const SET_HELP_MESSAGE: u32 = 0x00a4_54a0;
+/// 1.0 and 8.0 (`f64`s in `.rdata`), `AbmapPulseCursor`'s scale.
+pub const PULSE_ONE: u32 = 0x00b9_2248;
+/// See [`PULSE_ONE`].
+pub const PULSE_SCALE: u32 = 0x00b9_22a8;
+/// The emulated VU0 registers `vf01` and `vf05` (`AbmapVu0LoadMatrix1`/`2`
+/// load four each).
+pub const VU0_MATRIX1: u32 = 0x00c8_f7a0;
+/// See [`VU0_MATRIX1`].
+pub const VU0_MATRIX2: u32 = 0x00c8_f7e0;
 /// The sine table (4096 `f32`s, a quarter turn in 1024).
 pub const SIN_TABLE: u32 = 0x00c4_4bf0;
 
@@ -481,5 +494,248 @@ pub mod bridge {
             let g = ABMAP.get(mem);
             mem.write(g.wrapping_add(0x115a8), f);
         }
+    }
+
+    /// `AbmapMakeNodeMatrix(out, pos, scale)` (`0x00a5ad30`): a 4x4 matrix
+    /// filled from the emulated `r0` register (`crate::vu0::EE_GPR`, four
+    /// words, a row at a time), `scale` on the diagonal's first three, the
+    /// translation row the `i16` position, 1.0. Returns the `eax` it ends
+    /// with: the position's z sign-extended.
+    pub fn abmap_make_node_matrix(mem: &mut impl Mem, out: u32, pos: u32, scale: u32) -> u32 {
+        let r0 = crate::vu0::EE_GPR.ptr(mem).addr;
+        for row in 0..4u32 {
+            for i in 0..4u32 {
+                let w = mem.read::<u32>(r0 + 4 * i);
+                mem.write(out.wrapping_add(16 * row + 4 * i), w);
+            }
+        }
+        let s = x87::copy(scale);
+        for at in [0x28u32, 0x14, 0] {
+            mem.write(out.wrapping_add(at), s);
+        }
+        let mut z = 0;
+        for i in 0..3u32 {
+            z = i32::from(mem.read::<i16>(pos.wrapping_add(2 * i)));
+            #[allow(clippy::cast_precision_loss)] // fild, then fstp m32 rounds
+            mem.write(out.wrapping_add(0x30 + 4 * i), (z as f32).to_bits());
+        }
+        mem.write(out.wrapping_add(0x3c), 1.0f32.to_bits());
+        z.cast_unsigned()
+    }
+
+    /// `AbmapForEachNode(f, arg)` (`0x00a59710`): `f(node, arg)` for the
+    /// node count (`+2`, `i16`) of nodes, skipping kind -1, until one
+    /// returns non-zero. Returns that value; 0xffff when none did; the data
+    /// pointer with a count of 0.
+    pub fn abmap_for_each_node<M: Mem>(
+        mem: &mut M,
+        f: u32,
+        arg: u32,
+        mut call: impl FnMut(&mut M, u32, u32, u32) -> u32,
+    ) -> u32 {
+        let g = ABMAP.get(mem);
+        let mut n = i32::from(mem.read::<i16>(g.wrapping_add(2)));
+        let mut node = g.wrapping_add(layout::NODES);
+        if n == 0 {
+            return g;
+        }
+        loop {
+            n = n.wrapping_sub(1);
+            if mem.read::<u16>(node.wrapping_add(6)) != 0xffff {
+                let r = call(mem, f, node, arg);
+                if r != 0 {
+                    return r;
+                }
+            }
+            node = node.wrapping_add(layout::NODE_SIZE);
+            if n == 0 {
+                return 0xffff;
+            }
+        }
+    }
+
+    /// `AbmapForNodeAndLinked(node, f, arg)` (`0x00a59760`): `f(node, arg)`,
+    /// then for each link (`0x14` bytes from `+0xa808`, its two `u16` ends)
+    /// that touches the node, `f(other end, arg)`, until one returns
+    /// non-zero. Returns that value, else where the link scan stopped.
+    pub fn abmap_for_node_and_linked<M: Mem>(
+        mem: &mut M,
+        node: u16,
+        f: u32,
+        arg: u32,
+        mut call: impl FnMut(&mut M, u32, u32, u32) -> u32,
+    ) -> u32 {
+        let at = |g: u32, n: u16| {
+            g.wrapping_add(layout::NODES)
+                .wrapping_add(u32::from(n) * layout::NODE_SIZE)
+        };
+        let g = ABMAP.get(mem);
+        let r = call(mem, f, at(g, node), arg);
+        if r != 0 {
+            return r;
+        }
+        let mut last = 0u32;
+        loop {
+            let g = ABMAP.get(mem);
+            let count = i32::from(mem.read::<i16>(g.wrapping_add(layout::LINK_COUNT)));
+            let end = g.wrapping_add(
+                count
+                    .wrapping_mul(5)
+                    .wrapping_add(0x2a02)
+                    .cast_unsigned()
+                    .wrapping_mul(4),
+            );
+            let mut l = if last == 0 {
+                g.wrapping_add(0xa808)
+            } else {
+                last.wrapping_add(layout::LINK_SIZE)
+            };
+            let other = loop {
+                if l >= end {
+                    return l;
+                }
+                let (a, b) = (mem.read::<u16>(l), mem.read::<u16>(l.wrapping_add(2)));
+                if a == node {
+                    break b;
+                }
+                if b == node {
+                    break a;
+                }
+                l = l.wrapping_add(layout::LINK_SIZE);
+            };
+            last = l;
+            let r = call(mem, f, at(g, other), arg);
+            if r != 0 {
+                return r;
+            }
+        }
+    }
+
+    /// `AbmapResetHelp()` (`0x00a5b930`): clears `+0x115c4` and `+0x115c3`,
+    /// the state to `0x00a45010` and the message hook to
+    /// `AbmapSetHelpMessage`. Returns the data pointer.
+    pub fn abmap_reset_help(mem: &mut impl Mem) -> u32 {
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x115c4), 0u8);
+        let s = mem.rebase(super::STATE_HELP);
+        mem.write(g.wrapping_add(0x115a8), s);
+        let h = mem.rebase(super::SET_HELP_MESSAGE);
+        mem.write(g.wrapping_add(0x115ac), h);
+        mem.write(g.wrapping_add(0x115c3), 0u8);
+        g
+    }
+
+    /// `AbmapPulseCursor()` (`0x00a47440`): the sine of the frame counter
+    /// (`+0x11698`, 32 steps) to `+0x115a4`, and `+0x115c5` to
+    /// `((sin + 1) * 8 + 0x70) * +0x115c6 >> 7` (truncated). Returns the
+    /// byte before the scaling.
+    pub fn abmap_pulse_cursor(mem: &mut impl Mem) -> u32 {
+        let g = ABMAP.get(mem);
+        let i = mem.read::<u32>(g.wrapping_add(0x11698)) & 0x1f;
+        let table = mem.rebase(super::SIN_TABLE);
+        let s = x87::copy(mem.read::<u32>(table + (i << 9)));
+        mem.write(g.wrapping_add(0x115a4), s);
+        let one = mem.read::<f64>(mem.rebase(super::PULSE_ONE));
+        let eight = mem.read::<f64>(mem.rebase(super::PULSE_SCALE));
+        let v = f64::from(f32::from_bits(x87::store(ffx_bridge::x87::load(s) + one)));
+        let k = ffx_bridge::x87::cvttsd2si(v * eight);
+        #[allow(clippy::cast_possible_truncation)] // the low byte
+        let b = (k as u8).wrapping_add(0x70);
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x115c5), b);
+        let m = u32::from(mem.read::<u8>(g.wrapping_add(0x115c6))) * u32::from(b);
+        #[allow(clippy::cast_possible_truncation)] // the low byte
+        mem.write(g.wrapping_add(0x115c5), (m >> 7) as u8);
+        u32::from(b)
+    }
+
+    /// `AbmapSetChrMarker(chr)` (`0x00a5a990`): the character's marker
+    /// (`0x50` bytes at `+0x11088`) placed on its node (`+0x44`): x, y,
+    /// 0, 1, and `+0x3c` half its kind's size + 3.0. Returns the marker.
+    pub fn abmap_set_chr_marker(mem: &mut impl Mem, chr: u32) -> u32 {
+        let g = ABMAP.get(mem);
+        let m = g.wrapping_add(0x11088).wrapping_add(chr.wrapping_mul(0x50));
+        let node = g
+            .wrapping_add(layout::NODES)
+            .wrapping_add(u32::from(mem.read::<u16>(m.wrapping_add(0x44))) * layout::NODE_SIZE);
+        for i in 0..2u32 {
+            let v = i32::from(mem.read::<i16>(node.wrapping_add(2 * i)));
+            #[allow(clippy::cast_precision_loss)] // fild, then fstp m32 rounds
+            mem.write(m.wrapping_add(4 * i), (v as f32).to_bits());
+        }
+        mem.write(m.wrapping_add(8), 0.0f32.to_bits());
+        mem.write(m.wrapping_add(0xc), 1.0f32.to_bits());
+        let g = ABMAP.get(mem);
+        let node = g
+            .wrapping_add(layout::NODES)
+            .wrapping_add(u32::from(mem.read::<u16>(m.wrapping_add(0x44))) * layout::NODE_SIZE);
+        let kind = u32::from(mem.read::<u16>(node.wrapping_add(6)));
+        let size = mem.read::<i16>(
+            g.wrapping_add(layout::KIND_SIZE)
+                .wrapping_add(kind * layout::KIND_STRIDE),
+        ) >> 1;
+        let margin = super::HOMING_MARGIN.get(mem);
+        mem.write(m.wrapping_add(0x3c), x87::store(f64::from(size) + margin));
+        m
+    }
+
+    /// `0x00a5cee0` and `0x00a5cf10` (two copies, `(_, n)`): `n / 4`
+    /// (toward zero), or 1 when that is 0.
+    #[must_use]
+    pub fn abmap_quarter_or_one(n: i32) -> u32 {
+        let q = n / 4;
+        if q == 0 { 1 } else { q.cast_unsigned() }
+    }
+
+    /// `AbmapMakeLinkMatrix(out, a, b, scale)` (`0x00a5a360`): as
+    /// [`abmap_make_node_matrix`], the translation the sum of two `i16`
+    /// (x, y) positions, z 0.0, 1.0. Returns `b`'s y sign-extended.
+    pub fn abmap_make_link_matrix(mem: &mut impl Mem, out: u32, a: u32, b: u32, scale: u32) -> u32 {
+        let r0 = crate::vu0::EE_GPR.ptr(mem).addr;
+        for row in 0..4u32 {
+            for i in 0..4u32 {
+                let w = mem.read::<u32>(r0 + 4 * i);
+                mem.write(out.wrapping_add(16 * row + 4 * i), w);
+            }
+        }
+        let s = x87::copy(scale);
+        for at in [0x28u32, 0x14, 0] {
+            mem.write(out.wrapping_add(at), s);
+        }
+        let mut y = 0;
+        for i in 0..2u32 {
+            let p = i32::from(mem.read::<i16>(a.wrapping_add(2 * i)));
+            y = i32::from(mem.read::<i16>(b.wrapping_add(2 * i)));
+            mem.write(
+                out.wrapping_add(0x30 + 4 * i),
+                x87::store(f64::from(p) + f64::from(y)),
+            );
+        }
+        mem.write(out.wrapping_add(0x38), 0u32);
+        mem.write(out.wrapping_add(0x3c), 1.0f32.to_bits());
+        y.cast_unsigned()
+    }
+
+    /// `AbmapVu0LoadMatrix1(m)` (`0x00a5be30`): the 4x4 matrix into the
+    /// emulated VU0 registers `vf01`..`vf04` (`0x00c8f7a0`), as `lqc2`
+    /// would. Returns the last word.
+    pub fn abmap_vu0_load_matrix1(mem: &mut impl Mem, m: u32) -> u32 {
+        load_vf_matrix(mem, m, super::VU0_MATRIX1)
+    }
+
+    /// `AbmapVu0LoadMatrix2(m)` (`0x00a5bec0`): as
+    /// [`abmap_vu0_load_matrix1`] into `vf05`..`vf08` (`0x00c8f7e0`).
+    pub fn abmap_vu0_load_matrix2(mem: &mut impl Mem, m: u32) -> u32 {
+        load_vf_matrix(mem, m, super::VU0_MATRIX2)
+    }
+
+    fn load_vf_matrix(mem: &mut impl Mem, m: u32, vf: u32) -> u32 {
+        let to = mem.rebase(vf);
+        let mut last = 0;
+        for i in 0..16u32 {
+            last = mem.read::<u32>(m.wrapping_add(4 * i));
+            mem.write(to + 4 * i, last);
+        }
+        last
     }
 }

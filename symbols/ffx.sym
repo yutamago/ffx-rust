@@ -1716,6 +1716,7 @@
 0x00764800 function KeThCp_Init               # fh v3:exact 0x007648f0
 0x007649a0 function KeThCp_Update             # fh v3:exact 0x00764a90
 0x00764bb0 function KeThResHd_Init            # fh v3:exact 0x00764ca0
+0x00764c40 function KeAddScaledColor          # (out, base, step, k): out[i] = step[i] * k + base[i] as f32, clamped to 0..=255 (KeThBP_MkGifPk's colours)
 0x007658b0 function InitVFXKeThRenderData     # fh v3:exact 0x007659a0
 0x00766770 function updateVFXKeThRenderData   # fh v3:exact 0x00766860
 0x007669c0 function updateVFXKeThSetPoint     # fh v3:exact 0x00766ab0
@@ -5041,6 +5042,7 @@
 0x00906c40 function TOGetWindowType           # fh v3:bsim1.00 0x00906c40
 0x00906ce0 function TOSetExeWindowArea        # fh v3:exact 0x00906ce0
 0x00906fb0 function TOGetWindowStructAdrs     # fh v3:bsim1.00 0x00906fb0 _TOGetWindowStructAdrs
+0x00907d80 function yiWindowSetHandlers       # (window): +0x60..+0x70, +0x78 = the six handlers of kind +4 (i16) from the table 0x00c5d788 (6 words a kind)
 0x00907f00 function yiMapGetSection              # (map, index) -> map + section offset (+0x10 + 4 index) for data tagged MAP1, else 0; loadPhyreFieldMap, yiMapReadMaster, yiObjReadCallback, yiSetIDPage, yiSetPreBgPage
 0x00907f50 function initEventList             # fh v3:exact 0x00907f50
 0x00908000 function loadPhyreFieldMap         # fh v3:exact 0x00908000
@@ -5108,6 +5110,7 @@
 0x0090a730 function yiSetViewAdjust              # (m): g_YiViewAdjust = m
 0x0090a750 function yiSetRotTransDObj         # fh v3:exact 0x0090a750
 0x0090a950 function yiSetScaleFactor          # fh switch:bsim1.00 0x710052b260
+0x0090a980 function yiSetViewMatrix           # (m): copies the view matrix to g_YiViewMatrix and two floats of +0x20 to 0x018df168 (null: identity)
 0x0090ae20 function yiPkAddGsAD                  # (q, reg, data): the A+D quadword (data, 0, reg, 0) of a GS register write
 0x0090ae50 function yiAssert                  # fh v3:exact 0x0090ae50
 0x0090bbd0 function yiMalloc                  # fh v3:cg20 0x90bbd0
@@ -5120,13 +5123,22 @@
 0x0090cd10 function yiPkUnpackMatrix             # (m, out, addr): VIF UNPACK V4-32 x4 to addr (0x6c040000 | addr), then the matrix
 0x0090cd90 function yiRender_resetobj         # fh v3:exact 0x0090cd90
 0x0090cea0 function yiRender_resettex         # fh v3:exact 0x0090cea0
+0x0090d1b0 function yiRender_setupFogParam    # (scene): +0x68350 = -255 / (far - near) from +0x681f8 * 1/32 * 32 and +0x68348/+0x6834c; +0x68354 = 255 - +0x68344 (255 with +0x67f08 bit 3); called by yiRender_setupparamVU1
 0x0090d260 function yiRender_setupparamGS     # fh v3:exact 0x0090d260
 0x0090da90 function yiRender_setupparamVU1    # fh v3:exact 0x0090da90
 0x0090e6d0 function TextUtilList_TextUtilList # fh switch:bsim1.00 0x71002190e0 TextUtilList::TextUtilList
 0x0090e6f0 function yiArcPrintSize            # fh switch:bsim1.00 0x7100532640
+0x0090ed10 function yiLoadMatrixChunk         # (scene, chunk): chunk +4 to +0x6823c, 64 floats from +0x40 to +0x68240 (map file reader 0x0090f900)
+0x0090edb0 function yiObjLoad                 # (obj, record): the inverse of yiObjSave (map file reader 0x0090f900, object records)
+0x0090ee60 function yiObjSave                 # (record, obj): obj +0x80..+0x96 and the floats +0x50..+0x6c to a 0x40-byte record (0x0090f190)
+0x0090ef10 function yiCameraLoad              # (camera, record): u16s to +0x30/+0x32/+0x36/+0x34, +0x38, +0x48, twelve floats to +0 (map file reader 0x0090f900)
+0x0090f090 function yiFogLoad                 # (scene, record): the fog fields +0x68340..+0x6834c, +0xba400/+0xba404, colour +0x68378.., +0x6822c.. (map file reader 0x0090f900)
 0x0090f8e0 function yiArc_readmem             # fh v3:exact 0x0090f8e0
 0x00910040 function yiPkAddGsAD_00910040         # the same code as yiPkAddGsAD
+0x00910340 function yiTriColorsFromGif        # (out, gif, first): three RGBAQ quadwords' bytes to out (alphas first set to 0x80), +0x12 cleared
+0x009103e0 function yiTriColorsUvFromGif      # (out, gif, first, uv): as yiTriColorsFromGif with alpha 0x7f, then three UV quadwords' u16s to +0x14
 0x00910580 function yiHighestBit                 # (bits) -> index of the highest of the low 16 bits set, -1 none
+0x00911970 function yiPolyBufClear            # (buf): zeroes 0x4000 bytes and the counters at +0x4000..+0x4084
 0x009131d0 function yiScreff_entry            # fh v3:exact 0x009131d0
 0x00913f30 function yiScreff_init             # fh switch:bsim1.00 0x7100534af0
 0x00914250 function yiAnimAttachDefault       # fh v3:exact 0x00914250
@@ -5207,6 +5219,8 @@
 0x0091acc0 function Yn_MapPartSet14              # (part, v): float +0x14; native 0x8014 (0x0091b280)
 0x0091ad10 function Yn_PreBgSetScrBank        # fh switch:bsim1.00 0x7100548410
 0x0091ad80 function Yn_SceneSetC0                # (a, float b, c, d, e): scene +0xc0..+0xd0, +0xd4 = 0.0, +0xd8 = 0; script native 0x0091b550
+0x0091adf0 function Yn_SeaGetAngPtr           # () -> the sea's angle vector, 0 without a sea
+0x0091ae10 function Yn_SeaGetPosPtr           # () -> the sea's position vector, 0 without a sea
 0x0091ae30 function Yn_SeaResetMatrix         # fh v3:bsim1.00 0x0091ae30
 0x0091ae40 function Yn_SeaSetAng              # fh v3:cg4 0x91ae40
 0x0091ae60 function Yn_SeaSetMatrix           # fh v3:bsim1.00 0x0091ae60
@@ -5222,6 +5236,7 @@
 0x0091c740 function Native_FpShow                # 0x800d: args (fp id, show) -> show; show != 0: Fp_Show, 0: Fp_Hide
 0x0091c7a0 function Native_FpRunMode2            # ?0x8003: args (fp id) -> 1; Fp_RestartMode2 (state 2)
 0x0091c810 function Native_BltzSetObjModels      # ?0x8067: args (worker a, worker b, mode, unused) -> 1; Blitzball only (bltz000x); first map object of type 0x20008 gets both workers' models (+0x9c via 0x0086b3a0) and mode (0x00922ef0)
+0x0091cc00 function Yn_NearestOnLine2D        # (out, a, b, p, clamp): a + t (b - a), t = -((a - p) . d) / |d|^2 (0 if |d|^2 <= 0), clamped to 0..1 when clamp
 0x0091ccc0 function rcbgGuideBattleBegin      # fh v3:exact 0x0091ccc0
 0x0091cce0 function rcbgGuideBattleEnd        # fh v3:exact 0x0091cce0
 0x0091d280 function Guide_FadeStep               # (show): steps the minimap's fade g_GuideFade toward shown (128) or hidden (0)
@@ -5260,7 +5275,9 @@
 0x0091ffb0 function rcbgPSimSetReady          # fh switch:bsim0.98 0x7100546520
 0x00920020 function rcCalcPersMatrix          # fh switch:bsim1.00 0x7100541240
 0x00920050 function rcbgTexGetLog2Size           # (w, h, &lw, &lh, &tbw): rcLog2Ceil of each; tbw = ceil(w / 64) rounded up to even; outputs optional; rcbgLayerDraw, rcbgSceneChkSortLayer
+0x009201a0 function Yn_DepthToScreen          # (depth): the screen depth of a fog depth through the screen matrix and the scene's +0xf4 (FOG_SCALE 10.0)
 0x00920250 function rcbgRestoreReg            # fh v3:exact 0x00920250
+0x009202a0 function rcbgIdentity              # (x) -> x; rcbgRestoreReg's register conversion
 0x009202e0 function rcbgSetProjectionMatrixSub # fh v3:exact 0x009202e0
 0x00920450 function rcbgSetReg                # fh v3:bsim1.00 0x00920450
 0x009204b0 function rcbgSetViewMatrix         # fh v3:exact 0x009204b0
@@ -5313,6 +5330,7 @@
 0x009237e0 function rcdtTm2Init               # fh switch:bsim1.00 0x710054aff0
 0x00923800 function rcdtTm2Load               # fh switch:bsim1.00 0x710054b0c0
 0x00923960 function rcdtTm2LoadEff            # fh switch:bsim1.00 0x710054b330
+0x00923ae0 function rcdtTm2CopyRect           # (tm2, dst, x, y, n, rows): copies a rectangle of a TIM2 image's pixels
 0x00924390 function rcdtRsd2Init                 # (rsd): 8 words cleared (rcdtRsd2.c, 0x00924750)
 0x009249c0 function rcefTargetGetHeight          # (i) -> float +0x10 of effect target i (0x025d5c60, 0x24 bytes each, filled by 0x00924a20); g_MagicImports
 0x009249e0 function rcefTargetGetAngle           # (i) -> float +0xc, the target's direction; g_MagicImports
@@ -5337,6 +5355,7 @@
 0x009258a0 function rcAlloc                   # fh v3:bsim1.00 0x009258a0 _rcAlloc
 0x009258b0 function rcCalloc                  # fh v3:exact 0x009258b0 _rcCalloc
 0x009258f0 function rcRealloc                 # fh v3:exact 0x009258f0 _rcRealloc
+0x00925950 function rcVec4fToFixed            # (out, v): four floats * 16.0 to 12.4 fixed point (ftol each), returns the last
 0x009259c0 function rcPrimBatu                # fh v3:exact 0x009259c0
 0x00925b60 function rcPrimBox                 # fh v3:exact 0x00925b60
 0x00925ea0 function rcPrimCircleLine          # fh v3:exact 0x00925ea0
@@ -5358,22 +5377,28 @@
 0x00928000 function rcbgModelDelete           # fh v3:cg2 0x928000
 0x00928020 function rcbgModelDraw             # fh v3:exact 0x00928020
 0x009281d0 function rcbgModelFToS0            # fh v3:exact 0x009281d0
+0x00928270 function rcMeshPastIndices         # (obj) -> mesh (+0x14) data (+0xc) past its index triples (+0x14 count * 6, 16-byte aligned)
 0x009282a0 function rcbgModelGetPrim          # fh v3:exact 0x009282a0
 0x009282c0 function rcbgModelGetPrimHeader    # fh switch:bsim1.00 0x7100545490
 0x009283b0 function rcbgModelNew              # fh v3:bsim1.00 0x009283b0
 0x00928460 function rcbgModelSetAlpha         # fh v3:exact 0x00928460
 0x00928540 function rcbgModelSetScale         # fh v3:exact 0x00928540
+0x009288e0 function rcfxParticleInit          # (fx): rcfxParticle.c defaults (+8 0.03 f64, +0x18 0.001, +0x20 0.1); 0x00928950 allocates 0x40 bytes for it
 0x00928970 function rcfxParticleResetForce    # fh v3:exact 0x00928970
 0x009289b0 function rcfxParticleClearForces      # (p): 16 bytes per particle (+0x2c array, +0x1c count) zeroed; rcfxParticleResetForce
 0x009289f0 function rcfxParticleSetCnt        # fh switch:bsim1.00 0x710054f3f0
 0x00928a60 function rcfxParticleSetTime       # fh switch:bsim1.00 0x710054f8b0
 0x00928c80 function rcfxSpringFini            # fh switch:bsim0.91 0x710054fa80
+0x00929100 function rcfxNailInit              # (fx): kind 0x30004 and callbacks 0x00929070/0x00929190/0x00928f40; 0x00929170 allocates it (rcfxNail.c)
 0x009293d0 function rcfxDampInit                 # (damp) -> damp: type 0x30003, functions 0x009293c0 (+4), 0x00929360 (+0x14), +0x1c = 0.0001f (0x00b92154); rcfxDamp.c (0x00929420)
+0x00929570 function rcfxGravityInit           # (fx): kind 0x30002 and callbacks 0x00929560/0x00929500; 0x009295c0 allocates it (rcfxGravity.c)
+0x00929850 function rcfxWindInit              # (fx): kind 0x30006 and callbacks 0x00929840/0x009296d0, +0x1c 1.0, +0x34 0.1, +0x40 1.0 f64; 0x009298c0 allocates it (rcfxWind.c)
 0x00929910 function rcLog2Ceil                   # (n) -> smallest k in 1..16 with n <= 1 << k (16 when none); from 0x00920050
 0x00929930 function rcbgPalGetLastEntryData      # (pal) -> rcbgTrxGetEntryData(pal +0xc, its count +0x30 - 1)
 0x00929950 function rcbgPalAlloc              # fh switch:bsim1.00 0x71005551c0
 0x00929990 function rcbgPalGetEntryData          # (pal, n) -> rcbgTrxGetEntryData(pal +0xc, n)
 0x009299b0 function rcbgPalInit               # fh v3:exact 0x009299b0
+0x009299d0 function rcbgPalCopyToLast         # (pal): copies a CLUT's 16 or 256 entries into the transfer's last slot (map round 6)
 0x00929ab0 function rcbgPalSetNo              # fh v3:bsim1.00 0x00929ab0
 0x00929bf0 function rcbgLayerDraw             # fh switch:cg8 0x7100553a70
 0x0092acf0 function rcbgLayerGetTexData          # (layer) -> rcbgTrxGetEntryData(layer +0xbc, 0), 0 without a texture transfer
@@ -5407,11 +5432,15 @@
 0x0092ba60 function rcdtParseFini             # fh v3:bsim1.00 0x0092ba60
 0x0092ba70 function rcdtParseGetBegin         # fh switch:bsim1.00 0x71005495d0
 0x0092ba90 function rcdtParseGetBin           # fh v3:exact 0x0092ba90
+0x0092bae0 function rcdtParseFindChar         # (parse, c): the cursor advanced to c or the chunk end (rcdtChunkHandleGetEnd)
 0x0092bb20 function rcdtParseGetChunk            # (parse) -> parse +0
 0x0092bb90 function rcdtChunkHandleGetEnd        # (&chunk) -> rcdtChunkGetEnd(*handle)
 0x0092bd10 function rcdtParseGetMode             # (parse) -> parse +8 (rcdtParseSetMode)
+0x0092bd20 function rcdtParseSkipToken        # (parse): the cursor past non-separators
+0x0092bd60 function rcdtParseSkipSeparators   # (parse): the cursor past separators
 0x0092bda0 function rcdtParseGetPos              # (parse) -> parse +4, the cursor
 0x0092bf50 function rcdtParseInit             # fh v3:exact 0x0092bf50
+0x0092bfb0 function rcdtParseIsEnd            # (parse) -> 1 once the cursor reaches the chunk end
 0x0092c000 function rcdtParseInitSeparators      # (parse): parse +0xc, 128 bytes per ASCII code, = 1 for 0x00..0x20 (whitespace), 0 else; read by the token scanners 0x0092bd20, 0x0092be40; rcdtParseInit tail-calls it
 0x0092c0a0 function rcdtParseSet              # fh v3:exact 0x0092c0a0
 0x0092c0d0 function rcdtParseSetPos           # fh switch:cg2 0x71008bfbc8
@@ -5457,11 +5486,13 @@
 0x0092eee0 function rcefParCreate             # fh v3:exact 0x0092eee0
 0x0092efd0 function rcefParInit               # fh v3:exact 0x0092efd0
 0x0092f010 function rcefParProc               # fh v3:exact 0x0092f010
+0x0092f400 function rcefAnimeStep             # (anim): frame time +0x40 += speed +0x44, next key past +0x12 of the key, loops (key flag 0x80) or stops after the last; rcefAnimeProc's step
 0x0092f470 function rcefAnimeStart               # (anime, data, out0, out1): +4 data, +0x48/+0x4c outputs, +0 = 1 (running), +0x20 = anime + 0x50; 0x00925590 starts obj +0x330 with obj +0x1f0, +0x170
 0x0092f4a0 function rcefAnimeFini             # fh v3:exact 0x0092f4a0
 0x0092f4c0 function rcefAnimeInit             # fh v3:exact 0x0092f4c0
 0x0092f4f0 function rcefAnimeProc             # fh v3:exact 0x0092f4f0
 0x0092f510 function rcefModelProc             # fh switch:cg2 0x710054c990
+0x0092f6b0 function rcefSetupDraw             # (draw, tex, a, b): a draw record: GIF tag (0x1c, 0x00c498dc, 0x44), buffers 0x0230fd60/0x0230fda0 (0x00925690)
 0x0092f710 function rcefModelFini             # fh v3:exact 0x0092f710
 0x0092f750 function rcefModelInit             # fh v3:exact 0x0092f750
 0x0092f770 function rcefModelProc_0092f770    # fh v3:exact 0x0092f770
@@ -5500,6 +5531,8 @@
 0x00932570 function rcuiCollectChrHandles        # (): every character's index and handle into the rcui work's lists (+0x830, +0x870; count +0x824)
 0x00933c80 function Yn_FpMemWinOpen           # fh v3:exact 0x00933c80
 0x00934390 function rcuiInit                  # fh switch:bsim0.92 0x7100558860
+0x00934af0 function rcuiClearSelect           # (): g_RcuiWork +0x28c mode 1 clears bit 0 of the selected layer's +0xb0, mode 2 bit 1 of every layer (0xc0 bytes each)
+0x00934b50 function rcuiSetSelect             # (): as rcuiClearSelect, setting the bits (mode 2: all but the selected layer +0x288)
 0x009364a0 function rcuiPreMemWinOpen         # fh switch:bsim1.00 0x710055e6c0
 0x00937190 function rcuiVramWrite             # fh switch:cg2 0x710055dd50
 0x00937440 function rcefMemDebugDisp          # fh switch:bsim1.00 0x7100558660
@@ -5513,6 +5546,7 @@
 0x0093b3e0 function rcbgSceneLoadTextSub      # fh switch:bsim0.92 0x710055f800
 0x0093c110 function rcuiMouseMoveReset           # (): g_RcuiWork +0xbf0 = 0, the same code as rcuiMouseMoveEnd
 0x0093c120 function rcuiMouseMoveIsID            # (id) -> 1 when g_RcuiWork +0xbe8 == id and +0xbf0 (dragging) is set
+0x0093c150 function rcuiMouseMoveBegin        # (id, arg): starts a drag: mouse capture (GuMouseSetCapture), the start position and id in g_RcuiWork
 0x0093c210 function rcuiValueGet                 # (p, kind) -> 1 i8, 2 u8, 3 i16, 4 u16, 5/6 u32, else 0
 0x0093c270 function rcuiValueSet                 # (p, kind, v): the low 1/2/4 bytes by the same kinds
 0x0093c2c0 function rcuiItemInit                 # (item): +0xc u16 = 0x30, +0x1c and +0x24 cleared
@@ -5521,11 +5555,16 @@
 0x0093c820 function rcuiTake1C                   # (item) -> item +0x1c, cleared
 0x0093c840 function rcuiTake14                   # (item) -> item +0x14, cleared
 0x0093cbc0 function rcuiAddVector                # (out, a, b): four floats
+0x0093cbf0 function rcuiApplyMatrix           # (out, m, v): v through the 4x4 matrix
 0x0093ce10 function rcuiCopyMatrix               # (dst, src): 16 floats through the x87 stack, in order
 0x0093ce50 function rcuiCopyVector               # (dst, src): 4 floats through the x87 stack
+0x0093cff0 function rcuiVecToInt              # (out, v): four floats truncated to ints
 0x0093d030 function rcuiItoF                     # (out, ints): four i32 to floats
 0x0093d060 function rcuiDot                      # (a, b) -> float, the same code as rcVec3fDot
+0x0093d1b0 function rcuiMulMatrix             # (out, a, b): 4x4 product (out may be a)
 0x0093d290 function rcuiMulVector                # (out, a, b): four floats, per component
+0x0093d3d0 function rcuiNormalize             # (out, v): v / |v| (xyz)
+0x0093d440 function rcuiCrossProduct          # (out, a, b): a x b, w 0.0
 0x0093d830 function FFXSamp0TransMatrix       # fh v3:exact 0x0093d830
 0x0093d900 function FFXSamp0UnitMatrix        # fh v3:exact 0x0093d900
 0x0093d960 function FFXSamp0ViewScreenMatrix  # fh v3:exact 0x0093d960
@@ -5652,6 +5691,7 @@
 0x00a45920 function abmap_snd_chg_panel1      # fh v3:cg2 0xa45920
 0x00a45fd0 function AbmapFillUseItemMenu      # fh v3:exact 0x00a45fd0 +AbmapFillUseItemMenu
 0x00a473d0 function AbmapAllLinksLimitFlag    # fh v3:exact 0x00a473d0 +AbmapAllLinksLimitFlag
+0x00a47440 function AbmapPulseCursor          # (): +0x115a4 = sin(frame +0x11698), +0x115c5 = ((sin + 1) * 8 + 0x70) * +0x115c6 >> 7 (eiAbmCalc)
 0x00a474d0 function AbmapCalcMoveCosts        # fh v3:exact 0x00a474d0 +AbmapCalcMoveCosts
 0x00a47560 function AbmapCalcMoveCost         # fh v3:exact 0x00a47560 +AbmapCalcMoveCost
 0x00a47d50 function AbmapState_ChangingNode   # fh v3:exact+call.cs 0x00a47d50 cdecl
@@ -5679,19 +5719,29 @@
 0x00a581f0 function AbmapCalcLinkPointsStraight # fh v3:exact 0x00a581f0 +AbmapCalcLinkPointsStraight
 0x00a58df0 function AbmapFlagConnectedLinks   # fh v3:exact 0x00a58df0 +AbmapFlagConnectedLinks
 0x00a58ec0 function AbmapTryChangePlayer      # fh v3:exact 0x00a58ec0 +AbmapTryChangePlayer
+0x00a59710 function AbmapForEachNode          # (f, arg): f(node, arg) over the +2 nodes (kind -1 skipped) until non-zero
+0x00a59760 function AbmapForNodeAndLinked     # (node, f, arg): f on the node, then on the other end of each link (+0xa808, 0x14 bytes) touching it, until non-zero
 0x00a59990 function AbmapState_MovingToTarget # fh v3:exact+call.cs 0x00a59990
 0x00a59e80 function AbmapState_HomeOnNode     # fh v3:exact 0x00a59e80 +AbmapState_HomeOnNode
+0x00a5a360 function AbmapMakeLinkMatrix       # (out, a, b, scale): scale matrix (from the zero register), translation a + b (i16 x, y)
 0x00a5a800 function AbmapCalcLinkPoints       # fh v3:exact 0x00a5a800 +AbmapCalcLinkPoints
+0x00a5a990 function AbmapSetChrMarker         # (chr): marker +0x11088 + 0x50 chr on its node +0x44: x, y, 0, 1; +0x3c half the kind size + 3.0
+0x00a5ad30 function AbmapMakeNodeMatrix       # (out, pos, scale): scale matrix (from the zero register), translation the i16 position, 1.0 (7 callers)
 0x00a5b4c0 function AbmapGetNodePosRadius     # fh v3:exact 0x00a5b4c0 +AbmapGetNodePosRadius
 0x00a5b7b0 function AbmapInitChoosingMoveTarget # fh v3:exact 0x00a5b7b0 +AbmapInitChoosingMoveTarget
+0x00a5b930 function AbmapResetHelp            # (): +0x115a8 = state 0x00a45010, +0x115ac = AbmapSetHelpMessage, +0x115c3/+0x115c4 cleared
 0x00a5bca0 function AbmapTryUseItem           # fh v3:exact 0x00a5bca0 +AbmapTryUseItem
 0x00a5bd80 function KaGDebFirstCall           # fh v3:bsim1.00 0x00a5bd80
+0x00a5be30 function AbmapVu0LoadMatrix1       # (m): 64 bytes into the emulated vf01..vf04 (0x00c8f7a0)
+0x00a5bec0 function AbmapVu0LoadMatrix2       # (m): 64 bytes into the emulated vf05..vf08 (0x00c8f7e0)
 0x00a5ca60 function NkzGetAuronLimitButtonData # fh v3:exact 0x00a5ca60
 0x00a5ca70 function NkzGetAuronLimitTime      # fh v3:bsim1.00 0x00a5ca70
 0x00a5cb10 function NkzGetLuluLimitTime       # fh v3:bsim1.00 0x00a5cb10
 0x00a5cbd0 function NkzGetTidusLimitTime      # fh v3:bsim1.00 0x00a5cbd0
 0x00a5cc70 function NkzSetLuluLimitTbl        # fh v3:exact 0x00a5cc70
+0x00a5cee0 function AbmapQuarterOrOne_a5cee0  # (_, n) -> n / 4, or 1 when 0 (identical to 0x00a5cf10; called by 0x008db400)
 0x00a5cf00 function NkzVersion                # fh v3:bsim1.00 0x00a5cf00
+0x00a5cf10 function AbmapQuarterOrOne_a5cf10  # (_, n) -> n / 4, or 1 when 0 (identical to 0x00a5cee0; called by 0x008d9410)
 0x00a5cf30 function abmap_para_get_special    # fh v3:exact 0x00a5cf30
 0x00a5d3c0 function opd_num                   # fh v3:exact 0x00a5d3c0
 0x00a5d5f0 function opd_num_char_256          # fh v3:exact 0x00a5d5f0
@@ -7833,6 +7883,7 @@
 0x00c5d770 label    g_TOScreenW               # TOGetScreenWH reads its low half as the width
 0x00c5d774 label    g_TOScreenH               # TOGetScreenWH reads its low half as the height
 0x00c5d780 label    g_TOAddPkt                # TOInitAddPkt sets 1, TOSetAddPkt 0
+0x00c5d788 label    g_YiWindowHandlers        # window handlers by kind, 6 words (0x18 bytes) a kind (yiWindowSetHandlers)
 0x00c5e350 label    g_GuideFlags                 # bit 0: the minimap may show (clear: Guide_FadeOff)
 0x00c5e354 label    g_GuideTarget                # where the minimap sits: 0..3 the corners, 4 the centre (rcbgGuideSetTarget; script native 0x00f3)
 0x00c5e358 label    g_GuideSize                  # minimap size in pixels, 0x80 (0x100 centred)
@@ -8100,7 +8151,11 @@
 0x012a4100 label    g_EtEff                      # 512 x 0x20 effect records: +0 ID (bind effects 0x40000400/500/600/700 + chr record), +4 object (u16 signals at +0xb0: 0x4000 off, 0x8000 fade)
 0x012a84c0 label    g_EtChrDrawFlags             # byte per draw flag index: 4 hides the bind effect, 8 the second one (op_et_bindeff_draw_on/off)
 0x012a85b0 label    g_EtChrDrawFlags2            # used instead of g_EtChrDrawFlags where nonzero
+0x012f4e00 label    g_SqsSifDma               # two SIF DMA records of 16 bytes (source, destination, size, attribute): SqsSifDmaStart
 0x012f4e80 label    g_SqsIopStatus               # sound driver status words: 0 system (SqsIopSoundSystemStatus), 1 error (SqsIopSoundErrorStatus), indexed by SqsReportIopSoundStatus
+0x012f4e94 label    g_SqsShoutSkipped         # set when a shout sound was skipped (SqsShoutStreamingPlayState)
+0x012f4ecc label    g_SqsShoutBuffer          # the shout sound buffer's IOP address (SqsShoutStreamingDataSend)
+0x012f4ed0 label    g_SqsSifDmaId             # the id of the last SIF DMA (SqsSifDmaStart)
 0x012fb7f0 label    g_SgVCount                   # vertical blank counter, +2 a frame (0x00821e80); Sg_MainCalcRate reads it; yiGetVCount
 0x012fbc40 label g_CurrentMapNo             # current map (field) number: Ch_UseLargeCollisionRad, Ch_ShouldDisableClothForMotion, Ch_ClothSetAtariJimenCheck, Native_MsgSetPos compare it with map numbers
 0x012fbc54 label g_ChrClothParaEdit          # i8, Ch_ClothSetParaEdit / Ch_ClothGetParaEdit
@@ -8347,6 +8402,7 @@
 0x018ded08 label    g_YiRenderStatus             # field renderer flags: yiRenderEnable/Disable; |= 0x11 once a map is read (yiMapReadMaster); bit 0 gates yiCallFieldParticle
 0x018ded0c label    g_YiDrawMask                 # yiGetDrawMask/yiSetDrawMask; -9 after a map is read, -1 with the battle map circle on (yiMapReadMaster); script native 0x8000 sets its bits
 0x018ded2c label    g_YiRenderParam              # yiSetRenderParam's value
+0x018ded38 label    g_YiViewMatrix            # the field view matrix (yiSetViewMatrix)
 0x018dee38 label    g_YiViewAdjust               # 16 floats 0x0090a140 multiplies into the camera matrix (cdc_Mul4x4(out, camera, it)); yiGetViewAdjust / yiSetViewAdjust
 0x018deff8 label    g_YiScaleFactor              # x, y, z floats (yiSetScaleFactor)
 0x018df00c label    g_YiColorScale               # four floats (yiGetColorScale, yiSetColorScale; yiGetBackColor multiplies by it); saved with the render state
@@ -8355,6 +8411,7 @@
 0x018df140 label    g_YiRenderWord               # a word saved with the render state (yiPushRenderState); ?meaning
 0x018df144 label    g_YiRenderFloats             # three floats saved with the render state (yiPushRenderState); ?meaning
 0x018df150 label    g_YiColorShift               # four floats; yiSetColorShift copies them out; saved with the render state
+0x018df168 label    g_YiViewMatrixExtra       # two floats yiSetViewMatrix takes from +0x20 of its matrix
 0x018df178 label    g_YiBackColor                # background RGBA bytes (yiGetBackColor: scaled by g_YiColorScale plus g_YiColorOffset when render status bits 0 and 2)
 0x018df588 label    g_YiDObjCount                # display objects in use (yiGetMatrixDObj bound)
 0x018df59c label    g_YiDObjs                    # display objects, 0xb4 bytes each: +0 matrix, +0x40 rotation, +0x50 translation, +0x74 u16 group (yiGetMatrixGroup), +0x76 u16 rotation order (yiRotMatrixSeq; 0x00908190)
@@ -8446,6 +8503,5 @@
 0x025d5920 label    g_RcbgScreenWorldMatrix      # g_RcbgViewWorldMatrix through g_ScreenMatrix (rcbgUpdateMatrix)
 0x025d5960 label    g_RcbgViewWorldMatrix        # g_RcbgWorldMatrix through g_CameraMatrix (rcbgUpdateMatrix)
 0x025d59a0 label    g_RcbgWorldMatrix            # rcbgSetWorldMatrix
-
 0x025d5a24 label    g_RcefPrayEffect             # the pray effect rcEffectTaskPrayWait passes to op_pray_effect_check
 0x025d5c60 label    g_RcefTargets                # up to 16 effect targets, 0x24 bytes: u16 flags, +4 character, +8 distance, +0xc angle, +0x10 height, +0x14 direction (0x00924a20)

@@ -528,6 +528,26 @@ pub mod bridge {
         put(mem, 0x00c8_f97c, (r10 - r10).store());
         free(mem);
     }
+
+    /// `KeAddScaledColor(out, base, step, k)` (`0x00764c40`): each of the
+    /// four channels `step * k + base`, stored as `f32`, then clamped to
+    /// 0.0..=255.0 (NaN kept).
+    pub fn ke_add_scaled_color(mem: &mut impl Mem, out: u32, base: u32, step: u32, k: u32) {
+        let k = ffx_bridge::x87::load(k);
+        for i in 0..4u32 {
+            let d = ffx_bridge::x87::load(mem.read(step.wrapping_add(4 * i)));
+            let b = ffx_bridge::x87::load(mem.read(base.wrapping_add(4 * i)));
+            let v = x87::store(d * k + b);
+            let at = out.wrapping_add(4 * i);
+            mem.write(at, v);
+            let f = f32::from_bits(v);
+            if f > 255.0 {
+                mem.write(at, 255.0f32.to_bits());
+            } else if f < 0.0 {
+                mem.write(at, 0u32);
+            }
+        }
+    }
 }
 
 #[cfg(test)]

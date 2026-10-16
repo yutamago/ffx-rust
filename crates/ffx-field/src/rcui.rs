@@ -287,4 +287,90 @@ pub mod bridge {
         let w = WORK.get(mem);
         mem.write(w + 0xbf8, y);
     }
+
+    /// `rcuiCrossProduct(out, a, b)` (`0x0093d440`): `a x b` (x, y, z, each
+    /// `p * q - r * s` on the x87 stack), w 0.0. Returns `out`.
+    pub fn rcui_cross_product(mem: &mut impl Mem, out: u32, a: u32, b: u32) -> u32 {
+        let ld = |mem: &_, v: u32, i: u32| {
+            ffx_bridge::x87::load(Mem::read::<u32>(mem, v.wrapping_add(4 * i)))
+        };
+        let x = ld(&*mem, a, 1) * ld(&*mem, b, 2) - ld(&*mem, a, 2) * ld(&*mem, b, 1);
+        mem.write(out, x87::store(x));
+        let y = ld(&*mem, a, 2) * ld(&*mem, b, 0) - ld(&*mem, a, 0) * ld(&*mem, b, 2);
+        mem.write(out.wrapping_add(4), x87::store(y));
+        let z = ld(&*mem, b, 1) * ld(&*mem, a, 0) - ld(&*mem, b, 0) * ld(&*mem, a, 1);
+        mem.write(out.wrapping_add(8), x87::store(z));
+        mem.write(out.wrapping_add(0xc), 0u32);
+        out
+    }
+
+    /// The map system's layer table (`*(*YnMapSystem + 8)`; 0 without a
+    /// map system or map).
+    fn layer_table(mem: &impl Mem) -> u32 {
+        let s = crate::guide::YN_MAP_SYSTEM.get(mem);
+        if s == 0 {
+            return 0;
+        }
+        let m = mem.read::<u32>(s);
+        if m == 0 {
+            0
+        } else {
+            mem.read::<u32>(m.wrapping_add(8))
+        }
+    }
+
+    /// The select flags of `rcuiClearSelect`/`rcuiSetSelect`: mode 1
+    /// (`+0x28c`) changes bit 0 of the selected layer's `+0xb0` (the
+    /// layer `+0x288`, `0xc0` bytes each); mode 2 bit 1 of each layer's
+    /// first word (`skip_selected`: all but the selected one). Returns the
+    /// `eax` the originals end with.
+    fn select_flags(mem: &mut impl Mem, set: bool, skip_selected: bool) -> u32 {
+        let t = layer_table(mem);
+        let w = WORK.get(mem);
+        let mode = mem.read::<u32>(w.wrapping_add(0x28c));
+        let sel = mem.read::<u32>(w.wrapping_add(0x288));
+        let apply = |v: u32, bit: u32| if set { v | bit } else { v & !bit };
+        match mode {
+            1 => {
+                let layers = mem.read::<u32>(t.wrapping_add(8));
+                let at = sel
+                    .wrapping_mul(0xc0)
+                    .wrapping_add(layers)
+                    .wrapping_add(0xb0);
+                let v = mem.read::<u32>(at);
+                mem.write(at, apply(v, 1));
+                layers
+            }
+            2 => {
+                let mut last = 0;
+                let mut i = 0i32;
+                while i < mem.read::<i32>(t.wrapping_add(4)) {
+                    let w = WORK.get(mem);
+                    if !skip_selected || i.cast_unsigned() != mem.read::<u32>(w.wrapping_add(0x288))
+                    {
+                        last = mem.read::<u32>(t.wrapping_add(8));
+                        let at = last.wrapping_add(i.cast_unsigned().wrapping_mul(0xc0));
+                        let v = mem.read::<u32>(at);
+                        mem.write(at, apply(v, 2));
+                    }
+                    i += 1;
+                }
+                if skip_selected { WORK.get(mem) } else { last }
+            }
+            _ if skip_selected => w,
+            m => m.wrapping_sub(2),
+        }
+    }
+
+    /// `rcuiClearSelect()` (`0x00934af0`): [`select_flags`] clearing the
+    /// bits (every layer in mode 2).
+    pub fn rcui_clear_select(mem: &mut impl Mem) -> u32 {
+        select_flags(mem, false, false)
+    }
+
+    /// `rcuiSetSelect()` (`0x00934b50`): [`select_flags`] setting the bits
+    /// (all but the selected layer in mode 2).
+    pub fn rcui_set_select(mem: &mut impl Mem) -> u32 {
+        select_flags(mem, true, true)
+    }
 }

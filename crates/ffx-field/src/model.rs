@@ -144,6 +144,23 @@ pub mod psim {
     pub const POS2: u32 = 0x8c;
 }
 
+/// 0.03 (`f64`, `.rdata`): `rcfxParticleInit`'s `+8`.
+pub const PARTICLE_RATE: u32 = 0x00b5_4cc0;
+/// 0.001 and 0.1 (`f32`s, `.rdata`): `rcfxParticleInit`'s `+0x18` and
+/// `+0x20`.
+pub const PARTICLE_DEFAULTS: [u32; 2] = [0x00b3_68a4, 0x00b1_0f38];
+/// The GIF tag word `rcefSetupDraw` copies to `+0x14`.
+pub const REF_GIF_TAG: u32 = 0x00c4_98dc;
+/// The two buffers `rcefSetupDraw` points `+0x34` and `+0x38` at.
+pub const REF_BUFFERS: [u32; 2] = [0x0230_fd60, 0x0230_fda0];
+/// `rcfxNail`'s callbacks (`rcfxNailInit`: `+4`, `+0x10`, `+0x14`).
+pub const NAIL_CALLBACKS: [u32; 3] = [0x0092_9070, 0x0092_9190, 0x0092_8f40];
+/// `rcfxWind`'s callbacks (`rcfxWindInit`: `+4`, `+0x14`).
+pub const WIND_CALLBACKS: [u32; 2] = [0x0092_9840, 0x0092_96d0];
+/// `rcfxGravity`'s update callback (`0x00929560`).
+pub const GRAVITY_UPDATE: u32 = 0x0092_9560;
+/// `rcfxGravity`'s draw callback (`0x00929500`).
+pub const GRAVITY_DRAW: u32 = 0x0092_9500;
 /// The chunk tags `rcbgChkId` looks up: a null-terminated table of
 /// pointers to 4-character ids.
 pub const CHUNK_IDS: u32 = 0x00c5_e480;
@@ -1042,6 +1059,178 @@ pub mod bridge {
             mem.write(out.wrapping_add(4 * i), r);
         }
         r
+    }
+
+    /// `rcMeshPastIndices(obj)` (`0x00928270`): the mesh's (`+0x14`) data
+    /// (`+0xc`) past its index triples (`+0x14`, an `i16` count, 6 bytes
+    /// each), rounded up to 16 bytes.
+    pub fn rc_mesh_past_indices(mem: &impl Mem, obj: u32) -> u32 {
+        let mesh = mem.read::<u32>(obj.wrapping_add(0x14));
+        let mut n = i32::from(mem.read::<i16>(mesh.wrapping_add(0x14)))
+            .wrapping_mul(6)
+            .cast_unsigned();
+        if n & 0xf != 0 {
+            n = (n & !0xf).wrapping_add(0x10);
+        }
+        mem.read::<u32>(mesh.wrapping_add(0xc)).wrapping_add(n)
+    }
+
+    /// `rcfxGravityInit(fx)` (`0x00929570`): kind `0x30002`, its update
+    /// (`0x00929560`) and draw (`0x00929500`) callbacks, the rest 0 (the
+    /// four floats from `+0x1c` as 0.0). Returns `fx`.
+    pub fn rcfx_gravity_init(mem: &mut impl Mem, fx: u32) -> u32 {
+        mem.write(fx, 0x0003_0002u32);
+        let up = mem.rebase(super::GRAVITY_UPDATE);
+        mem.write(fx.wrapping_add(4), up);
+        for off in [8u32, 0xc, 0x10] {
+            mem.write(fx.wrapping_add(off), 0u32);
+        }
+        let draw = mem.rebase(super::GRAVITY_DRAW);
+        mem.write(fx.wrapping_add(0x14), draw);
+        for off in [0x18u32, 0x28, 0x24, 0x20, 0x1c] {
+            mem.write(fx.wrapping_add(off), 0u32);
+        }
+        fx
+    }
+
+    /// `rcbgIdentity(x)` (`0x009202a0`): `x` (called on a saved register
+    /// by `rcbgRestoreReg`).
+    #[must_use]
+    pub const fn rcbg_identity(x: u32) -> u32 {
+        x
+    }
+
+    /// `rcefAnimeStep(anim)` (`0x0092f400`): adds the speed (`+0x44`) to
+    /// the frame time (`+0x40`, `i16`); past the current key's length
+    /// (`+0x12` of the 8-byte key `+0x42` in the table `+4`) moves to the
+    /// next key, and past the last (`+6` of the table) loops (key flag
+    /// 0x80: `+0x40` as a word cleared) or stops (bit 0 of `+0` cleared,
+    /// time 0, the key kept). Returns the `eax` it ends with.
+    pub fn rcef_anime_step(mem: &mut impl Mem, anim: u32) -> u32 {
+        let table = mem.read::<u32>(anim.wrapping_add(4));
+        let key = mem.read::<u16>(anim.wrapping_add(0x42));
+        let k = table.wrapping_add(i32::from(key.cast_signed()).cast_unsigned().wrapping_mul(8));
+        let speed = mem.read::<u16>(anim.wrapping_add(0x44));
+        let t = mem.read::<u16>(anim.wrapping_add(0x40)).wrapping_add(speed);
+        mem.write(anim.wrapping_add(0x40), t);
+        let len = mem.read::<u16>(k.wrapping_add(0x12));
+        if t.cast_signed() < len.cast_signed() {
+            return u32::from(t);
+        }
+        let t = t.wrapping_sub(len);
+        mem.write(anim.wrapping_add(0x40), t);
+        let next = key.wrapping_add(1);
+        mem.write(anim.wrapping_add(0x42), next);
+        let eax = u32::from(key) + 1;
+        if next.cast_signed() < mem.read::<i16>(table.wrapping_add(6)) {
+            return eax;
+        }
+        if mem.read::<u8>(k.wrapping_add(0x14)) & 0x80 != 0 {
+            mem.write(anim.wrapping_add(0x40), 0u32);
+            return 0;
+        }
+        let f = mem.read::<u32>(anim);
+        mem.write(anim, f & !1);
+        mem.write(anim.wrapping_add(0x40), 0u16);
+        mem.write(anim.wrapping_add(0x42), key);
+        u32::from(key)
+    }
+
+    /// `rcfxParticleInit(fx)` (`0x009288e0`): the defaults: `+8` 0.03
+    /// (`f64`), `+0x18` 0.001 and `+0x20` 0.1 (`f32`s from `.rdata`), the
+    /// rest 0. Returns `fx`.
+    pub fn rcfx_particle_init(mem: &mut impl Mem, fx: u32) -> u32 {
+        mem.write(fx, 0u64);
+        mem.write(fx.wrapping_add(0x1c), 0u32);
+        let d = mem.rebase(super::PARTICLE_RATE);
+        let d = mem.read::<u64>(d);
+        mem.write(fx.wrapping_add(8), d);
+        for off in [0x24u32, 0x28, 0x2c] {
+            mem.write(fx.wrapping_add(off), 0u32);
+        }
+        mem.write(fx.wrapping_add(0x10), 0u64);
+        mem.write(fx.wrapping_add(0x30), 0u32);
+        let a = mem.rebase(super::PARTICLE_DEFAULTS[0]);
+        let a = mem.read::<u32>(a);
+        mem.write(fx.wrapping_add(0x34), 0u32);
+        mem.write(fx.wrapping_add(0x18), crate::x87::copy(a));
+        mem.write(fx.wrapping_add(0x38), 0u32);
+        let b = mem.rebase(super::PARTICLE_DEFAULTS[1]);
+        let b = mem.read::<u32>(b);
+        mem.write(fx.wrapping_add(0x3c), 0u32);
+        mem.write(fx.wrapping_add(0x20), crate::x87::copy(b));
+        fx
+    }
+
+    /// `rcefSetupDraw(draw, tex, a, b)` (`0x0092f6b0`): fills a draw
+    /// record: 1, `tex`, a GIF tag (`+0x10` 0x1c, `+0x14` from
+    /// `0x00c498dc`, `+0x18` 0x44), `+0x30` its own `+0x88`, `+0x34`/`+0x38`
+    /// two fixed buffers (`0x0230fd60`, `0x0230fda0`), `a` at `+0x80` and
+    /// `+0x3c`, `b` at `+0x84`. Returns `draw + 0x88`.
+    pub fn rcef_setup_draw(mem: &mut impl Mem, draw: u32, tex: u32, a: u32, b: u32) -> u32 {
+        mem.write(draw.wrapping_add(4), tex);
+        mem.write(draw.wrapping_add(0x84), b);
+        mem.write(draw, 1u32);
+        mem.write(draw.wrapping_add(0x80), a);
+        mem.write(draw.wrapping_add(0x10), 0x1cu32);
+        let at = mem.rebase(super::REF_GIF_TAG);
+        let g = mem.read::<u32>(at);
+        mem.write(draw.wrapping_add(0x14), g);
+        mem.write(draw.wrapping_add(0x18), 0x44u8);
+        mem.write(draw.wrapping_add(0x30), draw.wrapping_add(0x88));
+        let b0 = mem.rebase(super::REF_BUFFERS[0]);
+        let b1 = mem.rebase(super::REF_BUFFERS[1]);
+        mem.write(draw.wrapping_add(0x34), b0);
+        mem.write(draw.wrapping_add(0x38), b1);
+        mem.write(draw.wrapping_add(0x3c), a);
+        draw.wrapping_add(0x88)
+    }
+
+    /// `rcfxNailInit(fx)` (`0x00929100`): kind `0x30004`, its callbacks
+    /// (`+4` `0x00929070`, `+0x10` `0x00929190`, `+0x14` `0x00928f40`),
+    /// `+0x18` 2, `+0x30` 0.0 (`f64`), the rest 0. Returns `fx`.
+    pub fn rcfx_nail_init(mem: &mut impl Mem, fx: u32) -> u32 {
+        mem.write(fx.wrapping_add(0x30), 0u64);
+        mem.write(fx, 0x0003_0004u32);
+        let [a, b, c] = super::NAIL_CALLBACKS.map(|f| mem.rebase(f));
+        mem.write(fx.wrapping_add(4), a);
+        mem.write(fx.wrapping_add(8), 0u32);
+        mem.write(fx.wrapping_add(0xc), 0u32);
+        mem.write(fx.wrapping_add(0x10), b);
+        mem.write(fx.wrapping_add(0x14), c);
+        mem.write(fx.wrapping_add(0x18), 2u32);
+        for off in [0x1cu32, 0x20, 0x24, 0x28, 0x2c, 0x38] {
+            mem.write(fx.wrapping_add(off), 0u32);
+        }
+        fx
+    }
+
+    /// `rcfxWindInit(fx)` (`0x00929850`): kind `0x30006`, its callbacks
+    /// (`+4` `0x00929840`, `+0x14` `0x009296d0`), `+0x1c` 1.0, `+0x34` 0.1
+    /// (from `.rdata`), `+0x40` 1.0 (`f64`), the rest 0. Returns `fx`.
+    pub fn rcfx_wind_init(mem: &mut impl Mem, fx: u32) -> u32 {
+        mem.write(fx, 0x0003_0006u32);
+        let [a, b] = super::WIND_CALLBACKS.map(|f| mem.rebase(f));
+        mem.write(fx.wrapping_add(4), a);
+        for off in [8u32, 0xc, 0x10] {
+            mem.write(fx.wrapping_add(off), 0u32);
+        }
+        mem.write(fx.wrapping_add(0x14), b);
+        mem.write(fx.wrapping_add(0x18), 0u32);
+        mem.write(fx.wrapping_add(0x1c), 1.0f32.to_bits());
+        for off in [0x20u32, 0x24, 0x28, 0x2c, 0x30] {
+            mem.write(fx.wrapping_add(off), 0u32);
+        }
+        let k = mem.rebase(super::PARTICLE_DEFAULTS[1]);
+        let k = mem.read::<u32>(k);
+        mem.write(fx.wrapping_add(0x34), crate::x87::copy(k));
+        mem.write(fx.wrapping_add(0x38), 0u32);
+        mem.write(fx.wrapping_add(0x40), 1.0f64.to_bits());
+        mem.write(fx.wrapping_add(0x50), 0u64);
+        mem.write(fx.wrapping_add(0x48), 0u64);
+        mem.write(fx.wrapping_add(0x5c), 0u32);
+        mem.write(fx.wrapping_add(0x58), 0u32);
+        fx
     }
 }
 
