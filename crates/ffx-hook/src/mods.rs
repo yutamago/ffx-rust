@@ -1,8 +1,8 @@
 //! Loose-file mods.
 //!
-//! `File_Open` (`0x00607f40`, `thiscall(File*, path, mode, 3 unused)`) is the
+//! `Phyre_PSerialization_PStreamFileWin32_openFile` (`0x00607f40`, `thiscall(File*, path, mode, 3 unused)`) is the
 //! only way the game opens archive files. It normalizes the path, asks the
-//! mounted archives (`FileSys_FindEntry`), and if they lack it opens the path
+//! mounted archives (`BigFileStream_openFile`), and if they lack it opens the path
 //! as a loose file with `CreateFileW`. A `File` is two words: the OS handle
 //! (`-1` when unused) and the archive entry (`0` when the file is loose); its
 //! size, read and close methods use whichever is set.
@@ -10,7 +10,7 @@
 //! The replacement checks a mod index first: for a read open of a path that
 //! `mods/<mod>/<archive path>` provides, it opens that file read-only and
 //! leaves the entry empty, so the game's own loose-file code reads it. The
-//! handle must be read-only because `File_Close` (`0x00607d80`) calls
+//! handle must be read-only because `Phyre_PSerialization_PStreamFile_closeFile` (`0x00607d80`) calls
 //! `SetEndOfFile`, which would otherwise truncate the mod file.
 
 use std::collections::HashMap;
@@ -27,11 +27,11 @@ use windows_sys::Win32::Storage::FileSystem::{
 
 use crate::log::log;
 
-/// Trampoline to the original `File_Open`.
+/// Trampoline to the original `Phyre_PSerialization_PStreamFileWin32_openFile`.
 pub static FILE_OPEN_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
 
-/// `g_FileSys` (`0x00cc9c48`): pointer to the file system object, whose
-/// `+0x3c` holds the length of the root prefix `FileSys_FindEntry` skips.
+/// `BigFileStream_sBigFileStreamInstacne` (`0x00cc9c48`): pointer to the file system object, whose
+/// `+0x3c` holds the length of the root prefix `BigFileStream_openFile` skips.
 const G_FILE_SYS: u32 = 0x00cc_9c48;
 
 /// Archive path (normalized) → mod file, as a NUL-terminated wide string.
@@ -42,7 +42,7 @@ static SIZES: OnceLock<HashMap<String, u64>> = OnceLock::new();
 /// Set by `FFX_HOOK_LOG_OPENS=1`: log every file the game reads.
 static LOG_OPENS: AtomicBool = AtomicBool::new(false);
 
-/// Normalizes a path the way `File_Open` does: `\` → `/`, ASCII lowercase.
+/// Normalizes a path the way `Phyre_PSerialization_PStreamFileWin32_openFile` does: `\` → `/`, ASCII lowercase.
 fn normalize(path: &[u8]) -> String {
     path.iter()
         .map(|&b| {
@@ -135,7 +135,7 @@ pub fn load(game_dir: &Path) {
 
 type FileOpenFn = unsafe extern "thiscall" fn(*mut usize, *const c_char, u32, u32, u32, u32) -> u32;
 
-/// Replaces `File_Open`. Returns 0 on success, like the original.
+/// Replaces `Phyre_PSerialization_PStreamFileWin32_openFile`. Returns 0 on success, like the original.
 ///
 /// # Safety
 /// Called by the game with a valid `File` and path.
@@ -170,7 +170,7 @@ unsafe fn open_mod(file: *mut usize, path: *const c_char) -> bool {
     let Some(index) = INDEX.get().filter(|i| logging || harness || !i.is_empty()) else {
         return false;
     };
-    // SAFETY: `g_FileSys` is a pointer-sized global in the patched image.
+    // SAFETY: `BigFileStream_sBigFileStreamInstacne` is a pointer-sized global in the patched image.
     let fs = unsafe { *(crate::rebase(G_FILE_SYS) as *const usize) };
     if fs == 0 {
         return false;
@@ -222,12 +222,12 @@ unsafe fn open_mod(file: *mut usize, path: *const c_char) -> bool {
 pub static CD_FILE_SIZE_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
 pub static CD_FILE_SIZE_PC_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
 
-/// `Cd_FileName` (`0x00a42830`, `cdecl(number)`): the path of a PS2 file
+/// `CDfileName_PC` (`0x00a42830`, `cdecl(number)`): the path of a PS2 file
 /// of the current module, `host0:/ffx/master/…`.
 const CD_FILE_NAME: u32 = 0x00a4_2830;
 
 /// The size of the mod file standing in for PS2 file `number`, rounded up
-/// to 16 bytes like `CdFileSize_PC`. The PS2 file layer sizes buffers and
+/// to 16 bytes like `CDfileSize_PC`. The PS2 file layer sizes buffers and
 /// reads from its own tables (`cdrom.mdg` sectors, `sizetbl.bin`), so
 /// without this a mod file that grew would be cut at the original size.
 fn mod_size(number: i32) -> Option<u32> {
@@ -254,7 +254,7 @@ fn mod_size(number: i32) -> Option<u32> {
     Some(rounded)
 }
 
-/// Wraps `Cd_FileSize` (`0x0076c320`, `cdecl(number)`), the sector-table
+/// Wraps `CDfileSize_CD` (`0x0076c320`, `cdecl(number)`), the sector-table
 /// size: a mod file reports its own size.
 ///
 /// # Safety
@@ -271,7 +271,7 @@ pub unsafe extern "C" fn cd_file_size(number: i32) -> u32 {
     })
 }
 
-/// Wraps `CdFileSize_PC` (`0x00a428a0`, `cdecl(number)`), the size table
+/// Wraps `CDfileSize_PC` (`0x00a428a0`, `cdecl(number)`), the size table
 /// lookup: a mod file reports its own size.
 ///
 /// # Safety

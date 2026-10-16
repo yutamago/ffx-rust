@@ -125,11 +125,11 @@ pub fn load_save(game: &mut Game, entry: u32) -> Result<String> {
 }
 
 /// Starts a battle from the field, the way a random encounter does
-/// (`Enc_Check`, `0x00780d10`): the battle field (an index into the field
+/// (`MsBattleEncountExe`, `0x00780d10`): the battle field (an index into the field
 /// table at `*0x0112a9c8`, 14 bytes an entry with the map name at +6), the
 /// encounter group and the formation in it go to `0x0112c256`, `…58` and
 /// `…59`; the encounter counters are reset (`0x00780ff0`) and the request
-/// flag `0x0112a8e2` is raised. `Battle_Update` (`0x00790c10`) then loads
+/// flag `0x0112a8e2` is raised. `MsBattleProcess` (`0x00790c10`) then loads
 /// the battle on the next frame. Waits until the formation's file opens.
 ///
 /// # Errors
@@ -147,7 +147,7 @@ pub fn start_battle(game: &mut Game, field: u16, group: u8, formation: u8) -> Re
     game.wait_for_open("battle/btl/", 10, 600)
 }
 
-/// The battle actor `index` (`Battle_Actor`, `0x00794020`): actors below
+/// The battle actor `index` (`MsGetChr`, `0x00794020`): actors below
 /// 0x1f are `0xf90` bytes from `*0x011334d4`.
 ///
 /// # Errors

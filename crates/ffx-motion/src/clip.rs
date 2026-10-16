@@ -1,5 +1,5 @@
 //! One motion clip: the animation of a skeleton's bones over a number of
-//! frames (`SG_SetClip`, `0x00839980`; stepped by `SG_StepChannels`,
+//! frames (`Ch_MotionSetupFcurve`, `0x00839980`; stepped by `SG_StepChannels`,
 //! `0x008394d0`).
 //!
 //! ```text

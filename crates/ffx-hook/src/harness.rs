@@ -17,7 +17,7 @@
 //! - with `FFX_HARNESS_FAST=1`, runs frames back to back: the main loop's
 //!   frame-limiter `Sleep` (`0x0062f3bb`) and the start-up loop's 33 ms
 //!   `Time_Sleep` (`0x0066b345`, the logos) return at once and add their
-//!   time to the game's clock (`Time_Now`, `0x0042fd80`), so the game still
+//!   time to the game's clock (`Phyre_PTimerWin32_GetTime`, `0x0042fd80`), so the game still
 //!   sees its usual frame rate;
 //! - with `FFX_HARNESS_BACKGROUND=1`, shows the window without activating
 //!   it and makes the keyboard a background device, so the game neither
@@ -179,7 +179,7 @@ pub static CLOCK_SEED_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
 static SEED: OnceLock<u32> = OnceLock::new();
 
 /// Wraps `Rng_ClockSeed` (`0x00798950`): the XOR of the system time's bytes
-/// plus 1, which `Rng_Seed` (`0x00798890`) turns into the seeds of the
+/// plus 1, which `MsRandMize` (`0x00798890`) turns into the seeds of the
 /// global generator and the 68 generators at `0x01135ee0`. With
 /// `FFX_HARNESS_SEED` it returns that value instead.
 ///
@@ -199,7 +199,7 @@ pub unsafe extern "C" fn clock_seed() -> u32 {
     }
 }
 
-/// Trampoline to the original `Time_Now`.
+/// Trampoline to the original `Phyre_PTimerWin32_GetTime`.
 pub static TIME_NOW_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
 /// Seconds the frame limiter skipped, as `f64` bits.
 static SKIPPED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -207,7 +207,7 @@ static SKIPPED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new
 /// patched `call [ptr]` at `0x0062f3bb`.
 static FAST_SLEEP: unsafe extern "system" fn(u32) = fast_sleep;
 
-/// Wraps `Time_Now` (`0x0042fd80`, seconds): adds the skipped time.
+/// Wraps `Phyre_PTimerWin32_GetTime` (`0x0042fd80`, seconds): adds the skipped time.
 ///
 /// # Safety
 /// Called by the game.

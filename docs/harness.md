@@ -21,9 +21,9 @@ tools/harness.py quit
 | Focus | `ShowWindow` | Background mode shows the window without activating it |
 | Isolation | `GetDeviceState`, `XInputGetState` | In background mode the real keyboard, mouse and pads are ignored: background devices would otherwise see what the user types elsewhere |
 | Dialogs | `MessageBoxA`, `MessageBoxW` | In background mode a game dialog is logged (`ffx-hook.log`, and an event `messagebox <text>`) and answered OK instead of appearing on the user's desktop |
-| Events | `File_Open` | Every file the game opens, and which came from a mod |
-| Randomness | `Rng_ClockSeed` (`0x00798950`), wrapped | `Rng_Seed` (`0x00798890`) seeds the global generator (`0x00c42200`) and the 68 at `0x01135ee0` from the system time (`GetSystemTime` bytes XORed, plus 1). With `--seed N` it gets `N`; `ffx-harness` uses seed 1 unless a test says otherwise |
-| Speed | `Time_Now` (`0x0042fd80`), wrapped; the main loop's `call [Sleep]` (`0x0062f3bb`) | The main loop (`Game_Main`, `0x0062ee50`) runs a frame (`0x0062e340`) once `DAT_00c30e88` × 1/59.94 s have passed on `Time_Now`, and sleeps away the rest. With `--fast` that one `Sleep` returns at once and adds its time to the clock: frames run back to back (461 a second instead of 30–60) while the game still sees one frame interval per frame. `ffx-harness` uses it by default |
+| Events | `Phyre_PSerialization_PStreamFileWin32_openFile` | Every file the game opens, and which came from a mod |
+| Randomness | `Rng_ClockSeed` (`0x00798950`), wrapped | `MsRandMize` (`0x00798890`) seeds the global generator (`0x00c42200`) and the 68 at `0x01135ee0` from the system time (`GetSystemTime` bytes XORed, plus 1). With `--seed N` it gets `N`; `ffx-harness` uses seed 1 unless a test says otherwise |
+| Speed | `Phyre_PTimerWin32_GetTime` (`0x0042fd80`), wrapped; the main loop's `call [Sleep]` (`0x0062f3bb`) | The main loop (`Game_Main`, `0x0062ee50`) runs a frame (`0x0062e340`) once `DAT_00c30e88` × 1/59.94 s have passed on `Phyre_PTimerWin32_GetTime`, and sleeps away the rest. With `--fast` that one `Sleep` returns at once and adds its time to the clock: frames run back to back (461 a second instead of 30–60) while the game still sees one frame interval per frame. `ffx-harness` uses it by default |
 | Sandbox | `SHGetFolderPathW` | With `--home DIR`, the Documents folder is `DIR`: the game reads and writes `GameSetting.ini` and its saves (autosaves too) there. `ffx-harness` makes `DIR` a fresh copy of the user's `Square Enix/FINAL FANTASY X&X-2 HD Remaster` before each launch, so tests can load the user's saves and never change them |
 
 XInput is not used: the game creates XInput devices only for controllers
@@ -79,8 +79,8 @@ with `key` (arrows `c8`/`d0`/`cb`/`cd`, Enter `1c`, Esc `01`).
   the salvage ship deck (`cdsp0000`), in the field: the D-pad turns Tidus.
 - Battles start from the field without walking into one:
   `screens::start_battle(field, group, formation)` writes the request a
-  random encounter makes (`Enc_Check`, `0x00780d10`) and raises its flag;
-  `Battle_Update` (`0x00790c10`) loads it on the next frame. The field table
+  random encounter makes (`MsBattleEncountExe`, `0x00780d10`) and raises its flag;
+  `MsBattleProcess` (`0x00790c10`) loads it on the next frame. The field table
   (`*0x0112a9c8`, count `0x0112a9d0`, 14-byte entries: map number, group
   offset, first formation, name) lists all 96 battle fields; entry 3 is
   `cdsp00`. Actors are `*0x011334d4 + index × 0xf90`; a monster's max HP is

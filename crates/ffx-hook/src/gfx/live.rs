@@ -129,10 +129,10 @@ pub static CAM_UPDATE_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
 
 /// Wraps `Cam_Update` (`0x007bc110`, `cdecl(camera)`, which builds the view
 /// matrix): while the renderer has a free camera, the game's override
-/// camera (`Cam_OverrideSet`) holds it right before, whatever the scene's
+/// camera (`MsEffectCameraSet`) holds it right before, whatever the scene's
 /// camera scripts set since; and after, the view goes to the renderer as
 /// the channel's would (`Cam_Apply`, which the override's branch skips,
-/// calls `Render_SetFov` and `Render_SetView`): the field of view the
+/// calls `graphicCameraSetFOVy` and `graphicCameraSetWorldMatrix`): the field of view the
 /// renderer asks for (the game's, zoomed).
 ///
 /// # Safety

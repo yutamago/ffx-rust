@@ -6,7 +6,7 @@
 //! for byte. Changed and added files are split into 64 KiB blocks and
 //! zlib-compressed where that saves space, as in the shipped archives.
 //!
-//! What `Vbf_Open` checks is kept: the magic, the header layout and the MD5
+//! What `BigFileHandle_initialize` checks is kept: the magic, the header layout and the MD5
 //! of the header in the last 16 bytes. Fields the game does not read are
 //! carried over from the base archive.
 

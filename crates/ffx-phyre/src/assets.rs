@@ -1,6 +1,6 @@
 //! Character asset lists, `ffx_data/gamedata/ps3data/chr/…/<name>/<name>.ahwin32`.
 //!
-//! `Chr_LoadAssets` (`0x0082a1c0`) reads the character's list, a generated
+//! `Ch_LoadHdRenderData` (`0x0082a1c0`) reads the character's list, a generated
 //! C header (CRLF lines), and loads the files of its D3D11 section: the
 //! textures, the model and the shaders the model uses. A model's imports
 //! resolve against what the list loaded, so a texture a model newly

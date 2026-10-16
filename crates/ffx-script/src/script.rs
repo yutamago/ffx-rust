@@ -253,7 +253,7 @@ impl Script {
     }
 
     /// Variable `i` of a worker: its location word (type in bits 28–31,
-    /// storage in bits 25–27, offset in bits 0–23; `Script_VarAddress`,
+    /// storage in bits 25–27, offset in bits 0–23; `AtelGetRealVarAdrs`,
     /// `0x0086c2e0`) and array length.
     #[must_use]
     pub fn variable(&self, worker: usize, i: u16) -> Option<(u32, u16)> {

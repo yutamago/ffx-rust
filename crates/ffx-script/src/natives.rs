@@ -2,7 +2,7 @@
 //!
 //! A function ID splits into a group (`id >> 12`) and an index
 //! (`id & 0xfff`) into the group's table of 16-byte entries.
-//! `Script_InitNatives` (`0x0086d6d0`) registers the tables below; other
+//! `AtelInitTotal` (`0x0086d6d0`) registers the tables below; other
 //! groups get an empty one. An entry has four handler slots, used by the
 //! `func` opcodes in `Script_Run`:
 //!
@@ -15,7 +15,7 @@
 //!
 //! The handler addresses are read from the player's `FFX.exe`.
 
-/// (group, table address in `FFX.exe`), from `Script_InitNatives`.
+/// (group, table address in `FFX.exe`), from `AtelInitTotal`.
 pub const GROUP_TABLES: [(u16, u32); 11] = [
     (0x0, 0x00c5_0050),
     (0x1, 0x00c5_2be0),

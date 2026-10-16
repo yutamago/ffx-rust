@@ -248,7 +248,7 @@ pub struct Minimap {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct MapMarker {
-    /// The game's marker flags (`Minimap_GetWorkerMarker`): colour, shape,
+    /// The game's marker flags (`AtelGetGuideMapActorInfo`): colour, shape,
     /// player, edge pointer, line.
     pub flags: u32,
     /// Its colour (the game's palette for the flags' colour index), 0–1.

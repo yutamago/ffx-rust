@@ -58,7 +58,7 @@ Floats use the same opcodes.
 ## Native functions
 
 `func id` splits the ID into a group (`id >> 12`) and an index; groups
-0, 1, 4–9, b, c, d have tables registered by `Script_InitNatives`
+0, 1, 4–9, b, c, d have tables registered by `AtelInitTotal`
 (`0x0086d6d0`). Each 16-byte entry holds four handlers: start (called once),
 poll (called until done, so a call can span frames), float result and
 integer result. The shipped scripts call 948 distinct native functions,
@@ -76,9 +76,9 @@ used natives, by calls and by scripts, are named in `symbols/ffx.sym`
 
 | Group | Area | Examples |
 |---|---|---|
-| 0 | workers, movement, triggers, messages, sound, party | `Native_MsgSetText` (`0x0064`: window, message), `Native_MsgOpen` (`0x006a`), `Native_MsgWait` (`0x007c`), `Native_MoveStart` (`0x0018`), `Native_SetPos_0013`, `Native_MapJump` (`0x010b`: map, entrance), `Native_WaitFrames_0000`, `Native_SpriteShow` (`0x011b`) |
+| 0 | workers, movement, triggers, messages, sound, party | `Native_MsgSetText` (`0x0064`: window, message), `Native_MsgOpen` (`0x006a`), `Native_MsgWait` (`0x007c`), `Native_MoveStart` (`0x0018`), `CT_0013_setPosition`, `Native_MapJump` (`0x010b`: map, entrance), `Native_WaitFrames_0000`, `Native_SpriteShow` (`0x011b`) |
 | 1 | maths | `Native_MathSqrt` (`0x1006`) |
-| 4 | screen | `Native_FadeIn` (`0x4004`), `Native_FadeOut` (`0x4005`), `Native_LightSet` (`0x4013`), `Native_MenuOpen` (`0x401d`) |
+| 4 | screen | `Native_FadeIn` (`0x4004`), `Native_FadeOut` (`0x4005`), `Native_LightSet` (`0x4013`), `CT_401D_init` (`0x401d`) |
 | 5 | field characters | `Native_ChrPlayMotion` (`0x501a`), `Native_ChrWaitMotion_501e`, `Native_ChrHide` (`0x5008`), `Native_ChrSetMotionBlend` (`0x5034`) |
 | 6 | camera | `Native_CamSetPos` (`0x6002`), `Native_CamMove` (`0x6010`), `Native_CamSetScreenDepth` (`0x603b`) |
 | 7 | battle | `Native_BtlUseCommand` (`0x700b`: targets, command), `Native_GetActorProperty` (`0x700f`), `Native_SetActorsProperty` (`0x7018`), `Native_ActorPlayMotion` (`0x7007`) |

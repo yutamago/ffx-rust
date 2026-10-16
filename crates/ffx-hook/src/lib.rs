@@ -128,7 +128,7 @@ pub fn hooks() -> [Hook; 10] {
             steal: 0,
         },
         Hook {
-            name: "File_Open",
+            name: "Phyre_PSerialization_PStreamFileWin32_openFile",
             address: 0x0060_7f40,
             // push ebp; mov ebp, esp; sub esp, 8
             prologue: &[0x55, 0x8b, 0xec, 0x83, 0xec, 0x08],
@@ -146,7 +146,7 @@ pub fn hooks() -> [Hook; 10] {
             steal: 0,
         },
         Hook {
-            name: "Time_Now",
+            name: "Phyre_PTimerWin32_GetTime",
             address: 0x0042_fd80,
             // push ebp; mov ebp, esp; then mov eax, [abs32] (relocated: only
             // its opcode is checked; 8 bytes are copied)
@@ -174,7 +174,7 @@ pub fn hooks() -> [Hook; 10] {
             steal: 0,
         },
         Hook {
-            name: "Guide_Update",
+            name: "rcbgGuideUpdateEx",
             address: 0x0091_da80,
             // push ebx; mov ebx, esp; sub esp, 8
             prologue: &[0x53, 0x8b, 0xdc, 0x83, 0xec, 0x08],
@@ -183,7 +183,7 @@ pub fn hooks() -> [Hook; 10] {
             steal: 0,
         },
         Hook {
-            name: "Cd_FileSize",
+            name: "CDfileSize_CD",
             address: 0x0076_c320,
             // push ebp; mov ebp, esp; push ecx; then mov eax, [abs32]
             // (relocated, so only its opcode is checked; 9 bytes are copied)
@@ -193,7 +193,7 @@ pub fn hooks() -> [Hook; 10] {
             steal: 9,
         },
         Hook {
-            name: "CdFileSize_PC",
+            name: "CDfileSize_PC",
             address: 0x00a4_28a0,
             // push ebp; mov ebp, esp; push ebx; push edi
             prologue: &[0x55, 0x8b, 0xec, 0x53, 0x57],

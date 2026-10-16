@@ -8,12 +8,12 @@ Reader/writer: [`crates/ffx-monster`](../../crates/ffx-monster).
 
 ## Loading
 
-`Mon_LoadText` (`0x00783680`) copies the monster's name and texts from the
+`MsBtlReadMonster` (`0x00783680`) copies the monster's name and texts from the
 kernel `monster` tables into the battle actor, then requests the file as
 `mon_data` through the PS2 CD-library emulation (`libmscd.c`,
-`0x0076b970`), which opens it with `Ps2File_Open` → `PcFile_Open` →
-`File_Open`, so mods can replace it. When it arrives, `Mon_AttachData`
-(`0x00783b00`) points the actor at its sections and `Mon_InitActor`
+`0x0076b970`), which opens it with `sceOpen` → `fiosOpen` →
+`Phyre_PSerialization_PStreamFileWin32_openFile`, so mods can replace it. When it arrives, `Mon_AttachData`
+(`0x00783b00`) points the actor at its sections and `MsSetRamChr`
 (`0x0079b4f0`) builds the enemy from them.
 
 ## Container
@@ -30,7 +30,7 @@ absent and section 7 empty in every file.
 |---|---|---|
 | 0 | 1–70 KB | Battle AI script, actor `+0xf78` (step 4) |
 | 1 | | Dispatch table into the script (`Mon_FindHandler`, `0x00797410`), `+0xf7c` |
-| 2 | 128 + strings | Stat record, `+0xf80`; copied into the actor by `Mon_InitActor` |
+| 2 | 128 + strings | Stat record, `+0xf80`; copied into the actor by `MsSetRamChr` |
 | 4 | `0x118` + padding | Rewards, steal and bribe; copied per enemy slot, `+0xf88` |
 | 5 | | Passed to `0x007a01b0` when an actor flag is set |
 | 6 | 128 + strings | Copy of the stat record, `+0xf84`; identical to section 2 in every file |
@@ -47,10 +47,10 @@ same ID in all 361 files, but the battle reads the monster file's.
 | `0x14` | `u32` | HP | actor `+0x594` current, `+0x59c` max |
 | `0x18` | `u32` | MP | actor `+0x598`, `+0x5a0` |
 | `0x1c` | `u32` | overkill threshold | actor `+0x5a4`, `+0xf60` |
-| `0x20` | `u8` | strength | actor `+0x5a8`; cubed for physical damage in `Dmg_Calc` (`0x00789bf0`) |
-| `0x21` | `u8` | defense | actor `+0x5a9`; physical damage reduction in `Dmg_Calc` |
-| `0x22` | `u8` | magic | actor `+0x5aa`; magic damage in `Dmg_Calc` |
-| `0x23` | `u8` | magic defense | actor `+0x5ab`; magic damage reduction in `Dmg_Calc` |
+| `0x20` | `u8` | strength | actor `+0x5a8`; cubed for physical damage in `MsCalcDamageCommand` (`0x00789bf0`) |
+| `0x21` | `u8` | defense | actor `+0x5a9`; physical damage reduction in `MsCalcDamageCommand` |
+| `0x22` | `u8` | magic | actor `+0x5aa`; magic damage in `MsCalcDamageCommand` |
+| `0x23` | `u8` | magic defense | actor `+0x5ab`; magic damage reduction in `MsCalcDamageCommand` |
 | `0x24`–`0x27` | `u8` | four more stats | actor `+0x5ac`–`+0x5af`, clamped 1–255 (`0x26`: 0–255) |
 | `0x28` | `u16` | | actor `+0x5b8` |
 | `0x2a` | `u8` | | actor `+0x5ba` |
@@ -63,7 +63,7 @@ defense 120. Its toughness is the "armored" mechanic, not the defense stat.
 
 ## Rewards (section 4)
 
-From `Battle_GiveRewards` (`0x007990d0`) and `Battle_Steal`
+From `MsGetItem` (`0x007990d0`) and `Battle_Steal`
 (`0x0078b760`). Items are `0x2000` + item ID (kernel `item` table).
 
 | Offset | Type | Field |

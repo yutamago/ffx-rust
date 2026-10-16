@@ -18,8 +18,8 @@ validate.
 
 ## Characters
 
-A character id is `kind << 12 | number` (`Chr_KindLetter`, `0x00829e10`;
-`Chr_IdName`, `0x00838060`):
+A character id is `kind << 12 | number` (`sg_getdbtype`, `0x00829e10`;
+`ch_create_chrname`, `0x00838060`):
 
 | Kind | Letter | Folder |
 |---|---|---|
@@ -31,7 +31,7 @@ A character id is `kind << 12 | number` (`Chr_KindLetter`, `0x00829e10`;
 | 5 | f | `obj` |
 | 6 | k | `skl` |
 
-A motion id is `character << 16 | number`. `SG_SetMotion` (`0x00837ac0`)
+A motion id is `character << 16 | number`. `Ch_SetSequence` (`0x00837ac0`)
 looks the number up in the sequences of the id's character, which need not
 be the actor's own: 166 of the 242 monsters without motions of their own
 have the same skeleton as one that has them, and the `.chr` files of 178 of
@@ -113,7 +113,7 @@ unaligned.
 
 ### Clip
 
-`SG_SetClip` (`0x00839980`) reads the header:
+`Ch_MotionSetupFcurve` (`0x00839980`) reads the header:
 
 | Offset | Type | Meaning |
 |---|---|---|

@@ -3,7 +3,7 @@
 //! The same section table as the monster files: `u32` count (8; 7 or 5 in
 //! a few), then the section offsets, 0 for absent ones, in ascending order
 //! (in 15 files the last ones point 16 bytes past the end: empty sections).
-//! `Battle_InitSections` (`0x00783e20`) takes four of them:
+//! `MsBtlReadSetScene` (`0x00783e20`) takes four of them:
 //!
 //! | Section | Use |
 //! |---|---|
@@ -20,11 +20,11 @@
 //!                the second script set (0x007986a0)
 //! 0x01  u8       unknown_1: 1 sends request 0xc with 1 at battle start
 //!                (0x0081ec20); 0 or 2 in the shipped files
-//! 0x02  u8       footsteps: the footstep sound bank (Battle_LoadFootData)
-//! 0x03  u8       underwater (Battle_IsUnderwater)
+//! 0x02  u8       footsteps: the footstep sound bank (MsBtlReadScene)
+//! 0x03  u8       underwater (MsBattleWater)
 //! 0x04  u8 * 8   0 in every file
 //! 0x0c  u16 * 8  monster slots: monster id 0x1000 | n for mNNN; 0xffff empty
-//!                (Battle_SetUpActors, 0x0079c110)
+//!                (MsSetRamChrData, 0x0079c110)
 //! ```
 //!
 //! Edits are made in place, so the layout never changes.

@@ -1,7 +1,7 @@
 //! Reader for the VBF archives (`FFX_Data.vbf`, `FFX2_Data.vbf`, `metamenu.vbf`)
 //! shipped with the FFX/X-2 HD Remaster.
 //!
-//! The layout was recovered from `Vbf_Open` (`0x0061dac0`) in `FFX.exe`; see
+//! The layout was recovered from `BigFileHandle_initialize` (`0x0061dac0`) in `FFX.exe`; see
 //! `docs/formats/vbf.md` for the full description and the evidence behind it.
 //!
 //! An archive is a header followed by file data. Every file is split into
@@ -65,7 +65,7 @@ pub struct Entry {
     pub path: String,
     /// Index of the file's first block in the block-size table.
     pub first_block: u32,
-    /// Second header word of the entry record; not read by `Vbf_Open`.
+    /// Second header word of the entry record; not read by `BigFileHandle_initialize`.
     /// Equal to `first_block` in `metamenu.vbf`. In `FFX_Data.vbf` it is
     /// `0` for the 7 empty files and `3675126` for all others. Its purpose is
     /// still unknown.

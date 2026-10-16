@@ -10,7 +10,7 @@ Reader/writer: [`crates/ffx-kernel`](../../crates/ffx-kernel). Text:
 
 ## Loading
 
-`Kernel_LoadFile` (`0x00782df0`) builds the path from the language
+`getExcelBinSize` (`0x00782df0`) builds the path from the language
 (0 `jp`, 1 `us`, 2 `fr`, 3 `sp`, 4 `de`, 5 `it`, 9 `kr`, 10 `ch`) and reads
 the whole file. `Kernel_LoadTables` (`0x00781d40`) keeps each table in a
 global: `command` → `0x0112a92c`, `item` → `0x0112a940`, `a_ability` →
@@ -18,7 +18,7 @@ global: `command` → `0x0112a92c`, `item` → `0x0112a940`, `a_ability` →
 
 ## Container
 
-`Kernel_FindRecord(id, table, &strings)` (`0x007ab870`) defines it. All
+`MsGetExcelData(id, table, &strings)` (`0x007ab870`) defines it. All
 integers little-endian.
 
 | Offset | Type | Meaning |
@@ -41,7 +41,7 @@ Segment descriptor:
 
 Record *id* lives at `offset + size × (id − first)`. An ID outside every
 segment returns the first segment's first record. The third output of
-`Kernel_FindRecord` is `offset + length`: the start of the string area.
+`MsGetExcelData` is `offset + length`: the start of the string area.
 
 Record IDs need not start at 0: `monster2` covers 101–180 and `monster3`
 181–365, continuing `monster1`.
@@ -98,7 +98,7 @@ file `cdrom.fid[0xd] + n` of the name table `cdrom.fnd` in
 `buki_get`, `shop_arms`, `takara` and `weapon` with these fields:
 
 **Equipment** (`weapon`, the starting inventory, "wep_data", copied into
-the 200 inventory slots at `0x01130f2c` by `SaveData_Clear`, `0x00786b00`;
+the 200 inventory slots at `0x01130f2c` by `MsSetSaveStartGame`, `0x00786b00`;
 `shop_arms`, what shops sell), 22 bytes, the inventory's own layout:
 
 | Offset | Type | Field | Evidence |
@@ -116,13 +116,13 @@ the 200 inventory slots at `0x01130f2c` by `SaveData_Clear`, `0x00786b00`;
 | `0x0c` | `u16` | model | `w_name` `+0x38 + 2 × character` (`0x007a0c50`) |
 | `0x0e` | `u16` × 4 | ability_1–4 | `0x8000` + `a_ability` ID, `0x00ff` empty; each applies its `a_ability` record to the wearer (`0x0079c5f0`) |
 
-**Treasure** (`takara`, `Treasure_Give`, `0x00799420`), 4 bytes: `kind`
+**Treasure** (`takara`, `msFieldItemGet`, `0x00799420`), 4 bytes: `kind`
 (0 gil = amount × 100, 2 item, 5 equipment from `buki_get`, 10 key item),
 `amount`, `item` (`u16`: `0x2000` + item, `buki_get` record, `0xa000` +
 key item).
 
 **Found equipment** (`buki_get`), 16 bytes, turned into an equipment slot
-by `Treasure_Give`: `flags`, `character`, `armor`, ?, `formula`, `power`,
+by `msFieldItemGet`: `flags`, `character`, `armor`, ?, `formula`, `power`,
 `crit_bonus`, `slots` (at least the ability count), then four `u16`
 abilities (0 none).
 

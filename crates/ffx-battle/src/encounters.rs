@@ -1,4 +1,4 @@
-//! The encounter table, `battle/kernel/btl.bin` (`Enc_InitTable`,
+//! The encounter table, `battle/kernel/btl.bin` (`MsBtlListInit`,
 //! `0x0079d250`).
 //!
 //! ```text
@@ -8,21 +8,21 @@
 //! 0x0c  u32  end of the file
 //! ```
 //!
-//! A field (`Enc_Field`, `0x0079d190`) is 14 bytes: `i16` map number
-//! (`Enc_FieldIndex` finds the field of a map by it), `i16` offset of its
+//! A field (`MsBtlListField`, `0x0079d190`) is 14 bytes: `i16` map number
+//! (`MsBtlListFieldNum` finds the field of a map by it), `i16` offset of its
 //! block from the start of the blocks, `i16` its first formation's index,
 //! `char[8]` its name. Fields with the same block share their encounters.
 //!
-//! A block (`Enc_FieldGroups`, `0x0079d170`) is `u8` formation count
-//! (wrapping), `u8` group count, then the groups (`Enc_Group`,
+//! A block (`MsBtlListEncount`, `0x0079d170`) is `u8` formation count
+//! (wrapping), `u8` group count, then the groups (`MsBtlListGroup`,
 //! `0x0079d210`): `u8` formation count `n`, `u16` battle map, `u8` encounter
 //! rate, `u8` weight total, then `n` × (`u8` formation id, `u8` weights).
 //! The low nibble of the weights is the default weight; `Enc_ResetWeights`
-//! (`0x007828a0`) copies it into the high nibble, the weight `Enc_Check`
+//! (`0x007828a0`) copies it into the high nibble, the weight `MsBattleEncountExe`
 //! (`0x00780d10`) rolls with, and sums the group's weights into the total.
 //!
-//! `Battle_Load` (`0x00781020`) reads formation `first + position`, where
-//! the position counts the block's formations in order (`Enc_FormationIndex`,
+//! `MsBattleExe` (`0x00781020`) reads formation `first + position`, where
+//! the position counts the block's formations in order (`MsBtlListCDpos`,
 //! `0x0079d0e0`), as PS2 file `0xe:index`: the file
 //! `battle/btl/<owner>_<id>`, `<owner>` being the first field with the block.
 //! So the formation counts are fixed: one formation more would make every

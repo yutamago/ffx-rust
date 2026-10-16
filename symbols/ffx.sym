@@ -12,7 +12,9 @@
 # convention). The original C++ name follows when the token differs. BSim
 # matches are the least certain: confirm before relying on one. The script
 # rewrites these lines on each run; to keep one as ours, drop the "fh " prefix
-# from its comment. "fh: <name>" after our own comment is their name for it.
+# from its comment. Where both projects had named a function we took their
+# name; "was <name>" gives our old one. "fh: <name>" after our own comment is
+# their (different) name for it.
 0x00401880 function Settings_Construct        # GameSetting.ini path at +0x430; field 0 = language index
 0x00401cb0 function Settings_Load             # reads Documents\Square Enix\...\GameSetting.ini (Language=jp|en|fr|de|it|es|kr|ch)
 0x00405b90 function IggyArray_GetString       # fh switch:bsim1.00 0x71007ea3d0 IggyArray::GetString
@@ -44,7 +46,7 @@
 0x0042fb80 function Phyre_PhyreMalloc_0042fb80 # fh v3:exact 0x0042fc60 Phyre::PhyreMalloc
 0x0042fc80 function Phyre_PEventFlagWin32_PEventFlagWin32 # fh v3:bsim1.00 0x0042fd60 Phyre::PEventFlagWin32::PEventFlagWin32
 0x0042fc90 function Phyre_PSemaphoreWin32_PSemaphoreWin32 # fh v3:bsim1.00 0x0042fd70 Phyre::PSemaphoreWin32::PSemaphoreWin32
-0x0042fd80 function Time_Now                   # seconds (GetSystemTimePreciseAsFileTime, or QueryPerformanceCounter); wrapped by the harness (fast mode); fh: Phyre::PTimerWin32::GetTime
+0x0042fd80 function Phyre_PTimerWin32_GetTime # seconds (GetSystemTimePreciseAsFileTime, or QueryPerformanceCounter); wrapped by the harness (fast mode); was Time_Now
 0x0042fe10 function Phyre_PTimerWin32_Initialize # fh v3:exact 0x0042ff00 Phyre::PTimerWin32::Initialize
 0x00430030 function Phyre_PhyreOS_Sleep       # fh v3:bsim1.00 0x00430120 Phyre::PhyreOS::Sleep
 0x00430050 function Phyre_PEventFlagWin32_initialize # fh v3:exact 0x00430140 Phyre::PEventFlagWin32::initialize
@@ -363,16 +365,16 @@
 0x005fdde0 function Phyre_PClassDescriptorForType_Phyre_PPhysics_PPhysicsWorld__getPointerFromScriptContext # fh switch:bsim1.00 0x71001968b0 Phyre::PClassDescriptorForType<Phyre::PPhysics::PPhysicsWorld>::getPointerFromScriptContext
 0x005ff320 function Phyre_PClassDescriptorConcrete_Phyre_PWorldMatrix__getValueFromScriptContext # fh switch:bsim0.98 0x71000c1740 Phyre::PClassDescriptorConcrete<Phyre::PWorldMatrix>::getValueFromScriptContext
 0x00603ed0 function Phyre_PClassDescriptorAbstract_Phyre_PRendering_PEffectVariant__fixObjectsAfterLoading # fh switch:bsim1.00 0x71000e3860 Phyre::PClassDescriptorAbstract<Phyre::PRendering::PEffectVariant>::fixObjectsAfterLoading
-0x00607bc0 function File_Construct            # File = [handle (-1 unused), archive entry (0 = loose file)]; fh: Phyre_PSerialization_PStreamFile_ctor
+0x00607bc0 function Phyre_PSerialization_PStreamFile_ctor # File = [handle (-1 unused), archive entry (0 = loose file)]; was File_Construct
 0x00607c40 function Str_Utf8ToWide            # (src, dst, dst_end) -> chars written
-0x00607d30 function FileSys_GetBasePath       # returns g_BasePath; fh: Phyre::PSerialization::PStreamFile::GetStreamPrefix
-0x00607d40 function FileSys_SetBasePath       # Game_InitFileSystem passes "../../.."; fh: Phyre::PSerialization::PStreamFile::SetStreamPrefix
+0x00607d30 function Phyre_PSerialization_PStreamFile_GetStreamPrefix # returns g_BasePath; was FileSys_GetBasePath
+0x00607d40 function Phyre_PSerialization_PStreamFile_SetStreamPrefix # Game_InitFileSystem passes "../../.."; was FileSys_SetBasePath
 0x00607d50 function Path_ToLowerAscii         # in place, A-Z only (signed char compare), cdecl, returns end of string; replaced by ffx-hook
-0x00607d80 function File_Close                # releases the entry, or SetEndOfFile + CloseHandle on the loose handle; fh: Phyre_PSerialization_PStreamFile_closeFile
-0x00607dc0 function File_GetSize              # entry size, or GetFileSizeEx on the loose handle; fh: Phyre_PSerialization_PStreamFile_getFileSize
+0x00607d80 function Phyre_PSerialization_PStreamFile_closeFile # releases the entry, or SetEndOfFile + CloseHandle on the loose handle; was File_Close
+0x00607dc0 function Phyre_PSerialization_PStreamFile_getFileSize # entry size, or GetFileSizeEx on the loose handle; was File_GetSize
 0x00607e00 function File_Probe                # normalizes backslash -> / and case, FileSys_Exists, else CreateFileW + SetEndOfFile on the loose file
 0x00607f20 function Phyre_PSerialization_PStreamFileWin32_isOpen # fh v3:exact 0x006080e0 Phyre::PSerialization::PStreamFileWin32::isOpen
-0x00607f40 function File_Open                 # thiscall(File*, path, mode, 3 unused), ret 0x14: archive first, else CreateFileW; hooked for mods; fh: Phyre::PSerialization::PStreamFileWin32::openFile
+0x00607f40 function Phyre_PSerialization_PStreamFileWin32_openFile # thiscall(File*, path, mode, 3 unused), ret 0x14: archive first, else CreateFileW; hooked for mods; was File_Open
 0x00608090 function Phyre_PSerialization_PStreamFile_read # fh v4:user_defined+call.cs thiscall
 0x0060a340 function Fixup_UnpackArrayList     # (cursor*, out, count, objects): array fixup groups, 16-byte records; same modes as Fixup_UnpackList
 0x0060a750 function Fixup_UnpackList          # (cursor*, out, fixup count, object count): one list's packed pointer fixup groups, modes 0-6; ported in ffx-phyre fixup.rs
@@ -427,28 +429,28 @@
 0x0061aa60 function VFile_fileRead            # fh v3:exact 0x0061ac20 VFile::fileRead
 0x0061aa90 function FileSys_Read              # wrapper that calls FileSys_ReadSync
 0x0061acc0 function VbfStream_Open            # fopen(path, "rb") for one of 15 reader streams
-0x0061b590 function FileSys_CreateSingleton   # allocates the 0x44-byte FileSys into g_FileSys; fh: BigFileStream::createInstance
+0x0061b590 function BigFileStream_createInstance # allocates the 0x44-byte FileSys into g_FileSys; was FileSys_CreateSingleton
 0x0061b7e0 function FileSys_NewReadRequest    # finds the first block and its file offset for a read at a 64-bit position
-0x0061b8d0 function ReadRequest_ReadBlocks    # freads the stored blocks; stored size 0 means 0x10000; fh: BigFileStream::fileTaskRead
-0x0061ba80 function ReadRequest_Inflate       # raw blocks are memcpy'd, others go through zlib_uncompress; error text id 0x7836; fh: BigFileStream::fileTaskUncompress
-0x0061bdb0 function FileSys_Get               # returns g_FileSys; fh: BigFileStream::get
+0x0061b8d0 function BigFileStream_fileTaskRead # freads the stored blocks; stored size 0 means 0x10000; was ReadRequest_ReadBlocks
+0x0061ba80 function BigFileStream_fileTaskUncompress # raw blocks are memcpy'd, others go through zlib_uncompress; error text id 0x7836; was ReadRequest_Inflate
+0x0061bdb0 function BigFileStream_get         # returns g_FileSys; was FileSys_Get
 0x0061bdd0 function BigFileStream_ctor        # fh v4:user_defined+call.cs thiscall
 0x0061be40 function FileSys_Exists            # MD5 of the path (root prefix skipped), asks each mounted archive
-0x0061bf10 function FileSys_FindEntry         # like FileSys_Exists but returns the entry; fh: BigFileStream::openFile
+0x0061bf10 function BigFileStream_openFile    # like FileSys_Exists but returns the entry; was FileSys_FindEntry
 0x0061bfe0 function FileSys_ReadSync          # NewReadRequest + ReadBlocks + Inflate
-0x0061c150 function FileSys_MountVbf          # this=FileSys; mounts an archive into the first free of 5 slots at +0x10; fh: BigFileStream::registerBigFile
-0x0061c3a0 function FileSys_SetRootPath       # this=FileSys; copies path to +0x40, length to +0x3c; fh: BigFileStream::setStreamPrefix
+0x0061c150 function BigFileStream_registerBigFile # this=FileSys; mounts an archive into the first free of 5 slots at +0x10; was FileSys_MountVbf
+0x0061c3a0 function BigFileStream_setStreamPrefix # this=FileSys; copies path to +0x40, length to +0x3c; was FileSys_SetRootPath
 0x0061c9a0 function Phyre_PWorldMatrixController_dtor_PWorldMatrixController # fh switch:bsim1.00 0x71001a8f20 Phyre::PWorldMatrixController::~PWorldMatrixController
 0x0061ccd0 function Phyre_PScripting_PScriptMemoryRecorder_getAllocPos # fh switch:bsim1.00 0x71001a5280 Phyre::PScripting::PScriptMemoryRecorder::getAllocPos
 0x0061d140 function Vbf_MapLookup             # digest -> map node; entry pointer at node+0x20
-0x0061d460 function Vbf_Construct             # this=Vbf (0x60 bytes); hash map of entries + critical section at +0x44; fh: BigFileHandle::BigFileHandle
-0x0061d670 function Vbf_Destruct  # fh: BigFileHandle::~BigFileHandle
+0x0061d460 function BigFileHandle_BigFileHandle # this=Vbf (0x60 bytes); hash map of entries + critical section at +0x44; was Vbf_Construct
+0x0061d670 function BigFileHandle_dtor_BigFileHandle # was Vbf_Destruct
 0x0061d6e0 function Md5Digest_Less            # 128-bit compare used to verify the header digest
 0x0061d910 function BigFileHandle_deinitialize # fh v3:exact 0x0061dad0 BigFileHandle::deinitialize
-0x0061dac0 function Vbf_Open                  # reads SRYK header, verifies MD5 trailer, builds block tables and entry map; fh: BigFileHandle::initialize
+0x0061dac0 function BigFileHandle_initialize  # reads SRYK header, verifies MD5 trailer, builds block tables and entry map; was Vbf_Open
 0x0061de30 function Vbf_InsertEntry           # inserts (name MD5 -> entry*) into the entry map
 0x0061dec0 function Vbf_Contains
-0x0061df10 function Vbf_FindEntry  # fh: BigFileHandle::getNewVFile
+0x0061df10 function BigFileHandle_getNewVFile # was Vbf_FindEntry
 0x0061df70 function BigFileHandle_releaseVFile # fh v3:exact 0x0061e130 BigFileHandle::releaseVFile
 0x0061f810 function Phyre_PFramework_PApplication_PApplication # fh v3:exact 0x0061f9d0 Phyre::PFramework::PApplication::PApplication
 0x00622050 function Phyre_PFramework_PApplication_Bind # fh v3:exact 0x00622210 Phyre::PFramework::PApplication::Bind
@@ -531,7 +533,7 @@
 0x0062f9f0 function sceMcSync                 # fh switch:bsim1.00 0x71001c2790
 0x0062fa10 function sceMcInit                 # fh switch:bsim1.00 0x71001c2730
 0x0062fa20 function sceMount                  # fh v3:bsim1.00 0x0062fbd0
-0x0062fa30 function Ps2File_Open              # host0:/ffx/... -> /ffx_ps2/ffx/..., then the PC file layer; fh: sceOpen
+0x0062fa30 function sceOpen                   # host0:/ffx/... -> /ffx_ps2/ffx/..., then the PC file layer; was Ps2File_Open
 0x0062fb30 function scePadGetState            # fh v3:bsim1.00 0x0062fce0
 0x0062fb40 function scePadInfoAct             # fh v3:bsim1.00 0x0062fcf0
 0x0062fb50 function scePadInfoComb            # fh v3:bsim1.00 0x0062fd00
@@ -594,8 +596,8 @@
 0x00639570 function graphicCameraGetFOVy      # fh v3:bsim1.00 0x00639720
 0x00639590 function graphicCameraGetViewProjectionMatrix # fh v3:exact 0x00639740
 0x006395c0 function graphicCameraSetAspectRatio # fh v3:bsim1.00 0x00639770
-0x006395e0 function Render_SetFov                # cdecl(float* radians): the camera's field of view for the renderer (Cam_Apply: 2 atan of the screen depth's ratio); fh: graphicCameraSetFOVy
-0x00639860 function Render_SetView               # cdecl(view matrix*): the camera's view for the renderer; Cam_Apply passes 0x02311440; fh: graphicCameraSetWorldMatrix
+0x006395e0 function graphicCameraSetFOVy      # cdecl(float* radians): the camera's field of view for the renderer (Cam_Apply: 2 atan of the screen depth's ratio); was Render_SetFov
+0x00639860 function graphicCameraSetWorldMatrix # cdecl(view matrix*): the camera's view for the renderer; Cam_Apply passes 0x02311440; was Render_SetView
 0x00639b30 function graphicCameraSetWorldMatrixSub # fh v3:exact 0x00639ce0
 0x00639ff0 function graphicCharacterInsertDrawSituation # fh v3:exact 0x0063a1b0
 0x0063a030 function graphicCharacterInstanceDestroy # fh v3:exact 0x0063a1f0
@@ -615,7 +617,7 @@
 0x0063cb50 function graphicCharacterLightingSetLightDir # fh v3:exact 0x0063cd10
 0x0063cdd0 function graphicCharacterLightingSetShadeCoeff # fh v3:exact 0x0063cf90
 0x0063d050 function graphicCharacterLightingSetShadeColor # fh v3:exact 0x0063d200
-0x0063d140 function Chr_LoadAssetList          # (path, chr id): loads the files of an asset list (.ahwin32) through 0x006642f0; "VIRTUOS Error!!!!! Can't find character data: %s."; fh: graphicCharacterLoad
+0x0063d140 function graphicCharacterLoad      # (path, chr id): loads the files of an asset list (.ahwin32) through 0x006642f0; "VIRTUOS Error!!!!! Can't find character data: %s."; was Chr_LoadAssetList
 0x0063d370 function graphicCharacterRegistToInstantiate # fh v3:exact 0x0063d520
 0x0063d550 function graphicCharacterRestoreSummonTexture # fh v3:exact 0x0063d700
 0x0063d870 function graphicCharacterShaderRestore # fh switch:bsim1.00 0x71001db3e0
@@ -646,7 +648,7 @@
 0x00640db0 function graphicFontGetScreenWH    # fh v3:exact 0x00640f60
 0x00640dd0 function graphicSetUiDrawType      # fh v3:bsim1.00 0x00643ca0
 0x00641060 function graphicGetAbmap           # fh v3:exact 0x00641210
-0x006410e0 function Lang_Get                  # 0 jp, 1 us, 2 fr, 3 sp, 4 de, 5 it, 9 kr, 10 ch; fh: TOGetFFXLang
+0x006410e0 function TOGetFFXLang              # 0 jp, 1 us, 2 fr, 3 sp, 4 de, 5 it, 9 kr, 10 ch; was Lang_Get
 0x00641130 function graphicGetCut2DSceneBias  # fh v3:bsim1.00 0x006412e0
 0x00641150 function graphicGetFileReadSemaId  # fh switch:bsim1.00 0x71001db0c0
 0x00641230 function graphicGetFogColor        # fh v3:bsim1.00 0x00641310
@@ -793,7 +795,7 @@
 0x00645f00 function setNearPlane              # fh v3:bsim1.00 0x006460b0
 0x00645f30 function ConvertGameCodeToUTF8     # fh v3:bsim1.00 0x006460e0
 0x00645f50 function Text_ToUtf8               # FFX text -> UTF-8; defines the byte grammar (docs/formats/text.md)
-0x006460a0 function Text_DecodeCharCjk        # character code -> UTF-8 via the jp/kr/ch table; fh: DecodingGamecodeJPCHKR
+0x006460a0 function DecodingGamecodeJPCHKR    # character code -> UTF-8 via the jp/kr/ch table; was Text_DecodeCharCjk
 0x006461f0 function Text_DecodeCharWestern    # character code -> UTF-8 via ffxsjistbl_us.bin
 0x00646920 function Text_LoadCharset          # loads ffx_encoding/ffxsjistbl_<lang>.bin into g_CharsetCjk/g_CharsetWestern
 0x00647c90 function IsToLoadMagicAlreadyInUse # fh switch:bsim1.00 0x71007e2c30
@@ -935,7 +937,7 @@
 0x006795b0 function Game_InitFileSystem       # mounts data\FFX_Data.vbf, shows MessageBoxW on failure
 0x006796f0 function fiosIsFileExist           # fh v3:exact 0x006798a0
 0x00679710 function fiosLseek                 # fh v3:exact 0x006798c0
-0x00679730 function PcFile_Open               # allocates a File and calls File_Construct/File_Open; MessageBoxW on failure; fh: fiosOpen
+0x00679730 function fiosOpen                  # allocates a File and calls File_Construct/File_Open; MessageBoxW on failure; was PcFile_Open
 0x00679800 function fiosRead                  # fh v3:exact 0x006799b0
 0x00679820 function fiosUnifyFilename         # fh v4:imported+call.cs cdecl
 0x00679a00 function getPlatform               # fh switch:bsim1.00 0x71001cb250
@@ -1178,8 +1180,8 @@
 0x006da4a0 function Configs_ConfigFile_saveConfigToFile # fh switch:bsim1.00 0x710056cf70 Configs::ConfigFile::saveConfigToFile
 0x006da4b0 function PhyFMVPlayerManager_pauseMovie # fh v3:exact 0x006da5e0 PhyFMVPlayerManager::pauseMovie
 0x006dae00 function PhyFMVPlayerManager_updateVideoCallback # fh v3:exact 0x006daf30 PhyFMVPlayerManager::updateVideoCallback
-0x006db070 function LangManager_Get  # fh: LocalizationManager::GetInstance
-0x006db090 function LangManager_FromSettings  # settings language index -> game language id; fh: LocalizationManager_Initialize
+0x006db070 function LocalizationManager_GetInstance # was LangManager_Get
+0x006db090 function LocalizationManager_Initialize # settings language index -> game language id; was LangManager_FromSettings
 0x006db1f0 function LocalizationManager_getText # fh v3:exact 0x006db320 LocalizationManager::getText
 0x006db2f0 function LocalizationManager_readLocalizationKit # fh v3:exact 0x006db420 LocalizationManager::readLocalizationKit
 0x006dbf50 function JobSchedule_JobScheduler_waitForComplete # fh v3:exact 0x006dc080 JobSchedule::JobScheduler::waitForComplete
@@ -1257,7 +1259,7 @@
 0x006ef2d0 function crossAssertIsValidFloat   # fh v3:exact 0x006ef410
 0x006ef310 function crossAssertOutput         # fh switch:bsim1.00 0x71002403d0
 0x006ef6f0 function fix_mappic                # fh call.cs cdecl
-0x006f0330 function Save_InitFolder            # Documents (SHGetFolderPathW CSIDL_PERSONAL) + Square Enix\FINAL FANTASY X&X-2 HD Remaster\FINAL FANTASY X\; fh: _SetUpDefaultSaveFolder
+0x006f0330 function SetUpDefaultSaveFolder    # Documents (SHGetFolderPathW CSIDL_PERSONAL) + Square Enix\FINAL FANTASY X&X-2 HD Remaster\FINAL FANTASY X\; was Save_InitFolder
 0x006f0510 function SaveDataManager_debugSave_Internal_6f0650 # fh call.cs cdecl
 0x006f1550 function AchievementTryObtainPlat  # fh v3:exact 0x006f1690 +AchievementTryObtainPlat
 0x006f1ce0 function SaveDataManager_doLoad    # fh v3:exact 0x006f1e20 SaveDataManager::doLoad
@@ -1408,8 +1410,8 @@
 0x007291c0 function pppFpFree                 # fh v3:exact 0x007292b0
 0x00729290 function pppFpGetHeapSize          # fh v3:exact 0x00729380
 0x007292f0 function pppFpGetMngPtr            # fh v3:exact 0x007293e0
-0x00729570 function Fp_Hide                      # (id): sets bit 0x10 in the FP (field effect) state entry (0x00d30260 + i*0x4c); the "FP Disp Status" dump (0x00729060) prints it as Disp OFF; fh: pppFpIDdispOff
-0x007295b0 function Fp_Show                      # (id): clears bit 0x10 of the FP state entry (Disp ON in the 0x00729060 dump); fh: pppFpIDdispOn
+0x00729570 function pppFpIDdispOff            # (id): sets bit 0x10 in the FP (field effect) state entry (0x00d30260 + i*0x4c); the "FP Disp Status" dump (0x00729060) prints it as Disp OFF; was Fp_Hide
+0x007295b0 function pppFpIDdispOn             # (id): clears bit 0x10 of the FP state entry (Disp ON in the 0x00729060 dump); was Fp_Show
 0x00729660 function Fp_End                       # (id): sets entry +0x1d = 1; the 0x00729060 dump shows Stat END
 0x00729700 function Fp_Restart                   # (id): counter = 0, +0x1d = 0 (Stat RUN from the start)
 0x00729810 function Fp_RestartMode2              # ?(id): counter = 0, +0x1d = 2 (shown as END; probably play once and stop)
@@ -1581,7 +1583,7 @@
 0x0076b7e0 function eiWaitLoop                # fh switch:bsim1.00 0x71002f17e0
 0x0076b8d0 function eidprintfPrint            # fh v3:exact 0x0076b9e0
 0x0076b970 function Cd_QueueRead              # libmscd.c emulation: queue a read of a PS2 file by number; slot 0 of g_CdLib
-0x0076c320 function Cd_FileSize                # cdecl(number): size of a PS2 file from the sector table (cdrom.mdg); wrapped so mod files report their size; fh: CDfileSize_CD
+0x0076c320 function CDfileSize_CD             # cdecl(number): size of a PS2 file from the sector table (cdrom.mdg); wrapped so mod files report their size; was Cd_FileSize
 0x0076c410 function CDfileSize_CD_EX          # fh v3:exact 0x0076c520
 0x0076c560 function CdEnvInit                 # fh v3:exact 0x0076c670
 0x0076cfd0 function FileReadMain              # fh v3:bsim1.00 0x0076d0f0
@@ -1663,12 +1665,12 @@
 0x00780cc0 function MsBattleCursorCalc        # fh v3:exact 0x00780d90
 0x00780ce0 function MsBattleCursorType        # fh v3:bsim1.00 0x00780db0
 0x00780cf0 function MsBattleDisposeAtEvent    # fh v3:bsim1.00 0x00780dc0
-0x00780d10 function Enc_Check                  # random encounter roll; on a hit writes field 0x0112c256, group 0x0112c258, formation 0x0112c259, raises 0x0112a8e2; fh: MsBattleEncountExe
+0x00780d10 function MsBattleEncountExe        # random encounter roll; on a hit writes field 0x0112c256, group 0x0112c258, formation 0x0112c259, raises 0x0112a8e2; was Enc_Check
 0x00780fe0 function MsBattleEncountFlag       # fh switch:bsim1.00 0x7100339530
-0x00780ff0 function Enc_Reset                  # cdecl(full): resets the encounter step counters; fh: ResetEncountExe
-0x00781020 function Battle_Load                # (mode, field, group, formation): loads btl/<field>_<nn> and sets the battle up; fh: MsBattleExe
+0x00780ff0 function ResetEncountExe           # cdecl(full): resets the encounter step counters; was Enc_Reset
+0x00781020 function MsBattleExe               # (mode, field, group, formation): loads btl/<field>_<nn> and sets the battle up; was Battle_Load
 0x00781530 function MsBattleExeClear          # fh v3:exact 0x00781600
-0x00781550 function Battle_RequestFile        # (mode, index): reads PS2 file index of category 0xe (battle/btl/<field>_<nn>/<field>_<nn>.bin), index from Enc_FormationIndex; fh: MsBattleExeSetIndex
+0x00781550 function MsBattleExeSetIndex       # (mode, index): reads PS2 file index of category 0xe (battle/btl/<field>_<nn>/<field>_<nn>.bin), index from Enc_FormationIndex; was Battle_RequestFile
 0x00781590 function MsBattleFree              # fh v3:exact 0x00781660
 0x00781630 function MsBattleGetChrDisposeFlag # fh v3:bsim1.00 0x00781700
 0x00781680 function MsBattleGetFontAddress    # fh v3:exact 0x00781750
@@ -1682,30 +1684,30 @@
 0x00781d40 function Kernel_LoadTables         # loads command, ply_rom, a_ability, item, monmagic1/2, ... into globals
 0x00782050 function MsBattleReadData          # fh v3:exact 0x00782110
 0x00782090 function MsBattleReadDataNB        # fh v3:exact 0x00782150
-0x007821e0 function Battle_IsUnderwater        # returns 0x0112c9ce, formation byte 3 (set only in underwater fields: cdsp00, bjyt02, genk09, bsil03, mtgz07, stbv00 ...); fh: MsBattleWater
+0x007821e0 function MsBattleWater             # returns 0x0112c9ce, formation byte 3 (set only in underwater fields: cdsp00, bjyt02, genk09, bsil03, mtgz07, stbv00 ...); was Battle_IsUnderwater
 0x007821f0 function MsBtlBridgeBtl2Event      # fh v3:exact 0x007822b0
 0x007824e0 function MsBtlBridgeEvent2Btl      # fh v3:exact 0x007825a0
 0x00782770 function MsEnvInit                 # fh v3:exact 0x00782830
-0x007827f0 function Enc_FindFormation          # (field map<<16 | formation id) -> its 2-byte entry in the encounter groups; outputs field, group, position; fh: MsFldGetScene
+0x007827f0 function MsFldGetScene             # (field map<<16 | formation id) -> its 2-byte entry in the encounter groups; outputs field, group, position; was Enc_FindFormation
 0x007828a0 function Enc_ResetWeights           # (map, keep): entry byte 1 = default weight (low nibble) copied to the current weight (high nibble) unless keep; group +4 = sum of current weights
-0x00782970 function Battle_GetBattleId           # *0x0112a9f0 << 16 | *0x0112a9fc while in battle (0x0112a8e0), else 0; ?field index << 16 | formation (battle scripts compare it to e.g. 0x2050000); fh: MsGetBattleScene
+0x00782970 function MsGetBattleScene          # *0x0112a9f0 << 16 | *0x0112a9fc while in battle (0x0112a8e0), else 0; ?field index << 16 | formation (battle scripts compare it to e.g. 0x2050000); was Battle_GetBattleId
 0x00782a10 function MsGetEncountType          # fh v3:bsim1.00 0x00782ad0
 0x00782a20 function MsGetFileSize             # fh v3:exact 0x00782ae0
 0x00782ae0 function MsGetMapCenter            # fh v3:exact 0x00782ba0
 0x00782c00 function MsSetCountryName          # fh v3:exact 0x00782cc0
-0x00782df0 function Kernel_LoadFile           # (name, buffer) reads new_<lang>pc/battle/kernel/<name>.bin whole; fh: getExcelBinSize
+0x00782df0 function getExcelBinSize           # (name, buffer) reads new_<lang>pc/battle/kernel/<name>.bin whole; was Kernel_LoadFile
 0x00782f80 function AsyncLoadNewCharacter     # fh v3:exact 0x00783040
 0x00782fd0 function FinishReadPhyreBattleMap  # fh v3:bsim1.00 0x00783090
 0x00783000 function MsBtlReadInit             # fh v3:exact 0x007830b0
 0x00783020 function MsBtlReadManage           # fh v3:exact+call.cs 0x007830d0 cdecl
-0x00783680 function Mon_LoadText              # kernel monster name/texts -> actor +0x50/+0x90/+0x190, then requests mon_data; fh: MsBtlReadMonster
+0x00783680 function MsBtlReadMonster          # kernel monster name/texts -> actor +0x50/+0x90/+0x190, then requests mon_data; was Mon_LoadText
 0x007839b0 function MsBtlReadMonsterProcess   # fh v3:exact 0x00783a60
 0x00783b00 function Mon_AttachData            # monster file sections -> actor +0xf78 (script), +0xf7c, +0xf80 (stats), +0xf84
 0x00783b90 function MsBtlReadPlayerModelProcess # fh v3:exact 0x00783c40
 0x00783bc0 function MsBtlReadPlayerProcess    # fh v3:exact 0x00783c70
-0x00783d80 function Battle_LoadFootData        # (n): formation byte 2 selects the footstep sound bank ("foot_data"); fh: MsBtlReadScene
+0x00783d80 function MsBtlReadScene            # (n): formation byte 2 selects the footstep sound bank ("foot_data"); was Battle_LoadFootData
 0x00783e00 function MsBtlReadSceneFree        # fh v3:exact 0x00783eb0
-0x00783e20 function Battle_InitSections        # formation file sections: 0 script 0x0112a9ac, 1 0x0112a9b4, 2 formation 0x0112a9c0, 3 positions 0x0112a9b0 (0x20-byte records); fh: MsBtlReadSetScene
+0x00783e20 function MsBtlReadSetScene         # formation file sections: 0 script 0x0112a9ac, 1 0x0112a9b4, 2 formation 0x0112a9c0, 3 positions 0x0112a9b0 (0x20-byte records); was Battle_InitSections
 0x00784070 function Mon_LoadAll               # sprintf m%03d for each of 8 enemy slots
 0x00784120 function MsCDreadWeapon            # fh v3:exact 0x007841d0
 0x00784260 function Mon_GetName               # kernel monster record string 0
@@ -1717,7 +1719,7 @@
 0x007849c0 function MsDebugFullGill           # fh v3:bsim1.00 0x00784a80
 0x007849d0 function MsDebugFullItem           # fh v3:exact 0x00784a90
 0x00784ac0 function MsDebugFullMember         # fh v3:exact 0x00784b80
-0x00784d00 function Party_SwapIn                 # (chr or 0xff, slot): puts chr in party slot (0-2 front, 3-19 reserve, table 0x011307e8), the slot's old occupant takes chr's old place; refuses locked chars (0x01132088 bit 2); fh: MsExchangeSaveParty
+0x00784d00 function MsExchangeSaveParty       # (chr or 0xff, slot): puts chr in party slot (0-2 front, 3-19 reserve, table 0x011307e8), the slot's old occupant takes chr's old place; refuses locked chars (0x01132088 bit 2); was Party_SwapIn
 0x00784e60 function MsGetCheckEnglish         # fh v3:exact 0x00784f20
 0x00784e80 function MsGetGIL                  # fh v3:bsim1.00+call.cs 0x00784f40 cdecl
 0x00784e90 function MsGetNextAP               # fh v3:exact+call.cs 0x00784f50 cdecl
@@ -1731,13 +1733,13 @@
 0x007851c0 function MsGetSaveConfigCursorSave # fh v3:exact 0x00785280
 0x007851d0 function MsGetSaveConfigEnglish    # fh v3:bsim1.00+call.cs 0x00785290 cdecl
 0x007851f0 function MsGetSaveConfigHiragana   # fh v3:bsim1.00+call.cs 0x007852b0 cdecl
-0x00785240 function SaveData_Get                 # returns &g_SaveData (0x0112ca90); +0xc = entrance index (0x0088d670), +0x11/+0x12 = map fade type/frames; fh: MsGetSaveEventAddress
+0x00785240 function MsGetSaveEventAddress     # returns &g_SaveData (0x0112ca90); +0xc = entrance index (0x0088d670), +0x11/+0x12 = map fade type/frames; was SaveData_Get
 0x00785250 function MsGetSaveEventFlag        # fh v3:bsim1.00 0x00785310
 0x00785270 function MsGetSaveInParty          # fh v3:bsim1.00 0x00785330
 0x00785290 function MsGetSaveMenu             # fh v3:bsim1.00 0x00785350
 0x007852d0 function MsGetSaveOutParty         # fh v3:bsim1.00 0x00785390
 0x007852f0 function MsGetSavePartyMember      # fh v3:bsim1.00+call.cs 0x007853b0 cdecl
-0x00785330 function Party_GetChar                # (i < 0x12) -> 0x94-byte character record at 0x0113205c + i*0x94 (+0x1c/+0x20 cur HP/MP?, +0x24/+0x28 max HP/MP?); fh: MsGetSavePlayerPtr
+0x00785330 function MsGetSavePlayerPtr        # (i < 0x12) -> 0x94-byte character record at 0x0113205c + i*0x94 (+0x1c/+0x20 cur HP/MP?, +0x24/+0x28 max HP/MP?); was Party_GetChar
 0x00785380 function MsGetSavePlyJoin          # fh v3:exact+call.cs 0x00785440 cdecl
 0x007853a0 function MsGetSavePlyJoined        # fh v3:bsim1.00+call.cs 0x00785460 cdecl
 0x007853e0 function MsGetSaveSP               # fh v3:exact 0x007854a0
@@ -1757,8 +1759,8 @@
 0x00786900 function MsSetSaveParamAll         # fh v3:exact+call.cs 0x007869c0 cdecl
 0x00786930 function MsSetSaveParty            # fh v3:exact 0x007869f0
 0x00786950 function MsSetSavePartyMember      # fh v3:exact+call.cs 0x00786a10 cdecl
-0x007869b0 function Party_SetMember              # (chr, on): on=1 sets bits 0/4 of 0x01132088[chr*0x94] and adds chr to the party list 0x00785270(0) (20 slots); on=0 removes it; fh: MsSetSavePlyJoin
-0x00786b00 function SaveData_Clear             # new game: clears g_SaveData, reads menu, party, weapon (wep_data -> inventory 0x01130f2c, 200 x 22 bytes) and ply_save; fh: MsSetSaveStartGame
+0x007869b0 function MsSetSavePlyJoin          # (chr, on): on=1 sets bits 0/4 of 0x01132088[chr*0x94] and adds chr to the party list 0x00785270(0) (20 slots); on=0 removes it; was Party_SetMember
+0x00786b00 function MsSetSaveStartGame        # new game: clears g_SaveData, reads menu, party, weapon (wep_data -> inventory 0x01130f2c, 200 x 22 bytes) and ply_save; was SaveData_Clear
 0x00786ef0 function spendSlv                  # fh v3:exact 0x00786fb0 +spendSlv
 0x00786f50 function canUseAutoBattle          # fh v3:exact 0x00787010
 0x007871f0 function forceAutoBattleOff        # fh v3:exact 0x007872b0
@@ -1822,7 +1824,7 @@
 0x00789690 function DmgCalc_Crit              # fh v3:exact 0x00789750 +DmgCalc_Crit
 0x00789740 function MsCalcDamage              # fh v3:exact 0x00789800
 0x007898d0 function MsCalcDamageCTB           # fh v3:exact 0x00789990
-0x00789bf0 function Dmg_Calc                  # physical: str(+0x5a8)^3 vs def(+0x5a9); magic: mag(+0x5aa) vs mdef(+0x5ab); fh: MsCalcDamageCommand
+0x00789bf0 function MsCalcDamageCommand       # physical: str(+0x5a8)^3 vs def(+0x5a9); magic: mag(+0x5aa) vs mdef(+0x5ab); was Dmg_Calc
 0x0078a200 function DmgCalc_ApplyZombieDrainInteraction # fh v3:exact 0x0078a2c0 +DmgCalc_ApplyZombieDrainInteraction
 0x0078a240 function MsCalcDrainResult         # fh v3:exact 0x0078a300
 0x0078a360 function DmgCalc_Elem              # fh v3:exact 0x0078a420 +DmgCalc_Elem
@@ -1919,21 +1921,21 @@
 0x00790530 function MsSaveItemTypeBuffer      # fh v3:bsim1.00 0x00790580
 0x00790550 function MsSaveItemUse             # fh v3:exact+call.cs 0x007905a0 cdecl
 0x00790670 function MsSetItemCheck            # fh v3:bsim1.00 0x007906c0
-0x007906a0 function Item_BuildLists           # sorts items by command flags bit 0x2 / 0x400; fh: MsSetItemWindow
+0x007906a0 function MsSetItemWindow           # sorts items by command flags bit 0x2 / 0x400; was Item_BuildLists
 0x00790790 function MsSetUseItem              # fh v3:bsim1.00 0x007907e0
 0x00790800 function MsImportantGet            # fh v3:exact 0x00790850
 0x00790860 function MsImportantName           # fh v3:exact+call.cs 0x007908b0 cdecl
 0x007908a0 function MsImportantPtr            # fh v3:bsim1.00 0x007908f0
 0x007908c0 function MsImportantRead           # fh v3:exact 0x00790910
 0x00790930 function MsImportantSet            # fh v3:exact 0x00790980
-0x00790970 function Ability_FindRecord        # id & 0xfff in g_KernelAAbility; fh: MsGetRomAbility
+0x00790970 function MsGetRomAbility           # id & 0xfff in g_KernelAAbility; was Ability_FindRecord
 0x00790990 function MsGetRomCTBbase           # fh v3:exact 0x007909e0
 0x007909c0 function MsGetRomCTBcount          # fh v3:exact 0x00790a10
-0x007909f0 function Item_FindRecord           # id & 0xfff in g_KernelItem; fh: MsGetRomItem
+0x007909f0 function MsGetRomItem              # id & 0xfff in g_KernelItem; was Item_FindRecord
 0x00790a10 function MsGetRomKaizou            # fh switch:bsim1.00+call.cs 0x710036fc80 cdecl
 0x00790a50 function MonMagic1_FindRecord
 0x00790a70 function MsGetRomMonCommand2       # fh v3:bsim1.00 0x00790ac0
-0x00790a90 function Command_FindRecord        # id & 0xfff in g_KernelCommand; fh: MsGetRomPlyCommand
+0x00790a90 function MsGetRomPlyCommand        # id & 0xfff in g_KernelCommand; was Command_FindRecord
 0x00790ab0 function MsGetRomSummonGrow        # fh v3:bsim1.00+call.cs 0x00790b00 cdecl
 0x00790af0 function MsGetMonsterCapture       # fh v3:exact 0x00790b40
 0x00790b10 function MsGetSaveMonsterDefeat    # fh v3:bsim1.00 0x00790b60
@@ -1941,7 +1943,7 @@
 0x00790b30 function MsMonsterCapture          # fh v3:exact+call.cs 0x00790b80 cdecl
 0x00790b90 function AddMonsterCapture         # fh v3:exact 0x00790be0 +AddMonsterCapture
 0x00790be0 function MsSetMonsterCheck         # fh v3:bsim1.00 0x00790c30
-0x00790c10 function Battle_Update              # per frame; outside battle, a raised request flag 0x0112a8e2 starts Battle_Load; fh: MsBattleProcess
+0x00790c10 function MsBattleProcess           # per frame; outside battle, a raised request flag 0x0112a8e2 starts Battle_Load; was Battle_Update
 0x00791630 function MsCheckChrMotionAll       # fh v3:exact 0x00791680
 0x00792170 function MsCheckPlyBtlPosAll       # fh v3:exact 0x007921c0
 0x00792200 function MsDebugCameraSleepInit    # fh v3:bsim1.00 0x00792250
@@ -1970,8 +1972,8 @@
 0x00793d90 function MsChrCreatePacket         # fh v3:exact 0x00793da0
 0x00793e00 function MsCommandReturnChrStatusAll # fh v3:exact 0x00793e10
 0x00793ef0 function MsCommandStartChrStatusAll # fh v3:exact 0x00793f00
-0x00794020 function Battle_Actor               # index -> actor: < 0x1f at *0x011334d4 + i*0xf90, < 0x5d at *0x0113446c + (i-0x1f)*0x390; fh: MsGetChr
-0x00794330 function Battle_SelectActors          # (self, selector, ...) -> bitmask of the 31 actors; selector 0x1xxx = actors with that id (+0xe), negative values = special sets (-26 self target +0xdc4, -25 ... ); fh: MsGetChrBit
+0x00794020 function MsGetChr                  # index -> actor: < 0x1f at *0x011334d4 + i*0xf90, < 0x5d at *0x0113446c + (i-0x1f)*0x390; was Battle_Actor
+0x00794330 function MsGetChrBit               # (self, selector, ...) -> bitmask of the 31 actors; selector 0x1xxx = actors with that id (+0xe), negative values = special sets (-26 self target +0xdc4, -25 ... ); was Battle_SelectActors
 0x007947f0 function Battle_FirstSelectedActor    # (self, selector, a, b) -> lowest actor index in Battle_SelectActors' mask, -1 if none
 0x00794830 function MsGetChrBottomPos         # fh v3:exact 0x00794840
 0x007948a0 function MsGetChrBtlDir            # fh v3:exact 0x007948b0
@@ -2032,11 +2034,11 @@
 0x00797550 function MsAtelCamRegist           # fh v3:exact 0x00797560
 0x007975c0 function MsAtelChrInfo             # fh v3:exact 0x007975d0
 0x007976a0 function MsAtelChrInit             # fh v3:exact 0x007976b0
-0x00797a40 function Script_Register           # (manager, name, script): queue a script in a script manager (8 slots, 0x54 bytes each); fh: MsAtelRegist
+0x00797a40 function MsAtelRegist              # (manager, name, script): queue a script in a script manager (8 slots, 0x54 bytes each); was Script_Register
 0x00797a90 function MsAtelRegistFree          # fh v3:exact 0x00797aa0
 0x00797ae0 function MsAtelRegistInit          # fh v3:exact 0x00797af0
 0x00797b70 function MsAtelRequestAdd          # fh v3:exact 0x00797b80
-0x00797bc0 function Battle_RunEvent              # ?(slot, actor, handler id, handler2, ...): queues handlers (0x00797b70, Mon_FindHandler) and starts them through 0x00797d50; used by 0x703f with a finish flag out-param; fh: MsAtelRequestCamera
+0x00797bc0 function MsAtelRequestCamera       # ?(slot, actor, handler id, handler2, ...): queues handlers (0x00797b70, Mon_FindHandler) and starts them through 0x00797d50; used by 0x703f with a finish flag out-param; was Battle_RunEvent
 0x00797cd0 function MsAtelRequestCancel       # fh v3:exact 0x00797ce0
 0x00797d50 function MsAtelRequestExe          # fh v3:exact 0x00797d60
 0x00797ff0 function MsAtelRequestInit         # fh v3:bsim1.00 0x00798000
@@ -2045,11 +2047,11 @@
 0x00798390 function MsAtelSetUp               # fh v3:exact 0x007983a0
 0x007986a0 function MsGetVoiceEventFlag       # fh v3:exact 0x007986b0
 0x00798820 function MsInitChrAbilityMap       # fh v3:bsim1.00 0x00798830
-0x00798890 function Rng_Seed                   # cdecl(n): seeds 0x00c42200/04 from Rng_ClockSeed * (n + 1), then fills the 68 generators; fh: MsRandMize
-0x007988f0 function Rng_Next                   # cdecl(index): one of the 68 generators at 0x01135ee0 (multiplier table 0x00c42208, xor 0x00c42318); fh: brnd
+0x00798890 function MsRandMize                # cdecl(n): seeds 0x00c42200/04 from Rng_ClockSeed * (n + 1), then fills the 68 generators; was Rng_Seed
+0x007988f0 function brnd                      # cdecl(index): one of the 68 generators at 0x01135ee0 (multiplier table 0x00c42208, xor 0x00c42318); was Rng_Next
 0x00798930 function frnd                      # fh v3:exact 0x00798940
 0x00798950 function Rng_ClockSeed              # XOR of the GetSystemTime bytes + 1; wrapped by the harness (FFX_HARNESS_SEED)
-0x007989a0 function Rng_Global                 # seed = seed * 0x5d588b65 + 0x3c35, rotated by 16; returns 31 bits; fh: rnd
+0x007989a0 function rnd                       # seed = seed * 0x5d588b65 + 0x3c35, rotated by 16; returns 31 bits; was Rng_Global
 0x00798a00 function MsApUp                    # fh v3:exact+call.cs 0x00798a10 cdecl
 0x00798ac0 function BattleRewards_AddItem     # fh v3:exact 0x00798ad0 +BattleRewards_AddItem
 0x00798b60 function MsBtlGetInit              # fh v3:bsim1.00 0x00798b70
@@ -2061,9 +2063,9 @@
 0x00798fd0 function MsFieldItemGet            # fh v3:bsim1.00+call.cs 0x00798fe0 cdecl
 0x00798ff0 function MsFieldItemGetMes         # fh v3:exact 0x00799000
 0x00799020 function MsFieldItemRead           # fh v3:exact 0x00799030
-0x007990d0 function Battle_GiveRewards        # gil, AP, two drop slots, overkill drops, bribe (spoils section 4); fh: MsGetItem
+0x007990d0 function MsGetItem                 # gil, AP, two drop slots, overkill drops, bribe (spoils section 4); was Battle_GiveRewards
 0x007993b0 function MsSetWeaponName           # fh call.cs cdecl
-0x00799420 function Treasure_Give              # (takara index, rewards): kind 0 gil x100, 2 item, 5 equipment from buki_get, 10 key item; fh: msFieldItemGet
+0x00799420 function msFieldItemGet            # (takara index, rewards): kind 0 gil x100, 2 item, 5 equipment from buki_get, 10 key item; was Treasure_Give
 0x00799690 function MsGetCommandFar           # fh v3:exact 0x007996a0
 0x007996d0 function MsGetCommandTarget        # fh v3:exact 0x007996e0
 0x00799820 function MsGetCursorTarget         # fh v3:exact 0x00799830
@@ -2096,17 +2098,17 @@
 0x0079ae70 function MsGetRamChrMPmax          # fh v3:bsim1.00 0x0079ae80
 0x0079ae90 function MsGetRamChrMag            # fh v3:bsim1.00 0x0079aea0
 0x0079aed0 function MsGetRamChrMegas          # fh v3:bsim1.00 0x0079aee0
-0x0079aef0 function Battle_IsMonsterIndex        # (i) -> (i & 0xff) - 0x14 < 8: actor slots 0x14-0x1b are the monsters; fh: MsGetRamChrMonster
+0x0079aef0 function MsGetRamChrMonster        # (i) -> (i & 0xff) - 0x14 < 8: actor slots 0x14-0x1b are the monsters; was Battle_IsMonsterIndex
 0x0079af10 function MsGetRamChrName           # fh v3:bsim1.00 0x0079af20
 0x0079af40 function MsGetRamChrIconNumber     # fh v3:bsim1.00 0x0079ae20
 0x0079af60 function MsGetRamChrSummon         # fh v3:bsim1.00 0x0079af70
 0x0079afc0 function MsGetStatusThreat         # fh v3:exact 0x0079afd0
 0x0079b1a0 function MsResetAutoStatus         # fh v3:exact 0x0079b1b0
 0x0079b290 function MsSetAutoStatus           # fh v3:exact 0x0079b2a0
-0x0079b4f0 function Mon_InitActor             # copies the stat record (section 2) into the battle actor; fh: MsSetRamChr
-0x0079bb50 function Battle_CheckEquipment      # equipment checks per character (weapon/armor in inventory, flag 0x02 skipped); fh: MsSetRamChrAbility
-0x0079c110 function Battle_SetUpActors         # monster slot i (actor via 0x00795aa0) gets id = formation +0x0c + 2i (0xffff: empty); fh: MsSetRamChrData
-0x0079c5f0 function Battle_InitPartyActor      # party actor from ply_save and equipment: weapon formula/power -> +0x5c1/+0x5c7, crit -> +0x5d8, a_ability records applied; fh: MsSetRamChrParam
+0x0079b4f0 function MsSetRamChr               # copies the stat record (section 2) into the battle actor; was Mon_InitActor
+0x0079bb50 function MsSetRamChrAbility        # equipment checks per character (weapon/armor in inventory, flag 0x02 skipped); was Battle_CheckEquipment
+0x0079c110 function MsSetRamChrData           # monster slot i (actor via 0x00795aa0) gets id = formation +0x0c + 2i (0xffff: empty); was Battle_SetUpActors
+0x0079c5f0 function MsSetRamChrParam          # party actor from ply_save and equipment: weapon formula/power -> +0x5c1/+0x5c7, crit -> +0x5d8, a_ability records applied; was Battle_InitPartyActor
 0x0079cb10 function MsSetRamMonData           # fh v3:exact 0x0079cb30
 0x0079cb40 function MsMotBinFrame             # fh v3:exact 0x0079cb60
 0x0079ccd0 function MsRegMotionInit           # fh v3:bsim1.00 0x0079ccf0
@@ -2115,12 +2117,12 @@
 0x0079cdf0 function MsMessageCueProcess       # fh v3:exact+call.cs 0x0079ce10 cdecl
 0x0079cfd0 function MsMessageCueRegist        # fh v3:bsim1.00+call.cs 0x0079cff0 cdecl
 0x0079d050 function MsSystemMessageCheck      # fh v3:exact 0x0079d070
-0x0079d0e0 function Enc_FormationIndex         # (field, &group, &formation) -> field.first + sum of earlier groups' counts + formation, clamped; fh: MsBtlListCDpos
-0x0079d170 function Enc_FieldGroups            # field index -> its encounter block: u8 formation total, u8 group count, groups (*0x0112a9cc + field +2); fh: MsBtlListEncount
-0x0079d190 function Enc_Field                  # field index (clamped) -> 14-byte entry: i16 map, i16 block offset, i16 first formation, char[8] name; fh: MsBtlListField
-0x0079d1c0 function Enc_FieldIndex             # map number -> index in the battle field table *0x0112a9c8 (count 0x0112a9d0, 14-byte entries); fh: MsBtlListFieldNum
-0x0079d210 function Enc_Group                  # (field, group) -> group: u8 n, u16 battle map (& 0x3ff map, 0x400 battle map), u8 rate, u8 weight total, n x (u8 formation id, u8 weights); fh: MsBtlListGroup
-0x0079d250 function Enc_InitTable              # btl.bin (0x0112a9c4): fields at +4 -> 0x0112a9c8, count (end-start)/14 -> 0x0112a9d0, blocks at +8 -> 0x0112a9cc; fh: MsBtlListInit
+0x0079d0e0 function MsBtlListCDpos            # (field, &group, &formation) -> field.first + sum of earlier groups' counts + formation, clamped; was Enc_FormationIndex
+0x0079d170 function MsBtlListEncount          # field index -> its encounter block: u8 formation total, u8 group count, groups (*0x0112a9cc + field +2); was Enc_FieldGroups
+0x0079d190 function MsBtlListField            # field index (clamped) -> 14-byte entry: i16 map, i16 block offset, i16 first formation, char[8] name; was Enc_Field
+0x0079d1c0 function MsBtlListFieldNum         # map number -> index in the battle field table *0x0112a9c8 (count 0x0112a9d0, 14-byte entries); was Enc_FieldIndex
+0x0079d210 function MsBtlListGroup            # (field, group) -> group: u8 n, u16 battle map (& 0x3ff map, 0x400 battle map), u8 rate, u8 weight total, n x (u8 formation id, u8 weights); was Enc_Group
+0x0079d250 function MsBtlListInit             # btl.bin (0x0112a9c4): fields at +4 -> 0x0112a9c8, count (end-start)/14 -> 0x0112a9d0, blocks at +8 -> 0x0112a9cc; was Enc_InitTable
 0x0079d290 function MsComBufInit              # fh v3:bsim1.00 0x0079d2b0
 0x0079d2f0 function MsGetMagicEffNum          # fh v3:exact 0x0079d310
 0x0079d430 function MsBattleSpecial           # fh v3:exact 0x0079d450
@@ -2236,12 +2238,12 @@
 0x007ab500 function MsSetMotionAttackWait     # fh v3:bsim1.00 0x007ab520
 0x007ab6c0 function MsTerminateMotion         # fh v3:exact 0x007ab6e0
 0x007ab730 function MsMotionSpeedReset        # fh switch:bsim1.00 0x71003619f0
-0x007ab870 function Kernel_FindRecord         # (id, table, &strings) -> record; defines the container (docs/formats/kernel.md); fh: MsGetExcelData
+0x007ab870 function MsGetExcelData            # (id, table, &strings) -> record; defines the container (docs/formats/kernel.md); was Kernel_FindRecord
 0x007ab8f0 function MsGetExcelDataNum         # fh v3:exact 0x007ab910
 0x007ab970 function MsEquipSaveWeapon         # fh v3:exact 0x007ab990
 0x007ab9f0 function SwapSaveGear              # fh call.cs cdecl
-0x007abbd0 function Equip_Get                  # (id): 0xb000 + i -> battle spoils slot (0x02310dde), else inventory slot i (< 200) at 0x01130f2c; fh: MsGetSaveWeapon
-0x007abc60 function Equip_CountOwned           # counts in-use slots without flag 0x02; out: free slots; fh: MsGetSaveWeaponAmount
+0x007abbd0 function MsGetSaveWeapon           # (id): 0xb000 + i -> battle spoils slot (0x02310dde), else inventory slot i (< 200) at 0x01130f2c; was Equip_Get
+0x007abc60 function MsGetSaveWeaponAmount     # counts in-use slots without flag 0x02; out: free slots; was Equip_CountOwned
 0x007abca0 function Equip_RebuildWearers       # equipment +6 = wearer, from ply_save +0x2d/+0x2e
 0x007abd10 function MsGetSaveWeaponList       # fh v3:exact 0x007abd30
 0x007abdc0 function MsGetSaveWeaponModel      # fh v3:exact 0x007abde0
@@ -2254,7 +2256,7 @@
 0x007ac680 function MsPushBtlPosAll           # fh v3:bsim1.00 0x007ac6a0
 0x007ac6a0 function MsSetChrPosAfterSummon    # fh v3:exact 0x007ac6c0
 0x007ac9c0 function Battle_QueueCommand          # (actor, command, target mask, ...): adds a command to the 4-entry queue at 0x01136a80 for the current actor; "TARGET ERROR CHR" when no target is valid
-0x007acd40 function Battle_FilterActors          # (self, selector, property, unused, rng, mode, resolved, &pick): actors whose property is nonzero (mode|0x80: zero); mode 1 highest, 2 lowest; random pick via Rng_Next(rng); fh: MsActTargetSearch
+0x007acd40 function MsActTargetSearch         # (self, selector, property, unused, rng, mode, resolved, &pick): actors whose property is nonzero (mode|0x80: zero); mode 1 highest, 2 lowest; random pick via Rng_Next(rng); was Battle_FilterActors
 0x007ace90 function MsActionInit              # fh v3:bsim1.00 0x007aceb0
 0x007aceb0 function MsActionRequest           # fh call.cs cdecl
 0x007ad0c0 function MsActionTarget            # fh v3:exact 0x007ad0d0
@@ -2336,7 +2338,7 @@
 0x007b22e0 function MsGetInputCue             # fh v3:bsim1.00 0x007b22f0
 0x007b2300 function MsInsertInputCue          # fh v3:exact 0x007b2310
 0x007b2430 function MsRegistInputCue          # fh v3:exact 0x007b2440
-0x007b24a0 function Battle_ActorCanAct           # ?(actor, ...) -> 1 unless +0xdce, status bits 0x300/0x400/0x800 at +0x606, +0x608 or +0x617 bit 1 block it; fh: MsAutoCommandStatusCheck
+0x007b24a0 function MsAutoCommandStatusCheck  # ?(actor, ...) -> 1 unless +0xdce, status bits 0x300/0x400/0x800 at +0x606, +0x608 or +0x617 bit 1 block it; was Battle_ActorCanAct
 0x007b2510 function MsAutoCureProcess         # fh v3:exact+call.cs 0x007b2520 cdecl
 0x007b27b0 function MsAutoPhenixProcess       # fh v3:exact 0x007b27c0
 0x007b2850 function MsAutoPotionProcess       # fh v3:exact+call.cs 0x007b2860 cdecl
@@ -2349,7 +2351,7 @@
 0x007b2c10 function msVoiceCheckStanby        # fh v3:exact 0x007b2c20
 0x007b2dc0 function Battle_GetActorProperty   # switch over ~340 actor properties
 0x007b4a90 function Battle_SetActorFloatProperty # (actor, property 0-9, float): writes actor dwords 0x12f-0x139
-0x007b4b70 function Battle_SetActorProperty   # switch over ~320 actor properties; fh: MsSetChrStatInfo
+0x007b4b70 function MsSetChrStatInfo          # switch over ~320 actor properties; was Battle_SetActorProperty
 0x007b6c50 function MsGetBattleList           # fh v3:exact 0x007b6bd0
 0x007b6fb0 function MsGetTargetLinkList       # fh v3:exact 0x007b6f30
 0x007b7090 function MsGetTargetList           # fh v3:exact 0x007b7010
@@ -2389,16 +2391,16 @@
 0x007ba2d0 function Native_CamRefAddCircleArea   # 0x602b: args (x, z, r) -> 0; adds a circle constraint (type 3) to the ref's list (0x007bf1f0); ?keeps the ref inside/around the circle
 0x007ba2f0 function Native_CamRefClearAreas      # 0x602d: no args -> camera handle; clears the ref's constraint count (byte 0x01137634 + side/channel, 0x007bed10)
 0x007ba650 function MsAtelCameraInit          # fh v3:exact 0x007ba5d0
-0x007ba780 function Cam_GetHandle                # (type 5, which 0-3, camera < 3): cached camera channel handle (owner<<24 | type<<16 | slot<<8 | camera), allocates via 0x007bd110; fh: MsAtelGetCameraID
+0x007ba780 function MsAtelGetCameraID         # (type 5, which 0-3, camera < 3): cached camera channel handle (owner<<24 | type<<16 | slot<<8 | camera), allocates via 0x007bd110; was Cam_GetHandle
 0x007ba860 function MsAtelResetMoveCameraID   # fh v3:exact 0x007ba7e0
 0x007ba950 function MsBattleCameraFree        # fh v3:exact 0x007ba8d0
 0x007ba9a0 function MsBindCamera              # fh v3:exact 0x007ba920
 0x007ba9c0 function MsBindOffCamera           # fh v3:exact 0x007ba940
 0x007baaa0 function MsSplineInit              # fh v3:bsim1.00 0x007baa20
 0x007bba50 function MsCopyScreenMatrix        # fh v3:bsim1.00 0x007bb9d0
-0x007bba70 function Cam_OverrideReset            # resets the override camera: look-at/eye/up (0x01136fd8/fc8/fe8) to defaults, roll 0, screen depth 0x02311428 = 1024.0, off (0x0231142c = 0); fh: MsEffectCameraInit
-0x007bbb00 function Cam_OverrideOff              # 0x0231142c = 0: the camera update builds the view from the active channel again; fh: MsEffectCameraReset
-0x007bbb10 function Cam_OverrideSet              # (look-at vec4*, eye vec4*, screen depth, roll): override on (0x0231142c = 1); the camera update (0x007bc9xx, FUN_007c1be0 into 0x02311440) then uses these instead of g_Camera's sides; fh: MsEffectCameraSet
+0x007bba70 function MsEffectCameraInit        # resets the override camera: look-at/eye/up (0x01136fd8/fc8/fe8) to defaults, roll 0, screen depth 0x02311428 = 1024.0, off (0x0231142c = 0); was Cam_OverrideReset
+0x007bbb00 function MsEffectCameraReset       # 0x0231142c = 0: the camera update builds the view from the active channel again; was Cam_OverrideOff
+0x007bbb10 function MsEffectCameraSet         # (look-at vec4*, eye vec4*, screen depth, roll): override on (0x0231142c = 1); the camera update (0x007bc9xx, FUN_007c1be0 into 0x02311440) then uses these instead of g_Camera's sides; was Cam_OverrideSet
 0x007bbc30 function MsGetNowSelectedCamraLevel # fh v3:exact 0x007bbbb0
 0x007bbd00 function MsGetScreenData           # fh v3:exact 0x007bbc80
 0x007bbd70 function MsGetScreenMatrix         # fh v3:bsim1.00 0x007bbcf0
@@ -2409,7 +2411,7 @@
 0x007bc720 function MsScreenResetOffset       # fh v3:exact 0x007bc6a0
 0x007bc7f0 function MsSetScreen               # fh v3:exact 0x007bc770
 0x007bc980 function Cam_Apply                    # cdecl(camera): field of view from the camera's screen depth (448 / (2 d), atan) into the renderer, then Render_SetView(0x02311440); Cam_Update calls it only for channel cameras, not the override
-0x007bd110 function Cam_AllocChannel             # (owner, camera, type): finds/allocates one of 4 channels of a camera (0xda0 bytes each, table 0x011381a8); fh: MsCameraGet
+0x007bd110 function MsCameraGet               # (owner, camera, type): finds/allocates one of 4 channels of a camera (0xda0 bytes each, table 0x011381a8); was Cam_AllocChannel
 0x007bd2d0 function MsCameraGetAngle          # fh switch:bsim1.00 0x710039de80
 0x007bd340 function MsCameraGetNum            # fh v3:exact 0x007bd2c0
 0x007bd420 function Cam_GetPos                   # (camera, side, &x, &y, &z): side position at camera +0x50
@@ -2417,17 +2419,17 @@
 0x007bd510 function MsCameraGetScrDpt         # fh v3:bsim1.00 0x007bd490
 0x007bd560 function MsCameraIDcheck           # fh v3:exact 0x007bd4e0
 0x007bd5d0 function MsCameraInit              # fh v3:exact 0x007bd550
-0x007bd860 function Cam_StartMoveEased           # (handle, side, mode, accel, hold, decel, curve): type-2 interpolation on x/y/z (and roll/scrdpt for side 1); fh: MsCameraMoveAcc
+0x007bd860 function MsCameraMoveAcc           # (handle, side, mode, accel, hold, decel, curve): type-2 interpolation on x/y/z (and roll/scrdpt for side 1); was Cam_StartMoveEased
 0x007bda80 function MsCameraMoveCalc          # fh v3:exact 0x007bda00
 0x007bdd20 function Cam_IsMoving                 # (handle, side) -> bits: 1 interpolating, 2 busy, 4 mode 0xe
-0x007bde50 function Cam_StartMove                # (handle, side, mode, frames, type): starts per-axis interpolation counters; fh: MsCameraMoveFrame
+0x007bde50 function MsCameraMoveFrame         # (handle, side, mode, frames, type): starts per-axis interpolation counters; was Cam_StartMove
 0x007be0a0 function MsCameraPriority          # fh v3:exact 0x007be020
 0x007be100 function MsCameraPriorityMask      # fh v3:bsim1.00 0x007be080
 0x007be110 function MsCameraProcess           # fh v3:exact 0x007be090
-0x007bed60 function Cam_FinishMove               # (handle, side): zeros the counters and applies the target position (Cam_SetPos); fh: MsCameraResetMove
+0x007bed60 function MsCameraResetMove         # (handle, side): zeros the counters and applies the target position (Cam_SetPos); was Cam_FinishMove
 0x007bf700 function Cam_SetPolar                 # (handle, side, theta, phi, len) radians: absolute polar position, mode 2
 0x007bf7f0 function Cam_AddPolar                 # (handle, side, dtheta, dphi, dlen): relative polar position, mode 7
-0x007bf940 function Cam_SetPos                   # (handle, side, &xyz): absolute position; applied now if the channel is active; fh: MsCameraSetRect
+0x007bf940 function MsCameraSetRect           # (handle, side, &xyz): absolute position; applied now if the channel is active; was Cam_SetPos
 0x007bfa80 function MsCameraSetRoll           # fh v3:exact 0x007bfa00
 0x007bfbd0 function MsCameraSetScrDpt         # fh v3:exact 0x007bfb50
 0x007c0010 function Cam_SetChannelSuspended      # (handle, on): sets the suspended byte of the matching channel slots
@@ -2700,8 +2702,8 @@
 0x00820670 function Sg_GuiSetDrawChr          # fh switch:bsim1.00 0x710042c7b0
 0x008206c0 function Sg_MainCalcRate           # fh v3:exact 0x008207d0
 0x008207f0 function Sg_MainDebug              # fh v3:exact 0x00820900
-0x00820ae0 function Game_Frame                   # the game's frame (update and draw): with g_PauseOn the world update (0x00821e80) is skipped for the pause's (0x008893e0); calls Battle_Update, Cam_Update, Screen_UpdateFades; fh: Sg_MainLoop
-0x00821750 function Menu_Request                 # (menu id): g_012fbc38 = id, result 0x012fbc3c = -1; 0x40100000/0x40200000 handled separately; fh: Sg_MenuSetReserve
+0x00820ae0 function Sg_MainLoop               # the game's frame (update and draw): with g_PauseOn the world update (0x00821e80) is skipped for the pause's (0x008893e0); calls Battle_Update, Cam_Update, Screen_UpdateFades; was Game_Frame
+0x00821750 function Sg_MenuSetReserve         # (menu id): g_012fbc38 = id, result 0x012fbc3c = -1; 0x40100000/0x40200000 handled separately; was Menu_Request
 0x00821aa0 function TOInitFont1208            # fh switch:bsim1.00 0x71004b0f20
 0x00821ae0 function Sg_SetKeepFps             # fh v3:exact+call.cs 0x00821c00 cdecl
 0x00821b00 function Sg_SetMapAlphaFast        # fh v3:bsim1.00 0x00821c20
@@ -2765,16 +2767,16 @@
 0x00828c10 function InsideTriangle            # fh v3:exact 0x00828c90
 0x00829870 function passThisTriangle          # fh v3:exact 0x008298f0
 0x00829c60 function set0434isDarkYojimbo      # fh switch:bsim1.00 0x7100410fa0
-0x00829c90 function Chr_KindDir               # kind (0-6 or its letter) -> chr folder name; fh: sg_getdbname
-0x00829e10 function Chr_KindLetter            # id >> 12 -> 'c','m','n','s','w','f','k'; fh: sg_getdbtype
+0x00829c90 function sg_getdbname              # kind (0-6 or its letter) -> chr folder name; was Chr_KindDir
+0x00829e10 function sg_getdbtype              # id >> 12 -> 'c','m','n','s','w','f','k'; was Chr_KindLetter
 0x00829e60 function Ch_AnalysisChrNum         # fh v3:exact 0x00829ee0
 0x00829ef0 function Chr_LoadData                 # (chr id): queues "[%s:%s]CHRDATA" (prints "SG:RomRead:%s %x")
-0x0082a040 function Chr_IsLoaded                 # (chr id): ChrData_State(1, id); error "CH Data Read Sync" / "%s does not read.(can't sync)"; fh: Ch_DataReadSync
+0x0082a040 function Ch_DataReadSync           # (chr id): ChrData_State(1, id); error "CH Data Read Sync" / "%s does not read.(can't sync)"; was Chr_IsLoaded
 0x0082a080 function Ch_GetCharID              # fh v3:exact 0x0082a100
 0x0082a100 function Ch_IsLoadingClothFile     # fh v3:exact 0x0082a180
 0x0082a140 function Ch_LoadClothFileTask      # fh v3:exact 0x0082a1c0
-0x0082a1c0 function Chr_LoadAssets             # (chr path, ...): "Load Character: %s", builds /FFX_Data/GameData/PS3Data/chr/.../<name>.ahwin32 and loads its D3D11 file list; fh: Ch_LoadHdRenderData
-0x0082a4c0 function SG_LoadResidentGroup      # reads "[%s:resident%d.mgrp]" for a character; fh: Ch_MgrpRead
+0x0082a1c0 function Ch_LoadHdRenderData       # (chr path, ...): "Load Character: %s", builds /FFX_Data/GameData/PS3Data/chr/.../<name>.ahwin32 and loads its D3D11 file list; was Chr_LoadAssets
+0x0082a4c0 function Ch_MgrpRead               # reads "[%s:resident%d.mgrp]" for a character; was SG_LoadResidentGroup
 0x0082a5e0 function Ch_ReadSync               # fh v3:bsim1.00 0x0082a660
 0x0082a5f0 function Ch_RomDataReadInit        # fh v3:exact 0x0082a670
 0x0082a640 function Chr_TableIndex           # finds id & 0xfff in the kind's .tbl
@@ -2815,7 +2817,7 @@
 0x0082afe0 function Chr_SetAutoMotion            # (chr, slot, motion): chr +0x75c[slot]; -1 = default table 0x00c49680
 0x0082b010 function Ch_MotionSetNextHokan     # fh v3:exact 0x0082b090
 0x0082b040 function Ch_MoveSetChgRun          # fh v3:exact 0x0082b0c0
-0x0082b080 function Chr_ReleaseMotion            # (chr): +0x730 = 1, scripted motion flag +0x736 = 0, +0x728 = 0; called before every play; fh: Ch_ResetMotion
+0x0082b080 function Ch_ResetMotion            # (chr): +0x730 = 1, scripted motion flag +0x736 = 0, +0x728 = 0; called before every play; was Chr_ReleaseMotion
 0x0082b0d0 function Ch_SetBattleChrNum        # fh v3:bsim1.00 0x0082b150
 0x0082b150 function Ch_SetClipZ               # fh v3:exact 0x0082b1d0
 0x0082b190 function Ch_SetDir                 # fh switch:bsim1.00 0x710041de10
@@ -2855,7 +2857,7 @@
 0x0082ba30 function Chr_SetHideFlags             # (chr, on, mask) -> old: chr +0x180 hide bits (1 Ev, 2 Eff, 8 Disp, 0x10 Blt, 0x20 Z per the "Hide : %x" debug text)
 0x0082bd10 function Sg_AccSetAlpha            # fh v3:exact+call.cs 0x0082bd90 cdecl
 0x0082bee0 function Sg_Blur                   # fh v3:exact 0x0082bf60
-0x0082c0c0 function Screen_UpdateFades           # per frame: 5 fade slots (0x01300708 + i*0x10, mode byte, rgb, i16 counter at +4) -> fullscreen quad 0x00639240(r,g,b,a); mode 2 a=n/total (fade in), 3 a rising and held (fade out); fh: Sg_DrawFilter
+0x0082c0c0 function Sg_DrawFilter             # per frame: 5 fade slots (0x01300708 + i*0x10, mode byte, rgb, i16 counter at +4) -> fullscreen quad 0x00639240(r,g,b,a); mode 2 a=n/total (fade in), 3 a rising and held (fade out); was Screen_UpdateFades
 0x0082c790 function Ch_SetDumpMotEv           # fh switch:bsim1.00 0x7100415de0
 0x0082c7a0 function Sg_DrawSetClearIgnore     # fh switch:bsim1.00 0x710042bcf0
 0x0082c7b0 function Sg_DrawSetEnvironment     # fh v3:exact 0x0082c830
@@ -2873,7 +2875,7 @@
 0x0082cd20 function Sg_GetBlur                # fh switch:bsim1.00 0x710042ac50
 0x0082cd30 function Sg_GetFocus               # fh v3:bsim1.00 0x0082cdb0
 0x0082cd50 function Sg_InitFilter             # fh v3:exact 0x0082cdd0
-0x0082cdc0 function Screen_StartFade             # (frames, in, white?): slot 4 (flag 0x10): mode 2 (in) or 3 (out), +2 if third arg; counter 0x0130074c = frames; fh: Sg_Fade_Common
+0x0082cdc0 function Sg_Fade_Common            # (frames, in, white?): slot 4 (flag 0x10): mode 2 (in) or 3 (out), +2 if third arg; counter 0x0130074c = frames; was Screen_StartFade
 0x0082ce20 function Sg_SetFocus               # fh v3:exact 0x0082cea0
 0x0082ce80 function Sg_VramGetAddrZ           # fh v3:bsim1.00 0x0082cf00
 0x0082ce90 function sg_AccSetCurrent          # fh v3:exact 0x0082cf10
@@ -2936,7 +2938,7 @@
 0x00831c60 function Sg_PLightSetEnable        # fh v3:bsim1.00 0x00831ce0
 0x00832110 function Apply_Envelope            # fh v3:exact 0x00832190
 0x00832540 function TkSndClearKickFlag        # fh switch:bsim1.00 0x710048c1e0
-0x00832550 function Chr_RequestBoneUpdateAll     # Chr_RequestBoneUpdate for every active chr in g_ChrArray; fh: Ch_AllReserveCalcNorm
+0x00832550 function Ch_AllReserveCalcNorm     # Chr_RequestBoneUpdate for every active chr in g_ChrArray; was Chr_RequestBoneUpdateAll
 0x00832610 function Ch_BindSetScale           # fh v3:bsim1.00 0x00832690
 0x00832630 function Ch_BindToElem             # fh v3:exact 0x008326b0
 0x00832760 function Ch_CalcElement            # fh v3:exact 0x008327e0
@@ -2945,7 +2947,7 @@
 0x008337f0 function Ch_CheckNbBattleChr       # fh v3:bsim1.00 0x00833870
 0x00833860 function Ch_ClothResetRelation     # fh v3:exact 0x008338e0
 0x00833960 function Ch_ElemCalcQuaternion     # fh v3:exact 0x008339e0
-0x00833a70 function Chr_FindAttachPoint          # (model, point id, &bone, &offset): searches the chr def +0x6c list (16-byte entries, id & 0x3fff) -> bone index and scaled offset; fh: Ch_ElemGetAttr
+0x00833a70 function Ch_ElemGetAttr            # (model, point id, &bone, &offset): searches the chr def +0x6c list (16-byte entries, id & 0x3fff) -> bone index and scaled offset; was Chr_FindAttachPoint
 0x00833c30 function Ch_ElemGetMatrix          # fh v3:exact 0x00833cb0
 0x00833d10 function Ch_ElemGetPos             # fh v3:exact 0x00833d90
 0x00833e30 function Ch_ElemSetReplaceMatrix   # fh v3:exact 0x00833eb0
@@ -2971,7 +2973,7 @@
 0x008355e0 function Ch_OptposGetBase          # fh v3:bsim1.00 0x00835660
 0x00835660 function Ch_OptposGetElement       # fh v3:exact 0x008356e0
 0x008356b0 function Ch_OptposGetMatrix        # fh v3:exact 0x00835730
-0x00835710 function Chr_RequestBoneUpdate        # (chr): sets +0x194 bit 3 (one budgeted bone update in 0x00832110) unless bit 0 is set; fh: Ch_ReserveCalcNorm
+0x00835710 function Ch_ReserveCalcNorm        # (chr): sets +0x194 bit 3 (one budgeted bone update in 0x00832110) unless bit 0 is set; was Chr_RequestBoneUpdate
 0x00835730 function Ch_ReserveCalcNorm2       # fh v3:bsim1.00 0x008357b0
 0x00835750 function Ch_SetCalcNorm            # fh v3:exact 0x008357d0
 0x00835780 function Ch_SetCalcNorm2           # fh v3:exact 0x00835800
@@ -2992,7 +2994,7 @@
 0x00836710 function enableGameControlTextureAnimation # fh v3:bsim1.00+call.cs 0x00836790 cdecl
 0x00836830 function ChN_DisposeSystemMGRP     # fh v3:bsim1.00 0x008368b0
 0x00836850 function ChN_ExistSystemMGRP       # fh v3:exact 0x008368d0
-0x00836870 function Chr_LoadSystemMgrp           # (chr id, n): resident motion group via SG_LoadResidentGroup, then SG_AddMotionGroup; fh: ChN_ReadSystemMGRP
+0x00836870 function ChN_ReadSystemMGRP        # (chr id, n): resident motion group via SG_LoadResidentGroup, then SG_AddMotionGroup; was Chr_LoadSystemMgrp
 0x00836960 function ChN_ReadSystemMGRP_FinishRead # fh switch:bsim1.00 0x71004227a0
 0x00836a50 function ChN_ReadSystemMGRPsync    # fh v3:exact 0x00836ad0
 0x00836a80 function Ch_DisposeAllMGRP         # fh v3:exact 0x00836b00
@@ -3005,7 +3007,7 @@
 0x00837180 function Ch_MotionCancel           # fh switch:bsim1.00 0x7100423030
 0x008371a0 function Ch_GetSp                  # fh switch:bsim1.00 0x710041dd60
 0x00837350 function Chr_PlayMotionMarks          # (chr, motion, -, loops, start mark, end mark): marks index the motion's mark table; SG_StartClip, +0x736 = 1
-0x008373e0 function Chr_PlayMotion               # (chr, motion, -, loops, start frame, end frame): raw frames (<< 8) to SG_StartClip, +0x736 = 1; fh: Ch_MotionSetLow2
+0x008373e0 function Ch_MotionSetLow2          # (chr, motion, -, loops, start frame, end frame): raw frames (<< 8) to SG_StartClip, +0x736 = 1; was Chr_PlayMotion
 0x008374c0 function Chr_PlayMotionInclEnd        # like Chr_PlayMotion, end frame + 1 unless loops == 1
 0x008375f0 function Chr_LoadMotionGroup          # ?(n): if resource (1, n) not cached (0x00836f10, table 0x013011e0), requests it and waits through g_CdLib slot 2
 0x008376b0 function Ch_RegMotionEntryCache    # fh switch:bsim1.00 0x71004214d0
@@ -3015,10 +3017,10 @@
 0x008377c0 function SG_SeqFrame               # runs SG_SeqStep until a wait ("SG:SeqFrame", "seq err")
 0x00837860 function Ch_SeqGetFastMotion       # fh v3:exact 0x008378e0
 0x00837900 function SG_SeqStep                # motion script opcodes 0-6 ("unknown motion sequence code %x"); 1 = play clip (clip, loops, start mark, end mark)
-0x00837ac0 function SG_SetMotion              # (actor, character << 16 | number): finds the motion in the character's sequences; fh: Ch_SetSequence
-0x00837d00 function SG_PlaySlotMotion         # per-slot motion tables of the character definition; fh: Ch_SetSysMotion
+0x00837ac0 function Ch_SetSequence            # (actor, character << 16 | number): finds the motion in the character's sequences; was SG_SetMotion
+0x00837d00 function Ch_SetSysMotion           # per-slot motion tables of the character definition; was SG_PlaySlotMotion
 0x00837fa0 function Chb_AttachMotionTBL_OLD   # fh v3:bsim0.95 0x00838020
-0x00838060 function Chr_IdName                # "%s:%c%03d"; fh: ch_create_chrname
+0x00838060 function ch_create_chrname         # "%s:%c%03d"; was Chr_IdName
 0x00838100 function ch_create_name            # fh v3:exact 0x00838180
 0x00838150 function ch_create_section         # fh v3:exact 0x008381d0
 0x00838220 function ReadU16Unaligned          # p[1] << 8 | p[0]
@@ -3033,9 +3035,9 @@
 0x008398f0 function SG_RewindChannels         # restarts every key stream
 0x00839950 function Ch_MotionSetHalf          # fh switch:bsim1.00 0x71004124b0
 0x00839960 function Ch_MotionSetLoop          # fh switch:bsim1.00 0x71004116e0
-0x00839980 function SG_SetClip                # clip header, 2-bit channel types (0 zero, 1 one, 2 constant, 3 stream), nine per bone; fh: Ch_MotionSetupFcurve
+0x00839980 function Ch_MotionSetupFcurve      # clip header, 2-bit channel types (0 zero, 1 one, 2 constant, 3 stream), nine per bone; was SG_SetClip
 0x00839b50 function Ch_SetKeepFps             # fh v3:bsim1.00+call.cs 0x00839bd0 cdecl
-0x00839b80 function SG_StartClip             # (actor, clip, loops, start, end); fh: Ch_SetMotionSeq
+0x00839b80 function Ch_SetMotionSeq           # (actor, clip, loops, start, end); was SG_StartClip
 0x00839dd0 function Fixed12_ToFloat           # v / 4096
 0x00839e00 function Fixed8_ToFloat            # v / 256
 0x00839e30 function Angle12_Lerp              # 12-bit angle interpolation the short way
@@ -3284,9 +3286,9 @@
 0x00856630 function Native_AlwaysTrue019c        # 0x019c () -> 1; no pops, constant 1 (PS2 check stubbed on PC?); scripts use it inside conditions ("pushimm 32; and; land; func 0x019c; land")
 0x008566b0 function Native_ControlEnable         # 0x005d: no args -> 1; FUN_00871ab0: type-1 party workers (+0x40 != -1, flag 0x200) get flag 0x20, player worker's model goes to FUN_0082dad0, context byte 0 |= 2
 0x008567c0 function Native_ControlDisable        # 0x005e: no args -> 0; FUN_008719e0: clears flag 0x20 and the speed (pos+0x0c) of type-1 workers, FUN_0082dad0(0), context byte 0 &= ~2
-0x00856920 function Native_SetPartyControllable  # 0x0060: args (on) -> flag; worker+0x34 bit 0x200 (FUN_008712a0), then FUN_0086a0e0 refreshes control; 0x200 = can be the player, cannot be talked to (0x00866980); 0x0042 sets it for party index 0; fh: +CT_0060_ret
+0x00856920 function CT_0060_ret               # 0x0060: args (on) -> flag; worker+0x34 bit 0x200 (FUN_008712a0), then FUN_0086a0e0 refreshes control; 0x200 = can be the player, cannot be talked to (0x00866980); 0x0042 sets it for party index 0; was Native_SetPartyControllable
 0x00856a00 function Native_MacroDicText          # 0x013f (dict, entry) -> text pointer; MacroDic_Section(dict) u16 offset table, entry*2 + variant (0x0113079c bit 3); scripts push 26, v173[x]
-0x00856ad0 function Native_FieldSetFlag08        # 0x0241 (on) -> on != 0; sets/clears bit 3 of field state +0x210 (*0x01326b28, 0x01325db0); ?no static reader found; fh: +CT_0241_ret
+0x00856ad0 function CT_0241_ret               # 0x0241 (on) -> on != 0; sets/clears bit 3 of field state +0x210 (*0x01326b28, 0x01325db0); ?no static reader found; was Native_FieldSetFlag08
 0x00856c30 function Native_MoveStart             # 0x0018: args (slotMask, mode, param); current move slot: +0x00 = param, +0x02 = mode (low 7 bits: 1 walk, 2 walk at speed, 5/6/7/9 timed, 9 jump arc), slots in mask (bit 0x20 = all) share it (FUN_00870440); arrive radius 0 adds 0x800; scripts "0, 0xc001, 0" then 0x001a
 0x00856e20 function Native_GetWorkerPos          # 0x00a3: args (worker, &x, &y, &z) -> 0; each & is a variable location word resolved by Script_VarAddress; Script_GetWorkerPos 0x0086a2f0 writes the position (midpoint of the two endpoints for worker types 2/5)
 0x00857180 function Native_SetTalkRange          # 0x0061: args (range: float, truncated); pos block (FUN_0086c2b0) +0x40; talk check 0x00866980: dist <= ctx+0x1f0 + range; usually 13.0
@@ -3410,7 +3412,7 @@
 0x0085f460 function Native_SetPitch              # 0x0096: args (float a) -> a; Script_StopTurn(self), Angle_Wrap(a) into transform +0x24 (second heading angle in 0x008629c0) and +0x30 (model rot X); ? pitch
 0x0085f5a0 function Native_GetOwnWorkerType      # 0x0076: args () -> Script_GetWorkerType(ctx+0x2e); the first call in the shared init worker's e0 (`func 0x0076; popb`)
 0x0085fa80 function Native_MsgGetState           # 0x0097: args (window) -> u16 Msg_Window(w)+0x14 (0 closed, 1 opening, 2 open, 3 closing, 4 ?); scripts loop until it is 2
-0x0085faa0 function Native_SetPos_0013           # 0x0013: args (x, y, z) -> 0; FUN_00870b20: worker position, model (FUN_0082b480) or ?camera (FUN_007bf940); for the player also ctx+0x218; fh: +CT_0013_setPosition
+0x0085faa0 function CT_0013_setPosition       # 0x0013: args (x, y, z) -> 0; FUN_00870b20: worker position, model (FUN_0082b480) or ?camera (FUN_007bf940); for the player also ctx+0x218; was Native_SetPos_0013
 0x0085fbf0 function Native_TriggerSetActive      # 0x0056: args (on) -> 1 (0 for other types); worker types 2/3/5/6: +0x34 bit 0x80 = on, +0x36 |= 1
 0x0085fd20 function Native_WaitFrames_01d1       # 0x01d1 start (frames) -> result slot
 0x0085fea0 function Native_SetPos_0126           # 0x0126 (x, y, z floats) -> 0; Worker_SetPos 0x00870b20 (also moves the model, and the player record if this is the player)
@@ -3471,11 +3473,11 @@
 0x0086a420 function AtelGetActorExecspaceID   # fh v3:exact 0x0086a3b0
 0x0086a5d0 function AtelGetActorId            # fh v3:bsim1.00 0x0086a560
 0x0086a720 function AtelGetActorStartPos      # fh v3:exact 0x0086a6b0
-0x0086a7b0 function Script_GetWorkerType         # (index) -> type byte of the worker header, or 7 if the index is out of range; fh: AtelGetActorType
+0x0086a7b0 function AtelGetActorType          # (index) -> type byte of the worker header, or 7 if the index is out of range; was Script_GetWorkerType
 0x0086a7e0 function AtelGetAlbhedRikku        # fh v3:bsim1.00+call.cs 0x0086a770 cdecl
-0x0086a830 function Script_GetWorker          # worker index -> worker object (0xb58/0x558/0x5b8 sizes); fh: AtelGetBasicWork
+0x0086a830 function AtelGetBasicWork          # worker index -> worker object (0xb58/0x558/0x5b8 sizes); was Script_GetWorker
 0x0086a970 function AtelGetBattleIdAdrs       # fh v3:bsim1.00 0x0086a900
-0x0086a990 function AtelGetCameraWorkAdrs     # fh switch:bsim1.00 0x7100461bb0
+0x0086a990 function AtelGetCameraWorkAdrs_0086a990 # fh switch:bsim1.00 0x7100461bb0
 0x0086a9b0 function AtelGetBattleStatus       # fh switch:bsim1.00 0x710046ade0
 0x0086a9c0 function AtelGetBattleStatusDummyEnc # fh v3:bsim1.00 0x0086a950
 0x0086a9d0 function AtelGetBattleStatusSys    # fh switch:bsim1.00 0x710046ae40
@@ -3485,8 +3487,8 @@
 0x0086ade0 function MsGetGIL_0086ade0         # fh switch:bsim1.00 0x7100375290
 0x0086adf0 function AtelGetBindPC             # fh switch:bsim1.00 0x7100462680
 0x0086ae00 function AtelGetBindPCFromID       # fh v3:bsim1.00 0x0086ad90
-0x0086ae50 function Script_WorkerCamSlot         # (worker) -> worker + 0x3c (camera handle cache of group 6 natives); fh: AtelGetCameraWorkAdrs
-0x0086ae80 function Script_WorkerChr             # (worker) -> field character object (worker + 0x9c); used by every chr native of group 5; fh: AtelGetCharHandle
+0x0086ae50 function AtelGetCameraWorkAdrs     # (worker) -> worker + 0x3c (camera handle cache of group 6 natives); was Script_WorkerCamSlot
+0x0086ae80 function AtelGetCharHandle         # (worker) -> field character object (worker + 0x9c); used by every chr native of group 5; was Script_WorkerChr
 0x0086ae90 function AtelGetCharHandleFromBindPC # fh v3:bsim1.00 0x0086ae20
 0x0086aee0 function AtelGetCharHandleFromBindPC2 # fh v3:bsim1.00 0x0086ae70
 0x0086af30 function AtelGetControlerT         # fh switch:bsim1.00 0x7100462300
@@ -3508,8 +3510,8 @@
 0x0086b480 function AtelGetEventElemHandleFromID # fh v3:bsim1.00 0x0086b3d0
 0x0086b4c0 function AtelGetEventElemStatus    # fh v3:exact 0x0086b450
 0x0086b5d0 function AtelGetEventMapCameraId   # fh v3:exact 0x0086b560
-0x0086b710 function Minimap_MarkerCount          # () -> count of field minimap markers Minimap_GetWorkerMarker reads; Guide_Update loops over them; fh: AtelGetGideMapActorNumber
-0x0086b740 function Minimap_GetWorkerMarker      # (index, &out): worker marker from the script's tag table (+0x2c -> +0x18) or worker +0xbc override; flags 0x800, 0x2000, icon >> 4; used by 0x0091da80 and the debug list 0x00881be0; fh: AtelGetGuideMapActorInfo
+0x0086b710 function AtelGetGideMapActorNumber # () -> count of field minimap markers Minimap_GetWorkerMarker reads; Guide_Update loops over them; was Minimap_MarkerCount
+0x0086b740 function AtelGetGuideMapActorInfo  # (index, &out): worker marker from the script's tag table (+0x2c -> +0x18) or worker +0xbc override; flags 0x800, 0x2000, icon >> 4; used by 0x0091da80 and the debug list 0x00881be0; was Minimap_GetWorkerMarker
 0x0086b9a0 function AtelGetGuideMapAngEx      # fh v3:exact 0x0086b930
 0x0086b9e0 function AtelGetHelpEventFlag      # fh v3:exact 0x0086b970
 0x0086ba40 function AtelGetHideStatusFromID   # fh v3:bsim1.00 0x0086b9d0
@@ -3520,7 +3522,7 @@
 0x0086bc60 function AtelGetKeepPlayStatusNoStopFanfare # fh switch:bsim1.00 0x71004713f0
 0x0086bd90 function AtelGetMapIndex           # fh v3:exact 0x0086bd20
 0x0086be50 function AtelGetMenuMask           # fh switch:bsim1.00 0x71004600e0
-0x0086be90 function Msg_Window                   # (i): message window i (<0 or >7 clamped), 0x2c bytes at 0x01326d70 + (i + *0x01326b82*8)*0x2c; fh: AtelGetMesWinWork
+0x0086be90 function AtelGetMesWinWork         # (i): message window i (<0 or >7 clamped), 0x2c bytes at 0x01326d70 + (i + *0x01326b82*8)*0x2c; was Msg_Window
 0x0086bf10 function Msg_Flags                  # (i): entry i's flags (+2); high byte = choice count; kept at message window +0x16 (0x008607a0)
 0x0086bf30 function Msg_Text                   # (i): entry i's text (+0) in the event's message table; offset 0 falls back to the .ebp's section 1
 0x0086bf70 function Msg_Get                    # (i, alternate, table): like Msg_Text/Msg_TextAlt; table 1 = script context +0x38 (.ebp section 5)
@@ -3529,8 +3531,8 @@
 0x0086c160 function AtelGetMyWorkSize         # fh v3:exact 0x0086c0f0
 0x0086c1a0 function AtelGetNowCtrlTopId       # fh v3:exact 0x0086c130
 0x0086c200 function AtelGetOverlayStatus      # fh switch:bsim1.00 0x71004729b0
-0x0086c2b0 function Worker_PosBlock              # (worker): type 4 -> null, types 5/6 -> worker+0x284, else worker+0x558 (x,y,z +0; +0x30 pitch?, +0x34 yaw; +0x3c talk angle, +0x40 talk range); fh: AtelGetPosWorkAdrs
-0x0086c2e0 function Script_VarAddress          # (worker, location word): storage = bits 25-27 (0 globals at *(*0x01326b28+0x2c), 1 at +0x30, 2-6 script/worker data) + offset; fh: AtelGetRealVarAdrs
+0x0086c2b0 function AtelGetPosWorkAdrs        # (worker): type 4 -> null, types 5/6 -> worker+0x284, else worker+0x558 (x,y,z +0; +0x30 pitch?, +0x34 yaw; +0x3c talk angle, +0x40 talk range); was Worker_PosBlock
+0x0086c2e0 function AtelGetRealVarAdrs        # (worker, location word): storage = bits 25-27 (0 globals at *(*0x01326b28+0x2c), 1 at +0x30, 2-6 script/worker data) + offset; was Script_VarAddress
 0x0086c3f0 function AtelGetRequestLevel       # fh v3:bsim1.00 0x0086c380
 0x0086c410 function AtelGetSaveDic            # fh v3:exact+call.cs 0x0086c3a0 cdecl
 0x0086c430 function AtelGetSaveDicName        # fh v3:exact+call.cs 0x0086c3c0 cdecl
@@ -3545,7 +3547,7 @@
 0x0086d4c0 function AtelInitMotionRequest     # fh v3:bsim1.00 0x0086d450
 0x0086d4e0 function AtelInitSaveWork          # fh v3:exact 0x0086d470
 0x0086d670 function AtelInitSourceCodeDebugWork # fh v3:exact 0x0086d600
-0x0086d6d0 function Script_InitNatives        # registers the native function tables per group; fh: AtelInitTotal
+0x0086d6d0 function AtelInitTotal             # registers the native function tables per group; was Script_InitNatives
 0x0086d950 function AtelIsBind                # fh v3:exact 0x0086d8e0
 0x0086d9d0 function TkGetLastEventJumpIndex   # fh switch:bsim1.00 0x710048f6d0
 0x0086da10 function AtelJumpGameOver          # fh v3:exact+call.cs 0x0086d9a0 cdecl
@@ -3555,13 +3557,13 @@
 0x0086dd60 function AtelMenuExec              # fh switch:bsim1.00 0x7100470240
 0x0086ddb0 function AtelPopMember             # fh call.cs cdecl
 0x0086de40 function AtelPopPublicWork         # fh switch:bsim1.00 0x7100460120
-0x0086de50 function Script_PopFloat  # fh: AtelPopStackFloat
-0x0086df00 function Script_PopInt  # fh: AtelPopStackInteger
+0x0086de50 function AtelPopStackFloat         # was Script_PopFloat
+0x0086df00 function AtelPopStackInteger       # was Script_PopInt
 0x0086dfb0 function Script_StoreVar           # mode bit 0x80: pop an array index too; bit 1: store mode
 0x0086e160 function Script_PushVarRef         # address of an array element (element size from the type nibble)
 0x0086e310 function AtelPushMember            # fh call.cs cdecl
 0x0086e3c0 function Script_PushFloat
-0x0086e3f0 function Script_PushInt  # fh: AtelPushStackInteger
+0x0086e3f0 function AtelPushStackInteger      # was Script_PushInt
 0x0086e440 function Script_PushVar
 0x0086e4c0 function AtelRecoverFPFromBattle   # fh v3:exact 0x0086e450
 0x0086e700 function AtelRecoverFromMenuCallback # fh v3:exact 0x0086e690
@@ -3582,7 +3584,7 @@
 0x0086fda0 function AtelSetEventElemCharIDFromID # fh v3:exact 0x0086fd30
 0x0086fe20 function AtelSetEventElemPosFromID # fh v3:bsim1.00 0x0086fdb0
 0x0086fe60 function AtelSetEventElemStatus    # fh v3:exact 0x0086fdf0
-0x0086ff40 function Event_ChangeMap              # (map, entrance, flag): drops control, 0x0088ea60, ctx byte 0 &= 0x7f, ctx+0x210 |= 2, fade (FUN_0088eb50); fh: AtelSetEventJump2
+0x0086ff40 function AtelSetEventJump2         # (map, entrance, flag): drops control, 0x0088ea60, ctx byte 0 &= 0x7f, ctx+0x210 |= 2, fade (FUN_0088eb50); was Event_ChangeMap
 0x008700c0 function AtelSetEventActorLinkWork_008700c0 # fh switch:bsim0.92 0x7100472400
 0x00870130 function AtelSetForceBattleMapId   # fh v3:bsim1.00 0x008700d0
 0x00870140 function AtelSetForcePlaceId       # fh switch:bsim1.00 0x7100472300
@@ -3593,7 +3595,7 @@
 0x00870870 function AtelSetMyWorkAdrs         # fh v3:exact 0x00870810
 0x008708e0 function AtelSetNowEventJumpMapNo  # fh switch:bsim1.00 0x7100461a10
 0x00870900 function AtelSetOverlayStatus      # fh v3:bsim1.00 0x008708a0
-0x00870b20 function Worker_SetPos                # (worker, x, y, z, snap): position + model/?camera; player worker updates ctx+0x218/0x228; fh: AtelSetPos3d
+0x00870b20 function AtelSetPos3d              # (worker, x, y, z, snap): position + model/?camera; player worker updates ctx+0x218/0x228; was Worker_SetPos
 0x00870ef0 function AtelSetSaveDicIndex       # fh v3:exact 0x00870e90
 0x00870f60 function AtelSetShopRatio          # fh v3:bsim1.00 0x00870f00
 0x00871190 function AtelSetUpCtrlWork         # fh v3:exact 0x00871130
@@ -3605,8 +3607,8 @@
 0x00871890 function AtelStopSoundAll          # fh v3:exact 0x00871830
 0x00871950 function AtelStrcat                # fh v3:exact 0x008718f0
 0x00871980 function AtelStrcpy                # fh v3:exact 0x00871920
-0x008719e0 function Event_DisableControl         # see Native_ControlDisable; fh: AtelUcOff
-0x00871ab0 function Event_EnableControl          # see Native_ControlEnable; fh: AtelUcOn
+0x008719e0 function AtelUcOff                 # see Native_ControlDisable; was Event_DisableControl
+0x00871ab0 function AtelUcOn                  # see Native_ControlEnable; was Event_EnableControl
 0x00871bc0 function AtelUpdateBattleStatus    # fh v3:exact 0x00871b60
 0x00871d70 function AtelExec_Internal_871d10  # fh call.cs stdcall
 0x00871e50 function AtelUpdateWaterStatus     # fh v3:exact 0x00871df0
@@ -3630,7 +3632,7 @@
 0x00872c90 function AtelDrawNoTrans           # fh v3:bsim1.00 0x00872c30
 0x00872ca0 function AtelDrawSemiTrans         # fh v3:exact 0x00872c40
 0x00872d20 function AtelEventRemove           # fh v3:exact 0x00872cc0
-0x00872ef0 function Event_Load                 # (event): reads the .ebp, its localized message table (Msg_LoadFile) and .ftc, starts its scripts; fh: AtelEventSetUp
+0x00872ef0 function AtelEventSetUp            # (event): reads the .ebp, its localized message table (Msg_LoadFile) and .ftc, starts its scripts; was Event_Load
 0x00873a90 function AtelGetBattleEndTagAlways # fh v3:bsim1.00 0x00873a30
 0x00873aa0 function AtelGetEventMode          # fh v3:exact 0x00873a40
 0x00873ac0 function AtelGetExpandFTCAdrs      # fh v3:bsim1.00 0x00873a60
@@ -3663,7 +3665,7 @@
 0x00875190 function AtelRegistCallbackQue     # fh switch:bsim1.00 0x710044e160
 0x008751b0 function AtelRegistCallbackQue2    # fh v3:exact 0x00875130
 0x00875430 function AtelActorRemove           # fh v3:exact 0x008753b0
-0x00875510 function Event_InitScripts          # (..., messages, messages2, ...): script context +0x34 = messages, +0x38 = section 5 (or messages); fh: AtelActorSetUp2
+0x00875510 function AtelActorSetUp2           # (..., messages, messages2, ...): script context +0x34 = messages, +0x38 = section 5 (or messages); was Event_InitScripts
 0x008756d0 function AtelBattleSetUp           # fh v3:exact 0x00875650
 0x00875e10 function TkGetVibrateVolume        # fh switch:bsim1.00 0x7100479c70
 0x00875f60 function TkSetVibrateMask          # fh v3:exact 0x00875ee0
@@ -3678,7 +3680,7 @@
 0x00877730 function Script_PollNative         # slot 1; no handler = done
 0x008777a0 function Script_CallNative         # slot 0 (start) of the native table entry
 0x008777f0 function Script_FinishNative       # slot 2 (float) or 3 (int) result, pushed
-0x00877880 function Script_SetNativeTable     # (group, table); fh: AtelSetUpCallFunc
+0x00877880 function AtelSetUpCallFunc         # (group, table); was Script_SetNativeTable
 0x008778f0 function AtelCall_Math_Ftoul_RI    # fh v3:exact 0x00877870 +AtelCall_Math_Ftoul_RI
 0x00877b30 function AtelCall_Math_ATan2_RF    # fh v3:exact 0x00877ab0 +AtelCall_Math_ATan2_RF
 0x00877b70 function Native_MathSqrt              # 0x1006 float (x) -> sqrt(x)
@@ -3718,12 +3720,12 @@
 0x00886680 function SndIsSepPlay              # fh v3:exact 0x008865e0
 0x00886800 function SndMusicClear             # fh v3:bsim1.00 0x00886760
 0x00886830 function SndMusicCrossStart        # fh v3:exact 0x00886790
-0x00886960 function Music_Load                   # (music < 0x100): waits pending requests, FMOD cmd 0x28 (FmodMusic::read) + IOP request 0x15; fh: SndMusicRead
+0x00886960 function SndMusicRead              # (music < 0x100): waits pending requests, FMOD cmd 0x28 (FmodMusic::read) + IOP request 0x15; was Music_Load
 0x00886a00 function SndMusicStandby           # fh v3:bsim1.00 0x00886960
-0x00886a20 function Music_Play                   # (music < 0x100): FMOD cmd 0x27 (FmodMusic start, 0x007096f0), volume 0x7f (0x00886ab0); fh: SndMusicStart
+0x00886a20 function SndMusicStart             # (music < 0x100): FMOD cmd 0x27 (FmodMusic start, 0x007096f0), volume 0x7f (0x00886ab0); was Music_Play
 0x00886a60 function SndMusicStop              # fh v3:bsim1.00 0x008869c0
 0x00886ab0 function Music_SetVolume              # (music, volume): volume table 0x013300e0
-0x00886af0 function Music_FadeOut                # (music, frames); fh: SndMusicVolumeFadeOut
+0x00886af0 function SndMusicVolumeFadeOut     # (music, frames); was Music_FadeOut
 0x00886b40 function SndMusicVolumeTranslate   # fh v3:exact 0x00886aa0
 0x00886b80 function SndPlay                   # fh v3:exact 0x00886ae0
 0x00886ba0 function SndPlayClick              # fh v3:exact 0x00886b00
@@ -3735,8 +3737,8 @@
 0x00886db0 function SndSepClearAll            # fh v3:bsim1.00 0x00886d10
 0x00886dd0 function SndSepLock                # fh v3:bsim1.00 0x00886d30
 0x00886df0 function SndSepVolumeDirect        # fh v3:bsim1.00 0x00886ec0
-0x00886e50 function Sfx_Play                     # (sfx, pan, volume): FMOD cmd 0x33 via 0x0081e4e0; fh: SndSepPlay
-0x00886e80 function Sfx_PlayDefault              # (sfx): Sfx_Play(sfx, 0x3f, 0x7f); fh: SndSepPlaySimple
+0x00886e50 function SndSepPlay                # (sfx, pan, volume): FMOD cmd 0x33 via 0x0081e4e0; was Sfx_Play
+0x00886e80 function SndSepPlaySimple          # (sfx): Sfx_Play(sfx, 0x3f, 0x7f); was Sfx_PlayDefault
 0x00886eb0 function SndSepStop                # fh v3:exact 0x00886e10
 0x00886ee0 function SndSepTrans               # fh switch:bsim1.00 0x710048dd20
 0x00886ef0 function SqsSetStandbyWave         # fh switch:bsim1.00 0x71004074b0
@@ -3754,7 +3756,7 @@
 0x008875a0 function SndStartBattleStream      # fh v3:exact 0x00887510
 0x00887690 function Voice_Play                   # (a, b): sound command 0xf via 0x0067a770; clears 0x0132ff1c
 0x00887760 function SndStopBattleStream       # fh v3:bsim1.00 0x008876d0
-0x00887780 function Voice_Stop                   # 0x00887b50(0) + 0x0067a7a0 (sound command 10); fh: SndStopStream
+0x00887780 function SndStopStream             # 0x00887b50(0) + 0x0067a7a0 (sound command 10); was Voice_Stop
 0x00887900 function SndSyncMusicStandby       # fh v3:bsim1.00 0x00887870
 0x00887910 function SndSyncTrans              # fh v3:exact 0x00887880
 0x00887930 function SndSyncWaveTrans          # fh v3:bsim1.00 0x008878a0
@@ -3834,7 +3836,7 @@
 0x0088c810 function TkInitAlarm               # fh v3:bsim1.00 0x0088c780
 0x0088c850 function TkGetHddErrorFlag         # fh switch:bsim1.00 0x710048f1e0
 0x0088c860 function TKMallocAndReadEventFTC   # fh v3:exact 0x0088c7d0
-0x0088cac0 function Msg_LoadFile               # (name): new_<lang>pc/event/obj_ps3/<xx>/<name>.bin, battle/btl/<name>/<name>.bin (name with _), battle/kernel (monster*), menu/*.dcp (macro*); fh: TKMallocAndReadEventMessage
+0x0088cac0 function TKMallocAndReadEventMessage # (name): new_<lang>pc/event/obj_ps3/<xx>/<name>.bin, battle/btl/<name>/<name>.bin (name with _), battle/kernel (monster*), menu/*.dcp (macro*); was Msg_LoadFile
 0x0088d140 function TkCdRead                  # fh switch:bsim1.00 0x710048ff90
 0x0088d190 function TkCdReadNB                # fh v3:exact 0x0088d100
 0x0088d1c0 function TkCdReadSync              # fh v3:exact 0x0088d130
@@ -3849,7 +3851,7 @@
 0x0088d5e0 function TkGetFFXCofingAdrs_0088d5e0 # fh v3:bsim1.00 0x0088d550
 0x0088d5f0 function TkGetSoundSyncVFlag3      # fh switch:bsim1.00 0x710048eb50
 0x0088d660 function TkGetNowEventJumpId       # fh v3:bsim1.00 0x0088d5d0
-0x0088d670 function Map_GetEntranceIndex         # byte g_SaveData+0xc; fh: TkGetNowEventJumpIndex
+0x0088d670 function TkGetNowEventJumpIndex    # byte g_SaveData+0xc; was Map_GetEntranceIndex
 0x0088d680 function TkGetNowEventJumpMapIdNo  # fh v3:bsim1.00 0x0088d5f0
 0x0088d690 function TkGetNowEventJumpMapNo    # fh v3:bsim1.00 0x0088d600
 0x0088d6a0 function TkGetOutputEncount        # fh switch:bsim1.00 0x710048f3a0
@@ -3866,7 +3868,7 @@
 0x0088ea20 function TkSetDebugDrawFlag        # fh switch:bsim1.00 0x710048f370
 0x0088ea30 function TkSetDebugMenuStatus      # fh switch:bsim1.00 0x710048f420
 0x0088ea50 function TkSetEvSaveStatus         # fh v3:exact 0x0088e9c0
-0x0088ea60 function Map_RequestChange            # (map, entrance): game state (0x00785240) +0 = map, +2 = previous, +0xc = entrance; map < 0 = return to the saved map; fh: TkSetEventJump
+0x0088ea60 function TkSetEventJump            # (map, entrance): game state (0x00785240) +0 = map, +2 = previous, +0xc = entrance; map < 0 = return to the saved map; was Map_RequestChange
 0x0088eaf0 function TkSetEventJumpMapNo       # fh v3:exact 0x0088ea60
 0x0088eb50 function TkSetFadeOut              # fh v3:exact+call.cs 0x0088eac0 cdecl
 0x0088eb70 function TkSetHddErrorFlag         # fh switch:bsim1.00 0x710048f1d0
@@ -4475,7 +4477,7 @@
 0x00919c60 function Yn_GuideMapEnd            # fh v3:bsim1.00 0x00919c60
 0x00919c70 function Yn_GuideMapGetMapNo       # fh v3:exact 0x00919c70
 0x00919cd0 function Yn_GuideMapInit_00919cd0  # fh v3:bsim1.00 0x00919cd0
-0x00919d00 function Guide_Frame                  # per field frame: Guide_Update(*(0x0193bf80 + 4), show), the guide object of the minimap (Native_MinimapSetCorner); fh: Yn_GuideMapProcEx
+0x00919d00 function Yn_GuideMapProcEx         # per field frame: Guide_Update(*(0x0193bf80 + 4), show), the guide object of the minimap (Native_MinimapSetCorner); was Guide_Frame
 0x00919d70 function Yn_GuideMapSetDispProg    # fh v3:bsim1.00 0x00919d70
 0x00919da0 function Yn_GuideMapSetMapNo       # fh v3:exact 0x00919da0
 0x00919e20 function Yn_GuideMapSetMode        # fh v3:bsim1.00 0x00919e20
@@ -4515,7 +4517,7 @@
 0x0091d880 function rcbgGuideSetModelSub      # fh v3:exact 0x0091d880
 0x0091d930 function rcbgGuideSetTarget        # fh v3:exact 0x0091d930
 0x0091da10 function rcbgGuideUpdate           # fh switch:bsim1.00 0x7100541de0
-0x0091da80 function Guide_Update                 # cdecl (guide, show): the field minimap: fade (Guide_FadeStep), markers (Minimap_GetWorkerMarker; flags 0xf palette, 0x100 square, 0x200 triangle, 0x20000 diamond, 0x10000 exit line, 0x400 ring, 0x1000 blink, 0x800 player, 0x2000 destination), fog of war (Guide_RevealFog when guide +0x70), blink counter guide +0x74, mesh drawn by 0x00928020; nothing when g_GuideEnabled is 0; fh: rcbgGuideUpdateEx
+0x0091da80 function rcbgGuideUpdateEx         # cdecl (guide, show): the field minimap: fade (Guide_FadeStep), markers (Minimap_GetWorkerMarker; flags 0xf palette, 0x100 square, 0x200 triangle, 0x20000 diamond, 0x10000 exit line, 0x400 ring, 0x1000 blink, 0x800 player, 0x2000 destination), fog of war (Guide_RevealFog when guide +0x70), blink counter guide +0x74, mesh drawn by 0x00928020; nothing when g_GuideEnabled is 0; was Guide_Update
 0x0091ecb0 function rcbgGuideUpdateWalk       # fh v3:exact 0x0091ecb0
 0x0091f420 function Guide_RevealFog              # (guide, x, z): clears the fog of war around the player (four maps, g_SaveData + 0x350c)
 0x0091f7a0 function rcbgPSimAddDamp           # fh switch:bsim1.00 0x7100546310
@@ -4790,8 +4792,8 @@
 0x00a3d7c0 function Ch_SysGetCameraMatrixPtr_00a3d7c0 # fh switch:bsim1.00 0x7100412df0
 0x00a3e9b0 function Phyre_PText_PUtilityText_GetRenderPassForTechnique # fh v3:exact 0x00a3e9b0 Phyre::PText::PUtilityText::GetRenderPassForTechnique
 0x00a3ea40 function Phyre_PText_PUtilityText_initialize # fh switch:bsim1.00 0x7100803b50 Phyre::PText::PUtilityText::initialize
-0x00a42830 function Cd_FileName                # cdecl(number) -> "host0:/ffx/master/..." path of a PS2 file of the current module; fh: CDfileName_PC
-0x00a428a0 function CdFileSize_PC              # cdecl(number): size from sizetbl.bin, or the real file for some modules ("CDfileSize_PC: MISSING?"); fh: CDfileSize_PC
+0x00a42830 function CDfileName_PC             # cdecl(number) -> "host0:/ffx/master/..." path of a PS2 file of the current module; was Cd_FileName
+0x00a428a0 function CDfileSize_PC             # cdecl(number): size from sizetbl.bin, or the real file for some modules ("CDfileSize_PC: MISSING?"); was CdFileSize_PC
 0x00a429d0 function GetCDFileName_PC          # fh v3:exact 0x00a429d0
 0x00a42b70 function PcFileTblSet              # fh v3:exact 0x00a42b70
 0x00a42ba0 function PcReadFunc_set            # fh v3:exact 0x00a42ba0
@@ -4913,7 +4915,7 @@
 0x00a77ee0 function Native_FadeWait              # 0x400d start: empty
 0x00a77ef0 function Native_FadeWait_Poll         # 0x400d poll: done when fade slot 4's counter 0x0130074c is 0 (only fade in ends; follows 0x4004 in 633 of 685 calls)
 0x00a78030 function Native_LightSet              # 0x4013 (light, r, g, b, pitch deg, yaw deg) -> 0; Light_Set 0x00836520
-0x00a78210 function Native_MenuOpen              # 0x401d start (menu id): "%d:sgMenu Init", Menu_Request 0x00821750, frame counter 0x022fb4d4 = 1; fh: +CT_401D_init
+0x00a78210 function CT_401D_init              # 0x401d start (menu id): "%d:sgMenu Init", Menu_Request 0x00821750, frame counter 0x022fb4d4 = 1; was Native_MenuOpen
 0x00a78270 function Native_MenuOpen_Poll         # 0x401d poll: "%d:sgMenu Exec", waits one frame (0x022fb4d4)
 0x00a782a0 function Native_MenuOpen_Result       # 0x401d int: "%d:sgMenu Result = %d" -> 0x012fbc3c
 0x00a78750 function Native_ChrGetMotionFrame     # 0x5051: no args -> current motion frame (chr +0x740, 8.8 fixed; the "frame=" of the CHRINFO debug view)
@@ -6959,7 +6961,7 @@
 0x00c5e478 label    g_GuideEnabled               # 0: Guide_Update returns at once
 0x00c5e790 label    g_GuidePacketStrides         # bytes per primitive of the minimap mesh's packet types 0-7 (0x14 0x1c 0x20 0x28 0x18 0x20 0x28 0x30); type 0: triangles, vertex indices at +0xc
 0x00cc9698 label    g_BasePath
-0x00cc9c48 label    g_FileSys  # fh: BigFileStream::sBigFileStreamInstacne
+0x00cc9c48 label BigFileStream_sBigFileStreamInstacne # was g_FileSys
 0x00cc9cf5 label    g_SteamReady              # guards every other Steam call (achievements, RunCallbacks)
 0x00ccb95c label    g_CharsetCjk
 0x00ccb960 label    g_CharsetWestern

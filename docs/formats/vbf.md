@@ -30,7 +30,7 @@ Record (32 bytes):
 | Offset | Type | Meaning |
 |---|---|---|
 | `0x00` | `u32` | Index of the file's first block in the block-size table |
-| `0x04` | `u32` | Unknown, not read by `Vbf_Open`. Equals the first-block index in `metamenu.vbf`; in `FFX_Data.vbf` it is `0` for the 7 empty files and `3675126` for all others |
+| `0x04` | `u32` | Unknown, not read by `BigFileHandle_initialize`. Equals the first-block index in `metamenu.vbf`; in `FFX_Data.vbf` it is `0` for the 7 empty files and `3675126` for all others |
 | `0x08` | `u64` | Uncompressed size |
 | `0x10` | `u64` | Absolute file offset of the first block. Junk for empty files: the 7 in `FFX_Data.vbf` (names like `temp`, `placeholder`, `*.tmp`, `*.$$$`) have the entry count in the high dword |
 | `0x18` | `u64` | Offset of the path in the path table |
@@ -51,8 +51,8 @@ The block-size table gives each block's stored size:
 - anything else: zlib stream (`78 da` header) that inflates to the block's
   uncompressed size.
 
-`Vbf_Open` precomputes this as a one-byte-per-block "compressed" flag table.
-`ReadRequest_Inflate` (`0x0061ba80`) `memcpy`s raw blocks and passes the rest
+`BigFileHandle_initialize` precomputes this as a one-byte-per-block "compressed" flag table.
+`BigFileStream_fileTaskUncompress` (`0x0061ba80`) `memcpy`s raw blocks and passes the rest
 to `zlib_uncompress` (`0x00405e20`, zlib's `uncompress(dst, &dst_len, src,
 src_len)`). A size mismatch or zlib error shows message text `0x7836` in a
 `MessageBoxW`.
@@ -61,8 +61,8 @@ src_len)`). A size mismatch or zlib error shows message text `0x7836` in a
 
 `File_Probe` (`0x00607e00`) shows how the game turns a path into a key: it
 converts `\` to `/` and lowercases ASCII `A`–`Z` (`Path_ToLowerAscii`,
-`0x00607d50`). `FileSys_Exists` / `FileSys_FindEntry` (`0x0061be40` /
-`0x0061bf10`) then skip the root prefix set by `FileSys_SetRootPath`
+`0x00607d50`). `FileSys_Exists` / `BigFileStream_openFile` (`0x0061be40` /
+`0x0061bf10`) then skip the root prefix set by `BigFileStream_setStreamPrefix`
 (`"../../../"` at startup), MD5 the rest and ask each of the up to 5 mounted
 archives. Stored paths look like `ffx_data/gamedata/ps3data/...`.
 
@@ -71,7 +71,7 @@ prefix is up to the caller.
 
 ## Integrity
 
-`Vbf_Open` reads the last 16 bytes of the file, MD5s the header with
+`BigFileHandle_initialize` reads the last 16 bytes of the file, MD5s the header with
 CryptoAPI (`CALG_MD5`) and refuses the archive unless the two match.
 
 ## Writing
@@ -89,7 +89,7 @@ folder mirrors archive paths; later folders win.
   path table. Record field `0x04`, which the game does not read, follows the
   base's convention (the first-block index in `metamenu.vbf`, the shared
   constant in the big archives).
-- The header's MD5 is recomputed for the trailer, which is all `Vbf_Open`
+- The header's MD5 is recomputed for the trailer, which is all `BigFileHandle_initialize`
   checks.
 
 For development, the loose-file mod folder (`docs/hooking.md`) is quicker:

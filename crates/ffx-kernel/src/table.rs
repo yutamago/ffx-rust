@@ -1,6 +1,6 @@
 //! The table container.
 //!
-//! Recovered from `Kernel_FindRecord` (`0x007ab870`):
+//! Recovered from `MsGetExcelData` (`0x007ab870`):
 //!
 //! ```text
 //! 0x00  u16        segment count S

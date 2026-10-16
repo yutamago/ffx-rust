@@ -102,14 +102,14 @@ impl Language {
     }
 
     /// Archive folder of the language's battle kernel tables
-    /// (`Kernel_LoadFile`, `0x00782df0`).
+    /// (`getExcelBinSize`, `0x00782df0`).
     #[must_use]
     pub fn kernel_dir(self) -> String {
         format!("ffx_ps2/ffx/master/new_{}pc/battle/kernel/", self.code())
     }
 
     /// Archive path of event `event`'s dialogue (`cdsp0000`): the folder is
-    /// named after its first two letters (`Msg_LoadFile`, `0x0088cac0`).
+    /// named after its first two letters (`TKMallocAndReadEventMessage`, `0x0088cac0`).
     /// The `obj_psv` copies beside these are the Vita's.
     #[must_use]
     pub fn event_messages_path(self, event: &str) -> String {

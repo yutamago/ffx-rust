@@ -35,10 +35,10 @@ those originals, which is useful for A/B comparisons.
 
 ## Mods
 
-`File_Open` (`0x00607f40`) is the only way the game opens archive files.
+`Phyre_PSerialization_PStreamFileWin32_openFile` (`0x00607f40`) is the only way the game opens archive files.
 It normalizes the path, asks the archives, and if they lack the file opens
 it from disk with `CreateFileW`; the size, read and close methods then use
-that handle. The `File_Open` hook adds one step in front: for a read open of
+that handle. The `Phyre_PSerialization_PStreamFileWin32_openFile` hook adds one step in front: for a read open of
 a path that a mod provides, it opens the mod's file read-only and returns,
 so the game's own loose-file code reads it. Everything else goes to the
 original through a trampoline.
@@ -53,16 +53,16 @@ the log says so. A mod folder may hold a `mod.toml` (name, description,
 `enabled`); with `enabled = false` the mod is skipped. The desktop app
 writes it. `tools/run-game.sh --log-opens` (environment
 `FFX_HOOK_LOG_OPENS=1`) also logs every file the game reads, as the archive
-path a mod would use. The file must be opened read-only: `File_Close` calls
+path a mod would use. The file must be opened read-only: `Phyre_PSerialization_PStreamFile_closeFile` calls
 `SetEndOfFile`, which would truncate a writable mod file.
 
 Files of the PS2 game (`ffx_ps2/…`) are also sized by the PS2 file layer,
-from its own tables: `Cd_FileSize` (`0x0076c320`, sectors from
-`cdrom.mdg`) and `CdFileSize_PC` (`0x00a428a0`, `sizetbl.bin`), and buffers
+from its own tables: `CDfileSize_CD` (`0x0076c320`, sectors from
+`cdrom.mdg`) and `CDfileSize_PC` (`0x00a428a0`, `sizetbl.bin`), and buffers
 and reads use that size. A mod file that grew would be cut at the original
 size: a motion group 8 bytes larger lost the end of its sequence table and
 crashed the game. Both functions are wrapped: for a PS2 file number whose
-path (`Cd_FileName`, `0x00a42830`, `host0:/ffx/…` → `ffx_ps2/ffx/…`) a mod
+path (`CDfileName_PC`, `0x00a42830`, `host0:/ffx/…` → `ffx_ps2/ffx/…`) a mod
 provides, they return the mod file's size rounded up to 16 bytes.
 
 `ffx kernel import <table> <edits.toml> --mod-dir <game folder>/mods/<mod>`
@@ -77,8 +77,8 @@ writes a table straight into a mod. Verified in the game: with the
 |---|---|---|
 | `zlib_uncompress` | `0x00405e20` | 1,500 synthetic streams (fit, spare room, too small, truncated, flipped bit; all result codes) and every compressed block in `metamenu.vbf` |
 | `Path_ToLowerAscii` | `0x00607d50` | NULL, empty, all 255 byte values, 2,000 random strings; output bytes and return value |
-| `File_Open` | `0x00607f40` | Wrapped, not replaced: mod lookup, then the original through a trampoline; trampoline checked by the smoke test, mod loading in the game |
-| `Cd_FileSize`, `CdFileSize_PC` | `0x0076c320`, `0x00a428a0` | Wrapped: mod files report their own size; in the game by `an_edited_motion_group_loads_in_the_game` |
+| `Phyre_PSerialization_PStreamFileWin32_openFile` | `0x00607f40` | Wrapped, not replaced: mod lookup, then the original through a trampoline; trampoline checked by the smoke test, mod loading in the game |
+| `CDfileSize_CD`, `CDfileSize_PC` | `0x0076c320`, `0x00a428a0` | Wrapped: mod files report their own size; in the game by `an_edited_motion_group_loads_in_the_game` |
 | `Input_KeyHeld` | `0x00629d50` | Wrapped for the test harness (`docs/harness.md`) |
 
 ## Adding a replacement

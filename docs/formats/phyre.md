@@ -353,7 +353,7 @@ New joints in the hierarchy are not written.
 
 ### Character asset lists
 
-`Chr_LoadAssets` (`0x0082a1c0`) reads
+`Ch_LoadHdRenderData` (`0x0082a1c0`) reads
 `ffx_data/gamedata/ps3data/chr/<kind>/<name>/<name>.ahwin32`, a generated C
 header (CRLF lines). Its D3D11 section lists the files to load, in order:
 the textures, the model and the shaders; `const Phyre::PUInt32 <name> = n`

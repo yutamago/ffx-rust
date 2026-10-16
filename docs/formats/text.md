@@ -54,7 +54,7 @@ same bytes:
 ## Message tables
 
 An event's dialogue and a battle's texts are message tables, one per
-language, loaded by `Msg_LoadFile` (`0x0088cac0`):
+language, loaded by `TKMallocAndReadEventMessage` (`0x0088cac0`):
 
 - `ffx_ps2/ffx/master/new_<lang>pc/event/obj_ps3/<xx>/<event>/<event>.bin`,
   `<xx>` being the event's first two letters (`zn/znkd0600`). The
@@ -62,7 +62,7 @@ language, loaded by `Msg_LoadFile` (`0x0088cac0`):
 - `ffx_ps2/ffx/master/new_<lang>pc/battle/btl/<name>/<name>.bin` for
   battle `<name>` (`cdsp00_00`).
 
-`Event_Load` (`0x00872ef0`) puts the event's table at script context
+`AtelEventSetUp` (`0x00872ef0`) puts the event's table at script context
 `+0x34`; without one, section 1 of the `.ebp` (the original Japanese table,
 same layout) stands in.
 

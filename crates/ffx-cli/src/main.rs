@@ -1222,7 +1222,7 @@ fn monster(cmd: MonsterCommand) -> Result<()> {
 }
 
 /// The archive path of an event's (`cdsp0000`) or a battle's (`cdsp00_00`)
-/// messages; like `Msg_LoadFile`, a name with `_` is a battle.
+/// messages; like `TKMallocAndReadEventMessage`, a name with `_` is a battle.
 fn messages_path(game: &Game, name: &str) -> Result<String> {
     if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
         bail!("{name:?}: expected an event like `cdsp0000` or a battle like `cdsp00_00`");

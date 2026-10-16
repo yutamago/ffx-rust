@@ -1,13 +1,13 @@
 //! The field minimap (`rcbgGuide`, the guide map), for the renderer's own.
 //!
-//! `Guide_Update` (`0x0091da80`, `cdecl(guide, show)`, from `0x00919d00`
+//! `rcbgGuideUpdateEx` (`0x0091da80`, `cdecl(guide, show)`, from `0x00919d00`
 //! each field frame) fades the minimap, reveals the fog of war, and draws
 //! the map's mesh and its 2D quads. While the renderer draws its own
 //! minimap (its answer's flag 512), the wrapper does only the first two
 //! (the fade `0x0091d280`, the fog `0x0091f420`, the blink counter) with
 //! the game's mesh and fog passes off (`0x006425f0(0)`, `0x006425d0(0)`),
 //! and reads what the renderer needs: the fade, the markers through
-//! `Minimap_GetWorkerMarker` (`0x0086b740`, on this thread as the game
+//! `AtelGetGuideMapActorInfo` (`0x0086b740`, on this thread as the game
 //! calls it), the player among them (flag 0x800), and the mesh when it
 //! changes.
 
@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use crate::log::log;
 
-/// The trampoline to the original `Guide_Update`.
+/// The trampoline to the original `rcbgGuideUpdateEx`.
 pub static ORIGINAL: AtomicUsize = AtomicUsize::new(0);
 /// The renderer draws its own minimap.
 pub static REPLACE: AtomicBool = AtomicBool::new(false);
@@ -45,7 +45,7 @@ const MARKER: u32 = 0x0086_b740;
 const FOG_REVEAL: u32 = 0x0091_f420;
 const AFTER_DRAW: u32 = 0x008e_5cd0;
 
-/// Replaces `Guide_Update` (see the module's notes).
+/// Replaces `rcbgGuideUpdateEx` (see the module's notes).
 ///
 /// # Safety
 /// Called by the game, on its thread.

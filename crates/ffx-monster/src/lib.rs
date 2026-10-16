@@ -12,7 +12,7 @@
 //! |---|---|
 //! | 0 | battle AI script → actor `+0xf78` |
 //! | 1 | script dispatch table (`Mon_FindHandler`, `0x00797410`) → `+0xf7c` |
-//! | 2 | stat record (128 bytes, then Japanese strings) → `+0xf80`, copied into the actor by `Mon_InitActor` (`0x0079b4f0`) |
+//! | 2 | stat record (128 bytes, then Japanese strings) → `+0xf80`, copied into the actor by `MsSetRamChr` (`0x0079b4f0`) |
 //! | 4 | rewards, steal and bribe (`0x118` bytes) → copied per enemy slot, `+0xf88` |
 //! | 5 | read by `0x007a01b0` when the actor asks for it |
 //! | 6 | a second copy of the stat record → `+0xf84` |
@@ -34,7 +34,7 @@ pub const STATS_COPY: usize = 6;
 pub const SPOILS: usize = 4;
 /// Size of the stat record.
 pub const STATS_LEN: usize = 128;
-/// Size of the reward block the battle copies (`Mon_InitActor`).
+/// Size of the reward block the battle copies (`MsSetRamChr`).
 pub const SPOILS_LEN: usize = 0x118;
 /// Bytes of the stat record before the stats: five string references.
 const STATS_PREFIX: usize = 20;
@@ -55,7 +55,7 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Rewards, steal and bribe (`Battle_GiveRewards` `0x007990d0`,
+/// Rewards, steal and bribe (`MsGetItem` `0x007990d0`,
 /// `Battle_Steal` `0x0078b760`).
 pub const SPOILS_FIELDS: &[Field] = &[
     Field {

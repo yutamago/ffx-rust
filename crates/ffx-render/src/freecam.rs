@@ -9,7 +9,7 @@
 //! is held), W/A/S/D or the arrows move, Q/E go down and up, Shift runs,
 //! Alt is slow, the wheel or +/− sets the speed; the left button or Enter
 //! keeps the view, the right button or Esc goes back. The hook puts it
-//! into the game's own override camera (`Cam_OverrideSet`, see
+//! into the game's own override camera (`MsEffectCameraSet`, see
 //! `symbols/ffx.sym`), so the game draws, and culls, for it, with the
 //! game's field of view narrowed or widened by the zoom. Positions in
 //! render space (y up); the game's are x and y negated.

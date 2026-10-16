@@ -41,7 +41,7 @@ pub struct Field {
 /// The layout of one table's records.
 #[derive(Debug, Clone, Copy)]
 pub struct Schema {
-    /// File name without `.bin`, as passed to `Kernel_LoadFile`.
+    /// File name without `.bin`, as passed to `getExcelBinSize`.
     pub file: &'static str,
     pub record_size: u16,
     /// Names of the string references at the start of each record.
@@ -90,7 +90,7 @@ const COMMAND_FIELDS: &[Field] = &[
         name: "flags",
         offset: 0x1c,
         kind: Kind::U32,
-        doc: "bit 0x2: listed for use (Item_BuildLists 0x007906a0); bit 0x400 selects the second list; bit 0x40000: formula and power come from the user's weapon (0x007898d0, 0x0078e630)",
+        doc: "bit 0x2: listed for use (MsSetItemWindow 0x007906a0); bit 0x400 selects the second list; bit 0x40000: formula and power come from the user's weapon (0x007898d0, 0x0078e630)",
     },
     Field {
         name: "crit_flags",
@@ -120,11 +120,11 @@ const COMMAND_FIELDS: &[Field] = &[
 
 /// An auto-ability slot: 0x8000 + `a_ability` ID; 0x00ff (0 in `buki_get`)
 /// for none. Each one's `a_ability` record is applied to the wearer in
-/// battle (`Battle_InitPartyActor`, `0x0079c5f0`).
+/// battle (`MsSetRamChrParam`, `0x0079c5f0`).
 const ABILITY_DOC: &str = "auto-ability, 0x8000 + a_ability ID; 0x00ff empty";
 
 /// Equipment: the starting inventory (`weapon`, `wep_data`, copied into
-/// the 200 slots at `0x01130f2c` by `SaveData_Clear`, `0x00786b00`) and the
+/// the 200 slots at `0x01130f2c` by `MsSetSaveStartGame`, `0x00786b00`) and the
 /// equipment shops sell (`shop_arms`). The inventory slots have the same
 /// layout.
 const EQUIPMENT_FIELDS: &[Field] = &[
@@ -168,7 +168,7 @@ const EQUIPMENT_FIELDS: &[Field] = &[
         name: "formula",
         offset: 0x08,
         kind: Kind::U8,
-        doc: "weapon: damage formula of commands with flag 0x40000 (actor +0x5c1, Battle_InitPartyActor 0x0079c5f0)",
+        doc: "weapon: damage formula of commands with flag 0x40000 (actor +0x5c1, MsSetRamChrParam 0x0079c5f0)",
     },
     Field {
         name: "power",
@@ -220,7 +220,7 @@ const EQUIPMENT_FIELDS: &[Field] = &[
     },
 ];
 
-/// Treasure: what a chest (or a reward) gives (`Treasure_Give`,
+/// Treasure: what a chest (or a reward) gives (`msFieldItemGet`,
 /// `0x00799420`).
 const TAKARA_FIELDS: &[Field] = &[
     Field {
@@ -243,7 +243,7 @@ const TAKARA_FIELDS: &[Field] = &[
     },
 ];
 
-/// Equipment found in treasure (`Treasure_Give`, `0x00799420`, builds an
+/// Equipment found in treasure (`msFieldItemGet`, `0x00799420`, builds an
 /// equipment slot from it).
 const BUKI_GET_FIELDS: &[Field] = &[
     Field {
@@ -346,7 +346,7 @@ pub const SHARED_SCHEMAS: &[Schema] = &[
 
 /// Monster stats. The same 128-byte record appears in the kernel
 /// `monster1`–`3` tables and in sections 2 and 6 of each monster file; the
-/// battle copies section 2 into the enemy actor (`Mon_InitActor`,
+/// battle copies section 2 into the enemy actor (`MsSetRamChr`,
 /// `0x0079b4f0`; see `docs/formats/monster.md`).
 pub const MONSTER_FIELDS: &[Field] = &[
     Field {
@@ -371,25 +371,25 @@ pub const MONSTER_FIELDS: &[Field] = &[
         name: "strength",
         offset: 0x20,
         kind: Kind::U8,
-        doc: "actor +0x5a8; attacker stat of physical damage (Dmg_Calc 0x00789bf0)",
+        doc: "actor +0x5a8; attacker stat of physical damage (MsCalcDamageCommand 0x00789bf0)",
     },
     Field {
         name: "defense",
         offset: 0x21,
         kind: Kind::U8,
-        doc: "actor +0x5a9; target stat of physical damage (Dmg_Calc)",
+        doc: "actor +0x5a9; target stat of physical damage (MsCalcDamageCommand)",
     },
     Field {
         name: "magic",
         offset: 0x22,
         kind: Kind::U8,
-        doc: "actor +0x5aa; attacker stat of magic damage (Dmg_Calc)",
+        doc: "actor +0x5aa; attacker stat of magic damage (MsCalcDamageCommand)",
     },
     Field {
         name: "magic_defense",
         offset: 0x23,
         kind: Kind::U8,
-        doc: "actor +0x5ab; target stat of magic damage (Dmg_Calc)",
+        doc: "actor +0x5ab; target stat of magic damage (MsCalcDamageCommand)",
     },
     Field {
         name: "stat_24",
@@ -418,7 +418,7 @@ pub const MONSTER_FIELDS: &[Field] = &[
 ];
 
 /// Kernel monster text: 0 → actor +0x50 (name), 1 → +0x90, 3 → +0x190
-/// (`Mon_LoadText`, `0x00783680`).
+/// (`MsBtlReadMonster`, `0x00783680`).
 const MONSTER_STRINGS: &[&str] = &["name", "text_1", "text_2", "scan", "text_4"];
 
 const NAME_HELP: &[&str] = &["name", "text_1", "description", "text_3"];

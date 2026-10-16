@@ -15,8 +15,10 @@ Sources:
 
 Lines this script writes have a comment starting with "fh " and are rewritten
 on every run; edit the comment (drop the "fh " prefix) to keep a line as our
-own. Lines of ours are never renamed: where Fahrenheit names the same address,
-their name is appended to our comment as "fh: <name>".
+own. Lines of ours are never renamed by the script; we took Fahrenheit's
+names for ours on 2026-10-16 (the old name follows "was" in the comment).
+Where Fahrenheit names one of our addresses differently, their name is
+appended to our comment as "fh: <name>".
 
 Usage: tools/fh-import.py [--leads PATH] [--calls DIR] [--dry-run]
 """
@@ -116,7 +118,7 @@ def main():
     taken = Counter(n for _, n, _ in ours.values())
     entries = {}
     for addr, (kind, name, line) in ours.items():
-        if addr in fh:
+        if addr in fh and token(fh[addr]["name"]) != name:
             line += f"; fh: {fh[addr]['name']}" if "#" in line else f"  # fh: {fh[addr]['name']}"
         entries[addr] = line
 

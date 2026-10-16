@@ -232,10 +232,10 @@ darker toward the rim, a sheen on the glass. Markers keep the game's shape
 and colour; beyond the edge they sit on the rim line and fade in as the
 player comes nearer (from 1.5 radii beyond it); the destination marker
 always shows on the rim, exits show as bars. The renderer's answer carries flag 512; the hook then
-wraps `Guide_Update` (`0x0091da80`): it keeps the fade (`Guide_FadeStep`),
+wraps `rcbgGuideUpdateEx` (`0x0091da80`): it keeps the fade (`Guide_FadeStep`),
 the fog of war (`Guide_RevealFog`) and the blink counter, turns the game's
 mesh and fog passes off, and sends `Msg::Minimap` before each frame: the
-fade (`g_GuideFade`), the markers from `Minimap_GetWorkerMarker`
+fade (`g_GuideFade`), the markers from `AtelGetGuideMapActorInfo`
 (`0x0086b740`, colours from `g_GuideMarkerPalette`), the player among them
 (flag 0x800: position, yaw), and the mesh (`Guide_MeshObject`: matrix at
 +0xc0, i16 vertices and type 0 triangle packets, `g_GuidePacketStrides`)
@@ -263,9 +263,9 @@ the game's field of view. The overlay keeps the keyboard meanwhile (Alt
 keys too, but Alt+F4). The renderer's answer carries it (flag 64: eye and
 look-at in game space, the field of view, the roll); the hook wraps
 `Cam_Update` (`0x007bc110`): right before, the game's own override camera
-(`Cam_OverrideSet`) holds it, and after, the view and field of view go to
-the game's renderer as `Cam_Apply` would send them (`Render_SetFov`,
-`Render_SetView`), which the override's branch skips. The game then draws
+(`MsEffectCameraSet`) holds it, and after, the view and field of view go to
+the game's renderer as `Cam_Apply` would send them (`graphicCameraSetFOVy`,
+`graphicCameraSetWorldMatrix`), which the override's branch skips. The game then draws
 and culls for it; what lies outside the map's camera views may be
 unfinished. Off: the override ends.
 

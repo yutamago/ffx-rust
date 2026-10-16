@@ -1,7 +1,7 @@
 //! Message tables: an event's dialogue
 //! (`new_<lang>pc/event/obj_ps3/<xx>/<event>/<event>.bin`) and a battle's
 //! texts (`new_<lang>pc/battle/btl/<name>/<name>.bin`), loaded by
-//! `Msg_LoadFile` (`0x0088cac0`).
+//! `TKMallocAndReadEventMessage` (`0x0088cac0`).
 //!
 //! ```text
 //! n x 8 bytes   entries: u16 text offset, u16 flags,

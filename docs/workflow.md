@@ -48,10 +48,12 @@ stays theirs, we don't copy it. `tools/fh-import.py` merges into
   script, copied to `~/ffx-work/fahrenheit/<commit>/`).
 
 Their `A::B::c` becomes `A_B_c`, the convention their own FhCall tables use.
-Our names are never replaced; their name for the same address is appended to
-our comment as `fh: <name>`. Rerun the script after refreshing either source.
-When naming something new, use their name if they have one, so both projects
-mean the same function by the same word.
+Where both projects had named a function, we switched to their name
+(2026-10-16); our old name follows `was` in the comment. The script never
+renames our lines: if they later name one of ours differently, their name is
+appended to our comment as `fh: <name>`. Rerun the script after refreshing
+either source. When naming something new, use their name if they have one,
+so both projects mean the same function by the same word.
 
 ## Bulk dump
 
