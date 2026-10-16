@@ -55,6 +55,22 @@ appended to our comment as `fh: <name>`. Rerun the script after refreshing
 either source. When naming something new, use their name if they have one,
 so both projects mean the same function by the same word.
 
+Naming from local data, without the server (`tools/naming/`; each writes a
+proposals TSV that `apply.py` merges, skipping named addresses and taken
+names):
+
+```bash
+tools/naming/strmatch.py --out /tmp/str.tsv     # sole user of a string held once by both builds
+tools/naming/import_self.py --out /tmp/self.tsv # sole user of its own __FUNCTION__ string
+tools/naming/bracket.py --out /tmp/br.tsv       # alphabetical layout vs the Switch file's names
+tools/naming/bracket.py --holdout 0.1           # measure bracket's precision first
+tools/naming/apply.py /tmp/str.tsv /tmp/self.tsv /tmp/br.tsv
+```
+
+`tools/cg-match.py --out /tmp/cg.tsv` reruns the call-graph match against the
+current anchors; take leads with 3+ votes (about 99% on holdouts; 2-vote
+leads are about 91%).
+
 Branches that name things in the same range conflict in `ffx.sym`; during
 the merge, `tools/sym-resolve.py` merges it per symbol against the common
 ancestor (a line only one side changed takes that side; both changed: ours,
