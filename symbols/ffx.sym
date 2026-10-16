@@ -8427,6 +8427,7 @@
 0x009148d0 function yiLerpVec4                   # (t, a, b, out): four floats; from 0x009147b0
 0x00914920 function yiAnimDetach              # (scene, obj, kind): active animation slots (+0x9cac0, 0x28 bytes, 64) of obj and kind cleared, count +0x9cabc lowered; kind 2 turns keyframe animation off (yiKeyFrame_attachDObj)
 0x00914a10 function yiKeyFrame_main           # fh switch:cg2 0x710052e1e0
+0x00915120 function yiKeyFrameWrapAngles      # (v): four floats past pi less (1 - ftol(x / -2pi)) * 2pi, below -pi plus it (doubles 0x00b67118..38); yiKeyFrame_main; name ours
 0x009151c0 function yiRotMatrixSeq            # fh v3:exact 0x009151c0
 0x009152d0 function yiTexSwap_init            # fh v3:exact 0x009152d0
 0x00916290 function Yi_StrLower               # (s) tolower in place; own name
@@ -8442,10 +8443,13 @@
 0x009173e0 function yiIsPow2                     # (bits) -> 1 when at most one of the low 16 bits is set
 0x00917430 function yiLog2Ceil16                 # (bits) -> the only set bit's index, else the highest one's + 1; -1 none (low 16 bits)
 0x00917460 function yiPow2Ceil                   # (n) -> smallest 1 << k (k < 16) >= n, else 0
+0x00917490 function yiImageRectFree           # (page, list, img) -> 1 when img's rectangle (+0x11c/120/13c/140) is inside the page (+0x10/+0x14), aligned to power-of-two sizes and overlaps no other image of the list (+0x15c links); yiImageRman_serch; name ours
 0x009175f0 function yiImageRman_entry            # str-match switch: only user of 1 string(s) held once by both builds, e.g. "GSmem overflow.(%dx%d)\\n'%s'"; Switch 0x710053c930 yiImageRman_entry (symbols from Fahrenheit's server export)
 0x009178e0 function yiImageRman_foecrentry       # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'GSmem overflow.'; Switch 0x710053d0c0 yiImageRman_foecrentry (symbols from Fahrenheit's server export)
 0x00917b70 function yiImageRman_serch         # fh switch:bsim0.92 0x710053ccf0
 0x00917d80 function yiImageVramAlloc          # (img): GS memory by format +0xc (yiVramAllocPsm), 0x13 -> 0x1b and 0x14 -> 0x2c below page 0x2e00, 0x14 page cache 0x025d17a4; yiImageRman_entry
+0x00917e70 function yiImageTakeLastPage       # (img, page): an image fitting the last area (0x025d17a0..0x025d1798) goes there as 0x1b (PSMT8) or 0x2c (PSMT4, 0x0193bb24 set); a second PSMT4 shares it as 0x24 (returns 1); yiImageRman_entry; name ours
+0x00917f20 function yiVramSetup               # (pages, mode): the image VRAM areas (0x025d1798..d4) for modes 0..2, next 0xbc000, limit (0x38 - pages) << 14; returns the limit; name ours
 0x00918090 function yiVramAllocPsm               # (bytes, psm) -> address >> 6 or -1: as yiVramAlloc from regions 0, 1 (0x025d17bc/ac, 17b8/a8); PSMT8 (0x13) / PSMT4 (0x14) 4x / 8x the size from regions 2, 3 (17c0/b0, 17c4/b4)
 0x00918130 function yiVramAlloc                  # (bytes) -> g_YiVramNext >> 6 and moves it on by bytes rounded to 64, or -1 past g_YiVramLimit
 0x00918680 function yiImage_dumpall           # (rman) -> 0: dbgPrintf of every page's images (a bare ret on PC). Switch yiImage_dumpall: called by yiImageRman_entry and yiImageRman_foecrentry, as this is
@@ -8636,7 +8640,9 @@
 0x0091f980 function rcbgPSimAddWind           # fh switch:bsim1.00 0x7100546400
 0x0091f9b0 function rcbgPSimClearOMD          # fh switch:bsim1.00 0x71005460e0
 0x0091fd00 function rcbgPSimCreateFromOMD     # fh switch:bsim1.00 0x7100546080
+0x0091fd40 function rcbgPSimDelete            # (p): rcbgPSimFini, then rcFree(p) (tail call). Steam's rcbgPSim functions sort by name (CreateFromOMD 0x0091fd00, GetOmdIn 0x0091fdc0); Delete is the Switch name between them, and pppDrawMdlPSimDes calls it
 0x0091fd60 function rcbgRunRecordHook         # (obj): the hook at +0xc of record +0x14 called on the record when set (tail call); set by 0x0091fe2e
+0x0091fd80 function rcbgPSimFini              # (p): rcbgModelDelete(+0x14), rcfxParticleDelete(+0x18), each cleared when set. Switch name in the sorted rcbgPSim run (after Delete/Draw, before GetOmdIn); rcbgPSimDelete calls it
 0x0091fdc0 function rcbgPSimGetOmdIn          # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
 0x0091fdd0 function rcbgPSimGetPos            # fh switch:bsim1.00 0x7100546550
 0x0091fe00 function rcbgPSimInit              # fh switch:bsim1.00 0x7100545a90
@@ -8656,6 +8662,7 @@
 0x00920450 function rcbgSetReg                # fh v3:bsim1.00 0x00920450
 0x009204b0 function rcbgSetViewMatrix         # fh v3:exact 0x009204b0
 0x00920540 function rcbgSceneAddObject        # fh v3:exact 0x00920540
+0x00920580 function rcbgSceneWaveDCProc       # (scene): the wave Yn_SceneSetDC starts: sine (g_pppSinTable by +0xec) times +0xe8 into +0xac (faded for kind 2), +0xec += +0xe0, rcbgSceneWaveDCStop at +0xe4 counts, rcbgSceneSetMatrix; name ours
 0x00920650 function rcbgSceneWaveDCStop          # (scene): +0xac = 0.0, +0xdc = 0: ends the wave Yn_SceneSetDC starts (its update 0x00920580 calls it when +0xf0 reaches +0xe4)
 0x00920670 function rcbgSceneDelObject        # (scene, obj): the object's delete function, the table shifted and shrunk (rcRealloc rcbgScene.c 0xba)
 0x009206f0 function rcbgSceneDelObjects       # (scene, kind): rcbgSceneDelObject of the first of kind until none
@@ -8762,6 +8769,7 @@
 0x00925170 function rcefMainCreateTask        # fh v3:exact 0x00925170
 0x009251c0 function rcefMainFini              # fh v3:exact 0x009251c0
 0x00925210 function rcefMainInit              # fh v3:exact 0x00925210
+0x009253a0 function rcefMainKickPar           # (main, a, b, chr, bone, p0, p1, p2, flags, force): a new or the current object (unless its particles run), rcefMainSetPar, rcefObjAttachChr, three vectors to +0xd0/+0x100/+0x130, flags into +0xbc bits 4..12. Switch rcefMainKickPar calls rcefTaskCtrlIsEnd, rcefObjIsParEnd, rcefObjAttachChr as this does, and rcuiParProcKick calls it (cg_switch)
 0x00925440 function rcefMainProcRunAfter      # fh v3:exact 0x00925440
 0x009254f0 function rcefMainSetEnv               # (main): *(0x00c3a4cc) = main +0x10 (the ppp memory environment of rcefMainInit); g_MagicImports
 0x00925510 function rcefMainSetEnv_00925510      # the same code; g_MagicImports
@@ -9054,6 +9062,7 @@
 0x00934470 function rcuiLayerProc                # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'Layer Z'; Switch 0x71005591d0 rcuiLayerProc (symbols from Fahrenheit's server export)
 0x00934af0 function rcuiClearSelect           # (): g_RcuiWork +0x28c mode 1 clears bit 0 of the selected layer's +0xb0, mode 2 bit 1 of every layer (0xc0 bytes each)
 0x00934b50 function rcuiSetSelect             # (): as rcuiClearSelect, setting the bits (mode 2: all but the selected layer +0x288)
+0x00934fb0 function rcuiLoadSetTitle          # (): sprintf 'Load - %s' (0x00b68500) of the map directory (+0x64) and Gu_WindowSetTitle(+4); Switch's 'Load - %s' is used by rcuiLoadProc and rcuiLoadSetTitle only (str_switch)
 0x00935340 function rcuiMotionProc               # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'Motion Speed'; Switch 0x710055c730 rcuiMotionProc (symbols from Fahrenheit's server export)
 0x00935690 function rcuiMotionStep            # (d): the selected motion (work +0x8d8) moved d groups (ranges 0x00c60dc0, motions 0x00c60a78)
 0x009364a0 function rcuiPreMemWinOpen         # fh switch:bsim1.00 0x710055e6c0

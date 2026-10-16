@@ -195,6 +195,18 @@ pub const FOG_DEFAULTS: [u32; 4] = [0x00b6_7120, 0x00b4_82d8, 0x00b3_eb3c, 0x00b
 /// The largest finite float and its negation (`f32`s, `.rdata`):
 /// `yiBoundsMinMax`'s starting minimum and maximum.
 pub const BOUNDS_INIT: [u32; 2] = [0x00b1_7504, 0x00b1_f2d0];
+/// pi, -2pi, 2pi, -pi (`f64`s, `.rdata`): `yiKeyFrameWrapAngles`.
+pub const WRAP_CONSTS: [u32; 4] = [0x00b6_7118, 0x00b6_7138, 0x00b6_7128, 0x00b6_7130];
+/// The image VRAM area block (`0x025d1798`..`0x025d17d4`, `yiVramSetup`).
+pub const VRAM_AREAS: u32 = 0x025d_1798;
+/// The end of the last image area (`yiImageTakeLastPage`).
+pub const LAST_AREA_END: Global<u32> = Global::new(0x025d_1798);
+/// Where the last image area is used up to (its start while unused).
+pub const LAST_AREA_USED: Global<u32> = Global::new(0x025d_179c);
+/// The start of the last image area.
+pub const LAST_AREA_START: Global<u32> = Global::new(0x025d_17a0);
+/// Set while a PSMT4 image placed in the last area can share it (`u8`).
+pub const LAST_AREA_PSMT4: Global<u8> = Global::new(0x0193_bb24);
 /// `FFXVu0RotMatrixX/Y/Z(dst, src, angle)` (`0x006ed780`, `0x006ed7c0`,
 /// `0x006ed800`).
 pub const VU0_ROT_MATRIX: [u32; 3] = [0x006e_d780, 0x006e_d7c0, 0x006e_d800];
@@ -842,6 +854,7 @@ pub mod bridge {
     use super::state;
     use ffx_bridge::x87::{Reg, ftol};
     use ffx_ps2::vu0::bridge::copy_vector;
+    use ffx_system::stub::ptr32;
 
     /// `yiGetColorScale(out)` (`0x009088d0`): returns `FFXVu0CopyVector`'s
     /// `eax` (the last word).
@@ -3860,5 +3873,214 @@ pub mod bridge {
             v = v.wrapping_add(0x10);
         }
         r
+    }
+
+    // ---- round 13 ----
+
+    /// `yiKeyFrameWrapAngles(v)` (`0x00915120`): each of the four floats
+    /// past pi brought down by `(1 - ftol(x / -2pi)) * 2pi`, then each below
+    /// -pi brought up the same way (the constants are `.rdata` doubles,
+    /// [`super::WRAP_CONSTS`]).
+    pub fn yi_key_frame_wrap_angles(mem: &mut impl Mem, v: u32) {
+        let [pi, neg_two_pi, two_pi, neg_pi] =
+            super::WRAP_CONSTS.map(|at| mem.read::<f64>(mem.rebase(at)));
+        for i in 0..4u32 {
+            let at = v.wrapping_add(4 * i);
+            let x = x87::load(mem.read(at));
+            if x > pi {
+                let k = 1i32.wrapping_sub(ftol(mem, x / neg_two_pi).cast_signed());
+                let kf = x87::load(x87::store(f64::from(k)));
+                mem.write(at, x87::store(x - kf * two_pi));
+            }
+            let x = x87::load(mem.read(at));
+            if x < neg_pi {
+                let k = 1i32.wrapping_sub(ftol(mem, x / neg_two_pi).cast_signed());
+                let kf = x87::load(x87::store(f64::from(k)));
+                let x = x87::load(mem.read(at));
+                mem.write(at, x87::store(kf * two_pi + x));
+            }
+        }
+    }
+
+    /// `yiImageTakeLastPage(img, page)` (`0x00917e70`): when the image's
+    /// pages (`page +0x140`) fit the last area
+    /// (`(0x025d1798 - 0x025d17a0) >> 8`): with the area unused (`0x025d179c` at its start), a PSMT8
+    /// image becomes 0x1b and a PSMT4 0x2c (remembered at `0x0193bb24`),
+    /// placed there (`+4`, `+0x14`) and the area marked used; with it used
+    /// and a PSMT4 remembered, a PSMT4 image becomes 0x24 and shares it
+    /// (returns 1). Else 0.
+    pub fn yi_image_take_last_page(mem: &mut impl Mem, img: u32, page: u32) -> u32 {
+        let (end, used, start) = (
+            super::LAST_AREA_END,
+            super::LAST_AREA_USED,
+            super::LAST_AREA_START,
+        );
+        let start_v = start.get(mem);
+        let pages = end.get(mem).wrapping_sub(start_v) >> 8;
+        if mem.read::<u32>(page.wrapping_add(0x140)) > pages {
+            return 0;
+        }
+        let flag = super::LAST_AREA_PSMT4;
+        if used.get(mem) == start_v {
+            flag.set(mem, 0);
+            match mem.read::<u32>(img.wrapping_add(0xc)) {
+                0x13 => mem.write(img.wrapping_add(0xc), 0x1bu32),
+                0x14 => {
+                    flag.set(mem, 1);
+                    mem.write(img.wrapping_add(0xc), 0x2cu32);
+                }
+                _ => return 0,
+            }
+            mem.write(img.wrapping_add(0x14), pages);
+            let s = start.get(mem) >> 6;
+            mem.write(img.wrapping_add(4), s);
+            let e = end.get(mem);
+            used.set(mem, e);
+            return 0;
+        }
+        if flag.get(mem) == 0 || mem.read::<u32>(img.wrapping_add(0xc)) != 0x14 {
+            return 0;
+        }
+        mem.write(img.wrapping_add(0xc), 0x24u32);
+        let s = start.get(mem) >> 6;
+        mem.write(img.wrapping_add(4), s);
+        mem.write(img.wrapping_add(0x14), pages);
+        flag.set(mem, 0);
+        1
+    }
+
+    /// `yiImageRectFree(page, list, img)` (`0x00917490`): 1 when the
+    /// image's rectangle (`+0x11c` x, `+0x120` y, `+0x13c` w, `+0x140` h)
+    /// lies inside the page (`+0x10`, `+0x14`), aligned to its size when
+    /// that is a power of two, and overlaps none of the other images in
+    /// the list (linked by `+0x15c`); else 0. A zero power-of-two size
+    /// divides by zero in the original; this gives 0.
+    pub fn yi_image_rect_free(mem: &impl Mem, page: u32, list: u32, img: u32) -> u32 {
+        let y = mem.read::<u32>(img.wrapping_add(0x120));
+        let w = mem.read::<u32>(img.wrapping_add(0x13c));
+        let x = mem.read::<u32>(img.wrapping_add(0x11c));
+        let h = mem.read::<u32>(img.wrapping_add(0x140));
+        let right = x.wrapping_sub(1).wrapping_add(w);
+        let bottom = h.wrapping_sub(1).wrapping_add(y);
+        if right >= mem.read::<u32>(page.wrapping_add(0x10))
+            || bottom >= mem.read::<u32>(page.wrapping_add(0x14))
+            || x.cast_signed() < 0
+            || y.cast_signed() < 0
+        {
+            return 0;
+        }
+        for (v, size) in [(x, w), (y, h)] {
+            if super::is_pow2(size) && v.checked_rem(size) != Some(0) {
+                return 0;
+            }
+        }
+        let (x, y, right, bottom) = (
+            x.cast_signed(),
+            y.cast_signed(),
+            right.cast_signed(),
+            bottom.cast_signed(),
+        );
+        let within = |v: i32, lo: i32, hi: i32| lo <= v && v <= hi;
+        let mut o = list;
+        while o != 0 {
+            if o != img {
+                let ox = mem.read::<i32>(o.wrapping_add(0x11c));
+                let oy = mem.read::<i32>(o.wrapping_add(0x120));
+                let oright = mem
+                    .read::<i32>(o.wrapping_add(0x13c))
+                    .wrapping_sub(1)
+                    .wrapping_add(ox);
+                let obottom = mem
+                    .read::<i32>(o.wrapping_add(0x140))
+                    .wrapping_sub(1)
+                    .wrapping_add(oy);
+                let across = within(x, ox, oright)
+                    || within(right, ox, oright)
+                    || within(ox, x, right)
+                    || within(oright, x, right);
+                let down = within(y, oy, obottom)
+                    || within(bottom, oy, obottom)
+                    || within(oy, y, bottom)
+                    || within(obottom, y, bottom);
+                if across && down {
+                    return 0;
+                }
+            }
+            o = ptr32(mem.read(o.wrapping_add(0x15c)));
+        }
+        1
+    }
+
+    /// `yiVramSetup(pages, mode)` (`0x00917f20`): the image VRAM areas for
+    /// mode 0, 1 or 2 (others keep theirs), then the shared ones: next
+    /// 0xbc000, the limit `(0x38 - pages) << 14`, 0xf0000, 0x100000 and
+    /// the page cache -1. Returns the limit.
+    pub fn yi_vram_setup(mem: &mut impl Mem, pages: u32, mode: u32) -> u32 {
+        let mut put = |off: u32, v: u32| {
+            let at = mem.rebase(super::VRAM_AREAS + off);
+            mem.write(at, v);
+        };
+        // offsets from 0x025d1798
+        match mode {
+            0 => {
+                for (o, v) in [
+                    (0x1c, 0x9_0000),
+                    (0x18, 0),
+                    (0x28, 0),
+                    (0x38, 0),
+                    (4, 0x9_0000),
+                    (8, 0x9_0000),
+                    (0, 0x9_c000),
+                ] {
+                    put(o, v);
+                }
+            }
+            1 => {
+                for (o, v) in [
+                    (0x2c, 0x1_c000),
+                    (0x3c, 0x1_c000),
+                    (0x1c, 0xa_c000),
+                    (0x18, 0),
+                    (0x28, 0),
+                    (0x38, 0),
+                    (4, 0xa_c000),
+                    (8, 0xa_c000),
+                    (0, 0xb_8000),
+                ] {
+                    put(o, v);
+                }
+            }
+            2 => {
+                for (o, v) in [
+                    (0x1c, 0x6_0000),
+                    (0x28, 0x8_4000),
+                    (0x38, 0x8_4000),
+                    (0x18, 0xb_4000),
+                    (4, 0x6_0000),
+                    (8, 0x6_0000),
+                    (0, 0x6_8000),
+                ] {
+                    put(o, v);
+                }
+            }
+            _ => {}
+        }
+        if mode == 0 || mode == 2 {
+            put(0x3c, 0);
+            put(0x2c, 0);
+        }
+        let limit = 0x38u32.wrapping_sub(pages).wrapping_shl(14);
+        for (o, v) in [
+            (0x24, 0xb_c000),
+            (0x34, 0xb_c000),
+            (0x14, limit),
+            (0x20, 0xf_0000),
+            (0x30, 0xf_0000),
+            (0x10, 0x10_0000),
+            (0xc, u32::MAX),
+        ] {
+            put(o, v);
+        }
+        limit
     }
 }

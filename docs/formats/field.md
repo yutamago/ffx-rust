@@ -660,6 +660,36 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   `yiImage_dumpall` (`0x00918680`) only prints, through `dbgPrintf` (a
   bare `ret`).
 
+## Float results, waves, particle kicks and image VRAM (round 13)
+
+- The field oracle's `Orig::eax`/`Orig::void` now fail when the original
+  leaves a value in `ST0`: a port returning an integer or nothing would
+  drop it (a void `Ch_CheckRadian` made every model invisible). All
+  earlier field tests pass under it, and no map shim returns non-float
+  for a function its callers read as `(float10)` in the dump.
+- `rcbgSceneWaveDCProc` (`0x00920580`) runs the wave `Yn_SceneSetDC`
+  starts: `+0xac = +0xe8 * sin`, the sine from `g_pppSinTable` at
+  `ftol(+0xec * k / 2pi) >> 4` (`k` the double at `0x00b51558`), faded by
+  `(+0xe4 - +0xf0) / +0xe4` for kind 2; `+0xec += +0xe0`; it stops
+  (`rcbgSceneWaveDCStop`) when the counter reaches `+0xe4`.
+- `rcefMainKickPar` (`0x009253a0`, the Switch name: same callees, called
+  by `rcuiParProcKick`) starts a particle effect on a main: a new object
+  when its task ended, else the current one unless its particles still
+  run (and `force` is 0).
+- `rcbgPSimDelete`/`rcbgPSimFini` (`0x0091fd40`/`0x0091fd80`) take the
+  Switch names from the sorted `rcbgPSim` run of the Steam build.
+- `yiKeyFrameWrapAngles` (`0x00915120`) wraps four angles into `-pi..pi`
+  by `(1 - ftol(x / -2pi)) * 2pi`.
+- Image VRAM: `yiVramSetup` (`0x00917f20`) sets the area block
+  `0x025d1798..d4` for modes 0..2 and the limit `(0x38 - pages) << 14`;
+  `yiImageRectFree` (`0x00917490`) tests a rectangle against the page and
+  the other images (a zero power-of-two size divides by zero in the
+  original); `yiImageTakeLastPage` (`0x00917e70`) places a PSMT8/PSMT4
+  image in the last area as 0x1b/0x2c, a second PSMT4 sharing it as
+  0x24.
+- `rcuiLoadSetTitle` (`0x00934fb0`) titles the load window
+  "Load - <map directory>".
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

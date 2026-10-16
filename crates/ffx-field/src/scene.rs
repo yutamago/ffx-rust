@@ -8,6 +8,9 @@ pub const DEG: Global<f64> = Global::new(0x00b1_1330);
 /// `FFXVu0RotMatrixX/Y/Z(dst, src, angle)` (`0x006ed780`, `0x006ed7c0`,
 /// `0x006ed800`).
 pub const VU0_ROT: [u32; 3] = [0x006e_d780, 0x006e_d7c0, 0x006e_d800];
+/// The wave phase's scale (`f64`, `.rdata`, `0x00b51558`):
+/// `rcbgSceneWaveDCProc`'s sine index is `phase * this / 2pi`.
+pub const WAVE_PHASE_SCALE: u32 = 0x00b5_1558;
 
 /// Offsets in a scene (`rcbgSceneInit`, `0x110` bytes).
 pub mod layout {
@@ -582,5 +585,50 @@ pub mod bridge {
             mem.write(cam.wrapping_add(0x88 + 4 * i), x87::store(-m));
         }
         r
+    }
+
+    /// `rcbgSceneWaveDCProc(s)` (`0x00920580`): with a wave (`+0xdc`), its
+    /// sine (`g_pppSinTable` at `ftol(+0xec * k / 2pi) >> 4`), faded by
+    /// `(+0xe4 - +0xf0) / +0xe4` for kind 2, scales `+0xe8` into `+0xac`;
+    /// the counter `+0xf0` counts, the phase `+0xec` moves by `+0xe0`; the
+    /// wave stops when the counter reaches a positive `+0xe4`; then
+    /// `rcbgSceneSetMatrix`.
+    pub fn rcbg_scene_wave_dc_proc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        s: u32,
+        call: &mut C,
+    ) {
+        let kind = mem.read::<u32>(s.wrapping_add(0xdc));
+        if kind == 0 {
+            return;
+        }
+        let k = mem.read::<f64>(mem.rebase(super::WAVE_PHASE_SCALE));
+        let two_pi = mem.read::<f64>(mem.rebase(crate::vu0::TWO_PI));
+        let ph = x87::load(mem.read(s.wrapping_add(0xec)));
+        let i = ffx_bridge::x87::ftol(mem, ph * k / two_pi);
+        let i = (i.cast_signed() >> 4).cast_unsigned() & 0xfff;
+        let mut v = x87::copy(mem.read(mem.rebase(crate::abmap::SIN_TABLE) + 4 * i));
+        if kind == 2 {
+            let n = mem.read::<i32>(s.wrapping_add(0xe4));
+            if n > 0 {
+                let left = n.wrapping_sub(mem.read::<i32>(s.wrapping_add(0xf0)));
+                let a = x87::load(x87::store(f64::from(left)));
+                let b = x87::load(x87::store(f64::from(n)));
+                v = x87::store(a / b * x87::load(v));
+            }
+        }
+        let n = mem.read::<i32>(s.wrapping_add(0xe4));
+        let e8 = x87::load(mem.read(s.wrapping_add(0xe8)));
+        let c = mem.read::<u32>(s.wrapping_add(0xf0)).wrapping_add(1);
+        mem.write(s.wrapping_add(0xf0), c);
+        mem.write(s.wrapping_add(0xac), x87::store(e8 * x87::load(v)));
+        let e0 = x87::load(mem.read(s.wrapping_add(0xe0)));
+        let ec = x87::load(mem.read(s.wrapping_add(0xec)));
+        mem.write(s.wrapping_add(0xec), x87::store(e0 + ec));
+        if n > 0 && mem.read::<i32>(s.wrapping_add(0xf0)) >= n {
+            model::bridge::rcbg_scene_wave_dc_stop(mem, s);
+        }
+        let f = mem.rebase(super::SCENE_SET_MATRIX);
+        call(mem, f, &[s]);
     }
 }

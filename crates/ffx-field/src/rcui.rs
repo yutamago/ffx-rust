@@ -21,6 +21,10 @@ pub const MOTION_GROUPS: u32 = 0x00c6_0dc0;
 pub const CH_GET_NB_ELEM: u32 = 0x0083_03f0;
 /// `Ch_SetMotionSpeed(chr, speed)` (`0x0082b380`).
 pub const CH_SET_MOTION_SPEED: u32 = 0x0082_b380;
+/// "Load - %s" (`0x00b68500`).
+pub const LOAD_TITLE_FORMAT: u32 = 0x00b6_8500;
+/// `Gu_WindowSetTitle(w, title)` (`0x0084b6a0`).
+pub const GU_WINDOW_SET_TITLE: u32 = 0x0084_b6a0;
 
 /// Offsets in the work area.
 pub mod work {
@@ -567,5 +571,26 @@ pub mod bridge {
         let w = WORK.get(mem);
         mem.write(w.wrapping_add(0x8d4), 0x100u32);
         w
+    }
+
+    /// `rcuiLoadSetTitle(buf)` (`0x00934fb0`): "Load - <dir>" (the map
+    /// directory by `+0x64`) into `buf` (64 bytes, the original's stack)
+    /// and `Gu_WindowSetTitle(+4, buf)`; returns that.
+    pub fn rcui_load_set_title<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        buf: u32,
+        call: &mut C,
+    ) -> u32 {
+        let w = WORK.get(mem);
+        let i = mem.read::<u32>(w.wrapping_add(0x64));
+        let dirs = mem.rebase(super::MAP_DIRS);
+        let dir = mem.read::<u32>(dirs.wrapping_add(i.wrapping_mul(4)));
+        let fmt = mem.rebase(super::LOAD_TITLE_FORMAT);
+        let sprintf = mem.read::<u32>(mem.rebase(crate::yi::CRT_SPRINTF));
+        call(mem, sprintf, &[buf, fmt, dir]);
+        let w = WORK.get(mem);
+        let win = mem.read::<u32>(w.wrapping_add(4));
+        let f = mem.rebase(super::GU_WINDOW_SET_TITLE);
+        call(mem, f, &[win, buf])
     }
 }

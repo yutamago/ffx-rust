@@ -2991,6 +2991,45 @@ ported! {
     yiBoundsMinMax @ 0x0091_30f0 => extern "C" fn shim_yi_bounds_min_max(obj: u32, min: u32, max: u32) -> u32 {
         yi::bridge::yi_bounds_min_max(&mut mem(), obj, min, max)
     }
+    // ---- round 13 ----
+    /// `rcbgPSimFini(p)`.
+    rcbgPSimFini @ 0x0091_fd80 => extern "C" fn shim_rcbg_psim_fini(p: u32) -> u32 {
+        model::bridge::rcbg_psim_fini(&mut mem(), p, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcbgPSimDelete(p)`.
+    rcbgPSimDelete @ 0x0091_fd40 => extern "C" fn shim_rcbg_psim_delete(p: u32) -> u32 {
+        model::bridge::rcbg_psim_delete(&mut mem(), p, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcuiLoadSetTitle()`.
+    rcuiLoadSetTitle @ 0x0093_4fb0 => extern "C" fn shim_rcui_load_set_title() -> u32 {
+        let mut buf = Matrix([0; 0x40]);
+        let b = u32::try_from((&raw mut buf).expose_provenance()).unwrap_or(0);
+        rcui::bridge::rcui_load_set_title(&mut mem(), b, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcbgSceneWaveDCProc(scene)`.
+    rcbgSceneWaveDCProc @ 0x0092_0580 => extern "C" fn shim_rcbg_scene_wave_dc_proc(s: u32) {
+        scene::bridge::rcbg_scene_wave_dc_proc(&mut mem(), s, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefMainKickPar(main, a, b, chr, bone, p0, p1, p2, flags, force)`.
+    rcefMainKickPar @ 0x0092_53a0 => extern "C" fn shim_rcef_main_kick_par(m: u32, a: u32, b: u32, chr: u32, bone: u32, p0: u32, p1: u32, p2: u32, flags: u32, force: u32) -> u32 {
+        task::bridge::rcef_main_kick_par(&mut mem(), [m, a, b, chr, bone, p0, p1, p2, flags, force], &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `yiKeyFrameWrapAngles(v)`.
+    yiKeyFrameWrapAngles @ 0x0091_5120 => extern "C" fn shim_yi_key_frame_wrap_angles(v: u32) {
+        yi::bridge::yi_key_frame_wrap_angles(&mut mem(), v);
+    }
+    /// `yiImageTakeLastPage(img, page)`.
+    yiImageTakeLastPage @ 0x0091_7e70 => extern "C" fn shim_yi_image_take_last_page(img: u32, page: u32) -> u32 {
+        yi::bridge::yi_image_take_last_page(&mut mem(), img, page)
+    }
+    /// `yiImageRectFree(page, list, img)`.
+    yiImageRectFree @ 0x0091_7490 => extern "C" fn shim_yi_image_rect_free(page: u32, list: u32, img: u32) -> u32 {
+        yi::bridge::yi_image_rect_free(&mem(), page, list, img)
+    }
+    /// `yiVramSetup(pages, mode)`.
+    yiVramSetup @ 0x0091_7f20 => extern "C" fn shim_yi_vram_setup(pages: u32, mode: u32) -> u32 {
+        yi::bridge::yi_vram_setup(&mut mem(), pages, mode)
+    }
 }
 
 /// The original's 16-byte aligned stack buffer for a load-image packet
