@@ -1094,6 +1094,10 @@ ported! {
         let frame = locals.0.as_mut_ptr() as u32 + 0x90;
         slots::bridge::opp2_md_break(&mut mem(), obj, list, frame, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opp_0582_cmd_a70910(obj, cmd)`.
+    opp_0582_cmd_a70910 @ 0x00a7_0910 => extern "C" fn opp_0582_cmd_a70910(obj: u32, cmd: u32) -> u32 {
+        slots::bridge::opp_0582_cmd_a70910(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

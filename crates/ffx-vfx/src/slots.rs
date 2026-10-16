@@ -1610,4 +1610,189 @@ pub mod bridge {
         go(mem, 0x007e_6a60, &[0x200], call);
         0
     }
+
+    /// `opp_0582_cmd_a70910(obj, cmd)` (`0x00a70910`), the `opus_0582_*`
+    /// effect's command on the part `rec` (`obj +0x220`), the character
+    /// `g_EtChrHandles[rec +0x18]` and the unit list `obj + 0x300`:
+    /// - 0: a buffer of `n` = `i16 cmd[2]` 32-byte entries plus 0x10 into
+    ///   `rec +0xbc` (`0x007ff780` on `obj +0x3a8`), its header `n`, 0;
+    ///   `cmd + 4`.
+    /// - 0x1000: `obj[0..2]` = `n` / 256, `obj[2]` = `rec +0x3c` / 256; the
+    ///   matrix `obj + 0x40` scaled by them (`op_unit_m_scale2`) and moved
+    ///   to `rec + 0x90` (`op_trans_m`), `obj` = the part's matrix times
+    ///   it, `opus_0582_dot_draw(rec +0xbc, rec, obj, i16 obj +0x212)`;
+    ///   `cmd + 4`.
+    /// - 0x2000: unless `obj +0x212`, `0x00a73740(unit +0xbc, rec)` for the
+    ///   unit `u16 cmd[2]`; `cmd + 4`.
+    /// - 0x4000: the character's texture bases (`Ch_TextureSetClutBase(chr,
+    ///   -1, 0x3c00)`, `Ch_TextureSetImageBase(chr, -1, 0x2ee0)`),
+    ///   `0x00803220(points, chr, 0, points + 0x80000)` on `list +0x28`, a
+    ///   buffer of `0x00a72310(points)` bytes into `rec +0xbc`, `obj` = the
+    ///   part matrix, `opus_0582_break_make(buffer, points, obj)`; `cmd + 2`.
+    /// - 0x5000: `obj` = the part matrix, the textures loaded
+    ///   (`Ch_TextureLoadImage`, `Ch_TextureLoadClut`, slot -1),
+    ///   `opus_0582_draw(rec +0xbc, rec, unit, obj, obj + 0x280, obj +
+    ///   0x2c0)` for the unit `u16 cmd[2]`; `cmd + 4`.
+    /// - 0x6000: a buffer of `n` 48-byte entries plus 0x10, its header `n`,
+    ///   0, each entry's first `u16` cleared; `cmd + 4`.
+    /// - 0x7000: `obj` = the unit `u16 cmd[2]`'s matrix (`0x008062c0` at
+    ///   its `+0x30`, `+0x90`), `obj + 0xc0` = the part's matrix
+    ///   (`op_unit_m` at `obj + 0x40`, `op_mul_m`),
+    ///   `opus_0582_break_draw(rec +0xbc, unit +0xbc, rec, unit u16
+    ///   cmd[4], obj, obj + 0xc0, i16 obj +0x212)`; `cmd + 6`.
+    /// - 0x8000: `Sg_FadeOutW(1)`; `cmd + 2`.
+    /// - else `cmd`.
+    #[allow(clippy::too_many_lines)]
+    pub fn opp_0582_cmd_a70910<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use crate::x87::{MUL, Reg};
+        let (kind, rec) = kind_rec(mem, obj);
+        let slot = u32::from(mem.read::<u8>(rec.wrapping_add(0x18)));
+        let chr: u32 = mem.read(addr(mem, 0x012a_8100).wrapping_add(4 * slot));
+        let list = obj.wrapping_add(0x300);
+        let heap = |mem: &M| mem.read::<u32>(obj.wrapping_add(0x3a8));
+        let table = |mem: &mut M, size: u32, call: &mut _| {
+            let n = sw(mem, cmd, 2);
+            let h = heap(mem);
+            let b = go(
+                mem,
+                0x007f_f780,
+                &[h, n.wrapping_mul(size).wrapping_add(0x10)],
+                call,
+            );
+            mem.write(rec.wrapping_add(0xbc), b);
+            mem.write(b, n);
+            mem.write(b.wrapping_add(4), 0u32);
+            (n, b)
+        };
+        match kind {
+            0 => {
+                table(mem, 0x20, call);
+                cmd.wrapping_add(4)
+            }
+            0x1000 => {
+                let c = f64_at(mem, 0x00b5_0198);
+                #[allow(clippy::cast_precision_loss)] // an i16
+                let v = f64::from(mem.read::<i16>(cmd.wrapping_add(2)));
+                let s = Reg::Num(v).constant(MUL, c).store();
+                mem.write(obj.wrapping_add(4), s);
+                mem.write(obj, s);
+                let z = Reg::Num(c)
+                    .mem(MUL, mem.read(rec.wrapping_add(0x3c)))
+                    .store();
+                mem.write(obj.wrapping_add(8), z);
+                let m = obj.wrapping_add(0x40);
+                go(mem, 0x007e_a730, &[m, obj], call);
+                go(mem, 0x007e_a550, &[m, m, rec.wrapping_add(0x90)], call);
+                let part = go(mem, 0x0080_1f00, &[obj, rec], call);
+                go(mem, 0x007e_83b0, &[obj, part, m], call);
+                let flag = sw(mem, obj, 0x212);
+                let b: u32 = mem.read(rec.wrapping_add(0xbc));
+                go(mem, 0x00a7_2b80, &[b, rec, obj, flag], call);
+                cmd.wrapping_add(4)
+            }
+            0x2000 => {
+                if mem.read::<u16>(obj.wrapping_add(0x212)) == 0 {
+                    let no = w(mem, cmd, 2);
+                    let u = go(mem, 0x0080_1060, &[list, rec, no], call);
+                    let b: u32 = mem.read(u.wrapping_add(0xbc));
+                    go(mem, 0x00a7_3740, &[b, rec], call);
+                }
+                cmd.wrapping_add(4)
+            }
+            0x4000 => {
+                let pts: u32 = mem.read(list.wrapping_add(0x28));
+                go(mem, 0x0083_13c0, &[chr, u32::MAX, 0x3c00], call);
+                go(mem, 0x0083_1390, &[chr, u32::MAX, 0x2ee0], call);
+                let end = mem
+                    .read::<u32>(list.wrapping_add(0x28))
+                    .wrapping_add(0x8_0000);
+                go(mem, 0x0080_3220, &[pts, chr, 0, end], call);
+                let size = go(mem, 0x00a7_2310, &[pts], call);
+                let h = heap(mem);
+                let b = go(mem, 0x007f_f780, &[h, size], call);
+                mem.write(rec.wrapping_add(0xbc), b);
+                part_matrix(mem, obj, rec, obj, rec.wrapping_add(0x30), call);
+                go(mem, 0x00a7_1780, &[b, pts, obj], call);
+                cmd.wrapping_add(2)
+            }
+            0x5000 => {
+                let no = w(mem, cmd, 2);
+                let u = go(mem, 0x0080_1060, &[list, rec, no], call);
+                part_matrix(mem, obj, rec, obj, rec.wrapping_add(0x30), call);
+                go(mem, 0x0083_1300, &[chr, u32::MAX], call);
+                go(mem, 0x0083_11d0, &[chr, u32::MAX], call);
+                let b: u32 = mem.read(rec.wrapping_add(0xbc));
+                go(
+                    mem,
+                    0x00a7_0d70,
+                    &[
+                        b,
+                        rec,
+                        u,
+                        obj,
+                        obj.wrapping_add(0x280),
+                        obj.wrapping_add(0x2c0),
+                    ],
+                    call,
+                );
+                cmd.wrapping_add(4)
+            }
+            0x6000 => {
+                let (n, b) = table(mem, 0x30, call);
+                if n != 0 {
+                    let mut i = 0u32;
+                    loop {
+                        mem.write(b.wrapping_add(0x10).wrapping_add(0x30 * i), 0u16);
+                        i = i.wrapping_add(1);
+                        if i >= mem.read::<u32>(b) {
+                            break;
+                        }
+                    }
+                }
+                cmd.wrapping_add(4)
+            }
+            0x7000 => {
+                let no = w(mem, cmd, 2);
+                let u = go(mem, 0x0080_1060, &[list, rec, no], call);
+                let side = i32::from(mem.read::<i8>(obj.wrapping_add(0x21e))).cast_unsigned();
+                let k: u32 = mem.read(addr(mem, 0x00b5_01c0));
+                let slot = u32::from(mem.read::<u8>(rec.wrapping_add(0x18)));
+                go(
+                    mem,
+                    0x0080_62c0,
+                    &[
+                        obj,
+                        slot,
+                        crate::x87::load(k),
+                        u.wrapping_add(0x30),
+                        u.wrapping_add(0x90),
+                        side,
+                    ],
+                    call,
+                );
+                let e: u32 = mem.read(u.wrapping_add(0xbc));
+                let m = obj.wrapping_add(0x40);
+                go(mem, 0x007e_a6d0, &[m], call);
+                let part = go(mem, 0x0080_1f00, &[obj, rec], call);
+                let w0 = obj.wrapping_add(0xc0);
+                go(mem, 0x007e_83b0, &[w0, part, m], call);
+                let no = w(mem, cmd, 4);
+                let u2 = go(mem, 0x0080_1060, &[list, rec, no], call);
+                let flag = sw(mem, obj, 0x212);
+                let b: u32 = mem.read(rec.wrapping_add(0xbc));
+                go(mem, 0x00a7_2380, &[b, e, rec, u2, obj, w0, flag], call);
+                cmd.wrapping_add(6)
+            }
+            0x8000 => {
+                go(mem, 0x0082_cbe0, &[1], call);
+                cmd.wrapping_add(2)
+            }
+            _ => cmd,
+        }
+    }
 }

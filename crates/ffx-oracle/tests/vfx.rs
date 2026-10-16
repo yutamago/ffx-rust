@@ -6329,3 +6329,62 @@ fn md_break_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn opus_0582_commands_match_the_original() {
+    use slots::bridge as s;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a7_0910);
+        let (unit, buf) = (p.alloc(0x100), p.alloc(0x400));
+        // what the unit, buffer and size stand-ins return
+        let cells = p.alloc(12);
+        p.set(cells, unit);
+        p.set(cells + 4, buf);
+        for (sym, words, ret) in [
+            (0x0080_1060u32, &[0u8, 0, 0][..], Some(cells)),
+            (0x007f_f780, &[0, 0], Some(cells + 4)),
+            (0x007e_a730, &[0, 3], None),
+            (0x007e_a550, &[0, 0, 0], None),
+            (0x0080_1f00, &[0, 0], None),
+            (0x007e_83b0, &[0, 0, 0], None),
+            (0x00a7_2b80, &[0, 0, 0, 0], None),
+            (0x00a7_3740, &[0, 0], None),
+            (0x0083_13c0, &[0, 0, 0], None),
+            // 0x00831390 is 0x30 bytes before 0x008313c0: two words
+            (0x0083_1390, &[0, 0], None),
+            (0x0080_3220, &[0, 0, 0, 0], None),
+            (0x00a7_2310, &[0], Some(cells + 8)),
+            (0x0080_62c0, &[0, 0, 0, 0, 0, 0], None),
+            (0x00a7_1780, &[0, 0, 0], None),
+            (0x0083_1300, &[0, 0], None),
+            (0x0083_11d0, &[0, 0], None),
+            (0x00a7_0d70, &[0, 0, 0, 0, 0, 0], None),
+            (0x007e_a6d0, &[0], None),
+            (0x00a7_2380, &[0, 0, 0, 0, 0, 0, 0], None),
+            (0x0082_cbe0, &[0], None),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        let obj = p.alloc(0x400);
+        let rec = p.alloc(0x100);
+        let cmd = p.alloc(0x10);
+        for _ in 0..2000 {
+            for (at, len) in [(obj, 0x400), (rec, 0x100), (cmd, 0x10), (unit, 0x100)] {
+                p.fill(at, len, &mut rng);
+            }
+            p.set(obj + 0x220, rec);
+            let kind = u16::try_from(rng.below(10)).unwrap() << 12;
+            let low: u16 = p.get(obj + 0x21a);
+            p.set(obj + 0x21a, (low & 0x0fff) | kind);
+            let x = finite(&mut rng);
+            p.set(rec + 0x3c, x);
+            // kind 0x6000 clears every entry of the new buffer: few of them
+            p.set(cmd + 2, rng.pick(&[0i16, 1, 7, 3]));
+            p.set(obj + 0x212, u16::from(rng.chance(30)));
+            p.set(cells + 8, rng.below(0x100));
+            p.check("opp_0582_cmd_a70910", 0x00a7_0910, &[obj, cmd], |m| {
+                Some(s::opp_0582_cmd_a70910(m, obj, cmd, &mut call_original))
+            });
+        }
+    }
+}
