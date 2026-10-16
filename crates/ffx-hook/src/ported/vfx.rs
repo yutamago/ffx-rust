@@ -53,7 +53,7 @@ fn crt_rand() -> u32 {
 }
 
 /// A function the originals call through a pointer (the program table's
-/// `+4`..`+0x24`, `TOGetFFXLang`, `graphicVFXDestroy`, ...): cdecl, up to eight
+/// `+4`..`+0x24`, `TOGetFFXLang`, `graphicVFXDestroy`, ...): cdecl, up to twelve
 /// arguments; returns `eax`.
 fn call_ptr(f: u32, args: &[u32]) -> u32 {
     super::call_cdecl(f, args)
@@ -1107,6 +1107,16 @@ ported! {
         #[allow(clippy::cast_possible_truncation)] // a 32-bit process
         let frame = locals.0.as_mut_ptr() as u32 + 0xf0;
         slots::bridge::opp_0437_cmd_a6dbe0(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_mdc_draw_a6f4d0(obj, cmd)`: its stack locals in a buffer on
+    /// this shim's stack (the frame pointer at its end).
+    opp_mdc_draw_a6f4d0 @ 0x00a6_f4d0 => extern "C" fn opp_mdc_draw_a6f4d0(obj: u32, cmd: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x3b0]);
+        let mut locals = Locals([0; 0x3b0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x3b0;
+        slots::bridge::opp_mdc_draw_a6f4d0(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {

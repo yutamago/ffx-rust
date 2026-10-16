@@ -6476,3 +6476,146 @@ fn opus_0437_commands_match_the_original() {
         }
     }
 }
+
+/// Where a [`copy_recorder`] copies from: an argument or a fixed block.
+#[derive(Clone, Copy)]
+enum From {
+    Arg(u8),
+    At(u32),
+}
+
+/// A stand-in at `sym` that logs its first `nargs` arguments (16 per
+/// entry) and copies `words` dwords from `from` to argument `to`, so the
+/// locals an original reads back are known; returns the log.
+fn copy_recorder(p: &mut Pair, sym: u32, nargs: u8, to: u8, from: From, words: u8) -> u32 {
+    let log = p.alloc(4 + 0x100 * 64);
+    let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x81, 0xe1, 0xff, 0, 0, 0]); // and ecx, 0xff
+    c.extend([0xc1, 0xe1, 0x06]); // shl ecx, 6
+    for k in 0..nargs {
+        c.extend([0x8b, 0x44, 0x24, 4 + 4 * k]); // mov eax, [esp + 4 + 4k]
+        c.extend([0x89, 0x81]); // mov [ecx + slot], eax
+        c.extend((log + 4 + 4 * u32::from(k)).to_le_bytes());
+    }
+    c.extend([0xff, 0x05]); // inc dword [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x8b, 0x44, 0x24, 4 + 4 * to]); // mov eax, [esp + 4 + 4 to]
+    match from {
+        From::Arg(k) => c.extend([0x8b, 0x4c, 0x24, 4 + 4 * k]), // mov ecx, [esp + 4 + 4k]
+        From::At(at) => {
+            c.push(0xb9); // mov ecx, at
+            c.extend(at.to_le_bytes());
+        }
+    }
+    for k in 0..words {
+        c.extend([0x8b, 0x51, 4 * k]); // mov edx, [ecx + 4k]
+        c.extend([0x89, 0x50, 4 * k]); // mov [eax + 4k], edx
+    }
+    c.push(0xc3);
+    let at = p.sym(sym);
+    p.a.write(at, &c).unwrap();
+    p.b.write(at, &c).unwrap();
+    log
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn mdc_draws_match_the_original() {
+    use slots::bridge as s;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_f4d0);
+        let (unit, set, mat, texrec) =
+            (p.alloc(0x100), p.alloc(0x100), p.alloc(0x40), p.alloc(0x10));
+        // what the unit, bone-set, matrix and texture-loaded stand-ins
+        // return
+        let cells = p.alloc(16);
+        for (k, v) in [unit, set, mat, 1].into_iter().enumerate() {
+            p.set(cells + 4 * u32::try_from(k).unwrap(), v);
+        }
+        for (sym, words, ret) in [
+            (0x0080_1060u32, &[0u8, 0, 0][..], Some(cells)),
+            (0x0080_e160, &[0, 0, 0, 0, 0], Some(cells + 4)),
+            (0x0080_1f00, &[0, 0], Some(cells + 8)),
+            (0x00a4_4650, &[0], Some(cells + 8)),
+            (0x0064_5450, &[0, 0, 0, 0, 0, 0, 0], Some(cells + 12)),
+            (0x0080_62c0, &[0, 0, 0, 0, 0, 0], None),
+            (0x0082_6b70, &[0], None),
+            // the colour sums through their local
+            (0x0064_3770, &[0, 0, 0, 0, 4, 0, 0, 0, 0, 0], None),
+            (0x0064_39b0, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0], None),
+            (0x0063_b810, &[0, 0, 0], None),
+            (0x00a6_8e10, &[0, 0, 0, 0, 0, 0, 0, 0], None),
+            (0x007e_8010, &[0, 0], None),
+            (0x0064_2b10, &[0, 0], None),
+            (0x00a7_0210, &[0, 0, 0, 0, 0], None),
+            (0x0080_e900, &[0, 0, 0, 0, 0], None),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        // op_mul_m(out, a, b) as out = b; the texture record from texrec
+        copy_recorder(&mut p, 0x007e_83b0, 3, 0, From::Arg(2), 16);
+        copy_recorder(&mut p, 0x0080_8a90, 3, 2, From::At(texrec), 4);
+        let magic = p.sym(0x009d_a3b0);
+        let off = p.sym(0x012f_b7d0);
+        let (count_158, late_2c6) = (p.sym(0x022f_b3f4), p.sym(0x022f_b3f8));
+        let obj = p.alloc(0x400);
+        let rec = p.alloc(0x100);
+        let cmd = p.alloc(0x10);
+        for _ in 0..2000 {
+            for (at, len) in [
+                (obj, 0x400),
+                (rec, 0x100),
+                (cmd, 0x10),
+                (unit, 0x100),
+                (texrec, 0x10),
+            ] {
+                p.fill(at, len, &mut rng);
+            }
+            for i in 0..0x10 {
+                let x = finite(&mut rng);
+                p.set(mat + 4 * i, x);
+            }
+            for at in [0x30, 0x34, 0x3c, 0x4c, 0x90, 0x94] {
+                let x = finite(&mut rng);
+                p.set(unit + at, x);
+            }
+            for at in [0x3c, 0x4c] {
+                let x = finite(&mut rng);
+                p.set(rec + at, x);
+            }
+            // alphas in the byte range too
+            #[allow(clippy::cast_precision_loss)] // small
+            for at in [unit + 0x4c, rec + 0x4c] {
+                if rng.chance(50) {
+                    p.set(at, rng.below(300) as f32 - 20.0);
+                }
+            }
+            // texture sizes 16..4080 (a zero one faults the original)
+            p.set(texrec + 10, u8::try_from(1 + rng.below(255)).unwrap());
+            p.set(texrec + 11, u8::try_from(1 + rng.below(255)).unwrap());
+            p.set(obj + 0x220, rec);
+            let kind = rng.pick(&[0x1000u16, 0x2000, 0x3000]) | rng.pick(&[0u16, 0x800]);
+            let low: u16 = p.get(obj + 0x21a);
+            p.set(obj + 0x21a, (low & 0x07ff) | kind);
+            p.set(set + 4, u16::try_from(rng.below(4)).unwrap());
+            p.set(cells + 12, u32::from(!rng.chance(15)));
+            p.set(off, u32::from(rng.chance(30)));
+            p.set(count_158, rng.pick(&[0u32, 0x7b, 0x7c, 0x100]));
+            p.set(late_2c6, rng.pick(&[0u32, 0x279, 0x27a, 0x300]));
+            let id = rng.pick(&[
+                0x1b6u32, 0x1b5, 0x158, 0x245, 0x276, 0x27a, 0x270, 0xa1, 0x26f, 0x272, 0x144,
+                0x2c6, 0x273, 0x117, 0x204, 7,
+            ]);
+            p.a.stub_return(magic, id).unwrap();
+            p.b.stub_return(magic, id).unwrap();
+            check_deep(
+                &mut p,
+                "opp_mdc_draw_a6f4d0",
+                0x00a6_f4d0,
+                [obj, cmd],
+                |m, frame| s::opp_mdc_draw_a6f4d0(m, obj, cmd, frame, &mut call_original),
+            );
+        }
+    }
+}

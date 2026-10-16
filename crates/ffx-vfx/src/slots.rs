@@ -2009,4 +2009,390 @@ pub mod bridge {
             _ => cmd,
         }
     }
+
+    /// `_ftol2_sse` of an `f32` in memory, clamped to a byte (0..=255).
+    fn ftol_byte(mem: &impl Mem, at: u32) -> u8 {
+        let x = crate::x87::Reg::load_f32(mem.read(at)).value();
+        let c = ffx_bridge::x87::ftol(mem, x).cast_signed();
+        u8::try_from(c.clamp(0, 0xff)).unwrap_or(0)
+    }
+
+    /// `_ftol2_sse` of an `f32` in memory, shifted into 16.16 fixed point.
+    fn ftol_fixed(mem: &impl Mem, at: u32) -> u32 {
+        let x = crate::x87::Reg::load_f32(mem.read(at)).value();
+        ffx_bridge::x87::ftol(mem, x).wrapping_shl(16)
+    }
+
+    /// The texture offset `((v % (size << 16)) >> 4) / size` (`idiv`
+    /// twice) as an `f32` times 1/4096. A zero size, where the original
+    /// raises a divide error, gives 0.
+    fn tex_offset(v: u32, size: u32, q: f64) -> f32 {
+        let v = v.cast_signed();
+        let wide = size.wrapping_shl(16).cast_signed();
+        let r = v.checked_rem(wide).unwrap_or(0) >> 4;
+        let t = r.checked_div(size.cast_signed()).unwrap_or(0);
+        #[allow(clippy::cast_precision_loss)] // fild, fstp m32
+        let t = t as f32;
+        crate::x87::Reg::load_f32(t)
+            .constant(crate::x87::MUL, q)
+            .store()
+    }
+
+    /// `opp_mdc_draw_a6f4d0(obj, cmd)` (`0x00a6f4d0`): a character model
+    /// drawn with a texture, on the part `rec` (`obj +0x220`), the unit
+    /// `u` = `opus_no_get(obj + 0x300, rec, u16 cmd[2])`, the scale `S`
+    /// (`u +0x3c` with flag 0x800 in `obj +0x21a`, else 256) and the
+    /// texture record `0x00808a90(oef, u16 cmd[4], local T)`:
+    /// - 0x2000: the bone set (`0x0080e160`, `i16 cmd[6]`), `P` = `obj
+    ///   +0x2c0` times the part's matrix; `obj +0x110`/`+0x114` = `u
+    ///   +0x90`/`+0x94` (or `+0x30`/`+0x34` for magic 0x1b5/0x1b6) in
+    ///   16.16, `+0x118`/`+0x11c` the colours of `u` and `rec`, `+0x11b`
+    ///   the alpha (`u +0x4c` or `rec +0x4c`); part matrices into a local
+    ///   and `obj + 0x80`. For magic 0x1b5/0x1b6 `op1_mdc_ref_nolight(set,
+    ///   obj + 0x100, local, 0, 0, T, rec +0x3c * 16, obj + 0x80)` unless
+    ///   `0x012fb7d0`; else with the texture loaded
+    ///   (`graphicVFXIsTextureWithBpLoaded`, sizes `1 << n` from `T`) the
+    ///   colour sums (clamped to 255, / 128) and
+    ///   `graphicSetNoLightSpecularPassParam(chr, tex, u, v, colour, 1,
+    ///   obj + 0x80, w, h, rec +0x3c / 256)`, and for magic 0x158 after
+    ///   125 frames (`0x022fb3f4`) `0x0063b810(chr, set, 1e-4)`. Returns
+    ///   `cmd + 8`.
+    /// - 0x1000: the bone set with `cmd + 6` (`0x0080e900`), the same
+    ///   position, colour and alpha (no `+0x11c`), the part matrices; for
+    ///   magic 0x245 a local copy of the first scaled by 1000 into
+    ///   `0x00642b10(chr, m)`; per bone (`obj +0x12c` = local `B`) `B` =
+    ///   first part matrix times the bone with its translation times 1000,
+    ///   `obj + 0xc0` = `P` times `B`, `B` = `obj + 0x80` times it, and for
+    ///   the first `0x00a70210(bone, obj + 0x100, rec, u, T)`; with the
+    ///   texture loaded (sizes from bytes `T +10`, `+11` times 16)
+    ///   `0x006439b0(chr, tex, u, v, alpha, obj + 0x80, w, h, rec +0x3c /
+    ///   256, gain)`, the alpha `+0x11b` / 128 (or `i8 +0x11c` / 48 for
+    ///   some magic, times 3 for 0x245, 0 for 0x2c6 before frame 635 in
+    ///   `0x022fb3f8`) and the gain 1000, 500 or 700 for some magic, else
+    ///   1. Returns `cmd + 0x10`.
+    /// - else `cmd`.
+    ///
+    /// The locals are below `frame` (the original's frame pointer; down
+    /// to `frame - 0x374`), which the caller provides.
+    #[allow(clippy::too_many_lines, clippy::similar_names)]
+    pub fn opp_mdc_draw_a6f4d0<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        cmd: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use crate::x87::{MUL, Reg};
+        let f = |mem: &M, at: u32| mem.read::<f32>(at);
+        let rec: u32 = mem.read(obj.wrapping_add(0x220));
+        let slot = u32::from(mem.read::<u8>(rec.wrapping_add(0x18)));
+        let chr: u32 = mem.read(addr(mem, 0x012a_8100).wrapping_add(4 * slot));
+        let g = u32::from(mem.read::<u8>(rec.wrapping_add(0x1e)));
+        let oef: u32 = mem.read(obj.wrapping_add(0x360).wrapping_add(4 * g));
+        let list = obj.wrapping_add(0x300);
+        let no = w(mem, cmd, 2);
+        let u = go(mem, 0x0080_1060, &[list, rec, no], call);
+        let flags: u16 = mem.read(obj.wrapping_add(0x21a));
+        let scale = if flags & 0x800 == 0 {
+            f(mem, addr(mem, 0x00b5_01c0))
+        } else {
+            crate::x87::load_f32(f(mem, u.wrapping_add(0x3c)))
+        };
+        let magic = |mem: &mut M, call: &mut _| go(mem, 0x009d_a3b0, &[], call);
+        let bones = obj.wrapping_add(0x100);
+        let (part_m, first, model, tex) = (
+            frame.wrapping_sub(0x354),
+            frame.wrapping_sub(0x2d4),
+            obj.wrapping_add(0x80),
+            frame.wrapping_sub(0x374),
+        );
+        let q = f64_at(mem, 0x00b5_0190);
+        let matrices = |mem: &mut M, call: &mut _| {
+            let side = i32::from(mem.read::<i8>(obj.wrapping_add(0x21e))).cast_unsigned();
+            let slot = u32::from(mem.read::<u8>(rec.wrapping_add(0x18)));
+            let at = rec.wrapping_add(0x90);
+            go(
+                mem,
+                0x0080_62c0,
+                &[
+                    first,
+                    slot,
+                    scale.to_bits(),
+                    rec.wrapping_add(0x30),
+                    at,
+                    side,
+                ],
+                call,
+            );
+            let side = i32::from(mem.read::<i8>(obj.wrapping_add(0x21e))).cast_unsigned();
+            let slot = u32::from(mem.read::<u8>(rec.wrapping_add(0x18)));
+            go(
+                mem,
+                0x0080_62c0,
+                &[model, slot, scale.to_bits(), u.wrapping_add(0x30), at, side],
+                call,
+            );
+        };
+        let position = |mem: &mut M| {
+            let x = ftol_fixed(mem, u.wrapping_add(0x90));
+            mem.write(obj.wrapping_add(0x110), x);
+            let y = ftol_fixed(mem, u.wrapping_add(0x94));
+            mem.write(obj.wrapping_add(0x114), y);
+            let c: u32 = mem.read(u.wrapping_add(0xc8));
+            mem.write(obj.wrapping_add(0x118), c);
+        };
+        let rec_scale = |mem: &M| {
+            Reg::load_f32(f(mem, rec.wrapping_add(0x3c))).constant(MUL, f64_at(mem, 0x00b3_13a0))
+        };
+        match flags & 0xf000 {
+            0x2000 => {
+                let n = sw(mem, cmd, 6);
+                let set = go(mem, 0x0080_e160, &[bones, obj, list, rec, n], call);
+                let m = go(mem, 0x0080_1f00, &[obj, rec], call);
+                go(
+                    mem,
+                    0x007e_83b0,
+                    &[part_m, obj.wrapping_add(0x2c0), m],
+                    call,
+                );
+                position(mem);
+                let c: u32 = mem.read(rec.wrapping_add(0xc8));
+                mem.write(obj.wrapping_add(0x11c), c);
+                let a = ftol_byte(mem, u.wrapping_add(0x4c));
+                mem.write(obj.wrapping_add(0x11b), a);
+                if magic(mem, call) == 0x1b6 || magic(mem, call) == 0x1b5 {
+                    let x = ftol_fixed(mem, u.wrapping_add(0x30));
+                    mem.write(obj.wrapping_add(0x110), x);
+                    let y = ftol_fixed(mem, u.wrapping_add(0x34));
+                    mem.write(obj.wrapping_add(0x114), y);
+                    let a = ftol_byte(mem, rec.wrapping_add(0x4c));
+                    mem.write(obj.wrapping_add(0x11b), a);
+                }
+                matrices(mem, call);
+                let d = w(mem, cmd, 4);
+                go(mem, 0x0080_8a90, &[oef, d, tex], call);
+                if magic(mem, call) == 0x1b6 || magic(mem, call) == 0x1b5 {
+                    if mem.read::<u32>(addr(mem, 0x012f_b7d0)) == 0 {
+                        let k = rec_scale(mem).store();
+                        go(
+                            mem,
+                            0x00a6_8e10,
+                            &[set, bones, first, 0, 0, tex, k.to_bits(), model],
+                            call,
+                        );
+                    }
+                    return cmd.wrapping_add(8);
+                }
+                let id: u32 = mem.read(set);
+                let h = go(mem, 0x0082_6b70, &[id], call);
+                let t = u64::from(mem.read::<u32>(tex))
+                    | u64::from(mem.read::<u32>(tex.wrapping_add(4))) << 32;
+                #[allow(clippy::cast_possible_truncation)] // 4- and 6-bit fields
+                let (wn, hn, psm) = (
+                    (t >> 26) as u32 & 0xf,
+                    (t >> 30) as u32 & 0xf,
+                    (t >> 20) as u32 & 0x3f,
+                );
+                let (ww, hh) = (1u32 << wn, 1u32 << hn);
+                #[allow(clippy::cast_possible_truncation)] // the low word
+                let base = t as u32 & 0x3fff;
+                let local = frame.wrapping_sub(0x204);
+                if go(mem, 0x0064_5450, &[base, psm, 0, 0, ww, hh, local], call) == 0 {
+                    return cmd.wrapping_add(8);
+                }
+                let colour = frame.wrapping_sub(0x214);
+                for k in 0..4u32 {
+                    let a = f64::from(mem.read::<u8>(obj.wrapping_add(0x11c + k)));
+                    let b = f64::from(mem.read::<u8>(obj.wrapping_add(0x118 + k)));
+                    #[allow(clippy::cast_possible_truncation)] // fstp m32, exact
+                    mem.write(colour.wrapping_add(4 * k), (a + b) as f32);
+                }
+                let (top, cap, k128) = (
+                    f64_at(mem, 0x00b1_70c0),
+                    f(mem, addr(mem, 0x00b4_80d4)),
+                    f64_at(mem, 0x00b1_70b8),
+                );
+                for k in 0..4u32 {
+                    let at = colour.wrapping_add(4 * k);
+                    if f(mem, at) < 0.0 {
+                        mem.write(at, 0.0f32);
+                    }
+                    if f64::from(f(mem, at)) > top {
+                        mem.write(at, cap);
+                    }
+                    let v = Reg::load_f32(f(mem, at)).constant(MUL, k128).store();
+                    mem.write(at, v);
+                }
+                let sc = rec_scale(mem).constant(MUL, q).store();
+                #[allow(clippy::cast_precision_loss)] // 1 << 15 at most
+                let (wf, hf) = (ww as f32, hh as f32);
+                let tv = tex_offset(mem.read(obj.wrapping_add(0x114)), hh, q);
+                let tu = tex_offset(mem.read(obj.wrapping_add(0x110)), ww, q);
+                go(
+                    mem,
+                    0x0064_3770,
+                    &[
+                        h,
+                        local,
+                        tu.to_bits(),
+                        tv.to_bits(),
+                        colour,
+                        1.0f32.to_bits(),
+                        model,
+                        wf.to_bits(),
+                        hf.to_bits(),
+                        sc.to_bits(),
+                    ],
+                    call,
+                );
+                if magic(mem, call) == 0x158 {
+                    let at = addr(mem, 0x022f_b3f4);
+                    let n = mem.read::<u32>(at).wrapping_add(1);
+                    mem.write(at, n);
+                    if n.cast_signed() >= 0x7d {
+                        let id: u32 = mem.read(set);
+                        let k: u32 = mem.read(addr(mem, 0x00b9_2154));
+                        let h2 = go(mem, 0x0082_6b70, &[id], call);
+                        go(mem, 0x0063_b810, &[h2, id, crate::x87::load(k)], call);
+                    }
+                }
+                cmd.wrapping_add(8)
+            }
+            0x1000 => {
+                let n = sw(mem, cmd, 6);
+                let set = go(mem, 0x0080_e160, &[bones, obj, list, rec, n], call);
+                go(
+                    mem,
+                    0x0080_e900,
+                    &[bones, obj, list, rec, cmd.wrapping_add(6)],
+                    call,
+                );
+                let m = go(mem, 0x0080_1f00, &[obj, rec], call);
+                go(
+                    mem,
+                    0x007e_83b0,
+                    &[part_m, obj.wrapping_add(0x2c0), m],
+                    call,
+                );
+                position(mem);
+                let a = ftol_byte(mem, u.wrapping_add(0x4c));
+                mem.write(obj.wrapping_add(0x11b), a);
+                matrices(mem, call);
+                let thousand = f64_at(mem, 0x00b0_dba0);
+                if magic(mem, call) == 0x245 {
+                    let copy = frame.wrapping_sub(0x254);
+                    go(mem, 0x007e_8010, &[copy, first], call);
+                    for k in [0u32, 1, 2, 4, 5, 6, 8, 9, 10] {
+                        let at = copy.wrapping_add(4 * k);
+                        let v = Reg::load_f32(f(mem, at)).constant(MUL, thousand).store();
+                        mem.write(at, v);
+                    }
+                    let h = go(mem, 0x0082_6b70, &[chr], call);
+                    go(mem, 0x0064_2b10, &[h, copy], call);
+                }
+                let d = w(mem, cmd, 4);
+                go(mem, 0x0080_8a90, &[oef, d, tex], call);
+                let (bone_m, b) = (frame.wrapping_sub(0x294), frame.wrapping_sub(0x314));
+                let mut left = u32::from(mem.read::<u16>(set.wrapping_add(4)));
+                let mut e = set.wrapping_add(0x10);
+                mem.write(obj.wrapping_add(0x12c), b);
+                while left.cast_signed() > 0 {
+                    let id: u32 = mem.read(e.wrapping_add(4));
+                    let src = go(mem, 0x00a4_4650, &[id], call);
+                    for k in 0..16u32 {
+                        let x: u32 = mem.read(src.wrapping_add(4 * k));
+                        mem.write(bone_m.wrapping_add(4 * k), x);
+                    }
+                    for k in [12u32, 13, 14] {
+                        let at = bone_m.wrapping_add(4 * k);
+                        let v = Reg::load_f32(f(mem, at)).constant(MUL, thousand).store();
+                        mem.write(at, v);
+                    }
+                    go(mem, 0x007e_83b0, &[b, first, bone_m], call);
+                    go(mem, 0x007e_83b0, &[obj.wrapping_add(0xc0), part_m, b], call);
+                    go(mem, 0x007e_83b0, &[b, model, bone_m], call);
+                    if left == u32::from(mem.read::<u16>(set.wrapping_add(4))) {
+                        let id: u32 = mem.read(e);
+                        let x = go(mem, 0x00a4_4650, &[id], call);
+                        go(mem, 0x00a7_0210, &[x, bones, rec, u, tex], call);
+                    }
+                    left = left.wrapping_sub(1);
+                    e = e.wrapping_add(0x10);
+                }
+                let h = go(mem, 0x0082_6b70, &[chr], call);
+                let t = u64::from(mem.read::<u32>(tex))
+                    | u64::from(mem.read::<u32>(tex.wrapping_add(4))) << 32;
+                let ww = u32::from(mem.read::<u8>(tex.wrapping_add(10))) << 4;
+                let hh = u32::from(mem.read::<u8>(tex.wrapping_add(11))) << 4;
+                #[allow(clippy::cast_possible_truncation)] // a 6-bit field
+                let psm = (t >> 20) as u32 & 0x3f;
+                #[allow(clippy::cast_possible_truncation)] // the low word
+                let base = t as u32 & 0x3fff;
+                let local = frame.wrapping_sub(0x104);
+                if go(mem, 0x0064_5450, &[base, psm, 0, 0, ww, hh, local], call) == 0 {
+                    return cmd.wrapping_add(0x10);
+                }
+                let id = magic(mem, call);
+                let tu = tex_offset(mem.read(obj.wrapping_add(0x110)), ww, q);
+                let tv = tex_offset(mem.read(obj.wrapping_add(0x114)), hh, q);
+                let a = f64::from(mem.read::<u8>(obj.wrapping_add(0x11b)));
+                let mut alpha = Reg::Num(a).constant(MUL, f64_at(mem, 0x00b1_70b8)).store();
+                let id2 = magic(mem, call);
+                let table = addr(mem, 0x00c8_8c6c);
+                let listed = (0..7u32).any(|k| mem.read::<u32>(table.wrapping_add(4 * k)) == id2);
+                if listed
+                    || id2.wrapping_sub(0x26e) <= 7
+                    || id2.wrapping_sub(0x276) <= 7
+                    || id2 == 0x245
+                {
+                    let b = f64::from(mem.read::<i8>(obj.wrapping_add(0x11c)));
+                    let div: crate::x87::Op = |a, b| a / b;
+                    alpha = Reg::Num(b).constant(div, f64_at(mem, 0x00b5_f1e0)).store();
+                }
+                if id == 0x245 {
+                    alpha = Reg::load_f32(alpha)
+                        .constant(MUL, f64_at(mem, 0x00b2_c5c8))
+                        .store();
+                }
+                let sc = rec_scale(mem).constant(MUL, q).store();
+                let gain = match id {
+                    0x276 | 0x27a | 0x270 | 0xa1 | 0x26f => f(mem, addr(mem, 0x00b1_f2cc)),
+                    0x272 => f(mem, addr(mem, 0x00b4_998c)),
+                    0x144 => f(mem, addr(mem, 0x00b5_efe8)),
+                    _ => {
+                        if id == 0x2c6 {
+                            let at = addr(mem, 0x022f_b3f8);
+                            let n = mem.read::<u32>(at).wrapping_add(1);
+                            mem.write(at, n);
+                            if n.cast_signed() < 0x27b {
+                                alpha = 0.0;
+                            }
+                        }
+                        1.0
+                    }
+                };
+                #[allow(clippy::cast_precision_loss)] // 4080 at most
+                let (wf, hf) = (ww as f32, hh as f32);
+                go(
+                    mem,
+                    0x0064_39b0,
+                    &[
+                        h,
+                        local,
+                        tu.to_bits(),
+                        tv.to_bits(),
+                        alpha.to_bits(),
+                        model,
+                        wf.to_bits(),
+                        hf.to_bits(),
+                        sc.to_bits(),
+                        crate::x87::load(gain.to_bits()),
+                    ],
+                    call,
+                );
+                cmd.wrapping_add(0x10)
+            }
+            _ => cmd,
+        }
+    }
 }
