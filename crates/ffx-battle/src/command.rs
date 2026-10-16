@@ -98,15 +98,28 @@ pub mod bridge {
     /// unless its record's `+0x16` & 0xf8 is 8 or 0x10. The search stops at
     /// [`STOP_IDS`] and `stop`. The ID found goes to `id` (0 when none).
     pub fn ms_get_command(mem: &mut impl Mem, stop: u32, list: u32, idp: u32) -> u32 {
+        let given = if list != 0 || idp == 0 {
+            0xff
+        } else {
+            mem.read(idp)
+        };
+        let (found, found_id) = get_command(mem, stop, list, given);
+        if idp != 0 {
+            mem.write(idp, found_id);
+        }
+        found
+    }
+
+    /// [`ms_get_command`] without the pointer: the record and its ID (0
+    /// when none), `given` standing for `*id` when there is no list.
+    pub fn get_command(mem: &mut impl Mem, stop: u32, list: u32, given: u32) -> (u32, u32) {
         let n = if list == 0 { 1 } else { 2 };
         let (mut found, mut found_id) = (0, 0);
         for k in 0..n {
             let id = if list != 0 {
                 u32::from(mem.read::<u16>(list + 2 * k))
-            } else if idp != 0 {
-                mem.read(idp)
             } else {
-                0xff
+                given
             };
             let r = record(mem, id);
             if r != 0 && !(found != 0 && matches!(u8_at(mem, r, 0x16) & 0xf8, 8 | 0x10)) {
@@ -117,10 +130,7 @@ pub mod bridge {
                 break;
             }
         }
-        if idp != 0 {
-            mem.write(idp, if found != 0 { found_id } else { 0 });
-        }
-        found
+        (found, if found != 0 { found_id } else { 0 })
     }
 
     /// `MsGetCommandMP(chr, command)` (`0x0078cf70`): [`mp_cost`]; 0 for a

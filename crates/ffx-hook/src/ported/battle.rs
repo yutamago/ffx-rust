@@ -1,9 +1,11 @@
 //! `ffx-battle`: random numbers, the save block, actors, the battle camera,
 //! battle globals and helpers, damage.
 
-use ffx_battle::cue::bridge as cue;
 use ffx_battle::{actor::bridge as actor, camera::bridge as camera, command::bridge as cmd};
 use ffx_battle::{body::bridge as body, menu::bridge as menu, vector::bridge as vector};
+use ffx_battle::{
+    cue::bridge as cue, flow::bridge as flow, pos::bridge as pos, turn::bridge as turn,
+};
 use ffx_battle::{damage::bridge as dmg, state::bridge as state, util::bridge as util};
 use ffx_battle::{minor::bridge as minor, misc::bridge as misc, save::bridge as save};
 
@@ -25,6 +27,21 @@ fn call1(sym: u32, a: u32) -> u32 {
         f(a)
     }
 }
+
+/// Calls an original cdecl function of four arguments by its `ffx.sym`
+/// address.
+#[allow(clippy::many_single_char_names)]
+fn call4(sym: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
+    // SAFETY: the address is a cdecl function of this build taking four u32s.
+    unsafe {
+        let f: unsafe extern "C" fn(u32, u32, u32, u32) -> u32 =
+            std::mem::transmute(crate::rebase(sym));
+        f(a, b, c, d)
+    }
+}
+
+/// `MsGetSummonerPos` (still the original: its `_CIcos`/`_CIsin` are next).
+const MS_GET_SUMMONER_POS: u32 = 0x007a_c2b0;
 
 ported! {
     /// `rnd`: the global random generator.
@@ -1554,5 +1571,254 @@ ported! {
     /// `MsGetTargetList(chr, &n)`.
     MsGetTargetList @ 0x007b_7090 => extern "C" fn ms_get_target_list(chr: u32, n: u32) -> u32 {
         cue::ms_get_target_list(&mut mem(), chr, n)
+    }
+    /// `MsSetFirstCTB(mode)`.
+    MsSetFirstCTB @ 0x0078_ded0 => extern "C" fn ms_set_first_ctb(mode: i32) -> i32 {
+        turn::ms_set_first_ctb(&mut mem(), mode)
+    }
+    /// `MsUseItem(chr, command, n)`.
+    MsUseItem @ 0x007b_0c20 => extern "C" fn ms_use_item(chr: u32, command: u32, n: i32) -> i32 {
+        turn::ms_use_item(&mut mem(), chr, command, n)
+    }
+    /// `MsCheckStatus()`.
+    MsCheckStatus @ 0x0079_a0e0 => extern "C" fn ms_check_status() {
+        turn::ms_check_status(&mut mem());
+    }
+    /// `MsGetDamageStatus(chr, target, &added, &on, &added2, &removed, &off, &removed2)`.
+    MsGetDamageStatus @ 0x0079_aa50 => extern "C" fn ms_get_damage_status(chr: u32, target: u32, p0: u32, p1: u32, p2: u32, p3: u32, p4: u32, p5: u32) -> u32 {
+        turn::ms_get_damage_status(&mut mem(), chr, target, [p0, p1, p2, p3, p4, p5])
+    }
+    /// `MsApUp(chr, actor, ap, ret)`.
+    MsApUp @ 0x0079_8a00 => extern "C" fn ms_ap_up(chr: u32, actor: u32, ap: u32, ret: u32) -> u32 {
+        turn::ms_ap_up(&mut mem(), chr, actor, ap, ret)
+    }
+    /// `BattleRewards_AddItem(item, n, spoils)`.
+    BattleRewards_AddItem @ 0x0079_8ac0 => extern "C" fn battle_rewards_add_item(item: u32, n: i32, spoils: u32) {
+        turn::battle_rewards_add_item(&mut mem(), item, n, spoils);
+    }
+    /// `MsStatusEffectClear(i)`: `op_et_eff_off_signal` (vfx) for each.
+    MsStatusEffectClear @ 0x0079_f110 => extern "C" fn ms_status_effect_clear(i: u32) -> u32 {
+        flow::ms_status_effect_clear(&mut mem(), i, ffx_vfx::et::bridge::op_et_eff_off_signal)
+    }
+    /// `MsResetBindEffect(i)`: `op_et_bindeff_off_signal` (vfx).
+    MsResetBindEffect @ 0x0078_8e60 => extern "C" fn ms_reset_bind_effect(i: u32) {
+        flow::ms_reset_bind_effect(&mut mem(), i, ffx_vfx::et::bridge::op_et_bindeff_off_signal);
+    }
+    /// `MsResetAfterImage(actor)`: `op_et_weapon_afterimage_fade` (vfx).
+    MsResetAfterImage @ 0x0078_8e30 => extern "C" fn ms_reset_after_image(actor: u32) {
+        flow::ms_reset_after_image(&mut mem(), actor, ffx_vfx::et::bridge::op_et_weapon_afterimage_fade);
+    }
+    /// `MsEffectCheckMotion(i)`.
+    MsEffectCheckMotion @ 0x0078_7840 => extern "C" fn ms_effect_check_motion(i: u32) -> i32 {
+        flow::ms_effect_check_motion(&mut mem(), i)
+    }
+    /// `MsCheckStartEffect(chr, set)`.
+    MsCheckStartEffect @ 0x007a_92c0 => extern "C" fn ms_check_start_effect(chr: u32, set: u32) -> u32 {
+        flow::ms_check_start_effect(&mut mem(), chr, set)
+    }
+    /// `MsSetHeadTarget(chr, set)`.
+    MsSetHeadTarget @ 0x007b_1e80 => extern "C" fn ms_set_head_target(chr: u32, set: u32) -> u32 {
+        flow::ms_set_head_target(&mut mem(), chr, set)
+    }
+    /// `MsSaveAddInfoData(chr, kind)`.
+    MsSaveAddInfoData @ 0x0078_5a00 => extern "C" fn ms_save_add_info_data(chr: i32, kind: u32) -> i32 {
+        flow::ms_save_add_info_data(&mut mem(), chr, kind)
+    }
+    /// `MsLimitStatusProcess(_, actor, flags)`.
+    MsLimitStatusProcess @ 0x0078_d270 => extern "C" fn ms_limit_status_process(_x: u32, actor: u32, flags: i32) -> u32 {
+        flow::ms_limit_status_process(&mut mem(), actor, flags)
+    }
+    /// `MsMenuCheckLook()`.
+    MsMenuCheckLook @ 0x0078_f9e0 => extern "C" fn ms_menu_check_look() -> i32 {
+        flow::ms_menu_check_look(&mem())
+    }
+    /// `MsEffectCheckTarget(set)`.
+    MsEffectCheckTarget @ 0x0078_7900 => extern "C" fn ms_effect_check_target(set: u32) -> u32 {
+        flow::ms_effect_check_target(&mem(), set)
+    }
+    /// `MsReturnParty()`.
+    MsReturnParty @ 0x007a_eec0 => extern "C" fn ms_return_party() {
+        flow::ms_return_party(&mut mem());
+    }
+    /// `MsSetCameraMatrix(on, screen, camera, look_at, eye, roll)` (roll a float as bits).
+    MsSetCameraMatrix @ 0x007c_06d0 => extern "C" fn ms_set_camera_matrix(on: u32, screen: u32, cam: u32, look_at: u32, eye: u32, roll: u32) -> u32 {
+        camera::ms_set_camera_matrix(&mut mem(), on, screen, cam, look_at, eye, roll)
+    }
+    /// `MsSetChrImageDamageAttack`.
+    MsSetChrImageDamageAttack @ 0x0078_d790 => extern "C" fn ms_set_chr_image_damage_attack(actor: u32) -> i32 {
+        flow::ms_set_chr_image_damage_attack(&mut mem(), actor)
+    }
+    /// `MsSetChrHeight`.
+    MsSetChrHeight @ 0x007a_b300 => extern "C" fn ms_set_chr_height(i: u32) {
+        flow::ms_set_chr_height(&mut mem(), i);
+    }
+    /// `MsGetScreenData`.
+    MsGetScreenData @ 0x007b_bd00 => extern "C" fn ms_get_screen_data(a: u32, b: u32, c: u32, d: u32) -> u32 {
+        flow::ms_get_screen_data(&mut mem(), [a, b, c, d])
+    }
+    /// `MsBtlPosInit`.
+    MsBtlPosInit @ 0x007c_93d0 => extern "C" fn ms_btl_pos_init() {
+        flow::ms_btl_pos_init(&mut mem());
+    }
+    /// `MsAtelRegistInit`.
+    MsAtelRegistInit @ 0x0079_7ae0 => extern "C" fn ms_atel_regist_init() {
+        flow::ms_atel_regist_init(&mut mem());
+    }
+    /// `MsSetChrMotionInfo`.
+    MsSetChrMotionInfo @ 0x007b_4a90 => extern "C" fn ms_set_chr_motion_info(i: u32, k: u32, value: u32) {
+        flow::ms_set_chr_motion_info(&mut mem(), i, k, value);
+    }
+    /// `MsExchangeParty`.
+    MsExchangeParty @ 0x007a_de10 => extern "C" fn ms_exchange_party() {
+        flow::ms_exchange_party(&mut mem());
+    }
+    /// `MsChrSEfoot`.
+    MsChrSEfoot @ 0x0079_fd20 => extern "C" fn ms_chr_se_foot(i: u32, v: u32) {
+        #[allow(clippy::cast_possible_truncation)] // a byte argument
+        flow::ms_chr_se_foot(&mut mem(), i, v as u8);
+    }
+    /// `MsSEP3Dinit`.
+    MsSEP3Dinit @ 0x007a_0910 => extern "C" fn ms_sep3d_init() {
+        flow::ms_sep3d_init(&mut mem());
+    }
+    /// `MsEffectLimitSync`.
+    MsEffectLimitSync @ 0x007a_fde0 => extern "C" fn ms_effect_limit_sync(i: u32) -> i32 {
+        flow::ms_effect_limit_sync(&mem(), i)
+    }
+    /// `MsMenuInitText`.
+    MsMenuInitText @ 0x0078_fe60 => extern "C" fn ms_menu_init_text() {
+        flow::ms_menu_init_text(&mut mem());
+    }
+    /// `MsAddYoujinbouCom`.
+    MsAddYoujinbouCom @ 0x007b_2950 => extern "C" fn ms_add_youjinbou_com(n: i32) -> i32 {
+        flow::ms_add_youjinbou_com(&mut mem(), n)
+    }
+    /// `MsMagicEffectSet`.
+    MsMagicEffectSet @ 0x0079_e890 => extern "C" fn ms_magic_effect_set(chr: u32, actor: u32) {
+        flow::ms_magic_effect_set(&mut mem(), chr, actor);
+    }
+    /// `MsMenuCheckChrLook`.
+    MsMenuCheckChrLook @ 0x0078_f990 => extern "C" fn ms_menu_check_chr_look(i: u32) -> u32 {
+        flow::ms_menu_check_chr_look(&mem(), i)
+    }
+    /// `MsSetChrMoveFlagAll`.
+    MsSetChrMoveFlagAll @ 0x0078_8e90 => extern "C" fn ms_set_chr_move_flag_all(on: u32) {
+        flow::ms_set_chr_move_flag_all(&mut mem(), on);
+    }
+    /// `MsGetFirstAttack`.
+    MsGetFirstAttack @ 0x0078_d090 => extern "C" fn ms_get_first_attack(chance: i32) -> u32 {
+        flow::ms_get_first_attack(&mut mem(), chance)
+    }
+    /// `MsDefenseProcess`.
+    MsDefenseProcess @ 0x007a_f8a0 => extern "C" fn ms_defense_process() -> u32 {
+        flow::ms_defense_process(&mut mem())
+    }
+    /// `MsBtlChrInit`.
+    MsBtlChrInit @ 0x0079_35b0 => extern "C" fn ms_btl_chr_init() {
+        flow::ms_btl_chr_init(&mut mem());
+    }
+    /// `MsLimitTidusLearn`.
+    MsLimitTidusLearn @ 0x007b_0cd0 => extern "C" fn ms_limit_tidus_learn(chr: i32) -> u32 {
+        flow::ms_limit_tidus_learn(&mut mem(), chr)
+    }
+    /// `MsBattleCameraFree`.
+    MsBattleCameraFree @ 0x007b_a950 => extern "C" fn ms_battle_camera_free() {
+        flow::ms_battle_camera_free(&mut mem());
+    }
+    /// `MsBindOffCamera(w)`: `AtelGetCameraWorkAdrs` (script) for the worker.
+    MsBindOffCamera @ 0x007b_a9c0 => extern "C" fn ms_bind_off_camera(w: u32) {
+        flow::ms_bind_off_camera(&mut mem(), w, |_, w| ffx_script::vm::bridge::atel_get_camera_work_adrs(w));
+    }
+    /// `MsCheckStatusBeforeActionDamage`.
+    MsCheckStatusBeforeActionDamage @ 0x007a_f770 => extern "C" fn ms_check_status_before_action_damage(actor: u32) -> u32 {
+        flow::ms_check_status_before_action_damage(&mem(), actor)
+    }
+    /// `MsLimitCommandProcess(chr, actor, command, k)`.
+    MsLimitCommandProcess @ 0x007b_03e0 => extern "C" fn ms_limit_command_process(_chr: u32, actor: u32, command: u32, k: u32) -> u32 {
+        flow::ms_limit_command_process(&mut mem(), actor, command, k)
+    }
+    /// `MsSetLimitParty(chr, actor)`.
+    MsSetLimitParty @ 0x007b_1aa0 => extern "C" fn ms_set_limit_party(chr: u32, actor: u32) {
+        flow::ms_set_limit_party(&mut mem(), chr, actor);
+    }
+    /// `MsSetChrTransparent(i, alpha, frames)` (alpha a float as bits).
+    MsSetChrTransparent @ 0x0079_6480 => extern "C" fn ms_set_chr_transparent(i: u32, alpha: u32, frames: i32) -> u32 {
+        flow::ms_set_chr_transparent(&mut mem(), i, alpha, frames)
+    }
+    /// `MsEffectSetMotionFlag(i)`.
+    MsEffectSetMotionFlag @ 0x0078_83f0 => extern "C" fn ms_effect_set_motion_flag(i: u32) {
+        flow::ms_effect_set_motion_flag(&mut mem(), i);
+    }
+    /// `MsGetTargetRandomList2(i, &n)`.
+    MsGetTargetRandomList2 @ 0x007b_7280 => extern "C" fn ms_get_target_random_list2(i: u32, n: u32) -> u32 {
+        flow::ms_get_target_random_list2(&mut mem(), i, n)
+    }
+    /// `MsAtelCamFree()`: `AtelRemoveCtrlWork` (script).
+    MsAtelCamFree @ 0x0079_74e0 => extern "C" fn ms_atel_cam_free() {
+        flow::ms_atel_cam_free(&mut mem(), ffx_script::vm::bridge::atel_remove_ctrl_work);
+    }
+    /// `MsGetMagicEffNum(chr, id, command)`: `TkGetLang` (menu).
+    MsGetMagicEffNum @ 0x0079_d2f0 => extern "C" fn ms_get_magic_eff_num(chr: i32, id: u32, command: u32) -> u32 {
+        flow::ms_get_magic_eff_num(&mut mem(), chr, id, command, |m| ffx_menu::tk::bridge::tk_get_lang(m))
+    }
+    /// `MsBtlGetPos(write, actor, group, kind, index, vec)`: kinds 12-14
+    /// call the original `MsGetSummonerPos`.
+    MsBtlGetPos @ 0x007a_bfe0 => extern "C" fn ms_btl_get_pos(write: u32, actor: u32, group: i32, kind: i32, index: i32, vec: u32) -> i32 {
+        pos::ms_btl_get_pos(&mut mem(), write, actor, group, kind, index, vec, |_, actor, index, k, vec| {
+            call4(MS_GET_SUMMONER_POS, actor, index.cast_unsigned(), k.cast_unsigned(), vec);
+        })
+    }
+    /// `MsRegistCommandCue(chr, command, turn, kind, flag)`.
+    MsRegistCommandCue @ 0x007b_0b90 => extern "C" fn ms_regist_command_cue(chr: u32, command: u32, turn: u32, kind: u32, flag: u32) -> i32 {
+        #[allow(clippy::cast_possible_truncation)] // byte arguments
+        cue::ms_regist_command_cue(&mut mem(), chr, command, turn as u8, kind as u8, flag as u8)
+    }
+    /// `MsInsertCommandCue(chr, command, turn, kind, flag, on, after)`.
+    MsInsertCommandCue @ 0x007b_0a30 => extern "C" fn ms_insert_command_cue(chr: u32, command: u32, turn: u32, kind: u32, flag: u32, on: u32, after: u32) -> i32 {
+        #[allow(clippy::cast_possible_truncation)] // byte arguments
+        cue::ms_insert_command_cue(&mut mem(), chr, command, turn as u8, kind, flag as u8, on as u8, after)
+    }
+    /// `MsCleanCommandCue(chr, keep)`.
+    MsCleanCommandCue @ 0x007b_0830 => extern "C" fn ms_clean_command_cue(chr: u32, keep: u32) -> i32 {
+        cue::ms_clean_command_cue(&mut mem(), chr, keep)
+    }
+    /// `MsBtlListGroup(field, group)`.
+    MsBtlListGroup @ 0x0079_d210 => extern "C" fn ms_btl_list_group(field: i32, group: i32) -> u32 {
+        flow::ms_btl_list_group(&mem(), field, group)
+    }
+    /// `MsGetChrEscapePos(i, vec)`.
+    MsGetChrEscapePos @ 0x0079_4ec0 => extern "C" fn ms_get_chr_escape_pos(i: u32, vec: u32) -> i32 {
+        flow::ms_get_chr_escape_pos(&mut mem(), i, vec, |_, actor, index, k, vec| {
+            call4(MS_GET_SUMMONER_POS, actor, index.cast_unsigned(), k.cast_unsigned(), vec);
+        })
+    }
+    /// `MsUseChrMpLimit(i)`.
+    MsUseChrMpLimit @ 0x0078_e5a0 => extern "C" fn ms_use_chr_mp_limit(i: u32) {
+        flow::ms_use_chr_mp_limit(&mut mem(), i);
+    }
+    /// `MsBtlGetTerm()`.
+    MsBtlGetTerm @ 0x0079_8b70 => extern "C" fn ms_btl_get_term() {
+        flow::ms_btl_get_term(&mut mem());
+    }
+    /// `MsClearStatus(i, keep)`.
+    MsClearStatus @ 0x0079_a190 => extern "C" fn ms_clear_status(i: u32, keep: u32) {
+        #[allow(clippy::cast_possible_truncation)] // a u16 argument
+        flow::ms_clear_status(&mut mem(), i, keep as u16);
+    }
+    /// `MsMoveCheckFlag(actor)`.
+    MsMoveCheckFlag @ 0x007a_aae0 => extern "C" fn ms_move_check_flag(actor: u32) -> u32 {
+        flow::ms_move_check_flag(&mem(), actor)
+    }
+    /// `MsTestCheckMotion(i)`: `MsEffectCheckMotion`.
+    MsTestCheckMotion @ 0x0079_0260 => extern "C" fn ms_test_check_motion(i: u32) -> i32 {
+        flow::ms_effect_check_motion(&mut mem(), i)
+    }
+    /// `MsLimitUp(chr, actor, n)`.
+    MsLimitUp @ 0x007b_1590 => extern "C" fn ms_limit_up(chr: u32, actor: u32, n: i32) -> i32 {
+        turn::ms_limit_up(&mut mem(), chr, actor, n)
+    }
+    /// `MsCameraGet(owner, cam, kind)`.
+    MsCameraGet @ 0x007b_d110 => extern "C" fn ms_camera_get(owner: u32, cam: u32, kind: u32) -> u32 {
+        camera::ms_camera_get(&mut mem(), owner, cam, kind)
     }
 }
