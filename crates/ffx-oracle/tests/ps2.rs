@@ -380,3 +380,175 @@ fn matrices_and_registers_match_the_original_on_the_snapshot() {
     matrices(&mut a, &mut b, &mut rng);
     registers(&mut a, &mut b, &mut rng);
 }
+
+const NORMALIZE: u32 = 0x006e_d6f0;
+const SAFE_NORMALIZE3: u32 = 0x0070_4200;
+const CAN_NORMALIZE3: u32 = 0x0070_3bc0;
+
+/// Free image bytes after `.text` (mapped, executable) for the C runtime
+/// stand-ins below.
+const TEST_CODE: u32 = 0x00b0_bb00;
+
+/// Stand-ins for the C runtime imports the oracle lacks: `_isnan` (1 for
+/// a NaN) and `_finite` at their import slots, `_CIsqrt`'s thunk as the
+/// CPU's square root (`fsqrt; ret`).
+fn patch_crt_math(o: &mut Oracle) {
+    #[rustfmt::skip]
+    let isnan: [u8; 34] = [
+        0x8b, 0x44, 0x24, 0x08,             // mov eax, [esp+8]
+        0x25, 0xff, 0xff, 0xff, 0x7f,       // and eax, 0x7fffffff
+        0x3d, 0x00, 0x00, 0xf0, 0x7f,       // cmp eax, 0x7ff00000
+        0x77, 0x0c,                         // ja nan
+        0x72, 0x07,                         // jb num
+        0x83, 0x7c, 0x24, 0x04, 0x00,       // cmp dword [esp+4], 0
+        0x75, 0x03,                         // jne nan
+        0x31, 0xc0, 0xc3,                   // num: xor eax, eax; ret
+        0xb8, 0x01, 0x00, 0x00, 0x00, 0xc3, // nan: mov eax, 1; ret
+    ];
+    #[rustfmt::skip]
+    let finite: [u8; 25] = [
+        0x8b, 0x44, 0x24, 0x08,             // mov eax, [esp+8]
+        0x25, 0x00, 0x00, 0xf0, 0x7f,       // and eax, 0x7ff00000
+        0x3d, 0x00, 0x00, 0xf0, 0x7f,       // cmp eax, 0x7ff00000
+        0x0f, 0x95, 0xc0,                   // setne al
+        0x0f, 0xb6, 0xc0,                   // movzx eax, al
+        0xc3, 0xcc, 0xcc, 0xcc, 0xcc,
+    ];
+    let code = o.rebase(TEST_CODE);
+    o.write(code, &isnan).unwrap();
+    o.write(code + 0x40, &finite).unwrap();
+    Mem::write(o, o.rebase(0x00b0_c478), code);
+    Mem::write(o, o.rebase(0x00b0_c474), code + 0x40);
+    let sqrt = o.rebase(0x0094_97b8);
+    o.write(sqrt, &[0xd9, 0xfa, 0xc3]).unwrap();
+}
+
+/// A vector whose square sum lands anywhere, near `FLT_MIN` included.
+fn short_vector(rng: &mut Xorshift) -> [f32; 4] {
+    let e = rng.next() % 3;
+    std::array::from_fn(|_| match rng.next() % 8 {
+        0 => rng.float(),
+        1 => 0.0,
+        2 if e == 0 => f32::from_bits(rng.next() & 0x807f_ffff | (rng.next() % 12 + 58) << 23),
+        _ => f32::from_bits(rng.next() & 0x807f_ffff | (rng.next() % 30 + 112) << 23),
+    })
+}
+
+fn normalize(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    patch_crt_math(a);
+    patch_crt_math(b);
+    // [dst 16][src 16]
+    let block = alloc(a, b, 32);
+    for n in 0..6000u32 {
+        let v = short_vector(rng);
+        put(a, b, block + 16, v);
+        fill(a, b, rng, block, 4);
+        let ra = eax(a, CAN_NORMALIZE3, Conv::Thiscall(block + 16), &[]);
+        let rb = ffx_system::math::bridge::can_normalize3(b, block + 16);
+        assert_eq!(ra, rb, "CanNormalize3 {n} {v:?}");
+        let dst = if n % 4 == 0 { block + 16 } else { block };
+        cdecl(a, NORMALIZE, &[dst, block + 16]);
+        vu0::normalize(b, dst, block + 16);
+        assert_eq!(
+            words(a, block, 8),
+            words(b, block, 8),
+            "Normalize {n} {v:?}"
+        );
+        put(a, b, block, short_vector(rng));
+        eax(a, SAFE_NORMALIZE3, Conv::Fastcall, &[block]);
+        ffx_system::math::bridge::safe_normalize3(b, block);
+        assert_eq!(words(a, block, 4), words(b, block, 4), "SafeNormalize3 {n}");
+    }
+    same_memory("normalize", a, b);
+}
+
+#[test]
+fn normalize_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    normalize(&mut a, &mut b, &mut Xorshift(0x0ff0_7e03));
+}
+
+#[test]
+fn normalize_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    normalize(&mut a, &mut b, &mut Xorshift(0x0ff0_7e04));
+}
+
+const INVERS_MATRIX: u32 = 0x006e_d460;
+const INVERSE4X4: u32 = 0x0070_4dd0;
+
+/// A matrix: random elements, an invertible transform, a zero row, two
+/// equal rows (determinant 0) or ±0s.
+fn any_matrix(rng: &mut Xorshift) -> [f32; 16] {
+    let mut m: [f32; 16] = std::array::from_fn(|_| rng.float());
+    match rng.next() % 6 {
+        0 => {
+            let r = (rng.next() % 4) as usize * 4;
+            for e in &mut m[r..r + 4] {
+                *e = if rng.next().is_multiple_of(2) { 0.0 } else { -0.0 };
+            }
+        }
+        1 => {
+            let (r, s) = ((rng.next() % 4) as usize * 4, (rng.next() % 4) as usize * 4);
+            let row: [f32; 4] = m[r..r + 4].try_into().unwrap();
+            m[s..s + 4].copy_from_slice(&row);
+        }
+        2 | 3 => {
+            for (k, e) in m.iter_mut().enumerate() {
+                let small = f32::from(u8::try_from(rng.next() % 200).unwrap()) / 50.0 - 2.0;
+                *e = if k % 5 == 0 { 1.0 + small } else { small };
+            }
+            m[3] = 0.0;
+            m[7] = 0.0;
+            m[11] = 0.0;
+            m[15] = 1.0;
+        }
+        _ => {}
+    }
+    m
+}
+
+fn inverses(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    // [dst 64][m 64]
+    let block = alloc(a, b, 0x80);
+    for n in 0..6000u32 {
+        fill(a, b, rng, block, 16);
+        put(a, b, block + 0x40, any_matrix(rng));
+        let dst = block + if n % 4 == 0 { 0x40 } else { 0 };
+        let (sym, rb) = if n % 3 == 0 {
+            (
+                INVERSE4X4,
+                ffx_system::math::bridge::inverse4x4(b, dst, block + 0x40),
+            )
+        } else {
+            (
+                INVERS_MATRIX,
+                ffx_system::math::bridge::invers_matrix4x4(b, dst, block + 0x40),
+            )
+        };
+        let ra = cdecl(a, sym, &[dst, block + 0x40]);
+        assert_eq!(ra, rb, "inverse {n}: eax");
+        assert_eq!(words(a, block, 32), words(b, block, 32), "inverse {n}");
+    }
+    same_memory("inverses", a, b);
+}
+
+#[test]
+fn inverses_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    inverses(&mut a, &mut b, &mut Xorshift(0x0ff0_7e05));
+}
+
+#[test]
+fn inverses_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    inverses(&mut a, &mut b, &mut Xorshift(0x0ff0_7e06));
+}

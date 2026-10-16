@@ -265,6 +265,14 @@ pub mod bridge {
         b
     }
 
+    /// `FFXVu0Normalize(dst, src)` (`0x006ed6f0`): `src` copied word by
+    /// word, then `cdc_Vector_SafeNormalize3(dst)`: `xyz` to length 1, `w`
+    /// kept, or all zero for a vector too short (or not finite).
+    pub fn normalize(mem: &mut impl Mem, dst: u32, src: u32) {
+        copy_vector(mem, dst, src);
+        ffx_system::math::bridge::safe_normalize3(mem, dst);
+    }
+
     /// The identity (`0x006ece60`, `this` in ECX): returns 1.0's bits.
     pub fn matrix_identity(mem: &mut impl Mem, m: u32) -> u32 {
         mem.write(m, super::identity());

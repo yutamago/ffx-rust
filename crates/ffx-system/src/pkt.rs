@@ -1,4 +1,4 @@
-//! The `TO` layer's GS packet buffer and screen size.
+//! The `TO` layer's GS packet buffer, screen size and menu scissor.
 
 /// The originals over game memory (`ffx_bridge::Mem`).
 pub mod bridge {
@@ -39,5 +39,20 @@ pub mod bridge {
         mem.write(w, v);
         let v = SCREEN_H.get(mem);
         mem.write(h, v);
+    }
+
+    /// `TODrawScissorXYWH(x, y, w, h)` (`0x008f9230`): the menu scissor on
+    /// (not in XYUV mode), its box `(x, y, x + w, y + h)` as floats (each
+    /// `i32` rounded to `f32`, the sums wrapping). Returns `y + h`, left in
+    /// `eax`.
+    pub fn draw_scissor_xywh(mem: &mut impl Mem, x: i32, y: i32, w: i32, h: i32) -> u32 {
+        use ffx_menu::scissor::bridge::{SCISSOR_BOX, SCISSOR_ON, SCISSOR_XYUV};
+        let (right, bottom) = (x.wrapping_add(w), y.wrapping_add(h));
+        #[allow(clippy::cast_precision_loss)] // fild then fstp dword: rounded
+        let corners = [x, y, right, bottom].map(|v| v as f32);
+        SCISSOR_ON.set(mem, 1);
+        SCISSOR_XYUV.set(mem, 0);
+        SCISSOR_BOX.set(mem, corners);
+        bottom.cast_unsigned()
     }
 }

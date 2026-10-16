@@ -115,15 +115,201 @@ pub fn rotate(x: f32, y: f32, s: f32, c: f32) -> (f32, f32) {
     )
 }
 
+/// `cdc_Inverse4x4(dst, m)`: the inverse by cofactors, as compiled: `m`
+/// copied (transposed) into locals, the 2×2 products stored as `f32`s,
+/// each cofactor's positive half stored as an `f32` before the negative
+/// half is subtracted, the determinant stored, `1 / det` stored (0 for a
+/// zero determinant) and every cofactor multiplied by it. Generated from
+/// the instructions (`0x00704de9`..`0x00705492`), one `let` per `fstp
+/// dword`, named in order; the comment is the local it went to.
+#[must_use]
+#[allow(clippy::too_many_lines, clippy::similar_names)] // the original, store by store
+pub fn inverse4x4(m: &Matrix) -> Matrix {
+    let ld = load;
+    let t1 = ld(m[0]).store(); // ebp-0x44
+    let t2 = ld(m[1]).store(); // ebp-0x34
+    let t3 = ld(m[2]).store(); // ebp-0x24
+    let t4 = ld(m[3]).store(); // ebp-0x14
+    let t5 = ld(m[4]).store(); // ebp-0x40
+    let t6 = ld(m[5]).store(); // ebp-0x30
+    let t7 = ld(m[6]).store(); // ebp-0x20
+    let t8 = ld(m[7]).store(); // ebp-0x10
+    let t9 = ld(m[8]).store(); // ebp-0x3c
+    let t10 = ld(m[9]).store(); // ebp-0x2c
+    let t11 = ld(m[10]).store(); // ebp-0x1c
+    let t12 = ld(m[11]).store(); // ebp-0xc
+    let t13 = ld(m[12]).store(); // ebp-0x38
+    let t14 = ld(m[13]).store(); // ebp-0x28
+    let t15 = ld(m[14]).store(); // ebp-0x18
+    let t16 = ld(m[15]).store(); // ebp-0x8
+    let t17 = (ld(t16) * ld(t11)).store(); // ebp-0xb8
+    let t18 = (ld(t12) * ld(t15)).store(); // ebp-0xb4
+    let t19 = (ld(t7) * ld(t16)).store(); // ebp-0xb0
+    let t20 = (ld(t8) * ld(t15)).store(); // ebp-0xac
+    let t21 = (ld(t7) * ld(t12)).store(); // ebp-0xa8
+    let t22 = (ld(t11) * ld(t8)).store(); // ebp-0xa4
+    let t23 = (ld(t16) * ld(t3)).store(); // ebp-0xa0
+    let t24 = (ld(t15) * ld(t4)).store(); // ebp-0x9c
+    let t25 = (ld(t12) * ld(t3)).store(); // ebp-0x98
+    let t26 = ld(t4).mul_m32(t11).store(); // ebp-0x94
+    let t27 = (ld(t8) * ld(t3)).store(); // ebp-0x90
+    let t28 = (ld(t4) * ld(t7)).store(); // ebp-0x8c
+    let t29 = (((ld(t6) * ld(t17)) + ld(t10).mul_m32(t20)) + ld(t14).mul_m32(t21)).store(); // ebp-0x88
+    let t30 =
+        (ld(t29) - ((ld(t14) * ld(t22)) + ((ld(t10) * ld(t19)) + (ld(t6) * ld(t18))))).store(); // ebp-0x84
+    let t31 = (((ld(t10) * ld(t23)) + (ld(t18) * ld(t2))) + ld(t14).mul_m32(t26)).store(); // ebp-0x88
+    let t32 = (((ld(t10) * ld(t24)) + (ld(t17) * ld(t2))) + ld(t14).mul_m32(t25))
+        .subr_m32(t31)
+        .store(); // ebp-0x80
+    let t33 = ((ld(t14) * ld(t27)) + ((ld(t19) * ld(t2)) + (ld(t6) * ld(t24)))).store(); // ebp-0x88
+    let t34 = (ld(t33) - ((ld(t14) * ld(t28)) + ((ld(t2) * ld(t20)) + (ld(t6) * ld(t23))))).store(); // ebp-0x7c
+    let t35 = ((ld(t6).mul_m32(t25) + ld(t2).mul_m32(t22)) + (ld(t10) * ld(t28))).store(); // ebp-0x88
+    let t36 =
+        (ld(t35) - ((ld(t6).mul_m32(t26) + ld(t2).mul_m32(t21)) + (ld(t10) * ld(t27)))).store(); // ebp-0x78
+    let t37 = ((ld(t5).mul_m32(t18) + ld(t9).mul_m32(t19)) + ld(t13).mul_m32(t22)).store(); // ebp-0x88
+    let t38 =
+        (ld(t37) - ((ld(t5).mul_m32(t17) + ld(t9).mul_m32(t20)) + ld(t13).mul_m32(t21))).store(); // ebp-0x74
+    let t39 = ((ld(t1).mul_m32(t17) + (ld(t9) * ld(t24))) + ld(t13).mul_m32(t25)).store(); // ebp-0x88
+    let t40 =
+        (ld(t39) - ((ld(t1).mul_m32(t18) + (ld(t9) * ld(t23))) + ld(t13).mul_m32(t26))).store(); // ebp-0x70
+    let t41 = (((ld(t23) * ld(t5)) + ld(t1).mul_m32(t20)) + (ld(t13) * ld(t28))).store(); // ebp-0x88
+    let t42 =
+        (ld(t41) - (((ld(t24) * ld(t5)) + ld(t1).mul_m32(t19)) + (ld(t13) * ld(t27)))).store(); // ebp-0x6c
+    let t43 = ((ld(t27) * ld(t9)) + (ld(t5).mul_m32(t26) + ld(t1).mul_m32(t21))).store(); // ebp-0x88
+    let t44 =
+        (ld(t43) - ((ld(t28) * ld(t9)) + (ld(t5).mul_m32(t25) + ld(t1).mul_m32(t22)))).store(); // ebp-0x68
+    let t45 = (ld(t9) * ld(t14)).store(); // ebp-0xb8
+    let t46 = (ld(t13) * ld(t10)).store(); // ebp-0xb4
+    let t47 = (ld(t5) * ld(t14)).store(); // ebp-0xb0
+    let t48 = (ld(t13) * ld(t6)).store(); // ebp-0xac
+    let t49 = (ld(t5) * ld(t10)).store(); // ebp-0xa8
+    let t50 = (ld(t9) * ld(t6)).store(); // ebp-0xa4
+    let t51 = (ld(t14) * ld(t1)).store(); // ebp-0xa0
+    let t52 = (ld(t13) * ld(t2)).store(); // ebp-0x9c
+    let t53 = (ld(t10) * ld(t1)).store(); // ebp-0x98
+    let t54 = (ld(t9) * ld(t2)).store(); // ebp-0x94
+    let t55 = (ld(t6) * ld(t1)).store(); // ebp-0x90
+    let t56 = (ld(t5) * ld(t2)).store(); // ebp-0x8c
+    let t57 = ((ld(t49) * ld(t16)) + ((ld(t8) * ld(t45)) + ld(t48).mul_m32(t12))).store(); // ebp-0x88
+    let t58 =
+        (ld(t57) - ((ld(t16) * ld(t50)) + ((ld(t8) * ld(t46)) + ld(t47).mul_m32(t12)))).store(); // ebp-0x64
+    let t59 = ((ld(t46).mul_m32(t4) + ld(t51).mul_m32(t12)) + ld(t54).mul_m32(t16)).store(); // ebp-0x88
+    let t60 =
+        (ld(t59) - ((ld(t52).mul_m32(t12) + (ld(t4) * ld(t45))) + ld(t53).mul_m32(t16))).store(); // ebp-0x60
+    let t61 = (((ld(t47) * ld(t4)) + ld(t52).mul_m32(t8)) + ld(t55).mul_m32(t16)).store(); // ebp-0x88
+    let t62 =
+        (ld(t61) - (((ld(t4) * ld(t48)) + ld(t51).mul_m32(t8)) + ld(t56).mul_m32(t16))).store(); // ebp-0x5c
+    let t63 = ((ld(t4).mul_m32(t50) + ld(t53).mul_m32(t8)) + ld(t56).mul_m32(t12)).store(); // ebp-0x88
+    let t64 =
+        (ld(t63) - ((ld(t4).mul_m32(t49) + ld(t54).mul_m32(t8)) + ld(t55).mul_m32(t12))).store(); // ebp-0x58
+    let t65 = ((ld(t50).mul_m32(t15) + ld(t47).mul_m32(t11)) + ld(t7).mul_m32(t46)).store(); // ebp-0x88
+    let t66 =
+        (ld(t65) - ((ld(t49).mul_m32(t15) + (ld(t7) * ld(t45))) + ld(t48).mul_m32(t11))).store(); // ebp-0x54
+    let t67 = (((ld(t45) * ld(t3)) + ld(t53).mul_m32(t15)) + ld(t52).mul_m32(t11)).store(); // ebp-0x88
+    let t68 =
+        (ld(t67) - ((ld(t54).mul_m32(t15) + ld(t51).mul_m32(t11)) + ld(t3).mul_m32(t46))).store(); // ebp-0x50
+    let t69 = (((ld(t51) * ld(t7)) + ld(t56).mul_m32(t15)) + ld(t3).mul_m32(t48)).store(); // ebp-0x88
+    let t70 =
+        (ld(t69) - ((ld(t52) * ld(t7)) + (ld(t55).mul_m32(t15) + ld(t3).mul_m32(t47)))).store(); // ebp-0x4c
+    let t71 = (((ld(t55) * ld(t11)) + ld(t3).mul_m32(t49)) + (ld(t54) * ld(t7))).store(); // ebp-0x88
+    let t72 = (((ld(t7) * ld(t53)) + (ld(t11) * ld(t56))) + ld(t3).mul_m32(t50))
+        .subr_m32(t71)
+        .store(); // ebp-0x48
+    let t73 = (((ld(t5).mul_m32(t32) + ld(t1).mul_m32(t30)) + ld(t9).mul_m32(t34))
+        + ld(t13).mul_m32(t36))
+    .store(); // ebp-0x88
+    let det = t73;
+    let inv = if det == 0.0 {
+        0.0
+    } else {
+        (Reg::ONE / ld(det)).store()
+    };
+    let cof = [
+        t30, t32, t34, t36, t38, t40, t42, t44, t58, t60, t62, t64, t66, t68, t70, t72,
+    ];
+    cof.map(|c| (ld(c) * ld(inv)).store())
+}
+
 /// `sceVu0VectorLengthSquared(v)`: `x² + y² + z²`.
 #[must_use]
 pub fn length_squared(v: [f32; 3]) -> f32 {
     dot3(v, v).store()
 }
 
+/// `(x² + y²) + z²` as `cdc_Vector_CanNormalize3` and
+/// `cdc_Vector_SafeNormalize3` compute it (each square on the stack),
+/// stored as an `f32`.
+#[must_use]
+pub fn square_sum(v: [f32; 3]) -> f32 {
+    let [x, y, z] = v.map(load);
+    (y * y + x * x + z * z).store()
+}
+
+/// What `cdc_Vector_CanNormalize3` leaves in `eax` for the square sum `s`
+/// and the threshold `min` (`FLT_MIN`): `al` 1 when `s` is a number, finite
+/// and above `min`. The rest of `eax` is the x87 status word's high byte
+/// from comparing `min` with `s` (`fcomp`, `fnstsw ax`): C0 (0x100) set
+/// when `min < s`, C3 (0x4000) when equal; the stack top field is 0 as the
+/// callers leave the stack empty. A NaN or an infinity returns 0 (`al`
+/// cleared over `_isnan`'s 1, or `_finite`'s 0).
+#[must_use]
+pub fn can_normalize3_eax(s: f32, min: f32) -> u32 {
+    if s.is_nan() || s.is_infinite() {
+        return 0;
+    }
+    match load(min).value().partial_cmp(&load(s).value()) {
+        Some(std::cmp::Ordering::Less) => 0x101,
+        Some(std::cmp::Ordering::Equal) => 0x4000,
+        _ => 0,
+    }
+}
+
+/// `cdc_Vector_SafeNormalize3` on `v` whose square sum `s` passed the
+/// check: `1 / sqrt(s)` stored as an `f32` (as is the root), times each
+/// component (`x` and `y` from the register, `z` as the memory operand).
+#[must_use]
+pub fn scale_to_unit(v: [f32; 3], s: f32) -> [f32; 3] {
+    let root = load(s).sqrt().store();
+    let inv = load((Reg::ONE / load(root)).store());
+    [
+        (load(v[0]) * inv).store(),
+        (load(v[1]) * inv).store(),
+        inv.mul_m32(v[2]).store(),
+    ]
+}
+
 /// The originals over game memory (`ffx_bridge::Mem`).
 pub mod bridge {
-    use ffx_bridge::Mem;
+    use ffx_bridge::{Global, Mem};
+
+    /// The threshold `cdc_Vector_CanNormalize3` compares the square sum with
+    /// (`FLT_MIN`, an `f32` in `.rdata`).
+    pub const NORMALIZE_MIN: Global<f32> = Global::new(0x00b4_cf60);
+
+    /// `cdc_Vector_CanNormalize3(v)` (`0x00703bc0`, `this` in ECX): whether
+    /// `v.xyz` has a square sum that is a finite number above `FLT_MIN`;
+    /// the whole `eax` ([`super::can_normalize3_eax`]).
+    pub fn can_normalize3(mem: &impl Mem, v: u32) -> u32 {
+        let s = super::square_sum(mem.read(v));
+        super::can_normalize3_eax(s, NORMALIZE_MIN.get(mem))
+    }
+
+    /// `cdc_Vector_SafeNormalize3(v)` (`0x00704200`, fastcall): `v.xyz`
+    /// scaled to length 1 (`w` kept), or all four set to 0 when it cannot
+    /// be ([`can_normalize3`]).
+    pub fn safe_normalize3(mem: &mut impl Mem, v: u32) {
+        let x: [f32; 3] = mem.read(v);
+        if can_normalize3(mem, v).to_le_bytes()[0] == 0 {
+            for i in (0..4).rev() {
+                mem.write(at(v, i), 0.0f32);
+            }
+            return;
+        }
+        let r = super::scale_to_unit(x, super::square_sum(x));
+        for (i, c) in (0..3).zip(r) {
+            mem.write(at(v, i), c);
+        }
+    }
 
     use super::Matrix;
 
@@ -194,6 +380,28 @@ pub mod bridge {
             mem.write(at(p, 1), y);
         }
         m
+    }
+
+    /// `cdc_Inverse4x4(dst, m)` (`0x00704dd0`): `m` read whole first, so
+    /// `dst` may be `m`. Returns `dst + 0x48`, where its copy loop leaves
+    /// `eax`.
+    pub fn inverse4x4(mem: &mut impl Mem, dst: u32, m: u32) -> u32 {
+        let r = super::inverse4x4(&read_matrix(mem, m));
+        write_matrix(mem, dst, &r);
+        dst.wrapping_add(0x48)
+    }
+
+    /// `sceVu0InversMatrix4x4(dst, m)` (`0x006ed460`): the identity when
+    /// some row of `m` is all zeros (±0; a NaN counts as non-zero), else
+    /// [`inverse4x4`]. Returns `dst` for the identity.
+    pub fn invers_matrix4x4(mem: &mut impl Mem, dst: u32, m: u32) -> u32 {
+        let x = read_matrix(mem, m);
+        if x.chunks(4).any(|row| row.iter().all(|&e| e == 0.0)) {
+            let id: Matrix = std::array::from_fn(|k| if k % 5 == 0 { 1.0 } else { 0.0 });
+            write_matrix(mem, dst, &id);
+            return dst;
+        }
+        inverse4x4(mem, dst, m)
     }
 
     /// `sceVu0VectorLengthSquared(v)` (`0x006ed9b0`).

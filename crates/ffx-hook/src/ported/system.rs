@@ -5,8 +5,8 @@
 use ffx_bridge::Mem;
 use ffx_menu::scene::bridge as menu_scene;
 use ffx_system::{
-    btl, cd, config, fixup, instance, math, menu, msg, pad, pkt, render, save, scene, stub, vbf,
-    window,
+    btl, cd, config, fixup, instance, math, menu, msg, names, pad, pkt, render, save, scene, stl,
+    stub, vbf, window,
 };
 
 use super::{mem, ported};
@@ -253,6 +253,24 @@ ported! {
     /// `cdc::Matrix::RotZ(sin, cos)`.
     cdc_Matrix_RotZ @ 0x0070_6070 => extern "thiscall" fn cdc_matrix_rot_z(this: u32, sin: f32, cos: f32) -> u32 {
         math::bridge::rotate(&mut mem(), this, 0, sin, cos)
+    }
+    /// `cdc::Vector::CanNormalize3()` (`this` in ECX): `al` 1 when the
+    /// square sum is a finite number above `FLT_MIN`; the rest of `eax` as
+    /// the original leaves it.
+    cdc_Vector_CanNormalize3 @ 0x0070_3bc0 => extern "thiscall" fn cdc_vector_can_normalize3(this: u32) -> u32 {
+        math::bridge::can_normalize3(&mem(), this)
+    }
+    /// `cdc::Vector::SafeNormalize3()` (`this` in ECX, fastcall).
+    cdc_Vector_SafeNormalize3 @ 0x0070_4200 => extern "fastcall" fn cdc_vector_safe_normalize3(v: u32) {
+        math::bridge::safe_normalize3(&mut mem(), v);
+    }
+    /// `cdc::Inverse4x4(dst, m)`: the general inverse (cofactors).
+    cdc_Inverse4x4 @ 0x0070_4dd0 => extern "C" fn cdc_inverse4x4(dst: u32, m: u32) -> u32 {
+        math::bridge::inverse4x4(&mut mem(), dst, m)
+    }
+    /// `sceVu0InversMatrix4x4(dst, m)`.
+    sceVu0InversMatrix4x4 @ 0x006e_d460 => extern "C" fn sce_vu0_invers_matrix4x4(dst: u32, m: u32) -> u32 {
+        math::bridge::invers_matrix4x4(&mut mem(), dst, m)
     }
     /// `sceVu0VectorLengthSquared(v)`.
     sceVu0VectorLengthSquared @ 0x006e_d9b0 => extern "C" fn sce_vu0_vector_length_squared(v: u32) -> f32 {
@@ -574,6 +592,38 @@ ported! {
     /// `SaveDataCheckCrc()`.
     SaveDataCheckCrc @ 0x0064_7d70 => extern "C" fn save_data_check_crc() -> u32 {
         save::bridge::check_crc(&mut mem(), ffx_menu::tk::bridge::tk_crc)
+    }
+    /// `Fixup_WriteLeb128(value, &cursor)`.
+    Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
+        fixup::bridge::write_leb128(&mut mem(), value, cursor);
+    }
+    /// `TrophyManager::Install(arg)`: 0.
+    TrophyManager_Install @ 0x0059_e520 => extern "thiscall" fn trophy_manager_install(_this: u32, _arg: u32) -> u32 {
+        stub::TROPHY_INSTALL
+    }
+    /// `std::map` iterator `++` (fastcall).
+    std_Tree_const_iterator_inc_006352b0 @ 0x0063_52b0 => extern "fastcall" fn tree_iterator_inc_006352b0(it: u32) -> u32 {
+        stl::bridge::tree_iterator_inc(&mut mem(), it)
+    }
+    /// `std::map` iterator `++` (fastcall).
+    std_Tree_const_iterator_inc_00635300 @ 0x0063_5300 => extern "fastcall" fn tree_iterator_inc_00635300(it: u32) -> u32 {
+        stl::bridge::tree_iterator_inc(&mut mem(), it)
+    }
+    /// `std::map` iterator `++` (fastcall).
+    std_Tree_const_iterator_inc_00635350 @ 0x0063_5350 => extern "fastcall" fn tree_iterator_inc_00635350(it: u32) -> u32 {
+        stl::bridge::tree_iterator_inc(&mut mem(), it)
+    }
+    /// `std::map` iterator `++` (fastcall).
+    std_Tree_const_iterator_inc_00699ee0 @ 0x0069_9ee0 => extern "fastcall" fn tree_iterator_inc_00699ee0(it: u32) -> u32 {
+        stl::bridge::tree_iterator_inc(&mut mem(), it)
+    }
+    /// `TODrawScissorXYWH(x, y, w, h)`.
+    TODrawScissorXYWH @ 0x008f_9230 => extern "C" fn to_draw_scissor_xywh(x: i32, y: i32, w: i32, h: i32) -> u32 {
+        pkt::bridge::draw_scissor_xywh(&mut mem(), x, y, w, h)
+    }
+    /// `Kernel_GetItemName(id)`.
+    Kernel_GetItemName @ 0x0077_67a0 => extern "C" fn kernel_get_item_name(id: u32) -> u32 {
+        names::bridge::item_name(&mem(), id)
     }
 }
 

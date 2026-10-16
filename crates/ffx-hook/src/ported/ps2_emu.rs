@@ -112,6 +112,10 @@ ported! {
     setZSFlag @ 0x0042_ef30 => extern "C" fn set_zs_flag() {
         ee::set_zs_flag(&mut mem());
     }
+    /// `FFXVu0Normalize(dst, src)`.
+    FFXVu0Normalize @ 0x006e_d6f0 => extern "C" fn ffx_vu0_normalize(dst: u32, src: u32) {
+        vu0::normalize(&mut mem(), dst, src);
+    }
     /// `setSSFlag()`.
     setSSFlag @ 0x0042_ef20 => extern "C" fn set_ss_flag() {
         ee::set_ss_flag(&mut mem());

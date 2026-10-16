@@ -826,6 +826,8 @@ name = "ffx-system"
 version = "0.1.0"
 dependencies = [
  "ffx-bridge",
+ "ffx-kernel",
+ "ffx-menu",
 ]
 
 [[package]]

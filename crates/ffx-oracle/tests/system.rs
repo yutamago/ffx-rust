@@ -12,8 +12,8 @@ use std::path::PathBuf;
 use ffx_bridge::{Global, Mem};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_system::{
-    btl, cd, config, fixup, instance, math, menu, msg, pad, pkt, render, save, scene, stub, vbf,
-    window,
+    btl, cd, config, fixup, instance, math, menu, msg, names, pad, pkt, render, save, scene, stl,
+    stub, vbf, window,
 };
 
 /// The game thread's x87 control word.
@@ -1756,4 +1756,168 @@ fn to_layer_managers_and_save_crcs_match_the_original_on_the_snapshot() {
         return;
     };
     round2(&mut a, &mut b, &mut Xorshift(0x2002_0002));
+}
+
+const FIXUP_WRITE_LEB128: u32 = 0x0060_aba0;
+const TROPHY_MANAGER_INSTALL: u32 = 0x0059_e520;
+const TREE_ITERATOR_INC: [u32; 4] = [0x0063_52b0, 0x0063_5300, 0x0063_5350, 0x0069_9ee0];
+const TO_DRAW_SCISSOR_XYWH: u32 = 0x008f_9230;
+const KERNEL_GET_ITEM_NAME: u32 = 0x0077_67a0;
+
+fn leb128_and_stubs(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let cursor = alloc(a, b, 4);
+    let data = alloc(a, b, 0x40);
+    put(a, b, cursor, 0u32);
+    eax(a, FIXUP_WRITE_LEB128, &[rng.next(), cursor]);
+    fixup::bridge::write_leb128(b, rng.next(), cursor);
+    for n in 0..2000u32 {
+        let v = match n % 4 {
+            0 => rng.next() >> (rng.next() % 32),
+            1 => [0, 1, 0x7f, 0x80, 0x3fff, 0x4000, u32::MAX][(n / 4 % 7) as usize],
+            _ => rng.next(),
+        };
+        put(a, b, cursor, data + n % 16);
+        eax(a, FIXUP_WRITE_LEB128, &[v, cursor]);
+        fixup::bridge::write_leb128(b, v, cursor);
+        same_memory("Fixup_WriteLeb128", a, b);
+    }
+    for _ in 0..8 {
+        let ra = call(
+            a,
+            TROPHY_MANAGER_INSTALL,
+            Conv::Thiscall(rng.next()),
+            &[rng.next()],
+        )
+        .eax;
+        assert_eq!(ra, stub::TROPHY_INSTALL);
+    }
+    for n in 0..2000u32 {
+        let pick = |rng: &mut Xorshift| -> i32 {
+            match rng.next() % 4 {
+                0 => rng.next().cast_signed(),
+                1 => (rng.next() % 2000).cast_signed() - 1000,
+                2 => (rng.next() >> (rng.next() % 32)).cast_signed(),
+                _ => [i32::MIN, i32::MAX, -1, 0, 0x0100_0001][(rng.next() % 5) as usize],
+            }
+        };
+        let r = [pick(rng), pick(rng), pick(rng), pick(rng)];
+        let args = r.map(i32::cast_unsigned);
+        let ra = eax(a, TO_DRAW_SCISSOR_XYWH, &args);
+        assert_eq!(
+            ra,
+            pkt::bridge::draw_scissor_xywh(b, r[0], r[1], r[2], r[3]),
+            "{r:?}"
+        );
+        if n % 100 == 0 {
+            same_memory("TODrawScissorXYWH", a, b);
+        }
+    }
+    same_memory("TODrawScissorXYWH", a, b);
+}
+
+/// An MSVC `std::map` tree of `n` nodes (left +0, parent +4, right +8,
+/// `_Isnil` +0xd), balanced, under a head (`_Isnil` 1, root as its
+/// parent): the head and the nodes in order.
+fn map_tree(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, n: usize) -> (u32, Vec<u32>) {
+    fn build(a: &mut Oracle, b: &mut Oracle, head: u32, parent: u32, nodes: &[u32]) -> u32 {
+        if nodes.is_empty() {
+            return head;
+        }
+        let mid = nodes.len() / 2;
+        let node = nodes[mid];
+        let l = build(a, b, head, node, &nodes[..mid]);
+        let r = build(a, b, head, node, &nodes[mid + 1..]);
+        put(a, b, node, l);
+        put(a, b, node + 4, parent);
+        put(a, b, node + 8, r);
+        node
+    }
+    let head = alloc(a, b, 0x10);
+    let nodes: Vec<u32> = (0..n).map(|_| alloc(a, b, 0x10)).collect();
+    for &x in &nodes {
+        put(a, b, x + 0xc, rng.next() & 0xff);
+        put(a, b, x + 0xd, 0u8);
+    }
+    let root = build(a, b, head, head, &nodes);
+    put(a, b, head, nodes.first().copied().unwrap_or(head));
+    put(a, b, head + 4, root);
+    put(a, b, head + 8, nodes.last().copied().unwrap_or(head));
+    put(a, b, head + 0xc, 0x0101u16);
+    (head, nodes)
+}
+
+fn trees_and_names(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let it = alloc(a, b, 4);
+    for n in [0usize, 1, 2, 3, 7, 30, 64] {
+        let (head, nodes) = map_tree(a, b, rng, n);
+        for (k, &sym) in TREE_ITERATOR_INC.iter().enumerate() {
+            let start = if nodes.is_empty() {
+                head
+            } else {
+                nodes[k % nodes.len()]
+            };
+            put(a, b, it, start);
+            for _ in 0..=nodes.len() + 1 {
+                let ra = call(a, sym, Conv::Fastcall, &[it]).eax;
+                assert_eq!(ra, stl::bridge::tree_iterator_inc(b, it), "{sym:#x} {n}");
+                assert_eq!(
+                    Mem::read::<u32>(a, it),
+                    Mem::read::<u32>(b, it),
+                    "{sym:#x} {n}"
+                );
+            }
+            assert_eq!(Mem::read::<u32>(a, it), head);
+        }
+        same_memory("tree iterators", a, b);
+    }
+
+    // an item table where there is none: two segments
+    if ffx_kernel::bridge::ITEM.get(a) == 0 {
+        let t = alloc(a, b, 0x400);
+        put(a, b, t, 2u16);
+        put(a, b, t + 8, [0x0001u16, 0x0010, 8, 0x200]);
+        put(a, b, t + 16, 0x40u32);
+        put(a, b, t + 20, [0x0020u16, 0x0030, 4, 0x280]);
+        put(a, b, t + 28, 0xc0u32);
+        for k in 0..0x100u32 {
+            put(
+                a,
+                b,
+                t + 0x40 + 2 * k,
+                u16::try_from(rng.next() & 0x3ff).unwrap(),
+            );
+        }
+        set(a, b, ffx_kernel::bridge::ITEM, t);
+    }
+    for n in 0..600u32 {
+        let id = match n % 3 {
+            0 => 0,
+            1 => rng.next() & 0x3f,
+            _ => rng.next(),
+        };
+        let ra = eax(a, KERNEL_GET_ITEM_NAME, &[id]);
+        assert_eq!(ra, names::bridge::item_name(b, id), "item {id:#x}");
+    }
+    same_memory("item names", a, b);
+}
+
+fn round3(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    leb128_and_stubs(a, b, rng);
+    trees_and_names(a, b, rng);
+}
+
+#[test]
+fn round3_system_functions_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round3(&mut a, &mut b, &mut Xorshift(0x3003_0001));
+}
+
+#[test]
+fn round3_system_functions_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round3(&mut a, &mut b, &mut Xorshift(0x3003_0002));
 }

@@ -52,6 +52,28 @@ pub mod bridge {
         }
     }
 
+    /// `Fixup_WriteLeb128(value, &cursor)` (`0x0060aba0`): `value` as
+    /// LEB128 at the cursor (7 bits per byte, low first, the top bit on all
+    /// but the last; one byte for 0), the cursor moved past each byte as it
+    /// is written. Nothing for a null cursor.
+    pub fn write_leb128(mem: &mut impl Mem, value: u32, cursor: u32) {
+        let p: u32 = mem.read(cursor);
+        if p == 0 {
+            return;
+        }
+        let mut v = value;
+        loop {
+            let low = (v & 0x7f) as u8;
+            v >>= 7;
+            let at: u32 = mem.read(cursor);
+            mem.write(at, if v == 0 { low } else { low | 0x80 });
+            mem.write(cursor, at.wrapping_add(1));
+            if v == 0 {
+                return;
+            }
+        }
+    }
+
     /// `Fixup_SetObject(record, index)` (`0x0060ae40`) and
     /// `Fixup_SetArrayObject` (`0x0060ae30`): `record + 4 = index`.
     pub fn set_object(mem: &mut impl Mem, record: u32, index: u32) {

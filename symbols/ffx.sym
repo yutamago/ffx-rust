@@ -319,6 +319,7 @@
 0x00595f90 function Phyre_PRendering_PTexture2DD3D11_isBound # fh v3:bsim1.00 0x00596120 Phyre::PRendering::PTexture2DD3D11::isBound
 0x00598a30 function Phyre_PRendering_PShaderPassNVN_releaseShaderPass # fh switch:bsim1.00 0x710002db80 Phyre::PRendering::PShaderPassNVN::releaseShaderPass
 0x0059cc40 function Phyre_PRendering_PTexture2DD3D11_unbind # fh v3:exact 0x0059cdd0 Phyre::PRendering::PTexture2DD3D11::unbind
+0x0059e520 function TrophyManager_Install     # thiscall(this, arg), ret 4: xor eax,eax (nothing to install on PC); fh switch:bsim1.00 0x710023fda0 TrophyManager::Install
 0x005a0200 function Phyre_PNamedSemanticDescriptor_PNamedSemanticDescriptor # fh v3:exact 0x005a0390 Phyre::PNamedSemanticDescriptor::PNamedSemanticDescriptor
 0x005a7520 function Phyre_PClassDescriptorForType_Phyre_PGeometry_PMaterialSet__getPointerFromScriptContext # fh switch:bsim1.00 0x7100092610 Phyre::PClassDescriptorForType<Phyre::PGeometry::PMaterialSet>::getPointerFromScriptContext
 0x005afca0 function Phyre_PDynamicGeometry_PModifierNetworkDynamicMesh_sync # fh switch:bsim1.00 0x7100080fa0 Phyre::PDynamicGeometry::PModifierNetworkDynamicMesh::sync
@@ -373,6 +374,7 @@
 0x00608090 function Phyre_PSerialization_PStreamFile_read # fh v4:user_defined+call.cs thiscall
 0x0060a340 function Fixup_UnpackArrayList     # (cursor*, out, count, objects): array fixup groups, 16-byte records; same modes as Fixup_UnpackList
 0x0060a750 function Fixup_UnpackList          # (cursor*, out, fixup count, object count): one list's packed pointer fixup groups, modes 0-6; ported in ffx-phyre fixup.rs
+0x0060aba0 function Fixup_WriteLeb128         # (value, cursor*): LEB128 at *cursor, low 7 bits first, 0x80 on all but the last, cursor advanced per byte; nothing for a null cursor; Fixup_ReadLeb128's inverse; name ours
 0x0060ac00 function Fixup_ReadLeb128          # (cursor*) -> u32, 7 bits per byte, high bit = more
 0x0060ae30 function Fixup_SetArrayObject      # (record, index): record[1] = index
 0x0060ae40 function Fixup_SetObject           # (record, index): record[1] = index
@@ -548,6 +550,9 @@
 0x006329c0 function Virtuos_InputManager_setVibration # fh v3:exact 0x00632b70 Virtuos::InputManager::setVibration
 0x00632a30 function Virtuos_InputManager_updateInput # fastcall(input 0x00ccb170): ORs the bits of held bindings into the pad word (+0), previous at +4; was Input_UpdatePad
 0x00634610 function AssetListReader_dtor_AssetListReader # fh v3:exact 0x006347c0 AssetListReader::~AssetListReader
+0x006352b0 function std_Tree_const_iterator_inc_006352b0 # fastcall(it*) -> it: std::map iterator ++ (in-order successor; left +0, parent +4, right +8, _Isnil +0xd); same bytes at 0x00635300, 0x00635350, 0x00699ee0 (and in other modules)
+0x00635300 function std_Tree_const_iterator_inc_00635300 # same bytes as std_Tree_const_iterator_inc_006352b0
+0x00635350 function std_Tree_const_iterator_inc_00635350 # same bytes as std_Tree_const_iterator_inc_006352b0
 0x00636410 function asyncFFXInitialize        # fh switch:bsim1.00 0x71001cbb10
 0x00637860 function graphicAsyncTaskCallback  # fh v3:exact 0x00637a10
 0x00637980 function graphicCharacterUnloadTask # fh v3:exact 0x00637b30
@@ -1047,6 +1052,7 @@
 0x006985d0 function PostProcessManager_setHDAOSetting # fh v3:exact 0x00698710 PostProcessManager::setHDAOSetting
 0x00698750 function PostProcessManager_setNon16By9Viewport # fh v3:exact 0x00698890 PostProcessManager::setNon16By9Viewport
 0x006996ba function Catch_All_006997fa        # fh v3:cg2 0x6997fa Catch_All@006997fa
+0x00699ee0 function std_Tree_const_iterator_inc_00699ee0 # same bytes as std_Tree_const_iterator_inc_006352b0
 0x0069a1a0 function ClusterManager_GetInstance # fh v3:bsim1.00 0x0069a2e0 ClusterManager::GetInstance
 0x0069a6b0 function ChrResourceCacheManager_applyDelayedRelease # fh v3:exact 0x0069a7f0 ChrResourceCacheManager::applyDelayedRelease
 0x0069a950 function chrCacheApplyDelayedRelease # fh switch:bsim1.00 0x71001c7770
@@ -1217,7 +1223,7 @@
 0x006ed370 function FFXVu0CopyVector          # fh v3:bsim1.00 0x006ed4b0
 0x006ed3a0 function FFXVu0DivVector           # fh v3:exact 0x006ed4e0
 0x006ed420 function FFXVu0DivVectorXYZ        # fh v3:exact 0x006ed560
-0x006ed460 function sceVu0InversMatrix4x4     # fh v3:exact 0x006ed5a0
+0x006ed460 function sceVu0InversMatrix4x4     # cdecl(dst, m): the identity when a row of m is all ±0 (returns dst), else cdc_Inverse4x4 (returns dst+0x48); fh v3:exact 0x006ed5a0
 0x006ed4f0 function FFXVu0LightColorMatrix    # fh v3:exact 0x006ed630
 0x006ed5d0 function FFXVu0MulVector           # fh v3:exact 0x006ed710
 0x006ed620 function FFXVu0NormalLightMatrix   # fh v3:exact 0x006ed760
@@ -1293,7 +1299,9 @@
 0x006fb6c0 function user_aligned_free         # fh v3:exact 0x006fb7a0
 0x006fb8b0 function user_free                 # fh v3:exact 0x006fb990
 0x006fb9b0 function malloc_pool_init          # fh call.cs cdecl _malloc_pool_init
+0x00703bc0 function cdc_Vector_CanNormalize3  # thiscall(v): al = 1 when (x²+y²)+z² (stored f32) is not NaN (_isnan), finite (_finite) and > FLT_MIN (0x00b4cf60); only caller cdc_Vector_SafeNormalize3; name ours
 0x00704200 function cdc_Vector_SafeNormalize3 # fh v3:exact 0x007042f0 cdc::Vector::SafeNormalize3
+0x00704dd0 function cdc_Inverse4x4            # cdecl(dst, m): the general 4x4 inverse by cofactors (f32 stores between steps), 1/det or 0; leaves dst+0x48 in eax; only caller sceVu0InversMatrix4x4; name ours (cdc_ like its neighbours)
 0x00705850 function cdc_Mul3x4                # fh v3:exact 0x00705940 cdc::Mul3x4
 0x007058f0 function cdc_Mul4x4                # fh v3:exact 0x007059e0 cdc::Mul4x4
 0x007059b0 function cdc_Mul4x4_007059b0       # fh v3:exact 0x00705aa0 cdc::Mul4x4
@@ -1776,6 +1784,7 @@
 0x0076f0a0 function movie_sync_prog           # fh v3:bsim1.00 0x0076f1b0
 0x0076f0c0 function movie_with3DScene         # fh v3:exact 0x0076f1d0
 0x00774ae0 function getSa_MenuTextureName     # fh v3:exact 0x00774bf0
+0x007767a0 function Kernel_GetItemName        # (id) -> char*: g_EmptyName for 0, else MsGetRomItem's strings + the record's first u16; name ours
 0x00777680 function TkyiAssert                # fh v3:exact 0x00777780
 0x00777eb0 function get_hdd_name              # fh v3:exact 0x00777fb0
 0x007789e0 function hdd_head_reset            # fh v3:exact 0x00778ad0
@@ -4678,7 +4687,7 @@
 0x008f8940 function TODrawMenuStdPlateNonSC   # fh v3:cg2 0x8f8940
 0x008f8970 function TODrawMenuStdPlateType    # fh v3:exact 0x008f8970
 0x008f8ee0 function TODrawScaleButtonIconRGBA # fh v3:exact 0x008f8ee0
-0x008f9230 function TODrawScissorXYWH         # fh v3:exact+call.cs 0x008f9230 cdecl
+0x008f9230 function TODrawScissorXYWH         # (x, y, w, h): g_TkMenuScissorOn = 1, XYUV mode 0, box (x, y, x+w, y+h) as floats; leaves y+h in eax; fh v3:exact+call.cs 0x008f9230 cdecl
 0x008fa570 function TOGetFontSpaceInPiexl     # fh v3:exact 0x008fa570
 0x008fa6b0 function TOGetFontWidthInPiexl     # fh v3:exact 0x008fa6b0
 0x008fa800 function TOGetScaleButtonIconWidth # fh v3:exact 0x008fa800
@@ -7019,6 +7028,7 @@
 0x00b4c250 label ShadowDynamicMeshInstance_vftable # fh v4:imported ShadowDynamicMeshInstance::vftable
 0x00b4c2e4 label FmodManager_vftable          # fh v4:imported FmodManager::vftable
 0x00b4cf30 label JobSchedule_JobWorker_vftable # fh v4:imported JobSchedule::JobWorker::vftable
+0x00b4cf60 label    g_FltMin                  # f32 FLT_MIN (1.17549435e-38): cdc_Vector_CanNormalize3 wants the square sum above it
 0x00b501c0 label    g_AlphaScaleNormal        # .rdata f32 256.0: useExtendedAlpha(0) copies it to g_AlphaScale
 0x00b5b9fc label    g_AtelVersion                # build date and time string AtelGetVersion returns (__DATE__ " " __TIME__ style)
 0x00b69fe0 label type_info_vftable            # fh v4:imported type_info::vftable
@@ -7523,6 +7533,7 @@
 0x01128ab4 label    g_Cd_SectorBase           # added to every cdrom.mdg start sector (cd_file_sector); CdEnvInit: the disc's first sector less the table's own
 0x01128ab8 label    g_Cd_HddInstallCount      # hdd_install_check(g_Cd_HddInstall) (CdEnvInit); check_ex_file_size loops over that many
 0x01128ae4 label    g_Cd_HddInstall           # HDD-install table, 0x34-byte entries: archive (u8) +0, PS2 file number +8, size +0x10 (check_ex_file_size)
+0x0112a07c label    g_EmptyName               # u8 0 (.bss): what Kernel_GetItemName and 0x00774720 (ability names) return for ID 0
 0x0112a508 label    g_Hdd_Mounted             # i8: hdd_mount/hdd_unmount set it, hdd_mount_flg_get returns it
 0x0112a528 label    g_Hdd_Heads               # 51 entries of 12 bytes (hdd_head_reset runs to 0x0112a790 and sets +0, +4 to 0, +8 to 1): +8 = read mode (i8, hdd_rmode_get)
 0x0112a8e0 label g_BtlStatus                 # i8, not 0 in battle (MsBattleGetStatus 0x007816f0 sign-extends it; MsGetBattleScene 0x00782970 tests it)
