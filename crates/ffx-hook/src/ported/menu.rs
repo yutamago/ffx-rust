@@ -12,6 +12,25 @@ use ffx_menu::{
 
 use super::{mem, ported};
 
+/// A `g_TkMenuPacket` wrapper: `build` at `g_TkMenuPacket + 0x10`, whose
+/// end becomes the menu packet and the result.
+fn menu_packet(build: impl FnOnce(&mut super::RawMem, u32) -> u32) -> u32 {
+    let mut m = mem();
+    let p = tk::MENU_PACKET.get(&m).wrapping_add(0x10);
+    let end = build(&mut m, p);
+    tk::MENU_PACKET.set(&mut m, end);
+    end
+}
+
+/// `user_free(p)` (`0x006fb8b0`), through the game's entry (the system
+/// module's port when hooked).
+fn user_free(p: u32) -> u32 {
+    call_ptr(
+        u32::try_from(crate::rebase(0x006f_b8b0)).expect("32-bit"),
+        &[p],
+    )
+}
+
 /// Calls a game function pointer (a menu callback, cdecl) with one to three
 /// arguments.
 fn call_ptr(f: u32, args: &[u32]) -> u32 {
@@ -2501,5 +2520,86 @@ ported! {
     /// `TkMn2SeqGetRectCustom(i, name, &rect)`.
     TkMn2SeqGetRectCustom @ 0x008c_2bc0 => extern "C" fn tk_mn2_seq_get_rect_custom(i: i32, name: u32, out: u32) {
         tk::tk_mn2_seq_get_rect_custom(&mut mem(), i, name, out);
+    }
+    /// `Gu_ControlFreeText(control)`: through the game's `user_free` (itself
+    /// ported).
+    Gu_ControlFreeText @ 0x0084_94f0 => extern "C" fn gu_control_free_text(control: u32) -> u32 {
+        gu::gu_control_free_text(&mut mem(), control, &mut |_, p| user_free(p))
+    }
+    /// `Gu_SelectorDispose(selector)`: through the game's `user_free`.
+    Gu_SelectorDispose @ 0x0084_9bd0 => extern "C" fn gu_selector_dispose(selector: u32) -> u32 {
+        gu::gu_selector_dispose(&mut mem(), selector, &mut |_, p| user_free(p))
+    }
+    /// `MenuDraw_Sp3Body(p, _, x, y, entry, ox, oy, alpha)`.
+    MenuDraw_Sp3Body @ 0x008d_bf20 => extern "C" fn menu_draw_sp3_body(p: u32, z: u32, x: u32, y: u32, entry: u32, ox: u32, oy: u32, alpha: u32) -> u32 {
+        tk::menu_draw_sprites_plain(&mut mem(), [p, z, x, y, entry, ox, oy, alpha])
+    }
+    /// `MenuDraw_SpriteP(p, x, y, entry)`.
+    MenuDraw_SpriteP @ 0x008d_bd40 => extern "C" fn menu_draw_sprite_p(p: u32, x: u32, y: u32, entry: u32) -> u32 {
+        tk::menu_draw_sprites_plain(&mut mem(), [p, 0, x, y, entry, 0, 0, 0x80])
+    }
+    /// `MenuDraw_SpritePA(p, x, y, entry, alpha)`.
+    MenuDraw_SpritePA @ 0x008d_bd70 => extern "C" fn menu_draw_sprite_pa(p: u32, x: u32, y: u32, entry: u32, alpha: u32) -> u32 {
+        tk::menu_draw_sprites_plain(&mut mem(), [p, 0, x, y, entry, 0, 0, alpha])
+    }
+    /// `MenuDraw_SpriteP8A(p, x, y, entry, alpha)`.
+    MenuDraw_SpriteP8A @ 0x008d_bda0 => extern "C" fn menu_draw_sprite_p8_a(p: u32, x: u32, y: u32, entry: u32, alpha: u32) -> u32 {
+        tk::menu_draw_sprites_plain(&mut mem(), [p, 0, x, y, entry, 8, 0, alpha])
+    }
+    /// `MenuDraw_SpriteP1(p, x, y, entry)`.
+    MenuDraw_SpriteP1 @ 0x008d_be30 => extern "C" fn menu_draw_sprite_p1(p: u32, x: u32, y: u32, entry: u32) -> u32 {
+        tk::menu_draw_sprites_plain(&mut mem(), [p, 1, x, y, entry, 0, 0, 0x80])
+    }
+    /// `MenuDraw_SpriteP1A(p, x, y, entry, alpha)`.
+    MenuDraw_SpriteP1A @ 0x008d_be60 => extern "C" fn menu_draw_sprite_p1_a(p: u32, x: u32, y: u32, entry: u32, alpha: u32) -> u32 {
+        tk::menu_draw_sprites_plain(&mut mem(), [p, 1, x, y, entry, 0, 0, alpha])
+    }
+    /// `MenuDraw_SpriteP2(p, x, y, entry)`.
+    MenuDraw_SpriteP2 @ 0x008d_be90 => extern "C" fn menu_draw_sprite_p2(p: u32, x: u32, y: u32, entry: u32) -> u32 {
+        tk::menu_draw_sprites_plain(&mut mem(), [p, 2, x, y, entry, 0, 0, 0x80])
+    }
+    /// `MenuDraw_SpriteP2A(p, x, y, entry, alpha)`.
+    MenuDraw_SpriteP2A @ 0x008d_bec0 => extern "C" fn menu_draw_sprite_p2_a(p: u32, x: u32, y: u32, entry: u32, alpha: u32) -> u32 {
+        tk::menu_draw_sprites_plain(&mut mem(), [p, 2, x, y, entry, 0, 0, alpha])
+    }
+    /// `MenuDraw_SpriteP8(p, x, y, entry)`.
+    MenuDraw_SpriteP8 @ 0x008d_bef0 => extern "C" fn menu_draw_sprite_p8(p: u32, x: u32, y: u32, entry: u32) -> u32 {
+        tk::menu_draw_sprites_plain(&mut mem(), [p, 0, x, y, entry, 8, 0, 0x80])
+    }
+    /// `TkMenuDrawSp3(x, y, entry)`.
+    TkMenuDrawSp3 @ 0x008d_d520 => extern "C" fn tk_menu_draw_sp3(x: u32, y: u32, entry: u32) -> u32 {
+        menu_packet(|m, p| tk::menu_draw_sprites_plain(m, [p, 0, x, y, entry, 0, 0, 0x80]))
+    }
+    /// `TkMenuDrawSp3A(x, y, entry, alpha)`.
+    TkMenuDrawSp3A @ 0x008d_d550 => extern "C" fn tk_menu_draw_sp3_a(x: u32, y: u32, entry: u32, alpha: u32) -> u32 {
+        menu_packet(|m, p| tk::menu_draw_sprites_plain(m, [p, 0, x, y, entry, 0, 0, alpha]))
+    }
+    /// `TkMenuDrawSp3AHalf(x, y, entry, alpha)`.
+    TkMenuDrawSp3AHalf @ 0x008d_d580 => extern "C" fn tk_menu_draw_sp3_ahalf(x: u32, y: u32, entry: u32, alpha: u32) -> u32 {
+        menu_packet(|m, p| tk::menu_draw_sprites_plain(m, [p, 0, x, y, entry, 8, 0, alpha]))
+    }
+    /// `TkMenuDrawSp3AUR(x, y, entry, alpha)`.
+    TkMenuDrawSp3AUR @ 0x008d_d5b0 => extern "C" fn tk_menu_draw_sp3_aur(x: u32, y: u32, entry: u32, alpha: u32) -> u32 {
+        menu_packet(|m, p| tk::menu_draw_sprites(m, [p, 0, x, y, entry, 0, 0, alpha], true))
+    }
+    /// `TkMenuDrawSp3AURHalf(x, y, entry, alpha)`.
+    TkMenuDrawSp3AURHalf @ 0x008d_d5e0 => extern "C" fn tk_menu_draw_sp3_aurhalf(x: u32, y: u32, entry: u32, alpha: u32) -> u32 {
+        menu_packet(|m, p| tk::menu_draw_sprites(m, [p, 0, x, y, entry, 8, 0, alpha], true))
+    }
+    /// `TkMenuDrawSp3FaceB(x, y, entry)`.
+    TkMenuDrawSp3FaceB @ 0x008d_d740 => extern "C" fn tk_menu_draw_sp3_face_b(x: u32, y: u32, entry: u32) -> u32 {
+        menu_packet(|m, p| tk::menu_draw_sprites_plain(m, [p, 2, x, y, entry, 0, 0, 0x80]))
+    }
+    /// `TkMenuDrawSp3FaceBA(x, y, entry, alpha)`.
+    TkMenuDrawSp3FaceBA @ 0x008d_d770 => extern "C" fn tk_menu_draw_sp3_face_ba(x: u32, y: u32, entry: u32, alpha: u32) -> u32 {
+        menu_packet(|m, p| tk::menu_draw_sprites_plain(m, [p, 2, x, y, entry, 0, 0, alpha]))
+    }
+    /// `TkMenuDrawSp3Half(x, y, entry)`.
+    TkMenuDrawSp3Half @ 0x008d_d7a0 => extern "C" fn tk_menu_draw_sp3_half(x: u32, y: u32, entry: u32) -> u32 {
+        menu_packet(|m, p| tk::menu_draw_sprites_plain(m, [p, 0, x, y, entry, 8, 0, 0x80]))
+    }
+    /// `TkMenuDrawSp30(x, y)`.
+    TkMenuDrawSp30 @ 0x008d_ca20 => extern "C" fn tk_menu_draw_sp30(x: u32, y: u32) -> u32 {
+        menu_packet(|m, p| tk::menu_draw_sprites_plain(m, [p, 0, x, y, 0, 0, 0, 0x80]))
     }
 }

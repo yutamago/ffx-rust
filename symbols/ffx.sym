@@ -4143,6 +4143,7 @@
 0x008493e0 function Gu_ButtonSetToggleValue   # fh v3:bsim1.00 0x008493e0
 0x00849440 function Gu_MouseInRect            # (rect {i16 x, y, w, h}, dx, dy) -> 1 when g_GuMouseX/Y is strictly inside the moved rectangle
 0x00849490 function Gu_WindowMouseIn          # (window) Gu_SetHScale(+0x8e); mouse strictly inside the i16 rect +0xc; own name
+0x008494f0 function Gu_ControlFreeText        # (control) user_free(+0x28) when u16 +0x26 != 0; no direct caller; own name
 0x008496d0 function Gu_WindowControlSetRect   # (window, id, x, y, w, h) the control rects (x, y + client origin +0x80), -1 kept; own name
 0x00849780 function Gu_Hide                   # fh switch:bsim1.00 0x7100440810
 0x00849850 function Gu_Main                   # fh v3:exact 0x00849850
@@ -4156,6 +4157,7 @@
 0x00849b80 function Gu_MouseSetEnable         # 0x01303760 = on; Switch name, the one name between Gu_MouseSetCapture and Gu_MouseSetWindow
 0x00849b90 function Gu_MouseSetWindow         # fh v3:exact 0x00849b90
 0x00849bb0 function Gu_SelectorAllocate       # fh v3:exact 0x00849bb0
+0x00849bd0 function Gu_SelectorDispose        # (selector) user_free of +8 and +0xc (when +8 set), then of itself; Switch name, alphabetical slot Gu_SelectorAllocate..Gu_SelectorGetItemValue (frees itself)
 0x00849d10 function Gu_SelectorGetItemValue   # (selector): the selected item's value (+0xc array at +2), beside Gu_SelectorGetItemName
 0x00849d30 function Gu_SelectorGetItemName    # fh v3:bsim1.00 0x00849d30
 0x00849d50 function Gu_SelectorGetSelect      # (selector) -> i16 +2, the selected item
@@ -5592,8 +5594,17 @@
 0x008db7a0 function MenuTuto_SetChoice        # (window, i) 0x025d16bc = 1, 0x01871528 = i; own name
 0x008db840 function MenuTuto_GetChoice        # 0x01871528 when 0x025d16bc is set, else -1; own name
 0x008db870 function DrawBlackBackGround       # fh v3:exact 0x008db850
+0x008dbd40 function MenuDraw_SpriteP          # (p, x, y, entry) MenuDraw_Sp3Body tint 0x80; own name
+0x008dbd70 function MenuDraw_SpritePA         # (p, x, y, entry, alpha); own name
+0x008dbda0 function MenuDraw_SpriteP8A        # (p, x, y, entry, alpha) ox = 8; own name
 0x008dbdd0 function MenuDraw_SpriteVA         # (p, x, y, entry, alpha); own name
 0x008dbe00 function MenuDraw_SpriteV8A        # (p, x, y, entry, alpha) ox = 8; own name
+0x008dbe30 function MenuDraw_SpriteP1         # (p, x, y, entry) unused arg 1; own name
+0x008dbe60 function MenuDraw_SpriteP1A        # (p, x, y, entry, alpha) unused arg 1; own name
+0x008dbe90 function MenuDraw_SpriteP2         # (p, x, y, entry) unused arg 2; own name
+0x008dbec0 function MenuDraw_SpriteP2A        # (p, x, y, entry, alpha) unused arg 2; own name
+0x008dbef0 function MenuDraw_SpriteP8         # (p, x, y, entry) ox = 8; own name
+0x008dbf20 function MenuDraw_Sp3Body          # (p, _, x, y, entry, ox, oy, alpha) the unmirrored sprite body: u, v from cell * 16 + 8, screen offsets forward, u clamped to 0xff0 cutting the right edge; own name
 0x008dc0f0 function MenuDraw_Sprite           # (p, x, y, entry) MenuDraw_Sp3RBody tint 0x80; own name
 0x008dc120 function MenuDraw_SpriteA          # (p, x, y, entry, alpha); own name
 0x008dc150 function MenuDraw_Sprite1          # (p, x, y, entry) unused arg 1; no caller; own name
@@ -5608,6 +5619,7 @@
 0x008dc9b0 function TkMenuConfigMes           # fh switch:bsim1.00 0x71004c3490
 0x008dc9e0 function TkMenuDraw1612Width       # fh call.cs cdecl
 0x008dc9f0 function TkMenuDraw1612WidthHeight # fh switch:bsim1.00 0x71004bfde0
+0x008dca20 function TkMenuDrawSp30            # (x, y) TkMenuDrawSp3(x, y, 0), the 0 written into the caller's argument slot; own name
 0x008dca30 function TkMenuDrawSp3R0           # (x, y) TkMenuDrawSp3R(x, y, 0), the 0 written into the caller's argument slot; own name
 0x008dca90 function TkMenuDrawCursor2         # fh switch:bsim1.00 0x71004c0b40
 0x008dcb10 function TkMenuDrawEasyMes1208     # fh switch:bsim1.00 0x71004c19a0

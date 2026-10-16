@@ -970,6 +970,38 @@ pub mod bridge {
         let y = i32::from(mem.read::<i16>(at(w, 0xe)));
         ffx_sg::state::bridge::set_mouse(mem, x, y)
     }
+    /// `Gu_ControlFreeText(control)` (`0x008494f0`, own name): the text
+    /// buffer at `+0x28` freed (`user_free`) when `+0x26` is non-zero.
+    /// Returns `free`'s result, or the control (left in `eax`) when nothing
+    /// was freed.
+    pub fn gu_control_free_text<M: Mem>(
+        mem: &mut M,
+        control: u32,
+        free: &mut impl FnMut(&mut M, u32) -> u32,
+    ) -> u32 {
+        if mem.read::<u16>(control.wrapping_add(0x26)) == 0 {
+            return control;
+        }
+        let text = mem.read(control.wrapping_add(0x28));
+        free(mem, text)
+    }
+
+    /// `Gu_SelectorDispose(selector)` (`0x00849bd0`): its item arrays
+    /// (`+8`, then `+0xc`, when `+8` is set) and the selector itself freed.
+    /// Returns the last `free`'s result.
+    pub fn gu_selector_dispose<M: Mem>(
+        mem: &mut M,
+        selector: u32,
+        free: &mut impl FnMut(&mut M, u32) -> u32,
+    ) -> u32 {
+        let items: u32 = mem.read(selector.wrapping_add(8));
+        if items != 0 {
+            free(mem, items);
+            let data = mem.read(selector.wrapping_add(0xc));
+            free(mem, data);
+        }
+        free(mem, selector)
+    }
 }
 
 #[cfg(test)]

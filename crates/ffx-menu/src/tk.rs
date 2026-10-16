@@ -3181,6 +3181,22 @@ pub mod bridge {
     /// the packet end.
     #[allow(clippy::many_single_char_names, clippy::too_many_arguments)]
     pub fn menu_draw_sprites(mem: &mut impl Mem, args: [u32; 8], mirror: bool) -> u32 {
+        sprites(mem, args, u8::from(mirror))
+    }
+
+    /// `MenuDraw_Sp3Body(p, _, x, y, entry, ox, oy, alpha)` (`0x008dbf20`,
+    /// own name): the unmirrored form of [`menu_draw_sprites`]: texture
+    /// from (`u × 16 + 8`, `v × 16 + 8`), screen from the cell's offset
+    /// forward, the right edge cut where `u` passes `0xff0`.
+    pub fn menu_draw_sprites_plain(mem: &mut impl Mem, args: [u32; 8]) -> u32 {
+        sprites(mem, args, 2)
+    }
+
+    /// The three sprite bodies: 0 `0x008dc1b0`, 1 `0x008dc710`, 2
+    /// `0x008dbf20`.
+    #[allow(clippy::many_single_char_names)]
+    fn sprites(mem: &mut impl Mem, args: [u32; 8], mode: u8) -> u32 {
+        let mirror = mode == 1;
         let [p, _, x, y, entry, ox, oy, alpha] = args;
         let sx = x.wrapping_add(0x700) << 4;
         let sy = y.wrapping_add(0x730) << 4;
@@ -3202,7 +3218,24 @@ pub mod bridge {
                 oy.cast_signed(),
             );
             sprite_header(mem, q, 0x8001, 0x00f5_3530, 0x156);
-            if mirror {
+            if mode == 2 {
+                let u0 = u * 16 + 8;
+                let v0 = v * 16 + 8;
+                let mut u1 = w * 16 + u0;
+                let v1 = h * 16 + v0;
+                let xa = (dx * 16).wrapping_add(sx).wrapping_add(ox);
+                let mut xb = (sw * 16).wrapping_add(xa);
+                let ya = (dy * 16).wrapping_add(sy).wrapping_add(oy);
+                let yb = (sh * 16).wrapping_add(ya);
+                if u1 > 0xff0 {
+                    xb = xb.wrapping_sub(u1 - 0xff0);
+                    u1 = 0xff0;
+                }
+                put_u64(mem, q + 0x18, gs_xy(u0, v0));
+                put_u64(mem, q + 0x20, gs_xy(xa, ya));
+                put_u64(mem, q + 0x28, gs_xy(u1, v1));
+                put_u64(mem, q + 0x30, gs_xy(xb, yb));
+            } else if mirror {
                 let u0 = u * 16 + 8;
                 let v0 = (v * 16 - 8).max(0);
                 let mut u1 = w * 16 + u0;

@@ -94,6 +94,26 @@ fn setup(seed: u32) -> Option<Twins> {
     })
 }
 
+/// Like [`setup`], from the snapshot when `FFX_SNAPSHOT` is set and from
+/// the bare image otherwise (synthetic state only: `.bss` is zero and the
+/// game never ran).
+fn setup_any(seed: u32) -> Option<Twins> {
+    if std::env::var_os("FFX_SNAPSHOT").is_some() {
+        return setup(seed);
+    }
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return None;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    Some(Twins {
+        a: Oracle::load(&exe).unwrap(),
+        b: Oracle::load(&exe).unwrap(),
+        rng: Xorshift(seed),
+        calls: 0,
+    })
+}
+
 impl Twins {
     fn sym(&self, sym: u32) -> u32 {
         self.b.rebase(sym)
@@ -219,7 +239,7 @@ fn selector(t: &mut Twins) -> u32 {
 
 #[test]
 fn gu_matches_the_original() {
-    let Some(mut t) = setup(0x2545_f491) else {
+    let Some(mut t) = setup_any(0x2545_f491) else {
         return;
     };
     for _ in 0..60 {
@@ -606,7 +626,7 @@ fn scene_block(t: &mut Twins, params: &[&[u8]], scenes: &[&[u8]]) -> (u32, Vec<u
 
 #[test]
 fn scene_data_matches_the_original() {
-    let Some(mut t) = setup(0x0bad_cafe) else {
+    let Some(mut t) = setup_any(0x0bad_cafe) else {
         return;
     };
     let loaded: Vec<u32> = (0..8)
@@ -682,7 +702,7 @@ type ControlSetter = (&'static str, u32, fn(&mut Oracle, u32, u32, u32));
 
 #[test]
 fn tk_matches_the_original() {
-    let Some(mut t) = setup(0x5eed_0001) else {
+    let Some(mut t) = setup_any(0x5eed_0001) else {
         return;
     };
     // one global read (scrambled first) or a constant
@@ -1167,7 +1187,7 @@ impl Xorshift {
 
 #[test]
 fn floats_match_the_original() {
-    let Some(mut t) = setup(0xf10a_7001) else {
+    let Some(mut t) = setup_any(0xf10a_7001) else {
         return;
     };
     let pi = std::f32::consts::PI;
@@ -1286,7 +1306,7 @@ fn floats_match_the_original() {
 
 #[test]
 fn players_vibration_and_degrees_match_the_original() {
-    let Some(mut t) = setup(0x0dd_ba11) else {
+    let Some(mut t) = setup_any(0x0dd_ba11) else {
         return;
     };
     for _ in 0..1500 {
@@ -1410,7 +1430,7 @@ fn same_float(what: &str, want: Option<f64>, got: f32) {
 
 #[test]
 fn gu_packets_and_windows_match_the_original() {
-    let Some(mut t) = setup(0x9a11_0002) else {
+    let Some(mut t) = setup_any(0x9a11_0002) else {
         return;
     };
     for round in 0..400 {
@@ -2204,7 +2224,7 @@ fn menu_windows_and_items_match_the_original() {
 
 #[test]
 fn tk_round3_matches_the_original() {
-    let Some(mut t) = setup(0x9a11_0005) else {
+    let Some(mut t) = setup_any(0x9a11_0005) else {
         return;
     };
     let event = ffx_battle::save::bridge::ms_get_save_event_address(&t.b);
@@ -2336,7 +2356,7 @@ fn tk_round3_matches_the_original() {
 
 #[test]
 fn gu_round3_matches_the_original() {
-    let Some(mut t) = setup(0x9a11_0006) else {
+    let Some(mut t) = setup_any(0x9a11_0006) else {
         return;
     };
     for _ in 0..600 {
@@ -2562,7 +2582,7 @@ fn callback(o: &mut Oracle, f: u32, args: &[u32]) -> u32 {
 
 #[test]
 fn tk_round4_matches_the_original() {
-    let Some(mut t) = setup(0x7a4c_e019) else {
+    let Some(mut t) = setup_any(0x7a4c_e019) else {
         return;
     };
     let event = ffx_battle::save::bridge::ms_get_save_event_address(&t.b);
@@ -3750,7 +3770,7 @@ fn tk_round6_matches_the_original() {
 
 #[test]
 fn tk_round6b_matches_the_original() {
-    let Some(mut t) = setup(0x30a1_77c5) else {
+    let Some(mut t) = setup_any(0x30a1_77c5) else {
         return;
     };
     for round in 0..150u32 {
@@ -3964,7 +3984,7 @@ fn tk_round6b_matches_the_original() {
 
 #[test]
 fn menu_sprite_packets_match_the_original() {
-    let Some(mut t) = setup(0x4d72_19b3) else {
+    let Some(mut t) = setup_any(0x4d72_19b3) else {
         return;
     };
     let table = t.sym(0x00c5_a900);
@@ -3982,6 +4002,59 @@ fn menu_sprite_packets_match_the_original() {
         });
         t.twin("MenuDraw_Sp3UBody", 0x008d_c710, &args, U32, |o| {
             w(tk::menu_draw_sprites(o, args, true))
+        });
+        t.twin("MenuDraw_Sp3Body", 0x008d_bf20, &args, U32, |o| {
+            w(tk::menu_draw_sprites_plain(o, args))
+        });
+        for (name, sym, z, ox, al) in [
+            ("MenuDraw_SpriteP", 0x008d_bd40, 0, 0, None),
+            ("MenuDraw_SpritePA", 0x008d_bd70, 0, 0, Some(alpha)),
+            ("MenuDraw_SpriteP8A", 0x008d_bda0, 0, 8, Some(alpha)),
+            ("MenuDraw_SpriteP1", 0x008d_be30, 1, 0, None),
+            ("MenuDraw_SpriteP1A", 0x008d_be60, 1, 0, Some(alpha)),
+            ("MenuDraw_SpriteP2", 0x008d_be90, 2, 0, None),
+            ("MenuDraw_SpriteP2A", 0x008d_bec0, 2, 0, Some(alpha)),
+            ("MenuDraw_SpriteP8", 0x008d_bef0, 0, 8, None),
+        ] {
+            let mut a = vec![p, x, y, entry];
+            a.extend(al);
+            let all = [p, z, x, y, entry, ox, 0, al.unwrap_or(0x80)];
+            t.twin(name, sym, &a, U32, |o| {
+                w(tk::menu_draw_sprites_plain(o, all))
+            });
+        }
+        // the g_TkMenuPacket wrappers over them
+        for (name, sym, z, ox, al, v) in [
+            ("TkMenuDrawSp3", 0x008d_d520, 0, 0, None, false),
+            ("TkMenuDrawSp3A", 0x008d_d550, 0, 0, Some(alpha), false),
+            ("TkMenuDrawSp3AHalf", 0x008d_d580, 0, 8, Some(alpha), false),
+            ("TkMenuDrawSp3AUR", 0x008d_d5b0, 0, 0, Some(alpha), true),
+            ("TkMenuDrawSp3AURHalf", 0x008d_d5e0, 0, 8, Some(alpha), true),
+            ("TkMenuDrawSp3FaceB", 0x008d_d740, 2, 0, None, false),
+            ("TkMenuDrawSp3FaceBA", 0x008d_d770, 2, 0, Some(alpha), false),
+            ("TkMenuDrawSp3Half", 0x008d_d7a0, 0, 8, None, false),
+        ] {
+            let pk = t.alloc_random(0x1000);
+            t.put(t.sym(tk::MENU_PACKET.sym), pk);
+            let mut a = vec![x, y, entry];
+            a.extend(al);
+            let all = [pk + 0x10, z, x, y, entry, ox, 0, al.unwrap_or(0x80)];
+            t.twin(name, sym, &a, U32, |o| {
+                let e = if v {
+                    tk::menu_draw_sprites(o, all, true)
+                } else {
+                    tk::menu_draw_sprites_plain(o, all)
+                };
+                tk::MENU_PACKET.set(o, e);
+                w(e)
+            });
+        }
+        let pk = t.alloc_random(0x1000);
+        t.put(t.sym(tk::MENU_PACKET.sym), pk);
+        t.twin("TkMenuDrawSp30", 0x008d_ca20, &[x, y], U32, |o| {
+            let e = tk::menu_draw_sprites_plain(o, [pk + 0x10, 0, x, y, 0, 0, 0, 0x80]);
+            tk::MENU_PACKET.set(o, e);
+            w(e)
         });
         for (name, sym, z, ox, al, mirror) in [
             ("MenuDraw_Sprite", 0x008d_c0f0, 0, 0, None, false),
@@ -4151,7 +4224,7 @@ fn menu_sprite_packets_match_the_original() {
 
 #[test]
 fn tk_round6c_matches_the_original() {
-    let Some(mut t) = setup(0x5e17_a2c9) else {
+    let Some(mut t) = setup_any(0x5e17_a2c9) else {
         return;
     };
     for round in 0..200u32 {
@@ -4339,6 +4412,63 @@ fn tk_round6c_matches_the_original() {
             let e = tk::menu_draw_sprites(o, [pk + 0x10, 0, x, yy, 0, 0, 0, 0x80], false);
             tk::MENU_PACKET.set(o, e);
             w(e)
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+/// `user_free` replaced in both oracles by a recorder appending its
+/// argument at `*log` (`log` the cursor's address); returns 0.
+fn record_frees(t: &mut Twins) -> u32 {
+    let buf = t.alloc(&[0; 0x1000]);
+    let log = t.alloc(&buf.to_le_bytes());
+    let l = log.to_le_bytes();
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0x8b, 0x44, 0x24, 0x04][..],              // mov eax, [esp + 4]
+        &[0x8b, 0x0d], &l,                          // mov ecx, [log]
+        &[0x89, 0x01],                              // mov [ecx], eax
+        &[0x83, 0x05], &l, &[0x04],                 // add dword [log], 4
+        &[0x31, 0xc0, 0xc3],                        // xor eax, eax; ret
+    ]
+    .concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x006f_b8b0);
+        o.write(at, &code).unwrap();
+    }
+    log
+}
+
+/// The recorder's effect, for the bridge side.
+fn free_into(o: &mut Oracle, log: u32, p: u32) -> u32 {
+    let at: u32 = Mem::read(o, log);
+    Mem::write(o, at, p);
+    Mem::write(o, log, at + 4);
+    0
+}
+
+#[test]
+fn gu_frees_match_the_original() {
+    let Some(mut t) = setup_any(0x1f2e_3d4c) else {
+        return;
+    };
+    let log = record_frees(&mut t);
+    for _ in 0..100 {
+        let c = t.alloc_random(0x40);
+        let on = t.rng.pick(&[0u16, 0, 1, 0x100]);
+        t.put(c + 0x26, on);
+        t.twin("Gu_ControlFreeText", 0x0084_94f0, &[c], U32, |o| {
+            w(gu::gu_control_free_text(o, c, &mut |o, p| {
+                free_into(o, log, p)
+            }))
+        });
+        let sel = t.alloc_random(0x40);
+        let items = t.rng.pick(&[0u32, 0x1234_5678, 0x10]);
+        t.put(sel + 8, items);
+        t.twin("Gu_SelectorDispose", 0x0084_9bd0, &[sel], U32, |o| {
+            w(gu::gu_selector_dispose(o, sel, &mut |o, p| {
+                free_into(o, log, p)
+            }))
         });
     }
     eprintln!("{} calls", t.calls);
