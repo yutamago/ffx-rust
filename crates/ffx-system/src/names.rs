@@ -20,9 +20,18 @@ pub mod bridge {
         strings.wrapping_add(u32::from(mem.read::<u16>(record)))
     }
 
-    /// `0x00776f50(chr)`: a jump to `MsGetSavePlayerPtr` (the
-    /// `ply_save` record of `chr`).
+    /// The `ply_save` records (`MsGetSavePlayerPtr`'s, `ffx_battle::save`).
+    pub const PLY_SAVE: Global<[u8; 0x94]> = Global::new(0x0113_205c);
+
+    /// `0x00776f50(chr)`: a jump to `MsGetSavePlayerPtr`: the 0x94-byte
+    /// `ply_save` record of `chr & 0xff`, null from 0x12 on. (`ffx-system`
+    /// cannot depend on `ffx-battle`, which depends on it through
+    /// `ffx-chara`.)
     pub fn save_player_ptr(mem: &impl Mem, chr: u32) -> u32 {
-        ffx_battle::save::bridge::ms_get_save_player_ptr(mem, chr)
+        let chr = chr & 0xff;
+        if chr >= 0x12 {
+            return 0;
+        }
+        PLY_SAVE.ptr(mem).addr + chr * 0x94
     }
 }
