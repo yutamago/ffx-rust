@@ -491,4 +491,257 @@ pub mod bridge {
             SCREEN_H.set(mem, h as u16);
         }
     }
+
+    /// `0x008b9640(i)`: message window `i`'s object.
+    pub fn message_window(mem: &impl Mem, i: i32) -> u32 {
+        entry(mem, MSG_WINDOWS, i)
+    }
+
+    /// `0x008b9a50(i)`: entry `i` of the `0x01868a90` table.
+    pub fn table_01868a90_entry(mem: &impl Mem, i: i32) -> u32 {
+        table_entry(mem, i)
+    }
+
+    /// `0x008ca370(i, v)`: for `i` up to 3, byte `0x0186a42d`, `0x0186a42f`,
+    /// `0x0186a429` or `0x0186a42b` set (in that order of `i`).
+    pub fn set_byte_186a429(mem: &mut impl Mem, i: u32, v: u8) {
+        const AT: [u32; 4] = [0x0186_a42d, 0x0186_a42f, 0x0186_a429, 0x0186_a42b];
+        if let Some(&at) = AT.get(i as usize) {
+            mem.write(mem.rebase(at), v);
+        }
+    }
+
+    /// The three-state switch `0x00906740` steps (`0x018763e0`).
+    pub const SWITCH_18763E0: Global<i32> = Global::new(0x0187_63e0);
+
+    /// `0x00906740()`: the switch steps -1 to 0, 0 to 1, 1 to -1 (other
+    /// values stay); returns the new value (or the unchanged one).
+    pub fn step_switch(mem: &mut impl Mem) -> i32 {
+        let v = SWITCH_18763E0.get(mem);
+        let next = match v {
+            -1 => 0,
+            0 => 1,
+            1 => -1,
+            other => return other,
+        };
+        SWITCH_18763E0.set(mem, next);
+        next
+    }
+
+    /// `0x0089e4f0(a, b, c)`: a 12-byte entry appended at `0x013402b8`
+    /// (count `0x01340438`): `+0` 1, `+4` `a`, `+6` `b` (16 bits each), `+8`
+    /// `c`. Returns `c`.
+    pub fn push_entry_13402b8(mem: &mut impl Mem, a: u32, b: u32, c: u32) -> u32 {
+        let count = Global::<u32>::new(0x0134_0438);
+        let used = count.get(mem);
+        let e = mem.rebase(0x0134_02b8).wrapping_add(used.wrapping_mul(12));
+        mem.write(e, 1u16);
+        #[allow(clippy::cast_possible_truncation)] // 16-bit stores
+        {
+            mem.write(e.wrapping_add(4), a as u16);
+            mem.write(e.wrapping_add(6), b as u16);
+        }
+        mem.write(e.wrapping_add(8), c);
+        count.set(mem, used.wrapping_add(1));
+        c
+    }
+
+    /// `0x008be050(v)`: for each of the byte-count `0x01869f18` entries
+    /// (14 bytes from `0x01869f20`), `+4` = `v` and, when `v` is 3, `+2` =
+    /// twice the entries after it.
+    pub fn set_entries_1869f20(mem: &mut impl Mem, v: u32) {
+        let count = u32::from(Global::<u8>::new(0x0186_9f18).get(mem));
+        let base = mem.rebase(0x0186_9f22);
+        for k in 0..count {
+            let e = base + 0xe * k;
+            #[allow(clippy::cast_possible_truncation)] // 16-bit stores
+            {
+                mem.write(e + 2, v as u16);
+                if v == 3 {
+                    mem.write(
+                        e,
+                        (count.wrapping_sub(k).wrapping_sub(1) as u16).wrapping_mul(2),
+                    );
+                }
+            }
+        }
+    }
+
+    /// `0x008a2ad0(rec)`: one step of a 4-step offset animation: the
+    /// signed byte step `+0xf` picks 4, 7, 11 or 16 to add to the half
+    /// `+0x10`; after the fourth the step restarts and `+0x14` becomes
+    /// `0x008a2b10`. Returns 0.
+    pub fn anim_step_8a2ad0(mem: &mut impl Mem, rec: u32) -> u32 {
+        const STEPS: [i8; 4] = [4, 7, 11, 16];
+        let c: i8 = mem.read(rec.wrapping_add(0xf));
+        let add = STEPS[usize::try_from(c).expect("a step of 0..4")];
+        let v: i16 = mem.read(rec.wrapping_add(0x10));
+        mem.write(rec.wrapping_add(0x10), v.wrapping_add(i16::from(add)));
+        let c = c.wrapping_add(1);
+        mem.write(rec.wrapping_add(0xf), c);
+        if c >= 4 {
+            mem.write(rec.wrapping_add(0xf), 0u8);
+            let next = mem.rebase(0x008a_2b10);
+            mem.write(rec.wrapping_add(0x14), next);
+        }
+        0
+    }
+
+    /// The angle `0x00890f30` advances (`0x0133fa7c`, f32).
+    pub const ANGLE_133FA7C: Global<f32> = Global::new(0x0133_fa7c);
+
+    /// `0x00890f30()`: the angle advanced by the double at `0x00b5ee38`
+    /// (pi / 30), stored as a float; past pi (`0x00b92288`) it wraps by
+    /// 2 pi (`0x00b39378`).
+    pub fn advance_angle(mem: &mut impl Mem) {
+        let step = Global::<f64>::new(0x00b5_ee38).get(mem);
+        let pi = Global::<f64>::new(0x00b9_2288).get(mem);
+        let turn = Global::<f64>::new(0x00b3_9378).get(mem);
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let v = (f64::from(ANGLE_133FA7C.get(mem)) + step) as f32;
+        ANGLE_133FA7C.set(mem, v);
+        if f64::from(v) > pi {
+            #[allow(clippy::cast_possible_truncation)] // fstp dword
+            ANGLE_133FA7C.set(mem, (f64::from(v) - turn) as f32);
+        }
+    }
+
+    /// `0x00906c80(i)`: window `i` opened: `+0` 1, `+8` 0, its function
+    /// `+0x60` called with it, then `+8` 1 and `+0x74` = the function at
+    /// `+0x60 + 4 * (+8)`. Returns that function.
+    pub fn open_window<M: Mem>(
+        mem: &mut M,
+        i: i32,
+        call: impl FnOnce(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = entry(mem, WINDOWS, i);
+        mem.write(w, 1u16);
+        let w = entry(mem, WINDOWS, i);
+        mem.write(w.wrapping_add(8), 0u16);
+        let w = entry(mem, WINDOWS, i);
+        let f: u32 = mem.read(w.wrapping_add(0x60));
+        call(mem, f, &[w]);
+        let w = entry(mem, WINDOWS, i);
+        mem.write(w.wrapping_add(8), 1u16);
+        let w = entry(mem, WINDOWS, i);
+        let k = i32::from(mem.read::<i16>(w.wrapping_add(8)));
+        let f: u32 = mem.read(
+            w.wrapping_add(0x60)
+                .wrapping_add(k.cast_unsigned().wrapping_mul(4)),
+        );
+        mem.write(w.wrapping_add(0x74), f);
+        f
+    }
+
+    /// `0x008b8560(i)`: message window `i` opened: `+0` 1, `+0x2c` 0, its
+    /// function `+0x100` called with it, `+0x114` = `+0x104`, then (a tail
+    /// call) its function `+0xf8` with it.
+    pub fn open_message<M: Mem>(
+        mem: &mut M,
+        i: i32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let m = entry(mem, MSG_WINDOWS, i);
+        mem.write(m, 1u16);
+        let m = entry(mem, MSG_WINDOWS, i);
+        mem.write(m.wrapping_add(0x2c), 0u16);
+        let m = entry(mem, MSG_WINDOWS, i);
+        let f: u32 = mem.read(m.wrapping_add(0x100));
+        call(mem, f, &[m]);
+        let m = entry(mem, MSG_WINDOWS, i);
+        let v: u32 = mem.read(m.wrapping_add(0x104));
+        mem.write(m.wrapping_add(0x114), v);
+        let m = entry(mem, MSG_WINDOWS, i);
+        let f: u32 = mem.read(m.wrapping_add(0xf8));
+        call(mem, f, &[m])
+    }
+
+    /// `0x008ab800(i)`: message-window slot `i`'s (`0x01865b3c`) three
+    /// parts cleared: halves `+0`, `+8` of `*(slot + 0x10)`, `+0`, `+0x2c` of
+    /// `*(slot + 0x14)`, bytes `+0`, `+1` of `*(slot + 0x18)`. Returns the
+    /// third part.
+    pub fn clear_message_slot(mem: &mut impl Mem, i: u32) -> u32 {
+        let at = MSG_WINDOW_SLOTS
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.wrapping_mul(4));
+        let mut last = 0;
+        for (off, field, wide) in [
+            (0x10, 0, true),
+            (0x14, 0, true),
+            (0x18, 0, false),
+            (0x10, 8, true),
+            (0x14, 0x2c, true),
+            (0x18, 1, false),
+        ] {
+            let slot: u32 = mem.read(at);
+            let p: u32 = mem.read(slot.wrapping_add(off));
+            if wide {
+                mem.write(p.wrapping_add(field), 0u16);
+            } else {
+                mem.write(p.wrapping_add(field), 0u8);
+            }
+            last = p;
+        }
+        last
+    }
+
+    /// `0x009047f0(p, k, r, g, b, a)`: corner `k` (0..=3) of a G4 quad's
+    /// colours (bytes `+0x10 + k`, `+0x14 + k`, `+0x18 + k`, `+0x1c + k`), or
+    /// all four corners for a larger `k`.
+    pub fn set_quad_rgba(mem: &mut impl Mem, p: u32, k: u32, rgba: [u8; 4]) {
+        for (c, v) in (0u32..).zip(rgba) {
+            let at = p.wrapping_add(0x10 + 4 * c);
+            if k <= 3 {
+                mem.write(at.wrapping_add(k), v);
+            } else {
+                mem.write(at, [v; 4]);
+            }
+        }
+    }
+
+    /// `0x008b8b20(i, x, y, w, h)`: message window `i`'s area: halves `+0x40`
+    /// `w`, `+0x42` `h`, floats `+0x30` `x`, `+0x34` `y`, `+0x38` `x + w`,
+    /// `+0x3c` `y + h`.
+    #[allow(clippy::cast_precision_loss)] // fild then fstp dword
+    pub fn set_message_area(mem: &mut impl Mem, i: i32, r: [i32; 4]) {
+        let m = entry(mem, MSG_WINDOWS, i);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 16-bit stores
+        {
+            mem.write(m.wrapping_add(0x40), r[2] as u16);
+            mem.write(m.wrapping_add(0x42), r[3] as u16);
+        }
+        let f = [r[0], r[1], r[0].wrapping_add(r[2]), r[1].wrapping_add(r[3])];
+        mem.write(m.wrapping_add(0x30), f.map(|v| v as f32));
+    }
+
+    /// `0x00900f80(i, x, y, d)`: entry `i` (below 16) of [`ENTRIES_18762E0`]
+    /// moved to `(x, y)` (halves `+2`, `+4`; `+0` 1) unless it is already
+    /// there; unless its `+0xe` is 1, it restarts: `+8` 0, `+6` `d`, `+0xc`
+    /// `d / 14 + 2`.
+    #[allow(clippy::many_single_char_names)] // the original's parameters
+    pub fn move_entry_18762e0(mem: &mut impl Mem, i: i32, x: i32, y: i32, d: i32) {
+        if i >= 16 {
+            return;
+        }
+        let e = ENTRIES_18762E0
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.cast_unsigned() << 4);
+        if x == i32::from(mem.read::<i16>(e + 2)) && y == i32::from(mem.read::<i16>(e + 4)) {
+            return;
+        }
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 16-bit stores
+        {
+            mem.write(e, 1u16);
+            mem.write(e + 2, x as u16);
+            mem.write(e + 4, y as u16);
+            if mem.read::<u16>(e + 0xe) == 1 {
+                return;
+            }
+            mem.write(e + 8, 0u32);
+            mem.write(e + 6, d as u16);
+            mem.write(e + 0xc, (d / 14 + 2) as u16);
+        }
+    }
 }

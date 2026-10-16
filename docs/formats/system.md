@@ -143,3 +143,18 @@ register address follows the value.
 
 `TOAdpFOG` (`0x008ef800`) puts the fog in the top byte (register 0x0a).
 `TOAdpTEXFLUSH` (`0x008efb60`) writes register 0x3f with no data.
+
+## The allocation tracker and `operator delete`
+
+`operator new` and `new[]` are plain `user_malloc`. `operator delete`
+(`0x00630390`) hands one block back to the C runtime's `free` instead.
+That block's address is held at `0x00ccb160`, which is cleared after.
+Every other block goes through `AllocTracker_Release` (`0x00630a60`) and
+then `user_free`; `delete[]` (`0x00630540`) does the same. With a tracker
+object at `0x00ccb15c`, the release takes the tracker's mutex
+(`WaitForSingleObject` on `+0xa8`). It looks the block up in the map at
+`0x00c31e9c`, a u32-keyed tree: key `+0xc`, children `+0`/`+4`, root at
+`map + 0xc` (`MapFindU32_0062fe50`). It frees the record at the node's
+`+0x10`, removes the node (`Phyre::PRedBlackTree::remove`) and pushes it
+on the free list at `0x00c31eb4` (`Phyre::PFreeList::deallocate`). Then it
+releases the mutex.

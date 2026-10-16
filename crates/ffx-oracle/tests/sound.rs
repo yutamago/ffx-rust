@@ -13,7 +13,11 @@
 
 // a, b: the two oracles; h, f, s: hosts and bridges, as in the crate
 // cases are long lists of calls; test values are cut to bytes on purpose
-#![allow(clippy::many_single_char_names, clippy::too_many_lines, clippy::cast_possible_truncation)]
+#![allow(
+    clippy::many_single_char_names,
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation
+)]
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -1348,6 +1352,22 @@ fn stream_names_and_positions() {
     }
 }
 
+/// The `FmodManager` command helpers by argument count: async, then sync.
+const HELPERS: [[&str; 4]; 2] = [
+    [
+        "FmodManager_registCommandAsync1",
+        "FmodManager_registCommandAsync",
+        "FmodManager_registCommandAsync3",
+        "FmodManager_registCommandAsync4",
+    ],
+    [
+        "FmodManager_registCommandSync1",
+        "FmodManager_registCommandSync2",
+        "FmodManager_registCommandSync3",
+        "FmodManager_registCommandSync4",
+    ],
+];
+
 #[test]
 fn fmod_queue() {
     let mut rng = Xorshift(0x5eed_000b);
@@ -1363,7 +1383,7 @@ fn fmod_queue() {
                 "iMusicReplayPointSet" => |h| Some(f::i_music_replay_point_set(h)),
                 "iMusicStopAll" => |h| Some(f::i_music_stop_all(h)),
                 "iMusicSyncStandby" => |h| Some(f::i_music_sync_standby(h)),
-                "iSfxCommand41" => |h| Some(f::i_sfx_command41(h)),
+                "iSfxIsPaused" => |h| Some(f::i_sfx_is_paused(h)),
             );
             each!(a, b, &[x],
                 "iMusicClear" => |h| Some(f::i_music_clear(h, x)),
@@ -1373,7 +1393,7 @@ fn fmod_queue() {
                 "iMusicPlayState" => |h| Some(f::i_music_play_state(h, x)),
                 "iMusicRead" => |h| Some(f::i_music_read(h, x)),
                 "iMusicReplayPointClear" => |h| Some(f::i_music_replay_point_clear(h, x)),
-                "iMusicSetPause" => |h| Some(f::i_music_set_pause(h, x)),
+                "iMusicSetPaused" => |h| Some(f::i_music_set_paused(h, x)),
                 "iMusicStop" => |h| Some(f::i_music_stop(h, x)),
                 "iMusicTempoDirect" => |h| Some(f::i_music_tempo_direct(h, x)),
                 "iSfxIsPlaying" => |h| Some(f::i_sfx_is_playing(h, x)),
@@ -1398,24 +1418,24 @@ fn fmod_queue() {
             each!(a, b, &[x, y, z],
                 "iMusicPitchTranslate" => |h| Some(f::i_music_pitch_translate(h, x, y, z)),
                 "iMusicVolumeTranslate" => |h| Some(f::i_music_volume_translate(h, x, y, z)),
-                "iSfxCommand34" => |h| Some(f::i_sfx_command34(h, x, y, z)),
+                "iSfxForceStart" => |h| Some(f::i_sfx_force_start(h, x, y, z)),
                 "iSfxPlayBattleStreaming" => |h| Some(f::i_sfx_play_battle_streaming(h, x, y, z)),
                 "iSfxSetPanTranslate" => |h| Some(f::i_sfx_set_pan_translate(h, x, y, z)),
             );
             cdecl(
-                "iSfxCommand35",
+                "iSfxDelayStart",
                 a,
                 b,
-                sym("iSfxCommand35"),
+                sym("iSfxDelayStart"),
                 &[x, y, z, w],
-                |h| Some(f::i_sfx_command35(h, x, y, z, w)),
+                |h| Some(f::i_sfx_delay_start(h, x, y, z, w)),
             );
             // the helpers, on a manager of the case's choosing
             let mgr = f::MANAGER.get(a) ^ (rng.below(2) * 0x10);
-            for (k, name) in ["Fmod_PushCommand", "Fmod_SyncCommand"].iter().enumerate() {
-                for n in 0..4 {
+            for (k, names) in HELPERS.iter().enumerate() {
+                for (n, name) in names.iter().enumerate() {
                     let args = [x, y, z, w];
-                    let g = sym(&format!("{name}{n}"));
+                    let g = sym(name);
                     let shim_args: Vec<u32> = args[..=n].to_vec();
                     check(name, a, b, g, Conv::Thiscall(mgr), &shim_args, |h| {
                         let [c, p, q, r] = [args[0], args[1], args[2], args[3]];

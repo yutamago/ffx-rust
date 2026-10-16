@@ -888,6 +888,49 @@ pub mod bridge {
         }
         0
     }
+
+    /// The battle's spoils equipment (`0xb000` IDs), 8 slots.
+    pub const SPOILS_EQUIPMENT: Global<u8> = Global::new(0x0231_0dde);
+    /// The `0x7000` IDs' 8 slots.
+    pub const EQUIPMENT_7000: Global<u8> = Global::new(0x0231_0f9e);
+
+    /// `MsGetSaveWeapon(id, &name)` (`0x007abbd0`): the 22-byte equipment
+    /// slot of an ID (`0xb000 + i` the spoils', `0x7000 + i` the other 8
+    /// slots', else the inventory's, `i` below 200; an index out of range
+    /// gives slot 0), its name ([`ms_get_save_weapon_name`]) into `name`
+    /// when not null; 0 for ID 0xff.
+    pub fn ms_get_save_weapon(mem: &mut impl Mem, id: u32, name: u32) -> u32 {
+        if id == 0xff {
+            return 0;
+        }
+        let i = id & 0xfff;
+        let (base, n) = match id.cast_signed() >> 12 {
+            7 => (EQUIPMENT_7000.ptr(mem).addr, 8),
+            0xb => (SPOILS_EQUIPMENT.ptr(mem).addr, 8),
+            _ => (EQUIPMENT.ptr(mem).addr, 200),
+        };
+        let i = if i < n { i } else { 0 };
+        let slot = base.wrapping_add(i * 0x16);
+        if name != 0 {
+            let s = ms_get_save_weapon_name(mem, id);
+            mem.write(name, s);
+        }
+        slot
+    }
+
+    /// `MsGetSaveWeaponName(id)` (`0x007abdf0`): the name of the equipment
+    /// in an ID's slot (`MsWeaponName` of its `+0` and `+4`, in kana when
+    /// the config says so), 0 for none.
+    pub fn ms_get_save_weapon_name(mem: &mut impl Mem, id: u32) -> u32 {
+        let kana = ms_get_save_config_hiragana(mem);
+        let slot = ms_get_save_weapon(mem, id, 0);
+        if slot == 0 {
+            return 0;
+        }
+        let w = u32::from(mem.read::<u16>(slot));
+        let k = u32::from(mem.read::<u8>(slot.wrapping_add(4)));
+        crate::menu::bridge::ms_weapon_name(mem, w, k, kana, 0)
+    }
 }
 
 #[cfg(test)]

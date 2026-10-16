@@ -155,4 +155,44 @@ pub mod bridge {
         mem.write(part.wrapping_add(0x40), f32::from(v));
         cmd.wrapping_add(4)
     }
+
+    /// `opus_monster_index(obj)` (`0x007fe540`): the slot of `obj` among
+    /// the 8 `g_OpusMonsters` (null included), or -1.
+    pub fn opus_monster_index(mem: &impl Mem, obj: u32) -> i32 {
+        (0..8)
+            .find(|&i| MONSTERS.ptr(mem).at(i).get(mem) == obj)
+            .map_or(-1, u32::cast_signed)
+    }
+
+    /// `g_OpusMonsterFlags` (`0x0119fef0`): a byte per monster slot.
+    pub const MONSTER_FLAGS: Global<u8> = Global::new(0x0119_fef0);
+
+    fn monster_variant(mem: &impl Mem, slot: u32) -> Option<u32> {
+        let f: u8 = mem.read(MONSTER_FLAGS.ptr(mem).addr.wrapping_add(slot));
+        (f != 0).then_some(if f & 1 != 0 { 0 } else { 2 })
+    }
+
+    /// `opus_monster_clut_pos(slot)` (`0x00800e20`): 0 without flags,
+    /// else 0x3fc0 (flag bit 0) or 0x3fd0.
+    pub fn opus_monster_clut_pos(mem: &impl Mem, slot: u32) -> u32 {
+        monster_variant(mem, slot).map_or(0, |k| k * 8 + 0x3fc0)
+    }
+
+    /// `opus_monster_tex_pos(slot)` (`0x00800e50`): 0 without flags,
+    /// else 0x3f40 (flag bit 0) or 0x3fc0.
+    pub fn opus_monster_tex_pos(mem: &impl Mem, slot: u32) -> u32 {
+        monster_variant(mem, slot).map_or(0, |k| (k + 0xfd) << 6)
+    }
+
+    /// `opus_parts_clear(i, n)` (`0x00801480`): the first 16 bytes of the
+    /// first `n` 0x100-byte parts of opus object `i` (the table at
+    /// `g_OpusBattle`) zeroed.
+    pub fn opus_parts_clear(mem: &mut impl Mem, i: u32, n: u32) {
+        let obj: u32 = mem.read(OPUS_BATTLE.ptr(mem).addr.wrapping_add(4 * (i & 0xffff)));
+        let mut p: u32 = mem.read(obj.wrapping_add(0x20));
+        for _ in 0..(n & 0xffff) {
+            mem.write(p, [0u32; 4]);
+            p = p.wrapping_add(0x100);
+        }
+    }
 }

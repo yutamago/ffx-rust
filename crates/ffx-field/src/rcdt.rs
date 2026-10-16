@@ -38,6 +38,9 @@ pub const fn default_separator(c: u8) -> bool {
 }
 
 /// The parser where the game keeps it, through [`ffx_bridge::Mem`].
+/// MSVCR110's `atoi` import slot (`0x00b0c40c`).
+pub const CRT_ATOI: u32 = 0x00b0_c40c;
+
 pub mod bridge {
     use ffx_bridge::Mem;
 
@@ -283,6 +286,73 @@ pub mod bridge {
         let at = rcdt_parse_find_char(mem, p, c);
         mem.write(p.wrapping_add(4), at);
         at
+    }
+
+    /// `rcdtTm2Fini(tm2)` (`0x00923470`): its two buffers (`+0x40`,
+    /// `+0x44`) freed (`rcFree`) and cleared.
+    pub fn rcdt_tm2_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        t: u32,
+        call: &mut C,
+    ) {
+        for o in [0x40u32, 0x44] {
+            let p = mem.read::<u32>(t + o);
+            if p != 0 {
+                crate::model::bridge::rc_free(mem, call, p);
+            }
+            mem.write(t + o, 0u32);
+        }
+    }
+
+    /// `rcdtTm2New()` (`0x00923b40`): [`rcdt_tm2_init`] on a new 0x50-byte
+    /// block (`rcAlloc`).
+    pub fn rcdt_tm2_new<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let t = crate::model::bridge::rc_alloc(mem, call, 0x50);
+        rcdt_tm2_init(mem, t);
+        t
+    }
+
+    /// `rcdtParseNew()` (`0x0092bfd0`): [`rcdt_parse_init`] on a new
+    /// 0x8c-byte parser (`rcAlloc`).
+    pub fn rcdt_parse_new<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let p = crate::model::bridge::rc_alloc(mem, call, 0x8c);
+        rcdt_parse_init(mem, p);
+        p
+    }
+
+    /// `rcdtParseSkipLine(parse)` (`0x0092b970`): to the next newline
+    /// ([`rcdt_parse_seek_char`]) and past it.
+    pub fn rcdt_parse_skip_line(mem: &mut impl Mem, p: u32) {
+        rcdt_parse_seek_char(mem, p, 10);
+        let at = mem.read::<u32>(p + 4);
+        mem.write(p + 4, at.wrapping_add(1));
+    }
+
+    /// `rcdtParseGetInt(parse)` (`0x0092bc50`): binary mode: the word at
+    /// the cursor, which moves past it; text mode: the token through the
+    /// CRT's `atoi` (its import slot `0x00b0c40c`), then the next token
+    /// ([`rcdt_parse_next_token`]).
+    pub fn rcdt_parse_get_int<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        p: u32,
+        call: &mut C,
+    ) -> u32 {
+        if mem.read::<u32>(p + parse::MODE) == 0 {
+            let v = mem.read::<u32>(mem.read::<u32>(p + parse::CURSOR));
+            rcdt_parse_advance(mem, p, 4);
+            return v;
+        }
+        let atoi = mem.read::<u32>(mem.rebase(super::CRT_ATOI));
+        let at = mem.read::<u32>(p + parse::CURSOR);
+        let v = call(mem, atoi, &[at]);
+        rcdt_parse_next_token(mem, p);
+        v
     }
 }
 

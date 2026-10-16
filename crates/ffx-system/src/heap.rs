@@ -57,6 +57,10 @@ pub trait Os {
     /// The memory system's first set-up (`0x009428b0`, what `0x009428a0`
     /// calls while [`MEM_SYSTEM`] is null).
     fn mem_system_init(&mut self);
+    /// `WaitForSingleObject(handle, ms)`.
+    fn wait_for_single_object(&mut self, handle: u32, ms: u32) -> u32;
+    /// `ReleaseMutex(handle)`.
+    fn release_mutex(&mut self, handle: u32) -> u32;
 }
 
 /// The memory system (`0x0193cd2c`: the object at `0x0193c390` once
@@ -1420,6 +1424,88 @@ pub fn phyre_free(mem: &mut impl Mem, os: &mut impl Os, p: u32) {
 pub fn memclear(mem: &mut impl Mem, p: u32, n: u32) -> u32 {
     mem.write_bytes(p, &vec![0; n as usize]);
     p
+}
+
+/// The allocation tracker (`*0x00ccb15c`: its mutex at `+0xa8`) and its map
+/// from block to record (`0x00c31e9c`, a `Phyre::PRedBlackTree` whose
+/// nodes come from the free list at `0x00c31eb4`).
+pub const ALLOC_TRACKER: Global<u32> = Global::new(0x00cc_b15c);
+/// See [`ALLOC_TRACKER`].
+pub const TRACKER_MAP: Global<[u32; 6]> = Global::new(0x00c3_1e9c);
+/// See [`ALLOC_TRACKER`].
+pub const TRACKER_NODES: Global<u32> = Global::new(0x00c3_1eb4);
+/// A block `operator delete` hands back to the C runtime instead
+/// (`0x00ccb160`).
+pub const CRT_BLOCK: Global<u32> = Global::new(0x00cc_b160);
+
+/// `Phyre::PFreeList::deallocate(node)` (`0x0049c980`, `thiscall`): `node`
+/// pushed on the free list.
+pub fn free_list_deallocate(mem: &mut impl Mem, list: u32, node: u32) {
+    let head = rd(mem, list);
+    wr(mem, node, head);
+    wr(mem, list, node);
+}
+
+/// `0x00630a60(p)`: with the allocation tracker on, under its mutex: the
+/// record of `p` (`+0x10` of its map node) freed, then the node removed from
+/// the map (`Phyre::PRedBlackTree::remove`, `0x00575000`, passed in) and
+/// put back on the node free list.
+pub fn tracker_release<M: Mem>(
+    mem: &mut M,
+    os: &mut impl Os,
+    p: u32,
+    tree_remove: impl FnOnce(&mut M, u32, u32),
+) {
+    let tracker = ALLOC_TRACKER.get(mem);
+    if tracker == 0 {
+        return;
+    }
+    let mutex = rd(mem, tracker + 0xa8);
+    os.wait_for_single_object(mutex, u32::MAX);
+    let map = TRACKER_MAP.ptr(mem).addr;
+    let find = |mem: &M| crate::stl::bridge::map_find_u32_value(mem, map, p);
+    let n = find(mem);
+    if n != 0 {
+        let record = rd(mem, n + 0x10);
+        user_free(mem, os, record);
+        let n = find(mem);
+        if n != 0 {
+            tree_remove(mem, map, n);
+            let nodes = TRACKER_NODES.ptr(mem).addr;
+            free_list_deallocate(mem, nodes, n);
+        }
+    }
+    os.release_mutex(mutex);
+}
+
+/// `operator delete(p)` (`0x00630390`): the C runtime's block
+/// ([`CRT_BLOCK`]) goes back to `free` and is forgotten; anything else
+/// leaves the tracker ([`tracker_release`]) and is [`user_free`]d.
+pub fn operator_delete<M: Mem>(
+    mem: &mut M,
+    os: &mut impl Os,
+    p: u32,
+    tree_remove: impl FnOnce(&mut M, u32, u32),
+) {
+    if CRT_BLOCK.get(mem) == p {
+        os.crt_free(p);
+        CRT_BLOCK.set(mem, 0);
+        return;
+    }
+    tracker_release(mem, os, p, tree_remove);
+    user_free(mem, os, p);
+}
+
+/// `operator delete[](p)` (`0x00630540`): [`tracker_release`], then
+/// [`user_free`].
+pub fn operator_delete_array<M: Mem>(
+    mem: &mut M,
+    os: &mut impl Os,
+    p: u32,
+    tree_remove: impl FnOnce(&mut M, u32, u32),
+) {
+    tracker_release(mem, os, p, tree_remove);
+    user_free(mem, os, p);
 }
 
 /// The destructors that free a buffer held at `+8` (`0x00633b70` and 12

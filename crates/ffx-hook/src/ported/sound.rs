@@ -115,9 +115,9 @@ ported! {
     iMusicReplayPointSet @ 0x0067_a1b0 => extern "C" fn i_music_replay_point_set() -> u32 {
         f::i_music_replay_point_set(&mut game())
     }
-    /// `iMusicSetPause(flag)`.
-    iMusicSetPause @ 0x0067_a1c0 => extern "C" fn i_music_set_pause(flag: u32) -> u32 {
-        f::i_music_set_pause(&mut game(), flag)
+    /// `iMusicSetPaused(flag)`.
+    iMusicSetPaused @ 0x0067_a1c0 => extern "C" fn i_music_set_paused(flag: u32) -> u32 {
+        f::i_music_set_paused(&mut game(), flag)
     }
     /// `iMusicStart(id)`.
     iMusicStart @ 0x0067_a1e0 => extern "C" fn i_music_start(id: u32) -> u32 {
@@ -155,17 +155,17 @@ ported! {
     iMusicVolumeTranslate @ 0x0067_a2d0 => extern "C" fn i_music_volume_translate(id: u32, frames: u32, volume: u32) -> u32 {
         f::i_music_volume_translate(&mut game(), id, frames, volume)
     }
-    /// `iSfxCommand35(a, b, c, d)`.
-    iSfxCommand35 @ 0x0067_a2f0 => extern "C" fn i_sfx_command35(a: u32, b: u32, c: u32, d: u32) -> u32 {
-        f::i_sfx_command35(&mut game(), a, b, c, d)
+    /// `iSfxDelayStart(a, b, c, d)`.
+    iSfxDelayStart @ 0x0067_a2f0 => extern "C" fn i_sfx_delay_start(a: u32, b: u32, c: u32, d: u32) -> u32 {
+        f::i_sfx_delay_start(&mut game(), a, b, c, d)
     }
-    /// `iSfxCommand34(a, b, c)`.
-    iSfxCommand34 @ 0x0067_a310 => extern "C" fn i_sfx_command34(a: u32, b: u32, c: u32) -> u32 {
-        f::i_sfx_command34(&mut game(), a, b, c)
+    /// `iSfxForceStart(a, b, c)`.
+    iSfxForceStart @ 0x0067_a310 => extern "C" fn i_sfx_force_start(a: u32, b: u32, c: u32) -> u32 {
+        f::i_sfx_force_start(&mut game(), a, b, c)
     }
-    /// `iSfxCommand41()`.
-    iSfxCommand41 @ 0x0067_a330 => extern "C" fn i_sfx_command41() -> u32 {
-        f::i_sfx_command41(&mut game())
+    /// `iSfxIsPaused()`.
+    iSfxIsPaused @ 0x0067_a330 => extern "C" fn i_sfx_is_paused() -> u32 {
+        f::i_sfx_is_paused(&mut game())
     }
     /// `iSfxIsPlaying(id)`.
     iSfxIsPlaying @ 0x0067_a340 => extern "C" fn i_sfx_is_playing(id: u32) -> u32 {
@@ -191,36 +191,36 @@ ported! {
     iSfxSetPanTranslate @ 0x0067_a3e0 => extern "C" fn i_sfx_set_pan_translate(id: u32, pan: u32, frames: u32) -> u32 {
         f::i_sfx_set_pan_translate(&mut game(), id, pan, frames)
     }
-    /// `Fmod_PushCommand0(mgr, cmd)`.
-    Fmod_PushCommand0 @ 0x006f_a280 => extern "thiscall" fn fmod_push_command0(mgr: u32, cmd: u32) -> u32 {
+    /// `FmodManager_registCommandAsync1(mgr, cmd)`.
+    FmodManager_registCommandAsync1 @ 0x006f_a280 => extern "thiscall" fn fmod_manager_regist_command_async1(mgr: u32, cmd: u32) -> u32 {
         f::push0(&mut game(), mgr, cmd)
     }
-    /// `Fmod_PushCommand1(mgr, cmd, a)`.
-    Fmod_PushCommand1 @ 0x006f_a2a0 => extern "thiscall" fn fmod_push_command1(mgr: u32, cmd: u32, a: u32) -> u32 {
+    /// `FmodManager_registCommandAsync(mgr, cmd, a)`.
+    FmodManager_registCommandAsync @ 0x006f_a2a0 => extern "thiscall" fn fmod_manager_regist_command_async(mgr: u32, cmd: u32, a: u32) -> u32 {
         f::push1(&mut game(), mgr, cmd, a)
     }
-    /// `Fmod_PushCommand2(mgr, cmd, a, b)`.
-    Fmod_PushCommand2 @ 0x006f_a2c0 => extern "thiscall" fn fmod_push_command2(mgr: u32, cmd: u32, a: u32, b: u32) -> u32 {
+    /// `FmodManager_registCommandAsync3(mgr, cmd, a, b)`.
+    FmodManager_registCommandAsync3 @ 0x006f_a2c0 => extern "thiscall" fn fmod_manager_regist_command_async3(mgr: u32, cmd: u32, a: u32, b: u32) -> u32 {
         f::push2(&mut game(), mgr, cmd, a, b)
     }
-    /// `Fmod_PushCommand3(mgr, cmd, a, b, c)`.
-    Fmod_PushCommand3 @ 0x006f_a2e0 => extern "thiscall" fn fmod_push_command3(mgr: u32, cmd: u32, a: u32, b: u32, c: u32) -> u32 {
+    /// `FmodManager_registCommandAsync4(mgr, cmd, a, b, c)`.
+    FmodManager_registCommandAsync4 @ 0x006f_a2e0 => extern "thiscall" fn fmod_manager_regist_command_async4(mgr: u32, cmd: u32, a: u32, b: u32, c: u32) -> u32 {
         f::push3(&mut game(), mgr, cmd, a, b, c)
     }
-    /// `Fmod_SyncCommand0(mgr, cmd)`.
-    Fmod_SyncCommand0 @ 0x006f_a480 => extern "thiscall" fn fmod_sync_command0(mgr: u32, cmd: u32) -> u32 {
+    /// `FmodManager_registCommandSync1(mgr, cmd)`.
+    FmodManager_registCommandSync1 @ 0x006f_a480 => extern "thiscall" fn fmod_manager_regist_command_sync1(mgr: u32, cmd: u32) -> u32 {
         f::sync0(&mut game(), mgr, cmd)
     }
-    /// `Fmod_SyncCommand1(mgr, cmd, a)`.
-    Fmod_SyncCommand1 @ 0x006f_a4a0 => extern "thiscall" fn fmod_sync_command1(mgr: u32, cmd: u32, a: u32) -> u32 {
+    /// `FmodManager_registCommandSync2(mgr, cmd, a)`.
+    FmodManager_registCommandSync2 @ 0x006f_a4a0 => extern "thiscall" fn fmod_manager_regist_command_sync2(mgr: u32, cmd: u32, a: u32) -> u32 {
         f::sync1(&mut game(), mgr, cmd, a)
     }
-    /// `Fmod_SyncCommand2(mgr, cmd, a, b)`.
-    Fmod_SyncCommand2 @ 0x006f_a4c0 => extern "thiscall" fn fmod_sync_command2(mgr: u32, cmd: u32, a: u32, b: u32) -> u32 {
+    /// `FmodManager_registCommandSync3(mgr, cmd, a, b)`.
+    FmodManager_registCommandSync3 @ 0x006f_a4c0 => extern "thiscall" fn fmod_manager_regist_command_sync3(mgr: u32, cmd: u32, a: u32, b: u32) -> u32 {
         f::sync2(&mut game(), mgr, cmd, a, b)
     }
-    /// `Fmod_SyncCommand3(mgr, cmd, a, b, c)`.
-    Fmod_SyncCommand3 @ 0x006f_a4e0 => extern "thiscall" fn fmod_sync_command3(mgr: u32, cmd: u32, a: u32, b: u32, c: u32) -> u32 {
+    /// `FmodManager_registCommandSync4(mgr, cmd, a, b, c)`.
+    FmodManager_registCommandSync4 @ 0x006f_a4e0 => extern "thiscall" fn fmod_manager_regist_command_sync4(mgr: u32, cmd: u32, a: u32, b: u32, c: u32) -> u32 {
         f::sync3(&mut game(), mgr, cmd, a, b, c)
     }
     /// `FmodManager_signalMusicStart(mgr, id)`.

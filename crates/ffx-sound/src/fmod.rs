@@ -64,43 +64,43 @@ pub mod bridge {
         h.call_this5(f, mgr, [cmd, args[0], args[1], args[2], args[3]])
     }
 
-    /// `Fmod_PushCommand0(mgr; cmd)` 0x006fa280: the command with no
+    /// `FmodManager_registCommandAsync1(mgr; cmd)` 0x006fa280: the command with no
     /// arguments.
     pub fn push0(h: &mut impl FmodHost, mgr: u32, cmd: u32) -> u32 {
         push_command(h, mgr, cmd, [0; 4])
     }
 
-    /// `Fmod_PushCommand1(mgr; cmd, a)` 0x006fa2a0.
+    /// `FmodManager_registCommandAsync(mgr; cmd, a)` 0x006fa2a0.
     pub fn push1(h: &mut impl FmodHost, mgr: u32, cmd: u32, a: u32) -> u32 {
         push_command(h, mgr, cmd, [a, 0, 0, 0])
     }
 
-    /// `Fmod_PushCommand2(mgr; cmd, a, b)` 0x006fa2c0.
+    /// `FmodManager_registCommandAsync3(mgr; cmd, a, b)` 0x006fa2c0.
     pub fn push2(h: &mut impl FmodHost, mgr: u32, cmd: u32, a: u32, b: u32) -> u32 {
         push_command(h, mgr, cmd, [a, b, 0, 0])
     }
 
-    /// `Fmod_PushCommand3(mgr; cmd, a, b, c)` 0x006fa2e0.
+    /// `FmodManager_registCommandAsync4(mgr; cmd, a, b, c)` 0x006fa2e0.
     pub fn push3(h: &mut impl FmodHost, mgr: u32, cmd: u32, a: u32, b: u32, c: u32) -> u32 {
         push_command(h, mgr, cmd, [a, b, c, 0])
     }
 
-    /// `Fmod_SyncCommand0(mgr; cmd)` 0x006fa480.
+    /// `FmodManager_registCommandSync1(mgr; cmd)` 0x006fa480.
     pub fn sync0(h: &mut impl FmodHost, mgr: u32, cmd: u32) -> u32 {
         regist_command_sync(h, mgr, cmd, [0; 4])
     }
 
-    /// `Fmod_SyncCommand1(mgr; cmd, a)` 0x006fa4a0.
+    /// `FmodManager_registCommandSync2(mgr; cmd, a)` 0x006fa4a0.
     pub fn sync1(h: &mut impl FmodHost, mgr: u32, cmd: u32, a: u32) -> u32 {
         regist_command_sync(h, mgr, cmd, [a, 0, 0, 0])
     }
 
-    /// `Fmod_SyncCommand2(mgr; cmd, a, b)` 0x006fa4c0.
+    /// `FmodManager_registCommandSync3(mgr; cmd, a, b)` 0x006fa4c0.
     pub fn sync2(h: &mut impl FmodHost, mgr: u32, cmd: u32, a: u32, b: u32) -> u32 {
         regist_command_sync(h, mgr, cmd, [a, b, 0, 0])
     }
 
-    /// `Fmod_SyncCommand3(mgr; cmd, a, b, c)` 0x006fa4e0.
+    /// `FmodManager_registCommandSync4(mgr; cmd, a, b, c)` 0x006fa4e0.
     pub fn sync3(h: &mut impl FmodHost, mgr: u32, cmd: u32, a: u32, b: u32, c: u32) -> u32 {
         regist_command_sync(h, mgr, cmd, [a, b, c, 0])
     }
@@ -153,16 +153,16 @@ pub mod bridge {
         pub const MUSIC_CLEAR_ALL: u32 = 0x2d;
         /// `iMuiscSetBgmType(type)` (0 or 1).
         pub const MUSIC_SET_BGM_TYPE: u32 = 0x2e;
-        /// `iMusicSetPause(flag)`.
-        pub const MUSIC_SET_PAUSE: u32 = 0x2f;
+        /// `iMusicSetPaused(flag)`.
+        pub const MUSIC_SET_PAUSED: u32 = 0x2f;
         /// `iSfxLoadData(id, flag)`.
         pub const SFX_LOAD_DATA: u32 = 0x30;
         /// `iSfxStart(id, pan, volume)`.
         pub const SFX_START: u32 = 0x33;
-        /// `iSfxCommand34(a, b, c)`.
-        pub const SFX_34: u32 = 0x34;
-        /// `iSfxCommand35(a, b, c, d)`.
-        pub const SFX_35: u32 = 0x35;
+        /// `iSfxForceStart(a, b, c)`.
+        pub const SFX_FORCE_START: u32 = 0x34;
+        /// `iSfxDelayStart(a, b, c, d)`.
+        pub const SFX_DELAY_START: u32 = 0x35;
         /// `iSfxPause(id)`.
         pub const SFX_PAUSE: u32 = 0x3a;
         /// `iSfxSetVolume(id, volume)`: replaces a queued one for the same id.
@@ -175,8 +175,8 @@ pub mod bridge {
         pub const SFX_IS_PLAYING: u32 = 0x3f;
         /// `iSfxPlayBattleStreaming(a, b, c)`.
         pub const SFX_PLAY_BATTLE_STREAMING: u32 = 0x40;
-        /// `iSfxCommand41()` (synchronous).
-        pub const SFX_41: u32 = 0x41;
+        /// `iSfxIsPaused()` (synchronous).
+        pub const SFX_IS_PAUSED: u32 = 0x41;
         /// `iMusicSyncStandby()` (synchronous).
         pub const MUSIC_SYNC_STANDBY: u32 = 0x14;
     }
@@ -313,9 +313,9 @@ pub mod bridge {
         q0(h, cmd::MUSIC_REPLAY_POINT_SET)
     }
 
-    /// `iMusicSetPause(flag)` (0x0067a1c0): the FMOD thread pauses the music events (`FmodMusic` 0x00709000).
-    pub fn i_music_set_pause(h: &mut impl FmodHost, id: u32) -> u32 {
-        q1(h, cmd::MUSIC_SET_PAUSE, id)
+    /// `iMusicSetPaused(flag)` (0x0067a1c0): the FMOD thread pauses the music events (`FmodMusic` 0x00709000).
+    pub fn i_music_set_paused(h: &mut impl FmodHost, id: u32) -> u32 {
+        q1(h, cmd::MUSIC_SET_PAUSED, id)
     }
 
     /// `iMusicStart(id)` (0x0067a1e0) -> 0: the start signal
@@ -374,20 +374,20 @@ pub mod bridge {
         q3(h, cmd::MUSIC_VOLUME_TRANSLATE, [id, frames, volume])
     }
 
-    /// `iSfxCommand35(a, b, c, d)` (0x0067a2f0): `Fmod_PushCommand` itself.
-    pub fn i_sfx_command35(h: &mut impl FmodHost, a: u32, b: u32, c: u32, d: u32) -> u32 {
+    /// `iSfxDelayStart(a, b, c, d)` (0x0067a2f0): `Fmod_PushCommand` itself.
+    pub fn i_sfx_delay_start(h: &mut impl FmodHost, a: u32, b: u32, c: u32, d: u32) -> u32 {
         let m = mgr(h);
-        push_command(h, m, cmd::SFX_35, [a, b, c, d])
+        push_command(h, m, cmd::SFX_DELAY_START, [a, b, c, d])
     }
 
-    /// `iSfxCommand34(a, b, c)` (0x0067a310).
-    pub fn i_sfx_command34(h: &mut impl FmodHost, a: u32, b: u32, c: u32) -> u32 {
-        q3(h, cmd::SFX_34, [a, b, c])
+    /// `iSfxForceStart(a, b, c)` (0x0067a310).
+    pub fn i_sfx_force_start(h: &mut impl FmodHost, a: u32, b: u32, c: u32) -> u32 {
+        q3(h, cmd::SFX_FORCE_START, [a, b, c])
     }
 
-    /// `iSfxCommand41()` (0x0067a330), synchronous.
-    pub fn i_sfx_command41(h: &mut impl FmodHost) -> u32 {
-        s0(h, cmd::SFX_41)
+    /// `iSfxIsPaused()` (0x0067a330), synchronous.
+    pub fn i_sfx_is_paused(h: &mut impl FmodHost) -> u32 {
+        s0(h, cmd::SFX_IS_PAUSED)
     }
 
     /// `iSfxIsPlaying(id)` (0x0067a340), synchronous.

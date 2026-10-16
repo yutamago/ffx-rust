@@ -492,4 +492,41 @@ pub mod bridge {
         rcbg_trx_draw_pending(mem, t.wrapping_add(0x60), call);
         rcbg_trx_draw_pending(mem, t.wrapping_add(0x20), call);
     }
+
+    /// `rcbgSceneDelObject(scene, obj)` (`0x00920670`): each entry that is
+    /// `obj` has its delete function (`+0x4`, when set) run, the later
+    /// entries moved down, the count lowered and the table shrunk
+    /// (`rcRealloc`); the scan then continues past the moved entries, as
+    /// the original's index does.
+    pub fn rcbg_scene_del_object<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        s: u32,
+        obj: u32,
+        call: &mut C,
+    ) {
+        let mut i = 0i32;
+        while i < mem.read::<i32>(s + layout::OBJECT_COUNT) {
+            let list = mem.read::<u32>(s + layout::OBJECTS);
+            let o = mem.read::<u32>(list.wrapping_add(4 * i.cast_unsigned()));
+            if o == obj {
+                let d = mem.read::<u32>(o.wrapping_add(4));
+                if d != 0 {
+                    call(mem, d, &[o]);
+                }
+                while i < mem.read::<i32>(s + layout::OBJECT_COUNT) - 1 {
+                    let list = mem.read::<u32>(s + layout::OBJECTS);
+                    let at = list.wrapping_add(4 * i.cast_unsigned());
+                    let v = mem.read::<u32>(at.wrapping_add(4));
+                    mem.write(at, v);
+                    i += 1;
+                }
+                let n = mem.read::<i32>(s + layout::OBJECT_COUNT) - 1;
+                mem.write(s + layout::OBJECT_COUNT, n);
+                let list = mem.read::<u32>(s + layout::OBJECTS);
+                let new = model::bridge::rc_realloc(mem, call, list, n.cast_unsigned() << 2);
+                mem.write(s + layout::OBJECTS, new);
+            }
+            i += 1;
+        }
+    }
 }
