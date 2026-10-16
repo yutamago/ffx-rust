@@ -641,7 +641,9 @@ version = "0.1.0"
 dependencies = [
  "ffx-bridge",
  "ffx-core",
+ "ffx-kernel",
  "ffx-phyre",
+ "ffx-text",
  "ffx-vbf",
  "flate2",
  "goblin",

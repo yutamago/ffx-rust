@@ -102,6 +102,41 @@ def callers_of(calls):
     return rev
 
 
+def read_strings(path):
+    """value -> list of (string address, [referencing functions])."""
+    out = defaultdict(list)
+    with open(path, encoding="utf-8", errors="replace") as f:
+        next(f)
+        for line in f:
+            p = line.rstrip("\n").split("\t", 2)
+            if len(p) < 3 or len(p[2]) < 8:
+                continue
+            fns = [hexaddr(x if x.startswith("0x") else "0x" + x) for x in p[1].split(",") if x]
+            out[p[2]].append(fns)
+    return out
+
+
+def string_anchors(ours_path, theirs_path):
+    """Function pairs that are the only users of a string unique to both sides."""
+    ours, theirs = read_strings(ours_path), read_strings(theirs_path)
+    votes = defaultdict(Counter)
+    for value, defs in ours.items():
+        other = theirs.get(value)
+        if len(defs) != 1 or not other or len(other) != 1:
+            continue
+        fa, fb = defs[0], other[0]
+        if len(fa) == 1 and len(fb) == 1:
+            votes[fa[0]][fb[0]] += 1
+    out = {}
+    taken = Counter()
+    for a, cs in votes.items():
+        (b, _), *rest = cs.most_common(2) + [(None, 0)]
+        if not rest or rest[0][1] == 0:
+            out[a] = b
+            taken[b] += 1
+    return {a: b for a, b in out.items() if taken[b] == 1}
+
+
 def lcs(xs, ys):
     """Index pairs of a longest common subsequence of xs and ys."""
     n, m = len(xs), len(ys)
@@ -156,6 +191,10 @@ def main():
     ap.add_argument("--min-votes", type=int, default=2)
     ap.add_argument("--out", type=pathlib.Path)
     ap.add_argument("--rounds", type=int, default=20)
+    ap.add_argument("--strings", action="store_true",
+                    help="also anchor on unique strings (<prefix minus cg_>str_<origin>.strings.tsv"
+                         " or --strings-file)")
+    ap.add_argument("--strings-file", type=pathlib.Path)
     ap.add_argument("--holdout", type=float, default=0.0,
                     help="hide this share of the anchors and report how many come back right")
     args = ap.parse_args()
@@ -200,6 +239,14 @@ def main():
         scored = sorted(((len(ctx & t_context(b)), b) for b in cands), reverse=True)
         if scored[0][0] >= 1 and scored[0][0] > scored[1][0]:
             m[a] = scored[0][1]
+    if args.strings or args.strings_file:
+        sf = args.strings_file or pathlib.Path(args.theirs).with_name(f"str_{args.origin}.strings.tsv")
+        added = 0
+        for a, b in string_anchors(WORK / "decomp/strings.tsv", sf).items():
+            if a not in m and b not in set(m.values()):
+                m[a] = b
+                added += 1
+        print(f"string anchors added {added}", file=sys.stderr)
     # one-to-one only
     back = Counter(m.values())
     m = {a: b for a, b in m.items() if back[b] == 1}

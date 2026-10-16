@@ -28,6 +28,10 @@ function sizes ($FFX_WORK/decomp/functions.tsv):
   v3 BSim matches whose v3 address is off from the exact matches around it
       by more than 0x40 (the two Steam builds keep nearly the same layout).
 
+  cg leads   <export>/cg_<origin>.cg_leads.tsv, written by tools/cg-match.py:
+              their names carried to more of our functions through the call
+              graph (origin "<origin>:cg<votes>")
+
 Usage: tools/fh-import.py [--leads PATH] [--calls DIR] [--dump PATH] [--dry-run]
 """
 import argparse
@@ -103,6 +107,19 @@ def drop_unlikely(fh, sizes):
     return len(drop)
 
 
+def read_cg(path, origin):
+    """Names tools/cg-match.py carried over (address, their address, name, votes)."""
+    out = {}
+    if not path.exists():
+        return out
+    with open(path, encoding="utf-8") as f:
+        for r in csv.DictReader(f, delimiter="\t"):
+            out[int(r["address"], 16)] = dict(kind="function", name=r["name"],
+                                              origin=f"{origin}:cg{r['votes']}",
+                                              from_addr=r["their_address"], cc="")
+    return out
+
+
 def read_calls(root):
     """Named FFX.exe entries of their FhCall tables (FUN_ placeholders skipped)."""
     out = {}
@@ -132,6 +149,9 @@ def main():
         next(f)
         sizes = {int(p[0], 16): int(p[2]) for p in (line.split("\t") for line in f)}
     dropped = drop_unlikely(fh, sizes)
+    for origin in ("v3", "switch"):
+        for addr, r in read_cg(args.leads.with_name(f"cg_{origin}.cg_leads.tsv"), origin).items():
+            fh.setdefault(addr, r)
     for addr, c in read_calls(args.calls).items():
         if addr in fh:  # their hand-checked name wins; keep the convention
             fh[addr].update(name=c["name"] if fh[addr]["name"].replace("::", "_") != c["name"]

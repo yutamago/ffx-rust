@@ -23,6 +23,10 @@
 0x004078b0 function zlib_inflateEnd
 0x0042ee40 function AsmEmuInit                # fh v4:imported
 0x0042ee80 function AsmEmuPrintVec            # fh v3:exact 0x0042ee80
+0x0042eec0 function AsmEmuSetFuncParam0       # fh v3:cg2 0x42eec0
+0x0042eed0 function AsmEmuSetFuncParam1       # fh v3:cg2 0x42eed0
+0x0042eee0 function AsmEmuSetFuncParam2       # fh v3:cg2 0x42eee0
+0x0042eef0 function AsmEmuSetFuncParam3       # fh v3:cg2 0x42eef0
 0x0042ef00 function restoreVf00Register       # fh v3:exact 0x0042ef00
 0x0042ef20 function setSSFlag                 # fh v3:exact 0x0042ef20
 0x0042ef30 function setZSFlag                 # fh v3:bsim1.00 0x0042ef30
@@ -41,6 +45,7 @@
 0x0042fb80 function Phyre_PhyreMalloc_0042fb80 # fh v3:exact 0x0042fc60 Phyre::PhyreMalloc
 0x0042fc80 function Phyre_PEventFlagWin32_PEventFlagWin32 # fh v3:bsim1.00 0x0042fd60 Phyre::PEventFlagWin32::PEventFlagWin32
 0x0042fc90 function Phyre_PSemaphoreWin32_PSemaphoreWin32 # fh v3:bsim1.00 0x0042fd70 Phyre::PSemaphoreWin32::PSemaphoreWin32
+0x0042fca0 function Phyre_PThreadInitializationWin32_PThreadInitializationWin32 # fh v3:cg2 0x42fd80 Phyre::PThreadInitializationWin32::PThreadInitializationWin32
 0x0042fd80 function Phyre_PTimerWin32_GetTime # seconds (GetSystemTimePreciseAsFileTime, or QueryPerformanceCounter); wrapped by the harness (fast mode); was Time_Now
 0x0042fe10 function Phyre_PTimerWin32_Initialize # fh v3:exact 0x0042ff00 Phyre::PTimerWin32::Initialize
 0x00430030 function Phyre_PhyreOS_Sleep       # fh v3:bsim1.00 0x00430120 Phyre::PhyreOS::Sleep
@@ -54,6 +59,7 @@
 0x00430340 function Phyre_PTypeDispenser_GetClassDescriptor_Phyre_PTimer # fh v3:exact 0x00430430 Phyre::PTypeDispenser::GetClassDescriptor<Phyre::PTimer>
 0x00430d60 function Phyre_PhyreExit           # fh v3:exact 0x00430e50 Phyre::PhyreExit
 0x00430dd0 function Phyre_PhyreInit           # fh v3:exact 0x00430ed0 Phyre::PhyreInit
+0x00431690 function Phyre_PCriticalSectionSimple_PCriticalSectionSimple # fh v3:cg2 0x431790 Phyre::PCriticalSectionSimple::PCriticalSectionSimple
 0x004316f0 function Phyre_PThreadInitializationBase_PThreadInitializationBase # fh v3:exact 0x004317f0 Phyre::PThreadInitializationBase::PThreadInitializationBase
 0x004317a0 function Phyre_PThreadInitializationBase_GetDefaultThreadName # fh v3:bsim1.00 0x004318a0 Phyre::PThreadInitializationBase::GetDefaultThreadName
 0x004317f0 function Phyre_PCriticalSectionBase_initialize # fh v3:exact 0x004318f0 Phyre::PCriticalSectionBase::initialize
@@ -71,8 +77,10 @@
 0x00437260 function Phyre_PScripting_UnregisterTypes # fh switch:bsim1.00 0x7100076000 Phyre::PScripting::UnregisterTypes
 0x004374d0 function Phyre_PTypeDispenser_GetType_Phyre_PType # fh v3:bsim1.00 0x004375d0 Phyre::PTypeDispenser::GetType<Phyre::PType>
 0x00437740 function Phyre_PType_GetFixupForPTypePointer # fh v3:exact 0x00437840 Phyre::PType::GetFixupForPTypePointer
+0x00437830 function Phyre_PType_ResolveFixupForPTypePointer # fh v3:cg2 0x437930 Phyre::PType::ResolveFixupForPTypePointer
 0x00437980 function Phyre_PType_resolveFixupForAddress # fh switch:bsim1.00 0x71000a9230 Phyre::PType::resolveFixupForAddress
 0x004379b0 function Phyre_PType_setFixupFunctions # fh v3:bsim1.00 0x00437ab0 Phyre::PType::setFixupFunctions
+0x00437fc0 function Phyre_PTypeDispenser_GetType_unsigned_int # fh v3:cg41 0x4380b0 Phyre::PTypeDispenser::GetType<unsigned_int>
 0x00438060 function Phyre_PTypeDispenser_GetType_float # fh v3:bsim1.00 0x00438150 Phyre::PTypeDispenser::GetType<float>
 0x00439510 function Phyre_PTypeDispenser_RegisterDefaultTypes # fh v3:exact 0x00439600 Phyre::PTypeDispenser::RegisterDefaultTypes
 0x004395b0 function Phyre_PTypeDispenser_RegisterType # fh v3:exact 0x004396a0 Phyre::PTypeDispenser::RegisterType
@@ -85,6 +93,7 @@
 0x00439a60 function Phyre_PTypeDefault_double__putValueToScriptContext # fh switch:bsim1.00 0x71000aa970 Phyre::PTypeDefault<double>::putValueToScriptContext
 0x00439b20 function Phyre_PTypeDefault_bool__putValueToScriptContext # fh switch:bsim1.00 0x71000aa2d0 Phyre::PTypeDefault<bool>::putValueToScriptContext
 0x0043a080 function Phyre_PClassMember_PClassMember # fh v3:exact 0x0043a170 Phyre::PClassMember::PClassMember
+0x0043a1e0 function Phyre_PClassMember_Bind   # fh v3:cg7 0x43a2d0 Phyre::PClassMember::Bind
 0x0043afb0 function Phyre_PClassDescriptor_PClassDescriptor # fh v3:exact 0x0043b0a0 Phyre::PClassDescriptor::PClassDescriptor
 0x0043b0a0 function Phyre_PClassDescriptor_PClassDescriptor_0043b0a0 # fh v3:exact 0x0043b190 Phyre::PClassDescriptor::PClassDescriptor
 0x0043b8b0 function Phyre_PClassDescriptor_Bind # fh v3:exact 0x0043b9a0 Phyre::PClassDescriptor::Bind
@@ -92,10 +101,13 @@
 0x0043c140 function Phyre_PClassDescriptor_addToNamespace # fh v3:exact 0x0043c230 Phyre::PClassDescriptor::addToNamespace
 0x0043c420 function Phyre_PClassDescriptor_calculateDefaultBuffer # fh v3:bsim0.98 0x0043c510 Phyre::PClassDescriptor::calculateDefaultBuffer
 0x0043c630 function Phyre_PClassDescriptor_calculateValidationBuffer # fh v3:exact 0x0043c720 Phyre::PClassDescriptor::calculateValidationBuffer
+0x0043cb80 function Phyre_PClassDescriptor_getDefaultBuffer # fh v3:cg3 0x43cc70 Phyre::PClassDescriptor::getDefaultBuffer
 0x0043ccf0 function Phyre_PClassDescriptorForType_Phyre_PClassDescriptor__getPointerFromScriptContext # fh switch:bsim1.00 0x71000a41e0 Phyre::PClassDescriptorForType<Phyre::PClassDescriptor>::getPointerFromScriptContext
 0x0043ce00 function Phyre_PClassDescriptor_initializeInstance # fh v3:exact 0x0043cef0 Phyre::PClassDescriptor::initializeInstance
+0x0043d510 function Phyre_PClassDescriptor_setDefaultBuffer # fh v3:cg1439 0x43d600 Phyre::PClassDescriptor::setDefaultBuffer
 0x0043d590 function Phyre_PClassDescriptor_setOverallocation # fh switch:bsim1.00 0x71000a3c90 Phyre::PClassDescriptor::setOverallocation
 0x0043d5b0 function Phyre_PClassDescriptor_setValidationBuffer # fh v3:bsim1.00 0x0043d6a0 Phyre::PClassDescriptor::setValidationBuffer
+0x0043d5c0 function Phyre_PClassDescriptor_setWriteMaskBuffer # fh v3:cg2 0x43d6b0 Phyre::PClassDescriptor::setWriteMaskBuffer
 0x0043d6e0 function Phyre_PClassDescriptor_updateBaseOffsets # fh v3:exact 0x0043d7d0 Phyre::PClassDescriptor::updateBaseOffsets
 0x0043dd80 function Phyre_PNamespace_PNamespace # fh v3:exact 0x0043de70 Phyre::PNamespace::PNamespace
 0x0043e000 function Phyre_PNamespace_Bind     # fh v3:exact 0x0043e0f0 Phyre::PNamespace::Bind
@@ -108,6 +120,7 @@
 0x0043f800 function Phyre_PCluster_PCluster   # fh v3:exact 0x0043f8f0 Phyre::PCluster::PCluster
 0x0043f820 function Phyre_PClusterBase_PClusterBase # fh v3:exact 0x0043f910 Phyre::PClusterBase::PClusterBase
 0x0043fa30 function Phyre_PCluster_dtor_PCluster # fh v3:exact 0x0043fb20 Phyre::PCluster::~PCluster
+0x0043ffe0 function Phyre_PCluster_Bind       # fh v3:cg4 0x4400b0 Phyre::PCluster::Bind
 0x004406c0 function Phyre_PCluster_LoadAssetFile # fh v3:exact 0x00440790 Phyre::PCluster::LoadAssetFile
 0x004407e0 function Phyre_PCluster_LoadAssetFile_004407e0 # fh v3:exact 0x004408b0 Phyre::PCluster::LoadAssetFile
 0x00440890 function Phyre_PCluster_LoadAssetToVram # fh switch:bsim1.00 0x71000a5fe0 Phyre::PCluster::LoadAssetToVram
@@ -121,10 +134,12 @@
 0x00441ac0 function Phyre_PClassDescriptorForType_Phyre_PAssetReference__getPointerFromScriptContext # fh switch:bsim1.00 0x71000ae950 Phyre::PClassDescriptorForType<Phyre::PAssetReference>::getPointerFromScriptContext
 0x00441f20 function Phyre_PCluster_resolveAssetReferences # fh v3:exact 0x00441ff0 Phyre::PCluster::resolveAssetReferences
 0x004429e0 function Phyre_PWorld_PWorld       # fh v3:exact 0x00442ab0 Phyre::PWorld::PWorld
+0x00442e30 function Phyre_PWorld_Bind         # fh v3:cg4 0x442f00 Phyre::PWorld::Bind
 0x00443250 function Phyre_PWorld_addCluster   # fh v3:exact 0x00443320 Phyre::PWorld::addCluster
 0x00443320 function Phyre_PWorld_addInstanceList # fh v3:exact 0x004433f0 Phyre::PWorld::addInstanceList
 0x00443b70 function Phyre_PWorld_removeCluster # fh v3:exact 0x00443c40 Phyre::PWorld::removeCluster
 0x00443c20 function Phyre_PWorld_removeInstanceList # fh v3:exact 0x00443cf0 Phyre::PWorld::removeInstanceList
+0x004443f0 function Phyre_PTypedObject_Bind   # fh v3:cg5 0x4444c0 Phyre::PTypedObject::Bind
 0x00444880 function Phyre_PClassDescriptorAbstract_Phyre_PTypedObject__putValueToScriptContext # fh switch:bsim1.00 0x71000c0c00 Phyre::PClassDescriptorAbstract<Phyre::PTypedObject>::putValueToScriptContext
 0x004448c0 function Phyre_PTypedObject_swap   # fh switch:bsim1.00 0x71000c0b90 Phyre::PTypedObject::swap
 0x004454a0 function Phyre_PString_Bind        # fh v3:exact 0x00445570 Phyre::PString::Bind
@@ -134,6 +149,9 @@
 0x00446980 function Phyre_PClassDescriptorWithoutDefaultConstructor_Phyre_PClassDataMemberDynamic__constructInstance # fh switch:bsim1.00 0x7100173c00 Phyre::PClassDescriptorWithoutDefaultConstructor<Phyre::PClassDataMemberDynamic>::constructInstance
 0x00447da0 function Phyre_PClassDescriptorDynamic_Bind # fh v3:exact 0x00447e70 Phyre::PClassDescriptorDynamic::Bind
 0x00449650 function Phyre_PClassDescriptorAbstract_Phyre_PClassDescriptorDynamic__fixObjectsAfterLoading # fh switch:bsim1.00 0x7100176330 Phyre::PClassDescriptorAbstract<Phyre::PClassDescriptorDynamic>::fixObjectsAfterLoading
+0x0044ac10 function Phyre_PClassDescriptorConcrete_Phyre_PSharray_Phyre_PString__PClassDescriptorConcrete # fh v3:cg4 0x44acf0 Phyre::PClassDescriptorConcrete<Phyre::PSharray<Phyre::PString>>::PClassDescriptorConcrete
+0x0044b2b0 function Phyre_PClusterDependencyList_Bind # fh v3:cg4 0x44b390 Phyre::PClusterDependencyList::Bind
+0x0044b3b0 function Phyre_PSharray_Phyre_PString__DeclareClassDescriptor # fh v3:cg6 0x44b490 Phyre::PSharray<Phyre::PString>::DeclareClassDescriptor
 0x0044cbe0 function Phyre_PThreadPool_PThreadPool # fh v3:exact 0x0044ccc0 Phyre::PThreadPool::PThreadPool
 0x0044cd30 function Phyre_PThreadPool_GetSingleton # fh v3:exact 0x0044ce10 Phyre::PThreadPool::GetSingleton
 0x0044d880 function Phyre_PComponent_Bind     # fh v3:exact 0x0044d960 Phyre::PComponent::Bind
@@ -145,9 +163,12 @@
 0x004537d0 function Phyre_PCamera_Bind        # fh v3:exact 0x004538a0 Phyre::PCamera::Bind
 0x00454070 function Phyre_PCameraProjection_Bind # fh v3:exact 0x00454140 Phyre::PCameraProjection::Bind
 0x00454260 function Phyre_PCamera_ConvertProjectionMatrixDepthRangeToZeroOne # fh v3:exact 0x00454330 Phyre::PCamera::ConvertProjectionMatrixDepthRangeToZeroOne
+0x00454a30 function Phyre_PInternal_PCallerImplementation_PCallerImplementation1_PMethodCallerConcrete_Phyre_PCameraProjection_void_float__getArgumentTypes # fh switch:cg2 0x71000b12e0 Phyre::PInternal::PCallerImplementation::PCallerImplementation1::PMethodCallerConcrete<Phyre::PCameraProjection,void,float>::getArgumentTypes
 0x00454ad0 function Phyre_PClassDescriptorForType_Phyre_PLOD_PLODGroup__getPointerFromScriptContext # fh switch:bsim1.00 0x710009eae0 Phyre::PClassDescriptorForType<Phyre::PLOD::PLODGroup>::getPointerFromScriptContext
 0x004555e0 function Phyre_PCameraOrthographic_Bind # fh v3:exact 0x004556b0 Phyre::PCameraOrthographic::Bind
+0x00456540 function Phyre_PCameraPerspective_Bind # fh v3:cg8 0x456610 Phyre::PCameraPerspective::Bind
 0x004580c0 function Phyre_PInstancesComponent_Bind # fh v3:exact 0x00458190 Phyre::PInstancesComponent::Bind
+0x00458460 function Phyre_PArray_Phyre_PTypedObject_8u__DeclareClassDescriptor # fh v3:cg9 0x458530 Phyre::PArray<Phyre::PTypedObject,8u>::DeclareClassDescriptor
 0x00459a60 function Phyre_PClassDescriptorForType_Phyre_PInstancesComponent__getPointerFromScriptContext # fh switch:bsim1.00 0x71000b6f50 Phyre::PClassDescriptorForType<Phyre::PInstancesComponent>::getPointerFromScriptContext
 0x0045aa60 function Phyre_PNameComponent_Bind # fh v3:exact 0x0045ab30 Phyre::PNameComponent::Bind
 0x0045c500 function Phyre_PAssetReference_Bind # fh v3:exact 0x0045c5c0 Phyre::PAssetReference::Bind
@@ -157,7 +178,15 @@
 0x0045d9b0 function Phyre_PAssetReferenceImport_ResolveFixup # fh v3:exact 0x0045da70 Phyre::PAssetReferenceImport::ResolveFixup
 0x0045dd70 function Phyre_PFramework_PInputDeviceTouchNX_update # fh switch:bsim1.00 0x71001b7120 Phyre::PFramework::PInputDeviceTouchNX::update
 0x0045df50 function Phyre_PClassDescriptorForType_Phyre_PAnimation_PAnimationSet__getPointerFromScriptContext # fh switch:bsim1.00 0x710014ed00 Phyre::PClassDescriptorForType<Phyre::PAnimation::PAnimationSet>::getPointerFromScriptContext
+0x0045e950 function Phyre_PRandom_PRandomGenerator_Bind # fh v3:cg5 0x45ea10 Phyre::PRandom::PRandomGenerator::Bind
+0x0045f210 function Phyre_PTypeDispenser_GetClassDescriptor_sce_Vectormath_Scalar_Aos_Matrix3 # fh v3:cg7 0x45f2d0 Phyre::PTypeDispenser::GetClassDescriptor<sce::Vectormath::Scalar::Aos::Matrix3>
+0x0045f300 function Phyre_PTypeDispenser_GetClassDescriptor_sce_Vectormath_Scalar_Aos_Matrix4 # fh v3:cg9 0x45f3c0 Phyre::PTypeDispenser::GetClassDescriptor<sce::Vectormath::Scalar::Aos::Matrix4>
+0x0045f3f0 function Phyre_PTypeDispenser_GetClassDescriptor_Phyre_PMatrix4 # fh v3:cg7 0x45f4b0 Phyre::PTypeDispenser::GetClassDescriptor<Phyre::PMatrix4>
+0x0045f4e0 function Phyre_PTypeDispenser_GetClassDescriptor_sce_Vectormath_Scalar_Aos_Point3 # fh v3:cg8 0x45f5a0 Phyre::PTypeDispenser::GetClassDescriptor<sce::Vectormath::Scalar::Aos::Point3>
+0x0045f7c0 function Phyre_PTypeDispenser_GetClassDescriptor_sce_Vectormath_Scalar_Aos_Quat # fh v3:cg8 0x45f880 Phyre::PTypeDispenser::GetClassDescriptor<sce::Vectormath::Scalar::Aos::Quat>
 0x0045fb40 function Phyre_PTypeDispenser_GetClassDescriptor_sce_Vectormath_Scalar_Aos_Vector2 # fh v3:exact 0x0045fc00 Phyre::PTypeDispenser::GetClassDescriptor<sce::Vectormath::Scalar::Aos::Vector2>
+0x0045fd90 function Phyre_PTypeDispenser_GetClassDescriptor_sce_Vectormath_Scalar_Aos_Vector3 # fh v3:cg11 0x45fe40 Phyre::PTypeDispenser::GetClassDescriptor<sce::Vectormath::Scalar::Aos::Vector3>
+0x00460070 function Phyre_PTypeDispenser_GetClassDescriptor_sce_Vectormath_Scalar_Aos_Vector4 # fh v3:cg11 0x460120 Phyre::PTypeDispenser::GetClassDescriptor<sce::Vectormath::Scalar::Aos::Vector4>
 0x004609f0 function Phyre_PClassDescriptorWrapper_sce_Vectormath_Scalar_Aos_Vector4__putValueToScriptContext # fh switch:bsim1.00 0x71000ba900 Phyre::PClassDescriptorWrapper<sce::Vectormath::Scalar::Aos::Vector4>::putValueToScriptContext
 0x00460a50 function Phyre_PClassDescriptorWrapper_sce_Vectormath_Scalar_Aos_Matrix3__putValueToScriptContext # fh switch:bsim1.00 0x71000bb000 Phyre::PClassDescriptorWrapper<sce::Vectormath::Scalar::Aos::Matrix3>::putValueToScriptContext
 0x00460a80 function Phyre_PClassDescriptorWrapper_sce_Vectormath_Scalar_Aos_Vector2__putValueToScriptContext # fh switch:bsim1.00 0x71000b9eb0 Phyre::PClassDescriptorWrapper<sce::Vectormath::Scalar::Aos::Vector2>::putValueToScriptContext
@@ -187,6 +216,7 @@
 0x0049c980 function Phyre_PFreeList_deallocate # fh v3:bsim1.00 0x0049ca50 Phyre::PFreeList::deallocate
 0x0049cc10 function Phyre_PFreeList_reset     # fh v3:bsim1.00 0x0049cce0 Phyre::PFreeList::reset
 0x0049ef80 function Phyre_PClassDescriptorForType_Phyre_PSprite_PSpriteAnimationInfoChar__getPointerFromScriptContext # fh switch:bsim1.00 0x710012a000 Phyre::PClassDescriptorForType<Phyre::PSprite::PSpriteAnimationInfoChar>::getPointerFromScriptContext
+0x0049fa10 function Phyre_PRendering_PConstantBuffer_dtor_PConstantBuffer # fh v3:cg3 0x49fae0 Phyre::PRendering::PConstantBuffer::~PConstantBuffer
 0x004a31a0 function Phyre_PClassDescriptorConcrete_Phyre_PRendering_PShaderParameterCaptureBufferLocationType__getValueFromScriptContext # fh switch:bsim1.00 0x710005e4f0 Phyre::PClassDescriptorConcrete<Phyre::PRendering::PShaderParameterCaptureBufferLocationType>::getValueFromScriptContext
 0x004a31d0 function Phyre_PClassDescriptorConcrete_Phyre_PRendering_PShaderParameterCaptureBufferLocationTypeConstantBuffer__getValueFromScriptContext # fh switch:bsim0.91 0x710005e930 Phyre::PClassDescriptorConcrete<Phyre::PRendering::PShaderParameterCaptureBufferLocationTypeConstantBuffer>::getValueFromScriptContext
 0x004bed60 function Phyre_PRendering_PSamplerStateBase_Bind # fh v3:exact 0x004bee80 Phyre::PRendering::PSamplerStateBase::Bind
@@ -198,6 +228,8 @@
 0x004c2430 function Phyre_PRendering_PTextureCommonBase_GetMipCountForTextureSize # fh v3:exact 0x004c2540 Phyre::PRendering::PTextureCommonBase::GetMipCountForTextureSize
 0x004c2820 function Phyre_PClassDescriptorConcrete_Phyre_PRendering_PTextureCubeMapBase__getValueFromScriptContext # fh switch:bsim1.00 0x71000714d0 Phyre::PClassDescriptorConcrete<Phyre::PRendering::PTextureCubeMapBase>::getValueFromScriptContext
 0x004c2f90 function Phyre_PRendering_PTexture2DBase_PTexture2DBase # fh v3:exact 0x004c30a0 Phyre::PRendering::PTexture2DBase::PTexture2DBase
+0x004c33e0 function Phyre_PRendering_PTexture2D_Bind # fh v3:cg3 0x4c34f0 Phyre::PRendering::PTexture2D::Bind
+0x004c3400 function Phyre_PRendering_PTexture2DBase_Bind # fh v3:cg4 0x4c3510 Phyre::PRendering::PTexture2DBase::Bind
 0x004c40c0 function Phyre_PRendering_PTexture2DBase_setDimensions # fh v3:exact 0x004c41c0 Phyre::PRendering::PTexture2DBase::setDimensions
 0x004c4250 function Phyre_PRendering_PTexture2DBase_updateMaxLevel # fh v3:exact 0x004c4350 Phyre::PRendering::PTexture2DBase::updateMaxLevel
 0x004c5860 function Phyre_PClassDescriptorConcrete_Phyre_PRendering_PTexture3DBase__getValueFromScriptContext # fh switch:bsim0.97 0x710006ff70 Phyre::PClassDescriptorConcrete<Phyre::PRendering::PTexture3DBase>::getValueFromScriptContext
@@ -214,6 +246,7 @@
 0x004fc8c0 function Phyre_PClassDescriptorForType_Phyre_PCameraProjection__getPointerFromScriptContext # fh switch:bsim1.00 0x71000b0f70 Phyre::PClassDescriptorForType<Phyre::PCameraProjection>::getPointerFromScriptContext
 0x004fdec0 function Phyre_PRendering_PSceneWideParameters_getBuffer # fh v3:exact 0x004fe010 Phyre::PRendering::PSceneWideParameters::getBuffer
 0x004fe940 function Phyre_PRendering_PSceneWideParameters_PSceneWideParametersKey_initialize # fh v3:exact 0x004fea90 Phyre::PRendering::PSceneWideParameters::PSceneWideParametersKey::initialize
+0x004fee50 function Phyre_PRendering_PRenderInterfaceBase_PDynamicProcessBufferAllocation_PDynamicProcessBufferAllocation # fh switch:cg2 0x710089ce58 Phyre::PRendering::PRenderInterfaceBase::PDynamicProcessBufferAllocation::PDynamicProcessBufferAllocation
 0x004ffce0 function Phyre_PRendering_PMeshInstanceBounds_GetBoundsPoints # fh switch:bsim1.00 0x7100016de0 Phyre::PRendering::PMeshInstanceBounds::GetBoundsPoints
 0x00500bd0 function Phyre_PRendering_PMeshInstanceBounds_setMinAndMax # fh v3:bsim1.00 0x00500d30 Phyre::PRendering::PMeshInstanceBounds::setMinAndMax
 0x00500c20 function Phyre_PRendering_PMeshInstanceBounds_setMinAndSize # fh switch:bsim1.00 0x7100016a90 Phyre::PRendering::PMeshInstanceBounds::setMinAndSize
@@ -254,6 +287,7 @@
 0x00575000 function Phyre_PRedBlackTree_remove # fh v3:exact 0x00575170 Phyre::PRedBlackTree::remove
 0x00575160 function Phyre_PRedBlackTree_successor # fh v3:bsim1.00 0x005752d0 Phyre::PRedBlackTree::successor
 0x005752a0 function Phyre_PClassDataMember_PClassDataMember # fh v3:exact 0x00575410 Phyre::PClassDataMember::PClassDataMember
+0x00575440 function Phyre_PIClassDataMemberDynamicType_PIClassDataMemberDynamicType # fh switch:cg2 0x7100888218 Phyre::PIClassDataMemberDynamicType::PIClassDataMemberDynamicType
 0x005754f0 function Phyre_PIClassDataMemberDynamicType_dtor_PIClassDataMemberDynamicType # fh switch:bsim1.00 0x71000a1400 Phyre::PIClassDataMemberDynamicType::~PIClassDataMemberDynamicType
 0x00575690 function Phyre_PClassDataMember_getDynamicType # fh switch:bsim1.00 0x71000a15e0 Phyre::PClassDataMember::getDynamicType
 0x00575840 function Phyre_PAnnotation_PAnnotation # fh v3:exact 0x005759b0 Phyre::PAnnotation::PAnnotation
@@ -264,14 +298,20 @@
 0x00576270 function Phyre_PInstanceList_PInstanceList # fh v3:exact 0x005763e0 Phyre::PInstanceList::PInstanceList
 0x005764a0 function Phyre_PInstanceList_freeBuffer # fh v3:exact 0x00576610 Phyre::PInstanceList::freeBuffer
 0x00576530 function Phyre_PInstanceList_freeObject # fh v3:exact 0x005766a0 Phyre::PInstanceList::freeObject
+0x00576630 function Phyre_PCluster_operator_new # fh v3:cg6 0x5767a0 Phyre::PCluster::operator.new
 0x005766d0 function Phyre_PSerialization_PStreamReaderFile_PStreamReaderFile # fh v3:exact 0x00576840 Phyre::PSerialization::PStreamReaderFile::PStreamReaderFile
+0x005767c0 function Phyre_PSerialization_PStreamReaderFile_dtor_PStreamReaderFile # fh v3:cg6 0x576930 Phyre::PSerialization::PStreamReaderFile::~PStreamReaderFile
+0x00576930 function Phyre_PSerialization_PStreamReaderFile_close # fh v3:cg6 0x576aa0 Phyre::PSerialization::PStreamReaderFile::close
+0x00576980 function Phyre_PSerialization_PStreamReaderFile_isOpen # fh v3:cg8 0x576af0 Phyre::PSerialization::PStreamReaderFile::isOpen
 0x00579310 function PCluster_Analyze          # prints "Analyzing cluster '%s'" and every table size; names the header words (array/pointer/pointer-array fixup sizes and counts, header class counts and fixups)
 0x0057a280 function Fixup_FindMember          # thiscall(cache; member index or -1, &object, byte offset, ...): member index < namespace member count -> member table entry, else Class_FindMemberByOffset (cached)
 0x0057a6b0 function Cluster_ApplyPointerFixups # unpacks with Cluster_UnpackPointerFixups, then writes each pointer: target list data + index * size + word 4, or a user fixup when word 6 < user fixup count
 0x0057acd0 function Cluster_ApplyPointerArrayFixups # Cluster_UnpackArrayFixups(..., 1), then points each pointer array at its storage ("Pointer array fixup refers to array ...")
+0x0057bce0 function Phyre_PSerialization_PBinary_loadCluster # fh v3:cg4 0x57be50 Phyre::PSerialization::PBinary::loadCluster
 0x0057c480 function Phyre_PSerialization_PBinary_loadClusterToVram # fh switch:bsim1.00 0x71000fd4a0 Phyre::PSerialization::PBinary::loadClusterToVram
 0x0057cf50 function Phyre_PThreadPoolImmediate_GetSingleton # fh v3:exact 0x0057d0c0 Phyre::PThreadPoolImmediate::GetSingleton
 0x0057d100 function Phyre_PThreadPoolWorkStealing_PThreadPoolWorkStealing # fh v3:exact 0x0057d270 Phyre::PThreadPoolWorkStealing::PThreadPoolWorkStealing
+0x0057dc40 function Phyre_PSerialization_PStreamReader_PStreamReader # fh v3:cg2 0x57ddb0 Phyre::PSerialization::PStreamReader::PStreamReader
 0x00584240 function Phyre_PRendering_PTexture2DD3D11_PTexture2DD3D11 # fh v3:exact 0x005843d0 Phyre::PRendering::PTexture2DD3D11::PTexture2DD3D11
 0x0058db00 function Phyre_PRendering_PTexture2DD3D11_bind # fh v3:bsim1.00 0x0058dc90 Phyre::PRendering::PTexture2DD3D11::bind
 0x00594be0 function Phyre_PClassDescriptorConcrete_Phyre_PRendering_PSamplerState__getValueFromScriptContext # fh switch:bsim0.99 0x710004fab0 Phyre::PClassDescriptorConcrete<Phyre::PRendering::PSamplerState>::getValueFromScriptContext
@@ -290,7 +330,9 @@
 0x005b6330 function Phyre_PRendering_PRendererBase_clearScene # fh v3:exact 0x005b64d0 Phyre::PRendering::PRendererBase::clearScene
 0x005b6950 function Phyre_PRendering_PRenderer_endScene # fh v3:exact 0x005b6af0 Phyre::PRendering::PRenderer::endScene
 0x005b6af0 function Phyre_PRendering_PRenderer_flip # fh v3:exact 0x005b6c90 Phyre::PRendering::PRenderer::flip
+0x005b6cf0 function Phyre_PRendering_PRendererBase_generateContextParameterCaptureBuffer # fh v3:cg3 0x5b6e90 Phyre::PRendering::PRendererBase::generateContextParameterCaptureBuffer
 0x005b7f30 function Phyre_PRendering_PRendererBase_generateMaterialParameterCaptureBuffer # fh v3:exact 0x005b80d0 Phyre::PRendering::PRendererBase::generateMaterialParameterCaptureBuffer
+0x005b7fe0 function Phyre_PRendering_PRendererBase_generateNodeParameterCaptureBuffer # fh v3:cg4 0x5b8180 Phyre::PRendering::PRendererBase::generateNodeParameterCaptureBuffer
 0x005b9290 function Phyre_PRendering_PRendererBase_populateContextParameterCaptureBufferWithDynamicStreams # fh v3:exact 0x005b9430 Phyre::PRendering::PRendererBase::populateContextParameterCaptureBufferWithDynamicStreams
 0x005b94b0 function Phyre_PRendering_PRendererBase_populateContextParameterCaptureBufferWithStreams # fh v3:exact 0x005b9650 Phyre::PRendering::PRendererBase::populateContextParameterCaptureBufferWithStreams
 0x005b9a90 function Phyre_PRendering_PRendererBase_renderMeshInstance # fh v3:exact 0x005b9c30 Phyre::PRendering::PRendererBase::renderMeshInstance
@@ -299,9 +341,11 @@
 0x005bb5b0 function Phyre_PRendering_PRenderer_setDepthStencilTarget # fh v3:exact 0x005bb750 Phyre::PRendering::PRenderer::setDepthStencilTarget
 0x005bbdc0 function Phyre_PRendering_PRendererBase_setScissor # fh v3:exact 0x005bbf60 Phyre::PRendering::PRendererBase::setScissor
 0x005bc060 function Phyre_PRendering_PRendererBase_setViewport # fh v3:bsim1.00 0x005bc200 Phyre::PRendering::PRendererBase::setViewport
+0x005bc3f0 function Phyre_PRendering_PRenderer_syncRender # fh v3:cg5 0x5bc590 Phyre::PRendering::PRenderer::syncRender
 0x005cd010 function Phyre_PPreprocessRingBuffer_GetSingleton # fh v3:exact 0x005cd190 Phyre::PPreprocessRingBuffer::GetSingleton
 0x005cd0f0 function Phyre_PPreprocessRingBuffer_allocate # fh v3:exact 0x005cd270 Phyre::PPreprocessRingBuffer::allocate
 0x005cd110 function Phyre_PRingBuffer_Phyre_PPreprocessRingBufferBlock__allocateBlock # fh v3:exact 0x005cd290 Phyre::PRingBuffer<Phyre::PPreprocessRingBufferBlock>::allocateBlock
+0x005ce6e0 function Phyre_PRingBuffer_Phyre_PScripting_PAsyncProcessBufferBlock__allocateBlock # fh switch:cg2 0x71001a3a80 Phyre::PRingBuffer<Phyre::PScripting::PAsyncProcessBufferBlock>::allocateBlock
 0x005d0350 function Phyre_PScripting_PScheduler_addOneShotScript # fh switch:bsim1.00 0x71000f4330 Phyre::PScripting::PScheduler::addOneShotScript
 0x005d0ce0 function Phyre_PClassDescriptorForType_Phyre_PScripting_PScheduler__getPointerFromScriptContext # fh switch:bsim1.00 0x71000f4c60 Phyre::PClassDescriptorForType<Phyre::PScripting::PScheduler>::getPointerFromScriptContext
 0x005d5620 function Phyre_PScripting_ExecuteScript # fh switch:bsim0.90 0x71000f8300 Phyre::PScripting::ExecuteScript
@@ -350,10 +394,12 @@
 0x0060ed40 function Phyre_PProfiling_PProcessorProfileTimelineCpu_initialize # fh v3:bsim1.00 0x0060ef30 Phyre::PProfiling::PProcessorProfileTimelineCpu::initialize
 0x0060ede0 function Phyre_PProfiling_PProcessorProfileTimelineCollection_removeTimeline # fh v3:bsim1.00 0x0060efa0 Phyre::PProfiling::PProcessorProfileTimelineCollection::removeTimeline
 0x0060f050 function Phyre_PSerialization_PStream_PStream # fh v3:exact 0x0060f210 Phyre::PSerialization::PStream::PStream
+0x0061205d function Catch_All_0061221d        # fh v3:cg2 0x61221d Catch_All@0061221d
 0x00613e10 function Phyre_PRendering_PRenderRingBufferSegmented_allocate # fh v3:bsim1.00 0x00613fd0 Phyre::PRendering::PRenderRingBufferSegmented::allocate
 0x00613f00 function Phyre_PRendering_PRenderRingBuffer_stepForAllocation # fh v3:exact 0x006140c0 Phyre::PRendering::PRenderRingBuffer::stepForAllocation
 0x00613fc0 function Phyre_PRendering_PKick_PKick # fh v3:exact 0x00614180 Phyre::PRendering::PKick::PKick
 0x00614010 function Phyre_PRendering_PRenderThread_PRenderThread # fh v3:exact 0x006141d0 Phyre::PRendering::PRenderThread::PRenderThread
+0x00614410 function Phyre_PRendering_PRenderThread_GetInstance # fh v3:cg5 0x6145d0 Phyre::PRendering::PRenderThread::GetInstance
 0x00614700 function Phyre_PRendering_PRenderThread_SignalSynchronizationEventFlagRenderCallback # fh v3:exact 0x006148c0 Phyre::PRendering::PRenderThread::SignalSynchronizationEventFlagRenderCallback
 0x00614b70 function Phyre_PRendering_PRenderThread_getEventFlag # fh v3:exact 0x00614d30 Phyre::PRendering::PRenderThread::getEventFlag
 0x00614c00 function Phyre_PRendering_PRenderThread_getFlipSlot # fh v3:exact 0x00614dc0 Phyre::PRendering::PRenderThread::getFlipSlot
@@ -381,7 +427,7 @@
 0x0061bdd0 function BigFileStream_ctor        # fh v4:user_defined+call.cs thiscall
 0x0061be40 function FileSys_Exists            # MD5 of the path (root prefix skipped), asks each mounted archive
 0x0061bf10 function BigFileStream_openFile    # like FileSys_Exists but returns the entry; was FileSys_FindEntry
-0x0061bfe0 function FileSys_ReadSync          # NewReadRequest + ReadBlocks + Inflate
+0x0061bfe0 function FileSys_ReadSync          # NewReadRequest + ReadBlocks + Inflate; fh: BigFileStream::readVFile
 0x0061c150 function BigFileStream_registerBigFile # this=FileSys; mounts an archive into the first free of 5 slots at +0x10; was FileSys_MountVbf
 0x0061c3a0 function BigFileStream_setStreamPrefix # this=FileSys; copies path to +0x40, length to +0x3c; was FileSys_SetRootPath
 0x0061d140 function Vbf_MapLookup             # digest -> map node; entry pointer at node+0x20
@@ -422,6 +468,7 @@
 0x0062cb70 function Phyre_PFramework_PInputDevicePad_setVibration # fh v3:exact 0x0062cd20 Phyre::PFramework::PInputDevicePad::setVibration
 0x0062d5c0 function Keyboard_Update            # GetDeviceState(256); Phyre key i is down when scan code table[i] (0x00c30e90) is
 0x0062dba0 function PadXInput_Update           # XInputGetState for the device's user index
+0x0062de50 function Phyre_PFramework_PInputDeviceTouch_update # fh switch:cg2 0x71001b4e10 Phyre::PFramework::PInputDeviceTouch::update
 0x0062e340 function App_Frame                  # one frame: update and render (called by Game_Main's loop)
 0x0062ee50 function Game_Main                 # WinMain body called from the CRT entry; returns the process exit code. Its loop is the frame limiter: a frame (App_Frame) each DAT_00c30e88 x 1/59.94 s of Time_Now, Sleep in between (0x0062f3bb)
 0x0062f4c0 function FlushCache                # fh v3:bsim1.00 0x0062f670
@@ -438,11 +485,16 @@
 0x0062f720 function sceDmaSendN               # fh v3:bsim1.00 0x0062f8d0
 0x0062f730 function sceDmaSync                # fh v3:bsim1.00 0x0062f8e0
 0x0062f760 function sceFileSize               # fh v3:exact 0x0062f910
+0x0062f780 function sceFormat                 # fh v3:cg2 0x62f930
 0x0062f7a0 function sceGsExecLoadImage        # fh v3:bsim1.00 0x0062f950
+0x0062f7b0 function sceGsExecStoreImage       # fh v3:cg4 0x62f960
+0x0062f7c0 function sceGsResetGraph           # fh v3:cg4 0x62f970
 0x0062f7d0 function sceGsResetPath            # fh v3:bsim1.00 0x0062f980
 0x0062f7f0 function sceGsSetDefDispEnv        # fh v3:bsim1.00 0x0062f9a0
 0x0062f810 function sceGsSetDefDrawEnv        # fh v3:bsim1.00 0x0062f9b0
 0x0062f820 function sceGsSetDefLoadImage      # fh v3:bsim1.00 0x0062f9d0
+0x0062f830 function sceGsSetDefStoreImage     # fh v3:cg3 0x62f9e0
+0x0062f870 function sceGsSwapDBuffDc          # fh v3:cg2 0x62fa20
 0x0062f880 function sceGsSyncPath             # fh v3:bsim1.00 0x0062fa30
 0x0062f890 function sceGsSyncV                # fh v3:bsim1.00 0x0062fa40
 0x0062f8b0 function sceIoctl2                 # fh v3:bsim1.00 0x0062fa60
@@ -454,23 +506,34 @@
 0x0062fb30 function scePadGetState            # fh v3:bsim1.00 0x0062fce0
 0x0062fb40 function scePadInfoAct             # fh v3:bsim1.00 0x0062fcf0
 0x0062fb50 function scePadInfoComb            # fh v3:bsim1.00 0x0062fd00
+0x0062fb60 function scePadInfoMode            # fh v3:cg2 0x62fd10
 0x0062fb80 function scePadInit_ps2            # fh v3:bsim1.00 0x0062fd30
 0x0062fbb0 function scePadRead_ps2            # fh v3:bsim1.00 0x0062fd60
+0x0062fbe0 function scePadSetMainMode         # fh v3:cg2 0x62fd90
 0x0062fbf0 function scePrintf                 # fh v3:bsim1.00+call.cs 0x0062fda0
 0x0062fc00 function sceRead                   # fh v3:bsim1.00+call.cs 0x0062fdb0 cdecl
+0x0062fc20 function sceRemove                 # fh v3:cg8 0x62fdd0
+0x0062fc70 function FFXVpu0Reset              # fh v3:cg2 0x62fe20
 0x0062fca0 function FFXVu0CopyVectorXYZ       # fh v3:bsim1.00 0x0062fe50
 0x0062fce0 function FFXVu0InnerProduct        # fh v3:bsim1.00 0x0062fe90
 0x0062fd10 function FFXVu0InterVector         # fh v3:exact 0x0062fec0
 0x0062fd70 function FFXVu0InterVectorXYZ      # fh v3:exact 0x0062ff20
 0x0062fdc0 function sceWrite                  # fh v3:exact 0x0062ff70
 0x0062fdf0 function umount                    # fh v3:bsim1.00 0x0062ffa0
+0x00630310 function operator_new              # fh v3:cg27 0x6304c0 operator.new
 0x00630390 function operator_delete           # fh v3:exact 0x00630540 operator.delete
+0x006304c0 function operator_new_006304c0     # fh v3:cg17 0x630670 operator.new[]
 0x00630540 function operator_delete_00630540  # fh v3:bsim1.00 0x006306f0 operator.delete[]
+0x00630c30 function inputClear                # fh v3:cg2 0x630de0
 0x00630c40 function inputClearAllInputInfo    # fh v3:bsim1.00 0x00630df0
 0x00630c60 function inputGetCurTime           # fh v3:exact 0x00630e10
 0x00630c80 function inputGetCurrDeviceButtonInfo # fh v3:bsim1.00 0x00630e30
 0x00630c90 function inputGetCurrDeviceStickInfo # fh v3:bsim1.00 0x00630e40
+0x00630cd0 function inputIsHoldButton         # fh v3:cg3 0x630e80
+0x00630cf0 function inputIsPressButton        # fh v3:cg9 0x630ea0
+0x00630d30 function inputIsRepButton          # fh v3:cg3 0x630ee0
 0x00630de0 function inputSetInputInfoToCurrentFrame # fh v3:bsim1.00 0x00630f90
+0x00630e20 function inputSetVibration         # fh v3:cg2 0x630fd0
 0x00630e40 function FlashScene_dtor_FlashScene # fh switch:bsim1.00 0x71007e49e0 FlashScene::~FlashScene
 0x006312e0 function Virtuos_InputManager_getButtonInfo # fh v3:bsim1.00 0x00631490 Virtuos::InputManager::getButtonInfo
 0x00631300 function Virtuos_InputManager_getInstance # fh v3:bsim1.00 0x006314b0 Virtuos::InputManager::getInstance
@@ -482,7 +545,7 @@
 0x00631550 function Virtuos_InputManager_setInputInfo # fh v3:exact 0x00631700 Virtuos::InputManager::setInputInfo
 0x006315c0 function Input_BuildPadMap          # pairs each key binding (settings +0x60) with its PS2 pad bit
 0x006329c0 function Virtuos_InputManager_setVibration # fh v3:exact 0x00632b70 Virtuos::InputManager::setVibration
-0x00632a30 function Input_UpdatePad            # fastcall(input 0x00ccb170): ORs the bits of held bindings into the pad word (+0), previous at +4
+0x00632a30 function Input_UpdatePad            # fastcall(input 0x00ccb170): ORs the bits of held bindings into the pad word (+0), previous at +4; fh: Virtuos::InputManager::updateInput
 0x00634610 function AssetListReader_dtor_AssetListReader # fh v3:exact 0x006347c0 AssetListReader::~AssetListReader
 0x00636410 function asyncFFXInitialize        # fh switch:bsim1.00 0x71001cbb10
 0x00637860 function graphicAsyncTaskCallback  # fh v3:exact 0x00637a10
@@ -502,6 +565,7 @@
 0x00639280 function graphicAddScreenFadeTaskAfterRender # fh switch:bsim1.00 0x71001d7be0
 0x006392c0 function graphicAddScreenFadeTaskBeforeVFX # fh switch:bsim1.00 0x71001d7bd0
 0x00639330 function graphicAtelUnloadTexture  # fh v3:bsim1.00 0x006394e0
+0x00639470 function graphicBrokenScreenInitializeBlockDataWithGivenBuffer # fh switch:cg2 0x71008b1978
 0x00639570 function graphicCameraGetFOVy      # fh v3:bsim1.00 0x00639720
 0x00639590 function graphicCameraGetViewProjectionMatrix # fh v3:exact 0x00639740
 0x006395c0 function graphicCameraSetAspectRatio # fh v3:bsim1.00 0x00639770
@@ -513,34 +577,42 @@
 0x0063a160 function graphicCharacterInstanceDestroyClothVertexBuffers # fh v3:exact 0x0063a320
 0x0063a810 function graphicCharacterInstanceGetClothVertexBuffers # fh v3:bsim0.91 0x0063a9d0
 0x0063b1b0 function graphicCharacterInstanceGetMaxiumBoundingBox # fh v3:exact 0x0063b370
+0x0063b290 function batchSetClothVertexBuffers # fh switch:cg2 0x71001cfcf0
 0x0063b5b0 function graphicCharacterInstanceRemoveFromPipeline # fh switch:bsim1.00 0x71001ce400
 0x0063b7d0 function graphicCharacterInstanceSetDrawSituation # fh v3:exact 0x0063b990
 0x0063bc50 function graphicCharacterInstanceSetMeshSegmentAlpha # fh v3:exact 0x0063be10
 0x0063bc80 function graphicCharacterInstanceSetMeshSegmentColor # fh v3:exact 0x0063be40
 0x0063bdf0 function graphicCharacterInstanceSetMeshSegmentHide # fh v3:exact 0x0063bfb0
 0x0063be60 function graphicCharacterInstanceSetSkeletonMatrices # fh v3:exact 0x0063c020
+0x0063bfc0 function graphicCharacterInstanceSetSkeletonMatricesRestoreDefault # fh v3:cg2 0x63c180
 0x0063c390 function graphicCharacterInstanceSetVisible # fh v3:exact 0x0063c550
 0x0063c3e0 function graphicCharacterInstanceSetWorldMatrix # fh v3:exact 0x0063c5a0
 0x0063c430 function graphicCharacterInstanceSetWorldMatrixByMdlID # fh v3:exact 0x0063c5f0
 0x0063c500 function graphicCharacterInstanceUpdateSkeletonounds # fh v3:exact 0x0063c6c0
 0x0063cb50 function graphicCharacterLightingSetLightDir # fh v3:exact 0x0063cd10
 0x0063cdd0 function graphicCharacterLightingSetShadeCoeff # fh v3:exact 0x0063cf90
+0x0063cec0 function graphicCharacterLightingSetShadeCoeff_debug # fh switch:cg3 0x71001d23a0
+0x0063cf70 function graphicCharacterLightingSetShadeCoeffUnused # fh switch:cg3 0x71001d2530
 0x0063d050 function graphicCharacterLightingSetShadeColor # fh v3:exact 0x0063d200
 0x0063d140 function graphicCharacterLoad      # (path, chr id): loads the files of an asset list (.ahwin32) through 0x006642f0; "VIRTUOS Error!!!!! Can't find character data: %s."; was Chr_LoadAssetList
 0x0063d370 function graphicCharacterRegistToInstantiate # fh v3:exact 0x0063d520
 0x0063d550 function graphicCharacterRestoreSummonTexture # fh v3:exact 0x0063d700
 0x0063d9c0 function graphicCheckChrClusterRelationship # fh v3:exact 0x0063db70
+0x0063ddc0 function graphicClothMemPrintStats # fh v3:cg2 0x63df70
 0x0063dde0 function graphicClothMemoryInit    # fh switch:bsim1.00 0x71001cb500
 0x0063de10 function graphicConvertScreenCoords # fh switch:bsim1.00 0x71001d75e0
 0x0063df30 function graphicDestroyFmv         # fh v3:exact+call.cs 0x0063e0e0 cdecl
 0x0063df70 function graphicDrawDream          # fh v3:exact 0x0063e120
 0x0063e920 function graphicDrawMainMenuWaterEffect # fh v3:bsim1.00+call.cs 0x0063ead0 cdecl
 0x0063e930 function graphicDrawUIAbmapElement # fh v3:exact 0x0063eae0
+0x0063eee0 function graphicDrawUIElement      # fh v3:cg26 0x63f090
 0x0063fd70 function graphicDynGeoFillBufferIsValid # fh v3:exact 0x0063ff20
 0x0063fd80 function graphicDynGeoMemManagerClearBuffer # fh v3:bsim1.00 0x0063ff30
 0x0063fdb0 function graphicDynGeoMemManagerGetBufferForSegment # fh v3:exact 0x0063ff60
 0x0063ff50 function graphicDynGeoMemManagerGetCurrentBufferId # fh v3:bsim1.00 0x00640100
+0x0063ff60 function graphicDynGeoMemManagerLockForRecordNumInKeLns # fh v3:cg2 0x640110
 0x0063ff70 function graphicDynGeoMemManagerSwapBuffer # fh v3:exact+call.cs 0x00640120 cdecl
+0x00640050 function graphicDynGeoMemManagerUnlockForRecordNumInKeLns # fh v3:cg2 0x640200
 0x00640060 function graphicDynamicGeometryUpdateTexture # fh v3:exact 0x00640210
 0x00640090 function graphicEnableChrClusterDelayRelease # fh v3:exact 0x00640240
 0x00640100 function graphicEnableHSV          # fh v3:exact 0x006402b0
@@ -552,14 +624,23 @@
 0x00640660 function graphicFontDraw           # fh v3:exact 0x00640810
 0x00640d70 function graphicFontGetEdgeRatio   # fh v3:exact 0x00640f20
 0x00640db0 function graphicFontGetScreenWH    # fh v3:exact 0x00640f60
+0x00640dd0 function graphicFontSetUiShadowType # fh v3:cg15 0x640f80
 0x00641060 function graphicGetAbmap           # fh v3:exact 0x00641210
+0x006410d0 function graphicGetCurrentFrame    # fh v3:cg3 0x641280
 0x006410e0 function TOGetFFXLang              # 0 jp, 1 us, 2 fr, 3 sp, 4 de, 5 it, 9 kr, 10 ch; was Lang_Get
 0x00641130 function graphicGetCut2DSceneBias  # fh v3:bsim1.00 0x006412e0
+0x00641150 function graphicGetFileReadSemaId  # fh v3:cg2 0x641300
+0x00641160 function graphicGetFogColor        # fh v3:cg2 0x641310
+0x006411b0 function graphicGetFogFar          # fh v3:cg2 0x641360
+0x006411c0 function graphicGetFogLimit        # fh v3:cg2 0x641370
+0x006411d0 function graphicGetFogNear         # fh v3:cg2 0x641380
+0x00641230 function graphicGetGlobalAmbientColor # fh v3:cg2 0x6413e0
 0x006412d0 function SaveDataGetLoc            # fh v3:bsim1.00+call.cs 0x00641480 cdecl
 0x006412f0 function graphicGetLocTextWithLength # fh v3:bsim1.00 0x006414a0
 0x00641320 function graphicGetMiniMapType     # fh v3:bsim1.00 0x006414d0
 0x00641330 function graphicGetMonsterEtTextureName # fh v3:bsim1.00 0x006414e0
 0x00641350 function graphicGetNowUIType       # fh v3:bsim1.00 0x00641500
+0x00641360 function graphicGetOldFileReadCompleteSemaId # fh v3:cg2 0x641510
 0x00641390 function graphicGetScreenFadeColor # fh switch:bsim1.00 0x71001d7a80
 0x006413e0 function graphicGetScreenFadeLastReason # fh v3:bsim1.00 0x00641590
 0x006413f0 function graphicGetScreenRatio     # fh v3:bsim1.00 0x006415a0
@@ -569,10 +650,13 @@
 0x00641490 function graphicGuidemapSetup      # fh v3:exact 0x00641640
 0x006414f0 function graphicGuidemapUpdate     # fh v3:bsim1.00 0x006416a0
 0x00641510 function graphicGuildmapCreate     # fh v3:exact 0x006416c0
+0x00641660 function graphicHasRunDrawFilterInThisFrame # fh v3:cg2 0x641810
+0x00641670 function graphicHasRunDrawFocusInThisFrame # fh v3:cg3 0x641820
 0x00641690 function graphicInitFMVPlayer      # fh v3:exact+call.cs 0x00641840 cdecl
 0x006416c0 function graphicInitScene          # fh v3:exact 0x00641870
 0x006419d0 function graphicInitialize         # fh v3:exact 0x00641b80
 0x00641b90 function graphicIs3DScene          # fh v3:bsim1.00 0x00641d40
+0x00641c00 function graphicIsInCut2DScene     # fh v3:cg4 0x641db0
 0x00641c10 function graphicIsInLucaTheater    # fh v3:bsim1.00 0x00641dc0
 0x00641c60 function graphicIsMagicFileAsyncLoadAvailable # fh v3:bsim1.00 0x00641e10
 0x00641c70 function graphicIsMiniMapInBlitzBall # fh v3:bsim1.00 0x00641e20
@@ -594,6 +678,7 @@
 0x00642390 function graphicMenuUnloadSpecialTexture # fh v3:bsim1.00 0x00642540
 0x006423b0 function graphicMenuUpdate         # fh v3:bsim1.00 0x00642560
 0x00642410 function graphicMinimapCameraSetWorldMatrix # fh v3:exact 0x006425c0
+0x006425d0 function graphicMinimapFogSetEnable # fh v3:cg2 0x642780
 0x006425f0 function graphicMinimapSetEnable   # fh v3:bsim1.00 0x006427a0
 0x006426a0 function graphicObjectSetRotation  # fh v3:bsim1.00 0x00642850
 0x006426c0 function graphicObjectSetTranslation # fh v3:bsim1.00 0x00642870
@@ -602,9 +687,12 @@
 0x006427f0 function graphicProcessPs2DataLoadingCallback # fh v3:exact 0x006429a0
 0x00642860 function graphicProcessWindowsMessage # fh v3:exact 0x00642a10
 0x006428f0 function graphicProject3DPointOntoScreenConsider2DScene # fh v3:bsim1.00 0x00642aa0
+0x00642930 function graphicPushTipByLocId     # fh v3:cg4 0x642ae0
 0x00642950 function graphicRegistAsyncTask    # fh v3:bsim1.00 0x00642b00
 0x00642b90 function Phyre_PAnimation_PAnimationChannelTargetBindScene_dtor_PAnimationChannelTargetBindScene # fh switch:bsim1.00 0x71001a8400 Phyre::PAnimation::PAnimationChannelTargetBindScene::~PAnimationChannelTargetBindScene
 0x00642bb0 function graphicRender             # fh v3:exact 0x00642d60
+0x00642c60 function graphicResetButtonIconScale # fh v3:cg7 0x642e10
+0x00642c70 function graphicResetHasRunDrawFocusInThisFrame # fh v3:cg3 0x642e20
 0x00642cc0 function graphicResetYIQ           # fh v3:bsim1.00 0x00642e70
 0x00642cf0 function graphicScreenGetDttOffset # fh v3:exact 0x00642ea0
 0x00642d10 function graphicScreenGetOffset    # fh v3:exact 0x00642ec0
@@ -613,6 +701,7 @@
 0x00642d90 function graphicSet2DStartLayer    # fh v3:bsim1.00 0x00642f40
 0x00642da0 function graphicSetAbmap           # fh v3:exact 0x00642f50
 0x00642e90 function graphicSetBackgroundColour # fh v3:exact 0x00643040
+0x00642ec0 function graphicSetButtonIconScale # fh v3:cg4 0x643070
 0x00642ef0 function graphicSetChadist         # fh switch:bsim1.00 0x71001d1c50
 0x00642f10 function graphicSetChrFogFade      # fh v3:exact 0x006430c0
 0x00642f30 function graphicSetDistortionBlur  # fh v3:bsim1.00 0x006430e0
@@ -625,6 +714,7 @@
 0x00643260 function graphicSetGameOverNotify  # fh v3:bsim1.00 0x00643410
 0x00643270 function graphicSetGlobalAmbientColor # fh switch:bsim1.00 0x71001d93d0
 0x00643340 function graphicSetHSVParam        # fh v3:exact 0x006434f0
+0x00643450 function graphicSetHas2dMap        # fh v3:cg5 0x643600
 0x00643470 function graphicSetHas3dMap        # fh v3:bsim1.00 0x00643620
 0x00643490 function graphicSetIsBattleMap     # fh v3:exact 0x00643640
 0x006435e0 function graphicSetMagicFileAsyncLoadEnable # fh v3:exact 0x00643790
@@ -640,6 +730,7 @@
 0x00643900 function graphicSetScreenFadeColor # fh v3:exact 0x00643ab0
 0x00643940 function graphicSetScreenFadeLastReason # fh v3:bsim1.00 0x00643af0
 0x00643aa0 function graphicSetTextureVideoInfo # fh v3:exact 0x00643c50
+0x00643af0 function graphicSetUiDrawType      # fh v3:cg13 0x643ca0
 0x00643db0 function graphicShaderGetVertexInfo # fh v3:bsim1.00 0x00643f60
 0x00643e70 function graphicSwitchGPUMode      # fh v3:bsim1.00 0x00644020
 0x00644120 function graphicTextureAnimationSetMaterialVisiability # fh v3:exact 0x006442d0
@@ -661,15 +752,23 @@
 0x00644de0 function graphicVFXCreate          # fh call.cs cdecl
 0x00645040 function graphicVFXCreateDataBuffer # fh v3:exact 0x006451f0
 0x00645280 function graphicVFXDestroy         # fh v3:exact+call.cs 0x00645430 cdecl
+0x00645310 function graphicVFXDestroyAll      # fh v3:cg7 0x6454c0
+0x00645320 function graphicVFXDestroyAllExceptFieldAndEternal # fh v3:cg2 0x6454d0
 0x00645330 function graphicVFXDttUpdate       # fh v3:bsim1.00 0x006454e0
 0x00645350 function graphicVFXEnableYIQ       # fh v3:exact 0x00645500
+0x00645380 function graphicVFXGetDynamicGeometryDataByInstance # fh v3:cg13 0x645530
 0x006453b0 function graphicVFXGetRenderDataByGeometry # fh v3:exact 0x00645560
+0x006453d0 function graphicVFXGetRenderDataByInstance # fh v3:cg60 0x645580
 0x00645400 function graphicVFXIsTextureLoaded # fh v3:exact 0x006455b0
 0x00645450 function graphicVFXIsTextureWithBpLoaded # fh v3:exact 0x00645600
+0x006454a0 function graphicVFXLoadLevelData   # fh v3:cg4 0x645650
 0x006454c0 function graphicVFXLoadPersistentTexture # fh v3:bsim1.00 0x00645670
 0x00645600 function graphicVFXPath3Update     # fh v3:bsim1.00 0x006457b0
+0x00645620 function graphicVFXRemoveDeletedPoolMeshInstances # fh v3:cg2 0x6457d0
+0x00645630 function graphicVFXSetClutParameters # fh v3:cg3 0x6457e0
 0x00645670 function graphicVFXSetCurrentVFXType # fh v3:bsim1.00 0x00645820
 0x006456a0 function graphicVFXSetMeshInstanceName # fh v3:exact 0x00645850
+0x006456d0 function graphicVFXSetPointLightParameters # fh v3:cg5 0x645880
 0x00645710 function graphicVFXSetVisible      # fh v3:exact+call.cs 0x006458c0 cdecl
 0x00645750 function graphicVFXSetZCorrectionValue # fh v3:exact 0x00645900
 0x00645780 function graphicVFXSetup           # fh v3:exact 0x00645930
@@ -687,18 +786,26 @@
 0x00645f50 function Text_ToUtf8               # FFX text -> UTF-8; defines the byte grammar (docs/formats/text.md)
 0x006460a0 function DecodingGamecodeJPCHKR    # character code -> UTF-8 via the jp/kr/ch table; was Text_DecodeCharCjk
 0x006461f0 function Text_DecodeCharWestern    # character code -> UTF-8 via ffxsjistbl_us.bin
-0x00646920 function Text_LoadCharset          # loads ffx_encoding/ffxsjistbl_<lang>.bin into g_CharsetCjk/g_CharsetWestern
+0x00646920 function Text_LoadCharset          # loads ffx_encoding/ffxsjistbl_<lang>.bin into g_CharsetCjk/g_CharsetWestern; fh: MallocAndReadGamecode
 0x00647d70 function SaveDataCheckCrc          # fh call.cs cdecl
 0x00647e80 function SaveDataGetCrc            # fh switch:bsim1.00 0x7100224890
+0x00647ee0 function SaveDataGetDialogState    # fh v3:cg3 0x648090
 0x00647f30 function SaveDataGetLoc_00647f30   # fh v3:bsim1.00 0x006480e0
+0x00647f70 function SaveDataGetScreenState    # fh v3:cg4 0x648120
 0x00648020 function SaveDataIsAlbhedLoaded    # fh v3:bsim1.00 0x006481d0
 0x00648040 function SaveDataIsBusy            # fh v3:bsim1.00 0x006481f0
+0x00648060 function SaveDataIsDeletingFinished # fh v3:cg2 0x648210
 0x00648070 function SaveDataIsLoadingAlbhed   # fh v3:exact 0x00648220
+0x00648090 function SaveDataIsLoadingFinished # fh v3:cg3 0x648240
+0x006480a0 function SaveDataIsLoadingSuccessful # fh v3:cg2 0x648250
+0x006480c0 function SaveDataIsOperationCanceled # fh v3:cg2 0x648270
 0x006480d0 function SaveDataIsSave            # fh v3:bsim1.00 0x00648280
 0x006480e0 function SaveDataIsSaveEnabled     # fh v3:bsim1.00 0x00648290
+0x006480f0 function SaveDataIsSavingFinished  # fh v3:cg3 0x6482a0
 0x00648100 function SaveDataIsScreenClosed    # fh v3:exact 0x006482b0
 0x00648150 function SaveDataLocRemoveNumTag   # fh v3:exact 0x00648300
 0x006484d0 function SaveDataPreDebugSave      # fh v3:bsim1.00 0x00648680
+0x00648530 function SaveDataResetToIdle       # fh v3:cg2 0x6486e0
 0x00648540 function SaveDataSaveLoadSucceed   # fh call.cs cdecl
 0x006485e0 function SaveDataSetAlbhedFade     # fh switch:bsim1.00 0x71002207a0
 0x00648620 function SaveDataSetDialogState    # fh v3:bsim1.00 0x006487d0
@@ -713,7 +820,9 @@
 0x00648920 function SaveDataUpdateIcon        # fh v3:exact 0x00648ad0
 0x00648f20 function SaveDataWriteCrc          # fh v3:exact+call.cs 0x006490d0 cdecl
 0x00648fa0 function SetLocalDataSlotAndTime   # fh switch:bsim0.93 0x7100225490
+0x00648ff0 function TrophyGetError            # fh switch:cg2 0x7100877d38
 0x006492c0 function debugSavedataLoadAll      # fh switch:bsim1.00 0x7100223fe0
+0x00649d53 function Catch_All_00649f03        # fh v3:cg2 0x649f03 Catch_All@00649f03
 0x0064b7a0 function yiGetRootMatrix           # fh switch:bsim1.00 0x710052c6a0
 0x0064b7e0 function yiSetRootMatrix           # fh switch:bsim1.00 0x710052c670
 0x0064b800 function SqsEeSoundCreateTime      # fh switch:bsim1.00 0x7100409e70
@@ -728,6 +837,8 @@
 0x00654960 function PhyreScene_UpdateTextureVideo # fh v3:exact+call.cs 0x00654b10 thiscall PhyreScene::UpdateTextureVideo
 0x00654b20 function PhyreScene_UseVFXOptimizedTrans # fh v3:bsim1.00 0x00654cd0 PhyreScene::UseVFXOptimizedTrans
 0x00654cc0 function PhyreScene_VFXSyncPath    # fh v3:exact 0x00654e70 PhyreScene::VFXSyncPath
+0x006555d3 function Catch_All_00655783        # fh v3:cg2 0x655783 Catch_All@00655783
+0x00655afc function Catch_All_00655cac        # fh v3:cg2 0x655cac Catch_All@00655cac
 0x006564a0 function PhyreScene_addChrDrawSituation # fh v3:exact 0x00656650 PhyreScene::addChrDrawSituation
 0x00656940 function PhyreScene_addVFXDrawEvent # fh v3:exact 0x00656af0 PhyreScene::addVFXDrawEvent
 0x00657140 function PhyreScene_animate        # fh v3:bsim0.95 0x006572f0 PhyreScene::animate
@@ -746,6 +857,7 @@
 0x0065ce90 function PhyreScene_fieldMapLoadAsync # fh v3:exact 0x0065d010 PhyreScene::fieldMapLoadAsync
 0x0065d0c0 function PhyreScene_fieldMapShutdown # fh v3:exact 0x0065d240 PhyreScene::fieldMapShutdown
 0x0065d240 function PhyreScene_fieldMapUnload # fh v3:exact 0x0065d3c0 PhyreScene::fieldMapUnload
+0x0065d780 function PhyreScene_forceUnloadMenuTexture # fh v3:cg2 0x65d900 PhyreScene::forceUnloadMenuTexture
 0x0065de70 function PhyreScene_getCurrentLevelName # fh v3:bsim1.00 0x0065dff0 PhyreScene::getCurrentLevelName
 0x0065de90 function PhyreScene_getCurrentLevelNameHash # fh v3:bsim1.00 0x0065e010 PhyreScene::getCurrentLevelNameHash
 0x0065dea0 function PhyreScene_getCurrentMagicPath # fh v3:bsim1.00 0x0065e020 PhyreScene::getCurrentMagicPath
@@ -759,9 +871,11 @@
 0x00660350 function PhyreScene_isDrawingNonUI2DScene # fh v3:exact 0x006604d0 PhyreScene::isDrawingNonUI2DScene
 0x006604d0 function PhyreScene_isVFXTextureLoaded # fh v3:exact 0x00660650 PhyreScene::isVFXTextureLoaded
 0x00661c80 function PhyreScene_isVFXTextureLoaded_00661c80 # fh v3:bsim0.97 0x00661e10 PhyreScene::isVFXTextureLoaded
+0x00663f20 function PhyreScene_loadCharacter  # fh v3:cg17 0x6640b0 PhyreScene::loadCharacter
 0x006642f0 function PhyreScene_loadCharacterAsync # fh v3:exact 0x00664480 PhyreScene::loadCharacterAsync
 0x00664550 function PhyreScene_loadMagicFileVFXTexture # fh v3:exact 0x006646e0 PhyreScene::loadMagicFileVFXTexture
 0x00664d80 function PhyreScene_loadMagicVFXTexture # fh v3:exact 0x00664f10 PhyreScene::loadMagicVFXTexture
+0x00664f60 function PhyreScene_loadMapVFXTexture # fh v3:cg4 0x6650f0 PhyreScene::loadMapVFXTexture
 0x006651d0 function PhyreScene_loadMenuTexture # fh v3:bsim1.00 0x00665360 PhyreScene::loadMenuTexture
 0x00665660 function PhyreScene_loadPersistentVFXTexture # fh v3:exact 0x006657f0 PhyreScene::loadPersistentVFXTexture
 0x00665770 function PhyreScene_loadVFXTexture # fh v3:exact 0x00665900 PhyreScene::loadVFXTexture
@@ -772,9 +886,12 @@
 0x00666740 function PhyreScene_onMenuTextureLoaded # fh v3:exact 0x006668d0 PhyreScene::onMenuTextureLoaded
 0x00667bb0 function PhyreScene_readAssetHeader # fh v3:exact 0x00667d40 PhyreScene::readAssetHeader
 0x00668550 function PhyreScene_registClustersToAddToWorld # fh v3:exact 0x006686e0 PhyreScene::registClustersToAddToWorld
+0x00668640 function PhyreScene_removeChrFromPipeline # fh v3:cg4 0x6687d0 PhyreScene::removeChrFromPipeline
 0x00668680 function PhyreScene_removeMeshInstance # fh v3:exact 0x00668810 PhyreScene::removeMeshInstance
 0x006687a0 function PhyreScene_removeVFXFromRenderArray # fh v3:exact 0x00668930 PhyreScene::removeVFXFromRenderArray
+0x00668930 function PhyreScene_render         # fh v3:cg36 0x668ac0 PhyreScene::render
 0x0066b2e0 function PhyreScene_renderOpeningScreen # fh v3:exact 0x0066b470 PhyreScene::renderOpeningScreen
+0x0066b560 function PostProcessManager_renderHDAO # fh switch:cg4 0x7100210cd0 PostProcessManager::renderHDAO
 0x0066bf40 function PhyreScene_resetYIQ       # fh v3:exact 0x0066c0d0 PhyreScene::resetYIQ
 0x0066ca60 function PhyreScene_setAbmapCamera # fh v3:exact 0x0066cbf0 PhyreScene::setAbmapCamera
 0x0066cbe0 function PhyreScene_setCameraAspectRatio # fh v3:exact 0x0066cd70 PhyreScene::setCameraAspectRatio
@@ -782,6 +899,7 @@
 0x0066ce70 function PhyreScene_setCameraWorldMatrix # fh v3:exact 0x0066d000 PhyreScene::setCameraWorldMatrix
 0x0066cf80 function PhyreScene_setCurrentLevelName # fh v3:bsim1.00 0x0066d110 PhyreScene::setCurrentLevelName
 0x0066cf90 function PhyreScene_setCurrentLevelNameHash # fh v3:exact 0x0066d120 PhyreScene::setCurrentLevelNameHash
+0x0066d000 function PhyreScene_setEnableRenderWorldToTexture # fh v3:cg2 0x66d190 PhyreScene::setEnableRenderWorldToTexture
 0x0066d1d0 function PhyreScene_setMaterialColourScale2 # fh v3:exact 0x0066d360 PhyreScene::setMaterialColourScale2
 0x0066d5c0 function PhyreScene_setMaterialVisibilityBySetAlpha # fh v3:exact 0x0066d750 PhyreScene::setMaterialVisibilityBySetAlpha
 0x0066d810 function PhyreScene_setMeshInstanceWorldMatrix # fh v3:exact 0x0066d9a0 PhyreScene::setMeshInstanceWorldMatrix
@@ -800,12 +918,14 @@
 0x00670b00 function PhyreScene_unloadAtelVFXTexture_00670b00 # fh v3:bsim1.00 0x00670ca0 PhyreScene::unloadAtelVFXTexture
 0x00670f00 function PhyreScene_unloadMagicVFXTexture # fh v3:exact 0x006710a0 PhyreScene::unloadMagicVFXTexture
 0x00670fe0 function PhyreScene_unloadMapVFXTexture # fh v3:exact 0x00671180 PhyreScene::unloadMapVFXTexture
+0x00671120 function PhyreScene_unloadMenuTexture # fh v3:cg13 0x6712c0 PhyreScene::unloadMenuTexture
 0x00671300 function PhyreScene_unloadVFXTexture # fh v3:exact 0x006714a0 PhyreScene::unloadVFXTexture
 0x00671da0 function PhyreScene_updateMapYIQ   # fh v3:exact 0x00671f40 PhyreScene::updateMapYIQ
 0x00672070 function PhyreScene_updateTextureVideoCallback # fh v3:exact+call.cs 0x00672210 cdecl PhyreScene::updateTextureVideoCallback
 0x006720c0 function Phyre_PCamera_updateViewMatrices # fh v3:exact 0x00672260 Phyre::PCamera::updateViewMatrices
 0x00673b20 function ClassDynamicMeshInstance_populatePreprocessData # fh switch:bsim1.00 0x71001c46d0 ClassDynamicMeshInstance::populatePreprocessData
 0x006793e0 function PhyreFIOS_LoadMagicfilePrx # fh v3:exact 0x00679590 PhyreFIOS::LoadMagicfilePrx
+0x006794f0 function PhyreFIOS_UnloadMagicfilePrx # fh v3:cg2 0x6796a0 PhyreFIOS::UnloadMagicfilePrx
 0x00679500 function fiosClearOps              # fh v3:bsim1.00 0x006796b0
 0x00679510 function fiosClose                 # fh v3:exact 0x006796c0
 0x00679560 function fiosDeleteCompletedOps    # fh v3:bsim1.00 0x00679710
@@ -819,14 +939,17 @@
 0x00679820 function fiosUnifyFilename         # fh v4:imported+call.cs cdecl
 0x00679e60 function createVsyncEmuThread      # fh v3:exact 0x0067a010
 0x00679f20 function endVsyncEmuThread         # fh v3:exact 0x0067a0d0
+0x00679fc0 function iFmodInitialize           # fh switch:cg2 0x7100877d48
 0x00679fe0 function iMuiscSetBgmType          # fh v3:exact 0x0067a190
 0x0067a010 function iMusicClear               # fh v3:bsim1.00 0x0067a1c0
+0x0067a030 function iMusicClearAll            # fh v3:cg2 0x67a1e0
 0x0067a040 function iMusicCrossPlay           # fh v3:bsim1.00 0x0067a1f0
 0x0067a060 function iMusicDataSend            # fh v3:bsim1.00 0x0067a210
 0x0067a170 function iMusicRead                # fh v3:bsim1.00 0x0067a320
 0x0067a190 function iMusicReplayPointClear    # fh v3:bsim1.00 0x0067a340
 0x0067a1e0 function iMusicStart               # fh v3:exact 0x0067a390
 0x0067a210 function iMusicStop                # fh v3:bsim1.00 0x0067a3c0
+0x0067a230 function iMusicStopAll             # fh v3:cg2 0x67a3e0
 0x0067a240 function iMusicSyncStandby         # fh v3:bsim1.00 0x0067a3f0
 0x0067a290 function iMusicVolumeDirect        # fh v3:exact 0x0067a440
 0x0067a2b0 function iMusicVolumeFadeOut       # fh v3:bsim1.00 0x0067a460
@@ -838,6 +961,7 @@
 0x0067a3c0 function iSfxSetVolume             # fh v3:bsim1.00 0x0067a5b0
 0x0067a400 function iSfxSetPan                # fh v3:bsim1.00 0x0067a570
 0x0067a420 function iSfxSetVolumeTranslate    # fh v3:bsim1.00 0x0067a5d0
+0x0067a440 function iSfxStart                 # fh v3:cg2 0x67a5f0
 0x0067a460 function iSfxStop                  # fh v3:bsim1.00 0x0067a610
 0x0067a480 function iSfxStopAllNonBlockingSound # fh v3:bsim1.00 0x0067a630
 0x0067a4a0 function iSfxStopNonBlockingSound  # fh v3:bsim1.00 0x0067a650
@@ -858,6 +982,7 @@
 0x0067aae0 function getEternalCalmSceneSize   # fh v3:bsim1.00 0x0067ac90
 0x0067ab30 function isEternalCalmMgrp         # fh v3:bsim1.00 0x0067ace0
 0x0067ab50 function isEternalCalmScene        # fh v3:bsim1.00 0x0067ad00
+0x0067acc0 function TrophyManager_IsInstallCompleted # fh switch:cg2 0x710089f9a8 TrophyManager::IsInstallCompleted
 0x0067b7d0 function DJB_hash                  # fh v3:bsim1.00 0x0067b980
 0x0067b800 function op_vertex_normal_point4   # fh switch:bsim1.00 0x71003df230
 0x0067b970 function MenuManager_GetMenuCount  # fh v3:exact 0x0067bb20 MenuManager::GetMenuCount
@@ -866,6 +991,7 @@
 0x0067c720 function MenuTextureManager_LoadCloudSaveUITexture # fh v3:bsim1.00 0x0067c8d0 MenuTextureManager::LoadCloudSaveUITexture
 0x0067cb30 function MenuTextureManager_LoadGameMenuTexture # fh v3:exact 0x0067cce0 MenuTextureManager::LoadGameMenuTexture
 0x0067cbd0 function MenuTextureManager_LoadMon_BokuTextures # fh v3:exact 0x0067cd80 MenuTextureManager::LoadMon_BokuTextures
+0x0067ce50 function MenuTextureManager_LoadSaMenuTexture # fh v3:cg6 0x67cff0 MenuTextureManager::LoadSaMenuTexture
 0x0067d0b0 function MenuTextureManager_LoadSaSubMenuTexture # fh v3:exact 0x0067d250 MenuTextureManager::LoadSaSubMenuTexture
 0x0067d180 function MenuTextureManager_LoadSceneBattleFontTexture # fh v3:exact 0x0067d320 MenuTextureManager::LoadSceneBattleFontTexture
 0x0067d370 function MenuTextureManager_LoadSceneEventFontTexture # fh v3:exact 0x0067d510 MenuTextureManager::LoadSceneEventFontTexture
@@ -877,6 +1003,7 @@
 0x0067e4f0 function MenuManager_SetMenuUiInstanceUnloaded # fh v3:exact 0x0067e690 MenuManager::SetMenuUiInstanceUnloaded
 0x0067e6c0 function MenuManager_SetUpAllMenuInstance # fh v3:exact 0x0067e860 MenuManager::SetUpAllMenuInstance
 0x0067e7f0 function MenuManager_SwapMenuBufferChain # fh v3:exact 0x0067e990 MenuManager::SwapMenuBufferChain
+0x0067ebc0 function MenuTextureManager_UnLoadDreamMapTexture # fh v3:cg5 0x67ed60 MenuTextureManager::UnLoadDreamMapTexture
 0x0067ecf0 function MenuTextureManager_UnloadBGWaterTexture # fh v3:exact 0x0067ee90 MenuTextureManager::UnloadBGWaterTexture
 0x0067edc0 function MenuTextureManager_UnloadCloudSaveUITexture # fh v3:bsim1.00 0x0067ef60 MenuTextureManager::UnloadCloudSaveUITexture
 0x0067ee40 function MenuTextureManager_UnloadEternalCalmCopyRightTexture # fh v3:exact 0x0067eff0 MenuTextureManager::UnloadEternalCalmCopyRightTexture
@@ -890,6 +1017,7 @@
 0x0067fe70 function FreeCamera_FreeCamera     # fh v3:exact 0x00680020 FreeCamera::FreeCamera
 0x00680030 function FreeCamera_handleInput    # fh v3:exact 0x006801e0 FreeCamera::handleInput
 0x00680320 function FreeCamera_setFreePause   # fh v3:exact 0x006804d0 FreeCamera::setFreePause
+0x00680410 function FreeCamera_setType        # fh switch:cg2 0x71008a1cd8 FreeCamera::setType
 0x006843a0 function AbmapManager_CheckWordVertex # fh v3:exact 0x00684540 AbmapManager::CheckWordVertex
 0x00684cd0 function AbmapManager_GetVertexInfo # fh v3:exact 0x00684e70 AbmapManager::GetVertexInfo
 0x006857b0 function AbmapManager_ToDestroy    # fh v3:bsim1.00 0x00685950 AbmapManager::ToDestroy
@@ -911,9 +1039,11 @@
 0x00692be0 function PostProcessManager_GetInstance # fh v3:bsim1.00 0x00692d10 PostProcessManager::GetInstance
 0x00692c40 function PostProcessManager_copyBuffer # fh v3:exact 0x00692d70 PostProcessManager::copyBuffer
 0x00697490 function PostProcessManager_renderScreenFade # fh v3:exact 0x006975d0 PostProcessManager::renderScreenFade
+0x006984b0 function PostProcessManager_setCrossFadeWeight # fh v3:cg2 0x6985f0 PostProcessManager::setCrossFadeWeight
 0x00698550 function PostProcessManager_setFocusDepth # fh v3:exact 0x00698690 PostProcessManager::setFocusDepth
 0x006985d0 function PostProcessManager_setHDAOSetting # fh v3:exact 0x00698710 PostProcessManager::setHDAOSetting
 0x00698750 function PostProcessManager_setNon16By9Viewport # fh v3:exact 0x00698890 PostProcessManager::setNon16By9Viewport
+0x006996ba function Catch_All_006997fa        # fh v3:cg2 0x6997fa Catch_All@006997fa
 0x0069a1a0 function ClusterManager_GetInstance # fh v3:bsim1.00 0x0069a2e0 ClusterManager::GetInstance
 0x0069a6b0 function ChrResourceCacheManager_applyDelayedRelease # fh v3:exact 0x0069a7f0 ChrResourceCacheManager::applyDelayedRelease
 0x0069a950 function chrCacheApplyDelayedRelease # fh switch:bsim1.00 0x71001c7770
@@ -925,6 +1055,8 @@
 0x0069bb80 function ChrResourceCacheManager_onLoadPCluster # fh v3:exact 0x0069bcc0 ChrResourceCacheManager::onLoadPCluster
 0x0069bdb0 function ClusterManager_releasePCluster # fh v4:user_defined+call.cs thiscall ClusterManager::releasePCluster
 0x0069be90 function ClusterManager_releasePCluster_0069be90 # fh v3:exact 0x0069bfd0 ClusterManager::releasePCluster
+0x0069ccef function Catch_All_0069ce2f        # fh v3:cg2 0x69ce2f Catch_All@0069ce2f
+0x0069d0f4 function Catch_All_0069d234        # fh v3:cg2 0x69d234 Catch_All@0069d234
 0x0069e030 function ClassCharacter_ClassCharacter # fh v3:exact 0x0069e170 ClassCharacter::ClassCharacter
 0x0069e140 function ClassVFXRenderDataTable_ClassVFXRenderDataTable # fh v3:exact 0x0069e280 ClassVFXRenderDataTable::ClassVFXRenderDataTable
 0x0069e2b0 function GuildMapDynamicGeometry_GuildMapDynamicGeometry # fh v3:exact 0x0069e3f0 GuildMapDynamicGeometry::GuildMapDynamicGeometry
@@ -933,6 +1065,7 @@
 0x0069f000 function ClassVFXRenderDataTable_Clear # fh call.cs cdecl
 0x0069f110 function ClassVFXRenderDataTable_ClearByType # fh v3:exact 0x0069f250 ClassVFXRenderDataTable::ClearByType
 0x0069f2b0 function ClassVFXRenderDataTable_ClearVFXDrawData # fh v3:exact+call.cs 0x0069f3f0 thiscall ClassVFXRenderDataTable::ClearVFXDrawData
+0x0069f4c0 function ClassVFXRenderDataTable_CreateInstance # fh v3:cg2 0x69f600 ClassVFXRenderDataTable::CreateInstance
 0x0069f620 function ClassVFXRenderDataTable_GetDynamicGeometryByInstance # fh v3:exact+call.cs 0x0069f760 thiscall ClassVFXRenderDataTable::GetDynamicGeometryByInstance
 0x0069f6c0 function ClassLoadedCharacterTable_GetInstance # fh v3:bsim1.00 0x0069f800 ClassLoadedCharacterTable::GetInstance
 0x0069f6e0 function ClassVFXRenderDataTable_GetVFXDataByInstance # fh v3:exact 0x0069f820 ClassVFXRenderDataTable::GetVFXDataByInstance
@@ -973,16 +1106,20 @@
 0x006ab010 function Phyre_CharacterLighting_setShadeColor # fh v3:exact 0x006ab160 Phyre::CharacterLighting::setShadeColor
 0x006abf40 function MorphManager_GetInstance  # fh v3:bsim1.00 0x006ac090 MorphManager::GetInstance
 0x006ac530 function MorphManager_reset        # fh v3:exact 0x006ac680 MorphManager::reset
+0x006ad6b0 function RenderDelegationHelper_beforeEffects # fh v3:cg4 0x6ad800 RenderDelegationHelper::beforeEffects
+0x006adb80 function RenderDelegationHelper_beforeVFX # fh v3:cg5 0x6adcd0 RenderDelegationHelper::beforeVFX
 0x006ade20 function RenderDelegationHelper_registerDelegation # fh v3:exact 0x006adf70 RenderDelegationHelper::registerDelegation
 0x006ae340 function RenderDelegationHelper_unregisterDelegationOfGivenTaskAndData # fh v3:exact 0x006ae490 RenderDelegationHelper::unregisterDelegationOfGivenTaskAndData
 0x006ae5b0 function ScreenFadeDelegations_processRenderDelegation # fh v3:exact 0x006ae700 ScreenFadeDelegations::processRenderDelegation
 0x006ae650 function ScreenFadeDelegations_registerDelegation # fh v3:exact 0x006ae7a0 ScreenFadeDelegations::registerDelegation
 0x006b02e0 function TextureAnimationManager_GetInstance # fh v3:bsim1.00 0x006b0430 TextureAnimationManager::GetInstance
 0x006b2070 function TextureAnimationManager_getMaterialByLayNum # fh v3:exact 0x006b21c0 TextureAnimationManager::getMaterialByLayNum
+0x006b2f50 function TextureAnimationManager_sceenTextureAnimationClear # fh v3:cg2 0x6b30a0 TextureAnimationManager::sceenTextureAnimationClear
 0x006b3060 function TextureAnimationManager_setAnimatedMaterialsChar # fh v3:exact 0x006b31b0 TextureAnimationManager::setAnimatedMaterialsChar
 0x006b4330 function TextureAnimationManager_unregisterChararcterInstance # fh v3:exact 0x006b4480 TextureAnimationManager::unregisterChararcterInstance
 0x006b4950 function DebugMenuManager_CreateInstance # fh v3:exact 0x006b4aa0 DebugMenuManager::CreateInstance
 0x006b55d0 function CharacterSwitchTweakUtil_CharacterSwitchTweakUtil # fh v3:exact 0x006b5720 CharacterSwitchTweakUtil::CharacterSwitchTweakUtil
+0x006b5eb0 function CharacterSwitchTweakUtil_CreateInstance # fh v3:cg2 0x6b6000 CharacterSwitchTweakUtil::CreateInstance
 0x006b6340 function CharacterTextureAnimationTweakUtil_GetInstance # fh v3:bsim1.00 0x006b6480 CharacterTextureAnimationTweakUtil::GetInstance
 0x006b6370 function ViewerManager_GetInstance # fh v3:bsim1.00 0x006b64b0 ViewerManager::GetInstance
 0x006b7630 function BasicDebugTweakUtil_handleInput # fh v3:exact 0x006b7770 BasicDebugTweakUtil::handleInput
@@ -1002,9 +1139,12 @@
 0x006ce9d0 function ShadowManager_RemoveFromShadowMap # fh v3:exact 0x006ceb00 ShadowManager::RemoveFromShadowMap
 0x006d2390 function ShadowManager_getInstance # fh v3:bsim1.00 0x006d24c0 ShadowManager::getInstance
 0x006d3000 function ShadowManager_updateShadowMap # fh v3:exact 0x006d3130 ShadowManager::updateShadowMap
+0x006d5050 function BrokenScreenEffect_createRenderTarget # fh switch:cg2 0x710024efa0 BrokenScreenEffect::createRenderTarget
 0x006d5150 function BrokenScreenEffect_destroyRenderTarget # fh switch:bsim1.00 0x710024f0a0 BrokenScreenEffect::destroyRenderTarget
 0x006d5a70 function BrokenScreenEffect_updateLightParameters # fh switch:bsim1.00 0x710024f970 BrokenScreenEffect::updateLightParameters
+0x006d5d49 function Catch_All_006d5e79        # fh v3:cg2 0x6d5e79 Catch_All@006d5e79
 0x006d6970 function PhyFMVPlayerManager_PhyFMVPlayerManager # fh v3:exact 0x006d6aa0 PhyFMVPlayerManager::PhyFMVPlayerManager
+0x006d7130 function PhyFMVPlayerManager_CreateInstance # fh v3:cg2 0x6d7260 PhyFMVPlayerManager::CreateInstance
 0x006d73a0 function PhyFMVPlayerManager_GetInstance # fh v3:bsim1.00 0x006d74d0 PhyFMVPlayerManager::GetInstance
 0x006d7680 function PhyFMVPlayerManager_UpdateTexture # fh v3:exact+call.cs 0x006d77b0 thiscall PhyFMVPlayerManager::UpdateTexture
 0x006d9180 function PhyFMVPlayerManager_fmvPlayer_terminate # fh switch:bsim1.00 0x71002671f0 PhyFMVPlayerManager::fmvPlayer_terminate
@@ -1014,6 +1154,7 @@
 0x006da480 function PhyFMVPlayerDelegation_onTextureVideoPlay # fh v3:bsim1.00 0x006da5b0 PhyFMVPlayerDelegation::onTextureVideoPlay
 0x006da490 function PhyFMVPlayerDelegation_onTextureVideoStop # fh v3:bsim1.00 0x006da5c0 PhyFMVPlayerDelegation::onTextureVideoStop
 0x006da4b0 function PhyFMVPlayerManager_pauseMovie # fh v3:exact 0x006da5e0 PhyFMVPlayerManager::pauseMovie
+0x006da550 function PhyFMVPlayerManager_readCreditsText # fh switch:cg2 0x7100268970 PhyFMVPlayerManager::readCreditsText
 0x006dae00 function PhyFMVPlayerManager_updateVideoCallback # fh v3:exact 0x006daf30 PhyFMVPlayerManager::updateVideoCallback
 0x006db070 function LocalizationManager_GetInstance # was LangManager_Get
 0x006db090 function LocalizationManager_Initialize # settings language index -> game language id; was LangManager_FromSettings
@@ -1042,6 +1183,7 @@
 0x006e6330 function RemapButtonIcon_RemapButtonIcon # fh v3:exact 0x006e6460 RemapButtonIcon::RemapButtonIcon
 0x006e6450 function RemapButtonIcon_getCurrentControlMachine # fh v3:bsim1.00 0x006e6580 RemapButtonIcon::getCurrentControlMachine
 0x006e6460 function RemapButtonIcon_getJoypadUV # fh v3:exact 0x006e6590 RemapButtonIcon::getJoypadUV
+0x006e6660 function RemapButtonIcon_getPadIconPath # fh v3:cg2 0x6e6790 RemapButtonIcon::getPadIconPath
 0x006e6670 function RemapButtonIcon_getPcButtonUv # fh v3:exact 0x006e67a0 RemapButtonIcon::getPcButtonUv
 0x006e6730 function RemapButtonIcon_initPs2MessageInputPcMap # fh v3:exact 0x006e6860 RemapButtonIcon::initPs2MessageInputPcMap
 0x006e6890 function RemapButtonIcon_initPs2UIButtonPcMap # fh v3:exact 0x006e69c0 RemapButtonIcon::initPs2UIButtonPcMap
@@ -1053,10 +1195,12 @@
 0x006e7300 function RemapButtonIcon_remapUIButtonData # fh v3:exact 0x006e7430 RemapButtonIcon::remapUIButtonData
 0x006e7470 function RemapButtonIcon_remapUIButtonPosition # fh v3:exact 0x006e75a0 RemapButtonIcon::remapUIButtonPosition
 0x006e76b0 function RemapButtonIcon_resetButtonIconScale # fh v3:exact 0x006e77e0 RemapButtonIcon::resetButtonIconScale
+0x006e76c0 function RemapButtonIcon_sCreatInstance # fh v3:cg2 0x6e77f0 RemapButtonIcon::sCreatInstance
 0x006e7710 function RemapButtonIcon_sGetInstance # fh v3:bsim1.00 0x006e7840 RemapButtonIcon::sGetInstance
 0x006e7720 function RemapButtonIcon_setButtonIconScale # fh v3:bsim1.00 0x006e7850 RemapButtonIcon::setButtonIconScale
 0x006e8750 function TipSystem_Get             # fh v3:bsim1.00 0x006e8890 TipSystem::Get
 0x006e8770 function TipSystem_PushTip         # fh v3:exact 0x006e88b0 TipSystem::PushTip
+0x006e8a1f function Catch_All_006e8b5f        # fh v3:cg2 0x6e8b5f Catch_All@006e8b5f
 0x006e9570 function rcbgGuideMapSave          # fh switch:bsim1.00 0x7100562e90
 0x006e97b0 function SetIggyPosition720p       # fh switch:bsim1.00 0x710029ca80
 0x006ebbc0 function VirtualAlloc_ReserveCommit_TopDown_RW # fh call.cs cdecl _VirtualAlloc_ReserveCommit_TopDown_RW
@@ -1065,6 +1209,7 @@
 0x006ecc40 function Matrix__copy              # fh v3:bsim1.00 0x006ecd80 Matrix::+copy
 0x006ed290 function FFXVu0AddVector           # fh v3:exact 0x006ed3d0
 0x006ed2e0 function FFXVu0ApplyMatrix         # fh v3:bsim1.00 0x006ed420
+0x006ed360 function FFXVu0CopyMatrix          # fh v3:cg31 0x6ed4a0
 0x006ed370 function FFXVu0CopyVector          # fh v3:bsim1.00 0x006ed4b0
 0x006ed3a0 function FFXVu0DivVector           # fh v3:exact 0x006ed4e0
 0x006ed420 function FFXVu0DivVectorXYZ        # fh v3:exact 0x006ed560
@@ -1074,6 +1219,9 @@
 0x006ed620 function FFXVu0NormalLightMatrix   # fh v3:exact 0x006ed760
 0x006ed6f0 function FFXVu0Normalize           # fh v3:exact 0x006ed830
 0x006ed720 function FFXVu0OuterProduct        # fh v3:exact 0x006ed860
+0x006ed780 function FFXVu0RotMatrixX          # fh v3:cg4 0x6ed8c0
+0x006ed7c0 function FFXVu0RotMatrixY          # fh v3:cg3 0x6ed900
+0x006ed800 function FFXVu0RotMatrixZ          # fh v3:cg3 0x6ed940
 0x006ed840 function FFXVu0RotTransPers        # fh v3:exact 0x006ed980
 0x006ed8f0 function FFXVu0ScaleVector         # fh v3:exact 0x006eda30
 0x006ed940 function FFXVu0SubVector           # fh v3:exact 0x006eda80
@@ -1109,12 +1257,17 @@
 0x006f4350 function AssetListReader_getSymbolId # fh v3:exact 0x006f4490 AssetListReader::getSymbolId
 0x006f46b0 function AssetListReader_isModel   # fh v3:exact 0x006f47f0 AssetListReader::isModel
 0x006f4900 function AssetListReader_readAssetHeader # fh v3:exact 0x006f4a40 AssetListReader::readAssetHeader
+0x006f50a0 function AssetListReader_readListFile # fh switch:cg2 0x710029df10 AssetListReader::readListFile
 0x006f5b50 function TextUtil_TextUtil         # fh v3:exact 0x006f5c90 TextUtil::TextUtil
 0x006f6dc0 function LoadCameraData            # fh v3:exact 0x006f6f00
 0x006f6f80 function UnloadCameraData          # fh v3:bsim1.00 0x006f70c0
 0x006f72f0 function SpdCtrl_Init              # fh v3:exact 0x006f73e0
 0x006f7330 function SpdCtrl_IsSpeedingUp      # fh v3:bsim1.00 0x006f7420
+0x006f7340 function SpdCtrl_ScaleElapsedTime  # fh v3:cg5 0x6f7430
 0x006f7470 function SpdCtrl_Tick              # fh v3:exact 0x006f7550
+0x006f7580 function CheckAutobtlKey           # fh v3:cg3 0x6f7660
+0x006f75c0 function CheckEncounterKey         # fh v3:cg3 0x6f76a0
+0x006f76c0 function CheckInvincibleKey        # fh v3:cg3 0x6f77a0
 0x006f7b20 function RadialLine_destroyRadialLine # fh switch:bsim1.00 0x710026fa90 RadialLine::destroyRadialLine
 0x006f9a30 function ShadowDynamicMeshInstance_populatePreprocessData # fh switch:bsim0.96 0x71001ca740 ShadowDynamicMeshInstance::populatePreprocessData
 0x006f9ba0 function PhyreFIOS_LoadPrxInProgress # fh v3:exact 0x006f9c80 PhyreFIOS::LoadPrxInProgress
@@ -1126,6 +1279,7 @@
 0x006f9d80 function PhyreFIOSStreamFile_seek  # fh v3:exact 0x006f9e60 PhyreFIOSStreamFile::seek
 0x006fa300 function Fmod_PushCommand             # thiscall(mgr; cmd, a, b, c): queues an FMOD command (ring of 0x96 x 0x14 at 0x00ce8458, "Too many fmod commands at the same time!!"); dispatched through table 0x00c3a368 (0x1a music stop?, 0x27 music start, 0x28 music read, 0x33 sfx start)
 0x006fa690 function FmodManager_signalMusicStart # fh v3:exact 0x006fa770 FmodManager::signalMusicStart
+0x006fa8b0 function SyncManager_SyncManager   # fh v3:cg2 0x6fa990 SyncManager::SyncManager
 0x006fa8d0 function SyncManager_initData      # fh v3:exact 0x006fa9b0 SyncManager::initData
 0x006facf0 function SyncManager_readSyncFile  # fh v3:exact 0x006fadd0 SyncManager::readSyncFile
 0x006faf90 function SyncManager_syncDataChange # fh v3:exact 0x006fb070 SyncManager::syncDataChange
@@ -1156,8 +1310,12 @@
 0x0070b3f0 function FfxFmod_soundInit_setLang # fh call.cs thiscall
 0x0070d890 function FmodSfx_Start                # thiscall(sfx; seq, volume, pan): "FmodSfx::start: Fail to start sequence(%d)"; volume/127 -> 0..1, pan/127*2-1 -> -1..1 (0x0070f310)
 0x00710ed0 function InitGuildMapRenderData    # fh v3:exact 0x00710fb0
+0x00710fd0 function InitVFXPath3RenderData    # fh v3:cg5 0x7110b0
 0x00711030 function InitVFXPath3RenderDataShp # fh v3:bsim1.00 0x00711110
+0x007110d0 function InitVFXRenderDataShp_OShapeVu1 # fh switch:cg2 0x71002e18c0
+0x00711180 function InitVFXRenderData         # fh v3:cg5 0x711260
 0x007111e0 function InitVFXRenderDataAtelShp  # fh v3:exact 0x007112c0
+0x007112d0 function InitVFXRenderDataLine     # fh switch:cg2 0x71002e1c60
 0x00711350 function InitVFXRenderDataRects    # fh v3:exact 0x00711430
 0x007113d0 function InitVFXRenderDataShapeField # fh v3:exact 0x007114b0
 0x00711460 function InitVFXRenderDataShp      # fh v3:bsim1.00 0x00711540
@@ -1202,6 +1360,8 @@
 0x0071a330 function updateVFXRenderDataRects  # fh v3:exact 0x0071a410
 0x0071a4e0 function updateVFXRenderDataShapeField # fh v3:exact 0x0071a5c0
 0x0071b8a0 function updateVFXRenderDataShp    # fh v3:exact 0x0071b980
+0x0071d520 function updateVFXRenderData_KaGra001 # fh switch:cg2 0x71002e31c0
+0x0071dbd0 function updateVFXRenderData_NoiseBlur # fh switch:cg4 0x71002e3aa0
 0x0071e330 function updateVFXZBufClearRenderData # fh v3:exact 0x0071e410
 0x0071e460 function useExtendedAlpha          # fh v3:exact 0x0071e540
 0x0071e6f0 function useShaderPointLight       # fh switch:bsim1.00 0x71002d8da0
@@ -1209,14 +1369,17 @@
 0x0071ecd0 function JobSchedule_pppPart_clearFillBufferRequest # fh v3:exact+call.cs 0x0071edb0 cdecl
 0x0071ed10 function JobSchedule_pppPart_fillBuffer # fh v3:exact 0x0071edf0
 0x0071edb0 function JobSchedule_pppPart_fillBuffer_Kick # fh v3:exact+call.cs 0x0071ee90 cdecl
+0x0071ee80 function JobSchedule_pppPart_fillBuffer_drawShp # fh v3:cg2 0x71ef60
 0x0071f320 function JobSchedule_pppPart_fillBuffer_drawMdl # fh v3:bsim0.99 0x0071f400
 0x007256c0 function JobSchedule_pppPart_fillBuffer_drawMdlDtt # fh v3:exact 0x007257a0
-0x00727110 function JobSchedule_pppPart_fillBuffer_drawShp # fh v3:exact 0x00727200
+0x007269a0 function JobSchedule_pppPart_fillBuffer_drawModelScroll # fh v3:cg4 0x726a90
+0x00727110 function JobSchedule_pppPart_fillBuffer_drawShp_00727110 # fh v3:exact 0x00727200
 0x007282d0 function JobSchedule_pppPart_fillBuffer_md0_ref_0279 # fh v3:exact 0x007283c0
 0x00728660 function JobSchedule_pppPart_getFillBufferRequest # fh v3:exact 0x00728750
 0x00728750 function JobSchedule_pppPart_initFillBufferRequest # fh v3:exact 0x00728840
 0x007287b0 function JobSchedule_pppPart_fillBuffer_drawShp_007287b0 # fh v3:exact 0x007288a0
 0x00728e40 function hideDisplayOffParticle    # fh v3:exact+call.cs 0x00728f30 cdecl
+0x00728f10 function pppCheckViewCylinder      # fh v3:cg4 0x729000
 0x007291c0 function pppFpFree                 # fh v3:exact 0x007292b0
 0x00729290 function pppFpGetHeapSize          # fh v3:exact 0x00729380
 0x007292f0 function pppFpGetMngPtr            # fh v3:exact 0x007293e0
@@ -1230,6 +1393,7 @@
 0x00729a10 function pppFpLoadStat             # fh v3:exact 0x00729b00
 0x00729ab0 function pppFpLoop                 # fh v3:exact 0x00729ba0
 0x00729f70 function pppFpPointLightInit       # fh v3:bsim1.00 0x0072a060
+0x00729f90 function pppFpPointLightProc       # fh v3:cg17 0x72a080
 0x0072a120 function pppFpResetStick           # fh v3:exact 0x0072a210
 0x0072a180 function pppFpSaveStat             # fh v3:exact 0x0072a270
 0x0072a260 function pppFpSetDrawMatrix        # fh v3:exact 0x0072a350
@@ -1244,17 +1408,25 @@
 0x0072ac20 function ModelBuffer_AllocateBuffer # fh v3:bsim1.00 0x0072ad10
 0x0072ac30 function ModelBuffer_ClearAll      # fh v3:bsim1.00 0x0072ad20
 0x0072c190 function ModelBuffer_GetBufferByIndex # fh v3:bsim1.00 0x0072c280
+0x0072c1a0 function ModelBuffer_PrintMemUsage # fh v3:cg2 0x72c290
 0x0072c1b0 function ModelBuffer_ReleaseBufferByIndex # fh v3:exact 0x0072c2a0
 0x0072c3d0 function pppAlloc                  # fh v3:exact 0x0072c4c0
 0x0072c480 function pppCreateHeap             # fh v3:exact 0x0072c570
 0x0072c4d0 function pppDumpHeap               # fh switch:bsim1.00 0x71002d5140
 0x0072c510 function pppFree                   # fh v3:exact 0x0072c600
 0x0072c730 function pppGetRotMatrixX          # fh v3:exact 0x0072c820
+0x0072c800 function pppGetRotMatrixXYZ        # fh v3:cg5 0x72c8f0
+0x0072c890 function pppGetRotMatrixXZY        # fh v3:cg5 0x72c980
 0x0072c920 function pppGetRotMatrixY          # fh v3:exact 0x0072ca10
+0x0072c9f0 function pppGetRotMatrixYXZ        # fh v3:cg4 0x72cae0
+0x0072ca80 function pppGetRotMatrixYZX        # fh v3:cg5 0x72cb70
 0x0072cb10 function pppGetRotMatrixZ          # fh v3:exact 0x0072cc00
+0x0072cbe0 function pppGetRotMatrixZXY        # fh v3:cg4 0x72ccd0
+0x0072cc70 function pppGetRotMatrixZYX        # fh v3:cg5 0x72cd60
 0x0072d570 function pppMatrixXZY              # fh v3:bsim1.00 0x0072d650
 0x0072d930 function pppMatrixYZX              # fh v3:bsim1.00 0x0072da10
 0x0072dcf0 function pppMatrixZYX              # fh v3:bsim1.00 0x0072ddd0
+0x0072ded0 function KeDttMdl_MkGifPk          # fh v3:cg16 0x72dfb0
 0x0072e6d0 function KeDttMdl_UseSingleInstance # fh v3:exact 0x0072e7b0
 0x0072eb20 function pppVtMime                 # fh v3:exact 0x0072ec00
 0x0072ed70 function pppVtMimeCon              # fh v3:exact 0x0072ee50
@@ -1305,22 +1477,34 @@
 0x00757840 function pppVertexAp               # fh v3:exact 0x00757930
 0x00757ff0 function pppVertexApLc             # fh v3:bsim0.94 0x007580e0
 0x007582e0 function pppVertexApAt             # fh v3:exact 0x007583d0
+0x007587b0 function pppKeBornRnd2             # fh v3:cg2 0x7588a0
+0x00758840 function pppKeBornRnd2_Born        # fh v3:cg5 0x758930
+0x00758960 function pppKeBornRnd3             # fh v3:cg2 0x758a50
 0x007589f0 function pppKeBornRnd3_Born        # fh v3:exact 0x00758ae0
+0x00758ae0 function pppKeBornRnd4_Born        # fh switch:cg2 0x710030e010
+0x00758df0 function pppKeBornRnd4             # fh switch:cg2 0x710030e150
+0x00758fc0 function pppKeBornRnd5_Born        # fh v3:cg8 0x7590b0
 0x007592a0 function pppKeBornRnd6_Born        # fh v3:exact 0x00759390
 0x00759650 function pppKeGrvEff               # fh v3:exact 0x00759740
 0x007597b0 function pppKeGrvTgt               # fh v3:exact 0x007598a0
 0x00759bf0 function pppKeHmgEff               # fh v3:exact 0x00759ce0
+0x00759d80 function pppKeHitBorn              # fh switch:cg2 0x710030f430
 0x00759f30 function pppKeLnsLpSft             # fh v3:exact 0x0075a020
+0x0075a140 function pppKeLnsArndTDes          # fh v3:cg2 0x75a230
 0x0075a190 function pppKeLnsArndTDraw         # fh v3:exact 0x0075a280
 0x0075a2d0 function pppKeLnsArndUpdate        # fh v3:bsim1.00 0x0075a3c0
 0x0075a370 function pppKeLnsClmCon            # fh v3:exact 0x0075a460
 0x0075a4a0 function pppKeLnsClmTCon           # fh v3:exact 0x0075a590
+0x0075a4f0 function pppKeLnsClmTDes           # fh v3:cg2 0x75a5e0
 0x0075a540 function pppKeLnsClmTDraw          # fh v3:exact 0x0075a630
 0x0075a6a0 function pppKeLnsClmUpdate         # fh v3:exact 0x0075a790
 0x0075a740 function pppKeLnsCrnCon            # fh v3:bsim1.00 0x0075a830
 0x0075a870 function pppKeLnsCrnTCon           # fh v3:exact 0x0075a960
+0x0075a8b0 function pppKeLnsCrnTDes           # fh v3:cg2 0x75a9a0
 0x0075a900 function pppKeLnsCrnTDraw          # fh v3:exact 0x0075a9f0
 0x0075aab0 function pppKeLnsCrnUpdate         # fh v3:exact 0x0075aba0
+0x0075ac60 function pppKeLnsFlsTCon           # fh v3:cg2 0x75ad50
+0x0075acb0 function pppKeLnsFlsTDes           # fh v3:cg2 0x75ada0
 0x0075ad00 function pppKeLnsFlsTDraw          # fh v3:exact 0x0075adf0
 0x0075ae90 function pppKeLnsFlsUpdate         # fh v3:bsim1.00 0x0075af80
 0x0075af30 function pppKeLnsLpCon             # fh v3:exact 0x0075b020
@@ -1347,7 +1531,9 @@
 0x00761c40 function pppGetPartMatrix          # fh switch:bsim1.00 0x71002d4cc0
 0x00761c80 function pppInitGraphicSystem      # fh switch:bsim0.96 0x71002d1f00
 0x00761d60 function pppInitPartRender         # fh v3:exact 0x00761e50
+0x00761e20 function pppPartDraw               # fh switch:cg4 0x71002d37e0
 0x00762240 function pppPartLoop               # fh v3:exact+call.cs 0x00762330 cdecl
+0x00762550 function pppSetPartMatrix          # fh switch:cg2 0x71008b5328
 0x00763100 function KeThBP_MkGifPk            # fh v3:exact 0x007631f0
 0x007636c0 function KeThBP_Quit               # fh v3:exact 0x007637b0
 0x007637f0 function KeThBP_Update             # fh v3:bsim0.93 0x007638e0
@@ -1398,6 +1584,13 @@
 0x0076d510 function cd_file_sector            # fh v3:exact 0x0076d620
 0x0076d660 function check_ex_file_size        # fh v4:imported+call.cs cdecl
 0x0076d6b0 function disk_open_check_set       # fh v3:bsim1.00 0x0076d7c0
+0x0076d6c0 function dvd_cd_fat_data_size      # fh v3:cg2 0x76d7d0
+0x0076d740 function dvd_cd_fat_sector         # fh v3:cg3 0x76d850
+0x0076d7c0 function dvd_cd_fat_size           # fh v3:cg3 0x76d8d0
+0x0076d840 function dvd_cd_fid_sector         # fh v3:cg3 0x76d950
+0x0076d8c0 function dvd_cd_fid_size           # fh v3:cg3 0x76d9d0
+0x0076d940 function dvd_cd_id_sector          # fh v3:cg2 0x76da50
+0x0076d9c0 function dvd_cd_id_size            # fh v3:cg2 0x76dad0
 0x0076de90 function printf_cut                # fh switch:bsim1.00 0x71003202d0
 0x0076e630 function read_thread_init          # fh v3:bsim1.00 0x0076e740
 0x0076e640 function sa_read_callback          # fh v3:exact 0x0076e750
@@ -1406,6 +1599,7 @@
 0x0076efb0 function movie_frame_prog          # fh v3:bsim1.00 0x0076f0c0
 0x0076efc0 function movie_have_camera         # fh v3:exact 0x0076f0d0
 0x0076eff0 function movie_init                # fh v3:bsim1.00 0x0076f100
+0x0076f020 function movie_load_image          # fh v3:cg2 0x76f130
 0x0076f040 function movie_play_prog           # fh v3:bsim1.00 0x0076f150
 0x0076f060 function movie_run_check           # fh v3:bsim1.00 0x0076f170
 0x0076f080 function movie_start_prog          # fh v3:bsim1.00 0x0076f190
@@ -1439,9 +1633,13 @@
 0x0077d700 function movie_iPicture_Main2      # fh switch:bsim1.00 0x7100326c70
 0x0077e730 function loadImage                 # fh switch:bsim1.00 0x7100336e30
 0x0077e8e0 function syncStrCheckPC_HDD        # fh switch:bsim1.00 0x7100323e60
+0x0077e920 function tex_anim_dlg              # fh switch:cg2 0x71008b62a8
 0x0077e940 function tex_anim_no_set           # fh v3:exact 0x0077ea30
 0x0077eff0 function setLoadImageTagsTexAnim   # fh v3:exact 0x0077f0e0
+0x0077f1d0 function asmAddBlock1              # fh v3:cg2 0x77f2c0
+0x0077f1e0 function asmAddBlock2              # fh v3:cg2 0x77f2d0
 0x0077f1f0 function asmClearBlock             # fh v3:bsim1.00 0x0077f2e0
+0x0077f200 function asmClearBlock0            # fh v3:cg2 0x77f2f0
 0x0077f210 function chr_texanim_draw_sub_new  # fh v3:exact 0x0077f300
 0x0077f9c0 function chr_texanim_set_new       # fh v3:exact 0x0077fa90
 0x0077fce0 function tex_anim_no_set_new       # fh v3:exact 0x0077fdb0
@@ -1456,6 +1654,7 @@
 0x00780cc0 function MsBattleCursorCalc        # fh v3:exact 0x00780d90
 0x00780ce0 function MsBattleCursorType        # fh v3:bsim1.00 0x00780db0
 0x00780cf0 function MsBattleDisposeAtEvent    # fh v3:bsim1.00 0x00780dc0
+0x00780d00 function MsBattleDraw              # fh v3:cg2 0x780dd0
 0x00780d10 function MsBattleEncountExe        # random encounter roll; on a hit writes field 0x0112c256, group 0x0112c258, formation 0x0112c259, raises 0x0112a8e2; was Enc_Check
 0x00780ff0 function ResetEncountExe           # cdecl(full): resets the encounter step counters; was Enc_Reset
 0x00781020 function MsBattleExe               # (mode, field, group, formation): loads btl/<field>_<nn> and sets the battle up; was Battle_Load
@@ -1486,6 +1685,7 @@
 0x00782ae0 function MsGetMapCenter            # fh v3:exact 0x00782ba0
 0x00782c00 function MsSetCountryName          # fh v3:exact 0x00782cc0
 0x00782df0 function getExcelBinSize           # (name, buffer) reads new_<lang>pc/battle/kernel/<name>.bin whole; was Kernel_LoadFile
+0x00782f70 function setBattleEnable           # fh v3:cg2 0x783030
 0x00782f80 function AsyncLoadNewCharacter     # fh v3:exact 0x00783040
 0x00782fd0 function FinishReadPhyreBattleMap  # fh v3:bsim1.00 0x00783090
 0x00783000 function MsBtlReadInit             # fh v3:exact 0x007830b0
@@ -1503,8 +1703,10 @@
 0x00784260 function Mon_GetName               # kernel monster record string 0
 0x007844c0 function readBtlMonsterName        # fh v3:exact 0x00784570
 0x007845e0 function MsAddLoveParam            # fh v3:exact 0x00784690
+0x007846e0 function MsCheatPlayerPowerfulOff  # fh v3:cg2 0x784790
 0x00784720 function MsCheatPlayerPowerup      # fh v3:exact 0x007847d0
 0x00784830 function MsDebugAddGill            # fh switch:bsim1.00 0x7100371450
+0x007848b0 function MsDebugFullCommand        # fh v3:cg14 0x784960
 0x007849c0 function MsDebugFullGill           # fh v3:bsim1.00 0x00784a80
 0x007849d0 function MsDebugFullItem           # fh v3:exact 0x00784a90
 0x00784ac0 function MsDebugFullMember         # fh v3:exact 0x00784b80
@@ -1517,6 +1719,7 @@
 0x00784f60 function MsGetSaveChrFemale        # fh switch:bsim1.00 0x7100375b40
 0x00784f90 function MsGetSaveChrMan           # fh switch:bsim1.00 0x7100375b10
 0x00784fb0 function MsGetSaveChrName          # fh v3:exact 0x00785070
+0x00784ff0 function MsGetSaveChrSummon        # fh v3:cg4 0x7850b0
 0x00785020 function MsGetSaveCommand          # fh v3:exact+call.cs 0x007850e0 cdecl
 0x00785140 function MsGetSaveCommandUse       # fh v3:exact 0x00785200
 0x007851c0 function MsGetSaveConfigCursorSave # fh v3:exact 0x00785280
@@ -1567,6 +1770,7 @@
 0x00787840 function MsEffectCheckMotion       # fh v3:exact 0x00787900
 0x00787900 function MsEffectCheckTarget       # fh v3:exact 0x007879c0
 0x00787950 function MsEffectEndMotion         # fh v3:exact 0x00787a10
+0x00787a40 function MsEffectEnvFree           # fh v3:cg2 0x787b00
 0x00787ab0 function MsEffectForceFree         # fh v3:exact 0x00787b70
 0x00787af0 function MsEffectFree              # fh v3:exact 0x00787bb0
 0x00787bf0 function MsEffectGetLastMagicNum2  # fh v3:exact 0x00787cb0
@@ -1664,6 +1868,7 @@
 0x0078de40 function MsSetEscapeFlag           # fh v3:exact 0x0078df00
 0x0078de80 function MsSetEscapeFlagAll        # fh v3:exact 0x0078df40
 0x0078deb0 function MsSetEternalRelife        # fh v3:exact 0x0078df70
+0x0078ded0 function MsSetFirstCTB             # fh v3:cg10 0x78df90
 0x0078e0a0 function MsSetPartyRelifeTime      # fh v3:exact 0x0078e160
 0x0078e0f0 function DmgCalc_Delay             # fh v3:exact 0x0078e1b0 +DmgCalc_Delay
 0x0078e150 function MsStoneProcess            # fh v3:exact+call.cs 0x0078e210 cdecl
@@ -1690,6 +1895,7 @@
 0x0078fb80 function MsMenuGetChrSkipCommand   # fh v3:exact 0x0078fbd0
 0x0078fbb0 function MsMenuGetHelp             # fh v3:exact 0x0078fc00
 0x0078fcf0 function MsMenuGetText             # fh v3:exact 0x0078fd40
+0x0078fe40 function MsMenuHalfElement         # fh v3:cg2 0x78fe90
 0x0078fe60 function MsMenuInitText            # fh v3:bsim1.00 0x0078feb0
 0x0078fea0 function MsMenuOpenTitleWindow     # fh v3:exact 0x0078fef0
 0x0078fef0 function MsMenuReadText            # fh v3:exact 0x0078ff40
@@ -1715,7 +1921,7 @@
 0x007909c0 function MsGetRomCTBcount          # fh v3:exact 0x00790a10
 0x007909f0 function MsGetRomItem              # id & 0xfff in g_KernelItem; was Item_FindRecord
 0x00790a10 function MsGetRomKaizou            # fh switch:bsim1.00+call.cs 0x710036fc80 cdecl
-0x00790a50 function MonMagic1_FindRecord
+0x00790a50 function MonMagic1_FindRecord  # fh: MsGetRomMonCommand1
 0x00790a70 function MsGetRomMonCommand2       # fh v3:bsim1.00 0x00790ac0
 0x00790a90 function MsGetRomPlyCommand        # id & 0xfff in g_KernelCommand; was Command_FindRecord
 0x00790ab0 function MsGetRomSummonGrow        # fh v3:bsim1.00+call.cs 0x00790b00 cdecl
@@ -1759,17 +1965,25 @@
 0x00794830 function MsGetChrBottomPos         # fh v3:exact 0x00794840
 0x007948a0 function MsGetChrBtlDir            # fh v3:exact 0x007948b0
 0x007948e0 function MsGetChrBtlPos            # fh v3:exact 0x007948f0
+0x00794a30 function MsGetChrCamHeight         # fh v3:cg2 0x794a40
+0x00794a70 function MsGetChrCamWidth          # fh v3:cg2 0x794a80
 0x00794ab0 function MsGetChrCameraPos         # fh v3:exact 0x00794ac0
 0x00794c20 function MsGetChrCenterPos         # fh v3:exact 0x00794c30
+0x00794ca0 function MsGetChrCursorFlag        # fh v3:cg5 0x794cb0
 0x00794d20 function MsGetChrDir               # fh v3:exact 0x00794d30
+0x00794e00 function MsGetChrDist              # fh v3:cg8 0x794e10
 0x00794ec0 function MsGetChrEscapePos         # fh v3:exact 0x00794ed0
 0x00794f20 function MsGetChrEventFlag         # fh v3:exact 0x00794f30
 0x00794fb0 function MsGetChrGround            # fh v3:exact 0x00794fc0
+0x00794ff0 function MsGetChrGroundPos         # fh v3:cg6 0x795000
 0x00795040 function MsGetChrGroup             # fh v3:exact 0x00795050
 0x00795080 function MsGetChrHandle            # fh v3:exact 0x00795090
 0x007950b0 function MsGetChrHeadPos           # fh v3:exact 0x007950c0
+0x007950f0 function MsGetChrHeight            # fh v3:cg11 0x795100
 0x00795170 function MsGetChrInfo              # fh v3:exact 0x00795180
 0x00795250 function MsGetChrLimitBarFlag      # fh v3:exact 0x00795260
+0x00795550 function MsGetChrLimitGauge        # fh v3:cg7 0x795560
+0x00795590 function MsGetChrLimitGaugeMax     # fh v3:cg7 0x7955a0
 0x00795610 function MsGetChrModelID           # fh v3:exact 0x00795620
 0x00795660 function MsGetChrMotionSignal      # fh v3:exact 0x00795670
 0x007956a0 function MsGetChrMotionSpeed       # fh v3:exact 0x007956b0
@@ -1777,7 +1991,10 @@
 0x00795720 function MsGetChrScale             # fh v3:exact 0x00795730
 0x00795780 function MsGetChrStatDeath         # fh v3:exact 0x00795790
 0x007957c0 function MsGetChrStatPoison        # fh v3:exact 0x007957d0
+0x00795800 function MsGetChrStatStone         # fh v3:cg5 0x795810
+0x00795840 function MsGetChrStatWeak          # fh v3:cg2 0x795850
 0x00795880 function MsGetChrStatZombie        # fh v3:exact 0x00795890
+0x00795920 function MsGetChrTargetPos         # fh v3:cg3 0x795930
 0x00795970 function MsGetChrTop               # fh v3:bsim1.00 0x00795980
 0x00795980 function MsGetChrTopPos            # fh v3:exact 0x00795990
 0x00795a20 function MsGetChrWidth             # fh v3:exact 0x00795a30
@@ -1788,12 +2005,16 @@
 0x00795c00 function MsHideArm                 # fh v3:exact 0x00795c10
 0x00795c40 function MsResetNormalCalc         # fh v3:exact 0x00795c50
 0x00795c70 function MsReturnCameraVisible     # fh v3:exact 0x00795c80
+0x00795e20 function MsSetChrDirF              # fh v3:cg7 0x795e30
 0x00795eb0 function MsSetChrDirTarget         # fh v3:exact 0x00795ec0
+0x007960d0 function MsSetChrMotionLevel       # fh v3:cg2 0x7960e0
+0x00796110 function MsSetChrMoveFlag          # fh v3:cg4 0x796120
 0x00796150 function MsSetChrPos               # fh v3:exact 0x00796160
 0x00796220 function MsSetChrPosReset          # fh v3:exact 0x00796230
 0x007962b0 function MsSetChrShadow            # fh v3:bsim1.00 0x007962c0
 0x007962d0 function MsSetChrShadowMode        # fh v3:exact 0x007962e0
 0x00796360 function MsSetChrSpecular          # fh v3:exact 0x00796370
+0x00796480 function MsSetChrTransparent       # fh switch:cg2 0x71003489a0
 0x00796550 function MsSetChrTransparentVisible # fh v3:exact 0x00796560
 0x00796660 function MsSetChrVisible           # fh v3:bsim1.00 0x00796670
 0x007966a0 function MsSetChrVisibleAppear     # fh v3:bsim1.00 0x007966b0
@@ -1803,9 +2024,11 @@
 0x00796860 function MsSetChrVisibleMain       # fh switch:bsim1.00 0x7100347040
 0x007968e0 function MsSetChrWeight            # fh v3:exact 0x007968f0
 0x00796940 function MsSetDirThetaMode         # fh v3:exact 0x00796950
+0x007969c0 function Ch_SetCalcNorm2           # fh switch:cg3 0x71008ad4c8
 0x007969f0 function MsSetTargetDir            # fh v3:exact 0x00796a00
 0x00796c30 function getSparedLmtPos           # fh v3:exact 0x00796c40
 0x00796d70 function msCheckSameTarget         # fh v3:exact 0x00796d80
+0x00796dc0 function MsDebugFullCommand_00796dc0 # fh switch:cg2 0x7100370fc0
 0x00796ea0 function msGetChrPos               # fh v3:exact 0x00796eb0
 0x00796f20 function msSetChrBodyHit           # fh v3:exact 0x00796f30
 0x007972c0 function msSetChrWeight            # fh v3:exact 0x007972d0
@@ -1855,10 +2078,12 @@
 0x00799b40 function MsSetChrMimic             # fh v3:exact 0x00799b50
 0x00799cd0 function MsSetDeathSentence        # fh v3:exact 0x00799ce0
 0x00799d50 function MsSetProvokingCommand     # fh v3:exact 0x00799d60
+0x00799ee0 function MsMemCheckInit            # fh v3:cg2 0x799ef0
 0x00799f00 function MsMemCheckRegist          # fh v3:exact 0x00799f10
 0x00799f20 function MsMemCheckSum             # fh v3:exact 0x00799f30
 0x00799f70 function MsBtlFreeItemMem          # fh v3:bsim1.00 0x00799f80
 0x00799fb0 function MsBtlGetItemMem           # fh v3:exact 0x00799fc0
+0x0079a000 function MsBtlInitItemMem          # fh switch:cg2 0x71008ac2f8
 0x0079a0c0 function MsCheckRange              # fh v3:bsim1.00+call.cs 0x0079a0d0 cdecl
 0x0079a0e0 function MsCheckStatus             # fh v3:exact 0x0079a0f0
 0x0079a190 function MsClearStatus             # fh v3:exact 0x0079a1a0
@@ -1873,6 +2098,7 @@
 0x0079ad90 function MsGetRamChrDisableZan     # fh switch:bsim1.00 0x710036cbd0
 0x0079add0 function MsGetRamChrHP             # fh v3:bsim1.00+call.cs 0x0079ae00 cdecl
 0x0079adf0 function MsGetRamChrHP_0079adf0    # fh v3:bsim1.00 0x0079ade0
+0x0079ae10 function MsGetRamChrIconNumber     # fh v3:cg6 0x79ae20
 0x0079ae30 function MsGetRamChrIconType       # fh v3:bsim1.00 0x0079ae40
 0x0079ae50 function MsGetRamChrMP             # fh v3:bsim1.00+call.cs 0x0079ae60 cdecl
 0x0079ae70 function MsGetRamChrMPmax          # fh v3:bsim1.00 0x0079ae80
@@ -1908,6 +2134,7 @@
 0x0079ddb0 function MsBattleSpecialCameraPause # fh v3:exact 0x0079ddd0
 0x0079dde0 function MsBattleSpecialFree       # fh v3:exact 0x0079de00
 0x0079de60 function MsBattleSpecialInit       # fh v3:exact 0x0079de80
+0x0079e310 function MsCheckStat               # fh v3:cg2 0x79e330
 0x0079e320 function MsCheckStat2              # fh v3:bsim1.00 0x0079e340
 0x0079e340 function MsCheckWrongStatus        # fh v3:exact 0x0079e360
 0x0079e3d0 function MsDeathEffectStart        # fh v3:exact 0x0079e3f0
@@ -1918,6 +2145,7 @@
 0x0079e6a0 function MsEtEffectRead            # fh v3:exact 0x0079e6c0
 0x0079e730 function MsEtEffectReadInit        # fh v3:bsim1.00 0x0079e750
 0x0079e7a0 function MsEtEffectSet             # fh v3:exact 0x0079e7c0
+0x0079e7b0 function MsEtEffectStop            # fh v3:cg2 0x79e7d0
 0x0079e830 function MsMagicEffectEnd          # fh v3:exact 0x0079e850
 0x0079e890 function MsMagicEffectSet          # fh v3:exact 0x0079e8b0
 0x0079ed00 function MsSetStealEffect          # fh v3:bsim1.00+call.cs 0x0079ed20 cdecl
@@ -1935,7 +2163,10 @@
 0x0079f5e0 function MsNumberCalcProcess       # fh v3:exact 0x0079f600
 0x0079f660 function MsNumberDrawProcess       # fh v3:exact 0x0079f680
 0x0079f9b0 function MsNumberGetMem            # fh v3:exact 0x0079f9d0
+0x0079f9f0 function MsNumberInit              # fh v3:cg2 0x79fa10
 0x0079fa00 function MsNumberRegist            # fh v3:exact+call.cs 0x0079fa20 cdecl
+0x0079fd20 function MsChrSEfoot               # fh v3:cg3 0x79fd40
+0x0079fff0 function MsMusicReadStart          # fh v3:cg6 0x7a0010
 0x007a0040 function MsMusicSync               # fh v3:exact 0x007a0060
 0x007a0090 function MsMusicVolume             # fh v3:exact 0x007a00b0
 0x007a00b0 function MsNowMusicStop            # fh v3:exact 0x007a00d0
@@ -1957,7 +2188,7 @@
 0x007a0a30 function MsSEP3Dregist             # fh v3:exact 0x007a0a50
 0x007a0c50 function MsWeaponName              # fh v3:exact+call.cs 0x007a0c70 cdecl
 0x007a0cb0 function TrophyManager_DestroyInstance # fh switch:bsim1.00 0x710023fd20 TrophyManager::DestroyInstance
-0x007a0cd0 function MsBtlInitItemMem          # fh switch:bsim1.00 0x7100367af0
+0x007a0cd0 function MsBtlInitItemMem_007a0cd0 # fh switch:bsim1.00 0x7100367af0
 0x007a0cf0 function MsWeaponNameNum           # fh v3:exact+call.cs 0x007a0d10 cdecl
 0x007a2600 function MsWeaponNameRead          # fh v3:exact 0x007a2620
 0x007a2670 function MsStoneEffectCheck        # fh v3:exact 0x007a2690
@@ -1990,6 +2221,7 @@
 0x007a6ef0 function CT_703B_ret_setCommandDisabled # fh v3:exact 0x007a6f10 +CT_703B_ret_setCommandDisabled
 0x007a7340 function Native_BtlSetPadOrientation  # 0x7099: args (n) -> 0; 0x0112c9cd = n & 3; 0x0089d390 uses it to rotate the d-pad bits (0x1000/0x2000/0x4000/0x8000) for cursor movement; set with each camera shot
 0x007a76e0 function Native_BtlGetTurnActor       # 0x708d: () -> (signed char)0x0112c9e2, the actor whose turn last started (set with 0x0112c9df/e0 in the turn code ~0x00792350); ?exact meaning
+0x007a89c0 function MsSetChrVisibleBtl2Event  # fh switch:cg2 0x7100348680
 0x007a8c80 function ms_motion_trans           # fh v3:exact 0x007a8ca0
 0x007a8f20 function resetZanmatoSepList       # fh v3:exact 0x007a8f40
 0x007a8fc0 function Battle_ScriptPlayMotion      # (ctx, ..., motion, flag): plays a motion on the script's actor (0x00837d00), returns the length in frames << 8 / speed; core of 0x7007
@@ -1999,6 +2231,7 @@
 0x007a99b0 function MsGetEscapeDir            # fh v3:exact 0x007a99d0
 0x007a9a20 function MsMenuWeakElement         # fh switch:bsim1.00 0x710035e1b0
 0x007a9ac0 function MsGetMoveTargetPos        # fh v3:exact 0x007a9ae0
+0x007a9f30 function MsGetSummonDir            # fh switch:cg2 0x7100361020
 0x007aa100 function MsMotionPosCheck          # fh v3:exact 0x007aa120
 0x007aa140 function MsMotionPosCheckAll       # fh v3:exact 0x007aa160
 0x007aa160 function MsMotionProcess           # fh v3:exact 0x007aa180
@@ -2008,16 +2241,20 @@
 0x007aab80 function MsMoveChr                 # fh v3:exact 0x007aaba0
 0x007ab0b0 function MsMoveSplineRegist        # fh v3:exact 0x007ab0d0
 0x007ab140 function MsMoveSplineSet           # fh v3:exact 0x007ab160
+0x007ab160 function MsMoveTargetPos           # fh switch:cg2 0x71008b0578
 0x007ab170 function MsResetDirMove            # fh v3:bsim1.00 0x007ab190
 0x007ab300 function MsSetChrHeight            # fh v3:exact 0x007ab320
 0x007ab360 function MsSetMotion               # fh v3:exact 0x007ab380
 0x007ab500 function MsSetMotionAttackWait     # fh v3:bsim1.00 0x007ab520
+0x007ab520 function MsSetMotionReturn         # fh v3:cg3 0x7ab540
 0x007ab6c0 function MsTerminateMotion         # fh v3:exact 0x007ab6e0
 0x007ab730 function MsMotionSpeedReset        # fh switch:bsim1.00 0x71003619f0
 0x007ab870 function MsGetExcelData            # (id, table, &strings) -> record; defines the container (docs/formats/kernel.md); was Kernel_FindRecord
 0x007ab8f0 function MsGetExcelDataNum         # fh v3:exact 0x007ab910
 0x007ab970 function MsEquipSaveWeapon         # fh v3:exact 0x007ab990
 0x007ab9f0 function SwapSaveGear              # fh call.cs cdecl
+0x007abb70 function MsGetSaveChrArmorModel    # fh v3:cg2 0x7abb90
+0x007abba0 function MsGetSaveChrWeaponModel   # fh v3:cg2 0x7abbc0
 0x007abbd0 function MsGetSaveWeapon           # (id): 0xb000 + i -> battle spoils slot (0x02310dde), else inventory slot i (< 200) at 0x01130f2c; was Equip_Get
 0x007abc60 function MsGetSaveWeaponAmount     # counts in-use slots without flag 0x02; out: free slots; was Equip_CountOwned
 0x007abca0 function Equip_RebuildWearers       # equipment +6 = wearer, from ply_save +0x2d/+0x2e
@@ -2122,15 +2359,17 @@
 0x007b2950 function MsAddYoujinbouCom         # fh switch:bsim1.00 0x7100381b80
 0x007b2980 function MsCheckSummon             # fh v3:exact 0x007b2990
 0x007b2ad0 function MsDeathYoujinbou          # fh v3:exact 0x007b2ae0
+0x007b2b00 function MsGetSummonEnergy         # fh v3:cg4 0x7b2b10
 0x007b2b20 function MsGetYoujinbouCom         # fh v3:bsim1.00 0x007b2b30
 0x007b2c10 function msVoiceCheckStanby        # fh v3:exact 0x007b2c20
-0x007b2dc0 function Battle_GetActorProperty   # switch over ~340 actor properties
-0x007b4a90 function Battle_SetActorFloatProperty # (actor, property 0-9, float): writes actor dwords 0x12f-0x139
+0x007b2dc0 function Battle_GetActorProperty   # switch over ~340 actor properties; fh: MsGetChrStatInfo
+0x007b4a90 function Battle_SetActorFloatProperty # (actor, property 0-9, float): writes actor dwords 0x12f-0x139; fh: MsSetChrMotionInfo
 0x007b4b70 function MsSetChrStatInfo          # switch over ~320 actor properties; was Battle_SetActorProperty
 0x007b6c50 function MsGetBattleList           # fh v3:exact 0x007b6bd0
 0x007b6fb0 function MsGetTargetLinkList       # fh v3:exact 0x007b6f30
 0x007b7090 function MsGetTargetList           # fh v3:exact 0x007b7010
 0x007b7170 function MsGetTargetRandomList     # fh v3:exact 0x007b70f0
+0x007b7280 function MsGetTargetRandomList2    # fh switch:cg4 0x710037d720
 0x007b72c0 function MsGetTargetSortList       # fh v3:exact 0x007b7240
 0x007b78c0 function MsSetBallSpline           # fh v3:exact 0x007b7840
 0x007b7eb0 function MsEffectGetBufferAddress  # fh switch:bsim1.00 0x7100391ac0
@@ -2172,6 +2411,7 @@
 0x007ba9a0 function MsBindCamera              # fh v3:exact 0x007ba920
 0x007ba9c0 function MsBindOffCamera           # fh v3:exact 0x007ba940
 0x007baaa0 function MsSplineInit              # fh v3:bsim1.00 0x007baa20
+0x007bb6a0 function setCameraMatrixToPhyreScene # fh switch:cg2 0x71003a0fe0
 0x007bba50 function MsCopyScreenMatrix        # fh v3:bsim1.00 0x007bb9d0
 0x007bba70 function MsEffectCameraInit        # resets the override camera: look-at/eye/up (0x01136fd8/fc8/fe8) to defaults, roll 0, screen depth 0x02311428 = 1024.0, off (0x0231142c = 0); was Cam_OverrideReset
 0x007bbb00 function MsEffectCameraReset       # 0x0231142c = 0: the camera update builds the view from the active channel again; was Cam_OverrideOff
@@ -2182,12 +2422,14 @@
 0x007bbd80 function MsScreenFocusReset        # fh v3:bsim1.00 0x007bbd00
 0x007bbda0 function MsScreenFocusResetAll     # fh v3:exact 0x007bbd20
 0x007bc0c0 function MsScreenOffset            # fh v3:exact 0x007bc040
-0x007bc110 function Cam_Update                   # cdecl(camera 0-2) -> 1 when camera > 2: per frame, picks the active channel (g_Camera), moves it, builds the view matrix 0x02311440 with FUN_007c1be0 from the channel's eye (+0x65c) and look-at (+0x40), or from the override camera when g_CamOverrideOn
+0x007bc110 function Cam_Update                   # cdecl(camera 0-2) -> 1 when camera > 2: per frame, picks the active channel (g_Camera), moves it, builds the view matrix 0x02311440 with FUN_007c1be0 from the channel's eye (+0x65c) and look-at (+0x40), or from the override camera when g_CamOverrideOn; fh: MsScreenProcess
 0x007bc720 function MsScreenResetOffset       # fh v3:exact 0x007bc6a0
 0x007bc7f0 function MsSetScreen               # fh v3:exact 0x007bc770
 0x007bc980 function Cam_Apply                    # cdecl(camera): field of view from the camera's screen depth (448 / (2 d), atan) into the renderer, then Render_SetView(0x02311440); Cam_Update calls it only for channel cameras, not the override
+0x007bd000 function MsCameraFree              # fh v3:cg3 0x7bcf80
 0x007bd110 function MsCameraGet               # (owner, camera, type): finds/allocates one of 4 channels of a camera (0xda0 bytes each, table 0x011381a8); was Cam_AllocChannel
 0x007bd2d0 function MsCameraGetAngle          # fh switch:bsim1.00 0x710039de80
+0x007bd300 function MsCameraGetID             # fh switch:cg3 0x71008afb08
 0x007bd340 function MsCameraGetNum            # fh v3:exact 0x007bd2c0
 0x007bd420 function Cam_GetPos                   # (camera, side, &x, &y, &z): side position at camera +0x50
 0x007bd470 function MsCameraGetPosNow         # fh v3:exact 0x007bd3f0
@@ -2215,6 +2457,8 @@
 0x007c06d0 function MsSetCameraMatrix         # fh v3:exact 0x007c0650
 0x007c0790 function MsSetCheckChange          # fh v3:exact 0x007c0710
 0x007c0ab0 function MsSetNormalUpVector       # fh v3:exact 0x007c0a30
+0x007c1480 function MsAddPoint                # fh v3:cg21 0x7c1400
+0x007c1550 function MsApplyMatrix             # fh v3:cg6 0x7c14d0
 0x007c1be0 function MsCameraMatrix            # fh v3:exact 0x007c1b70
 0x007c2520 function MsDivVector               # fh v3:exact 0x007c24b0
 0x007c25e0 function MsMiddlePoint             # fh v3:exact 0x007c2570
@@ -2226,6 +2470,7 @@
 0x007c3480 function MsRotMatrixY              # fh v3:bsim1.00 0x007c3420
 0x007c3790 function MsRotMatrixZ              # fh v3:bsim1.00 0x007c3730
 0x007c3d60 function MsScreenMatrix            # fh v3:exact 0x007c3d00
+0x007c40b0 function MsSubPoint                # fh v3:cg6 0x7c4050
 0x007c4180 function MsVectorGetSide           # fh v3:exact 0x007c4120
 0x007c4280 function MsVectorLen               # fh v3:exact 0x007c4220
 0x007c43a0 function MsVectorLen2D             # fh v3:exact 0x007c4340
@@ -2239,16 +2484,20 @@
 0x007c5fc0 function MsGetBattleName           # fh v3:exact 0x007c5f30
 0x007c6110 function Ms_Gui_BattleConsoleProc  # fh v3:exact 0x007c6080
 0x007c6d80 function enterBattle               # fh switch:bsim1.00 0x71003a8a40
+0x007c6e20 function Ms_Gui_BattleConfigProc   # fh v3:cg16 0x7c6d90
 0x007c86e0 function Gui_MasakiInit            # fh v3:exact 0x007c8650
 0x007c8950 function MsAutoRepeatCheck         # fh v3:exact 0x007c88c0
 0x007c89a0 function MsAutoRepeatInit          # fh v3:exact 0x007c8910
 0x007c8b00 function MsFileIn                  # fh switch:bsim1.00 0x71003b5f60
 0x007c8b50 function MsFileOut                 # fh switch:bsim1.00 0x71003b5ee0
+0x007c90f0 function MsDebugBattlePosInit      # fh switch:cg2 0x71003a8bd0
 0x007c93d0 function MsBtlPosInit              # fh v3:exact 0x007c9300
 0x007cd800 function MsDebugEnvSave            # fh v3:exact 0x007cd730
 0x007cf640 function MsSetHashValue            # fh v3:exact 0x007cf570
 0x007cf6c0 function MsStrCopy                 # fh v3:exact 0x007cf5f0
+0x007cfb20 function MsDebugGetCameraMode      # fh switch:cg2 0x71008b03e8
 0x007cfcd0 function Ms_Gui_InfoProc           # fh v3:exact 0x007cfc00
+0x007d42e0 function MsSaveUcID                # fh switch:cg2 0x71008b0588
 0x007d44a0 function Ms_Gui_CameraProc         # fh v3:exact 0x007d43d0
 0x007d80a0 function Ms_Gui_BattleProc         # fh v3:exact 0x007d7fc0
 0x007d9c20 function Ms_Gui_ReferencePos       # fh v3:exact 0x007d9b40
@@ -2291,6 +2540,7 @@
 0x007e8010 function op_m_copy                 # fh v3:exact 0x007e7f20
 0x007e83b0 function op_mul_m                  # fh v3:exact 0x007e82c0
 0x007e9a30 function op_rt_m_yxz               # fh v3:bsim1.00 0x007e9940
+0x007e9f20 function op_spline_table           # fh v3:cg4 0x7e9e30
 0x007ea120 function op_spline_xyz             # fh v3:exact 0x007ea030
 0x007ea2d0 function op_spline_xyz_table       # fh v3:exact 0x007ea1e0
 0x007ea700 function op_unit_m_scale           # fh v3:exact 0x007ea610
@@ -2309,7 +2559,12 @@
 0x007ec7e0 function op_zbuf_clear             # fh v3:exact 0x007ec700
 0x007ec890 function ops_init_draw_work        # fh v3:exact 0x007ec7b0
 0x007ecf30 function op_anm_tex0_reset         # fh v3:bsim1.00 0x007ece50
+0x007ed0c0 function op_shape_draw             # fh v3:cg2 0x7ecfe0
+0x007f67c0 function opus_0154_wave_omd_make   # fh switch:cg2 0x71003e2830
+0x007f8930 function opus_encount4_init        # fh switch:cg2 0x71003e9590
+0x007f94e0 function opus_wave_omd_make        # fh switch:cg2 0x71003eaaf0
 0x007faed0 function op_et_astatus_effect_change # fh v3:exact 0x007fadf0
+0x007fb000 function op_et_astatus_effect_off  # fh v3:cg5 0x7faf20
 0x007fb170 function op_et_battle_effect_free  # fh v3:exact 0x007fb090
 0x007fb1e0 function op_et_battle_effect_init  # fh v3:exact 0x007fb100
 0x007fb240 function op_et_battle_genko_counter_get # fh v3:bsim1.00 0x007fb160
@@ -2364,6 +2619,7 @@
 0x007ff290 function op_heap_display_set       # fh v3:bsim1.00 0x007ff1b0
 0x007ff2b0 function op_heap_display_set_par   # fh v3:exact 0x007ff1d0
 0x007ff360 function op_init_ffx               # fh v3:exact 0x007ff280
+0x007ff670 function op_loop_end_ffx           # fh v3:cg2 0x7ff590
 0x007ff680 function op_loop_ffx_after         # fh v3:exact+call.cs 0x007ff5a0 cdecl
 0x007ff770 function op_loop_ffx_before        # fh v3:bsim1.00+call.cs 0x007ff690 cdecl
 0x007ff8e0 function opd_exit_from_ovl         # fh v3:bsim1.00 0x007ff800
@@ -2396,9 +2652,13 @@
 0x00801700 function opus_prog_on              # fh v3:exact 0x00801620
 0x00803730 function op_mdc_mem_transfer_cue_free # fh v3:exact 0x00803650
 0x00803760 function op_mdc_mem_transfer_cue_free_all # fh v3:bsim1.00 0x00803680
+0x008044e0 function opu_motion                # fh switch:cg2 0x71003e4c60
+0x00804c90 function opu_v_en_bone             # fh switch:cg2 0x71003e5500
 0x008061a0 function opus_mdc_free             # fh v3:exact 0x008060c0
 0x00807830 function yonExtMapDeleteId         # fh v3:bsim1.00 0x00807750
 0x00807860 function yonExtMapRegister         # fh v3:bsim1.00 0x00807780
+0x00807870 function op_chara_hsv              # fh v3:cg4 0x807790
+0x008079f0 function op_chara_hsv_make         # fh v3:cg4 0x807ae0
 0x00807b20 function op_chara_hsv_size_get     # fh v3:exact 0x00807c90
 0x00808a20 function opus_all_clut_dispose     # fh v3:exact 0x00808b90
 0x0080a560 function opus_chara_rgba_set       # fh v3:exact 0x0080a6c0
@@ -2415,18 +2675,23 @@
 0x00813460 function opp_et_ovl                # fh switch:bsim1.00 0x71003fb640
 0x00814790 function opu_et_ovl                # fh switch:bsim1.00 0x7100406310
 0x00815e10 function opu_damage_motion         # fh v3:exact 0x00815f60
+0x008161f0 function opu_en_on                 # fh switch:cg3 0x71003fc0f0
 0x008165d0 function opu_et_no                 # fh switch:bsim1.00 0x71003fbd90
+0x00817590 function opus_camera_limit         # fh switch:cg2 0x71003fcb90
 0x0081ce70 function SqsAllVoiceTerminate      # fh v3:exact 0x0081cf80
 0x0081cef0 function SqsBattleStreamingDataSend # fh v3:exact 0x0081d000
 0x0081cf40 function SqsBattleStreamingStart   # fh v3:exact 0x0081d050
 0x0081cf90 function SqsBattleWaveDataSend     # fh v3:exact 0x0081d0a0
 0x0081cfd0 function SqsDataSendingCompleted   # fh v3:exact 0x0081d0e0
+0x0081d3c0 function SqsInitMusicInfoHdd       # fh v3:cg3 0x81d4d0
+0x0081d470 function SqsInitWaveInfoHdd        # fh v3:cg4 0x81d580
 0x0081d5f0 function SqsIopCommandSend         # fh v3:exact 0x0081d700
 0x0081d700 function SqsIopSoundErrorStatus    # fh v3:bsim1.00 0x0081d810
 0x0081d710 function SqsIopSoundSystemStatus   # fh v3:bsim1.00 0x0081d820
 0x0081d820 function SqsMusicDataRead          # fh v3:exact 0x0081d930
 0x0081dcd0 function SqsMusicPlay              # fh switch:bsim0.96 0x7100407bc0
 0x0081e250 function SqsReportIopSoundStatus   # fh v3:bsim1.00 0x0081e360
+0x0081e3b0 function SndStandbyShoutStream     # fh switch:cg2 0x71008ba6a8
 0x0081e4e0 function SqsSePlay                 # fh v3:bsim1.00 0x0081e5f0
 0x0081e5d0 function SqsSeSeparateClear        # fh v3:exact 0x0081e6e0
 0x0081e600 function SqsSeSeparateDataSend     # fh v3:exact 0x0081e710
@@ -2442,6 +2707,8 @@
 0x0081edf0 function SqsShoutStreamingPlayState # fh v3:exact 0x0081ef00
 0x0081eeb0 function SqsSifDmaStart            # fh switch:bsim1.00 0x7100406c30
 0x0081ef50 function SqsSetStraightStreamAreaSize # fh switch:bsim0.93 0x710040a960
+0x0081ff80 function HandleSaveDataScreen      # fh v3:cg23 0x820090
+0x008202e0 function ExportValidateInterface   # fh v3:cg2 0x8203f0
 0x00820380 function Sg_EffectRoutineEnable    # fh v3:bsim1.00+call.cs 0x00820490 cdecl
 0x008203a0 function Sg_EnableCalcCam          # fh v3:bsim1.00 0x008204b0
 0x008203e0 function Sg_EnableCalcChr          # fh switch:bsim1.00 0x710042c630
@@ -2449,15 +2716,19 @@
 0x00820420 function Sg_EnableDrawGui          # fh switch:bsim1.00 0x710042c6f0
 0x00820440 function Sg_EnableCalcMap          # fh switch:bsim1.00 0x710042c600
 0x00820460 function Sg_EnableDrawMenu         # fh switch:bsim1.00 0x710042c720
+0x00820480 function Sg_EnableEffectMatirx     # fh v3:cg2 0x820590
+0x00820490 function Sg_EnableGetCalcCam       # fh v3:cg4 0x8205a0
 0x00820500 function Sg_EnableTkAnti           # fh switch:bsim1.00 0x7100435280
 0x00820530 function Sg_GetDBuffDC             # fh v3:exact+call.cs 0x00820640 cdecl
 0x00820550 function Sg_GetDispMode            # fh v3:bsim1.00 0x00820660
 0x008205a0 function Sg_GetKeepFps             # fh v3:bsim1.00+call.cs 0x008206b0 cdecl
+0x008205d0 function Sg_GetMapAlphaFast        # fh v3:cg2 0x8206e0
 0x008205e0 function Sg_GetPause               # fh v3:bsim1.00 0x008206f0
 0x00820610 function Sg_GetUserName            # fh v3:bsim1.00 0x00820720
 0x00820650 function Sg_GetthDispEnable        # fh v3:bsim1.00 0x00820760
 0x008206c0 function Sg_MainCalcRate           # fh v3:exact 0x008207d0
 0x008207f0 function Sg_MainDebug              # fh v3:exact 0x00820900
+0x00820860 function Sg_MainInit               # fh switch:cg4 0x710042ce30
 0x00820ae0 function Sg_MainLoop               # the game's frame (update and draw): with g_PauseOn the world update (0x00821e80) is skipped for the pause's (0x008893e0); calls Battle_Update, Cam_Update, Screen_UpdateFades; was Game_Frame
 0x00821750 function Sg_MenuSetReserve         # (menu id): g_012fbc38 = id, result 0x012fbc3c = -1; 0x40100000/0x40200000 handled separately; was Menu_Request
 0x00821aa0 function TOInitFont1208            # fh switch:bsim1.00 0x71004b0f20
@@ -2469,7 +2740,9 @@
 0x00821d50 function Sg_SetthDispEnable        # fh v3:bsim1.00 0x00821e70
 0x00822380 function achievementUnlockAchievement # fh call.cs cdecl
 0x008223a0 function drawDreamEffect           # fh v3:exact 0x00822430
+0x00822410 function dreamParamReset           # fh switch:cg2 0x710042da00
 0x00822460 function getUCStatus               # fh v3:exact 0x008224f0
+0x00822580 function recallSceneEffect         # fh switch:cg4 0x710042da60
 0x00822620 function recallSceneEffect2        # fh v3:exact 0x008226b0
 0x00822760 function trophyCheckDefeatMonster  # fh v3:exact 0x008227f0
 0x00822840 function updateFFX                 # fh v3:exact 0x008228d0
@@ -2509,6 +2782,7 @@
 0x00826d70 function Ch_HandleGetNext          # fh v3:exact 0x00826df0
 0x00826db0 function Ch_HandleRewind           # fh v3:bsim1.00 0x00826e30
 0x00826ea0 function Ch_InitAll                # fh v3:exact 0x00826f20
+0x00826fbc function Ch_MemMove                # fh switch:cg2 0x7100410460
 0x00827250 function Ch_MemMoveSetTrigger      # fh v3:bsim1.00 0x008272d0
 0x00827280 function Ch_ModelCreatePacket      # fh v3:exact 0x00827300
 0x00827700 function Ch_ModelPurgePacket       # fh v3:exact 0x00827780
@@ -2519,12 +2793,13 @@
 0x00828620 function Ch_WorkRestore            # fh v3:exact 0x008286a0
 0x00828b30 function Ch_WorkSwap               # fh v3:exact 0x00828bb0
 0x00828c10 function InsideTriangle            # fh v3:exact 0x00828c90
+0x008295e0 function characterChange           # fh switch:cg2 0x7100410c00
 0x00829870 function passThisTriangle          # fh v3:exact 0x008298f0
 0x00829c60 function set0434isDarkYojimbo      # fh switch:bsim1.00 0x7100410fa0
 0x00829c90 function sg_getdbname              # kind (0-6 or its letter) -> chr folder name; was Chr_KindDir
 0x00829e10 function sg_getdbtype              # id >> 12 -> 'c','m','n','s','w','f','k'; was Chr_KindLetter
 0x00829e60 function Ch_AnalysisChrNum         # fh v3:exact 0x00829ee0
-0x00829ef0 function Chr_LoadData                 # (chr id): queues "[%s:%s]CHRDATA" (prints "SG:RomRead:%s %x")
+0x00829ef0 function Chr_LoadData                 # (chr id): queues "[%s:%s]CHRDATA" (prints "SG:RomRead:%s %x"); fh: Ch_DataRead
 0x0082a040 function Ch_DataReadSync           # (chr id): ChrData_State(1, id); error "CH Data Read Sync" / "%s does not read.(can't sync)"; was Chr_IsLoaded
 0x0082a080 function Ch_GetCharID              # fh v3:exact 0x0082a100
 0x0082a100 function Ch_IsLoadingClothFile     # fh v3:exact 0x0082a180
@@ -2535,9 +2810,11 @@
 0x0082a5f0 function Ch_RomDataReadInit        # fh v3:exact 0x0082a670
 0x0082a640 function Chr_TableIndex           # finds id & 0xfff in the kind's .tbl
 0x0082a6c0 function Ch_RomReadChrCB           # fh v3:exact 0x0082a740
+0x0082a6e0 function Ch_RomReadEventMGRP       # fh switch:cg3 0x7100419120
 0x0082a7d0 function Ch_RomReadEventMGRPcb     # fh switch:bsim1.00 0x71004190f0
 0x0082a7f0 function Ch_RomReadEventMGRPsync   # fh switch:bsim1.00 0x7100419100
 0x0082a890 function Ch_AddGrav                # fh switch:bsim1.00 0x710041dc20
+0x0082a930 function Ch_ClothSetEnable         # fh v3:cg2 0x82a9b0
 0x0082a9a0 function Ch_EffectGetEffectLevel   # fh v3:bsim1.00 0x0082aa20
 0x0082a9b0 function Ch_EffectGetResidentPtr   # fh v3:exact 0x0082aa30
 0x0082a9d0 function Ch_EffectSetEffectLevel   # fh v3:bsim1.00 0x0082aa50
@@ -2564,15 +2841,17 @@
 0x0082ae30 function Ch_ModelSetAlpha          # fh v3:exact 0x0082aeb0
 0x0082aea0 function Ch_ModelSetHide           # fh v3:exact 0x0082af20
 0x0082afb0 function Ch_MotionSetHokan         # fh v3:exact 0x0082b030
-0x0082afe0 function Chr_SetAutoMotion            # (chr, slot, motion): chr +0x75c[slot]; -1 = default table 0x00c49680
+0x0082afe0 function Chr_SetAutoMotion            # (chr, slot, motion): chr +0x75c[slot]; -1 = default table 0x00c49680; fh: Ch_MotionSetMoves
 0x0082b010 function Ch_MotionSetNextHokan     # fh v3:exact 0x0082b090
 0x0082b040 function Ch_MoveSetChgRun          # fh v3:exact 0x0082b0c0
 0x0082b080 function Ch_ResetMotion            # (chr): +0x730 = 1, scripted motion flag +0x736 = 0, +0x728 = 0; called before every play; was Chr_ReleaseMotion
 0x0082b0d0 function Ch_SetBattleChrNum        # fh v3:bsim1.00 0x0082b150
+0x0082b0f0 function Ch_SetCamHeight           # fh v3:cg2 0x82b170
 0x0082b150 function Ch_SetClipZ               # fh v3:exact 0x0082b1d0
 0x0082b190 function Ch_SetDir                 # fh switch:bsim1.00 0x710041de10
 0x0082b1b0 function Ch_SetDirF                # fh v3:exact 0x0082b230
 0x0082b1e0 function Ch_SetFieldMode           # fh v3:bsim1.00 0x0082b260
+0x0082b200 function Ch_SetFixHeight           # fh v3:cg2 0x82b280
 0x0082b240 function Ch_SetGravMode            # fh v3:bsim1.00 0x0082b2c0
 0x0082b260 function Ch_SetHideBattle          # fh v3:bsim1.00 0x0082b2e0
 0x0082b280 function Ch_SetHideCalc            # fh v3:bsim1.00 0x0082b300
@@ -2583,6 +2862,7 @@
 0x0082b3c0 function Ch_SetOffset              # fh v3:bsim1.00 0x0082b440
 0x0082b3e0 function Ch_SetOrgMatrix           # fh v3:bsim1.00 0x0082b460
 0x0082b400 function Ch_SetOrgMatrixScale      # fh v3:bsim1.00 0x0082b480
+0x0082b420 function Ch_SetOverlapHit          # fh v3:cg2 0x82b4a0
 0x0082b440 function Ch_SetPos                 # fh v3:exact 0x0082b4c0
 0x0082b480 function Ch_SetPos3                # fh v3:exact 0x0082b500
 0x0082b4e0 function Ch_SetResHide             # fh v3:exact 0x0082b560
@@ -2597,6 +2877,7 @@
 0x0082b840 function Ch_SetSp                  # fh v3:bsim1.00 0x0082b8c0
 0x0082b860 function Ch_SetSpecularAlpha       # fh v3:bsim1.00 0x0082b8e0
 0x0082b880 function Ch_SetThickness           # fh v3:exact 0x0082b900
+0x0082b8c0 function Ch_SetThicknessBtlCam     # fh v3:cg3 0x82b940
 0x0082b900 function Ch_SetTransparent         # fh v3:bsim1.00 0x0082b980
 0x0082b920 function Ch_SetVelY                # fh switch:bsim1.00 0x710041dd40
 0x0082b940 function Ch_SetWeight              # fh v3:exact 0x0082b9c0
@@ -2604,7 +2885,10 @@
 0x0082b9b0 function TkChPatchM160             # fh v3:exact 0x0082ba30
 0x0082ba00 function TkChPatchM339             # fh v3:exact 0x0082ba80
 0x0082ba30 function Chr_SetHideFlags             # (chr, on, mask) -> old: chr +0x180 hide bits (1 Ev, 2 Eff, 8 Disp, 0x10 Blt, 0x20 Z per the "Hide : %x" debug text)
+0x0082bc50 function Sg_AccSetFrameMap         # fh switch:cg3 0x710042ba10
 0x0082bd10 function Sg_AccSetAlpha            # fh v3:exact+call.cs 0x0082bd90 cdecl
+0x0082be20 function Sg_AccSetFrameChr         # fh switch:cg3 0x710042ba80
+0x0082be80 function Sg_AccDrawBG              # fh switch:cg8 0x710042bae0
 0x0082bee0 function Sg_Blur                   # fh v3:exact 0x0082bf60
 0x0082c0c0 function Sg_DrawFilter             # per frame: 5 fade slots (0x01300708 + i*0x10, mode byte, rgb, i16 counter at +4) -> fullscreen quad 0x00639240(r,g,b,a); mode 2 a=n/total (fade in), 3 a rising and held (fade out); was Screen_UpdateFades
 0x0082c7b0 function Sg_DrawSetEnvironment     # fh v3:exact 0x0082c830
@@ -2624,7 +2908,9 @@
 0x0082ce20 function Sg_SetFocus               # fh v3:exact 0x0082cea0
 0x0082ce80 function Sg_VramGetAddrZ           # fh v3:bsim1.00 0x0082cf00
 0x0082ce90 function sg_AccSetCurrent          # fh v3:exact 0x0082cf10
+0x0082d180 function Sg_ControlPlayer          # fh switch:cg2 0x7100427b30
 0x0082d7e0 function Sg_GetCurExecFrames       # fh v3:exact+call.cs 0x0082d860 cdecl
+0x0082d810 function Sg_GetExecFrames          # fh v3:cg4 0x82d890
 0x0082d840 function Sg_GetLRButtonMode        # fh v3:bsim1.00 0x0082d8c0
 0x0082d860 function Sg_GetPlayer              # fh v3:bsim1.00 0x0082d8e0
 0x0082d880 function Sg_GetPlayerPos           # fh v3:exact 0x0082d900
@@ -2640,6 +2926,7 @@
 0x0082ec30 function Ch_DrawGetShadowDir       # fh switch:bsim1.00 0x71004199a0
 0x0082ed30 function Ch_DrawInitAll            # fh v3:bsim1.00 0x0082edb0
 0x0082fe00 function Ch_DrawMainForSituation   # fh v3:exact 0x0082fe80
+0x008300b0 function Ch_DrawSetCull            # fh v3:cg2 0x830130
 0x00830100 function Ch_DrawSetShadowColor     # fh switch:bsim1.00 0x7100419930
 0x00830120 function Ch_DrawSetShadowDir       # fh switch:bsim1.00 0x7100419990
 0x00830140 function Ch_DrawSetShadowMode      # fh v3:bsim1.00 0x008301c0
@@ -2673,6 +2960,7 @@
 0x00831ba0 function Sg_PLightDispose          # fh v3:exact 0x00831c20
 0x00831bf0 function Sg_PLightSetAttenuation   # fh v3:bsim1.00 0x00831c70
 0x00831c60 function Sg_PLightSetEnable        # fh v3:bsim1.00 0x00831ce0
+0x00831f00 function ch_TextureLoad            # fh v3:cg6 0x831f80
 0x00832110 function Apply_Envelope            # fh v3:exact 0x00832190
 0x00832550 function Ch_AllReserveCalcNorm     # Chr_RequestBoneUpdate for every active chr in g_ChrArray; was Chr_RequestBoneUpdateAll
 0x00832610 function Ch_BindSetScale           # fh v3:bsim1.00 0x00832690
@@ -2690,10 +2978,13 @@
 0x00833f80 function Ch_GetRootGlobalMatrix    # fh v3:bsim1.00 0x00834000
 0x00833fc0 function Ch_GetRootLightMatrix     # fh v3:bsim1.00 0x00834040
 0x00834000 function Ch_GetVel                 # fh switch:bsim1.00 0x71004162e0
+0x00834060 function Ch_GuiGetCalcNormal       # fh v3:cg2 0x8340e0
 0x00834090 function Ch_GuiSetCalcNormAll      # fh v3:exact 0x00834110
 0x008340f0 function Ch_IdEnableShade          # fh v3:bsim1.00 0x00834170
 0x00834750 function Ch_MouthInit              # fh v3:exact 0x008347d0
 0x00834770 function Ch_MouthSetAutoTalk       # fh switch:bsim1.00 0x7100416e40
+0x008347a0 function Ch_MoveChrBlk             # fh switch:cg2 0x7100416020
+0x008348d0 function Ch_Neck                   # fh switch:cg2 0x7100417500
 0x00834e60 function Ch_NeckInit               # fh v3:exact 0x00834ee0
 0x00834f60 function Ch_NeckSetEnable          # fh v3:exact 0x00834fe0
 0x00834fd0 function TextUtil_setPosOffset     # fh switch:bsim1.00 0x7100219d10 TextUtil::setPosOffset
@@ -2708,7 +2999,8 @@
 0x00835710 function Ch_ReserveCalcNorm        # (chr): sets +0x194 bit 3 (one budgeted bone update in 0x00832110) unless bit 0 is set; was Chr_RequestBoneUpdate
 0x00835730 function Ch_ReserveCalcNorm2       # fh v3:bsim1.00 0x008357b0
 0x00835750 function Ch_SetCalcNorm            # fh v3:exact 0x008357d0
-0x00835780 function Ch_SetCalcNorm2           # fh v3:exact 0x00835800
+0x00835780 function Ch_SetCalcNorm2_00835780  # fh v3:exact 0x00835800
+0x008357c0 function Ch_SetDumpMotEv           # fh v3:cg2 0x835840
 0x00835b50 function Ch_SoundSetId             # fh v3:bsim1.00 0x00835bd0
 0x00835b70 function Ch_SysGetScreenMatrixPtr  # fh v3:bsim1.00 0x00835bf0
 0x00835ba0 function Ch_SysGetCameraMatrixPtr  # fh v3:bsim1.00 0x00835c20
@@ -2755,10 +3047,12 @@
 0x00838750 function SG_ApplyRawClip           # uncompressed clips: per bone 9 channels x frames i16
 0x00838c90 function SG_UpdateMotion           # per-frame motion update of an actor
 0x00838f70 function SG_ApplyBones             # scale = character def +0x38 * 0.001; calls SG_ApplyBone per bone
+0x00839140 function Ch_AnimCopy2              # fh switch:cg2 0x7100412100
 0x008392c0 function Ch_GetWaitMotion          # fh v3:bsim1.00 0x00839340
 0x008393c0 function SG_SampleChannels         # steps the key streams to the frame, interpolates (angles wrap at 1 turn)
 0x008394d0 function SG_StepChannels           # key stream decoder: 7-bit delta, 14-bit delta (0xc0), repeat (0x80 | n)
 0x00839860 function Ch_MotionGetFrame         # fh v3:bsim1.00 0x008398e0
+0x00839870 function Ch_MotionGetHalf          # fh v3:cg2 0x8398f0
 0x008398f0 function SG_RewindChannels         # restarts every key stream
 0x00839960 function Ch_MotionSetLoop          # fh switch:bsim1.00 0x71004116e0
 0x00839980 function Ch_MotionSetupFcurve      # clip header, 2-bit channel types (0 zero, 1 one, 2 constant, 3 stream), nine per bone; was SG_SetClip
@@ -2772,6 +3066,7 @@
 0x0083a470 function Sg_CaptureEnable          # fh v3:exact 0x0083a4f0
 0x0083a620 function Sg_CaptureGetGuiHide      # fh v3:exact 0x0083a6a0
 0x0083a690 function Sg_CaptureToFile          # fh v3:exact 0x0083a710
+0x0083a9a0 function Sg_CaptureToFileZ         # fh switch:cg4 0x7100434b80
 0x0083add0 function Sg_EnableTkAnti_0083add0  # fh v3:bsim1.00 0x0083ae50
 0x0083adf0 function Sg_GetTkAntiXYB           # fh switch:bsim1.00 0x71004352c0
 0x0083ae30 function Sg_PcRead                 # fh v3:bsim1.00 0x0083aeb0
@@ -2800,12 +3095,14 @@
 0x0083c630 function Sg_MemDump_0083c630       # fh v3:exact 0x0083c6b0 _Sg_MemDump
 0x0083c6f0 function Ch_CalcLight              # fh v3:exact 0x0083c770
 0x0083c710 function Ch_ClutCreate             # fh v3:exact 0x0083c790
+0x0083c810 function Ch_ClutDispose            # fh v3:cg13 0x83c890
 0x0083c940 function Ch_ClutEnable             # fh v3:exact 0x0083c940
 0x0083c9a0 function Ch_ClutGetNb              # fh v3:bsim1.00 0x0083c9a0
 0x0083c9b0 function Ch_ClutGetOrgPtr          # fh v3:exact 0x0083c9b0
 0x0083c9d0 function Ch_ClutGetPtr             # fh v3:exact 0x0083c9d0
 0x0083c9f0 function Ch_ClutGetSize            # fh v3:exact 0x0083c9f0
 0x0083ca20 function Ch_ClutMapping            # fh v3:exact 0x0083ca20
+0x0083caf0 function op_chara_hsv_make_0083caf0 # fh switch:cg2 0x7100403e90
 0x0083cb90 function Ch_GetLightValue          # fh v3:bsim1.00 0x0083cb90
 0x0083cba0 function Ch_TexDataMapping         # fh v3:exact 0x0083cba0
 0x0083cdd0 function Ch_TextureReMapping       # fh v3:exact 0x0083cdd0
@@ -2839,7 +3136,7 @@
 0x0083fd60 function Sg_SaveVramResource       # fh v3:exact 0x0083fd60
 0x0083fe10 function Sg_SetResource            # fh v3:exact 0x0083fe10
 0x0083fe60 function Sg_SetResourceSTR         # fh v3:exact 0x0083fe60
-0x0083ffe0 function ChrData_State                # (kind, id): 2 = not registered, else whether loaded (table 0x01302f98)
+0x0083ffe0 function ChrData_State                # (kind, id): 2 = not registered, else whether loaded (table 0x01302f98); fh: Cache_CheckYet
 0x00840030 function Cache_Clear               # fh v3:exact 0x00840030
 0x00840250 function Cache_Dispose             # fh v3:exact 0x00840250
 0x00840510 function Cache_Dump                # fh v3:exact 0x00840510
@@ -2884,6 +3181,8 @@
 0x00841f10 function Sg_GsTexHokan             # fh v3:exact 0x00841f10
 0x00841f60 function Sg_GsUV                   # fh v3:exact 0x00841f60
 0x00841fb0 function Sg_GsUV2                  # fh v3:exact 0x00841fb0
+0x00842000 function Sg_GsXYOFFSET             # fh v3:cg2 0x842000
+0x00842070 function Sg_GsXYOFFSET2            # fh v3:cg3 0x842070
 0x00842140 function Sg_GsXYZF2                # fh v3:exact 0x00842140
 0x00842210 function Sg_GsXYZF2V               # fh v3:bsim1.00 0x00842210
 0x00842c80 function Ch_EffectPacketCreateMain # fh v3:exact 0x00842c80
@@ -2946,7 +3245,9 @@
 0x0084a0e0 function Gu_SelectorSetSelect      # fh v3:exact 0x0084a0e0
 0x0084a110 function Gu_SelectorSetSelectSTR   # fh v3:exact 0x0084a110
 0x0084a260 function Gu_VSync                  # fh v3:exact 0x0084a260
+0x0084a470 function Gu_WindowAddButton        # fh v3:cg16 0x84a470
 0x0084a4a0 function Gu_WindowAddClient        # fh switch:bsim1.00 0x710043f3f0
+0x0084a4d0 function Gu_WindowAddStatic        # fh v3:cg3 0x84a4d0
 0x0084a500 function Gu_WindowAddVScroll       # fh switch:bsim1.00 0x710043f430
 0x0084a620 function Gu_WindowControlSetDisable # fh v3:exact 0x0084a620
 0x0084a670 function Gu_WindowControlSetHide   # fh v3:exact 0x0084a670
@@ -2959,7 +3260,9 @@
 0x0084b250 function Gu_WindowOpen             # fh v3:exact 0x0084b250
 0x0084b560 function Gu_WindowSetArg           # fh v3:bsim1.00 0x0084b560
 0x0084b580 function Gu_WindowSetClientH       # fh v3:exact 0x0084b580
+0x0084b620 function Gu_WindowSetLocalTrans    # fh switch:cg4 0x71008b5e68
 0x0084b660 function Gu_WindowSetParent        # fh v3:bsim1.00 0x0084b660
+0x0084b6a0 function Gu_WindowSetTitle         # fh v3:cg19 0x84b6a0
 0x0084b960 function Gu_ControlMouseButtonHandle # fh v3:exact 0x0084b960 _Gu_ControlMouseButtonHandle
 0x0084c1e0 function ChrViewProc               # fh v3:exact 0x0084c1e0
 0x0084c9d0 function Gui_ButtonSetTexture      # fh v3:exact 0x0084c9d0
@@ -2984,9 +3287,11 @@
 0x008517c0 function Sg_MouseButtonMain        # fh v3:exact 0x008517c0
 0x00851910 function Sg_MouseGetMove           # fh v3:bsim1.00 0x00851910
 0x00851ae0 function Sg_SetMouse               # fh v3:exact 0x00851ae0
+0x008537b0 function Gui_ChrInfo               # fh v3:cg3 0x8537b0
 0x00853ea0 function Gui_ClockInit             # fh v3:exact 0x00853ea0
 0x00854df0 function gui_eve_GWM_SELECTOR      # fh v3:exact 0x00854df0
 0x00854e60 function gui_eve_Init              # fh v3:exact 0x00854e60
+0x00854e80 function gui_eve_GWM_BUTTONUP      # fh switch:cg2 0x7100448490
 0x00854f60 function Gu_DrawRectStrip          # fh switch:bsim1.00 0x710043d750
 0x00854fd0 function Gui_MemGraph              # fh v3:exact 0x00854fd0
 0x00855430 function Gui_ProgAvarage           # fh v3:exact 0x00855430
@@ -3084,7 +3389,7 @@
 0x0085c420 function Native_WaitForever           # 0x005f poll: returns 0 forever (never done), parks the entry until it is interrupted; 14636 calls in 1555 scripts
 0x0085c4c0 function Native_SpriteHide            # 0x011c (slot) -> slot; sprite +0 = 0 (slot < 0 clears slot 0) (0x008747f0)
 0x0085c4e0 function Native_WaitFrames_0000       # 0x0000: args (frames) -> frames; start slot stores the count in *result (40 instead of 10 when 0x00782970()==0x610000 && *0x00c64ca0==0x290, a one-off timing patch); scripts: "pushimm 1; func 0x0000"
-0x0085c5b0 function Native_StopMoveAllLevels     # 0x00d1: args () -> 0; Script_StopMove(own worker (ctx+0x2e), level) for levels 0-8
+0x0085c5b0 function Native_StopMoveAllLevels     # 0x00d1: args () -> 0; Script_StopMove(own worker (ctx+0x2e), level) for levels 0-8; fh: +CT_01D1_ret
 0x0085c680 function Native_CharRestoreHp         # 0x0171 (chr) -> HP; Party_GetChar(chr): +0x1c = max(+0x1c, +0x24), clears +0x3d; ?HP fields
 0x0085c6b0 function Native_WaitFrames_Poll_0000  # 0x0000 poll: count -= 1 per frame (or -= FUN_00645d90() elapsed frames when *0x0112a008 && FUN_0076efc0()); done when count < 1
 0x0085c760 function Native_SpriteSetColor        # 0x0129 (slot, c0, c2, c1) -> slot; bytes +0x10/+0x12/+0x11 clamped 0-255; drawn as R,G,B (+0x10,+0x11,+0x12), so the push order is r, b, g
@@ -3135,6 +3440,7 @@
 0x008603d0 function Native_MsgShowWait_Poll      # 0x013b poll: tail call to 0x00859c50: waits on window state +0x14 (0 or 4 done; 2 = choice made) and stores the chosen option
 0x008603e0 function Native_TriggerSetPoint       # 0x0057: args (x, y, z) -> 1; worker types 3/6 only: position = point, +0x34 |= 0x80, +0x36 |= 1
 0x00860760 function Native_MsgShowWait_Result    # 0x013b int: tail call to 0x0085a6f0 -> chosen option (-1 none)
+0x00860a60 function debugSetRikkuName         # fh switch:cg2 0x71008aefb8
 0x00860a90 function getMegasAdding            # fh v3:bsim1.00 0x00860a30
 0x00860f50 function AtelAllClearBindMask      # fh v3:exact 0x00860ef0
 0x00860fd0 function AtelAllClearEffectFlag    # fh v3:bsim1.00 0x00860f70
@@ -3146,7 +3452,10 @@
 0x00862cc0 function AtelChangeBinaryHeader    # fh v3:exact 0x00862c60
 0x00862d30 function AtelChangeCurrentCtrl     # fh v3:exact 0x00862cd0
 0x008632b0 function Script_LineActorSide         # (worker, key): types 5/6 only; status byte of the worker[0xb9] entry matching the actor id; 3 or not found -> -1
+0x00863620 function AtelClearAllMenuMask      # fh v3:cg2 0x8635c0
+0x00863880 function AtelClearEffectParam      # fh v3:cg2 0x863820
 0x008638b0 function AtelClearForcePlaceId     # fh v3:bsim1.00 0x00863850
+0x00863ae0 function AtelClearLoveParamDisable # fh v3:cg2 0x863a80
 0x00863b10 function AtelClearMesWinWork       # fh v3:exact 0x00863ab0
 0x00863e10 function Script_StopMove              # (worker, level or -1 = current): levels sharing that level's move block get their own block at ctx+0x5b8+i*0x4c with flags +2 = 0, keeping its fields; also stops turning if flag 0x4000
 0x00863f90 function AtelClearNotAuronPatchFlag # fh v3:bsim1.00 0x00863f30
@@ -3162,6 +3471,7 @@
 0x008658d0 function AtelEventKickBGSep        # fh v3:exact 0x00865870
 0x00865ac0 function AtelEventPlayMusic        # fh v3:exact 0x00865a60
 0x00865b80 function AtelEventRegistFootInfo   # fh v3:exact 0x00865b20
+0x00865dc0 function AtelEventRemoveForBattle  # fh v3:cg25 0x865d60
 0x008661a0 function AtelEventRemoveGuideMap   # fh v3:exact 0x00866140
 0x008661d0 function AtelEventRemoveSep        # fh v3:exact 0x00866170
 0x00866210 function AtelEventSetUpFoot3d      # fh v3:exact 0x008661b0
@@ -3178,11 +3488,13 @@
 0x0086a390 function AtelGetActorEndPos        # fh v3:exact 0x0086a320
 0x0086a420 function AtelGetActorExecspaceID   # fh v3:exact 0x0086a3b0
 0x0086a5d0 function AtelGetActorId            # fh v3:bsim1.00 0x0086a560
+0x0086a650 function AtelGetActorNumber        # fh v3:cg4 0x86a5e0
 0x0086a720 function AtelGetActorStartPos      # fh v3:exact 0x0086a6b0
 0x0086a7b0 function AtelGetActorType          # (index) -> type byte of the worker header, or 7 if the index is out of range; was Script_GetWorkerType
 0x0086a7e0 function AtelGetAlbhedRikku        # fh v3:bsim1.00+call.cs 0x0086a770 cdecl
 0x0086a830 function AtelGetBasicWork          # worker index -> worker object (0xb58/0x558/0x5b8 sizes); was Script_GetWorker
 0x0086a970 function AtelGetBattleIdAdrs       # fh v3:bsim1.00 0x0086a900
+0x0086a990 function AtelGetBattleIdAdrs2      # fh switch:cg2 0x71008af3c8
 0x0086a9c0 function AtelGetBattleStatusDummyEnc # fh v3:bsim1.00 0x0086a950
 0x0086aa20 function AtelGetBinHdrExpandAddChr # fh v3:bsim1.00 0x0086a9b0
 0x0086ad20 function AtelGetBinHdrExpandSoundEvent # fh v3:exact 0x0086acb0
@@ -3209,6 +3521,7 @@
 0x0086b480 function AtelGetEventElemHandleFromID # fh v3:bsim1.00 0x0086b3d0
 0x0086b4c0 function AtelGetEventElemStatus    # fh v3:exact 0x0086b450
 0x0086b5d0 function AtelGetEventMapCameraId   # fh v3:exact 0x0086b560
+0x0086b700 function AtelGetGideMapActorInfo   # fh v3:cg7 0x86b690
 0x0086b710 function AtelGetGideMapActorNumber # () -> count of field minimap markers Minimap_GetWorkerMarker reads; Guide_Update loops over them; was Minimap_MarkerCount
 0x0086b740 function AtelGetGuideMapActorInfo  # (index, &out): worker marker from the script's tag table (+0x2c -> +0x18) or worker +0xbc override; flags 0x800, 0x2000, icon >> 4; used by 0x0091da80 and the debug list 0x00881be0; was Minimap_GetWorkerMarker
 0x0086b9a0 function AtelGetGuideMapAngEx      # fh v3:exact 0x0086b930
@@ -3218,6 +3531,7 @@
 0x0086bb80 function AtelGetIndexWork          # fh v3:exact 0x0086bb10
 0x0086bbf0 function AtelGetKeepBattlePartyFromID # fh v3:exact 0x0086bb80
 0x0086bd90 function AtelGetMapIndex           # fh v3:exact 0x0086bd20
+0x0086be50 function AtelGetMenuMask           # fh switch:cg2 0x71008bcd08
 0x0086be90 function AtelGetMesWinWork         # (i): message window i (<0 or >7 clamped), 0x2c bytes at 0x01326d70 + (i + *0x01326b82*8)*0x2c; was Msg_Window
 0x0086bf10 function Msg_Flags                  # (i): entry i's flags (+2); high byte = choice count; kept at message window +0x16 (0x008607a0)
 0x0086bf30 function Msg_Text                   # (i): entry i's text (+0) in the event's message table; offset 0 falls back to the .ebp's section 1
@@ -3225,6 +3539,7 @@
 0x0086bfe0 function Event_GetEntrance            # (ctx) -> 0x20-byte entrance record (current entrance index * 0x20 into the event table at ctx+4); 0x01325b50 when there is none
 0x0086c0c0 function AtelGetMyBufferSize       # fh v3:exact 0x0086c050
 0x0086c160 function AtelGetMyWorkSize         # fh v3:exact 0x0086c0f0
+0x0086c190 function AtelGetNamespaceNumber    # fh v3:cg4 0x86c120
 0x0086c1a0 function AtelGetNowCtrlTopId       # fh v3:exact 0x0086c130
 0x0086c2b0 function AtelGetPosWorkAdrs        # (worker): type 4 -> null, types 5/6 -> worker+0x284, else worker+0x558 (x,y,z +0; +0x30 pitch?, +0x34 yaw; +0x3c talk angle, +0x40 talk range); was Worker_PosBlock
 0x0086c2e0 function AtelGetRealVarAdrs        # (worker, location word): storage = bits 25-27 (0 globals at *(*0x01326b28+0x2c), 1 at +0x30, 2-6 script/worker data) + offset; was Script_VarAddress
@@ -3233,6 +3548,7 @@
 0x0086c430 function AtelGetSaveDicName        # fh v3:exact+call.cs 0x0086c3c0 cdecl
 0x0086c470 function AtelGetScenarioFlag       # fh v3:bsim1.00 0x0086c400
 0x0086c4b0 function AtelGetSphereMonitor      # fh v3:exact 0x0086c440
+0x0086c4d0 function AtelGetStatusWinFadeOut   # fh v3:cg4 0x86c460
 0x0086c510 function AtelGetTotalActorNumber2  # fh v3:exact 0x0086c4a0
 0x0086c8a0 function AtelGetWaterBattleEffect  # fh v3:bsim1.00 0x0086c830
 0x0086cae0 function AtelInitActor             # fh v3:exact 0x0086ca70
@@ -3262,8 +3578,10 @@
 0x0086e820 function AtelRegistAlbhedDic       # fh v3:bsim1.00 0x0086e7b0
 0x0086e840 function AtelRegistBattleEndMovieFadeout # fh v3:bsim1.00 0x0086e7d0
 0x0086e9e0 function AtelRegistSignal2         # fh v3:exact 0x0086e970
+0x0086ec40 function AtelRegistSignalWithoutSameTag # fh switch:cg2 0x71008b9018
 0x0086ed40 function AtelRemoveCtrlWork        # fh v3:exact 0x0086ecd0
 0x0086ed80 function AtelRequestMapCamera      # fh v3:exact 0x0086ed10
+0x0086ee10 function AtelRequireCtrlWork       # fh v3:cg3 0x86eda0
 0x0086f3a0 function AtelSetBattleEndKeepRecoverType # fh v3:exact 0x0086f330
 0x0086f3c0 function AtelSetBattleSceneGroup   # fh v3:bsim1.00 0x0086f350
 0x0086f4c0 function AtelSetBindObject         # fh v3:exact 0x0086f450
@@ -3274,6 +3592,7 @@
 0x0086fc40 function AtelSetEventActorLinkWork # fh v3:exact 0x0086fbd0
 0x0086fd60 function AtelSetEventCharHandleFromID # fh v3:exact 0x0086fcf0
 0x0086fda0 function AtelSetEventElemCharIDFromID # fh v3:exact 0x0086fd30
+0x0086fde0 function AtelSetEventElemHandleFromID # fh v3:cg6 0x86fd70
 0x0086fe20 function AtelSetEventElemPosFromID # fh v3:bsim1.00 0x0086fdb0
 0x0086fe60 function AtelSetEventElemStatus    # fh v3:exact 0x0086fdf0
 0x0086ff40 function AtelSetEventJump2         # (map, entrance, flag): drops control, 0x0088ea60, ctx byte 0 &= 0x7f, ctx+0x210 |= 2, fade (FUN_0088eb50); was Event_ChangeMap
@@ -3303,6 +3622,7 @@
 0x00871bc0 function AtelUpdateBattleStatus    # fh v3:exact 0x00871b60
 0x00871d70 function AtelExec_Internal_871d10  # fh call.cs stdcall
 0x00871e50 function AtelUpdateWaterStatus     # fh v3:exact 0x00871df0
+0x00871f30 function AtelUpdateWindowStatus    # fh switch:cg2 0x710046cc00
 0x00872160 function TkChSetBattleChrNum       # fh v3:exact 0x00872100
 0x00872190 function TkCh_Allocate             # fh v3:exact 0x00872130
 0x00872210 function TkCh_Allocate2            # fh v3:exact 0x008721b0
@@ -3315,6 +3635,7 @@
 0x00872550 function TkSoftWareReset           # fh switch:bsim1.00 0x7100471580
 0x00872650 function Script_WorkerLevel           # (worker, level) -> 0x4c-byte level block at ctx+0x12c+level*0x4c (types 5/6: 2 levels); +0x44 move block ptr, +0x48 turn block ptr
 0x008726f0 function Script_Jump               # pc = code start + labels[index]
+0x00872b50 function AtelCheckMenuOtakaraFlag  # fh switch:cg2 0x71008b8908
 0x00872b60 function AtelClearMenuOtakaraFlag  # fh v3:bsim1.00 0x00872b00
 0x00872b70 function AtelClearPauseFlag        # fh v3:bsim1.00 0x00872b10
 0x00872b90 function AtelClearPreBgPage        # fh switch:bsim1.00 0x710044e730
@@ -3338,6 +3659,7 @@
 0x008742b0 function AtelClearShape            # fh v3:exact 0x00874240
 0x00874420 function AtelExecDrawShape         # fh v3:exact 0x008743b0
 0x00874c50 function getEventLocTexListPath    # fh v3:exact 0x00874be0
+0x00875000 function AtelCheckCallbackQue      # fh v3:cg2 0x874f80
 0x008750b0 function AtelExecCallbackQue       # fh v3:exact 0x00875030
 0x00875180 function AtelIsCallbackQue         # fh v3:bsim1.00 0x00875100
 0x00875190 function AtelRegistCallbackQue     # fh switch:bsim1.00 0x710044e160
@@ -3347,6 +3669,7 @@
 0x008756d0 function AtelBattleSetUp           # fh v3:exact 0x00875650
 0x00875e10 function TkGetVibrateVolume        # fh switch:bsim1.00 0x7100479c70
 0x00875f60 function TkSetVibrateMask          # fh v3:exact 0x00875ee0
+0x00875fb0 function TkSetVibrateStream        # fh v3:cg2 0x875f30
 0x00876290 function TkStopVibrate             # fh v3:exact 0x00876210
 0x008762f0 function TkStopVibrateAll          # fh v3:exact 0x00876270
 0x00876930 function AtelCalcSound             # fh switch:bsim1.00 0x7100478700
@@ -3359,12 +3682,17 @@
 0x008777f0 function Script_FinishNative       # slot 2 (float) or 3 (int) result, pushed
 0x00877880 function AtelSetUpCallFunc         # (group, table); was Script_SetNativeTable
 0x008778f0 function AtelCall_Math_Ftoul_RI    # fh v3:exact 0x00877870 +AtelCall_Math_Ftoul_RI
+0x00877a70 function AtelCall_Math_Sin_RF      # fh v3:cg2 0x8779f0 +AtelCall_Math_Sin_RF
+0x00877aa0 function AtelCall_Math_Cos_RF      # fh v3:cg2 0x877a20 +AtelCall_Math_Cos_RF
+0x00877ad0 function AtelCall_Math_Tan_RF      # fh v3:cg2 0x877a50 +AtelCall_Math_Tan_RF
+0x00877b00 function AtelCall_Math_ATan_RF     # fh v3:cg2 0x877a80 +AtelCall_Math_ATan_RF
 0x00877b30 function AtelCall_Math_ATan2_RF    # fh v3:exact 0x00877ab0 +AtelCall_Math_ATan2_RF
-0x00877b70 function Native_MathSqrt              # 0x1006 float (x) -> sqrt(x)
+0x00877b70 function Native_MathSqrt              # 0x1006 float (x) -> sqrt(x); fh: +AtelCall_Math_Sqrt_RF
 0x00877ba0 function AtelCall_Math_InvSqrt_RF  # fh v3:exact 0x00877b20 +AtelCall_Math_InvSqrt_RF
 0x00877fd0 function AtelCall_Math_Abs_RF      # fh v3:exact 0x00877f50 +AtelCall_Math_Abs_RF
 0x008795b0 function AtelEventGetFilePath2     # fh v3:exact 0x00879530
 0x00879760 function AtelGetEventName          # fh v3:exact+call.cs 0x008796e0 cdecl
+0x00879880 function AtelGetSourcefileName     # fh switch:cg2 0x7100486c00
 0x008799b0 function AtelLoadDebugData         # fh v3:exact 0x00879930
 0x00879a70 function AtelLoadSourceData        # fh v3:exact 0x008799f0
 0x00879f00 function AtelUpdateFilePath        # fh v3:exact 0x00879e80
@@ -3390,6 +3718,7 @@
 0x00886600 function TkSndIsRead               # fh switch:bsim1.00 0x710048c800
 0x00886640 function SndIsReadShoutVoiceStatus # fh v3:bsim1.00 0x008865a0
 0x00886650 function SndIsReadStatus           # fh v3:bsim1.00 0x008865b0
+0x00886660 function SndIsReadVagVoiceStatus   # fh switch:cg2 0x71008b0668
 0x00886680 function SndIsSepPlay              # fh v3:exact 0x008865e0
 0x00886800 function SndMusicClear             # fh v3:bsim1.00 0x00886760
 0x00886830 function SndMusicCrossStart        # fh v3:exact 0x00886790
@@ -3409,11 +3738,13 @@
 0x00886d80 function SndSepClear               # fh v3:exact 0x00886ce0
 0x00886db0 function SndSepClearAll            # fh v3:bsim1.00 0x00886d10
 0x00886dd0 function SndSepLock                # fh v3:bsim1.00 0x00886d30
+0x00886df0 function SndSepPanDirect           # fh v3:cg2 0x886d50
 0x00886e50 function SndSepPlay                # (sfx, pan, volume): FMOD cmd 0x33 via 0x0081e4e0; was Sfx_Play
 0x00886e80 function SndSepPlaySimple          # (sfx): Sfx_Play(sfx, 0x3f, 0x7f); was Sfx_PlayDefault
 0x00886eb0 function SndSepStop                # fh v3:exact 0x00886e10
 0x00886f00 function SndSepTransNonblock       # fh v3:bsim1.00 0x00886e60
 0x00886f30 function SndSepTransSepOnly        # fh v3:bsim1.00 0x00886e90
+0x00886f60 function SndSepVolumeDirect        # fh v3:cg2 0x886ec0
 0x00886f90 function SndSepVolumeFadeOut       # fh v3:bsim1.00 0x00886ef0
 0x00886ff0 function SndSepVolumeTranslate     # fh v3:bsim1.00 0x00886f50
 0x008870e0 function SndSetFootSep             # fh v3:exact 0x00887050
@@ -3434,6 +3765,7 @@
 0x00887ab0 function TkSndClearKickFlag        # fh v3:bsim1.00 0x00887a20
 0x00887b30 function TkSndReportStatus         # fh v3:bsim1.00 0x00887aa0
 0x00887b50 function TkSndSetStandbyVoice      # fh v3:bsim1.00 0x00887ac0
+0x00887b60 function TkSndUpdate               # fh switch:cg2 0x71008b6fd8
 0x00887b80 function TkSndUpdate2              # fh v3:exact 0x00887af0
 0x00887ba0 function TkSndUpdate3              # fh switch:bsim1.00 0x710048c750
 0x00887bd0 function TkSndUpdateMain           # fh v3:exact 0x00887b40
@@ -3487,6 +3819,7 @@
 0x0088c420 function CItan                     # fh v3:bsim1.00 0x0088c390 +_CItan
 0x0088c5a0 function TkNormalFVector           # fh switch:bsim1.00 0x7100488080
 0x0088c710 function TkResetClip               # fh v3:exact 0x0088c680
+0x0088c7d0 function TkClearAlarm              # fh v3:cg2 0x88c740
 0x0088c7f0 function TkRestartSyncH            # fh v3:bsim1.00 0x0088c790
 0x0088c800 function TkGetSyncH                # fh v3:bsim1.00 0x0088c770
 0x0088c810 function TkInitAlarm               # fh v3:bsim1.00 0x0088c780
@@ -3497,6 +3830,7 @@
 0x0088d1c0 function TkCdReadSync              # fh v3:exact 0x0088d130
 0x0088d2c0 function TkCdReadWithMallocWithMessage # fh v3:exact 0x0088d230
 0x0088d390 function TkCdSize                  # fh switch:bsim1.00 0x7100490160
+0x0088d4e0 function TkDrawDebug               # fh v3:cg2 0x88d450
 0x0088d4f0 function TkDrawNoTrans             # fh v3:bsim1.00 0x0088d460
 0x0088d520 function TkFree                    # fh v3:exact 0x0088d490
 0x0088d570 function TkGetBattleMusicSize      # fh v3:bsim1.00 0x0088d4e0
@@ -3509,6 +3843,7 @@
 0x0088d690 function TkGetNowEventJumpMapNo    # fh v3:bsim1.00 0x0088d600
 0x0088d6d0 function TkGetTGS                  # fh v3:bsim1.00 0x0088d640
 0x0088d710 function TkInit                    # fh v3:exact 0x0088d680
+0x0088df40 function TkInitSaveWork            # fh v3:cg6 0x88deb0
 0x0088e070 function TkInitScene               # fh v3:exact 0x0088dfe0
 0x0088e610 function TkLoadVibrate             # fh switch:bsim1.00 0x7100490400
 0x0088e650 function TkMalloc                  # fh v3:exact 0x0088e5c0
@@ -3543,6 +3878,7 @@
 0x00892870 function TOBtlDrawCaptureMonsterMessageWindow # fh call.cs cdecl
 0x008928b0 function TOBtlDrawChangeSeqAnm0    # fh v3:exact 0x00892820
 0x00892910 function TOBtlDrawCrossLimitGauge  # fh v3:exact 0x00892880
+0x00892cb0 function TOBtlDrawCrossParamPlate  # fh v3:cg13 0x892c20
 0x00893290 function TOBtlDrawDamageValue2     # fh v3:exact 0x00893200
 0x008933c0 function TOBtlDrawEnemyLimit       # fh v3:exact 0x00893330
 0x008934d0 function TOBtlDrawFirstStrikeEnemyMessageWindow # fh call.cs cdecl
@@ -3552,6 +3888,7 @@
 0x00893660 function TOBtlDrawGetMoneyMessageWindow # fh v3:exact+call.cs 0x008935d0 cdecl
 0x008936d0 function TOBtlDrawHelpWin          # fh v3:exact 0x00893640
 0x00893a30 function TOBtlDrawInfoWin          # fh v3:exact 0x008939a0
+0x00894b40 function TOBtlDrawInfoWinElementLamp # fh v3:cg4 0x894ab0
 0x00895140 function TOBtlDrawInfoWinMes       # fh v3:exact 0x008950b0
 0x00895240 function TOBtlDrawInfoWinStatus    # fh v3:exact 0x008951b0
 0x00895320 function TOBtlDrawLearningMessageWindow # fh v3:exact+call.cs 0x00895290 cdecl
@@ -3559,10 +3896,12 @@
 0x00895480 function TOBtlDrawLimitGauge       # fh v3:exact 0x008953f0
 0x00895660 function TOBtlDrawLuluLimitWindow  # fh v3:exact 0x008955d0
 0x00895940 function TOBtlDrawParamPlate       # fh v3:exact 0x008958b0
+0x00895ae0 function TOBtlDrawScanWinElementLamp # fh v3:cg4 0x895a50
 0x008960e0 function TOBtlDrawStatusLimitGauge # fh v3:exact 0x00896050
 0x00896450 function TOBtlDrawStatusWin        # fh v3:exact 0x008963c0
 0x00897200 function TOBtlDrawStdChrNameMessageWindow # fh call.cs cdecl
 0x00897240 function TOBtlDrawTidusLimitWindow # fh v3:exact 0x008971b0
+0x008976f0 function TOBtlGetChrName           # fh v3:cg6 0x897660
 0x008977f0 function TOBtlInit                 # fh v3:exact 0x00897760
 0x00897970 function TOBtlInitAuronLimitWindow # fh v3:exact 0x008978e0
 0x008979d0 function TOBtlInitChrNum           # fh v3:bsim1.00 0x00897940
@@ -3602,16 +3941,19 @@
 0x0089ae20 function TOControlBtlWindow        # fh v3:exact 0x0089ad90
 0x0089afc0 function TOControlMsSetMenuCommand # fh v3:exact 0x0089af30
 0x0089b360 function TODrawBtlWindow           # fh v3:exact 0x0089b2d0
+0x0089b530 function TODrawCommandValue        # fh switch:cg2 0x71004a1820
 0x0089b590 function TOGetBtlWindowControlEnable # fh v3:bsim1.00 0x0089b500
 0x0089b5a0 function TOGetSaveWindow           # fh v3:exact+call.cs 0x0089b510 cdecl
 0x0089b660 function TOInitBtlWindow           # fh v3:exact 0x0089b5d0
 0x0089bb10 function TOSetBtlActiveChr         # fh v3:exact 0x0089ba80
 0x0089bc80 function ToDrawLibraWin            # fh v3:exact 0x0089bbf0
+0x0089bf70 function TOBtlDrawLibraLeft        # fh v3:cg14 0x89bee0 _TOBtlDrawLibraLeft
 0x0089c870 function TOBtlDrawTargetCursor     # fh v3:exact 0x0089c7e0 _TOBtlDrawTargetCursor
 0x0089c900 function TOBtlGetMainPad           # fh v3:exact 0x0089c870 _TOBtlGetMainPad
 0x0089cde0 function TOBtlGetStdPad            # fh v3:bsim0.96 0x0089cd50 _TOBtlGetStdPad
 0x0089d390 function TOBtlGetTargetPad         # fh v3:exact 0x0089d300 _TOBtlGetTargetPad
 0x0089d610 function TOGetPadStatusPrepare     # fh v3:exact 0x0089d580 _TOGetPadStatusPrepare
+0x0089d9b0 function TOBtlDrawSimpleHelpMes    # fh v3:cg7 0x89d920 __TOBtlDrawSimpleHelpMes
 0x0089dc10 function TODapsDraw                # fh v3:bsim1.00 0x0089db80
 0x0089dc40 function TODapsInit                # fh v3:bsim1.00 0x0089dbb0
 0x0089dde0 function TODapsPrintf              # fh v3:exact 0x0089dd50
@@ -3632,6 +3974,22 @@
 0x008a16d0 function TODrawBtlCtbParts         # fh v3:exact 0x008a1660
 0x008a1ce0 function TODrawLimitBG             # fh v3:exact 0x008a1c70
 0x008a2160 function TOBtlGetChangePad         # fh v3:exact 0x008a2100 _TOBtlGetChangePad
+0x008a22f0 function TOBtlGetLeftPad           # fh v3:cg10 0x8a2290 _TOBtlGetLeftPad
+0x008a2690 function TOBtlGetRightPad          # fh v3:cg10 0x8a2630 _TOBtlGetRightPad
+0x008a2da0 function TODrawWaitBtlWinChange    # fh v3:cg3 0x8a2d40 __TODrawWaitBtlWinChange
+0x008a32b0 function TODrawWaitBtlWinInputGil  # fh v3:cg7 0x8a3250 __TODrawWaitBtlWinInputGil
+0x008a3680 function TODrawWaitBtlWinLeft      # fh v3:cg5 0x8a3620 __TODrawWaitBtlWinLeft
+0x008a49b0 function TODrawWaitBtlWinMain      # fh v3:cg10 0x8a4950 __TODrawWaitBtlWinMain
+0x008a6870 function TODrawWaitBtlWinPrepare   # fh v3:cg3 0x8a6810 __TODrawWaitBtlWinPrepare
+0x008a6a60 function TODrawWaitBtlWinRight     # fh v3:cg4 0x8a6a10 __TODrawWaitBtlWinRight
+0x008a7520 function TODrawWaitBtlWinSub       # fh v3:cg3 0x8a74d0 __TODrawWaitBtlWinSub
+0x008a75f0 function TODrawWaitBtlWinSummon    # fh v3:cg5 0x8a75a0 __TODrawWaitBtlWinSummon
+0x008a7dc0 function TODrawWaitBtlWinWeapon    # fh v3:cg5 0x8a7d70 __TODrawWaitBtlWinWeapon
+0x008a84d0 function TOInitBtlWinChange        # fh v3:cg2 0x8a8480 __TOInitBtlWinChange
+0x008a85a0 function TOOpenBtlLimitBreak       # fh v3:cg2 0x8a8550 __TOOpenBtlLimitBreak
+0x008a8640 function TOOpenBtlWinMain          # fh v3:cg2 0x8a85f0 __TOOpenBtlWinMain
+0x008a87d0 function TOWaitBtlWinInputGil      # fh v3:cg3 0x8a8780 __TOWaitBtlWinInputGil
+0x008a8a70 function TOWaitBtlWinMain          # fh v3:cg2 0x8a8a20 __TOWaitBtlWinMain
 0x008a8e10 function IsInTkMenuPause           # fh v3:bsim1.00 0x008a8dc0
 0x008a8e30 function TOMenuGetDBuffDC          # fh switch:bsim1.00 0x71004bcd80
 0x008a8e50 function TOMenuGetFirstReadEndFlag # fh v3:bsim1.00 0x008a8e00
@@ -3642,6 +4000,7 @@
 0x008a9880 function TkMenuGetCurrentSummon    # fh call.cs cdecl
 0x008a98a0 function TkMenuGetDrawShadeRatio   # fh v3:bsim1.00 0x008a9850
 0x008a98c0 function TkMenuGetHP               # fh v3:bsim1.00+call.cs 0x008a9870 cdecl
+0x008a98f0 function TkMenuGetItemHelp         # fh v3:cg2 0x8a98a0
 0x008a9970 function TkMenuGetMP               # fh v3:bsim1.00+call.cs 0x008a9920 cdecl
 0x008a9990 function TkMenuGetMaxHP            # fh v3:bsim1.00+call.cs 0x008a9940 cdecl
 0x008a99b0 function TkMenuGetMaxMP            # fh v3:bsim1.00+call.cs 0x008a9960 cdecl
@@ -3658,6 +4017,7 @@
 0x008aa460 function TkMenuMainGetMenuActiveMask # fh v3:bsim1.00 0x008aa410
 0x008aab00 function TkMenuMainRegistWindow    # fh switch:bsim1.00+call.cs 0x71004ba0f0 cdecl
 0x008aab20 function TkMenuMainRemoveMenu      # fh v3:exact 0x008aaad0
+0x008aad60 function TkMenuMainSetIgnoreJoinFlag # fh v3:cg3 0x8aad10
 0x008aad70 function TkMenuMainSleepMenu       # fh v3:exact 0x008aad20
 0x008aae10 function TkMenuRefreshPartyList    # fh v3:bsim1.00 0x008aadc0
 0x008aae80 function TkMenuSetCurrentPlayerPos # fh v3:bsim1.00 0x008aae30
@@ -3671,6 +4031,7 @@
 0x008ab240 function TkMn2GetMenuMode          # fh v3:bsim1.00 0x008ab1f0
 0x008ab260 function TkMn2SetMainFrameRatioDiff # fh v3:bsim1.00 0x008ab210
 0x008ab280 function TkMsGetRomItem            # fh v3:exact+call.cs 0x008ab230 cdecl
+0x008ab2c0 function TkMsImportantGet          # fh v3:cg3 0x8ab270
 0x008ab340 function Pause_Update                 # per frame: enters the pause (Pause_Enter) when g_PauseOn is set and not entered; Start (pad 0x800) at fade 0x40 hides the screen and sets the step +4; at 0x80 it ends (flags cleared, sound resumed)
 0x008ab3d0 function Pause_Enter                  # sound and timers paused (0x00640e20(1), 0x00821cc0(1)), the pause screen shown (0x006f3300), g_PauseEntered = g_PauseOn = 1, fade 0x80 step -4
 0x008ab550 function EventFontTextureArrayReset # fh v3:exact 0x008ab500
@@ -3681,9 +4042,11 @@
 0x008ab8f0 function TOCloseMessageWindow      # fh v3:bsim1.00 0x008ab8a0
 0x008ab9a0 function TOControlMessageWindowForMenu # fh v3:exact 0x008ab950
 0x008aba30 function TODVDFileRead             # fh switch:bsim1.00 0x71004f4c70
+0x008abd00 function TODebugAddPadPrintFlag    # fh switch:cg2 0x71008bb6d8
 0x008abd20 function TODebugGetPadPrintFlag    # fh v3:bsim1.00 0x008abcd0
 0x008abd30 function TODrawMessageWindow       # fh v3:exact+call.cs 0x008abce0 stdcall
 0x008abe40 function TODrawMessageWindowForMenu # fh v3:exact 0x008abdf0
+0x008abf30 function TODrawMovieMessage        # fh switch:cg3 0x71004fc2d0
 0x008ac130 function TOFTCTransfer             # fh v3:exact 0x008ac0e0
 0x008ac300 function TOGetFFXLangStr           # fh v3:exact 0x008ac2b0
 0x008ac390 function TOGetFFXLangSwapFlag      # fh v3:bsim1.00 0x008ac340
@@ -3727,8 +4090,10 @@
 0x008b1330 function resetButtonData           # fh v3:bsim1.00 0x008b12e0
 0x008b1350 function setButtonData             # fh v3:bsim1.00 0x008b1300
 0x008b1450 function TkCRC                     # fh v3:exact 0x008b1400
+0x008b15d0 function TkMenuCtrlSaveLoad        # fh v3:cg22 0x8b1580 +TkMenuCtrlSaveLoad
 0x008b3cf0 function AtelAllClearCallbackQue   # fh switch:bsim1.00 0x710044df20
 0x008b3db0 function TkMenuCloseSaveLoadScreen # fh v3:exact 0x008b3d60
+0x008b4ec0 function TkMenuJumpToLoadedScene   # fh v3:cg14 0x8b4e70
 0x008b50b0 function TkMenuPreSave             # fh v3:exact 0x008b5060
 0x008b5530 function TkMenuRestartSelFileWindow # fh switch:bsim1.00 0x71004db0a0
 0x008b55c0 function TkMenuSaveLoadActive      # fh v3:bsim1.00 0x008b5570
@@ -3737,8 +4102,10 @@
 0x008b5810 function TOCloseMessage            # fh v3:exact 0x008b57c0
 0x008b5850 function TOControlMessage          # fh v3:exact 0x008b5800
 0x008b5960 function TODrawChangeMacro2        # fh v3:exact 0x008b5910
+0x008b5c70 function TODrawExtMessage          # fh switch:cg2 0x71004f35e0
 0x008b5dc0 function TODrawMessage             # fh v3:exact 0x008b5d70
 0x008b5ea0 function TODrawMovieChangeMacro2   # fh v3:exact 0x008b5e50
+0x008b5fb0 function TODrawSelectCursor        # fh v3:cg8 0x8b5f60
 0x008b6200 function TOFFXToSJIS               # fh v3:exact 0x008b61b0
 0x008b64a0 function TOFuncPadMessageNormal    # fh v3:exact 0x008b6450
 0x008b6660 function TOGetChangeMacroAddress   # fh v3:exact 0x008b6610
@@ -3762,6 +4129,7 @@
 0x008b9330 function TOGetFontWidth            # fh v3:exact 0x008b92e0 _TOGetFontWidth
 0x008b9650 function TOGetMessageWH            # fh v3:exact 0x008b9600 _TOGetMessageWH
 0x008b9eb0 function TkMenuGetPlayerDamegedColor # fh v3:bsim1.00 0x008b9e60
+0x008ba5c0 function TkBtlEndCheckLegendWeapon # fh switch:cg2 0x71004b2420
 0x008ba660 function TkBtlEndCtrl              # fh v3:exact 0x008ba620
 0x008bda60 function TkBtlEndGetText           # fh switch:bsim1.00+call.cs 0x71004b25f0 cdecl
 0x008bdb70 function TkBtlEndInit              # fh v3:exact 0x008bdb30
@@ -3810,6 +4178,9 @@
 0x008c1870 function TkMn2DrawWeaponName       # fh switch:bsim1.00 0x71004c6db0
 0x008c18a0 function TkMn2DumpPlate            # fh switch:bsim1.00 0x71004c7740
 0x008c1910 function SetSummonGrowMax          # fh v3:exact 0x008c18f0 +SetSummonGrowMax
+0x008c19e0 function TkMn2GetCommandHelp       # fh v3:cg5 0x8c19c0
+0x008c1a20 function TkMn2GetCommandName       # fh v3:cg2 0x8c1a00
+0x008c1b30 function TkMn2GetItemHelp          # fh v3:cg3 0x8c1b10
 0x008c1c20 function TkMn2GetSummonGrow        # fh v3:bsim1.00 0x008c1c00
 0x008c1c40 function TkMn2GetSummonGrowMax     # fh v3:bsim1.00+call.cs 0x008c1c20 cdecl
 0x008c2360 function TkMn2RefreshList          # fh switch:bsim1.00 0x71004c4110
@@ -3834,6 +4205,7 @@
 0x008c8c30 function TOAmapGetItemListMax      # fh v3:bsim1.00 0x008c8c00
 0x008c8e60 function TkMenuItemRefresh         # fh v3:exact 0x008c8e30
 0x008ca320 function TOMenuGetDummyAnalogControler # fh v3:exact 0x008ca2f0
+0x008ca480 function TkMenuDraw                # fh v3:cg2 0x8ca450
 0x008ca490 function TkMenuFlushDummyControler # fh switch:bsim1.00 0x71004c3a50
 0x008ca510 function TkMenuGetDummyControlerFlag # fh v3:bsim1.00 0x008ca4e0
 0x008ca570 function TkMenuSetDummyControlerFlag # fh v3:bsim1.00 0x008ca540
@@ -3874,6 +4246,9 @@
 0x008dd440 function TkMenuDrawScissorClear    # fh switch:bsim1.00 0x71004bfe20
 0x008dd4f0 function TkMenuDrawShape           # fh switch:bsim1.00 0x71004c3910
 0x008ddc60 function TkMenuEquipWin            # fh switch:bsim1.00 0x71004c1280
+0x008dde10 function TkMenuGetCommandHelp      # fh v3:cg3 0x8dddf0
+0x008ddea0 function TOMenuGetGetImportantHelp # fh v3:cg3 0x8dde80
+0x008ddee0 function TOMenuGetGetImportantName # fh v3:cg2 0x8ddec0
 0x008ddf20 function TkMenuSaveMes             # fh switch:bsim1.00 0x71004c3430
 0x008ddf60 function TkMenuMainHelp            # fh switch:bsim1.00 0x71004c35b0
 0x008ddf80 function TkMenuMainMes             # fh switch:bsim1.00 0x71004c33a0
@@ -3915,6 +4290,7 @@
 0x008e8fb0 function TOAddPktBaseMesFontLAbmap # fh v3:exact 0x008e8fb0
 0x008e92a0 function TOAddPktBaseMesFontLClutTypeRGBA # fh v3:exact 0x008e92a0
 0x008e9ca0 function TOAddPktChangeMacro_help  # fh v3:exact 0x008e9ca0
+0x008eb120 function TOAddPktMenuHelpWindow    # fh switch:cg2 0x71008bc398
 0x008eb240 function TOAddPktMenuIcon          # fh v3:bsim1.00 0x008eb240
 0x008eb270 function TOAddPktMenuIconRGBA      # fh v3:exact 0x008eb270
 0x008ec2f0 function TOAdpCrossEasyStrFontSClutRGBA # fh v3:exact 0x008ec2f0
@@ -3922,6 +4298,8 @@
 0x008ee240 function TOAdpFontM_ASCII          # fh v3:exact 0x008ee240
 0x008ef790 function TOAdpGsDirectRGBA         # fh switch:bsim1.00 0x710051b230
 0x008f0680 function TOAdpMenuIconImportantName # fh v3:exact 0x008f0680
+0x008f0700 function TOAdpMenuIconItemAbmap    # fh v3:cg3 0x8f0700
+0x008f0770 function TOAdpMenuIconItemName     # fh v3:cg4 0x8f0770
 0x008f0830 function TOAdpMenuIconWeaponName   # fh v3:exact 0x008f0830
 0x008f08e0 function TOAdpMenuIconWeaponName2  # fh v3:exact 0x008f08e0
 0x008f34c0 function TOBtlDrawWeaponAbilityWindow # fh v3:exact 0x008f34c0
@@ -3933,12 +4311,19 @@
 0x008f41b0 function TODrawBtlNetWindowXYWHType # fh v3:exact 0x008f41b0
 0x008f4b20 function TODrawCrossBoxXYWHC2      # fh call.cs cdecl
 0x008f4c40 function TODrawCrossBoxXYWHC2FW    # fh v3:exact 0x008f4c40
+0x008f4f10 function TODrawCrossMenuIconAbilityName # fh v3:cg3 0x8f4f10
+0x008f5000 function TODrawCrossMenuIconCommandName # fh v3:cg3 0x8f5000
+0x008f50f0 function TODrawCrossMenuIconImportantName # fh v3:cg3 0x8f50f0
 0x008f5b90 function TODrawIcon                # fh switch:bsim1.00 0x710051ab50
 0x008f5bc0 function TODrawKick                # fh v3:exact 0x008f5bc0
 0x008f5c10 function TODrawMenuBG              # fh switch:bsim1.00+call.cs 0x7100528940 cdecl
 0x008f5c60 function TODrawMenuBGC2            # fh switch:bsim1.00 0x7100528980
 0x008f5cc0 function TODrawMenuChrFace         # fh switch:bsim1.00 0x7100522230
 0x008f5f70 function TODrawMenuPlateXYWHType   # fh call.cs cdecl
+0x008f88b0 function TODrawMenuStdPlateC1      # fh v3:cg2 0x8f88b0
+0x008f88e0 function TODrawMenuStdPlateC2      # fh v3:cg2 0x8f88e0
+0x008f8910 function TODrawMenuStdPlateNonC    # fh v3:cg2 0x8f8910
+0x008f8940 function TODrawMenuStdPlateNonSC   # fh v3:cg2 0x8f8940
 0x008f8970 function TODrawMenuStdPlateType    # fh v3:exact 0x008f8970
 0x008f8ee0 function TODrawScaleButtonIconRGBA # fh v3:exact 0x008f8ee0
 0x008f9230 function TODrawScissorXYWH         # fh v3:exact+call.cs 0x008f9230 cdecl
@@ -3947,6 +4332,7 @@
 0x008fa800 function TOGetScaleButtonIconWidth # fh v3:exact 0x008fa800
 0x008fa900 function TOGetScreenWH             # fh switch:bsim1.00 0x7100502fb0
 0x008fa920 function TOGetWidthMacro_help      # fh v3:exact 0x008fa920
+0x008fae10 function TOSetAddPkt               # fh v3:cg2 0x8fae10
 0x008fae40 function TOMakeBtlEasyFontEdge     # fh v3:exact 0x008fae40
 0x008fb150 function TOMakePktBoxXYWHRGBA      # fh v3:exact 0x008fb150
 0x008fb840 function TOMakePktBtlDamageNumRGBA # fh v3:exact 0x008fb840
@@ -3980,7 +4366,9 @@
 0x00901c50 function TOMkpEasyMesFontLCenter   # fh v3:exact 0x00901c50
 0x00901f40 function TOMkpEasyStrFontM         # fh v3:bsim1.00 0x00901f40
 0x00902040 function TOMkpEasyStrFontS         # fh v3:exact 0x00902040
+0x00902840 function TOMkpMovieMessageImage    # fh switch:cg2 0x71008bdad8
 0x009029b0 function TOMkpPadButtonData        # fh v3:exact 0x009029b0
+0x00902ef0 function TOMkpRotateShapeXYWHUVC2  # fh v3:cg12 0x902ef0
 0x00903300 function TOMkpSetEnvSubFont        # fh v3:exact 0x00903300
 0x009034b0 function TOMkpShapePartIndexXYWHC2 # fh v3:exact 0x009034b0
 0x00903a10 function TOMkpShapeXY              # fh v3:exact 0x00903a10
@@ -3993,6 +4381,7 @@
 0x009048a0 function TOSetPolyG4A_XYWH         # fh switch:bsim1.00 0x71005094e0
 0x009048e0 function TOSetRegFont1612          # fh v3:bsim1.00 0x009048e0
 0x00904a70 function ToDrawEternalCalmCopyRight # fh v3:exact 0x00904a70
+0x00904ba0 function QuickRecoverMenuDraw      # fh switch:cg2 0x71004beaa0
 0x00905190 function ToGetBtlEasyDigitWidth    # fh v3:exact 0x00905190
 0x00905290 function ToGetBtlEasyFontWidth     # fh v3:exact+call.cs 0x00905290 cdecl
 0x00905320 function ToGetCrossExtMesFontWidth # fh v3:exact+call.cs 0x00905320 cdecl
@@ -4028,6 +4417,7 @@
 0x009084b0 function yiDisposeAnimDObj         # fh switch:bsim1.00 0x710052c6f0
 0x00908550 function yiDrawScrEffect           # fh v3:exact 0x00908550
 0x009085d0 function yiFieldMapRead            # fh v3:bsim1.00 0x009085d0
+0x00908600 function yiFieldMapReadNB          # fh v3:cg3 0x908600
 0x00908630 function yiFieldObjReadNB          # fh switch:bsim1.00 0x710052ac80
 0x009086d0 function yiGetBackColor            # fh v3:exact 0x009086d0
 0x009087f0 function yiGetBattleCenter         # fh v3:exact 0x009087f0
@@ -4043,6 +4433,7 @@
 0x00908e30 function yiGetMatrixGroup          # fh v3:exact 0x00908e30
 0x00908f10 function yiGetRenderStatus         # fh v3:bsim1.00 0x00908f10
 0x00908f70 function yiGetVCount               # fh v3:bsim1.00 0x00908f70
+0x00908f90 function yiGui_setfogparam         # fh v3:cg4 0x908f90
 0x00909030 function yiInit                    # fh v3:exact 0x00909030
 0x00909190 function yiLoadFieldParticle       # fh switch:bsim0.97 0x710052c850
 0x009093b0 function yiMapReadMaster           # fh v3:exact 0x009093b0
@@ -4064,6 +4455,8 @@
 0x0090a750 function yiSetRotTransDObj         # fh v3:exact 0x0090a750
 0x0090a950 function yiSetScaleFactor          # fh switch:bsim1.00 0x710052b260
 0x0090ae50 function yiAssert                  # fh v3:exact 0x0090ae50
+0x0090bbd0 function yiMalloc                  # fh v3:cg20 0x90bbd0
+0x0090bbe0 function yiMalloc64                # fh v3:cg4 0x90bbe0
 0x0090bee0 function yiRender_destroy          # fh switch:bsim1.00 0x7100539700
 0x0090cd90 function yiRender_resetobj         # fh v3:exact 0x0090cd90
 0x0090cea0 function yiRender_resettex         # fh v3:exact 0x0090cea0
@@ -4076,7 +4469,10 @@
 0x00913f30 function yiScreff_init             # fh switch:bsim1.00 0x7100534af0
 0x00914250 function yiAnimAttachDefault       # fh v3:exact 0x00914250
 0x00914310 function yiAnimInfo_init           # fh v3:exact 0x00914310
+0x009143c0 function yiAnimAttachDefault_009143c0 # fh switch:cg2 0x710052d7b0
 0x009144a0 function yiKeyFrame_attachDObj     # fh v3:exact 0x009144a0
+0x00914630 function yiKeyFrame_attachChr      # fh switch:cg2 0x710052dfb0
+0x00914a10 function yiKeyFrame_main           # fh switch:cg2 0x710052e1e0
 0x009151c0 function yiRotMatrixSeq            # fh v3:exact 0x009151c0
 0x009152d0 function yiTexSwap_init            # fh v3:exact 0x009152d0
 0x00917050 function yiClutAlloc_makepacket    # fh v3:exact 0x00917050
@@ -4093,12 +4489,14 @@
 0x00919d70 function Yn_GuideMapSetDispProg    # fh v3:bsim1.00 0x00919d70
 0x00919da0 function Yn_GuideMapSetMapNo       # fh v3:exact 0x00919da0
 0x00919e20 function Yn_GuideMapSetMode        # fh v3:bsim1.00 0x00919e20
+0x00919f00 function Yn_PSimGetHandle_00919f00 # fh switch:cg3 0x71008af228
 0x00919f10 function Yn_PSimSetPos             # fh v3:exact 0x00919f10
 0x0091a0d0 function Yn_PreBgChangeStage       # fh v3:exact 0x0091a0d0
 0x0091a770 function Yn_PreBgLayerDispGet      # fh v3:exact 0x0091a770
 0x0091aa60 function Yn_PreBgSetData           # fh v3:exact 0x0091aa60
 0x0091ad10 function Yn_PreBgSetScrBank        # fh switch:bsim1.00 0x7100548410
 0x0091ae30 function Yn_SeaResetMatrix         # fh v3:bsim1.00 0x0091ae30
+0x0091ae40 function Yn_SeaSetAng              # fh v3:cg4 0x91ae40
 0x0091ae60 function Yn_SeaSetMatrix           # fh v3:bsim1.00 0x0091ae60
 0x0091ae80 function Yn_SeaSetPos              # fh v3:bsim1.00 0x0091ae80
 0x0091aea0 function Yn_SeaSetUvSpd            # fh v3:exact 0x0091aea0
@@ -4133,6 +4531,7 @@
 0x0091fd00 function rcbgPSimCreateFromOMD     # fh switch:bsim1.00 0x7100546080
 0x0091fdd0 function rcbgPSimGetPos            # fh switch:bsim1.00 0x7100546550
 0x0091fe00 function rcbgPSimInit              # fh switch:bsim1.00 0x7100545a90
+0x0091fe70 function rcbgPSimProc              # fh switch:cg2 0x7100545b70
 0x0091fef0 function rcbgPSimSetInitCnt        # fh switch:bsim1.00 0x7100546570
 0x0091ff10 function rcbgPSimSetPos            # fh v3:exact 0x0091ff10
 0x0091ffb0 function rcbgPSimSetReady          # fh switch:bsim0.98 0x7100546520
@@ -4147,6 +4546,7 @@
 0x00920870 function rcbgSceneFini             # fh v3:exact 0x00920870
 0x009209e0 function rcbgSceneInit             # fh v3:exact 0x009209e0
 0x00920c00 function rcbgSceneSetMatrix        # fh v3:exact 0x00920c00
+0x00920e40 function rcbgSceneSetMatrix_Cross  # fh switch:cg2 0x7100547310
 0x009210a0 function rcbgSceneSetPal           # fh switch:bsim1.00 0x71005472b0
 0x009212c0 function rcVec3fMul                # fh v3:bsim1.00 0x009212c0
 0x00921360 function rcVec3fNormalize          # fh v3:exact 0x00921360
@@ -4178,6 +4578,7 @@
 0x00925210 function rcefMainInit              # fh v3:exact 0x00925210
 0x00925440 function rcefMainProcRunAfter      # fh v3:exact 0x00925440
 0x009256d0 function rcefMainSetPar            # fh v3:exact 0x009256d0
+0x00925730 function rcbgIDLoad                # fh switch:cg2 0x71005537a0
 0x009257f0 function rcMat4fSetScale           # fh v3:exact 0x009257f0
 0x00925820 function rcMat4fSetScaleVec3f      # fh v3:bsim1.00 0x00925820
 0x00925850 function rcMat4fSetTranslate       # fh v3:bsim1.00 0x00925850
@@ -4198,7 +4599,10 @@
 0x00927a20 function rcPacketDataInit          # fh v3:exact 0x00927a20
 0x00927a70 function rcPacketDataOpenAdr       # fh v3:exact 0x00927a70
 0x00927be0 function rcbgModelCreate           # fh v3:exact 0x00927be0
+0x00927d70 function rcbgModelCreateFromOMD    # fh switch:cg2 0x71008bf5f8
+0x00927d80 function rcbgModelCreateMesh       # fh switch:cg2 0x7100545130
 0x00927fa0 function rcbgModelCreateOnePrimH   # fh v3:exact 0x00927fa0
+0x00928000 function rcbgModelDelete           # fh v3:cg2 0x928000
 0x00928020 function rcbgModelDraw             # fh v3:exact 0x00928020
 0x009281d0 function rcbgModelFToS0            # fh v3:exact 0x009281d0
 0x009282a0 function rcbgModelGetPrim          # fh v3:exact 0x009282a0
@@ -4213,8 +4617,10 @@
 0x00929950 function rcbgPalAlloc              # fh switch:bsim1.00 0x71005551c0
 0x009299b0 function rcbgPalInit               # fh v3:exact 0x009299b0
 0x00929ab0 function rcbgPalSetNo              # fh v3:bsim1.00 0x00929ab0
+0x00929bf0 function rcbgLayerDraw             # fh switch:cg8 0x7100553a70
 0x0092ad20 function rcbgLayerInit             # fh v3:exact 0x0092ad20
 0x0092ad80 function rcbgLayerProc             # fh switch:bsim1.00 0x7100553930
+0x0092af60 function rcbgClipVertex            # fh v3:cg2 0x92af60
 0x0092b0d0 function rcbgSetClipMatrix         # fh v3:exact 0x0092b0d0
 0x0092b140 function rcbgSetWorldMatrix        # fh v3:bsim1.00 0x0092b140
 0x0092b160 function rcbgUpdateMatrix          # fh v3:exact 0x0092b160
@@ -4238,13 +4644,16 @@
 0x0092ba90 function rcdtParseGetBin           # fh v3:exact 0x0092ba90
 0x0092bf50 function rcdtParseInit             # fh v3:exact 0x0092bf50
 0x0092c0a0 function rcdtParseSet              # fh v3:exact 0x0092c0a0
+0x0092c0d0 function rcdtParseSetPos           # fh switch:cg2 0x71008bfbc8
+0x0092d230 function rcbgTrxDraw               # fh switch:cg3 0x71005557c0
 0x0092d450 function rcbgTrxDelete             # fh v3:bsim1.00 0x0092d450
-0x0092d470 function rcbgTrxDraw               # fh v3:exact 0x0092d470
+0x0092d470 function rcbgTrxDraw_0092d470      # fh v3:exact 0x0092d470
 0x0092d490 function rcbgTrxFini               # fh v3:exact 0x0092d490
 0x0092d510 function rcbgTrxInit               # fh v3:exact 0x0092d510
 0x0092d580 function rcbgTrxNew                # fh v3:bsim1.00 0x0092d580
 0x0092d670 function rcbgTrxSetNo              # fh v3:bsim1.00 0x0092d670
 0x0092d680 function rcbgTrxSetTag             # fh v3:bsim1.00 0x0092d680
+0x0092dd30 function rcefChgChrClut            # fh switch:cg2 0x7100557340
 0x0092dfb0 function rcefEffectReady           # fh v3:exact 0x0092dfb0
 0x0092e1c0 function rcefGetChrHandle          # fh v3:exact 0x0092e1c0
 0x0092e240 function rcefGetChrMatrix          # fh v3:exact 0x0092e240
@@ -4270,9 +4679,10 @@
 0x0092f4a0 function rcefAnimeFini             # fh v3:exact 0x0092f4a0
 0x0092f4c0 function rcefAnimeInit             # fh v3:exact 0x0092f4c0
 0x0092f4f0 function rcefAnimeProc             # fh v3:exact 0x0092f4f0
+0x0092f510 function rcefModelProc             # fh switch:cg2 0x710054c990
 0x0092f710 function rcefModelFini             # fh v3:exact 0x0092f710
 0x0092f750 function rcefModelInit             # fh v3:exact 0x0092f750
-0x0092f770 function rcefModelProc             # fh v3:exact 0x0092f770
+0x0092f770 function rcefModelProc_0092f770    # fh v3:exact 0x0092f770
 0x0092f970 function rcefObjAttachChr          # fh v3:exact 0x0092f970
 0x0092f9a0 function rcefObjAttachChrOpt       # fh v3:exact 0x0092f9a0
 0x0092f9d0 function rcefObjCalcLocalMatrix    # fh v3:exact 0x0092f9d0
@@ -4301,11 +4711,14 @@
 0x00933c80 function Yn_FpMemWinOpen           # fh v3:exact 0x00933c80
 0x00934390 function rcuiInit                  # fh switch:bsim0.92 0x7100558860
 0x009364a0 function rcuiPreMemWinOpen         # fh switch:bsim1.00 0x710055e6c0
+0x00937190 function rcuiVramWrite             # fh switch:cg2 0x710055dd50
 0x00937440 function rcefMemDebugDisp          # fh switch:bsim1.00 0x7100558660
 0x00937940 function rcuiGetStageName          # fh switch:bsim1.00 0x7100563a00
 0x00937b20 function rcuiMakeFullPath          # fh switch:bsim1.00 0x7100563880
+0x00937b70 function rcuiResetChrPos           # fh switch:cg2 0x7100563b40
 0x00937ef0 function rcuiWindowCreate          # fh v3:exact 0x00937ef0
 0x00939950 function rcbgTrxSave               # fh switch:bsim0.99 0x71005625c0
+0x0093a280 function rcbgModelCreateFromFile   # fh switch:cg3 0x7100560ba0
 0x0093b3e0 function rcbgSceneLoadTextSub      # fh switch:bsim0.92 0x710055f800
 0x0093c3d0 function rcuiNumberIsOK            # fh switch:bsim1.00 0x71005645f0
 0x0093d830 function FFXSamp0TransMatrix       # fh v3:exact 0x0093d830
@@ -4318,18 +4731,39 @@
 0x009438b0 function VirtualAlloc_Commit_RW    # fh v3:exact+call.cs 0x009438b0 cdecl _VirtualAlloc_Commit_RW
 0x009438e0 function VirtualFree_Decommit      # fh call.cs cdecl _VirtualFree_Decommit
 0x009439a0 function VirtualAlloc_Reserve_NA   # fh v3:exact+call.cs 0x009439a0 cdecl _VirtualAlloc_Reserve_NA
+0x00949162 function onexit                    # fh v3:cg3 0x949162 __onexit
+0x00949207 function atexit                    # fh v3:cg225 0x949207 _atexit
+0x0094923a function security_check_cookie     # fh v3:cg658 0x949240 __security_check_cookie
+0x0094926c function FID_conflict_vector_deleting_destructor # fh v3:cg2 0x949272 FID_conflict:`vector_deleting_destructor'
+0x00949620 function alloca_probe              # fh v3:cg9 0x949620 __alloca_probe
+0x0094966a function eh_vector_constructor_iterator # fh v3:cg7 0x94966a `eh_vector_constructor_iterator'
+0x009496d2 function eh_vector_destructor_iterator # fh v3:cg3 0x9496d2 `eh_vector_destructor_iterator'
+0x0094975a function ArrayUnwind               # fh v3:cg2 0x94975a __ArrayUnwind
+0x00949890 function alloca_probe_16           # fh v3:cg5 0x949890 __alloca_probe_16
+0x009498a6 function alloca_probe_8            # fh v3:cg2 0x9498a6 __alloca_probe_8
+0x00949910 function allshl                    # fh v3:cg2 0x949910 __allshl
+0x00949b02 function report_rangecheckfailure  # fh v3:cg10 0x949afc ___report_rangecheckfailure
+0x00949d00 function aullshr                   # fh v3:cg3 0x949d00 __aullshr
+0x00949e30 function aulldiv                   # fh v3:cg2 0x949e30 __aulldiv
+0x00949ea0 function alldiv                    # fh v3:cg2 0x949ea0 __alldiv
+0x00949ff0 function SEH_prolog4               # fh v3:cg2 0x949ff0 __SEH_prolog4
+0x0094a035 function SEH_epilog4               # fh v3:cg2 0x94a035 __SEH_epilog4
+0x0094a684 function Facet_Register            # fh v3:cg2 0x94a684
 0x0094ab80 function lua_atpanic               # fh switch:bsim1.00 0x710076c3d4
 0x0094ad00 function lua_concat                # fh switch:bsim1.00 0x710076f3fc
 0x0094ae10 function lua_dump                  # fh switch:bsim1.00 0x710076f17c
 0x0094b080 function lua_getglobal             # fh switch:bsim1.00 0x710076deb8
 0x0094b450 function lua_newuserdata           # fh switch:bsim0.99 0x710076f584
 0x0094b660 function lua_pushfstring           # fh switch:bsim0.93 0x710076dcc8
+0x0094b690 function lua_pushinteger           # fh switch:cg5 0x710087db08
 0x0094b6c0 function lua_pushlightuserdata     # fh switch:bsim0.98 0x710076de6c
 0x0094b6e0 function lua_pushlstring           # fh switch:bsim0.99 0x710076db50
 0x0094b730 function lua_pushnil               # fh switch:bsim0.98 0x710076dac4
 0x0094b750 function lua_pushnumber            # fh switch:bsim0.98 0x710076dadc
 0x0094bc10 function lua_setallocf             # fh switch:bsim1.00 0x710076f570
 0x0094bc80 function lua_setglobal             # fh switch:bsim1.00 0x710076e5e0
+0x0094bdc0 function lua_settop                # fh switch:cg5 0x7100879298
+0x0094c1b0 function lua_touserdata            # fh switch:cg2 0x7100882988
 0x0094c2c0 function lua_version               # fh switch:bsim1.00 0x710076c3e4
 0x0094cae0 function luaL_checkstack           # fh switch:bsim1.00 0x71007707b8
 0x009506b0 function lua_close                 # fh switch:bsim1.00 0x710077e1e8
@@ -4376,6 +4810,8 @@
 0x00a42b70 function PcFileTblSet              # fh v3:exact 0x00a42b70
 0x00a42ba0 function PcReadFunc_set            # fh v3:exact 0x00a42ba0
 0x00a42f30 function clear_read_chgname        # fh v3:exact 0x00a42f30
+0x00a43080 function pc_module_sizetbl_set     # fh v3:cg2 0xa43080
+0x00a430c0 function pc_sizetbl_set            # fh v3:cg2 0xa430c0
 0x00a43100 function pc_sizetbl_set_Ex         # fh v3:exact 0x00a43100
 0x00a431f0 function setFullArenaLocalizationEnable # fh switch:bsim1.00 0x7100857650
 0x00a43220 function set_read_chgname          # fh v3:exact 0x00a43220
@@ -4392,13 +4828,19 @@
 0x00a44790 function sceSifSetDma              # fh v3:bsim1.00 0x00a44790
 0x00a447b0 function sceCdGetDiskType          # fh v3:bsim1.00 0x00a447b0
 0x00a447c0 function sceCdRead                 # fh v3:bsim1.00 0x00a447c0
+0x00a44800 function sceCdStandby              # fh v3:cg2 0xa44800
+0x00a44820 function sceCdSync                 # fh v3:cg5 0xa44820
+0x00a44840 function MyProfilerAddMarker       # fh v3:cg6 0xa44840
 0x00a44b30 function JobScheduleWait_Ch_Cloth_PerCharacter # fh v3:bsim1.00 0x00a44b30
 0x00a44bd0 function str_replace               # fh v3:exact 0x00a44bd0
 0x00a45000 function abmCalcChrMoveCurMoveCheck # fh v3:exact 0x00a45000
+0x00a454a0 function AbmapSetHelpMessage       # fh v3:cg2 0xa454a0 +AbmapSetHelpMessage
 0x00a45570 function LoadAbmap                 # fh v3:exact 0x00a45570 +LoadAbmap
 0x00a458a0 function abmap_get_panel           # fh v3:exact+call.cs 0x00a458a0 cdecl
 0x00a458c0 function abmap_lost_panel          # fh v3:exact 0x00a458c0
 0x00a458f0 function abmap_set_chr_pos         # fh v3:exact 0x00a458f0
+0x00a45910 function abmap_snd_chg_panel0      # fh v3:cg2 0xa45910
+0x00a45920 function abmap_snd_chg_panel1      # fh v3:cg2 0xa45920
 0x00a45fd0 function AbmapFillUseItemMenu      # fh v3:exact 0x00a45fd0 +AbmapFillUseItemMenu
 0x00a473d0 function AbmapAllLinksLimitFlag    # fh v3:exact 0x00a473d0 +AbmapAllLinksLimitFlag
 0x00a474d0 function AbmapCalcMoveCosts        # fh v3:exact 0x00a474d0 +AbmapCalcMoveCosts
@@ -4409,6 +4851,7 @@
 0x00a48c80 function AbmapInitMovingToTarget   # fh v3:exact 0x00a48c80 +AbmapInitMovingToTarget
 0x00a48d20 function AbmapTransitionToHoming   # fh v3:exact 0x00a48d20 +AbmapTransitionToHoming
 0x00a48d70 function AbmapInitHoming           # fh v3:exact 0x00a48d70 +AbmapInitHoming
+0x00a48f50 function AbmapCtrlTilt             # fh v3:cg2 0xa48f50 +AbmapCtrlTilt
 0x00a490c0 function AbmapCtrlZoom             # fh v3:exact 0x00a490c0 +AbmapCtrlZoom
 0x00a49590 function LoadSaveAbmap             # fh v3:exact 0x00a49590 +LoadSaveAbmap
 0x00a53570 function eiAbmCalc                 # fh v3:exact 0x00a53570
@@ -4467,7 +4910,17 @@
 0x00a6a6a0 function op_md_ref_nolight         # fh v3:exact 0x00a6a6a0
 0x00a6cd80 function op_matrix_light4_vector   # fh v3:exact 0x00a6cd80
 0x00a6cf10 function op_normal_light44_ffx     # fh v3:exact 0x00a6cf10
+0x00a6cfb0 function op_refrection_st_float    # fh v3:cg7 0xa6cfb0
 0x00a6d380 function op_vertex_normal_point44_ffx # fh v3:exact 0x00a6d380
+0x00a6e2e0 function opus_0437_dot_draw        # fh switch:cg2 0x7100870250
+0x00a6e650 function opus_0437_draw            # fh switch:cg2 0x7100870ea0
+0x00a70d70 function opus_0582_draw            # fh switch:cg4 0x7100871b30
+0x00a71780 function opus_0582_break_make      # fh switch:cg4 0x71008725b0
+0x00a72380 function opus_0582_break_draw      # fh switch:cg4 0x7100872d90
+0x00a72b80 function opus_0582_dot_draw        # fh switch:cg4 0x7100873570
+0x00a73c20 function createGT3MeshBreakRenderDataBuffer # fh switch:cg3 0x71008741f0
+0x00a73d90 function opp2_md_break             # fh switch:cg3 0x7100874300
+0x00a75170 function opus_map_del_draw         # fh switch:cg2 0x7100874df0
 0x00a77b30 function Native_FootSetMaterial       # 0x403b (index, material) -> 0; footstep material table 0x01301af8[set 0x01301b00 * 4 + index] = material (read by 0x0083d7e0)
 0x00a77c30 function Native_SetControlAngle       # 0x4040 float (degrees) -> 0; stick-direction offset 0x01300780 = wrap(deg) + current input angle 0x013007a0 (0x0082d950), used by the player movement code 0x0082d5xx; scripts push 19, -160
 0x00a77d30 function Atel_Sg_Flash             # fh v3:bsim1.00 0x00a77d30 +Atel_Sg_Flash
@@ -4513,7 +4966,7 @@
 0x00a79e60 function Native_ChrPlayDefaultMotion  # 0x5032: no args -> 0; SG_PlaySlotMotion(chr, chr +0x185, 0)
 0x00a79ea0 function Native_ChrFadeAlpha          # 0x5033: args (alpha float, frames) -> 0; shade alpha at chr +0x354 ("shadeRGBA" in CHRINFO): target + frames, frames 0 = immediate (0x0082b990); scripts push (0, 60)
 0x00a79f40 function Native_ChrSetMotionBlend     # 0x5034: args (frames) -> 0; chr +0x73a, copied to "hokan" (+0x752) when the next clip starts (SG_StartClip); 0 marks dirty (+0x820 |= 4)
-0x00a7a210 function Native_ChrSetTalking         # 0x507e: args (worker, on) -> 0; chr +0x4d4 of another worker's chr turns on random rotation of bone 13 (0x00834..); ?mouth flapping while a voice line plays (used around 0x00d5 calls)
+0x00a7a210 function Native_ChrSetTalking         # 0x507e: args (worker, on) -> 0; chr +0x4d4 of another worker's chr turns on random rotation of bone 13 (0x00834..); ?mouth flapping while a voice line plays (used around 0x00d5 calls); fh: +CT_507E_ret
 0x00a7a340 function Native_ChrSetHitRadiusScale  # 0x5039: args (scale float; <= 0 = model default +0x1c4->+0x1c) -> previous; chr +0x4e4, collision radius +0x4e8 = mean bbox width * scale; scripts push 6.0, 8.0
 0x00a7a610 function Native_ChrSetMotion2         # 0x5040: same body as 0x501b (SG_SetMotion)
 0x00a7a6a0 function Native_ChrRefreshAllBones    # 0x5087: no args -> 0; Chr_RequestBoneUpdateAll; ?one-time skeleton refresh of every chr

@@ -20,7 +20,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
-use ffx_bridge::snapshot::Snapshot;
+use ffx_bridge::snapshot::{BLOCK, Snapshot};
 use goblin::pe::PE;
 use unicorn_engine::{Arch, HookType, MemType, Mode, Prot, RegisterX86, Unicorn};
 
@@ -31,8 +31,6 @@ const HEAP_SIZE: u64 = 0x400_0000;
 const STUB_SIZE: u64 = 0x100_0000;
 /// Upper bound on instructions per call, against runaway loops.
 const MAX_INSTRUCTIONS: usize = 200_000_000;
-/// Pages mapped from a snapshot at a time.
-const CHUNK: u64 = 0x1_0000;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -95,18 +93,22 @@ enum Stub {
     Missing(usize),
 }
 
-/// A snapshot with its regions unpacked on first use; shared by every
+/// A snapshot whose blocks are unpacked on first use; shared by every
 /// oracle made from it.
 pub struct Pages {
     snapshot: Snapshot,
-    unpacked: Vec<OnceLock<Vec<u8>>>,
+    unpacked: Vec<Vec<OnceLock<Vec<u8>>>>,
 }
 
 impl Pages {
     /// Wraps a snapshot.
     #[must_use]
     pub fn new(snapshot: Snapshot) -> Arc<Self> {
-        let unpacked = snapshot.regions.iter().map(|_| OnceLock::new()).collect();
+        let unpacked = snapshot
+            .regions
+            .iter()
+            .map(|r| r.blocks.iter().map(|_| OnceLock::new()).collect())
+            .collect();
         Arc::new(Self { snapshot, unpacked })
     }
 
@@ -125,8 +127,7 @@ impl Pages {
         &self.snapshot
     }
 
-    /// The bytes of `[addr, addr + len)` within one region, if the snapshot
-    /// has them.
+    /// The snapshot block holding `addr`: its first address and bytes.
     fn chunk(&self, addr: u64) -> Option<(u64, &[u8])> {
         let a = u32::try_from(addr).ok()?;
         let i = self
@@ -135,17 +136,18 @@ impl Pages {
             .partition_point(|r| r.base <= a)
             .checked_sub(1)?;
         let r = &self.snapshot.regions[i];
-        let end = u64::from(r.base) + u64::from(r.size);
-        if addr >= end {
+        if addr >= u64::from(r.base) + u64::from(r.size) {
             return None;
         }
-        let data = self.unpacked[i].get_or_init(|| r.bytes().unwrap_or_default());
-        let start = (addr & !(CHUNK - 1)).max(u64::from(r.base));
-        let stop = (start + CHUNK).min(end);
-        let off = usize::try_from(start - u64::from(r.base)).ok()?;
-        let len = usize::try_from(stop - start).ok()?;
-        Some((start, data.get(off..off + len)?))
+        let k = usize::try_from((addr - u64::from(r.base)) / BLOCK as u64).ok()?;
+        let packed = r.blocks.get(k)?;
+        let data = self.unpacked[i][k].get_or_init(|| lz4_flex_unpack(packed));
+        Some((u64::from(r.base) + (k * BLOCK) as u64, data.as_slice()))
     }
+}
+
+fn lz4_flex_unpack(block: &[u8]) -> Vec<u8> {
+    ffx_bridge::snapshot::unpack(block).unwrap_or_default()
 }
 
 #[derive(Default)]

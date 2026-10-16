@@ -15,6 +15,8 @@ unicorn-engine.workspace = true
 
 [dev-dependencies]
 ffx-core.workspace = true
+ffx-kernel.workspace = true
+ffx-text.workspace = true
 ffx-vbf.workspace = true
 ffx-phyre.workspace = true
 flate2.workspace = true

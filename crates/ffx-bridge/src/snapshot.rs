@@ -12,13 +12,18 @@
 //! | 20 | 4 | reserved, 0 |
 //!
 //! then per region: base, size, protection (`PAGE_*`), type (`MEM_*`) and
-//! compressed length (`u32` each), then the region's bytes as one LZ4 block
-//! (`lz4_flex` with the size prepended).
+//! the length of what follows (`u32` each), then the region's bytes in
+//! [`BLOCK`]-sized pieces, each a `u32` length and an LZ4 block (`lz4_flex`
+//! with the size prepended). Pieces keep blocks small: `lz4_flex` sizes its
+//! output buffer wrongly on 32-bit targets for inputs over about 39 MB.
 
 use std::io::{self, Read, Write};
 
 /// The magic.
 pub const MAGIC: &[u8; 8] = b"FFXSNAP1";
+
+/// Bytes per compressed piece.
+pub const BLOCK: usize = 0x10_0000;
 
 /// A region of the snapshot.
 #[derive(Debug, Clone)]
@@ -31,19 +36,31 @@ pub struct Region {
     pub protect: u32,
     /// `MEM_PRIVATE`, `MEM_IMAGE` or `MEM_MAPPED`.
     pub kind: u32,
-    /// The contents, compressed.
-    pub packed: Vec<u8>,
+    /// The contents in compressed [`BLOCK`]-sized pieces.
+    pub blocks: Vec<Vec<u8>>,
 }
 
 impl Region {
     /// The contents.
     ///
     /// # Errors
-    /// When the block is corrupt.
+    /// When a block is corrupt.
     pub fn bytes(&self) -> io::Result<Vec<u8>> {
-        lz4_flex::decompress_size_prepended(&self.packed)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+        let mut out = Vec::with_capacity(self.size as usize);
+        for b in &self.blocks {
+            out.extend(unpack(b)?);
+        }
+        Ok(out)
     }
+}
+
+/// One compressed block's bytes.
+///
+/// # Errors
+/// When the block is corrupt.
+pub fn unpack(block: &[u8]) -> io::Result<Vec<u8>> {
+    lz4_flex::decompress_size_prepended(block)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 /// A whole snapshot.
@@ -85,12 +102,22 @@ impl Snapshot {
             r.read_exact(&mut h)?;
             let mut packed = vec![0u8; u32_at(&h, 16) as usize];
             r.read_exact(&mut packed)?;
+            let mut blocks = Vec::new();
+            let mut at = 0;
+            while at + 4 <= packed.len() {
+                let n = u32_at(&packed, at) as usize;
+                let block = packed
+                    .get(at + 4..at + 4 + n)
+                    .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "truncated block"))?;
+                blocks.push(block.to_vec());
+                at += 4 + n;
+            }
             snap.regions.push(Region {
                 base: u32_at(&h, 0),
                 size: u32_at(&h, 4),
                 protect: u32_at(&h, 8),
                 kind: u32_at(&h, 12),
-                packed,
+                blocks,
             });
         }
         Ok(snap)
@@ -133,7 +160,13 @@ pub fn write_region(
     kind: u32,
     bytes: &[u8],
 ) -> io::Result<()> {
-    let packed = lz4_flex::compress_prepend_size(bytes);
+    let mut packed = Vec::new();
+    for piece in bytes.chunks(BLOCK) {
+        let block = lz4_flex::compress_prepend_size(piece);
+        let n = u32::try_from(block.len()).map_err(|_| io::Error::other("block over 4 GiB"))?;
+        packed.extend_from_slice(&n.to_le_bytes());
+        packed.extend_from_slice(&block);
+    }
     let size = u32::try_from(bytes.len()).map_err(|_| io::Error::other("region over 4 GiB"))?;
     let len = u32::try_from(packed.len()).map_err(|_| io::Error::other("region over 4 GiB"))?;
     for v in [base, size, protect, kind, len] {
@@ -149,13 +182,18 @@ mod tests {
     #[test]
     fn round_trip() {
         let mut file = Vec::new();
-        Snapshot::write_header(&mut file, 0x0040_0000, 0x027f, 2).unwrap();
+        Snapshot::write_header(&mut file, 0x0040_0000, 0x027f, 3).unwrap();
         write_region(&mut file, 0x1000, 4, 0x2_0000, &[7; 0x1000]).unwrap();
         write_region(&mut file, 0x8000, 4, 0x2_0000, &[1, 2, 3]).unwrap();
+        let big: Vec<u8> = (0..BLOCK * 2 + 5)
+            .map(|i| u8::try_from(i % 251).unwrap())
+            .collect();
+        write_region(&mut file, 0x40_0000, 4, 0x2_0000, &big).unwrap();
         let s = Snapshot::read(file.as_slice()).unwrap();
         assert_eq!(s.fpu_control, 0x027f);
         assert_eq!(s.region_at(0x1fff).unwrap().base, 0x1000);
         assert!(s.region_at(0x2000).is_none());
         assert_eq!(s.region_at(0x8002).unwrap().bytes().unwrap(), [1, 2, 3]);
+        assert_eq!(s.region_at(0x40_0000).unwrap().bytes().unwrap(), big);
     }
 }

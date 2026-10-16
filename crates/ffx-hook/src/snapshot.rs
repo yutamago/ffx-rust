@@ -13,7 +13,7 @@ use std::io::{BufWriter, Write};
 
 use windows_sys::Win32::System::Memory::{
     MEM_COMMIT, MEM_IMAGE, MEM_PRIVATE, MEMORY_BASIC_INFORMATION, PAGE_GUARD, PAGE_NOACCESS,
-    VirtualQuery,
+    PAGE_NOCACHE, PAGE_WRITECOMBINE, VirtualQuery,
 };
 
 use ffx_bridge::snapshot::{Snapshot, write_region};
@@ -51,8 +51,10 @@ pub fn take(path: &str) -> Result<(u32, u64), String> {
         }
         let base = info.BaseAddress as usize;
         let size = info.RegionSize;
+        // Write-combined and uncached pages are the GPU's, not game state,
+        // and slow (or unsafe) to read.
         let readable = info.State == MEM_COMMIT
-            && info.Protect & (PAGE_NOACCESS | PAGE_GUARD) == 0
+            && info.Protect & (PAGE_NOACCESS | PAGE_GUARD | PAGE_NOCACHE | PAGE_WRITECOMBINE) == 0
             && info.Protect != 0;
         let ours = info.Type == MEM_PRIVATE
             || (info.Type == MEM_IMAGE && base >= image && base < image_end);
@@ -71,12 +73,28 @@ pub fn take(path: &str) -> Result<(u32, u64), String> {
     Snapshot::write_header(&mut w, image as u32, fpu_control(), count)
         .map_err(|e| e.to_string())?;
     let mut total = 0u64;
+    let mut bytes = Vec::new();
     for (base, size, protect, kind) in regions {
-        // SAFETY: the region was committed and readable a moment ago; the
-        // game thread is here, not freeing it.
-        let bytes = unsafe { std::slice::from_raw_parts(base as *const u8, size) };
+        // Copied with ReadProcessMemory, which fails instead of faulting
+        // when another thread frees or protects a page meanwhile; such
+        // pages are left zero.
+        bytes.clear();
+        bytes.resize(size, 0);
+        for off in (0..size).step_by(0x10_0000) {
+            let n = (size - off).min(0x10_0000);
+            if crate::harness::read_memory(base + off, n)
+                .map(|v| bytes[off..off + n].copy_from_slice(&v))
+                .is_err()
+            {
+                for page in (off..off + n).step_by(0x1000) {
+                    if let Ok(v) = crate::harness::read_memory(base + page, 0x1000) {
+                        bytes[page..page + 0x1000].copy_from_slice(&v);
+                    }
+                }
+            }
+        }
         #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        write_region(&mut w, base as u32, protect, kind, bytes).map_err(|e| e.to_string())?;
+        write_region(&mut w, base as u32, protect, kind, &bytes).map_err(|e| e.to_string())?;
         total += size as u64;
     }
     w.flush().map_err(|e| e.to_string())?;
