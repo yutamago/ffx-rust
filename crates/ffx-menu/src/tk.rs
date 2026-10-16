@@ -187,10 +187,6 @@ pub mod bridge {
     pub const MENU_MAIN_MAX_OPTIONS: Global<u32> = Global::new(0x0187_1688);
     /// The menu's packet pointer (`TkMenuDrawEnv` appends there).
     pub const MENU_PACKET: Global<u32> = Global::new(0x0187_1530);
-    /// The menu scissor: on (`u32`), then the XYUV mode (`u8`).
-    pub const MENU_SCISSOR_ON: Global<u32> = Global::new(0x0187_16d0);
-    /// See [`MENU_SCISSOR_ON`].
-    pub const MENU_SCISSOR_XYUV: Global<u8> = Global::new(0x0187_16d4);
     /// `TkSndSetStandbyVoice`.
     pub const SND_STANDBY_VOICE: Global<u32> = Global::new(0x0132_ff1c);
     /// `TkSndReportStatus` (nonzero: busy).
@@ -491,12 +487,6 @@ pub mod bridge {
     /// `TkSetEvSaveStatus(p)` (`0x0088ea50`).
     pub fn tk_set_ev_save_status(mem: &mut impl Mem, p: u32) {
         mem.write(p.wrapping_add(0x2a), 1u8);
-    }
-
-    /// `CloseScissor()` (`0x008e5cd0`).
-    pub fn close_scissor(mem: &mut impl Mem) {
-        MENU_SCISSOR_ON.set(mem, 0);
-        MENU_SCISSOR_XYUV.set(mem, 0);
     }
 
     /// `TkMenuFlushDummyControler()` (`0x008ca490`): the pending input

@@ -11,7 +11,10 @@
 use std::path::PathBuf;
 
 use ffx_bridge::{Mem, Value};
-use ffx_menu::{gu::bridge as gu, msg::bridge as msg, scene::bridge as scene, tk::bridge as tk};
+use ffx_menu::{
+    gu::bridge as gu, msg::bridge as msg, scene::bridge as scene, scissor::bridge as scissor,
+    tk::bridge as tk,
+};
 use ffx_oracle::{Conv, Oracle, Pages};
 
 struct Xorshift(u32);
@@ -941,7 +944,9 @@ fn tk_matches_the_original() {
         ("TkMenuFlushDummyControler", 0x008c_a490, |o, _| {
             tk::tk_menu_flush_dummy_controler(o);
         }),
-        ("CloseScissor", 0x008e_5cd0, |o, _| tk::close_scissor(o)),
+        ("CloseScissor", 0x008e_5cd0, |o, _| {
+            scissor::close_scissor(o);
+        }),
         ("TkMenuCloseSubCmdWindow", 0x008e_36f0, |o, _| {
             tk::tk_menu_close_sub_cmd_window(o);
         }),
@@ -954,7 +959,7 @@ fn tk_matches_the_original() {
         // what the setters read or keep
         t.scramble(tk::MENU_HELP_MESSAGE.sym, 12);
         t.scramble(tk::MENU_DUMMY_CONTROLER.sym, 16);
-        t.scramble(tk::MENU_SCISSOR_ON.sym, 8);
+        t.scramble(scissor::SCISSOR_ON.sym, 8);
         let sub = if t.rng.below(3) == 0 {
             0
         } else {
@@ -1143,6 +1148,133 @@ fn tk_matches_the_original() {
         });
     } else {
         eprintln!("no summon growth table in this snapshot; TkMn2GetSummonGrow skipped");
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+impl Xorshift {
+    /// A float in `lo..hi`.
+    #[allow(clippy::cast_precision_loss)]
+    fn float(&mut self, lo: f32, hi: f32) -> f32 {
+        lo + (hi - lo) * (self.next() as f32 / u32::MAX as f32)
+    }
+}
+
+#[test]
+fn floats_match_the_original() {
+    let Some(mut t) = setup(0xf10a_7001) else {
+        return;
+    };
+    let pi = std::f32::consts::PI;
+    let mut angles = vec![
+        0.0,
+        -0.0,
+        pi,
+        -pi,
+        f32::from_bits(pi.to_bits() + 1),
+        -f32::from_bits(pi.to_bits() + 1),
+        f32::from_bits(pi.to_bits() - 1),
+        std::f32::consts::TAU,
+        -std::f32::consts::TAU,
+        1000.0,
+        -99_999.0,
+        f32::NAN,
+    ];
+    angles.extend((0..2000).map(|_| t.rng.float(-50.0, 50.0)));
+    for a in angles {
+        let r =
+            t.a.call(t.a.rebase(0x0088_bc20), Conv::Cdecl, &[a.to_bits()])
+                .unwrap();
+        let want = r.st0.expect("a float in st0");
+        let got = f64::from(ffx_menu::math::wrap_angle(a));
+        assert!(
+            want.to_bits() == got.to_bits() || (want.is_nan() && got.is_nan()),
+            "Math_WrapAngle({a}): {want} vs {got}"
+        );
+    }
+    let specials = [
+        0.0,
+        -0.0,
+        1e-30,
+        1e-45,
+        1e20,
+        1e30,
+        f32::INFINITY,
+        f32::NAN,
+        -3.0,
+    ];
+    for k in 0..3000 {
+        let mut v = [0f32; 4];
+        for x in &mut v {
+            *x = if k % 4 == 0 {
+                t.rng.pick(&specials)
+            } else {
+                t.rng.float(-100.0, 100.0)
+            };
+        }
+        if k % 4 == 1 {
+            // on the boundary: r within an ulp or two of the distance
+            #[allow(clippy::cast_possible_truncation)]
+            let d = (f64::from(v[1] * v[1]) + f64::from(v[2] * v[2]) + f64::from(v[3] * v[3]))
+                .sqrt() as f32;
+            let nudge = t.rng.below(5).cast_signed() - 2;
+            v[0] = f32::from_bits(d.to_bits().wrapping_add_signed(nudge));
+        }
+        let args = v.map(f32::to_bits);
+        t.twin("Math_InRadius", 0x0088_b730, &args, U32, |_| {
+            w(u32::from(ffx_menu::math::in_radius(v[0], v[1], v[2], v[3])))
+        });
+    }
+    // the scissor: random boxes, scales and rectangles, the pointers into
+    // one block (sometimes the same float twice)
+    for k in 0..4000 {
+        let on = t.rng.pick(&[1u32, 1, 1, 0, 2]);
+        t.put(t.sym(scissor::SCISSOR_ON.sym), on);
+        let xyuv = t.rng.pick(&[0u8, 1, 1, 2]);
+        t.put(t.sym(scissor::SCISSOR_XYUV.sym), xyuv);
+        let any = t.rng.float(0.1, 4.0);
+        let scale_a = t.rng.pick(&[1.0, 0.5, 2.0, any]);
+        let any = t.rng.float(0.1, 4.0);
+        let scale_b = t.rng.pick(&[1.0, 0.75, any]);
+        t.put(t.sym(scissor::SCISSOR_SCALES.sym), [scale_a, scale_b]);
+        let (l, top) = (t.rng.float(-50.0, 300.0), t.rng.float(-50.0, 200.0));
+        let bx = [
+            l,
+            top,
+            l + t.rng.float(0.0, 400.0),
+            top + t.rng.float(0.0, 300.0),
+        ];
+        t.put(t.sym(scissor::SCISSOR_BOX.sym), bx);
+        let x0 = t.rng.float(-200.0, 700.0);
+        let y0 = t.rng.float(-200.0, 500.0);
+        let q = [
+            x0,
+            y0,
+            x0 + t.rng.float(-50.0, 500.0),
+            y0 + t.rng.float(-50.0, 400.0),
+            t.rng.float(0.0, 1.0),
+            t.rng.float(0.0, 1.0),
+            t.rng.float(0.0, 1.0),
+            t.rng.float(0.0, 1.0),
+        ];
+        let q = if k % 50 == 0 {
+            [bx[0], bx[1], bx[2], bx[3], 0.0, 0.0, 1.0, 1.0]
+        } else {
+            q
+        };
+        let mut bytes = Vec::new();
+        for v in q {
+            bytes.extend(v.to_le_bytes());
+        }
+        let block = t.alloc(&bytes);
+        let mut at: [u32; 8] = std::array::from_fn(|n| block + 4 * u32::try_from(n).unwrap());
+        if k % 10 == 7 {
+            let (p, r) = (t.rng.below(8) as usize, t.rng.below(8) as usize);
+            at[p] = at[r];
+        }
+        t.twin("BeginScissor_XYUV", 0x008e_5a20, &at, U32, |o| {
+            w(u32::from(scissor::begin_scissor_xyuv_at(o, at)))
+        });
     }
     eprintln!("{} calls", t.calls);
 }

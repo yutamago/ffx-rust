@@ -5,7 +5,10 @@
 //! widen them (`movzx`/`movsx`), so callers reading all of `eax` see the
 //! same value.
 
-use ffx_menu::{gu::bridge as gu, msg::bridge as msg, scene::bridge as scene, tk::bridge as tk};
+use ffx_menu::{
+    gu::bridge as gu, msg::bridge as msg, scene::bridge as scene, scissor::bridge as scissor,
+    tk::bridge as tk,
+};
 
 use super::{mem, ported};
 
@@ -263,6 +266,14 @@ ported! {
     TkSetFadeOut @ 0x0088_eb50 => extern "C" fn tk_set_fade_out(v: u32) {
         tk::tk_set_fade_out(&mut mem(), v);
     }
+    /// `Math_InRadius(r, dx, dy, dz)`.
+    Math_InRadius @ 0x0088_b730 => extern "C" fn math_in_radius(r: f32, dx: f32, dy: f32, dz: f32) -> u32 {
+        u32::from(ffx_menu::math::in_radius(r, dx, dy, dz))
+    }
+    /// `Math_WrapAngle(a)`: in `st0`.
+    Math_WrapAngle @ 0x0088_bc20 => extern "C" fn math_wrap_angle(a: f32) -> f32 {
+        ffx_menu::math::wrap_angle(a)
+    }
     /// `TkSetDebugFontLocate(x, y)`.
     TkSetDebugFontLocate @ 0x0088_faf0 => extern "C" fn tk_set_debug_font_locate(x: i32, y: i32) {
         tk::tk_set_debug_font_locate(&mut mem(), x, y);
@@ -412,9 +423,13 @@ ported! {
     TkMenuRestartSubCmdWindow2 @ 0x008e_49d0 => extern "C" fn tk_menu_restart_sub_cmd_window2() {
         tk::tk_menu_restart_sub_cmd_window2(&mut mem());
     }
+    /// `BeginScissor_XYUV(&x0, &y0, &x1, &y1, &u0, &v0, &u1, &v1)`.
+    BeginScissor_XYUV @ 0x008e_5a20 => extern "C" fn begin_scissor_xyuv(x0: u32, y0: u32, x1: u32, y1: u32, u0: u32, v0: u32, u1: u32, v1: u32) -> u32 {
+        u32::from(scissor::begin_scissor_xyuv_at(&mut mem(), [x0, y0, x1, y1, u0, v0, u1, v1]))
+    }
     /// `CloseScissor()`.
     CloseScissor @ 0x008e_5cd0 => extern "C" fn close_scissor() {
-        tk::close_scissor(&mut mem());
+        scissor::close_scissor(&mut mem());
     }
     /// `get_ptr32_func(p)`: `p`.
     get_ptr32_func @ 0x00a4_4650 => extern "C" fn get_ptr32_func(p: u32) -> u32 {
