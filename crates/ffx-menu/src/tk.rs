@@ -2200,6 +2200,380 @@ pub mod bridge {
                 .wrapping_add(i.wrapping_mul(4)),
         )
     }
+
+    // ---- round 5: memory card wrappers, Mn2 kernel lookups, config
+    // callbacks, vibration streams ----
+
+    /// The memory card port and the one the last call used.
+    pub const MC_PORT: Global<[u32; 2]> = Global::new(0x0133_0230);
+
+    /// The `TkMc*` wrappers (`TkMcOpen` and kin): most copy the port to
+    /// the last-used one; then on the PC every `sceMc*` stub returns 0, as
+    /// does the TGS path, so the result is always 0.
+    pub fn tk_mc_call(mem: &mut impl Mem, sets_port: bool) -> u32 {
+        if sets_port {
+            let [port, _] = MC_PORT.get(mem);
+            MC_PORT.set(mem, [port, port]);
+        }
+        0
+    }
+
+    /// `TkMcGetInfo(port, ...)` (`0x008882c0`): its port becomes the last
+    /// used one; 0 (the `sceMcGetInfo` stub).
+    pub fn tk_mc_get_info(mem: &mut impl Mem, port: u32) -> u32 {
+        let [p, _] = MC_PORT.get(mem);
+        MC_PORT.set(mem, [p, port]);
+        0
+    }
+
+    /// The debug font buffer pointer (`TkGetDebugFontBuffer` reads its
+    /// first word).
+    pub const DEBUG_FONT_BUFFER: Global<u32> = Global::new(0x0133_c8cc);
+
+    /// `TkGetDebugFontBuffer()` (`0x0088edc0`): `get_ptr32_func` of the
+    /// buffer's first word.
+    pub fn tk_get_debug_font_buffer(mem: &impl Mem) -> u32 {
+        crate::get_ptr32_func(mem.read(DEBUG_FONT_BUFFER.get(mem)))
+    }
+
+    /// `TkMn2GetExcelData(id, table)` (`0x008c1af0`): `MsGetExcelData`'s
+    /// record (the strings go to a local it drops).
+    pub fn tk_mn2_get_excel_data(mem: &impl Mem, id: i32, table: u32) -> u32 {
+        ffx_kernel::bridge::excel_data(mem, id, table).0
+    }
+
+    /// `TkMn2GetKaizou()` (`0x008c1b70`): `MsGetRomKaizou`'s first record.
+    pub fn tk_mn2_get_kaizou(mem: &mut impl Mem) -> u32 {
+        ffx_kernel::bridge::first_record(mem, ffx_kernel::bridge::KAIZOU, 0)
+    }
+
+    /// `TkMn2GetKaizouMax()` (`0x008c1b90`): the customize table's record
+    /// count (first segment).
+    pub fn tk_mn2_get_kaizou_max(mem: &impl Mem) -> i32 {
+        let t = ffx_kernel::bridge::KAIZOU.get(mem);
+        ffx_kernel::bridge::ms_get_excel_data_num(mem, t, 0)
+    }
+
+    /// Two Mn2 words `TkMn2InitWork` clears.
+    pub const MN2_WORK: [Global<u32>; 2] = [Global::new(0x0186_a240), Global::new(0x0186_a248)];
+
+    /// `TkMn2InitWork()` (`0x008c1c50`): the Mn2 counters to 0, the
+    /// name-mode count to 1.
+    pub fn tk_mn2_init_work(mem: &mut impl Mem) {
+        MN2_WORK[0].set(mem, 0);
+        MN2_WORK[1].set(mem, 0);
+        MENU_SUMMON_GROW_MAX.set(mem, 0);
+        MN2_LIST_MAX.set(mem, 0);
+        MN2_NAME_MODE_MAX.set(mem, 1);
+    }
+
+    /// `MenuMn2_StepDrawY80(...)` (`0x008c0dd0`, own name): the draw y
+    /// becomes `MenuMn2_Plus80(y + 16)`; returns it.
+    pub fn menu_mn2_step_draw_y80(mem: &mut impl Mem) -> u32 {
+        let v = super::plus_80(MN2_DRAW_Y.get(mem).wrapping_add(0x10));
+        MN2_DRAW_Y.set(mem, v);
+        v
+    }
+
+    /// `MenuItem_AddMP(chr, n)` (`0x008c8e20`, own name): MP + `n`, capped
+    /// at the maximum (signed); the record back (from `TkMenuSetMP`).
+    pub fn menu_item_add_mp(mem: &mut impl Mem, chr: u32, n: u32) -> u32 {
+        let mp = tk_menu_get_ply(mem, chr, 0x20).wrapping_add(n);
+        let max = tk_menu_get_ply(mem, chr, 0x28);
+        let mp = if mp.cast_signed() < max.cast_signed() {
+            mp
+        } else {
+            max
+        };
+        tk_menu_set_ply(mem, chr, 0x20, mp)
+    }
+
+    /// The party members' bit mask (`MenuParty_RefreshMask`).
+    pub const MENU_PARTY_BITS: Global<u32> = Global::new(0x0184_1c2c);
+
+    /// `MenuParty_RefreshMask()` (`0x008aae30`, own name): one bit per
+    /// party slot (`TkMenuGetPlayerPartyMask` of them) that holds a
+    /// character, by its id.
+    pub fn menu_party_refresh_mask(mem: &mut impl Mem) {
+        MENU_PARTY_BITS.set(mem, 0);
+        let n = MENU_PLAYER_PARTY_MASK.get(mem).cast_signed();
+        let base = MENU_PLAYERS.ptr(mem).addr;
+        let mut bits = 0u32;
+        for i in 0..n.max(0).cast_unsigned() {
+            let c = mem.read::<u8>(base.wrapping_add(i));
+            if c != 0xff {
+                bits |= 1 << (c & 0x1f);
+            }
+        }
+        MENU_PARTY_BITS.set(mem, bits);
+    }
+
+    /// `Pad_RefreshActuatorMode()` (`0x00872480`, own name): pad 0's
+    /// actuator mode from the menu setting bit 4.
+    pub fn pad_refresh_actuator_mode(mem: &mut impl Mem) -> u32 {
+        let on = (mem.read::<u8>(save::ms_get_save_menu(mem)) >> 4) & 1;
+        tk_set_controler_actuator_mode(mem, 0, 0, on)
+    }
+
+    /// `Pad_GetFrame(pad, port, i)` (`0x00888b80`, own name):
+    /// `TkGetControlerFrame(TkGetControlerWork(pad, port), i)`.
+    pub fn pad_get_frame(mem: &impl Mem, pad: i32, port: i32, i: i32) -> u32 {
+        tk_get_controler_frame(mem, tk_get_controler_work(mem, pad, port), i)
+    }
+
+    fn menu_word(mem: &impl Mem) -> u32 {
+        mem.read(save::ms_get_save_menu(mem))
+    }
+
+    /// The config menu's read callbacks (`MenuConfig_GetBit1` and kin):
+    /// option `+8` = menu setting bit `bit`, inverted when `invert`; the
+    /// option back.
+    pub fn menu_config_get_bit(mem: &mut impl Mem, option: u32, bit: u32, invert: bool) -> u32 {
+        let v = ((menu_word(mem) >> bit) & 1) ^ u32::from(invert);
+        mem.write(option.wrapping_add(8), v);
+        option
+    }
+
+    /// The config menu's write callbacks (`MenuConfig_SetBit5` and kin):
+    /// the menu setting bits `mask` set when option `+8` is 0 (`set_on_0`)
+    /// or nonzero, cleared otherwise; the setting's address back.
+    pub fn menu_config_set_bits(mem: &mut impl Mem, option: u32, mask: u32, set_on_0: bool) -> u32 {
+        let at = save::ms_get_save_menu(mem);
+        let v = mem.read::<u32>(at);
+        let set = (mem.read::<u32>(option.wrapping_add(8)) == 0) == set_on_0;
+        mem.write(at, if set { v | mask } else { v & !mask });
+        at
+    }
+
+    /// `MenuConfig_SetBit9(option)` (`0x008cadb0`): option `+0xc` = bit 8,
+    /// then bit 9 set when `+8` is 0, cleared otherwise.
+    pub fn menu_config_set_bit9(mem: &mut impl Mem, option: u32) -> u32 {
+        let bit8 = (menu_word(mem) >> 8) & 1;
+        mem.write(option.wrapping_add(0xc), bit8);
+        menu_config_set_bits(mem, option, 0x200, true)
+    }
+
+    /// `MenuConfig_GetBit5(option)` (`0x008cade0`): `+8` = !bit 5, `+0xc`
+    /// = bit 8; returns 0 or -1 by bit 8 (left in `eax`).
+    pub fn menu_config_get_bit5(mem: &mut impl Mem, option: u32) -> u32 {
+        let m = menu_word(mem);
+        mem.write(option.wrapping_add(0xc), 1u32);
+        mem.write(option.wrapping_add(8), (!m >> 5) & 1);
+        let keep = if m & 0x100 != 0 { u32::MAX } else { 0 };
+        let v = mem.read::<u32>(option.wrapping_add(0xc)) & keep;
+        mem.write(option.wrapping_add(0xc), v);
+        keep
+    }
+
+    /// `MenuConfig_GetBit8(option)` (`0x008cb490`): `+0xc` = 1, `+8` =
+    /// !bit 8; returns `+8`'s value.
+    pub fn menu_config_get_bit8(mem: &mut impl Mem, option: u32) -> u32 {
+        mem.write(option.wrapping_add(0xc), 1u32);
+        let v = (!menu_word(mem) >> 8) & 1;
+        mem.write(option.wrapping_add(8), v);
+        v
+    }
+
+    /// `MenuConfig_GetBit9(option)` (`0x008cb500`): `+0xc` = bit 8, `+8` =
+    /// !bit 9; returns `+8`'s value.
+    pub fn menu_config_get_bit9(mem: &mut impl Mem, option: u32) -> u32 {
+        let m = menu_word(mem);
+        mem.write(option.wrapping_add(0xc), (m >> 8) & 1);
+        let v = (!menu_word(mem) >> 9) & 1;
+        mem.write(option.wrapping_add(8), v);
+        v
+    }
+
+    /// `MenuConfig_GetEnglish(option)` (`0x008cafd0`): `+8` =
+    /// `MsGetSaveConfigEnglish() != 1`; that stub returns 0 on the PC, so
+    /// 1. Returns the value.
+    pub fn menu_config_get_english(mem: &mut impl Mem, option: u32) -> u32 {
+        mem.write(option.wrapping_add(8), 1u32);
+        1
+    }
+
+    /// `MenuConfig_SetEnglish(option)` (`0x008caff0`):
+    /// `MsSetSaveConfigEnglish(+8 == 0)` with the game language.
+    pub fn menu_config_set_english(mem: &mut impl Mem, option: u32) {
+        let on = u32::from(mem.read::<u32>(option.wrapping_add(8)) == 0);
+        let lang = i32::from(LANG.get(mem));
+        ffx_battle::minor::bridge::ms_set_save_config_english(mem, on, lang);
+    }
+
+    /// `MenuConfig_GetSaveFlag(option)` (`0x008cb090`): `+8` = save byte
+    /// `+0x5ec` bit 0; the option back.
+    pub fn menu_config_get_save_flag(mem: &mut impl Mem, option: u32) -> u32 {
+        let v = u32::from(mem.read::<u8>(event(mem) + 0x5ec) & 1);
+        mem.write(option.wrapping_add(8), v);
+        option
+    }
+
+    /// `Vibrate_ResetStream(stream)` (`0x00875f30`, own name): `+4` = 0,
+    /// `u16` `+8` = 0, `+0xa` = 0; returns 0.
+    pub fn vibrate_reset_stream(mem: &mut impl Mem, stream: u32) -> u32 {
+        mem.write(stream.wrapping_add(4), 0u32);
+        mem.write(stream.wrapping_add(8), 0u16);
+        mem.write(stream.wrapping_add(0xa), 0u8);
+        0
+    }
+
+    /// `Vibrate_ResetPad(pad)` (`0x00875ef0`, own name): state `+0x22` and
+    /// `u16` `+0x20` cleared, then both 16-byte streams reset; returns 0.
+    pub fn vibrate_reset_pad(mem: &mut impl Mem, pad: u32) -> u32 {
+        mem.write(pad.wrapping_add(0x22), 0u8);
+        mem.write(pad.wrapping_add(0x20), 0u16);
+        vibrate_reset_stream(mem, pad);
+        vibrate_reset_stream(mem, pad.wrapping_add(0x10))
+    }
+
+    /// `Vibrate_HoldStream(stream)` (`0x00876160`, own name): `+4` =
+    /// `0xfffe0000`, `u16` `+8` = 0; returns `is_ptr32_null` of its
+    /// pointer.
+    pub fn vibrate_hold_stream(mem: &mut impl Mem, stream: u32) -> u32 {
+        let p = mem.read::<u32>(stream);
+        mem.write(stream.wrapping_add(4), 0xfffe_0000u32);
+        mem.write(stream.wrapping_add(8), 0u16);
+        u32::from(crate::is_ptr32_null(p))
+    }
+
+    /// `Vibrate_StartStream(stream, curve)` (`0x00876350`, own name): from
+    /// the curve header (`u8` level, `u8` length, `u8` flag): `u16` `+4` =
+    /// 0, `+6` = (length + 1) × 2, `+8` level, `+9` flag; the stream's
+    /// pointer = the data after the first two bytes, returned.
+    pub fn vibrate_start_stream(mem: &mut impl Mem, stream: u32, curve: u32) -> u32 {
+        let data = curve.wrapping_add(2);
+        mem.write(stream.wrapping_add(4), 0u16);
+        let len = mem.read::<u8>(curve.wrapping_add(1));
+        mem.write(
+            stream.wrapping_add(6),
+            u16::from(len).wrapping_add(1).wrapping_mul(2),
+        );
+        let level = mem.read::<u8>(curve);
+        mem.write(stream.wrapping_add(8), level);
+        let flag = mem.read::<u8>(data);
+        mem.write(stream.wrapping_add(9), flag);
+        mem.write(stream, data);
+        data
+    }
+
+    /// `Vibrate_CheckDone(pad)` (`0x00875d30`, own name): state 1 ends when
+    /// both streams' `+6` are `0x200`, state 2 when both are `0xfffe`;
+    /// returns `pad`.
+    pub fn vibrate_check_done(mem: &mut impl Mem, pad: u32) -> u32 {
+        let want = match mem.read::<u8>(pad.wrapping_add(0x22)) {
+            1 => 0x200u16,
+            2 => 0xfffe,
+            _ => return pad,
+        };
+        if mem.read::<u16>(pad.wrapping_add(6)) == want
+            && mem.read::<u16>(pad.wrapping_add(0x16)) == want
+        {
+            mem.write(pad.wrapping_add(0x22), 0u8);
+        }
+        pad
+    }
+
+    /// The item menu's key-item-use flag (`MenuItem_IsUsable2`).
+    pub const MENU_ITEM_KEY_USE: Global<u8> = Global::new(0x0186_a280);
+
+    /// `MenuItem_IsUsable2(window, list)` (`0x008c3550`, own name): list 4,
+    /// or list 3 with a target, is usable when the key-item flag is set;
+    /// other lists always.
+    pub fn menu_item_is_usable2(mem: &impl Mem, list: i32) -> u32 {
+        if list == 4 || (list == 3 && MENU_ITEM_SELECTED_LIST.get(mem).cast_signed() >= 0) {
+            u32::from(MENU_ITEM_KEY_USE.get(mem) != 0)
+        } else {
+            1
+        }
+    }
+
+    /// The equipment menu's chosen item id (`0xff` for none).
+    pub const MENU_EQUIP_ITEM: Global<u32> = Global::new(0x0186_a630);
+
+    /// `MenuEquip_PickItem()` (`0x008d0430`, own name): the id of the item
+    /// list entry under the equipment window's cursor (`i16` `+0x48`), or
+    /// `0xff` when empty; returns the id read.
+    pub fn menu_equip_pick_item(mem: &mut impl Mem) -> u32 {
+        let w = EQUIP_WINDOW.get(mem);
+        let i = i32::from(mem.read::<i16>(w.wrapping_add(0x48))).cast_unsigned();
+        let id = u32::from(
+            mem.read::<u16>(MENU_ITEM_LIST.ptr(mem).addr.wrapping_add(i.wrapping_mul(4))),
+        );
+        MENU_EQUIP_ITEM.set(mem, if id == 0 { 0xff } else { id });
+        id
+    }
+
+    /// `MenuSaveLoad_Reset(v)` (`0x008b4e70`, own name): two flags and two
+    /// words of the save/load menu cleared, the second window's `+0x58` =
+    /// `v`; that window back.
+    pub fn menu_save_load_reset(mem: &mut impl Mem, v: u32) -> u32 {
+        let w = SAVE_LOAD_WINDOW2.get(mem);
+        mem.write(mem.rebase(0x0186_628b), 0u8);
+        mem.write(mem.rebase(0x0186_62f3), 0u8);
+        mem.write(mem.rebase(0x0186_627c), 0u32);
+        mem.write(mem.rebase(0x0186_6280), 0u32);
+        mem.write(w.wrapping_add(0x58), v);
+        w
+    }
+
+    /// The main menu's task (a pointer to a code pointer;
+    /// `MenuMain_GetTask`).
+    pub const MENU_MAIN_TASK: Global<u32> = Global::new(0x0184_0874);
+
+    /// The sine table `Math_SinLookup` reads (`u16` entries).
+    pub const SIN_LOOKUP: Global<u16> = Global::new(0x023c_bee0);
+
+    /// `Math_SinLookup(x)` (`0x0088e730`, own name): entry `x / 64`
+    /// (truncating toward 0); the original loads it into `ax`, so the upper
+    /// half of `eax` is the index's.
+    pub fn math_sin_lookup(mem: &impl Mem, x: i32) -> u32 {
+        let i = x.wrapping_add((x >> 31) & 0x3f) >> 6;
+        let at = SIN_LOOKUP
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.cast_unsigned().wrapping_mul(2));
+        (i.cast_unsigned() & 0xffff_0000) | u32::from(mem.read::<u16>(at))
+    }
+
+    /// `Math_CosLookup(x)` (`0x0088e750`, own name): `Math_SinLookup` of
+    /// `0x1000 - x`.
+    pub fn math_cos_lookup(mem: &impl Mem, x: i32) -> u32 {
+        math_sin_lookup(mem, 0x1000i32.wrapping_sub(x))
+    }
+
+    /// `Table_PairWord(table, i, second)` (`0x008725c0`, own name): word 0
+    /// or 1 of the 8-byte entry `i`.
+    pub fn table_pair_word(mem: &impl Mem, table: u32, i: u32, second: bool) -> u32 {
+        mem.read(
+            table
+                .wrapping_add(i.wrapping_mul(8))
+                .wrapping_add(if second { 4 } else { 0 }),
+        )
+    }
+
+    /// `Ref_Deref(ref)` (`0x008725a0`, own name): the word at `ref[1]` past
+    /// the base pointer `+0x20` of the object `ref[0]`.
+    pub fn ref_deref(mem: &impl Mem, r: u32) -> u32 {
+        let obj = mem.read::<u32>(r);
+        let base = mem.read::<u32>(obj.wrapping_add(0x20));
+        let off = mem.read::<u32>(r.wrapping_add(4));
+        mem.read(base.wrapping_add(off))
+    }
+
+    /// `MenuStatus_ResetEntry(entry)` (`0x008dea20`, own name): `u16` `+0`
+    /// and `+0x2c` cleared; returns 0.
+    pub fn menu_status_reset_entry(mem: &mut impl Mem, entry: u32) -> u32 {
+        mem.write(entry, 0u16);
+        mem.write(entry.wrapping_add(0x2c), 0u32);
+        0
+    }
+
+    /// The `+0x1c` clearing window callbacks (`MenuHdd_WindowReset` and
+    /// kin); the window back.
+    pub fn window_clear_1c(mem: &mut impl Mem, window: u32) -> u32 {
+        mem.write(window.wrapping_add(0x1c), 0u32);
+        window
+    }
 }
 
 #[cfg(test)]

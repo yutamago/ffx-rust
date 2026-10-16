@@ -1712,4 +1712,256 @@ ported! {
     TkMn2GetAbilityHelp @ 0x008c_1960 => extern "C" fn tk_mn2_get_ability_help(id: u32) -> u32 {
         tk::tk_mn2_get_ability_help(&mut mem(), id)
     }
+    /// `TkMcChdir(dir)`: 0 (`sceMcChdir` stub).
+    TkMcChdir @ 0x0088_7fd0 => extern "C" fn tk_mc_chdir(_dir: u32) -> u32 {
+        tk::tk_mc_call(&mut mem(), true)
+    }
+    /// `TkMcClose()`: 0 (stub).
+    TkMcClose @ 0x0088_8010 => extern "C" fn tk_mc_close() -> u32 {
+        tk::tk_mc_call(&mut mem(), false)
+    }
+    /// `TkMcDelete(name)`: 0 (stub).
+    TkMcDelete @ 0x0088_8170 => extern "C" fn tk_mc_delete(_name: u32) -> u32 {
+        tk::tk_mc_call(&mut mem(), true)
+    }
+    /// `TkMcFlush()`: 0 (stub).
+    TkMcFlush @ 0x0088_81a0 => extern "C" fn tk_mc_flush() -> u32 {
+        tk::tk_mc_call(&mut mem(), false)
+    }
+    /// `TkMcFormat()`: 0 (stub).
+    TkMcFormat @ 0x0088_81c0 => extern "C" fn tk_mc_format() -> u32 {
+        tk::tk_mc_call(&mut mem(), true)
+    }
+    /// `TkMcGetDir(name, mode, max, table)`: 0 (stub).
+    TkMcGetDir @ 0x0088_8200 => extern "C" fn tk_mc_get_dir(_a: u32, _b: u32, _c: u32, _d: u32) -> u32 {
+        tk::tk_mc_call(&mut mem(), true)
+    }
+    /// `TkMcGetEntSpace(path)`: 0 (stub).
+    TkMcGetEntSpace @ 0x0088_8240 => extern "C" fn tk_mc_get_ent_space(_path: u32) -> u32 {
+        tk::tk_mc_call(&mut mem(), true)
+    }
+    /// `TkMcGetInfo(port, type, free, format)`: 0 (stub).
+    TkMcGetInfo @ 0x0088_82c0 => extern "C" fn tk_mc_get_info(port: u32, _a: u32, _b: u32, _c: u32) -> u32 {
+        tk::tk_mc_get_info(&mut mem(), port)
+    }
+    /// `TkMcMkdir(name)`: 0 (stub).
+    TkMcMkdir @ 0x0088_8330 => extern "C" fn tk_mc_mkdir(_name: u32) -> u32 {
+        tk::tk_mc_call(&mut mem(), true)
+    }
+    /// `TkMcOpen(name, mode)`: 0 (stub).
+    TkMcOpen @ 0x0088_8360 => extern "C" fn tk_mc_open(_name: u32, _mode: u32) -> u32 {
+        tk::tk_mc_call(&mut mem(), true)
+    }
+    /// `TkMcRead()`: 0 (stub).
+    TkMcRead @ 0x0088_83a0 => extern "C" fn tk_mc_read() -> u32 {
+        tk::tk_mc_call(&mut mem(), false)
+    }
+    /// `TkMcRename(old, new)`: 0 (stub).
+    TkMcRename @ 0x0088_83c0 => extern "C" fn tk_mc_rename(_old: u32, _new: u32) -> u32 {
+        tk::tk_mc_call(&mut mem(), true)
+    }
+    /// `TkMcSeek()`: 0 (stub).
+    TkMcSeek @ 0x0088_8400 => extern "C" fn tk_mc_seek() -> u32 {
+        tk::tk_mc_call(&mut mem(), false)
+    }
+    /// `TkMcSetFileInfo(name, info, flags)`: 0 (stub).
+    TkMcSetFileInfo @ 0x0088_8440 => extern "C" fn tk_mc_set_file_info(_a: u32, _b: u32, _c: u32) -> u32 {
+        tk::tk_mc_call(&mut mem(), true)
+    }
+    /// `TkVU1SyncPath()`: 0 (`sceGsSyncPath` stub).
+    TkVU1SyncPath @ 0x0088_ec60 => extern "C" fn tk_vu1_sync_path() -> u32 {
+        0
+    }
+    /// `TkGetDebugFontBuffer()`.
+    TkGetDebugFontBuffer @ 0x0088_edc0 => extern "C" fn tk_get_debug_font_buffer() -> u32 {
+        tk::tk_get_debug_font_buffer(&mem())
+    }
+    /// `Math_CosTable(angle)`: `Math_SinTable(angle + 0x2000)`.
+    Math_CosTable @ 0x0088_c120 => extern "C" fn math_cos_table(angle: u32) -> i32 {
+        ffx_menu::math::bridge::math_sin_table(&mem(), angle.wrapping_add(0x2000))
+    }
+    /// `Math_SinTable2(angle)`: `Math_SinTable(angle)`.
+    Math_SinTable2 @ 0x0088_c380 => extern "C" fn math_sin_table2(angle: u32) -> i32 {
+        ffx_menu::math::bridge::math_sin_table(&mem(), angle)
+    }
+    /// `Math_SinLookup(x)`.
+    Math_SinLookup @ 0x0088_e730 => extern "C" fn math_sin_lookup(x: i32) -> u32 {
+        tk::math_sin_lookup(&mem(), x)
+    }
+    /// `Math_CosLookup(x)`.
+    Math_CosLookup @ 0x0088_e750 => extern "C" fn math_cos_lookup(x: i32) -> u32 {
+        tk::math_cos_lookup(&mem(), x)
+    }
+    /// `TkMn2GetExcelData(id, table)`: the record.
+    TkMn2GetExcelData @ 0x008c_1af0 => extern "C" fn tk_mn2_get_excel_data(id: i32, table: u32) -> u32 {
+        tk::tk_mn2_get_excel_data(&mem(), id, table)
+    }
+    /// `TkMn2GetKaizou()`: the first customize record.
+    TkMn2GetKaizou @ 0x008c_1b70 => extern "C" fn tk_mn2_get_kaizou() -> u32 {
+        tk::tk_mn2_get_kaizou(&mut mem())
+    }
+    /// `TkMn2GetKaizouMax()`.
+    TkMn2GetKaizouMax @ 0x008c_1b90 => extern "C" fn tk_mn2_get_kaizou_max() -> i32 {
+        tk::tk_mn2_get_kaizou_max(&mem())
+    }
+    /// `TkMn2InitWork()`.
+    TkMn2InitWork @ 0x008c_1c50 => extern "C" fn tk_mn2_init_work() {
+        tk::tk_mn2_init_work(&mut mem());
+    }
+    /// `MenuMn2_StepDrawY80(...)`: the new y (left in `eax`).
+    MenuMn2_StepDrawY80 @ 0x008c_0dd0 => extern "C" fn menu_mn2_step_draw_y80() -> u32 {
+        tk::menu_mn2_step_draw_y80(&mut mem())
+    }
+    /// `MenuItem_AddMP(chr, n)`: the record (left in `eax`).
+    MenuItem_AddMP @ 0x008c_8e20 => extern "C" fn menu_item_add_mp(chr: u32, n: u32) -> u32 {
+        tk::menu_item_add_mp(&mut mem(), chr, n)
+    }
+    /// `MenuParty_RefreshMask()`.
+    MenuParty_RefreshMask @ 0x008a_ae30 => extern "C" fn menu_party_refresh_mask() {
+        tk::menu_party_refresh_mask(&mut mem());
+    }
+    /// `Pad_RefreshActuatorMode()`: the pad work (left in `eax`).
+    Pad_RefreshActuatorMode @ 0x0087_2480 => extern "C" fn pad_refresh_actuator_mode() -> u32 {
+        tk::pad_refresh_actuator_mode(&mut mem())
+    }
+    /// `Pad_GetFrame(pad, port, i)`.
+    Pad_GetFrame @ 0x0088_8b80 => extern "C" fn pad_get_frame(pad: i32, port: i32, i: i32) -> u32 {
+        tk::pad_get_frame(&mem(), pad, port, i)
+    }
+    /// `BtlEnd_GetNextAP(chr)`: `MsGetNextAP`.
+    BtlEnd_GetNextAP @ 0x008b_da40 => extern "C" fn btl_end_get_next_ap(chr: i32) -> i32 {
+        ffx_battle::menu::bridge::ms_get_next_ap(&mut mem(), chr)
+    }
+    /// `TkMenuGetPlayerDamegedColor(chr)`: `MenuPlayer_DamageClass`.
+    TkMenuGetPlayerDamegedColor @ 0x008b_9eb0 => extern "C" fn tk_menu_get_player_dameged_color(chr: u32) -> u32 {
+        tk::menu_player_damage_class(&mem(), chr, true)
+    }
+    /// `MenuConfig_SetBit9(option)`: the setting's address (left in `eax`).
+    MenuConfig_SetBit9 @ 0x008c_adb0 => extern "C" fn menu_config_set_bit9(option: u32) -> u32 {
+        tk::menu_config_set_bit9(&mut mem(), option)
+    }
+    /// `MenuConfig_GetBit5(option)`: 0 or -1 (left in `eax`).
+    MenuConfig_GetBit5 @ 0x008c_ade0 => extern "C" fn menu_config_get_bit5(option: u32) -> u32 {
+        tk::menu_config_get_bit5(&mut mem(), option)
+    }
+    /// `MenuConfig_SetBit5(option)`: the setting's address.
+    MenuConfig_SetBit5 @ 0x008c_ae20 => extern "C" fn menu_config_set_bit5(option: u32) -> u32 {
+        tk::menu_config_set_bits(&mut mem(), option, 0x20, true)
+    }
+    /// `MenuConfig_GetBit1(option)`: the option.
+    MenuConfig_GetBit1 @ 0x008c_ae40 => extern "C" fn menu_config_get_bit1(option: u32) -> u32 {
+        tk::menu_config_get_bit(&mut mem(), option, 1, false)
+    }
+    /// `MenuConfig_SetBit1(option)`: the setting's address.
+    MenuConfig_SetBit1 @ 0x008c_ae60 => extern "C" fn menu_config_set_bit1(option: u32) -> u32 {
+        tk::menu_config_set_bits(&mut mem(), option, 2, false)
+    }
+    /// `MenuConfig_GetBit10(option)`: the option.
+    MenuConfig_GetBit10 @ 0x008c_ae80 => extern "C" fn menu_config_get_bit10(option: u32) -> u32 {
+        tk::menu_config_get_bit(&mut mem(), option, 10, true)
+    }
+    /// `MenuConfig_SetBit10(option)`: the setting's address.
+    MenuConfig_SetBit10 @ 0x008c_aea0 => extern "C" fn menu_config_set_bit10(option: u32) -> u32 {
+        tk::menu_config_set_bits(&mut mem(), option, 0x400, true)
+    }
+    /// `MenuConfig_GetBit11(option)`: the option.
+    MenuConfig_GetBit11 @ 0x008c_aed0 => extern "C" fn menu_config_get_bit11(option: u32) -> u32 {
+        tk::menu_config_get_bit(&mut mem(), option, 11, true)
+    }
+    /// `MenuConfig_SetBit11(option)`: the setting's address.
+    MenuConfig_SetBit11 @ 0x008c_aef0 => extern "C" fn menu_config_set_bit11(option: u32) -> u32 {
+        tk::menu_config_set_bits(&mut mem(), option, 0x800, true)
+    }
+    /// `MenuConfig_GetBit6(option)`: the option.
+    MenuConfig_GetBit6 @ 0x008c_af20 => extern "C" fn menu_config_get_bit6(option: u32) -> u32 {
+        tk::menu_config_get_bit(&mut mem(), option, 6, true)
+    }
+    /// `MenuConfig_SetBit6(option)`: the setting's address.
+    MenuConfig_SetBit6 @ 0x008c_af40 => extern "C" fn menu_config_set_bit6(option: u32) -> u32 {
+        tk::menu_config_set_bits(&mut mem(), option, 0x40, true)
+    }
+    /// `MenuConfig_GetEnglish(option)`: 1 (left in `eax`).
+    MenuConfig_GetEnglish @ 0x008c_afd0 => extern "C" fn menu_config_get_english(option: u32) -> u32 {
+        tk::menu_config_get_english(&mut mem(), option)
+    }
+    /// `MenuConfig_SetEnglish(option)`.
+    MenuConfig_SetEnglish @ 0x008c_aff0 => extern "C" fn menu_config_set_english(option: u32) {
+        tk::menu_config_set_english(&mut mem(), option);
+    }
+    /// `MenuConfig_GetSaveFlag(option)`: the option.
+    MenuConfig_GetSaveFlag @ 0x008c_b090 => extern "C" fn menu_config_get_save_flag(option: u32) -> u32 {
+        tk::menu_config_get_save_flag(&mut mem(), option)
+    }
+    /// `MenuConfig_GetBit8(option)`: the value (left in `eax`).
+    MenuConfig_GetBit8 @ 0x008c_b490 => extern "C" fn menu_config_get_bit8(option: u32) -> u32 {
+        tk::menu_config_get_bit8(&mut mem(), option)
+    }
+    /// `MenuConfig_GetBit9(option)`: the value (left in `eax`).
+    MenuConfig_GetBit9 @ 0x008c_b500 => extern "C" fn menu_config_get_bit9(option: u32) -> u32 {
+        tk::menu_config_get_bit9(&mut mem(), option)
+    }
+    /// `Vibrate_ResetStream(stream)`: 0.
+    Vibrate_ResetStream @ 0x0087_5f30 => extern "C" fn vibrate_reset_stream(stream: u32) -> u32 {
+        tk::vibrate_reset_stream(&mut mem(), stream)
+    }
+    /// `Vibrate_ResetPad(pad)`: 0.
+    Vibrate_ResetPad @ 0x0087_5ef0 => extern "C" fn vibrate_reset_pad(pad: u32) -> u32 {
+        tk::vibrate_reset_pad(&mut mem(), pad)
+    }
+    /// `Vibrate_HoldStream(stream)`.
+    Vibrate_HoldStream @ 0x0087_6160 => extern "C" fn vibrate_hold_stream(stream: u32) -> u32 {
+        tk::vibrate_hold_stream(&mut mem(), stream)
+    }
+    /// `Vibrate_StartStream(stream, curve)`: the data pointer.
+    Vibrate_StartStream @ 0x0087_6350 => extern "C" fn vibrate_start_stream(stream: u32, curve: u32) -> u32 {
+        tk::vibrate_start_stream(&mut mem(), stream, curve)
+    }
+    /// `Vibrate_CheckDone(pad)`: `pad`.
+    Vibrate_CheckDone @ 0x0087_5d30 => extern "C" fn vibrate_check_done(pad: u32) -> u32 {
+        tk::vibrate_check_done(&mut mem(), pad)
+    }
+    /// `MenuItem_IsUsable2(window, list)`.
+    MenuItem_IsUsable2 @ 0x008c_3550 => extern "C" fn menu_item_is_usable2(_window: u32, list: i32) -> u32 {
+        tk::menu_item_is_usable2(&mem(), list)
+    }
+    /// `MenuEquip_PickItem()`: the id read.
+    MenuEquip_PickItem @ 0x008d_0430 => extern "C" fn menu_equip_pick_item() -> u32 {
+        tk::menu_equip_pick_item(&mut mem())
+    }
+    /// `MenuSaveLoad_Reset(v)`: the second window.
+    MenuSaveLoad_Reset @ 0x008b_4e70 => extern "C" fn menu_save_load_reset(v: u32) -> u32 {
+        tk::menu_save_load_reset(&mut mem(), v)
+    }
+    /// `Gu_Approach(cur, target, step)`.
+    Gu_Approach @ 0x0084_9270 => extern "C" fn gu_approach(cur: i32, target: i32, step: i32) -> i32 {
+        ffx_menu::gu::approach(cur, target, step)
+    }
+    /// `Gu_PrintSetMetrics(size)`: the ×4 metric.
+    Gu_PrintSetMetrics @ 0x0084_87e0 => extern "C" fn gu_print_set_metrics(size: i32) -> i32 {
+        gu::gu_print_set_metrics(&mut mem(), size)
+    }
+    /// `Gu_WindowGetWord8C(window)`.
+    Gu_WindowGetWord8C @ 0x0084_af60 => extern "C" fn gu_window_get_word8c(window: u32) -> i32 {
+        gu::gu_window_get_word8c(&mem(), window)
+    }
+    /// `Table_PairWord(table, i, second)`.
+    Table_PairWord @ 0x0087_25c0 => extern "C" fn table_pair_word(table: u32, i: u32, second: u32) -> u32 {
+        tk::table_pair_word(&mem(), table, i, second != 0)
+    }
+    /// `Ref_Deref(ref)`.
+    Ref_Deref @ 0x0087_25a0 => extern "C" fn ref_deref(r: u32) -> u32 {
+        tk::ref_deref(&mem(), r)
+    }
+    /// `MenuStatus_ResetEntry(entry)`: 0.
+    MenuStatus_ResetEntry @ 0x008d_ea20 => extern "C" fn menu_status_reset_entry(entry: u32) -> u32 {
+        tk::menu_status_reset_entry(&mut mem(), entry)
+    }
+    /// `MenuHdd_WindowReset(window)`: the window.
+    MenuHdd_WindowReset @ 0x008e_28e0 => extern "C" fn menu_hdd_window_reset(window: u32) -> u32 {
+        tk::window_clear_1c(&mut mem(), window)
+    }
+    /// `MenuMain_GetTask()`.
+    MenuMain_GetTask @ 0x008a_9b90 => extern "C" fn menu_main_get_task() -> u32 {
+        tk::MENU_MAIN_TASK.get(&mem())
+    }
 }
