@@ -3,6 +3,8 @@
 
 #![allow(dead_code)] // each test file uses its own share
 
+pub mod world;
+
 use std::path::PathBuf;
 
 use ffx_bridge::Global;

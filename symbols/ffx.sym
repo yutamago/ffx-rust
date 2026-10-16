@@ -7007,6 +7007,7 @@
 0x0112a8f5 label g_BtlExeKeep                # not 0: MsBattleExeClear keeps g_BtlExe
 0x0112a8f8 label g_BtlDebugNoDamageMonster    # u8, monsters take no damage (DebugCanTakeDamage); debug native case 2/0xc
 0x0112a8f9 label g_BtlDebugNoDamageParty      # u8, the party takes no damage (DebugCanTakeDamage); debug native case 1/2
+0x0112a901 label g_BtlDebugFreeMp             # u8, MsCheckUseCommand charges no MP (as for monsters); debug native case 4
 0x0112a906 label g_BtlDebugNoStatus           # u8, DmgCalc inflicts no statuses (skips DmgCalc_InflictStatus and _Extra)
 0x0112a908 label g_BtlDebugNoVariance         # i8, DmgCalc passes 1 - it as MsCalcDamageCommand's vary; debug native case 6
 0x0112a909 label g_BtlDebugNoCrit             # u8, DmgCalc skips DmgCalc_Crit; debug native case 7

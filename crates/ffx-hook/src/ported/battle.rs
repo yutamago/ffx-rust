@@ -1,7 +1,8 @@
 //! `ffx-battle`: random numbers, the save block, actors, the battle camera,
 //! battle globals and helpers, damage.
 
-use ffx_battle::{actor::bridge as actor, camera::bridge as camera, save::bridge as save};
+use ffx_battle::save::bridge as save;
+use ffx_battle::{actor::bridge as actor, camera::bridge as camera, command::bridge as cmd};
 use ffx_battle::{damage::bridge as dmg, state::bridge as state, util::bridge as util};
 
 use super::{call0, mem, ported};
@@ -683,5 +684,31 @@ ported! {
     /// `MsCalcDrainResult(user_id, target, command, results, damage, none)`.
     MsCalcDrainResult @ 0x0078_a240 => extern "C" fn ms_calc_drain_result(user_id: u32, target: u32, command: u32, results: u32, damage: u32, none: i32) {
         dmg::ms_calc_drain_result(&mut mem(), user_id, target, command, results, damage, none);
+    }
+
+    // Commands.
+    /// `MsGetCommand(chr, _, stop, list, &id)`: a command's kernel record.
+    MsGetCommand @ 0x0078_ce50 => extern "C" fn ms_get_command(_chr: u32, _unused: u32, stop: u32, list: u32, id: u32) -> u32 {
+        cmd::ms_get_command(&mut mem(), stop, list, id)
+    }
+    /// `MsGetCommandMP(chr, command)`.
+    MsGetCommandMP @ 0x0078_cf70 => extern "C" fn ms_get_command_mp(chr: u32, command: u32) -> i32 {
+        cmd::ms_get_command_mp(&mut mem(), chr, command)
+    }
+    /// `MsCheckUseCommand(chr, command, extra)`: its MP cost, or -1.
+    MsCheckUseCommand @ 0x0078_c690 => extern "C" fn ms_check_use_command(chr: u32, command: u32, extra: i32) -> i32 {
+        cmd::ms_check_use_command(&mut mem(), chr, command, extra)
+    }
+    /// `MsCalcMagic(cue, k)`.
+    MsCalcMagic @ 0x0078_ab20 => extern "C" fn ms_calc_magic(cue: u32, k: u32) -> i32 {
+        cmd::ms_calc_magic(&mut mem(), cue, k)
+    }
+    /// `MsCalcCostCTB(cue)`: the CTB rank.
+    MsCalcCostCTB @ 0x0078_95b0 => extern "C" fn ms_calc_cost_ctb(cue: u32) -> u32 {
+        cmd::ms_calc_cost_ctb(&mut mem(), cue)
+    }
+    /// `MsCalcDamageCTB(cue, ctb, rank, haste, slow)`.
+    MsCalcDamageCTB @ 0x0078_98d0 => extern "C" fn ms_calc_damage_ctb(cue: u32, ctb: u32, rank: i32, haste: u32, slow: u32) {
+        cmd::ms_calc_damage_ctb(&mut mem(), cue, ctb, rank, haste, slow);
     }
 }
