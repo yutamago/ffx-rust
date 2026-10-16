@@ -269,6 +269,9 @@ impl Oracle {
         uc.mem_map(stack_base, STACK_SIZE, Prot::READ | Prot::WRITE)?;
         uc.mem_map(heap_base, HEAP_SIZE, Prot::READ | Prot::WRITE)?;
         uc.mem_map(stub_base, STUB_SIZE, Prot::ALL)?;
+        let teb_base = gap(&mut taken, 2 * PAGE)?;
+        uc.mem_map(teb_base, 2 * PAGE, Prot::READ | Prot::WRITE)?;
+        thread_block(&mut uc, teb_base, stack_base)?;
         {
             let s = uc.get_data_mut();
             s.heap_base = heap_base;
@@ -687,6 +690,58 @@ fn relocate(image: &mut [u8], pe: &PE, delta: u32) {
 
 /// The lowest free range of `size` bytes from `0x1000_0000` (or else from
 /// `0x10000`) that overlaps nothing in `taken`; marks it taken.
+/// A thread environment block where `fs` points, as on Windows: code with
+/// structured exception handling links its frames at `fs:[0]` (the chain
+/// starts empty, -1), and `fs:[4]`/`fs:[8]` are the stack's top and bottom,
+/// `fs:[0x18]` the block itself. Page one holds a descriptor table whose
+/// entry 1 gives `fs` that base (Unicorn ignores a 32-bit `FS_BASE` write and
+/// starts with protection off, where a selector is not looked up), page two
+/// the block.
+fn thread_block(uc: &mut Unicorn<'static, State>, at: u64, stack_base: u64) -> Result<()> {
+    let teb = at + PAGE;
+    let word = |v: u64| u32::try_from(v).expect("below 4 GiB").to_le_bytes();
+    uc.mem_write(teb, &u32::MAX.to_le_bytes())?;
+    uc.mem_write(teb + 4, &word(stack_base + STACK_SIZE))?;
+    uc.mem_write(teb + 8, &word(stack_base))?;
+    uc.mem_write(teb + 0x18, &word(teb))?;
+    uc.mem_write(teb + 0x24, &1u32.to_le_bytes())?;
+    // entry 1: data at the block, 4 KiB, ring 3 (fs); 2: flat 32-bit code;
+    // 3: flat 32-bit data (ss, ds, es). With protection on, a segment's
+    // cached flags decide the operand and stack size, so all of them need
+    // proper 32-bit entries, not only fs.
+    let descriptor = |base: u64, limit: u64, access: u64, flags: u64| -> u64 {
+        (limit & 0xffff)
+            | ((base & 0xff_ffff) << 16)
+            | (access << 40)
+            | (((limit >> 16) & 0xf) << 48)
+            | (flags << 52)
+            | ((base >> 24) << 56)
+    };
+    let teb_base = u64::from(u32::try_from(teb).expect("below 4 GiB"));
+    let table = [
+        0,
+        descriptor(teb_base, 0xfff, 0xf3, 0x4),
+        descriptor(0, 0xf_ffff, 0x9b, 0xc),
+        descriptor(0, 0xf_ffff, 0x93, 0xc),
+    ];
+    for (i, d) in (0u64..).zip(table) {
+        uc.mem_write(at + 8 * i, &d.to_le_bytes())?;
+    }
+    // uc_x86_mmr: selector u16, (pad), base u64, limit u32, flags u32
+    let mut gdtr = [0u8; 24];
+    gdtr[8..16].copy_from_slice(&at.to_le_bytes());
+    gdtr[16..20].copy_from_slice(&0x1fu32.to_le_bytes());
+    uc.reg_write_long(RegisterX86::GDTR, &gdtr)?;
+    let cr0 = uc.reg_read(RegisterX86::CR0)?;
+    uc.reg_write(RegisterX86::CR0, cr0 | 1)?;
+    uc.reg_write(RegisterX86::CS, 0x10)?;
+    for seg in [RegisterX86::SS, RegisterX86::DS, RegisterX86::ES] {
+        uc.reg_write(seg, 0x18)?;
+    }
+    uc.reg_write(RegisterX86::FS, 0x0b)?; // entry 1, ring 3
+    Ok(())
+}
+
 fn gap(taken: &mut Vec<(u64, u64)>, size: u64) -> Result<u64> {
     taken.sort_unstable();
     for start_at in [0x1000_0000u64, 0x1_0000] {

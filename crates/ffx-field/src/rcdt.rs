@@ -177,6 +177,13 @@ pub mod bridge {
         mem.write(p + parse::MODE, 0u32);
         rcdt_parse_init_separators(mem, p);
     }
+
+    /// `rcdtChunkHandleGetEnd(&chunk)` (`0x0092bb90`):
+    /// [`rcdt_chunk_get_end`] of the chunk a handle points to.
+    pub fn rcdt_chunk_handle_get_end(mem: &impl Mem, h: u32) -> u32 {
+        let c = mem.read::<u32>(h);
+        rcdt_chunk_get_end(mem, c)
+    }
 }
 
 #[cfg(test)]

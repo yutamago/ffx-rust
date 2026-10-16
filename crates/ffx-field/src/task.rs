@@ -89,7 +89,44 @@ pub mod obj {
     /// `+0x330`: the animation (`rcefAnimeInit`, `0x90` bytes); its first
     /// byte's bit 0 while it runs.
     pub const ANIME: u32 = 0x330;
+    /// `+0x3c0`: the model (`rcefModelInit`, `0xd0` bytes).
+    pub const MODEL: u32 = 0x3c0;
+    /// Size.
+    pub const SIZE: u32 = 0x490;
+    /// `rcefObjFini`, its destructor.
+    pub const FINI: u32 = 0x0092_fee0;
+    /// `rcefObjProc`, its after-function.
+    pub const PROC: u32 = 0x0093_0060;
+    /// The floats `rcefObjInit` sets: scales and colours 1.0 (`+0x13c`,
+    /// `+0x16c` 0.0, which clearing already did).
+    pub const INIT: [(u32, f32); 12] = [
+        (0x130, 1.0),
+        (0x134, 1.0),
+        (0x138, 1.0),
+        (0x13c, 0.0),
+        (0x16c, 0.0),
+        (0x160, 1.0),
+        (0x164, 1.0),
+        (0x168, 1.0),
+        (0x170, 1.0),
+        (0x174, 1.0),
+        (0x178, 1.0),
+        (0x17c, 1.0),
+    ];
+    /// Its three matrices (identity after `rcefObjInit`).
+    pub const MATRICES: [u32; 3] = [0x1b0, 0x1f0, 0x230];
 }
+
+/// The particle parts `rcefParCreate` remembers for entry 2, by magic
+/// effect id (`0x0193c0d0`..).
+pub const PAR_KEEP_2: [(u32, u32); 4] = [
+    (0x20e, 0x0193_c0d0),
+    (0x180, 0x0193_c0d8),
+    (0x168, 0x0193_c0e0),
+    (0x217, 0x0193_c0e8),
+];
+/// The same for entry 1.
+pub const PAR_KEEP_1: [(u32, u32); 2] = [(0xbf, 0x0193_c0dc), (0x216, 0x0193_c0e4)];
 
 /// Offsets in a particle part (`rcefParInit`).
 pub mod par {
@@ -207,6 +244,8 @@ pub mod bridge {
     pub const TASK_WAIT_A: Global<u32> = Global::new(0x025d_5a44);
     /// The second one.
     pub const TASK_WAIT_B: Global<u32> = Global::new(0x025d_5afc);
+    /// The pray effect `rcEffectTaskPrayWait` waits for.
+    pub const PRAY_EFFECT: Global<u32> = Global::new(0x025d_5a24);
     /// What `rcEffectTaskFlagWait` waits to be 0 (read only there).
     pub const FLAG_WAIT: Global<u32> = Global::new(0x025d_5c10);
 
@@ -515,6 +554,155 @@ pub mod bridge {
         if FLAG_WAIT.get(mem) == 0 {
             rcef_task_ret_seq_cont(mem, t);
         }
+    }
+
+    // ---- round 4: running tasks, objects, particle parts ----
+
+    /// `rcefTaskProc(task)` (`0x0092ed90`): the current level's sequence
+    /// (`call(mem, function, task)`, again while it sets [`RERUN`]), then
+    /// the after-function unless the task is dead. Returns the `eax` it
+    /// ends with: 0 without an after-function, the function when dead,
+    /// else its result.
+    pub fn rcef_task_proc<M: Mem>(
+        mem: &mut M,
+        t: u32,
+        mut call: impl FnMut(&mut M, u32, u32) -> u32,
+    ) -> u32 {
+        loop {
+            let l = level(mem, t);
+            let f = mem.read::<u32>(t + header::FLAGS);
+            mem.write(t + header::FLAGS, f & !RERUN);
+            let seq = mem.read::<u32>(seq_slot(t, l));
+            if seq != 0 {
+                call(mem, seq, t);
+            }
+            if mem.read::<u32>(t + header::FLAGS) & RERUN == 0 {
+                break;
+            }
+        }
+        let after = mem.read::<u32>(t + header::AFTER);
+        if after == 0 || mem.read::<u32>(t + header::FLAGS) & super::DEAD != 0 {
+            return after;
+        }
+        call(mem, after, t)
+    }
+
+    /// `rcefTaskDestruct(task)` (`0x0092ec90`): its destructor
+    /// (`call(mem, function, task)`, a tail call: its result), or the task
+    /// itself without one.
+    pub fn rcef_task_destruct<M: Mem>(
+        mem: &mut M,
+        t: u32,
+        call: impl FnOnce(&mut M, u32, u32) -> u32,
+    ) -> u32 {
+        match mem.read::<u32>(t + header::DESTRUCTOR) {
+            0 => t,
+            f => call(mem, f, t),
+        }
+    }
+
+    /// `rcEffectTaskPrayWait(task)` (`0x009304b0`): returns to the caller
+    /// sequence (`rcefTaskRetSeqCont`) once `op_pray_effect_check` of the
+    /// pray effect (`0x025d5a24`; `check`) gives 0.
+    pub fn rc_effect_task_pray_wait<M: Mem>(
+        mem: &mut M,
+        t: u32,
+        check: impl FnOnce(&mut M, u32) -> i32,
+    ) {
+        let e = PRAY_EFFECT.get(mem);
+        if check(mem, e) == 0 {
+            rcef_task_ret_seq_cont(mem, t);
+        }
+    }
+
+    /// `rcefObjInit(obj)` (`0x0092ff20`): cleared (`0x490` bytes), a task
+    /// with `rcefObjFini` as destructor and `rcefObjProc` after, scales
+    /// and colours 1.0, three identity matrices, the particle part, the
+    /// animation and the model (`+0x3c0`); returns the model (the
+    /// `memset` `rcefModelInit` tail-calls returns it).
+    pub fn rcef_obj_init(mem: &mut impl Mem, o: u32) -> u32 {
+        mem.write_bytes(o, &[0; obj::SIZE as usize]);
+        rcef_task_init(mem, o);
+        let fini = mem.rebase(obj::FINI);
+        mem.write(o + header::DESTRUCTOR, fini);
+        let proc = mem.rebase(obj::PROC);
+        mem.write(o + header::AFTER, proc);
+        for (at, v) in obj::INIT {
+            mem.write(o + at, v);
+        }
+        for m in obj::MATRICES {
+            ffx_ps2::vu0::bridge::matrix_identity(mem, o + m);
+        }
+        rcef_par_init(mem, o + obj::PAR);
+        rcef_anime_init(mem, o + obj::ANIME);
+        rcef_model_init(mem, o + obj::MODEL);
+        o + obj::MODEL
+    }
+
+    /// `rcefParCreate(par, data, index, a, b, c)` (`0x0092eee0`): a running
+    /// particle part on entry `index` of `data` (`0x50` bytes each from
+    /// `+0x20`), scales 1.0 and the three arguments; parts of some magic
+    /// effects are remembered (`MagicFile_GetMagicId`: index 2 of 0x20e,
+    /// 0x180, 0x168, 0x217; index 1 of 0xbf, 0x216). Returns `c`.
+    pub fn rcef_par_create(
+        mem: &mut impl Mem,
+        p: u32,
+        data: u32,
+        index: u32,
+        a: u32,
+        b: u32,
+        c: u32,
+    ) -> u32 {
+        let id = ffx_system::instance::bridge::magic_id(mem);
+        let table: &[(u32, u32)] = match index {
+            2 => &super::PAR_KEEP_2,
+            1 => &super::PAR_KEEP_1,
+            _ => &[],
+        };
+        if let Some(&(_, at)) = table.iter().find(|&&(m, _)| m == id) {
+            mem.write(mem.rebase(at), p);
+        }
+        mem.write(
+            p + 0xc,
+            index
+                .wrapping_mul(0x50)
+                .wrapping_add(0x20)
+                .wrapping_add(data),
+        );
+        mem.write(p + 8, index);
+        mem.write(p, 1u32);
+        mem.write(p + 4, data);
+        mem.write(p + 0x78, 1f32);
+        mem.write(p + 0x74, 1f32);
+        mem.write(p + 0x70, 1f32);
+        mem.write(p + 0x90, a);
+        mem.write(p + 0x94, b);
+        mem.write(p + 0x98, c);
+        c
+    }
+
+    /// `rcefMainSetPar(main, obj, data_index, index)` (`0x009256d0`):
+    /// [`rcef_par_create`] on the object's particle part with the main
+    /// data's entry (`+0x18` table), its matrix `+0x1f0`, scale `+0x160`
+    /// and colour `+0x170`; returns the last.
+    pub fn rcef_main_set_par(
+        mem: &mut impl Mem,
+        main: u32,
+        o: u32,
+        data_index: u32,
+        index: u32,
+    ) -> u32 {
+        let table = mem.read::<u32>(main.wrapping_add(0x18));
+        let data = mem.read::<u32>(table.wrapping_add(data_index.wrapping_mul(4)));
+        rcef_par_create(
+            mem,
+            o.wrapping_add(obj::PAR),
+            data,
+            index,
+            o.wrapping_add(0x1f0),
+            o.wrapping_add(0x160),
+            o.wrapping_add(0x170),
+        )
     }
 }
 

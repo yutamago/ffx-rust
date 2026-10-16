@@ -91,4 +91,19 @@ pub mod bridge {
     pub fn set_battle_enable(mem: &mut impl Mem, on: u32) {
         BATTLE_ENABLE.set(mem, on);
     }
+
+    /// The video mode byte `FFXGetVideoMode` reads (signed).
+    pub const FFX_VIDEO_MODE: Global<i8> = Global::new(0x0133_0831);
+    /// The byte `sceGsSetDefDrawEnv2` returns (signed; 1 in the image).
+    pub const DEF_DRAW_ENV2: Global<i8> = Global::new(0x00b5_ec4f);
+
+    /// `FFXGetVideoMode()` (`0x00887c40`).
+    pub fn ffx_video_mode(mem: &impl Mem) -> i32 {
+        i32::from(FFX_VIDEO_MODE.get(mem))
+    }
+
+    /// `sceGsSetDefDrawEnv2(...)` (`0x00887c60`): sets nothing on PC.
+    pub fn gs_set_def_draw_env2(mem: &impl Mem) -> i32 {
+        i32::from(DEF_DRAW_ENV2.get(mem))
+    }
 }

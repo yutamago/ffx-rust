@@ -58,6 +58,20 @@ pub mod layer {
 /// "YNST", "YNSP", "YNTT", "YNSE", "YNFT", "YNGM", "YNED").
 pub const CHUNK_TAGS: Global<u32> = Global::new(0x00c5_e480);
 
+/// The map part override table of the field object (`+0x2c00`, two
+/// entries of ten words: a map id and nine parts).
+pub const LANG_TABLE: u32 = 0x2c00;
+/// Bytes per entry.
+pub const LANG_ENTRY: u32 = 0x28;
+/// What `MapPart_InitLangOverrides` writes: map `0xcbc` (`titl00`, the
+/// title) and `0x199f` (`titl02`, the logos), each with the part per
+/// language slot (0..=5 Japanese, English, French, Spanish, German,
+/// Italian; 6, 7 Korean and Chinese; 8 unused).
+pub const LANG_OVERRIDES: [(u32, [u32; 9]); 2] = [
+    (0xcbc, [0, 0xd, 7, 0xb, 9, 5, 0xd, 3, 0xd]),
+    (0x199f, [2, 0, 6, 8, 7, 5, 2, 2, 8]),
+];
+
 /// The scene where the game keeps it, through [`ffx_bridge::Mem`].
 pub mod bridge {
     use ffx_bridge::Mem;
@@ -113,5 +127,47 @@ pub mod bridge {
         for (o, v) in layer::INIT {
             mem.write(l + o, v);
         }
+    }
+
+    // ---- round 4: language overrides of map parts ----
+
+    /// `MapPart_InitLangOverrides(this)` (`0x0067c620`, `this` in ECX): the
+    /// two entries of the override table at `+0x2c00`: a map id and nine
+    /// parts by language slot ([`super::LANG_OVERRIDES`]). Returns `this`.
+    pub fn map_part_init_lang_overrides(mem: &mut impl Mem, this: u32) -> u32 {
+        for (i, (map, parts)) in (0u32..).zip(super::LANG_OVERRIDES) {
+            let e = this.wrapping_add(super::LANG_TABLE + i * super::LANG_ENTRY);
+            mem.write(e.wrapping_add(4), parts);
+            mem.write(e, map);
+        }
+        this
+    }
+
+    /// `MapPart_LangOverride(this, lang, map)` (`0x0067fb30`, thiscall):
+    /// the part to show for game language `lang` (0..=5 the slots 0..=5,
+    /// 9 and 10 the slots 6 and 7) when `map` has an entry, else -1. Other
+    /// languages print "Warning: uncorrect `LanguageType`" (`warn`) and give
+    /// -1.
+    pub fn map_part_lang_override<M: Mem>(
+        mem: &mut M,
+        this: u32,
+        lang: u32,
+        map: u32,
+        warn: impl FnOnce(&mut M),
+    ) -> u32 {
+        let Some(i) = (0..2u32).find(|&i| {
+            mem.read::<u32>(this.wrapping_add(super::LANG_TABLE + i * super::LANG_ENTRY)) == map
+        }) else {
+            return u32::MAX;
+        };
+        let slot = if lang <= 5 {
+            lang
+        } else if lang.wrapping_sub(9) <= 1 {
+            lang - 3
+        } else {
+            warn(mem);
+            return u32::MAX;
+        };
+        mem.read(this.wrapping_add(super::LANG_TABLE + 4 + 4 * (slot + i * 10)))
     }
 }

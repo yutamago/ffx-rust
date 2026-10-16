@@ -1,67 +1,73 @@
 #!/usr/bin/env python3
-"""Resolves merge conflicts in symbols/ffx.sym (two branches naming things
-in the same address range).
+"""Resolves a merge conflict in symbols/ffx.sym (two branches naming things
+in the same address range), during `git merge`.
 
-  tools/sym-resolve.py [path]
+  tools/sym-resolve.py
 
-Each conflict keeps the lines of both sides, sorted by address. Then, for
-every address and kind named twice in the file (one side renamed or
-re-commented a line the other kept), the longer line stays: the one with
-more evidence. Prints what it dropped, names given to two addresses, and
-lines out of order; review those before committing.
+A three-way merge per symbol, from git's stages of the file (1 the common
+ancestor, 2 ours, 3 theirs), keyed by address and kind: a symbol only one
+side changed (added, renamed, re-commented, removed) takes that side's
+line; one both changed alike takes it; one both changed differently keeps
+ours and is reported. The result is written in address order. Also reports
+a name given to two addresses. Review what it prints before committing.
 """
 import re
+import subprocess
 import sys
 
-path = sys.argv[1] if len(sys.argv) > 1 else "symbols/ffx.sym"
-ADDR = re.compile(r"0x[0-9a-fA-F]+")
+PATH = "symbols/ffx.sym"
+ADDR = re.compile(r"0x[0-9a-fA-F]+\s")
 
 
-def key(line):
-    return int(line.split()[0], 16) if ADDR.match(line) else -1
+def stage(n):
+    out = subprocess.run(["git", "show", f":{n}:{PATH}"], capture_output=True, text=True, check=False)
+    if out.returncode:
+        sys.exit(f"no stage {n} of {PATH}: run this during a merge with a conflict in it")
+    return out.stdout.splitlines(keepends=True)
 
 
-out, side, a, b = [], None, [], []
-for line in open(path, encoding="utf-8"):
-    if line.startswith("<<<<<<<"):
-        side, a, b = "a", [], []
-    elif line.startswith("=======") and side == "a":
-        side = "b"
-    elif line.startswith(">>>>>>>") and side == "b":
-        chunk = list(dict.fromkeys(a + b))
-        chunk.sort(key=key)
-        out += chunk
-        side = None
+def symbols(lines):
+    """Header lines, and {(address, kind): line}; a key named twice keeps both lines in order."""
+    head, syms = [], {}
+    for line in lines:
+        if ADDR.match(line):
+            p = line.split()
+            syms.setdefault((int(p[0], 16), p[1]), []).append(line)
+        elif not syms:
+            head.append(line)
+    return head, syms
+
+
+base_head, base = symbols(stage(1))
+ours_head, ours = symbols(stage(2))
+_, theirs = symbols(stage(3))
+
+merged = {}
+for key in sorted(set(base) | set(ours) | set(theirs)):
+    b, o, t = base.get(key), ours.get(key), theirs.get(key)
+    if o == t or t == b:
+        pick = o
+    elif o == b:
+        pick = t
     else:
-        (a if side == "a" else b if side == "b" else out).append(line)
+        pick = o
+        print(f"both changed {key[0]:#010x} {key[1]}; kept ours:")
+        print("  ours:  ", "".join(o or ["(removed)\n"]).rstrip()[:150])
+        print("  theirs:", "".join(t or ["(removed)\n"]).rstrip()[:150])
+    if pick:
+        merged[key] = pick
 
-best = {}
-for i, line in enumerate(out):
-    if ADDR.match(line):
-        k = tuple(line.split()[:2])
-        if k not in best or len(line) > len(out[best[k]]):
-            best[k] = i
-keep = set(best.values())
-for i, line in enumerate(out):
-    if ADDR.match(line) and i not in keep:
-        print("dropped:", line.rstrip()[:120])
-out = [line for i, line in enumerate(out) if not ADDR.match(line) or i in keep]
+out = list(ours_head)
+for key in sorted(merged):
+    out += merged[key]
 
-prev = -1
-for n, line in enumerate(out, 1):
-    if ADDR.match(line):
-        if key(line) < prev:
-            print(f"out of order at line {n}: {line.rstrip()[:80]}")
-        prev = key(line)
-
-# one name at two addresses: two branches named different things alike
 seen = {}
 for line in out:
     p = line.split("#", 1)[0].split()
-    if len(p) == 3 and p[1] != "fh":
+    if len(p) == 3 and ADDR.match(line) and p[1] != "fh":
         if p[2] in seen and seen[p[2]] != p[0]:
             print(f"{p[2]} names both {seen[p[2]]} and {p[0]}")
         seen.setdefault(p[2], p[0])
 
-with open(path, "w", encoding="utf-8") as f:
+with open(PATH, "w", encoding="utf-8") as f:
     f.writelines(out)

@@ -19,6 +19,10 @@ pub const LINE_FEED_HEIGHT: u32 = 0x10;
 /// memory-card operation running.
 pub const MC_SYNC: i32 = -1;
 
+/// `TrophyManager::Install(arg)` (`0x0059e520`, `ret 4`): nothing to
+/// install on PC.
+pub const TROPHY_INSTALL: u32 = 0;
+
 /// `set_ptr32(p)` (`0x00a44700`) and `get_ptr32_func(p)` (`0x00a44650`).
 #[must_use]
 pub const fn ptr32(p: u32) -> u32 {

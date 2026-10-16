@@ -1,4 +1,4 @@
-//! The `TO` layer's GS packet buffer and screen size.
+//! The `TO` layer's GS packet buffer, screen size and menu scissor.
 
 /// The originals over game memory (`ffx_bridge::Mem`).
 pub mod bridge {
@@ -11,6 +11,12 @@ pub mod bridge {
     pub const PKT_BUFF: Global<[u32; 3]> = Global::new(0x0187_16c0);
     /// Screen width (`u16` read).
     pub const SCREEN_W: Global<u16> = Global::new(0x00c5_d770);
+    /// The menu scissor's switch (`ffx_menu::scissor`'s too).
+    pub const SCISSOR_ON: Global<u32> = Global::new(0x0187_16d0);
+    /// The menu scissor's XYUV mode (`u8`).
+    pub const SCISSOR_XYUV: Global<u8> = Global::new(0x0187_16d4);
+    /// The menu scissor's box: left, top, right, bottom.
+    pub const SCISSOR_BOX: Global<[f32; 4]> = Global::new(0x0187_16f8);
     /// Screen height (`u16` read).
     pub const SCREEN_H: Global<u16> = Global::new(0x00c5_d774);
 
@@ -40,4 +46,32 @@ pub mod bridge {
         let v = SCREEN_H.get(mem);
         mem.write(h, v);
     }
+
+    /// `TODrawScissorXYWH(x, y, w, h)` (`0x008f9230`): the menu scissor on
+    /// (not in XYUV mode), its box `(x, y, x + w, y + h)` as floats (each
+    /// `i32` rounded to `f32`, the sums wrapping). Returns `y + h`, left in
+    /// `eax`.
+    pub fn draw_scissor_xywh(mem: &mut impl Mem, x: i32, y: i32, w: i32, h: i32) -> u32 {
+        let (right, bottom) = (x.wrapping_add(w), y.wrapping_add(h));
+        #[allow(clippy::cast_precision_loss)] // fild then fstp dword: rounded
+        let corners = [x, y, right, bottom].map(|v| v as f32);
+        SCISSOR_ON.set(mem, 1);
+        SCISSOR_XYUV.set(mem, 0);
+        SCISSOR_BOX.set(mem, corners);
+        bottom.cast_unsigned()
+    }
+
+    /// `TOMakePktScissor(x0, y0, x1, y1)` (`0x008fdee0`, the same code at
+    /// `0x008f91f0`): the menu scissor on (not in XYUV mode), its box the
+    /// four integers as floats.
+    pub fn make_pkt_scissor(mem: &mut impl Mem, x0: i32, y0: i32, x1: i32, y1: i32) {
+        #[allow(clippy::cast_precision_loss)] // fild then fstp dword: rounded
+        let corners = [x0, y0, x1, y1].map(|v| v as f32);
+        SCISSOR_ON.set(mem, 1);
+        SCISSOR_XYUV.set(mem, 0);
+        SCISSOR_BOX.set(mem, corners);
+    }
+
+    /// `0x008fa7b0()`: a constant GS register word, in `edx:eax`.
+    pub const GS_WORD_008FA7B0: u64 = 0x2005_d406_2131_3e00;
 }

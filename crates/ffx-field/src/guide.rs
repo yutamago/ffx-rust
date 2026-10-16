@@ -39,6 +39,11 @@ pub const ENABLED: Global<u32> = Global::new(0x00c5_e478);
 
 /// The sea's matrix (`Yn_SeaGetMatrix`, `Yn_SeaSetMatrix`).
 pub const SEA_MATRIX: Global<[f32; 16]> = Global::new(0x0193_bf28);
+/// 10.0, an `f64` in `.rdata`: the minimap model's origin scale
+/// (`Guide_RevealFog`).
+pub const FOG_SCALE: Global<f64> = Global::new(0x00b9_22b0);
+/// 40.0, an `f64` in `.rdata`: a fog cell's size (`Guide_RevealFog`).
+pub const FOG_CELL: Global<f64> = Global::new(0x00b5_af28);
 
 /// Size and centre of the minimap for each [`TARGET`]
 /// (`rcbgGuideSetTarget`'s cases).
@@ -175,6 +180,7 @@ pub mod bridge {
         FLAGS, Fade, POS, SIZE, TARGET, TARGETS, YN_MAP_SYSTEM, map, object, system,
     };
     use crate::{scene, x87};
+    use ffx_bridge::x87::{Reg, ftol};
 
     /// The guide object, when Yn's field state and it exist.
     fn yn_guide(mem: &impl Mem) -> Option<u32> {
@@ -443,6 +449,313 @@ pub mod bridge {
     /// `Yn_MapPartAnimeOff(part)` (`0x00919f40`).
     pub fn yn_map_part_anime_off(mem: &mut impl Mem, part: i32) {
         map_part_anime(mem, part, false);
+    }
+
+    /// `Yn_SeaResetMatrix()` (`0x0091ae30`): the identity; returns
+    /// `FFXVu0UnitMatrix`'s `eax`.
+    pub fn yn_sea_reset_matrix(mem: &mut impl Mem) -> u32 {
+        let m = super::SEA_MATRIX.ptr(mem).addr;
+        ffx_ps2::vu0::bridge::matrix_identity(mem, m)
+    }
+
+    /// `Yn_SeaSetMatrix(m)` (`0x0091ae60`): `FFXVu0CopyMatrix`.
+    pub fn yn_sea_set_matrix(mem: &mut impl Mem, m: u32) -> u32 {
+        let at = super::SEA_MATRIX.ptr(mem).addr;
+        ffx_ps2::vu0::bridge::matrix_copy(mem, at, m)
+    }
+
+    /// `Yn_PreBgLayerDispGet(part)` (`0x0091a770`): layer `part`'s first
+    /// word (its display flags) for a part below the count, else 0. With
+    /// no map the original reads the layers pointer at address 8, as here.
+    pub fn yn_pre_bg_layer_disp_get(mem: &impl Mem, part: i32) -> u32 {
+        if part >= yn_map_part_count(mem) {
+            return 0;
+        }
+        let s = YN_MAP_SYSTEM.get(mem);
+        let m = if s == 0 {
+            0
+        } else {
+            mem.read::<u32>(s + system::MAP)
+        };
+        let scene = if m == 0 {
+            0
+        } else {
+            mem.read::<u32>(m + map::SCENE)
+        };
+        let layers = mem.read::<u32>(scene.wrapping_add(scene::layout::LAYERS));
+        #[allow(clippy::cast_sign_loss)] // a negative part indexes back, as the original
+        let at = layers.wrapping_add((part as u32).wrapping_mul(scene::layer::SIZE));
+        mem.read(at)
+    }
+
+    /// `Guide_RevealFog(guide, x, z)` (`0x0091f420`): marks the 13 cells
+    /// of a diamond of radius 2 around the player's cell as seen in the
+    /// guide's 64 x 64 fog bitmap (`+0x70`). The cell is
+    /// `((x - ox * 10) / 40, (oz * 10 - z) / 40)` (`ox`, `oz` the minimap
+    /// model's `+0x90` and `+0xa8`; 10.0 and 40.0 `f64` constants in
+    /// `.rdata`), through `_ftol2_sse`, each coordinate clamped to 0..=63.
+    /// Returns the z cell (what `eax` holds).
+    pub fn guide_reveal_fog(mem: &mut impl Mem, g: u32, x: f32, z: f32) -> u32 {
+        const DX: [i8; 13] = [0, -1, 0, 1, -2, -1, 0, 1, 2, -1, 0, 1, 0];
+        const DZ: [i8; 13] = [-2, -1, -1, -1, 0, 0, 0, 0, 0, 1, 1, 1, 2];
+        let o = guide_mesh_object(mem, g);
+        let k = Reg::constant(super::FOG_SCALE.get(mem));
+        let ox = (Reg::load(mem.read::<f32>(o + 0x90)) * k).store();
+        let oz = k.mul_m32(mem.read::<f32>(o + 0xa8)).store();
+        let cell = Reg::constant(super::FOG_CELL.get(mem));
+        let ix = ftol(mem, (Reg::load(x).sub_m32(ox) / cell).value());
+        let iz = ftol(mem, (Reg::load(oz).sub_m32(z) / cell).value());
+        let fog = mem.read::<u32>(g + object::FOG);
+        for (dx, dz) in DX.into_iter().zip(DZ) {
+            let clamp = |v: u32| -> u32 {
+                #[allow(clippy::cast_possible_wrap)]
+                let v = v as i32;
+                #[allow(clippy::cast_sign_loss)]
+                if v < 0 { 0 } else { v.min(0x3f) as u32 }
+            };
+            #[allow(clippy::cast_sign_loss)]
+            let cx = clamp(ix.wrapping_add(i32::from(dx) as u32));
+            #[allow(clippy::cast_sign_loss)]
+            let cz = clamp(iz.wrapping_add(i32::from(dz) as u32));
+            let bit = cz * 64 + cx;
+            let at = fog.wrapping_add(bit >> 3);
+            let b = mem.read::<u8>(at);
+            mem.write(at, b | (1 << (bit & 7)));
+        }
+        iz
+    }
+
+    // ---- round 5: map part (scene layer) accessors of the script natives ----
+
+    /// Layer `part` for a part below [`yn_map_part_count`]. Without a map
+    /// the originals read the layer list at address 8, as here.
+    fn yn_layer(mem: &impl Mem, part: i32) -> Option<u32> {
+        if part >= yn_map_part_count(mem) {
+            return None;
+        }
+        let s = YN_MAP_SYSTEM.get(mem);
+        let m = if s == 0 {
+            0
+        } else {
+            mem.read::<u32>(s + system::MAP)
+        };
+        let scene = if m == 0 {
+            0
+        } else {
+            mem.read::<u32>(m + map::SCENE)
+        };
+        let layers = mem.read::<u32>(scene.wrapping_add(scene::layout::LAYERS));
+        #[allow(clippy::cast_sign_loss)] // a negative part indexes back, as the original
+        Some(layers.wrapping_add((part as u32).wrapping_mul(scene::layer::SIZE)))
+    }
+
+    fn part_word(mem: &impl Mem, part: i32, offset: u32) -> u32 {
+        yn_layer(mem, part).map_or(0, |l| mem.read(l.wrapping_add(offset)))
+    }
+
+    fn part_float(mem: &impl Mem, part: i32, offset: u32) -> f32 {
+        yn_layer(mem, part).map_or(0.0, |l| {
+            f32::from_bits(x87::copy(mem.read(l.wrapping_add(offset))))
+        })
+    }
+
+    /// `Yn_MapPartGetWidth(part)` (`0x0091a620`): the layer's `+4`, 0 past
+    /// the count.
+    pub fn yn_map_part_get_width(mem: &impl Mem, part: i32) -> u32 {
+        part_word(mem, part, 4)
+    }
+
+    /// `Yn_MapPartGetHeight(part)` (`0x0091a3f0`): `+8`.
+    pub fn yn_map_part_get_height(mem: &impl Mem, part: i32) -> u32 {
+        part_word(mem, part, 8)
+    }
+
+    /// `Yn_MapPartGet0C(part)` (`0x0091a440`).
+    pub fn yn_map_part_get_0c(mem: &impl Mem, part: i32) -> u32 {
+        part_word(mem, part, 0xc)
+    }
+
+    /// `Yn_MapPartGet10(part)` (`0x0091a490`).
+    pub fn yn_map_part_get_10(mem: &impl Mem, part: i32) -> u32 {
+        part_word(mem, part, 0x10)
+    }
+
+    /// `Yn_MapPartGet24(part)` (`0x0091a580`).
+    pub fn yn_map_part_get_24(mem: &impl Mem, part: i32) -> u32 {
+        part_word(mem, part, 0x24)
+    }
+
+    /// `Yn_MapPartGet28(part)` (`0x0091a5d0`).
+    pub fn yn_map_part_get_28(mem: &impl Mem, part: i32) -> u32 {
+        part_word(mem, part, 0x28)
+    }
+
+    /// `Yn_MapPartAnimeGetCount(part)` (`0x0091a2a0`): the animation's
+    /// frame count (`+0x98`).
+    pub fn yn_map_part_anime_get_count(mem: &impl Mem, part: i32) -> u32 {
+        part_word(mem, part, 0x98)
+    }
+
+    /// `Yn_MapPartGetAlpha(part)` (`0x0091a2e0`): the colour's alpha byte
+    /// (`+0x43`).
+    pub fn yn_map_part_get_alpha(mem: &impl Mem, part: i32) -> u32 {
+        yn_layer(mem, part).map_or(0, |l| u32::from(mem.read::<u8>(l.wrapping_add(0x43))))
+    }
+
+    /// `Yn_MapPartGet14(part)` (`0x0091a670`): a float, 0.0 past the count.
+    pub fn yn_map_part_get_14(mem: &impl Mem, part: i32) -> f32 {
+        part_float(mem, part, 0x14)
+    }
+
+    /// `Yn_MapPartGetScaleX(part)` (`0x0091a530`): `+0x44`.
+    pub fn yn_map_part_get_scale_x(mem: &impl Mem, part: i32) -> f32 {
+        part_float(mem, part, 0x44)
+    }
+
+    /// `Yn_MapPartGetScaleY(part)` (`0x0091a4e0`): `+0x48`.
+    pub fn yn_map_part_get_scale_y(mem: &impl Mem, part: i32) -> f32 {
+        part_float(mem, part, 0x48)
+    }
+
+    /// `Yn_MapPartGetPosX(part)` (`0x0091a330`): `+0x4c`.
+    pub fn yn_map_part_get_pos_x(mem: &impl Mem, part: i32) -> f32 {
+        part_float(mem, part, 0x4c)
+    }
+
+    /// `Yn_MapPartGetPosY(part)` (`0x0091a380`): `+0x50`.
+    pub fn yn_map_part_get_pos_y(mem: &impl Mem, part: i32) -> f32 {
+        part_float(mem, part, 0x50)
+    }
+
+    /// `Yn_MapPartSetSize(part, w, h)` (`0x0091ac80`): `+4`, `+8`.
+    pub fn yn_map_part_set_size(mem: &mut impl Mem, part: i32, w: u32, h: u32) {
+        if let Some(l) = yn_layer(mem, part) {
+            mem.write(l.wrapping_add(4), [w, h]);
+        }
+    }
+
+    /// `Yn_MapPartSet24(part, a, b)` (`0x0091ac40`): `+0x24`, `+0x28`.
+    pub fn yn_map_part_set_24(mem: &mut impl Mem, part: i32, a: u32, b: u32) {
+        if let Some(l) = yn_layer(mem, part) {
+            mem.write(l.wrapping_add(0x24), [a, b]);
+        }
+    }
+
+    /// `Yn_MapPartSet14(part, v)` (`0x0091acc0`): a float.
+    pub fn yn_map_part_set_14(mem: &mut impl Mem, part: i32, v: u32) {
+        if let Some(l) = yn_layer(mem, part) {
+            mem.write(l.wrapping_add(0x14), x87::copy(v));
+        }
+    }
+
+    /// `Yn_MapPartAnimeSetFrame(part, frame)` (`0x0091a930`): the current
+    /// frame (`u16` at `+0x96`).
+    pub fn yn_map_part_anime_set_frame(mem: &mut impl Mem, part: i32, frame: u16) {
+        if let Some(l) = yn_layer(mem, part) {
+            mem.write(l.wrapping_add(0x96), frame);
+        }
+    }
+
+    /// `Yn_MapPartAnimeSetLastFrame(part)` (`0x0091a970`): the current
+    /// frame to the count less 1 (16 bits).
+    pub fn yn_map_part_anime_set_last_frame(mem: &mut impl Mem, part: i32) {
+        if let Some(l) = yn_layer(mem, part) {
+            let n = mem.read::<u16>(l.wrapping_add(0x98));
+            mem.write(l.wrapping_add(0x96), n.wrapping_sub(1));
+        }
+    }
+
+    /// `Yn_MapPartAnimeSetRate(part, rate)` (`0x0091a9c0`): `+0xa4`.
+    pub fn yn_map_part_anime_set_rate(mem: &mut impl Mem, part: i32, rate: u32) {
+        if let Some(l) = yn_layer(mem, part) {
+            mem.write(l.wrapping_add(0xa4), rate);
+        }
+    }
+
+    /// `Yn_MapPartAnimeSetMode(part, bits)` (`0x00919fe0`): bits 8..=11
+    /// of the animation word replaced (`& !0xf00 | bits`, the bits as
+    /// given).
+    pub fn yn_map_part_anime_set_mode(mem: &mut impl Mem, part: i32, bits: u32) {
+        if let Some(l) = yn_layer(mem, part) {
+            let at = l.wrapping_add(scene::layer::ANIME);
+            let w = mem.read::<u32>(at);
+            mem.write(at, (w & 0xffff_f0ff) | bits);
+        }
+    }
+
+    /// `Yn_MapPartAnimeFlag0Off(part)` (`0x0091a030`): clears bit 0 of the
+    /// animation word.
+    pub fn yn_map_part_anime_flag0_off(mem: &mut impl Mem, part: i32) {
+        if let Some(l) = yn_layer(mem, part) {
+            let at = l.wrapping_add(scene::layer::ANIME);
+            let w = mem.read::<u32>(at);
+            mem.write(at, w & !1);
+        }
+    }
+
+    /// `Yn_MapPartAnimeFlag0On(part)` (`0x0091a080`): sets it.
+    pub fn yn_map_part_anime_flag0_on(mem: &mut impl Mem, part: i32) {
+        if let Some(l) = yn_layer(mem, part) {
+            let at = l.wrapping_add(scene::layer::ANIME);
+            let w = mem.read::<u32>(at);
+            mem.write(at, w | 1);
+        }
+    }
+
+    /// `Yn_MapPartSetPos(part, x, y)` (`0x0091aae0`): the position
+    /// (`+0x4c`, `+0x50`), the move's counters (`+0x7c`, `+0x80`) 0.
+    pub fn yn_map_part_set_pos(mem: &mut impl Mem, part: i32, x: u32, y: u32) {
+        if let Some(l) = yn_layer(mem, part) {
+            mem.write(l.wrapping_add(0x4c), x87::copy(x));
+            mem.write(l.wrapping_add(0x80), 0u32);
+            mem.write(l.wrapping_add(0x7c), 0u32);
+            mem.write(l.wrapping_add(0x50), x87::copy(y));
+        }
+    }
+
+    /// `Yn_MapPartMoveTo(part, x, y, frames)` (`0x0091a0f0`): a move from
+    /// the position (`+0x64`, `+0x6c`) to `x`, `y` (`+0x68`, `+0x70`) over
+    /// `frames` (`+0x7c`), the counter (`+0x80`) 0.
+    pub fn yn_map_part_move_to(mem: &mut impl Mem, part: i32, x: u32, y: u32, frames: u32) {
+        if let Some(l) = yn_layer(mem, part) {
+            let px = mem.read::<u32>(l.wrapping_add(0x4c));
+            mem.write(l.wrapping_add(0x7c), frames);
+            mem.write(l.wrapping_add(0x64), x87::copy(px));
+            mem.write(l.wrapping_add(0x80), 0u32);
+            mem.write(l.wrapping_add(0x68), x87::copy(x));
+            let py = mem.read::<u32>(l.wrapping_add(0x50));
+            mem.write(l.wrapping_add(0x6c), x87::copy(py));
+            mem.write(l.wrapping_add(0x70), x87::copy(y));
+        }
+    }
+
+    /// `Yn_MapPartScaleTo(part, sx, sy, frames)` (`0x0091a150`): a scale
+    /// change from the scale (`+0x54`, `+0x5c`) to `sx`, `sy` (`+0x58`,
+    /// `+0x60`; a 0.0 target keeps the scale) over `frames` (`+0x74`), the
+    /// counter (`+0x78`) 0.
+    pub fn yn_map_part_scale_to(mem: &mut impl Mem, part: i32, sx: u32, sy: u32, frames: u32) {
+        let Some(l) = yn_layer(mem, part) else { return };
+        let zero = |v: u32| f32::from_bits(v) == 0.0;
+        let scale_x = x87::copy(mem.read::<u32>(l.wrapping_add(0x44)));
+        if zero(sx) {
+            mem.write(l.wrapping_add(0x58), scale_x);
+            mem.write(l.wrapping_add(0x54), scale_x);
+        } else {
+            mem.write(l.wrapping_add(0x54), scale_x);
+            mem.write(l.wrapping_add(0x58), x87::copy(sx));
+        }
+        let scale_y = x87::copy(mem.read::<u32>(l.wrapping_add(0x48)));
+        if zero(sy) {
+            mem.write(l.wrapping_add(0x74), frames);
+            mem.write(l.wrapping_add(0x78), 0u32);
+            mem.write(l.wrapping_add(0x60), scale_y);
+            mem.write(l.wrapping_add(0x5c), scale_y);
+        } else {
+            mem.write(l.wrapping_add(0x5c), scale_y);
+            mem.write(l.wrapping_add(0x74), frames);
+            mem.write(l.wrapping_add(0x78), 0u32);
+            mem.write(l.wrapping_add(0x60), x87::copy(sy));
+        }
     }
 
     /// `Guide_MeshObject(guide)` (`0x0091d460`): the map's own minimap
