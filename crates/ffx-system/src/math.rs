@@ -404,6 +404,19 @@ pub mod bridge {
         inverse4x4(mem, dst, m)
     }
 
+    /// `cdc::Matrix::RotY` (`0x00705fa0`, `thiscall(m, s, c)`): columns 0
+    /// (`x`) and 2 (`z`) of every row turned, `z' = z c - x s`,
+    /// `x' = z s + x c` ([`super::rotate`] on `(z, x)`). Returns `m`.
+    pub fn rotate_y(mem: &mut impl Mem, m: u32, sin: f32, cos: f32) -> u32 {
+        for row in 0..4 {
+            let p = at(m, 4 * row);
+            let (z, x) = super::rotate(mem.read(at(p, 2)), mem.read(p), sin, cos);
+            mem.write(p, x);
+            mem.write(at(p, 2), z);
+        }
+        m
+    }
+
     /// `sceVu0VectorLengthSquared(v)` (`0x006ed9b0`).
     pub fn length_squared(mem: &impl Mem, v: u32) -> f32 {
         super::length_squared(mem.read(v))

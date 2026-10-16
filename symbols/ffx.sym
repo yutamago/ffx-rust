@@ -1229,9 +1229,9 @@
 0x006ed620 function FFXVu0NormalLightMatrix   # fh v3:exact 0x006ed760
 0x006ed6f0 function FFXVu0Normalize           # fh v3:exact 0x006ed830
 0x006ed720 function FFXVu0OuterProduct        # fh v3:exact 0x006ed860
-0x006ed780 function FFXVu0RotMatrixX          # fh v3:cg4 0x6ed8c0
-0x006ed7c0 function FFXVu0RotMatrixY          # fh v3:cg3 0x6ed900
-0x006ed800 function FFXVu0RotMatrixZ          # fh v3:cg3 0x6ed940
+0x006ed780 function FFXVu0RotMatrixX          # (dst, src, angle): Matrix::copy, then cdc_Matrix_RotX(sin, cos) from _CIcos/_CIsin stored as f32; returns dst; fh v3:cg4 0x6ed8c0
+0x006ed7c0 function FFXVu0RotMatrixY          # (dst, src, angle): Matrix::copy, then cdc_Matrix_RotY(sin, cos) from _CIcos/_CIsin stored as f32; returns dst; fh v3:cg3 0x6ed900
+0x006ed800 function FFXVu0RotMatrixZ          # (dst, src, angle): Matrix::copy, then cdc_Matrix_RotZ(sin, cos) from _CIcos/_CIsin stored as f32; returns dst; fh v3:cg3 0x6ed940
 0x006ed840 function FFXVu0RotTransPers        # fh v3:exact 0x006ed980
 0x006ed8f0 function FFXVu0ScaleVector         # fh v3:exact 0x006eda30
 0x006ed940 function FFXVu0SubVector           # fh v3:exact 0x006eda80
@@ -1307,6 +1307,7 @@
 0x007059b0 function cdc_Mul4x4_007059b0       # fh v3:exact 0x00705aa0 cdc::Mul4x4
 0x00705db0 function cdc_OrthonormalInverse3x4 # fh v3:exact 0x00705ea0 cdc::OrthonormalInverse3x4
 0x00705ed0 function cdc_Matrix_RotX           # fh v3:exact 0x00705fc0 cdc::Matrix::RotX
+0x00705fa0 function cdc_Matrix_RotY           # thiscall(m, sin, cos), ret 8: columns 0 and 2 of each row turned (z' = z c - x s, x' = z s + x c); returns m; between RotX and RotZ, called by FFXVu0RotMatrixY; name ours
 0x00706070 function cdc_Matrix_RotZ           # fh v3:exact 0x00706160 cdc::Matrix::RotZ
 0x007063f0 function cdc_Transpose             # fh v3:exact 0x007064e0 cdc::Transpose
 0x00706a00 function FfxFmod_musicVolumeFadeOut # fh switch:bsim1.00 0x710029f720 FfxFmod::musicVolumeFadeOut
@@ -3259,6 +3260,7 @@
 0x008357d0 function Ch_SetFuka                # (i, v): g_ChrFuka[i] = v; Switch name, in name order after Ch_SetDumpMotEv
 0x00835b50 function Ch_SoundSetId             # fh v3:bsim1.00 0x00835bd0
 0x00835b70 function Ch_SysGetScreenMatrixPtr  # fh v3:bsim1.00 0x00835bf0
+0x00835b90 function FFXVu0ClipScreen          # () -> &g_Vu0ClipScreen; fh switch:bsim1.00 0x71001c22e0
 0x00835ba0 function Ch_SysGetCameraMatrixPtr  # fh v3:bsim1.00 0x00835c20
 0x00835e90 function Ch_SysSetScreenMatrix     # (m): 64 bytes from m to g_ChrScreenMatrix (Ch_SysGetScreenMatrixPtr's); Switch name
 0x00835eb0 function Ch_SysSetCameraMatrix     # (m): 64 bytes from m to g_ChrCameraMatrix (Ch_SysGetCameraMatrixPtr's); Switch name
@@ -7725,6 +7727,7 @@
 0x013008db label g_ChrDumpMotEv              # i8, Ch_SetDumpMotEv / Ch_GetDumpMotEv
 0x013008f8 label g_ChrCameraMatrix           # 64 bytes, Ch_SysGetCameraMatrixPtr / Ch_SysSetCameraMatrix
 0x01300938 label g_ChrScreenMatrix           # 64 bytes, Ch_SysGetScreenMatrixPtr / Ch_SysSetScreenMatrix
+0x01300978 label    g_Vu0ClipScreen           # what FFXVu0ClipScreen returns; also read by the chara screen code (0x008360b0, 0x00836240, 0x00836250, 0x00836430); after g_ChrScreenMatrix
 0x013009b8 label g_ChrFuka                   # u32 by index, Ch_SetFuka / Ch_GetFuka
 0x013009e0 label g_ChrGuiCalcNormal          # 0 or 1, Ch_GuiSetCalcNormAll / Ch_GuiGetCalcNormal
 0x013017f8 label g_ChrMotionHalf             # Ch_MotionSetHalf / Ch_MotionGetHalf

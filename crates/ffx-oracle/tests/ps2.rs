@@ -344,6 +344,7 @@ const SET_ZS_FLAG: u32 = 0x0042_ef30;
 const SET_SS_FLAG: u32 = 0x0042_ef20;
 
 fn registers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    assert_eq!(cdecl(a, 0x0083_5b90, &[]), vu0::clip_screen(b));
     for (n, &sym) in (0..).zip(&SET_FUNC_PARAM) {
         let v = rng.next();
         assert_eq!(cdecl(a, sym, &[v]), ee::set_func_param(b, n, v));
@@ -489,7 +490,11 @@ fn any_matrix(rng: &mut Xorshift) -> [f32; 16] {
         0 => {
             let r = (rng.next() % 4) as usize * 4;
             for e in &mut m[r..r + 4] {
-                *e = if rng.next().is_multiple_of(2) { 0.0 } else { -0.0 };
+                *e = if rng.next().is_multiple_of(2) {
+                    0.0
+                } else {
+                    -0.0
+                };
             }
         }
         1 => {
@@ -551,4 +556,82 @@ fn inverses_match_the_original_on_the_snapshot() {
         return;
     };
     inverses(&mut a, &mut b, &mut Xorshift(0x0ff0_7e06));
+}
+
+const ROT_MATRIX: [(u32, ffx_ps2::vu0::Axis); 3] = [
+    (0x006e_d780, ffx_ps2::vu0::Axis::X),
+    (0x006e_d7c0, ffx_ps2::vu0::Axis::Y),
+    (0x006e_d800, ffx_ps2::vu0::Axis::Z),
+];
+const CDC_ROT_Y: u32 = 0x0070_5fa0;
+
+/// `_CIcos` and `_CIsin` (imports the oracle lacks) replaced at their
+/// thunks by exact stand-ins, `x²` and `2x` (`fmul st, st; ret` and `fadd
+/// st, st; ret`): the bridges get the same through their callback, so the
+/// angle's path and the matrix arithmetic are checked; the C runtime's own
+/// sine and cosine are the game's in both.
+fn patch_trig(o: &mut Oracle) {
+    let cos = o.rebase(0x0094_98c2);
+    o.write(cos, &[0xd8, 0xc8, 0xc3]).unwrap();
+    let sin = o.rebase(0x0094_98c8);
+    o.write(sin, &[0xd8, 0xc0, 0xc3]).unwrap();
+}
+
+fn stand_in(t: ffx_ps2::vu0::Trig, x: f32) -> f32 {
+    use ffx_bridge::x87::Reg;
+    match t {
+        ffx_ps2::vu0::Trig::Cos => (Reg::load(x) * Reg::load(x)).store(),
+        ffx_ps2::vu0::Trig::Sin => (Reg::load(x) + Reg::load(x)).store(),
+    }
+}
+
+fn rotations(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    patch_trig(a);
+    patch_trig(b);
+    // [dst 64][src 64]
+    let block = alloc(a, b, 0x80);
+    for n in 0..3000u32 {
+        fill(a, b, rng, block, 32);
+        let angle = if n % 3 == 0 {
+            f32::from(u8::try_from(rng.next() % 64).unwrap()) / 8.0 - 4.0
+        } else {
+            rng.float()
+        };
+        let (sym, axis) = ROT_MATRIX[(n % 3) as usize];
+        let dst = block + if n % 5 == 0 { 0x40 } else { 0 };
+        let ra = cdecl(a, sym, &[dst, block + 0x40, angle.to_bits()]);
+        let rb = vu0::rot_matrix(b, axis, dst, block + 0x40, angle, &mut stand_in);
+        assert_eq!(ra, rb, "RotMatrix {axis:?} {n}: eax");
+        assert_eq!(
+            words(a, block, 32),
+            words(b, block, 32),
+            "RotMatrix {axis:?} {n}"
+        );
+        let (s, c) = (rng.float(), rng.float());
+        let ra = eax(
+            a,
+            CDC_ROT_Y,
+            Conv::Thiscall(block),
+            &[s.to_bits(), c.to_bits()],
+        );
+        assert_eq!(ra, ffx_system::math::bridge::rotate_y(b, block, s, c));
+        assert_eq!(words(a, block, 32), words(b, block, 32), "RotY {n}");
+    }
+    same_memory("rotations", a, b);
+}
+
+#[test]
+fn rotations_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    rotations(&mut a, &mut b, &mut Xorshift(0x0ff0_7e07));
+}
+
+#[test]
+fn rotations_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    rotations(&mut a, &mut b, &mut Xorshift(0x0ff0_7e08));
 }

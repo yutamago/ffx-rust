@@ -136,6 +136,29 @@ pub fn to_fixed(mem: &impl ffx_bridge::Mem, x: f32, k_scale: f64, k_round: f64) 
     ffx_bridge::x87::ftol(mem, add(mul(ld(x).value(), k_scale), k_round))
 }
 
+/// A C runtime function of one float the library calls (`_CIcos`,
+/// `_CIsin`): the caller supplies it (in the game, MSVCR110's own), taking
+/// the angle as loaded and returning what the original stores (`fstp
+/// dword`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Trig {
+    /// `_CIcos`.
+    Cos,
+    /// `_CIsin`.
+    Sin,
+}
+
+/// The axis `FFXVu0RotMatrixX`/`Y`/`Z` turn about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Axis {
+    /// `FFXVu0RotMatrixX` (`cdc::Matrix::RotX`).
+    X,
+    /// `FFXVu0RotMatrixY` (`cdc::Matrix::RotY`).
+    Y,
+    /// `FFXVu0RotMatrixZ` (`cdc::Matrix::RotZ`).
+    Z,
+}
+
 /// The originals over game memory (`ffx_bridge::Mem`).
 pub mod bridge {
     use ffx_bridge::{Global, Mem};
@@ -144,6 +167,15 @@ pub mod bridge {
     pub const FIXED_SCALE: Global<f64> = Global::new(0x00b3_13a0);
     /// The rounding it adds (an `f64` 0.5 in `.rdata`).
     pub const FIXED_ROUND: Global<f64> = Global::new(0x00b9_2220);
+
+    /// What `FFXVu0ClipScreen` returns (the chara screen code reads and
+    /// writes it too).
+    pub const CLIP_SCREEN: Global<[f32; 4]> = Global::new(0x0130_0978);
+
+    /// `FFXVu0ClipScreen()` (`0x00835b90`): the address of [`CLIP_SCREEN`].
+    pub fn clip_screen(mem: &impl Mem) -> u32 {
+        CLIP_SCREEN.ptr(mem).addr
+    }
 
     fn at(p: u32, i: u32) -> u32 {
         p.wrapping_add(4 * i)
@@ -287,6 +319,30 @@ pub mod bridge {
             mem.write(at(this, i), w);
         }
         this
+    }
+
+    /// `FFXVu0RotMatrixX`/`Y`/`Z(dst, src, angle)` (`0x006ed780`,
+    /// `0x006ed7c0`, `0x006ed800`): `src` copied to `dst`
+    /// (`Matrix::copy`), then `cos(angle)` and `sin(angle)` (in that
+    /// order, through `trig`) turn it (`cdc::Matrix::RotX`/`RotY`/`RotZ`).
+    /// Returns `dst`.
+    pub fn rot_matrix(
+        mem: &mut impl Mem,
+        axis: super::Axis,
+        dst: u32,
+        src: u32,
+        angle: f32,
+        trig: &mut impl FnMut(super::Trig, f32) -> f32,
+    ) -> u32 {
+        use ffx_system::math::bridge::{rotate, rotate_y};
+        matrix_copy(mem, dst, src);
+        let c = trig(super::Trig::Cos, angle);
+        let s = trig(super::Trig::Sin, angle);
+        match axis {
+            super::Axis::X => rotate(mem, dst, 1, s, c),
+            super::Axis::Y => rotate_y(mem, dst, s, c),
+            super::Axis::Z => rotate(mem, dst, 0, s, c),
+        }
     }
 
     /// `FFXVu0ApplyMatrix(dst, m, v)` (`0x006ed2e0`): `cdc_Mul4x4` into a

@@ -250,6 +250,10 @@ ported! {
     cdc_Matrix_RotX @ 0x0070_5ed0 => extern "thiscall" fn cdc_matrix_rot_x(this: u32, sin: f32, cos: f32) -> u32 {
         math::bridge::rotate(&mut mem(), this, 1, sin, cos)
     }
+    /// `cdc::Matrix::RotY(sin, cos)`.
+    cdc_Matrix_RotY @ 0x0070_5fa0 => extern "thiscall" fn cdc_matrix_rot_y(this: u32, sin: f32, cos: f32) -> u32 {
+        math::bridge::rotate_y(&mut mem(), this, sin, cos)
+    }
     /// `cdc::Matrix::RotZ(sin, cos)`.
     cdc_Matrix_RotZ @ 0x0070_6070 => extern "thiscall" fn cdc_matrix_rot_z(this: u32, sin: f32, cos: f32) -> u32 {
         math::bridge::rotate(&mut mem(), this, 0, sin, cos)
