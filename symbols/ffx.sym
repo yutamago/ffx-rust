@@ -3244,13 +3244,25 @@
 0x008479d0 function Gu_DrawEnd                # fh v3:exact 0x008479d0
 0x00847a40 function Gu_DrawMouseCursor        # fh v3:exact 0x00847a40
 0x00847b00 function Gu_DrawStart              # fh v3:exact 0x00847b00
+0x00848460 function Gu_PacketEndTag           # (): the open GIF tag's NLOOP (15 bits) = quadwords since Gu_PacketBeginTag - 1
+0x00848480 function Gu_SetPrim                # (prim): A+D PRIM (register 0) into g_GuPacketData, sign-extended to 64 bits
+0x008484c0 function Gu_SetRgbaq               # (r, g, b, a): A+D RGBAQ (register 1) into g_GuPacketData, a | 0x800000 as the top field
+0x00848530 function Gu_PacketBeginTag         # (window): GIF tag {0x4d2, 0x10000000, A+D} at g_GuPacket; origin = window +0x14/+0x16 plus its border +0x80/+0x82 (y by g_GuHScale), 0 for null
+0x008485d0 function Gu_SetTest                # (ate, atst, aref, afail, date, datm, zte, ztst): A+D TEST_1 (register 0x47) into g_GuPacketData
+0x00848680 function Gu_SetXyzf2               # (x, y): A+D XYZF2 (register 4), 12.4 fixed point at the drawing origin centred in 4096 by g_GuScreenSize; y by g_GuHScale
+0x00848720 function Gu_PrintSetBold           # (on) -> 0x01303720; name from Fahrenheit's Switch symbols (BSim 1.00 on a small function), kept as it fits beside Gu_PrintSetColor
 0x00848740 function Gu_PrintSetColor          # fh switch:bsim1.00 0x7100441a40
+0x00848760 function Gu_PrintSetItalic         # (on) -> 0x01303718; Switch symbol name (BSim), fits beside Gu_PrintSetBold
+0x00848770 function Gu_PrintSetSize           # (size in 1/256): fills the text size block 0x013036dc-0x01303728 (size, size*8/256 and +1, size*4/256, size/256, running maximum at 0x013036f8)
+0x008487d0 function Gu_PrintSetSizeOnly       # (size): 0x013036dc alone (the first word Gu_PrintSetSize sets)
 0x00848820 function Gu_PrintSetX              # fh v3:bsim1.00 0x00848820
+0x00848840 function Gu_PrintSetXY             # (x, y): Gu_PrintSetX and Gu_PrintSetY in one
 0x00848860 function Gu_PrintSetY              # fh v3:bsim1.00 0x00848860
 0x00848880 function Gu_Printf                 # fh v3:exact 0x00848880
 0x00848b30 function Gu_SetHScale              # fh v3:bsim1.00 0x00848b30
 0x00848b40 function Gu_SetScissor             # fh v3:exact 0x00848b40
 0x00848d10 function Gu_SetTexFlush            # fh v3:exact 0x00848d10
+0x00848f00 function Gu_WindowSetHokanEnable   # (on) -> 0x00c4df60; Switch symbol name (BSim)
 0x00849330 function Gu_ButtonGetToggleValue   # fh v3:exact 0x00849330
 0x00849380 function Gu_ButtonSetToggle        # fh v3:bsim1.00 0x00849380
 0x008493e0 function Gu_ButtonSetToggleValue   # fh v3:bsim1.00 0x008493e0
@@ -3259,9 +3271,12 @@
 0x00849970 function Gu_MessageBox             # fh v3:exact 0x00849970
 0x00849aa0 function Gu_MouseGetWindowY        # fh switch:bsim1.00 0x710043fd40
 0x00849ac0 function Gu_MouseGetWindowX        # fh switch:bsim1.00 0x710043fd20
+0x00849ae0 function Gu_MouseGetY              # () -> g_GuMouseY
+0x00849af0 function Gu_MouseGetX              # () -> g_GuMouseX
 0x00849b60 function Gu_MouseSetCapture        # fh switch:bsim1.00 0x710043fa00
 0x00849b90 function Gu_MouseSetWindow         # fh v3:exact 0x00849b90
 0x00849bb0 function Gu_SelectorAllocate       # fh v3:exact 0x00849bb0
+0x00849d10 function Gu_SelectorGetItemValue   # (selector): the selected item's value (+0xc array at +2), beside Gu_SelectorGetItemName
 0x00849d30 function Gu_SelectorGetItemName    # fh v3:bsim1.00 0x00849d30
 0x00849d60 function Gu_SelectorOpen           # fh v3:exact 0x00849d60
 0x00849dc0 function Gu_SelectorOpenXYWH       # fh v3:exact 0x00849dc0
@@ -3276,20 +3291,32 @@
 0x0084a4a0 function Gu_WindowAddClient        # fh switch:bsim1.00 0x710043f3f0
 0x0084a4d0 function Gu_WindowAddStatic        # fh v3:cg3 0x84a4d0
 0x0084a500 function Gu_WindowAddVScroll       # fh switch:bsim1.00 0x710043f430
+0x0084a530 function Gu_WindowStartMove        # (window): +0x1c/+0x1e = mouse, +0x20 = 0, flag 0x10; recursively for open windows whose parent (+8) it is
 0x0084a620 function Gu_WindowControlSetDisable # fh v3:exact 0x0084a620
 0x0084a670 function Gu_WindowControlSetHide   # fh v3:exact 0x0084a670
 0x0084a710 function Gu_WindowControlSetText   # fh v3:exact 0x0084a710
 0x0084a920 function Gu_WindowCreate           # fh v3:exact 0x0084a920
 0x0084aec0 function Gu_WindowGetArg           # fh v3:bsim1.00 0x0084aec0
+0x0084aed0 function Gu_WindowGetClientH       # (window) -> i16 +0x86 (Gu_WindowSetClientH, Gu_WindowSetSize)
+0x0084aee0 function Gu_WindowGetClientW       # (window) -> i16 +0x84 (Gu_WindowSetSize: width - 2 * border +0x80)
+0x0084af00 function Gu_WindowGetClientTop     # (window) -> i16 +0x82 (the top border Gu_WindowSetSize subtracts)
+0x0084af10 function Gu_WindowGetSizeH         # (window) -> i16 +0x12 (Gu_WindowSetSize's height)
+0x0084af30 function Gu_WindowGetHeight        # (window) -> i16 +0x1a; Switch symbol name (BSim), pairs with Gu_WindowGetWidth (+0x18)
+0x0084af90 function Gu_WindowGetSizeW         # (window) -> i16 +0x10 (Gu_WindowSetSize's width)
 0x0084afa0 function Gu_WindowGetWidth         # fh v3:bsim1.00 0x0084afa0
+0x0084afb0 function Gu_WindowGetY             # (window) -> i16 +0x0c (Gu_MouseGetWindowY subtracts it from the mouse y)
 0x0084afc0 function Gu_WindowGetX             # fh v3:bsim1.00 0x0084afb0
 0x0084b200 function Gu_WindowIsDrag           # fh switch:bsim1.00 0x710043fd70
+0x0084b220 function Gu_WindowSetPos           # (window, y, x): +0x0c/+0x0e and their copies at +0x14 and +0x1c
 0x0084b250 function Gu_WindowOpen             # fh v3:exact 0x0084b250
 0x0084b560 function Gu_WindowSetArg           # fh v3:bsim1.00 0x0084b560
 0x0084b580 function Gu_WindowSetClientH       # fh v3:exact 0x0084b580
+0x0084b600 function Gu_WindowSetFlag2         # (window, on): flag bit 1 of +0x88 (the bit Gu_WindowOpen clears)
 0x0084b620 function Gu_WindowSetLocalTrans    # fh switch:cg4 0x71008b5e68
 0x0084b660 function Gu_WindowSetParent        # fh v3:bsim1.00 0x0084b660
 0x0084b6a0 function Gu_WindowSetTitle         # fh v3:cg19 0x84b6a0
+0x0084b720 function Gu_WindowSetSize          # (window, w, h): +0x10/+0x12 and copies at +0x18, +0x20; client +0x84 = w - 2 * +0x80, +0x86 = h - +0x82 - 2
+0x0084b770 function Gu_WindowToFront          # (window): to the front of g_GuWindowList (Gu_WindowOpen's tail)
 0x0084b960 function Gu_ControlMouseButtonHandle # fh v3:exact 0x0084b960 _Gu_ControlMouseButtonHandle
 0x0084c1e0 function ChrViewProc               # fh v3:exact 0x0084c1e0
 0x0084c9d0 function Gui_ButtonSetTexture      # fh v3:exact 0x0084c9d0
@@ -3712,11 +3739,13 @@
 0x00875430 function AtelActorRemove           # fh v3:exact 0x008753b0
 0x00875510 function AtelActorSetUp2           # (..., messages, messages2, ...): script context +0x34 = messages, +0x38 = section 5 (or messages); was Event_InitScripts
 0x008756d0 function AtelBattleSetUp           # fh v3:exact 0x00875650
+0x00875de0 function TkGetVibrateOn            # (pad) -> u8 g_TkVibratePads[pad].+0x22, pad clamped to 0..7 (the byte TkStopVibrate clears)
 0x00875e10 function TkGetVibrateVolume        # fh switch:bsim1.00 0x7100479c70
 0x00875f60 function TkSetVibrateMask          # fh v3:exact 0x00875ee0
 0x00875fb0 function TkSetVibrateStream        # fh v3:cg2 0x875f30
 0x00876290 function TkStopVibrate             # fh v3:exact 0x00876210
 0x008762f0 function TkStopVibrateAll          # fh v3:exact 0x00876270
+0x008763e0 function TkGetVibrateCurve         # (kind, i, curve) -> u16 curve[i]; without a curve the default for kind: 2/3 0x00c52ae8, 5 0x00c52af8, 6 0x00c52b08, else 0x00c52ad8
 0x00876930 function AtelCalcSound             # fh switch:bsim1.00 0x7100478700
 0x00877330 function AtelClearSnd3dWorkAll     # fh v3:exact 0x008772b0
 0x00877420 function AtelInitCalcSound         # fh switch:bsim1.00 0x7100478a70
@@ -3808,6 +3837,11 @@
 0x00887990 function SndVagStreamVolumeDirect  # fh v3:bsim1.00 0x00887900
 0x00887a90 function SsSetProjectBase          # fh v3:bsim1.00 0x00887a00
 0x00887ab0 function TkSndClearKickFlag        # fh v3:bsim1.00 0x00887a20
+0x00887ac0 function TkSndGetKickFlag          # () -> u8 g_TkSndKickFlag (TkSndClearKickFlag clears it)
+0x00887af0 function TkSndIsReadVagVoice       # () -> 0x0132ff14 != 0; Switch symbol name (BSim); the four TkSndIs* read consecutive words 0x0132ff10-0x0132ff1c
+0x00887b00 function TkSndIsReadShoutVoice     # () -> 0x0132ff18 != 0; Switch symbol name (BSim)
+0x00887b10 function TkSndIsReadVoice          # () -> 0x0132ff10 != 0; Switch symbol name (BSim)
+0x00887b20 function TkSndIsStandbyVoice       # () -> g_TkSndStandbyVoice != 0; Switch symbol name (BSim), agrees with TkSndSetStandbyVoice's global
 0x00887b30 function TkSndReportStatus         # fh v3:bsim1.00 0x00887aa0
 0x00887b50 function TkSndSetStandbyVoice      # fh v3:bsim1.00 0x00887ac0
 0x00887b60 function TkSndUpdate               # fh switch:cg2 0x71008b6fd8
@@ -3822,8 +3856,10 @@
 0x00887d20 function FFXSetLang                # fh v3:bsim1.00 0x00887c90
 0x00887d30 function TkClearSoundSyncVFlag     # fh v3:bsim1.00 0x00887ca0
 0x00887d60 label VsyncHandler                 # the vsync handler createVsyncEmuThread gets (from 0x00888680, TkInitAllSyncVCallback): runs the TkSetSyncVCallbackPtr callbacks
+0x00887db0 function TkGetGsRegisterCSR        # () -> 0x013301f4; Switch symbol name (BSim)
 0x00887dc0 function TkGetLastSyncVCounter     # fh v3:bsim1.00 0x00887d30
 0x00887dd0 function TkGetSoundSyncVFlag       # fh v3:bsim1.00 0x00887d40
+0x00887e00 function TkGetSyncVCounter         # () -> 0x01330200; Switch symbol name (BSim); 0x00887e20 counts it with g_TkTotalSyncVCounter
 0x00887e10 function TkGetTotalSyncVCounter    # fh v3:bsim1.00 0x00887d80
 0x00887e30 function TkInitSyncV               # fh v3:exact 0x00887da0
 0x00887f00 function TkSyncV                   # fh v3:exact 0x00887e70
@@ -3847,8 +3883,10 @@
 0x00888c20 function TkGetControlerAnalogHist  # fh v3:exact 0x00888b90
 0x00888c40 function Pad_MapButtons               # (a, b, buttons): remaps button bits through the config table 0x01330488
 0x00888d70 function TkGetControlerHist        # fh v3:bsim1.00 0x00888ce0
+0x00888e10 function TkGetControlerWork2       # (a, b) -> &0x013304c0[(a + b) * 0x20] (beside g_PadButtonMap)
 0x00888e50 function TkGetControlerReptHist    # fh v3:bsim1.00 0x00888dc0
 0x00888e80 function TkGetControlerTrigHist    # fh v3:bsim1.00 0x00888df0
+0x00888ec0 function TkGetControlerWork        # (a, b) -> &0x01330288[(a + b) * 0x100] (after g_TkControlerWork)
 0x00888f00 function TkInitControlerWork       # fh v3:bsim1.00 0x00888e70
 0x008893e0 function TkScanControler           # fh v3:exact 0x00889350
 0x008894d0 function TkSetControlerActuatorMode # fh v3:bsim1.00 0x00889440
@@ -3858,13 +3896,16 @@
 0x0088a4d0 function TkMtCalcSpline3           # fh v3:bsim1.00 0x0088a440
 0x0088b3b0 function TkMtCalcSplineTangent     # fh v3:bsim1.00 0x0088b320
 0x0088b3e0 function CIcos                     # fh v3:bsim1.00 0x0088b350 +_CIcos
+0x0088b400 function Math_MinAbs               # (a, b) -> float: |a| when b is greater, else b
 0x0088b430 function Math_Atan2XZ                 # (x0, z0, x1, z1) -> angle with axis special cases
 0x0088b4d0 function Math_YawPitchTo              # (*yaw, *pitch, from xyz, to xyz)
 0x0088b730 function Math_InRadius                # (r, dx, dy, dz) -> dx^2+dy^2+dz^2 <= r^2
 0x0088bc20 function Math_WrapAngle               # wraps to [-pi, pi]
 0x0088c3a0 function CIsin                     # fh v3:bsim1.00 0x0088c310 +_CIsin
+0x0088c3c0 function Math_LengthSq3            # (x, y, z) -> float x*x + y*y + z*z (squares rounded to float)
 0x0088c420 function CItan                     # fh v3:bsim1.00 0x0088c390 +_CItan
 0x0088c5a0 function TkNormalFVector           # fh switch:bsim1.00 0x7100488080
+0x0088c690 function Math_SinTable             # (angle in 1/0x8000 turns) -> i32 from the quarter-wave u16 table g_SinQuarter
 0x0088c710 function TkResetClip               # fh v3:exact 0x0088c680
 0x0088c7d0 function TkClearAlarm              # fh v3:cg2 0x88c740
 0x0088c7f0 function TkRestartSyncH            # fh v3:bsim1.00 0x0088c790
@@ -3872,6 +3913,7 @@
 0x0088c810 function TkInitAlarm               # fh v3:bsim1.00 0x0088c780
 0x0088c860 function TKMallocAndReadEventFTC   # fh v3:exact 0x0088c7d0
 0x0088cac0 function TKMallocAndReadEventMessage # (name): new_<lang>pc/event/obj_ps3/<xx>/<name>.bin, battle/btl/<name>/<name>.bin (name with _), battle/kernel (monster*), menu/*.dcp (macro*); was Msg_LoadFile
+0x0088d120 function Math_RoundUp              # (n, step) -> n rounded up to a multiple of step (unsigned)
 0x0088d140 function TkCdRead                  # fh switch:bsim1.00 0x710048ff90
 0x0088d190 function TkCdReadNB                # fh v3:exact 0x0088d100
 0x0088d1c0 function TkCdReadSync              # fh v3:exact 0x0088d130
@@ -3888,6 +3930,7 @@
 0x0088d670 function TkGetNowEventJumpIndex    # byte g_SaveData+0xc; was Map_GetEntranceIndex
 0x0088d680 function TkGetNowEventJumpMapIdNo  # fh v3:bsim1.00 0x0088d5f0
 0x0088d690 function TkGetNowEventJumpMapNo    # fh v3:bsim1.00 0x0088d600
+0x0088d6a0 function TkGetOutputEncount        # () -> u8 0x01330871; Switch symbol name (BSim), pairs with TkSetOutputEncount
 0x0088d6d0 function TkGetTGS                  # fh v3:bsim1.00 0x0088d640
 0x0088d710 function TkInit                    # fh v3:exact 0x0088d680
 0x0088df40 function TkInitSaveWork            # fh v3:cg6 0x88deb0
@@ -3903,7 +3946,10 @@
 0x0088ea60 function TkSetEventJump            # (map, entrance): game state (0x00785240) +0 = map, +2 = previous, +0xc = entrance; map < 0 = return to the saved map; was Map_RequestChange
 0x0088eaf0 function TkSetEventJumpMapNo       # fh v3:exact 0x0088ea60
 0x0088eb50 function TkSetFadeOut              # fh v3:exact+call.cs 0x0088eac0 cdecl
+0x0088ebe0 function TkSetOutputEncount        # (on): u8 0x01330871 (the byte TkGetOutputEncount reads)
+0x0088ec10 function TkSetTGS                  # (v): u8 g_TkTGS (TkGetTGS's byte)
 0x0088ec60 function TkVU1SyncPath             # fh v3:bsim1.00+call.cs 0x0088ebd0 cdecl
+0x0088ee70 function TkGetStrWidth             # (proportional, s) -> width in 1/16: per character (lead byte >= 0x80: two bytes) g_FontWidths[c] + 2, or 9 / 13 for one / two bytes
 0x0088f140 function TkPutDebugFontString      # fh switch:bsim1.00 0x7100492f20
 0x0088f4c0 function TkPutDebugFontStringP     # fh switch:bsim1.00 0x7100492a20
 0x0088faf0 function TkSetDebugFontLocate      # fh switch:bsim1.00 0x7100492180
@@ -4042,9 +4088,11 @@
 0x008a8e50 function TOMenuGetFirstReadEndFlag # fh v3:bsim1.00 0x008a8e00
 0x008a9670 function TkMenuDrawShadeRatioDiff  # fh v3:bsim1.00 0x008a9630
 0x008a9720 function TkMenuExchangePlayerPos   # fh v3:exact 0x008a96d0
+0x008a9840 function TkMenuGetPlayerStep       # () -> i8 g_TkMenuPlayerStep, sign-extended
 0x008a9860 function TkMenuGetCurrentPlayer    # fh v3:bsim1.00+call.cs 0x008a9810 stdcall
 0x008a9870 function TkMenuGetCurrentPlayerPos # fh v3:bsim1.00+call.cs 0x008a9820 cdecl
 0x008a9880 function TkMenuGetCurrentSummon    # fh call.cs cdecl
+0x008a9890 function TkMenuGetCurrentSummonPos # () -> g_TkMenuCurrentSummonPos (the dump's Switch guess TkMenuGetCurrentPlayerPos is taken by 0x008a9870)
 0x008a98a0 function TkMenuGetDrawShadeRatio   # fh v3:bsim1.00 0x008a9850
 0x008a98c0 function TkMenuGetHP               # fh v3:bsim1.00+call.cs 0x008a9870 cdecl
 0x008a98f0 function TkMenuGetItemHelp         # fh v3:cg2 0x8a98a0
@@ -4055,7 +4103,11 @@
 0x008a9b00 function TkMenuGetPlayerFromIndex2_008a9b00 # fh v3:bsim1.00 0x008a9ab0
 0x008a9b30 function TkMenuGetPlayerListMax    # fh v3:exact 0x008a9ae0
 0x008a9b50 function TkMenuGetPlayerListMax2   # fh v3:bsim1.00+call.cs 0x008a9b00 cdecl
+0x008a9b70 function TkMenuGetPlayerPartyMask  # () -> 0x01841c24; Switch symbol name (BSim), the word after the player list sizes
+0x008a9bb0 function TkMenuGetSummonStep       # () -> i8 g_TkMenuSummonStep, sign-extended
+0x008a9bc0 function TkMenuGetSummonFromIndex  # (i) -> u8 g_TkMenuSummons[i] clamped to g_TkMenuSummonListMax (as TkMenuGetPlayerFromIndex2 for players)
 0x008a9bf0 function TkMenuGetSummonListMax    # fh v3:bsim1.00 0x008a9ba0
+0x008a9c60 function TkMenuGetTimer            # () -> u8 0x01840884; Switch symbol name (BSim)
 0x008aa100 function TkMenuMainActiveMenu      # fh v3:exact 0x008aa0b0
 0x008aa1a0 function TkMenuMainAllocWindow     # fh call.cs cdecl
 0x008aa1e0 function TkMenuMainClearSelectWindow # fh switch:bsim1.00 0x71004ba0e0
@@ -4072,9 +4124,12 @@
 0x008aaeb0 function TkMenuSetHelpMessage      # fh v3:exact 0x008aae60
 0x008aaf10 function TkMenuSetNextPlayer       # fh v3:bsim1.00 0x008aaec0
 0x008aaf40 function TkMenuSetNextPlayer2      # fh v3:bsim1.00 0x008aaef0
+0x008aaf70 function TkMenuSetNextSummon       # (): g_TkMenuCurrentSummonPos + 1, 0 past the list; g_TkMenuSummonStep = 1 (as TkMenuSetNextPlayer)
 0x008aafa0 function TkMenuSetPrevPlayer       # fh v3:bsim1.00 0x008aaf50
 0x008aafc0 function TkMenuSetPrevPlayer2      # fh v3:bsim1.00 0x008aaf70
+0x008aafe0 function TkMenuSetPrevSummon       # (): g_TkMenuCurrentSummonPos - 1, the last before the first; g_TkMenuSummonStep = 0xff
 0x008ab1e0 function TkMenuSummonEnableMask    # fh v3:bsim1.00+call.cs 0x008ab190 cdecl
+0x008ab220 function TkMenuGetHelpRatio2       # () -> 0x01840878; Switch symbol name (BSim)
 0x008ab230 function TkMn2GetMainFrameRatio    # fh v3:bsim1.00 0x008ab1e0
 0x008ab240 function TkMn2GetMenuMode          # fh v3:bsim1.00 0x008ab1f0
 0x008ab260 function TkMn2SetMainFrameRatioDiff # fh v3:bsim1.00 0x008ab210
@@ -4231,6 +4286,8 @@
 0x008c1b30 function TkMn2GetItemHelp          # fh v3:cg3 0x8c1b10
 0x008c1c20 function TkMn2GetSummonGrow        # fh v3:bsim1.00 0x008c1c00
 0x008c1c40 function TkMn2GetSummonGrowMax     # fh v3:bsim1.00+call.cs 0x008c1c20 cdecl
+0x008c2300 function TkMn2RestoreFontShade     # (): the four g_TkMn2FontShade words back from the copies after each (0x023cc474, 0x46c, 0x464, 0x45c)
+0x008c2330 function TkMn2SaveFontShade        # (): the four g_TkMn2FontShade words to the copies after each
 0x008c2360 function TkMn2RefreshList          # fh switch:bsim1.00 0x71004c4110
 0x008c2b50 function TkMn2SeqGetPos            # fh switch:bsim1.00 0x71004c7660
 0x008c2b90 function TkMn2SeqGetRect           # fh switch:bsim1.00 0x71004c74c0
@@ -4256,16 +4313,22 @@
 0x008ca480 function TkMenuDraw                # fh v3:cg2 0x8ca450
 0x008ca490 function TkMenuFlushDummyControler # fh switch:bsim1.00 0x71004c3a50
 0x008ca510 function TkMenuGetDummyControlerFlag # fh v3:bsim1.00 0x008ca4e0
+0x008ca560 function TkMenuSetDummyControlerPending # (buttons): g_TkMenuDummyControler +4 (what TkMenuFlushDummyControler makes current)
 0x008ca570 function TkMenuSetDummyControlerFlag # fh v3:bsim1.00 0x008ca540
 0x008cb0e0 function TkMenuCtrlConfig          # fh v3:exact 0x008cb0b0
 0x008cc170 function iMusicRefreshBgmType      # fh v3:exact 0x008cc140
 0x008cc330 function TkMenuCtrlSummon          # fh v3:exact+call.cs 0x008cc300 cdecl
+0x008ced10 function Math_Clamp1To99           # (n) -> n clamped to 1..99
 0x008ced30 function TkMn2OpenSummonGrowWindow # fh v3:exact 0x008ced00
 0x008cf020 function TkMenuCtrlEquip           # fh v3:exact 0x008ceff0
 0x008d0460 function TkMenuCtrlLimit           # fh v3:exact 0x008d0430
 0x008d1e00 function TkMenuCtrlStatus          # fh v3:exact 0x008d1dd0
+0x008d2660 function TMn2SetStatusBGDiff       # (step): i16 0x0186a9fc; Switch symbol name (BSim), pairs with TkMn2InitStatusBG
 0x008d2d80 function TkMenuGetCommandMax       # fh v3:exact 0x008d2d50
 0x008d2dc0 function TkMenuGetCommandOffset    # fh v3:exact 0x008d2d90
+0x008d3280 function TkMn2StepStatusBG         # (): i16 0x0186aa00 += step (0x0186a9fc), kept in 0..0x1000
+0x008d4910 function TkMn2GetStatusBG          # () -> i16 0x0186aa00, sign-extended
+0x008d4ed0 function TkMn2InitStatusBG         # (): both i16 of g_TkMn2StatusBG = 0; Switch symbol name (BSim)
 0x008d5540 function TkMenuCtrlKaizou          # fh v3:exact 0x008d5510
 0x008d5830 function UpdateGearCustomizationMenuState # fh call.cs cdecl
 0x008d5f60 function DrawGearCustomizationMenu # fh call.cs cdecl
@@ -4283,6 +4346,7 @@
 0x008dcd50 function TkMenuDrawFont1208ValueClut # fh switch:bsim1.00 0x71004c1880
 0x008dcd80 function TkMenuDrawFont1208ValueClutRight # fh switch:bsim1.00 0x71004c18e0
 0x008dcdb0 function TkMenuDrawFont1612        # fh switch:bsim1.00 0x71004c1830
+0x008dce10 function TkMenuGetTableEntry       # (i, table): table of u32 count + offsets from its start; entry i, 0 past the end
 0x008dce30 function TkMenuDrawInitString      # fh v3:exact 0x008dce10
 0x008dce50 function TkMenuDrawKick            # fh v3:exact 0x008dce30
 0x008dcee0 function TkMn2DrawMenuAbility      # fh switch:bsim1.00 0x71004c62a0
@@ -4319,9 +4383,11 @@
 0x008e2870 function TkMenuCtrlHdd             # fh v3:exact 0x008e2870
 0x008e2960 function TkMenuCtrlWorldMap        # fh v3:exact 0x008e2960
 0x008e2de0 function TOMenuCloseYesNoWindow    # fh switch:bsim1.00 0x71004e7cb0
+0x008e3390 function TkMn2GetListMax2          # () -> 0x023cc120; Switch symbol name (BSim)
 0x008e36f0 function TkMenuCloseSubCmdWindow   # fh switch:bsim1.00 0x71004e9140
 0x008e49d0 function TkMenuRestartSubCmdWindow2 # fh switch:bsim1.00 0x71004e9120
 0x008e5280 function AdjustButtonIconY         # fh v3:exact 0x008e5280
+0x008e58e0 function BeginScissor_XY           # (&x0, &y0, &x1, &y1) -> 1: wholly outside g_TkMenuScissorBox (edge counts) -> all four -100000.0; then edges inside the box moved onto it
 0x008e5a20 function BeginScissor_XYUV         # (&x0, &y0, &x1, &y1, &u0, &v0, &u1, &v1) -> 0 when outside g_TkMenuScissorBox, else 1 with the rectangle and its texture coordinates clipped; x87 at 53 bits, ratios rounded to float; fh v3:exact 0x008e5a20
 0x008e5cd0 function CloseScissor              # fh v3:bsim1.00 0x008e5cd0
 0x008e6070 function DrawCrossButtonIconRGBA   # fh v3:exact 0x008e6070
@@ -6229,6 +6295,7 @@
 0x00b363e8 label Phyre_PRendering_PRendererForJobs_vftable # fh v4:imported Phyre::PRendering::PRendererForJobs::vftable
 0x00b363f8 label Phyre_PRendering_PRenderer_vftable # fh v4:imported Phyre::PRendering::PRenderer::vftable
 0x00b36880 label Phyre_PRendering_PInternal_PRendererThreadPoolJob_vftable # fh v4:imported Phyre::PRendering::PInternal::PRendererThreadPoolJob::vftable
+0x00b368b8 label    g_ScissorOutside          # -100000.0f, BeginScissor_XY's corners for a rectangle outside the box
 0x00b368c4 label Phyre_PClassDescriptorForType_Phyre_PDynamicGeometry_PModifierNetworkInfoPacket_ModifierCode__vftable # fh v4:imported Phyre::PClassDescriptorForType<Phyre::PDynamicGeometry::PModifierNetworkInfoPacket_ModifierCode>::vftable
 0x00b3690c label Phyre_PClassDescriptorAbstract_Phyre_PDynamicGeometry_PModifierNetworkInfoPacket_ModifierCode__vftable # fh v4:imported Phyre::PClassDescriptorAbstract<Phyre::PDynamicGeometry::PModifierNetworkInfoPacket_ModifierCode>::vftable
 0x00b36954 label Phyre_PClassDescriptorConcrete_Phyre_PDynamicGeometry_PModifierNetworkInfoPacket_ModifierCode__vftable # fh v4:imported Phyre::PClassDescriptorConcrete<Phyre::PDynamicGeometry::PModifierNetworkInfoPacket_ModifierCode>::vftable
@@ -7036,6 +7103,9 @@
 0x00c44bf0 label    g_pppSinTable                # 4096 f32 sines over a turn: pppGetRotMatrix* read [(a>>4)&0xfff] and [((a+0x4000)>>4)&0xfff] (cosine)
 0x00c49680 label g_ChrDefaultMoves           # Ch_MotionSetMoves(chr, slot, -1) stores entry [slot] (0, 1, 2, then zeros)
 0x00c4df54 label    g_GuHScale                # vertical scale of Gu_SetScissor's y bounds, 8.8 fixed point (Gu_SetHScale)
+0x00c4df60 label    g_GuWindowHokan           # window movement smoothing on (Gu_WindowSetHokanEnable)
+0x00c52ad8 label    g_TkVibrateCurves         # 4 default vibration curves of 16 bytes (u16 entries), by kind (TkGetVibrateCurve)
+0x00c54e40 label    g_SinQuarter              # 0x2000 x u16, the first quarter of a sine wave (Math_SinTable)
 0x00c59554 label    g_SystemConfirmButtonAssign # TOGetSystemConfirmButtonAssign returns it with -1 replaced by 0 (and stores that back)
 0x00c5955c label    g_ButtonData              # 2 words: setButtonData(a, b); resetButtonData sets both to -1
 0x00c5e350 label    g_GuideFlags                 # bit 0: the minimap may show (clear: Guide_FadeOff)
@@ -7190,11 +7260,18 @@
 0x012ffad8 label g_ChrSkipSetPos3            # set by Ch_GetPosSg; Ch_SetPos3 clears it instead of moving the character
 0x013036c0 label    g_GuPacketCount           # GIF quadwords queued at g_GuPacket (Gu_SetScissor, Gu_SetTexFlush add 2)
 0x013036c4 label    g_GuPacket                # the Gu GS packet buffer, 16-byte quadwords
+0x013036c8 label    g_GuPacketData            # where Gu_SetPrim, Gu_SetRgbaq, Gu_SetTest, Gu_SetXyzf2 append (indexed by g_GuPacketCount like g_GuPacket)
+0x013036cc label    g_GuPacketTag             # the open GIF tag (Gu_PacketBeginTag, Gu_PacketEndTag)
+0x013036d0 label    g_GuPacketTagStart        # quadword index of the open GIF tag
+0x013036d4 label    g_GuPacketOrigin          # i32 x, y: drawing origin from a window (Gu_PacketBeginTag), added by Gu_SetXyzf2
+0x013036dc label    g_GuPrintSize             # text size in 1/256 (Gu_PrintSetSize, Gu_PrintSetSizeOnly); the block to 0x01303728 holds what is derived from it
 0x013036e0 label    g_GuPrintBaseX            # text cursor origin x; Gu_PrintSetX(x) sets g_GuPrintX = this + x
 0x013036e4 label    g_GuPrintX                # text cursor x (Gu_PrintSetX)
 0x013036e8 label    g_GuPrintBaseY            # text cursor origin y (Gu_PrintSetY)
 0x013036ec label    g_GuPrintY                # text cursor y (Gu_PrintSetY)
 0x0130370c label    g_GuPrintColor            # 3 x u32 (Gu_PrintSetColor r, g, b)
+0x01303718 label    g_GuPrintItalic           # Gu_PrintSetItalic
+0x01303720 label    g_GuPrintBold             # Gu_PrintSetBold
 0x01303734 label    g_GuWindowList            # open Gu windows, linked through window +0, front first (Gu_WindowOpen moves a window to the front)
 0x01303738 label    g_GuDragWindow            # the window being dragged (Gu_WindowIsDrag)
 0x01303754 label    g_GuMouseCapture          # 2 words (Gu_MouseSetCapture)
@@ -7218,11 +7295,14 @@
 0x01328272 label    g_TkVibrateOff            # nonzero: TkGetVibrateVolume reports 0, 0
 0x01328274 label    g_TkVibrateMask           # u16, pads allowed to vibrate (TkSetVibrateMask: bit per pad; pad < 0: 0xff or 0)
 0x01328558 label    g_NativeTables            # per-group native function tables
+0x0132ff10 label    g_TkSndVoiceFlags         # 4 words: read, VAG read, shout read voice, standby voice (g_TkSndStandbyVoice at +0xc) (TkSndIs*)
 0x0132ff1c label    g_TkSndStandbyVoice       # TkSndSetStandbyVoice
 0x0132ff24 label    g_TkSndStatus             # TkSndReportStatus returns whether it is nonzero
 0x0132ffa0 label    g_PartyWorkers               # [16] worker id per party index (0x0042, FUN_00885fd0)
 0x01330094 label    g_TkSndKickFlag           # u8, cleared by TkSndClearKickFlag
 0x013301e4 label    g_TkSoundSyncVFlag        # cleared by TkClearSoundSyncVFlag
+0x013301f4 label    g_TkGsCsr                 # TkGetGsRegisterCSR
+0x01330200 label    g_TkSyncVCounter          # TkGetSyncVCounter; 0x00887e20 increments it with g_TkTotalSyncVCounter
 0x01330210 label    g_TkTotalSyncVCounter     # TkGetTotalSyncVCounter (returned as 64 bits, high half 0)
 0x01330254 label    g_TkBGThreadFunc          # TkRegistBGThreadFunc(f) sets it, returns the old one
 0x0133025c label    g_TkSyncVCallbackHandles  # 3 words (TkGetSyncVCallbackHandle, index clamped to 0..2)
@@ -7236,6 +7316,7 @@
 0x01330850 label    g_TkFadeOut               # 2 words, both set by TkSetFadeOut
 0x0133086c label    g_TkEncountCounterEventStart # TkGetEncountCounterEventStart
 0x01330870 label    g_TkDebugMenuStatus       # u8 0/1 (TkSetDebugMenuStatus)
+0x01330871 label    g_TkOutputEncount         # u8 (TkGetOutputEncount / TkSetOutputEncount)
 0x01330880 label    g_TkBattleMusicSize       # TkGetBattleMusicSize returns its address
 0x01338880 label    g_FFXConfig               # the FFX configuration block (TkGetFFXCofingAdrs returns its address)
 0x0133c8c0 label    g_TkBattleMusicBuffer     # TkGetBattleMusicBuffer
@@ -7247,14 +7328,18 @@
 0x0134084c label    g_PauseEntered               # 1 once Pause_Enter ran
 0x01597f74 label    g_SaveData_LoadResult     # u8, 1 = the load succeeded (SaveDataIsLoadingSuccessful); SaveDataToLoad, TkMenuPreSave write it
 0x01840870 label    g_TkMenuMainIgnoreJoinFlag # TkMenuMainSetIgnoreJoinFlag
+0x01840878 label    g_TkMenuHelpRatio2        # TkMenuGetHelpRatio2
 0x0184087c label    g_TkMenuDrawShadeRatio    # TkMenuGetDrawShadeRatio; TkMenuDrawShadeRatioDiff sets it (fh bsim names)
+0x01840884 label    g_TkMenuTimer             # u8 (TkMenuGetTimer)
 0x01840886 label    g_TkMenuPlayerStep        # u8, the last change of menu character: 1 (TkMenuSetNextPlayer2), 0xff (TkMenuSetPrevPlayer2)
+0x01840887 label    g_TkMenuSummonStep        # u8: 1 (TkMenuSetNextSummon) or 0xff (TkMenuSetPrevSummon)
 0x018408ec label    g_TkMenuMainActiveMask    # bit per main menu (TkMenuMainGetMenuActiveMask; TkMenuMainActiveMenu sets, TkMenuMainSleepMenu clears)
 0x018408f8 label    g_TkMn2MenuMode           # TkMn2GetMenuMode; TkMenuMainActiveMenu tests its high half for 0x80
 0x01841c00 label    g_TkMenuHelpMessage       # 3 x i32: current help message, the previous one, a timer (TkMenuSetHelpMessage resets it on a change)
 0x01841c14 label    g_TkMenuPlayers           # u8 character ids, indexed by g_TkMenuCurrentPlayerPos (TkMenuGetCurrentPlayer)
 0x01841c1c label    g_TkMenuPlayerListMax     # TkMenuGetPlayerListMax without the ignore-join flag (with it: g_TkMenuPlayerListMax2)
 0x01841c20 label    g_TkMenuPlayerListMax2    # TkMenuGetPlayerListMax2
+0x01841c24 label    g_TkMenuPlayerPartyMask   # TkMenuGetPlayerPartyMask
 0x01841c28 label    g_TkMenuCurrentPlayerPos  # TkMenuGetCurrentPlayerPos / TkMenuSetCurrentPlayerPos
 0x01841c38 label    g_TkMenuSummons           # u8 aeon ids, indexed by g_TkMenuCurrentSummonPos (TkMenuGetCurrentSummon)
 0x01841c50 label    g_TkMenuSummonListMax     # TkMenuGetSummonListMax
@@ -7272,6 +7357,7 @@
 0x0186a388 label    g_TkMenuImportantListMax  # TkMenuImportantListMax
 0x0186a420 label    g_TkMenuDummyControler    # +0 buttons, +4 pending buttons, +8..+0xf current/pending stick byte pairs (TkMenuFlushDummyControler: pending -> current, pending -> released, 0x80)
 0x0186a430 label    g_TkMenuDummyControlerFlag # u8 (TkMenuGetDummyControlerFlag / TkMenuSetDummyControlerFlag)
+0x0186a9fc label    g_TkMn2StatusBG           # i16 step, i16 value 0..0x1000 (TkMn2InitStatusBG, TMn2SetStatusBGDiff, TkMn2StepStatusBG, TkMn2GetStatusBG)
 0x01871530 label    g_TkMenuPacket            # menu GS packet pointer; TkMenuDrawEnv writes 0x50 bytes at +0x10 and moves it 0x60 on
 0x01871568 label    g_TkMenuMainOptions       # 8-byte entries: +0 menu (TkMenuMainGetOptionMenu), +4 i16 enabled (TkMenuMainGetOptionEnabled)
 0x01871688 label    g_TkMenuMainMaxOptions    # TkMenuMainGetMaxOptions
@@ -7322,8 +7408,11 @@
 0x023c44e0 label    g_ChrCount                   # number of field characters in g_ChrArray
 0x023c44e4 label    g_ChrArray                   # field characters, 0x880 bytes each (byte +2 = active)
 0x023c8d00 label g_ChrBlk                    # 40 character model blocks of 0x12c bytes (Ch_BlkGetHandleFast); chr +0x1c4 points at one: +0x1c thickness, +0x30 scale, +0x71 name, +0xb8 directory, +0x124/+0x128 resident data
+0x023cbbe0 label    g_GuScreenSize            # i32 height, width: Gu_SetXyzf2 centres in 4096 by them
 0x023cbbf0 label    g_SgFrame                    # main loop frame counter: Sg_MainLoop increments it and passes it to sceGsSwapDBuffDc; yiGetFCount returns it * 2
 0x023cbd60 label    g_EventEbpMessages        # the .ebp's own message table (section 1), set by AtelEventSetUp; the Msg_ lookups fall back to it for offset 0
 0x023cbebc label gNeedAutoSave                # fh v4:user_defined
+0x023cbf6c label    g_FontWidths              # a byte per character code, two-byte codes too (TkGetStrWidth)
+0x023cc120 label    g_TkMn2ListMax2           # TkMn2GetListMax2
 0x023cc128 label    g_TkMenuSubCmdWindow      # the open sub-command window (TkMenuCloseSubCmdWindow sets its +0x41 and clears this; TkMenuRestartSubCmdWindow2)
 0x023cc458 label    g_TkMn2FontShade          # 4 words 8 bytes apart, stored downwards: TkMn2SetFontShade(s0..s3) puts s0 at 0x023cc470, s3 here

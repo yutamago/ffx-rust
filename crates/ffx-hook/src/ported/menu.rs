@@ -495,4 +495,363 @@ ported! {
     TkMenuSetSceneDataAdrs @ 0x00a7_c7f0 => extern "C" fn tk_menu_set_scene_data_adrs(i: i32, data: u32) {
         scene::tk_menu_set_scene_data_adrs(&mut mem(), i, data);
     }
+    /// `Gu_PacketEndTag()`.
+    Gu_PacketEndTag @ 0x0084_8460 => extern "C" fn gu_packet_end_tag() {
+        gu::gu_packet_end_tag(&mut mem());
+    }
+    /// `Gu_SetPrim(prim)`.
+    Gu_SetPrim @ 0x0084_8480 => extern "C" fn gu_set_prim(prim: i32) {
+        gu::gu_set_prim(&mut mem(), prim);
+    }
+    /// `Gu_SetRgbaq(r, g, b, a)`.
+    Gu_SetRgbaq @ 0x0084_84c0 => extern "C" fn gu_set_rgbaq(r: i32, g: i32, b: i32, a: i32) {
+        gu::gu_set_rgbaq(&mut mem(), [r, g, b, a]);
+    }
+    /// `Gu_PacketBeginTag(window)`.
+    Gu_PacketBeginTag @ 0x0084_8530 => extern "C" fn gu_packet_begin_tag(window: u32) {
+        gu::gu_packet_begin_tag(&mut mem(), window);
+    }
+    /// `Gu_SetTest(ate, atst, aref, afail, date, datm, zte, ztst)`.
+    Gu_SetTest @ 0x0084_85d0 => extern "C" fn gu_set_test(f0: i32, f1: i32, f2: i32, f3: i32, f4: i32, f5: i32, f6: i32, f7: i32) {
+        gu::gu_set_test(&mut mem(), [f0, f1, f2, f3, f4, f5, f6, f7]);
+    }
+    /// `Gu_SetXyzf2(x, y)`.
+    Gu_SetXyzf2 @ 0x0084_8680 => extern "C" fn gu_set_xyzf2(x: i32, y: i32) {
+        gu::gu_set_xyzf2(&mut mem(), x, y);
+    }
+    /// `Gu_PrintSetBold(on)`.
+    Gu_PrintSetBold @ 0x0084_8720 => extern "C" fn gu_print_set_bold(on: u32) {
+        gu::PRINT_BOLD.set(&mut mem(), on);
+    }
+    /// `Gu_PrintSetItalic(on)`.
+    Gu_PrintSetItalic @ 0x0084_8760 => extern "C" fn gu_print_set_italic(on: u32) {
+        gu::PRINT_ITALIC.set(&mut mem(), on);
+    }
+    /// `Gu_PrintSetSize(size)`.
+    Gu_PrintSetSize @ 0x0084_8770 => extern "C" fn gu_print_set_size(size: i32) {
+        gu::gu_print_set_size(&mut mem(), size);
+    }
+    /// `Gu_PrintSetSizeOnly(size)`: the first size word alone.
+    Gu_PrintSetSizeOnly @ 0x0084_87d0 => extern "C" fn gu_print_set_size_only(size: u32) {
+        gu::PRINT_SIZE.set(&mut mem(), size);
+    }
+    /// `Gu_PrintSetXY(x, y)`.
+    Gu_PrintSetXY @ 0x0084_8840 => extern "C" fn gu_print_set_xy(x: i32, y: i32) {
+        gu::gu_print_set_xy(&mut mem(), x, y);
+    }
+    /// `Gu_WindowSetHokanEnable(on)`.
+    Gu_WindowSetHokanEnable @ 0x0084_8f00 => extern "C" fn gu_window_set_hokan_enable(on: u32) {
+        gu::WINDOW_HOKAN.set(&mut mem(), on);
+    }
+    /// `Gu_MouseGetY()`.
+    Gu_MouseGetY @ 0x0084_9ae0 => extern "C" fn gu_mouse_get_y() -> i32 {
+        gu::MOUSE_Y.get(&mem())
+    }
+    /// `Gu_MouseGetX()`.
+    Gu_MouseGetX @ 0x0084_9af0 => extern "C" fn gu_mouse_get_x() -> i32 {
+        gu::MOUSE_X.get(&mem())
+    }
+    /// `Gu_SelectorGetItemValue(selector)`.
+    Gu_SelectorGetItemValue @ 0x0084_9d10 => extern "C" fn gu_selector_get_item_value(selector: u32) -> u32 {
+        gu::gu_selector_get_item_value(&mem(), selector)
+    }
+    /// `Gu_WindowStartMove(window)`.
+    Gu_WindowStartMove @ 0x0084_a530 => extern "C" fn gu_window_start_move(window: u32) {
+        gu::gu_window_start_move(&mut mem(), window);
+    }
+    /// `Gu_WindowGetClientH(window)`.
+    Gu_WindowGetClientH @ 0x0084_aed0 => extern "C" fn gu_window_get_client_h(window: u32) -> i32 {
+        gu::gu_window_field(&mem(), window, 0x86)
+    }
+    /// `Gu_WindowGetClientW(window)`.
+    Gu_WindowGetClientW @ 0x0084_aee0 => extern "C" fn gu_window_get_client_w(window: u32) -> i32 {
+        gu::gu_window_field(&mem(), window, 0x84)
+    }
+    /// `Gu_WindowGetClientTop(window)`.
+    Gu_WindowGetClientTop @ 0x0084_af00 => extern "C" fn gu_window_get_client_top(window: u32) -> i32 {
+        gu::gu_window_field(&mem(), window, 0x82)
+    }
+    /// `Gu_WindowGetSizeH(window)`.
+    Gu_WindowGetSizeH @ 0x0084_af10 => extern "C" fn gu_window_get_size_h(window: u32) -> i32 {
+        gu::gu_window_field(&mem(), window, 0x12)
+    }
+    /// `Gu_WindowGetHeight(window)`.
+    Gu_WindowGetHeight @ 0x0084_af30 => extern "C" fn gu_window_get_height(window: u32) -> i32 {
+        gu::gu_window_field(&mem(), window, 0x1a)
+    }
+    /// `Gu_WindowGetSizeW(window)`.
+    Gu_WindowGetSizeW @ 0x0084_af90 => extern "C" fn gu_window_get_size_w(window: u32) -> i32 {
+        gu::gu_window_field(&mem(), window, 0x10)
+    }
+    /// `Gu_WindowGetY(window)`.
+    Gu_WindowGetY @ 0x0084_afb0 => extern "C" fn gu_window_get_y(window: u32) -> i32 {
+        gu::gu_window_field(&mem(), window, 0xc)
+    }
+    /// `Gu_WindowSetPos(window, y, x)`.
+    Gu_WindowSetPos @ 0x0084_b220 => extern "C" fn gu_window_set_pos(window: u32, y: u32, x: u32) {
+        #[allow(clippy::cast_possible_truncation)] // 16-bit stores
+        gu::gu_window_set_pos(&mut mem(), window, y as u16, x as u16);
+    }
+    /// `Gu_WindowSetFlag2(window, on)`.
+    Gu_WindowSetFlag2 @ 0x0084_b600 => extern "C" fn gu_window_set_flag2(window: u32, on: u32) {
+        gu::gu_window_set_flag2(&mut mem(), window, on);
+    }
+    /// `Gu_WindowSetSize(window, w, h)`.
+    Gu_WindowSetSize @ 0x0084_b720 => extern "C" fn gu_window_set_size(window: u32, w: u32, h: u32) {
+        #[allow(clippy::cast_possible_truncation)] // 16-bit stores
+        gu::gu_window_set_size(&mut mem(), window, w as u16, h as u16);
+    }
+    /// `Gu_WindowToFront(window)`.
+    Gu_WindowToFront @ 0x0084_b770 => extern "C" fn gu_window_to_front(window: u32) {
+        gu::gu_window_to_front(&mut mem(), window);
+    }
+
+    /// `TkChSetBattleChrNum(work)`.
+    TkChSetBattleChrNum @ 0x0087_2160 => extern "C" fn tk_ch_set_battle_chr_num(work: u32) {
+        tk::tk_ch_set_battle_chr_num(&mut mem(), work);
+    }
+    /// `TkCheckPlayVoice()`.
+    TkCheckPlayVoice @ 0x0087_2340 => extern "C" fn tk_check_play_voice() -> u32 {
+        tk::tk_check_play_voice(&mem())
+    }
+    /// `TkGetVibrateOn(pad)`.
+    TkGetVibrateOn @ 0x0087_5de0 => extern "C" fn tk_get_vibrate_on(pad: i32) -> u32 {
+        u32::from(tk::tk_get_vibrate_on(&mem(), pad))
+    }
+    /// `TkGetVibrateCurve(kind, i, curve)`.
+    TkGetVibrateCurve @ 0x0087_63e0 => extern "C" fn tk_get_vibrate_curve(kind: u32, i: i32, curve: u32) -> u32 {
+        u32::from(tk::tk_get_vibrate_curve(&mem(), kind, i, curve))
+    }
+    /// `TkSndGetKickFlag()`.
+    TkSndGetKickFlag @ 0x0088_7ac0 => extern "C" fn tk_snd_get_kick_flag() -> u32 {
+        u32::from(tk::SND_KICK_FLAG.get(&mem()))
+    }
+    /// `TkSndIsReadVagVoice()`.
+    TkSndIsReadVagVoice @ 0x0088_7af0 => extern "C" fn tk_snd_is_read_vag_voice() -> u32 {
+        tk::tk_snd_flag(&mem(), 1)
+    }
+    /// `TkSndIsReadShoutVoice()`.
+    TkSndIsReadShoutVoice @ 0x0088_7b00 => extern "C" fn tk_snd_is_read_shout_voice() -> u32 {
+        tk::tk_snd_flag(&mem(), 2)
+    }
+    /// `TkSndIsReadVoice()`.
+    TkSndIsReadVoice @ 0x0088_7b10 => extern "C" fn tk_snd_is_read_voice() -> u32 {
+        tk::tk_snd_flag(&mem(), 0)
+    }
+    /// `TkSndIsStandbyVoice()`.
+    TkSndIsStandbyVoice @ 0x0088_7b20 => extern "C" fn tk_snd_is_standby_voice() -> u32 {
+        tk::tk_snd_flag(&mem(), 3)
+    }
+    /// `TkGetGsRegisterCSR()`.
+    TkGetGsRegisterCSR @ 0x0088_7db0 => extern "C" fn tk_get_gs_register_csr() -> u32 {
+        tk::GS_CSR.get(&mem())
+    }
+    /// `TkGetSyncVCounter()`.
+    TkGetSyncVCounter @ 0x0088_7e00 => extern "C" fn tk_get_sync_v_counter() -> u32 {
+        tk::SYNC_V_COUNTER.get(&mem())
+    }
+    /// `TkGetControlerWork2(a, b)`.
+    TkGetControlerWork2 @ 0x0088_8e10 => extern "C" fn tk_get_controler_work2(a: i32, b: i32) -> u32 {
+        tk::tk_get_controler_work2(&mem(), a, b)
+    }
+    /// `TkGetControlerWork(a, b)`.
+    TkGetControlerWork @ 0x0088_8ec0 => extern "C" fn tk_get_controler_work(a: i32, b: i32) -> u32 {
+        tk::tk_get_controler_work(&mem(), a, b)
+    }
+    /// `Math_MinAbs(a, b)`: in `st0`.
+    Math_MinAbs @ 0x0088_b400 => extern "C" fn math_min_abs(a: f32, b: f32) -> f32 {
+        ffx_menu::math::min_abs(a, b)
+    }
+    /// `Math_LengthSq3(x, y, z)`: in `st0`.
+    Math_LengthSq3 @ 0x0088_c3c0 => extern "C" fn math_length_sq3(x: f32, y: f32, z: f32) -> f32 {
+        ffx_menu::math::length_sq3(x, y, z)
+    }
+    /// `Math_SinTable(angle)`.
+    Math_SinTable @ 0x0088_c690 => extern "C" fn math_sin_table(angle: u32) -> i32 {
+        ffx_menu::math::bridge::math_sin_table(&mem(), angle)
+    }
+    /// `Math_RoundUp(n, step)`.
+    Math_RoundUp @ 0x0088_d120 => extern "C" fn math_round_up(n: u32, step: u32) -> u32 {
+        ffx_menu::math::round_up(n, step)
+    }
+    /// `TkGetNowEventJumpId()`.
+    TkGetNowEventJumpId @ 0x0088_d660 => extern "C" fn tk_get_now_event_jump_id() -> u32 {
+        u32::from(tk::tk_get_now_event_jump_id(&mem()))
+    }
+    /// `TkGetNowEventJumpIndex()`.
+    TkGetNowEventJumpIndex @ 0x0088_d670 => extern "C" fn tk_get_now_event_jump_index() -> u32 {
+        u32::from(tk::tk_get_now_event_jump_index(&mem()))
+    }
+    /// `TkGetNowEventJumpMapIdNo()`.
+    TkGetNowEventJumpMapIdNo @ 0x0088_d680 => extern "C" fn tk_get_now_event_jump_map_id_no() -> u32 {
+        u32::from(tk::tk_get_now_event_jump_map_id_no(&mem()))
+    }
+    /// `TkGetNowEventJumpMapNo()`.
+    TkGetNowEventJumpMapNo @ 0x0088_d690 => extern "C" fn tk_get_now_event_jump_map_no() -> u32 {
+        u32::from(tk::tk_get_now_event_jump_map_no(&mem()))
+    }
+    /// `TkGetOutputEncount()`.
+    TkGetOutputEncount @ 0x0088_d6a0 => extern "C" fn tk_get_output_encount() -> u32 {
+        u32::from(tk::OUTPUT_ENCOUNT.get(&mem()))
+    }
+    /// `TkSetEventJumpMapNo(map, id)`.
+    TkSetEventJumpMapNo @ 0x0088_eaf0 => extern "C" fn tk_set_event_jump_map_no(map: u32, id: u32) {
+        #[allow(clippy::cast_possible_truncation)] // 16-bit stores
+        tk::tk_set_event_jump_map_no(&mut mem(), map as u16, id as u16);
+    }
+    /// `TkSetOutputEncount(on)`: the low byte.
+    TkSetOutputEncount @ 0x0088_ebe0 => extern "C" fn tk_set_output_encount(on: u32) {
+        #[allow(clippy::cast_possible_truncation)]
+        tk::OUTPUT_ENCOUNT.set(&mut mem(), on as u8);
+    }
+    /// `TkSetTGS(v)`: the low byte.
+    TkSetTGS @ 0x0088_ec10 => extern "C" fn tk_set_tgs(v: u32) {
+        #[allow(clippy::cast_possible_truncation)]
+        tk::TGS.set(&mut mem(), v as u8);
+    }
+    /// `TkGetStrWidth(proportional, s)`.
+    TkGetStrWidth @ 0x0088_ee70 => extern "C" fn tk_get_str_width(proportional: i32, s: u32) -> i32 {
+        tk::tk_get_str_width(&mem(), proportional, s)
+    }
+    /// `TkMenuGetPlayerStep()`.
+    TkMenuGetPlayerStep @ 0x008a_9840 => extern "C" fn tk_menu_get_player_step() -> i32 {
+        tk::tk_menu_get_player_step(&mem())
+    }
+    /// `TkMenuGetCurrentSummonPos()`.
+    TkMenuGetCurrentSummonPos @ 0x008a_9890 => extern "C" fn tk_menu_get_current_summon_pos() -> u32 {
+        tk::MENU_CURRENT_SUMMON_POS.get(&mem())
+    }
+    /// `TkMenuGetHP(chr)`.
+    TkMenuGetHP @ 0x008a_98c0 => extern "C" fn tk_menu_get_hp(chr: u32) -> u32 {
+        tk::tk_menu_get_ply(&mem(), chr, 0x1c)
+    }
+    /// `TkMenuGetItemHelp(id)`.
+    TkMenuGetItemHelp @ 0x008a_98f0 => extern "C" fn tk_menu_get_item_help(id: u32) -> u32 {
+        tk::tk_get_item_help(&mut mem(), id)
+    }
+    /// `TkMenuGetMP(chr)`.
+    TkMenuGetMP @ 0x008a_9970 => extern "C" fn tk_menu_get_mp(chr: u32) -> u32 {
+        tk::tk_menu_get_ply(&mem(), chr, 0x20)
+    }
+    /// `TkMenuGetMaxHP(chr)`.
+    TkMenuGetMaxHP @ 0x008a_9990 => extern "C" fn tk_menu_get_max_hp(chr: u32) -> u32 {
+        tk::tk_menu_get_ply(&mem(), chr, 0x24)
+    }
+    /// `TkMenuGetMaxMP(chr)`.
+    TkMenuGetMaxMP @ 0x008a_99b0 => extern "C" fn tk_menu_get_max_mp(chr: u32) -> u32 {
+        tk::tk_menu_get_ply(&mem(), chr, 0x28)
+    }
+    /// `TkMenuGetPlayerPartyMask()`.
+    TkMenuGetPlayerPartyMask @ 0x008a_9b70 => extern "C" fn tk_menu_get_player_party_mask() -> u32 {
+        tk::MENU_PLAYER_PARTY_MASK.get(&mem())
+    }
+    /// `TkMenuGetSummonStep()`.
+    TkMenuGetSummonStep @ 0x008a_9bb0 => extern "C" fn tk_menu_get_summon_step() -> i32 {
+        tk::tk_menu_get_summon_step(&mem())
+    }
+    /// `TkMenuGetSummonFromIndex(i)`.
+    TkMenuGetSummonFromIndex @ 0x008a_9bc0 => extern "C" fn tk_menu_get_summon_from_index(i: i32) -> u32 {
+        u32::from(tk::tk_menu_get_summon_from_index(&mem(), i))
+    }
+    /// `TkMenuGetTimer()`.
+    TkMenuGetTimer @ 0x008a_9c60 => extern "C" fn tk_menu_get_timer() -> u32 {
+        u32::from(tk::MENU_TIMER.get(&mem()))
+    }
+    /// `TkMenuSetNextPlayer()`.
+    TkMenuSetNextPlayer @ 0x008a_af10 => extern "C" fn tk_menu_set_next_player() {
+        tk::tk_menu_set_next_player(&mut mem());
+    }
+    /// `TkMenuSetNextSummon()`.
+    TkMenuSetNextSummon @ 0x008a_af70 => extern "C" fn tk_menu_set_next_summon() {
+        tk::tk_menu_set_next_summon(&mut mem());
+    }
+    /// `TkMenuSetPrevPlayer()`.
+    TkMenuSetPrevPlayer @ 0x008a_afa0 => extern "C" fn tk_menu_set_prev_player() {
+        tk::tk_menu_set_prev_player(&mut mem());
+    }
+    /// `TkMenuSetPrevSummon()`.
+    TkMenuSetPrevSummon @ 0x008a_afe0 => extern "C" fn tk_menu_set_prev_summon() {
+        tk::tk_menu_set_prev_summon(&mut mem());
+    }
+    /// `TkMenuGetHelpRatio2()`.
+    TkMenuGetHelpRatio2 @ 0x008a_b220 => extern "C" fn tk_menu_get_help_ratio2() -> u32 {
+        tk::MENU_HELP_RATIO2.get(&mem())
+    }
+    /// `TkMsGetRomItem(id, &name)`.
+    TkMsGetRomItem @ 0x008a_b280 => extern "C" fn tk_ms_get_rom_item(id: u32, out: u32) {
+        tk::tk_ms_get_rom_item(&mut mem(), id, out);
+    }
+    /// `TkMsImportantGet(id)`.
+    TkMsImportantGet @ 0x008a_b2c0 => extern "C" fn tk_ms_important_get(id: u32) -> u32 {
+        tk::tk_ms_important_get(&mem(), id)
+    }
+    /// `TkMn2GetCommandHelp(id)`.
+    TkMn2GetCommandHelp @ 0x008c_19e0 => extern "C" fn tk_mn2_get_command_help(id: u32) -> u32 {
+        tk::tk_get_command_help(&mut mem(), id)
+    }
+    /// `TkMn2GetCommandName(id)`.
+    TkMn2GetCommandName @ 0x008c_1a20 => extern "C" fn tk_mn2_get_command_name(id: u32) -> u32 {
+        tk::tk_mn2_get_command_name(&mut mem(), id)
+    }
+    /// `TkMn2GetItemHelp(id)`.
+    TkMn2GetItemHelp @ 0x008c_1b30 => extern "C" fn tk_mn2_get_item_help(id: u32) -> u32 {
+        tk::tk_get_item_help(&mut mem(), id)
+    }
+    /// `TkMn2GetSummonGrowMax()`.
+    TkMn2GetSummonGrowMax @ 0x008c_1c40 => extern "C" fn tk_mn2_get_summon_grow_max() -> u32 {
+        tk::tk_mn2_get_summon_grow_max(&mut mem())
+    }
+    /// `TkMn2RestoreFontShade()`.
+    TkMn2RestoreFontShade @ 0x008c_2300 => extern "C" fn tk_mn2_restore_font_shade() {
+        tk::tk_mn2_restore_font_shade(&mut mem());
+    }
+    /// `TkMn2SaveFontShade()`.
+    TkMn2SaveFontShade @ 0x008c_2330 => extern "C" fn tk_mn2_save_font_shade() {
+        tk::tk_mn2_save_font_shade(&mut mem());
+    }
+    /// `TkCalcImportantListMax()`.
+    TkCalcImportantListMax @ 0x008c_6790 => extern "C" fn tk_calc_important_list_max() -> u32 {
+        tk::tk_calc_important_list_max(&mut mem())
+    }
+    /// `TkMenuSetDummyControlerPending(buttons)`.
+    TkMenuSetDummyControlerPending @ 0x008c_a560 => extern "C" fn tk_menu_set_dummy_controler_pending(buttons: u32) {
+        tk::tk_menu_set_dummy_controler_pending(&mut mem(), buttons);
+    }
+    /// `Math_Clamp1To99(n)`.
+    Math_Clamp1To99 @ 0x008c_ed10 => extern "C" fn math_clamp_1_to_99(n: i32) -> i32 {
+        ffx_menu::math::clamp_1_to_99(n)
+    }
+    /// `TMn2SetStatusBGDiff(step)`.
+    TMn2SetStatusBGDiff @ 0x008d_2660 => extern "C" fn tmn2_set_status_bg_diff(step: u32) {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)] // a 16-bit store
+        tk::tmn2_set_status_bg_diff(&mut mem(), step as i16);
+    }
+    /// `TkMn2StepStatusBG()`.
+    TkMn2StepStatusBG @ 0x008d_3280 => extern "C" fn tk_mn2_step_status_bg() {
+        tk::tk_mn2_step_status_bg(&mut mem());
+    }
+    /// `TkMn2GetStatusBG()`.
+    TkMn2GetStatusBG @ 0x008d_4910 => extern "C" fn tk_mn2_get_status_bg() -> i32 {
+        tk::tk_mn2_get_status_bg(&mem())
+    }
+    /// `TkMn2InitStatusBG()`.
+    TkMn2InitStatusBG @ 0x008d_4ed0 => extern "C" fn tk_mn2_init_status_bg() {
+        tk::tk_mn2_init_status_bg(&mut mem());
+    }
+    /// `TkMenuGetTableEntry(i, table)`.
+    TkMenuGetTableEntry @ 0x008d_ce10 => extern "C" fn tk_menu_get_table_entry(i: u32, table: u32) -> u32 {
+        tk::tk_menu_get_table_entry(&mem(), i, table)
+    }
+    /// `TkMenuGetCommandHelp(id)`.
+    TkMenuGetCommandHelp @ 0x008d_de10 => extern "C" fn tk_menu_get_command_help(id: u32) -> u32 {
+        tk::tk_get_command_help(&mut mem(), id)
+    }
+    /// `TkMn2GetListMax2()`.
+    TkMn2GetListMax2 @ 0x008e_3390 => extern "C" fn tk_mn2_get_list_max2() -> u32 {
+        tk::MN2_LIST_MAX2.get(&mem())
+    }
+    /// `BeginScissor_XY(&x0, &y0, &x1, &y1)`.
+    BeginScissor_XY @ 0x008e_58e0 => extern "C" fn begin_scissor_xy(x0: u32, y0: u32, x1: u32, y1: u32) -> u32 {
+        u32::from(scissor::begin_scissor_xy_at(&mut mem(), [x0, y0, x1, y1]))
+    }
 }
