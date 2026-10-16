@@ -136,7 +136,7 @@ enum Stub {
     Memset,
     Crt(crt::Crt),
     /// A `KERNEL32` function the runtime DLL calls.
-    Win(win32::Api),
+    Win32(win32::Win32),
     Missing(usize),
 }
 
@@ -233,10 +233,10 @@ struct State {
     heap_sizes: HashMap<u32, u32>,
     /// Thread-local slots (`TlsAlloc`).
     tls: Vec<u32>,
-    /// `GetLastError`.
-    last_error: u32,
-    /// Handles made so far (`CreateMutexW`, ...).
-    handles: u32,
+    /// The `KERNEL32` stand-ins' handles, last error and semaphores.
+    win32: win32::Objects,
+    /// The runtime DLL's private memory, left out of [`Oracle::diff`].
+    private: Vec<std::ops::Range<u64>>,
     /// Free space for [`Oracle::alloc_code`], in the stub area.
     code_next: u64,
     /// Strings handed out once (command line, environment).
@@ -433,10 +433,11 @@ impl Oracle {
                 other => crt::lookup(other).map(Stub::Crt),
             };
             // FFX.exe's own KERNEL32 calls: the runtime's stand-ins
-            let win = (stub.is_none() && import.dll.eq_ignore_ascii_case("kernel32.dll"))
-                .then(|| win32::lookup(name))
+            let win = stub
+                .is_none()
+                .then(|| win32::lookup(import.dll, name))
                 .flatten();
-            let stub = stub.or(win.map(|(api, _)| Stub::Win(api)));
+            let stub = stub.or(win.map(|(api, _)| Stub::Win32(api)));
             let stub = stub.unwrap_or_else(|| {
                 let state = uc.get_data_mut();
                 state.unstubbed.push(format!("{}!{name}", import.dll));
@@ -563,6 +564,26 @@ impl Oracle {
             if ok.eax == 0 {
                 return Err(Error::RuntimeInit("DllMain returned FALSE".into()));
             }
+            // An invalid-parameter handler that returns: a call the runtime
+            // rejects (sprintf_s into too small a buffer, ...) takes the
+            // CRT's error path (an empty string, -1, errno) instead of
+            // ending the process. The game installs none and would end;
+            // tests can still compare what the original does up to there.
+            let handler = o.alloc_code(&[0xc3])?;
+            if let Some(set) = o.runtime_export("_set_invalid_parameter_handler") {
+                o.call(set, Conv::Cdecl, &[handler])
+                    .map_err(|e| Error::RuntimeInit(e.to_string()))?;
+            }
+            // The runtime's own state (its image, and what it allocated to
+            // start: per-thread data with errno, locale, stdio tables) is
+            // left out of comparisons; later blocks start on a fresh page.
+            let s = o.uc.get_data_mut();
+            s.crt_heap.0 = s.crt_heap.0.next_multiple_of(PAGE);
+            let heap_start = s.crt_heap.1 - CRT_HEAP_SIZE;
+            s.private = vec![
+                u64::from(r.base)..u64::from(r.base) + r.size,
+                heap_start..s.crt_heap.0,
+            ];
             o.clear_dirty();
         }
         o.set_fpu_control(cw)?;
@@ -784,7 +805,8 @@ impl Oracle {
     }
 
     /// Bytes that differ between two oracles over the pages either wrote,
-    /// outside both stacks: `(address, ours, theirs)`.
+    /// outside both stacks and the runtime DLL's own state (its image and
+    /// the blocks it allocated to start): `(address, ours, theirs)`.
     ///
     /// # Errors
     /// On emulator errors.
@@ -795,10 +817,21 @@ impl Oracle {
             .copied()
             .collect();
         let (s1, s2) = (self.stack_range(), other.stack_range());
+        let private: Vec<_> = self
+            .uc
+            .get_data()
+            .private
+            .iter()
+            .chain(&other.uc.get_data().private)
+            .cloned()
+            .collect();
         let mut out = Vec::new();
         for p in pages {
             let a = p << 12;
-            if s1.contains(&a) || s2.contains(&a) {
+            if s1.contains(&a)
+                || s2.contains(&a)
+                || private.iter().any(|r| r.contains(&u64::from(a)))
+            {
                 continue;
             }
             let x = self.read(a, PAGE_BYTES)?;
@@ -995,6 +1028,7 @@ impl Runtime {
 /// The loaded runtime DLL.
 struct LoadedDll {
     base: u32,
+    size: u64,
     entry: u32,
     exports: HashMap<String, u32>,
     /// Where the x87 instructions [`x87`] computes are, and whether those
@@ -1059,8 +1093,8 @@ fn load_runtime(
     uc.get_data_mut().dll_base = base32;
     for import in &pe.imports {
         let name = import.name.as_ref();
-        let (stub, code) = if let Some((api, n)) = win32::lookup(name) {
-            (Stub::Win(api), win32::code(n))
+        let (stub, code) = if let Some((api, n)) = win32::lookup(import.dll, name) {
+            (Stub::Win32(api), win32::code(n))
         } else {
             let state = uc.get_data_mut();
             state
@@ -1123,6 +1157,7 @@ fn load_runtime(
     }
     Ok(LoadedDll {
         base: base32,
+        size: image.len() as u64,
         entry,
         exports,
         x87_sites,
@@ -1382,7 +1417,7 @@ fn run_stub(uc: &mut Unicorn<State>, stub: Stub, addr: u64) -> Result<()> {
             dst
         }
         Stub::Crt(c) => crt::run(uc, c, u32::try_from(addr).expect("32-bit stub"))?,
-        Stub::Win(api) => win32::run(uc, api)?,
+        Stub::Win32(api) => win32::run(uc, api)?,
         Stub::Missing(i) => return Err(Error::UnstubbedImport(uc.get_data().unstubbed[i].clone())),
     };
     uc.reg_write(RegisterX86::EAX, u64::from(ret))?;
@@ -2413,8 +2448,11 @@ mod crt {
                 let f = cstr(uc, fmt)?;
                 let s = format(uc, &f, &mut Args { at: esp + 16 })?;
                 if s.len() >= size as usize {
-                    // the invalid-parameter path: an empty string, -1
+                    // the invalid-parameter path: what fits (size - 1 bytes
+                    // and a NUL) is written, then the first byte cleared;
+                    // -1 (as MSVCR110.dll does, with a returning handler)
                     if size > 0 {
+                        put_cstr(uc, buf, &s[..size as usize - 1])?;
                         write(uc, buf, &[0])?;
                     }
                     u32::MAX

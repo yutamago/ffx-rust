@@ -1,5 +1,10 @@
-//! Native stand-ins for the `KERNEL32` functions `MSVCR110.dll` imports,
-//! enough to initialise it and run its exports on one emulated thread.
+//! Native stand-ins for `KERNEL32`, for `FFX.exe`'s own calls (threading
+//! and synchronisation) and for the imports of `MSVCR110.dll` (enough to
+//! initialise it and run its exports), all on one emulated thread: waits
+//! are satisfied at once (`WAIT_OBJECT_0`), creations hand out fresh
+//! handles, semaphores keep their count so `ReleaseSemaphore` reports the
+//! previous one, the `Interlocked*` functions are plain
+//! read-modify-writes, and sleeps return.
 //!
 //! Everything is deterministic: clocks and counters are constants, the
 //! process has one thread (id 1), handles are small fixed numbers, file
@@ -19,7 +24,7 @@ use crate::{Error, Result, State};
 
 /// A `KERNEL32` function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Api {
+pub(crate) enum Win32 {
     EncodePointer,
     GetLastError,
     SetLastError,
@@ -69,17 +74,47 @@ pub(crate) enum Api {
     /// The runtime's last resorts: stop with [`Error::RuntimeAbort`].
     Abort(&'static str),
     GetThreadTimes,
-    /// `CreateMutexW`, `CreateSemaphoreW`, `CreateEventW`: a new handle.
+    /// `CreateMutexW`, `CreateEventW`: a new handle.
     NewHandle,
     /// `ReleaseSemaphore(handle, count, previous)`.
     ReleaseSemaphore,
+    /// `CreateSemaphore(attributes, initial, maximum, name)`.
+    CreateSemaphore,
+    /// `WaitForSingleObject(Ex)`: takes one from a semaphore.
+    WaitForSingleObject,
+    CloseHandle,
+}
+
+/// The handles handed out, the last error and the semaphores' counts.
+#[derive(Debug, Default)]
+pub(crate) struct Objects {
+    handles: u32,
+    last_error: u32,
+    semaphores: std::collections::HashMap<u32, i32>,
+}
+
+/// First handle value (small, aligned like the kernel's).
+const FIRST_HANDLE: u32 = 0x100;
+
+fn fresh(uc: &mut Unicorn<State>) -> u32 {
+    let o = &mut uc.get_data_mut().win32;
+    let h = FIRST_HANDLE + 4 * o.handles;
+    o.handles += 1;
+    h
+}
+
+fn set_error(uc: &mut Unicorn<State>, e: u32) {
+    uc.get_data_mut().win32.last_error = e;
 }
 
 /// The stub for a `KERNEL32` import and its argument count.
 // grouped by meaning, so some groups share a result
 #[allow(clippy::enum_glob_use, clippy::match_same_arms)]
-pub(crate) fn lookup(name: &str) -> Option<(Api, u8)> {
-    use Api::*;
+pub(crate) fn lookup(dll: &str, name: &str) -> Option<(Win32, u8)> {
+    use Win32::*;
+    if !dll.eq_ignore_ascii_case("KERNEL32.dll") {
+        return None;
+    }
     Some(match name {
         "EncodePointer" | "DecodePointer" => (EncodePointer, 1),
         "GetLastError" => (GetLastError, 0),
@@ -113,7 +148,6 @@ pub(crate) fn lookup(name: &str) -> Option<(Api, u8)> {
         | "FreeLibrary"
         | "IsValidCodePage"
         | "TlsFree"
-        | "CloseHandle"
         | "FlushFileBuffers" => (One, 1),
         "InitializeCriticalSectionAndSpinCount" | "HeapCompact" | "IsValidLocale" => (One, 2),
         "HeapFree" | "HeapValidate" => (One, 3),
@@ -156,12 +190,14 @@ pub(crate) fn lookup(name: &str) -> Option<(Api, u8)> {
         "GetThreadTimes" => (GetThreadTimes, 5),
         // threads and their objects: one thread, so every wait is satisfied
         // at once (WAIT_OBJECT_0) and every release succeeds
-        "WaitForSingleObject" | "SleepEx" => (Zero, 2),
-        "WaitForSingleObjectEx" => (Zero, 3),
+        "WaitForSingleObject" => (WaitForSingleObject, 2),
+        "SleepEx" => (Zero, 2),
+        "WaitForSingleObjectEx" => (WaitForSingleObject, 3),
         "ReleaseMutex" | "SetEvent" | "ResetEvent" => (One, 1),
         "ReleaseSemaphore" => (ReleaseSemaphore, 3),
         "CreateMutexW" | "CreateMutexA" => (NewHandle, 3),
-        "CreateSemaphoreW" | "CreateSemaphoreA" => (NewHandle, 4),
+        "CreateSemaphoreW" | "CreateSemaphoreA" => (CreateSemaphore, 4),
+        "CloseHandle" => (CloseHandle, 1),
         "CreateEventW" | "CreateEventA" => (NewHandle, 4),
         "UnhandledExceptionFilter" => (Abort("UnhandledExceptionFilter"), 1),
         "RaiseException" => (Abort("RaiseException"), 4),
@@ -346,7 +382,7 @@ const DLL_PATH: &str = "C:\\FFX\\MSVCR110.dll";
 
 /// Runs one `KERNEL32` function; returns EAX.
 #[allow(clippy::too_many_lines, clippy::match_same_arms)] // one match over the functions
-pub(crate) fn run(uc: &mut Unicorn<State>, api: Api) -> Result<u32> {
+pub(crate) fn run(uc: &mut Unicorn<State>, api: Win32) -> Result<u32> {
     let esp = u32::try_from(uc.reg_read(RegisterX86::ESP)?).expect("32-bit");
     let mut a = [0u32; 8];
     for (k, v) in (0u32..).zip(a.iter_mut()) {
@@ -354,63 +390,62 @@ pub(crate) fn run(uc: &mut Unicorn<State>, api: Api) -> Result<u32> {
             .map_or(0, |b| u32::from_le_bytes(b.try_into().expect("4 bytes")));
     }
     Ok(match api {
-        Api::EncodePointer => a[0],
-        Api::GetLastError => uc.get_data().last_error,
-        Api::SetLastError => {
-            uc.get_data_mut().last_error = a[0];
+        Win32::EncodePointer => a[0],
+        Win32::GetLastError => uc.get_data().win32.last_error,
+        Win32::SetLastError => {
+            set_error(uc, a[0]);
             0
         }
-        Api::GetCurrentThreadId => 1,
-        Api::GetCurrentProcessId => 0x10,
-        Api::GetCurrentThread => 0xffff_fffe,
-        Api::GetCurrentProcess => 0xffff_ffff,
-        Api::GetTickCount => 0x0010_0000,
-        Api::QueryPerformanceCounter => {
+        Win32::GetCurrentThreadId => 1,
+        Win32::GetCurrentProcessId => 0x10,
+        Win32::GetCurrentThread => 0xffff_fffe,
+        Win32::GetCurrentProcess => 0xffff_ffff,
+        Win32::GetTickCount => 0x0010_0000,
+        Win32::QueryPerformanceCounter => {
             write(uc, a[0], &0x0123_4567_89abu64.to_le_bytes())?;
             1
         }
-        Api::GetSystemTimeAsFileTime => {
+        Win32::GetSystemTimeAsFileTime => {
             write(uc, a[0], &FILETIME.to_le_bytes())?;
             0
         }
         // PF_COMPARE_EXCHANGE_DOUBLE, MMX, XMMI, RDTSC, XMMI64 (SSE2), as
         // on the machines the game runs on; not FASTFAIL (23).
-        Api::IsProcessorFeaturePresent => u32::from(matches!(a[0], 2 | 3 | 6 | 8 | 10)),
-        Api::Zero => 0,
-        Api::One => 1,
-        Api::GetProcessHeap => PROCESS_HEAP,
-        Api::HeapAlloc => heap_alloc(uc, a[2])?,
-        Api::HeapReAlloc => {
+        Win32::IsProcessorFeaturePresent => u32::from(matches!(a[0], 2 | 3 | 6 | 8 | 10)),
+        Win32::Zero => 0,
+        Win32::One => 1,
+        Win32::GetProcessHeap => PROCESS_HEAP,
+        Win32::HeapAlloc => heap_alloc(uc, a[2])?,
+        Win32::HeapReAlloc => {
             let old = uc.get_data().heap_sizes.get(&a[2]).copied().unwrap_or(0);
             let p = heap_alloc(uc, a[3])?;
             let keep = read(uc, a[2], old.min(a[3]) as usize)?;
             write(uc, p, &keep)?;
             p
         }
-        Api::HeapSize => uc
+        Win32::HeapSize => uc
             .get_data()
             .heap_sizes
             .get(&a[2])
             .copied()
             .unwrap_or(u32::MAX),
-        Api::TlsAlloc => {
+        Win32::TlsAlloc => {
             let s = uc.get_data_mut();
             s.tls.push(0);
             u32::try_from(s.tls.len() - 1).expect("few slots")
         }
-        Api::TlsGetValue => {
-            let s = uc.get_data_mut();
-            s.last_error = 0;
-            s.tls.get(a[0] as usize).copied().unwrap_or(0)
+        Win32::TlsGetValue => {
+            set_error(uc, 0);
+            uc.get_data().tls.get(a[0] as usize).copied().unwrap_or(0)
         }
-        Api::TlsSetValue => match uc.get_data_mut().tls.get_mut(a[0] as usize) {
+        Win32::TlsSetValue => match uc.get_data_mut().tls.get_mut(a[0] as usize) {
             Some(v) => {
                 *v = a[1];
                 1
             }
             None => 0,
         },
-        Api::GetModuleHandle(w) => {
+        Win32::GetModuleHandle(w) => {
             if a[0] == 0 {
                 uc.get_data().image_base
             } else {
@@ -429,7 +464,7 @@ pub(crate) fn run(uc: &mut Unicorn<State>, api: Api) -> Result<u32> {
                 }
             }
         }
-        Api::GetModuleHandleExW => {
+        Win32::GetModuleHandleExW => {
             // (flags, name or address, out handle): only ever asked about
             // the runtime itself, to pin it.
             let h = uc.get_data().dll_base;
@@ -438,7 +473,7 @@ pub(crate) fn run(uc: &mut Unicorn<State>, api: Api) -> Result<u32> {
             }
             1
         }
-        Api::GetModuleFileName(w) => {
+        Win32::GetModuleFileName(w) => {
             let path = if a[0] == uc.get_data().dll_base {
                 DLL_PATH
             } else {
@@ -454,7 +489,7 @@ pub(crate) fn run(uc: &mut Unicorn<State>, api: Api) -> Result<u32> {
             }
             u32::try_from(n).expect("short")
         }
-        Api::GetCommandLine(w) => {
+        Win32::GetCommandLine(w) => {
             let line = format!("\"{EXE_PATH}\"");
             if w {
                 constant(uc, "cmdline-w", &utf16z(&line))?
@@ -464,36 +499,36 @@ pub(crate) fn run(uc: &mut Unicorn<State>, api: Api) -> Result<u32> {
                 constant(uc, "cmdline-a", &v)?
             }
         }
-        Api::GetEnvironmentStringsW => constant(uc, "environment", &[0, 0, 0, 0])?,
-        Api::GetStartupInfoW => {
+        Win32::GetEnvironmentStringsW => constant(uc, "environment", &[0, 0, 0, 0])?,
+        Win32::GetStartupInfoW => {
             let mut info = vec![0u8; 0x44];
             info[0] = 0x44;
             write(uc, a[0], &info)?;
             0
         }
-        Api::GetStdHandle => match a[0] {
+        Win32::GetStdHandle => match a[0] {
             0xffff_fff6 => STD_HANDLES[0],
             0xffff_fff5 => STD_HANDLES[1],
             0xffff_fff4 => STD_HANDLES[2],
             _ => 0xffff_ffff,
         },
-        Api::GetFileType => {
+        Win32::GetFileType => {
             if STD_HANDLES.contains(&a[0]) {
                 FILE_TYPE_CHAR
             } else {
                 0
             }
         }
-        Api::WriteFile => {
+        Win32::WriteFile => {
             // (handle, data, length, written, overlapped): discarded
             if a[3] != 0 {
                 put_u32(uc, a[3], a[2])?;
             }
             1
         }
-        Api::GetAcp => 1252,
-        Api::GetOemCp => 437,
-        Api::GetCpInfo => {
+        Win32::GetAcp => 1252,
+        Win32::GetOemCp => 437,
+        Win32::GetCpInfo => {
             // MaxCharSize 1, DefaultChar "?", no lead bytes
             let mut info = vec![0u8; 20];
             info[0] = 1;
@@ -501,7 +536,7 @@ pub(crate) fn run(uc: &mut Unicorn<State>, api: Api) -> Result<u32> {
             write(uc, a[1], &info)?;
             1
         }
-        Api::MultiByteToWideChar => {
+        Win32::MultiByteToWideChar => {
             // (cp, flags, src, srclen, dst, dstlen)
             let src = bytes(uc, a[2], a[3])?;
             let out: Vec<u16> = src.iter().map(|&b| to_wide(b)).collect();
@@ -509,7 +544,7 @@ pub(crate) fn run(uc: &mut Unicorn<State>, api: Api) -> Result<u32> {
             if a[5] == 0 {
                 n
             } else if n > a[5] {
-                uc.get_data_mut().last_error = 122; // ERROR_INSUFFICIENT_BUFFER
+                set_error(uc, 122); // ERROR_INSUFFICIENT_BUFFER
                 0
             } else {
                 let b: Vec<u8> = out.iter().flat_map(|w| w.to_le_bytes()).collect();
@@ -517,7 +552,7 @@ pub(crate) fn run(uc: &mut Unicorn<State>, api: Api) -> Result<u32> {
                 n
             }
         }
-        Api::WideCharToMultiByte => {
+        Win32::WideCharToMultiByte => {
             // (cp, flags, src, srclen, dst, dstlen, default, used default)
             let src = wide(uc, a[2], a[3])?;
             let mut used = false;
@@ -537,14 +572,14 @@ pub(crate) fn run(uc: &mut Unicorn<State>, api: Api) -> Result<u32> {
             if a[5] == 0 {
                 n
             } else if n > a[5] {
-                uc.get_data_mut().last_error = 122;
+                set_error(uc, 122);
                 0
             } else {
                 write(uc, a[4], &out)?;
                 n
             }
         }
-        Api::GetStringTypeW => {
+        Win32::GetStringTypeW => {
             // (info type, src, len, types)
             let src = wide(uc, a[1], a[2])?;
             let types: Vec<u8> = src
@@ -555,7 +590,7 @@ pub(crate) fn run(uc: &mut Unicorn<State>, api: Api) -> Result<u32> {
             write(uc, a[3], &types)?;
             1
         }
-        Api::LcMapStringW => {
+        Win32::LcMapStringW => {
             // (lcid, flags, src, srclen, dst, dstlen)
             let mut src = wide(uc, a[2], a[3])?;
             for w in &mut src {
@@ -584,7 +619,7 @@ pub(crate) fn run(uc: &mut Unicorn<State>, api: Api) -> Result<u32> {
             }
             n
         }
-        Api::CompareStringW => {
+        Win32::CompareStringW => {
             // (lcid, flags, s1, n1, s2, n2): ordinal, 1/2/3 for </=/>
             let x = wide(uc, a[2], a[3])?;
             let y = wide(uc, a[4], a[5])?;
@@ -596,10 +631,10 @@ pub(crate) fn run(uc: &mut Unicorn<State>, api: Api) -> Result<u32> {
                 std::cmp::Ordering::Greater => 3,
             }
         }
-        Api::GetUserDefaultLcid => 0x0409,
-        Api::InterlockedIncrement | Api::InterlockedDecrement => {
+        Win32::GetUserDefaultLcid => 0x0409,
+        Win32::InterlockedIncrement | Win32::InterlockedDecrement => {
             let v = u32_at(uc, a[0])?;
-            let v = if api == Api::InterlockedIncrement {
+            let v = if api == Win32::InterlockedIncrement {
                 v.wrapping_add(1)
             } else {
                 v.wrapping_sub(1)
@@ -607,31 +642,31 @@ pub(crate) fn run(uc: &mut Unicorn<State>, api: Api) -> Result<u32> {
             put_u32(uc, a[0], v)?;
             v
         }
-        Api::InterlockedExchange => {
+        Win32::InterlockedExchange => {
             let v = u32_at(uc, a[0])?;
             put_u32(uc, a[0], a[1])?;
             v
         }
-        Api::InterlockedCompareExchange => {
+        Win32::InterlockedCompareExchange => {
             let v = u32_at(uc, a[0])?;
             if v == a[2] {
                 put_u32(uc, a[0], a[1])?;
             }
             v
         }
-        Api::InterlockedExchangeAdd => {
+        Win32::InterlockedExchangeAdd => {
             let v = u32_at(uc, a[0])?;
             put_u32(uc, a[0], v.wrapping_add(a[1]))?;
             v
         }
-        Api::GetVersionExW => {
+        Win32::GetVersionExW => {
             // OSVERSIONINFOW: Windows 7 SP1 (6.1.7601), NT platform
             for (off, v) in [(4, 6), (8, 1), (12, 7601), (16, 2)] {
                 put_u32(uc, a[0] + off, v)?;
             }
             1
         }
-        Api::GetSystemInfo => {
+        Win32::GetSystemInfo => {
             let mut info = vec![0u8; 36];
             info[4..8].copy_from_slice(&0x1000u32.to_le_bytes()); // page size
             info[8..12].copy_from_slice(&0x1_0000u32.to_le_bytes()); // min address
@@ -644,7 +679,7 @@ pub(crate) fn run(uc: &mut Unicorn<State>, api: Api) -> Result<u32> {
             write(uc, a[0], &info)?;
             0
         }
-        Api::GetThreadTimes => {
+        Win32::GetThreadTimes => {
             // (thread, creation, exit, kernel, user): created at the fixed
             // clock, no time spent
             write(uc, a[1], &FILETIME.to_le_bytes())?;
@@ -653,19 +688,38 @@ pub(crate) fn run(uc: &mut Unicorn<State>, api: Api) -> Result<u32> {
             }
             1
         }
-        Api::Abort(name) => return Err(Error::RuntimeAbort(name)),
-        Api::NewHandle => {
-            let s = uc.get_data_mut();
-            s.handles += 1;
-            0x100 + 4 * s.handles
+        Win32::Abort(name) => return Err(Error::RuntimeAbort(name)),
+        Win32::NewHandle => fresh(uc),
+        Win32::CreateSemaphore => {
+            let h = fresh(uc);
+            uc.get_data_mut()
+                .win32
+                .semaphores
+                .insert(h, a[1].cast_signed());
+            h
         }
-        Api::ReleaseSemaphore => {
+        Win32::WaitForSingleObject => {
+            if let Some(n) = uc.get_data_mut().win32.semaphores.get_mut(&a[0])
+                && *n > 0
+            {
+                *n -= 1;
+            }
+            0 // WAIT_OBJECT_0
+        }
+        Win32::ReleaseSemaphore => {
+            let count = uc.get_data_mut().win32.semaphores.entry(a[0]).or_insert(0);
+            let previous = *count;
+            *count = count.wrapping_add(a[1].cast_signed());
             if a[2] != 0 {
-                put_u32(uc, a[2], 0)?;
+                put_u32(uc, a[2], previous.cast_unsigned())?;
             }
             1
         }
-        Api::InitializeSListHead => {
+        Win32::CloseHandle => {
+            uc.get_data_mut().win32.semaphores.remove(&a[0]);
+            1
+        }
+        Win32::InitializeSListHead => {
             write(uc, a[0], &[0; 8])?;
             0
         }

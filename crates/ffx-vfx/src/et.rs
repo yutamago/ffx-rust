@@ -627,4 +627,170 @@ pub mod bridge {
         op_et_oef2_start(mem, oef2, call);
         1
     }
+
+    /// `opu_unit_free_by_id(opus, id)` (`0x007fde30`), called through
+    /// `call`.
+    const OPU_UNIT_FREE_BY_ID: Global<u32> = Global::new(0x007f_de30);
+
+    /// `op_et_bindeff2_off(h)` (`0x007fb6d0`): the character's bind flags
+    /// lose 0x730 and its `op_et_bindeff2` unit (ID `0x50001800 + index`)
+    /// is freed (`opu_unit_free_by_id(g_OpusBattle, id)` through `call`).
+    /// Returns what the original leaves in `eax`: the free's result, the
+    /// end of `g_EtChr` for an unknown handle, 0 for null (the original's
+    /// is undefined there).
+    pub fn op_et_bindeff2_off<M: Mem>(
+        mem: &mut M,
+        h: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if h == 0 {
+            return 0;
+        }
+        let Some(i) = and_flags(mem, h, 0xf8cf) else {
+            return CHR.ptr(mem).at(CHRS).addr;
+        };
+        let f = OPU_UNIT_FREE_BY_ID.ptr(mem).addr;
+        let b = OPUS_BATTLE.get(mem);
+        call(mem, f, &[b, 0x5000_1800 + i])
+    }
+
+    /// `opu_et_unit_free_by_id(id)` (`0x007fda40`):
+    /// `opu_unit_free_by_id(g_OpusBattle, id)` through `call`; returns its
+    /// result.
+    pub fn opu_et_unit_free_by_id<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = OPU_UNIT_FREE_BY_ID.ptr(mem).addr;
+        let b = OPUS_BATTLE.get(mem);
+        call(mem, f, &[b, id])
+    }
+
+    /// `opu_et_unit_ofs(oef2, a, b, c)` (`0x007fda30`):
+    /// `opu_et_unit(oef2 + 0x10, a, b, c)` (a tail call, through `call`);
+    /// returns its result.
+    pub fn opu_et_unit_ofs<M: Mem>(
+        mem: &mut M,
+        args: [u32; 4],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = OPU_ET_UNIT.ptr(mem).addr;
+        call(
+            mem,
+            f,
+            &[args[0].wrapping_add(0x10), args[1], args[2], args[3]],
+        )
+    }
+
+    /// `op_et_eff(oef2, a, kind, id)` (`0x007fc2e0`), called through
+    /// `call`.
+    const OP_ET_EFF: Global<u32> = Global::new(0x007f_c2e0);
+    /// `g_OpEtBindOff` (`0x011a0065`): while set, `op_et_bindeff` does
+    /// nothing.
+    pub const BIND_OFF: Global<u8> = Global::new(0x011a_0065);
+
+    /// `op_et_bindeff(h)` (`0x007fb290`): unless `g_OpEtBindOff` is set,
+    /// a known character without bind flag 0 whose oef2 object (record
+    /// `+8`) is one of `g_OpusMonsters` gets its four bind effects
+    /// (`op_et_eff(oef2, 0, k, 0x40000k00 + index)` for k = 4..7, through
+    /// `call`) and bind flags `& 0xfffd | 1`. Returns what the original
+    /// leaves in `eax` where that is defined (`None` for null `h` or with
+    /// the flag set): the end of `g_EtChr` for an unknown handle, the
+    /// record when it is skipped, the monster index when that is negative,
+    /// else the last `op_et_eff` result's high half with the new flags.
+    pub fn op_et_bindeff<M: Mem>(
+        mem: &mut M,
+        h: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        if BIND_OFF.get(mem) != 0 || h == 0 {
+            return None;
+        }
+        let Some(i) = find_chr(mem, h) else {
+            return Some(CHR.ptr(mem).at(CHRS).addr);
+        };
+        let rec = chr(mem, i);
+        let flags: u16 = mem.read(rec + 0xc);
+        let oef: u32 = mem.read(rec + 8);
+        if flags & 1 != 0 || oef == 0 {
+            return Some(rec);
+        }
+        let m = crate::opus::bridge::opus_get_monster_index(mem, oef);
+        if m < 0 {
+            return Some(m.cast_unsigned());
+        }
+        let f = OP_ET_EFF.ptr(mem).addr;
+        let mut last = 0;
+        for k in 4..8u32 {
+            last = call(mem, f, &[oef, 0, k, 0x4000_0000 + (k << 8) + i]);
+        }
+        let flags = (mem.read::<u16>(rec + 0xc) & 0xfffd) | 1;
+        mem.write(rec + 0xc, flags);
+        Some((last & 0xffff_0000) | u32::from(flags))
+    }
+
+    /// `op_et_bindeff_off(h)` (`0x007fbb90`): bind flags 0 and 1 cleared,
+    /// the four bind effect units (`0x40000k00 + index`, k = 4..7) freed
+    /// (`opu_unit_free_by_id(g_OpusBattle, id)` through `call`).
+    pub fn op_et_bindeff_off<M: Mem>(
+        mem: &mut M,
+        h: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let Some(i) = and_flags(mem, h, 0xfffc) else {
+            return;
+        };
+        let f = OPU_UNIT_FREE_BY_ID.ptr(mem).addr;
+        for k in 4..8u32 {
+            let b = OPUS_BATTLE.get(mem);
+            call(mem, f, &[b, 0x4000_0000 + (k << 8) + i]);
+        }
+    }
+
+    /// `g_OpusWeaponEffCount` (`0x0119fef8`): a byte per weapon slot,
+    /// numbering its effect units.
+    pub const WEAPON_EFF_COUNT: Global<u8> = Global::new(0x0119_fef8);
+
+    /// `op_et_weapon_unit(h)` (`0x007fc9b0`): for a known character, the
+    /// weapon object whose number is its record's `u16` `+0xe` (else the
+    /// record's oef2 at `+8`, slot 0) runs unit 9 with ID `(0x300000 +
+    /// count) << 8 | index` (`opu_et_unit(obj, 0, 9, id)` through `call`),
+    /// the slot's count one more; returns the ID, 0 for an unknown handle.
+    pub fn op_et_weapon_unit<M: Mem>(
+        mem: &mut M,
+        h: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let Some(i) = find_chr(mem, h) else {
+            return 0;
+        };
+        let rec = chr(mem, i);
+        let no = u32::from(mem.read::<u16>(rec + 0xe));
+        let weapon = crate::opus::bridge::opus_get_weapon_by_no(mem, no);
+        let (obj, slot) = if weapon == 0 {
+            (mem.read::<u32>(rec + 8), 0)
+        } else {
+            (
+                weapon,
+                crate::opus::bridge::opus_get_weapon_index(mem, weapon).cast_unsigned(),
+            )
+        };
+        let at = WEAPON_EFF_COUNT.ptr(mem).addr.wrapping_add(slot);
+        let count: u8 = mem.read(at);
+        let id = ((u32::from(count) + 0x30_0000) << 8).wrapping_add(i);
+        mem.write(at, count.wrapping_add(1));
+        let f = OPU_ET_UNIT.ptr(mem).addr;
+        call(mem, f, &[obj, 0, 9, id]);
+        id
+    }
+
+    /// `opus_chr_handles_clear()` (`0x007fedf0`): the 240 `g_EtChrHandles`
+    /// zeroed.
+    pub fn opus_chr_handles_clear(mem: &mut impl Mem) {
+        let at = CHR_HANDLES.ptr(mem).addr;
+        for i in 0..0xf0 {
+            mem.write(at + 4 * i, 0u32);
+        }
+    }
 }

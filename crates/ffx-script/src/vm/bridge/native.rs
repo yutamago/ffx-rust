@@ -151,6 +151,8 @@ chr_natives! {
     native_chr_set_distance_cull => 0x0082_aa30, chr_get_set;
     /// `Native_ChrSetShadowMode` (`0x00a79a40`, `0x5029`): `Ch_SetShadowMode`'s result.
     native_chr_set_shadow_mode => 0x0082_b820, chr_get_set;
+    /// `Native_ChrHide` (`0x00a78ac0`, `0x5008`): `Ch_SetHideEvent`.
+    native_chr_hide => 0x0082_b2c0, chr_set;
 }
 
 /// `Native_ChrSetAutoMotion` (`0x00a79670`, `0x5025`): `(slot, motion)`,
@@ -725,6 +727,101 @@ pub fn native_field_set_mask_bit<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: 
     grp
 }
 
+/// `Native_SpriteShow` (`0x0085c370`, `0x011b`): `(sprite, var)` ->
+/// `0x008748a0(sprite, &var)` (the variable's address); returns `sprite`.
+pub fn native_sprite_show<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let var = pop(h, s);
+    let sprite = pop(h, s);
+    let at = super::atel_get_real_var_adrs(h, w, var);
+    call(h, 0x0087_48a0, &[sprite, at]);
+    sprite
+}
+
+/// `Native_SpriteHide` (`0x0085c4c0`, `0x011c`): `0x008747f0(sprite)`;
+/// returns `sprite`.
+pub fn native_sprite_hide<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let sprite = pop(h, s);
+    call(h, 0x0087_47f0, &[sprite]);
+    sprite
+}
+
+/// `Native_SpriteSetColor` (`0x0085c760`, `0x0129`): `(sprite, a, b, c)`
+/// -> `0x008749f0(sprite, a, c, b)`; returns `sprite`.
+pub fn native_sprite_set_color<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let p1 = pop(h, s);
+    let p2 = pop(h, s);
+    let p3 = pop(h, s);
+    let sprite = pop(h, s);
+    call(h, 0x0087_49f0, &[sprite, p3, p1, p2]);
+    sprite
+}
+
+/// `Native_SpriteSetScale` (`0x0085cde0`, `0x0120`): `(sprite, x, y)` ->
+/// `0x00874a80(sprite, x, y)`; returns `sprite`.
+pub fn native_sprite_set_scale<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let y = popf(h, s);
+    let x = popf(h, s);
+    let sprite = pop(h, s);
+    call(h, 0x0087_4a80, &[sprite, x, y]);
+    sprite
+}
+
+/// `Native_WorkerStopMove` (`0x0085b620`, `0x0077`): `(worker)` ->
+/// `Script_StopMove(worker, -1)`; 0.
+pub fn native_worker_stop_move<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let i = pop(h, s);
+    let o = work(h, i);
+    call(h, 0x0086_3e10, &[o, u32::MAX]);
+    0
+}
+
+/// `Native_WorkerStopTurn` (`0x0085b950`, `0x0078`): `Script_StopTurn(worker, -1)`; 0.
+pub fn native_worker_stop_turn<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let i = pop(h, s);
+    let o = work(h, i);
+    call(h, 0x0086_3fe0, &[o, u32::MAX]);
+    0
+}
+
+/// `Native_SfxPlayEx` (`0x0085ff30`, `0x00fd`): `(sfx, a, b)` ->
+/// `SndSepPlay(sfx, a, b)`; returns `sfx`.
+pub fn native_sfx_play_ex<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let b = pop(h, s);
+    let a = pop(h, s);
+    let sfx = pop(h, s);
+    call(h, 0x0088_6e50, &[sfx, a, b]);
+    sfx
+}
+
+/// `Native_SfxPlay` (`0x0085f310`, `0x00df`): `SndSepPlaySimple(sfx)`;
+/// returns `sfx`.
+pub fn native_sfx_play<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let sfx = pop(h, s);
+    call(h, 0x0088_6e80, &[sfx]);
+    sfx
+}
+
+/// `CT_0013_setPosition` (`0x0085faa0`, `0x0013`): `(x, y, z)` ->
+/// `AtelSetPos3d(worker, x, y, z, 0)`; 0.
+pub fn ct_0013_set_position<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let z = popf(h, s);
+    let y = popf(h, s);
+    let x = popf(h, s);
+    call(h, 0x0087_0b20, &[w, x, y, z, 0]);
+    0
+}
+
+/// `Native_ChrSetMotion_5000` (`0x00a78770`) and `_501b` (`0x00a792d0`):
+/// `(motion)` -> `Ch_SetSequence(chr, motion)`; 0.
+pub fn native_chr_set_motion<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let m = pop(h, s);
+    let c = atel_get_char_handle(h, w);
+    if c != 0 {
+        call(h, 0x0083_7ac0, &[c, m]);
+    }
+    0
+}
+
 /// The Rust version of the native handler at `sym` (an `ffx.sym` address).
 #[allow(clippy::too_many_lines)] // a table
 #[must_use]
@@ -797,12 +894,23 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x0091_c740 => Int(native_fp_show),
         0x0091_c7a0 => Int(native_fp_run_mode2),
         0x0091_c530 => Int(native_field_set_mask_bit),
-        _ => return None,
+        0x0085_c370 => Int(native_sprite_show),
+        0x0085_c4c0 => Int(native_sprite_hide),
+        0x0085_c760 => Int(native_sprite_set_color),
+        0x0085_cde0 => Int(native_sprite_set_scale),
+        0x0085_b620 => Int(native_worker_stop_move),
+        0x0085_b950 => Int(native_worker_stop_turn),
+        0x0085_ff30 => Int(native_sfx_play_ex),
+        0x0085_f310 => Int(native_sfx_play),
+        0x0085_faa0 => Int(ct_0013_set_position),
+        0x00a7_8770 | 0x00a7_92d0 => Int(native_chr_set_motion),
+        0x00a7_8ac0 => Int(native_chr_hide),
+        _ => return super::native_map::find(sym),
     })
 }
 
 /// Every handler [`find`] has, with whether it returns a float.
-pub const PORTED: [(u32, bool); 67] = [
+pub const PORTED: [(u32, bool); 79] = [
     (0x0085_8360, false),
     (0x0085_84d0, false),
     (0x0085_fa80, false),
@@ -870,4 +978,16 @@ pub const PORTED: [(u32, bool); 67] = [
     (0x0091_c740, false),
     (0x0091_c7a0, false),
     (0x0091_c530, false),
+    (0x0085_c370, false),
+    (0x0085_c4c0, false),
+    (0x0085_c760, false),
+    (0x0085_cde0, false),
+    (0x0085_b620, false),
+    (0x0085_b950, false),
+    (0x0085_ff30, false),
+    (0x0085_f310, false),
+    (0x0085_faa0, false),
+    (0x00a7_8770, false),
+    (0x00a7_92d0, false),
+    (0x00a7_8ac0, false),
 ];

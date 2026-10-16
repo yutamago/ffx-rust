@@ -530,3 +530,109 @@ fn numbers_recorded(runtime: &str, o: &mut Oracle) {
         assert_eq!(e - s, used, "strtol({text}, {base}) end");
     }
 }
+
+/// KERNEL32's threading imports on one thread: each through its import,
+/// stdcall (`Oracle::call` checks the callee popped its arguments).
+#[test]
+fn threading_stubs() {
+    let Some(mut o) = oracle() else { return };
+    let call = |o: &mut Oracle, name: &str, args: &[u32]| {
+        let at = stub(o, name);
+        o.call(at, Conv::Stdcall, args).unwrap().eax
+    };
+    // fresh, distinct handles
+    let m = call(&mut o, "CreateMutexW", &[0, 0, 0]);
+    let e = call(&mut o, "CreateEventW", &[0, 1, 0, 0]);
+    let ea = call(&mut o, "CreateEventA", &[0, 0, 0, 0]);
+    let s = call(&mut o, "CreateSemaphoreW", &[0, 2, 10, 0]);
+    let sa = call(&mut o, "CreateSemaphoreA", &[0, 0, 1, 0]);
+    let handles = [m, e, ea, s, sa];
+    for (k, h) in handles.iter().enumerate() {
+        assert_ne!(*h, 0);
+        assert!(!handles[..k].contains(h), "{h:#x} handed out twice");
+    }
+    // waits are signalled, releases and event changes succeed
+    assert_eq!(call(&mut o, "WaitForSingleObject", &[m, u32::MAX]), 0);
+    assert_eq!(call(&mut o, "WaitForSingleObjectEx", &[e, 0, 1]), 0);
+    assert_eq!(call(&mut o, "ReleaseMutex", &[m]), 1);
+    assert_eq!(call(&mut o, "SetEvent", &[e]), 1);
+    assert_eq!(call(&mut o, "ResetEvent", &[e]), 1);
+    // the semaphore keeps its count: 2, a wait takes one, release adds 3
+    let prev = o.alloc(4).unwrap();
+    assert_eq!(call(&mut o, "WaitForSingleObject", &[s, 0]), 0);
+    assert_eq!(call(&mut o, "ReleaseSemaphore", &[s, 3, prev]), 1);
+    assert_eq!(ffx_bridge::Mem::read::<u32>(&o, prev), 1);
+    assert_eq!(call(&mut o, "ReleaseSemaphore", &[s, 1, 0]), 1);
+    assert_eq!(call(&mut o, "ReleaseSemaphore", &[s, 1, prev]), 1);
+    assert_eq!(ffx_bridge::Mem::read::<u32>(&o, prev), 5);
+    for h in handles {
+        assert_eq!(call(&mut o, "CloseHandle", &[h]), 1);
+    }
+    // interlocked read-modify-writes return what the API returns
+    let v = o.alloc(4).unwrap();
+    ffx_bridge::Mem::write(&mut o, v, 5u32);
+    assert_eq!(call(&mut o, "InterlockedIncrement", &[v]), 6);
+    assert_eq!(call(&mut o, "InterlockedDecrement", &[v]), 5);
+    assert_eq!(call(&mut o, "InterlockedExchangeAdd", &[v, 10]), 5);
+    assert_eq!(ffx_bridge::Mem::read::<u32>(&o, v), 15);
+    assert_eq!(call(&mut o, "InterlockedCompareExchange", &[v, 1, 7]), 15);
+    assert_eq!(ffx_bridge::Mem::read::<u32>(&o, v), 15);
+    assert_eq!(call(&mut o, "InterlockedCompareExchange", &[v, 1, 15]), 15);
+    assert_eq!(ffx_bridge::Mem::read::<u32>(&o, v), 1);
+    ffx_bridge::Mem::write(&mut o, v, 0u32);
+    assert_eq!(call(&mut o, "InterlockedDecrement", &[v]), u32::MAX);
+    // sleeps return, the last error is kept
+    call(&mut o, "Sleep", &[1000]);
+    assert_eq!(call(&mut o, "SleepEx", &[0, 1]), 0);
+    assert_eq!(call(&mut o, "GetLastError", &[]), 0);
+    call(&mut o, "SetLastError", &[183]);
+    assert_eq!(call(&mut o, "GetLastError", &[]), 183);
+    assert_eq!(call(&mut o, "GetCurrentThreadId", &[]), 1);
+    // none of these is missing any more
+    for name in [
+        "WaitForSingleObject",
+        "WaitForSingleObjectEx",
+        "ReleaseMutex",
+        "CreateMutexW",
+        "CloseHandle",
+        "InterlockedCompareExchange",
+        "Sleep",
+        "SetLastError",
+    ] {
+        assert!(
+            !o.missing_imports()
+                .iter()
+                .any(|m| m.ends_with(&format!("!{name}"))),
+            "{name} still missing"
+        );
+    }
+}
+
+/// `sprintf_s` into too small a buffer (the oracle's invalid-parameter
+/// handler returns; the game has none and would end): MSVCR110 writes what
+/// fits and a NUL, then clears the first byte, and returns -1.
+#[test]
+fn sprintf_s_overflow_as_msvcr110() {
+    for (runtime, mut o) in both() {
+        let f = string(&mut o, b"%s%s");
+        let x = string(&mut o, b"ab");
+        let y = string(&mut o, b"cdefghijk");
+        let at = stub(&o, "sprintf_s");
+        for (size, ret, want) in [
+            (8u32, -1, &b"\0bcdefg\0\x55\x55"[..]),
+            (1, -1, b"\0\x55\x55\x55\x55\x55\x55\x55\x55\x55"),
+            (11, -1, b"\0bcdefghij\0"),
+            (12, 11, b"abcdefghijk\0"),
+        ] {
+            let buf = o.alloc(16).unwrap();
+            o.write(buf, &[0x55; 16]).unwrap();
+            let r = o.call(at, Conv::Cdecl, &[buf, size, f, x, y]).unwrap().eax;
+            assert_eq!(r.cast_signed(), ret, "{runtime}: size {size}");
+            assert_eq!(
+                o.read(buf, want.len()).unwrap(),
+                want,
+                "{runtime}: size {size}"
+            );
+        }
+    }
+}

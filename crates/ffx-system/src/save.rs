@@ -234,4 +234,34 @@ pub mod bridge {
         mem.write(m.wrapping_add(0x360), v);
         m
     }
+
+    /// `0x006f1e40(id)` (`thiscall`, `ret 4`): the first of the manager's
+    /// `+0x3a0` 0x20-byte entries (at `*(this + 0x368)`) whose half at `+6`
+    /// is `id`, or 0.
+    pub fn find_entry_by_id(mem: &impl Mem, this: u32, id: u32) -> u32 {
+        let count: i32 = mem.read(this.wrapping_add(0x3a0));
+        let base: u32 = mem.read(this.wrapping_add(0x368));
+        for k in 0..count.max(0).cast_unsigned() {
+            let e = base.wrapping_add(k << 5);
+            if u32::from(mem.read::<u16>(e.wrapping_add(6))) == id {
+                return e;
+            }
+        }
+        0
+    }
+
+    /// `0x006fc390(key)` (`thiscall`, `ret 4`): every in-use (byte 1)
+    /// 0x18-byte slot (`*(this + 4)`, count in the low 31 bits of `+0`)
+    /// whose `+4` is `key` released (byte 0). Returns 0.
+    pub fn release_slots(mem: &mut impl Mem, this: u32, key: u32) -> u32 {
+        let count = mem.read::<u32>(this) & 0x7fff_ffff;
+        for k in 0..count {
+            let slots: u32 = mem.read(this.wrapping_add(4));
+            let s = slots.wrapping_add(k * 0x18);
+            if mem.read::<u8>(s) == 1 && mem.read::<u32>(s.wrapping_add(4)) == key {
+                mem.write(s, 0u8);
+            }
+        }
+        0
+    }
 }

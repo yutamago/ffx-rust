@@ -48,11 +48,84 @@ pub trait Os {
     /// message (`FormatMessageA`, allocating) and pass it to the error hook
     /// at `0x0193cd4c` when one is set.
     fn report_free_failure(&mut self);
-    /// The heap's first use, while `*g_UserHeap` is still null: the host
-    /// creates it (`malloc_pool_init`, `0x006fb9b0`: the page manager, the
-    /// heap object from the C runtime's `malloc`, its critical section, a
-    /// first 16-byte block).
-    fn malloc_pool_init(&mut self);
+    /// `InitializeCriticalSection(cs)`.
+    fn initialize_critical_section(&mut self, cs: u32);
+    /// The C runtime's `malloc(size)` (import `0x00b0c468`).
+    fn crt_malloc(&mut self, size: u32) -> u32;
+    /// The C runtime's `free(p)` (import `0x00b0c370`).
+    fn crt_free(&mut self, p: u32);
+    /// The memory system's first set-up (`0x009428b0`, what `0x009428a0`
+    /// calls while [`MEM_SYSTEM`] is null).
+    fn mem_system_init(&mut self);
+    /// `WaitForSingleObject(handle, ms)`.
+    fn wait_for_single_object(&mut self, handle: u32, ms: u32) -> u32;
+    /// `ReleaseMutex(handle)`.
+    fn release_mutex(&mut self, handle: u32) -> u32;
+}
+
+/// The memory system (`0x0193cd2c`: the object at `0x0193c390` once
+/// `0x009428b0` has set it up).
+pub const MEM_SYSTEM: Global<u32> = Global::new(0x0193_cd2c);
+/// The first block `malloc_pool_init` takes (`0x00ce9020`).
+pub const FIRST_BLOCK: Global<u32> = Global::new(0x00ce_9020);
+/// The arena size `malloc_pool_init` settled on (`0x00ce9024`).
+pub const ARENA_SIZE: Global<u32> = Global::new(0x00ce_9024);
+
+/// `0x009428a0()`: the memory system set up unless it already is.
+pub fn mem_system_ensure(mem: &impl Mem, os: &mut impl Os) {
+    if MEM_SYSTEM.get(mem) == 0 {
+        os.mem_system_init();
+    }
+}
+
+/// `UserHeap_Init(arena, a, b)` (`0x00942a40`, `thiscall`, `ret 0xc`): the
+/// arena size rounded up to 4 KiB, the two limits, no arenas yet, the
+/// 16-byte minimum, no free list. Returns `heap`.
+pub fn heap_init(mem: &mut impl Mem, heap: u32, arena: u32, a: u32, b: u32) -> u32 {
+    wr(mem, heap, arena.wrapping_add(0xfff) & 0xffff_f000);
+    wr(mem, heap + 4, a);
+    wr(mem, heap + 8, b);
+    wr(mem, heap + 0xc, 0);
+    wr(mem, heap + 0x10, 0x10);
+    wr(mem, heap + 0x14, 0);
+    heap
+}
+
+/// `malloc_pool_init()` (`0x006fb9b0`, behind the `0x00687040` jump): the
+/// memory system, then a heap object from the C runtime (0x30 bytes: its
+/// critical section, the allocator at `+0x18` with 0x30000000-byte arenas
+/// and a 0x2ff00000 limit) and a first 16-byte block; while that block
+/// fails, the object is freed and the arena size drops by 16 MiB.
+pub fn malloc_pool_init(mem: &mut impl Mem, os: &mut impl Os) {
+    mem_system_ensure(mem, os);
+    let mut arena = 0x3000_0000u32;
+    loop {
+        let mut heap = os.crt_malloc(0x30);
+        USER_HEAP.set(mem, heap);
+        if heap != 0 {
+            os.initialize_critical_section(heap);
+            heap_init(mem, heap + 0x18, arena, 0, arena.wrapping_sub(0x10_0000));
+        } else {
+            heap = 0;
+        }
+        USER_HEAP.set(mem, heap);
+        os.enter_critical_section(heap);
+        let first = heap_alloc(mem, os, heap + 0x18, 0x10);
+        os.leave_critical_section(heap);
+        FIRST_BLOCK.set(mem, first);
+        if first != 0 {
+            ARENA_SIZE.set(mem, arena);
+            return;
+        }
+        os.crt_free(USER_HEAP.get(mem));
+        arena = arena.wrapping_sub(0x100_0000);
+    }
+}
+
+/// `0x006fb9a0()` (behind the `0x00687030` jump): the heap object handed
+/// back to the C runtime (the pointer is left as it was).
+pub fn user_heap_destroy(mem: &impl Mem, os: &mut impl Os) {
+    os.crt_free(USER_HEAP.get(mem));
 }
 
 /// The user heap object (`*g_UserHeap`: lock, then the allocator at
@@ -1175,10 +1248,10 @@ pub fn block_size(mem: &impl Mem, heap: u32, p: u32) -> u32 {
     u32::MAX
 }
 
-/// The user heap, created on first use ([`Os::malloc_pool_init`]).
-fn user_heap(mem: &impl Mem, os: &mut impl Os) -> u32 {
+/// The user heap, created on first use ([`malloc_pool_init`]).
+fn user_heap(mem: &mut impl Mem, os: &mut impl Os) -> u32 {
     if USER_HEAP.get(mem) == 0 {
-        os.malloc_pool_init();
+        malloc_pool_init(mem, os);
     }
     USER_HEAP.get(mem)
 }
@@ -1268,6 +1341,171 @@ pub fn user_free(mem: &mut impl Mem, os: &mut impl Os, p: u32) {
     os.enter_critical_section(heap);
     heap_free(mem, os, heap + 0x18, p);
     os.leave_critical_section(heap);
+}
+
+/// `user_aligned_free(p)` (`0x006fb6c0`): the block `p` was moved up
+/// from (by the byte before `p`) measured under the heap's lock, filled
+/// with `0xfe`, then freed under the lock.
+pub fn user_aligned_free(mem: &mut impl Mem, os: &mut impl Os, p: u32) {
+    let base = p.wrapping_sub(u32::from(mem.read::<u8>(p.wrapping_sub(1))));
+    let heap = USER_HEAP.get(mem);
+    os.enter_critical_section(heap);
+    let size = block_size(mem, heap + 0x18, base);
+    os.leave_critical_section(heap);
+    mem.write_bytes(base, &vec![0xfe; size as usize]);
+    let heap = USER_HEAP.get(mem);
+    os.enter_critical_section(heap);
+    heap_free(mem, os, heap + 0x18, base);
+    os.leave_critical_section(heap);
+}
+
+/// `user_calloc(n, size)` (`0x006fb820`, behind the `0x00687000` jump):
+/// `n * size` bytes (32-bit product) under the heap's lock, zeroed.
+pub fn user_calloc(mem: &mut impl Mem, os: &mut impl Os, n: u32, size: u32) -> u32 {
+    let heap = user_heap(mem, os);
+    os.enter_critical_section(heap);
+    let len = n.wrapping_mul(size);
+    let p = heap_alloc(mem, os, heap + 0x18, len);
+    os.leave_critical_section(heap);
+    mem.write_bytes(p, &vec![0; len as usize]);
+    p
+}
+
+/// `Phyre::PhyreMalloc(size)` (`0x0042fb40`): `size + 0x14` user bytes, the
+/// result 16-aligned past a word that keeps the block (at the word below
+/// it, as the original's `(-(r - 7) & 3) + r - 7` gives); 0 when the heap
+/// is out.
+pub fn phyre_malloc(mem: &mut impl Mem, os: &mut impl Os, size: u32) -> u32 {
+    let p = user_malloc(mem, os, size.wrapping_add(0x14));
+    if p == 0 {
+        return 0;
+    }
+    let q = p.wrapping_add(4);
+    let r = q.wrapping_add(q.wrapping_neg() & 0xf);
+    store_block(mem, r, p);
+    r
+}
+
+/// `Phyre::PhyreMalloc(size, align)` (`0x0042fb80`): as [`phyre_malloc`]
+/// with `size + 4 + align` bytes and the result aligned to `align` (a power
+/// of two).
+pub fn phyre_malloc_aligned(mem: &mut impl Mem, os: &mut impl Os, size: u32, align: u32) -> u32 {
+    let p = user_malloc(mem, os, size.wrapping_add(4).wrapping_add(align));
+    if p == 0 {
+        return 0;
+    }
+    let q = p.wrapping_add(4);
+    let r = q.wrapping_add(q.wrapping_neg() & align.wrapping_sub(1));
+    store_block(mem, r, p);
+    r
+}
+
+/// Where the Phyre allocations keep their block: `r - 7` plus
+/// `-(r - 7) & 3` (the word below `r` when `r` is word-aligned).
+fn block_word(r: u32) -> u32 {
+    let low = r.wrapping_sub(7);
+    low.wrapping_add(low.wrapping_neg() & 3)
+}
+
+fn store_block(mem: &mut impl Mem, r: u32, p: u32) {
+    wr(mem, block_word(r), p);
+}
+
+/// `Phyre::PhyreFree(p)` (`0x0042fb20`): the block kept below `p` freed
+/// ([`user_free`]); nothing for null.
+pub fn phyre_free(mem: &mut impl Mem, os: &mut impl Os, p: u32) {
+    if p != 0 {
+        let block = rd(mem, block_word(p));
+        user_free(mem, os, block);
+    }
+}
+
+/// `memclear(p, n)` (`0x0062f4e0`): `memset(p, 0, n)`; returns `p`.
+pub fn memclear(mem: &mut impl Mem, p: u32, n: u32) -> u32 {
+    mem.write_bytes(p, &vec![0; n as usize]);
+    p
+}
+
+/// The allocation tracker (`*0x00ccb15c`: its mutex at `+0xa8`) and its map
+/// from block to record (`0x00c31e9c`, a `Phyre::PRedBlackTree` whose
+/// nodes come from the free list at `0x00c31eb4`).
+pub const ALLOC_TRACKER: Global<u32> = Global::new(0x00cc_b15c);
+/// See [`ALLOC_TRACKER`].
+pub const TRACKER_MAP: Global<[u32; 6]> = Global::new(0x00c3_1e9c);
+/// See [`ALLOC_TRACKER`].
+pub const TRACKER_NODES: Global<u32> = Global::new(0x00c3_1eb4);
+/// A block `operator delete` hands back to the C runtime instead
+/// (`0x00ccb160`).
+pub const CRT_BLOCK: Global<u32> = Global::new(0x00cc_b160);
+
+/// `Phyre::PFreeList::deallocate(node)` (`0x0049c980`, `thiscall`): `node`
+/// pushed on the free list.
+pub fn free_list_deallocate(mem: &mut impl Mem, list: u32, node: u32) {
+    let head = rd(mem, list);
+    wr(mem, node, head);
+    wr(mem, list, node);
+}
+
+/// `0x00630a60(p)`: with the allocation tracker on, under its mutex: the
+/// record of `p` (`+0x10` of its map node) freed, then the node removed from
+/// the map (`Phyre::PRedBlackTree::remove`, `0x00575000`, passed in) and
+/// put back on the node free list.
+pub fn tracker_release<M: Mem>(
+    mem: &mut M,
+    os: &mut impl Os,
+    p: u32,
+    tree_remove: impl FnOnce(&mut M, u32, u32),
+) {
+    let tracker = ALLOC_TRACKER.get(mem);
+    if tracker == 0 {
+        return;
+    }
+    let mutex = rd(mem, tracker + 0xa8);
+    os.wait_for_single_object(mutex, u32::MAX);
+    let map = TRACKER_MAP.ptr(mem).addr;
+    let find = |mem: &M| crate::stl::bridge::map_find_u32_value(mem, map, p);
+    let n = find(mem);
+    if n != 0 {
+        let record = rd(mem, n + 0x10);
+        user_free(mem, os, record);
+        let n = find(mem);
+        if n != 0 {
+            tree_remove(mem, map, n);
+            let nodes = TRACKER_NODES.ptr(mem).addr;
+            free_list_deallocate(mem, nodes, n);
+        }
+    }
+    os.release_mutex(mutex);
+}
+
+/// `operator delete(p)` (`0x00630390`): the C runtime's block
+/// ([`CRT_BLOCK`]) goes back to `free` and is forgotten; anything else
+/// leaves the tracker ([`tracker_release`]) and is [`user_free`]d.
+pub fn operator_delete<M: Mem>(
+    mem: &mut M,
+    os: &mut impl Os,
+    p: u32,
+    tree_remove: impl FnOnce(&mut M, u32, u32),
+) {
+    if CRT_BLOCK.get(mem) == p {
+        os.crt_free(p);
+        CRT_BLOCK.set(mem, 0);
+        return;
+    }
+    tracker_release(mem, os, p, tree_remove);
+    user_free(mem, os, p);
+}
+
+/// `operator delete[](p)` (`0x00630540`): [`tracker_release`], then
+/// [`user_free`].
+pub fn operator_delete_array<M: Mem>(
+    mem: &mut M,
+    os: &mut impl Os,
+    p: u32,
+    tree_remove: impl FnOnce(&mut M, u32, u32),
+) {
+    tracker_release(mem, os, p, tree_remove);
+    user_free(mem, os, p);
 }
 
 /// The destructors that free a buffer held at `+8` (`0x00633b70` and 12

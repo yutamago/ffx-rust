@@ -265,6 +265,42 @@ pub mod bridge {
         FP_DISP.set(mem, on);
         on
     }
+    /// The field effects' packet and heap statistics `pppFpLoop` keeps:
+    /// the packet budget (`0x00cec200`), the last frame's packet use
+    /// (`0x00cec204`) and its peak (`0x00cec208`), the heap use
+    /// (`0x00cec20c`) and its peak (`0x00cec210`).
+    pub const STATS: [u32; 5] = [
+        0x00ce_c200,
+        0x00ce_c204,
+        0x00ce_c208,
+        0x00ce_c20c,
+        0x00ce_c210,
+    ];
+
+    /// The getters of [`STATS`]: `pppFpGetPacketSize` (`0x007293e0`),
+    /// `pppFpGetPacketUsed` (`0x007293f0`), `pppFpGetPacketPeak`
+    /// (`0x007293d0`), `pppFpGetHeapUsed` (`0x007292d0`),
+    /// `pppFpGetHeapPeak` (`0x00729280`).
+    pub fn ppp_fp_stat(mem: &impl Mem, i: usize) -> u32 {
+        Global::<u32>::new(STATS[i]).get(mem)
+    }
+
+    /// `pppFpGroupDispOff(group)` (`0x00729400`): `pppFpIDdispOff` for
+    /// every entry of the group (`+0x66`).
+    pub fn ppp_fp_group_disp_off(mem: &mut impl Mem, group: u32) {
+        for i in in_group(mem, group) {
+            let d = disp(mem, i);
+            or_flags(mem, d, 0x10, !0);
+        }
+    }
+
+    /// `pppFpGroupDispOn(group)` (`0x00729440`).
+    pub fn ppp_fp_group_disp_on(mem: &mut impl Mem, group: u32) {
+        for i in in_group(mem, group) {
+            let d = disp(mem, i);
+            or_flags(mem, d, 0, !0x10);
+        }
+    }
 }
 
 #[cfg(test)]

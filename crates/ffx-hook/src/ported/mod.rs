@@ -137,6 +137,24 @@ pub(crate) const fn callee_pops(abi: &str) -> bool {
     !matches!(abi.as_bytes(), b"C" | b"cdecl")
 }
 
+/// Calls an original cdecl function by absolute address with 0 to 8 word
+/// arguments, returning `eax`. cdecl leaves the stack to the caller, so
+/// the call is the same for any count; more than 8 is a bug in the bridge
+/// that asked.
+#[allow(clippy::many_single_char_names)] // the arguments, in order
+pub(crate) fn call_cdecl(f: u32, a: &[u32]) -> u32 {
+    type F8 = unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32) -> u32;
+    assert!(a.len() <= 8, "call_cdecl: {} arguments", a.len());
+    let mut w = [0u32; 8];
+    w[..a.len()].copy_from_slice(a);
+    // SAFETY: a cdecl function of at most 8 word arguments; the extra
+    // zero words it doesn't read sit on the caller's side of the stack.
+    unsafe {
+        let g: F8 = std::mem::transmute::<usize, F8>(f as usize);
+        g(w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7])
+    }
+}
+
 /// `ported! { /// doc  Name @ 0xADDR => extern "C" fn shim(args) -> ret { body } ... }`:
 /// the shims, a register-saving thunk for each ([`Saved`]), and the
 /// module's `hooks()`.
