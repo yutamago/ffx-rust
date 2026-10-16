@@ -48,7 +48,7 @@ pub mod bridge {
         u32::from(get(0x664)) | (u32::from(get(0x690)) << 1)
     }
 
-    /// `MsSetChrCommandFlag(chr, id, on)` (`0x0079c070`): sets or clears
+    /// `MsSetRamChrCommand(chr, id, on)` (`0x0079c070`): sets or clears
     /// actor `chr`'s `+0x664` bit of command `id`.
     pub fn ms_set_chr_command_flag(mem: &mut impl Mem, chr: u32, id: u32, on: u32) {
         let a = ms_get_chr(mem, chr);

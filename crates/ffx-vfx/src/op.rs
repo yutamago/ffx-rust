@@ -594,7 +594,7 @@ pub mod bridge {
     /// `g_VfxCurrentType` (`0x00c322aa`, a byte).
     pub const CURRENT_TYPE: Global<u8> = Global::new(0x00c3_22aa);
 
-    /// The axis rotations `op_rt_m_x/y/z(dst, src, angle)`: `angle` in
+    /// The axis rotations `op_rot_m_x/y/z(dst, src, angle)`: `angle` in
     /// `g_pppSinTable` steps (4096 a turn, `ftol` of it), the matrix
     /// `src` turned about the axis into `dst` (every row, the translation
     /// too; `src` read first, so they may be the same).
@@ -1333,10 +1333,10 @@ pub mod bridge {
         shift.set(mem, 0);
     }
 
-    /// `op_oef2_clut_pos_set(rec, pos)` (`0x007e45e0`): a table-3 record's
+    /// `op_oef2_clut_change_monster(rec, pos)` (`0x007e45e0`): a table-3 record's
     /// `u16` becomes `(pos & 0x3fff) + (old & 0x3c)` and its byte `+0xf`
     /// 1; returns the new `u16`.
-    pub fn op_oef2_clut_pos_set(mem: &mut impl Mem, rec: u32, pos: u32) -> u32 {
+    pub fn op_oef2_clut_change_monster(mem: &mut impl Mem, rec: u32, pos: u32) -> u32 {
         #[allow(clippy::cast_possible_truncation)] // 16-bit arithmetic
         let v = ((pos & 0x3fff) as u16).wrapping_add(mem.read::<u16>(rec) & 0x3c);
         mem.write(rec, v);
