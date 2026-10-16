@@ -258,6 +258,87 @@ pub mod bridge {
     pub fn ch_cloth_reset_all(mem: &mut impl Mem) {
         each_active(mem, |m, c| ch_cloth_reset(m, c));
     }
+
+    /// The cloth flip (−1.0, `f32`) on x and y of `Ch_UpdateClothMatrix`.
+    pub const CLOTH_FLIP: Global<f32> = Global::new(0x00b9_2340);
+    /// `1000.0` (`double`): the translation scale.
+    pub const K_1000: Global<f64> = Global::new(0x00b0_dba0);
+
+    /// `Ch_UpdateClothMatrix(chr)` (`0x008314c0`): with the cloth set up
+    /// ([`F_CLOTH_READY`]) and a render cloth at `+0x834`: its `+8` takes
+    /// the hide byte; when its state (`+0xc`) is not 0 it becomes 2 and
+    /// each cloth mesh of each list (`+0x14` lists from `+0x30`, each a
+    /// count and mesh pointers) gets its model's matrix: the base
+    /// element's global matrix with the translation × 1000, through the
+    /// root matrix, flipped on x and y. Meshes of one model in a row
+    /// share it. Unless the state was 2, each mesh's vectors (`+0x44`
+    /// count at `+0x4c`) lose their x, y, z first.
+    ///
+    /// A first mesh of model `0xffff` would get the original's
+    /// uninitialised local matrix; here it gets zeros.
+    pub fn ch_update_cloth_matrix(mem: &mut impl Mem, chr: u32) {
+        use ffx_system::math::mul4x4;
+        let rc: u32 = mem.read(chr + 0x834);
+        if rc == 0 || mem.read::<u32>(chr + l::FLAGS) & F_CLOTH_READY == 0 {
+            return;
+        }
+        let mut flip = ffx_ps2::vu0::identity();
+        let c = crate::x87::load(CLOTH_FLIP.get(mem));
+        flip[0] = c;
+        flip[5] = c;
+        let hide = i32::from(mem.read::<i8>(chr + l::HIDE));
+        mem.write(rc + 8, hide);
+        let state: u32 = mem.read(rc + 0xc);
+        if state == 0 {
+            return;
+        }
+        mem.write(rc + 0xc, 2u32);
+        let mut cached = 0xffffu16;
+        let mut m = [0f32; 16];
+        let mut i = 0u32;
+        while i < mem.read::<u32>(rc + 0x14) {
+            let list: u32 = mem.read(rc + 0x30 + 4 * i);
+            if list != 0 {
+                let mut k = 0u32;
+                while k < mem.read::<u32>(list) {
+                    let mesh: u32 = mem.read(list + 4 + 4 * k);
+                    if mesh != 0 {
+                        if state != 2 {
+                            let v: u32 = mem.read(mesh + 0x4c);
+                            let mut j = 0u32;
+                            while j < mem.read::<u32>(mesh + 0x44) {
+                                mem.write(v.wrapping_add(16 * j), [0f32; 3]);
+                                j += 1;
+                            }
+                        }
+                        let model: u16 = mem.read(mesh + 0x40);
+                        if model != cached {
+                            let models: u32 = mem.read(chr + l::MODELS);
+                            let data: u32 =
+                                mem.read(models.wrapping_add(u32::from(model) * l::MODEL_SIZE));
+                            let e = u32::from(mem.read::<u16>(data));
+                            let g = mem
+                                .read::<u32>(chr + l::ELEMS)
+                                .wrapping_add(0x88)
+                                .wrapping_add(e * l::ELEM_SIZE);
+                            m = mem.read(g);
+                            let k1000 = crate::x87::Reg::constant(K_1000.get(mem));
+                            m[12] = crate::x87::Reg::load(m[12]).mul_st(k1000).store();
+                            m[13] = crate::x87::Reg::load(m[13]).mul_st(k1000).store();
+                            m[14] = k1000.mul_m32(m[14]).store();
+                            let root: [f32; 16] = mem.read(chr + 0x1d0);
+                            m = mul4x4(&root, &m);
+                            m = mul4x4(&flip, &m);
+                            cached = model;
+                        }
+                        mem.write(mesh, m);
+                    }
+                    k += 1;
+                }
+            }
+            i += 1;
+        }
+    }
 }
 
 #[cfg(test)]

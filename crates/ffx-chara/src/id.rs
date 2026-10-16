@@ -74,6 +74,26 @@ pub mod bridge {
     pub fn ch_id_set_def_pid(mem: &mut impl Mem, chr: u32) {
         mem.write(chr + l::PID, 0xfffe_0000u32);
     }
+
+    /// `i8`: id shades on (`0x00844bb0` returns it).
+    pub const ID_SHADE_ON: Global<i8> = Global::new(0x0130_34b8);
+
+    /// `Ch_IdGetShade(chr)` (`0x0083d880`): the id word's shade (`0x0083e980`
+    /// of it: bits 17..31 while id shades are on, else `0x4210`).
+    pub fn ch_id_get_shade(mem: &impl Mem, chr: u32) -> u32 {
+        let id: i32 = mem.read(chr + l::PID);
+        if ID_SHADE_ON.get(mem) != 0 {
+            ((id >> 17) & 0x7fff).cast_unsigned()
+        } else {
+            0x4210
+        }
+    }
+
+    /// `Ch_IdGetShade0/1/2(chr)` (`0x0083d8a0`, `0x0083d8c0`,
+    /// `0x0083d8e0`): 5-bit field `k` of [`ch_id_get_shade`].
+    pub fn ch_id_get_shade_field(mem: &impl Mem, chr: u32, k: u32) -> u32 {
+        (ch_id_get_shade(mem, chr) >> (5 * k)) & 0x1f
+    }
 }
 
 #[cfg(test)]
