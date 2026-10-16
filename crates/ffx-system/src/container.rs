@@ -162,4 +162,79 @@ pub mod bridge {
             mem.write(this.wrapping_add(off), 0u32);
         }
     }
+
+    /// The Phyre array "append into a new buffer" copies (`thiscall`,
+    /// `ret 8`; `0x00629b90`, `0x0069b530`, `0x0069b5c0`, `0x0069b650`):
+    /// for a null `dst` error 0xd; else the `count` (`+0`, top bit masked)
+    /// words of the old buffer (`+4`) copied to `dst` (each to a non-null
+    /// address), `*value` stored after them, the old buffer freed when it
+    /// is not `dst` and was owned, then `+4` = `dst` and `+0` = `count + 1`
+    /// (owned). Returns 0.
+    pub fn parray_push_into<M: Mem>(
+        mem: &mut M,
+        this: u32,
+        dst: u32,
+        value: u32,
+        free: impl FnOnce(&mut M, u32),
+    ) -> u32 {
+        if dst == 0 {
+            return 0xd;
+        }
+        let count = mem.read::<u32>(this) & 0x7fff_ffff;
+        let mut src: u32 = mem.read(this.wrapping_add(4));
+        for k in 0..count {
+            let d = dst.wrapping_add(4 * k);
+            if d != 0 {
+                let w: u32 = mem.read(src);
+                mem.write(d, w);
+                src = src.wrapping_add(4);
+            }
+        }
+        let slot = dst.wrapping_add(4 * count);
+        if slot != 0 {
+            let w: u32 = mem.read(value);
+            mem.write(slot, w);
+        }
+        let old: u32 = mem.read(this.wrapping_add(4));
+        if old != dst && mem.read::<u32>(this) >> 31 == 0 {
+            free(mem, old);
+        }
+        mem.write(this.wrapping_add(4), dst);
+        mem.write(this, count + 1);
+        0
+    }
+
+    /// `0x00689620()` (`thiscall`, a destructor): the owned arrays at
+    /// `+0x158` then `+0x150` reset ([`owned_reset`] with the null check).
+    pub fn reset_arrays_689620<M: Mem>(mem: &mut M, this: u32, mut free: impl FnMut(&mut M, u32)) {
+        owned_reset(mem, this.wrapping_add(0x158), true, &mut free);
+        owned_reset(mem, this.wrapping_add(0x150), true, free);
+    }
+
+    /// `0x009e2420()` (`thiscall`): a Phyre array of objects destroyed:
+    /// each non-null element deleted through its vtable's first entry
+    /// (`delete_object(obj)`, the scalar deleting destructor with 1; the
+    /// count is re-read after each), then, for a non-zero count word, the
+    /// owned non-null buffer freed and both words zeroed, and once more
+    /// the (now zero) buffer freed unless borrowed and both words zeroed.
+    pub fn parray_delete_all<M: Mem>(
+        mem: &mut M,
+        this: u32,
+        mut delete_object: impl FnMut(&mut M, u32),
+        mut free: impl FnMut(&mut M, u32),
+    ) {
+        let mut i = 0u32;
+        while i < mem.read::<u32>(this) & 0x7fff_ffff {
+            let data: u32 = mem.read(this.wrapping_add(4));
+            let obj: u32 = mem.read(data.wrapping_add(4 * i));
+            if obj != 0 {
+                delete_object(mem, obj);
+            }
+            i += 1;
+        }
+        if mem.read::<u32>(this) != 0 {
+            owned_reset(mem, this, true, &mut free);
+        }
+        owned_reset(mem, this, false, free);
+    }
 }

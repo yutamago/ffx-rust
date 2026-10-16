@@ -151,6 +151,30 @@ pub mod bridge {
         }
         p
     }
+
+    /// The ids `0x009066f0` shifts (`0x00b66e44`, zero-terminated).
+    pub const SHIFTED_IDS: Global<u32> = Global::new(0x00b6_6e44);
+
+    /// `0x009066f0(id)`: an id in `0x40e..=0x46e` that is 0x40e or in
+    /// [`SHIFTED_IDS`] plus 100; any other unchanged.
+    pub fn shift_listed_id(mem: &impl Mem, id: i32) -> i32 {
+        if !(0x40e..=0x46e).contains(&id) {
+            return id;
+        }
+        let table = SHIFTED_IDS.ptr(mem).addr;
+        let mut cur = 0x40e;
+        let mut k = 0u32;
+        loop {
+            if id == cur {
+                return id + 0x64;
+            }
+            cur = mem.read::<i32>(table.wrapping_add(4 * k));
+            k += 1;
+            if cur == 0 {
+                return id;
+            }
+        }
+    }
 }
 
 #[cfg(test)]

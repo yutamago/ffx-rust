@@ -183,4 +183,59 @@ pub mod bridge {
         INTERNATIONAL_ENV.set(mem, [0; 4]);
         r
     }
+
+    /// `TOGetFFXLangStr()` (`0x008ac300`): the two-letter code of the
+    /// language `TOGetFFXLang()` returned (`lang`): 1 `us`, 2 `fr`, 3 `es`,
+    /// 4 `de`, 5 `it`, 9 `kr`, 10 `ch`, 18 `uk`, any other `jp`; an image
+    /// string.
+    pub fn ffx_lang_str(mem: &impl Mem, lang: u32) -> u32 {
+        mem.rebase(match lang {
+            1 => 0x00b5_46b8,
+            2 => 0x00b7_c908,
+            3 => 0x00b7_c914,
+            4 => 0x00b7_c90c,
+            5 => 0x00b7_c910,
+            9 => 0x00b7_c918,
+            10 => 0x00b7_c91c,
+            18 => 0x00b5_46bc,
+            _ => 0x00b7_c900,
+        })
+    }
+
+    /// The second save-region flag (`0x00c59978`).
+    pub const SAVE_REGION2: Global<u32> = Global::new(0x00c5_9978);
+    /// Two words `0x008b0970` clears (`0x01841d38`).
+    pub const INTERNATIONAL_ENV2: Global<[u32; 2]> = Global::new(0x0184_1d38);
+
+    /// `0x008b0970(english)`: [`swap_international_env_init`]'s twin:
+    /// `MsSetSaveConfigEnglish(english)`, [`SAVE_REGION2`] 4 or 0x12,
+    /// [`INTERNATIONAL_ENV2`] zeroed; the call's `eax`.
+    pub fn swap_international_env_init2<M: Mem>(
+        mem: &mut M,
+        english: u32,
+        set_english: impl FnOnce(&mut M, u32) -> u32,
+    ) -> u32 {
+        let r = set_english(mem, english);
+        SAVE_REGION2.set(mem, if english == 1 { 4 } else { 0x12 });
+        INTERNATIONAL_ENV2.set(mem, [0; 2]);
+        r
+    }
+
+    /// `TOMenuAtelReq(work, entry, level)` (`0x008be370`): with the event
+    /// script controller switched to 6 (`AtelChangeCurrentCtrl`), signal
+    /// `entry` of `work` registered without duplicate tags
+    /// (`AtelRegistSignalWithoutSameTag(0xffff, entry, 0, work, level)`),
+    /// then the previous controller restored (`AtelSetCurrentCtrl`); what
+    /// that returns. The three are the script module's, passed in.
+    pub fn menu_atel_req<M: Mem>(
+        mem: &mut M,
+        args: [u32; 3],
+        change_ctrl: impl FnOnce(&mut M, u32) -> u32,
+        regist: impl FnOnce(&mut M, [u32; 5]) -> u32,
+        set_ctrl: impl FnOnce(&mut M, u32) -> u32,
+    ) -> u32 {
+        let saved = change_ctrl(mem, 6);
+        regist(mem, [0xffff, args[1], 0, args[0], args[2]]);
+        set_ctrl(mem, saved)
+    }
 }

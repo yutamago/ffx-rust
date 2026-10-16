@@ -6,7 +6,7 @@ use ffx_bridge::Mem;
 use ffx_menu::scene::bridge as menu_scene;
 use ffx_system::{
     accessor, btl, cd, config, container, daps, dtor, files, fixup, heap, instance, math, menu,
-    msg, names, pad, pkt, render, save, scene, stl, stub, sync, vbf, window,
+    msg, names, pad, pkt, render, save, scene, sort, stl, stub, sync, vbf, window,
 };
 
 use super::{call0, mem, ported};
@@ -107,6 +107,39 @@ fn delete<M: Mem>(m: &mut M, p: u32) {
 /// `PhyreFree(p)` (ported), for the container helpers.
 fn phyre_free_cb<M: Mem>(m: &mut M, p: u32) {
     heap::phyre_free(m, &mut GameOs, p);
+}
+
+/// Runs `f` with a sorter of `size`-byte records over the game's
+/// comparator `pred` (cdecl, two record addresses, `bool` in `al`) and a
+/// scratch record on this stack.
+fn with_sorter<R>(
+    size: u32,
+    pred: u32,
+    f: impl FnOnce(
+        &mut super::RawMem,
+        &mut sort::bridge::Sorter<fn(&mut super::RawMem, u32, u32) -> bool>,
+    ) -> R,
+) -> R {
+    thread_local! {
+        static PRED: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    }
+    fn less(m: &mut super::RawMem, a: u32, b: u32) -> bool {
+        let pred = PRED.with(std::cell::Cell::get);
+        call_ptr(m, pred, &[a, b]) & 0xff != 0
+    }
+    let mut tmp = [0u32; 7];
+    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    let at = tmp.as_mut_ptr() as u32;
+    let saved = PRED.with(|c| c.replace(pred));
+    let mut sorter = sort::bridge::Sorter {
+        size,
+        tmp: at,
+        less: less as fn(&mut super::RawMem, u32, u32) -> bool,
+    };
+    let r = f(&mut mem(), &mut sorter);
+    PRED.with(|c| c.set(saved));
+    std::hint::black_box(&mut tmp);
+    r
 }
 
 /// The heap's Win32 calls, through the game's own import slots (so they are
@@ -3525,6 +3558,223 @@ ported! {
     /// `Counters_Snapshot()`.
     Counters_Snapshot @ 0x0082_1a70 => extern "C" fn counters_snapshot() -> u32 {
         save::bridge::counters_snapshot(&mut mem())
+    }
+    /// `std::_Adjust_heap(first, hole, bottom, &val, less)`, 16-byte records.
+    StdAdjustHeap16 @ 0x0060_aeb0 => extern "C" fn sort16_0060aeb0(first: u32, hole: i32, bottom: i32, val: u32, less: u32) {
+        with_sorter(16, less, |m, s| s.adjust_heap(m, first, hole, bottom, val));
+    }
+    /// `std::_Insertion_sort(first, last, less)`, 16-byte records.
+    StdInsertionSort16 @ 0x0060_b0f0 => extern "C" fn sort16_0060b0f0(first: u32, last: u32, less: u32) {
+        with_sorter(16, less, |m, s| s.insertion_sort(m, first, last));
+    }
+    /// `std::_Insertion_sort(first, last, less)`, 16-byte records.
+    StdInsertionSort16_0060b2d0 @ 0x0060_b2d0 => extern "C" fn sort16_0060b2d0(first: u32, last: u32, less: u32) {
+        with_sorter(16, less, |m, s| s.insertion_sort(m, first, last));
+    }
+    /// `std::_Make_heap(first, last, less)`, 16-byte records.
+    StdMakeHeap16 @ 0x0060_b310 => extern "C" fn sort16_0060b310(first: u32, last: u32, less: u32) {
+        with_sorter(16, less, |m, s| s.make_heap(m, first, last));
+    }
+    /// `std::_Med3(a, b, c, less)`, 16-byte records.
+    StdMed316 @ 0x0060_b550 => extern "C" fn sort16_0060b550(a: u32, b: u32, c: u32, less: u32) {
+        with_sorter(16, less, |m, s| s.med3(m, a, b, c));
+    }
+    /// `std::_Median(first, mid, last, less), last inclusive; median of nine above 40 records`, 16-byte records.
+    StdMedian16 @ 0x0060_b6f0 => extern "C" fn sort16_0060b6f0(first: u32, mid: u32, last: u32, less: u32) {
+        with_sorter(16, less, |m, s| s.median(m, first, mid, last));
+    }
+    /// `std::_Pop_heap(first, last, dest, &val, less)`, 16-byte records.
+    StdPopHeapTo16 @ 0x0060_b950 => extern "C" fn sort16_0060b950(first: u32, last: u32, dest: u32, val: u32, less: u32) {
+        with_sorter(16, less, |m, s| s.pop_heap_to(m, first, last, dest, val));
+    }
+    /// `std::_Pop_heap(first, last, less): top to the last record`, 16-byte records.
+    StdPopHeap16 @ 0x0060_b990 => extern "C" fn sort16_0060b990(first: u32, last: u32, less: u32) {
+        with_sorter(16, less, |m, s| s.pop_heap(m, first, last));
+    }
+    /// `std::_Pop_heap(first, last, less): top to the last record`, 16-byte records.
+    StdPopHeap16_0060baa0 @ 0x0060_baa0 => extern "C" fn sort16_0060baa0(first: u32, last: u32, less: u32) {
+        with_sorter(16, less, |m, s| s.pop_heap(m, first, last));
+    }
+    /// `std::_Push_heap(first, hole, top, &val, less)`, 16-byte records.
+    StdPushHeap16 @ 0x0060_bb80 => extern "C" fn sort16_0060bb80(first: u32, hole: i32, top: i32, val: u32, less: u32) {
+        with_sorter(16, less, |m, s| s.push_heap(m, first, hole, top, val));
+    }
+    /// `std::_Sort(first, last, ideal, less): introsort, 32-record insertion cutoff`, 16-byte records.
+    StdSort16 @ 0x0060_bc90 => extern "C" fn sort16_0060bc90(first: u32, last: u32, ideal: i32, less: u32) {
+        with_sorter(16, less, |m, s| s.sort(m, first, last, ideal));
+    }
+    /// `std::sort_heap(first, last, less)`, 16-byte records.
+    StdSortHeap16 @ 0x0060_bed0 => extern "C" fn sort16_0060bed0(first: u32, last: u32, less: u32) {
+        with_sorter(16, less, |m, s| s.sort_heap(m, first, last));
+    }
+    /// `std::_Unguarded_partition(&result, first, last, less) -> &result (pfirst, plast)`, 16-byte records.
+    StdUnguardedPartition16 @ 0x0060_c030 => extern "C" fn sort16_0060c030(result: u32, first: u32, last: u32, less: u32) -> u32 {
+        let (lo, hi) = with_sorter(16, less, |m, s| s.partition(m, first, last));
+        mem().write(result, [lo, hi]);
+        result
+    }
+    /// `std::_Adjust_heap(first, hole, bottom, &val, less)`, 28-byte records.
+    StdAdjustHeap28 @ 0x0060_afc0 => extern "C" fn sort28_0060afc0(first: u32, hole: i32, bottom: i32, val: u32, less: u32) {
+        with_sorter(28, less, |m, s| s.adjust_heap(m, first, hole, bottom, val));
+    }
+    /// `std::_Insertion_sort(first, last, less)`, 28-byte records.
+    StdInsertionSort28 @ 0x0060_b1f0 => extern "C" fn sort28_0060b1f0(first: u32, last: u32, less: u32) {
+        with_sorter(28, less, |m, s| s.insertion_sort(m, first, last));
+    }
+    /// `std::_Insertion_sort(first, last, less)`, 28-byte records.
+    StdInsertionSort28_0060b2f0 @ 0x0060_b2f0 => extern "C" fn sort28_0060b2f0(first: u32, last: u32, less: u32) {
+        with_sorter(28, less, |m, s| s.insertion_sort(m, first, last));
+    }
+    /// `std::_Make_heap(first, last, less)`, 28-byte records.
+    StdMakeHeap28 @ 0x0060_b420 => extern "C" fn sort28_0060b420(first: u32, last: u32, less: u32) {
+        with_sorter(28, less, |m, s| s.make_heap(m, first, last));
+    }
+    /// `std::_Med3(a, b, c, less)`, 28-byte records.
+    StdMed328 @ 0x0060_b640 => extern "C" fn sort28_0060b640(a: u32, b: u32, c: u32, less: u32) {
+        with_sorter(28, less, |m, s| s.med3(m, a, b, c));
+    }
+    /// `std::_Median(first, mid, last, less), last inclusive; median of nine above 40 records`, 28-byte records.
+    StdMedian28 @ 0x0060_b790 => extern "C" fn sort28_0060b790(first: u32, mid: u32, last: u32, less: u32) {
+        with_sorter(28, less, |m, s| s.median(m, first, mid, last));
+    }
+    /// `std::_Pop_heap(first, last, dest, &val, less)`, 28-byte records.
+    StdPopHeapTo28 @ 0x0060_b9f0 => extern "C" fn sort28_0060b9f0(first: u32, last: u32, dest: u32, val: u32, less: u32) {
+        with_sorter(28, less, |m, s| s.pop_heap_to(m, first, last, dest, val));
+    }
+    /// `std::_Pop_heap(first, last, less): top to the last record`, 28-byte records.
+    StdPopHeap28 @ 0x0060_ba40 => extern "C" fn sort28_0060ba40(first: u32, last: u32, less: u32) {
+        with_sorter(28, less, |m, s| s.pop_heap(m, first, last));
+    }
+    /// `std::_Pop_heap(first, last, less): top to the last record`, 28-byte records.
+    StdPopHeap28_0060bb00 @ 0x0060_bb00 => extern "C" fn sort28_0060bb00(first: u32, last: u32, less: u32) {
+        with_sorter(28, less, |m, s| s.pop_heap(m, first, last));
+    }
+    /// `std::_Push_heap(first, hole, top, &val, less)`, 28-byte records.
+    StdPushHeap28 @ 0x0060_bc00 => extern "C" fn sort28_0060bc00(first: u32, hole: i32, top: i32, val: u32, less: u32) {
+        with_sorter(28, less, |m, s| s.push_heap(m, first, hole, top, val));
+    }
+    /// `std::_Sort(first, last, ideal, less): introsort, 32-record insertion cutoff`, 28-byte records.
+    StdSort28 @ 0x0060_bd80 => extern "C" fn sort28_0060bd80(first: u32, last: u32, ideal: i32, less: u32) {
+        with_sorter(28, less, |m, s| s.sort(m, first, last, ideal));
+    }
+    /// `std::sort_heap(first, last, less)`, 28-byte records.
+    StdSortHeap28 @ 0x0060_bf60 => extern "C" fn sort28_0060bf60(first: u32, last: u32, less: u32) {
+        with_sorter(28, less, |m, s| s.sort_heap(m, first, last));
+    }
+    /// `std::_Unguarded_partition(&result, first, last, less) -> &result (pfirst, plast)`, 28-byte records.
+    StdUnguardedPartition28 @ 0x0060_c390 => extern "C" fn sort28_0060c390(result: u32, first: u32, last: u32, less: u32) -> u32 {
+        let (lo, hi) = with_sorter(28, less, |m, s| s.partition(m, first, last));
+        mem().write(result, [lo, hi]);
+        result
+    }
+    /// `std::sort(first, last, less)`, 16-byte records.
+    StdSort16_std @ 0x0060_c890 => extern "C" fn std_sort16(first: u32, last: u32, less: u32) {
+        with_sorter(16, less, |m, s| s.std_sort(m, first, last));
+    }
+    /// `std::sort(first, last, less)`, 28-byte records.
+    StdSort28_std @ 0x0060_c8b0 => extern "C" fn std_sort28(first: u32, last: u32, less: u32) {
+        with_sorter(28, less, |m, s| s.std_sort(m, first, last));
+    }
+    /// Phyre array append into a new buffer.
+    PArray_PushInto_00629b90 @ 0x0062_9b90 => extern "thiscall" fn parray_push_into_00629b90(this: u32, dst: u32, value: u32) -> u32 {
+        container::bridge::parray_push_into(&mut mem(), this, dst, value, phyre_free_cb)
+    }
+    /// Phyre array append into a new buffer.
+    PArray_PushInto_0069b530 @ 0x0069_b530 => extern "thiscall" fn parray_push_into_0069b530(this: u32, dst: u32, value: u32) -> u32 {
+        container::bridge::parray_push_into(&mut mem(), this, dst, value, phyre_free_cb)
+    }
+    /// Phyre array append into a new buffer.
+    PArray_PushInto_0069b5c0 @ 0x0069_b5c0 => extern "thiscall" fn parray_push_into_0069b5c0(this: u32, dst: u32, value: u32) -> u32 {
+        container::bridge::parray_push_into(&mut mem(), this, dst, value, phyre_free_cb)
+    }
+    /// Phyre array append into a new buffer.
+    PArray_PushInto_0069b650 @ 0x0069_b650 => extern "thiscall" fn parray_push_into_0069b650(this: u32, dst: u32, value: u32) -> u32 {
+        container::bridge::parray_push_into(&mut mem(), this, dst, value, phyre_free_cb)
+    }
+    /// `0x00689620()`: two owned arrays reset.
+    ResetArrays_00689620 @ 0x0068_9620 => extern "thiscall" fn reset_arrays_00689620(this: u32) {
+        container::bridge::reset_arrays_689620(&mut mem(), this, phyre_free_cb);
+    }
+    /// `0x009e2420()`: a Phyre array of objects destroyed.
+    PArray_DeleteAll_009e2420 @ 0x009e_2420 => extern "thiscall" fn parray_delete_all_009e2420(this: u32) {
+        container::bridge::parray_delete_all(
+            &mut mem(),
+            this,
+            |m, obj| {
+                // SAFETY: the object's scalar deleting destructor (vtable
+                // slot 0, thiscall, flag 1), as the original calls it.
+                unsafe {
+                    let vtable: u32 = m.read(obj);
+                    let f: u32 = m.read(vtable);
+                    let f: unsafe extern "thiscall" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
+                    f(obj, 1);
+                }
+            },
+            phyre_free_cb,
+        );
+    }
+    /// `TOSeqSetScenePosByName(i, name, x, y)`.
+    TOSeqSetScenePosByName @ 0x008a_f060 => extern "C" fn to_seq_set_scene_pos_by_name(i: i32, name: u32, x: u32, y: u32) {
+        #[allow(clippy::cast_possible_truncation)] // the menu takes u16 positions
+        scene::bridge::set_scene_pos_by_name(&mut mem(), i, name, x, y, |m, i, h, x, y| {
+            ffx_menu::scene::bridge::tk_menu_set_scene_pos(m, i, h, x as u16, y as u16);
+        });
+    }
+    /// `ScreenProjection(m)`.
+    ScreenProjection @ 0x0076_6ae0 => extern "C" fn screen_projection(m: u32) {
+        math::bridge::screen_projection(&mut mem(), m, |mm, p| {
+            ffx_ps2::vu0::bridge::matrix_identity(mm, p);
+        });
+    }
+    /// `TOGetFFXLangStr()`.
+    TOGetFFXLangStr @ 0x008a_c300 => extern "C" fn to_get_ffx_lang_str() -> u32 {
+        let m = mem();
+        let lang = instance::bridge::ffx_lang(&m, &mut phyre_printf);
+        menu::bridge::ffx_lang_str(&m, lang)
+    }
+    /// `TOSwapInternationalEnvInit_008b0970(english)`.
+    TOSwapInternationalEnvInit_008b0970 @ 0x008b_0970 => extern "C" fn to_swap_international_env_init_008b0970(english: u32) {
+        menu::bridge::swap_international_env_init2(&mut mem(), english, |m, e| call_sym(m, 0x0078_5ed0, &[e]));
+    }
+    /// `TOMenuAtelReq(work, entry, level)`.
+    TOMenuAtelReq @ 0x008b_e370 => extern "C" fn to_menu_atel_req(work: u32, entry: u32, level: u32) -> u32 {
+        use ffx_script::vm::bridge as atel;
+        menu::bridge::menu_atel_req(
+            &mut mem(),
+            [work, entry, level],
+            atel::atel_change_current_ctrl,
+            |m, [from, to, kind, lvl, ent]| {
+                atel::signal::atel_regist_signal_without_same_tag(m, atel::signal::Request::new(from, to, kind, lvl, ent))
+            },
+            atel::atel_set_current_ctrl,
+        )
+    }
+    /// `TOSeqGetColorRGBA(i, name, &r, &g, &b, &a)`.
+    TOSeqGetColorRGBA @ 0x008a_e3a0 => extern "C" fn to_seq_get_color_rgba(i: i32, name: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
+        scene::bridge::get_color_rgba(
+            &mut mem(),
+            i,
+            name,
+            [r, g, b, a],
+            |m, i, n| ffx_menu::scene::bridge::tk_menu_get_param_handle(m, i, n),
+            |m, i, h, n| ffx_menu::scene::bridge::tk_menu_get_param_offset(m, i, h.cast_signed(), n.cast_signed()),
+        )
+    }
+    /// `TOShiftListedId(id)`.
+    TOShiftListedId @ 0x0090_66f0 => extern "C" fn to_shift_listed_id(id: i32) -> i32 {
+        msg::bridge::shift_listed_id(&mem(), id)
+    }
+    /// `TOBtlSetDamageValue(a, b, c, d, e, f, g, h)`.
+    TOBtlSetDamageValue @ 0x0089_9a40 => extern "C" fn to_btl_set_damage_value(a: u32, b: u32, c: u32, d: u32, e: u32, f: u32, g: u32, h: u32) -> i32 {
+        btl::bridge::set_damage_value(&mut mem(), [a, b, c, d, e, f, g, h])
+    }
+    /// `TOBtlMakeTargetListBit()`.
+    TOBtlMakeTargetListBit @ 0x0089_85b0 => extern "C" fn to_btl_make_target_list_bit() -> i32 {
+        btl::bridge::make_target_list_bit(&mut mem())
+    }
+    /// `TOControlMessageWindowForMenu()`.
+    TOControlMessageWindowForMenu @ 0x008a_b9a0 => extern "C" fn to_control_message_window_for_menu() -> u32 {
+        window::bridge::control_message_window_for_menu(&mut mem(), call_ptr)
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {

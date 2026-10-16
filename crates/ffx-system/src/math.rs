@@ -432,6 +432,39 @@ pub mod bridge {
         let q = ffx_bridge::x87::Reg::load(a).div_m32(b).store();
         ffx_bridge::x87::Reg::load(q).mul_m32(q).store()
     }
+
+    /// The first screen (`0x01137000`): `+8` near, `+0xc` far, `+0x10`,
+    /// `+0x14` width and height, `+0x1c` the focal length (f32).
+    pub const SCREEN0: Global<[u32; 8]> = Global::new(0x0113_7000);
+
+    /// `0x00766ae0(m)`: the projection matrix of the first screen: `m` the
+    /// identity (`FFXVu0UnitMatrix`, passed in), then `m[0]` =
+    /// `2f / (512 / w)`, `m[5]` = `2f / (416 / h)`, `m[10]` =
+    /// `(far + near) / (far - near)`, `m[14]` = `near * far * -2 / (far -
+    /// near)`, `m[11]` = 1, `m[15]` = 0, in the x87's 53-bit precision with
+    /// the two scales and the inputs stored as `f32` on the way.
+    pub fn screen_projection<M: Mem>(mem: &mut M, m: u32, unit_matrix: impl FnOnce(&mut M, u32)) {
+        use ffx_bridge::x87::{add, div, load, mul, store, sub};
+        let s = SCREEN0.get(mem);
+        let sx = store(div(512.0, load(s[4])));
+        let sy = store(div(416.0, load(s[5])));
+        let focal = store(load(s[7]));
+        let near = store(load(s[2]));
+        let far = store(load(s[3]));
+        unit_matrix(mem, m);
+        let d = add(load(focal), load(focal));
+        mem.write(m, store(div(d, load(sx))));
+        mem.write(m.wrapping_add(0x14), store(div(d, load(sy))));
+        let (near, far) = (load(near), load(far));
+        let range = sub(far, near);
+        mem.write(m.wrapping_add(0x28), store(div(add(far, near), range)));
+        mem.write(
+            m.wrapping_add(0x38),
+            store(div(mul(near, mul(far, -2.0)), range)),
+        );
+        mem.write(m.wrapping_add(0x2c), 1f32.to_bits());
+        mem.write(m.wrapping_add(0x3c), 0u32);
+    }
 }
 
 #[cfg(test)]

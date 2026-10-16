@@ -24,6 +24,7 @@ pub mod pkt;
 pub mod render;
 pub mod save;
 pub mod scene;
+pub mod sort;
 pub mod stl;
 pub mod stub;
 pub mod sync;

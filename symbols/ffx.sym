@@ -408,10 +408,36 @@
 0x0060ae40 function Fixup_SetObject           # (record, index): record[1] = index
 0x0060ae50 function Fixup_SetArrayObjectAndRead # (record, index, cursor*, flags): record[1] = index; record[2] unless 0x08; record[3]
 0x0060ae90 function Fixup_SetObjectAndRead    # (record, index, cursor*, flags): record[1] = index, then Fixup_ReadRecord
+0x0060aeb0 function StdAdjustHeap16 # cdecl std::_Adjust_heap(first, hole, bottom, &val, less); 16-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060afc0 function StdAdjustHeap28 # cdecl std::_Adjust_heap(first, hole, bottom, &val, less); 28-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060b0f0 function StdInsertionSort16 # cdecl std::_Insertion_sort(first, last, less); 16-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060b1f0 function StdInsertionSort28 # cdecl std::_Insertion_sort(first, last, less); 28-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060b2d0 function StdInsertionSort16_0060b2d0 # cdecl std::_Insertion_sort(first, last, less); 16-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060b2f0 function StdInsertionSort28_0060b2f0 # cdecl std::_Insertion_sort(first, last, less); 28-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060b310 function StdMakeHeap16 # cdecl std::_Make_heap(first, last, less); 16-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060b420 function StdMakeHeap28 # cdecl std::_Make_heap(first, last, less); 28-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060b550 function StdMed316 # cdecl std::_Med3(a, b, c, less); 16-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060b640 function StdMed328 # cdecl std::_Med3(a, b, c, less); 28-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060b6f0 function StdMedian16 # cdecl std::_Median(first, mid, last, less), last inclusive; median of nine above 40 records; 16-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060b790 function StdMedian28 # cdecl std::_Median(first, mid, last, less), last inclusive; median of nine above 40 records; 28-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
 0x0060b850 function Identity_0060b850 # cdecl(x) -> x (frame-pointer build); name ours
 0x0060b860 function Identity_0060b860 # cdecl(x) -> x (frame-pointer build); name ours
+0x0060b950 function StdPopHeapTo16 # cdecl std::_Pop_heap(first, last, dest, &val, less); 16-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060b990 function StdPopHeap16 # cdecl std::_Pop_heap(first, last, less): top to the last record; 16-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060b9f0 function StdPopHeapTo28 # cdecl std::_Pop_heap(first, last, dest, &val, less); 28-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060ba40 function StdPopHeap28 # cdecl std::_Pop_heap(first, last, less): top to the last record; 28-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060baa0 function StdPopHeap16_0060baa0 # cdecl std::_Pop_heap(first, last, less): top to the last record; 16-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060bb00 function StdPopHeap28_0060bb00 # cdecl std::_Pop_heap(first, last, less): top to the last record; 28-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060bb80 function StdPushHeap16 # cdecl std::_Push_heap(first, hole, top, &val, less); 16-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060bc00 function StdPushHeap28 # cdecl std::_Push_heap(first, hole, top, &val, less); 28-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060bc90 function StdSort16 # cdecl std::_Sort(first, last, ideal, less): introsort, 32-record insertion cutoff; 16-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060bd80 function StdSort28 # cdecl std::_Sort(first, last, ideal, less): introsort, 32-record insertion cutoff; 28-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060bed0 function StdSortHeap16 # cdecl std::sort_heap(first, last, less); 16-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060bf60 function StdSortHeap28 # cdecl std::sort_heap(first, last, less); 28-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
 0x0060c010 function Identity_0060c010 # cdecl(x) -> x (frame-pointer build); name ours
 0x0060c020 function Identity_0060c020 # cdecl(x) -> x (frame-pointer build); name ours
+0x0060c030 function StdUnguardedPartition16 # cdecl std::_Unguarded_partition(&result, first, last, less) -> &result (pfirst, plast); 16-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
+0x0060c390 function StdUnguardedPartition28 # cdecl std::_Unguarded_partition(&result, first, last, less) -> &result (pfirst, plast); 28-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
 0x0060c6b0 function MapFindU32_0060c6b0 # thiscall(head; &key), ret 4: the same lookup as MapFindU32_0062fe50; caller 0x0060df30; name ours
 0x0060c700 function Identity_0060c700 # cdecl(x) -> x (frame-pointer build); name ours
 0x0060c710 function Identity_0060c710 # cdecl(x) -> x (frame-pointer build); name ours
@@ -419,6 +445,8 @@
 0x0060c730 function Identity_0060c730 # cdecl(x) -> x (frame-pointer build); name ours
 0x0060c870 function Identity_0060c870 # cdecl(x) -> x (frame-pointer build); name ours
 0x0060c880 function Identity_0060c880 # cdecl(x) -> x (frame-pointer build); name ours
+0x0060c890 function StdSort16_std # cdecl std::sort(first, last, less): StdSort16(first, last, count, less); 16-byte fixup records; name ours
+0x0060c8b0 function StdSort28_std # cdecl std::sort(first, last, less): StdSort28(first, last, count, less); 28-byte fixup records; name ours
 0x0060c990 function TaggedTreeInsert_0060c990 # thiscall(head; node), ret 4: inserts node by u32 key +0xc (children +0/+4 = head, parent in +8 tagged with bit 0); returns an equal node or 0; callers 0x0060c740, 0x0060dfc0; name ours
 0x0060ca10 function Fixup_RunAll16            # Fixup_RunAll for 16-byte records
 0x0060ca70 function Fixup_RunAll              # thiscall({flags, objects}, callback, template, cursor*, out*): every object
@@ -524,6 +552,7 @@
 0x006288d0 function Phyre_PClassDescriptorForType_Phyre_PPhysics_PPhysicsCharacterControllerBase__getPointerFromScriptContext # fh switch:bsim1.00 0x710018d990 Phyre::PClassDescriptorForType<Phyre::PPhysics::PPhysicsCharacterControllerBase>::getPointerFromScriptContext
 0x00629800 function Phyre_PFramework_PApplication_handleInputs # fh v3:bsim1.00 0x006299b0 Phyre::PFramework::PApplication::handleInputs
 0x00629820 function Phyre_PFramework_PApplication_initScene # fh v3:bsim1.00 0x006299d0 Phyre::PFramework::PApplication::initScene
+0x00629b90 function PArray_PushInto_00629b90 # thiscall(this, dst, &value), ret 8: null dst -> 0xd; old count words copied to dst, *value appended, old buffer PhyreFree-d when owned and not dst; +4 = dst, +0 = count + 1; returns 0; name ours
 0x00629ca0 function Input_KeyDown             # thiscall(manager, key, pad), ret 8: al = pad state byte [[manager+0x2b8]+0x38+4 pad]+0x18+key-11 != 0 for key 11..26, pad < 0x12; upper eax as left (key-11 or the table); name ours, next to Input_KeyHeld
 0x00629d50 function Input_KeyHeld              # thiscall(devices, binding, device): binding >= 28 is Phyre key binding-28 in the keyboard state
 0x0062a600 function Phyre_PFramework_PApplication_onInit # fh v3:exact 0x0062a7b0 Phyre::PFramework::PApplication::onInit
@@ -1198,6 +1227,7 @@
 0x00689510 function TouchRecord_Reset # thiscall(rec) -> rec: one TouchRecords_Init record reset; callers 0x00689580, 0x006897d0; name ours
 0x006895c0 function PArray_Reset_006895c0 # thiscall: count +0 top bit clear and buffer non-null: PhyreFree(+4); +0, +4 = 0; name ours
 0x006895f0 function PArray_Reset_006895f0 # thiscall: count +0 top bit clear and buffer non-null: PhyreFree(+4); +0, +4 = 0; name ours
+0x00689620 function ResetArrays_00689620 # thiscall destructor: owned arrays +0x158 then +0x150 reset (PhyreFree when owned and non-null, both words 0); name ours
 0x006898c0 function TouchManager_GetInstance  # () -> [0x00ccc850]; fh switch:bsim1.00 0x710023e180 TouchManager::GetInstance
 0x006898d0 function TouchTracks_Init # cdecl(base, n): n 0x1c8-byte records reset (+0 u16, eight 0x38-byte points from +4: bytes +0/+0x14, floats +4..+0x14; +0x1c4; null skipped); returns the last record; callers 0x00689750/0x0068a660/0x0068ad60 beside TouchRecords_Init; name ours
 0x00689a10 function TouchRecords_Init # cdecl(base, n): n 0x150-byte records reset (+0 u16 0, +4 -1, +8 0, 32 ten-byte points from +0xc, +0x14c 0; null record skipped); callers 0x00689790/0x0068a660/0x0068ade0 next to TouchManager_GetInstance; name ours
@@ -1245,6 +1275,9 @@
 0x0069af30 function CopyThisTo_0069af30 # thiscall(this; p), ret 4: *p = *this, returns p (vtable only); name ours
 0x0069b310 function ClusterManager_forceReleasePCluster # fh v3:exact 0x0069b450 ClusterManager::forceReleasePCluster
 0x0069b4b0 function ClusterManager_getPClusterByName # fh v4:user_defined+call.cs thiscall ClusterManager::getPClusterByName
+0x0069b530 function PArray_PushInto_0069b530 # thiscall(this, dst, &value), ret 8: null dst -> 0xd; old count words copied to dst, *value appended, old buffer PhyreFree-d when owned and not dst; +4 = dst, +0 = count + 1; returns 0; name ours
+0x0069b5c0 function PArray_PushInto_0069b5c0 # thiscall(this, dst, &value), ret 8: null dst -> 0xd; old count words copied to dst, *value appended, old buffer PhyreFree-d when owned and not dst; +4 = dst, +0 = count + 1; returns 0; name ours
+0x0069b650 function PArray_PushInto_0069b650 # thiscall(this, dst, &value), ret 8: null dst -> 0xd; old count words copied to dst, *value appended, old buffer PhyreFree-d when owned and not dst; +4 = dst, +0 = count + 1; returns 0; name ours
 0x0069b7b0 function ChrResourceCacheManager_isChrDelayedRelease # fh v3:bsim1.00 0x0069b8f0 ChrResourceCacheManager::isChrDelayedRelease
 0x0069b940 function ClusterManager_loadPCluster # fh v4:user_defined+call.cs thiscall ClusterManager::loadPCluster
 0x0069bb80 function ChrResourceCacheManager_onLoadPCluster # fh v3:exact 0x0069bcc0 ChrResourceCacheManager::onLoadPCluster
@@ -2206,6 +2239,7 @@
 0x007665b0 function SetGlobal_02305840 # cdecl(v): *0x02305840 = v, returns v; name ours
 0x00766770 function updateVFXKeThRenderData   # fh v3:exact 0x00766860
 0x007669c0 function updateVFXKeThSetPoint     # fh v3:exact 0x00766ab0
+0x00766ae0 function ScreenProjection # cdecl(m): FFXVu0UnitMatrix(m), then the perspective terms from g_Screens[0] (+8 near, +0xc far, +0x10/+0x14 w/h against 512/416, +0x1c focal); name ours
 0x00766be0 function prcPacketDataDraw         # fh switch:bsim1.00 0x71003069a0
 0x00766c20 function prcPacketDataDrawPtr      # fh switch:bsim1.00 0x71003069f0
 0x00766ff0 function KeMdl_Draw                # fh v3:exact 0x007670d0
@@ -5306,6 +5340,7 @@
 0x00898260 function TOBtlMakeStatusBuff       # fh v3:exact 0x008981d0
 0x00898330 function TOBtlMakeTargetChrStatusBit # fh v3:exact 0x008982a0
 0x00898490 function TOBtlMakeTargetGroupBit   # fh v3:exact 0x00898400
+0x008985b0 function TOBtlMakeTargetListBit    # (): target bits of the lists 0x0133f0d8/0x0133f0ec OR-ed into 0x0133d0d4/0x0133d0d8, union to 0x0133d0dc; returns the summed counts
 0x00898640 function TOBtlMakeTargetTargetBit  # fh v3:exact 0x008985b0
 0x008989d0 function TOBtlMemoryCursorPos      # fh v3:exact 0x00898940
 0x00898ad0 function TOBtlOpenAuronLimitWindow # fh v3:exact 0x00898a40
@@ -5320,7 +5355,7 @@
 0x008997c0 function TOBtlSetChangeHelpMes     # fh v3:exact 0x00899730
 0x00899870 function TOBtlSetCommand           # fh v3:exact 0x008997e0
 0x008999f0 function TOBtlSetCurPos            # fh v3:exact 0x00899960
-0x00899a40 function TOBtlSetDamageValue       # fh v3:exact 0x008999b0
+0x00899a40 function TOBtlSetDamageValue       # fh v3:exact 0x008999b0; appends a 16-byte record (u16, u16, u32, u32, 4 bytes) at 0x0133f110, count i16 0x0133f108 (max 63, else -1)
 0x00899ac0 function TOBtlSetDefaultCursorPos  # fh v3:exact 0x00899a30
 0x00899fd0 function TOBtlSetInfoWinParam      # fh v3:exact 0x00899f40
 0x0089a160 function TOBtlSetLibraWindowParam  # fh v3:exact 0x0089a0d0
@@ -5479,7 +5514,7 @@
 0x008ab7d0 function TOCDGetFileName           # fh v3:bsim1.00 0x008ab780
 0x008ab800 function TOClearMessageSlot_008ab800 # cdecl(i): g_TOMessageWindowSlots[i]: halves +0, +8 of *(slot+0x10), +0, +0x2c of *(slot+0x14), bytes +0, +1 of *(slot+0x18) zeroed; caller 0x008ab860; name ours
 0x008ab8f0 function TOCloseMessageWindow      # (i): TOCloseWindow(i), then jmp TOCloseMessage(i); fh v3:bsim1.00 0x008ab8a0
-0x008ab9a0 function TOControlMessageWindowForMenu # fh v3:exact 0x008ab950
+0x008ab9a0 function TOControlMessageWindowForMenu # fh v3:exact 0x008ab950; per message-window slot: TOControlWindow, TOControlMessage, TOSetMessageFunc, TOGetControlPadStatus; g_TOMenuPad 0x100,0x100: jmp TODebugAddPadPrintFlag
 0x008aba30 function TODVDFileRead             # fh switch:bsim1.00 0x71004f4c70
 0x008aba60 function TODVDFileLoad # cdecl(file, name): CdLib +0x10(file), size = +0x14(name), user_malloc(size), TODVDFileRead(file, name, block); block or 0; name ours
 0x008abab0 function TODVDFileStartRead # cdecl(file, name, buf): CdLib kept in 0x01865f04; +0x10(file); +0x14(name) non-zero: +0(name, buf, 0, 0); name ours
@@ -5491,7 +5526,7 @@
 0x008ac130 function TOFTCTransfer             # fh v3:exact 0x008ac0e0
 0x008ac2c0 function TOGetBtlMenuTexAdrs       # () -> [0x01841e04]; fh switch:bsim1.00 0x71004fa310
 0x008ac2d0 function TOGetWord_01841e08        # () -> [0x01841e08]; between TOGetBtlMenuTexAdrs and TOGetFFXLangStr; name ours
-0x008ac300 function TOGetFFXLangStr           # fh v3:exact 0x008ac2b0
+0x008ac300 function TOGetFFXLangStr           # fh v3:exact 0x008ac2b0; TOGetFFXLang -> "us" 1, "fr" 2, "es" 3, "de" 4, "it" 5, "kr" 9, "ch" 10, "uk" 18, else "jp"
 0x008ac390 function TOGetFFXLangSwapFlag      # fh v3:bsim1.00 0x008ac340
 0x008ac3a0 function TOGetFFXVideoMode         # fh v3:bsim1.00 0x008ac350
 0x008ac3d0 function TOGetFontWidthTblAdrs     # fh v3:bsim1.00 0x008ac380
@@ -5519,6 +5554,7 @@
 0x008ae2f0 function TOSeqDraw                 # fh v3:exact 0x008ae2a0
 0x008ae340 function TOSeqDrawLayer            # fh switch:bsim1.00 0x71004fcea0
 0x008ae360 function TOSeqGetColor             # fh v3:exact 0x008ae310
+0x008ae3a0 function TOSeqGetColorRGBA         # cdecl(i, name, &r, &g, &b, &a): TkMenuGetParamOffset(i, TkMenuGetParamHandle(i, name), 0) split into bytes, 0s without the parameter
 0x008ae410 function TOSeqGetNum               # fh v3:exact 0x008ae3c0
 0x008ae450 function TOSeqGetPoint             # fh v3:exact 0x008ae400
 0x008ae4b0 function TOSeqGetRect              # fh v3:exact 0x008ae460
@@ -5526,6 +5562,7 @@
 0x008ae5a0 function TOSeqInitAllScene         # fh v3:exact 0x008ae550
 0x008ae6f0 function TOSeqInitParam            # fh v3:exact 0x008ae6a0
 0x008aeec0 function TOSeqInitScene            # fh v3:exact 0x008aee70
+0x008af060 function TOSeqSetScenePosByName # cdecl(i, name, x, y): every slot of scene i named name: TkMenuSetScenePos(i, slot +0x1c, x, y); name ours
 0x008af0d0 function TOSeqStartScene           # fh v3:exact 0x008af080
 0x008af1b0 function TOSeqStartSceneDrawContinue # fh v3:exact 0x008af160
 0x008af380 function TOSeqStopExecScene        # fh v3:exact 0x008af330
@@ -5540,6 +5577,7 @@
 0x008b0340 function TOSwapInternationalEnvExec # fh v3:exact 0x008b02f0
 0x008b0500 function TOSwapInternationalEnvExecNonBlock # fh v3:exact 0x008b04b0
 0x008b0920 function TOSwapInternationalEnvInit # fh v3:exact 0x008b08d0; MsSetSaveConfigEnglish(on); 0x00c59564 = on == 1 ? 4 : 0x12; 0x01841d28..+0x10 = 0
+0x008b0970 function TOSwapInternationalEnvInit_008b0970 # cdecl(english): MsSetSaveConfigEnglish(english); 0x00c59978 = english == 1 ? 4 : 0x12; 0x01841d38, 0x01841d3c = 0; twin of TOSwapInternationalEnvInit; name ours
 0x008b1020 function TOTransTexture            # fh v3:exact 0x008b0fd0
 0x008b1330 function resetButtonData           # fh v3:bsim1.00 0x008b12e0
 0x008b1350 function setButtonData             # fh v3:bsim1.00 0x008b1300
@@ -5627,7 +5665,7 @@
 0x008be050 function SetEntries_01869f20 # cdecl(v): for the byte 0x01869f18 14-byte entries from 0x01869f22, +2 = v and (v == 3) +0 = 2 * entries after it; caller TkBtlEndCtrl; name ours
 0x008be320 function GetU32_00c5a084 # () -> u32 at 0x00c5a084; name ours
 0x008be330 function TOInitMenuGraph           # fh switch:bsim1.00 0x71004b1c00
-0x008be370 function TOMenuAtelReq             # fh v3:exact 0x008be340
+0x008be370 function TOMenuAtelReq             # fh v3:exact 0x008be340; cdecl(work, entry, level): AtelChangeCurrentCtrl(6); AtelRegistSignalWithoutSameTag(0xffff, entry, 0, work, level); AtelSetCurrentCtrl(previous)
 0x008be3a0 function TOMenuAtelStart           # fh switch:bsim1.00 0x71004b2260
 0x008be3d0 function TOMenuClearControlPadBuff # fh v3:bsim1.00 0x008be3a0
 0x008be410 function TOMenuGetControlPad       # fh v3:exact 0x008be3e0
@@ -6184,6 +6222,7 @@
 0x00906270 function TOMakePktFont1612Font_00906270 # fh switch:bsim1.00 0x7100505d30 _TOMakePktFont1612Font
 0x00906290 function TOMakePktFont1612Shadow_00906290 # fh switch:bsim1.00 0x7100508b70 _TOMakePktFont1612Shadow
 0x009062b0 function getScaleButtonIconWidth   # fh v3:exact 0x009062b0
+0x009066f0 function TOShiftListedId # cdecl(id): 0x40e..=0x46e and 0x40e or in the zero-terminated table 0x00b66e44: id + 100; else id; name ours
 0x00906730 function GetU32_018763e0 # () -> u32 at 0x018763e0; name ours
 0x00906740 function StepSwitch_018763e0 # (): *0x018763e0 steps -1 -> 0 -> 1 -> -1 (other values stay), returns it; caller 0x006b8ce0; name ours
 0x00906780 function TOConvAlbhedWord          # fh v3:exact 0x00906780
@@ -7062,6 +7101,7 @@
 0x009e22e0 function PClassDescriptorForType_Phyre_PInputs_PInputSourceTouchRotate_Destruct # thiscall: *this = vtable 0x00b70f54, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
 0x009e22f0 function PClassDescriptorForType_Phyre_PInputs_PInputSourceTouchTwoFingerDragX_Destruct # thiscall: *this = vtable 0x00b71154, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
 0x009e2300 function PClassDescriptorForType_Phyre_PInputs_PInputSourceTouchTwoFingerDragY_Destruct # thiscall: *this = vtable 0x00b7125c, then jmp Phyre_PClassDescriptor_Destruct 0x0043b3e0; type from the vtable label; name ours
+0x009e2420 function PArray_DeleteAll_009e2420 # thiscall: each non-null element's vtable[0](1), then owned buffer PhyreFree-d and both words 0 (twice, inlined resets); name ours
 0x009e24f0 function PInputSource_setVftable # thiscall(this): *this = Phyre_PInputs_PInputSource_vftable (base part of three constructors at 0x00ada8c0..); eax untouched; name ours
 0x009e2cb0 function Index4At4_009e2cb0 # thiscall(this; i), ret 4 -> this[1] + 4 i (vtable only); name ours
 0x009e2cc0 function Index4At4_009e2cc0 # thiscall(this; i), ret 4 -> this[1] + 4 i (vtable only); name ours

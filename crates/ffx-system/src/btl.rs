@@ -173,4 +173,70 @@ pub mod bridge {
         }
         1
     }
+
+    /// The damage values shown (`0x0133f108`): an `i16` count, then from
+    /// `0x0133f110` up to 63 records of 16 bytes.
+    pub const DAMAGE_COUNT: Global<i16> = Global::new(0x0133_f108);
+    /// The first damage record.
+    pub const DAMAGE_VALUES: Global<[u8; 16]> = Global::new(0x0133_f110);
+
+    /// `TOBtlSetDamageValue(a, b, c, d, e, f, g, h)` (`0x00899a40`): a
+    /// record (`u16`, `u16`, `u32`, `u32`, four bytes) appended; the new
+    /// count, or -1 with 63 already.
+    pub fn set_damage_value(mem: &mut impl Mem, a: [u32; 8]) -> i32 {
+        let n = DAMAGE_COUNT.get(mem);
+        if n >= 0x3f {
+            return -1;
+        }
+        let r = DAMAGE_VALUES
+            .ptr(mem)
+            .addr
+            .wrapping_add(i32::from(n).cast_unsigned() << 4);
+        #[allow(clippy::cast_possible_truncation)] // the low halves
+        {
+            mem.write(r, a[0] as u16);
+            mem.write(r.wrapping_add(2), a[1] as u16);
+        }
+        mem.write(r.wrapping_add(4), a[2]);
+        mem.write(r.wrapping_add(8), a[3]);
+        for (k, w) in (0u32..).zip(&a[4..]) {
+            mem.write(r.wrapping_add(0xc + k), w.to_le_bytes()[0]);
+        }
+        let n = n.wrapping_add(1);
+        DAMAGE_COUNT.set(mem, n);
+        i32::from(n)
+    }
+
+    /// The two target lists (`0x0133f0d8`, `0x0133f0ec`): a count, then
+    /// two-byte entries whose first byte is a target bit.
+    pub const TARGET_LISTS: [u32; 2] = [0x0133_f0d8, 0x0133_f0ec];
+    /// The masks they are OR-ed into (`0x0133d0d4`, `0x0133d0d8`) and the
+    /// union (`0x0133d0dc`).
+    pub const TARGET_MASKS: Global<[u32; 3]> = Global::new(0x0133_d0d4);
+
+    /// `TOBtlMakeTargetListBit()` (`0x008985b0`): each list's target bits
+    /// OR-ed into its mask (stored only for a non-empty list), the union of
+    /// both into the third; returns the sum of the counts.
+    pub fn make_target_list_bit(mem: &mut impl Mem) -> i32 {
+        let masks = TARGET_MASKS.ptr(mem).addr;
+        let mut out = [0u32; 2];
+        let mut total = 0i32;
+        for (k, &list) in TARGET_LISTS.iter().enumerate() {
+            let list = mem.rebase(list);
+            let n: i32 = mem.read(list);
+            let at = masks.wrapping_add(4 * u32::try_from(k).unwrap_or(0));
+            let mut m: u32 = mem.read(at);
+            for i in 0..n.max(0).cast_unsigned() {
+                let bit: u8 = mem.read(list.wrapping_add(4 + 2 * i));
+                m |= 1u32.wrapping_shl(u32::from(bit));
+            }
+            if n > 0 {
+                mem.write(at, m);
+            }
+            out[k] = m;
+            total = total.wrapping_add(n);
+        }
+        mem.write(masks.wrapping_add(8), out[0] | out[1]);
+        total
+    }
 }

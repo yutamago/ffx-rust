@@ -795,4 +795,46 @@ pub mod bridge {
         YES_NO_WINDOW.set(mem, 0);
         w
     }
+
+    /// `TOControlMessageWindowForMenu()` (`0x008ab9a0`): for each of the
+    /// eight message-window slots in use (`u16` at its object): the window
+    /// controlled ([`control_window`]), the message ([`control_message`]),
+    /// a non-zero window result setting the message function
+    /// ([`set_message_func`] with the `i16` at `+8` of `*(slot + 0x10)`), and
+    /// a slot in state 1 (`+6`) polling the pad ([`control_pad_status`]).
+    /// Then with both menu pad words (`0x025d09d2`, `+2`) 0x100 the debug
+    /// print flag advances (a tail call, its sign-extended byte returned);
+    /// else 0x100.
+    pub fn control_message_window_for_menu<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let slots = MSG_WINDOW_SLOTS.ptr(mem).addr;
+        for i in 0..8i32 {
+            let at = slots.wrapping_add(i.cast_unsigned() * 4);
+            let s: u32 = mem.read(at);
+            if mem.read::<u16>(s) == 0 {
+                continue;
+            }
+            let r = control_window(mem, i, &mut call);
+            control_message(mem, i, &mut call);
+            if r != 0 {
+                let s: u32 = mem.read(at);
+                let p: u32 = mem.read(s.wrapping_add(0x10));
+                let n = i32::from(mem.read::<i16>(p.wrapping_add(8)));
+                set_message_func(mem, i, n);
+            }
+            let s: u32 = mem.read(at);
+            if mem.read::<u16>(s.wrapping_add(6)) == 1 {
+                control_pad_status(mem, i, &mut call);
+            }
+        }
+        let pad = crate::pad::bridge::FIRST.get(mem);
+        if pad[0] == 0x100 && pad[1] == 0x100 {
+            crate::pad::bridge::add_print_flag(mem);
+            let v = crate::pad::bridge::PRINT_FLAG.get(mem);
+            return i32::from(v.cast_signed()).cast_unsigned();
+        }
+        0x100
+    }
 }
