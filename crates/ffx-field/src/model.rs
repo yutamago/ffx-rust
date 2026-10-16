@@ -144,6 +144,13 @@ pub mod psim {
     pub const POS2: u32 = 0x8c;
 }
 
+/// `rcFree` (`0x009258e0`): a jump to `user_free`; the `rcbg*Fini`
+/// functions free through it.
+pub const RC_FREE: u32 = 0x0092_58e0;
+/// The stream word `rcefSetStream` sets (`0x025d5c14`).
+pub const REF_STREAM: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x025d_5c14);
+/// Set to 3 with a stream (`0x025d5be0`).
+pub const REF_STREAM_MODE: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x025d_5be0);
 /// 0.03 (`f64`, `.rdata`): `rcfxParticleInit`'s `+8`.
 pub const PARTICLE_RATE: u32 = 0x00b5_4cc0;
 /// 0.001 and 0.1 (`f32`s, `.rdata`): `rcfxParticleInit`'s `+0x18` and
@@ -1231,6 +1238,122 @@ pub mod bridge {
         mem.write(fx.wrapping_add(0x5c), 0u32);
         mem.write(fx.wrapping_add(0x58), 0u32);
         fx
+    }
+
+    /// `rcFree(p)` (`0x009258e0`, a jump to `user_free`) through the
+    /// caller's `call(mem, function, args)`: returns its `eax`.
+    pub fn rc_free<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+        p: u32,
+    ) -> u32 {
+        let f = mem.rebase(super::RC_FREE);
+        call(mem, f, &[p])
+    }
+
+    /// Frees the block a word at `at` points to (when set) and clears the
+    /// word: the pattern of the `*Fini` functions. Returns `rcFree`'s
+    /// `eax`, or 0 with nothing to free.
+    pub fn free_field<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+        at: u32,
+    ) -> u32 {
+        let p = mem.read::<u32>(at);
+        if p == 0 {
+            return 0;
+        }
+        let r = rc_free(mem, call, p);
+        mem.write(at, 0u32);
+        r
+    }
+
+    /// `rcbgModelFini(model)` (`0x00928240`): frees its animation data
+    /// (`+0x14`).
+    pub fn rcbg_model_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        model: u32,
+        call: &mut C,
+    ) -> u32 {
+        free_field(mem, call, model.wrapping_add(0x14))
+    }
+
+    /// `rcbgModelDelete(model)` (`0x00928000`): [`rcbg_model_fini`], then
+    /// the model itself freed.
+    pub fn rcbg_model_delete<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        model: u32,
+        call: &mut C,
+    ) -> u32 {
+        rcbg_model_fini(mem, model, call);
+        rc_free(mem, call, model)
+    }
+
+    /// `rcbgTrxFini(trx)` (`0x0092d490`): frees the transfer's own data
+    /// (`+0x38`) when flag bit 0 (`+0x10`) says it owns it.
+    pub fn rcbg_trx_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        trx: u32,
+        call: &mut C,
+    ) {
+        if mem.read::<u8>(trx.wrapping_add(0x10)) & 1 != 0 {
+            free_field(mem, call, trx.wrapping_add(0x38));
+        }
+    }
+
+    /// `rcbgTrxDelete(trx)` (`0x0092d450`): [`rcbg_trx_fini`], then the
+    /// transfer freed.
+    pub fn rcbg_trx_delete<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        trx: u32,
+        call: &mut C,
+    ) -> u32 {
+        rcbg_trx_fini(mem, trx, call);
+        rc_free(mem, call, trx)
+    }
+
+    /// `rcbgLayerAnimeFini(anime)` (`0x00930830`): frees `+0xc` (a
+    /// layer's `+0x90` block).
+    pub fn rcbg_layer_anime_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        a: u32,
+        call: &mut C,
+    ) -> u32 {
+        free_field(mem, call, a.wrapping_add(0xc))
+    }
+
+    /// `rcbgEmbeddedTrxGetCnt(obj)` (`0x00922140`): the entry count of the
+    /// transfer embedded at `+0x20` ([`rcbg_trx_get_cnt`]); reached
+    /// through `Yn_EmbeddedTrxGetCnt` (`0x00919bc0`).
+    pub fn rcbg_embedded_trx_get_cnt(mem: &impl Mem, obj: u32) -> u32 {
+        rcbg_trx_get_cnt(mem, obj.wrapping_add(0x20))
+    }
+
+    /// `rcefSetStream(stream)` (`0x00925710`, a table entry at
+    /// `0x00c65524`): the stream word (`0x025d5c14`), and with one, mode 3
+    /// at `0x025d5be0`. Returns `stream`.
+    pub fn rcef_set_stream(mem: &mut impl Mem, s: u32) -> u32 {
+        super::REF_STREAM.set(mem, s);
+        if s != 0 {
+            super::REF_STREAM_MODE.set(mem, 3);
+        }
+        s
+    }
+
+    /// `rcbgRunRecordHook(obj)` (`0x0091fd60`, set by `0x0091fe2e`): calls
+    /// the hook at `+0xc` of the record `+0x14` on that record, when set.
+    /// Returns its `eax`, else the record.
+    pub fn rcbg_run_record_hook<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        mut call: impl FnMut(&mut M, u32, u32) -> u32,
+    ) -> u32 {
+        let r = mem.read::<u32>(obj.wrapping_add(0x14));
+        let f = mem.read::<u32>(r.wrapping_add(0xc));
+        if f == 0 {
+            return r;
+        }
+        call(mem, f, r)
     }
 }
 

@@ -56,6 +56,20 @@ pub const TARGETS: [(u32, [u32; 2]); 5] = [
 ];
 
 /// Offsets in Yn's field state.
+/// The low word of the guide's VFX instance handle (`rcbgGuideFini`).
+pub const GUIDE_VFX: Global<u32> = Global::new(0x0230_fd20);
+/// `graphicVFXGetRenderDataByInstance` (cdecl, a 64-bit handle).
+pub const VFX_GET_RENDER_DATA: u32 = 0x0064_53d0;
+/// `graphicVFXDestroy` (cdecl, a 64-bit handle).
+pub const VFX_DESTROY: u32 = 0x0064_5280;
+/// 1024.0 (`f32`, `.rdata`): the camera distance `rcbgPreFini` resets.
+pub const CAMERA_DISTANCE: u32 = 0x00b5_5178;
+/// `MsSetCameraMatrix` (cdecl, six words).
+pub const MS_SET_CAMERA_MATRIX: u32 = 0x007c_06d0;
+/// `sceDevVif0Reset` (`0x0092cce0`), which `rcbgFini` calls in debug
+/// builds.
+pub const VIF0_RESET: u32 = 0x0092_cce0;
+
 pub mod system {
     /// `+0x0`: the map.
     pub const MAP: u32 = 0x0;
@@ -926,6 +940,152 @@ pub mod bridge {
         let y = dy * t + ld(&*mem, a.wrapping_add(4));
         mem.write(out.wrapping_add(4), x87::store(y));
         out
+    }
+
+    /// `rcbgGuideFini(guide)` (`0x0091d3d0`): its VFX instance (handle:
+    /// low word `0x0230fd20`, high word the guide plus the low word's
+    /// sign) destroyed when `graphicVFXGetRenderDataByInstance` finds it,
+    /// the walk-mesh model (`+8`) deleted. Returns the deletion's `eax`,
+    /// or 0 without the model.
+    pub fn rcbg_guide_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        g: u32,
+        call: &mut C,
+    ) -> u32 {
+        let lo = super::GUIDE_VFX.get(mem);
+        let hi = g.wrapping_add(lo.cast_signed().wrapping_shr(31).cast_unsigned());
+        let get = mem.rebase(super::VFX_GET_RENDER_DATA);
+        if call(mem, get, &[lo, hi]) != 0 {
+            let destroy = mem.rebase(super::VFX_DESTROY);
+            call(mem, destroy, &[lo, hi]);
+        }
+        let m = mem.read::<u32>(g.wrapping_add(object::WALK_MODEL));
+        if m == 0 {
+            return 0;
+        }
+        let r = crate::model::bridge::rcbg_model_delete(mem, m, call);
+        mem.write(g.wrapping_add(object::WALK_MODEL), 0u32);
+        r
+    }
+
+    /// `rcbgGuideDelete(guide)` (`0x0091cef0`): [`rcbg_guide_fini`], then
+    /// the guide freed.
+    pub fn rcbg_guide_delete<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        g: u32,
+        call: &mut C,
+    ) -> u32 {
+        rcbg_guide_fini(mem, g, call);
+        crate::model::bridge::rc_free(mem, call, g)
+    }
+
+    /// `rcbgPreFini()` (`0x009216b0`): the map's scenes (`0x110` bytes
+    /// each, count `+0`) finished, the scene array (`+4`), `+0xc` and the
+    /// map freed, then `MsSetCameraMatrix(0, 0, 0, 0, 0, 1024.0)`. Returns
+    /// its `eax`; 0 without a map system, the system without a map.
+    pub fn rcbg_pre_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let s = YN_MAP_SYSTEM.get(mem);
+        if s == 0 {
+            return 0;
+        }
+        let map = mem.read::<u32>(s.wrapping_add(system::MAP));
+        if map == 0 {
+            return s;
+        }
+        let mut i = 0;
+        while i < mem.read::<i32>(map) {
+            let scenes = mem.read::<u32>(map.wrapping_add(4));
+            scene::bridge::rcbg_scene_fini(
+                mem,
+                scenes.wrapping_add(i.cast_unsigned().wrapping_mul(0x110)),
+                call,
+            );
+            i += 1;
+        }
+        crate::model::bridge::free_field(mem, call, map.wrapping_add(4));
+        crate::model::bridge::free_field(mem, call, map.wrapping_add(0xc));
+        let s = YN_MAP_SYSTEM.get(mem);
+        if s != 0 {
+            crate::model::bridge::free_field(mem, call, s.wrapping_add(system::MAP));
+        }
+        let at = mem.rebase(super::CAMERA_DISTANCE);
+        let d = x87::copy(mem.read::<u32>(at));
+        let f = mem.rebase(super::MS_SET_CAMERA_MATRIX);
+        call(mem, f, &[0, 0, 0, 0, 0, d])
+    }
+
+    /// `rcbgFini()` (`0x00921aa0`): with a map system: the guide's minimap
+    /// model's VFX instance (`+0x14`) destroyed and [`rcbg_pre_fini`]
+    /// when there is a map; `sceDevVif0Reset` in debug builds
+    /// (`FFXIsDebug` and `sceGsSetDefDrawEnv2`); the guide deleted, the
+    /// chunks `+0x10`, `+0x14`, `+0x18` deleted, the system freed and
+    /// cleared. Returns the last free's `eax`, 0 without a system.
+    pub fn rcbg_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let s = YN_MAP_SYSTEM.get(mem);
+        if s == 0 {
+            return 0;
+        }
+        if mem.read::<u32>(s.wrapping_add(system::MAP)) != 0 {
+            let g = mem.read::<u32>(s.wrapping_add(system::GUIDE));
+            if g != 0 {
+                let m = mem.read::<u32>(g.wrapping_add(object::MODEL));
+                if m != 0 {
+                    let h = mem.read::<u32>(m.wrapping_add(0x14));
+                    if h != 0 {
+                        let destroy = mem.rebase(super::VFX_DESTROY);
+                        call(mem, destroy, &[0, h]);
+                    }
+                }
+            }
+            rcbg_pre_fini(mem, call);
+        }
+        if ffx_system::config::bridge::is_debug(mem) != 0
+            && ffx_system::config::bridge::gs_set_def_draw_env2(mem) != 0
+        {
+            let reset = mem.rebase(super::VIF0_RESET);
+            call(mem, reset, &[]);
+        }
+        let s = YN_MAP_SYSTEM.get(mem);
+        let g = mem.read::<u32>(s.wrapping_add(system::GUIDE));
+        if g != 0 {
+            rcbg_guide_delete(mem, g, call);
+            let s = YN_MAP_SYSTEM.get(mem);
+            mem.write(s.wrapping_add(system::GUIDE), 0u32);
+        }
+        for off in [0x10u32, 0x14, 0x18] {
+            let s = YN_MAP_SYSTEM.get(mem);
+            let c = mem.read::<u32>(s.wrapping_add(off));
+            if c != 0 {
+                crate::rcdt::bridge::rcdt_chunk_delete(mem, c, call);
+                let s = YN_MAP_SYSTEM.get(mem);
+                mem.write(s.wrapping_add(off), 0u32);
+            }
+        }
+        let s = YN_MAP_SYSTEM.get(mem);
+        if s == 0 {
+            return 0;
+        }
+        let r = crate::model::bridge::rc_free(mem, call, s);
+        YN_MAP_SYSTEM.set(mem, 0);
+        r
+    }
+
+    /// `Yn_MapSystemFini()` (`0x00919a60`): [`rcbg_fini`] when there is a
+    /// map system (the guard jumps into it).
+    pub fn yn_map_system_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        if YN_MAP_SYSTEM.get(mem) == 0 {
+            return 0;
+        }
+        rcbg_fini(mem, call)
     }
 }
 

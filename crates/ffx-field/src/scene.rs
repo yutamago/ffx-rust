@@ -170,4 +170,74 @@ pub mod bridge {
         };
         mem.read(this.wrapping_add(super::LANG_TABLE + 4 + 4 * (slot + i * 10)))
     }
+
+    /// `rcbgLayerFini(layer)` (`0x0092ac90`): deletes its two transfers
+    /// (`+0xa0`, `+0xbc`), its animation block (`+0x90`), then
+    /// `rcbgPalFini(+0xb0)` (`0x00929980`, an empty function). Returns
+    /// `layer + 0xb0`.
+    pub fn rcbg_layer_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        l: u32,
+        call: &mut C,
+    ) -> u32 {
+        for off in [0xa0u32, 0xbc] {
+            let t = mem.read::<u32>(l.wrapping_add(off));
+            if t != 0 {
+                model::bridge::rcbg_trx_delete(mem, t, call);
+                mem.write(l.wrapping_add(off), 0u32);
+            }
+        }
+        model::bridge::rcbg_layer_anime_fini(mem, l.wrapping_add(0x90), call);
+        l.wrapping_add(0xb0)
+    }
+
+    /// `rcbgSceneFini(scene)` (`0x00920870`): the layers finished and
+    /// freed, each object's destructor (`+4` of the object, when set)
+    /// called and the object table freed, `+0x14` freed, the models
+    /// (`+0x1c`, `i16` count `+0x18`) deleted. Returns 0.
+    pub fn rcbg_scene_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        s: u32,
+        call: &mut C,
+    ) -> u32 {
+        let mut i = 0;
+        while i < mem.read::<i32>(s.wrapping_add(4)) {
+            let l = mem.read::<u32>(s.wrapping_add(8));
+            rcbg_layer_fini(
+                mem,
+                l.wrapping_add(i.cast_unsigned().wrapping_mul(0xc0)),
+                call,
+            );
+            i += 1;
+        }
+        mem.write(s.wrapping_add(4), 0u32);
+        model::bridge::free_field(mem, call, s.wrapping_add(8));
+        let mut i = 0;
+        while i < mem.read::<i32>(s.wrapping_add(0xc)) {
+            let table = mem.read::<u32>(s.wrapping_add(0x10));
+            let o = mem.read::<u32>(table.wrapping_add(i.cast_unsigned().wrapping_mul(4)));
+            let f = mem.read::<u32>(o.wrapping_add(4));
+            if f != 0 {
+                call(mem, f, &[o]);
+            }
+            i += 1;
+        }
+        mem.write(s.wrapping_add(0xc), 0u32);
+        model::bridge::free_field(mem, call, s.wrapping_add(0x10));
+        model::bridge::free_field(mem, call, s.wrapping_add(0x14));
+        let mut i = 0i32;
+        while i < i32::from(mem.read::<i16>(s.wrapping_add(0x18))) {
+            let at = s
+                .wrapping_add(0x1c)
+                .wrapping_add(i.cast_unsigned().wrapping_mul(4));
+            let m = mem.read::<u32>(at);
+            if m != 0 {
+                model::bridge::rcbg_model_delete(mem, m, call);
+                mem.write(at, 0u32);
+            }
+            i += 1;
+        }
+        mem.write(s.wrapping_add(0x18), 0u16);
+        0
+    }
 }
