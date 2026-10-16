@@ -713,6 +713,60 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   then 0..0xe with their handles; `rcuiVu0AddVector` (`0x00937540`) adds
   through the VU0 registers at `0x00c8f980`/`0x00c8f970`.
 
+## Hermite curves, linked key frames and the lens shapes' render data (round 15)
+
+- `yiHermiteVec2`/`yiHermiteVec4` (`0x00914700`/`0x009147b0`): cubic
+  Hermite interpolation of two or four floats. The weights
+  `(t-1)^2 (2t+1)`, `t^2 (3-2t)`, `(1-t)^2 t` and `t^2 (t-1)` are each
+  stored as `f32` first. Ghidra's `fVar3 * t * t` is really `t^2 * (t-1)`
+  (`t^2` is computed once and reused), so the products follow the
+  disassembly, not the decompilation.
+- `yiKeyFrameAdvanceLinked` (`0x00914070`): the `yiKeyFrameAdvance` of
+  tracks whose 0x80-byte records chain from `+0x24`; while paused it
+  returns `now`, not the time difference its sibling returns.
+- `yiRectTriOverlapXZ` (`0x00910070`): an x/z rectangle against a
+  triangle (transformed, or twelve unsigned integers as floats), both
+  ways, through `yiTriContainsXZ`. It writes 1.0 into the input
+  vectors' w before transforming them.
+- `0x00920100` is not ported: it ends in `FFXVu0FTOI4Vector`, a bare
+  `ret` on PC, so it returns the z of an uninitialised local divided by
+  0x3000.
+- The lens shapes' render data: `KeLnsArnd_Draw` (`0x00769340`),
+  `KeLnsCrn_Draw` (`0x00769d70`) and `KeLnsFls_Draw` (`0x0076a1f0`) build
+  a matrix from the lens source (`+0x7c` alpha, `+0x8f` own matrix,
+  `+0xa4` intensity, `+0x80` position plus the VFX offset at
+  `0x0230ff50`), compute the colour's alpha (`fistp` under
+  round-toward-zero), step the shape's clock (`KeLnsShp_Update`), stamp
+  the program byte into the shape (`+0xb`) unless an ordering-table pass
+  draws (`0x00cec1a4`), then hand the description (flags `+2`, colour
+  `+4`, matrix pointer `+0x10`) to the PC renderer:
+  `updateVFXRenderDataShp` and `graphicVFXUpdate` when render data
+  exists for the instance key (program byte, instance), else
+  `InitVFXRenderDataShp` with `calculateVFXSP_AlphaFunction` of the
+  frame's mode `| 0x800` (`| 0x40` for flag bit 3). `KeLnsFls_Draw`
+  looks the render data up first and hides it (`graphicVFXSetVisible`)
+  when the flash cannot draw. Bytes 0..2 and 0x14..0x1c of the
+  description are never written: the renderer gets the original's
+  stack there, and the port's zeros.
+- `KeMdl_Draw` (`0x00766ff0`) also feeds the renderer
+  (`InitVFXRenderData`/`updateVFXRenderData`, CLUT parameters), but its
+  colour goes through the emulated EE registers (`0x00c8f508`..,
+  `0x00c8f588`.., `pppEePmulth`, `pppEePpacb`) with persistent global
+  writes at every step. It is left for its own round.
+
+### Replaced by ffx-render
+
+Pure GS/DMA packet writing, left to the original until the external
+renderer takes over:
+
+- `0x00760ce0`: a GIF image transfer (`sceGsSyncPath`, `sceDmaSync`,
+  `sceDmaSend` from two alternating buffers).
+- `rcPacketDataDraw` (`0x00927600`): `sceDmaSend` of a packet.
+- `0x00927630`, `0x00927720`, `0x00927810`, `0x009278d0`: `rc` packet
+  builders (rectangles, circles, lines, projected points as fixed-point
+  GIF vertices; their `ftol2_sse` operands are x87 values the
+  decompilation hides).
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

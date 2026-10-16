@@ -8685,6 +8685,7 @@
 0x0090f900 function yiMapFileRead             # (scene, file): map render file (0x214365, version 0x110; count +0xc; 0x40-byte record headers): 0 objects, 1 cameras, 2 textures, 3 CLUTs, 4 fog, 5/8 packet lists, 6 animation tracks, 7 matrices (yiArc_readmem)
 0x0090ff40 function yiObjInit                 # (obj): a 0xb4-byte map object cleared, scales 1.0, +0xc GS tag 0x6c040014, +0x10 identity (yiMapFileRead)
 0x00910040 function yiPkAddGsAD_00910040         # the same code as yiPkAddGsAD
+0x00910070 function yiRectTriOverlapXZ        # (tri, m, a, b) -> 1 when the x/z rectangle a..b and the triangle (three vectors through FFXVu0ApplyMatrix by m, their w set to 1.0; or without m twelve unsigned ints as floats) overlap: a corner of either inside the other (yiTriContainsXZ); name ours
 0x00910270 function yiTriContainsXZ           # (tri, p) -> 1 when p's x, z lie inside the triangle of tri's three vectors (either winding, edge cross products against the full one); name ours
 0x00910340 function yiTriColorsFromGif        # (out, gif, first): three RGBAQ quadwords' bytes to out (alphas first set to 0x80), +0x12 cleared
 0x009103e0 function yiTriColorsUvFromGif      # (out, gif, first, uv): as yiTriColorsFromGif with alpha 0x7f, then three UV quadwords' u16s to +0x14
@@ -8694,12 +8695,15 @@
 0x009131d0 function yiScreff_entry            # fh v3:exact 0x009131d0
 0x00913f30 function yiScreff_init             # fh switch:bsim1.00 0x7100534af0
 0x00913f50 function yiRender_initfog          # (r): the fog block at +0xbe07c (0x60, grey, 0.03/0.02/0.005, 64.0)
+0x00914070 function yiKeyFrameAdvanceLinked   # (r, track, now): yiKeyFrameAdvance for tracks of chained 0x80-byte records (+0x24 current, +4 length, bit 0 end; restart from r +0x9d4c4[+8]); paused returns now; yiKeyFrame_main; name ours
 0x00914180 function yiKeyFrameAdvance         # (r, track, now): paused (Sg_GetPause) shifts start +0x14 by now - +0x18; else frames (records r +0x9d5c4[+8] + 32 * +0xa, length +4 doubled) advance while now passes their end, looping or clearing at the count r +0x9d6c4[+8]; yiKeyFrame_main; name ours
 0x00914250 function yiAnimAttachDefault       # fh v3:exact 0x00914250
 0x00914310 function yiAnimInfo_init           # fh v3:exact 0x00914310
 0x009143c0 function yiAnimAttachDefault_009143c0 # fh switch:cg2 0x710052d7b0
 0x009144a0 function yiKeyFrame_attachDObj     # fh v3:exact 0x009144a0
 0x00914630 function yiKeyFrame_attachChr      # fh switch:cg2 0x710052dfb0
+0x00914700 function yiHermiteVec2             # (t, p0, p1, p2, p3, out): two floats of a cubic Hermite curve, weights (t-1)^2(2t+1), t^2(3-2t), (1-t)^2 t, t^2(t-1) stored as floats; yiKeyFrame_main; name ours (cf. yiLerpVec2)
+0x009147b0 function yiHermiteVec4             # (t, p0, p1, p2, p3, out): four floats, as yiHermiteVec2; name ours
 0x009148a0 function yiLerpVec2                   # (t, a, b, out): out = a + (b - a) * t, two floats
 0x009148d0 function yiLerpVec4                   # (t, a, b, out): four floats; from 0x009147b0
 0x00914920 function yiAnimDetach              # (scene, obj, kind): active animation slots (+0x9cac0, 0x28 bytes, 64) of obj and kind cleared, count +0x9cabc lowered; kind 2 turns keyframe animation off (yiKeyFrame_attachDObj)

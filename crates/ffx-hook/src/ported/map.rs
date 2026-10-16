@@ -3057,6 +3057,46 @@ ported! {
     yiKeyFrameAdvance @ 0x0091_4180 => extern "C" fn shim_yi_key_frame_advance(r: u32, a: u32, now: u32) -> u32 {
         yi::bridge::yi_key_frame_advance(&mut mem(), r, a, now, &mut |_, f, a| call_cdecl(f, a))
     }
+    // ---- round 15 ----
+    /// `yiHermiteVec2(t, p0, p1, p2, p3, out)`.
+    yiHermiteVec2 @ 0x0091_4700 => extern "C" fn shim_yi_hermite_vec2(t: u32, p0: u32, p1: u32, p2: u32, p3: u32, out: u32) {
+        yi::bridge::yi_hermite_vec2(&mut mem(), t, [p0, p1, p2, p3], out);
+    }
+    /// `yiHermiteVec4(t, p0, p1, p2, p3, out)`.
+    yiHermiteVec4 @ 0x0091_47b0 => extern "C" fn shim_yi_hermite_vec4(t: u32, p0: u32, p1: u32, p2: u32, p3: u32, out: u32) {
+        yi::bridge::yi_hermite_vec4(&mut mem(), t, [p0, p1, p2, p3], out);
+    }
+    /// `yiKeyFrameAdvanceLinked(r, track, now)`.
+    yiKeyFrameAdvanceLinked @ 0x0091_4070 => extern "C" fn shim_yi_key_frame_advance_linked(r: u32, a: u32, now: u32) -> u32 {
+        yi::bridge::yi_key_frame_advance_linked(&mut mem(), r, a, now, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `yiRectTriOverlapXZ(tri, m, a, b)`.
+    yiRectTriOverlapXZ @ 0x0091_0070 => extern "C" fn shim_yi_rect_tri_overlap_xz(tri: u32, m: u32, a: u32, b: u32) -> u32 {
+        let mut work = Work([0; 0xa4]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        yi::bridge::yi_rect_tri_overlap_xz(&mut mem(), tri, m, [a, b], w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `KeLnsArnd_Draw(e, flags)`.
+    KeLnsArnd_Draw @ 0x0076_9340 => extern "C" fn shim_ke_lns_arnd_draw(e: u32, flags: u32) {
+        let mut work = Work([0; 0xa4]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        #[allow(clippy::cast_possible_truncation)] // a u16 argument
+        ke::bridge::ke_lns_arnd_draw(&mut mem(), e, flags as u16, w, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `KeLnsCrn_Draw(e, flags)`.
+    KeLnsCrn_Draw @ 0x0076_9d70 => extern "C" fn shim_ke_lns_crn_draw(e: u32, flags: u32) {
+        let mut work = Work([0; 0xa4]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        #[allow(clippy::cast_possible_truncation)] // a u16 argument
+        ke::bridge::ke_lns_crn_draw(&mut mem(), e, flags as u16, w, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `KeLnsFls_Draw(e, flags)`.
+    KeLnsFls_Draw @ 0x0076_a1f0 => extern "C" fn shim_ke_lns_fls_draw(e: u32, flags: u32) {
+        let mut work = Work([0; 0xa4]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        #[allow(clippy::cast_possible_truncation)] // a u16 argument
+        ke::bridge::ke_lns_fls_draw(&mut mem(), e, flags as u16, w, &mut |_, f, a| call_cdecl(f, a));
+    }
 }
 
 /// The original's 16-byte aligned stack buffer for a load-image packet

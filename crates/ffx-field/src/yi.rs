@@ -209,6 +209,10 @@ pub const LAST_AREA_START: Global<u32> = Global::new(0x025d_17a0);
 pub const LAST_AREA_PSMT4: Global<u8> = Global::new(0x0193_bb24);
 /// `Sg_GetPause()` (`0x008205e0`).
 pub const SG_GET_PAUSE: u32 = 0x0082_05e0;
+/// 3.0 (`f64`, `.rdata`, `0x00b2c5c8`): the Hermite weights' constant.
+pub const HERMITE_THREE: u32 = 0x00b2_c5c8;
+/// `FFXVu0ApplyMatrix(dst, m, src)` (`0x006ed2e0`).
+pub const VU0_APPLY_MATRIX: u32 = 0x006e_d2e0;
 /// `FFXVu0RotMatrixX/Y/Z(dst, src, angle)` (`0x006ed780`, `0x006ed7c0`,
 /// `0x006ed800`).
 pub const VU0_ROT_MATRIX: [u32; 3] = [0x006e_d780, 0x006e_d7c0, 0x006e_d800];
@@ -4218,5 +4222,195 @@ pub mod bridge {
                 return a;
             }
         }
+    }
+
+    // ---- round 15 ----
+
+    /// The cubic Hermite weights for `t` (`f32` bits) as the original
+    /// stores them (`f32` each): `(t - 1)^2 (2t + 1)`, `t^2 (C - 2t)`,
+    /// `(1 - t)^2 t`, `t^2 (t - 1)`, `C` the `.rdata` double 3.0
+    /// ([`super::HERMITE_THREE`]); products in the original's order.
+    fn hermite_weights(mem: &impl Mem, t: u32) -> [f64; 4] {
+        let t = x87::load(t);
+        let c = mem.read::<f64>(mem.rebase(super::HERMITE_THREE));
+        let tm1 = t - 1.0;
+        let two_t = t + t;
+        let h0 = tm1 * tm1 * (two_t + 1.0);
+        let tt = t * t;
+        let h1 = (c - two_t) * tt;
+        let omt = 1.0 - t;
+        let h2 = omt * omt * t;
+        let h3 = tt * tm1;
+        [h0, h1, h2, h3].map(|h| x87::load(x87::store(h)))
+    }
+
+    /// `yiHermiteVec(t, p, out, n)`: `out[i] = ((h0 p0[i] + h1 p1[i]) + h2
+    /// p2[i]) + h3 p3[i]` for the first `n` floats, each stored before the
+    /// next is read.
+    fn hermite(mem: &mut impl Mem, t: u32, p: [u32; 4], out: u32, n: u32) {
+        let [h0, h1, h2, h3] = hermite_weights(mem, t);
+        for i in 0..n {
+            let v = |mem: &mut _, k: usize| {
+                x87::load(Mem::read::<u32>(&*mem, p[k].wrapping_add(4 * i)))
+            };
+            let (a, b, c, d) = (v(mem, 0), v(mem, 1), v(mem, 2), v(mem, 3));
+            let s = h0 * a + h1 * b + h2 * c + h3 * d;
+            mem.write(out.wrapping_add(4 * i), x87::store(s));
+        }
+    }
+
+    /// `yiHermiteVec2(t, p0, p1, p2, p3, out)` (`0x00914700`): two floats
+    /// of a cubic Hermite curve ([`hermite_weights`]).
+    pub fn yi_hermite_vec2(mem: &mut impl Mem, t: u32, p: [u32; 4], out: u32) {
+        hermite(mem, t, p, out, 2);
+    }
+
+    /// `yiHermiteVec4(t, p0, p1, p2, p3, out)` (`0x009147b0`): four floats.
+    pub fn yi_hermite_vec4(mem: &mut impl Mem, t: u32, p: [u32; 4], out: u32) {
+        hermite(mem, t, p, out, 4);
+    }
+
+    /// `yiKeyFrameAdvanceLinked(r, track, now)` (`0x00914070`): as
+    /// [`yi_key_frame_advance`] for tracks whose 0x80-byte records chain
+    /// (`+0x24` the current one, its `+4` the length, byte bit 0 the end):
+    /// paused, the start moves on (returns `now`); else frames advance
+    /// while `now` passes the current end, past the count
+    /// (`r +0x9d6c4[+8]`) restarting from `r +0x9d4c4[+8]` or, for a
+    /// one-shot track, clearing once the last frame ended; a record of
+    /// length 0 stops. Returns `track`.
+    pub fn yi_key_frame_advance_linked<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        r: u32,
+        a: u32,
+        now: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(super::SG_GET_PAUSE);
+        if call(mem, f, &[]) != 0 {
+            let d = now.wrapping_sub(mem.read::<u32>(a.wrapping_add(0x18)));
+            mem.write(a.wrapping_add(0x18), now);
+            let s = mem.read::<u32>(a.wrapping_add(0x14)).wrapping_add(d);
+            mem.write(a.wrapping_add(0x14), s);
+            return now;
+        }
+        if mem.read::<u32>(a.wrapping_add(0x14)) > now {
+            mem.write(a.wrapping_add(0x14), now);
+        }
+        let mut rec = mem.read::<u32>(a.wrapping_add(0x24));
+        let mut start = mem.read::<u32>(a.wrapping_add(0x14));
+        mem.write(a.wrapping_add(0x18), now);
+        let len = |mem: &M, rec: u32| mem.read::<u32>(rec.wrapping_add(4));
+        if now < len(mem, rec).wrapping_add(start) {
+            return a;
+        }
+        loop {
+            if mem.read::<u8>(rec) & 1 != 0 {
+                mem.write(a, 0u16);
+                mem.write(a.wrapping_add(0x14), now);
+                mem.write(a.wrapping_add(0x18), now);
+                mem.write(a.wrapping_add(8), 0u32);
+                mem.write(a.wrapping_add(6), 0u16);
+                mem.write(a.wrapping_add(0x24), 0u32);
+                return a;
+            }
+            let fr = mem.read::<u16>(a.wrapping_add(0xa)).wrapping_add(1);
+            mem.write(a.wrapping_add(0xa), fr);
+            let idx = u32::from(mem.read::<u16>(a.wrapping_add(8)));
+            let fr = u32::from(mem.read::<u16>(a.wrapping_add(0xa)));
+            let next = if mem.read::<u32>(r.wrapping_add(idx * 4 + 0x9d6c4)) > fr {
+                let e = len(mem, rec).wrapping_add(start);
+                mem.write(a.wrapping_add(0x14), e);
+                mem.write(a.wrapping_add(0x18), now);
+                let n = rec.wrapping_add(0x80);
+                mem.write(a.wrapping_add(0x24), n);
+                n
+            } else if mem.read::<u16>(a.wrapping_add(2)) != 0 {
+                let cur = mem.read::<u32>(a.wrapping_add(0x24));
+                if now <= len(mem, cur).wrapping_add(mem.read(a.wrapping_add(0x14))) {
+                    return a;
+                }
+                mem.write(a, 0u16);
+                mem.write(a.wrapping_add(8), 0u32);
+                mem.write(a.wrapping_add(6), 0u16);
+                mem.write(a.wrapping_add(0x14), now);
+                mem.write(a.wrapping_add(0x18), now);
+                let at = r.wrapping_add(0x9cabc);
+                let c = mem.read::<u32>(at).wrapping_sub(1);
+                mem.write(at, c);
+                mem.write(a.wrapping_add(0x24), 0u32);
+                return a;
+            } else {
+                let e = len(mem, rec).wrapping_add(start);
+                mem.write(a.wrapping_add(0x14), e);
+                mem.write(a.wrapping_add(0x18), now);
+                let first = mem.read::<u32>(r.wrapping_add(idx * 4 + 0x9d4c4));
+                mem.write(a.wrapping_add(0x24), first);
+                mem.write(a.wrapping_add(0xa), 0u16);
+                mem.read::<u32>(a.wrapping_add(0x24))
+            };
+            if len(mem, next) == 0 {
+                return a;
+            }
+            rec = mem.read::<u32>(a.wrapping_add(0x24));
+            start = mem.read::<u32>(a.wrapping_add(0x14));
+            if now < len(mem, rec).wrapping_add(start) {
+                return a;
+            }
+        }
+    }
+
+    /// `yiRectTriOverlapXZ(tri, m, a, b, work)` (`0x00910070`): 1 when the
+    /// x/z rectangle from `a` to `b` and the triangle `tri` overlap on x,
+    /// z (a triangle corner in either half of the rectangle, or a
+    /// rectangle corner in the triangle, by [`yi_tri_contains_xz`]); else
+    /// 0. The triangle is three vectors transformed by `m`
+    /// (`FFXVu0ApplyMatrix`, their w set to 1.0 first), or without `m`
+    /// three times four unsigned integers as floats. `work` holds the
+    /// original's locals (0x80 bytes: the rectangle's corners, then the
+    /// triangle).
+    pub fn yi_rect_tri_overlap_xz<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        tri: u32,
+        m: u32,
+        ab: [u32; 2],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [a, b] = ab;
+        let (rect, t) = (work, work.wrapping_add(0x50));
+        let corners = [(a, a), (b, a), (b, b), (a, b), (a, a)];
+        for (i, (x, z)) in (0u32..).zip(corners) {
+            let vx = x87::copy(mem.read(x));
+            mem.write(rect.wrapping_add(0x10 * i), vx);
+            let vz = x87::copy(mem.read(z.wrapping_add(8)));
+            mem.write(rect.wrapping_add(0x10 * i + 8), vz);
+        }
+        if m == 0 {
+            for i in 0..12u32 {
+                let u = mem.read::<u32>(tri.wrapping_add(4 * i));
+                mem.write(t.wrapping_add(4 * i), x87::store(f64::from(u)));
+            }
+        } else {
+            let f = mem.rebase(super::VU0_APPLY_MATRIX);
+            for i in 0..3u32 {
+                let src = tri.wrapping_add(0x10 * i);
+                mem.write(src.wrapping_add(0xc), 1f32);
+                call(mem, f, &[t.wrapping_add(0x10 * i), m, src]);
+            }
+        }
+        for i in 0..3u32 {
+            let p = t.wrapping_add(0x10 * i);
+            if yi_tri_contains_xz(mem, rect, p) != 0
+                || yi_tri_contains_xz(mem, rect.wrapping_add(0x20), p) != 0
+            {
+                return 1;
+            }
+        }
+        for i in 0..4u32 {
+            if yi_tri_contains_xz(mem, t, rect.wrapping_add(0x10 * i)) != 0 {
+                return 1;
+            }
+        }
+        0
     }
 }
