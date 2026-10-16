@@ -830,7 +830,6 @@ dependencies = [
  "ffx-battle",
  "ffx-bridge",
  "ffx-kernel",
- "ffx-menu",
 ]
 
 [[package]]
