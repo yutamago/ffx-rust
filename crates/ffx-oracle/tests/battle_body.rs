@@ -307,6 +307,25 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, out: u32) {
         ALL,
         |m| cam::ms_debug_get_camera_mode(m, side),
     );
+    for _ in 0..4 {
+        let (mut owner, mut cam, mut kind) = (rng.next(), rng.below(4), rng.next());
+        if rng.below(2) == 0 {
+            // an existing request's owner and kind
+            cam = rng.below(3);
+            let slot = cam::SLOTS_AT.ptr(b).addr + cam * cam::CAMERA_SIZE + 8 * rng.below(4);
+            let id = u32::from_le_bytes(b.read(slot, 4).unwrap().try_into().unwrap());
+            (owner, kind) = (id >> 24, (id >> 16) & 0xf);
+        }
+        twin(
+            "MsCameraGet",
+            a,
+            b,
+            0x007b_d110,
+            &[owner, cam, kind],
+            ALL,
+            |m| cam::ms_camera_get(m, owner, cam, kind),
+        );
+    }
     twin(
         "MsCopyCameraMatrix",
         a,
@@ -594,7 +613,11 @@ fn globals(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         fill(a, b, rng, base + 0xc68, 0x20);
         for k in 0..4 {
             // levels small, the camera's own index in byte 0
-            let id = (rng.below(4) << 16) | (rng.below(2) << 20) | (rng.below(6) << 8) | c;
+            let id = (rng.below(4) << 24)
+                | (rng.below(4) << 16)
+                | (rng.below(2) << 20)
+                | (rng.below(6) << 8)
+                | c;
             poke(a, b, base + 0xc68 + 8 * k, &id.to_le_bytes());
         }
         poke(a, b, base + 0xd84, &[0, 0]);

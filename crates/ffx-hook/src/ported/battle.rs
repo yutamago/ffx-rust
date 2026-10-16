@@ -1817,4 +1817,8 @@ ported! {
     MsLimitUp @ 0x007b_1590 => extern "C" fn ms_limit_up(chr: u32, actor: u32, n: i32) -> i32 {
         turn::ms_limit_up(&mut mem(), chr, actor, n)
     }
+    /// `MsCameraGet(owner, cam, kind)`.
+    MsCameraGet @ 0x007b_d110 => extern "C" fn ms_camera_get(owner: u32, cam: u32, kind: u32) -> u32 {
+        camera::ms_camera_get(&mut mem(), owner, cam, kind)
+    }
 }
