@@ -2942,4 +2942,12 @@ ported! {
     TkEucToSjisString @ 0x0088_ed10 => extern "C" fn tk_euc_to_sjis_string(src: u32, dst: u32, n: i32) -> u32 {
         tk::tk_euc_to_sjis_string(&mut mem(), src, dst, n)
     }
+    /// `TkMenuDrawMenuWindowScissorWithLabel(window, mode, t)`.
+    TkMenuDrawMenuWindowScissorWithLabel @ 0x008d_d2d0 => extern "C" fn tk_menu_draw_menu_window_scissor_with_label(window: u32, mode: i32, t: i32) -> u32 {
+        tk::tk_menu_draw_menu_window_scissor_with_label(&mut mem(), window, mode, t)
+    }
+    /// `Vibrate_EntryLevel(rec, e)`.
+    Vibrate_EntryLevel @ 0x0087_5c20 => extern "C" fn vibrate_entry_level(rec: u32, e: u32) -> u32 {
+        tk::vibrate_entry_level(&mut mem(), rec, e)
+    }
 }

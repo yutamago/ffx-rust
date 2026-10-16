@@ -6555,6 +6555,7 @@
 0x00875510 function AtelActorSetUp2           # (..., messages, messages2, ...): script context +0x34 = messages, +0x38 = section 5 (or messages); was Event_InitScripts
 0x008756d0 function AtelBattleSetUp           # fh v3:exact 0x00875650
 0x00875af0 function Vibrate_BumpStream        # (k) stream k (clamped 0..7) u16 counter 0x01328170 + k*0x24 += 1, byte +2 = 0; record left in eax; own name
+0x00875c20 function Vibrate_EntryLevel        # (rec, e) entry e level for this frame into +0xa: 0 outside modes 1/2, start level for negative length, 0 for curve parts >= 0x200, else Vibrate_StepLevel; own name
 0x00875c90 function Vibrate_StepLevel         # (rec, entry, len) step +4 += 1; at len: mode 1 -> Vibrate_StartStream(entry, data), mode 2 -> level = target, +6 = 0xfffe; returns ((n - s) * from + to * s) / n or from; own name
 0x00875d30 function Vibrate_CheckDone         # (pad) state 1/2 ends when both streams +6 are 0x200/0xfffe; own name
 0x00875d70 function Vibrate_CurveData         # (k, n, table) curve k (< 0x40) data: table + table[k] + 4 + its first n u16 lengths, when halfword n is non-zero; else 0; own name
@@ -7627,6 +7628,7 @@
 0x008dd190 function TkMenuDrawMenuSummon         # layout: alphabetical run between TkMenuDrawMenuInfoWindow2 and TkMenuDrawMenuWeapon (4 unnamed in the gap); Switch 0x71004c1bd0 TkMenuDrawMenuSummon is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008dd1c0 function TkMenuDrawMenuWeapon      # fh switch:bsim1.00 0x71004c1b10
 0x008dd220 function TkMenuDrawMenuWindowScissor# (window, mode, t) TkMenuDrawScissorRect(0, y, 0x1ff, h) for the window inside (+0x14 y, +0x1c h), mode 1/2 opening by |t|/4096 of the height; Switch name, alphabetical slot TkMenuDrawMenuWeapon..TkMenuDrawMes1208Clut (3 names, 2 functions; picked by behaviour)
+0x008dd2d0 function TkMenuDrawMenuWindowScissorWithLabel# (window, mode, t) TkMenuDrawMenuWindowScissor with +0x14 += 10, +0x1c -= 10 for the call (restored); Switch name, the one name left in its slot
 0x008dd310 function TkMenuDrawMes1208Clut     # fh switch:bsim1.00 0x71004c19f0
 0x008dd340 function TkMenuDrawRect            # (x, y, w, h, c0, c1) PC: graphicDrawUIElement(element, 0, 1, 0, 0) unless graphicGetAbmap() == 1; corners (x, y), (x + w, y + h) as floats with c0/c1 bytes, depth 1000; Switch name, the one name for the slot TkMenuDrawMes1208Clut..TkMenuDrawScissorClear
 0x008dd440 function TkMenuDrawScissorClear    # fh switch:bsim1.00 0x71004bfe20

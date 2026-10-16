@@ -4749,6 +4749,20 @@ fn tk_round7_matches_the_original() {
                 .rng
                 .pick(&[0u32, 0x800, 0x1000, 0xffff_f800, 0x8000_0000, 7]);
             t.twin(
+                "TkMenuDrawMenuWindowScissorWithLabel",
+                0x008d_d2d0,
+                &[sw, smode, st],
+                U32,
+                |o| {
+                    w(tk::tk_menu_draw_menu_window_scissor_with_label(
+                        o,
+                        sw,
+                        i(smode),
+                        i(st),
+                    ))
+                },
+            );
+            t.twin(
                 "TkMenuDrawMenuWindowScissor",
                 0x008d_d220,
                 &[sw, smode, st],
@@ -5150,6 +5164,17 @@ fn tk_round8_matches_the_original() {
             U32,
             |o| w(tk::vibrate_step_level(o, vrec2, sent, i(slen))),
         );
+        let lrec = t.alloc_random(0x24);
+        let lmode = t.rng.pick(&[0u8, 1, 2, 3]);
+        t.put(lrec + 0x22, lmode);
+        let le = t.rng.below(2);
+        let lent = lrec + 0x10 * le;
+        let llen = t.rng.pick(&[0u16, 5, 0x1ff, 0x200, 0xfffe]);
+        t.put(lent + 6, llen);
+        t.put(lent, 0u32);
+        t.twin("Vibrate_EntryLevel", 0x0087_5c20, &[lrec, le], U32, |o| {
+            w(tk::vibrate_entry_level(o, lrec, le))
+        });
         let sk = t.rng.pick(&[0u32, 2, 7, 8, 0xffff_ffff]);
         let sc = t.rng.pick(&[0u32, 1, 2, 5, 0x3f, 0x40]);
         t.twin(

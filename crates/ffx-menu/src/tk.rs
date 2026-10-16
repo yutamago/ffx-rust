@@ -4857,6 +4857,48 @@ pub mod bridge {
         mem.write(d, 0u8);
         s
     }
+    /// `TkMenuDrawMenuWindowScissorWithLabel(window, mode, t)`
+    /// (`0x008dd2d0`): [`tk_menu_draw_menu_window_scissor`] with the
+    /// window's inside lowered 10 pixels for its label (`+0x14` and
+    /// `+0x1c` changed for the call and put back).
+    pub fn tk_menu_draw_menu_window_scissor_with_label(
+        mem: &mut impl Mem,
+        w: u32,
+        mode: i32,
+        t: i32,
+    ) -> u32 {
+        let h: u32 = mem.read(w + 0x1c);
+        let y: u32 = mem.read(w + 0x14);
+        mem.write(w + 0x14, y.wrapping_add(10));
+        mem.write(w + 0x1c, h.wrapping_sub(10));
+        let r = tk_menu_draw_menu_window_scissor(mem, w, mode, t);
+        mem.write(w + 0x14, y);
+        mem.write(w + 0x1c, h);
+        r
+    }
+
+    /// `Vibrate_EntryLevel(rec, e)` (`0x00875c20`, own name): entry `e`'s
+    /// level this frame, also kept in its `+0xa`: 0 outside modes 1 and
+    /// 2, the start level for a negative length, 0 for a curve part of
+    /// 0x200 or more, otherwise [`vibrate_step_level`] (whose whole result
+    /// is returned).
+    pub fn vibrate_entry_level(mem: &mut impl Mem, rec: u32, e: u32) -> u32 {
+        let entry = rec.wrapping_add(e.wrapping_shl(4));
+        let mode: u8 = mem.read(rec + 0x22);
+        let len = i32::from(mem.read::<i16>(entry.wrapping_add(6)));
+        let r = if mode.wrapping_sub(1) > 1 {
+            0
+        } else if len < 0 {
+            u32::from(mem.read::<u8>(entry.wrapping_add(8)))
+        } else if mode == 1 && len >= 0x200 {
+            0
+        } else {
+            vibrate_step_level(mem, rec, entry, len)
+        };
+        #[allow(clippy::cast_possible_truncation)]
+        mem.write(entry.wrapping_add(0xa), r as u8);
+        r
+    }
 }
 
 #[cfg(test)]
