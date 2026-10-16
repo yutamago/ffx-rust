@@ -9123,3 +9123,165 @@ fn round13_field_helpers_match_the_original() {
         );
     }
 }
+
+/// Round 14: a character's direction (`MsGetChrDir` stood in, the
+/// angle wrap through `_CIfmod`), the rcui character lists and vector
+/// add, layer animation steps, key frame tracks and the image placement
+/// search.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round14_field_helpers_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x000e_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    t.install_trig();
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let fcall = &mut oracle_fcall;
+    let (dirv, pausev, handles) = (t.alloc(4), t.alloc(4), t.alloc(0x80));
+    // MsGetChrDir(chr, &out): `mov ecx, [dirv]; mov eax, [esp + 8]; mov [eax], ecx; ret`
+    let mut dir = vec![0x8b, 0x0d];
+    dir.extend_from_slice(&dirv.to_le_bytes());
+    dir.extend_from_slice(&[0x8b, 0x44, 0x24, 0x08, 0x89, 0x08, 0xc3]);
+    // MsGetChrHandle(id): `mov eax, [esp + 4]; mov eax, [handles + eax * 4]; ret`
+    let mut handle = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x04, 0x85];
+    handle.extend_from_slice(&handles.to_le_bytes());
+    handle.push(0xc3);
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (Some(vu0::MS_GET_CHR_DIR), dir),
+        (Some(rcui::MS_GET_CHR_HANDLE), handle),
+        (Some(yi::SG_GET_PAUSE), log_stub(env.log, pausev, 120, 0)),
+    ];
+    t.cave_from(env.cave_end, &list);
+    let rw = t.alloc(0x1000);
+    t.set(rcui::WORK, rw);
+    let (dst, a, b) = (t.alloc(0x10), t.alloc(0x10), t.alloc(0x10));
+    let (anim, frames) = (t.alloc(0x20), t.alloc(0x40));
+    let r = t.alloc(0x9e000);
+    let (track, recs) = (t.alloc(0x30), t.alloc(0x200));
+    let page = t.alloc(0x20);
+    let imgs: Vec<u32> = (0..5).map(|_| t.alloc(0x160)).collect();
+    for k in 0..40u32 {
+        env.reset(&mut t, &mut rng);
+        // a character's direction
+        let d = match k % 3 {
+            0 => float_in(&mut rng, -20, 0),
+            1 => float_in(&mut rng, 7, 20),
+            _ => float_in(&mut rng, 0, 6),
+        };
+        t.put(dirv, d);
+        let out = t.stack_scratch(0);
+        t.same(
+            "rcefGetChrDir",
+            |o| o.float(0x0092_dfd0, &[rng_free(k)]),
+            |m| {
+                bits(vu0::bridge::rcef_get_chr_dir(
+                    m,
+                    rng_free(k),
+                    out,
+                    call,
+                    fcall,
+                ))
+            },
+        );
+        // the rcui lists
+        for i in 0..0x20 {
+            let h = if rng.below(3) == 0 { 0 } else { rng.next() };
+            t.put(handles + 4 * i, h);
+        }
+        t.put(rw + 0x824, rng.below(4));
+        t.put(rw + 0x828, rng.next());
+        t.put(rw + 0x82c, rng.next());
+        t.same(
+            "rcuiCollectChrHandlesByGroup",
+            |o| o.void(0x0093_23b0, &[]),
+            |m| rcui::bridge::rcui_collect_chr_handles_by_group(m, call),
+        );
+        for i in 0..4 {
+            t.put(a + 4 * i, float_in(&mut rng, -50, 50));
+            t.put(b + 4 * i, float_in(&mut rng, -50, 50));
+        }
+        t.same(
+            "rcuiVu0AddVector",
+            |o| o.void(0x0093_7540, &[dst, a, b]),
+            |m| rcui::bridge::rcui_vu0_add_vector(m, dst, a, b),
+        );
+        // a layer animation
+        let n = rng.range(0, 6);
+        t.put(
+            anim,
+            rng.below(4) | ([0u32, 0x100, 0x200][rng.below(3) as usize]),
+        );
+        t.put(anim + 4, u16::try_from(rng.below(40)).unwrap());
+        t.put(anim + 6, i16::try_from(rng.range(0, n.max(1) - 1)).unwrap());
+        t.put(anim + 8, n);
+        t.put(anim + 0xc, frames);
+        t.put(anim + 0x14, rng.range(-0x100, 0x600));
+        t.put(anim + 0x18, rng.range(0, 0x200));
+        t.fill(frames, 0x40, &mut rng);
+        for i in 0..0x10 {
+            t.put(frames + 4 * i + 1, u8::try_from(rng.below(12)).unwrap());
+        }
+        t.same(
+            "rcbgLayerAnimStep",
+            |o| o.eax(0x0093_0920, &[anim]),
+            |m| scene::bridge::rcbg_layer_anim_step(m, anim),
+        );
+        // a key frame track
+        t.put(pausev, u32::from(rng.below(5) == 0));
+        let idx = rng.below(4);
+        t.put(track + 8, u16::try_from(idx).unwrap());
+        t.put(track + 2, u16::try_from(rng.below(2)).unwrap());
+        t.put(track + 0xa, u16::try_from(rng.below(4)).unwrap());
+        t.put(track + 0x14, rng.below(100));
+        t.put(track + 0x18, rng.below(100));
+        t.put(track + 0x24, rng.next());
+        t.put(r + 0x9d5c4 + 4 * idx, recs);
+        t.put(r + 0x9d6c4 + 4 * idx, rng.below(6));
+        t.put(r + 0x9cabc, rng.next());
+        for i in 0..0x10 {
+            t.put(recs + 0x20 * i + 4, rng.below(20));
+        }
+        let now = rng.below(200);
+        t.same(
+            "yiKeyFrameAdvance",
+            |o| o.eax(0x0091_4180, &[r, track, now]),
+            |m| yi::bridge::yi_key_frame_advance(m, r, track, now, call),
+        );
+        // image placement
+        t.put(page + 0x10, rng.range(16, 128));
+        t.put(page + 0x14, rng.range(16, 128));
+        let used = rng.below(5);
+        for (i, &o) in imgs.iter().enumerate() {
+            let size = |rng: &mut Xorshift| {
+                if rng.below(2) == 0 {
+                    1u32 << rng.below(6)
+                } else {
+                    1 + rng.below(40)
+                }
+            };
+            let (w, h) = (size(&mut rng), size(&mut rng));
+            t.put(o + 0x11c, rng.below(100));
+            t.put(o + 0x120, rng.below(100));
+            t.put(o + 0x13c, w);
+            t.put(o + 0x140, h);
+            let next = if i + 1 < used as usize {
+                imgs[i + 1]
+            } else {
+                0
+            };
+            t.put(o + 0x15c, next);
+        }
+        t.put(page + 0x1c, if used == 0 { 0 } else { imgs[0] });
+        let img = imgs[4];
+        t.same(
+            "yiImageRman_serch",
+            |o| o.eax(0x0091_7b70, &[0, page, img]),
+            |m| yi::bridge::yi_image_rman_serch(m, page, img),
+        );
+    }
+}
+
+/// A character number for the stand-ins (unused by them).
+fn rng_free(k: u32) -> u32 {
+    k % 7
+}

@@ -3030,6 +3030,33 @@ ported! {
     yiVramSetup @ 0x0091_7f20 => extern "C" fn shim_yi_vram_setup(pages: u32, mode: u32) -> u32 {
         yi::bridge::yi_vram_setup(&mut mem(), pages, mode)
     }
+    // ---- round 14 ----
+    /// `rcefGetChrDir(chr)`.
+    rcefGetChrDir @ 0x0092_dfd0 => extern "C" fn shim_rcef_get_chr_dir(chr: u32) -> f32 {
+        let mut out = Scratch([0; 0x20]);
+        let o = u32::try_from((&raw mut out).expose_provenance()).unwrap_or(0);
+        vu0::bridge::rcef_get_chr_dir(&mut mem(), chr, o, &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a))
+    }
+    /// `rcuiCollectChrHandlesByGroup()`.
+    rcuiCollectChrHandlesByGroup @ 0x0093_23b0 => extern "C" fn shim_rcui_collect_chr_handles_by_group() {
+        rcui::bridge::rcui_collect_chr_handles_by_group(&mut mem(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcuiVu0AddVector(dst, a, b)`.
+    rcuiVu0AddVector @ 0x0093_7540 => extern "C" fn shim_rcui_vu0_add_vector(dst: u32, a: u32, b: u32) {
+        rcui::bridge::rcui_vu0_add_vector(&mut mem(), dst, a, b);
+    }
+    /// `rcbgLayerAnimStep(a)`.
+    rcbgLayerAnimStep @ 0x0093_0920 => extern "C" fn shim_rcbg_layer_anim_step(a: u32) -> u32 {
+        scene::bridge::rcbg_layer_anim_step(&mut mem(), a)
+    }
+    /// `yiImageRman_serch(rman, page, img)`.
+    yiImageRman_serch @ 0x0091_7b70 => extern "C" fn shim_yi_image_rman_serch(_rman: u32, page: u32, img: u32) -> u32 {
+        yi::bridge::yi_image_rman_serch(&mut mem(), page, img)
+    }
+    /// `yiKeyFrameAdvance(r, a, now)`.
+    yiKeyFrameAdvance @ 0x0091_4180 => extern "C" fn shim_yi_key_frame_advance(r: u32, a: u32, now: u32) -> u32 {
+        yi::bridge::yi_key_frame_advance(&mut mem(), r, a, now, &mut |_, f, a| call_cdecl(f, a))
+    }
 }
 
 /// The original's 16-byte aligned stack buffer for a load-image packet

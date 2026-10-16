@@ -690,6 +690,29 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
 - `rcuiLoadSetTitle` (`0x00934fb0`) titles the load window
   "Load - <map directory>".
 
+## Character direction, layer animation, key frames and image placement (round 14)
+
+- `rcefGetChrDir` (`0x0092dfd0`, the Switch name) returns a float in
+  `ST0`: `MsGetChrDir` into a local, then `rcefAngleWrap`. Ghidra types
+  it `float10`, and its shim returns `f32`.
+- `rcbgLayerAnimStep` (`0x00930920`): a layer animation adds its speed
+  (`+0x14`) to a sub-frame counter (`+0x18`) and moves whole 0x100 steps
+  into the tick (`+4`); while the tick passes the current record's
+  length (its byte `+1`) the frame (`+6`) steps forward (backward with
+  bit 1), wrapping (mode 0) or holding (0x100, bits 8..11). It returns
+  the record it started from, not the new one.
+- `yiKeyFrameAdvance` (`0x00914180`): a key frame track's start
+  (`+0x14`) follows the clock; frame records are 32 bytes at
+  `r +0x9d5c4[track +8]`, each lasting twice its `+4`; a one-shot track
+  (`+2` set) clears itself at the end and counts down `r +0x9cabc`.
+- `yiImageRman_serch` (`0x00917b70`) looks for a place for an image:
+  right of, below, left of and above each image already in the page,
+  then the page's bottom-left and bottom-right corners, each checked
+  with `yiImageRectFree`.
+- `rcuiCollectChrHandlesByGroup` (`0x009323b0`) lists characters 0x14..0x1b
+  then 0..0xe with their handles; `rcuiVu0AddVector` (`0x00937540`) adds
+  through the VU0 registers at `0x00c8f980`/`0x00c8f970`.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

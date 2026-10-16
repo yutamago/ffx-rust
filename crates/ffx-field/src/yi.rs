@@ -207,6 +207,8 @@ pub const LAST_AREA_USED: Global<u32> = Global::new(0x025d_179c);
 pub const LAST_AREA_START: Global<u32> = Global::new(0x025d_17a0);
 /// Set while a PSMT4 image placed in the last area can share it (`u8`).
 pub const LAST_AREA_PSMT4: Global<u8> = Global::new(0x0193_bb24);
+/// `Sg_GetPause()` (`0x008205e0`).
+pub const SG_GET_PAUSE: u32 = 0x0082_05e0;
 /// `FFXVu0RotMatrixX/Y/Z(dst, src, angle)` (`0x006ed780`, `0x006ed7c0`,
 /// `0x006ed800`).
 pub const VU0_ROT_MATRIX: [u32; 3] = [0x006e_d780, 0x006e_d7c0, 0x006e_d800];
@@ -4082,5 +4084,139 @@ pub mod bridge {
             put(o, v);
         }
         limit
+    }
+
+    // ---- round 14 ----
+
+    /// `yiImageRman_serch(rman, page, img)` (`0x00917b70`): a free place
+    /// for the image in the page: right of, below, left of and above each
+    /// image already there (from `+0x1c`, linked by `+0x15c`), then the
+    /// page's bottom-left and bottom-right corners, each tried with
+    /// [`yi_image_rect_free`]; 1 when one fits (the image's `+0x11c`/
+    /// `+0x120` left there), else 0.
+    pub fn yi_image_rman_serch(mem: &mut impl Mem, page: u32, img: u32) -> u32 {
+        let mut o = mem.read::<u32>(page.wrapping_add(0x1c));
+        while o != 0 {
+            let x = mem
+                .read::<u32>(o.wrapping_add(0x13c))
+                .wrapping_add(mem.read(o.wrapping_add(0x11c)));
+            let y = mem.read::<u32>(o.wrapping_add(0x120));
+            if image_fits_at(mem, page, img, x, y) {
+                return 1;
+            }
+            let x = mem.read::<u32>(o.wrapping_add(0x11c));
+            let y = mem
+                .read::<u32>(o.wrapping_add(0x140))
+                .wrapping_add(mem.read(o.wrapping_add(0x120)));
+            if image_fits_at(mem, page, img, x, y) {
+                return 1;
+            }
+            let x = mem
+                .read::<u32>(o.wrapping_add(0x11c))
+                .wrapping_sub(mem.read(img.wrapping_add(0x13c)));
+            let y = mem.read::<u32>(o.wrapping_add(0x120));
+            if image_fits_at(mem, page, img, x, y) {
+                return 1;
+            }
+            let x = mem.read::<u32>(o.wrapping_add(0x11c));
+            let y = mem
+                .read::<u32>(o.wrapping_add(0x120))
+                .wrapping_sub(mem.read(img.wrapping_add(0x140)));
+            if image_fits_at(mem, page, img, x, y) {
+                return 1;
+            }
+            o = ptr32(mem.read(o.wrapping_add(0x15c)));
+        }
+        let y = mem
+            .read::<u32>(page.wrapping_add(0x14))
+            .wrapping_sub(mem.read(img.wrapping_add(0x140)));
+        if image_fits_at(mem, page, img, 0, y) {
+            return 1;
+        }
+        let x = mem
+            .read::<u32>(page.wrapping_add(0x10))
+            .wrapping_sub(mem.read(img.wrapping_add(0x13c)));
+        let y = mem
+            .read::<u32>(page.wrapping_add(0x14))
+            .wrapping_sub(mem.read(img.wrapping_add(0x140)));
+        u32::from(image_fits_at(mem, page, img, x, y))
+    }
+
+    /// The image placed at (`x`, `y`) (`+0x11c`, `+0x120`), then
+    /// [`yi_image_rect_free`] against the page's list.
+    fn image_fits_at(mem: &mut impl Mem, page: u32, img: u32, x: u32, y: u32) -> bool {
+        mem.write(img.wrapping_add(0x11c), x);
+        mem.write(img.wrapping_add(0x120), y);
+        let list = mem.read::<u32>(page.wrapping_add(0x1c));
+        yi_image_rect_free(mem, page, list, img) != 0
+    }
+
+    /// `yiKeyFrameAdvance(r, a, now)` (`0x00914180`): a key frame track
+    /// timed by `now`. Paused (`Sg_GetPause`): its start (`+0x14`) moves on
+    /// by the time since `+0x18` (returned). Else the start is clamped to
+    /// `now`, and while `now` passes the current frame's end (start + 2 x
+    /// the record's `+4`; records at `r +0x9d5c4[+8]`, 32 bytes, indexed by
+    /// `+0xa`) the frame advances; past the last (count `r +0x9d6c4[+8]`)
+    /// a looping animation (`+2` 0) restarts, a one-shot one is cleared
+    /// (`r +0x9cabc` counts down). Returns `a` otherwise.
+    pub fn yi_key_frame_advance<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        r: u32,
+        a: u32,
+        now: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(super::SG_GET_PAUSE);
+        if call(mem, f, &[]) != 0 {
+            let d = now.wrapping_sub(mem.read::<u32>(a.wrapping_add(0x18)));
+            mem.write(a.wrapping_add(0x18), now);
+            let s = mem.read::<u32>(a.wrapping_add(0x14)).wrapping_add(d);
+            mem.write(a.wrapping_add(0x14), s);
+            return d;
+        }
+        if mem.read::<u32>(a.wrapping_add(0x14)) > now {
+            mem.write(a.wrapping_add(0x14), now);
+        }
+        let idx = u32::from(mem.read::<u16>(a.wrapping_add(8)));
+        let mut start = mem.read::<u32>(a.wrapping_add(0x14));
+        let rec = u32::from(mem.read::<u16>(a.wrapping_add(0xa)))
+            .wrapping_shl(5)
+            .wrapping_add(mem.read::<u32>(r.wrapping_add(0x9d5c4 + idx * 4)));
+        mem.write(a.wrapping_add(0x18), now);
+        let end = |mem: &M, start: u32| {
+            start.wrapping_add(mem.read::<u32>(rec.wrapping_add(4)).wrapping_mul(2))
+        };
+        if now < end(mem, start) {
+            return a;
+        }
+        loop {
+            let fr = mem.read::<u16>(a.wrapping_add(0xa)).wrapping_add(1);
+            mem.write(a.wrapping_add(0xa), fr);
+            let frames = mem.read::<u32>(r.wrapping_add(idx * 4 + 0x9d6c4));
+            if frames > u32::from(mem.read::<u16>(a.wrapping_add(0xa))) {
+                let e = end(mem, start);
+                mem.write(a.wrapping_add(0x14), e);
+            } else if mem.read::<u16>(a.wrapping_add(2)) != 0 {
+                mem.write(a, 0u16);
+                mem.write(a.wrapping_add(8), 0u32);
+                mem.write(a.wrapping_add(6), 0u16);
+                mem.write(a.wrapping_add(0x14), now);
+                mem.write(a.wrapping_add(0x18), now);
+                let at = r.wrapping_add(0x9cabc);
+                let c = mem.read::<u32>(at).wrapping_sub(1);
+                mem.write(at, c);
+                mem.write(a.wrapping_add(0x24), 0u32);
+                return a;
+            } else {
+                let e = end(mem, start);
+                mem.write(a.wrapping_add(0x14), e);
+                mem.write(a.wrapping_add(0xa), 0u16);
+            }
+            start = mem.read::<u32>(a.wrapping_add(0x14));
+            mem.write(a.wrapping_add(0x18), now);
+            if now < end(mem, start) {
+                return a;
+            }
+        }
     }
 }

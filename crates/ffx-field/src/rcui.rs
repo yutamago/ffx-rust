@@ -25,6 +25,10 @@ pub const CH_SET_MOTION_SPEED: u32 = 0x0082_b380;
 pub const LOAD_TITLE_FORMAT: u32 = 0x00b6_8500;
 /// `Gu_WindowSetTitle(w, title)` (`0x0084b6a0`).
 pub const GU_WINDOW_SET_TITLE: u32 = 0x0084_b6a0;
+/// `MsGetChrHandle(id)` (`0x00795080`).
+pub const MS_GET_CHR_HANDLE: u32 = 0x0079_5080;
+/// The VU0 register at `0x00c8f970`: `rcuiVu0AddVector`'s second operand.
+pub const VF_ADD_B: Global<[u32; 4]> = Global::new(0x00c8_f970);
 
 /// Offsets in the work area.
 pub mod work {
@@ -592,5 +596,47 @@ pub mod bridge {
         let win = mem.read::<u32>(w.wrapping_add(4));
         let f = mem.rebase(super::GU_WINDOW_SET_TITLE);
         call(mem, f, &[win, buf])
+    }
+
+    /// `rcuiCollectChrHandlesByGroup()` (`0x009323b0`): characters 0x14
+    /// to 0x1b (counted at `+0x828`), then 0 to 0xe (`+0x82c`), each with
+    /// a handle (`MsGetChrHandle`) added to the work's lists (index
+    /// `+0x830`, handle `+0x870`, count `+0x824`).
+    pub fn rcui_collect_chr_handles_by_group<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) {
+        let f = mem.rebase(super::MS_GET_CHR_HANDLE);
+        for (ids, counter) in [(0x14u32..0x1c, 0x828u32), (0..0xf, 0x82c)] {
+            for id in ids {
+                let h = call(mem, f, &[id]);
+                if h == 0 {
+                    continue;
+                }
+                let w = WORK.get(mem);
+                let c = mem.read::<u32>(w.wrapping_add(counter)).wrapping_add(1);
+                mem.write(w.wrapping_add(counter), c);
+                let n = mem.read::<u32>(w.wrapping_add(0x824));
+                mem.write(w.wrapping_add(0x830).wrapping_add(n.wrapping_mul(4)), id);
+                let n = mem.read::<u32>(w.wrapping_add(0x824));
+                mem.write(w.wrapping_add(0x870).wrapping_add(n.wrapping_mul(4)), h);
+                let n = mem.read::<u32>(w.wrapping_add(0x824)).wrapping_add(1);
+                mem.write(w.wrapping_add(0x824), n);
+            }
+        }
+    }
+
+    /// `rcuiVu0AddVector(dst, a, b)` (`0x00937540`): `dst = (a.xyz + b.xyz,
+    /// a.w)` through the VU0 registers at `0x00c8f980` (`a`, then the sum)
+    /// and `0x00c8f970` (`b`).
+    pub fn rcui_vu0_add_vector(mem: &mut impl Mem, dst: u32, a: u32, b: u32) {
+        let va = mem.read::<[u32; 4]>(a);
+        super::VF_COPY.set(mem, va);
+        let vb = mem.read::<[u32; 4]>(b);
+        super::VF_ADD_B.set(mem, vb);
+        let s = |i: usize| x87::store(x87::load(va[i]) + x87::load(vb[i]));
+        let r = [s(0), s(1), s(2), va[3]];
+        super::VF_COPY.set(mem, r);
+        mem.write(dst, r);
     }
 }

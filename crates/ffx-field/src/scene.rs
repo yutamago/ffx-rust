@@ -631,4 +631,75 @@ pub mod bridge {
         let f = mem.rebase(super::SCENE_SET_MATRIX);
         call(mem, f, &[s]);
     }
+
+    /// `rcbgLayerAnimStep(a)` (`0x00930920`): a layer animation's step.
+    /// Without frames (`+8`) 0; else the current frame record
+    /// (`+0xc + 4 * +6`), returned as is when paused (bit 0). The
+    /// sub-frame counter (`+0x18`) gains the speed (`+0x14`); whole steps
+    /// of 0x100 move into the tick (`+4`, `i16`), and while the tick
+    /// passes the record's length (byte `+1`) the frame advances (or goes
+    /// back with bit 1), at the end wrapping (`+0x00` mode 0x000) or
+    /// holding (0x100). Returns the record it started from.
+    pub fn rcbg_layer_anim_step(mem: &mut impl Mem, a: u32) -> u32 {
+        let count = mem.read::<i32>(a.wrapping_add(8));
+        if count == 0 {
+            return 0;
+        }
+        let frame = i32::from(mem.read::<i16>(a.wrapping_add(6)));
+        let cur = mem
+            .read::<u32>(a.wrapping_add(0xc))
+            .wrapping_add(frame.wrapping_mul(4).cast_unsigned());
+        if mem.read::<u8>(a) & 1 != 0 {
+            return cur;
+        }
+        let speed = mem.read::<i32>(a.wrapping_add(0x14));
+        let acc = mem.read::<i32>(a.wrapping_add(0x18)).wrapping_add(speed);
+        mem.write(a.wrapping_add(0x18), acc);
+        if acc < 0x100 {
+            return cur;
+        }
+        let q = acc.wrapping_add((acc >> 31) & 0xff) >> 8;
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // the low half
+        let mut tick = mem.read::<u16>(a.wrapping_add(4)).wrapping_add(q as u16);
+        mem.write(a.wrapping_add(4), tick);
+        mem.write(a.wrapping_add(0x18), acc.wrapping_sub(q << 8));
+        let mut len = u16::from(mem.read::<u8>(cur.wrapping_add(1)));
+        if tick.cast_signed() <= len.cast_signed() {
+            return cur;
+        }
+        let flags = mem.read::<u32>(a);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // the low half
+        let last = (count as u16).wrapping_sub(1);
+        loop {
+            tick = tick.wrapping_add(0xffff_u16.wrapping_sub(len));
+            mem.write(a.wrapping_add(4), tick);
+            let at = a.wrapping_add(6);
+            let mode = flags & 0xf00;
+            if flags & 2 == 0 {
+                let f = mem.read::<u16>(at).wrapping_add(1);
+                mem.write(at, f);
+                if i32::from(f.cast_signed()) >= count {
+                    match mode {
+                        0 => mem.write(at, 0u16),
+                        0x100 => mem.write(at, last),
+                        _ => {}
+                    }
+                }
+            } else {
+                let f = mem.read::<u16>(at).wrapping_sub(1);
+                mem.write(at, f);
+                if f.cast_signed() < 0 {
+                    match mode {
+                        0 => mem.write(at, last),
+                        0x100 => mem.write(at, 0u16),
+                        _ => {}
+                    }
+                }
+            }
+            len = u16::from(mem.read::<u8>(cur.wrapping_add(1)));
+            if tick.cast_signed() <= len.cast_signed() {
+                return cur;
+            }
+        }
+    }
 }
