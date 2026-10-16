@@ -399,6 +399,7 @@
 0x0060ab60 function Identity_0060ab60 # cdecl(x) -> x (frame-pointer build); name ours
 0x0060ab70 function ZeroExtend64_0060ab70 # cdecl(x) -> edx:eax = 0:x; name ours
 0x0060ab80 function Add_0060ab80 # cdecl(a, b) -> a + b; name ours
+0x0060ab90 function AddU8_0060ab90 # cdecl(a, b) -> a + (u8)b (no direct callers); name ours
 0x0060aba0 function Fixup_WriteLeb128         # (value, cursor*): LEB128 at *cursor, low 7 bits first, 0x80 on all but the last, cursor advanced per byte; nothing for a null cursor; Fixup_ReadLeb128's inverse; name ours
 0x0060ac00 function Fixup_ReadLeb128          # (cursor*) -> u32, 7 bits per byte, high bit = more
 0x0060ae30 function Fixup_SetArrayObject      # (record, index): record[1] = index
@@ -416,6 +417,7 @@
 0x0060c730 function Identity_0060c730 # cdecl(x) -> x (frame-pointer build); name ours
 0x0060c870 function Identity_0060c870 # cdecl(x) -> x (frame-pointer build); name ours
 0x0060c880 function Identity_0060c880 # cdecl(x) -> x (frame-pointer build); name ours
+0x0060c990 function TaggedTreeInsert_0060c990 # thiscall(head; node), ret 4: inserts node by u32 key +0xc (children +0/+4 = head, parent in +8 tagged with bit 0); returns an equal node or 0; callers 0x0060c740, 0x0060dfc0; name ours
 0x0060ca10 function Fixup_RunAll16            # Fixup_RunAll for 16-byte records
 0x0060ca70 function Fixup_RunAll              # thiscall({flags, objects}, callback, template, cursor*, out*): every object
 0x0060cac0 function Fixup_RunBitmask16        # Fixup_RunBitmask for 16-byte records
@@ -451,6 +453,7 @@
 0x006185a0 function Phyre_PScripting_PScriptingCompiler_CalculateSize # fh switch:bsim1.00 0x71001a46f0 Phyre::PScripting::PScriptingCompiler::CalculateSize
 0x006185d0 function Phyre_PScripting_PScriptingCompiler_GetChunksForFunction # fh switch:bsim1.00 0x71001a4720 Phyre::PScripting::PScriptingCompiler::GetChunksForFunction
 0x00618600 function Phyre_PScripting_PScriptingCompiler_Writer # fh switch:bsim0.99 0x71001a4670 Phyre::PScripting::PScriptingCompiler::Writer
+0x00619e70 function SetGlobal_00cc9a38 # cdecl(v): *0x00cc9a38 = v, returns v; name ours
 0x0061a110 function ReturnMinus1_0061a110 # stdcall(3 args), ret 0xc: returns -1 (vtable only); name ours
 0x0061a730 function PWorldMatrixController_setVftable # thiscall(this): *this = Phyre_PWorldMatrixController_vftable (callers 0x005d6d10, 0x005d6d20); eax untouched; name ours
 0x0061a860 function VFile_VFile               # fh v3:exact 0x0061aa20 VFile::VFile
@@ -459,6 +462,7 @@
 0x0061aa10 function VFile_assign              # fh v3:exact 0x0061abd0 VFile::assign
 0x0061aa60 function VFile_fileRead            # fh v3:exact 0x0061ac20 VFile::fileRead
 0x0061aa90 function FileSys_Read              # wrapper that calls FileSys_ReadSync
+0x0061ac30 function VFile_fileSeek # thiscall(vfile; offset, whence), ret 8: the 64-bit position +0x10 from the start / current / end (size at *(this+0xc)+8); -1 for another whence, a negative offset or offset past the size (after moving); returns the position low word; callers 0x006080e0, 0x00608120 (PStreamFile seeks); name ours
 0x0061acb0 function PStreamFile_entrySize64 # thiscall(this) -> edx:eax = u64 at +8 of *(this+0xc) (called by Phyre_PSerialization_PStreamFile_getFileSize); name ours
 0x0061acc0 function VbfStream_Open            # fopen(path, "rb") for one of 15 reader streams
 0x0061acf0 function VFile_reset # thiscall(this): +0xc, +0x10, +0x14 and byte +0 zeroed (the VFile released); caller BigFileHandle_releaseVFile; name ours
@@ -475,10 +479,12 @@
 0x0061c220 function FileSys_SubmitRead          # cdecl(request): thread-pool work BigFileStream_fileTaskRead(request), and a wait on the request's event (+0x48) running BigFileStream_fileTaskUncompress; made synchronous by the harness on the virtual clock
 0x0061c3a0 function BigFileStream_setStreamPrefix # this=FileSys; copies path to +0x40, length to +0x3c; was FileSys_SetRootPath
 0x0061d110 function Add_0061d110 # cdecl(a, b) -> a + b; name ours
+0x0061d120 function AddU8_0061d120 # cdecl(a, b) -> a + (u8)b (no direct callers); name ours
 0x0061d140 function Vbf_MapLookup             # digest -> map node; entry pointer at node+0x20
 0x0061d460 function BigFileHandle_BigFileHandle # this=Vbf (0x60 bytes); hash map of entries + critical section at +0x44; was Vbf_Construct
 0x0061d670 function BigFileHandle_dtor_BigFileHandle # was Vbf_Destruct
 0x0061d6e0 function Md5Digest_Less            # 128-bit compare used to verify the header digest
+0x0061d730 function CompareI64Pairs_0061d730 # stdcall(a, b), ret 8: (i64 a[0], i64 a[8]) against b lexicographically: -1, 0, 1; callers 0x0061d870, 0x0061d890 (BigFileHandle); name ours
 0x0061d910 function BigFileHandle_deinitialize # fh v3:exact 0x0061dad0 BigFileHandle::deinitialize
 0x0061dac0 function BigFileHandle_initialize  # reads SRYK header, verifies MD5 trailer, builds block tables and entry map; was Vbf_Open
 0x0061de30 function Vbf_InsertEntry           # inserts (name MD5 -> entry*) into the entry map
@@ -486,9 +492,12 @@
 0x0061df10 function BigFileHandle_getNewVFile # was Vbf_FindEntry
 0x0061df70 function BigFileHandle_releaseVFile # fh v3:exact 0x0061e130 BigFileHandle::releaseVFile
 0x0061e6e0 function Difference_0061e6e0 # cdecl(a, b) -> b - a; name ours
+0x0061e6f0 function Difference_0061e6f0 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x0061e700 function Difference_0061e700 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
 0x0061e710 function IdentityU16_0061e710 # cdecl(x) -> ax = (u16)x, upper eax untouched; name ours
 0x0061e720 function Identity_0061e720 # cdecl(x) -> x (frame-pointer build); name ours
 0x0061e730 function Identity_0061e730 # cdecl(x) -> x (frame-pointer build); name ours
+0x0061e740 function Add_0061e740 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
 0x0061f810 function Phyre_PFramework_PApplication_PApplication # fh v3:exact 0x0061f9d0 Phyre::PFramework::PApplication::PApplication
 0x00622050 function Phyre_PFramework_PApplication_Bind # fh v3:exact 0x00622210 Phyre::PFramework::PApplication::Bind
 0x006227b0 function Phyre_PFramework_PApplicationViewport_Bind # fh v3:exact 0x00622970 Phyre::PFramework::PApplicationViewport::Bind
@@ -575,6 +584,7 @@
 0x00630390 function operator_delete           # fh v3:exact 0x00630540 operator.delete
 0x006304c0 function operator_new_006304c0     # fh v3:cg17 0x630670 operator.new[]
 0x00630540 function operator_delete_00630540  # fh v3:bsim1.00 0x006306f0 operator.delete[]
+0x00630a60 function AllocTracker_Release # cdecl(p): with *0x00ccb15c set, under its mutex (+0xa8, WaitForSingleObject/ReleaseMutex): user_free(record of p in the map 0x00c31e9c, +0x10), then the node removed (Phyre_PRedBlackTree_remove) and pushed on the free list 0x00c31eb4; called by operator_delete and delete[]; name ours
 0x00630c30 function inputClear                # fh v3:cg2 0x630de0
 0x00630c40 function inputClearAllInputInfo    # fh v3:bsim1.00 0x00630df0
 0x00630c60 function inputGetCurTime           # fh v3:exact 0x00630e10
@@ -586,6 +596,8 @@
 0x00630de0 function inputSetInputInfoToCurrentFrame # fh v3:bsim1.00 0x00630f90
 0x00630e20 function inputSetVibration         # fh v3:cg2 0x630fd0
 0x00630e40 function FlashScene_dtor_FlashScene # fh switch:bsim1.00 0x71007e49e0 FlashScene::~FlashScene
+0x00631170 function Index8At8_00631170 # thiscall(this; i), ret 4 -> this[2] + 8 i (vtable only); name ours
+0x00631180 function Index8At8_00631180 # thiscall(this; i), ret 4 -> this[2] + 8 i (vtable only); name ours
 0x006311b0 function Table60_Get               # thiscall(this, i), ret 4: [this + 0x60 + 4 i]; callers 0x00700da0, 0x00701fa0; name ours
 0x006312e0 function Virtuos_InputManager_getButtonInfo # fh v3:bsim1.00 0x00631490 Virtuos::InputManager::getButtonInfo
 0x00631300 function Virtuos_InputManager_getInstance # fh v3:bsim1.00 0x006314b0 Virtuos::InputManager::getInstance
@@ -600,6 +612,8 @@
 0x00632930 function InputManager_SwapState_00632930 # thiscall(this; out, a, b, c), ret 0x10 -> out: the three words at +0xac to out, replaced by a, b, c; +0, +4 zeroed; caller 0x00630df0 (input manager); name ours
 0x006329c0 function Virtuos_InputManager_setVibration # fh v3:exact 0x00632b70 Virtuos::InputManager::setVibration
 0x00632a30 function Virtuos_InputManager_updateInput # fastcall(input 0x00ccb170): ORs the bits of held bindings into the pad word (+0), previous at +4; was Input_UpdatePad
+0x006331a0 function Add_006331a0 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
+0x006331b0 function AddU16_006331b0 # cdecl(a, b) -> a + (u16)b (no direct callers); name ours
 0x006332d0 function Identity_006332d0 # cdecl(x) -> x (frame-pointer build); name ours
 0x006332e0 function Identity_006332e0 # cdecl(x) -> x (frame-pointer build); name ours
 0x006332f0 function Identity_006332f0 # cdecl(x) -> x (frame-pointer build); name ours
@@ -607,6 +621,15 @@
 0x00633310 function Identity_00633310 # cdecl(x) -> x (frame-pointer build); name ours
 0x00633320 function Identity_00633320 # cdecl(x) -> x (frame-pointer build); name ours
 0x00633330 function Identity_00633330 # cdecl(x) -> x (frame-pointer build); name ours
+0x006338e0 function StoreRetThis_006338e0 # thiscall(this; v, unused), ret 8: *this = v, returns this (vtable only); name ours
+0x006338f0 function StoreRetThis_006338f0 # thiscall(this; v, unused), ret 8: *this = v, returns this (vtable only); name ours
+0x00633900 function StoreRetThis_00633900 # thiscall(this; v, unused), ret 8: *this = v, returns this (vtable only); name ours
+0x00633910 function StoreRetThis_00633910 # thiscall(this; v, unused), ret 8: *this = v, returns this (vtable only); name ours
+0x00633920 function StoreRetThis_00633920 # thiscall(this; v, unused), ret 8: *this = v, returns this (vtable only); name ours
+0x00633930 function StoreRetThis_00633930 # thiscall(this; v, unused), ret 8: *this = v, returns this (vtable only); name ours
+0x00633940 function StoreRetThis_00633940 # thiscall(this; v, unused), ret 8: *this = v, returns this (vtable only); name ours
+0x00633950 function StoreRetThis_00633950 # thiscall(this; v, unused), ret 8: *this = v, returns this (vtable only); name ours
+0x00633960 function StoreRetThis_00633960 # thiscall(this; v, unused), ret 8: *this = v, returns this (vtable only); name ours
 0x00633b70 function BufferAt8_dtor_00633b70 # thiscall(this): user_free(this[2]) when set (a destructor run by exception unwinding, called from 0x00acf9xx funclets); returns 0; name ours
 0x00633b80 function BufferAt8_dtor_00633b80 # thiscall(this): user_free(this[2]) when set (a destructor run by exception unwinding, called from 0x00acf9xx funclets); returns 0; name ours
 0x00633b90 function BufferAt8_dtor_00633b90 # thiscall(this): user_free(this[2]) when set (a destructor run by exception unwinding, called from 0x00acf9xx funclets); returns 0; name ours
@@ -864,8 +887,12 @@
 0x006460a0 function DecodingGamecodeJPCHKR    # (src, pos, out, lang) -> pos + bytes: character code -> UTF-8 via the jp/kr/ch table (3 bytes, 2 for 17 and 40); was Text_DecodeCharCjk
 0x006461f0 function Text_DecodeCharWestern    # (src, pos, out) -> pos + bytes: character code -> UTF-8 via ffxsjistbl_us.bin, codes < 0xc0 only (a jump table of offsets)
 0x00646920 function MallocAndReadGamecode     # loads ffx_encoding/ffxsjistbl_<lang>.bin into g_CharsetCjk/g_CharsetWestern; was Text_LoadCharset
+0x00647220 function SwapHeaderF00_00647220 # cdecl(p) -> 0x1320: u16s of p[0xf00..0xf10] and u32s of p[0xf10..0xf18] byte-swapped; callers 0x006477f0, 0x006479b0 (save data); name ours
+0x006473d0 function SwapHalves_006473d0 # cdecl(p) -> 0x340: the u16s of p[0..0x200] and p[0x300..0x340] byte-swapped (big-endian data); callers 0x006477f0, 0x006479b0; name ours
 0x00647440 function SwapWords3_00647440 # cdecl(p) -> 0x1c: the three words at p byte-swapped in place (big-endian header); caller 0x006479b0; name ours
 0x00647490 function SwapWords3Out_00647490 # cdecl(p, out) -> 0x1c: as SwapWords3_00647440, then *out = word 1; caller 0x006477f0; name ours
+0x00647560 function SwapHeader84_00647560 # cdecl(p) -> 0x84: u32s of p[0..0x10], u16s of p[0x24..0x54], u32s of p[0x5c..0x84] byte-swapped; callers 0x006477f0, 0x006479b0; name ours
+0x00647bb0 function SetMember8_00647bb0 # thiscall(this; v), ret 4: this[2] = v, returns v; name ours
 0x00647c90 function GetU32_01325ac4 # () -> u32 at 0x01325ac4; name ours
 0x00647cb0 function ReturnConst_00647cb0 # () -> 0x6900; name ours
 0x00647d70 function SaveDataCheckCrc          # fh call.cs cdecl
@@ -892,6 +919,7 @@
 0x00648620 function SaveDataSetDialogState    # fh v3:bsim1.00 0x006487d0
 0x00648630 function SaveDataSetEventId        # fh v3:bsim1.00 0x006487e0
 0x00648640 function SaveDataManager_SetWord360 # cdecl(v) -> manager: SaveDataManager_instance() + 0x360 = v; callers 0x0085b1a0, 0x0085d8f0; name ours
+0x00648680 function SetGlobal_00ccb9a0 # cdecl(v): *0x00ccb9a0 = v, returns v; name ours
 0x006486b0 function SaveDataSetSave           # fh v3:bsim1.00 0x00648860
 0x006486c0 function SaveDataSetSaveDataInfo   # fh v3:bsim1.00 0x00648870
 0x006486e0 function SaveDataSetScreenState    # fh v3:exact 0x00648890
@@ -1006,10 +1034,18 @@
 0x00672070 function PhyreScene_updateTextureVideoCallback # fh v3:exact+call.cs 0x00672210 cdecl PhyreScene::updateTextureVideoCallback
 0x006720c0 function Phyre_PCamera_updateViewMatrices # fh v3:exact 0x00672260 Phyre::PCamera::updateViewMatrices
 0x00673b20 function ClassDynamicMeshInstance_populatePreprocessData # fh switch:bsim1.00 0x71001c46d0 ClassDynamicMeshInstance::populatePreprocessData
+0x00675c70 function Difference_00675c70 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x006765c0 function ReturnZeroStd_006765c0 # stdcall(1 arg), ret 4 -> 0 (vtable only); name ours
 0x006765d0 function ReturnMinus1_006765d0 # stdcall(3 args), ret 0xc: returns -1 (vtable only); name ours
+0x00676960 function Difference_00676960 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x00677060 function ReturnZeroStd_00677060 # stdcall(1 arg), ret 4 -> 0 (vtable only); name ours
 0x00677080 function ReturnMinus1_00677080 # stdcall(3 args), ret 0xc: returns -1 (vtable only); name ours
 0x006770b0 function ReturnConstStd_006770b0 # stdcall(1 arg) -> 0x18, ret 4 (vtable only); name ours
+0x006772d0 function Difference_006772d0 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x00677c20 function ReturnZeroStd_00677c20 # stdcall(1 arg), ret 4 -> 0 (vtable only); name ours
 0x00677c30 function ReturnMinus1_00677c30 # stdcall(3 args), ret 0xc: returns -1 (vtable only); name ours
+0x00678010 function Difference_00678010 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x00678b40 function ReturnZeroStd_00678b40 # stdcall(1 arg), ret 4 -> 0 (vtable only); name ours
 0x00678b50 function ReturnMinus1_00678b50 # stdcall(3 args), ret 0xc: returns -1 (vtable only); name ours
 0x006793e0 function PhyreFIOS_LoadMagicfilePrx # fh v3:exact 0x00679590 PhyreFIOS::LoadMagicfilePrx
 0x006794f0 function PhyreFIOS_UnloadMagicfilePrx # fh v3:cg2 0x6796a0 PhyreFIOS::UnloadMagicfilePrx
@@ -1119,6 +1155,8 @@
 0x006857b0 function AbmapManager_ToDestroy    # fh v3:bsim1.00 0x00685950 AbmapManager::ToDestroy
 0x00686c50 function IdentityStd_00686c50 # stdcall(x) -> x, ret 4; name ours
 0x00686cb0 function Identity_00686cb0 # cdecl(x) -> x (frame-pointer build); name ours
+0x00686ce0 function CopyThisTo_00686ce0 # thiscall(this; p), ret 4: *p = *this, returns p (vtable only); name ours
+0x00686e80 function CopyThisTo_00686e80 # thiscall(this; p), ret 4: *p = *this, returns p (vtable only); name ours
 0x00686f80 function Identity_00686f80 # cdecl(x) -> x (frame-pointer build); name ours
 0x00686ff0 function user_aligned_malloc       # cdecl(size, align): jmp UserHeap_AlignedMalloc; fh v3:bsim1.00 0x00687190
 0x00687000 function user_calloc # cdecl(n, size): jmp UserHeap_Calloc 0x006fb820; name ours (after user_malloc)
@@ -1128,6 +1166,8 @@
 0x00687040 function malloc_pool_init_thunk # (): jmp malloc_pool_init 0x006fb9b0; name ours
 0x00687050 function user_mem_size             # cdecl(p): jmp UserHeap_MemSize; fh v3:bsim1.00 0x006871f0
 0x00687060 function user_realloc              # cdecl(p, size): jmp UserHeap_Realloc; name ours (after user_mem_size)
+0x00687190 function Init68_00687190 # thiscall(this; a, b), ret 8 -> this: +0 a, +8 b, +4 and +0xc..+0x40 zeroed; callers 0x006870b0, 0x00687130; name ours
+0x00689510 function TouchRecord_Reset # thiscall(rec) -> rec: one TouchRecords_Init record reset; callers 0x00689580, 0x006897d0; name ours
 0x006898c0 function TouchManager_GetInstance  # () -> [0x00ccc850]; fh switch:bsim1.00 0x710023e180 TouchManager::GetInstance
 0x006898d0 function TouchTracks_Init # cdecl(base, n): n 0x1c8-byte records reset (+0 u16, eight 0x38-byte points from +4: bytes +0/+0x14, floats +4..+0x14; +0x1c4; null skipped); returns the last record; callers 0x00689750/0x0068a660/0x0068ad60 beside TouchRecords_Init; name ours
 0x00689a10 function TouchRecords_Init # cdecl(base, n): n 0x150-byte records reset (+0 u16 0, +4 -1, +8 0, 32 ten-byte points from +0xc, +0x14c 0; null record skipped); callers 0x00689790/0x0068a660/0x0068ade0 next to TouchManager_GetInstance; name ours
@@ -1139,11 +1179,19 @@
 0x0068ff60 function FFEscMenu_unpauseAudioVideo # fh switch:bsim1.00 0x7100243f60 FFEscMenu::unpauseAudioVideo
 0x00690590 function AssetListReader_getPlatformSpecificPath # fh v3:exact 0x006906c0 AssetListReader::getPlatformSpecificPath
 0x00690a20 function BufferAt8_dtor_00690a20 # thiscall(this): user_free(this[2]) when set (a destructor run by exception unwinding, called from 0x00acf9xx funclets); returns 0; name ours
+0x00690bd0 function Index4At8_00690bd0 # thiscall(this; i), ret 4 -> this[2] + 4 i (vtable only); name ours
+0x00690be0 function Index4At8_00690be0 # thiscall(this; i), ret 4 -> this[2] + 4 i (vtable only); name ours
+0x00690bf0 function Index4At8_00690bf0 # thiscall(this; i), ret 4 -> this[2] + 4 i (vtable only); name ours
+0x00690c00 function Index4At8_00690c00 # thiscall(this; i), ret 4 -> this[2] + 4 i (vtable only); name ours
 0x00690f70 function AsyncLoadManager_createChildrenRequestList # fh v3:exact 0x006910a0 AsyncLoadManager::createChildrenRequestList
 0x00691630 function AsyncLoadManager_isAllRequestDone # fh v3:exact 0x00691760 AsyncLoadManager::isAllRequestDone
 0x00691660 function AsyncLoadManager_loadCluster # fh v3:exact 0x00691790 AsyncLoadManager::loadCluster
 0x006918b0 function AsyncLoadManager_registAsyncLoadTask # fh v3:exact 0x006919e0 AsyncLoadManager::registAsyncLoadTask
 0x00691b40 function AsyncLoadManager_sGetInstance # fh v3:bsim1.00 0x00691c70 AsyncLoadManager::sGetInstance
+0x00691b50 function SetGlobal_00ccc890 # cdecl(v): *0x00ccc890 = v, returns v; name ours
+0x00691b60 function SetGlobal_00ccc894 # cdecl(v): *0x00ccc894 = v, returns v; name ours
+0x00691dc0 function MapFindU32_00691dc0 # thiscall(head; &key), ret 4: the same lookup as MapFindU32_0062fe50; callers 0x006935d0, 0x006985d0; name ours
+0x00691e60 function TaggedTreeInsert_00691e60 # the same code as TaggedTreeInsert_0060c990; callers 0x00691e30, 0x00693c50; name ours
 0x00692be0 function PostProcessManager_GetInstance # fh v3:bsim1.00 0x00692d10 PostProcessManager::GetInstance
 0x00692c40 function PostProcessManager_copyBuffer # fh v3:exact 0x00692d70 PostProcessManager::copyBuffer
 0x00697490 function PostProcessManager_renderScreenFade # fh v3:exact 0x006975d0 PostProcessManager::renderScreenFade
@@ -1162,6 +1210,7 @@
 0x0069a6b0 function ChrResourceCacheManager_applyDelayedRelease # fh v3:exact 0x0069a7f0 ChrResourceCacheManager::applyDelayedRelease
 0x0069a950 function chrCacheApplyDelayedRelease # fh switch:bsim1.00 0x71001c7770
 0x0069ae80 function ChrResourceCacheManager_enableChrDelayRelease # fh v3:exact 0x0069afc0 ChrResourceCacheManager::enableChrDelayRelease
+0x0069af30 function CopyThisTo_0069af30 # thiscall(this; p), ret 4: *p = *this, returns p (vtable only); name ours
 0x0069b310 function ClusterManager_forceReleasePCluster # fh v3:exact 0x0069b450 ClusterManager::forceReleasePCluster
 0x0069b4b0 function ClusterManager_getPClusterByName # fh v4:user_defined+call.cs thiscall ClusterManager::getPClusterByName
 0x0069b7b0 function ChrResourceCacheManager_isChrDelayedRelease # fh v3:bsim1.00 0x0069b8f0 ChrResourceCacheManager::isChrDelayedRelease
@@ -1170,6 +1219,10 @@
 0x0069bda0 function Identity_0069bda0 # cdecl(x) -> x (frame-pointer build); name ours
 0x0069bdb0 function ClusterManager_releasePCluster # fh v4:user_defined+call.cs thiscall ClusterManager::releasePCluster
 0x0069be90 function ClusterManager_releasePCluster_0069be90 # fh v3:exact 0x0069bfd0 ClusterManager::releasePCluster
+0x0069c4b0 function Add_0069c4b0 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
+0x0069c4c0 function AddU16_0069c4c0 # cdecl(a, b) -> a + (u16)b (no direct callers); name ours
+0x0069c4d0 function Add_0069c4d0 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
+0x0069c4e0 function AddU8_0069c4e0 # cdecl(a, b) -> a + (u8)b (no direct callers); name ours
 0x0069ccef function Catch_All_0069ce2f        # fh v3:cg2 0x69ce2f Catch_All@0069ce2f
 0x0069d0f4 function Catch_All_0069d234        # fh v3:cg2 0x69d234 Catch_All@0069d234
 0x0069e030 function ClassCharacter_ClassCharacter # fh v3:exact 0x0069e170 ClassCharacter::ClassCharacter
@@ -1292,6 +1345,8 @@
 0x006e36c0 function Phyre_FogEffectManager_setChrFogFadeType # fh v3:exact 0x006e37f0 Phyre::FogEffectManager::setChrFogFadeType
 0x006e4020 function SetPairFloats_006e4020 # thiscall(this; key, a, b), ret 0xc: the 12-byte entry with key (from +4, count +0, appended when missing) gets floats a, b; returns 3 * index; caller 0x006e4100; name ours
 0x006e40b0 function DepthBiasHooks_clearDepthBias # fh v3:exact 0x006e41e0 DepthBiasHooks::clearDepthBias
+0x006e45c0 function Add_006e45c0 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
+0x006e45d0 function AddU16_006e45d0 # cdecl(a, b) -> a + (u16)b (no direct callers); name ours
 0x006e45e0 function LoadingScreen_LoadingScreen # fh v3:exact 0x006e4710 LoadingScreen::LoadingScreen
 0x006e4720 function LoadingScreen_initialize  # fh v3:exact 0x006e4850 LoadingScreen::initialize
 0x006e4770 function LoadingScreen_loadTextures # fh v3:exact 0x006e48a0 LoadingScreen::loadTextures
@@ -1393,7 +1448,10 @@
 0x006f2ed0 function Mutex_Lock                # (mutex): WaitForSingleObject(*mutex, INFINITE) (import 0x00b0c0f8)
 0x006f2f50 function Mutex_Unlock              # (mutex): ReleaseMutex(*mutex) (import 0x00b0c1c0)
 0x006f32e0 function Pause_HideScreen             # the pause screen's Flash "hidePause" (Pause_Update calls it when Start ends the pause)
+0x006f3fe0 function CopyThisTo_006f3fe0 # thiscall(this; p), ret 4: *p = *this, returns p (vtable only); name ours
 0x006f4030 function AssetListReader_clear     # fh v3:exact 0x006f4170 AssetListReader::clear
+0x006f4090 function CopyThis4To_006f4090 # thiscall(this; p), ret 4: *p = this[1], returns p (vtable only); name ours
+0x006f40a0 function CopyThis4To_006f40a0 # thiscall(this; p), ret 4: *p = this[1], returns p (vtable only); name ours
 0x006f4170 function AssetListReader_getAssetCount # fh v3:exact 0x006f42b0 AssetListReader::getAssetCount
 0x006f41b0 function AssetListReader_getAssetPath # fh v3:exact 0x006f42f0 AssetListReader::getAssetPath
 0x006f42d0 function AssetListReader_getSymbolById # fh v3:bsim1.00 0x006f4410 AssetListReader::getSymbolById
@@ -1403,6 +1461,10 @@
 0x006f4880 function Identity_006f4880 # cdecl(x) -> x (frame-pointer build); name ours
 0x006f4900 function AssetListReader_readAssetHeader # fh v3:exact 0x006f4a40 AssetListReader::readAssetHeader
 0x006f50a0 function AssetListReader_readListFile # fh switch:cg2 0x710029df10 AssetListReader::readListFile
+0x006f5370 function Add_006f5370 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
+0x006f5380 function AddU16_006f5380 # cdecl(a, b) -> a + (u16)b (no direct callers); name ours
+0x006f5750 function AddU16_006f5750 # cdecl(a, b) -> a + (u16)b (no direct callers); name ours
+0x006f5a00 function Add_006f5a00 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
 0x006f5b50 function TextUtil_TextUtil         # fh v3:exact 0x006f5c90 TextUtil::TextUtil
 0x006f6dc0 function LoadCameraData            # fh v3:exact 0x006f6f00
 0x006f6f80 function UnloadCameraData          # fh v3:bsim1.00 0x006f70c0
@@ -1441,7 +1503,11 @@
 0x006fb9b0 function malloc_pool_init          # fh call.cs cdecl _malloc_pool_init
 0x006fba90 function UserHeap_MemSize          # cdecl(p): UserHeap_BlockSize under the lock (no first-use check); name ours
 0x006fbb00 function UserHeap_Realloc          # cdecl(p, size): new block (none for 0), memcpy_s min(old, size) bytes, old freed; name ours
+0x006fbdc0 function ResetRecords18_006fbdc0 # cdecl(base, n): n 0x18-byte records reset (byte +0, floats +8..+0x18; null skipped), returns the last; callers 0x006fbd50, 0x006fc2c0; name ours
+0x006fc340 function SetMember8_006fc340 # thiscall(this; v), ret 4: this[2] = v, returns v; name ours
 0x006fc390 function ReleaseSlots_006fc390 # thiscall(this; key), ret 4 -> 0: every 0x18-byte slot (count in +0 low 31 bits, array *(this + 4)) with byte 1 and +4 == key gets byte 0; caller 0x0068bfa0; name ours
+0x00702fd0 function Add_00702fd0 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
+0x00702fe0 function AddU16_00702fe0 # cdecl(a, b) -> a + (u16)b (no direct callers); name ours
 0x00703750 function CopyFloats4_00703750 # thiscall(this; src), ret 4: 4 floats from src to this+4 through the x87 stack, returns src; caller 0x006c3970; name ours
 0x007037e0 function CopyFloats2_007037e0 # thiscall(this; src), ret 4: 2 floats from src to this+0x14 through the x87 stack, returns src; caller 0x006c3970; name ours
 0x00703bc0 function cdc_Vector_CanNormalize3  # thiscall(v): al = 1 when (x²+y²)+z² (stored f32) is not NaN (_isnan), finite (_finite) and > FLT_MIN (0x00b4cf60); only caller cdc_Vector_SafeNormalize3; name ours
@@ -2089,6 +2155,8 @@
 0x00764bb0 function KeThResHd_Init            # fh v3:exact 0x00764ca0
 0x00764c40 function KeAddScaledColor          # (out, base, step, k): out[i] = step[i] * k + base[i] as f32, clamped to 0..=255 (KeThBP_MkGifPk's colours)
 0x007658b0 function InitVFXKeThRenderData     # fh v3:exact 0x007659a0
+0x007665a0 function SetGlobal_02305844 # cdecl(v): *0x02305844 = v, returns v; name ours
+0x007665b0 function SetGlobal_02305840 # cdecl(v): *0x02305840 = v, returns v; name ours
 0x00766770 function updateVFXKeThRenderData   # fh v3:exact 0x00766860
 0x007669c0 function updateVFXKeThSetPoint     # fh v3:exact 0x00766ab0
 0x00766be0 function prcPacketDataDraw         # fh switch:bsim1.00 0x71003069a0
@@ -2172,6 +2240,7 @@
 0x00774720 function Kernel_GetAbilityName # (id) -> char*: g_EmptyName for 0, else TkMn2GetAbilityMes(id) (a tail jump); about 110 callers 0x00770920..0x007734c0; named after Kernel_GetItemName; name ours
 0x00774740 function ResetRecords_00774740 # (): records (0x138 bytes) of entry *0x0112a088 of the table *0x0112a01c (offset + *0x0112a03c, i16 count at +4): +0x114/+0x116 = +0x120/+0x122, +0x118/+0x11c = 0.0; callers 0x0076f470, 0x00775ce0, 0x00775de0, 0x00776110; name ours
 0x00774ae0 function getSa_MenuTextureName     # fh v3:exact 0x00774bf0
+0x00775810 function SetGlobal_0112a018 # cdecl(v): *0x0112a018 = v, returns v; name ours
 0x007767a0 function Kernel_GetItemName        # (id) -> char*: g_EmptyName for 0, else MsGetRomItem's strings + the record's first u16; name ours
 0x00776910 function UnlinkRecord_00776910 # cdecl(rec): unlinks rec from the offset list in *0x0112a03c (+0x38 next, +0x44 previous) and marks it 7; caller 0x007767d0; name ours
 0x00776f50 function MsGetSavePlayerPtr_thunk  # (chr): jmp MsGetSavePlayerPtr
@@ -3437,6 +3506,8 @@
 0x00820860 function Sg_MainInit               # fh switch:cg4 0x710042ce30
 0x00820ae0 function Sg_MainLoop               # the game's frame (update and draw): with g_PauseOn the world update (0x00821e80) is skipped for the pause's (0x008893e0); calls Battle_Update, Cam_Update, Screen_UpdateFades; was Game_Frame
 0x00821750 function Sg_MenuSetReserve         # (menu id): g_012fbc38 = id, result 0x012fbc3c = -1; 0x40100000/0x40200000 handled separately; was Menu_Request
+0x00821a20 function SetByte_012fb8fb # cdecl(v): byte 0x012fb8fb = v; name ours
+0x00821a30 function SetByte_012fb8fc # cdecl(v): byte 0x012fb8fc = v; name ours
 0x00821aa0 function TOInitFont1208            # fh switch:bsim1.00 0x71004b0f20
 0x00821ae0 function Sg_SetKeepFps             # fh v3:exact+call.cs 0x00821c00 cdecl
 0x00821b00 function Sg_SetMapAlphaFast        # fh v3:bsim1.00 0x00821c20
@@ -5206,6 +5277,7 @@
 0x0089a2f0 function TOBtlSetLuluLimitTbl      # fh v3:exact 0x0089a260
 0x0089a330 function TOBtlSetNextAction        # fh v3:exact 0x0089a2a0
 0x0089a630 function TOBtlSetPrevAction        # fh v3:exact 0x0089a5a0
+0x0089a850 function SetByte_0133d782 # cdecl(v): byte 0x0133d782 = v; name ours
 0x0089a8b0 function TOBtlSetTargetHelpMes     # fh v3:exact 0x0089a820
 0x0089ab80 function TOBgoodStart              # g_MagicImports slot 661 (10 overlays): TOSeqStartScene(2, "bgood"); SndPlayClick(0x68); hidden from the dump
 0x0089abd0 function TOCheckBtlCommandTarget   # fh v3:exact 0x0089ab40
@@ -5220,6 +5292,8 @@
 0x0089b5a0 function TOGetSaveWindow           # fh v3:exact+call.cs 0x0089b510 cdecl
 0x0089b660 function TOInitBtlWindow           # fh v3:exact 0x0089b5d0
 0x0089bb10 function TOSetBtlActiveChr         # fh v3:exact 0x0089ba80
+0x0089bc50 function SetGlobal_00c58ef8 # cdecl(v): *0x00c58ef8 = v, returns v; name ours
+0x0089bc60 function SetByte_00c58ef4 # cdecl(v): byte 0x00c58ef4 = v; name ours
 0x0089bc80 function ToDrawLibraWin            # fh v3:exact 0x0089bbf0
 0x0089bf70 function TOBtlDrawLibraLeft        # fh v3:cg14 0x89bee0 _TOBtlDrawLibraLeft
 0x0089c870 function TOBtlDrawTargetCursor     # fh v3:exact 0x0089c7e0 _TOBtlDrawTargetCursor
@@ -5348,6 +5422,7 @@
 0x008ab340 function Pause_Update                 # per frame: enters the pause (Pause_Enter) when g_PauseOn is set and not entered; Start (pad 0x800) at fade 0x40 hides the screen and sets the step +4; at 0x80 it ends (flags cleared, sound resumed)
 0x008ab3d0 function Pause_Enter                  # sound and timers paused (0x00640e20(1), 0x00821cc0(1)), the pause screen shown (0x006f3300), g_PauseEntered = g_PauseOn = 1, fade 0x80 step -4
 0x008ab550 function EventFontTextureArrayReset # fh v3:exact 0x008ab500
+0x008ab570 function SetGlobal_00c59f38 # cdecl(v): *0x00c59f38 = v, returns v; name ours
 0x008ab580 function SetTOPadGetCtrl           # fh v3:bsim1.00 0x008ab530
 0x008ab590 function TOAllClearMessageWindow   # fh v3:bsim1.00 0x008ab540
 0x008ab7b0 function TOAllCloseMessageWindow   # fh v3:bsim1.00 0x008ab760
@@ -5385,6 +5460,7 @@
 0x008adbf0 function TOInitSceneMessageWindow  # fh v3:bsim1.00 0x008adba0
 0x008ade50 function TOReset1                  # fh v3:exact 0x008ade00
 0x008adee0 function TOReset2                  # fh v3:exact 0x008ade90
+0x008adf20 function TOSeqClearSlots_008adf20 # (): state and name byte of the 8 slots of scenes 0..2 in g_TOSeqSlots cleared; callers 0x008ad4d0, 0x008adee0; name ours
 0x008ae070 function TOSeqCheckTermScene       # fh v3:exact 0x008ae020
 0x008ae0f0 function TOSeqCtrl                 # fh v3:exact 0x008ae0a0
 0x008ae2f0 function TOSeqDraw                 # fh v3:exact 0x008ae2a0
@@ -5393,6 +5469,7 @@
 0x008ae410 function TOSeqGetNum               # fh v3:exact 0x008ae3c0
 0x008ae450 function TOSeqGetPoint             # fh v3:exact 0x008ae400
 0x008ae4b0 function TOSeqGetRect              # fh v3:exact 0x008ae460
+0x008ae530 function TOSeqGetSceneState_008ae530 # cdecl(i, name): i16 state of scene i's slot named name, 0 when none; callers 0x008974a0, 0x008fdf20; name ours
 0x008ae5a0 function TOSeqInitAllScene         # fh v3:exact 0x008ae550
 0x008ae6f0 function TOSeqInitParam            # fh v3:exact 0x008ae6a0
 0x008aeec0 function TOSeqInitScene            # fh v3:exact 0x008aee70
@@ -5468,6 +5545,7 @@
 0x008b8960 function TOMacroSetType            # (win, n, t): byte 0 of macro record n of message window win (g_MsgVars; the Btl form sets byte 1 too); name ours
 0x008b8980 function TOMacroSetValue           # (win, n, v): word 1 of the record; returns v; name ours
 0x008b8af0 function TOSetMessageFunc          # fh v3:exact 0x008b8aa0
+0x008b8b20 function TOSetMessageArea_008b8b20 # cdecl(i, x, y, w, h): message window i: u16 +0x40 w, +0x42 h, floats +0x30 x, +0x34 y, +0x38 x + w, +0x3c y + h; callers 0x0089b2f0, 0x008afbb0; name ours
 0x008b8ca0 function TOMessageCallF8_008b8ca0 # cdecl(i): message window i's function +0xf8(window) when the byte at *(window + 0x98) is set, else that pointer; name ours
 0x008b8cd0 function TOSetRectDirect           # fh switch:bsim1.00 0x71004f0dc0
 0x008b9130 function GetU32_025d16c4 # () -> u32 at 0x025d16c4; name ours
@@ -5504,6 +5582,7 @@
 0x008be470 function TOMenuGetControlPadRep    # fh v3:bsim1.00 0x008be440
 0x008be4b0 function TOMenuGetControlPadTrg    # fh v3:bsim1.00 0x008be480
 0x008be800 function TOMenuInit                # fh v3:exact 0x008be7d0
+0x008be9b0 function SetGlobal_00c5a084 # cdecl(v): *0x00c5a084 = v, returns v; name ours
 0x008bea20 function TOMenuDrawKickTmp         # fh v3:bsim1.00+call.cs 0x008be9f0 cdecl
 0x008bea30 function TOMenuGetAbilitymapWorkAdrs # fh v3:bsim1.00 0x008bea00
 0x008bec70 function ReturnAddress_008bec70 # () -> 0x023cc480 (an address in the image); name ours
@@ -5965,6 +6044,7 @@
 0x008ff140 function TOClearEntry_008ff140 # cdecl(i): the 16-byte entry i (< 16, signed) of 0x018762e0 zeroed, returns its address; callers 0x008e3cf0, 0x008e4140; name ours
 0x00900f40 function TOMenuInitBrush           # fh switch:bsim1.00 0x71005280f0
 0x00900f60 function TOMenuSet_018762ee        # (i, v): i < 16 (signed): u16 at 0x018762ee + 16 i = v; between TOMenuInitBrush and TOMenuTransFacePlyTex; name ours
+0x00900f80 function TOMoveEntry_00900f80 # cdecl(i, x, y, d): entry i (< 16) of 0x018762e0 moved to (x, y) (+0 = 1) unless there; unless +0xe == 1: +8 = 0, +6 = d, +0xc = d / 14 + 2; callers 0x008e3cf0, 0x008e4140; name ours
 0x00901100 function TOMenuTransFacePlyTex     # fh switch:bsim1.00 0x7100522020
 0x00901130 function TOMenuTransFaceSmnTex     # fh switch:bsim1.00 0x7100522040
 0x00901160 function TOMenuTransSmallFacePlyTex # fh switch:bsim1.00 0x7100522000
@@ -5989,6 +6069,7 @@
 0x00904650 function TOInitAddPkt              # fh v3:bsim1.00 0x00904650
 0x009046d0 function TOSetEnvCursor            # fh v3:bsim1.00 0x009046d0
 0x009047c0 function TOSetPktBuffAdrs          # fh v3:exact 0x009047c0
+0x009047f0 function TOSetQuadRGBA_009047f0 # cdecl(p, k, r, g, b, a): corner k (0..3) of the quad colours at p+0x10/+0x14/+0x18/+0x1c, all four for k > 3; callers 0x008947c0, 0x0089b860; name ours
 0x009048a0 function TOSetPolyG4A_XYWH         # fh switch:bsim1.00 0x71005094e0
 0x009048e0 function TOSetRegFont1612          # fh v3:bsim1.00 0x009048e0
 0x009048f0 function TOSetScreenWH # cdecl(w, h): u16 g_TOScreenW = w, g_TOScreenH = h (the setter of TOGetScreenWH); caller 0x008fae20; name ours
@@ -6814,6 +6895,7 @@
 0x009da420 function MagicFile_IsNexData       # fh v3:bsim1.00 0x009da410
 0x009da430 function MagicFile_Load            # fh v3:exact 0x009da420
 0x009da750 function Copy_009da750 # (): 64 bytes 0x022fb620 -> 0x02311480 and 0x022fb660 -> 0x02311440; caller MsScreenProcess; name ours
+0x009da790 function SetGlobal_00c64ca4 # cdecl(v): *0x00c64ca4 = v, returns v; name ours
 0x009da7a0 function MagicFile_SetMagicId      # fh v3:exact 0x009da780
 0x009da7f0 function MagicFile_Start           # fh v3:exact 0x009da7d0
 0x009da880 function MagicFile_Stop            # fh v3:exact 0x009da860
@@ -6822,11 +6904,44 @@
 0x009daca0 function MagicFile_clearAllPreloadedPrx # fh v3:exact 0x009dac80
 0x009dad70 function MagicFile_FindPreloaded_009dad70 # cdecl(id, &out): with 0x0193fd40 set, the first of 12 entries (0x00c64c18, 12 bytes) with id (any for negative) and a positive count (0x0193fd44 + 4 i): *out = &count, 1; else 0; caller MagicFile_isPrxPreloaded; name ours
 0x009dae60 function MagicFile_isPrxPreloaded  # fh v3:exact 0x009dae40
+0x009dafd0 function SetGlobal_0193fdac # cdecl(v): *0x0193fdac = v, returns v; name ours
 0x009db110 function onMagicDLLLoaded          # fh v3:exact 0x009db0f0
 0x009db190 function magic_ret0_009db190       # g_MagicImports slot 301: xor eax, eax; ret; hidden from the dump
 0x009dba10 function FFXVu0MulMatrix_thunk     # g_MagicImports slot 299 (5 overlays): jmp FFXVu0MulMatrix (0x006ed5c0); hidden from the dump
 0x009dbea0 function magic_nop_009dbea0        # g_MagicImports slot 720 (354 overlays): a lone ret; hidden from the dump
+0x009ddb30 function Difference_009ddb30 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddb40 function Difference_009ddb40 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddb50 function Difference_009ddb50 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddb60 function Difference_009ddb60 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddb70 function Difference_009ddb70 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddb80 function Difference_009ddb80 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddb90 function Difference_009ddb90 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddba0 function Difference_009ddba0 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddbb0 function Difference_009ddbb0 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddbc0 function Difference_009ddbc0 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddbd0 function Difference_009ddbd0 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddbe0 function Difference_009ddbe0 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddbf0 function Difference_009ddbf0 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddc00 function Difference_009ddc00 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddc10 function Difference_009ddc10 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddc20 function Difference_009ddc20 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddc30 function Difference_009ddc30 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddc40 function Difference_009ddc40 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddc50 function Difference_009ddc50 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddc60 function Difference_009ddc60 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddc70 function Difference_009ddc70 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddc80 function Difference_009ddc80 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddc90 function Difference_009ddc90 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddca0 function Difference_009ddca0 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddcb0 function Difference_009ddcb0 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddcc0 function Difference_009ddcc0 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddcd0 function Difference_009ddcd0 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
+0x009ddce0 function Add_009ddce0 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
+0x009ddcf0 function Add_009ddcf0 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
 0x009e24f0 function PInputSource_setVftable # thiscall(this): *this = Phyre_PInputs_PInputSource_vftable (base part of three constructors at 0x00ada8c0..); eax untouched; name ours
+0x009e2cb0 function Index4At4_009e2cb0 # thiscall(this; i), ret 4 -> this[1] + 4 i (vtable only); name ours
+0x009e2cc0 function Index4At4_009e2cc0 # thiscall(this; i), ret 4 -> this[1] + 4 i (vtable only); name ours
+0x009e2cd0 function Index4At4_009e2cd0 # thiscall(this; i), ret 4 -> this[1] + 4 i (vtable only); name ours
 0x009ecd80 function Phyre_PClassDescriptorForType_Phyre_PPostProcessing_PPostEffectManager__getPointerFromScriptContext # fh switch:bsim1.00 0x710083e950 Phyre::PClassDescriptorForType<Phyre::PPostProcessing::PPostEffectManager>::getPointerFromScriptContext
 0x009ecda0 function Phyre_PClassDescriptorForType_Phyre_PString__getPointerFromScriptContext # fh switch:bsim1.00 0x71000be440 Phyre::PClassDescriptorForType<Phyre::PString>::getPointerFromScriptContext
 0x009f4650 function Phyre_PInputs_PUtilityInputs_initialize # fh switch:bsim1.00 0x71007fa4d0 Phyre::PInputs::PUtilityInputs::initialize
@@ -6856,6 +6971,7 @@
 0x00a41990 function std_Tree_Max_00a41990 # cdecl(node): the rightmost node below node (links +8, nil flag +0xd); caller 0x00a41ff0; name ours
 0x00a419b0 function std_Tree_Min_00a419b0 # cdecl(node): the leftmost node below node (links +0, nil flag +0xd); caller 0x00a41ff0; name ours
 0x00a41b40 function std_Tree_Rrotate_00a41b40 # thiscall(tree; node), ret 4: std::_Tree::_Rrotate; caller 0x00a41ff0; name ours
+0x00a42360 function ReturnZeroStd_00a42360 # stdcall(1 arg), ret 4 -> 0 (vtable only); name ours
 0x00a42490 function ReturnMinus1_00a42490 # stdcall(3 args), ret 0xc: returns -1 (vtable only); name ours
 0x00a42830 function CDfileName_PC             # cdecl(number) -> "host0:/ffx/master/..." path of a PS2 file of the current module; was Cd_FileName
 0x00a428a0 function CDfileSize_PC             # cdecl(number): size from sizetbl.bin, or the real file for some modules ("CDfileSize_PC: MISSING?"); was CdFileSize_PC

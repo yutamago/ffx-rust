@@ -98,6 +98,134 @@ pub const FIRST_STDCALL: [u32; 8] = [
     0x00a4_18f0,
 ];
 
+/// Cdecl `b - a` (frame-pointer builds of pointer differences; vtable only).
+pub const SUB2: [u32; 33] = [
+    0x0061_e6f0,
+    0x0061_e700,
+    0x0067_5c70,
+    0x0067_6960,
+    0x0067_72d0,
+    0x0067_8010,
+    0x009d_db30,
+    0x009d_db40,
+    0x009d_db50,
+    0x009d_db60,
+    0x009d_db70,
+    0x009d_db80,
+    0x009d_db90,
+    0x009d_dba0,
+    0x009d_dbb0,
+    0x009d_dbc0,
+    0x009d_dbd0,
+    0x009d_dbe0,
+    0x009d_dbf0,
+    0x009d_dc00,
+    0x009d_dc10,
+    0x009d_dc20,
+    0x009d_dc30,
+    0x009d_dc40,
+    0x009d_dc50,
+    0x009d_dc60,
+    0x009d_dc70,
+    0x009d_dc80,
+    0x009d_dc90,
+    0x009d_dca0,
+    0x009d_dcb0,
+    0x009d_dcc0,
+    0x009d_dcd0,
+];
+
+/// Cdecl `a + b`.
+pub const ADD2: [u32; 10] = [
+    0x0061_e740,
+    0x0063_31a0,
+    0x0069_c4b0,
+    0x0069_c4d0,
+    0x006e_45c0,
+    0x006f_5370,
+    0x006f_5a00,
+    0x0070_2fd0,
+    0x009d_dce0,
+    0x009d_dcf0,
+];
+
+/// Cdecl `a + (b as u16)`.
+pub const ADD_U16: [u32; 6] = [
+    0x0063_31b0,
+    0x0069_c4c0,
+    0x006e_45d0,
+    0x006f_5380,
+    0x006f_5750,
+    0x0070_2fe0,
+];
+
+/// Cdecl `a + (b as u8)`.
+pub const ADD_U8: [u32; 3] = [0x0060_ab90, 0x0061_d120, 0x0069_c4e0];
+
+/// `xor eax, eax; ret 4`: one stack argument, 0.
+pub const ZERO_RET4: [u32; 5] = [
+    0x0067_65c0,
+    0x0067_7060,
+    0x0067_7c20,
+    0x0067_8b40,
+    0x00a4_2360,
+];
+
+/// `thiscall(this, v, _)`, `ret 8`: `*this = v`, returns `this`.
+pub const STORE0_RET_THIS: [u32; 9] = [
+    0x0063_38e0,
+    0x0063_38f0,
+    0x0063_3900,
+    0x0063_3910,
+    0x0063_3920,
+    0x0063_3930,
+    0x0063_3940,
+    0x0063_3950,
+    0x0063_3960,
+];
+
+/// `thiscall(this, p)`, `ret 4`: `*p = *this`, returns `p`.
+pub const COPY_THIS_TO_P: [u32; 4] = [0x0068_6ce0, 0x0068_6e80, 0x0069_af30, 0x006f_3fe0];
+
+/// `thiscall(this, p)`, `ret 4`: `*p = this[1]`, returns `p`.
+pub const COPY_THIS4_TO_P: [u32; 2] = [0x006f_4090, 0x006f_40a0];
+
+/// `thiscall(this, v)`, `ret 4`: `this[2] = v`, returns `v`.
+pub const STORE8_RET_V: [u32; 2] = [0x0064_7bb0, 0x006f_c340];
+
+/// `thiscall(this, i)`, `ret 4`: `this[2] + 4 i`.
+pub const INDEX4_AT8: [u32; 4] = [0x0069_0bd0, 0x0069_0be0, 0x0069_0bf0, 0x0069_0c00];
+
+/// `thiscall(this, i)`, `ret 4`: `this[1] + 4 i`.
+pub const INDEX4_AT4: [u32; 3] = [0x009e_2cb0, 0x009e_2cc0, 0x009e_2cd0];
+
+/// `thiscall(this, i)`, `ret 4`: `this[2] + 8 i`.
+pub const INDEX8_AT8: [u32; 2] = [0x0063_1170, 0x0063_1180];
+
+/// Cdecl word-global setters `(function, global)`: store `v`, return it.
+pub const WORD_SETTERS2: [(u32, u32); 12] = [
+    (0x0061_9e70, 0x00cc_9a38),
+    (0x0064_8680, 0x00cc_b9a0),
+    (0x0069_1b50, 0x00cc_c890),
+    (0x0069_1b60, 0x00cc_c894),
+    (0x0076_65a0, 0x0230_5844),
+    (0x0076_65b0, 0x0230_5840),
+    (0x0077_5810, 0x0112_a018),
+    (0x0089_bc50, 0x00c5_8ef8),
+    (0x008a_b570, 0x00c5_9f38),
+    (0x008b_e9b0, 0x00c5_a084),
+    (0x009d_a790, 0x00c6_4ca4),
+    (0x009d_afd0, 0x0193_fdac),
+];
+
+/// Cdecl byte-global setters `(function, global)`.
+pub const BYTE_SETTERS: [(u32, u32); 4] = [
+    (0x0082_1a20, 0x012f_b8fb),
+    (0x0082_1a30, 0x012f_b8fc),
+    (0x0089_a850, 0x0133_d782),
+    (0x0089_bc60, 0x00c5_8ef4),
+];
+
 /// The value in a `(function, value)` table.
 #[must_use]
 pub const fn lookup(table: &[(u32, u32)], function: u32) -> u32 {
@@ -543,5 +671,116 @@ pub mod bridge {
             i += 1;
         }
         if size == 0x1c && i > 0 { dst } else { result }
+    }
+
+    /// `0x006fbdc0(base, n)`: `n` 0x18-byte records reset (a null one
+    /// skipped): byte `+0` 0, floats `+8..+0x18` 0.0. Returns the last
+    /// record's `+0xc` slot address minus 0xc, as `eax` ends (the last
+    /// record).
+    pub fn reset_records_18(mem: &mut impl Mem, base: u32, n: u32) -> u32 {
+        let mut rec = base;
+        let mut last = 0;
+        for _ in 0..n {
+            last = rec;
+            if rec != 0 {
+                mem.write(rec.wrapping_add(8), 0.0f32);
+                mem.write(rec, 0u8);
+                mem.write(rec.wrapping_add(0xc), [0.0f32; 3]);
+            }
+            rec = rec.wrapping_add(0x18);
+        }
+        last
+    }
+
+    /// `0x006473d0(p)`: the 16-bit halves of `p[0..0x200]` and
+    /// `p[0x300..0x340]` byte-swapped; returns 0x340.
+    pub fn swap_halves(mem: &mut impl Mem, p: u32) -> u32 {
+        for (from, to) in [(0u32, 0x200u32), (0x300, 0x340)] {
+            for at in (from..to).step_by(2) {
+                let v: u16 = mem.read(p + at);
+                mem.write(p + at, v.swap_bytes());
+            }
+        }
+        0x340
+    }
+
+    fn swap16(mem: &mut impl Mem, p: u32, from: u32, to: u32) {
+        for at in (from..to).step_by(2) {
+            let v: u16 = mem.read(p + at);
+            mem.write(p + at, v.swap_bytes());
+        }
+    }
+
+    fn swap32(mem: &mut impl Mem, p: u32, from: u32, to: u32) {
+        for at in (from..to).step_by(4) {
+            let v: u32 = mem.read(p + at);
+            mem.write(p + at, v.swap_bytes());
+        }
+    }
+
+    /// `0x00647220(p)`: halves of `p[0xf00..0xf10]` and words of
+    /// `p[0xf10..0xf18]` byte-swapped; returns 0x1320.
+    pub fn swap_header_f00(mem: &mut impl Mem, p: u32) -> u32 {
+        swap16(mem, p, 0xf00, 0xf10);
+        swap32(mem, p, 0xf10, 0xf18);
+        0x1320
+    }
+
+    /// `0x00647560(p)`: words of `p[0..0x10]`, halves of `p[0x24..0x54]`,
+    /// words of `p[0x5c..0x84]` byte-swapped; returns 0x84.
+    pub fn swap_header_84(mem: &mut impl Mem, p: u32) -> u32 {
+        swap32(mem, p, 0, 0x10);
+        swap16(mem, p, 0x24, 0x54);
+        swap32(mem, p, 0x5c, 0x84);
+        0x84
+    }
+
+    /// `0x00687190(a, b)` (`thiscall`, `ret 8`): `+0` `a`, `+8` `b`, the
+    /// other words to `+0x40` zeroed; returns `this`.
+    pub fn init_68(mem: &mut impl Mem, this: u32, a: u32, b: u32) -> u32 {
+        mem.write(this, a);
+        mem.write(this.wrapping_add(8), b);
+        mem.write(this.wrapping_add(4), 0u32);
+        for off in (0xc..=0x40).step_by(4) {
+            mem.write(this.wrapping_add(off), 0u32);
+        }
+        this
+    }
+
+    /// `0x0061d730(a, b)` (stdcall, `ret 8`): two pairs of signed 64-bit
+    /// values compared in order: -1, 0 or 1.
+    pub fn compare_i64_pairs(mem: &impl Mem, a: u32, b: u32) -> i32 {
+        let x: [i64; 2] = [mem.read(a), mem.read(a.wrapping_add(8))];
+        let y: [i64; 2] = [mem.read(b), mem.read(b.wrapping_add(8))];
+        match x.cmp(&y) {
+            std::cmp::Ordering::Less => -1,
+            std::cmp::Ordering::Equal => 0,
+            std::cmp::Ordering::Greater => 1,
+        }
+    }
+
+    /// A setter of [`super::WORD_SETTERS2`]: stores `v`, returns it.
+    pub fn set_word_global2(mem: &mut impl Mem, function: u32, v: u32) -> u32 {
+        Global::<u32>::new(super::lookup(&super::WORD_SETTERS2, function)).set(mem, v);
+        v
+    }
+
+    /// A setter of [`super::BYTE_SETTERS`].
+    pub fn set_byte_global(mem: &mut impl Mem, function: u32, v: u8) {
+        Global::<u8>::new(super::lookup(&super::BYTE_SETTERS, function)).set(mem, v);
+    }
+
+    /// [`super::COPY_THIS_TO_P`] (`at` 0) and [`super::COPY_THIS4_TO_P`]
+    /// (`at` 4): `*p = this[at / 4]`; returns `p`.
+    pub fn copy_member_to(mem: &mut impl Mem, this: u32, at: u32, p: u32) -> u32 {
+        let v: u32 = mem.read(this.wrapping_add(at));
+        mem.write(p, v);
+        p
+    }
+
+    /// The `INDEX*` tables: `*(this + at) + i * scale`.
+    pub fn index_member(mem: &impl Mem, this: u32, at: u32, i: u32, scale: u32) -> u32 {
+        mem.read::<u32>(this.wrapping_add(at))
+            .wrapping_add(i.wrapping_mul(scale))
     }
 }

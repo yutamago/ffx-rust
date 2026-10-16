@@ -323,4 +323,37 @@ pub mod bridge {
         );
         u32::try_from(text.len()).unwrap_or(u32::MAX)
     }
+
+    /// `VFile::fileSeek(offset, whence)` (`0x0061ac30`, `thiscall`, `ret 8`):
+    /// the 64-bit position (`+0x10`) set from the start (0), the current
+    /// position (1) or the end (2, the size at `*(this + 0xc) + 8`); -1 for
+    /// another `whence` (nothing moved), a negative `offset` or an `offset`
+    /// past the size (both after moving). Returns the position's low word.
+    /// (The bound is checked on `offset` itself, as the original does.)
+    pub fn vfile_seek(mem: &mut impl Mem, this: u32, offset: i32, whence: u32) -> u32 {
+        let off = i64::from(offset);
+        let at = this.wrapping_add(0x10);
+        let entry: u32 = mem.read(this.wrapping_add(0xc));
+        match whence {
+            0 => mem.write(at, off.cast_unsigned()),
+            1 => {
+                let pos: u64 = mem.read(at);
+                mem.write(at, pos.wrapping_add(off.cast_unsigned()));
+            }
+            2 => {
+                let size: u64 = mem.read(entry.wrapping_add(8));
+                mem.write(at, size.wrapping_sub(off.cast_unsigned()));
+            }
+            _ => return u32::MAX,
+        }
+        if offset < 0 {
+            return u32::MAX;
+        }
+        let entry: u32 = mem.read(this.wrapping_add(0xc));
+        let size: u64 = mem.read(entry.wrapping_add(8));
+        if off.cast_unsigned() > size {
+            return u32::MAX;
+        }
+        mem.read(at)
+    }
 }

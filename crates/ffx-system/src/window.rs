@@ -685,4 +685,63 @@ pub mod bridge {
         }
         last
     }
+
+    /// `0x009047f0(p, k, r, g, b, a)`: corner `k` (0..=3) of a G4 quad's
+    /// colours (bytes `+0x10 + k`, `+0x14 + k`, `+0x18 + k`, `+0x1c + k`), or
+    /// all four corners for a larger `k`.
+    pub fn set_quad_rgba(mem: &mut impl Mem, p: u32, k: u32, rgba: [u8; 4]) {
+        for (c, v) in (0u32..).zip(rgba) {
+            let at = p.wrapping_add(0x10 + 4 * c);
+            if k <= 3 {
+                mem.write(at.wrapping_add(k), v);
+            } else {
+                mem.write(at, [v; 4]);
+            }
+        }
+    }
+
+    /// `0x008b8b20(i, x, y, w, h)`: message window `i`'s area: halves `+0x40`
+    /// `w`, `+0x42` `h`, floats `+0x30` `x`, `+0x34` `y`, `+0x38` `x + w`,
+    /// `+0x3c` `y + h`.
+    #[allow(clippy::cast_precision_loss)] // fild then fstp dword
+    pub fn set_message_area(mem: &mut impl Mem, i: i32, r: [i32; 4]) {
+        let m = entry(mem, MSG_WINDOWS, i);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 16-bit stores
+        {
+            mem.write(m.wrapping_add(0x40), r[2] as u16);
+            mem.write(m.wrapping_add(0x42), r[3] as u16);
+        }
+        let f = [r[0], r[1], r[0].wrapping_add(r[2]), r[1].wrapping_add(r[3])];
+        mem.write(m.wrapping_add(0x30), f.map(|v| v as f32));
+    }
+
+    /// `0x00900f80(i, x, y, d)`: entry `i` (below 16) of [`ENTRIES_18762E0`]
+    /// moved to `(x, y)` (halves `+2`, `+4`; `+0` 1) unless it is already
+    /// there; unless its `+0xe` is 1, it restarts: `+8` 0, `+6` `d`, `+0xc`
+    /// `d / 14 + 2`.
+    #[allow(clippy::many_single_char_names)] // the original's parameters
+    pub fn move_entry_18762e0(mem: &mut impl Mem, i: i32, x: i32, y: i32, d: i32) {
+        if i >= 16 {
+            return;
+        }
+        let e = ENTRIES_18762E0
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.cast_unsigned() << 4);
+        if x == i32::from(mem.read::<i16>(e + 2)) && y == i32::from(mem.read::<i16>(e + 4)) {
+            return;
+        }
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 16-bit stores
+        {
+            mem.write(e, 1u16);
+            mem.write(e + 2, x as u16);
+            mem.write(e + 4, y as u16);
+            if mem.read::<u16>(e + 0xe) == 1 {
+                return;
+            }
+            mem.write(e + 8, 0u32);
+            mem.write(e + 6, d as u16);
+            mem.write(e + 0xc, (d / 14 + 2) as u16);
+        }
+    }
 }

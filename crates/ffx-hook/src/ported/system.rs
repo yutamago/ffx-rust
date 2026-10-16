@@ -75,6 +75,17 @@ fn get_file_size_ex<M>(_mem: &mut M, handle: u32) -> Option<u64> {
     (ok != 0).then_some(size)
 }
 
+/// `Phyre::PRedBlackTree::remove(node)` (`0x00575000`, thiscall, `ret 4`),
+/// the engine's, not ported here.
+fn red_black_remove<M>(_mem: &mut M, tree: u32, node: u32) {
+    // SAFETY: the engine's thiscall tree removal.
+    unsafe {
+        let f: unsafe extern "thiscall" fn(u32, u32) =
+            std::mem::transmute(crate::rebase(0x0057_5000));
+        f(tree, node);
+    }
+}
+
 /// The heap's Win32 calls, through the game's own import slots (so they are
 /// the calls the originals make, to the same critical sections).
 struct GameOs;
@@ -179,6 +190,22 @@ impl heap::Os for GameOs {
     fn mem_system_init(&mut self) {
         // the original slow path of 0x009428a0 (cdecl, no arguments)
         call0(0x0094_28b0);
+    }
+    fn wait_for_single_object(&mut self, handle: u32, ms: u32) -> u32 {
+        // SAFETY: WaitForSingleObject, stdcall.
+        unsafe {
+            let f: unsafe extern "stdcall" fn(u32, u32) -> u32 =
+                std::mem::transmute(Self::import(0x00b0_c0f8));
+            f(handle, ms)
+        }
+    }
+    fn release_mutex(&mut self, handle: u32) -> u32 {
+        // SAFETY: ReleaseMutex, stdcall.
+        unsafe {
+            let f: unsafe extern "stdcall" fn(u32) -> u32 =
+                std::mem::transmute(Self::import(0x00b0_c1c0));
+            f(handle)
+        }
     }
 }
 
@@ -2383,6 +2410,487 @@ ported! {
     /// `get_hdd_name(n)`.
     get_hdd_name @ 0x0077_7eb0 => extern "C" fn get_hdd_name(n: i32) -> u32 {
         cd::bridge::get_hdd_name(&mut mem(), n)
+    }
+    /// `AllocTracker_Release(p)`.
+    AllocTracker_Release @ 0x0063_0a60 => extern "C" fn alloc_tracker_release(p: u32) {
+        heap::tracker_release(&mut mem(), &mut GameOs, p, red_black_remove);
+    }
+    /// `operator delete(p)`.
+    operator_delete @ 0x0063_0390 => extern "C" fn operator_delete(p: u32) {
+        heap::operator_delete(&mut mem(), &mut GameOs, p, red_black_remove);
+    }
+    /// `operator delete[](p)`.
+    operator_delete_00630540 @ 0x0063_0540 => extern "C" fn operator_delete_array(p: u32) {
+        heap::operator_delete_array(&mut mem(), &mut GameOs, p, red_black_remove);
+    }
+    /// `ResetRecords18_006fbdc0`.
+    ResetRecords18_006fbdc0 @ 0x006f_bdc0 => extern "C" fn resetrecords18_006fbdc0(base: u32, n: u32) -> u32 {
+        accessor::bridge::reset_records_18(&mut mem(), base, n)
+    }
+    /// `SwapHalves_006473d0`.
+    SwapHalves_006473d0 @ 0x0064_73d0 => extern "C" fn swaphalves_006473d0(p: u32) -> u32 {
+        accessor::bridge::swap_halves(&mut mem(), p)
+    }
+    /// `TouchRecord_Reset`.
+    TouchRecord_Reset @ 0x0068_9510 => extern "thiscall" fn touchrecord_reset(this: u32) -> u32 {
+        pad::bridge::touch_record_reset(&mut mem(), this)
+    }
+    /// `MapFindU32_00691dc0`.
+    MapFindU32_00691dc0 @ 0x0069_1dc0 => extern "thiscall" fn mapfindu32_00691dc0(this: u32, key: u32) -> u32 {
+        stl::bridge::map_find_u32(&mem(), this, key)
+    }
+    /// `TOSeqClearSlots_008adf20`.
+    TOSeqClearSlots_008adf20 @ 0x008a_df20 => extern "C" fn toseqclearslots_008adf20() -> u32 {
+        scene::bridge::clear_slots(&mut mem())
+    }
+    /// `TOSeqGetSceneState_008ae530`.
+    TOSeqGetSceneState_008ae530 @ 0x008a_e530 => extern "C" fn toseqgetscenestate_008ae530(i: i32, name: u32) -> i32 {
+        scene::bridge::scene_state(&mem(), i, name)
+    }
+    /// `TOSetQuadRGBA_009047f0`.
+    TOSetQuadRGBA_009047f0 @ 0x0090_47f0 => extern "C" fn tosetquadrgba_009047f0(p: u32, k: u32, r: u8, g: u8, b: u8, a: u8) {
+        window::bridge::set_quad_rgba(&mut mem(), p, k, [r, g, b, a]);
+    }
+    /// `TOSetMessageArea_008b8b20`.
+    TOSetMessageArea_008b8b20 @ 0x008b_8b20 => extern "C" fn tosetmessagearea_008b8b20(i: i32, x: i32, y: i32, w: i32, h: i32) {
+        window::bridge::set_message_area(&mut mem(), i, [x, y, w, h]);
+    }
+    /// `VFile_fileSeek`.
+    VFile_fileSeek @ 0x0061_ac30 => extern "thiscall" fn vfile_fileseek(this: u32, offset: i32, whence: u32) -> u32 {
+        files::bridge::vfile_seek(&mut mem(), this, offset, whence)
+    }
+    /// `SwapHeaderF00_00647220`.
+    SwapHeaderF00_00647220 @ 0x0064_7220 => extern "C" fn swapheaderf00_00647220(p: u32) -> u32 {
+        accessor::bridge::swap_header_f00(&mut mem(), p)
+    }
+    /// `SwapHeader84_00647560`.
+    SwapHeader84_00647560 @ 0x0064_7560 => extern "C" fn swapheader84_00647560(p: u32) -> u32 {
+        accessor::bridge::swap_header_84(&mut mem(), p)
+    }
+    /// `Init68_00687190`.
+    Init68_00687190 @ 0x0068_7190 => extern "thiscall" fn init68_00687190(this: u32, x: u32, y: u32) -> u32 {
+        accessor::bridge::init_68(&mut mem(), this, x, y)
+    }
+    /// `CompareI64Pairs_0061d730`.
+    CompareI64Pairs_0061d730 @ 0x0061_d730 => extern "stdcall" fn comparei64pairs_0061d730(x: u32, y: u32) -> i32 {
+        accessor::bridge::compare_i64_pairs(&mem(), x, y)
+    }
+    /// `TaggedTreeInsert_0060c990`.
+    TaggedTreeInsert_0060c990 @ 0x0060_c990 => extern "thiscall" fn taggedtreeinsert_0060c990(this: u32, node: u32) -> u32 {
+        stl::bridge::tagged_tree_insert(&mut mem(), this, node)
+    }
+    /// `TaggedTreeInsert_00691e60`.
+    TaggedTreeInsert_00691e60 @ 0x0069_1e60 => extern "thiscall" fn taggedtreeinsert_00691e60(this: u32, node: u32) -> u32 {
+        stl::bridge::tagged_tree_insert(&mut mem(), this, node)
+    }
+    /// `TOMoveEntry_00900f80`.
+    TOMoveEntry_00900f80 @ 0x0090_0f80 => extern "C" fn tomoveentry_00900f80(i: i32, x: i32, y: i32, d: i32) {
+        window::bridge::move_entry_18762e0(&mut mem(), i, x, y, d);
+    }
+    /// `Difference_0061e6f0`.
+    Difference_0061e6f0 @ 0x0061_e6f0 => extern "C" fn difference_0061e6f0(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_0061e700`.
+    Difference_0061e700 @ 0x0061_e700 => extern "C" fn difference_0061e700(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_00675c70`.
+    Difference_00675c70 @ 0x0067_5c70 => extern "C" fn difference_00675c70(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_00676960`.
+    Difference_00676960 @ 0x0067_6960 => extern "C" fn difference_00676960(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_006772d0`.
+    Difference_006772d0 @ 0x0067_72d0 => extern "C" fn difference_006772d0(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_00678010`.
+    Difference_00678010 @ 0x0067_8010 => extern "C" fn difference_00678010(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddb30`.
+    Difference_009ddb30 @ 0x009d_db30 => extern "C" fn difference_009ddb30(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddb40`.
+    Difference_009ddb40 @ 0x009d_db40 => extern "C" fn difference_009ddb40(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddb50`.
+    Difference_009ddb50 @ 0x009d_db50 => extern "C" fn difference_009ddb50(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddb60`.
+    Difference_009ddb60 @ 0x009d_db60 => extern "C" fn difference_009ddb60(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddb70`.
+    Difference_009ddb70 @ 0x009d_db70 => extern "C" fn difference_009ddb70(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddb80`.
+    Difference_009ddb80 @ 0x009d_db80 => extern "C" fn difference_009ddb80(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddb90`.
+    Difference_009ddb90 @ 0x009d_db90 => extern "C" fn difference_009ddb90(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddba0`.
+    Difference_009ddba0 @ 0x009d_dba0 => extern "C" fn difference_009ddba0(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddbb0`.
+    Difference_009ddbb0 @ 0x009d_dbb0 => extern "C" fn difference_009ddbb0(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddbc0`.
+    Difference_009ddbc0 @ 0x009d_dbc0 => extern "C" fn difference_009ddbc0(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddbd0`.
+    Difference_009ddbd0 @ 0x009d_dbd0 => extern "C" fn difference_009ddbd0(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddbe0`.
+    Difference_009ddbe0 @ 0x009d_dbe0 => extern "C" fn difference_009ddbe0(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddbf0`.
+    Difference_009ddbf0 @ 0x009d_dbf0 => extern "C" fn difference_009ddbf0(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddc00`.
+    Difference_009ddc00 @ 0x009d_dc00 => extern "C" fn difference_009ddc00(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddc10`.
+    Difference_009ddc10 @ 0x009d_dc10 => extern "C" fn difference_009ddc10(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddc20`.
+    Difference_009ddc20 @ 0x009d_dc20 => extern "C" fn difference_009ddc20(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddc30`.
+    Difference_009ddc30 @ 0x009d_dc30 => extern "C" fn difference_009ddc30(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddc40`.
+    Difference_009ddc40 @ 0x009d_dc40 => extern "C" fn difference_009ddc40(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddc50`.
+    Difference_009ddc50 @ 0x009d_dc50 => extern "C" fn difference_009ddc50(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddc60`.
+    Difference_009ddc60 @ 0x009d_dc60 => extern "C" fn difference_009ddc60(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddc70`.
+    Difference_009ddc70 @ 0x009d_dc70 => extern "C" fn difference_009ddc70(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddc80`.
+    Difference_009ddc80 @ 0x009d_dc80 => extern "C" fn difference_009ddc80(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddc90`.
+    Difference_009ddc90 @ 0x009d_dc90 => extern "C" fn difference_009ddc90(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddca0`.
+    Difference_009ddca0 @ 0x009d_dca0 => extern "C" fn difference_009ddca0(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddcb0`.
+    Difference_009ddcb0 @ 0x009d_dcb0 => extern "C" fn difference_009ddcb0(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddcc0`.
+    Difference_009ddcc0 @ 0x009d_dcc0 => extern "C" fn difference_009ddcc0(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Difference_009ddcd0`.
+    Difference_009ddcd0 @ 0x009d_dcd0 => extern "C" fn difference_009ddcd0(x: u32, y: u32) -> u32 {
+        accessor::difference(x, y)
+    }
+    /// `Add_0061e740`.
+    Add_0061e740 @ 0x0061_e740 => extern "C" fn add_0061e740(x: u32, y: u32) -> u32 {
+        accessor::add(x, y)
+    }
+    /// `Add_006331a0`.
+    Add_006331a0 @ 0x0063_31a0 => extern "C" fn add_006331a0(x: u32, y: u32) -> u32 {
+        accessor::add(x, y)
+    }
+    /// `Add_0069c4b0`.
+    Add_0069c4b0 @ 0x0069_c4b0 => extern "C" fn add_0069c4b0(x: u32, y: u32) -> u32 {
+        accessor::add(x, y)
+    }
+    /// `Add_0069c4d0`.
+    Add_0069c4d0 @ 0x0069_c4d0 => extern "C" fn add_0069c4d0(x: u32, y: u32) -> u32 {
+        accessor::add(x, y)
+    }
+    /// `Add_006e45c0`.
+    Add_006e45c0 @ 0x006e_45c0 => extern "C" fn add_006e45c0(x: u32, y: u32) -> u32 {
+        accessor::add(x, y)
+    }
+    /// `Add_006f5370`.
+    Add_006f5370 @ 0x006f_5370 => extern "C" fn add_006f5370(x: u32, y: u32) -> u32 {
+        accessor::add(x, y)
+    }
+    /// `Add_006f5a00`.
+    Add_006f5a00 @ 0x006f_5a00 => extern "C" fn add_006f5a00(x: u32, y: u32) -> u32 {
+        accessor::add(x, y)
+    }
+    /// `Add_00702fd0`.
+    Add_00702fd0 @ 0x0070_2fd0 => extern "C" fn add_00702fd0(x: u32, y: u32) -> u32 {
+        accessor::add(x, y)
+    }
+    /// `Add_009ddce0`.
+    Add_009ddce0 @ 0x009d_dce0 => extern "C" fn add_009ddce0(x: u32, y: u32) -> u32 {
+        accessor::add(x, y)
+    }
+    /// `Add_009ddcf0`.
+    Add_009ddcf0 @ 0x009d_dcf0 => extern "C" fn add_009ddcf0(x: u32, y: u32) -> u32 {
+        accessor::add(x, y)
+    }
+    /// `AddU16_006331b0`.
+    AddU16_006331b0 @ 0x0063_31b0 => extern "C" fn addu16_006331b0(x: u32, y: u32) -> u32 {
+        accessor::add(x, y & 0xffff)
+    }
+    /// `AddU16_0069c4c0`.
+    AddU16_0069c4c0 @ 0x0069_c4c0 => extern "C" fn addu16_0069c4c0(x: u32, y: u32) -> u32 {
+        accessor::add(x, y & 0xffff)
+    }
+    /// `AddU16_006e45d0`.
+    AddU16_006e45d0 @ 0x006e_45d0 => extern "C" fn addu16_006e45d0(x: u32, y: u32) -> u32 {
+        accessor::add(x, y & 0xffff)
+    }
+    /// `AddU16_006f5380`.
+    AddU16_006f5380 @ 0x006f_5380 => extern "C" fn addu16_006f5380(x: u32, y: u32) -> u32 {
+        accessor::add(x, y & 0xffff)
+    }
+    /// `AddU16_006f5750`.
+    AddU16_006f5750 @ 0x006f_5750 => extern "C" fn addu16_006f5750(x: u32, y: u32) -> u32 {
+        accessor::add(x, y & 0xffff)
+    }
+    /// `AddU16_00702fe0`.
+    AddU16_00702fe0 @ 0x0070_2fe0 => extern "C" fn addu16_00702fe0(x: u32, y: u32) -> u32 {
+        accessor::add(x, y & 0xffff)
+    }
+    /// `AddU8_0060ab90`.
+    AddU8_0060ab90 @ 0x0060_ab90 => extern "C" fn addu8_0060ab90(x: u32, y: u32) -> u32 {
+        accessor::add(x, y & 0xff)
+    }
+    /// `AddU8_0061d120`.
+    AddU8_0061d120 @ 0x0061_d120 => extern "C" fn addu8_0061d120(x: u32, y: u32) -> u32 {
+        accessor::add(x, y & 0xff)
+    }
+    /// `AddU8_0069c4e0`.
+    AddU8_0069c4e0 @ 0x0069_c4e0 => extern "C" fn addu8_0069c4e0(x: u32, y: u32) -> u32 {
+        accessor::add(x, y & 0xff)
+    }
+    /// `ReturnZeroStd_006765c0`.
+    ReturnZeroStd_006765c0 @ 0x0067_65c0 => extern "stdcall" fn returnzerostd_006765c0(_x: u32) -> u32 {
+        0
+    }
+    /// `ReturnZeroStd_00677060`.
+    ReturnZeroStd_00677060 @ 0x0067_7060 => extern "stdcall" fn returnzerostd_00677060(_x: u32) -> u32 {
+        0
+    }
+    /// `ReturnZeroStd_00677c20`.
+    ReturnZeroStd_00677c20 @ 0x0067_7c20 => extern "stdcall" fn returnzerostd_00677c20(_x: u32) -> u32 {
+        0
+    }
+    /// `ReturnZeroStd_00678b40`.
+    ReturnZeroStd_00678b40 @ 0x0067_8b40 => extern "stdcall" fn returnzerostd_00678b40(_x: u32) -> u32 {
+        0
+    }
+    /// `ReturnZeroStd_00a42360`.
+    ReturnZeroStd_00a42360 @ 0x00a4_2360 => extern "stdcall" fn returnzerostd_00a42360(_x: u32) -> u32 {
+        0
+    }
+    /// `StoreRetThis_006338e0`.
+    StoreRetThis_006338e0 @ 0x0063_38e0 => extern "thiscall" fn storeretthis_006338e0(this: u32, v: u32, _unused: u32) -> u32 {
+        accessor::bridge::set_member(&mut mem(), this, 0, v);
+        this
+    }
+    /// `StoreRetThis_006338f0`.
+    StoreRetThis_006338f0 @ 0x0063_38f0 => extern "thiscall" fn storeretthis_006338f0(this: u32, v: u32, _unused: u32) -> u32 {
+        accessor::bridge::set_member(&mut mem(), this, 0, v);
+        this
+    }
+    /// `StoreRetThis_00633900`.
+    StoreRetThis_00633900 @ 0x0063_3900 => extern "thiscall" fn storeretthis_00633900(this: u32, v: u32, _unused: u32) -> u32 {
+        accessor::bridge::set_member(&mut mem(), this, 0, v);
+        this
+    }
+    /// `StoreRetThis_00633910`.
+    StoreRetThis_00633910 @ 0x0063_3910 => extern "thiscall" fn storeretthis_00633910(this: u32, v: u32, _unused: u32) -> u32 {
+        accessor::bridge::set_member(&mut mem(), this, 0, v);
+        this
+    }
+    /// `StoreRetThis_00633920`.
+    StoreRetThis_00633920 @ 0x0063_3920 => extern "thiscall" fn storeretthis_00633920(this: u32, v: u32, _unused: u32) -> u32 {
+        accessor::bridge::set_member(&mut mem(), this, 0, v);
+        this
+    }
+    /// `StoreRetThis_00633930`.
+    StoreRetThis_00633930 @ 0x0063_3930 => extern "thiscall" fn storeretthis_00633930(this: u32, v: u32, _unused: u32) -> u32 {
+        accessor::bridge::set_member(&mut mem(), this, 0, v);
+        this
+    }
+    /// `StoreRetThis_00633940`.
+    StoreRetThis_00633940 @ 0x0063_3940 => extern "thiscall" fn storeretthis_00633940(this: u32, v: u32, _unused: u32) -> u32 {
+        accessor::bridge::set_member(&mut mem(), this, 0, v);
+        this
+    }
+    /// `StoreRetThis_00633950`.
+    StoreRetThis_00633950 @ 0x0063_3950 => extern "thiscall" fn storeretthis_00633950(this: u32, v: u32, _unused: u32) -> u32 {
+        accessor::bridge::set_member(&mut mem(), this, 0, v);
+        this
+    }
+    /// `StoreRetThis_00633960`.
+    StoreRetThis_00633960 @ 0x0063_3960 => extern "thiscall" fn storeretthis_00633960(this: u32, v: u32, _unused: u32) -> u32 {
+        accessor::bridge::set_member(&mut mem(), this, 0, v);
+        this
+    }
+    /// `CopyThisTo_00686ce0`.
+    CopyThisTo_00686ce0 @ 0x0068_6ce0 => extern "thiscall" fn copythisto_00686ce0(this: u32, p: u32) -> u32 {
+        accessor::bridge::copy_member_to(&mut mem(), this, 0, p)
+    }
+    /// `CopyThisTo_00686e80`.
+    CopyThisTo_00686e80 @ 0x0068_6e80 => extern "thiscall" fn copythisto_00686e80(this: u32, p: u32) -> u32 {
+        accessor::bridge::copy_member_to(&mut mem(), this, 0, p)
+    }
+    /// `CopyThisTo_0069af30`.
+    CopyThisTo_0069af30 @ 0x0069_af30 => extern "thiscall" fn copythisto_0069af30(this: u32, p: u32) -> u32 {
+        accessor::bridge::copy_member_to(&mut mem(), this, 0, p)
+    }
+    /// `CopyThisTo_006f3fe0`.
+    CopyThisTo_006f3fe0 @ 0x006f_3fe0 => extern "thiscall" fn copythisto_006f3fe0(this: u32, p: u32) -> u32 {
+        accessor::bridge::copy_member_to(&mut mem(), this, 0, p)
+    }
+    /// `CopyThis4To_006f4090`.
+    CopyThis4To_006f4090 @ 0x006f_4090 => extern "thiscall" fn copythis4to_006f4090(this: u32, p: u32) -> u32 {
+        accessor::bridge::copy_member_to(&mut mem(), this, 4, p)
+    }
+    /// `CopyThis4To_006f40a0`.
+    CopyThis4To_006f40a0 @ 0x006f_40a0 => extern "thiscall" fn copythis4to_006f40a0(this: u32, p: u32) -> u32 {
+        accessor::bridge::copy_member_to(&mut mem(), this, 4, p)
+    }
+    /// `SetMember8_00647bb0`.
+    SetMember8_00647bb0 @ 0x0064_7bb0 => extern "thiscall" fn setmember8_00647bb0(this: u32, v: u32) -> u32 {
+        accessor::bridge::set_member(&mut mem(), this, 8, v)
+    }
+    /// `SetMember8_006fc340`.
+    SetMember8_006fc340 @ 0x006f_c340 => extern "thiscall" fn setmember8_006fc340(this: u32, v: u32) -> u32 {
+        accessor::bridge::set_member(&mut mem(), this, 8, v)
+    }
+    /// `Index4At8_00690bd0`.
+    Index4At8_00690bd0 @ 0x0069_0bd0 => extern "thiscall" fn index4at8_00690bd0(this: u32, i: u32) -> u32 {
+        accessor::bridge::index_member(&mem(), this, 8, i, 4)
+    }
+    /// `Index4At8_00690be0`.
+    Index4At8_00690be0 @ 0x0069_0be0 => extern "thiscall" fn index4at8_00690be0(this: u32, i: u32) -> u32 {
+        accessor::bridge::index_member(&mem(), this, 8, i, 4)
+    }
+    /// `Index4At8_00690bf0`.
+    Index4At8_00690bf0 @ 0x0069_0bf0 => extern "thiscall" fn index4at8_00690bf0(this: u32, i: u32) -> u32 {
+        accessor::bridge::index_member(&mem(), this, 8, i, 4)
+    }
+    /// `Index4At8_00690c00`.
+    Index4At8_00690c00 @ 0x0069_0c00 => extern "thiscall" fn index4at8_00690c00(this: u32, i: u32) -> u32 {
+        accessor::bridge::index_member(&mem(), this, 8, i, 4)
+    }
+    /// `Index4At4_009e2cb0`.
+    Index4At4_009e2cb0 @ 0x009e_2cb0 => extern "thiscall" fn index4at4_009e2cb0(this: u32, i: u32) -> u32 {
+        accessor::bridge::index_member(&mem(), this, 4, i, 4)
+    }
+    /// `Index4At4_009e2cc0`.
+    Index4At4_009e2cc0 @ 0x009e_2cc0 => extern "thiscall" fn index4at4_009e2cc0(this: u32, i: u32) -> u32 {
+        accessor::bridge::index_member(&mem(), this, 4, i, 4)
+    }
+    /// `Index4At4_009e2cd0`.
+    Index4At4_009e2cd0 @ 0x009e_2cd0 => extern "thiscall" fn index4at4_009e2cd0(this: u32, i: u32) -> u32 {
+        accessor::bridge::index_member(&mem(), this, 4, i, 4)
+    }
+    /// `Index8At8_00631170`.
+    Index8At8_00631170 @ 0x0063_1170 => extern "thiscall" fn index8at8_00631170(this: u32, i: u32) -> u32 {
+        accessor::bridge::index_member(&mem(), this, 8, i, 8)
+    }
+    /// `Index8At8_00631180`.
+    Index8At8_00631180 @ 0x0063_1180 => extern "thiscall" fn index8at8_00631180(this: u32, i: u32) -> u32 {
+        accessor::bridge::index_member(&mem(), this, 8, i, 8)
+    }
+    /// `SetGlobal_00cc9a38`.
+    SetGlobal_00cc9a38 @ 0x0061_9e70 => extern "C" fn setglobal_00cc9a38(v: u32) -> u32 {
+        accessor::bridge::set_word_global2(&mut mem(), 0x0061_9e70, v)
+    }
+    /// `SetGlobal_00ccb9a0`.
+    SetGlobal_00ccb9a0 @ 0x0064_8680 => extern "C" fn setglobal_00ccb9a0(v: u32) -> u32 {
+        accessor::bridge::set_word_global2(&mut mem(), 0x0064_8680, v)
+    }
+    /// `SetGlobal_00ccc890`.
+    SetGlobal_00ccc890 @ 0x0069_1b50 => extern "C" fn setglobal_00ccc890(v: u32) -> u32 {
+        accessor::bridge::set_word_global2(&mut mem(), 0x0069_1b50, v)
+    }
+    /// `SetGlobal_00ccc894`.
+    SetGlobal_00ccc894 @ 0x0069_1b60 => extern "C" fn setglobal_00ccc894(v: u32) -> u32 {
+        accessor::bridge::set_word_global2(&mut mem(), 0x0069_1b60, v)
+    }
+    /// `SetGlobal_02305844`.
+    SetGlobal_02305844 @ 0x0076_65a0 => extern "C" fn setglobal_02305844(v: u32) -> u32 {
+        accessor::bridge::set_word_global2(&mut mem(), 0x0076_65a0, v)
+    }
+    /// `SetGlobal_02305840`.
+    SetGlobal_02305840 @ 0x0076_65b0 => extern "C" fn setglobal_02305840(v: u32) -> u32 {
+        accessor::bridge::set_word_global2(&mut mem(), 0x0076_65b0, v)
+    }
+    /// `SetGlobal_0112a018`.
+    SetGlobal_0112a018 @ 0x0077_5810 => extern "C" fn setglobal_0112a018(v: u32) -> u32 {
+        accessor::bridge::set_word_global2(&mut mem(), 0x0077_5810, v)
+    }
+    /// `SetGlobal_00c58ef8`.
+    SetGlobal_00c58ef8 @ 0x0089_bc50 => extern "C" fn setglobal_00c58ef8(v: u32) -> u32 {
+        accessor::bridge::set_word_global2(&mut mem(), 0x0089_bc50, v)
+    }
+    /// `SetGlobal_00c59f38`.
+    SetGlobal_00c59f38 @ 0x008a_b570 => extern "C" fn setglobal_00c59f38(v: u32) -> u32 {
+        accessor::bridge::set_word_global2(&mut mem(), 0x008a_b570, v)
+    }
+    /// `SetGlobal_00c5a084`.
+    SetGlobal_00c5a084 @ 0x008b_e9b0 => extern "C" fn setglobal_00c5a084(v: u32) -> u32 {
+        accessor::bridge::set_word_global2(&mut mem(), 0x008b_e9b0, v)
+    }
+    /// `SetGlobal_00c64ca4`.
+    SetGlobal_00c64ca4 @ 0x009d_a790 => extern "C" fn setglobal_00c64ca4(v: u32) -> u32 {
+        accessor::bridge::set_word_global2(&mut mem(), 0x009d_a790, v)
+    }
+    /// `SetGlobal_0193fdac`.
+    SetGlobal_0193fdac @ 0x009d_afd0 => extern "C" fn setglobal_0193fdac(v: u32) -> u32 {
+        accessor::bridge::set_word_global2(&mut mem(), 0x009d_afd0, v)
+    }
+    /// `SetByte_012fb8fb`.
+    SetByte_012fb8fb @ 0x0082_1a20 => extern "C" fn setbyte_012fb8fb(v: u8) {
+        accessor::bridge::set_byte_global(&mut mem(), 0x0082_1a20, v);
+    }
+    /// `SetByte_012fb8fc`.
+    SetByte_012fb8fc @ 0x0082_1a30 => extern "C" fn setbyte_012fb8fc(v: u8) {
+        accessor::bridge::set_byte_global(&mut mem(), 0x0082_1a30, v);
+    }
+    /// `SetByte_0133d782`.
+    SetByte_0133d782 @ 0x0089_a850 => extern "C" fn setbyte_0133d782(v: u8) {
+        accessor::bridge::set_byte_global(&mut mem(), 0x0089_a850, v);
+    }
+    /// `SetByte_00c58ef4`.
+    SetByte_00c58ef4 @ 0x0089_bc60 => extern "C" fn setbyte_00c58ef4(v: u8) {
+        accessor::bridge::set_byte_global(&mut mem(), 0x0089_bc60, v);
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {

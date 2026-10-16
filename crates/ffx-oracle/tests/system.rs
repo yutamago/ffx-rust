@@ -2386,6 +2386,8 @@ struct TestOs {
     inits: Vec<u32>,
     /// `VirtualAlloc` fails above this size.
     max_size: u32,
+    /// Mutexes waited for and not yet released.
+    waits: Vec<u32>,
 }
 
 impl TestOs {
@@ -2400,6 +2402,7 @@ impl TestOs {
             freed: Vec::new(),
             inits: Vec::new(),
             max_size: u32::MAX,
+            waits: Vec::new(),
         }
     }
 
@@ -2456,6 +2459,28 @@ impl ffx_system::heap::Os for TestOs {
     fn mem_system_init(&mut self) {
         panic!("the tests set the memory system up");
     }
+    fn wait_for_single_object(&mut self, handle: u32, _ms: u32) -> u32 {
+        self.waits.push(handle);
+        0
+    }
+    fn release_mutex(&mut self, handle: u32) -> u32 {
+        self.waits.retain(|&h| h != handle);
+        1
+    }
+}
+
+/// The allocation tracker's map: a balanced tree of (block, record)
+/// nodes (left +0, right +4, key +0xc, record +0x10) under `head`.
+fn tracker_tree(a: &mut Oracle, b: &mut Oracle, head: u32, items: &[(u32, u32)]) -> u32 {
+    if items.is_empty() {
+        return head;
+    }
+    let mid = items.len() / 2;
+    let node = alloc(a, b, 0x14);
+    let l = tracker_tree(a, b, head, &items[..mid]);
+    let r = tracker_tree(a, b, head, &items[mid + 1..]);
+    put(a, b, node, [l, r, 0, items[mid].0, items[mid].1]);
+    node
 }
 
 /// The heap's entry points around the allocator: `malloc_pool_init` on a
@@ -2609,6 +2634,58 @@ fn heap_entry_points_match_the_original() {
         );
         os.sync(a, b, "setStreamPrefix");
         same_memory("setStreamPrefix", a, b);
+    }
+    // operator delete / delete[] with the allocation tracker: its map holds
+    // half the blocks (records freed with them), the tree removal recorded
+    let cell = alloc(a, b, 4);
+    put(a, b, cell, 0u32);
+    #[rustfmt::skip]
+    let mut remove = vec![0x8b, 0x44, 0x24, 0x04, 0xa3, 0, 0, 0, 0, 0xc2, 0x04, 0x00];
+    remove[5..9].copy_from_slice(&cell.to_le_bytes());
+    let remove = stand_in(a, b, 0x1c0, &remove);
+    redirect(a, b, 0x0057_5000, remove);
+    let tracker = alloc(a, b, 0xac);
+    put(a, b, tracker + 0xa8, 0x1234u32);
+    let mut blocks = Vec::new();
+    for _ in 0..12 {
+        let mut os = TestOs::new(b, cursors, u32::MAX);
+        os.max_size = 0x100_0000;
+        let size = 0x20 + rng.next() % 0x80;
+        let p = eax(a, 0x0063_0310, &[size]);
+        assert_eq!(p, h::user_malloc(b, &mut os, size));
+        let r = eax(a, 0x0063_0310, &[0x10]);
+        assert_eq!(r, h::user_malloc(b, &mut os, 0x10));
+        os.sync(a, b, "tracked blocks");
+        blocks.push((p, r));
+    }
+    let mut in_map: Vec<(u32, u32)> = blocks.iter().copied().step_by(2).collect();
+    in_map.sort_unstable();
+    let map = h::TRACKER_MAP.ptr(b).addr;
+    set(a, b, h::TRACKER_NODES, 0);
+    for (k, &(p, _)) in blocks.iter().enumerate() {
+        // the stand-in removal leaves the tree as it was: rebuild it from
+        // the blocks still tracked
+        let root = tracker_tree(a, b, map, &in_map);
+        put(a, b, map + 0xc, root);
+        in_map.retain(|&(q, _)| q != p || k % 5 == 4 || k == 3);
+        let mut os = TestOs::new(b, cursors, u32::MAX);
+        os.max_size = 0x100_0000;
+        let on = k % 5 != 4;
+        set(a, b, h::ALLOC_TRACKER, if on { tracker } else { 0 });
+        set(a, b, h::CRT_BLOCK, if k == 3 { p } else { 0 });
+        let b_remove = |m: &mut Oracle, t: u32, n: u32| {
+            m.call(remove, Conv::Thiscall(t), &[n]).unwrap();
+        };
+        if k % 2 == 0 {
+            eax(a, 0x0063_0390, &[p]);
+            h::operator_delete(b, &mut os, p, b_remove);
+        } else {
+            eax(a, 0x0063_0540, &[p]);
+            h::operator_delete_array(b, &mut os, p, b_remove);
+        }
+        assert!(os.waits.is_empty(), "the tracker's mutex is released");
+        os.sync(a, b, "operator delete");
+        same_memory("operator delete", a, b);
     }
     // UserHeap_Init on a scratch object
     let obj = random_block(a, b, &mut rng, 0x18);
@@ -4901,5 +4978,264 @@ fn unify_filename_matches_the_original() {
             cd::bridge::get_hdd_name(b, n)
         );
         same_memory("get_hdd_name", a, b);
+    }
+}
+
+/// Round 7: record resets, half swaps, touch records, map finds, sequence
+/// slots, quad colours, message areas.
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one pass; a, b: the oracles
+fn round7(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use accessor::bridge as acc;
+    use window::bridge as w;
+    let recs = random_block(a, b, rng, 0x18 * 4);
+    for (base, n) in [(recs, 4), (0, 1)] {
+        assert_eq!(
+            eax(a, 0x006f_bdc0, &[base, n]),
+            acc::reset_records_18(b, base, n)
+        );
+    }
+    let data = random_block(a, b, rng, 0x340);
+    assert_eq!(eax(a, 0x0064_73d0, &[data]), acc::swap_halves(b, data));
+    let touch = random_block(a, b, rng, 0x150);
+    assert_eq!(
+        call(a, 0x0068_9510, Conv::Thiscall(touch), &[]).eax,
+        pad::bridge::touch_record_reset(b, touch)
+    );
+    same_memory("round 7 resets", a, b);
+    let head = alloc(a, b, 0x10);
+    let mut keys: Vec<u32> = (0..20).map(|_| rng.next() % 100).collect();
+    keys.sort_unstable();
+    keys.dedup();
+    let root = build_tree(a, b, head, &keys);
+    put(a, b, head + 0xc, root);
+    let key = alloc(a, b, 4);
+    for k in 0..100u32 {
+        put(a, b, key, k);
+        assert_eq!(
+            call(a, 0x0069_1dc0, Conv::Thiscall(head), &[key]).eax,
+            stl::bridge::map_find_u32(b, head, key)
+        );
+    }
+    // sequence slots: names, states, then the clear
+    let names: [&[u8]; 3] = [b"open\0", b"close\0", b"x\0"];
+    let name = alloc(a, b, 0x20);
+    for i in 0..8u32 {
+        for j in 0..8u32 {
+            let s = scene::bridge::SLOTS.ptr(b).addr + i * 0x100 + j * 0x20;
+            let mut bytes = [0u8; 0x20];
+            let nm = names[(rng.next() % 3) as usize];
+            bytes[8..8 + nm.len()].copy_from_slice(nm);
+            bytes[..2].copy_from_slice(&u16::try_from(rng.next() % 6).unwrap().to_le_bytes());
+            put(a, b, s, bytes);
+        }
+    }
+    for i in 0..8u32 {
+        for nm in names.iter().chain([b"none\0".as_slice()].iter()) {
+            let mut bytes = [0u8; 0x20];
+            bytes[..nm.len()].copy_from_slice(nm);
+            put(a, b, name, bytes);
+            let ra = eax(a, 0x008a_e530, &[i, name]);
+            assert_eq!(
+                ra,
+                scene::bridge::scene_state(b, i.cast_signed(), name).cast_unsigned()
+            );
+        }
+    }
+    assert_eq!(eax(a, 0x008a_df20, &[]), scene::bridge::clear_slots(b));
+    same_memory("sequence slots", a, b);
+    let quad = random_block(a, b, rng, 0x20);
+    for _ in 0..20 {
+        let k = rng.next() % 6;
+        let c: [u32; 4] = std::array::from_fn(|_| rng.next());
+        eax(a, 0x0090_47f0, &[quad, k, c[0], c[1], c[2], c[3]]);
+        w::set_quad_rgba(b, quad, k, c.map(|v| v.to_le_bytes()[0]));
+    }
+    for i in 0..8u32 {
+        let m = random_block(a, b, rng, 0x120);
+        set_entry(a, b, w::MSG_WINDOWS, i, m);
+        let r: [u32; 4] = std::array::from_fn(|_| rng.next() % 0x1000);
+        eax(a, 0x008b_8b20, &[i, r[0], r[1], r[2], r[3]]);
+        w::set_message_area(b, i.cast_signed(), r.map(u32::cast_signed));
+    }
+    same_memory("round 7 windows", a, b);
+    // VFile seeks, header swaps, init, pair compares, tree inserts, entries
+    let size_rec = random_block(a, b, rng, 0x10);
+    let vf = random_block(a, b, rng, 0x18);
+    put(a, b, vf + 0xc, size_rec);
+    for n in 0..60u32 {
+        put(
+            a,
+            b,
+            size_rec + 8,
+            [rng.next() % 0x1000, u32::from(n.is_multiple_of(7))],
+        );
+        let off = [
+            0,
+            1,
+            0x800,
+            0xfff,
+            0x1001,
+            -1i32,
+            i32::MIN,
+            rng.next().cast_signed(),
+        ][(n % 8) as usize];
+        let whence = n % 4;
+        let ra = call(
+            a,
+            0x0061_ac30,
+            Conv::Thiscall(vf),
+            &[off.cast_unsigned(), whence],
+        )
+        .eax;
+        assert_eq!(
+            ra,
+            files::bridge::vfile_seek(b, vf, off, whence),
+            "seek {n}"
+        );
+        same_memory("VFile seek", a, b);
+    }
+    let hdr = random_block(a, b, rng, 0xf20);
+    assert_eq!(eax(a, 0x0064_7220, &[hdr]), acc::swap_header_f00(b, hdr));
+    assert_eq!(eax(a, 0x0064_7560, &[hdr]), acc::swap_header_84(b, hdr));
+    let o = random_block(a, b, rng, 0x48);
+    let (x, y) = (rng.next(), rng.next());
+    assert_eq!(
+        call(a, 0x0068_7190, Conv::Thiscall(o), &[x, y]).eax,
+        acc::init_68(b, o, x, y)
+    );
+    same_memory("swaps and init", a, b);
+    let (p, q) = (alloc(a, b, 0x10), alloc(a, b, 0x10));
+    for _ in 0..100 {
+        let v: [u32; 4] =
+            std::array::from_fn(|_| [0, 1, u32::MAX, 0x8000_0000][(rng.next() % 4) as usize]);
+        let mut wv = v;
+        if rng.next().is_multiple_of(2) {
+            wv[(rng.next() % 4) as usize] =
+                [0, 1, u32::MAX, 0x8000_0000][(rng.next() % 4) as usize];
+        }
+        put(a, b, p, v);
+        put(a, b, q, wv);
+        let ra = call(a, 0x0061_d730, Conv::Stdcall, &[p, q]).eax;
+        assert_eq!(ra, acc::compare_i64_pairs(b, p, q).cast_unsigned());
+    }
+    for sym in [0x0060_c990, 0x0069_1e60] {
+        let head = alloc(a, b, 0x10);
+        put(a, b, head + 0xc, head);
+        for _ in 0..30 {
+            let node = random_block(a, b, rng, 0x10);
+            put(a, b, node + 0xc, rng.next() % 40);
+            let ra = call(a, sym, Conv::Thiscall(head), &[node]).eax;
+            assert_eq!(ra, stl::bridge::tagged_tree_insert(b, head, node));
+            same_memory("tagged tree insert", a, b);
+        }
+    }
+    let table = w::ENTRIES_18762E0.ptr(b).addr;
+    for i in 0..16u32 {
+        put(
+            a,
+            b,
+            table + 16 * i,
+            [0u32, 0, 0, if i % 3 == 0 { 0x0001_0000 } else { 0 }],
+        );
+    }
+    for _ in 0..60 {
+        let i = [0, 3, 15, 16, rng.next() % 16][(rng.next() % 5) as usize];
+        let (x, y) = (rng.next() % 4, rng.next() % 4);
+        let d = (rng.next() % 2000).cast_signed() - 1000;
+        eax(a, 0x0090_0f80, &[i, x, y, d.cast_unsigned()]);
+        w::move_entry_18762e0(b, i.cast_signed(), x.cast_signed(), y.cast_signed(), d);
+        same_memory("entry moves", a, b);
+    }
+}
+
+#[test]
+fn round7_system_functions_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round7(&mut a, &mut b, &mut Xorshift(0x4007_0001));
+}
+
+#[test]
+fn round7_system_functions_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round7(&mut a, &mut b, &mut Xorshift(0x4007_0002));
+}
+
+/// Round 7's one-line accessors, every table entry with random arguments.
+#[test]
+#[allow(clippy::many_single_char_names)] // a, b: the oracles
+fn round7_accessor_tables_match_the_original() {
+    use accessor::bridge as acc;
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let (a, b) = (&mut a, &mut b);
+    let mut rng = Xorshift(0x4007_0101);
+    let obj = random_block(a, b, &mut rng, 0x20);
+    let out = alloc(a, b, 4);
+    for _ in 0..30 {
+        let (x, y) = (rng.next(), rng.next());
+        for f in accessor::SUB2 {
+            assert_eq!(eax(a, f, &[x, y]), accessor::difference(x, y), "{f:#x}");
+        }
+        for f in accessor::ADD2 {
+            assert_eq!(eax(a, f, &[x, y]), accessor::add(x, y), "{f:#x}");
+        }
+        for f in accessor::ADD_U16 {
+            assert_eq!(eax(a, f, &[x, y]), accessor::add(x, y & 0xffff), "{f:#x}");
+        }
+        for f in accessor::ADD_U8 {
+            assert_eq!(eax(a, f, &[x, y]), accessor::add(x, y & 0xff), "{f:#x}");
+        }
+        for f in accessor::ZERO_RET4 {
+            assert_eq!(call(a, f, Conv::Stdcall, &[x]).eax, 0, "{f:#x}");
+        }
+        for f in accessor::STORE0_RET_THIS {
+            assert_eq!(call(a, f, Conv::Thiscall(obj), &[x, y]).eax, obj, "{f:#x}");
+            acc::set_member(b, obj, 0, x);
+        }
+        for f in accessor::COPY_THIS_TO_P {
+            assert_eq!(
+                call(a, f, Conv::Thiscall(obj), &[out]).eax,
+                acc::copy_member_to(b, obj, 0, out)
+            );
+        }
+        for f in accessor::COPY_THIS4_TO_P {
+            assert_eq!(
+                call(a, f, Conv::Thiscall(obj), &[out]).eax,
+                acc::copy_member_to(b, obj, 4, out)
+            );
+        }
+        for f in accessor::STORE8_RET_V {
+            assert_eq!(
+                call(a, f, Conv::Thiscall(obj), &[y]).eax,
+                acc::set_member(b, obj, 8, y)
+            );
+        }
+        put(a, b, obj + 4, rng.next());
+        for (table, at, scale) in [
+            (&accessor::INDEX4_AT8[..], 8, 4),
+            (&accessor::INDEX4_AT4[..], 4, 4),
+            (&accessor::INDEX8_AT8[..], 8, 8),
+        ] {
+            for &f in table {
+                let i = rng.next() % 64;
+                assert_eq!(
+                    call(a, f, Conv::Thiscall(obj), &[i]).eax,
+                    acc::index_member(b, obj, at, i, scale)
+                );
+            }
+        }
+        for (f, _) in accessor::WORD_SETTERS2 {
+            assert_eq!(eax(a, f, &[x]), acc::set_word_global2(b, f, x));
+        }
+        for (f, _) in accessor::BYTE_SETTERS {
+            eax(a, f, &[y]);
+            acc::set_byte_global(b, f, y.to_le_bytes()[0]);
+        }
+        same_memory("round 7 accessor tables", a, b);
     }
 }

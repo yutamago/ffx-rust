@@ -185,6 +185,22 @@ pub mod bridge {
         }
         false
     }
+
+    /// `0x00689510()` (`thiscall`): one touch record reset (as
+    /// [`touch_records_init`] does each); returns it.
+    pub fn touch_record_reset(mem: &mut impl Mem, rec: u32) -> u32 {
+        mem.write(rec, 0u16);
+        mem.write(rec.wrapping_add(4), u32::MAX);
+        mem.write(rec.wrapping_add(8), 0u32);
+        for k in 0..32u32 {
+            let p = rec.wrapping_add(0xc + 10 * k);
+            mem.write(p, 0u8);
+            mem.write(p.wrapping_add(2), 0u32);
+            mem.write(p.wrapping_add(6), 0u32);
+        }
+        mem.write(rec.wrapping_add(0x14c), 0u32);
+        rec
+    }
 }
 
 #[cfg(test)]
