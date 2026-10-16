@@ -279,4 +279,38 @@ pub mod bridge {
     pub fn cd_module_file_sector_rel(mem: &impl Mem, n: i32) -> u32 {
         cd_file_sector(mem, n.wrapping_add(FILE_BASE.get(mem)))
     }
+
+    /// `set_read_chgname(from, to)` (`0x00a43220`): the pair in the first
+    /// slot of [`CHGNAME_FROM`] that is 0; with all 16 taken, the assertion
+    /// `i!=FILE_NAME_CHG_TBL_CNT` (`read_debug.c`, line 0x7e) goes to
+    /// `movie_err` (passed in: expression, file, line) and slot 16 is
+    /// written anyway. Returns the slot.
+    pub fn set_read_chgname<M: Mem>(
+        mem: &mut M,
+        from: u32,
+        to: u32,
+        assert_fail: impl FnOnce(&mut M, u32, u32, u32),
+    ) -> u32 {
+        let table = CHGNAME_FROM.ptr(mem).addr;
+        let mut i = 0u32;
+        while i < 16 && mem.read::<u32>(table + 4 * i) != 0 {
+            i += 1;
+        }
+        if i == 16 {
+            let expr = mem.rebase(0x00b7_ad40);
+            let file = mem.rebase(0x00b7_ad20);
+            assert_fail(mem, expr, file, 0x7e);
+        }
+        mem.write(table + 4 * i, from);
+        mem.write(CHGNAME_TO.ptr(mem).addr + 4 * i, to);
+        i
+    }
+
+    /// `0x0076dc20(n)`: whether file `n` of the current module is present
+    /// (bit 23 clear) with its size in `sizetbl.bin` (bit 22 set).
+    pub fn cd_size_from_table(mem: &impl Mem, n: i32) -> u32 {
+        let i = n.wrapping_add(FILE_BASE.get(mem)).cast_unsigned();
+        let e: u32 = mem.read(SECTORS.get(mem).wrapping_add(i.wrapping_mul(4)));
+        u32::from(e & 0x80_0000 == 0 && e & 0x40_0000 != 0)
+    }
 }
