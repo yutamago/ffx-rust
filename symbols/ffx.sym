@@ -4773,6 +4773,7 @@
 0x008756d0 function AtelBattleSetUp           # fh v3:exact 0x00875650
 0x00875af0 function Vibrate_BumpStream        # (k) stream k (clamped 0..7) u16 counter 0x01328170 + k*0x24 += 1, byte +2 = 0; record left in eax; own name
 0x00875d30 function Vibrate_CheckDone         # (pad) state 1/2 ends when both streams +6 are 0x200/0xfffe; own name
+0x00875d70 function Vibrate_CurveData         # (k, n, table) curve k (< 0x40) data: table + table[k] + 4 + its first n u16 lengths, when halfword n is non-zero; else 0; own name
 0x00875de0 function TkGetVibrateOn            # (pad) -> u8 g_TkVibratePads[pad].+0x22, pad clamped to 0..7 (the byte TkStopVibrate clears)
 0x00875e10 function TkGetVibrateVolume        # fh switch:bsim1.00 0x7100479c70
 0x00875e50 function TkGetVibratePad           # (pad) -> &g_TkVibratePads[pad], pad clamped to 0..7
@@ -4782,7 +4783,9 @@
 0x00875f50 function TkSetVibrateOff           # (v) g_TkVibrateOff = low byte; own name
 0x00875f60 function TkSetVibrateMask          # fh v3:exact 0x00875ee0
 0x00875fb0 function TkSetVibrateStream        # fh v3:cg2 0x875f30
+0x00876050 function Vibrate_StartLevel        # (k, e, from, to, len) stream k entry e restarted as a level easing from -> to over len (clamped 0..0x7f; from = +0xa when negative); counter bumped, mode +0x22 = 2; returns len; own name
 0x00876160 function Vibrate_HoldStream        # (stream) +4 = 0xfffe0000, u16 +8 = 0; own name
+0x00876180 function Vibrate_SetStreams        # (rec, a, b) Vibrate_SetStream for both 0x10-byte entries; second data pointer left in eax; own name
 0x00876230 function Vibrate_SetStream         # (entry, src) entry from curve header src: +4 0, +6 (src[1]+1)*2, +8 src[0], +9 src[2], +0 set_ptr32(src+2); null: +4 0x02000000, +8 0, +0 0; own name
 0x00876290 function TkStopVibrate             # fh v3:exact 0x00876210
 0x008762f0 function TkStopVibrateAll          # fh v3:exact 0x00876270
@@ -4991,10 +4994,13 @@
 0x0088b400 function Math_MinAbs               # (a, b) -> float: |a| when b is greater, else b
 0x0088b430 function Math_Atan2XZ                 # (x0, z0, x1, z1) -> angle with axis special cases
 0x0088b4d0 function Math_YawPitchTo              # (*yaw, *pitch, from xyz, to xyz)
+0x0088b6b0 function Math_AngleStepTo          # (a, target, step) a + step unless (a - t)(a + step - t) <= 0, then target; Math_WrapAngle; own name
 0x0088b730 function Math_InRadius                # (r, dx, dy, dz) -> dx^2+dy^2+dz^2 <= r^2
 0x0088b800 function Math_ClampPi              # (a) a clamped to [-pi, pi] (float pi); NaN passes; own name
 0x0088bc20 function Math_WrapAngle               # wraps to [-pi, pi]
 0x0088bc70 function Math_Det3Points           # (x1, y1, x2, y2, x3, y3) -> float twice the signed triangle area (sums in doubles, rounded to float)
+0x0088bfe0 function Math_AngleTo12Bits        # (a) Math_WrapAngle, +2pi when negative, * 4096 / 2pi, _ftol2_sse & 0xfff (inverse of Math_AngleFrom12Bits); own name
+0x0088c040 function Math_AngleTo15Bits        # (a) the same * 32768 & 0x7fff; own name
 0x0088c0a0 function Math_AngleFrom12Bits      # (a) Math_WrapAngle((a & 0xfff) * 2pi / 4096), f32 steps; own name
 0x0088c0e0 function Math_AngleFrom15Bits      # (a) Math_WrapAngle((a & 0x7fff) * 2pi / 32768), f32 steps; own name
 0x0088c120 function Math_CosTable             # (angle) Math_SinTable(angle + 0x2000); own name
@@ -5005,6 +5011,7 @@
 0x0088c420 function CItan                     # fh v3:bsim1.00 0x0088c390 +_CItan
 0x0088c510 function Math_UnitMatrix           # (m): a 4x4 float identity (zeroes, then the diagonal 1.0)
 0x0088c5a0 function TkNormalFVector           # fh switch:bsim1.00 0x7100488080
+0x0088c5c0 function Math_AngleToDegrees       # (a) Math_WrapAngle * 57.2957763671875, then into [0, 360] by turns; own name
 0x0088c630 function Math_WrapAngleFloor       # (a) (a + pi) - floor((a + pi) / 2pi) * 2pi - pi, float steps; own name
 0x0088c690 function Math_SinTable             # (angle in 1/0x8000 turns) -> i32 from the quarter-wave u16 table g_SinQuarter
 0x0088c710 function TkResetClip               # fh v3:exact 0x0088c680

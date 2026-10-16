@@ -2863,4 +2863,32 @@ ported! {
     Yi_StrUpper @ 0x0091_62c0 => extern "C" fn yi_str_upper(s: u32) {
         gu::yi_str_case(&mut mem(), s, true);
     }
+    /// `Math_AngleTo12Bits(a)`.
+    Math_AngleTo12Bits @ 0x0088_bfe0 => extern "C" fn math_angle_to12_bits(a: f32) -> u32 {
+        tk::math_angle_to_bits(&mem(), a, 0x00b5_15c8, 0xfff)
+    }
+    /// `Math_AngleTo15Bits(a)`.
+    Math_AngleTo15Bits @ 0x0088_c040 => extern "C" fn math_angle_to15_bits(a: f32) -> u32 {
+        tk::math_angle_to_bits(&mem(), a, 0x00b5_1588, 0x7fff)
+    }
+    /// `Math_AngleToDegrees(a)`: in `st0`.
+    Math_AngleToDegrees @ 0x0088_c5c0 => extern "C" fn math_angle_to_degrees(a: f32) -> f32 {
+        tk::math_angle_to_degrees(a)
+    }
+    /// `Math_AngleStepTo(a, target, step)`: in `st0`.
+    Math_AngleStepTo @ 0x0088_b6b0 => extern "C" fn math_angle_step_to(a: f32, target: f32, step: f32) -> f32 {
+        tk::math_angle_step_to(a, target, step)
+    }
+    /// `Vibrate_SetStreams(rec, a, b)`: the second data pointer.
+    Vibrate_SetStreams @ 0x0087_6180 => extern "C" fn vibrate_set_streams(rec: u32, a: u32, b: u32) -> u32 {
+        tk::vibrate_set_streams(&mut mem(), rec, a, b)
+    }
+    /// `Vibrate_StartLevel(k, e, from, to, len)`: the length.
+    Vibrate_StartLevel @ 0x0087_6050 => extern "C" fn vibrate_start_level(k: i32, e: i32, from: i32, to: i32, len: i32) -> i32 {
+        tk::vibrate_start_level(&mut mem(), k, e, from, to, len)
+    }
+    /// `Vibrate_CurveData(k, n, table)`.
+    Vibrate_CurveData @ 0x0087_5d70 => extern "C" fn vibrate_curve_data(k: u32, n: i32, table: u32) -> u32 {
+        tk::vibrate_curve_data(&mem(), k, n, table)
+    }
 }

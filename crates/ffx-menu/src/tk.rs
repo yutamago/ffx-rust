@@ -4253,6 +4253,129 @@ pub mod bridge {
         let r = ffx_bridge::x87::round_trip;
         ffx_chara::chr::bridge::ch_set_pos3(mem, chr, r(x), r(y), r(z));
     }
+    /// `Math_AngleTo12Bits(a)` (`0x0088bfe0`) and `Math_AngleTo15Bits(a)`
+    /// (`0x0088c040`, own names): `a` wrapped (`Math_WrapAngle`), made
+    /// non-negative by a turn, scaled by the constant at `scale` (4096 or
+    /// 32768) over 2π, truncated (`_ftol2_sse`) and masked.
+    pub fn math_angle_to_bits(mem: &impl Mem, a: f32, scale: u32, mask: u32) -> u32 {
+        let tau = mem.read::<f64>(mem.rebase(0x00b3_9378));
+        let k = mem.read::<f64>(mem.rebase(scale));
+        let mut w = crate::math::wrap_angle(ffx_bridge::x87::round_trip(a));
+        if w < 0.0 {
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                w = (f64::from(w) + tau) as f32;
+            }
+        }
+        ffx_bridge::x87::ftol(mem, f64::from(w) * k / tau) & mask
+    }
+
+    /// `Math_AngleToDegrees(a)` (`0x0088c5c0`, own name): `a` wrapped,
+    /// times `57.2957763671875`, then brought into [0, 360] by whole turns
+    /// (float steps).
+    #[must_use]
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn math_angle_to_degrees(a: f32) -> f32 {
+        let w = crate::math::wrap_angle(ffx_bridge::x87::round_trip(a));
+        let mut d = (f64::from(w) * 57.295_776_367_187_5) as f32;
+        while d > 360.0 {
+            d = (f64::from(d) - 360.0) as f32;
+        }
+        while d < 0.0 {
+            d = (f64::from(d) + 360.0) as f32;
+        }
+        d
+    }
+
+    /// `Math_AngleStepTo(a, target, step)` (`0x0088b6b0`, own name): `a +
+    /// step` unless that would reach or pass `target` (or a NaN arises),
+    /// then `target`; wrapped.
+    #[must_use]
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn math_angle_step_to(a: f32, target: f32, step: f32) -> f32 {
+        let d1 = (f64::from(a) - f64::from(target)) as f32;
+        let d2 = (f64::from(a) + f64::from(step) - f64::from(target)) as f32;
+        let d = (f64::from(d1) * f64::from(d2)) as f32;
+        let v = if d > 0.0 {
+            (f64::from(a) + f64::from(step)) as f32
+        } else {
+            target
+        };
+        crate::math::wrap_angle(ffx_bridge::x87::round_trip(v))
+    }
+
+    /// `Vibrate_SetStreams(rec, a, b)` (`0x00876180`, own name): both
+    /// entries of a stream record from curve headers ([`vibrate_set_stream`]
+    /// at `rec` and `rec + 0x10`). Returns the second's data pointer.
+    pub fn vibrate_set_streams(mem: &mut impl Mem, rec: u32, a: u32, b: u32) -> u32 {
+        vibrate_set_stream(mem, rec, a);
+        vibrate_set_stream(mem, rec + 0x10, b)
+    }
+
+    /// `Vibrate_StartLevel(k, e, from, to, len)` (`0x00876050`, own name):
+    /// stream `k`'s (0..=7) entry `e` (0..=1) restarted as a plain level:
+    /// no data, `+4` `0xfffe0000` then step 0 and length `len` (-1 for
+    /// negative), level `from` (the entry's `+0xa` when negative) easing to
+    /// `to` (both clamped to 0..=0x7f; `to` is `from` for a negative
+    /// length); the stream's counter bumped and mode `+0x22` 2. Returns the
+    /// length.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    pub fn vibrate_start_level(
+        mem: &mut impl Mem,
+        k: i32,
+        e: i32,
+        from: i32,
+        to: i32,
+        len: i32,
+    ) -> i32 {
+        let k = k.clamp(0, 7).cast_unsigned();
+        let rec = mem.rebase(0x0132_8150) + k * 0x24;
+        let n: u16 = mem.read(rec + 0x20);
+        mem.write(rec + 0x20, n.wrapping_add(1));
+        mem.write(rec + 0x22, 0u8);
+        let entry = rec + e.clamp(0, 1).cast_unsigned() * 0x10;
+        mem.write(entry, 0u32);
+        mem.write(rec + 0x22, 2u8);
+        mem.write(entry + 4, 0xfffe_0000u32);
+        mem.write(entry + 8, 0u16);
+        let from = if from < 0 {
+            i32::from(mem.read::<u8>(entry + 0xa))
+        } else {
+            from
+        };
+        let from = from.clamp(0, 0x7f) as u8;
+        let to = to.clamp(0, 0x7f) as u8;
+        let len = if len < 0 { -1 } else { len };
+        mem.write(entry + 4, 0u16);
+        mem.write(entry + 6, len as u16);
+        mem.write(entry + 8, from);
+        mem.write(entry + 9, if (len as i16) < 0 { from } else { to });
+        len
+    }
+
+    /// `Vibrate_CurveData(k, n, table)` (`0x00875d70`, own name): curve
+    /// `k` (< 0x40) of `table`: its start (`table + table[k]`) plus 4 and
+    /// its first `n` halfword lengths, when it has a curve and its
+    /// halfword `n` is non-zero; 0 otherwise.
+    pub fn vibrate_curve_data(mem: &impl Mem, k: u32, n: i32, table: u32) -> u32 {
+        if k > 0x3f || table == 0 {
+            return 0;
+        }
+        let off: u32 = mem.read(table.wrapping_add(4 * k));
+        if off == 0 {
+            return 0;
+        }
+        let base = off.wrapping_add(table);
+        let at = |j: i32| base.wrapping_add((j.wrapping_mul(2)).cast_unsigned());
+        if mem.read::<u16>(at(n)) == 0 {
+            return 0;
+        }
+        let mut sum = 4u32;
+        for j in 0..n.max(0) {
+            sum = sum.wrapping_add(u32::from(mem.read::<u16>(at(j))));
+        }
+        sum.wrapping_add(base)
+    }
 }
 
 #[cfg(test)]

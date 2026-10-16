@@ -4987,6 +4987,96 @@ fn tk_round8_matches_the_original() {
                     .unwrap();
             same_float(name, r.st0, func(f));
         }
+        let fin = [
+            0.0f32, -0.0, 1.0, 2.0, 0.25, 3.0, 3.2, -3.2, 7.5, -100.25, 1e5, 6.3, -6.3, 1e-30,
+        ];
+        let (fa, fb, fc) = (t.rng.pick(&fin), t.rng.pick(&fin), t.rng.pick(&fin));
+        for (name, sym, scale, mask) in [
+            (
+                "Math_AngleTo12Bits",
+                0x0088_bfe0u32,
+                0x00b5_15c8u32,
+                0xfffu32,
+            ),
+            ("Math_AngleTo15Bits", 0x0088_c040, 0x00b5_1588, 0x7fff),
+        ] {
+            t.twin(name, sym, &[fa.to_bits()], U32, |o| {
+                w(tk::math_angle_to_bits(o, fa, scale, mask))
+            });
+        }
+        let r =
+            t.a.call(t.a.rebase(0x0088_c5c0), Conv::Cdecl, &[fa.to_bits()])
+                .unwrap();
+        same_float("Math_AngleToDegrees", r.st0, tk::math_angle_to_degrees(fa));
+        let r =
+            t.a.call(
+                t.a.rebase(0x0088_b6b0),
+                Conv::Cdecl,
+                &[fa.to_bits(), fb.to_bits(), fc.to_bits()],
+            )
+            .unwrap();
+        same_float(
+            "Math_AngleStepTo",
+            r.st0,
+            tk::math_angle_step_to(fa, fb, fc),
+        );
+        let rec = t.alloc_random(0x24);
+        let ha = if t.rng.below(3) == 0 {
+            0
+        } else {
+            t.alloc_random(4)
+        };
+        let hb = if t.rng.below(3) == 0 {
+            0
+        } else {
+            t.alloc_random(4)
+        };
+        t.twin(
+            "Vibrate_SetStreams",
+            0x0087_6180,
+            &[rec, ha, hb],
+            U32,
+            |o| w(tk::vibrate_set_streams(o, rec, ha, hb)),
+        );
+        let vk = t.rng.pick(&[0u32, 3, 7, 9, 0xffff_ffff]);
+        let ve = t.rng.pick(&[0u32, 1, 2, 0xffff_ffff]);
+        let vf = t.rng.pick(&[0u32, 0x40, 0x7f, 0x80, 0xffff_ffff]);
+        let vt = t.rng.pick(&[0u32, 0x40, 0x100, 0xffff_ffff]);
+        let vl = t.rng.pick(&[0u32, 10, 0x8000, 0x1_0005, 0xffff_ffff]);
+        t.twin(
+            "Vibrate_StartLevel",
+            0x0087_6050,
+            &[vk, ve, vf, vt, vl],
+            U32,
+            |o| {
+                s(tk::vibrate_start_level(
+                    o,
+                    i(vk),
+                    i(ve),
+                    i(vf),
+                    i(vt),
+                    i(vl),
+                ))
+            },
+        );
+        let mut tb = vec![0u8; 0x100];
+        for k in 0..0x40usize {
+            if k % 3 != 0 {
+                tb[4 * k..4 * k + 4].copy_from_slice(&0x100u32.to_le_bytes());
+            }
+        }
+        let curves = t.rng.bytes(0x40);
+        tb.extend(curves);
+        let table = if t.rng.below(8) == 0 { 0 } else { t.alloc(&tb) };
+        let ck = t.rng.pick(&[0u32, 1, 2, 5, 0x3f, 0x40]);
+        let cn = t.rng.pick(&[0u32, 1, 2, 3, 4, 7, 10]);
+        t.twin(
+            "Vibrate_CurveData",
+            0x0087_5d70,
+            &[ck, cn, table],
+            U32,
+            |o| w(tk::vibrate_curve_data(o, ck, i(cn), table)),
+        );
         let dst = t.alloc_random(4);
         let src = t.alloc(&g.to_le_bytes());
         t.twin(
