@@ -2088,6 +2088,7 @@
 0x0078b760 function Battle_Steal              # steal chance spoils+0x0a, items +0x24/+0x26, counts +0x28/+0x29
 0x0078b920 function Battle_StealGil           # Mug's gil: spoils +0x113 x (100 + roll%101) x 100/200 x target +0x712 / 255 into the result's +0x10; +0x712 halved per success; brnd(10); ported
 0x0078ba30 function DmgCalc_ShatterFail       # fh v3:exact 0x0078baf0 +DmgCalc_ShatterFail
+0x0078ba70 function MsCalcCommandTarget       # (user, hits[31], counts[31], command, event, &targets, &total) -> reflecting bits: MsCalcCommand's target step: hit counts per target (random picks with +0x1c 0x8000), guard redirection (MsGetGuardChr) for single targets, reflect (+0x60d / +0x62c 0x20, command +0x1c 0x80) back to the user or a random foe; final targets to g_BtlChrSet; named here; ported
 0x0078bd50 function DmgCalc_Threaten          # fh v3:exact 0x0078be10 +DmgCalc_Threaten
 0x0078bd90 function DmgCalc_ReelBonus         # damage x (time + 2 start) / (2 start) while actor +0xd26 is set; +0xd2c/+0xd30 are the floats MsSetReelResult stores for Wakka ("time", "start_time" in its debug text); ported
 0x0078bdd0 function DmgCalc_Bribe             # fh v3:exact 0x0078be90 +DmgCalc_Bribe
@@ -2268,6 +2269,7 @@
 0x00795980 function MsGetChrTopPos            # fh v3:exact 0x00795990
 0x00795a20 function MsGetChrWidth             # fh v3:exact 0x00795a30
 0x00795aa0 function MsGetMon                  # fh v3:exact+call.cs 0x00795ab0 cdecl
+0x00795ac0 function msGetChrPosNoChr          # (actor, vec): msGetChrPos without the actor's own character: actor +0x43f's character's optional position +0x441, or (+0x43f 0xff) MsGetChrBtlPos(+0xc); named here; ported
 0x00795b10 function MsGetWeapon               # fh v3:exact 0x00795b20
 0x00795b40 function MsGetWeaponHandle         # fh v3:exact 0x00795b50
 0x00795bb0 function MsGetWeaponSpecial        # fh v3:exact 0x00795bc0
@@ -2342,6 +2344,7 @@
 0x00799690 function MsGetCommandFar           # fh v3:exact 0x007996a0
 0x007996d0 function MsGetCommandTarget        # fh v3:exact 0x007996e0
 0x00799820 function MsGetCursorTarget         # fh v3:exact 0x00799830
+0x00799910 function MsGetRandomGroupTarget    # (bits) -> the actors of bits in one random group (MsGetChrGroup; brnd(5) % groups present); MsGetCommandTarget's +0x1a mode 1; named here; ported
 0x00799ab0 function MsInitMimic               # fh v3:bsim1.00 0x00799ac0
 0x00799ac0 function MsSetBerserkCommand       # fh v3:exact 0x00799ad0
 0x00799b40 function MsSetChrMimic             # fh v3:exact 0x00799b50
@@ -8190,6 +8193,7 @@
 0x0112a8f9 label g_BtlDebugNoDamageParty      # u8, the party takes no damage (DebugCanTakeDamage); debug native case 1/2
 0x0112a901 label g_BtlDebugFreeMp             # u8, MsCheckUseCommand charges no MP (as for monsters); debug native case 4
 0x0112a906 label g_BtlDebugNoStatus           # u8, DmgCalc inflicts no statuses (skips DmgCalc_InflictStatus and _Extra)
+0x0112a907 label g_BtlStatInvert1B         # u8, MsGetChrStatInfo property 0x1b counts actors whose +0xdec is clear instead of set
 0x0112a908 label g_BtlDebugNoVariance         # i8, DmgCalc passes 1 - it as MsCalcDamageCommand's vary; debug native case 6
 0x0112a909 label g_BtlDebugNoCrit             # u8, DmgCalc skips DmgCalc_Crit; debug native case 7
 0x0112a90a label g_BtlDebugAlwaysHit          # u8, DmgCalc_CheckHit never misses, statuses and Bribe always land; debug native case 8
@@ -8281,6 +8285,8 @@
 0x0112c9e7 label g_BtlDirFree              # u8; set: MsSetDirThetaMode gives actors direction mode 1 (ffx_battle::minor)
 0x0112c9eb label g_BtlEndAlt               # u8 set: MsGetBattleEndStatus reports 2 instead of 4 when the monsters are gone
 0x0112c9f1 label g_BtlEndForced            # u8, when not 0 MsGetBattleEndStatus's result
+0x0112c9fa label g_BtlReflected            # u8, set by MsCalcCommandTarget when a target reflected the command
+0x0112c9fb label g_BtlGuardTook            # u8, set by MsCalcCommandTarget when a guard took a hit for its target
 0x0112c9ff label g_BtlEscapeRule              # i8, set by battle script (0x007a77a0): 1 no escape, 2 always (MsCalcEscape)
 0x0112ca00 label g_BtlMenuSkipOn           # u8 set: actors' skip command (+0x6c8) counts (MsMenuGetChrSkipCommand)
 0x0112ca03 label g_BtlSummonLimit             # u8; Summons keep the overdrive gauge while this is set (MsSummonLimitSave). MsLimitCommandProcess sets it for command 0x3118 and clears it otherwise.
@@ -8347,6 +8353,7 @@
 0x01135e00 label g_BtlAbilityMap           # 8 x 0x1c bytes cleared by MsInitChrAbilityMap
 0x01136000 label g_BtlMemCheck               # i32 work memory booked, from 0x40; MsMemCheckRegist (0x00799f00) adds size + 0x4f rounded to 64
 0x01136004 label g_BtlMemCheck2              # cleared by MsMemCheckInit (0x00799ee0)
+0x01136008 label g_BtlNoCommand            # MsGetComData's record for IDs of no table (kinds 0, 1, 5, 7, 9-0xb)
 0x01136068 label g_BtlItemMem                 # u32; Reset by MsBtlInitItemMem.
 0x0113606c label g_BtlRegMotion               # u32; Reset by MsRegMotionInit, with [REG_MOTION_FLAG].
 0x01136070 label g_BtlComBuf                  # u32; Reset by MsComBufInit.
@@ -8726,11 +8733,13 @@
 0x02310c60 label    g_CdLib_FileBase          # g_CdLib + 0x20: the current module's first PS2 file number (CDfileSize_CD, CDfileSize_CD_EX add it to theirs)
 0x02310c68 label    g_CdLib_SectorTable       # g_CdLib + 0x28: cdrom.mdg (CdEnvInit), u32 per file: start sector in bits 0-21, bit 22 size from sizetbl.bin, bit 23 absent, top byte the unused bytes at the end / 8 (CDfileSize_CD, cd_file_sector)
 0x02310cd8 label g_BtlItemMem2                # u32; with the one before it (same function, ffx_battle::misc)
+0x02310dde label g_BtlSpoilsEquipment      # 8 x 22-byte equipment slots of the 0xb000 IDs (MsGetSaveWeapon)
 0x02310ea0 label g_BtlCountsBattle         # 18 bytes: characters MsBtlGetTerm counts a battle for (MsSaveAddInfoData kind 0)
 0x02310ec4 label g_BtlTookPart             # 18 bytes: characters who took part keep their battle AP (MsBtlGetTerm)
 0x02310ed8 label g_BtlStartAp                 # [u32; 18]; The AP of 18 actors at battle start (MsBtlStartAP copies the current ones, 0x48 bytes on, here).
 0x02310f20 label    g_TkBtlEndResults         # battle-end words (BtlEnd_GetResult); the first 18 are the AP each character gained (MsApUp)
 0x02310f68 label g_BtlTermWord             # u32 cleared by MsBtlGetTerm
+0x02310f9e label g_Equipment7000           # 8 x 22-byte equipment slots of the 0x7000 IDs (MsGetSaveWeapon)
 0x02311050 label g_BtlChrExtra             # pointer to 0x24 bytes MsBtlChrInit clears
 0x023110a0 label g_DefaultChrNames           # 0x14 bytes per character (getDefaultChrName 0x00787320)
 0x02311240 label g_BtlDamageRates             # 4 bytes per actor: physical, magic damage dealt bonus %, physical, magic damage taken reduction % (DmgCalc_StatBoostAbility)

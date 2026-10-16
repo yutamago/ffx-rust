@@ -29,6 +29,7 @@ pub mod misc;
 pub mod pos;
 pub mod rng;
 pub mod save;
+pub mod stat;
 pub mod state;
 pub mod turn;
 pub mod util;

@@ -28,20 +28,53 @@ fn call1(sym: u32, a: u32) -> u32 {
     }
 }
 
-/// Calls an original cdecl function of four arguments by its `ffx.sym`
-/// address.
-#[allow(clippy::many_single_char_names)]
-fn call4(sym: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
-    // SAFETY: the address is a cdecl function of this build taking four u32s.
+/// MSVCR110's `_CIcos` or `_CIsin` through the game's import slot
+/// (`0x00b0c3b4`, `0x00b0c3b8`, behind the thunks `0x009498c2`,
+/// `0x009498c8`): the angle (`f32` bits) loaded with `fld dword`, the
+/// result stored with `fstp dword`, as `MsGetSummonerPos` does.
+fn crt_trig(t: pos::Trig, x: u32) -> u32 {
+    let slot = match t {
+        pos::Trig::Cos => 0x00b0_c3b4,
+        pos::Trig::Sin => 0x00b0_c3b8,
+    };
+    // SAFETY: the slot holds the address of the CRT's intrinsic, which
+    // takes its argument in ST0 and returns in ST0 (eax, ecx, edx, the x87
+    // and SSE registers clobbered).
+    #[cfg(target_arch = "x86")]
     unsafe {
-        let f: unsafe extern "C" fn(u32, u32, u32, u32) -> u32 =
-            std::mem::transmute(crate::rebase(sym));
-        f(a, b, c, d)
+        let f = (crate::rebase(slot) as *const usize).read();
+        let bits: u32;
+        std::arch::asm!(
+            "fld dword ptr [{x}]",
+            "call {f}",
+            "sub esp, 4",
+            "fstp dword ptr [esp]",
+            "pop eax",
+            x = in(reg) &raw const x,
+            f = in(reg) f,
+            lateout("eax") bits,
+            clobber_abi("C"),
+        );
+        bits
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = (slot, x);
+        unreachable!("the CRT's trigonometry runs in the 32-bit game")
     }
 }
 
-/// `MsGetSummonerPos` (still the original: its `_CIcos`/`_CIsin` are next).
-const MS_GET_SUMMONER_POS: u32 = 0x007a_c2b0;
+/// `MsGetSummonerPos` in Rust with the CRT's own cosine and sine.
+fn summoner_pos(m: &mut impl ffx_bridge::Mem, actor: u32, index: i32, k: i32, vec: u32) {
+    pos::ms_get_summoner_pos(
+        m,
+        &crt_trig,
+        actor,
+        index.cast_unsigned(),
+        k.cast_unsigned(),
+        vec,
+    );
+}
 
 ported! {
     /// `rnd`: the global random generator.
@@ -1761,12 +1794,73 @@ ported! {
     MsGetMagicEffNum @ 0x0079_d2f0 => extern "C" fn ms_get_magic_eff_num(chr: i32, id: u32, command: u32) -> u32 {
         flow::ms_get_magic_eff_num(&mut mem(), chr, id, command, |m| ffx_menu::tk::bridge::tk_get_lang(m))
     }
-    /// `MsBtlGetPos(write, actor, group, kind, index, vec)`: kinds 12-14
-    /// call the original `MsGetSummonerPos`.
-    MsBtlGetPos @ 0x007a_bfe0 => extern "C" fn ms_btl_get_pos(write: u32, actor: u32, group: i32, kind: i32, index: i32, vec: u32) -> i32 {
-        pos::ms_btl_get_pos(&mut mem(), write, actor, group, kind, index, vec, |_, actor, index, k, vec| {
-            call4(MS_GET_SUMMONER_POS, actor, index.cast_unsigned(), k.cast_unsigned(), vec);
+    /// `MsGetSummonerPos(actor, chr, k, vec)`: the CRT's `_CIcos` and
+    /// `_CIsin` through their import slots.
+    MsGetSummonerPos @ 0x007a_c2b0 => extern "C" fn ms_get_summoner_pos(actor: u32, chr: u32, k: u32, vec: u32) {
+        pos::ms_get_summoner_pos(&mut mem(), &crt_trig, actor, chr, k, vec);
+    }
+    /// `MsGetChrStatInfo(chr, kind, selector, out)`.
+    MsGetChrStatInfo @ 0x007b_2dc0 => extern "C" fn ms_get_chr_stat_info(chr: u32, kind: u32, selector: u32, out: u32) -> u32 {
+        ffx_battle::stat::bridge::ms_get_chr_stat_info(&mut mem(), &crt_trig, chr, kind, selector, out)
+    }
+    /// `MsActTargetSearch(chr, selector, kind, _, rng, mode, resolved, pick)`.
+    MsActTargetSearch @ 0x007a_cd40 => extern "C" fn ms_act_target_search(chr: u32, selector: u32, kind: u32, _unused: u32, rng: u32, mode: u32, resolved: u32, pick: u32) -> u32 {
+        ffx_battle::stat::bridge::ms_act_target_search(&mut mem(), &crt_trig, chr, selector, kind, rng, mode, resolved, pick)
+    }
+    /// `MsCalcCommandTarget(user, hits, counts, command, event, &targets, &total)`.
+    MsCalcCommandTarget @ 0x0078_ba70 => extern "C" fn ms_calc_command_target(user: u32, hits: u32, counts: u32, command: u32, event: u32, targets: u32, total: u32) -> u32 {
+        ffx_battle::stat::bridge::ms_calc_command_target(&mut mem(), &crt_trig, user, hits, counts, command, event, targets, total)
+    }
+    /// `MsCalcCommand(cue, k)`: `TOGetFFXLang` and the achievement unlock
+    /// (main's) through the originals.
+    MsCalcCommand @ 0x0078_92e0 => extern "C" fn ms_calc_command(cue: u32, k: u32) -> u32 {
+        ffx_battle::stat::bridge::ms_calc_command(&mut mem(), &crt_trig, cue, k, |_| call0(TO_GET_FFX_LANG), |_, n| {
+            call1(ACHIEVEMENT_UNLOCK, n);
         })
+    }
+    /// `MsGetComData(id, &name)`.
+    MsGetComData @ 0x0079_a4b0 => extern "C" fn ms_get_com_data(id: u32, name: u32) -> u32 {
+        ffx_battle::stat::bridge::ms_get_com_data(&mut mem(), id, name)
+    }
+    /// `MsGetRandomGroupTarget(bits)`.
+    MsGetRandomGroupTarget @ 0x0079_9910 => extern "C" fn ms_get_random_group_target(bits: u32) -> u32 {
+        ffx_battle::stat::bridge::ms_get_random_group_target(&mut mem(), bits)
+    }
+    /// `MsGetCommandTarget(chr, id, side, event)`.
+    MsGetCommandTarget @ 0x0079_96d0 => extern "C" fn ms_get_command_target(chr: u32, id: u32, side: i32, event: u32) -> u32 {
+        ffx_battle::stat::bridge::ms_get_command_target(&mut mem(), &crt_trig, chr, id, side, event)
+    }
+    /// `MsGetSaveWeapon(id, &name)`.
+    MsGetSaveWeapon @ 0x007a_bbd0 => extern "C" fn ms_get_save_weapon(id: u32, name: u32) -> u32 {
+        save::ms_get_save_weapon(&mut mem(), id, name)
+    }
+    /// `MsGetSaveWeaponName(id)`.
+    MsGetSaveWeaponName @ 0x007a_bdf0 => extern "C" fn ms_get_save_weapon_name(id: u32) -> u32 {
+        save::ms_get_save_weapon_name(&mut mem(), id)
+    }
+    /// `MsGetChrBtlPos(i, vec)`.
+    MsGetChrBtlPos @ 0x0079_48e0 => extern "C" fn ms_get_chr_btl_pos(i: u32, vec: u32) -> i32 {
+        pos::ms_get_chr_btl_pos(&mut mem(), &crt_trig, i, vec)
+    }
+    /// `MsGetChrPos(i, vec)`.
+    MsGetChrPos @ 0x0079_56e0 => extern "C" fn ms_get_chr_pos(i: u32, vec: u32) -> i32 {
+        pos::ms_get_chr_pos(&mut mem(), &crt_trig, i, vec)
+    }
+    /// `msGetChrPos(actor, vec)`.
+    msGetChrPos @ 0x0079_6ea0 => extern "C" fn ms_get_chr_pos_of(actor: u32, vec: u32) {
+        pos::ms_get_chr_pos_of(&mut mem(), &crt_trig, actor, vec);
+    }
+    /// `msGetChrPosNoChr(actor, vec)`.
+    msGetChrPosNoChr @ 0x0079_5ac0 => extern "C" fn ms_get_chr_pos_no_chr(actor: u32, vec: u32) {
+        pos::ms_get_chr_pos_no_chr(&mut mem(), &crt_trig, actor, vec);
+    }
+    /// `MsCheckBtlPos(i, actor, flat)`.
+    MsCheckBtlPos @ 0x007a_9230 => extern "C" fn ms_check_btl_pos(i: u32, actor: u32, flat: u32) -> u32 {
+        pos::ms_check_btl_pos(&mut mem(), &crt_trig, i, actor, flat)
+    }
+    /// `MsBtlGetPos(write, actor, group, kind, index, vec)`.
+    MsBtlGetPos @ 0x007a_bfe0 => extern "C" fn ms_btl_get_pos(write: u32, actor: u32, group: i32, kind: i32, index: i32, vec: u32) -> i32 {
+        pos::ms_btl_get_pos(&mut mem(), write, actor, group, kind, index, vec, summoner_pos)
     }
     /// `MsRegistCommandCue(chr, command, turn, kind, flag)`.
     MsRegistCommandCue @ 0x007b_0b90 => extern "C" fn ms_regist_command_cue(chr: u32, command: u32, turn: u32, kind: u32, flag: u32) -> i32 {
@@ -1788,9 +1882,7 @@ ported! {
     }
     /// `MsGetChrEscapePos(i, vec)`.
     MsGetChrEscapePos @ 0x0079_4ec0 => extern "C" fn ms_get_chr_escape_pos(i: u32, vec: u32) -> i32 {
-        flow::ms_get_chr_escape_pos(&mut mem(), i, vec, |_, actor, index, k, vec| {
-            call4(MS_GET_SUMMONER_POS, actor, index.cast_unsigned(), k.cast_unsigned(), vec);
-        })
+        flow::ms_get_chr_escape_pos(&mut mem(), i, vec, summoner_pos)
     }
     /// `MsUseChrMpLimit(i)`.
     MsUseChrMpLimit @ 0x0078_e5a0 => extern "C" fn ms_use_chr_mp_limit(i: u32) {
