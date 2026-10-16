@@ -15,6 +15,7 @@ pub mod bridge {
 
     use super::clut_entries;
     use crate::chr::bridge::{blk, set_flag};
+
     use crate::layout as l;
 
     /// Entry `i`'s word at `+off` of a texture list, or 0 past its end (the
@@ -107,6 +108,97 @@ pub mod bridge {
     #[must_use]
     pub const fn ch_get_light_value(chr: u32) -> u32 {
         chr.wrapping_add(l::FADE_LIGHT)
+    }
+
+    /// Clut disposal is held while this is set (`Ch_ClutDisposeCheck`).
+    pub const CLUT_DISPOSE_HOLD: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x0130_19c0);
+
+    /// `Ch_ClutDisposeCheck()` (`0x0083c910`): 1 when cluts may be freed:
+    /// not held, and no spell effect loaded but `0x2a0`'s.
+    pub fn ch_clut_dispose_check(mem: &impl Mem) -> u32 {
+        use ffx_system::instance::bridge as sys;
+        if CLUT_DISPOSE_HOLD.get(mem) != 0 {
+            return 0;
+        }
+        if sys::magic_handle(mem) == u32::MAX {
+            return 1;
+        }
+        u32::from(sys::magic_id(mem) != 0x2a0)
+    }
+
+    /// Two GS packets for the specular textures (`Ch_TextureSendSpecular`).
+    pub const SPECULAR: [ffx_bridge::Global<u32>; 2] = [
+        ffx_bridge::Global::new(0x0130_19e0),
+        ffx_bridge::Global::new(0x0130_1a20),
+    ];
+    /// Their clut data pointers (`+0x30` of each).
+    pub const SPECULAR_DATA: [ffx_bridge::Global<u32>; 2] = [
+        ffx_bridge::Global::new(0x0130_1a10),
+        ffx_bridge::Global::new(0x0130_1a50),
+    ];
+
+    /// `Ch_TextureSendSpecular(out)` (`0x0083cf80`): two DMA tags (a
+    /// reference to each specular packet, then its data) to `out`; marks
+    /// each data block `0x5100`. Returns `out + 0x40`.
+    pub fn ch_texture_send_specular(mem: &mut impl Mem, out: u32) -> u32 {
+        for (i, (pk, data)) in (0u32..).zip(SPECULAR.into_iter().zip(SPECULAR_DATA)) {
+            let o = out + 0x20 * i;
+            let at = pk.ptr(mem).addr;
+            mem.write(o, [0x3000_0005u32, at, 0, 0]);
+            let d = data.get(mem);
+            mem.write(d.wrapping_sub(0x12), 0x5100u16);
+            let n = mem.read::<u32>(d.wrapping_sub(0x10)) & 0x7fff;
+            mem.write(o + 0x10, n.wrapping_add(2) | 0x3000_0000);
+            if i == 0 {
+                mem.write(o + 0x18, [0u32; 2]);
+            }
+            let d = data.get(mem);
+            mem.write(o + 0x14, d.wrapping_sub(0x20));
+            if i == 1 {
+                mem.write(o + 0x18, [0u32; 2]);
+            }
+        }
+        out + 0x40
+    }
+
+    /// `Ch_GetBigImageSize(chr, &w, &h, rows)` (`0x00833e60`): the widest
+    /// image and the heights of all of them stacked (the images of the
+    /// archive's texture list), and in `rows` where each starts.
+    pub fn ch_get_big_image_size(mem: &mut impl Mem, chr: u32, w: u32, h: u32, rows: u32) {
+        let arc: u32 = mem.read(blk(mem, chr) + 0x6c);
+        let t: u32 = mem.read(arc + 0x18);
+        let n = u32::from(mem.read::<u16>(t + 4));
+        let height = |mem: &mut _, k: u32| -> u32 {
+            let list: u32 = Mem::read(mem, t + 0x14);
+            let idx = u32::from(Mem::read::<u8>(mem, list.wrapping_add(16 * k)));
+            let images: u32 = Mem::read(mem, t + 0x1c);
+            u32::from(Mem::read::<u16>(mem, images.wrapping_add(16 * idx) + 0xa))
+        };
+        let (mut max_w, mut sum) = (0u32, 0u32);
+        if n > 0 {
+            let images: u32 = mem.read(t + 0x1c);
+            let list: u32 = mem.read(t + 0x14);
+            for k in 0..n {
+                let idx = u32::from(mem.read::<u8>(list.wrapping_add(16 * k)));
+                let img = images.wrapping_add(16 * idx);
+                max_w = max_w.max(u32::from(mem.read::<u16>(img + 8)));
+                sum = sum.wrapping_add(u32::from(mem.read::<u16>(img + 0xa)));
+            }
+        }
+        mem.write(w, max_w);
+        mem.write(h, sum);
+        mem.write(rows, 0u32);
+        let mut i = 1u32;
+        while i < u32::from(mem.read::<u16>(t + 4)) {
+            let at = rows + 4 * i;
+            mem.write(at, 0u32);
+            let mut s = 0u32;
+            for k in 0..i {
+                s = s.wrapping_add(height(mem, k));
+                mem.write(at, s);
+            }
+            i += 1;
+        }
     }
 
     fn tex(mem: &impl Mem, chr: u32) -> u32 {

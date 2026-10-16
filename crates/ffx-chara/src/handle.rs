@@ -172,6 +172,48 @@ pub mod bridge {
         }))
     }
 
+    /// Calls `f` on every active character, the array reread after each
+    /// (as the `Ch_All*` loops do).
+    pub fn each_active<M: Mem>(mem: &mut M, mut f: impl FnMut(&mut M, u32)) {
+        let mut c = CHR_ARRAY.get(mem);
+        loop {
+            let end = slot(mem, CHR_COUNT.get(mem));
+            if c == end {
+                break;
+            }
+            if active(mem, c) {
+                f(mem, c);
+            }
+            c = c.wrapping_add(l::SIZE);
+        }
+    }
+
+    /// `Ch_AllReserveCalcNorm()` (`0x00832550`).
+    pub fn ch_all_reserve_calc_norm(mem: &mut impl Mem) {
+        each_active(mem, |m, c| {
+            crate::parts::bridge::ch_reserve_calc_norm(m, c, l::F_RESERVE_CALC_NORM);
+        });
+    }
+
+    /// `Ch_AllSetCalcNorm(on)` (`0x008325b0`).
+    pub fn ch_all_set_calc_norm(mem: &mut impl Mem, on: u32) {
+        each_active(mem, |m, c| {
+            crate::parts::bridge::ch_set_calc_norm(m, c, on);
+        });
+    }
+
+    /// `Ch_SysGetNbUse()` (`0x008285e0`): characters in use.
+    pub fn ch_sys_get_nb_use(mem: &impl Mem) -> u32 {
+        let end = slot(mem, CHR_COUNT.get(mem));
+        let mut c = CHR_ARRAY.get(mem);
+        let mut n = 0u32;
+        while c != end {
+            n += u32::from(active(mem, c));
+            c = c.wrapping_add(l::SIZE);
+        }
+        n
+    }
+
     /// `Ch_FunctionHistoryInit()` (`0x00826a40`): count 0, each entry's
     /// first byte 0.
     pub fn ch_function_history_init(mem: &mut impl Mem) {
@@ -180,6 +222,58 @@ pub mod bridge {
         for i in 0..FUNCTION_HISTORY_LEN {
             mem.write(first + 16 * i, 0u8);
         }
+    }
+
+    /// `Ch_HandleFromId(id)` (`0x008261f0`): the first active character
+    /// whose `u16` id equals `id` (all 32 bits compared), or 0.
+    pub fn ch_handle_from_id(mem: &impl Mem, id: u32) -> u32 {
+        let end = slot(mem, CHR_COUNT.get(mem));
+        let mut c = CHR_ARRAY.get(mem);
+        while c != end {
+            if active(mem, c) && u32::from(mem.read::<u16>(c + l::ID)) == id {
+                return c;
+            }
+            c = c.wrapping_add(l::SIZE);
+        }
+        0
+    }
+
+    /// `Ch_UnbindChildren(chr)` (`0x00826150`): clears the bind parent of
+    /// the characters bound to `chr`. The original walks `g_ChrCount`
+    /// slots from `chr` itself, not from the array's start.
+    pub fn ch_unbind_children(mem: &mut impl Mem, chr: u32) {
+        if chr == 0 {
+            return;
+        }
+        let mut c = chr;
+        loop {
+            #[allow(clippy::cast_sign_loss)] // multiplied unsigned
+            let end = chr.wrapping_add((CHR_COUNT.get(mem) as u32).wrapping_mul(l::SIZE));
+            if c == end {
+                break;
+            }
+            if mem.read::<u32>(c + l::BIND_PARENT) == chr {
+                mem.write(c + l::BIND_PARENT, 0u32);
+            }
+            c = c.wrapping_add(l::SIZE);
+        }
+    }
+
+    /// `Ch_AllClearFlags24(…)` (`0x00832db0`): clears bits 24..26 of
+    /// [`l::FLAGS`] of every active character.
+    pub fn ch_all_clear_flags24(mem: &mut impl Mem) {
+        each_active(mem, |m, c| {
+            let w: u32 = m.read(c + l::FLAGS);
+            m.write(c + l::FLAGS, w & 0xf8ff_ffff);
+        });
+    }
+
+    /// `Ch_CompareDrawOrder(&a, &b)` (`0x008320f0`): a sort comparator:
+    /// `(*a)+0x6d4 − (*b)+0x6d4`.
+    pub fn ch_compare_draw_order(mem: &impl Mem, a: u32, b: u32) -> u32 {
+        let (ca, cb): (u32, u32) = (mem.read(a), mem.read(b));
+        mem.read::<u32>(ca + 0x6d4)
+            .wrapping_sub(mem.read(cb + 0x6d4))
     }
 }
 
