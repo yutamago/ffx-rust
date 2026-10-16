@@ -2996,10 +2996,11 @@ fn st0_call(f: u32, x: f64) -> f64 {
         std::arch::asm!(
             "fld qword ptr [{x}]",
             "call {f}",
-            "fstp qword ptr [{out}]",
+            "fstp qword ptr [edi]",
             x = in(reg) &raw const x,
             f = in(reg) f,
-            out = in(reg) &raw mut out,
+            // edi: the callee keeps it (eax, ecx and edx it may not)
+            in("edi") &raw mut out,
             clobber_abi("C"),
         );
         out
@@ -3026,11 +3027,12 @@ fn st01_call(f: u32, a: f64, b: f64) -> f64 {
             "fld qword ptr [{a}]",
             "fld qword ptr [{b}]",
             "call {f}",
-            "fstp qword ptr [{out}]",
+            "fstp qword ptr [edi]",
             a = in(reg) &raw const a,
             b = in(reg) &raw const b,
             f = in(reg) f,
-            out = in(reg) &raw mut out,
+            // edi: the callee keeps it (eax, ecx and edx it may not)
+            in("edi") &raw mut out,
             clobber_abi("C"),
         );
         out
