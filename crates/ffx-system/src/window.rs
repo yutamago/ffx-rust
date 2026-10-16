@@ -219,4 +219,108 @@ pub mod bridge {
             mem.write(at, (v & 0xffff) as u16);
         }
     }
+
+    /// The `TO` texture and window tables `0x008b7c40` reads: pointers,
+    /// `+0xc` of each returned.
+    pub const TABLE_01868A90: Global<u32> = Global::new(0x0186_8a90);
+
+    /// `TOMacroSetType(win, n, t)` (`0x008b8960`): byte 0 of macro record
+    /// `n` of message window `win` (the battle form, `0x008b57c0`, sets
+    /// byte 1 too).
+    pub fn macro_set_type(mem: &mut impl Mem, win: i32, n: i32, t: u8) {
+        let r = macro_record(mem, win, n);
+        mem.write(r, t);
+    }
+
+    /// `TOMacroSetValue(win, n, v)` (`0x008b8980`): word 1 of the record;
+    /// returns `v`.
+    pub fn macro_set_value(mem: &mut impl Mem, win: i32, n: i32, v: u32) -> u32 {
+        let r = macro_record(mem, win, n);
+        mem.write(r.wrapping_add(4), v);
+        v
+    }
+
+    fn macro_record(mem: &impl Mem, win: i32, n: i32) -> u32 {
+        let i = win
+            .cast_unsigned()
+            .wrapping_shl(5)
+            .wrapping_add(n.cast_unsigned());
+        mem.read(MSG_VARS.ptr(mem).addr.wrapping_add(i.wrapping_mul(4)))
+    }
+
+    /// `TOGetTable_01868a90(i)` (`0x008b7c40`): `+0xc` of entry `i`.
+    pub fn table_01868a90(mem: &impl Mem, i: i32) -> u32 {
+        let e: u32 = mem.read(
+            TABLE_01868A90
+                .ptr(mem)
+                .addr
+                .wrapping_add(i.cast_unsigned().wrapping_mul(4)),
+        );
+        mem.read(e.wrapping_add(0xc))
+    }
+
+    /// `TOSetWindowRGBA(i, r, g, b, a)` (`0x00906d90`): window `i`'s colour
+    /// bytes at `+0x58`..`+0x5b` (the pointer read again for each).
+    pub fn set_window_rgba(mem: &mut impl Mem, i: i32, rgba: [u8; 4]) {
+        for (k, c) in (0..4u32).zip(rgba) {
+            let w: u32 = mem.read(
+                WINDOWS
+                    .ptr(mem)
+                    .addr
+                    .wrapping_add(i.cast_unsigned().wrapping_mul(4)),
+            );
+            mem.write(w.wrapping_add(0x58 + k), c);
+        }
+    }
+
+    /// `0x008b84f0(win, n, v)`: byte 1 of macro record `n` of message
+    /// window `win` (the battle form of [`macro_set_type`]'s second byte).
+    pub fn macro_set_byte1(mem: &mut impl Mem, win: i32, n: i32, v: u8) {
+        let r = macro_record(mem, win, n);
+        mem.write(r.wrapping_add(1), v);
+    }
+
+    fn table_entry(mem: &impl Mem, i: i32) -> u32 {
+        mem.read(
+            TABLE_01868A90
+                .ptr(mem)
+                .addr
+                .wrapping_add(i.cast_unsigned().wrapping_mul(4)),
+        )
+    }
+
+    /// `0x008b7fb0(i)`: byte 1 (the kind) of entry `i`, sign-extended.
+    pub fn table_kind(mem: &impl Mem, i: i32) -> i32 {
+        i32::from(mem.read::<i8>(table_entry(mem, i).wrapping_add(1)))
+    }
+
+    /// `0x008b7fd0(i)`: `entry + 0x18` for a kind-2 entry `i`, else 0.
+    pub fn table_kind2_data(mem: &impl Mem, i: i32) -> u32 {
+        let e = table_entry(mem, i);
+        if mem.read::<u8>(e.wrapping_add(1)) == 2 {
+            e.wrapping_add(0x18)
+        } else {
+            0
+        }
+    }
+
+    /// `0x008b7ff0(i)`: byte 7 (sign-extended) of a kind-2 entry `i`, else
+    /// -1.
+    pub fn table_kind2_byte7(mem: &impl Mem, i: i32) -> i32 {
+        let e = table_entry(mem, i);
+        if mem.read::<u8>(e.wrapping_add(1)) == 2 {
+            i32::from(mem.read::<i8>(e.wrapping_add(7)))
+        } else {
+            -1
+        }
+    }
+
+    /// `TOAllCloseMessageWindow()` (`0x008ab7b0`): [`close_window`] and
+    /// [`close_message`] for all eight windows.
+    pub fn all_close_message_window(mem: &mut impl Mem) {
+        for i in 0..8 {
+            close_window(mem, i);
+            close_message(mem, i);
+        }
+    }
 }
