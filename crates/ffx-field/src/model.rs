@@ -178,6 +178,13 @@ pub const PARTICLE_RATE: u32 = 0x00b5_4cc0;
 pub const PARTICLE_DEFAULTS: [u32; 2] = [0x00b3_68a4, 0x00b1_0f38];
 /// The GIF tag word `rcefSetupDraw` copies to `+0x14`.
 pub const REF_GIF_TAG: u32 = 0x00c4_98dc;
+/// A spring's functions (`rcfxSpringInit`): delete (`0x00928c60`, `+0x4`),
+/// `0x00928d70` (`+0x10`) and `0x00928aa0` (`+0x14`).
+pub const SPRING_FUNCTIONS: [u32; 3] = [0x0092_8c60, 0x0092_8d70, 0x0092_8aa0];
+/// A new spring's stiffness, 0.8 (`.rdata`, `0x00b34254`).
+pub const SPRING_STIFFNESS: u32 = 0x00b3_4254;
+/// A new spring's damping, 0.4 (`.rdata`, `0x00b10f3c`).
+pub const SPRING_DAMPING: u32 = 0x00b1_0f3c;
 /// The two buffers `rcefSetupDraw` points `+0x34` and `+0x38` at.
 pub const REF_BUFFERS: [u32; 2] = [0x0230_fd60, 0x0230_fda0];
 /// `rcfxNail`'s callbacks (`rcfxNailInit`: `+4`, `+0x10`, `+0x14`).
@@ -1747,6 +1754,575 @@ pub mod bridge {
         call: &mut C,
     ) -> u32 {
         rc_new(mem, call, 8, crate::rcdt::bridge::rcdt_chunk_init)
+    }
+
+    /// `rcbgModelCreate(model, desc)` (`0x00927be0`): a primitive blob for
+    /// `desc` (`n`, a pointer to `n` `{type, count, flags}` triples, the
+    /// vertex and normal counts): its size (a 0x20 header, each packet's
+    /// 0x10 header and `count` records of the type's stride, the end mark,
+    /// six bytes per vertex and per normal, each part rounded up to 16),
+    /// [`rc_alloc`]ed and zeroed, the header and packet headers filled, an
+    /// end mark `0xffff`; the model's `+0x14` points at it and its GIF tag
+    /// and matrices are reset. Returns 0 (the `eax` the original leaves).
+    pub fn rcbg_model_create<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        m: u32,
+        desc: u32,
+        call: &mut C,
+    ) -> u32 {
+        let up = |n: u32| if n & 0xf != 0 { (n & !0xf) + 0x10 } else { n };
+        let strides = super::PACKET_STRIDES.ptr(mem).addr;
+        let stride = |mem: &M, t: u32| u32::from(mem.read::<u8>(strides.wrapping_add(t)));
+        let n = mem.read::<i32>(desc);
+        let list = mem.read::<u32>(desc + 4);
+        let (mut packets, mut prims) = (0u32, 0u32);
+        for i in 0..n.max(0).cast_unsigned() {
+            let e = list.wrapping_add(12 * i);
+            let count = mem.read::<u32>(e + 4);
+            prims = prims.wrapping_add(count);
+            let s = stride(mem, mem.read(e));
+            packets = packets
+                .wrapping_add(0x10)
+                .wrapping_add(s.wrapping_mul(count));
+        }
+        let packets = up(packets.wrapping_add(0x10));
+        let verts = up(mem.read::<u32>(desc + 8).wrapping_mul(6));
+        let normals = up(mem.read::<u32>(desc + 0xc).wrapping_mul(6));
+        let size = normals
+            .wrapping_add(0x20)
+            .wrapping_add(verts)
+            .wrapping_add(packets);
+        let b = rc_alloc(mem, call, size);
+        for i in 0..size {
+            mem.write(b.wrapping_add(i), 0u8);
+        }
+        mem.write(b + 8, packets + 0x20);
+        mem.write(b, 0u32);
+        mem.write(b + 0xc, packets.wrapping_add(0x20).wrapping_add(verts));
+        #[allow(clippy::cast_possible_truncation)] // `mov word`
+        {
+            mem.write(b + 0x10, prims as u16);
+            mem.write(b + 4, 0x20u32);
+            mem.write(b + 0x12, mem.read::<u16>(desc + 8));
+            mem.write(b + 0x14, mem.read::<u16>(desc + 0xc));
+        }
+        mem.write(b + 0x16, 0x44u32);
+        mem.write(b + 0x1a, 0u16);
+        mem.write(b + 0x1c, 0u32);
+        let mut p = b + 0x20;
+        for i in 0..n.max(0).cast_unsigned() {
+            let e = list.wrapping_add(12 * i);
+            let t = mem.read::<u32>(e);
+            let count = mem.read::<u32>(e + 4);
+            mem.write(p, 0u8);
+            mem.write(p.wrapping_add(1), mem.read::<u8>(e));
+            mem.write(p.wrapping_add(2), mem.read::<u16>(e + 4));
+            mem.write(p.wrapping_add(4), mem.read::<u8>(e + 8));
+            mem.write(p.wrapping_add(5), 0u8);
+            mem.write(p.wrapping_add(8), 0u32);
+            let s = stride(mem, t);
+            p = p.wrapping_add(0x10).wrapping_add(s.wrapping_mul(count));
+        }
+        mem.write(p, 0xffffu16);
+        mem.write(m + 0x14, b);
+        mem.write(m + 0x20, 0x1cu32);
+        let tag = mem.read::<u32>(mem.rebase(super::REF_GIF_TAG));
+        mem.write(m + 0x24, tag);
+        mem.write(m + 0x28, 0x44u16);
+        mem.write(m + 0x2a, 0u8);
+        for o in [0x2c, 0x30, 0x34] {
+            mem.write(m + o, 0u32);
+        }
+        mem.write(m + 0x38, 0x8080_8080u32);
+        mem.write(m + 0x3c, 0u32);
+        mem.write(m + 0x40, crate::geom::SCREEN_WORLD.ptr(mem).addr);
+        mem.write(m + 0x64, 0u32);
+        mem.write(m + 0x50, crate::geom::VIEW_WORLD.ptr(mem).addr);
+        0
+    }
+
+    /// `rcbgModelCreateOnePrimH(model, type, count, verts, normals)`
+    /// (`0x00927fa0`): [`rcbg_model_create`] with one packet (flags 0);
+    /// the description is built in `work` (the original's stack, 0x1c
+    /// bytes).
+    #[allow(clippy::too_many_arguments)]
+    pub fn rcbg_model_create_one_prim_h<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        m: u32,
+        kind: u32,
+        count: u32,
+        verts: u32,
+        normals: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        mem.write(work, 1u32);
+        mem.write(work + 4, work + 0x10);
+        mem.write(work + 8, verts);
+        mem.write(work + 0xc, normals);
+        mem.write(work + 0x10, kind);
+        mem.write(work + 0x14, count);
+        mem.write(work + 0x18, 0u32);
+        rcbg_model_create(mem, m, work, call)
+    }
+
+    /// `rcbgModelFToS0(out, points, n, scale)` (`0x009281d0`): each of `n`
+    /// points (16 bytes) times `1 / scale` (`rcbgModelScaleVector`), cut to
+    /// integers (`rcbgModelVectorToInt`, both into the original's stack:
+    /// `work`, 0x20 bytes) and its x, y, z kept as `i16` triples at `out`.
+    /// Returns the last z (the `eax` the original leaves), or 0 for none.
+    pub fn rcbg_model_f_to_s0(
+        mem: &mut impl Mem,
+        out: u32,
+        points: u32,
+        n: i32,
+        scale: u32,
+        work: u32,
+    ) -> u32 {
+        use ffx_bridge::x87::Reg;
+        let inv = (Reg::ONE / Reg::load(f32::from_bits(scale)))
+            .store()
+            .to_bits();
+        let (scaled, ints) = (work, work + 0x10);
+        let mut last = 0;
+        let (mut o, mut p) = (out, points);
+        for _ in 0..n.max(0) {
+            crate::vu0::bridge::rcbg_scale_vector(mem, scaled, p, inv);
+            crate::vu0::bridge::rcbg_model_vector_to_int(mem, ints, scaled);
+            let x = mem.read::<u16>(ints);
+            let y = mem.read::<u16>(ints + 4);
+            last = mem.read::<u16>(ints + 8);
+            mem.write(o, x);
+            mem.write(o.wrapping_add(2), y);
+            mem.write(o.wrapping_add(4), last);
+            p = p.wrapping_add(0x10);
+            o = o.wrapping_add(6);
+        }
+        u32::from(last)
+    }
+
+    /// `rcbgTrxTexSetAddr(tex, image, clut)` (`0x00922210`): the GS
+    /// addresses kept at `+0x18`/`+0x1c` and both transfers' registers: the
+    /// image (`+0x20`: base `image & 0x3fff`, width `image >> 14 & 0x3f`,
+    /// format 0x13, the texture's size `+0x10`/`+0x12`) and the CLUT
+    /// (`+0x60`: base `clut >> 5 & 0x3fff`, width 1, 16x16).
+    #[allow(clippy::cast_possible_truncation)] // the registers are 16-bit
+    pub fn rcbg_trx_tex_set_addr(mem: &mut impl Mem, t: u32, image: u32, clut: u32) {
+        mem.write(t + 0x18, image);
+        mem.write(t + 0x1c, clut);
+        let w = mem.read::<i16>(t + 0x10);
+        let h = mem.read::<i16>(t + 0x12);
+        rcbg_trx_set_regs(
+            mem,
+            t + 0x20,
+            (image & 0x3fff) as i16,
+            (image >> 14 & 0x3f) as i16,
+            0x13,
+            0,
+            0,
+            w,
+            h,
+        );
+        rcbg_trx_set_regs(
+            mem,
+            t + 0x60,
+            (clut >> 5 & 0x3fff) as i16,
+            1,
+            0,
+            0,
+            0,
+            0x10,
+            0x10,
+        );
+    }
+
+    /// The `if (p) { rcFree(p); p = 0; }` the `*Fini` functions repeat.
+    fn free_word<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(mem: &mut M, call: &mut C, at: u32) {
+        let p = mem.read::<u32>(at);
+        if p != 0 {
+            rc_free(mem, call, p);
+            mem.write(at, 0u32);
+        }
+    }
+
+    /// `rcdtListsFini(l)` (`0x009242f0`): `+0x4`, `+0xc`, `+0x14`, each of
+    /// the `+0x18` pointers in the table at `+0x1c`, then the table freed
+    /// (`rcFree`) and cleared.
+    pub fn rcdt_lists_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        l: u32,
+        call: &mut C,
+    ) {
+        for o in [4u32, 0xc, 0x14] {
+            free_word(mem, call, l + o);
+        }
+        let mut i = 0u32;
+        while i.cast_signed() < mem.read::<i32>(l + 0x18) {
+            let at = mem.read::<u32>(l + 0x1c).wrapping_add(4 * i);
+            let p = mem.read::<u32>(at);
+            if p != 0 {
+                rc_free(mem, call, p);
+                let at = mem.read::<u32>(l + 0x1c).wrapping_add(4 * i);
+                mem.write(at, 0u32);
+            }
+            i += 1;
+        }
+        free_word(mem, call, l + 0x1c);
+    }
+
+    /// `rcfxParticleAddForce(ps, force)` (`0x00928660`): the force inserted
+    /// into the system's list (`+0x34` count, `+0x38` table, grown by
+    /// `rcRealloc`) before the first with a greater priority (`+0x18`), else
+    /// at the end.
+    pub fn rcfx_particle_add_force<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        ps: u32,
+        force: u32,
+        call: &mut C,
+    ) {
+        let n = mem.read::<i32>(ps + 0x34);
+        let prio = mem.read::<i32>(force + 0x18);
+        let list = mem.read::<u32>(ps + 0x38);
+        let mut at = None;
+        for i in 0..n.max(0) {
+            let f = mem.read::<u32>(list.wrapping_add(4 * i.cast_unsigned()));
+            if mem.read::<i32>(f + 0x18) > prio {
+                at = Some(i);
+                break;
+            }
+        }
+        let size = n.wrapping_mul(4).wrapping_add(4).cast_unsigned();
+        let new = rc_realloc(mem, call, list, size);
+        match at {
+            None => {
+                mem.write(ps + 0x38, new);
+                let n = mem.read::<u32>(ps + 0x34);
+                mem.write(new.wrapping_add(4 * n), force);
+                mem.write(ps + 0x34, n.wrapping_add(1));
+            }
+            Some(i) => {
+                let n = mem.read::<i32>(ps + 0x34).wrapping_add(1);
+                mem.write(ps + 0x34, n);
+                mem.write(ps + 0x38, new);
+                let mut k = n - 1;
+                while k > i {
+                    let t = mem
+                        .read::<u32>(ps + 0x38)
+                        .wrapping_add(4 * k.cast_unsigned());
+                    let v = mem.read::<u32>(t.wrapping_sub(4));
+                    mem.write(t, v);
+                    k -= 1;
+                }
+                let t = mem
+                    .read::<u32>(ps + 0x38)
+                    .wrapping_add(4 * i.cast_unsigned());
+                mem.write(t, force);
+            }
+        }
+    }
+
+    /// `rcfxParticleFiniForces(ps)` (`0x00928800`): each force's delete
+    /// function (`+0x4`, when set) on it, then the table freed.
+    pub fn rcfx_particle_fini_forces<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        ps: u32,
+        call: &mut C,
+    ) {
+        let mut i = 0u32;
+        while i.cast_signed() < mem.read::<i32>(ps + 0x34) {
+            let f = mem.read::<u32>(mem.read::<u32>(ps + 0x38).wrapping_add(4 * i));
+            let d = mem.read::<u32>(f + 4);
+            if d != 0 {
+                call(mem, d, &[f]);
+            }
+            i += 1;
+        }
+        free_word(mem, call, ps + 0x38);
+    }
+
+    /// The `rcRealloc` of `n` units each to the given words (`*SetCnt`).
+    fn realloc_words<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+        p: u32,
+        sizes: &[(u32, u32)],
+    ) {
+        for &(o, size) in sizes {
+            let old = mem.read::<u32>(p + o);
+            let new = rc_realloc(mem, call, old, size);
+            mem.write(p + o, new);
+        }
+    }
+
+    /// `rcfxParticleSetCnt(ps, n)` (`0x009289f0`): `n` at `+0x1c` and the
+    /// four particle buffers (`+0x24..+0x30`) resized to `n` quadwords.
+    pub fn rcfx_particle_set_cnt<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        ps: u32,
+        n: u32,
+        call: &mut C,
+    ) {
+        mem.write(ps + 0x1c, n);
+        let s = n.wrapping_shl(4);
+        realloc_words(mem, call, ps, &[(0x24, s), (0x28, s), (0x2c, s), (0x30, s)]);
+    }
+
+    /// `rcfxSpringFini(s)` (`0x00928c80`): its two buffers (`+0x20`,
+    /// `+0x24`) freed and cleared.
+    pub fn rcfx_spring_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        s: u32,
+        call: &mut C,
+    ) {
+        for o in [0x20u32, 0x24] {
+            let p = mem.read::<u32>(s + o);
+            if p != 0 {
+                rc_free(mem, call, p);
+            }
+            mem.write(s + o, 0u32);
+        }
+    }
+
+    /// `rcfxSpringInit(s)` (`0x00928ce0`): kind `0x30005`, its functions
+    /// ([`super::SPRING_FUNCTIONS`]), no buffers, stiffness 0.8 and damping
+    /// 0.4 (`.rdata` floats).
+    pub fn rcfx_spring_init(mem: &mut impl Mem, s: u32) {
+        mem.write(s, 0x0003_0005u32);
+        for (o, f) in [(4u32, 0), (0x10, 1), (0x14, 2)] {
+            let a = mem.rebase(super::SPRING_FUNCTIONS[f]);
+            mem.write(s + o, a);
+        }
+        for o in [8u32, 0xc, 0x18, 0x1c, 0x20, 0x24] {
+            mem.write(s + o, 0u32);
+        }
+        for (o, c) in [
+            (0x28u32, super::SPRING_STIFFNESS),
+            (0x2c, super::SPRING_DAMPING),
+        ] {
+            let v = mem.read::<u32>(mem.rebase(c));
+            mem.write(s + o, crate::x87::copy(v));
+        }
+    }
+
+    /// `rcfxSpringSetCnt(s, n)` (`0x00928d80`): `n` at `+0x1c`, the pairs
+    /// (`+0x20`, 8 bytes each) and lengths (`+0x24`, 4 bytes) resized.
+    pub fn rcfx_spring_set_cnt<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        s: u32,
+        n: u32,
+        call: &mut C,
+    ) {
+        mem.write(s + 0x1c, n);
+        realloc_words(
+            mem,
+            call,
+            s,
+            &[(0x20, n.wrapping_mul(8)), (0x24, n.wrapping_mul(4))],
+        );
+    }
+
+    /// `rcfxNailFini(nail)` (`0x00929090`): its four buffers
+    /// (`+0x20..+0x2c`) freed and cleared.
+    pub fn rcfx_nail_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        nail: u32,
+        call: &mut C,
+    ) {
+        for o in [0x20u32, 0x24, 0x28, 0x2c] {
+            free_word(mem, call, nail + o);
+        }
+    }
+
+    /// `rcfxNailSetCnt(nail, n)` (`0x00929230`): `n` at `+0x1c`, the
+    /// indices (`+0x20`, a word each) and three quadword buffers resized.
+    pub fn rcfx_nail_set_cnt<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        nail: u32,
+        n: u32,
+        call: &mut C,
+    ) {
+        mem.write(nail + 0x1c, n);
+        let q = n.wrapping_shl(4);
+        realloc_words(
+            mem,
+            call,
+            nail,
+            &[(0x20, n.wrapping_mul(4)), (0x24, q), (0x28, q), (0x2c, q)],
+        );
+    }
+
+    /// `rcfxWindSet(wind, dir, pos, power)` (`0x009298e0`): the two vectors
+    /// (`rcCopyQword`) to `+0x1c`/`+0x2c` and the power as a double at
+    /// `+0x40`.
+    pub fn rcfx_wind_set(mem: &mut impl Mem, wind: u32, dir: u32, pos: u32, power: u32) {
+        crate::vu0::bridge::rc_copy_qword(mem, wind + 0x1c, dir);
+        crate::vu0::bridge::rc_copy_qword(mem, wind + 0x2c, pos);
+        mem.write(wind + 0x40, crate::x87::load(power));
+    }
+
+    /// The end of the palette animations: the transfer's last entry made
+    /// current (`rcbgTrxSetNo`).
+    fn pal_commit(mem: &mut impl Mem, pal: u32) {
+        let t = mem.read::<u32>(pal + 0xc);
+        let n = mem.read::<u32>(t + 0x30).wrapping_sub(1);
+        rcbg_trx_set_no(mem, t, n);
+    }
+
+    /// The step counter of the scrolling palette animations: `+0x4` counts
+    /// up to the speed (`+0xb`); past it the offset (`+0x6`) moves one
+    /// entry (wrapping at 0x100) and the counter restarts.
+    fn pal_step(mem: &mut impl Mem, pal: u32) {
+        let c = mem.read::<i16>(pal + 4).wrapping_add(1);
+        mem.write(pal + 4, c);
+        if c <= i16::from(mem.read::<u8>(pal + 0xb)) {
+            return;
+        }
+        let o = mem.read::<i16>(pal + 6).wrapping_add(1);
+        mem.write(pal + 6, if o < 0x100 { o } else { o.wrapping_sub(0x100) });
+        mem.write(pal + 4, 0i16);
+    }
+
+    /// `memcpy`/`memset` as the palette animations use them.
+    fn copy_bytes(mem: &mut impl Mem, dst: u32, src: Option<u32>, n: u32) {
+        for i in 0..n {
+            let v = src.map_or(0, |s| mem.read::<u8>(s.wrapping_add(i)));
+            mem.write(dst.wrapping_add(i), v);
+        }
+    }
+
+    /// `rcbgPalRotate(pal)` (`0x00929a10`): the entry (`+0x8`) rotated by
+    /// the offset (`+0x6`) into the last entry, made current, then a step
+    /// ([`pal_step`]).
+    pub fn rcbg_pal_rotate(mem: &mut impl Mem, pal: u32) {
+        let n = i32::from(mem.read::<i16>(pal + 8)).cast_unsigned();
+        let src = rcbg_pal_get_entry_data(mem, pal, n);
+        let dst = rcbg_pal_get_last_entry_data(mem, pal);
+        let off = i32::from(mem.read::<i16>(pal + 6));
+        let size = (0x100 - off).wrapping_mul(4).cast_unsigned();
+        copy_bytes(
+            mem,
+            dst,
+            Some(src.wrapping_add(off.wrapping_mul(4).cast_unsigned())),
+            size,
+        );
+        let off = i32::from(mem.read::<i16>(pal + 6));
+        copy_bytes(
+            mem,
+            dst.wrapping_add(size),
+            Some(src),
+            (off << 2).cast_unsigned(),
+        );
+        pal_commit(mem, pal);
+        pal_step(mem, pal);
+    }
+
+    /// `rcbgPalShift(pal)` (`0x00929ac0`): as [`rcbg_pal_rotate`], the
+    /// entries shifted in replaced by zeros.
+    pub fn rcbg_pal_shift(mem: &mut impl Mem, pal: u32) {
+        let n = i32::from(mem.read::<i16>(pal + 8)).cast_unsigned();
+        let src = rcbg_pal_get_entry_data(mem, pal, n);
+        let dst = rcbg_pal_get_last_entry_data(mem, pal);
+        let off = i32::from(mem.read::<i16>(pal + 6));
+        let size = (0x100 - off).wrapping_mul(4).cast_unsigned();
+        copy_bytes(
+            mem,
+            dst,
+            Some(src.wrapping_add(off.wrapping_mul(4).cast_unsigned())),
+            size,
+        );
+        let off = i32::from(mem.read::<i16>(pal + 6));
+        copy_bytes(
+            mem,
+            dst.wrapping_add(size),
+            None,
+            (off << 2).cast_unsigned(),
+        );
+        pal_commit(mem, pal);
+        pal_step(mem, pal);
+    }
+
+    /// `rcbgPalWhite(pal)` (`0x00929ba0`): the entry (`+0x8`) with every
+    /// colour white (alpha kept) into the last entry, made current.
+    pub fn rcbg_pal_white(mem: &mut impl Mem, pal: u32) {
+        let n = i32::from(mem.read::<i16>(pal + 8)).cast_unsigned();
+        let src = rcbg_pal_get_entry_data(mem, pal, n);
+        let dst = rcbg_pal_get_last_entry_data(mem, pal);
+        for i in 0..0x100u32 {
+            let v = mem.read::<u32>(src.wrapping_add(4 * i));
+            mem.write(dst.wrapping_add(4 * i), v | 0x00ff_ffff);
+        }
+        pal_commit(mem, pal);
+    }
+
+    /// `rcbgTrxAllocEntries(t, format, w, h, n)` (`0x0092d3e0`): `n` at
+    /// `+0x30`; the entry size (`+0x34`) for format 0 (`4 w h + 16`) or
+    /// 0x13 (`w h + 16`; others keep it); `n` entries [`rc_alloc`]ed to
+    /// `+0x38`, flag `+0x10 | 1`.
+    pub fn rcbg_trx_alloc_entries<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        t: u32,
+        format: i16,
+        w: i16,
+        h: i16,
+        n: u32,
+        call: &mut C,
+    ) {
+        mem.write(t + 0x30, n);
+        let (w, h) = (i32::from(w), i32::from(h));
+        match format {
+            0 => mem.write(
+                t + 0x34,
+                w.wrapping_mul(h).wrapping_mul(4).wrapping_add(0x10),
+            ),
+            0x13 => mem.write(t + 0x34, w.wrapping_mul(h).wrapping_add(0x10)),
+            _ => {}
+        }
+        let size = mem.read::<u32>(t + 0x34).wrapping_mul(n);
+        let p = rc_alloc(mem, call, size);
+        let f = mem.read::<u32>(t + 0x10);
+        mem.write(t + 0x10, f | 1);
+        mem.write(t + 0x38, p);
+    }
+
+    /// `rcbgTrxPacketMake(t, out)` (`0x0092d5a0`): the transfer's GS image
+    /// upload at `out`: a GIF tag of four A+D registers (BITBLTBUF, TRXPOS,
+    /// TRXREG from `+0x18..+0x2c`, TRXDIR 0), then an image tag of
+    /// `+0x34 / 16` quadwords (`0x3000`) pointing at the current entry
+    /// (`+0x3c`). Returns `out + 0x60`.
+    pub fn rcbg_trx_make_packet(mem: &mut impl Mem, t: u32, out: u32) -> u32 {
+        let words = [
+            0x1000_0005,
+            0,
+            0,
+            0,
+            mem.read::<u32>(t + 0x18),
+            mem.read::<u32>(t + 0x1c),
+            0x50,
+            0,
+            mem.read::<u32>(t + 0x20),
+            mem.read::<u32>(t + 0x24),
+            0x51,
+            0,
+            mem.read::<u32>(t + 0x28),
+            mem.read::<u32>(t + 0x2c),
+            0x52,
+            0,
+            0,
+            0,
+            0x53,
+            0,
+        ];
+        for (i, w) in (0u32..).zip(words) {
+            mem.write(out + 4 * i, w);
+        }
+        #[allow(clippy::cast_possible_truncation)] // `mov word`
+        mem.write(out + 0x50, (mem.read::<i32>(t + 0x34) / 16) as i16);
+        mem.write(out + 0x52, 0x3000u16);
+        let e = rcbg_trx_get_entry(mem, t, mem.read(t + 0x3c));
+        mem.write(out + 0x54, e);
+        mem.write(out + 0x58, 0u32);
+        mem.write(out + 0x5c, 0u32);
+        out + 0x60
     }
 }
 

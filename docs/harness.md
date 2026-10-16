@@ -168,6 +168,25 @@ process with `TerminateProcess`: running the game's own shutdown from the
 harness thread once deadlocked, and that process, stuck while exiting,
 kept the mutex (and the harness port) until it finally went away.
 
+So every test and agent queues for the game: the game slot
+(`crates/ffx-harness/src/slot.rs`), shared by all worktrees in
+`~/ffx-work/game-slot`. `Game::launch` takes a ticket, waits until it is
+first (saying so on stderr), holds an OS file lock while the game runs and
+frees it when the `Game` is dropped; a process that dies frees its ticket
+and lock with it. Scripts that start several games (`tools/replays/run-all.sh`,
+`tools/game-tests.sh`) take the slot once for all of them
+(`tools/in-game-slot.sh`). From the shell:
+
+```bash
+cargo build --release -p ffx-harness --bin game-slot
+target/release/game-slot status              # holder and queue
+target/release/game-slot run -- <command>    # waits, runs it in the slot
+```
+
+`tools/run-game.sh` refuses to start a game while someone else holds the
+slot. A detached game (`Game::detach`) outlives its slot. Run long game
+tests as background commands: they wait for their turn and finish later.
+
 ## Tests
 
 `crates/ffx-harness` launches the game (`Game::launch`, background mode)

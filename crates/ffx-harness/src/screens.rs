@@ -54,8 +54,9 @@ pub fn wait_for(
 /// Fails when the title does not appear.
 pub fn to_title(game: &mut Game) -> Result<Image> {
     game.wait_for_open("titl00", 30, 3000)?;
-    // The logos and the auto-save notice last a while in real time (fast
-    // mode does not shorten them), so keep tapping for up to two minutes.
+    // Fast mode ends the logos at once (the hook clears their movie's
+    // flag); without it they last a while in real time, so keep tapping
+    // for up to two minutes.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
     while std::time::Instant::now() < deadline {
         let shot = game.screenshot()?;

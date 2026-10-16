@@ -8,6 +8,7 @@
 #   --all   run every game test
 #   --list  only print which tests would run, and why
 set -euo pipefail
+source "$(dirname "$0")/in-game-slot.sh"
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo"
 
