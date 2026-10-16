@@ -24,6 +24,10 @@
 0x00401cb0 function Settings_Load             # reads Documents\Square Enix\...\GameSetting.ini (Language=jp|en|fr|de|it|es|kr|ch)
 0x00402a00 function SetWordAt_00402a00 # thiscall(this, i, v), ret 8: this[i] = v, returns 0; name ours
 0x00402be0 function GetTable_00c8a538 # stdcall(i), ret 4: word i of the table at 0x00c8a538; callers 0x00700da0, 0x00701fa0; name ours
+0x00402c90 function std_string_ctor_cstr         # structure: thiscall(this, const char *s): capacity 15, size 0, buf[0] = 0, then assign(s, strlen(s)) (0x00404270); MSVC std::basic_string<char>(const char *) layout {buf/ptr, +0x10 size, +0x14 capacity}; name ours
+0x00402cf0 function std_string_ctor_move         # structure: thiscall(this, other): empty init, then takes other's heap pointer (capacity >= 16) or copies its small buffer, and leaves other empty; MSVC std::basic_string<char>(basic_string &&); name ours
+0x00402d60 function std_string_assign_move       # structure: thiscall(this, other): if this != other: frees own heap buffer (capacity > 15), then moves other in (0x004039b0); MSVC basic_string<char>::operator=(basic_string &&); name ours
+0x00402da0 function std_string_dtor              # structure: fastcall(this): operator_delete(ptr) when capacity > 15, then capacity 15, size 0, buf[0] = 0 (_Tidy(true)); MSVC ~basic_string<char>; 59 callers, mostly unwind funclets; name ours
 0x00405ba0 function ReturnConst_00405ba0 # () -> 0x80; name ours
 0x00405e20 function zlib_uncompress           # zlib 1.2.x uncompress(dst, &dst_len, src, src_len), cdecl; replaced by ffx-hook
 0x00406000 function zlib_inflateInit_         # called first by zlib_uncompress; stream ptr in ECX
@@ -1884,6 +1888,7 @@
 0x0065de70 function PhyreScene_getCurrentLevelName # fh v3:bsim1.00 0x0065dff0 PhyreScene::getCurrentLevelName
 0x0065de90 function PhyreScene_getCurrentLevelNameHash # fh v3:bsim1.00 0x0065e010 PhyreScene::getCurrentLevelNameHash
 0x0065dea0 function PhyreScene_getCurrentMagicPath # fh v3:bsim1.00 0x0065e020 PhyreScene::getCurrentMagicPath
+0x0065e050 function PhyreScene_getLinearSampler  # structure: thiscall(scene, which) -> the sampler state object at scene + 0xfaa8 (+0xfacc for which == 2); 20 callers are material and post-process setup (ClassDynamicGeometry_setupMaterial, PostProcessManager_renderUSM); Switch PhyreScene::getLinearSampler (36 bytes) sorts between PhyreScene_getCurrentMagicPath and PhyreScene_getMonsterEtTextureName, as here
 0x0065e200 function PhyreScene_getMonsterEtTextureName # fh v3:exact 0x0065e380 PhyreScene::getMonsterEtTextureName
 0x0065e310 function PhyreScene_getPreviousLevelNameHash # fh v3:bsim1.00 0x0065e490 PhyreScene::getPreviousLevelNameHash
 0x0065e5e0 function PhyreScene_getToBeDeleteMagicPath # fh v3:bsim1.00 0x0065e760 PhyreScene::getToBeDeleteMagicPath
@@ -2498,6 +2503,7 @@
 0x006f5e30 function TextUtil_appendLine          # structure: thiscall(this, text): stores a copy of text in the first empty line slot of the line array (+0x74 count, +0x78 PStrings), "file error" path; 10 callers are the *TweakUtil initialize functions adding lines; Switch TextUtil::appendLine (596 bytes)
 0x006f6070 function TextUtil_changeLine          # structure: thiscall(this, i, text): if i < line count, assign line i (0x00445cf0) and set the dirty flag +0x70; Switch TextUtil::changeLine; 35 callers (tweak utils updating values)
 0x006f60a0 function TextUtil_doOnAllTextUtilAssetsLoaded # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Debug Info:'; Switch 0x7100219540 TextUtil::doOnAllTextUtilAssetsLoaded (symbols from Fahrenheit's server export)
+0x006f6300 function TextUtil_getTextWidthHeight  # layout: alphabetical run between TextUtil_doOnAllTextUtilAssetsLoaded and TextUtil_init (1 unnamed in the gap); Switch 0x710021a5c0 TextUtil::getTextWidthHeight is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x006f6370 function TextUtil_init                # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71008a1d98 TextUtil::init, 3 votes, round 1
 0x006f63f0 function TextUtil_onTextUtilAssetLoaded # structure: the asset-loaded callback TextUtil_init passes to AsyncLoadManager for its 2 clusters; Switch TextUtil::onTextUtilAssetLoaded follows the constructors
 0x006f65b0 function TextUtil_render              # structure: thiscall: when enabled (+0x80) and set up (+0x10): rebuild if dirty (+0x70), beginScene, draw, endScene; callers are the *TweakUtil render functions; Switch TextUtil::render
@@ -2527,7 +2533,12 @@
 0x006f9d50 function PhyreFIOSStreamFile_getFileSize # fh v3:exact 0x006f9e30 PhyreFIOSStreamFile::getFileSize
 0x006f9d70 function PhyreFIOS_isFileExist     # fh v3:bsim1.00 0x006f9e50 PhyreFIOS::isFileExist
 0x006f9d80 function PhyreFIOSStreamFile_seek  # fh v3:exact 0x006f9e60 PhyreFIOSStreamFile::seek
+0x006fa130 function FmodManager_createThread     # str: the thread is named "FmodManager"; Switch FmodManager::createThread (116 bytes) sits in the same place after getSystemTimeInMsec/registCommandAsync in the file
+0x006fa210 function FmodManager_getSystemTimeInMsec # structure: graphicGetTimeInMicroseconds converted to a float of milliseconds; Switch FmodManager::getSystemTimeInMsec (36 bytes), here just before the registCommandAsync overloads as there
+0x006fa280 function FmodManager_registCommandAsync1 # structure: (cmd) -> Fmod_PushCommand(cmd, 0, 0, 0, 0); one of the registCommandAsync overloads with defaulted arguments (Switch has five FmodManager::registCommandAsync, 28-40 bytes beside the 556-byte main one, which is our Fmod_PushCommand); 1-argument form
 0x006fa2a0 function FmodManager_registCommandAsync # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71008a3118 FmodManager::registCommandAsync, 3 votes, round 1
+0x006fa2c0 function FmodManager_registCommandAsync3 # structure: (cmd, a, b) -> Fmod_PushCommand(cmd, a, b, 0, 0); 3-argument registCommandAsync overload (see FmodManager_registCommandAsync1); callers iMusic*/iSfx*
+0x006fa2e0 function FmodManager_registCommandAsync4 # structure: (cmd, a, b, c) -> Fmod_PushCommand(cmd, a, b, c, 0); 4-argument registCommandAsync overload (see FmodManager_registCommandAsync1)
 0x006fa300 function Fmod_PushCommand             # thiscall(mgr; cmd, a, b, c): queues an FMOD command (ring of 0x96 x 0x14 at 0x00ce8458, "Too many fmod commands at the same time!!"); dispatched through table 0x00c3a368 (0x1a music stop?, 0x27 music start, 0x28 music read, 0x33 sfx start)
 0x006fa500 function FmodManager_registCommandSync # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'registCommandSync TimeOut: %d\\n'; Switch 0x71002371d0 FmodManager::registCommandSync (symbols from Fahrenheit's server export)
 0x006fa690 function FmodManager_signalMusicStart # fh v3:exact 0x006fa770 FmodManager::signalMusicStart
@@ -4501,12 +4512,25 @@
 0x007e9580 function op_rt_m_x                 # (dst, src, float angle): src turned about X into dst (all four rows), sin/cos from g_pppSinTable[ftol(angle) & 0xfff] and [+0x400]
 0x007e9670 function op_rt_m_y                 # (dst, src, float angle): as op_rt_m_x about Y
 0x007e9760 function op_rt_m_z                 # (dst, src, float angle): as op_rt_m_x about Z
+0x007e9850 function op_rt_m                      # structure: (dst, src, angles): op_rt_m_z, op_rt_m_y, op_rt_m_x in that order (the default order); first of the op matrix file's rt_m group, sorted after op_rt_m_z; Switch op_rt_m (0x71003da7d0) precedes the five orders and op_rt_m_6
+0x007e98b0 function op_rt_m_6                    # structure: dispatches on an order index to op_rt_m and the five ordered variants (0x007e9970.. 0x007e9af0); Switch op_rt_m_6 (60 bytes); sorts after op_rt_m and before op_rt_m_xyz
+0x007e9970 function op_rt_m_xyz                  # structure: op_rt_m_x, op_rt_m_y, op_rt_m_z in that order; Switch op_rt_m_xyz; sorted run op_rt_m_xyz, xzy, yxz (named, v3 bsim), yzx, zxy
+0x007e99d0 function op_rt_m_xzy                  # structure: op_rt_m_x, op_rt_m_z, op_rt_m_y in that order; Switch op_rt_m_xzy
 0x007e9a30 function op_rt_m_yxz               # fh v3:bsim1.00 0x007e9940
+0x007e9a90 function op_rt_m_yzx                  # structure: op_rt_m_y, op_rt_m_z, op_rt_m_x in that order; Switch op_rt_m_yzx
+0x007e9af0 function op_rt_m_zxy                  # structure: op_rt_m_z, op_rt_m_x, op_rt_m_y in that order; Switch op_rt_m_zxy
+0x007e9b50 function op_rtp_w1                    # structure: VU0-emulated (AsmEmuSetFuncParam0-3) rotate-translate-project of a point with w = 1; Switch op_rtp_w1 (0x71003dbfe0) of the op matrix file sorts between op_rt_m_zxy and op_spline, as here
+0x007e9e20 function op_spline                    # structure: (t, values, knots, ., n) -> float: binary search of t in the knot table then the segment's interpolation; only caller op_spline_xyz; Switch op_spline (0x71003dca90, 240 bytes) sorts before op_spline_table, as here
 0x007e9f20 function op_spline_table           # fh v3:cg4 0x7e9e30
 0x007ea120 function op_spline_xyz             # fh v3:exact 0x007ea030
 0x007ea2d0 function op_spline_xyz_table       # fh v3:exact 0x007ea1e0
+0x007ea550 function op_trans_m                   # structure: VU0-emulated (dst, src, vec): src with vec added to its translation row; Switch op_trans_m (0x71003da6a0) is the op matrix file's only name between op_spline_xyz_table and op_unit_m
+0x007ea6d0 function op_unit_m                    # structure: (m): memset 0x40 then 1.0 on the diagonal (identity); Switch op_unit_m (40 bytes) sorts before op_unit_m_scale, as here
 0x007ea700 function op_unit_m_scale           # fh v3:exact 0x007ea610
+0x007ea730 function op_unit_m_scale2             # structure: (m, v): zero, diagonal v.x, v.y, v.z, 1.0; Switch op_unit_m_scale2 (52 bytes) sorts between op_unit_m_scale and op_vector_m, as here
 0x007ea760 function op_vector_m                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '*** Calling op_vector_m() math.c:%d ***\\n'; Switch 0x71003dd0f0 op_vector_m (symbols from Fahrenheit's server export)
+0x007ea850 function op_xyz_scale                 # structure: VU0-emulated (dst, src, s): dst.xyz = src.xyz * s, dst.w = src.w; Switch op_xyz_scale (160 bytes) follows op_vector_m in the sorted names, as here; 27 callers
+0x007ea8f0 function op_xyzw_scale                # structure: VU0-emulated (dst, src, s): all four components scaled; Switch op_xyzw_scale (192 bytes) follows op_xyz_scale, as here
 0x007eaac0 function magic_ret0_007eaac0       # g_MagicImports slot 252 (2 overlays): xor eax, eax; ret; hidden from the dump
 0x007eaad0 function op_flash_path3            # fh v3:exact 0x007ea9e0
 0x007eb300 function op_func_after_ot3d_free   # op_func_ot_free(slot, 0x20): the free of op_func_after_ot3d_set's list
@@ -4677,6 +4701,7 @@
 0x00801480 function opus_osu_init_group          # structure: (battle i, n): zeroes n entries of g_OpusBattle[i]'s +0x20 table; the one Switch name of that file between opus_osu_init and opus_prog_off (opus_osu_init_group, 0x71003f4160)
 0x008014c0 function opus_prog_off             # fh v3:exact 0x008013e0
 0x00801700 function opus_prog_on              # fh v3:exact 0x00801620
+0x008020a0 function opp_md                       # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003f9be0 opp_md, 4 votes, round 1
 0x00802fb0 function createU16MeshBreakRenderDataBuffer # str-match switch: only user of 9 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/chr'; Switch 0x71003e7650 createU16MeshBreakRenderDataBuffer (symbols from Fahrenheit's server export)
 0x00803730 function op_mdc_mem_transfer_cue_free # fh v3:exact 0x00803650
 0x00803760 function op_mdc_mem_transfer_cue_free_all # fh v3:bsim1.00 0x00803680
@@ -4734,6 +4759,7 @@
 0x008190e0 function opu_v_en_move                # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003fef00 opu_v_en_move, 2 votes, round 1
 0x0081c140 function SqsCmdSetC2               # (ctx, cmd) -> cmd + 4: the command's u16 +2 to +0xc2 of ctx +0x220; entry of the IOP command table 0x00c48f30
 0x0081c4f0 function opu_md_etc                   # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x7100404b50 opu_md_etc, 3 votes, round 1
+0x0081cbd0 function Sqs_CallRpc                  # structure: (cmd): waits for the sound RPC client 0x012f4e20 to be idle (FFXSifCheckStatRpc), then FFXSifCallRpc(client, cmd, send 0x40, recv 0x400) until accepted; 21 callers, the Sqs* IOP command wrappers 0x0081d010..; name ours
 0x0081ce70 function SqsAllVoiceTerminate      # fh v3:exact 0x0081cf80
 0x0081cef0 function SqsBattleStreamingDataSend # fh v3:exact 0x0081d000
 0x0081cf40 function SqsBattleStreamingStart   # fh v3:exact 0x0081d050
@@ -6736,6 +6762,8 @@
 0x0089d390 function TOBtlGetTargetPad         # fh v3:exact 0x0089d300 _TOBtlGetTargetPad
 0x0089d610 function TOGetPadStatusPrepare     # fh v3:exact 0x0089d580 _TOGetPadStatusPrepare
 0x0089d9b0 function TOBtlDrawSimpleHelpMes    # fh v3:cg7 0x89d920 __TOBtlDrawSimpleHelpMes
+0x0089db60 function TOBtlInitSimpleHelpMes       # structure: (i): g_BtlSimpleHelpMes[i] = {0, type 7, 0, 0}; Switch TOBtlInitSimpleHelpMes (32 bytes); sorts after TOBtlDrawSimpleHelpMes, as here
+0x0089dba0 function TOBtlOpenSimpleHelpMes       # structure: (i, message): g_BtlSimpleHelpMes[i] = {open 1, type 7, message}, size from TOGetMessageWH; callers are the TOBtlDraw*MessageWindow functions; Switch TOBtlOpenSimpleHelpMes (96 bytes) sorts after TOBtlInitSimpleHelpMes, as here
 0x0089dc10 function TODapsDraw                # fh v3:bsim1.00 0x0089db80
 0x0089dc40 function TODapsInit                # fh v3:bsim1.00 0x0089dbb0
 0x0089dc70 function TODapsInteger                # layout: alphabetical run between TODapsInit and TODapsPrintf (2 unnamed in the gap); Switch 0x71004b1630 TODapsInteger is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -8308,6 +8336,7 @@
 0x00937400 function rcefMemChk                   # str-match switch: only user of 1 string(s) held once by both builds, e.g. '---- rcefMemChk mcb:%p top:%p bottom:%p'; Switch 0x71005586f0 rcefMemChk (symbols from Fahrenheit's server export)
 0x00937440 function rcefMemDebugDisp          # fh switch:bsim1.00 0x7100558660
 0x009374f0 function rcefMemDebugInit             # str-match switch: only user of 1 string(s) held once by both builds, e.g. '---- rcefMemDebugInit Heap %p[%x] : Packet %p[%x]'; Switch 0x7100558620 rcefMemDebugInit (symbols from Fahrenheit's server export)
+0x00937780 function rcuiAddItems                 # structure: (window, items): walks a 0-terminated item table, type 1 -> Gu_WindowAddButton, type 2 -> Gu_WindowAddStatic; callers are the rcui*Proc debug windows (rcuiAlphaProc, rcuiAnimeProc, rcuiCameraProc, rcuiLayerProc); Switch rcuiAddItems (148 bytes) is the rcui file's name sorting here
 0x00937940 function rcuiGetStageName          # fh switch:bsim1.00 0x7100563a00
 0x00937960 function rcuiGetStageName2            # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'host:/ffx/proj/map/btlmaster/info/btlmap.csv'; Switch 0x7100563a10 rcuiGetStageName2 (symbols from Fahrenheit's server export)
 0x00937af0 function rcuiMakeBasePath             # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/ffx/proj/map/%s/'; Switch 0x7100563850 rcuiMakeBasePath (symbols from Fahrenheit's server export)
@@ -8437,6 +8466,7 @@
 0x0094b080 function lua_getglobal             # fh switch:bsim1.00 0x710076deb8
 0x0094b160 function lua_gettop                   # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71008829d8 lua_gettop, 4 votes, round 1
 0x0094b450 function lua_newuserdata           # fh switch:bsim0.99 0x710076f584
+0x0094b490 function lua_next                     # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x710088ec68 lua_next, 4 votes, round 1
 0x0094b4d0 function lua_pcallk                             # Lua 5.2.1; lua_pcall failed messages in its callers 0x004362b0, 0x00618330
 0x0094b5a0 function lua_pushboolean              # layout: alphabetical run between lua_pcallk and lua_pushfstring (2 unnamed in the gap); Switch 0x710076de44 lua_pushboolean is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0094b5c0 function lua_pushcclosure             # layout: alphabetical run between lua_pcallk and lua_pushfstring (2 unnamed in the gap); Switch 0x710076dd8c lua_pushcclosure is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -8812,6 +8842,7 @@
 0x00a5be30 function AbmapVu0LoadMatrix1       # (m): 64 bytes into the emulated vf01..vf04 (0x00c8f7a0)
 0x00a5bec0 function AbmapVu0LoadMatrix2       # (m): 64 bytes into the emulated vf05..vf08 (0x00c8f7e0)
 0x00a5c130 function createVFXRenderDataBuffer_DrawScrollModel # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'diffuse'; Switch 0x7100863940 createVFXRenderDataBuffer_DrawScrollModel (symbols from Fahrenheit's server export)
+0x00a5c370 function updateVFXRenderData_DrawModelScroll # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x7100863610 updateVFXRenderData_DrawModelScroll, 4 votes, round 1
 0x00a5ca60 function NkzGetAuronLimitButtonData # fh v3:exact 0x00a5ca60
 0x00a5ca70 function NkzGetAuronLimitTime      # fh v3:bsim1.00 0x00a5ca70
 0x00a5ca80 function NkzGetLuluLimitMidareCount   # layout: alphabetical run between NkzGetAuronLimitTime and NkzGetLuluLimitTime (1 unnamed in the gap); Switch 0x71003c81e0 NkzGetLuluLimitMidareCount is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
