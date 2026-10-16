@@ -65,6 +65,32 @@ pub fn crc(data: &[u8]) -> u16 {
     !c
 }
 
+/// `MenuMn2_Plus80(v)` (`0x008c22f0`, own name): `v + 0x80`.
+#[must_use]
+pub const fn plus_80(v: u32) -> u32 {
+    v.wrapping_add(0x80)
+}
+
+/// `MenuItem_Less(a, b)` (`0x008c6a60`, own name): `a < b`, signed.
+#[must_use]
+pub const fn less(a: i32, b: i32) -> bool {
+    a < b
+}
+
+/// `BtlEnd_RowX(i, n)` (`0x008ba370`, own name): `(7 - n) × 44 / 2 + i ×
+/// 44 + 76`, the division truncating toward 0.
+#[must_use]
+pub const fn btl_end_row_x(i: i32, n: i32) -> i32 {
+    (7i32.wrapping_sub(n)).wrapping_mul(0x2c) / 2 + i.wrapping_mul(0x2c).wrapping_add(0x4c)
+}
+
+/// `MenuHelp_Ratio(a, b)` (`0x008bf120`, own name): `(b + 2) × a × 2 / 4`,
+/// truncating toward 0.
+#[must_use]
+pub const fn menu_help_ratio(a: i32, b: i32) -> i32 {
+    b.wrapping_add(2).wrapping_mul(a).wrapping_mul(2) / 4
+}
+
 /// A menu command list: 4-byte records (`u8` a, `u8` b, two more bytes)
 /// ending at a record whose first byte is `0xff`. `TkMenuGetCommandOffset`:
 /// the index of the first record matching `(a, b)`, 0 when none does (or
@@ -121,6 +147,7 @@ pub mod bridge {
     use ffx_bridge::{Global, Mem};
 
     use ffx_battle::save::bridge as save;
+    use ffx_field::yi::bridge as yi;
 
     use super::{DRAW_ENV, command_count, command_offset, crc, map_buttons, vibrate_mask};
 
@@ -836,36 +863,11 @@ pub mod bridge {
     /// hiragana) from the segment's strings.
     fn kernel_text(mem: &mut impl Mem, table: Global<u32>, id: u32, field: u32) -> u32 {
         let hiragana = save::ms_get_save_config_hiragana(mem) != 0;
-        let record = ffx_kernel::bridge::rom(mem, table, id, 0);
-        let strings = segment_strings(mem, table.get(mem), id & 0xfff);
+        let (record, strings) = ffx_kernel::bridge::rom_strings(mem, table, id);
         let at = record
             .wrapping_add(field)
             .wrapping_add(u32::from(hiragana) * 4);
         strings.wrapping_add(u32::from(mem.read::<u16>(at)))
-    }
-
-    /// Where the strings of `id`'s segment start, as `MsGetExcelData`
-    /// stores them for its caller (the first segment's when none holds it).
-    fn segment_strings(mem: &impl Mem, table: u32, id: u32) -> u32 {
-        let count = i32::from(mem.read::<i16>(table));
-        let mut seg = table.wrapping_add(8);
-        let mut found = false;
-        for _ in 0..count.max(0) {
-            let first = u32::from(mem.read::<u16>(seg));
-            let last = u32::from(mem.read::<u16>(seg.wrapping_add(2)));
-            if first <= id && id <= last {
-                found = true;
-                break;
-            }
-            seg = seg.wrapping_add(12);
-        }
-        if !found {
-            seg = table.wrapping_add(8);
-        }
-        let data = mem.read::<u32>(seg.wrapping_add(8));
-        u32::from(mem.read::<u16>(seg.wrapping_add(6)))
-            .wrapping_add(data)
-            .wrapping_add(table)
     }
 
     /// `TkMsGetRomItem(id, &name)` (`0x008ab280`): an item's name, and
@@ -1558,6 +1560,633 @@ pub mod bridge {
             }
             _ => 0,
         }
+    }
+
+    // ---- round 4: Tk library state, party fields, menu slots, list
+    // callbacks, pad work ----
+
+    /// The last sound kick id (`u8`, next to [`SND_KICK_FLAG`]).
+    pub const SND_LAST_KICK_ID: Global<u8> = Global::new(0x0133_0095);
+    /// The foot-step kick stay value (`TkSndSetFootKickStay`).
+    pub const SND_FOOT_KICK_STAY: Global<u32> = Global::new(0x0132_ff4c);
+    /// The third sync-V flag (`TkGetSoundSyncVFlag3`).
+    pub const SOUND_SYNC_V_FLAG3: Global<u32> = Global::new(0x0133_01ec);
+    /// The memory card debug lock (`TkMcSetDebugLock`).
+    pub const MC_DEBUG_LOCK: Global<u32> = Global::new(0x0133_0238);
+    /// The memory card load positions, one `u32` per slot.
+    pub const MC_LOAD_FILE_POS: Global<u32> = Global::new(0x0133_023c);
+    /// The common vibration curve (`TkGetCommonVibrate` returns its address).
+    pub const COMMON_VIBRATE: Global<u8> = Global::new(0x0133_88c0);
+    /// The HDD error flag (`u8`).
+    pub const HDD_ERROR_FLAG: Global<u8> = Global::new(0x0133_0873);
+    /// The start map's event id and index (`TkSetStartMapIndex`).
+    pub const START_MAP_EVENT: Global<[u32; 2]> = Global::new(0x0133_085c);
+    /// The local start map's event id and index (`TkSetLocalStartMapIndex`).
+    pub const LOCAL_START_MAP_EVENT: Global<[u32; 2]> = Global::new(0x0133_0864);
+    /// The menu slots: 25 window pointers (`TkMenuMainRegistMenu`).
+    pub const MENU_SLOTS: Global<u32> = Global::new(0x0184_0888);
+    /// The help window's second ratio step (`TkMenuSetHelpRatioDiff2`).
+    pub const MENU_HELP_RATIO_DIFF2: Global<u32> = Global::new(0x0184_1c10);
+    /// The aeon total list (`u8` ids, `TkMenuGetSummonTotalFromIndex`).
+    pub const MENU_SUMMON_TOTALS: Global<u8> = Global::new(0x0184_1c44);
+    /// Entries in [`MENU_SUMMON_TOTALS`].
+    pub const MENU_SUMMON_TOTAL_MAX: Global<i32> = Global::new(0x0184_1c58);
+    /// The Mn2 list count (`TkMn2GetListMax`).
+    pub const MN2_LIST_MAX: Global<u32> = Global::new(0x0186_a24c);
+    /// The Mn2 name-mode count (`TkMn2GetNameModeMax`).
+    pub const MN2_NAME_MODE_MAX: Global<u32> = Global::new(0x0186_a250);
+    /// The aeon menu's status window (closed with the status background).
+    pub const SUMMON_STATUS_WINDOW: Global<u32> = Global::new(0x0186_a5a4);
+    /// The aeon menu's count that picks the window state on restart.
+    pub const SUMMON_RESTART_COUNT: Global<i32> = Global::new(0x0186_a5fc);
+    /// The status menu's windows, by index (`+0x54` fade step on close).
+    pub const STATUS_WINDOWS: Global<u32> = Global::new(0x0186_a820);
+    /// The weapon shop's windows (`TkMenuCtrlWShop`): five more.
+    pub const WSHOP_WINDOWS: [Global<u32>; 5] = [
+        Global::new(0x0186_aaf0),
+        Global::new(0x0186_aaf4),
+        Global::new(0x0186_aaf8),
+        Global::new(0x0186_aafc),
+        Global::new(0x0186_ab00),
+    ];
+    /// The tutorial menu's windows.
+    pub const TUTO_WINDOWS: [Global<u32>; 2] = [Global::new(0x0186_ac34), Global::new(0x0186_ac38)];
+    /// The world map's window (`TkMenuCtrlWorldMap`).
+    pub const WORLD_MAP_WINDOW: Global<u32> = Global::new(0x0187_1698);
+    /// The second sub-command window (`0x023cc124`, beside
+    /// [`MENU_SUB_CMD_WINDOW`]).
+    pub const MENU_SUB_CMD_WINDOW2: Global<u32> = Global::new(0x023c_c124);
+
+    globals! {
+        "`TkSndGetLastKickId()` (`0x00887ad0`)." tk_snd_get_last_kick_id: get SND_LAST_KICK_ID;
+        "`TkSndSetFootKickStay(v)` (`0x00887b40`)." tk_snd_set_foot_kick_stay: set SND_FOOT_KICK_STAY;
+        "`TkClearSoundSyncVFlag3()` (`0x00887d50`)." tk_clear_sound_sync_v_flag3: clear SOUND_SYNC_V_FLAG3 = 0;
+        "`TkGetSoundSyncVFlag3()` (`0x00887df0`)." tk_get_sound_sync_v_flag3: get SOUND_SYNC_V_FLAG3;
+        "`TkMcSetDebugLock(v)` (`0x00888420`)." tk_mc_set_debug_lock: set MC_DEBUG_LOCK;
+        "`TkGetDebugMenuStatus()` (`0x0088d5b0`)." tk_get_debug_menu_status: get DEBUG_MENU_STATUS;
+        "`TkGetHddErrorFlag()` (`0x0088d5f0`)." tk_get_hdd_error_flag: get HDD_ERROR_FLAG;
+        "`TkMenuSetHelpRatioDiff2(v)` (`0x008aaee0`)." tk_menu_set_help_ratio_diff2: set MENU_HELP_RATIO_DIFF2;
+        "`TkMn2GetListMax()` (`0x008c1bb0`)." tk_mn2_get_list_max: get MN2_LIST_MAX;
+        "`TkMn2GetNameModeMax()` (`0x008c1bc0`)." tk_mn2_get_name_mode_max: get MN2_NAME_MODE_MAX;
+        "`TkMenuSetHelpRatio2()` (`0x008ab270`): the ratio to 1 (own name)." tk_menu_set_help_ratio2: clear MENU_HELP_RATIO2 = 1;
+    }
+
+    /// `TkMcGetLoadFilePos(slot)` (`0x00888300`).
+    pub fn tk_mc_get_load_file_pos(mem: &impl Mem, slot: u32) -> u32 {
+        mem.read(
+            MC_LOAD_FILE_POS
+                .ptr(mem)
+                .addr
+                .wrapping_add(slot.wrapping_mul(4)),
+        )
+    }
+
+    /// `TkMcSetLoadFilePos(slot, pos)` (`0x00888480`).
+    pub fn tk_mc_set_load_file_pos(mem: &mut impl Mem, slot: u32, pos: u32) {
+        let at = MC_LOAD_FILE_POS
+            .ptr(mem)
+            .addr
+            .wrapping_add(slot.wrapping_mul(4));
+        mem.write(at, pos);
+    }
+
+    /// `TkGetCommonVibrate()` (`0x0088d590`): the common curve's address.
+    pub fn tk_get_common_vibrate(mem: &impl Mem) -> u32 {
+        COMMON_VIBRATE.ptr(mem).addr
+    }
+
+    /// `TkGetEventNewGame()` (`0x0088d5d0`): save byte `+0x2b`.
+    pub fn tk_get_event_new_game(mem: &impl Mem) -> u8 {
+        mem.read(event(mem) + 0x2b)
+    }
+
+    /// `TkSetEventNewGame(v)` (`0x0088eb40`): save byte `+0x2b`; returns
+    /// the save block (left in `eax`).
+    pub fn tk_set_event_new_game(mem: &mut impl Mem, v: u8) -> u32 {
+        let e = event(mem);
+        mem.write(e + 0x2b, v);
+        e
+    }
+
+    /// `TkGetLastEventJumpId()` (`0x0088d600`): the previous event id
+    /// (`+2`, beside [`tk_get_now_event_jump_id`]'s `+0`).
+    pub fn tk_get_last_event_jump_id(mem: &impl Mem) -> u16 {
+        mem.read(event(mem) + 2)
+    }
+
+    /// `TkGetLastEventJumpIndex()` (`0x0088d610`): `+0xd`.
+    pub fn tk_get_last_event_jump_index(mem: &impl Mem) -> u8 {
+        mem.read(event(mem) + 0xd)
+    }
+
+    /// `TkGetLastEventJumpMapIdNo()` (`0x0088d620`): `+0xa`.
+    pub fn tk_get_last_event_jump_map_id_no(mem: &impl Mem) -> u16 {
+        mem.read(event(mem) + 0xa)
+    }
+
+    /// `TkGetLastEventJumpMapNo()` (`0x0088d630`): `+6`.
+    pub fn tk_get_last_event_jump_map_no(mem: &impl Mem) -> u16 {
+        mem.read(event(mem) + 6)
+    }
+
+    /// `TkSetMapGroupDrawStatus(group, on)` (`0x0088eba0`): the field
+    /// draw mask's bit `group & 31` set or cleared.
+    pub fn tk_set_map_group_draw_status(mem: &mut impl Mem, group: u32, on: u32) {
+        let mask = yi::yi_get_draw_mask(mem);
+        let bit = 1u32 << (group & 0x1f);
+        yi::yi_set_draw_mask(mem, if on != 0 { mask | bit } else { mask & !bit });
+    }
+
+    /// `ply_save` byte `field` of character `chr` (`TkMenuGetArmor` and
+    /// kin: `+0x2d` weapon, `+0x2e` armour, `+0x38` overdrive mode, `+0x39`
+    /// overdrive gauge, `+0x3a` its maximum).
+    pub fn tk_menu_get_ply_byte(mem: &impl Mem, chr: u32, field: u32) -> u8 {
+        let ply = save::ms_get_save_player_ptr(mem, chr);
+        mem.read(ply.wrapping_add(field))
+    }
+
+    /// `TkMenuSetHP(chr, hp)` (`0x008aae90`): `+0x1c`; a nonzero HP clears
+    /// the KO byte `+0x3d`. Returns the record (left in `eax`).
+    pub fn tk_menu_set_hp(mem: &mut impl Mem, chr: u32, hp: u32) -> u32 {
+        let ply = save::ms_get_save_player_ptr(mem, chr);
+        mem.write(ply.wrapping_add(0x1c), hp);
+        if hp != 0 {
+            mem.write(ply.wrapping_add(0x3d), 0u8);
+        }
+        ply
+    }
+
+    /// `TkMenuSetMP(chr, mp)` (`0x008aaef0`) and the other `ply_save`
+    /// setters: a `u32` field; the record back (left in `eax`).
+    pub fn tk_menu_set_ply(mem: &mut impl Mem, chr: u32, field: u32, v: u32) -> u32 {
+        let ply = save::ms_get_save_player_ptr(mem, chr);
+        mem.write(ply.wrapping_add(field), v);
+        ply
+    }
+
+    /// `TkMenuSetSP(chr, sp)` (`0x008ab000`) and `TkMn2SetOverDriveId`
+    /// (`0x008c2c90`, `+0x38`): a byte field; the record back.
+    pub fn tk_menu_set_ply_byte(mem: &mut impl Mem, chr: u32, field: u32, v: u8) -> u32 {
+        let ply = save::ms_get_save_player_ptr(mem, chr);
+        mem.write(ply.wrapping_add(field), v);
+        ply
+    }
+
+    /// `TkMenuGetTime()` (`0x008a9c50`): the play time, save `+0xbc`.
+    pub fn tk_menu_get_time(mem: &impl Mem) -> u32 {
+        mem.read(event(mem) + 0xbc)
+    }
+
+    /// `TkMenuGetSummonTotalFromIndex(i)` (`0x008a9c00`): entry `i` of the
+    /// aeon total list: entry 0 for a negative `i`, the last (`max - 1`,
+    /// even -1 for an empty list) past the end.
+    pub fn tk_menu_get_summon_total_from_index(mem: &impl Mem, i: i32) -> u8 {
+        let last = MENU_SUMMON_TOTAL_MAX.get(mem).wrapping_sub(1);
+        let i = if i < 0 {
+            0
+        } else if i > last {
+            last
+        } else {
+            i
+        };
+        mem.read(
+            MENU_SUMMON_TOTALS
+                .ptr(mem)
+                .addr
+                .wrapping_add(i.cast_unsigned()),
+        )
+    }
+
+    /// The menu slot for `slot`, clamped to `0..=24`.
+    fn slot_at(mem: &impl Mem, slot: i32) -> u32 {
+        MENU_SLOTS.ptr(mem).addr + 4 * slot.clamp(0, 0x18).cast_unsigned()
+    }
+
+    /// `TkMenuMainRegistMenu(slot, window)` (`0x008aaab0`): stores the
+    /// window in its slot, clears its active flags (`+0x18`) and timer
+    /// (`+0x1c`) and calls its init callback `+8` with the menu mode.
+    /// Returns what the callback returns, 0 without one.
+    pub fn tk_menu_main_regist_menu<M: Mem>(
+        mem: &mut M,
+        slot: i32,
+        window: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = slot_at(mem, slot);
+        mem.write(at, window);
+        let f = mem.read::<u32>(window.wrapping_add(8));
+        mem.write(window.wrapping_add(0x18), 0u16);
+        mem.write(window.wrapping_add(0x1c), 0u32);
+        if f == 0 {
+            return 0;
+        }
+        let mode = MN2_MENU_MODE.get(mem);
+        call(mem, f, &[window, mode])
+    }
+
+    /// `TkMenuMainRegistWindow(window)` (`0x008aab00`): marks it used
+    /// (`+0x40`), state idle, and tail-calls its callback `+8`; returns
+    /// what that returns, or the window without one.
+    pub fn tk_menu_main_regist_window<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.read::<u32>(window.wrapping_add(8));
+        mem.write(window.wrapping_add(0x40), 1u8);
+        mem.write(window.wrapping_add(0x28), 0u32);
+        if f == 0 {
+            return window;
+        }
+        call(mem, f, &[window])
+    }
+
+    /// `TkMenuMainSleepMenu(slot)` (`0x008aad70`): an active menu (`+0x18`
+    /// is 1) gets its sleep callback `+0x10`; then its flags are cleared and
+    /// its bit leaves the active mask.
+    pub fn tk_menu_main_sleep_menu<M: Mem>(
+        mem: &mut M,
+        slot: i32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let slot = slot.clamp(0, 0x18);
+        let w = mem.read::<u32>(slot_at(mem, slot));
+        if w == 0 {
+            return;
+        }
+        if mem.read::<u8>(w.wrapping_add(0x18)) == 1 {
+            let f = mem.read::<u32>(w.wrapping_add(0x10));
+            if f != 0 {
+                call(mem, f, &[w]);
+            }
+        }
+        mem.write(w.wrapping_add(0x18), 0u16);
+        let m = MENU_MAIN_ACTIVE_MASK.get(mem) & !(1u32 << slot);
+        MENU_MAIN_ACTIVE_MASK.set(mem, m);
+    }
+
+    /// `TkMenuMainActiveMenu(slot, arg)` (`0x008aa100`): slot 1 becomes
+    /// 0x16 in menu mode `0x80xxxx`; an inactive menu gets its activate
+    /// callback `+0xc` (with `arg`) and its start callback `+0`; then
+    /// `+0x18` = `0x0101` and its bit joins the active mask.
+    pub fn tk_menu_main_active_menu<M: Mem>(
+        mem: &mut M,
+        slot: i32,
+        arg: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let slot = if slot == 1 && MN2_MENU_MODE.get(mem) & 0xffff_0000 == 0x80_0000 {
+            0x16
+        } else {
+            slot.clamp(0, 0x18)
+        };
+        let w = mem.read::<u32>(slot_at(mem, slot));
+        if w == 0 {
+            return;
+        }
+        if mem.read::<u8>(w.wrapping_add(0x18)) == 0 {
+            let f = mem.read::<u32>(w.wrapping_add(0xc));
+            if f != 0 {
+                call(mem, f, &[w, arg]);
+            }
+            let f = mem.read::<u32>(w);
+            if f != 0 {
+                call(mem, f, &[w]);
+            }
+        }
+        mem.write(w.wrapping_add(0x18), 0x0101u16);
+        let m = MENU_MAIN_ACTIVE_MASK.get(mem) | (1u32 << slot);
+        MENU_MAIN_ACTIVE_MASK.set(mem, m);
+    }
+
+    /// The restart wrappers (`MenuSummon_RestartGrowWindow` and kin):
+    /// `TkMenuRestartSelFileWindow` on the window in `global` when there is
+    /// one; the global's value back (left in `eax`).
+    pub fn restart_global_window(mem: &mut impl Mem, global: Global<u32>) -> u32 {
+        let w = global.get(mem);
+        if w != 0 {
+            tk_menu_restart_sel_file_window(mem, w);
+        }
+        w
+    }
+
+    /// `MenuTuto_RestartWindow2()` (`0x008daac0`): `TkMenuRestartWindow`
+    /// on the tutorial's second window.
+    pub fn menu_tuto_restart_window2(mem: &mut impl Mem) -> u32 {
+        let w = TUTO_WINDOWS[1].get(mem);
+        if w != 0 {
+            tk_menu_restart_window(mem, w);
+        }
+        w
+    }
+
+    /// `MenuWShop_RestartListWindow()` (`0x008d8420`): restarts the shop's
+    /// first window, then sets it idle and not busy; the window back.
+    pub fn menu_wshop_restart_list_window(mem: &mut impl Mem) -> u32 {
+        let w = WSHOP_WINDOWS[0].get(mem);
+        if w == 0 {
+            return 0;
+        }
+        tk_menu_restart_sel_file_window(mem, w);
+        let w = WSHOP_WINDOWS[0].get(mem);
+        mem.write(w.wrapping_add(0x28), 0u32);
+        mem.write(w.wrapping_add(0x45), 0u8);
+        w
+    }
+
+    /// `MenuSummon_CloseStatusWindow()` (`0x008ccb10`): resets the status
+    /// background, then requests the close and forgets the window.
+    pub fn menu_summon_close_status_window(mem: &mut impl Mem) {
+        if SUMMON_STATUS_WINDOW.get(mem) == 0 {
+            return;
+        }
+        tk_mn2_init_status_bg(mem);
+        let w = SUMMON_STATUS_WINDOW.get(mem);
+        SUMMON_STATUS_WINDOW.set(mem, 0);
+        mem.write(w.wrapping_add(0x41), 1u8);
+    }
+
+    /// `MenuSummon_RestartWindow()` (`0x008cd1f0`): the aeon window not
+    /// busy, state 0 (count up to 1) or 2, then the status background
+    /// reset.
+    pub fn menu_summon_restart_window(mem: &mut impl Mem) {
+        let w = SUMMON_WINDOW.get(mem);
+        if w == 0 {
+            return;
+        }
+        let state = if SUMMON_RESTART_COUNT.get(mem) <= 1 {
+            0u32
+        } else {
+            2
+        };
+        mem.write(w.wrapping_add(0x45), 0u8);
+        mem.write(w.wrapping_add(0x28), state);
+        tk_mn2_init_status_bg(mem);
+    }
+
+    /// `MenuStatus_CloseWindow(i)` (`0x008d2680`): close request for status
+    /// window `i`, fade step `-0xaa`, forget it; the global's value back.
+    pub fn menu_status_close_window(mem: &mut impl Mem, i: u32) -> u32 {
+        let at = STATUS_WINDOWS.ptr(mem).addr.wrapping_add(i.wrapping_mul(4));
+        let w = mem.read::<u32>(at);
+        if w == 0 {
+            return 0;
+        }
+        mem.write(w.wrapping_add(0x41), 1u8);
+        let w = mem.read::<u32>(at);
+        mem.write(w.wrapping_add(0x54), 0xff56u16);
+        mem.write(at, 0u32);
+        w
+    }
+
+    /// `MenuSubCmd_RefreshHelp()` (`0x008e49b0`): the sub-command window's
+    /// help message for its cursor (`+0x5c + 12 × cursor`).
+    pub fn menu_sub_cmd_refresh_help(mem: &mut impl Mem) {
+        let w = MENU_SUB_CMD_WINDOW.get(mem);
+        if w == 0 {
+            return;
+        }
+        let cursor = i32::from(mem.read::<i16>(w.wrapping_add(0x48))).cast_unsigned();
+        let id = mem.read::<i32>(w.wrapping_add(0x5c).wrapping_add(cursor.wrapping_mul(0xc)));
+        tk_menu_set_help_message(mem, id);
+    }
+
+    /// `MenuSubCmd_SetValue(v)` (`0x008e4a10`) and `MenuSubCmd_SetValue2`
+    /// (`0x008e4a30`): `u16` `+0x38` of a sub-command window, if any.
+    pub fn menu_sub_cmd_set_value(mem: &mut impl Mem, global: Global<u32>, v: u16) {
+        let w = global.get(mem);
+        if w != 0 {
+            mem.write(w.wrapping_add(0x38), v);
+        }
+    }
+
+    /// `MenuSummon_GrowEntry(i)` (`0x008cecf0`): `TkMn2GetSummonGrow() + 8
+    /// × i + 8 × TkMn2GetSummonGrowMax()`.
+    pub fn menu_summon_grow_entry(mem: &mut impl Mem, i: u32) -> u32 {
+        let grow = tk_mn2_get_summon_grow(mem);
+        let max = MENU_SUMMON_GROW_MAX.get(mem);
+        grow.wrapping_add(i.wrapping_mul(8))
+            .wrapping_add(max.wrapping_mul(8))
+    }
+
+    /// `MenuItem_IsUsable(list, i)` (`0x008c9120`): items (list 3 is the
+    /// key items: usable when the counter is nonzero) are usable.
+    pub fn menu_item_is_usable(mem: &impl Mem, list: i32) -> u32 {
+        if list == 3 {
+            u32::from(tk_menu_get_important_counter(mem) != 0)
+        } else {
+            1
+        }
+    }
+
+    /// `MenuPlayer_DamageClass(chr)` (`0x008a99f0`, own name): 1 for a
+    /// character outside the party (`MsGetSavePlyJoin` 0) while the
+    /// ignore-join flag is clear, or one who left (`Joined` 1); otherwise 2
+    /// when `MsCalcWeakLevel(hp, max HP)` is positive, else 0.
+    /// `MenuPlayer_DamageClass2` (`0x008a9a70`) skips the first test.
+    pub fn menu_player_damage_class(mem: &impl Mem, chr: u32, check_ignore: bool) -> u32 {
+        let hp = tk_menu_get_ply(mem, chr, 0x1c).cast_signed();
+        let max = tk_menu_get_ply(mem, chr, 0x24).cast_signed();
+        let join = save::ms_get_save_ply_join(mem, chr);
+        if check_ignore && join == 0 && MENU_MAIN_IGNORE_JOIN.get(mem) == 0 {
+            return 1;
+        }
+        if join == 0 && save::ms_get_save_ply_joined(mem, chr) == 1 {
+            return 1;
+        }
+        if ffx_battle::actor::bridge::ms_calc_weak_level(hp, max).cast_signed() >= 1 {
+            2
+        } else {
+            0
+        }
+    }
+
+    /// `Pad_GetWorkByte9D(pad, port)` (`0x00888ba0`, own name): byte
+    /// `+0x9d` of the controller work.
+    pub fn pad_get_work_byte_9d(mem: &impl Mem, pad: i32, port: i32) -> u8 {
+        mem.read(tk_get_controler_work(mem, pad, port).wrapping_add(0x9d))
+    }
+
+    /// `TkGetControlerAnalog(pad, port, i)` (`0x00888c00`): analog byte
+    /// `+0x84 + i`. The original loads it into `al` over `i`, so the upper
+    /// bytes of `eax` are `i`'s.
+    pub fn tk_get_controler_analog(mem: &impl Mem, pad: i32, port: i32, i: u32) -> u32 {
+        let b = mem.read::<u8>(
+            tk_get_controler_work(mem, pad, port)
+                .wrapping_add(0x84)
+                .wrapping_add(i),
+        );
+        (i & !0xff) | u32::from(b)
+    }
+
+    /// `TkGetControlerId(pad, port)` (`0x00888d90`): byte `+0x80`, loaded
+    /// into `al` over the work pointer (whose upper bytes stay in `eax`).
+    pub fn tk_get_controler_id(mem: &impl Mem, pad: i32, port: i32) -> u32 {
+        let w = tk_get_controler_work(mem, pad, port);
+        (w & !0xff) | u32::from(mem.read::<u8>(w.wrapping_add(0x80)))
+    }
+
+    /// `TkGetControlerPress(pad, port)` (`0x00888dd0`): byte `+0x82`.
+    pub fn tk_get_controler_press(mem: &impl Mem, pad: i32, port: i32) -> u8 {
+        mem.read(tk_get_controler_work(mem, pad, port).wrapping_add(0x82))
+    }
+
+    /// `Pad_SetWorkByte(pad, port, field, v)`: the actuator bytes `+0xfe`
+    /// (`Pad_SetActuatorFE`, `0x008894b0`) and `+0xff`
+    /// (`Pad_SetActuatorFF`, `0x00889490`); the work pointer back.
+    pub fn pad_set_work_byte(mem: &mut impl Mem, pad: i32, port: i32, field: u32, v: u8) -> u32 {
+        let w = tk_get_controler_work(mem, pad, port);
+        mem.write(w.wrapping_add(field), v);
+        w
+    }
+
+    /// `Pad_ResetAnalog(work)` (`0x00889000`, own name): the two analog
+    /// quads at `+0x84` and `+0x90` centred (`0x80`), the words between
+    /// cleared. `Pad_ResetAnalogAt0C` (`0x00889030`) does the same at
+    /// `+0xc`..`+0x1b`. Returns `work`.
+    pub fn pad_reset_analog(mem: &mut impl Mem, work: u32, base: u32) -> u32 {
+        let at = work.wrapping_add(base);
+        mem.write(at, 0x8080_8080u32);
+        mem.write(at.wrapping_add(4), 0u32);
+        mem.write(at.wrapping_add(8), 0u32);
+        mem.write(at.wrapping_add(0xc), 0x8080_8080u32);
+        work
+    }
+
+    /// `Pad_SetActuatorPair(work, a, b)` (`0x00889460`, own name): bytes
+    /// `+0xf0`, `+0xf1` and the `u16` `+0xf8` cleared.
+    pub fn pad_set_actuator_pair(mem: &mut impl Mem, work: u32, a: u8, b: u8) {
+        mem.write(work.wrapping_add(0xf0), a);
+        mem.write(work.wrapping_add(0xf1), b);
+        mem.write(work.wrapping_add(0xf8), 0u16);
+    }
+
+    /// `Pad_ResetMode(work)` (`0x00888ee0`, own name): `u16` `+0xf6` =
+    /// `0x0808`; returns `work`.
+    pub fn pad_reset_mode(mem: &mut impl Mem, work: u32) -> u32 {
+        mem.write(work.wrapping_add(0xf6), 0x0808u16);
+        work
+    }
+
+    fn item_entry(mem: &impl Mem, i: u32) -> u32 {
+        MENU_ITEM_LIST.ptr(mem).addr.wrapping_add(i.wrapping_mul(4))
+    }
+
+    /// The item lists' `usable` callbacks (`MenuItem_UsableByte`,
+    /// `0x008c6a30`, `0x008c6a40`, `0x008d9b00`): entry `i`'s byte `+3`.
+    pub fn menu_item_usable_byte(mem: &impl Mem, i: u32) -> u8 {
+        mem.read(item_entry(mem, i).wrapping_add(3))
+    }
+
+    /// `MenuKaizou_ItemUsable(list, i)` (`0x008d5730`): byte `+3` is not
+    /// `0xff`.
+    pub fn menu_kaizou_item_usable(mem: &impl Mem, i: u32) -> bool {
+        menu_item_usable_byte(mem, i) != 0xff
+    }
+
+    /// `MenuWShop_ItemPresent(list, i)` (`0x008d75d0`): entry `i`'s id
+    /// is nonzero.
+    pub fn menu_wshop_item_present(mem: &impl Mem, i: u32) -> bool {
+        mem.read::<u16>(item_entry(mem, i)) != 0
+    }
+
+    /// The window-state callbacks that set `+0x28` (state) to 0
+    /// (`MenuEquip_WindowIdle` and kin); the window back.
+    pub fn window_idle(mem: &mut impl Mem, window: u32) -> u32 {
+        mem.write(window.wrapping_add(0x28), 0u32);
+        window
+    }
+
+    /// `MenuSubCmd_CursorAtTop(window)` (`0x008e4a90`): the `i16` at
+    /// `+0x46` is not positive.
+    pub fn menu_sub_cmd_cursor_at_top(mem: &impl Mem, window: u32) -> bool {
+        mem.read::<i16>(window.wrapping_add(0x46)) < 1
+    }
+
+    /// `MenuSubCmd_CenterX(window)` (`0x008e4ad0`): `+0x4a` = (512 - width
+    /// `+0x4e`) / 2, truncated toward 0; the whole quotient back (left in
+    /// `eax`).
+    pub fn menu_sub_cmd_center_x(mem: &mut impl Mem, window: u32) -> i32 {
+        let w = i32::from(mem.read::<i16>(window.wrapping_add(0x4e)));
+        let x = (0x200 - w) / 2;
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        // the original stores AX
+        mem.write(window.wrapping_add(0x4a), x as u16);
+        x
+    }
+
+    /// `MenuList_IsEmptySlot(entry)` (`0x008bf720`): 1 when the `u16`
+    /// selected by byte `+0xb` among those from `+0xc` is 0 or `0xff`.
+    pub fn menu_list_is_empty_slot(mem: &impl Mem, entry: u32) -> u32 {
+        let k = u32::from(mem.read::<u8>(entry.wrapping_add(0xb)));
+        let v = mem.read::<u16>(entry.wrapping_add(0xc).wrapping_add(2 * k));
+        u32::from(v == 0xff || v == 0)
+    }
+
+    /// `MenuMain_OptionY(i)` (`0x008e2260`): option `i`'s `i16` at `+2` of
+    /// its 8-byte entry after [`MENU_MAIN_OPTIONS`]` + 4`.
+    pub fn menu_main_option_y(mem: &impl Mem, i: u32) -> i32 {
+        let at = MENU_MAIN_OPTIONS.ptr(mem).addr + 6;
+        i32::from(mem.read::<i16>(at.wrapping_add(i.wrapping_mul(8))))
+    }
+
+    /// The tutorial's chosen entry and whether one was chosen.
+    pub const TUTO_CHOICE: Global<i32> = Global::new(0x0187_1528);
+    /// Set once the tutorial has a choice.
+    pub const TUTO_CHOSEN: Global<u32> = Global::new(0x025d_16bc);
+
+    /// `MenuTuto_GetChoice()` (`0x008db840`): the choice, -1 without one.
+    pub fn menu_tuto_get_choice(mem: &impl Mem) -> i32 {
+        if TUTO_CHOSEN.get(mem) != 0 {
+            TUTO_CHOICE.get(mem)
+        } else {
+            -1
+        }
+    }
+
+    /// `MenuTuto_SetChoice(window, i)` (`0x008db7a0`): the choice and its
+    /// flag; returns `i` (left in `eax`).
+    pub fn menu_tuto_set_choice(mem: &mut impl Mem, i: i32) -> i32 {
+        TUTO_CHOSEN.set(mem, 1);
+        TUTO_CHOICE.set(mem, i);
+        i
+    }
+
+    /// The item menu's cursor cell (`MenuItem_SetCell`).
+    pub const MENU_ITEM_CELL: Global<u32> = Global::new(0x0186_a268);
+    /// The item menu's selected list (`MenuItem_SetList`).
+    pub const MENU_ITEM_SELECTED_LIST: Global<u32> = Global::new(0x0186_a258);
+    /// The Mn2 draw position (`MenuMn2_StepDrawY` adds 16).
+    pub const MN2_DRAW_Y: Global<u32> = Global::new(0x0186_a238);
+
+    /// `MenuItem_SetCell(x, y)` (`0x008c5260`): `y × 15 + x`.
+    pub fn menu_item_set_cell(mem: &mut impl Mem, x: u32, y: u32) {
+        MENU_ITEM_CELL.set(mem, y.wrapping_mul(15).wrapping_add(x));
+    }
+
+    /// The battle-end results: 18 words (`TkBtlEndGetResult`), the last
+    /// one at `+0x4c`.
+    pub const BTL_END_RESULTS: Global<u32> = Global::new(0x0231_0f20);
+
+    /// The item menu's list rows (`MenuItem_GetRows`).
+    pub const MENU_ITEM_ROWS: Global<u32> = Global::new(0x0186_a38c);
+    /// The equipment menu's alternate mode (toggled in `TkMenuCtrlEquip`).
+    pub const MENU_EQUIP_ALT_MODE: Global<u32> = Global::new(0x0186_a624);
+    /// Two save/load menu toggles (`u8`).
+    pub const MENU_SAVE_LOAD_TOGGLES: Global<[u8; 2]> = Global::new(0x0186_626a);
+    /// A battle-end flag (`BtlEnd_SetFlag` sets it, the end clears it).
+    pub const BTL_END_FLAG: Global<u32> = Global::new(0x0186_9fbc);
+    /// The pause request (`Pause_Update` runs while it is set).
+    pub const PAUSE_REQUEST: Global<u32> = Global::new(0x0134_0850);
+
+    /// `BtlEnd_GetResult(i)` (`0x008bda10`, own name).
+    pub fn btl_end_get_result(mem: &impl Mem, i: u32) -> u32 {
+        mem.read(
+            BTL_END_RESULTS
+                .ptr(mem)
+                .addr
+                .wrapping_add(i.wrapping_mul(4)),
+        )
     }
 }
 

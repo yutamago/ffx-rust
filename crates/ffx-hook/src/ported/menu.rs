@@ -12,6 +12,26 @@ use ffx_menu::{
 
 use super::{mem, ported};
 
+/// Calls a game function pointer (a menu callback, cdecl) with one or two
+/// arguments.
+fn call_ptr(f: u32, args: &[u32]) -> u32 {
+    // SAFETY: `f` is a callback the game stored in a menu window; the
+    // originals call it as cdecl with these arguments.
+    unsafe {
+        match *args {
+            [a] => {
+                let f: unsafe extern "C" fn(u32) -> u32 = std::mem::transmute(f as usize);
+                f(a)
+            }
+            [a, b] => {
+                let f: unsafe extern "C" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
+                f(a, b)
+            }
+            _ => unreachable!("menu callbacks take one or two arguments"),
+        }
+    }
+}
+
 ported! {
     /// `Gu_PrintSetColor(r, g, b)`.
     Gu_PrintSetColor @ 0x0084_8740 => extern "C" fn gu_print_set_color(r: u32, g: u32, b: u32) {
@@ -1194,5 +1214,494 @@ ported! {
     /// `TkMenuGetParamOffset2(i, offset, n)`: a copy of `TkMenuGetParamOffset`.
     TkMenuGetParamOffset2 @ 0x00a7_b890 => extern "C" fn tk_menu_get_param_offset2(i: i32, offset: i32, n: i32) -> u32 {
         scene::tk_menu_get_param_offset(&mem(), i, offset, n)
+    }
+    /// `TkSndGetLastKickId()`.
+    TkSndGetLastKickId @ 0x0088_7ad0 => extern "C" fn tk_snd_get_last_kick_id() -> u32 {
+        tk::tk_snd_get_last_kick_id(&mem())
+    }
+    /// `TkSndSetFootKickStay(v)`: `v` (left in `eax`).
+    TkSndSetFootKickStay @ 0x0088_7b40 => extern "C" fn tk_snd_set_foot_kick_stay(v: u32) -> u32 {
+        tk::tk_snd_set_foot_kick_stay(&mut mem(), v);
+        v
+    }
+    /// `TkClearSoundSyncVFlag3()`.
+    TkClearSoundSyncVFlag3 @ 0x0088_7d50 => extern "C" fn tk_clear_sound_sync_v_flag3() {
+        tk::tk_clear_sound_sync_v_flag3(&mut mem());
+    }
+    /// `TkGetSoundSyncVFlag3()`.
+    TkGetSoundSyncVFlag3 @ 0x0088_7df0 => extern "C" fn tk_get_sound_sync_v_flag3() -> u32 {
+        tk::tk_get_sound_sync_v_flag3(&mem())
+    }
+    /// `TkMcGetLoadFilePos(slot)`.
+    TkMcGetLoadFilePos @ 0x0088_8300 => extern "C" fn tk_mc_get_load_file_pos(slot: u32) -> u32 {
+        tk::tk_mc_get_load_file_pos(&mem(), slot)
+    }
+    /// `TkMcSetDebugLock(v)`: `v` (left in `eax`).
+    TkMcSetDebugLock @ 0x0088_8420 => extern "C" fn tk_mc_set_debug_lock(v: u32) -> u32 {
+        tk::tk_mc_set_debug_lock(&mut mem(), v);
+        v
+    }
+    /// `TkMcSetLoadFilePos(slot, pos)`: `slot` (left in `eax`).
+    TkMcSetLoadFilePos @ 0x0088_8480 => extern "C" fn tk_mc_set_load_file_pos(slot: u32, pos: u32) -> u32 {
+        tk::tk_mc_set_load_file_pos(&mut mem(), slot, pos);
+        slot
+    }
+    /// `TkGetCommonVibrate()`.
+    TkGetCommonVibrate @ 0x0088_d590 => extern "C" fn tk_get_common_vibrate() -> u32 {
+        tk::tk_get_common_vibrate(&mem())
+    }
+    /// `TkGetDebugMenuStatus()`.
+    TkGetDebugMenuStatus @ 0x0088_d5b0 => extern "C" fn tk_get_debug_menu_status() -> u32 {
+        tk::tk_get_debug_menu_status(&mem())
+    }
+    /// `TkGetEventNewGame()`.
+    TkGetEventNewGame @ 0x0088_d5d0 => extern "C" fn tk_get_event_new_game() -> u32 {
+        u32::from(tk::tk_get_event_new_game(&mem()))
+    }
+    /// `TkGetHddErrorFlag()`.
+    TkGetHddErrorFlag @ 0x0088_d5f0 => extern "C" fn tk_get_hdd_error_flag() -> u32 {
+        tk::tk_get_hdd_error_flag(&mem())
+    }
+    /// `TkGetLastEventJumpId()`.
+    TkGetLastEventJumpId @ 0x0088_d600 => extern "C" fn tk_get_last_event_jump_id() -> u32 {
+        u32::from(tk::tk_get_last_event_jump_id(&mem()))
+    }
+    /// `TkGetLastEventJumpIndex()`.
+    TkGetLastEventJumpIndex @ 0x0088_d610 => extern "C" fn tk_get_last_event_jump_index() -> u32 {
+        u32::from(tk::tk_get_last_event_jump_index(&mem()))
+    }
+    /// `TkGetLastEventJumpMapIdNo()`.
+    TkGetLastEventJumpMapIdNo @ 0x0088_d620 => extern "C" fn tk_get_last_event_jump_map_id_no() -> u32 {
+        u32::from(tk::tk_get_last_event_jump_map_id_no(&mem()))
+    }
+    /// `TkGetLastEventJumpMapNo()`.
+    TkGetLastEventJumpMapNo @ 0x0088_d630 => extern "C" fn tk_get_last_event_jump_map_no() -> u32 {
+        u32::from(tk::tk_get_last_event_jump_map_no(&mem()))
+    }
+    /// `TkGetLocalStartMapEventId()`.
+    TkGetLocalStartMapEventId @ 0x0088_d640 => extern "C" fn tk_get_local_start_map_event_id() -> u32 {
+        tk::LOCAL_START_MAP_EVENT.get(&mem())[0]
+    }
+    /// `TkGetLocalStartMapEventIndex()`.
+    TkGetLocalStartMapEventIndex @ 0x0088_d650 => extern "C" fn tk_get_local_start_map_event_index() -> u32 {
+        tk::LOCAL_START_MAP_EVENT.get(&mem())[1]
+    }
+    /// `TkGetStartMapEventId()`.
+    TkGetStartMapEventId @ 0x0088_d6b0 => extern "C" fn tk_get_start_map_event_id() -> u32 {
+        tk::START_MAP_EVENT.get(&mem())[0]
+    }
+    /// `TkGetStartMapEventIndex()`.
+    TkGetStartMapEventIndex @ 0x0088_d6c0 => extern "C" fn tk_get_start_map_event_index() -> u32 {
+        tk::START_MAP_EVENT.get(&mem())[1]
+    }
+    /// `TkSetEventNewGame(v)`: the save block (left in `eax`).
+    TkSetEventNewGame @ 0x0088_eb40 => extern "C" fn tk_set_event_new_game(v: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // a byte store
+        tk::tk_set_event_new_game(&mut mem(), v as u8)
+    }
+    /// `TkSetHddErrorFlag(v)`.
+    TkSetHddErrorFlag @ 0x0088_eb70 => extern "C" fn tk_set_hdd_error_flag(v: u32) {
+        #[allow(clippy::cast_possible_truncation)] // a byte store
+        tk::HDD_ERROR_FLAG.set(&mut mem(), v as u8);
+    }
+    /// `TkSetLocalStartMapIndex(id, index)`: `index` (left in `eax`).
+    TkSetLocalStartMapIndex @ 0x0088_eb80 => extern "C" fn tk_set_local_start_map_index(id: u32, index: u32) -> u32 {
+        tk::LOCAL_START_MAP_EVENT.set(&mut mem(), [id, index]);
+        index
+    }
+    /// `TkSetMapGroupDrawStatus(group, on)`.
+    TkSetMapGroupDrawStatus @ 0x0088_eba0 => extern "C" fn tk_set_map_group_draw_status(group: u32, on: u32) {
+        tk::tk_set_map_group_draw_status(&mut mem(), group, on);
+    }
+    /// `TkSetStartMapIndex(id, index)`: `index` (left in `eax`).
+    TkSetStartMapIndex @ 0x0088_ebf0 => extern "C" fn tk_set_start_map_index(id: u32, index: u32) -> u32 {
+        tk::START_MAP_EVENT.set(&mut mem(), [id, index]);
+        index
+    }
+    /// `Pad_GetWorkByte9D(pad, port)`.
+    Pad_GetWorkByte9D @ 0x0088_8ba0 => extern "C" fn pad_get_work_byte_9d(pad: i32, port: i32) -> u32 {
+        u32::from(tk::pad_get_work_byte_9d(&mem(), pad, port))
+    }
+    /// `TkGetControlerAnalog(pad, port, i)`.
+    TkGetControlerAnalog @ 0x0088_8c00 => extern "C" fn tk_get_controler_analog(pad: i32, port: i32, i: u32) -> u32 {
+        tk::tk_get_controler_analog(&mem(), pad, port, i)
+    }
+    /// `TkGetControlerId(pad, port)`.
+    TkGetControlerId @ 0x0088_8d90 => extern "C" fn tk_get_controler_id(pad: i32, port: i32) -> u32 {
+        tk::tk_get_controler_id(&mem(), pad, port)
+    }
+    /// `TkGetControlerPress(pad, port)`.
+    TkGetControlerPress @ 0x0088_8dd0 => extern "C" fn tk_get_controler_press(pad: i32, port: i32) -> u32 {
+        u32::from(tk::tk_get_controler_press(&mem(), pad, port))
+    }
+    /// `Pad_SetActuatorFF(pad, port, v)`: the work (left in `eax`).
+    Pad_SetActuatorFF @ 0x0088_9490 => extern "C" fn pad_set_actuator_ff(pad: i32, port: i32, v: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // a byte store
+        tk::pad_set_work_byte(&mut mem(), pad, port, 0xff, v as u8)
+    }
+    /// `Pad_SetActuatorFE(pad, port, v)`: the work (left in `eax`).
+    Pad_SetActuatorFE @ 0x0088_94b0 => extern "C" fn pad_set_actuator_fe(pad: i32, port: i32, v: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // a byte store
+        tk::pad_set_work_byte(&mut mem(), pad, port, 0xfe, v as u8)
+    }
+    /// `Pad_ResetAnalog(work)`: `work` (left in `eax`).
+    Pad_ResetAnalog @ 0x0088_9000 => extern "C" fn pad_reset_analog(work: u32) -> u32 {
+        tk::pad_reset_analog(&mut mem(), work, 0x84)
+    }
+    /// `Pad_ResetAnalogAt0C(work)`: `work` (left in `eax`).
+    Pad_ResetAnalogAt0C @ 0x0088_9030 => extern "C" fn pad_reset_analog_at0c(work: u32) -> u32 {
+        tk::pad_reset_analog(&mut mem(), work, 0xc)
+    }
+    /// `Pad_SetActuatorPair(work, a, b)`.
+    Pad_SetActuatorPair @ 0x0088_9460 => extern "C" fn pad_set_actuator_pair(work: u32, a: u32, b: u32) {
+        #[allow(clippy::cast_possible_truncation)] // byte stores
+        tk::pad_set_actuator_pair(&mut mem(), work, a as u8, b as u8);
+    }
+    /// `Pad_ResetMode(work)`: `work` (left in `eax`).
+    Pad_ResetMode @ 0x0088_8ee0 => extern "C" fn pad_reset_mode(work: u32) -> u32 {
+        tk::pad_reset_mode(&mut mem(), work)
+    }
+    /// `TkMenuGetArmor(chr)`.
+    TkMenuGetArmor @ 0x008a_9820 => extern "C" fn tk_menu_get_armor(chr: u32) -> u32 {
+        u32::from(tk::tk_menu_get_ply_byte(&mem(), chr, 0x2e))
+    }
+    /// `TkMenuGetLimit(chr)`.
+    TkMenuGetLimit @ 0x008a_9930 => extern "C" fn tk_menu_get_limit(chr: u32) -> u32 {
+        u32::from(tk::tk_menu_get_ply_byte(&mem(), chr, 0x39))
+    }
+    /// `TkMenuGetLimitMax(chr)`.
+    TkMenuGetLimitMax @ 0x008a_9950 => extern "C" fn tk_menu_get_limit_max(chr: u32) -> u32 {
+        u32::from(tk::tk_menu_get_ply_byte(&mem(), chr, 0x3a))
+    }
+    /// `TkMenuGetSP(chr)`: `MsGetSaveSP`.
+    TkMenuGetSP @ 0x008a_9b80 => extern "C" fn tk_menu_get_sp(chr: u32) -> u32 {
+        ffx_battle::save::bridge::ms_get_save_sp(&mem(), chr)
+    }
+    /// `BtlEnd_GetSP(chr)`: `MsGetSaveSP`.
+    BtlEnd_GetSP @ 0x008b_da50 => extern "C" fn btl_end_get_sp(chr: u32) -> u32 {
+        ffx_battle::save::bridge::ms_get_save_sp(&mem(), chr)
+    }
+    /// `TkMenuGetSummonTotalFromIndex(i)`.
+    TkMenuGetSummonTotalFromIndex @ 0x008a_9c00 => extern "C" fn tk_menu_get_summon_total_from_index(i: i32) -> u32 {
+        u32::from(tk::tk_menu_get_summon_total_from_index(&mem(), i))
+    }
+    /// `TkMenuGetTime()`.
+    TkMenuGetTime @ 0x008a_9c50 => extern "C" fn tk_menu_get_time() -> u32 {
+        tk::tk_menu_get_time(&mem())
+    }
+    /// `TkMenuGetWeapon(chr)`.
+    TkMenuGetWeapon @ 0x008a_9c70 => extern "C" fn tk_menu_get_weapon(chr: u32) -> u32 {
+        u32::from(tk::tk_menu_get_ply_byte(&mem(), chr, 0x2d))
+    }
+    /// `TkMenuSetHP(chr, hp)`: the record (left in `eax`).
+    TkMenuSetHP @ 0x008a_ae90 => extern "C" fn tk_menu_set_hp(chr: u32, hp: u32) -> u32 {
+        tk::tk_menu_set_hp(&mut mem(), chr, hp)
+    }
+    /// `TkMenuSetMP(chr, mp)`: the record (left in `eax`).
+    TkMenuSetMP @ 0x008a_aef0 => extern "C" fn tk_menu_set_mp(chr: u32, mp: u32) -> u32 {
+        tk::tk_menu_set_ply(&mut mem(), chr, 0x20, mp)
+    }
+    /// `TkMenuSetSP(chr, sp)`: the record (left in `eax`).
+    TkMenuSetSP @ 0x008a_b000 => extern "C" fn tk_menu_set_sp(chr: u32, sp: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // a byte store
+        tk::tk_menu_set_ply_byte(&mut mem(), chr, 0x3b, sp as u8)
+    }
+    /// `TkMenuSetHelpRatioDiff2(v)`: `v` (left in `eax`).
+    TkMenuSetHelpRatioDiff2 @ 0x008a_aee0 => extern "C" fn tk_menu_set_help_ratio_diff2(v: u32) -> u32 {
+        tk::tk_menu_set_help_ratio_diff2(&mut mem(), v);
+        v
+    }
+    /// `MenuHelp_SetRatio2()`.
+    MenuHelp_SetRatio2 @ 0x008a_b270 => extern "C" fn menu_help_set_ratio2() {
+        tk::tk_menu_set_help_ratio2(&mut mem());
+    }
+    /// `TkMenuMainRegistMenu(slot, window)`: the init callback's result.
+    TkMenuMainRegistMenu @ 0x008a_aab0 => extern "C" fn tk_menu_main_regist_menu(slot: i32, window: u32) -> u32 {
+        tk::tk_menu_main_regist_menu(&mut mem(), slot, window, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuMainRegistWindow(window)`: the callback's result, or the
+    /// window.
+    TkMenuMainRegistWindow @ 0x008a_ab00 => extern "C" fn tk_menu_main_regist_window(window: u32) -> u32 {
+        tk::tk_menu_main_regist_window(&mut mem(), window, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuMainSleepMenu(slot)`.
+    TkMenuMainSleepMenu @ 0x008a_ad70 => extern "C" fn tk_menu_main_sleep_menu(slot: i32) {
+        tk::tk_menu_main_sleep_menu(&mut mem(), slot, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMenuMainActiveMenu(slot, arg)`.
+    TkMenuMainActiveMenu @ 0x008a_a100 => extern "C" fn tk_menu_main_active_menu(slot: i32, arg: u32) {
+        tk::tk_menu_main_active_menu(&mut mem(), slot, arg, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuPlayer_DamageClass(chr)`.
+    MenuPlayer_DamageClass @ 0x008a_99f0 => extern "C" fn menu_player_damage_class(chr: u32) -> u32 {
+        tk::menu_player_damage_class(&mem(), chr, true)
+    }
+    /// `MenuPlayer_DamageClass2(chr)`.
+    MenuPlayer_DamageClass2 @ 0x008a_9a70 => extern "C" fn menu_player_damage_class2(chr: u32) -> u32 {
+        tk::menu_player_damage_class(&mem(), chr, false)
+    }
+    /// `TkMn2GetListMax()`.
+    TkMn2GetListMax @ 0x008c_1bb0 => extern "C" fn tk_mn2_get_list_max() -> u32 {
+        tk::tk_mn2_get_list_max(&mem())
+    }
+    /// `TkMn2GetNameModeMax()`.
+    TkMn2GetNameModeMax @ 0x008c_1bc0 => extern "C" fn tk_mn2_get_name_mode_max() -> u32 {
+        tk::tk_mn2_get_name_mode_max(&mem())
+    }
+    /// `TkMn2GetOverDriveId(chr)`.
+    TkMn2GetOverDriveId @ 0x008c_1bd0 => extern "C" fn tk_mn2_get_over_drive_id(chr: u32) -> u32 {
+        u32::from(tk::tk_menu_get_ply_byte(&mem(), chr, 0x38))
+    }
+    /// `TkMn2GetOverDriveType(chr)`.
+    TkMn2GetOverDriveType @ 0x008c_1bf0 => extern "C" fn tk_mn2_get_over_drive_type(chr: u32) -> u32 {
+        tk::tk_menu_get_ply(&mem(), chr, 0x88)
+    }
+    /// `TkMn2SetOverDriveId(chr, v)`: the record (left in `eax`).
+    TkMn2SetOverDriveId @ 0x008c_2c90 => extern "C" fn tk_mn2_set_over_drive_id(chr: u32, v: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // a byte store
+        tk::tk_menu_set_ply_byte(&mut mem(), chr, 0x38, v as u8)
+    }
+    /// `MenuSummon_GrowEntry(i)`.
+    MenuSummon_GrowEntry @ 0x008c_ecf0 => extern "C" fn menu_summon_grow_entry(i: u32) -> u32 {
+        tk::menu_summon_grow_entry(&mut mem(), i)
+    }
+    /// `MenuWorldMap_CloseWindow()`: the window (left in `eax`).
+    MenuWorldMap_CloseWindow @ 0x008e_2b10 => extern "C" fn menu_world_map_close_window() -> u32 {
+        tk::close_window(&mut mem(), tk::WORLD_MAP_WINDOW, false, true)
+    }
+    /// `MenuWShop_CloseSubWindow0()`: the window (left in `eax`).
+    MenuWShop_CloseSubWindow0 @ 0x008d_7610 => extern "C" fn menu_wshop_close_sub_window0() -> u32 {
+        tk::close_window(&mut mem(), tk::WSHOP_WINDOWS[0], true, true)
+    }
+    /// `MenuWShop_CloseSubWindow1()`: the window (left in `eax`).
+    MenuWShop_CloseSubWindow1 @ 0x008d_7650 => extern "C" fn menu_wshop_close_sub_window1() -> u32 {
+        tk::close_window(&mut mem(), tk::WSHOP_WINDOWS[1], true, true)
+    }
+    /// `MenuWShop_CloseSubWindow2()`: the window (left in `eax`).
+    MenuWShop_CloseSubWindow2 @ 0x008d_75f0 => extern "C" fn menu_wshop_close_sub_window2() -> u32 {
+        tk::close_window(&mut mem(), tk::WSHOP_WINDOWS[2], true, true)
+    }
+    /// `MenuWShop_CloseSubWindow3()`: the window (left in `eax`).
+    MenuWShop_CloseSubWindow3 @ 0x008d_7630 => extern "C" fn menu_wshop_close_sub_window3() -> u32 {
+        tk::close_window(&mut mem(), tk::WSHOP_WINDOWS[3], true, true)
+    }
+    /// `MenuWShop_CloseSubWindow4()`: the window (left in `eax`).
+    MenuWShop_CloseSubWindow4 @ 0x008d_7670 => extern "C" fn menu_wshop_close_sub_window4() -> u32 {
+        tk::close_window(&mut mem(), tk::WSHOP_WINDOWS[4], true, true)
+    }
+    /// `MenuSummon_CloseStatusWindow()`.
+    MenuSummon_CloseStatusWindow @ 0x008c_cb10 => extern "C" fn menu_summon_close_status_window() {
+        tk::menu_summon_close_status_window(&mut mem());
+    }
+    /// `MenuSummon_RestartGrowWindow()`: the window (left in `eax`).
+    MenuSummon_RestartGrowWindow @ 0x008c_ee30 => extern "C" fn menu_summon_restart_grow_window() -> u32 {
+        tk::restart_global_window(&mut mem(), tk::SUMMON_GROW_WINDOW)
+    }
+    /// `MenuSummon_RestartWindow2()`: the window (left in `eax`).
+    MenuSummon_RestartWindow2 @ 0x008c_ee50 => extern "C" fn menu_summon_restart_window2() -> u32 {
+        tk::restart_global_window(&mut mem(), tk::SUMMON_WINDOW2)
+    }
+    /// `MenuKaizou_RestartWindow2()`: the window (left in `eax`).
+    MenuKaizou_RestartWindow2 @ 0x008d_6e00 => extern "C" fn menu_kaizou_restart_window2() -> u32 {
+        tk::restart_global_window(&mut mem(), tk::KAIZOU_WINDOW2)
+    }
+    /// `MenuTuto_RestartWindow()`: the window (left in `eax`).
+    MenuTuto_RestartWindow @ 0x008d_aaa0 => extern "C" fn menu_tuto_restart_window() -> u32 {
+        tk::restart_global_window(&mut mem(), tk::TUTO_WINDOWS[0])
+    }
+    /// `MenuTuto_RestartWindow2()`: the window (left in `eax`).
+    MenuTuto_RestartWindow2 @ 0x008d_aac0 => extern "C" fn menu_tuto_restart_window2() -> u32 {
+        tk::menu_tuto_restart_window2(&mut mem())
+    }
+    /// `MenuWShop_RestartListWindow()`: the window (left in `eax`).
+    MenuWShop_RestartListWindow @ 0x008d_8420 => extern "C" fn menu_wshop_restart_list_window() -> u32 {
+        tk::menu_wshop_restart_list_window(&mut mem())
+    }
+    /// `MenuStatus_CloseWindow(i)`: the window (left in `eax`).
+    MenuStatus_CloseWindow @ 0x008d_2680 => extern "C" fn menu_status_close_window(i: u32) -> u32 {
+        tk::menu_status_close_window(&mut mem(), i)
+    }
+    /// `MenuSummon_RestartWindow()`.
+    MenuSummon_RestartWindow @ 0x008c_d1f0 => extern "C" fn menu_summon_restart_window() {
+        tk::menu_summon_restart_window(&mut mem());
+    }
+    /// `MenuSubCmd_RefreshHelp()`.
+    MenuSubCmd_RefreshHelp @ 0x008e_49b0 => extern "C" fn menu_sub_cmd_refresh_help() {
+        tk::menu_sub_cmd_refresh_help(&mut mem());
+    }
+    /// `MenuSubCmd_SetValue(v)`.
+    MenuSubCmd_SetValue @ 0x008e_4a10 => extern "C" fn menu_sub_cmd_set_value(v: u32) {
+        #[allow(clippy::cast_possible_truncation)] // a 16-bit store
+        tk::menu_sub_cmd_set_value(&mut mem(), tk::MENU_SUB_CMD_WINDOW, v as u16);
+    }
+    /// `MenuSubCmd_SetValue2(v)`.
+    MenuSubCmd_SetValue2 @ 0x008e_4a30 => extern "C" fn menu_sub_cmd_set_value2(v: u32) {
+        #[allow(clippy::cast_possible_truncation)] // a 16-bit store
+        tk::menu_sub_cmd_set_value(&mut mem(), tk::MENU_SUB_CMD_WINDOW2, v as u16);
+    }
+    /// `MenuItem_IsUsable(window, list)`.
+    MenuItem_IsUsable @ 0x008c_9120 => extern "C" fn menu_item_is_usable(_window: u32, list: i32) -> u32 {
+        tk::menu_item_is_usable(&mem(), list)
+    }
+    /// `MenuList_IsEmptySlot(entry)`.
+    MenuList_IsEmptySlot @ 0x008b_f720 => extern "C" fn menu_list_is_empty_slot(entry: u32) -> u32 {
+        tk::menu_list_is_empty_slot(&mem(), entry)
+    }
+    /// `MenuMain_OptionY(i)`.
+    MenuMain_OptionY @ 0x008e_2260 => extern "C" fn menu_main_option_y(i: u32) -> i32 {
+        tk::menu_main_option_y(&mem(), i)
+    }
+    /// `MenuTuto_GetChoice()`.
+    MenuTuto_GetChoice @ 0x008d_b840 => extern "C" fn menu_tuto_get_choice() -> i32 {
+        tk::menu_tuto_get_choice(&mem())
+    }
+    /// `MenuTuto_SetChoice(window, i)`: `i` (left in `eax`).
+    MenuTuto_SetChoice @ 0x008d_b7a0 => extern "C" fn menu_tuto_set_choice(_window: u32, i: i32) -> i32 {
+        tk::menu_tuto_set_choice(&mut mem(), i)
+    }
+    /// `MenuItem_SetCell(x, y)`.
+    MenuItem_SetCell @ 0x008c_5260 => extern "C" fn menu_item_set_cell(x: u32, y: u32) {
+        tk::menu_item_set_cell(&mut mem(), x, y);
+    }
+    /// `MenuItem_SetTarget(chr)`: `chr` (left in `eax`).
+    MenuItem_SetTarget @ 0x008c_5440 => extern "C" fn menu_item_set_target(chr: u32) -> u32 {
+        tk::MENU_ITEM_SELECTED_LIST.set(&mut mem(), chr);
+        chr
+    }
+    /// `MenuItem_GetRows()`.
+    MenuItem_GetRows @ 0x008c_8a00 => extern "C" fn menu_item_get_rows() -> u32 {
+        tk::MENU_ITEM_ROWS.get(&mem())
+    }
+    /// `MenuEquip_IsAltMode()`.
+    MenuEquip_IsAltMode @ 0x008c_fc30 => extern "C" fn menu_equip_is_alt_mode() -> u32 {
+        u32::from(tk::MENU_EQUIP_ALT_MODE.get(&mem()) != 0)
+    }
+    /// `MenuSaveLoad_ResetToggles()`.
+    MenuSaveLoad_ResetToggles @ 0x008b_4eb0 => extern "C" fn menu_save_load_reset_toggles() {
+        tk::MENU_SAVE_LOAD_TOGGLES.set(&mut mem(), [0, 0]);
+    }
+    /// `BtlEnd_SetFlag()`.
+    BtlEnd_SetFlag @ 0x008b_db60 => extern "C" fn btl_end_set_flag() {
+        tk::BTL_END_FLAG.set(&mut mem(), 1);
+    }
+    /// `BtlEnd_GetResult(i)`.
+    BtlEnd_GetResult @ 0x008b_da10 => extern "C" fn btl_end_get_result(i: u32) -> u32 {
+        tk::btl_end_get_result(&mem(), i)
+    }
+    /// `BtlEnd_GetResult19()`.
+    BtlEnd_GetResult19 @ 0x008b_da20 => extern "C" fn btl_end_get_result19() -> u32 {
+        tk::btl_end_get_result(&mem(), 19)
+    }
+    /// `Pause_Request()`.
+    Pause_Request @ 0x008a_ae00 => extern "C" fn pause_request() {
+        tk::PAUSE_REQUEST.set(&mut mem(), 1);
+    }
+    /// `MenuMn2_StepDrawY()`.
+    MenuMn2_StepDrawY @ 0x008c_0a10 => extern "C" fn menu_mn2_step_draw_y() {
+        let mut m = mem();
+        let v = tk::MN2_DRAW_Y.get(&m).wrapping_add(0x10);
+        tk::MN2_DRAW_Y.set(&mut m, v);
+    }
+    /// `TkMenuGetDummyControler()`.
+    TkMenuGetDummyControler @ 0x008c_a500 => extern "C" fn tk_menu_get_dummy_controler() -> u32 {
+        tk::MENU_DUMMY_CONTROLER.get(&mem())
+    }
+    /// `TkMenuGetDummyControlerR()`.
+    TkMenuGetDummyControlerR @ 0x008c_a520 => extern "C" fn tk_menu_get_dummy_controler_r() -> u32 {
+        tk::MENU_DUMMY_CONTROLER.get(&mem())
+    }
+    /// `TkMenuGetDummyControlerT()`.
+    TkMenuGetDummyControlerT @ 0x008c_a530 => extern "C" fn tk_menu_get_dummy_controler_t() -> u32 {
+        tk::MENU_DUMMY_CONTROLER.get(&mem())
+    }
+    /// `MenuMn2_Plus80(v)`.
+    MenuMn2_Plus80 @ 0x008c_22f0 => extern "C" fn menu_mn2_plus80(v: u32) -> u32 {
+        ffx_menu::tk::plus_80(v)
+    }
+    /// `MenuItem_Less(a, b)`.
+    MenuItem_Less @ 0x008c_6a60 => extern "C" fn menu_item_less(a: i32, b: i32) -> u32 {
+        u32::from(ffx_menu::tk::less(a, b))
+    }
+    /// `BtlEnd_RowX(i, n)`.
+    BtlEnd_RowX @ 0x008b_a370 => extern "C" fn btl_end_row_x(i: i32, n: i32) -> i32 {
+        ffx_menu::tk::btl_end_row_x(i, n)
+    }
+    /// `MenuHelp_Ratio(a, b)`.
+    MenuHelp_Ratio @ 0x008b_f120 => extern "C" fn menu_help_ratio(a: i32, b: i32) -> i32 {
+        ffx_menu::tk::menu_help_ratio(a, b)
+    }
+    /// `MenuItem_UsableByte(list, i)`.
+    MenuItem_UsableByte @ 0x008c_6a30 => extern "C" fn menu_item_usable_byte(_list: u32, i: u32) -> u32 {
+        u32::from(tk::menu_item_usable_byte(&mem(), i))
+    }
+    /// `MenuItem_UsableByte2(list, i)`.
+    MenuItem_UsableByte2 @ 0x008c_6a40 => extern "C" fn menu_item_usable_byte2(_list: u32, i: u32) -> u32 {
+        u32::from(tk::menu_item_usable_byte(&mem(), i))
+    }
+    /// `MenuWShop_UsableByte(list, i)`.
+    MenuWShop_UsableByte @ 0x008d_9b00 => extern "C" fn menu_wshop_usable_byte(_list: u32, i: u32) -> u32 {
+        u32::from(tk::menu_item_usable_byte(&mem(), i))
+    }
+    /// `MenuKaizou_ItemUsable(list, i)`.
+    MenuKaizou_ItemUsable @ 0x008d_5730 => extern "C" fn menu_kaizou_item_usable(_list: u32, i: u32) -> u32 {
+        u32::from(tk::menu_kaizou_item_usable(&mem(), i))
+    }
+    /// `MenuWShop_ItemPresent(list, i)`.
+    MenuWShop_ItemPresent @ 0x008d_75d0 => extern "C" fn menu_wshop_item_present(_list: u32, i: u32) -> u32 {
+        u32::from(tk::menu_wshop_item_present(&mem(), i))
+    }
+    /// `MenuEquip_WindowIdle(window)`: the window (left in `eax`).
+    MenuEquip_WindowIdle @ 0x008c_f950 => extern "C" fn menu_equip_window_idle(window: u32) -> u32 {
+        tk::window_idle(&mut mem(), window)
+    }
+    /// `MenuLimit_WindowIdle(window)`: the window (left in `eax`).
+    MenuLimit_WindowIdle @ 0x008d_0e80 => extern "C" fn menu_limit_window_idle(window: u32) -> u32 {
+        tk::window_idle(&mut mem(), window)
+    }
+    /// `MenuKaizou_WindowIdle(window)`: the window (left in `eax`).
+    MenuKaizou_WindowIdle @ 0x008d_56d0 => extern "C" fn menu_kaizou_window_idle(window: u32) -> u32 {
+        tk::window_idle(&mut mem(), window)
+    }
+    /// `MenuSubCmd_CursorAtTop(window)`.
+    MenuSubCmd_CursorAtTop @ 0x008e_4a90 => extern "C" fn menu_sub_cmd_cursor_at_top(window: u32) -> u32 {
+        u32::from(tk::menu_sub_cmd_cursor_at_top(&mem(), window))
+    }
+    /// `MenuSubCmd_CenterX(window)`: the x (left in `eax`).
+    MenuSubCmd_CenterX @ 0x008e_4ad0 => extern "C" fn menu_sub_cmd_center_x(window: u32) -> i32 {
+        tk::menu_sub_cmd_center_x(&mut mem(), window)
+    }
+    /// `Gu_FontSetX(x)`: `x` (left in `eax`).
+    Gu_FontSetX @ 0x0084_82f0 => extern "C" fn gu_font_set_x(x: i32) -> i32 {
+        gu::PRINT_X.set(&mut mem(), x);
+        x
+    }
+    /// `Gu_FontSetY(y)`: `y` (left in `eax`).
+    Gu_FontSetY @ 0x0084_8300 => extern "C" fn gu_font_set_y(y: i32) -> i32 {
+        gu::PRINT_Y.set(&mut mem(), y);
+        y
+    }
+    /// `Gu_PrintSetCR(v)`: `v` (left in `eax`).
+    Gu_PrintSetCR @ 0x0084_8730 => extern "C" fn gu_print_set_cr(v: u32) -> u32 {
+        gu::PRINT_CR.set(&mut mem(), v);
+        v
+    }
+    /// `Gu_MouseSetEnable(on)`: `on` (left in `eax`).
+    Gu_MouseSetEnable @ 0x0084_9b80 => extern "C" fn gu_mouse_set_enable(on: u32) -> u32 {
+        gu::MOUSE_ENABLE.set(&mut mem(), on);
+        on
+    }
+    /// `Gu_WindowGetHScale(window)`.
+    Gu_WindowGetHScale @ 0x0084_af20 => extern "C" fn gu_window_get_h_scale(window: u32) -> i32 {
+        gu::gu_window_get_h_scale(&mem(), window)
+    }
+    /// `Gu_WindowSetHScale(window, scale)`: the window (left in `eax`).
+    Gu_WindowSetHScale @ 0x0084_b5b0 => extern "C" fn gu_window_set_h_scale(window: u32, scale: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // a 16-bit store
+        gu::gu_window_set_h_scale(&mut mem(), window, scale as u16)
+    }
+    /// `Gu_WindowSetWord30(window, v)`: the window (left in `eax`).
+    Gu_WindowSetWord30 @ 0x0084_b7e0 => extern "C" fn gu_window_set_word30(window: u32, v: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // a 16-bit store
+        gu::gu_window_set_word30(&mut mem(), window, v as u16)
     }
 }

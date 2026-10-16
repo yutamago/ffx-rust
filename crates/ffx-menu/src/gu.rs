@@ -129,6 +129,31 @@ pub mod bridge {
         p.wrapping_add(o)
     }
 
+    /// The text carriage-return column (`Gu_PrintSetCR`).
+    pub const PRINT_CR: Global<u32> = Global::new(0x0130_372c);
+    /// Whether the mouse is enabled (`Gu_MouseSetEnable`).
+    pub const MOUSE_ENABLE: Global<u32> = Global::new(0x0130_3760);
+
+    /// `Gu_WindowGetHScale(window)` (`0x0084af20`): the `i16` scale `+0x8e`
+    /// (`Gu_WindowCheckMouse` passes it to `Gu_SetHScale`).
+    pub fn gu_window_get_h_scale(mem: &impl Mem, window: u32) -> i32 {
+        i32::from(mem.read::<i16>(at(window, 0x8e)))
+    }
+
+    /// `Gu_WindowSetHScale(window, scale)` (`0x0084b5b0`): the window back
+    /// (left in `eax`).
+    pub fn gu_window_set_h_scale(mem: &mut impl Mem, window: u32, scale: u16) -> u32 {
+        mem.write(at(window, 0x8e), scale);
+        window
+    }
+
+    /// `Gu_WindowSetWord30(window, v)` (`0x0084b7e0`, own name): the `u16`
+    /// `+0x30`; the window back.
+    pub fn gu_window_set_word30(mem: &mut impl Mem, window: u32, v: u16) -> u32 {
+        mem.write(at(window, 0x30), v);
+        window
+    }
+
     /// `Gu_PrintSetX(x)` (`0x00848820`).
     pub fn gu_print_set_x(mem: &mut impl Mem, x: i32) {
         let v = PRINT_BASE_X.get(mem).wrapping_add(x);
