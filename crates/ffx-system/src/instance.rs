@@ -314,4 +314,69 @@ pub mod bridge {
         let m = localization_manager(mem, print);
         mem.read(m.wrapping_add(4))
     }
+
+    /// `TOGetBtlMenuTexAdrs()`'s word.
+    pub const BTL_MENU_TEX: Global<u32> = Global::new(0x0184_1e04);
+    /// `TOMenuGetYesNoWindow()`'s word.
+    pub const YES_NO_WINDOW: Global<u32> = Global::new(0x0184_1c2c);
+
+    /// The entry table `0x00774740` reads (`0x0112a01c`): 8 bytes per
+    /// entry, an offset from [`RECORD_BASE`] and an i16 record count.
+    pub const RECORD_ENTRIES: Global<u32> = Global::new(0x0112_a01c);
+    /// Added to an entry's offset (`0x0112a03c`).
+    pub const RECORD_BASE: Global<u32> = Global::new(0x0112_a03c);
+    /// The current entry (`0x0112a088`).
+    pub const RECORD_ENTRY: Global<u32> = Global::new(0x0112_a088);
+
+    /// `0x00774740()`: the current entry's records (0x138 bytes each)
+    /// reset: the halves at `+0x120`, `+0x122` copied to `+0x114`,
+    /// `+0x116`, the floats `+0x118`, `+0x11c` zeroed. Returns what `eax`
+    /// ends as: the last record's half at `+0x122`, or the table pointer
+    /// when there are none.
+    pub fn reset_records(mem: &mut impl Mem) -> u32 {
+        let table = RECORD_ENTRIES.get(mem);
+        let entry = table.wrapping_add(RECORD_ENTRY.get(mem).wrapping_mul(8));
+        let count: i16 = mem.read(entry.wrapping_add(4));
+        let mut rec = mem.read::<u32>(entry).wrapping_add(RECORD_BASE.get(mem));
+        let mut eax = table;
+        for _ in 0..count.max(0) {
+            let (x, y): (u16, u16) = (
+                mem.read(rec.wrapping_add(0x120)),
+                mem.read(rec.wrapping_add(0x122)),
+            );
+            mem.write(rec.wrapping_add(0x114), x);
+            mem.write(rec.wrapping_add(0x116), y);
+            mem.write(rec.wrapping_add(0x118), 0u64);
+            eax = u32::from(y);
+            rec = rec.wrapping_add(0x138);
+        }
+        eax
+    }
+
+    /// `0x00641100()`: the first word of the localization manager (through
+    /// `LocalizationManager_GetInstance`, twice, as the original), or 0
+    /// when there is none.
+    pub fn localization_manager_word0(mem: &impl Mem, print: &mut impl FnMut(u32, u32)) -> u32 {
+        if localization_manager(mem, print) == 0 {
+            return 0;
+        }
+        mem.read(localization_manager(mem, print))
+    }
+
+    /// The word table `0x00402be0` reads (`0x00c8a538`).
+    pub const TABLE_00C8A538: Global<u32> = Global::new(0x00c8_a538);
+    /// The word table `0x008bdfc0` writes (`0x02310f20`).
+    pub const TABLE_02310F20: Global<u32> = Global::new(0x0231_0f20);
+
+    /// `0x00402be0(i)` (`ret 4`): word `i` of [`TABLE_00C8A538`].
+    pub fn table_00c8a538(mem: &impl Mem, i: u32) -> u32 {
+        mem.read(TABLE_00C8A538.ptr(mem).addr.wrapping_add(i.wrapping_mul(4)))
+    }
+
+    /// `0x008bdfc0(i, v)`: word `i` of [`TABLE_02310F20`] set; returns `i`.
+    pub fn set_table_02310f20(mem: &mut impl Mem, i: u32, v: u32) -> u32 {
+        let at = TABLE_02310F20.ptr(mem).addr.wrapping_add(i.wrapping_mul(4));
+        mem.write(at, v);
+        i
+    }
 }

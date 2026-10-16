@@ -77,6 +77,55 @@ pub mod bridge {
         let v = super::next_print_flag(PRINT_FLAG.get(mem));
         PRINT_FLAG.set(mem, v);
     }
+
+    /// `0x00689a10(base, n)`: `n` touch records of 0x150 bytes from `base`
+    /// reset (a null record skipped): `+0` u16 0, `+4` -1, `+8` 0, 32
+    /// ten-byte points from `+0xc` (byte, then words at `+2` and `+6`)
+    /// zeroed, `+0x14c` 0. Callers are the touch manager's (near
+    /// `TouchManager_GetInstance`).
+    pub fn touch_records_init(mem: &mut impl Mem, base: u32, n: u32) {
+        let mut rec = base;
+        for _ in 0..n {
+            if rec != 0 {
+                mem.write(rec, 0u16);
+                mem.write(rec.wrapping_add(4), u32::MAX);
+                mem.write(rec.wrapping_add(8), 0u32);
+                for k in 0..32u32 {
+                    let p = rec.wrapping_add(0xc + 10 * k);
+                    mem.write(p, 0u8);
+                    mem.write(p.wrapping_add(2), 0u32);
+                    mem.write(p.wrapping_add(6), 0u32);
+                }
+                mem.write(rec.wrapping_add(0x14c), 0u32);
+            }
+            rec = rec.wrapping_add(0x150);
+        }
+    }
+
+    /// `0x006898d0(base, n)`: `n` touch tracks of 0x1c8 bytes from `base`
+    /// reset (a null one skipped): `+0` u16, eight 0x38-byte points from
+    /// `+4` (bytes `+0`, `+0x14` and the floats `+4..+0x14`) and `+0x1c4`
+    /// zeroed. Returns the last track's address (what `eax` ends as; for
+    /// `n` 0 the original leaves the caller's).
+    pub fn touch_tracks_init(mem: &mut impl Mem, base: u32, n: u32) -> u32 {
+        let mut rec = base;
+        let mut last = 0;
+        for _ in 0..n {
+            last = rec;
+            if rec != 0 {
+                mem.write(rec, 0u16);
+                for k in 0..8u32 {
+                    let p = rec.wrapping_add(4 + 0x38 * k);
+                    mem.write(p, 0u8);
+                    mem.write(p.wrapping_add(0x14), 0u8);
+                    mem.write(p.wrapping_add(4), [0u32; 4]);
+                }
+                mem.write(rec.wrapping_add(0x1c4), 0u32);
+            }
+            rec = rec.wrapping_add(0x1c8);
+        }
+        last
+    }
 }
 
 #[cfg(test)]

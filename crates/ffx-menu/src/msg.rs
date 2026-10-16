@@ -209,6 +209,30 @@ pub mod bridge {
         }
         mode
     }
+
+    /// `Msg_CloseWindow(window)` (`0x008640f0`): the message window
+    /// (clamped to 0..7 in the current bank) loses its choice (`+0x1e` =
+    /// -1); one still open (state `+0x14` not 0 or 3) is set to 3 and
+    /// `TOCloseMessageWindow(window)` (`close`) called. Returns whether it was.
+    pub fn msg_close_window<M: Mem>(
+        mem: &mut M,
+        window: i32,
+        close: impl FnOnce(&mut M, i32),
+    ) -> bool {
+        let i = window.clamp(0, 7);
+        let bank = i32::from(mem.read::<i8>(mem.rebase(0x0132_6b82)));
+        let w = mem
+            .rebase(0x0132_6d70)
+            .wrapping_add(i.wrapping_add(bank * 8).cast_unsigned().wrapping_mul(0x2c));
+        let state = mem.read::<u16>(w + 0x14);
+        mem.write(w + 0x1e, 0xffffu16);
+        if state == 0 || state == 3 {
+            return false;
+        }
+        mem.write(w + 0x14, 3u16);
+        close(mem, window);
+        true
+    }
 }
 
 #[cfg(test)]

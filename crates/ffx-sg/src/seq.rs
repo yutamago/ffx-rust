@@ -116,4 +116,106 @@ pub mod bridge {
         }
         0
     }
+
+    /// `SG_RelocateGroup(group)` (`0x00836f70`): a motion group moved since
+    /// it was built (its first word, its own address then, differs):
+    /// the sequence table (`+0xc`) and every sequence in it (20 bytes each,
+    /// `i32` count at `+4`, read again for each) move by the difference.
+    pub fn relocate_group(mem: &mut impl Mem, group: u32) {
+        if group == 0 {
+            return;
+        }
+        let delta = group.wrapping_sub(mem.read::<u32>(group));
+        if delta == 0 {
+            return;
+        }
+        let t: u32 = mem.read(group.wrapping_add(0xc));
+        mem.write(group.wrapping_add(0xc), t.wrapping_add(delta));
+        mem.write(group, group);
+        let mut i = 0i32;
+        while i < mem.read::<i32>(group.wrapping_add(4)) {
+            let t: u32 = mem.read(group.wrapping_add(0xc));
+            relocate_sequence(mem, t.wrapping_add(20 * i.cast_unsigned()), delta);
+            i += 1;
+        }
+    }
+
+    /// `SG_RewindChannels(obj)` (`0x008398f0`): every channel back to its
+    /// stream's start (`+8`), wait and delta 0, value 0 (the old value kept
+    /// at `+0x1a`), one step, the previous value set to the kept one; then
+    /// the object's `+0x7dc` to 1.
+    pub fn rewind_channels(mem: &mut impl Mem, obj: u32) {
+        let first: u32 = mem.read(obj.wrapping_add(0x74c));
+        let mut ch = first;
+        while ch != 0 {
+            let start: u32 = mem.read(ch.wrapping_add(8));
+            mem.write(ch.wrapping_add(0xc), start);
+            let v: u16 = mem.read(ch.wrapping_add(0x16));
+            mem.write(ch.wrapping_add(0x1a), v);
+            mem.write(ch.wrapping_add(6), 0u16);
+            mem.write(ch.wrapping_add(0x14), 0u32);
+            ch = mem.read(ch);
+        }
+        step_channels(mem, obj, 1);
+        let mut ch: u32 = mem.read(obj.wrapping_add(0x74c));
+        while ch != 0 {
+            let v: u16 = mem.read(ch.wrapping_add(0x1a));
+            mem.write(ch.wrapping_add(0x18), v);
+            ch = mem.read(ch);
+        }
+        mem.write(obj.wrapping_add(0x7dc), 1u32);
+    }
+
+    /// The loaded motion groups: 50 entries of `{group, i16, i16, key}`.
+    pub const MOTION_GROUPS: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x0130_11e0);
+    /// `g_ChrSequences`: 100 entries of 20 bytes, the sequence first.
+    pub const SEQUENCES: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x0130_0a08);
+
+    /// `SG_FindMotionGroup(a, b, key)` (`0x00836f10`): the first loaded
+    /// group with those two numbers and key, else 0.
+    pub fn find_motion_group(mem: &impl Mem, a: i32, b: i32, key: u32) -> u32 {
+        let base = MOTION_GROUPS.ptr(mem).addr;
+        for k in 0..50 {
+            let e = base.wrapping_add(12 * k);
+            let group: u32 = mem.read(e);
+            if group != 0
+                && i32::from(mem.read::<i16>(e.wrapping_add(4))) == a
+                && i32::from(mem.read::<i16>(e.wrapping_add(6))) == b
+                && mem.read::<u32>(e.wrapping_add(8)) == key
+            {
+                return group;
+            }
+        }
+        0
+    }
+
+    /// `SG_RemoveMotionGroup(group)` (`0x00836da0`): clears its entry.
+    pub fn remove_motion_group(mem: &mut impl Mem, group: u32) {
+        if group == 0 {
+            return;
+        }
+        let base = MOTION_GROUPS.ptr(mem).addr;
+        for k in 0..50 {
+            let e = base.wrapping_add(12 * k);
+            if mem.read::<u32>(e) == group {
+                mem.write(e, 0u32);
+                return;
+            }
+        }
+    }
+
+    /// `SG_RemoveSequence(seq)` (`0x00836de0`): clears its entry (a null
+    /// `seq` finds the first free one) and links the table again
+    /// (`Ch_SeqLink`).
+    pub fn remove_sequence(mem: &mut impl Mem, seq: u32) {
+        let base = SEQUENCES.ptr(mem).addr;
+        for k in 0..100 {
+            let e = base.wrapping_add(20 * k);
+            if mem.read::<u32>(e) == seq {
+                mem.write(e, 0u32);
+                ffx_chara::motion::bridge::ch_seq_link(mem);
+                return;
+            }
+        }
+    }
 }

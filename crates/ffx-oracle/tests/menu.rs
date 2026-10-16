@@ -3090,9 +3090,13 @@ fn menu_slots_windows_and_party_match_the_original() {
         t.put_bytes(work, &v);
         let idx = t.rng.below(12) | (t.rng.next() & 0xffff_ff00);
         let idx = idx & 0xff;
-        t.twin("Pad_GetWorkByte9D", 0x0088_8ba0, &[pad, port], U32, |o| {
-            w(u32::from(tk::pad_get_work_byte_9d(o, i(pad), i(port))))
-        });
+        t.twin(
+            "TkGetControlerActuatorMode",
+            0x0088_8ba0,
+            &[pad, port],
+            U32,
+            |o| w(u32::from(tk::pad_get_work_byte_9d(o, i(pad), i(port)))),
+        );
         t.twin(
             "TkGetControlerAnalog",
             0x0088_8c00,
@@ -3286,7 +3290,7 @@ fn tk_round5_matches_the_original() {
         if round % 2 == 0 {
             t.put(opt + 8, 0u32);
         }
-        t.twin("Pad_RefreshActuatorMode", 0x0087_2480, &[], U32, |o| {
+        t.twin("TkRefreshActuator", 0x0087_2480, &[], U32, |o| {
             w(tk::pad_refresh_actuator_mode(o))
         });
         t.twin("MenuConfig_SetBit9", 0x008c_adb0, &[opt], U32, |o| {
@@ -3428,6 +3432,497 @@ fn tk_round5_matches_the_original() {
         t.scramble(tk::MENU_MAIN_TASK.sym, 4);
         t.twin("MenuMain_GetTask", 0x008a_9b90, &[], U32, |o| {
             w(tk::MENU_MAIN_TASK.get(o))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn tk_round6_matches_the_original() {
+    let Some(mut t) = setup(0x6b2f_0d41) else {
+        return;
+    };
+    let event = ffx_battle::save::bridge::ms_get_save_event_address(&t.b);
+    for round in 0..150u32 {
+        // pad history
+        let (pad, port) = (t.rng.below(2), t.rng.below(2));
+        let work = tk::tk_get_controler_work(&t.b, i(pad), i(port));
+        let v = t.rng.bytes(0x100);
+        t.put_bytes(work, &v);
+        let typ = t.rng.pick(&[5u8, 4, 7]);
+        t.put(work + 0x9f, typ);
+        let m = t.rng.pick(&[8u8, 0, 1]);
+        t.put(work + 0xf6, m);
+        let fr = t.rng.int();
+        for (name, sym, off) in [
+            ("TkGetControlerHist", 0x0088_8d70, 4),
+            ("TkGetControlerTrigHist", 0x0088_8e80, 6),
+            ("TkGetControlerTrigRHist", 0x0088_8ea0, 8),
+            ("TkGetControlerReptHist", 0x0088_8e50, 0xa),
+            ("TkGetControlerRept2Hist", 0x0088_8e30, 0x1c),
+        ] {
+            t.twin(name, sym, &[pad, port, fr], U32, |o| {
+                w(tk::tk_get_controler_hist(o, i(pad), i(port), i(fr), off))
+            });
+        }
+        let k = t.rng.below(16) | (t.rng.next() & 0xffff_ff00);
+        let k = k & 0xff0f;
+        t.twin(
+            "TkGetControlerAnalogHist",
+            0x0088_8c20,
+            &[pad, port, k, fr],
+            U32,
+            |o| {
+                w(tk::tk_get_controler_analog_hist(
+                    o,
+                    i(pad),
+                    i(port),
+                    k,
+                    i(fr),
+                ))
+            },
+        );
+        t.twin(
+            "TkGetControlerActuatorNumber",
+            0x0088_8bc0,
+            &[pad, port],
+            U32,
+            |o| w(tk::tk_get_controler_actuator_number(o, i(pad), i(port))),
+        );
+        // ability list
+        let chr = t.rng.below(7);
+        if round % 3 == 0 {
+            let ply = ffx_battle::save::bridge::ms_get_save_player_ptr(&t.b, chr);
+            let v = t.rng.bytes(0x94);
+            t.put_bytes(ply, &v);
+        }
+        if round < 20 {
+            t.twin("MenuAbility_RefreshList", 0x008c_6800, &[chr], U32, |o| {
+                s(tk::menu_ability_refresh_list(o, chr))
+            });
+        }
+        // windows and lists
+        let win = t.alloc_random(0xa0);
+        t.twin("MenuMain_ResetWindow", 0x008a_a4b0, &[win], VOID, |o| {
+            tk::menu_main_reset_window(o, win);
+            0
+        });
+        let list = t.alloc_random(0x100);
+        let (a, b) = (t.rng.below(8), t.rng.below(8));
+        if round % 2 == 0 {
+            let v = t.rng.bytes(0x1c);
+            t.put_bytes(list + 32 * b, &v);
+            t.put_bytes(list + 32 * a, &v);
+        }
+        t.twin(
+            "MenuItem_CompareEntries",
+            0x008c_9410,
+            &[list, a, b],
+            U32,
+            |o| s(tk::menu_item_compare_entries(o, list, a, b)),
+        );
+        t.twin(
+            "MenuItem_SwapEntries",
+            0x008c_9460,
+            &[list, a, b],
+            VOID,
+            |o| {
+                tk::menu_item_swap_entries(o, list, a, b);
+                0
+            },
+        );
+        let items = t.sym(tk::MENU_ITEM_LIST.sym);
+        let mut bytes = t.rng.bytes(0x80);
+        for x in bytes.iter_mut().skip(3).step_by(4) {
+            *x = u8::from(t.rng.below(4) == 0);
+        }
+        t.put_bytes(items, &bytes);
+        let sw = t.alloc_random(0x60);
+        let n = t.rng.pick(&[0u16, 1, 5, 20, 32]);
+        t.put(sw + 0x30, n);
+        let vis = t.rng.pick(&[0u16, 1, 4, 8, 40]);
+        t.put(sw + 0x3a, vis);
+        t.twin("MenuWShop_InitCursor", 0x008d_9580, &[sw], VOID, |o| {
+            tk::menu_wshop_init_cursor(o, sw);
+            0
+        });
+        // save/load slots
+        let mut slots = t.rng.bytes(99);
+        for x in &mut slots {
+            *x = t.rng.pick(&[0u8, 0, 1, 2, 3]);
+        }
+        t.put_bytes(t.sym(tk::SAVE_SLOTS.sym), &slots);
+        let (free, need) = (t.rng.below(20).wrapping_sub(2), t.rng.below(5));
+        t.twin(
+            "MenuSaveLoad_MarkSlots",
+            0x008b_54c0,
+            &[free, need],
+            VOID,
+            |o| {
+                tk::menu_save_load_mark_slots(o, i(free), i(need));
+                0
+            },
+        );
+        // weapon shop
+        let table = ffx_kernel::bridge::COMMAND.get(&t.b);
+        let id = t.rng.below(0x40);
+        t.put(t.sym(tk::WSHOP_LIST.sym), id);
+        t.put(t.sym(tk::WSHOP_LIST.sym) + 0xc, table);
+        t.twin("MenuWShop_CountSlots", 0x008d_b440, &[], VOID, |o| {
+            tk::menu_wshop_count_slots(o);
+            0
+        });
+        t.put(t.sym(tk::WSHOP_TABLE.sym), table);
+        let id = t.rng.int();
+        t.twin("MenuWShop_GetRecord", 0x008d_9170, &[id], U32, |o| {
+            w(tk::menu_wshop_get_record(o, id))
+        });
+        // battle end
+        t.scramble(tk::BTL_END_RESULTS.sym, 0x50);
+        t.twin("BtlEnd_InitApStep", 0x008b_df10, &[], VOID, |o| {
+            tk::btl_end_init_ap_step(o);
+            0
+        });
+        t.twin("BtlEnd_ApStep", 0x008b_a3c0, &[chr], U32, |o| {
+            w(tk::btl_end_ap_step_for(o, i(chr)))
+        });
+        t.scramble(tk::BTL_END_LIST.sym, 0x40);
+        let n = t.rng.pick(&[0u8, 1, 2, 3, 4, 0xff]);
+        t.put(t.sym(tk::BTL_END_LIST.sym), n);
+        t.twin("BtlEnd_CompactList", 0x008b_a400, &[], VOID, |o| {
+            tk::btl_end_compact_list(o);
+            0
+        });
+        // status layout
+        let tt = t.rng.below(0x1100);
+        let dir = t.rng.int();
+        t.twin("MenuMn2_Ease", 0x008d_30c0, &[tt, dir], U32, |o| {
+            w(tk::menu_mn2_ease(o, i(tt), i(dir)))
+        });
+        t.scramble(tk::STATUS_RECT_SIZE.sym, 4);
+        t.scramble(tk::STATUS_ORIGIN.sym, 4);
+        t.scramble(0x0186_a900, 0x68);
+        let rect = t.alloc_random(0x18);
+        let out = t.alloc_random(0x18);
+        let (dx, dy, sized) = (t.rng.int(), t.rng.int(), t.rng.below(2));
+        t.twin(
+            "MenuStatus_OffsetRect",
+            0x008d_3220,
+            &[dx, dy, out, rect, sized],
+            VOID,
+            |o| {
+                #[allow(clippy::cast_possible_truncation)]
+                tk::menu_status_offset_rect(o, dx as u16, dy as u16, out, rect, sized != 0);
+                0
+            },
+        );
+        let alt = t.rng.below(2);
+        t.twin("MenuStatus_GetPos", 0x008d_4e30, &[out, alt], VOID, |o| {
+            tk::menu_status_get_pos(o, out, alt != 0, 0x0186_a900, 0x0186_a948);
+            0
+        });
+        t.twin("MenuStatus_GetPos2", 0x008d_4e80, &[out, alt], VOID, |o| {
+            tk::menu_status_get_pos(o, out, alt != 0, 0x0186_a918, 0x0186_a960);
+            0
+        });
+        // HDD close through the main task's callback
+        let task = t.alloc_random(0x10);
+        let f = t.rng.pick(&[0, t.sym(0x008c_6a60)]);
+        t.put(task + 8, f);
+        t.put(
+            t.sym(tk::MENU_MAIN_TASK.sym),
+            if round % 4 == 0 { 0 } else { task },
+        );
+        if f != 0 || round % 4 == 0 {
+            t.twin("MenuHdd_Close", 0x008e_2930, &[], VOID, |o| {
+                tk::menu_hdd_close(o, &mut callback);
+                0
+            });
+        }
+        // packets and scissors
+        let tab = t.alloc_random(0x200);
+        if round < 3 {
+            t.twin(
+                "MenuSaveLoad_BuildCrcTable",
+                0x008b_1370,
+                &[tab],
+                VOID,
+                |o| {
+                    tk::menu_save_load_build_crc_table(o, tab);
+                    0
+                },
+            );
+        }
+        let (x, y, z) = (t.rng.next(), t.rng.next(), t.rng.next());
+        t.twin("MenuDraw_GifTag", 0x008d_e0a0, &[tab, x, y, z], U32, |o| {
+            w(tk::menu_draw_gif_tag(o, tab, x, y, z))
+        });
+        t.twin("TkMenuDrawInitString", 0x008d_ce30, &[], VOID, |o| {
+            tk::tk_menu_draw_init_string(o);
+            0
+        });
+        let (sy, sh, ratio) = (
+            t.rng.below(0x200),
+            t.rng.below(0x200),
+            t.rng.below(0x2000).wrapping_sub(0x1000),
+        );
+        let mode = t.rng.pick(&[0u32, 1, 2, 3]);
+        t.twin(
+            "TkMn2DrawMenuWindowScissor",
+            0x008c_0f70,
+            &[sy, sh, mode, ratio],
+            U32,
+            |o| {
+                w(tk::tk_mn2_draw_menu_window_scissor(
+                    o,
+                    i(sy),
+                    i(sh),
+                    i(mode),
+                    i(ratio),
+                ))
+            },
+        );
+        for (name, sym) in [
+            ("TkMn2DrawScissorClear", 0x008c_1370),
+            ("TkMenuDrawScissorClear", 0x008d_d440),
+        ] {
+            t.twin(name, sym, &[], U32, |o| {
+                w(ffx_system::pkt::bridge::draw_scissor_xywh(
+                    o, 0, 0, 0x200, 0x1a0,
+                ))
+            });
+        }
+        // message windows
+        let bank = t.rng.pick(&[0i8, 1]);
+        t.put(t.sym(0x0132_6b82), bank);
+        let wi = t.rng.pick_or_any(&[0, 3, 7, 8, 0xffff_ffff]);
+        let wi = if wi > 7 && wi < 0x8000_0000 { 9 } else { wi };
+        let at = t.sym(0x0132_6d70) + (wi.min(7) + u32::from(bank.cast_unsigned()) * 8) * 0x2c;
+        if wi < 8 {
+            let st = t.rng.pick(&[0u16, 3, 1, 2]);
+            t.put(at + 0x14, st);
+        }
+        t.twin("Msg_CloseWindow", 0x0086_40f0, &[wi], VOID, |o| {
+            msg::msg_close_window(o, i(wi), |o, k| {
+                o.call(o.rebase(0x008a_b8f0), Conv::Cdecl, &[k.cast_unsigned()])
+                    .unwrap();
+            });
+            0
+        });
+        let _ = event;
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn tk_round6b_matches_the_original() {
+    let Some(mut t) = setup(0x30a1_77c5) else {
+        return;
+    };
+    for round in 0..150u32 {
+        // menu window records
+        let win = t.alloc_random(0xa0);
+        t.twin("TkMenuMainFreeWindow", 0x008a_a3f0, &[win], VOID, |o| {
+            tk::tk_menu_main_free_window(o, win);
+            0
+        });
+        let win = t.alloc_random(0xa0);
+        t.twin("MenuMain_ResetWindowRet", 0x008a_a180, &[win], U32, |o| {
+            tk::menu_main_reset_window(o, win);
+            w(win)
+        });
+        if round < 3 {
+            t.scramble(tk::MENU_WINDOWS.sym, 0x98 * 32);
+            t.twin("MenuMain_ResetAllWindows", 0x008a_a470, &[], VOID, |o| {
+                tk::menu_main_reset_all_windows(o);
+                0
+            });
+        }
+        t.twin("TkMenuDrawKick", 0x008d_ce50, &[], U32, |o| {
+            w(tk::tk_menu_draw_kick(o))
+        });
+        t.twin("TkMenuDrawInitString", 0x008d_ce30, &[], U32, |o| {
+            w(tk::tk_menu_draw_init_string(o))
+        });
+        // script choice slots
+        let ctx = Mem::read::<u32>(&t.b, t.sym(0x0132_6b28));
+        if ctx != 0 {
+            let slot = t.rng.pick_or_any(&[0, 1, 3, 4, 0xffff_ffff]);
+            let s0 = ctx + (i(slot).clamp(0, 3).cast_unsigned() << 4);
+            let target = t.alloc_random(4);
+            let v = t.rng.pick(&[0u32, 5, 0xffff_ffff]);
+            t.put(s0 + 0x64, v);
+            t.put(s0 + 0x6c, target);
+            let worker = t.rng.below(4);
+            t.twin(
+                "Msg_CancelChoice",
+                0x0086_4150,
+                &[worker, slot],
+                VOID,
+                |o| {
+                    tk::msg_cancel_choice(o, i(worker), i(slot));
+                    0
+                },
+            );
+        }
+        // debug font buffer
+        let buf = t.alloc_random(0x10);
+        t.put(t.sym(tk::DEBUG_FONT_BUFFER.sym), buf);
+        let p = t.rng.next();
+        t.twin("TkSetDebugFontBuffer", 0x0088_fab0, &[p], U32, |o| {
+            w(tk::tk_set_debug_font_buffer(o, p))
+        });
+        // GS packers and helpers
+        let a = [
+            t.rng.next(),
+            t.rng.next(),
+            t.rng.next(),
+            t.rng.next(),
+            t.rng.next(),
+        ];
+        for (name, sym) in [("Gs_Pack4", 0x008d_e1b0), ("Gs_Pack4b", 0x008c_32e0)] {
+            t.twin(name, sym, &a[..4], U64, |_| {
+                ffx_menu::tk::gs_pack4(a[0], a[1], a[2], a[3])
+            });
+        }
+        for (name, sym) in [
+            ("Gs_Pack5", 0x008d_e1d0),
+            ("Gs_Pack5b", 0x008c_3300),
+            ("Gs_Pack5c", 0x0089_0a30),
+            ("Gs_Pack5d", 0x008c_ad80),
+        ] {
+            t.twin(name, sym, &a, U64, |_| {
+                ffx_menu::tk::gs_pack5(a[0], a[1], a[2], a[3], a[4])
+            });
+        }
+        for (name, sym, add) in [
+            ("MenuStatus_Plus10", 0x008d_e1a0, 0x10u32),
+            ("MenuItem_Plus10", 0x008c_32d0, 0x10),
+            ("MenuHelp_Plus40", 0x008b_f140, 0x40),
+        ] {
+            t.twin(name, sym, &a[..1], U32, |_| w(a[0].wrapping_add(add)));
+        }
+        for (name, sym) in [
+            ("MenuStatus_Second", 0x008d_e200),
+            ("MenuItem_Second", 0x008c_3330),
+        ] {
+            t.twin(name, sym, &a[..2], U32, |_| w(a[1]));
+        }
+        // floats
+        let which = t.rng.pick(&[0u32, 1, 7]);
+        let f = t.rng.float(-1000.0, 1000.0);
+        t.twin(
+            "Tk_SetScale",
+            0x0087_2530,
+            &[which, f.to_bits()],
+            VOID,
+            |o| {
+                tk::tk_set_scale(o, which, f);
+                0
+            },
+        );
+        let r =
+            t.a.call(t.a.rebase(0x0087_2360), Conv::Cdecl, &[which])
+                .unwrap();
+        same_float("Tk_GetScale", r.st0, tk::tk_get_scale(&t.b, which));
+        let obj = t.alloc_random(0x30);
+        let r =
+            t.a.call(t.a.rebase(0x0087_2590), Conv::Cdecl, &[obj])
+                .unwrap();
+        same_float("Obj_GetFloat28", r.st0, tk::obj_get_float28(&t.b, obj));
+        let ang = t.rng.next();
+        let r =
+            t.a.call(t.a.rebase(0x0088_c0a0), Conv::Cdecl, &[ang])
+                .unwrap();
+        same_float(
+            "Math_AngleFrom12Bits",
+            r.st0,
+            tk::math_angle_from_bits(&t.b, ang, 0xfff, 0x00b5_15c8),
+        );
+        let r =
+            t.a.call(t.a.rebase(0x0088_c0e0), Conv::Cdecl, &[ang])
+                .unwrap();
+        same_float(
+            "Math_AngleFrom15Bits",
+            r.st0,
+            tk::math_angle_from_bits(&t.b, ang, 0x7fff, 0x00b5_1588),
+        );
+        // the getters write nothing but the stack
+        t.a.clear_dirty();
+        t.b.clear_dirty();
+        // Gu windows
+        let list = t.alloc(&[0; 4]);
+        let mut wins = Vec::new();
+        for _ in 0..4 {
+            let wn = t.alloc_random(0xa0);
+            let f = t.rng.pick(&[0, t.sym(0x008c_6a60)]);
+            t.put(wn + 0x7c, f);
+            let parent = if wins.is_empty() {
+                0
+            } else {
+                t.rng.pick(&wins)
+            };
+            t.put(wn + 8, parent);
+            wins.push(wn);
+        }
+        for k in 0..wins.len() {
+            let next = wins.get(k + 1).copied().unwrap_or(0);
+            t.put(wins[k], next);
+        }
+        let _ = list;
+        t.put(t.sym(gu::WINDOW_LIST.sym), wins[0]);
+        t.scramble(gu::MOUSE_X.sym, 8);
+        t.twin("Gu_WindowStartDrag", 0x0084_a580, &[wins[0]], VOID, |o| {
+            gu::gu_window_start_drag(o, wins[0]);
+            0
+        });
+        t.twin("Gu_WindowCloseTree", 0x0084_ab80, &[wins[0]], VOID, |o| {
+            gu::gu_window_close_tree(o, wins[0], &mut callback);
+            0
+        });
+        t.twin("Gu_ListCopyNext", 0x0084_a600, &[wins[0]], VOID, |o| {
+            gu::gu_list_copy_next(o, wins[0]);
+            0
+        });
+        let wn = window(&mut t);
+        let mx = t.rng.below(0x200);
+        let my = t.rng.below(0x200);
+        t.put(t.sym(gu::MOUSE_X.sym), mx);
+        t.put(t.sym(gu::MOUSE_Y.sym), my);
+        t.twin("Gu_WindowMouseIn", 0x0084_9490, &[wn], U32, |o| {
+            w(gu::gu_window_mouse_in(o, wn))
+        });
+        let id = t.rng.pick(&[1u32, 2, 3, 0xffff, 0x1_0001]);
+        let on = t.rng.next();
+        t.twin(
+            "Gu_WindowControlSetLeftText",
+            0x0084_a6c0,
+            &[wn, id, on],
+            VOID,
+            |o| {
+                #[allow(clippy::cast_possible_truncation)]
+                gu::gu_window_control_set_left_text(o, wn, id as u16, on);
+                0
+            },
+        );
+        let r = [
+            t.rng.pick_or_any(&[0xffff_ffff]),
+            t.rng.pick_or_any(&[0xffff_ffff]),
+            t.rng.int(),
+            t.rng.int(),
+        ];
+        t.twin(
+            "Gu_WindowControlSetRect",
+            0x0084_96d0,
+            &[wn, id, r[0], r[1], r[2], r[3]],
+            VOID,
+            |o| {
+                gu::gu_window_control_set_rect(o, wn, id, r.map(i));
+                0
+            },
+        );
+        t.twin("Gu_MouseSetWindow", 0x0084_9b90, &[wn], U32, |o| {
+            s(gu::gu_mouse_set_window(o, wn))
         });
     }
     eprintln!("{} calls", t.calls);

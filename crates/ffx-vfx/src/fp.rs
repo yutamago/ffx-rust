@@ -119,6 +119,38 @@ pub mod bridge {
         restart(mem, id, 2);
     }
 
+    /// Every entry whose `u16` at `+0x66` (after the ID) is the low 16
+    /// bits of `group`.
+    fn in_group(mem: &impl Mem, group: u32) -> Vec<u32> {
+        let Some((n, ids)) = table(mem) else {
+            return Vec::new();
+        };
+        #[allow(clippy::cast_possible_truncation)] // the original compares 16 bits
+        let want = group as u16;
+        (0..n)
+            .filter(|&i| mem.read::<u16>(ids.wrapping_add(2 + 0x50 * i)) == want)
+            .collect()
+    }
+
+    /// `Fp_EndGroup(group)` (`0x007294f0`): as `Fp_End` for every entry
+    /// of the group (`+0x66`).
+    pub fn fp_end_group(mem: &mut impl Mem, group: u32) {
+        for i in in_group(mem, group) {
+            let r = run(mem, i);
+            mem.write(r + 0x1d, 1u8);
+        }
+    }
+
+    /// `Fp_RestartGroup(group)` (`0x00729530`): as `Fp_Restart` for every
+    /// entry of the group.
+    pub fn fp_restart_group(mem: &mut impl Mem, group: u32) {
+        for i in in_group(mem, group) {
+            let r = run(mem, i);
+            mem.write(r, 0u32);
+            mem.write(r + 0x1d, 0u8);
+        }
+    }
+
     /// `Fp_End(id)` (`0x00729660`): status ended.
     pub fn fp_end(mem: &mut impl Mem, id: u32) {
         for i in matching(mem, id) {

@@ -12,7 +12,7 @@ use ffx_menu::{
 
 use super::{mem, ported};
 
-/// Calls a game function pointer (a menu callback, cdecl) with one or two
+/// Calls a game function pointer (a menu callback, cdecl) with one to three
 /// arguments.
 fn call_ptr(f: u32, args: &[u32]) -> u32 {
     // SAFETY: `f` is a callback the game stored in a menu window; the
@@ -27,7 +27,11 @@ fn call_ptr(f: u32, args: &[u32]) -> u32 {
                 let f: unsafe extern "C" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
                 f(a, b)
             }
-            _ => unreachable!("menu callbacks take one or two arguments"),
+            [a, b, c] => {
+                let f: unsafe extern "C" fn(u32, u32, u32) -> u32 = std::mem::transmute(f as usize);
+                f(a, b, c)
+            }
+            _ => unreachable!("menu callbacks take one to three arguments"),
         }
     }
 }
@@ -1318,8 +1322,8 @@ ported! {
         tk::START_MAP_EVENT.set(&mut mem(), [id, index]);
         index
     }
-    /// `Pad_GetWorkByte9D(pad, port)`.
-    Pad_GetWorkByte9D @ 0x0088_8ba0 => extern "C" fn pad_get_work_byte_9d(pad: i32, port: i32) -> u32 {
+    /// `TkGetControlerActuatorMode(pad, port)`.
+    TkGetControlerActuatorMode @ 0x0088_8ba0 => extern "C" fn pad_get_work_byte_9d(pad: i32, port: i32) -> u32 {
         u32::from(tk::pad_get_work_byte_9d(&mem(), pad, port))
     }
     /// `TkGetControlerAnalog(pad, port, i)`.
@@ -1820,8 +1824,8 @@ ported! {
     MenuParty_RefreshMask @ 0x008a_ae30 => extern "C" fn menu_party_refresh_mask() {
         tk::menu_party_refresh_mask(&mut mem());
     }
-    /// `Pad_RefreshActuatorMode()`: the pad work (left in `eax`).
-    Pad_RefreshActuatorMode @ 0x0087_2480 => extern "C" fn pad_refresh_actuator_mode() -> u32 {
+    /// `TkRefreshActuator()`: the pad work (left in `eax`).
+    TkRefreshActuator @ 0x0087_2480 => extern "C" fn pad_refresh_actuator_mode() -> u32 {
         tk::pad_refresh_actuator_mode(&mut mem())
     }
     /// `Pad_GetFrame(pad, port, i)`.
@@ -1963,5 +1967,246 @@ ported! {
     /// `MenuMain_GetTask()`.
     MenuMain_GetTask @ 0x008a_9b90 => extern "C" fn menu_main_get_task() -> u32 {
         tk::MENU_MAIN_TASK.get(&mem())
+    }
+    /// `TkGetControlerHist(pad, port, i)`: buttons of frame `i`.
+    TkGetControlerHist @ 0x0088_8d70 => extern "C" fn tk_get_controler_hist(pad: i32, port: i32, i: i32) -> u32 {
+        tk::tk_get_controler_hist(&mem(), pad, port, i, 4)
+    }
+    /// `TkGetControlerTrigHist(pad, port, i)`: triggered buttons.
+    TkGetControlerTrigHist @ 0x0088_8e80 => extern "C" fn tk_get_controler_trig_hist(pad: i32, port: i32, i: i32) -> u32 {
+        tk::tk_get_controler_hist(&mem(), pad, port, i, 6)
+    }
+    /// `TkGetControlerTrigRHist(pad, port, i)`: released buttons.
+    TkGetControlerTrigRHist @ 0x0088_8ea0 => extern "C" fn tk_get_controler_trig_r_hist(pad: i32, port: i32, i: i32) -> u32 {
+        tk::tk_get_controler_hist(&mem(), pad, port, i, 8)
+    }
+    /// `TkGetControlerReptHist(pad, port, i)`: repeating buttons.
+    TkGetControlerReptHist @ 0x0088_8e50 => extern "C" fn tk_get_controler_rept_hist(pad: i32, port: i32, i: i32) -> u32 {
+        tk::tk_get_controler_hist(&mem(), pad, port, i, 0xa)
+    }
+    /// `TkGetControlerRept2Hist(pad, port, i)`: the second repeat set.
+    TkGetControlerRept2Hist @ 0x0088_8e30 => extern "C" fn tk_get_controler_rept2_hist(pad: i32, port: i32, i: i32) -> u32 {
+        tk::tk_get_controler_hist(&mem(), pad, port, i, 0x1c)
+    }
+    /// `TkGetControlerAnalogHist(pad, port, k, i)`.
+    TkGetControlerAnalogHist @ 0x0088_8c20 => extern "C" fn tk_get_controler_analog_hist(pad: i32, port: i32, k: u32, i: i32) -> u32 {
+        tk::tk_get_controler_analog_hist(&mem(), pad, port, k, i)
+    }
+    /// `TkGetControlerActuatorNumber(pad, port)`.
+    TkGetControlerActuatorNumber @ 0x0088_8bc0 => extern "C" fn tk_get_controler_actuator_number(pad: i32, port: i32) -> u32 {
+        tk::tk_get_controler_actuator_number(&mem(), pad, port)
+    }
+    /// `MenuAbility_RefreshList(chr)`: the rows.
+    MenuAbility_RefreshList @ 0x008c_6800 => extern "C" fn menu_ability_refresh_list(chr: u32) -> i32 {
+        tk::menu_ability_refresh_list(&mut mem(), chr)
+    }
+    /// `MenuMain_ResetWindow(window)`.
+    MenuMain_ResetWindow @ 0x008a_a4b0 => extern "C" fn menu_main_reset_window(window: u32) {
+        tk::menu_main_reset_window(&mut mem(), window);
+    }
+    /// `MenuItem_CompareEntries(list, a, b)`.
+    MenuItem_CompareEntries @ 0x008c_9410 => extern "C" fn menu_item_compare_entries(list: u32, a: u32, b: u32) -> i32 {
+        tk::menu_item_compare_entries(&mem(), list, a, b)
+    }
+    /// `MenuItem_SwapEntries(list, a, b)`.
+    MenuItem_SwapEntries @ 0x008c_9460 => extern "C" fn menu_item_swap_entries(list: u32, a: u32, b: u32) {
+        tk::menu_item_swap_entries(&mut mem(), list, a, b);
+    }
+    /// `MenuWShop_InitCursor(window)`.
+    MenuWShop_InitCursor @ 0x008d_9580 => extern "C" fn menu_wshop_init_cursor(window: u32) {
+        tk::menu_wshop_init_cursor(&mut mem(), window);
+    }
+    /// `MenuSaveLoad_MarkSlots(free, need)`.
+    MenuSaveLoad_MarkSlots @ 0x008b_54c0 => extern "C" fn menu_save_load_mark_slots(free: i32, need: i32) {
+        tk::menu_save_load_mark_slots(&mut mem(), free, need);
+    }
+    /// `MenuWShop_CountSlots()`.
+    MenuWShop_CountSlots @ 0x008d_b440 => extern "C" fn menu_wshop_count_slots() {
+        tk::menu_wshop_count_slots(&mut mem());
+    }
+    /// `BtlEnd_InitApStep()`.
+    BtlEnd_InitApStep @ 0x008b_df10 => extern "C" fn btl_end_init_ap_step() {
+        tk::btl_end_init_ap_step(&mut mem());
+    }
+    /// `BtlEnd_ApStep(chr)`.
+    BtlEnd_ApStep @ 0x008b_a3c0 => extern "C" fn btl_end_ap_step(chr: i32) -> u32 {
+        tk::btl_end_ap_step_for(&mut mem(), chr)
+    }
+    /// `BtlEnd_CompactList()`.
+    BtlEnd_CompactList @ 0x008b_a400 => extern "C" fn btl_end_compact_list() {
+        tk::btl_end_compact_list(&mut mem());
+    }
+    /// `MenuMn2_Ease(t, dir)`.
+    MenuMn2_Ease @ 0x008d_30c0 => extern "C" fn menu_mn2_ease(t: i32, dir: i32) -> u32 {
+        tk::menu_mn2_ease(&mem(), t, dir)
+    }
+    /// `MenuStatus_OffsetRect(dx, dy, out, rect, sized)`.
+    MenuStatus_OffsetRect @ 0x008d_3220 => extern "C" fn menu_status_offset_rect(dx: u32, dy: u32, out: u32, rect: u32, sized: u32) {
+        #[allow(clippy::cast_possible_truncation)] // 16-bit adds
+        tk::menu_status_offset_rect(&mut mem(), dx as u16, dy as u16, out, rect, sized != 0);
+    }
+    /// `MenuStatus_GetPos(out, alt)`.
+    MenuStatus_GetPos @ 0x008d_4e30 => extern "C" fn menu_status_get_pos(out: u32, alt: u32) {
+        tk::menu_status_get_pos(&mut mem(), out, alt != 0, 0x0186_a900, 0x0186_a948);
+    }
+    /// `MenuStatus_GetPos2(out, alt)`.
+    MenuStatus_GetPos2 @ 0x008d_4e80 => extern "C" fn menu_status_get_pos2(out: u32, alt: u32) {
+        tk::menu_status_get_pos(&mut mem(), out, alt != 0, 0x0186_a918, 0x0186_a960);
+    }
+    /// `MenuHdd_Close()`.
+    MenuHdd_Close @ 0x008e_2930 => extern "C" fn menu_hdd_close() {
+        tk::menu_hdd_close(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuSaveLoad_BuildCrcTable(table)`.
+    MenuSaveLoad_BuildCrcTable @ 0x008b_1370 => extern "C" fn menu_save_load_build_crc_table(table: u32) {
+        tk::menu_save_load_build_crc_table(&mut mem(), table);
+    }
+    /// `MenuDraw_GifTag(packet, a, b, c)`: the end of the tag.
+    MenuDraw_GifTag @ 0x008d_e0a0 => extern "C" fn menu_draw_gif_tag(p: u32, a: u32, b: u32, c: u32) -> u32 {
+        tk::menu_draw_gif_tag(&mut mem(), p, a, b, c)
+    }
+    /// `TkMenuDrawInitString()`.
+    TkMenuDrawInitString @ 0x008d_ce30 => extern "C" fn tk_menu_draw_init_string() -> u32 {
+        tk::tk_menu_draw_init_string(&mut mem())
+    }
+    /// `TkMn2DrawMenuWindowScissor(y, h, mode, ratio)`: the bottom.
+    TkMn2DrawMenuWindowScissor @ 0x008c_0f70 => extern "C" fn tk_mn2_draw_menu_window_scissor(y: i32, h: i32, mode: i32, ratio: i32) -> u32 {
+        tk::tk_mn2_draw_menu_window_scissor(&mut mem(), y, h, mode, ratio)
+    }
+    /// `TkMn2DrawScissorClear()`: the full-screen scissor.
+    TkMn2DrawScissorClear @ 0x008c_1370 => extern "C" fn tk_mn2_draw_scissor_clear() -> u32 {
+        ffx_system::pkt::bridge::draw_scissor_xywh(&mut mem(), 0, 0, 0x200, 0x1a0)
+    }
+    /// `TkMenuDrawScissorClear()`: the full-screen scissor.
+    TkMenuDrawScissorClear @ 0x008d_d440 => extern "C" fn tk_menu_draw_scissor_clear() -> u32 {
+        ffx_system::pkt::bridge::draw_scissor_xywh(&mut mem(), 0, 0, 0x200, 0x1a0)
+    }
+    /// `MenuWShop_GetRecord(id)`.
+    MenuWShop_GetRecord @ 0x008d_9170 => extern "C" fn menu_wshop_get_record(id: u32) -> u32 {
+        tk::menu_wshop_get_record(&mem(), id)
+    }
+    /// `Msg_CloseWindow(window)`.
+    Msg_CloseWindow @ 0x0086_40f0 => extern "C" fn msg_close_window(window: i32) {
+        msg::msg_close_window(&mut mem(), window, |m, i| {
+            ffx_system::window::bridge::close_message_window(m, i);
+        });
+    }
+    /// `TkMenuMainFreeWindow(window)`.
+    TkMenuMainFreeWindow @ 0x008a_a3f0 => extern "C" fn tk_menu_main_free_window(window: u32) {
+        tk::tk_menu_main_free_window(&mut mem(), window);
+    }
+    /// `MenuMain_ResetWindowRet(window)`: the window (left in `eax`).
+    MenuMain_ResetWindowRet @ 0x008a_a180 => extern "C" fn menu_main_reset_window_ret(window: u32) -> u32 {
+        tk::menu_main_reset_window(&mut mem(), window);
+        window
+    }
+    /// `MenuMain_ResetAllWindows()`.
+    MenuMain_ResetAllWindows @ 0x008a_a470 => extern "C" fn menu_main_reset_all_windows() {
+        tk::menu_main_reset_all_windows(&mut mem());
+    }
+    /// `TkMenuDrawKick()`: the packet pointer (left in `eax`).
+    TkMenuDrawKick @ 0x008d_ce50 => extern "C" fn tk_menu_draw_kick() -> u32 {
+        tk::tk_menu_draw_kick(&mut mem())
+    }
+    /// `Msg_CancelChoice(worker, slot)`.
+    Msg_CancelChoice @ 0x0086_4150 => extern "C" fn msg_cancel_choice(worker: i32, slot: i32) {
+        tk::msg_cancel_choice(&mut mem(), worker, slot);
+    }
+    /// `TkSetDebugFontBuffer(p)`: the buffer end (left in `eax`).
+    TkSetDebugFontBuffer @ 0x0088_fab0 => extern "C" fn tk_set_debug_font_buffer(p: u32) -> u32 {
+        tk::tk_set_debug_font_buffer(&mut mem(), p)
+    }
+    /// `Obj_GetFloat28(p)`.
+    Obj_GetFloat28 @ 0x0087_2590 => extern "C" fn obj_get_float28(p: u32) -> f32 {
+        tk::obj_get_float28(&mem(), p)
+    }
+    /// `Tk_GetScale(which)`.
+    Tk_GetScale @ 0x0087_2360 => extern "C" fn tk_get_scale(which: u32) -> f32 {
+        tk::tk_get_scale(&mem(), which)
+    }
+    /// `Tk_SetScale(which, v)`.
+    Tk_SetScale @ 0x0087_2530 => extern "C" fn tk_set_scale(which: u32, v: f32) {
+        tk::tk_set_scale(&mut mem(), which, v);
+    }
+    /// `Math_AngleFrom12Bits(a)`.
+    Math_AngleFrom12Bits @ 0x0088_c0a0 => extern "C" fn math_angle_from_12_bits(a: u32) -> f32 {
+        tk::math_angle_from_bits(&mem(), a, 0xfff, 0x00b5_15c8)
+    }
+    /// `Math_AngleFrom15Bits(a)`.
+    Math_AngleFrom15Bits @ 0x0088_c0e0 => extern "C" fn math_angle_from_15_bits(a: u32) -> f32 {
+        tk::math_angle_from_bits(&mem(), a, 0x7fff, 0x00b5_1588)
+    }
+    /// `Gs_Pack4(a, b, c, d)`.
+    Gs_Pack4 @ 0x008d_e1b0 => extern "C" fn gs_pack4(a: u32, b: u32, c: u32, d: u32) -> u64 {
+        ffx_menu::tk::gs_pack4(a, b, c, d)
+    }
+    /// `Gs_Pack4b(a, b, c, d)`: a copy.
+    Gs_Pack4b @ 0x008c_32e0 => extern "C" fn gs_pack4b(a: u32, b: u32, c: u32, d: u32) -> u64 {
+        ffx_menu::tk::gs_pack4(a, b, c, d)
+    }
+    /// `Gs_Pack5(a, b, c, d, e)`.
+    Gs_Pack5 @ 0x008d_e1d0 => extern "C" fn gs_pack5(a: u32, b: u32, c: u32, d: u32, e: u32) -> u64 {
+        ffx_menu::tk::gs_pack5(a, b, c, d, e)
+    }
+    /// `Gs_Pack5b(a, b, c, d, e)`: a copy.
+    Gs_Pack5b @ 0x008c_3300 => extern "C" fn gs_pack5b(a: u32, b: u32, c: u32, d: u32, e: u32) -> u64 {
+        ffx_menu::tk::gs_pack5(a, b, c, d, e)
+    }
+    /// `Gs_Pack5c(a, b, c, d, e)`: a copy.
+    Gs_Pack5c @ 0x0089_0a30 => extern "C" fn gs_pack5c(a: u32, b: u32, c: u32, d: u32, e: u32) -> u64 {
+        ffx_menu::tk::gs_pack5(a, b, c, d, e)
+    }
+    /// `Gs_Pack5d(a, b, c, d, e)`: a copy.
+    Gs_Pack5d @ 0x008c_ad80 => extern "C" fn gs_pack5d(a: u32, b: u32, c: u32, d: u32, e: u32) -> u64 {
+        ffx_menu::tk::gs_pack5(a, b, c, d, e)
+    }
+    /// `MenuStatus_Plus10(p)`: `p + 0x10`.
+    MenuStatus_Plus10 @ 0x008d_e1a0 => extern "C" fn menu_status_plus10(p: u32) -> u32 {
+        p.wrapping_add(0x10)
+    }
+    /// `MenuItem_Plus10(p)`: `p + 0x10`.
+    MenuItem_Plus10 @ 0x008c_32d0 => extern "C" fn menu_item_plus10(p: u32) -> u32 {
+        p.wrapping_add(0x10)
+    }
+    /// `MenuHelp_Plus40(p)`: `p + 0x40`.
+    MenuHelp_Plus40 @ 0x008b_f140 => extern "C" fn menu_help_plus40(p: u32) -> u32 {
+        p.wrapping_add(0x40)
+    }
+    /// `MenuStatus_Second(a, b)`: `b`.
+    MenuStatus_Second @ 0x008d_e200 => extern "C" fn menu_status_second(_a: u32, b: u32) -> u32 {
+        b
+    }
+    /// `MenuItem_Second(a, b)`: `b`.
+    MenuItem_Second @ 0x008c_3330 => extern "C" fn menu_item_second(_a: u32, b: u32) -> u32 {
+        b
+    }
+    /// `Gu_WindowStartDrag(window)`.
+    Gu_WindowStartDrag @ 0x0084_a580 => extern "C" fn gu_window_start_drag(window: u32) {
+        gu::gu_window_start_drag(&mut mem(), window);
+    }
+    /// `Gu_WindowCloseTree(window)`.
+    Gu_WindowCloseTree @ 0x0084_ab80 => extern "C" fn gu_window_close_tree(window: u32) {
+        gu::gu_window_close_tree(&mut mem(), window, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `Gu_ListCopyNext(node)`.
+    Gu_ListCopyNext @ 0x0084_a600 => extern "C" fn gu_list_copy_next(node: u32) {
+        gu::gu_list_copy_next(&mut mem(), node);
+    }
+    /// `Gu_WindowMouseIn(window)`.
+    Gu_WindowMouseIn @ 0x0084_9490 => extern "C" fn gu_window_mouse_in(window: u32) -> u32 {
+        gu::gu_window_mouse_in(&mut mem(), window)
+    }
+    /// `Gu_WindowControlSetLeftText(window, id, on)`.
+    Gu_WindowControlSetLeftText @ 0x0084_a6c0 => extern "C" fn gu_window_control_set_left_text(window: u32, id: u32, on: u32) {
+        #[allow(clippy::cast_possible_truncation)] // a 16-bit compare
+        gu::gu_window_control_set_left_text(&mut mem(), window, id as u16, on);
+    }
+    /// `Gu_WindowControlSetRect(window, id, x, y, w, h)`.
+    Gu_WindowControlSetRect @ 0x0084_96d0 => extern "C" fn gu_window_control_set_rect(window: u32, id: u32, x: i32, y: i32, w: i32, h: i32) {
+        gu::gu_window_control_set_rect(&mut mem(), window, id, [x, y, w, h]);
+    }
+    /// `Gu_MouseSetWindow(window)`.
+    Gu_MouseSetWindow @ 0x0084_9b90 => extern "C" fn gu_mouse_set_window(window: u32) -> i32 {
+        gu::gu_mouse_set_window(&mut mem(), window)
     }
 }

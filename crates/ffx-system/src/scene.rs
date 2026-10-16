@@ -82,4 +82,134 @@ pub mod bridge {
     ) {
         get(mem, i, name, &outs, false, handle, offset);
     }
+
+    /// The scenes' sequence slots (`0x01865f20`): 0x100 bytes per scene,
+    /// eight 0x20-byte slots of a state (`+0`, u16: 0 free, 1..=3 running,
+    /// 4 stopped), a draw-continue flag (`+4`, u16), a name (`+8`) and a
+    /// handle (`+0x1c`).
+    pub const SLOTS: ffx_bridge::Global<[u8; 0x20]> = ffx_bridge::Global::new(0x0186_5f20);
+
+    /// Slot `j` of scene `i`.
+    fn slot(mem: &impl Mem, i: i32, j: u32) -> u32 {
+        SLOTS
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.cast_unsigned().wrapping_shl(8))
+            .wrapping_add(j * 0x20)
+    }
+
+    /// Whether the C strings at `a` and `b` are equal.
+    fn str_eq(mem: &impl Mem, left: u32, right: u32) -> bool {
+        let mut k = 0u32;
+        loop {
+            let (lb, rb): (u8, u8) = (
+                mem.read(left.wrapping_add(k)),
+                mem.read(right.wrapping_add(k)),
+            );
+            if lb != rb {
+                return false;
+            }
+            if lb == 0 {
+                return true;
+            }
+            k += 1;
+        }
+    }
+
+    /// The first slot of scene `i` named `name`.
+    fn find(mem: &impl Mem, i: i32, name: u32) -> Option<u32> {
+        (0..8)
+            .map(|j| slot(mem, i, j))
+            .find(|&s| str_eq(mem, name, s.wrapping_add(8)))
+    }
+
+    fn running(mem: &impl Mem, slot: u32) -> bool {
+        matches!(mem.read::<u16>(slot), 1..=3)
+    }
+
+    /// `TOSeqCheckTermScene(i, name)` (`0x008ae070`): whether the sequence
+    /// `name` of scene `i` has ended (`TkMenuIsTermScene` on its handle,
+    /// passed in); 0 when no slot has the name.
+    pub fn check_term_scene<M: Mem>(
+        mem: &mut M,
+        i: i32,
+        name: u32,
+        is_term: impl Fn(&M, i32, u32) -> u32,
+    ) -> u32 {
+        match find(mem, i, name) {
+            Some(s) => {
+                let handle: u32 = mem.read(s.wrapping_add(0x1c));
+                u32::from(is_term(mem, i, handle) != 0)
+            }
+            None => 0,
+        }
+    }
+
+    /// `TOSeqStartScene(i, name)` (`0x008af0d0`) and, with `draw_continue`,
+    /// `TOSeqStartSceneDrawContinue` (`0x008af1b0`): unless a slot already
+    /// has the name, the first free slot gets `TkMenuGetSceneHandle(i,
+    /// name)` (passed in; stored even when 0) and, when that is not 0,
+    /// state 1 (and the draw-continue flag) and the name. 1 when started.
+    pub fn start_scene<M: Mem>(
+        mem: &mut M,
+        i: i32,
+        name: u32,
+        draw_continue: bool,
+        scene_handle: impl Fn(&M, i32, u32) -> u32,
+    ) -> u32 {
+        if find(mem, i, name).is_some() {
+            return 0;
+        }
+        let Some(s) = (0..8)
+            .map(|j| slot(mem, i, j))
+            .find(|&s| mem.read::<u16>(s) == 0)
+        else {
+            return 0;
+        };
+        let handle = scene_handle(mem, i, name);
+        mem.write(s.wrapping_add(0x1c), handle);
+        if handle == 0 {
+            return 0;
+        }
+        mem.write(s, 1u16);
+        if draw_continue {
+            mem.write(s.wrapping_add(4), 1u16);
+        }
+        let mut k = 0u32;
+        loop {
+            let c: u8 = mem.read(name.wrapping_add(k));
+            mem.write(s.wrapping_add(8 + k), c);
+            if c == 0 {
+                return 1;
+            }
+            k += 1;
+        }
+    }
+
+    /// `TOSeqStopScene(i, name)` (`0x008af4f0`): the first running slot
+    /// named `name` stopped (state 4, name cleared); 1 when one was.
+    pub fn stop_scene(mem: &mut impl Mem, i: i32, name: u32) -> u32 {
+        for j in 0..8 {
+            let s = slot(mem, i, j);
+            if running(mem, s) && str_eq(mem, name, s.wrapping_add(8)) {
+                mem.write(s, 4u16);
+                mem.write(s.wrapping_add(8), 0u8);
+                return 1;
+            }
+        }
+        0
+    }
+
+    /// `TOSeqInitAllScene(i)` (`0x008ae5a0`): every running slot of scene
+    /// `i` stopped (state 4, name cleared). Returns `i << 8` (left in `eax`).
+    pub fn init_all_scene(mem: &mut impl Mem, i: i32) -> u32 {
+        for j in 0..8 {
+            let s = slot(mem, i, j);
+            if running(mem, s) {
+                mem.write(s, 4u16);
+                mem.write(s.wrapping_add(8), 0u8);
+            }
+        }
+        i.cast_unsigned().wrapping_shl(8)
+    }
 }

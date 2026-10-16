@@ -184,6 +184,106 @@ pub mod bridge {
         let c = mem.read::<u32>(h);
         rcdt_chunk_get_end(mem, c)
     }
+
+    /// `rcdtParseIsEnd(parse)` (`0x0092bfb0`): 1 once the position
+    /// (`+4`) reaches the chunk's end ([`rcdt_chunk_handle_get_end`]).
+    pub fn rcdt_parse_is_end(mem: &impl Mem, p: u32) -> u32 {
+        let end = rcdt_chunk_handle_get_end(mem, p);
+        u32::from(mem.read::<u32>(p.wrapping_add(4)) >= end)
+    }
+
+    /// `rcdtParseSkipSeparators(parse)` (`0x0092bd60`): the first byte at
+    /// or after the position that is not a separator (the 256-byte table
+    /// at `+0xc`), or the end.
+    pub fn rcdt_parse_skip_separators(mem: &impl Mem, p: u32) -> u32 {
+        scan_while(mem, p, |mem, b| {
+            mem.read::<u8>(p.wrapping_add(0xc).wrapping_add(u32::from(b))) != 0
+        })
+    }
+
+    /// `rcdtParseSkipToken(parse)` (`0x0092bd20`): the first separator at
+    /// or after the position, or the end.
+    pub fn rcdt_parse_skip_token(mem: &impl Mem, p: u32) -> u32 {
+        scan_while(mem, p, |mem, b| {
+            mem.read::<u8>(p.wrapping_add(0xc).wrapping_add(u32::from(b))) == 0
+        })
+    }
+
+    /// `rcdtParseFindChar(parse, c)` (`0x0092bae0`): the first `c` (a
+    /// sign-extended char compared with the zero-extended byte) at or
+    /// after the position, or the end.
+    pub fn rcdt_parse_find_char(mem: &impl Mem, p: u32, c: i8) -> u32 {
+        let want = i32::from(c).cast_unsigned();
+        scan_while(mem, p, |_, b| u32::from(b) != want)
+    }
+
+    fn scan_while<M: Mem>(mem: &M, p: u32, go: impl Fn(&M, u8) -> bool) -> u32 {
+        let mut at = mem.read::<u32>(p.wrapping_add(4));
+        let mut b = mem.read::<u8>(at);
+        while go(mem, b) {
+            if at >= rcdt_chunk_handle_get_end(mem, p) {
+                break;
+            }
+            b = mem.read::<u8>(at.wrapping_add(1));
+            at = at.wrapping_add(1);
+        }
+        at
+    }
+
+    /// `rcdtChunkFini(chunk)` (`0x0092b7f0`): frees the chunk's data.
+    pub fn rcdt_chunk_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        c: u32,
+        call: &mut C,
+    ) -> u32 {
+        crate::model::bridge::free_field(mem, call, c)
+    }
+
+    /// `rcdtChunkDelete(chunk)` (`0x0092b7d0`): [`rcdt_chunk_fini`], then
+    /// the chunk freed.
+    pub fn rcdt_chunk_delete<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        c: u32,
+        call: &mut C,
+    ) -> u32 {
+        rcdt_chunk_fini(mem, c, call);
+        crate::model::bridge::rc_free(mem, call, c)
+    }
+
+    /// `rcdtParseNextToken(parse)` (`0x0092ba30`): the cursor past the
+    /// token ([`rcdt_parse_skip_token`]) and then the separators
+    /// ([`rcdt_parse_skip_separators`]). Returns the new cursor.
+    pub fn rcdt_parse_next_token(mem: &mut impl Mem, p: u32) -> u32 {
+        let at = rcdt_parse_skip_token(mem, p);
+        mem.write(p.wrapping_add(4), at);
+        let at = rcdt_parse_skip_separators(mem, p);
+        mem.write(p.wrapping_add(4), at);
+        at
+    }
+
+    /// `rcdtParseTokenLen(parse)` (`0x0092bf30`): the current token's
+    /// length.
+    pub fn rcdt_parse_token_len(mem: &impl Mem, p: u32) -> u32 {
+        rcdt_parse_skip_token(mem, p).wrapping_sub(mem.read::<u32>(p.wrapping_add(4)))
+    }
+
+    /// `rcdtParseTokenLenText(parse)` (`0x0092be10`): the token's length
+    /// in text mode (`+8` 1), else 0.
+    pub fn rcdt_parse_token_len_text(mem: &impl Mem, p: u32) -> u32 {
+        if mem.read::<u32>(p.wrapping_add(8)) == 1 {
+            rcdt_parse_token_len(mem, p)
+        } else {
+            0
+        }
+    }
+
+    /// `rcdtParseSeekChar(parse, c)` (`0x0092b990`): the cursor moved to
+    /// `c` ([`rcdt_parse_find_char`]). Returns it.
+    pub fn rcdt_parse_seek_char(mem: &mut impl Mem, p: u32, c: i8) -> u32 {
+        let at = rcdt_parse_find_char(mem, p, c);
+        mem.write(p.wrapping_add(4), at);
+        at
+    }
 }
 
 #[cfg(test)]

@@ -1270,6 +1270,17 @@ pub fn user_free(mem: &mut impl Mem, os: &mut impl Os, p: u32) {
     os.leave_critical_section(heap);
 }
 
+/// The destructors that free a buffer held at `+8` (`0x00633b70` and 12
+/// more copies, thiscall; run by exception unwinding): `user_free` of it
+/// when set. Returns 0, the `eax` the original leaves either way.
+pub fn free_member8(mem: &mut impl Mem, os: &mut impl Os, this: u32) -> u32 {
+    let p = rd(mem, this.wrapping_add(8));
+    if p != 0 {
+        user_free(mem, os, p);
+    }
+    0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

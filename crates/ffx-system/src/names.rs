@@ -34,4 +34,18 @@ pub mod bridge {
         }
         PLY_SAVE.ptr(mem).addr + chr * 0x94
     }
+
+    /// `0x00774720(id)`: [`EMPTY_NAME`] for 0, else the auto-ability's
+    /// name from `TkMn2GetAbilityMes` (passed in, it lives in `ffx-menu`;
+    /// a tail jump).
+    pub fn ability_name<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        ability_mes: impl Fn(&mut M, u32) -> u32,
+    ) -> u32 {
+        if id == 0 {
+            return EMPTY_NAME.ptr(mem).addr;
+        }
+        ability_mes(mem, id)
+    }
 }

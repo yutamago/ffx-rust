@@ -192,6 +192,58 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, out: u32) {
     same("cue", a, b);
 }
 
+fn commands(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, cmd: u32) {
+    fill(a, b, rng, cmd, 0x48);
+    poke(a, b, cmd + 3, &[u8::try_from(rng.below(4)).unwrap()]);
+    for k in 0..4 {
+        let id = u16::try_from(0x2000 + rng.below(0x20)).unwrap();
+        poke(a, b, cmd + 8 + 0x10 * k, &id.to_le_bytes());
+    }
+    let c = rng.below(ACTORS);
+    let (t, k, f, on) = (rng.next(), rng.next(), rng.next(), rng.next());
+    twin(
+        "MsRegistCommandCue",
+        a,
+        b,
+        0x007b_0b90,
+        &[c, cmd, t, k, f],
+        ALL,
+        |m| {
+            let [t, k, f] = [t, k, f].map(|x| x.to_le_bytes()[0]);
+            cue::ms_regist_command_cue(m, c, cmd, t, k, f).cast_unsigned()
+        },
+    );
+    let kind = match rng.below(3) {
+        0 => rng.next(),
+        1 => rng.below(0x10),
+        _ => rng.below(0x100),
+    };
+    let after = chr(rng);
+    twin(
+        "MsInsertCommandCue",
+        a,
+        b,
+        0x007b_0a30,
+        &[c, cmd, t, kind, f, on, after],
+        ALL,
+        |m| {
+            let [t, f, on] = [t, f, on].map(|x| x.to_le_bytes()[0]);
+            cue::ms_insert_command_cue(m, c, cmd, t, kind, f, on, after).cast_unsigned()
+        },
+    );
+    let (c, keep) = (chr(rng), rng.below(2));
+    twin(
+        "MsCleanCommandCue",
+        a,
+        b,
+        0x007b_0830,
+        &[c, keep],
+        ALL,
+        |m| cue::ms_clean_command_cue(m, c, keep).cast_unsigned(),
+    );
+    same("command cue", a, b);
+}
+
 fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let w = world(a, b, rng, synthetic);
     let out = w.out;
@@ -214,6 +266,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     for _ in 0..2000 {
         randomize(a, b, rng, w.actors);
         calls(a, b, rng, out);
+        commands(a, b, rng, w.command);
     }
 }
 

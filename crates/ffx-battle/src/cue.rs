@@ -384,4 +384,142 @@ pub mod bridge {
         }
         list
     }
+    /// Writes a command entry at `k`: the 0x48 bytes of `command`, then
+    /// actor, flags and kind over them (`+3` and `+5` cleared or, from
+    /// `MsRegistCommandCue`, `+4` too), counting it for `chr` (`+0xde7`);
+    /// the command's items are used (`MsUseItem(chr, command, -1)`).
+    #[allow(clippy::too_many_arguments)]
+    fn put_command(
+        mem: &mut impl Mem,
+        k: i32,
+        chr: u32,
+        command: u32,
+        flag: u8,
+        turn: u8,
+        running: Option<u8>,
+        kind: u8,
+    ) {
+        let a = ms_get_chr(mem, chr);
+        let c = byte(mem, a, 0xde7).wrapping_add(1);
+        mem.write(a.wrapping_add(0xde7), c);
+        let e = super::bridge::command(mem, k);
+        let v: [u32; 0x12] = mem.read(command);
+        mem.write(e, v);
+        mem.write(e + 1, flag);
+        match running {
+            Some(on) => mem.write(e + 4, on),
+            None => mem.write(e + 4, 0u16),
+        }
+        mem.write(e + 6, turn);
+        mem.write(e, chr.to_le_bytes()[0]);
+        mem.write(e + 2, 0u8);
+        if running.is_some() {
+            mem.write(e + 5, 0u8);
+        }
+        mem.write(e + 7, kind);
+        crate::turn::bridge::ms_use_item(mem, chr, command, -1);
+    }
+
+    /// `MsRegistCommandCue(chr, command, turn, kind, flag)` (`0x007b0b90`):
+    /// appends `command` (not running) for `chr`; -1, or 0 when full.
+    pub fn ms_regist_command_cue(
+        mem: &mut impl Mem,
+        chr: u32,
+        command: u32,
+        turn: u8,
+        kind: u8,
+        flag: u8,
+    ) -> i32 {
+        let n = COMMAND_CUE_COUNT.get(mem);
+        if n >= 0x3e {
+            return 0;
+        }
+        put_command(mem, i32::from(n), chr, command, flag, turn, None, kind);
+        COMMAND_CUE_COUNT.set(mem, n.wrapping_add(1));
+        -1
+    }
+
+    /// `MsInsertCommandCue(chr, command, turn, kind, flag, on, after)`
+    /// (`0x007b0a30`): inserts `command` as `MsInsertInputCue` does: after
+    /// `after`'s own entry or at the first not running, past the entries
+    /// whose kind (`+7`, with a high nibble) is at most `kind`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ms_insert_command_cue(
+        mem: &mut impl Mem,
+        chr: u32,
+        command: u32,
+        turn: u8,
+        kind: u32,
+        flag: u8,
+        on: u8,
+        after: u32,
+    ) -> i32 {
+        let n = i32::from(COMMAND_CUE_COUNT.get(mem));
+        if n >= 0x3e {
+            return 0;
+        }
+        let mut pos = 0;
+        let own = if ms_btl_chr_num_check(after) == 0 {
+            None
+        } else {
+            let s = byte(mem, ms_get_chr(mem, after), 0xde5);
+            (s != 0xff
+                && u32::from(byte(mem, super::bridge::command(mem, i32::from(s)), 0)) == after)
+                .then_some(i32::from(s))
+        };
+        if let Some(s) = own {
+            pos = s + 1;
+        } else if let Some(k) = (0..n).find(|&k| byte(mem, super::bridge::command(mem, k), 4) == 0)
+        {
+            pos = k;
+        }
+        if kind & 0xf0 != 0 {
+            let mut k = pos;
+            while k < n {
+                let p = byte(mem, super::bridge::command(mem, k), 7);
+                if p & 0xf0 == 0 || i32::from(p) > kind.cast_signed() {
+                    pos = k;
+                    break;
+                }
+                k += 1;
+            }
+            if k == n {
+                pos = k;
+            }
+        }
+        let mut k = n;
+        while k > pos {
+            let v: [u32; 0x12] = mem.read(super::bridge::command(mem, k - 1));
+            let to = super::bridge::command(mem, k);
+            mem.write(to, v);
+            k -= 1;
+        }
+        put_command(
+            mem,
+            pos,
+            chr,
+            command,
+            flag,
+            turn,
+            Some(on),
+            kind.to_le_bytes()[0],
+        );
+        #[allow(clippy::cast_possible_truncation)] // the count is an i8
+        COMMAND_CUE_COUNT.set(mem, (n as i8).wrapping_add(1));
+        -1
+    }
+
+    /// `MsCleanCommandCue(chr, keep)` (`0x007b0830`): drops `chr`'s command
+    /// entries from the last to the first (`MsDeleteCommandCue`); how many.
+    pub fn ms_clean_command_cue(mem: &mut impl Mem, chr: u32, keep: u32) -> i32 {
+        let n = i32::from(COMMAND_CUE_COUNT.get(mem));
+        let mut dropped = 0i32;
+        let mut k = n - 1;
+        while k >= 0 {
+            dropped =
+                dropped.wrapping_add(ms_delete_command_cue(mem, chr, k.cast_unsigned(), keep));
+            k -= 1;
+        }
+        dropped
+    }
 }
