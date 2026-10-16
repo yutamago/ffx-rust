@@ -7016,6 +7016,7 @@
 0x00b920cc label mkvparser_SimpleBlock_vftable # fh v4:imported mkvparser::SimpleBlock::vftable
 0x00b920dc label mkvparser_BlockEntry_vftable # fh v4:imported mkvparser::BlockEntry::vftable
 0x00b920ec label mkvparser_Track_vftable      # fh v4:imported mkvparser::Track::vftable
+0x00c0a000 label    g_Vu0_R                      # emulated VU0 R (random) register, f32 bits in [1,2): op_random/op_random_p step it (vrnext: low 22 fraction bits << 1, bit 4 of R^(R>>18) in) and leave draw - 1.8872414 there; 0x0075fe50 seeds it
 0x00c0a004 label g_Vu0_Vf00                  # emulated VU0 vf00 (x, y, z, w) = (0, 0, 0, 1.0f): AsmEmuInit and restoreVf00Register store exactly that
 0x00c30f94 label NvOptimusEnablement          # fh v4:imported
 0x00c30f98 label AmdPowerXpressRequestHighPerformance # fh v4:imported
@@ -7024,6 +7025,7 @@
 0x00c421cc label    g_BattleEnable            # set by setBattleEnable, read by MsBattleEncountExe
 0x00c423e8 label g_StatusTable               # 4 bytes per status; MsCheckStat (0x0079e310) returns byte 3 of entry i
 0x00c42420 label g_StatusTable2              # entry 14 of g_StatusTable on; MsCheckStat2 (0x0079e320) returns byte 3 of entry i
+0x00c44bf0 label    g_pppSinTable                # 4096 f32 sines over a turn: pppGetRotMatrix* read [(a>>4)&0xfff] and [((a+0x4000)>>4)&0xfff] (cosine)
 0x00c49680 label g_ChrDefaultMoves           # Ch_MotionSetMoves(chr, slot, -1) stores entry [slot] (0, 1, 2, then zeros)
 0x00c4df54 label    g_GuHScale                # vertical scale of Gu_SetScissor's y bounds, 8.8 fixed point (Gu_SetHScale)
 0x00c59554 label    g_SystemConfirmButtonAssign # TOGetSystemConfirmButtonAssign returns it with -1 replaced by 0 (and stores that back)
@@ -7035,10 +7037,13 @@
 0x00c64ca0 label    g_MagicFile_MagicId       # MagicFile_GetMagicId; -1 = none (MagicFile_GetEffectOverlayTable checks)
 0x00c64cac label    g_MagicFile_Handle        # MagicFile_GetHandle; -1 = none (MagicFile_GetEffectOverlayTable checks)
 0x00c64ce8 label g_MagicImports                # 744 slots (0xba0 bytes) handed to every magic_*.dll's InitMagicPRX: 658 FFX.exe functions (effects 278, battle 114, map 104, characters 83, ...), the overlays' only way into the game
+0x00c8b500 label    g_pppColorConShift           # added once to pppColorCon's work offset, then cleared there; also RW by pppDrawShape0
 0x00c8f508 label g_Ee_Gpr                    # emulated R5900 GPRs, 32 x 16 bytes: r0 (zero) here, t0 at +0x80 (pppRandFloat: t0 = r0 - 1), sp at +0x1d0 (AsmEmuInit stores this address there); argument registers set by AsmEmuSetFuncParam0 and the setters around it
+0x00c8f728 label    g_Vu0_RSeeded                # nonzero once g_Vu0_R is seeded (0x0075fe50 sets it with R); op_random draws 1.0 while 0, then sets it
 0x00cc9698 label    g_BasePath
 0x00cc9c48 label BigFileStream_sBigFileStreamInstacne # was g_FileSys
 0x00cc9cf5 label    g_SteamReady              # guards every other Steam call (achievements, RunCallbacks)
+0x00ccb248 label    g_EtBreathFlags              # op_et_bindeff2_breath_on sets bit 0 for characters 1 and 0x65
 0x00ccb95c label    g_CharsetCjk              # ffxsjistbl_jp/kr/ch.bin as loaded by MallocAndReadGamecode (null in a western game); read by DecodingGamecodeJPCHKR
 0x00ccb960 label    g_CharsetWestern          # ffxsjistbl_us.bin as loaded by MallocAndReadGamecode (null in a jp/kr/ch game); read by Text_DecodeCharWestern
 0x00ccb990 label    g_SaveData_EventId        # written by SaveDataSetEventId; no absolute reads
@@ -7049,7 +7054,14 @@
 0x00ccca4c label    g_ClusterManager          # the instance ClusterManager_GetInstance returns
 0x00cded58 label    g_LangManager
 0x00ce81f4 label    g_SaveDataManager         # the instance SaveDataManager_instance returns (+4 callback result, +8 state for isBusy, +0x350 ref buffer)
+0x00cec1f4 label    g_FpPointLightA              # cleared by pppFpPointLightInit and pppFpLoop, read by pppFpPointLightProc
+0x00cec1fc label    g_FpPointLightB              # cleared by pppFpPointLightInit and pppFpLoop, read by pppFpPointLightProc
+0x00cec22c label    g_pppFpHeap                  # the field effects' ppp heap {cur, first, last, used}: pppFpGetHeapSize adds last - first + 16; 0x007296a0 makes it current
+0x00cec23c label    g_pppFpHeap2                 # the field effects' second ppp heap (pppFpGetHeapSize)
 0x00d2c258 label    g_FpData                     # current field's FP (effect) table: u16 count at +4, 0x50-byte entries with the id at +0x64; runtime state at 0x00d2c260 (0x80 each) and 0x00d30260 (0x4c each)
+0x00d2c260 label    g_FpRun                      # FP run records, 0x80 per g_FpData entry: +0 frame counter (-0x1000 not started), +0x1d status (0 run, 1 end: Fp_End, 2: Fp_RestartMode2)
+0x00d30260 label    g_FpDisp                     # FP display records, 0x4c per entry: +0 flags (0x10 hidden: pppFpIDdispOff, 2 stuck to map: pppFpSetStickMap, 8 to a display object), +4 stick target
+0x010e7640 label    g_pppWaitDone                # set by pppClearWait, polled by pppSendWait
 0x01128a90 label    g_Cd_ExSizes              # u32 per PS2 file number: pc_sizetbl_set_Ex() (CdEnvInit); CDfileSize_CD_EX indexes it with number + g_CdLib_FileBase
 0x01128a94 label    g_Cd_ExSizeCount          # entries of g_Cd_ExSizes (pc_sizetbl_set_Ex); CDfileSize_CD_EX returns -1 at or past it
 0x01128aac label    g_Cd_DiskOpenCheck        # byte: disk_open_check_set; CdEnvInit clears it; the read loop 0x0076ccb0 reads it
@@ -7137,6 +7149,25 @@
 0x01137540 label    g_Cameras                    # ?3 cameras x 0xda0: two sides of 0x61c each (0 = ref, 1 = cam), channels of 0x130 at +0xc0, channel table at 0x011381a8
 0x011381a8 label g_CameraSlots               # g_Cameras + 0xc68: 4 request slots of 8 bytes per camera (u32 ID, byte 2 the level; +4/+5 off/done flags; +6 i8 level bonus); MsCameraGetNum 0x007bd340, MsCameraIDcheck 0x007bd560
 0x01139e50 label g_BtlDebugField             # 2 x u32; MsDebugGetFieldNum (0x007c5f50) returns [0] << 16 + [1]
+0x0119fe10 label    g_OpSprStack                 # op scratch stack, i32 marks: op_spr_alloc(n) pushes top + n (top index g_OpSprTop)
+0x0119fea0 label    g_OpusWeapons                # 4 weapon opus objects (opus_get_weapon_index)
+0x0119fed0 label    g_OpusMonsters               # 8 monster opus objects (opus_get_monster_index)
+0x011a0061 label    g_OpPrayEffect               # op_pray_effect_check returns -1 while nonzero
+0x011a0067 label    g_OpWotTrigger               # set by op_wot_triger, read by op_ot_draw
+0x011a03a0 label    g_OpOef2ClutCues             # ring of 64 CLUT masks (op_oef2_tex_clut_cue_check, op_oef2_tex_clut_cue_trans)
+0x011a04a0 label    g_OpOef2ClutCueHead          # u16 first entry of g_OpOef2ClutCues
+0x011a04a2 label    g_OpOef2ClutCueCount         # u16 entries in g_OpOef2ClutCues
+0x011a04b0 label    g_OpOef2ClutOvlCount         # u16 one past the last overlay CLUT kept (op_oef2_tex_clut_ovl_clear)
+0x011a04c0 label    g_OpOef2ClutOvl              # 64 overlay CLUT masks, 0 free (op_oef2_tex_clut_ovl_clear, op_oef2_tex_clut_ovl_trans)
+0x011a0960 label    g_OpFuncOtOrder              # op function ordering table: i8 slot lists (-1 free), 32 from a list base (op_func_ot_set/free)
+0x011a09e0 label    g_OpFuncOt                   # its 16-byte slots {func, a, b, u16 c} at (list + slot) * 16
+0x011a11e0 label    g_OpMdcTransferCues          # 8 x 16-byte mdc transfer cues keyed by their first word (op_mdc_mem_transfer_cue_free[_all])
+0x012a1370 label    g_OpPads                     # 0x20 per pad: now, last, pressed, auto-repeat, repeat timer (op_pad_set: 12 frames, then every frame)
+0x012a22c0 label    g_EtChr                      # 240 x 0x20 effect character records: +0 handle, +4 chr number, +0xc u16 bind flags, +0xe draw flag index, +0x17 bit 0 stone (op_et_*, op_get_chr*)
+0x012a40c0 label    g_OpusBattle                 # the battle's opus object: +0x1c draw list, +0x20 parts, +0x3a genko counter (opus_get_osu_by_draw default, op_et_battle_genko_counter_get)
+0x012a4100 label    g_EtEff                      # 512 x 0x20 effect records: +0 ID (bind effects 0x40000400/500/600/700 + chr record), +4 object (u16 signals at +0xb0: 0x4000 off, 0x8000 fade)
+0x012a84c0 label    g_EtChrDrawFlags             # byte per draw flag index: 4 hides the bind effect, 8 the second one (op_et_bindeff_draw_on/off)
+0x012a85b0 label    g_EtChrDrawFlags2            # used instead of g_EtChrDrawFlags where nonzero
 0x012fbd9c label g_ChrHandleCursor           # Ch_HandleGetNext's slot index into g_ChrArray; Ch_HandleRewind sets 0
 0x012fbda4 label g_ChrFunctionHistoryCount   # Ch_FunctionHistoryInit sets 0
 0x012fbda8 label g_ChrFunctionHistory        # 127 entries of 16 bytes (to 0x012fc598); Ch_FunctionHistoryInit clears byte 0 of each
@@ -7237,8 +7268,16 @@
 0x01a85ba8 label    g_FullArenaLocalization   # toggled (non-zero -> 0, 0 -> 1) by setFullArenaLocalizationEnable; read by 0x00a42c00, 0x00a42fa0
 0x01a85bb0 label    g_ReadChgName_From        # 16 u32 (FILE_NAME_CHG_TBL_CNT, read_debug.c): set_read_chgname(a, b) puts a in the first zero slot, b in g_ReadChgName_To; clear_read_chgname zeroes both
 0x01a85bf0 label    g_ReadChgName_To          # 16 u32: the b of set_read_chgname(a, b), beside g_ReadChgName_From
+0x02286148 label    g_OpdNumHome                 # u16 x, y where opd_num_vdisp puts the number cursor back (opd_num_init)
+0x0228614c label    g_OpdNumPos                  # u16 x, y of the number printer's cursor (opd_num_xy_set, opd_num)
+0x02286150 label    g_OpdNumColumn               # u16 characters on the line, cleared by opd_num_xy_set and opd_num_vdisp
+0x02286154 label    g_OpdNumDisplay              # u16 opd_num display mode (opd_num_display)
+0x0228615c label    g_OpdNumPal                  # byte palette of the number printer (opd_num_pal_set/default)
+0x022881d4 label    g_OpdNumFrames               # u16 counted up by opd_num_vdisp
+0x022c9760 label    g_OpdHeapDisplay             # 4 x 0x40 heap gauges: +0 flags (0xffff none, bits 8-11 priority, 0x8000 ppp heap at +4), +8 used, +0xc total (opd_heap_display_*)
 0x022fb4dc label    g_TkMenuSceneData         # 8 menu scene data blocks (TkMenuSetSceneDataAdrs, TkMenuInitSeq zeroes them; layout in crates/ffx-menu/src/scene.rs)
 0x022fb504 label    g_Settings
+0x0230fd34 label    g_pppStopStatus              # set by pppFpStopStatus; the ppp per-frame steps (pppColor, pppAngle, ...) do nothing while nonzero
 0x02310c40 label    g_CdLib                   # function table of the PS2 CD-library emulation
 0x02310c60 label    g_CdLib_FileBase          # g_CdLib + 0x20: the current module's first PS2 file number (CDfileSize_CD, CDfileSize_CD_EX add it to theirs)
 0x02310c68 label    g_CdLib_SectorTable       # g_CdLib + 0x28: cdrom.mdg (CdEnvInit), u32 per file: start sector in bits 0-21, bit 22 size from sizetbl.bin, bit 23 absent, top byte the unused bytes at the end / 8 (CDfileSize_CD, cd_file_sector)
@@ -7249,6 +7288,10 @@
 0x02311430 label    g_Camera                     # pointer to the active camera channel (FUN_007bd470 reads its sides): +0x50 look-at point (ref, side 0) xyz, +0x66c eye (side 1) xyz; live: the look-at follows the player at chest height on the S.S. Winno deck
 0x02311440 label g_CameraMatrix              # MsGetCameraMatrix (0x007c04b0)
 0x02311480 label g_ScreenMatrix              # MsGetScreenMatrix (0x007bbd70)
+0x02321548 label    g_OpPadInput                 # byte: while 0, op_pad_set takes no buttons
+0x02322790 label    g_OpPadActive                # byte set by pppInitPartRender: op_pad_set does nothing while 0
+0x02332ea1 label    g_OpSprTop                   # i8 top index of g_OpSprStack (op_spr_alloc, op_spr_free)
+0x023c3648 label    g_OpOef2StreamCues           # 2 stream cue pointers (op_oef2_stream_cue, op_oef2_sound_cue_*)
 0x023c44e0 label    g_ChrCount                   # number of field characters in g_ChrArray
 0x023c44e4 label    g_ChrArray                   # field characters, 0x880 bytes each (byte +2 = active)
 0x023c8d00 label g_ChrBlk                    # 40 character model blocks of 0x12c bytes (Ch_BlkGetHandleFast); chr +0x1c4 points at one: +0x1c thickness, +0x30 scale, +0x71 name, +0xb8 directory, +0x124/+0x128 resident data
