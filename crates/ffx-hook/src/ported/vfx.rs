@@ -2397,16 +2397,16 @@ ported! {
     pppKeLnsLpCon @ 0x0075_af30 => extern "C" fn ppp_ke_lns_lp_con(obj: u32, ctrl: u32) {
         prog::bridge::ppp_ke_lns_lp_con(&mut mem(), obj, ctrl);
     }
-    /// `op_rt_m_x(dst, src, angle)`.
-    op_rt_m_x @ 0x007e_9580 => extern "C" fn op_rt_m_x(dst: u32, src: u32, angle: f32) {
+    /// `op_rot_m_x(dst, src, angle)`.
+    op_rot_m_x @ 0x007e_9580 => extern "C" fn op_rot_m_x(dst: u32, src: u32, angle: f32) {
         op::bridge::op_rt_m(&mut mem(), dst, src, angle, mat::Axis::X);
     }
-    /// `op_rt_m_y(dst, src, angle)`.
-    op_rt_m_y @ 0x007e_9670 => extern "C" fn op_rt_m_y(dst: u32, src: u32, angle: f32) {
+    /// `op_rot_m_y(dst, src, angle)`.
+    op_rot_m_y @ 0x007e_9670 => extern "C" fn op_rot_m_y(dst: u32, src: u32, angle: f32) {
         op::bridge::op_rt_m(&mut mem(), dst, src, angle, mat::Axis::Y);
     }
-    /// `op_rt_m_z(dst, src, angle)`.
-    op_rt_m_z @ 0x007e_9760 => extern "C" fn op_rt_m_z(dst: u32, src: u32, angle: f32) {
+    /// `op_rot_m_z(dst, src, angle)`.
+    op_rot_m_z @ 0x007e_9760 => extern "C" fn op_rot_m_z(dst: u32, src: u32, angle: f32) {
         op::bridge::op_rt_m(&mut mem(), dst, src, angle, mat::Axis::Z);
     }
     /// `op_rt_m_yxz(dst, src, angles, t)`.

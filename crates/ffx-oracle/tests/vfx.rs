@@ -3450,9 +3450,9 @@ fn round5_helpers_match_the_original() {
             let a: u32 = p.get(angles);
             let d = if rng.chance(30) { x } else { dst };
             for (name, sym, axis) in [
-                ("op_rt_m_x", 0x007e_9580, mat::Axis::X),
-                ("op_rt_m_y", 0x007e_9670, mat::Axis::Y),
-                ("op_rt_m_z", 0x007e_9760, mat::Axis::Z),
+                ("op_rot_m_x", 0x007e_9580, mat::Axis::X),
+                ("op_rot_m_y", 0x007e_9670, mat::Axis::Y),
+                ("op_rot_m_z", 0x007e_9760, mat::Axis::Z),
             ] {
                 p.check(name, sym, &[d, x, a], |m| {
                     o::op_rt_m(m, d, x, f32::from_bits(a), axis);

@@ -534,7 +534,7 @@ pub mod bridge {
         u32_field(mem, i, 0x5d0)
     }
 
-    /// `MsGetRamChrHP_0079adf0(i)` (`0x0079adf0`): max HP (`+0x594`).
+    /// `MsGetRamChrHPmax(i)` (`0x0079adf0`): max HP (`+0x594`).
     pub fn ms_get_ram_chr_hp_max(mem: &impl Mem, i: u32) -> u32 {
         u32_field(mem, i, 0x594)
     }

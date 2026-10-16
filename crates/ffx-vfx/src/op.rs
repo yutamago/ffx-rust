@@ -594,7 +594,7 @@ pub mod bridge {
     /// `g_VfxCurrentType` (`0x00c322aa`, a byte).
     pub const CURRENT_TYPE: Global<u8> = Global::new(0x00c3_22aa);
 
-    /// The axis rotations `op_rt_m_x/y/z(dst, src, angle)`: `angle` in
+    /// The axis rotations `op_rot_m_x/y/z(dst, src, angle)`: `angle` in
     /// `g_pppSinTable` steps (4096 a turn, `ftol` of it), the matrix
     /// `src` turned about the axis into `dst` (every row, the translation
     /// too; `src` read first, so they may be the same).

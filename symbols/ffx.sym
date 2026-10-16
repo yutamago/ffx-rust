@@ -1520,6 +1520,7 @@
 0x00635300 function std_Tree_const_iterator_inc_00635300 # same bytes as std_Tree_const_iterator_inc_006352b0
 0x00635350 function std_Tree_const_iterator_inc_00635350 # same bytes as std_Tree_const_iterator_inc_006352b0
 0x00636410 function asyncFFXInitialize        # fh switch:bsim1.00 0x71001cbb10
+0x006365f0 function batchSetClothVertexBuffers   # str-match switch: only user of the string 'ClothWorld' held once by both builds; Switch 0x71001cfcf0 batchSetClothVertexBuffers (the address fh switch:cg2 had given to 0x0063b290)
 0x00637860 function graphicAsyncTaskCallback  # fh v3:exact 0x00637a10
 0x00637980 function graphicCharacterUnloadTask # fh v3:exact 0x00637b30
 0x00637d90 function FlashSpriteRenderer_Initialize # fh switch:bsim1.00 0x71000028f0 FlashSpriteRenderer::Initialize
@@ -1560,7 +1561,7 @@
 0x0063a160 function graphicCharacterInstanceDestroyClothVertexBuffers # fh v3:exact 0x0063a320
 0x0063a810 function graphicCharacterInstanceGetClothVertexBuffers # fh v3:bsim0.91 0x0063a9d0
 0x0063b1b0 function graphicCharacterInstanceGetMaxiumBoundingBox # fh v3:exact 0x0063b370
-0x0063b290 function batchSetClothVertexBuffers # fh switch:cg2 0x71001cfcf0
+0x0063b290 function graphicCharacterInstanceOutputAllVertexBuffers # str-match switch: only user of 5 strings held once by both builds, e.g. 'mesh count %d\n'; Switch 0x71001cec00 graphicCharacterInstanceOutputAllVertexBuffers; was batchSetClothVertexBuffers (fh switch:cg2 0x71001cfcf0, contradicted by the strings; the real batchSetClothVertexBuffers is 0x006365f0 'ClothWorld')
 0x0063b5b0 function graphicCharacterInstanceRemoveFromPipeline # fh switch:bsim1.00 0x71001ce400
 0x0063b5d0 function graphicCharacterInstanceSetBTUFadeCenter # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'GradualFade_BasicAlpha'; Switch 0x71001d1120 graphicCharacterInstanceSetBTUFadeCenter (symbols from Fahrenheit's server export)
 0x0063b740 function graphicCharacterInstanceSetClothVertexBuffers # layout: alphabetical run between graphicCharacterInstanceSetBTUFadeCenter and graphicCharacterInstanceSetDrawSituation (1 unnamed in the gap); Switch 0x71001d01d0 graphicCharacterInstanceSetClothVertexBuffers is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -4097,7 +4098,7 @@
 0x0079ad30 function MsGetChrCommandFlag       # (chr, id) -> bit 0: actor +0x664 bit of command id (usable), bit 1: its +0x690 bit; named here; ported
 0x0079ad90 function MsGetRamChrDisableZan     # fh switch:bsim1.00 0x710036cbd0
 0x0079add0 function MsGetRamChrHP             # fh v3:bsim1.00+call.cs 0x0079ae00 cdecl
-0x0079adf0 function MsGetRamChrHP_0079adf0    # fh v3:bsim1.00 0x0079ade0
+0x0079adf0 function MsGetRamChrHPmax          # (i) -> actor +0x594 max HP (MsGetRamChrHP 0x0079add0 reads the current +0x5d0); cg-match Switch lead 0x71008acef8 MsGetRamChrHPmax (4 votes, call-sequence LCS); was MsGetRamChrHP_0079adf0 (fh v3:bsim1.00 0x0079ade0, a duplicate of MsGetRamChrHP's name)
 0x0079ae10 function MsGetRamChrIconNumber     # fh v3:cg6 0x79ae20
 0x0079ae30 function MsGetRamChrIconType       # fh v3:bsim1.00 0x0079ae40
 0x0079ae50 function MsGetRamChrMP             # fh v3:bsim1.00+call.cs 0x0079ae60 cdecl
@@ -4682,16 +4683,16 @@
 0x007e83b0 function op_mul_m                  # fh v3:exact 0x007e82c0
 0x007e8b00 function op_mul_m33                   # str-match switch: only user of 1 string(s) held once by both builds, e.g. '*** Calling op_mul_m33() math.c:%d ***\\n'; Switch 0x71003db990 op_mul_m33 (symbols from Fahrenheit's server export)
 0x007e9530 function op_rot_m                     # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71008b1548 op_rot_m, 3 votes, round 1
-0x007e9580 function op_rt_m_x                 # (dst, src, float angle): src turned about X into dst (all four rows), sin/cos from g_pppSinTable[ftol(angle) & 0xfff] and [+0x400]
-0x007e9670 function op_rt_m_y                 # (dst, src, float angle): as op_rt_m_x about Y
-0x007e9760 function op_rt_m_z                 # (dst, src, float angle): as op_rt_m_x about Z
-0x007e9850 function op_rt_m                      # structure: (dst, src, angles): op_rt_m_z, op_rt_m_y, op_rt_m_x in that order (the default order); first of the op matrix file's rt_m group, sorted after op_rt_m_z; Switch op_rt_m (0x71003da7d0) precedes the five orders and op_rt_m_6
+0x007e9580 function op_rot_m_x                 # (dst, src, float angle): src turned about X into dst (all four rows), sin/cos from g_pppSinTable[ftol(angle) & 0xfff] and [+0x400]; Switch op_rot_m_x (op matrix file, 0x71003da1f0..): op_rot_m, op_rot_m_x/y/z sort before op_rt_m and the five ordered op_rt_m_* that call them; was op_rt_m_x
+0x007e9670 function op_rot_m_y                 # (dst, src, float angle): as op_rot_m_x about Y; Switch op_rot_m_y (op matrix file, 0x71003da1f0..): op_rot_m, op_rot_m_x/y/z sort before op_rt_m and the five ordered op_rt_m_* that call them; was op_rt_m_y
+0x007e9760 function op_rot_m_z                 # (dst, src, float angle): as op_rot_m_x about Z; Switch op_rot_m_z (op matrix file, 0x71003da1f0..): op_rot_m, op_rot_m_x/y/z sort before op_rt_m and the five ordered op_rt_m_* that call them; was op_rt_m_z
+0x007e9850 function op_rt_m                      # structure: (dst, src, angles): op_rot_m_z, op_rot_m_y, op_rot_m_x in that order (the default order); first of the op matrix file's rt_m group, sorted after op_rot_m_z; Switch op_rt_m (0x71003da7d0) precedes the five orders and op_rt_m_6
 0x007e98b0 function op_rt_m_6                    # structure: dispatches on an order index to op_rt_m and the five ordered variants (0x007e9970.. 0x007e9af0); Switch op_rt_m_6 (60 bytes); sorts after op_rt_m and before op_rt_m_xyz
-0x007e9970 function op_rt_m_xyz                  # structure: op_rt_m_x, op_rt_m_y, op_rt_m_z in that order; Switch op_rt_m_xyz; sorted run op_rt_m_xyz, xzy, yxz (named, v3 bsim), yzx, zxy
-0x007e99d0 function op_rt_m_xzy                  # structure: op_rt_m_x, op_rt_m_z, op_rt_m_y in that order; Switch op_rt_m_xzy
+0x007e9970 function op_rt_m_xyz                  # structure: op_rot_m_x, op_rot_m_y, op_rot_m_z in that order; Switch op_rt_m_xyz; sorted run op_rt_m_xyz, xzy, yxz (named, v3 bsim), yzx, zxy
+0x007e99d0 function op_rt_m_xzy                  # structure: op_rot_m_x, op_rot_m_z, op_rot_m_y in that order; Switch op_rt_m_xzy
 0x007e9a30 function op_rt_m_yxz               # fh v3:bsim1.00 0x007e9940
-0x007e9a90 function op_rt_m_yzx                  # structure: op_rt_m_y, op_rt_m_z, op_rt_m_x in that order; Switch op_rt_m_yzx
-0x007e9af0 function op_rt_m_zxy                  # structure: op_rt_m_z, op_rt_m_x, op_rt_m_y in that order; Switch op_rt_m_zxy
+0x007e9a90 function op_rt_m_yzx                  # structure: op_rot_m_y, op_rot_m_z, op_rot_m_x in that order; Switch op_rt_m_yzx
+0x007e9af0 function op_rt_m_zxy                  # structure: op_rot_m_z, op_rot_m_x, op_rot_m_y in that order; Switch op_rt_m_zxy
 0x007e9b50 function op_rtp_w1                    # structure: VU0-emulated (AsmEmuSetFuncParam0-3) rotate-translate-project of a point with w = 1; Switch op_rtp_w1 (0x71003dbfe0) of the op matrix file sorts between op_rt_m_zxy and op_spline, as here
 0x007e9e20 function op_spline                    # structure: (t, values, knots, ., n) -> float: binary search of t in the knot table then the segment's interpolation; only caller op_spline_xyz; Switch op_spline (0x71003dca90, 240 bytes) sorts before op_spline_table, as here
 0x007e9f20 function op_spline_table           # fh v3:cg4 0x7e9e30

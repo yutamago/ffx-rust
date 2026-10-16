@@ -783,8 +783,8 @@ ported! {
     MsGetRamChrHP @ 0x0079_add0 => extern "C" fn ms_get_ram_chr_hp(i: u32) -> u32 {
         actor::ms_get_ram_chr_hp(&mem(), i)
     }
-    /// `MsGetRamChrHP_0079adf0(i)`.
-    MsGetRamChrHP_0079adf0 @ 0x0079_adf0 => extern "C" fn ms_get_ram_chr_hp_max(i: u32) -> u32 {
+    /// `MsGetRamChrHPmax(i)`.
+    MsGetRamChrHPmax @ 0x0079_adf0 => extern "C" fn ms_get_ram_chr_hp_max(i: u32) -> u32 {
         actor::ms_get_ram_chr_hp_max(&mem(), i)
     }
     /// `MsGetRamChrMP(i)`.
