@@ -5005,8 +5005,14 @@
 0x008c2300 function TkMn2RestoreFontShade     # (): the four g_TkMn2FontShade words back from the copies after each (0x023cc474, 0x46c, 0x464, 0x45c)
 0x008c2330 function TkMn2SaveFontShade        # (): the four g_TkMn2FontShade words to the copies after each
 0x008c2360 function TkMn2RefreshList          # fh switch:bsim1.00 0x71004c4110
+0x008c2ad0 function TkMn2SeqGetColor          # (name) TOSeqGetColor(1, name, &local), the word returned; Switch name: the four TkMn2SeqGet{Color,ColorCustom,Num,NumCustom} names fill the last four slots before TkMn2SeqGetPos in order
+0x008c2af0 function TkMn2SeqGetColorCustom    # (i, name) TOSeqGetColor(i, ...); Switch name: the four TkMn2SeqGet{Color,ColorCustom,Num,NumCustom} names fill the last four slots before TkMn2SeqGetPos in order
+0x008c2b10 function TkMn2SeqGetNum            # (name) TOSeqGetNum(1, ...), the halfword sign-extended; Switch name: the four TkMn2SeqGet{Color,ColorCustom,Num,NumCustom} names fill the last four slots before TkMn2SeqGetPos in order
+0x008c2b30 function TkMn2SeqGetNumCustom      # (i, name); Switch name: the four TkMn2SeqGet{Color,ColorCustom,Num,NumCustom} names fill the last four slots before TkMn2SeqGetPos in order
 0x008c2b50 function TkMn2SeqGetPos            # fh switch:bsim1.00 0x71004c7660
+0x008c2b70 function TkMn2SeqGetPosCustom      # (i, name, &pos) TOSeqGetPoint(i, name, pos, pos + 2); Switch name, the one name for the slot TkMn2SeqGetPos..TkMn2SeqGetRect
 0x008c2b90 function TkMn2SeqGetRect           # fh switch:bsim1.00 0x71004c74c0
+0x008c2bc0 function TkMn2SeqGetRectCustom     # (i, name, &rect) TOSeqGetRect into four halfwords; Switch name, the one name for the slot TkMn2SeqGetRect..TkMn2SeqStartScene
 0x008c2bf0 function TkMn2SeqStartScene        # fh switch:bsim1.00 0x71004c7690
 0x008c2c10 function TkMn2SeqStopScene         # fh switch:bsim1.00 0x71004c76a0
 0x008c2c30 function TkMn2SetFontShade         # fh switch:bsim1.00 0x71004c5040

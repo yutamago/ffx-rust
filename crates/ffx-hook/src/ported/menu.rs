@@ -2478,4 +2478,28 @@ ported! {
         tk::MENU_PACKET.set(&mut m, end);
         end
     }
+    /// `TkMn2SeqGetColor(name)`: scene 1's colour word.
+    TkMn2SeqGetColor @ 0x008c_2ad0 => extern "C" fn tk_mn2_seq_get_color(name: u32) -> u32 {
+        tk::tk_mn2_seq_get_color(&mem(), 1, name)
+    }
+    /// `TkMn2SeqGetColorCustom(i, name)`.
+    TkMn2SeqGetColorCustom @ 0x008c_2af0 => extern "C" fn tk_mn2_seq_get_color_custom(i: i32, name: u32) -> u32 {
+        tk::tk_mn2_seq_get_color(&mem(), i, name)
+    }
+    /// `TkMn2SeqGetNum(name)`: sign-extended.
+    TkMn2SeqGetNum @ 0x008c_2b10 => extern "C" fn tk_mn2_seq_get_num(name: u32) -> i32 {
+        tk::tk_mn2_seq_get_num(&mem(), 1, name)
+    }
+    /// `TkMn2SeqGetNumCustom(i, name)`: sign-extended.
+    TkMn2SeqGetNumCustom @ 0x008c_2b30 => extern "C" fn tk_mn2_seq_get_num_custom(i: i32, name: u32) -> i32 {
+        tk::tk_mn2_seq_get_num(&mem(), i, name)
+    }
+    /// `TkMn2SeqGetPosCustom(i, name, &pos)`.
+    TkMn2SeqGetPosCustom @ 0x008c_2b70 => extern "C" fn tk_mn2_seq_get_pos_custom(i: i32, name: u32, out: u32) {
+        tk::tk_mn2_seq_get_pos_custom(&mut mem(), i, name, out);
+    }
+    /// `TkMn2SeqGetRectCustom(i, name, &rect)`.
+    TkMn2SeqGetRectCustom @ 0x008c_2bc0 => extern "C" fn tk_mn2_seq_get_rect_custom(i: i32, name: u32, out: u32) {
+        tk::tk_mn2_seq_get_rect_custom(&mut mem(), i, name, out);
+    }
 }

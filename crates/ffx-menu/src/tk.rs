@@ -3546,6 +3546,57 @@ pub mod bridge {
     pub fn tk_get_debug_font_string_width(mem: &impl Mem, proportional: i32, s: u32) -> i32 {
         tk_get_str_width(mem, proportional, s) >> 4
     }
+    /// The first value of scene `i`'s parameter `name` (`TOSeqGet*`'s
+    /// lookup), 0 when it has none.
+    fn seq_value(mem: &impl Mem, i: i32, name: u32) -> u32 {
+        let h = crate::scene::bridge::tk_menu_get_param_handle(mem, i, name);
+        if h == 0 {
+            0
+        } else {
+            crate::scene::bridge::tk_menu_get_param_offset(mem, i, h.cast_signed(), 0)
+        }
+    }
+
+    /// `TkMn2SeqGetColor(name)` (`0x008c2ad0`) and
+    /// `TkMn2SeqGetColorCustom(i, name)` (`0x008c2af0`): `TOSeqGetColor`
+    /// into a local, returned (scene 1 for the first).
+    pub fn tk_mn2_seq_get_color(mem: &impl Mem, i: i32, name: u32) -> u32 {
+        seq_value(mem, i, name)
+    }
+
+    /// `TkMn2SeqGetNum(name)` (`0x008c2b10`) and `TkMn2SeqGetNumCustom(i,
+    /// name)` (`0x008c2b30`): `TOSeqGetNum`'s halfword, sign-extended.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn tk_mn2_seq_get_num(mem: &impl Mem, i: i32, name: u32) -> i32 {
+        i32::from(seq_value(mem, i, name) as i16)
+    }
+
+    /// `TkMn2SeqGetPosCustom(i, name, &pos)` (`0x008c2b70`): `TOSeqGetPoint`
+    /// into two halfwords.
+    pub fn tk_mn2_seq_get_pos_custom(mem: &mut impl Mem, i: i32, name: u32, out: u32) {
+        ffx_system::scene::bridge::get_point(
+            mem,
+            i,
+            name,
+            [out, out.wrapping_add(2)],
+            crate::scene::bridge::tk_menu_get_param_handle,
+            crate::scene::bridge::tk_menu_get_param_offset,
+        );
+    }
+
+    /// `TkMn2SeqGetRectCustom(i, name, &rect)` (`0x008c2bc0`):
+    /// `TOSeqGetRect` into four halfwords.
+    pub fn tk_mn2_seq_get_rect_custom(mem: &mut impl Mem, i: i32, name: u32, out: u32) {
+        let outs = [0, 2, 4, 6].map(|o| out.wrapping_add(o));
+        ffx_system::scene::bridge::get_rect(
+            mem,
+            i,
+            name,
+            outs,
+            crate::scene::bridge::tk_menu_get_param_handle,
+            crate::scene::bridge::tk_menu_get_param_offset,
+        );
+    }
 }
 
 #[cfg(test)]

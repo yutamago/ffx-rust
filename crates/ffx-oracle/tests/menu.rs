@@ -2164,6 +2164,40 @@ fn menu_windows_and_items_match_the_original() {
             tk::tk_mn2_seq_get_rect(o, p, out);
             0
         });
+        t.twin("TkMn2SeqGetColor", 0x008c_2ad0, &[p], U32, |o| {
+            w(tk::tk_mn2_seq_get_color(o, 1, p))
+        });
+        t.twin("TkMn2SeqGetNum", 0x008c_2b10, &[p], U32, |o| {
+            s(tk::tk_mn2_seq_get_num(o, 1, p))
+        });
+        for k in [0u32, 1, 2, 3] {
+            t.twin("TkMn2SeqGetColorCustom", 0x008c_2af0, &[k, p], U32, |o| {
+                w(tk::tk_mn2_seq_get_color(o, i(k), p))
+            });
+            t.twin("TkMn2SeqGetNumCustom", 0x008c_2b30, &[k, p], U32, |o| {
+                s(tk::tk_mn2_seq_get_num(o, i(k), p))
+            });
+            t.twin(
+                "TkMn2SeqGetPosCustom",
+                0x008c_2b70,
+                &[k, p, out],
+                VOID,
+                |o| {
+                    tk::tk_mn2_seq_get_pos_custom(o, i(k), p, out);
+                    0
+                },
+            );
+            t.twin(
+                "TkMn2SeqGetRectCustom",
+                0x008c_2bc0,
+                &[k, p, out],
+                VOID,
+                |o| {
+                    tk::tk_mn2_seq_get_rect_custom(o, i(k), p, out);
+                    0
+                },
+            );
+        }
     }
     eprintln!("{} calls", t.calls);
 }
