@@ -30,42 +30,8 @@ fn crt_rand() -> u32 {
 /// A function the originals call through a pointer (the program table's
 /// `+4`..`+0x24`, `TOGetFFXLang`, `graphicVFXDestroy`): cdecl, up to four
 /// arguments; returns `eax`.
-#[allow(clippy::many_single_char_names)] // the arguments
 fn call_ptr(f: u32, args: &[u32]) -> u32 {
-    // SAFETY: `f` is a function the game stored in its particle program
-    // table, or one of its own; the originals call it as cdecl with these
-    // arguments.
-    unsafe {
-        match *args {
-            [] => {
-                let f: unsafe extern "C" fn() -> u32 = std::mem::transmute(f as usize);
-                f()
-            }
-            [a] => {
-                let f: unsafe extern "C" fn(u32) -> u32 = std::mem::transmute(f as usize);
-                f(a)
-            }
-            [a, b] => {
-                let f: unsafe extern "C" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
-                f(a, b)
-            }
-            [a, b, c] => {
-                let f: unsafe extern "C" fn(u32, u32, u32) -> u32 = std::mem::transmute(f as usize);
-                f(a, b, c)
-            }
-            [a, b, c, d] => {
-                let f: unsafe extern "C" fn(u32, u32, u32, u32) -> u32 =
-                    std::mem::transmute(f as usize);
-                f(a, b, c, d)
-            }
-            [a, b, c, d, e, g, h] => {
-                let f: unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32) -> u32 =
-                    std::mem::transmute(f as usize);
-                f(a, b, c, d, e, g, h)
-            }
-            _ => unreachable!("the functions called back take 0 to 4 or 7 arguments"),
-        }
-    }
+    super::call_cdecl(f, args)
 }
 
 /// A rand program with the CRT's `srand`.

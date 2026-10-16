@@ -23,27 +23,8 @@ fn phyre_printf(level: u32, format: u32) {
 
 /// Calls the cdecl function at `f` (an absolute address, as the game's
 /// function tables hold them) with up to four arguments.
-#[allow(clippy::many_single_char_names)] // the arguments in order
 fn call_ptr<M>(_mem: &mut M, f: u32, args: &[u32]) -> u32 {
-    // SAFETY: a cdecl function of the game taking these arguments (the
-    // caller passes the arguments the original passes it).
-    unsafe {
-        match *args {
-            [] => std::mem::transmute::<usize, unsafe extern "C" fn() -> u32>(f as usize)(),
-            [a] => std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> u32>(f as usize)(a),
-            [a, b] => std::mem::transmute::<usize, unsafe extern "C" fn(u32, u32) -> u32>(
-                f as usize,
-            )(a, b),
-            [a, b, c] => std::mem::transmute::<usize, unsafe extern "C" fn(u32, u32, u32) -> u32>(
-                f as usize,
-            )(a, b, c),
-            [a, b, c, d] => std::mem::transmute::<
-                usize,
-                unsafe extern "C" fn(u32, u32, u32, u32) -> u32,
-            >(f as usize)(a, b, c, d),
-            _ => unreachable!("at most four arguments"),
-        }
-    }
+    super::call_cdecl(f, args)
 }
 
 /// Calls the original cdecl function at `sym` (an `ffx.sym` address).

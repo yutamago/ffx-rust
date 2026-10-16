@@ -2351,26 +2351,10 @@ struct Image([u8; 0x60]);
 #[repr(C, align(16))]
 struct Work([u8; 0xa4]);
 
-/// Calls an original cdecl function (absolute address) with up to six
-/// word arguments, returning `eax`.
-#[allow(clippy::many_single_char_names)] // the arguments, in order
+/// Calls an original cdecl function (absolute address) with its word
+/// arguments, returning `eax`.
 fn call_cdecl(f: u32, a: &[u32]) -> u32 {
-    // SAFETY: the callers pass cdecl functions of exactly these word
-    // arguments (frees, VFX handles, MsSetCameraMatrix, destructors).
-    unsafe {
-        match *a {
-            [] => std::mem::transmute::<usize, unsafe extern "C" fn() -> u32>(f as usize)(),
-            [x] => std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> u32>(f as usize)(x),
-            [x, y] => std::mem::transmute::<usize, unsafe extern "C" fn(u32, u32) -> u32>(
-                f as usize,
-            )(x, y),
-            [x, y, z, u, v, w] => std::mem::transmute::<
-                usize,
-                unsafe extern "C" fn(u32, u32, u32, u32, u32, u32) -> u32,
-            >(f as usize)(x, y, z, u, v, w),
-            _ => unreachable!("no call of {} words", a.len()),
-        }
-    }
+    super::call_cdecl(f, a)
 }
 
 /// Calls a Phyre/CRT routine for the free camera: `arg` as `this`
