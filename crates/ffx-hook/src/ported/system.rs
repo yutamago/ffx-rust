@@ -5,8 +5,8 @@
 use ffx_bridge::Mem;
 use ffx_menu::scene::bridge as menu_scene;
 use ffx_system::{
-    accessor, btl, cd, config, daps, fixup, heap, instance, math, menu, msg, names, pad, pkt,
-    render, save, scene, stl, stub, vbf, window,
+    accessor, btl, cd, config, daps, files, fixup, heap, instance, math, menu, msg, names, pad,
+    pkt, render, save, scene, stl, stub, vbf, window,
 };
 
 use super::{call0, mem, ported};
@@ -19,6 +19,60 @@ fn phyre_printf(level: u32, format: u32) {
         let f: unsafe extern "C" fn(u32, u32) = std::mem::transmute(crate::rebase(0x0043_52f0));
         f(level, format);
     }
+}
+
+/// Calls the cdecl function at `f` (an absolute address, as the game's
+/// function tables hold them) with up to four arguments.
+#[allow(clippy::many_single_char_names)] // the arguments in order
+fn call_ptr<M>(_mem: &mut M, f: u32, args: &[u32]) -> u32 {
+    // SAFETY: a cdecl function of the game taking these arguments (the
+    // caller passes the arguments the original passes it).
+    unsafe {
+        match *args {
+            [] => std::mem::transmute::<usize, unsafe extern "C" fn() -> u32>(f as usize)(),
+            [a] => std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> u32>(f as usize)(a),
+            [a, b] => std::mem::transmute::<usize, unsafe extern "C" fn(u32, u32) -> u32>(
+                f as usize,
+            )(a, b),
+            [a, b, c] => std::mem::transmute::<usize, unsafe extern "C" fn(u32, u32, u32) -> u32>(
+                f as usize,
+            )(a, b, c),
+            [a, b, c, d] => std::mem::transmute::<
+                usize,
+                unsafe extern "C" fn(u32, u32, u32, u32) -> u32,
+            >(f as usize)(a, b, c, d),
+            _ => unreachable!("at most four arguments"),
+        }
+    }
+}
+
+/// Calls the original cdecl function at `sym` (an `ffx.sym` address).
+fn call_sym<M>(mem: &mut M, sym: u32, args: &[u32]) -> u32 {
+    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    call_ptr(mem, crate::rebase(sym) as u32, args)
+}
+
+/// `Phyre::PSerialization::PStreamFile::read(buf, n)` (`0x00608090`,
+/// thiscall), not ported yet.
+fn stream_read<M>(_mem: &mut M, stream: u32, buf: u32, n: u32) -> u32 {
+    // SAFETY: the game's thiscall stream read.
+    unsafe {
+        let f: unsafe extern "thiscall" fn(u32, u32, u32) -> u32 =
+            std::mem::transmute(crate::rebase(0x0060_8090));
+        f(stream, buf, n)
+    }
+}
+
+/// `GetFileSizeEx(handle, &size)` through its import slot.
+fn get_file_size_ex<M>(_mem: &mut M, handle: u32) -> Option<u64> {
+    let mut size = 0u64;
+    // SAFETY: GetFileSizeEx, stdcall, on the stream's handle.
+    let ok = unsafe {
+        let f: unsafe extern "stdcall" fn(u32, *mut u64) -> u32 =
+            std::mem::transmute(GameOs::import(0x00b0_c13c));
+        f(handle, &raw mut size)
+    };
+    (ok != 0).then_some(size)
 }
 
 /// The heap's Win32 calls, through the game's own import slots (so they are
@@ -100,10 +154,31 @@ impl heap::Os for GameOs {
             }
         }
     }
-    fn malloc_pool_init(&mut self) {
-        // the original (`malloc_pool_init`, cdecl, no arguments): the page
-        // manager, the CRT malloc'd heap object, InitializeCriticalSection
-        call0(0x006f_b9b0);
+    fn initialize_critical_section(&mut self, cs: u32) {
+        // SAFETY: InitializeCriticalSection(cs), stdcall.
+        unsafe {
+            let f: unsafe extern "stdcall" fn(u32) = std::mem::transmute(Self::import(0x00b0_c150));
+            f(cs);
+        }
+    }
+    fn crt_malloc(&mut self, size: u32) -> u32 {
+        // SAFETY: the C runtime's malloc, cdecl.
+        unsafe {
+            let f: unsafe extern "C" fn(u32) -> u32 =
+                std::mem::transmute(Self::import(0x00b0_c468));
+            f(size)
+        }
+    }
+    fn crt_free(&mut self, p: u32) {
+        // SAFETY: the C runtime's free, cdecl.
+        unsafe {
+            let f: unsafe extern "C" fn(u32) = std::mem::transmute(Self::import(0x00b0_c370));
+            f(p);
+        }
+    }
+    fn mem_system_init(&mut self) {
+        // the original slow path of 0x009428a0 (cdecl, no arguments)
+        call0(0x0094_28b0);
     }
 }
 
@@ -1805,6 +1880,251 @@ ported! {
     /// `Kernel_GetAbilityName(id)`.
     Kernel_GetAbilityName @ 0x0077_4720 => extern "C" fn kernel_get_ability_name(id: u32) -> u32 {
         names::bridge::ability_name(&mut mem(), id, ffx_menu::tk::bridge::tk_mn2_get_ability_mes)
+    }
+    /// `user_aligned_free(p)`.
+    user_aligned_free @ 0x006f_b6c0 => extern "C" fn user_aligned_free(p: u32) {
+        heap::user_aligned_free(&mut mem(), &mut GameOs, p);
+    }
+    /// `UserHeap_Calloc(n, size)`.
+    UserHeap_Calloc @ 0x006f_b820 => extern "C" fn user_heap_calloc(n: u32, size: u32) -> u32 {
+        heap::user_calloc(&mut mem(), &mut GameOs, n, size)
+    }
+    /// `user_calloc(n, size)`: the jump to `UserHeap_Calloc`.
+    user_calloc @ 0x0068_7000 => extern "C" fn user_calloc(n: u32, size: u32) -> u32 {
+        heap::user_calloc(&mut mem(), &mut GameOs, n, size)
+    }
+    /// `malloc_pool_init()`.
+    malloc_pool_init @ 0x006f_b9b0 => extern "C" fn malloc_pool_init() {
+        heap::malloc_pool_init(&mut mem(), &mut GameOs);
+    }
+    /// `MemSystem_Ensure()`.
+    MemSystem_Ensure @ 0x0094_28a0 => extern "C" fn mem_system_ensure() {
+        heap::mem_system_ensure(&mem(), &mut GameOs);
+    }
+    /// `UserHeap_Init(arena, a, b)` (`this` in ECX).
+    UserHeap_Init @ 0x0094_2a40 => extern "thiscall" fn user_heap_init(this: u32, arena: u32, a: u32, b: u32) -> u32 {
+        heap::heap_init(&mut mem(), this, arena, a, b)
+    }
+    /// `Phyre::PhyreMalloc(size)`.
+    Phyre_PhyreMalloc @ 0x0042_fb40 => extern "C" fn phyre_malloc(size: u32) -> u32 {
+        heap::phyre_malloc(&mut mem(), &mut GameOs, size)
+    }
+    /// `Phyre::PhyreMalloc(size, align)`.
+    Phyre_PhyreMalloc_0042fb80 @ 0x0042_fb80 => extern "C" fn phyre_malloc_aligned(size: u32, align: u32) -> u32 {
+        heap::phyre_malloc_aligned(&mut mem(), &mut GameOs, size, align)
+    }
+    /// `Phyre::PhyreFree(p)`.
+    Phyre_PhyreFree @ 0x0042_fb20 => extern "C" fn phyre_free(p: u32) {
+        heap::phyre_free(&mut mem(), &mut GameOs, p);
+    }
+    /// `operator new(size)`: `user_malloc`.
+    operator_new @ 0x0063_0310 => extern "C" fn operator_new(size: u32) -> u32 {
+        heap::user_malloc(&mut mem(), &mut GameOs, size)
+    }
+    /// `operator new[](size)`: `user_malloc`.
+    operator_new_006304c0 @ 0x0063_04c0 => extern "C" fn operator_new_array(size: u32) -> u32 {
+        heap::user_malloc(&mut mem(), &mut GameOs, size)
+    }
+    /// `memclear(p, n)`.
+    memclear @ 0x0062_f4e0 => extern "C" fn memclear(p: u32, n: u32) -> u32 {
+        heap::memclear(&mut mem(), p, n)
+    }
+    /// `PStreamFileWin32::isOpen()` (`this` in ECX).
+    Phyre_PSerialization_PStreamFileWin32_isOpen @ 0x0060_7f20 => extern "thiscall" fn stream_is_open(this: u32) -> bool {
+        files::bridge::stream_is_open(&mem(), this)
+    }
+    /// `PStreamFile::getFileSize()` (`this` in ECX).
+    Phyre_PSerialization_PStreamFile_getFileSize @ 0x0060_7dc0 => extern "thiscall" fn stream_file_size(this: u32) -> u64 {
+        files::bridge::stream_file_size(&mut mem(), this, get_file_size_ex)
+    }
+    /// `PhyreFIOSStreamFile::getFileSize()` (`this` in ECX).
+    PhyreFIOSStreamFile_getFileSize @ 0x006f_9d50 => extern "thiscall" fn fios_stream_file_size(this: u32) -> u64 {
+        files::bridge::fios_stream_file_size(&mut mem(), this, get_file_size_ex)
+    }
+    /// `fiosFileSize(stream)`.
+    fiosFileSize @ 0x0067_9570 => extern "C" fn fios_file_size(stream: u32) -> u32 {
+        files::bridge::fios_file_size(&mut mem(), stream, get_file_size_ex)
+    }
+    /// `sceFileSize(stream)`.
+    sceFileSize @ 0x0062_f760 => extern "C" fn sce_file_size(stream: u32) -> u32 {
+        files::bridge::fios_file_size(&mut mem(), stream, get_file_size_ex)
+    }
+    /// `fiosRead(stream, buf, n)`.
+    fiosRead @ 0x0067_9800 => extern "C" fn fios_read(stream: u32, buf: u32, n: u32) -> u32 {
+        files::bridge::fios_read(&mut mem(), stream, buf, n, stream_read)
+    }
+    /// `sceRead(fd, buf, n)`.
+    sceRead @ 0x0062_fc00 => extern "C" fn sce_read(fd: u32, buf: u32, n: u32) -> u32 {
+        files::bridge::sce_read(&mut mem(), fd, buf, n, stream_read)
+    }
+    /// `PhyreFIOS::isFileExist(name)`: `File_Probe`.
+    PhyreFIOS_isFileExist @ 0x006f_9d70 => extern "C" fn phyre_fios_is_file_exist(name: u32) -> u32 {
+        call_sym(&mut mem(), 0x0060_7e00, &[name])
+    }
+    /// `fiosIsFileExist(name)`.
+    fiosIsFileExist @ 0x0067_96f0 => extern "C" fn fios_is_file_exist(name: u32) -> u32 {
+        files::bridge::fios_is_file_exist(&mut mem(), name, |m, n| call_sym(m, 0x0060_7e00, &[n]))
+    }
+    /// `TODVDFileRead(file, buf, len)`.
+    TODVDFileRead @ 0x008a_ba30 => extern "C" fn to_dvd_file_read(file: u32, buf: u32, len: u32) -> u32 {
+        files::bridge::dvd_file_read(&mut mem(), file, buf, len, call_ptr)
+    }
+    /// `TOCDGetFileName(file, out)`.
+    TOCDGetFileName @ 0x008a_b7d0 => extern "C" fn to_cd_get_file_name(file: u32, out: u32) -> u32 {
+        files::bridge::cd_get_file_name(&mut mem(), file, out, call_ptr)
+    }
+    /// `CDfileName_PC(n)`.
+    CDfileName_PC @ 0x00a4_2830 => extern "C" fn cd_file_name_pc(n: u32) -> u32 {
+        files::bridge::cd_file_name_pc(&mut mem(), n, |m, at| call_sym(m, 0x00a4_2c00, &[at]))
+    }
+    /// `GetCDFileName_PC(n)`.
+    GetCDFileName_PC @ 0x00a4_29d0 => extern "C" fn get_cd_file_name_pc(n: u32) -> u32 {
+        files::bridge::get_cd_file_name_pc(&mut mem(), n, |m, at| call_sym(m, 0x00a4_2c00, &[at]))
+    }
+    /// `set_read_chgname(from, to)`.
+    set_read_chgname @ 0x00a4_3220 => extern "C" fn set_read_chgname(from: u32, to: u32) -> u32 {
+        cd::bridge::set_read_chgname(&mut mem(), from, to, |m, e, f, l| {
+            call_sym(m, 0x0076_efa0, &[e, f, l]);
+        })
+    }
+    /// `VFile::assign(handle)` (`this` in ECX).
+    VFile_assign @ 0x0061_aa10 => extern "thiscall" fn vfile_assign(this: u32, handle: u32) -> u32 {
+        files::bridge::vfile_assign(&mut mem(), this, handle)
+    }
+    /// `VFile::fileRead(buf, n)` (`this` in ECX).
+    VFile_fileRead @ 0x0061_aa60 => extern "thiscall" fn vfile_file_read(this: u32, buf: u32, n: u32) -> u32 {
+        files::bridge::vfile_file_read(&mut mem(), this, buf, n, |_, t, b, c| {
+            // SAFETY: FileSys_Read (thiscall, ret 8), not ported yet.
+            unsafe {
+                let f: unsafe extern "thiscall" fn(u32, u32, u32) -> u32 =
+                    std::mem::transmute(crate::rebase(0x0061_aa90));
+                f(t, b, c)
+            }
+        })
+    }
+    /// `BigFileStream::setStreamPrefix(path)` (`this` in ECX).
+    BigFileStream_setStreamPrefix @ 0x0061_c3a0 => extern "thiscall" fn set_stream_prefix(this: u32, path: u32) -> u32 {
+        files::bridge::set_stream_prefix(&mut mem(), &mut GameOs, this, path)
+    }
+    /// `TOControlWindow(i)`.
+    TOControlWindow @ 0x0090_6bd0 => extern "C" fn to_control_window(i: i32) -> u32 {
+        window::bridge::control_window(&mut mem(), i, call_ptr)
+    }
+    /// `TODrawWindow(i)`.
+    TODrawWindow @ 0x0090_6bf0 => extern "C" fn to_draw_window(i: i32) -> u32 {
+        window::bridge::draw_window(&mut mem(), i, call_ptr)
+    }
+    /// `TOControlMessage(i)`.
+    TOControlMessage @ 0x008b_5850 => extern "C" fn to_control_message(i: i32) -> u32 {
+        window::bridge::control_message(&mut mem(), i, call_ptr)
+    }
+    /// `TOMessageCallF8_008b8ca0(i)`.
+    TOMessageCallF8_008b8ca0 @ 0x008b_8ca0 => extern "C" fn to_message_call_f8(i: i32) -> u32 {
+        window::bridge::message_call_f8(&mut mem(), i, call_ptr)
+    }
+    /// `TOGetControlPadStatus(i)`.
+    TOGetControlPadStatus @ 0x008b_6b70 => extern "C" fn to_get_control_pad_status(i: i32) -> u32 {
+        window::bridge::control_pad_status(&mut mem(), i, call_ptr)
+    }
+    /// `TOMessageTableByte2_008b8010(i)`.
+    TOMessageTableByte2_008b8010 @ 0x008b_8010 => extern "C" fn to_message_table_byte2(i: i32) -> i32 {
+        window::bridge::message_table_byte2(&mem(), i)
+    }
+    /// `TOSetPolyG4A_XYWH(p, x, y, w, h)`.
+    TOSetPolyG4A_XYWH @ 0x0090_48a0 => extern "C" fn to_set_poly_g4a_xywh(p: u32, x: u32, y: u32, width: u32, height: u32) {
+        window::bridge::set_poly_g4a_xywh(&mut mem(), p, x, y, width, height);
+    }
+    /// `cd_size_from_table(n)`.
+    cd_size_from_table @ 0x0076_dc20 => extern "C" fn cd_size_from_table(n: i32) -> u32 {
+        cd::bridge::cd_size_from_table(&mem(), n)
+    }
+    /// `TOAdpALPHA(p, A, B, C, D, FIX)`.
+    TOAdpALPHA @ 0x008e_f670 => extern "C" fn toadpalpha(p: u32, f0: i32, f1: i32, f2: i32, f3: i32, f4: i32) -> u32 {
+        pkt::bridge::adp_reg_at(&mut mem(), 0x008e_f670, p, &[f0, f1, f2, f3, f4])
+    }
+    /// `TOAdpCLAMP(p, WMS, WMT, MINU, MAXU, MINV, MAXV)`.
+    TOAdpCLAMP @ 0x008e_f6e0 => extern "C" fn toadpclamp(p: u32, f0: i32, f1: i32, f2: i32, f3: i32, f4: i32, f5: i32) -> u32 {
+        pkt::bridge::adp_reg_at(&mut mem(), 0x008e_f6e0, p, &[f0, f1, f2, f3, f4, f5])
+    }
+    /// `TOAdpCOLCLAMP(p, value)`.
+    TOAdpCOLCLAMP @ 0x008e_f760 => extern "C" fn toadpcolclamp(p: u32, f0: i32) -> u32 {
+        pkt::bridge::adp_reg_at(&mut mem(), 0x008e_f760, p, &[f0])
+    }
+    /// `TOAdpFBA(p, value)`.
+    TOAdpFBA @ 0x008e_f7d0 => extern "C" fn toadpfba(p: u32, f0: i32) -> u32 {
+        pkt::bridge::adp_reg_at(&mut mem(), 0x008e_f7d0, p, &[f0])
+    }
+    /// `TOAdpFRAME(p, FBP, FBW, PSM, FBMSK)`.
+    TOAdpFRAME @ 0x008e_f880 => extern "C" fn toadpframe(p: u32, f0: i32, f1: i32, f2: i32, f3: i32) -> u32 {
+        pkt::bridge::adp_reg_at(&mut mem(), 0x008e_f880, p, &[f0, f1, f2, f3])
+    }
+    /// `TOAdpSCISSOR(p, SCAX0, SCAX1, SCAY0, SCAY1)`.
+    TOAdpSCISSOR @ 0x008e_f910 => extern "C" fn toadpscissor(p: u32, f0: i32, f1: i32, f2: i32, f3: i32) -> u32 {
+        pkt::bridge::adp_reg_at(&mut mem(), 0x008e_f910, p, &[f0, f1, f2, f3])
+    }
+    /// `TOAdpTEX1(p, LCM, MXL, MMAG, MMIN, MTBA, L, K)`.
+    TOAdpTEX1 @ 0x008e_fad0 => extern "C" fn toadptex1(p: u32, f0: i32, f1: i32, f2: i32, f3: i32, f4: i32, f5: i32, f6: i32) -> u32 {
+        pkt::bridge::adp_reg_at(&mut mem(), 0x008e_fad0, p, &[f0, f1, f2, f3, f4, f5, f6])
+    }
+    /// `TOAdpXYOFFSET(p, OFX, OFY)`.
+    TOAdpXYOFFSET @ 0x008e_fc60 => extern "C" fn toadpxyoffset(p: u32, f0: i32, f1: i32) -> u32 {
+        pkt::bridge::adp_reg_at(&mut mem(), 0x008e_fc60, p, &[f0, f1])
+    }
+    /// `TOAdpFOG`.
+    TOAdpFOG @ 0x008e_f800 => extern "C" fn toadpfog(p: u32, fog: u32) -> u32 {
+        pkt::bridge::adp_fog(&mut mem(), p, fog)
+    }
+    /// `TOAdpTEXFLUSH`.
+    TOAdpTEXFLUSH @ 0x008e_fb60 => extern "C" fn toadptexflush(p: u32) -> u32 {
+        pkt::bridge::adp_texflush(&mut mem(), p)
+    }
+    /// `TOAdpXYFrac`.
+    TOAdpXYFrac @ 0x008e_fbc0 => extern "C" fn toadpxyfrac(p: u32, x: u32, fx: u32, y: u32, fy: u32) -> u32 {
+        pkt::bridge::adp_xy_frac(&mut mem(), p, [x, fx, y, fy])
+    }
+    /// `TOAdpWords2Reg10`.
+    TOAdpWords2Reg10 @ 0x008e_fc30 => extern "C" fn toadpwords2reg10(p: u32, a: u32, b: u32) -> u32 {
+        pkt::bridge::adp_words2_reg10(&mut mem(), p, a, b)
+    }
+    /// `TOAdpWords3`.
+    TOAdpWords3 @ 0x008e_fcd0 => extern "C" fn toadpwords3(p: u32, a: u32, b: u32, c: u32) -> u32 {
+        pkt::bridge::adp_words3(&mut mem(), p, a, b, c)
+    }
+    /// `TOAdpXYZOffset`.
+    TOAdpXYZOffset @ 0x008e_fc90 => extern "C" fn toadpxyzoffset(p: u32, x: u32, y: u32, z: u32) -> u32 {
+        pkt::bridge::adp_xyz_offset(&mut mem(), p, x, y, z, None)
+    }
+    /// `TOAdpXYZWOffset`.
+    TOAdpXYZWOffset @ 0x008e_fd00 => extern "C" fn toadpxyzwoffset(p: u32, x: u32, y: u32, z: u32, w: u32) -> u32 {
+        pkt::bridge::adp_xyz_offset(&mut mem(), p, x, y, z, Some(w))
+    }
+    /// `Virtuos::InputManager::isHoldButton(mask)` (`this` in ECX).
+    Virtuos_InputManager_isHoldButton @ 0x0063_1340 => extern "thiscall" fn is_hold_button(this: u32, mask: u32) -> u32 {
+        pad::bridge::is_hold_button(&mem(), this, mask)
+    }
+    /// `Virtuos::InputManager::isPressButton(mask)` (`this` in ECX).
+    Virtuos_InputManager_isPressButton @ 0x0063_1360 => extern "thiscall" fn is_press_button(this: u32, mask: u32) -> bool {
+        pad::bridge::is_press_button(&mem(), this, mask)
+    }
+    /// `Virtuos_InputManager_isReleaseButton(mask)` (`this` in ECX).
+    Virtuos_InputManager_isReleaseButton @ 0x0063_1380 => extern "thiscall" fn is_release_button(this: u32, mask: u32) -> bool {
+        pad::bridge::is_release_button(&mem(), this, mask)
+    }
+    /// `TOSetPair_008bdfe0(prev, cur)`.
+    TOSetPair_008bdfe0 @ 0x008b_dfe0 => extern "C" fn to_set_pair(prev: u32, cur: u32) -> u32 {
+        window::bridge::set_pair(&mut mem(), prev, cur)
+    }
+    /// `TOClearEntry_008ff140(i)`.
+    TOClearEntry_008ff140 @ 0x008f_f140 => extern "C" fn to_clear_entry(i: i32) -> u32 {
+        window::bridge::clear_entry_18762e0(&mut mem(), i)
+    }
+    /// `TOSetScreenWH(w, h)`.
+    TOSetScreenWH @ 0x0090_48f0 => extern "C" fn to_set_screen_wh(w: u32, h: u32) {
+        window::bridge::set_screen_wh(&mut mem(), w, h);
+    }
+    /// `TOAdpTEX0(p, TBP0, TBW, PSM, TW, TH, TCC, TFX, CBP, CPSM, CSM, CSA, CLD)`.
+    TOAdpTEX0 @ 0x008e_fa00 => extern "C" fn toadptex0(p: u32, f0: i32, f1: i32, f2: i32, f3: i32, f4: i32, f5: i32, f6: i32, f7: i32, f8: i32, f9: i32, f10: i32, f11: i32) -> u32 {
+        pkt::bridge::adp_reg_at(&mut mem(), 0x008e_fa00, p, &[f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11])
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {

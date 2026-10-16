@@ -209,4 +209,23 @@ pub mod bridge {
         }
         0
     }
+
+    /// `Path_ToLowerAscii(s)` (`0x00607d50`): `A`..`Z` lowered in place;
+    /// returns the terminator's address (`s` itself when null or empty).
+    pub fn to_lower_ascii(mem: &mut impl Mem, s: u32) -> u32 {
+        if s == 0 || mem.read::<u8>(s) == 0 {
+            return s;
+        }
+        let mut p = s;
+        loop {
+            let c: u8 = mem.read(p);
+            if c.is_ascii_uppercase() {
+                mem.write(p, c + 0x20);
+            }
+            p = p.wrapping_add(1);
+            if mem.read::<u8>(p) == 0 {
+                return p;
+            }
+        }
+    }
 }

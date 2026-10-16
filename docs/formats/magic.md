@@ -41,20 +41,24 @@ system 36, main 25, PS2 emulation 22, script 6, menu 6, CRT 4, movie 1;
 
 ## Functions the Ghidra dump hides
 
-The dump (`tools/ghidra/dump.sh`) folds some functions into the one before
-them, so `tools/check-ported.py` and `tools/check-clobber.py` cannot see
-them and they cannot be installed yet:
+The dump (`tools/ghidra/dump.sh`) folded some functions into the one
+before them or left them undefined, so `tools/check-ported.py` and
+`tools/check-clobber.py` could not see them. `tools/ghidra/ApplySymbols.java`
+now creates a function wherever `symbols/ffx.sym` has a `function` line, so
+naming them is enough:
 
 - `pppKeMatSN` (`0x00734020`, program table record `pppKeMatSN` step): its
-  aligned-stack prologue (`push ebx; mov ebx, esp; and esp, -16`) makes
-  Ghidra treat it as part of `FUN_00733ff0`. Ported and tested
-  (`ffx_vfx::mat::bridge::ppp_ke_mat_sn`), no shim.
-- 83 slots (marked `?` in *module*: effects 47, system 15, map 12, CRT 4,
-  PS2 emulation 2, battle, characters, main 1 each) point at addresses that
-  are neither in `functions.tsv` nor a `// ==== ` header of the code dump,
-  among them many program table draws (`pppDrawMdl` `0x00737770`,
-  `pppDrawMdlTs` `0x00737f40`, ...). They need the dump to define them
-  before they can be ported.
+  aligned-stack prologue (`push ebx; mov ebx, esp; and esp, -16`) made
+  Ghidra treat it as part of `FUN_00733ff0`. In the dump since the round 5
+  re-dump, and ported.
+- 83 slots pointed at addresses outside every dumped function. The
+  program-table names (pppDrawMdl `0x00737770`, pppDrawMdlTs `0x00737f40`,
+  ...) brought 33 of them in. The other 50 now have `function` lines too
+  (evidence in their comments): thunks (`jmp` to a named function or an
+  `MSVCR110` import), lone `ret`/`xor eax, eax; ret` bodies, small `TO*`
+  scene wrappers, `rcef*` helpers, and slot 733 `0x00a74d30`, which every
+  overlay uses and which has the same aligned-stack prologue as
+  `pppKeMatSN`.
 
 ## The slots
 

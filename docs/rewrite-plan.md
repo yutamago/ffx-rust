@@ -227,6 +227,8 @@ saves, settings, language) move to Rust. The 64-bit host runs the whole game
 from the Rust crates and no longer starts `FFX.exe`. Saves stay
 byte-compatible with the original's.
 
+Alongside M4 and M5: the Lua stages L1 and L2 (Modding, below).
+
 ### M6: ports
 
 Linux and the Steam Deck first (wgpu and our platform layer already cover
@@ -281,6 +283,38 @@ afterwards:
 
 The original's fixed array sizes stay only where save compatibility needs
 them.
+
+### Scripting for modders (Lua)
+
+FFX's events, cutscenes, field logic and monster AI are Atel bytecode run by
+the script VM (`Script_Run`, in Rust since M1), and everything a script does
+goes through the VM's natives. Modders should not need Atel: the plan adds
+Lua on top, in three stages. Lua because it is the usual language of game
+mods, embeds well from Rust (`mlua`, sandboxed), and its coroutines match
+Atel's model: workers that run a little each frame and wait on signals,
+moves and messages. (FFX.exe links a Lua 5.2.1 of its own through
+PhyreEngine, but never runs it and exposes nothing of the game to it:
+`docs/formats/lua.md`. This is a new runtime, not that one.)
+
+- **Prerequisite, from M1 on: a documented native API.** Every native that
+  moves to Rust gets its name, its arguments and their meaning, and what it
+  waits for, in `docs/formats/script.md`; that table is what the Lua API is
+  generated from. This is part of each script round, not extra work.
+- **L1, Lua beside Atel (after M3, once the natives are in Rust).** Mods ship
+  Lua scripts that hook game events (map entered, worker started, signal
+  sent, battle started, command chosen) and call the natives through a
+  typed API (`chr.move_to`, `msg.show`, `wait.frames`). The original
+  scripts stay as they are; a mod adds behaviour or replaces one worker's.
+  Runs in the hook first and in the 64-bit host after M5 unchanged.
+- **L2, Atel to Lua (with M4/M5).** A decompiler turns every shipped event
+  and battle script into readable Lua (workers as coroutines, natives by
+  name, variables by their descriptors), and the engine runs the Lua.
+  Checked like everything else: a decompiled script must give the original's
+  replay. This is what lets the community edit existing cutscenes and
+  fights, not only add to them.
+- **L3, Lua to Atel (optional, on demand).** A compiler back to bytecode, so
+  an edited script also runs in the unmodified game. Only if there is
+  demand; Lua constructs without an Atel equivalent are refused.
 
 ## Risks
 

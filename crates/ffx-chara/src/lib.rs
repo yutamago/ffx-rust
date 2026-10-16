@@ -21,6 +21,7 @@
 //! - [`motion`]: motion lerps, the motion frame loop, the sequence table.
 //! - [`matrix`]: the root and model matrices.
 //! - [`texanim`]: texture animation and texture register fix-ups.
+//! - [`msvc`]: the C runtime's `sprintf` output for the formats used.
 //! - [`fixed`]: fixed-point and 12-bit angle helpers.
 //! - [`x87`]: what the game's x87 code does to the floats it computes.
 
@@ -37,6 +38,7 @@ pub mod layout;
 pub mod mapping;
 pub mod matrix;
 pub mod motion;
+pub mod msvc;
 pub mod parts;
 pub mod sys;
 pub mod texanim;

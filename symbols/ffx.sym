@@ -589,6 +589,7 @@
 0x00631320 function Virtuos_InputManager_getVibrationFlag # fh v3:exact 0x006314d0 Virtuos::InputManager::getVibrationFlag
 0x00631340 function Virtuos_InputManager_isHoldButton # fh v3:exact 0x006314f0 Virtuos::InputManager::isHoldButton
 0x00631360 function Virtuos_InputManager_isPressButton # fh v3:exact 0x00631510 Virtuos::InputManager::isPressButton
+0x00631380 function Virtuos_InputManager_isReleaseButton # thiscall(this; mask), ret 4 -> bool: mask bits set in the previous word (+4) and none in the current (+0); the counterpart of isPressButton 0x00631360; name ours
 0x006313a0 function Virtuos_InputManager_isRepButton # fh v3:exact 0x00631550 Virtuos::InputManager::isRepButton
 0x00631550 function Virtuos_InputManager_setInputInfo # fh v3:exact 0x00631700 Virtuos::InputManager::setInputInfo
 0x006315c0 function Input_BuildPadMap          # pairs each key binding (settings +0x60) with its PS2 pad bit
@@ -1111,7 +1112,11 @@
 0x00686cb0 function Identity_00686cb0 # cdecl(x) -> x (frame-pointer build); name ours
 0x00686f80 function Identity_00686f80 # cdecl(x) -> x (frame-pointer build); name ours
 0x00686ff0 function user_aligned_malloc       # cdecl(size, align): jmp UserHeap_AlignedMalloc; fh v3:bsim1.00 0x00687190
+0x00687000 function user_calloc # cdecl(n, size): jmp UserHeap_Calloc 0x006fb820; name ours (after user_malloc)
+0x00687010 function user_free_thunk # cdecl(p): jmp user_free 0x006fb8b0 (Phyre_PhyreFree and operator delete call it); name ours
 0x00687020 function user_malloc               # cdecl(size): jmp UserHeap_Malloc; fh v3:bsim1.00 0x006871c0
+0x00687030 function user_heap_destroy # (): jmp UserHeap_Destroy 0x006fb9a0; name ours
+0x00687040 function malloc_pool_init_thunk # (): jmp malloc_pool_init 0x006fb9b0; name ours
 0x00687050 function user_mem_size             # cdecl(p): jmp UserHeap_MemSize; fh v3:bsim1.00 0x006871f0
 0x00687060 function user_realloc              # cdecl(p, size): jmp UserHeap_Realloc; name ours (after user_mem_size)
 0x006898c0 function TouchManager_GetInstance  # () -> [0x00ccc850]; fh switch:bsim1.00 0x710023e180 TouchManager::GetInstance
@@ -1318,8 +1323,10 @@
 0x006ed370 function FFXVu0CopyVector          # fh v3:bsim1.00 0x006ed4b0
 0x006ed3a0 function FFXVu0DivVector           # fh v3:exact 0x006ed4e0
 0x006ed420 function FFXVu0DivVectorXYZ        # fh v3:exact 0x006ed560
+0x006ed450 function FFXVu0InversMatrix        # g_MagicImports slot 327 (40 overlays), between FFXVu0InterVectorXYZ and FFXVu0RotMatrixX in the slot order: jmp cdc_OrthonormalInverse3x4 (0x00705db0); hidden from the dump (no function at the address)
 0x006ed460 function sceVu0InversMatrix4x4     # cdecl(dst, m): the identity when a row of m is all ±0 (returns dst), else cdc_Inverse4x4 (returns dst+0x48); fh v3:exact 0x006ed5a0
 0x006ed4f0 function FFXVu0LightColorMatrix    # fh v3:exact 0x006ed630
+0x006ed5c0 function FFXVu0MulMatrix           # g_MagicImports slot 231 (408 overlays), between FFXVu0CopyMatrix and FFXVu0Normalize: jmp cdc_Mul4x4_007059b0; hidden from the dump
 0x006ed5d0 function FFXVu0MulVector           # fh v3:exact 0x006ed710
 0x006ed620 function FFXVu0NormalLightMatrix   # fh v3:exact 0x006ed760
 0x006ed6f0 function FFXVu0Normalize           # fh v3:exact 0x006ed830
@@ -1408,8 +1415,10 @@
 0x006fb160 function SyncManager_syncGetData   # fh v3:exact 0x006fb240 SyncManager::syncGetData
 0x006fb6c0 function user_aligned_free         # fh v3:exact 0x006fb7a0
 0x006fb770 function UserHeap_AlignedMalloc    # cdecl(size, align): UserHeap_Alloc(size + align), pointer moved up to a multiple of align (__aullrem of the sign-extended pointer), the distance in the byte before; the first size bytes filled 0xcd; name ours
+0x006fb820 function UserHeap_Calloc # cdecl(n, size): malloc_pool_init on first use, UserHeap_Alloc(n * size) under the heap's critical section, memset 0; name ours
 0x006fb8b0 function user_free                 # cdecl(p): UserHeap_Free(*g_UserHeap + 0x18, p) under the heap's critical section (*g_UserHeap + 0); fh v3:exact 0x006fb990
 0x006fb910 function UserHeap_Malloc           # cdecl(size): malloc_pool_init on first use, UserHeap_Alloc under the heap's lock, the block filled 0xcd; name ours
+0x006fb9a0 function UserHeap_Destroy # (): CRT free(*g_UserHeap) (import 0x00b0c370), the pointer left; name ours
 0x006fb9b0 function malloc_pool_init          # fh call.cs cdecl _malloc_pool_init
 0x006fba90 function UserHeap_MemSize          # cdecl(p): UserHeap_BlockSize under the lock (no first-use check); name ours
 0x006fbb00 function UserHeap_Realloc          # cdecl(p, size): new block (none for 0), memcpy_s min(old, size) bytes, old freed; name ours
@@ -1490,6 +1499,7 @@
 0x00716be0 function pppOtFunc_Reg             # fh v3:exact 0x00716cc0
 0x00716c40 function pppRunPartStd             # fh v3:exact 0x00716d20
 0x00717410 function pppSetMatrix              # fh v3:exact 0x007174f0
+0x007175f0 function magic_nop_007175f0        # g_MagicImports slot 259 (4 overlays): a lone ret; hidden from the dump
 0x00717600 function resetVfxShapeEnlargeBufferFactor # fh v3:bsim1.00 0x007176e0
 0x00717610 function setVfxShapeEnlargeBufferFactor # fh v3:bsim1.00 0x007176f0
 0x00717620 function updateGuildMapRenderData  # fh v3:exact 0x00717700
@@ -1704,8 +1714,13 @@
 0x007371c0 function pppNeiChrPointLightDraw   # ppp program table record "pppNeiChrPointLight" draw
 0x007372b0 function pppNeiChrPointLightCon    # ppp program table record "pppNeiChrPointLight" +0x1c set-up; not a function start in the Ghidra dump
 0x007372c0 function pppNeiChrPointLightDes    # ppp program table record "pppNeiChrPointLight" +0x24 destructor; not a function start in the Ghidra dump
+0x00737420 function pppColorShiftLoad         # (dst, base) dst = 8 bytes at base + g_pppColorConShift; the shift cleared (as pppColorCon)
+0x00737450 function pppEePextlh               # (dst, rs, rt) R5900 PEXTLH: halves of the low words of rt and rs interleaved; 7 callers (the pppDrawMdl draws)
 0x007374e0 function pppEePmulth               # (dst, a, b): the R5900 PMULTH: dst words = low signed halves multiplied; both halves' products into the emulated LO/HI (0x00c8f708..0x00c8f727); used by the model draws
 0x007375d0 function pppEePpacb                # (dst, a, b): the R5900 PPACB: dst bytes 0..7 the low bytes of b's halves, 8..15 a's
+0x007376a0 function pppEePpach                # (dst, rs, rt) R5900 PPACH: low halves of rt's four words, then rs's
+0x00737700 function pppEePsrlw                # (dst, src, sa) R5900 PSRLW the PC way: (i32 >> sa&31) & (0x7fffffff >> (sa-1 & 31)), so sa 0 gives 0
+0x00737750 function pppColorShiftStore        # (src, base) dword at base + g_pppColorConShift = *src; the shift cleared
 0x00737770 function pppDrawMdlDraw            # ppp program table record "pppDrawMdl" draw; not a function start in the Ghidra dump
 0x00737b20 function pppDrawMdlSemiDraw        # ppp program table record "pppDrawMdlSemi" draw; not a function start in the Ghidra dump
 0x00737f40 function pppDrawMdlTsDraw          # ppp program table record "pppDrawMdlTs" draw; not a function start in the Ghidra dump
@@ -1726,26 +1741,35 @@
 0x0073b800 function pppDrawMdlInfCon2         # ppp program table record "pppDrawMdlInf" (0x00c3b2c8) +0x20 second set-up; "pppDrawMdlInf" (0x00c3c970) +0x20 second set-up
 0x0073b830 function pppDrawMdlInfDes          # ppp program table record "pppDrawMdlInf" +0x24 destructor
 0x0073b9b0 function pppDrawMdlInfDraw         # ppp program table record "pppDrawMdlInf" draw; not a function start in the Ghidra dump
+0x0073ce30 function pppVu0MoveVia             # (dst, src) src through the emulated VU0 register 0x00c8f980 into dst (pppDrawMdlInfDraw)
+0x0073ce80 function pppVu0LoadVf00            # (dst) dst = g_Vu0_Vf00 (pppDrawMdlInfDraw)
+0x0073ceb0 function pppVu0Length              # (v) -> f32: emulated VU0 length: v into 0x00c8f830, squares, sums at 0x00c8f820, g_Vu0_Q = sqrt|x²+y²+z²| (_CIsqrt), vf00.x + Q returned and in 0x00c8f830 (pppDrawMdlInfDraw)
 0x0073cfb0 function pppDrawMdlPSimCon         # ppp program table record "pppDrawMdlPSim" (0x00c3b4d0) +0x1c set-up; "pppDrawMdlPSim" (0x00c3cb78) +0x1c set-up
 0x0073cfe0 function pppDrawMdlPSimCon2        # ppp program table record "pppDrawMdlPSim" (0x00c3b4d0) +0x20 second set-up; "pppDrawMdlPSim" (0x00c3cb78) +0x20 second set-up
 0x0073d010 function pppDrawMdlPSimDes         # ppp program table record "pppDrawMdlPSim" +0x24 destructor
 0x0073d070 function pppDrawMdlPSimDraw        # ppp program table record "pppDrawMdlPSim" draw
+0x0073d7c0 function pppVu0Length_2            # the pppVu0Length body again (pppDrawMdlPSimDraw)
 0x0073d8c0 function pppDrawMdlCameraCon       # ppp program table record "pppDrawMdlCamera" (0x00c3b688) +0x1c set-up; "pppDrawMdlCamera" (0x00c3cd30) +0x1c set-up
 0x0073d8f0 function pppDrawMdlCameraCon2      # ppp program table record "pppDrawMdlCamera" (0x00c3b688) +0x20 second set-up; "pppDrawMdlCamera" (0x00c3cd30) +0x20 second set-up
 0x0073d920 function pppDrawMdlCameraDes       # ppp program table record "pppDrawMdlCamera" +0x24 destructor; not a function start in the Ghidra dump
 0x0073d930 function pppDrawMdlCameraDraw      # ppp program table record "pppDrawMdlCamera" draw; not a function start in the Ghidra dump
+0x0073e110 function pppVu0LoadVf00_2          # the pppVu0LoadVf00 body again
+0x0073e140 function pppVu0Length_3            # the pppVu0Length body again (pppDrawMdlCameraDraw)
 0x0073e240 function pppDrawMdlLoopCon         # ppp program table record "pppDrawMdlLoop" (0x00c3b638) +0x1c set-up; "pppDrawMdlLoop" (0x00c3cce0) +0x1c set-up
 0x0073e270 function pppDrawMdlLoopCon2        # ppp program table record "pppDrawMdlLoop" (0x00c3b638) +0x20 second set-up; "pppDrawMdlLoop" (0x00c3cce0) +0x20 second set-up
 0x0073e2a0 function pppDrawMdlLoopDes         # ppp program table record "pppDrawMdlLoop" +0x24 destructor; not a function start in the Ghidra dump
 0x0073e2b0 function pppDrawMdlLoopDraw        # ppp program table record "pppDrawMdlLoop" draw; not a function start in the Ghidra dump
+0x0073e990 function pppShapeIterInit          # (shape, it) it = (set_ptr32(shape), shape+8, 0, 0, shape+0x14, 0, 0)
 0x0073e9d0 function pppDrawMdlLoopZCon        # ppp program table record "pppDrawMdlLoopZ" (0x00c3b7c8) +0x1c set-up; "pppDrawMdlLoopZ" (0x00c3ce70) +0x1c set-up
 0x0073ea00 function pppDrawMdlLoopZCon2       # ppp program table record "pppDrawMdlLoopZ" (0x00c3b7c8) +0x20 second set-up; "pppDrawMdlLoopZ" (0x00c3ce70) +0x20 second set-up
 0x0073ea30 function pppDrawMdlLoopZDes        # ppp program table record "pppDrawMdlLoopZ" +0x24 destructor; not a function start in the Ghidra dump
 0x0073ea40 function pppDrawMdlLoopZDraw       # ppp program table record "pppDrawMdlLoopZ" draw; not a function start in the Ghidra dump
+0x0073f180 function pppShapeIterInit_2        # the pppShapeIterInit body again
 0x0073f1c0 function pppDrawMdlLoopDisPosCon   # ppp program table record "pppDrawMdlLoopDisPos" (0x00c3b7f0) +0x1c set-up; "pppDrawMdlLoopDisPos" (0x00c3ce98) +0x1c set-up
 0x0073f1f0 function pppDrawMdlLoopDisPosCon2  # ppp program table record "pppDrawMdlLoopDisPos" (0x00c3b7f0) +0x20 second set-up; "pppDrawMdlLoopDisPos" (0x00c3ce98) +0x20 second set-up
 0x0073f220 function pppDrawMdlLoopDisPosDes   # ppp program table record "pppDrawMdlLoopDisPos" +0x24 destructor; not a function start in the Ghidra dump
 0x0073f230 function pppDrawMdlLoopDisPosDraw  # ppp program table record "pppDrawMdlLoopDisPos" draw; not a function start in the Ghidra dump
+0x0073f9a0 function pppShapeIterInit_3        # the pppShapeIterInit body again
 0x0073f9e0 function pppDrawMdlCameraLoopCon   # ppp program table record "pppDrawMdlCameraLoop" (0x00c3b6b0) +0x1c set-up; "pppDrawMdlCameraLoop" (0x00c3cd58) +0x1c set-up
 0x0073fa10 function pppDrawMdlCameraLoopCon2  # ppp program table record "pppDrawMdlCameraLoop" (0x00c3b6b0) +0x20 second set-up; "pppDrawMdlCameraLoop" (0x00c3cd58) +0x20 second set-up
 0x0073fa40 function pppDrawMdlCameraLoopDes   # ppp program table record "pppDrawMdlCameraLoop" +0x24 destructor; not a function start in the Ghidra dump
@@ -1760,6 +1784,7 @@
 0x00741450 function pppDrawShapeXCon          # ppp program table record "pppDrawShapeX" (0x00c3b1b0) +0x1c set-up; "pppDrawShapeX" (0x00c3b1b0) +0x20 second set-up; "pppDrawShapeX" (0x00c3c858) +0x1c set-up and 1 more
 0x00741570 function pppDrawShapeRevCon        # ppp program table record "pppDrawShapeRev" (0x00c3b7a0) +0x1c set-up; "pppDrawShapeRev" (0x00c3b7a0) +0x20 second set-up; "pppDrawShapeRev" (0x00c3ce48) +0x1c set-up and 1 more
 0x007415a0 function pppDrawShapeRevDraw       # ppp program table record "pppDrawShapeRev" draw; not a function start in the Ghidra dump
+0x007419e0 function pppShapeRandFlip          # (def, out) u16 out = 1; for bits 0/1 of def+0xf, op_random(1.0) > 0 sets that bit of out's high byte (pppDrawShapeRevDraw)
 0x00742b50 function pppDrawShapeFieldCon      # ppp program table record "pppDrawShapeField" +0x1c set-up
 0x00742bd0 function pppDrawShapeFieldDes      # ppp program table record "pppDrawShapeField" +0x24 destructor
 0x00742cc0 function pppDrawShapeFieldDraw     # ppp program table record "pppDrawShapeField" draw
@@ -1932,6 +1957,7 @@
 0x0075b130 function pppKeLnsLpTDes            # ppp program table record "pppKeLnsLpT" +0x24 destructor
 0x0075b160 function pppKeLnsLpTDraw           # ppp program table record "pppKeLnsLpT" draw
 0x0075b230 function pppKeLnsLpTOtDraw         # the g_pppOtList draw pppKeLnsLpTCon registers (node area+0xb0)
+0x0075b680 function magic_nop_0075b680        # g_MagicImports slot 422 (4 overlays): a lone ret; hidden from the dump
 0x0075b690 function pppKeAcmCic               # ppp program table record "pppKeAcmCic" step
 0x0075b6b0 function pppKeAccSpdSv             # ppp program table record "pppKeAccSpdSv" step; not a function start in the Ghidra dump
 0x0075b6c0 function pppKeAccSpdSvCon          # ppp program table record "pppKeAccSpdSv" +0x1c set-up; not a function start in the Ghidra dump
@@ -2098,6 +2124,7 @@
 0x0076d9c0 function dvd_cd_id_size            # fh v3:cg2 0x76dad0
 0x0076da40 function dvd_cd_unk7 # () -> 0xf: one of seven getters by MsGetSaveConfigEnglish/TkGetLang, all returning the same; name ours (the eighth/ninth of the dvd_cd_* family)
 0x0076dac0 function dvd_cd_unk8 # () -> 0x10: one of seven getters by MsGetSaveConfigEnglish/TkGetLang, all returning the same; name ours (the eighth/ninth of the dvd_cd_* family)
+0x0076dc20 function cd_size_from_table # cdecl(n): 1 when entry n + g_CdLib+0x20 of the sector table has bit 23 clear and bit 22 set (size from sizetbl.bin), else 0; name ours
 0x0076dc50 function get_read_buffer           # () -> the CD reader's buffer (0x01128ac8); Fahrenheit Switch BSim 1.00 0x710031e670
 0x0076de90 function printf_cut                # fh switch:bsim1.00 0x71003202d0
 0x0076e5e0 function read_err_disp_set         # (v): byte 0x01128a87 = v; Fahrenheit Switch BSim 1.00 0x710031ea70
@@ -2940,6 +2967,9 @@
 0x007b2ad0 function MsDeathYoujinbou          # fh v3:exact 0x007b2ae0
 0x007b2b00 function MsGetSummonEnergy         # fh v3:cg4 0x7b2b10
 0x007b2b20 function MsGetYoujinbouCom         # fh v3:bsim1.00 0x007b2b30
+0x007b2b70 function msVoiceCheckStanbyOn      # g_MagicImports slot 593 (2 overlays): with 0x0112c8f0 set, msVoiceCheckStanby(1) != 0 -> -1 (else continues); hidden from the dump
+0x007b2ba0 function msVoiceCheckStanbyOff     # g_MagicImports slot 595 (2 overlays): with 0x0112c8f0 set, msVoiceCheckStanby(0) != 0 -> -1 (else continues); hidden from the dump
+0x007b2be0 function msVoiceIsStreaming        # g_MagicImports slot 594 (2 overlays): SndGetStreamState() != 0 -> 1; hidden from the dump
 0x007b2c10 function msVoiceCheckStanby        # fh v3:exact 0x007b2c20
 0x007b2dc0 function MsGetChrStatInfo          # switch over ~340 actor properties; was Battle_GetActorProperty
 0x007b4a70 function Battle_ChrMoveFlags       # (actor) -> u32 actor +0x4ac (bits 0-1: a move under way), | 8 while +0x3fb; used by MsGetChrStatInfo and 0x007a4f80
@@ -2953,6 +2983,7 @@
 0x007b72c0 function MsGetTargetSortList       # fh v3:exact 0x007b7240
 0x007b78c0 function MsSetBallSpline           # fh v3:exact 0x007b7840
 0x007b7eb0 function MsEffectGetBufferAddress  # fh switch:bsim1.00 0x7100391ac0
+0x007b7f20 function MsGetBattle112be90        # g_MagicImports slot 592 (2 overlays): returns the dword at 0x0112be90; hidden from the dump
 0x007b7f50 function MsEffectSetCameraBufFloat # fh v3:exact 0x007b7ed0
 0x007b7f70 function Native_CamFocusTimeLinear    # 0x602e: args (frames) -> 0; linear transition time for the battle camera's focus point (half 0, 0x007bde50 type 1); paired with 0x6010 (eye half)
 0x007b8050 function Native_Cam_6030            # 0x6030: (frames): MsCameraMoveFrame(cam, 0, 0, frames, 3); 0; ported in native_cam
@@ -3165,6 +3196,7 @@
 0x007ea120 function op_spline_xyz             # fh v3:exact 0x007ea030
 0x007ea2d0 function op_spline_xyz_table       # fh v3:exact 0x007ea1e0
 0x007ea700 function op_unit_m_scale           # fh v3:exact 0x007ea610
+0x007eaac0 function magic_ret0_007eaac0       # g_MagicImports slot 252 (2 overlays): xor eax, eax; ret; hidden from the dump
 0x007eaad0 function op_flash_path3            # fh v3:exact 0x007ea9e0
 0x007eb300 function op_func_after_ot3d_free   # op_func_ot_free(slot, 0x20): the free of op_func_after_ot3d_set's list
 0x007eb320 function op_func_after_ot3d_set    # fh v3:bsim1.00 0x007eb230
@@ -3200,6 +3232,7 @@
 0x007fb530 function op_et_bindeff2_draw_off   # (h) -> 8 if newly set: draw flags (g_EtChrDrawFlags2 if nonzero, else g_EtChrDrawFlags) |= 8 when bind flags & 0x10; the set form of op_et_bindeff2_draw_on
 0x007fb5a0 function op_et_bindeff2_draw_on    # fh v3:bsim1.00 0x007fb4c0
 0x007fb610 function op_et_bindeff2_draw_set   # (h, hide) op_et_bindeff2_draw_off (hide) or _draw_on, one body; returns ~old & 8
+0x007fb6d0 function op_et_bindeff2_off        # (h) bind flags &= 0xf8cf, then opu_unit_free_by_id(g_OpusBattle, 0x50001800 + record index): the unit op_et_bindeff2 starts with opu_et_unit(oef2, 0, 0x18, 0x50001800 + i)
 0x007fb7f0 function op_et_bindeff2_walk_off   # (h) bind flags |= 0x100 (op_et_bindeff2_walk_on clears it)
 0x007fb830 function op_et_bindeff2_walk_on    # fh v3:bsim1.00 0x007fb750
 0x007fb870 function op_et_bind_default_water  # () u16 g_EtBindDefault = (g_EtBindDefault & 0xcbff) | 0x800, the word left in eax
@@ -3230,12 +3263,18 @@
 0x007fc650 function op_et_monster_free        # fh v3:exact 0x007fc570
 0x007fc780 function op_et_monster_init        # fh v3:exact 0x007fc6a0
 0x007fc8a0 function op_et_monster_add         # (oef2) -> -1 null, 0 present or no slot, 1: first free g_OpusMonsters slot, op_oef2_set2 + opu_et_unit(oef2, 0, 0, -1)
+0x007fc900 function op_et_flag2_on            # g_MagicImports slot 575 (6 overlays): byte 0x011a006e |= 2; hidden from the dump
+0x007fc910 function op_et_flag2_off           # g_MagicImports slot 574 (6 overlays): byte 0x011a006e &= 0xfd; hidden from the dump
 0x007fc920 function op_et_prayeff_send_read_through # fh v3:exact 0x007fc840
 0x007fc970 function op_et_oef2_start2         # (oef2) the op_et_oef2_start body again
+0x007fc990 function op_et_flag1_on            # g_MagicImports slot 633 (1 overlay): byte 0x011a006e |= 1; hidden from the dump
+0x007fc9a0 function op_et_flag1_off           # g_MagicImports slot 631 (1 overlay): byte 0x011a006e &= 0xfe; hidden from the dump
+0x007fc9b0 function op_et_weapon_unit         # (h) -> unit ID: weapon object by the record's u16 +0xe (opus_get_weapon_by_no; else record +8, slot 0), opu_et_unit(obj, 0, 9, (0x300000 + g_OpusWeaponEffCount[slot]++) << 8 | index); g_MagicImports slot 623
 0x007fca40 function op_et_weapon_afterimage_fade # fh v3:bsim1.00 0x007fc960
 0x007fca90 function op_et_weapon_free         # fh v3:exact 0x007fc9b0
 0x007fcaf0 function op_et_weapon_free_all     # fh v3:exact 0x007fca10
 0x007fcb60 function op_et_weapon_init         # fh v3:exact 0x007fca80
+0x007fcbd0 function magic_nop_007fcbd0        # g_MagicImports slot 224 (1 overlay): a lone ret; hidden from the dump
 0x007fcbf0 function op_event_effect_free      # fh v3:exact 0x007fcb10
 0x007fcc20 function op_event_effect_init      # fh v3:exact 0x007fcb40
 0x007fcc40 function op_fp_effect_free         # fh v3:bsim1.00 0x007fcb60
@@ -3253,8 +3292,10 @@
 0x007fd720 function opu_end_all               # fh switch:bsim0.91 0x71003f1f50
 0x007fd760 function opu_et_init               # fh v3:exact 0x007fd680
 0x007fd7f0 function opu_et_unit               # fh v3:exact 0x007fd710
+0x007fda30 function opu_et_unit_ofs           # (oef2, a, b, c) arg0 += 0x10, tail jmp opu_et_unit
 0x007fda40 function opu_et_unit_free_by_id    # fh switch:bsim1.00 0x71003ed4a0
 0x007fda60 function opu_et_oef2_free          # (oef2) the op_et_oef2_free body again
+0x007fdc80 function opu_debug_reload          # g_MagicImports slot 717 (130 overlays), after opu_main_host: with the debug flag 0x02322790, per bit of 0x02321580 frees/reloads the debug oef2 objects (0x023215c0..0x023215dc) through op_et_encount_effect_free, 0x007e5c10, op_oef2_set2, 0x007e3b70; hidden from the dump
 0x007fde30 function opu_unit_free_by_id       # fh v3:exact 0x007fdd50
 0x007fdf70 function opu_unit_free_by_oef2     # fh v3:exact 0x007fde90
 0x007fe1a0 function opus_change_chrhd_battle_to_ffx # fh v3:exact 0x007fe0c0
@@ -3281,12 +3322,15 @@
 0x007ffa90 function op_3d_vol_pan_get         # fh v3:exact 0x007ff9b0
 0x007ffc60 function op_oef2_se_3d_move        # fh v3:exact 0x007ffb80
 0x007ffd20 function op_oef2_se_3d_on          # fh v3:exact 0x007ffc40
+0x007ffde0 function op_oef2_se_volume         # (cue, vol) kind-1 cue: SndSepVolumeTranslate(record +8 id, vol, 0); g_MagicImports slot 663 (10 overlays)
 0x007ffe10 function op_oef2_se_on             # fh v3:exact 0x007ffd30
+0x007ffeb0 function op_oef2_sound_cue_push    # (cue, arg) -> 0/-1: kind-1 cue with a record: SndSepTransSepOnly(record, record +0xc), ring slot (u16 head 0x023c3640 + count 0x023c3642) & 31 of 0x023c3540 = cue, 0x023c35c0 = arg, count+1; -1 when 32 are queued (op_oef2_sound_cue_multi)
 0x007fff30 function op_oef2_sep_free_all      # fh v3:exact 0x007ffe50
 0x007fff80 function op_oef2_sep_number_get    # fh v3:exact 0x007ffea0
 0x008000f0 function op_oef2_sound_cue_check   # fh v3:exact 0x00800010
 0x00800170 function op_oef2_sound_cue_loop    # fh v3:exact 0x00800090
 0x008002c0 function op_oef2_sound_cue_multi   # fh v3:exact 0x008001e0
+0x00800330 function op_oef2_sound_wait        # g_MagicImports slot 550 (100 overlays), between op_oef2_sound_cue_check and op_oef2_stream_cue: loops op_oef2_sound_cue_loop until 0x023c3648/0x023c364c are clear (SndDataSendSync(0) for -1) and u16 0x023c3642 is 0; hidden from the dump
 0x00800390 function op_oef2_stream_cue        # fh v3:exact 0x008002b0
 0x00800580 function op_effect_init            # fh v3:exact 0x008004a0
 0x00800610 function op_effect_run_before      # fh v3:exact 0x00800530
@@ -3311,6 +3355,7 @@
 0x00801700 function opus_prog_on              # fh v3:exact 0x00801620
 0x00803730 function op_mdc_mem_transfer_cue_free # fh v3:exact 0x00803650
 0x00803760 function op_mdc_mem_transfer_cue_free_all # fh v3:bsim1.00 0x00803680
+0x008037c0 function op_chara_packet_size_get  # (chr, mode, visible) -> bytes: mimic: 0x0080f580(mode, visible); else per model (Ch_GetNbModel, hidden skipped with visible) Ch_ModelCalcSizeEffectPacket rounded to 16 (+ size/28 * 12 rounded for mode 2), + 0x10 per model + 0x10; g_MagicImports slot 363
 0x008044e0 function opu_motion                # fh switch:cg2 0x71003e4c60
 0x00804c90 function opu_v_en_bone             # fh switch:cg2 0x71003e5500
 0x008061a0 function opus_mdc_free             # fh v3:exact 0x008060c0
@@ -3729,6 +3774,7 @@
 0x00831940 function Sg_GuiSetTextureAnim      # (v): byte 0x013007eb = v; partner of Sg_GuiGetTextureAnim
 0x00831950 function Sg_PLightAllocate         # fh v3:exact 0x008319d0
 0x008319b0 function Sg_PLightDefine           # fh v3:exact 0x00831a30
+0x00831a30 function Sg_PLightDispose_thunk    # g_MagicImports slot 402 (3 overlays), after Sg_PLightDefine: jmp Sg_PLightDispose; hidden from the dump
 0x00831a40 function Sg_PLightGetAttenuation   # fh v3:bsim1.00 0x00831ac0
 0x00831a60 function Sg_PLightGetColor         # fh v3:exact 0x00831ae0
 0x00831ad0 function Sg_PLightGetEnable        # (i) -> i8 enabled (+0x28) of point light i, 0 past the last (docs/formats/main.md)
@@ -3759,6 +3805,7 @@
 0x00832db0 function Ch_AllClearFlags24       # ours: chr +0x194 &= 0xf8ffffff for every active character (Sg_MainLoop)
 0x00832e10 function Ch_CalcMain               # fh v3:exact+call.cs 0x00832e90 cdecl
 0x00833760 function Ch_FunctionHistoryClear  # ours: g_ChrFunctionHistory9e8 = 0 (next to the chr.c function-history logger 0x00833770)
+0x00833770 function Ch_FunctionHistory        # ours: for each active character whose header has no models (+6 == 0) sprintfs "%s:%s:%d\n" (name chr+4, file, line) into the debug line 0x023c4000; cdecl (file, line); next to Ch_FunctionHistoryClear
 0x008337f0 function Ch_CheckNbBattleChr       # fh v3:bsim1.00 0x00833870
 0x00833800 function Ch_ClothResetAll         # Switch name (0x71004161d0): Ch_ClothReset on every active character
 0x00833860 function Ch_ClothResetRelation     # fh v3:exact 0x008338e0
@@ -3841,10 +3888,12 @@
 0x008366f0 function Sg_RadToDeg               # (r) -> r * 180.0 (0x00b48378) / pi (0x00b582f0) as f32; Ch_Neck
 0x00836710 function enableGameControlTextureAnimation # fh v3:bsim1.00+call.cs 0x00836790 cdecl
 0x00836720 function Angle_Wrap_00836720       # the same code as Angle_Wrap; a copy in the character file (8 callers)
+0x00836790 function Ch_CheckRadian            # ours: if !(a < g_ChRadianHi) || a <= g_ChRadianLo sprintfs "radian value error = %f" into 0x023c4000, then wraps the angle (Angle_Wrap_0083a010) and drops the result
 0x00836830 function ChN_DisposeSystemMGRP     # fh v3:bsim1.00 0x008368b0
 0x00836850 function ChN_ExistSystemMGRP       # fh v3:exact 0x008368d0
 0x00836870 function ChN_ReadSystemMGRP        # (chr id, n): resident motion group via SG_LoadResidentGroup, then SG_AddMotionGroup; was Chr_LoadSystemMgrp
 0x00836960 function ChN_ReadSystemMGRP_FinishRead # fh switch:bsim1.00 0x71004227a0
+0x00836a40 function Ch_MgrpRead_thunk         # g_MagicImports slot 27 (27 overlays), between ChN_ReadSystemMGRP and ChN_ReadSystemMGRPsync: jmp Ch_MgrpRead; hidden from the dump
 0x00836a50 function ChN_ReadSystemMGRPsync    # fh v3:exact 0x00836ad0
 0x00836a80 function Ch_DisposeAllMGRP         # fh v3:exact 0x00836b00
 0x00836ad0 function Ch_DisposeMGRP            # fh switch:bsim1.00 0x71004223e0
@@ -4149,6 +4198,8 @@
 0x00847b00 function Gu_DrawStart              # (buffer): GIF tag (one A+D) at buffer+0x10, g_GuPacket = g_GuPacketData = buffer, count 2, then Gu_SetTest(1, 1, 0, 0, 0, 0, 1, 2); fh v3:exact 0x00847b00
 0x008482f0 function Gu_FontSetX               # g_GuPrintX = x; Switch name, alphabetical slot Gu_DrawStart..Gu_PacketEndTag
 0x00848300 function Gu_FontSetY               # g_GuPrintY = y; Switch name, alphabetical slot
+0x00848310 function Gu_FontSetupWindow        # (window) print base/cursor = client origin +0x80/+0x82 + position +0x14/+0x16, client size at 0x01303704/08, italic/bold off, Gu_PrintSetSize(0x100), colour/CR cleared, 0x013036f8 = 0x013036f4; Switch name, alphabetical slot Gu_FontSetY..Gu_PacketEndTag
+0x008483e0 function Gu_SetAlpha               # (a, b, c, d, fix): A+D ALPHA_1 (register 0x42) into g_GuPacketData, fields sign-extended into 64-bit shifts; no direct caller; own name (beside Gu_SetPrim/Rgbaq/Test)
 0x00848460 function Gu_PacketEndTag           # (): the open GIF tag's NLOOP (15 bits) = quadwords since Gu_PacketBeginTag - 1
 0x00848480 function Gu_SetPrim                # (prim): A+D PRIM (register 0) into g_GuPacketData, sign-extended to 64 bits
 0x008484c0 function Gu_SetRgbaq               # (r, g, b, a): A+D RGBAQ (register 1) into g_GuPacketData, a | 0x800000 as the top field
@@ -4180,8 +4231,10 @@
 0x008493e0 function Gu_ButtonSetToggleValue   # fh v3:bsim1.00 0x008493e0
 0x00849440 function Gu_MouseInRect            # (rect {i16 x, y, w, h}, dx, dy) -> 1 when g_GuMouseX/Y is strictly inside the moved rectangle
 0x00849490 function Gu_WindowMouseIn          # (window) Gu_SetHScale(+0x8e); mouse strictly inside the i16 rect +0xc; own name
+0x008494f0 function Gu_ControlFreeText        # (control) user_free(+0x28) when u16 +0x26 != 0; no direct caller; own name
 0x008496d0 function Gu_WindowControlSetRect   # (window, id, x, y, w, h) the control rects (x, y + client origin +0x80), -1 kept; own name
 0x00849780 function Gu_Hide                   # fh switch:bsim1.00 0x7100440810
+0x008497f0 function Gu_InitBox                # (box, x, y, w, h) three rect copies, tints 0x80808080/0x8080, +0x22 = 0; Switch name, alphabetical slot Gu_Hide..Gu_Main (Gu_HoseiClock, Gu_Init, Gu_InitBox)
 0x00849850 function Gu_Main                   # fh v3:exact 0x00849850
 0x00849970 function Gu_MessageBox             # fh v3:exact 0x00849970
 0x00849aa0 function Gu_MouseGetWindowY        # fh switch:bsim1.00 0x710043fd40
@@ -4193,6 +4246,7 @@
 0x00849b80 function Gu_MouseSetEnable         # 0x01303760 = on; Switch name, the one name between Gu_MouseSetCapture and Gu_MouseSetWindow
 0x00849b90 function Gu_MouseSetWindow         # fh v3:exact 0x00849b90
 0x00849bb0 function Gu_SelectorAllocate       # fh v3:exact 0x00849bb0
+0x00849bd0 function Gu_SelectorDispose        # (selector) user_free of +8 and +0xc (when +8 set), then of itself; Switch name, alphabetical slot Gu_SelectorAllocate..Gu_SelectorGetItemValue (frees itself)
 0x00849d10 function Gu_SelectorGetItemValue   # (selector): the selected item's value (+0xc array at +2), beside Gu_SelectorGetItemName
 0x00849d30 function Gu_SelectorGetItemName    # fh v3:bsim1.00 0x00849d30
 0x00849d50 function Gu_SelectorGetSelect      # (selector) -> i16 +2, the selected item
@@ -4242,6 +4296,7 @@
 0x0084b600 function Gu_WindowSetFlag2         # (window, on): flag bit 1 of +0x88 (the bit Gu_WindowOpen clears)
 0x0084b620 function Gu_WindowSetLocalTrans    # fh switch:cg4 0x71008b5e68
 0x0084b660 function Gu_WindowSetParent        # fh v3:bsim1.00 0x0084b660
+0x0084b670 function Gu_SetPopupWindow         # (w) 0x01303740 = w, the selector popup window (Gu_SelectorOpen stores it; the mouse handler routes clicks to it); own name
 0x0084b680 function Gu_WindowSetFlag1         # (window, on): flag bit 0 of +0x88 from on's low bit
 0x0084b6a0 function Gu_WindowSetTitle         # fh v3:cg19 0x84b6a0
 0x0084b6b0 function Gu_WindowSetW             # (window, w): +0x10 and copies; client +0x84 = w - 2 * left border (half of Gu_WindowSetSize)
@@ -4601,7 +4656,7 @@
 0x0086d670 function AtelInitSourceCodeDebugWork # fh v3:exact 0x0086d600
 0x0086d6d0 function AtelInitTotal             # registers the native function tables per group; was Script_InitNatives
 0x0086d950 function AtelIsBind                # fh v3:exact 0x0086d8e0
-0x0086d9d0 function AtelGetSave20             # g_SaveData +0x20 (u8); read by 0x008807b0. Fahrenheit's Switch BSim gives TkGetLastEventJumpIndex, which belongs to 0x0088d610
+0x0086d9d0 function AtelGetSave20             # ours: the Switch BSim name TkGetLastEventJumpIndex belongs to 0x0088d610 (its alphabetical Tk slot, menu module): g_SaveData +0x20 (u8)
 0x0086d9e0 function Script_TopTwoInts         # (worker, stack) -> 1 when the top two slots are both integers (kind 1): Script_Run's integer or float choice for arithmetic and comparisons
 0x0086da10 function AtelJumpGameOver          # fh v3:exact+call.cs 0x0086d9a0 cdecl
 0x0086dc10 function AtelLinkSigWorkNext       # (at, node): links a signal node after node/list head at (ffx_script::vm::bridge::signal)
@@ -4684,6 +4739,7 @@
 0x00871d70 function AtelExec_Internal_871d10  # fh call.cs stdcall
 0x00871e50 function AtelUpdateWaterStatus     # fh v3:exact 0x00871df0
 0x00871f30 function AtelUpdateWindowStatus    # fh switch:cg2 0x710046cc00
+0x008720d0 function Atel_SetScriptByteGate    # (v) 0x00c526d4 = v, gating 0x008655b0 writing script context +0x1e6; own name
 0x00872160 function TkChSetBattleChrNum       # fh v3:exact 0x00872100
 0x00872190 function TkCh_Allocate             # fh v3:exact 0x00872130
 0x00872210 function TkCh_Allocate2            # fh v3:exact 0x008721b0
@@ -4697,9 +4753,11 @@
 0x008724f0 function TkRefreshSoundMode        # fh v3:exact 0x00872490
 0x00872530 function Tk_SetScale               # (which, v) f32 0x01325b98[which != 0] = v; own name
 0x00872550 function TkSoftWareReset           # fh switch:bsim1.00 0x7100471580
+0x00872580 function Tk_ByteHighBit            # (b) b & 0x80; no caller; own name
 0x00872590 function Obj_GetFloat28            # (p) f32 +0x28; own name
 0x008725a0 function Ref_Deref                 # (ref) [[ref[0] + 0x20] + ref[1]]; own name
 0x008725c0 function Table_PairWord            # (table, i, second) word 0/1 of 8-byte entry i; own name
+0x008725e0 function Script_PcOffset           # (ctx, worker) worker +0x18 - *(ctx+4)+0x30 - *(ctx+4); own name
 0x00872650 function Script_WorkerLevel        # (worker, level) -> 0x4c-byte level block at worker+0x12c+level*0x4c, level clamped to 0..8 (types 5/6: 0..1); +0x18 PC, +0x1f request state, +0x20/+0x24 registers A/B, +0x28 float accumulator, +0x44 move block ptr, +0x48 turn block ptr
 0x008726f0 function Script_Jump               # (worker, level, label): level PC = the worker's code start + labels[label] (worker header +0x24) of the worker running at the call depth (level +0x0e + depth*2 inside a call); level +0x1e = 0
 0x00872860 function AtelCancelSignals         # (worker, level, mode): drops queued signals above level, replying to waiting REQSW/REQEW senders
@@ -4749,15 +4807,19 @@
 0x00875430 function AtelActorRemove           # fh v3:exact 0x008753b0
 0x00875510 function AtelActorSetUp2           # (..., messages, messages2, ...): script context +0x34 = messages, +0x38 = section 5 (or messages); was Event_InitScripts
 0x008756d0 function AtelBattleSetUp           # fh v3:exact 0x00875650
+0x00875af0 function Vibrate_BumpStream        # (k) stream k (clamped 0..7) u16 counter 0x01328170 + k*0x24 += 1, byte +2 = 0; record left in eax; own name
 0x00875d30 function Vibrate_CheckDone         # (pad) state 1/2 ends when both streams +6 are 0x200/0xfffe; own name
 0x00875de0 function TkGetVibrateOn            # (pad) -> u8 g_TkVibratePads[pad].+0x22, pad clamped to 0..7 (the byte TkStopVibrate clears)
 0x00875e10 function TkGetVibrateVolume        # fh switch:bsim1.00 0x7100479c70
 0x00875e50 function TkGetVibratePad           # (pad) -> &g_TkVibratePads[pad], pad clamped to 0..7
+0x00875e80 function Vibrate_ResetAll          # () 8 streams (0x01328150, 0x24 each): counters and both 0x10-byte entries cleared; g_TkVibrateOff 0, u16 0x01328274 = 0xff; own name
 0x00875ef0 function Vibrate_ResetPad          # (pad) +0x22, u16 +0x20 cleared, both 16-byte streams reset; own name
 0x00875f30 function Vibrate_ResetStream       # (stream) +4, u16 +8, +0xa cleared; own name
+0x00875f50 function TkSetVibrateOff           # (v) g_TkVibrateOff = low byte; own name
 0x00875f60 function TkSetVibrateMask          # fh v3:exact 0x00875ee0
 0x00875fb0 function TkSetVibrateStream        # fh v3:cg2 0x875f30
 0x00876160 function Vibrate_HoldStream        # (stream) +4 = 0xfffe0000, u16 +8 = 0; own name
+0x00876230 function Vibrate_SetStream         # (entry, src) entry from curve header src: +4 0, +6 (src[1]+1)*2, +8 src[0], +9 src[2], +0 set_ptr32(src+2); null: +4 0x02000000, +8 0, +0 0; own name
 0x00876290 function TkStopVibrate             # fh v3:exact 0x00876210
 0x008762f0 function TkStopVibrateAll          # fh v3:exact 0x00876270
 0x00876350 function Vibrate_StartStream       # (stream, curve) header (level, length, flag) into +8/+6/+9, pointer = curve + 2; own name
@@ -4790,8 +4852,14 @@
 0x00879a70 function AtelLoadSourceData        # fh v3:exact 0x008799f0
 0x00879f00 function AtelUpdateFilePath        # fh v3:exact 0x00879e80
 0x0087ddd0 function AtelDebugDrawRect         # fh switch:bsim1.00 0x710047b940
+0x00885110 function AtelSetDebugDraw          # (v) byte 0x01328a78, the debug draw toggle (debug pad button 0x800 flips it); own name
 0x00885120 function TkCreateDECI2Header       # fh v3:exact 0x00885080
+0x00885150 function TkGetDebugControler1Hist  # (i) TkGetControlerHist(0, 0, i) zero-extended; Switch name, alphabetical slot TkCreateDECI2Header..TkGetDebugControlerAnalog (two slots, two names)
+0x00885170 function TkGetDebugControler1TrigHist# (i) TkGetControlerTrigHist(0, 0, i); Switch name, alphabetical slot
 0x00885190 function TkGetDebugControlerAnalog # fh switch:bsim1.00 0x710047b9d0
+0x008851b0 function TkGetDebugControlerHist   # (i) TkGetControlerHist(1, 0, i); Switch name, alphabetical slot after TkGetDebugControlerAnalog (Hist, ReptHist, TrigHist match the callees)
+0x008851d0 function TkGetDebugControlerReptHist# (i) TkGetControlerReptHist(1, 0, i); Switch name, alphabetical slot
+0x008851f0 function TkGetDebugControlerTrigHist# (i) TkGetControlerTrigHist(1, 0, i); Switch name, alphabetical slot
 0x00885240 function TkInitDeci2               # fh v3:exact 0x008851a0
 0x00885420 function TkIsDeci2Send             # () -> i8 0x0132f580, sign-extended; Switch symbol name (BSim), in the DECI2 code beside TkCreateDECI2Header
 0x00885640 function Phyre_PRendering_PRenderInterfaceBase_GetClearMaskDescription # fh switch:bsim1.00 0x710004aa80 Phyre::PRendering::PRenderInterfaceBase::GetClearMaskDescription
@@ -4871,6 +4939,7 @@
 0x00887ba0 function TkSndUpdate3              # fh switch:bsim1.00 0x710048c750
 0x00887bd0 function TkSndUpdateMain           # fh v3:exact 0x00887b40
 0x00887c20 function FFXGetAsiaMode            # fh v3:bsim1.00 0x00887b90
+0x00887c30 function TkGetLang_thunk           # g_MagicImports slot 279 (4 overlays): jmp TkGetLang; hidden from the dump
 0x00887c40 function FFXGetVideoMode           # () -> (i8) 0x01330831 sign-extended (between g_TkLang and g_FFXAsiaMode); fh switch:bsim1.00 0x7100487fe0
 0x00887c50 function FFXIsDebug                # fh v3:bsim1.00 0x00887bc0
 0x00887c60 function sceGsSetDefDrawEnv2       # () -> (i8) 0x00b5ec4f sign-extended (1 in the image), sets nothing; fh switch:bsim1.00 0x71001c2920
@@ -4925,7 +4994,9 @@
 0x00888c40 function Pad_MapButtons               # (a, b, buttons): remaps button bits through the config table 0x01330488
 0x00888d70 function TkGetControlerHist        # fh v3:bsim1.00 0x00888ce0
 0x00888d90 function TkGetControlerId          # (pad, port) work byte +0x80, into al over the work pointer; Switch name, alphabetical slot TkGetControlerHist..
+0x00888db0 function TkGetControlerIdHist      # (pad, port, i) frame byte +0 into al over the frame pointer; Switch name, the one name for the slot TkGetControlerId..TkGetControlerPress
 0x00888dd0 function TkGetControlerPress       # (pad, port) work byte +0x82; Switch name, alphabetical slot (between the Id and Press hist readers)
+0x00888df0 function TkGetControlerPressHist   # (pad, port, i) frame byte +1; Switch name, alphabetical slot TkGetControlerPress..TkGetControlerWork2
 0x00888e10 function TkGetControlerWork2       # (a, b) -> &0x013304c0[(a + b) * 0x20] (beside g_PadButtonMap)
 0x00888e30 function TkGetControlerRept2Hist   # (pad, port, i) frame u16 +0x1c, into ax over the frame pointer; Switch name, alphabetical slot TkGetControlerWork2..TkGetControlerReptHist
 0x00888e50 function TkGetControlerReptHist    # fh v3:bsim1.00 0x00888dc0
@@ -4954,6 +5025,7 @@
 0x0088b430 function Math_Atan2XZ                 # (x0, z0, x1, z1) -> angle with axis special cases
 0x0088b4d0 function Math_YawPitchTo              # (*yaw, *pitch, from xyz, to xyz)
 0x0088b730 function Math_InRadius                # (r, dx, dy, dz) -> dx^2+dy^2+dz^2 <= r^2
+0x0088b800 function Math_ClampPi              # (a) a clamped to [-pi, pi] (float pi); NaN passes; own name
 0x0088bc20 function Math_WrapAngle               # wraps to [-pi, pi]
 0x0088bc70 function Math_Det3Points           # (x1, y1, x2, y2, x3, y3) -> float twice the signed triangle area (sums in doubles, rounded to float)
 0x0088c0a0 function Math_AngleFrom12Bits      # (a) Math_WrapAngle((a & 0xfff) * 2pi / 4096), f32 steps; own name
@@ -5031,19 +5103,39 @@
 0x0088ebe0 function TkSetOutputEncount        # (on): u8 0x01330871 (the byte TkGetOutputEncount reads)
 0x0088ebf0 function TkSetStartMapIndex        # (id, index) -> 0x0133085c/0x01330860; Switch name, alphabetical slot TkSetOutputEncount..TkSetTGS
 0x0088ec10 function TkSetTGS                  # (v): u8 g_TkTGS (TkGetTGS's byte)
+0x0088ec20 function TkConfig_SetByteC         # (v) g_FFXConfig byte +0xc; own name
 0x0088ec60 function TkVU1SyncPath             # fh v3:bsim1.00+call.cs 0x0088ebd0 cdecl
+0x0088ec90 function Tk_NoteEternalCalm        # (scene) isEternalCalmScene; first time: byte 0x018663d0 = 1, 0x018663d4 = 0; own name
+0x0088ecf0 function TkDebugPrint              # (fmt) dbgPrintf (a PC stub), returns 1; no caller; own name
 0x0088edc0 function TkGetDebugFontBuffer      # None
+0x0088edf0 function TkGetDebugFontStringWidth # (proportional, s) TkGetStrWidth >> 4; Switch name, the only slot TkGetDebugFontBuffer..TkGetStrWidth (picked by behaviour among its names)
 0x0088ee70 function TkGetStrWidth             # (proportional, s) -> width in 1/16: per character (lead byte >= 0x80: two bytes) g_FontWidths[c] + 2, or 9 / 13 for one / two bytes
 0x0088f140 function TkPutDebugFontString      # fh switch:bsim1.00 0x7100492f20
 0x0088f4c0 function TkPutDebugFontStringP     # fh switch:bsim1.00 0x7100492a20
 0x0088fab0 function TkSetDebugFontBuffer      # (p) debug font current pointer = p (only logs past the end +0xc); Switch name, alphabetical slot TkPutDebugFontStringP..TkSetDebugFontLocate
 0x0088faf0 function TkSetDebugFontLocate      # fh switch:bsim1.00 0x7100492180
+0x0088fb10 function TkDebugFont_SetWord4      # (p) g_TkDebugFontBuffer word +4 = set_ptr32(p); own name
 0x008904e0 function TkSetDebugFontLocate2     # (x, y): 0x0133c8dc/e0 = x << 4, y << 4 (TkSetDebugFontLocate's pair at 0x0133c8d4)
+0x00890780 function TkDebugFont_SwapBuffer    # () g_TkDebugFontBuffer flipped between 0x0133c8c4/0x0133c8c8; write pointers +0/+4 = start +8; 0x0133c8d0..d8 = 0; own name
+0x008907e0 function TkEucToSjis               # (src, out) one EUC char to Shift-JIS for the debug font: 0 -> 0, ASCII -> 1, two-byte -> 2; own name
+0x00890860 function Dma_PutTagEx              # (p, qwc, pce, id, irq, addr) tag QWC (1 for 0), byte 3 ((irq<<3|id)<<2|pce)<<2, addr; zero quadword after for qwc 0; returns the end; own name
+0x008908c0 function Dma_PutCall               # (p, addr) call tag (id 5) QWC 1 to addr + a zero quadword; byte 2 untouched; returns p + 0x20; own name
+0x00890910 function Dma_PutEnd                # (p) end tag (id 7) + a zero quadword; returns p + 0x20; own name
+0x00890960 function Dma_PutCnt                # (p) cnt tag (id 1) + a zero quadword; own name
+0x008909b0 function Dma_PutRet                # (p) ret tag (id 6) + a zero quadword; own name
 0x00890a00 function TkGetCharWidth            # (proportional, c) -> one character's width as TkGetStrWidth counts it: g_FontWidths[c] + 2, or 9 / 13
 0x00890a30 function Gs_Pack5c                 # copy of Gs_Pack5; own name
+0x00890a60 function Dma_CloseCnt              # (p, end, flags) cnt tag (0x1000) at p, QWC (end - p + 15) / 16 - 1, last word QWC | flags; returns end; own name
+0x00890aa0 function Dma_CloseCnt2             # (p, end, a, b) cnt tag, words 2-3 = a, b; returns end; own name
+0x00890ae0 function Dma_CloseNext             # (p, end, addr, a, b) next tag (0x2000) to addr; returns end; own name
+0x00890d30 function Dma_PutTagEx2             # a copy of Dma_PutTagEx; own name
+0x00890d90 function Dma_PutCall2              # (p, addr) a copy of Dma_PutCall; own name
+0x00890e70 function TOSepStop4e               # g_MagicImports slot 648 (10 overlays): 0x0133f77c = 0; SndIsSepPlay(0x8000004e) then SndSepStop(0x8000004e); hidden from the dump
 0x00890eb0 function TOBtlCloseHelpWin         # fh v3:bsim1.00 0x00890e20
+0x00890ec0 function TOBtlLibraSetState6       # g_MagicImports slot 372 (1 overlay), after Sg_SetFocus: u16 0x0133f6a8 = 6 (TOBtlLibraGetState reads it); hidden from the dump
 0x00890ee0 function TOBtlCloseSignWindow      # fh v3:bsim1.00 0x00890e50
 0x00890ef0 function TOBtlCloseSimpleHelpMes   # fh v3:bsim1.00+call.cs 0x00890e60 cdecl
+0x00890f10 function TOBwakkStop               # g_MagicImports slot 649 (10 overlays): TOSeqStopScene(2, "bwakk"), 0x008e89d0(), byte 0x0133c93f = 0; hidden from the dump
 0x00890f70 function TOBtlCtrlAuronLimitWindow # fh v3:exact 0x00890ee0
 0x00891140 function TOBtlCtrlChrNum           # fh v3:bsim1.00 0x008910b0
 0x00891220 function TOBtlCtrlEnemyLimit       # fh v3:exact 0x00891190
@@ -5083,14 +5175,20 @@
 0x00897200 function TOBtlDrawStdChrNameMessageWindow # fh call.cs cdecl
 0x00897240 function TOBtlDrawTidusLimitWindow # fh v3:exact 0x008971b0
 0x008976f0 function TOBtlGetChrName           # fh v3:cg6 0x897660
+0x00897770 function TOBtlLibraGetState        # g_MagicImports slot 373 (1 overlay): (i16) 0x0133f6a8; hidden from the dump
+0x00897780 function TOGetFloat133f790         # g_MagicImports slot 651 (10 overlays): fld 0x0133f790; hidden from the dump
+0x008977c0 function TOBwakkCheckTerm          # g_MagicImports slot 652 (10 overlays): with byte 0x0133c93f 1, TOSeqCheckTermScene(2, "bwakk"); hidden from the dump
+0x008977e0 function TOBgoodCheckTerm          # g_MagicImports slot 653 (10 overlays): TOSeqCheckTermScene(2, "bgood"); hidden from the dump
 0x008977f0 function TOBtlInit                 # fh v3:exact 0x00897760
 0x00897970 function TOBtlInitAuronLimitWindow # fh v3:exact 0x008978e0
 0x008979d0 function TOBtlInitChrNum           # fh v3:bsim1.00 0x00897940
 0x00897bd0 function TOBtlInitInfoWinMes       # fh v3:exact 0x00897b40
+0x00897dc0 function TOBtlLibraGetRects        # g_MagicImports slot 374 (1 overlay), before TOBtlOpenLibraWindow: TOSeqGetRect(2, "dum28"/"dum29", ...) and TOSeqGetPos-style 0x008ae450 calls into 0x0133f6a4..0x0133f744; hidden from the dump
 0x00897f70 function TOBtlInitLuluLimitWindow  # fh v3:exact 0x00897ee0
 0x00898010 function TOBtlInitStatusWin        # fh v3:exact 0x00897f80
 0x00898130 function TOBtlInitTargetBit        # fh switch:bsim1.00 0x710049aae0
 0x00898180 function TOBtlInitTidusLimitWindow # fh v3:exact 0x008980f0
+0x00898230 function TODum225GetNum            # g_MagicImports slot 655 (10 overlays): TOInitPadData(); TOSeqGetNum(2, "dum225", 0x0133f778); byte 0x0133c93f = 0; hidden from the dump
 0x00898260 function TOBtlMakeStatusBuff       # fh v3:exact 0x008981d0
 0x00898330 function TOBtlMakeTargetChrStatusBit # fh v3:exact 0x008982a0
 0x00898490 function TOBtlMakeTargetGroupBit   # fh v3:exact 0x00898400
@@ -5101,6 +5199,7 @@
 0x00898bf0 function TOBtlOpenLuluLimitWindow  # fh v3:exact 0x00898b60
 0x00898c60 function TOBtlOpenSignWindow       # fh v3:exact 0x00898bd0
 0x00898ca0 function TOBtlOpenTidusLimitWindow # fh v3:exact 0x00898c10
+0x00898dc0 function TOBwakkStart              # g_MagicImports slot 656 (10 overlays): 0x0133f520 = 0; TOSeqStartSceneDrawContinue(2, "bwakk"); byte 0x0133c93f = 1; hidden from the dump
 0x00898df0 function TOBtlPadScrollDown        # fh v3:exact 0x00898d60
 0x00898e20 function TOBtlPadScrollUp          # fh v3:exact 0x00898d90
 0x008990f0 function TOBtlSearchRevNearTarget  # fh v3:exact 0x00899060
@@ -5115,6 +5214,7 @@
 0x0089a330 function TOBtlSetNextAction        # fh v3:exact 0x0089a2a0
 0x0089a630 function TOBtlSetPrevAction        # fh v3:exact 0x0089a5a0
 0x0089a8b0 function TOBtlSetTargetHelpMes     # fh v3:exact 0x0089a820
+0x0089ab80 function TOBgoodStart              # g_MagicImports slot 661 (10 overlays): TOSeqStartScene(2, "bgood"); SndPlayClick(0x68); hidden from the dump
 0x0089abd0 function TOCheckBtlCommandTarget   # fh v3:exact 0x0089ab40
 0x0089aca0 function TOCheckBtlCommandUse      # fh v3:exact+call.cs 0x0089ac10 cdecl
 0x0089ad90 function TOClearBtlWindow          # fh v3:exact 0x0089ad00
@@ -5176,6 +5276,7 @@
 0x008a8e30 function TOMenuGetDBuffDC          # fh switch:bsim1.00 0x71004bcd80
 0x008a8e50 function TOMenuGetFirstReadEndFlag # fh v3:bsim1.00 0x008a8e00
 0x008a9670 function TkMenuDrawShadeRatioDiff  # fh v3:bsim1.00 0x008a9630
+0x008a9680 function TkMenuSetDrawShadeRatioStep# (v) 0x01840880, added to g_TkMenuDrawShadeRatio each draw; own name
 0x008a9720 function TkMenuExchangePlayerPos   # fh v3:exact 0x008a96d0
 0x008a9820 function TkMenuGetArmor            # (chr) ply_save u8 +0x2e; Switch name, alphabetical slot (pairs with TkMenuGetWeapon +0x2d)
 0x008a9840 function TkMenuGetPlayerStep       # () -> i8 g_TkMenuPlayerStep, sign-extended
@@ -5238,6 +5339,7 @@
 0x008aafc0 function TkMenuSetPrevPlayer2      # fh v3:bsim1.00 0x008aaf70
 0x008aafe0 function TkMenuSetPrevSummon       # (): g_TkMenuCurrentSummonPos - 1, the last before the first; g_TkMenuSummonStep = 0xff
 0x008ab000 function TkMenuSetSP               # (chr, sp) ply u8 +0x3b (MsGetSaveSP reads it); Switch name, alphabetical slot
+0x008ab020 function TkMenuSetScreenX2Flag     # (v) byte 0x01840885 (TkMenuStart, the next slot, sets it to 1); Switch name, alphabetical slot TkMenuSetSP..TkMenuStart
 0x008ab1e0 function TkMenuSummonEnableMask    # fh v3:bsim1.00+call.cs 0x008ab190 cdecl
 0x008ab1f0 function TkMenuWindowStepFade      # (window) -> 0x1000: menu window fade +0x52 += step +0x54 (16-bit), kept in 0..0x1000
 0x008ab220 function TkMenuGetHelpRatio2       # () -> 0x01840878; Switch symbol name (BSim)
@@ -5324,6 +5426,7 @@
 0x008b4e70 function MenuSaveLoad_Reset        # (v) save/load flags cleared, second window +0x58 = v; own name
 0x008b4eb0 function MenuSaveLoad_ResetToggles # u8 0x0186626a, 0x0186626b = 0; own name
 0x008b4ec0 function TkMenuJumpToLoadedScene   # fh v3:cg14 0x8b4e70
+0x008b4fb0 function MenuSave_OpenWindow2      # (arg) window 0x01866258: +0x10 0x008b4920, mode 4, +0x58 arg; registered; own name
 0x008b50b0 function TkMenuPreSave             # fh v3:exact 0x008b5060
 0x008b54c0 function MenuSaveLoad_MarkSlots    # (free, need) 99 slot states at 0x01866290: marks (3) while free < need, used flag 0x01866278; own name
 0x008b5530 function TkMenuRestartSelFileWindow # fh switch:bsim1.00 0x71004db0a0
@@ -5354,6 +5457,7 @@
 0x008b7fb0 function TOGetTableKind_008b7fb0 # cdecl(i) -> i8 byte 1 of entry i of the table at 0x01868a90 (see TOGetTable_01868a90); name ours
 0x008b7fd0 function TOGetTableKind2Data_008b7fd0 # cdecl(i): entry i of 0x01868a90 + 0x18 when its byte 1 is 2, else 0; name ours
 0x008b7ff0 function TOGetTableKind2Byte7_008b7ff0 # cdecl(i): i8 byte 7 of entry i of 0x01868a90 when its byte 1 is 2, else -1; name ours
+0x008b8010 function TOMessageTableByte2_008b8010 # cdecl(i): i8 byte 2 of entry i of 0x01868a90 when message window i has +0x1e == 1 and the entry's kind (byte 1) >= 1, else -1; name ours
 0x008b81d0 function TOInitMacroCmd            # fh v3:exact 0x008b8180
 0x008b8210 function TOInitMessage             # fh v3:exact 0x008b81c0
 0x008b8290 function TOIntToMes                # fh v3:exact 0x008b8240
@@ -5365,6 +5469,7 @@
 0x008b8960 function TOMacroSetType            # (win, n, t): byte 0 of macro record n of message window win (g_MsgVars; the Btl form sets byte 1 too); name ours
 0x008b8980 function TOMacroSetValue           # (win, n, v): word 1 of the record; returns v; name ours
 0x008b8af0 function TOSetMessageFunc          # fh v3:exact 0x008b8aa0
+0x008b8ca0 function TOMessageCallF8_008b8ca0 # cdecl(i): message window i's function +0xf8(window) when the byte at *(window + 0x98) is set, else that pointer; name ours
 0x008b8cd0 function TOSetRectDirect           # fh switch:bsim1.00 0x71004f0dc0
 0x008b9130 function GetU32_025d16c4 # () -> u32 at 0x025d16c4; name ours
 0x008b9140 function TOValueToMesFontL         # fh v3:exact 0x008b90f0
@@ -5385,6 +5490,7 @@
 0x008bdb70 function TkBtlEndInit              # fh v3:exact 0x008bdb30
 0x008bdf10 function BtlEnd_InitApStep         # 0x01869f14 = result 19 (AP), 0x01869f10 = its step (ap/189 | 1, +2 on a multiple of 5); own name
 0x008bdfc0 function SetTable_02310f20 # cdecl(i, v) -> i: word i of the table at 0x02310f20 = v; callers 0x008ba4e0, 0x008bb690; name ours
+0x008bdfe0 function TOSetPair_008bdfe0 # cdecl(prev, cur): 0x025cc584 = prev (or the stored 0x025cc588 for 0), 0x025cc588 = cur, u16 0x0186a178 = 0x1000 when equal else 0 (returned); callers 0x008ba660, 0x008bdb70; name ours
 0x008be320 function GetU32_00c5a084 # () -> u32 at 0x00c5a084; name ours
 0x008be330 function TOInitMenuGraph           # fh switch:bsim1.00 0x71004b1c00
 0x008be370 function TOMenuAtelReq             # fh v3:exact 0x008be340
@@ -5443,6 +5549,8 @@
 0x008c19a0 function TkMn2GetAbilityMes        # (id) auto-ability name: MsGetRomAbility text +0 (+4 hiragana), as TkMn2GetCommandName; Switch name (0x71004c78b0); Switch has no TkMn2GetAbilityName
 0x008c19e0 function TkMn2GetCommandHelp       # fh v3:cg5 0x8c19c0
 0x008c1a20 function TkMn2GetCommandName       # fh v3:cg2 0x8c1a00
+0x008c1a60 function TkMn2GetCommonPlate       # (plate, rect, c1, c2, a, b) TkMn2SeqGetRect + two TkMn2SeqGetColor (+8, +0xc), a, b (+0x10, +0x14): the plate TkMn2DumpPlate prints; Switch name, the two TkMn2GetCommonPlate names fill the two slots TkMn2GetCommandName..TkMn2GetExcelData
+0x008c1aa0 function TkMn2GetCommonPlateCustom # (i, plate, rect, c1, c2, a, b) the same from scene i; Switch name, the two TkMn2GetCommonPlate names fill the two slots TkMn2GetCommandName..TkMn2GetExcelData
 0x008c1af0 function TkMn2GetExcelData         # (id, table) MsGetExcelData record, strings to a dropped local; Switch name, alphabetical slot TkMn2GetCommandName..TkMn2GetItemHelp
 0x008c1b30 function TkMn2GetItemHelp          # fh v3:cg3 0x8c1b10
 0x008c1b70 function TkMn2GetKaizou            # MsGetRomKaizou first record; Switch name, alphabetical slot
@@ -5458,8 +5566,14 @@
 0x008c2300 function TkMn2RestoreFontShade     # (): the four g_TkMn2FontShade words back from the copies after each (0x023cc474, 0x46c, 0x464, 0x45c)
 0x008c2330 function TkMn2SaveFontShade        # (): the four g_TkMn2FontShade words to the copies after each
 0x008c2360 function TkMn2RefreshList          # fh switch:bsim1.00 0x71004c4110
+0x008c2ad0 function TkMn2SeqGetColor          # (name) TOSeqGetColor(1, name, &local), the word returned; Switch name: the four TkMn2SeqGet{Color,ColorCustom,Num,NumCustom} names fill the last four slots before TkMn2SeqGetPos in order
+0x008c2af0 function TkMn2SeqGetColorCustom    # (i, name) TOSeqGetColor(i, ...); Switch name: the four TkMn2SeqGet{Color,ColorCustom,Num,NumCustom} names fill the last four slots before TkMn2SeqGetPos in order
+0x008c2b10 function TkMn2SeqGetNum            # (name) TOSeqGetNum(1, ...), the halfword sign-extended; Switch name: the four TkMn2SeqGet{Color,ColorCustom,Num,NumCustom} names fill the last four slots before TkMn2SeqGetPos in order
+0x008c2b30 function TkMn2SeqGetNumCustom      # (i, name); Switch name: the four TkMn2SeqGet{Color,ColorCustom,Num,NumCustom} names fill the last four slots before TkMn2SeqGetPos in order
 0x008c2b50 function TkMn2SeqGetPos            # fh switch:bsim1.00 0x71004c7660
+0x008c2b70 function TkMn2SeqGetPosCustom      # (i, name, &pos) TOSeqGetPoint(i, name, pos, pos + 2); Switch name, the one name for the slot TkMn2SeqGetPos..TkMn2SeqGetRect
 0x008c2b90 function TkMn2SeqGetRect           # fh switch:bsim1.00 0x71004c74c0
+0x008c2bc0 function TkMn2SeqGetRectCustom     # (i, name, &rect) TOSeqGetRect into four halfwords; Switch name, the one name for the slot TkMn2SeqGetRect..TkMn2SeqStartScene
 0x008c2bf0 function TkMn2SeqStartScene        # fh switch:bsim1.00 0x71004c7690
 0x008c2c10 function TkMn2SeqStopScene         # fh switch:bsim1.00 0x71004c76a0
 0x008c2c30 function TkMn2SetFontShade         # fh switch:bsim1.00 0x71004c5040
@@ -5511,6 +5625,9 @@
 0x008ca540 function TkMenuClearDummyControler # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-menu port shows the behaviour it names (crates/ffx-hook/src/ported/menu.rs)
 0x008ca560 function TkMenuSetDummyControlerPending # (buttons): g_TkMenuDummyControler +4 (what TkMenuFlushDummyControler makes current)
 0x008ca570 function TkMenuSetDummyControlerFlag # fh v3:bsim1.00 0x008ca540
+0x008ca580 function MenuDraw_Line             # (p, x, y, w, a, b) line primitive (GIF list 0x00f51510); no caller; own name
+0x008ca610 function MenuDraw_Strip            # (p, x, y, xs, n, dx, tag) n XYZ2 points (x + xs[k] + dx, y + 16k); own name
+0x008ca6f0 function MenuDraw_StripR           # (p, x, y, xs, n, dx, tag) the same with x - xs[k]; own name
 0x008cad80 function Gs_Pack5d                 # copy of Gs_Pack5; own name
 0x008cadb0 function MenuConfig_SetBit9        # (option) +0xc = bit 8; bit 9 set when +8 is 0; config table callback; own name
 0x008cade0 function MenuConfig_GetBit5        # (option) +8 = !bit 5, +0xc = bit 8; own name
@@ -5550,6 +5667,7 @@
 0x008d0460 function TkMenuCtrlLimit           # fh v3:exact 0x008d0430
 0x008d0c90 function TkMenuLimitCloseWindow    # (): close request for 0x0186a714 (TkMenuCtrlLimit's), forget it
 0x008d0cb0 function TkMenuLimitCloseWindow2   # (): close request for 0x0186a718 (TkMenuCtrlLimit's), forget it
+0x008d0d50 function MenuLimit_OpenWindow      # (arg) window 0x0186a714: MenuLimit_WindowIdle, 0x008d0e90, 0x008d16f0, 0x008d1bb0; rows TkMn2GetListMax, 7 visible; own name
 0x008d0e80 function MenuLimit_WindowIdle      # (window) +0x28 = 0; own name
 0x008d1b50 function TkMenuLimitClearWindow    # (): 0x0186a714 +0x28 = 0, +0x45 = 0
 0x008d1b70 function TkMenuLimitClearWindow2   # (): 0x0186a718 +0x28 = 0, +0x45 = 0
@@ -5588,6 +5706,8 @@
 0x008d9600 function TkMenuCtrlWShop           # fh v3:exact 0x008d95d0
 0x008d9b00 function MenuWShop_UsableByte      # (list, i) copy of MenuItem_UsableByte; own name
 0x008d9b10 function TkMenuWShopCloseWindow    # (): close request for 0x0186ac3c (TkMenuCtrlWShop's), +0x10 = 0, forget it
+0x008d9b30 function MenuTuto_CloseWindow      # () tutorial window 0x0186ac34 closed (+0x41 1, +0x10 0, +0x3e 2), forgotten; TkMn2SeqStopScene("scene18") always; own name
+0x008d9b60 function MenuTuto_CloseWindow2     # () tutorial window 0x0186ac38 the same, then TkMn2SeqStopScene("scene9") only after a close; own name
 0x008d9b90 function TkMenuWShopCloseWindow3   # (): the same for 0x0186ac30 (weapon shop code)
 0x008d9bb0 function TkMenuWShopCloseWindow2   # (): the same for 0x0186ac40 (TkMenuCtrlWShop's)
 0x008daaa0 function MenuTuto_RestartWindow    # TkMenuRestartSelFileWindow(0x0186ac34); own name
@@ -5597,9 +5717,33 @@
 0x008db7a0 function MenuTuto_SetChoice        # (window, i) 0x025d16bc = 1, 0x01871528 = i; own name
 0x008db840 function MenuTuto_GetChoice        # 0x01871528 when 0x025d16bc is set, else -1; own name
 0x008db870 function DrawBlackBackGround       # fh v3:exact 0x008db850
+0x008dbd40 function MenuDraw_SpriteP          # (p, x, y, entry) MenuDraw_Sp3Body tint 0x80; own name
+0x008dbd70 function MenuDraw_SpritePA         # (p, x, y, entry, alpha); own name
+0x008dbda0 function MenuDraw_SpriteP8A        # (p, x, y, entry, alpha) ox = 8; own name
+0x008dbdd0 function MenuDraw_SpriteVA         # (p, x, y, entry, alpha); own name
+0x008dbe00 function MenuDraw_SpriteV8A        # (p, x, y, entry, alpha) ox = 8; own name
+0x008dbe30 function MenuDraw_SpriteP1         # (p, x, y, entry) unused arg 1; own name
+0x008dbe60 function MenuDraw_SpriteP1A        # (p, x, y, entry, alpha) unused arg 1; own name
+0x008dbe90 function MenuDraw_SpriteP2         # (p, x, y, entry) unused arg 2; own name
+0x008dbec0 function MenuDraw_SpriteP2A        # (p, x, y, entry, alpha) unused arg 2; own name
+0x008dbef0 function MenuDraw_SpriteP8         # (p, x, y, entry) ox = 8; own name
+0x008dbf20 function MenuDraw_Sp3Body          # (p, _, x, y, entry, ox, oy, alpha) the unmirrored sprite body: u, v from cell * 16 + 8, screen offsets forward, u clamped to 0xff0 cutting the right edge; own name
+0x008dc0f0 function MenuDraw_Sprite           # (p, x, y, entry) MenuDraw_Sp3RBody tint 0x80; own name
+0x008dc120 function MenuDraw_SpriteA          # (p, x, y, entry, alpha); own name
+0x008dc150 function MenuDraw_Sprite1          # (p, x, y, entry) unused arg 1; no caller; own name
+0x008dc180 function MenuDraw_Sprite2          # (p, x, y, entry) unused arg 2; no caller; own name
+0x008dc1b0 function MenuDraw_Sp3RBody         # (p, _, x, y, entry, ox, oy, alpha) GifTag (TOGetGsRegWord, tint) + one sprite per 12-byte cell of TkMenuGetTableEntry(entry, 0x00c5a900), x mirrored; own name
+0x008dc360 function MenuDraw_Bar              # (p, n, cell, x, y) one sprite stretched n down; own name
+0x008dc480 function MenuDraw_BarV             # (p, n, cell, x, y) one sprite stretched n right; own name
+0x008dc5a0 function MenuDraw_Bar2             # (p, m, n, cell, x, y) stretched m right and n down; own name
+0x008dc6b0 function MenuDraw_SpriteV          # (p, x, y, entry) MenuDraw_Sp3UBody; own name
+0x008dc6e0 function MenuDraw_SpriteV8         # (p, x, y, entry) ox = 8; own name
+0x008dc710 function MenuDraw_Sp3UBody         # (p, _, x, y, entry, ox, oy, alpha) the same flipped vertically, u clamped to 0xff0; own name
 0x008dc9b0 function TkMenuConfigMes           # fh switch:bsim1.00 0x71004c3490
 0x008dc9e0 function TkMenuDraw1612Width       # fh call.cs cdecl
 0x008dc9f0 function TkMenuDraw1612WidthHeight # fh switch:bsim1.00 0x71004bfde0
+0x008dca20 function TkMenuDrawSp30            # (x, y) TkMenuDrawSp3(x, y, 0), the 0 written into the caller's argument slot; own name
+0x008dca30 function TkMenuDrawSp3R0           # (x, y) TkMenuDrawSp3R(x, y, 0), the 0 written into the caller's argument slot; own name
 0x008dca90 function TkMenuDrawCursor2         # fh switch:bsim1.00 0x71004c0b40
 0x008dcb10 function TkMenuDrawEasyMes1208     # fh switch:bsim1.00 0x71004c19a0
 0x008dcb80 function TkMenuDrawEasyMes1612     # fh switch:bsim1.00 0x71004c1660
@@ -5620,6 +5764,24 @@
 0x008dd440 function TkMenuDrawScissorClear    # fh switch:bsim1.00 0x71004bfe20
 0x008dd460 function TkMenuDrawScissorRect     # 5-byte jmp TODrawScissorXYWH thunk (not a function in the dump, left original); Switch name, after TkMenuDrawScissorClear
 0x008dd4f0 function TkMenuDrawShape           # fh switch:bsim1.00 0x71004c3910
+0x008dd520 function TkMenuDrawSp3             # g_TkMenuPacket += 0x10, = 0x008dbd40(...); Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd550 function TkMenuDrawSp3A            # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd580 function TkMenuDrawSp3AHalf        # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd5b0 function TkMenuDrawSp3AUR          # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd5e0 function TkMenuDrawSp3AURHalf      # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd610 function TkMenuDrawSp3FaceA        # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd6a0 function TkMenuDrawSp3FaceAA       # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd740 function TkMenuDrawSp3FaceB        # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd770 function TkMenuDrawSp3FaceBA       # Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd7a0 function TkMenuDrawSp3Half         # ox 8 variant; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd7d0 function TkMenuDrawSp3R            # (x, y, entry) MenuDraw_Sprite at g_TkMenuPacket + 0x10; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd800 function TkMenuDrawSp3RA           # (x, y, entry, alpha); Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd830 function TkMenuDrawSp3StretchD     # (cell, x, y, n) MenuDraw_Bar; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd860 function TkMenuDrawSp3StretchR     # (cell, x, y, n) MenuDraw_BarV; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd890 function TkMenuDrawSp3StretchRD    # (cell, x, y, m, n) MenuDraw_Bar2; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd8c0 function TkMenuDrawSp3Tex0         # (a, b, c) MenuDraw_GifTag (the TEX0 setup); Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd8f0 function TkMenuDrawSp3UR           # (x, y, entry) MenuDraw_SpriteV; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
+0x008dd920 function TkMenuDrawSp3URHalf       # (x, y, entry) MenuDraw_SpriteV8; Switch name: the 18 TkMenuDrawSp3* names fill the 18 slots 0x008dd520..0x008dd920 after TkMenuDrawShape in order
 0x008ddc60 function TkMenuEquipWin            # fh switch:bsim1.00 0x71004c1280
 0x008dde10 function TkMenuGetCommandHelp      # fh v3:cg3 0x8dddf0
 0x008ddea0 function TOMenuGetGetImportantHelp # fh v3:cg3 0x8dde80
@@ -5640,6 +5802,9 @@
 0x008df8f0 function TOSetDrawInfo             # fh v3:exact 0x008df8e0
 0x008dfd80 function TOSkipCode                # fh v3:exact 0x008dfd70
 0x008dfea0 function TODrawMovieMessageWaitNamesp # fh v3:bsim0.91 0x008dfe90 _TODrawMovieMessageWaitNamesp
+0x008e0200 function MenuWin_StateSlide        # (w) +0x2c = 1, float +0x4c -= 12, +0x114 = +0x104; returns 0; own name
+0x008e0240 function MenuWin_StateOpen         # (w) +0x2c = 2, +0xa0 = +0xa8, handlers 0x008e0230 (+0x114), 0x008de970 (+0x11c); returns 0; own name
+0x008e0280 function MenuWin_StateWaitText     # (w) +0x2e = 2, or 3 when the text at +0x98 is empty; +0x120 = itself; returns 0; own name
 0x008e0350 function TkMenuCtrlMain            # fh v3:exact 0x008e0340
 0x008e0ba0 function TkMenuDrawMain            # fh call.cs cdecl
 0x008e1c60 function TkMenuAppearMainCmdWindow # fh call.cs cdecl
@@ -5647,6 +5812,7 @@
 0x008e2270 function TkMenuMainGetOptionMenu   # fh v3:bsim1.00 0x008e2270 +TkMenuMainGetOptionMenu
 0x008e2280 function TkMenuMainGetMaxOptions   # fh v3:bsim1.00 0x008e2280 +TkMenuMainGetMaxOptions
 0x008e2290 function TkMenuMainGetOptionEnabled # fh v3:bsim1.00 0x008e2290 +TkMenuMainGetOptionEnabled
+0x008e24c0 function TkMenuMainOpenOption      # (i) option i (TkMenuMainGetOptionMenu): its menu slot activated, main menu (1) slept; 0x0187154c = -1; own name
 0x008e2630 function TkMn2GetMainPos           # fh switch:bsim1.00 0x71004d55d0
 0x008e2690 function TkScreenToMenuX           # (x) -> float(x) * 512 / 1920 (a 1920-wide coordinate in the 512-wide menu)
 0x008e26b0 function TkScreenToMenuY           # (y) -> float(y) * 416 / 1080
@@ -5658,8 +5824,18 @@
 0x008e2960 function TkMenuCtrlWorldMap        # fh v3:exact 0x008e2960
 0x008e2b10 function MenuWorldMap_CloseWindow  # close request for 0x01871698, forget it; own name
 0x008e2d50 function TkMenuWorldMapWindowWord64 # () -> word +0x64 of *g_TkMenuWorldMapWindow (caller TkMenuCtrlWorldMap); name ours
+0x008e2d60 function MenuWorldMap_OpenWindow   # () g_TkMenuWorldMapWindow: callbacks 0x008e2b00/0x008e2b30/0x008e2b60, mode 7, tint 0x80 x3, +0x68 6; own name
 0x008e2de0 function TOMenuCloseYesNoWindow    # fh switch:bsim1.00 0x71004e7cb0
 0x008e3390 function TkMn2GetListMax2          # () -> 0x023cc120; Switch symbol name (BSim)
+0x008e33a0 function TkMenuOpenSubCmdWindow    # (x, items, c) TkMenuOpenSubCmdWindowMain with d 0; Switch name of the TkMenuOpenSubCmdWindow family (Main, plain, 2), by role: no alphabetical slot here
+0x008e33c0 function TkMenuOpenSubCmdWindow2   # (x, items, c, d) a jump to TkMenuOpenSubCmdWindowMain; Switch name of the TkMenuOpenSubCmdWindow family (Main, plain, 2), by role: no alphabetical slot here
+0x008e33d0 function TkMenuOpenSubCmdWindowMain# (x, items, c, d) window into 0x023cc120: 2x2, mode 2 (3 for items 0), callbacks 0x008e2e20/0x008e2f80/0x008e36b0, +0x37 1, +0x90/+0x94 1/1; Switch name of the TkMenuOpenSubCmdWindow family (Main, plain, 2), by role: no alphabetical slot here
+0x008e3470 function MenuSubCmd_OpenMainA      # (x, items, c, d) as TkMenuOpenSubCmdWindowMain without +0x37, +0x90/+0x94 0/1; own name
+0x008e3510 function MenuSubCmd_OpenMainB      # (x, items, c, d) +0x90/+0x94 1/2; own name
+0x008e35b0 function MenuSubCmd_OpenMainC      # (x, items, c, d) +0x90/+0x94 0/2; own name
+0x008e3650 function MenuSubCmd_OpenA          # (x, items, c) MenuSubCmd_OpenMainA with d 0; own name
+0x008e3670 function MenuSubCmd_OpenB          # (x, items, c) MenuSubCmd_OpenMainB with d 0; own name
+0x008e3690 function MenuSubCmd_OpenC          # (x, items, c) MenuSubCmd_OpenMainC with d 0; own name
 0x008e36f0 function TkMenuCloseSubCmdWindow   # fh switch:bsim1.00 0x71004e9140
 0x008e3710 function TkMenuCloseSubCmdWindow1  # (): close request for 0x023cc124 and forget it (TkMenuCloseSubCmdWindow does 0x023cc128)
 0x008e3b80 function TkMenuSetSubCmdWindowCursor # (i): g_TkMenuSubCmdWindow busy (+0x45 = 1), cursor +0x2c/+0x48 = i, state +0x28 = 6
@@ -5699,11 +5875,27 @@
 0x008ed050 function Identity_008ed050 # cdecl(x) -> x (frame-pointer build), jumps to Identity_008ed040; name ours
 0x008ed380 function TOAdpEasyShapeXYWHC2      # fh v3:exact 0x008ed380
 0x008ee240 function TOAdpFontM_ASCII          # fh v3:exact 0x008ee240
+0x008ef670 function TOAdpALPHA # cdecl(p, A, B, C, D, FIX) -> p + 0x10: GS register 0x42 from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
+0x008ef6e0 function TOAdpCLAMP # cdecl(p, WMS, WMT, MINU, MAXU, MINV, MAXV) -> p + 0x10: GS register 0x08 from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
+0x008ef760 function TOAdpCOLCLAMP # cdecl(p, value) -> p + 0x10: GS register 0x46 from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
 0x008ef790 function TOAdpGsDirectRGBA         # (p, rgba) -> p + 16: the four colour bytes as words; fh switch:bsim1.00 0x710051b230
+0x008ef7d0 function TOAdpFBA # cdecl(p, value) -> p + 0x10: GS register 0x4a from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
+0x008ef800 function TOAdpFOG # cdecl(p, fog) -> p + 0x10: GS FOG (0x0a), the value in bits 56..63; name ours
+0x008ef880 function TOAdpFRAME # cdecl(p, FBP, FBW, PSM, FBMSK) -> p + 0x10: GS register 0x4c from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
 0x008ef8e0 function TOAdpWords4               # (p, a, b, c, d) -> p + 16; name ours
+0x008ef910 function TOAdpSCISSOR # cdecl(p, SCAX0, SCAX1, SCAY0, SCAY1) -> p + 0x10: GS register 0x40 from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
 0x008ef970 function TOAdpTEST # cdecl(p, ate, atst, aref, afail, date, datm, zte, ztst) -> p + 0x10: the GS TEST_2 (0x47) register from its fields, each sign-extended and OR-ed unmasked; name ours
+0x008efa00 function TOAdpTEX0 # cdecl(p, TBP0, TBW, PSM, TW, TH, TCC, TFX, CBP, CPSM, CSM, CSA, CLD) -> p + 0x10: GS TEX0_1 (0x06) from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
+0x008efad0 function TOAdpTEX1 # cdecl(p, LCM, MXL, MMAG, MMIN, MTBA, L, K) -> p + 0x10: GS register 0x14 from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
+0x008efb60 function TOAdpTEXFLUSH # cdecl(p) -> p + 0x10: GS TEXFLUSH (0x3f), no data; name ours
 0x008efb90 function TOAdpXY2                  # (p, x, y) -> p + 16: x * 16 + 8, y * 16 + 8; name ours
+0x008efbc0 function TOAdpXYFrac # cdecl(p, x, fx, y, fy) -> p + 0x10: x * 16 + fx, y * 16 + fy into the first two words (12.4 fixed point); name ours
 0x008efbf0 function TOAdpXYZ2Offset           # (p, x, y) -> p + 16: (x + 0x700) * 16, (y + 0x730) * 16, 16, 0; name ours
+0x008efc30 function TOAdpWords2Reg10 # cdecl(p, a, b) -> p + 0x10: a, b, register 0x10; name ours
+0x008efc60 function TOAdpXYOFFSET # cdecl(p, OFX, OFY) -> p + 0x10: GS register 0x18 from its fields, each sign-extended and OR-ed in unmasked; name ours (the PS2 register name)
+0x008efc90 function TOAdpXYZOffset # cdecl(p, x, y, z) -> p + 0x10: (x + 0x700) * 16, (y + 0x730) * 16, z * 16, 0; name ours
+0x008efcd0 function TOAdpWords3 # cdecl(p, a, b, c) -> p + 0x10: a, b, c, 0; name ours
+0x008efd00 function TOAdpXYZWOffset # cdecl(p, x, y, z, w) -> p + 0x10: (x + 0x700) * 16, (y + 0x730) * 16, z * 16, w * 16; name ours
 0x008f0680 function TOAdpMenuIconImportantName # fh v3:exact 0x008f0680
 0x008f0700 function TOAdpMenuIconItemAbmap    # fh v3:cg3 0x8f0700
 0x008f0770 function TOAdpMenuIconItemName     # fh v3:cg4 0x8f0770
@@ -5763,6 +5955,7 @@
 0x008fe040 function TOMakePktSeqPrimFunc      # fh v3:exact 0x008fe040
 0x008fe080 function TOMakePktSeqPrimMes       # fh v3:exact 0x008fe080
 0x008feb00 function TOMakePktShapeCursor      # fh v3:exact 0x008feb00
+0x008ff140 function TOClearEntry_008ff140 # cdecl(i): the 16-byte entry i (< 16, signed) of 0x018762e0 zeroed, returns its address; callers 0x008e3cf0, 0x008e4140; name ours
 0x00900f40 function TOMenuInitBrush           # fh switch:bsim1.00 0x71005280f0
 0x00900f60 function TOMenuSet_018762ee        # (i, v): i < 16 (signed): u16 at 0x018762ee + 16 i = v; between TOMenuInitBrush and TOMenuTransFacePlyTex; name ours
 0x00901100 function TOMenuTransFacePlyTex     # fh switch:bsim1.00 0x7100522020
@@ -5791,6 +5984,7 @@
 0x009047c0 function TOSetPktBuffAdrs          # fh v3:exact 0x009047c0
 0x009048a0 function TOSetPolyG4A_XYWH         # fh switch:bsim1.00 0x71005094e0
 0x009048e0 function TOSetRegFont1612          # fh v3:bsim1.00 0x009048e0
+0x009048f0 function TOSetScreenWH # cdecl(w, h): u16 g_TOScreenW = w, g_TOScreenH = h (the setter of TOGetScreenWH); caller 0x008fae20; name ours
 0x00904a70 function ToDrawEternalCalmCopyRight # fh v3:exact 0x00904a70
 0x00904ba0 function QuickRecoverMenuDraw      # fh switch:cg2 0x71004beaa0
 0x00905190 function ToGetBtlEasyDigitWidth    # fh v3:exact 0x00905190
@@ -5820,33 +6014,40 @@
 0x00906fb0 function TOGetWindowStructAdrs     # fh v3:bsim1.00 0x00906fb0 _TOGetWindowStructAdrs
 0x00906fc0 function yiWindowGrowClose         # (window): progress +6 -= 0x2aa (>= 0), drawn x1 = x0 + height +0x10 * progress / 4096; at x0: state 4, handler yiWindowFinishAll; window kind 0 slot +0x6c
 0x00907040 function yiWindowFinishAll         # (window): +0 and state +8 cleared, handler +0x74 = idle 0x00907e50; returns 1 (kind 0 slot +0x70)
+0x00907060 function yiWindowDrawMenu          # (window): full scissor, TODrawMenuPlateXYWHType(x0 + 4, y0 [- 1 when 0x008ac2f0], x1 - x0 - 8, y1 - y0, 10), TODrawScissor(x0 - 5, y0, x1 - 6, y1) (kind 0 slot +0x78)
 0x00907160 function yiWindowPopInit           # (window): frames +0xc = 0, drawn rect +0x48.. = rect +0x28..; kinds 1, 2 slot +0x60
 0x00907190 function yiWindowPopOpen           # (window): state 2, handler = slot +0x68; returns 1
 0x009071c0 function yiWindowPopClose          # (window): frames +0xc -1; at 0 state 4, handler = slot +0x70
 0x009071f0 function yiWindowFinish_009071f0   # (window): +0 cleared, handler idle 0x00907e50, 1 (kinds 1, 2; same code as 0x00907370 0x009075b0 0x009077e0 0x00907a20)
+0x00907210 function yiWindowDrawPop           # (window): on map 0x15b with the window at (65, 290), TODrawScissor of the TO window at (38, 115); else TOMakePktScissor(0, 0, 512, 416) (kinds 1, 2)
 0x009072e0 function yiWindowSlideDownOpen     # (window): drawn y1 +0x54 += step +0x3c, frames +0xc -1; at 0: frames from +0xe, state 2, handler slot +0x68 (kind 3)
 0x00907330 function yiWindowSlideDownClose    # (window): drawn y1 -= step; at 0 frames: state 4, handler slot +0x70 (kind 3)
 0x00907370 function yiWindowFinish_00907370   # (window): as yiWindowFinish_009071f0 (kind 3)
+0x00907390 function yiWindowDrawPlate         # (window): full scissor, plate 0x008f9a40(x0, y0, w, h) of the drawn rectangle, TODrawScissor(x0 + 12, y0 + 4, x1 - 12, y1 - 4) (kind 3; same code at 0x009075d0, 0x00907800, 0x00907a40)
 0x00907450 function yiWindowSlideDownInit     # (window): y1 = 416.0, y0 0, from (x0, 0, x1, 0), 6 frames (0x60006 at +0xc), step +0x3c = (416 - 0) / 6 (kind 3 slot +0x60)
 0x009074b0 function yiWindowSlideUpInitHere   # (window): y0 -= 416 - y1, from/drawn y 416, 6 frames, step (y1 - y0) / 6 (kind 4)
 0x00907520 function yiWindowSlideUpOpen       # (window): drawn y0 +0x4c -= step +0x3c; at 0 frames: reload, state 2 (kinds 4, 5)
 0x00907570 function yiWindowSlideUpClose      # (window): drawn y0 += step; at 0 frames: state 4 (kinds 4, 5)
 0x009075b0 function yiWindowFinish_009075b0   # (window): as yiWindowFinish_009071f0 (kinds 4, 5)
+0x009075d0 function yiWindowDrawPlate_009075d0 # (window): as yiWindowDrawPlate (kinds 4, 5)
 0x00907690 function yiWindowSlideUpInit       # (window): rect y 0..416, from/drawn y 416, 6 frames of 416 / 6 (kind 5)
 0x009076f0 function yiWindowSlideRightInitHere # (window): x1 += x0, from/drawn x 0, 6 frames, step +0x38 = (x1 - x0) / 6 (kind 6)
 0x00907750 function yiWindowSlideRightOpen    # (window): drawn x1 +0x50 += step +0x38; at 0 frames: reload, state 2 (kinds 6, 7)
 0x009077a0 function yiWindowSlideRightClose   # (window): drawn x1 -= step; at 0 frames: state 4 (kinds 6, 7)
 0x009077e0 function yiWindowFinish_009077e0   # (window): as yiWindowFinish_009071f0 (kinds 6, 7)
+0x00907800 function yiWindowDrawPlate_00907800 # (window): as yiWindowDrawPlate (kinds 6, 7)
 0x009078c0 function yiWindowSlideRightInit    # (window): rect x 0..512, from/drawn x 0, 6 frames of 512 / 6 (kind 7)
 0x00907920 function yiWindowSlideLeftInitHere # (window): x0 -= 512 - x1, from/drawn x 512, 6 frames, step (x1 - x0) / 6 (kind 8)
 0x00907990 function yiWindowSlideLeftOpen     # (window): drawn x0 +0x48 -= step +0x38; at 0 frames: reload, state 2 (kinds 8, 9)
 0x009079e0 function yiWindowSlideLeftClose    # (window): drawn x0 += step; at 0 frames: state 4 (kinds 8, 9)
 0x00907a20 function yiWindowFinish_00907a20   # (window): as yiWindowFinish_009071f0 (kinds 8, 9)
+0x00907a40 function yiWindowDrawPlate_00907a40 # (window): as yiWindowDrawPlate (kinds 8, 9)
 0x00907b00 function yiWindowSlideLeftInit     # (window): rect x 0..512, from/drawn x 512, 6 frames of 512 / 6 (kind 9)
 0x00907b60 function yiWindowBarInit           # (window): drawn (0, 8, 512, 28), colour +0x58 0x80808080 (kind 10)
 0x00907ba0 function yiWindowBarOpen           # (window): state 2, handler 0x00907d70 (open, returns 0); 1 (kind 10)
 0x00907bd0 function yiWindowBarClose          # (window): state 4, handler yiWindowFinishAll; 1 (kind 10)
 0x00907bf0 function yiWindowFinishAll_00907bf0 # (window): the same code as yiWindowFinishAll (kind 10 slot +0x70)
+0x00907c10 label    yiWindowDrawBar           # not a function start in the dump (no hook); ported for the rewrite: (window): the help bar: two sprites (0x008f5e90) and its text (TOMkpShapeXY 0x106) from the layout at 0x025d1618, scissor packet (0, 8, 512, 28) (kind 10)
 0x00907cc0 function yiWindowGrowInit         # (window): progress +6 = 0, drawn (x0, y0, x0, y1) (kind 0 slot +0x60; table g_YiWindowHandlers)
 0x00907cf0 function yiWindowGrowOpen         # (window): progress += 0x2aa (<= 0x1000), drawn x1 from it; at x1: state 2, handler 0x00907d70 (kind 0)
 0x00907d80 function yiWindowSetHandlers       # (window): +0x60..+0x70, +0x78 = the six handlers of kind +4 (i16) from the table 0x00c5d788 (6 words a kind)
@@ -5918,6 +6119,7 @@
 0x0090a750 function yiSetRotTransDObj         # fh v3:exact 0x0090a750
 0x0090a950 function yiSetScaleFactor          # fh switch:bsim1.00 0x710052b260
 0x0090a980 function yiSetViewMatrix           # (m): copies the view matrix to g_YiViewMatrix and two floats of +0x20 to 0x018df168 (null: identity)
+0x0090a9e0 function yiObjReadFinish           # (read): MAP1 file read +0x10: render section +0x14 through yiArc_readmem, section 2 to 0x0072aa40, file freed (yiFree); render status &= ~0xc0, 0x018ded34 = read +0x18
 0x0090ae20 function yiPkAddGsAD                  # (q, reg, data): the A+D quadword (data, 0, reg, 0) of a GS register write
 0x0090ae50 function yiAssert                  # fh v3:exact 0x0090ae50
 0x0090bbd0 function yiMalloc                  # fh v3:cg20 0x90bbd0
@@ -5933,6 +6135,7 @@
 0x0090d1b0 function yiRender_setupFogParam    # (scene): +0x68350 = -255 / (far - near) from +0x681f8 * 1/32 * 32 and +0x68348/+0x6834c; +0x68354 = 255 - +0x68344 (255 with +0x67f08 bit 3); called by yiRender_setupparamVU1
 0x0090d260 function yiRender_setupparamGS     # fh v3:exact 0x0090d260
 0x0090da90 function yiRender_setupparamVU1    # fh v3:exact 0x0090da90
+0x0090e5d0 function yiLoadVramImage           # (scene, entry, data): an image above GS 0x3c00 kept in the scene's copy from +0x276a4: format 0 w*h/8 quadwords, 0x14 w*h/32, 0x13 swizzled by 0x0090e0b0 (yiMapFileRead)
 0x0090e6d0 function TextUtilList_TextUtilList # fh switch:bsim1.00 0x71002190e0 TextUtilList::TextUtilList
 0x0090e6f0 function yiArcPrintSize            # fh switch:bsim1.00 0x7100532640
 0x0090ed10 function yiLoadMatrixChunk         # (scene, chunk): chunk +4 to +0x6823c, 64 floats from +0x40 to +0x68240 (map file reader 0x0090f900)
@@ -5941,6 +6144,8 @@
 0x0090ef10 function yiCameraLoad              # (camera, record): u16s to +0x30/+0x32/+0x36/+0x34, +0x38, +0x48, twelve floats to +0 (map file reader 0x0090f900)
 0x0090f090 function yiFogLoad                 # (scene, record): the fog fields +0x68340..+0x6834c, +0xba400/+0xba404, colour +0x68378.., +0x6822c.. (map file reader 0x0090f900)
 0x0090f8e0 function yiArc_readmem             # fh v3:exact 0x0090f8e0
+0x0090f900 function yiMapFileRead             # (scene, file): map render file (0x214365, version 0x110; count +0xc; 0x40-byte record headers): 0 objects, 1 cameras, 2 textures, 3 CLUTs, 4 fog, 5/8 packet lists, 6 animation tracks, 7 matrices (yiArc_readmem)
+0x0090ff40 function yiObjInit                 # (obj): a 0xb4-byte map object cleared, scales 1.0, +0xc GS tag 0x6c040014, +0x10 identity (yiMapFileRead)
 0x00910040 function yiPkAddGsAD_00910040         # the same code as yiPkAddGsAD
 0x00910340 function yiTriColorsFromGif        # (out, gif, first): three RGBAQ quadwords' bytes to out (alphas first set to 0x80), +0x12 cleared
 0x009103e0 function yiTriColorsUvFromGif      # (out, gif, first, uv): as yiTriColorsFromGif with alpha 0x7f, then three UV quadwords' u16s to +0x14
@@ -5955,9 +6160,11 @@
 0x00914630 function yiKeyFrame_attachChr      # fh switch:cg2 0x710052dfb0
 0x009148a0 function yiLerpVec2                   # (t, a, b, out): out = a + (b - a) * t, two floats
 0x009148d0 function yiLerpVec4                   # (t, a, b, out): four floats; from 0x009147b0
+0x00914920 function yiAnimDetach              # (scene, obj, kind): active animation slots (+0x9cac0, 0x28 bytes, 64) of obj and kind cleared, count +0x9cabc lowered; kind 2 turns keyframe animation off (yiKeyFrame_attachDObj)
 0x00914a10 function yiKeyFrame_main           # fh switch:cg2 0x710052e1e0
 0x009151c0 function yiRotMatrixSeq            # fh v3:exact 0x009151c0
 0x009152d0 function yiTexSwap_init            # fh v3:exact 0x009152d0
+0x00916ad0 function Yi_PutRef                 # (p, a, b) {b, 0, a, 0}; a left in eax; own name
 0x00917050 function yiClutAlloc_makepacket    # fh v3:exact 0x00917050
 0x009173e0 function yiIsPow2                     # (bits) -> 1 when at most one of the low 16 bits is set
 0x00917430 function yiLog2Ceil16                 # (bits) -> the only set bit's index, else the highest one's + 1; -1 none (low 16 bits)
@@ -6108,6 +6315,7 @@
 0x0091cc00 function Yn_NearestOnLine2D        # (out, a, b, p, clamp): a + t (b - a), t = -((a - p) . d) / |d|^2 (0 if |d|^2 <= 0), clamped to 0..1 when clamp
 0x0091ccc0 function rcbgGuideBattleBegin      # fh v3:exact 0x0091ccc0
 0x0091cce0 function rcbgGuideBattleEnd        # fh v3:exact 0x0091cce0
+0x0091ce50 function rcbgGuideSetWalkFog       # (guide): on maps 0x246, 0x248, 0x24e, 0x24f (0x0086c1f0) the fog of war +0x70 = MsGetSaveWalkMap + 0x200 * index, the mesh object's flag bit 1 cleared (rcbgGuideSetModelSub)
 0x0091cef0 function rcbgGuideDelete           # (guide): rcbgGuideFini, then rcFree; rcbgFini (g_YnMapSystem +4)
 0x0091d280 function Guide_FadeStep               # (show): steps the minimap's fade g_GuideFade toward shown (128) or hidden (0)
 0x0091d3a0 function Guide_FadeOff                # (): minimap hidden at once (g_GuideFade = 0); Guide_Update when g_GuideFlags bit 0 is clear
@@ -6117,6 +6325,7 @@
 0x0091d450 function rcbgGuideGetLimit            # (guide) -> float guide +0x6c: rcbgGuideUpdateEx clamps the view offset to minus it
 0x0091d460 function Guide_MeshObject             # (guide) -> the minimap mesh object: guide +0 (the map's own, MAP1 chunk 0xb), else guide +8 (made from the walkmesh)
 0x0091d480 function rcbgGuideGetTarget           # () -> g_GuideTarget (0x00934110 reads it)
+0x0091d490 function rcbgGuideInit             # (guide): 0x78 bytes cleared, view limit +0x6c 350.0, g_GuideFlags |= 0x100, Guide_FadeOff (rcbgGuideNew)
 0x0091d4e0 function rcbgGuideNew              # fh v3:bsim1.00 0x0091d4e0
 0x0091d510 function rcbgGuideSetFlag3            # (guide, on): g_GuideFlags bit 3 (no reader found in FFX.exe)
 0x0091d530 function rcbgGuideSetFlag8            # (guide, on): g_GuideFlags bit 8 (rcbgGuideUpdateEx reads it)
@@ -6143,6 +6352,7 @@
 0x0091fdc0 function rcbgPSimGetOmdIn          # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
 0x0091fdd0 function rcbgPSimGetPos            # fh switch:bsim1.00 0x7100546550
 0x0091fe00 function rcbgPSimInit              # fh switch:bsim1.00 0x7100545a90
+0x0091fe40 function rcbgPSimNew               # (): rcAlloc 0xb0 (rcbgPSim.c), rcbgPSimInit
 0x0091fe70 function rcbgPSimProc              # fh switch:cg2 0x7100545b70
 0x0091fef0 function rcbgPSimSetInitCnt        # fh switch:bsim1.00 0x7100546570
 0x0091ff10 function rcbgPSimSetPos            # fh v3:exact 0x0091ff10
@@ -6181,6 +6391,7 @@
 0x009216b0 function rcbgPreFini               # fh v3:exact 0x009216b0
 0x00921770 function rcbgPreInit               # fh v3:exact 0x00921770
 0x009217e0 function rcbgPreSetSceneNo         # fh v3:exact 0x009217e0
+0x009218c0 function rcbgPreAddObject          # (obj): rcbgSceneAddObject to the map's current scene (+8), rcbgPreDummyInit without a map (rcbgLoadBin YNTT/YNFT)
 0x00921910 function Yn_BattleCaptureNum          # (): while g_YnMapSystem +0xc is 0 takes a non-zero MsBattleGetNum and clears +8; 0x0091a8c0
 0x00921940 function rcbgChkId                 # fh v3:exact 0x00921940
 0x00921aa0 function rcbgFini                  # fh v3:exact 0x00921aa0
@@ -6188,18 +6399,24 @@
 0x00921be0 function Yn_SceneGetObject            # (kind, n) -> rcbgSceneGetObject of the Yn scene, 0 without one
 0x00921c20 function Yn_SceneCountObjects         # (kind) -> rcbgSceneCountObjects of the Yn scene, 0 without one
 0x00921ce0 function rcbgInit                  # fh v3:exact 0x00921ce0
+0x00921d60 function rcbgLoadBin               # (data): an RCBG background (YNDT, then YNPR map, YNSC scenes, YNSM models, YNST transfers, YNTT/YNFT texture transfers, YNGM a scene's guide model, YNED end); parse on the stack (Yn_PreBgSetData)
 0x009220c0 function rcbgFpTrxTexNew           # fh v3:exact 0x009220c0
 0x009220e0 function rcbgTrxTexDelete          # fh v3:bsim1.00 0x009220e0
 0x00922100 function rcbgTrxTexDraw            # fh v3:bsim1.00 0x00922100
+0x00922120 function rcbgTrxTexFini            # (tex): rcbgTrxFini of its two transfers (+0x20, +0x60) (rcbgTrxTexDelete)
 0x00922140 function rcbgEmbeddedTrxGetCnt     # (obj) -> rcbgTrxGetCnt(obj + 0x20)
+0x00922160 function rcbgTrxTexInit            # (tex): kind 0x20003, rcbgTrxTexDelete, rcbgTrxTexDraw, +0x14 -1, two transfers +0x20/+0x60 (rcbgTrxTexNew)
 0x009221b0 function rcbgTrxTexNew             # fh v3:bsim1.00 0x009221b0
 0x00922510 function rcCopyQword_00922510      # (dst, src): as rcCopyQword_0091cb40
 0x00922560 function rcbgFPm097Init            # fh switch:bsim1.00 0x71005524e0
+0x009225a0 function rcbgFPm097New             # (): rcAlloc 0x40 (rcbgFP.c), rcbgFPm097Init
 0x00922930 function rcbgFpFadeInit               # (fade, id, step, frames): pppFpIDdispOff(id), then 0, id, step (float), frames, 0; rcbgFPm097's process (0x00922600)
 0x00922b50 function rcbgFPm173End             # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
 0x00922b70 function rcbgFPm173Init               # (part) -> part: +0x10..0x24 cleared, type 0x20008, functions 0x00922b40, 0x00922be0; map 0xad's part (0x00921a50)
+0x00922bb0 function rcbgFPm173New             # (): rcAlloc 0x28 (rcbgFP.c), rcbgFPm173Init
 0x00922ef0 function rcbgFPm173Start           # fh switch:bsim0.96 0x7100553480
 0x00922f50 function rcbgFPm565Init               # (part) -> part: type 0x20008, functions 0x00922f30, 0x00922fb0; maps 0x235, 0x236 (0x00921a50)
+0x00922f80 function rcbgFPm565New             # (): rcAlloc 0x10 (rcbgFP.c), rcbgFPm565Init
 0x00923100 function rcbgFpGetWork             # fh v3:exact 0x00923100
 0x00923240 function rcdtTm2ClutAlphaToPs2        # (clut): 256 RGBA entries, alpha a -> a * 128 / 255, alpha 0 -> entry 0; rcdtTm2 load (0x009232a0) when asked
 0x00923280 function rcdtTm2GetPsm                # (picture header) -> GS PSM of its image type (+0x13) from 0x00c5e754 (1 CT16, 2 CT24, 3 CT32, 4 T4, 5 T8), 0 for 0
@@ -6209,7 +6426,9 @@
 0x00923960 function rcdtTm2LoadEff            # fh switch:bsim1.00 0x710054b330
 0x00923ae0 function rcdtTm2CopyRect           # (tm2, dst, x, y, n, rows): copies a rectangle of a TIM2 image's pixels
 0x00924390 function rcdtRsd2Init                 # (rsd): 8 words cleared (rcdtRsd2.c, 0x00924750)
+0x00924750 function rcdtRsd2New               # (): rcAlloc 0x20 (rcdtRsd2.c), rcdtRsd2Init
 0x00924830 function rcCopyQword_00924830      # (dst, src): as rcCopyQword_0091cb40
+0x009249a0 function rcefGetFloat25d5ea4       # g_MagicImports slot 515 (3 overlays), after rcAngleDiff: fld 0x025d5ea4; hidden from the dump
 0x009249c0 function rcefTargetGetHeight          # (i) -> float +0x10 of effect target i (0x025d5c60, 0x24 bytes each, filled by 0x00924a20); g_MagicImports
 0x009249e0 function rcefTargetGetAngle           # (i) -> float +0xc, the target's direction; g_MagicImports
 0x00924a00 function rcefTargetGetDist            # (i) -> float +8, horizontal distance (rcVec3fLength before the normalize); g_MagicImports
@@ -6219,6 +6438,7 @@
 0x00924f30 function rcbgChrHandleIndex           # (handle) -> battle slot 0..14 or 20..27 whose MsGetChrHandle is handle, else -1; 0x00935340
 0x00924f90 function rcCopyQword_00924f90      # (dst, src): as rcCopyQword_0091cb40
 0x009250a0 function rcCopyQword_009250a0      # (dst, src): as rcCopyQword_0091cb40
+0x00925130 function rcefWorkCall_00924c70     # g_MagicImports slot 526 (1 overlay): 0x00924c70(0x025d5a20); hidden from the dump
 0x00925140 function rcefMainCreateObj         # fh v3:exact 0x00925140
 0x00925170 function rcefMainCreateTask        # fh v3:exact 0x00925170
 0x009251c0 function rcefMainFini              # fh v3:exact 0x009251c0
@@ -6266,10 +6486,12 @@
 0x009282a0 function rcbgModelGetPrim          # fh v3:exact 0x009282a0
 0x009282c0 function rcbgModelGetPrimHeader    # fh switch:bsim1.00 0x7100545490
 0x00928300 function rcbgModelGetScale         # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
+0x00928320 function rcbgModelInit             # (model): kind 0x20001, rcbgModelDelete, 0x009283e0, rcbgModelDraw; +0x20 cleared, bbox +0x90, matrices +0xc0/+0x100 identity (rcbgModelNew)
 0x009283b0 function rcbgModelNew              # fh v3:bsim1.00 0x009283b0
 0x00928460 function rcbgModelSetAlpha         # fh v3:exact 0x00928460
 0x00928540 function rcbgModelSetScale         # fh v3:exact 0x00928540
 0x009288e0 function rcfxParticleInit          # (fx): rcfxParticle.c defaults (+8 0.03 f64, +0x18 0.001, +0x20 0.1); 0x00928950 allocates 0x40 bytes for it
+0x00928950 function rcfxParticleNew           # (): rcAlloc 0x40 (rcfxParticle.c), rcfxParticleInit
 0x00928970 function rcfxParticleResetForce    # fh v3:exact 0x00928970
 0x009289b0 function rcfxParticleClearForces      # (p): 16 bytes per particle (+0x2c array, +0x1c count) zeroed; rcfxParticleResetForce
 0x009289f0 function rcfxParticleSetCnt        # fh switch:bsim1.00 0x710054f3f0
@@ -6277,10 +6499,14 @@
 0x00928c80 function rcfxSpringFini            # fh switch:bsim0.91 0x710054fa80
 0x00928eb0 function rcCopyQword_00928eb0      # (dst, src): as rcCopyQword_0091cb40
 0x00929100 function rcfxNailInit              # (fx): kind 0x30004 and callbacks 0x00929070/0x00929190/0x00928f40; 0x00929170 allocates it (rcfxNail.c)
+0x00929170 function rcfxNailNew               # (): rcAlloc 0x40 (rcfxNail.c), rcfxNailInit
 0x009293d0 function rcfxDampInit                 # (damp) -> damp: type 0x30003, functions 0x009293c0 (+4), 0x00929360 (+0x14), +0x1c = 0.0001f (0x00b92154); rcfxDamp.c (0x00929420)
+0x00929420 function rcfxDampNew               # (): rcAlloc 0x20 (rcfxDamp.c), rcfxDampInit (rcbgPSimAddDamp)
 0x00929570 function rcfxGravityInit           # (fx): kind 0x30002 and callbacks 0x00929560/0x00929500; 0x009295c0 allocates it (rcfxGravity.c)
+0x009295c0 function rcfxGravityNew            # (): rcAlloc 0x2c (rcfxGravity.c), rcfxGravityInit
 0x009296a0 function rcCopyQword_009296a0      # (dst, src): as rcCopyQword_0091cb40
 0x00929850 function rcfxWindInit              # (fx): kind 0x30006 and callbacks 0x00929840/0x009296d0, +0x1c 1.0, +0x34 0.1, +0x40 1.0 f64; 0x009298c0 allocates it (rcfxWind.c)
+0x009298c0 function rcfxWindNew               # (): rcAlloc 0x60 (rcfxWind.c), rcfxWindInit
 0x00929910 function rcLog2Ceil                   # (n) -> smallest k in 1..16 with n <= 1 << k (16 when none); from 0x00920050
 0x00929930 function rcbgPalGetLastEntryData      # (pal) -> rcbgTrxGetEntryData(pal +0xc, its count +0x30 - 1)
 0x00929950 function rcbgPalAlloc              # fh switch:bsim1.00 0x71005551c0
@@ -6303,6 +6529,7 @@
 0x0092b2c0 function rcPad16                      # (n) -> 16 - n % 16 (C remainder), 0 when it divides; 7 callers around 0x00938xxx
 0x0092b2f0 function rcbgModelLoad             # fh v3:exact 0x0092b2f0
 0x0092b390 function rcbgPreLoad               # fh v3:exact 0x0092b390
+0x0092b400 function rcbgSceneChkLayers        # (scene): +0xf8 for a layer 448+ high, +0xfc for an image layer (0x10), then rcbgSceneChkSortLayer (rcbgSceneLoad)
 0x0092b460 function rcbgSceneChkSortLayer     # fh v3:exact 0x0092b460
 0x0092b5e0 function rcbgSceneLoad             # fh v3:exact 0x0092b5e0
 0x0092b6b0 function rcbgSceneModelLoad        # fh v3:bsim1.00 0x0092b6b0
@@ -6316,6 +6543,7 @@
 0x0092b830 function rcdtChunkGetSize             # (chunk) -> chunk +4
 0x0092b840 function rcdtChunkInit             # fh switch:bsim1.00 0x7100549250
 0x0092b860 function rcdtChunkIsEmpty             # (chunk) -> 1 when data or size is 0
+0x0092b900 function rcdtChunkNew              # (): rcAlloc 8 (rcdtChunk.c), rcdtChunkInit
 0x0092b920 function rcdtChunkSet                 # (chunk, data, size)
 0x0092b940 function rcdtChunkSetBin           # fh v3:exact 0x0092b940
 0x0092b960 function rcdtParseAdvance          # fh v3:exact 0x0092b960
@@ -6353,10 +6581,13 @@
 0x0092d670 function rcbgTrxSetNo              # fh v3:bsim1.00 0x0092d670
 0x0092d680 function rcbgTrxSetTag             # fh v3:bsim1.00 0x0092d680
 0x0092d6f0 function rcCopyQword_0092d6f0      # (dst, src): as rcCopyQword_0091cb40 (6 callers)
+0x0092d860 function op_et_bindeff_draw_off_thunk # g_MagicImports slot 454 (1 overlay): jmp op_et_bindeff_draw_off; hidden from the dump
+0x0092d870 function op_et_bindeff_draw_on_thunk # g_MagicImports slot 455 (1 overlay): jmp op_et_bindeff_draw_on; hidden from the dump
 0x0092dd30 function rcefChgChrClut            # fh switch:cg2 0x7100557340
 0x0092de30 function rcefDirToAngle               # (float) -> 3pi/2 (double 0x00b67e18) - x, as f32; from 0x00924a20 (g_MagicImports)
 0x0092de50 function rcMat4fSetScale001           # (m) -> identity scaled by 0.01 (0x00b1f2b0); FFXVu0UnitMatrix's eax
 0x0092de80 function rcMat4fSetScale0001          # (m) -> identity scaled by 0.001 (0x00b368a4)
+0x0092df90 function rcefEffectEndMotion       # g_MagicImports slot 432 (39 overlays), before rcefEffectReady: MsEffectEndMotion(dword 0x025d5bb8, 0); hidden from the dump
 0x0092dfb0 function rcefEffectReady           # fh v3:exact 0x0092dfb0
 0x0092e1c0 function rcefGetChrHandle          # fh v3:exact 0x0092e1c0
 0x0092e1e0 function rcbgChrFindById              # (id) -> first character (Ch_HandleRewind / Ch_HandleGetNext) whose Ch_GetId is id, else 0; rcbgFPm097's process
@@ -6365,8 +6596,13 @@
 0x0092e620 function rcefIsBattle              # fh v3:bsim1.00 0x0092e620
 0x0092e680 function rcefPlaySE                # fh v3:exact 0x0092e680
 0x0092e6b0 function rcefPlayStream            # fh v3:exact 0x0092e6b0
+0x0092e770 function rcefWorkCall_00925530     # g_MagicImports slot 472 (9 overlays): 0x00925530(0x025d5a20); hidden from the dump
 0x0092e780 function rcefResetMotion           # fh switch:bsim1.00 0x7100556210
+0x0092e7a0 function rcefReverseList           # g_MagicImports slot 521 (1 overlay): reverses the dwords from 0x025d5bc0 (count at 0x025d5bbc) in place; hidden from the dump
+0x0092e980 function MsSetChrPos_thunk         # g_MagicImports slot 506 (1 overlay), after rcefObjClearMode: jmp MsSetChrPos; hidden from the dump
+0x0092e990 function MsSetChrVisible_thunk     # g_MagicImports slot 507 (1 overlay): jmp MsSetChrVisible; hidden from the dump
 0x0092e9a0 function rcefSetDamage             # fh v3:exact 0x0092e9a0
+0x0092eb10 function MsEffectSetMotion_thunk   # g_MagicImports slot 447 (28 overlays), between rcefSetDamage and rcefStreamCue: jmp MsEffectSetMotion; hidden from the dump
 0x0092ebf0 function rcefStreamCue             # fh v3:exact 0x0092ebf0
 0x0092ec60 function rcefStreamCue_0092ec60    # fh switch:bsim1.00 0x71005582b0
 0x0092ec90 function rcefTaskDestruct            # (task): calls task +0xb4 if set (rcefTaskKill)
@@ -6418,9 +6654,11 @@
 0x00930430 function rcEffectTaskMotionWait    # fh v3:exact 0x00930430
 0x00930490 function rcEffectTaskParWait       # fh v3:bsim1.00 0x00930490
 0x009304b0 function rcEffectTaskPrayWait      # fh v3:exact 0x009304b0
+0x009304d0 function rcefTaskRetSeqCont_thunk  # g_MagicImports slot 430 (39 overlays), between rcEffectTaskPrayWait and rcEffectTaskTaskWait: jmp rcefTaskRetSeqCont; hidden from the dump
 0x00930520 function rcEffectTaskTaskWait      # fh v3:exact 0x00930520
 0x00930710 function rcefChrFini               # fh switch:bsim1.00 0x7100555f00
 0x00930770 function rcefChrInit               # fh switch:bsim0.91 0x7100555e10
+0x00930800 function rcefChrAlloc              # g_MagicImports slot 468 (1 overlay): pppMemAlloc(env, env + 0x10, 0x100) on g_pppEnvSlot's environment, rcefChrInit(it), returns it; hidden from the dump
 0x00930830 function rcbgLayerAnimeFini        # (anime): rcFree of +0xc (cleared); a layer's +0x90 block (rcbgLayerFini)
 0x00930860 function rcbgAnimeGetFrame            # (anime, n) -> anime +0xc + 4n when n < anime +8, else 0
 0x00930880 function rcbgAnimeGetCurrent          # (anime) -> anime +0xc + 4 * i16 anime +6
@@ -6473,6 +6711,8 @@
 0x0093da30 function movieOpen                 # fh switch:bsim1.00 0x710056ae50
 0x0093e510 function chr_anim_win              # fh switch:bsim1.00 0x710056aae0
 0x00942110 function sasa_menu                 # fh v3:exact 0x00942110
+0x009428a0 function MemSystem_Ensure # (): 0x009428b0 (sets g_MemSystem = 0x0193c390) unless g_MemSystem is set; called first by malloc_pool_init; name ours
+0x00942a40 function UserHeap_Init # thiscall(heap; arena, a, b), ret 0xc -> heap: +0 arena rounded up to 4 KiB, +4 a, +8 b, +0xc 0 (arenas), +0x10 0x10, +0x14 0; malloc_pool_init passes (0x30000000, 0, 0x2ff00000); name ours
 0x00942b60 function UserHeap_Alloc            # thiscall(heap, size), ret 4 -> p: (size + 15 & ~15) + 16 from UserHeap_FindFree's node; the covered pages committed; remainder keeps the node (or is free with node 3 under heap[1], or joins the block under 16 bytes); name ours
 0x00942dc0 function UserHeap_NewArena         # fastcall(heap): PageAlloc(heap[0], 0x1000), commits its first 2 and last page; 255 bins, 16-byte in-use blocks at +0x1000 and the end, one free block from +0x1010 in bin 254; name ours
 0x00943050 function UserHeap_ReleaseArena     # thiscall(heap, arena), ret 4: unchains an arena that is one free block, its node to the pool, its first two pages and last header page to PageQueueDecommit, PageRelease; name ours
@@ -6510,6 +6750,7 @@
 0x0094923a function security_check_cookie     # fh v3:cg658 0x949240 __security_check_cookie
 0x0094926c function FID_conflict_vector_deleting_destructor # fh v3:cg2 0x949272 FID_conflict:`vector_deleting_destructor'
 0x00949620 function alloca_probe              # fh v3:cg9 0x949620 __alloca_probe
+0x0094964c function crt_memset_thunk          # g_MagicImports slot 725: jmp [0x00b0c388] (MSVCR110 memset); hidden from the dump
 0x0094966a function eh_vector_constructor_iterator # fh v3:cg7 0x94966a `eh_vector_constructor_iterator'
 0x009496d2 function eh_vector_destructor_iterator # fh v3:cg3 0x9496d2 `eh_vector_destructor_iterator'
 0x0094975a function ArrayUnwind               # fh v3:cg2 0x94975a __ArrayUnwind
@@ -6518,9 +6759,11 @@
 0x009498a6 function alloca_probe_8            # fh v3:cg2 0x9498a6 __alloca_probe_8
 0x00949910 function allshl                    # fh v3:cg2 0x949910 __allshl
 0x00949b02 function report_rangecheckfailure  # fh v3:cg10 0x949afc ___report_rangecheckfailure
+0x00949cf0 function crt_rand_thunk            # g_MagicImports slot 452: jmp [0x00b0c420] (MSVCR110 rand); hidden from the dump
 0x00949d00 function aullshr                   # fh v3:cg3 0x949d00 __aullshr
 0x00949e30 function aulldiv                   # fh v3:cg2 0x949e30 __aulldiv
 0x00949ea0 function alldiv                    # fh v3:cg2 0x949ea0 __alldiv
+0x00949f50 function crt_vprintf_thunk         # g_MagicImports slot 726 (142 overlays): jmp [0x00b0c48c] (MSVCR110 vprintf); hidden from the dump
 0x00949ff0 function SEH_prolog4               # fh v3:cg2 0x949ff0 __SEH_prolog4
 0x0094a035 function SEH_epilog4               # fh v3:cg2 0x94a035 __SEH_epilog4
 0x0094a684 function Facet_Register            # fh v3:cg2 0x94a684
@@ -6569,6 +6812,9 @@
 0x009daca0 function MagicFile_clearAllPreloadedPrx # fh v3:exact 0x009dac80
 0x009dae60 function MagicFile_isPrxPreloaded  # fh v3:exact 0x009dae40
 0x009db110 function onMagicDLLLoaded          # fh v3:exact 0x009db0f0
+0x009db190 function magic_ret0_009db190       # g_MagicImports slot 301: xor eax, eax; ret; hidden from the dump
+0x009dba10 function FFXVu0MulMatrix_thunk     # g_MagicImports slot 299 (5 overlays): jmp FFXVu0MulMatrix (0x006ed5c0); hidden from the dump
+0x009dbea0 function magic_nop_009dbea0        # g_MagicImports slot 720 (354 overlays): a lone ret; hidden from the dump
 0x009e24f0 function PInputSource_setVftable # thiscall(this): *this = Phyre_PInputs_PInputSource_vftable (base part of three constructors at 0x00ada8c0..); eax untouched; name ours
 0x009ecd80 function Phyre_PClassDescriptorForType_Phyre_PPostProcessing_PPostEffectManager__getPointerFromScriptContext # fh switch:bsim1.00 0x710083e950 Phyre::PClassDescriptorForType<Phyre::PPostProcessing::PPostEffectManager>::getPointerFromScriptContext
 0x009ecda0 function Phyre_PClassDescriptorForType_Phyre_PString__getPointerFromScriptContext # fh switch:bsim1.00 0x71000be440 Phyre::PClassDescriptorForType<Phyre::PString>::getPointerFromScriptContext
@@ -6731,6 +6977,7 @@
 0x00a72b80 function opus_0582_dot_draw        # fh switch:cg4 0x7100873570
 0x00a73c20 function createGT3MeshBreakRenderDataBuffer # fh switch:cg3 0x71008741f0
 0x00a73d90 function opp2_md_break             # fh switch:cg3 0x7100874300
+0x00a74d30 function opp_draw_part_a74d30      # g_MagicImports slot 733 (581 overlays): aligned-stack prologue (like pppKeMatSN), draws a part by its +0x21a kind (0x1000/0x2000/...) with op_unit_m_scale, op_mul_m and FUN_00801f00; hidden from the dump
 0x00a75170 function opus_map_del_draw         # fh switch:cg2 0x7100874df0
 0x00a77b30 function Native_FootSetMaterial       # 0x403b (index, material) -> 0; footstep material table 0x01301af8[set 0x01301b00 * 4 + index] = material (read by 0x0083d7e0)
 0x00a77c30 function Native_SetControlAngle       # 0x4040 float (degrees) -> 0; stick-direction offset 0x01300780 = wrap(deg) + current input angle 0x013007a0 (0x0082d950), used by the player movement code 0x0082d5xx; scripts push 19, -160
@@ -6803,6 +7050,7 @@
 0x00a7c810 function TkMenuSetScenePos         # (i, handle, x, y): the record's +8/+0xa
 0x00a7c880 function TkMenuStartScene          # fh v3:exact 0x00a7c880
 0x00a7c8a0 function TkMenuStopScene           # fh v3:exact 0x00a7c8a0
+0x00a8d87a function crt_abs_thunk             # g_MagicImports slot 392: jmp [0x00b0c5b4] (MSVCR110 abs); hidden from the dump
 0x00b0d998 label FFXApplication_vftable       # fh v4:imported FFXApplication::vftable
 0x00b0d9cc label std_error_category_vftable   # fh v4:imported std::error_category::vftable
 0x00b0d9e8 label std__Generic_error_category_vftable # fh v4:imported std::_Generic_error_category::vftable
@@ -8384,6 +8632,9 @@
 0x00b55178 label g_FloatScreenDepth        # f32 1024.0, the default screen depth (MsEffectCameraInit)
 0x00b594ec label g_ChrStrC101               # "c101", Tidus's other model name (Ch_CbMapping)
 0x00b59840 label g_ChrExceptionIds          # 9 character ids Ch_IsNotExceptionId (0x00831780) checks
+0x00b599e0 label    g_ChRadianLo              # f32 lower bound used by Ch_CheckRadian 0x00836790
+0x00b599f0 label    g_ChRadianHi              # f32 upper bound used by Ch_CheckRadian 0x00836790
+0x00b59a08 label    g_ChNameNone              # "0000"-style name returned by ch_create_name 0x00838100 for id 0
 0x00b5b9fc label    g_AtelVersion                # build date and time string AtelGetVersion returns (__DATE__ " " __TIME__ style)
 0x00b5ec4f label    g_GsDefDrawEnv2           # i8 1: what sceGsSetDefDrawEnv2 returns; also read by MsBattleProcess, TkInit
 0x00b69fe0 label type_info_vftable            # fh v4:imported type_info::vftable
@@ -8848,6 +9099,7 @@
 0x00c58f00 label g_TOFontGlyphs # 4 bytes per glyph (x, y, flags, width), read by TOFontGlyphSprite 0x0089e360; name ours
 0x00c59554 label    g_SystemConfirmButtonAssign # TOGetSystemConfirmButtonAssign returns it with -1 replaced by 0 (and stores that back)
 0x00c5955c label    g_ButtonData              # 2 words: setButtonData(a, b); resetButtonData sets both to -1
+0x00c5a03c label g_TOControlPadLatch # u8 TOGetControlPadStatus sets for state-2 message windows and clears otherwise; name ours
 0x00c5a088 label    g_MenuHelpExtArg          # second argument of TOMenuHelpSetExtMode
 0x00c5d770 label    g_TOScreenW               # TOGetScreenWH reads its low half as the width
 0x00c5d774 label    g_TOScreenH               # TOGetScreenWH reads its low half as the height
@@ -8877,6 +9129,7 @@
 0x00c8f588 label g_Ee_GprMove              # the EE register MsEffectCameraSet moves its vectors through
 0x00c8f728 label    g_Vu0_RSeeded                # nonzero once g_Vu0_R is seeded (0x0075fe50 sets it with R); op_random draws 1.0 while 0, then sets it
 0x00c8f788 label g_Vu0_Q                      # emulated VU0 Q (f32): MsDivVector leaves vf00.w / s there, MsVectorLen the length; the VF registers follow from 0x00c8f790, 16 bytes each (MsApplyMatrix: acc 0x00c8f790, matrix 0x00c8f7d0, vector 0x00c8f810, result 0x00c8f850)
+0x00c8f980 label    g_Vu0_VfMove              # emulated VU0 register pppVu0MoveVia copies through
 0x00c8fac4 label    g_Vu0_Status              # emulated VU0 status flags: setZSFlag sets 0x40 (sticky zero), setSSFlag 0x80 (sticky sign)
 0x00cc9698 label    g_BasePath
 0x00cc9c48 label BigFileStream_sBigFileStreamInstacne # was g_FileSys
@@ -8900,6 +9153,8 @@
 0x00ce7318 label g_SortedSaveTable # 200 x 3 words, sorted by SortSaveTable_006f0fb0; name ours
 0x00ce81f4 label    g_SaveDataManager         # the instance SaveDataManager_instance returns (+4 callback result, +8 state for isBusy, +0x350 ref buffer)
 0x00ce901c label    g_UserHeap                # user_malloc/user_free's heap: CRITICAL_SECTION, then the allocator at +0x18 (arena size, bin min, bin max, arenas, node pool); malloc_pool_init creates it
+0x00ce9020 label g_UserHeapFirstBlock # the 16-byte block malloc_pool_init allocates to prove the heap; name ours
+0x00ce9024 label g_UserHeapArenaSize # arena size malloc_pool_init settled on (0x30000000, less 16 MiB per failed try); name ours
 0x00cec1a4 label    g_pppOtDrawing            # pppOtFunc_Control (0x00716ac0) sets it to 1 while it calls the g_pppOtList draws, 0 after; the KeLns draws in 0x00760000.c test it
 0x00cec1c0 label    g_FillBufferRequests      # 12 words zeroed by JobSchedule_pppPart_clearFillBufferRequest (and initFillBufferRequest, after the 6 buffers at 0x00cec1a8)
 0x00cec1f0 label    g_pppFpDisp               # the field effects' display switch: pppFpSetDisp; the field effect debug listing prints On/Off from it
@@ -8910,6 +9165,7 @@
 0x00d2c258 label    g_FpData                     # current field's FP (effect) table: u16 count at +4, 0x50-byte entries with the id at +0x64; runtime state at 0x00d2c260 (0x80 each) and 0x00d30260 (0x4c each)
 0x00d2c260 label    g_FpRun                      # FP run records, 0x80 per g_FpData entry: +0 frame counter (-0x1000 not started), +0x1d status (0 run, 1 end: Fp_End, 2: Fp_RestartMode2)
 0x00d30260 label    g_FpDisp                     # FP display records, 0x4c per entry: +0 flags (0x10 hidden: pppFpIDdispOff, 2 stuck to map: pppFpSetStickMap, 8 to a display object), +4 stick target
+0x00d4b464 label    g_pppDrawMdlInfActive     # pppDrawMdlInfDes clears it
 0x00d4b46c label    g_KeLnsLpTCount           # pppKeLnsLpTCon (0x0075b090) stores it at area +0x8c and increments it (byte)
 0x00d52398 label    g_pppRandTarget          # the float the ppp rand programs (pppRandFloat ...) add to when the key's target offset is -1
 0x00d524a4 label    g_KePmcomNext                # next free address of the pmcom arena 0x00e524f0..0x00f524f0 (KePmcomAlloc)
@@ -9141,10 +9397,13 @@
 0x0119fe9c label    g_OpusWeaponNos           # 4 bytes: the weapon numbers of g_OpusWeapons (set by op_et_weapon_init, 0xff free; opus_get_weapon_by_no)
 0x0119fea0 label    g_OpusWeapons                # 4 weapon opus objects (opus_get_weapon_index)
 0x0119fed0 label    g_OpusMonsters               # 8 monster opus objects (opus_get_monster_index)
+0x0119fef8 label    g_OpusWeaponEffCount      # byte per g_OpusWeapons slot: op_et_weapon_unit numbers unit IDs with it (op_et_weapon_init clears it)
 0x011a0061 label    g_OpPrayEffect               # op_pray_effect_check returns -1 while nonzero
 0x011a0063 label    g_OpEtChrShow             # byte: the last op_et_chr_show argument
+0x011a0065 label    g_OpEtBindOff             # byte: while set op_et_bindeff (and op_et_bindeff2's encounter part) do nothing
 0x011a0067 label    g_OpWotTrigger               # set by op_wot_triger, read by op_ot_draw
 0x011a0080 label    g_EtBindDefault           # u16 bind flags; op_et_bind_default_water keeps the water bits (0x3400) at 0x800
+0x011a0083 label    g_OpOef2BattleStreamPlaying # byte, op_oef2_se_on / op_oef2_se_3d_on set it to 1 before starting a battle stream
 0x011a03a0 label    g_OpOef2ClutCues             # ring of 64 CLUT masks (op_oef2_tex_clut_cue_check, op_oef2_tex_clut_cue_trans)
 0x011a04a0 label    g_OpOef2ClutCueHead          # u16 first entry of g_OpOef2ClutCues
 0x011a04a2 label    g_OpOef2ClutCueCount         # u16 entries in g_OpOef2ClutCues
@@ -9195,6 +9454,7 @@
 0x013009b8 label g_ChrFuka                   # u32 by index, Ch_SetFuka / Ch_GetFuka
 0x013009e0 label g_ChrGuiCalcNormal          # 0 or 1, Ch_GuiSetCalcNormAll / Ch_GuiGetCalcNormal
 0x013009e8 label g_ChrFunctionHistory9e8    # u32, cleared by Ch_FunctionHistoryClear
+0x01300a00 label    g_ChCreateName            # char buffer ch_create_name 0x00838100 formats "%c%03d" (class letter c/m/n/s/w/f/k or '-', number) into
 0x01300a08 label g_ChrSequences             # 100 x 0x14 bytes: data, u16 key +4, u16 taken +6, next same key +8, next key +0xc (SG_AddSequence, Ch_SeqLink)
 0x013011d8 label g_ChrSequenceHead          # first chain of g_ChrSequences (Ch_SeqLink)
 0x013017f8 label g_ChrMotionHalf             # Ch_MotionSetHalf / Ch_MotionGetHalf
@@ -9434,6 +9694,7 @@
 0x0186ac34 label    g_TkMenuTutoWindows       # 2 tutorial windows (MenuTuto_RestartWindow/2)
 0x01871528 label    g_TkMenuTutoChoice        # MenuTuto_GetChoice/SetChoice
 0x01871530 label    g_TkMenuPacket            # menu GS packet pointer; TkMenuDrawEnv writes 0x50 bytes at +0x10 and moves it 0x60 on
+0x0187154c label    g_TkMenuMainChoice        # reset to -1 by TkMenuMainOpenOption
 0x01871568 label    g_TkMenuMainOptions       # 8-byte entries: +0 menu (TkMenuMainGetOptionMenu), +4 i16 enabled (TkMenuMainGetOptionEnabled)
 0x01871688 label    g_TkMenuMainMaxOptions    # TkMenuMainGetMaxOptions
 0x01871698 label    g_TkMenuWorldMapWindow    # MenuWorldMap_CloseWindow
@@ -9480,6 +9741,7 @@
 0x0193bf80 label    g_YnMapSystem                # Yn's field state: +0 the map (its +8: guide map list, +0x18 i16 count, +0x1a i16 shown, +0x1c models), +4 the guide (Yn_GuideMapGetMapNo, Yn_GuideMapSetMapNo, Yn_BattleBegin)
 0x0193c0d0 label    g_RcefParKept                # particle parts rcefParCreate remembers for some magic effects: +0 0x20e, +8 0x180, +0x10 0x168, +0x18 0x217 (entry 2); +0xc 0xbf, +0x14 0x216 (entry 1)
 0x0193c0f0 label    g_RcuiWork                   # rcui work area: +0xbe8 the ID dragged, +0xbec rcuiMouseMoveGetID, +0xbf0 dragging
+0x0193cd2c label g_MemSystem # set to 0x0193c390 by 0x009428b0 (MemSystem_Ensure's slow path); name ours
 0x0193cd44 label    g_ReservedBytes           # VirtualAlloc_Reserve_NA adds, VirtualFree_Release subtracts
 0x0193cd48 label    g_CommittedBytes          # VirtualAlloc_Commit_RW adds, VirtualFree_Decommit subtracts
 0x0193cd4c label    g_VirtualFreeErrorHook    # cdecl(message) the VirtualFree wrappers call on failure, when set
@@ -9546,7 +9808,12 @@
 0x02321548 label    g_OpPadInput                 # byte: while 0, op_pad_set takes no buttons
 0x02322790 label    g_OpDebugMode                # byte set by pppInitPartRender: op_pad_set and op_heap_display_set_par do nothing while 0; read by the op debug functions around 0x007e5bd0
 0x02332ea1 label    g_OpSprTop                   # i8 top index of g_OpSprStack (op_spr_alloc, op_spr_free)
+0x023c3540 label    g_OpOef2SoundCueRing      # 32 cue pointers queued by op_oef2_sound_cue_push (arguments at 0x023c35c0)
+0x023c35c0 label    g_OpOef2SoundCueArgs      # the arguments of g_OpOef2SoundCueRing
+0x023c3640 label    g_OpOef2SoundCueHead      # u16 ring head of g_OpOef2SoundCueRing
+0x023c3642 label    g_OpOef2SoundCueCount     # u16 queued cues (<= 32); op_oef2_sound_cue_check returns it, op_oef2_sound_wait waits for 0
 0x023c3648 label    g_OpOef2StreamCues           # 2 stream cue pointers (op_oef2_stream_cue, op_oef2_sound_cue_*)
+0x023c4000 label    g_DebugLine               # char buffer for debug text; Ch_FunctionHistory 0x00833770 and Ch_CheckRadian 0x00836790 sprintf into it
 0x023c44a0 label g_ChrTex0List              # texture list Ch_TextureSetTex0 last worked on
 0x023c44e0 label    g_ChrCount                   # number of field characters in g_ChrArray
 0x023c44e4 label    g_ChrArray                   # field characters, 0x880 bytes each (byte +2 = active)

@@ -275,6 +275,52 @@ pub mod bridge {
         mem.read::<u32>(ca + 0x6d4)
             .wrapping_sub(mem.read(cb + 0x6d4))
     }
+
+    /// The debug line buffer the `chr.c` debug prints go to.
+    pub const DEBUG_LINE: Global<u8> = Global::new(0x023c_4000);
+
+    /// A C string at `p` (`"(null)"` for a null pointer, as the CRT's `%s`).
+    pub(crate) fn c_string(mem: &impl Mem, p: u32) -> Vec<u8> {
+        if p == 0 {
+            return b"(null)".to_vec();
+        }
+        let mut out = Vec::new();
+        let mut at = p;
+        loop {
+            let b: u8 = mem.read(at);
+            if b == 0 {
+                return out;
+            }
+            out.push(b);
+            at = at.wrapping_add(1);
+        }
+    }
+
+    /// Writes `s` and its NUL at `at` (what `sprintf` leaves).
+    pub(crate) fn put_c_string(mem: &mut impl Mem, at: u32, s: &[u8]) {
+        let mut v = s.to_vec();
+        v.push(0);
+        mem.write_bytes(at, &v);
+    }
+
+    /// `Ch_FunctionHistory(file, line)` (`0x00833770`): for each active
+    /// character without models, `sprintf(debug line, "%s:%s:%d\n", name,
+    /// file, line)`.
+    pub fn ch_function_history(mem: &mut impl Mem, file: u32, line: u32) {
+        each_active(mem, |m, c| {
+            let header: u32 = m.read(c + l::MODEL_HEADER);
+            if m.read::<u16>(header + l::HEADER_MODELS) != 0 {
+                return;
+            }
+            let name: u32 = m.read(c + l::NAME);
+            let mut s = c_string(m, name);
+            s.push(b':');
+            s.extend(c_string(m, file));
+            s.extend(format!(":{}\n", line.cast_signed()).bytes());
+            let at = DEBUG_LINE.ptr(m).addr;
+            put_c_string(m, at, &s);
+        });
+    }
 }
 
 #[cfg(test)]

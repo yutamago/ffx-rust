@@ -326,3 +326,18 @@ after a 32-byte block tag (`0x1000`, the texture's registers or
 fourth state word changes. Texture coordinates are `v × 4096 / (size ×
 16)`, truncated (`fistp` in chop mode). While the packet pointer is 0 it
 only measures: size, triangle count, largest x and y.
+
+## Debug text and generated names
+
+- `Ch_FunctionHistory` (`0x00833770`) and `Ch_CheckRadian` (`0x00836790`)
+  `sprintf` into the debug line at `0x023c4000`: `"%s:%s:%d\n"` (character
+  name at chr+4, source file, line) for each active character with no
+  models, and `"radian value error =%f"` for an angle outside
+  `[0x00b599e0, 0x00b599f0)` or NaN. `%f` follows MSVCR110: 17 significant
+  digits, then zeros (see `ffx_chara::msvc::fmt_f`).
+- `ch_create_name` (`0x00838100`) formats `"%c%03d"` into `0x01300a00`: the
+  letter is the database type (c, m, n, s, w, f, k; `-` otherwise) and the
+  number is the id within it. Id 0 returns the constant at `0x00b59a08`.
+- `Ch_AnalysisChrNum` (`0x00829e60`) turns `.../mdl/xxx.chr` into the
+  `.../xxx.ah` name: it copies up to the dot, appends `ah`, and drops the
+  first `mdl/`.
