@@ -3,7 +3,9 @@
 
 use ffx_battle::{actor::bridge as actor, camera::bridge as camera, command::bridge as cmd};
 use ffx_battle::{body::bridge as body, menu::bridge as menu, vector::bridge as vector};
-use ffx_battle::{cue::bridge as cue, flow::bridge as flow, turn::bridge as turn};
+use ffx_battle::{
+    cue::bridge as cue, flow::bridge as flow, pos::bridge as pos, turn::bridge as turn,
+};
 use ffx_battle::{damage::bridge as dmg, state::bridge as state, util::bridge as util};
 use ffx_battle::{minor::bridge as minor, misc::bridge as misc, save::bridge as save};
 
@@ -25,6 +27,21 @@ fn call1(sym: u32, a: u32) -> u32 {
         f(a)
     }
 }
+
+/// Calls an original cdecl function of four arguments by its `ffx.sym`
+/// address.
+#[allow(clippy::many_single_char_names)]
+fn call4(sym: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
+    // SAFETY: the address is a cdecl function of this build taking four u32s.
+    unsafe {
+        let f: unsafe extern "C" fn(u32, u32, u32, u32) -> u32 =
+            std::mem::transmute(crate::rebase(sym));
+        f(a, b, c, d)
+    }
+}
+
+/// `MsGetSummonerPos` (still the original: its `_CIcos`/`_CIsin` are next).
+const MS_GET_SUMMONER_POS: u32 = 0x007a_c2b0;
 
 ported! {
     /// `rnd`: the global random generator.
@@ -1743,5 +1760,12 @@ ported! {
     /// `MsGetMagicEffNum(chr, id, command)`: `TkGetLang` (menu).
     MsGetMagicEffNum @ 0x0079_d2f0 => extern "C" fn ms_get_magic_eff_num(chr: i32, id: u32, command: u32) -> u32 {
         flow::ms_get_magic_eff_num(&mut mem(), chr, id, command, |m| ffx_menu::tk::bridge::tk_get_lang(m))
+    }
+    /// `MsBtlGetPos(write, actor, group, kind, index, vec)`: kinds 12-14
+    /// call the original `MsGetSummonerPos`.
+    MsBtlGetPos @ 0x007a_bfe0 => extern "C" fn ms_btl_get_pos(write: u32, actor: u32, group: i32, kind: i32, index: i32, vec: u32) -> i32 {
+        pos::ms_btl_get_pos(&mut mem(), write, actor, group, kind, index, vec, |_, actor, index, k, vec| {
+            call4(MS_GET_SUMMONER_POS, actor, index.cast_unsigned(), k.cast_unsigned(), vec);
+        })
     }
 }

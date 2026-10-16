@@ -7756,6 +7756,7 @@
 0x0112a958 label g_StatusRom               # kernel table MsMenuStatusNum reads
 0x0112a960 label g_KernelSummonGrow            # battle resource 6 (MsBattleInit); MsGetRomSummonGrow
 0x0112a964 label g_KernelKaizou                # battle resource 5 (MsBattleInit); MsGetRomKaizou
+0x0112a9b0 label g_BtlPosFile              # pointer to the battle map's position file: flag, i8 group count, records of 0x20 (flag set) or 3 x 0x20 per group (MsBtlGetPos)
 0x0112a9bc label g_BtlFont                    # u32; The battle font (MsBattleGetFontAddress).
 0x0112a9c0 label g_BtlVoiceEvent             # pointer to a byte flag; MsGetVoiceEventFlag (0x007986a0) is 1 when it is set and g_BtlVoiceMute is not
 0x0112a9c4 label g_BtlFieldList               # u32; The battle field list (MsBtlListInit): the loaded file, its records' count and the two tables in it.
