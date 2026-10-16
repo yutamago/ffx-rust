@@ -553,6 +553,51 @@ pub mod bridge {
         let close = near > f64::from(crate::x87::load(d2));
         u8::from(close && f64::from(crate::x87::load(angle)) > COPY2_ANGLE.get(mem))
     }
+
+    /// `Ch_SeqGetFastMotion(chr)` (`0x00837860`): the first motion the
+    /// sequence at `+0x714` plays: walks its codes (2: one byte, 3 and 6:
+    /// three, 4: a jump through the sequence group `+0x70c`, table `+8` of
+    /// `i16` offsets from `+0xc`) to the first 1, whose `i16` motion picks a
+    /// 16-byte entry of the motion group's (`+0x710`) table `+0x10`; 0 for
+    /// no sequence, an end (0, 5) or an unknown code (printed through the
+    /// empty `dbgPrintf`).
+    pub fn ch_seq_get_fast_motion(mem: &impl Mem, chr: u32) -> u32 {
+        let mut p: u32 = mem.read(chr + 0x714);
+        if p == 0 {
+            return 0;
+        }
+        loop {
+            match mem.read::<i8>(p) {
+                1 => {
+                    let m = read_i16u(mem, p + 1);
+                    let g: u32 = mem.read(chr + 0x710);
+                    let t: u32 = mem.read(g + 0x10);
+                    return (m << 4).cast_unsigned().wrapping_add(t);
+                }
+                2 => p = p.wrapping_add(1),
+                3 | 6 => p = p.wrapping_add(3),
+                4 => {
+                    let g: u32 = mem.read(chr + 0x70c);
+                    let k = read_i16u(mem, p + 1);
+                    let tab: u32 = mem.read(g + 8);
+                    let off = i32::from(mem.read::<i16>(tab.wrapping_add((2 * k).cast_unsigned())));
+                    p = off.cast_unsigned().wrapping_add(mem.read::<u32>(g + 0xc));
+                }
+                _ => return 0,
+            }
+        }
+    }
+
+    /// `ChN_ExistSystemMGRP(key, b)` (`0x00836850`): whether
+    /// `SG_FindMotionGroup(0, b, key)` (passed in) finds one.
+    pub fn chn_exist_system_mgrp<M: Mem>(
+        mem: &mut M,
+        key: u32,
+        b: u32,
+        find: impl FnOnce(&mut M, i32, i32, u32) -> u32,
+    ) -> u32 {
+        u32::from(find(mem, 0, b.cast_signed(), key) != 0)
+    }
 }
 
 #[cfg(test)]
