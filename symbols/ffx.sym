@@ -6592,6 +6592,7 @@
 0x00b41280 label Phyre_PInternal_PCallerImplementation_PCallerImplementation0_PMethodCallerConcrete_Phyre_PFramework_PApplicationViewport_unsigned_int__vftable # fh v4:imported Phyre::PInternal::PCallerImplementation::PCallerImplementation0::PMethodCallerConcrete<Phyre::PFramework::PApplicationViewport,unsigned_int>::vftable
 0x00b41298 label Phyre_PInternal_PCallerImplementation_PCallerImplementation0_PMethodCallerConcrete_Phyre_PFramework_PInputMapper_unsigned_int__vftable # fh v4:imported Phyre::PInternal::PCallerImplementation::PCallerImplementation0::PMethodCallerConcrete<Phyre::PFramework::PInputMapper,unsigned_int>::vftable
 0x00b41358 label BacktraceOutputWin32_vftable # fh v4:imported BacktraceOutputWin32::vftable
+0x00b41d9c label    g_AlphaScaleExtended      # .rdata f32 512.0: useExtendedAlpha(1) copies it to g_AlphaScale
 0x00b43e04 label Phyre_PClassDescriptorForType_ClassDynamicMesh__vftable # fh v4:imported Phyre::PClassDescriptorForType<ClassDynamicMesh>::vftable
 0x00b43e4c label Phyre_PClassDescriptorAbstract_ClassDynamicMesh__vftable # fh v4:imported Phyre::PClassDescriptorAbstract<ClassDynamicMesh>::vftable
 0x00b43e94 label Phyre_PClassDescriptorConcrete_ClassDynamicMesh__vftable # fh v4:imported Phyre::PClassDescriptorConcrete<ClassDynamicMesh>::vftable
@@ -6675,6 +6676,7 @@
 0x00b4c250 label ShadowDynamicMeshInstance_vftable # fh v4:imported ShadowDynamicMeshInstance::vftable
 0x00b4c2e4 label FmodManager_vftable          # fh v4:imported FmodManager::vftable
 0x00b4cf30 label JobSchedule_JobWorker_vftable # fh v4:imported JobSchedule::JobWorker::vftable
+0x00b501c0 label    g_AlphaScaleNormal        # .rdata f32 256.0: useExtendedAlpha(0) copies it to g_AlphaScale
 0x00b5b9fc label    g_AtelVersion                # build date and time string AtelGetVersion returns (__DATE__ " " __TIME__ style)
 0x00b69fe0 label type_info_vftable            # fh v4:imported type_info::vftable
 0x00b6ed04 label btCollisionShape_vftable     # fh v4:imported btCollisionShape::vftable
@@ -7095,9 +7097,12 @@
 0x00c0a004 label g_Vu0_Vf00                  # emulated VU0 vf00 (x, y, z, w) = (0, 0, 0, 1.0f): AsmEmuInit and restoreVf00Register store exactly that
 0x00c30f94 label NvOptimusEnablement          # fh v4:imported
 0x00c30f98 label AmdPowerXpressRequestHighPerformance # fh v4:imported
+0x00c32308 label    g_SaveData_AlbhedFade     # SaveDataSetAlbhedFade stores it, only while a SaveDataManager exists
 0x00c33468 label    g_EternalCalmFirstMap     # first of the 7 Eternal Calm maps (a map = PS2 file number / 18, as CDfileSize_CD asks): isEternalCalmScene/Mgrp, getEternalCalmSceneName/Size subtract it
 0x00c334b8 label    g_EternalCalmSceneNames   # 7 pointers to "host0:/ffx_master/jppc/event/obj..." paths, indexed by getEternalCalmSceneName
+0x00c3a4d0 label    g_AlphaScale              # f32 set by useExtendedAlpha (512 extended, 256 normal)
 0x00c421cc label    g_BattleEnable            # set by setBattleEnable, read by MsBattleEncountExe
+0x00c421dc label    g_NewCharacterLoads       # AsyncLoadNewCharacter counts it up while non-negative
 0x00c423e8 label g_StatusTable               # 4 bytes per status; MsCheckStat (0x0079e310) returns byte 3 of entry i
 0x00c42420 label g_StatusTable2              # entry 14 of g_StatusTable on; MsCheckStat2 (0x0079e320) returns byte 3 of entry i
 0x00c44bf0 label    g_pppSinTable                # 4096 f32 sines over a turn: pppGetRotMatrix* read [(a>>4)&0xfff] and [((a+0x4000)>>4)&0xfff] (cosine)
@@ -7106,8 +7111,13 @@
 0x00c4df60 label    g_GuWindowHokan           # window movement smoothing on (Gu_WindowSetHokanEnable)
 0x00c52ad8 label    g_TkVibrateCurves         # 4 default vibration curves of 16 bytes (u16 entries), by kind (TkGetVibrateCurve)
 0x00c54e40 label    g_SinQuarter              # 0x2000 x u16, the first quarter of a sine wave (Math_SinTable)
+0x00c58ef8 label    g_BtlWindowControlEnable  # TOGetBtlWindowControlEnable
 0x00c59554 label    g_SystemConfirmButtonAssign # TOGetSystemConfirmButtonAssign returns it with -1 replaced by 0 (and stores that back)
 0x00c5955c label    g_ButtonData              # 2 words: setButtonData(a, b); resetButtonData sets both to -1
+0x00c5a088 label    g_MenuHelpExtArg          # second argument of TOMenuHelpSetExtMode
+0x00c5d770 label    g_TOScreenW               # TOGetScreenWH reads its low half as the width
+0x00c5d774 label    g_TOScreenH               # TOGetScreenWH reads its low half as the height
+0x00c5d780 label    g_TOAddPkt                # TOInitAddPkt sets 1, TOSetAddPkt 0
 0x00c5e350 label    g_GuideFlags                 # bit 0: the minimap may show (clear: Guide_FadeOff)
 0x00c5e364 label    g_GuideFadeDelay             # frames Guide_FadeStep waits before fading in (and longer than it before fading out); 2 in .data
 0x00c5e368 label    g_GuideFadeSteps             # steps of a minimap fade: g_GuideFade = level * 128 / steps (Guide_FadeStep); 6 in .data
@@ -7133,10 +7143,13 @@
 0x00ccb994 label    g_SaveData_ScreenState    # SaveDataSetScreenState writes, SaveDataGetScreenState reads, SaveDataIsScreenClosed: == 0
 0x00ccb998 label    g_SaveData_DialogState    # SaveDataGet/SetDialogState; also written by SaveDataSetScreenState, SaveDataToLoad
 0x00ccb99c label    g_SaveData_IsSave         # SaveDataSetSave writes, SaveDataIsSave: == 1
+0x00ccb9a4 label    g_SaveData_CrcCheckOff    # nonzero: SaveDataCheckCrc passes every save without computing TkCRC
 0x00ccc88c label    g_AsyncLoadManager        # the instance AsyncLoadManager_sGetInstance returns
 0x00ccca4c label    g_ClusterManager          # the instance ClusterManager_GetInstance returns
 0x00cded58 label    g_LangManager
+0x00ce5176 label    g_DepthBias_Dirty         # u8: DepthBiasHooks_clearDepthBias resets the table only when set, and clears it
 0x00ce81f4 label    g_SaveDataManager         # the instance SaveDataManager_instance returns (+4 callback result, +8 state for isBusy, +0x350 ref buffer)
+0x00cec1c0 label    g_FillBufferRequests      # 12 words zeroed by JobSchedule_pppPart_clearFillBufferRequest (and initFillBufferRequest, after the 6 buffers at 0x00cec1a8)
 0x00cec1f4 label    g_FpPointLightA              # cleared by pppFpPointLightInit and pppFpLoop, read by pppFpPointLightProc
 0x00cec1fc label    g_FpPointLightB              # cleared by pppFpPointLightInit and pppFpLoop, read by pppFpPointLightProc
 0x00cec22c label    g_pppFpHeap                  # the field effects' ppp heap {cur, first, last, used}: pppFpGetHeapSize adds last - first + 16; 0x007296a0 makes it current
@@ -7322,11 +7335,21 @@
 0x0133c8c0 label    g_TkBattleMusicBuffer     # TkGetBattleMusicBuffer
 0x0133c8d4 label    g_TkDebugFontPos          # 2 x i32, x and y x16 (TkSetDebugFontLocate)
 0x0133c910 label    g_FFXIsDebug              # i8: FFXIsDebug
+0x0133c93c label    g_BtlHelpWinOpen          # u8: TOBtlCloseHelpWin clears it
+0x0133d6f0 label    g_BtlCurPosCount          # i16: cursor positions TOBtlSetCurPos pushed (at most 4) into g_BtlCurPos
+0x0133f510 label    g_BtlSimpleHelpMes        # TOBtlCloseSimpleHelpMes clears it
+0x0133f520 label    g_BtlSignWindow           # TOBtlCloseSignWindow clears it
+0x0133f798 label    g_BtlLuluLimitTbl         # 16 bytes: running sums of the ASCII digits TOBtlSetLuluLimitTbl gets
+0x0133f7b4 label    g_BtlCurPos               # 4 cursor positions of 8 bytes (x +0, y +4, z +6, u16) pushed by TOBtlSetCurPos
+0x01340452 label    g_BtlInitAnm              # u8: TOBtlInitAnm sets 1
 0x01340828 label    g_PauseOn                    # nonzero: Game_Frame runs the pause instead of the world; set alone, Pause_Update enters the pause
 0x01340838 label    g_PauseFade                  # the pause's dimming, 0x40 (paused) to 0x80 (running)
 0x0134083c label    g_PauseFadeStep              # added to g_PauseFade each frame: -4 entering, +4 leaving
 0x0134084c label    g_PauseEntered               # 1 once Pause_Enter ran
+0x01340859 label    g_TkMenuFirstReadEnd      # i8: TOMenuGetFirstReadEndFlag
+0x01597770 label    g_AmapItems               # ability-map item list, 4-byte entries, type (u16) first: TOAmapGetItemType
 0x01597f74 label    g_SaveData_LoadResult     # u8, 1 = the load succeeded (SaveDataIsLoadingSuccessful); SaveDataToLoad, TkMenuPreSave write it
+0x01640870 label    g_AbilitymapWork          # the ability map's work area (TOMenuGetAbilitymapWorkAdrs)
 0x01840870 label    g_TkMenuMainIgnoreJoinFlag # TkMenuMainSetIgnoreJoinFlag
 0x01840878 label    g_TkMenuHelpRatio2        # TkMenuGetHelpRatio2
 0x0184087c label    g_TkMenuDrawShadeRatio    # TkMenuGetDrawShadeRatio; TkMenuDrawShadeRatioDiff sets it (fh bsim names)
@@ -7347,24 +7370,35 @@
 0x01841c5c label    g_TkMenuSummonEnableMask  # TkMenuSummonEnableMask
 0x01841c64 label    g_TkMn2MainFrameRatioDiff # TkMn2SetMainFrameRatioDiff
 0x01841c68 label    g_TkMn2MainFrameRatio     # TkMn2GetMainFrameRatio
+0x01841d43 label    g_DebugPadPrintFlag       # u8, 4 modes: TODebugAddPadPrintFlag steps it ((v + 1) signed % 4)
+0x01841da4 label    g_FontWidthTbls           # font width table pointers in 16-byte font records: TOGetFontWidthTblAdrs(font)
+0x018659bc label    g_MessageWindowMode       # TOGetMessageWindowMode
 0x01865cdc label    g_FFXLangSwapFlag         # TOGetFFXLangSwapFlag
 0x01865f00 label    g_FFXVideoMode            # TOGetFFXVideoMode
 0x018663c4 label    g_TkMenuSaveLoadActive    # cleared by TkMenuSaveLoadActive
+0x018676f0 label    g_MsgWindows              # message window pointers: +0 in use (i16), +0x2c state, +0x2e status (TOGetMessageStatus), +0x100 handler per state, +0x114 current handler (TOCloseMessage, TOSetMessageFunc, TOControlMessage)
 0x01869ab0 label    g_MsgVars                    # per window 32 pointers to text variable records {u8 default type, u8 type, i32 value}; text code 0x12
 0x01869eb0 label    g_MacroDic                   # macrodic section pointer table (MacroDic_Load)
+0x0186a228 label    g_MenuHelpExtMode         # first argument of TOMenuHelpSetExtMode
 0x0186a23c label    g_TkMenuSummonGrowMax     # SetSummonGrowMax, once: summon growth records (8 bytes) before the first with byte +7 set
 0x0186a380 label    g_TkMenuImportantCounter  # TkMenuGetImportantCounter
+0x0186a384 label    g_AmapItemListMax         # TOAmapGetItemListMax
 0x0186a388 label    g_TkMenuImportantListMax  # TkMenuImportantListMax
 0x0186a420 label    g_TkMenuDummyControler    # +0 buttons, +4 pending buttons, +8..+0xf current/pending stick byte pairs (TkMenuFlushDummyControler: pending -> current, pending -> released, 0x80)
+0x0186a428 label    g_TkMenuDummyAnalog       # 8 bytes; TOMenuGetDummyAnalogControler(axis) returns +4, +6, +0, +2 for axes 0-3, else 0x80
 0x0186a430 label    g_TkMenuDummyControlerFlag # u8 (TkMenuGetDummyControlerFlag / TkMenuSetDummyControlerFlag)
 0x0186a9fc label    g_TkMn2StatusBG           # i16 step, i16 value 0..0x1000 (TkMn2InitStatusBG, TMn2SetStatusBGDiff, TkMn2StepStatusBG, TkMn2GetStatusBG)
 0x01871530 label    g_TkMenuPacket            # menu GS packet pointer; TkMenuDrawEnv writes 0x50 bytes at +0x10 and moves it 0x60 on
 0x01871568 label    g_TkMenuMainOptions       # 8-byte entries: +0 menu (TkMenuMainGetOptionMenu), +4 i16 enabled (TkMenuMainGetOptionEnabled)
 0x01871688 label    g_TkMenuMainMaxOptions    # TkMenuMainGetMaxOptions
 0x018716a8 label    g_TkMenuScissorScales     # 2 x f32 a, b: in XYUV mode BeginScissor_XYUV scales x1 from x0 by b / a, clips, scales back by a / b
+0x018716c0 label    g_TOPktBuff               # 3 words: TOSetPktBuffAdrs(base, a, b) stores base, base + a (+4), base + b (+8)
 0x018716d0 label    g_TkMenuScissorOn         # 1: BeginScissor_XYUV clips; cleared by CloseScissor
 0x018716d4 label    g_TkMenuScissorXyuv       # u8, BeginScissor_XYUV's scaled mode; cleared by CloseScissor
+0x018716f0 label    g_InvokedFromSelectCursor # SetInvokedFromSelectCursor
 0x018716f8 label    g_TkMenuScissorBox        # 4 x f32 left, top, right, bottom (BeginScissor_XYUV; an edge counts as outside)
+0x018763e8 label    g_FFXToAlbhedTbl          # the Al Bhed character table (TOGetFFXToAlbhedTblAdrs)
+0x01876da8 label    g_Windows                 # TO window pointers: +0 in use (i16), +4 type, +8 state, +0x60 handler per state, +0x74 current handler (TOGetWindowType/Status, TOCloseWindow, TOControlWindow)
 0x018ded08 label    g_YiRenderStatus             # field renderer flags: yiRenderEnable/Disable; |= 0x11 once a map is read (yiMapReadMaster); bit 0 gates yiCallFieldParticle
 0x018ded0c label    g_YiDrawMask                 # yiGetDrawMask/yiSetDrawMask; -9 after a map is read, -1 with the battle map circle on (yiMapReadMaster); script native 0x8000 sets its bits
 0x018deff8 label    g_YiScaleFactor              # x, y, z floats (yiSetScaleFactor)
@@ -7378,6 +7412,8 @@
 0x0193bf7c label    g_GuideBattleSave            # the guide's +0x6c float kept over a battle (rcbgGuideBattleBegin/End)
 0x0193bf80 label    g_YnMapSystem                # Yn's field state: +0 the map (its +8: guide map list, +0x18 i16 count, +0x1a i16 shown, +0x1c models), +4 the guide (Yn_GuideMapGetMapNo, Yn_GuideMapSetMapNo, Yn_BattleBegin)
 0x0193fdac label    g_MagicFile_IsNexData     # MagicFile_IsNexData
+0x01942998 label    g_DepthBias_Count         # entries in use; DepthBiasHooks_clearDepthBias zeroes it
+0x0194299c label    g_DepthBias               # 256 entries of 12 bytes (u32, f32 scale, f32): DepthBiasHooks_clearDepthBias resets them to (0, 1.0, 0.0)
 0x01a85ba8 label    g_FullArenaLocalization   # toggled (non-zero -> 0, 0 -> 1) by setFullArenaLocalizationEnable; read by 0x00a42c00, 0x00a42fa0
 0x01a85bb0 label    g_ReadChgName_From        # 16 u32 (FILE_NAME_CHG_TBL_CNT, read_debug.c): set_read_chgname(a, b) puts a in the first zero slot, b in g_ReadChgName_To; clear_read_chgname zeroes both
 0x01a85bf0 label    g_ReadChgName_To          # 16 u32: the b of set_read_chgname(a, b), beside g_ReadChgName_From
@@ -7416,3 +7452,7 @@
 0x023cc120 label    g_TkMn2ListMax2           # TkMn2GetListMax2
 0x023cc128 label    g_TkMenuSubCmdWindow      # the open sub-command window (TkMenuCloseSubCmdWindow sets its +0x41 and clears this; TkMenuRestartSubCmdWindow2)
 0x023cc458 label    g_TkMn2FontShade          # 4 words 8 bytes apart, stored downwards: TkMn2SetFontShade(s0..s3) puts s0 at 0x023cc470, s3 here
+0x025d09c0 label    g_TOPadGetCtrl            # u8: SetTOPadGetCtrl
+0x025d09d2 label    g_TOMenuPad               # 3 u16 (held, trg, rep): TOMenuGetControlPad/Trg/Rep return these when the dummy controller is on or held & 0xf000, else g_TOMenuPadAlt
+0x025d09d8 label    g_TOMenuPad2              # u16: TOMenuGetControlPad2
+0x025d09e2 label    g_TOMenuPadAlt            # 3 u16 (held, trg, rep), the other choice of TOMenuGetControlPad/Trg/Rep
