@@ -4036,6 +4036,7 @@
 0x0078e5a0 function MsUseChrMpLimit           # fh v3:exact 0x0078e5f0
 0x0078e630 function DmgCalc                   # fh v3:exact 0x0078e680 +DmgCalc
 0x0078eef0 function MsGetGuardChr             # (user, target) -> who takes target's hit: the side's guard/sentinel actor (status 2 0x1000/0x2000, MsAutoCommandStatusCheck) with most HP (x2 sentinel, + half Tidus' affection), else target; called by MsCalcCommand's target step 0x0078ba70; ported
+0x0078f040 function MsSetChrMovePos           # (i, actor): +0x425 = 1, tail jump MsGetChrPos(i, actor +0x3c0); MsDamageSetMotion kind 1; name ours
 0x0078f060 function AfterDamageProcess        # fh call.cs cdecl
 0x0078f700 function MsCheckLeftWindow         # fh v3:exact 0x0078f750
 0x0078f7c0 function MsGetMenuChrInfo          # fh v3:exact 0x0078f810
@@ -4350,6 +4351,7 @@
 0x0079e730 function MsEtEffectReadInit        # fh v3:bsim1.00 0x0079e750
 0x0079e7a0 function MsEtEffectSet             # fh v3:exact 0x0079e7c0
 0x0079e7b0 function MsEtEffectStop            # fh v3:cg2 0x79e7d0
+0x0079e7c0 function MsGetStatusLook           # (i) -> bits: 1 +0x606 bit 1, 2 +0xdce, 4 +0x606 bit 9, 8 +0x613, 0x10 +0x614, 0x20 +0x616 bit 10; MsStatusEffectCheck (into +0x6f8, op_et_astatus_effect_change); name ours
 0x0079e830 function MsMagicEffectEnd          # fh v3:exact 0x0079e850
 0x0079e890 function MsMagicEffectSet          # fh v3:exact 0x0079e8b0
 0x0079ed00 function MsSetStealEffect          # fh v3:bsim1.00+call.cs 0x0079ed20 cdecl
@@ -4465,7 +4467,8 @@
 0x007a9230 function MsCheckBtlPos             # fh v3:exact 0x007a9250
 0x007a92c0 function MsCheckStartEffect        # fh v3:exact 0x007a92e0
 0x007a93e0 function MsGetChrMovePos           # (i, out): where actor i is on its move: +0x425 fixed point +0x3c0, kind +0x415 7 a spline, else a step towards MsGetMoveTargetPos's point (bit 0x80 growing speed, else MsGetChrMoveAccelPos); named here; ported
-0x007a9710 function MsGetDirMode              # fh v3:exact 0x007a9730
+0x007a9650 function MsDirTurn                 # (actor, dir) -> f32 in ST0: MsNearRag(+0x490, dir), or the turn the other way round (+-2pi) when +0x494 and the turn pass 2pi/3; MsGetDirMode with +0x42c; name ours
+0x007a9710 function MsGetDirMode              # (i, actor, vec, follow, &mode, &plain) -> f32 in ST0 (fld at ret; Ghidra types it void, MsSetChrDirTarget reads (float10)); direction for mode +0x42b 1-13; fh v3:exact 0x007a9730
 0x007a99b0 function MsGetEscapeDir            # fh v3:exact 0x007a99d0
 0x007a9a20 function MsMenuWeakElement         # fh switch:bsim1.00 0x710035e1b0
 0x007a9a40 function MsGetTargetDist              # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100360780 MsGetTargetDist, 2 votes, round 1
@@ -11376,6 +11379,7 @@
 0x00b4cf30 label JobSchedule_JobWorker_vftable # fh v4:imported JobSchedule::JobWorker::vftable
 0x00b4cf60 label    g_FltMin                  # f32 FLT_MIN (1.17549435e-38): cdc_Vector_CanNormalize3 wants the square sum above it
 0x00b501c0 label    g_AlphaScaleNormal        # .rdata f32 256.0: useExtendedAlpha(0) copies it to g_AlphaScale
+0x00b54f28 label g_TwoThirdsPi             # f32 2pi/3, and -2pi/3 at 0x00b54f2c: MsDirTurn's limits
 0x00b55178 label g_FloatScreenDepth        # f32 1024.0, the default screen depth (MsEffectCameraInit)
 0x00b594ec label g_ChrStrC101               # "c101", Tidus's other model name (Ch_CbMapping)
 0x00b59840 label g_ChrExceptionIds          # 9 character ids Ch_IsNotExceptionId (0x00831780) checks
@@ -11801,6 +11805,7 @@
 0x00b920ec label mkvparser_Track_vftable      # fh v4:imported mkvparser::Track::vftable
 0x00b92220 label    g_Vu0FixedRound           # f64 0.5: FFXVu0RotTransPers rounds to the nearest 1/16
 0x00b92288 label g_PiF64                      # f64 of pi rounded to f32 (0x400921fb60000000); MsNearRag's half turn
+0x00b922d0 label g_PiF32                   # f32 pi: MsGetDirMode's turn for modes 9, 10, 13
 0x00b92340 label g_ChrClothFlip             # f32 -1.0: Ch_UpdateClothMatrix's x and y flip
 0x00c0a000 label    g_Vu0_R                      # emulated VU0 R (random) register, f32 bits in [1,2): op_random/op_random_p step it (vrnext: low 22 fraction bits << 1, bit 4 of R^(R>>18) in) and leave draw - 1.8872414 there; 0x0075fe50 seeds it
 0x00c0a004 label g_Vu0_Vf00                  # emulated VU0 vf00 (x, y, z, w) = (0, 0, 0, 1.0f): AsmEmuInit and restoreVf00Register store exactly that
@@ -12077,6 +12082,7 @@
 0x0112c9df label g_BtlTurnActorNow           # u8, the actor whose turn it is (MsGetChrBit -18); copied to g_BtlTurnActor when a turn starts
 0x0112c9e0 label g_BtlCommandActor           # u8, the actor whose command runs, 0xff none (MsGetChrBit -2, -3: its command cue entry's targets)
 0x0112c9e2 label    g_BtlTurnActor               # ?actor index copied from 0x0112c9df when a turn starts; read by 0x708d
+0x0112c9e4 label g_BtlTurnEndActor         # u8, MsDeleteInputCue (last) sets the actor whose turn ended with +0x606 bit 3
 0x0112c9e5 label g_BtlStealRule               # u8, 2: nothing can be stolen or mugged in this battle (Battle_Steal, Battle_StealGil)
 0x0112c9e6 label g_BtlMenuCommandSet          # u8; with the one before it (same function, ffx_battle::misc)
 0x0112c9e7 label g_BtlDirFree              # u8; set: MsSetDirThetaMode gives actors direction mode 1 (ffx_battle::minor)
@@ -12084,6 +12090,7 @@
 0x0112c9e9 label g_BtlListSlot             # i8, a party slot MsGetBattleList kinds 9 and 0xa treat apart
 0x0112c9eb label g_BtlEndAlt               # u8 set: MsGetBattleEndStatus reports 2 instead of 4 when the monsters are gone
 0x0112c9f1 label g_BtlEndForced            # u8, when not 0 MsGetBattleEndStatus's result
+0x0112c9f7 label g_BtlSetCommandFlag       # u8, cleared by MsSetBtlCommand
 0x0112c9fa label g_BtlReflected            # u8, set by MsCalcCommandTarget when a target reflected the command
 0x0112c9fb label g_BtlGuardTook            # u8, set by MsCalcCommandTarget when a guard took a hit for its target
 0x0112c9ff label g_BtlEscapeRule              # i8, set by battle script (0x007a77a0): 1 no escape, 2 always (MsCalcEscape)
@@ -12177,6 +12184,8 @@
 0x01136a58 label g_BtlMoveTarget              # u8; The move target position (MsMoveTargetPos).
 0x01136a68 label g_BtlAction                  # i32; Set to -1 by MsActionInit.
 0x01136a6c label g_BtlActionRequest        # u32, cleared by MsActionRequestSet with 0x01136a70 and the 0x48-byte block 0x01136a78
+0x01136a7b label g_BtlActionRequestEntries # u8, the action request block's (0x01136a78) +3: entries a script left; MsActionRequest makes them a cue entry
+0x01136a7c label g_BtlActionRequestTurn    # u8, the block's +4; MsActionRequest copies the out cue's into it
 0x01136ad8 label g_BtlEffectCameraFloats      # [u32; 16]; 16 floats MsEffectSetCameraBufFloat sets.
 0x01136b5c label    g_CamWaitFrames            # Native_CamWait (0x007b9be0) debug frame count
 0x01136b60 label g_BtlSplines                 # [u32; 2]; Reset by MsSplineInit.

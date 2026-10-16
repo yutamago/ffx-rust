@@ -32,6 +32,8 @@ pub mod bridge {
         /// `AtelRegistSignal2` with the signal block the original builds
         /// on its stack (8 words).
         pub signal: &'a mut dyn FnMut(&mut M, [u32; 8]) -> u32,
+        /// `op_et_eff_off_signal(id)` (vfx): an effect ends.
+        pub off: &'a mut dyn FnMut(&mut M, u32),
     }
 
     /// `AtelChangeCurrentCtrl`.
