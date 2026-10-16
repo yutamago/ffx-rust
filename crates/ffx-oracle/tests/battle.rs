@@ -150,7 +150,7 @@ type Getter = (&'static str, u32, u32, fn(&mut Oracle) -> u32);
 /// A function on an actor: name, `ffx.sym` address, the Rust.
 type Unit = (&'static str, u32, fn(&mut Oracle, u32));
 
-const GETTERS: [Getter; 23] = [
+const GETTERS: [Getter; 38] = [
     ("MsGetSaveEventAddress", 0x0078_5240, ALL, |m| {
         save::bridge::ms_get_save_event_address(m)
     }),
@@ -222,6 +222,53 @@ const GETTERS: [Getter; 23] = [
         save::bridge::ms_debug_full_gill(m);
         0
     }),
+    ("MsBattleWater", 0x0078_21e0, ALL, |m| {
+        state::bridge::ms_battle_water(m).cast_unsigned()
+    }),
+    ("MsBattleGetMapCircleOn", 0x0078_16a0, ALL, |m| {
+        state::bridge::ms_battle_get_map_circle_on(m).cast_unsigned()
+    }),
+    ("MsGetEncountType", 0x0078_2a10, ALL, |m| {
+        state::bridge::ms_get_encount_type(m)
+    }),
+    ("MsStoneEffectCheck", 0x007a_2670, ALL, |m| {
+        state::bridge::ms_stone_effect_check(m).cast_unsigned()
+    }),
+    ("MsBattleCursorType", 0x0078_0ce0, ALL, |m| {
+        state::bridge::ms_battle_cursor_type(m).cast_unsigned()
+    }),
+    ("MsBattleGetChrDisposeFlag", 0x0078_1630, ALL, |_| {
+        state::bridge::ms_battle_get_chr_dispose_flag()
+    }),
+    ("MsGetInputCue", 0x007b_22e0, ALL, |m| {
+        state::bridge::ms_get_input_cue(m)
+    }),
+    ("MsGetCommandCue", 0x007b_0a10, ALL, |m| {
+        state::bridge::ms_get_command_cue(m)
+    }),
+    ("MsSEPtransAmount", 0x007a_04b0, ALL, |m| {
+        state::bridge::ms_sep_trans_amount(m)
+    }),
+    ("MsSEPtransCheck", 0x007a_04c0, ALL, |m| {
+        state::bridge::ms_sep_trans_check(m).cast_unsigned()
+    }),
+    ("MsDebugGetFieldNum", 0x007c_5f50, ALL, |m| {
+        state::bridge::ms_debug_get_field_num(m)
+    }),
+    ("MsGetYoujinbouCom", 0x007b_2b20, ALL, |m| {
+        save::bridge::ms_get_youjinbou_com(m)
+    }),
+    ("MsGetScreenMatrix", 0x007b_bd70, ALL, |m| {
+        camera::bridge::ms_get_screen_matrix(m)
+    }),
+    ("MsOrderInit", 0x0078_d4b0, 0, |m| {
+        state::bridge::ms_order_init(m);
+        0
+    }),
+    ("MsEventEffectInit", 0x0078_8be0, 0, |m| {
+        state::bridge::ms_event_effect_init(m);
+        0
+    }),
 ];
 
 fn getters(a: &mut Oracle, b: &mut Oracle) {
@@ -236,7 +283,10 @@ fn randomize_getters(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         save::bridge::MENU,
         save::bridge::GIL,
         save::bridge::BATTLE_COUNT,
+        save::bridge::YOUJINBOU_COM,
         actor::bridge::CHR_TOP,
+        state::bridge::SEP_TRANS,
+        state::bridge::EVENT_EFFECT_A,
     ] {
         let v = rng.word();
         set(a, b, g, v);
@@ -255,10 +305,22 @@ fn randomize_getters(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         let v = rng.byte();
         set(a, b, g, v);
     }
+    let field = [rng.word(), rng.word()];
+    set(a, b, state::bridge::DEBUG_FIELD, field);
+    let stone = [rng.byte().cast_signed(), rng.byte().cast_signed()];
+    set(a, b, state::bridge::STONE_EFFECT, stone);
+    let g = state::bridge::ENCOUNT_TYPE;
+    let v = rng.byte();
+    set(a, b, g, v);
     for g in [
         state::bridge::STATUS,
         state::bridge::EVENT_EFFECT_STAT,
         state::bridge::EXE,
+        state::bridge::UNDERWATER,
+        state::bridge::MAP_CIRCLE_ON,
+        state::bridge::PAD_ORIENTATION,
+        state::bridge::INPUT_CUE_COUNT,
+        state::bridge::COMMAND_CUE_COUNT,
     ] {
         let v = rng.byte().cast_signed();
         set(a, b, g, v);
@@ -621,6 +683,31 @@ fn save_matches_the_original_on_a_snapshot() {
 /// The functions on one actor at `p`.
 fn actor_fns(a: &mut Oracle, b: &mut Oracle, p: u32) {
     use actor::bridge as x;
+    for (chr, targets) in [
+        (0, 0),
+        (0, 1),
+        (3, 8),
+        (3, 9),
+        (3, 0xb),
+        (3, 0x1b),
+        (5, 0x7000_0020),
+        (5, 0x8000_0021),
+        (5, 0xc000_0021),
+        (0x25, 0x60),
+        (0x25, 0x20),
+        (0x1f, 0x8000_0000),
+        (0x1f, 0x8000_0003),
+    ] {
+        twin(
+            "msCheckSameTarget",
+            a,
+            b,
+            0x0079_6d70,
+            &[chr, p, targets],
+            ALL,
+            |m| x::ms_check_same_target(m, chr, p, targets).cast_unsigned(),
+        );
+    }
     for mode in [0u32, 1, 2, 3, 0xffff_ffff] {
         twin(
             "MsCheckSetMotion",
@@ -652,7 +739,7 @@ fn actor_fns(a: &mut Oracle, b: &mut Oracle, p: u32) {
             },
         );
     }
-    let unit: [Unit; 8] = [
+    let unit: [Unit; 9] = [
         ("MsPushBtlPos", 0x007a_c650, x::ms_push_btl_pos),
         ("MsPopBtlPos", 0x007a_c600, x::ms_pop_btl_pos),
         ("MsSetAutoStatus", 0x0079_b290, x::ms_set_auto_status),
@@ -661,9 +748,10 @@ fn actor_fns(a: &mut Oracle, b: &mut Oracle, p: u32) {
         ("MsMotionSpeedReset", 0x007a_b730, x::ms_motion_speed_reset),
         ("MsTerminateMotion", 0x007a_b6c0, x::ms_terminate_motion),
         ("msSetEndDir", 0x0079_3260, x::ms_set_end_dir),
+        ("MsBtlChrInfoFree", 0x0079_3570, x::ms_btl_chr_info_free),
     ];
     // in an order that keeps state for the next: set, reset, set again
-    for i in [0, 2, 3, 2, 1, 4, 5, 6, 7, 3] {
+    for i in [0, 2, 3, 2, 1, 4, 5, 6, 7, 3, 8] {
         let (name, sym, rust) = unit[i];
         twin(name, a, b, sym, &[p], 0, |m| {
             rust(m, p);
@@ -677,7 +765,7 @@ fn actor_fns(a: &mut Oracle, b: &mut Oracle, p: u32) {
 fn fill_actor(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, p: u32) {
     fill(a, b, rng, p, actor::ACTOR_SIZE);
     let small = |rng: &mut Xorshift| u8::from(rng.below(3) == 0);
-    for off in [0x508, 0x608, 0x432, 0xdce, 0xdc8, 0x3b, 0x612, 0x613] {
+    for off in [0x508, 0x608, 0x432, 0xdce, 0xdc8, 0x3b, 0x612, 0x613, 0x3f8] {
         let v = small(rng);
         poke(a, b, p + off, &[v]);
     }
@@ -842,7 +930,7 @@ fn check_state(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bo
         });
         set(a, b, s::VOICE_EVENT, buf + 0x10);
         poke(a, b, buf + 0x10, &[u8::from(rng.below(2) == 0)]);
-        set(a, b, s::VOICE_MUTE, u8::from(rng.below(2) == 0));
+        set(a, b, s::UNDERWATER, i8::from(rng.below(2) == 0));
         twin("MsGetVoiceEventFlag", a, b, 0x0079_86a0, &[], ALL, |m| {
             s::ms_get_voice_event_flag(m)
         });
@@ -887,6 +975,81 @@ fn check_state(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bo
         });
     }
     same("battle state", a, b);
+    check_cues(a, b, rng, synthetic);
+}
+
+/// The command cue, the action order, the status tables.
+fn check_cues(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+    use state::bridge as s;
+    let cue = s::COMMAND_CUE.ptr(a).addr;
+    for round in 0..100 {
+        if synthetic || round > 0 {
+            for i in 0..12 {
+                let e = [
+                    rng.below(4).to_le_bytes()[0],
+                    rng.below(4).to_le_bytes()[0],
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    rng.byte(),
+                ];
+                poke(a, b, cue + i * s::CUE_SIZE, &e);
+            }
+            set(
+                a,
+                b,
+                s::COMMAND_CUE_COUNT,
+                rng.range(-3, 13).to_le_bytes()[0].cast_signed(),
+            );
+        }
+        for _ in 0..8 {
+            let (actor, command) = (rng.below(5), rng.below(5));
+            twin(
+                "MsCheckCommandCue",
+                a,
+                b,
+                0x007b_0720,
+                &[actor, command],
+                ALL,
+                |m| s::ms_check_command_cue(m, actor, command),
+            );
+            let kind = rng.next();
+            twin(
+                "MsCheckCommandCue2",
+                a,
+                b,
+                0x007b_0770,
+                &[actor, kind],
+                ALL,
+                |m| s::ms_check_command_cue2(m, actor, kind),
+            );
+        }
+        if rng.below(8) == 0 {
+            set(a, b, s::ORDER_COUNT, rng.range(-2, 0x24));
+        }
+        let chr = rng.next();
+        twin("MsOrderRegist", a, b, 0x0078_d4c0, &[chr], 0, |m| {
+            s::ms_order_regist(m, chr.to_le_bytes()[0]);
+            0
+        });
+        let on = rng.word();
+        twin("MsMuteBattleSubTitle", a, b, 0x0078_5990, &[on], 0, |m| {
+            s::ms_mute_battle_sub_title(m, on);
+            0
+        });
+    }
+    same("cues", a, b);
+    for i in (-4i32..0x40).chain([0x100, -0x100]) {
+        let arg = i.cast_unsigned();
+        twin("MsCheckStat", a, b, 0x0079_e310, &[arg], ALL, |m| {
+            s::ms_check_stat(m, i)
+        });
+        twin("MsCheckStat2", a, b, 0x0079_e320, &[arg], ALL, |m| {
+            s::ms_check_stat2(m, i)
+        });
+    }
 }
 
 #[test]
@@ -986,6 +1149,40 @@ fn helpers_match_the_original() {
         }
     }
     same("auto repeat", a, b);
+    for _ in 0..200 {
+        let x = rng.word();
+        twin("MsGetEff2Chr", a, b, 0x0078_8de0, &[x], ALL, |_| {
+            u::ms_get_eff2_chr(x)
+        });
+        let n = [0xf, 0x10, 0x11, 0x12, x][rng.below(5) as usize];
+        twin("MsCheckMegas", a, b, 0x007a_da40, &[n], ALL, |_| {
+            u::ms_check_megas(n.cast_signed()).cast_unsigned()
+        });
+    }
+    // name lists: (name, ?, hash) up to a null name
+    for _ in 0..50 {
+        fill(a, b, rng, buf, 0x400);
+        let entries = rng.below(8);
+        for i in 0..entries {
+            let name = buf + 0x100 + 0x30 * i;
+            let len = rng.below(0x2f);
+            let bytes: Vec<u8> = (0..len)
+                .map(|_| match rng.below(3) {
+                    0 => b'A' + rng.below(26).to_le_bytes()[0],
+                    _ => rng.byte().max(1),
+                })
+                .chain([0])
+                .collect();
+            poke(a, b, name, &bytes);
+            poke(a, b, buf + 12 * i, &name.to_le_bytes());
+        }
+        poke(a, b, buf + 12 * entries, &[0; 4]);
+        twin("MsSetHashValue", a, b, 0x007c_f640, &[buf], 0, |m| {
+            u::ms_set_hash_value(m, buf);
+            0
+        });
+    }
+    same("MsSetHashValue", a, b);
 }
 
 fn check_camera(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
@@ -1044,6 +1241,30 @@ fn check_camera(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: b
         };
         twin("MsCameraIDcheck", a, b, 0x007b_d560, &[id], ALL, |m| {
             c::ms_camera_id_check(m, id).cast_unsigned()
+        });
+        let mask = u32::from(rng.below(4) == 0);
+        twin("MsCameraPriorityMask", a, b, 0x007b_e100, &[mask], 0, |m| {
+            c::ms_camera_priority_mask(m, mask);
+            0
+        });
+        let bonus = rng.next();
+        twin(
+            "MsCameraPriority",
+            a,
+            b,
+            0x007b_e0a0,
+            &[id, bonus],
+            0,
+            |m| {
+                c::ms_camera_priority(m, id, bonus.to_le_bytes()[0]);
+                0
+            },
+        );
+        let screen = [0, 1, 2, 3, rng.next()][rng.below(5) as usize];
+        fill(a, b, rng, c::SCREENS.ptr(b).addr, 3 * c::SCREEN_SIZE);
+        twin("MsScreenResetShake", a, b, 0x007c_56c0, &[screen], 0, |m| {
+            c::ms_screen_reset_shake(m, screen);
+            0
         });
         // the camera in use
         set(a, b, c::CAMERA, cam);

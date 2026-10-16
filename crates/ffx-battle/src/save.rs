@@ -211,6 +211,8 @@ pub mod bridge {
     pub const MENU: Global<u32> = Global::new(0x0113_079c);
     /// Battles fought, save `+0x3d14`.
     pub const BATTLE_COUNT: Global<u32> = Global::new(0x0113_07a4);
+    /// Yojimbo's command (`MsGetYoujinbouCom`), save `+0x3da4`.
+    pub const YOUJINBOU_COM: Global<u32> = Global::new(0x0113_0834);
     /// Gil, save `+0x3d48`.
     pub const GIL: Global<u32> = Global::new(0x0113_07d8);
     /// The three party members in battle (`ply_save` indices).
@@ -431,6 +433,11 @@ pub mod bridge {
     /// `MsGetGIL` (`0x00784e80`).
     pub fn ms_get_gil(mem: &impl Mem) -> u32 {
         GIL.get(mem)
+    }
+
+    /// `MsGetYoujinbouCom` (`0x007b2b20`).
+    pub fn ms_get_youjinbou_com(mem: &impl Mem) -> u32 {
+        YOUJINBOU_COM.get(mem)
     }
 
     /// `MsDebugFullGill` (`0x007849c0`).

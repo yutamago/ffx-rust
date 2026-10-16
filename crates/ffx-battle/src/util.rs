@@ -31,6 +31,30 @@ pub const fn eff_id(group: u32, a: u32, b: u32) -> u32 {
     ((group & 0xfff) << 16) | ((a & 0xff) << 8) | (b & 0xff)
 }
 
+/// `MsCheckMegas(n)` (`0x007ada40`): 0x10 and 0x11 become 0xf.
+#[must_use]
+pub const fn check_megas(n: i32) -> i32 {
+    if n == 0x10 || n == 0x11 { 0xf } else { n }
+}
+
+/// The hash `MsSetHashValue` gives a name: over its bytes, letters
+/// lowercased (`A`-`Z`), the sum of each byte (signed) XOR `0x6f × i`.
+#[must_use]
+pub fn name_hash(name: impl IntoIterator<Item = u8>) -> i32 {
+    let mut h = 0i32;
+    let mut k = 0u32;
+    for c in name {
+        let c = if c.wrapping_sub(b'A') < 26 {
+            c + 0x20
+        } else {
+            c
+        };
+        h = h.wrapping_add((i32::from(c.cast_signed()).cast_unsigned() ^ k).cast_signed());
+        k = k.wrapping_add(0x6f);
+    }
+    h
+}
+
 /// A key repeat (`MsAutoRepeatInit`): the last input, frames it has been
 /// held, the frames to wait, and the first and later waits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,7 +109,7 @@ impl AutoRepeat {
 pub mod bridge {
     use ffx_bridge::Mem;
 
-    use super::{AutoRepeat, copy_len, eff_id, str_len};
+    use super::{AutoRepeat, check_megas, copy_len, eff_id, name_hash, str_len};
 
     /// `MsStructClear(p, n)` (`0x0079f230`): zeroes `n` bytes (nothing
     /// unless `n` is above 0).
@@ -147,6 +171,37 @@ pub mod bridge {
         let fired = r.check(input);
         mem.write(p, [r.last, r.held, r.wait]);
         fired
+    }
+
+    /// `MsGetEff2Chr(x)` (`0x00788de0`): the low byte of `x`.
+    #[must_use]
+    pub fn ms_get_eff2_chr(x: u32) -> u32 {
+        x & 0xff
+    }
+
+    /// `MsCheckMegas(n)` (`0x007ada40`).
+    #[must_use]
+    pub fn ms_check_megas(n: i32) -> i32 {
+        check_megas(n)
+    }
+
+    /// `MsSetHashValue(list)` (`0x007cf640`): for each 12-byte entry
+    /// (name pointer, ?, hash) up to a null name, stores the name's
+    /// [`name_hash`] at `+8`.
+    pub fn ms_set_hash_value(mem: &mut impl Mem, list: u32) {
+        let mut e = list;
+        loop {
+            let name: u32 = mem.read(e);
+            if name == 0 {
+                break;
+            }
+            let bytes = (0u32..)
+                .map(|i| mem.read::<u8>(name.wrapping_add(i)))
+                .take_while(|&c| c != 0);
+            let h = name_hash(bytes);
+            mem.write(e + 8, h);
+            e += 12;
+        }
     }
 
     /// `MsGetEffID(group, a, b)` (`0x00788df0`).

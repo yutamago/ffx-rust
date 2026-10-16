@@ -104,6 +104,16 @@ pub mod bridge {
     pub const CAMERA: Global<u32> = Global::new(0x0231_1430);
     /// The camera matrix (`MsGetCameraMatrix`).
     pub const CAMERA_MATRIX: Global<u8> = Global::new(0x0231_1440);
+    /// The screen matrix (`MsGetScreenMatrix`).
+    pub const SCREEN_MATRIX: Global<u8> = Global::new(0x0231_1480);
+    /// Not 0: `MsCameraPriority` changes nothing (`MsCameraPriorityMask`).
+    pub const PRIORITY_MASK: Global<u32> = Global::new(0x0231_1424);
+    /// The three screens (`MsScreenResetShake`), 0x1c0 bytes each, right
+    /// before `g_Cameras`: shake offsets `+0x30`/`+0x34` (`f32`), shake
+    /// flags `+0x16c` and `+0x190`.
+    pub const SCREENS: Global<u8> = Global::new(0x0113_7000);
+    /// Bytes per screen.
+    pub const SCREEN_SIZE: u32 = 0x1c0;
 
     fn slots(mem: &impl Mem, cam: u32) -> [Slot; SLOTS] {
         let base = SLOTS_AT.ptr(mem).addr + (cam & 0xff) * CAMERA_SIZE;
@@ -142,6 +152,45 @@ pub mod bridge {
     /// the x87 stack).
     pub fn ms_camera_get_scr_dpt(mem: &impl Mem) -> f32 {
         mem.read(CAMERA.get(mem).wrapping_add(0xc9c))
+    }
+
+    /// `MsCameraPriority(id, bonus)` (`0x007be0a0`): unless masked, every
+    /// slot of camera `id & 0xff` with exactly request `id` gets level
+    /// bonus `bonus`.
+    pub fn ms_camera_priority(mem: &mut impl Mem, id: u32, bonus: u8) {
+        if PRIORITY_MASK.get(mem) != 0 {
+            return;
+        }
+        let base = SLOTS_AT.ptr(mem).addr + (id & 0xff) * CAMERA_SIZE;
+        for i in 0u32..4 {
+            let at = base + 8 * i;
+            if mem.read::<u32>(at) == id {
+                mem.write(at + 6, bonus);
+            }
+        }
+    }
+
+    /// `MsCameraPriorityMask(on)` (`0x007be100`).
+    pub fn ms_camera_priority_mask(mem: &mut impl Mem, on: u32) {
+        PRIORITY_MASK.set(mem, on);
+    }
+
+    /// `MsScreenResetShake(screen)` (`0x007c56c0`): stops screen `screen`'s
+    /// shake (below 3, unsigned).
+    pub fn ms_screen_reset_shake(mem: &mut impl Mem, screen: u32) {
+        if screen > 2 {
+            return;
+        }
+        let s = SCREENS.ptr(mem).addr + screen * SCREEN_SIZE;
+        mem.write(s + 0x16c, 0u8);
+        mem.write(s + 0x30, 0.0f32);
+        mem.write(s + 0x190, 0u8);
+        mem.write(s + 0x34, 0.0f32);
+    }
+
+    /// `MsGetScreenMatrix` (`0x007bbd70`).
+    pub fn ms_get_screen_matrix(mem: &impl Mem) -> u32 {
+        SCREEN_MATRIX.ptr(mem).addr
     }
 
     /// `MsGetCameraMatrix` (`0x007c04b0`).

@@ -208,6 +208,10 @@ ported! {
     MsAddLoveParam @ 0x0078_45e0 => extern "C" fn ms_add_love_param(chr: i32, n: i32) -> u32 {
         save::ms_add_love_param(&mut mem(), chr, n)
     }
+    /// `MsGetYoujinbouCom`: Yojimbo's command.
+    MsGetYoujinbouCom @ 0x007b_2b20 => extern "C" fn ms_get_youjinbou_com() -> u32 {
+        save::ms_get_youjinbou_com(&mem())
+    }
 
     // Actors.
     /// `MsGetChr(i)`: the actor of index `i`.
@@ -278,6 +282,14 @@ ported! {
     msSetEndDir @ 0x0079_3260 => extern "C" fn ms_set_end_dir(p: u32) {
         actor::ms_set_end_dir(&mut mem(), p);
     }
+    /// `msCheckSameTarget(chr, actor, targets)`.
+    msCheckSameTarget @ 0x0079_6d70 => extern "C" fn ms_check_same_target(chr: u32, p: u32, targets: u32) -> i32 {
+        actor::ms_check_same_target(&mem(), chr, p, targets)
+    }
+    /// `MsBtlChrInfoFree(actor)`.
+    MsBtlChrInfoFree @ 0x0079_3570 => extern "C" fn ms_btl_chr_info_free(p: u32) {
+        actor::ms_btl_chr_info_free(&mut mem(), p);
+    }
 
     // Battle globals.
     /// `MsBattleGetStatus`.
@@ -321,6 +333,82 @@ ported! {
         #[allow(clippy::cast_possible_truncation)] // the original stores 16 bits
         state::ms_atel_request_add(&mut mem(), [a as u16, b as u16, c as u16, d as u16]);
     }
+    /// `MsBattleWater`: under water.
+    MsBattleWater @ 0x0078_21e0 => extern "C" fn ms_battle_water() -> i32 {
+        state::ms_battle_water(&mem())
+    }
+    /// `MsBattleGetMapCircleOn`.
+    MsBattleGetMapCircleOn @ 0x0078_16a0 => extern "C" fn ms_battle_get_map_circle_on() -> i32 {
+        state::ms_battle_get_map_circle_on(&mem())
+    }
+    /// `MsGetEncountType`.
+    MsGetEncountType @ 0x0078_2a10 => extern "C" fn ms_get_encount_type() -> u32 {
+        state::ms_get_encount_type(&mem())
+    }
+    /// `MsStoneEffectCheck`.
+    MsStoneEffectCheck @ 0x007a_2670 => extern "C" fn ms_stone_effect_check() -> i32 {
+        state::ms_stone_effect_check(&mem())
+    }
+    /// `MsBattleCursorType`.
+    MsBattleCursorType @ 0x0078_0ce0 => extern "C" fn ms_battle_cursor_type() -> i32 {
+        state::ms_battle_cursor_type(&mem())
+    }
+    /// `MsBattleGetChrDisposeFlag`: always 1.
+    MsBattleGetChrDisposeFlag @ 0x0078_1630 => extern "C" fn ms_battle_get_chr_dispose_flag() -> u32 {
+        state::ms_battle_get_chr_dispose_flag()
+    }
+    /// `MsGetInputCue`.
+    MsGetInputCue @ 0x007b_22e0 => extern "C" fn ms_get_input_cue() -> u32 {
+        state::ms_get_input_cue(&mem())
+    }
+    /// `MsGetCommandCue`.
+    MsGetCommandCue @ 0x007b_0a10 => extern "C" fn ms_get_command_cue() -> u32 {
+        state::ms_get_command_cue(&mem())
+    }
+    /// `MsCheckCommandCue(actor, command)`.
+    MsCheckCommandCue @ 0x007b_0720 => extern "C" fn ms_check_command_cue(actor: u32, command: u32) -> u32 {
+        state::ms_check_command_cue(&mem(), actor, command)
+    }
+    /// `MsCheckCommandCue2(actor, kind)`.
+    MsCheckCommandCue2 @ 0x007b_0770 => extern "C" fn ms_check_command_cue2(actor: u32, kind: u32) -> u32 {
+        state::ms_check_command_cue2(&mem(), actor, kind)
+    }
+    /// `MsOrderInit`.
+    MsOrderInit @ 0x0078_d4b0 => extern "C" fn ms_order_init() {
+        state::ms_order_init(&mut mem());
+    }
+    /// `MsOrderRegist(chr)`: the low byte.
+    MsOrderRegist @ 0x0078_d4c0 => extern "C" fn ms_order_regist(chr: u32) {
+        state::ms_order_regist(&mut mem(), chr.to_le_bytes()[0]);
+    }
+    /// `MsMuteBattleSubTitle(on)`.
+    MsMuteBattleSubTitle @ 0x0078_5990 => extern "C" fn ms_mute_battle_sub_title(on: u32) {
+        state::ms_mute_battle_sub_title(&mut mem(), on);
+    }
+    /// `MsEventEffectInit`.
+    MsEventEffectInit @ 0x0078_8be0 => extern "C" fn ms_event_effect_init() {
+        state::ms_event_effect_init(&mut mem());
+    }
+    /// `MsSEPtransAmount`.
+    MsSEPtransAmount @ 0x007a_04b0 => extern "C" fn ms_sep_trans_amount() -> u32 {
+        state::ms_sep_trans_amount(&mem())
+    }
+    /// `MsSEPtransCheck`.
+    MsSEPtransCheck @ 0x007a_04c0 => extern "C" fn ms_sep_trans_check() -> i32 {
+        state::ms_sep_trans_check(&mem())
+    }
+    /// `MsDebugGetFieldNum`.
+    MsDebugGetFieldNum @ 0x007c_5f50 => extern "C" fn ms_debug_get_field_num() -> u32 {
+        state::ms_debug_get_field_num(&mem())
+    }
+    /// `MsCheckStat(i)`.
+    MsCheckStat @ 0x0079_e310 => extern "C" fn ms_check_stat(i: i32) -> u32 {
+        state::ms_check_stat(&mem(), i)
+    }
+    /// `MsCheckStat2(i)`.
+    MsCheckStat2 @ 0x0079_e320 => extern "C" fn ms_check_stat2(i: i32) -> u32 {
+        state::ms_check_stat2(&mem(), i)
+    }
 
     // Helpers.
     /// `MsStructClear(p, n)`.
@@ -335,6 +423,18 @@ ported! {
     /// `MsStrCopy(src, dst, max)`.
     MsStrCopy @ 0x007c_f6c0 => extern "C" fn ms_str_copy(src: u32, dst: u32, max: i32) -> i32 {
         util::ms_str_copy(&mut mem(), src, dst, max)
+    }
+    /// `MsGetEff2Chr(x)`.
+    MsGetEff2Chr @ 0x0078_8de0 => extern "C" fn ms_get_eff2_chr(x: u32) -> u32 {
+        util::ms_get_eff2_chr(x)
+    }
+    /// `MsCheckMegas(n)`.
+    MsCheckMegas @ 0x007a_da40 => extern "C" fn ms_check_megas(n: i32) -> i32 {
+        util::ms_check_megas(n)
+    }
+    /// `MsSetHashValue(list)`.
+    MsSetHashValue @ 0x007c_f640 => extern "C" fn ms_set_hash_value(list: u32) {
+        util::ms_set_hash_value(&mut mem(), list);
     }
     /// `MsGetEffID(group, a, b)`.
     MsGetEffID @ 0x0078_8df0 => extern "C" fn ms_get_eff_id(group: u32, a: u32, b: u32) -> u32 {
@@ -365,6 +465,22 @@ ported! {
     /// `MsCameraGetScrDpt`: a float, on the x87 stack.
     MsCameraGetScrDpt @ 0x007b_d510 => extern "C" fn ms_camera_get_scr_dpt() -> f32 {
         camera::ms_camera_get_scr_dpt(&mem())
+    }
+    /// `MsCameraPriority(id, bonus)`: the low byte of `bonus`.
+    MsCameraPriority @ 0x007b_e0a0 => extern "C" fn ms_camera_priority(id: u32, bonus: u32) {
+        camera::ms_camera_priority(&mut mem(), id, bonus.to_le_bytes()[0]);
+    }
+    /// `MsCameraPriorityMask(on)`.
+    MsCameraPriorityMask @ 0x007b_e100 => extern "C" fn ms_camera_priority_mask(on: u32) {
+        camera::ms_camera_priority_mask(&mut mem(), on);
+    }
+    /// `MsScreenResetShake(screen)`.
+    MsScreenResetShake @ 0x007c_56c0 => extern "C" fn ms_screen_reset_shake(screen: u32) {
+        camera::ms_screen_reset_shake(&mut mem(), screen);
+    }
+    /// `MsGetScreenMatrix`.
+    MsGetScreenMatrix @ 0x007b_bd70 => extern "C" fn ms_get_screen_matrix() -> u32 {
+        camera::ms_get_screen_matrix(&mem())
     }
     /// `MsGetCameraMatrix`.
     MsGetCameraMatrix @ 0x007c_04b0 => extern "C" fn ms_get_camera_matrix() -> u32 {

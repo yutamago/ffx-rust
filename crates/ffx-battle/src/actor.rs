@@ -296,13 +296,29 @@ pub fn motion_settable(busy: u8, counter0: u8, playing: u8, motion: u8, mode: i3
     })
 }
 
+/// `msCheckSameTarget(chr, actor, targets)` given the actor's `+0x3f8`
+/// (`multi`): 0 when `targets` is nobody or only `chr` (bit `chr & 0x1f`),
+/// or, for a `multi` actor among them, more than two of bits 0-30; else -1.
+#[must_use]
+pub fn same_target(chr: u32, multi: impl FnOnce() -> u8, targets: u32) -> i32 {
+    let me = 1u32 << (chr & 0x1f);
+    if targets == me || targets == 0 {
+        return 0;
+    }
+    if targets & me != 0 && multi() != 0 && (targets & 0x7fff_ffff).count_ones() > 2 {
+        return 0;
+    }
+    -1
+}
+
 /// The actors where the game keeps them, through [`ffx_bridge::Mem`].
 pub mod bridge {
     use ffx_bridge::{Global, Mem, Ptr};
 
     use super::{
         ACTOR_SIZE, ACTORS, AUTO_STATUS_AT, AUTO_STATUS_SIZE, AutoStatus, Chr, CommandStatus,
-        FIRST_MONSTER, MONSTERS, WEAPON_SIZE, auto_command_ok, chr, motion_settable, weak_level,
+        FIRST_MONSTER, MONSTERS, WEAPON_SIZE, auto_command_ok, chr, motion_settable, same_target,
+        weak_level,
     };
 
     /// Pointer to the first actor (`MsGetChrTop`).
@@ -406,6 +422,21 @@ pub mod bridge {
             let v = byte(mem, actor, from + i);
             mem.write(actor.wrapping_add(to + i), v);
         }
+    }
+
+    /// `msCheckSameTarget(chr, actor, targets)` (`0x00796d70`): see
+    /// [`same_target`]; `+0x3f8` is read only when `chr` is a target.
+    pub fn ms_check_same_target(mem: &impl Mem, chr: u32, actor: u32, targets: u32) -> i32 {
+        same_target(chr, || byte(mem, actor, 0x3f8), targets)
+    }
+
+    /// `MsBtlChrInfoFree(actor)` (`0x00793570`): clears the busy and motion
+    /// bytes and the word at `+0x4c`.
+    pub fn ms_btl_chr_info_free(mem: &mut impl Mem, actor: u32) {
+        for o in [0x508, 0x432, 0x42e, 0x41c, 0x415] {
+            mem.write(actor.wrapping_add(o), 0u8);
+        }
+        mem.write(actor.wrapping_add(0x4c), 0u32);
     }
 
     /// `MsPushBtlPos(actor)` (`0x007ac650`): saves the battle position
