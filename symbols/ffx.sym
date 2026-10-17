@@ -2597,6 +2597,7 @@
 0x0069e2b0 function GuildMapDynamicGeometry_GuildMapDynamicGeometry # fh v3:exact 0x0069e3f0 GuildMapDynamicGeometry::GuildMapDynamicGeometry
 0x0069e320 function MenuDynamicGeometry_MenuDynamicGeometry # fh v3:exact 0x0069e460 MenuDynamicGeometry::MenuDynamicGeometry
 0x0069e3e0 function VFXDynamicGeometry_VFXDynamicGeometry # fh v3:exact 0x0069e520 VFXDynamicGeometry::VFXDynamicGeometry
+0x0069ebd0 function TreeNext_0069ebd0           # ours: (ecx it) -> it: the MSVC tree iterator ++, the same code as opusTree_Next 0x00806a50 (left +0, parent +4, right +8, nil byte +0xd); callers 0x0069caf0, 0x0069eb70, 0x0069eb90, 0x0069ebc0, 0x006a1a70
 0x0069f000 function ClassVFXRenderDataTable_Clear # fh call.cs cdecl
 0x0069f110 function ClassVFXRenderDataTable_ClearByType # fh v3:exact 0x0069f250 ClassVFXRenderDataTable::ClearByType
 0x0069f2b0 function ClassVFXRenderDataTable_ClearVFXDrawData # fh v3:exact+call.cs 0x0069f3f0 thiscall ClassVFXRenderDataTable::ClearVFXDrawData
@@ -3467,7 +3468,7 @@
 0x00714d40 function createVFXRenderDataBufferShapeField # fh v3:exact 0x00714e20
 0x00715170 function createVFXRenderDataBufferShp # fh v3:exact 0x00715250
 0x00715810 function createVFXRenderDataBufferShp_OShapeVu1 # layout+callees: sorts between createVFXRenderDataBufferShp and getAlphaForShpIgnoreAnFormatBaseOnSh, and its named callees match the Switch 0x71002dec70 createVFXRenderDataBufferShp_OShapeVu1's (similarity 0.60: graphicVFXCreate, graphicVFXCreateDataBuffer, graphicVFXIsTextureWithBpLoaded); symbols from Fahrenheit's server export
-0x00716550 function getAlphaForShpIgnoreAnFormatBaseOnSh # fh v3:exact 0x00716630
+0x00716550 function getAlphaForShpIgnoreAnFormatBaseOnSh # fh v3:exact 0x00716630; ours: (shp) -> byte +0x1c when byte +0xf is 3, else the byte at shp + shp[1] + 4 (small::bridge::shp_alpha)
 0x00716570 function hashU                     # fh v3:exact 0x00716650
 0x00716620 function initVFXRenderDataBuffer_FakeEnvModel # layout+callees: sorts between hashU and pppCallUsrFunc, and its named callees match the Switch 0x71002e5280 initVFXRenderDataBuffer_FakeEnvModel's (similarity 0.60: graphicVFXDestroy, graphicVFXSetup, graphicVFXUpdate); symbols from Fahrenheit's server export
 0x00716710 function pppCallUsrFunc            # fh v3:exact 0x007167f0
@@ -3556,6 +3557,7 @@
 0x0072a630 function pppFpSetStickPos          # fh v3:exact 0x0072a720
 0x0072a690 function pppFpSetWoodMatrix        # fh v3:exact 0x0072a780
 0x0072a750 function pppFpStopStatus           # fh v3:bsim1.00+call.cs 0x0072a840 cdecl
+0x0072a760 function Fp_IdState_0072a760         # ours: (id) -> run state of the first g_FpData entry with i16 +0x64 == id: 0 not started (g_FpRun +0 = -0x1000), 1 running, 2 ended (+0x1d set), -1 no table or entry; callers 0x0091c860, 0x00933cc0
 0x0072a7f0 function pppSetFpPdt               # fh v3:exact 0x0072a8e0
 0x0072aa40 function pppSetFpTex                  # callees: its named callees match the Switch 0x71002d5480 pppSetFpTex's (similarity 1.00: op_fp_effect_init, op_oef2_a_get, op_oef2_clut_load, op_oef2_set2, op_oef2_texture_load); symbols from Fahrenheit's server export
 0x0072ab20 function pppVu0Length_copy_0072ab20   # the pppVu0Length body again (emulated VU0 length into 0x00c8f820.., _CIsqrt, Q); callers pppFpInfPrint, 0x00728ac0; the system agent's finding (vfx family, placed among system names); own name
@@ -6034,9 +6036,11 @@
 0x007e13e0 function op_char_table_set         # (table, chars, v) table[(i8) c] = v for each byte of the string chars
 0x007e1450 function op_error_007e1450          # ours: (code, arg) -> code + 1: op script error report through dbgPrintf (file 0x0113fc58, line 0x0113fc5c when set, then code 1..11's message, e.g. "file not open"), keeps code + 1 in 0x0113e238
 0x007e1b50 function op_str_unquote            # (s) the string's ' and " taken out in place
+0x007e1cc0 function op_read_line_007e1cc0        # ours: (src, out, max) -> bytes stored: the op script reader's next line (src: [+0] bytes, +0xc position, +0x10 end) up to 0/0xff/CR/LF, two-byte characters (>= 0x80) kept whole, at most max-1 bytes and a NUL, position stepped back one; callers 0x007e1d50, 0x007e2270
 0x007e1f80 function op_token_007e1f80          # ours: (src, out, &pos, max, eol) -> the first byte's class: the op script tokenizer by g_OpCharClass (word runs, two-byte runs, quoted runs, spaces, single characters, ; // /* */ comments with depth 0x0113fc64); callers 0x007e1d50, 0x007e2140, 0x007e2270, 0x007e2a60
 0x007e2250 function op_strlen                 # (s) -> length of the C string, 0 for null (op layer string helpers 0x007e1d50..)
 0x007e2600 function op_str_equal_007e2600      # ours: (a, b, nocase) -> -1 when the strings are equal (A-Z folded with nocase), else 0; 0 for a null string; called by 0x007e11a0
+0x007e2660 function op_line_length_007e2660      # ours: (src, lines) -> length of the op script reader's next line (bytes before LF, >= 0x80 with the next) or -1 at 0/0xff/the end (position back one); *lines (if any) and g_OpLineCount += 1; callers 0x007e1d50, 0x007e2270
 0x007e2ed0 function op_file_read                 # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003cb510 op_file_read, 2 votes, round 1
 0x007e3040 function op_and64                  # (dst, a, b) 64-bit dst = *a & *b
 0x007e3060 function op_word_copy3             # the op_word_copy body again
@@ -6077,6 +6081,7 @@
 0x007e5030 function op_oef2_texture_load      # fh v3:exact 0x007e4f40
 0x007e5210 function op_tex_vdisp_load_triger  # (on) byte 0x011a0066 = on (name from the dump's import of an older symbol)
 0x007e5660 function op_vec_zero               # (dst) four zero words
+0x007e5680 function op_oef2_tex_clut_init_007e5680 # ours: () -> 0: clears g_OpOef2ClutOvl, 0x011a01a0.., 0x011a02a0.., g_OpOef2ClutCues (64 dwords each), the cue head/count dword and g_OpOef2ClutOvlCount; caller 0x007ff960
 0x007e56d0 function op_oef2_tex_clut_ovl_add_007e56d0 # ours: (rec, mask, flag) -> index or -1: drops overlay CLUTs sharing a mask bit whose VRAM area overlaps the new one (block range from g_OpPsmBlockFactor), packs the table, appends (mask, flag, rec) unless rec is still present or 64 are taken; sets g_OpOef2ClutOvlCount
 0x007e5950 function op_float_add              # (dst, v, s) *dst = *v + s
 0x007e59a0 function op_float_sub              # (dst, v, s) *dst = *v - s
@@ -6348,12 +6353,13 @@
 0x00800e20 function opus_monster_clut_pos     # (slot) -> 0 without g_OpusMonsterFlags[slot], else 0x3fc0 (bit 0) or 0x3fd0
 0x00800e50 function opus_monster_tex_pos      # (slot) -> 0 without flags, else 0x3f40 (bit 0) or 0x3fc0
 0x00800e80 function opus_get_monster_index    # fh v3:exact 0x00800da0
+0x00800eb0 function opus_osu_copy_00800eb0      # ours: (set, dst, src) -> eax byte src+0xb3: copies src's +0x30..+0x4c, +0x90..+0x9c, +0x14, +0x18, +0x1e, +0xba, +0xb3 into dst and dst.u16[+0x1c] = (src - set[+0x20]) >> 8; called with opus_osu_init by 0x0080ae30, 0x0080af70, 0x0080b520
 0x00800f60 function opus_get_osu_by_draw      # fh v3:exact 0x00800e80
 0x00800fd0 function opus_get_weapon_by_no     # (no) -> g_OpusWeapons[i] for the first g_OpusWeaponNos[i] == no, else 0
 0x00801000 function opus_get_weapon_index     # fh v3:exact 0x00800f20
 0x00801030 function opus_get_weapon_index_by_no # (no) -> the first i with g_OpusWeaponNos[i] == no, else -1
 0x00801060 function opus_no_get                  # structure: (oef2, unit, no) -> the 0x100-byte unit with number no (+0x1a) and the same group (+0x1e), searched in two index lists (+0x14, +0x10), 0xffff/0xff00 special cases, calls is_ptr32_null; Switch opus_no_get (0x71003f4ff0, calls is_ptr32_null) sorts between opus_get_weapon_index_by_no and opus_osu_init, as here; 47 callers
-0x00801200 function opus_osu_init             # fh v3:exact 0x00801120
+0x00801200 function opus_osu_init             # fh v3:exact 0x00801120; ours: (out) -> eax g_Ee_Gpr r0 word 3: fills 0x100 bytes with r0, then out+0xc8 = 0x80808080 (opus::bridge::opus_osu_init)
 0x00801480 function opus_osu_init_group          # (battle i, n): zeroes the first 16 bytes of n 0x100-byte units of g_OpusBattle[i]'s +0x20 table; its only caller 0x007fda80 calls opus_osu_init_group, opus_osu_init, set_ptr32, opus_get_eff_status_index, the callees of the Switch's opu_init, which calls opus_osu_init_group (0x71003f4160); sorts between opus_osu_init and opus_prog_off; the vfx porter's opus_parts_clear
 0x008014c0 function opus_prog_off             # fh v3:exact 0x008013e0
 0x00801700 function opus_prog_on              # fh v3:exact 0x00801620
@@ -6431,6 +6437,7 @@
 0x008079f0 function op_chara_hsv_make         # fh v3:cg4 0x807ae0
 0x00807b20 function op_chara_hsv_size_get     # fh v3:exact 0x00807c90
 0x00807de0 function op_ota_encount1_draw         # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003e92c0 op_ota_encount1_draw, 4 votes, round 1
+0x00807e90 function op_rgb_to_hsv_00807e90      # ours: (out, src, n) -> out end: n rgba byte colours to u16 hue (0..0x2ff, 0x100 a sextant pair), saturation (256 d / max), value, alpha; callers 0x008079f0, 0x00807de0, 0x00808000
 0x00808000 function opu_clut_load                # layout+callees: sorts between op_ota_encount1_draw and opu_tc_load, and its named callees match the Switch 0x71004039a0 opu_clut_load's (similarity 0.60: Ch_ClutCreate, Ch_ClutDispose, op_chara_hsv, op_chara_hsv_make, op_free); symbols from Fahrenheit's server export
 0x008085a0 function opu_tc_load                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '(op)\\tno u_tc_block_monster[]\\n'; Switch 0x7100403690 opu_tc_load (symbols from Fahrenheit's server export)
 0x00808a20 function opus_all_clut_dispose     # fh v3:exact 0x00808b90
@@ -7328,7 +7335,9 @@
 0x0083d900 function Ch_IdGetSound             # chr +0x828 bits 15-16; Switch name, in name order
 0x0083d920 function Ch_IdGetWater             # chr +0x828 bits 13-14; Switch name, in name order before Ch_IdSetDefPid
 0x0083d940 function Ch_IdSetDefPid            # fh v3:bsim1.00 0x0083d940
+0x0083e040 function Sg_IdGetHeight            # (p, i) -> ST0: the height of id triangle i's plane under point p (x, z): normal n (Sg_CalcTriangleNormal via the entry's vertices), first vertex v, (n.v - (n.x p.x + n.z p.z)) / n.y; 0.0 without id data (0x01301a84) or for i -1; callers 0x0083d960, 0x0083de10, 0x0083e5f0 (ground under a character); name ours; ported (ffx_sg::state)
 0x0083e130 function Sg_IdGetNormal            # (out, i) -> -1 without id data (0x01301a84) or for i -1; else Sg_CalcTriangleNormal of entry i's three i16 vertices (8 bytes each at 0x01301a8c) into out, 0; name ours; ported (ffx_sg::state)
+0x0083e180 function Sg_IdSlideEdge            # (from, to): a move that crossed the id edge 0x01301aec-0x01301af0 slides along it: the move in the edge's frame (FFXVu0ApplyMatrix) loses its across component, then steps back one unit along z while the world result (FFXVu0InversMatrix) is still past the edge; to.x/z = from + w; called from the id move loop 0x0083e5f0 after 0x0083d960 finds a crossing; name ours; ported (ffx_sg::state)
 0x0083e3e0 function Sg_VectorGetLengthXZ      # (a, b) -> |b - a| in the x-z plane (_CIsqrt); the id map functions
 0x0083e420 function Sg_CalcTriangleNormal_0083e420 # structure: (v0, v1, v2, out) with s16 vertices: the normalised cross product of the two edges (FFXVu0OuterProduct, FFXVu0Normalize); next to Sg_VectorGetLengthXZ; name ours
 0x0083e4e0 function Sg_IdMatchChr             # (chr, i) -> whether id entry i's kind (low 7 bits of +0xc) applies to chr: 1 all, 2 not the player, 13 bit 2 of +0x198, 14 the player, 0x30..0x3f through g_ChrIdMapTable; caller 0x0083d960; name ours; ported (ffx_sg::state)
@@ -8904,6 +8913,8 @@
 0x00888740 function TkRegistBGThreadFunc      # fh v3:bsim1.00 0x008886b0
 0x00888790 function TkSetSyncVCallbackPtr     # fh v3:exact 0x00888700
 0x00888820 function TkSignalSemaBGThread      # fh v3:bsim1.00 0x00888790
+0x00888890 function op_counter_add_00888890      # ours: (n) -> n: adds n to the dword at 0x01330278 when n > 0; caller 0x008884a0
+0x008888e0 function op_slot_bytes_reset_008888e0 # ours: (obj) -> obj+0xfe: u16 +0xfe = 0, u16 +0xf6 = 0x808, bytes +0xf0..+0xf5 = 0xff, +0xf8..+0xfd = 0; callers 0x00889050, 0x00889360
 0x008889e0 function Compute_008889e0             # auto-port shape (arithmetic on arguments, cdecl): return (a1 & 0xff); callers: ; name ours
 0x00888b60 function TkGetControlerFrame       # (work, i) -> work + ((byte +0x9c + i) & 3) * 0x20: a frame of a pad work's 4-entry input ring
 0x00888b80 function Pad_GetFrame              # (pad, port, i) TkGetControlerFrame(TkGetControlerWork(pad, port), i); own name
@@ -9186,7 +9197,7 @@
 0x0089ab80 function TOBgoodStart              # g_MagicImports slot 661 (10 overlays): TOSeqStartScene(2, "bgood"); SndPlayClick(0x68); hidden from the dump
 0x0089aba0 function TOBtlLimitTimerStop_0089aba0 # (): same body as 0x0089ab20; name ours
 0x0089abd0 function TOCheckBtlCommandTarget   # fh v3:exact 0x0089ab40; cdecl(chr, cmd): 0x0133d0d0 (0x140) cleared, +0 chr, +2 cmd, window start/mask 0, TOBtlMakeTarget{List,Group,ChrStatus,Command,Target}Bit; 0x0133c94c == 0x100: single party target 0x0133d15c & 0x0133d154 & 0x0133d0dc in mode 2; returns 1
-0x0089aca0 function TOCheckBtlCommandUse      # fh v3:exact+call.cs 0x0089ac10 cdecl
+0x0089aca0 function TOCheckBtlCommandUse      # fh v3:exact+call.cs 0x0089ac10 cdecl; (chr, cmd): 0xfe->0, 0xff->-2, MsGetCommandUse 1 -> -1, MsCheckUseCommand -1 -> -2, item kinds (+0x16&0xf8 8/0x10) -> +0x17 or -4/-3 if TOGetSaveWindow is empty, else 0xfe (+0x1a bit 0) or 0xfe + (0x0133c94c != 0x100)
 0x0089ad90 function TOClearBtlWindow          # fh v3:exact 0x0089ad00
 0x0089ade0 function TOCloseBtlWindow          # (): 0x023cc08c and the nine words at 0x0133d74c zeroed; returns 0; fh v3:exact 0x0089ad50
 0x0089ae20 function TOControlBtlWindow        # fh v3:exact 0x0089ad90
@@ -9194,7 +9205,7 @@
 0x0089b360 function TODrawBtlWindow           # fh v3:exact 0x0089b2d0
 0x0089b530 function TODrawCommandValue        # fh switch:cg2 0x71004a1820
 0x0089b590 function TOGetBtlWindowControlEnable # fh v3:bsim1.00 0x0089b500
-0x0089b5a0 function TOGetSaveWindow           # fh v3:exact+call.cs 0x0089b510 cdecl
+0x0089b5a0 function TOGetSaveWindow           # fh v3:exact+call.cs 0x0089b510 cdecl; (a, kind, &count): MsGetSaveWindow text, trailing 0xff halfwords dropped except kinds 6/17/20, kinds 7/15 at least 1
 0x0089b660 function TOInitBtlWindow           # fh v3:exact 0x0089b5d0
 0x0089baa0 function TOBtlSetDamageValue_0089baa0 # cdecl(a, b, d, e, f, g, h): TOBtlSetDamageValue without the word at +4; name ours
 0x0089bb10 function TOSetBtlActiveChr         # fh v3:exact 0x0089ba80
@@ -9382,7 +9393,7 @@
 0x008ac790 function TOGetWord_01841e00        # () -> [0x01841e00]; between TOGetInternationalBaseDicType and TOGetMessageWindowMode; name ours
 0x008ac7b0 function TOGetMessageWindowMode    # fh v3:bsim1.00 0x008ac760
 0x008ac7c0 function TOGetMessageWindowWH         # layout+callees: sorts between TOGetMessageWindowMode and TOGetSaveChrName, and its named callees match the Switch 0x71004fa030 TOGetMessageWindowWH's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
-0x008ac850 function TOGetSaveChrName          # fh v3:exact+call.cs 0x008ac800 cdecl
+0x008ac850 function TOGetSaveChrName          # fh v3:exact+call.cs 0x008ac800 cdecl; (i): >= 0x14 MsGetRamChrName, else MsGetSaveChrName after MsGetSaveConfigEnglish when the language is 0
 0x008ac8c0 function TOGetShapTextureName      # fh v3:exact+call.cs 0x008ac870 cdecl; id -> name pointer from 0x00c59d58..0x00c59eb8 by id and TOGetFFXLang; 0x2f00 cached at 0x025d16c8; unknown ids return id
 0x008acf10 function TOGetWord_01841d9c        # () -> [0x01841d9c]; before TOGetSystemConfirmButtonAssign; name ours
 0x008acf20 function GetU32_01841d30 # () -> u32 at 0x01841d30; name ours
@@ -9498,7 +9509,7 @@
 0x008b65e0 function TOGetButtonIconWidth         # layout: alphabetical run between TOFuncPadMessageNormal and TOGetChangeMacroAddress (2 unnamed in the gap); Switch 0x71004f1ae0 TOGetButtonIconWidth is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008b6660 function TOGetChangeMacroAddress   # fh v3:exact 0x008b6610
 0x008b6a30 function TOGetChangeMacroWidth     # fh v3:exact 0x008b69e0
-0x008b6b00 function TOGetChangeMacroWordCount # fh v3:exact 0x008b6ab0
+0x008b6b00 function TOGetChangeMacroWordCount # fh v3:exact 0x008b6ab0; (table, index): codes >= 0x26 or 4 count one, group-3 codes add their macro's count (recursive)
 0x008b6b70 function TOGetControlPadStatus     # fh v3:exact 0x008b6b20
 0x008b70a0 function MacroDic_Section             # (n, table) -> *(macrodic table + (n - 19) * 4)
 0x008b70c0 function TOGetTextWidth            # cdecl(text, arg) -> float: sum of TOGetFontWidthForLang(text, 0, &w, arg) widths as ftol(total + w), glyph count in 0x018663e8; name ours
@@ -9523,7 +9534,7 @@
 0x008b8070 function TOGetWidthExtMes1612         # layout+callees: sorts between TOGetSaveDicAdrs and TOInitMacroCmd, and its named callees match the Switch 0x71004f12e0 TOGetWidthExtMes1612's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
 0x008b81d0 function TOInitMacroCmd            # fh v3:exact 0x008b8180
 0x008b8210 function TOInitMessage             # fh v3:exact 0x008b81c0
-0x008b8290 function TOIntToMes                # fh v3:exact 0x008b8240
+0x008b8290 function TOIntToMes                # fh v3:exact 0x008b8240; (value, out, digits, mode) -> shown value: negatives 0; mode 0 value % 10^digits left-padded with ']'/':'/0xfe by language, mode 1 clamped to 10^digits-1 and zero-padded; copies `digits` bytes of its sprintf buffer, so stale stack bytes follow the terminator
 0x008b8430 function TOWideWindowX_008b8430 # cdecl(i, x) -> float: type-1 window and 0x01340824/0x0133c948/0x01327100 clear: (w - 512 h/416) / (2 w/512) + x (h/416)/(w/512) from graphicFontGetScreenWH; else x; name ours
 0x008b84f0 function TOMacroSetByte1 # cdecl(win, n, v): byte 1 of macro record n of message window win (the table at 0x01869ab0, as TOMacroSetType sets byte 0); callers 0x008c2c60, 0x00a59350; name ours
 0x008b8510 function TOMacroSetValue_008b8510 # the same code as TOMacroSetValue 0x008b8980; callers 0x008c2c60, 0x00a59350; name ours
@@ -9547,7 +9558,7 @@
 0x008b8db0 function TOStdGetItemName             # layout+callees: sorts between TOSetRectDirect and TOValueToMesFontL, and its named callees match the Switch 0x71004f2560 TOStdGetItemName's (similarity 1.00: MsGetRomItem); symbols from Fahrenheit's server export; cdecl(item): MsGetRomItem(item, &base) record's u16 +0 + base
 0x008b8dd0 function TOStdGetWeaponName        # cdecl(id): tail call MsGetSaveWeaponName(id); sits after TOStdGetItemName; name ours
 0x008b9130 function GetU32_025d16c4 # () -> u32 at 0x025d16c4; name ours
-0x008b9140 function TOValueToMesFontL         # fh v3:exact 0x008b90f0
+0x008b9140 function TOValueToMesFontL         # fh v3:exact 0x008b90f0; (value, out, width): %d / %<width>d, digits kept, spaces '^' (lang 0, not English), ':' (lang 9/10) or 0xfe, others dropped
 0x008b9220 function TOTimedMacroMessage       # cdecl(arg): frames 0x018663d4 counted while 0x018663d0; TOCountMapVisits; state 0x018663d1 0: TOSelectMacroDic_008b56d0 table 0x01869eb8, row g_GraphicMapId - 0x189; state 1: at frame table[row*0x32+col] TOMessageCallF8_008b8ca0(arg), col up to 0x32; 0 frame clears all; name ours
 0x008b9330 function TOGetFontWidth            # fh v3:exact 0x008b92e0 _TOGetFontWidth; (text, kind, &w, table) -> next: glyph width (tables via 0x01841da4, kr/ch code-4 pages) -> TOGetFontWidthInPiexl + space (x aspect when 0x018663ec); 0x47 runs; 6 and < 0x30 are 2 bytes
 0x008b9640 function TOGetMessageWindow_008b9640 # cdecl(i): message window i (the pointer table at 0x018676f0); caller 0x008ada30; name ours
@@ -10331,13 +10342,13 @@
 0x00905e90 function TOCopyWindowLayout_00905e90 # cdecl(table, i): i < count: entry i (n, then n 12-byte records; layout 0x43 n = 1) memcpy'd to 0x01876148; returns it, else 0; name ours
 0x00906270 function TOMakePktFont1612Font_00906270 # fh switch:bsim1.00 0x7100505d30 _TOMakePktFont1612Font
 0x00906290 function TOMakePktFont1612Shadow_00906290 # fh switch:bsim1.00 0x7100508b70 _TOMakePktFont1612Shadow
-0x009062b0 function getScaleButtonIconWidth   # fh v3:exact 0x009062b0
+0x009062b0 function getScaleButtonIconWidth   # fh v3:exact 0x009062b0; (id, scale) -> f32: ids 0x258..0x263/0x264..0x267/0x268/0x269 give graphicUiRemapX2(ftol(scale*54/64/64.5/147.4 + 0.5)); char 0x025d16e4 digits/space 9.0, ':;' 13.6, '@'..'O' 20.0 or 9.0 ('@' 33.5)
 0x00906420 function graphicDrawUIElementAfterSet # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100501fe0 graphicDrawUIElementAfterSet, 3 votes, round 1
 0x00906680 function SeveralStoresSetTableConstantsArgumentsAddresses_00906680 # auto-port shape (several stores: set table (constants, arguments, addresses), cdecl): u32[((a4 << 0x5) + &0x025d1710)] = a0; u32[((a4 << 0x5) + &0x025d1714)] = a1; u32[((a4 << 0x5) + &0x025d1718)] = a2; u32[((a4 << 0x5) + &0x025d171c)] = a3; return a3; callers: no direct caller; name ours
 0x009066f0 function TOShiftListedId # cdecl(id): 0x40e..=0x46e and 0x40e or in the zero-terminated table 0x00b66e44: id + 100; else id; name ours
 0x00906730 function GetU32_018763e0 # () -> u32 at 0x018763e0; name ours
 0x00906740 function StepSwitch_018763e0 # (): *0x018763e0 steps -1 -> 0 -> 1 -> -1 (other values stay), returns it; caller 0x006b8ce0; name ours
-0x00906780 function TOConvAlbhedWord          # fh v3:exact 0x00906780
+0x00906780 function TOConvAlbhedWord          # fh v3:exact 0x00906780; (in, out) -> 1 translated / 2 letter known (or all known) / 0: known letters = 0x011307a0 bits (0x018763e0 -1 none, 1 all); lang 0 tables at 0x0187626c (0x5f..0xae), other Latin 0x018762a8 (0x50..0x69, 0x70..0x89), langs 9/10 kana ids letter (id-0x5e)%26
 0x00906b10 function GetGlobal011307a0_00906b10   # auto-port shape (return global u32, cdecl): t0 = u32[&0x011307a0]; return t0; callers: ; name ours
 0x00906b20 function TOGetFFXToAlbhedTblAdrs   # fh v3:bsim1.00 0x00906b20
 0x00906b30 function TOSetCollectBit           # cdecl(n): -1 clears 0x011307a0; 0..0x19 sets bit n + achievement 1, all 26 -> achievement 0x1c; 0xff sets all + achievement 0x1c; name ours
@@ -11764,8 +11775,12 @@
 0x00a384b0 function SetFieldComputed30_00a384b0  # auto-port shape (store computed to field, stdcall): t0 = u32[(a0 + 0x30)]; u32[a1] = (t0 & 0xfffffff); return a1; callers: no direct caller; name ours
 0x00a39900 function SetFields_00a39900           # auto-port shape (several stores: set field (constants, arguments, addresses), stdcall): u32[a0] = 0x8; u32[(a0 + 0x4)] = 0x1ffe; u32[(a0 + 0xc)] = 0x0; u32[(a0 + 0x10)] = 0x1; u32[(a0 + 0x14)] = 0x1; u32[(a0 + 0x8)] = 0x2000; u32[(a0 + 0x18)] = 0x0; return a0; callers: no direct caller; name ours
 0x00a39b00 function StoreComputed_00a39b00       # auto-port shape (several stores: computed, into deref/field, cdecl): t0 = u32[(a0 + 0x20)]; t1 = u32[(a0 + 0x1c)]; t2 = u32[(a0 + 0x18)]; u32[(t0 + 0x1c)] = t1; t3 = u32[(a0 + 0x1c)]; t4 = u32[(a0 + 0x20)]; u32[(t3 + 0x20)] = t4; u32[(a0 + 0x1c)] = (t2 + 0x10); t5 = u32[(t2 + 0x30)]; u32[(a0 + 0x20)] = t5; u32[(t5 + 0x1c)] = a0; t6 = u32[(a0 + 0x1c)]; u32[(t6 + 0x20)] = a0; t7 = u32[(a0 + 0x30)]; u32[(a0 + 0x30)] = (t7 & 0xfffffff); return t6; callers: ; name ours
+0x00a39bc0 function op_node_pool_init_00a39bc0  # ours: (set, n, v) -> set: seven list heads at +0x10 + 0x38k (empty, +0x30 0x70000000) and n nodes at +0x1a8 + 0x38i chained into the first list (owner set); the lists op_node_requeue_00a39f00 moves between; callers 0x00a35780, 0x00a38180, 0x00a3bcd0
+0x00a39f00 function op_node_requeue_00a39f00    # ours: (n) -> eax the state word: a node in state 2 (top nibble of +0x30) unlinks (+0x1c prev, +0x20 next) and goes in at the front of [n+0x18]+0x48's list, state 1; callers 0x00a374e0, 0x00a38c40, 0x00a39200, 0x00a398a0, 0x00a3ac90
 0x00a3a010 function StoreComputed_00a3a010       # auto-port shape (several stores: computed, into deref/field, cdecl): t0 = u32[(a0 + 0x18)]; t1 = u32[(a0 + 0x20)]; t2 = u32[(a0 + 0x1c)]; u32[(t1 + 0x1c)] = t2; t3 = u32[(a0 + 0x1c)]; t4 = u32[(a0 + 0x20)]; u32[(t3 + 0x20)] = t4; u32[(a0 + 0x1c)] = ((t0 + 0x10) + (((a1 * 0x8) - a1) * 0x8)); t5 = u32[(((t0 + 0x10) + (((a1 * 0x8) - a1) * 0x8)) + 0x20)]; u32[(a0 + 0x20)] = t5; u32[(t5 + 0x1c)] = a0; t6 = u32[(a0 + 0x1c)]; u32[(t6 + 0x20)] = a0; t7 = u32[(a0 + 0x30)]; u32[(a0 + 0x30)] = ((t7 & 0xfffffff) | (a1 << 0x1c)); return ((t7 & 0xfffffff) | (a1 << 0x1c)); callers:  and 3 more; name ours
 0x00a3b210 function opd_config_memory            # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'memory'; Switch 0x7100864950 opd_config_memory (symbols from Fahrenheit's server export)
+0x00a3ba10 function op_node_slot_00a3ba10        # ours: (node) -> base + 16 ((node - base - 0x438) / 0x38 + 99), base = [0x01a858b4] (the render object's 0x38-byte nodes and their 16-byte slots); caller 0x00a39200
+0x00a3c0f0 function op_mip_bytes_00a3c0f0        # ours: (w, h, levels) -> sum over levels of 2 w h, w and h halved (at least 1) each level: a 16-bit texture's mip chain bytes; caller 0x00a37c20
 0x00a3d7c0 function AddrOfGlobal01a858cc_00a3d7c0 # auto-port shape (return address of global, cdecl): return &0x01a858cc; callers: ; name ours
 0x00a3dd00 function SetFields_00a3dd00           # auto-port shape (several stores: set field (constants, arguments, addresses), thiscall): u32[(a0 + 0xc)] = a3; u32[(a0 + 0x10)] = a4; u32[(a0 + 0x14)] = a1; u32[(a0 + 0x18)] = a2; return a2; callers: ; name ours
 0x00a3dd50 function StoreAddressToField_00a3dd50 # auto-port shape (store address to field, thiscall): u32[a0] = &0x00b7a9e4; callers:  and 4 more; name ours
@@ -11980,6 +11995,7 @@
 0x00a690c0 function op_ffxlight_to_omdlight   # fh v3:exact 0x00a690c0
 0x00a691c0 function op_ffxlight_to_omdlight_0279 # layout+callees: sorts between op_ffxlight_to_omdlight and op_md_copy, and its named callees match the Switch 0x71003cd520 op_ffxlight_to_omdlight_0279's (similarity 1.00: Sg_LightGetColor, Sg_LightGetDir); symbols from Fahrenheit's server export
 0x00a69290 function op_md_copy                   # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'op_md_copy error !!!\\t\\tomd size zero byte\\n'; Switch 0x71003cce00 op_md_copy (symbols from Fahrenheit's server export)
+0x00a698c0 function op_md_packet_size_00a698c0   # ours: (packet) -> 0 at a tag of type nibble 0x10/0x20, else at the 0xf0 end tag (6 (i16 +0x12 + i16 +0x14) + 0x1f + end - packet) & 0x7ffffff0; tags as in op_md_packet_set_addr (g_OpMdTagSizes); callers 0x0081c4f0, 0x00a69290
 0x00a69940 function op_md_spr_init_x64        # fh v3:bsim1.00 0x00a69940; ours: (obj, init, work) -> work+0x300: copies the 0x50-byte init block to work+0x300 through g_Ee_Gpr+0x20 (the emulated v0, the last 16 bytes stay), fills the default pointers +0x338/+0x33c, the ranges +0x390/+0x394/+0x39c and the DMA/GIF packet at work+0x100 (md::bridge::op_md_spr_init_x64)
 0x00a69c80 function op_md_tex0_change         # fh switch:bsim1.00 0x71003ccfd0
 0x00a69de0 function op_md_packet_set_addr     # (packet, a, b): unless MagicFile_GetMagicId is 0x94, 0x239 or 0xd0, every tag from packet+0x20 (until type 0xff at +1) takes a at +8, b at +0xc; tag = 0x10 + count (i16 +2) * g_OpMdTagSizes[type & 7]; g_MagicImports slot 620
@@ -11991,6 +12007,7 @@
 0x00a6c8b0 function op_md_one8_fog               # str-match switch: only user of 1 string(s) held once by both builds, e.g. '(op)\\top_md0_onef() light no support !\\n'; Switch 0x71003d2140 op_md_one8_fog (symbols from Fahrenheit's server export)
 0x00a6cd80 function op_matrix_light4_vector   # fh v3:exact 0x00a6cd80
 0x00a6cf10 function op_normal_light44_ffx     # fh v3:exact 0x00a6cf10
+0x00a6cf70 function op_md_white_vectors_00a6cf70 # ours: (obj, _, work) -> count: obj.i16[+0x14] (1,1,1,1) vectors from [work+0x390] (the count reread each time); caller 0x00a6b710
 0x00a6cfb0 function op_refrection_st_float    # fh v3:cg7 0xa6cfb0
 0x00a6d380 function op_vertex_normal_point44_ffx # fh v3:exact 0x00a6d380
 0x00a6d670 function op_vertex_normal_point44_ffx_2 # callees: its named callees match the Switch 0x71003df590 op_vertex_normal_point44_ffx_2's (similarity 0.78: Ch_DrawCalcShade, Ch_GetChrRenderInstance, MagicFile_GetMagicId, graphicPS2LightingSetupEffect, op_ffxlight_to_omdlight_0279); symbols from Fahrenheit's server export
@@ -14279,6 +14296,9 @@
 0x00c496ea label g_ChrShadeByLight           # i8: Ch_DrawCalcShade multiplies the shade fade by the light value fade (+0x36c) when set
 0x00c49718 label g_ChrMouthTh                # i16, Ch_GuiSetMouthTh (0..200)
 0x00c49784 label    g_ChrSysMotionSets        # i8 per slot: the system motion set of a definition's table (+0x6c, 8-byte entries from +0x10) Ch_SetSysMotion 0x00837d00 uses
+0x00c4dee4 label    g_FreeCamHeight           # f32: Sg_ControlCamera's height, +/- 0.2 with L/R button mode buttons 2/8
+0x00c4def0 label    g_FreeCamYaw              # f32 radians: Sg_ControlCamera turns it by (right stick x - 0x80) degrees / 12, wrapped into -pi..pi
+0x00c4def4 label    g_FreeCamPitch            # f32 radians: Sg_ControlCamera turns it by (right stick y - 0x80) degrees / 12, wrapped into -pi..pi
 0x00c4df54 label    g_GuHScale                # vertical scale of Gu_SetScissor's y bounds, 8.8 fixed point (Gu_SetHScale)
 0x00c4df60 label    g_GuWindowHokan           # window movement smoothing on (Gu_WindowSetHokanEnable)
 0x00c52704 label    g_AtelConstants              # u32 table opcode 75 pushes (Script_Run)
@@ -14702,6 +14722,7 @@
 0x0113fb58 label    g_OpCharClass                # 256 bytes: the op script tokenizer's class per byte (1 word, 2 two-byte, 3/4 quotes, 5 space, 6/8 single, 7 comment/end)
 0x0113fc60 label    g_OpInComment                # nonzero inside an op script block comment (op_token_007e1f80)
 0x0113fc64 label    g_OpCommentDepth             # op script block-comment nesting depth (op_token_007e1f80)
+0x0113fc80 label    g_OpLineCount                # op script reader line counter, +1 per op_line_length_007e2660
 0x0113fcd0 label    g_Op3dListener            # matrix op_3d_vol_pan_get applies (op_apply_m_w1) to a sound position
 0x0119fe10 label    g_OpSprStack                 # op scratch stack, i32 marks: op_spr_alloc(n) pushes top + n (top index g_OpSprTop)
 0x0119fe98 label    g_OpusEncount             # the encounter effect's oef2 object: op_et_encount_effect_on runs opu_et_unit on it, op_et_encount_effect_free frees its units and clears it
@@ -14804,6 +14825,8 @@
 0x013019e0 label g_ChrSpecularPackets       # two 0x40-byte GS packets (0x013019e0, 0x01301a20) Ch_TextureSendSpecular references; clut data pointers at +0x30
 0x01301af8 label g_ChrIdEffectTable          # u8, 4 per set: Ch_IdGetEffectTable
 0x01301b00 label g_ChrIdEffectTableIndex     # i8, the set (Sg_IdSetEffectTableIndex)
+0x01301bb0 label    g_FreeCamPreset           # u32: Sg_ControlCamera's distance preset counter (button 0x400; low byte % 6 picks 50, 100, 180, 250, 1000, 30)
+0x01301bb8 label    g_FreeCamDist             # f32: Sg_ControlCamera's distance, +/- 0.4 with L/R button mode buttons 1/4, or a preset
 0x01301ff8 label    g_CacheEntries            # the model cache's 100 entries (0x28 bytes) Cache_Init points g_CacheSlots at
 0x01302f98 label    g_CacheSlots              # the model cache's 100 entry pointers, least recently used first (Cache_*; layout in docs/formats/render.md)
 0x013032b8 label    g_CacheState              # a word Cache_Init clears

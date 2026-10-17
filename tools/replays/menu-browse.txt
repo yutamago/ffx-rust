@@ -6,7 +6,9 @@
 # $OUT\menu-browse-<n>.bmp (the trace's folder), for tools/shot-compare.py.
 load direct 1 cdsp0000
 lockstep on
-wait 30
+# the field takes input only after its fade-in; 30 frames was too few
+# under parallel load (the menu stayed shut)
+wait 120
 trace 0x00ccb170:8 0x0113205c:0xa68
 press triangle 4 40
 shot $OUT\menu-browse-1.bmp
