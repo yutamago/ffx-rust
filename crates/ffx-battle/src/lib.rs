@@ -15,6 +15,7 @@
 //! [`state`], [`util`], [`damage`], [`command`], [`vector`], [`misc`], [`minor`], [`body`], [`menu`], [`cue`], [`turn`], [`flow`] and [`pos`].
 
 pub mod ability;
+pub mod action;
 pub mod actor;
 pub mod atel;
 pub mod body;
@@ -34,6 +35,7 @@ pub mod rng;
 pub mod save;
 pub mod stat;
 pub mod state;
+pub mod status;
 pub mod target;
 pub mod turn;
 pub mod util;

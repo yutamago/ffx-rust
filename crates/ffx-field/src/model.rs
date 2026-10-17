@@ -201,6 +201,10 @@ pub const FP_RESTART: u32 = 0x0072_9700;
 pub const CH_OPTPOS_GET_ELEMENT: u32 = 0x0083_5660;
 /// The palette configuration keywords (`0x00c60e94`, a null-ended table).
 pub const PAL_CONFIG_KEYS: u32 = 0x00c6_0e94;
+/// `rcbgAnimeLoadConfig`'s keywords (`0x00c60e84`: `DataCnt`, ...).
+pub const ANIME_CONFIG_KEYS: u32 = 0x00c6_0e84;
+/// `rcbgAnimeSetDataCnt(anime, n)` (`0x009308d0`).
+pub const ANIME_SET_DATA_CNT: u32 = 0x0093_08d0;
 /// The text sub-configuration keywords (`0x00c60e44`).
 pub const TEXT_SUB_KEYS: u32 = 0x00c6_0e44;
 /// The field programs' degree-to-radian factor (`.rdata` float,
@@ -2745,6 +2749,56 @@ pub mod bridge {
     ) -> u32 {
         rcbg_psim_fini(mem, p, call);
         rc_free(mem, call, p)
+    }
+
+    /// `rcbgAnimeLoadConfig(anime, parse)` (`0x0093a650`): after the next
+    /// token, keywords from the table at `0x00c60e84` until the parser
+    /// ends: 0 the frame count (`rcbgAnimeSetDataCnt`), 1 that many
+    /// four-byte frames (integers) into the data at `+0xc` between two
+    /// tokens, 2 stops (returns 0); others are skipped. Returns the
+    /// parser's end flag otherwise.
+    pub fn rcbg_anime_load_config<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        anime: u32,
+        p: u32,
+        call: &mut C,
+    ) -> u32 {
+        use crate::rcdt::bridge as rb;
+        let (mut count, mut last) = (0i32, 0i32);
+        rb::rcdt_parse_next_token(mem, p);
+        let table = mem.rebase(super::ANIME_CONFIG_KEYS);
+        loop {
+            let end = rb::rcdt_parse_is_end(mem, p);
+            if end != 0 {
+                return end;
+            }
+            match rb::rcdt_parse_get_keyword(mem, p, table, call) {
+                0 => {
+                    count = rb::rcdt_parse_get_int(mem, p, call).cast_signed();
+                    last = count;
+                    let f = mem.rebase(super::ANIME_SET_DATA_CNT);
+                    call(mem, f, &[anime, count.cast_unsigned()]);
+                }
+                1 => {
+                    rb::rcdt_parse_next_token(mem, p);
+                    let mut d = mem.read::<u32>(anime.wrapping_add(0xc));
+                    if count > 0 {
+                        for _ in 0..count {
+                            for k in 0..4 {
+                                #[allow(clippy::cast_possible_truncation)] // `mov byte`
+                                let v = rb::rcdt_parse_get_int(mem, p, call) as u8;
+                                mem.write(d.wrapping_add(k), v);
+                            }
+                            d = d.wrapping_add(4);
+                        }
+                        count = last;
+                    }
+                    rb::rcdt_parse_next_token(mem, p);
+                }
+                2 => return 0,
+                _ => {}
+            }
+        }
     }
 }
 

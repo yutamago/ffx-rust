@@ -358,7 +358,9 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, actor: u32, area: u
     });
     // MsVectorGetSide: the registers' w come from the original's stack
     let f: [u32; 4] = std::array::from_fn(|_| floats(rng));
-    let ra = a.call(a.rebase(0x007c_4180), Conv::Cdecl, &f).unwrap().eax;
+    let r = a.call(a.rebase(0x007c_4180), Conv::Cdecl, &f).unwrap();
+    assert!(r.st0.is_none(), "MsVectorGetSide {f:x?}: a float in ST0");
+    let ra = r.eax;
     let rb = ffx_battle::vector::bridge::ms_vector_get_side(b, f).cast_unsigned();
     assert_eq!(ra, rb, "MsVectorGetSide {f:x?}");
     let m = ffx_battle::vector::bridge::VF_M.ptr(b).addr;

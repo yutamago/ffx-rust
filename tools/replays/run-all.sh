@@ -11,7 +11,7 @@
 # (traces, screenshots, the replay's output), kept for inspection; the
 # recorded originals stay where the comparisons find them:
 # %TEMP%\ffx-snap\<replay>-orig.trace, -orig2.trace and
-# /tmp/ffx-replay-shots/orig, orig2.
+# ~/ffx-work/replay-shots/orig, orig2 (FFX_REPLAY_SHOTS).
 #
 # FFX_REPLAY_SERIAL=1 runs the replays one after the other instead.
 set -u
@@ -22,7 +22,7 @@ temp_win="$(powershell.exe -NoProfile -Command '[IO.Path]::GetTempPath()' | tr -
 temp_win="${temp_win%\\}"
 win="$temp_win\\ffx-snap"
 lin="$(wslpath "$win")"
-shots=/tmp/ffx-replay-shots
+shots="${FFX_REPLAY_SHOTS:-$HOME/ffx-work/replay-shots}"  # outlives a WSL restart (/tmp does not)
 id="$(date +%Y%m%d-%H%M%S)-$$"
 runs="$lin/runs/$id"
 replays=(field-walk battle-attack menu-browse)

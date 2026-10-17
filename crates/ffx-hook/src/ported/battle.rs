@@ -1,8 +1,10 @@
 //! `ffx-battle`: random numbers, the save block, actors, the battle camera,
 //! battle globals and helpers, damage.
 
+use ffx_battle::action::bridge as action;
 use ffx_battle::atel::bridge as atel;
 use ffx_battle::exec::bridge as exec;
+use ffx_battle::status::bridge as status;
 use ffx_battle::{actor::bridge as actor, camera::bridge as camera, command::bridge as cmd};
 use ffx_battle::{
     body::bridge as body, menu::bridge as menu, target::bridge as target, vector::bridge as vector,
@@ -75,9 +77,11 @@ macro_rules! script {
     ($s:ident) => {
         let mut call = call_ptr;
         let mut signal = regist_signal;
+        let mut off = |m: &mut _, e| ffx_vfx::et::bridge::op_et_eff_off_signal(m, e);
         let mut $s = atel::Script {
             call: &mut call,
             signal: &mut signal,
+            off: &mut off,
         };
     };
 }
@@ -2229,5 +2233,109 @@ ported! {
     MsDefenseStartProcess @ 0x007a_f920 => extern "C" fn ms_defense_start_process() {
         script!(s);
         atel::ms_defense_start_process(&mut mem(), &mut s, &crt_trig, None);
+    }
+    /// `MsDirTurn(actor, dir)` (an `f32` in ST0).
+    MsDirTurn @ 0x007a_9650 => extern "C" fn ms_dir_turn(actor: u32, dir: f32) -> f32 {
+        f32::from_bits(target::ms_dir_turn(&mem(), actor, dir.to_bits()))
+    }
+    /// `MsGetDirMode(i, actor, vec, follow, &mode, &plain)` (an `f32` in ST0).
+    MsGetDirMode @ 0x007a_9710 => extern "C" fn ms_get_dir_mode(i: u32, actor: u32, vec: u32, follow: u32, mode: u32, plain: u32) -> f32 {
+        let mut m = mem();
+        f32::from_bits(target::ms_get_dir_mode(&mut target::Dm::new(&mut m), &host(), i, actor, vec, follow, mode, plain))
+    }
+    /// `MsSetChrDirTarget(i, mode, turn, target, a, b)`.
+    MsSetChrDirTarget @ 0x0079_5eb0 => extern "C" fn ms_set_chr_dir_target(i: u32, mode: u32, turn: u32, target: u32, a: u32, b: u32) -> i32 {
+        let mut m = mem();
+        target::ms_set_chr_dir_target(&mut target::Dm::new(&mut m), &host(), i, mode, turn, target, a, b)
+    }
+    /// `MsHideArm(i, hide)`: `Ch_ModelSetHide` (chara).
+    MsHideArm @ 0x0079_5c00 => extern "C" fn ms_hide_arm(i: u32, hide: u32) {
+        status::ms_hide_arm(&mut mem(), &mut call_ptr, i, hide);
+    }
+    /// `MsResetChrPos(i, actor)`.
+    MsResetChrPos @ 0x0078_d680 => extern "C" fn ms_reset_chr_pos(i: u32, actor: u32) -> u32 {
+        status::ms_reset_chr_pos(&mut mem(), &crt_trig, i, actor)
+    }
+    /// `MsSetChrMovePos(i, actor)`.
+    MsSetChrMovePos @ 0x0078_f040 => extern "C" fn ms_set_chr_move_pos(i: u32, actor: u32) -> i32 {
+        status::ms_set_chr_move_pos(&mut mem(), &crt_trig, i, actor)
+    }
+    /// `MsAttachWeapon(i, k)`.
+    MsAttachWeapon @ 0x0079_3330 => extern "C" fn ms_attach_weapon(i: u32, k: u32) -> u32 {
+        let mut m = mem();
+        status::ms_attach_weapon(&mut target::Dm::new(&mut m), &host(), &mut call_ptr, i, k)
+    }
+    /// `MsDamageSetMotion(i, kind, flags)`.
+    MsDamageSetMotion @ 0x0078_ca20 => extern "C" fn ms_damage_set_motion(i: u32, kind: u32, flags: u32) {
+        let mut m = mem();
+        script!(s);
+        status::ms_damage_set_motion(&mut target::Dm::new(&mut m), &host(), &mut s, i, kind, flags);
+    }
+    /// `MsStatusEffect(i, actor, rec, on, slots)`: `op_et_eff` through the
+    /// game, `op_et_eff_off_signal` (vfx).
+    MsStatusEffect @ 0x0079_ef40 => extern "C" fn ms_status_effect(i: u32, actor: u32, rec: u32, on: u32, slots: u32) {
+        let mut off = |m: &mut _, e| ffx_vfx::et::bridge::op_et_eff_off_signal(m, e);
+        status::ms_status_effect(&mut mem(), &mut call_ptr, &mut off, i, actor, rec, on, slots);
+    }
+    /// `MsGetStatusLook(i)`.
+    MsGetStatusLook @ 0x0079_e7c0 => extern "C" fn ms_get_status_look(i: u32) -> u32 {
+        status::ms_get_status_look(&mem(), i)
+    }
+    /// `MsStatusEffectCheck(i)`.
+    MsStatusEffectCheck @ 0x0079_eff0 => extern "C" fn ms_status_effect_check(i: u32) {
+        let mut off = |m: &mut _, e| ffx_vfx::et::bridge::op_et_eff_off_signal(m, e);
+        status::ms_status_effect_check(&mut mem(), &mut call_ptr, &mut off, i);
+    }
+    /// `MsCheckAutoStatus(i, actor)`.
+    MsCheckAutoStatus @ 0x007a_f260 => extern "C" fn ms_check_auto_status(i: u32, actor: u32) -> u32 {
+        let mut off = |m: &mut _, e| ffx_vfx::et::bridge::op_et_eff_off_signal(m, e);
+        status::ms_check_auto_status(&mut mem(), &mut call_ptr, &mut off, i, actor)
+    }
+    /// `MsCheckStatusAfterInput()`.
+    MsCheckStatusAfterInput @ 0x007a_f4b0 => extern "C" fn ms_check_status_after_input() -> u32 {
+        let mut off = |m: &mut _, e| ffx_vfx::et::bridge::op_et_eff_off_signal(m, e);
+        status::ms_check_status_after_input(&mut mem(), &mut call_ptr, &mut off)
+    }
+    /// `MsCheckStatusAfterAction(i, actor)`.
+    MsCheckStatusAfterAction @ 0x007a_f390 => extern "C" fn ms_check_status_after_action(i: u32, actor: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        status::ms_check_status_after_action(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor)
+    }
+    /// `MsSetBtlCommand(cue, gil, flag)`.
+    MsSetBtlCommand @ 0x0079_2d60 => extern "C" fn ms_set_btl_command(cue: u32, gil: i32, flag: u32) -> i32 {
+        let mut m = mem();
+        script!(s);
+        action::ms_set_btl_command(&mut target::Dm::new(&mut m), &host(), &mut s, cue, gil, flag)
+    }
+    /// `MsInsertBtlCommand(cue, prio, flag, after)`.
+    MsInsertBtlCommand @ 0x0079_29b0 => extern "C" fn ms_insert_btl_command(cue: u32, prio: u32, flag: u32, after: u32) -> i32 {
+        let mut m = mem();
+        script!(s);
+        action::ms_insert_btl_command(&mut target::Dm::new(&mut m), &host(), &mut s, cue, prio, flag, after)
+    }
+    /// `MsActionRequest(i, who, n, special, mode, out)`.
+    MsActionRequest @ 0x007a_ceb0 => extern "C" fn ms_action_request(i: u32, who: u32, n: i32, special: u32, mode: u32, out: u32) -> i32 {
+        let mut m = mem();
+        script!(s);
+        action::ms_action_request(&mut target::Dm::new(&mut m), &host(), &mut s, i, who, n, special, mode, out)
+    }
+    /// `MsActionTarget(bits, who, _, _, n, mode)`.
+    MsActionTarget @ 0x007a_d0c0 => extern "C" fn ms_action_target(bits: u32, who: u32, _a: u32, _b: u32, n: i32, mode: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        action::ms_action_target(&mut target::Dm::new(&mut m), &host(), &mut s, bits, who, n, mode)
+    }
+    /// `MsCheckSummon(i, actor, x, cue)`.
+    MsCheckSummon @ 0x007b_2980 => extern "C" fn ms_check_summon(i: u32, actor: u32, x: u32, cue: u32) -> i32 {
+        let mut m = mem();
+        script!(s);
+        action::ms_check_summon(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor, x, cue)
+    }
+    /// `MsDeleteInputCue(chr, k, last, keep)`.
+    MsDeleteInputCue @ 0x007b_20e0 => extern "C" fn ms_delete_input_cue(chr: u32, k: u32, last: u32, keep: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        action::ms_delete_input_cue(&mut target::Dm::new(&mut m), &host(), &mut s, chr, k, last, keep)
     }
 }

@@ -1114,4 +1114,264 @@ pub mod bridge {
         mem.write(actor.wrapping_add(0x717), 1u8);
         u32::from(targets == 0)
     }
+
+    /// `2pi/3` and its negation, the turn limits of [`ms_dir_turn`].
+    pub const TURN_LIMIT: Global<u32> = Global::new(0x00b5_4f28);
+    pub const TURN_LIMIT_NEG: Global<u32> = Global::new(0x00b5_4f2c);
+    /// `2pi` (`double`).
+    pub const TWO_PI_D: Global<f64> = Global::new(0x00b3_9378);
+    /// `pi` (`f32`), the turn `MsGetDirMode` adds for "away" modes.
+    pub const PI_F: Global<u32> = Global::new(0x00b9_22d0);
+    /// The EE's `r0` (16 zero bytes), which `MsSetChrDirTarget` starts its
+    /// target vector from.
+    pub const EE_R0: Global<[u32; 4]> = Global::new(0x00c8_f508);
+    /// The actor whose command runs (`g_BtlCommandActor`).
+    pub const COMMAND_ACTOR: Global<u8> = Global::new(0x0112_c9e0);
+
+    /// `0x007a9650(actor, dir)` (`MsDirTurn`, name ours): `dir` as a turn
+    /// from the actor's direction (`+0x490`, `MsNearRag`): the near angle
+    /// `n`; with `d = n - +0x490`, a turn the other way round is taken
+    /// (`+0x490 + d -/+ 2pi`) when the remaining turn (`+0x494`) lies
+    /// beyond `-2pi/3` (for `d` not below 0, `d` beyond `2pi/3`) or below
+    /// `2pi/3` (`d` below `-2pi/3`). An `f32` in ST0.
+    pub fn ms_dir_turn(mem: &impl Mem, actor: u32, dir: u32) -> u32 {
+        use ffx_bridge::x87::{add, load, store, sub};
+        let base = f32_at(mem, actor.wrapping_add(0x490));
+        let n = v::ms_near_rag(mem, base, dir).to_bits();
+        let d = store(sub(load(n), load(base)));
+        let (ld, rest) = (load(d), load(f32_at(mem, actor.wrapping_add(0x494))));
+        let (lim, neg) = (load(TURN_LIMIT.get(mem)), load(TURN_LIMIT_NEG.get(mem)));
+        let two_pi = TWO_PI_D.get(mem);
+        // `fcom` with an unordered result reads as below
+        let below = ld < 0.0 || ld.is_nan();
+        if !below {
+            if neg > rest && lim < ld {
+                return store(sub(add(ld, load(base)), two_pi));
+            }
+        } else if lim < rest && neg > ld {
+            return store(add(add(ld, load(base)), two_pi));
+        }
+        n
+    }
+
+    /// `MsGetDirMode(i, actor, vec, follow, &mode, &plain)` (`0x007a9710`):
+    /// the direction actor `i` should face for its direction mode
+    /// (`+0x42b`): 1 its battle direction (`+0x514[+0x511]`), 6 the
+    /// summoner's; 3, 4, 5, 8, 13 towards its battle position, actor
+    /// `+0x416`, actor `+0xded`, `vec` itself or its escape position
+    /// (`vec` getting the point); 2 and 7 towards its (or the command
+    /// actor's) targets' centre (`MsGetChrTargetInfo` kind 12; mode 2 with
+    /// `+0x431` an actor faces that actor instead, its own index meaning
+    /// mode 1); 11 towards `+0x3e0` (set once from actor `+0xded`'s
+    /// position with `follow`); 12 `+0x4f4`. Modes 9, 10, 13 add pi to
+    /// modes 2, 5, 13's. With `+0x42c` the result goes through
+    /// [`ms_dir_turn`] (`plain` 0, else 1). `mode` gets -1, or the target
+    /// lookup's result, 0 for none. An `f32` in ST0.
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+    pub fn ms_get_dir_mode(
+        mem: &mut Dm<'_>,
+        host: &Host<'_>,
+        i: u32,
+        actor: u32,
+        vec: u32,
+        follow: u32,
+        mode_out: u32,
+        plain_out: u32,
+    ) -> u32 {
+        use crate::pos::bridge as p;
+        use ffx_bridge::x87::{add, load, store};
+        let trig = host.trig;
+        mem.frame(0x20, |mem, f| {
+            let (pos, ang) = (f, f + 0x10);
+            mem.write(ang, 0.0f32.to_bits());
+            let mut base = 0.0f32.to_bits();
+            let mut mode: i32 = 0;
+            p::ms_get_chr_pos(mem, trig, i, pos);
+            let toward = |mem: &mut Dm<'_>, from: u32| {
+                v::ms_vector_rect2_polar(mem, trig, from, pos, ang, 0, 0);
+            };
+            let battle_dir = |mem: &mut Dm<'_>, a: u32| {
+                let k = i32::from(mem.read::<i8>(a.wrapping_add(0x511)));
+                let at = a.wrapping_add(0x514).wrapping_add((k * 4).cast_unsigned());
+                quiet(f32_at(mem, at))
+            };
+            let kind = byte(mem, actor, 0x42b);
+            if matches!(kind, 9 | 10 | 13) {
+                base = PI_F.get(mem);
+            }
+            match kind {
+                1 => {
+                    let d = battle_dir(mem, actor);
+                    mem.write(ang, d);
+                    mode = -1;
+                }
+                6 => {
+                    mode = -1;
+                    let s = i32::from(SUMMONER.get(mem)).cast_unsigned();
+                    let a = ms_get_chr(mem, s);
+                    let d = battle_dir(mem, a);
+                    mem.write(ang, d);
+                }
+                2 | 9 => {
+                    let t = byte(mem, actor, 0x431);
+                    let one = if t == 0xff {
+                        MOVE_FRAME.set(mem, 4);
+                        mode = ms_get_chr_target_info(mem, host, i, 0xc, vec, 0, 0);
+                        mode == 0
+                    } else if i == u32::from(t) {
+                        true
+                    } else {
+                        p::ms_get_chr_pos(mem, trig, u32::from(t), vec);
+                        mode = -1;
+                        false
+                    };
+                    if one {
+                        let d = battle_dir(mem, actor);
+                        mem.write(ang, d);
+                        mode = -1;
+                    } else {
+                        toward(mem, vec);
+                    }
+                }
+                3 => {
+                    p::ms_get_chr_btl_pos(mem, trig, i, vec);
+                    mode = -1;
+                    toward(mem, vec);
+                }
+                4 => {
+                    p::ms_get_chr_pos(mem, trig, u32::from(byte(mem, actor, 0x416)), vec);
+                    mode = -1;
+                    toward(mem, vec);
+                }
+                5 | 10 => {
+                    let t = i32::from(byte(mem, actor, 0xded).cast_signed()).cast_unsigned();
+                    p::ms_get_chr_pos(mem, trig, t, vec);
+                    mode = -1;
+                    toward(mem, vec);
+                }
+                7 => {
+                    MOVE_FRAME.set(mem, 4);
+                    let c = u32::from(COMMAND_ACTOR.get(mem));
+                    mode = ms_get_chr_target_info(mem, host, c, 0xc, vec, 0, 0);
+                    toward(mem, vec);
+                }
+                8 => {
+                    mode = -1;
+                    toward(mem, vec);
+                }
+                11 => {
+                    mode = -1;
+                    let at = actor.wrapping_add(0x3e0);
+                    if byte(mem, actor, 0x42d) == 0 && follow != 0 {
+                        mem.write(actor.wrapping_add(0x42d), 1u8);
+                        let t = i32::from(byte(mem, actor, 0xded).cast_signed()).cast_unsigned();
+                        p::ms_get_chr_pos(mem, trig, t, at);
+                    }
+                    toward(mem, at);
+                }
+                12 => {
+                    let d = quiet(f32_at(mem, actor.wrapping_add(0x4f4)));
+                    mem.write(ang, d);
+                    mode = -1;
+                }
+                13 => {
+                    mode = -1;
+                    crate::flow::bridge::ms_get_chr_escape_pos(
+                        mem,
+                        i,
+                        vec,
+                        |m, a, index, kk, out| {
+                            p::ms_get_summoner_pos(
+                                m,
+                                trig,
+                                a,
+                                index.cast_unsigned(),
+                                kk.cast_unsigned(),
+                                out,
+                            );
+                        },
+                    );
+                    toward(mem, vec);
+                }
+                _ => {}
+            }
+            let plain = if byte(mem, actor, 0x42c) != 0 {
+                let d = f32_at(mem, ang);
+                let t = ms_dir_turn(mem, actor, d);
+                mem.write(ang, t);
+                0u32
+            } else {
+                1
+            };
+            let r = store(add(load(base), load(f32_at(mem, ang))));
+            if mode_out != 0 {
+                mem.write(mode_out, mode);
+            }
+            if plain_out != 0 {
+                mem.write(plain_out, plain);
+            }
+            r
+        })
+    }
+
+    /// `MsSetChrDirTarget(i, mode, turn, target, a, b)` (`0x00795eb0`):
+    /// actor `i & 0xff` (unless `+0x41b` holds it) gets direction mode
+    /// `mode` (`+0x42b`), `turn` (`+0x42c`), `+0x42d` cleared, `target`
+    /// (`+0x431`), `a` and `b` (`+0x42f`, `+0x430`; `b` 1 when `b + 2a`
+    /// is not above 0) and their sum `2a + b` (`+0x42e`), its direction
+    /// (`MsGetChrDir`, as `MsNearRag(0, dir)`) in `+0x490` and, without
+    /// `turn`, the turn left to [`ms_get_dir_mode`]'s direction in
+    /// `+0x494`. -1, or 0 for a non-actor or a held one.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ms_set_chr_dir_target(
+        mem: &mut Dm<'_>,
+        host: &Host<'_>,
+        i: u32,
+        mode: u32,
+        turn: u32,
+        target: u32,
+        a: u32,
+        b: u32,
+    ) -> i32 {
+        use ffx_bridge::x87::{load, store, sub};
+        let i = i & 0xff;
+        if ms_btl_chr_num_check(i) == 0 {
+            return 0;
+        }
+        let actor = ms_get_chr(mem, i);
+        if byte(mem, actor, 0x41b) != 0 {
+            return 0;
+        }
+        mem.write(actor.wrapping_add(0x42b), mode.to_le_bytes()[0]);
+        mem.write(actor.wrapping_add(0x42c), turn.to_le_bytes()[0]);
+        mem.write(actor.wrapping_add(0x42d), 0u8);
+        let b = if a.wrapping_mul(2).wrapping_add(b).cast_signed() <= 0 {
+            1
+        } else {
+            b
+        };
+        let sum = a.to_le_bytes()[0]
+            .wrapping_mul(2)
+            .wrapping_add(b.to_le_bytes()[0]);
+        mem.write(actor.wrapping_add(0x42e), sum);
+        mem.write(actor.wrapping_add(0x431), target.to_le_bytes()[0]);
+        mem.write(actor.wrapping_add(0x42f), a.to_le_bytes()[0]);
+        mem.write(actor.wrapping_add(0x430), b.to_le_bytes()[0]);
+        mem.frame(0x20, |mem, f| {
+            crate::body::bridge::ms_get_chr_dir(mem, i, f);
+            let d = f32_at(mem, f);
+            let r = v::ms_near_rag(mem, 0, d).to_bits();
+            mem.write(actor.wrapping_add(0x490), r);
+            if turn == 0 {
+                let vec = f + 0x10;
+                let r0 = EE_R0.get(mem);
+                mem.write(vec, r0);
+                let m = ms_get_dir_mode(mem, host, i, actor, vec, 0, 0, 0);
+                let n = v::ms_near_rag(mem, r, m);
+                let t = store(sub(f64::from(n), load(r)));
+                mem.write(actor.wrapping_add(0x494), t);
+            }
+        });
+        -1
+    }
 }

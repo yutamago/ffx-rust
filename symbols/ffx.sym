@@ -4258,6 +4258,7 @@
 0x0078e5a0 function MsUseChrMpLimit           # fh v3:exact 0x0078e5f0
 0x0078e630 function DmgCalc                   # fh v3:exact 0x0078e680 +DmgCalc
 0x0078eef0 function MsGetGuardChr             # (user, target) -> who takes target's hit: the side's guard/sentinel actor (status 2 0x1000/0x2000, MsAutoCommandStatusCheck) with most HP (x2 sentinel, + half Tidus' affection), else target; called by MsCalcCommand's target step 0x0078ba70; ported
+0x0078f040 function MsSetChrMovePos           # (i, actor): +0x425 = 1, tail jump MsGetChrPos(i, actor +0x3c0); MsDamageSetMotion kind 1; name ours
 0x0078f060 function AfterDamageProcess        # fh call.cs cdecl
 0x0078f700 function MsCheckLeftWindow         # fh v3:exact 0x0078f750
 0x0078f7c0 function MsGetMenuChrInfo          # fh v3:exact 0x0078f810
@@ -4572,6 +4573,7 @@
 0x0079e730 function MsEtEffectReadInit        # fh v3:bsim1.00 0x0079e750
 0x0079e7a0 function MsEtEffectSet             # fh v3:exact 0x0079e7c0
 0x0079e7b0 function MsEtEffectStop            # fh v3:cg2 0x79e7d0
+0x0079e7c0 function MsGetStatusLook           # (i) -> bits: 1 +0x606 bit 1, 2 +0xdce, 4 +0x606 bit 9, 8 +0x613, 0x10 +0x614, 0x20 +0x616 bit 10; MsStatusEffectCheck (into +0x6f8, op_et_astatus_effect_change); name ours
 0x0079e830 function MsMagicEffectEnd          # fh v3:exact 0x0079e850
 0x0079e890 function MsMagicEffectSet          # fh v3:exact 0x0079e8b0
 0x0079ed00 function MsSetStealEffect          # fh v3:bsim1.00+call.cs 0x0079ed20 cdecl
@@ -4729,7 +4731,8 @@
 0x007a9230 function MsCheckBtlPos             # fh v3:exact 0x007a9250
 0x007a92c0 function MsCheckStartEffect        # fh v3:exact 0x007a92e0
 0x007a93e0 function MsGetChrMovePos           # (i, out): where actor i is on its move: +0x425 fixed point +0x3c0, kind +0x415 7 a spline, else a step towards MsGetMoveTargetPos's point (bit 0x80 growing speed, else MsGetChrMoveAccelPos); named here; ported
-0x007a9710 function MsGetDirMode              # fh v3:exact 0x007a9730
+0x007a9650 function MsDirTurn                 # (actor, dir) -> f32 in ST0: MsNearRag(+0x490, dir), or the turn the other way round (+-2pi) when +0x494 and the turn pass 2pi/3; MsGetDirMode with +0x42c; name ours
+0x007a9710 function MsGetDirMode              # (i, actor, vec, follow, &mode, &plain) -> f32 in ST0 (fld at ret; Ghidra types it void, MsSetChrDirTarget reads (float10)); direction for mode +0x42b 1-13; fh v3:exact 0x007a9730
 0x007a99b0 function MsGetEscapeDir            # fh v3:exact 0x007a99d0
 0x007a9a20 function MsMenuWeakElement         # fh switch:bsim1.00 0x710035e1b0
 0x007a9a40 function MsGetTargetDist              # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100360780 MsGetTargetDist, 2 votes, round 1
@@ -8685,6 +8688,7 @@
 0x0090f900 function yiMapFileRead             # (scene, file): map render file (0x214365, version 0x110; count +0xc; 0x40-byte record headers): 0 objects, 1 cameras, 2 textures, 3 CLUTs, 4 fog, 5/8 packet lists, 6 animation tracks, 7 matrices (yiArc_readmem)
 0x0090ff40 function yiObjInit                 # (obj): a 0xb4-byte map object cleared, scales 1.0, +0xc GS tag 0x6c040014, +0x10 identity (yiMapFileRead)
 0x00910040 function yiPkAddGsAD_00910040         # the same code as yiPkAddGsAD
+0x00910070 function yiRectTriOverlapXZ        # (tri, m, a, b) -> 1 when the x/z rectangle a..b and the triangle (three vectors through FFXVu0ApplyMatrix by m, their w set to 1.0; or without m twelve unsigned ints as floats) overlap: a corner of either inside the other (yiTriContainsXZ); name ours
 0x00910270 function yiTriContainsXZ           # (tri, p) -> 1 when p's x, z lie inside the triangle of tri's three vectors (either winding, edge cross products against the full one); name ours
 0x00910340 function yiTriColorsFromGif        # (out, gif, first): three RGBAQ quadwords' bytes to out (alphas first set to 0x80), +0x12 cleared
 0x009103e0 function yiTriColorsUvFromGif      # (out, gif, first, uv): as yiTriColorsFromGif with alpha 0x7f, then three UV quadwords' u16s to +0x14
@@ -8694,11 +8698,15 @@
 0x009131d0 function yiScreff_entry            # fh v3:exact 0x009131d0
 0x00913f30 function yiScreff_init             # fh switch:bsim1.00 0x7100534af0
 0x00913f50 function yiRender_initfog          # (r): the fog block at +0xbe07c (0x60, grey, 0.03/0.02/0.005, 64.0)
+0x00914070 function yiKeyFrameAdvanceLinked   # (r, track, now): yiKeyFrameAdvance for tracks of chained 0x80-byte records (+0x24 current, +4 length, bit 0 end; restart from r +0x9d4c4[+8]); paused returns now; yiKeyFrame_main; name ours
+0x00914180 function yiKeyFrameAdvance         # (r, track, now): paused (Sg_GetPause) shifts start +0x14 by now - +0x18; else frames (records r +0x9d5c4[+8] + 32 * +0xa, length +4 doubled) advance while now passes their end, looping or clearing at the count r +0x9d6c4[+8]; yiKeyFrame_main; name ours
 0x00914250 function yiAnimAttachDefault       # fh v3:exact 0x00914250
 0x00914310 function yiAnimInfo_init           # fh v3:exact 0x00914310
 0x009143c0 function yiAnimAttachDefault_009143c0 # fh switch:cg2 0x710052d7b0
 0x009144a0 function yiKeyFrame_attachDObj     # fh v3:exact 0x009144a0
 0x00914630 function yiKeyFrame_attachChr      # fh switch:cg2 0x710052dfb0
+0x00914700 function yiHermiteVec2             # (t, p0, p1, p2, p3, out): two floats of a cubic Hermite curve, weights (t-1)^2(2t+1), t^2(3-2t), (1-t)^2 t, t^2(t-1) stored as floats; yiKeyFrame_main; name ours (cf. yiLerpVec2)
+0x009147b0 function yiHermiteVec4             # (t, p0, p1, p2, p3, out): four floats, as yiHermiteVec2; name ours
 0x009148a0 function yiLerpVec2                   # (t, a, b, out): out = a + (b - a) * t, two floats
 0x009148d0 function yiLerpVec4                   # (t, a, b, out): four floats; from 0x009147b0
 0x00914920 function yiAnimDetach              # (scene, obj, kind): active animation slots (+0x9cac0, 0x28 bytes, 64) of obj and kind cleared, count +0x9cabc lowered; kind 2 turns keyframe animation off (yiKeyFrame_attachDObj)
@@ -9241,6 +9249,7 @@
 0x0092ded0 function rcefAngleToDir            # (out, a): (-sin a, 0, -cos a, 0)
 0x0092df90 function rcefEffectEndMotion       # g_MagicImports slot 432 (39 overlays), before rcefEffectReady: MsEffectEndMotion(dword 0x025d5bb8, 0); hidden from the dump
 0x0092dfb0 function rcefEffectReady           # fh v3:exact 0x0092dfb0
+0x0092dfd0 function rcefGetChrDir             # (chr) -> float: MsGetChrDir into a local, rcefAngleWrap of it (ST0). Switch rcefGetChrDir: the rcef name for a character's direction; caller 0x00924a20
 0x0092e1c0 function rcefGetChrHandle          # fh v3:exact 0x0092e1c0
 0x0092e1e0 function rcbgChrFindById              # (id) -> first character (Ch_HandleRewind / Ch_HandleGetNext) whose Ch_GetId is id, else 0; rcbgFPm097's process
 0x0092e240 function rcefGetChrMatrix          # fh v3:exact 0x0092e240
@@ -9323,6 +9332,7 @@
 0x00930880 function rcbgAnimeGetCurrent          # (anime) -> anime +0xc + 4 * i16 anime +6
 0x009308a0 function rcbgAnimeInit             # fh v3:exact 0x009308a0
 0x009308d0 function rcbgAnimeSetDataCnt       # fh v3:exact 0x009308d0
+0x00930920 function rcbgLayerAnimStep         # (anim) -> the current frame record (+0xc + 4 * +6): speed +0x14 into +0x18, whole 0x100 steps into the tick +4, frames advance (bit 1 backwards; mode +0 bits 8..11 wrap or hold) while the tick passes the record's byte +1; rcbgLayerProc; name ours
 0x00930d80 function Gui_YanagiInit            # fh v3:exact 0x00930d80
 0x00930db0 function RopeDebug                    # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'rope:%f,%f,%f'; Switch 0x710055ea10 RopeDebug (symbols from Fahrenheit's server export)
 0x00930e70 function RopeDebug2                   # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%d:%f,%f,%f'; Switch 0x710055eaf0 RopeDebug2 (symbols from Fahrenheit's server export)
@@ -9330,6 +9340,7 @@
 0x00931050 function rcuiAlphaProc                # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Alpha Fix'; Switch 0x710055ba70 rcuiAlphaProc (symbols from Fahrenheit's server export)
 0x009313f0 function rcuiAnimeProc                # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Anime Data'; Switch 0x710055aff0 rcuiAnimeProc (symbols from Fahrenheit's server export)
 0x00931910 function rcuiCameraProc               # str-match switch: only user of 10 string(s) held once by both builds, e.g. 'Camera Pos.X'; Switch 0x7100559ab0 rcuiCameraProc (symbols from Fahrenheit's server export)
+0x009323b0 function rcuiCollectChrHandlesByGroup # (): MsGetChrHandle of characters 0x14..0x1b (count +0x828) then 0..0xe (+0x82c) into the rcui lists (+0x830 index, +0x870 handle, +0x824); name ours
 0x00932470 function rcuiChrMotionSetup        # (): the selected character (+0x870[+0x8b0]): Ch_GetNbElem to +0x8b8, buffer +0x8c8 freed and rcAlloc'd 16 per element ('rcuiPre.c' 0xd08), +0x8cc 0x16, Ch_SetMotionSpeed 0x100 (+0x8d4); name ours
 0x00932570 function rcuiCollectChrHandles        # (): every character's index and handle into the rcui work's lists (+0x830, +0x870; count +0x824)
 0x00933c80 function Yn_FpMemWinOpen           # fh v3:exact 0x00933c80
@@ -9347,7 +9358,9 @@
 0x00937400 function rcefMemChk                   # str-match switch: only user of 1 string(s) held once by both builds, e.g. '---- rcefMemChk mcb:%p top:%p bottom:%p'; Switch 0x71005586f0 rcefMemChk (symbols from Fahrenheit's server export)
 0x00937440 function rcefMemDebugDisp          # fh switch:bsim1.00 0x7100558660
 0x009374f0 function rcefMemDebugInit             # str-match switch: only user of 1 string(s) held once by both builds, e.g. '---- rcefMemDebugInit Heap %p[%x] : Packet %p[%x]'; Switch 0x7100558620 rcefMemDebugInit (symbols from Fahrenheit's server export)
+0x00937540 function rcuiVu0AddVector          # (dst, a, b): dst = (a.xyz + b.xyz, a.w) through the VU0 registers 0x00c8f980 (a) and 0x00c8f970 (b); rcuiResetChrPos; name ours
 0x00937610 function rcuiScaleVector_00937610  # the same code as rcuiScaleVector 0x00930f30; rcuiResetChrPos
+0x009376b0 function rcuiVu0SubVector          # (dst, a, b): dst = (a.xyz - b.xyz, a.w) through the VU0 registers 0x00c8f980/0x00c8f970, vf00 restored first; rcuiResetChrPos; name ours (cf. rcuiVu0AddVector)
 0x00937780 function rcuiAddItems                 # structure: (window, items): walks a 0-terminated item table, type 1 -> Gu_WindowAddButton, type 2 -> Gu_WindowAddStatic; callers are the rcui*Proc debug windows (rcuiAlphaProc, rcuiAnimeProc, rcuiCameraProc, rcuiLayerProc); Switch rcuiAddItems (148 bytes) is the rcui file's name sorting here
 0x00937940 function rcuiGetStageName          # fh switch:bsim1.00 0x7100563a00
 0x00937960 function rcuiGetStageName2            # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'host:/ffx/proj/map/btlmaster/info/btlmap.csv'; Switch 0x7100563a10 rcuiGetStageName2 (symbols from Fahrenheit's server export)
@@ -9367,6 +9380,7 @@
 0x00939950 function rcbgTrxSave               # fh switch:bsim0.99 0x71005625c0
 0x00939b10 function rcbgSaveText                 # str-match switch: only user of 19 string(s) held once by both builds, e.g. 'Save(Text) Failed.'; Switch 0x7100563100 rcbgSaveText (symbols from Fahrenheit's server export)
 0x0093a280 function rcbgModelCreateFromFile   # fh switch:cg3 0x7100560ba0
+0x0093a650 function rcbgAnimeLoadConfig       # (anime, parse): keywords 0x00c60e84: DataCnt (rcbgAnimeSetDataCnt), the frames (four byte integers each into +0xc), stop; name ours (cf. rcbgPalLoadConfig)
 0x0093a800 function rcbgFpLoadTextSub            # str-match switch: only user of 2 string(s) held once by both builds, e.g. '/ffx/proj/map/btlmaster/%c%c%c%c/%s/3d/eff/'; Switch 0x71005610f0 rcbgFpLoadTextSub (symbols from Fahrenheit's server export)
 0x0093a910 function rcbgFpTrxTexLoadTextGetTrxCnt # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s%d_00.tm2'; Switch 0x7100561290 rcbgFpTrxTexLoadTextGetTrxCnt (symbols from Fahrenheit's server export)
 0x0093adf0 function rcbgPalLoadConfig         # (pal, parse): keywords (0x00c60e94) 0 mode byte +0xa, 1 speed byte +0xb, 2 stop
@@ -9394,15 +9408,18 @@
 0x0093c840 function rcuiTake14                   # (item) -> item +0x14, cleared
 0x0093cbc0 function rcuiAddVector                # (out, a, b): four floats
 0x0093cbf0 function rcuiApplyMatrix           # (out, m, v): v through the 4x4 matrix
+0x0093cd20 function rcuiClampVector           # (dst, v, lo, hi): four floats clamped to lo..hi (NaN kept), rcuiCopyVector of them; name ours
 0x0093ce10 function rcuiCopyMatrix               # (dst, src): 16 floats through the x87 stack, in order
 0x0093ce50 function rcuiCopyVector               # (dst, src): 4 floats through the x87 stack
 0x0093cff0 function rcuiVecToInt              # (out, v): four floats truncated to ints
 0x0093d030 function rcuiItoF                     # (out, ints): four i32 to floats
 0x0093d060 function rcuiDot                      # (a, b) -> float, the same code as rcVec3fDot
+0x0093d090 function rcuiInvertRigidMatrix     # (dst, m): m transposed, its translation -(R^T t), bottom row 0 0 0 1, rcuiCopyMatrix; name ours
 0x0093d1b0 function rcuiMulMatrix             # (out, a, b): 4x4 product (out may be a)
 0x0093d290 function rcuiMulVector                # (out, a, b): four floats, per component
 0x0093d3d0 function rcuiNormalize             # (out, v): v / |v| (xyz)
 0x0093d440 function rcuiCrossProduct          # (out, a, b): a x b, w 0.0
+0x0093d710 function rcuiProjectToInt          # (out, m, v, raw) -> float 1/w (left in ST0): rcuiApplyMatrix, x y z over w, the four ftol'd (times the double 0x00b313a0 unless raw); name ours
 0x0093d830 function FFXSamp0TransMatrix       # fh v3:exact 0x0093d830
 0x0093d900 function FFXSamp0UnitMatrix        # fh v3:exact 0x0093d900
 0x0093d960 function FFXSamp0ViewScreenMatrix  # fh v3:exact 0x0093d960
@@ -11661,6 +11678,7 @@
 0x00b4cf30 label JobSchedule_JobWorker_vftable # fh v4:imported JobSchedule::JobWorker::vftable
 0x00b4cf60 label    g_FltMin                  # f32 FLT_MIN (1.17549435e-38): cdc_Vector_CanNormalize3 wants the square sum above it
 0x00b501c0 label    g_AlphaScaleNormal        # .rdata f32 256.0: useExtendedAlpha(0) copies it to g_AlphaScale
+0x00b54f28 label g_TwoThirdsPi             # f32 2pi/3, and -2pi/3 at 0x00b54f2c: MsDirTurn's limits
 0x00b55178 label g_FloatScreenDepth        # f32 1024.0, the default screen depth (MsEffectCameraInit)
 0x00b594ec label g_ChrStrC101               # "c101", Tidus's other model name (Ch_CbMapping)
 0x00b59840 label g_ChrExceptionIds          # 9 character ids Ch_IsNotExceptionId (0x00831780) checks
@@ -12086,6 +12104,7 @@
 0x00b920ec label mkvparser_Track_vftable      # fh v4:imported mkvparser::Track::vftable
 0x00b92220 label    g_Vu0FixedRound           # f64 0.5: FFXVu0RotTransPers rounds to the nearest 1/16
 0x00b92288 label g_PiF64                      # f64 of pi rounded to f32 (0x400921fb60000000); MsNearRag's half turn
+0x00b922d0 label g_PiF32                   # f32 pi: MsGetDirMode's turn for modes 9, 10, 13
 0x00b92340 label g_ChrClothFlip             # f32 -1.0: Ch_UpdateClothMatrix's x and y flip
 0x00c0a000 label    g_Vu0_R                      # emulated VU0 R (random) register, f32 bits in [1,2): op_random/op_random_p step it (vrnext: low 22 fraction bits << 1, bit 4 of R^(R>>18) in) and leave draw - 1.8872414 there; 0x0075fe50 seeds it
 0x00c0a004 label g_Vu0_Vf00                  # emulated VU0 vf00 (x, y, z, w) = (0, 0, 0, 1.0f): AsmEmuInit and restoreVf00Register store exactly that
@@ -12365,6 +12384,7 @@
 0x0112c9df label g_BtlTurnActorNow           # u8, the actor whose turn it is (MsGetChrBit -18); copied to g_BtlTurnActor when a turn starts
 0x0112c9e0 label g_BtlCommandActor           # u8, the actor whose command runs, 0xff none (MsGetChrBit -2, -3: its command cue entry's targets)
 0x0112c9e2 label    g_BtlTurnActor               # ?actor index copied from 0x0112c9df when a turn starts; read by 0x708d
+0x0112c9e4 label g_BtlTurnEndActor         # u8, MsDeleteInputCue (last) sets the actor whose turn ended with +0x606 bit 3
 0x0112c9e5 label g_BtlStealRule               # u8, 2: nothing can be stolen or mugged in this battle (Battle_Steal, Battle_StealGil)
 0x0112c9e6 label g_BtlMenuCommandSet          # u8; with the one before it (same function, ffx_battle::misc)
 0x0112c9e7 label g_BtlDirFree              # u8; set: MsSetDirThetaMode gives actors direction mode 1 (ffx_battle::minor)
@@ -12372,6 +12392,7 @@
 0x0112c9e9 label g_BtlListSlot             # i8, a party slot MsGetBattleList kinds 9 and 0xa treat apart
 0x0112c9eb label g_BtlEndAlt               # u8 set: MsGetBattleEndStatus reports 2 instead of 4 when the monsters are gone
 0x0112c9f1 label g_BtlEndForced            # u8, when not 0 MsGetBattleEndStatus's result
+0x0112c9f7 label g_BtlSetCommandFlag       # u8, cleared by MsSetBtlCommand
 0x0112c9fa label g_BtlReflected            # u8, set by MsCalcCommandTarget when a target reflected the command
 0x0112c9fb label g_BtlGuardTook            # u8, set by MsCalcCommandTarget when a guard took a hit for its target
 0x0112c9ff label g_BtlEscapeRule              # i8, set by battle script (0x007a77a0): 1 no escape, 2 always (MsCalcEscape)
@@ -12465,6 +12486,8 @@
 0x01136a58 label g_BtlMoveTarget              # u8; The move target position (MsMoveTargetPos).
 0x01136a68 label g_BtlAction                  # i32; Set to -1 by MsActionInit.
 0x01136a6c label g_BtlActionRequest        # u32, cleared by MsActionRequestSet with 0x01136a70 and the 0x48-byte block 0x01136a78
+0x01136a7b label g_BtlActionRequestEntries # u8, the action request block's (0x01136a78) +3: entries a script left; MsActionRequest makes them a cue entry
+0x01136a7c label g_BtlActionRequestTurn    # u8, the block's +4; MsActionRequest copies the out cue's into it
 0x01136ad8 label g_BtlEffectCameraFloats      # [u32; 16]; 16 floats MsEffectSetCameraBufFloat sets.
 0x01136b5c label    g_CamWaitFrames            # Native_CamWait (0x007b9be0) debug frame count
 0x01136b60 label g_BtlSplines                 # [u32; 2]; Reset by MsSplineInit.

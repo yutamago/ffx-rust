@@ -75,6 +75,8 @@ pub const VU0_SCALE: u32 = 0x00c8_f970;
 pub const VU0_VF00: u32 = 0x00c0_a004;
 /// 2π as the `f32` value widened (`.rdata` double, `0x00b39378`).
 pub const TWO_PI: u32 = 0x00b3_9378;
+/// `MsGetChrDir(chr, out)` (`0x00794d20`).
+pub const MS_GET_CHR_DIR: u32 = 0x0079_4d20;
 /// `_CIfmod`'s import thunk (`0x009498e0`): `fmod(ST1, ST0)` into ST0.
 pub const CI_FMOD: u32 = 0x0094_98e0;
 /// `_CIacos`'s import thunk (`0x009498da`).
@@ -476,6 +478,27 @@ pub mod bridge {
         let r = VF_C.get(mem);
         mem.write(dst, r);
         r[3]
+    }
+
+    /// `rcefGetChrDir(chr, out)` (`0x0092dfd0`): `MsGetChrDir(chr, out)`
+    /// into `out` (a 4-byte buffer, the original's stack, 0.0 first), then
+    /// [`rcef_angle_wrap`] of it; returns that in `ST0`.
+    pub fn rcef_get_chr_dir<M: Mem, C, F>(
+        mem: &mut M,
+        chr: u32,
+        out: u32,
+        call: &mut C,
+        fcall: &mut F,
+    ) -> f32
+    where
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+        F: FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    {
+        mem.write(out, 0f32);
+        let f = mem.rebase(super::MS_GET_CHR_DIR);
+        call(mem, f, &[chr, out]);
+        let d = x87::copy(mem.read(out));
+        rcef_angle_wrap(mem, d, fcall)
     }
 }
 
