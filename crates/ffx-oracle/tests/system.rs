@@ -14359,7 +14359,7 @@ fn round25_net_window(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     ];
     for k in 0..600u32 {
         put(a, b, cursor, log);
-        put(a, b, clock, (rng.next() % 100_000) as f64 / 7.0);
+        put(a, b, clock, f64::from(rng.next() % 100_000) / 7.0);
         for at in uv_constants {
             let at = a.rebase(at);
             put(
