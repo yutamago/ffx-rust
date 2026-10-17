@@ -3,7 +3,7 @@
 //! `crossAssertIsValidFloat`.
 
 use ffx_sg::quat::Crt;
-use ffx_sg::{camera, chpacket, control, envelope, gs, light, quat, seq, state, vec};
+use ffx_sg::{camera, chpacket, cloth, control, envelope, gs, light, quat, seq, state, vec};
 
 use super::{mem, ported};
 
@@ -1327,6 +1327,18 @@ ported! {
     Sg_IdSlideEdge @ 0x0083_e180 => extern "C" fn sg_id_slide_edge(from: u32, to: u32) {
         state::bridge::id_slide_edge(&mut mem(), from, to);
     }
+    /// `Sg_ChrPushApart(a, b, reach, dist)`.
+    Sg_ChrPushApart @ 0x0083_ecd0 => extern "C" fn sg_chr_push_apart(a: u32, b: u32, reach: f32, dist: f32) -> u32 {
+        state::bridge::chr_push_apart(&mut mem(), a, b, reach, dist)
+    }
+    /// `Sg_ClothPlaceAnchors(chr)`.
+    Sg_ClothPlaceAnchors @ 0x0082_dbc0 => extern "C" fn sg_cloth_place_anchors(chr: u32) {
+        vec::bridge::cloth_place_anchors(&mut mem(), chr);
+    }
+    /// `Sg_ClothStep(chr)`.
+    Sg_ClothStep @ 0x0082_2de0 => extern "C" fn sg_cloth_step(chr: u32) {
+        cloth::bridge::cloth_step(&mut mem(), chr, &mut crt);
+    }
     /// `Sg_ControlCamera()`.
     Sg_ControlCamera @ 0x0083_f4b0 => extern "C" fn sg_control_camera() -> u32 {
         state::bridge::control_camera(&mut mem())
@@ -1366,6 +1378,14 @@ ported! {
     /// `sg_calcenvelope_asm_opt(lists, out, m)`.
     sg_calcenvelope_asm_opt @ 0x006e_ee40 => extern "C" fn sg_calcenvelope_asm_opt(lists: u32, out: u32, m: u32) {
         envelope::bridge::calc_envelope_opt(&mut mem(), lists, out, m);
+    }
+    /// `sg_calcenvelopeW_asm(lists, out, mask, m)`.
+    sg_calcenvelopeW_asm @ 0x006e_d9e0 => extern "C" fn sg_calcenvelope_w_asm(lists: u32, out: u32, mask: u32, m: u32) -> u32 {
+        envelope::bridge::calc_envelope_w(&mut mem(), lists, out, mask, m)
+    }
+    /// `sg_calcenvelope_asm(lists, out, mask, m)`.
+    sg_calcenvelope_asm @ 0x006e_e570 => extern "C" fn sg_calcenvelope_asm(lists: u32, out: u32, mask: u32, m: u32) -> u32 {
+        envelope::bridge::calc_envelope(&mut mem(), lists, out, mask, m)
     }
 }
 
