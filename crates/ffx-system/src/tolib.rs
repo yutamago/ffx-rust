@@ -6286,4 +6286,224 @@ pub mod bridge {
         tail(mem, o, c);
         all(mask)
     }
+
+    /// `TOGetInternationalBaseDicType()` (`0x008ac760`): the font
+    /// dictionary, 4 or 0. Languages 0, 9 and 10 give 4 only with
+    /// `MsGetSaveConfigEnglish`; the others always 4.
+    pub fn to_get_international_base_dic_type<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let lang = 0x008a_c2f0;
+        if call(mem, lang, &[]) != 0 && call(mem, lang, &[]) != 9 && call(mem, lang, &[]) != 0xa {
+            return 4;
+        }
+        if call(mem, 0x0078_51d0, &[]) != 0 {
+            4
+        } else {
+            0
+        }
+    }
+
+    /// The slant of a glyph in [`to_get_font_info`]: -1.0 for language 10,
+    /// 1.0 for languages 1..=8, else 0.0 (constant `0x00b92340`).
+    fn font_slant<M: Mem>(mem: &mut M, call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32) -> f32 {
+        let lang = 0x008a_c2f0;
+        if call(mem, lang, &[]) == 0xa {
+            return mem.read(mem.rebase(0x00b9_2340));
+        }
+        if call(mem, lang, &[]).cast_signed() > 0 && call(mem, lang, &[]).cast_signed() < 9 {
+            1.0
+        } else {
+            0.0
+        }
+    }
+
+    /// The cell of glyph `index` in [`to_get_font_info`]: its sheet
+    /// position (columns of 14 for every two glyphs, rows of 18), the
+    /// parity at `+4`, and the box `+8..+0x14` with the width at `+0x1c`.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss
+    )]
+    fn font_cell<M: Mem>(mem: &mut M, out: u32, index: i32, width: f32) {
+        let row = index / 0x12;
+        let x = ((index - row * 0x12) / 2 * 0xe) as f32;
+        let y = (row * 0x12) as f32;
+        let tall: f64 = mem.read(mem.rebase(0x00b5_87d8));
+        mem.write(out.wrapping_add(8), x);
+        mem.write(out.wrapping_add(4), (index & 1) as u16);
+        mem.write(out.wrapping_add(0xc), y);
+        mem.write(
+            out.wrapping_add(0x10),
+            (f64::from(x) + f64::from(width)) as f32,
+        );
+        mem.write(out.wrapping_add(0x14), (f64::from(y) + tall) as f32);
+    }
+
+    /// `TOGetFontInfo(text, out)` (`0x008b7240`): the font page, sheet cell
+    /// and size of the glyph at `text`, and the text after it.
+    ///
+    /// `out`: `+0` the page (0x3c00 by default, 0x3d40 with English or
+    /// other languages, 0x3d30/0x3d10 for languages 9/10), `+2` 0x14, `+4`
+    /// the cell parity, `+8..+0x14` the cell box, `+0x18` the slant,
+    /// `+0x1c` the width (a quarter of the width-table byte from
+    /// `TOGetFontWidthTblAdrs`), `+0x20` 18.0. Codes from 0x2c use the
+    /// language dictionary (a lead below 0x30 picks a 0xd0 row, a `4` lead
+    /// adds 0x410 in languages 9/10); 0x2a/0x2b, 0x28/0x29 and 0x26/0x27
+    /// are two-byte codes of tables 1-3 (page 0x3d00, 0x3d01 for table 3;
+    /// table 1 sets the parity when `0x01871534` is set); 6 is a table-5
+    /// icon (14.0 wide without a table). A `:` joining its neighbours
+    /// (`TOJoinsNeighbours`) is 5.0 wide, and a run of `G` in a text that
+    /// starts with one is one glyph of the run's width. Other codes, and
+    /// 0x5c..=0x5e in Japanese, get a fixed 10.0-wide box. Constants are
+    /// read from the image.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss
+    )]
+    pub fn to_get_font_info<M: Mem>(
+        mem: &mut M,
+        text: u32,
+        out: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let lang = 0x008a_c2f0;
+        let english = 0x0078_51d0;
+        let image_f32 = |mem: &M, a: u32| -> f32 { mem.read(mem.rebase(a)) };
+        let quarter: f64 = mem.read(mem.rebase(0x00b3_4f90));
+        let tall = image_f32(mem, 0x00b5_4c84);
+        let mut p = text;
+        let mut base = 0i32;
+        let flag: u32 = mem.read(mem.rebase(0x025d_16c0));
+        let mut page: u16 = if flag == 1 && call(mem, lang, &[]) == 0 {
+            if call(mem, english, &[]) != 0 {
+                0x3d40
+            } else {
+                0x3c00
+            }
+        } else {
+            0x3c00
+        };
+        let c0: u8 = mem.read(text);
+        let plain = call(mem, lang, &[]) == 0
+            && call(mem, english, &[]) == 0
+            && (0x5c..=0x5e).contains(&c0);
+        let width_of = |mem: &M, table: u32, index: i32| -> f32 {
+            let b: i8 = mem.read(table.wrapping_add(index.cast_unsigned()));
+            (f64::from(b) * quarter) as f32
+        };
+        if !plain {
+            page = match call(mem, lang, &[]) {
+                0 => 0x3c00,
+                l @ (9 | 0xa) => {
+                    if c0 == 4 {
+                        base = 0x410;
+                        p = p.wrapping_add(1);
+                    }
+                    if l == 9 { 0x3d30 } else { 0x3d10 }
+                }
+                _ => 0x3d40,
+            };
+            let c: u8 = mem.read(p);
+            if c >= 0x2c {
+                let dic = call(mem, 0x008a_c760, &[]);
+                let table = call(mem, 0x008a_c3d0, &[dic]);
+                let c: u8 = mem.read(p);
+                if c < 0x30 {
+                    base += (i32::from(c) - 0x2b) * 0xd0;
+                    p = p.wrapping_add(1);
+                }
+                let index = i32::from(mem.read::<u8>(p)) + base - 0x30;
+                mem.write(out, page);
+                mem.write(out.wrapping_add(2), 0x14u16);
+                let slant = font_slant(mem, &mut call);
+                mem.write(out.wrapping_add(0x18), slant);
+                let mut width = width_of(mem, table, index);
+                mem.write(out.wrapping_add(0x1c), width);
+                if mem.read::<u8>(p) == 0x3a {
+                    if call(mem, 0x008b_5760, &[p]) != 0 {
+                        width = image_f32(mem, 0x00b3_eb98);
+                    }
+                    mem.write(out.wrapping_add(0x1c), width);
+                }
+                mem.write(out.wrapping_add(0x20), tall);
+                font_cell(mem, out, index, width);
+                if mem.read::<u8>(text) != 0x47 {
+                    return p.wrapping_add(1);
+                }
+                let mut run = 0u32;
+                if mem.read::<u8>(p) == 0x47 {
+                    run = 1;
+                    while mem.read::<u8>(p.wrapping_add(run)) == 0x47 {
+                        run += 1;
+                    }
+                    if run > 1 {
+                        let dic = call(mem, 0x008a_c760, &[]);
+                        let w: f32 = mem.read(out.wrapping_add(0x1c));
+                        let mut wide = f64::from(run as f32) * f64::from(w);
+                        if dic == 4 {
+                            wide += wide;
+                        }
+                        mem.write(out.wrapping_add(0x1c), wide as f32);
+                        let four: f64 = mem.read(mem.rebase(0x00b4_3d80));
+                        let x: f32 = mem.read(out.wrapping_add(8));
+                        mem.write(out.wrapping_add(8), (f64::from(x) + four) as f32);
+                        let right: f32 = mem.read(out.wrapping_add(0x10));
+                        mem.write(out.wrapping_add(0x10), (f64::from(right) - four) as f32);
+                    }
+                }
+                return p.wrapping_add(run);
+            }
+            let two_byte = match c {
+                0x2a | 0x2b => Some((1u32, 0x2250, 0x0014_3d00u32)),
+                0x28 | 0x29 => Some((2, 0x20b0, 0x0014_3d00)),
+                0x26 | 0x27 => Some((3, 0x1f10, 0x0014_3d01)),
+                6 => Some((5, 0, 0x0014_3d60)),
+                _ => None,
+            };
+            if let Some((which, bias, head)) = two_byte {
+                let next = i32::from(mem.read::<u8>(p.wrapping_add(1)));
+                let index = if c == 6 {
+                    next - 0x30
+                } else {
+                    next - bias + i32::from(c) * 0xd0
+                };
+                let table = call(mem, 0x008a_c3d0, &[which]);
+                mem.write(out, head);
+                let slant = font_slant(mem, &mut call);
+                mem.write(out.wrapping_add(0x18), slant);
+                let width = if c == 6 && table == 0 {
+                    image_f32(mem, 0x00b5_4f84)
+                } else {
+                    width_of(mem, table, index)
+                };
+                mem.write(out.wrapping_add(0x1c), width);
+                mem.write(out.wrapping_add(0x20), tall);
+                font_cell(mem, out, index, width);
+                if which == 1 && mem.read::<u32>(mem.rebase(0x0187_1534)) != 0 {
+                    mem.write(out.wrapping_add(4), 1u16);
+                }
+                return p.wrapping_add(2);
+            }
+        }
+        // the fixed box
+        mem.write(out.wrapping_add(0x18), 0.0f32);
+        mem.write(out, page);
+        let narrow = image_f32(mem, 0x00b9_2318);
+        mem.write(out.wrapping_add(0x1c), narrow);
+        mem.write(out.wrapping_add(2), 0x14u32);
+        mem.write(out.wrapping_add(0x20), tall);
+        let x = image_f32(mem, 0x00b5_f314);
+        mem.write(out.wrapping_add(8), x);
+        mem.write(out.wrapping_add(0xc), 0.0f32);
+        let right = image_f32(mem, 0x00b5_67a8);
+        mem.write(out.wrapping_add(0x10), right);
+        let bottom: f64 = mem.read(mem.rebase(0x00b5_87d8));
+        let zero: f64 = mem.read(mem.rebase(0x00b0_db90));
+        mem.write(out.wrapping_add(0x14), (bottom + zero) as f32);
+        p.wrapping_add(1)
+    }
 }

@@ -12023,6 +12023,97 @@ fn round20_albhed_matches_the_original_on_the_snapshot() {
     round20_albhed(&mut a, &mut b, &mut Xorshift(0x4020_0042));
 }
 
+/// Round 21's font dictionary and glyph info over stand-ins for the
+/// language, English flag, width tables and the `:` join test.
+#[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
+fn round21_font(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let cells = alloc(a, b, 0x10);
+    for (i, sym) in [0x008a_c2f0u32, 0x0078_51d0, 0x008a_c3d0, 0x008b_5760]
+        .into_iter()
+        .enumerate()
+    {
+        let mut v = vec![0xa1];
+        v.extend_from_slice(&(cells + 4 * i as u32).to_le_bytes());
+        v.push(0xc3);
+        let s = stand_in8(a, b, 0x40 + 0x20 * i as u32, &v);
+        redirect(a, b, sym, s);
+    }
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    let table = alloc(a, b, 0x2000);
+    let widths: Vec<u8> = (0..0x2000).map(|_| rng.next() as u8).collect();
+    a.write(table, &widths).unwrap();
+    b.write(table, &widths).unwrap();
+    let text = alloc(a, b, 0x20);
+    let out = alloc(a, b, 0x30);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..3000u32 {
+        put(
+            a,
+            b,
+            cells,
+            [0u32, 0, 9, 10, 3, 1, 8, 0xffff_ffff][(rng.next() % 8) as usize],
+        );
+        put(a, b, cells + 4, rng.next() % 2);
+        put(a, b, g(a, 0x025d_16c0), rng.next() % 3);
+        put(a, b, g(a, 0x0187_1534), rng.next() % 2);
+        let mut bytes: Vec<u8> = (0..0x20).map(|_| rng.next() as u8).collect();
+        let leads = [
+            4u8, 0x2c, 0x2d, 0x2e, 0x2f, 0x2a, 0x2b, 0x28, 0x29, 0x26, 0x27, 6, 0x47, 0x3a, 0x5c,
+            0x5e,
+        ];
+        if rng.next() % 4 != 0 {
+            bytes[0] = leads[(rng.next() % 16) as usize];
+        }
+        if rng.next().is_multiple_of(3) {
+            bytes[1] = leads[(rng.next() % 16) as usize];
+        }
+        if bytes[0] == 0x47 && rng.next().is_multiple_of(2) {
+            let n = 1 + (rng.next() % 6) as usize;
+            for c in &mut bytes[..n] {
+                *c = 0x47;
+            }
+        }
+        // a table near the middle of its block, so lead rows stay inside;
+        // none only for the table-5 icon, the one code that checks for it
+        let none = bytes[0] == 6 && rng.next().is_multiple_of(3);
+        put(a, b, cells + 8, if none { 0 } else { table + 0x1000 });
+        a.write(text, &bytes).unwrap();
+        b.write(text, &bytes).unwrap();
+        let fill: Vec<u8> = (0..0x30).map(|_| rng.next() as u8).collect();
+        a.write(out, &fill).unwrap();
+        b.write(out, &fill).unwrap();
+        assert_eq!(
+            eax(a, 0x008a_c760, &[]),
+            t::to_get_international_base_dic_type(b, call),
+            "dic {k}"
+        );
+        assert_eq!(
+            eax(a, 0x008b_7240, &[text, out]),
+            t::to_get_font_info(b, text, out, call),
+            "font info {k}: {:x?}",
+            &bytes[..4]
+        );
+        same_memory("font info", a, b);
+    }
+}
+
+#[test]
+fn round21_font_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round21_font(&mut a, &mut b, &mut Xorshift(0x4021_0011));
+}
+
+#[test]
+fn round21_font_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round21_font(&mut a, &mut b, &mut Xorshift(0x4021_0012));
+}
+
 #[test]
 fn round19_cursor_matches_the_original_synthetic() {
     let Some((mut a, mut b)) = synthetic() else {

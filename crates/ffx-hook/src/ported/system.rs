@@ -5819,6 +5819,14 @@ ported! {
     TOConvAlbhedWord @ 0x0090_6780 => extern "C" fn to_conv_albhed_word(input: u32, out: u32) -> u32 {
         tolib::bridge::to_conv_albhed_word(&mut mem(), input, out, call_sym)
     }
+    /// `TOGetInternationalBaseDicType()`.
+    TOGetInternationalBaseDicType @ 0x008a_c760 => extern "C" fn to_get_international_base_dic_type() -> u32 {
+        tolib::bridge::to_get_international_base_dic_type(&mut mem(), call_sym)
+    }
+    /// `TOGetFontInfo(text, out)`.
+    TOGetFontInfo @ 0x008b_7240 => extern "C" fn to_get_font_info(text: u32, out: u32) -> u32 {
+        tolib::bridge::to_get_font_info(&mut mem(), text, out, call_sym)
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);
