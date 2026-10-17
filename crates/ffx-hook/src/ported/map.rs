@@ -3787,6 +3787,16 @@ ported! {
         rcui::bridge::rc_prim_tri(&mut mem(), [x, y, r, angle, colour, ui], w, &mut |_, f, a| call_cdecl(f, a))
     }
 
+    /// `rcbgFPm173ProcKonjyo(obj)`.
+    rcbgFPm173ProcKonjyo @ 0x0092_2e60 => extern "C" fn shim_rcbg_fpm173_proc_konjyo(obj: u32) -> u32 {
+        model::bridge::rcbg_fpm173_proc_konjyo(&mut mem(), obj, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcbgFPm173ProcJect(obj)`.
+    rcbgFPm173ProcJect @ 0x0092_2c50 => extern "C" fn shim_rcbg_fpm173_proc_ject(obj: u32) -> u32 {
+        model::bridge::rcbg_fpm173_proc_ject(&mut mem(), obj, &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `Sg_IsSceneLoading()`.
     Sg_IsSceneLoading @ 0x0081_fcd0 => extern "C" fn shim_sg_is_scene_loading() -> u32 {
         yi::bridge::sg_is_scene_loading(&mut mem(), &mut |_, f, a| call_cdecl(f, a))

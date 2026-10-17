@@ -1483,6 +1483,26 @@ the call).
     (`[ebp-0x14]`), so its result depends on what an earlier call left on
     the stack.
 
+## Map 0xad's effect steps (round 49)
+
+The two step functions of map 0xad's effect object (`rcbgFPm173*`; the
+object's step is `+0x1c`, its character `+0x10`):
+- `rcbgFPm173ProcKonjyo(obj)` (`0x00922e60`):
+  - At step 0, effect 0x58 sticks to the character at bone 2
+    (`pppFpSetStickChr`) and restarts (`Fp_Restart`).
+  - At step 0x32, effect 0x59 does the same at bone 0x35, and `+0x20`
+    becomes 0.
+  - It returns the restart's `eax`; any other step leaves the step itself
+    in `eax`.
+- `rcbgFPm173ProcJect(obj)` (`0x00922c50`) switches on the step:
+  - 0x25: `rcbgFPmRestart(0x53, chr, 0x2f)`.
+  - 0x82: effect 0x54 sticks at bone 2 and restarts.
+  - 200: `Fp_End(0x54)` (Ghidra drops the argument, which goes through
+    the function's own argument slot before the tail jump).
+  - 0x100: `rcbgFPmRestart(0x55, chr, 0x5d)`, and `+0x20` becomes 0.
+  - Other steps leave the jump table's index in `eax`: 4 within
+    0x25..=0x100, else the step less 0x25.
+
 ## The scene loading check (round 48)
 
 `Sg_IsSceneLoading()` (`0x0081fcd0`, name ours; from `Sg_MainLoop`)

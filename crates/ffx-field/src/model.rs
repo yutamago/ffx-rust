@@ -257,6 +257,10 @@ pub const OP_RT_M_YXZ: u32 = 0x007e_9a30;
 pub const PPP_FP_GET_MNG_PTR: u32 = 0x0072_92f0;
 /// `Fp_Restart(id)` (`0x00729700`).
 pub const FP_RESTART: u32 = 0x0072_9700;
+/// `pppFpSetStickChr(fp, chr, bone)` (`0x0072a530`).
+pub const PPP_FP_SET_STICK_CHR: u32 = 0x0072_a530;
+/// `rcbgFPmRestart(fp, chr, bone)` (`0x00922300`).
+pub const RCBG_FPM_RESTART: u32 = 0x0092_2300;
 /// `Ch_OptposGetElement(chr, n, k)` (`0x00835660`).
 pub const CH_OPTPOS_GET_ELEMENT: u32 = 0x0083_5660;
 /// The palette configuration keywords (`0x00c60e94`, a null-ended table).
@@ -3319,6 +3323,76 @@ pub mod bridge {
                 }
                 2 => return 0,
                 _ => {}
+            }
+        }
+    }
+
+    // ---- field round 49: map 0xad's effect steps ----
+
+    /// `rcbgFPm173ProcKonjyo(obj)` (`0x00922e60`): at step (`+0x1c`) 0
+    /// the effect 0x58 sticks to the object's character (`+0x10`, bone 2)
+    /// and restarts; at 0x32 the effect 0x59 (bone 0x35) does, and `+0x20`
+    /// becomes 0. Returns the restart's `eax`, else the step (left in
+    /// `eax`).
+    pub fn rcbg_fpm173_proc_konjyo<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        obj: u32,
+        call: &mut C,
+    ) -> u32 {
+        let step = mem.read::<u32>(obj.wrapping_add(0x1c));
+        let chr = mem.read::<u32>(obj.wrapping_add(0x10));
+        let (fp, bone) = match step {
+            0 => (0x58, 2),
+            0x32 => (0x59, 0x35),
+            _ => return step,
+        };
+        let stick = mem.rebase(super::PPP_FP_SET_STICK_CHR);
+        call(mem, stick, &[fp, chr, bone]);
+        let restart = mem.rebase(super::FP_RESTART);
+        let r = call(mem, restart, &[fp]);
+        if step != 0 {
+            mem.write(obj.wrapping_add(0x20), 0u32);
+        }
+        r
+    }
+
+    /// `rcbgFPm173ProcJect(obj)` (`0x00922c50`), by step (`+0x1c`):
+    /// - 0x25: `rcbgFPmRestart(0x53, chr, 0x2f)`;
+    /// - 0x82: effect 0x54 sticks to the character (bone 2) and restarts;
+    /// - 200: `Fp_End(0x54)`;
+    /// - 0x100: `rcbgFPmRestart(0x55, chr, 0x5d)` and `+0x20` 0.
+    ///
+    /// `chr` is `+0x10`. Returns the last call's `eax`; another step
+    /// leaves its jump-table index in `eax`: 4 for steps 0x25..=0x100, else
+    /// the step less 0x25.
+    pub fn rcbg_fpm173_proc_ject<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        obj: u32,
+        call: &mut C,
+    ) -> u32 {
+        let step = mem.read::<u32>(obj.wrapping_add(0x1c));
+        let chr = mem.read::<u32>(obj.wrapping_add(0x10));
+        let restart = mem.rebase(super::RCBG_FPM_RESTART);
+        match step {
+            0x25 => call(mem, restart, &[0x53, chr, 0x2f]),
+            0x82 => {
+                let stick = mem.rebase(super::PPP_FP_SET_STICK_CHR);
+                call(mem, stick, &[0x54, chr, 2]);
+                let f = mem.rebase(super::FP_RESTART);
+                call(mem, f, &[0x54])
+            }
+            200 => {
+                let f = mem.rebase(super::FP_END);
+                call(mem, f, &[0x54])
+            }
+            0x100 => {
+                let r = call(mem, restart, &[0x55, chr, 0x5d]);
+                mem.write(obj.wrapping_add(0x20), 0u32);
+                r
+            }
+            _ => {
+                let i = step.wrapping_sub(0x25);
+                if i <= 0xdb { 4 } else { i }
             }
         }
     }

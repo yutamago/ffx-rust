@@ -13070,3 +13070,74 @@ fn round48_on_a_snapshot_matches_the_original() {
     };
     round48_cases(&mut t);
 }
+
+// ---- round 49 ----
+
+/// Round 49 on `t`: map 0xad's effect steps (`rcbgFPm173ProcKonjyo`,
+/// `rcbgFPm173ProcJect`) at every step they act on and around them, the
+/// effect calls logged.
+fn round49_cases(t: &mut Twin, rng: &mut Xorshift) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, obj) = (t.alloc(4 + 0x20 * 8), t.alloc(4), t.alloc(0x30));
+    t.cave(&[
+        (Some(model::PPP_FP_SET_STICK_CHR), log_stub(log, rv, 1, 3)),
+        (Some(model::FP_RESTART), log_stub(log, rv, 2, 1)),
+        (Some(model::FP_END), log_stub(log, rv, 3, 1)),
+        (Some(model::RCBG_FPM_RESTART), log_stub(log, rv, 4, 3)),
+    ]);
+    let steps = [
+        0u32,
+        0x32,
+        0x25,
+        0x82,
+        200,
+        0x100,
+        0x24,
+        0x26,
+        0x101,
+        0x31,
+        0x33,
+        u32::MAX,
+        0x8000_0000,
+    ];
+    for k in 0..200 {
+        let step = if k < steps.len() * 2 {
+            steps[k % steps.len()]
+        } else {
+            rng.next()
+        };
+        t.fill(obj, 0x30, rng);
+        t.put(obj + 0x1c, step);
+        t.put(rv, rng.next());
+        t.put(log, 0u32);
+        t.same(
+            "rcbgFPm173ProcKonjyo",
+            |o| o.eax(0x0092_2e60, &[obj]),
+            |m| model::bridge::rcbg_fpm173_proc_konjyo(m, obj, call),
+        );
+        t.put(log, 0u32);
+        t.same(
+            "rcbgFPm173ProcJect",
+            |o| o.eax(0x0092_2c50, &[obj]),
+            |m| model::bridge::rcbg_fpm173_proc_ject(m, obj, call),
+        );
+    }
+}
+
+/// Round 49: map 0xad's effect steps.
+#[test]
+fn round49_fpm173_steps_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0031_0001);
+    round49_cases(&mut t, &mut rng);
+}
+
+/// Round 49 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round49_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0031_0002);
+    round49_cases(&mut t, &mut rng);
+}
