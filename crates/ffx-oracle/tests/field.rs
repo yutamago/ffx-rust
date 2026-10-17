@@ -10952,3 +10952,105 @@ fn round23_yn_layers_and_rcfx_match_the_original() {
         );
     }
 }
+
+/// Round 24: the aeons' stat gains and the effect's stream, vibration
+/// and object-start forwarders.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round24_aeon_gains_and_streams_match_the_original() {
+    use ffx_field::nkz;
+    use task::bridge as tb;
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0018_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let log = env.log;
+    let v: Vec<u32> = (0..4).map(|_| t.alloc(4)).collect();
+    let [cue, ev, rv2, rv3] = v[..] else {
+        unreachable!()
+    };
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (Some(nkz::DBG_PRINTF), log_stub(log, rv3, 280, 2)),
+        (Some(tb::SOUND_CUE_CHECK), log_stub(log, cue, 281, 1)),
+        (Some(tb::OP_OEF2_A_GET), log_stub(log, ev, 282, 3)),
+        (Some(tb::OP_OEF2_SE_ON), log_stub(log, rv2, 283, 3)),
+        (Some(tb::OP_OEF2_STREAM_CUE), log_stub(log, rv2, 284, 3)),
+        (Some(tb::TK_SET_VIBRATE_STREAM), log_stub(log, rv2, 285, 3)),
+        (Some(tb::RCEF_ANIME_START), log_stub(log, rv2, 286, 4)),
+        (Some(tb::RCEF_SETUP_DRAW), log_stub(log, rv2, 287, 4)),
+    ];
+    t.cave_from(env.cave_end, &list);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let halves = [
+        0x00a5_c660u32,
+        0x00a5_c740,
+        0x00a5_c910,
+        0x00a5_c980,
+        0x00a5_c9f0,
+        0x00a5_c860,
+        0x00a5_c6d0,
+        0x00a5_c7f0,
+    ];
+    let envp = t.alloc(0x10);
+    for k in 0..400u32 {
+        env.reset(&mut t, &mut rng);
+        for &w in &v {
+            t.put(w, if rng.below(3) == 0 { 0 } else { rng.next() });
+        }
+        let pc = if rng.below(4) == 0 {
+            rng.next()
+        } else {
+            rng.below(20)
+        };
+        let val = match k % 4 {
+            0 => rng.range(-3, 4),
+            1 => rng.range(0, 100_000),
+            2 => rng.next().cast_signed(),
+            _ => rng.range(0, 300),
+        };
+        let f = halves[(k % 8) as usize];
+        t.same(
+            "NkzAeonGain (half)",
+            |o| o.eax(f, &[pc, val.cast_unsigned()]),
+            |m| nkz::bridge::nkz_aeon_gain_half(m, pc, val, call),
+        );
+        t.same(
+            "NkzAeonGainHp",
+            |o| o.eax(0x00a5_c7b0, &[pc, val.cast_unsigned()]),
+            |m| nkz::bridge::nkz_aeon_gain_hp(m, val),
+        );
+        t.same(
+            "NkzAeonGainMp",
+            |o| o.eax(0x00a5_c8d0, &[pc, val.cast_unsigned()]),
+            |m| nkz::bridge::nkz_aeon_gain_mp(m, val),
+        );
+        // the effect forwarders
+        t.set(tb::RCEF_OEF2, rng.next());
+        let (id, arg, o) = (rng.next(), rng.next(), rng.next());
+        t.same(
+            "rcefSetVibrate",
+            |x| x.eax(0x0092_ec60, &[id, arg]),
+            |m| tb::rcef_set_vibrate(m, id, arg, call),
+        );
+        t.same(
+            "rcefStreamCue",
+            |x| x.eax(0x0092_ebf0, &[id, arg]),
+            |m| tb::rcef_stream_cue(m, id, arg, call),
+        );
+        t.same(
+            "rcefPlayStream",
+            |x| x.eax(0x0092_e6b0, &[id]),
+            |m| tb::rcef_play_stream(m, id, call),
+        );
+        t.put(envp + 8, rng.next());
+        t.same(
+            "rcefObjAnimeStart",
+            |x| x.eax(0x0092_5590, &[envp, o, id]),
+            |m| tb::rcef_obj_anime_start(m, [envp, o, id], call),
+        );
+        t.same(
+            "rcefObjSetupDraw",
+            |x| x.eax(0x0092_5690, &[envp, o, id]),
+            |m| tb::rcef_obj_setup_draw(m, [envp, o, id], call),
+        );
+    }
+}
