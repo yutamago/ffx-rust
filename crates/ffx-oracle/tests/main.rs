@@ -2452,6 +2452,7 @@ fn control_synthetic() {
     round5_main_cases(&mut a, &mut b, &mut rng, 300);
     round6_main_cases(&mut a, &mut b, &mut rng, 300);
     round7_main_cases(&mut a, &mut b, &mut rng, 300);
+    round8_main_cases(&mut a, &mut b, &mut rng, 300, false);
 }
 
 #[test]
@@ -2469,6 +2470,7 @@ fn control_snapshot() {
     round5_main_cases(&mut a, &mut b, &mut rng, 300);
     round6_main_cases(&mut a, &mut b, &mut rng, 300);
     round7_main_cases(&mut a, &mut b, &mut rng, 300);
+    round8_main_cases(&mut a, &mut b, &mut rng, 300, true);
 }
 
 // Main round 2: map id data, motion groups, the player's settings.
@@ -3359,4 +3361,205 @@ fn round7_main_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds:
             },
         );
     }
+}
+
+// Main round 8: motion groups, id heights, bones per character, the motion
+// script.
+
+fn round8_main_cases(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    rounds: u32,
+    from_game: bool,
+) {
+    use ffx_sg::seq::bridge as sq;
+    use ffx_sg::state::bridge as st;
+    let f = f32::from_bits;
+    let log = a.rebase(REC_LOG);
+    recorder(a, b, 37, sq::CH_ANIM_COPY_NEAR, 1, 0);
+    recorder(a, b, 38, sq::CH_ANIM_COPY2, 1, 0);
+    recorder(a, b, 39, sq::CH_SET_MOTION_SEQ, 5, 0x6000);
+    recorder(a, b, 40, sq::DBG_PRINTF, 2, 0x6001);
+    let rets = a.rebase(REC_RETS);
+    for _ in 0..rounds {
+        // motion groups: sequences without tables (relocation moves only
+        // the table pointers), the group table sometimes full
+        put(a, b, log, 0u32);
+        if !from_game {
+            let groups = a.rebase(sq::MOTION_GROUPS.sym);
+            let full = rng.below(6) == 0;
+            for k in 0..50 {
+                let used = full || rng.below(4) == 0;
+                put(a, b, groups + 12 * k, if used { rng.next() | 1 } else { 0 });
+            }
+            let seqs = a.rebase(sq::SEQUENCES.sym);
+            for k in 0..100 {
+                put(
+                    a,
+                    b,
+                    seqs + 20 * k,
+                    if rng.below(3) == 0 { rng.next() | 1 } else { 0 },
+                );
+            }
+        }
+        let group = block(a, b, rng, 0x20);
+        let n = rng.below(4);
+        let records = block(a, b, rng, 20 * n as usize + 4);
+        for k in 0..n {
+            put(a, b, records + 20 * k + 8, 0u32);
+        }
+        // built at `group - d`: the table offset relative to that
+        let d = if rng.below(2) == 0 {
+            0
+        } else {
+            4 * rng.below(0x100)
+        };
+        put(a, b, group + 4, n);
+        put(a, b, group + 0xc, records.wrapping_sub(d));
+        put(a, b, group, group.wrapping_sub(d));
+        let arg = if rng.below(10) == 0 { 0 } else { group };
+        let (ga, gb, key) = (rng.next(), rng.next(), rng.next());
+        twin(
+            "SG_AddMotionGroup",
+            a,
+            b,
+            0x0083_6c90,
+            &[arg, ga, gb, key],
+            |m| {
+                sq::add_motion_group(&mut H(m), arg, ga, gb, key);
+            },
+        );
+
+        // id heights
+        let verts = block(a, b, rng, 8 * 8);
+        for k in 0..24 {
+            put(a, b, verts + 2 * k, u16::try_from(rng.below(64)).unwrap());
+        }
+        let table = alloc(a, b, 16 * 4);
+        for k in 0..12 {
+            put(
+                a,
+                b,
+                table + 16 * (k / 3) + 2 * (k % 3),
+                u16::try_from(rng.below(8)).unwrap(),
+            );
+        }
+        set(
+            a,
+            b,
+            st::ID_TABLE,
+            if rng.below(8) == 0 { 0 } else { table },
+        );
+        set(a, b, st::ID_VERTICES, verts);
+        let p = alloc(a, b, 16);
+        for k in 0..3 {
+            put(a, b, p + 4 * k, modest(rng));
+        }
+        let i = if rng.below(8) == 0 {
+            u32::MAX
+        } else {
+            rng.below(4)
+        };
+        twin("Sg_IdGetHeight", a, b, 0x0083_e040, &[p, i], |m| {
+            st::id_get_height(m, p, i)
+        });
+
+        // bones per character
+        let chr = block(a, b, rng, 0x900);
+        let nb = rng.below(4);
+        let model = block(a, b, rng, 0x10);
+        put(a, b, model + 0xa, u16::try_from(nb).unwrap());
+        put(a, b, chr + 0x1c0, model);
+        let def = block(a, b, rng, 0x40);
+        put(a, b, def + 0x38, modest(rng));
+        put(a, b, chr + 0x1c4, def);
+        let chan = alloc(a, b, 0x18c * nb as usize + 4);
+        for k in 0..(0x18c * nb) / 4 {
+            put(a, b, chan + 4 * k, bounded(rng));
+        }
+        for k in 0..9 * nb {
+            put(
+                a,
+                b,
+                chan + 0x2c * k + 0x28,
+                u8::try_from(rng.below(2)).unwrap(),
+            );
+        }
+        put(a, b, chr + 0x748, chan);
+        let bones = block(a, b, rng, 0x400);
+        for k in 0..0x100 {
+            put(a, b, bones + 4 * k, modest(rng));
+        }
+        put(a, b, chr + 0x328, bones);
+        let map = if rng.below(2) == 0 {
+            0
+        } else {
+            let m = alloc(a, b, 0x20);
+            put(a, b, m + 2, u16::try_from(rng.below(5)).unwrap());
+            for k in 0..8 {
+                let v = if rng.below(4) == 0 {
+                    0xffff
+                } else {
+                    rng.below(2)
+                };
+                put(a, b, m + 8 + 2 * k, u16::try_from(v).unwrap());
+            }
+            m
+        };
+        put(a, b, chr + 0x758, map);
+        // mostly the copy path (where the map and kind decide)
+        put(a, b, chr + 0x871, u8::from(rng.below(6) == 0));
+        put(a, b, chr + 0x870, u8::from(rng.below(6) != 0));
+        put(a, b, chr + 0x820, if rng.below(4) == 0 { 4u8 } else { 0 });
+        let kinds = [0u16, 4, 0x5045, 1, 7];
+        put(a, b, chr, kinds[rng.below(5) as usize]);
+        let maps = [0x170, 0x11d, 0x50, 0x137, 0x64, 0x3c, 0x10, 0x200];
+        set(a, b, sq::GRAPHIC_MAP_ID, maps[rng.below(8) as usize]);
+        // the scenario around 0x9a, where map 0x3c changes
+        put(a, b, rets + 4 * 22, 0x99 + rng.below(2));
+        put(
+            a,
+            b,
+            rets + 4 * 37,
+            u32::from(rng.below(4) != 0) * (rng.next() | 1),
+        );
+        put(a, b, rets + 4 * 38, rng.below(2) * (rng.next() | 1));
+        put(a, b, log, 0u32);
+        twin("SG_ApplyBones", a, b, 0x0083_8f70, &[chr], |m| {
+            sq::apply_bones(&mut H(m), chr);
+        });
+
+        // the motion script
+        put(a, b, log, 0u32);
+        let chr = block(a, b, rng, 0x800);
+        let script = alloc(a, b, 16);
+        let ops = [0u8, 1, 2, 3, 4, 5, 6, 7, 0xff];
+        put(a, b, script, ops[rng.below(9) as usize]);
+        // u16 operands at 1, 3, 5, 7: small (indices into 4 entries)
+        for k in 1..10 {
+            let v = if k % 2 == 1 { rng.below(4) } else { 0 };
+            put(a, b, script + k, u8::try_from(v).unwrap());
+        }
+        put(a, b, chr + 0x714, script);
+        let clips = block(a, b, rng, 0x20);
+        let entries = block(a, b, rng, 16 * 4);
+        let marks = block(a, b, rng, 2 * 4);
+        for k in 0..4 {
+            put(a, b, entries + 16 * k + 8, marks);
+        }
+        put(a, b, clips + 0x10, entries);
+        put(a, b, chr + 0x710, clips);
+        let jumps = block(a, b, rng, 0x10);
+        let offs = block(a, b, rng, 2 * 4);
+        put(a, b, jumps + 8, offs);
+        put(a, b, chr + 0x70c, jumps);
+        put(a, b, chr + 0x728, u16::try_from(rng.below(2)).unwrap());
+        put(a, b, chr + 0x72a, u16::try_from(rng.below(3)).unwrap());
+        put(a, b, chr + 0x737, u8::try_from(rng.below(5)).unwrap());
+        twin("SG_SeqStep", a, b, 0x0083_7900, &[chr], |m| {
+            sq::seq_step(&mut H(m), chr)
+        });
+    }
+    let _ = f;
 }

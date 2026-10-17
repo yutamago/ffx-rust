@@ -658,7 +658,9 @@ pub mod bridge {
             return;
         }
         let base = MOTION_GROUPS.ptr(h).addr;
-        let free = (0..50u32).map(|k| base.wrapping_add(12 * k)).find(|&e| h.read::<u32>(e) == 0);
+        let free = (0..50u32)
+            .map(|k| base.wrapping_add(12 * k))
+            .find(|&e| h.read::<u32>(e) == 0);
         if let Some(e) = free {
             h.write(e.wrapping_add(4), crate::lo16(a));
             h.write(e.wrapping_add(6), crate::lo16(b));
@@ -683,8 +685,9 @@ pub mod bridge {
     /// game's.
     pub const CH_ANIM_COPY_NEAR: u32 = 0x0083_9200;
     pub const CH_ANIM_COPY2: u32 = 0x0083_9140;
-    /// `getScenerioFlag()`'s value (`u16`; the call has no other effect).
-    pub const SCENARIO_FLAG: ffx_bridge::Global<u16> = ffx_bridge::Global::new(0x0112_d67c);
+    /// `getScenerioFlag()` (`g_SaveScenario` as `u16`), called as the
+    /// game's.
+    pub const GET_SCENERIO_FLAG: u32 = 0x0078_7360;
     /// `g_GraphicMapId`.
     pub const GRAPHIC_MAP_ID: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x0133_0844);
     /// 0.001 (`f64`).
@@ -706,9 +709,15 @@ pub mod bridge {
         let mut chan: u32 = h.read(at(0x748));
         let def: u32 = h.read(at(0x1c4));
         let base = x87::load(h.read(def.wrapping_add(0x38)));
+        let flag = h.rebase(GET_SCENERIO_FLAG);
+        h.call(flag, &[]);
         let scale = f32::from_bits(x87::store(x87::mul(base, MILLI.get(h))));
         let map: u32 = h.read(at(0x758));
-        let map_count = if map == 0 { 0 } else { i32::from(h.read::<u16>(map.wrapping_add(2))) };
+        let map_count = if map == 0 {
+            0
+        } else {
+            i32::from(h.read::<u16>(map.wrapping_add(2)))
+        };
         let mode = if h.read::<u8>(at(0x871)) != 0 {
             1
         } else if h.read::<u8>(at(0x870)) == 0 || h.read::<u8>(at(0x820)) & 4 != 0 {
@@ -719,7 +728,11 @@ pub mod bridge {
                 0
             } else {
                 let copy2 = h.rebase(CH_ANIM_COPY2);
-                if crate::lo8(h.call(copy2, &[chr])) == 0 { 2 } else { 1 }
+                if crate::lo8(h.call(copy2, &[chr])) == 0 {
+                    2
+                } else {
+                    1
+                }
             };
             let kind: u16 = h.read(chr);
             let direct = match GRAPHIC_MAP_ID.get(h) {
@@ -727,7 +740,7 @@ pub mod bridge {
                 0x50 => kind == 4,
                 0x137 => kind == 0x5045,
                 0x64 => kind != 0,
-                0x3c => SCENARIO_FLAG.get(h) < 0x9a,
+                0x3c => crate::lo16(h.call(flag, &[])) < 0x9a,
                 _ => false,
             };
             if direct { 0 } else { mode }
@@ -758,6 +771,118 @@ pub mod bridge {
             }
             k += 1;
             chan = chan.wrapping_add(0x18c);
+        }
+    }
+
+    /// `Ch_SetMotionSeq(chr, clip, loops, start, end)` and `dbgPrintf`,
+    /// called as the game's.
+    pub const CH_SET_MOTION_SEQ: u32 = 0x0083_9b80;
+    pub const DBG_PRINTF: u32 = 0x0062_f500;
+    /// "unknown motion sequence code %x\n".
+    pub const UNKNOWN_CODE_TEXT: u32 = 0x00b5_9aa4;
+
+    /// `SG_SeqStep(chr)` (`0x00837900`): one opcode of the character's
+    /// motion script (`+0x714`; `u16` operands read as
+    /// `ReadU16Unaligned`, sign-extended bytes). 0 ends it (2), 5 holds it
+    /// (3); 1 plays a clip (`Ch_SetMotionSeq`: the clip `[+0x710]+0x10` table
+    /// entry's `+0xc`, loops, start and end marks from its `+8` table, the
+    /// end one frame further unless either loop operand is 1); 2 waits for
+    /// `+0x728` to be 0; 3 waits a count (`+0x72a`); 4 jumps (`+0x70c`'s
+    /// `+8` table, from its `+0xc`); 6 waits until `+0x737` reaches the
+    /// operand. Waiting returns 1 with the script unmoved, a done step 0;
+    /// an unknown code is printed (`dbgPrintf`) and returns -1.
+    pub fn seq_step(h: &mut impl ffx_bridge::Host, chr: u32) -> u32 {
+        use crate::state::bridge::read_u16_unaligned as ru;
+        let at = |o: u32| chr.wrapping_add(o);
+        let p: u32 = h.read(at(0x714));
+        let op = i32::from(h.read::<i8>(p));
+        let i16v = |v: i32| i32::from(crate::lo16(v.cast_unsigned()).cast_signed());
+        match op {
+            0 | 5 => {
+                h.write(at(0x714), p);
+                if op == 0 { 2 } else { 3 }
+            }
+            1 => {
+                let clip_i = i16v(ru(h, p.wrapping_add(1)));
+                let table: u32 = h.read(h.read::<u32>(at(0x710)).wrapping_add(0x10));
+                let entry = table.wrapping_add((clip_i << 4).cast_unsigned());
+                let marks: u32 = h.read(entry.wrapping_add(8));
+                let mark = |h: &_, i: i32| {
+                    i32::from(Mem::read::<i16>(
+                        h,
+                        marks.wrapping_add((2 * i).cast_unsigned()),
+                    ))
+                };
+                let start = mark(h, i16v(ru(h, p.wrapping_add(5))));
+                let mut end = mark(h, i16v(ru(h, p.wrapping_add(7))));
+                let loops = i16v(ru(h, p.wrapping_add(3)));
+                let last = crate::lo16(ru(h, p.wrapping_add(7)).cast_unsigned());
+                if last != 1 && loops != 1 {
+                    end += 1;
+                }
+                let clip: u32 = h.read(entry.wrapping_add(0xc));
+                let f = h.rebase(CH_SET_MOTION_SEQ);
+                h.call(
+                    f,
+                    &[
+                        chr,
+                        clip,
+                        loops.cast_unsigned(),
+                        (start << 8).cast_unsigned(),
+                        (end << 8).cast_unsigned(),
+                    ],
+                );
+                h.write(at(0x714), p.wrapping_add(9));
+                h.write(at(0x73e), 0u8);
+                0
+            }
+            2 => {
+                if h.read::<u16>(at(0x728)) == 0 {
+                    h.write(at(0x714), p.wrapping_add(1));
+                    0
+                } else {
+                    h.write(at(0x714), p);
+                    1
+                }
+            }
+            3 => {
+                if h.read::<u16>(at(0x72a)) == 0 {
+                    let v = crate::lo16(ru(h, p.wrapping_add(1)).cast_unsigned());
+                    h.write(at(0x72a), v);
+                }
+                let n = h.read::<u16>(at(0x72a)).wrapping_sub(1);
+                h.write(at(0x72a), n);
+                let done = n == 0;
+                h.write(at(0x714), if done { p.wrapping_add(3) } else { p });
+                u32::from(!done)
+            }
+            4 => {
+                let jumps: u32 = h.read(at(0x70c));
+                let i = i16v(ru(h, p.wrapping_add(1)));
+                let offs: u32 = h.read(jumps.wrapping_add(8));
+                let d = i32::from(h.read::<i16>(offs.wrapping_add((2 * i).cast_unsigned())));
+                let base: u32 = h.read(jumps.wrapping_add(0xc));
+                h.write(at(0x714), d.cast_unsigned().wrapping_add(base));
+                0
+            }
+            6 => {
+                let v = crate::lo16(ru(h, p.wrapping_add(1)).cast_unsigned()).cast_signed();
+                let cur = i16::from(h.read::<i8>(at(0x737)));
+                if cur < v {
+                    h.write(at(0x714), p);
+                    1
+                } else {
+                    h.write(at(0x714), p.wrapping_add(3));
+                    0
+                }
+            }
+            _ => {
+                let f = h.rebase(DBG_PRINTF);
+                let text = h.rebase(UNKNOWN_CODE_TEXT);
+                h.call(f, &[text, op.cast_unsigned()]);
+                h.write(at(0x714), p);
+                u32::MAX
+            }
         }
     }
 }

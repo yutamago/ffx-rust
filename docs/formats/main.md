@@ -376,3 +376,27 @@ behind them stays with those modules, which the bridges call.
   to 43, 3 copies bone 42's to 43 and 44. Last, every bone's floats are
   set: rotations through `SG_RawToRad`, translations times the scale
   `+0x38` of `+0x1c4`, scales / 4096.
+
+## Motion groups, id heights, bones per character, the motion script (round 8)
+
+- `SG_AddMotionGroup(group, a, b, key)` (`0x00836c90`): a loaded group takes
+  the first free motion-group entry (50; full asserts "nb mgrp err"), is
+  relocated (`SG_RelocateGroup`) and adds each of its sequences
+  (`SG_AddSequence`).
+- `Sg_IdGetHeight(p, i)` (`0x0083e040`, result in ST0): the ground height
+  under `p` on id triangle `i`. With the triangle's normal `n` and first
+  vertex `v`, it is `(n.v - (n.x p.x + n.z p.z)) / n.y`; 0 without id
+  data.
+- `SG_ApplyBones(chr)` (`0x00838f70`): every bone takes its channels at the
+  character's scale / 1000. A character with `+0x871` set blends (damped).
+  One with `+0x870` set and `+0x820` bit 2 clear blends when near the camera
+  (`Ch_AnimCopyNear`): damped when `Ch_AnimCopy2` says so, else by the
+  bone's own byte. Some maps apply directly anyway: `0x170`, `0x11d`;
+  `0x50` for kind 4, `0x137` for kind `0x5045`, `100` for kinds other
+  than 0, and `0x3c` while the scenario is below `0x9a`.
+- `SG_SeqStep(chr)` (`0x00837900`): one opcode of the motion script
+  (`+0x714`). 0 end (returns 2), 5 hold (3); 1 play a clip (`Ch_SetMotionSeq`
+  with the clip's start and end marks, the end one frame later unless a
+  loop operand is 1); 2 wait for `+0x728` 0; 3 wait a count (`+0x72a`); 4
+  jump; 6 wait until `+0x737` reaches the operand. A wait returns 1 with
+  the script unmoved, a step 0, an unknown code -1 (printed).

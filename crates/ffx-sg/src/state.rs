@@ -1699,12 +1699,48 @@ pub mod bridge {
         r
     }
 
-    /// `Sg_IdCheckNormal(_, i)` (`0x0083e040`): [`id_get_normal`] into a
-    /// local the original never reads: no effect beyond the reads.
-    pub fn id_check_normal(mem: &mut impl Mem, i: u32) {
-        use crate::scratch::{SCRATCH, Scratch};
-        let mut s = Scratch::new(mem);
-        id_get_normal(&mut s, SCRATCH, i);
+    /// [`id_get_height`]'s local for the normal (unmapped, below
+    /// [`crate::scratch::SCRATCH`]).
+    const HEIGHT_FRAME: u32 = 0xffff_e000;
+
+    /// `Sg_IdGetHeight(p, i)` (`0x0083e040`): the height of id triangle
+    /// `i`'s plane under the point `p` (`f32` x, z): with the triangle's
+    /// normal `n` ([`id_get_normal`]) and first vertex `v`, `d = (n.y v.y +
+    /// n.x v.x) + n.z v.z` and `t = n.x p.x + n.z p.z` (each stored as
+    /// `f32`), the height `(d - t) / n.y`. 0 without id data or for `i`
+    /// -1. Returned in ST0.
+    pub fn id_get_height(mem: &mut impl Mem, p: u32, i: u32) -> f32 {
+        use ffx_bridge::x87;
+        let table = ID_TABLE.get(mem);
+        if table == 0 || i == u32::MAX {
+            return 0.0;
+        }
+        // the normal's local: below the scratch range, which the normal's
+        // own locals (Sg_CalcTriangleNormal) take
+        let n: [u32; 3] = {
+            let mut f = ffx_bridge::frame::Frame::new(mem, HEIGHT_FRAME, 16);
+            id_get_normal(&mut f, HEIGHT_FRAME, i);
+            f.read(HEIGHT_FRAME)
+        };
+        let [nx, ny, nz] = n.map(x87::load);
+        let e = table.wrapping_add(i << 4);
+        let verts = ID_VERTICES.get(mem);
+        let first = i32::from(mem.read::<i16>(e));
+        let vp = verts.wrapping_add((first << 3).cast_unsigned());
+        let v = [0u32, 2, 4].map(|k| {
+            let c = i32::from(mem.read::<i16>(vp.wrapping_add(k)));
+            x87::load(x87::store(f64::from(c)))
+        });
+        let ld = |b: u32| x87::load(b);
+        let d = x87::add(
+            x87::add(x87::mul(ny, v[1]), x87::mul(nx, v[0])),
+            x87::mul(nz, v[2]),
+        );
+        let d = ld(x87::store(d));
+        let px = ld(mem.read(p));
+        let pz = ld(mem.read(p.wrapping_add(8)));
+        let t = ld(x87::store(x87::add(x87::mul(nx, px), x87::mul(nz, pz))));
+        f32::from_bits(x87::store(x87::div(x87::sub(d, t), ny)))
     }
 
     /// The diving byte (`0x013007c5`): while set, `Sg_ControlMain` adds

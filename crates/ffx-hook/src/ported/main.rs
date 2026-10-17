@@ -1335,6 +1335,22 @@ ported! {
     SG_ApplyRawClip @ 0x0083_8750 => extern "C" fn sg_apply_raw_clip(obj: u32, clip: u32, t: u32, t2: u32) {
         seq::bridge::apply_raw_clip(&mut mem(), obj, clip, t, t2);
     }
+    /// `SG_AddMotionGroup(group, a, b, key)`.
+    SG_AddMotionGroup @ 0x0083_6c90 => extern "C" fn sg_add_motion_group(group: u32, a: u32, b: u32, key: u32) {
+        seq::bridge::add_motion_group(&mut mem(), group, a, b, key);
+    }
+    /// `Sg_IdGetHeight(p, i)`: the height in ST0.
+    Sg_IdGetHeight @ 0x0083_e040 => extern "C" fn sg_id_get_height(p: u32, i: u32) -> f32 {
+        state::bridge::id_get_height(&mut mem(), p, i)
+    }
+    /// `SG_ApplyBones(chr)`.
+    SG_ApplyBones @ 0x0083_8f70 => extern "C" fn sg_apply_bones(chr: u32) {
+        seq::bridge::apply_bones(&mut mem(), chr);
+    }
+    /// `SG_SeqStep(chr)`.
+    SG_SeqStep @ 0x0083_7900 => extern "C" fn sg_seq_step(chr: u32) -> u32 {
+        seq::bridge::seq_step(&mut mem(), chr)
+    }
 }
 
 /// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in
