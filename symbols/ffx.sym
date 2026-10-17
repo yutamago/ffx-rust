@@ -8205,7 +8205,7 @@
 0x00862cc0 function AtelChangeBinaryHeader    # fh v3:exact 0x00862c60
 0x00862d30 function AtelChangeCurrentCtrl     # fh v3:exact 0x00862cd0
 0x00862d50 function Atel_GetBattleMapId        # (map) -> g_AtelForceBattleMapId when positive, else map; name ours; ported in helpers (script round 14)
-0x008632b0 function Script_LineActorSide         # (worker, key): types 5/6 only; status byte of the worker[0xb9] entry matching the actor id; 3 or not found -> -1
+0x008632b0 function Script_LineActorSide         # (worker, key): types 5/6 only; status byte of the worker[0xb9] entry matching the actor id; 3 or not found -> -1; ported in helpers (script round 16)
 0x00863570 function AtelIsSignalQueued        # (worker index, entry) -> 1 when a request for entry is queued (opcodes 77/78, wait state 2)
 0x008635c0 function AtelSearchReplySignal     # (worker, level) -> the last reply matching the level's wait (+0x2c entry, +0x2e worker, +0x30 level); Script_Run wait state 1
 0x00863620 function AtelClearAllMenuMask      # fh v3:cg2 0x8635c0
@@ -8281,6 +8281,7 @@
 0x0086aa70 function Atel_GetBinHdrExpandName   # (block): the expansion header's +0x10 string, the empty string 0x00b8fbeb without; name ours; ported in helpers (script round 14)
 0x0086aac0 function Atel_GetBinHdrTable18B     # (block, i): entry i's +8 u16 of the expansion +0x18 table, 0 without; name ours; ported in helpers (script round 14)
 0x0086aaf0 function Atel_GetBinHdrTable18A     # (block, i): entry i's +4 word of the expansion +0x18 table, 0 without; name ours; ported in helpers (script round 14)
+0x0086ab80 function Atel_GetBinHdrFloat        # (block, i) -> float: the expansion +0x3c record's +0x44 + 4i, else the header's +0x14, else 0; name ours; ported in helpers (script round 16)
 0x0086ac30 function Atel_BinTableEntryA        # (block, i): entry i's first word (+4 + 8i) of that table; name ours; ported in helpers (script round 13)
 0x0086ac60 function Atel_BinTableCount         # (block): the first word of the script block's +0x2c -> +0xc table (offsets relative to the block), 0 without; name ours; ported in helpers (script round 13)
 0x0086ac90 function Atel_BinTableEntryB        # (block, i): entry i's second word (+8 + 8i); name ours; ported in helpers (script round 13)
@@ -8355,7 +8356,7 @@
 0x0086bf70 function Msg_Get                    # (i, alternate, table): like Msg_Text/Msg_TextAlt; table 1 = script context +0x38 (.ebp section 5)
 0x0086bfe0 function Event_GetEntrance            # (ctx) -> 0x20-byte entrance record (current entrance index * 0x20 into the event table at ctx+4); 0x01325b50 when there is none
 0x0086c0a0 function Native_GetFieldPtr32_0086c0a0 # auto-port shape (return address of a field's target, cdecl): t0 = u8[(a0 + 0x32)]; return (((t0 * 0x4c) + 0x5b8) + a0); callers: Native_MoveStart; name ours
-0x0086c0c0 function AtelGetMyBufferSize       # fh v3:exact 0x0086c050
+0x0086c0c0 function AtelGetMyBufferSize       # fh v3:exact 0x0086c050; ported in helpers (script round 16)
 0x0086c160 function AtelGetMyWorkSize         # fh v3:exact 0x0086c0f0
 0x0086c190 function AtelGetNamespaceNumber    # fh v3:cg4 0x86c120
 0x0086c1a0 function AtelGetNowCtrlTopId       # fh v3:exact 0x0086c130
@@ -8449,6 +8450,7 @@
 0x0086f3a0 function AtelSetBattleEndKeepRecoverType # fh v3:exact 0x0086f330
 0x0086f3c0 function AtelSetBattleSceneGroup   # fh v3:bsim1.00 0x0086f350
 0x0086f3d0 function Atel_SetCtrlFlag1325db0    # (on): bit 0 of 0x01325db0 = on != 0 -> old ^ new; name ours; ported in helpers (script round 14)
+0x0086f460 function Atel_SetBindMask           # (n < 0x200): bind-mask bit n set, union 0x01326b94 recomputed; name ours; ported in helpers (script round 16)
 0x0086f4c0 function AtelSetBindObject         # fh v3:exact 0x0086f450
 0x0086f580 function AtelSetCtrlChar              # layout+callees: sorts between AtelSetBindObject and AtelSetCurrentCtrl, and its named callees match the Switch 0x710046fe70 AtelSetCtrlChar's (similarity 0.75: AtelGetBasicWork, AtelUcOff, AtelUcOn); symbols from Fahrenheit's server export
 0x0086f6a0 function Event_SetPlayer              # (worker id): ctx+0x0a = id; copies its position to ctx+0x218 and +0x228
@@ -8605,10 +8607,10 @@
 0x00874c50 function getEventLocTexListPath    # fh v3:exact 0x00874be0
 0x00874fb0 function Atel_ClearRecords1327f50   # (): 32 records at 0x01327f50 (16 bytes): +0, +4, byte +8 cleared; name ours; ported in helpers (script round 14)
 0x00875000 function AtelCheckCallbackQue      # fh v3:cg2 0x874f80
-0x008750b0 function AtelExecCallbackQue       # fh v3:exact 0x00875030
+0x008750b0 function AtelExecCallbackQue       # fh v3:exact 0x00875030; ported in helpers (script round 16)
 0x00875180 function AtelIsCallbackQue         # fh v3:bsim1.00 0x00875100
 0x00875190 function AtelRegistCallbackQue     # fh switch:bsim1.00 0x710044e160
-0x008751b0 function AtelRegistCallbackQue2    # fh v3:exact 0x00875130
+0x008751b0 function AtelRegistCallbackQue2    # fh v3:exact 0x00875130; ported in helpers (script round 16)
 0x00875430 function AtelActorRemove           # fh v3:exact 0x008753b0
 0x008754e0 function AtelActorSetUp               # layout+callees: sorts between AtelActorRemove and AtelActorSetUp2, and its named callees match the Switch 0x710045f5d0 AtelActorSetUp's (similarity 1.00: AtelActorSetUp2); symbols from Fahrenheit's server export
 0x00875510 function AtelActorSetUp2           # (..., messages, messages2, ...): script context +0x34 = messages, +0x38 = section 5 (or messages); was Event_InitScripts
@@ -8655,6 +8657,7 @@
 0x00877470 function AtelSetSndCameraPos          # layout+callees: sorts between AtelSetSnd3dVolumeTotalRatio and AtelSetUpCallFunc, and its named callees match the Switch 0x7100477f60 AtelSetSndCameraPos's (similarity 0.78: AtelChangeCurrentCtrl, AtelGetBasicWork, AtelGetCurCtrlWork, AtelGetPosWorkAdrs, AtelSetCurrentCtrl); symbols from Fahrenheit's server export
 0x00877520 function Atel_PutDigits             # (v, dst, base): v as digits over the divisor table 0x00c52b18 (0-ended), each + base -> what is left of v; name ours; ported in helpers (script round 15)
 0x00877610 function Atel_StrTrimLeading        # (s, n, ch): up to n leading ch dropped in place (the copy starts at the last one when all n match) -> the terminator; name ours; ported in helpers (script round 14)
+0x00877660 function Atel_ParseHex              # (s) -> the hex number after an optional 0x or $; name ours; ported in helpers (script round 16)
 0x00877730 function Script_PollNative         # slot 1; no handler = done
 0x00877770 function Script_NativeEntry        # (id) -> g_NativeTables[id >> 12] + (id & 0xfff) * 16; ffx_script::vm::bridge::run
 0x008777a0 function Script_CallNative         # slot 0 (start) of the native table entry

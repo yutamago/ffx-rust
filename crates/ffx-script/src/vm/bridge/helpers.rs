@@ -847,3 +847,168 @@ pub fn atel_require_ctrl_work(m: &mut impl Mem, i: u32, block: u32, a: u32, b: u
     }
     c
 }
+
+// ---- round 16 ----
+
+/// `g_AtelCallbackQue` (`0x01327f50`): queues of 0x100 bytes, fifteen
+/// 16-byte entries (`+0` the callback, `+4` its word, `+8` a 7-character
+/// name) and a sixteenth callback slot at `+0xf0`.
+const CALLBACK_QUE: u32 = 0x0132_7f50;
+
+/// `Script_LineActorSide(worker, key)` (`0x008632b0`): for worker types 5
+/// and 6, the status byte (`+4`) of the entry of the worker's line table
+/// (`+0x2e4`, eight 8-byte entries) whose `+2` is the bound actor's id
+/// (`*(+0x90) + 8`) and, for a non-negative key, whose `+0` is the key;
+/// -1 for none, a status of 3 or other types.
+pub fn script_line_actor_side(m: &impl Mem, w: u32, key: u32) -> u32 {
+    if kind(m, w).wrapping_sub(5) > 1 {
+        return u32::MAX;
+    }
+    let t = m.read::<u32>(w + 0x2e4);
+    let a = m.read::<u32>(w + 0x90);
+    if t == 0 || a == 0 {
+        return u32::MAX;
+    }
+    let id = m.read::<u16>(a + 8);
+    let hit = (0..8).find(|&i| {
+        let e = t + i * 8;
+        m.read::<u16>(e + 2) == id
+            && (key.cast_signed() < 0 || u32::from(m.read::<u16>(e)) == key)
+    });
+    match hit.map(|i| u32::from(m.read::<u8>(t + i * 8 + 4))) {
+        Some(v) if v != 3 => v,
+        _ => u32::MAX,
+    }
+}
+
+/// `0x00877660(s)`: the hexadecimal number at s (after an optional `0x`
+/// or `$`), up to the first character that is no hex digit.
+pub fn atel_parse_hex(m: &impl Mem, s: u32) -> u32 {
+    let mut p = s;
+    if m.read::<u8>(p) == b'0' && m.read::<u8>(p + 1) == b'x' {
+        p += 2;
+    } else if m.read::<u8>(p) == b'$' {
+        p += 1;
+    }
+    let mut v = 0_u32;
+    loop {
+        let c = m.read::<u8>(p);
+        match c {
+            b'0'..=b'9' => v = (v << 4).wrapping_add(u32::from(c - b'0')),
+            b'A'..=b'F' | b'a'..=b'f' => {
+                v = (v << 4).wrapping_sub(0x37).wrapping_add(u32::from(c & 0xdf));
+            }
+            _ => return v,
+        }
+        p = p.wrapping_add(1);
+    }
+}
+
+/// `0x0086f460(n)`: bind-mask bit n (below 0x200; signed division, as the
+/// original) set and the union `0x01326b94` recomputed. Returns the `EAX`
+/// it leaves (the loop's end address; n itself for n >= 0x200, where the
+/// original leaves the caller's).
+pub fn atel_set_bind_mask(m: &mut impl Mem, n: u32) -> u32 {
+    let k = n.cast_signed();
+    if k >= 0x200 {
+        return n;
+    }
+    let idx = k / 32;
+    let bit = 1_u32.wrapping_shl((k % 32).cast_unsigned());
+    let at = m.rebase(BIND_MASKS).wrapping_add(idx.cast_unsigned().wrapping_mul(4));
+    let v = m.read::<u32>(at);
+    m.write(at, v | bit);
+    let base = m.rebase(BIND_MASKS);
+    let mut all = 0;
+    for i in 0..16 {
+        all |= m.read::<u32>(base + 4 * i);
+    }
+    m.write(m.rebase(BIND_MASK_ALL), all);
+    base + 0x48
+}
+
+/// `0x0086ab80(block, i)` (float): the expansion header's `+0x3c` record's
+/// `+0x44 + 4i`, else the header's `+0x14`, else 0.0 (`f32`).
+pub fn atel_get_bin_hdr_float(m: &impl Mem, b: u32, i: u32) -> f64 {
+    let Some(e) = expansion(m, b) else { return 0.0 };
+    let r = m.read::<u32>(e + 0x3c);
+    let at = if r != 0 && r.wrapping_add(b) != 0 {
+        r.wrapping_add(b).wrapping_add(0x44).wrapping_add(i.wrapping_mul(4))
+    } else {
+        e + 0x14
+    };
+    x87::load(x87::store(x87::load(m.read(at))))
+}
+
+/// A size rounded up to 16 as the original does (`(x + 15)`, then toward
+/// zero to a multiple of 16).
+fn round16(x: u32) -> u32 {
+    let v = x.wrapping_add(15).cast_signed();
+    (v.wrapping_add((v >> 31) & 15) & !15).cast_unsigned()
+}
+
+/// `AtelGetMyBufferSize(block)` (`0x0086c0c0`): the sum of the block's
+/// workers' sizes (each worker header's `+0x10`, from the offsets at
+/// `+0x38`, `+0x36` of them), each rounded up to 16.
+pub fn atel_get_my_buffer_size(m: &impl Mem, b: u32) -> u32 {
+    let n = u32::from(m.read::<u16>(b + 0x36));
+    (0..n).fold(0_u32, |s, j| {
+        let h = m.read::<u32>(b + 0x38 + j * 4);
+        s.wrapping_add(round16(m.read::<u32>(h.wrapping_add(0x10).wrapping_add(b))))
+    })
+}
+
+/// `AtelRegistCallbackQue2(q, f, name)` (`0x008751b0`): the first free of
+/// queue q's fifteen entries gets callback f, word 0 and the name
+/// (`strncpy` of 7, 0-ended); the next entry's callback is cleared.
+/// `EAX` the name's address, or the last entry's when the queue is full.
+pub fn atel_regist_callback_que2(m: &mut impl Mem, q: u32, f: u32, name: u32) -> u32 {
+    let base = m.rebase(CALLBACK_QUE).wrapping_add(q.wrapping_mul(0x100));
+    let Some(k) = (0..15).find(|&k| m.read::<u32>(base + k * 0x10) == 0) else {
+        return base + 15 * 0x10;
+    };
+    let e = base + k * 0x10;
+    m.write(e, f);
+    m.write(e + 4, 0_u32);
+    let mut end = false;
+    for i in 0..7 {
+        let c = if end { 0 } else { m.read::<u8>(name.wrapping_add(i)) };
+        end |= c == 0;
+        m.write(e + 8 + i, c);
+    }
+    m.write(e + 0xf, 0_u8);
+    m.write(e + 0x10, 0_u32);
+    e + 8
+}
+
+/// `AtelExecCallbackQue(q)` (`0x008750b0`): calls queue q's first
+/// callback with its word's address; when it returns non-zero the
+/// entries move up one (callback, word and name) and the last slot is
+/// cleared. 1 when the queue is (then) empty.
+pub fn atel_exec_callback_que(h: &mut impl ffx_bridge::Host, q: u32) -> u32 {
+    let base = h.rebase(CALLBACK_QUE).wrapping_add(q.wrapping_mul(0x100));
+    let f = h.read::<u32>(base);
+    if f == 0 {
+        return 1;
+    }
+    if h.call(f, &[base + 4]) != 0 {
+        for k in 0..15 {
+            let e = base + k * 0x10;
+            let nf = h.read::<u32>(e + 0x10);
+            h.write(e, nf);
+            let nw = h.read::<u32>(e + 0x14);
+            h.write(e + 4, nw);
+            let mut i = 0;
+            loop {
+                let c = h.read::<u8>(e + 0x18 + i);
+                h.write(e + 8 + i, c);
+                i += 1;
+                if c == 0 {
+                    break;
+                }
+            }
+        }
+        h.write(base + 0xf0, 0_u32);
+    }
+    u32::from(h.read::<u32>(base) == 0)
+}
