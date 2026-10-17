@@ -4,7 +4,7 @@
 use super::{mem, ported};
 use ffx_vfx::mat::{self, order};
 use ffx_vfx::rand::bridge::{Kind, Spread};
-use ffx_vfx::{et, fp, heap, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec};
+use ffx_vfx::{et, fp, heap, md, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec};
 
 /// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`), so the
 /// CRT's state moves as it does with the originals.
@@ -37,6 +37,31 @@ fn crt_atan2(y: f64, x: f64) -> f64 {
             // edi: the callee keeps it (eax, ecx and edx it may not)
             in("edi") &raw mut out,
             f = in(reg) f,
+            clobber_abi("C"),
+        );
+    }
+    out
+}
+
+/// MSVCR110's `_CIcos` (`cos`) or `_CIsin` through the game's import slot
+/// (`0x00b0c3b4`, `0x00b0c3b8`): the angle loaded as `fld dword`, the
+/// result stored as `fstp dword` through `edi`.
+fn crt_trig(cos: bool, x: f32) -> f32 {
+    let slot = crate::rebase(if cos { 0x00b0_c3b4 } else { 0x00b0_c3b8 }) as *const usize;
+    let mut out = 0f32;
+    // SAFETY: the slot holds the CRT's intrinsic, which takes its operand
+    // in ST0 and leaves the result there; the asm loads it, calls it and
+    // stores the result through edi (which the callee keeps), leaving the
+    // x87 stack empty.
+    unsafe {
+        let f = slot.read();
+        std::arch::asm!(
+            "fld dword ptr [{x}]",
+            "call {f}",
+            "fstp dword ptr [edi]",
+            x = in(reg) &raw const x,
+            f = in(reg) f,
+            in("edi") &raw mut out,
             clobber_abi("C"),
         );
     }
@@ -1399,6 +1424,38 @@ ported! {
     /// `op_func_ot(list)`.
     op_func_ot @ 0x007e_b430 => extern "C" fn op_func_ot(list: u32) {
         op::bridge::op_func_ot(&mut mem(), list, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op1_md_draw_eiabm_sphe(obj, part, n, e)`: its stack locals in a
+    /// buffer on this shim's stack (the frame pointer at its end).
+    op1_md_draw_eiabm_sphe @ 0x00a6_8140 => extern "C" fn op1_md_draw_eiabm_sphe(obj: u32, part: u32, n: u32, e: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xb0]);
+        let mut locals = Locals([0; 0xb0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xb0;
+        md::bridge::op1_md_draw_eiabm_sphe(&mut mem(), obj, part, n, e, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_rot_point_007ea9d0(x0, y0, ang, x1, y1, ox, oy)`.
+    op_rot_point_007ea9d0 @ 0x007e_a9d0 => extern "C" fn op_rot_point(x0: f32, y0: f32, ang: f32, x1: f32, y1: f32, ox: u32, oy: u32) -> u32 {
+        vec::bridge::op_rot_point(&mut mem(), x0, y0, ang, [x1, y1], [ox, oy], &mut |_, c, x| crt_trig(c, x))
+    }
+    /// `op_token_007e1f80(src, out, pos, max, eol)`.
+    op_token_007e1f80 @ 0x007e_1f80 => extern "C" fn op_token(src: u32, out: u32, pos: u32, max: u32, eol: u32) -> u32 {
+        op::bridge::op_token(&mut mem(), src, out, pos, max, eol, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op1_md_draw_eiabm(obj, part, slot)`: its stack locals in a buffer
+    /// on this shim's stack (the frame pointer at its end).
+    op1_md_draw_eiabm @ 0x00a6_57c0 => extern "C" fn op1_md_draw_eiabm(obj: u32, part: u32, slot: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x450]);
+        let mut locals = Locals([0; 0x450]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x450;
+        md::bridge::op1_md_draw_eiabm(&mut mem(), obj, part, slot, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_md_spr_init_x64(obj, init, work)`.
+    op_md_spr_init_x64 @ 0x00a6_9940 => extern "C" fn op_md_spr_init_x64(obj: u32, init: u32, work: u32) -> u32 {
+        md::bridge::op_md_spr_init_x64(&mut mem(), obj, init, work)
     }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
