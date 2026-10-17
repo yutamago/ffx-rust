@@ -1267,6 +1267,93 @@ From here on, functions are picked by `symbols/classes.tsv` (category
 - The debug pixel probe `0x007606f0`/`0x00760f30` moved to "Debug
   (mod-tool candidates)".
 
+## The sphere grid's achievements and special item kinds (round 29)
+
+- `AbmapCheckAchievements` (`0x00a47210`, name ours, from `0x00a48910` and
+  `AbmapTryChangePlayer`):
+  - marks the locked entries of menu pads 3, 2, 4 and 5;
+  - reads the grid's node list (file 0x11, 0x12 or 0x13 for the save's
+    grid kind, bits 14..15 of `MsGetSaveMenu`) through the CD library
+    table `GetCD` returns: `+0x10(0x25)`, `+0(file, buffer, 0, 0)`,
+    `+8(0)`, into a 0x484-byte local;
+  - unlocks achievement 0x17 once for each character bit 0..6 for which
+    every listed node (byte list, 0xff skipped) has that bit in the
+    save's ability map (`MsGetSaveAbilityMap`, byte `1 + 2 i`), and 0x1d
+    when every listed node is 0x7f. An empty list unlocks both.
+  - The list's count is at `+2` and the list at `+8` when the file
+    starts with 0x31. Otherwise the original takes the list from `+2`
+    and the ability map's address as its count.
+- `AbmapSpecialEffect` (`0x00a5d120`, name ours) is 1 when an item of a
+  special kind applies to a node (`AbmapItemNodeEffect`). It checks:
+  - kinds 1..4: the node row's type `+0x16` is 0x12, 0x11, 0 or 0x10;
+  - 5..7 and 0x10..0x16: type 1;
+  - 8..0xb: the character lacks the node's panel bit, the type is 0xf,
+    0xe, 0xc or 0xd, and another character has the bit;
+  - 0xc..0xf: the character is not on the node and, in turn, has the
+    panel bit, another character has it, another joined character stands
+    on the node, or the row is not hidden;
+  - 0x17: type 2..0xb; 0x18: the same plus no panel bit and another
+    character's.
+
+## The sphere grid's bounds and the sea's effect fade (round 30)
+
+- `AbmapCalcBounds` (`0x00a5ae40`, name ours, from `LoadAbmap`): the
+  grid's extent. Starting from 0.0 (so it always contains the origin), it
+  takes the minimum and maximum over the nodes (`i16` count at `+0`,
+  16-byte records from `+8`: x `+0`, y `+2`, kind `+6`) of
+  `x -/+ w / 2` and `y -/+ h / 2`. `w` and `h` are the kind's size
+  (`+0xf808 + 4 kind`), halved toward zero. The results go to
+  `+0x115fc`/`+0x11600` (minimum) and `+0x11604`/`+0x11608` (maximum),
+  copied to `+0x1160c`, `+0x11610`, `+0x11614`, `+0x11618`.
+- `Yn_SeaFpFade` (`0x00922970`, name ours, from `0x00922600`) fades a
+  field effect by the sea's angle (`Yn_SeaGetAngPtr` `+8`, `lim`) against
+  the fade's own angle (`+8`, `a`). It is a four-state machine at `+0`:
+  - 0, off: when `lim < a < 0` or `0 < a < lim`, the effect (id `+4`) is
+    shown and restarted, and the state becomes 1.
+  - 1, fading in: the count `+0x10` goes up and the weight is
+    `count / frames` (`+0xc`; both ints stored as `f32` first). At the
+    frames the state becomes 2.
+  - 2, on: weight 1.0; when `a < 0` and `a < lim`, or `0 < a` and
+    `a > lim`, the state becomes 3. Equal angles stay on.
+  - 3, fading out: the count goes down; at 0 the effect is hidden and
+    ended, and the state goes back to 0.
+  - For a positive id the weight goes to `+0x2c` of the chunk entry
+    (`0x00c5e480 + 0x38 id`), whose matrix (`rcbgFPmGetMatrix`) is
+    copied into the effect's manager (`pppFpGetMngPtr`, `+0xc`).
+- The Ke* functions left in the worklist (`KeDttSpr_MkGifPk`,
+  `KeDttMdl_MkGifPk`, `KeLnsLp_Update`, `KeThBP_Update`, `KeBornPtCmlp`,
+  `KeVu0ItrsBallLine`) are classed logic by default in `classes.tsv`.
+  The `MkGifPk` ones build GIF packets (replaced by ffx-render). The
+  updates (`KeLnsLp_Update`, `KeThBP_Update`, `KeBornPtCmlp`,
+  `KeVu0ItrsBallLine`) belong to the Ke effect library in `ke.rs` and
+  stay on the list as large logic.
+
+## The Ke library: ray-sphere test and particle gap filling (round 31)
+
+- `KeVu0ItrsBallLine` (`0x0075eed0`, from `pppKeHitChkPxB`): the ray
+  `p + t d` (`p` at `+0`, `d` at `+0x10`) against the sphere of radius
+  `+0x20` around the origin. With `a = d.d`, `b = 2 p.d` and
+  `c = p.p - r²` (each partial sum stored as `f32`), it returns 0 when
+  `b² - 4ac < 0`. Otherwise it stores the entry point
+  `t = (-b - f32(sqrt(disc))) / f32(2a)` at `+0x24` and returns 1.
+- `KeBornPtCmlp` (`0x00759400`, from `pppKeBornPtCmpl`) spawns the
+  particle objects that fill the gap between the previous point and this
+  frame's:
+  - It first creates one object (`pppCreatePObject(part, pd[8] * 16 +
+    part +0x3c)`; a zero address gives no object and a failed creation
+    returns at once), stores it to `out`, sets its owner (`+4`) and its
+    position (`+0xa0 + pd[0xc]`, `dst`) to the point at
+    `pc + prog[0xc][1] + 0xa0`.
+  - Without a previous point (`pc + prog[0xc][0] + 0xa0` null), the step
+    `+0xa8` there becomes `1 / f32(pd[4] + 1)`.
+  - Otherwise, for `f` from `pd[4]` down by 1.0 while above 0, it creates
+    another object at `prev + (dst - prev) * f32(f * step)`.
+  - The previous point then becomes `dst`.
+  - A zero object address leaves `out` 0 and the original writes through
+    address 0; the test leaves that pairing out.
+- Test note: dyadic test floats make some `f32` stores exact (doubling is
+  exact), so the ray test also uses non-dyadic inputs.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

@@ -529,12 +529,28 @@ model natives (5), the rest of the camera and screen natives (6), the
 movie player (11) and group 12's system natives. Natives that build an
 out local with `push ecx` (`0x70be`'s `MsGetChrDir` writes nothing
 without a model) read the caller's `ECX` there; the ports zero it, and
-the oracle test calls the originals with `ECX` = 0. Left for a later
-round: `0x1005` (`_CIatan2`, the x87 `fpatan`), `0x5037`, `0x6077` (it
-calls `0x007bd500` with no arguments of its own) and `0xc025`. The
+the oracle test calls the originals with `ECX` = 0. Round 13 ported
+the last four: `0x1005` calls the game's own `_CIatan2` through its
+import thunk (`0x009498bc`, `NativeHost::call_intrinsic2`, `y` in `ST1`
+and `x` in `ST0`), so it is bit-exact with the CRT; `0x6077` reads the
+camera's `+0xc90` (`0x007bd500`, called with no arguments); `0x5037`
+and `0xc025`. `0xc03b` and `0xc03c` turned out to be the debug cheats
+`MsDebugFullItem`/`MsDebugFullCommand` and are marked instead. The
 debug ones (`0x70b1`, `0xb002`, `0xc00b`, `0xc00c`, `0xc018`, `0xc022`,
-`0xc028`, `0xc02a`, `0xc056`, `0xc057`, `0xc05b`) are marked in the
-table.
+`0xc028`, `0xc02a`, `0xc03b`, `0xc03c`, `0xc056`, `0xc057`, `0xc05b`)
+are marked in the table. `0x5065` stops in most oracle calls (all on
+the field snapshot): its `Ch_RomReadEventMGRP` asks the file system for
+the group's size first (`*0x02310c54`, whatever the input), which
+hashes the name through `ADVAPI32!CryptCreateHash`, an import the
+emulator does not stub; on the battle snapshot some calls get past it.
+
+`ffx_script::vm::bridge::helpers` (round 13) has VM helpers that are
+not natives: `Script_StopTurn` (`0x00863fe0`, the turn-block twin of
+`Script_StopMove`), the script block's header tables (`0x0086ac60`,
+`0x0086ac30`, `0x0086ac90`: `+0x2c`, then `+0xc`, offsets relative to
+the block), `AtelGetSnd3dWork`, `AtelSoundTableGet_00876860`, the
+message-window status of the current bank (`0x0086be60`, `0x0086c8b0`),
+`0x0086c530`, `0x0086f780`, `0x008712a0` and `AtelAllClearBindMask`.
 
 Debug natives and debug-only code are not ported. In this build
 `dbgPrintf` (`0x0062f500`) is a bare `ret` and `TkIsDebug` (`0x00887d10`)
@@ -996,6 +1012,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0x1000` | `Native_1000` | slot int, a int, b int, v int | 1: ctrl work +0xa4 slot (0..31) = a/8 | 0x80, b/4, the worker's +0x2e, v (cleared for negative a or b) | - | int `0x008779c0` (native_chr) |
 | `0x1001` | `AtelCall_Math_Sin_RF` | v f | float: CIsin(v) (0x0088c3a0) | - | float `0x00877a70` (native_chr) |
 | `0x1002` | `AtelCall_Math_Cos_RF` | v f | float: CIcos(v) (0x0088b3e0) | - | float `0x00877aa0` (native_chr) |
+| `0x1005` | `AtelCall_Math_ATan2_RF` | y f, x f | float: atan2(y, x) through the game's _CIatan2 (import thunk 0x009498bc), rounded to f32 | - | float `0x00877b30` (native_chr) |
 | `0x1006` | `AtelCall_Math_Sqrt_RF` | x f | float: sqrt(x) as f32 | - | float `0x00877b70` (native_move) |
 | `0x100a` | `Native_100a` | v int | int: the popped value; int: the popped value | - | int `0x008778b0` (native_chr) |
 | `0x1013` | `Native_1013` | v f | float: Math_WrapAngle(v) (0x0088bc20) | - | float `0x00877d30` (native_chr) |
@@ -1088,6 +1105,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0x5034` | `Native_ChrSetMotionBlend` | frames int: blend into the next motion | 0 | - | int `0x00a79f40` (native) |
 | `0x5035` | `Native_5035` | - | Ch_GetSeqFrame(model) (0x00836af0), 0 without a model | - | int `0x00a79fa0` (native_chr) |
 | `0x5036` | `Native_5036` | - | 0x00a7a980(worker, args, stack, 0) | - | int `0x00a7a120` (native_chr) |
+| `0x5037` | `Native_5037` | worker int, x var, y var, z var | 0: the model's point 0 (Ch_OptposGet 0x008354f0) into the variables (null ones skipped) | - | int `0x00a7a140` (native_chr) |
 | `0x5039` | `Native_ChrSetHitRadiusScale` | scale f | float: Ch_SetThickness(model, scale) (0x0082b880); 0.0 without a model | - | float `0x00a7a340` (native_chr) |
 | `0x503a` | `Native_503a` | z f | float: Ch_SetClipZ(model, z) (0x0082b150); 0.0 without a model | - | float `0x00a7a3d0` (native_chr) |
 | `0x503b` | `Native_503b` | b, a | ChN_DisposeSystemMGRP(b, a) (0x00836830) when the worker has a model | - | int `0x00a7a450` (native_chr) |
@@ -1246,6 +1264,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0x6071` | `Native_Cam_6071` | as 0x606b, kind 5 | 0 | - | int `0x007b9580` (native_cam) |
 | `0x6074` | `Native_6074` | - | 0x007bb840(worker, args, stack, 6); 0 | - | int `0x007b9610` (native_chr) |
 | `0x6076` | `Native_Cam_6076` | - | 0 (the battle cameras freed) | - | int `0x007b8fe0` (native_cam) |
+| `0x6077` | `Native_6077` | - | float: the camera's +0xc90 angle (0x007bd500) in degrees (MsNearRag(0, v) * 180 / pi) | - | float `0x007b9190` (native_chr) |
 | `0x6078` | `Native_6078` | - | jumps to 0x007bd510(worker, args, stack) (ST0) | - | float `0x007b91f0` (native_chr) |
 | `0x607b` | `Native_607b` | screen | start: into the args word; EAX it; poll: 5 once MsScreenMoveCheck(screen, 0) (0x007bbfc0) is 0 | see the poll | start `0x007b8e40`, poll `0x007b8e60` (native_chr) |
 | `0x607d` | `Native_Cam_607d` | v int | int: camera handle (0x007bcdd0(cam, v)) | - | int `0x007b8840` (native_cam) |
@@ -1484,6 +1503,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0xc018` | `Native_c018` | - | debug (mod-tool candidate): in a debug build SqsSetProjectBase(&var); 1 in release | - | int `0x008788a0` (not ported) |
 | `0xc022` | `Native_c022` | - | debug (mod-tool candidate): in a debug build Sg_EnableDrawGui(v); 1 in release | - | int `0x00878b00` (not ported) |
 | `0xc024` | `Native_c024` | _, v | start: the battle end (AtelEventSetUpForBattleMusic, AtelEventRemoveForBattle for the event jump map, AtelBattleEndCallback(1, v, map)); its EAX; poll: 0xc024 (0x00878c60, poll), 0xb00a (0x0076ec10, int) and the like: 1; poll: 1 | see the poll | start `0x00878c10`, poll `0x00878c60`, poll `0x00878c60` (native_chr) |
+| `0xc025` | `Native_c025` | msg int | int: 1 when the message text (Msg_Text) fits and is copied over the player's name (MsGetSaveChrName(0), shorter than MsGetSaveChrNameSize(0)), else 0 | - | int `0x00878c70` (native_chr) |
 | `0xc028` | `Native_c028` | - | debug (mod-tool candidate): in a debug build 0x0088e790(0xa004 + i) for 26 i; 1 | - | int `0x00878d60` (not ported) |
 | `0xc02a` | `Native_c02a` | - | debug (mod-tool candidate): in a debug build TkSetOutputEncount(v) and AtelOutputEncountStart(); v | - | int `0x00878e10` (not ported) |
 | `0xc02c` | `Native_c02c` | v int | int: the popped value; int: the popped value | - | int `0x00878e60` (native_chr) |
@@ -1491,8 +1511,8 @@ API is generated from this table. `-`: none. A result starting with
 | `0xc030` | `Native_c030` | - | TkIsDebug(), then the current ctrl work's +0x1f4 | - | int `0x00878ed0` (native_chr) |
 | `0xc031` | `Native_c031` | v | 0x0086dcd0(v) | - | int `0x00878530` (native_chr) |
 | `0xc036` | `Native_c036` | on | pppFpSetDisp(on != 0) (0x00729050); on != 0 | - | int `0x00878f70` (native_chr) |
-| `0xc03b` | `Native_c03b` | - | 0x007849d0(); 1 | - | int `0x008790b0` (native_chr) |
-| `0xc03c` | `Native_c03c` | - | 0x007848b0(); 1 | - | int `0x008790c0` (native_chr) |
+| `0xc03b` | `Native_c03b` | - | debug (mod-tool candidate): MsDebugFullItem (0x007849d0), the debug cheat that gives every item; 1 | - | int `0x008790b0` (not ported) |
+| `0xc03c` | `Native_c03c` | - | debug (mod-tool candidate): MsDebugFullCommand (0x007848b0), the debug cheat that teaches every command; 1 | - | int `0x008790c0` (not ported) |
 | `0xc051` | `Native_c051` | on | TkSetTGS(on != 0) (0x0088ec10); on != 0 | - | int `0x008793b0` (native_chr) |
 | `0xc052` | `Native_c052` | - | jumps to 0x0088d6d0 | - | int `0x008793e0` (native_chr) |
 | `0xc053` | `Native_c053` | - | four popped and dropped; 0 | - | int `0x008793f0` (native_chr) |
@@ -1556,10 +1576,10 @@ the tests reach.
 1. Done: the accessors, the dispatch loop, every opcode, native dispatch,
    the signals (request families, `AtelExecReturn`, the waits, opcodes
    `79`/`7a`): `Script_Run` calls no original script code but natives.
-2. Now: the natives, most used first. Done: every native the shipped
-   scripts call (rounds 1-12; the group-0 table at `0x00c50050` has 180
-   more entries no shipped script calls) but `0x1005`, `0x5037`,
-   `0x6077`, `0xc025` and the debug ones. Next: those four.
+2. Done: every native the shipped scripts call (rounds 1-13; the
+   group-0 table at `0x00c50050` has 180 more entries no shipped script
+   calls) but the debug ones, which are marked. Now: the VM's other
+   helpers, by blocker count (`tools/worklist.py --module script`).
 3. Then a `Natives` implementation with no original code behind it, so
    the interpreter runs outside the game.
 

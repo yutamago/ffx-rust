@@ -3579,6 +3579,48 @@ ported! {
         model::bridge::rcfx_nail_update(&mut mem(), fx, ctx)
     }
 
+    /// `AbmapCheckAchievements()`.
+    AbmapCheckAchievements @ 0x00a4_7210 => extern "C" fn shim_abmap_check_achievements() {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x490]);
+        let mut work = Locals([0; 0x490]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        abmap::bridge::abmap_check_achievements(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `AbmapSpecialEffect(kind, node, row, chr)`.
+    AbmapSpecialEffect @ 0x00a5_d120 => extern "C" fn shim_abmap_special_effect(kind: u32, node: u32, row: u32, chr: u32) -> u32 {
+        abmap::bridge::abmap_special_effect(&mut mem(), [kind, node, row, chr], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `AbmapCalcBounds()`.
+    AbmapCalcBounds @ 0x00a5_ae40 => extern "C" fn shim_abmap_calc_bounds() -> u32 {
+        abmap::bridge::abmap_calc_bounds(&mut mem())
+    }
+
+    /// `Yn_SeaFpFade(fade)`.
+    Yn_SeaFpFade @ 0x0092_2970 => extern "C" fn shim_yn_sea_fp_fade(fade: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x50]);
+        let mut work = Locals([0; 0x50]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        model::bridge::yn_sea_fp_fade(&mut mem(), fade, w, &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `KeVu0ItrsBallLine(q)`.
+    KeVu0ItrsBallLine @ 0x0075_eed0 => extern "C" fn shim_ke_vu0_itrs_ball_line(q: u32) -> u32 {
+        ke::bridge::ke_vu0_itrs_ball_line(&mut mem(), q)
+    }
+
+    /// `KeBornPtCmlp(pc, pd, prog, out)`.
+    KeBornPtCmlp @ 0x0075_9400 => extern "C" fn shim_ke_born_pt_cmlp(pc: u32, pd: u32, prog: u32, out: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x30]);
+        let mut work = Locals([0; 0x30]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        ke::bridge::ke_born_pt_cmlp(&mut mem(), [pc, pd, prog, out], w, &mut |_, f, a| call_cdecl(f, a));
+    }
+
     /// `yiSetBackColor(c)`.
     yiSetBackColor @ 0x0090_a040 => extern "C" fn shim_yi_set_back_color(c: u32) {
         yi::bridge::yi_set_back_color(&mut mem(), c, &mut |_, f, a| call_cdecl(f, a));
