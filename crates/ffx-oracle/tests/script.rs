@@ -3010,6 +3010,10 @@ fn move_and_message_cases_match_the_original() {
     }
 }
 
+/// Start handlers that are a bare `ret`: `Native_ChrWaitMotion_501e`,
+/// `Native_MusicWaitLoaded`, `Native_00dc`.
+const BARE_RET: [u32; 3] = [0x00a7_9370, 0x0085_9d70, 0x0085_ee00];
+
 /// Every Rust native against the original on each actor of each ctrl work
 /// in use, with small integer and float arguments on the worker's stack
 /// (the same on both sides): the result (`EAX`, or `ST0` for the float
@@ -3084,9 +3088,9 @@ fn natives_match_the_original() {
                             ra.st0
                         );
                         let rb = f(&mut Run(b), w, args, s);
-                        // Native_ChrWaitMotion_501e is a bare ret: EAX is
-                        // the caller's (and the dispatch ignores a start's)
-                        if sym != 0x00a7_9370 {
+                        // bare rets: EAX is the caller's (and the
+                        // dispatch ignores a start's)
+                        if !BARE_RET.contains(&sym) {
                             assert_eq!(ra.eax, rb, "{what}: EAX");
                         }
                     }
