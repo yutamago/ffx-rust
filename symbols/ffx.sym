@@ -6756,7 +6756,7 @@
 0x00829e60 function Ch_AnalysisChrNum         # fh v3:exact 0x00829ee0
 0x00829ef0 function Ch_DataRead               # (chr id): queues "[%s:%s]CHRDATA" (prints "SG:RomRead:%s %x"); was Chr_LoadData
 0x0082a040 function Ch_DataReadSync           # (chr id): ChrData_State(1, id); error "CH Data Read Sync" / "%s does not read.(can't sync)"; was Chr_IsLoaded
-0x0082a080 function Ch_GetCharID              # fh v3:exact 0x0082a100
+0x0082a080 function Ch_GetCharID              # fh v3:exact 0x0082a100; (id): atoi of the 7th..5th characters from the end of g_CdLib_98(Chr_TableIndex(id)), -1 without a name; the digit slot is a push ecx (the caller's ECX), so its 4th byte and any byte a short name leaves unset are undefined: the port treats them as NUL (equal whenever that byte is not a digit)
 0x0082a100 function Ch_IsLoadingClothFile     # fh v3:exact 0x0082a180
 0x0082a140 function Ch_LoadClothFileTask      # fh v3:exact 0x0082a1c0
 0x0082a1c0 function Ch_LoadHdRenderData       # (chr path, ...): "Load Character: %s", builds /FFX_Data/GameData/PS3Data/chr/.../<name>.ahwin32 and loads its D3D11 file list; was Chr_LoadAssets
