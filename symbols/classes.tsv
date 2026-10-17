@@ -12286,7 +12286,7 @@
 0x00873c00	logic	default (no rule: ported to be safe)
 0x00873c30	logic	default (no rule: ported to be safe)
 0x00873c70	logic	debug-sounding name, but used by logic: 0x8677a0, AtelActorSetUp2, AtelEventLoadMusic
-0x00873c80	logic	debug-sounding name, but used by logic: 0x8677a0, 0x878330, 0x8783c0
+0x00873c80	logic	debug-sounding name, but used by logic: 0x8677a0, 0x8783c0, Native_c05b
 0x00873cc0	logic	default (no rule: ported to be safe)
 0x00873cf0	logic	default (no rule: ported to be safe)
 0x00873d00	logic	default (no rule: ported to be safe)
@@ -12877,7 +12877,7 @@
 0x00887c80	dead	unreachable from the entry point and every pointer table
 0x00887cb0	dead	unreachable from the entry point and every pointer table
 0x00887d00	logic	default (no rule: ported to be safe)
-0x00887d10	logic	debug-sounding name, but used by logic: 0x858520, 0x858740, 0x8783c0
+0x00887d10	logic	debug-sounding name, but used by logic: 0x8783c0, 0x878470, 0x878570
 0x00887d20	logic	default (no rule: ported to be safe)
 0x00887d30	logic	default (no rule: ported to be safe)
 0x00887d50	logic	default (no rule: ported to be safe)
