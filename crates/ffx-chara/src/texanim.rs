@@ -659,4 +659,185 @@ pub mod bridge {
         mem.write(e + 8, 0u32);
         eax
     }
+
+    /// `TexAnim_StartNew(id, k, mode)` (`0x0077fc90`), `TexAnim_ResetPos(id,
+    /// k, x)` (`0x0077fda0`), `TexAnim_StartOld(id, k, mode)` (`0x00780750`)
+    /// and `tex_anim_pos_set_old(id, k, x)` (`0x007808f0`).
+    pub const START_NEW: u32 = 0x0077_fc90;
+    pub const RESET_POS: u32 = 0x0077_fda0;
+    pub const START_OLD: u32 = 0x0078_0750;
+    pub const POS_SET_OLD: u32 = 0x0078_08f0;
+
+    /// The two forms of `chr_texanim_set_*`.
+    struct SetForm {
+        size: u32,
+        /// Offsets zeroed in each of the first 8 or 64 slots (0x34 bytes).
+        zero: &'static [u32],
+        slots: u32,
+        /// Where the source's slot modes go (from its `+0xc`) and how many.
+        modes: u32,
+        mode_len: u32,
+        /// The slots' position pair, the source's stride per slot.
+        pos: u32,
+        stride: u32,
+        handle: u32,
+        count: u32,
+        extra: u32,
+        start: u32,
+        reset: u32,
+        old: bool,
+    }
+
+    /// `chr_texanim_set_new` / `_old`: a work block for entry `id` of
+    /// [`TEX_ANIMS`] (its `+8` and, new form, the dwords at `+0xf`..`+0x2b`
+    /// cleared); slot fields zeroed, the source's slot modes copied in,
+    /// the handle stored. Each slot with a mode (not -1) is started
+    /// (mode 0 as 2, 1/3 as 1, 2 as 3, 4 as 0; others untouched) and
+    /// positioned; a mode-2 slot whose mode survives gets the source's
+    /// position pair (its slot at `[src+8]`, floats through x87). The
+    /// count of slots up to the last used one (at least the source's `+1`
+    /// byte) is stored, then each of `def`'s `u16` `+0xc` entries (0x10
+    /// bytes at `+0x1c`) gives a dword (`+0xc`) and two halves (`+8`,
+    /// `+0xa`).
+    fn chr_texanim_set<M: Mem>(
+        mem: &mut M,
+        f: &SetForm,
+        id: u32,
+        handle: u32,
+        def: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let e = TEX_ANIMS
+            .ptr(mem)
+            .addr
+            .wrapping_add(0x30u32.wrapping_mul(id));
+        let src: u32 = mem.read(e);
+        let malloc = mem.rebase(crate::handle::bridge::USER_MALLOC);
+        let buf = call(mem, malloc, &[f.size]);
+        mem.write(e + 4, buf);
+        mem.write(e + 8, 0u32);
+        if !f.old {
+            for k in 0..8 {
+                mem.write(e + 0xf + 4 * k, 0u32);
+            }
+        }
+        for k in 0..f.slots {
+            for &o in f.zero {
+                mem.write(buf.wrapping_add(o + 0x34 * k), 0u32);
+            }
+        }
+        for k in 0..f.mode_len / 4 {
+            let v: u32 = mem.read(src.wrapping_add(0xc + 4 * k));
+            mem.write(buf.wrapping_add(f.modes + 4 * k), v);
+        }
+        mem.write(buf.wrapping_add(f.handle), handle);
+        if !f.old {
+            mem.write(buf.wrapping_add(0xd48), 0u32);
+        }
+        let mut most = if f.old {
+            i32::from(mem.read::<i8>(src.wrapping_add(1)))
+        } else {
+            i32::from(mem.read::<u8>(src.wrapping_add(1)))
+        };
+        let start = mem.rebase(f.start);
+        let reset = mem.rebase(f.reset);
+        for k in 0..f.mode_len {
+            let mode = mem.read::<i8>(buf.wrapping_add(f.modes + k));
+            if mode == -1 {
+                continue;
+            }
+            let (m, r) = match mode {
+                0 => (Some(2), 0),
+                1 | 3 => (Some(1), u32::from(!f.old)),
+                2 => (Some(3), 0),
+                4 => (Some(0), 0),
+                _ => (None, 0),
+            };
+            if let Some(m) = m {
+                call(mem, start, &[id, k, m]);
+                call(mem, reset, &[id, k, r]);
+                if mode == 2 && mem.read::<i8>(buf.wrapping_add(f.modes + k)) != -1 {
+                    let at: u32 = mem.read(src.wrapping_add(8));
+                    let p = at.wrapping_add(f.stride * k).wrapping_add(src);
+                    let d = buf.wrapping_add(f.pos + 0x34 * k);
+                    for w in 0..2 {
+                        let v = crate::x87::load(mem.read::<f32>(p.wrapping_add(4 * w)));
+                        mem.write(d.wrapping_add(4 * w), v);
+                    }
+                }
+            }
+            most = most.max(k.cast_signed() + 1);
+        }
+        mem.write(buf.wrapping_add(f.count), most);
+        let mut eax = 0u32;
+        let mut i = 0u32;
+        while i < u32::from(mem.read::<u16>(def + 0xc)) {
+            let t: u32 = mem.read(def + 0x1c);
+            let v: u32 = mem.read(t.wrapping_add(0x10 * i + 0xc));
+            mem.write(buf.wrapping_add(f.extra + 4 * i), v);
+            let t: u32 = mem.read(def + 0x1c);
+            let v: u16 = mem.read(t.wrapping_add(0x10 * i + 8));
+            mem.write(buf.wrapping_add(f.extra + 0x10 + 2 * i), v);
+            let t: u32 = mem.read(def + 0x1c);
+            let v: u16 = mem.read(t.wrapping_add(0x10 * i + 0xa));
+            mem.write(buf.wrapping_add(f.extra + 0x18 + 2 * i), v);
+            eax = u32::from(mem.read::<u16>(def + 0xc));
+            i += 1;
+        }
+        if f.old { buf } else { eax }
+    }
+
+    /// `chr_texanim_set_new(id, handle, def)` (`0x0077f9c0`): the new form
+    /// (0xd4c bytes, 32 slots); returns `def`'s count (what EAX holds).
+    pub fn chr_texanim_set_new<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        handle: u32,
+        def: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const FORM: SetForm = SetForm {
+            size: 0xd4c,
+            zero: &[0x8, 0xc, 0x1c, 0x20, 0x24, 0x2c, 0x30, 0x34, 0x38],
+            slots: 64,
+            modes: 0xd08,
+            mode_len: 32,
+            pos: 0x2c,
+            stride: 0x110,
+            handle: 4,
+            count: 0,
+            extra: 0xd28,
+            start: START_NEW,
+            reset: RESET_POS,
+            old: false,
+        };
+        chr_texanim_set(mem, &FORM, id, handle, def, call)
+    }
+
+    /// `chr_texanim_set_old(id, handle, def)` (`0x007803f0`): the old form
+    /// (0x5d8 bytes, 16 slots, positioned with 0); returns the block.
+    pub fn chr_texanim_set_old<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        handle: u32,
+        def: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const FORM: SetForm = SetForm {
+            size: 0x5d8,
+            zero: &[0x40c, 0x41c, 0x420, 0x424, 0x42c, 0x430, 0x434, 0x438],
+            slots: 8,
+            modes: 0x5a8,
+            mode_len: 16,
+            pos: 0x42c,
+            stride: 0x90,
+            handle: 0x404,
+            count: 0x400,
+            extra: 0x5b8,
+            start: START_OLD,
+            reset: POS_SET_OLD,
+            old: true,
+        };
+        chr_texanim_set(mem, &FORM, id, handle, def, call)
+    }
 }

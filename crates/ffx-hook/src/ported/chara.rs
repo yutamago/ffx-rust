@@ -1623,4 +1623,12 @@ ported! {
     Ch_ModelCreatePacket @ 0x0082_7280 => extern "C" fn ch_model_create_packet(chr: u32) -> u32 {
         c::ch_model_create_packet(&mut mem(), chr, scratch(), &mut |_, f, a| super::call_cdecl(f, a))
     }
+    /// `chr_texanim_set_new(id, handle, def)`.
+    chr_texanim_set_new @ 0x0077_f9c0 => extern "C" fn chr_texanim_set_new(id: u32, handle: u32, def: u32) -> u32 {
+        ta::chr_texanim_set_new(&mut mem(), id, handle, def, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `chr_texanim_set_old(id, handle, def)`.
+    chr_texanim_set_old @ 0x0078_03f0 => extern "C" fn chr_texanim_set_old(id: u32, handle: u32, def: u32) -> u32 {
+        ta::chr_texanim_set_old(&mut mem(), id, handle, def, &mut |_, f, a| super::call_cdecl(f, a))
+    }
 }

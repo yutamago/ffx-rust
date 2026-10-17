@@ -6298,3 +6298,78 @@ fn round10c_on(t: &mut Twin) {
         );
     }
 }
+
+#[test]
+fn round10d_matches_the_original() {
+    for mut t in twins() {
+        round10d_on(&mut t);
+    }
+}
+
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn round10d_on(t: &mut Twin) {
+    use ffx_chara::texanim::bridge as ta;
+    let mut rng = Xorshift(0x0010_d10d);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let heap = fk.fake_alloc(t, 0x0068_7020, 1, 0x1000);
+    let mut rets = vec![];
+    for (sym, id) in [
+        (0x0077_fc90, 2),
+        (0x0077_fda0, 3),
+        (0x0078_0750, 4),
+        (0x0078_08f0, 5),
+    ] {
+        rets.push(fk.fake(t, sym, id, 3));
+    }
+    for round in 0..24u32 {
+        fk.reset(t);
+        for &r in &rets {
+            t.put_u32(r, rng.next());
+        }
+        let blocks = t.alloc(0x1000 * 2);
+        t.put_u32(heap, blocks);
+        let id = rng.next() % 64;
+        let e = t.a.rebase(0x0231_0000) + 0x30 * id;
+        let src = t.alloc(0x2300);
+        t.put_u32(e, src);
+        t.put_u32(src, rng.next());
+        t.put_u32(src + 8, 0x40);
+        for k in 0..32 {
+            #[allow(clippy::cast_possible_truncation)]
+            let m = [0xffu8, 0, 1, 2, 3, 4, 5, 0xfe][rng.next() as usize % 8];
+            t.put(src + 0xc + k, &[m]);
+        }
+        for k in 0..(0x2200 / 4) {
+            // floats without signalling NaNs
+            let mut v = rng.next();
+            if v & 0x7f80_0000 == 0x7f80_0000 {
+                v |= 0x0040_0000;
+            }
+            t.put_u32(src + 0x40 + 4 * k, v);
+        }
+        let def = t.alloc(0x20);
+        let n = rng.next() % 5;
+        #[allow(clippy::cast_possible_truncation)]
+        t.put(def + 0xc, &(n as u16).to_le_bytes());
+        let ents = t.alloc(0x10 * 5);
+        for k in 0..n * 4 {
+            t.put_u32(ents + 4 * k, rng.next());
+        }
+        t.put_u32(def + 0x1c, ents);
+        let handle = rng.next();
+        let old = round % 2 == 1;
+        let (what, at) = if old {
+            ("chr_texanim_set_old", 0x0078_03f0)
+        } else {
+            ("chr_texanim_set_new", 0x0077_f9c0)
+        };
+        t.check(&format!("{what} {round}"), at, &[id, handle, def], |m| {
+            Res::Int(if old {
+                ta::chr_texanim_set_old(m, id, handle, def, &mut |m, f, a| call(m, f, a))
+            } else {
+                ta::chr_texanim_set_new(m, id, handle, def, &mut |m, f, a| call(m, f, a))
+            })
+        });
+    }
+}
