@@ -10355,3 +10355,244 @@ fn round17_kernel_flags_match_the_original_on_the_snapshot() {
     };
     round17_kernel_flags(&mut a, &mut b, &mut Xorshift(0x4017_0022));
 }
+
+/// Round 18's magic-file, language, message and record helpers over
+/// stand-ins (their answers change only through data cells).
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round18_helpers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::{menu::bridge as mb, window::bridge as wb};
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x400);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x40);
+    let mut off = 0u32;
+    let mut stub = |a: &mut Oracle, b: &mut Oracle, code: &[u8]| {
+        let s = stand_in8(a, b, off, code);
+        off += (code.len() as u32 + 15) & !15;
+        s
+    };
+    let getter = |cell: u32| {
+        let mut v = vec![0xa1];
+        v.extend_from_slice(&cell.to_le_bytes());
+        v.push(0xc3);
+        v
+    };
+    for (k, sym) in [
+        0x0064_3670u32,
+        0x0064_5280,
+        0x0064_2f10,
+        0x0064_35e0,
+        0x008b_8ca0,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let s = stub(a, b, &logger(cursor, 0x1800_0000 + ((k as u32) << 8)));
+        redirect(a, b, sym, s);
+    }
+    let printf = stub(a, b, &logger(cursor, 0x1800_1000));
+    let at = a.rebase(0x00b0_c380);
+    a.write(at, &printf.to_le_bytes()).unwrap();
+    b.write(at, &printf.to_le_bytes()).unwrap();
+    for (k, sym) in [
+        0x0078_0c90u32,
+        0x0064_27e0,
+        0x0088_7c30,
+        0x0088_7c20,
+        0x0064_10e0,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let s = stub(a, b, &getter(cells + 4 * k as u32));
+        redirect(a, b, sym, s);
+    }
+    // no-argument stand-ins counting their calls
+    for (k, sym) in [0x009d_a2d0u32, 0x008b_5680].into_iter().enumerate() {
+        let mut v = vec![0x83, 0x05];
+        v.extend_from_slice(&(cells + 0x20 + 4 * k as u32).to_le_bytes());
+        v.extend_from_slice(&[0x01, 0xc3]);
+        let s = stub(a, b, &v);
+        redirect(a, b, sym, s);
+    }
+    // TOSelectMacroDic: *0x01869eb8 = [cells + 0x28]
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&(cells + 0x28).to_le_bytes());
+    v.push(0xa3);
+    v.extend_from_slice(&a.rebase(0x0186_9eb8).to_le_bytes());
+    v.push(0xc3);
+    let s = stub(a, b, &v);
+    redirect(a, b, 0x008b_56d0, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let printf_b = |m: &mut Oracle, fmt: u32, arg: Option<u32>| {
+        let mut args = vec![fmt];
+        args.extend(arg);
+        m.call(printf, Conv::Cdecl, &args).unwrap();
+    };
+    let ctx = alloc(a, b, 8);
+    set(a, b, Global::<u32>::new(0x0132_6b28), ctx);
+    let msgs = alloc(a, b, 8 * 0x40);
+    let lines = alloc(a, b, 8 * 0x100);
+    for k in 0..8u32 {
+        put(a, b, wb::MSG_WINDOWS.ptr(a).addr + 4 * k, msgs + 0x40 * k);
+        put(a, b, a.rebase(0x0186_8a90) + 4 * k, lines + 0x100 * k);
+    }
+    let win = alloc(a, b, 0x60);
+    let rtable = alloc(a, b, 0x40 * 4);
+    set(a, b, Global::<u32>::new(0x0112_a0a4), rtable);
+    let rec = alloc(a, b, 0x30);
+    let macros = alloc(a, b, 4 * 0x32 * 4);
+    let ids = [
+        0x114u32, 0xa8, 0x158, 0x1b5, 0x1b6, 0x26e, 0x274, 0x275, 0x15c, 0x15e, 0x277, 0x27b, 7,
+    ];
+    for k in 0..300u32 {
+        put(a, b, cursor, log);
+        let id = ids[(rng.next() % 13) as usize];
+        let handle = if rng.next().is_multiple_of(5) {
+            u32::MAX
+        } else {
+            rng.next()
+        };
+        let idv = if rng.next().is_multiple_of(7) {
+            u32::MAX
+        } else {
+            id
+        };
+        set(a, b, mb::MAGIC_FILE, [idv, rng.next(), rng.next(), handle]);
+        put(
+            a,
+            b,
+            cells,
+            [
+                rng.next() & 1,
+                if rng.next() & 1 == 0 {
+                    0x1d58
+                } else {
+                    rng.next()
+                },
+                rng.next() % 20,
+                rng.next() % 4,
+                rng.next() % 14,
+            ],
+        );
+        assert_eq!(
+            eax(a, 0x009d_a880, &[]),
+            mb::magic_file_stop(b, call, printf_b)
+        );
+        set(a, b, mb::MAGIC_FILE, [id, 0, 0, 0]);
+        assert_eq!(eax(a, 0x009d_afe0, &[]), mb::magic_file_async_load(b, call));
+        if k % 50 == 0 {
+            assert_eq!(eax(a, 0x009d_adc0, &[]), mb::magic_file_reset_preloaded(b));
+        }
+        put(a, b, ctx, rng.next());
+        assert_eq!(eax(a, 0x0087_2a00, &[]), t::previous_level_check(b, call));
+        // message choices
+        let bytes: Vec<u8> = (0..8 * 0x100).map(|_| rng.next() as u8).collect();
+        a.write(lines, &bytes).unwrap();
+        b.write(lines, &bytes).unwrap();
+        let (i, n) = (rng.next() % 8, rng.next() % 12 + 1);
+        let (x, y, total) = (rng.next() % 600, rng.next() % 400, rng.next() % 500);
+        eax(a, 0x008b_8880, &[i, n, x, y, total]);
+        t::set_message_choice(b, i, n, x, y, total);
+        // window rectangle snap
+        for j in 0..4u32 {
+            let v = match rng.next() % 4 {
+                0 => (rng.next() % 2000) as f32 / 3.0 - 300.0,
+                1 => f32::from_bits(rng.next() & 0xbfff_ffff),
+                2 => 70_000.5,
+                _ => -1.5,
+            };
+            put(a, b, win + 0x28 + 4 * j, v);
+        }
+        eax(a, 0x0090_6e90, &[win]);
+        t::snap_window_rect(b, win);
+        // language
+        eax(a, 0x008a_d900, &[]);
+        t::init_language(b, call);
+        // timed macro messages
+        let bytes: Vec<u8> = (0..4 * 0x32 * 4).map(|_| (rng.next() % 6) as u8).collect();
+        a.write(macros, &bytes).unwrap();
+        b.write(macros, &bytes).unwrap();
+        put(
+            a,
+            b,
+            cells + 0x28,
+            if rng.next().is_multiple_of(3) {
+                0
+            } else {
+                macros
+            },
+        );
+        put(a, b, a.rebase(0x0133_0844), 0x189 + rng.next() % 4);
+        let base = a.rebase(0x0186_63d0);
+        put(
+            a,
+            b,
+            base,
+            [u8::from(rng.next() & 1 == 0), (rng.next() % 3) as u8, 0, 0],
+        );
+        put(
+            a,
+            b,
+            base + 4,
+            [rng.next() % 6, rng.next() % 4, rng.next() % 0x34],
+        );
+        put(a, b, a.rebase(0x0186_9eb8), macros);
+        let arg = rng.next();
+        eax(a, 0x008b_9220, &[arg]);
+        t::timed_macro_message(b, arg, call);
+        // the language-special record
+        put(
+            a,
+            b,
+            a.rebase(0x00c4_16c0),
+            if rng.next() & 1 == 0 { 8u32 } else { 7 },
+        );
+        let idx = (rng.next() % 16) as u16;
+        put(a, b, rec + 0x26, idx);
+        put(
+            a,
+            b,
+            rtable + 4 * u32::from(idx),
+            if rng.next() & 1 == 0 {
+                0xffff_fe70u32
+            } else {
+                0
+            },
+        );
+        let want = [0x25au16, 0x266, 0x276][(rng.next() % 3) as usize];
+        put(
+            a,
+            b,
+            rec + 4,
+            [want, if rng.next() & 3 == 0 { 0 } else { 0xbb }],
+        );
+        let r = if rng.next().is_multiple_of(9) { 0 } else { rec };
+        assert_eq!(
+            eax(a, 0x0077_4680, &[r]),
+            t::is_lang_special_record(b, r, |m| eax(m, 0x0064_10e0, &[]))
+        );
+        same_memory("round 18 helpers", a, b);
+    }
+}
+
+#[test]
+fn round18_helpers_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round18_helpers(&mut a, &mut b, &mut Xorshift(0x4018_0001));
+}
+
+#[test]
+fn round18_helpers_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round18_helpers(&mut a, &mut b, &mut Xorshift(0x4018_0002));
+}
