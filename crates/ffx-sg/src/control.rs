@@ -499,4 +499,32 @@ pub mod bridge {
         SYNC_RATE.set(h, f32::from_bits(x87::store(x87::mul(k, rt))));
         i
     }
+
+    /// `g_GraphicMapId`.
+    pub const GRAPHIC_MAP_ID: Global<u32> = Global::new(0x0133_0844);
+
+    /// `drawDreamEffect()` (`0x008223a0`): the dream effect on the maps
+    /// that have one: layer 0 on maps `0x86`, `0xa5`, `0xbf`, `0xf9` and
+    /// `0xfc` ([`recall_scene_effect`]), layers 3 and 4 on `0x129` and 7 and 8
+    /// on `0x187` ([`recall_scene_effect2`]); elsewhere a started effect is
+    /// reset (`dreamParamReset`). Returns the call's `eax`, or what the
+    /// comparison chain left (`map - 0xbf` or `map - 0x187`).
+    pub fn draw_dream_effect(h: &mut impl Host) -> u32 {
+        let map = GRAPHIC_MAP_ID.get(h);
+        match map {
+            0x86 | 0xa5 | 0xbf | 0xf9 | 0xfc => recall_scene_effect(h, 0),
+            0x129 => recall_scene_effect2(h, 3, 4),
+            0x187 => recall_scene_effect2(h, 7, 8),
+            _ => {
+                if DREAM_ON.get(h) != 0 {
+                    return dream_param_reset(h);
+                }
+                if map.cast_signed() > 0xf9 {
+                    map.wrapping_sub(0x187)
+                } else {
+                    map.wrapping_sub(0xbf)
+                }
+            }
+        }
+    }
 }

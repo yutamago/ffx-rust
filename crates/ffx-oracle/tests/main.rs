@@ -2269,6 +2269,8 @@ const REC_CODE: u32 = 0x0270_0000;
 const REC_LOG: u32 = 0x0270_f000;
 /// One answer per recorder.
 const REC_RETS: u32 = 0x0270_fc00;
+/// `Yn_PreBgLayerDispGet`'s answers by layer id (16 bytes).
+const LAYER_DISP: u32 = 0x0270_fe00;
 
 /// A cdecl recording stub over the original at `sym` (slot `k` of the
 /// code area): logs `sym` and `n` arguments, returns `ret`.
@@ -2447,6 +2449,7 @@ fn control_synthetic() {
     round3_main_cases(&mut a, &mut b, &mut rng, 300);
     round4_main_cases(&mut a, &mut b, &mut rng, 300, false);
     sync_cases(&mut a, &mut b, &mut rng, 300);
+    round5_main_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 #[test]
@@ -2461,6 +2464,7 @@ fn control_snapshot() {
     round3_main_cases(&mut a, &mut b, &mut rng, 300);
     round4_main_cases(&mut a, &mut b, &mut rng, 300, true);
     sync_cases(&mut a, &mut b, &mut rng, 300);
+    round5_main_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 // Main round 2: map id data, motion groups, the player's settings.
@@ -2780,12 +2784,15 @@ fn round4_main_cases(
     let log = a.rebase(REC_LOG);
     let f = f32::from_bits;
     recorder(a, b, 25, sq::YI_ASSERT, 3, 0x4000);
-    // Yn_PreBgLayerDispGet: the byte its argument points to
+    // Yn_PreBgLayerDispGet: layer `id`'s byte in the display table
     for o in [&mut *a, &mut *b] {
         let code = o.rebase(REC_CODE) + 0x60 * 26;
-        // mov eax, [esp+4]; movzx eax, byte [eax]; ret
-        o.write(code, &[0x8b, 0x44, 0x24, 0x04, 0x0f, 0xb6, 0x00, 0xc3])
-            .unwrap();
+        let table = o.rebase(LAYER_DISP);
+        // mov eax, [esp+4]; movzx eax, byte [eax + table]; ret
+        let mut s = vec![0x8b, 0x44, 0x24, 0x04, 0x0f, 0xb6, 0x80];
+        s.extend(table.to_le_bytes());
+        s.push(0xc3);
+        o.write(code, &s).unwrap();
         let at = o.rebase(c::YN_PRE_BG_LAYER_DISP_GET);
         let mut j = vec![0xe9];
         j.extend(code.wrapping_sub(at + 5).to_le_bytes());
@@ -2894,13 +2901,15 @@ fn round4_main_cases(
             st::id_match_chr(m, chr, i)
         });
 
-        // the dream effect: a layer is a pointer to its display byte here
+        // the dream effect over layer ids 0..15
         put(a, b, log, 0u32);
         let disp = [0u8, 1, 2, 3, 4, 8, 0x80, 0x81];
-        let la = alloc(a, b, 4);
-        let lb = alloc(a, b, 4);
-        put(a, b, la, disp[rng.below(8) as usize]);
-        put(a, b, lb, disp[rng.below(8) as usize]);
+        let disp_at = a.rebase(LAYER_DISP);
+        for k in 0..16 {
+            put(a, b, disp_at + k, disp[rng.below(8) as usize]);
+        }
+        let la = rng.below(16);
+        let lb = rng.below(16);
         set(a, b, c::DREAM_ON, rng.below(2));
         set(a, b, c::DREAM_PHASE, [0, 1, 5, 7][rng.below(4) as usize]);
         if rng.below(2) == 0 {
@@ -3003,6 +3012,107 @@ fn sync_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
         put(a, b, at, rng.below(2));
         twin("Sg_SyncCutScene", a, b, 0x0082_1d60, &[], |m| {
             c::sync_cut_scene(&mut H(m))
+        });
+    }
+}
+
+/// Id normals, the bone dispatcher, the dream effect by map.
+fn round5_main_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::control::bridge as c;
+    use ffx_sg::seq::bridge as sq;
+    use ffx_sg::state::bridge as st;
+    let log = a.rebase(REC_LOG);
+    let f = f32::from_bits;
+    for _ in 0..rounds {
+        // id triangles over 8 vertices
+        let verts = block(a, b, rng, 8 * 8);
+        let table = alloc(a, b, 16 * 4);
+        for k in 0..12 {
+            put(
+                a,
+                b,
+                table + 16 * (k / 3) + 2 * (k % 3),
+                u16::try_from(rng.below(8)).unwrap(),
+            );
+        }
+        set(
+            a,
+            b,
+            st::ID_TABLE,
+            if rng.below(8) == 0 { 0 } else { table },
+        );
+        set(a, b, st::ID_VERTICES, verts);
+        let i = if rng.below(8) == 0 {
+            u32::MAX
+        } else {
+            rng.below(4)
+        };
+        let out = block(a, b, rng, 16);
+        twin("Sg_IdGetNormal", a, b, 0x0083_e130, &[out, i], |m| {
+            st::id_get_normal(m, out, i)
+        });
+
+        // the bone dispatcher
+        let chan = alloc(a, b, 9 * 0x2c);
+        for k in 0..9 {
+            let x = modest(rng);
+            let x = if k < 3 && (x >> 23 & 0xff) > 0x90 {
+                0x3f80_0000
+            } else {
+                x
+            };
+            put(a, b, chan + 0x2c * k + 0x20, x);
+            put(
+                a,
+                b,
+                chan + 0x2c * k + 0x28,
+                u8::try_from(rng.below(2)).unwrap(),
+            );
+        }
+        let bone = alloc(a, b, 0x148);
+        for k in 0..0x50 {
+            put(a, b, bone + 4 * k, modest(rng));
+        }
+        put(a, b, bone + 0x144, u8::try_from(rng.below(2)).unwrap());
+        let scale = modest(rng);
+        let first = rng.next();
+        twin(
+            "SG_ApplyBoneSel",
+            a,
+            b,
+            0x0083_8240,
+            &[first, chan, bone, scale],
+            |m| {
+                sq::apply_bone_sel(m, chan, bone, f(scale));
+            },
+        );
+
+        // the dream effect by map
+        put(a, b, log, 0u32);
+        let disp = [0u8, 1, 2, 3, 4, 8, 0x80, 0x81];
+        let disp_at = a.rebase(LAYER_DISP);
+        for k in 0..16 {
+            put(a, b, disp_at + k, disp[rng.below(8) as usize]);
+        }
+        let maps = [
+            0x86,
+            0xa5,
+            0xbf,
+            0xf9,
+            0xfc,
+            0x129,
+            0x187,
+            0x85,
+            0xfa,
+            0x200,
+            0x10,
+            u32::MAX,
+        ];
+        set(a, b, c::GRAPHIC_MAP_ID, maps[rng.below(12) as usize]);
+        set(a, b, c::DREAM_ON, rng.below(2));
+        set(a, b, c::DREAM_PHASE, [0, 1, 5][rng.below(3) as usize]);
+        twin("drawDreamEffect", a, b, 0x0082_23a0, &[], |m| {
+            c::draw_dream_effect(&mut H(m))
         });
     }
 }

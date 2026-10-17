@@ -365,4 +365,12 @@ pub mod bridge {
         }
         ffx_chara::motion::bridge::ch_seq_link(h);
     }
+
+    /// `SG_ApplyBoneSel(a, chan, bone, scale)` (`0x00838240`):
+    /// [`apply_bone`], damped when the bone's byte `+0x144` is set (`scale`
+    /// passed on through `fld`/`fstp`).
+    pub fn apply_bone_sel(mem: &mut impl Mem, chan: u32, bone: u32, scale: f32) {
+        let damped = mem.read::<u8>(bone.wrapping_add(0x144)) != 0;
+        apply_bone(mem, chan, bone, ffx_bridge::x87::round_trip(scale), damped);
+    }
 }

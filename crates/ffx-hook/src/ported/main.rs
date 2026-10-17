@@ -1299,6 +1299,18 @@ ported! {
     Sg_SyncCutScene @ 0x0082_1d60 => extern "C" fn sg_sync_cut_scene() -> u32 {
         control::bridge::sync_cut_scene(&mut mem())
     }
+    /// `Sg_IdGetNormal(out, i)`.
+    Sg_IdGetNormal @ 0x0083_e130 => extern "C" fn sg_id_get_normal(out: u32, i: u32) -> u32 {
+        state::bridge::id_get_normal(&mut mem(), out, i)
+    }
+    /// `SG_ApplyBoneSel(a, chan, bone, scale)`.
+    SG_ApplyBoneSel @ 0x0083_8240 => extern "C" fn sg_apply_bone_sel(_a: u32, chan: u32, bone: u32, scale: f32) {
+        seq::bridge::apply_bone_sel(&mut mem(), chan, bone, scale);
+    }
+    /// `drawDreamEffect()`.
+    drawDreamEffect @ 0x0082_23a0 => extern "C" fn draw_dream_effect() -> u32 {
+        control::bridge::draw_dream_effect(&mut mem())
+    }
 }
 
 /// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in

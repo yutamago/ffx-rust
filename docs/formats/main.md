@@ -303,3 +303,23 @@ behind them stays with those modules, which the bridges call.
     below `lim`; kinds 2 and 4 move both halfway.
   - Kinds 5 and 6 always apply. `b = a` when `|d|^2` (5) or `|d|` (6) is
     at most `1e-5`.
+
+## Cut-scene sync, id normals, dispatchers (round 5)
+
+- `Sg_SyncCutScene()` (`0x00821d60`) calls `iSyncGetData(&time, &rate,
+  &frame)` with the frame in a local, so a callee writes through a pointer
+  to the original's stack. The bridge gets that memory from
+  `ffx_bridge::Host::callee_scratch` (a static buffer in the game, the
+  emulated stack's bottom in the oracle). An answer of 999 clears the sync:
+  `0x012fb8a0..b0` 0, the frame table `0x012fb828` (30 words), its index
+  `0x012fb814`, `0x00c494d4` 1. Any other answer turns it on, stores `frame
+  << 7` at the index and makes time `0x012fb8ac` and rate `0x012fb8b0`
+  milliseconds (`x 1000`).
+- `Sg_IdGetNormal(out, i)` (`0x0083e130`): the normal of id triangle `i`
+  from the id data's `i16` vertex numbers and vertex block (`0x01301a8c`, 8
+  bytes per vertex).
+- `SG_ApplyBoneSel` (`0x00838240`): `SG_ApplyBoneDamped` when the bone's
+  `+0x144` is set, else `SG_ApplyBone`.
+- `drawDreamEffect` (`0x008223a0`): which maps have the dream effect and on
+  which layers: 0 on `0x86`, `0xa5`, `0xbf`, `0xf9`, `0xfc`; 3 and 4 on
+  `0x129`; 7 and 8 on `0x187`. Elsewhere a started effect is reset.

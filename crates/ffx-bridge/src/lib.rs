@@ -345,6 +345,7 @@ impl Host for RawMem {
     fn callee_scratch(&mut self) -> Option<u32> {
         // the address only: the bridge reads and writes it through `Mem`,
         // the originals through their pointers, as they would their stack
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
         Some(SCRATCH.with(|s| s.get() as usize as u32))
     }
 }
