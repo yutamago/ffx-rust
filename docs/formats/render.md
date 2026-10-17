@@ -578,8 +578,8 @@ Round 8:
   cleared without a node.
 
 Classed logic but not ported, with the class I think fits (for the
-classifier): `0x0066e4f0` (trophy install, `TrophyManager_Install`:
-platform), `0x006590d0` (`std::string::compare`), `0x00636d60`
+classifier): `0x0066e4f0` (a render-target surface-format check:
+glue), `0x006590d0` (`std::string::compare`), `0x00636d60`
 (`std::map` range erase) and `0x0064fa50` (`_CxxThrowException`): `std`
 and CRT copies, platform; `0x0066c8a0` (an x-rotation matrix from
 `_CIsin`/`_CIcos`, whose results need the CRT's own routines), `0x006426e0`,

@@ -631,4 +631,48 @@ pub mod bridge {
         }
         0
     }
+
+    /// `TextureAnimationManager_SetFrame(this, i, frame, absolute)`
+    /// (`0x006b42c0`): material `i` (offset by `+8 + +0xc` unless
+    /// `absolute`) names a texture animation (`TextureAnimation_FindByName`),
+    /// which is unpaused (`+0x1c`) and, when `frame` is below its frame
+    /// count (`+8`, bit 31 a flag), set to it (`+0x18`). Returns `eax`: 1
+    /// in `al` (0 when the name finds no animation), over the frame count,
+    /// the material count, or 0.
+    pub fn tex_anim_set_frame(
+        m: &mut impl Mem,
+        this: u32,
+        i: u32,
+        frame: u32,
+        absolute: u32,
+    ) -> u32 {
+        use crate::managers::bridge::find_by_name;
+        let i = if absolute == 0 {
+            let a: u32 = m.read(this + 0xc);
+            let b: u32 = m.read(this + 8);
+            i.wrapping_add(a.wrapping_add(b))
+        } else {
+            i
+        };
+        let count = m.read::<u32>(this + 0x74) & 0x7fff_ffff;
+        if i >= count {
+            return (count & !0xff) | 1;
+        }
+        let list: u32 = m.read(this + 0x78);
+        let mat: u32 = m.read(list + 4 * i);
+        if mat == 0 {
+            return 1;
+        }
+        let name = pstring_text(m, mat + 0x10);
+        let anim = find_by_name(m, this, name);
+        if anim == 0 {
+            return 0;
+        }
+        let n = m.read::<u32>(anim + 8) & 0x7fff_ffff;
+        m.write(anim + 0x1c, 0u8);
+        if frame < n {
+            m.write(anim + 0x18, frame);
+        }
+        (n & !0xff) | 1
+    }
 }

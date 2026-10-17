@@ -1148,6 +1148,10 @@ ported! {
     PostProcessManager_SetFirstEntry @ 0x0069_8400 => extern "thiscall" fn post_process_set_first_entry(this: u32, list: u32) -> u32 {
         ut::post_process_set_first_entry(&mut mem(), this, list)
     }
+    /// `TextureAnimationManager_SetFrame(this, i, frame, absolute)`.
+    TextureAnimationManager_SetFrame @ 0x006b_42c0 => extern "thiscall" fn tex_anim_set_frame(this: u32, i: u32, frame: u32, absolute: u32) -> u32 {
+        ut::tex_anim_set_frame(&mut mem(), this, i, frame, absolute)
+    }
 }
 
 /// A singleton's pointer.
