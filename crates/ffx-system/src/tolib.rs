@@ -5801,4 +5801,93 @@ pub mod bridge {
         };
         icon(mem, id, scale)
     }
+
+    /// `TOGetSaveChrName(i)` (`0x008ac850`): characters from 0x14 on come
+    /// from `MsGetRamChrName(i)`; the others from `MsGetSaveChrName(i)`,
+    /// after `MsGetSaveConfigEnglish()` when the language
+    /// (`TOGetFFXLang`, through `0x008ac2f0`) is 0. Returns the name call's
+    /// eax.
+    pub fn to_get_save_chr_name<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if i.cast_signed() >= 0x14 {
+            return call(mem, 0x0079_af10, &[i]);
+        }
+        if call(mem, 0x008a_c2f0, &[]) == 0 {
+            call(mem, 0x0078_51d0, &[]);
+        }
+        call(mem, 0x0078_4fb0, &[i])
+    }
+
+    /// `TOGetChangeMacroWordCount(table, index)` (`0x008b6b00`): the number
+    /// of words in the text `TOGetChangeMacroAddress(table, index)` (0 without one):
+    /// each code below 0x26 other than 4 counts one, and a group-3 code
+    /// (`TOGetGroup`) adds the count of its own macro
+    /// (`TOGetChangeMacroWordCount(table, code address)`, through `count`); codes are
+    /// stepped with `TOSkipCode`.
+    pub fn to_get_change_macro_word_count<M: Mem>(
+        mem: &mut M,
+        table: u32,
+        index: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        count: &mut impl FnMut(&mut M, u32, u32) -> u32,
+    ) -> u32 {
+        let mut n = 0u32;
+        let mut p = call(mem, 0x008b_6660, &[table, index]);
+        if p == 0 {
+            return 0;
+        }
+        loop {
+            let c: u8 = mem.read(p);
+            if c == 0 {
+                return n;
+            }
+            if call(mem, 0x008d_f610, &[u32::from(c)]) == 3 {
+                n = n.wrapping_add(count(mem, table, p));
+            }
+            let c: u8 = mem.read(p);
+            if c >= 0x26 || c == 4 {
+                n = n.wrapping_add(1);
+            }
+            p = call(mem, 0x008d_fd80, &[p]);
+        }
+    }
+
+    /// `TOGetSaveWindow(a, kind, &count)` (`0x0089b5a0`): the text of
+    /// `MsGetSaveWindow(a, kind, &n)` with its length in `*count`. Trailing
+    /// 0xff halfwords are dropped, except for kinds 6, 17 and 20; kinds 7
+    /// and 15 report at least 1.
+    pub fn to_get_save_window<M: Mem>(
+        mem: &mut M,
+        a: u32,
+        kind: u32,
+        count: u32,
+        local: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        mem.write(local, 0u32);
+        let p = call(mem, 0x0078_5410, &[a, kind, local]);
+        let mut n: i32 = mem.read(local);
+        let case = kind.wrapping_sub(6);
+        let raw = matches!(case, 0 | 11 | 14);
+        if raw {
+            mem.write(count, n);
+            return p;
+        }
+        while n > 0
+            && mem.read::<u16>(
+                p.wrapping_add(n.cast_unsigned().wrapping_mul(2))
+                    .wrapping_sub(2),
+            ) == 0xff
+        {
+            n -= 1;
+        }
+        mem.write(count, n);
+        if matches!(case, 1 | 9) && n <= 0 {
+            mem.write(count, 1u32);
+        }
+        p
+    }
 }

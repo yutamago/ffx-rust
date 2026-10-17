@@ -5776,6 +5776,23 @@ ported! {
             tolib::bridge::scale_button_icon_width(m, id, s, |_, v| ffx_graphic::ui::remap_x2(v))
         })
     }
+    /// `TOGetSaveChrName(i)`.
+    TOGetSaveChrName @ 0x008a_c850 => extern "C" fn to_get_save_chr_name(i: u32) -> u32 {
+        tolib::bridge::to_get_save_chr_name(&mut mem(), i, call_sym)
+    }
+    /// `TOGetChangeMacroWordCount(table, index)`.
+    TOGetChangeMacroWordCount @ 0x008b_6b00 => extern "C" fn to_get_change_macro_word_count(table: u32, index: u32) -> u32 {
+        tolib::bridge::to_get_change_macro_word_count(&mut mem(), table, index, &mut call_sym, &mut |m, t, i| {
+            call_sym(m, 0x008b_6b00, &[t, i])
+        })
+    }
+    /// `TOGetSaveWindow(a, kind, &count)`.
+    TOGetSaveWindow @ 0x0089_b5a0 => extern "C" fn to_get_save_window(a: u32, kind: u32, count: u32) -> u32 {
+        let mut n = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let local = (&raw mut n) as usize as u32;
+        tolib::bridge::to_get_save_window(&mut mem(), a, kind, count, local, call_sym)
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

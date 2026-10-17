@@ -11591,6 +11591,160 @@ fn round20_icon_matches_the_original_on_the_snapshot() {
     round20_icon(&mut a, &mut b, &mut Xorshift(0x4020_0012));
 }
 
+/// Round 20's save-name, macro word-count and save-window helpers over
+/// stand-ins.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round20_text(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x400);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let ret = |cell: u32| {
+        let mut v = vec![0xa1];
+        v.extend_from_slice(&cell.to_le_bytes());
+        v.push(0xc3);
+        v
+    };
+    let s = stand_in8(a, b, 0x40, &logger(cursor, 0x2000_0100));
+    redirect(a, b, 0x0079_af10, s);
+    let s = stand_in8(a, b, 0x80, &ret(cells));
+    redirect(a, b, 0x008a_c2f0, s);
+    let s = stand_in8(a, b, 0xc0, &marker(cursor, 0x2000_0200));
+    redirect(a, b, 0x0078_51d0, s);
+    let s = stand_in8(a, b, 0x100, &logger(cursor, 0x2000_0300));
+    redirect(a, b, 0x0078_4fb0, s);
+    // TOGetChangeMacroAddress: the text in cells+4 for small indices, else 0
+    let mut v = vec![
+        0x8b, 0x44, 0x24, 0x08, 0x3d, 0x00, 0x00, 0x01, 0x00, 0x73, 0x06, 0xa1,
+    ];
+    v.extend_from_slice(&(cells + 4).to_le_bytes());
+    // the macros' own macro: no group-3 codes, so no deeper recursion
+    let inner = alloc(a, b, 0x20);
+    let inner_text: Vec<u8> = (0..0x20u8)
+        .map(|j| if j < 0x1f { 0x30 + (j % 3) * 0x11 } else { 0 })
+        .collect();
+    a.write(inner, &inner_text).unwrap();
+    b.write(inner, &inner_text).unwrap();
+    let inner_cell = alloc(a, b, 4);
+    put(a, b, inner_cell, inner);
+    v.push(0xc3);
+    v.push(0xa1);
+    v.extend_from_slice(&inner_cell.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x140, &v);
+    redirect(a, b, 0x008b_6660, s);
+    let s = stand_in8(
+        a,
+        b,
+        0x180,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x03, 0xc3],
+    );
+    redirect(a, b, 0x008d_f610, s);
+    let s = stand_in8(
+        a,
+        b,
+        0x1c0,
+        &[
+            0x8b, 0x44, 0x24, 0x04, 0x0f, 0xb6, 0x08, 0x83, 0xe1, 0x01, 0x8d, 0x44, 0x08, 0x01,
+            0xc3,
+        ],
+    );
+    redirect(a, b, 0x008d_fd80, s);
+    // MsGetSaveWindow: *n = cells[2], returns cells[3]
+    let mut v = vec![0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d];
+    v.extend_from_slice(&(cells + 8).to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x08, 0xa1]);
+    v.extend_from_slice(&(cells + 12).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x200, &v);
+    redirect(a, b, 0x0078_5410, s);
+    let text = alloc(a, b, 0x40);
+    let window = alloc(a, b, 0x40);
+    let count = alloc(a, b, 4);
+    let local = alloc(a, b, 4);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..500u32 {
+        put(a, b, cursor, log);
+        // the save name
+        put(a, b, cells, rng.next() % 3);
+        let i = if rng.next().is_multiple_of(4) {
+            rng.next()
+        } else {
+            rng.next() % 0x20
+        };
+        assert_eq!(
+            eax(a, 0x008a_c850, &[i]),
+            t::to_get_save_chr_name(b, i, call),
+            "save name {k}"
+        );
+        // the macro word count
+        let n = rng.next() % 0x30;
+        let bytes: Vec<u8> = (0..0x40)
+            .map(|j| if j < n { (rng.next() as u8).max(1) } else { 0 })
+            .collect();
+        a.write(text, &bytes).unwrap();
+        b.write(text, &bytes).unwrap();
+        put(a, b, cells + 4, if k % 7 == 0 { 0 } else { text });
+        let (x, y) = (rng.next(), rng.next() % 0x100);
+        assert_eq!(
+            eax(a, 0x008b_6b00, &[x, y]),
+            t::to_get_change_macro_word_count(b, x, y, &mut { call }, &mut |m, tb, ix| {
+                eax(m, 0x008b_6b00, &[tb, ix])
+            }),
+            "word count {k}"
+        );
+        // the save window
+        let words: Vec<u8> = (0..0x20)
+            .flat_map(|_| {
+                let w: u16 = if rng.next().is_multiple_of(2) {
+                    0xff
+                } else {
+                    rng.next() as u16
+                };
+                w.to_le_bytes()
+            })
+            .collect();
+        a.write(window, &words).unwrap();
+        b.write(window, &words).unwrap();
+        let kind = rng.next() % 24;
+        let n = if rng.next().is_multiple_of(2) {
+            rng.next() % 4
+        } else {
+            rng.next() % 0x22
+        };
+        put(a, b, cells + 8, n.wrapping_sub(2));
+        put(a, b, cells + 12, window);
+        assert_eq!(
+            eax(a, 0x0089_b5a0, &[x, kind, count]),
+            t::to_get_save_window(b, x, kind, count, local, call),
+            "save window {k}"
+        );
+        let v: u32 = Mem::read(b, local);
+        Mem::write(a, local, v);
+        same_memory("round 20 text helpers", a, b);
+    }
+}
+
+#[test]
+fn round20_text_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round20_text(&mut a, &mut b, &mut Xorshift(0x4020_0021));
+}
+
+#[test]
+fn round20_text_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round20_text(&mut a, &mut b, &mut Xorshift(0x4020_0022));
+}
+
 #[test]
 fn round19_cursor_matches_the_original_synthetic() {
     let Some((mut a, mut b)) = synthetic() else {
