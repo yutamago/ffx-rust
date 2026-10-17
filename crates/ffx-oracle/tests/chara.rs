@@ -7981,3 +7981,74 @@ fn round12c_on(t: &mut Twin) {
         );
     }
 }
+
+#[test]
+fn round12d_matches_the_original() {
+    for mut t in twins() {
+        round12d_on(&mut t);
+    }
+}
+
+fn round12d_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0012_d12d);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let free = fk.fake(t, 0x0068_7010, 1, 1);
+    let dispose = fk.fake(t, 0x0083_6830, 2, 2);
+    let unuse = fk.fake(t, 0x0084_0d70, 3, 2);
+    let tex = fk.fake(t, 0x0083_0330, 4, 1);
+    let norm = fk.fake(t, 0x0083_4090, 5, 1);
+    let circle = fk.fake(t, 0x0082_e5a0, 6, 0);
+    // Ch_MemMove: moves on the first few calls
+    let left = t.alloc(4);
+    let mut c = vec![0x31, 0xc0, 0x83, 0x2d];
+    c.extend(left.to_le_bytes());
+    c.extend([0x01, 0x78, 0x01, 0x40, 0xc3]);
+    // xor eax,eax; sub dword [left],1; js +1; inc eax; ret
+    let mm = twin_code(t, &c);
+    let at = t.a.rebase(0x0082_6fa0);
+    let mut jmp = vec![0xe9];
+    jmp.extend(mm.wrapping_sub(at + 5).to_le_bytes());
+    t.put(at, &jmp);
+    for round in 0..24u32 {
+        fk.reset(t);
+        for r in [free, dispose, unuse, tex, norm, circle] {
+            t.put_u32(r, rng.next());
+        }
+        let blk = t.alloc(0x130);
+        for k in 0..0x4c {
+            t.put_u32(blk + 4 * k, rng.next());
+        }
+        if round % 6 == 5 {
+            t.put_u32(blk, u32::MAX);
+        }
+        t.check(
+            &format!("Ch_BlkDispose {round}"),
+            0x0082_58d0,
+            &[blk],
+            |m| Res::Int(c::ch_blk_dispose(m, blk, &mut |m, f, a| call(m, f, a))),
+        );
+        let chr = t.alloc(4);
+        t.put(
+            chr,
+            &[
+                [3u8, 0x67, 4, 0][usize::try_from(rng.next() % 4).unwrap()],
+                0,
+            ],
+        );
+        t.check(
+            &format!("Ch_IsShadowExceptionId {round}"),
+            0x0082_e200,
+            &[chr],
+            |m| Res::Int(c::ch_is_shadow_exception_id(m, chr)),
+        );
+        t.put_u32(left, rng.next() % 4);
+        t.check(&format!("Ch_MemMove_Over {round}"), 0x0082_7260, &[], |m| {
+            Res::Int(c::ch_mem_move_over(m, &mut |m, f, a| call(m, f, a)))
+        });
+        t.check(&format!("Ch_DrawInitAll {round}"), 0x0082_ed30, &[], |m| {
+            c::ch_draw_init_all(m, &mut |m, f, a| call(m, f, a));
+            Res::Void
+        });
+    }
+}

@@ -1446,6 +1446,99 @@ pub mod bridge {
         mem.write(r(mem, MEM_MOVE_TRIGGER), 0u8);
         0
     }
+
+    /// `Cache_Unuse(kind, id)` (`0x00840d70`), `Ch_EnableSetTexture(on)`
+    /// (`0x00830330`), `Ch_GuiSetCalcNormAll(on)` (`0x00834090`),
+    /// `Ch_InitCircleTable()` (`0x0082e5a0`), `ChN_DisposeSystemMGRP(id, k)`
+    /// (`0x00836830`).
+    pub const CACHE_UNUSE: u32 = 0x0084_0d70;
+    pub const ENABLE_SET_TEXTURE: u32 = 0x0083_0330;
+    pub const GUI_SET_CALC_NORM_ALL: u32 = 0x0083_4090;
+    pub const INIT_CIRCLE_TABLE: u32 = 0x0082_e5a0;
+    pub const DISPOSE_SYSTEM_MGRP: u32 = 0x0083_6830;
+
+    /// `Ch_BlkDispose(blk)` (`0x008258d0`): a used model block (id `+0` not
+    /// -1) gives back what it holds. A resident block (flag bit 0 of
+    /// `+0x70`) disposes its four system motion groups and its cache entry
+    /// (`Cache_Unuse(1, id)`) and frees `+0x124` (cleared); others free
+    /// `+4`, `+0x14`, `+0x10c`, `+0x108`. A resident one with bit 1 frees
+    /// `+0x6c` (and with bit 2 `+0x14`). Then `+0x11c`, `+0x68`, `+0x100`
+    /// (cleared) are freed and the id becomes -1. Returns what EAX holds:
+    /// -1 for an unused block, else the last `user_free`'s result.
+    pub fn ch_blk_dispose<M: Mem>(
+        mem: &mut M,
+        blk: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let id: u32 = mem.read(blk);
+        if id == u32::MAX {
+            return id;
+        }
+        let free = mem.rebase(USER_FREE);
+        let free_at = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, off: u32| {
+            let p: u32 = mem.read(blk + off);
+            call(mem, free, &[p])
+        };
+        if mem.read::<u8>(blk + 0x70) & 1 != 0 {
+            for k in 0..4 {
+                let id: u32 = mem.read(blk);
+                call(mem, mem.rebase(DISPOSE_SYSTEM_MGRP), &[id, k]);
+            }
+            let id: u32 = mem.read(blk);
+            call(mem, mem.rebase(CACHE_UNUSE), &[1, id]);
+            if mem.read::<u32>(blk + 0x124) != 0 {
+                free_at(mem, call, 0x124);
+                mem.write(blk + 0x124, 0u32);
+            }
+        } else {
+            for off in [4u32, 0x14, 0x10c, 0x108] {
+                free_at(mem, call, off);
+            }
+        }
+        let flags = mem.read::<u8>(blk + 0x70);
+        if flags & 3 == 3 {
+            free_at(mem, call, 0x6c);
+            if mem.read::<u8>(blk + 0x70) & 4 != 0 {
+                free_at(mem, call, 0x14);
+            }
+        }
+        free_at(mem, call, 0x11c);
+        free_at(mem, call, 0x68);
+        let r = free_at(mem, call, 0x100);
+        mem.write(blk + 0x100, 0u32);
+        mem.write(blk, u32::MAX);
+        r
+    }
+
+    /// `Ch_IsShadowExceptionId(chr)` (`0x0082e200`): 1 for characters 3
+    /// and 0x67 (`u16` `+0`), else 0.
+    pub fn ch_is_shadow_exception_id<M: Mem>(mem: &mut M, chr: u32) -> u32 {
+        u32::from(matches!(mem.read::<u16>(chr), 3 | 0x67))
+    }
+
+    /// `Ch_MemMove_Over()` (`0x00827260`): `Ch_MemMove` (`0x00826fa0`)
+    /// until it moves nothing; the number of passes that moved something.
+    pub fn ch_mem_move_over<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut n = 0u32;
+        while call(mem, mem.rebase(0x0082_6fa0), &[]) != 0 {
+            n += 1;
+        }
+        n
+    }
+
+    /// `Ch_DrawInitAll()` (`0x0082ed30`): `Ch_EnableSetTexture(1)`,
+    /// `Ch_GuiSetCalcNormAll(0)`, then (a tail call) `Ch_InitCircleTable()`.
+    pub fn ch_draw_init_all<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        call(mem, mem.rebase(ENABLE_SET_TEXTURE), &[1]);
+        call(mem, mem.rebase(GUI_SET_CALC_NORM_ALL), &[0]);
+        call(mem, mem.rebase(INIT_CIRCLE_TABLE), &[]);
+    }
 }
 
 #[cfg(test)]

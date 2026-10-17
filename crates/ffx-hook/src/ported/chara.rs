@@ -1827,4 +1827,20 @@ ported! {
     Ch_MemMove @ 0x0082_6fa0 => extern "C" fn ch_mem_move() -> u32 {
         c::ch_mem_move(&mut mem(), scratch(), &mut |_, f, a| super::call_cdecl(f, a))
     }
+    /// `Ch_BlkDispose(blk)`.
+    Ch_BlkDispose @ 0x0082_58d0 => extern "C" fn ch_blk_dispose(blk: u32) -> u32 {
+        c::ch_blk_dispose(&mut mem(), blk, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_IsShadowExceptionId(chr)`.
+    Ch_IsShadowExceptionId @ 0x0082_e200 => extern "C" fn ch_is_shadow_exception_id(chr: u32) -> u32 {
+        c::ch_is_shadow_exception_id(&mut mem(), chr)
+    }
+    /// `Ch_MemMove_Over()`.
+    Ch_MemMove_Over @ 0x0082_7260 => extern "C" fn ch_mem_move_over() -> u32 {
+        c::ch_mem_move_over(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_DrawInitAll()`.
+    Ch_DrawInitAll @ 0x0082_ed30 => extern "C" fn ch_draw_init_all() {
+        c::ch_draw_init_all(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a));
+    }
 }
