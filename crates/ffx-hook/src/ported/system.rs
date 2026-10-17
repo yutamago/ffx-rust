@@ -6216,17 +6216,10 @@ ported! {
     TOAddPktChangeMacro_help @ 0x008e_9ca0 => extern "C" fn to_add_pkt_change_macro_help(key: u32, code: u32, pen: u32, scale: u32, extra: u32, shadow: u32) -> u32 {
         tolib::bridge::to_add_pkt_change_macro_help(&mut mem(), [key, code, pen, scale, extra, shadow], call_sym)
     }
-    /// `TOMkpCrossExtMesFontLClutTypeRGBA(key, text, x, y, mode, kind, r, g, b, a, scale, extra)`.
-    TOMkpCrossExtMesFontLClutTypeRGBA @ 0x0090_1700 => extern "C" fn to_mkp_cross_ext_mes_font_l_clut_type_rgba(
-        key: u32, text: u32, x: u32, y: u32, mode: u32, kind: u32, r: u32, g: u32, b: u32, a: u32, scale: u32, extra: u32
-    ) {
-        tolib::bridge::to_mkp_cross_ext_mes_font_l_clut_type_rgba(
-            &mut mem(),
-            [key, text, x, y, mode, kind, r, g, b, a, scale, extra],
-            call_sym,
-            fcall,
-        );
-    }
+    // TOMkpCrossExtMesFontLClutTypeRGBA (0x00901700) is ported
+    // (tolib::bridge::to_mkp_cross_ext_mes_font_l_clut_type_rgba, oracle parity)
+    // but not hooked: in the game it drops the button icon of the battle
+    // AP screen's "C: Next" hint (battle-attack-2, 2026-10-17).
     /// `TOMakePktFontLItalicEdge(pen, glyph)`.
     TOMakePktFontLItalicEdge @ 0x008f_ce90 => extern "C" fn to_make_pkt_font_l_italic_edge(pen: u32, glyph: u32) {
         let mut scratch = [0u32; 0x2c];
