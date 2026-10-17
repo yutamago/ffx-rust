@@ -191,6 +191,29 @@ the KO'd), 4 and 5 escapes, 6 frees the actor (`MsBtlChrFree`,
 (`0x0079e830`) ends actors 0x10's and 0x11's effects first for an actor of
 kind 8, so one of those two with kind 8 would recurse without end.
 
+## The end of a battle: `MsBattleProcess_Status`
+
+`MsBattleProcess_Status_007917d0` (`0x007917d0`, `ffx_battle::battle_end`)
+runs the battle's end from `g_BtlStatus` (`0x0112a8e0`), one step a frame:
+
+| State | Waits for | Then |
+|---|---|---|
+| 1 | an end status (`MsGetBattleEndStatus`) | 2 |
+| 2 | no command queued (`g_BtlCommandCueCount`), no damage numbers | with an aeon out (`g_BtlSummoner`, not `0x0112ca11`, script `0x7118`) and the party gone (1) or unable to act (3): Yojimbo's death action (`MsDeathYoujinbou`), a command for an aeon whose `+0x702` is 1 or the party back (`MsReturnSummon(0)`): 1. No end: 1. Else 0x17 |
+| 0x17 | no sound read, stream, shout voice or system message | the end kept in `g_BtlEndForced`, system script check 4: 0x18 |
+| 0x18 | no script camera, the same | message windows closed; end 1 with battle-end status bit 9 clear (`AtelIsBattleEndStatusClear9`): music `0x8c`, 0x19; end 2 with bit 8 clear: music `0x8a` (the fanfare), 0x19; else 0x1b |
+| 0x19, 0x1a, 0x1c | | the music fades out, the end's music read (`MsMusicReadStart`), played (`MsMusicSync`), then 0x1d |
+| 0x1b | no actor moving, turning or changing (`+0x508`, `+0x42e`, `+0x415`, `+0x41c` with `+0x41d`) | 0x1c with music, else 0x1d |
+| 0x1d | | end directions (`0x00793290`), the end kind's system script check (0, 1, 2, 3 for ends 2, 1, 3/5, 4) and closing camera (`0x42`-`0x45`), fade frames, overdrive experience (`MsLimitTypeWinCheck`): 0x1e |
+| 0x1e | actors' effects (`+0x432`, `+0x436`) and the vfx counter; the closing event effect (`0x0112c94e`, script `0x711c`) read and started | victory motion `0x2d`, 3D sounds faded, the screen fade (`Sg_FadeOut`): 0x1f |
+| 0x1f | the fade (`0x0112c9ed`), `0x0112ca01` | the event effect freed (`MsEffectForceFree`): 0x20; else 0x21 |
+| 0x20 | no event effect | 0x21 |
+
+States 3-0x16 and anything outside 1-0x20 do nothing. The globals it
+keeps are in `symbols/ffx.sym` (`g_BtlEnd*`, `0x0112c9ec`-`0x0112c9f4`).
+`dbgPrintf` (state 0x1b's wait message) and `FlushCache` are empty in
+this build; the ports leave them out.
+
 ## The model read queue
 
 Characters that join a battle mid-way (party members swapped in, aeons

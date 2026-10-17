@@ -19,6 +19,7 @@ pub mod action;
 pub mod actor;
 pub mod after_damage;
 pub mod atel;
+pub mod battle_end;
 pub mod body;
 pub mod camera;
 pub mod chr_damage;

@@ -4,6 +4,7 @@
 use ffx_battle::action::bridge as action;
 use ffx_battle::after_damage::bridge as afterdmg;
 use ffx_battle::atel::bridge as atel;
+use ffx_battle::battle_end::bridge as bend;
 use ffx_battle::chr_damage::bridge as chrdmg;
 use ffx_battle::damage_end::bridge as dmgend;
 use ffx_battle::death::bridge as death;
@@ -3014,5 +3015,58 @@ ported! {
         let mut m = mem();
         script!(s);
         dmgend::ms_battle_process_chr_damage(&mut target::Dm::new(&mut m), &host(), &mut s);
+    }
+    /// `MsEffectForceFree(id)`: the overlay table's function or vfx.
+    MsEffectForceFree @ 0x0078_7ab0 => extern "C" fn ms_effect_force_free(id: u32) -> u32 {
+        bend::ms_effect_force_free(&mut mem(), &mut call_ptr, id)
+    }
+    /// `MsEffectSepClearAll()`.
+    MsEffectSepClearAll @ 0x0078_82b0 => extern "C" fn ms_effect_sep_clear_all() -> u32 {
+        bend::ms_effect_sep_clear_all(&mut mem(), &mut call_ptr)
+    }
+    /// `MsEventEffectRead(id)`.
+    MsEventEffectRead @ 0x0078_8c60 => extern "C" fn ms_event_effect_read(id: u32) -> i32 {
+        bend::ms_event_effect_read(&mut mem(), &mut call_ptr, id)
+    }
+    /// `MsEventEffectStart(b)`.
+    MsEventEffectStart @ 0x0078_8d60 => extern "C" fn ms_event_effect_start(b: u32) -> i32 {
+        bend::ms_event_effect_start(&mut mem(), &mut call_ptr, b)
+    }
+    /// `0x00793290()` (`MsSetEndDirAll`).
+    MsSetEndDirAll @ 0x0079_3290 => extern "C" fn ms_set_end_dir_all() {
+        bend::ms_set_end_dir_all(&mut mem());
+    }
+    /// `MsAtelRequestSystemCheckExe(v, flags, actor, out)`.
+    MsAtelRequestSystemCheckExe @ 0x0079_82a0 => extern "C" fn ms_atel_request_system_check_exe(v: u32, flags: u32, actor: u32, out: u32) -> i32 {
+        script!(s);
+        bend::ms_atel_request_system_check_exe(&mut mem(), &mut s, v, flags, actor, out)
+    }
+    /// `MsSEPbattleClear()`.
+    MsSEPbattleClear @ 0x007a_0370 => extern "C" fn ms_sep_battle_clear() {
+        bend::ms_sep_battle_clear(&mut mem(), &mut call_ptr);
+    }
+    /// `MsMusicReadStart()`: `SndMusicRead`'s result.
+    MsMusicReadStart @ 0x0079_fff0 => extern "C" fn ms_music_read_start() -> u32 {
+        bend::ms_music_read_start(&mut mem(), &mut call_ptr)
+    }
+    /// `MsMusicSync(music)`.
+    MsMusicSync @ 0x007a_0040 => extern "C" fn ms_music_sync(music: u32) -> i32 {
+        bend::ms_music_sync(&mut mem(), &mut call_ptr, music)
+    }
+    /// `MsLimitTypeWinCheck()`.
+    MsLimitTypeWinCheck @ 0x007b_1540 => extern "C" fn ms_limit_type_win_check() -> u32 {
+        bend::ms_limit_type_win_check(&mut mem())
+    }
+    /// `MsDeathYoujinbou(i)`.
+    MsDeathYoujinbou @ 0x007b_2ad0 => extern "C" fn ms_death_youjinbou(i: u32) -> i32 {
+        let mut m = mem();
+        script!(s);
+        bend::ms_death_youjinbou(&mut target::Dm::new(&mut m), &host(), &mut s, i)
+    }
+    /// `MsBattleProcess_Status_007917d0()`.
+    MsBattleProcess_Status_007917d0 @ 0x0079_17d0 => extern "C" fn ms_battle_process_status() {
+        let mut m = mem();
+        script!(s);
+        bend::ms_battle_process_status(&mut target::Dm::new(&mut m), &host(), &mut s);
     }
 }

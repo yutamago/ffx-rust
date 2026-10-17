@@ -4869,7 +4869,7 @@
 0x00787a40 function MsEffectEnvFree           # fh v3:cg2 0x787b00
 0x00787a60 function MsEffectEnvInit              # layout: alphabetical run between MsEffectEnvFree and MsEffectForceFree (2 unnamed in the gap); Switch 0x710034f540 MsEffectEnvInit is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00787a70 function MsEffectFileNumber           # layout: alphabetical run between MsEffectEnvFree and MsEffectForceFree (2 unnamed in the gap); Switch 0x710034f6a0 MsEffectFileNumber is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00787ab0 function MsEffectForceFree         # fh v3:exact 0x00787b70
+0x00787ab0 function MsEffectForceFree         # fh v3:exact 0x00787b70; ours: (id) event effect 0x29f ends through MagicFile_GetEffectOverlayTable(0)+0x20 with 0x0113336c, any other op_ovl_effect_forced_free; their eax; ported (battle round 14)
 0x00787af0 function MsEffectFree              # fh v3:exact 0x00787bb0; ours: (i) a magic effect (+0xdfb 6) ends: scripts cancelled, camera, read buffer, +0xf8c's effect; ported (battle round 13)
 0x00787be0 function MsEffectGetLastMagicNum      # layout: alphabetical run between MsEffectFree and MsEffectGetLastMagicNum2 (1 unnamed in the gap); Switch 0x7100351930 MsEffectGetLastMagicNum is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00787bf0 function MsEffectGetLastMagicNum2  # fh v3:exact 0x00787cb0
@@ -4883,7 +4883,7 @@
 0x007881c0 function MsEffectReadStatInit         # layout: alphabetical run between MsEffectReadComplete and MsEffectReady (2 unnamed in the gap); Switch 0x7100351b20 MsEffectReadStatInit is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00788200 function MsEffectReady             # fh v3:exact 0x007882c0
 0x00788270 function MsEffectResetMotionDisable # fh v3:exact 0x00788330
-0x007882b0 function MsEffectSepClearAll       # fh v3:bsim1.00 0x00788370
+0x007882b0 function MsEffectSepClearAll       # fh v3:bsim1.00 0x00788370; ours: op_oef2_sep_free_all(0xffff), its eax; ported (battle round 14)
 0x007882c0 function MsEffectSetMotion         # fh v3:exact 0x00788380
 0x007883f0 function MsEffectSetMotionFlag     # fh switch:bsim1.00 0x71003514a0
 0x00788430 function MsEffectSetSpeed          # fh v3:exact+call.cs 0x007884f0 cdecl
@@ -4896,9 +4896,9 @@
 0x00788bd0 function MsEventEffectGetStat      # fh v3:bsim1.00 0x00788c90
 0x00788be0 function MsEventEffectInit         # fh v3:exact 0x00788ca0
 0x00788c00 function MsEventEffectProcess      # fh v3:exact 0x00788cc0
-0x00788c60 function MsEventEffectRead         # fh v3:exact 0x00788d20
+0x00788c60 function MsEventEffectRead         # fh v3:exact 0x00788d20; ours: (id) with g_BtlEventEffectStat 0: g_BtlLastMagic2, file (0 with 0x0112a903), CD +0x10(0x11), 0x00c421e0 = MsEffectFileNumber, MagicFile_SetMagicId/Load; state 1, overlay 0x01340870 + op_ovl_effect_init unless async; returns the state; ported (battle round 14)
 0x00788d10 function MsEventEffectReadComplete # fh switch:bsim1.00 0x7100351520
-0x00788d60 function MsEventEffectStart        # fh v3:exact 0x00788e20
+0x00788d60 function MsEventEffectStart        # fh v3:exact 0x00788e20; ours: (b) state 3: 0x0112c9f9 = Sg_SetKeepFps(1), id MsGetEffID(0x01133358, 0x80, b) -> 0x0113336c, state 4, (*0x01133360)(id), 0x01133358++; returns the state; ported (battle round 14)
 0x00788dd0 function MsGetAnimaChainOff           # layout: alphabetical run between MsEventEffectStart and MsGetEff2Chr (1 unnamed in the gap); Switch 0x71003519a0 MsGetAnimaChainOff is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00788de0 function MsGetEff2Chr              # fh v3:bsim1.00 0x00788ea0
 0x00788df0 function MsGetEffID                # fh v3:exact 0x00788eb0
@@ -5072,7 +5072,7 @@
 0x00791690 function MsCheckCommandEnd         # ours: (actor) -> 1 (+0xdf0 = 1) when the command may end; waits (+0xdf0 = 5) on kind-1 numbers, +0xe13, 0x0112c8f8; titled commands wait for the title window (0x3103: above 0x2d); ported (battle round 12)
 0x00791760 function MsSetDeathAll             # ours: MsSetDeath(i, 1) for every actor, each frame (MsBattleProcess)
 0x00791780 function MsCheckRestMotion         # ours: (i, actor) -> 1 when the actor goes back to its standing motion (+0x41c, +0x41d, no +0xde7/+0x508/+0x432, not the turn-end actor); ported (battle round 12)
-0x007917d0 function MsBattleProcess_Status_007917d0 # (): the g_BtlStatus state machine of MsBattleProcess (battle end via MsGetBattleEndStatus, the waits on g_BtlCommandCueCount / g_BtlNumbersShown, MsReturnSummon, MsSetPartyRelifeTime, MsDeathYoujinbou); a part of the Switch's 11224-byte MsBattleProcess; own name
+0x007917d0 function MsBattleProcess_Status_007917d0 # (): the g_BtlStatus state machine of MsBattleProcess (battle end via MsGetBattleEndStatus, the waits on g_BtlCommandCueCount / g_BtlNumbersShown, MsReturnSummon, MsSetPartyRelifeTime, MsDeathYoujinbou; states 0x17-0x20: closing camera, fanfare 0x8a / game over 0x8c, event effect, fade); a part of the Switch's 11224-byte MsBattleProcess; own name; ported (battle round 14)
 0x00791fa0 function MsSetTargetsMotion        # (chr, cue, k, &far): entry k's command (MsGetCommand) and targets +0x10: out of reach (+0x4ff > MsGetCommandFar) counted in far, KO'd skipped unless command +0x1a bit 6; the rest +0xded = chr, MsSetMotion(+0x422, 0x1c, 0, 0, 1), head target (MsSetHeadTarget / msResetHeadTarget by +0x1c bit 27); kept targets to +0x10 and g_BtlChrSet; -1/0; name ours
 0x00792120 function MsCheckAutoInput          # ours: (i, actor) -> +0xdf3 (sign-extended), or 1 for Yojimbo (0xe) when brnd(0x11) & 0xff < MsGetYoujinbouCom / 4: the actor picks its own command (MsBattleProcess_InputCue); ported (battle round 12)
 0x00792170 function MsCheckPlyBtlPosAll       # fh v3:exact 0x007921c0
@@ -5092,6 +5092,7 @@
 0x00792ee0 function MsCheckPartyDying         # ours: () -> -1 while a party member's death plays (+0x436), else 0; ported (battle round 12)
 0x00792f20 function MsBattleProcess_DebugStatus_00792f20 # (): the debug status line of MsBattleProcess (TODapsString of battle-end, sound, CD and cue-level states, "%2d:%2d:%1d W%1d S%1d E%1d"); own name
 0x00793260 function msSetEndDir               # fh v3:exact 0x00793270
+0x00793290 function MsSetEndDirAll            # name ours: msSetEndDir for actors 0..0x1e; called by MsBattleProcess_Status_007917d0 at state 0x1d; ported (battle round 14)
 0x007932b0 function MesSetChrTargetPosToLimitSparePosy # fh v3:exact 0x007932c0
 0x00793330 function MsAttachWeapon            # fh v3:exact 0x00793340
 0x00793410 function MsBtlChrFree              # fh v3:exact 0x00793420; ours: (i, flags) hidden, bind/status effects off, script i+5 cancelled, model and weapons disposed by flags; ported (battle round 13)
@@ -5220,7 +5221,7 @@
 0x00797ff0 function MsAtelRequestInit         # fh v3:bsim1.00 0x00798000
 0x00798000 function MsAtelRequestMagicCamera  # fh v3:exact 0x00798010
 0x007981e0 function MsAtelRequestSystem          # layout: alphabetical run between MsAtelRequestMagicCamera and MsAtelRequestSystemCheckExe (1 unnamed in the gap); Switch 0x710033cb00 MsAtelRequestSystem is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x007982a0 function MsAtelRequestSystemCheckExe # fh v3:exact 0x007982b0
+0x007982a0 function MsAtelRequestSystemCheckExe # fh v3:exact 0x007982b0; ours: (v, flags, actor, out) system handler 0x6c of owner 1 then 0x89 (owners 1 and 0 with MsGetVoiceEventFlag), each run and its tags parsed; returns the second; ported (battle round 14)
 0x00798390 function MsAtelSetUp               # fh v3:exact 0x007983a0
 0x007984c0 function MsAtelChrInfoOne          # (i, kind, acc): adds script actor i's position (1, 8, 9; 0x0086b1e0), direction (2, +pi 7; 0x0086a6e0) or 18.0/10.0 (3, 10 / 4, 11) to acc; other kinds add stack garbage; named here; ported
 0x00798590 function MsAtelGetHandler          # (kind, i, n, &base): handler n (Mon_FindHandler) of kind 2 (records 0x0112a984 +0x10, i <= 1), 3 (actor i +0xf7c while g_BtlChrScripts; base = sum of +0xdf6 before it) or 4 (script camera, i 0); name ours
@@ -5381,9 +5382,9 @@
 0x0079fc00 function MsNumberDigits            # ours: (n, &digits) -> count: n's decimal digits (lowest first, up to 9) into 0x011360ac, its address to digits; 0 for n < 0; MsNumberRegist's only callee of it; ported (battle round 12)
 0x0079fc60 function MsNumberPut               # ours: (i, k, ch, x, y, w, h, life, colour, style) -> 1: a damage number character into the first free of g_BtlNumbers' 0x80 records of 0x14 (+0 style), linked at g_BtlNumberTail; 0 when full; ported (battle round 12)
 0x0079fd20 function MsChrSEfoot               # fh v3:cg3 0x79fd40
-0x0079fff0 function MsMusicReadStart          # fh v3:cg6 0x7a0010
+0x0079fff0 function MsMusicReadStart          # fh v3:cg6 0x7a0010; ours: MsSEPbattleClear, MsEffectSepClearAll, the playing music stopped and cleared, SndMusicRead (tail call, its eax); ported (battle round 14)
 0x007a0020 function MsMusicStop                  # layout: alphabetical run between MsMusicReadStart and MsMusicSync (1 unnamed in the gap); Switch 0x7100377f30 MsMusicStop is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x007a0040 function MsMusicSync               # fh v3:exact 0x007a0060
+0x007a0040 function MsMusicSync               # fh v3:exact 0x007a0060; ours: (music) SndSyncMusicStandby(0) 0: playing music stopped/cleared, SndMusicReplayPointClear and SndMusicStart(music), -1; else 0; ported (battle round 14)
 0x007a0090 function MsMusicVolume             # fh v3:exact 0x007a00b0
 0x007a00b0 function MsNowMusicStop            # fh v3:exact 0x007a00d0
 0x007a00d0 function MsRegSEfade               # fh v3:exact 0x007a00f0; ours: (i, se, frames) MsSEP3DfadeOut(se | 0x80000000): -1, 0 without se; ported (battle round 13)
@@ -5391,7 +5392,7 @@
 0x007a0140 function MsRegSEplay2              # fh v3:exact+call.cs 0x007a0160 cdecl; ours: (i, se): MsSEP3Dregist(3, i, se|bit31, once); ported (battle round 13)
 0x007a0170 function MsRegSEplay3                 # layout: alphabetical run between MsRegSEplay2 and MsRegistSEdata (1 unnamed in the gap); Switch 0x71003784b0 MsRegSEplay3 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007a01b0 function MsRegistSEdata            # fh v3:exact 0x007a01d0
-0x007a0370 function MsSEPbattleClear          # fh v3:exact 0x007a0390
+0x007a0370 function MsSEPbattleClear          # fh v3:exact 0x007a0390; ours: SndSepClear each g_SepTransTable word, slot zeroed; byte 0x0112c029 cleared; eax garbage (last word read); ported (battle round 14)
 0x007a0400 function MsSEPchrClear             # fh v3:exact 0x007a0420
 0x007a04b0 function MsSEPtransAmount          # fh v3:bsim1.00 0x007a04d0
 0x007a04c0 function MsSEPtransCheck           # fh v3:exact 0x007a04e0
@@ -5728,7 +5729,7 @@
 0x007b1180 function MsLimitTypeProcess        # fh v3:exact 0x007b1190
 0x007b12c0 function MsLimitTypeStatusCheck    # fh v3:exact+call.cs 0x007b12d0 cdecl; ours: (i, by, j, actor, n, bits) the overdrive modes statuses feed (4, 5, 6, 10); ported (battle round 13)
 0x007b13c0 function MsLimitTypeTurnCheck      # fh v3:exact+call.cs 0x007b13d0 cdecl
-0x007b1540 function MsLimitTypeWinCheck       # fh v3:exact+call.cs 0x007b1550 cdecl
+0x007b1540 function MsLimitTypeWinCheck       # fh v3:exact+call.cs 0x007b1550 cdecl; ours: actors 0-6 with +0xdc8: MsLimitTypeExpGet(i, 0xb, 0), +0x5bb 0xb: MsLimitUp(i, a, 0x14); returns their count; ported (battle round 14)
 0x007b1590 function MsLimitUp                 # fh v3:exact+call.cs 0x007b15a0 cdecl
 0x007b1a70 function MsRestartMagicCamera      # fh switch:bsim1.00 0x710035cc00
 0x007b1aa0 function MsSetLimitParty           # fh v3:exact 0x007b1ab0
@@ -5753,7 +5754,7 @@
 0x007b2910 function MsAutoRelifeProcess_007b2910 # fh v3:exact 0x007b2920; ours: status bit 9 (Auto-Life): command 0x311f on itself via MsAutoInsertAbility; else +0x5ca cleared, -1; ported (battle round 12)
 0x007b2950 function MsAddYoujinbouCom         # fh switch:bsim1.00 0x7100381b80
 0x007b2980 function MsCheckSummon             # fh v3:exact 0x007b2990
-0x007b2ad0 function MsDeathYoujinbou          # fh v3:exact 0x007b2ae0
+0x007b2ad0 function MsDeathYoujinbou          # fh v3:exact 0x007b2ae0; ours: (i) 0xe: MsActionRequest(0xe, 0xff, 0xb, 1, 2, 0); else -1; ported (battle round 14)
 0x007b2b00 function MsGetSummonEnergy         # fh v3:cg4 0x7b2b10
 0x007b2b20 function MsGetYoujinbouCom         # fh v3:bsim1.00 0x007b2b30
 0x007b2b40 function MsSet01130838             # (v) dword 0x01130838 = v
@@ -8839,6 +8840,7 @@
 0x00886930 function SndMusicPitchDirect       # (pitch, b): jmp iMusicPitchDirect(pitch & 0xff, b); Switch name by alphabetical slot
 0x00886940 function SndMusicPitchTranslate    # (id, pitch, frames): jmp iMusicVolumeTranslate(id, pitch & 0xff, frames) (sic); Switch name by alphabetical slot
 0x00886960 function SndMusicRead              # (music < 0x100): waits pending requests, FMOD cmd 0x28 (FmodMusic::read) + IOP request 0x15; was Music_Load
+0x008869e0 function SndMusicReplayPointClear  # jmp iMusicReplayPointClear (0x0067a190), the slot before SndMusicReplayPointSet's (0x008869f0); (music) before SndMusicStart in MsMusicSync; name ours
 0x00886a00 function SndMusicStandby           # fh v3:bsim1.00 0x00886960
 0x00886a20 function SndMusicStart             # (music < 0x100): FMOD cmd 0x27 (FmodMusic start, 0x007096f0), volume 0x7f (0x00886ab0); was Music_Play
 0x00886a60 function SndMusicStop              # fh v3:bsim1.00 0x008869c0
@@ -14370,6 +14372,8 @@
 0x00c421cc label    g_BattleEnable            # set by setBattleEnable, read by MsBattleEncountExe
 0x00c421d8 label g_EncountMode             # u32 how steps count toward encounters: 0 not, 1 with encounters on, 2 ten times (MsBattleEncountExe)
 0x00c421dc label    g_NewCharacterLoads       # AsyncLoadNewCharacter counts it up while non-negative
+0x00c421e0 label g_BtlEventEffectFile      # u32 MsEffectFileNumber of the event effect (MsEventEffectRead); name ours
+0x00c421e4 label g_BtlEventEffectClear     # u32 cleared by MsEventEffectRead; name ours
 0x00c421e8 label g_BtlEffectReadClear      # u32 cleared after MsEffectRead starts a file it waits for
 0x00c421ec label g_BtlKeepAlive            # u32: in battle 0x159/0 actor 0x14's HP loss sets it, 0x17's clears it; meanwhile actor 0x15 keeps 1 HP (MsSubHP)
 0x00c421f0 label g_BtlAccuracyTable           # 9 x i8, DmgCalc_CheckHit's chance by clamp(accuracy*2/5 - evasion + 10, 0, 8)
@@ -14555,6 +14559,7 @@
 0x0112a8e0 label g_BtlStatus                 # i8, not 0 in battle (MsBattleGetStatus 0x007816f0 sign-extends it; MsGetBattleScene 0x00782970 tests it)
 0x0112a8e1 label g_BtlOrderHold            # u8: no turn order is made while set (MsBattleProcess_Order)
 0x0112a8e2 label g_BtlExe                    # i8; MsBattleExeClear (0x00781530) returns it and clears it unless g_BtlExeKeep
+0x0112a8e3 label g_BtlEndKind              # i8 MsBattleProcess_Status_007917d0 copies g_BtlEndForced at state 0x1d; name ours
 0x0112a8e4 label g_BtlCameraState          # u8, 2: no script camera requests unless an actor asks (MsAtelRequestCamera)
 0x0112a8e7 label g_BtlSpecialCamera           # u8; with the one before it (same function, ffx_battle::misc)
 0x0112a8e8 label g_BtlSpecialCameraOn         # u8; The special camera: on, saved camera, camera (MsBattleSpecialCamera*).
@@ -14571,6 +14576,7 @@
 0x0112a900 label g_BtlAeonPlain2           # u8; with 0x0112a904, MsInsertChrCommand kind 0 falls back to no value (+0x1e set)
 0x0112a901 label g_BtlDebugFreeMp             # u8, MsCheckUseCommand charges no MP (as for monsters); debug native case 4
 0x0112a902 label g_BtlNoMagicFile          # u8: set, MsEffectRead reads magic file 0
+0x0112a903 label g_BtlNoEventMagicFile     # u8 set: MsEventEffectRead reads file 0; name ours
 0x0112a904 label g_BtlAeonPlain            # u8 (MsInsertChrCommand)
 0x0112a906 label g_BtlDebugNoStatus           # u8, DmgCalc inflicts no statuses (skips DmgCalc_InflictStatus and _Extra)
 0x0112a907 label g_BtlStatInvert1B         # u8, MsGetChrStatInfo property 0x1b counts actors whose +0xdec is clear instead of set
@@ -14666,12 +14672,16 @@
 0x0112c8ec label g_BtlLastMagic            # u32: the magic effect MsEffectRead reads (with 0x0112c8e8)
 0x0112c8f0 label g_BtlVoiceWait           # u32 (MsSetVoiceWait), cleared at each turn start
 0x0112c8f8 label g_BtlCommandHold2          # u32: not 0, MsCheckCommandEnd waits
+0x0112c904 label g_BtlEndFlags             # byte; (b & 0xf0) with 0x0112c908 0 lets the game-over event effect end the battle (state 0x1e); name ours
+0x0112c908 label g_BtlEndEffectWait        # u32 -1 when a game over plays its event effect (state 0x1d); name ours
 0x0112c90c label g_BtlMessageCueInit2         # u32; with the one before it (same function, ffx_battle::misc)
 0x0112c914 label g_BtlMessageCue              # 4 battle messages of 12 bytes (+0 kind, +1, +2, +4 actor, +8 message ID), a ring (MsMessageCueRegist)
 0x0112c944 label g_BtlMessageCueCount         # u8, messages queued (at most 4)
 0x0112c945 label g_BtlMessageCueStart         # u8, the ring's first entry
 0x0112c948 label g_BtlUseItem                # u16 item being used (MsSetUseItem 0x00790790); MsGetSaveItemNum counts one less of it
 0x0112c94a label g_BtlLimitLearntId        # u16 the overdrive just learnt
+0x0112c94c label g_BtlEndMusic             # u16 0x8c game over, 0x8a victory fanfare (MsMusicReadStart's caller, MsMusicSync); name ours
+0x0112c94e label g_BtlEndEffect            # u16 closing event effect (script 0x711c); MsEventEffectRead, MsEffectForceFree; name ours
 0x0112c950 label g_BtlStoneList            # up to 31 petrified actors (u32), count g_BtlStoneEffect (MsStoneRegist)
 0x0112c9cd label    g_BtlPadOrientation          # 0-3, set by 0x7099; read by 0x00780ce0 for the d-pad remap
 0x0112c9ce label g_BtlUnderwater             # i8, the formation's byte 3 (underwater fields); MsBattleWater (0x007821e0) returns it, MsGetVoiceEventFlag returns 0 while it is set
@@ -14698,14 +14708,24 @@
 0x0112c9e9 label g_BtlListSlot             # i8, a party slot MsGetBattleList kinds 9 and 0xa treat apart
 0x0112c9ea label g_BtlHitMotion            # u8 MsCheckChrHitMotionAll each frame (MsBattleProcess); the battle waits while set
 0x0112c9eb label g_BtlEndAlt               # u8 set: MsGetBattleEndStatus reports 2 instead of 4 when the monsters are gone
+0x0112c9ec label g_BtlEndFade              # u8 closing fade frames (0x1e, 10, 0); name ours
+0x0112c9ed label g_BtlEndFadeOut           # u8 screen fade-out frames, 0 none; name ours
+0x0112c9ee label g_BtlEndFadeNext          # u8 g_BtlEndFade at state 0x19; name ours
+0x0112c9ef label g_BtlEndEventEffect       # i8 1 play the closing event effect, -1 played; name ours
+0x0112c9f0 label g_BtlEndFadeFrames        # u8 0x2d or 10: Sg_FadeOut's frames; name ours
 0x0112c9f1 label g_BtlEndForced            # u8, when not 0 MsGetBattleEndStatus's result
+0x0112c9f2 label g_BtlEndVictory           # u8 end 2 with AtelIsBattleEndStatusClear8 1: fanfare, motion 0x2d; name ours
+0x0112c9f3 label g_BtlEndWait              # u8 the closing waits on +0x432/+0x436 and op_et_battle_genko_counter_get; name ours
+0x0112c9f4 label g_BtlEndGameOver          # u8 end 1 with AtelIsBattleEndStatusClear9: game over music and event effect; name ours
 0x0112c9f5 label g_BtlPartyLeaves          # u8: set by a party swap (0x3002) or an escape (0x3018) in MsParseCommand; MsCommandCueProcess waits while set
 0x0112c9f7 label g_BtlSetCommandFlag       # u8, cleared by MsSetBtlCommand
+0x0112c9f9 label g_BtlKeepFps              # u8 Sg_SetKeepFps(1)'s result at MsEventEffectStart; name ours
 0x0112c9fa label g_BtlReflected            # u8, set by MsCalcCommandTarget when a target reflected the command
 0x0112c9fb label g_BtlGuardTook            # u8, set by MsCalcCommandTarget when a guard took a hit for its target
 0x0112c9fe label g_BtlCameraHides          # u8, set by MsSetChrVisibleCamera; MsReturnCameraVisible shows all again and clears it (the shows set it again)
 0x0112c9ff label g_BtlEscapeRule              # i8, set by battle script (0x007a77a0): 1 no escape, 2 always (MsCalcEscape)
 0x0112ca00 label g_BtlMenuSkipOn           # u8 set: actors' skip command (+0x6c8) counts (MsMenuGetChrSkipCommand)
+0x0112ca01 label g_BtlEndHold              # u8 set: state 0x1f waits; name ours
 0x0112ca02 label g_BtlSep3dOff            # u8: set, MsSEP3Dregist plays nothing
 0x0112ca03 label g_BtlSummonLimit             # u8; Summons keep the overdrive gauge while this is set (MsSummonLimitSave). MsLimitCommandProcess sets it for command 0x3118 and clears it otherwise.
 0x0112ca04 label g_BtlCommandMusicDown     # u8: the parsed command's flag bit 30 (+0x1c): MsMusicVolume(0x65, 0x1e) (MsParseCommand)
@@ -14717,6 +14737,7 @@
 0x0112ca0d label g_BtlCommandHold          # u8: MsCommandCueProcess waits while set
 0x0112ca0e label g_BtlRandomTargets        # i8 count of the random targets (MsGetTargetRandomList2)
 0x0112ca0f label g_BtlCommandRunning       # u8: set when a command starts, cleared when its actor's turn ends early (MsCommandCueProcess)
+0x0112ca11 label g_BtlNoSummonReturn       # u8 set by script 0x7118: state 2 does not send an aeon back; name ours
 0x0112ca12 label g_BtlCounterOn               # u8, set by battle script (0x007a8430): counterattacks happen only while set (DmgCalc_CheckCounter)
 0x0112ca15 label g_BtlCommand3029Count     # u8: commands with ID 0x3029 among their two (+0x6d0; MsParseCommand)
 0x0112ca16 label g_BtlCommandCamera        # u8: the next command starts with camera 0x1c (MsCommandCueProcess)
@@ -14764,6 +14785,7 @@
 0x01132ac4 label g_SaveCommandUse            # commands used, 18 characters x 0x16 flag words, right after g_PlySave (MsGetSaveCommandUse 0x00785140)
 0x01132ddc label g_SaveChrNames            # characters' names, 0x14 bytes each (MsGetSaveChrName)
 0x01133354 label g_BtlMuteSubtitle           # u32 (MsMuteBattleSubTitle 0x00785990)
+0x01133358 label g_BtlEventEffectCount     # u32 MsEventEffectStart's MsGetEffID group, counted up; name ours
 0x0113335c label    g_VfxPass                 # copied into every updateVFXRenderData fill request (+0x108)
 0x01133364 label g_BtlEventEffectStat        # i8 (MsEventEffectGetStat 0x00788bd0)
 0x01133368 label g_BtlEffectReadStat       # u32 cleared when MsEffectRead starts
