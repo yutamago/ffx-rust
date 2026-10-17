@@ -11766,3 +11766,80 @@ fn round31_ke_ball_line_and_born_points_match_the_original() {
         );
     }
 }
+
+/// Round 32: the Ke lens flare's screen frame and fade (`KeLnsLp_Update`),
+/// object and world space, with the vector library run as the original.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round32_ke_lens_flare_update_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0020_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    t.install_trig();
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let fcall = &mut oracle_fcall;
+    let (lp, obj, vec, mat) = (t.alloc(0x10), t.alloc(0xb0), t.alloc(0x10), t.alloc(0x40));
+    let off = t.b.rebase(ke::VFX_OFFSET);
+    t.put(lp, obj);
+    t.put(lp + 4, vec);
+    t.put(lp + 8, mat);
+    let fl = |rng: &mut Xorshift, lo: i32, hi: i32, k: u32| -> u32 {
+        if k % 2 == 0 {
+            float_in(rng, lo, hi)
+        } else {
+            #[allow(clippy::cast_precision_loss)]
+            let x = (rng.next() as f32 / 4_294_967_296.0) * (hi - lo) as f32 + lo as f32;
+            x.to_bits()
+        }
+    };
+    for k in 0..400u32 {
+        env.reset(&mut t, &mut rng);
+        t.fill(obj, 0xb0, &mut rng);
+        for i in 0..16 {
+            let v = if i % 5 == 0 {
+                fl(&mut rng, -2, 2, k)
+            } else {
+                fl(&mut rng, -1, 1, k)
+            };
+            t.put(mat + 4 * i, v);
+        }
+        if k % 6 == 0 {
+            // a translation-free matrix: the object-space d is zero
+            for i in 12..15 {
+                t.put(mat + 4 * i, 0u32);
+            }
+        }
+        for i in 0..4 {
+            t.put(vec + 4 * i, fl(&mut rng, -50, 50, k));
+            t.put(off + 4 * i, fl(&mut rng, -500, 500, k));
+            t.put(obj + 0x80 + 4 * i, fl(&mut rng, -500, 500, k));
+            t.put(obj + 0x90 + 4 * i, fl(&mut rng, -1, 1, k));
+        }
+        if k % 7 == 3 {
+            // the flare at the offset: world-space d is zero
+            for i in 0..3 {
+                t.put(obj + 0x80 + 4 * i, 0u32);
+            }
+        }
+        t.put(obj + 0x8f, u8::from(rng.below(2) == 0));
+        t.put(obj + 0x8e, u8::try_from(rng.below(40)).unwrap());
+        let w9c = match rng.below(4) {
+            0 => 0u32,
+            1 => fl(&mut rng, -2, 0, k),
+            _ => fl(&mut rng, 0, 3, k),
+        };
+        t.put(obj + 0x9c, w9c);
+        let a8 = match rng.below(5) {
+            0 => fl(&mut rng, -10, 0, k),
+            1 => 0u32,
+            _ => fl(&mut rng, 0, 900, k),
+        };
+        t.put(obj + 0xa8, a8);
+        let work = t.stack_scratch(0x100);
+        t.same(
+            "KeLnsLp_Update",
+            |o| o.void(0x0076_a690, &[lp]),
+            |m| ke::bridge::ke_lns_lp_update(m, lp, work, call, &mut *fcall),
+        );
+    }
+}

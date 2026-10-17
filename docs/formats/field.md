@@ -1354,6 +1354,40 @@ From here on, functions are picked by `symbols/classes.tsv` (category
 - Test note: dyadic test floats make some `f32` stores exact (doubling is
   exact), so the ray test also uses non-dyadic inputs.
 
+## The Ke lens flare update (round 32)
+
+`KeLnsLp_Update` (`0x0076a690`, from `pppKeLnsLpDraw`) computes a lens
+flare object's screen frame and fade. The object is
+`get_ptr32_func(lp[0])`; `lp[1]` is a point and `lp[2]` a matrix `M`. Its
+locals (0xc0 bytes) are `M`'s copy, a work matrix `W`, `d`, `v0` and
+`v1`.
+- Object space (`+0x8f` set): `v0 = W lp[1]`, with `W` being `M` without
+  its translation, and `v1 = -M.t`.
+- World space: `v0` is the flare's point (`+0x80` plus the VFX offset at
+  `0x0230ff50`) and `v1` the offset, each through a unit matrix with that
+  translation and divided by its `w`. Then `d.y` is scaled by 0.9230769
+  (12/13) and `d.z` set to 512.0.
+- In both, `d = v1 - v0`.
+- The object becomes the unit matrix with `+0x30 = M lp[1]`. When `d.x`
+  or `d.y` is non-zero (a NaN counts as non-zero, `fucom`), rows
+  `+0x40`/`+0x50` hold the 2D rotation by `d` (divided by `f32(|d.xy|)`)
+  and `+0x60` is (0, 0, 1, 0).
+- `+0x70..` copy `+0x30..`. `+0x78` is the depth (`+0x38`, or the flare's
+  z plus the offset) divided by 512; `+0x70`/`+0x74` are that times the
+  normalised `d`. Then `v1 -= v0`, `+0xa4` is its xy length and `v0` its
+  direction.
+- The fade `+0x7c`:
+  - world space: `1 - |xy| / +0xa8` (0 beyond, and 0 unless `+0xa8 > 0`);
+  - object space: the cone term `1 - (1 - (1 - v0.z) / 2) / 0.3` (0
+    beyond);
+  - times the direction term `1 - (1 - dir . v1') / 2 / +0x9c` when
+    `+0x9c >= 0` (`dir` at `+0x90`; `v1'` = (0, 0, 1) through `W`; 1 for
+    `+0x9c` = 0);
+  - times the distance term `1 - length / (+0xa8 - +0x8e)` (0 beyond);
+    the fade is 0 when that range is not positive.
+- Every stored step is an `f32`. A NaN passes the `1 - x` steps (the
+  `C0`/`C2` tests), not the zero.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single
