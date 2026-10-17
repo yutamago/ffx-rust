@@ -2225,3 +2225,218 @@ fn packet_setter_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, round
         });
     }
 }
+
+// Main round 1 (control.rs): the requests the main loop passes on. Their
+// callees (renderer, sound, DMA) are recording stubs, so these cases run
+// on oracles of their own.
+
+/// The bridges' host: the oracle's memory and, for the callees, its
+/// emulator.
+struct H<'a>(&'a mut Oracle);
+
+impl Mem for H<'_> {
+    fn read_bytes(&self, addr: u32, out: &mut [u8]) {
+        self.0.read_bytes(addr, out);
+    }
+    fn write_bytes(&mut self, addr: u32, data: &[u8]) {
+        Mem::write_bytes(self.0, addr, data);
+    }
+    fn image_base(&self) -> u32 {
+        self.0.image_base()
+    }
+}
+
+impl ffx_bridge::Host for H<'_> {
+    fn call(&mut self, addr: u32, args: &[u32]) -> u32 {
+        self.0
+            .call(addr, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"))
+            .eax
+    }
+}
+
+/// Free image bytes for the recorders: the `.reloc` section, which the
+/// code never reads.
+const REC_CODE: u32 = 0x0270_0000;
+/// The log: a count, then 32-byte entries (the callee, up to six
+/// arguments).
+const REC_LOG: u32 = 0x0270_f000;
+
+/// A cdecl recording stub over the original at `sym` (slot `k` of the
+/// code area): logs `sym` and `n` arguments, returns `ret`.
+fn recorder(a: &mut Oracle, b: &mut Oracle, k: u32, sym: u32, n: u32, ret: u32) {
+    assert!(n <= 6);
+    for o in [a, b] {
+        let log = o.rebase(REC_LOG);
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(sym.to_le_bytes()); // mov [eax], sym
+        for i in 0..n {
+            let d = u8::try_from(4 + 4 * i).unwrap();
+            c.extend([0x8b, 0x54, 0x24, d]); // mov edx, [esp+4+4i]
+            c.extend([0x89, 0x50, d]); // mov [eax+4+4i], edx
+        }
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.push(0xb8);
+        c.extend(ret.to_le_bytes()); // mov eax, ret
+        c.push(0xc3);
+        assert!(c.len() <= 0x60);
+        let code = o.rebase(REC_CODE) + 0x60 * k;
+        o.write(code, &c).unwrap();
+        let at = o.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        o.write(at, &j).unwrap();
+    }
+}
+
+fn control_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32, from_game: bool) {
+    use ffx_sg::control::bridge as c;
+    let callees = [
+        (c::GRAPHIC_SET_MOTION_BLUR_ENABLE, 1),
+        (c::GRAPHIC_SET_MOTION_BLUR_WEIGHT, 1),
+        (c::GRAPHIC_UPDATE_CROSS_FADE, 2),
+        (c::GRAPHIC_SET_MAP_ALPHA_FAST, 1),
+        (c::VOICE_SET_PAUSED, 1),
+        (c::SFX_PAUSE, 1),
+        (c::SFX_STOP_NON_LOOP, 0),
+        (c::SOUND_SET_MUTE, 2),
+        (c::USER_FREE, 1),
+        (c::MEM_MOVE_SET_TRIGGER, 0),
+        (0x0063_9150, 0),
+        (0x0064_2390, 1),
+        (c::VU0_NORMAL_LIGHT_MATRIX, 4),
+        (c::LIGHTING_SET_LIGHT_DIR, 4),
+        (c::FLUSH_CACHE, 1),
+        (c::DMA_SYNC, 3),
+        (c::DMA_SEND, 2),
+    ];
+    for (k, &(sym, n)) in (0u32..).zip(callees.iter()) {
+        recorder(a, b, k, sym, n, 0x1000 + k);
+    }
+    let pause_slot = u32::try_from(callees.len()).unwrap();
+    let log = a.rebase(REC_LOG);
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        set(a, b, c::ACC_FLAGS, rng.next());
+        let w = match rng.below(4) {
+            0 => 0,
+            1 => rng.next(),
+            _ => rng.below(0x200),
+        };
+        twin("Sg_Blur", a, b, 0x0082_bee0, &[w], |m| {
+            c::blur(&mut H(m), w)
+        });
+
+        put(a, b, log, 0u32);
+        set(a, b, c::ACC_FLAGS, rng.next());
+        let now = if rng.below(3) == 0 {
+            0
+        } else {
+            u16::try_from(rng.next() & 0xffff).unwrap()
+        };
+        set(a, b, c::ACC_ALPHA, now);
+        let map = if rng.below(3) == 0 {
+            0x102
+        } else {
+            rng.below(0x200)
+        };
+        set(a, b, c::MAP_NO, map);
+        let alpha = if rng.below(4) == 0 {
+            rng.next()
+        } else {
+            rng.below(0x100)
+        };
+        let frames = match rng.below(5) {
+            0 => 0,
+            1 => rng.next() | 1,
+            2 => 0x10000 * (rng.below(4) + 1),
+            _ => rng.below(60) + 1,
+        };
+        twin("Sg_AccSetAlpha", a, b, 0x0082_bd10, &[alpha, frames], |m| {
+            c::acc_set_alpha(&mut H(m), alpha, frames)
+        });
+
+        // the menu's pause answer, fixed per round
+        let held = rng.below(3) == 0;
+        recorder(a, b, pause_slot, c::IS_IN_TK_MENU_PAUSE, 0, u32::from(held));
+        let on = if rng.below(4) == 0 {
+            rng.next()
+        } else {
+            rng.below(2)
+        };
+        put(a, b, log, 0u32);
+        set(a, b, c::SOUND_STATE, rng.below(4));
+        twin("Sg_SetPauseAllSounds", a, b, 0x0082_1cc0, &[on], |m| {
+            c::set_pause_all_sounds(&mut H(m), on);
+        });
+        put(a, b, log, 0u32);
+        set(a, b, c::SOUND_STATE, rng.below(4));
+        twin("Sg_SetMuteSound", a, b, 0x0082_1c60, &[on], |m| {
+            c::set_mute_sound(&mut H(m), on);
+        });
+        put(a, b, log, 0u32);
+        twin("Sg_SetMapAlphaFast", a, b, 0x0082_1b00, &[on], |m| {
+            c::set_map_alpha_fast(&mut H(m), on)
+        });
+
+        put(a, b, log, 0u32);
+        set(a, b, c::PLIGHT_TABLE, rng.next());
+        set(a, b, c::PLIGHT_COUNT, rng.next());
+        twin("Sg_PLightDispose", a, b, 0x0083_1ba0, &[], |m| {
+            c::plight_dispose(&mut H(m))
+        });
+        put(a, b, log, 0u32);
+        twin("Sg_AccRequestCurrent", a, b, 0x0082_bdf0, &[], |m| {
+            c::acc_request_current(&mut H(m))
+        });
+        put(a, b, log, 0u32);
+        twin("dreamParamReset", a, b, 0x0082_2410, &[], |m| {
+            c::dream_param_reset(&mut H(m))
+        });
+
+        put(a, b, log, 0u32);
+        let dir = floats(a, b, rng, 4);
+        let i = rng.below(4);
+        twin("Sg_LightSetDir", a, b, 0x0083_6430, &[i, dir], |m| {
+            c::light_set_dir(&mut H(m), i, dir)
+        });
+
+        // the GS packet in a fresh block (the game's own, from a snapshot,
+        // is left alone), the tag inside it
+        put(a, b, log, 0u32);
+        let n = rng.below(16) + 1;
+        let packet = block(a, b, rng, 16 * (n as usize + 2));
+        set(a, b, gs::bridge::PACKET, packet);
+        set(a, b, gs::bridge::COUNT, n);
+        set(a, b, gs::bridge::START, rng.below(n + 1));
+        set(a, b, gs::bridge::TAG, packet + 16 * rng.below(n));
+        if !from_game || rng.below(2) == 0 {
+            set(a, b, c::GS_DMA_CHANNEL, rng.next());
+        }
+        twin("Sg_GsEnd", a, b, 0x0084_1770, &[], |m| c::gs_end(&mut H(m)));
+    }
+}
+
+#[test]
+fn control_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0401);
+    control_cases(&mut a, &mut b, &mut rng, 300, false);
+}
+
+#[test]
+fn control_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0402);
+    control_cases(&mut a, &mut b, &mut rng, 300, true);
+}

@@ -3534,6 +3534,21 @@ ported! {
         task::bridge::rcef_color_fade(&mut mem(), [r0, g0, b0, a0, r1, g1, b1, a1, v], w);
     }
 
+    /// `rcefScreenShake(e)`.
+    rcefScreenShake @ 0x0092_4df0 => extern "C" fn shim_rcef_screen_shake(e: u32) {
+        task::bridge::rcef_screen_shake(&mut mem(), e, &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `rcbgSceneWaveC0Update(scene)`.
+    rcbgSceneWaveC0Update @ 0x0092_10e0 => extern "C" fn shim_rcbg_scene_wave_c0_update(s: u32) {
+        model::bridge::rcbg_scene_wave_c0_update(&mut mem(), s, &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `AbmapStartPart(part, n, x, y, z, a, b, c, d, e, f)`.
+    AbmapStartPart @ 0x00a5_bad0 => extern "C" fn shim_abmap_start_part(part: u32, n: u32, x: u32, y: u32, z: u32, a: u32, b: u32, c: u32, d: u32, e: u32, f: u32) -> u32 {
+        abmap::bridge::abmap_start_part(&mut mem(), [part, n, x, y, z, a, b, c, d, e, f], &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `yiSetBackColor(c)`.
     yiSetBackColor @ 0x0090_a040 => extern "C" fn shim_yi_set_back_color(c: u32) {
         yi::bridge::yi_set_back_color(&mut mem(), c, &mut |_, f, a| call_cdecl(f, a));

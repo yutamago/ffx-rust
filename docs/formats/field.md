@@ -1177,6 +1177,37 @@ From here on, functions are picked by `symbols/classes.tsv` (category
   - `0x0092e4f0` loops on `rand()` through the import table.
   - `0x00a45930` sets the ppp matrices and runs a sphere grid ppp part (vfx).
 
+## Screen shake, scene wave and the sphere grid's part start (round 26)
+
+- The screen shake and the scene's wave share a swing: the sine table
+  entry `(0x4000 - trunc(phase * -65536.0 / 6.2831855)) >> 4 & 0xfff`.
+  Faded, it becomes `f32(frames - done) / f32(frames) * swing`, each int
+  stored as `f32` first, so frame counts beyond 2^24 round. The amplitude
+  is `rand() % range + base` through the import table. A zero range
+  faults in the original; the port then uses `base`.
+- `rcefScreenShake` (`0x00924df0`, name ours, from
+  `rcefMainProcRunAfter`): on `+0x214` with mode `+0x1f8`. The swing of
+  the phase `+0x210`, faded over `+0x200` frames for modes from 3, times
+  the amplitude (`+0x20c`, `+0x208`) gives the x offset (odd modes) or
+  the y offset. The phase advances by `+0x1fc` and `+0x204` counts the
+  frames. Within the frames it calls `MsScreenOffset(x, y)`; after them
+  `MsScreenOffset(0, 0)`, and the shake turns off.
+- `rcbgSceneWaveC0Update` (`0x009210e0`, name ours, from `0x00920aa0`):
+  the same with mode `+0xc0`, phase `+0xd4`, step `+0xc4`, frames
+  `+0xc8` (done `+0xd8`; faded for modes 3 and 4), amplitude `+0xcc`
+  (plus the random part only when `+0xd0` is positive). The result goes
+  to `+0xb8` (odd modes) or `+0xbc`. It calls `rcbgSceneWaveC0Stop` after
+  the frames, then `rcbgSceneSetMatrix`.
+- `AbmapStartPart` (`0x00a5bad0`, name ours): starts sphere grid ppp part
+  `n` in the grid's environment (`0x01a86034`) through
+  `pppStartPart(part, 0x1000, id, 1, 0)`; Ghidra shows
+  `get_ptr32_func`'s two leftover pushes as its arguments. It then fills
+  the part: `+0x40` x, y, z, 1.0, `+0x50` three truncated floats,
+  `+0x5c` 1, `+0x60` three floats, `+0x6c` 1.0. Returns the third
+  truncated value.
+- Not ported: `0x00a461b0` and `0x0092f290` write draw packets and VFX
+  render data (replaced by ffx-render).
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single
