@@ -1579,7 +1579,7 @@ buffer:
 a menu entry's `+0x48` whose high half is a stack word it never writes
 (`mov WORD PTR [ebp-4], si`, then `mov eax, [ebp-4]`).
 
-## 2D lines, circles and triangles (rounds 41-43)
+## 2D lines, circles, triangles and boxes (rounds 41-43, 52)
 
 `rcPrimLine(x0, y0, x1, y1, colour, ui)` (`0x00926c00`) builds two
 vertices `(x, y, 256.0, 0.0)` on its stack. The coordinates are copied
@@ -1614,6 +1614,26 @@ triangle inscribed in that circle:
   the others; `w` is 0.
 - It is drawn with `rcPrimDraw2D(0x4c, verts, 3, colour)` and the same UI
   type calls.
+
+`rcPrimBox(x, y, w, h, colour, ui)` (`0x00925b60`, round 52) draws the
+box centred on `(x, y)`:
+- The halves are `f32(w * 0.5)` and `f32(0.5 * h)` (0.5 is the `f64` at
+  `0x00b92220`).
+- The corners are `(x - w/2, y - h/2)`, `(x + w/2, y - h/2)`,
+  `(x - w/2, y + h/2)` and `(x + w/2, y + h/2)`, each coordinate stored as
+  `f32`, with depth 256.0 and `w` 0.
+- It is drawn as `rcPrimDraw2D(0x44, verts, 4, colour)`, with the UI type
+  set through `graphicSetNowUIType` (`0x006437c0`) rather than
+  `cgraphicSetNowUIType`.
+
+Two neighbours are not ported (round 52):
+- `rcbgFPm173ProcKieru` (`0x00922dc0`): at step 0x4b it fills two position
+  locals (`Ch_ElemGetPos`, `Ch_OptposGet`) and restarts effect 0x61. At
+  every later step it still sets the effect's stick position from those
+  locals (`y - y0 * 0.1`), which are then uninitialised stack.
+- `0x009283f0`: it converts `i16` triples to float vectors through a
+  4-word local whose fourth word it never writes, and
+  `rcbgModelScaleVector` copies that `w` to the destination.
 
 ## Separate SE wave data (round 40)
 

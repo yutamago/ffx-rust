@@ -834,7 +834,18 @@ pub mod bridge {
         ui: u32,
         call: &mut C,
     ) -> u32 {
-        let ui_type = mem.rebase(SET_NOW_UI_TYPE);
+        draw_2d_with(mem, SET_NOW_UI_TYPE, draw, ui, call)
+    }
+
+    /// [`draw_2d`] with the UI type set through `set_ui`.
+    fn draw_2d_with<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        set_ui: u32,
+        draw: [u32; 4],
+        ui: u32,
+        call: &mut C,
+    ) -> u32 {
+        let ui_type = mem.rebase(set_ui);
         if ui != 0 {
             call(mem, ui_type, &[2]);
         }
@@ -941,5 +952,48 @@ pub mod bridge {
         ];
         mem.write(work, v);
         draw_2d(mem, [0x4c, work, 3, colour], ui, call)
+    }
+
+    /// `graphicSetNowUIType(type)` (`0x006437c0`), the setter `rcPrimBox`
+    /// uses.
+    pub const GRAPHIC_SET_NOW_UI_TYPE: u32 = 0x0064_37c0;
+    /// 0.5 (`f64`, `0x00b92220`): `rcPrimBox`'s half.
+    pub const BOX_HALF: u32 = 0x00b9_2220;
+
+    /// `rcPrimBox(x, y, w, h, colour, ui)` (`0x00925b60`): the box of
+    /// size `w` by `h` centred on `(x, y)` as four vertices at `work`:
+    /// `(x - w/2, y - h/2)`, `(x + w/2, y - h/2)`, `(x - w/2, y + h/2)`,
+    /// `(x + w/2, y + h/2)` (depth 256.0, `w` 0). The halves are `f32(w *
+    /// 0.5)` and `f32(0.5 * h)`, each corner coordinate is stored as `f32`.
+    /// Drawn as `rcPrimDraw2D(0x44, work, 4, colour)` between
+    /// `graphicSetNowUIType(2)` (when `ui` is set) and
+    /// `graphicSetNowUIType(0)`, whose `eax` it returns.
+    pub fn rc_prim_box<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 6],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, store, sub};
+        let [x, y, w, h, colour, ui] = args;
+        let k = mem.read::<f64>(mem.rebase(BOX_HALF));
+        let hw = load(store(mul(load(w), k)));
+        let hh = load(store(mul(k, load(h))));
+        let (x, y) = (load(x), load(y));
+        let depth = ffx_bridge::x87::round_trip(mem.read::<f32>(mem.rebase(PRIM_DEPTH))).to_bits();
+        let (left, top) = (store(sub(x, hw)), store(sub(y, hh)));
+        let (right, bottom) = (store(add(x, hw)), store(add(y, hh)));
+        let v = [
+            left, top, depth, 0, right, top, depth, 0, left, bottom, depth, 0, right, bottom,
+            depth, 0,
+        ];
+        mem.write(work, v);
+        draw_2d_with(
+            mem,
+            GRAPHIC_SET_NOW_UI_TYPE,
+            [0x44, work, 4, colour],
+            ui,
+            call,
+        )
     }
 }

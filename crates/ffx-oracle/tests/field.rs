@@ -12830,6 +12830,10 @@ fn round41_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
             Some(rcui::bridge::SET_NOW_UI_TYPE),
             log_stub(log2, rv, 1, 1),
         ),
+        (
+            Some(rcui::bridge::GRAPHIC_SET_NOW_UI_TYPE),
+            log_stub(log2, rv, 2, 1),
+        ),
     ]);
     for _ in 0..rounds {
         let a: [u32; 6] = [
@@ -12868,6 +12872,15 @@ fn round41_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
                 v.to_bits()
             }
         };
+        // round 52: the box
+        let bx = [a[0], a[1], rng.any_float(), rng.any_float(), a[4], a[5]];
+        t.put(log2, 0u32);
+        t.fill(work, 0x40, rng);
+        t.same(
+            "rcPrimBox",
+            |o| o.eax(0x0092_5b60, &bx),
+            |m| rcui::bridge::rc_prim_box(m, bx, work, call),
+        );
         let tri = [a[0], a[1], c[2], angle, a[4], a[5]];
         t.put(log2, 0u32);
         t.fill(work, 0x30, rng);
