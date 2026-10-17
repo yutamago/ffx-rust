@@ -8159,3 +8159,86 @@ fn round12f_on(t: &mut Twin) {
         );
     }
 }
+
+#[test]
+fn round12g_matches_the_original() {
+    for mut t in twins() {
+        round12g_on(&mut t);
+    }
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn round12g_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0012_a12a);
+    let fk = Fakes::new(t);
+    let hash = fk.fake(t, 0x0064_1da0, 1, 0);
+    let cam = t.alloc(16);
+    let stub = copy_stub(cam, None, 2);
+    fake_with(t, 0x007b_d470, &stub);
+    let visible = fk.fake(t, 0x0063_b230, 3, 1);
+    let split = fk.fake(t, 0x0064_1cc0, 4, 0);
+    let valefor = fk.fake(t, 0x0078_7340, 5, 0);
+    let ci1 = twin_code(t, &CI1_STUB);
+    let f = |rng: &mut Xorshift, lo: i32, hi: i32| {
+        let span = u32::try_from(hi - lo).unwrap() * 4;
+        ((rng.next() % span) as f32 / 4.0 + lo as f32).to_bits()
+    };
+    for round in 0..48u32 {
+        fk.reset(t);
+        t.put_u32(
+            hash,
+            if rng.next().is_multiple_of(2) {
+                0x24f9
+            } else {
+                7
+            },
+        );
+        t.put_u32(visible, u32::from(!rng.next().is_multiple_of(4)));
+        t.put_u32(split, u32::from(rng.next().is_multiple_of(4)));
+        t.put_u32(valefor, rng.next() & 0x84);
+        for k in 0..4 {
+            let v = f(&mut rng, -20, 20);
+            t.put_u32(cam + 4 * k, v);
+        }
+        let chr = t.alloc(0x900);
+        for k in 0..4 {
+            let v = f(&mut rng, -20, 20);
+            t.put_u32(chr + 0x694 + 4 * k, v);
+        }
+        t.put(
+            chr + 0x180,
+            &[[0u8, 0x28, 0x01][usize::try_from(rng.next() % 3).unwrap()]],
+        );
+        t.put_u32(chr + 0x194, rng.next());
+        t.put_u32(chr + 0x174, f(&mut rng, 0, 40));
+        t.put_u32(chr + 0x830, rng.next());
+        let scratch = t.alloc(p::CULL_SCRATCH as usize);
+        let at = t.a.rebase(0x0082_e220);
+        let ra = t.a.call(at, Conv::Cdecl, &[chr]).unwrap();
+        let rb = {
+            let mut call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+            let mut fcall = |_: &mut Oracle, _: u32, _: &[u32]| f64::NAN;
+            let mut ci = |m: &mut Oracle, f: u32, a: &[f64]| {
+                let b = a[0].to_bits();
+                #[allow(clippy::cast_possible_truncation)]
+                let w = [b as u32, (b >> 32) as u32, f];
+                f32::from_bits(m.call(ci1, Conv::Cdecl, &w).unwrap().eax)
+            };
+            let mut c = p::NeckCalls {
+                call: &mut call,
+                fcall: &mut fcall,
+                ci: &mut ci,
+            };
+            p::ch_cull_by_distance(&mut t.b, chr, scratch, &mut c)
+        };
+        assert_eq!(ra.eax, rb, "{}: Ch_CullByDistance {round}", t.name);
+        let s = Oracle::read(&mut t.b, scratch, p::CULL_SCRATCH as usize).unwrap();
+        t.a.write(scratch, &s).unwrap();
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{}: Ch_CullByDistance {round} memory",
+            t.name
+        );
+    }
+}

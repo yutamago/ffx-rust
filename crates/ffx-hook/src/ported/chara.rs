@@ -1855,4 +1855,12 @@ ported! {
     Ch_TextureSetup @ 0x0083_d0a0 => extern "C" fn ch_texture_setup(chr: u32) -> u32 {
         tx::ch_texture_setup(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
     }
+    /// `Ch_CullByDistance(chr)`.
+    Ch_CullByDistance @ 0x0082_e220 => extern "C" fn ch_cull_by_distance(chr: u32) -> u32 {
+        let mut call = |_: &mut _, f, a: &[u32]| super::call_cdecl(f, a);
+        let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
+        let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
+        let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
+        p::ch_cull_by_distance(&mut mem(), chr, scratch(), &mut c)
+    }
 }

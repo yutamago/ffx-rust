@@ -6932,6 +6932,7 @@
 0x0082dad0 function Sg_SetPlayer              # fh v3:exact 0x0082db50
 0x0082db50 function Angle_Wrap                   # float radians wrapped into [-pi, pi]
 0x0082e200 function Ch_IsShadowExceptionId    # (chr): 1 for characters 3 and 0x67 (u16 +0), else 0; Ch_DrawShadow's per-character test; name ours
+0x0082e220 function Ch_CullByDistance         # (chr): +0x178 = camera distance (MsCameraGetPosNow(1), _CIsqrt) to +0x694; with +0x194 bit 11: hide bit 3 of +0x180 when the instance is not visible, bit 5 beyond +0x174 (half on level 0x24f9 with Valefor's bit 2); returns 1 when hidden; called after Ch_UpdateClothMatrix; name ours
 0x0082e3e0 function Ch_DrawShadowQuad         # (chr, -, p3): the shadow quad: matrix by -facing +0x158 and position +0x7c, graphicUpdateShadowMap (size, uv) then Ch_DrawQuad; returns p3; called for shadow mode 2 with Ch_IsNotExceptionId; name ours
 0x0082e5a0 function Ch_InitCircleTable        # (): for i in 0..13 the angle i * [0x00b59638] / [0x00b4b468] gives _CIcos into 0x013007ec[i] and _CIsin into 0x01300860[i]; called at init after Ch_GuiSetCalcNormAll(0); name ours
 0x0082eaf0 function Ch_DrawCalcShade          # fh v3:exact 0x0082eb70

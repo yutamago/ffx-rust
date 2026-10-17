@@ -1401,6 +1401,87 @@ pub mod bridge {
             }
         }
     }
+
+    /// The callees `Ch_CullByDistance` makes: `graphicLevelGetNameHash()`
+    /// (`0x00641da0`), `MsCameraGetPosNow(k, out)` (`0x007bd470`),
+    /// `graphicCharacterInstanceIsVisible(inst)` (`0x0063b230`),
+    /// `graphicIsSplitScreenEnabled()` (`0x00641cc0`), `getInterValefor()`
+    /// (`0x00787340`).
+    pub const LEVEL_NAME_HASH: u32 = 0x0064_1da0;
+    pub const CAMERA_GET_POS_NOW: u32 = 0x007b_d470;
+    pub const INSTANCE_IS_VISIBLE: u32 = 0x0063_b230;
+    pub const SPLIT_SCREEN: u32 = 0x0064_1cc0;
+    pub const INTER_VALEFOR: u32 = 0x0078_7340;
+    /// Bytes of scratch `ch_cull_by_distance` needs: the original's frame
+    /// (offset `0x28 - n` stands for `[ebp - n]`).
+    pub const CULL_SCRATCH: u32 = 0x28;
+
+    /// `Ch_CullByDistance(chr)` (`0x0082e220`): the distance from the
+    /// camera (`MsCameraGetPosNow(1)`) to the character's centre `+0x694`
+    /// goes to `+0x178` (`_CIsqrt` through `ci`); hide bits 3 and 5 of
+    /// `+0x180` and flag bit 28 of `+0x194` are cleared first. With flag bit
+    /// 11 of `+0x194` and no other hide bit, an instance (`+0x830`) the
+    /// renderer does not show sets bit 3, and beyond the draw distance
+    /// `+0x174` (half of it on level 0x24f9 while Valefor's flag bit 2 is
+    /// set and the next read is not negative; the full distance only
+    /// without split screen) sets bit 5. Returns 1 when hidden, else 0.
+    pub fn ch_cull_by_distance<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        scratch: u32,
+        c: &mut NeckCalls<'_, M>,
+    ) -> u32 {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let fl = |mem: &M, a: u32| f64::from(mem.read::<f32>(a));
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r32 = |x: f64| x as f32;
+        let (p, cam) = (scratch, scratch + 0x14);
+        let hash = (c.call)(mem, r(mem, LEVEL_NAME_HASH), &[]);
+        let h: u8 = mem.read(chr + 0x180);
+        mem.write(chr + 0x180, h & 0xd7);
+        let f: u32 = mem.read(chr + 0x194);
+        mem.write(chr + 0x194, f & 0xefff_ffff);
+        for k in 0..4 {
+            let w: u32 = mem.read(chr + 0x694 + 4 * k);
+            mem.write(p + 4 * k, w);
+        }
+        (c.call)(mem, r(mem, CAMERA_GET_POS_NOW), &[1, cam]);
+        for k in 0..3 {
+            let d = r32(fl(mem, p + 4 * k) - fl(mem, cam + 4 * k));
+            mem.write(p + 4 * k, d);
+        }
+        let (x, y, z) = (fl(mem, p), fl(mem, p + 4), fl(mem, p + 8));
+        let dist = (c.ci)(mem, r(mem, CI_SQRT), &[(y * y + x * x) + z * z]);
+        mem.write(scratch + 0x10, dist);
+        mem.write(chr + 0x178, dist);
+        if mem.read::<u8>(chr + 0x180) != 0 {
+            return 1;
+        }
+        if mem.read::<u32>(chr + 0x194) & 0x800 == 0 {
+            return 0;
+        }
+        let hide = |mem: &mut M, bit: u8| {
+            let h: u8 = mem.read(chr + 0x180);
+            mem.write(chr + 0x180, h | bit);
+            1
+        };
+        let inst: u32 = mem.read(chr + 0x830);
+        if (c.call)(mem, r(mem, INSTANCE_IS_VISIBLE), &[inst]) == 0 {
+            return hide(mem, 8);
+        }
+        let d = f64::from(dist);
+        if (c.call)(mem, r(mem, SPLIT_SCREEN), &[]) == 0 && d > fl(mem, chr + 0x174) {
+            return hide(mem, 0x20);
+        }
+        if hash == 0x24f9
+            && (c.call)(mem, r(mem, INTER_VALEFOR), &[]) & 4 != 0
+            && (c.call)(mem, r(mem, INTER_VALEFOR), &[]) & 0x80 == 0
+            && d > fl(mem, chr + 0x174) * mem.read::<f64>(r(mem, 0x00b9_2220))
+        {
+            return hide(mem, 0x20);
+        }
+        0
+    }
 }
 
 #[cfg(test)]
