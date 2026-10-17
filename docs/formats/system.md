@@ -386,3 +386,27 @@ The table holding these is at `0x00c4119c` in `.data`; no code refers to
 its address directly. For the set-type entries the ports return eax as
 the original leaves it, because whoever calls through the table may read
 it.
+
+## Language set-up and timed messages
+
+`0x008ad900` sets the TO library's language word (`0x01865b5c`), the
+language swap flag and the video mode from `TkGetLang()`:
+
+| `TkGetLang` | language word | swap flag | video mode |
+|---|---|---|---|
+| 0, by `FFXGetAsiaMode` 0 / 1 / 2 | 0 / 0x11 / 9 | 1 | 0 (NTSC) |
+| 1 (English) | 1 | 0 | 0 (NTSC) |
+| 2..5 | same | 0 | 1 (PAL) |
+| 18 | 0x12 | 0 | 1 (PAL) |
+| any other | unchanged | unchanged | unchanged |
+
+`0x008b9220` plays timed macro messages. It counts frames while
+`0x018663d0` is set. It picks a table for the map (row
+`g_GraphicMapId - 0x189`, 0x32 frame numbers per row) and calls
+`TOMessageCallF8` each time the count reaches the next frame number. A 0
+in the table ends the sequence and resets its state.
+
+The 0x6f1820 group (`0x006f1820..0x006f1890`) is not ported. It is
+thiscall delegate glue: each stub loads a bound object (`+0xc`) and
+function (`+0x10`) from `this` and calls or jumps through them. It is
+classed logic only by default.

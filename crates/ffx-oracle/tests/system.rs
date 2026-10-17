@@ -10603,3 +10603,54 @@ fn round18_helpers_match_the_original_on_the_snapshot() {
     };
     round18_helpers(&mut a, &mut b, &mut Xorshift(0x4018_0002));
 }
+
+/// Round 18's resets and gil input over a stand-in gil.
+#[allow(clippy::cast_possible_truncation)]
+fn round18_resets(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let cell = alloc(a, b, 4);
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&cell.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x40, &v);
+    redirect(a, b, 0x0078_4e80, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..200u32 {
+        if k % 40 == 0 {
+            for (at, len) in [(0x012f_bbbcu32, 0x40u32), (0x025c_c5a0, 0x4000)] {
+                let bytes: Vec<u8> = (0..len).map(|_| rng.next() as u8).collect();
+                let at = a.rebase(at);
+                a.write(at, &bytes).unwrap();
+                b.write(at, &bytes).unwrap();
+            }
+            put(a, b, a.rebase(0x0230_56e8), rng.next());
+            put(a, b, a.rebase(0x0184_1d90), rng.next());
+            eax(a, 0x0082_1aa0, &[]);
+            t::init_font_1208(b);
+            eax(a, 0x008a_b550, &[]);
+            t::event_font_texture_array_reset(b);
+        }
+        let gil = [0u32, 9, 10, 999_999_999, rng.next() % 1_000_000, rng.next()]
+            [(rng.next() % 6) as usize];
+        put(a, b, cell, gil);
+        let max = [u32::MAX, 0, 100, rng.next() % 2_000_000, rng.next()][(rng.next() % 5) as usize];
+        assert_eq!(eax(a, 0x008a_2030, &[max]), t::init_gil_input(b, max, call));
+        same_memory("round 18 resets", a, b);
+    }
+}
+
+#[test]
+fn round18_resets_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round18_resets(&mut a, &mut b, &mut Xorshift(0x4018_0011));
+}
+
+#[test]
+fn round18_resets_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round18_resets(&mut a, &mut b, &mut Xorshift(0x4018_0012));
+}
