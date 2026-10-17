@@ -1247,7 +1247,7 @@
 0x00644910	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicUpdateCrossFade
 0x00644940	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicUpdateDistortionVertex
 0x00644990	platform	only called from platform code (FFXApplication_animate)
-0x006449d0	logic	default (no rule: ported to be safe)
+0x006449d0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x00644a00	logic	default (no rule: ported to be safe)
 0x00644ab0	logic	default (no rule: ported to be safe)
 0x00644ac0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicUseOptimizedVFXShader
@@ -2298,12 +2298,12 @@
 0x0067fcb0	dead	unreachable from the entry point and every pointer table
 0x0067fd20	dead	unreachable from the entry point and every pointer table
 0x0067fd60	dead	unreachable from the entry point and every pointer table
-0x0067fda0	logic	default (no rule: ported to be safe)
-0x0067fe70	logic	default (no rule: ported to be safe)
-0x0067ff10	logic	default (no rule: ported to be safe)
-0x0067ffb0	dead	unreachable from the entry point and every pointer table
+0x0067fda0	debug	only called from debug code (FreeCamera_handleInput and 2 more)
+0x0067fe70	debug	debug name: FreeCamera_FreeCamera
+0x0067ff10	debug	debug name: FreeCamera_dtor
+0x0067ffb0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0067ffe0	dead	unreachable from the entry point and every pointer table
-0x00680000	logic	default (no rule: ported to be safe)
+0x00680000	debug	debug name: FreeCamera_destroyInstance
 0x006843a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): AbmapManager_CheckWordVertex
 0x00684a60	glue	only called from glue code (0x638f90)
 0x00684b00	logic	default (no rule: ported to be safe)
@@ -3296,8 +3296,8 @@
 0x006b5190	dead	unreachable from the entry point and every pointer table
 0x006b51a0	dead	unreachable from the entry point and every pointer table
 0x006b51b0	dead	unreachable from the entry point and every pointer table
-0x006b52a0	logic	default (no rule: ported to be safe)
-0x006b53b0	logic	default (no rule: ported to be safe)
+0x006b52a0	debug	only called from debug code (0x6b5cb0)
+0x006b53b0	debug	only called from debug code (0x6b5d30)
 0x006b85c0	dead	unreachable from the entry point and every pointer table
 0x006b8820	dead	unreachable from the entry point and every pointer table
 0x006b8a20	dead	unreachable from the entry point and every pointer table
@@ -3555,7 +3555,7 @@
 0x006c3cb0	dead	unreachable from the entry point and every pointer table
 0x006c3cd0	glue	calls PhyreEngine Phyre_PCluster_dtor_PCluster
 0x006c3d40	glue	only called from glue code (PhyreScene_animate)
-0x006c3fd0	logic	default (no rule: ported to be safe)
+0x006c3fd0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x006c4000	logic	default (no rule: ported to be safe)
 0x006c4010	dead	unreachable from the entry point and every pointer table
 0x006c4020	logic	default (no rule: ported to be safe)
@@ -6097,7 +6097,7 @@
 0x00760830	dead	unreachable from the entry point and every pointer table
 0x00760bf0	dead	unreachable from the entry point and every pointer table
 0x00760c90	dead	unreachable from the entry point and every pointer table
-0x00760ce0	logic	default (no rule: ported to be safe)
+0x00760ce0	glue	GS/DMA packet writer (sceDmaSend, sceDmaSync, sceGsSyncPath; writes no game state): replaced by ffx-render
 0x00760e30	dead	unreachable from the entry point and every pointer table
 0x00760f30	logic	default (no rule: ported to be safe)
 0x007610a0	dead	unreachable from the entry point and every pointer table
@@ -6120,7 +6120,7 @@
 0x007626b0	dead	unreachable from the entry point and every pointer table
 0x007626d0	logic	default (no rule: ported to be safe)
 0x00762760	dead	unreachable from the entry point and every pointer table
-0x00762810	logic	default (no rule: ported to be safe)
+0x00762810	glue	GS/DMA packet writer (sceGsExecLoadImage, sceGsSetDefLoadImage, sceGsSyncPath; writes no game state): replaced by ffx-render
 0x007628c0	logic	default (no rule: ported to be safe)
 0x007629e0	logic	default (no rule: ported to be safe)
 0x00762f00	dead	unreachable from the entry point and every pointer table
@@ -6209,7 +6209,7 @@
 0x0076b210	logic	default (no rule: ported to be safe)
 0x0076b2d0	logic	default (no rule: ported to be safe)
 0x0076b3d0	logic	default (no rule: ported to be safe)
-0x0076b4a0	logic	default (no rule: ported to be safe)
+0x0076b4a0	glue	GS/DMA packet writer (sceGsSyncV; writes no game state): replaced by ffx-render
 0x0076b4f0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): rpc_read
 0x0076b690	dead	unreachable from the entry point and every pointer table
 0x0076b6d0	dead	unreachable from the entry point and every pointer table
@@ -6750,7 +6750,7 @@
 0x00774ff0	logic	default (no rule: ported to be safe)
 0x00775330	logic	default (no rule: ported to be safe)
 0x00775530	logic	default (no rule: ported to be safe)
-0x00775720	logic	default (no rule: ported to be safe)
+0x00775720	glue	GS/DMA packet writer (sceGsExecLoadImage, sceGsSetDefLoadImage, sceGsSyncPath; writes no game state): replaced by ffx-render
 0x00775810	logic	default (no rule: ported to be safe)
 0x00775820	logic	default (no rule: ported to be safe)
 0x00775a20	logic	default (no rule: ported to be safe)
@@ -6819,7 +6819,7 @@
 0x00779730	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): hdd_unmount
 0x007798b0	platform	only called from platform code (hdd_kabe_disp)
 0x00779a80	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): hdd_set_pass_names_x
-0x00779ad0	logic	default (no rule: ported to be safe)
+0x00779ad0	glue	GS/DMA packet writer (sceGsExecLoadImage, sceGsSetDefLoadImage, sceGsSyncPath; writes no game state): replaced by ffx-render
 0x00779be0	dead	unreachable from the entry point and every pointer table
 0x00779ca0	logic	default (no rule: ported to be safe)
 0x00779d20	platform	only called from platform code (hdd_thread_main)
@@ -6930,7 +6930,7 @@
 0x0077c4c0	dead	unreachable from the entry point and every pointer table
 0x0077c6d0	dead	unreachable from the entry point and every pointer table
 0x0077c770	logic	default (no rule: ported to be safe)
-0x0077c830	logic	default (no rule: ported to be safe)
+0x0077c830	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x0077c870	logic	default (no rule: ported to be safe)
 0x0077c8d0	logic	default (no rule: ported to be safe)
 0x0077c900	dead	unreachable from the entry point and every pointer table
@@ -6975,22 +6975,22 @@
 0x0077ea10	logic	default (no rule: ported to be safe)
 0x0077eaa0	dead	unreachable from the entry point and every pointer table
 0x0077ead0	dead	unreachable from the entry point and every pointer table
-0x0077eb00	logic	default (no rule: ported to be safe)
+0x0077eb00	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x0077eb70	dead	unreachable from the entry point and every pointer table
-0x0077ebc0	logic	default (no rule: ported to be safe)
-0x0077ebe0	logic	default (no rule: ported to be safe)
+0x0077ebc0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
+0x0077ebe0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x0077ec20	dead	unreachable from the entry point and every pointer table
 0x0077ee40	dead	unreachable from the entry point and every pointer table
-0x0077eff0	logic	default (no rule: ported to be safe)
-0x0077f0e0	logic	default (no rule: ported to be safe)
-0x0077f100	logic	default (no rule: ported to be safe)
-0x0077f140	logic	default (no rule: ported to be safe)
+0x0077eff0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
+0x0077f0e0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
+0x0077f100	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
+0x0077f140	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x0077f160	dead	unreachable from the entry point and every pointer table
 0x0077f1d0	dead	unreachable from the entry point and every pointer table
 0x0077f1e0	dead	unreachable from the entry point and every pointer table
 0x0077f1f0	dead	unreachable from the entry point and every pointer table
 0x0077f200	dead	unreachable from the entry point and every pointer table
-0x0077f210	logic	default (no rule: ported to be safe)
+0x0077f210	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x0077f360	logic	default (no rule: ported to be safe)
 0x0077f970	logic	default (no rule: ported to be safe)
 0x0077f9c0	logic	default (no rule: ported to be safe)
@@ -6999,7 +6999,7 @@
 0x0077fce0	logic	default (no rule: ported to be safe)
 0x0077fda0	logic	default (no rule: ported to be safe)
 0x0077fe30	logic	default (no rule: ported to be safe)
-0x0077fe50	logic	default (no rule: ported to be safe)
+0x0077fe50	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x0077ff00	logic	default (no rule: ported to be safe)
 0x007803a0	dead	unreachable from the entry point and every pointer table
 0x007803f0	logic	default (no rule: ported to be safe)
@@ -7090,7 +7090,7 @@
 0x00784720	logic	default (no rule: ported to be safe)
 0x00784830	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x00784860	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x007848b0	logic	debug-sounding name, but used by logic: 0x7a81f0, 0x879070, MsBattleInit
+0x007848b0	logic	debug-sounding name, but used by logic: 0x879070, MsBattleInit, Native_707d
 0x007849c0	debug	debug name: MsDebugFullGill
 0x007849d0	debug	debug name: MsDebugFullItem
 0x00784ac0	logic	debug-sounding name, but used by logic: MsBattleInit
@@ -8718,14 +8718,14 @@
 0x007c86c0	dead	unreachable from the entry point and every pointer table
 0x007c86d0	dead	unreachable from the entry point and every pointer table
 0x007c86e0	debug	debug name: Gui_MasakiInit
-0x007c8930	logic	default (no rule: ported to be safe)
-0x007c8950	logic	default (no rule: ported to be safe)
-0x007c89a0	logic	default (no rule: ported to be safe)
-0x007c8a80	logic	default (no rule: ported to be safe)
-0x007c8b00	logic	default (no rule: ported to be safe)
-0x007c8b50	logic	default (no rule: ported to be safe)
-0x007c8bb0	logic	default (no rule: ported to be safe)
-0x007c8c50	logic	default (no rule: ported to be safe)
+0x007c8930	debug	only called from debug code (Ms_Gui_CameraProc and 2 more)
+0x007c8950	debug	only called from debug code (Ms_Gui_BattleConfigProc and 11 more)
+0x007c89a0	debug	only called from debug code (Ms_Gui_BattleConfigProc and 11 more)
+0x007c8a80	debug	only called from debug code (Ms_Gui_CameraProc and 2 more)
+0x007c8b00	debug	only called from debug code (Ms_Gui_CameraProc and 1 more)
+0x007c8b50	debug	only called from debug code (Ms_Gui_CameraProc and 1 more)
+0x007c8bb0	debug	only called from debug code (0x7cfca0 and 4 more)
+0x007c8c50	debug	only called from debug code (Ms_Gui_ReferencePos and 4 more)
 0x007c90f0	debug	debug name: MsDebugBattlePosInit
 0x007c9210	debug	only called from debug code (0x7d7450)
 0x007c9360	dead	unreachable from the entry point and every pointer table
@@ -8776,14 +8776,14 @@
 0x007cf2c0	dead	unreachable from the entry point and every pointer table
 0x007cf2e0	dead	unreachable from the entry point and every pointer table
 0x007cf300	dead	unreachable from the entry point and every pointer table
-0x007cf330	logic	default (no rule: ported to be safe)
+0x007cf330	debug	only called from debug code (0x7d2f10 and 1 more)
 0x007cf380	debug	only called from debug code (0x7cd0f0)
 0x007cf410	dead	unreachable from the entry point and every pointer table
 0x007cf540	debug	only called from debug code (0x7cf180)
 0x007cf590	debug	only called from debug code (Ms_Gui_BattleProc)
 0x007cf640	logic	default (no rule: ported to be safe)
 0x007cf6a0	dead	unreachable from the entry point and every pointer table
-0x007cf6c0	logic	default (no rule: ported to be safe)
+0x007cf6c0	debug	only called from debug code (Ms_Gui_BattleProc and 6 more)
 0x007cf730	dead	unreachable from the entry point and every pointer table
 0x007cf780	dead	unreachable from the entry point and every pointer table
 0x007cf820	dead	unreachable from the entry point and every pointer table
@@ -8793,73 +8793,73 @@
 0x007cf9f0	dead	unreachable from the entry point and every pointer table
 0x007cfaa0	debug	only called from debug code (Ms_Gui_InfoProc)
 0x007cfb20	debug	debug name: MsDebugGetCameraMode
-0x007cfb60	logic	default (no rule: ported to be safe)
+0x007cfb60	debug	only called from debug code (0x7d42f0 and 2 more)
 0x007cfba0	debug	only called from debug code (Ms_Gui_InfoProc)
-0x007cfca0	logic	default (no rule: ported to be safe)
+0x007cfca0	debug	only called from debug code (Ms_Gui_InfoProc and 1 more)
 0x007cfcd0	debug	debug name: Ms_Gui_InfoProc
-0x007d0af0	logic	default (no rule: ported to be safe)
+0x007d0af0	debug	only called from debug code (Ms_Gui_CameraProc and 1 more)
 0x007d0c90	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
 0x007d0ee0	debug	only called from debug code (Ms_Gui_MapDataProc)
 0x007d1030	debug	only called from debug code (Ms_Gui_MapDataProc)
 0x007d10c0	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
-0x007d1220	logic	default (no rule: ported to be safe)
-0x007d12a0	logic	default (no rule: ported to be safe)
-0x007d1300	logic	default (no rule: ported to be safe)
+0x007d1220	debug	only called from debug code (Ms_Gui_CameraProc and 2 more)
+0x007d12a0	debug	only called from debug code (Ms_Gui_CameraProc and 1 more)
+0x007d1300	debug	only called from debug code (Ms_Gui_CameraProc and 1 more)
 0x007d14f0	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
-0x007d1790	logic	default (no rule: ported to be safe)
+0x007d1790	debug	only called from debug code (Ms_Gui_CameraProc and 1 more)
 0x007d1940	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
-0x007d1bd0	logic	default (no rule: ported to be safe)
+0x007d1bd0	debug	only called from debug code (Ms_Gui_CameraProc and 2 more)
 0x007d1f50	debug	debug name: MsDebugBtlPrint
 0x007d23d0	debug	only called from debug code (Ms_Gui_ReferencePos)
 0x007d2410	debug	only called from debug code (Ms_Gui_InfoProc)
 0x007d2420	debug	only called from debug code (Ms_Gui_InfoProc)
 0x007d2430	debug	debug name: MsDebugOutCamera
-0x007d2f10	logic	default (no rule: ported to be safe)
+0x007d2f10	debug	only called from debug code (Ms_Gui_CameraProc and 2 more)
 0x007d2f50	debug	only called from debug code (Ms_Gui_ReferencePos)
-0x007d2fc0	logic	default (no rule: ported to be safe)
-0x007d3420	logic	default (no rule: ported to be safe)
+0x007d2fc0	debug	only called from debug code (Ms_Gui_CameraProc and 3 more)
+0x007d3420	debug	only called from debug code (Ms_Gui_ReferencePos and 1 more)
 0x007d34a0	debug	only called from debug code (Ms_Gui_ReferencePos)
 0x007d36b0	debug	only called from debug code (Ms_Gui_ReferencePos)
 0x007d3700	debug	debug name: MsDebugSplinePrint
-0x007d38c0	logic	default (no rule: ported to be safe)
-0x007d3f40	logic	default (no rule: ported to be safe)
+0x007d38c0	debug	only called from debug code (Ms_Gui_CameraProc and 1 more)
+0x007d3f40	debug	only called from debug code (Ms_Gui_CameraProc and 1 more)
 0x007d42e0	debug	only called from debug code (Ms_Gui_ReferencePos)
-0x007d42f0	logic	default (no rule: ported to be safe)
+0x007d42f0	debug	only called from debug code (Ms_Gui_CameraProc and 1 more)
 0x007d44a0	debug	debug name: Ms_Gui_CameraProc
 0x007d5480	debug	debug name: Ms_Gui_MapDataProc
-0x007d6470	logic	default (no rule: ported to be safe)
-0x007d6530	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
-0x007d66d0	logic	default (no rule: ported to be safe)
-0x007d6850	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
-0x007d6a50	logic	default (no rule: ported to be safe)
-0x007d6bb0	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
-0x007d6dc0	logic	default (no rule: ported to be safe)
-0x007d6ed0	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
-0x007d70d0	logic	default (no rule: ported to be safe)
-0x007d7130	logic	default (no rule: ported to be safe)
-0x007d71d0	debug	only called from debug code (Ms_Gui_MapDataProc)
-0x007d72e0	debug	only called from debug code (Ms_Gui_BattleProc)
-0x007d73e0	debug	only called from debug code (Ms_Gui_BattleProc)
-0x007d7450	debug	only called from debug code (Ms_Gui_BattleProc)
-0x007d74e0	debug	only called from debug code (Ms_Gui_BattleProc)
-0x007d79e0	debug	only called from debug code (Ms_Gui_BattleProc)
-0x007d7a40	debug	only called from debug code (0x7d74e0)
-0x007d7b20	debug	only called from debug code (Ms_Gui_BattleProc)
+0x007d6470	debug	unnamed, between the debug methods Ms_Gui_MapDataProc and Ms_Gui_BattleProc
+0x007d6530	debug	unnamed, between the debug methods Ms_Gui_MapDataProc and Ms_Gui_BattleProc
+0x007d66d0	debug	unnamed, between the debug methods Ms_Gui_MapDataProc and Ms_Gui_BattleProc
+0x007d6850	debug	unnamed, between the debug methods Ms_Gui_MapDataProc and Ms_Gui_BattleProc
+0x007d6a50	debug	unnamed, between the debug methods Ms_Gui_MapDataProc and Ms_Gui_BattleProc
+0x007d6bb0	debug	unnamed, between the debug methods Ms_Gui_MapDataProc and Ms_Gui_BattleProc
+0x007d6dc0	debug	unnamed, between the debug methods Ms_Gui_MapDataProc and Ms_Gui_BattleProc
+0x007d6ed0	debug	unnamed, between the debug methods Ms_Gui_MapDataProc and Ms_Gui_BattleProc
+0x007d70d0	debug	unnamed, between the debug methods Ms_Gui_MapDataProc and Ms_Gui_BattleProc
+0x007d7130	debug	unnamed, between the debug methods Ms_Gui_MapDataProc and Ms_Gui_BattleProc
+0x007d71d0	debug	unnamed, between the debug methods Ms_Gui_MapDataProc and Ms_Gui_BattleProc
+0x007d72e0	debug	unnamed, between the debug methods Ms_Gui_MapDataProc and Ms_Gui_BattleProc
+0x007d73e0	debug	unnamed, between the debug methods Ms_Gui_MapDataProc and Ms_Gui_BattleProc
+0x007d7450	debug	unnamed, between the debug methods Ms_Gui_MapDataProc and Ms_Gui_BattleProc
+0x007d74e0	debug	unnamed, between the debug methods Ms_Gui_MapDataProc and Ms_Gui_BattleProc
+0x007d79e0	debug	unnamed, between the debug methods Ms_Gui_MapDataProc and Ms_Gui_BattleProc
+0x007d7a40	debug	unnamed, between the debug methods Ms_Gui_MapDataProc and Ms_Gui_BattleProc
+0x007d7b20	debug	unnamed, between the debug methods Ms_Gui_MapDataProc and Ms_Gui_BattleProc
 0x007d80a0	debug	debug name: Ms_Gui_BattleProc
-0x007d92d0	debug	only called from debug code (Ms_Gui_BattleProc and 1 more)
-0x007d93f0	debug	only called from debug code (0x7d7b20)
-0x007d9470	debug	only called from debug code (Ms_Gui_BattleProc)
+0x007d92d0	debug	unnamed, between the debug methods Ms_Gui_BattleProc and Ms_Gui_ReferencePos
+0x007d93f0	debug	unnamed, between the debug methods Ms_Gui_BattleProc and Ms_Gui_ReferencePos
+0x007d9470	debug	unnamed, between the debug methods Ms_Gui_BattleProc and Ms_Gui_ReferencePos
 0x007d94f0	dead	unreachable from the entry point and every pointer table
-0x007d9550	debug	only called from debug code (Ms_Gui_BattleProc)
-0x007d95e0	debug	only called from debug code (Ms_Gui_ReferencePos)
-0x007d9700	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
-0x007d9950	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
-0x007d9ab0	debug	only called from debug code (MsDebugBtlPrint)
-0x007d9af0	logic	default (no rule: ported to be safe)
-0x007d9b00	debug	only called from debug code (Ms_Gui_ReferencePos)
+0x007d9550	debug	unnamed, between the debug methods Ms_Gui_BattleProc and Ms_Gui_ReferencePos
+0x007d95e0	debug	unnamed, between the debug methods Ms_Gui_BattleProc and Ms_Gui_ReferencePos
+0x007d9700	debug	unnamed, between the debug methods Ms_Gui_BattleProc and Ms_Gui_ReferencePos
+0x007d9950	debug	unnamed, between the debug methods Ms_Gui_BattleProc and Ms_Gui_ReferencePos
+0x007d9ab0	debug	unnamed, between the debug methods Ms_Gui_BattleProc and Ms_Gui_ReferencePos
+0x007d9af0	debug	unnamed, between the debug methods Ms_Gui_BattleProc and Ms_Gui_ReferencePos
+0x007d9b00	debug	unnamed, between the debug methods Ms_Gui_BattleProc and Ms_Gui_ReferencePos
 0x007d9c20	debug	debug name: Ms_Gui_ReferencePos
-0x007dabc0	debug	only called from debug code (Ms_Gui_ReferencePos)
-0x007dacd0	debug	only calls debug code (Gu_PrintSetX, Gu_PrintSetY)
+0x007dabc0	debug	unnamed, between the debug methods Ms_Gui_ReferencePos and Ms_Gui_BattleInfoProc
+0x007dacd0	debug	unnamed, between the debug methods Ms_Gui_ReferencePos and Ms_Gui_BattleInfoProc
 0x007daed0	debug	debug name: Ms_Gui_BattleInfoProc
 0x007dbee0	debug	only called from debug code (Ms_Gui_BattleInfoProc)
 0x007dce60	dead	unreachable from the entry point and every pointer table
@@ -8871,7 +8871,7 @@
 0x007dd890	debug	debug name: Ms_Gui_BattleChr1Proc
 0x007de670	dead	unreachable from the entry point and every pointer table
 0x007de6c0	dead	unreachable from the entry point and every pointer table
-0x007de700	debug	only called from debug code (0x7dcf70 and 2 more)
+0x007de700	debug	unnamed, between the debug methods Ms_Gui_BattleChr1Proc and Ms_Gui_BattleChr2Proc
 0x007de790	debug	debug name: Ms_Gui_BattleChr2Proc
 0x007dfde0	debug	debug name: Ms_Gui_ShakeProc
 0x007e1010	debug	only called from debug code (Ms_Gui_BattleProc)
@@ -8935,8 +8935,8 @@
 0x007e3e70	logic	default (no rule: ported to be safe)
 0x007e3e90	dead	unreachable from the entry point and every pointer table
 0x007e3f60	dead	unreachable from the entry point and every pointer table
-0x007e4420	logic	default (no rule: ported to be safe)
-0x007e4540	logic	default (no rule: ported to be safe)
+0x007e4420	glue	GS/DMA packet writer (sceGsExecLoadImage, sceGsSetDefLoadImage, sceGsSyncPath; writes no game state): replaced by ffx-render
+0x007e4540	glue	GS/DMA packet writer (sceGsExecStoreImage, sceGsSetDefStoreImage, sceGsSyncPath; writes no game state): replaced by ffx-render
 0x007e45b0	dead	unreachable from the entry point and every pointer table
 0x007e45c0	dead	unreachable from the entry point and every pointer table
 0x007e45e0	logic	default (no rule: ported to be safe)
@@ -8951,11 +8951,11 @@
 0x007e4f20	logic	default (no rule: ported to be safe)
 0x007e4fc0	dead	unreachable from the entry point and every pointer table
 0x007e4ff0	logic	default (no rule: ported to be safe)
-0x007e5030	logic	default (no rule: ported to be safe)
+0x007e5030	glue	GS/DMA packet writer (sceGsExecLoadImage, sceGsSetDefLoadImage, sceGsSyncPath; writes no game state): replaced by ffx-render
 0x007e5210	logic	default (no rule: ported to be safe)
 0x007e5220	dead	unreachable from the entry point and every pointer table
 0x007e5260	logic	default (no rule: ported to be safe)
-0x007e5390	logic	default (no rule: ported to be safe)
+0x007e5390	glue	GS/DMA packet writer (sceGsExecLoadImage, sceGsSetDefLoadImage, sceGsSyncPath; writes no game state): replaced by ffx-render
 0x007e54d0	dead	unreachable from the entry point and every pointer table
 0x007e5660	dead	unreachable from the entry point and every pointer table
 0x007e5680	logic	default (no rule: ported to be safe)
@@ -9088,7 +9088,7 @@
 0x007eb430	logic	default (no rule: ported to be safe)
 0x007eb4a0	logic	default (no rule: ported to be safe)
 0x007eb500	logic	default (no rule: ported to be safe)
-0x007eb580	logic	default (no rule: ported to be safe)
+0x007eb580	glue	GS/DMA packet writer (sceDmaSend, sceGsSyncPath; writes no game state): replaced by ffx-render
 0x007eb760	logic	default (no rule: ported to be safe)
 0x007eba80	dead	unreachable from the entry point and every pointer table
 0x007ec410	logic	default (no rule: ported to be safe)
@@ -9145,7 +9145,7 @@
 0x007f8570	logic	default (no rule: ported to be safe)
 0x007f8930	logic	default (no rule: ported to be safe)
 0x007f8e30	logic	default (no rule: ported to be safe)
-0x007f8e80	logic	default (no rule: ported to be safe)
+0x007f8e80	glue	GS/DMA packet writer (sceDmaSend, sceGsSyncPath; writes no game state): replaced by ffx-render
 0x007f9280	logic	default (no rule: ported to be safe)
 0x007f94e0	logic	default (no rule: ported to be safe)
 0x007fa510	logic	default (no rule: ported to be safe)
@@ -10228,11 +10228,11 @@
 0x00830d10	logic	default (no rule: ported to be safe)
 0x00830d30	dead	unreachable from the entry point and every pointer table
 0x00830d60	dead	unreachable from the entry point and every pointer table
-0x00830d90	logic	default (no rule: ported to be safe)
-0x00830dc0	logic	default (no rule: ported to be safe)
+0x00830d90	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
+0x00830dc0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x00830df0	dead	unreachable from the entry point and every pointer table
 0x00830e20	dead	unreachable from the entry point and every pointer table
-0x00831110	logic	default (no rule: ported to be safe)
+0x00831110	glue	GS/DMA packet writer (sceDmaSend; writes no game state): replaced by ffx-render
 0x008311d0	logic	default (no rule: ported to be safe)
 0x00831200	dead	unreachable from the entry point and every pointer table
 0x00831300	logic	default (no rule: ported to be safe)
@@ -10359,7 +10359,7 @@
 0x00835d30	logic	default (no rule: ported to be safe)
 0x00835e90	logic	default (no rule: ported to be safe)
 0x00835eb0	logic	default (no rule: ported to be safe)
-0x00835ed0	logic	default (no rule: ported to be safe)
+0x00835ed0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x00835f10	dead	unreachable from the entry point and every pointer table
 0x00835f80	logic	default (no rule: ported to be safe)
 0x00836020	logic	default (no rule: ported to be safe)
@@ -10642,7 +10642,7 @@
 0x0083f710	dead	unreachable from the entry point and every pointer table
 0x0083f780	logic	default (no rule: ported to be safe)
 0x0083f7a0	logic	default (no rule: ported to be safe)
-0x0083f7f0	logic	default (no rule: ported to be safe)
+0x0083f7f0	debug	only called from debug code (Ms_Gui_CameraProc and 1 more)
 0x0083f800	debug	only called from debug code (Send_DebugFont)
 0x0083f850	dead	unreachable from the entry point and every pointer table
 0x0083f870	dead	unreachable from the entry point and every pointer table
@@ -10698,7 +10698,7 @@
 0x00841000	debug	debug name: Sg_DbBox
 0x00841050	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x008410a0	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x00841100	debug	only called from debug code (Sg_DbInitAll)
+0x00841100	debug	unnamed, between the debug methods Sg_DbCircle and Sg_DbCircleXY
 0x00841170	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x008411d0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x00841230	debug	unreachable from the entry point and every pointer table; debug name or strings
@@ -10729,7 +10729,7 @@
 0x00841cf0	logic	default (no rule: ported to be safe)
 0x00841d10	logic	default (no rule: ported to be safe)
 0x00841d50	logic	default (no rule: ported to be safe)
-0x00841d60	logic	default (no rule: ported to be safe)
+0x00841d60	glue	GS/DMA packet writer (sceDmaSync; writes no game state): replaced by ffx-render
 0x00841d80	logic	default (no rule: ported to be safe)
 0x00841e30	logic	default (no rule: ported to be safe)
 0x00841ee0	logic	default (no rule: ported to be safe)
@@ -10848,7 +10848,7 @@
 0x008479d0	debug	debug name: Gu_DrawEnd
 0x00847a40	debug	debug name: Gu_DrawMouseCursor
 0x00847b00	debug	debug name: Gu_DrawStart
-0x00847b50	debug	only called from debug code (0x847720)
+0x00847b50	debug	unnamed, between the debug methods Gu_DrawStart and Gu_FontSetX
 0x008482f0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x00848300	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x00848310	debug	debug name: Gu_FontSetupWindow
@@ -10874,10 +10874,10 @@
 0x00848b40	debug	debug name: Gu_SetScissor
 0x00848c30	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x00848d10	debug	debug name: Gu_SetTexFlush
-0x00848d60	debug	only called from debug code (0x847720 and 4 more)
+0x00848d60	debug	unnamed, between the debug methods Gu_SetTexFlush and Gu_WindowSetHokanEnable
 0x00848f00	debug	debug name: Gu_WindowSetHokanEnable
-0x00848f10	logic	default (no rule: ported to be safe)
-0x00848f20	logic	debug-sounding name, but used by logic: 0x849510
+0x00848f10	debug	only called from debug code (0x849510 and 2 more)
+0x00848f20	debug	debug name: Gui_WindowSetGlobalTrans
 0x00848f50	dead	unreachable from the entry point and every pointer table
 0x00848f60	debug	only called from debug code (Gu_Printf and 2 more)
 0x00848fe0	debug	only called from debug code (Gu_Printf and 1 more)
@@ -10894,7 +10894,7 @@
 0x00849440	debug	debug name: Gu_MouseInRect
 0x00849490	debug	debug name: Gu_WindowMouseIn
 0x008494f0	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x00849510	logic	default (no rule: ported to be safe)
+0x00849510	debug	unnamed, between the debug methods Gu_ControlFreeText and Gu_ControlInit
 0x008495e0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x00849610	debug	debug name: Gu_ControlSetText
 0x008496d0	debug	debug name: Gu_WindowControlSetRect
@@ -10903,7 +10903,7 @@
 0x00849850	debug	debug name: Gu_Main
 0x008498e0	debug	debug name: Gu_MakeFileList
 0x00849970	debug	debug name: Gu_MessageBox
-0x00849a10	debug	only called from debug code (Gu_MessageBox)
+0x00849a10	debug	unnamed, between the debug methods Gu_MessageBox and Gu_MouseGetWindowY
 0x00849aa0	debug	debug name: Gu_MouseGetWindowY
 0x00849ac0	debug	debug name: Gu_MouseGetWindowX
 0x00849ae0	debug	debug name: Gu_MouseGetX
@@ -10914,13 +10914,13 @@
 0x00849b90	debug	debug name: Gu_MouseSetWindow
 0x00849bb0	debug	debug name: Gu_SelectorAllocate
 0x00849bd0	debug	debug name: Gu_SelectorDispose
-0x00849c00	debug	only calls debug code (Gu_PrintSetColor, Gu_PrintSetX, Gu_PrintSetY)
+0x00849c00	debug	unnamed, between the debug methods Gu_SelectorDispose and Gu_SelectorGetItemValue
 0x00849d10	debug	debug name: Gu_SelectorGetItemValue
 0x00849d30	debug	debug name: Gu_SelectorGetItemName
 0x00849d50	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x00849d60	debug	debug name: Gu_SelectorOpen
 0x00849dc0	debug	debug name: Gu_SelectorOpenXYWH
-0x00849e30	debug	only called from debug code (Gu_SelectorOpen and 1 more)
+0x00849e30	debug	unnamed, between the debug methods Gu_SelectorOpenXYWH and Gu_SelectorResetNbItem
 0x00849f40	debug	debug name: Gu_SelectorResetNbItem
 0x00849fc0	debug	debug name: Gu_SelectorSetCallback
 0x00849fd0	debug	debug name: Gu_SelectorSetItem
@@ -10946,7 +10946,7 @@
 0x0084a920	debug	debug name: Gu_WindowCreate
 0x0084ab80	debug	debug name: Gu_WindowCloseTree
 0x0084abd0	debug	debug name: Gu_WindowFreeClosed
-0x0084ac80	debug	only called from debug code (Gu_Main)
+0x0084ac80	debug	unnamed, between the debug methods Gu_WindowFreeClosed and Gu_WindowGetArg
 0x0084aec0	debug	debug name: Gu_WindowGetArg
 0x0084aed0	debug	debug name: Gu_WindowGetClientH
 0x0084aee0	logic	debug-sounding name, but used by logic: 0x8555e9
@@ -10961,11 +10961,11 @@
 0x0084afa0	debug	debug name: Gu_WindowGetWidth
 0x0084afb0	debug	debug name: Gu_WindowGetLeft
 0x0084afc0	debug	debug name: Gu_WindowGetX
-0x0084afd0	debug	only called from debug code (Gu_VSync)
+0x0084afd0	debug	unnamed, between the debug methods Gu_WindowGetX and Gu_WindowIsDrag
 0x0084b200	debug	debug name: Gu_WindowIsDrag
 0x0084b220	debug	debug name: Gu_WindowSetPos
 0x0084b250	debug	debug name: Gu_WindowOpen
-0x0084b2e0	debug	only called from debug code (Gu_VSync)
+0x0084b2e0	debug	unnamed, between the debug methods Gu_WindowOpen and Gu_WindowSetArg
 0x0084b540	dead	unreachable from the entry point and every pointer table
 0x0084b560	debug	debug name: Gu_WindowSetArg
 0x0084b580	debug	debug name: Gu_WindowSetClientH
@@ -10984,7 +10984,7 @@
 0x0084b770	debug	debug name: Gu_WindowToFront
 0x0084b7b0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0084b7e0	debug	debug name: Gu_WindowSetWord30
-0x0084b7f0	debug	only called from debug code (0x84afd0 and 1 more)
+0x0084b7f0	debug	unnamed, between the debug methods Gu_WindowSetWord30 and Gu_ControlMouseButtonHandle
 0x0084b960	debug	debug name: Gu_ControlMouseButtonHandle
 0x0084bae0	debug	only called from debug code (Gu_WindowAddClient and 4 more)
 0x0084bc00	debug	only called from debug code (ChrViewProc)
@@ -11085,11 +11085,11 @@
 0x00853520	debug	only called from debug code (0x853780)
 0x00853780	debug	only called from debug code (WMainProc)
 0x008537b0	debug	debug name: Gui_ChrInfo
-0x008537d0	debug	only called from debug code (Gui_ChrInfo)
-0x00853d40	debug	only calls debug code (Gu_SelectorGetItemValue, Gu_WindowControlSetText, Gu_WindowSetArg)
+0x008537d0	debug	unnamed, between the debug methods Gui_ChrInfo and Gui_ClockInit
+0x00853d40	debug	unnamed, between the debug methods Gui_ChrInfo and Gui_ClockInit
 0x00853da0	dead	unreachable from the entry point and every pointer table
-0x00853dc0	debug	only called from debug code (0x8537d0)
-0x00853e40	debug	only called from debug code (0x8537d0)
+0x00853dc0	debug	unnamed, between the debug methods Gui_ChrInfo and Gui_ClockInit
+0x00853e40	debug	unnamed, between the debug methods Gui_ChrInfo and Gui_ClockInit
 0x00853ea0	debug	debug name: Gui_ClockInit
 0x00853ec0	debug	only called from debug code (Gui_ClockInit)
 0x00854200	debug	only called from debug code (0x853ec0)
@@ -11103,13 +11103,13 @@
 0x00854e80	debug	debug name: gui_eve_GWM_BUTTONUP
 0x00854f60	debug	debug name: Gu_DrawRectStrip
 0x00854fd0	debug	debug name: Gui_MemGraph
-0x00855020	debug	only called from debug code (Gui_MemGraph)
-0x00855290	debug	only called from debug code (0x855360)
+0x00855020	debug	unnamed, between the debug methods Gui_MemGraph and Gui_ProgAvarage
+0x00855290	debug	unnamed, between the debug methods Gui_MemGraph and Gui_ProgAvarage
 0x00855340	dead	unreachable from the entry point and every pointer table
-0x00855360	debug	only called from debug code (0x855020)
+0x00855360	debug	unnamed, between the debug methods Gui_MemGraph and Gui_ProgAvarage
 0x008553d0	dead	unreachable from the entry point and every pointer table
 0x00855430	debug	debug name: Gui_ProgAvarage
-0x008554b0	debug	only called from debug code (Gui_ProgAvarage)
+0x008554b0	debug	only calls debug code (0x848d60, Gu_PacketBeginTag, Gu_PacketEndTag)
 0x00855570	debug	only called from debug code (Gui_ProgAvarage)
 0x008555e9	logic	default (no rule: ported to be safe)
 0x00855a30	logic	default (no rule: ported to be safe)
@@ -12927,7 +12927,7 @@
 0x008883a0	logic	default (no rule: ported to be safe)
 0x008883c0	dead	unreachable from the entry point and every pointer table
 0x00888400	dead	unreachable from the entry point and every pointer table
-0x00888420	logic	debug-sounding name, but used by logic: 0x8b3510, 0x8b3580
+0x00888420	logic	debug-sounding name, but used by logic: TOLoadMenuOpen_008b3510, TOSaveMenuOpen_008b3580
 0x00888430	logic	default (no rule: ported to be safe)
 0x00888440	dead	unreachable from the entry point and every pointer table
 0x00888480	logic	default (no rule: ported to be safe)
@@ -13133,7 +13133,7 @@
 0x0088ebf0	logic	default (no rule: ported to be safe)
 0x0088ec10	logic	default (no rule: ported to be safe)
 0x0088ec20	dead	unreachable from the entry point and every pointer table
-0x0088ec60	logic	default (no rule: ported to be safe)
+0x0088ec60	glue	GS/DMA packet writer (sceGsSyncPath; writes no game state): replaced by ffx-render
 0x0088ec70	dead	unreachable from the entry point and every pointer table
 0x0088ec90	dead	unreachable from the entry point and every pointer table
 0x0088ecf0	debug	unreachable from the entry point and every pointer table; debug name or strings
@@ -13480,16 +13480,16 @@
 0x008aa610	logic	default (no rule: ported to be safe)
 0x008aa690	logic	default (no rule: ported to be safe)
 0x008aa6d0	dead	unreachable from the entry point and every pointer table
-0x008aa710	logic	default (no rule: ported to be safe)
+0x008aa710	glue	GS/DMA packet writer (sceGsExecLoadImage, sceGsSetDefLoadImage, sceGsSyncPath; writes no game state): replaced by ffx-render
 0x008aa780	logic	default (no rule: ported to be safe)
 0x008aaab0	logic	default (no rule: ported to be safe)
 0x008aab00	logic	default (no rule: ported to be safe)
 0x008aab20	logic	default (no rule: ported to be safe)
 0x008aab90	logic	default (no rule: ported to be safe)
 0x008aabd0	dead	unreachable from the entry point and every pointer table
-0x008aac10	logic	default (no rule: ported to be safe)
+0x008aac10	glue	GS/DMA packet writer (sceGsExecStoreImage, sceGsSetDefStoreImage, sceGsSyncPath; writes no game state): replaced by ffx-render
 0x008aac80	logic	default (no rule: ported to be safe)
-0x008aacf0	logic	default (no rule: ported to be safe)
+0x008aacf0	glue	GS/DMA packet writer (sceGsExecStoreImage, sceGsSetDefStoreImage, sceGsSyncPath; writes no game state): replaced by ffx-render
 0x008aad60	logic	default (no rule: ported to be safe)
 0x008aad70	logic	default (no rule: ported to be safe)
 0x008aadd0	logic	default (no rule: ported to be safe)
@@ -13617,7 +13617,7 @@
 0x008b0920	logic	default (no rule: ported to be safe)
 0x008b0970	logic	default (no rule: ported to be safe)
 0x008b09b0	logic	default (no rule: ported to be safe)
-0x008b0b10	logic	default (no rule: ported to be safe)
+0x008b0b10	glue	GS/DMA packet writer (sceDmaGetChan, sceDmaSend, sceGsSyncPath; writes no game state): replaced by ffx-render
 0x008b0da0	dead	unreachable from the entry point and every pointer table
 0x008b1020	logic	default (no rule: ported to be safe)
 0x008b1190	logic	default (no rule: ported to be safe)
@@ -13823,11 +13823,11 @@
 0x008be500	logic	default (no rule: ported to be safe)
 0x008be800	logic	default (no rule: ported to be safe)
 0x008be840	logic	default (no rule: ported to be safe)
-0x008be910	logic	default (no rule: ported to be safe)
+0x008be910	debug	only called from debug code (0x7d44d2)
 0x008be960	dead	unreachable from the entry point and every pointer table
 0x008be9b0	dead	unreachable from the entry point and every pointer table
 0x008bea00	dead	unreachable from the entry point and every pointer table
-0x008bea20	logic	default (no rule: ported to be safe)
+0x008bea20	glue	GS/DMA packet writer (TOClosePktbuff, TODrawKick; writes no game state): replaced by ffx-render
 0x008bea30	logic	default (no rule: ported to be safe)
 0x008bea50	dead	unreachable from the entry point and every pointer table
 0x008bea70	dead	unreachable from the entry point and every pointer table
@@ -13856,7 +13856,7 @@
 0x008bee90	logic	default (no rule: ported to be safe)
 0x008beeb0	logic	default (no rule: ported to be safe)
 0x008bef10	logic	default (no rule: ported to be safe)
-0x008bef30	logic	default (no rule: ported to be safe)
+0x008bef30	glue	GS/DMA packet writer (TOOpenPktbuff, TOSetPktBuffAdrs; writes no game state): replaced by ffx-render
 0x008bef50	logic	default (no rule: ported to be safe)
 0x008bf070	logic	default (no rule: ported to be safe)
 0x008bf0b0	logic	default (no rule: ported to be safe)
@@ -14669,7 +14669,7 @@
 0x008ebf50	dead	unreachable from the entry point and every pointer table
 0x008ebfc0	dead	unreachable from the entry point and every pointer table
 0x008ec250	dead	unreachable from the entry point and every pointer table
-0x008ec2f0	logic	default (no rule: ported to be safe)
+0x008ec2f0	glue	GS packet API (TOAdpCrossEasyStrFontSClutRGBA): appends to or kicks a packet; replaced by ffx-render
 0x008ec720	logic	default (no rule: ported to be safe)
 0x008eca90	dead	unreachable from the entry point and every pointer table
 0x008ecde0	dead	unreachable from the entry point and every pointer table
@@ -14688,8 +14688,8 @@
 0x008ed160	logic	default (no rule: ported to be safe)
 0x008ed190	logic	default (no rule: ported to be safe)
 0x008ed320	dead	unreachable from the entry point and every pointer table
-0x008ed380	logic	default (no rule: ported to be safe)
-0x008edfc0	logic	default (no rule: ported to be safe)
+0x008ed380	glue	GS packet API (TOAdpEasyShapeXYWHC2): appends to or kicks a packet; replaced by ffx-render
+0x008edfc0	glue	GS/DMA packet writer (TOAdpFontM_ASCII; writes no game state): replaced by ffx-render
 0x008ee010	dead	unreachable from the entry point and every pointer table
 0x008ee060	logic	default (no rule: ported to be safe)
 0x008ee0b0	dead	unreachable from the entry point and every pointer table
@@ -14698,32 +14698,32 @@
 0x008ee190	dead	unreachable from the entry point and every pointer table
 0x008ee1d0	dead	unreachable from the entry point and every pointer table
 0x008ee210	logic	default (no rule: ported to be safe)
-0x008ee240	logic	default (no rule: ported to be safe)
+0x008ee240	glue	GS packet API (TOAdpFontM_ASCII): appends to or kicks a packet; replaced by ffx-render
 0x008ee600	dead	unreachable from the entry point and every pointer table
 0x008ee9c0	dead	unreachable from the entry point and every pointer table
 0x008eed20	dead	unreachable from the entry point and every pointer table
 0x008eeee0	logic	default (no rule: ported to be safe)
 0x008ef2b0	dead	unreachable from the entry point and every pointer table
-0x008ef670	logic	default (no rule: ported to be safe)
+0x008ef670	glue	GS packet API (TOAdpALPHA): appends to or kicks a packet; replaced by ffx-render
 0x008ef6e0	dead	unreachable from the entry point and every pointer table
 0x008ef760	dead	unreachable from the entry point and every pointer table
 0x008ef790	dead	unreachable from the entry point and every pointer table
 0x008ef7d0	dead	unreachable from the entry point and every pointer table
 0x008ef800	dead	unreachable from the entry point and every pointer table
 0x008ef830	dead	unreachable from the entry point and every pointer table
-0x008ef880	logic	default (no rule: ported to be safe)
-0x008ef8e0	logic	default (no rule: ported to be safe)
+0x008ef880	glue	GS packet API (TOAdpFRAME): appends to or kicks a packet; replaced by ffx-render
+0x008ef8e0	glue	GS packet API (TOAdpWords4): appends to or kicks a packet; replaced by ffx-render
 0x008ef910	dead	unreachable from the entry point and every pointer table
-0x008ef970	logic	default (no rule: ported to be safe)
-0x008efa00	logic	default (no rule: ported to be safe)
+0x008ef970	glue	GS packet API (TOAdpTEST): appends to or kicks a packet; replaced by ffx-render
+0x008efa00	glue	GS packet API (TOAdpTEX0): appends to or kicks a packet; replaced by ffx-render
 0x008efad0	dead	unreachable from the entry point and every pointer table
-0x008efb60	logic	default (no rule: ported to be safe)
-0x008efb90	logic	default (no rule: ported to be safe)
+0x008efb60	glue	GS packet API (TOAdpTEXFLUSH): appends to or kicks a packet; replaced by ffx-render
+0x008efb90	glue	GS packet API (TOAdpXY2): appends to or kicks a packet; replaced by ffx-render
 0x008efbc0	dead	unreachable from the entry point and every pointer table
-0x008efbf0	logic	default (no rule: ported to be safe)
+0x008efbf0	glue	GS packet API (TOAdpXYZ2Offset): appends to or kicks a packet; replaced by ffx-render
 0x008efc30	dead	unreachable from the entry point and every pointer table
 0x008efc60	dead	unreachable from the entry point and every pointer table
-0x008efc90	logic	default (no rule: ported to be safe)
+0x008efc90	glue	GS packet API (TOAdpXYZOffset): appends to or kicks a packet; replaced by ffx-render
 0x008efcd0	dead	unreachable from the entry point and every pointer table
 0x008efd00	dead	unreachable from the entry point and every pointer table
 0x008efd40	dead	unreachable from the entry point and every pointer table
@@ -14733,7 +14733,7 @@
 0x008f0590	logic	default (no rule: ported to be safe)
 0x008f0600	dead	unreachable from the entry point and every pointer table
 0x008f0680	dead	unreachable from the entry point and every pointer table
-0x008f0700	logic	default (no rule: ported to be safe)
+0x008f0700	glue	GS packet API (TOAdpMenuIconItemAbmap): appends to or kicks a packet; replaced by ffx-render
 0x008f0770	dead	unreachable from the entry point and every pointer table
 0x008f07f0	dead	unreachable from the entry point and every pointer table
 0x008f0830	dead	unreachable from the entry point and every pointer table
@@ -14743,7 +14743,7 @@
 0x008f0a70	logic	default (no rule: ported to be safe)
 0x008f11b0	dead	unreachable from the entry point and every pointer table
 0x008f1770	dead	unreachable from the entry point and every pointer table
-0x008f1880	logic	default (no rule: ported to be safe)
+0x008f1880	glue	GS/DMA packet writer (TOAdpTEST, TOAdpTEX0, TOAdpWords4; writes no game state): replaced by ffx-render
 0x008f1990	logic	default (no rule: ported to be safe)
 0x008f1a10	logic	default (no rule: ported to be safe)
 0x008f1a90	logic	default (no rule: ported to be safe)
@@ -14779,9 +14779,9 @@
 0x008f3830	dead	unreachable from the entry point and every pointer table
 0x008f38c0	logic	default (no rule: ported to be safe)
 0x008f38f0	dead	unreachable from the entry point and every pointer table
-0x008f3930	logic	default (no rule: ported to be safe)
+0x008f3930	glue	GS packet API (TOClosePktbuff): appends to or kicks a packet; replaced by ffx-render
 0x008f3940	dead	unreachable from the entry point and every pointer table
-0x008f3a30	logic	default (no rule: ported to be safe)
+0x008f3a30	glue	GS packet API (TOCtrlPkt): appends to or kicks a packet; replaced by ffx-render
 0x008f3a50	logic	default (no rule: ported to be safe)
 0x008f3c70	dead	unreachable from the entry point and every pointer table
 0x008f3d20	dead	unreachable from the entry point and every pointer table
@@ -14799,7 +14799,7 @@
 0x008f51e0	logic	default (no rule: ported to be safe)
 0x008f59c0	logic	default (no rule: ported to be safe)
 0x008f5b90	dead	unreachable from the entry point and every pointer table
-0x008f5bc0	logic	default (no rule: ported to be safe)
+0x008f5bc0	glue	GS packet API (TODrawKick): appends to or kicks a packet; replaced by ffx-render
 0x008f5c10	logic	default (no rule: ported to be safe)
 0x008f5c60	logic	default (no rule: ported to be safe)
 0x008f5cc0	dead	unreachable from the entry point and every pointer table
@@ -14841,32 +14841,32 @@
 0x008fa800	logic	default (no rule: ported to be safe)
 0x008fa900	dead	unreachable from the entry point and every pointer table
 0x008fa920	logic	default (no rule: ported to be safe)
-0x008faa20	logic	default (no rule: ported to be safe)
+0x008faa20	glue	GS packet API (TOGsALPHA): appends to or kicks a packet; replaced by ffx-render
 0x008faa50	dead	unreachable from the entry point and every pointer table
 0x008faa80	dead	unreachable from the entry point and every pointer table
 0x008faaa0	dead	unreachable from the entry point and every pointer table
 0x008faac0	dead	unreachable from the entry point and every pointer table
 0x008faae0	dead	unreachable from the entry point and every pointer table
 0x008fab00	dead	unreachable from the entry point and every pointer table
-0x008fab30	logic	default (no rule: ported to be safe)
+0x008fab30	glue	GS packet API (TOGsFRAME): appends to or kicks a packet; replaced by ffx-render
 0x008fab60	dead	unreachable from the entry point and every pointer table
-0x008fab80	logic	default (no rule: ported to be safe)
+0x008fab80	glue	GS packet API (TOGsWords4): appends to or kicks a packet; replaced by ffx-render
 0x008fabb0	dead	unreachable from the entry point and every pointer table
-0x008fabe0	logic	default (no rule: ported to be safe)
-0x008fac10	logic	default (no rule: ported to be safe)
+0x008fabe0	glue	GS packet API (TOGsTEST): appends to or kicks a packet; replaced by ffx-render
+0x008fac10	glue	GS packet API (TOGsTEX0): appends to or kicks a packet; replaced by ffx-render
 0x008fac50	dead	unreachable from the entry point and every pointer table
-0x008fac80	logic	default (no rule: ported to be safe)
-0x008faca0	logic	default (no rule: ported to be safe)
+0x008fac80	glue	GS packet API (TOGsTEXFLUSH): appends to or kicks a packet; replaced by ffx-render
+0x008faca0	glue	GS packet API (TOGsXY2): appends to or kicks a packet; replaced by ffx-render
 0x008facc0	dead	unreachable from the entry point and every pointer table
-0x008facf0	logic	default (no rule: ported to be safe)
+0x008facf0	glue	GS packet API (TOGsXYZ2Offset): appends to or kicks a packet; replaced by ffx-render
 0x008fad10	dead	unreachable from the entry point and every pointer table
 0x008fad30	dead	unreachable from the entry point and every pointer table
-0x008fad50	logic	default (no rule: ported to be safe)
+0x008fad50	glue	GS packet API (TOGsXYZOffset): appends to or kicks a packet; replaced by ffx-render
 0x008fad80	dead	unreachable from the entry point and every pointer table
 0x008fadb0	dead	unreachable from the entry point and every pointer table
 0x008fade0	dead	unreachable from the entry point and every pointer table
 0x008fae10	logic	default (no rule: ported to be safe)
-0x008fae20	logic	default (no rule: ported to be safe)
+0x008fae20	glue	GS/DMA packet writer (sceDmaGetChan; writes no game state): replaced by ffx-render
 0x008fae40	logic	default (no rule: ported to be safe)
 0x008fb090	logic	default (no rule: ported to be safe)
 0x008fb150	logic	default (no rule: ported to be safe)
@@ -14942,7 +14942,7 @@
 0x00901300	logic	default (no rule: ported to be safe)
 0x00901490	logic	default (no rule: ported to be safe)
 0x009015e0	dead	unreachable from the entry point and every pointer table
-0x00901660	logic	default (no rule: ported to be safe)
+0x00901660	glue	GS/DMA packet writer (TOAdpCrossEasyStrFontSClutRGBA; writes no game state): replaced by ffx-render
 0x009016b0	logic	default (no rule: ported to be safe)
 0x00901700	logic	default (no rule: ported to be safe)
 0x009019f0	logic	default (no rule: ported to be safe)
@@ -14966,7 +14966,7 @@
 0x00901f80	logic	default (no rule: ported to be safe)
 0x00901fc0	dead	unreachable from the entry point and every pointer table
 0x00902000	dead	unreachable from the entry point and every pointer table
-0x00902040	logic	default (no rule: ported to be safe)
+0x00902040	glue	GS/DMA packet writer (TOAdpCrossEasyStrFontSClutRGBA; writes no game state): replaced by ffx-render
 0x009020a0	dead	unreachable from the entry point and every pointer table
 0x009020e0	dead	unreachable from the entry point and every pointer table
 0x00902120	dead	unreachable from the entry point and every pointer table
@@ -15017,17 +15017,17 @@
 0x009042e0	logic	default (no rule: ported to be safe)
 0x00904310	dead	unreachable from the entry point and every pointer table
 0x00904340	dead	unreachable from the entry point and every pointer table
-0x00904600	logic	default (no rule: ported to be safe)
-0x00904650	logic	default (no rule: ported to be safe)
+0x00904600	glue	GS packet API (TOOpenPktbuff): appends to or kicks a packet; replaced by ffx-render
+0x00904650	glue	GS/DMA packet writer (TOGsFRAME; writes no game state): replaced by ffx-render
 0x009046d0	logic	default (no rule: ported to be safe)
 0x009046e0	logic	default (no rule: ported to be safe)
 0x009047a0	dead	unreachable from the entry point and every pointer table
-0x009047c0	logic	default (no rule: ported to be safe)
+0x009047c0	glue	GS packet API (TOSetPktBuffAdrs): appends to or kicks a packet; replaced by ffx-render
 0x009047f0	dead	unreachable from the entry point and every pointer table
 0x00904860	dead	unreachable from the entry point and every pointer table
 0x009048a0	dead	unreachable from the entry point and every pointer table
 0x009048e0	logic	default (no rule: ported to be safe)
-0x009048f0	logic	default (no rule: ported to be safe)
+0x009048f0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x00904910	dead	unreachable from the entry point and every pointer table
 0x00904a00	dead	unreachable from the entry point and every pointer table
 0x00904a70	logic	default (no rule: ported to be safe)
@@ -15225,9 +15225,9 @@
 0x0090a950	logic	default (no rule: ported to be safe)
 0x0090a980	logic	default (no rule: ported to be safe)
 0x0090a9e0	dead	unreachable from the entry point and every pointer table
-0x0090aaa0	logic	default (no rule: ported to be safe)
+0x0090aaa0	glue	GS/DMA packet writer (sceDmaGetChan, sceDmaSendN, sceDmaSync; writes no game state): replaced by ffx-render
 0x0090ae20	dead	unreachable from the entry point and every pointer table
-0x0090ae50	logic	default (no rule: ported to be safe)
+0x0090ae50	glue	GS/DMA packet writer (sceDmaGetChan, sceDmaSendN, sceDmaSync; writes no game state): replaced by ffx-render
 0x0090b490	dead	unreachable from the entry point and every pointer table
 0x0090b4b0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0090b5f0	dead	unreachable from the entry point and every pointer table
@@ -15364,8 +15364,8 @@
 0x00916d40	logic	default (no rule: ported to be safe)
 0x00916da0	dead	unreachable from the entry point and every pointer table
 0x00916e50	dead	unreachable from the entry point and every pointer table
-0x00916e60	logic	default (no rule: ported to be safe)
-0x00917050	logic	default (no rule: ported to be safe)
+0x00916e60	glue	GS/DMA packet writer (sceGsExecLoadImage, sceGsSetDefLoadImage, sceGsSyncPath; writes no game state): replaced by ffx-render
+0x00917050	glue	GS/DMA packet writer (sceGsExecStoreImage, sceGsSetDefStoreImage, sceGsSyncPath; writes no game state): replaced by ffx-render
 0x009173e0	dead	unreachable from the entry point and every pointer table
 0x00917420	dead	unreachable from the entry point and every pointer table
 0x00917430	dead	unreachable from the entry point and every pointer table
@@ -15644,16 +15644,16 @@
 0x0091ff10	logic	default (no rule: ported to be safe)
 0x0091ffb0	logic	default (no rule: ported to be safe)
 0x0091ffd0	logic	default (no rule: ported to be safe)
-0x00920020	logic	default (no rule: ported to be safe)
+0x00920020	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x00920050	logic	default (no rule: ported to be safe)
 0x009200a0	logic	default (no rule: ported to be safe)
 0x00920100	dead	unreachable from the entry point and every pointer table
-0x009201a0	logic	default (no rule: ported to be safe)
-0x00920250	logic	default (no rule: ported to be safe)
+0x009201a0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
+0x00920250	glue	GS packet API (rcbgRestoreReg): appends to or kicks a packet; replaced by ffx-render
 0x009202a0	logic	default (no rule: ported to be safe)
 0x009202b0	dead	unreachable from the entry point and every pointer table
 0x009202e0	logic	default (no rule: ported to be safe)
-0x00920450	logic	default (no rule: ported to be safe)
+0x00920450	glue	GS packet API (rcbgSetReg): appends to or kicks a packet; replaced by ffx-render
 0x00920460	dead	unreachable from the entry point and every pointer table
 0x009204b0	logic	default (no rule: ported to be safe)
 0x00920540	logic	default (no rule: ported to be safe)
@@ -15812,38 +15812,38 @@
 0x009258a0	logic	default (no rule: ported to be safe)
 0x009258b0	logic	default (no rule: ported to be safe)
 0x009258f0	logic	default (no rule: ported to be safe)
-0x00925950	logic	default (no rule: ported to be safe)
+0x00925950	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x009259c0	logic	default (no rule: ported to be safe)
 0x00925b60	logic	default (no rule: ported to be safe)
 0x00925c50	dead	unreachable from the entry point and every pointer table
 0x00925db0	dead	unreachable from the entry point and every pointer table
 0x00925ea0	logic	default (no rule: ported to be safe)
-0x00925f80	logic	default (no rule: ported to be safe)
+0x00925f80	glue	GS/DMA packet writer (rcPacketDataCloseAdr, rcPacketDataDraw, rcPacketDataInit; writes no game state): replaced by ffx-render
 0x00926c00	logic	default (no rule: ported to be safe)
 0x00926c80	dead	unreachable from the entry point and every pointer table
 0x00926eb0	dead	unreachable from the entry point and every pointer table
 0x009270c0	logic	default (no rule: ported to be safe)
 0x00927230	dead	unreachable from the entry point and every pointer table
 0x009273b0	dead	unreachable from the entry point and every pointer table
-0x009273e0	logic	default (no rule: ported to be safe)
+0x009273e0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x00927430	dead	unreachable from the entry point and every pointer table
 0x00927520	dead	unreachable from the entry point and every pointer table
 0x00927550	logic	default (no rule: ported to be safe)
 0x00927570	dead	unreachable from the entry point and every pointer table
 0x00927590	dead	unreachable from the entry point and every pointer table
-0x009275b0	logic	default (no rule: ported to be safe)
-0x00927600	logic	default (no rule: ported to be safe)
-0x00927630	logic	default (no rule: ported to be safe)
-0x00927720	logic	default (no rule: ported to be safe)
-0x00927810	logic	default (no rule: ported to be safe)
-0x009278d0	logic	default (no rule: ported to be safe)
+0x009275b0	glue	GS packet API (rcPacketDataCloseAdr): appends to or kicks a packet; replaced by ffx-render
+0x00927600	glue	GS packet API (rcPacketDataDraw): appends to or kicks a packet; replaced by ffx-render
+0x00927630	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
+0x00927720	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
+0x00927810	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
+0x009278d0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x00927a00	dead	unreachable from the entry point and every pointer table
-0x00927a20	logic	default (no rule: ported to be safe)
+0x00927a20	glue	GS packet API (rcPacketDataInit): appends to or kicks a packet; replaced by ffx-render
 0x00927a40	dead	unreachable from the entry point and every pointer table
 0x00927a50	dead	unreachable from the entry point and every pointer table
-0x00927a70	logic	default (no rule: ported to be safe)
-0x00927a90	logic	default (no rule: ported to be safe)
-0x00927ac0	logic	default (no rule: ported to be safe)
+0x00927a70	glue	GS packet API (rcPacketDataOpenAdr): appends to or kicks a packet; replaced by ffx-render
+0x00927a90	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
+0x00927ac0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x00927b00	logic	default (no rule: ported to be safe)
 0x00927b60	logic	default (no rule: ported to be safe)
 0x00927ba0	logic	default (no rule: ported to be safe)
@@ -15864,7 +15864,7 @@
 0x009283b0	logic	default (no rule: ported to be safe)
 0x009283f0	logic	default (no rule: ported to be safe)
 0x00928460	logic	default (no rule: ported to be safe)
-0x009284d0	logic	default (no rule: ported to be safe)
+0x009284d0	glue	GS/DMA packet writer (rcbgSetReg; writes no game state): replaced by ffx-render
 0x00928540	logic	default (no rule: ported to be safe)
 0x00928580	dead	unreachable from the entry point and every pointer table
 0x009285a0	logic	default (no rule: ported to be safe)
@@ -16006,16 +16006,16 @@
 0x0092c0c0	debug	only called from debug code (rcdtRsdLoad_LoadMatRsd and 8 more)
 0x0092c0d0	debug	only called from debug code (0x9232a0)
 0x0092c0f0	debug	only called from debug code (0x9243c0 and 3 more)
-0x0092c130	logic	default (no rule: ported to be safe)
-0x0092c250	logic	default (no rule: ported to be safe)
-0x0092c4c0	logic	default (no rule: ported to be safe)
-0x0092c5e0	logic	default (no rule: ported to be safe)
-0x0092c600	logic	default (no rule: ported to be safe)
-0x0092c740	logic	default (no rule: ported to be safe)
-0x0092c960	logic	default (no rule: ported to be safe)
-0x0092cbf0	logic	default (no rule: ported to be safe)
-0x0092cc20	logic	default (no rule: ported to be safe)
-0x0092cc40	logic	default (no rule: ported to be safe)
+0x0092c130	glue	GS/DMA packet writer (rcPacketDataCloseAdr, rcPacketDataDraw, rcPacketDataInit; writes no game state): replaced by ffx-render
+0x0092c250	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
+0x0092c4c0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
+0x0092c5e0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
+0x0092c600	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
+0x0092c740	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
+0x0092c960	glue	GS/DMA packet writer (rcPacketDataCloseAdr, rcPacketDataDraw, rcPacketDataInit; writes no game state): replaced by ffx-render
+0x0092cbf0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
+0x0092cc20	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
+0x0092cc40	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x0092cca0	debug	only called from debug code (0x9325c0)
 0x0092ccb0	debug	only called from debug code (0x9325c0)
 0x0092ccc0	debug	only called from debug code (0x9325c0)
@@ -16024,7 +16024,7 @@
 0x0092ccf0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0092cdd0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0092cf00	logic	default (no rule: ported to be safe)
-0x0092cfa0	logic	default (no rule: ported to be safe)
+0x0092cfa0	glue	GS/DMA packet writer (rcPacketDataCloseAdr, rcPacketDataDraw, rcPacketDataInit; writes no game state): replaced by ffx-render
 0x0092d230	logic	default (no rule: ported to be safe)
 0x0092d320	debug	only called from debug code (rcbgPalAlloc and 2 more)
 0x0092d360	logic	default (no rule: ported to be safe)
@@ -16352,7 +16352,7 @@
 0x0093d620	logic	default (no rule: ported to be safe)
 0x0093d690	logic	default (no rule: ported to be safe)
 0x0093d710	debug	debug name: rcuiProjectToInt
-0x0093d7d0	dead	unreachable from the entry point and every pointer table
+0x0093d7d0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0093d800	dead	unreachable from the entry point and every pointer table
 0x0093d830	logic	default (no rule: ported to be safe)
 0x0093d8a0	dead	unreachable from the entry point and every pointer table
@@ -17184,7 +17184,7 @@
 0x00a428a0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): CDfileSize_PC
 0x00a429d0	logic	default (no rule: ported to be safe)
 0x00a42a00	logic	default (no rule: ported to be safe)
-0x00a42ab0	logic	default (no rule: ported to be safe)
+0x00a42ab0	glue	GS/DMA packet writer (sceGsSetDefDrawEnv2; writes no game state): replaced by ffx-render
 0x00a42b70	logic	default (no rule: ported to be safe)
 0x00a42ba0	logic	default (no rule: ported to be safe)
 0x00a42c00	logic	default (no rule: ported to be safe)
@@ -17491,7 +17491,7 @@
 0x00a5e400	dead	unreachable from the entry point and every pointer table
 0x00a5e420	dead	unreachable from the entry point and every pointer table
 0x00a5e440	dead	unreachable from the entry point and every pointer table
-0x00a5e4a0	logic	default (no rule: ported to be safe)
+0x00a5e4a0	glue	GS/DMA packet writer (sceDmaSendN, sceGsExecLoadImage, sceGsSetDefLoadImage; writes no game state): replaced by ffx-render
 0x00a5e730	dead	unreachable from the entry point and every pointer table
 0x00a5e7b0	logic	default (no rule: ported to be safe)
 0x00a5e880	logic	default (no rule: ported to be safe)
@@ -17638,7 +17638,7 @@
 0x00a74a00	logic	default (no rule: ported to be safe)
 0x00a74c60	logic	default (no rule: ported to be safe)
 0x00a74d30	logic	default (no rule: ported to be safe)
-0x00a75170	logic	default (no rule: ported to be safe)
+0x00a75170	glue	GS/DMA packet writer (sceDmaSend, sceGsSyncPath; writes no game state): replaced by ffx-render
 0x00a753f0	logic	default (no rule: ported to be safe)
 0x00a75640	dead	unreachable from the entry point and every pointer table
 0x00a75670	dead	unreachable from the entry point and every pointer table
