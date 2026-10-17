@@ -16793,13 +16793,22 @@
 0x00a29300	dead	unreachable from the entry point and every pointer table
 0x00a29310	dead	unreachable from the entry point and every pointer table
 0x00a29320	logic	default (no rule: ported to be safe)
+0x00a37410	logic	default (no rule: ported to be safe)
+0x00a374e0	glue	calls Iggy IggyGDrawSendWarning
+0x00a37910	dead	unreachable from the entry point and every pointer table
+0x00a37950	dead	unreachable from the entry point and every pointer table
+0x00a37960	glue	calls Iggy _IggyGDrawFree@4
+0x00a37ac0	logic	default (no rule: ported to be safe)
+0x00a37b20	dead	unreachable from the entry point and every pointer table
+0x00a37b50	dead	unreachable from the entry point and every pointer table
+0x00a37c20	glue	calls Iggy IggyGDrawSendWarning, _IggyGDrawFree@4, _IggyGDrawMallocAnnotated@12
 0x00a380b0	logic	default (no rule: ported to be safe)
 0x00a38100	dead	unreachable from the entry point and every pointer table
 0x00a38120	dead	unreachable from the entry point and every pointer table
 0x00a38180	glue	calls Iggy _IggyGDrawFree@4
 0x00a38300	logic	default (no rule: ported to be safe)
 0x00a38380	dead	unreachable from the entry point and every pointer table
-0x00a383a0	logic	default (no rule: ported to be safe)
+0x00a383a0	glue	only called from glue code (0xa37c20)
 0x00a38450	dead	unreachable from the entry point and every pointer table
 0x00a38480	logic	default (no rule: ported to be safe)
 0x00a384b0	logic	default (no rule: ported to be safe)
@@ -16881,6 +16890,23 @@
 0x00a3cd10	dead	unreachable from the entry point and every pointer table
 0x00a3cd30	logic	default (no rule: ported to be safe)
 0x00a3cdb0	dead	unreachable from the entry point and every pointer table
+0x00a3ce00	logic	default (no rule: ported to be safe)
+0x00a3cec0	glue	calls Iggy IggyGDrawSendWarning
+0x00a3cf40	glue	calls Iggy IggyGDrawSendWarning
+0x00a3cfc0	glue	only called from glue code (0xa37960)
+0x00a3d020	glue	calls Iggy IggyGDrawSendWarning
+0x00a3d1f0	dead	unreachable from the entry point and every pointer table
+0x00a3d240	glue	only called from glue code (0xa25eb0)
+0x00a3d280	glue	only called from glue code (0xa38180 and 1 more)
+0x00a3d2d0	dead	unreachable from the entry point and every pointer table
+0x00a3d300	dead	unreachable from the entry point and every pointer table
+0x00a3d310	logic	default (no rule: ported to be safe)
+0x00a3d3c0	logic	default (no rule: ported to be safe)
+0x00a3d3d0	logic	default (no rule: ported to be safe)
+0x00a3d410	logic	default (no rule: ported to be safe)
+0x00a3d4f0	dead	unreachable from the entry point and every pointer table
+0x00a3d510	dead	unreachable from the entry point and every pointer table
+0x00a3d540	dead	unreachable from the entry point and every pointer table
 0x00a42250	dead	unreachable from the entry point and every pointer table
 0x00a42270	dead	unreachable from the entry point and every pointer table
 0x00a42360	logic	default (no rule: ported to be safe)
