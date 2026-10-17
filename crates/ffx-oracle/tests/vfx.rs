@@ -10419,6 +10419,78 @@ fn texels_halve_matches_the_original() {
 }
 
 #[test]
+fn vfx_render_data_counts_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0071_3290);
+        let (rd, parts, bufs) = (p.alloc(0x100), p.alloc(0x6c * 8), p.alloc(0x400));
+        // the shape in the middle of its block: entries before and after it
+        let shape = p.alloc(0x500) + 0x100;
+        let (get_rd, get_id, get_ptr) =
+            (p.sym(0x0064_53d0), p.sym(0x0063_ff50), p.sym(0x00a4_4650));
+        for _ in 0..300 {
+            p.fill(rd, 0x100, &mut rng);
+            p.fill(parts, 0x6c * 8, &mut rng);
+            p.fill(shape - 0x100, 0x500, &mut rng);
+            p.fill(bufs, 0x400, &mut rng);
+            let found = if rng.chance(15) { 0 } else { rd };
+            let id = rng.below(3);
+            for o in [&mut p.a, &mut p.b] {
+                o.stub_return(get_rd, found).unwrap();
+                o.stub_return(get_id, id).unwrap();
+                o.stub_return(get_ptr, shape).unwrap();
+            }
+            let n = rng.pick(&[0i32, 1, 3, 5, -1]);
+            p.set(rd + 0x90, n);
+            p.set(rd + 0x94, parts);
+            for i in 0..5 {
+                let part = parts + 0x6c * i;
+                p.set(part + 0x1c, bufs + 0x80 * i);
+                p.set(part + 0x68, rng.below(0x40));
+            }
+            // shape entries: offsets to small records with an i16 count
+            let k = rng.below(8);
+            let off = rng.pick(&[0x100 + 8 * i16::try_from(k).unwrap(), -0x80, -2]);
+            p.set(shape + 0x10 + 8 * k, off);
+            let (lo, hi) = (rng.next(), rng.next());
+            p.check("0x00713290", 0x0071_3290, &[lo, hi], |m| {
+                Some(draw::bridge::clear_vfx_render_data_shp(
+                    m,
+                    lo,
+                    hi,
+                    &mut call_original,
+                ))
+            });
+            p.fill(parts, 0x6c * 8, &mut rng);
+            for i in 0..5 {
+                let part = parts + 0x6c * i;
+                p.set(part + 0x1c, bufs + 0x80 * i);
+                p.set(part + 0x68, rng.below(0x40));
+            }
+            p.check("0x00713320", 0x0071_3320, &[lo, hi], |m| {
+                Some(draw::bridge::clear_vfx_render_data_shp_with_memset(
+                    m,
+                    lo,
+                    hi,
+                    &mut call_original,
+                ))
+            });
+            let arg = rng.next();
+            p.set(bufs, arg);
+            let n = k | rng.pick(&[0u32, 0xffff_0000]);
+            p.check("0x00712bd0", 0x0071_2bd0, &[lo, hi, bufs, n], |m| {
+                Some(
+                    draw::bridge::caculate_vfx_render_data_shape_field_buffer_size(
+                        m,
+                        [lo, hi, bufs, n],
+                        &mut call_original,
+                    ),
+                )
+            });
+        }
+    }
+}
+
+#[test]
 fn md_tex0_change_matches_the_original() {
     for mut p in Pair::all() {
         let mut rng = Xorshift(0x00a6_9ca0);

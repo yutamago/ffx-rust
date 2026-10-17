@@ -359,3 +359,20 @@ particles, 0x20 bytes each from `+0x30`:
 
 Each step adds 64.0 in 53 bits to the stored `f32` and rounds at the store.
 Returns the plane count (0 for none) in `eax`.
+
+## Render-data counts (`clearVFXRenderDataShp*`, `caculateVFXRenderDataShapeFieldBufferSize`)
+
+A VFX render data (`graphicVFXGetRenderDataByInstance`) has `i32 +0x90`
+parts of 0x6c bytes at `[+0x94]`. A part keeps its index count at `+4`, its
+vertex count at `+8`, its index buffer at `+0x1c` (`[+0x68]` entries of 2
+bytes), and from `+0x2c` one 0x1c-byte record per dynamic-geometry buffer
+whose first two words are that buffer's index and vertex counts.
+
+| Function | Effect |
+| --- | --- |
+| `clearVFXRenderDataShp` (`0x00713290`) | every part's counts set to 0, also in the current buffer's record (`graphicDynGeoMemManagerGetCurrentBufferId`) |
+| `clearVFXRenderDataShpWithMemset` (`0x00713320`) | the same, each index buffer zeroed first |
+| `caculateVFXRenderDataShapeFieldBufferSize` (`0x00712bd0`) | the first part's vertex count += 6n, index count += 4n, for `n` the `i16 +2` of shape entry `k` (`get_ptr32(*shape)`, offset `i16 +0x10 + 8k`) |
+
+All three return 1, or 0 when the instance has no render data. They are
+bookkeeping for the PC renderer's buffers, ported in `draw.rs`.

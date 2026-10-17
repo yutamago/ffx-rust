@@ -3288,6 +3288,18 @@ ported! {
     pppKeShpTail3VfCopy_00751680 @ 0x0075_1680 => extern "C" fn ppp_ke_shp_tail3_vf_copy(dst: u32) -> u32 {
         small::bridge::ppp_ke_shp_tail3_vf_copy(&mut mem(), dst)
     }
+    /// `caculateVFXRenderDataShapeFieldBufferSize(lo, hi, shape, n)`.
+    caculateVFXRenderDataShapeFieldBufferSize @ 0x0071_2bd0 => extern "C" fn caculate_vfx_render_data_shape_field_buffer_size(lo: u32, hi: u32, shape: u32, n: u32) -> u32 {
+        draw::bridge::caculate_vfx_render_data_shape_field_buffer_size(&mut mem(), [lo, hi, shape, n], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `clearVFXRenderDataShp(lo, hi)`.
+    clearVFXRenderDataShp @ 0x0071_3290 => extern "C" fn clear_vfx_render_data_shp(lo: u32, hi: u32) -> u32 {
+        draw::bridge::clear_vfx_render_data_shp(&mut mem(), lo, hi, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `clearVFXRenderDataShpWithMemset(lo, hi)`.
+    clearVFXRenderDataShpWithMemset @ 0x0071_3320 => extern "C" fn clear_vfx_render_data_shp_with_memset(lo: u32, hi: u32) -> u32 {
+        draw::bridge::clear_vfx_render_data_shp_with_memset(&mut mem(), lo, hi, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `pppKeShpTail3XVfCopy_00753080(dst)`.
     pppKeShpTail3XVfCopy_00753080 @ 0x0075_3080 => extern "C" fn ppp_ke_shp_tail3x_vf_copy(dst: u32) -> u32 {
         small::bridge::ppp_ke_shp_tail3x_vf_copy(&mut mem(), dst)

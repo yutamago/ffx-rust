@@ -3448,7 +3448,7 @@
 0x007123c0 function pppStartPart              # fh v3:exact 0x007124a0 _pppStartPart
 0x00712560 function pppStartPartFromYonish    # fh v3:exact 0x00712640 _pppStartPartFromYonish
 0x00712b80 function pppBornPObjects           # (part): each birth record (+0x3c, +0x18 of them, 16 bytes) whose frame (+8) is at or before the part's (+8) is set to 0x7fffffff and gets pppCreatePObject; stops at a failure (called by pppRunPart)
-0x00712bd0 function caculateVFXRenderDataShapeFieldBufferSize # fh v3:exact 0x00712cb0
+0x00712bd0 function caculateVFXRenderDataShapeFieldBufferSize # fh v3:exact 0x00712cb0; (lo, hi, shape, u16 n) -> 1 (0 without render data): the first part's vertex count +8 += 6 x and index count +4 += 4 x the i16 +2 of shape entry n (get_ptr32(*shape) + i16 [+0x10 + 8n]); ported in ffx-vfx draw.rs
 0x00712c30 function calculateVFXSP_AlphaFunction # fh v3:exact 0x00712d10
 0x00712d00 function calculateVFXSP_ZMat       # fh v3:exact 0x00712de0
 0x00712d20 function pppPObjectCon2            # (obj): as pppPObjectCon with the program table records' +0x20 (Con2)
@@ -3458,8 +3458,8 @@
 0x00712e80 function pppPartCall14             # (part): as pppPartCall18 with the records' +0x14
 0x00712ec0 function checkEnvMdl0434              # str-match switch: only user of 3 string(s) held once by both builds, e.g. '15281_19_0_0_128_128.dds.phyre'; Switch 0x71002e5440 checkEnvMdl0434 (symbols from Fahrenheit's server export)
 0x00713160 function checkPolyImg0434             # layout+callees: sorts between checkEnvMdl0434 and clearVFXRenderDataShp, and its named callees match the Switch 0x71002e5960 checkPolyImg0434's (similarity 1.00: graphicDynGeoMemManagerGetBufferForSegment, graphicVFXCreate, graphicVFXCreateDataBuffer, graphicVFXDestroy, graphicVFXGetRenderDataByInstance); symbols from Fahrenheit's server export
-0x00713290 function clearVFXRenderDataShp     # fh v3:exact 0x00713370
-0x00713320 function clearVFXRenderDataShpWithMemset # layout+callees: sorts between clearVFXRenderDataShp and createGuildMapRenderDataBuffer, and its named callees match the Switch 0x71002dd660 clearVFXRenderDataShpWithMemset's (similarity 1.00: graphicDynGeoMemManagerGetCurrentBufferId, graphicVFXGetRenderDataByInstance); symbols from Fahrenheit's server export
+0x00713290 function clearVFXRenderDataShp     # fh v3:exact 0x00713370; (lo, hi) -> 1 (0 without render data): every part (i32 +0x90 of 0x6c bytes at [+0x94]) gets counts +4/+8 = 0, copied to its record +0x2c + 0x1c x graphicDynGeoMemManagerGetCurrentBufferId(); ported in ffx-vfx draw.rs
+0x00713320 function clearVFXRenderDataShpWithMemset # layout+callees: sorts between clearVFXRenderDataShp and createGuildMapRenderDataBuffer, and its named callees match the Switch 0x71002dd660 clearVFXRenderDataShpWithMemset's (similarity 1.00: graphicDynGeoMemManagerGetCurrentBufferId, graphicVFXGetRenderDataByInstance); symbols from Fahrenheit's server export; (lo, hi) -> as clearVFXRenderDataShp, each part's index buffer [+0x1c] memset to 0 for 2 x [+0x68] bytes first
 0x007133e0 function createGuildMapRenderDataBuffer # fh v3:exact 0x007134c0
 0x007135b0 function createMapRenderDataBuffer    # layout: alphabetical run between createGuildMapRenderDataBuffer and createVFXRenderDataBuffer (1 unnamed in the gap); Switch 0x71002da2a0 createMapRenderDataBuffer is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00713790 function createVFXRenderDataBuffer # fh v3:bsim0.97 0x00713870
