@@ -2825,4 +2825,89 @@ pub mod bridge {
         mem.write(w, 1u16);
         1
     }
+
+
+    /// `TOBtlCtrlLimitTimer()` (`0x00891ac0`): while the limit timer runs
+    /// (`0x0133f77c` 2) a frame is counted (`0x0133f788` += 1) and the time
+    /// left (`0x0133f790`) is the limit (`0x0133f78c`) less the frames over
+    /// 30 (25 in video mode 1, PAL). At 0 or below both it and the shown
+    /// time (`0x0133f794`) become 0; otherwise the shown time gets a random
+    /// hundredths digit: `(rnd() % 10 - 10 * ftol(left * -10)) / 100` (the
+    /// battle `rnd`, passed in). A NaN time takes the second path, as the
+    /// original's `fcom` does.
+    #[allow(clippy::cast_possible_truncation)] // values already rounded to f32
+    pub fn btl_ctrl_limit_timer<M: Mem>(mem: &mut M, rnd: impl FnOnce(&mut M) -> u32) {
+        use ffx_bridge::x87;
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        if mem.read::<u32>(g(mem, 0x0133_f77c)) != 2 {
+            return;
+        }
+        let frames_at = g(mem, 0x0133_f788);
+        let frames = f64::from(mem.read::<f32>(frames_at));
+        let frames = dword(x87::add(frames, 1.0));
+        mem.write(frames_at, frames as f32);
+        let per_second = if crate::config::bridge::video_mode(mem) == 0 { 30.0 } else { 25.0 };
+        let limit = f64::from(mem.read::<f32>(g(mem, 0x0133_f78c)));
+        let left = dword(x87::sub(limit, x87::div(frames, per_second)));
+        let left_at = g(mem, 0x0133_f790);
+        let shown_at = g(mem, 0x0133_f794);
+        mem.write(left_at, left as f32);
+        if left <= 0.0 {
+            mem.write(left_at, 0f32);
+            mem.write(shown_at, 0f32);
+            return;
+        }
+        let digit = rnd(mem).cast_signed() % 10;
+        let tens = x87::ftol(mem, x87::mul(left, -10.0)).cast_signed();
+        let v = digit.wrapping_sub(tens.wrapping_mul(10));
+        let shown = dword(x87::div(f32_of(v), 100.0));
+        mem.write(shown_at, shown as f32);
+    }
+
+    /// `TOBtlMemoryCursorPos()` (`0x008989d0`): unless the command
+    /// `0x0133ca4c` is 0xffff, 0xfffe or 0x3002, the cursor state of the
+    /// `0x023cc092` + 1 command windows (0xf0 bytes each from `0x0133c952`)
+    /// is saved for character `0x023cc088` (0x168 bytes each from
+    /// `0x0133d788`, 0x24 per window): the window kind, the depth and its
+    /// per-level positions and scrolls, and five more cursor words; the
+    /// character's saved flag (`0x0133d770 + i`) set.
+    #[allow(clippy::cast_possible_truncation)] // the image is 32-bit
+    pub fn btl_memory_cursor_pos(mem: &mut impl Mem) {
+        let cmd: u16 = mem.read(mem.rebase(0x0133_ca4c));
+        if matches!(cmd, 0xffff | 0xfffe | 0x3002) {
+            return;
+        }
+        let n = i32::from(mem.read::<i8>(mem.rebase(0x023c_c092)));
+        let chr = i32::from(mem.read::<i16>(mem.rebase(0x023c_c088)));
+        if n >= 0 {
+            let mut dst = mem
+                .rebase(0x0133_d78a)
+                .wrapping_add(chr.wrapping_mul(0x168).cast_unsigned());
+            let mut src = mem.rebase(0x0133_c95a);
+            for _ in 0..=n {
+                let kind = i16::from(mem.read::<i8>(src.wrapping_sub(8)));
+                mem.write(dst.wrapping_sub(2), kind);
+                let depth: i8 = mem.read(src);
+                mem.write(dst, i16::from(depth));
+                for j in 0..i32::from(depth).max(0) as u32 {
+                    let a: u16 = mem.read(src.wrapping_add(4 + 2 * j));
+                    mem.write(dst.wrapping_add(2 + 2 * j), a);
+                    let b: u16 = mem.read(src.wrapping_add(0xc + 2 * j));
+                    mem.write(dst.wrapping_add(0xa + 2 * j), b);
+                }
+                let v: u16 = mem.read(src.wrapping_add(2));
+                mem.write(dst.wrapping_add(0x12), v);
+                let v: u32 = mem.read(src.wrapping_add(0xce));
+                mem.write(dst.wrapping_add(0x1a), v);
+                for (from, to) in [(0xca, 0x16), (0xcc, 0x18), (0x38, 0x1e), (0x36, 0x14)] {
+                    let v: u16 = mem.read(src.wrapping_add(from));
+                    mem.write(dst.wrapping_add(to), v);
+                }
+                dst = dst.wrapping_add(0x24);
+                src = src.wrapping_add(0xf0);
+            }
+        }
+        let flag = mem.rebase(0x0133_d770).wrapping_add(chr.cast_unsigned());
+        mem.write(flag, 1u8);
+    }
 }

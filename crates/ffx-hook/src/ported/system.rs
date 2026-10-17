@@ -4428,6 +4428,14 @@ ported! {
     TOBtlOpenTidusLimitWindow @ 0x0089_8ca0 => extern "C" fn to_btl_open_tidus_limit_window(cmd: u32) -> u32 {
         tolib::bridge::btl_open_tidus_limit_window(&mut mem(), cmd, &mut GameMenu)
     }
+    /// `TOBtlCtrlLimitTimer()`.
+    TOBtlCtrlLimitTimer @ 0x0089_1ac0 => extern "C" fn to_btl_ctrl_limit_timer() {
+        tolib::bridge::btl_ctrl_limit_timer(&mut mem(), |m| call_sym(m, 0x0079_89a0, &[]));
+    }
+    /// `TOBtlMemoryCursorPos()`.
+    TOBtlMemoryCursorPos @ 0x0089_89d0 => extern "C" fn to_btl_memory_cursor_pos() {
+        tolib::bridge::btl_memory_cursor_pos(&mut mem());
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);
