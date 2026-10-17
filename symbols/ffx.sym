@@ -6672,7 +6672,7 @@
 0x0081e250 function SqsReportIopSoundStatus   # fh v3:bsim1.00 0x0081e360
 0x0081e260 function SqsReportStandby         # (): unanswered standby requests (0x012f414c != g_SqsIopResult) flush the command queue (SqsIopCommandSend when next > top); ++0x012f414c, (1, count) to g_SqsRpcSend2, Sqs_CallRpc2(0, _, 0x0081fcb0, 0); callers SqsMusicDataRead, SqsMusicDataSend, SqsSetReverbAttribute, SqsStraightStreamingDigitalModeSet; between SqsReportIopSoundStatus and SqsReportStandbyStatus alphabetically; name ours; ported (field round 36)
 0x0081e2d0 function SqsReportStandbyStatus    # (x); called by SndReportStandbyStatusDirect; alphabetical slot; ported (field round 36): (flush) -> 0x012f414c - g_SqsIopResult, the queue flushed first when flush and requests are unanswered
-0x0081e3b0 function SndStandbyShoutStream     # fh switch:cg2 0x71008ba6a8
+0x0081e3b0 function SndStandbyShoutStream     # fh switch:cg2 0x71008ba6a8; ported (field round 44): (data): length +0xc in 1..=0x10000 (signed) -> iSfxLoadData(i16 +8, 0), returns its eax; else returns the length
 0x0081e3e0 function SqsSeBlockPlaying         # (id); SndIsSepPlay for block SEs (bit 31 set); alphabetical slot before SqsSeForcePlay; ported (field round 33)
 0x0081e410 function SqsSeForcePlay            # (kind, id, pan, volume); called by SndForcePlayClick; alphabetical slot; ported (field round 33): iSfxForceStart(id, volume, pan), returns the new SE handle 0x012f4e7c
 0x0081e460 function SqsSePanDirect            # (kind, id, pan) -> iSfxSetPan (cmd 0x3d); called by SndSepPanDirect; alphabetical slot before SqsSePanTranslate; fh: SqsSeVolumeDirect (BSim; that one is 0x0081e820); ported (field round 33)
@@ -6683,7 +6683,7 @@
 0x0081e530 function SqsSePlayState            # () -> 0: prints a message (stderr) on PC; SndGetSePlayState jumps here
 0x0081e550 function SqsSePlaySwitch              # layout+callees: sorts between SqsSePlayState and SqsSeSeparateClear, and its named callees match the Switch 0x7100407050 SqsSePlaySwitch's (similarity 1.00: SqsIopCommandSend); symbols from Fahrenheit's server export
 0x0081e5d0 function SqsSeSeparateClear        # fh v3:exact 0x0081e6e0; ported (field round 33)
-0x0081e600 function SqsSeSeparateDataSend     # fh v3:exact 0x0081e710
+0x0081e600 function SqsSeSeparateDataSend     # fh v3:exact 0x0081e710; ported (field round 40): (data, size): size outside 1..=0x10000 -> dbgPrintf (flag bit 0), returns size - 1; else collects the u16 ids (+0x11) of chunks "SeSe" 0x20202070 with a positive multiple-of-4 length at +0xc into 0x012fb3c0 (unique, 256 max, a red "Too many wave datat" on stderr at 256), iSfxLoadData(id, 0) each, then SqsIopCommandSend (tail call)
 0x0081e750 function SqsSeSeparateMaskClear    # fh v3:exact 0x0081e860; ported (field round 33): 8 mask words + -1 into the RPC send buffer, iSfxStopAllNonBlockingSound(buf), iSfxUnloadAllData
 0x0081e7a0 function SqsSeSeparatePlaying # (id); SndIsSepPlay for separate SEs; alphabetical slot between SqsSeSeparateMaskClear and SqsSeStop; layout: alphabetical run between SqsSeSeparateMaskClear and SqsSeStop (1 unnamed in the gap); Switch 0x7100408670 SqsSeSeparatePlaying is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (field round 33)
 0x0081e7c0 function SqsSeStop # fh v3:exact 0x0081e8d0; fh v3:exact 0x0081e8d0; ported (field round 33)
@@ -11116,6 +11116,7 @@
 0x0091f420 function Guide_RevealFog              # (guide, x, z): clears the fog of war around the player (four maps, g_SaveData + 0x350c)
 0x0091f530 function Yn_GuideEdgeFade          # (p, a, b, rect, out) -> 1 beyond: h = |rect x0 - x1| / 2, r = distance of p from segment a-b (Yn_NearestOnLine2D, clamped); r^2 > (0.2h)^2 -> out 1.0, returns 1; else out = (r - 0.15h)/(0.05h) clamped 0..1, returns 0; from 0x0091cf10; name ours
 0x0091f640 function Guide_SetEnabled             # (on): g_GuideEnabled; from BasicDebugTweakUtil_handleInput
+0x0091f650 function rcVu0Add                 # (a, b, c) -> a.w: the rcVu0Sub template (b to the VU0 register 0x00c8f980, c to 0x00c8f970, Vec3AddScalars_00735100 on it with c's words, the register to a); caller rcbgPSimAddNail; name ours; ported (field round 45)
 0x0091f6b0 function rcbgScaleVector_0091f6b0  # the same code as rcbgScaleVector 0x009200a0
 0x0091f710 function rcCopyQword_0091f710      # (dst, src): as rcCopyQword_0091cb40
 0x0091f740 function rcVu0Sub                 # (a, b, c) -> a.w: b to the VU0 register 0x00c8f980, c to 0x00c8f970 (VFX_Copy16From), Vec3SubScalars(reg, reg, c.xyzw) (f32 each, restores vf00), the register to a (VFX_Copy16To; a.w = b.w); callers rcbgPSimAddNail, rcbgPSimCreate; name ours; ported (field round 38)
@@ -11244,8 +11245,10 @@
 0x009242f0 function rcdtListsFini             # (l): rcFree +0x4, +0xc, +0x14, the +0x18 entries of +0x1c and the table
 0x00924390 function rcdtRsd2Init                 # (rsd): 8 words cleared (rcdtRsd2.c, 0x00924750)
 0x00924750 function rcdtRsd2New               # (): rcAlloc 0x20 (rcdtRsd2.c), rcdtRsd2Init
+0x00924770 function rcVu0Add_00924770        # (a, b, c) -> a.w: the rcVu0Sub template (b to the VU0 register 0x00c8f980, c to 0x00c8f970, Vec3AddScalars_00735100 on it with c's words, the register to a); caller 0x00924a20; name ours; ported (field round 45)
 0x009247d0 function rcbgScaleVector_009247d0  # the same code as rcbgScaleVector 0x009200a0
 0x00924830 function rcCopyQword_00924830      # (dst, src): as rcCopyQword_0091cb40
+0x00924860 function rcVu0Sub_00924860        # (a, b, c) -> a.w: the rcVu0Sub template (b to the VU0 register 0x00c8f980, c to 0x00c8f970, Vec3SubScalars_0074b670 (restores vf00) on it with c's words, the register to a); caller 0x00924a20; name ours; ported (field round 45)
 0x009249a0 function rcefGetFloat25d5ea4       # g_MagicImports slot 515 (3 overlays), after rcAngleDiff: fld 0x025d5ea4; hidden from the dump
 0x009249c0 function rcefTargetGetHeight          # (i) -> float +0x10 of effect target i (0x025d5c60, 0x24 bytes each, filled by 0x00924a20); g_MagicImports
 0x009249e0 function rcefTargetGetAngle           # (i) -> float +0xc, the target's direction; g_MagicImports
@@ -11257,9 +11260,11 @@
 0x00924df0 function rcefScreenShake           # (e): while +0x214 with mode +0x1f8: sin-table swing of phase +0x210, faded over +0x200 frames from mode 3, times rand() % +0x20c + +0x208 as x (odd) or y; MsScreenOffset(x, y), after the frames (0, 0) and +0x214 = 0; from rcefMainProcRunAfter; name ours
 0x00924f30 function rcbgChrHandleIndex           # (handle) -> battle slot 0..14 or 20..27 whose MsGetChrHandle is handle, else -1; 0x00935340
 0x00924f90 function rcCopyQword_00924f90      # (dst, src): as rcCopyQword_0091cb40
+0x00924fc0 function rcVu0Add4                # (a, b, c) -> a.w: the rcVu0Sub template (b to the VU0 register 0x00c8f980, c to 0x00c8f970, Vec4AddScalars_0074bc50 on it with c's words, the register to a); caller 0x00924c70; name ours; ported (field round 45)
 0x00925020 function rcefGetVf00               # (dst): vf00 (0x00c0a004) to dst
 0x00925040 function rcbgScaleVector4_00925040 # the same code as rcbgScaleVector4_0091cb70
 0x009250a0 function rcCopyQword_009250a0      # (dst, src): as rcCopyQword_0091cb40
+0x009250d0 function rcVu0Sub4                # (a, b, c) -> a.w: the rcVu0Sub template (b to the VU0 register 0x00c8f980, c to 0x00c8f970, Vec4SubScalars_0074be90 (restores vf00) on it with c's words, the register to a); caller 0x00924c70; name ours; ported (field round 45)
 0x00925130 function rcefWorkCall_00924c70     # g_MagicImports slot 526 (1 overlay): 0x00924c70(0x025d5a20); hidden from the dump
 0x00925140 function rcefMainCreateObj         # fh v3:exact 0x00925140
 0x00925170 function rcefMainCreateTask        # fh v3:exact 0x00925170
@@ -11290,10 +11295,10 @@
 0x00925b60 function rcPrimBox                 # fh v3:exact 0x00925b60
 0x00925c50 function rcPrimBoxLine                # layout: alphabetical run between rcPrimBox and rcPrimCircleLine (2 unnamed in the gap); Switch 0x7100551660 rcPrimBoxLine is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00925db0 function rcPrimCircle                 # layout: alphabetical run between rcPrimBox and rcPrimCircleLine (2 unnamed in the gap); Switch 0x7100551e10 rcPrimCircle is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00925ea0 function rcPrimCircleLine          # fh v3:exact 0x00925ea0
+0x00925ea0 function rcPrimCircleLine          # fh v3:exact 0x00925ea0; ported (field round 42): (x, y, r, colour, ui): 65 stack vertices, the box (x - r, y - k), (x + r, y + k) at depth 256 and 63 zero ones, k = r * 1.1666666 * 416 / 448 (f64), rcPrimDraw2D(0x42, verts, 0x41, colour) with the UI type as rcPrimLine; returns cgraphicSetNowUIType(0)'s eax
 0x00925f80 function rcPrimDraw2D              # fh v3:exact 0x00925f80
-0x00926c00 function rcPrimLine                # fh v3:exact 0x00926c00
-0x009270c0 function rcPrimTri                 # fh v3:exact 0x009270c0
+0x00926c00 function rcPrimLine                # fh v3:exact 0x00926c00; ported (field round 41): (x0, y0, x1, y1, colour, ui): vertices (x, y, 256.0, 0) on the stack, rcPrimDraw2D(0x41, verts, 2, colour) between cgraphicSetNowUIType(2) (when ui) and cgraphicSetNowUIType(0), whose eax it returns
+0x009270c0 function rcPrimTri                 # fh v3:exact 0x009270c0; ported (field round 43): (x, y, r, angle, colour, ui): the triangle inscribed in rcPrimCircleLine's circle, corners at angle and +-1/3 turn through g_pppSinTable 0x00c44bf0 (index ftol(angle * [0x00b51558] / [0x00b39378]), (i + off) >> 4 & 0xfff), y scaled by 1.1666666 * 416 / 448; depths 256.0 and [0x00b664d8]; rcPrimDraw2D(0x4c, verts, 3, colour) with rcPrimLine's UI calls
 0x00927230 function rcPrimTriLine                # layout+callees: sorts between rcPrimTri and rcPrint, and its named callees match the Switch 0x7100551970 rcPrimTriLine's (similarity 0.67: cgraphicSetNowUIType, rcPrimDraw2D); symbols from Fahrenheit's server export
 0x009273b0 function rcCopyQword_009273b0      # (dst, src): as rcCopyQword_0091cb40
 0x009273e0 function rcVectorToFixed_009273e0  # (dst, v): v through vf31 as 12.4 fixed point (rcVec4fToFixed); rcPrimDraw2D
@@ -11327,6 +11332,7 @@
 0x00928460 function rcbgModelSetAlpha         # fh v3:exact 0x00928460
 0x009284d0 function rcbgModelSetTexReg        # (page): a GS register record (page << 17 | 0x1000f, reg 0x47) for rcbgSetReg; rcbgModelDraw
 0x00928540 function rcbgModelSetScale         # fh v3:exact 0x00928540
+0x009285a0 function rcVu0Add_009285a0        # (a, b, c) -> a.w: the rcVu0Sub template (b to the VU0 register 0x00c8f980, c to 0x00c8f970, Vec3AddScalars_00735100 on it with c's words, the register to a); caller 0x00928710; name ours; ported (field round 45)
 0x00928600 function rcbgScaleVector_00928600  # the same code as rcbgScaleVector 0x009200a0
 0x00928660 function rcfxParticleAddForce      # (ps, force): inserted before the first force of greater priority (+0x18); rcRealloc rcfxParticle.c 0x61/0x6e; rcbgPSimAddDamp/AddWind
 0x00928800 function rcfxParticleFiniForces    # (ps): each force's delete (+0x4), then the table (+0x38) freed
@@ -11344,8 +11350,10 @@
 0x00928ce0 function rcfxSpringInit            # (s): kind 0x30005, functions 0x00928c60/0x00928d70/0x00928aa0, 0.8 and 0.4
 0x00928d50 function rcfxSpringNew             # (): rcAlloc(0x30, rcfxSpring.c 0x1d) + rcfxSpringInit
 0x00928d80 function rcfxSpringSetCnt          # (s, n): +0x1c = n, +0x20 (8 n) and +0x24 (4 n) reallocated (rcfxSpring.c 0x42/0x43)
+0x00928df0 function rcVu0Add_00928df0        # (a, b, c) -> a.w: the rcVu0Sub template (b to the VU0 register 0x00c8f980, c to 0x00c8f970, Vec3AddScalars_00735100 on it with c's words, the register to a); caller 0x00928f40; name ours; ported (field round 45)
 0x00928e50 function rcbgScaleVector_00928e50  # the same code as rcbgScaleVector 0x009200a0
 0x00928eb0 function rcCopyQword_00928eb0      # (dst, src): as rcCopyQword_0091cb40
+0x00928ee0 function rcVu0Sub_00928ee0        # (a, b, c) -> a.w: the rcVu0Sub template (b to the VU0 register 0x00c8f980, c to 0x00c8f970, Vec3SubScalars_0074b670 (restores vf00) on it with c's words, the register to a); caller 0x00928f40; name ours; ported (field round 45)
 0x00929070 function rcfxNailDelete            # (nail): rcfxNailFini, then rcFree; name ours
 0x00929090 function rcfxNailFini              # (nail): rcFree +0x20..+0x2c
 0x00929100 function rcfxNailInit              # (fx): kind 0x30004 and callbacks 0x00929070/0x00929190/0x00928f40; 0x00929170 allocates it (rcfxNail.c)
@@ -11353,11 +11361,14 @@
 0x00929190 function rcfxNailUpdate            # (fx, ctx) -> ctx: each of +0x1c points: ctx +0x24 array [+0x20 index] to +0x24 array, through matrix +0x38 (rcVec3fApplyMatrix) or copied to +0x28, then to +0x2c; ctx f64 to +0x30; rcfxNailInit's update callback; name ours
 0x00929230 function rcfxNailSetCnt            # (nail, n): +0x1c = n, +0x20 (4 n) and three quadword buffers reallocated (rcfxNail.c 0x45..0x48)
 0x009292a0 function rcbgScaleVector_009292a0  # the same code as rcbgScaleVector 0x009200a0
+0x00929300 function rcVu0Sub_00929300        # (a, b, c) -> a.w: the rcVu0Sub template (b to the VU0 register 0x00c8f980, c to 0x00c8f970, Vec3SubScalars_0074b670 (restores vf00) on it with c's words, the register to a); caller 0x00929360; name ours; ported (field round 45)
 0x009293d0 function rcfxDampInit                 # (damp) -> damp: type 0x30003, functions 0x009293c0 (+4), 0x00929360 (+0x14), +0x1c = 0.0001f (0x00b92154); rcfxDamp.c (0x00929420)
 0x00929420 function rcfxDampNew               # (): rcAlloc 0x20 (rcfxDamp.c), rcfxDampInit (rcbgPSimAddDamp)
+0x00929440 function rcVu0Add_00929440        # (a, b, c) -> a.w: the rcVu0Sub template (b to the VU0 register 0x00c8f980, c to 0x00c8f970, Vec3AddScalars_00735100 on it with c's words, the register to a); caller 0x00929500; name ours; ported (field round 45)
 0x009294a0 function rcbgScaleVector_009294a0  # the same code as rcbgScaleVector 0x009200a0
 0x00929570 function rcfxGravityInit           # (fx): kind 0x30002 and callbacks 0x00929560/0x00929500; 0x009295c0 allocates it (rcfxGravity.c)
 0x009295c0 function rcfxGravityNew            # (): rcAlloc 0x2c (rcfxGravity.c), rcfxGravityInit
+0x009295e0 function rcVu0Add_009295e0        # (a, b, c) -> a.w: the rcVu0Sub template (b to the VU0 register 0x00c8f980, c to 0x00c8f970, Vec3AddScalars_00735100 on it with c's words, the register to a); caller 0x009296d0; name ours; ported (field round 45)
 0x00929640 function rcbgScaleVector_00929640  # the same code as rcbgScaleVector 0x009200a0
 0x009296a0 function rcCopyQword_009296a0      # (dst, src): as rcCopyQword_0091cb40
 0x00929850 function rcfxWindInit              # (fx): kind 0x30006 and callbacks 0x00929840/0x009296d0, +0x1c 1.0, +0x34 0.1, +0x40 1.0 f64; 0x009298c0 allocates it (rcfxWind.c)
@@ -11524,8 +11535,10 @@
 0x0092f710 function rcefModelFini             # fh v3:exact 0x0092f710
 0x0092f750 function rcefModelInit             # fh v3:exact 0x0092f750
 0x0092f770 function rcefModelProc_0092f770    # fh v3:exact 0x0092f770
+0x0092f790 function rcVu0Add_0092f790        # (a, b, c) -> a.w: the rcVu0Sub template (b to the VU0 register 0x00c8f980, c to 0x00c8f970, Vec3AddScalars_00735100 on it with c's words, the register to a); caller rcefObjCalcLocalMatrix; name ours; ported (field round 45)
 0x0092f7f0 function rcbgScaleVector_0092f7f0  # the same code as rcbgScaleVector 0x009200a0
 0x0092f850 function rcCopyQword_0092f850      # (dst, src): as rcCopyQword_0091cb40; rcefObjCalcLocalMatrix, rcefObjCalcParentMatrix
+0x0092f880 function rcVu0Add4_0092f880       # (a, b, c) -> a.w: the rcVu0Sub template (b to the VU0 register 0x00c8f980, c to 0x00c8f970, Vec4AddScalars_0074bc50 on it with c's words, the register to a); caller rcefObjCalcLocalMatrix; name ours; ported (field round 45)
 0x0092f920 function rcefObjLinkLast              # (obj, child): child after the last of obj's chain (+0xcc next, child +0xc8 = previous)
 0x0092f970 function rcefObjAttachChr          # fh v3:exact 0x0092f970
 0x0092f9a0 function rcefObjAttachChrOpt       # fh v3:exact 0x0092f9a0
@@ -15159,6 +15172,7 @@
 0x012f4f48 label    g_SqsReplyHistory            # 4 x 4 words: SqsIopCommandSend shifts each row down and puts reply +0x10, +0x18, +0x30, +0x34 last; bit 0 of 0x012f4f64 (row 1's newest) set by an SE start
 0x012f4f88 label    g_SqsWaveInfoDst             # IOP address SqsInitWaveInfo sends 0x5000 bytes to
 0x012f4f90 label    g_SqsAdpcmState              # PS-ADPCM history: left s1, s2, right s1, s2 (i32; Sqs_DecodeAdpcm)
+0x012fb3c0 label    g_SqsSepWaves                # the wave ids SqsSeSeparateDataSend loads (256 u32)
 0x012fb7cc label g_BtlCheatPowerup         # u32: the player powerup cheat (MsCheatPlayerPowerup on each turn, MsBattleProcess_InputCue)
 0x012fb7d0 label    g_GraphicSkipFrame        # set to 1 while the sound request count 0x012fb808 is above 1 (a skipped frame); graphicVFXUpdate and updateVFXRenderData do nothing then
 0x012fb7d8 label    g_ChrDrawDetached         # u32: when set, Ch_SysDrawSetSituation and Ch_DrawClothClear leave the renderer alone

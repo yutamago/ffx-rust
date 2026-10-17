@@ -3757,6 +3757,46 @@ ported! {
         yi::bridge::yi_poly_buf_unpack(&mut mem(), buf, src, code)
     }
 
+    /// `rcPrimLine(x0, y0, x1, y1, colour, ui)`: the vertices in a local
+    /// buffer, as the original's.
+    rcPrimLine @ 0x0092_6c00 => extern "C" fn shim_rc_prim_line(x0: u32, y0: u32, x1: u32, y1: u32, colour: u32, ui: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Verts([u32; 8]);
+        let mut v = Verts([0; 8]);
+        let w = u32::try_from((&raw mut v).expose_provenance()).unwrap_or(0);
+        rcui::bridge::rc_prim_line(&mut mem(), [x0, y0, x1, y1, colour, ui], w, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcPrimCircleLine(x, y, r, colour, ui)`: the 65 vertices in a local
+    /// buffer, as the original's.
+    rcPrimCircleLine @ 0x0092_5ea0 => extern "C" fn shim_rc_prim_circle_line(x: u32, y: u32, r: u32, colour: u32, ui: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Verts([u32; 65 * 4]);
+        let mut v = Verts([0; 65 * 4]);
+        let w = u32::try_from((&raw mut v).expose_provenance()).unwrap_or(0);
+        rcui::bridge::rc_prim_circle_line(&mut mem(), [x, y, r, colour, ui], w, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcPrimTri(x, y, r, angle, colour, ui)`: the vertices in a local
+    /// buffer, as the original's.
+    rcPrimTri @ 0x0092_70c0 => extern "C" fn shim_rc_prim_tri(x: u32, y: u32, r: u32, angle: u32, colour: u32, ui: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Verts([u32; 12]);
+        let mut v = Verts([0; 12]);
+        let w = u32::try_from((&raw mut v).expose_provenance()).unwrap_or(0);
+        rcui::bridge::rc_prim_tri(&mut mem(), [x, y, r, angle, colour, ui], w, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SndStandbyShoutStream(data)`.
+    SndStandbyShoutStream @ 0x0081_e3b0 => extern "C" fn shim_snd_standby_shout_stream(data: u32) -> u32 {
+        nkz::bridge::snd_standby_shout_stream(&mut mem(), data, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsSeSeparateDataSend(data, size)`.
+    SqsSeSeparateDataSend @ 0x0081_e600 => extern "C" fn shim_sqs_se_separate_data_send(data: u32, size: u32) -> u32 {
+        nkz::bridge::sqs_se_separate_data_send(&mut mem(), data, size, &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `SqsSetCycleMode(a)`.
     SqsSetCycleMode @ 0x0081_e900 => extern "C" fn shim_sqs_set_cycle_mode(a: u32) -> u32 {
         nkz::bridge::sqs_cmd_arg(&mut mem(), 4, a, &mut |_, f, a| call_cdecl(f, a))
@@ -3816,6 +3856,71 @@ ported! {
     /// `eax` as the original's early return does (no caller reads it).
     SqsInitWaveInfo @ 0x0081_d3f0 => extern "C" fn shim_sqs_init_wave_info(src: u32, _b: u32, a: u32) {
         nkz::bridge::sqs_init_wave_info(&mut mem(), src, a, &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `rcVu0Add(a, b, c)`.
+    rcVu0Add @ 0x0091_f650 => extern "C" fn shim_rc_vu0_add(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add3, a, b, c)
+    }
+
+    /// `rcVu0Add_00924770(a, b, c)`.
+    rcVu0Add_00924770 @ 0x0092_4770 => extern "C" fn shim_rc_vu0_add_00924770(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add3, a, b, c)
+    }
+
+    /// `rcVu0Sub_00924860(a, b, c)`.
+    rcVu0Sub_00924860 @ 0x0092_4860 => extern "C" fn shim_rc_vu0_sub_00924860(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Sub3, a, b, c)
+    }
+
+    /// `rcVu0Add4(a, b, c)`.
+    rcVu0Add4 @ 0x0092_4fc0 => extern "C" fn shim_rc_vu0_add4(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add4, a, b, c)
+    }
+
+    /// `rcVu0Sub4(a, b, c)`.
+    rcVu0Sub4 @ 0x0092_50d0 => extern "C" fn shim_rc_vu0_sub4(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Sub4, a, b, c)
+    }
+
+    /// `rcVu0Add_009285a0(a, b, c)`.
+    rcVu0Add_009285a0 @ 0x0092_85a0 => extern "C" fn shim_rc_vu0_add_009285a0(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add3, a, b, c)
+    }
+
+    /// `rcVu0Add_00928df0(a, b, c)`.
+    rcVu0Add_00928df0 @ 0x0092_8df0 => extern "C" fn shim_rc_vu0_add_00928df0(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add3, a, b, c)
+    }
+
+    /// `rcVu0Sub_00928ee0(a, b, c)`.
+    rcVu0Sub_00928ee0 @ 0x0092_8ee0 => extern "C" fn shim_rc_vu0_sub_00928ee0(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Sub3, a, b, c)
+    }
+
+    /// `rcVu0Sub_00929300(a, b, c)`.
+    rcVu0Sub_00929300 @ 0x0092_9300 => extern "C" fn shim_rc_vu0_sub_00929300(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Sub3, a, b, c)
+    }
+
+    /// `rcVu0Add_00929440(a, b, c)`.
+    rcVu0Add_00929440 @ 0x0092_9440 => extern "C" fn shim_rc_vu0_add_00929440(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add3, a, b, c)
+    }
+
+    /// `rcVu0Add_009295e0(a, b, c)`.
+    rcVu0Add_009295e0 @ 0x0092_95e0 => extern "C" fn shim_rc_vu0_add_009295e0(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add3, a, b, c)
+    }
+
+    /// `rcVu0Add_0092f790(a, b, c)`.
+    rcVu0Add_0092f790 @ 0x0092_f790 => extern "C" fn shim_rc_vu0_add_0092f790(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add3, a, b, c)
+    }
+
+    /// `rcVu0Add4_0092f880(a, b, c)`.
+    rcVu0Add4_0092f880 @ 0x0092_f880 => extern "C" fn shim_rc_vu0_add4_0092f880(a: u32, b: u32, c: u32) -> u32 {
+        vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add4, a, b, c)
     }
 
     /// `rcVu0Sub(a, b, c)`.
