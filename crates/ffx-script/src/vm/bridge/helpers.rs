@@ -228,3 +228,394 @@ pub fn atel_all_clear_bind_mask(m: &mut impl Mem) -> u32 {
     m.write(m.rebase(BIND_MASK_ALL), 0_u32);
     base + 0x48
 }
+
+// ---- round 14 ----
+
+/// The effect flags (`0x01326b70`, `0x01326b74`), the love-parameter
+/// mask (`0x01326b90`) and the guide-map flag byte (`0x01325ba3`).
+const EFFECT_FLAGS: u32 = 0x0132_6b70;
+const EFFECT_FLAGS2: u32 = 0x0132_6b74;
+const LOVE_DISABLE: u32 = 0x0132_6b90;
+const GUIDE_MAP_FLAGS: u32 = 0x0132_5ba3;
+/// `g_AtelForceBattleMapId` (`0x00c5273c`).
+const FORCE_BATTLE_MAP: u32 = 0x00c5_273c;
+/// The 128 sprite records (`0x01327148`, 0x1c bytes each).
+const SPRITES: u32 = 0x0132_7148;
+/// The empty string the header getters return for none (`0x00b8fbeb`).
+const EMPTY: u32 = 0x00b8_fbeb;
+
+/// `1 << (n & 31)` (`shl eax, cl`).
+fn bit(n: u32) -> u32 {
+    1_u32.wrapping_shl(n)
+}
+
+fn and_word(m: &mut impl Mem, at: u32, mask: u32) {
+    let p = m.rebase(at);
+    let v = m.read::<u32>(p);
+    m.write(p, v & mask);
+}
+
+fn or_word(m: &mut impl Mem, at: u32, mask: u32) {
+    let p = m.rebase(at);
+    let v = m.read::<u32>(p);
+    m.write(p, v | mask);
+}
+
+/// `AtelClearEffectFlag_00863860(n)`: bit n of `0x01326b70` cleared;
+/// `EAX` the mask.
+pub fn atel_clear_effect_flag(m: &mut impl Mem, n: u32) -> u32 {
+    and_word(m, EFFECT_FLAGS, !bit(n));
+    !bit(n)
+}
+
+/// `0x008702f0(n)`: bit n of `0x01326b74` set; `EAX` the bit.
+pub fn atel_set_effect_flag2(m: &mut impl Mem, n: u32) -> u32 {
+    or_word(m, EFFECT_FLAGS2, bit(n));
+    bit(n)
+}
+
+/// `0x00863af0(n)`: bit n of `0x01326b74` cleared; `EAX` the mask.
+pub fn atel_clear_effect_flag2(m: &mut impl Mem, n: u32) -> u32 {
+    and_word(m, EFFECT_FLAGS2, !bit(n));
+    !bit(n)
+}
+
+/// `AtelSetLoveParamDisable(i, on)` (`0x00870250`): bit i (< 8) of
+/// `0x01326b90` set or cleared; `EAX` the bit or its mask (i itself for
+/// i >= 8).
+pub fn atel_set_love_param_disable(m: &mut impl Mem, i: u32, on: u32) -> u32 {
+    if i.cast_signed() >= 8 {
+        return i;
+    }
+    if on != 0 {
+        or_word(m, LOVE_DISABLE, bit(i));
+        bit(i)
+    } else {
+        and_word(m, LOVE_DISABLE, !bit(i));
+        !bit(i)
+    }
+}
+
+/// Bit `k` of the guide-map flag byte = on != 0 (`AtelSetGuideMapDraw*`);
+/// `EAX` the old bit.
+fn guide_map_flag(m: &mut impl Mem, k: u32, on: u32) -> u32 {
+    let p = m.rebase(GUIDE_MAP_FLAGS);
+    let v = m.read::<u8>(p);
+    let old = u32::from(v >> k & 1);
+    let b = u8::from(on != 0) << k;
+    m.write(p, v & !(1 << k) | b);
+    old
+}
+
+/// `AtelSetGuideMapDrawBlizFlag(on)` (`0x00870160`): bit 3.
+pub fn atel_set_guide_map_draw_bliz_flag(m: &mut impl Mem, on: u32) -> u32 {
+    guide_map_flag(m, 3, on)
+}
+
+/// `AtelSetGuideMapDrawFlag(on)` (`0x00870190`): bit 5.
+pub fn atel_set_guide_map_draw_flag(m: &mut impl Mem, on: u32) -> u32 {
+    guide_map_flag(m, 5, on)
+}
+
+/// `AtelSetGuideMapForceDrawFlag(on)` (`0x008701c0`): bit 6.
+pub fn atel_set_guide_map_force_draw_flag(m: &mut impl Mem, on: u32) -> u32 {
+    guide_map_flag(m, 6, on)
+}
+
+/// `0x0086f3d0(on)`: bit 0 of `0x01325db0` = on != 0; `EAX` the old bit
+/// xor the new one.
+pub fn atel_set_ctrl_flag_1325db0(m: &mut impl Mem, on: u32) -> u32 {
+    let p = m.rebase(0x0132_5db0);
+    let v = m.read::<u32>(p);
+    let x = (v ^ u32::from(on != 0)) & 1;
+    m.write(p, v ^ x);
+    x
+}
+
+/// `0x00862d50(map)`: `g_AtelForceBattleMapId` when it is positive, else
+/// map.
+pub fn atel_get_battle_map_id(m: &impl Mem, map: u32) -> u32 {
+    let f = m.read::<u32>(m.rebase(FORCE_BATTLE_MAP));
+    if f.cast_signed() < 1 { map } else { f }
+}
+
+/// `0x00870fe0(worker, on)`: the worker's `+0x36` bit 3 set or cleared;
+/// returns the bit.
+pub fn atel_set_worker_flag36_8(m: &mut impl Mem, w: u32, on: u32) -> u32 {
+    let v = m.read::<u16>(w + 0x36);
+    let v = if on != 0 { v | 8 } else { v & 0xfff7 };
+    m.write(w + 0x36, v);
+    u32::from(v >> 3 & 1)
+}
+
+/// The script block's expansion header (`+0x2c`, relative), if any.
+fn expansion(m: &impl Mem, b: u32) -> Option<u32> {
+    let o = m.read::<u32>(b + 0x2c);
+    if o == 0 {
+        return None;
+    }
+    let e = o.wrapping_add(b);
+    (e != 0).then_some(e)
+}
+
+/// `AtelGetBinHdrExpandSpFlags(block)` (`0x0086adc0`): the expansion
+/// header's `+8`, 0 without one.
+pub fn atel_get_bin_hdr_expand_sp_flags(m: &impl Mem, b: u32) -> u32 {
+    expansion(m, b).map_or(0, |e| m.read(e + 8))
+}
+
+/// `0x0086acc0(block)`: the expansion header's `+0x24` table address
+/// (relative to the block), 0 without one.
+pub fn atel_get_bin_hdr_expand_24(m: &impl Mem, b: u32) -> u32 {
+    let Some(e) = expansion(m, b) else { return 0 };
+    let t = m.read::<u32>(e + 0x24);
+    if t == 0 { 0 } else { t.wrapping_add(b) }
+}
+
+/// `0x0086aa70(block)`: the expansion header's `+0x10` string (relative
+/// to the block), the empty string `0x00b8fbeb` without one.
+pub fn atel_get_bin_hdr_expand_name(m: &impl Mem, b: u32) -> u32 {
+    let Some(e) = expansion(m, b) else {
+        return m.rebase(EMPTY);
+    };
+    let t = m.read::<u32>(e + 0x10);
+    if t == 0 {
+        m.rebase(EMPTY)
+    } else {
+        b.wrapping_add(t)
+    }
+}
+
+/// `AtelGetBindpList()` (`0x0086ae20`): the first ctrl work's script
+/// block's expansion `+0x28` list, `0x01325b80` without one.
+pub fn atel_get_bindp_list(m: &impl Mem) -> u32 {
+    let none = m.rebase(0x0132_5b80);
+    let b = m.read::<u32>(m.rebase(0x0132_5be8));
+    if b == 0 {
+        return none;
+    }
+    let Some(e) = expansion(m, b) else {
+        return none;
+    };
+    let t = m.read::<u32>(e + 0x28);
+    if t == 0 { none } else { b.wrapping_add(t) }
+}
+
+/// The expansion header's `+0x18` table entry i (8 bytes, relative to
+/// the block).
+fn table18(m: &impl Mem, b: u32, i: u32) -> Option<u32> {
+    let e = expansion(m, b)?;
+    let t = m.read::<u32>(e + 0x18);
+    (t != 0).then(|| t.wrapping_add(i.wrapping_mul(8)).wrapping_add(b))
+}
+
+/// `0x0086aaf0(block, i)`: entry i's word at `+4` of the `+0x18` table, 0
+/// without one.
+pub fn atel_get_bin_hdr_table18_a(m: &impl Mem, b: u32, i: u32) -> u32 {
+    table18(m, b, i).map_or(0, |p| m.read(p + 4))
+}
+
+/// `0x0086aac0(block, i)`: entry i's `u16` at `+8` of the `+0x18` table,
+/// 0 without one.
+pub fn atel_get_bin_hdr_table18_b(m: &impl Mem, b: u32, i: u32) -> u32 {
+    table18(m, b, i).map_or(0, |p| u32::from(m.read::<u16>(p + 8)))
+}
+
+/// `AtelGetBinHdrExpandSoundEvent(block)` (`0x0086ad20`): the expansion
+/// header's `+0x3c` record's `+8` (relative to the block), 0 without one.
+pub fn atel_get_bin_hdr_expand_sound_event(m: &impl Mem, b: u32) -> u32 {
+    let Some(e) = expansion(m, b) else { return 0 };
+    let t = m.read::<u32>(e + 0x3c);
+    if t == 0 {
+        return 0;
+    }
+    let r = t.wrapping_add(b);
+    if r == 0 {
+        return 0;
+    }
+    m.read::<u32>(r + 8).wrapping_add(b)
+}
+
+/// `0x008858c0(ctrl, i)`: string i of the ctrl work's `+8` block's `+0x44`
+/// table (offsets relative to it), the empty string without one.
+pub fn atel_get_block_string(m: &impl Mem, c: u32, i: u32) -> u32 {
+    let e = m.read::<u32>(c + 8);
+    if e == 0 {
+        return m.rebase(EMPTY);
+    }
+    let t = m.read::<u32>(e + 0x44).wrapping_add(e);
+    if t == 0 {
+        return m.rebase(EMPTY);
+    }
+    m.read::<u32>(t.wrapping_add(i.wrapping_mul(4)))
+        .wrapping_add(t)
+}
+
+/// Sprite record i clamped to 0..127 (`0x1c` bytes from `0x01327148`).
+fn sprite(m: &impl Mem, i: u32) -> u32 {
+    let i = i.cast_signed().clamp(0, 0x7f).cast_unsigned();
+    m.rebase(SPRITES) + i * 0x1c
+}
+
+/// `0x008747b0(i)`: sprite record i's address.
+pub fn atel_get_sprite(m: &impl Mem, i: u32) -> u32 {
+    sprite(m, i)
+}
+
+/// `0x008747f0(i)`: sprite record i's first byte cleared (for a negative
+/// i, record 0 gets 0 too); `EAX` 7i or 0x37d (`lea`/`sub`).
+pub fn atel_clear_sprite(m: &mut impl Mem, i: u32) -> u32 {
+    let p = sprite(m, i);
+    m.write(p, 0_u8);
+    (p - m.rebase(SPRITES)) / 4
+}
+
+/// `0x00874970(i, on)`: sprite i's `+3` byte = on != 0 (1 or 0); `EAX` on.
+pub fn atel_set_sprite_flag(m: &mut impl Mem, i: u32, on: u32) -> u32 {
+    let p = sprite(m, i);
+    m.write(p + 3, u8::from(on != 0));
+    on
+}
+
+/// `0x008749b0(i, v)`: sprite i's `+0x13` byte = v; `EAX` the clamped
+/// index with v in its low byte.
+pub fn atel_set_sprite_13(m: &mut impl Mem, i: u32, v: u32) -> u32 {
+    let k = i.cast_signed().clamp(0, 0x7f).cast_unsigned();
+    let p = sprite(m, i);
+    let b = v.to_le_bytes()[0];
+    m.write(p + 0x13, b);
+    k & !0xff | u32::from(b)
+}
+
+/// `0x00874b30(i, x, y)`: sprite i's `+4` and `+6` (`u16`) = x, y; `EAX`
+/// the clamped index with y in its low half.
+pub fn atel_set_sprite_pos(m: &mut impl Mem, i: u32, x: u32, y: u32) -> u32 {
+    let k = i.cast_signed().clamp(0, 0x7f).cast_unsigned();
+    let p = sprite(m, i);
+    let [x0, x1, ..] = x.to_le_bytes();
+    let [y0, y1, ..] = y.to_le_bytes();
+    m.write(p + 4, u16::from_le_bytes([x0, x1]));
+    m.write(p + 6, u16::from_le_bytes([y0, y1]));
+    k & !0xffff | u32::from(u16::from_le_bytes([y0, y1]))
+}
+
+/// `AtelClearSnd3dWork(i)` (`0x008772f0`): record i's `+0`, `+4` and
+/// `+0x20` (`u16`) cleared; `EAX` 9i (clamped to 0..15).
+pub fn atel_clear_snd3d_work(m: &mut impl Mem, i: u32) -> u32 {
+    let k = i.cast_signed().clamp(0, 0xf).cast_unsigned();
+    let p = m.rebase(SND3D_WORK) + k * 0x24;
+    m.write(p, 0_u32);
+    m.write(p + 4, 0_u32);
+    m.write(p + 0x20, 0_u16);
+    k * 9
+}
+
+/// `0x00874fb0()`: the 32 records at `0x01327f50` (16 bytes) get `+0`,
+/// `+4` and the byte `+8` cleared; `EAX` the end `0x01328154`.
+pub fn atel_clear_records_1327f50(m: &mut impl Mem) -> u32 {
+    let base = m.rebase(0x0132_7f50);
+    for i in 0..32 {
+        let p = base + i * 0x10;
+        m.write(p, 0_u32);
+        m.write(p + 4, 0_u32);
+        m.write(p + 8, 0_u8);
+    }
+    base + 0x204
+}
+
+/// `0x008719c0(s)`: the length of the string at s.
+pub fn atel_strlen(m: &impl Mem, s: u32) -> u32 {
+    let mut n = 0_u32;
+    while m.read::<u8>(s.wrapping_add(n)) != 0 {
+        n = n.wrapping_add(1);
+    }
+    n
+}
+
+/// `0x00877610(s, n, ch)`: drops up to n leading `ch` from the string in
+/// place, as the original does (when all n match, the copy starts at the
+/// last one); `EAX` the new terminator's address.
+pub fn atel_str_trim_leading(m: &mut impl Mem, s: u32, n: u32, ch: u32) -> u32 {
+    let mut src = s;
+    let mut p = s;
+    let mut k = 0_i32;
+    if n.cast_signed() > 0 {
+        loop {
+            let c = i32::from(m.read::<i8>(p)).cast_unsigned();
+            src = p;
+            p = p.wrapping_add(1);
+            if c != ch {
+                break;
+            }
+            k += 1;
+            if k >= n.cast_signed() {
+                break;
+            }
+        }
+    }
+    let mut d = s;
+    let mut c = m.read::<u8>(src);
+    while c != 0 {
+        m.write(d, c);
+        c = m.read::<u8>(src.wrapping_add(d.wrapping_sub(s)).wrapping_add(1));
+        d = d.wrapping_add(1);
+    }
+    m.write(d, 0_u8);
+    d
+}
+
+/// One `f32` argument stored `fld m32`/`fstp m32`.
+fn put_f32(m: &mut impl Mem, at: u32, v: u32) {
+    m.write(at, x87::store(x87::load(v)));
+}
+
+/// `0x00870d10(worker, i, v f)`: the worker's `+(i + 0x14) * 0x4c` = v;
+/// `EAX` the worker.
+pub fn atel_set_level_f74(m: &mut impl Mem, w: u32, i: u32, v: u32) -> u32 {
+    put_f32(
+        m,
+        w.wrapping_add(i.wrapping_add(0x14).wrapping_mul(0x4c)),
+        v,
+    );
+    w
+}
+
+/// The current level's field `off` (`+level*0x4c`) = v (`0x0086f040`
+/// `+0x5ec`, `0x008715c0` `+0x5c8`, `0x00871610` `+0x5c4`, `0x00871630`
+/// `+0x5c0`); `EAX` level*0x4c.
+pub fn atel_set_cur_level_f32(m: &mut impl Mem, w: u32, off: u32, v: u32) -> u32 {
+    let o = u32::from(m.read::<u8>(w + 0x32)) * 0x4c;
+    put_f32(m, w + o + off, v);
+    o
+}
+
+/// Level i's field `off` (`+i*0x4c`) = v, left in `ST0` (`fst`):
+/// `0x00871500` `+0x5f8`, `0x00871520` `+0x5f4`. Returns v.
+pub fn atel_set_level_f32(m: &mut impl Mem, w: u32, i: u32, off: u32, v: u32) -> f64 {
+    put_f32(m, w.wrapping_add(i.wrapping_mul(0x4c)).wrapping_add(off), v);
+    x87::load(v)
+}
+
+/// Turn block i's field `off` (`+i*0x44`) = v, left in `ST0`:
+/// `0x00871540` `+0x880`, `0x00871560` `+0x87c`, `0x00871580` `+0x874`,
+/// `0x008715a0` `+0x878`. Returns v.
+pub fn atel_set_turn_f32(m: &mut impl Mem, w: u32, i: u32, off: u32, v: u32) -> f64 {
+    put_f32(m, w.wrapping_add(i.wrapping_mul(0x44)).wrapping_add(off), v);
+    x87::load(v)
+}
+
+/// The same field of all nine levels (`+off + l*0x4c`) or turn blocks
+/// (`+off + l*0x44`) = v (`0x0086f0d0` and the like; `0x0086f300`'s last
+/// store is an `fst`, so its shim returns v in `ST0`); `EAX` the worker.
+pub fn atel_set_all_f32(m: &mut impl Mem, w: u32, off: u32, step: u32, v: u32) -> u32 {
+    for l in 0..9 {
+        put_f32(m, w + off + l * step, v);
+    }
+    w
+}
+
+/// `0x007a3ac0()`: the battle word `0x0112c900` as `f32` (`fild`).
+pub fn atel_get_battle_count_f(m: &impl Mem) -> f64 {
+    let v = m.read::<u32>(m.rebase(0x0112_c900)).cast_signed();
+    x87::load(x87::store(f64::from(v)))
+}

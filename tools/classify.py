@@ -77,6 +77,8 @@ REVIEWED = {
     0x0083b1d0: ("platform", "Sg_PcRead: file read (main round 8)"),
     0x0083c200: ("platform", "Sg_Mem heap setup (main round 8)"),
     0x007ff670: ("debug", "op_loop_end_ffx: jumps to the debug routine 0x00a5bd90 under g_OpDebugMode (effects round 17)"),
+    0x0082a1c0: ("platform", "Ch_LoadHdRenderData: builds the path, loads the render data, starts an async task (chara round 12)"),
+    0x0082a140: ("platform", "Ch_LoadClothFileTask: the async cloth file task (chara round 12)"),
     0x00851b20: ("debug", "debug code (main round 8)"),
     0x00843560: ("debug", "debug code (main round 8)"),
 }
