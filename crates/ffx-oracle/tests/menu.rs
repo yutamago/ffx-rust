@@ -6290,3 +6290,43 @@ fn menu_selectors_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_weapon_prices_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_9370) else {
+        return;
+    };
+    for round in 0..64u32 {
+        let rec = t.alloc_random(8);
+        return_const(&mut t, 0x008c_1af0, rec);
+        if round % 3 == 0 {
+            let small = t.rng.below(200);
+            t.put(rec, small);
+        }
+        let mut e = t.rng.bytes(0x20);
+        e[0xb] = u8::try_from(t.rng.below(6)).unwrap_or(0);
+        for k in 0..4 {
+            let v: u16 = match t.rng.below(4) {
+                0 => 0,
+                1 => 0xff,
+                _ => u16::try_from(t.rng.below(0x10000)).unwrap_or(0),
+            };
+            e[0xe + 2 * k..0x10 + 2 * k].copy_from_slice(&v.to_le_bytes());
+        }
+        let e = t.alloc(&e);
+        let ratio = if round % 2 == 0 {
+            t.rng.below(300)
+        } else {
+            t.rng.next()
+        };
+        t.put(t.sym(0x0132_6b6c), ratio);
+        t.twin("MenuShop_WeaponPrice", 0x008d_9370, &[e], U32, |o| {
+            u64::from(tk::menu_shop_weapon_price(o, e, &mut callback).cast_unsigned())
+        });
+        t.twin("MenuShop_WeaponSellPrice", 0x008d_9410, &[e], U32, |o| {
+            u64::from(tk::menu_shop_weapon_sell_price(o, e, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}

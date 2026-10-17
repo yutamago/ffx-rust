@@ -5455,6 +5455,68 @@ pub mod bridge {
         w
     }
 
+    /// The base value of an equipment entry `e` (shared by
+    /// `0x008d9370` and `0x008d9410`): the first words of its abilities'
+    /// records (`u16` ids at `+0xe`, `byte +0xb` of them; 0 and 0xff empty)
+    /// summed through `TkMn2GetExcelData(id & 0xfff, [0x0186aba4])`, then
+    /// `AbmapScaledLevelValue(sum, slots, empty slots)`.
+    fn weapon_value<M: Mem>(
+        mem: &mut M,
+        e: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let n = u32::from(mem.read::<u8>(e.wrapping_add(0xb)));
+        let mut empty = n;
+        let mut sum = 0u32;
+        for k in 0..n {
+            let id = u32::from(mem.read::<u16>(e.wrapping_add(0xe + 2 * k)));
+            if id == 0xff || id == 0 {
+                continue;
+            }
+            let table = mem.read::<u32>(mem.rebase(0x0186_aba4));
+            let f = mem.rebase(0x008c_1af0);
+            let rec = call(mem, f, &[id & 0xfff, table]);
+            sum = sum.wrapping_add(mem.read::<u32>(rec));
+            empty -= 1;
+        }
+        let f = mem.rebase(0x00a5_cbe0);
+        call(mem, f, &[sum, n, empty])
+    }
+
+    /// `MenuShop_WeaponPrice(e)` (`0x008d9370`, own name): the entry's
+    /// value (`weapon_value`) times the shop ratio (`0x01326b6c`) / 100,
+    /// truncated (32-bit product); at least 1.
+    pub fn menu_shop_weapon_price<M: Mem>(
+        mem: &mut M,
+        e: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> i32 {
+        let v = weapon_value(mem, e, call).cast_signed();
+        let f = mem.rebase(0x0086_c480);
+        let ratio = call(mem, f, &[]).cast_signed();
+        let p = ratio.wrapping_mul(v) / 100;
+        if p == 0 { 1 } else { p }
+    }
+
+    /// `MenuShop_WeaponSellPrice(e)` (`0x008d9410`, own name):
+    /// `AbmapQuarterOrOne([0x0186ab1c], value)` (`weapon_value`), 0 for an
+    /// entry with flag bits `+3 & 0xd`.
+    pub fn menu_shop_weapon_sell_price<M: Mem>(
+        mem: &mut M,
+        entry: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let v = weapon_value(mem, entry, call);
+        let x = mem.read::<u32>(mem.rebase(0x0186_ab1c));
+        let f = mem.rebase(0x00a5_cf10);
+        let r = call(mem, f, &[x, v]);
+        if mem.read::<u8>(entry.wrapping_add(3)) & 0xd != 0 {
+            0
+        } else {
+            r
+        }
+    }
+
     /// `TkSetRgba_*(i, r, g, b, a)` (`0x0088fca0`, `0x00890320`,
     /// `0x008906d0`): entry `i` (clamped to `0..=last`) of the colour table
     /// at `table` = the four components clamped to 0..=255, packed

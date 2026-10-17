@@ -9968,6 +9968,8 @@
 0x008d8420 function MenuWShop_RestartListWindow# restart 0x0186aaf0, then +0x28 = 0, +0x45 = 0; own name
 0x008d9170 function MenuWShop_GetRecord       # (id) TkMn2GetExcelData(id & 0xfff, 0x0186abac); own name
 0x008d9190 function TkMn2GetWShopPos             # str-match switch: only user of 23 string(s) held once by both builds, e.g. 'rect_wshscrol'; Switch 0x71004e91d0 TkMn2GetWShopPos (symbols from Fahrenheit's server export)
+0x008d9370 function MenuShop_WeaponPrice      # (entry): AbmapScaledLevelValue(sum of the abilities' TkMn2GetExcelData(id, [0x0186aba4]) first words, slots, empty slots) * shop ratio (0x01326b6c) / 100, at least 1; name ours
+0x008d9410 function MenuShop_WeaponSellPrice  # (entry): AbmapQuarterOrOne([0x0186ab1c], the MenuShop_WeaponPrice base value); 0 with flags +3 & 0xd; name ours
 0x008d9580 function MenuWShop_InitCursor      # (window) cursor +0x48 on the first usable item, scroll +0x32/+0x34 centred and clamped; own name
 0x008d9600 function TkMenuCtrlWShop           # fh v3:exact 0x008d95d0
 0x008d9ad0 function Set_g_TkMenuWShopList_008d9ad0 # auto-port shape (store argument to global, cdecl): u32[&0x0186ac20] = a1; return a1; callers: no direct caller; name ours

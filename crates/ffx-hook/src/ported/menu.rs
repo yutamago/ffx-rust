@@ -3181,4 +3181,12 @@ ported! {
     MenuNameEntry_RegistWindow @ 0x008c_4450 => extern "C" fn menu_name_entry_regist_window() -> u32 {
         tk::menu_name_entry_regist_window(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuShop_WeaponPrice(e)`.
+    MenuShop_WeaponPrice @ 0x008d_9370 => extern "C" fn menu_shop_weapon_price(e: u32) -> i32 {
+        tk::menu_shop_weapon_price(&mut mem(), e, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuShop_WeaponSellPrice(e)`.
+    MenuShop_WeaponSellPrice @ 0x008d_9410 => extern "C" fn menu_shop_weapon_sell_price(e: u32) -> u32 {
+        tk::menu_shop_weapon_sell_price(&mut mem(), e, &mut |_, f, a| call_ptr(f, a))
+    }
 }
