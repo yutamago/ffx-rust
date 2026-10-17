@@ -4092,6 +4092,7 @@
 0x007605d0 function pppFreeAllEnvObjects      # (): for each of *0x00d4b4cc object blocks (0x80 from 0x00d4e390), *g_pppEnvSlot = the pmcom environment 0x010d4cfc and pppAllFreePObject(block); called by pppDataRcv, pppPartDraw; name ours
 0x00760610 function pppInitPmcomEnv           # (): 0x00d524a0 = 0x00d524a8, g_KePmcomNext = its base 0x00e524f0, pppInitEnv(0x010d4cfc, 0, 0x00fd24f0, 0x100000); name ours
 0x00760640 function KeResampleRgbaToRgb       # (src, sw, sh, dst, dw, dh): nearest-neighbour RGBA to bottom-up BGR bytes by Bresenham error terms; returns the row error; pppPartDraw; name ours
+0x007606f0 function pppDrawCrosshair         # (): unless 0x00d4b4e8 (x) is 0x7fff, a crosshair at (x, y) through the line packet writer 0x00760ce0 in 12.4 units around 0x800: grey verticals at x, x - 1 (y +-10), horizontal at y (x +-20); black copies one unit right/down; returns the last line's eax (0x7fff when none); from pppPartDraw, pppPartLoop; name ours; ported (field round 50)
 0x007610a0 function dumpFvector               # fh switch:bsim1.00 0x71002d1e50
 0x007610e0 function dumpMatrix                   # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s=\\n{ %f %f %f %f }\\n{ %f %f %f %f }\\n{ %f %f %f %f }\\n{ %f'; Switch 0x71002d1db0 dumpMatrix (symbols from Fahrenheit's server export)
 0x00761250 function pppDataLastPair_00761250 # ours: (data, a, b) -> b: the records from data + [data+4] (16-byte headers, kind i8 +1 until 0xff, i16 +2 entries of 20/28/32/40/24/32/40/48 bytes by kind 0..7): the +8/+0xc words of the last kind 2, 3, 6 or 7 record into a and b (0 for none); caller pppDataRcv
@@ -14806,6 +14807,7 @@
 0x00d30260 label    g_FpDisp                     # FP display records, 0x4c per entry: +0 flags (0x10 hidden: pppFpIDdispOff, 2 stuck to map: pppFpSetStickMap, 8 to a display object), +4 stick target
 0x00d4b464 label    g_pppDrawMdlInfActive     # pppDrawMdlInfDes clears it
 0x00d4b46c label    g_KeLnsLpTCount           # pppKeLnsLpTCon (0x0075b090) stores it at area +0x8c and increments it (byte)
+0x00d4b4e8 label    g_PppCrosshair               # i32 x, y of pppDrawCrosshair's point (x 0x7fff: none); read by 0x007606f0 and 0x00760f30, no writer in the dump
 0x00d4be38 label    g_pppPmcomTexRecs         # 12-byte texture records pppSetPmcom2Texture_007629e0 fills (count at 0x00d4be34; u16s at +4, +6, +8); pppDataSetTex_007628c0 copies words 0 and 1 into the data records
 0x00d52398 label    g_pppRandTarget          # the float the ppp rand programs (pppRandFloat ...) add to when the key's target offset is -1
 0x00d524a4 label    g_KePmcomNext                # next free address of the pmcom arena 0x00e524f0..0x00f524f0 (KePmcomAlloc)

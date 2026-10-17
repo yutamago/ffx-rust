@@ -1823,6 +1823,53 @@ pub mod bridge {
         mem.write(q.wrapping_add(0x24), store(t));
         1
     }
+
+    // ---- field round 50 ----
+
+    /// The crosshair's point (`i32` x, y; x 0x7fff: none; nothing in the
+    /// dump writes them).
+    pub const CROSSHAIR: u32 = 0x00d4_b4e8;
+    /// The line packet writer the crosshair uses (`0x00760ce0`, glue:
+    /// `(x0, y0, x1, y1, rgba, f32 1.0)` in 12.4 screen units).
+    pub const PPP_LINE: u32 = 0x0076_0ce0;
+
+    /// `pppDrawCrosshair()` (`0x007606f0`, name ours; from `pppPartDraw` and
+    /// `pppPartLoop`): unless x is 0x7fff (then `eax` stays 0x7fff), a
+    /// crosshair at the point `(x, y)` (`0x00d4b4e8`) through the line
+    /// writer, in 12.4 units around the screen centre (0x800):
+    /// - grey (`0x80808080`): two vertical lines at x and x - 1 from y - 10
+    ///   to y + 10, one horizontal line at y from x - 20 to x + 20;
+    /// - black (`0x80000000`), one unit right and down: verticals at x + 1
+    ///   and x + 2 from y - 9 to y + 11, the horizontal at y + 1 from
+    ///   x - 19 to x + 21.
+    ///
+    /// Returns the last line's `eax`.
+    pub fn ppp_draw_crosshair<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let at = mem.rebase(CROSSHAIR);
+        let [x, y] = mem.read::<[i32; 2]>(at);
+        if x == 0x7fff {
+            return 0x7fff;
+        }
+        let u = |v: i32, d: i32| (v.wrapping_add(0x800 + d).wrapping_mul(0x10)).cast_unsigned();
+        let f = mem.rebase(PPP_LINE);
+        let one = 0x3f80_0000;
+        let lines = [
+            [u(x, 0), u(y, -10), u(x, 0), u(y, 10), 0x8080_8080],
+            [u(x, -1), u(y, -10), u(x, -1), u(y, 10), 0x8080_8080],
+            [u(x, -20), u(y, 0), u(x, 20), u(y, 0), 0x8080_8080],
+            [u(x, 1), u(y, -9), u(x, 1), u(y, 11), 0x8000_0000],
+            [u(x, 2), u(y, -9), u(x, 2), u(y, 11), 0x8000_0000],
+            [u(x, -19), u(y, 1), u(x, 21), u(y, 1), 0x8000_0000],
+        ];
+        let mut r = 0;
+        for [x0, y0, x1, y1, c] in lines {
+            r = call(mem, f, &[x0, y0, x1, y1, c, one]);
+        }
+        r
+    }
 }
 
 #[cfg(test)]

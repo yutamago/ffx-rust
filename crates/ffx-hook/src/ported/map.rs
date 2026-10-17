@@ -3787,6 +3787,11 @@ ported! {
         rcui::bridge::rc_prim_tri(&mut mem(), [x, y, r, angle, colour, ui], w, &mut |_, f, a| call_cdecl(f, a))
     }
 
+    /// `pppDrawCrosshair()`.
+    pppDrawCrosshair @ 0x0076_06f0 => extern "C" fn shim_ppp_draw_crosshair() -> u32 {
+        ke::bridge::ppp_draw_crosshair(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `rcbgFPm173ProcKonjyo(obj)`.
     rcbgFPm173ProcKonjyo @ 0x0092_2e60 => extern "C" fn shim_rcbg_fpm173_proc_konjyo(obj: u32) -> u32 {
         model::bridge::rcbg_fpm173_proc_konjyo(&mut mem(), obj, &mut |_, f, a| call_cdecl(f, a))

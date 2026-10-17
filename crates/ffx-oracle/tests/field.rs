@@ -13141,3 +13141,48 @@ fn round49_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0031_0002);
     round49_cases(&mut t, &mut rng);
 }
+
+// ---- round 50 ----
+
+/// Round 50 on `t`: `pppDrawCrosshair` (none at x 0x7fff, else six lines
+/// logged).
+fn round50_cases(t: &mut Twin, rng: &mut Xorshift) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv) = (t.alloc(4 + 0x20 * 8), t.alloc(4));
+    t.cave(&[(Some(ke::bridge::PPP_LINE), log_stub(log, rv, 1, 6))]);
+    let at = t.b.rebase(ke::bridge::CROSSHAIR);
+    for k in 0..100 {
+        let x = match k % 4 {
+            0 => 0x7fff,
+            1 => rng.range(-0x900, 0x900).cast_unsigned(),
+            _ => rng.next(),
+        };
+        t.put(at, x);
+        t.put(at + 4, rng.next());
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.same(
+            "pppDrawCrosshair",
+            |o| o.eax(0x0076_06f0, &[]),
+            |m| ke::bridge::ppp_draw_crosshair(m, call),
+        );
+    }
+}
+
+/// Round 50: `pppDrawCrosshair`.
+#[test]
+fn round50_crosshair_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0032_0001);
+    round50_cases(&mut t, &mut rng);
+}
+
+/// Round 50 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round50_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0032_0002);
+    round50_cases(&mut t, &mut rng);
+}

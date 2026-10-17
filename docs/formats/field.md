@@ -1483,6 +1483,20 @@ the call).
     (`[ebp-0x14]`), so its result depends on what an earlier call left on
     the stack.
 
+## The effect crosshair (round 50)
+
+`pppDrawCrosshair()` (`0x007606f0`, name ours; from `pppPartDraw` and
+`pppPartLoop`) draws a crosshair at the point `(x, y)` at `0x00d4b4e8`
+(`i32` each). Nothing in the dump writes that point, so it is probably a
+debug cursor. With x = 0x7fff it draws nothing and returns 0x7fff.
+Otherwise it draws six lines through the line packet writer `0x00760ce0`
+(glue), in 12.4 units around the screen centre (0x800):
+- grey (`0x80808080`): verticals at x and x - 1 from y - 10 to y + 10, and
+  a horizontal at y from x - 20 to x + 20;
+- black (`0x80000000`), the same shape one unit right and down.
+
+It returns the last line's `eax`.
+
 ## Map 0xad's effect steps (round 49)
 
 The two step functions of map 0xad's effect object (`rcbgFPm173*`; the
