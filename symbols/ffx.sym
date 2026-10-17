@@ -3915,7 +3915,7 @@
 0x00759200 function pppKeBornRnd6             # ppp program table record "pppKeBornRnd6" step
 0x00759270 function pppKeBornRnd6Con          # ppp program table record "pppKeBornRnd6" (0x00c3af80) +0x1c set-up; "pppKeBornRnd6" (0x00c3c628) +0x1c set-up
 0x007592a0 function pppKeBornRnd6_Born        # fh v3:exact 0x00759390
-0x00759400 function KeBornPtCmlp                 # callees: its named callees match the Switch 0x710030d580 KeBornPtCmlp's (similarity 1.00: FFXVu0CopyVector, FFXVu0ScaleVector, FFXVu0SubVector, KeVu0AddVecXYZ, KeVu0CopyVecXYZ); symbols from Fahrenheit's server export
+0x00759400 function KeBornPtCmlp                 # callees: its named callees match the Switch 0x710030d580 KeBornPtCmlp's (similarity 1.00: FFXVu0CopyVector, FFXVu0ScaleVector, FFXVu0SubVector, KeVu0AddVecXYZ, KeVu0CopyVecXYZ); symbols from Fahrenheit's server export; ported (round 31): (pc, pd, prog, out): spawns pd[4] particle objects (pppCreatePObject) filling the gap from the previous point (prog[0xc][0]) to this one (prog[0xc][1]) at prev + d * f * step, step +0xa8 = 1 / (pd[4] + 1) when there is no previous point
 0x007595e0 function pppKeBornPtCmpl           # ppp program table record "pppKeBornPtCmpl" step
 0x00759620 function pppKeBornPtCmplCon        # ppp program table record "pppKeBornPtCmpl" (0x00c3e1d0) +0x1c set-up
 0x00759650 function pppKeGrvEff               # fh v3:exact 0x00759740
@@ -4060,7 +4060,7 @@
 0x0075eca0 function KeVu0AddVecXYZ            # fh v3:exact 0x0075ed90
 0x0075ede0 function KeVu0CopyVecXYZ           # fh v3:exact 0x0075eed0
 0x0075ee70 function KeVu0GetDist                 # layout+callees: sorts between KeVu0CopyVecXYZ and KeVu0RndI, and its named callees match the Switch 0x7100307e30 KeVu0GetDist's (similarity 1.00: FFXVu0SubVector); symbols from Fahrenheit's server export
-0x0075eed0 function KeVu0ItrsBallLine            # layout: alphabetical run between KeVu0GetDist and KeVu0RndI (7 unnamed in the gap); Switch 0x71003071c0 KeVu0ItrsBallLine is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0075eed0 function KeVu0ItrsBallLine            # layout: alphabetical run between KeVu0GetDist and KeVu0RndI (7 unnamed in the gap); Switch 0x71003071c0 KeVu0ItrsBallLine is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (round 31): ray p + t d (+0, +0x10) against the sphere of radius +0x20: a = d.d, b = 2 p.d, c = p.p - r^2 (f32 partial sums), 0 when b^2 - 4ac < 0, else t = (-b - sqrt) / 2a to +0x24 and 1
 0x0075efe0 function KeVu0LowClamp                # layout: alphabetical run between KeVu0GetDist and KeVu0RndI (7 unnamed in the gap); Switch 0x71003072b0 KeVu0LowClamp is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0075f010 function KeVu0NormXY                  # layout: alphabetical run between KeVu0GetDist and KeVu0RndI (7 unnamed in the gap); Switch 0x7100307990 KeVu0NormXY is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0075f120 function KeVu0PacAddVecXY             # layout: alphabetical run between KeVu0GetDist and KeVu0RndI (7 unnamed in the gap); Switch 0x7100307680 KeVu0PacAddVecXY is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)

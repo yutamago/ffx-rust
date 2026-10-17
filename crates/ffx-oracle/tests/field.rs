@@ -11680,3 +11680,89 @@ fn round30_grid_bounds_and_sea_fade_match_the_original() {
         );
     }
 }
+
+/// Round 31: the Ke library's ray-sphere test and its particle gap
+/// filler.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round31_ke_ball_line_and_born_points_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x001f_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let objv = t.alloc(4);
+    // pppCreatePObject(part, base): the word at objv, which then moves on
+    // by 0x100 (0 stays 0: the creation fails)
+    let mut create = vec![0xa1];
+    create.extend_from_slice(&objv.to_le_bytes());
+    create.extend_from_slice(&[0x85, 0xc0, 0x74, 0x0a, 0x81, 0x05]);
+    create.extend_from_slice(&objv.to_le_bytes());
+    create.extend_from_slice(&0x100u32.to_le_bytes());
+    create.push(0xc3);
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![(Some(ke::PPP_CREATE_POBJECT), create)];
+    t.cave_from(env.cave_end, &list);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let q = t.alloc(0x30);
+    let (pc, pd, prog, tab, out, part, prevv) = (
+        t.alloc(0x200),
+        t.alloc(0x10),
+        t.alloc(0x10),
+        t.alloc(8),
+        t.alloc(4),
+        t.alloc(0x40),
+        t.alloc(0x10),
+    );
+    let pool = t.alloc(0x100 * 14);
+    t.put(t.b.rebase(ke::PPP_CURRENT_PART), part);
+    for k in 0..400u32 {
+        env.reset(&mut t, &mut rng);
+        // the ray and the sphere
+        for i in 0..10 {
+            let v = if k % 2 == 0 {
+                float_in(&mut rng, -50, 50)
+            } else {
+                // not dyadic: every f32 store rounds
+                #[allow(clippy::cast_precision_loss)]
+                let x = rng.next() as f32 / 4.294_967e7 - 50.0;
+                x.to_bits()
+            };
+            t.put(q + 4 * i, v);
+        }
+        if k % 3 == 0 {
+            t.put(q + 0x20, float_in(&mut rng, 0, 400));
+        }
+        t.same(
+            "KeVu0ItrsBallLine",
+            |o| o.eax(0x0075_eed0, &[q]),
+            |m| ke::bridge::ke_vu0_itrs_ball_line(m, q),
+        );
+        // the gap filler
+        t.fill(pool, 0x100 * 14, &mut rng);
+        t.put(objv, if rng.below(8) == 0 { 0 } else { pool });
+        t.put(part + 0x3c, if rng.below(10) == 0 { 0u32 } else { 0x40 });
+        t.put(pd + 4, u8::try_from(rng.below(12)).unwrap());
+        t.put(pd + 8, if k % 10 == 0 { 0u32 } else { rng.below(4) });
+        t.put(pd + 0xc, rng.below(4) * 0x10);
+        t.put(prog + 0xc, tab);
+        t.put(tab, 0x40u32);
+        t.put(tab + 4, 0x10u32);
+        for i in 0..0x80 {
+            t.put(pc + 4 * i, float_in(&mut rng, -100, 100));
+        }
+        for i in 0..4 {
+            t.put(prevv + 4 * i, float_in(&mut rng, -100, 100));
+        }
+        t.put(pc + 0x40 + 0xa0, if rng.below(3) == 0 { 0 } else { prevv });
+        t.put(pc + 0x40 + 0xa8, float_in(&mut rng, -2, 2));
+        let work = t.stack_scratch(0x100);
+        // the original crashes on a missing object address (it writes
+        // through 0); leave that pairing out
+        if t.b.read::<u32>(part + 0x3c) == 0 && t.b.read::<u32>(pd + 8) == 0 {
+            continue;
+        }
+        t.same(
+            "KeBornPtCmlp",
+            |o| o.void(0x0075_9400, &[pc, pd, prog, out]),
+            |m| ke::bridge::ke_born_pt_cmlp(m, [pc, pd, prog, out], work, call),
+        );
+    }
+}

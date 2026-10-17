@@ -3607,6 +3607,20 @@ ported! {
         model::bridge::yn_sea_fp_fade(&mut mem(), fade, w, &mut |_, f, a| call_cdecl(f, a));
     }
 
+    /// `KeVu0ItrsBallLine(q)`.
+    KeVu0ItrsBallLine @ 0x0075_eed0 => extern "C" fn shim_ke_vu0_itrs_ball_line(q: u32) -> u32 {
+        ke::bridge::ke_vu0_itrs_ball_line(&mut mem(), q)
+    }
+
+    /// `KeBornPtCmlp(pc, pd, prog, out)`.
+    KeBornPtCmlp @ 0x0075_9400 => extern "C" fn shim_ke_born_pt_cmlp(pc: u32, pd: u32, prog: u32, out: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x30]);
+        let mut work = Locals([0; 0x30]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        ke::bridge::ke_born_pt_cmlp(&mut mem(), [pc, pd, prog, out], w, &mut |_, f, a| call_cdecl(f, a));
+    }
+
     /// `yiSetBackColor(c)`.
     yiSetBackColor @ 0x0090_a040 => extern "C" fn shim_yi_set_back_color(c: u32) {
         yi::bridge::yi_set_back_color(&mut mem(), c, &mut |_, f, a| call_cdecl(f, a));
