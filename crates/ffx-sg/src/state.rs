@@ -1636,7 +1636,11 @@ pub mod bridge {
         let st = |x: f64| f32::from_bits(x87::store(x));
         let stick = |b: u8| {
             let v = u32::from(b);
-            if v.wrapping_sub(0x51) <= 0x5e { 0x80 } else { v }
+            if v.wrapping_sub(0x51) <= 0x5e {
+                0x80
+            } else {
+                v
+            }
         };
         let sx = stick(PAD_RSTICK_X.get(mem));
         let sy = stick(PAD_RSTICK_Y.get(mem));
@@ -1660,7 +1664,8 @@ pub mod bridge {
                 g.set(mem, st(x87::add(a, two)));
             }
         }
-        if IS_DEBUG.get(mem) != 0 && PAD_HELD.get(mem) & 0x100 != 0 && capture_get_select(mem) != 0 {
+        if IS_DEBUG.get(mem) != 0 && PAD_HELD.get(mem) & 0x100 != 0 && capture_get_select(mem) != 0
+        {
             capture_enable(mem);
         }
         let mut r = 0;
