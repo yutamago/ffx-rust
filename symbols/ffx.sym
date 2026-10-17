@@ -12746,6 +12746,7 @@
 0x0112bea0 label g_BtlReadCue                 # u8; The read cue: entries of 12 bytes from 0x0112bea0, the current one (MsBtlReadStatusComplete marks its +2 done).
 0x0112c020 label g_BtlReadCueIndex            # u8; with the one before it (same function, ffx_battle::misc)
 0x0112c021 label g_BtlReadCueLevel           # u8, MsBtlReadCueLevel (0x007ad180)
+0x0112c023 label g_BtlCommandStarted       # u8: set when a command starts (MsCommandCueProcess), cleared when an aeon is called (MsParseCommand)
 0x0112c029 label g_SepTransFlag            # u16 cleared by MsSEPtransInit
 0x0112c02b label g_BtlLimitLearnt          # u8 set when MsLimitTidusLearn teaches an overdrive
 0x0112c02c label g_SepTransTable           # 0x80 words cleared by MsSEPtransInit
@@ -12762,6 +12763,8 @@
 0x0112c8c8 label g_BtlChrSet                 # u32 actor bits; MsGetChrBit selector -4 returns its present actors
 0x0112c8d0 label g_BtlScriptTargets        # u32 targets: 0x007a3d00 copies an actor's +0xdc0, MsInsertScriptCommand queues a command on them, MsBattleExe clears
 0x0112c8d4 label g_BtlMotionBusy           # bit per actor: MsCheckChrMotionAll marks the first actor found running a motion
+0x0112c8d8 label g_BtlParsedCommand        # u32: the command MsParseCommand parses (also 0x0112c8dc)
+0x0112c8dc label g_BtlParsedCommand2       # u32: copy of g_BtlParsedCommand (MsParseCommand)
 0x0112c8e8 label g_BtlLastMagic2              # u32; The last magic of kind 2 (MsEffectGetLastMagicNum2).
 0x0112c8ec label g_BtlLastMagic            # u32: the magic effect MsEffectRead reads (with 0x0112c8e8)
 0x0112c90c label g_BtlMessageCueInit2         # u32; with the one before it (same function, ffx_battle::misc)
@@ -12793,6 +12796,7 @@
 0x0112c9e9 label g_BtlListSlot             # i8, a party slot MsGetBattleList kinds 9 and 0xa treat apart
 0x0112c9eb label g_BtlEndAlt               # u8 set: MsGetBattleEndStatus reports 2 instead of 4 when the monsters are gone
 0x0112c9f1 label g_BtlEndForced            # u8, when not 0 MsGetBattleEndStatus's result
+0x0112c9f5 label g_BtlPartyLeaves          # u8: set by a party swap (0x3002) or an escape (0x3018) in MsParseCommand; MsCommandCueProcess waits while set
 0x0112c9f7 label g_BtlSetCommandFlag       # u8, cleared by MsSetBtlCommand
 0x0112c9fa label g_BtlReflected            # u8, set by MsCalcCommandTarget when a target reflected the command
 0x0112c9fb label g_BtlGuardTook            # u8, set by MsCalcCommandTarget when a guard took a hit for its target
@@ -12800,11 +12804,14 @@
 0x0112c9ff label g_BtlEscapeRule              # i8, set by battle script (0x007a77a0): 1 no escape, 2 always (MsCalcEscape)
 0x0112ca00 label g_BtlMenuSkipOn           # u8 set: actors' skip command (+0x6c8) counts (MsMenuGetChrSkipCommand)
 0x0112ca03 label g_BtlSummonLimit             # u8; Summons keep the overdrive gauge while this is set (MsSummonLimitSave). MsLimitCommandProcess sets it for command 0x3118 and clears it otherwise.
+0x0112ca04 label g_BtlCommandMusicDown     # u8: the parsed command's flag bit 30 (+0x1c): MsMusicVolume(0x65, 0x1e) (MsParseCommand)
+0x0112ca05 label g_BtlCommandFlag29        # u8: the parsed command's flag bit 29 (+0x1c) (MsParseCommand)
 0x0112ca08 label g_BtlEffectWait           # 2 x u8: the actor an effect waits on and its motion (0xff any) (MsEffectCheckMotion, MsCheckStartEffect)
 0x0112ca0a label g_BtlMessageCueInit          # u32; Reset by MsMessageCueInit (a u32 at 0x0112ca0a, which covers the stone effect counters from 0x0112ca0b, and the cue's count and start).
 0x0112ca0b label g_BtlStoneEffect            # 2 x i8; MsStoneEffectCheck (0x007a2670) returns their sum
 0x0112ca0e label g_BtlRandomTargets        # i8 count of the random targets (MsGetTargetRandomList2)
 0x0112ca12 label g_BtlCounterOn               # u8, set by battle script (0x007a8430): counterattacks happen only while set (DmgCalc_CheckCounter)
+0x0112ca15 label g_BtlCommand3029Count     # u8: commands with ID 0x3029 among their two (+0x6d0; MsParseCommand)
 0x0112ca30 label g_BtlMemWord              # u32 zeroed by MsBattleMemInit
 0x0112ca60 label g_BtlRead3                # u32; with the one before it (same function, ffx_battle::misc)
 0x0112ca68 label g_BtlMapRead                 # u32; Reset by FinishReadPhyreBattleMap.
@@ -12827,6 +12834,7 @@
 0x01130834 label g_SaveYoujinbouCom          # save +0x3da4: u32 Yojimbo's command (MsGetYoujinbouCom 0x007b2b20)
 0x0113083c label g_SaveTidusLimitUses      # i32: Tidus' overdrive uses, counted by MsLimitTidusLearn
 0x01130840 label g_StealCount                 # u32, items stolen from monster kind 6 (+0xded); achievementUnlockAchievement(4) from 200 (Battle_Steal)
+0x01130844 label g_BtlGilThrown            # i32: gil thrown by command 0x302a; achievement 0x13 at 100000 (MsParseCommand)
 0x0113085c label g_SaveEventFlags            # MsGetSaveEventFlag (0x00785250)
 0x0113095c label g_SaveItemIds               # 0x70 x u16 inventory item IDs (MsSaveItemTypeBuffer 0x00790530, count 0x70; MsGetSaveItemNum)
 0x01130b5c label g_SaveItemCounts            # 0x70 x u8 inventory counts (MsSaveItemNumBuffer 0x00790510)

@@ -2518,4 +2518,10 @@ ported! {
         script!(s);
         parse::ms_effect_read_complete(&mut mem(), &mut s)
     }
+    /// `MsParseCommand(cue)`.
+    MsParseCommand @ 0x007a_e370 => extern "C" fn ms_parse_command(cue: u32) -> i32 {
+        let mut m = mem();
+        script!(s);
+        parse::ms_parse_command(&mut target::Dm::new(&mut m), &host(), &mut s, cue)
+    }
 }

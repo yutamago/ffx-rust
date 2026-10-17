@@ -1349,6 +1349,69 @@ fn effects(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, rec: u
     same("MsEffectReadComplete", a, b);
 }
 
+/// A command parsed (`MsParseCommand`): a cue entry of a random actor,
+/// list and command, every actor placed (the moves and directions).
+fn parse(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32) {
+    use ffx_battle::atel::bridge::Script;
+    let h = host();
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    set(a, b, ffx_battle::state::bridge::INPUT_CUE_COUNT, 0);
+    set(a, b, ffx_battle::state::bridge::COMMAND_CUE_COUNT, 0);
+    if !placed(a, b, w, out) {
+        return;
+    }
+    let cue = out + 0x80;
+    fill(a, b, rng, cue, 0x48);
+    let i = rng.below(ACTORS);
+    let sub = rng.below(3);
+    poke(a, b, cue, &[u8::try_from(i).unwrap()]);
+    poke(a, b, cue + 2, &[u8::try_from(sub).unwrap()]);
+    let ids = [
+        0x3002, 0x3003, 0x3004, 0x3005, 0x3018, 0x3021, 0x3022, 0x3055, 0x3056, 0x3117, 0x30ff,
+        0x3129, 0x302a, 0x3025, 0x3026, 0x3029,
+    ];
+    let id = [ids[rng.below(16) as usize], 0x3000 + rng.below(0x140)][rng.below(3).min(1) as usize];
+    let list = cue + 8 + sub * 0x10;
+    poke(a, b, list, &u16::try_from(id).unwrap().to_le_bytes());
+    // the second word: an actor to swap in or an aeon
+    let other = [rng.below(ACTORS), 8 + rng.below(10)][rng.below(2) as usize];
+    poke(a, b, list + 2, &u16::try_from(other).unwrap().to_le_bytes());
+    let actor = w.actor(i);
+    for o in [0xdfb, 0xdea] {
+        poke(
+            a,
+            b,
+            actor + o,
+            &[[0, 0, 1, rng.byte()][rng.below(4) as usize]],
+        );
+    }
+    // targets among the actors (g_BtlMotionBusy and the action take them)
+    let targets = [rng.next() & 0x7fff_ffff, 1 << rng.below(ACTORS), 0][rng.below(3) as usize];
+    poke(a, b, actor + 0xdc0, &targets.to_le_bytes());
+    if [0x3117, 0x30ff].contains(&id)
+        && ![other, 0xf, 0x10, 0x11]
+            .into_iter()
+            .all(|k| writes(a, b, 0x0079_48e0, k, out + 0x40))
+    {
+        return;
+    }
+    twin("MsParseCommand", a, b, 0x007a_e370, &[cue], ALL, |m| {
+        dm(m, |m| {
+            let mut s = Script {
+                call: &mut call,
+                signal: &mut signal,
+                off: &mut off,
+            };
+            ffx_battle::parse::bridge::ms_parse_command(m, &h, &mut s, cue).cast_unsigned()
+        })
+    });
+    local_words(a, b);
+    rect_words(a, b);
+    same("MsParseCommand", a, b);
+}
+
 /// Whether every able (`+0xdc8`) actor's and every monster's battle
 /// position is written (`MsCalcChrDir`'s centres and turning monsters).
 fn placed(a: &mut Oracle, b: &mut Oracle, w: &World, out: u32) -> bool {
@@ -1740,6 +1803,24 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let erec = scratch(a, b, (EXCHANGE_REC * 12) as usize);
     effect_stubs(a, b, erec);
     let files = scratch(a, b, 0x802);
+    // the music volume's sound callees (SndGetNowPlayMusic,
+    // SndMusicVolumeTranslate), after the exchange stubs and inside the CD
+    // call's function
+    let srec = scratch(a, b, (EXCHANGE_REC * 3) as usize);
+    for o in [&mut *a, &mut *b] {
+        use ffx_battle::exec::bridge as e;
+        logging_stub(o, e::SND_GET_NOW_PLAY_MUSIC, 0x0078_06f0, srec, 0, 0x2d);
+        logging_stub(
+            o,
+            e::SND_MUSIC_VOLUME_TRANSLATE,
+            0x0078_0760,
+            srec + EXCHANGE_REC,
+            3,
+            7,
+        );
+        // TOBtlOpenSignWindow (system), MsMenuOpenTitleWindow's window
+        logging_stub(o, 0x0089_8c60, 0x0078_08c0, srec + 2 * EXCHANGE_REC, 1, 0);
+    }
     for _ in 0..400 {
         file(a, b, rng, &f);
         dress(a, b, rng, &w, &f);
@@ -1750,6 +1831,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         actions(a, b, rng, &w, out);
         exchange(a, b, rng, &w, out, xrec);
         effects(a, b, rng, &w, erec, files);
+        parse(a, b, rng, &w, out);
     }
 }
 
