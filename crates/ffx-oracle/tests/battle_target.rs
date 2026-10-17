@@ -2523,19 +2523,26 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
         local_words(a, b);
         same("MsCheatPlayerPowerup", a, b);
     }
-    // the overdrive modes of a death
-    let (i, j) = (rng.below(ACTORS), rng.below(ACTORS));
-    let args = [i, w.actor(i), j, w.actor(j)];
-    twin(
-        "MsLimitTypeDeathCheck",
-        a,
-        b,
-        0x007b_0f80,
-        &args,
-        ALL,
-        |m| d::ms_limit_type_death_check(m, i, args[1], j, args[3]),
-    );
-    same("MsLimitTypeDeathCheck", a, b);
+    // the overdrive modes of a death: kills either way between the party
+    // (0-6) and the monsters, now and then any two
+    for _ in 0..4 {
+        let (i, j) = match rng.below(3) {
+            0 => (rng.below(7), 0x14 + rng.below(8)),
+            1 => (0x14 + rng.below(8), rng.below(7)),
+            _ => (rng.below(ACTORS), rng.below(ACTORS)),
+        };
+        let args = [i, w.actor(i), j, w.actor(j)];
+        twin(
+            "MsLimitTypeDeathCheck",
+            a,
+            b,
+            0x007b_0f80,
+            &args,
+            ALL,
+            |m| d::ms_limit_type_death_check(m, i, args[1], j, args[3]),
+        );
+        same("MsLimitTypeDeathCheck", a, b);
+    }
     // Auto-Life and Auto-Phoenix (an item in the bag at times)
     let (i, killer) = (rng.below(ACTORS), rng.below(ACTORS));
     let actor = w.actor(i);
@@ -2576,51 +2583,53 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
     );
     local_words(a, b);
     same("MsAutoPhenixProcess", a, b);
-    // deaths by damage (the spoils and auto-battle through the stubs)
-    set(a, b, d::NO_OVERKILL, flag(rng, 3));
-    let i = rng.below(ACTORS);
-    let j = [
-        rng.below(ACTORS),
-        8 + rng.below(7),
-        0xf + rng.below(3),
-        0x14 + rng.below(8),
-    ][rng.below(4) as usize];
-    let v = w.actor(j);
-    poke(a, b, v + 0x617, &[flag(rng, 4)]);
-    // mostly out of HP (else only a removal kills)
-    let hp = [0, -5, 0, 1, rng.range(-100, 100)][rng.below(5) as usize];
-    poke(a, b, v + 0x5d0, &hp.to_le_bytes());
-    poke(a, b, v + 0xdcc, &[flag(rng, 5)]);
-    poke(a, b, v + 0x10, &[flag(rng, 6) ^ 1]);
-    poke(a, b, v + 0x701, &[[0, 0, 1, 3][rng.below(4) as usize]]);
-    for o in [0xdcd, 0xdce, 0xdd0, 0x6d0, 0x3f5] {
-        poke(a, b, v + o, &[flag(rng, 3)]);
-    }
-    poke(a, b, v + 0xf60, &rng.range(-2, 3).to_le_bytes());
-    let no_reward = u32::from(flag(rng, 3));
-    let flags = rng.below(3);
-    let dying_ok =
-        writes(a, b, 0x0079_56e0, j, out + 0x40) && writes(a, b, 0x0079_48e0, j, out + 0x40);
-    if dying_ok && placed(a, b, w, out) {
-        twin(
-            "MsDamageCheckDeath",
-            a,
-            b,
-            0x0078_c740,
-            &[i, j, no_reward, flags],
-            ALL,
-            |m| {
-                dm(m, |m| {
-                    s!(s);
-                    d::ms_damage_check_death(m, &h, &mut s, i, j, no_reward, flags)
-                })
-            },
-        );
-        local_words(a, b);
-        let m = ffx_battle::vector::bridge::VF_M.ptr(a).addr;
-        let x = a.read(m + 0x20, 16).unwrap();
-        b.write(m + 0x20, &x).unwrap();
-        same("MsDamageCheckDeath", a, b);
+    // deaths by damage (three; the spoils and auto-battle through the stubs)
+    for _ in 0..3 {
+        set(a, b, d::NO_OVERKILL, flag(rng, 3));
+        let i = rng.below(ACTORS);
+        let j = [
+            rng.below(ACTORS),
+            8 + rng.below(7),
+            0xf + rng.below(3),
+            0x14 + rng.below(8),
+        ][rng.below(4) as usize];
+        let v = w.actor(j);
+        poke(a, b, v + 0x617, &[flag(rng, 4)]);
+        // mostly out of HP (else only a removal kills)
+        let hp = [0, -5, 0, 1, rng.range(-100, 100)][rng.below(5) as usize];
+        poke(a, b, v + 0x5d0, &hp.to_le_bytes());
+        poke(a, b, v + 0xdcc, &[flag(rng, 5)]);
+        poke(a, b, v + 0x10, &[flag(rng, 6) ^ 1]);
+        poke(a, b, v + 0x701, &[[0, 0, 1, 3][rng.below(4) as usize]]);
+        for o in [0xdcd, 0xdce, 0xdd0, 0x6d0, 0x3f5] {
+            poke(a, b, v + o, &[flag(rng, 3)]);
+        }
+        poke(a, b, v + 0xf60, &rng.range(-2, 3).to_le_bytes());
+        let no_reward = u32::from(flag(rng, 3));
+        let flags = rng.below(3);
+        let dying_ok =
+            writes(a, b, 0x0079_56e0, j, out + 0x40) && writes(a, b, 0x0079_48e0, j, out + 0x40);
+        if dying_ok && placed(a, b, w, out) {
+            twin(
+                "MsDamageCheckDeath",
+                a,
+                b,
+                0x0078_c740,
+                &[i, j, no_reward, flags],
+                ALL,
+                |m| {
+                    dm(m, |m| {
+                        s!(s);
+                        d::ms_damage_check_death(m, &h, &mut s, i, j, no_reward, flags)
+                    })
+                },
+            );
+            local_words(a, b);
+            let m = ffx_battle::vector::bridge::VF_M.ptr(a).addr;
+            let x = a.read(m + 0x20, 16).unwrap();
+            b.write(m + 0x20, &x).unwrap();
+            same("MsDamageCheckDeath", a, b);
+        }
     }
     // the damage step's pieces (ffx_battle::chr_damage)
     {
