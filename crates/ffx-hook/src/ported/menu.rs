@@ -106,6 +106,14 @@ fn call_ptr(f: u32, args: &[u32]) -> u32 {
     super::call_cdecl(f, args)
 }
 
+/// `graphicUiRemapX2`/`graphicUiRemapY2(v)` (`0x006447e0`/`0x00644820`)
+/// through the game's entries: the result in `ST0`, read back as a double.
+fn ui_remap(y: bool, v: f32) -> f64 {
+    let f = crate::rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+    // SAFETY: a cdecl function of one float word returning in ST0.
+    unsafe { std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> f64>(f)(v.to_bits()) }
+}
+
 ported! {
     /// `Gu_PrintSetColor(r, g, b)`.
     Gu_PrintSetColor @ 0x0084_8740 => extern "C" fn gu_print_set_color(r: u32, g: u32, b: u32) {
@@ -3204,5 +3212,25 @@ ported! {
             return 0;
         };
         tk::tk_menu_item_heal_amount(&mut m, [item, player, mp], local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `DrawCrossMenuIconItemName(item, x, y, colour)`.
+    DrawCrossMenuIconItemName @ 0x008e_6700 => extern "C" fn draw_cross_menu_icon_item_name(item: u32, x: u32, y: u32, colour: u32) -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::draw_cross_menu_icon_item_name(&mut m, item, [f32::from_bits(x), f32::from_bits(y)], colour, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `DrawCrossMenuIconWeaponName(id, x, y, colour)`.
+    DrawCrossMenuIconWeaponName @ 0x008e_67f0 => extern "C" fn draw_cross_menu_icon_weapon_name(id: u32, x: u32, y: u32, colour: u32) {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return;
+        };
+        tk::draw_cross_menu_icon_weapon_name(&mut m, id, [x, y, colour], local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `DrawCrossMenuIconWeaponName2(e, x, y, colour)`.
+    DrawCrossMenuIconWeaponName2 @ 0x008e_6970 => extern "C" fn draw_cross_menu_icon_weapon_name2(e: u32, x: u32, y: u32, colour: u32) {
+        tk::draw_cross_menu_icon_weapon_name2(&mut mem(), e, [x, y, colour], &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
     }
 }

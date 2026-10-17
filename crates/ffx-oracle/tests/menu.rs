@@ -6397,3 +6397,138 @@ fn menu_out_pointer_callers_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// `f` replaced in both oracles by a recorder appending its first `n`
+/// argument words at `*log` (128 KiB of them); returns `ret`. The code
+/// takes `13 + 7n` bytes: `f` must be at least that long.
+fn record_n(t: &mut Twins, f: u32, n: u8, ret: u32) {
+    let buf = t.alloc(&vec![0; 0x2_0000]);
+    let log = t.alloc(&buf.to_le_bytes());
+    let l = log.to_le_bytes();
+    let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &l].concat(); // mov ecx, [log]
+    for k in 0..n {
+        code.extend([0x8b, 0x44, 0x24, 4 + 4 * k]); // mov eax, [esp + 4 + 4k]
+        code.extend([0x89, 0x41, 4 * k]); // mov [ecx + 4k], eax
+    }
+    code.extend([&[0x83, 0x05][..], &l, &[4 * n]].concat()); // add dword [log], 4n
+    code.push(0xb8); // mov eax, ret
+    code.extend(ret.to_le_bytes());
+    code.push(0xc3);
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(f);
+        o.write(at, &code).unwrap();
+    }
+}
+
+/// The UI remaps through the originals, for the bridge side.
+fn ui_remap(o: &mut Oracle, y: bool, v: f32) -> f64 {
+    let at = o.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+    o.call(at, Conv::Cdecl, &[v.to_bits()])
+        .unwrap()
+        .st0
+        .unwrap()
+}
+
+#[test]
+fn draw_cross_menu_icons_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_6700) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    // the drawing (DrawCrossMenuIconXYWHRGBA, ToMakeBtlEasyFont) and the
+    // name lookups, recorded or constant
+    record_n(&mut t, 0x008e_6af0, 9, 0x51);
+    record_n(&mut t, 0x0090_5ab0, 6, 0x52);
+    return_const(&mut t, 0x007a_bdf0, 0x00c0_1234);
+    record_n(&mut t, 0x007a_0c50, 3, 0x00c0_5678);
+    return_const(&mut t, 0x0078_51f0, 1);
+    let pick = |t: &mut Twins| -> u32 {
+        match t.rng.below(6) {
+            0 => f32::NAN.to_bits(),
+            1 => t.rng.next(),
+            _ => (f32::from(i16::try_from(t.rng.below(1000)).unwrap_or(0)) / 2.0).to_bits(),
+        }
+    };
+    for round in 0..64u32 {
+        let (x, y, colour) = (pick(&mut t), pick(&mut t), t.rng.next());
+        let xy = [f32::from_bits(x), f32::from_bits(y)];
+        // MsGetRomItem: a record, the text base written through the out
+        let rec = t.alloc_random(0x20);
+        let base = t.rng.next();
+        #[rustfmt::skip]
+        let code: Vec<u8> = [
+            &[0x8b, 0x44, 0x24, 0x08, 0xc7, 0x00][..], &base.to_le_bytes(), // *[esp + 8] = base
+            &[0xb8], &rec.to_le_bytes(), &[0xc3],                           // eax = rec; ret
+        ]
+        .concat();
+        for o in [&mut t.a, &mut t.b] {
+            let at = o.rebase(0x0079_09f0);
+            o.write(at, &code).unwrap();
+        }
+        let item = t.rng.next();
+        t.twin(
+            "DrawCrossMenuIconItemName",
+            0x008e_6700,
+            &[item, x, y, colour],
+            U32,
+            |o| {
+                w64(tk::draw_cross_menu_icon_item_name(
+                    o,
+                    item,
+                    xy,
+                    colour,
+                    local,
+                    &mut ui_remap,
+                    &mut callback,
+                ))
+            },
+        );
+        // a weapon slot, its +4 sometimes equal to +6
+        let id = t.rng.below(0xc8);
+        let mut e = t.rng.bytes(0x16);
+        if round % 2 == 0 {
+            e[6] = e[4];
+        }
+        t.put_bytes(t.sym(0x0113_0f2c) + 0x16 * id, &e);
+        t.twin(
+            "DrawCrossMenuIconWeaponName",
+            0x008e_67f0,
+            &[id, x, y, colour],
+            VOID,
+            |o| {
+                tk::draw_cross_menu_icon_weapon_name(
+                    o,
+                    id,
+                    [x, y, colour],
+                    local,
+                    &mut ui_remap,
+                    &mut callback,
+                );
+                0
+            },
+        );
+        let e = t.alloc(&e);
+        t.twin(
+            "DrawCrossMenuIconWeaponName2",
+            0x008e_6970,
+            &[e, x, y, colour],
+            VOID,
+            |o| {
+                tk::draw_cross_menu_icon_weapon_name2(
+                    o,
+                    e,
+                    [x, y, colour],
+                    &mut ui_remap,
+                    &mut callback,
+                );
+                0
+            },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+fn w64(v: u32) -> u64 {
+    u64::from(v)
+}

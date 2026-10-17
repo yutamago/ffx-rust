@@ -5580,6 +5580,132 @@ pub mod bridge {
         }
     }
 
+    /// The layout `DrawCrossMenuIcon*` share (`0x008e6700`, `0x008e67f0`,
+    /// `0x008e6970`): `DrawCrossMenuIconXYWHRGBA(remapX2(180) + x,
+    /// remapY2(7) + y, remapX2(38), remapY2(46), icon, 0x80 ×4)`, each
+    /// remap a double (`ST0`) and every argument rounded to a float. The
+    /// remaps run in the original's order (Y 46, X 38, Y 7, X 180).
+    #[allow(clippy::many_single_char_names)]
+    fn cross_icon<M: Mem>(
+        mem: &mut M,
+        [x, y]: [f32; 2],
+        icon: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r = |v: f64| (v as f32).to_bits();
+        let h = r(remap(mem, true, 46.0));
+        let w = r(remap(mem, false, 38.0));
+        let top = r(remap(mem, true, 7.0) + f64::from(y));
+        let left = r(remap(mem, false, 180.0) + f64::from(x));
+        let f = mem.rebase(0x008e_6af0);
+        call(mem, f, &[left, top, w, h, icon, 0x80, 0x80, 0x80, 0x80])
+    }
+
+    /// The name after the icon: `ToMakeBtlEasyFont(text, remapX2(240) + x,
+    /// remapY2(8) + y, colour, 0.78, 1.0)`; its result.
+    fn cross_text<M: Mem>(
+        mem: &mut M,
+        [x, y]: [f32; 2],
+        text: u32,
+        colour: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r = |v: f64| (v as f32).to_bits();
+        let top = r(remap(mem, true, 8.0) + f64::from(y));
+        let left = r(remap(mem, false, 240.0) + f64::from(x));
+        let scale = f32::from_bits(0x3f47_ae14).to_bits();
+        let f = mem.rebase(0x0090_5ab0);
+        call(mem, f, &[text, left, top, colour, scale, 1f32.to_bits()])
+    }
+
+    /// `DrawCrossMenuIconItemName(item, x, y, colour)` (`0x008e6700`): the
+    /// item's icon (`MsGetRomItem(item, &text)` record byte `+0x14`) and
+    /// its name (`+0` plus the `text` base the call writes; `scratch`
+    /// stands for that local) at `(x, y)`. Returns `ToMakeBtlEasyFont`'s
+    /// result.
+    pub fn draw_cross_menu_icon_item_name<M: Mem>(
+        mem: &mut M,
+        item: u32,
+        [x, y]: [f32; 2],
+        colour: u32,
+        scratch: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0079_09f0);
+        let rec = call(mem, f, &[item, scratch]);
+        let base: u32 = mem.read(scratch);
+        let text = u32::from(mem.read::<u16>(rec)).wrapping_add(base);
+        let icon = u32::from(mem.read::<u8>(rec.wrapping_add(0x14)));
+        cross_icon(mem, [x, y], icon, remap, call);
+        cross_text(mem, [x, y], text, colour, remap, call)
+    }
+
+    /// The weapon icon of an equipment slot `e`: `2 * +4 + 1 + +5` (as a
+    /// byte); then the name, and with `+4` equal to `+6` the marker icon
+    /// 0x31 over it.
+    fn cross_weapon<M: Mem>(
+        mem: &mut M,
+        e: u32,
+        text: u32,
+        [x, y, colour]: [u32; 3],
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = [f32::from_bits(x), f32::from_bits(y)];
+        let kind: u8 = mem.read(e.wrapping_add(4));
+        let icon = kind
+            .wrapping_mul(2)
+            .wrapping_add(1)
+            .wrapping_add(mem.read::<u8>(e.wrapping_add(5)));
+        cross_icon(mem, at, u32::from(icon), remap, call);
+        cross_text(mem, at, text, colour, remap, call);
+        if mem.read::<u8>(e.wrapping_add(4)) == mem.read::<u8>(e.wrapping_add(6)) {
+            cross_icon(mem, at, 0x31, remap, call);
+        }
+    }
+
+    /// `DrawCrossMenuIconWeaponName(id, x, y, colour)` (`0x008e67f0`): the
+    /// weapon slot `MsGetSaveWeapon(id, &unused)` (`scratch` standing for
+    /// the local) drawn with `MsGetSaveWeaponName(id)` (see `cross_weapon`).
+    pub fn draw_cross_menu_icon_weapon_name<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        [x, y, colour]: [u32; 3],
+        scratch: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let f = mem.rebase(0x007a_bbd0);
+        let e = call(mem, f, &[id, scratch]);
+        let f = mem.rebase(0x007a_bdf0);
+        let text = call(mem, f, &[id]);
+        cross_weapon(mem, e, text, [x, y, colour], remap, call);
+    }
+
+    /// `DrawCrossMenuIconWeaponName2(e, x, y, colour)` (`0x008e6970`): an
+    /// equipment record `e` drawn with `MsWeaponName(+0, +4,
+    /// MsGetSaveConfigHiragana(0))` (see `cross_weapon`).
+    pub fn draw_cross_menu_icon_weapon_name2<M: Mem>(
+        mem: &mut M,
+        e: u32,
+        [x, y, colour]: [u32; 3],
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let f = mem.rebase(0x0078_51f0);
+        let hira = call(mem, f, &[0]);
+        let name = u32::from(mem.read::<u16>(e));
+        let kind = u32::from(mem.read::<u8>(e.wrapping_add(4)));
+        let f = mem.rebase(0x007a_0c50);
+        let text = call(mem, f, &[name, kind, hira]);
+        cross_weapon(mem, e, text, [x, y, colour], remap, call);
+    }
+
     /// `TkSetRgba_*(i, r, g, b, a)` (`0x0088fca0`, `0x00890320`,
     /// `0x008906d0`): entry `i` (clamped to `0..=last`) of the colour table
     /// at `table` = the four components clamped to 0..=255, packed
