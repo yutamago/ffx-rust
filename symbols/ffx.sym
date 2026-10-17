@@ -12061,6 +12061,7 @@
 0x00b4cf30 label JobSchedule_JobWorker_vftable # fh v4:imported JobSchedule::JobWorker::vftable
 0x00b4cf60 label    g_FltMin                  # f32 FLT_MIN (1.17549435e-38): cdc_Vector_CanNormalize3 wants the square sum above it
 0x00b501c0 label    g_AlphaScaleNormal        # .rdata f32 256.0: useExtendedAlpha(0) copies it to g_AlphaScale
+0x00b549f8 label s_BtlEffectReadError      # MsEffectRead's MsBattleError message (reading while an event effect plays or the actor reads already)
 0x00b54f28 label g_TwoThirdsPi             # f32 2pi/3, and -2pi/3 at 0x00b54f2c: MsDirTurn's limits
 0x00b55178 label g_FloatScreenDepth        # f32 1024.0, the default screen depth (MsEffectCameraInit)
 0x00b594ec label g_ChrStrC101               # "c101", Tidus's other model name (Ch_CbMapping)
@@ -12512,6 +12513,7 @@
 0x00c42130 label g_ChrTexAnimSwizzle        # two 64-byte index tables (0x00c42130, 0x00c42170) for chr_texanim_clut_swizzle
 0x00c421cc label    g_BattleEnable            # set by setBattleEnable, read by MsBattleEncountExe
 0x00c421dc label    g_NewCharacterLoads       # AsyncLoadNewCharacter counts it up while non-negative
+0x00c421e8 label g_BtlEffectReadClear      # u32 cleared after MsEffectRead starts a file it waits for
 0x00c421f0 label g_BtlAccuracyTable           # 9 x i8, DmgCalc_CheckHit's chance by clamp(accuracy*2/5 - evasion + 10, 0, 8)
 0x00c423e8 label g_StatusTable               # 4 bytes per status; MsCheckStat (0x0079e310) returns byte 3 of entry i
 0x00c42420 label g_StatusTable2              # entry 14 of g_StatusTable on; MsCheckStat2 (0x0079e320) returns byte 3 of entry i
@@ -12682,6 +12684,7 @@
 0x0112a8fe label g_BtlCameraLock           # u8, MsAtelRequestCamera / MsAtelRequestMagicCamera refuse (-1) while set
 0x0112a900 label g_BtlAeonPlain2           # u8; with 0x0112a904, MsInsertChrCommand kind 0 falls back to no value (+0x1e set)
 0x0112a901 label g_BtlDebugFreeMp             # u8, MsCheckUseCommand charges no MP (as for monsters); debug native case 4
+0x0112a902 label g_BtlNoMagicFile          # u8: set, MsEffectRead reads magic file 0
 0x0112a904 label g_BtlAeonPlain            # u8 (MsInsertChrCommand)
 0x0112a906 label g_BtlDebugNoStatus           # u8, DmgCalc inflicts no statuses (skips DmgCalc_InflictStatus and _Extra)
 0x0112a907 label g_BtlStatInvert1B         # u8, MsGetChrStatInfo property 0x1b counts actors whose +0xdec is clear instead of set
@@ -12760,6 +12763,7 @@
 0x0112c8d0 label g_BtlScriptTargets        # u32 targets: 0x007a3d00 copies an actor's +0xdc0, MsInsertScriptCommand queues a command on them, MsBattleExe clears
 0x0112c8d4 label g_BtlMotionBusy           # bit per actor: MsCheckChrMotionAll marks the first actor found running a motion
 0x0112c8e8 label g_BtlLastMagic2              # u32; The last magic of kind 2 (MsEffectGetLastMagicNum2).
+0x0112c8ec label g_BtlLastMagic            # u32: the magic effect MsEffectRead reads (with 0x0112c8e8)
 0x0112c90c label g_BtlMessageCueInit2         # u32; with the one before it (same function, ffx_battle::misc)
 0x0112c914 label g_BtlMessageCue              # 4 battle messages of 12 bytes (+0 kind, +1, +2, +4 actor, +8 message ID), a ring (MsMessageCueRegist)
 0x0112c944 label g_BtlMessageCueCount         # u8, messages queued (at most 4)
@@ -12775,6 +12779,7 @@
 0x0112c9d4 label g_BtlNumbersKind12        # u8 (MsNumberCalcProcess)
 0x0112c9d5 label g_BtlNumbersShown         # u8 (MsNumberCalcProcess)
 0x0112c9d7 label g_BtlEffectCameraMode     # u8 (MsEffectCameraCall's second argument)
+0x0112c9d8 label g_BtlEffectOverlayBusy    # u8: the overlay effect stands in while a magic file loads (MsEffectRead, MsEffectReadComplete)
 0x0112c9db label g_BtlChrScripts           # u8, actors' monster-file handlers usable (MsAtelGetHandler kind 3); MsBattleExe, 0x00784070 write it
 0x0112c9dd label g_BtlCameraKoHeight       # u8, MsGetChrCameraPos keeps a KO'd actor's (+0xdcc 2) +0xf70 height
 0x0112c9df label g_BtlTurnActorNow           # u8, the actor whose turn it is (MsGetChrBit -18); copied to g_BtlTurnActor when a turn starts
@@ -12841,6 +12846,8 @@
 0x01133354 label g_BtlMuteSubtitle           # u32 (MsMuteBattleSubTitle 0x00785990)
 0x0113335c label    g_VfxPass                 # copied into every updateVFXRenderData fill request (+0x108)
 0x01133364 label g_BtlEventEffectStat        # i8 (MsEventEffectGetStat 0x00788bd0)
+0x01133368 label g_BtlEffectReadStat       # u32 cleared when MsEffectRead starts
+0x0113337c label g_BtlEffectReadChr        # u32: the actor whose magic file loads (MsEffectRead, MsEffectReadComplete)
 0x01133390 label g_BtlDamage9999             # u32, set by MsCalcDamage when a hit of 9999+ comes from a user whose +0x50 string is empty
 0x01133394 label g_BtlDamage99999            # u32, the same for 99999+ (MsCalcDamage)
 0x011333c0 label g_BtlOrderCount             # i32 queued action orders (MsOrderInit 0x0078d4b0, MsOrderRegist)
@@ -12946,6 +12953,7 @@
 0x012fb7e0 label    g_BtlRandomLatch           # set by g_CamFinishCount, read and cleared by Native_BtlRandom (0x007b89a0): the next draw gives 2 or 0
 0x012fb7f0 label    g_SgVCount                   # vertical blank counter, +2 a frame (0x00821e80); Sg_MainCalcRate reads it; yiGetVCount
 0x012fb808 label    g_VoiceHold                # above 1 the VoiceStandby wait (0x0085cec0) never ends
+0x012fb8b8 label g_BtlEffectPreloaded      # u32: magic file 0x15e taken preloaded (MsEffectRead)
 0x012fbc40 label g_CurrentMapNo             # current map (field) number: Ch_UseLargeCollisionRad, Ch_ShouldDisableClothForMotion, Ch_ClothSetAtariJimenCheck, Native_MsgSetPos compare it with map numbers
 0x012fbc54 label g_ChrClothParaEdit          # i8, Ch_ClothSetParaEdit / Ch_ClothGetParaEdit
 0x012fbc58 label g_ChrClothY                 # float, Ch_ClothSetY
@@ -13172,6 +13180,7 @@
 0x0134084c label    g_PauseEntered               # 1 once Pause_Enter ran
 0x01340850 label    g_PauseRequest            # Pause_Request sets it; the main loop runs Pause_Update while set
 0x01340859 label    g_TkMenuFirstReadEnd      # i8: TOMenuGetFirstReadEndFlag
+0x01340870 label g_BtlEffectOverlayDefault # the overlay table an actor plays while its magic file loads (+0xf8c; MsEffectRead)
 0x01596f70 label    g_TkMenuImportantList     # u16 key item ids by their list slot (TkMenuItemImportantRefresh)
 0x01597370 label    g_TkMenuItemCounts        # 0x200 x u16 cleared; item counts by the id's low byte (TkMenuItemRefresh)
 0x01597770 label    g_TkMenuItemList          # 0x200 x {u16 id, u8 count, u8 usable} (TkMenuItemRefresh)
@@ -13309,6 +13318,7 @@
 0x0193cd4c label    g_VirtualFreeErrorHook    # cdecl(message) the VirtualFree wrappers call on failure, when set
 0x0193ed20 label g_Sse2Available             # MSVC CRT __sse2_available: _ftol2_sse picks cvttsd2si when set (0 in an image that has not run its start-up)
 0x0193fdac label    g_MagicFile_IsNexData     # MagicFile_IsNexData
+0x01940abc label g_BtlEffectSpecialScene   # u32: effect 0x84 by model 0x108f in scene 0x1e70000 (MsEffectRead)
 0x01942998 label    g_DepthBias_Count         # entries in use; DepthBiasHooks_clearDepthBias zeroes it
 0x0194299c label    g_DepthBias               # 256 entries of 12 bytes (u32, f32 scale, f32): DepthBiasHooks_clearDepthBias resets them to (0, 1.0, 0.0)
 0x01a85ba8 label    g_FullArenaLocalization   # toggled (non-zero -> 0, 0 -> 1) by setFullArenaLocalizationEnable; read by 0x00a42c00, 0x00a42fa0

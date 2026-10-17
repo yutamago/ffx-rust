@@ -1231,6 +1231,124 @@ fn rect_words(a: &mut Oracle, b: &mut Oracle) {
     b.write(m + 8, &w).unwrap();
 }
 
+/// The effect read's callees of system, vfx, chara and the CD library
+/// (`ffx_battle::parse`), stubbed in `tex_anim_pos_set_old` (8) and
+/// `tex_anim_no_set_old` (4), with their argument counts; the CD
+/// library's `+0x10` is `FUN_00780750` (the third).
+const EFFECT_CALLEES: [(u32, u8); 12] = {
+    use ffx_battle::parse::bridge as p;
+    [
+        (p::MS_BATTLE_ERROR, 1),
+        (p::GET_CD, 0),
+        (0x0078_0750, 1),
+        (p::MAGIC_FILE_SET_MAGIC_ID, 1),
+        (p::MAGIC_FILE_LOAD, 0),
+        (p::MAGIC_FILE_IS_PRX_PRELOADED, 1),
+        (p::MAGIC_FILE_START, 0),
+        (p::MAGIC_FILE_GET_EFFECT_OVERLAY_TABLE, 1),
+        (p::MAGIC_FILE_CLEANUP, 0),
+        (p::IS_LOAD_TEXTURE, 0),
+        (p::GRAPHIC_IS_MAGIC_FILE_ASYNC_LOAD_AVAILABLE, 0),
+        (p::CH_GET_ID, 1),
+    ]
+};
+
+fn effect_stub_at(k: u32) -> u32 {
+    if k < 8 {
+        0x0078_08f0 + 0x40 * k
+    } else {
+        0x0078_07c0 + 0x40 * (k - 8)
+    }
+}
+
+/// The stubs of [`EFFECT_CALLEES`] in both oracles, records from `rec`
+/// ([`EXCHANGE_REC`] each), and the CD library object.
+fn effect_stubs(a: &mut Oracle, b: &mut Oracle, rec: u32) {
+    let cd = scratch(a, b, 0x20);
+    for o in [&mut *a, &mut *b] {
+        for (k, (f, n)) in (0u32..).zip(EFFECT_CALLEES) {
+            logging_stub(o, f, effect_stub_at(k), rec + EXCHANGE_REC * k, n, 0);
+        }
+        let f = o.rebase(0x0078_0750);
+        o.write(cd + 0x10, &f.to_le_bytes()).unwrap();
+        o.write(rec + EXCHANGE_REC + 4, &cd.to_le_bytes()).unwrap();
+    }
+}
+
+/// The magic effect reads (`ffx_battle::parse`).
+fn effects(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, rec: u32, files: u32) {
+    use ffx_battle::atel::bridge::Script;
+    use ffx_battle::parse::bridge as p;
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    macro_rules! s {
+        ($s:ident) => {
+            let mut $s = Script {
+                call: &mut call,
+                signal: &mut signal,
+                off: &mut off,
+            };
+        };
+    }
+    let flag = |rng: &mut Xorshift, n: u32| u8::from(rng.below(n) == 0);
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::EVENT_EFFECT_STAT,
+        i8::try_from(flag(rng, 8)).unwrap(),
+    );
+    let stone = [i8::try_from(flag(rng, 6)).unwrap(), 0];
+    set(a, b, ffx_battle::state::bridge::STONE_EFFECT, stone);
+    set(a, b, p::NO_MAGIC_FILE, flag(rng, 4));
+    set(a, b, ffx_battle::action::bridge::AEON_PLAIN2, flag(rng, 6));
+    set(a, b, p::EFFECT_PRELOADED, u32::from(flag(rng, 3)));
+    set(a, b, p::EFFECT_READ_CHR, rng.below(ACTORS));
+    // the effect file table, effect 0x15e at times
+    set(a, b, ffx_battle::exec::bridge::EFFECT_FILES, files);
+    let mut t = vec![0u8; 0x802];
+    for k in 0..0x401 {
+        let v = u16::try_from(k * 2 + rng.below(3)).unwrap();
+        t[2 * k as usize..2 * k as usize + 2].copy_from_slice(&v.to_le_bytes());
+    }
+    let id = [rng.below(0x400), 0x84, rng.below(0x40), 0][rng.below(4) as usize];
+    if rng.below(3) == 0 && id < 0x3ff {
+        t[2 * id as usize..2 * id as usize + 4].copy_from_slice(&[0x5e, 1, 0x5f, 1]);
+    }
+    poke(a, b, files, &t);
+    for (k, r) in [
+        (4, [0, 5, u32::MAX][rng.below(3) as usize]),
+        (5, u32::from(flag(rng, 2))),
+        (6, u32::from(flag(rng, 2))),
+        (7, rng.next()),
+        (8, rng.next()),
+        (9, u32::from(flag(rng, 2))),
+        (10, [0, 1, 3][rng.below(3) as usize]),
+        (11, [0x108f, rng.below(0x2000)][rng.below(2) as usize]),
+    ] {
+        poke(a, b, rec + EXCHANGE_REC * k + 4, &r.to_le_bytes());
+    }
+    let i = [rng.below(ACTORS), rng.next()][rng.below(4).min(1) as usize];
+    let actor = w.actor(i & 0xff);
+    if (i & 0xff) < ACTORS {
+        poke(a, b, actor + 0xdfb, &[[0, 0, 0, 1][rng.below(4) as usize]]);
+    }
+    twin("MsEffectRead", a, b, 0x0078_7f20, &[i, id], ALL, |m| {
+        dm(m, |m| {
+            s!(s);
+            p::ms_effect_read(m, &mut s, i, id).cast_unsigned()
+        })
+    });
+    same("MsEffectRead", a, b);
+    twin("MsEffectReadComplete", a, b, 0x0078_8110, &[], ALL, |m| {
+        dm(m, |m| {
+            s!(s);
+            p::ms_effect_read_complete(m, &mut s)
+        })
+    });
+    same("MsEffectReadComplete", a, b);
+}
+
 /// Whether every able (`+0xdc8`) actor's and every monster's battle
 /// position is written (`MsCalcChrDir`'s centres and turning monsters).
 fn placed(a: &mut Oracle, b: &mut Oracle, w: &World, out: u32) -> bool {
@@ -1619,6 +1737,9 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
             );
         }
     }
+    let erec = scratch(a, b, (EXCHANGE_REC * 12) as usize);
+    effect_stubs(a, b, erec);
+    let files = scratch(a, b, 0x802);
     for _ in 0..400 {
         file(a, b, rng, &f);
         dress(a, b, rng, &w, &f);
@@ -1628,6 +1749,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         status(a, b, rng, &w, out);
         actions(a, b, rng, &w, out);
         exchange(a, b, rng, &w, out, xrec);
+        effects(a, b, rng, &w, erec, files);
     }
 }
 

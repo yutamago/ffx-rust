@@ -5,6 +5,7 @@ use ffx_battle::action::bridge as action;
 use ffx_battle::atel::bridge as atel;
 use ffx_battle::exchange::bridge as exchange;
 use ffx_battle::exec::bridge as exec;
+use ffx_battle::parse::bridge as parse;
 use ffx_battle::status::bridge as status;
 use ffx_battle::visible::bridge as visible;
 use ffx_battle::{actor::bridge as actor, camera::bridge as camera, command::bridge as cmd};
@@ -2506,5 +2507,15 @@ ported! {
         let mut m = mem();
         script!(s);
         exchange::ms_exchange_summon(&mut target::Dm::new(&mut m), &host(), &mut s, inn, summon);
+    }
+    /// `MsEffectRead(i, id)`: the magic files (system, vfx) through the game.
+    MsEffectRead @ 0x0078_7f20 => extern "C" fn ms_effect_read(i: u32, id: u32) -> i32 {
+        script!(s);
+        parse::ms_effect_read(&mut mem(), &mut s, i, id)
+    }
+    /// `MsEffectReadComplete()`.
+    MsEffectReadComplete @ 0x0078_8110 => extern "C" fn ms_effect_read_complete() -> u32 {
+        script!(s);
+        parse::ms_effect_read_complete(&mut mem(), &mut s)
     }
 }
