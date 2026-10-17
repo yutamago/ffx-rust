@@ -1178,6 +1178,143 @@ pub mod bridge {
         call(mem, mem.rebase(MEM_MOVE_SET_TRIGGER), &[]);
         total
     }
+
+    /// `FFXVu0Normalize(out, v)` (`0x006ed6f0`), `Ch_ClothReset(chr)`
+    /// (`0x00824650`), `MagicFile_GetMagicId()` (`0x009da3b0`).
+    pub const VU0_NORMALIZE: u32 = 0x006e_d6f0;
+    pub const CLOTH_RESET: u32 = 0x0082_4650;
+    pub const GET_MAGIC_ID: u32 = 0x009d_a3b0;
+    /// Bytes of scratch `ch_model_create_packet` needs (a block's name).
+    pub const CREATE_PACKET_SCRATCH: u32 = 0x40;
+
+    /// `Ch_ModelCreatePacket(chr, scratch)` (`0x00827280`): flag bit 11
+    /// (`+0x198`) on while each model (0x38 bytes at `+0x1bc`, count `u16`
+    /// `+6` of `+0x1c0`) gets what it lacks, each block named `"<name>:
+    /// vtex"`, `":norm"`, `":physics"` (`Sg_MemSetStr(block, name, model)`
+    /// with the name in `scratch`, the original's stack; type 1): `+8` its
+    /// vertices (`u16` `+4` of its data, `i16` triples at `+8` as `f32` x,
+    /// y, z, 1), `+4` its normals (`u16` `+0x16`, triples at `+0xc`, each
+    /// normalised with `FFXVu0Normalize`), and with physics entries (`u16`
+    /// `+0x18`, 0x24 bytes at `+0x1c`) `+0xc` room for the sum of their
+    /// `i8` `+0x13` and `i16` `+0x1c` counts (`+0x10`) × 0x30 bytes. A
+    /// character with flag bit 5 that got physics is reset
+    /// (`Ch_ClothReset`); flag bits 5 and 11 then cleared. The renderer's
+    /// instance is shown, except character 0x402e during magic 0x295,
+    /// which stays hidden (hide byte `+0x180` = 1). Returns
+    /// `graphicCharacterInstanceSetVisible`'s result.
+    #[allow(clippy::too_many_lines)] // one pass over the models
+    pub fn ch_model_create_packet<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let malloc = mem.rebase(crate::handle::bridge::USER_MALLOC);
+        let set_str = mem.rebase(crate::handle::bridge::MEM_SET_STR);
+        let set_type = mem.rebase(crate::sys::bridge::MEM_SET_TYPE);
+        let flags: u32 = mem.read(chr + 0x198);
+        mem.write(chr + 0x198, flags | 0x800);
+        let name_at: u32 = mem.read(chr + 4);
+        let name = crate::handle::bridge::c_string(mem, name_at);
+        let label = |mem: &mut M,
+                     block: u32,
+                     what: &[u8],
+                     i: u32,
+                     call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            let mut s = name.clone();
+            s.push(b':');
+            s.extend(what);
+            crate::handle::bridge::put_c_string(mem, scratch, &s);
+            call(mem, set_str, &[block, scratch, i]);
+            call(mem, set_type, &[block, 1]);
+        };
+        let count = |mem: &M| {
+            let h: u32 = mem.read(chr + 0x1c0);
+            u32::from(mem.read::<u16>(h + 6))
+        };
+        let triple = |mem: &mut M, src: u32, dst: u32| {
+            for k in 0..3 {
+                mem.write(dst + 4 * k, f32::from(mem.read::<i16>(src + 2 * k)));
+            }
+            mem.write(dst + 0xc, 1f32);
+        };
+        let mut physics = false;
+        let mut i = 0u32;
+        while i < count(mem) {
+            let m = mem.read::<u32>(chr + 0x1bc).wrapping_add(0x38 * i);
+            if mem.read::<u32>(m + 8) == 0 {
+                let d: u32 = mem.read(m);
+                let n = u32::from(mem.read::<u16>(d + 4));
+                let p = call(mem, malloc, &[n << 4]);
+                mem.write(m + 8, p);
+                let d: u32 = mem.read(m);
+                let mut src: u32 = mem.read(d + 8);
+                let mut k = 0u32;
+                while k < u32::from(mem.read::<u16>(mem.read::<u32>(m) + 4)) {
+                    let p: u32 = mem.read(m + 8);
+                    triple(mem, src, p.wrapping_add(0x10 * k));
+                    src = src.wrapping_add(6);
+                    k += 1;
+                }
+                let p: u32 = mem.read(m + 8);
+                label(mem, p, b"vtex", i, call);
+            }
+            if mem.read::<u32>(m + 4) == 0 {
+                let d: u32 = mem.read(m);
+                let n = u32::from(mem.read::<u16>(d + 0x16));
+                let p = call(mem, malloc, &[n << 4]);
+                mem.write(m + 4, p);
+                let d: u32 = mem.read(m);
+                let mut src: u32 = mem.read(d + 0xc);
+                let mut k = 0u32;
+                while k < u32::from(mem.read::<u16>(mem.read::<u32>(m) + 0x16)) {
+                    let p: u32 = mem.read(m + 4);
+                    let v = p.wrapping_add(0x10 * k);
+                    triple(mem, src, v);
+                    let p: u32 = mem.read(m + 4);
+                    let v = p.wrapping_add(0x10 * k);
+                    call(mem, mem.rebase(VU0_NORMALIZE), &[v, v]);
+                    src = src.wrapping_add(6);
+                    k += 1;
+                }
+                let p: u32 = mem.read(m + 4);
+                label(mem, p, b"norm", i, call);
+            }
+            if mem.read::<u32>(m + 0xc) == 0 {
+                let d: u32 = mem.read(m);
+                let n = u32::from(mem.read::<u16>(d + 0x18));
+                if n != 0 {
+                    let mut e = mem.read::<u32>(d + 0x1c).wrapping_add(0x13);
+                    let mut total = 0i32;
+                    for _ in 0..n {
+                        total = total
+                            .wrapping_add(i32::from(mem.read::<i8>(e)))
+                            .wrapping_add(i32::from(mem.read::<i16>(e + 9)));
+                        e = e.wrapping_add(0x24);
+                    }
+                    mem.write(m + 0x10, total);
+                    let p = call(mem, malloc, &[total.cast_unsigned().wrapping_mul(0x30)]);
+                    mem.write(m + 0xc, p);
+                    label(mem, p, b"physics", i, call);
+                    physics = true;
+                }
+            }
+            i += 1;
+        }
+        if mem.read::<u32>(chr + 0x198) & 0x20 != 0 && physics {
+            call(mem, mem.rebase(CLOTH_RESET), &[chr]);
+        }
+        let flags: u32 = mem.read(chr + 0x198);
+        mem.write(chr + 0x198, flags & 0xffff_f7df);
+        let inst: u32 = mem.read(chr + 0x830);
+        if mem.read::<u16>(chr) == 0x402e && call(mem, mem.rebase(GET_MAGIC_ID), &[]) == 0x295 {
+            let r = call(mem, mem.rebase(SET_VISIBLE), &[inst, 0]);
+            mem.write(chr + 0x180, 1u8);
+            return r;
+        }
+        let inst: u32 = mem.read(chr + 0x830);
+        call(mem, mem.rebase(SET_VISIBLE), &[inst, 1])
+    }
 }
 
 #[cfg(test)]

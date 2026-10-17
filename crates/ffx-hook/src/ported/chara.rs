@@ -1588,4 +1588,59 @@ ported! {
     Ch_ClutDispose @ 0x0083_c810 => extern "C" fn ch_clut_dispose(chr: u32) -> u32 {
         tx::ch_clut_dispose(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
     }
+
+    // ---- round 10
+
+    /// `chr_texanim_del(id)`.
+    chr_texanim_del @ 0x0077_c770 => extern "C" fn chr_texanim_del(id: i32) -> u32 {
+        ta::chr_texanim_del(&mut mem(), id, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_ClothMeshDestroy(chr)`: 0.
+    Ch_ClothMeshDestroy @ 0x0082_6260 => extern "C" fn ch_cloth_mesh_destroy(chr: u32) -> u32 {
+        cl::ch_cloth_mesh_destroy(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_GetRestPoseMatrices(chr)`: 0.
+    Ch_GetRestPoseMatrices @ 0x0082_6ba0 => extern "C" fn ch_get_rest_pose_matrices(chr: u32) -> u32 {
+        cl::ch_get_rest_pose_matrices(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_MotionCancel(chr)`.
+    Ch_MotionCancel @ 0x0083_7180 => extern "C" fn ch_motion_cancel(chr: u32) -> u32 {
+        mo::bridge::ch_motion_cancel(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_ClutCreate(chr)`.
+    Ch_ClutCreate @ 0x0083_c710 => extern "C" fn ch_clut_create(chr: u32) -> u32 {
+        tx::ch_clut_create(&mut mem(), chr, scratch(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_ClothMeshMapping(chr)`: 1 with mesh data, else 0.
+    Ch_ClothMeshMapping @ 0x0082_6340 => extern "C" fn ch_cloth_mesh_mapping(chr: u32) -> u32 {
+        cl::ch_cloth_mesh_mapping(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_MotionSetupFcurve(chr, clip)`.
+    Ch_MotionSetupFcurve @ 0x0083_9980 => extern "C" fn ch_motion_setup_fcurve(chr: u32, clip: u32) -> u32 {
+        mo::bridge::ch_motion_setup_fcurve(&mut mem(), chr, clip, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_ModelCreatePacket(chr)`: vertex, normal and physics blocks.
+    Ch_ModelCreatePacket @ 0x0082_7280 => extern "C" fn ch_model_create_packet(chr: u32) -> u32 {
+        c::ch_model_create_packet(&mut mem(), chr, scratch(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `chr_texanim_set_new(id, handle, def)`.
+    chr_texanim_set_new @ 0x0077_f9c0 => extern "C" fn chr_texanim_set_new(id: u32, handle: u32, def: u32) -> u32 {
+        ta::chr_texanim_set_new(&mut mem(), id, handle, def, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `chr_texanim_set_old(id, handle, def)`.
+    chr_texanim_set_old @ 0x0078_03f0 => extern "C" fn chr_texanim_set_old(id: u32, handle: u32, def: u32) -> u32 {
+        ta::chr_texanim_set_old(&mut mem(), id, handle, def, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `chr_texanim_main_sub_old(id)`.
+    chr_texanim_main_sub_old @ 0x0077_ff00 => extern "C" fn chr_texanim_main_sub_old(id: u32) -> u32 {
+        ta::chr_texanim_main_sub_old(&mut mem(), id, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `chr_texanim_set(def, handle)`.
+    chr_texanim_set @ 0x0077_c950 => extern "C" fn chr_texanim_set(def: u32, handle: u32) -> u32 {
+        ta::chr_texanim_set(&mut mem(), def, handle, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_SetMotionSeq(chr, clip, loops, start, end)`.
+    Ch_SetMotionSeq @ 0x0083_9b80 => extern "C" fn ch_set_motion_seq(chr: u32, clip: u32, loops: u32, start: i32, end: i32) -> u32 {
+        mo::bridge::ch_set_motion_seq(&mut mem(), chr, clip, loops, start, end, &mut |_, f, a| super::call_cdecl(f, a))
+    }
 }

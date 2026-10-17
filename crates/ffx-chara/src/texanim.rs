@@ -598,4 +598,515 @@ pub mod bridge {
         call(mem, mem.rebase(TEXTURE_LOAD), &[t, n.cast_unsigned(), x]);
         ch_texture_load_anim(mem, chr, scratch, call);
     }
+
+    /// The character texture animation table (`chr_texanim_*`): 64
+    /// entries of 0x30 bytes: `+0` source, `+4` work block, `+8`, `u8`
+    /// kind `+0xc` (1 new form, 2 old).
+    pub const TEX_ANIMS: Global<u32> = Global::new(0x0231_0000);
+    /// `g_ChrTexAnim844` and the byte after it.
+    pub const TEX_ANIM_844: Global<[u8; 2]> = Global::new(0x0112_a844);
+    /// `movie_err(message, file, line)` (`0x0076efa0`).
+    pub const MOVIE_ERR: u32 = 0x0076_efa0;
+
+    /// `chr_texanim_del(id)` (`0x0077c770`): an id outside 0..64 is
+    /// reported (`movie_err("id >= 0" / "id < CHR_TEX_ANIM_MAX",
+    /// "..\\program\\lib\\src\\movie_str.c", 0xb39 / 0xb3a)`, then used
+    /// anyway). A kind-1 entry's work block is shut down (the function at
+    /// `+4` of the table at its `+0x460f8`), freed, and the two bytes at
+    /// [`TEX_ANIM_844`] reset to 0, 0xff; a kind-2 entry's block is
+    /// freed; the block, source and `+8` cleared. Returns what the
+    /// original leaves in EAX.
+    pub fn chr_texanim_del<M: Mem>(
+        mem: &mut M,
+        id: i32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let err = mem.rebase(MOVIE_ERR);
+        let file = mem.rebase(0x00b5_40a8);
+        if id < 0 {
+            call(mem, err, &[mem.rebase(0x00b5_44cc), file, 0xb39]);
+        }
+        if id >= 0x40 {
+            call(mem, err, &[mem.rebase(0x00b5_44d4), file, 0xb3a]);
+        }
+        let e = TEX_ANIMS
+            .ptr(mem)
+            .addr
+            .wrapping_add(0x30u32.wrapping_mul(id.cast_unsigned()));
+        let kind = i32::from(mem.read::<i8>(e + 0xc));
+        let free = mem.rebase(crate::chr::bridge::USER_FREE);
+        let block: u32 = mem.read(e + 4);
+        let eax = match kind {
+            1 if block != 0 => {
+                let table: u32 = mem.read(block.wrapping_add(0x460f8));
+                let f: u32 = mem.read(table.wrapping_add(4));
+                call(mem, f, &[]);
+                let block: u32 = mem.read(e + 4);
+                let r = call(mem, free, &[block]);
+                TEX_ANIM_844.set(mem, [0, 0xff]);
+                mem.write(e + 4, 0u32);
+                r
+            }
+            2 if block != 0 => {
+                let r = call(mem, free, &[block]);
+                mem.write(e + 4, 0u32);
+                r
+            }
+            1 | 2 => 0,
+            k => (k - 2).cast_unsigned(),
+        };
+        mem.write(e, 0u32);
+        mem.write(e + 8, 0u32);
+        eax
+    }
+
+    /// `TexAnim_StartNew(id, k, mode)` (`0x0077fc90`), `TexAnim_ResetPos(id,
+    /// k, x)` (`0x0077fda0`), `TexAnim_StartOld(id, k, mode)` (`0x00780750`)
+    /// and `tex_anim_pos_set_old(id, k, x)` (`0x007808f0`).
+    pub const START_NEW: u32 = 0x0077_fc90;
+    pub const RESET_POS: u32 = 0x0077_fda0;
+    pub const START_OLD: u32 = 0x0078_0750;
+    pub const POS_SET_OLD: u32 = 0x0078_08f0;
+
+    /// The two forms of `chr_texanim_set_*`.
+    struct SetForm {
+        size: u32,
+        /// Offsets zeroed in each of the first 8 or 64 slots (0x34 bytes).
+        zero: &'static [u32],
+        slots: u32,
+        /// Where the source's slot modes go (from its `+0xc`) and how many.
+        modes: u32,
+        mode_len: u32,
+        /// The slots' position pair, the source's stride per slot.
+        pos: u32,
+        stride: u32,
+        handle: u32,
+        count: u32,
+        extra: u32,
+        start: u32,
+        reset: u32,
+        old: bool,
+    }
+
+    /// `chr_texanim_set_new` / `_old`: a work block for entry `id` of
+    /// [`TEX_ANIMS`] (its `+8` and, new form, the dwords at `+0xf`..`+0x2b`
+    /// cleared); slot fields zeroed, the source's slot modes copied in,
+    /// the handle stored. Each slot with a mode (not -1) is started
+    /// (mode 0 as 2, 1/3 as 1, 2 as 3, 4 as 0; others untouched) and
+    /// positioned; a mode-2 slot whose mode survives gets the source's
+    /// position pair (its slot at `[src+8]`, floats through x87). The
+    /// count of slots up to the last used one (at least the source's `+1`
+    /// byte) is stored, then each of `def`'s `u16` `+0xc` entries (0x10
+    /// bytes at `+0x1c`) gives a dword (`+0xc`) and two halves (`+8`,
+    /// `+0xa`).
+    fn chr_texanim_set_form<M: Mem>(
+        mem: &mut M,
+        f: &SetForm,
+        id: u32,
+        handle: u32,
+        def: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let e = TEX_ANIMS
+            .ptr(mem)
+            .addr
+            .wrapping_add(0x30u32.wrapping_mul(id));
+        let src: u32 = mem.read(e);
+        let malloc = mem.rebase(crate::handle::bridge::USER_MALLOC);
+        let buf = call(mem, malloc, &[f.size]);
+        mem.write(e + 4, buf);
+        mem.write(e + 8, 0u32);
+        if !f.old {
+            for k in 0..8 {
+                mem.write(e + 0xf + 4 * k, 0u32);
+            }
+        }
+        for k in 0..f.slots {
+            for &o in f.zero {
+                mem.write(buf.wrapping_add(o + 0x34 * k), 0u32);
+            }
+        }
+        for k in 0..f.mode_len / 4 {
+            let v: u32 = mem.read(src.wrapping_add(0xc + 4 * k));
+            mem.write(buf.wrapping_add(f.modes + 4 * k), v);
+        }
+        mem.write(buf.wrapping_add(f.handle), handle);
+        if !f.old {
+            mem.write(buf.wrapping_add(0xd48), 0u32);
+        }
+        let mut most = if f.old {
+            i32::from(mem.read::<i8>(src.wrapping_add(1)))
+        } else {
+            i32::from(mem.read::<u8>(src.wrapping_add(1)))
+        };
+        let start = mem.rebase(f.start);
+        let reset = mem.rebase(f.reset);
+        for k in 0..f.mode_len {
+            let mode = mem.read::<i8>(buf.wrapping_add(f.modes + k));
+            if mode == -1 {
+                continue;
+            }
+            let (m, r) = match mode {
+                0 => (Some(2), 0),
+                1 | 3 => (Some(1), u32::from(!f.old)),
+                2 => (Some(3), 0),
+                4 => (Some(0), 0),
+                _ => (None, 0),
+            };
+            if let Some(m) = m {
+                call(mem, start, &[id, k, m]);
+                call(mem, reset, &[id, k, r]);
+                if mode == 2 && mem.read::<i8>(buf.wrapping_add(f.modes + k)) != -1 {
+                    let at: u32 = mem.read(src.wrapping_add(8));
+                    let p = at.wrapping_add(f.stride * k).wrapping_add(src);
+                    let d = buf.wrapping_add(f.pos + 0x34 * k);
+                    for w in 0..2 {
+                        let v = crate::x87::load(mem.read::<f32>(p.wrapping_add(4 * w)));
+                        mem.write(d.wrapping_add(4 * w), v);
+                    }
+                }
+            }
+            most = most.max(k.cast_signed() + 1);
+        }
+        mem.write(buf.wrapping_add(f.count), most);
+        let mut eax = 0u32;
+        let mut i = 0u32;
+        while i < u32::from(mem.read::<u16>(def + 0xc)) {
+            let t: u32 = mem.read(def + 0x1c);
+            let v: u32 = mem.read(t.wrapping_add(0x10 * i + 0xc));
+            mem.write(buf.wrapping_add(f.extra + 4 * i), v);
+            let t: u32 = mem.read(def + 0x1c);
+            let v: u16 = mem.read(t.wrapping_add(0x10 * i + 8));
+            mem.write(buf.wrapping_add(f.extra + 0x10 + 2 * i), v);
+            let t: u32 = mem.read(def + 0x1c);
+            let v: u16 = mem.read(t.wrapping_add(0x10 * i + 0xa));
+            mem.write(buf.wrapping_add(f.extra + 0x18 + 2 * i), v);
+            eax = u32::from(mem.read::<u16>(def + 0xc));
+            i += 1;
+        }
+        if f.old { buf } else { eax }
+    }
+
+    /// `chr_texanim_set_new(id, handle, def)` (`0x0077f9c0`): the new form
+    /// (0xd4c bytes, 32 slots); returns `def`'s count (what EAX holds).
+    pub fn chr_texanim_set_new<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        handle: u32,
+        def: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const FORM: SetForm = SetForm {
+            size: 0xd4c,
+            zero: &[0x8, 0xc, 0x1c, 0x20, 0x24, 0x2c, 0x30, 0x34, 0x38],
+            slots: 64,
+            modes: 0xd08,
+            mode_len: 32,
+            pos: 0x2c,
+            stride: 0x110,
+            handle: 4,
+            count: 0,
+            extra: 0xd28,
+            start: START_NEW,
+            reset: RESET_POS,
+            old: false,
+        };
+        chr_texanim_set_form(mem, &FORM, id, handle, def, call)
+    }
+
+    /// `chr_texanim_set_old(id, handle, def)` (`0x007803f0`): the old form
+    /// (0x5d8 bytes, 16 slots, positioned with 0); returns the block.
+    pub fn chr_texanim_set_old<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        handle: u32,
+        def: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const FORM: SetForm = SetForm {
+            size: 0x5d8,
+            zero: &[0x40c, 0x41c, 0x420, 0x424, 0x42c, 0x430, 0x434, 0x438],
+            slots: 8,
+            modes: 0x5a8,
+            mode_len: 16,
+            pos: 0x42c,
+            stride: 0x90,
+            handle: 0x404,
+            count: 0x400,
+            extra: 0x5b8,
+            start: START_OLD,
+            reset: POS_SET_OLD,
+            old: true,
+        };
+        chr_texanim_set_form(mem, &FORM, id, handle, def, call)
+    }
+
+    /// The import slots `chr_texanim_main_sub_old` calls through: `rand`,
+    /// `memcpy`.
+    pub const RAND_SLOT: u32 = 0x00b0_c420;
+    pub const MEMCPY_SLOT: u32 = 0x00b0_c364;
+
+    /// `chr_texanim_main_sub_old(id)` (`0x0077ff00`): one step of an old
+    /// form entry (source kind byte 2) of [`TEX_ANIMS`]: for each of its
+    /// work block's slots (count `+0x400`, 0x34 bytes from `+0x40c`) with
+    /// a mode (byte `+0x5a8 + k`, not -1), its source slot (0x90 bytes at
+    /// `[src+8]`) gives the frame list for the entry's track (`+8`; frames
+    /// of 4 bytes at its `+0x10`, `i16` count `+0x14`; none sets the
+    /// slot's done flag `+0x12`). By the slot's play mode (`+0x10`): 1/4
+    /// show frame `+0`; 2 blinks (state `+0xe`: wait 60-149, 4 steps per
+    /// frame, then back); 3 and others step the frame when a counter
+    /// (`+8`) passes the frame's `i16` time plus a random wait (`rand` &
+    /// 0xff × frame byte 3 / 256, set when it steps; the step keeps the
+    /// old frame for this pass), mode 3 also scrolling its offsets (`+0x20`,
+    /// `+0x24` by `+0x18`, `+0x1c`, wrapped into the frame's rectangle,
+    /// floats through x87). The frame's rectangle (12 bytes at `[src+4]`,
+    /// index byte 2) and the slot's placement are stored; mode 3 then
+    /// copies the rectangle's rows into the destination (`memcpy`; the
+    /// block's `+0x5b8` and `+0x5c8` by the slot's `+0xc`), starting at the
+    /// row of its scroll `y`. Returns what EAX holds: the id with no source,
+    /// kind − 2 for another kind, the track with no slots, else the block.
+    #[allow(clippy::too_many_lines)] // one step of every slot
+    pub fn chr_texanim_main_sub_old<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let e = TEX_ANIMS
+            .ptr(mem)
+            .addr
+            .wrapping_add(0x30u32.wrapping_mul(id));
+        let src: u32 = mem.read(e);
+        if src == 0 {
+            return id;
+        }
+        let kind = i32::from(mem.read::<i8>(src));
+        if kind != 2 {
+            return (kind - 2).cast_unsigned();
+        }
+        let track: u32 = mem.read(e + 8);
+        let buf: u32 = mem.read(e + 4);
+        let rects = src.wrapping_add(mem.read::<u32>(src.wrapping_add(4)));
+        let rd16 = |mem: &M, a: u32| i32::from(mem.read::<i16>(a));
+        let rand = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            let f: u32 = mem.read(mem.rebase(RAND_SLOT));
+            call(mem, f, &[])
+        };
+        if mem.read::<i32>(buf.wrapping_add(0x400)) <= 0 {
+            return track;
+        }
+        let mut k = 0u32;
+        while k.cast_signed() < mem.read::<i32>(buf.wrapping_add(0x400)) {
+            let s = buf.wrapping_add(0x420 + 0x34 * k);
+            if mem.read::<i8>(buf.wrapping_add(0x5a8 + k)) == -1 {
+                k += 1;
+                continue;
+            }
+            let ss = src
+                .wrapping_add(mem.read::<u32>(src.wrapping_add(8)))
+                .wrapping_add(0x90 * k);
+            let list = ss.wrapping_add(track.wrapping_mul(8));
+            let cnt = rd16(mem, list.wrapping_add(0x14));
+            if cnt == 0 {
+                mem.write(s.wrapping_add(6), 1u16);
+                k += 1;
+                continue;
+            }
+            let base = src.wrapping_add(mem.read::<u32>(list.wrapping_add(0x10)));
+            let frame_at =
+                |mem: &M| base.wrapping_add(mem.read::<u32>(s.wrapping_sub(0x14)).wrapping_mul(4));
+            let mode = rd16(mem, s.wrapping_add(4));
+            let fr = match mode {
+                1 | 4 => frame_at(mem),
+                2 => {
+                    match rd16(mem, s.wrapping_add(2)) {
+                        0 => {
+                            let r = rand(mem, call).cast_signed();
+                            mem.write(s.wrapping_add(2), 1u16);
+                            mem.write(s.wrapping_sub(0x14), 0u32);
+                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                            mem.write(s, (r.wrapping_rem(0x5a) + 0x3c) as u16);
+                        }
+                        1 => {
+                            let t = mem.read::<i16>(s).wrapping_sub(1);
+                            mem.write(s, t);
+                            if t < 0 {
+                                mem.write(s, 0x0002_0004u32);
+                            }
+                        }
+                        2 => {
+                            let t = mem.read::<i16>(s).wrapping_sub(1);
+                            mem.write(s, t);
+                            if t < 0 {
+                                let f = mem.read::<i32>(s.wrapping_sub(0x14)).wrapping_add(1);
+                                mem.write(s.wrapping_sub(0x14), f);
+                                if f < cnt {
+                                    mem.write(s, 1u16);
+                                } else {
+                                    mem.write(s.wrapping_sub(0x14), f.wrapping_sub(1));
+                                    mem.write(s, 0u32);
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                    frame_at(mem)
+                }
+                _ => {
+                    let mut fr = frame_at(mem);
+                    if mem.read::<i16>(fr) >= 0 {
+                        let c = mem.read::<i16>(s.wrapping_sub(4)).wrapping_add(1);
+                        mem.write(s.wrapping_sub(4), c);
+                        if rd16(mem, fr) + rd16(mem, s.wrapping_sub(2)) < i32::from(c) {
+                            mem.write(s.wrapping_sub(4), 0u16);
+                            let f = mem.read::<i32>(s.wrapping_sub(0x14)).wrapping_add(1);
+                            mem.write(s.wrapping_sub(0x14), f);
+                            if f >= cnt {
+                                fr = base;
+                                mem.write(s.wrapping_sub(0x14), 0u32);
+                            }
+                            let r = rand(mem, call) & 0xff;
+                            let w =
+                                r.wrapping_mul(u32::from(mem.read::<u8>(fr.wrapping_add(3)))) >> 8;
+                            #[allow(clippy::cast_possible_truncation)]
+                            mem.write(s.wrapping_sub(2), w as u16);
+                        }
+                    }
+                    if mode == 3 {
+                        #[allow(clippy::cast_possible_truncation)] // fstp m32
+                        let add = |a: f32, b: f32| (f64::from(a) + f64::from(b)) as f32;
+                        let x = add(
+                            mem.read(s.wrapping_add(0xc)),
+                            mem.read(s.wrapping_add(0x14)),
+                        );
+                        mem.write(s.wrapping_add(0x14), x);
+                        let y = add(
+                            mem.read(s.wrapping_add(0x10)),
+                            mem.read(s.wrapping_add(0x18)),
+                        );
+                        mem.write(s.wrapping_add(0x18), y);
+                        let r =
+                            rects.wrapping_add(12 * u32::from(mem.read::<u8>(fr.wrapping_add(2))));
+                        for (pos, dim) in [(0x14u32, 4u32), (0x18, 6)] {
+                            let v = if pos == 0x14 { x } else { y };
+                            if v < 0.0 {
+                                let d = f64::from(rd16(mem, r.wrapping_add(dim)));
+                                #[allow(clippy::cast_possible_truncation)]
+                                mem.write(s.wrapping_add(pos), (f64::from(v) + d) as f32);
+                            }
+                        }
+                        for (pos, dim) in [(0x14u32, 4u32), (0x18, 6)] {
+                            let d = f64::from(rd16(mem, r.wrapping_add(dim)));
+                            let v = f64::from(crate::x87::load(mem.read(s.wrapping_add(pos))));
+                            if v >= d {
+                                #[allow(clippy::cast_possible_truncation)]
+                                mem.write(s.wrapping_add(pos), (v - d) as f32);
+                            }
+                        }
+                    }
+                    fr
+                }
+            };
+            mem.write(s.wrapping_add(6), 0u16);
+            let r = rects.wrapping_add(12 * u32::from(mem.read::<u8>(fr.wrapping_add(2))));
+            let pixels = src.wrapping_add(mem.read::<u32>(r.wrapping_add(8)));
+            for (to, from) in [
+                (s.wrapping_sub(0x10), 8u32),
+                (s.wrapping_sub(0xe), 0xa),
+                (s + 8, 0xc),
+            ] {
+                let v: u16 = mem.read(ss.wrapping_add(from));
+                mem.write(to, v);
+            }
+            for (to, from) in [(0xcu32, 4u32), (0xa, 6), (8, 0), (6, 2)] {
+                let v: u16 = mem.read(r.wrapping_add(from));
+                mem.write(s.wrapping_sub(to), v);
+            }
+            mem.write(s.wrapping_sub(0x18), pixels);
+            if mode == 3 {
+                let sl = rd16(mem, ss.wrapping_add(0xc)).cast_unsigned();
+                let pitch = rd16(
+                    mem,
+                    buf.wrapping_add(0x5c8).wrapping_add(sl.wrapping_mul(2)),
+                );
+                let pos_y = f64::from(mem.read::<f32>(s.wrapping_add(0x18)));
+                let v = ffx_bridge::x87::ftol(mem, pos_y).cast_signed();
+                let dst = rd16(mem, s.wrapping_sub(0x10)).wrapping_add(
+                    mem.read::<i32>(buf.wrapping_add(0x5b8).wrapping_add(sl.wrapping_mul(4))),
+                );
+                let memcpy: u32 = mem.read(mem.rebase(MEMCPY_SLOT));
+                let mut row = 0i32;
+                while row < rd16(mem, r.wrapping_add(6)) {
+                    let Some(m) = v
+                        .wrapping_add(row)
+                        .checked_rem(rd16(mem, s.wrapping_sub(0xa)))
+                    else {
+                        return 0;
+                    };
+                    let w = rd16(mem, s.wrapping_sub(0xc));
+                    let from = m
+                        .wrapping_mul(w)
+                        .wrapping_add(pixels.cast_signed())
+                        .wrapping_add(0x20);
+                    let to = rd16(mem, s.wrapping_sub(0xe))
+                        .wrapping_add(row)
+                        .wrapping_mul(pitch)
+                        .wrapping_add(dst);
+                    call(
+                        mem,
+                        memcpy,
+                        &[to.cast_unsigned(), from.cast_unsigned(), w.cast_unsigned()],
+                    );
+                    row += 1;
+                }
+            }
+            k += 1;
+        }
+        buf
+    }
+
+    /// `chr_texanim_set(def, handle)` (`0x0077c950`): the first free entry
+    /// of [`TEX_ANIMS`] (none: `movie_err("i!=CHR_TEX_ANIM_MAX", ...,
+    /// 0xb28)`, -1) takes `def`'s source (`+0x20`) and its kind (byte `+0`
+    /// to `+0xc`) and form (byte `+2` to `+0xd`). Kind 1 marks
+    /// [`TEX_ANIM_844`] with 1 and the entry; kind 2 sets up the old (form
+    /// 0) or new (form 1) work block. Returns the entry.
+    pub fn chr_texanim_set<M: Mem>(
+        mem: &mut M,
+        def: u32,
+        handle: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table = TEX_ANIMS.ptr(mem).addr;
+        let Some(i) = (0..0x40u32).find(|&i| mem.read::<u32>(table + 0x30 * i) == 0) else {
+            let err = mem.rebase(MOVIE_ERR);
+            let (msg, file) = (mem.rebase(0x00b5_44b8), mem.rebase(0x00b5_40a8));
+            call(mem, err, &[msg, file, 0xb28]);
+            return u32::MAX;
+        };
+        let e = table + 0x30 * i;
+        let src: u32 = mem.read(def.wrapping_add(0x20));
+        mem.write(e, src);
+        let src: u32 = mem.read(def.wrapping_add(0x20));
+        let form: u8 = mem.read(src.wrapping_add(2));
+        mem.write(e + 0xd, form);
+        let kind: u8 = mem.read(src);
+        mem.write(e + 0xc, kind);
+        match kind {
+            1 => {
+                #[allow(clippy::cast_possible_truncation)] // below 0x40
+                TEX_ANIM_844.set(mem, [1, i as u8]);
+            }
+            2 => match mem.read::<u8>(e + 0xd) {
+                0 => {
+                    chr_texanim_set_old(mem, i, handle, def, call);
+                }
+                1 => {
+                    chr_texanim_set_new(mem, i, handle, def, call);
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+        i
+    }
 }
