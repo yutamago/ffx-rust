@@ -711,12 +711,22 @@ impl Game {
     /// Fails on timeout.
     pub fn wait_for_open(&mut self, needle: &str, step: u32, limit: u32) -> Result<String> {
         let mut deadline = Deadline::new(self, limit)?;
+        let seen = self.log.len();
         loop {
             if let Some(e) = self.events()?.into_iter().find(|e| e.contains(needle)) {
                 return Ok(e);
             }
             if deadline.passed(self, &format!("a file with {needle:?}"))? {
-                return Err(Error::Harness(format!("no file with {needle:?} opened")));
+                let last: Vec<&str> = self.log[seen..]
+                    .iter()
+                    .rev()
+                    .take(5)
+                    .map(String::as_str)
+                    .collect();
+                return Err(Error::Harness(format!(
+                    "no file with {needle:?} opened ({} events meanwhile, the last: {last:?})",
+                    self.log.len() - seen
+                )));
             }
             self.wait(step)?;
         }

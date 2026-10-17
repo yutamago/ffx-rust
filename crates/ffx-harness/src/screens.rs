@@ -144,19 +144,57 @@ pub fn load_save(game: &mut Game, entry: u32) -> Result<String> {
 /// flag `0x0112a8e2` is raised. `MsBattleProcess` (`0x00790c10`) then loads
 /// the battle on the next frame. Waits until the formation's file opens.
 ///
+/// A request made while the field is still loading is dropped: the flag
+/// goes back to 0 and no battle starts (`load` returns when the event
+/// script opens, and the field's models, sounds and textures load after
+/// it on the asset loader's thread, in real time; with games side by side
+/// that takes more frames than the replays wait). So while no battle file
+/// has opened, the flag is down and no battle is under way (phase
+/// `0x0112a8e0` still 0), the request is made again, every 30 frames.
+///
 /// # Errors
 /// Fails when the battle does not load.
 pub fn start_battle(game: &mut Game, field: u16, group: u8, formation: u8) -> Result<String> {
+    const NEEDLE: &str = "battle/btl/";
     game.events()?;
-    game.command(&format!(
-        "write 0x112c256 {:02x}{:02x}",
-        field & 0xff,
-        field >> 8
-    ))?;
-    game.command(&format!("write 0x112c258 {group:02x}{formation:02x}"))?;
-    game.command("call 0x780ff0 1")?;
-    game.command("write 0x112a8e2 01")?;
-    game.wait_for_open("battle/btl/", 10, 600)
+    let request = |game: &mut Game| -> Result<()> {
+        game.command(&format!(
+            "write 0x112c256 {:02x}{:02x}",
+            field & 0xff,
+            field >> 8
+        ))?;
+        game.command(&format!("write 0x112c258 {group:02x}{formation:02x}"))?;
+        game.command("call 0x780ff0 1")?;
+        game.command("write 0x112a8e2 01").map(drop)
+    };
+    request(game)?;
+    let mut deadline = crate::Deadline::new(game, 600)?;
+    let (mut again, mut polls) = (0u32, 0u32);
+    loop {
+        if let Some(e) = game.events()?.into_iter().find(|e| e.contains(NEEDLE)) {
+            if again > 0 {
+                eprintln!("start_battle: the request was made {} times", again + 1);
+            }
+            return Ok(e);
+        }
+        if deadline.passed(game, "the battle's file")? {
+            return Err(Error::Harness(format!(
+                "no file with {NEEDLE:?} opened (request made {} times)",
+                again + 1
+            )));
+        }
+        game.wait(10)?;
+        polls += 1;
+        if polls % 3 == 0 && game.read(0x0112_a8e2, 1)? == [0] && game.read(0x0112_a8e0, 1)? == [0]
+        {
+            // Look once more: the battle may have opened its file meanwhile.
+            if let Some(e) = game.events()?.into_iter().find(|e| e.contains(NEEDLE)) {
+                return Ok(e);
+            }
+            request(game)?;
+            again += 1;
+        }
+    }
 }
 
 /// The battle actor `index` (`MsGetChr`, `0x00794020`): actors below
