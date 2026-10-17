@@ -4,7 +4,7 @@
 use super::{mem, ported};
 use ffx_vfx::mat::{self, order};
 use ffx_vfx::rand::bridge::{Kind, Spread};
-use ffx_vfx::{et, fp, heap, op, opd, opus, part, ppp, prog, rand, slots, small, tree};
+use ffx_vfx::{et, fp, heap, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec};
 
 /// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`), so the
 /// CRT's state moves as it does with the originals.
@@ -1118,6 +1118,28 @@ ported! {
         #[allow(clippy::cast_possible_truncation)] // a 32-bit process
         let frame = locals.0.as_mut_ptr() as u32 + 0x3b0;
         slots::bridge::opp_mdc_draw_a6f4d0(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_no_get(list, unit, no)`.
+    opus_no_get @ 0x0080_1060 => extern "C" fn opus_no_get(list: u32, unit: u32, no: u32) -> u32 {
+        opus::bridge::opus_no_get(&mem(), list, unit, no)
+    }
+    /// `op_mul_m(dst, b, c)`.
+    op_mul_m @ 0x007e_83b0 => extern "C" fn op_mul_m(dst: u32, b: u32, c: u32) {
+        op::bridge::op_mul_m(&mut mem(), dst, b, c);
+    }
+    /// `Vec3AddScalars_00735100(dst, src, x, y, z, w)`.
+    Vec3AddScalars_00735100 @ 0x0073_5100 => extern "C" fn vec3_add_scalars(dst: u32, src: u32, x: u32, y: u32, z: u32) -> u32 {
+        let k = [x, y, z].map(f32::from_bits);
+        vec::bridge::vec3_add_scalars(&mut mem(), dst, src, k)
+    }
+    /// `Vec3SubScalars_0074b670(dst, src, x, y, z)`.
+    Vec3SubScalars_0074b670 @ 0x0074_b670 => extern "C" fn vec3_sub_scalars(dst: u32, src: u32, x: u32, y: u32, z: u32) {
+        let k = [x, y, z].map(f32::from_bits);
+        vec::bridge::vec3_sub_scalars(&mut mem(), dst, src, k);
+    }
+    /// `Vec2SubScalarsFlags_0075e870(dst, src, x, y)`.
+    Vec2SubScalarsFlags_0075e870 @ 0x0075_e870 => extern "C" fn vec2_sub_scalars_flags(dst: u32, src: u32, x: u32, y: u32) {
+        vec::bridge::vec2_sub_scalars_flags(&mut mem(), dst, src, f32::from_bits(x), f32::from_bits(y));
     }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {

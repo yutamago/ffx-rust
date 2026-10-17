@@ -4041,6 +4041,7 @@
 0x0075e4b0 function op_word_copy              # (dst, src) *dst = *src (one word); 1 caller
 0x0075e670 function pppVu0MaddaY_copy_0075e670   # the same code as pppVu0MaddaY (0x0072c590; call targets equal), a copy the compiler kept; own name
 0x0075e6d0 function pppVu0MaddaZ_copy_0075e6d0   # the same code as pppVu0MaddaZ (0x0072c5f0; call targets equal), a copy the compiler kept; own name
+0x0075e870 function Vec2SubScalarsFlags_0075e870 # ours: (dst, src, x, y): dst.xy = src.xy - (x, y); setZSFlag when either is 0, setSSFlag when either is negative, then restoreVf00Register; callers 0x0075f120, 0x0075f420
 0x0075eca0 function KeVu0AddVecXYZ            # fh v3:exact 0x0075ed90
 0x0075ede0 function KeVu0CopyVecXYZ           # fh v3:exact 0x0075eed0
 0x0075ee70 function KeVu0GetDist                 # layout+callees: sorts between KeVu0CopyVecXYZ and KeVu0RndI, and its named callees match the Switch 0x7100307e30 KeVu0GetDist's (similarity 1.00: FFXVu0SubVector); symbols from Fahrenheit's server export

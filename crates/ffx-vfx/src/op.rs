@@ -1024,6 +1024,60 @@ pub mod bridge {
         mem.write(dst, o);
     }
 
+    /// The emulated VU0 registers `op_mul_m` uses besides those of
+    /// `op_apply_m_w1`: the right matrix and the result at `0x00c8f910`.
+    const MULM_C: u32 = 0x00c8_f910;
+
+    /// `op_mul_m(dst, b, c)` (`0x007e83b0`): VU0's `MULAx`, `MADDAy`, `MADDAz`
+    /// and `MADDw` for each row of `c`: row `r` of `dst` is `c[r].x * b[0] +
+    /// c[r].y * b[1] + c[r].z * b[2] + c[r].w * b[3]` (so `dst` = `c` times
+    /// `b` for row vectors). The arguments go to `a0`..`a2` (`a3` 0), `b`
+    /// to `0x00c8f950`, `c` and then each result row to `0x00c8f910`, the
+    /// sums through the accumulator `0x00c8f790` (each an `f32` after a
+    /// product added in 53 bits); the result is copied to `dst` last, so
+    /// `dst` may be `b` or `c`.
+    pub fn op_mul_m(mem: &mut impl Mem, dst: u32, b: u32, c: u32) {
+        use x87::{ADD, MUL, Reg};
+        for (n, a) in [dst, b, c, 0].into_iter().enumerate() {
+            #[allow(clippy::cast_possible_truncation)] // 0..4
+            ffx_ps2::ee::bridge::set_func_param(mem, n as u32, a);
+        }
+        let (br, cr, acc) = (
+            Global::<u32>::new(MW1_M).ptr(mem).addr,
+            Global::<u32>::new(MULM_C).ptr(mem).addr,
+            Global::<u32>::new(MW1_ACC).ptr(mem).addr,
+        );
+        let bb: [u32; 16] = mem.read(b);
+        mem.write(br, bb);
+        let cc: [u32; 16] = mem.read(c);
+        mem.write(cr, cc);
+        for r in 0..4u32 {
+            let row: [f32; 4] = mem.read(cr + 0x10 * r);
+            for i in 0..4 {
+                let v = Reg::load_f32(row[0]).mem(MUL, rf(mem, br + 4 * i)).store();
+                mem.write(acc + 4 * i, v);
+            }
+            for k in 1..3u32 {
+                for i in 0..4 {
+                    let v = Reg::load_f32(row[k as usize])
+                        .mem(MUL, rf(mem, br + 0x10 * k + 4 * i))
+                        .mem(ADD, rf(mem, acc + 4 * i))
+                        .store();
+                    mem.write(acc + 4 * i, v);
+                }
+            }
+            for i in 0..4 {
+                let v = Reg::load_f32(row[3])
+                    .mem(MUL, rf(mem, br + 0x30 + 4 * i))
+                    .mem(ADD, rf(mem, acc + 4 * i))
+                    .store();
+                mem.write(cr + 0x10 * r + 4 * i, v);
+            }
+        }
+        let o: [u32; 16] = mem.read(cr);
+        mem.write(dst, o);
+    }
+
     /// `op_length_get(a, b)` (`0x007e7fc0`): the distance from `a` to `b`
     /// (`xyz`): the differences as `f32`, the sum of their squares in 53
     /// bits, `_CIsqrt` (an exact `f64` square root), as `f32`.

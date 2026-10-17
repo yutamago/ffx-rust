@@ -9,7 +9,9 @@ use std::sync::{Arc, OnceLock};
 
 use ffx_bridge::{Global, Mem, Value};
 use ffx_oracle::{Conv, Oracle, Pages};
-use ffx_vfx::{et, fp, heap, mat, op, opd, opus, part, ppp, prog, rand, slots, small, tree, x87};
+use ffx_vfx::{
+    et, fp, heap, mat, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec, x87,
+};
 
 fn exe() -> Option<PathBuf> {
     let dir = std::env::var_os("FFX_GAME_DIR").map(PathBuf::from);
@@ -162,6 +164,14 @@ impl Pair {
             .a
             .call(at, Conv::Cdecl, args)
             .unwrap_or_else(|e| panic!("{}: {what}: {e}", self.name));
+        // a float the original leaves in ST0 is a result: the port must
+        // return it (check_f32 and float_call), not only eax
+        assert!(
+            r.st0.is_none(),
+            "{}: {what}: the original returns {:?} in ST0",
+            self.name,
+            r.st0
+        );
         let mine = rust(&mut self.b);
         if let Some(m) = mine {
             assert_eq!(r.eax, m, "{}: {what}: result", self.name);
@@ -5636,6 +5646,12 @@ fn check_conv(
     let r =
         p.a.call(at, conv, args)
             .unwrap_or_else(|e| panic!("{}: {what}: {e:?}", p.name));
+    assert!(
+        r.st0.is_none(),
+        "{}: {what}: the original returns {:?} in ST0",
+        p.name,
+        r.st0
+    );
     if let Some(m) = rust(&mut p.b) {
         assert_eq!(r.eax, m, "{}: {what}: result", p.name);
     }
@@ -5901,6 +5917,12 @@ fn check_deep(
     let r =
         p.a.call(at, Conv::Cdecl, &args)
             .unwrap_or_else(|e| panic!("{}: {what}: {e}", p.name));
+    assert!(
+        r.st0.is_none(),
+        "{}: {what}: the original returns {:?} in ST0",
+        p.name,
+        r.st0
+    );
     let mine = rust(&mut p.b, frame);
     assert_eq!(r.eax, mine, "{}: {what}: result", p.name);
     p.same(what);
@@ -6615,6 +6637,102 @@ fn mdc_draws_match_the_original() {
                 0x00a6_f4d0,
                 [obj, cmd],
                 |m, frame| s::opp_mdc_draw_a6f4d0(m, obj, cmd, frame, &mut call_original),
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn round10_helpers_match_the_original() {
+    use vec::bridge as v;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_1060);
+        // opus_no_get: a list with 16 parts, three index lists
+        let list = p.alloc(0x40);
+        let parts = p.alloc(0x1000);
+        let idx = p.alloc(0x60);
+        let table = p.sym(opus::bridge::NO_TABLE.sym);
+        let (a, b, c) = (p.alloc(0x40), p.alloc(0x40), p.alloc(0x40));
+        let status = p.sym(ffx_ps2::ee::bridge::STATUS.sym);
+        for _ in 0..3000 {
+            p.fill(parts, 0x1000, &mut rng);
+            p.fill(list, 0x40, &mut rng);
+            p.set(list + 0x20, parts);
+            for (k, at) in [0x14u32, 0x10, 0x18].into_iter().enumerate() {
+                let l = idx + 0x20 * u32::try_from(k).unwrap();
+                p.set(list + at, l);
+                let n = rng.below(6);
+                for i in 0..n {
+                    p.set(l + 2 * i, u16::try_from(rng.below(16)).unwrap());
+                }
+                p.set(l + 2 * n, rng.pick(&[0xffffu16, 0x8000]));
+            }
+            for i in 0..16 {
+                let u = parts + 0x100 * i;
+                p.set(u + 0x1a, u16::try_from(rng.below(8)).unwrap());
+                p.set(u + 0x1c, u16::try_from(rng.below(16)).unwrap());
+                p.set(u + 0x1e, u8::try_from(rng.below(2)).unwrap());
+                p.set(u + 0x14, u16::try_from(rng.below(4)).unwrap());
+                if rng.chance(20) {
+                    p.set(u, 0u32);
+                }
+            }
+            for i in 0..4 {
+                p.set(table + 32 * i, parts + 0x100 * rng.below(16));
+            }
+            let unit = parts + 0x100 * rng.below(16);
+            let (r1, r2) = (rng.below(8), rng.below(8) | 0x7fff_0000);
+            let no = rng.pick(&[
+                0xff00u32, 0xffff, 0xfffe, 0xfffd, 0xfe03, 0xfe0f, 0xb001, 0xbffc, 0xcfff, 0xd000,
+                0xb000, r1, r2,
+            ]);
+            p.check("opus_no_get", 0x0080_1060, &[list, unit, no], |m| {
+                Some(opus::bridge::opus_no_get(m, list, unit, no))
+            });
+            // op_mul_m, also in place
+            for at in [a, b, c] {
+                for i in 0..16 {
+                    let x = rng.float();
+                    p.set(at + 4 * i, x);
+                }
+            }
+            let dst = rng.pick(&[c, a, b]);
+            p.check("op_mul_m", 0x007e_83b0, &[dst, a, b], |m| {
+                op::bridge::op_mul_m(m, dst, a, b);
+                None
+            });
+            // the vector helpers
+            let k = [rng.float(), rng.float(), rng.float(), rng.float()];
+            let kf = k.map(f32::from_bits);
+            p.set(status, rng.next());
+            p.check(
+                "Vec3AddScalars",
+                0x0073_5100,
+                &[c, a, k[0], k[1], k[2], k[3]],
+                |m| Some(v::vec3_add_scalars(m, c, a, [kf[0], kf[1], kf[2]])),
+            );
+            p.check(
+                "Vec3SubScalars",
+                0x0074_b670,
+                &[c, a, k[0], k[1], k[2]],
+                |m| {
+                    v::vec3_sub_scalars(m, c, a, [kf[0], kf[1], kf[2]]);
+                    None
+                },
+            );
+            if rng.chance(30) {
+                p.set(a, rng.pick(&[0u32, 0x8000_0000]));
+                p.set(a + 4, k[1]);
+            }
+            p.check(
+                "Vec2SubScalarsFlags",
+                0x0075_e870,
+                &[c, a, k[0], k[1]],
+                |m| {
+                    v::vec2_sub_scalars_flags(m, c, a, kf[0], kf[1]);
+                    None
+                },
             );
         }
     }
