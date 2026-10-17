@@ -1175,7 +1175,7 @@ From here on, functions are picked by `symbols/classes.tsv` (category
 - Not ported:
   - `0x00a48e40` and `0x0090dd00` have no caller or pointer in the image.
   - `0x0092e4f0` loops on `rand()` through the import table.
-  - `0x00a45930` runs a ppp part for the sphere grid's cursor.
+  - `0x00a45930` sets the ppp matrices and runs a sphere grid ppp part (vfx).
 
 ## Floats
 
