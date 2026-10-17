@@ -3137,6 +3137,18 @@ ported! {
     TkSndUpdateMain @ 0x0088_7bd0 => extern "C" fn tk_snd_update_main() -> u32 {
         tk::tk_snd_update_main(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkSndUpdate()`.
+    TkSndUpdate @ 0x0088_7b60 => extern "C" fn tk_snd_update() -> u32 {
+        tk::tk_snd_update(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkSndUpdate2()`.
+    TkSndUpdate2 @ 0x0088_7b80 => extern "C" fn tk_snd_update2() -> u32 {
+        tk::tk_snd_update2(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkSndUpdate3(last)`: the sync counter.
+    TkSndUpdate3 @ 0x0088_7ba0 => extern "C" fn tk_snd_update3(last: u32) -> u32 {
+        tk::tk_snd_update3(&mut mem(), last, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkMsImportantSet(n)`.
     TkMsImportantSet @ 0x0088_e790 => extern "C" fn tk_ms_important_set(n: u32) -> u32 {
         tk::tk_ms_important_set(&mut mem(), n, &mut |_, f, a| call_ptr(f, a))

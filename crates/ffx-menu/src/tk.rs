@@ -6136,6 +6136,53 @@ pub mod bridge {
         call(mem, f, &[1, file, 0x1e1])
     }
 
+    /// `TkSndUpdate()` (`0x00887b60`): `SndExecMusicClearQue(1, 0)` (every
+    /// queued music/SE entry counted down), then [`tk_snd_update_main`],
+    /// whose result it returns (a tail jump).
+    pub fn tk_snd_update<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0088_6000);
+        call(mem, f, &[1, 0]);
+        tk_snd_update_main(mem, call)
+    }
+
+    /// `TkSndUpdate2()` (`0x00887b80`): with `TkGetSoundSyncVFlag()` set,
+    /// `SndExecMusicClearQue(1, 0)` and [`tk_snd_update`] (so the queue
+    /// counts down twice); otherwise the flag (0).
+    pub fn tk_snd_update2<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0088_7dd0);
+        let flag = call(mem, f, &[]);
+        if flag == 0 {
+            return flag;
+        }
+        let f = mem.rebase(0x0088_6000);
+        call(mem, f, &[1, 0]);
+        tk_snd_update(mem, call)
+    }
+
+    /// `TkSndUpdate3(last)` (`0x00887ba0`): the sync counter
+    /// (`TkGetSyncVCounter()`); when `last` is nonzero and differs from it,
+    /// the sound sync flag is set and [`tk_snd_update_main`] runs first.
+    pub fn tk_snd_update3<M: Mem>(
+        mem: &mut M,
+        last: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0088_7e00);
+        let counter = call(mem, f, &[]);
+        if last != 0 && last != counter {
+            let f = mem.rebase(0x0088_7ea0);
+            call(mem, f, &[]);
+            tk_snd_update_main(mem, call);
+        }
+        counter
+    }
+
     /// `TkSndUpdateMain()` (`0x00887bd0`): with `TkGetSoundSyncVFlag()` set,
     /// `SndSqsIopFrame()`, the voice/shout/stream busy words and the status
     /// words `0x0132ff20`/`0x0132ff24` cleared, `SndStatusUpdate()`, and

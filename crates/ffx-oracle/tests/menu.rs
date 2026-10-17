@@ -6045,6 +6045,35 @@ fn menu_wrappers_match_the_original() {
         t.twin("TkSndUpdateMain", 0x0088_7bd0, &[], U32, |o| {
             w(tk::tk_snd_update_main(o, &mut callback))
         });
+        // the music queue SndExecMusicClearQue counts down: entries whose
+        // frames stay above 0 or already are at or below (the stop at 0
+        // goes to the sound driver), up to 17
+        let n = t.rng.below(18);
+        t.put(t.sym(0x0133_0068), n);
+        for k in 0..17 {
+            let frames = t.rng.pick(&[0i16, -1, 4, 5, 100, 0x7fff]);
+            let at = t.sym(0x0132_ffe0) + 8 * k;
+            t.put(at + 2, frames);
+        }
+        // the sound sync flag (always 1 on PC; 0 for the other path)
+        let flag = t.rng.below(2);
+        return_const(&mut t, 0x0088_7dd0, flag);
+        t.twin("TkSndUpdate", 0x0088_7b60, &[], U32, |o| {
+            w(tk::tk_snd_update(o, &mut callback))
+        });
+        t.twin("TkSndUpdate2", 0x0088_7b80, &[], U32, |o| {
+            w(tk::tk_snd_update2(o, &mut callback))
+        });
+        return_const(&mut t, 0x0088_7dd0, 1);
+        let counter = t.rng.below(4);
+        t.put(t.sym(0x0133_0200), counter);
+        // what TkSndUpdateMain clears and the sync flag, to see whether it ran
+        t.scramble(0x0132_ff10, 0x18);
+        t.scramble(0x0133_01e4, 4);
+        let last = t.rng.below(4);
+        t.twin("TkSndUpdate3", 0x0088_7ba0, &[last], U32, |o| {
+            w(tk::tk_snd_update3(o, last, &mut callback))
+        });
         let n = match round % 3 {
             0 => 0xa000 + t.rng.below(0x24),
             1 => t.rng.below(0x100),
