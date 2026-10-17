@@ -2802,6 +2802,81 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
             same("MsPoisonProcess", a, b);
         }
     }
+    // what a hit leaves behind (ffx_battle::after_damage)
+    {
+        use ffx_battle::after_damage::bridge as ad;
+        let i = rng.below(ACTORS);
+        let p = w.actor(i);
+        let n = [
+            rng.range(-500, 500),
+            rng.range(-20, 300),
+            rng.next().cast_signed(),
+        ][rng.below(3) as usize];
+        let flags = rng.below(8);
+        let style = [0, 1, 2, 0x81][rng.below(4) as usize];
+        let args = [i, p, n.cast_unsigned(), rng.next(), 0, flags, style];
+        twin("MsSubMP", a, b, 0x0078_e3b0, &args, 0, |m| {
+            ad::ms_sub_mp(m, i, p, n, args[3].cast_signed(), 0, flags, style);
+            0
+        });
+        same("MsSubMP", a, b);
+        let args = [i, p, n.cast_unsigned(), 0, flags, style];
+        twin("MsSubCTB", a, b, 0x0078_e1e0, &args, 0, |m| {
+            ad::ms_sub_ctb(m, i, p, n, 0, flags, style);
+            0
+        });
+        same("MsSubCTB", a, b);
+        let i = rng.below(ACTORS);
+        let p = w.actor(i);
+        poke(a, b, p + 0x606, &[flag(rng, 2)]);
+        twin("MsAliveProcess", a, b, 0x0078_9160, &[i, p], ALL, |m| {
+            dm(m, |m| {
+                s!(s);
+                ad::ms_alive_process(m, &mut s, i, p)
+            })
+        });
+        local_words(a, b);
+        same("MsAliveProcess", a, b);
+        let (by, helper) = (rng.below(ACTORS), w.actor(rng.below(ACTORS)));
+        poke(a, b, p + 0x446, &[[0, 1, 2][rng.below(3) as usize]]);
+        twin(
+            "MsAutoRelifeProcess",
+            a,
+            b,
+            0x0078_d8d0,
+            &[i, p, by, helper],
+            ALL,
+            |m| {
+                dm(m, |m| {
+                    s!(s);
+                    ad::ms_auto_relife_command(m, &h, &mut s, i, p, by, helper)
+                })
+            },
+        );
+        local_words(a, b);
+        same("MsAutoRelifeProcess", a, b);
+        let got = rng.below(2);
+        let (what, sym) = [
+            ("MsSetStealEffect", 0x0079_ed00),
+            ("MsSetStealGillEffect", 0x0079_ed20),
+            ("MsSetChrEffectNext", 0x0079_ebe0),
+        ][rng.below(3) as usize];
+        let y = rng.next();
+        twin(what, a, b, sym, &[i, got, y], 0, |m| {
+            dm(m, |m| {
+                let mut c = game_call;
+                match sym {
+                    0x0079_ed00 => ad::ms_set_steal_effect(m, &mut c, i, got),
+                    0x0079_ed20 => ad::ms_set_steal_gill_effect(m, &mut c, i, got),
+                    _ => {
+                        ad::ms_set_chr_effect_next(m, &mut c, i, got, y);
+                    }
+                }
+            });
+            0
+        });
+        same(what, a, b);
+    }
     // Regen and the status counts before a turn (the motions of those it
     // heals read their positions)
     let i = rng.below(ACTORS);

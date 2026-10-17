@@ -328,7 +328,7 @@ pub mod bridge {
     /// (`MsInsertBtlCommand(block, prio, 1, after)`), the block cleared
     /// first.
     #[allow(clippy::too_many_arguments)]
-    fn insert_one<'d>(
+    pub(crate) fn insert_one<'d>(
         mem: &mut Dm<'d>,
         host: &Host<'_>,
         s: &mut Script<'_, Dm<'d>>,
