@@ -528,3 +528,37 @@ all targets are chosen. `TOCheckBtlCommandUse` decides what opens next:
 a sub-window (`TOBtlSetCommand`, 0x80 or less), a target pick (0xfe) or
 the finish (0xff). A new target pick with no forced target starts on the
 first dead party member.
+
+## Battle font layout (`ToMakeBtlEasy*`)
+
+The battle texts (damage numbers, counters) are laid out with a text
+cursor at `0x025d09a0`: `+0` the colour bytes, `+4`/`+8` the pen (f32),
+`+0x1a` the icon mode and `+0x1b` the alpha. `ToMakeBtlEasyFont`
+(`0x00905ab0`) and `ToMakeBtlEasyEdgeFontA` (`0x00905970`) walk a text:
+
+- Line codes (group 1) move the pen back to the start x and 16.0 down.
+- Glyphs (group 4) get their `TOGetFontInfo` record, then their packets,
+  and the pen moves on (`TOAddFontWidthSpace`).
+- `0xb n` draws a button icon at the pen (`TODrawScaleButtonIconRGBA`, y
+  + 1.7 at scale 0.6, or + 3.2 at 0.73 in icon modes 1 and 3) and moves the
+  pen by the icon width plus 1.0 (1.5).
+
+The digit writers (`ToMakeBtlEasyDigit`, `…Digit2`, `…DigitRight`,
+`…DigitRightAbmap`, `…EdgeDigit`, `…EdgeDigit2`) write the number with
+`TOValueToMesFontL`, using as many digits as it has; the right-aligned
+ones start the pen at x less the number's width.
+
+The packet writers compute the glyph quad from the pen and the record.
+The corners are the pen plus `(0, K_y × scale × slant)` and pen plus
+`(width × scale × K_x, K_y × scale × (18 + slant))` (`K_x`, `K_y` at
+`0x00c5d778`/`0x00c5d77c`), and the UVs are the cell over the texture
+size. The quad then goes to `BeginScissor_XYUV` and `graphicFontDraw`.
+The face (`TOMakePktBtlEasyFont`) draws at layer parity + 2. The shadow
+(`TOMakePktBtlEasyFontShadow`) is moved by `0x018716e0`/`0x018716e4`.
+The edge (`TOMakeBtlEasyFontEdge`) uses `K_x` for both axes and draws
+eight copies offset by ±2 over the edge ratio. These are ported; only
+`graphicFontDraw` itself emits packets.
+
+`TODrawScaleButtonIconRGBA` (`0x008f8ee0`) picks the icon for a text
+character, as `TOGetScaleButtonIconWidth` does. `4`..`7` sit 2.0 higher,
+and `@`..`O` stack four direction parts by their low bits.
