@@ -534,4 +534,68 @@ pub mod bridge {
         ];
         call(mem, mem.rebase(TEX_ANIM_NO_SET), &args)
     }
+
+    /// `i8` texture animation switch read by `Ch_TextureLoadAnim`.
+    pub const TEXANIM_ON: Global<u8> = Global::new(0x0130_07eb);
+    /// The DMA channel `Ch_TextureLoadAnim` sends on.
+    pub const TEXANIM_DMA_CHANNEL: Global<u32> = Global::new(0x023c_bbf8);
+    /// `g_GsRegisterSink`: bit 8 set while the GS is busy.
+    pub const GS_REGISTER_SINK: Global<u32> = Global::new(0x0230_56e8);
+    /// `Ch_TextureGetImageAddr`, `chr_texanim_draw`, `FlushCache`,
+    /// `sceDmaSend`.
+    pub const TEXTURE_GET_IMAGE_ADDR: u32 = 0x0083_0d90;
+    pub const CHR_TEXANIM_DRAW: u32 = 0x0077_c830;
+    pub const FLUSH_CACHE: u32 = 0x0062_f4c0;
+    pub const DMA_SEND: u32 = 0x0062_f710;
+    /// `ch_TextureLoad(tex, n, x)` (`0x00831f00`).
+    pub const TEXTURE_LOAD: u32 = 0x0083_1f00;
+    /// Bytes of scratch `ch_texture_load_anim` needs (the original's stack
+    /// packet buffer).
+    pub const LOAD_ANIM_SCRATCH: u32 = 0xa00;
+
+    /// `Ch_TextureLoadAnim(chr, scratch)` (`0x00831110`): with texture
+    /// animations (`+0x6fc`) and [`TEXANIM_ON`], `chr_texanim_draw(+0x700,
+    /// scratch, Ch_TextureGetImageAddr(chr, 0))` builds a packet in
+    /// `scratch` ([`LOAD_ANIM_SCRATCH`] bytes; the original's stack); if it
+    /// wrote anything, an end tag (`0x70000000`, three 0 words) at its end,
+    /// `FlushCache(0)`, and the packet sent (`sceDmaSend(channel,
+    /// scratch)`) between waits for the GS.
+    pub fn ch_texture_load_anim<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if mem.read::<u32>(chr + 0x6fc) == 0 || TEXANIM_ON.get(mem) == 0 {
+            return;
+        }
+        let image = call(mem, mem.rebase(TEXTURE_GET_IMAGE_ADDR), &[chr, 0]);
+        let anim: u32 = mem.read(chr + 0x700);
+        let end = call(mem, mem.rebase(CHR_TEXANIM_DRAW), &[anim, scratch, image]);
+        if end == scratch {
+            return;
+        }
+        mem.write(end, [0x7000_0000u32, 0, 0, 0]);
+        call(mem, mem.rebase(FLUSH_CACHE), &[0]);
+        while GS_REGISTER_SINK.get(mem) & 0x100 != 0 {}
+        let ch = TEXANIM_DMA_CHANNEL.get(mem);
+        call(mem, mem.rebase(DMA_SEND), &[ch, scratch]);
+        while GS_REGISTER_SINK.get(mem) & 0x100 != 0 {}
+    }
+
+    /// `Ch_TextureLoadImage(chr, x)` (`0x00831300`): `ch_TextureLoad` on
+    /// the image textures (`+0x6ec`, count `i16` `+0x6f0`), then
+    /// [`ch_texture_load_anim`].
+    pub fn ch_texture_load_image<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        x: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let t: u32 = mem.read(chr + 0x6ec);
+        let n = i32::from(mem.read::<i16>(chr + 0x6f0));
+        call(mem, mem.rebase(TEXTURE_LOAD), &[t, n.cast_unsigned(), x]);
+        ch_texture_load_anim(mem, chr, scratch, call);
+    }
 }

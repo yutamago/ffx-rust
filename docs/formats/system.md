@@ -303,3 +303,33 @@ kept in the 512x412 field (rows to 0x7b in message mode 1). Magic 0x281
 on maps 0x5e and 0x12e, and type-1 windows while `0x01327104` is set,
 may leave it horizontally. `0x008afa90` is the same with an explicit
 size.
+
+## Battle target lists and the saved cursor
+
+`TOBtlMakeTargetTargetBit` (`0x00898640`) fills the party list
+`0x0133d180` (20 entries, count `0x0133d17c`) and the monster list
+`0x0133d1d4` (8, count `0x0133d1d0`). The entries come from the group
+masks of `TOBtlMakeTargetGroupBit`, ANDed with the selectable mask
+`0x0133d174`. Bit 1 of the command's `+0x1a` flags selects the monster
+list. Group mode 0 starts at the cursor character's entry. The counts are
+re-read from memory after each list, so a list longer than its slots
+runs into the next count, as in the original.
+
+`TOBtlSetDefaultCursorPos` (`0x00899ac0`) restores what
+`TOBtlMemoryCursorPos` saved, but only if the window key still matches.
+The scroll is looked up through the found list index used as a window
+number. That is how it is compiled, and the port keeps it.
+`TOBtlSearchRevNearTarget` (`0x008990f0`) writes nothing, but returns
+the index of the target it picks in eax. The decompilation misses that
+return; `TOBtlGetTargetPad` reads it. It is not ported yet.
+
+## Achievement counters
+
+- `0x00906b30(n)` keeps the 26 collection bits at `0x011307a0`, in the
+  save. Each new bit unlocks achievement 1; with all 26 set, it unlocks
+  0x1c. -1 clears the bits and 0xff sets them all.
+- `0x008b5680` counts visits to map `0x00c3347c` while its latch
+  `0x00c5a03c` is set. The 0x3a-th visit unlocks achievement 0x21.
+
+The Steam call itself (`achievementUnlockAchievement`) is platform. The
+counting decides game state, so it is ported.
