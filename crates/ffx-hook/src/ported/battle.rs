@@ -3318,6 +3318,17 @@ ported! {
         let mut m = mem();
         predict::ms_get_move_target_dist(&mut target::Dm::new(&mut m), &host(), i, kind, with, speed, n, accel, brake, [a, b, c], gravity, None);
     }
+    /// `MsGetChrPredictPos(i)`: one frame of actor `i`'s move; the
+    /// caller's registers (the radius words) are not known here.
+    MsGetChrPredictPos @ 0x007a_a2a0 => extern "C" fn ms_get_chr_predict_pos(i: u32) {
+        let mut m = mem();
+        predict::ms_get_chr_predict_pos(&mut target::Dm::new(&mut m), &host(), i, None);
+    }
+    /// `MsMoveChr()`: every actor's move step and neck, each frame.
+    MsMoveChr @ 0x007a_ab80 => extern "C" fn ms_move_chr() {
+        let mut m = mem();
+        predict::ms_move_chr(&mut target::Dm::new(&mut m), &host());
+    }
     /// `MsCameraMoveCalc(near, value, start, mv)`: the CRT's `_CIcos`.
     MsCameraMoveCalc @ 0x007b_da80 => extern "C" fn ms_camera_move_calc(near: u32, value: u32, start: u32, mv: u32) -> u32 {
         camera::ms_camera_move_calc(&mut mem(), &crt_cos, near, value, start, mv)

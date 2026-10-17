@@ -6158,6 +6158,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let mrec = scratch(a, b, (EXCHANGE_REC * 10) as usize);
     let mut r15 = Xorshift(0x15e5_0001 ^ u32::from(synthetic));
     let mut r16 = Xorshift(0x16e5_0001 ^ u32::from(synthetic));
+    let mut r17 = Xorshift(0x17e5_0001 ^ u32::from(synthetic));
     for _ in 0..400 {
         file(a, b, rng, &f);
         dress(a, b, rng, &w, &f);
@@ -6184,6 +6185,8 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         save_params(a, b, &mut r15, &w, out, effrec, xrec);
         messages_and_cameras(a, b, &mut r15, mrec);
         moves(a, b, &mut r16, &w, out);
+        let whole = r17.below(2) == 0;
+        move_steps(a, b, &mut r17, &w, &f, whole);
     }
 }
 
@@ -6293,6 +6296,215 @@ fn moves(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
             cam::ms_camera_move_calc(m, &cos_stand_in, near, out, start, mv)
         });
         same("MsCameraMoveCalc", a, b);
+    }
+}
+
+/// Makes every NaN word in `len` bytes at `at` a number in both oracles:
+/// the calls before leave NaNs in the actors and characters, and two
+/// NaNs that meet resolve in the emulator unlike on the x87 (it takes
+/// `st0`'s, the x87 the larger significand, with the sign by operand
+/// order), so the move steps start from numbers.
+fn no_nans(a: &mut Oracle, b: &mut Oracle, at: u32, len: u32) {
+    let v = a.read(at, len as usize).unwrap();
+    let w: Vec<u8> = v
+        .chunks(4)
+        .flat_map(|c| no_nan(u32::from_le_bytes(c.try_into().unwrap())).to_le_bytes())
+        .collect();
+    if w != v {
+        poke(a, b, at, &w);
+    }
+}
+
+/// `MsGetChrPredictPos` and `MsMoveChr` (round 17) on the
+/// dressed actors, every move kind.
+/// `whole`: `MsMoveChr`, else `MsGetChrPredictPos` actor by actor.
+fn move_steps(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    w: &World,
+    f: &Fakes,
+    whole: bool,
+) {
+    use ffx_battle::predict::bridge as pr;
+    let h = host();
+    let kinds = [0u8, 7, 7, 0x10, 1, 2, 3, 6, 8, 9, 10, 11, 13, 14];
+    // the position file again (kind 1's battle position: the calls since
+    // `dress` replace it, and a missing table leaves words of the target
+    // unwritten, stack garbage in the original)
+    file(a, b, rng, f);
+    // the move splines again (the calls since `dress` rewrite them):
+    // three of them, 3 * 0x210 being g_BtlMoveTarget, which actor 0's
+    // move writes
+    let sp = t::MOVE_SPLINES.ptr(b).addr;
+    for k in 0..3 {
+        let at = sp + k * 0x210;
+        poke(a, b, at, &(3 + rng.below(6)).to_le_bytes());
+        poke(a, b, at + 0x10, &floats(rng, 0x80));
+    }
+    // every actor with a character (one without has its position from
+    // the battle position file, which leaves words of the caller's local
+    // unwritten: stack garbage in the original, zeros in the port)
+    let chrs: Vec<u32> = (0..ACTORS)
+        .map(|i| u32::from_le_bytes(a.read(w.actor(i), 4).unwrap().try_into().unwrap()))
+        .filter(|&c| c != 0)
+        .collect();
+    for i in 0..ACTORS {
+        let p = w.actor(i);
+        no_nans(a, b, p, ACTOR);
+        let mut chr = u32::from_le_bytes(a.read(p, 4).unwrap().try_into().unwrap());
+        if chr == 0 && !chrs.is_empty() {
+            chr = chrs[rng.below(u32::try_from(chrs.len()).unwrap()) as usize];
+            poke(a, b, p, &chr.to_le_bytes());
+        }
+        if chr != 0 && a.read(chr, 0x1000).is_ok() {
+            no_nans(a, b, chr, 0x1000);
+        }
+        // the fields `dress` sets for positions the file has, and actor
+        // indexes (the calls since change them; an index past the actors
+        // writes no target, which leaves the original's stack garbage)
+        poke(a, b, p + 0x43f, &[0xff]);
+        for o in [0xc, 0x14, 0x416, 0xded] {
+            poke(a, b, p + o, &[u8::try_from(rng.below(ACTORS)).unwrap()]);
+        }
+        poke(a, b, p + 0x511, &[u8::try_from(rng.below(4)).unwrap()]);
+        poke(
+            a,
+            b,
+            p + 0x4fc,
+            &[0, 3, u8::try_from(rng.below(4)).unwrap()],
+        );
+        poke(a, b, p + 0x6d4, &[if rng.below(3) == 0 { 1 } else { 0xff }]);
+        poke(a, b, p + 0x6dd, &[0]);
+        let kind = kinds[rng.below(u32::try_from(kinds.len()).unwrap()) as usize]
+            | if rng.below(3) == 0 { 0x80 } else { 0 };
+        poke(a, b, p + 0x415, &[kind]);
+        // a length of at least 1 (0 makes 0/0 NaNs that meet, which the
+        // emulator resolves unlike the x87) and no ball spline (spline 2,
+        // MsSetBallSpline, still original, is called through the game but
+        // reads wild pointers on these actors)
+        let len = u16::try_from(1 + rng.below(12)).unwrap();
+        poke(a, b, p + 0x45a, &len.to_le_bytes());
+        // the frame within the move (a spline move past its length reads
+        // spline points past the table, wild in the original; steering
+        // moves run to twice the length, then restart)
+        let fr = if kind & 0x7f == 7 {
+            rng.below(u32::from(len))
+        } else {
+            rng.below(2 * u32::from(len) + 2)
+        };
+        poke(a, b, p + 0x452, &u16::try_from(fr).unwrap().to_le_bytes());
+        let sp = u16::from(rng.below(2) == 0);
+        poke(a, b, p + 0x454, &sp.to_le_bytes());
+        // the direction modes as `status` sets them (MsGetDirMode), but
+        // for 2, 7 and 9 (the targets' centre: none makes the indefinite
+        // NaN, which the C runtime's stand-in meets in the emulator unlike
+        // on the x87; `status` has them)
+        // on the whole frame, mode 8 (towards the move's target, the
+        // step's local) only for kinds that write one: 0, 7 and 0x10
+        // leave it as it was, after an earlier actor's step stack garbage
+        // in the original
+        let mut mode = [0u8, 1, 3, 4, 5, 6, 8, 10, 11, 12, 13, 14][rng.below(12) as usize];
+        if whole && mode == 8 && matches!(kind & 0x7f, 0 | 7 | 0x10) {
+            mode = 3;
+        }
+        poke(a, b, p + 0x42b, &[mode]);
+        let dt = if rng.below(2) == 0 {
+            0xff
+        } else {
+            u8::try_from(rng.below(ACTORS)).unwrap()
+        };
+        poke(a, b, p + 0x431, &[dt]);
+        for o in [0x42c, 0x42d, 0x41b] {
+            poke(a, b, p + o, &[u8::from(rng.below(3) == 0)]);
+        }
+        // angles Ch_SetDirF's wrap ends on (a huge one loops for ever)
+        let angle = |rng: &mut Xorshift| {
+            (f32::from(i16::try_from(rng.range(-3000, 3000)).unwrap()) / 97.0).to_bits()
+        };
+        for o in [0x4f4, 0x490, 0x470, 0x47c, 0x46c] {
+            poke(a, b, p + o, &angle(rng).to_le_bytes());
+        }
+        // kind 9's turn and kind 17: see `moves`
+        poke(a, b, p + 0x411, &[0]);
+        poke(a, b, p + 0x419, &[u8::from(rng.below(3) == 0)]);
+        poke(a, b, p + 0x42a, &[[0u8, 1, 0xff][rng.below(3) as usize]]);
+        poke(a, b, p + 0x42e, &[u8::try_from(rng.below(4)).unwrap()]);
+        poke(a, b, p + 0x42f, &[u8::try_from(rng.below(4)).unwrap()]);
+        poke(a, b, p + 0x430, &[u8::try_from(rng.below(4)).unwrap()]);
+        poke(a, b, p + 0x439, &[u8::try_from(rng.below(3)).unwrap()]);
+        let t = if rng.below(3) == 0 {
+            0xff
+        } else {
+            u8::try_from(rng.below(ACTORS)).unwrap()
+        };
+        poke(a, b, p + 0x438, &[t]);
+        poke(
+            a,
+            b,
+            p + 0x3f0,
+            &[[0u8, 0x22, 0x4a, 0x30][rng.below(4) as usize]],
+        );
+        for o in [0x10, 0x12] {
+            poke(a, b, p + o, &[u8::from(rng.below(2) == 0)]);
+        }
+        for o in [0x460, 0x464, 0x468, 0x474, 0x478, 0x480, 0x484, 0x4a8] {
+            poke(a, b, p + o, &float(rng).to_le_bytes());
+        }
+    }
+    // the characters at modest positions (huge ones overflow on the way)
+    let mut seen = Vec::new();
+    for i in 0..ACTORS {
+        let c = u32::from_le_bytes(a.read(w.actor(i), 4).unwrap().try_into().unwrap());
+        if !seen.contains(&c) {
+            seen.push(c);
+            let v: Vec<u8> = (0..3)
+                .flat_map(|_| {
+                    (f32::from(i16::try_from(rng.range(-3000, 3000)).unwrap()) / 37.0)
+                        .to_bits()
+                        .to_le_bytes()
+                })
+                .collect();
+            poke(a, b, c + ffx_chara::layout::POS, &v);
+        }
+    }
+    // the actors another faces or moves to (+0x416, +0xded) of another
+    // character: two actors of one character stand at one point, and the
+    // direction between them (a zero vector) reads the w words the
+    // originals leave unwritten, stack garbage after an earlier step
+    let chr_of = |o: &mut Oracle, k: u32| {
+        u32::from_le_bytes(o.read(w.actor(k), 4).unwrap().try_into().unwrap())
+    };
+    for i in 0..ACTORS {
+        let own = chr_of(a, i);
+        let others: Vec<u32> = (0..ACTORS).filter(|&k| chr_of(a, k) != own).collect();
+        if others.is_empty() {
+            continue;
+        }
+        for o in [0x416, 0xded] {
+            let k = others[rng.below(u32::try_from(others.len()).unwrap()) as usize];
+            poke(a, b, w.actor(i) + o, &[u8::try_from(k).unwrap()]);
+        }
+    }
+    if whole {
+        zero_stack(a);
+        twin("MsMoveChr", a, b, 0x007a_ab80, &[], 0, |m| {
+            dm(m, |m| pr::ms_move_chr(m, &h));
+            0
+        });
+        local_words(a, b);
+        same("MsMoveChr", a, b);
+        return;
+    }
+    for i in 0..ACTORS {
+        let k: u8 = b.read(w.actor(i) + 0x415, 1).unwrap()[0];
+        zero_stack(a);
+        twin("MsGetChrPredictPos", a, b, 0x007a_a2a0, &[i], 0, |m| {
+            dm(m, |m| pr::ms_get_chr_predict_pos(m, &h, i, Some(HARNESS)));
+            0
+        });
+        local_words(a, b);
+        same(&format!("MsGetChrPredictPos {i} kind {k:#x}"), a, b);
     }
 }
 

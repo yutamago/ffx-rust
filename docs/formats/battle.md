@@ -430,6 +430,50 @@ stack (curve 2, `[1]` left as stack garbage, which curve 2 never reads).
 (`+0x3f0`) 0x20-0x24 and 0x48-0x4c, else -1; `MsMoveChr` sets a neck
 target only on -1.
 
+`MsGetChrPredictPos(i)` (`0x007aa2a0`, `ffx_battle::predict`; cdecl, eax
+garbage) is one frame of actor `i`'s move, nothing without a character.
+By `+0x415 & 0x7f`: 0 none; 7 along move spline `+0x454` (2 is the ball's,
+`MsSetBallSpline` first) at `t = frame / length` (`+0x452` after its
+increment, `+0x45a`, a double rounded to `f32`): `TkMtCalcSpline` into
+the position (`MsSetChrPos`), then `TkMtCalcSplineTangent`, whose yaw
+turns `+0x490` by `+0x46c` of the difference (`MsNearRag`; with `+0x42a`
+negative a difference past pi/2, positive one below -pi/2, flips sign:
+`0x00b11338`/`0x00b3ebb0`) and faces the model (`Ch_SetDirF`); 0x10 a
+straight step of `+0x460` along yaw `+0x470`, pitch `+0x47c`
+(`MsVectorPolar2Rect`); else towards `MsGetMoveTargetPos`'s point (actor
+0's also into `EE_MOVE` `0x00c8f588` and `g_BtlMoveTarget`). Without bit
+0x80 the step is `MsGetChrMoveAccelPos` at the incremented frame; with it
+the actor steers: the speed `+0x460` grows by `+0x468` up to `+0x464`,
+yaw and pitch (pitch only for a walker, `+0x34` 0) turn towards the
+target by at most `+0x474`/`+0x480`, which grow by `+0x478`/`+0x484`;
+past the length the yaw closes `(frame - length) / (4 length + 1)` of the
+rest; past twice the length a new move starts (`MsSetChrDirTarget(i, 8,
+0, 0, frames / 4, 1)` and `MsGetMoveTargetDist` of kind `& ~0x80`,
+`frames = ftol(dist / +0x464) | 1`, braking 0x20). A move ends (`+0x415`,
+`+0x418` 0) at its length. With `+0x419` the height follows the gravity
+`+0x4a8` from `+0x394`: `v0 = (y_to - y0 - g n² / 2) / n`, `y = f v0 + y0
++ g f² / 2`. Then, while `+0x42e` counts down, the direction eases: a
+curve-2 move block on the stack (`+0x42f`, `+0x430`), `MsGetDirMode` into
+`+0x4f4` and, when it has a mode, `MsCameraMoveCalc` from `+0x490` and
+`Ch_SetDirF`. The radius words of `MsVectorPolar2Rect` are the caller's
+`edi`, `esi`, `ebx` (see `ffx_battle::target`).
+
+`MsMoveChr()` (`0x007aab80`): for each of the 31 actors, one that moves
+(`+0x10` or `+0x12`) is bound to the character it rides (`+0x43f`,
+element `+0x441`, `Ch_BindToElem`) and steps (`MsGetChrPredictPos`); then
+the neck delay `+0x439` counts down, and at 0 the neck follows actor
+`+0x438`'s character (`Ch_NeckSetTarget`, unless `MsCheckNeckMotion`
+says no) or, for 0xff, stops (`Ch_NeckSetEnable(chr, 0)`). The character
+is the one read before the step.
+
+Facts the parity test found (`tests/battle_target.rs`, `move_steps`):
+only three move splines exist (`0x01136428 + 3 * 0x210` is
+`g_BtlMoveTarget`); a spline move past its length reads points beyond
+the table; and several paths read the caller's locals where nothing was
+written (a target actor index past 30, a kind without a target with
+direction mode 8, an actor without a character whose battle position the
+file lacks): the original's stack garbage there, the port's zeros.
+
 ## M2 remaining
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here.

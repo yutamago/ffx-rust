@@ -5764,9 +5764,9 @@
 0x007aa160 function MsMotionProcess           # fh v3:exact 0x007aa180
 0x007aa260 function MsMotionSpeedSetNormal    # fh switch:bsim1.00 0x71003619d0
 0x007aa280 function msMoveReset               # fh switch:bsim1.00 0x71003606e0
-0x007aa2a0 function MsGetChrPredictPos           # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100361470 MsGetChrPredictPos, 3 votes, round 2
+0x007aa2a0 function MsGetChrPredictPos           # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100361470 MsGetChrPredictPos, 3 votes, round 2; cdecl(i), eax garbage: one frame of actor i's move (+0x415 & 0x7f: 7 spline +0x454 at frame +0x452 of +0x45a, 0x10 straight step, else towards MsGetMoveTargetPos with bit 0x80 steering or MsGetChrMoveAccelPos), then the direction easing (+0x42e, MsGetDirMode, MsCameraMoveCalc curve 2, Ch_SetDirF); ported (ffx_battle::predict, battle round 17)
 0x007aaae0 function MsMoveCheckFlag           # fh switch:bsim1.00 0x710035f050
-0x007aab80 function MsMoveChr                 # fh v3:exact 0x007aaba0
+0x007aab80 function MsMoveChr                 # fh v3:exact 0x007aaba0; cdecl(): per actor 0..30 with +0x10/+0x12 Ch_BindToElem to the ridden +0x43f and MsGetChrPredictPos, then the neck delay +0x439 (Ch_NeckSetTarget to +0x438 unless MsCheckNeckMotion, 0xff Ch_NeckSetEnable(chr, 0)); ported (ffx_battle::predict, battle round 17)
 0x007aac40 function MsGetChrMoveAccelPos      # (actor, n, speed, target, out) -> 1/0: frame n of an accelerated move (+0x454 accelerate, +0x456 cruise, +0x458 brake frames, +0x45c start speed; +0x4a0/+0x4a4 covered/scale); named here; ported
 0x007ab010 function MsMoveSpline                 # layout+callees: sorts between MsMoveChr and MsMoveSplineRegist, and its named callees match the Switch 0x7100361310 MsMoveSpline's (similarity 1.00: MsGetChr, MsGetChrDir); symbols from Fahrenheit's server export
 0x007ab0b0 function MsMoveSplineRegist        # fh v3:exact 0x007ab0d0
@@ -12940,6 +12940,7 @@
 0x00b111b4 label Phyre_PClassDescriptorAbstract_Phyre_PCameraPerspective__vftable # fh v4:imported Phyre::PClassDescriptorAbstract<Phyre::PCameraPerspective>::vftable
 0x00b111fc label Phyre_PClassDescriptorConcrete_Phyre_PCameraPerspective__vftable # fh v4:imported Phyre::PClassDescriptorConcrete<Phyre::PCameraPerspective>::vftable
 0x00b11240 label Phyre_PCameraPerspective_vftable # fh v4:imported Phyre::PCameraPerspective::vftable
+0x00b11338 label k_HalfPiF64              # f64 pi/2 rounded to f32 (0x3ff921fb60000000): MsGetChrPredictPos's spline turn limit (battle round 17); name ours
 0x00b11344 label Phyre_PClassDescriptorForType_Phyre_PInstancesComponent__vftable # fh v4:imported Phyre::PClassDescriptorForType<Phyre::PInstancesComponent>::vftable
 0x00b1138c label Phyre_PClassDescriptorAbstract_Phyre_PInstancesComponent__vftable # fh v4:imported Phyre::PClassDescriptorAbstract<Phyre::PInstancesComponent>::vftable
 0x00b113d4 label Phyre_PClassDescriptorConcrete_Phyre_PInstancesComponent__vftable # fh v4:imported Phyre::PClassDescriptorConcrete<Phyre::PInstancesComponent>::vftable
@@ -14259,6 +14260,7 @@
 0x00b3d938 label Phyre_PInternal_PCallerImplementation_PCallerImplementation0_PMethodCallerConcrete_Phyre_PPhysics_PPhysicsCharacterControllerBase_bool__vftable # fh v4:imported Phyre::PInternal::PCallerImplementation::PCallerImplementation0::PMethodCallerConcrete<Phyre::PPhysics::PPhysicsCharacterControllerBase,bool>::vftable
 0x00b3d950 label Phyre_PInternal_PCallerImplementation_PCallerImplementation0_PMethodCallerConcrete_Phyre_PPhysics_PPhysicsRigidBodyBase_float__vftable # fh v4:imported Phyre::PInternal::PCallerImplementation::PCallerImplementation0::PMethodCallerConcrete<Phyre::PPhysics::PPhysicsRigidBodyBase,float>::vftable
 0x00b3d968 label Phyre_PInternal_PCallerImplementation_PCallerImplementation0_PMethodCallerConcrete_Phyre_PPhysics_PPhysicsRigidBodyBase_bool__vftable # fh v4:imported Phyre::PInternal::PCallerImplementation::PCallerImplementation0::PMethodCallerConcrete<Phyre::PPhysics::PPhysicsRigidBodyBase,bool>::vftable
+0x00b3ebb0 label k_MinusHalfPiF64         # f64 -pi/2 rounded to f32: MsGetChrPredictPos's spline turn limit (battle round 17); name ours
 0x00b3ec94 label Phyre_PNamedSemanticDescriptorForType_Phyre_PPlatform_PPlatformConverter__vftable # fh v4:imported Phyre::PNamedSemanticDescriptorForType<Phyre::PPlatform::PPlatformConverter>::vftable
 0x00b3eccc label Phyre_PSerialization_PStream_vftable # fh v4:imported Phyre::PSerialization::PStream::vftable
 0x00b3ecfc label Phyre_PSerialization_PBinary_PInternal_PGatherHeaderClassObjectsVisitor_vftable # fh v4:imported Phyre::PSerialization::PBinary::PInternal::PGatherHeaderClassObjectsVisitor::vftable
@@ -15349,7 +15351,7 @@
 0x011363e8 label    g_Native70a2Flag           # set by Native_70a2 start (0x007a7440)
 0x01136418 label g_BtlMoveSplines             # [u32; 3]; The three move splines (MsMoveSplineSet).
 0x01136424 label g_BtlMoveFrame            # i32, frames into the current move (MsGetChrMovePos; MsGetMoveTargetPos kind 12 sets it)
-0x01136428 label g_BtlMoveSplineData       # 0x210-byte move splines: u32 count, points from +0x10 (MsGetChrMovePos kind 7, TkMtCalcSpline)
+0x01136428 label g_BtlMoveSplineData       # 0x210-byte move splines: u32 count, points from +0x10 (MsGetChrMovePos kind 7, TkMtCalcSpline); three of them: 3 * 0x210 is g_BtlMoveTarget (MsGetChrPredictPos)
 0x01136a58 label g_BtlMoveTarget              # u8; The move target position (MsMoveTargetPos).
 0x01136a68 label g_BtlAction                  # i32; Set to -1 by MsActionInit.
 0x01136a6c label g_BtlActionRequest        # u32, cleared by MsActionRequestSet with 0x01136a70 and the 0x48-byte block 0x01136a78
