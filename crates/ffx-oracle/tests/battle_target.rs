@@ -292,9 +292,9 @@ const HARNESS: t::Regs = t::Regs {
 /// unwritten: the original's stack garbage reaches the `w` words of
 /// `VF_B`'s neighbour, `VF0` and `VF2` through `MsVectorRect2Polar`, so
 /// those are copied too.
-/// VF_M's third row and the first row's x, copied from `a`: MsResetChrPos's
-/// MsCheckBtlPos copies its battle position into the third row
-/// (MsPointLen), and on the field snapshot the original's x there was once
+/// `VF_M`'s third row and the first row's x, copied from `a`:
+/// `MsResetChrPos`'s `MsCheckBtlPos` copies its battle position into the
+/// third row (`MsPointLen`), and on the field snapshot the original's x there was once
 /// 0x6d where the port's was 0 with everything else the same; on the image
 /// the third row's x was 0x6e and the first row's 0x8000006e, the port's
 /// 0. Small integers: likely a caller's register word (the target chain's
