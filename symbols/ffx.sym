@@ -9441,7 +9441,7 @@
 0x008ac3d0 function TOGetFontWidthTblAdrs     # fh v3:bsim1.00 0x008ac380
 0x008ac3f0 function TOGetWord_01841d98        # () -> [0x01841d98]; between TOGetFontWidthTblAdrs and TOGetImageWH; name ours
 0x008ac400 function TOGetImageWH              # fh v3:exact+call.cs 0x008ac3b0 cdecl; (id, &w, &h): constant sizes for 0x2eac..0x132f0c, or i16 pairs from 0x01841dac (0x3c00 by TkGetLang, 0x3d00 by MsBattleGetStatus); returns &h
-0x008ac760 function TOGetInternationalBaseDicType # fh v3:exact 0x008ac710
+0x008ac760 function TOGetInternationalBaseDicType # fh v3:exact 0x008ac710; () -> 4, or for languages 0/9/10 4 only with MsGetSaveConfigEnglish (else 0)
 0x008ac790 function TOGetWord_01841e00        # () -> [0x01841e00]; between TOGetInternationalBaseDicType and TOGetMessageWindowMode; name ours
 0x008ac7b0 function TOGetMessageWindowMode    # fh v3:bsim1.00 0x008ac760
 0x008ac7c0 function TOGetMessageWindowWH         # layout+callees: sorts between TOGetMessageWindowMode and TOGetSaveChrName, and its named callees match the Switch 0x71004fa030 TOGetMessageWindowWH's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
@@ -9565,9 +9565,10 @@
 0x008b6b70 function TOGetControlPadStatus     # fh v3:exact 0x008b6b20
 0x008b70a0 function MacroDic_Section             # (n, table) -> *(macrodic table + (n - 19) * 4)
 0x008b70c0 function TOGetTextWidth            # cdecl(text, arg) -> float: sum of TOGetFontWidthForLang(text, 0, &w, arg) widths as ftol(total + w), glyph count in 0x018663e8; name ours
+0x008b7130 function TOGetMessageSize_008b7130 # (text, &w, &h) -> 0: TOGetMessageWH(0, text, .., 0, 0), w through ftol, h the i16 height; name ours
 0x008b71c0 function TOGetEasyMesWHForCredits  # fh switch:bsim1.00 0x71004f15e0
 0x008b71f0 function TOGetExtMesWHFontL2          # layout+callees: sorts between TOGetEasyMesWHForCredits and TOGetFontInfo, and its named callees match the Switch 0x71004f1540 TOGetExtMesWHFontL2's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
-0x008b7240 function TOGetFontInfo             # fh v3:exact 0x008b71f0
+0x008b7240 function TOGetFontInfo             # fh v3:exact 0x008b71f0; (text, out) -> next: page +0, cell parity +4, box +8..+0x14, slant +0x18, width +0x1c (width-table byte / 4), +0x20 18.0; dictionary codes from 0x2c, two-byte tables 0x26..0x2b, icon 6, fixed 10.0 box otherwise
 0x008b78b0 function TOGetFontInfoInterMode       # layout and calls: the Switch name after TOGetFontInfo here (TOGetFontInfoInterMode, 744 bytes, calls TOGetFFXLang; ours 801, calls TOGetFFXLang)
 0x008b7be0 function TOGetFontWidthInterMode      # layout and calls: (a, b, c) -> TOGetFontWidth(a, b, c, TOGetInternationalBaseDicType()); the Switch's TOGetFontWidthInterMode (calls TOGetFFXLang and _TOGetFontWidth) sorts after TOGetFontInfoInterMode, as here
 0x008b7c00 function TOGetFontWidthForLang     # cdecl(text, kind, out, _): TOGetFontWidth(text, kind, out, lang 0/9/10 ? 0 : 4); name ours
@@ -9584,6 +9585,7 @@
 0x008b7ff0 function TOGetTableKind2Byte7_008b7ff0 # cdecl(i): i8 byte 7 of entry i of 0x01868a90 when its byte 1 is 2, else -1; name ours
 0x008b8010 function TOMessageTableByte2_008b8010 # cdecl(i): i8 byte 2 of entry i of 0x01868a90 when message window i has +0x1e == 1 and the entry's kind (byte 1) >= 1, else -1; name ours
 0x008b8070 function TOGetWidthExtMes1612         # layout+callees: sorts between TOGetSaveDicAdrs and TOInitMacroCmd, and its named callees match the Switch 0x71004f12e0 TOGetWidthExtMes1612's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
+0x008b80b0 function TOCountMessageWords_008b80b0 # (window, text): words up to the first line code: glyphs 1, macros and 0x10 counters their TOGetChangeMacroWordCount, 0xb icons and 9 n>=0xc0 one; name ours
 0x008b81d0 function TOInitMacroCmd            # fh v3:exact 0x008b8180
 0x008b8210 function TOInitMessage             # fh v3:exact 0x008b81c0
 0x008b8290 function TOIntToMes                # fh v3:exact 0x008b8240; (value, out, digits, mode) -> shown value: negatives 0; mode 0 value % 10^digits left-padded with ']'/':'/0xfe by language, mode 1 clamped to 10^digits-1 and zero-padded; copies `digits` bytes of its sprintf buffer, so stale stack bytes follow the terminator
@@ -9599,6 +9601,7 @@
 0x008b8960 function TOMacroSetType            # (win, n, t): byte 0 of macro record n of message window win (g_MsgVars; the Btl form sets byte 1 too); name ours
 0x008b8980 function TOMacroSetValue           # (win, n, v): word 1 of the record; returns v; name ours
 0x008b89a0 function TOSetMessageText_008b89a0 # cdecl(i, text): window +0x94 = text, +0x98 = TOSkipCodesAbove2(text); name ours
+0x008b89d0 function TOSetMessageWindowTexts_008b89d0 # (window, text, other): window +0x5c/+0x60 text, +0x74/+0x78 text (lang swap, English, 0x025d16bc) or other, +0x90/+0x94 the shown pair, +0x20 0, +0x22 bit test 0x007851b0 or 0x00c59558; then the window function +0xf4; name ours
 0x008b8af0 function TOSetMessageFunc          # fh v3:exact 0x008b8aa0
 0x008b8b20 function TOSetMessageArea_008b8b20 # cdecl(i, x, y, w, h): message window i: u16 +0x40 w, +0x42 h, floats +0x30 x, +0x34 y, +0x38 x + w, +0x3c y + h; callers 0x0089b2f0, 0x008afbb0; name ours
 0x008b8bb0 function TOSetMessageType             # layout+callees: sorts between TOSetMessageFunc and TOSetRectDirect, and its named callees match the Switch 0x71004ee390 TOSetMessageType's (similarity 1.00: MsGetSaveMenu, TOInitMessageCallBack); symbols from Fahrenheit's server export; cdecl(i, type): msg +8 = type & 0xf, +0x10 = type & 0x4000, +0x1a = 0x2000 ? (0x8000 ? 3 : 1) : 0, +0xc = 0x1000 (or 1 without save-menu bit 0x100), +0x12 = 0x400; kind 3: +0x1a = 0x8000 ? 3 : 1; TOInitMessageCallBack; returns 0

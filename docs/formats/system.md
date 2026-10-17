@@ -491,3 +491,74 @@ skipped.
   battle command can be used: -1 when `MsGetCommandUse` blocks it, -2 when
   `MsCheckUseCommand` fails, the item window kind for item-like commands
   (-4/-3 for an empty list), else 0xfe or 0xff.
+
+## Glyph metrics and message sizes
+
+- `TOGetFontInfo(text, out)` (`0x008b7240`) describes one glyph and
+  returns the text after it. `out` holds the font page (`+0`), the cell
+  parity (`+4`), the cell box (`+8..+0x14`: columns of 14 for every two
+  glyphs, rows of 18), the slant (`+0x18`: -1.0 for language 10, 1.0 for
+  languages 1-8), the width (`+0x1c`, a quarter of the width-table byte
+  from `TOGetFontWidthTblAdrs`) and 18.0 (`+0x20`). Codes from 0x2c use
+  the language's dictionary; 0x26..0x2b are two-byte codes of tables 1-3;
+  6 is an icon. A `:` that joins its neighbours is 5.0 wide, and a run
+  of `G` at the start of a text is measured as one glyph.
+- `TOGetChangeMacroAddress(window, code)` (`0x008b6660`) finds the text a
+  macro code stands for: a macro slot (`0x01869ab0`, 32 per window), a
+  character, item or key-item name, a window string table, or a number
+  written by `TOIntToMes`. A slot whose kind is a code byte folds `+4 /
+  0xd0` into that code and expands it in turn. The original builds that
+  code in its own argument slot and can return a pointer to it; the port
+  keeps it in a static, so the text stays readable.
+- `TOGetMessageWH` (`0x008b9650`) measures a message: the widest line in
+  pixels and the height of the deepest line (lines of 0x10, plus 2). Codes
+  0-3 end lines and the text, `7 n` positions and spaces, `0xe 0x40`/`0x41`
+  open and close a 5.0 indent, `0xb n` adds a button icon and `0x10 n` the
+  window's counter. Macros add `TOGetChangeMacroWidth`. The battle widths
+  (`ToGetBtlEasyFontWidth`, `ToGetBtlEasyDigitWidth`,
+  `ToGetCrossExtMesFontWidth`, `TOGetWidthMacro_help`) add glyph advances
+  (`TOGetFontAdvance`) and take off one letter space at the end.
+
+## Battle command windows
+
+`TOBtlSetNextAction(chr, command)` (`0x0089a330`) moves the command
+windows one level deeper. At a targeting level the command becomes the
+target pick 0x3115, and the command finishes (`TOBtlFinishCommand`) once
+all targets are chosen. `TOCheckBtlCommandUse` decides what opens next:
+a sub-window (`TOBtlSetCommand`, 0x80 or less), a target pick (0xfe) or
+the finish (0xff). A new target pick with no forced target starts on the
+first dead party member.
+
+## Battle font layout (`ToMakeBtlEasy*`)
+
+The battle texts (damage numbers, counters) are laid out with a text
+cursor at `0x025d09a0`: `+0` the colour bytes, `+4`/`+8` the pen (f32),
+`+0x1a` the icon mode and `+0x1b` the alpha. `ToMakeBtlEasyFont`
+(`0x00905ab0`) and `ToMakeBtlEasyEdgeFontA` (`0x00905970`) walk a text:
+
+- Line codes (group 1) move the pen back to the start x and 16.0 down.
+- Glyphs (group 4) get their `TOGetFontInfo` record, then their packets,
+  and the pen moves on (`TOAddFontWidthSpace`).
+- `0xb n` draws a button icon at the pen (`TODrawScaleButtonIconRGBA`, y
+  + 1.7 at scale 0.6, or + 3.2 at 0.73 in icon modes 1 and 3) and moves the
+  pen by the icon width plus 1.0 (1.5).
+
+The digit writers (`ToMakeBtlEasyDigit`, `…Digit2`, `…DigitRight`,
+`…DigitRightAbmap`, `…EdgeDigit`, `…EdgeDigit2`) write the number with
+`TOValueToMesFontL`, using as many digits as it has; the right-aligned
+ones start the pen at x less the number's width.
+
+The packet writers compute the glyph quad from the pen and the record.
+The corners are the pen plus `(0, K_y × scale × slant)` and pen plus
+`(width × scale × K_x, K_y × scale × (18 + slant))` (`K_x`, `K_y` at
+`0x00c5d778`/`0x00c5d77c`), and the UVs are the cell over the texture
+size. The quad then goes to `BeginScissor_XYUV` and `graphicFontDraw`.
+The face (`TOMakePktBtlEasyFont`) draws at layer parity + 2. The shadow
+(`TOMakePktBtlEasyFontShadow`) is moved by `0x018716e0`/`0x018716e4`.
+The edge (`TOMakeBtlEasyFontEdge`) uses `K_x` for both axes and draws
+eight copies offset by ±2 over the edge ratio. These are ported; only
+`graphicFontDraw` itself emits packets.
+
+`TODrawScaleButtonIconRGBA` (`0x008f8ee0`) picks the icon for a text
+character, as `TOGetScaleButtonIconWidth` does. `4`..`7` sit 2.0 higher,
+and `@`..`O` stack four direction parts by their low bits.
