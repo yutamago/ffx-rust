@@ -840,4 +840,227 @@ pub mod bridge {
         };
         chr_texanim_set(mem, &FORM, id, handle, def, call)
     }
+
+    /// The import slots `chr_texanim_main_sub_old` calls through: `rand`,
+    /// `memcpy`.
+    pub const RAND_SLOT: u32 = 0x00b0_c420;
+    pub const MEMCPY_SLOT: u32 = 0x00b0_c364;
+
+    /// `chr_texanim_main_sub_old(id)` (`0x0077ff00`): one step of an old
+    /// form entry (source kind byte 2) of [`TEX_ANIMS`]: for each of its
+    /// work block's slots (count `+0x400`, 0x34 bytes from `+0x40c`) with
+    /// a mode (byte `+0x5a8 + k`, not -1), its source slot (0x90 bytes at
+    /// `[src+8]`) gives the frame list for the entry's track (`+8`; frames
+    /// of 4 bytes at its `+0x10`, `i16` count `+0x14`; none sets the
+    /// slot's done flag `+0x12`). By the slot's play mode (`+0x10`): 1/4
+    /// show frame `+0`; 2 blinks (state `+0xe`: wait 60-149, 4 steps per
+    /// frame, then back); 3 and others step the frame when a counter
+    /// (`+8`) passes the frame's `i16` time plus a random wait (`rand` &
+    /// 0xff × frame byte 3 / 256, set when it steps; the step keeps the
+    /// old frame for this pass), mode 3 also scrolling its offsets (`+0x20`,
+    /// `+0x24` by `+0x18`, `+0x1c`, wrapped into the frame's rectangle,
+    /// floats through x87). The frame's rectangle (12 bytes at `[src+4]`,
+    /// index byte 2) and the slot's placement are stored; mode 3 then
+    /// copies the rectangle's rows into the destination (`memcpy`; the
+    /// block's `+0x5b8` and `+0x5c8` by the slot's `+0xc`), starting at the
+    /// row of its scroll `y`. Returns what EAX holds: the id with no source,
+    /// kind − 2 for another kind, the track with no slots, else the block.
+    #[allow(clippy::too_many_lines)] // one step of every slot
+    pub fn chr_texanim_main_sub_old<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let e = TEX_ANIMS
+            .ptr(mem)
+            .addr
+            .wrapping_add(0x30u32.wrapping_mul(id));
+        let src: u32 = mem.read(e);
+        if src == 0 {
+            return id;
+        }
+        let kind = i32::from(mem.read::<i8>(src));
+        if kind != 2 {
+            return (kind - 2).cast_unsigned();
+        }
+        let track: u32 = mem.read(e + 8);
+        let buf: u32 = mem.read(e + 4);
+        let rects = src.wrapping_add(mem.read::<u32>(src.wrapping_add(4)));
+        let rd16 = |mem: &M, a: u32| i32::from(mem.read::<i16>(a));
+        let rand = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            let f: u32 = mem.read(mem.rebase(RAND_SLOT));
+            call(mem, f, &[])
+        };
+        if mem.read::<i32>(buf.wrapping_add(0x400)) <= 0 {
+            return track;
+        }
+        let mut k = 0u32;
+        while k.cast_signed() < mem.read::<i32>(buf.wrapping_add(0x400)) {
+            let s = buf.wrapping_add(0x420 + 0x34 * k);
+            if mem.read::<i8>(buf.wrapping_add(0x5a8 + k)) == -1 {
+                k += 1;
+                continue;
+            }
+            let ss = src
+                .wrapping_add(mem.read::<u32>(src.wrapping_add(8)))
+                .wrapping_add(0x90 * k);
+            let list = ss.wrapping_add(track.wrapping_mul(8));
+            let cnt = rd16(mem, list.wrapping_add(0x14));
+            if cnt == 0 {
+                mem.write(s.wrapping_add(6), 1u16);
+                k += 1;
+                continue;
+            }
+            let base = src.wrapping_add(mem.read::<u32>(list.wrapping_add(0x10)));
+            let frame_at =
+                |mem: &M| base.wrapping_add(mem.read::<u32>(s.wrapping_sub(0x14)).wrapping_mul(4));
+            let mode = rd16(mem, s.wrapping_add(4));
+            let fr = match mode {
+                1 | 4 => frame_at(mem),
+                2 => {
+                    match rd16(mem, s.wrapping_add(2)) {
+                        0 => {
+                            let r = rand(mem, call).cast_signed();
+                            mem.write(s.wrapping_add(2), 1u16);
+                            mem.write(s.wrapping_sub(0x14), 0u32);
+                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                            mem.write(s, (r.wrapping_rem(0x5a) + 0x3c) as u16);
+                        }
+                        1 => {
+                            let t = mem.read::<i16>(s).wrapping_sub(1);
+                            mem.write(s, t);
+                            if t < 0 {
+                                mem.write(s, 0x0002_0004u32);
+                            }
+                        }
+                        2 => {
+                            let t = mem.read::<i16>(s).wrapping_sub(1);
+                            mem.write(s, t);
+                            if t < 0 {
+                                let f = mem.read::<i32>(s.wrapping_sub(0x14)).wrapping_add(1);
+                                mem.write(s.wrapping_sub(0x14), f);
+                                if f < cnt {
+                                    mem.write(s, 1u16);
+                                } else {
+                                    mem.write(s.wrapping_sub(0x14), f.wrapping_sub(1));
+                                    mem.write(s, 0u32);
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                    frame_at(mem)
+                }
+                _ => {
+                    let mut fr = frame_at(mem);
+                    if mem.read::<i16>(fr) >= 0 {
+                        let c = mem.read::<i16>(s.wrapping_sub(4)).wrapping_add(1);
+                        mem.write(s.wrapping_sub(4), c);
+                        if rd16(mem, fr) + rd16(mem, s.wrapping_sub(2)) < i32::from(c) {
+                            mem.write(s.wrapping_sub(4), 0u16);
+                            let f = mem.read::<i32>(s.wrapping_sub(0x14)).wrapping_add(1);
+                            mem.write(s.wrapping_sub(0x14), f);
+                            if f >= cnt {
+                                fr = base;
+                                mem.write(s.wrapping_sub(0x14), 0u32);
+                            }
+                            let r = rand(mem, call) & 0xff;
+                            let w =
+                                r.wrapping_mul(u32::from(mem.read::<u8>(fr.wrapping_add(3)))) >> 8;
+                            #[allow(clippy::cast_possible_truncation)]
+                            mem.write(s.wrapping_sub(2), w as u16);
+                        }
+                    }
+                    if mode == 3 {
+                        #[allow(clippy::cast_possible_truncation)] // fstp m32
+                        let add = |a: f32, b: f32| (f64::from(a) + f64::from(b)) as f32;
+                        let x = add(
+                            mem.read(s.wrapping_add(0xc)),
+                            mem.read(s.wrapping_add(0x14)),
+                        );
+                        mem.write(s.wrapping_add(0x14), x);
+                        let y = add(
+                            mem.read(s.wrapping_add(0x10)),
+                            mem.read(s.wrapping_add(0x18)),
+                        );
+                        mem.write(s.wrapping_add(0x18), y);
+                        let r =
+                            rects.wrapping_add(12 * u32::from(mem.read::<u8>(fr.wrapping_add(2))));
+                        for (pos, dim) in [(0x14u32, 4u32), (0x18, 6)] {
+                            let v = if pos == 0x14 { x } else { y };
+                            if v < 0.0 {
+                                let d = f64::from(rd16(mem, r.wrapping_add(dim)));
+                                #[allow(clippy::cast_possible_truncation)]
+                                mem.write(s.wrapping_add(pos), (f64::from(v) + d) as f32);
+                            }
+                        }
+                        for (pos, dim) in [(0x14u32, 4u32), (0x18, 6)] {
+                            let d = f64::from(rd16(mem, r.wrapping_add(dim)));
+                            let v = f64::from(crate::x87::load(mem.read(s.wrapping_add(pos))));
+                            if v >= d {
+                                #[allow(clippy::cast_possible_truncation)]
+                                mem.write(s.wrapping_add(pos), (v - d) as f32);
+                            }
+                        }
+                    }
+                    fr
+                }
+            };
+            mem.write(s.wrapping_add(6), 0u16);
+            let r = rects.wrapping_add(12 * u32::from(mem.read::<u8>(fr.wrapping_add(2))));
+            let pixels = src.wrapping_add(mem.read::<u32>(r.wrapping_add(8)));
+            for (to, from) in [
+                (s.wrapping_sub(0x10), 8u32),
+                (s.wrapping_sub(0xe), 0xa),
+                (s + 8, 0xc),
+            ] {
+                let v: u16 = mem.read(ss.wrapping_add(from));
+                mem.write(to, v);
+            }
+            for (to, from) in [(0xcu32, 4u32), (0xa, 6), (8, 0), (6, 2)] {
+                let v: u16 = mem.read(r.wrapping_add(from));
+                mem.write(s.wrapping_sub(to), v);
+            }
+            mem.write(s.wrapping_sub(0x18), pixels);
+            if mode == 3 {
+                let sl = rd16(mem, ss.wrapping_add(0xc)).cast_unsigned();
+                let pitch = rd16(
+                    mem,
+                    buf.wrapping_add(0x5c8).wrapping_add(sl.wrapping_mul(2)),
+                );
+                let pos_y = f64::from(mem.read::<f32>(s.wrapping_add(0x18)));
+                let v = ffx_bridge::x87::ftol(mem, pos_y).cast_signed();
+                let dst = rd16(mem, s.wrapping_sub(0x10)).wrapping_add(
+                    mem.read::<i32>(buf.wrapping_add(0x5b8).wrapping_add(sl.wrapping_mul(4))),
+                );
+                let memcpy: u32 = mem.read(mem.rebase(MEMCPY_SLOT));
+                let mut row = 0i32;
+                while row < rd16(mem, r.wrapping_add(6)) {
+                    let Some(m) = v
+                        .wrapping_add(row)
+                        .checked_rem(rd16(mem, s.wrapping_sub(0xa)))
+                    else {
+                        return 0;
+                    };
+                    let w = rd16(mem, s.wrapping_sub(0xc));
+                    let from = m
+                        .wrapping_mul(w)
+                        .wrapping_add(pixels.cast_signed())
+                        .wrapping_add(0x20);
+                    let to = rd16(mem, s.wrapping_sub(0xe))
+                        .wrapping_add(row)
+                        .wrapping_mul(pitch)
+                        .wrapping_add(dst);
+                    call(
+                        mem,
+                        memcpy,
+                        &[to.cast_unsigned(), from.cast_unsigned(), w.cast_unsigned()],
+                    );
+                    row += 1;
+                }
+            }
+            k += 1;
+        }
+        buf
+    }
 }

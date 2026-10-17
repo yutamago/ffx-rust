@@ -6373,3 +6373,108 @@ fn round10d_on(t: &mut Twin) {
         });
     }
 }
+
+#[test]
+fn round10e_matches_the_original() {
+    for mut t in twins() {
+        round10e_on(&mut t);
+    }
+}
+
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+fn round10e_on(t: &mut Twin) {
+    use ffx_chara::texanim::bridge as ta;
+    let mut rng = Xorshift(0x0010_e10e);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let small = |rng: &mut Xorshift, n: u32| rng.next() % n;
+    for round in 0..160u32 {
+        let id = rng.next() % 64;
+        let e = t.a.rebase(0x0231_0000) + 0x30 * id;
+        let src = t.alloc(0x4000);
+        t.put_u32(e, if round % 16 == 15 { 0 } else { src });
+        let kind = if round % 8 == 7 { 1 } else { 2u8 };
+        t.put(src, &[kind]);
+        t.put_u32(src + 4, 0x100);
+        t.put_u32(src + 8, 0x400);
+        for r in 0..8 {
+            let rect = src + 0x100 + 12 * r;
+            let w = 1 + small(&mut rng, 8) as u16;
+            let h = 1 + small(&mut rng, 6) as u16;
+            t.put(rect, &(rng.next() as u16).to_le_bytes());
+            t.put(rect + 2, &(rng.next() as u16).to_le_bytes());
+            t.put(rect + 4, &w.to_le_bytes());
+            t.put(rect + 6, &h.to_le_bytes());
+            t.put_u32(rect + 8, 0x800 + 0x100 * r);
+        }
+        for k in 0..0x800 / 4 {
+            t.put_u32(src + 0x800 + 4 * k, rng.next());
+        }
+        let track = small(&mut rng, 4);
+        t.put_u32(e + 8, track);
+        for k in 0..4 {
+            let ss = src + 0x400 + 0x90 * k;
+            t.put(ss + 8, &(small(&mut rng, 16) as u16).to_le_bytes());
+            t.put(ss + 0xa, &(small(&mut rng, 8) as u16).to_le_bytes());
+            t.put(ss + 0xc, &(small(&mut rng, 4) as u16).to_le_bytes());
+            let list = ss + 8 * track;
+            t.put_u32(list + 0x10, 0x1800 + 0x40 * k);
+            let cnt = if rng.next().is_multiple_of(6) {
+                0
+            } else {
+                1 + small(&mut rng, 4)
+            };
+            t.put(list + 0x14, &(cnt as u16).to_le_bytes());
+            for f in 0..4 {
+                let fr = src + 0x1800 + 0x40 * k + 4 * f;
+                let time = small(&mut rng, 6) as i16 - 1;
+                t.put(fr, &time.to_le_bytes());
+                t.put(fr + 2, &[small(&mut rng, 8) as u8, rng.next() as u8]);
+            }
+        }
+        let buf = t.alloc(0x600);
+        t.put_u32(e + 4, buf);
+        t.put_u32(buf + 0x400, small(&mut rng, 6).wrapping_sub(1));
+        for k in 0..16 {
+            let m = [0xffu8, 0, 1, 2][small(&mut rng, 4) as usize];
+            t.put(buf + 0x5a8 + k, &[m]);
+        }
+        let dst = t.alloc(0x1000);
+        for k in 0..4 {
+            t.put_u32(buf + 0x5b8 + 4 * k, dst + 0x10 * k);
+            t.put(buf + 0x5c8 + 2 * k, &32u16.to_le_bytes());
+        }
+        for k in 0..4 {
+            let s = buf + 0x420 + 0x34 * k;
+            for off in [0x18u32, 0x10, 0xe, 0xc, 0xa, 8, 6] {
+                t.put_u32(s - off, rng.next());
+            }
+            t.put_u32(s - 0x14, small(&mut rng, 4));
+            t.put(s - 4, &(small(&mut rng, 8) as u16).to_le_bytes());
+            t.put(s - 2, &(small(&mut rng, 4) as u16).to_le_bytes());
+            t.put(s, &(small(&mut rng, 4) as i16 - 1).to_le_bytes());
+            t.put(s + 2, &(small(&mut rng, 4) as u16).to_le_bytes());
+            t.put(s + 4, &(small(&mut rng, 6) as u16).to_le_bytes());
+            t.put(s + 6, &[0x55, 0x55]);
+            t.put_u32(s + 8, rng.next());
+            for off in [0xcu32, 0x10] {
+                let v = (rng.next() % 16) as f32 / 2.0 - 4.0;
+                t.put_u32(s + off, v.to_bits());
+            }
+            for off in [0x14u32, 0x18] {
+                let v = (rng.next() % 32) as f32 / 2.0 - 8.0;
+                t.put_u32(s + off, v.to_bits());
+            }
+        }
+        t.check(
+            &format!("chr_texanim_main_sub_old {round}"),
+            0x0077_ff00,
+            &[id],
+            |m| {
+                Res::Int(ta::chr_texanim_main_sub_old(m, id, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+    }
+}
