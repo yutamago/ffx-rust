@@ -1483,6 +1483,125 @@ the call).
     (`[ebp-0x14]`), so its result depends on what an earlier call left on
     the stack.
 
+## 2D lines, circles and triangles (rounds 41-43)
+
+`rcPrimLine(x0, y0, x1, y1, colour, ui)` (`0x00926c00`) builds two
+vertices `(x, y, 256.0, 0.0)` on its stack. The coordinates are copied
+through the x87 stack, so a signalling NaN turns quiet; 256.0 comes from
+`0x00b501c0`. It then calls `rcPrimDraw2D(0x41, verts, 2, colour)`
+(`0x00925f80`, the renderer), with `cgraphicSetNowUIType(2)` before it when
+`ui` is set and `cgraphicSetNowUIType(0)` after. It returns that last
+call's `eax`, which the stack-cookie check leaves alone.
+
+`rcPrimCircleLine(x, y, r, colour, ui)` (`0x00925ea0`) hands the renderer
+a circle as 65 vertices on its stack:
+- the box `(x - r, y - k)` and `(x + r, y + k)`, depth 256.0 and `w` 0;
+- then 63 zero vertices.
+
+Here `k = r * 1.1666666 * 416 / 448` (constants at `0x00b67698`,
+`0x00b41d30`, `0x00b50210`, each step in `f64` at 53 bits), the height
+corrected for the screen's aspect. It calls `rcPrimDraw2D(0x42, verts,
+0x41, colour)` with the same UI type calls as `rcPrimLine`.
+
+`rcPrimTri(x, y, r, angle, colour, ui)` (`0x009270c0`) draws the
+triangle inscribed in that circle:
+- Its corners sit at `angle` and a third of a turn on either side.
+- `i = ftol(angle * A / B)` (`A`, `B` the `f64` at `0x00b51558` and
+  `0x00b39378`) indexes the `ppp` sine table (`0x00c44bf0`, 4096 `f32`)
+  as `(i + o) >> 4 & 0xfff`.
+- Corner `k` is `(x + t(a) r, y + t(b) r * 1.1666666 * 416 / 448)` with
+  `(a, b)` = (0x4000, 0x8000), (0xa38e, 0xe38e), (0xdc71, 0x11c71) (the
+  cosine and sine of each).
+- Each step runs at 53 bits in the original's operand order and is
+  rounded to `f32` at the store.
+- Depths are 256.0 for the first corner and the `f32` at `0x00b664d8` for
+  the others; `w` is 0.
+- It is drawn with `rcPrimDraw2D(0x4c, verts, 3, colour)` and the same UI
+  type calls.
+
+## Separate SE wave data (round 40)
+
+`SqsSeSeparateDataSend(data, size)` (`0x0081e600`) loads the waves a
+block of SE data names:
+- A size outside `1..=0x10000` only reports (`dbgPrintf`, a bare `ret`,
+  when bit 0 of `0x012f4148` is set) and returns `size - 1`.
+- While more than 16 bytes are left, it reads a chunk. A chunk starts with
+  the words `0x65536553` (the bytes `"SeSe"`) and
+  `0x20202070`, and has its length at `+0xc` (positive, a multiple of 4).
+  Anything else ends the walk.
+- A chunk's `u16` id at `+0x11` (unaligned) joins the list at
+  `0x012fb3c0` unless already there, up to 256 ids. Reaching 256 prints
+  "Too many wave datat to be loaded at the same time!!" between red and
+  reset escapes to stderr and flushes it.
+- Each listed id then goes to `iSfxLoadData(id, 0)`, and the queue is sent
+  (a tail call to `SqsIopCommandSend`, whose result it returns).
+
+`SndStandbyShoutStream(data)` (`0x0081e3b0`, round 44) loads one shout
+wave: when the length at `+0xc` is in `1..=0x10000` (signed) it calls
+`iSfxLoadData(i16 +8, 0)` and returns that call's result. Otherwise it
+returns the length, which is what `eax` still holds.
+
+## The Sqs IOP command builders (round 39)
+
+The command builders append one 32-byte command (`op`, then up to three
+arguments, zeros after) at `g_SqsCmdNext` (`0x00c4946c`) and move it on
+by 0x20. When the command would end past `0x012f4e00`, they first send
+the queue (`SqsIopCommandSend`), with a `dbgPrintf` (`0x00b58d28`) when bit
+0 of `0x012f4148` is set. The `eax` a builder leaves is its argument when
+it reloads it, else the send's result after a send, else the old end
+plus 0x20; the ports return the same.
+
+| Function | Address | Command | Also | Returns |
+|---|---|---|---|---|
+| `SqsAllVoiceTerminate()` | `0x0081ce70` | `(0)` | | queue |
+| `SqsMusicDataRead(a)` | `0x0081d820` | `(0x15, a)` | `SqsReportStandby` before, `SqsIopCommandSend` after | the send |
+| `SqsSetCycleMode(a)` | `0x0081e900` | `(4, a)` | | `a` |
+| `SqsSetPlayMode(m)` | `0x0081ea00` | `(3, m)` | `m` 3 and up (signed) becomes 0, kept in `0x012f4144` | queue |
+| `SqsSetReverbPlaySwitch(a)` | `0x0081ec20` | `(0xc, a)` | | `a` |
+| `SqsShoutStreamingStart(a)` | `0x0081ee20` | `(0x37, a, 0x40, 0x7f)` | `0x012f4f84` and `0x012f4e94` = 1 | `a` |
+| `SqsSetStraightStreamAreaSize(a)` | `0x0081ef50` | `(5, a)` | | `a` |
+| `SqsStraightStreamingStart()` | `0x0081f6c0` | `(0x38, *0x012f4e70)` | `0x012f4e90` = 0, `0x012f4edc` = 1, `0x012f4ef8` = 0 | queue |
+| `SqsStraightStreamingStop()` | `0x0081f770` | `(0x33, 0)` | `0x012f4efc` = 3, `0x012f4edc` = 0 | queue |
+| `SqsStraightStreamingVolumeDirect(v)` | `0x0081f800` | `(0x3e, v & 0x7f)` | | queue |
+| `SqsStraightStreamingVolumeTranslate(n, v)` | `0x0081f880` | `(0x3f, n, v & 0x7f)` | | `n` |
+
+("queue": the send's result or the old end plus 0x20.) The remaining
+builders in `0x0081d4a0..0x0081fc30` are dead.
+
+`SqsInitWaveInfo(src, _, a)` (`0x0081d3f0`) does nothing once `0x012f4140`
+is set; its `eax` is then the caller's. Otherwise a source goes by SIF DMA
+(0x5000 bytes to `*0x012f4f88`: the record at `0x012f4e00`, id 0, then
+`SqsSifDmaState(1, 1)`), and `a` to the send buffer for `Sqs_CallRpc(4)`.
+Neither caller reads `eax`, so its shim is void.
+
+## VU0 sums and differences (rounds 38, 45)
+
+`rcVu0Sub(a, b, c)` (`0x0091f740`, name ours; from `rcbgPSimAddNail`
+and `rcbgPSimCreate`) and the identical `rcVu0Sub_0092d720` (from
+`0x0092dad0`, `0x0092e020`) compute `a.xyz = b.xyz - c.xyz` through the
+emulated VU0 registers:
+- `b` is copied to `0x00c8f980` and `c` to `0x00c8f970`; both keep the
+  copies afterwards.
+- `Vec3SubScalars` subtracts each component as an `f32` (the original
+  pushes `c`'s four words as its scalar arguments by overwriting the
+  stack words of the two copies' arguments) and restores `vf00`.
+- The register goes to `a`, so `a.w` is `b.w`. The function returns that
+  last word.
+
+Thirteen more copies of the same 95-byte template differ only in the
+step they call (round 45, names ours):
+- `Vec3AddScalars` (`xyz` sums, `vf00` left alone): `rcVu0Add`
+  (`0x0091f650`) and `rcVu0Add_<address>` at `0x00924770`, `0x009285a0`,
+  `0x00928df0`, `0x00929440`, `0x009295e0`, `0x0092f790`.
+- `Vec3SubScalars`: `rcVu0Sub_<address>` at `0x00924860`, `0x00928ee0`,
+  `0x00929300`.
+- `Vec4AddScalars` (all four, no `vf00`): `rcVu0Add4` (`0x00924fc0`),
+  `rcVu0Add4_0092f880`.
+- `Vec4SubScalars` (all four, `vf00` restored): `rcVu0Sub4`
+  (`0x009250d0`).
+
+The 4-component ones leave `a.w = b.w ± c.w`.
+
 ## The map's ID map pages and yiReset (round 37)
 
 - `yiSetIDPage(page)` (`0x0090a4a0`) gives the map file's (`g_YiMapData`,

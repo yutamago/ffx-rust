@@ -25,7 +25,7 @@ pub use ffx_graphic::host::{Conv, Host as FmodHost};
 /// The original functions, over game memory.
 #[allow(clippy::many_single_char_names)] // the originals' arguments
 pub mod bridge {
-    use ffx_bridge::{Global, Mem};
+    use ffx_bridge::{Global, Mem, x87};
 
     use super::{Conv, FMOD_MANAGER, FmodHost, PUSH_COMMAND, REGIST_COMMAND_SYNC};
 
@@ -191,6 +191,43 @@ pub mod bridge {
     pub fn i_fmod_finalize(h: &mut impl FmodHost) -> u32 {
         h.call_sym(FMOD_FINALIZE, Conv::Cdecl, &[]);
         0
+    }
+
+    /// `g_Settings` (0x022fb504): the PC settings block.
+    pub const SETTINGS: Global<u32> = Global::new(0x022f_b504);
+    /// `g_Settings +0x10`: sound off (every volume 0).
+    pub const SETTINGS_MUTE: u32 = 0x10;
+    /// `g_Settings +0x14`, `+0x1c`, `+0x18`, `+0x20`: the volumes of
+    /// commands `0x42`..`0x45`, in that order (0..100; `+0x14` the movies'
+    /// too).
+    pub const SETTINGS_VOLUMES: [u32; 4] = [0x14, 0x1c, 0x18, 0x20];
+    /// The movie player's volume setter (0x006dabf0, cdecl f32 0..1):
+    /// glue, left original.
+    pub const MOVIE_SET_VOLUME: u32 = 0x006d_abf0;
+    /// `iSoundUpdate`'s 100.0 (`.rdata` 0x00b922e0).
+    const D_100: Global<f64> = Global::new(0x00b9_22e0);
+
+    /// `iSoundUpdate()` (0x0067a600): the settings' four volumes (all 0
+    /// when sound is off) to the FMOD thread as commands `0x42`..`0x45`,
+    /// the first also to the movie player as `f32(f32(v) / 100.0)`
+    /// (`fild`, `fstp`, `fdiv qword`, `fstp`). Returns the last command's
+    /// `eax`.
+    pub fn i_sound_update(h: &mut impl FmodHost) -> u32 {
+        let s = SETTINGS.get(h);
+        let mut v = SETTINGS_VOLUMES.map(|o| h.read::<u32>(s + o));
+        if h.read::<u32>(s + SETTINGS_MUTE) != 0 {
+            v = [0; 4];
+        }
+        #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+        let f = v[0].cast_signed() as f32;
+        let r = (x87::Reg::load(f) / x87::Reg::constant(D_100.get(h))).store();
+        h.call_sym(MOVIE_SET_VOLUME, Conv::Cdecl, &[r.to_bits()]);
+        let mut eax = 0;
+        for (cmd, v) in (0x42..).zip(v) {
+            let m = mgr(h);
+            eax = push1(h, m, cmd, v);
+        }
+        eax
     }
 
     /// `iFmodInitialize()` (0x00679fc0) -> 0.

@@ -5553,7 +5553,18 @@ fn x87_call(o: &mut Oracle, slot: u32, a: f64, b: Option<f64>) -> f64 {
     let r = o.call(at, Conv::Cdecl, &w).unwrap();
     let pop = o.rebase(X87_CODE + 0x60);
     o.call(pop, Conv::Cdecl, &[]).unwrap();
-    r.st0.expect("a float result")
+    let v = r.st0.expect("a float result");
+    if !v.is_nan() {
+        return v;
+    }
+    // `st0` makes every NaN the same: the sign and payload from the 80 bits
+    let raw = r.st0_raw.expect("a float result");
+    let mut m = [0; 8];
+    m.copy_from_slice(&raw[..8]);
+    let sign = u64::from(raw[9] >> 7) << 63;
+    f64::from_bits(
+        sign | 0x7ff0_0000_0000_0000 | ((u64::from_le_bytes(m) >> 11) & 0x000f_ffff_ffff_ffff),
+    )
 }
 
 #[test]
@@ -6018,6 +6029,13 @@ fn menu_wrappers_match_the_original() {
             o.write(at, &[0x31, 0xc0, 0xc3]).unwrap();
         }
     }
+    // dbgPrintf (a bare ret on PC) counting its calls: inc dword [n]; ret
+    let n = t.alloc(&[0; 4]);
+    let code = [&[0xff, 0x05][..], &n.to_le_bytes(), &[0xc3]].concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x0062_f500);
+        o.write(at, &code).unwrap();
+    }
     let w = u64::from;
     for round in 0..48u32 {
         t.twin("TkSyncV", 0x0088_7f00, &[], U32, |o| {
@@ -6027,6 +6045,24 @@ fn menu_wrappers_match_the_original() {
         t.put(t.sym(0x0186_a244), copy);
         t.twin("TkMn2DrawInitPacket", 0x008c_0be0, &[], U32, |o| {
             w(tk::tk_mn2_draw_init_packet(o, &mut callback))
+        });
+        // the cursor, its start and the two marks around each other and the
+        // 0x02000000 limit
+        for a in [0x0186_a238u32, 0x0186_a240, 0x0186_a244, 0x0186_a248] {
+            let v = match t.rng.below(4) {
+                0 => 0x01ff_fff0 + t.rng.below(0x20),
+                1 => t.rng.below(0x100),
+                _ => t.rng.next(),
+            };
+            t.put(t.sym(a), v);
+        }
+        if round % 6 == 0 {
+            // one step short of the limit
+            t.put(t.sym(0x0186_a238), 0x01ff_fff0u32);
+        }
+        let clear = t.rng.pick(&[0, 1, 0x100]);
+        t.twin("TkMn2DrawKickPacketBody", 0x008c_0c50, &[clear], U32, |o| {
+            w(tk::tk_mn2_draw_kick_packet_body(o, clear, &mut callback))
         });
         let p = t.rng.next();
         t.twin("TkFree", 0x0088_d520, &[p], U32, |o| {
@@ -6044,6 +6080,35 @@ fn menu_wrappers_match_the_original() {
         }
         t.twin("TkSndUpdateMain", 0x0088_7bd0, &[], U32, |o| {
             w(tk::tk_snd_update_main(o, &mut callback))
+        });
+        // the music queue SndExecMusicClearQue counts down: entries whose
+        // frames stay above 0 or already are at or below (the stop at 0
+        // goes to the sound driver), up to 17
+        let n = t.rng.below(18);
+        t.put(t.sym(0x0133_0068), n);
+        for k in 0..17 {
+            let frames = t.rng.pick(&[0i16, -1, 4, 5, 100, 0x7fff]);
+            let at = t.sym(0x0132_ffe0) + 8 * k;
+            t.put(at + 2, frames);
+        }
+        // the sound sync flag (always 1 on PC; 0 for the other path)
+        let flag = t.rng.below(2);
+        return_const(&mut t, 0x0088_7dd0, flag);
+        t.twin("TkSndUpdate", 0x0088_7b60, &[], U32, |o| {
+            w(tk::tk_snd_update(o, &mut callback))
+        });
+        t.twin("TkSndUpdate2", 0x0088_7b80, &[], U32, |o| {
+            w(tk::tk_snd_update2(o, &mut callback))
+        });
+        return_const(&mut t, 0x0088_7dd0, 1);
+        let counter = t.rng.below(4);
+        t.put(t.sym(0x0133_0200), counter);
+        // what TkSndUpdateMain clears and the sync flag, to see whether it ran
+        t.scramble(0x0132_ff10, 0x18);
+        t.scramble(0x0133_01e4, 4);
+        let last = t.rng.below(4);
+        t.twin("TkSndUpdate3", 0x0088_7ba0, &[last], U32, |o| {
+            w(tk::tk_snd_update3(o, last, &mut callback))
         });
         let n = match round % 3 {
             0 => 0xa000 + t.rng.below(0x24),
@@ -6092,6 +6157,80 @@ fn menu_wrappers_match_the_original() {
             x87_call(&mut t.b, 0x00b0_c3b0, a, Some(b))
         });
         same_float(&format!("Math_Atan2XZ {v:?}"), r.st0, want);
+        // Math_FacingWithin: finite headings (Math_WrapAngle never ends
+        // for an infinity), tolerances around the difference, NaN
+        let heading = if round % 7 == 0 {
+            f32::NAN
+        } else {
+            f32::from(i16::try_from(t.rng.below(4000)).unwrap_or(0) - 2000) / 100.0
+        };
+        let tol = match t.rng.below(6) {
+            0 => f32::NAN,
+            1 => -1.0,
+            2 => 0.0,
+            _ => f32::from(u16::try_from(t.rng.below(400)).unwrap_or(0)) / 100.0,
+        };
+        let q: [f32; 4] = std::array::from_fn(|_| pick(&mut t));
+        let args = [heading, tol, q[0], q[1], q[2], q[3]].map(f32::to_bits);
+        t.twin("Math_FacingWithin", 0x0088_b780, &args, U32, |o| {
+            w(tk::math_facing_within(
+                o,
+                heading,
+                tol,
+                [q[0], q[1]],
+                [q[2], q[3]],
+                &mut |o, a, b| x87_call(o, 0x00b0_c3b0, a, Some(b)),
+            ))
+        });
+        // Math_PolarToVector: finite angles (Math_WrapAngle never ends for
+        // an infinity), around ±π/2 and beyond a turn; NaN
+        let angle = |t: &mut Twins| -> f32 {
+            match t.rng.below(8) {
+                0 => f32::NAN,
+                1 => t.rng.pick(&[
+                    std::f32::consts::FRAC_PI_2,
+                    -std::f32::consts::FRAC_PI_2,
+                    std::f32::consts::PI,
+                ]),
+                _ => f32::from(i16::try_from(t.rng.below(2000)).unwrap_or(0) - 1000) / 100.0,
+            }
+        };
+        let (yaw, pitch) = (angle(&mut t), angle(&mut t));
+        let r = pick(&mut t);
+        let out = t.alloc_random(16);
+        let args = [out, r.to_bits(), yaw.to_bits(), pitch.to_bits()];
+        t.twin("Math_PolarToVector", 0x0088_a3a0, &args, VOID, |o| {
+            tk::math_polar_to_vector(o, out, [r, yaw, pitch], &mut |o, cos, v| {
+                x87_call(o, if cos { 0x00b0_c3b4 } else { 0x00b0_c3b8 }, v, None)
+            });
+            0
+        });
+        // Math_YawPitchTo from and to points sharing axes or not
+        let mut p: [f32; 6] = std::array::from_fn(|_| pick(&mut t));
+        match round % 4 {
+            1 => p[3] = p[0],
+            2 => p[5] = p[2],
+            3 => {
+                let k = t.rng.below(3) as usize;
+                p[k] = f32::INFINITY;
+                p[3 + k] = f32::INFINITY;
+            }
+            _ => {}
+        }
+        let (yaw, pitch) = (t.alloc_random(4), t.alloc_random(4));
+        let pitch = if round % 8 == 0 { yaw } else { pitch };
+        let mut args = vec![yaw, pitch];
+        args.extend(p.map(f32::to_bits));
+        t.twin("Math_YawPitchTo", 0x0088_b4d0, &args, U32, |o| {
+            w(tk::math_yaw_pitch_to(
+                o,
+                yaw,
+                pitch,
+                [p[0], p[1], p[2]],
+                [p[3], p[4], p[5]],
+                &mut |o, a, b| x87_call(o, 0x00b0_c3b0, a, Some(b)),
+            ))
+        });
     }
     eprintln!("{} calls", t.calls);
 }
@@ -6231,6 +6370,17 @@ fn menu_selectors_match_the_original() {
         t.twin("MenuItem_CursorTable", 0x008c_4ff0, &[], U32, |o| {
             w(tk::menu_item_cursor_table(o, &mut callback))
         });
+        // the table as the image has it, or cut short at a random entry
+        if round % 4 == 3 {
+            let f = t.sym(0x008c_4ff0);
+            let table = callback(&mut t.b, f, &[]);
+            let k = t.rng.below(6);
+            let v = u16::try_from(t.rng.below(3)).unwrap_or(0);
+            t.put(table + 4 * k, v);
+        }
+        t.twin("MenuItem_CursorCount", 0x008c_5030, &[], U32, |o| {
+            w(tk::menu_item_cursor_count(o, &mut callback))
+        });
         t.twin("MenuItem_CellTable", 0x008c_4f80, &[], U32, |o| {
             w(tk::menu_item_cell_table(o, &mut callback))
         });
@@ -6287,6 +6437,13 @@ fn menu_selectors_match_the_original() {
                 w(tk::menu_name_entry_regist_window(o, &mut callback))
             });
         }
+        if round % 8 == 4 {
+            let index = t.rng.pick(&[0u32, 1, 2, 3, 4, 5, 6]);
+            let args = [t.rng.next(), index, t.rng.next(), t.rng.next()];
+            t.twin("MenuStatus_OpenWindow", 0x008d_3140, &args, U32, |o| {
+                w(tk::menu_status_open_window(o, args, &mut callback))
+            });
+        }
     }
     eprintln!("{} calls", t.calls);
 }
@@ -6326,6 +6483,35 @@ fn menu_weapon_prices_match_the_original() {
         });
         t.twin("MenuShop_WeaponSellPrice", 0x008d_9410, &[e], U32, |o| {
             u64::from(tk::menu_shop_weapon_sell_price(o, e, &mut callback))
+        });
+        // what the shop compares the prices with: the gil (MsGetGIL) and
+        // the count held (MsGetSaveItemNum), constants around the edges
+        let gil = match t.rng.below(3) {
+            0 => t.rng.next(),
+            _ => t.rng.below(0x400),
+        };
+        return_const(&mut t, 0x0078_4e80, gil);
+        let held = t.rng.pick(&[0u32, 98, 99, 100, 0xffff_ffff]);
+        return_const(&mut t, 0x0079_04b0, held);
+        let open = t.rng.pick(&[0u32, 1, 0x100]);
+        t.put(t.sym(0x0186_ab14), open);
+        if round % 4 == 1 {
+            // exactly the price
+            let f = t.sym(0x008d_9370);
+            let price = callback(&mut t.b, f, &[e]);
+            return_const(&mut t, 0x0078_4e80, price);
+        }
+        t.twin("MenuWShop_CanAfford", 0x008d_85d0, &[e], U32, |o| {
+            u64::from(tk::menu_wshop_can_afford(o, e, &mut callback))
+        });
+        let id = t.rng.next();
+        if round % 4 == 3 {
+            let f = t.sym(0x008d_b3b0);
+            let price = callback(&mut t.b, f, &[id]);
+            return_const(&mut t, 0x0078_4e80, price);
+        }
+        t.twin("MenuShop_CanBuy", 0x008d_ab30, &[id], U32, |o| {
+            u64::from(tk::menu_shop_can_buy(o, id, &mut callback))
         });
     }
     eprintln!("{} calls", t.calls);
@@ -6635,6 +6821,548 @@ fn tk_menu_list_window_ctrl_matches_the_original() {
             tk::tk_menu_list_window_ctrl(o, w, &mut callback);
             0
         });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_item_keys_match_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_5390) else {
+        return;
+    };
+    for round in 0..400u32 {
+        // a key string of tokens of each shape (kind 4's second byte on
+        // both sides of 0x2f; 6..=0x2f with an argument; lone bytes)
+        let mut keys = Vec::new();
+        for _ in 0..t.rng.below(6) {
+            match t.rng.below(4) {
+                0 => {
+                    let c = u8::try_from(t.rng.below(0x40)).unwrap_or(0).max(1);
+                    keys.extend([4, c]);
+                    if c <= 0x2f || t.rng.below(4) == 0 {
+                        keys.push(u8::try_from(1 + t.rng.below(0xff)).unwrap_or(1));
+                    }
+                }
+                1 => {
+                    let any = u8::try_from(6 + t.rng.below(0x2a)).unwrap_or(6);
+                    let b = t.rng.pick(&[6, 0x2f, any]);
+                    keys.extend([b, u8::try_from(1 + t.rng.below(0xff)).unwrap_or(1)]);
+                }
+                _ => keys.push(t.rng.pick(&[1u8, 2, 3, 5, 0x30, 0x31, 0x80, 0xff])),
+            }
+        }
+        keys.push(0);
+        let keys = t.alloc(&keys);
+        // the entries Menu_ParseItemKeys makes of it, sometimes from
+        // another string or with one byte changed
+        let parsed = if round % 4 == 0 {
+            let mut other: Vec<u8> = (0..t.rng.below(6))
+                .map(|_| t.rng.pick(&[1u8, 4, 6, 0x10, 0x30, 0x40]))
+                .collect();
+            other.push(0);
+            t.alloc(&other)
+        } else {
+            keys
+        };
+        let f = t.sym(0x008c_5280);
+        for o in [&mut t.a, &mut t.b] {
+            o.call(f, Conv::Cdecl, &[parsed]).unwrap();
+        }
+        if round % 2 == 1 {
+            // mostly in the first entries, where the tokens are
+            let k = t.rng.below(if round % 4 == 1 { 0xc } else { 0x20 });
+            let v = u8::try_from(t.rng.below(4)).unwrap_or(0);
+            t.put(t.sym(tk::ITEM_KEYS) + k, v);
+        }
+        t.a.clear_dirty();
+        t.b.clear_dirty();
+        // TOMenuGetNameMes: the string (or an empty one)
+        let s = if round % 16 == 0 { t.alloc(&[0]) } else { keys };
+        return_const(&mut t, 0x008b_edd0, s);
+        let target = t.rng.below(0x14).wrapping_sub(2);
+        t.twin("MenuItem_KeysMatch", 0x008c_5390, &[target], U32, |o| {
+            u64::from(tk::menu_item_keys_match(
+                o,
+                target.cast_signed(),
+                &mut callback,
+            ))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round18_windows_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_9140) else {
+        return;
+    };
+    // the windows come from the 32 slots: a dozen calls at most
+    for round in 0..6u32 {
+        // the item and key-item counts (TOAmapGetItemListMax,
+        // TkMenuGetImportantCounter), odd, even and negative
+        let n = t
+            .rng
+            .pick(&[0u32, 1, 2, 7, 0xffff_ffff, 0xffff_fffe, 0x2_0001]);
+        return_const(&mut t, 0x008c_8c30, n);
+        return_const(&mut t, 0x008c_8a10, n.wrapping_add(1));
+        t.scramble(0x0186_a3ac, 4);
+        let kind = if round < 4 { round } else { t.rng.next() };
+        t.twin("MenuItem_OpenListWindow", 0x008c_9140, &[kind], U32, |o| {
+            u64::from(tk::menu_item_open_list_window(o, kind, &mut callback))
+        });
+        let chr = t.rng.below(0x14);
+        t.scramble(0x023c_c3bc, 0x10);
+        t.twin(
+            "MenuNameEntry_OpenCharWindow",
+            0x008c_43f0,
+            &[chr],
+            U32,
+            |o| u64::from(tk::menu_name_entry_open_char_window(o, chr, &mut callback)),
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round18_checks_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_6a70) else {
+        return;
+    };
+    // Msg_CloseWindow recorded; the message status and the control work
+    // stand-ins
+    record_n(&mut t, 0x0086_40f0, 1, 0);
+    let ctrl = t.alloc_random(4);
+    return_const(&mut t, 0x0086_aff0, ctrl);
+    for round in 0..200u32 {
+        // HP and MP around their maxima, some negative
+        let chr = t.rng.below(0x12);
+        let ply = ffx_battle::save::bridge::ms_get_save_player_ptr(&t.b, chr);
+        let base = t.rng.below(1000);
+        for o in [0x1cu32, 0x20, 0x24, 0x28] {
+            let v = match t.rng.below(4) {
+                0 => t.rng.next(),
+                _ => base + t.rng.below(3),
+            };
+            t.put(ply + o, v);
+        }
+        let kind = if round % 8 == 7 {
+            t.rng.next()
+        } else {
+            t.rng.below(5)
+        };
+        let all = t.rng.next();
+        t.twin(
+            "MenuItem_TargetNeedsRecovery",
+            0x008c_6a70,
+            &[kind, all, chr],
+            U32,
+            |o| u64::from(tk::menu_item_target_needs_recovery(o, kind, chr)),
+        );
+        // Msg_PollClose over the window bank's states
+        let bank = u8::try_from(t.rng.below(2)).unwrap_or(0);
+        t.put(t.sym(0x0132_6b82), bank);
+        let i = t.rng.pick(&[0u32, 1, 3, 7, 8, 0xffff_ffff]);
+        let f = t.sym(0x0086_be90);
+        let window = callback(&mut t.b, f, &[i]);
+        let state = t.rng.pick(&[0u16, 1, 2, 2, 3, 4, 5, 0x102]);
+        t.put(window + 0x14, state);
+        let status = t.rng.pick(&[3u32, 3, 2, 0x103]);
+        return_const(&mut t, 0x008b_7ca0, status);
+        let bits = u8::try_from(t.rng.below(0x100)).unwrap_or(0);
+        t.put(ctrl, bits);
+        t.twin("Msg_PollClose", 0x0086_0aa0, &[i], U32, |o| {
+            u64::from(tk::msg_poll_close(o, i, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_summon_grow_info_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_d320) else {
+        return;
+    };
+    // MenuSummon_GrowEntry: a random entry; the descriptors' gain
+    // functions: a recorder (in the body of an unused debug function)
+    // returning a value set per case
+    let entry = t.alloc_random(8);
+    return_const(&mut t, 0x008c_ecf0, entry);
+    let out = t.alloc_random(8);
+    record_n(&mut t, 0x0088_fd50, 2, 0);
+    for _ in 0..300u32 {
+        let stat = t.rng.below(14).wrapping_sub(2);
+        let chr = t.rng.below(0x12);
+        let ply = ffx_battle::save::bridge::ms_get_save_player_ptr(&t.b, chr);
+        let rec = t.rng.bytes(0x94);
+        t.put_bytes(ply, &rec);
+        // the descriptor read (stat < 10, signed; 9 for the others)
+        let k = if stat.cast_signed() < 10 { stat } else { 9 };
+        let desc = t.sym(0x00c5_a608).wrapping_add(0x1c_u32.wrapping_mul(k));
+        // the limit near the maximum the descriptor reads
+        let max = tk::menu_summon_get_stat(&t.b, ply, desc, 1);
+        let limit = match t.rng.below(4) {
+            0 => t.rng.next(),
+            _ => max.wrapping_add(t.rng.below(3)).wrapping_sub(1),
+        };
+        t.put(desc + 0x14, limit);
+        let gain = t
+            .rng
+            .pick(&[0u32, 1, 50, 99, 100, 0xffff_ffff, 0x8000_0000]);
+        // record_n's `mov eax, ret` immediate: 6 + 7 × 2 + 7 + 1 bytes in
+        let f = t.sym(0x0088_fd50);
+        t.put(f + 28, gain);
+        t.put(desc + 0x18, f);
+        let r = t.rng.bytes(4);
+        t.put_bytes(entry, &r);
+        let args = [stat, chr, out, out + 4];
+        t.twin("MenuSummon_GrowInfo", 0x008c_d320, &args, U32, |o| {
+            u64::from(tk::menu_summon_grow_info(
+                o,
+                stat.cast_signed(),
+                chr,
+                [out, out + 4],
+                &mut callback,
+            ))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_name_entry_load_layout_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_5050) else {
+        return;
+    };
+    // the plate and sequence lookups recorded, each into its own log
+    record_n(&mut t, 0x008c_1a60, 6, 0x11);
+    record_n(&mut t, 0x008c_2b10, 1, 0x22);
+    record_n(&mut t, 0x008c_2ad0, 1, 0x33);
+    record_n(&mut t, 0x008c_2b50, 2, 0x44);
+    record_n(&mut t, 0x008c_2b90, 2, 0x55);
+    for _ in 0..4 {
+        t.scramble(0x0186_a300, 0x80);
+        t.twin("MenuNameEntry_LoadLayout", 0x008c_5050, &[], U32, |o| {
+            u64::from(tk::menu_name_entry_load_layout(o, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_summon_draw_face_slide_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_34a0) else {
+        return;
+    };
+    // TkMn2DrawCrossCharFace and TkMn2SetFontShade recorded
+    record_n(&mut t, 0x008c_0250, 5, 0x66);
+    record_n(&mut t, 0x008c_2c30, 4, 0x77);
+    let pick = |t: &mut Twins| -> u32 {
+        match t.rng.below(8) {
+            0 => f32::NAN.to_bits(),
+            1 => t.rng.next() & 0xffbf_ffff | 0x0040_0000, // no signalling NaNs
+            _ => (f32::from(i16::try_from(t.rng.below(2000)).unwrap_or(0) - 1000) / 4.0).to_bits(),
+        }
+    };
+    for round in 0..300u32 {
+        // the read-end flag
+        let flag = t.rng.pick(&[0u32, 1, 0x100]);
+        return_const(&mut t, 0x008a_8e50, flag);
+        let step = match t.rng.below(3) {
+            0 => t.rng.next(),
+            _ => t.rng.below(0x200),
+        };
+        t.put(t.sym(0x0186_a9ec), step);
+        t.scramble(0x023c_c458, 0x24);
+        let xywh: [u32; 4] = std::array::from_fn(|_| pick(&mut t));
+        let slide = match round % 4 {
+            0 => 0,
+            1 => t.rng.next(),
+            _ => t.rng.below(0x2000).wrapping_sub(0x1000),
+        };
+        let cur = t.rng.below(12);
+        let next = t.rng.below(12);
+        let args = [xywh[0], xywh[1], xywh[2], xywh[3], slide, cur, next];
+        t.twin("MenuSummon_DrawFaceSlide", 0x008d_34a0, &args, U32, |o| {
+            u64::from(tk::menu_summon_draw_face_slide(
+                o,
+                xywh,
+                slide.cast_signed(),
+                [cur, next],
+                &mut callback,
+            ))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn math_segments_cross_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_9bb0) else {
+        return;
+    };
+    // points on a small grid (so collinear and touching cases come up),
+    // sometimes anywhere, NaN or infinite
+    let coord = |t: &mut Twins| -> f32 {
+        match t.rng.below(16) {
+            0 => f32::NAN,
+            1 => f32::INFINITY,
+            2 => f32::from(i16::try_from(t.rng.below(2000)).unwrap_or(0) - 1000) / 7.0,
+            _ => f32::from(i8::try_from(t.rng.below(7)).unwrap_or(0) - 3),
+        }
+    };
+    for round in 0..3000u32 {
+        let mut pts = [0u32; 4];
+        for p in &mut pts {
+            let v: Vec<u8> = [
+                coord(&mut t),
+                f32::from_bits(t.rng.next() & 0x7fbf_ffff), // y, never read
+                coord(&mut t),
+            ]
+            .iter()
+            .flat_map(|f| f.to_le_bytes())
+            .collect();
+            *p = t.alloc(&v);
+        }
+        if round % 5 == 0 {
+            // a shared end point
+            let k = t.rng.below(2) as usize;
+            pts[2 + k] = pts[t.rng.below(2) as usize];
+        }
+        t.twin("Math_SegmentsCross", 0x0088_9bb0, &pts, U32, |o| {
+            u64::from(tk::math_segments_cross(o, pts).cast_unsigned())
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_summon_build_command_list_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_2b40) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    // TkMenuGetCommandMax and TkMenuGetCommandOffset: a word per group
+    // (`mov eax, [esp + 0x10]; mov eax, [eax*4 + table]; ret`);
+    // MsGetSaveCommand: a byte per id's low 6 bits
+    let max = t.alloc(&[0; 32]);
+    let off = t.alloc(&[0; 32]);
+    let has = t.alloc(&[0; 64]);
+    for (f, table) in [(0x008d_2d80u32, max), (0x008d_2dc0, off)] {
+        let code = [
+            &[0x8b, 0x44, 0x24, 0x10, 0x8b, 0x04, 0x85][..],
+            &table.to_le_bytes(),
+            &[0xc3],
+        ]
+        .concat();
+        for o in [&mut t.a, &mut t.b] {
+            let at = o.rebase(f);
+            o.write(at, &code).unwrap();
+        }
+    }
+    #[rustfmt::skip]
+    let code = [
+        &[0x8b, 0x44, 0x24, 0x08, 0x83, 0xe0, 0x3f, 0x0f, 0xb6, 0x80][..], &has.to_le_bytes(), &[0xc3],
+    ]
+    .concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x0078_5020);
+        o.write(at, &code).unwrap();
+    }
+    for round in 0..300u32 {
+        let list = t.alloc_random(0x100);
+        return_const(&mut t, 0x0079_0200, list);
+        for g in 0..8u32 {
+            let n = match t.rng.below(6) {
+                0 => t.rng.pick(&[0u32, 0xffff_ffff]),
+                1 => 8 + t.rng.below(8),
+                _ => t.rng.below(5),
+            };
+            t.put(max + 4 * g, n);
+            let o = t.rng.below(0x30);
+            t.put(off + 4 * g, o);
+        }
+        let mut bits = t.rng.bytes(64);
+        if round % 3 == 0 {
+            for b in &mut bits {
+                *b &= 1;
+            }
+        }
+        t.put_bytes(has, &bits);
+        t.scramble(0x0186_aa04, 0x28);
+        let chr = t.rng.below(0x20);
+        t.twin(
+            "MenuSummon_BuildCommandList",
+            0x008d_2b40,
+            &[chr],
+            U32,
+            |o| {
+                u64::from(tk::menu_summon_build_command_list(
+                    o,
+                    chr,
+                    local,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round18_small_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_0cc0) else {
+        return;
+    };
+    // SndSqsIopFrame and SndStatusUpdate (the sound driver): xor eax, eax;
+    // ret; the packet builder 0x008f1b50, the sync-callback setters and
+    // AbmapQuarterOrOne recorded
+    for o in [&mut t.a, &mut t.b] {
+        for f in [0x0088_7310, 0x0088_7700] {
+            let at = o.rebase(f);
+            o.write(at, &[0x31, 0xc0, 0xc3]).unwrap();
+        }
+    }
+    // 0x008f1b50 logging the draw cursor it finds and its four arguments
+    let log = t.alloc(&[0; 20]);
+    let mut code = vec![0xa1];
+    code.extend(t.sym(0x0186_a238).to_le_bytes()); // mov eax, [g_TkMn2DrawY]
+    code.push(0xa3);
+    code.extend(log.to_le_bytes()); // mov [log], eax
+    for k in 1..5u8 {
+        code.extend([0x8b, 0x44, 0x24, 4 * k]); // mov eax, [esp + 4k]
+        code.push(0xa3);
+        code.extend((log + 4 * u32::from(k)).to_le_bytes()); // mov [log + 4k], eax
+    }
+    code.push(0xb8);
+    code.extend(0x0123_4560u32.to_le_bytes());
+    code.push(0xc3);
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x008f_1b50);
+        o.write(at, &code).unwrap();
+    }
+    record_n(&mut t, 0x0088_7e80, 1, 0x74);
+    let rec = t.alloc_random(8);
+    record_n(&mut t, 0x008c_1af0, 2, rec);
+    record_n(&mut t, 0x0088_8620, 1, 0x71);
+    record_n(&mut t, 0x0088_8790, 2, 0x72);
+    record_n(&mut t, 0x00a5_cee0, 2, 0x73);
+    let w = u64::from;
+    for round in 0..200u32 {
+        for a in [0x0186_a238u32, 0x0186_a240, 0x0186_a244, 0x0186_a248] {
+            let v = match t.rng.below(4) {
+                0 => 0x01ff_fff0 + t.rng.below(0x20),
+                _ => t.rng.next(),
+            };
+            t.put(t.sym(a), v);
+        }
+        t.twin("TkMn2DrawKickSyncPacket", 0x008c_0cc0, &[], U32, |o| {
+            w(tk::tk_mn2_draw_kick_sync_packet(o, 1, &mut callback))
+        });
+        // the scissor TkMn2DrawScissorClear would set
+        t.scramble(0x0187_16d0, 0x40);
+        t.twin("TkMn2DrawKickSyncPacket2", 0x008c_0cd0, &[], U32, |o| {
+            w(tk::tk_mn2_draw_kick_sync_packet(o, 0, &mut callback))
+        });
+        let args = [t.rng.next(), t.rng.next(), t.rng.below(12)];
+        t.twin("MenuMn2_EmitPacket", 0x008c_11b0, &args, U32, |o| {
+            w(tk::menu_mn2_emit_packet(o, args, &mut callback))
+        });
+        for a in [
+            0x0132_ff10u32,
+            0x0132_ff14,
+            0x0132_ff18,
+            0x0132_ff1c,
+            0x0132_ff20,
+            0x0132_ff24,
+        ] {
+            let v = if t.rng.below(3) == 0 { t.rng.next() } else { 0 };
+            t.put(t.sym(a), v);
+        }
+        t.twin("TkSndIsRead", 0x0088_6600, &[], U32, |o| {
+            w(tk::tk_snd_is_read(o, &mut callback))
+        });
+        let (id, f) = (t.rng.next(), t.rng.next());
+        t.twin("TkSetSyncVCallback", 0x0088_7ed0, &[id, f], U32, |o| {
+            w(tk::tk_set_sync_v_callback(o, id, f, &mut callback))
+        });
+        let n = t
+            .rng
+            .pick(&[0u32, 1, 2, 0xffff_ffff, 0x8000_0000, 0x7fff_ffff]);
+        t.put(t.sym(0x0133_01e0), n);
+        t.twin("TkSyncVEI", 0x0088_7f40, &[], U32, |o| {
+            w(tk::tk_sync_v_ei(o, &mut callback))
+        });
+        // MenuShop_SellPrice over a stand-in record
+        let r = t.rng.bytes(8);
+        t.put_bytes(rec, &r);
+        t.scramble(0x0186_ac20, 0x10);
+        let id = if round % 2 == 0 {
+            t.rng.below(0x2000)
+        } else {
+            t.rng.next()
+        };
+        t.twin("MenuShop_SellPrice", 0x008d_b400, &[id], U32, |o| {
+            w(tk::menu_shop_sell_price(o, id, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round18_batch7_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_56f0) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let w = u64::from;
+    for round in 0..64u32 {
+        // TkMenuStopScene over a stand-in MenuScene_ResetGroup entry (or none)
+        let e = if round % 4 == 0 { 0 } else { t.alloc_random(8) };
+        record_n(&mut t, 0x00a7_ba70, 3, e);
+        let (scene, group) = (t.rng.next(), t.rng.next());
+        t.twin("TkMenuStopScene", 0x00a7_c8a0, &[scene, group], U32, |o| {
+            w(tk::tk_menu_stop_scene(o, scene, group, &mut callback))
+        });
+        // MenuKaizou_WeaponByte4: the list and a stand-in weapon record
+        let list = t.alloc_random(0x100);
+        t.put(t.sym(0x0186_aa38), list);
+        let mut rec = t.rng.bytes(8);
+        if round % 2 == 0 {
+            rec[2] = 0;
+        }
+        let rec = t.alloc(&rec);
+        record_n(&mut t, 0x007a_bbd0, 1, rec);
+        let win = t.alloc_random(0x60);
+        let k = i16::try_from(t.rng.below(0x60)).unwrap_or(0) - 0x10;
+        t.put(win + 0x48, k);
+        t.twin("MenuKaizou_WeaponByte4", 0x008d_56f0, &[win], U32, |o| {
+            w(tk::menu_kaizou_weapon_byte4(o, win, local, &mut callback))
+        });
+        // MenuMain_BusyMask: the mask, the CD read and the callback queue
+        let mask = if round % 2 == 0 { 0 } else { t.rng.next() };
+        t.put(t.sym(tk::MENU_MAIN_ACTIVE_MASK.sym), mask);
+        let cd = t.rng.pick(&[0u32, 1, 0x100]);
+        return_const(&mut t, 0x0088_d1c0, cd);
+        let que = t.rng.pick(&[0u32, 1, 2, 0x101]);
+        return_const(&mut t, 0x0087_5180, que);
+        t.twin("MenuMain_BusyMask", 0x008a_a610, &[], U32, |o| {
+            w(tk::menu_main_busy_mask(o, &mut callback))
+        });
+        if round % 8 == 0 {
+            t.twin("MenuWShop_OpenSubWindow4", 0x008d_83e0, &[], U32, |o| {
+                w(tk::menu_wshop_open_sub_window4(o, &mut callback))
+            });
+        }
     }
     eprintln!("{} calls", t.calls);
 }

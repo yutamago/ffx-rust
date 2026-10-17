@@ -145,6 +145,36 @@ pub const SQS_RPC_FLAGS: Global<u32> = Global::new(0x012f_4e74);
 /// Set while a reply history update is pending (`SqsReportStandby` reads
 /// it, without effect).
 pub const SQS_REPLY_PENDING: Global<u32> = Global::new(0x012f_4f44);
+/// Bit 0: report a full command queue (`dbgPrintf`) before sending it.
+pub const SQS_DEBUG_FLAGS: Global<u32> = Global::new(0x012f_4148);
+/// The end of the command queue's space: a command that would pass it
+/// sends the queue first.
+pub const SQS_CMD_LIMIT: u32 = 0x012f_4e00;
+/// The full-queue message (`.rdata`).
+pub const SQS_CMD_FULL_MESSAGE: u32 = 0x00b5_8d28;
+/// The play mode `SqsSetPlayMode` keeps (0..2).
+pub const SQS_PLAY_MODE: Global<u32> = Global::new(0x012f_4144);
+/// Non-zero: `SqsInitWaveInfo` does nothing.
+pub const SQS_WAVE_INFO_DONE: Global<u32> = Global::new(0x012f_4140);
+/// The IOP address `SqsInitWaveInfo` sends the wave info to.
+pub const SQS_WAVE_INFO_DST: Global<u32> = Global::new(0x012f_4f88);
+/// The straight stream's id (`SqsStraightStreamingStart` sends it).
+pub const SQS_STRAIGHT_STREAM: Global<u32> = Global::new(0x012f_4e70);
+/// The wave ids `SqsSeSeparateDataSend` loads (256 `u32`).
+pub const SQS_SEP_WAVES: u32 = 0x012f_b3c0;
+/// `SqsSeSeparateDataSend`'s messages (`.rdata`): the size error's format
+/// and prefix, the red and reset escapes and the overflow text.
+pub const SQS_SEP_SIZE_FORMAT: u32 = 0x00b5_8e08;
+/// See [`SQS_SEP_SIZE_FORMAT`].
+pub const SQS_SEP_SIZE_PREFIX: u32 = 0x00b5_8df4;
+/// See [`SQS_SEP_SIZE_FORMAT`].
+pub const SQS_SEP_RED: u32 = 0x00b1_f84c;
+/// See [`SQS_SEP_SIZE_FORMAT`].
+pub const SQS_SEP_RESET: u32 = 0x00b1_f854;
+/// See [`SQS_SEP_SIZE_FORMAT`].
+pub const SQS_SEP_TOO_MANY: u32 = 0x00b5_8dbc;
+/// MSVCR110's `fflush` import slot.
+pub const CRT_FFLUSH: u32 = 0x00b0_c3bc;
 /// What `SqsIopCommandSend` returns.
 pub const SQS_IOP_RESULT: Global<u32> = Global::new(0x012f_4150);
 /// The last SE handle `SqsSePlay`/`SqsSeForcePlay` gave (never 0).
@@ -881,5 +911,260 @@ pub mod bridge {
     ) -> u32 {
         let r = send_string(mem, path, 2, call);
         if r == 0 { 0 } else { mem.read::<u32>(r) }
+    }
+
+    // ---- field round 39: the IOP command builders ----
+
+    /// Appends the 32-byte command `cmd` to the queue (`0x00c4946c`); a
+    /// command that would pass `0x012f4e00` sends the queue first, with a
+    /// `dbgPrintf` when bit 0 of `0x012f4148` is set. Returns the `eax`
+    /// this leaves: the send's result, else the old end plus 0x20.
+    fn push_command<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        cmd: [u32; 8],
+        call: &mut C,
+    ) -> u32 {
+        let mut at = super::SQS_CMD_NEXT.get(mem);
+        let mut eax = at.wrapping_add(0x20);
+        if eax > mem.rebase(super::SQS_CMD_LIMIT) {
+            if super::SQS_DEBUG_FLAGS.get(mem) & 1 != 0 {
+                let f = mem.rebase(super::DBG_PRINTF);
+                let msg = mem.rebase(super::SQS_CMD_FULL_MESSAGE);
+                call(mem, f, &[msg]);
+            }
+            eax = sqs_iop_command_send(mem, call);
+            at = super::SQS_CMD_NEXT.get(mem);
+        }
+        mem.write(at, cmd);
+        super::SQS_CMD_NEXT.set(mem, at.wrapping_add(0x20));
+        eax
+    }
+
+    /// `(op, a, b, c)` padded with zeros to a command.
+    const fn cmd(op: u32, a: u32, b: u32, c: u32) -> [u32; 8] {
+        [op, a, b, c, 0, 0, 0, 0]
+    }
+
+    /// The one-argument command builders that return their argument:
+    /// `SqsSetCycleMode(a)` (`0x0081e900`, op 4), `SqsSetReverbPlaySwitch`
+    /// (`0x0081ec20`, op `0xc`), `SqsSetStraightStreamAreaSize`
+    /// (`0x0081ef50`, op 5).
+    pub fn sqs_cmd_arg<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        op: u32,
+        a: u32,
+        call: &mut C,
+    ) -> u32 {
+        push_command(mem, cmd(op, a, 0, 0), call);
+        a
+    }
+
+    /// `SqsAllVoiceTerminate()` (`0x0081ce70`): command 0.
+    pub fn sqs_all_voice_terminate<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        push_command(mem, cmd(0, 0, 0, 0), call)
+    }
+
+    /// `SqsMusicDataRead(a)` (`0x0081d820`): a standby request
+    /// ([`sqs_report_standby`]), command `(0x15, a)`, then the queue sent
+    /// (a tail call to `SqsIopCommandSend`, whose result it returns).
+    pub fn sqs_music_data_read<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        a: u32,
+        call: &mut C,
+    ) -> u32 {
+        sqs_report_standby(mem, call);
+        push_command(mem, cmd(0x15, a, 0, 0), call);
+        sqs_iop_command_send(mem, call)
+    }
+
+    /// `SqsSetPlayMode(mode)` (`0x0081ea00`): modes 3 and up (signed)
+    /// become 0; kept in `0x012f4144` and sent as `(3, mode)`.
+    pub fn sqs_set_play_mode<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        mode: u32,
+        call: &mut C,
+    ) -> u32 {
+        let v = if mode.cast_signed() >= 3 { 0 } else { mode };
+        super::SQS_PLAY_MODE.set(mem, v);
+        push_command(mem, cmd(3, v, 0, 0), call)
+    }
+
+    /// `SqsShoutStreamingStart(a)` (`0x0081ee20`): `(0x37, a, 0x40,
+    /// 0x7f)`, then `0x012f4f84` and the shout flag `0x012f4e94` 1.
+    /// Returns `a`.
+    pub fn sqs_shout_streaming_start<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        a: u32,
+        call: &mut C,
+    ) -> u32 {
+        push_command(mem, cmd(0x37, a, 0x40, 0x7f), call);
+        let h = mem.rebase(super::SQS_REPLY_HISTORY);
+        mem.write(h + 0x3c, 1u32);
+        super::SHOUT_SKIPPED.set(mem, 1);
+        a
+    }
+
+    /// `SqsStraightStreamingStart()` (`0x0081f6c0`): `(0x38, id)` with the
+    /// stream id `0x012f4e70` (read before a send), then `0x012f4e90` 0,
+    /// `0x012f4edc` 1, `0x012f4ef8` 0.
+    pub fn sqs_straight_streaming_start<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let id = super::SQS_STRAIGHT_STREAM.get(mem);
+        let r = push_command(mem, cmd(0x38, id, 0, 0), call);
+        for (at, v) in [(0x012f_4e90, 0u32), (0x012f_4edc, 1), (0x012f_4ef8, 0)] {
+            let a = mem.rebase(at);
+            mem.write(a, v);
+        }
+        r
+    }
+
+    /// `SqsStraightStreamingStop()` (`0x0081f770`): `(0x33, 0)`, then
+    /// `0x012f4efc` 3 and `0x012f4edc` 0.
+    pub fn sqs_straight_streaming_stop<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let r = push_command(mem, cmd(0x33, 0, 0, 0), call);
+        for (at, v) in [(0x012f_4efc, 3u32), (0x012f_4edc, 0)] {
+            let a = mem.rebase(at);
+            mem.write(a, v);
+        }
+        r
+    }
+
+    /// `SqsStraightStreamingVolumeDirect(v)` (`0x0081f800`): `(0x3e, v &
+    /// 0x7f)`.
+    pub fn sqs_straight_streaming_volume_direct<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        v: u32,
+        call: &mut C,
+    ) -> u32 {
+        push_command(mem, cmd(0x3e, v & 0x7f, 0, 0), call)
+    }
+
+    /// `SqsStraightStreamingVolumeTranslate(frames, v)` (`0x0081f880`):
+    /// `(0x3f, frames, v & 0x7f)`; returns `frames`.
+    pub fn sqs_straight_streaming_volume_translate<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        frames: u32,
+        v: u32,
+        call: &mut C,
+    ) -> u32 {
+        push_command(mem, cmd(0x3f, frames, v & 0x7f, 0), call);
+        frames
+    }
+
+    /// `SqsInitWaveInfo(src, _, a)` (`0x0081d3f0`): nothing once
+    /// `0x012f4140` is set (the caller's `eax` comes back). Else a source
+    /// sends 0x5000 bytes by SIF DMA to `*0x012f4f88` (the record at
+    /// `0x012f4e00`, id 0, then `SqsSifDmaState(1, 1)`; the `FlushCache(0)`
+    /// before is a bare `ret`), and `a` goes to the send buffer for
+    /// `Sqs_CallRpc(4)`. No caller reads `eax`.
+    pub fn sqs_init_wave_info<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        src: u32,
+        a: u32,
+        call: &mut C,
+    ) {
+        if super::SQS_WAVE_INFO_DONE.get(mem) != 0 {
+            return;
+        }
+        if src != 0 {
+            let dst = super::SQS_WAVE_INFO_DST.get(mem);
+            let r = mem.rebase(super::SIF_DMA);
+            mem.write(r, [src, dst, 0x5000, 0]);
+            super::SIF_DMA_ID.set(mem, 0);
+            sqs_sif_dma_state(mem, 1, call);
+        }
+        let buf = super::SQS_RPC_SEND.get(mem);
+        mem.write(buf, a);
+        sqs_call_rpc(mem, 4, call);
+    }
+
+    // ---- field round 40: separate SE wave data ----
+
+    /// `SqsSeSeparateDataSend(data, size)` (`0x0081e600`): collects the
+    /// wave ids of the chunks in `data` and loads each.
+    /// - A size outside `1..=0x10000` only reports (`dbgPrintf`, a bare
+    ///   `ret`, when bit 0 of `0x012f4148` is set) and returns `size - 1`.
+    /// - While more than 16 bytes are left, a chunk must start with the
+    ///   words `0x65536553`, `0x20202070` and have a positive multiple of 4
+    ///   at `+0xc` (its length); its `u16` id at `+0x11` joins the list at
+    ///   `0x012fb3c0` unless already there (256 at most; reaching 256
+    ///   prints "Too many wave datat..." in red to stderr and flushes it).
+    /// - Each listed id goes to `iSfxLoadData(id, 0)`, then the queue is
+    ///   sent (a tail call to `SqsIopCommandSend`, whose result it returns).
+    pub fn sqs_se_separate_data_send<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        data: u32,
+        size: u32,
+        call: &mut C,
+    ) -> u32 {
+        if size.wrapping_sub(1) > 0xffff {
+            if super::SQS_DEBUG_FLAGS.get(mem) & 1 != 0 {
+                let f = mem.rebase(super::DBG_PRINTF);
+                let fmt = mem.rebase(super::SQS_SEP_SIZE_FORMAT);
+                let pre = mem.rebase(super::SQS_SEP_SIZE_PREFIX);
+                call(mem, f, &[fmt, pre, size]);
+            }
+            return size.wrapping_sub(1);
+        }
+        let table = mem.rebase(super::SQS_SEP_WAVES);
+        let (mut p, mut left, mut n) = (data, size, 0u32);
+        while left > 0x10 {
+            let [magic, tag, _, len] = mem.read::<[u32; 4]>(p);
+            if magic != 0x6553_6553 || tag != 0x2020_2070 || len.cast_signed() <= 0 || len & 3 != 0
+            {
+                break;
+            }
+            let id = u32::from(mem.read::<u8>(p.wrapping_add(0x12))) << 8
+                | u32::from(mem.read::<u8>(p.wrapping_add(0x11)));
+            let known = (0..n).any(|i| mem.read::<u32>(table + 4 * i) == id);
+            if !known && n < 0x100 {
+                mem.write(table + 4 * n, id);
+                n += 1;
+                if n >= 0x100 {
+                    for msg in [
+                        super::SQS_SEP_RED,
+                        super::SQS_SEP_TOO_MANY,
+                        super::SQS_SEP_RESET,
+                    ] {
+                        print_error(mem, msg, call);
+                    }
+                    let iob = mem.read::<u32>(mem.rebase(crate::yi::CRT_IOB_FUNC));
+                    let fflush = mem.read::<u32>(mem.rebase(super::CRT_FFLUSH));
+                    let stderr = call(mem, iob, &[]).wrapping_add(0x40);
+                    call(mem, fflush, &[stderr]);
+                }
+            }
+            left = left.wrapping_sub(len);
+            p = p.wrapping_add(len);
+        }
+        for i in 0..n {
+            let id = mem.read::<u32>(table + 4 * i);
+            glue(mem, super::I_SFX_LOAD_DATA, &[id, 0], call);
+        }
+        sqs_iop_command_send(mem, call)
+    }
+
+    /// `SndStandbyShoutStream(data)` (`0x0081e3b0`): for a length at
+    /// `+0xc` in `1..=0x10000` (signed), `iSfxLoadData(i16 +8, 0)`, whose
+    /// result it returns; else the length (left in `eax`).
+    pub fn snd_standby_shout_stream<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        data: u32,
+        call: &mut C,
+    ) -> u32 {
+        let len = mem.read::<i32>(data.wrapping_add(0xc));
+        if len <= 0 || len > 0x1_0000 {
+            return len.cast_unsigned();
+        }
+        let id = i32::from(mem.read::<i16>(data.wrapping_add(8))).cast_unsigned();
+        glue(mem, super::I_SFX_LOAD_DATA, &[id, 0], call)
     }
 }
