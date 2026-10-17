@@ -5215,4 +5215,248 @@ pub mod bridge {
             page += 1;
         }
     }
+
+    /// `0x00776110(&result)`: one step of the help/menu screen's cursor.
+    /// `*result` 0 nothing, 1 moved, 2 an entry chosen.
+    ///
+    /// With a request pending (`0x0112a038` 1) the request is handed over
+    /// (`TOMenuHelpSetExtMode(kind, value)`, banner prints through
+    /// `dbgPrintf`, `0x0112a060` = 1 on screen 0xb for kind 1 else 0,
+    /// `TOMenuTermHelp()`); any request state then becomes 2 with the pad
+    /// words cleared. Otherwise the pressed direction (as in
+    /// [`menu_cursor_blocked`]) is followed to its target record: a failed
+    /// condition plays the record's `+0xf8` sound and the scan goes on; a
+    /// passed one moves the cursor there (sounds `+0xf6` for a page change,
+    /// `+0xf0` within the page, unless one already played), resets the
+    /// records on a page change, copies the target's value pairs, clears
+    /// the pad words and reports 1. Without a move, an entry of kind 1
+    /// (`+0xfb`, pad 0x40) or 2 (pad 0x20) is chosen when its condition
+    /// (`+0x100`, `+0x102`, expected `+0xfc`) passes: the request kind
+    /// (`+0xfa`) and value (the value table entry `+0xfe`, unless -1) are
+    /// posted with its sound (`+0xf2` / `+0xf4`), and `0x0112a05c` is
+    /// cleared (kind 1) or set (kind 2) on screen 0xb; a failed kind-1
+    /// condition plays `+0xf8` and clears `0x0112a05c` there. Calls go
+    /// through `call`, conditions through `cond(function, argument)`.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::many_single_char_names
+    )]
+    pub fn menu_cursor_step<M: Mem>(
+        mem: &mut M,
+        result: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut cond: impl FnMut(&mut M, u32, u32) -> u32,
+    ) {
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        let word = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        let old_page = word(mem, 0x0112_a088);
+        let state_at = g(mem, 0x0112_a038);
+        let state: u8 = mem.read(state_at);
+        mem.write(result, 0u32);
+        let clear_pads = |mem: &mut M| {
+            for a in [0x0112_a090u32, 0x0112_a08c, 0x0112_a094] {
+                mem.write(mem.rebase(a), 0u16);
+            }
+        };
+        let sound = |mem: &mut M,
+                     call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+                     rec: u32,
+                     off: u32|
+         -> bool {
+            let s: i16 = mem.read(rec.wrapping_add(off));
+            if s == 0 {
+                return false;
+            }
+            call(
+                mem,
+                0x0088_6e80,
+                &[i32::from(s).cast_unsigned() | 0x8000_0000],
+            );
+            true
+        };
+        let screen_b = |mem: &M| word(mem, 0x00c4_16c0) == 0xb;
+        if state != 0 {
+            if state == 1 {
+                let (kind, value) = (word(mem, 0x0112_a058), word(mem, 0x0112_a054));
+                call(mem, 0x008b_ef10, &[kind, value]);
+                let (line, gap, args) = (
+                    g(mem, 0x00b5_30dc),
+                    g(mem, 0x00b5_30f8),
+                    g(mem, 0x00b5_3114),
+                );
+                call(mem, 0x0062_f500, &[line]);
+                call(mem, 0x0062_f500, &[line]);
+                call(mem, 0x0062_f500, &[gap]);
+                let (kind, value) = (word(mem, 0x0112_a058), word(mem, 0x0112_a054));
+                call(mem, 0x0062_f500, &[args, kind, value]);
+                call(mem, 0x0062_f500, &[gap]);
+                call(mem, 0x0062_f500, &[line]);
+                call(mem, 0x0062_f500, &[line]);
+                let flag = u32::from(screen_b(mem) && word(mem, 0x0112_a058) == 1);
+                mem.write(g(mem, 0x0112_a060), flag);
+                call(mem, 0x008b_f0b0, &[]);
+            }
+            mem.write(state_at, 2u8);
+            clear_pads(mem);
+            return;
+        }
+        if word(mem, 0x0112_a01c) == 0 || word(mem, 0x0112_a084) == 0 {
+            return;
+        }
+        let cur = word(mem, 0x0112_a084);
+        let last_at = g(mem, 0x0112_a08c);
+        let pad_at = match mem.read::<u8>(cur.wrapping_add(2)) {
+            0 => Some(0x0112_a090),
+            1 => Some(0x0112_a08c),
+            2 => Some(0x0112_a094),
+            _ => None,
+        };
+        let bits = pad_at.map_or(0, |a| u32::from(mem.read::<u16>(g(mem, a))));
+        let mut dir = -1i32;
+        if bits != 0 {
+            for (bit, d) in [
+                (0x1000u32, 0),
+                (0x4000, 1),
+                (0x2000, 3),
+                (0x8000, 2),
+                (0x80, 5),
+                (0x10, 6),
+                (0x40, 7),
+                (0x20, 4),
+            ] {
+                if bits & bit != 0 {
+                    dir = d;
+                    mem.write(last_at, bit as u16);
+                }
+            }
+        }
+        if dir >= 0 {
+            let link = (dir * 0xc).cast_unsigned();
+            let target = mem
+                .read::<u32>(cur.wrapping_add(link + 0x38))
+                .wrapping_add(word(mem, 0x0112_a03c));
+            let mut played = false;
+            if target != 0 {
+                let mut page = 0u32;
+                let any = word(mem, 0x0112_a080).cast_signed() > 0;
+                while page.cast_signed() < word(mem, 0x0112_a080).cast_signed() {
+                    let entry = word(mem, 0x0112_a01c).wrapping_add(page * 8);
+                    let n = i32::from(mem.read::<i16>(entry.wrapping_add(4)));
+                    let mut rec = mem.read::<u32>(entry).wrapping_add(word(mem, 0x0112_a03c));
+                    for _ in 0..n.max(0) {
+                        if rec == target {
+                            let cur = word(mem, 0x0112_a084);
+                            let c = i32::from(mem.read::<i16>(cur.wrapping_add(link + 0x30)));
+                            let passed = if c < 0 {
+                                true
+                            } else {
+                                let arg = i32::from(mem.read::<i16>(cur.wrapping_add(link + 0x32)))
+                                    .cast_unsigned();
+                                let f: u32 = mem.read(
+                                    word(mem, 0x00c4_16d0).wrapping_add((c * 4).cast_unsigned()),
+                                );
+                                let r = cond(mem, f, arg);
+                                let cur = word(mem, 0x0112_a084);
+                                (r != 0) != (mem.read::<u8>(cur.wrapping_add(link + 0x34)) != 0)
+                            };
+                            if passed {
+                                let cur = word(mem, 0x0112_a084);
+                                let mut once = played;
+                                if !once && page != old_page {
+                                    once = sound(mem, &mut call, cur, 0xf6);
+                                }
+                                let cur = word(mem, 0x0112_a084);
+                                if !once && page == old_page {
+                                    sound(mem, &mut call, cur, 0xf0);
+                                }
+                                mem.write(g(mem, 0x0112_a084), target);
+                                mem.write(g(mem, 0x0112_a088), page);
+                                if page != old_page {
+                                    call(mem, 0x0077_4740, &[]);
+                                }
+                                let rel = page.wrapping_sub(word(mem, 0x0112_a03c));
+                                mem.write(g(mem, 0x0112_a0a0), rel);
+                                let count = mem.read::<u16>(rec.wrapping_add(0x1c));
+                                if count != 0 {
+                                    let start = i32::from(mem.read::<i16>(rec.wrapping_add(0x1e)));
+                                    let mut pair = word(mem, 0x0112_a028)
+                                        .wrapping_add(start.wrapping_mul(8).cast_unsigned());
+                                    let values = word(mem, 0x0112_a0a4);
+                                    let mut j = 0u32;
+                                    while j < u32::from(mem.read::<u16>(rec.wrapping_add(0x1c))) {
+                                        let k: u32 = mem.read(pair);
+                                        let v: u32 = mem.read(pair.wrapping_add(4));
+                                        mem.write(values.wrapping_add(k.wrapping_mul(4)), v);
+                                        j += 1;
+                                        pair = pair.wrapping_add(8);
+                                    }
+                                }
+                                clear_pads(mem);
+                                mem.write(result, 1u32);
+                                return;
+                            }
+                            let cur = word(mem, 0x0112_a084);
+                            if sound(mem, &mut call, cur, 0xf8) {
+                                played = true;
+                            }
+                        }
+                        rec = rec.wrapping_add(0x138);
+                    }
+                    page += 1;
+                }
+                if any && mem.read::<u8>(state_at) != 0 {
+                    return;
+                }
+            }
+        }
+        let cur = word(mem, 0x0112_a084);
+        let last = u32::from(mem.read::<u16>(last_at));
+        let kind = mem.read::<i8>(cur.wrapping_add(0xfb));
+        let need = match kind {
+            1 => 0x40,
+            2 => 0x20,
+            _ => return,
+        };
+        if last & need == 0 {
+            return;
+        }
+        let c = i32::from(mem.read::<i16>(cur.wrapping_add(0x100)));
+        let passed = if c < 0 {
+            true
+        } else {
+            let arg = i32::from(mem.read::<i16>(cur.wrapping_add(0x102))).cast_unsigned();
+            let f: u32 = mem.read(word(mem, 0x00c4_16d0).wrapping_add((c * 4).cast_unsigned()));
+            let r = cond(mem, f, arg);
+            let cur = word(mem, 0x0112_a084);
+            (r != 0) != (mem.read::<u8>(cur.wrapping_add(0xfc)) != 0)
+        };
+        let cur = word(mem, 0x0112_a084);
+        if passed {
+            let k = i32::from(mem.read::<i8>(cur.wrapping_add(0xfa))).cast_unsigned();
+            mem.write(g(mem, 0x0112_a058), k);
+            mem.write(g(mem, 0x0112_a054), 0u32);
+            let vi: i16 = mem.read(cur.wrapping_add(0xfe));
+            if vi != -1 {
+                let v: u32 = mem
+                    .read(word(mem, 0x0112_a0a4).wrapping_add((i32::from(vi) * 4).cast_unsigned()));
+                mem.write(g(mem, 0x0112_a054), v);
+            }
+            sound(mem, &mut call, cur, if kind == 1 { 0xf2 } else { 0xf4 });
+            mem.write(state_at, 1u8);
+            mem.write(result, 2u32);
+            if screen_b(mem) {
+                mem.write(g(mem, 0x0112_a05c), u32::from(kind == 2));
+            }
+        } else {
+            sound(mem, &mut call, cur, 0xf8);
+            if kind == 1 {
+                if screen_b(mem) {
+                    mem.write(g(mem, 0x0112_a05c), 0u32);
+                }
+            } else if screen_b(mem) {
+                mem.write(g(mem, 0x0112_a05c), 1u32);
+            }
+        }
+    }
 }

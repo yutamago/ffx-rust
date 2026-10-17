@@ -10949,6 +10949,205 @@ fn round19_cursor(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     }
 }
 
+/// `0x00776110` over logging stand-ins for the sound, print, help and
+/// reset calls and two condition functions.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round19_step(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x800);
+    let cursor = alloc(a, b, 4);
+    // logs [esp+4] and [esp+8]
+    let mut two = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x54, 0x24, 0x08, 0x8b, 0x0d];
+    two.extend_from_slice(&cursor.to_le_bytes());
+    two.extend_from_slice(&[0x89, 0x01, 0x89, 0x51, 0x04, 0x83, 0x05]);
+    two.extend_from_slice(&cursor.to_le_bytes());
+    two.extend_from_slice(&[0x08, 0xc3]);
+    // logs a fixed word
+    let marker = |value: u32| {
+        let mut v = vec![0x8b, 0x0d];
+        v.extend_from_slice(&cursor.to_le_bytes());
+        v.extend_from_slice(&[0xc7, 0x01]);
+        v.extend_from_slice(&value.to_le_bytes());
+        v.extend_from_slice(&[0x83, 0x05]);
+        v.extend_from_slice(&cursor.to_le_bytes());
+        v.extend_from_slice(&[0x04, 0xc3]);
+        v
+    };
+    let s = stand_in8(a, b, 0x40, &logger(cursor, 0x1900_1000));
+    redirect(a, b, 0x0088_6e80, s);
+    let s = stand_in8(a, b, 0x80, &logger(cursor, 0x1900_2000));
+    redirect(a, b, 0x0062_f500, s);
+    let s = stand_in8(a, b, 0xc0, &two);
+    redirect(a, b, 0x008b_ef10, s);
+    let s = stand_in8(a, b, 0x100, &marker(0x1900_3000));
+    redirect(a, b, 0x008b_f0b0, s);
+    let s = stand_in8(a, b, 0x140, &marker(0x1900_4000));
+    redirect(a, b, 0x0077_4740, s);
+    let c0 = stand_in8(
+        a,
+        b,
+        0x180,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x01, 0xc3],
+    );
+    let c1 = stand_in8(
+        a,
+        b,
+        0x1c0,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x02, 0xc3],
+    );
+    let table = alloc(a, b, 8);
+    put(a, b, table, [c0, c1]);
+    set(a, b, Global::<u32>::new(0x00c4_16d0), table);
+    let pages = alloc(a, b, 8 * 8);
+    let records = alloc(a, b, 8 * 8 * 0x138);
+    let pairs = alloc(a, b, 16 * 8);
+    let values = alloc(a, b, 0x40 * 4);
+    let out = alloc(a, b, 4);
+    let base = records - 0x40;
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..500u32 {
+        put(a, b, cursor, log);
+        put(a, b, out, rng.next());
+        let bytes: Vec<u8> = (0..8 * 8 * 0x138).map(|_| rng.next() as u8).collect();
+        a.write(records, &bytes).unwrap();
+        b.write(records, &bytes).unwrap();
+        for r in 0..64u32 {
+            let rec = records + 0x138 * r;
+            put(
+                a,
+                b,
+                rec + 0x1c,
+                [(rng.next() % 4) as u16, (rng.next() % 8) as u16],
+            );
+            for off in [0xf0u32, 0xf2, 0xf4, 0xf6, 0xf8] {
+                let v = if rng.next().is_multiple_of(2) {
+                    0
+                } else {
+                    rng.next() as u16
+                };
+                put(a, b, rec + off, v);
+            }
+            put(a, b, rec + 0xfb, (rng.next() % 4) as u8);
+            put(a, b, rec + 0xfc, (rng.next() % 2) as u8);
+            let vi = if rng.next().is_multiple_of(4) {
+                0xffff
+            } else {
+                (rng.next() % 0x40) as u16
+            };
+            let c = if rng.next().is_multiple_of(4) {
+                0xffff
+            } else {
+                (rng.next() % 2) as u16
+            };
+            put(a, b, rec + 0xfe, [vi, c, rng.next() as u16]);
+        }
+        for i in 0..16u32 {
+            put(a, b, pairs + 8 * i, [rng.next() % 0x40, rng.next()]);
+        }
+        set(a, b, Global::<u32>::new(0x0112_a028), pairs);
+        set(a, b, Global::<u32>::new(0x0112_a0a4), values);
+        let npages = rng.next() % 8 + u32::from(k % 11 != 0);
+        for p in 0..8u32 {
+            put(a, b, pages + 8 * p, 0x40 + p * 8 * 0x138);
+            put(a, b, pages + 8 * p + 4, (rng.next() % 9) as u16);
+        }
+        set(
+            a,
+            b,
+            Global::<u32>::new(0x0112_a01c),
+            if k % 17 == 0 { 0 } else { pages },
+        );
+        set(a, b, Global::<u32>::new(0x0112_a03c), base);
+        set(a, b, Global::<u32>::new(0x0112_a080), npages);
+        let state = if rng.next().is_multiple_of(5) {
+            (rng.next() % 3) as u8
+        } else {
+            0
+        };
+        put(a, b, g(a, 0x0112_a038), state);
+        set(a, b, Global::<u32>::new(0x0112_a058), rng.next() % 3);
+        set(a, b, Global::<u32>::new(0x0112_a054), rng.next());
+        set(a, b, Global::<u32>::new(0x0112_a05c), rng.next());
+        set(a, b, Global::<u32>::new(0x0112_a060), rng.next());
+        set(
+            a,
+            b,
+            Global::<u32>::new(0x0112_a088),
+            base + 0x40 + (rng.next() % 3) * 8 * 0x138,
+        );
+        set(
+            a,
+            b,
+            Global::<u32>::new(0x00c4_16c0),
+            [5u32, 0xb, 8][(rng.next() % 3) as usize],
+        );
+        let cur = records + 0x138 * (rng.next() % 64);
+        set(
+            a,
+            b,
+            Global::<u32>::new(0x0112_a084),
+            if k % 19 == 0 { 0 } else { cur },
+        );
+        put(a, b, cur + 2, (rng.next() % 4) as u8);
+        for d in 0..8u32 {
+            let link = cur + 0x30 + 0xc * d;
+            let cond = if rng.next().is_multiple_of(5) {
+                0xffff
+            } else {
+                (rng.next() % 2) as u16
+            };
+            put(a, b, link, [cond, rng.next() as u16]);
+            put(a, b, link + 4, (rng.next() % 2) as u8);
+            let p = rng.next() % 8;
+            let r = rng.next() % 8;
+            let target = match rng.next() % 4 {
+                0 => 0x40 + r * 0x138,
+                1 => 0x40 + p * 8 * 0x138 + r * 0x138,
+                2 => base.wrapping_neg(),
+                _ => rng.next(),
+            };
+            put(a, b, link + 8, target);
+        }
+        let bits = [
+            0x1000u16, 0x4000, 0x2000, 0x8000, 0x80, 0x10, 0x40, 0x20, 0, 0x60,
+        ];
+        for at in [0x0112_a08cu32, 0x0112_a090, 0x0112_a094] {
+            put(
+                a,
+                b,
+                g(a, at),
+                bits[(rng.next() % 10) as usize] | bits[(rng.next() % 10) as usize],
+            );
+        }
+        eax(a, 0x0077_6110, &[out]);
+        t::menu_cursor_step(b, out, call, |m, f, arg| {
+            m.call(f, Conv::Cdecl, &[arg]).unwrap().eax
+        });
+        same_memory("menu cursor step", a, b);
+    }
+}
+
+#[test]
+fn round19_step_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round19_step(&mut a, &mut b, &mut Xorshift(0x4019_0031));
+}
+
+#[test]
+fn round19_step_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round19_step(&mut a, &mut b, &mut Xorshift(0x4019_0032));
+}
+
 #[test]
 fn round19_cursor_matches_the_original_synthetic() {
     let Some((mut a, mut b)) = synthetic() else {

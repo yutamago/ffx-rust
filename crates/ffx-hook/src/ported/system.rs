@@ -5730,6 +5730,10 @@ ported! {
     MenuCursorBlocked_00775530 @ 0x0077_5530 => extern "C" fn menu_cursor_blocked() {
         tolib::bridge::menu_cursor_blocked(&mut mem(), |m, f, arg| call_ptr(m, f, &[arg]));
     }
+    /// `MenuCursorStep_00776110(&result)`.
+    MenuCursorStep_00776110 @ 0x0077_6110 => extern "C" fn menu_cursor_step(result: u32) {
+        tolib::bridge::menu_cursor_step(&mut mem(), result, call_sym, |m, f, arg| call_ptr(m, f, &[arg]));
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

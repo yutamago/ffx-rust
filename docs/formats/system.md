@@ -411,7 +411,7 @@ thiscall delegate glue: each stub loads a bound object (`+0xc`) and
 function (`+0x10`) from `this` and calls or jumps through them. It is
 classed logic only by default.
 
-## Menu record helpers (`0x00775820..0x007767d0`)
+## Menu record helpers (`0x00775530..0x007767d0`)
 
 The help and menu screens keep their entries in pages of 0x138-byte
 records. The page table is at `*0x0112a01c`: 8 bytes per page, an offset
@@ -426,6 +426,17 @@ current page and record are in `0x0112a088` and `0x0112a084`.
   screen 0xb's pages 13 and 14: it moves some records and unlinks others.
 - `0x00775820` gives the texture size of a menu picture for screens 5 and
   0xb.
+- `0x00776110` is one step of the list's cursor. A pending request
+  (`0x0112a038` = 1) is handed to `TOMenuHelpSetExtMode` and
+  `TOMenuTermHelp`, and the state becomes 2. Otherwise the pressed
+  direction is followed through the record's 12-byte link (at
+  `+0x30 + 12 × direction`) to its target. The move is allowed when the
+  link has no condition, or when the condition's result differs from the
+  link's flag. A move makes the target current and plays `+0xf6` on a page
+  change or `+0xf0` within the page; a refused move plays `+0xf8`.
+  Without a move, an entry of kind `+0xfb` 1 (pad 0x40) or 2 (pad 0x20)
+  posts a request: its kind `+0xfa` goes to `0x0112a058` and the value
+  `+0xfe` (an index into the value table) goes to `0x0112a054`.
 
 `0x00775330` builds a GS packet (GIF tags, `TEX0`/`TEX1`), so it is
 skipped.
