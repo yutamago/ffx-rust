@@ -435,3 +435,25 @@ ancestors lose their damping byte (`+0x144`), as does every bone whose
 parent has none. Each model entry gets `Chr_ModelEntry`, a weight of 1.0 at
 `+0x14`, and `+0x194` bit 21 when its `+0x18` is set. Then
 `Ch_ModelCreatePacket` builds the packet.
+
+## The envelope (round 9, `crates/ffx-sg/src/envelope.rs`)
+
+The skinning code transforms a bone's vertex lists by its matrix
+(`cdc_Mul3x4`) into the model's vertex buffer (16 bytes per vertex), in
+thousandths with w 1.0. Three lists follow each other: rigid vertices,
+first weighted vertices (they set), further weighted vertices (they add).
+
+- `sg_calcenvelopeW_asm_opt(lists, out, m)` (`0x006ee270`), float form. Each
+  list is a `u32` count, then entries: rigid `f32 x, y, z, u32 index`
+  (16 bytes); weighted `f32 x, y, z, weight, u32 index` (20 bytes). The
+  added w is `w + 0.0`.
+- `sg_calcenvelope_asm_opt(lists, out, m)` (`0x006eee40`), packed form.
+  The rigid list is a `u16` count and 2 bytes, then 8-byte entries (`i16 x,
+  y, z` / 1000, `u16 index`). Weighted vertices come in groups: a `u16`
+  count (`0xffff` ends the list), a `u16` base, then 8-byte entries (`i16
+  x, y, z`, `u8` weight / 255, `u8` index + base x 256). The further
+  weighted groups start 2 bytes after the first list's terminator, and
+  they set w to 1.0.
+
+Products are stored as `f32` at each step (vertex x weight, then x
+1000).
