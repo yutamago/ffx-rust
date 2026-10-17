@@ -9137,3 +9137,143 @@ fn round15_forwarders_match_the_original_on_the_snapshot() {
     };
     round15_forwarders(&mut a, &mut b, &mut Xorshift(0x4015_0042));
 }
+
+/// Round 15's map-message flag, visit counters, collected bits, block
+/// clear and font width by language, over stand-ins.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round15_counters(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x100);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x20);
+    let block = alloc(a, b, 0x400);
+    let s = stand_in8(a, b, 0x1180, &logger(cursor, 0x1500_1100));
+    redirect(a, b, 0x0082_2380, s);
+    // MsGetSaveMenu: returns cells; 0x007851b0: [cells + 4]; 0x008b3630: block
+    let mut v = vec![0xb8];
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x11a0, &v);
+    redirect(a, b, 0x0078_5290, s);
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&(cells + 4).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x11b0, &v);
+    redirect(a, b, 0x0078_51b0, s);
+    let mut v = vec![0xb8];
+    v.extend_from_slice(&block.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x11c0, &v);
+    redirect(a, b, 0x008b_3630, s);
+    // TOGetFFXLang: [cells + 8]; TOGetFontWidth: logs its table, returns it ^ key
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&(cells + 8).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x11d0, &v);
+    redirect(a, b, 0x0064_10e0, s);
+    let mut v = vec![0x8b, 0x44, 0x24, 0x10, 0x35];
+    v.extend_from_slice(&0x1500_1200u32.to_le_bytes());
+    v.extend_from_slice(&[0xa3]);
+    v.extend_from_slice(&(cells + 0xc).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x11e0, &v);
+    redirect(a, b, 0x008b_9330, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let maps = [0xa2u32, 0x11, 0x8a, 0x99, 0x76, 0xf5, 0x12, 0];
+    for k in 0..400u32 {
+        put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            cells,
+            [
+                rng.next() & 0x200,
+                rng.next() & 1,
+                [0u32, 9, 10, 1, 5][(rng.next() % 5) as usize],
+            ],
+        );
+        put(
+            a,
+            b,
+            a.rebase(0x00c5_9558),
+            [0u32, 1, u32::MAX, 7][(rng.next() % 4) as usize],
+        );
+        set(a, b, t::CURRENT_MAP, maps[(rng.next() % 8) as usize]);
+        let id = [0u32, 1, 2, 3, 4, 5, 7, 0x17, 0x24, 0x3b][(rng.next() % 10) as usize];
+        assert_eq!(
+            eax(a, 0x008a_f6a0, &[id]),
+            t::check_map_message(b, id, call)
+        );
+        put(
+            a,
+            b,
+            a.rebase(0x00c5_a03c),
+            [1u8, 0, 0xff][(rng.next() % 3) as usize],
+        );
+        let map: u32 = Mem::read(a, a.rebase(0x00c3_347c));
+        put(
+            a,
+            b,
+            a.rebase(0x0133_0844),
+            if rng.next() & 1 == 0 { map } else { rng.next() },
+        );
+        put(
+            a,
+            b,
+            a.rebase(0x0186_63e4),
+            [0x39u32, 0x3a, u32::MAX, 3][(rng.next() % 4) as usize],
+        );
+        eax(a, 0x008b_5680, &[]);
+        t::count_map_visits(b, call);
+        let n = [u32::MAX, 0, 5, 0x19, 0x1a, 0xff, 0x100][(rng.next() % 7) as usize];
+        put(
+            a,
+            b,
+            a.rebase(0x0113_07a0),
+            if k % 3 == 0 {
+                0x03ff_ffff ^ (1 << (rng.next() % 26))
+            } else {
+                rng.next()
+            },
+        );
+        eax(a, 0x0090_6b30, &[n]);
+        t::collect_bit(b, n, call);
+        if k % 20 == 0 {
+            let bytes: Vec<u8> = (0..0x400).map(|_| rng.next() as u8).collect();
+            a.write(block, &bytes).unwrap();
+            b.write(block, &bytes).unwrap();
+            eax(a, 0x008b_3610, &[]);
+            t::clear_block_159e468(b, call);
+        }
+        let (text, kind, out) = (rng.next(), rng.next(), rng.next());
+        assert_eq!(
+            eax(a, 0x008b_7c00, &[text, kind, out, rng.next()]),
+            t::font_width_for_lang(
+                b,
+                |m| eax(m, 0x0064_10e0, &[]),
+                |m, table| { eax(m, 0x008b_9330, &[text, kind, out, table]) }
+            )
+        );
+        same_memory("counters", a, b);
+    }
+}
+
+#[test]
+fn round15_counters_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round15_counters(&mut a, &mut b, &mut Xorshift(0x4015_0051));
+}
+
+#[test]
+fn round15_counters_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round15_counters(&mut a, &mut b, &mut Xorshift(0x4015_0052));
+}

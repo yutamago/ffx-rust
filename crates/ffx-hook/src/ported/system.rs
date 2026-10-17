@@ -4542,7 +4542,11 @@ ported! {
     }
     /// `TOGetFontWidthForLang(text, kind, out, _)`.
     TOGetFontWidthForLang @ 0x008b_7c00 => extern "C" fn to_get_font_width_for_lang(text: u32, kind: u32, out: u32) -> u32 {
-        tolib::bridge::font_width_for_lang(&mut mem(), text, kind, out, &mut GameMenu)
+        tolib::bridge::font_width_for_lang(
+            &mut mem(),
+            |m| instance::bridge::ffx_lang(m, &mut phyre_printf),
+            |m, table| tolib::bridge::font_width(m, text, kind, out, table, &mut GameMenu),
+        )
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {

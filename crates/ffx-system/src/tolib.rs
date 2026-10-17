@@ -3498,7 +3498,6 @@ pub mod bridge {
         call(mem, 0x007a_bdf0, &[id])
     }
 
-
     /// `0x008af6a0(id)`: the flag `0x00c59558` set to 1 when `id` is listed
     /// for the current map in the table at `0x00b5f730` (0x20-byte entries:
     /// map, then ids up to -1; a map of 0 ends it, and the first entry's map
@@ -3580,7 +3579,11 @@ pub mod bridge {
     /// -1 clears them; 0..=0x19 sets bit `n` and unlocks achievement 1, and
     /// achievement 0x1c once all 26 are set; 0xff sets all and unlocks
     /// 0x1c (`achievementUnlockAchievement`, through `call`).
-    pub fn collect_bit<M: Mem>(mem: &mut M, n: u32, mut call: impl FnMut(&mut M, u32, &[u32]) -> u32) {
+    pub fn collect_bit<M: Mem>(
+        mem: &mut M,
+        n: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
         let bits = mem.rebase(0x0113_07a0);
         if n == u32::MAX {
             mem.write(bits, 0u32);
@@ -3599,22 +3602,28 @@ pub mod bridge {
 
     /// `0x008b3610()`: the 0x400 bytes at `0x008b3630()` (through `call`)
     /// cleared.
-    pub fn clear_block_159e468<M: Mem>(mem: &mut M, mut call: impl FnMut(&mut M, u32, &[u32]) -> u32) {
+    pub fn clear_block_159e468<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
         let at = call(mem, 0x008b_3630, &[]);
         mem.write_bytes(at, &[0u8; 0x400]);
     }
 
     /// `0x008b7c00(text, kind, out, _)`: `TOGetFontWidth(text, kind, out,
-    /// table)` with table 0 for languages 0, 9 and 10 (Japanese, Korean,
-    /// Chinese) and 4 otherwise (`TOGetFFXLang` asked up to three times).
+    /// table)` (`width(table)`, passed in) with table 0 for languages 0, 9
+    /// and 10 (Japanese, Korean, Chinese) and 4 otherwise (`TOGetFFXLang`,
+    /// `lang`, asked up to three times).
     pub fn font_width_for_lang<M: Mem>(
         mem: &mut M,
-        text: u32,
-        kind: u32,
-        out: u32,
-        k: &mut impl FontWidth<M>,
+        mut lang: impl FnMut(&mut M) -> u32,
+        width: impl FnOnce(&mut M, u32) -> u32,
     ) -> u32 {
-        let table = if k.lang(mem) == 0 || k.lang(mem) == 9 || k.lang(mem) == 0xa { 0 } else { 4 };
-        font_width(mem, text, kind, out, table, k)
+        let table = if lang(mem) == 0 || lang(mem) == 9 || lang(mem) == 0xa {
+            0
+        } else {
+            4
+        };
+        width(mem, table)
     }
 }
