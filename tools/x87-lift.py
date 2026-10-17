@@ -17,7 +17,9 @@ function:
       "fpu": ["f64::from(h)", "img32(mem, 0x00b5_4f84)"],
       "calls": {"0x903ee0": 11, "0x641060": 0},
       "st0_calls": {"0x6447e0": "remap(mem, false, {0})"},
-      "eax_calls": ["0x641060"]
+      "eax_calls": ["0x641060"],
+      "stops": ["0x8f42fa"],
+      "regs": {"edi": "colour"}
     }
 
 - `entries`: the start addresses to lift, keyed by the match-arm label
@@ -28,6 +30,10 @@ function:
 - `calls`: the argument count of every called function; `st0_calls` give a
   Rust template (`{0}` is the first argument, an f32) for functions that
   return in ST0, and `eax_calls` those whose eax is tested afterwards.
+- `stops` (optional): addresses where lifting ends, such as the join point
+  after a branch, so a long function can be lifted one section at a time
+  (each section an entry) instead of duplicating every tail.
+- `regs` (optional): Rust names of other registers pushed as arguments.
 
 The output models the x87 at the game's 53-bit precision: register values
 are `f64` expressions, `fst/fstp dword` stores round to `f32` (`let vN`),
@@ -42,8 +48,8 @@ example (TODrawMenuPlateXYWHType).
 
 Supported: fld/fst/fstp (dword/qword memory, st(i)), fldz, fld1,
 fadd/fsub/fsubr/fmul/fdiv/fdivr (memory or st(i) into st0), fxch, fcomp +
-fnstsw + test ah,0x41 + je/jne, push imm/ecx/esi, sub/add esp, call,
-cmp esi/test eax + je/jne, jmp, pop/mov epilogues and ret. Anything else
+fnstsw + test ah,0x41 + je/jne, push imm/ecx/esi (and `regs`), sub/add esp, call,
+cmp esi/test esi/test eax + je/jne, jmp, pop/mov epilogues and ret. Anything else
 stops with an error naming the instruction.
 """
 
@@ -62,6 +68,8 @@ nxt = {order[i]: order[i+1] for i in range(len(order)-1)}
 ARITY = {int(k, 16): v for k, v in cfg.get('calls', {}).items()}
 ST0 = {int(k, 16): v for k, v in cfg.get('st0_calls', {}).items()}
 EAX = {int(k, 16) for k in cfg.get('eax_calls', [])}
+STOPS = {int(k, 16) for k in cfg.get('stops', [])}
+REGS = cfg.get('regs', {})
 def hx(v): 
     s = f'{v:08x}'; return f'0x{s[:4]}_{s[4:]}'
 class St:
@@ -122,6 +130,7 @@ def arg(st, off):
 OPS = {'fadd': '{a} + {b}', 'fsub': '{a} - {b}', 'fsubr': '{b} - {a}', 'fmul': '{a} * {b}', 'fdiv': '{a} / {b}', 'fdivr': '{b} / {a}'}
 def run(a, st, out, ind):
     while True:
+        if a in STOPS: return
         m, op = ins[a]
         n = nxt.get(a)
         if m == 'fld':
@@ -160,6 +169,7 @@ def run(a, st, out, ind):
                 st.stack[st.esp] = ('u32', hx(int(op, 0) & 0xffffffff))
             elif op == 'ecx': st.stack.pop(st.esp, None)
             elif op in ('esi',): st.stack[st.esp] = ('u32', st.esi)
+            elif op in REGS: st.stack[st.esp] = ('u32', REGS[op])
             else: raise Exception(f'push {op}')
         elif m == 'sub' and op.startswith('esp'):
             k = int(op.split(',')[1], 0)
@@ -181,6 +191,8 @@ def run(a, st, out, ind):
                     out.append(f'{ind}call(mem, {hx(t)}, &[{args}]);')
         elif m == 'cmp' and op.startswith('esi'):
             st.cmp = ('esi', int(op.split(',')[1], 0))
+        elif m == 'test' and op == 'esi, esi':
+            st.cmp = ('esi', 0)
         elif m == 'test' and op == 'eax, eax':
             st.cmp = ('eax',)
         elif m == 'fcomp':
@@ -212,7 +224,8 @@ def run(a, st, out, ind):
             return
         elif m == 'jmp':
             n = int(op, 16)
-        elif m in ('pop', 'mov') and op in ('esi', 'ebp', 'esp, ebp'): pass
+        elif m in ('pop', 'mov') and op in ('esi', 'edi', 'ebp', 'esp, ebp'): pass
+        elif m == 'mov' and op.startswith('esi, '): pass  # esi is `kind`, the switch value
         elif m == 'ret':
             return
         else:
@@ -223,7 +236,11 @@ for label, entry in cfg['entries'].items():
     st.frame = {int(k): tuple(v) for k, v in cfg.get('frame', {}).items()}
     st.fpu = list(cfg.get('fpu', []))
     out = []
-    run(int(entry, 16), st, out, '            ')
+    start = int(entry, 16)
+    stop_here = start in STOPS
+    STOPS.discard(start)  # an entry may be another section's stop
+    run(start, st, out, '            ')
+    if stop_here: STOPS.add(start)
     while True:
         text = '\n'.join(out); changed = False
         for i, l in enumerate(out):
