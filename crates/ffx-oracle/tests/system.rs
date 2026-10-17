@@ -8293,3 +8293,102 @@ fn round14_message_positions_match_the_original_on_the_snapshot() {
     };
     round14_message_positions(&mut a, &mut b, &mut Xorshift(0x4014_0002));
 }
+
+/// Round 14's battle limit-window set-ups over stand-in scene getters.
+#[allow(clippy::items_after_statements)]
+fn round14_limit_windows(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    // [out] = name ^ key
+    let store = |key: u32| {
+        let mut v = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x4c, 0x24, 0x0c, 0x35];
+        v.extend_from_slice(&key.to_le_bytes());
+        v.extend_from_slice(&[0x89, 0x01, 0xc3]);
+        v
+    };
+    // *x = (name ^ key) & 0xffff, *y = (name ^ key) >> 16 (halves)
+    let mut point = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x4c, 0x24, 0x0c, 0x35];
+    point.extend_from_slice(&0x1400_0303u32.to_le_bytes());
+    point.extend_from_slice(&[
+        0x66, 0x89, 0x01, 0x8b, 0x4c, 0x24, 0x10, 0xc1, 0xe8, 0x10, 0x66, 0x89, 0x01, 0xc3,
+    ]);
+    let num = stand_in8(a, b, 0xc40, &store(0x1400_0101));
+    let color = stand_in8(a, b, 0xc60, &store(0x1400_0202));
+    let pt = stand_in8(a, b, 0xc80, &point);
+    redirect(a, b, 0x008a_e410, num);
+    redirect(a, b, 0x008a_e360, color);
+    redirect(a, b, 0x008a_e450, pt);
+    // the limit timer's sound calls are not set up: count its calls instead
+    let timer_count = alloc(a, b, 4);
+    let mut count = vec![0x83, 0x05];
+    count.extend_from_slice(&timer_count.to_le_bytes());
+    count.extend_from_slice(&[0x01, 0xc3]);
+    let timer = stand_in8(a, b, 0xcb0, &count);
+    redirect(a, b, 0x0089_7f00, timer);
+    struct Calls;
+    impl t::LimitWindowCalls<Oracle> for Calls {
+        fn seq_num(&mut self, m: &mut Oracle, i: u32, name: u32, out: u32) {
+            eax(m, 0x008a_e410, &[i, name, out]);
+        }
+        fn seq_point(&mut self, m: &mut Oracle, i: u32, name: u32, x: u32, y: u32) {
+            eax(m, 0x008a_e450, &[i, name, x, y]);
+        }
+        fn seq_color(&mut self, m: &mut Oracle, i: u32, name: u32, out: u32) {
+            eax(m, 0x008a_e360, &[i, name, out]);
+        }
+        fn init_pad(&mut self, m: &mut Oracle) {
+            eax(m, 0x008a_dbd0, &[]);
+        }
+        fn init_limit_timer(&mut self, m: &mut Oracle) {
+            eax(m, 0x0089_7f00, &[]);
+        }
+        fn remap(&mut self, m: &mut Oracle, y: bool, v: f32) -> f32 {
+            let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+            let r = m.call(at, Conv::Cdecl, &[v.to_bits()]).unwrap().st0.unwrap();
+            #[allow(clippy::cast_possible_truncation)] // exact: an f32 value
+            let r = r as f32;
+            r
+        }
+    }
+    let fill = |a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift| {
+        for (from, len) in [(0x0133_d6f0u32, 0x60u32), (0x0133_f778, 0x320), (0x0133_f7d4, 4)] {
+            let bytes: Vec<u8> = (0..len).map(|_| rng.next() as u8).collect();
+            let at = a.rebase(from);
+            a.write(at, &bytes).unwrap();
+            b.write(at, &bytes).unwrap();
+        }
+    };
+    for _ in 0..4 {
+        fill(a, b, rng);
+        eax(a, 0x0089_7970, &[]);
+        t::btl_init_auron_limit_window(b, &mut Calls);
+        same_memory("Auron's limit window", a, b);
+        fill(a, b, rng);
+        eax(a, 0x0089_7f70, &[]);
+        t::btl_init_lulu_limit_window(b, &mut Calls);
+        same_memory("Lulu's limit window", a, b);
+        fill(a, b, rng);
+        eax(a, 0x0089_8180, &[]);
+        t::btl_init_tidus_limit_window(b, &mut Calls);
+        same_memory("Tidus' limit window", a, b);
+        fill(a, b, rng);
+        eax(a, 0x0089_7860, &[]);
+        t::btl_init_window_params(b, &mut Calls);
+        same_memory("battle window parameters", a, b);
+    }
+}
+
+#[test]
+fn round14_limit_windows_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round14_limit_windows(&mut a, &mut b, &mut Xorshift(0x4014_0011));
+}
+
+#[test]
+fn round14_limit_windows_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round14_limit_windows(&mut a, &mut b, &mut Xorshift(0x4014_0012));
+}
