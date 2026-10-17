@@ -10773,7 +10773,7 @@ fn round19_records_match_the_original_on_the_snapshot() {
 }
 
 /// Round 19's language relayout of menu records.
-#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
 fn round19_relayout(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     let cell = alloc(a, b, 4);
