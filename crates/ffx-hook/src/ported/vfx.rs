@@ -1173,6 +1173,26 @@ ported! {
     op_free @ 0x007f_f1d0 => extern "C" fn op_free(heap: u32, p: u32) {
         op::bridge::op_free(&mut mem(), heap, p, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `op_rot_m(dst, src, angles)`.
+    op_rot_m @ 0x007e_9530 => extern "C" fn op_rot_m(dst: u32, src: u32, angles: u32) {
+        op::bridge::op_rot_m(&mut mem(), dst, src, angles);
+    }
+    /// `op_rt_m(dst, src, angles, t)`.
+    op_rt_m @ 0x007e_9850 => extern "C" fn op_rt_m(dst: u32, src: u32, angles: u32, t: u32) {
+        op::bridge::op_rt_m_zyx(&mut mem(), dst, src, angles, t);
+    }
+    /// `opus_prog_off(list, no)`.
+    opus_prog_off @ 0x0080_14c0 => extern "C" fn opus_prog_off(list: u32, no: u32) {
+        op::bridge::opus_prog_off(&mut mem(), list, no, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_irandom_core_007e35c0(n, b, c, d)`.
+    op_irandom_core_007e35c0 @ 0x007e_35c0 => extern "C" fn op_irandom_core(n: u32, b: u32, c: u32, d: u32) -> u32 {
+        rand::bridge::op_irandom_core(&mut mem(), [n, b, c, d])
+    }
+    /// `op_random_per(n, b, c, d)`.
+    op_random_per @ 0x007e_33e0 => extern "C" fn op_random_per(n: u32, b: u32, c: u32, d: u32) -> u32 {
+        rand::bridge::op_random_per(&mut mem(), [n, b, c, d])
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

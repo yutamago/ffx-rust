@@ -649,6 +649,147 @@ pub mod bridge {
         }
     }
 
+    /// `op_rot_m(dst, src, angles)` (`0x007e9530`): `src` turned about Z,
+    /// Y then X (angles `[2]`, `[1]`, `[0]`, each read after the previous
+    /// turn, so `angles` may lie in `dst`).
+    pub fn op_rot_m(mem: &mut impl Mem, dst: u32, src: u32, angles: u32) {
+        use crate::mat::Axis;
+        let a2: f32 = mem.read(angles.wrapping_add(8));
+        op_rt_m(mem, dst, src, a2, Axis::Z);
+        let a1: f32 = mem.read(angles.wrapping_add(4));
+        op_rt_m(mem, dst, dst, a1, Axis::Y);
+        let a0: f32 = mem.read(angles);
+        op_rt_m(mem, dst, dst, a0, Axis::X);
+    }
+
+    /// `op_rt_m(dst, src, angles, t)` (`0x007e9850`): [`op_rot_m`], then
+    /// `t` added to the translation.
+    pub fn op_rt_m_zyx(mem: &mut impl Mem, dst: u32, src: u32, angles: u32, t: u32) {
+        op_rot_m(mem, dst, src, angles);
+        for i in 0..3 {
+            let at = dst.wrapping_add(0x30 + 4 * i);
+            let v = ffx_bridge::x87::Reg::load(mem.read(t.wrapping_add(4 * i)))
+                .add_m32(mem.read(at))
+                .store();
+            mem.write(at, v);
+        }
+    }
+
+    /// `opus_prog_off(list, no)` (`0x008014c0`): unit `no` (16 bits) of the
+    /// list (the battle's list, `0x012a12fc + 0x300`, when there is one)
+    /// leaves whichever index list holds it (`+0x14`, `+0x10`, `+0x18`;
+    /// later entries move down) and is shut down: its first 16 bytes
+    /// cleared; its buffer (`+0xbc`) handed to the list's handler
+    /// (`[+0x50] +0x54`) for draw kind 3, else freed (`op_free` on the list
+    /// heap `+0xa8`) after the kind's render data are destroyed
+    /// (`graphicVFXDestroy`: kind 5 the buffer's instance, 0xa and 0x11
+    /// one per buffer entry (`u16 +4`), 9 one per shape of `+0xa8`); then
+    /// the trail instances (`+0x17` of them for type 0x10 at `+0x16`),
+    /// kinds 1 and 2's own instance, and instance 0x15; the list's unit
+    /// count (`u16 +0x38`) goes down. All callees through `call`.
+    pub fn opus_prog_off<M: Mem>(
+        mem: &mut M,
+        list: u32,
+        no: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let battle: u32 = mem.read(Global::<u32>::new(0x012a_12fc).ptr(mem).addr);
+        let l = if battle == 0 {
+            list
+        } else {
+            battle.wrapping_add(0x300)
+        };
+        #[allow(clippy::cast_possible_truncation)] // the 16-bit argument
+        let want = no as u16;
+        let mut hit = None;
+        'lists: for at in [0x14u32, 0x10, 0x18] {
+            let mut e: u32 = mem.read(l.wrapping_add(at));
+            loop {
+                let v: u16 = mem.read(e);
+                if v & 0x8000 != 0 {
+                    break;
+                }
+                if v == want {
+                    hit = Some(e);
+                    break 'lists;
+                }
+                e = e.wrapping_add(2);
+            }
+        }
+        let Some(mut e) = hit else { return };
+        loop {
+            let v: u16 = mem.read(e.wrapping_add(2));
+            if v & 0x8000 != 0 {
+                break;
+            }
+            mem.write(e, v);
+            e = e.wrapping_add(2);
+        }
+        mem.write(e, 0xffffu16);
+        let destroy = Global::<u32>::new(0x0064_5280).ptr(mem).addr;
+        let unit = (i32::from(want.cast_signed()) << 8)
+            .cast_unsigned()
+            .wrapping_add(mem.read::<u32>(l.wrapping_add(0x20)));
+        mem.write(unit, [0u32; 4]);
+        let buf: u32 = mem.read(unit.wrapping_add(0xbc));
+        let sign = |x: u32| (x.cast_signed() >> 31).cast_unsigned();
+        if buf != 0 {
+            match mem.read::<u8>(unit.wrapping_add(0xbb)) {
+                3 => {
+                    let vt: u32 = mem.read(l.wrapping_add(0x50));
+                    let f: u32 = mem.read(vt.wrapping_add(0x54));
+                    call(mem, f, &[unit]);
+                }
+                k => {
+                    match k {
+                        5 => {
+                            call(mem, destroy, &[buf, sign(buf)]);
+                        }
+                        0xa | 0x11 => {
+                            let n = u32::from(mem.read::<u16>(buf.wrapping_add(4)));
+                            for i in 0..n {
+                                call(mem, destroy, &[i, unit]);
+                            }
+                        }
+                        9 => {
+                            let d: u32 = mem.read(unit.wrapping_add(0xa8));
+                            let mut i = 0u32;
+                            while i < u32::from(mem.read::<u16>(d)) {
+                                let id = d.wrapping_add(0x20 + 0x50 * i);
+                                let get = Global::<u32>::new(0x0064_53d0).ptr(mem).addr;
+                                if call(mem, get, &[0, id]) != 0 {
+                                    call(mem, destroy, &[0, id]);
+                                }
+                                i += 1;
+                            }
+                        }
+                        _ => {}
+                    }
+                    let heap: u32 = mem.read(l.wrapping_add(0xa8));
+                    let b: u32 = mem.read(unit.wrapping_add(0xbc));
+                    let free = Global::<u32>::new(0x007f_f1d0).ptr(mem).addr;
+                    call(mem, free, &[heap, b]);
+                }
+            }
+            mem.write(unit.wrapping_add(0xbc), 0u32);
+        }
+        if mem.read::<u8>(unit.wrapping_add(0x16)) == 0x10 {
+            let mut i = 0u32;
+            while i < u32::from(mem.read::<u8>(unit.wrapping_add(0x17))) {
+                call(mem, destroy, &[i, unit]);
+                i += 1;
+            }
+        }
+        for k in [1u8, 2] {
+            if mem.read::<u8>(unit.wrapping_add(0xbb)) == k {
+                call(mem, destroy, &[0, unit]);
+            }
+        }
+        call(mem, destroy, &[0x15, unit]);
+        let n: u16 = mem.read(l.wrapping_add(0x38));
+        mem.write(l.wrapping_add(0x38), n.wrapping_sub(1));
+    }
+
     /// `g_OpMdTagSizes` (`0x00c88aa8`): bytes per element of each of the
     /// eight model packet tag types.
     pub const MD_TAG_SIZES: Global<[u32; 8]> = Global::new(0x00c8_8aa8);

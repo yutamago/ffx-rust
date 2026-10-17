@@ -6909,3 +6909,104 @@ fn round10b_helpers_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round10c_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_14c0);
+        let (m, ang, t) = (p.alloc(0x40), p.alloc(0x10), p.alloc(0x10));
+        for _ in 0..400 {
+            for i in 0..16 {
+                let x = finite(&mut rng);
+                p.set(m + 4 * i, x);
+            }
+            for i in 0..3 {
+                let a = finite(&mut rng);
+                p.set(ang + 4 * i, a);
+                let x = rng.float();
+                p.set(t + 4 * i, x);
+            }
+            p.check("op_rot_m", 0x007e_9530, &[m, m, ang], |o| {
+                op::bridge::op_rot_m(o, m, m, ang);
+                None
+            });
+            p.check("op_rt_m", 0x007e_9850, &[m, m, ang, t], |o| {
+                op::bridge::op_rt_m_zyx(o, m, m, ang, t);
+                None
+            });
+        }
+        // op_irandom_core, op_random_per
+        for _ in 0..3000 {
+            let r = 0x3f80_0000 | rng.below(0x80_0000);
+            p.put(rand::bridge::R, r);
+            p.put(rand::bridge::SEEDED, u32::from(rng.chance(80)));
+            // offsets inside the arguments' slots (others hit the frame)
+            p.put(
+                rand::bridge::COLOR_CON_SHIFT,
+                rng.pick(&[0u32, 0, 0, 1, 2, 3, 4, 8, 0xc]),
+            );
+            let any = rng.next();
+            let n = rng.pick(&[0u32, 1, 7, 100, 0x7fff_ffff, 0x8000_0000, any]);
+            let args = [n, rng.next(), rng.next(), rng.next()];
+            p.check("op_irandom_core", 0x007e_35c0, &args, |o| {
+                Some(rand::bridge::op_irandom_core(o, args))
+            });
+            p.check("op_random_per", 0x007e_33e0, &args, |o| {
+                Some(rand::bridge::op_random_per(o, args))
+            });
+        }
+        // opus_prog_off
+        let cells = p.alloc(8);
+        for (sym, words, ret) in [
+            (0x0064_5280u32, &[0u8, 0][..], None),
+            (0x0064_53d0, &[0, 0], Some(cells)),
+            (0x007f_f1d0, &[0, 0], None),
+            (0x00a7_0910, &[0], None),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        let handler = p.sym(0x00a7_0910);
+        let battle = p.sym(0x012a_12fc);
+        let (list, other) = (p.alloc(0x100), p.alloc(0x400));
+        let units = p.alloc(0x1000);
+        let idx = p.alloc(0x60);
+        let (buf, shapes, vt) = (p.alloc(0x40), p.alloc(0x200), p.alloc(0x80));
+        for _ in 0..2000 {
+            p.fill(units, 0x1000, &mut rng);
+            for l in [list, other + 0x300] {
+                p.set(l + 0x20, units);
+                p.set(l + 0x50, vt);
+                p.set(l + 0x38, u16::try_from(rng.below(9)).unwrap());
+                p.set(l + 0xa8, 0x1234u32);
+                for (k, at) in [0x14u32, 0x10, 0x18].into_iter().enumerate() {
+                    let li = idx + 0x20 * u32::try_from(k).unwrap();
+                    p.set(l + at, li);
+                    let n = rng.below(6);
+                    for i in 0..n {
+                        p.set(li + 2 * i, u16::try_from(rng.below(16)).unwrap());
+                    }
+                    p.set(li + 2 * n, 0xffffu16);
+                }
+            }
+            p.set(vt + 0x54, handler);
+            p.set(battle, if rng.chance(30) { other } else { 0 });
+            for i in 0..16 {
+                let u = units + 0x100 * i;
+                p.set(u + 0xbc, if rng.chance(20) { 0 } else { buf });
+                p.set(u + 0xbb, rng.pick(&[1u8, 2, 3, 5, 9, 0xa, 0x11, 4]));
+                p.set(u + 0x16, rng.pick(&[0x10u8, 0]));
+                p.set(u + 0x17, u8::try_from(rng.below(4)).unwrap());
+                p.set(u + 0xa8, shapes);
+            }
+            p.set(buf + 4, u16::try_from(rng.below(4)).unwrap());
+            p.set(shapes, u16::try_from(rng.below(4)).unwrap());
+            p.set(cells, rng.pick(&[0u32, 1]));
+            let no = rng.below(16) | rng.pick(&[0, 0x1_0000]);
+            p.check("opus_prog_off", 0x0080_14c0, &[list, no], |o| {
+                op::bridge::opus_prog_off(o, list, no, &mut call_original);
+                None
+            });
+        }
+    }
+}
