@@ -87,10 +87,8 @@ ported! {
     AbmapPadCtrl @ 0x00a5_83e0 => extern "C" fn abmap_pad_ctrl() {
         panel::pad_ctrl(&mut mem());
     }
-    /// `MenuItem_ParseTargetKeys(t)`.
-    MenuItem_ParseTargetKeys @ 0x008c_5320 => extern "C" fn menu_item_parse_target_keys(t: i32) {
-        item::parse_target_keys(&mut mem(), t);
-    }
+    // 0x008c5320 is hooked in menu.rs as MenuItem_LoadTargetKeys (ported
+    // there first); item::parse_target_keys is a second port of it.
     /// `MenuItem_DrawRow(window, x, y, index)`, floats taken as bits.
     MenuItem_DrawRow @ 0x008c_9a70 => extern "C" fn menu_item_draw_row(window: u32, x: u32, y: u32, index: i32) {
         item::draw_row(&mut mem(), window, f32::from_bits(x), f32::from_bits(y), index);

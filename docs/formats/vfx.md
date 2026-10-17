@@ -438,3 +438,123 @@ matrix (`pk +0x24`) and position matrix (`pk +0x28`) start as rows of
 0.0625`, and colour `+0x3c * (1/32768) * c` for R, G, B (53 bits) and
 `a / 256`. `pk +0x4c` and `+0x4d` become `ftol(unit +0x30) / 2` and
 `ftol(unit +0x4c) / 2`, clamped to 0..0x80.
+
+## High range (`0x00a30000..0x00a80000`)
+
+Ported in `crates/ffx-vfx/src/hi_md.rs` and `hi_opus.rs`; the shims are
+`crates/ffx-hook/src/ported/vfx_hi.rs`, the oracle tests
+`crates/ffx-oracle/tests/vfx_hi.rs`.
+
+What else lies in the range is not effect logic:
+
+- `0x00a34000..0x00a3e000` is Iggy's GDraw back end for D3D11 (its
+  allocations are tagged `gdraw_d3d1x_shared.inl`; `0x00a35780` fills the
+  GDraw function table at `0x01a85828` and allocates the context
+  `[0x01a858b4]`). The `op_node_*` and `op_texels_*` functions ported
+  earlier are its handle cache and mip builder (state 5 is GDraw's
+  user-owned handle). Middleware, left original.
+- `0x00a5d120..0x00a65570` is the op debug display (`opd_*`): the
+  `op_num_*` wrappers reach the digit-sprite writers only under
+  `g_OpDebugMode` or `0x02322794`, and the command printers
+  `0x00a64c00..0x00a64ff0` only call `op_num` (`0x007e63a0`), a bare `ret`.
+
+### Model packets
+
+A model list holds `u16 +4` packets, each a `ptr32` at `+0x10 + 0x10 k`.
+A packet's tags start at `+0x20`: type byte `+1`, `i16` count `+2`.
+
+- `op_md_copy(src, dst)` (`0x00a69290`) copies `op_md_packet_size(src)`
+  bytes (`0x00a698c0`) 16 at a time, one word at a time from the start; a
+  size of 0 goes to `dbgPrintf` (`"op_md_copy error !!!"`, `0x00b7c3b4`)
+  and `debug_exit_trace(1)`, both bare `ret`s here.
+- `op_md_list_count10_00a6a2b0(list)` sums the counts of each packet's
+  leading tags of type 0x10, stepping `0x20 + 0x1c n`
+  (`opp_0437_cmd_a6dbe0` kind 0x4000 sizes its buffer with it).
+- `opus_0582_break_bytes_00a72310(list)` is `0x40 + 0x300` per element
+  of every tag up to the end tag (type 0xff), with the same step
+  (`opp_0582_cmd_a70910` kind 0x4000).
+
+- `op_md_tex0_change_range_00a69ca0(packet, _, lo, hi)` (`0x00a69ca0`;
+  `op_md_tex0_change` at `0x00a69c80` passes `0..0x4000`) rebases the
+  `TEX0` (`+8`, 64 bits) of the textured tags (type bit 1): with `m` the
+  smallest `TBP0 - 0x3fff` (bits 0..13) over them and `n` the same for
+  `CBP` (bits 37..50, `+0xc >> 5`), each tag whose `TBP0` is in `lo..=hi`
+  gets `TBP0 - m` and `CBP - n` (16-bit; never negative, so they come out
+  0x3fff above the smallest, and the `TBP0` overflows into bit 14). Tags
+  step `0x10 + n x g_OpMdTagSizes[type & 7]` (`0x00c88aa8`) to the end tag
+  (0xff).
+- `op_md_vn_index(packet, out, table)` (`0x00a69f10`): `[packet] |= 8`,
+  `packet +0x1c = out - packet`; the `i16 +0x12` 64-byte lists in `table`
+  are emptied and filled by `op_md_vn_index_sub` from every element
+  (0x1c bytes, tags as above); `out` gets `u16 +0x14`, then from `+0x10`
+  each list's count and entries. Returns the end rounded up to 16.
+
+- `op_md_list_bounds_00a6a0c0(list, m, min, max)` (`0x00a6a0c0`; from
+  `0x00a6e1b0` and `opus_0582_break_make`): the box round every vertex
+  (16 bytes from `packet + [packet + 8]`, `i16 +0x12` of them) under
+  `op_mul_m(m, packet matrix)`, through `FFXVu0ApplyMatrix`; `min`/`max`
+  start at `+-16777216.0` and widen on `<` (never on a NaN). Each
+  packet's matrix (the `ptr32` after the packet's) has its translation
+  multiplied by 1000 for the product and divided by 1000 after, as `f32`
+  both times, so it keeps both roundings.
+
+### oef2 entry links
+
+`op_oef2_entry_link_00a6a320(e, i)` (`0x00a6a320`, from `opu_part_init`
+kind 0x2000): `t = ptr32(e + 0x14)`. Below `0x100000`, `t` is an offset
+from `e` and so is the link `ptr32(e + t + 32 i + 0x1c)` (0 when null);
+otherwise the link is the absolute `ptr32(t + 32 i + 0x1c)`, 0 when it
+is `e` itself.
+
+### Lights
+
+`op_normal_light44_ffx(obj, model, work)` (`0x00a6cf10`) fills the work
+area `w = [work + 0x390]`: `op_ffxlight_to_omdlight(w + 0x80, w + 0xc0)`,
+then `op_matrix_light4_vector(w + 0x40, model +0x28, model +0x2c)` and
+`op_matrix_light4_vector(w + 0xc0, w + 0xc0, model +0x2c)`. Its `eax` is
+the last copy's last word, the light matrix's `w` 0.
+
+`op_ffxlight_to_omdlight_0279(colours, dirs)` (`0x00a691c0`) is
+`op_ffxlight_to_omdlight` with the ambient colour (`Sg_LightGetColor(3)`)
+in `colours` row 3 instead of `r0`. `op_ffxambient_to_omdambient()`
+(`0x00a68ff0`) turns the ambient colour into RGBA bytes (`x 256` as
+`f32`, above 255 is 255, below 0 is 0, else truncated) and leaves them in
+`eax`; its callers drop them.
+
+### `opus_0437` dots
+
+The dot buffer `b`: `b[0]` the entry count, `b[1]` the next entry
+(counted up, taken modulo the count), 32-byte entries from `b + 0x10`.
+
+- `opus_0437_dot_init_00a6e540(b, n)` (`0x00a6e540`, kind 0 of
+  `opp_0437_cmd_a6dbe0`): both halves of each entry the EE's `r0`, then
+  `u16 +0x1c` 0x20, `u16 +0xc` 0x8080, `u8 +0xf` 0x80 and `u8 +0xe`
+  `0x40 + op_random_per_call_007e5d40(0x40)`. `op_random_per` reads four
+  words; the three past the pushed one are the caller's `edi`, `esi`,
+  `ebx` the original saved on entry, and only reach VU0 registers
+  (`0x00c8f974..0x00c8f97c`). The hook passes 0 for them.
+- `opus_0437_dot_set(b, pos, colour)` (`0x00a6e5d0`, kind 0x1000): the
+  entry's first half `op_xyz_scale(e, pos, 1.0)`, its second the colour
+  (through the EE's `v0`, `0x00c8f528`), `u16 +0x1c` cleared. An empty
+  buffer divides by zero in the original.
+- `opus_0437_dot_draw(b)` (`0x00a6e2e0`, kind 0x2000) still builds the
+  PS2 packet in a `0x1100`-byte `op_spr_alloc` scratch and sends its DMA
+  block (`+0x1000`, the `TEST`/`ALPHA` writes `0x48`, `0x42`) through
+  `sceGsSyncPath`/`sceDmaSend`; two quadwords at `+0` are copied to
+  `+0x800` through `v0`. Then three line instances `(1000 + i, 0x1b5)`
+  (`createVFXRenderDataBufferLine(id, 3000, 2)` when missing, then
+  `+0xb8` = 1 and `graphicVFXSetup`) each get a segment buffer, a unit
+  matrix, `graphicVFXSetVisible` and `graphicVFXPath3Update`; any missing
+  piece stops the draw. With all three and a valid fill buffer, the fill
+  request (`JobSchedule_pppPart_getFillBufferRequest(b[0])`) gets kind 4,
+  the three segments, `b + 0x10` and `b[0]`.
+
+### `opus_0582` dots
+
+`opus_0582_dot_set_00a73740(b, rec)` (`0x00a73740`,
+`opp_0582_cmd_a70910` kind 0x2000) fills the next entry (`b[1] % b[0]`)
+of the dot buffer `opus_0582_dot_draw` reads, from the part `rec`: radii
+`+0x40`, `+0x48` / 256, height `+0x94`, scale `+0x3c` / 16, angle
+`ftol(+0x30)`, step `ftol(ftol(+0x34) / 256)` (the integer back through
+an `f32`), spread `ftol(+0x38)` (0 when negative), life `ftol(+0x4c) +
+16`, colour `+0xc8`, fade-in 8. It returns the colour.
