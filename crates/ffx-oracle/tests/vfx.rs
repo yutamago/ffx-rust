@@ -8182,6 +8182,33 @@ fn eiabm_matches_the_original() {
     }
 }
 
+#[test]
+fn md_spr_init_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_9940);
+        let (obj, init, work) = (p.alloc(0x40), p.alloc(0x60), p.alloc(0x400));
+        let (g1, g2) = (p.sym(0x011a_0740), p.sym(0x011a_07f0));
+        for _ in 0..3000 {
+            p.fill(obj, 0x40, &mut rng);
+            p.fill(init, 0x60, &mut rng);
+            p.fill(work, 0x400, &mut rng);
+            p.fill(g1, 0x10, &mut rng);
+            p.fill(g2, 0x10, &mut rng);
+            for at in [0x38u32, 0x3c] {
+                if rng.chance(2) {
+                    p.set(init + at, 0u32);
+                }
+            }
+            if rng.chance(3) {
+                p.set(init + 8, 0u16);
+            }
+            p.check("op_md_spr_init_x64", 0x00a6_9940, &[obj, init, work], |o| {
+                Some(md::bridge::op_md_spr_init_x64(o, obj, init, work))
+            });
+        }
+    }
+}
+
 /// `fcos`/`fsin` stand-ins for the CRT's `_CIcos`/`_CIsin` (their import
 /// slots `0x00b0c3b4`, `0x00b0c3b8` pointed at `0x00b0bfc0`, `0x00b0bfc8`)
 /// and a thunk at [`THUNK`], `fld dword [esp + 4]; jmp [slot]`, for the

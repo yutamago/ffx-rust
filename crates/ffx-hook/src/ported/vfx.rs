@@ -1453,6 +1453,10 @@ ported! {
         let frame = locals.0.as_mut_ptr() as u32 + 0x450;
         md::bridge::op1_md_draw_eiabm(&mut mem(), obj, part, slot, frame, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `op_md_spr_init_x64(obj, init, work)`.
+    op_md_spr_init_x64 @ 0x00a6_9940 => extern "C" fn op_md_spr_init_x64(obj: u32, init: u32, work: u32) -> u32 {
+        md::bridge::op_md_spr_init_x64(&mut mem(), obj, init, work)
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

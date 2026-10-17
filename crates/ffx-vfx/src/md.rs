@@ -767,4 +767,95 @@ pub mod bridge {
         }
         0
     }
+
+    /// The emulated EE register `v0` (`g_Ee_Gpr +0x20`, `0x00c8f528`),
+    /// which `op_md_spr_init_x64` copies through.
+    pub const SPR_BOUNCE: Global<[u32; 4]> = Global::new(0x00c8_f528);
+
+    /// `op_md_spr_init_x64(obj, init, work)` (`0x00a69940`): the 0x50-byte
+    /// `init` into `work +0x300` (16 bytes at a time through
+    /// [`SPR_BOUNCE`], which keeps the last), then:
+    /// - `+0x338`, `+0x33c` when 0: `obj + obj[2]`, `obj + obj[3]`;
+    /// - `+0x390` = `+0x304 + 16 obj.i16[+0x12]`, `+0x394` = `+0x304`,
+    ///   `+0x39c` = `+0x390 + 16 obj.i16[+0x14]`;
+    /// - the packet at `+0x100`: tag `0x70000005`, 0, GIF tag `0x8001`,
+    ///   `0xeeeeeeee`, `+0x128` 6, `+0x130`/`+0x134` the bytes `+0x308`,
+    ///   `+0x309` (or, when that `u16` is 0, `obj +0x16`, `+0x17`),
+    ///   `+0x138` 0x42, `+0x140`.. the four dwords at `0x011a07f0` (bit 3
+    ///   of `+0x300`) or `0x011a0740`, `+0x158` 8, and `+0x150`: with `obj`
+    ///   bit 4 `init.u16[+0x54] << 24 | [+0x52] << 14 | [+0x50] << 4 |
+    ///   10`, else 0 with `obj` bit 2, 5 without.
+    ///
+    /// Returns `work + 0x300`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn op_md_spr_init_x64(mem: &mut impl Mem, obj: u32, init: u32, work: u32) -> u32 {
+        let bounce = SPR_BOUNCE.ptr(mem).addr;
+        for b in 0..5u32 {
+            for i in 0..4u32 {
+                let x: u32 = mem.read(init.wrapping_add(16 * b + 4 * i));
+                mem.write(bounce + 4 * i, x);
+            }
+            for i in 0..4u32 {
+                let x: u32 = mem.read(bounce + 4 * i);
+                mem.write(work.wrapping_add(0x300 + 16 * b + 4 * i), x);
+            }
+        }
+        let w = |o: u32| work.wrapping_add(o);
+        let mut a: u32 = mem.read(w(0x338));
+        if a == 0 {
+            a = obj.wrapping_add(mem.read(obj.wrapping_add(8)));
+        }
+        let mut b: u32 = mem.read(w(0x33c));
+        if b == 0 {
+            b = obj.wrapping_add(mem.read(obj.wrapping_add(0xc)));
+        }
+        mem.write(w(0x33c), b);
+        mem.write(w(0x338), a);
+        let n12 = i32::from(mem.read::<i16>(obj.wrapping_add(0x12))).cast_unsigned();
+        let base: u32 = mem.read(w(0x304));
+        mem.write(w(0x390), (n12 << 4).wrapping_add(base));
+        let base: u32 = mem.read(w(0x304));
+        mem.write(w(0x394), base);
+        let n14 = i32::from(mem.read::<i16>(obj.wrapping_add(0x14))).cast_unsigned();
+        let at: u32 = mem.read(w(0x390));
+        let end = (n14 << 4).wrapping_add(at);
+        mem.write(w(0x100), 0x7000_0005u32);
+        mem.write(w(0x39c), end);
+        mem.write(w(0x108), 0u32);
+        mem.write(w(0x110), 0x8001u32);
+        mem.write(w(0x118), 0xeeee_eeeeu32);
+        mem.write(w(0x128), 6u32);
+        let (lo, hi) = if mem.read::<u16>(w(0x308)) == 0 {
+            (obj.wrapping_add(0x16), obj.wrapping_add(0x17))
+        } else {
+            (w(0x308), w(0x309))
+        };
+        let x = u32::from(mem.read::<u8>(lo));
+        mem.write(w(0x130), x);
+        let x = u32::from(mem.read::<u8>(hi));
+        mem.write(w(0x134), x);
+        mem.write(w(0x138), 0x42u32);
+        let src = if mem.read::<u8>(w(0x300)) & 8 != 0 {
+            0x011a_07f0
+        } else {
+            0x011a_0740
+        };
+        let src = g(mem, src);
+        for i in 0..4u32 {
+            let x: u32 = mem.read(src + 4 * i);
+            mem.write(w(0x140 + 4 * i), x);
+        }
+        let flags: u32 = mem.read(obj);
+        let gs = if flags & 0x10 != 0 {
+            let h = |o: u32| u32::from(mem.read::<u16>(init.wrapping_add(o)));
+            (h(0x54) << 24) | (h(0x52) << 14) | (h(0x50) << 4) | 0xa
+        } else if flags & 4 != 0 {
+            0
+        } else {
+            5
+        };
+        mem.write(w(0x150), gs);
+        mem.write(w(0x158), 8u32);
+        w(0x300)
+    }
 }
