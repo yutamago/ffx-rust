@@ -146,32 +146,19 @@ pub fn load_save(game: &mut Game, entry: u32) -> Result<String> {
 /// boot jump, `g_TkEventJumpRequest` `0x0133084c`, enters the title map,
 /// and the title script's set-up starts a new game's state and jumps to
 /// `memochek`); one sent from `memochek` crashed the game. So this waits
-/// for `memochek`, the title event's second opening, the jump request to
+/// for `memochek`, the title scene again (scene number `0x01330844`), the jump request to
 /// clear and 30 frames for the script's set-up (about 100 frames from
 /// boot in fast mode).
 ///
 /// # Errors
 /// Fails when the save does not load or its event does not open.
 pub fn load_save_direct(game: &mut Game, save: &str) -> Result<String> {
-    game.events()?;
-    let seen = |game: &Game| {
-        let log = game.opened();
-        log.iter()
-            .rposition(|e| e.contains("memochek.ebp"))
-            .map(|m| log[m..].iter().any(|e| e.contains("test20.ebp")))
-    };
-    match seen(game) {
-        Some(true) => {}
-        Some(false) => {
-            game.wait_for_open("test20.ebp", 2, 3000)?;
-        }
-        None => {
-            game.wait_for_open("memochek.ebp", 2, 3000)?;
-            if seen(game) != Some(true) {
-                game.wait_for_open("test20.ebp", 2, 3000)?;
-            }
-        }
+    // The title event is not read again on the second visit, so that one
+    // shows in the scene number TkInitScene keeps (0x01330844).
+    if !game.opened().iter().any(|e| e.contains("memochek.ebp")) {
+        game.wait_for_open("memochek.ebp", 2, 3000)?;
     }
+    game.command("waitfor 0x01330844:4 17000000 ffffffff 3000")?;
     game.command("waitfor 0x0133084c:4 00000000 ffffffff 600")?;
     game.wait(30)?;
     let mut tries = 0;

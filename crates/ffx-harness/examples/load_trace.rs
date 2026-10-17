@@ -96,15 +96,7 @@ fn direct(save: &str, early: bool) -> Result<()> {
     game.wait_for_open("test20.ebp", 1, 3000)?;
     if !early {
         game.wait_for_open("memochek.ebp", 1, 3000)?;
-        game.events()?;
-        let log = game.opened();
-        let m = log
-            .iter()
-            .rposition(|e| e.contains("memochek.ebp"))
-            .unwrap_or(0);
-        if !log[m..].iter().any(|e| e.contains("test20.ebp")) {
-            game.wait_for_open("test20.ebp", 1, 3000)?;
-        }
+        game.command("waitfor 0x01330844:4 17000000 ffffffff 3000")?;
         game.command("waitfor 0x0133084c:4 00000000 ffffffff 600")?;
         game.wait(30)?;
     }
