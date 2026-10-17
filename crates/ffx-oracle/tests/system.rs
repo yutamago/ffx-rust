@@ -13687,7 +13687,11 @@ fn round23_plates_match_the_original_on_the_snapshot() {
 
 /// Round 24's gradient box and sheet cell over cells for the scissor and
 /// image size and a logging draw.
-#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::too_many_lines
+)]
 fn round24_boxes(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge as t;
     let log = alloc(a, b, 0x1000);
