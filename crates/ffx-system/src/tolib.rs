@@ -6286,4 +6286,2159 @@ pub mod bridge {
         tail(mem, o, c);
         all(mask)
     }
+
+    /// `TOGetInternationalBaseDicType()` (`0x008ac760`): the font
+    /// dictionary, 4 or 0. Languages 0, 9 and 10 give 4 only with
+    /// `MsGetSaveConfigEnglish`; the others always 4.
+    pub fn to_get_international_base_dic_type<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let lang = 0x008a_c2f0;
+        if call(mem, lang, &[]) != 0 && call(mem, lang, &[]) != 9 && call(mem, lang, &[]) != 0xa {
+            return 4;
+        }
+        if call(mem, 0x0078_51d0, &[]) != 0 {
+            4
+        } else {
+            0
+        }
+    }
+
+    /// The slant of a glyph in [`to_get_font_info`]: -1.0 for language 10,
+    /// 1.0 for languages 1..=8, else 0.0 (constant `0x00b92340`).
+    fn font_slant<M: Mem>(mem: &mut M, call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32) -> f32 {
+        let lang = 0x008a_c2f0;
+        if call(mem, lang, &[]) == 0xa {
+            return mem.read(mem.rebase(0x00b9_2340));
+        }
+        if call(mem, lang, &[]).cast_signed() > 0 && call(mem, lang, &[]).cast_signed() < 9 {
+            1.0
+        } else {
+            0.0
+        }
+    }
+
+    /// The cell of glyph `index` in [`to_get_font_info`]: its sheet
+    /// position (columns of 14 for every two glyphs, rows of 18), the
+    /// parity at `+4`, and the box `+8..+0x14` with the width at `+0x1c`.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss
+    )]
+    fn font_cell<M: Mem>(mem: &mut M, out: u32, index: i32, width: f32) {
+        let row = index / 0x12;
+        let x = ((index - row * 0x12) / 2 * 0xe) as f32;
+        let y = (row * 0x12) as f32;
+        let tall: f64 = mem.read(mem.rebase(0x00b5_87d8));
+        mem.write(out.wrapping_add(8), x);
+        mem.write(out.wrapping_add(4), (index & 1) as u16);
+        mem.write(out.wrapping_add(0xc), y);
+        mem.write(
+            out.wrapping_add(0x10),
+            (f64::from(x) + f64::from(width)) as f32,
+        );
+        mem.write(out.wrapping_add(0x14), (f64::from(y) + tall) as f32);
+    }
+
+    /// `TOGetFontInfo(text, out)` (`0x008b7240`): the font page, sheet cell
+    /// and size of the glyph at `text`, and the text after it.
+    ///
+    /// `out`: `+0` the page (0x3c00 by default, 0x3d40 with English or
+    /// other languages, 0x3d30/0x3d10 for languages 9/10), `+2` 0x14, `+4`
+    /// the cell parity, `+8..+0x14` the cell box, `+0x18` the slant,
+    /// `+0x1c` the width (a quarter of the width-table byte from
+    /// `TOGetFontWidthTblAdrs`), `+0x20` 18.0. Codes from 0x2c use the
+    /// language dictionary (a lead below 0x30 picks a 0xd0 row, a `4` lead
+    /// adds 0x410 in languages 9/10); 0x2a/0x2b, 0x28/0x29 and 0x26/0x27
+    /// are two-byte codes of tables 1-3 (page 0x3d00, 0x3d01 for table 3;
+    /// table 1 sets the parity when `0x01871534` is set); 6 is a table-5
+    /// icon (14.0 wide without a table). A `:` joining its neighbours
+    /// (`TOJoinsNeighbours`) is 5.0 wide, and a run of `G` in a text that
+    /// starts with one is one glyph of the run's width. Other codes, and
+    /// 0x5c..=0x5e in Japanese, get a fixed 10.0-wide box. Constants are
+    /// read from the image.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss
+    )]
+    pub fn to_get_font_info<M: Mem>(
+        mem: &mut M,
+        text: u32,
+        out: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let lang = 0x008a_c2f0;
+        let english = 0x0078_51d0;
+        let image_f32 = |mem: &M, a: u32| -> f32 { mem.read(mem.rebase(a)) };
+        let quarter: f64 = mem.read(mem.rebase(0x00b3_4f90));
+        let tall = image_f32(mem, 0x00b5_4c84);
+        let mut p = text;
+        let mut base = 0i32;
+        let flag: u32 = mem.read(mem.rebase(0x025d_16c0));
+        let mut page: u16 = if flag == 1 && call(mem, lang, &[]) == 0 {
+            if call(mem, english, &[]) != 0 {
+                0x3d40
+            } else {
+                0x3c00
+            }
+        } else {
+            0x3c00
+        };
+        let c0: u8 = mem.read(text);
+        let plain = call(mem, lang, &[]) == 0
+            && call(mem, english, &[]) == 0
+            && (0x5c..=0x5e).contains(&c0);
+        let width_of = |mem: &M, table: u32, index: i32| -> f32 {
+            let b: i8 = mem.read(table.wrapping_add(index.cast_unsigned()));
+            (f64::from(b) * quarter) as f32
+        };
+        if !plain {
+            page = match call(mem, lang, &[]) {
+                0 => 0x3c00,
+                l @ (9 | 0xa) => {
+                    if c0 == 4 {
+                        base = 0x410;
+                        p = p.wrapping_add(1);
+                    }
+                    if l == 9 { 0x3d30 } else { 0x3d10 }
+                }
+                _ => 0x3d40,
+            };
+            let c: u8 = mem.read(p);
+            if c >= 0x2c {
+                let dic = call(mem, 0x008a_c760, &[]);
+                let table = call(mem, 0x008a_c3d0, &[dic]);
+                let c: u8 = mem.read(p);
+                if c < 0x30 {
+                    base += (i32::from(c) - 0x2b) * 0xd0;
+                    p = p.wrapping_add(1);
+                }
+                let index = i32::from(mem.read::<u8>(p)) + base - 0x30;
+                mem.write(out, page);
+                mem.write(out.wrapping_add(2), 0x14u16);
+                let slant = font_slant(mem, &mut call);
+                mem.write(out.wrapping_add(0x18), slant);
+                let mut width = width_of(mem, table, index);
+                mem.write(out.wrapping_add(0x1c), width);
+                if mem.read::<u8>(p) == 0x3a {
+                    if call(mem, 0x008b_5760, &[p]) != 0 {
+                        width = image_f32(mem, 0x00b3_eb98);
+                    }
+                    mem.write(out.wrapping_add(0x1c), width);
+                }
+                mem.write(out.wrapping_add(0x20), tall);
+                font_cell(mem, out, index, width);
+                if mem.read::<u8>(text) != 0x47 {
+                    return p.wrapping_add(1);
+                }
+                let mut run = 0u32;
+                if mem.read::<u8>(p) == 0x47 {
+                    run = 1;
+                    while mem.read::<u8>(p.wrapping_add(run)) == 0x47 {
+                        run += 1;
+                    }
+                    if run > 1 {
+                        let dic = call(mem, 0x008a_c760, &[]);
+                        let w: f32 = mem.read(out.wrapping_add(0x1c));
+                        let mut wide = f64::from(run as f32) * f64::from(w);
+                        if dic == 4 {
+                            wide += wide;
+                        }
+                        mem.write(out.wrapping_add(0x1c), wide as f32);
+                        let four: f64 = mem.read(mem.rebase(0x00b4_3d80));
+                        let x: f32 = mem.read(out.wrapping_add(8));
+                        mem.write(out.wrapping_add(8), (f64::from(x) + four) as f32);
+                        let right: f32 = mem.read(out.wrapping_add(0x10));
+                        mem.write(out.wrapping_add(0x10), (f64::from(right) - four) as f32);
+                    }
+                }
+                return p.wrapping_add(run);
+            }
+            let two_byte = match c {
+                0x2a | 0x2b => Some((1u32, 0x2250, 0x0014_3d00u32)),
+                0x28 | 0x29 => Some((2, 0x20b0, 0x0014_3d00)),
+                0x26 | 0x27 => Some((3, 0x1f10, 0x0014_3d01)),
+                6 => Some((5, 0, 0x0014_3d60)),
+                _ => None,
+            };
+            if let Some((which, bias, head)) = two_byte {
+                let next = i32::from(mem.read::<u8>(p.wrapping_add(1)));
+                let index = if c == 6 {
+                    next - 0x30
+                } else {
+                    next - bias + i32::from(c) * 0xd0
+                };
+                let table = call(mem, 0x008a_c3d0, &[which]);
+                mem.write(out, head);
+                let slant = font_slant(mem, &mut call);
+                mem.write(out.wrapping_add(0x18), slant);
+                let width = if c == 6 && table == 0 {
+                    image_f32(mem, 0x00b5_4f84)
+                } else {
+                    width_of(mem, table, index)
+                };
+                mem.write(out.wrapping_add(0x1c), width);
+                mem.write(out.wrapping_add(0x20), tall);
+                font_cell(mem, out, index, width);
+                if which == 1 && mem.read::<u32>(mem.rebase(0x0187_1534)) != 0 {
+                    mem.write(out.wrapping_add(4), 1u16);
+                }
+                return p.wrapping_add(2);
+            }
+        }
+        // the fixed box
+        mem.write(out.wrapping_add(0x18), 0.0f32);
+        mem.write(out, page);
+        let narrow = image_f32(mem, 0x00b9_2318);
+        mem.write(out.wrapping_add(0x1c), narrow);
+        mem.write(out.wrapping_add(2), 0x14u32);
+        mem.write(out.wrapping_add(0x20), tall);
+        let x = image_f32(mem, 0x00b5_f314);
+        mem.write(out.wrapping_add(8), x);
+        mem.write(out.wrapping_add(0xc), 0.0f32);
+        let right = image_f32(mem, 0x00b5_67a8);
+        mem.write(out.wrapping_add(0x10), right);
+        let bottom: f64 = mem.read(mem.rebase(0x00b5_87d8));
+        let zero: f64 = mem.read(mem.rebase(0x00b0_db90));
+        mem.write(out.wrapping_add(0x14), (bottom + zero) as f32);
+        p.wrapping_add(1)
+    }
+
+    /// Clears the 0x40-byte glyph record at `0x01841d50` that the battle
+    /// text widths pass to `TOGetFontInfo` (the originals `memset` it).
+    fn clear_glyph_record<M: Mem>(mem: &mut M) -> u32 {
+        let at = mem.rebase(0x0184_1d50);
+        for k in 0..0x10 {
+            mem.write(at.wrapping_add(4 * k), 0u32);
+        }
+        at
+    }
+
+    /// The advance of the glyph at `p` (`TOGetFontInfo` into the glyph
+    /// record, then `TOGetFontAdvance(0, record, scale)`), added to the f32
+    /// at `out`.
+    #[allow(clippy::cast_possible_truncation)]
+    fn add_glyph_advance<M: Mem>(
+        mem: &mut M,
+        p: u32,
+        out: u32,
+        scale: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        let record = mem.rebase(0x0184_1d50);
+        let next = call(mem, 0x008b_7240, &[p, record]);
+        let advance = fcall(mem, 0x008f_a740, &[0, record, scale]);
+        let w: f32 = mem.read(out);
+        mem.write(out, (advance + f64::from(w)) as f32);
+        next
+    }
+
+    /// Takes the trailing letter space (`TOGetFontSpaceInPiexl(0)`) off
+    /// the f32 at `out`.
+    #[allow(clippy::cast_possible_truncation)]
+    fn drop_letter_space<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        let w: f32 = mem.read(out);
+        let space = fcall(mem, 0x008f_a570, &[0]);
+        mem.write(out, (f64::from(w) - space) as f32);
+    }
+
+    /// `ToGetBtlEasyFontWidth(text, &width, _, scale)` (`0x00905290`): the
+    /// width of a battle text at `scale` (f32 bits): the advances of its
+    /// group-4 glyphs (`TOGetGroup`), less one letter space. Calls go
+    /// through `call`, float results (ST0) through `fcall`.
+    pub fn to_get_btl_easy_font_width<M: Mem>(
+        mem: &mut M,
+        text: u32,
+        out: u32,
+        scale: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        clear_glyph_record(mem);
+        mem.write(out, 0.0f32);
+        let mut p = text;
+        loop {
+            let c: u8 = mem.read(p);
+            if c == 0 {
+                break;
+            }
+            if call(mem, 0x008d_f610, &[u32::from(c)]) == 4 {
+                add_glyph_advance(mem, p, out, scale, &mut call, &mut fcall);
+            }
+            p = call(mem, 0x008d_fd80, &[p]);
+        }
+        drop_letter_space(mem, out, &mut fcall);
+    }
+
+    /// `ToGetBtlEasyDigitWidth(digits, value, &width, scale)`
+    /// (`0x00905190`): the width of `value` written by
+    /// `TOValueToMesFontL(value, text, digits)` into the 32-byte `text`
+    /// (the original's stack buffer): every glyph's advance, less one
+    /// letter space.
+    #[allow(clippy::too_many_arguments)]
+    pub fn to_get_btl_easy_digit_width<M: Mem>(
+        mem: &mut M,
+        digits: u32,
+        value: u32,
+        out: u32,
+        scale: u32,
+        text: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        call(mem, 0x008b_9140, &[value, text, digits]);
+        clear_glyph_record(mem);
+        mem.write(out, 0.0f32);
+        let mut p = text;
+        while mem.read::<u8>(p) != 0 {
+            add_glyph_advance(mem, p, out, scale, &mut call, &mut fcall);
+            p = call(mem, 0x008d_fd80, &[p]);
+        }
+        drop_letter_space(mem, out, &mut fcall);
+    }
+
+    /// `ToGetBtlEasyDigitWidth2(value, &width, scale, extra)`
+    /// (`0x00905230`): [`to_get_btl_easy_digit_width`] with as many digits
+    /// as `value` has (1 for 0).
+    pub fn to_get_btl_easy_digit_width2<M: Mem>(
+        mem: &mut M,
+        value: u32,
+        out: u32,
+        scale: u32,
+        extra: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let mut digits = 0u32;
+        let mut q = value.cast_signed();
+        if q == 0 {
+            digits = 1;
+        } else {
+            while q != 0 {
+                q /= 10;
+                digits += 1;
+            }
+        }
+        call(mem, 0x0090_5190, &[digits, value, out, scale, extra]);
+    }
+
+    /// `TOGetWidthMacro_help(table, code, scale, extra)` (`0x008fa920`):
+    /// the width of the macro text `TOGetChangeMacroAddress(table, code)`
+    /// (0.0 without one): `7 n` spaces of `n - 0xe0` (0xe0..0xf0), nested
+    /// macros 0x12..=0x22 (through `fcall` to itself), other glyphs their
+    /// advance at `scale`.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn to_get_width_macro_help<M: Mem>(
+        mem: &mut M,
+        table: u32,
+        code: u32,
+        scale: u32,
+        extra: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> f32 {
+        let record = clear_glyph_record(mem);
+        let mut acc = 0.0f32;
+        let mut p = call(mem, 0x008b_6660, &[table, code]);
+        if p == 0 {
+            return 0.0;
+        }
+        loop {
+            let c: u8 = mem.read(p);
+            if c == 0 {
+                return acc;
+            }
+            if c == 7 {
+                let n: u8 = mem.read(p.wrapping_add(1));
+                if (0xe0..0xf0).contains(&n) {
+                    acc = (f64::from(f32::from(n - 0xe0)) + f64::from(acc)) as f32;
+                }
+                p = call(mem, 0x008d_fd80, &[p]);
+            } else if (0x12..=0x22).contains(&c) {
+                let v = fcall(mem, 0x008f_a920, &[table, p, scale, extra]);
+                acc = (v + f64::from(acc)) as f32;
+                p = call(mem, 0x008d_fd80, &[p]);
+            } else {
+                p = call(mem, 0x008b_7240, &[p, record]);
+                let advance = fcall(mem, 0x008f_a740, &[0, record, scale]);
+                acc = (advance + f64::from(acc)) as f32;
+            }
+        }
+    }
+
+    /// `ToGetCrossExtMesFontWidth(table, text, &width, scale, extra)`
+    /// (`0x00905320`): the width of a message text: group-4 glyphs their
+    /// advance, group-3 macros their width (`TOGetWidthMacro_help`, unless
+    /// `table` is -1), group-2 `7 n` spaces of `n - 0xe0` (0xe1..0xf0) and
+    /// `0xb n` button icons (`TOGetScaleButtonIconWidth(n, 0x00b66864)`
+    /// plus a letter space), less one letter space. It first asks
+    /// `graphicFontGetScreenWH` into `scratch` (8 bytes), as the original
+    /// does.
+    #[allow(clippy::cast_possible_truncation, clippy::too_many_arguments)]
+    pub fn to_get_cross_ext_mes_font_width<M: Mem>(
+        mem: &mut M,
+        table: u32,
+        text: u32,
+        out: u32,
+        scale: u32,
+        extra: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        call(mem, 0x0064_0db0, &[scratch, scratch.wrapping_add(4)]);
+        clear_glyph_record(mem);
+        mem.write(out, 0.0f32);
+        let mut p = text;
+        loop {
+            let c: u8 = mem.read(p);
+            if c == 0 {
+                break;
+            }
+            let add = match call(mem, 0x008d_f610, &[u32::from(c)]) {
+                4 => {
+                    add_glyph_advance(mem, p, out, scale, &mut call, &mut fcall);
+                    None
+                }
+                3 if table != u32::MAX => Some(fcall(mem, 0x008f_a920, &[table, p, scale, extra])),
+                2 if c == 7 => {
+                    let n: u8 = mem.read(p.wrapping_add(1));
+                    (n > 0xe0 && n < 0xf0).then(|| f64::from(f32::from(n - 0xe0)))
+                }
+                2 if c == 0xb => {
+                    let n = u32::from(mem.read::<u8>(p.wrapping_add(1)));
+                    let size: u32 = mem.read(mem.rebase(0x00b6_6864));
+                    let icon = fcall(mem, 0x008f_a800, &[n, size]);
+                    let space = fcall(mem, 0x008f_a570, &[0]);
+                    Some(space + icon)
+                }
+                _ => None,
+            };
+            if let Some(v) = add {
+                let w: f32 = mem.read(out);
+                mem.write(out, (v + f64::from(w)) as f32);
+            }
+            p = call(mem, 0x008d_fd80, &[p]);
+        }
+        drop_letter_space(mem, out, &mut fcall);
+    }
+
+    /// `TOGetChangeMacroAddress(window, code)` (`0x008b6660`): the text a
+    /// macro code stands for in message window `window`, or 0.
+    ///
+    /// By the code byte: 0x10 `n` (0x50..=0x57) writes the window's counter
+    /// (`*(0x01868a90[window]) + 0xc`) as `n - 0x4f` digits into
+    /// `0x01869ec4` (`TOIntToMes` mode 1, kept back in the counter); 0x12
+    /// is a macro slot (`0x01869ab0[window × 32 + n - 0x30]`, see below, or
+    /// for `n` from 0x50 a window string `u16` offset table at
+    /// `*0x025d16c4 - 0x140`); 0x13 a character name
+    /// (`TOGetSaveChrName`); 0x14, 0x15 and 0x18 the code itself; 0x16 and
+    /// 0x17 an item text (`MsGetRomItem`); 0x19..=0x22 a text table
+    /// (`get_ptr32_func` of `0x01869eb0[English]`, entry `code - 0x13`)
+    /// indexed by the window's `+0x20` base; 0x23 a key item
+    /// (`MsImportantName`).
+    ///
+    /// A macro slot of kind (`+1`) 0xff is the empty text (`0x00c5a040`);
+    /// 0 points at `+4`; 1 and 2 go through `TOFuncMacroCmdValue`;
+    /// 0x33..=0x36 name an item, weapon, command or ability (`+4`); 0x37 is
+    /// the field pickup (`MsFieldItemGetMes`, then gil, item, key item or
+    /// weapon from `0x02310dac..`, the empty text unless exactly one kind);
+    /// 0x13..=0x23 fold `+4 / 0xd0` into the kind (and keep `+4 % 0xd0`)
+    /// and expand that code (through `scratch + 4`, the original's stack);
+    /// 0x2b..=0x32 write `+4` as `kind - 0x2a` digits. `scratch` (8 bytes)
+    /// stands in for the original's stack words.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::many_single_char_names
+    )]
+    pub fn to_get_change_macro_address<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        code: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let empty = mem.rebase(0x00c5_a040);
+        let digits = mem.rebase(0x0186_9ec4);
+        let c: u8 = mem.read(code);
+        let next: u8 = mem.read(code.wrapping_add(1));
+        let n = u32::from(next.wrapping_sub(0x30));
+        let window_base = |mem: &M| -> i32 {
+            let w: u32 = mem.read(mem.rebase(0x0186_76f0).wrapping_add(window.wrapping_mul(4)));
+            i32::from(mem.read::<i16>(w.wrapping_add(0x20)))
+        };
+        match c {
+            0x10 => {
+                if !(0x50..=0x57).contains(&next) {
+                    return 0;
+                }
+                let slot = mem.rebase(0x0186_8a90).wrapping_add(window.wrapping_mul(4));
+                let w: u32 = mem.read(slot);
+                let count: u32 = mem.read(w.wrapping_add(0xc));
+                let r = call(
+                    mem,
+                    0x008b_8290,
+                    &[count, digits, u32::from(next) - 0x4f, 1],
+                );
+                let w: u32 = mem.read(slot);
+                mem.write(w.wrapping_add(0xc), r);
+                digits
+            }
+            0x12 => {
+                if next >= 0x50 {
+                    let strings: u32 = mem.read(mem.rebase(0x025d_16c4));
+                    let index = window_base(mem) + i32::from(next) * 2;
+                    let at = strings
+                        .wrapping_add((index * 2).cast_unsigned())
+                        .wrapping_sub(0x140);
+                    return u32::from(mem.read::<u16>(at)).wrapping_add(strings);
+                }
+                let slot = mem
+                    .rebase(0x0186_9ab0)
+                    .wrapping_add((window.wrapping_shl(5).wrapping_add(n)).wrapping_mul(4));
+                let entry = |mem: &M| -> u32 { mem.read(slot) };
+                let e = entry(mem);
+                let kind: u8 = mem.read(e.wrapping_add(1));
+                if kind == 0xff {
+                    return empty;
+                }
+                let mut out = if kind == 0 {
+                    mem.read(e.wrapping_add(4))
+                } else {
+                    code
+                };
+                if kind == 1 {
+                    out = call(mem, 0x008b_6210, &[e]);
+                }
+                let e = entry(mem);
+                if mem.read::<u8>(e.wrapping_add(1)) == 2 {
+                    out = call(mem, 0x008b_6210, &[e]);
+                }
+                let e = entry(mem);
+                let kind: u8 = mem.read(e.wrapping_add(1));
+                let arg: u32 = mem.read(e.wrapping_add(4));
+                let name = match kind {
+                    0x33 => Some(0x008b_8db0),
+                    0x34 => Some(0x008b_8dd0),
+                    0x35 => Some(0x008b_8d70),
+                    0x36 => Some(0x008b_8d90),
+                    _ => None,
+                };
+                if let Some(f) = name {
+                    return call(mem, f, &[arg]);
+                }
+                if kind == 0x37 {
+                    call(mem, 0x0079_8ff0, &[arg]);
+                    let g = |mem: &M, a: u32| mem.rebase(a);
+                    let gil: i32 = mem.read(g(mem, 0x0231_0dac));
+                    let items = i16::from(mem.read::<i8>(g(mem, 0x0231_0db0)));
+                    let keys = i16::from(mem.read::<i8>(g(mem, 0x0231_0db1)));
+                    let weapons = i16::from(mem.read::<i8>(g(mem, 0x0231_0db2)));
+                    let kinds = keys
+                        .wrapping_add(weapons)
+                        .wrapping_add(items)
+                        .wrapping_add(i16::from(gil > 0));
+                    if kinds != 1 {
+                        return empty;
+                    }
+                    if gil > 0 {
+                        call(mem, 0x008b_8290, &[gil.cast_unsigned(), digits, 0, 0]);
+                        return digits;
+                    }
+                    if items > 0 {
+                        let item = u32::from(mem.read::<u16>(g(mem, 0x0231_0db4)));
+                        return call(mem, 0x008b_8db0, &[item]);
+                    }
+                    if keys > 0 {
+                        let key = u32::from(mem.read::<u16>(g(mem, 0x0231_0dcc)));
+                        return call(mem, 0x0079_0860, &[key]);
+                    }
+                    if weapons > 0 {
+                        let weapon = u32::from(mem.read::<u16>(g(mem, 0x0231_0dce)));
+                        return call(mem, 0x008b_8dd0, &[weapon]);
+                    }
+                }
+                let e = entry(mem);
+                let kind = mem.read::<i8>(e.wrapping_add(1));
+                if (0x13..=0x23).contains(&kind) {
+                    let v: i32 = mem.read(e.wrapping_add(4));
+                    mem.write(
+                        e.wrapping_add(1),
+                        kind.cast_unsigned().wrapping_add((v / 0xd0) as u8),
+                    );
+                    let e = entry(mem);
+                    let v: i32 = mem.read(e.wrapping_add(4));
+                    mem.write(e.wrapping_add(4), v % 0xd0);
+                    let e = entry(mem);
+                    let buf = scratch.wrapping_add(4);
+                    let k: u8 = mem.read(e.wrapping_add(1));
+                    let low: u8 = mem.read(e.wrapping_add(4));
+                    mem.write(buf, k);
+                    mem.write(buf.wrapping_add(1), low.wrapping_add(0x30));
+                    mem.write(buf.wrapping_add(2), 0u8);
+                    out = call(mem, 0x008b_6660, &[window, buf]);
+                }
+                let e = entry(mem);
+                let kind = mem.read::<i8>(e.wrapping_add(1));
+                if (0x2b..=0x32).contains(&kind) {
+                    let v: u32 = mem.read(e.wrapping_add(4));
+                    let count = (i32::from(kind) - 0x2a).cast_unsigned();
+                    call(mem, 0x008b_8290, &[v, digits, count, 0]);
+                    return digits;
+                }
+                out
+            }
+            0x13 => call(mem, 0x008a_c850, &[n]),
+            0x14 | 0x15 | 0x18 => code,
+            0x16 | 0x17 => {
+                let item = call(mem, 0x0079_09f0, &[n, scratch]);
+                let base: u32 = mem.read(scratch);
+                u32::from(mem.read::<u16>(item)).wrapping_add(base)
+            }
+            0x19..=0x22 => {
+                let english = call(mem, 0x0078_51d0, &[]);
+                let tables: u32 = mem.read(
+                    mem.rebase(0x0186_9eb0)
+                        .wrapping_add(english.wrapping_mul(4)),
+                );
+                let table = call(mem, 0x00a4_4650, &[tables]);
+                let text: u32 = mem.read(table.wrapping_add(u32::from(c) * 4).wrapping_sub(0x4c));
+                let index = window_base(mem) + n.cast_signed() * 2;
+                u32::from(mem.read::<u16>(text.wrapping_add((index * 2).cast_unsigned())))
+                    .wrapping_add(text)
+            }
+            0x23 => call(mem, 0x0079_0860, &[n]),
+            _ => 0,
+        }
+    }
+
+    /// `TOGetChangeMacroWidth(window, code, mode)` (`0x008b6a30`): the width
+    /// of the macro text `TOGetChangeMacroAddress(window, code)` (0.0
+    /// without one): nested macros (group 3, through `fcall` to itself),
+    /// `7 n` spaces of `n - 0xe0` (0xe1..=0xef), other glyphs
+    /// `TOGetFontWidthInterMode(glyph, mode, &w)`. `w` lives in `scratch`
+    /// and keeps its last value between glyphs, starting at 0.0.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn to_get_change_macro_width<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        code: u32,
+        mode: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> f32 {
+        let mut acc = 0.0f32;
+        mem.write(scratch, 0.0f32);
+        let mut p = call(mem, 0x008b_6660, &[window, code]);
+        if p == 0 {
+            return 0.0;
+        }
+        loop {
+            let c: u8 = mem.read(p);
+            if c == 0 {
+                return acc;
+            }
+            if call(mem, 0x008d_f610, &[u32::from(c)]) == 3 {
+                let v = fcall(mem, 0x008b_6a30, &[window, p, mode]);
+                acc = (v + f64::from(acc)) as f32;
+                p = call(mem, 0x008d_fd80, &[p]);
+                continue;
+            }
+            let n: u8 = mem.read(p.wrapping_add(1));
+            if c == 7 && (0xe1..=0xef).contains(&n) {
+                acc = (f64::from(f32::from(n - 0xe0)) + f64::from(acc)) as f32;
+                p = call(mem, 0x008d_fd80, &[p]);
+                continue;
+            }
+            p = call(mem, 0x008b_7be0, &[p, mode, scratch]);
+            let w: f32 = mem.read(scratch);
+            acc = (f64::from(w) + f64::from(acc)) as f32;
+        }
+    }
+
+    /// `TOGetMessageWH(window, text, &w, &h, mode, flags)` (`0x008b9650`):
+    /// the width (f32, the widest line) and height (`u16`, the deepest line
+    /// plus 2) of a message text, returning the text after the code that
+    /// ended it.
+    ///
+    /// Lines are 0x10 high. Codes 1 and 2 end a line (and the text when
+    /// `flags & 0xf` is at least 1), 3 adds a line (ending the text at mode
+    /// 3), 0 ends it. Glyphs (group 4) add `TOGetFontWidthInterMode` widths,
+    /// translated first in an Al Bhed window (`+0x10` 0x4000,
+    /// `TOConvAlbhedWord`); code 5 skips a byte. Controls: `7 n` sets the
+    /// line start (`n × 4 - 0x100` for 0x40..0xc0), adds `n - 0xe0` spaces
+    /// (0xe1..=0xef), and `7 0x38` marks the window (`+0xe`) unless `+0x24`;
+    /// `0xe 0x40`/`0xe 0x41` open and close a 5.0 wrap indent (also taken on
+    /// a line break; mode 3 starts with it open); `0xb n` adds a button icon
+    /// (`TOGetScaleButtonIconWidth`, scale 0.73 and 1.5 more at modes 1 and
+    /// 3, else 0.65 and 1.0 more); `0x10 n` counts the window's counter
+    /// (`0x50..0x60`, measured through `fcall` to itself) and marks `+0x1e`
+    /// unless `flags & 0x100` or `n` is 0xff. Macros (group 3) add
+    /// `TOGetChangeMacroWidth`. `0x018663e8` counts the codes and
+    /// `0x018663ec` flags a type-1 window (0..=7, `TOGetWindowType`) while
+    /// no battle window or event message is up. `scratch` (0x40 bytes)
+    /// stands in for the original's stack.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::too_many_arguments,
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        clippy::many_single_char_names
+    )]
+    pub fn to_get_message_wh<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        text: u32,
+        out_w: u32,
+        out_h: u32,
+        mode: u32,
+        flags: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        let tmp = scratch;
+        let albhed = scratch.wrapping_add(4);
+        let sub_w = scratch.wrapping_add(0x10);
+        let sub_h = scratch.wrapping_add(0x14);
+        let digits = scratch.wrapping_add(0x20);
+        let indent: f64 = mem.read(g(mem, 0x00b4_1d20));
+        let mut max_w = 0.0f32;
+        let mut cur_w = 0.0f32;
+        mem.write(tmp, 0.0f32);
+        let mut max_h = 0i32;
+        let mut going = true;
+        if window <= 7 {
+            let typed = call(mem, 0x0090_6c40, &[window]) == 1
+                && mem.read::<u32>(g(mem, 0x0134_0824)) == 0
+                && mem.read::<u32>(g(mem, 0x0133_c948)) == 0;
+            let flag = typed && mem.read::<u32>(g(mem, 0x0132_7100)) == 0;
+            mem.write(g(mem, 0x0186_63ec), u32::from(flag));
+        }
+        let line_end = flags & 0xf;
+        let high = flags & 0xff00;
+        let mut wrap = (mode ^ 3).cast_signed() < 1;
+        let mut line = 0x10i32;
+        mem.write(g(mem, 0x0186_63e8), 0u32);
+        let window_info =
+            |mem: &M| -> u32 { mem.read(g(mem, 0x0186_76f0).wrapping_add(window.wrapping_mul(4))) };
+        let mut p = text;
+        loop {
+            let c: u8 = mem.read(p);
+            let mut add: Option<f64> = None;
+            match call(mem, 0x008d_f610, &[u32::from(c)]) {
+                1 => {
+                    if wrap && cur_w > 0.0 {
+                        cur_w = (f64::from(cur_w) + indent) as f32;
+                    }
+                    if max_w < cur_w {
+                        max_w = cur_w;
+                    }
+                    cur_w = 0.0;
+                    match c {
+                        0 => {
+                            if line > max_h {
+                                max_h = line;
+                            }
+                            going = false;
+                        }
+                        1 | 2 => {
+                            if line > max_h {
+                                max_h = line;
+                            }
+                            line = 0x10;
+                            if line_end >= 1 {
+                                going = false;
+                            }
+                        }
+                        3 => {
+                            line += 0x10;
+                            if line_end == 3 && line > max_h {
+                                max_h = line;
+                                going = false;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                2 => {
+                    let n: u8 = mem.read(p.wrapping_add(1));
+                    if c == 7 {
+                        if window.cast_signed() >= 0 && n == 0x38 {
+                            let w = window_info(mem);
+                            if mem.read::<u16>(w.wrapping_add(0x24)) == 0 {
+                                mem.write(w.wrapping_add(0xe), 1u16);
+                            }
+                        }
+                        if (0x40..0xc0).contains(&n) {
+                            cur_w = (i32::from(n) * 4 - 0x100) as f32;
+                        }
+                        if (0xe1..=0xef).contains(&n) {
+                            add = Some(f64::from(f32::from(n - 0xe0)));
+                        }
+                    } else {
+                        if c == 0xe {
+                            if n == 0x40 && !wrap {
+                                wrap = true;
+                            }
+                            if n == 0x41 && wrap && cur_w > 0.0 {
+                                wrap = false;
+                                cur_w = (f64::from(cur_w) + indent) as f32;
+                            }
+                        }
+                        if c == 0xb {
+                            let (scale, extra) = if mode == 1 || mode == 3 {
+                                (
+                                    mem.read::<u32>(g(mem, 0x00b6_55e4)),
+                                    mem.read::<f64>(g(mem, 0x00b4_1d00)),
+                                )
+                            } else {
+                                (mem.read::<u32>(g(mem, 0x00b5_edf0)), 1.0)
+                            };
+                            let icon = fcall(mem, 0x008f_a800, &[u32::from(n), scale]);
+                            cur_w = ((icon + extra) + f64::from(cur_w)) as f32;
+                        }
+                        if c == 0x10 && window.cast_signed() >= 0 {
+                            if (0x50..0x60).contains(&n) {
+                                let counter: u32 = mem.read(
+                                    mem.read::<u32>(
+                                        g(mem, 0x0186_8a90).wrapping_add(window.wrapping_mul(4)),
+                                    )
+                                    .wrapping_add(0xc),
+                                );
+                                call(mem, 0x008b_8290, &[counter, digits, u32::from(n) - 0x4f, 1]);
+                                call(mem, 0x008b_9650, &[window, digits, sub_w, sub_h, mode, 0]);
+                                let w: f32 = mem.read(sub_w);
+                                cur_w = (f64::from(w) + f64::from(cur_w)) as f32;
+                                let info = window_info(mem);
+                                mem.write(info.wrapping_add(0x1e), 1u16);
+                            }
+                            if high & 0x100 == 0 && mem.read::<u8>(p.wrapping_add(1)) != 0xff {
+                                let info = window_info(mem);
+                                mem.write(info.wrapping_add(0x1e), 1u16);
+                            }
+                        }
+                    }
+                }
+                3 => add = Some(fcall(mem, 0x008b_6a30, &[window, p, mode])),
+                4 => {
+                    if c == 5 {
+                        p = p.wrapping_add(1);
+                    } else {
+                        let glyph = if window.cast_signed() >= 0
+                            && mem.read::<u16>(window_info(mem).wrapping_add(0x10)) == 0x4000
+                        {
+                            call(mem, 0x0090_6780, &[p, albhed]);
+                            albhed
+                        } else {
+                            p
+                        };
+                        call(mem, 0x008b_7be0, &[glyph, mode, tmp]);
+                        add = Some(f64::from(mem.read::<f32>(tmp)));
+                    }
+                }
+                _ => {}
+            }
+            if let Some(v) = add {
+                cur_w = (v + f64::from(cur_w)) as f32;
+            }
+            p = call(mem, 0x008d_fd80, &[p]);
+            let count: u32 = mem.read(g(mem, 0x0186_63e8));
+            mem.write(g(mem, 0x0186_63e8), count.wrapping_add(1));
+            if !going {
+                break;
+            }
+        }
+        mem.write(out_w, max_w);
+        mem.write(out_h, (max_h + 2) as u16);
+        mem.write(g(mem, 0x0186_63ec), 0u32);
+        p
+    }
+
+    /// `TOBtlFinishCommand()` (`0x008975a0`): sends the chosen command
+    /// (`TOControlMsSetMenuCommand`, `MsSetBtlCommand(0x023cc040,
+    /// 0x023cc038, 0)`), saves the cursor when the cursor-save option is on
+    /// and the command (`0x023cc040`) is at most 0x11, clears the command
+    /// window state (`0x0133c93c`, `0x023cc08c`, nine words at
+    /// `0x0133d74c`), resets the scenes (`TOSeqInitAllScene(2)`) and, when
+    /// `0x0133d6e0` is 0, sets `0x023cc088` to 0xff. Returns 0xff then,
+    /// else the scene reset's eax.
+    pub fn to_btl_finish_command<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        call(mem, 0x0089_afc0, &[]);
+        let target: u32 = mem.read(g(mem, 0x023c_c038));
+        call(mem, 0x0079_2d60, &[g(mem, 0x023c_c040), target, 0]);
+        if call(mem, 0x0078_51c0, &[]) == 1 && mem.read::<u8>(g(mem, 0x023c_c040)) <= 0x11 {
+            call(mem, 0x0089_89d0, &[]);
+        }
+        mem.write(g(mem, 0x0133_c93c), 0u8);
+        mem.write(g(mem, 0x023c_c08c), 0u32);
+        for k in 0..9 {
+            mem.write(g(mem, 0x0133_d74c).wrapping_add(4 * k), 0u32);
+        }
+        let r = call(mem, 0x008a_e5a0, &[2]);
+        if mem.read::<u32>(g(mem, 0x0133_d6e0)) == 0 {
+            mem.write(g(mem, 0x023c_c088), 0xffu16);
+            return 0xff;
+        }
+        r
+    }
+
+    /// `TOBtlSetCommand(level, chr, command)` (`0x00899870`): opens the
+    /// sub-window of battle-window level `level` (0xf0-byte entries at
+    /// `0x0133c950`) for `command`: its kind `+6` (0 for 0xfe, 0xd for
+    /// 0xfffe, 0xc for 0xffff, else the command data's `+0x17`) and sets
+    /// `+0xa` to 1; a real command checks the current level's command (`+0xc`):
+    /// 0x311e sets `0x0133c94c` to 0x100 and marks `+0xa` 2, 0x3029 sets it
+    /// to 0x10000 and `+0xa4` to 2. Then `+0x20` takes the
+    /// `TOGetSaveWindow(chr +8, kind, +0x24)` text, `+0x88` the window
+    /// function `0x00898e40`, and the layout and callback are set
+    /// (`TOBtlSetWindowLayout`, `TOBtlSetCallback`, whose eax it returns).
+    /// `scratch` stands in for the original's argument slot that
+    /// `MsGetComData` writes.
+    pub fn to_btl_set_command<M: Mem>(
+        mem: &mut M,
+        level: u32,
+        chr: u32,
+        command: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let _ = chr;
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        let entry = g(mem, 0x0133_c950).wrapping_add(level.wrapping_mul(0xf0));
+        mem.write(entry.wrapping_add(2), 0u8);
+        let kind = match command {
+            0xfe => Some(0u16),
+            0xfffe => Some(0xd),
+            0xffff => Some(0xc),
+            _ => None,
+        };
+        if let Some(kind) = kind {
+            mem.write(entry.wrapping_add(6), kind);
+            mem.write(entry.wrapping_add(0xa), 1u16);
+        } else {
+            mem.write(scratch, level);
+            let data = call(mem, 0x0079_a4b0, &[command, scratch]);
+            let kind = u16::from(mem.read::<u8>(data.wrapping_add(0x17)));
+            mem.write(entry.wrapping_add(6), kind);
+            let depth = i32::from(mem.read::<i8>(g(mem, 0x023c_c092)));
+            let current =
+                g(mem, 0x0133_c950).wrapping_add(depth.wrapping_mul(0xf0).cast_unsigned());
+            mem.write(entry.wrapping_add(0xa), 1u16);
+            if mem.read::<u16>(current.wrapping_add(0xc)) == 0x311e {
+                mem.write(g(mem, 0x0133_c94c), 0x100u32);
+                mem.write(current.wrapping_add(0xa), 2u8);
+            }
+            if mem.read::<u16>(current.wrapping_add(0xc)) == 0x3029 {
+                mem.write(g(mem, 0x0133_c94c), 0x0001_0000u32);
+                mem.write(current.wrapping_add(0xa4), 2u16);
+            }
+        }
+        let kind = i32::from(mem.read::<i16>(entry.wrapping_add(6))).cast_unsigned();
+        let owner = i32::from(mem.read::<i16>(entry.wrapping_add(8))).cast_unsigned();
+        let text = call(mem, 0x0089_b5a0, &[owner, kind, entry.wrapping_add(0x24)]);
+        mem.write(entry.wrapping_add(0x20), text);
+        mem.write(entry.wrapping_add(0x88), g(mem, 0x0089_8e40));
+        call(mem, 0x008a_10d0, &[entry]);
+        call(mem, 0x008a_0de0, &[entry])
+    }
+
+    /// `TOBtlSetNextAction(chr, command)` (`0x0089a330`): steps the battle
+    /// command windows one level deeper for `command`, returning 1, or 0
+    /// when `TOCheckBtlCommandUse` refuses it.
+    ///
+    /// At a targeting level (`+2` 1) the command is the target pick 0x3115
+    /// and the command list is saved (`0x0133d0d0` to `0x0133d210`, 0x140
+    /// bytes); with all targets chosen (`+0xa6` at least `+0xa4`) the
+    /// command finishes (`TOBtlFinishCommand`) instead, and at the 0x10000
+    /// pick mode `0x0133f106` takes `MsGetCommandMP`. A use check of 0xff
+    /// finishes too. The current level is marked done (`+1` 6) with the
+    /// command in its history (`+0x16 + 2 × +0xb`); the next level is
+    /// cleared and given the character, command, `+0x16` 0xff, the target
+    /// counts of the level before (or 1 at level 0) and `+1` 1. Checks of
+    /// 0x80 or less open the sub-window (`TOBtlSetCommand`), 0xfe a target
+    /// pick (`TOBtlSetTarget`); with cursor saving the saved cursor comes
+    /// back (`TOBtlSetDefaultCursorPos`). A new target pick with no
+    /// forced target (`0x0133d168` -1, `0x0133d0e0` 0) starts on the first
+    /// dead party member (`MsGetChrStatDeath`), if any. `scratch` stands in
+    /// for the original's stack word.
+    #[allow(clippy::too_many_lines)]
+    pub fn to_btl_set_next_action<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        command: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        let depth_at = g(mem, 0x023c_c092);
+        let level_at = |mem: &M, depth: i8| -> u32 {
+            mem.rebase(0x0133_c950)
+                .wrapping_add((i32::from(depth) * 0xf0).cast_unsigned())
+        };
+        let depth: i8 = mem.read(depth_at);
+        let level = level_at(mem, depth);
+        let mut command = command;
+        if mem.read::<u8>(level.wrapping_add(2)) == 1 {
+            let done: i16 = mem.read(level.wrapping_add(0xa6));
+            let want: i16 = mem.read(level.wrapping_add(0xa4));
+            if done >= want {
+                call(mem, 0x0089_75a0, &[]);
+                return 1;
+            }
+            command = 0x3115;
+            for k in 0..0x50u32 {
+                let v: u32 = mem.read(g(mem, 0x0133_d0d0).wrapping_add(4 * k));
+                mem.write(g(mem, 0x0133_d210).wrapping_add(4 * k), v);
+            }
+            if mem.read::<u32>(g(mem, 0x0133_c94c)) == 0x0001_0000 {
+                let own = u32::from(mem.read::<u16>(level.wrapping_add(0xc)));
+                let data = call(mem, 0x0079_a4b0, &[own, scratch]);
+                let depth: i8 = mem.read(depth_at);
+                let who = i32::from(mem.read::<i16>(level_at(mem, depth).wrapping_add(8)))
+                    .cast_unsigned();
+                let mp = call(mem, 0x0078_cf70, &[who, data]);
+                #[allow(clippy::cast_possible_truncation)] // mov word, ax
+                mem.write(g(mem, 0x0133_f106), mp as u16);
+            }
+        }
+        let check = match command {
+            0xfffe => 0xdi32,
+            0xffff => 0xc,
+            _ => {
+                let r = call(mem, 0x0089_aca0, &[chr, command]).cast_signed();
+                if r < 0 {
+                    return 0;
+                }
+                if r == 0xff {
+                    call(mem, 0x0089_75a0, &[]);
+                    return 1;
+                }
+                r
+            }
+        };
+        let depth: i8 = mem.read(depth_at);
+        if depth >= 0 {
+            let level = level_at(mem, depth);
+            mem.write(level.wrapping_add(1), 6u8);
+            let slot = i32::from(mem.read::<i8>(level.wrapping_add(0xb)));
+            #[allow(clippy::cast_possible_truncation)] // mov word, cx
+            mem.write(
+                level
+                    .wrapping_add(0x16)
+                    .wrapping_add((slot * 2).cast_unsigned()),
+                command as u16,
+            );
+        }
+        let depth = depth.wrapping_add(1);
+        mem.write(depth_at, depth);
+        let next = level_at(mem, depth);
+        for k in 0..0x3cu32 {
+            mem.write(next.wrapping_add(4 * k), 0u32);
+        }
+        #[allow(clippy::cast_possible_truncation)] // mov word, dx / cx
+        {
+            mem.write(next.wrapping_add(8), chr as u16);
+            mem.write(next.wrapping_add(0xc), command as u16);
+        }
+        mem.write(next.wrapping_add(0x16), 0xffu16);
+        if depth == 0 {
+            mem.write(g(mem, 0x0133_c9f4), 1u32);
+        } else {
+            let before = next.wrapping_sub(0xf0);
+            let want: u16 = mem.read(before.wrapping_add(0xa4));
+            mem.write(next.wrapping_add(0xa4), want);
+            let done: u16 = mem.read(before.wrapping_add(0xa6));
+            mem.write(next.wrapping_add(0xa6), done);
+        }
+        mem.write(next.wrapping_add(1), 1u8);
+        let depth_arg = i32::from(depth).cast_unsigned();
+        if check <= 0x80 {
+            call(mem, 0x0089_9870, &[depth_arg, chr, command]);
+        }
+        if check == 0xfe {
+            let depth: i8 = mem.read(depth_at);
+            call(
+                mem,
+                0x0089_a860,
+                &[i32::from(depth).cast_unsigned(), chr, command],
+            );
+        }
+        if call(mem, 0x0078_51c0, &[]) == 1 {
+            let depth: i8 = mem.read(depth_at);
+            let screen = i32::from(mem.read::<i16>(g(mem, 0x023c_c088)));
+            let saved: u8 = mem.read(g(mem, 0x0133_d770).wrapping_add(screen.cast_unsigned()));
+            let pick: u16 = mem.read(g(mem, 0x0133_ca4c));
+            let level = level_at(mem, depth);
+            if saved == 1
+                && pick != 0xffff
+                && pick != 0xfffe
+                && mem.read::<i16>(level.wrapping_add(8)) <= 0x11
+            {
+                call(mem, 0x0089_9ac0, &[level]);
+            }
+        }
+        let depth: i8 = mem.read(depth_at);
+        let level = level_at(mem, depth);
+        if mem.read::<u8>(level.wrapping_add(2)) == 1
+            && mem.read::<u32>(g(mem, 0x0133_d168)) == 0xffff_ffff
+            && mem.read::<u32>(g(mem, 0x0133_d0e0)) == 0
+        {
+            let count: i32 = mem.read(g(mem, 0x0133_f0d8));
+            let mut i = 0i32;
+            while i < count {
+                let who = g(mem, 0x0133_f0dc).wrapping_add((i * 2).cast_unsigned());
+                let id = u32::from(mem.read::<u16>(who));
+                if call(mem, 0x0079_5780, &[id]) == 1 {
+                    mem.write(g(mem, 0x0133_d200), 0u16);
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    // mov word, si
+                    mem.write(g(mem, 0x0133_d1fc), i as u16);
+                    let target: u32 =
+                        mem.read(g(mem, 0x0133_d180).wrapping_add((i * 4).cast_unsigned()));
+                    mem.write(g(mem, 0x0133_d178), target);
+                    let id: u16 = mem.read(who);
+                    mem.write(g(mem, 0x0133_d1f4), id);
+                    mem.write(g(mem, 0x0133_d1f8), g(mem, 0x0133_d180));
+                    let n: u16 = mem.read(g(mem, 0x0133_d17c));
+                    mem.write(g(mem, 0x0133_d1f6), n);
+                    return 1;
+                }
+                i += 1;
+            }
+        }
+        1
+    }
+
+    /// The battle text cursor at `0x025d09a0` the `ToMakeBtlEasy*` writers
+    /// lay glyphs out with: `+0` the colour words, `+4`/`+8` the pen
+    /// position (f32 bits), `+0xc..+0x18` cleared, `+0x1a` the icon mode 0,
+    /// `+0x1b` the alpha. The glyph record at `0x01841d50` is cleared too.
+    fn btl_easy_cursor<M: Mem>(mem: &mut M, colour: u32, x: u32, y: u32, alpha: u32) -> u32 {
+        clear_glyph_record(mem);
+        let c = mem.rebase(0x025d_09a0);
+        for k in 0..7 {
+            mem.write(c.wrapping_add(4 * k), 0u32);
+        }
+        mem.write(c, colour);
+        mem.write(c.wrapping_add(4), x);
+        mem.write(c.wrapping_add(8), y);
+        #[allow(clippy::cast_possible_truncation)] // mov byte, al
+        mem.write(c.wrapping_add(0x1b), alpha as u8);
+        c
+    }
+
+    /// The number of decimal digits of `value` (1 for 0).
+    fn digit_count(value: u32) -> u32 {
+        let mut q = value.cast_signed();
+        if q == 0 {
+            return 1;
+        }
+        let mut n = 0;
+        while q != 0 {
+            q /= 10;
+            n += 1;
+        }
+        n
+    }
+
+    /// `ToMakeBtlEasyDigit(digits, value, x, y, alpha, scale)`
+    /// (`0x00905440`): lays out `value` (`TOValueToMesFontL` into the
+    /// 32-byte `text`, the original's stack) from pen `x, y`: each glyph
+    /// gets its record (`TOGetFontInfo`), its shadow and face packets
+    /// (`TOMakePktBtlEasyFontShadow`, `TOMakePktBtlEasyFont`) and moves the
+    /// pen (`TOAddFontWidthSpace`). Float arguments are f32 bits.
+    #[allow(clippy::too_many_arguments)]
+    pub fn to_make_btl_easy_digit<M: Mem>(
+        mem: &mut M,
+        digits: u32,
+        value: u32,
+        x: u32,
+        y: u32,
+        alpha: u32,
+        scale: u32,
+        text: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        call(mem, 0x008b_9140, &[value, text, digits]);
+        btl_easy_digit_glyphs(mem, text, [x, y, alpha, scale], &mut call);
+    }
+
+    /// The glyph loop of the `ToMakeBtlEasyDigit*` writers: the cursor
+    /// at pen `x, y`, then for each glyph of `text` its record, shadow and
+    /// face packets and the pen advance.
+    fn btl_easy_digit_glyphs<M: Mem>(
+        mem: &mut M,
+        text: u32,
+        pen: [u32; 4],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [x, y, alpha, scale] = pen;
+        let cursor = btl_easy_cursor(mem, 0x8080_8080, x, y, alpha);
+        let record = mem.rebase(0x0184_1d50);
+        let mut p = text;
+        while mem.read::<u8>(p) != 0 {
+            call(mem, 0x008b_7240, &[p, record]);
+            call(mem, 0x008f_bae0, &[cursor, record, scale]);
+            call(mem, 0x008f_b940, &[cursor, record, scale]);
+            call(mem, 0x008e_8ed0, &[cursor, record, scale]);
+            p = call(mem, 0x008d_fd80, &[p]);
+        }
+    }
+
+    /// `ToMakeBtlEasyDigitRightAbmap(value, x, y, alpha, scale, extra)`
+    /// (`0x00905660`): `value` right-aligned on `x` (its
+    /// `ToGetBtlEasyDigitWidth` taken off), written with as many digits as
+    /// it has. `scratch` (0x24 bytes: the width, then the text) stands in
+    /// for the original's stack.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn to_make_btl_easy_digit_right_abmap<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [value, x, y, alpha, scale, extra] = args;
+        let n = digit_count(value);
+        let text = scratch.wrapping_add(4);
+        call(mem, 0x0090_5190, &[n, value, scratch, scale, extra]);
+        call(mem, 0x008b_9140, &[value, text, n]);
+        let w: f32 = mem.read(scratch);
+        let left = (f64::from(f32::from_bits(x)) - f64::from(w)) as f32;
+        btl_easy_digit_glyphs(mem, text, [left.to_bits(), y, alpha, scale], &mut call);
+    }
+
+    /// `0x008b89d0(window, text, other)`: gives message window `window`
+    /// (`0x018676f0`) its texts: `+0x5c`/`+0x60` `text`, `+0x74`/`+0x78`
+    /// `text` too with the language swap on, English and `0x025d16bc` set,
+    /// else `other`; `+0x90`/`+0x94` the swapped pair (with the swap and
+    /// English) or the first; `+0x20` 0 and `+0x22` whether bit test
+    /// `0x007851b0` or `0x00c59558` is 1. Then the no-op `0x006ef310`
+    /// (with `scratch`) and the window's own function at `+0xf4`
+    /// (through `cond`, with the window).
+    pub fn set_message_window_texts<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        text: u32,
+        other: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut cond: impl FnMut(&mut M, u32, u32) -> u32,
+    ) {
+        let info = |mem: &M| -> u32 {
+            mem.read(mem.rebase(0x0186_76f0).wrapping_add(window.wrapping_mul(4)))
+        };
+        let swapped = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            call(mem, 0x008a_c390, &[]) == 1 && call(mem, 0x0078_51d0, &[]) == 1
+        };
+        let second = if swapped(mem, &mut call) && mem.read::<u32>(mem.rebase(0x025d_16bc)) == 1 {
+            text
+        } else {
+            other
+        };
+        for (off, v) in [
+            (0x5cu32, text),
+            (0x60, text),
+            (0x74, second),
+            (0x78, second),
+        ] {
+            let w = info(mem);
+            mem.write(w.wrapping_add(off), v);
+        }
+        let (first, last) = if swapped(mem, &mut call) {
+            (0x74, 0x78)
+        } else {
+            (0x5c, 0x60)
+        };
+        let w = info(mem);
+        let v: u32 = mem.read(w.wrapping_add(first));
+        mem.write(w.wrapping_add(0x90), v);
+        let w = info(mem);
+        let v: u32 = mem.read(w.wrapping_add(last));
+        mem.write(w.wrapping_add(0x94), v);
+        let w = info(mem);
+        mem.write(w.wrapping_add(0x20), 0u16);
+        let flag =
+            call(mem, 0x0078_51b0, &[]) == 1 || mem.read::<u32>(mem.rebase(0x00c5_9558)) == 1;
+        let w = info(mem);
+        mem.write(w.wrapping_add(0x22), u16::from(flag));
+        call(mem, 0x006e_f310, &[scratch]);
+        let w = info(mem);
+        let f: u32 = mem.read(w.wrapping_add(0xf4));
+        cond(mem, f, w);
+    }
+
+    /// `ToMakeBtlEasyDigit2(value, x, y, alpha, scale, extra)`
+    /// (`0x00905550`): [`to_make_btl_easy_digit`] with as many digits as
+    /// `value` has.
+    pub fn to_make_btl_easy_digit2<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [value, x, y, alpha, scale, extra] = args;
+        let n = digit_count(value);
+        call(mem, 0x0090_5440, &[n, value, x, y, alpha, scale, extra]);
+    }
+
+    /// `ToMakeBtlEasyDigitRight(value, x, y, alpha, scale, extra)`
+    /// (`0x009055c0`): [`to_make_btl_easy_digit2`] right-aligned on `x`:
+    /// the pen starts at `x` less the number's width
+    /// (`ToGetBtlEasyDigitWidth` into `width`, the original's argument
+    /// slot).
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn to_make_btl_easy_digit_right<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        width: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [value, x, y, alpha, scale, extra] = args;
+        let n = digit_count(value);
+        mem.write(width, value);
+        call(mem, 0x0090_5190, &[n, value, width, scale, extra]);
+        let w: f32 = mem.read(width);
+        let left = (f64::from(f32::from_bits(x)) - f64::from(w)) as f32;
+        mem.write(width, left);
+        call(
+            mem,
+            0x0090_5440,
+            &[n, value, left.to_bits(), y, alpha, scale, extra],
+        );
+    }
+
+    /// `ToMakeBtlEasyEdgeDigit(digits, value, x, y, alpha, scale, extra)`
+    /// (`0x009057c0`): `value` written by `TOValueToMesFontL` into the
+    /// 32-byte `text` and laid out with `ToMakeBtlEasyEdgeFont`.
+    pub fn to_make_btl_easy_edge_digit<M: Mem>(
+        mem: &mut M,
+        digits: u32,
+        args: [u32; 6],
+        text: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [value, x, y, alpha, scale, extra] = args;
+        call(mem, 0x008b_9140, &[value, text, digits]);
+        call(mem, 0x0090_5930, &[text, x, y, alpha, scale, extra]);
+    }
+
+    /// `ToMakeBtlEasyEdgeDigit2(value, x, y, alpha, scale, extra)`
+    /// (`0x00905820`): [`to_make_btl_easy_edge_digit`] with as many digits
+    /// as `value` has.
+    pub fn to_make_btl_easy_edge_digit2<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [value, x, y, alpha, scale, extra] = args;
+        let n = digit_count(value);
+        call(mem, 0x0090_57c0, &[n, value, x, y, alpha, scale, extra]);
+    }
+
+    /// `ToMakeBtlEasyEdgeFont(text, x, y, alpha, scale, extra)`
+    /// (`0x00905930`): `ToMakeBtlEasyEdgeFontA` with edge alpha 0x80.
+    pub fn to_make_btl_easy_edge_font<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [text, x, y, alpha, scale, extra] = args;
+        call(mem, 0x0090_5970, &[text, x, y, alpha, scale, extra, 0x80]);
+    }
+
+    /// `ToMakeBtlEasyEdgeFontA(text, x, y, alpha, scale, extra, edge)`
+    /// (`0x00905970`): lays out an edged battle text from pen `x, y`
+    /// (colour 0x80 grey with edge alpha `edge`): line codes (group 1) move
+    /// the pen back to `x` and 16.0 down; glyphs (group 4) get their record,
+    /// the edge and face packets (`TOMakeBtlEasyFontEdge` with the UI draw
+    /// type 1 and shadow type 0, `TOMakePktBtlEasyFont` with shadow type
+    /// 1, then draw type 0) and move the pen (`TOAddFontWidthSpace`).
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn to_make_btl_easy_edge_font_a<M: Mem>(
+        mem: &mut M,
+        args: [u32; 7],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [text, x, y, alpha, scale, _extra, edge] = args;
+        let colour = 0x0080_8080 | (edge & 0xff) << 24;
+        let cursor = btl_easy_cursor(mem, colour, x, y, alpha);
+        let record = mem.rebase(0x0184_1d50);
+        let down: f64 = mem.read(mem.rebase(0x00b3_13a0));
+        let mut p = text;
+        loop {
+            let c: u8 = mem.read(p);
+            if c == 0 {
+                return;
+            }
+            match call(mem, 0x008d_f610, &[u32::from(c)]) {
+                1 => {
+                    mem.write(cursor.wrapping_add(4), x);
+                    let pen: f32 = mem.read(cursor.wrapping_add(8));
+                    mem.write(cursor.wrapping_add(8), (f64::from(pen) + down) as f32);
+                }
+                4 => {
+                    call(mem, 0x008b_7240, &[p, record]);
+                    call(mem, 0x0064_3af0, &[1]);
+                    call(mem, 0x0064_0dd0, &[0]);
+                    call(mem, 0x008f_ae40, &[cursor, record, scale]);
+                    call(mem, 0x0064_0dd0, &[1]);
+                    call(mem, 0x008f_b940, &[cursor, record, scale]);
+                    call(mem, 0x0064_3af0, &[0]);
+                    call(mem, 0x008e_8ed0, &[cursor, record, scale]);
+                }
+                _ => {}
+            }
+            p = call(mem, 0x008d_fd80, &[p]);
+        }
+    }
+
+    /// `ToMakeBtlEasyFont(text, x, y, alpha, scale)` (`0x00905ab0`): lays
+    /// out a battle text from pen `x, y` in grey 0x80: line codes move the
+    /// pen back to `x` and 16.0 down; glyphs get their record, the shadow
+    /// (unless `0x018716bc`, with UI draw type 1 and shadow types 0/1
+    /// around it) and face packets and move the pen
+    /// (`TOAddFontWidthSpace`); `0xb n` button icons (`setButtonData(n, -1)`,
+    /// then `resetButtonData`) are drawn at the pen
+    /// (`TODrawScaleButtonIconRGBA(n, x, y + 1.7, 0.6, grey)`, or `+ 3.2`
+    /// at 0.73 for icon modes 1 and 3) unless `n` is 0x4a, and move it by
+    /// the icon width (`TOGetScaleButtonIconWidth` through `fcall`) plus
+    /// 1.0 (1.5).
+    #[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
+    pub fn to_make_btl_easy_font<M: Mem>(
+        mem: &mut M,
+        args: [u32; 5],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        let [text, x, y, alpha, scale] = args;
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        let cursor = btl_easy_cursor(mem, 0x8080_8080, x, y, alpha);
+        let record = g(mem, 0x0184_1d50);
+        let down: f64 = mem.read(g(mem, 0x00b3_13a0));
+        let mut p = text;
+        loop {
+            let c: u8 = mem.read(p);
+            if c == 0 {
+                return;
+            }
+            match call(mem, 0x008d_f610, &[u32::from(c)]) {
+                1 => {
+                    mem.write(cursor.wrapping_add(4), x);
+                    let pen: f32 = mem.read(cursor.wrapping_add(8));
+                    mem.write(cursor.wrapping_add(8), (f64::from(pen) + down) as f32);
+                }
+                2 => {
+                    if c == 0xb {
+                        let n = u32::from(mem.read::<u8>(p.wrapping_add(1)));
+                        call(mem, 0x008b_1350, &[n, 0xffff_ffff]);
+                        let n = u32::from(mem.read::<u8>(p.wrapping_add(1)));
+                        if n != 0x4a {
+                            let wide = matches!(mem.read::<u8>(cursor.wrapping_add(0x1a)), 1 | 3);
+                            let (size, drop) = if wide {
+                                (g(mem, 0x00b6_55e4), g(mem, 0x00b6_6c88))
+                            } else {
+                                (g(mem, 0x00b3_eb48), g(mem, 0x00b5_83a0))
+                            };
+                            let size: u32 = mem.read(size);
+                            let drop: f64 = mem.read(drop);
+                            let pen_y: f32 = mem.read(cursor.wrapping_add(8));
+                            let icon_y = (f64::from(pen_y) + drop) as f32;
+                            let pen_x: u32 = mem.read(cursor.wrapping_add(4));
+                            call(
+                                mem,
+                                0x008f_8ee0,
+                                &[n, pen_x, icon_y.to_bits(), size, 0x80, 0x80, 0x80, 0x80],
+                            );
+                            let wide = matches!(mem.read::<u8>(cursor.wrapping_add(0x1a)), 1 | 3);
+                            let (size, gap) = if wide {
+                                (
+                                    mem.read::<u32>(g(mem, 0x00b6_55e4)),
+                                    mem.read::<f64>(g(mem, 0x00b4_1d00)),
+                                )
+                            } else {
+                                (mem.read::<u32>(g(mem, 0x00b3_eb48)), 1.0)
+                            };
+                            let n = u32::from(mem.read::<u8>(p.wrapping_add(1)));
+                            let icon = fcall(mem, 0x008f_a800, &[n, size]);
+                            let pen_x: f32 = mem.read(cursor.wrapping_add(4));
+                            mem.write(
+                                cursor.wrapping_add(4),
+                                ((icon + gap) + f64::from(pen_x)) as f32,
+                            );
+                        }
+                    }
+                    call(mem, 0x008b_1330, &[]);
+                }
+                4 => {
+                    call(mem, 0x008b_7240, &[p, record]);
+                    if mem.read::<u32>(g(mem, 0x0187_16bc)) == 0 {
+                        call(mem, 0x0064_3af0, &[1]);
+                        call(mem, 0x0064_0dd0, &[0]);
+                        call(mem, 0x008f_bae0, &[cursor, record, scale]);
+                        call(mem, 0x0064_0dd0, &[1]);
+                        call(mem, 0x008f_b940, &[cursor, record, scale]);
+                        call(mem, 0x0064_3af0, &[0]);
+                    } else {
+                        call(mem, 0x008f_b940, &[cursor, record, scale]);
+                    }
+                    call(mem, 0x008e_8ed0, &[cursor, record, scale]);
+                }
+                _ => {}
+            }
+            p = call(mem, 0x008d_fd80, &[p]);
+        }
+    }
+
+    /// `TOMakePktBtlEasyFont(pen, glyph, scale)` (`0x008fb940`) and, with
+    /// `shadow`, `TOMakePktBtlEasyFontShadow` (`0x008fbae0`): the quad of
+    /// one battle glyph at the pen of the text cursor `pen` (see
+    /// [`to_make_btl_easy_font`]) from its `TOGetFontInfo` record `glyph`,
+    /// handed to `graphicFontDraw` when `BeginScissor_XYUV` keeps it.
+    ///
+    /// The sprite record (in `scratch`, 0xb0 bytes: the image size at `+0`,
+    /// the record at `+0x10`, the texture word pair at `+0xa0`) holds the
+    /// corners `x, y` = pen + (0, `K_y × scale × slant`) and
+    /// pen + (`width × scale × K_x`, `K_y × scale × (18 + slant)`)
+    /// (`K_x`, `K_y` at `0x00c5d778`, `0x00c5d77c`), the cell's UVs over
+    /// the texture size (`TOGetImageWH`), the pen colour twice and the depth
+    /// 2000. The shadow is the same moved by `0x018716e0`/`0x018716e4`, its
+    /// texture variant 1 and draw offsets 2.0; the face draws at layer
+    /// parity + 2. With `edge` (`TOMakeBtlEasyFontEdge`, `0x008fae40`,
+    /// which wins over `shadow`) the slant and height use `K_x`, the
+    /// texture variant is 1, and the quad is drawn eight times at layer 0,
+    /// offset by ±2 (and 0) in x and y over `graphicFontGetEdgeRatio`
+    /// (through `fcall`). Record words the original leaves unset are zero
+    /// here.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::too_many_arguments,
+        clippy::cast_possible_truncation
+    )]
+    pub fn to_make_pkt_btl_easy_font<M: Mem>(
+        mem: &mut M,
+        pen: u32,
+        glyph: u32,
+        scale: u32,
+        shadow: bool,
+        edge: bool,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        let shadow = shadow && !edge;
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        let f = |mem: &M, a: u32| -> f64 { f64::from(mem.read::<f32>(a)) };
+        for k in 0..0x2c {
+            mem.write(scratch.wrapping_add(4 * k), 0u32);
+        }
+        let size = scratch;
+        let rec = scratch.wrapping_add(0x10);
+        let extra = scratch.wrapping_add(0xa0);
+        let page = u32::from(mem.read::<u16>(glyph));
+        let alpha = u32::from(mem.read::<u8>(pen.wrapping_add(0x1b)));
+        let parity = u32::from(mem.read::<u16>(glyph.wrapping_add(4)));
+        let texture = call(
+            mem,
+            0x008a_cf50,
+            &[page, alpha, parity, u32::from(shadow || edge), extra],
+        );
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let ratio = if edge {
+            fcall(mem, 0x0064_0d70, &[]) as f32
+        } else {
+            1.0
+        };
+        let page = i32::from(mem.read::<i16>(glyph)).cast_unsigned();
+        call(mem, 0x008a_c400, &[page, size, size.wrapping_add(4)]);
+        let (w_img, h_img) = (f(mem, size), f(mem, size.wrapping_add(4)));
+        let s = f64::from(f32::from_bits(scale));
+        let (px, py) = (f(mem, pen.wrapping_add(4)), f(mem, pen.wrapping_add(8)));
+        let slant = f(mem, glyph.wrapping_add(0x18));
+        let kx = f(mem, g(mem, 0x00c5_d778));
+        let ky = if edge {
+            kx
+        } else {
+            f(mem, g(mem, 0x00c5_d77c))
+        };
+        let (ox, oy) = if shadow {
+            (f(mem, g(mem, 0x0187_16e0)), f(mem, g(mem, 0x0187_16e4)))
+        } else {
+            (0.0, 0.0)
+        };
+        let (x0, y0, x1, y1) = if shadow {
+            let x1 = (f(mem, glyph.wrapping_add(0x1c)) * s * kx + px) + ox;
+            let y1 = oy + ((s * (f(mem, glyph.wrapping_add(0x20)) + slant)) * ky + py);
+            (px + ox, (s * slant + py) + oy, x1, y1)
+        } else {
+            let x1 = f(mem, glyph.wrapping_add(0x1c)) * s * kx + px;
+            let y1 = py + ky * (s * (f(mem, glyph.wrapping_add(0x20)) + slant));
+            (px, py + ky * (s * slant), x1, y1)
+        };
+        let colour: [u8; 4] = mem.read(pen);
+        mem.write(rec, x0 as f32);
+        mem.write(rec.wrapping_add(4), y0 as f32);
+        mem.write(
+            rec.wrapping_add(8),
+            (f(mem, glyph.wrapping_add(8)) / w_img) as f32,
+        );
+        mem.write(
+            rec.wrapping_add(0xc),
+            (f(mem, glyph.wrapping_add(0xc)) / h_img) as f32,
+        );
+        mem.write(rec.wrapping_add(0x20), x1 as f32);
+        mem.write(rec.wrapping_add(0x24), y1 as f32);
+        mem.write(
+            rec.wrapping_add(0x28),
+            (f(mem, glyph.wrapping_add(0x10)) / w_img) as f32,
+        );
+        mem.write(
+            rec.wrapping_add(0x2c),
+            (f(mem, glyph.wrapping_add(0x14)) / h_img) as f32,
+        );
+        for (k, c) in colour.iter().enumerate() {
+            let k = k as u32 * 4;
+            mem.write(rec.wrapping_add(0x10 + k), u32::from(*c));
+            mem.write(rec.wrapping_add(0x30 + k), u32::from(*c));
+        }
+        mem.write(rec.wrapping_add(0x80), 2000u32);
+        mem.write(rec.wrapping_add(0x88), 0u32);
+        let kept = call(
+            mem,
+            0x008e_5a20,
+            &[
+                rec,
+                rec.wrapping_add(4),
+                rec.wrapping_add(0x20),
+                rec.wrapping_add(0x24),
+                rec.wrapping_add(8),
+                rec.wrapping_add(0xc),
+                rec.wrapping_add(0x28),
+                rec.wrapping_add(0x2c),
+            ],
+        );
+        if kept != 0 && edge {
+            let ratio = f64::from(ratio);
+            for (dx, dy) in [
+                (-2.0f64, -2.0),
+                (0.0, -2.0),
+                (2.0, -2.0),
+                (-2.0, 0.0),
+                (2.0, 0.0),
+                (-2.0, 2.0),
+                (0.0, 2.0),
+                (2.0, 2.0),
+            ] {
+                let (ox, oy) = ((dx / ratio) as f32, (dy / ratio) as f32);
+                call(
+                    mem,
+                    0x0064_0660,
+                    &[rec, texture, ox.to_bits(), oy.to_bits(), 0],
+                );
+            }
+        } else if kept != 0 {
+            let layer = i32::from(mem.read::<i16>(glyph.wrapping_add(4)));
+            let (offset, layer) = if shadow {
+                (mem.read::<u32>(g(mem, 0x00b9_2268)), layer)
+            } else {
+                (0.0f32.to_bits(), layer + 2)
+            };
+            call(
+                mem,
+                0x0064_0660,
+                &[rec, texture, offset, offset, layer.cast_unsigned()],
+            );
+        }
+    }
+
+    /// `TODrawScaleButtonIconRGBA(c, x, y, scale, r, g, b, a)`
+    /// (`0x008f8ee0`): draws the button icon for the text character `c`
+    /// at `x, y` (f32 bits) through `DrawScaleButtonIconRGBA(id, x, y,
+    /// scale, rgba, rgba)`, choosing the icon as
+    /// [`to_get_scale_button_icon_width`] does: `4`..`7` sit 2.0 higher;
+    /// `' '`..`'"'` draw the 10×10 sheet cell (96, 224)..(139, 267) of
+    /// icon 0x258 (`TOMkpShapeXYWHUVC2`); `@`..`O` stack the four
+    /// direction parts 0x258/0x259, 0x25a/0x25b, 0x25c/0x25d and
+    /// 0x25e/0x25f by the low four bits; digits use `c + 0x230` (`1`/`2`
+    /// as 0x262/0x261 with the confirm button swapped); `` ` `` 0x270.
+    #[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
+    pub fn to_draw_scale_button_icon_rgba<M: Mem>(
+        mem: &mut M,
+        args: [u32; 8],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [mut c, x, mut y, scale, r, g, b, a] = args;
+        let rgba = (a & 0xff) << 24 | (b & 0xff) << 16 | (g & 0xff) << 8 | (r & 0xff);
+        if c.wrapping_sub(0x34) <= 3 {
+            let two: f64 = mem.read(mem.rebase(0x00b9_2270));
+            y = ((f64::from(f32::from_bits(y)) - two) as f32).to_bits();
+        }
+        let image = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        if (0x20..=0x22).contains(&c) {
+            let ten = image(mem, 0x00b9_2318);
+            let shape = [
+                0x258,
+                x,
+                y,
+                ten,
+                ten,
+                image(mem, 0x00b4_3db8),
+                image(mem, 0x00b6_6da0),
+                image(mem, 0x00b6_6d8c),
+                image(mem, 0x00b5_4cfc),
+                rgba,
+                rgba,
+            ];
+            call(mem, 0x0090_3ee0, &shape);
+        }
+        let icon = [0, x, y, scale, rgba, rgba];
+        let with = |id: u32| {
+            let mut v = icon;
+            v[0] = id;
+            v
+        };
+        if c.wrapping_sub(0x40) <= 0xf {
+            c &= 0xf;
+            call(
+                mem,
+                0x008e_7a90,
+                &with(if c & 1 != 0 { 0x259 } else { 0x258 }),
+            );
+            call(
+                mem,
+                0x008e_7a90,
+                &with(if c & 2 != 0 { 0x25b } else { 0x25a }),
+            );
+            call(
+                mem,
+                0x008e_7a90,
+                &with(if c & 4 != 0 { 0x25d } else { 0x25c }),
+            );
+            call(
+                mem,
+                0x008e_7a90,
+                &with(if c & 8 != 0 { 0x25f } else { 0x25e }),
+            );
+        }
+        if c.wrapping_sub(0x30) <= 9 {
+            if call(mem, 0x008a_cf30, &[]) == 1 && (0x31..=0x32).contains(&c) {
+                let id = if c == 0x31 { 0x262 } else { 0x261 };
+                call(mem, 0x008e_7a90, &with(id));
+                return;
+            }
+            call(mem, 0x008e_7a90, &with(c + 0x230));
+        }
+        if c == 0x60 {
+            call(mem, 0x008e_7a90, &with(0x270));
+        }
+    }
+
+    /// `0x008b80b0(window, text)`: the number of words in a message up to
+    /// its first line code (0..=2): glyphs (group 4) count one, macros
+    /// (group 3) and `0x10 n` counters (0x50..0x60) their words
+    /// (`TOGetChangeMacroWordCount`), `0xb` icons and `9 n` codes from
+    /// 0xc0 one each.
+    pub fn count_message_words<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        text: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut n = 0u32;
+        let mut p = text;
+        loop {
+            let c: u8 = mem.read(p);
+            if c <= 2 {
+                return n;
+            }
+            match call(mem, 0x008d_f610, &[u32::from(c)]) {
+                2 => {
+                    let next: u8 = mem.read(p.wrapping_add(1));
+                    if c == 0x10 && (0x50..0x60).contains(&next) {
+                        n = n.wrapping_add(call(mem, 0x008b_6b00, &[window, p]));
+                    }
+                    let c: u8 = mem.read(p);
+                    if c == 0xb {
+                        n = n.wrapping_add(1);
+                    }
+                    if c == 9 && mem.read::<u8>(p.wrapping_add(1)) >= 0xc0 {
+                        n = n.wrapping_add(1);
+                    }
+                }
+                3 => n = n.wrapping_add(call(mem, 0x008b_6b00, &[window, p])),
+                4 => n = n.wrapping_add(1),
+                _ => {}
+            }
+            p = call(mem, 0x008d_fd80, &[p]);
+        }
+    }
+
+    /// `0x008b7130(text, &w, &h)`: the size of a message in window 0 at
+    /// mode 0 (`TOGetMessageWH`), the width through `ftol`. `scratch` (8
+    /// bytes) stands in for the original's stack. Returns 0.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn message_size<M: Mem>(
+        mem: &mut M,
+        text: u32,
+        w: u32,
+        h: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(
+            mem,
+            0x008b_9650,
+            &[0, text, scratch, scratch.wrapping_add(4), 0, 0],
+        );
+        let width: f32 = mem.read(scratch);
+        let v = ffx_bridge::x87::ftol(mem, f64::from(width));
+        mem.write(w, v);
+        let height: i16 = mem.read(scratch.wrapping_add(4));
+        mem.write(h, i32::from(height));
+        0
+    }
+
+    /// `TOFirstInitMessageNormal(window, text, pos)` (`0x008df520`):
+    /// centres a message in its window: `pos + 4` becomes the left edge
+    /// plus half of what the width leaves of the window (edges `+0x48` and
+    /// `+0x50`), the width from
+    /// `TOGetMessageWH(+4, text, &w, &h, +0x1a, 0x103)`. `scratch` (8
+    /// bytes) stands in for the original's stack. Returns `pos`.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn to_first_init_message_normal<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        text: u32,
+        pos: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let id = i32::from(mem.read::<i16>(window.wrapping_add(4))).cast_unsigned();
+        let mode = i32::from(mem.read::<i16>(window.wrapping_add(0x1a))).cast_unsigned();
+        mem.write(scratch.wrapping_add(4), window);
+        call(
+            mem,
+            0x008b_9650,
+            &[id, text, scratch, scratch.wrapping_add(4), mode, 0x103],
+        );
+        let f = |mem: &M, a: u32| f64::from(mem.read::<f32>(a));
+        let half: f64 = mem.read(mem.rebase(0x00b9_2220));
+        let left = f(mem, window.wrapping_add(0x48));
+        let x = ((f(mem, window.wrapping_add(0x50)) - left) - f(mem, scratch)) * half + left;
+        mem.write(pos.wrapping_add(4), x as f32);
+        pos
+    }
+
+    /// `TOMkpShapeXYWHUV(shape, x, y, w, h, u0, v0, u1, v1)` (`0x00903bb0`)
+    /// and, with `colours`, `TOMkpShapeXYWHUVC2(…, c0, c1)` (`0x00903ee0`):
+    /// the quad of a UI shape: corners `x, y` and `x + w, y + h`, clipped
+    /// with its UVs by `BeginScissor_XYUV`, then the UVs scaled for the
+    /// shape's sheet and the quad handed to `graphicDrawUIElement(rec,
+    /// texture, 1, 0, 0)`.
+    ///
+    /// Shapes -1, -3 and -6 divide the UVs by the size of image 0x3e80,
+    /// 0x3e83 or 0x3e86 (`TOGetImageWH`); -2 scales u by 1/2048 and v by
+    /// 1/1024 (image 0x3e82); -4 (C2 only) both by 1/256 (0x3e84); 0..=0xc6
+    /// and 0xc8..=0x18e use sheet 0x3e00, 0x190..=0x256 sheet 0x3f00, and
+    /// 0x258..=0x289 scale u by 1/1024 and v by 1/512 (sheet 0x3dc0)
+    /// (`TOGetShapTextureName`). Other shapes leave the texture unset in
+    /// the original (a stale stack word); the port passes 0. Colours are
+    /// grey 0x80, or the bytes of `c0`/`c1` for the two corners. `scratch`
+    /// (0xd0 bytes) stands in for the original's stack: corners at `+0`,
+    /// UVs at `+0x10`, image size at `+0x20`, the record at `+0x30`.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::many_single_char_names
+    )]
+    pub fn to_mkp_shape_xywhuv<M: Mem>(
+        mem: &mut M,
+        args: [u32; 9],
+        colours: Option<[u32; 2]>,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [shape, x, y, w, h, u0, v0, u1, v1] = args;
+        let f = |bits: u32| f64::from(f32::from_bits(bits));
+        let rd = |mem: &M, a: u32| f64::from(mem.read::<f32>(a));
+        for k in 0..0x34 {
+            mem.write(scratch.wrapping_add(4 * k), 0u32);
+        }
+        let corner = scratch;
+        let uv = scratch.wrapping_add(0x10);
+        let size = scratch.wrapping_add(0x20);
+        let rec = scratch.wrapping_add(0x30);
+        mem.write(corner, x);
+        mem.write(corner.wrapping_add(4), y);
+        mem.write(corner.wrapping_add(8), (f(x) + f(w)) as f32);
+        mem.write(corner.wrapping_add(0xc), (f(y) + f(h)) as f32);
+        for (k, v) in [u0, v0, u1, v1].into_iter().enumerate() {
+            mem.write(uv.wrapping_add(4 * k as u32), v);
+        }
+        let kept = call(
+            mem,
+            0x008e_5a20,
+            &[
+                corner,
+                corner.wrapping_add(4),
+                corner.wrapping_add(8),
+                corner.wrapping_add(0xc),
+                uv,
+                uv.wrapping_add(4),
+                uv.wrapping_add(8),
+                uv.wrapping_add(0xc),
+            ],
+        );
+        if kept == 0 {
+            return;
+        }
+        let scale_uv = |mem: &mut M, ku: f64, kv: f64| {
+            for (k, s) in [(0u32, ku), (8, ku), (4, kv), (0xc, kv)] {
+                let v = rd(mem, uv.wrapping_add(k));
+                mem.write(uv.wrapping_add(k), (v * s) as f32);
+            }
+        };
+        let divide_uv = |mem: &mut M| {
+            let (wi, hi) = (rd(mem, size), rd(mem, size.wrapping_add(4)));
+            for (k, s) in [(0u32, wi), (8, wi), (4, hi), (0xc, hi)] {
+                let v = rd(mem, uv.wrapping_add(k));
+                mem.write(uv.wrapping_add(k), (v / s) as f32);
+            }
+        };
+        let image = |mem: &M, a: u32| -> f64 { mem.read(mem.rebase(a)) };
+        let mut texture = 0u32;
+        let sheet = match shape.cast_signed() {
+            -1 | -3 | -6 => {
+                let id = match shape.cast_signed() {
+                    -1 => 0x3e80,
+                    -3 => 0x3e83,
+                    _ => 0x3e86,
+                };
+                call(mem, 0x008a_c400, &[id, size, size.wrapping_add(4)]);
+                divide_uv(mem);
+                Some(id)
+            }
+            -2 => {
+                let (ku, kv) = (image(mem, 0x00b5_8590), image(mem, 0x00b5_8b50));
+                scale_uv(mem, ku, kv);
+                Some(0x3e82)
+            }
+            -4 if colours.is_some() => {
+                let k = image(mem, 0x00b5_0198);
+                scale_uv(mem, k, k);
+                Some(0x3e84)
+            }
+            _ => None,
+        };
+        if let Some(id) = sheet {
+            texture = call(mem, 0x008a_c8c0, &[id]);
+        } else {
+            if shape <= 0xc6 {
+                texture = call(mem, 0x008a_c8c0, &[0x3e00]);
+            }
+            if shape.wrapping_sub(0xc8) <= 0xc6 {
+                texture = call(mem, 0x008a_c8c0, &[0x3e00]);
+            }
+            if shape.wrapping_sub(0x190) <= 0xc6 {
+                texture = call(mem, 0x008a_c8c0, &[0x3f00]);
+            }
+            if shape.wrapping_sub(0x258) <= 0x31 {
+                let (ku, kv) = (image(mem, 0x00b5_8b50), image(mem, 0x00b4_1cc0));
+                scale_uv(mem, ku, kv);
+                texture = call(mem, 0x008a_c8c0, &[0x3dc0]);
+            }
+        }
+        let [c0, c1] = colours.unwrap_or([0x8080_8080, 0x8080_8080]);
+        for (k, off) in [(0u32, 0u32), (4, 4), (8, 0x20), (0xc, 0x24)] {
+            let v: u32 = mem.read(corner.wrapping_add(k));
+            mem.write(rec.wrapping_add(off), v);
+        }
+        for (k, off) in [(0u32, 8u32), (4, 0xc), (8, 0x28), (0xc, 0x2c)] {
+            let v: u32 = mem.read(uv.wrapping_add(k));
+            mem.write(rec.wrapping_add(off), v);
+        }
+        for k in 0..4u32 {
+            mem.write(rec.wrapping_add(0x10 + 4 * k), (c0 >> (8 * k)) & 0xff);
+            mem.write(rec.wrapping_add(0x30 + 4 * k), (c1 >> (8 * k)) & 0xff);
+        }
+        mem.write(rec.wrapping_add(0x88), 0u32);
+        call(mem, 0x0063_eee0, &[rec, texture, 1, 0, 0]);
+    }
+
+    /// The colour words of a UI record: the bytes of `c` (r, g, b, a) as
+    /// four words at `at`.
+    fn colour_words<M: Mem>(mem: &mut M, at: u32, c: u32) {
+        for k in 0..4u32 {
+            mem.write(at.wrapping_add(4 * k), (c >> (8 * k)) & 0xff);
+        }
+    }
+
+    /// `TODrawCrossBoxXYWHC2(x, y, w, h, c0, c1)` (`0x008f4b20`): an
+    /// untextured gradient box from colour `c0` (top left) to `c1` (bottom
+    /// right): corners `x, y` and `x + w, y + h` (f32 bits), clipped by
+    /// `BeginScissor_XY`, drawn with `graphicDrawUIElement(rec, 0, 1, 0, 0)`.
+    /// `scratch` (0xa0 bytes) holds the corners (`+0`) and the record
+    /// (`+0x10`); the UV words the original leaves unset are zero here.
+    #[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
+    pub fn to_draw_cross_box_xywh_c2<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [x, y, w, h, c0, c1] = args;
+        let f = |b: u32| f64::from(f32::from_bits(b));
+        for k in 0..0x28 {
+            mem.write(scratch.wrapping_add(4 * k), 0u32);
+        }
+        let corner = scratch;
+        let rec = scratch.wrapping_add(0x10);
+        mem.write(corner, x);
+        mem.write(corner.wrapping_add(4), y);
+        mem.write(corner.wrapping_add(8), (f(x) + f(w)) as f32);
+        mem.write(corner.wrapping_add(0xc), (f(y) + f(h)) as f32);
+        let kept = call(
+            mem,
+            0x008e_58e0,
+            &[
+                corner,
+                corner.wrapping_add(4),
+                corner.wrapping_add(8),
+                corner.wrapping_add(0xc),
+            ],
+        );
+        if kept == 0 {
+            return;
+        }
+        for (k, off) in [(0u32, 0u32), (4, 4), (8, 0x20), (0xc, 0x24)] {
+            let v: u32 = mem.read(corner.wrapping_add(k));
+            mem.write(rec.wrapping_add(off), v);
+        }
+        colour_words(mem, rec.wrapping_add(0x10), c0);
+        colour_words(mem, rec.wrapping_add(0x30), c1);
+        mem.write(rec.wrapping_add(0x88), 0u32);
+        call(mem, 0x0063_eee0, &[rec, 0, 1, 0, 0]);
+    }
+
+    /// `0x008f8bb0(cell, x, y, w, h)`: draws cell `cell` of sheet 0x2ecc
+    /// (columns of 170 by rows of 14 pixels, nine rows per column) over
+    /// `x, y, w, h` (f32 bits) in grey, unclipped. `scratch` (0xa0 bytes)
+    /// holds the sheet size (`+0`) and the record (`+0x10`).
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::many_single_char_names
+    )]
+    pub fn draw_sheet_cell<M: Mem>(
+        mem: &mut M,
+        args: [u32; 5],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [index, x, y, w, h] = args;
+        let f = |b: u32| f64::from(f32::from_bits(b));
+        for k in 0..0x28 {
+            mem.write(scratch.wrapping_add(4 * k), 0u32);
+        }
+        let size = scratch;
+        let rec = scratch.wrapping_add(0x10);
+        let texture = call(mem, 0x008a_c8c0, &[0x2ecc]);
+        call(mem, 0x008a_c400, &[0x2ecc, size, size.wrapping_add(4)]);
+        let (sw, sh) = (
+            f64::from(mem.read::<f32>(size)),
+            f64::from(mem.read::<f32>(size.wrapping_add(4))),
+        );
+        let i = index.cast_signed();
+        let (column, row) = ((i / 9).wrapping_mul(0xaa), (i % 9).wrapping_mul(0xe));
+        let u = |p: i32| (f64::from(p as f32) / sw) as f32;
+        let v = |p: i32| (f64::from(p as f32) / sh) as f32;
+        mem.write(rec, x);
+        mem.write(rec.wrapping_add(4), y);
+        mem.write(rec.wrapping_add(8), u(column));
+        mem.write(rec.wrapping_add(0xc), v(row));
+        colour_words(mem, rec.wrapping_add(0x10), 0x8080_8080);
+        mem.write(rec.wrapping_add(0x20), (f(x) + f(w)) as f32);
+        mem.write(rec.wrapping_add(0x24), (f(y) + f(h)) as f32);
+        mem.write(rec.wrapping_add(0x28), u(column.wrapping_add(0xaa)));
+        mem.write(rec.wrapping_add(0x2c), v(row.wrapping_add(0xe)));
+        colour_words(mem, rec.wrapping_add(0x30), 0x8080_8080);
+        mem.write(rec.wrapping_add(0x88), 0u32);
+        call(mem, 0x0063_eee0, &[rec, texture, 1, 0, 0]);
+    }
+
+    /// The integer box record of [`to_draw_box_xywh_c2`] and
+    /// [`to_make_pkt_box_xywh_rgba`]: corners `x, y` and `x + w, y + h`
+    /// (wrapping integer sums, then `fild`), the two corner colours, and
+    /// `+0x88`, `+0x90`, `+0x94` cleared; drawn untextured with
+    /// `graphicDrawUIElement(rec, 0, 1, 0, 0)`.
+    #[allow(clippy::cast_precision_loss)]
+    fn int_box<M: Mem>(
+        mem: &mut M,
+        rect: [u32; 4],
+        colours: [[u32; 4]; 2],
+        rec: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [x, y, w, h] = rect.map(u32::cast_signed);
+        for k in 0..0x26 {
+            mem.write(rec.wrapping_add(4 * k), 0u32);
+        }
+        mem.write(rec, x as f32);
+        mem.write(rec.wrapping_add(4), y as f32);
+        mem.write(rec.wrapping_add(0x20), x.wrapping_add(w) as f32);
+        mem.write(rec.wrapping_add(0x24), y.wrapping_add(h) as f32);
+        for (corner, c) in [0x10u32, 0x30].into_iter().zip(colours) {
+            for (k, v) in c.into_iter().enumerate() {
+                #[allow(clippy::cast_possible_truncation)] // four words
+                mem.write(rec.wrapping_add(corner + 4 * k as u32), v);
+            }
+        }
+        call(mem, 0x0063_eee0, &[rec, 0, 1, 0, 0]);
+    }
+
+    /// `TODrawBoxXYWHC2(x, y, w, h, c0, c1)` (`0x008f3db0`): an integer
+    /// gradient box (see [`int_box`]) from colour `c0` to `c1`, skipped
+    /// while the ability map is up (`graphicGetAbmap() == 1`). `rec` is
+    /// 0x98 bytes of scratch.
+    pub fn to_draw_box_xywh_c2<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        rec: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [x, y, w, h, c0, c1] = args;
+        if call(mem, 0x0064_1060, &[]) == 1 {
+            return;
+        }
+        let bytes = |c: u32| [c & 0xff, (c >> 8) & 0xff, (c >> 16) & 0xff, c >> 24];
+        int_box(mem, [x, y, w, h], [bytes(c0), bytes(c1)], rec, &mut call);
+    }
+
+    /// `TOMakePktBoxXYWHRGBA(x, y, w, h, r, g, b, a)` (`0x008fb150`): an
+    /// integer box (see [`int_box`]) in one colour.
+    #[allow(clippy::many_single_char_names)]
+    pub fn to_make_pkt_box_xywh_rgba<M: Mem>(
+        mem: &mut M,
+        args: [u32; 8],
+        rec: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [x, y, w, h, r, g, b, a] = args;
+        int_box(mem, [x, y, w, h], [[r, g, b, a]; 2], rec, &mut call);
+    }
 }

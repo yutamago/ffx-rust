@@ -22,6 +22,10 @@ use super::{mem, ported};
 static SCRATCH: [core::sync::atomic::AtomicU32; 0x280] =
     [const { core::sync::atomic::AtomicU32::new(0) }; 0x280];
 
+/// `Ch_CalcElement`'s frame (0xc11c bytes, its 512 skeleton matrices).
+static CALC_SCRATCH: [core::sync::atomic::AtomicU32; 0x3047] =
+    [const { core::sync::atomic::AtomicU32::new(0) }; 0x3047];
+
 /// [`SCRATCH`]'s address.
 fn scratch() -> u32 {
     u32::try_from(SCRATCH.as_ptr() as usize).unwrap_or(0)
@@ -75,13 +79,23 @@ fn ci_call(f: u32, args: &[f64]) -> f32 {
     }
 }
 
-/// A cdecl function of one word that returns in `ST0` (read back as
-/// `f64`).
+/// A cdecl function of one to three words that returns in `ST0` (read
+/// back as `f64`).
 fn st0_cdecl(f: u32, args: &[u32]) -> f64 {
-    let [a] = *args else { return f64::NAN };
-    // SAFETY: `f` is an original cdecl function of one word returning a
-    // float in ST0.
-    unsafe { std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> f64>(f as usize)(a) }
+    // SAFETY: `f` is an original cdecl function of these words returning
+    // a float in ST0.
+    unsafe {
+        match *args {
+            [a] => std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> f64>(f as usize)(a),
+            [a, b] => std::mem::transmute::<usize, unsafe extern "C" fn(u32, u32) -> f64>(
+                f as usize,
+            )(a, b),
+            [a, b, c] => std::mem::transmute::<usize, unsafe extern "C" fn(u32, u32, u32) -> f64>(
+                f as usize,
+            )(a, b, c),
+            _ => f64::NAN,
+        }
+    }
 }
 
 ported! {
@@ -1759,9 +1773,9 @@ ported! {
     Ch_ReadEventMgrp @ 0x0083_7670 => extern "C" fn ch_read_event_mgrp(x: u32) -> u32 {
         mo::bridge::ch_read_event_mgrp(&mut mem(), x, &mut |_, f, a| super::call_cdecl(f, a))
     }
-    /// `Ch_SaveMotionByte(chr)`.
-    Ch_SaveMotionByte @ 0x0083_03a0 => extern "C" fn ch_save_motion_byte(chr: u32) -> u32 {
-        mo::bridge::ch_save_motion_byte(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    /// `Ch_IsShadowHidden(chr)`.
+    Ch_IsShadowHidden @ 0x0083_03a0 => extern "C" fn ch_is_shadow_hidden(chr: u32) -> u32 {
+        mo::bridge::ch_is_shadow_hidden(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
     }
     /// `SetByte_012fb8fd(v)`.
     SetByte_012fb8fd @ 0x0082_1b20 => extern "C" fn setbyte_012fb8fd(v: u8) {
@@ -1798,5 +1812,95 @@ ported! {
         let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
         let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
         p::ch_draw_shadow_quad(&mut mem(), chr, p3, scratch(), &mut c)
+    }
+    /// `Ch_CalcElement(chr)`.
+    Ch_CalcElement @ 0x0083_2760 => extern "C" fn ch_calc_element(chr: u32) {
+        let at = u32::try_from(CALC_SCRATCH.as_ptr() as usize).unwrap_or(0);
+        let mut call = |_: &mut _, f, a: &[u32]| super::call_cdecl(f, a);
+        let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
+        let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
+        let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
+        p::ch_calc_element(&mut mem(), chr, at, &mut c);
+    }
+    /// `Ch_MemMove()`: the whole function (the dump splits it at the early
+    /// return).
+    Ch_MemMove @ 0x0082_6fa0 => extern "C" fn ch_mem_move() -> u32 {
+        c::ch_mem_move(&mut mem(), scratch(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_BlkDispose(blk)`.
+    Ch_BlkDispose @ 0x0082_58d0 => extern "C" fn ch_blk_dispose(blk: u32) -> u32 {
+        c::ch_blk_dispose(&mut mem(), blk, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_IsShadowExceptionId(chr)`.
+    Ch_IsShadowExceptionId @ 0x0082_e200 => extern "C" fn ch_is_shadow_exception_id(chr: u32) -> u32 {
+        c::ch_is_shadow_exception_id(&mut mem(), chr)
+    }
+    /// `Ch_MemMove_Over()`.
+    Ch_MemMove_Over @ 0x0082_7260 => extern "C" fn ch_mem_move_over() -> u32 {
+        c::ch_mem_move_over(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_DrawInitAll()`.
+    Ch_DrawInitAll @ 0x0082_ed30 => extern "C" fn ch_draw_init_all() {
+        c::ch_draw_init_all(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    /// `Ch_DrawShadow(on)`.
+    Ch_DrawShadow @ 0x0083_0180 => extern "C" fn ch_draw_shadow(on: u32) {
+        c::ch_draw_shadow(&mut mem(), on, &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    /// `Ch_DrawSingleShadow(chr)`.
+    Ch_DrawSingleShadow @ 0x0083_0240 => extern "C" fn ch_draw_single_shadow(chr: u32) {
+        c::ch_draw_single_shadow(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    /// `Ch_TextureSetup(chr)`.
+    Ch_TextureSetup @ 0x0083_d0a0 => extern "C" fn ch_texture_setup(chr: u32) -> u32 {
+        tx::ch_texture_setup(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_CullByDistance(chr)`.
+    Ch_CullByDistance @ 0x0082_e220 => extern "C" fn ch_cull_by_distance(chr: u32) -> u32 {
+        let mut call = |_: &mut _, f, a: &[u32]| super::call_cdecl(f, a);
+        let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
+        let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
+        let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
+        p::ch_cull_by_distance(&mut mem(), chr, scratch(), &mut c)
+    }
+    /// `Ch_BlkAllocate_00825760(id, data)`.
+    Ch_BlkAllocate_00825760 @ 0x0082_5760 => extern "C" fn ch_blk_allocate(id: u32, data: u32) -> u32 {
+        h::ch_blk_allocate(&mut mem(), id, data, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_GetCharID(id)`.
+    Ch_GetCharID @ 0x0082_a080 => extern "C" fn ch_get_char_id(id: u32) -> u32 {
+        sy::ch_get_char_id(&mut mem(), id, scratch(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `ChN_ReadSystemMGRP(a, b)`.
+    ChN_ReadSystemMGRP @ 0x0083_6870 => extern "C" fn chn_read_system_mgrp(a: u32, b: u32) -> u32 {
+        mo::bridge::chn_read_system_mgrp(&mut mem(), a, b, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `ChN_AddEventMgrp(data, x)`.
+    ChN_AddEventMgrp @ 0x0083_7630 => extern "C" fn chn_add_event_mgrp(data: u32, x: u32) -> u32 {
+        mo::bridge::chn_add_event_mgrp(&mut mem(), data, x, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `ChN_AddSystemMgrp(data)`.
+    ChN_AddSystemMgrp @ 0x0083_7750 => extern "C" fn chn_add_system_mgrp(data: u32) -> u32 {
+        mo::bridge::chn_add_system_mgrp(&mut mem(), data, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_BlkDisposeAll()`.
+    Ch_BlkDisposeAll @ 0x0082_59c0 => extern "C" fn ch_blk_dispose_all() {
+        c::ch_blk_dispose_all(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    /// `Sg_IdWalk(chr, p, i)`.
+    Sg_IdWalk @ 0x0083_d960 => extern "C" fn sg_id_walk(chr: u32, p: u32, i: u32) -> u32 {
+        let mut call = |_: &mut _, f, a: &[u32]| super::call_cdecl(f, a);
+        let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
+        let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
+        let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
+        p::sg_id_walk(&mut mem(), chr, p, i, scratch(), &mut c)
+    }
+    /// `Ch_DataRead(id)`.
+    Ch_DataRead @ 0x0082_9ef0 => extern "C" fn ch_data_read(id: u32) -> u32 {
+        sy::ch_data_read(&mut mem(), id, scratch(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_RomReadEventMGRPcb(req)`.
+    Ch_RomReadEventMGRPcb @ 0x0082_a7d0 => extern "C" fn ch_rom_read_event_mgrp_cb(req: u32) -> u32 {
+        sy::ch_rom_read_event_mgrp_cb(&mut mem(), req, &mut |_, f, a| super::call_cdecl(f, a))
     }
 }

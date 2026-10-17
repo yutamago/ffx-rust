@@ -48,6 +48,8 @@ pub mod bridge {
     pub struct Dm<'a> {
         mem: &'a mut dyn Raw,
         sp: u32,
+        /// [`Dm::locals`]' blocks (base, bytes), innermost last.
+        locals: Vec<(u32, Vec<u8>)>,
     }
 
     /// Where [`Dm`]'s frames start (growing down).
@@ -59,7 +61,30 @@ pub mod bridge {
             Self {
                 mem,
                 sp: FRAMES_TOP,
+                locals: Vec::new(),
             }
+        }
+
+        /// Runs `f` with `len` bytes of locals (zeroed; their address the
+        /// second argument) on this same memory: unlike [`Dm::frame`],
+        /// `f` keeps the lifetime, so callbacks made for it (a script's
+        /// calls) still take it.
+        pub fn locals<R>(&mut self, len: u32, f: impl FnOnce(&mut Self, u32) -> R) -> R {
+            let old = self.sp;
+            let base = old.wrapping_sub(len) & !0xf;
+            self.sp = base;
+            self.locals.push((base, vec![0; len as usize]));
+            let r = f(self, base);
+            self.locals.pop();
+            self.sp = old;
+            r
+        }
+
+        fn local(&mut self, addr: u32, len: usize) -> Option<&mut [u8]> {
+            self.locals.iter_mut().rev().find_map(|(base, bytes)| {
+                let start = addr.checked_sub(*base)? as usize;
+                bytes.get_mut(start..start.checked_add(len)?)
+            })
         }
 
         /// Runs `f` with `len` bytes of locals (zeroed; their address the
@@ -70,6 +95,7 @@ pub mod bridge {
             let mut d = Dm {
                 mem: &mut fr,
                 sp: base,
+                locals: Vec::new(),
             };
             f(&mut d, base)
         }
@@ -77,10 +103,20 @@ pub mod bridge {
 
     impl Mem for Dm<'_> {
         fn read_bytes(&self, addr: u32, out: &mut [u8]) {
-            self.mem.raw_read(addr, out);
+            let local = self.locals.iter().rev().find_map(|(base, bytes)| {
+                let start = addr.checked_sub(*base)? as usize;
+                bytes.get(start..start.checked_add(out.len())?)
+            });
+            match local {
+                Some(b) => out.copy_from_slice(b),
+                None => self.mem.raw_read(addr, out),
+            }
         }
         fn write_bytes(&mut self, addr: u32, data: &[u8]) {
-            self.mem.raw_write(addr, data);
+            match self.local(addr, data.len()) {
+                Some(b) => b.copy_from_slice(data),
+                None => self.mem.raw_write(addr, data),
+            }
         }
         fn image_base(&self) -> u32 {
             self.mem.raw_base()

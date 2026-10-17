@@ -340,6 +340,65 @@ frame (×256; a negative end means the clip's length). One case is
 special: Tidus (`"c001"`) on map 0x7a, playing 0x3000 to -0x100, stops
 at 0x2800.
 
+## Element matrices
+
+`Ch_CalcElement` (`0x00832760`) builds the character's world matrix
+`+0x1d0` from one of three sources: a parent's element (`+0x19c`,
+`+0x1a0`), a given matrix (`+0x10c`), or its own scale, pitch, facing and
+position. The scaled copy goes to `+0x210`. It then builds each
+element's matrix (`+0x88` of the 0x160-byte elements at `+0x328`). The
+skin matrices (the element relative to its bone's inverse) go into a
+512-entry stack buffer at each element's index `+4`, and
+`graphicCharacterInstanceSetSkeletonMatrices` (`0x0063be60`) uploads that
+buffer to both instances. The upload reads only the entries its meshes'
+remap tables name. On the snapshots' characters those are all computed
+entries; the other entries are undefined in the original, and the oracle
+check `ch_calc_element_reads_only_computed_matrices` confirms this with a
+poisoned stack.
+
+`Ch_MemMove` (`0x00826fa0`) is one function; the dump splits it at the
+early return. It moves each active character's heap blocks
+(`Sg_MemMoveWork`) and stops after the first character that moved
+anything.
+
+## Character numbers
+
+`Ch_GetCharID` (`0x0082a080`) reads a character's number from its table
+entry's file name (`g_CdLib_98(Chr_TableIndex(id))`). It takes the 7th to
+5th characters from the end and passes them to `atoi`. The original
+keeps them in a 4-byte stack slot made by `push ecx`, so the slot's 4th
+byte is whatever the caller left in ECX. So is any byte that a name
+shorter than 7 characters does not reach. That input is undefined. The
+port treats those bytes as NUL, which gives the original's result
+whenever the byte is not a digit; the oracle test enters the original
+with ECX = `"AAAA"`.
+
+## The id map walk
+
+`Sg_IdWalk` (`0x0083d960`) finds the id-map triangle under a position. A
+triangle is 16 bytes in the table at `0x01301a84`: three `i16` vertex
+indices, then the neighbours across edges 0-1, 1-2 and 2-0. Vertices are
+8 bytes in the table at `0x01301a8c`: `i16` x, y, z. Each edge test
+evaluates the edge's line at the position. The coefficients are the
+edge's integer coordinates and their integer products, each rounded to
+`f32`.
+
+The first edge the position lies beyond wins. A later edge overrides an
+earlier one only when the character's previous position (`+0x3c`,
+`+0x44`) is also beyond it. Inside all three edges, the triangle's
+vertices go to `+0x8c`..`+0xb4` and its index to `+0x824`. Beyond an
+edge, the walk moves to the neighbour (depth `0x01301ae8`, at most 10)
+unless one of these stops it:
+
+- there is no neighbour;
+- `Sg_IdMatchChr` rejects the neighbour for this character;
+- the neighbour's floor is too low: `Sg_IdGetHeight` is below the
+  character's `+0x40` less the slack `0x01301af4`. The floor is checked
+  only for a sloped normal.
+
+When the walk stops, it records the crossed edge (`0x01301aec`,
+`0x01301af0`).
+
 ## Head, mouth and automatic motion
 
 `Ch_Neck` (`0x008348d0`) turns the head (option point 9's element)

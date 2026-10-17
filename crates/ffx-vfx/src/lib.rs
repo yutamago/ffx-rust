@@ -18,6 +18,7 @@
 //!
 //! [`x87`] reproduces the game thread's float arithmetic bit for bit.
 
+pub mod draw;
 pub mod et;
 pub mod fp;
 pub mod heap;
@@ -34,4 +35,5 @@ pub mod slots;
 pub mod small;
 pub mod tree;
 pub mod vec;
+pub mod wave;
 pub mod x87;

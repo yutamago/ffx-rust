@@ -4,7 +4,9 @@
 use super::{mem, ported};
 use ffx_vfx::mat::{self, order};
 use ffx_vfx::rand::bridge::{Kind, Spread};
-use ffx_vfx::{et, fp, heap, md, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec};
+use ffx_vfx::{
+    draw, et, fp, heap, md, op, opd, opus, part, ppp, prog, rand, slots, small, tree, vec, wave,
+};
 
 /// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`), so the
 /// CRT's state moves as it does with the originals.
@@ -59,6 +61,31 @@ fn crt_trig(cos: bool, x: f32) -> f32 {
             "fld dword ptr [{x}]",
             "call {f}",
             "fstp dword ptr [edi]",
+            x = in(reg) &raw const x,
+            f = in(reg) f,
+            in("edi") &raw mut out,
+            clobber_abi("C"),
+        );
+    }
+    out
+}
+
+/// MSVCR110's `_CItan` through the game's import slot (`0x00b0c3a0`): the
+/// operand loaded as `fld qword`, the result stored as `fstp qword`
+/// through `edi`.
+fn crt_tan(x: f64) -> f64 {
+    let slot = crate::rebase(0x00b0_c3a0) as *const usize;
+    let mut out = 0f64;
+    // SAFETY: the slot holds the CRT's intrinsic, which takes its operand
+    // in ST0 and leaves the result there; the asm loads it, calls it and
+    // stores the result through edi (which the callee keeps), leaving the
+    // x87 stack empty.
+    unsafe {
+        let f = slot.read();
+        std::arch::asm!(
+            "fld qword ptr [{x}]",
+            "call {f}",
+            "fstp qword ptr [edi]",
             x = in(reg) &raw const x,
             f = in(reg) f,
             in("edi") &raw mut out,
@@ -268,6 +295,30 @@ ported! {
     /// `pppSRandDownHCV(obj, key, ctrl)`.
     pppSRandDownHCV @ 0x0073_3d10 => extern "C" fn ppp_srand_down_hcv(obj: u32, key: u32, ctrl: u32) {
         srand_program(obj, key, ctrl, Spread::Down, Kind::ShortVec);
+    }
+    /// `pppSRandFV_Draw(two)`: one spread draw, in ST0.
+    pppSRandFV_Draw @ 0x0073_26e0 => extern "C" fn ppp_srand_fv_draw(two: u32) -> f32 {
+        rand::bridge::ppp_srand_draw(&mut mem(), Spread::Plain, two & 0xff != 0, &mut |_, seed| {
+            crt_srand(seed);
+        })
+    }
+    /// `pppSRandUpFV_Draw(two)`: one spread draw, in ST0.
+    pppSRandUpFV_Draw @ 0x0073_2970 => extern "C" fn ppp_srand_up_fv_draw(two: u32) -> f32 {
+        rand::bridge::ppp_srand_draw(&mut mem(), Spread::Up, two & 0xff != 0, &mut |_, seed| {
+            crt_srand(seed);
+        })
+    }
+    /// `pppSRandDownFV_Draw(two)`: one spread draw, in ST0.
+    pppSRandDownFV_Draw @ 0x0073_2c00 => extern "C" fn ppp_srand_down_fv_draw(two: u32) -> f32 {
+        rand::bridge::ppp_srand_draw(&mut mem(), Spread::Down, two & 0xff != 0, &mut |_, seed| {
+            crt_srand(seed);
+        })
+    }
+    /// `pppSRandCV_Draw(two)`: one spread draw, in ST0.
+    pppSRandCV_Draw @ 0x0073_2f30 => extern "C" fn ppp_srand_cv_draw(two: u32) -> f32 {
+        rand::bridge::ppp_srand_draw(&mut mem(), Spread::Plain, two & 0xff != 0, &mut |_, seed| {
+            crt_srand(seed);
+        })
     }
     // ---- ppp programs ----
     /// `pppKeDrctCon(obj, ctrl)`.
@@ -1526,6 +1577,128 @@ ported! {
     op_oef2_tex_clut_init_007e5680 @ 0x007e_5680 => extern "C" fn op_oef2_tex_clut_init() -> u32 {
         op::bridge::op_oef2_tex_clut_init(&mut mem())
     }
+    /// `pppVu0MaddW_copy_0074bde0(dst, v, _, _, _, s)`: `pppVu0MaddW`'s
+    /// code again; returns `dst`.
+    pppVu0MaddW_copy_0074bde0 @ 0x0074_bde0 => extern "C" fn ppp_vu0_madd_w_copy(dst: u32, v: u32, a: u32, b: u32, c: u32, s: f32) -> u32 {
+        let _ = (a, b, c);
+        mat::bridge::ppp_vu0_madd(&mut mem(), dst, v, s);
+        dst
+    }
+    /// `op_ivec4_shr7_00749050(out, v)`.
+    op_ivec4_shr7_00749050 @ 0x0074_9050 => extern "C" fn ivec4_shr7_to_fvec4(out: u32, v: u32) -> u32 {
+        vec::bridge::ivec4_shr7_to_fvec4(&mut mem(), out, v)
+    }
+    /// `op_et_chr_slot_007fead0(chr)`.
+    op_et_chr_slot_007fead0 @ 0x007f_ead0 => extern "C" fn op_et_chr_slot(chr: u32) -> u32 {
+        et::bridge::op_et_chr_slot(&mem(), chr)
+    }
+    /// `opus_list_add_00801780(set, id, list)`.
+    opus_list_add_00801780 @ 0x0080_1780 => extern "C" fn opus_list_add(set: u32, id: u32, list: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the u16 argument
+        opus::bridge::opus_list_add(&mut mem(), set, id as u16, list)
+    }
+    /// `opu_main_host(battle, list)`.
+    opu_main_host @ 0x0080_cc00 => extern "C" fn opu_main_host(battle: u32, list: u32) -> u32 {
+        opus::bridge::opu_main_host(&mut mem(), battle, list, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_wave_omd_make(obj, wave, uv, omd, view, light)`: its stack
+    /// locals in a buffer on this shim's stack (the frame pointer at its
+    /// end).
+    opus_wave_omd_make @ 0x007f_94e0 => extern "C" fn opus_wave_omd_make(obj: u32, wv: u32, uv: u32, omd: u32, view: u32, light: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x90]);
+        let mut locals = Locals([0; 0x90]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x90;
+        wave::bridge::opus_wave_omd_make(&mut mem(), obj, wv, uv, omd, view, light, frame, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opus_0154_wave_omd_make(obj, wave, uv, omd, view, proj)`: its
+    /// stack locals in a buffer on this shim's stack (the frame pointer at
+    /// its end).
+    opus_0154_wave_omd_make @ 0x007f_67c0 => extern "C" fn opus_0154_wave_omd_make(obj: u32, wv: u32, uv: u32, omd: u32, view: u32, proj: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xf0]);
+        let mut locals = Locals([0; 0xf0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xf0;
+        wave::bridge::opus_0154_wave_omd_make(&mut mem(), obj, wv, uv, omd, view, proj, frame, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a), &mut |_, x| crt_tan(x))
+    }
+    /// `pppDrawShapeFieldCon(obj, prog)`.
+    pppDrawShapeFieldCon @ 0x0074_2b50 => extern "C" fn ppp_draw_shape_field_con(obj: u32, prog: u32) -> u32 {
+        draw::bridge::shape_con(&mut mem(), obj, prog, draw::bridge::FIELD_CON, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeFieldRevCon(obj, prog)`.
+    pppDrawShapeFieldRevCon @ 0x0074_3f00 => extern "C" fn ppp_draw_shape_field_rev_con(obj: u32, prog: u32) -> u32 {
+        draw::bridge::shape_con(&mut mem(), obj, prog, draw::bridge::FIELD_REV_CON, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeFieldSpdCon(obj, prog)`.
+    pppDrawShapeFieldSpdCon @ 0x0074_50a0 => extern "C" fn ppp_draw_shape_field_spd_con(obj: u32, prog: u32) -> u32 {
+        draw::bridge::shape_con(&mut mem(), obj, prog, draw::bridge::FIELD_SPD_CON, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeFieldGlobalCon(obj, prog)`.
+    pppDrawShapeFieldGlobalCon @ 0x0074_6200 => extern "C" fn ppp_draw_shape_field_global_con(obj: u32, prog: u32) -> u32 {
+        draw::bridge::shape_con(&mut mem(), obj, prog, draw::bridge::FIELD_GLOBAL_CON, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeCameraCon(obj, prog)`.
+    pppDrawShapeCameraCon @ 0x0074_7410 => extern "C" fn ppp_draw_shape_camera_con(obj: u32, prog: u32) -> u32 {
+        draw::bridge::shape_con(&mut mem(), obj, prog, draw::bridge::CAMERA_CON, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeCameraDisPosCon(obj, prog)`.
+    pppDrawShapeCameraDisPosCon @ 0x0074_8660 => extern "C" fn ppp_draw_shape_camera_dis_pos_con(obj: u32, prog: u32) -> u32 {
+        draw::bridge::shape_con(&mut mem(), obj, prog, draw::bridge::CAMERA_CON, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeFieldDes(obj, prog)`.
+    pppDrawShapeFieldDes @ 0x0074_2bd0 => extern "C" fn ppp_draw_shape_field_des(obj: u32, prog: u32) -> u32 {
+        draw::bridge::ppp_des(&mut mem(), obj, prog, draw::bridge::FIELD_DES, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeFieldRevDes(obj, prog)`.
+    pppDrawShapeFieldRevDes @ 0x0074_3f80 => extern "C" fn ppp_draw_shape_field_rev_des(obj: u32, prog: u32) -> u32 {
+        draw::bridge::ppp_des(&mut mem(), obj, prog, draw::bridge::FIELD_REV_DES, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeFieldSpdDes(obj, prog)`.
+    pppDrawShapeFieldSpdDes @ 0x0074_5130 => extern "C" fn ppp_draw_shape_field_spd_des(obj: u32, prog: u32) -> u32 {
+        draw::bridge::ppp_des(&mut mem(), obj, prog, draw::bridge::FIELD_SPD_DES, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeFieldGlobalDes(obj, prog)`.
+    pppDrawShapeFieldGlobalDes @ 0x0074_6280 => extern "C" fn ppp_draw_shape_field_global_des(obj: u32, prog: u32) -> u32 {
+        draw::bridge::ppp_des(&mut mem(), obj, prog, draw::bridge::FIELD_GLOBAL_DES, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeCameraDes(obj, prog)`.
+    pppDrawShapeCameraDes @ 0x0074_7490 => extern "C" fn ppp_draw_shape_camera_des(obj: u32, prog: u32) -> u32 {
+        draw::bridge::ppp_des(&mut mem(), obj, prog, draw::bridge::CAMERA_DES, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeCameraDisPosDes(obj, prog)`.
+    pppDrawShapeCameraDisPosDes @ 0x0074_86e0 => extern "C" fn ppp_draw_shape_camera_dis_pos_des(obj: u32, prog: u32) -> u32 {
+        draw::bridge::ppp_des(&mut mem(), obj, prog, draw::bridge::CAMERA_DES, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawRainDes(obj, prog)`.
+    pppDrawRainDes @ 0x0075_6270 => extern "C" fn ppp_draw_rain_des(obj: u32, prog: u32) -> u32 {
+        draw::bridge::ppp_des(&mut mem(), obj, prog, draw::bridge::RAIN_DES, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawMdlDraw(obj, key, prog)`: its stack locals in a buffer on
+    /// this shim's stack (the frame pointer at its end).
+    pppDrawMdlDraw @ 0x0073_7770 => extern "C" fn ppp_draw_mdl_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xa0]);
+        let mut locals = Locals([0; 0xa0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xa0;
+        draw::bridge::ppp_draw_mdl_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeTkFadeDraw(obj, key, prog)`: its stack locals in a buffer on
+    /// this shim's stack (the frame pointer at its end).
+    pppKeTkFadeDraw @ 0x0072_ee50 => extern "C" fn ppp_ke_tk_fade_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xc0]);
+        let mut locals = Locals([0; 0xc0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xc0;
+        draw::bridge::ppp_ke_tk_fade_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    // pppKeLnsLpTOtDraw (0x0075b230) is ported (draw::bridge::
+    // ppp_ke_lns_lp_t_ot_draw, oracle parity) but deliberately not hooked:
+    // on PC its result comes from stale memory (docs/formats/vfx.md,
+    // "To observe").
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

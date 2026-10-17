@@ -667,6 +667,155 @@ pub mod bridge {
         let v = ffx_bridge::x87::ftol(mem, x);
         EFFECT_ALPHA.set(mem, v);
     }
+
+    /// `Chr_TableIndex(id)` (`0x0082a640`) and the `atoi` import slot.
+    pub const TABLE_INDEX: u32 = 0x0082_a640;
+    pub const ATOI_SLOT: u32 = 0x00b0_c40c;
+    /// Bytes of scratch `ch_get_char_id` needs (its 4-byte digit buffer).
+    pub const CHAR_ID_SCRATCH: u32 = 4;
+
+    /// `Ch_GetCharID(id)` (`0x0082a080`): the file name of `id`'s table
+    /// entry (`g_CdLib_98(Chr_TableIndex(id))`; none: -1) gives its number,
+    /// `atoi` of the 7th to 5th characters from the end. The original keeps
+    /// those three in a 4-byte stack slot holding the caller's ECX, so its
+    /// 4th byte (and any of the three a short name does not reach) is
+    /// undefined; here they are NUL, which matches the original whenever
+    /// that byte is not a digit.
+    pub fn ch_get_char_id<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let k = call(mem, mem.rebase(TABLE_INDEX), &[id]);
+        let f = CD_LIB_98.get(mem);
+        let s = call(mem, f, &[k]);
+        if s == 0 {
+            return u32::MAX;
+        }
+        let mut n = 0u32;
+        while mem.read::<u8>(s.wrapping_add(n)) != 0 {
+            n += 1;
+        }
+        mem.write(scratch, 0u32);
+        for (j, back) in [7u32, 6, 5].into_iter().enumerate() {
+            if n >= back {
+                let b: u8 = mem.read(s.wrapping_add(n - back));
+                #[allow(clippy::cast_possible_truncation)] // 0..3
+                mem.write(scratch + j as u32, b);
+            }
+        }
+        let atoi: u32 = mem.read(mem.rebase(ATOI_SLOT));
+        call(mem, atoi, &[scratch])
+    }
+
+    /// `ch_create_name(id)` (`0x00838100`), `ch_create_section(id, name)`
+    /// (`0x00838150`), `Cache_Entry_RenderData(kind, id, &a, &b, &c, &d)`
+    /// (`0x00840680`), `Ch_LoadHdRenderData(file, c, d, id)` (`0x0082a1c0`),
+    /// the `sprintf` import slot and the block name format
+    /// `"[%s:%s]CHRDATA"` (`0x00b596a8`).
+    pub const CREATE_NAME: u32 = 0x0083_8100;
+    pub const CREATE_SECTION: u32 = 0x0083_8150;
+    pub const CACHE_ENTRY_RENDER_DATA: u32 = 0x0084_0680;
+    pub const LOAD_HD_RENDER_DATA: u32 = 0x0082_a1c0;
+    pub const SPRINTF_IMPORT: u32 = 0x00b0_c3dc;
+    pub const CHRDATA_FORMAT: u32 = 0x00b5_96a8;
+    /// Bytes of scratch `ch_data_read` needs: the original's frame (offset
+    /// `0x74 - n` stands for `[ebp - n]`; the read request at `[ebp-0x60]`).
+    pub const DATA_READ_SCRATCH: u32 = 0x74;
+
+    /// `Ch_DataRead(id)` (`0x00829ef0`): queues the read of a character's
+    /// data unless it is cached or loading (`Cache_CheckYet(1, id)` 1 or 0:
+    /// 0). Its table entry (`Chr_TableIndex`; none, or no size from
+    /// `g_CdLib_14`: -1) gets a block of the size rounded as the heap
+    /// rounds, named `"[<section>:<name>]CHRDATA"`, entered in the cache
+    /// (`Cache_Entry`, `Cache_Entry_NotYet`), and read into
+    /// (`g_CdLib(index, block, Ch_RomReadChrCB, request)`, the request's
+    /// `+0xc` = id, `+0x10` = block, `+0x14` = 1). The HD render data is
+    /// loaded too (`Ch_LoadHdRenderData(file, ...)` into the cache's render
+    /// slot, its second slot cleared). Returns 0. (`dbgPrintf` is left out.)
+    pub fn ch_data_read<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |n: u32| scratch + 0x74 - n;
+        let state = call(
+            mem,
+            mem.rebase(crate::motion::bridge::CACHE_CHECK_YET),
+            &[1, id],
+        );
+        if state <= 1 {
+            return 0;
+        }
+        let index = call(mem, mem.rebase(0x0082_a640), &[id]);
+        mem.write(at(0x70), index);
+        if index.cast_signed() < 0 {
+            return u32::MAX;
+        }
+        let f = CD_LIB_14.get(mem);
+        let size = call(mem, f, &[index]);
+        if size == 0 {
+            return u32::MAX;
+        }
+        let len = (size.wrapping_add(0x8f) & 0xffff_ff80).wrapping_sub(0x10);
+        let block = call(mem, mem.rebase(crate::handle::bridge::USER_MALLOC), &[len]);
+        let name = call(mem, mem.rebase(CREATE_NAME), &[id]);
+        let section = call(mem, mem.rebase(CREATE_SECTION), &[id, name]);
+        let sprintf: u32 = mem.read(mem.rebase(SPRINTF_IMPORT));
+        // the original leaves `name` pushed: it is the format's second %s
+        call(
+            mem,
+            sprintf,
+            &[at(0x44), mem.rebase(CHRDATA_FORMAT), section, name],
+        );
+        call(
+            mem,
+            mem.rebase(crate::handle::bridge::MEM_SET_STR),
+            &[block, at(0x44), u32::MAX],
+        );
+        let f = CD_LIB_98.get(mem);
+        let file = call(mem, f, &[index]);
+        mem.write(at(0x54), id);
+        mem.write(at(0x50), block);
+        mem.write(at(0x4c), 1u32);
+        call(mem, mem.rebase(CACHE_ENTRY), &[1, id, block]);
+        call(mem, mem.rebase(CACHE_ENTRY_NOT_YET), &[1, id, 1]);
+        let f = CD_LIB.get(mem);
+        let index: u32 = mem.read(at(0x70));
+        call(
+            mem,
+            f,
+            &[index, block, mem.rebase(ROM_READ_CHR_CB), at(0x60)],
+        );
+        call(
+            mem,
+            mem.rebase(CACHE_ENTRY_RENDER_DATA),
+            &[1, id, at(0x64), at(0x68), at(0x74), at(0x6c)],
+        );
+        let (c, d) = (mem.read::<u32>(at(0x74)), mem.read::<u32>(at(0x6c)));
+        let r = call(mem, mem.rebase(LOAD_HD_RENDER_DATA), &[file, c, d, id]);
+        let a: u32 = mem.read(at(0x64));
+        mem.write(a, r);
+        let b: u32 = mem.read(at(0x68));
+        mem.write(b, 0u32);
+        0
+    }
+
+    /// `Ch_RomReadEventMGRPcb(req)` (`0x0082a7d0`): the event group read
+    /// for `req` is added (`ChN_AddEventMgrp(+0x10, +0xc)`).
+    pub fn ch_rom_read_event_mgrp_cb<M: Mem>(
+        mem: &mut M,
+        req: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (data, x) = (
+            mem.read::<u32>(req.wrapping_add(0x10)),
+            mem.read::<u32>(req.wrapping_add(0xc)),
+        );
+        call(mem, mem.rebase(0x0083_7630), &[data, x])
+    }
 }
 
 #[cfg(test)]

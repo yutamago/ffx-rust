@@ -87,6 +87,20 @@ for f in sorted((progress.REPO / "crates/ffx-hook/src/ported").glob("*.rs")):
         if PANICS.search(line) and "runs in the 32-bit game" not in line and "\"32-bit\"" not in line:
             print(f"{f.name}:{n}: may panic in the game: {line.strip()[:80]}")
             bad += 1
+# The same holds for the game-side Host implementations other crates give
+# RawMem (the bridges' calls run through them inside the game): no panics
+# and no asserts in those impl blocks.
+GAME_SIDE = re.compile(r"\bassert(_eq|_ne)?!")
+for f in sorted(progress.REPO.glob("crates/*/src/**/*.rs")):
+    text = f.read_text(encoding="utf-8")
+    for m in re.finditer(r"^impl [^\n]*\bfor (?:ffx_bridge::)?RawMem\b[^\n]*\{\n(.*?)^\}", text, re.S | re.M):
+        start = text[: m.start(1)].count("\n") + 1
+        for k, line in enumerate(m.group(1).splitlines()):
+            if line.strip().startswith("//"):
+                continue
+            if PANICS.search(line) or GAME_SIDE.search(line):
+                print(f"{f.relative_to(progress.REPO)}:{start + k}: may panic in the game: {line.strip()[:80]}")
+                bad += 1
 # An asm! block that calls the game must not use an `in(reg)` operand after
 # the call: the register allocator may have put it in eax/ecx/edx, which the
 # callee overwrites (an output pointer in edx crashed the field replays).
@@ -104,5 +118,15 @@ for f in sorted((progress.REPO / "crates/ffx-hook/src").rglob("*.rs")):
                 n = text[: m.start()].count("\n") + 1
                 print(f"{f.name}:{n}: asm uses {{{name}}} after a call, in a register the callee may clobber")
                 bad += 1
+
+# Argument counts at the bridges' calls into original code (tools/callarity.py).
+if exe:
+    import callarity  # noqa: E402
+
+    found, checked = callarity.check(progress.REPO, exe, {a: size for a, (_, size) in rows.items()})
+    for line in found:
+        print(line)
+    bad += len(found)
+    print(f"{checked} calls checked for argument counts")
 print(f"{len(seen)} ported, {bad} problems")
 sys.exit(1 if bad else 0)

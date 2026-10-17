@@ -1185,6 +1185,458 @@ pub mod bridge {
         (c.call)(mem, r(mem, DRAW_QUAD), &quad);
         p3
     }
+
+    /// The callees `Ch_CalcElement` adds: `FFXVu0ApplyMatrix(out, m, v)`
+    /// (`0x006ed2e0`), `sceVu0InversMatrix4x4(out, m)` (`0x006ed460`),
+    /// `Ch_CheckRadian(a)` (`0x00836790`, `ST0` out), the skeleton upload
+    /// `graphicCharacterInstanceSetSkeletonMatrices(id, inst, matrices)`
+    /// (`0x0063be60`) and `...RestoreDefault(inst, bone)` (`0x0063bfc0`).
+    pub const APPLY_MATRIX: u32 = 0x006e_d2e0;
+    pub const INVERSE_MATRIX: u32 = 0x006e_d460;
+    pub const CHECK_RADIAN: u32 = 0x0083_6790;
+    pub const SET_SKELETON_MATRICES: u32 = 0x0063_be60;
+    pub const RESTORE_SKELETON_MATRIX: u32 = 0x0063_bfc0;
+    /// `Ch_ElemCalcQuaternion(e)` ([`ch_elem_calc_quaternion`]).
+    pub const ELEM_CALC_QUATERNION: u32 = 0x0083_3960;
+    /// Skips the element matrices' upload when set (`u32`), and the flag
+    /// that restores bones 0x6b, 0x6c of character 0x66 (`u32`).
+    pub const NO_SKELETON_UPLOAD: u32 = 0x012f_b7d8;
+    pub const RESTORE_66: u32 = 0x0130_08e0;
+    /// Bytes of scratch `ch_calc_element` needs: the original's frame
+    /// (offset `0xc11c - n` stands for `[ebp - n]`), whose 512 skeleton
+    /// matrices (`[ebp - 0xc104]`) hold only the elements' entries.
+    pub const CALC_ELEMENT_SCRATCH: u32 = 0xc11c;
+
+    /// `Ch_CalcElement(chr)` (`0x00832760`): the character's matrices
+    /// `+0x1d0` (world), `+0x210` (world with the model's scale), `+0x250`
+    /// (unit), then every element's (0x160 bytes at `+0x328`, count `u16`
+    /// `+0xa` of `+0x1c0`) and their upload. The world matrix is:
+    /// attached to element `+0x1a0` of character `+0x19c` (its matrix
+    /// scaled by `+0x1b4` / the parent's scale, moved by the offset
+    /// `+0x1a4`..`+0x1ac`, times the parent's `+0x1d0`); a given matrix
+    /// `+0x10c`; or the character's own (scale `+0x5c`..`+0x64` × model
+    /// scale / `+0x38` × 0.01, a pitch `+0x15c` approaching `+0x160` by
+    /// `+0x164`, the facing `-+0x158 - pi/2` through `Ch_CheckRadian`,
+    /// position `+0xc`..`+0x14` plus `+0x6c`..`+0x74`). An element with a
+    /// given matrix (`+0xc8`, then cleared) takes it, its translation /1000;
+    /// otherwise its scale `+0x104`.., turn `+0xe4`.. and position `+0xf4`..
+    /// times its bone's `+0x88`, blended by `Ch_ElemCalcQuaternion` when it
+    /// has a target (`+0xcc`). Unless uploads are off ([`NO_SKELETON_UPLOAD`]),
+    /// each element's skin matrix (relative to its bone's inverse) goes to
+    /// entry `+4` of the buffer, uploaded to both instances (`+0x830`,
+    /// `+0x838`) when the model has meshes (`u16` `+8` of `+0x1c0`).
+    #[allow(clippy::too_many_lines)]
+    pub fn ch_calc_element<M: Mem>(mem: &mut M, chr: u32, scratch: u32, c: &mut NeckCalls<'_, M>) {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let fl = |mem: &M, a: u32| f64::from(mem.read::<f32>(a));
+        let ld = |mem: &M, a: u32| crate::x87::load(mem.read::<f32>(a));
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r32 = |x: f64| x as f32;
+        let at = |n: u32| scratch + 0xc11c - n;
+        let (s4, t, u, v) = (at(0x4004), at(0x4044), at(0x4084), at(0xc114));
+        let (inv, res, buf) = (at(0x4104), at(0x40c4), at(0xc104));
+        let world = chr + 0x1d0;
+        let unit = r(mem, UNIT_MATRIX);
+        let mul = r(mem, MUL_MATRIX);
+        let copy = r(mem, COPY_MATRIX);
+        let k1000 = mem.read::<f64>(r(mem, 0x00b0_dba0));
+        (c.call)(mem, unit, &[chr + 0x250]);
+        (c.call)(mem, unit, &[world]);
+        (c.call)(mem, unit, &[chr + 0x210]);
+        let parent: u32 = mem.read(chr + 0x19c);
+        if parent != 0 {
+            (c.call)(mem, unit, &[s4]);
+            let ei: u32 = mem.read(chr + 0x1a0);
+            let pm: u32 = mem.read(parent.wrapping_add(0x1c4));
+            let s = r32(1.0 / fl(mem, pm.wrapping_add(0x30)));
+            let s = r32(f64::from(s) * fl(mem, chr + 0x1b4));
+            for off in [0x28u32, 0x14, 0] {
+                mem.write(s4 + off, s);
+            }
+            let em = mem
+                .read::<u32>(parent.wrapping_add(0x328))
+                .wrapping_add(ei.wrapping_mul(0x160))
+                .wrapping_add(0x88);
+            (c.call)(mem, mul, &[t, em, s4]);
+            for k in 0..4 {
+                let w: u32 = mem.read(chr + 0x1a4 + 4 * k);
+                mem.write(v + 4 * k, w);
+            }
+            for k in 0..3 {
+                let pm: u32 = mem.read(mem.read::<u32>(chr + 0x19c).wrapping_add(0x1c4));
+                let x = r32(fl(mem, pm.wrapping_add(0x30)) * fl(mem, v + 4 * k));
+                mem.write(v + 4 * k, x);
+            }
+            for k in 0..3 {
+                let x = r32(fl(mem, t + 0x30 + 4 * k) * k1000);
+                mem.write(t + 0x30 + 4 * k, x);
+            }
+            (c.call)(mem, r(mem, APPLY_MATRIX), &[v, t, v]);
+            for k in 0..3 {
+                let x = ld(mem, v + 4 * k);
+                mem.write(t + 0x30 + 4 * k, x);
+            }
+            let p: u32 = mem.read(chr + 0x19c);
+            (c.call)(mem, mul, &[world, p.wrapping_add(0x1d0), t]);
+        } else if mem.read::<u32>(chr + 0x10c) != 0 {
+            let m: u32 = mem.read(chr + 0x10c);
+            (c.call)(mem, copy, &[world, m]);
+        } else {
+            (c.call)(mem, unit, &[s4]);
+            let model: u32 = mem.read(chr + 0x1c4);
+            let d = r32(
+                fl(mem, model.wrapping_add(0x30)) / fl(mem, model.wrapping_add(0x38))
+                    * mem.read::<f64>(r(mem, 0x00b1_f2b8)),
+            );
+            for (to, from) in [(0u32, 0x5cu32), (0x14, 0x60), (0x28, 0x64)] {
+                let x = r32(fl(mem, chr + from) * f64::from(d));
+                mem.write(s4 + to, x);
+            }
+            if fl(mem, chr + 0x160) != 0.0 {
+                let args = [0x15cu32, 0x160, 0x164].map(|o| ld(mem, chr + o).to_bits());
+                let a = r32((c.fcall)(mem, r(mem, 0x0083_5f80), &args));
+                mem.write(chr + 0x15c, a);
+                (c.call)(mem, r(mem, ROT_MATRIX_X), &[s4, s4, a.to_bits()]);
+            }
+            let yaw = r32(-fl(mem, chr + 0x158) - mem.read::<f64>(r(mem, 0x00b5_82e8)));
+            let yaw = r32((c.fcall)(mem, r(mem, CHECK_RADIAN), &[yaw.to_bits()]));
+            (c.call)(mem, r(mem, ROT_MATRIX_Y), &[s4, s4, yaw.to_bits()]);
+            for k in 0..3 {
+                let x = r32(fl(mem, chr + 0x6c + 4 * k) + fl(mem, chr + 0xc + 4 * k));
+                mem.write(s4 + 0x30 + 4 * k, x);
+            }
+            (c.call)(mem, copy, &[world, s4]);
+        }
+        (c.call)(mem, unit, &[u]);
+        let model: u32 = mem.read(chr + 0x1c4);
+        let sc = f64::from(ld(mem, model.wrapping_add(0x3c)));
+        for (to, from) in [(0u32, 0x5cu32), (0x14, 0x60), (0x28, 0x64)] {
+            let x = r32(sc / (fl(mem, chr + from) * fl(mem, chr + 0x110)));
+            mem.write(u + to, x);
+        }
+        (c.call)(mem, mul, &[chr + 0x210, world, u]);
+        let skip = |mem: &M| mem.read::<u32>(mem.rebase(NO_SKELETON_UPLOAD)) != 0;
+        let mut e: u32 = mem.read(chr + 0x328);
+        let mut k = 0u32;
+        while k < u32::from(mem.read::<u16>(mem.read::<u32>(chr + 0x1c0).wrapping_add(0xa))) {
+            let bone = |mem: &M| mem.read::<u32>(e).wrapping_add(0x88);
+            let em = e.wrapping_add(0x88);
+            let given: u32 = mem.read(e.wrapping_add(0xc8));
+            let store = if given != 0 {
+                (c.call)(mem, copy, &[em, given]);
+                if skip(mem) {
+                    false
+                } else {
+                    for o in [0xb8u32, 0xbc, 0xc0] {
+                        let x = r32(fl(mem, e.wrapping_add(o)) / k1000);
+                        mem.write(e.wrapping_add(o), x);
+                    }
+                    let b = bone(mem);
+                    (c.call)(mem, r(mem, INVERSE_MATRIX), &[inv, b]);
+                    (c.call)(mem, mul, &[res, inv, em]);
+                    true
+                }
+            } else {
+                (c.call)(mem, unit, &[s4]);
+                for (to, from) in [(0u32, 0x104u32), (0x14, 0x108), (0x28, 0x10c)] {
+                    let x = ld(mem, e.wrapping_add(from));
+                    mem.write(s4 + to, x);
+                }
+                for (f, o) in [
+                    (ROT_MATRIX_X, 0xe4u32),
+                    (ROT_MATRIX_Y, 0xe8),
+                    (ROT_MATRIX_Z, 0xec),
+                ] {
+                    let a = ld(mem, e.wrapping_add(o)).to_bits();
+                    (c.call)(mem, r(mem, f), &[s4, s4, a]);
+                }
+                for k in 0..3 {
+                    let x = ld(mem, e.wrapping_add(0xf4 + 4 * k));
+                    mem.write(s4 + 0x30 + 4 * k, x);
+                }
+                let b = bone(mem);
+                (c.call)(mem, mul, &[em, b, s4]);
+                if mem.read::<u32>(e.wrapping_add(0xcc)) != 0 {
+                    (c.call)(mem, r(mem, ELEM_CALC_QUATERNION), &[e]);
+                    if skip(mem) {
+                        false
+                    } else {
+                        let b = bone(mem);
+                        (c.call)(mem, r(mem, INVERSE_MATRIX), &[inv, b]);
+                        (c.call)(mem, mul, &[res, inv, em]);
+                        true
+                    }
+                } else if skip(mem) {
+                    false
+                } else {
+                    (c.call)(mem, copy, &[res, s4]);
+                    true
+                }
+            };
+            if store {
+                let slot = buf.wrapping_add(mem.read::<u32>(e.wrapping_add(4)) << 6);
+                for w in 0..16 {
+                    let x: u32 = mem.read(res + 4 * w);
+                    mem.write(slot.wrapping_add(4 * w), x);
+                }
+                if given != 0 {
+                    mem.write(e.wrapping_add(0xc8), 0u32);
+                }
+            }
+            k += 1;
+            e = e.wrapping_add(0x160);
+        }
+        let hdr: u32 = mem.read(chr + 0x1c0);
+        if mem.read::<u16>(hdr.wrapping_add(8)) != 0 && !skip(mem) {
+            let id = u32::from(mem.read::<u16>(chr));
+            for off in [0x830u32, 0x838] {
+                let inst: u32 = mem.read(chr + off);
+                (c.call)(mem, r(mem, SET_SKELETON_MATRICES), &[id, inst, buf]);
+            }
+            if mem.read::<u32>(r(mem, RESTORE_66)) != 0 && mem.read::<u16>(chr) == 0x66 {
+                for bone in [0x6bu32, 0x6c] {
+                    let inst: u32 = mem.read(chr + 0x830);
+                    (c.call)(mem, r(mem, RESTORE_SKELETON_MATRIX), &[inst, bone]);
+                }
+            }
+        }
+    }
+
+    /// The callees `Ch_CullByDistance` makes: `graphicLevelGetNameHash()`
+    /// (`0x00641da0`), `MsCameraGetPosNow(k, out)` (`0x007bd470`),
+    /// `graphicCharacterInstanceIsVisible(inst)` (`0x0063b230`),
+    /// `graphicIsSplitScreenEnabled()` (`0x00641cc0`), `getInterValefor()`
+    /// (`0x00787340`).
+    pub const LEVEL_NAME_HASH: u32 = 0x0064_1da0;
+    pub const CAMERA_GET_POS_NOW: u32 = 0x007b_d470;
+    pub const INSTANCE_IS_VISIBLE: u32 = 0x0063_b230;
+    pub const SPLIT_SCREEN: u32 = 0x0064_1cc0;
+    pub const INTER_VALEFOR: u32 = 0x0078_7340;
+    /// Bytes of scratch `ch_cull_by_distance` needs: the original's frame
+    /// (offset `0x28 - n` stands for `[ebp - n]`).
+    pub const CULL_SCRATCH: u32 = 0x28;
+
+    /// `Ch_CullByDistance(chr)` (`0x0082e220`): the distance from the
+    /// camera (`MsCameraGetPosNow(1)`) to the character's centre `+0x694`
+    /// goes to `+0x178` (`_CIsqrt` through `ci`); hide bits 3 and 5 of
+    /// `+0x180` and flag bit 28 of `+0x194` are cleared first. With flag bit
+    /// 11 of `+0x194` and no other hide bit, an instance (`+0x830`) the
+    /// renderer does not show sets bit 3, and beyond the draw distance
+    /// `+0x174` (half of it on level 0x24f9 while Valefor's flag bit 2 is
+    /// set and the next read is not negative; the full distance only
+    /// without split screen) sets bit 5. Returns 1 when hidden, else 0.
+    pub fn ch_cull_by_distance<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        scratch: u32,
+        c: &mut NeckCalls<'_, M>,
+    ) -> u32 {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let fl = |mem: &M, a: u32| f64::from(mem.read::<f32>(a));
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r32 = |x: f64| x as f32;
+        let (p, cam) = (scratch, scratch + 0x14);
+        let hash = (c.call)(mem, r(mem, LEVEL_NAME_HASH), &[]);
+        let h: u8 = mem.read(chr + 0x180);
+        mem.write(chr + 0x180, h & 0xd7);
+        let f: u32 = mem.read(chr + 0x194);
+        mem.write(chr + 0x194, f & 0xefff_ffff);
+        for k in 0..4 {
+            let w: u32 = mem.read(chr + 0x694 + 4 * k);
+            mem.write(p + 4 * k, w);
+        }
+        (c.call)(mem, r(mem, CAMERA_GET_POS_NOW), &[1, cam]);
+        for k in 0..3 {
+            let d = r32(fl(mem, p + 4 * k) - fl(mem, cam + 4 * k));
+            mem.write(p + 4 * k, d);
+        }
+        let (x, y, z) = (fl(mem, p), fl(mem, p + 4), fl(mem, p + 8));
+        let dist = (c.ci)(mem, r(mem, CI_SQRT), &[(y * y + x * x) + z * z]);
+        mem.write(scratch + 0x10, dist);
+        mem.write(chr + 0x178, dist);
+        if mem.read::<u8>(chr + 0x180) != 0 {
+            return 1;
+        }
+        if mem.read::<u32>(chr + 0x194) & 0x800 == 0 {
+            return 0;
+        }
+        let hide = |mem: &mut M, bit: u8| {
+            let h: u8 = mem.read(chr + 0x180);
+            mem.write(chr + 0x180, h | bit);
+            1
+        };
+        let inst: u32 = mem.read(chr + 0x830);
+        if (c.call)(mem, r(mem, INSTANCE_IS_VISIBLE), &[inst]) == 0 {
+            return hide(mem, 8);
+        }
+        let d = f64::from(dist);
+        if (c.call)(mem, r(mem, SPLIT_SCREEN), &[]) == 0 && d > fl(mem, chr + 0x174) {
+            return hide(mem, 0x20);
+        }
+        if hash == 0x24f9
+            && (c.call)(mem, r(mem, INTER_VALEFOR), &[]) & 4 != 0
+            && (c.call)(mem, r(mem, INTER_VALEFOR), &[]) & 0x80 == 0
+            && d > fl(mem, chr + 0x174) * mem.read::<f64>(r(mem, 0x00b9_2220))
+        {
+            return hide(mem, 0x20);
+        }
+        0
+    }
+
+    /// The id map (`Sg_Id*`): triangles (`0x01301a84`, 16 bytes: `i16`
+    /// vertex indices `+0`, `+2`, `+4`, neighbours across each edge `+6`,
+    /// `+8`, `+0xa`), vertices (`0x01301a8c`, 8 bytes: `i16` x, y, z), the
+    /// walk's depth (`i32`), the edge it last crossed (two vertex pointers)
+    /// and the height slack (`f32`); `Sg_IdMatchChr(chr, i)` (`0x0083e4e0`),
+    /// `Sg_IdGetNormal(out, i)` (`0x0083e130`), `Sg_IdGetHeight(p, i)`
+    /// (`0x0083e040`, `ST0` out).
+    pub const ID_TRIANGLES: u32 = 0x0130_1a84;
+    pub const ID_VERTICES: u32 = 0x0130_1a8c;
+    pub const ID_DEPTH: u32 = 0x0130_1ae8;
+    pub const ID_EDGE_A: u32 = 0x0130_1aec;
+    pub const ID_EDGE_B: u32 = 0x0130_1af0;
+    pub const ID_SLACK: u32 = 0x0130_1af4;
+    pub const ID_MATCH_CHR: u32 = 0x0083_e4e0;
+    pub const ID_GET_NORMAL: u32 = 0x0083_e130;
+    pub const ID_GET_HEIGHT: u32 = 0x0083_e040;
+    /// Bytes of scratch `sg_id_walk` needs (the normal `Sg_IdGetNormal`
+    /// writes, the original's `[ebp-0x14]`).
+    pub const ID_WALK_SCRATCH: u32 = 0x14;
+
+    /// `Sg_IdWalk(chr, p, i)` (`0x0083d960`): from id triangle `i` (-1: 1),
+    /// finds the edge position `p` (x `+0`, z `+8`) lies beyond (the
+    /// edge's line through its integer x, z, products as `f32`; the first
+    /// of edges 0-1, 1-2, 2-0 in order, a later one overriding an earlier
+    /// one only when the character's old position `+0x3c`, `+0x44` is on
+    /// its far side). Inside all three: the triangle's vertices become
+    /// `+0x8c`..`+0xb4` (floats, 0x10 apart), `+0x824` = `i`, 0. Beyond an
+    /// edge, its neighbour is entered (depth +1) unless it is missing, does
+    /// not apply to the character (`Sg_IdMatchChr`), the walk is past 10
+    /// deep, or its floor (`Sg_IdGetHeight`, only for a sloped normal) is
+    /// below the character's `+0x40` less the slack; then the edge is
+    /// recorded and the result is 1. Floats as the x87 at 53 bits.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::similar_names,
+        clippy::many_single_char_names
+    )]
+    pub fn sg_id_walk<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        p: u32,
+        tri: u32,
+        scratch: u32,
+        c: &mut NeckCalls<'_, M>,
+    ) -> u32 {
+        if tri == u32::MAX {
+            return 1;
+        }
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let fl = |mem: &M, a: u32| f64::from(mem.read::<f32>(a));
+        #[allow(clippy::cast_precision_loss)] // fild, fstp dword
+        let i2f = |v: i32| f64::from(v as f32);
+        let verts: u32 = mem.read(r(mem, ID_VERTICES));
+        let t = mem.read::<u32>(r(mem, ID_TRIANGLES)).wrapping_add(tri << 4);
+        let vert = |mem: &M, k: u32| {
+            verts.wrapping_add(
+                8u32.wrapping_mul(i32::from(mem.read::<i16>(t + 2 * k)).cast_unsigned()),
+            )
+        };
+        let (p0, p1, p2) = (vert(mem, 0), vert(mem, 1), vert(mem, 2));
+        let c16 = |mem: &M, a: u32| i32::from(mem.read::<i16>(a));
+        let (x0, z0) = (c16(mem, p0), c16(mem, p0 + 4));
+        let (x1, z1) = (c16(mem, p1), c16(mem, p1 + 4));
+        let (x2, z2) = (c16(mem, p2), c16(mem, p2 + 4));
+        let (px, pz) = (fl(mem, p), fl(mem, p + 8));
+        // which side of the edge through (xa, za)-(xb, zb) p lies on
+        let side =
+            |dz: i32, dx: i32, c1: i32, c2: i32| i2f(dz) * px + i2f(dx) * pz + i2f(c1) - i2f(c2);
+        // the same for the character's old position, the edge's far end given
+        let old = |mem: &M, x: i32, z: i32| {
+            let (ox, oz) = (fl(mem, chr + 0x3c), fl(mem, chr + 0x44));
+            (oz - pz) * f64::from(x) + (px - ox) * f64::from(z) + ox * pz - oz * px
+        };
+        let (mut a, mut b, mut next, mut edge) = (0u32, 0u32, 0i32, 0u32);
+        let neighbour = |mem: &M, off: u32| i32::from(mem.read::<i16>(t + off));
+        if 0.0
+            < side(
+                z0.wrapping_sub(z1),
+                x1.wrapping_sub(x0),
+                x0.wrapping_mul(z1),
+                x1.wrapping_mul(z0),
+            )
+        {
+            (a, b, next, edge) = (p0, p1, neighbour(mem, 6), 1);
+        }
+        let mut done = false;
+        if side(
+            z1.wrapping_sub(z2),
+            x2.wrapping_sub(x1),
+            z2.wrapping_mul(x1),
+            x2.wrapping_mul(z1),
+        ) > 0.0
+        {
+            if edge != 0 && old(mem, x1, z1) < 0.0 {
+                done = true;
+            } else {
+                (a, b, next, edge) = (p1, p2, neighbour(mem, 8), 2);
+            }
+        }
+        if !done {
+            let s = side(
+                z2.wrapping_sub(z0),
+                x0.wrapping_sub(x2),
+                x2.wrapping_mul(z0),
+                z2.wrapping_mul(x0),
+            );
+            if s > 0.0 {
+                // a NaN takes the edge, as the original's x87 compares do
+                #[allow(clippy::neg_cmp_op_on_partial_ord)]
+                let take = match edge {
+                    1 => !(old(mem, x0, z0) > 0.0) && !(old(mem, x2, z2) < 0.0),
+                    2 => !(old(mem, x2, z2) < 0.0),
+                    _ => true,
+                };
+                if take {
+                    (a, b, next) = (p2, p0, neighbour(mem, 0xa));
+                }
+            } else if edge == 0 {
+                for (k, v) in [p0, p1, p2].into_iter().enumerate() {
+                    for (j, o) in [0u32, 2, 4].into_iter().enumerate() {
+                        #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+                        let off = 0x8c + 0x10 * k as u32 + 4 * j as u32;
+                        mem.write(chr + off, f32::from(mem.read::<i16>(v + o)));
+                    }
+                }
+                #[allow(clippy::cast_possible_truncation)] // the low half, as stored
+                mem.write(chr + 0x824, tri as u16);
+                return 0;
+            }
+        }
+        let stop = |mem: &mut M| {
+            mem.write(mem.rebase(ID_EDGE_A), a);
+            mem.write(mem.rebase(ID_EDGE_B), b);
+            1
+        };
+        let nx = next.cast_unsigned();
+        if next != -1 && (c.call)(mem, r(mem, ID_MATCH_CHR), &[chr, nx]) != 0 {
+            return stop(mem);
+        }
+        if mem.read::<i32>(r(mem, ID_DEPTH)) > 10 || next == -1 {
+            return stop(mem);
+        }
+        (c.call)(mem, r(mem, ID_GET_NORMAL), &[scratch, nx]);
+        if fl(mem, scratch + 4) != 0.0 {
+            #[allow(clippy::cast_possible_truncation)] // fstp dword
+            let h = f64::from((c.fcall)(mem, r(mem, ID_GET_HEIGHT), &[p, nx]) as f32);
+            if h < fl(mem, chr + 0x40) - fl(mem, r(mem, ID_SLACK)) {
+                return stop(mem);
+            }
+        }
+        let d: i32 = mem.read(r(mem, ID_DEPTH));
+        mem.write(r(mem, ID_DEPTH), d.wrapping_add(1));
+        (c.call)(mem, r(mem, 0x0083_d960), &[chr, p, nx])
+    }
 }
 
 #[cfg(test)]
