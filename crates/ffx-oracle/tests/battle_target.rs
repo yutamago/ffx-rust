@@ -1843,7 +1843,7 @@ fn process(
         a,
         b,
         ffx_battle::state::bridge::INPUT_CUE_COUNT,
-        if rng.below(4) == 0 { 1 } else { 0 },
+        i8::from(rng.below(4) == 0),
     );
     set(a, b, p::ORDER_HOLD, flag(rng, 8));
     set(a, b, p::IDLE_ROUNDS, i8::try_from(rng.below(4)).unwrap());
@@ -1894,6 +1894,12 @@ fn process(
             q + 0x5bb,
             &[[0xd, 0xe, 0xf, 0x10, rng.byte()][rng.below(5) as usize]],
         );
+        // (no AP-linked gauge: its next-AP table is not loaded here;
+        // MsLimitUp has its own test) and an ordinary gauge rate
+        let abil = b.read(q + 0x6be, 1).unwrap()[0] & !8;
+        poke(a, b, q + 0x6be, &[abil]);
+        let rate = (f32::from(i16::try_from(rng.range(1, 3000)).unwrap()) / 100.0).to_bits();
+        poke(a, b, q + 0x70c, &rate.to_le_bytes());
     }
     let n = [0, 1, 3, 8, rng.below(0x20)][rng.below(5) as usize];
     set(
