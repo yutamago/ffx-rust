@@ -12031,8 +12031,8 @@
 0x00a57710 function AbmapCalcLinkPointsCurved # fh v3:exact 0x00a57710 +AbmapCalcLinkPointsCurved
 0x00a58080 function AbmapPositionPlyTag       # fh v3:exact 0x00a58080 +AbmapPositionPlyTag
 0x00a581f0 function AbmapCalcLinkPointsStraight # fh v3:exact 0x00a581f0 +AbmapCalcLinkPointsStraight
-0x00a58df0 function AbmapFlagConnectedLinks   # fh v3:exact 0x00a58df0 +AbmapFlagConnectedLinks
-0x00a58ec0 function AbmapTryChangePlayer      # fh v3:exact 0x00a58ec0 +AbmapTryChangePlayer
+0x00a58df0 function AbmapFlagConnectedLinks   # fh v3:exact 0x00a58df0 +AbmapFlagConnectedLinks; cdecl(flag) -> eax node pointer past the last: nodes whose kind record (MsGetExcelData(kind, [0x01a860e0])) has +0x10 bit 0x8000 OR flag into byte +0xe of every link (+0xa808, 0x14 each, count i16 +4) touching them; ported (ffx-pcui)
+0x00a58ec0 function AbmapTryChangePlayer      # fh v3:exact 0x00a58ec0 +AbmapTryChangePlayer; pad edge 4/8 (+0x11672): TkMenuSetPrev/NextPlayer, direction +0x115be, previous +0x115bd, current +0x115bc, homing on +0x110cc+0x50*current at 0.25, AbmapState_HomeOnNode pushed (+0x115a8 -> +0x115b0); tail jmp AbmapResetCursorCamera; ported (ffx-pcui)
 0x00a59350 function AbmapHelpMessageStep_00a59350 # structure: (message): counts down the area-map help timer (g_Abmap +0x11666) and draws its message through TOMacroSetByte1/TOMacroSetValue and TOAddPktBaseMesFontLAbmap, or starts message 0x48/0x23 (0x00a594c0) when the timer is out; callers AbmapSetHelpMessage and the area-map screens; name ours
 0x00a59680 function CopyDeref_00a59680           # auto-port shape (several stores: copy into deref, cdecl): t0 = u32[&0x01a86108]; t1 = u16[((a0 * 0x340) + t0)]; u16[(((a0 * 0x340) + t0) + 0x8)] = t1; t2 = u16[(((a0 * 0x340) + t0) + 0x2)]; u16[(((a0 * 0x340) + t0) + 0xa)] = t2; t3 = u16[(((a0 * 0x340) + t0) + 0x4)]; u16[(((a0 * 0x340) + t0) + 0xc)] = t3; t4 = u16[(((a0 * 0x340) + t0) + 0x6)]; u16[(((a0 * 0x340) + t0) + 0xe)] = t4; t5 = u16[(((a0 * 0x340) + t0) + 0x10)]; u16[(((a0 * 0x340) + t0) + 0x14)] = t5; t6 = u16[(((a0 * 0x340) + t0) + 0x12)]; u16[(((a0 * 0x340) + t0) + 0x16)] = t6; return t6; callers: no direct caller; name ours
 0x00a596d0 function CopyDeref_00a596d0           # auto-port shape (several stores: copy into deref, cdecl): t0 = u32[&0x01a86108]; t1 = u16[(((a0 * 0x340) + t0) + 0x8)]; u16[(((a0 * 0x340) + t0) + 0x2a)] = t1; t2 = u16[(((a0 * 0x340) + t0) + 0xa)]; u16[(((a0 * 0x340) + t0) + 0x2c)] = t2; t3 = u16[(((a0 * 0x340) + t0) + 0xc)]; u16[(((a0 * 0x340) + t0) + 0x2e)] = t3; t4 = u16[(((a0 * 0x340) + t0) + 0xe)]; u16[(((a0 * 0x340) + t0) + 0x30)] = t4; u8[(((a0 * 0x340) + t0) + 0x32)] = 0x0; u32[(((a0 * 0x340) + t0) + 0x34)] = &0x00a5a170; return t4; callers: no direct caller; name ours
@@ -15347,6 +15347,7 @@
 0x01a85ba8 label    g_FullArenaLocalization   # toggled (non-zero -> 0, 0 -> 1) by setFullArenaLocalizationEnable; read by 0x00a42c00, 0x00a42fa0
 0x01a85bb0 label    g_ReadChgName_From        # 16 u32 (FILE_NAME_CHG_TBL_CNT, read_debug.c): set_read_chgname(a, b) puts a in the first zero slot, b in g_ReadChgName_To; clear_read_chgname zeroes both
 0x01a85bf0 label    g_ReadChgName_To          # 16 u32: the b of set_read_chgname(a, b), beside g_ReadChgName_From
+0x01a860e0 label    g_AbmapNodeKinds             # the MsGetExcelData table AbmapFlagConnectedLinks looks node kinds up in (kind record +0x10 bit 0x8000 flags their links); name ours
 0x01a860fc label    g_AbmapMoveLimit             # the highest cost AbmapCalcMoveCost walks to (the cost's low 16 bits compared)
 0x01a86100 label    g_AbmapMoveStep              # the cost of the next step (1 when the link byte matches g_AbmapMoveMask, else 4)
 0x01a86104 label    g_AbmapMoveMask              # the link byte mask for cheap steps

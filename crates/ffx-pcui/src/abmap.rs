@@ -116,6 +116,152 @@ pub mod bridge {
     /// `TOMenuGetControlPadAnalogHist(pad, frame, axis, -1)`.
     pub const TO_MENU_GET_CONTROL_PAD_ANALOG_HIST: u32 = 0x008b_e450;
 
+    /// `TkMenuSetPrevPlayer()`.
+    pub const TK_MENU_SET_PREV_PLAYER: u32 = 0x008a_afa0;
+    /// `TkMenuSetNextPlayer()`.
+    pub const TK_MENU_SET_NEXT_PLAYER: u32 = 0x008a_af10;
+    /// `TkMenuGetCurrentPlayer()`: the character shown, in `al`.
+    pub const TK_MENU_GET_CURRENT_PLAYER: u32 = 0x008a_9860;
+    /// `SndSepPlaySimple(sfx)`.
+    pub const SND_SEP_PLAY_SIMPLE: u32 = 0x0088_6e80;
+    /// `AbmapInitHoming(node, speed)`.
+    pub const ABMAP_INIT_HOMING: u32 = 0x00a4_8d70;
+    /// `AbmapCheckAchievements()`.
+    pub const ABMAP_CHECK_ACHIEVEMENTS: u32 = 0x00a4_7210;
+    /// `AbmapMarkEmptyMenus()`.
+    pub const ABMAP_MARK_EMPTY_MENUS: u32 = 0x00a5_aca0;
+    /// `AbmapResetCursorCamera()`.
+    pub const ABMAP_RESET_CURSOR_CAMERA: u32 = 0x00a5_b030;
+    /// `AbmapState_HomeOnNode`: the state that moves the cursor to a node.
+    pub const ABMAP_STATE_HOME_ON_NODE: u32 = 0x00a5_9e80;
+    /// `MsGetExcelData(id, table, &strings)`.
+    pub const MS_GET_EXCEL_DATA: u32 = 0x007a_b870;
+    /// `g_AbmapNodeKinds`: the table `AbmapFlagConnectedLinks` looks node
+    /// kinds up in.
+    pub const NODE_KINDS: Global<u32> = Global::new(0x01a8_60e0);
+
+    /// `AbmapTryChangePlayer()` (`0x00a58ec0`): unless a state is stacked
+    /// (`+0x115b0`), L1/R1 (pad edge bits 4/8 at `+0x11672`) switch to
+    /// the previous/next character (direction at `+0x115be`, cleared when
+    /// the character stays): a sound, the cursor homing on the new
+    /// character's node (`+0x110cc + 0x50 * character`) at speed 0.25,
+    /// `AbmapState_HomeOnNode` pushed over the current state, the menus
+    /// refreshed. Ends in `AbmapResetCursorCamera`, whose `eax` it returns
+    /// (`g_Abmap` when a state is stacked).
+    pub fn try_change_player(mem: &mut impl Host) -> u32 {
+        let g = ABMAP.get(mem);
+        if mem.read::<u32>(g.wrapping_add(0x115b0)) != 0 {
+            return g;
+        }
+        let edge: u16 = mem.read(g.wrapping_add(0x11672));
+        if edge & 4 != 0 {
+            mem.call_sym(TK_MENU_SET_PREV_PLAYER, Conv::Cdecl, &[]);
+            let g = ABMAP.get(mem);
+            mem.write(g.wrapping_add(0x115be), 1u8);
+        } else if edge & 8 != 0 {
+            mem.write(g.wrapping_add(0x115be), 2u8);
+            mem.call_sym(TK_MENU_SET_NEXT_PLAYER, Conv::Cdecl, &[]);
+        } else {
+            return mem.call_sym(ABMAP_RESET_CURSOR_CAMERA, Conv::Cdecl, &[]);
+        }
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x115bf), 0u8);
+        let was: u8 = mem.read(g.wrapping_add(0x115bc));
+        mem.write(g.wrapping_add(0x115bd), was);
+        #[allow(clippy::cast_possible_truncation)] // a byte result
+        let now = mem.call_sym(TK_MENU_GET_CURRENT_PLAYER, Conv::Cdecl, &[]) as u8;
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x115bc), now);
+        if mem.read::<u8>(g.wrapping_add(0x115bd)) == mem.read::<u8>(g.wrapping_add(0x115bc)) {
+            mem.write(g.wrapping_add(0x115be), 0u8);
+        } else {
+            mem.write(g.wrapping_add(0x116ac), 1u32);
+            let g = ABMAP.get(mem);
+            mem.write(g.wrapping_add(0x116a8), u32::MAX);
+            mem.call_sym(SND_SEP_PLAY_SIMPLE, Conv::Cdecl, &[0x8000_0004]);
+        }
+        let g = ABMAP.get(mem);
+        let who = u32::from(mem.read::<u8>(g.wrapping_add(0x115bc)));
+        let node: u16 = mem.read(g.wrapping_add(0x110cc + who * 0x50));
+        mem.call_sym(
+            ABMAP_INIT_HOMING,
+            Conv::Cdecl,
+            &[u32::from(node), 0.25f32.to_bits()],
+        );
+        let g = ABMAP.get(mem);
+        if mem.read::<u32>(g.wrapping_add(0x115b0)) == 0 {
+            let state: u32 = mem.read(g.wrapping_add(0x115a8));
+            mem.write(g.wrapping_add(0x115b0), state);
+            let g = ABMAP.get(mem);
+            let home = mem.rebase(ABMAP_STATE_HOME_ON_NODE);
+            mem.write(g.wrapping_add(0x115a8), home);
+        }
+        mem.call_sym(ABMAP_CHECK_ACHIEVEMENTS, Conv::Cdecl, &[]);
+        mem.call_sym(ABMAP_MARK_EMPTY_MENUS, Conv::Cdecl, &[]);
+        mem.call_sym(ABMAP_RESET_CURSOR_CAMERA, Conv::Cdecl, &[])
+    }
+
+    /// `AbmapFlagConnectedLinks(flag)` (`0x00a58df0`): for every node
+    /// whose kind's record (`MsGetExcelData(kind, NODE_KINDS)`) has bit
+    /// 0x8000 at `+0x10`, ORs `flag` into byte `+0xe` of every link
+    /// (`+0xa808`, 0x14 each, `+4` count) with that node at either end.
+    /// Nodes of kind 0xffff are skipped. Returns what it leaves in `eax`:
+    /// the node pointer past the last (0 with no nodes).
+    pub fn flag_connected_links(mem: &mut impl Host, flag: u32) -> u32 {
+        let g0 = ABMAP.get(mem);
+        let mut g = g0;
+        if mem.read::<i16>(g.wrapping_add(2)) <= 0 {
+            return 0;
+        }
+        let mut node = g0.wrapping_add(0x80e);
+        let mut i: u32 = 0;
+        loop {
+            let kind: u16 = mem.read(node);
+            if kind != 0xffff {
+                let table = NODE_KINDS.get(mem);
+                let strings = mem.scratch();
+                let rec = mem.call_sym(
+                    MS_GET_EXCEL_DATA,
+                    Conv::Cdecl,
+                    &[u32::from(kind), table, strings],
+                );
+                g = ABMAP.get(mem);
+                if mem.read::<u16>(rec.wrapping_add(0x10)) & 0x8000 != 0 {
+                    let mut link = None::<u32>;
+                    loop {
+                        g = ABMAP.get(mem);
+                        let count = i32::from(mem.read::<i16>(g.wrapping_add(4)));
+                        #[allow(clippy::cast_sign_loss)] // the original's address arithmetic
+                        let end = g.wrapping_add(((count * 5 + 0x2a02) * 4) as u32);
+                        let mut at =
+                            link.map_or(g.wrapping_add(0xa808), |l: u32| l.wrapping_add(0x14));
+                        #[allow(clippy::cast_possible_truncation)] // compared as 16 bits
+                        let me = i as u16;
+                        while at < end
+                            && mem.read::<u16>(at) != me
+                            && mem.read::<u16>(at.wrapping_add(2)) != me
+                        {
+                            at = at.wrapping_add(0x14);
+                        }
+                        if at >= end {
+                            break;
+                        }
+                        let b: u8 = mem.read(at.wrapping_add(0xe));
+                        #[allow(clippy::cast_possible_truncation)] // a byte argument
+                        mem.write(at.wrapping_add(0xe), b | flag as u8);
+                        link = Some(at);
+                    }
+                }
+            }
+            node = node.wrapping_add(0x28);
+            i += 1;
+            if i32::try_from(i).unwrap_or(i32::MAX) >= i32::from(mem.read::<i16>(g.wrapping_add(2)))
+            {
+                return node;
+            }
+        }
+    }
+
     /// `AbmapResetVectors()` (`0x00a57120`): the eight vectors at
     /// `g_Abmap + 0x11520..0x115a0` from `r0` (zero), the `w` of the first
     /// four then 1.0; returns `g_Abmap` (left in `eax`).

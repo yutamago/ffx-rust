@@ -30,6 +30,8 @@ const ABMAP_NODE_RADIUS: u32 = 0x00a5_6f30;
 const ABMAP_RANGES_OVERLAP: u32 = 0x00a5_7000;
 const ABMAP_RESET_VECTORS: u32 = 0x00a5_7120;
 const ABMAP_READ_PAD: u32 = 0x00a5_7520;
+const ABMAP_FLAG_CONNECTED_LINKS: u32 = 0x00a5_8df0;
+const ABMAP_TRY_CHANGE_PLAYER: u32 = 0x00a5_8ec0;
 const GUI_TOUCH_RESET_BUTTONS: u32 = 0x0068_ab30;
 const GUI_TOUCH_HANDLE_EVENT: u32 = 0x0068_b470;
 const GUI_TOUCH_HOVER: u32 = 0x0068_b6d0;
@@ -701,6 +703,196 @@ fn gui_touch_handle_event_matches_the_original() {
                     touch::handle_event(&mut Run(b), this, event);
                     Res::Void
                 },
+            );
+        }
+    }
+}
+
+/// A call log both oracles share the layout of: a cursor word, then
+/// 16-byte entries (stub id, the first three arguments).
+struct Log {
+    cursor: u32,
+}
+
+impl Log {
+    fn new(t: &mut Twin) -> Self {
+        let cursor = t.alloc(0x1004);
+        t.put(cursor, &(cursor + 4).to_le_bytes());
+        Self { cursor }
+    }
+
+    /// Replaces the original at `sym` in both with a cdecl stub that logs
+    /// `id` and its first `args` arguments (0 to 3) and returns
+    /// `base + (first argument & mask) * stride`.
+    fn stub(&self, t: &mut Twin, sym: u32, id: u32, args: u8, ret: (u32, u32, u32)) {
+        self.stub_poke(t, sym, id, args, ret, None);
+    }
+
+    /// [`Log::stub`] that also stores `poke.1` at `poke.0` (a callee
+    /// changing state its caller reads again).
+    fn stub_poke(
+        &self,
+        t: &mut Twin,
+        sym: u32,
+        id: u32,
+        args: u8,
+        ret: (u32, u32, u32),
+        poke: Option<(u32, u32)>,
+    ) {
+        let at = t.a.rebase(sym);
+        let mut c = Vec::new();
+        if let Some((addr, value)) = poke {
+            c.extend([0xc7, 0x05]);
+            c.extend(addr.to_le_bytes());
+            c.extend(value.to_le_bytes());
+        }
+        c.extend([0x8b, 0x0d]);
+        c.extend(self.cursor.to_le_bytes());
+        c.extend([0xc7, 0x01]);
+        c.extend(id.to_le_bytes());
+        for k in 1..=args {
+            c.extend([0x8b, 0x54, 0x24, 4 * k, 0x89, 0x51, 4 * k]);
+        }
+        c.extend([0x83, 0xc1, 0x10, 0x89, 0x0d]);
+        c.extend(self.cursor.to_le_bytes());
+        let (base, mask, stride) = ret;
+        c.extend([0x8b, 0x44, 0x24, 0x04, 0x25]);
+        c.extend(mask.to_le_bytes());
+        c.extend([0x69, 0xc0]);
+        c.extend(stride.to_le_bytes());
+        c.push(0x05);
+        c.extend(base.to_le_bytes());
+        c.push(0xc3);
+        t.put(at, &c);
+    }
+
+    fn rewind(&self, t: &mut Twin) {
+        t.put(self.cursor, &(self.cursor + 4).to_le_bytes());
+    }
+}
+
+#[test]
+fn abmap_flag_connected_links_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_0005);
+        let log = Log::new(&mut t);
+        // kind records: 0x14 bytes each by the kind's low byte
+        let records = t.alloc(0x14 * 256);
+        log.stub(
+            &mut t,
+            abmap::MS_GET_EXCEL_DATA,
+            1,
+            2,
+            (records, 0xff, 0x14),
+        );
+        let table = t.a.rebase(abmap::NODE_KINDS.sym);
+        for n in 0..60u32 {
+            log.rewind(&mut t);
+            let mut recs = rng.bytes(0x14 * 256);
+            for r in 0..256 {
+                recs[r * 0x14 + 0x11] &= if rng.below(2) == 0 { 0x7f } else { 0xff };
+            }
+            t.put(records, &recs);
+            t.put(table, &rng.next().to_le_bytes());
+            let g = made_up_abmap(&mut t, &mut rng, 0x11600);
+            let nodes: i16 = match n % 6 {
+                0 => 0,
+                1 => -3,
+                #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+                _ => rng.below(40) as i16,
+            };
+            let links: i16 = match n % 5 {
+                0 => -1,
+                #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+                _ => rng.below(80) as i16,
+            };
+            t.put(g + 2, &nodes.to_le_bytes());
+            t.put(g + 4, &links.to_le_bytes());
+            for k in 0..40u32 {
+                let kind: u16 = if rng.below(5) == 0 {
+                    0xffff
+                } else {
+                    #[allow(clippy::cast_possible_truncation)]
+                    let v = rng.next() as u16;
+                    v
+                };
+                t.put(g + 0x80e + k * 0x28, &kind.to_le_bytes());
+            }
+            for l in 0..80u32 {
+                #[allow(clippy::cast_possible_truncation)]
+                let ends = [rng.below(45) as u16, rng.below(45) as u16];
+                t.put(g + 0xa808 + l * 0x14, &ends[0].to_le_bytes());
+                t.put(g + 0xa80a + l * 0x14, &ends[1].to_le_bytes());
+            }
+            let flag = rng.next();
+            t.check(
+                &format!("flag links {n}"),
+                ABMAP_FLAG_CONNECTED_LINKS,
+                Conv::Cdecl,
+                &[flag],
+                |b| Res::Int(abmap::flag_connected_links(&mut Run(b), flag)),
+            );
+        }
+    }
+}
+
+#[test]
+fn abmap_try_change_player_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_0006);
+        let log = Log::new(&mut t);
+        let none = (0, 0, 0);
+        log.stub(&mut t, abmap::TK_MENU_SET_PREV_PLAYER, 1, 0, none);
+        log.stub(&mut t, abmap::TK_MENU_SET_NEXT_PLAYER, 2, 0, none);
+        log.stub(&mut t, abmap::SND_SEP_PLAY_SIMPLE, 4, 1, none);
+        log.stub(&mut t, abmap::ABMAP_INIT_HOMING, 5, 2, none);
+        log.stub(&mut t, abmap::ABMAP_CHECK_ACHIEVEMENTS, 6, 0, none);
+        log.stub(&mut t, abmap::ABMAP_MARK_EMPTY_MENUS, 7, 0, none);
+        log.stub(
+            &mut t,
+            abmap::ABMAP_RESET_CURSOR_CAMERA,
+            8,
+            0,
+            (0x1234_5678, 0, 0),
+        );
+        for n in 0..400u32 {
+            log.rewind(&mut t);
+            let current = match n % 3 {
+                0 => rng.below(7),
+                1 => rng.next(),
+                _ => rng.below(0x100) | 0x0100,
+            };
+            log.stub(
+                &mut t,
+                abmap::TK_MENU_GET_CURRENT_PLAYER,
+                3,
+                0,
+                (current, 0, 0),
+            );
+            let g = made_up_abmap(&mut t, &mut rng, 0x11700);
+            // homing sometimes stacks a state of its own
+            let poke = (rng.below(3) == 0).then(|| (g + 0x115b0, rng.next() & 0xff));
+            log.stub_poke(&mut t, abmap::ABMAP_INIT_HOMING, 5, 2, none, poke);
+            if rng.below(3) != 0 {
+                t.put(g + 0x115b0, &[0; 4]);
+            }
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                let shown = if rng.below(2) == 0 {
+                    current as u8
+                } else {
+                    rng.below(7) as u8
+                };
+                t.put(g + 0x115bc, &[shown]);
+                let edge = [0u16, 4, 8, 12, rng.next() as u16][n as usize % 5];
+                t.put(g + 0x11672, &edge.to_le_bytes());
+            }
+            t.check(
+                &format!("change player {n}"),
+                ABMAP_TRY_CHANGE_PLAYER,
+                Conv::Cdecl,
+                &[],
+                |b| Res::Int(abmap::try_change_player(&mut Run(b))),
             );
         }
     }

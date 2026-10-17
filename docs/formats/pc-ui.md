@@ -73,6 +73,23 @@ node `+6`), kind sizes `i16` at `+0xf834` (0x30 each), zoom level byte at
   | 0x08 | 2 | first: pressed, or every third repeat frame |
   | 0x0a | 16 | frames held per button, up to 6 |
   | 0x1a | 16 | repeat cycle per button, 0..2 |
+- `AbmapTryChangePlayer()` (`0x00a58ec0`, Fahrenheit's name): unless a
+  state is stacked (`+0x115b0`), pad edge bit 4 (`TkMenuSetPrevPlayer`,
+  direction 1) or 8 (`TkMenuSetNextPlayer`, direction 2) at `+0x11672`
+  changes character: direction `+0x115be`, previous `+0x115bd`, current
+  `+0x115bc` (`TkMenuGetCurrentPlayer`, a byte; same character clears the
+  direction, another sets `+0x116ac` = 1, `+0x116a8` = -1 and plays
+  0x80000004), then `AbmapInitHoming(node at +0x110cc + 0x50 * current,
+  0.25)`, `AbmapState_HomeOnNode` pushed over `+0x115a8` (into `+0x115b0`)
+  when nothing is stacked by then, `AbmapCheckAchievements`,
+  `AbmapMarkEmptyMenus`. Always ends with a tail call of
+  `AbmapResetCursorCamera`, whose `eax` it returns.
+- `AbmapFlagConnectedLinks(flag)` (`0x00a58df0`, Fahrenheit's name): for
+  each node (count `i16` at `+2`) of a kind other than 0xffff whose record
+  `MsGetExcelData(kind, [0x01a860e0])` has bit 0x8000 at `+0x10`, ORs the
+  `flag` byte into `+0xe` of every link (`+0xa808`, 0x14 bytes: node `u16`
+  at both ends, count `i16` at `+4`) touching it. `eax`: the node pointer
+  past the last, 0 with no nodes.
 
 ## Pointer zones
 

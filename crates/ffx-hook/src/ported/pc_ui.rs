@@ -64,4 +64,12 @@ ported! {
     AbmapReadPad @ 0x00a5_7520 => extern "C" fn abmap_read_pad(no_stick: u32, pad: u32) -> u32 {
         abmap::read_pad(&mut mem(), no_stick, pad)
     }
+    /// `AbmapFlagConnectedLinks(flag)`.
+    AbmapFlagConnectedLinks @ 0x00a5_8df0 => extern "C" fn abmap_flag_connected_links(flag: u32) -> u32 {
+        abmap::flag_connected_links(&mut mem(), flag)
+    }
+    /// `AbmapTryChangePlayer()`.
+    AbmapTryChangePlayer @ 0x00a5_8ec0 => extern "C" fn abmap_try_change_player() -> u32 {
+        abmap::try_change_player(&mut mem())
+    }
 }
