@@ -9176,7 +9176,7 @@
 0x0089ab80 function TOBgoodStart              # g_MagicImports slot 661 (10 overlays): TOSeqStartScene(2, "bgood"); SndPlayClick(0x68); hidden from the dump
 0x0089aba0 function TOBtlLimitTimerStop_0089aba0 # (): same body as 0x0089ab20; name ours
 0x0089abd0 function TOCheckBtlCommandTarget   # fh v3:exact 0x0089ab40; cdecl(chr, cmd): 0x0133d0d0 (0x140) cleared, +0 chr, +2 cmd, window start/mask 0, TOBtlMakeTarget{List,Group,ChrStatus,Command,Target}Bit; 0x0133c94c == 0x100: single party target 0x0133d15c & 0x0133d154 & 0x0133d0dc in mode 2; returns 1
-0x0089aca0 function TOCheckBtlCommandUse      # fh v3:exact+call.cs 0x0089ac10 cdecl
+0x0089aca0 function TOCheckBtlCommandUse      # fh v3:exact+call.cs 0x0089ac10 cdecl; (chr, cmd): 0xfe->0, 0xff->-2, MsGetCommandUse 1 -> -1, MsCheckUseCommand -1 -> -2, item kinds (+0x16&0xf8 8/0x10) -> +0x17 or -4/-3 if TOGetSaveWindow is empty, else 0xfe (+0x1a bit 0) or 0xfe + (0x0133c94c != 0x100)
 0x0089ad90 function TOClearBtlWindow          # fh v3:exact 0x0089ad00
 0x0089ade0 function TOCloseBtlWindow          # (): 0x023cc08c and the nine words at 0x0133d74c zeroed; returns 0; fh v3:exact 0x0089ad50
 0x0089ae20 function TOControlBtlWindow        # fh v3:exact 0x0089ad90
@@ -9537,7 +9537,7 @@
 0x008b8db0 function TOStdGetItemName             # layout+callees: sorts between TOSetRectDirect and TOValueToMesFontL, and its named callees match the Switch 0x71004f2560 TOStdGetItemName's (similarity 1.00: MsGetRomItem); symbols from Fahrenheit's server export; cdecl(item): MsGetRomItem(item, &base) record's u16 +0 + base
 0x008b8dd0 function TOStdGetWeaponName        # cdecl(id): tail call MsGetSaveWeaponName(id); sits after TOStdGetItemName; name ours
 0x008b9130 function GetU32_025d16c4 # () -> u32 at 0x025d16c4; name ours
-0x008b9140 function TOValueToMesFontL         # fh v3:exact 0x008b90f0
+0x008b9140 function TOValueToMesFontL         # fh v3:exact 0x008b90f0; (value, out, width): %d / %<width>d, digits kept, spaces '^' (lang 0, not English), ':' (lang 9/10) or 0xfe, others dropped
 0x008b9220 function TOTimedMacroMessage       # cdecl(arg): frames 0x018663d4 counted while 0x018663d0; TOCountMapVisits; state 0x018663d1 0: TOSelectMacroDic_008b56d0 table 0x01869eb8, row g_GraphicMapId - 0x189; state 1: at frame table[row*0x32+col] TOMessageCallF8_008b8ca0(arg), col up to 0x32; 0 frame clears all; name ours
 0x008b9330 function TOGetFontWidth            # fh v3:exact 0x008b92e0 _TOGetFontWidth; (text, kind, &w, table) -> next: glyph width (tables via 0x01841da4, kr/ch code-4 pages) -> TOGetFontWidthInPiexl + space (x aspect when 0x018663ec); 0x47 runs; 6 and < 0x30 are 2 bytes
 0x008b9640 function TOGetMessageWindow_008b9640 # cdecl(i): message window i (the pointer table at 0x018676f0); caller 0x008ada30; name ours

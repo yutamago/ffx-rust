@@ -5793,6 +5793,24 @@ ported! {
         let local = (&raw mut n) as usize as u32;
         tolib::bridge::to_get_save_window(&mut mem(), a, kind, count, local, call_sym)
     }
+    /// `TOValueToMesFontL(value, out, width)`.
+    TOValueToMesFontL @ 0x008b_9140 => extern "C" fn to_value_to_mes_font_l(value: u32, out: u32, width: u32) {
+        tolib::bridge::to_value_to_mes_font_l(&mut mem(), value, out, width, call_sym);
+    }
+    /// `TOCheckBtlCommandUse(chr, command)`.
+    TOCheckBtlCommandUse @ 0x0089_aca0 => extern "C" fn to_check_btl_command_use(chr: u32, command: u32) -> u32 {
+        let mut scratch = [0u32; 2];
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = scratch.as_mut_ptr() as usize as u32;
+        tolib::bridge::to_check_btl_command_use(&mut mem(), chr, command, at, call_sym)
+    }
+    /// `TOBtlOpenSimpleHelpMes(i, message)`.
+    TOBtlOpenSimpleHelpMes @ 0x0089_dba0 => extern "C" fn to_btl_open_simple_help_mes(i: u32, message: u32) -> u32 {
+        let mut scratch = 0u32;
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process
+        let at = (&raw mut scratch) as usize as u32;
+        tolib::bridge::to_btl_open_simple_help_mes(&mut mem(), i, message, at, call_sym)
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);

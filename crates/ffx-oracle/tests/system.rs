@@ -11745,6 +11745,140 @@ fn round20_text_matches_the_original_on_the_snapshot() {
     round20_text(&mut a, &mut b, &mut Xorshift(0x4020_0022));
 }
 
+/// Round 20's number text, command-use check and simple help line over
+/// stand-ins.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round20_btl(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let cells = alloc(a, b, 0x20);
+    let ret = |cell: u32| {
+        let mut v = vec![0xa1];
+        v.extend_from_slice(&cell.to_le_bytes());
+        v.push(0xc3);
+        v
+    };
+    // *[esp+off] = [cell]
+    let store = |off: u8, cell: u32| {
+        let mut v = vec![0x8b, 0x44, 0x24, off, 0x8b, 0x0d];
+        v.extend_from_slice(&cell.to_le_bytes());
+        v.extend_from_slice(&[0x89, 0x08, 0xc3]);
+        v
+    };
+    for (i, sym) in [
+        0x008a_c2f0u32,
+        0x0078_51d0,
+        0x0079_a4b0,
+        0x0079_a5b0,
+        0x0078_c690,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let s = stand_in8(a, b, 0x40 + 0x20 * i as u32, &ret(cells + 4 * i as u32));
+        redirect(a, b, sym, s);
+    }
+    let s = stand_in8(a, b, 0x100, &store(0x0c, cells + 0x14));
+    redirect(a, b, 0x0089_b5a0, s);
+    let s = stand_in8(a, b, 0x140, &store(0x0c, cells + 0x18));
+    redirect(a, b, 0x008b_9650, s);
+    let out = alloc(a, b, 0x40);
+    let data = alloc(a, b, 0x20);
+    let scratch = alloc(a, b, 8);
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..1000u32 {
+        put(a, b, cells, [0u32, 9, 10, 3][(rng.next() % 4) as usize]);
+        put(a, b, cells + 4, rng.next() % 2);
+        // the number text
+        let value = match rng.next() % 3 {
+            0 => rng.next() % 100,
+            1 => rng.next() % 1_000_000,
+            _ => rng.next(),
+        };
+        let width = match rng.next() % 4 {
+            0 => 0,
+            1 => rng.next().wrapping_neg() | 0x8000_0000,
+            _ => rng.next() % 14,
+        };
+        eax(a, 0x008b_9140, &[value, out, width]);
+        t::to_value_to_mes_font_l(b, value, out, width, call);
+        same_memory("number text", a, b);
+        // the command use
+        let bytes: Vec<u8> = (0..0x20).map(|_| rng.next() as u8).collect();
+        a.write(data, &bytes).unwrap();
+        b.write(data, &bytes).unwrap();
+        put(
+            a,
+            b,
+            data + 0x16,
+            [8u8, 0x10, 0x18, 0x0f, rng.next() as u8][(rng.next() % 5) as usize],
+        );
+        put(a, b, cells + 8, data);
+        put(a, b, cells + 12, rng.next() % 3);
+        put(
+            a,
+            b,
+            cells + 16,
+            [0u32, 0xffff_ffff, 1][(rng.next() % 3) as usize],
+        );
+        put(a, b, cells + 0x14, rng.next() % 3);
+        put(
+            a,
+            b,
+            g(a, 0x0133_c94c),
+            if rng.next().is_multiple_of(2) {
+                0x100
+            } else {
+                rng.next()
+            },
+        );
+        let command = [0xfeu32, 0xff, rng.next() % 0x100, rng.next()][(rng.next() % 4) as usize];
+        let chr = rng.next() % 0x20;
+        assert_eq!(
+            eax(a, 0x0089_aca0, &[chr, command]),
+            t::to_check_btl_command_use(b, chr, command, scratch, call),
+            "command use {k}"
+        );
+        // the simple help line
+        let width = match rng.next() % 3 {
+            0 => (rng.next() % 600) as f32 / 3.0,
+            1 => -((rng.next() % 600) as f32) / 7.0,
+            _ => f32::from_bits(rng.next() & 0xbfff_ffff),
+        };
+        put(a, b, cells + 0x18, width.to_bits());
+        let i = rng.next() % 8;
+        let message = rng.next();
+        assert_eq!(
+            eax(a, 0x0089_dba0, &[i, message]),
+            t::to_btl_open_simple_help_mes(b, i, message, scratch, call),
+            "help {k}"
+        );
+        let v: [u32; 2] = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory("round 20 battle helpers", a, b);
+    }
+}
+
+#[test]
+fn round20_btl_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round20_btl(&mut a, &mut b, &mut Xorshift(0x4020_0031));
+}
+
+#[test]
+fn round20_btl_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round20_btl(&mut a, &mut b, &mut Xorshift(0x4020_0032));
+}
+
 #[test]
 fn round19_cursor_matches_the_original_synthetic() {
     let Some((mut a, mut b)) = synthetic() else {

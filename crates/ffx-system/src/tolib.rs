@@ -5890,4 +5890,123 @@ pub mod bridge {
         }
         p
     }
+
+    /// `TOValueToMesFontL(value, out, width)` (`0x008b9140`): `value` as
+    /// decimal (`%d`, or right-aligned `%<width>d` for a positive width)
+    /// in the large message font: digits copied, spaces written as `^`
+    /// (language 0 without `MsGetSaveConfigEnglish`), `:` (languages 9 and
+    /// 10) or 0xfe, other characters dropped, then a terminator. The
+    /// language (`TOGetFFXLang` through `0x008ac2f0`) is asked for every
+    /// space as the original does.
+    pub fn to_value_to_mes_font_l<M: Mem>(
+        mem: &mut M,
+        value: u32,
+        out: u32,
+        width: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let v = value.cast_signed();
+        let w = width.cast_signed();
+        let text = if w > 0 {
+            format!("{v:>w$}", w = w.cast_unsigned() as usize)
+        } else {
+            format!("{v}")
+        };
+        let mut p = out;
+        for c in text.bytes() {
+            let b = match c {
+                b'0'..=b'9' => c,
+                b' ' => {
+                    let lang = call(mem, 0x008a_c2f0, &[]);
+                    if lang == 0 && call(mem, 0x0078_51d0, &[]) == 0 {
+                        0x5e
+                    } else if call(mem, 0x008a_c2f0, &[]) == 0xa || call(mem, 0x008a_c2f0, &[]) == 9
+                    {
+                        0x3a
+                    } else {
+                        0xfe
+                    }
+                }
+                _ => continue,
+            };
+            mem.write(p, b);
+            p = p.wrapping_add(1);
+        }
+        mem.write(p, 0u8);
+    }
+
+    /// `TOCheckBtlCommandUse(chr, command)` (`0x0089aca0`): 0 for command
+    /// 0xfe, -2 for 0xff, -1 when `MsGetCommandUse` says 1, -2 when
+    /// `MsCheckUseCommand(chr, data, 0x0133f106)` fails. Item-like
+    /// commands (`+0x16 & 0xf8` 8 or 0x10) return their window kind
+    /// `+0x17`, or -4/-3 when `TOGetSaveWindow` gives an empty list;
+    /// others 0xfe when `+0x1a` bit 0 is set, else 0xfe plus whether
+    /// `0x0133c94c` is not 0x100. `scratch` holds the two out-words.
+    pub fn to_check_btl_command_use<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        command: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        match command {
+            0xfe => return 0,
+            0xff => return 0xffff_fffe,
+            _ => {}
+        }
+        let data = call(mem, 0x0079_a4b0, &[command, scratch]);
+        if call(mem, 0x0079_a5b0, &[chr, command]) == 1 {
+            return 0xffff_ffff;
+        }
+        let user: u16 = mem.read(mem.rebase(0x0133_f106));
+        if call(mem, 0x0078_c690, &[chr, data, u32::from(user)]) == 0xffff_ffff {
+            return 0xffff_fffe;
+        }
+        let kind = u32::from(mem.read::<u8>(data.wrapping_add(0x16))) & 0xf8;
+        if kind == 8 || kind == 0x10 {
+            let window = u32::from(mem.read::<u8>(data.wrapping_add(0x17)));
+            let count = scratch.wrapping_add(4);
+            mem.write(count, command);
+            call(mem, 0x0089_b5a0, &[chr, window, count]);
+            if mem.read::<u32>(count) == 0 {
+                return u32::from(kind != 8).wrapping_sub(4);
+            }
+            return u32::from(mem.read::<u8>(data.wrapping_add(0x17)));
+        }
+        if mem.read::<u8>(data.wrapping_add(0x1a)) & 1 != 0 {
+            return 0xfe;
+        }
+        0xfe + u32::from(mem.read::<u32>(mem.rebase(0x0133_c94c)) != 0x100)
+    }
+
+    /// `TOBtlOpenSimpleHelpMes(i, message)` (`0x0089dba0`): opens help
+    /// line `i` (16-byte entries at `0x0133f510`: `+0` 1, `+4` 7, `+8` the
+    /// message, `+0xc`/`+0xe` sizes), measures it with
+    /// `TOGetMessageWH(7, message, &w, +0xe, 1, 0)` and stores `ftol(w)` at
+    /// `+0xc`. `w` lives in `scratch`, starting as `i`. Returns 1.
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn to_btl_open_simple_help_mes<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        message: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let entry = mem.rebase(0x0133_f510).wrapping_add(i << 4);
+        mem.write(entry.wrapping_add(0xe), 0u16);
+        mem.write(entry.wrapping_add(0xc), 0u16);
+        mem.write(entry, 1u32);
+        mem.write(entry.wrapping_add(4), 7u32);
+        mem.write(entry.wrapping_add(8), message);
+        mem.write(scratch, i);
+        call(
+            mem,
+            0x008b_9650,
+            &[7, message, scratch, entry.wrapping_add(0xe), 1, 0],
+        );
+        let w: f32 = mem.read(scratch);
+        let v = ffx_bridge::x87::ftol(mem, f64::from(w));
+        mem.write(entry.wrapping_add(0xc), v as u16);
+        1
+    }
 }
