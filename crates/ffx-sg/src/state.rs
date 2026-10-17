@@ -1500,6 +1500,28 @@ pub mod bridge {
         }
     }
 
+    /// The current id data's vertices (`Sg_IdSetPtr`'s, 8 bytes each).
+    pub const ID_VERTICES: Global<u32> = Global::new(0x0130_1a8c);
+
+    /// `Sg_IdGetNormal(out, i)` (`0x0083e130`): the normal of id triangle
+    /// `i` (three `i16` vertex numbers at the entry's start) into `out`
+    /// (`Sg_CalcTriangleNormal`); -1 without id data or for `i` -1, else
+    /// 0.
+    pub fn id_get_normal(mem: &mut impl Mem, out: u32, i: u32) -> u32 {
+        let table = ID_TABLE.get(mem);
+        if table == 0 || i == u32::MAX {
+            return u32::MAX;
+        }
+        let e = table.wrapping_add(i << 4);
+        let verts = ID_VERTICES.get(mem);
+        let [v0, v1, v2] = [0u32, 2, 4].map(|k| {
+            let n = i32::from(mem.read::<i16>(e.wrapping_add(k)));
+            verts.wrapping_add((n << 3).cast_unsigned())
+        });
+        crate::vec::bridge::calc_triangle_normal(mem, v0, v1, v2, out);
+        0
+    }
+
     /// The diving byte (`0x013007c5`): while set, `Sg_ControlMain` adds
     /// gravity (0.2, below 2.0) to the player in motion type 2 with flag 0x40.
     pub const PLAYER_DIVING: Global<u8> = Global::new(0x0130_07c5);

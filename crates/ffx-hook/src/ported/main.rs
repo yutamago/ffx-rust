@@ -1295,6 +1295,34 @@ ported! {
     Sg_ClothRodFix @ 0x0082_2cf0 => extern "C" fn sg_cloth_rod_fix(rods: u32, n: u32, points: u32) -> u32 {
         vec::bridge::cloth_rods(&mut mem(), 6, rods, n, points)
     }
+    /// `Sg_SyncCutScene()`.
+    Sg_SyncCutScene @ 0x0082_1d60 => extern "C" fn sg_sync_cut_scene() -> u32 {
+        control::bridge::sync_cut_scene(&mut mem())
+    }
+    /// `Sg_IdGetNormal(out, i)`.
+    Sg_IdGetNormal @ 0x0083_e130 => extern "C" fn sg_id_get_normal(out: u32, i: u32) -> u32 {
+        state::bridge::id_get_normal(&mut mem(), out, i)
+    }
+    /// `SG_ApplyBoneSel(a, chan, bone, scale)`.
+    SG_ApplyBoneSel @ 0x0083_8240 => extern "C" fn sg_apply_bone_sel(_a: u32, chan: u32, bone: u32, scale: f32) {
+        seq::bridge::apply_bone_sel(&mut mem(), chan, bone, scale);
+    }
+    /// `drawDreamEffect()`.
+    drawDreamEffect @ 0x0082_23a0 => extern "C" fn draw_dream_effect() -> u32 {
+        control::bridge::draw_dream_effect(&mut mem())
+    }
+    /// `Ch_EffectPacketStoreStrip(v)`.
+    Ch_EffectPacketStoreStrip @ 0x0084_4370 => extern "C" fn ch_effect_packet_store_strip(v: u32) -> u32 {
+        control::bridge::effect_store_strip(&mut mem(), v)
+    }
+    /// `SG_SampleChannels(obj)`.
+    SG_SampleChannels @ 0x0083_93c0 => extern "C" fn sg_sample_channels(obj: u32) {
+        seq::bridge::sample_channels(&mut mem(), obj);
+    }
+    /// `SG_BlendToTarget(obj, n)`.
+    SG_BlendToTarget @ 0x0083_95b0 => extern "C" fn sg_blend_to_target(obj: u32, n: i32) {
+        seq::bridge::blend_to_target(&mut mem(), obj, n);
+    }
 }
 
 /// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in
