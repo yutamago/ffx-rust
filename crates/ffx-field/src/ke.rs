@@ -1484,6 +1484,7 @@ pub mod bridge {
     ///   `+0x90`) when `+0x9c >= 0`, times
     ///   `1 - length / (+0xa8 - +0x8e)` (0 beyond; the fade 0 when that
     ///   range is not positive). Every stored step is an `f32`.
+    #[allow(clippy::too_many_lines)] // one original function, step by step
     pub fn ke_lns_lp_update<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
         mem: &mut M,
         lp: u32,
@@ -1631,7 +1632,7 @@ pub mod bridge {
         let a8 = f32at(mem, o.wrapping_add(0xa8));
         if !local {
             // the C0/C2 test: on unless 0 < a8
-            if !(0.0 < a8) {
+            if a8.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
                 mem.write(fade, 0u32);
                 return;
             }
@@ -1676,7 +1677,7 @@ pub mod bridge {
         // the distance term
         let n = f64::from(mem.read::<u8>(o.wrapping_add(0x8e)));
         let r = st(sub(f32at(mem, o.wrapping_add(0xa8)), n));
-        if !(0.0 < r) {
+        if r.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
             mem.write(fade, 0u32);
             return;
         }
