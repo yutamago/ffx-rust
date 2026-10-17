@@ -43,7 +43,7 @@ MASKS = {
     "menu-browse-2.bmp": [(140, 575, 165, 605)],
     # a searchlight beam's lower end (blocks at y 240, x 1000-1120; up to 41 seen)
     # and the save sphere's pulsing glow (field-walk-1 only; 21.5 seen)
-    "field-walk-1.bmp": [(1000, 240, 1120, 280), (500, 320, 560, 380)],
+    "field-walk-1.bmp": [(1000, 240, 1120, 280), (480, 300, 580, 420)],
     "field-walk-2.bmp": [(1000, 240, 1120, 280)],
 }
 BLOCK = 20

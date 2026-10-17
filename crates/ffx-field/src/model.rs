@@ -1259,6 +1259,46 @@ pub mod bridge {
         call(mem, f, &[s]);
     }
 
+    /// `rcfxNailUpdate(fx, ctx)` (`0x00929190`, `rcfxNailInit`'s update
+    /// callback; name ours): for each of the `+0x1c` points, the source
+    /// point (`ctx +0x24` array, index from `+0x20`) to the base array
+    /// (`+0x24`), through the matrix `+0x38` (`rcVec3fApplyMatrix`) or
+    /// copied to `+0x28`, and that to `+0x2c` (16-byte `rcCopyQword`s);
+    /// then the 8 bytes at `ctx` to `+0x30` (an `f64` through the x87
+    /// stack). Returns `ctx`.
+    pub fn rcfx_nail_update(mem: &mut impl Mem, fx: u32, ctx: u32) -> u32 {
+        use crate::geom::bridge::rc_vec3f_apply_matrix;
+        use crate::vu0::bridge::rc_copy_qword;
+        let src = mem.read::<u32>(ctx.wrapping_add(0x24));
+        let mut i = 0i32;
+        while i < mem.read::<i32>(fx.wrapping_add(0x1c)) {
+            let o = i.cast_unsigned().wrapping_mul(0x10);
+            let arr = |mem: &dyn Fn(u32) -> u32, at: u32| mem(at).wrapping_add(o);
+            let rd = |at: u32| mem.read::<u32>(fx.wrapping_add(at));
+            let idx = mem.read::<u32>(rd(0x20).wrapping_add(i.cast_unsigned().wrapping_mul(4)));
+            let base = arr(&rd, 0x24);
+            rc_copy_qword(mem, base, src.wrapping_add(idx.wrapping_shl(4)));
+            let rd = |at: u32| mem.read::<u32>(fx.wrapping_add(at));
+            let m = rd(0x38);
+            let (a, b) = (arr(&rd, 0x24), arr(&rd, 0x28));
+            if m == 0 {
+                rc_copy_qword(mem, b, a);
+            } else {
+                rc_vec3f_apply_matrix(mem, b, a, m);
+            }
+            let rd = |at: u32| mem.read::<u32>(fx.wrapping_add(at));
+            let (b, c) = (arr(&rd, 0x28), arr(&rd, 0x2c));
+            rc_copy_qword(mem, c, b);
+            i += 1;
+        }
+        let mut v = mem.read::<u64>(ctx);
+        if v & 0x7ff0_0000_0000_0000 == 0x7ff0_0000_0000_0000 && v & 0x000f_ffff_ffff_ffff != 0 {
+            v |= 0x0008_0000_0000_0000; // a signalling NaN turns quiet
+        }
+        mem.write(fx.wrapping_add(0x30), v);
+        ctx
+    }
+
     /// `Yn_SceneGetObject(kind, n)` (`0x00921be0`): the scene's
     /// `rcbgSceneGetObject`, 0 without a scene.
     pub fn yn_scene_get_object(mem: &impl Mem, kind: u32, n: u32) -> u32 {

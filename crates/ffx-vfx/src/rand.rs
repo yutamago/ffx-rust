@@ -88,6 +88,155 @@ pub mod bridge {
         run(mem, x, super::positive)
     }
 
+    /// Copies the emulated VU0 register word `from` to `to` (both
+    /// addresses before rebasing).
+    fn vmove(mem: &mut impl Mem, to: u32, from: u32) {
+        let v: u32 = mem.read(Global::<u32>::new(from).ptr(mem).addr);
+        mem.write(Global::<u32>::new(to).ptr(mem).addr, v);
+    }
+
+    fn vset(mem: &mut impl Mem, to: u32, v: u32) {
+        mem.write(Global::<u32>::new(to).ptr(mem).addr, v);
+    }
+
+    fn vget(mem: &impl Mem, from: u32) -> u32 {
+        mem.read(Global::<u32>::new(from).ptr(mem).addr)
+    }
+
+    /// The draw of the integer generators: `R` stepped into memory when
+    /// seeded (1.0 otherwise), as `f32`.
+    fn idraw(mem: &mut impl Mem) -> f32 {
+        if SEEDED.get(mem) == 0 {
+            1.0
+        } else {
+            let r = super::step(R.get(mem));
+            R.set(mem, r);
+            f32::from_bits(r)
+        }
+    }
+
+    #[allow(clippy::cast_precision_loss)] // fild, then fstp m32
+    fn ifloat(v: u32) -> u32 {
+        (v.cast_signed() as f32).to_bits()
+    }
+
+    /// `op_irandom_core_007e35c0(n, b, c, d)` (`0x007e35c0`): a random
+    /// integer in `[0, n)`: `(draw - 1) * n` truncated (`_ftol2_sse`),
+    /// through the emulated VU0 registers as the original moves them (the
+    /// four arguments to `0x00c8f970`, the draw to `0x00c8f984`..`98c`,
+    /// the result and `b`..`d` to `0x00c8f5a8`..`5b4`); `R` becomes the
+    /// draw minus 1.8872414; seeded after.
+    pub fn op_irandom_core(mem: &mut impl Mem, args: [u32; 4]) -> u32 {
+        for (i, a) in (0u32..).zip(args) {
+            vset(mem, 0x00c8_f970 + 4 * i, a);
+        }
+        vset(mem, 0x00c8_f538, 1.0f32.to_bits());
+        vset(mem, 0x00c8_f558, 0x3ff1_9120);
+        let v = idraw(mem);
+        vmove(mem, 0x00c8_f964, 0x00c8_f53c);
+        vset(mem, 0x00c8_f984, v.to_bits());
+        vset(mem, 0x00c8_f988, v.to_bits());
+        vmove(mem, 0x00c8_f968, 0x00c8_f540);
+        vset(mem, 0x00c8_f98c, v.to_bits());
+        vmove(mem, 0x00c8_f96c, 0x00c8_f544);
+        vmove(mem, 0x00c8_f944, 0x00c8_f55c);
+        vmove(mem, 0x00c8_f948, 0x00c8_f560);
+        vset(mem, 0x00c8_f970, ifloat(args[0]));
+        let one = f32::from_bits(vget(mem, 0x00c8_f538));
+        vset(mem, 0x00c8_f960, 1.0f32.to_bits());
+        vset(mem, 0x00c8_f940, 0x3ff1_9120);
+        vset(mem, 0x00c8_f980, x87::sub(v, one).to_bits());
+        vmove(mem, 0x00c8_f94c, 0x00c8_f564);
+        ffx_ps2::ee::bridge::restore_vf00(mem);
+        let next = x87::sub(
+            f32::from_bits(vget(mem, 0x00c8_f98c)),
+            f32::from_bits(vget(mem, 0x00c8_f940)),
+        );
+        vset(mem, 0x00c8_f92c, next.to_bits());
+        let t = x87::mul(
+            f32::from_bits(vget(mem, 0x00c8_f980)),
+            f32::from_bits(vget(mem, 0x00c8_f970)),
+        );
+        vset(mem, 0x00c8_f970, t.to_bits());
+        let n = ffx_bridge::x87::ftol(mem, x87::Reg::load_f32(t).value());
+        R.set(mem, x87::load(vget(mem, 0x00c8_f92c)));
+        vmove(mem, 0x00c8_f5ac, 0x00c8_f974);
+        vmove(mem, 0x00c8_f5b0, 0x00c8_f978);
+        vset(mem, 0x00c8_f970, n);
+        vset(mem, 0x00c8_f5a8, n);
+        vmove(mem, 0x00c8_f5b4, 0x00c8_f97c);
+        SEEDED.set(mem, 1);
+        n
+    }
+
+    /// `g_pppColorConShift` (`0x00c8b500`): `op_random_per` stores its
+    /// result at this byte offset from its first argument's stack slot,
+    /// then clears it.
+    pub const COLOR_CON_SHIFT: Global<u32> = Global::new(0x00c8_b500);
+
+    /// `op_random_per(n, b, c, d)` (`0x007e33e0`): a random integer in
+    /// `[-n, n)`: `(2 draw - 3) * n` truncated, through the emulated VU0
+    /// registers as the original moves them (`b`, `c`, `d` converted to
+    /// floats in `0x00c8f974`..`97c`); `R` becomes the draw minus
+    /// 1.8872414. The result goes to the first argument's stack slot at
+    /// `COLOR_CON_SHIFT` (then cleared), and the slot is returned: the
+    /// result when the shift is 0, else the scaled float's bits with any
+    /// overlapping bytes of the result. (A shift outside the slot writes
+    /// elsewhere on the original's stack; that is not reproduced.)
+    pub fn op_random_per(mem: &mut impl Mem, args: [u32; 4]) -> u32 {
+        for (i, a) in (0u32..).zip(args) {
+            vset(mem, 0x00c8_f970 + 4 * i, a);
+        }
+        vset(mem, 0x00c8_f538, 2.0f32.to_bits());
+        vset(mem, 0x00c8_f548, 3.0f32.to_bits());
+        vset(mem, 0x00c8_f558, 0x3ff1_9120);
+        let v = idraw(mem);
+        vmove(mem, 0x00c8_f964, 0x00c8_f53c);
+        vset(mem, 0x00c8_f984, v.to_bits());
+        vmove(mem, 0x00c8_f968, 0x00c8_f540);
+        vset(mem, 0x00c8_f988, v.to_bits());
+        vset(mem, 0x00c8_f98c, v.to_bits());
+        vmove(mem, 0x00c8_f96c, 0x00c8_f544);
+        vmove(mem, 0x00c8_f954, 0x00c8_f54c);
+        vset(mem, 0x00c8_f970, ifloat(args[0]));
+        vmove(mem, 0x00c8_f958, 0x00c8_f550);
+        vmove(mem, 0x00c8_f95c, 0x00c8_f554);
+        vset(mem, 0x00c8_f974, ifloat(args[1]));
+        vmove(mem, 0x00c8_f944, 0x00c8_f55c);
+        vmove(mem, 0x00c8_f948, 0x00c8_f560);
+        vset(mem, 0x00c8_f978, ifloat(args[2]));
+        vset(mem, 0x00c8_f960, 2.0f32.to_bits());
+        vset(mem, 0x00c8_f950, 3.0f32.to_bits());
+        vset(mem, 0x00c8_f940, 0x3ff1_9120);
+        vset(mem, 0x00c8_f97c, ifloat(args[3]));
+        vmove(mem, 0x00c8_f94c, 0x00c8_f564);
+        let two = x87::mul(f32::from_bits(vget(mem, 0x00c8_f538)), v);
+        vset(mem, 0x00c8_f980, two.to_bits());
+        let next = x87::sub(v, f32::from_bits(vget(mem, 0x00c8_f558)));
+        vset(mem, 0x00c8_f92c, next.to_bits());
+        let u = x87::sub(two, f32::from_bits(vget(mem, 0x00c8_f548)));
+        vset(mem, 0x00c8_f980, u.to_bits());
+        ffx_ps2::ee::bridge::restore_vf00(mem);
+        let t = x87::mul(f32::from_bits(vget(mem, 0x00c8_f970)), u);
+        let n = ffx_bridge::x87::ftol(mem, x87::Reg::load_f32(t).value());
+        R.set(mem, x87::load(vget(mem, 0x00c8_f92c)));
+        let shift = COLOR_CON_SHIFT.get(mem).cast_signed();
+        vmove(mem, 0x00c8_f5ac, 0x00c8_f974);
+        vmove(mem, 0x00c8_f5b0, 0x00c8_f978);
+        let mut slot = t.to_bits().to_le_bytes();
+        for (i, b) in (0i32..).zip(n.to_le_bytes()) {
+            if let Ok(j @ 0..4) = usize::try_from(shift.wrapping_add(i)) {
+                slot[j] = b;
+            }
+        }
+        vset(mem, 0x00c8_f970, n);
+        vset(mem, 0x00c8_f5a8, n);
+        vmove(mem, 0x00c8_f5b4, 0x00c8_f97c);
+        COLOR_CON_SHIFT.set(mem, 0);
+        SEEDED.set(mem, 1);
+        u32::from_le_bytes(slot)
+    }
+
     /// `g_Ee_Gpr`'s `r0`, low word.
     const R0: Global<u32> = Global::new(0x00c8_f508);
     /// `g_Ee_Gpr`'s `t0` (four words).
