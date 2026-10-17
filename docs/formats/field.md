@@ -1208,6 +1208,38 @@ From here on, functions are picked by `symbols/classes.tsv` (category
 - Not ported: `0x00a461b0` and `0x0092f290` write draw packets and VFX
   render data (replaced by ffx-render).
 
+## The Phyre map load, the sphere grid's warp and a 2D angle (round 27)
+
+- `loadPhyreFieldMap` (`0x00908000`): with a pending map (`0x01934ed0`)
+  and its name (`0x01934ee8`, a string), it switches both map kinds off
+  and prints `"RAM Inuse : %d u:%d"` (0, 0) to `stdout` through
+  `__iob_func`/`fprintf`. Then, for each section `yiMapGetSection` finds
+  (0: 2D, 1: 3D), it switches that kind on, counts it (`0x01934ec4`),
+  loads it (`graphicFieldMapLoad(name, kind)`) and sets the map kind
+  (`0x01934ec0`). The 2D section also sets render status bit 14 and
+  `0x0191389c`. The request is then cleared, followed by
+  `graphicFieldMapInitialize` and `graphicVFXLoadLevelData` (its `eax`
+  is returned). Without a request it only clears `g_BtlMapRead`.
+- `AbmapStartWarp` (`0x00a48a80`, name ours, from `abmap_set_chr_pos`):
+  - plays the warp sound;
+  - writes the character's node position as floats (`+0x11308`/
+    `+0x1130c`, again at `+0x1163c`/`+0x11640`), the target (`+0x11634`)
+    and the character (`+0x11638`);
+  - creates the grid's ppp heap and starts part 2 there
+    (`AbmapStartPart`, scale 0.5);
+  - hooks the warp's draw (`0x00a4c430`, at `+0x115ac`) and
+    `AbmapState_Warping` (`+0x115a8`), saving the previous hooks unless a
+    save slot is taken.
+- `rcAngle2D` (`0x007e6d80`, name ours) returns in `ST0` the direction of
+  `(x1 - x0, y1 - y0)` in `0..2π`:
+  - the quadrant `q` (a NaN counts as negative) turns the vector into
+    non-negative `(a, b)`;
+  - the angle is `atan(b / a)` when `a >= b` (or unordered), else
+    `π/2 - atan(a / b)` stored as `f32`;
+  - then `q π/2` is added (`π/2` the `f64` of an `f32`).
+- Left for the debug list: `0x007606f0` (cross lines through
+  `0x00760ce0` around a point at `0x00d4b4e8`).
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single
