@@ -527,4 +527,62 @@ pub mod bridge {
             }
         }
     }
+
+    /// The effect strip's last three vertices (`0x01303354`, 8 bytes each:
+    /// `u16` x, y, u, v), the newest one's slot and the vertex count.
+    pub const STRIP_RING: u32 = 0x0130_3354;
+    pub const STRIP_CUR: Global<u32> = Global::new(0x0130_336c);
+    pub const STRIP_COUNT: Global<u16> = Global::new(0x0130_3370);
+    /// `Ch_EffectPacketStorePoly(a, b, c)`.
+    pub const CH_EFFECT_PACKET_STORE_POLY: u32 = 0x0084_5820;
+
+    /// `Ch_EffectPacketStoreStrip(v)` (`0x00844370`): the next vertex of a
+    /// triangle strip (null starts a new strip: count 0, returns 0). The
+    /// vertex goes into the ring slot `count % 3`. An x or y with bit 15
+    /// set refers back: `n = (x & 0x7fff) * 4 / 3` words before the
+    /// vertex's own x (y: one word further back), the value there taken
+    /// instead. From the third vertex on, each makes a triangle with the
+    /// two before it, wound alternately (even counts `(n-1, n-2, new)`,
+    /// odd `(n-2, n-1, new)`), stored by `Ch_EffectPacketStorePoly`. Returns
+    /// that call's `eax`, or the vertex's v.
+    pub fn effect_store_strip(h: &mut impl Host, v: u32) -> u32 {
+        if v == 0 {
+            STRIP_COUNT.set(h, 0);
+            return 0;
+        }
+        let n = STRIP_COUNT.get(h);
+        let ring = h.rebase(STRIP_RING);
+        let slot = |k: u32| ring.wrapping_add(8 * (k % 3));
+        let cur = slot(u32::from(n));
+        STRIP_CUR.set(h, cur);
+        let back = |h: &mut _, w: u16, extra: u32| -> u16 {
+            if w & 0x8000 == 0 {
+                return w;
+            }
+            let q = (u32::from(w & 0x7fff) << 2) / 3;
+            Mem::read(h, v.wrapping_sub(2 * q).wrapping_sub(extra))
+        };
+        let x: u16 = h.read(v);
+        let x = back(h, x, 0);
+        h.write(cur, x);
+        let y: u16 = h.read(v.wrapping_add(2));
+        let y = back(h, y, 2);
+        h.write(cur.wrapping_add(2), y);
+        let u: u16 = h.read(v.wrapping_add(4));
+        h.write(cur.wrapping_add(4), u);
+        let w: u16 = h.read(v.wrapping_add(6));
+        h.write(cur.wrapping_add(6), w);
+        if n <= 1 {
+            STRIP_COUNT.set(h, n.wrapping_add(1));
+            return u32::from(w);
+        }
+        let k = u32::from(n);
+        let (p, q) = (slot(k - 1), slot(k - 2));
+        let (first, second) = if n & 1 == 0 { (p, q) } else { (q, p) };
+        let at = h.rebase(CH_EFFECT_PACKET_STORE_POLY);
+        let r = h.call(at, &[first, second, cur]);
+        let n = STRIP_COUNT.get(h);
+        STRIP_COUNT.set(h, n.wrapping_add(1));
+        r
+    }
 }
