@@ -13091,6 +13091,122 @@ fn round22_layout_matches_the_original_on_the_snapshot() {
     round22_layout(&mut a, &mut b, &mut Xorshift(0x4022_0012));
 }
 
+/// Round 22's battle glyph quads with `TOGetImageWH` from cells, the
+/// original texture names and scissor, and a `graphicFontDraw` stand-in
+/// that logs the record words the writers set and its arguments.
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+fn round22_quads(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    let log = alloc(a, b, 0x1000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    // TOGetTextureName logs its four values; BeginScissor_XYUV keeps the
+    // quad when cells[2] says so
+    let s = stand_in8(a, b, 0xc0, &logger_args(cursor, 4));
+    redirect(a, b, 0x008a_cf50, s);
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&(cells + 8).to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x100, &v);
+    redirect(a, b, 0x008e_5a20, s);
+    // TOGetImageWH(page, &w, &h): w, h from cells
+    let mut v = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d];
+    v.extend_from_slice(&cells.to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x08, 0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d]);
+    v.extend_from_slice(&(cells + 4).to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x08, 0xc3]);
+    let s = stand_in8(a, b, 0x40, &v);
+    redirect(a, b, 0x008a_c400, s);
+    let mut v = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c, 0x8b, 0x3d];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[
+        0xb9, 0x10, 0x00, 0x00, 0x00, 0xf3, 0xa5, 0x8b, 0x46, 0x40, 0xab, 0x8b, 0x46, 0x48, 0xab,
+        0x8b, 0x44, 0x24, 0x10, 0xab, 0x8b, 0x44, 0x24, 0x14, 0xab, 0x8b, 0x44, 0x24, 0x18, 0xab,
+        0x8b, 0x44, 0x24, 0x1c, 0xab, 0x89, 0x3d,
+    ]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[0x5f, 0x5e, 0xc3]);
+    let s = stand_in8(a, b, 0x80, &v);
+    redirect(a, b, 0x0064_0660, s);
+    let pen = alloc(a, b, 0x20);
+    let glyph = alloc(a, b, 0x40);
+    let scratch = alloc(a, b, 0xb0);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..2000u32 {
+        put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            cells,
+            [
+                [256.0f32, 512.0, 1024.0][(rng.next() % 3) as usize].to_bits(),
+                [256.0f32, 512.0][(rng.next() % 2) as usize].to_bits(),
+            ],
+        );
+        put(a, b, cells + 8, u32::from(!rng.next().is_multiple_of(5)));
+        put(a, b, pen, rng.next());
+        put(
+            a,
+            b,
+            pen + 4,
+            [
+                ((rng.next() % 7000) as f32 / 10.0 - 50.0).to_bits(),
+                ((rng.next() % 5000) as f32 / 10.0 - 30.0).to_bits(),
+            ],
+        );
+        put(a, b, pen + 0x1b, rng.next() as u8);
+        let page = [0x3c00u16, 0x3d00, 0x3d40, 0x3d60][(rng.next() % 4) as usize];
+        put(a, b, glyph, [page, 0x14, (rng.next() % 2) as u16, 0]);
+        let cell: [f32; 7] = [
+            (rng.next() % 0x200) as f32,
+            (rng.next() % 0x200) as f32,
+            (rng.next() % 0x200) as f32,
+            (rng.next() % 0x200) as f32,
+            [-1.0f32, 0.0, 1.0][(rng.next() % 3) as usize],
+            (rng.next() % 80) as f32 / 4.0,
+            18.0,
+        ];
+        put(a, b, glyph + 8, cell);
+        let kx = [1.0f32, 1.5, 0.75][(rng.next() % 3) as usize];
+        let ky = [1.0f32, 1.125, 0.8][(rng.next() % 3) as usize];
+        put(a, b, g(a, 0x00c5_d778), [kx, ky]);
+        put(
+            a,
+            b,
+            g(a, 0x0187_16e0),
+            [(rng.next() % 5) as f32 - 2.0, (rng.next() % 5) as f32 - 2.0],
+        );
+        let scale = [1.0f32, 0.75, 1.3, 0.6][(rng.next() % 4) as usize].to_bits();
+        let shadow = rng.next().is_multiple_of(2);
+        eax(
+            a,
+            if shadow { 0x008f_bae0 } else { 0x008f_b940 },
+            &[pen, glyph, scale],
+        );
+        t::to_make_pkt_btl_easy_font(b, pen, glyph, scale, shadow, scratch, call);
+        let v: [u32; 0x2c] = Mem::read(b, scratch);
+        Mem::write(a, scratch, v);
+        same_memory("glyph quad", a, b);
+    }
+}
+
+#[test]
+fn round22_quads_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round22_quads(&mut a, &mut b, &mut Xorshift(0x4022_0021));
+}
+
+#[test]
+fn round22_quads_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round22_quads(&mut a, &mut b, &mut Xorshift(0x4022_0022));
+}
+
 #[test]
 fn round19_cursor_matches_the_original_synthetic() {
     let Some((mut a, mut b)) = synthetic() else {

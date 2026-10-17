@@ -7709,4 +7709,124 @@ pub mod bridge {
             p = call(mem, 0x008d_fd80, &[p]);
         }
     }
+
+    /// `TOMakePktBtlEasyFont(pen, glyph, scale)` (`0x008fb940`) and, with
+    /// `shadow`, `TOMakePktBtlEasyFontShadow` (`0x008fbae0`): the quad of
+    /// one battle glyph at the pen of the text cursor `pen` (see
+    /// [`to_make_btl_easy_font`]) from its `TOGetFontInfo` record `glyph`,
+    /// handed to `graphicFontDraw` when `BeginScissor_XYUV` keeps it.
+    ///
+    /// The sprite record (in `scratch`, 0xb0 bytes: the image size at `+0`,
+    /// the record at `+0x10`, the texture word pair at `+0xa0`) holds the
+    /// corners `x, y` = pen + (0, `K_y × scale × slant`) and
+    /// pen + (`width × scale × K_x`, `K_y × scale × (18 + slant)`)
+    /// (`K_x`, `K_y` at `0x00c5d778`, `0x00c5d77c`), the cell's UVs over
+    /// the texture size (`TOGetImageWH`), the pen colour twice and the depth
+    /// 2000. The shadow is the same moved by `0x018716e0`/`0x018716e4`, its
+    /// texture variant 1 and draw offsets 2.0; the face draws at layer
+    /// parity + 2. Record words the original leaves unset are zero here.
+    #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+    pub fn to_make_pkt_btl_easy_font<M: Mem>(
+        mem: &mut M,
+        pen: u32,
+        glyph: u32,
+        scale: u32,
+        shadow: bool,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        let f = |mem: &M, a: u32| -> f64 { f64::from(mem.read::<f32>(a)) };
+        for k in 0..0x2c {
+            mem.write(scratch.wrapping_add(4 * k), 0u32);
+        }
+        let size = scratch;
+        let rec = scratch.wrapping_add(0x10);
+        let extra = scratch.wrapping_add(0xa0);
+        let page = u32::from(mem.read::<u16>(glyph));
+        let alpha = u32::from(mem.read::<u8>(pen.wrapping_add(0x1b)));
+        let parity = u32::from(mem.read::<u16>(glyph.wrapping_add(4)));
+        let texture = call(
+            mem,
+            0x008a_cf50,
+            &[page, alpha, parity, u32::from(shadow), extra],
+        );
+        let page = i32::from(mem.read::<i16>(glyph)).cast_unsigned();
+        call(mem, 0x008a_c400, &[page, size, size.wrapping_add(4)]);
+        let (w_img, h_img) = (f(mem, size), f(mem, size.wrapping_add(4)));
+        let s = f64::from(f32::from_bits(scale));
+        let (px, py) = (f(mem, pen.wrapping_add(4)), f(mem, pen.wrapping_add(8)));
+        let slant = f(mem, glyph.wrapping_add(0x18));
+        let kx = f(mem, g(mem, 0x00c5_d778));
+        let ky = f(mem, g(mem, 0x00c5_d77c));
+        let (ox, oy) = if shadow {
+            (f(mem, g(mem, 0x0187_16e0)), f(mem, g(mem, 0x0187_16e4)))
+        } else {
+            (0.0, 0.0)
+        };
+        let (x0, y0, x1, y1) = if shadow {
+            let x1 = (f(mem, glyph.wrapping_add(0x1c)) * s * kx + px) + ox;
+            let y1 = oy + ((s * (f(mem, glyph.wrapping_add(0x20)) + slant)) * ky + py);
+            (px + ox, (s * slant + py) + oy, x1, y1)
+        } else {
+            let x1 = f(mem, glyph.wrapping_add(0x1c)) * s * kx + px;
+            let y1 = py + ky * (s * (f(mem, glyph.wrapping_add(0x20)) + slant));
+            (px, py + ky * (s * slant), x1, y1)
+        };
+        let colour: [u8; 4] = mem.read(pen);
+        mem.write(rec, x0 as f32);
+        mem.write(rec.wrapping_add(4), y0 as f32);
+        mem.write(
+            rec.wrapping_add(8),
+            (f(mem, glyph.wrapping_add(8)) / w_img) as f32,
+        );
+        mem.write(
+            rec.wrapping_add(0xc),
+            (f(mem, glyph.wrapping_add(0xc)) / h_img) as f32,
+        );
+        mem.write(rec.wrapping_add(0x20), x1 as f32);
+        mem.write(rec.wrapping_add(0x24), y1 as f32);
+        mem.write(
+            rec.wrapping_add(0x28),
+            (f(mem, glyph.wrapping_add(0x10)) / w_img) as f32,
+        );
+        mem.write(
+            rec.wrapping_add(0x2c),
+            (f(mem, glyph.wrapping_add(0x14)) / h_img) as f32,
+        );
+        for (k, c) in colour.iter().enumerate() {
+            let k = k as u32 * 4;
+            mem.write(rec.wrapping_add(0x10 + k), u32::from(*c));
+            mem.write(rec.wrapping_add(0x30 + k), u32::from(*c));
+        }
+        mem.write(rec.wrapping_add(0x80), 2000u32);
+        mem.write(rec.wrapping_add(0x88), 0u32);
+        let kept = call(
+            mem,
+            0x008e_5a20,
+            &[
+                rec,
+                rec.wrapping_add(4),
+                rec.wrapping_add(0x20),
+                rec.wrapping_add(0x24),
+                rec.wrapping_add(8),
+                rec.wrapping_add(0xc),
+                rec.wrapping_add(0x28),
+                rec.wrapping_add(0x2c),
+            ],
+        );
+        if kept != 0 {
+            let layer = i32::from(mem.read::<i16>(glyph.wrapping_add(4)));
+            let (offset, layer) = if shadow {
+                (mem.read::<u32>(g(mem, 0x00b9_2268)), layer)
+            } else {
+                (0.0f32.to_bits(), layer + 2)
+            };
+            call(
+                mem,
+                0x0064_0660,
+                &[rec, texture, offset, offset, layer.cast_unsigned()],
+            );
+        }
+    }
 }
