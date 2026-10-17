@@ -359,6 +359,211 @@ pub mod bridge {
         crate::action::bridge::ms_action_request(mem, host, s, 0xe, 0xff, 0xb, 1, 2, 0)
     }
 
+    /// `SndIsSepPlay` (sound).
+    pub const SND_IS_SEP_PLAY: u32 = 0x0088_6680;
+    /// `SndSepStop` (sound).
+    pub const SND_SEP_STOP: u32 = 0x0088_6eb0;
+    /// `SndSepVolumeDirect(se, volume)` (sound).
+    pub const SND_SEP_VOLUME_DIRECT: u32 = 0x0088_6f60;
+    /// `SndSepPanDirect(se, pan)` (sound).
+    pub const SND_SEP_PAN_DIRECT: u32 = 0x0088_6df0;
+    /// `SndSyncWaveTrans` (sound).
+    pub const SND_SYNC_WAVE_TRANS: u32 = 0x0088_7930;
+    /// `SndStandbySepWave` (sound).
+    pub const SND_STANDBY_SEP_WAVE: u32 = 0x0088_7550;
+    /// `SndStandbyBattleWave(data, size)` (sound).
+    pub const SND_STANDBY_BATTLE_WAVE: u32 = 0x0088_7450;
+    /// `SndSepTransSepOnly(data, size)` (sound).
+    pub const SND_SEP_TRANS_SEP_ONLY: u32 = 0x0088_6f30;
+    /// `Sg_FreeA` (main).
+    pub const SG_FREE_A: u32 = 0x0083_f090;
+
+    /// The sound transfers queued (`MsSEPtransRegist`): 16 records of 12
+    /// bytes (data, size, type: 0 effects only, else a wave; actor, 0xff
+    /// the scene's; state: 0 queued, 1 sent, 2 wave standing by).
+    pub const SEP_TRANS_QUEUE: Global<u32> = Global::new(0x0113_60c8);
+    /// The scene's sound transfers still running.
+    pub const SEP_TRANS_SCENE: Global<u8> = Global::new(0x0112_c02a);
+
+    /// `MsEventEffectProcess()` (`0x00788c00`): an event effect that is
+    /// done (state 6, a table in [`EVENT_EFFECT_A`]) ends: its table's
+    /// second function called with 0, the script camera kept
+    /// (`MsEffectCameraEnd(1)`), the overlay effect freed, state 0 and no
+    /// table, the magic file stopped, the frame rate back
+    /// (`Sg_SetKeepFps(`[`KEEP_FPS`]`)`, sign-extended).
+    pub fn ms_event_effect_process<M: Mem>(mem: &mut M, s: &mut Script<'_, M>) {
+        let table = EVENT_EFFECT_A.get(mem);
+        if EVENT_EFFECT_STAT.get(mem) != 6 || table == 0 {
+            return;
+        }
+        let f: u32 = mem.read(table.wrapping_add(4));
+        (s.call)(mem, f, &[0]);
+        crate::chr_damage::bridge::ms_effect_camera_end(mem, s, 1);
+        game(
+            mem,
+            &mut *s.call,
+            crate::damage_end::bridge::OP_OVL_EFFECT_FREE,
+            &[],
+        );
+        EVENT_EFFECT_STAT.set(mem, 0);
+        EVENT_EFFECT_A.set(mem, 0);
+        game(
+            mem,
+            &mut *s.call,
+            crate::damage_end::bridge::MAGIC_FILE_STOP,
+            &[],
+        );
+        let keep = i32::from(KEEP_FPS.get(mem).cast_signed()).cast_unsigned();
+        game(mem, &mut *s.call, SG_SET_KEEP_FPS, &[keep]);
+    }
+
+    /// `MsBtlReadSceneFree()` (`0x00783e00`): the scene's read buffer
+    /// ([`crate::misc::bridge::BTL_READ3`]) freed (`Sg_FreeA(p, 5)`).
+    pub fn ms_btl_read_scene_free<M: Mem>(mem: &mut M, call: Call<'_, M>) {
+        let p = crate::misc::bridge::BTL_READ3.get(mem);
+        if p != 0 {
+            game(mem, call, SG_FREE_A, &[p, 5]);
+            crate::misc::bridge::BTL_READ3.set(mem, 0);
+        }
+    }
+
+    /// `MsSEPtransProcess()` (`0x007a0540`): with transfers running
+    /// ([`crate::state::bridge::SEP_TRANS`] above 0) the current record
+    /// ([`SEP_TRANS_QUEUE`] at the index in
+    /// [`crate::minor::bridge::SEP_TRANS_STATE`]) goes on: a queued one
+    /// is sent (state 1; type 0 `SndSepTransSepOnly`, else
+    /// `SndStandbyBattleWave`, with its data and size). A sent one, once
+    /// the transfer is done (`SndSyncWaveTrans(0)` 0): a wave's goes to
+    /// standing by (state 2, `SndStandbySepWave`); else it ends: one
+    /// transfer fewer, its actor's count `+0xf2d` down (at 0 `+0xf2c` set)
+    /// or for the scene's ([`SEP_TRANS_SCENE`] down, at 0 the transfer
+    /// flag set and the scene's buffer freed), the index on (mod 16). -1;
+    /// with none running 0. (`dbgPrintf`, empty, gets the record's first
+    /// data byte: the original reads it.)
+    #[allow(clippy::many_single_char_names)] // record, index, actor
+    pub fn ms_sep_trans_process<M: Mem>(mem: &mut M, call: Call<'_, M>) -> i32 {
+        use crate::state::bridge::SEP_TRANS;
+        if SEP_TRANS.get(mem).cast_signed() <= 0 {
+            return 0;
+        }
+        let k = crate::minor::bridge::SEP_TRANS_STATE.get(mem)[0];
+        let r = SEP_TRANS_QUEUE
+            .ptr(mem)
+            .addr
+            .wrapping_add(k.wrapping_mul(12));
+        let state: u8 = mem.read(r.wrapping_add(0xa));
+        if state == 0 {
+            let kind: u8 = mem.read(r.wrapping_add(8));
+            let data: u32 = mem.read(r);
+            mem.write(r.wrapping_add(0xa), 1u8);
+            let _: u8 = mem.read(data);
+            let size: u32 = mem.read(r.wrapping_add(4));
+            let f = if kind == 0 {
+                SND_SEP_TRANS_SEP_ONLY
+            } else {
+                SND_STANDBY_BATTLE_WAVE
+            };
+            let data: u32 = mem.read(r);
+            game(mem, call, f, &[data, size]);
+            return -1;
+        }
+        if game(mem, &mut *call, SND_SYNC_WAVE_TRANS, &[0]) != 0 {
+            return -1;
+        }
+        let kind: u8 = mem.read(r.wrapping_add(8));
+        if kind == 1 && mem.read::<u8>(r.wrapping_add(0xa)) == 1 {
+            mem.write(r.wrapping_add(0xa), 2u8);
+            game(mem, call, SND_STANDBY_SEP_WAVE, &[]);
+            return -1;
+        }
+        SEP_TRANS.set(mem, SEP_TRANS.get(mem).wrapping_sub(1));
+        let i: u8 = mem.read(r.wrapping_add(9));
+        if i == 0xff {
+            let n = SEP_TRANS_SCENE.get(mem).wrapping_sub(1);
+            SEP_TRANS_SCENE.set(mem, n);
+            if n == 0 {
+                mem.write(crate::minor::bridge::SEP_TRANS_FLAG.ptr(mem).addr, 1u8);
+                ms_btl_read_scene_free(mem, &mut *call);
+            }
+        } else {
+            let a = ms_get_chr(mem, u32::from(i));
+            let n = byte(mem, a, 0xf2d).wrapping_sub(1);
+            mem.write(a.wrapping_add(0xf2d), n);
+            if n == 0 {
+                mem.write(a.wrapping_add(0xf2c), 1u8);
+            }
+        }
+        let k = crate::minor::bridge::SEP_TRANS_STATE.get(mem)[0];
+        let at = crate::minor::bridge::SEP_TRANS_STATE.ptr(mem).addr;
+        // (the original's signed `% 16`)
+        mem.write(at, (k.wrapping_add(1).cast_signed() % 16).cast_unsigned());
+        -1
+    }
+
+    /// `MsSEP3Dprocess()` (`0x007a0930`): each 3D sound
+    /// ([`crate::minor::bridge::SEP_3D`]) counts its delay (`+3`) down;
+    /// after it, one no longer playing (`SndIsSepPlay(+8)` 0) is cleared
+    /// (`+0`) and unlinked; a playing one's volume (0x100, or while fading
+    /// `+6` frames of `+4` left: `(+6 << 8) / +4`, at 0 the sound stopped)
+    /// and pan follow its actor (`MsSEP3DPos(+1, +2, +0x10)`,
+    /// `op_3d_vol_pan_get`). A node linked to itself is cut. The nodes
+    /// walked.
+    pub fn ms_sep_3d_process<M: Mem>(
+        mem: &mut M,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        call: Call<'_, M>,
+        vol_pan: &mut dyn FnMut(&mut M, u32, u32) -> (u32, u32),
+    ) -> u32 {
+        let mut link = crate::minor::bridge::SEP_3D.ptr(mem).addr;
+        let mut node: u32 = mem.read(link);
+        let mut n = 0u32;
+        while node != 0 {
+            let delay = byte(mem, node, 3);
+            if delay != 0 {
+                mem.write(node.wrapping_add(3), delay - 1);
+                link = node.wrapping_add(0xc);
+            } else {
+                let se: u32 = mem.read(node.wrapping_add(8));
+                if game(mem, &mut *call, SND_IS_SEP_PLAY, &[se]) == 0 {
+                    mem.write(node, 0u8);
+                    let next: u32 = mem.read(node.wrapping_add(0xc));
+                    mem.write(link, next);
+                } else {
+                    let total: i16 = mem.read(node.wrapping_add(4));
+                    let mut vol = 0x100u32;
+                    if total != 0 {
+                        let left = mem.read::<i16>(node.wrapping_add(6)).wrapping_sub(1);
+                        mem.write(node.wrapping_add(6), left);
+                        if left > 0 {
+                            vol = ((i32::from(left) << 8) / i32::from(total)).cast_unsigned();
+                        } else {
+                            vol = 0;
+                            game(mem, &mut *call, SND_SEP_STOP, &[se]);
+                        }
+                    }
+                    let (kind, i) = (byte(mem, node, 1), byte(mem, node, 2));
+                    crate::after_damage::bridge::ms_sep_3d_pos(
+                        mem,
+                        trig,
+                        u32::from(kind),
+                        u32::from(i),
+                        node.wrapping_add(0x10),
+                    );
+                    let (pan, volume) = vol_pan(mem, node.wrapping_add(0x10), vol);
+                    game(mem, &mut *call, SND_SEP_VOLUME_DIRECT, &[se, volume]);
+                    game(mem, &mut *call, SND_SEP_PAN_DIRECT, &[se, pan]);
+                    link = node.wrapping_add(0xc);
+                }
+            }
+            node = mem.read(node.wrapping_add(0xc));
+            n += 1;
+            if node != 0 && node == mem.read::<u32>(node.wrapping_add(0xc)) {
+                mem.write(node.wrapping_add(0xc), 0u32);
+            }
+        }
+        n
+    }
+
     /// The waits before the closing: nothing being read or streamed, no
     /// shout voice, no system message.
     fn sound_idle<M: Mem>(mem: &mut M, call: Call<'_, M>) -> bool {

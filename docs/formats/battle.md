@@ -214,6 +214,29 @@ keeps are in `symbols/ffx.sym` (`g_BtlEnd*`, `0x0112c9ec`-`0x0112c9f4`).
 `dbgPrintf` (state 0x1b's wait message) and `FlushCache` are empty in
 this build; the ports leave them out.
 
+## Sound transfers and 3D sounds each frame
+
+`MsSEPtransProcess` (`0x007a0540`) works through the transfer queue at
+`0x011360c8` (16 records of 12 bytes: data pointer, size, type (0 sound
+effects only, else a wave), actor (0xff the scene's), state (0 queued, 1
+sent, 2 wave standing by)), one step a frame while `g_BtlSepTrans`
+(`0x0113618c`) is above 0: a queued record is sent
+(`SndSepTransSepOnly` or `SndStandbyBattleWave`); a sent one, once
+`SndSyncWaveTrans(0)` reports done, either stands its wave by (type 1,
+`SndStandbySepWave`) or ends: its actor's count `+0xf2d` down (at 0
+`+0xf2c` set) or the scene's (`0x0112c02a`, at 0 `g_SepTransFlag` set and
+the scene's buffer freed, `MsBtlReadSceneFree`), the queue index on
+(signed `% 16`). The empty `dbgPrintf` there is passed the record's first
+data byte, so the original reads through the data pointer even though
+nothing uses the value; the port keeps the read.
+
+`MsSEP3Dprocess` (`0x007a0930`) walks `g_Sep3dList` (`0x011361a0`): a node
+counts its delay `+3` down first; then one no longer playing is unlinked,
+a playing one's volume (0x100, or while fading `(+6 << 8) / +4` after
+`+6` counts down, the sound stopped at 0) and pan follow its actor
+(`MsSEP3DPos`, `op_3d_vol_pan_get`, whose volume comes back through a
+frame local). A node linked to itself is cut when the walk reaches it.
+
 ## The model read queue
 
 Characters that join a battle mid-way (party members swapped in, aeons

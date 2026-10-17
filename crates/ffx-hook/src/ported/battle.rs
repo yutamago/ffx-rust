@@ -61,6 +61,20 @@ fn call_ptr<M>(_: &mut M, f: u32, args: &[u32]) -> u32 {
     super::call_cdecl(f, args)
 }
 
+/// `op_3d_vol_pan_get(pos, vol, &out)` with `out` on this thread's stack
+/// (`MsSEP3Dprocess`'s frame local): the pan and the volume.
+fn sep_vol_pan<M>(_: &mut M, pos: u32, vol: u32) -> (u32, u32) {
+    let mut out = 0u32;
+    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    let (at, f) = (
+        std::ptr::addr_of_mut!(out) as u32,
+        crate::rebase(afterdmg::OP_3D_VOL_PAN_GET) as u32,
+    );
+    let pan = super::call_cdecl(f, &[pos, vol, at]);
+    // SAFETY: `out` is this frame's local, written through `at` above.
+    (pan, unsafe { std::ptr::read_volatile(&raw const out) })
+}
+
 /// The calls `MsCheckRikkuLimit` makes: the CD library's read queue gets
 /// a block whose `+0xc` is the actor index (the original's other words
 /// are stack garbage; zeros here).
@@ -3068,5 +3082,23 @@ ported! {
         let mut m = mem();
         script!(s);
         bend::ms_battle_process_status(&mut target::Dm::new(&mut m), &host(), &mut s);
+    }
+    /// `MsEventEffectProcess()`.
+    MsEventEffectProcess @ 0x0078_8c00 => extern "C" fn ms_event_effect_process() {
+        script!(s);
+        bend::ms_event_effect_process(&mut mem(), &mut s);
+    }
+    /// `MsBtlReadSceneFree()`.
+    MsBtlReadSceneFree @ 0x0078_3e00 => extern "C" fn ms_btl_read_scene_free() {
+        bend::ms_btl_read_scene_free(&mut mem(), &mut call_ptr);
+    }
+    /// `MsSEPtransProcess()`.
+    MsSEPtransProcess @ 0x007a_0540 => extern "C" fn ms_sep_trans_process() -> i32 {
+        bend::ms_sep_trans_process(&mut mem(), &mut call_ptr)
+    }
+    /// `MsSEP3Dprocess()`: `op_3d_vol_pan_get`'s volume in the shim's
+    /// frame.
+    MsSEP3Dprocess @ 0x007a_0930 => extern "C" fn ms_sep_3d_process() -> u32 {
+        bend::ms_sep_3d_process(&mut mem(), &crt_trig, &mut call_ptr, &mut sep_vol_pan)
     }
 }

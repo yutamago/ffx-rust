@@ -4759,7 +4759,7 @@
 0x00783b90 function MsBtlReadPlayerModelProcess # fh v3:exact 0x00783c40
 0x00783bc0 function MsBtlReadPlayerProcess    # fh v3:exact 0x00783c70
 0x00783d80 function MsBtlReadScene            # (n): formation byte 2 selects the footstep sound bank ("foot_data"); was Battle_LoadFootData
-0x00783e00 function MsBtlReadSceneFree        # fh v3:exact 0x00783eb0
+0x00783e00 function MsBtlReadSceneFree        # fh v3:exact 0x00783eb0; ours: g_BtlRead3 freed (Sg_FreeA(p, 5)) and cleared; ported (battle round 14)
 0x00783e20 function MsBtlReadSetScene         # formation file sections: 0 script 0x0112a9ac, 1 0x0112a9b4, 2 formation 0x0112a9c0, 3 positions 0x0112a9b0 (0x20-byte records); was Battle_InitSections
 0x00783f60 function MsBtlReadWeapon              # layout+callees: sorts between MsBtlReadSetScene and MsCDreadWeapon, and its named callees match the Switch 0x710036eda0 MsBtlReadWeapon's (similarity 1.00: MsCDreadWeapon, MsGetChr); symbols from Fahrenheit's server export
 0x00784070 function Mon_LoadAll               # sprintf m%03d for each of 8 enemy slots
@@ -4895,7 +4895,7 @@
 0x00788b90 function MsEventEffectFree         # fh v3:exact 0x00788c50
 0x00788bd0 function MsEventEffectGetStat      # fh v3:bsim1.00 0x00788c90
 0x00788be0 function MsEventEffectInit         # fh v3:exact 0x00788ca0
-0x00788c00 function MsEventEffectProcess      # fh v3:exact 0x00788cc0
+0x00788c00 function MsEventEffectProcess      # fh v3:exact 0x00788cc0; ours: state 6 with a table at 0x01133360: table+4 called with 0, MsEffectCameraEnd(1), op_ovl_effect_free, state 0, table 0, MagicFile_Stop, Sg_SetKeepFps((i8)0x0112c9f9); ported (battle round 14)
 0x00788c60 function MsEventEffectRead         # fh v3:exact 0x00788d20; ours: (id) with g_BtlEventEffectStat 0: g_BtlLastMagic2, file (0 with 0x0112a903), CD +0x10(0x11), 0x00c421e0 = MsEffectFileNumber, MagicFile_SetMagicId/Load; state 1, overlay 0x01340870 + op_ovl_effect_init unless async; returns the state; ported (battle round 14)
 0x00788d10 function MsEventEffectReadComplete # fh switch:bsim1.00 0x7100351520
 0x00788d60 function MsEventEffectStart        # fh v3:exact 0x00788e20; ours: (b) state 3: 0x0112c9f9 = Sg_SetKeepFps(1), id MsGetEffID(0x01133358, 0x80, b) -> 0x0113336c, state 4, (*0x01133360)(id), 0x01133358++; returns the state; ported (battle round 14)
@@ -5398,7 +5398,7 @@
 0x007a04c0 function MsSEPtransCheck           # fh v3:exact 0x007a04e0
 0x007a04d0 function MsSEPtransCheckWave          # layout: alphabetical run between MsSEPtransCheck and MsSEPtransInit (1 unnamed in the gap); Switch 0x7100376d20 MsSEPtransCheckWave is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007a0500 function MsSEPtransInit            # fh v3:exact 0x007a0520
-0x007a0540 function MsSEPtransProcess         # fh v3:exact 0x007a0560
+0x007a0540 function MsSEPtransProcess         # fh v3:exact 0x007a0560; ours: g_BtlSepTrans > 0: record 0x011360c8 + 12*g_SepTransState: state 0 sends (type 0 SndSepTransSepOnly, else SndStandbyBattleWave), state 1 after SndSyncWaveTrans(0) 0: type 1 SndStandbySepWave (state 2), else ends (actor +0xf2d down, +0xf2c at 0; 0xff: 0x0112c02a down, at 0 g_SepTransFlag 1 + MsBtlReadSceneFree), index +1 mod 16; -1, none 0; dbgPrintf reads the data's first byte; ported (battle round 14)
 0x007a06b0 function MsSEPtransRegist             # layout: alphabetical run between MsSEPtransProcess and MsSetVoiceCheck (2 unnamed in the gap); Switch 0x7100376d60 MsSEPtransRegist is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007a0720 function MsSetVoice                   # layout: alphabetical run between MsSEPtransProcess and MsSetVoiceCheck (2 unnamed in the gap); Switch 0x7100377ca0 MsSetVoice is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007a07b0 function MsSetVoiceCheck           # fh v3:exact 0x007a07d0
@@ -5406,7 +5406,7 @@
 0x007a08a0 function MsSEP3DfadeOut            # fh v3:exact 0x007a08c0; ours: (se, frames) a node not fading (+4 0) gets +4 = +6 = frames: 1; ported (battle round 13)
 0x007a08e0 function MsSEP3DfadeOutAll         # fh v3:exact 0x007a0900
 0x007a0910 function MsSEP3Dinit               # fh v3:exact 0x007a0930
-0x007a0930 function MsSEP3Dprocess            # fh v3:exact 0x007a0950
+0x007a0930 function MsSEP3Dprocess            # fh v3:exact 0x007a0950; ours: g_Sep3dList walk: +3 delay down; stopped (SndIsSepPlay 0) unlinked, +0 cleared; else volume 0x100 or fade (+6 << 8) / +4 (0: SndSepStop), MsSEP3DPos, op_3d_vol_pan_get, SndSepVolumeDirect/PanDirect; self-link cut; returns nodes walked; ported (battle round 14)
 0x007a0a30 function MsSEP3Dregist             # fh v3:exact 0x007a0a50; ours: (kind, i, se, once, pos): node in g_Sep3dList (existing se, else first free of 16 at 0x011361b0), position by kind (0: pos via the EE register 0x00c8f588), op_3d_vol_pan_get, SndSepPlay; ported (battle round 13)
 0x007a0b90 function MsSEP3DFind               # (se) -> the first node of g_Sep3dList (0x011361a0) whose +8 is se, else 0; callers MsSEP3DfadeOut; name ours; ported (battle round 13)
 0x007a0bb0 function MsSEP3DPos                # ours: (kind, i, vec): kind & ~0x100: 1 MsGetChrPos, 2 MsGetChrTopPos, 3 MsGetChrCenterPos, 4 MsGetChrBottomPos; ported (battle round 13)
@@ -14647,6 +14647,7 @@
 0x0112c023 label g_BtlCommandStarted       # u8: set when a command starts (MsCommandCueProcess), cleared when an aeon is called (MsParseCommand)
 0x0112c024 label g_BtlResetWait            # u32: a soft reset waits while set (MsCheckSoftResetOk)
 0x0112c029 label g_SepTransFlag            # u16 cleared by MsSEPtransInit
+0x0112c02a label g_SepTransScene           # u8 scene sound transfers running (MsSEPtransProcess: at 0 g_SepTransFlag = 1, MsBtlReadSceneFree); name ours
 0x0112c02b label g_BtlLimitLearnt          # u8 set when MsLimitTidusLearn teaches an overdrive
 0x0112c02c label g_SepTransTable           # 0x80 words cleared by MsSEPtransInit
 0x0112c22c label g_EffectCameraBuf         # 8 words cleared by MsEffectCameraBufInit
@@ -14822,6 +14823,7 @@
 0x011360b8 label g_BtlNumbers                 # u32; Reset by MsNumberInit (the damage numbers).
 0x011360bc label g_BtlNumberList           # damage numbers on screen: +0 kind, +5 delay, +6 age, +7 life, +0x10 next (MsNumberCalcProcess)
 0x011360c0 label g_BtlNumberTail           # the last next-link of g_BtlNumberList
+0x011360c8 label g_SepTransQueue           # 16 records of 12 bytes: data, size, type (0 effects, else wave), actor (0xff scene), state (0 queued, 1 sent, 2 standby) (MsSEPtransProcess); name ours
 0x01136188 label g_SepTransState           # 3 words cleared by MsSEPtransInit (g_BtlSepTrans at +4)
 0x0113618c label g_BtlSepTrans               # u32 sound effect data in transfer (MsSEPtransAmount 0x007a04b0, MsSEPtransCheck)
 0x011361a0 label g_Sep3dList               # 3D sound effects: nodes with fade u16 +4/+6, next +0xc (MsSEP3DfadeOutAll)

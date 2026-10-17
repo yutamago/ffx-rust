@@ -4486,6 +4486,188 @@ fn battle_end_status(
     same("MsBattleProcess_Status", a, b);
 }
 
+/// The battle loop's sound and event-effect callees of sound and main
+/// (`ffx_battle::battle_end`), logging stubs in
+/// `MsBattleProcess_DebugStatus_00792f20` (never called here); the first
+/// is replaced by one answering from its argument.
+const FRAME_CALLEES: [(u32, u8); 8] = {
+    use ffx_battle::battle_end::bridge as be;
+    [
+        (be::SND_IS_SEP_PLAY, 1),
+        (be::SND_SEP_STOP, 1),
+        (be::SND_SEP_VOLUME_DIRECT, 2),
+        (be::SND_SEP_PAN_DIRECT, 2),
+        (be::SND_SYNC_WAVE_TRANS, 1),
+        (be::SND_STANDBY_SEP_WAVE, 0),
+        (be::SND_STANDBY_BATTLE_WAVE, 2),
+        (be::SND_SEP_TRANS_SEP_ONLY, 2),
+    ]
+};
+const FRAME_STUBS: u32 = 0x0079_2f20;
+
+/// `op_3d_vol_pan_get` with its output through [`SCRATCH`] (the original's
+/// is a frame local).
+fn vol_pan(m: &mut Oracle, v: u32, vol: u32) -> (u32, u32) {
+    let s = SCRATCH.with(std::cell::Cell::get);
+    let pan = call(
+        m,
+        ffx_battle::after_damage::bridge::OP_3D_VOL_PAN_GET,
+        &[v, vol, s],
+    )
+    .eax;
+    let out = u32::from_le_bytes(m.read(s, 4).unwrap().try_into().unwrap());
+    m.write(s, &[0; 4]).unwrap();
+    (pan, out)
+}
+
+/// The battle loop's per-frame sound transfers, 3D sounds and event
+/// effect end (`ffx_battle::battle_end`).
+fn battle_frame(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    w: &World,
+    out: u32,
+    frec: u32,
+) {
+    use ffx_battle::atel::bridge::Script;
+    use ffx_battle::battle_end::bridge as be;
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    let flag = |rng: &mut Xorshift, n: u32| u8::from(rng.below(n) == 0);
+    for k in 0..8 {
+        let r = [0, 0, 1, rng.next()][rng.below(4) as usize];
+        poke(a, b, frec + EXCHANGE_REC * k + 4, &r.to_le_bytes());
+    }
+    // an event effect done
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::EVENT_EFFECT_STAT,
+        [6i8, 6, 0, 5][rng.below(4) as usize],
+    );
+    let f = b.rebase(END_STUBS + 0x40 * 15);
+    poke(a, b, out + 0xc4, &f.to_le_bytes());
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::EVENT_EFFECT_A,
+        [out + 0xc0, out + 0xc0, 0][rng.below(3) as usize],
+    );
+    set(a, b, be::KEEP_FPS, rng.byte());
+    twin("MsEventEffectProcess", a, b, 0x0078_8c00, &[], 0, |m| {
+        dm(m, |m| {
+            let mut s = Script {
+                call: &mut call,
+                signal: &mut signal,
+                off: &mut off,
+            };
+            be::ms_event_effect_process(m, &mut s);
+        });
+        0
+    });
+    same("MsEventEffectProcess", a, b);
+    // the sound transfers: records of every type, actor and state
+    let q = be::SEP_TRANS_QUEUE.ptr(b).addr;
+    let mut recs = vec![0u8; 16 * 12];
+    for r in recs.chunks_mut(12) {
+        r[0..4].copy_from_slice(&(out + rng.below(0x80)).to_le_bytes());
+        r[4..8].copy_from_slice(&rng.next().to_le_bytes());
+        r[8] = [0, 1, 1, 2][rng.below(4) as usize];
+        r[9] = [u8::try_from(rng.below(ACTORS)).unwrap(), 0xff][rng.below(2) as usize];
+        r[10] = [0, 1, 1, 2][rng.below(4) as usize];
+    }
+    poke(a, b, q, &recs);
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::SEP_TRANS,
+        [1, 2, 1, 0, u32::MAX][rng.below(5) as usize],
+    );
+    set(
+        a,
+        b,
+        ffx_battle::minor::bridge::SEP_TRANS_STATE,
+        [rng.below(16), rng.next(), rng.next()],
+    );
+    set(
+        a,
+        b,
+        be::SEP_TRANS_SCENE,
+        [1, 1, 2, 0][rng.below(4) as usize],
+    );
+    set(
+        a,
+        b,
+        ffx_battle::misc::bridge::BTL_READ3,
+        [0, rng.next()][rng.below(2) as usize],
+    );
+    for i in 0..ACTORS {
+        poke(
+            a,
+            b,
+            w.actor(i) + 0xf2d,
+            &[[1, 1, 2, 0][rng.below(4) as usize]],
+        );
+        poke(a, b, w.actor(i) + 0xf2c, &[flag(rng, 3)]);
+    }
+    poke(
+        a,
+        b,
+        frec + EXCHANGE_REC * 4 + 4,
+        &u32::from(flag(rng, 3)).to_le_bytes(),
+    );
+    twin("MsSEPtransProcess", a, b, 0x007a_0540, &[], ALL, |m| {
+        dm(m, |m| {
+            be::ms_sep_trans_process(m, &mut call).cast_unsigned()
+        })
+    });
+    same("MsSEPtransProcess", a, b);
+    // 3D sounds: delays, fades, actors (every actor placed)
+    if !placed(a, b, w, out) {
+        return;
+    }
+    let nodes = b.rebase(ffx_battle::after_damage::bridge::SEP_3D_NODES);
+    let mut area = vec![0u8; 0x200];
+    let n = rng.below(6);
+    for k in 0..n as usize {
+        let at = nodes + 0x20 * u32::try_from(k).unwrap();
+        let e = &mut area[0x20 * k..0x20 * k + 0x20];
+        e[0] = 1;
+        e[1] = [1, 2, 3, 4, 0, 5][rng.below(6) as usize];
+        e[2] = u8::try_from(rng.below(ACTORS)).unwrap();
+        e[3] = [0, 0, 0, 1, 2][rng.below(5) as usize];
+        let total = [0i16, 0, 5, -3, 1, 0x7fff][rng.below(6) as usize];
+        let left = [1i16, 2, 5, 0, -1, 3][rng.below(6) as usize];
+        e[4..6].copy_from_slice(&total.to_le_bytes());
+        e[6..8].copy_from_slice(&left.to_le_bytes());
+        e[8..12].copy_from_slice(&(0x8000_0000 | rng.below(4)).to_le_bytes());
+        // the last links to itself at times (the walk cuts it)
+        let next = if k + 1 < n as usize {
+            at + 0x20
+        } else if rng.below(4) == 0 {
+            at
+        } else {
+            0
+        };
+        e[0xc..0x10].copy_from_slice(&next.to_le_bytes());
+    }
+    poke(a, b, nodes, &area);
+    let head = if n == 0 { 0 } else { nodes };
+    poke(
+        a,
+        b,
+        ffx_battle::minor::bridge::SEP_3D.ptr(b).addr,
+        &head.to_le_bytes(),
+    );
+    twin("MsSEP3Dprocess", a, b, 0x007a_0930, &[], ALL, |m| {
+        be::ms_sep_3d_process(m, &stand_in, &mut game_call_o, &mut vol_pan)
+    });
+    local_words(a, b);
+    same("MsSEP3Dprocess", a, b);
+}
+
 /// Party members and aeons coming and going (`ffx_battle::exchange`).
 fn exchange(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32, rec: u32) {
     use ffx_battle::atel::bridge::Script;
@@ -4957,6 +5139,18 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         }
         logging_stub(o, 0, FREE_STUBS + 0x40 * 8, frec + EXCHANGE_REC * 8, 1, 0);
     }
+    // the loop's sound stubs' records
+    let grec = scratch(a, b, (EXCHANGE_REC * 8) as usize);
+    for o in [&mut *a, &mut *b] {
+        for (k, (f, n)) in (0u32..).zip(FRAME_CALLEES) {
+            logging_stub(o, f, FRAME_STUBS + 0x40 * k, grec + EXCHANGE_REC * k, n, 0);
+        }
+        // SndIsSepPlay: playing by the sound's low bit (a walk mixes
+        // playing and stopped nodes)
+        let at = o.rebase(FRAME_STUBS);
+        o.write(at, &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x01, 0xc3])
+            .unwrap();
+    }
     // the battle end's stubs' records
     let nrec = scratch(a, b, (EXCHANGE_REC * 18) as usize);
     for o in [&mut *a, &mut *b] {
@@ -4998,6 +5192,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         input(a, b, &w, out, irec);
         damage_end(a, b, rng, &w, out);
         battle_end(a, b, rng, &w, out, [nrec, erec, prec, srec], files);
+        battle_frame(a, b, rng, &w, out, grec);
     }
 }
 
