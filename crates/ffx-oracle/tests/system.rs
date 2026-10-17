@@ -10298,11 +10298,11 @@ fn round17_kernel_flags(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         } else {
             i
         };
-        if i2 != 0xf9 {
-            assert_eq!(eax(a, 0x0077_2dc0, &[i2]), t::kernel_slot_word_194(b, i2));
-        } else {
+        if i2 == 0xf9 {
             assert_eq!(eax(a, 0x0077_2dc0, &[i2]), 0x1f40);
             assert_eq!(t::kernel_slot_word_194(b, i2), 0x1f40);
+        } else {
+            assert_eq!(eax(a, 0x0077_2dc0, &[i2]), t::kernel_slot_word_194(b, i2));
         }
         assert_eq!(eax(a, 0x0077_2e40, &[i]), t::kernel_gil_after(b, i, call));
         let sfx = rng.next();
