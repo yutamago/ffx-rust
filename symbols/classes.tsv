@@ -923,7 +923,7 @@
 0x0063d710	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterSetClipPlane
 0x0063d810	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterSetShaderType
 0x0063d870	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterShaderRestore
-0x0063d880	glue	calls PhyreEngine Phyre_CharacterShaderManager_setShaderParameter
+0x0063d880	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterShaderSetParameter
 0x0063d8e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterShaderSetParameterTexture
 0x0063d940	logic	default (no rule: ported to be safe)
 0x0063d9c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCheckChrClusterRelationship

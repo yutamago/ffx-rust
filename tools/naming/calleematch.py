@@ -16,7 +16,8 @@ seeds): 98-99.5% with the defaults.
 
   tools/naming/calleematch.py --out PROPOSALS.tsv [--min 0.6] [--shared 1]
   tools/naming/calleematch.py --holdout 0.2 [--seed 1]   # measure precision
-  wider: --span 0x3000 --file 0x20000 (holdout 97-99.3%, about twice the names)
+  wider: --span 0x3000 --file 0x20000 (holdout 97-99.3%, about twice the names);
+  --callers compares named callers too (holdout 99%, a few more)
   then: tools/naming/apply.py PROPOSALS.tsv  (repeat: new names make new gaps)
 
 Inputs: $FFX_WORK/decomp/{functions,call_sites}.tsv and
@@ -38,7 +39,7 @@ GENERIC = {"security_check_cookie", "get_ptr32_func", "get_ptr32", "set_ptr32", 
            "sinf", "crt_abs_thunk", "operator_new", "operator_delete", "Phyre_PhyreFree", "Phyre_PhyreMalloc"}
 
 
-def our_callees(path, names):
+def our_callees(path, names, callers=False):
     out = defaultdict(set)
     with open(path, encoding="utf-8") as f:
         next(f)
@@ -49,10 +50,13 @@ def our_callees(path, names):
             n = names.get(int(c, 16))
             if n and n not in GENERIC:
                 out[int(a, 16)].add(n)
+            m = names.get(int(a, 16))
+            if callers and m and int(a, 16) != int(c, 16):
+                out[int(c, 16)].add("<" + m)
     return out
 
 
-def their_callees(path):
+def their_callees(path, callers=False):
     out = defaultdict(set)
     with open(path, encoding="utf-8") as f:
         for r in csv.DictReader(f, delimiter="\t"):
@@ -62,6 +66,8 @@ def their_callees(path):
             t = symlib.token(n)
             if t not in GENERIC and r["callee_name"] != r["caller_name"]:
                 out[int(r["caller"], 16)].add(t)
+                if callers and not r["caller_name"].startswith("FUN_"):
+                    out[int(r["callee"], 16)].add("<" + symlib.token(r["caller_name"]))
     return out
 
 
@@ -82,6 +88,7 @@ def main():
     ap.add_argument("--file", type=lambda s: int(s, 0), default=0x8000,
                     help="largest Switch distance between the two neighbours")
     ap.add_argument("--span", type=lambda s: int(s, 0), default=0x800)
+    ap.add_argument("--callers", action="store_true", help="compare named callers too")
     ap.add_argument("--holdout", type=float, default=0)
     ap.add_argument("--seed", type=int, default=1)
     args = ap.parse_args()
@@ -94,7 +101,7 @@ def main():
     theirs = defaultdict(list)
     for a, n, s in symlib.read_theirs(args.theirs):
         theirs[symlib.token(n)].append((a, s))
-    tcallees = their_callees(args.their_calls)
+    tcallees = their_callees(args.their_calls, args.callers)
     anchors = {a for a, n in names.items() if n in theirs}
     hidden = {}
     if args.holdout:
@@ -102,7 +109,7 @@ def main():
         for a in rng.sample(sorted(anchors), int(len(anchors) * args.holdout)):
             hidden[a] = names.pop(a)
             anchors.discard(a)
-    ocallees = our_callees(args.calls, names)
+    ocallees = our_callees(args.calls, names, args.callers)
     used = set(names.values())
     tsorted = sorted(t for t in theirs if t not in used)
     order = [a for a in funcs if osize[a] > 0]
