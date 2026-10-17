@@ -1607,6 +1607,17 @@ earlier calls left at that depth, so the Rust interpreter (whose frames
 differ) can store different garbage there; nothing reads it back as far as
 the tests reach.
 
+The oracle reports a call that runs out of its instruction budget
+(200,000,000) as a runaway with the address it stopped at; it used to
+show up as "EBX not preserved", because the registers had not been
+restored. That was `ctrl_start_matches_the_original` on the battle
+snapshot: worker 18 of ctrl work `0xf45ba0` is a field worker that
+`Script_Run` skips in battle (`+0x34` bit 2 and `+0x36` bit 6 clear,
+`MsBattleCheck` set), so it never sets its init bit and the start
+callback's loop spins on it for ever, in the game as in the oracle. A
+snapshot's ctrl works are past their start; the test now gives such
+workers the init bit in both runs and compares the rest.
+
 ### Plan
 
 1. Done: the accessors, the dispatch loop, every opcode, native dispatch,

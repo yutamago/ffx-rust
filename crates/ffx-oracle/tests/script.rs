@@ -3850,8 +3850,31 @@ fn ctrl_start_matches_the_original() {
     let exe = PathBuf::from(dir).join("FFX.exe");
     let pages = Pages::read(PathBuf::from(snap)).unwrap();
     let ctrls = in_use(&Oracle::from_snapshot(&exe, &pages).unwrap());
+    let mut compared = 0;
     for c in ctrls {
         let (mut a, mut b) = fresh_run_pair(&pages, &exe, c);
+        // A worker Script_Run skips (+0x34 bit 1 clear; a field worker in
+        // battle: bit 2 clear, +0x36 bit 6 clear and MsBattleCheck set; the
+        // ctrl's mode 1, or mode 2 without +0x36 bit 15)
+        // never sets its init bit, and the callback's loop would spin on
+        // it for ever, in the game as here: a snapshot's ctrl work is past
+        // its start. Such workers get the init bit in both runs.
+        let in_battle = orig(&mut b, run::MS_BATTLE_CHECK, &[]) != 0;
+        orig(&mut a, run::MS_BATTLE_CHECK, &[]);
+        let mode = Mem::read::<u8>(&b, c + ctrl::MODE) & 3;
+        for i in 0..u32::from(Mem::read::<u16>(&b, c + 0xc)) {
+            let w = v::atel_get_basic_work(&mut Run(&mut b), i.cast_signed());
+            orig(&mut a, ATEL_GET_BASIC_WORK, &[i]);
+            let f = Mem::read::<u16>(&b, w + worker::FLAGS);
+            let f2 = Mem::read::<u16>(&b, w + worker::FLAGS2);
+            if mode == 1
+                || (mode == 2 && f2 & 0x8000 == 0)
+                || f & 2 == 0
+                || (f & 4 == 0 && f2 & 0x40 == 0 && in_battle)
+            {
+                poke(&mut a, &mut b, w + worker::FLAGS, f | 0x10);
+            }
+        }
         clear_stacks(&mut a, &mut b);
         let ra = match a.call(a.rebase(0x0086_83e0), Conv::Cdecl, &[c]) {
             Ok(r) => r.eax,
@@ -3863,5 +3886,7 @@ fn ctrl_start_matches_the_original() {
         let rb = hp::atel_ctrl_start(&mut Run(&mut b), c);
         assert_eq!(ra, rb, "0x008683e0 {c:#x}");
         native_no_diff(&mut a, &mut b, &format!("0x008683e0 {c:#x}"));
+        compared += 1;
     }
+    eprintln!("{compared} ctrl works started");
 }
