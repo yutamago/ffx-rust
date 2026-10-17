@@ -8741,7 +8741,7 @@ fn ranged(rng: &mut Xorshift, lo: f32, hi: f32) -> u32 {
 fn wave_omd_make_matches_the_original() {
     for mut p in Pair::all() {
         let mut rng = Xorshift(0x007f_94e0);
-        x87_crt_stand_ins(&mut p);
+        // MSVCR110's own _CIatan2 (op_deg_get)
         let (obj, wv, uv) = (p.alloc(0x40), p.alloc(0x60), p.alloc(8));
         let omd = p.alloc(0x8000);
         let (view, light) = (p.alloc(0x100), p.alloc(0x60));
@@ -8837,16 +8837,11 @@ fn wave_omd_make_matches_the_original() {
     }
 }
 
-/// An `fptan` stand-in for the CRT's `_CItan` (its import slot
-/// `0x00b0c3a0` pointed at `0x00b0bfd0`) and a thunk, `fld qword [esp +
-/// 4]; jmp [slot]`, for the bridge's side; returns the thunk.
-fn tan_stand_in(p: &mut Pair) -> u32 {
-    let at = p.sym(0x00b0_bfd0);
-    let code = [0xd9u8, 0xf2, 0xdd, 0xd8, 0xc3]; // fptan; fstp st0; ret
-    p.a.write(at, &code).unwrap();
-    p.b.write(at, &code).unwrap();
+/// A thunk, `fld qword [esp + 4]; jmp [slot]`, through `_CItan`'s import
+/// slot (`0x00b0c3a0`, MSVCR110's own `_CItan` in the oracle's runtime), for
+/// the bridges' `tan` callback; returns the thunk.
+fn tan_thunk(p: &mut Pair) -> u32 {
     let slot = p.sym(0x00b0_c3a0);
-    p.set(slot, at);
     let t = p.sym(0x00b0_bba0);
     let mut c = vec![0xdd, 0x44, 0x24, 0x04, 0xff, 0x25]; // fld qword [esp+4]; jmp [slot]
     c.extend(slot.to_le_bytes());
@@ -8860,8 +8855,8 @@ fn tan_stand_in(p: &mut Pair) -> u32 {
 fn wave_0154_omd_make_matches_the_original() {
     for mut p in Pair::all() {
         let mut rng = Xorshift(0x007f_67c0);
-        x87_crt_stand_ins(&mut p);
-        let tan = tan_stand_in(&mut p);
+        // MSVCR110's own _CIatan2 (op_deg_get) and _CItan
+        let tan = tan_thunk(&mut p);
         let fov = p.alloc(4);
         float_stub(&mut p, 0x0063_9570, fov);
         let (obj, wv, uv) = (p.alloc(0x40), p.alloc(0x60), p.alloc(8));
