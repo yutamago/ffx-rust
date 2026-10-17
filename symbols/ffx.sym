@@ -3983,7 +3983,7 @@
 0x00774670 function GetU32_0112a010 # () -> u32 at 0x0112a010; name ours
 0x00774720 function Kernel_GetAbilityName # (id) -> char*: g_EmptyName for 0, else TkMn2GetAbilityMes(id) (a tail jump); about 110 callers 0x00770920..0x007734c0; named after Kernel_GetItemName; name ours
 0x00774740 function ResetRecords_00774740 # (): records (0x138 bytes) of entry *0x0112a088 of the table *0x0112a01c (offset + *0x0112a03c, i16 count at +4): +0x114/+0x116 = +0x120/+0x122, +0x118/+0x11c = 0.0; callers 0x0076f470, 0x00775ce0, 0x00775de0, 0x00776110; name ours
-0x00774ae0 function getSa_MenuTextureName     # fh v3:exact 0x00774bf0
+0x00774ae0 function getSa_MenuTextureName     # fh v3:exact 0x00774bf0; cdecl(out, n): help picture path by TOGetFFXLang (0 help, 1 us, 2 fr, 3 es, 4 de, 5 it, 9 kr, 10 ch; others format an uninitialised buffer) through fiosUnifyFilename, then sprintf(out, path, n)
 0x00775810 function SetGlobal_0112a018 # cdecl(v): *0x0112a018 = v, returns v; name ours
 0x007767a0 function Kernel_GetItemName        # (id) -> char*: g_EmptyName for 0, else MsGetRomItem's strings + the record's first u16; name ours
 0x00776910 function UnlinkRecord_00776910 # cdecl(rec): unlinks rec from the offset list in *0x0112a03c (+0x38 next, +0x44 previous) and marks it 7; caller 0x007767d0; name ours
@@ -7930,6 +7930,7 @@
 0x008a87d0 function TOWaitBtlWinInputGil      # fh v3:cg3 0x8a8780 __TOWaitBtlWinInputGil
 0x008a8a70 function TOWaitBtlWinMain          # fh v3:cg2 0x8a8a20 __TOWaitBtlWinMain
 0x008a8e10 function IsInTkMenuPause           # fh v3:bsim1.00 0x008a8dc0
+0x008a8e20 function TOGetSaveGilAddress       # () -> MsGetSaveEventAddress() + 0x3d48 (&g_SaveGil); name ours
 0x008a8e30 function TOMenuGetDBuffDC          # fh switch:bsim1.00 0x71004bcd80; Sg_GetDBuffDC(0); non-null out = 0x01841c60
 0x008a8e50 function TOMenuGetFirstReadEndFlag # fh v3:bsim1.00 0x008a8e00
 0x008a8e70 function TOMenuMainWindowOpen_008a8e70 # (): TkMenuMainAllocWindow, set up (handlers 0x008a91d0/0x008a9350, layer 6), kept at 0x018408fc, 0x01841c00..+0x14 = 0, TkMenuMainRegistWindow; name ours

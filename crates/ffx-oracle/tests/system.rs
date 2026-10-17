@@ -7728,6 +7728,7 @@ fn round13(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         assert_eq!(eax(a, 0x008f_a4f0, &[id]), t::window_layout_of(b, id), "{id:#x}");
         same_memory("window layouts", a, b);
     }
+    assert_eq!(eax(a, 0x008a_8e20, &[]), t::save_gil_address(b));
     // the magic texture loaded once, through a stand-in recording the id
     let cell = alloc(a, b, 4);
     let load = stand_in8(a, b, 0xa80, &recorder(cell, 0x5a5a_0013));
@@ -7760,4 +7761,58 @@ fn round13_system_functions_match_the_original_on_the_snapshot() {
         return;
     };
     round13(&mut a, &mut b, &mut Xorshift(0x4013_0002));
+}
+
+/// Round 13's language-dependent help picture names.
+fn round13_help_names(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let cell = alloc(a, b, 4);
+    let mut getter = vec![0xa1];
+    getter.extend_from_slice(&cell.to_le_bytes());
+    getter.push(0xc3);
+    let lang = stand_in8(a, b, 0xaa0, &getter);
+    redirect(a, b, 0x0064_10e0, lang);
+    let out = alloc(a, b, 0x200);
+    let prefix = alloc(a, b, 0x110);
+    let prefix_cell = ffx_system::files::bridge::STREAM_PREFIX;
+    let mut long = vec![b'x'; 0x90];
+    long.extend_from_slice(b"%%/");
+    let prefixes: [Option<&[u8]>; 5] = [None, Some(b""), Some(b"data/"), Some(&long), Some(&[b'y'; 0xd0])];
+    for pre in prefixes {
+        match pre {
+            Some(text) => {
+                let mut v = text.to_vec();
+                v.push(0);
+                a.write(prefix, &v).unwrap();
+                b.write(prefix, &v).unwrap();
+                set(a, b, prefix_cell, prefix);
+            }
+            None if prefix_cell.get(a) == 0 => continue,
+            None => {}
+        }
+        for l in [0u32, 1, 2, 3, 4, 5, 9, 10] {
+            put(a, b, cell, l);
+            for n in [0i32, 1, 7, 42, -3, i32::MAX, i32::MIN, rng.next().cast_signed()] {
+                put(a, b, out, [0xa5u8; 0x200]);
+                eax(a, 0x0077_4ae0, &[out, n.cast_unsigned()]);
+                ffx_system::files::bridge::help_texture_name(b, out, n, l);
+                same_memory("help names", a, b);
+            }
+        }
+    }
+}
+
+#[test]
+fn round13_help_names_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round13_help_names(&mut a, &mut b, &mut Xorshift(0x4013_0011));
+}
+
+#[test]
+fn round13_help_names_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round13_help_names(&mut a, &mut b, &mut Xorshift(0x4013_0012));
 }

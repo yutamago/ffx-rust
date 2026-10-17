@@ -2041,4 +2041,11 @@ pub mod bridge {
         }
         r
     }
+
+
+    /// `0x008a8e20()`: `MsGetSaveEventAddress() + 0x3d48`, the save's gil
+    /// (`g_SaveGil`, `0x011307d8`).
+    pub fn save_gil_address(mem: &impl Mem) -> u32 {
+        mem.rebase(0x0112_ca90).wrapping_add(0x3d48)
+    }
 }

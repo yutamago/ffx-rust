@@ -4275,6 +4275,16 @@ ported! {
             call_sym(m, 0x0064_20b0, &[id]);
         })
     }
+    /// `getSa_MenuTextureName(out, n)`.
+    getSa_MenuTextureName @ 0x0077_4ae0 => extern "C" fn get_sa_menu_texture_name(out: u32, n: i32) {
+        let mut m = mem();
+        let lang = instance::bridge::ffx_lang(&m, &mut phyre_printf);
+        files::bridge::help_texture_name(&mut m, out, n, lang);
+    }
+    /// `TOGetSaveGilAddress()`.
+    TOGetSaveGilAddress @ 0x008a_8e20 => extern "C" fn to_get_save_gil_address() -> u32 {
+        tolib::bridge::save_gil_address(&mem())
+    }
     /// `Fixup_WriteLeb128(value, &cursor)`.
     Fixup_WriteLeb128 @ 0x0060_aba0 => extern "C" fn fixup_write_leb128(value: u32, cursor: u32) {
         fixup::bridge::write_leb128(&mut mem(), value, cursor);
