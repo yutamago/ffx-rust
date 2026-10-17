@@ -222,3 +222,45 @@ billboard from `g_pppViewMatrix` in `0x0230fee0` and copies it to
 `g_pppWoodMatrix`: row 1 the view's row 1 (`w` 0) normalised, row 0
 `(y, -x, 0, 0)` of it normalised, row 2 their outer product normalised,
 row 3 the view's translation.
+
+`pppKeZCrctShpDraw(obj, key, ctrl)` (`0x007354c0`, `mat.rs`) builds a
+shape's draw matrix in work area 0 on the emulated VU0: rows 0..2 are the
+object's rows times the running part's scale (`+0x60`), and row 3 depends
+on the key's mode (`u8 +0x30`), with `v` = the object's `+0x40` times the
+key's `+0x20` (xyz): 0 is `(v + key +0x10) x g_pppViewMatrix`, 1 is
+`v x g_pppViewMatrix + key +0x10`, 2 is the part's scale plus the scale
+times the key's `+0x10` (`v x g_pppWorldMatrix` is computed into the VU0
+registers but not used). Any other mode leaves row 3 as the stack held it
+(the port's hook: zero). The VU0 registers `0x00c8f790` (accumulator),
+`0x00c8f820..0x00c8f85c` and `0x00c8f930..0x00c8f98c` keep the original's
+final values.
+
+## Dynamic geometry (`opus_0582_dot_draw`)
+
+`opus_0582_dot_draw(b, rec, m, hold)` (`0x00a72b80`, `slots.rs`; called by
+`opp_0582_cmd_a70910` kind 0x1000) draws the `opus_0582` dots through two
+render instances: `(0, b)`, two segments of 9000 points and 18000 indices
+(line pairs), used when any entry's spread / 16 is not 0, and `(0x1000,
+b)`, one segment of 2500 points and indices. A missing instance is made
+with `graphicVFXCreate` / `graphicVFXCreateDataBuffer` (names
+`"NoTexture"`, `0x00b41b50`) / `graphicVFXSetup` and registered with
+`op_pair_index_00a70ce0`; the buffers come from
+`graphicDynGeoMemManagerGetBufferForSegment`. The entries (32 bytes from
+`b + 0x10`, count at `b`):
+
+| Offset | Contents |
+| --- | --- |
+| `+0..+0xc` | `f32` radius x, height, radius z, scale |
+| `+0x10` | `u16` angle (`& 0xfff`, a turn of 4096 `g_pppSinTable` steps) |
+| `+0x12` | `i16` angle step per frame |
+| `+0x14` | `i16` spread: `n` = spread / 16 points (32 from 64), stepping the angle by spread / `n` |
+| `+0x16` | `u16` life (alpha `8 x life`, 0x80 from 16); 0 skips the entry |
+| `+0x18..+0x1a` | colour bytes (`/ 256`) |
+| `+0x1c` | `i8` fade-in (alpha `(8 - c) x 16`), counted before the life |
+
+A point is `(sin a x rx x s, y, cos a x rz x s)`. Strands alternate between
+the two line segments, the alpha falling by `128 / n` per point (not below
+0). The segments' counts are set, their unused tails cleared, and each
+instance gets `m` times `g_pppFillMatrix`, bounds of +-100000 and
+`graphicVFXSetVisible` / `graphicVFXUpdate`. A failed allocation returns
+before `op_spr_free`.

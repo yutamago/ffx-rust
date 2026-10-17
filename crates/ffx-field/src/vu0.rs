@@ -500,6 +500,33 @@ pub mod bridge {
         let d = x87::copy(mem.read(out));
         rcef_angle_wrap(mem, d, fcall)
     }
+
+    /// `rcVu0Sub(a, b, c)` (`0x0091f740`, name ours; from
+    /// `rcbgPSimAddNail` and `rcbgPSimCreate`) and its twin
+    /// `rcVu0Sub_0092d720` (from `0x0092dad0` and `0x0092e020`): `b` to
+    /// the VU0 register at `0x00c8f980` and `c` to `0x00c8f970`
+    /// (`VFX_Copy16From`), the first's `xyz` less `c`'s (`f32` each,
+    /// `Vec3SubScalars`, which restores `vf00`), then the register to `a`
+    /// (`VFX_Copy16To`, so `a.w` is `b.w`). Returns the last word copied.
+    pub fn rc_vu0_sub(mem: &mut impl Mem, a: u32, b: u32, c: u32) -> u32 {
+        let r = mem.rebase(super::VU0_COPY_REG);
+        let k = mem.rebase(super::VU0_SCALE);
+        let v = mem.read::<[u32; 4]>(b);
+        mem.write(r, v);
+        let v = mem.read::<[u32; 4]>(c);
+        mem.write(k, v);
+        let k = mem.read::<[f32; 4]>(k);
+        for i in 0..3u32 {
+            let x = Reg::load(mem.read::<f32>(r + 4 * i))
+                .sub_m32(k[i as usize])
+                .store();
+            mem.write(r + 4 * i, x);
+        }
+        ffx_ps2::ee::bridge::restore_vf00(mem);
+        let v = mem.read::<[u32; 4]>(r);
+        mem.write(a, v);
+        v[3]
+    }
 }
 
 #[cfg(test)]

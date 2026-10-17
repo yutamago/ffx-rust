@@ -160,6 +160,25 @@ pub fn det3_points(x1: f32, y1: f32, x2: f32, y2: f32, x3: f32, y3: f32) -> f32 
     }
 }
 
+/// `Math_SegmentsCross(a, b, c, d)` (`0x00889bb0`, own name), on the XZ
+/// plane: whether segments `ab` and `cd` cross or touch — `c` and `d` not
+/// strictly on one side of `ab` ([`det3_points`] products at most 0, the
+/// product at 53 bits) and `a` and `b` not strictly on one side of `cd`.
+/// Then 1 when `d` is on the positive side of `ab`, else -1; 0 when they
+/// do not cross (or a NaN takes part).
+#[must_use]
+pub fn segments_cross(a: [f32; 2], b: [f32; 2], c: [f32; 2], d: [f32; 2]) -> i32 {
+    let det =
+        |p: [f32; 2], q: [f32; 2], r: [f32; 2]| det3_points(p[0], p[1], q[0], q[1], r[0], r[1]);
+    let apart = |u: f32, v: f32| f64::from(u) * f64::from(v) > 0.0 || (u * v).is_nan();
+    let side_c = det(a, b, c);
+    let side_d = det(a, b, d);
+    if apart(side_c, side_d) || apart(det(c, d, a), det(c, d, b)) {
+        return 0;
+    }
+    if side_d > 0.0 { 1 } else { -1 }
+}
+
 /// `TkScreenToMenuX(x)` (`0x008e2690`) and `TkScreenToMenuY(y)`
 /// (`0x008e26b0`): a 1920×1080 coordinate in the menu's 512×416 space;
 /// the integer goes through a float first.
@@ -235,9 +254,11 @@ pub fn atan2_xz(
     z1: f32,
     intrinsic: impl FnOnce(f64, f64) -> f64,
 ) -> f32 {
-    let r = |v: f32| f64::from(ffx_bridge::x87::round_trip(v));
-    let dx = (r(x1) - r(x0)) as f32;
-    let dz = (r(z1) - r(z0)) as f32;
+    use ffx_bridge::x87::{load, store, sub};
+    // x87 subtraction: ∞ - ∞ is the negative indefinite NaN
+    let d = |a: f32, b: f32| f32::from_bits(store(sub(load(a.to_bits()), load(b.to_bits()))));
+    let dx = d(x1, x0);
+    let dz = d(z1, z0);
     #[allow(clippy::float_cmp)] // fucompp against 0
     if dx.abs() == 0.0 {
         return if dz >= 0.0 {
@@ -251,6 +272,89 @@ pub fn atan2_xz(
         return if dx >= 0.0 { -0.0 } else { PI_F32 };
     }
     intrinsic(f64::from(dz), f64::from(dx)) as f32
+}
+
+/// `Math_YawPitchTo(*yaw, *pitch, from, to)` (`0x0088b4d0`): the yaw
+/// [`atan2_xz`] from `from` to `to` on the XZ plane, and the pitch
+/// [`atan2_xz`] from `(0, from.y)` to `(h, to.y)`, `h` the horizontal
+/// distance: the differences stored as floats, `sqrt(dx² + dz²)` at 53
+/// bits stored as a float. `(yaw, pitch)`.
+#[must_use]
+pub fn yaw_pitch_to(
+    from: [f32; 3],
+    to: [f32; 3],
+    mut intrinsic: impl FnMut(f64, f64) -> f64,
+) -> (f32, f32) {
+    use ffx_bridge::x87::{add, load, mul, sqrt, store, sub};
+    let [fx, fy, fz] = from;
+    let [tx, ty, tz] = to;
+    let yaw = atan2_xz(fx, fz, tx, tz, &mut intrinsic);
+    let dx = load(store(sub(load(tx.to_bits()), load(fx.to_bits()))));
+    let dz = load(store(sub(load(tz.to_bits()), load(fz.to_bits()))));
+    let h = f32::from_bits(store(sqrt(add(mul(dx, dx), mul(dz, dz)))));
+    let pitch = atan2_xz(0.0, fy, h, ty, &mut intrinsic);
+    (yaw, pitch)
+}
+
+/// `Math_FacingWithin(heading, tol, x0, z0, x1, z1)` (`0x0088b780`, own
+/// name): whether the direction [`atan2_xz`] from `(x0, z0)` to `(x1, z1)`
+/// lies within `tol` of `heading`: the difference stored as a float,
+/// [`wrap_angle`]d, [`min_abs`] with `tol`, then strictly below `tol`
+/// (false with a NaN). The script's talk-angle check (`Native_SetTalkAngle`,
+/// `Native_1015`) asks it. Like [`wrap_angle`], it never ends for an
+/// infinite difference.
+#[must_use]
+pub fn facing_within(
+    heading: f32,
+    tol: f32,
+    from: [f32; 2],
+    to: [f32; 2],
+    intrinsic: impl FnOnce(f64, f64) -> f64,
+) -> bool {
+    use ffx_bridge::x87::{load, store, sub};
+    let a = atan2_xz(from[0], from[1], to[0], to[1], intrinsic);
+    let d = f32::from_bits(store(sub(load(a.to_bits()), load(heading.to_bits()))));
+    min_abs(wrap_angle(d), tol) < tol
+}
+
+/// `Math_PolarToVector(out, r, yaw, pitch)` (`0x0088a3a0`, own name): the
+/// point at distance `r` in direction `(yaw, pitch)` as `(x, y, z, 1)`:
+/// the pitch [`wrap_angle`]d and, beyond ±π/2 (the float's value as a
+/// double), turned back (`π - pitch` or `pitch + π`) with the yaw turned
+/// by π; the yaw wrapped; `y = sin(pitch) r`, `h = cos(pitch) r`, `x =
+/// cos(yaw) h`, `z = sin(yaw) h`, each a float. `sin_cos(cos, v)` is the C
+/// runtime's `_CIcos` or `_CIsin` (through `CIcos`/`CIsin`), called for
+/// `sin(pitch)`, `cos(pitch)`, `cos(yaw)`, `sin(yaw)` in that order. Like
+/// [`wrap_angle`], it never ends for an infinite angle.
+#[must_use]
+pub fn polar_to_vector(
+    r: f32,
+    yaw: f32,
+    pitch: f32,
+    mut sin_cos: impl FnMut(bool, f64) -> f64,
+) -> [f32; 4] {
+    use ffx_bridge::x87::{add, load, mul, store, sub};
+    let ld = |v: f32| load(v.to_bits());
+    let st = |v: f64| f32::from_bits(store(v));
+    let half_pi = f64::from(FRAC_PI_2_F32);
+    let pi = f64::from(PI_F32);
+    let mut yaw = yaw;
+    let mut pitch = wrap_angle(pitch);
+    if ld(pitch) > half_pi {
+        yaw = st(add(ld(yaw), pi));
+        pitch = st(sub(pi, ld(pitch)));
+    }
+    if ld(pitch) < -half_pi {
+        yaw = st(add(ld(yaw), pi));
+        pitch = st(add(ld(pitch), pi));
+    }
+    let yaw = wrap_angle(yaw);
+    let mut ci = |cos: bool, v: f32| ld(st(sin_cos(cos, ld(v))));
+    let up = st(mul(ci(false, pitch), ld(r)));
+    let flat = st(mul(ci(true, pitch), ld(r)));
+    let across = st(mul(ci(true, yaw), ld(flat)));
+    let along = st(mul(ci(false, yaw), ld(flat)));
+    [across, up, along, 1.0]
 }
 
 /// The float constants `Math_Atan2XZ` loads: π/2 (`0x00b43d38`) and π
