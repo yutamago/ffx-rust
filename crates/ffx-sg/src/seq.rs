@@ -646,4 +646,36 @@ pub mod bridge {
             e = e.wrapping_add(0x160);
         }
     }
+
+    /// `SG_AddMotionGroup(group, a, b, key)` (`0x00836c90`): a loaded
+    /// group takes the first free motion-group entry (`group`, the `i16`
+    /// numbers, `key`); a full table (50) asserts (`yiAssert(0, "SG:Add
+    /// MGRP", "nb mgrp err")`). The group is relocated
+    /// ([`relocate_group`]) and each of its sequences added
+    /// ([`add_sequence`] with the group). A null group does nothing.
+    pub fn add_motion_group(h: &mut impl ffx_bridge::Host, group: u32, a: u32, b: u32, key: u32) {
+        if group == 0 {
+            return;
+        }
+        let base = MOTION_GROUPS.ptr(h).addr;
+        let free = (0..50u32).map(|k| base.wrapping_add(12 * k)).find(|&e| h.read::<u32>(e) == 0);
+        if let Some(e) = free {
+            h.write(e.wrapping_add(4), crate::lo16(a));
+            h.write(e.wrapping_add(6), crate::lo16(b));
+            h.write(e, group);
+            h.write(e.wrapping_add(8), key);
+        } else {
+            let at = h.rebase(YI_ASSERT);
+            let file = h.rebase(0x00b5_9a3c);
+            let text = h.rebase(0x00b5_9a30);
+            h.call(at, &[0, file, text]);
+        }
+        relocate_group(h, group);
+        let mut k = 0i32;
+        while k < h.read::<i32>(group.wrapping_add(4)) {
+            let seqs: u32 = h.read(group.wrapping_add(0xc));
+            add_sequence(h, seqs.wrapping_add(20 * k.cast_unsigned()), group);
+            k += 1;
+        }
+    }
 }

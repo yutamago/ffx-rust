@@ -1699,6 +1699,14 @@ pub mod bridge {
         r
     }
 
+    /// `Sg_IdCheckNormal(_, i)` (`0x0083e040`): [`id_get_normal`] into a
+    /// local the original never reads: no effect beyond the reads.
+    pub fn id_check_normal(mem: &mut impl Mem, i: u32) {
+        use crate::scratch::{SCRATCH, Scratch};
+        let mut s = Scratch::new(mem);
+        id_get_normal(&mut s, SCRATCH, i);
+    }
+
     /// The diving byte (`0x013007c5`): while set, `Sg_ControlMain` adds
     /// gravity (0.2, below 2.0) to the player in motion type 2 with flag 0x40.
     pub const PLAYER_DIVING: Global<u8> = Global::new(0x0130_07c5);
