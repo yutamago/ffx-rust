@@ -128,6 +128,42 @@ pub fn load_save(game: &mut Game, entry: u32) -> Result<String> {
     game.wait_for_open(".ebp", 30, 1200)
 }
 
+/// From boot into the game from a save file, without the title menu: as
+/// soon as the title event runs (its script, `test20.ebp`, has opened),
+/// the `loadsave` harness command runs what the Load menu runs once a
+/// save is picked (`docs/formats/save.md`). `save` is a slot (the file
+/// `ffx_<slot>` of the sandbox saves, `Options::home`: slot 1 is
+/// `ffx_001`, not the list's entry 1) or a Windows path to a save file,
+/// which is only read. Returns the event script the save starts in.
+///
+/// # Errors
+/// Fails when the save does not load or its event does not open.
+pub fn load_save_direct(game: &mut Game, save: &str) -> Result<String> {
+    game.events()?;
+    if !game.opened().iter().any(|e| e.contains("test20.ebp")) {
+        game.wait_for_open("test20.ebp", 5, 3000)?;
+    }
+    let mut tries = 0;
+    let reply = loop {
+        match game.command(&format!("loadsave {save}")) {
+            Ok(r) => break r,
+            // The save data manager is made a little after the first event.
+            Err(Error::Harness(e)) if e.contains("no save data manager") && tries < 100 => {
+                tries += 1;
+                game.wait(5)?;
+            }
+            Err(e) => return Err(e),
+        }
+    };
+    let opened = game.wait_for_open(".ebp", 5, 1200)?;
+    if opened.contains("test20.ebp") {
+        return Err(Error::Harness(format!(
+            "loadsave {save} ({reply}): the title event opened again"
+        )));
+    }
+    Ok(opened)
+}
+
 /// Starts a battle from the field, the way a random encounter does
 /// (`MsBattleEncountExe`, `0x00780d10`): the battle field (an index into the field
 /// table at `*0x0112a9c8`, 14 bytes an entry with the map name at +6), the

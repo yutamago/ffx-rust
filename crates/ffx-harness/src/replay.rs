@@ -7,7 +7,8 @@
 //!
 //! | Line | Does |
 //! |---|---|
-//! | `load N` | boots and loads save entry `N` (`screens::load_save`) |
+//! | `load N [script]` | boots and loads save entry `N` of the title's list (`screens::load_save`) |
+//! | `load direct SAVE [script]` | boots into save slot `SAVE` (`ffx_<SAVE>`) or a Windows path, without the title menu (`screens::load_save_direct`) |
 //! | `battle FIELD GROUP FORMATION` | starts a battle (`screens::start_battle`) |
 //! | `trace RANGE...` | starts tracing these ranges (`addr:len`, `*addr+off:len`; see the `trace` harness command) |
 //! | anything else | sent to the harness as it is (`press circle 4`, `wait 60`, ...) |
@@ -32,13 +33,22 @@ pub fn play(game: &mut Game, script: &str, trace: &str) -> Result<Vec<String>> {
         let words: Vec<&str> = line.split_whitespace().collect();
         let reply = match words[0] {
             "load" => {
-                // `load <entry> [script]`: fails when another scene starts
-                // (a lost key press loads a different save).
-                let opened = screens::load_save(
-                    game,
-                    words.get(1).map_or(Ok(1), |w| w.parse()).unwrap_or(1),
-                )?;
-                if let Some(want) = words.get(2)
+                // `load <entry> [script]` or `load direct <save> [script]`:
+                // fails when another scene starts (a lost key press loads a
+                // different save).
+                let (opened, want) = if words.get(1) == Some(&"direct") {
+                    let save = words.get(2).copied().unwrap_or("1");
+                    (screens::load_save_direct(game, save)?, words.get(3))
+                } else {
+                    (
+                        screens::load_save(
+                            game,
+                            words.get(1).map_or(Ok(1), |w| w.parse()).unwrap_or(1),
+                        )?,
+                        words.get(2),
+                    )
+                };
+                if let Some(want) = want
                     && !opened.contains(want)
                 {
                     return Err(crate::Error::Harness(format!(
