@@ -1116,6 +1116,67 @@ From here on, functions are picked by `symbols/classes.tsv` (category
   import table). When the layer is past the limit, `eax` is the map
   number.
 
+## The aeons' stat gains and the effect's stream forwarders (round 24)
+
+- The aeon stat table (`0x00c5a604`, read by `TkMenuCtrlSummon`) has
+  `0x1c`-byte rows. Row 0 is empty, then HP, MP, strength, defence,
+  magic, magic defence, agility, luck, evasion and accuracy. Each row
+  starts with its gain function and ends with the maximum (99999, 9999,
+  then 255). The gain functions (names ours) take `(pc, v)`:
+  - HP (`0x00a5c7b0`): `trunc(sqrt(v) * 0.25 + 16.0)`, at least 1.
+  - MP (`0x00a5c8d0`): `trunc((sqrt(v) + sqrt(v)) / 3.0 + 10.0)`, at
+    least 1.
+  - The other eight (`0x00a5c660`, `0x00a5c740`, `0x00a5c910`,
+    `0x00a5c980`, `0x00a5c9f0`, `0x00a5c860`, `0x00a5c6d0`,
+    `0x00a5c7f0`) have identical bodies: for PCs 8..=17 (the aeons)
+    `v / 2` rounded toward zero, at least 1; any other PC prints
+    `"NKZ:Illigal PC Number %d"` and gives 100. HP and MP don't check the
+    PC.
+  - Both roots use `_CIsqrt` and `_ftol2_sse` at 53-bit precision.
+- Effect forwarders, each returning the last call's `eax`:
+  - `rcefSetVibrate` (`0x0092ec60`, name ours; Fahrenheit's Switch BSim
+    guess was `rcefStreamCue`) calls `TkSetVibrateStream(7, arg,
+    entry)` with entry `id` of kind 5 of the effect data.
+  - `rcefStreamCue` (`0x0092ebf0`) calls `op_oef2_stream_cue(entry, arg,
+    0x800)` with entry `id` of kind 6.
+  - `rcefPlayStream` (`0x0092e6b0`) returns `op_oef2_sound_cue_check
+    (0x800)` when it is non-zero, else plays the entry like
+    `rcefPlaySE`.
+  - `rcefObjAnimeStart`/`rcefObjSetupDraw` (`0x00925590`/`0x00925690`,
+    effect imports, names ours) start the object's animation (`+0x330`)
+    or set up its draw record (`+0x3c0`) from the kind 4 entry of the
+    environment's data (`env +8`), with outputs at `+0x1f0` and `+0x170`.
+- Left for the debug list: `rcefMemDebugInit`/`rcefMemDebugDisp`
+  (`0x009374f0`/`0x00937440`).
+
+## Copies, the morph value, interpolation and colour work (round 25)
+
+- `rcuiScaleVector_copy_00756600` and `rcVec4fToFixed_copy_007e6cc0` are
+  copies of `rcuiScaleVector` and `rcVec4fToFixed` that the compiler
+  kept; their shims use the same bridges.
+- `yiSetMIMeParamDObj` (`0x0090a4d0`): for a display object below
+  `g_YiDObjCount`, copies the float at `p` through the x87 stack into
+  the object's morph value (`0x018df624`, `0xb4` bytes apart) and passes
+  it to `graphicSetMeshVertexColorMorphValue`. Returns 0.
+- `yiGetColorOffsetInt` (`0x00908660`, an effect import, name ours): the
+  colour offsets plus 128.0, truncated into four ints.
+- `rcefLerp` (`0x0092e580`, an effect import, name ours) returns
+  `a + w (b - a)` in `ST0`:
+  - mode 2: `w` is the sine table's entry
+    `trunc(t * 16384) >> 4 & 0xfff`.
+  - mode 1: a cosine ease, `(sin(t * 32768 - 16384) + 1) / 2`, stored
+    as `f32`.
+  - any other mode: `w` is `t`.
+  - `b - a` and the result are stored as `f32`.
+- `rcefColorSet`/`rcefColorFade` (`0x0092e9c0`/`0x0092ea40`, effect
+  imports, names ours) convert colour bytes to floats and start the
+  effect's colour work at `0x025d5a20` with `rcefWorkSetFromVf00` (from
+  the current colour) or `rcefWorkSet` (from colour 0 to colour 1).
+- Not ported:
+  - `0x00a48e40` and `0x0090dd00` have no caller or pointer in the image.
+  - `0x0092e4f0` loops on `rand()` through the import table.
+  - `0x00a45930` sets the ppp matrices and runs a sphere grid ppp part (vfx).
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single
