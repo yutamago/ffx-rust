@@ -6113,4 +6113,177 @@ pub mod bridge {
         mem.write(p, 0u8);
         v.cast_unsigned()
     }
+
+    /// The kana of [`to_conv_albhed_word`]: an optional `4` lead and page
+    /// byte for the converted id's 0xd0-row `q`, then
+    /// `(q + 1) × 0x30 + low` (the low byte of `low`). Returns the cursor.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    fn albhed_kana<M: Mem>(mem: &mut M, mut out: u32, q: i32, low: i32) -> u32 {
+        let mut put = |mem: &mut M, b: u8| {
+            mem.write(out, b);
+            out = out.wrapping_add(1);
+        };
+        if q > 4 {
+            put(mem, 4);
+            if q != 5 {
+                put(mem, (q + 0x26) as u8);
+            }
+        } else if (q - 1).cast_unsigned() <= 3 {
+            put(mem, (q + 0x2b) as u8);
+        }
+        let b = ((q as u8).wrapping_add(1))
+            .wrapping_mul(0x30)
+            .wrapping_add(low as u8);
+        put(mem, b);
+        mem.write(out, 0u8);
+        out
+    }
+
+    /// `TOConvAlbhedWord(in, out)` (`0x00906780`): one character of an Al
+    /// Bhed text in its translation, written to `out` with a terminator.
+    ///
+    /// The known letters are the collected bits of `0x011307a0` (none when
+    /// `0x018763e0` is -1, all 26 when it is 1). Returns 1 when the
+    /// character was translated, 2 when its letter is known and it stays
+    /// (or always 2 with all letters), 0 otherwise.
+    ///
+    /// Language 0 without English: codes 0xaf.. stay (0); 0x5f..=0xae
+    /// use the 4-byte table at `0x0187626c` (`+2` the letter, `+1` the
+    /// translation); others copy a lead byte below 0x30 and the code.
+    /// Languages 9 and 10 (two-byte kana, an optional `4` lead adding
+    /// 0x410): the kana id from `0x5e` on (up to 0x6b4 / 0x521 more) has
+    /// letter `(id - 0x5e) % 26`; unknown ones shift by a fixed amount
+    /// (Japanese 0x359/-0x340, Korean 0x255/-0x1a0 then `TOShiftListedId`)
+    /// and are re-encoded. Other languages translate 0x50..=0x69 and
+    /// 0x70..=0x89 through the table at `0x018762a8`.
+    #[allow(clippy::too_many_lines)]
+    pub fn to_conv_albhed_word<M: Mem>(
+        mem: &mut M,
+        input: u32,
+        out: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let switch: i32 = mem.read(mem.rebase(0x0187_63e0));
+        let collected: u32 = mem.read(mem.rebase(0x0113_07a0));
+        let mask = match switch {
+            -1 => 0,
+            1 => 0x03ff_ffff,
+            _ => collected,
+        };
+        let all = |mask: u32| if mask == 0x03ff_ffff { 2 } else { 0 };
+        let tail = |mem: &mut M, out: u32, b: u8| {
+            mem.write(out, b);
+            mem.write(out.wrapping_add(1), 0u8);
+        };
+        let lang = call(mem, 0x008a_c2f0, &[]);
+        if lang == 0 && call(mem, 0x0078_51d0, &[]) == 0 {
+            let c: u8 = mem.read(input);
+            if c >= 0xaf {
+                tail(mem, out, c);
+                return 0;
+            }
+            if c >= 0x5f {
+                let entry = mem.rebase(0x0187_626c).wrapping_add(u32::from(c) * 4);
+                let bit = u32::from(mem.read::<u8>(entry.wrapping_add(2))) & 0x1f;
+                if mask & (1 << bit) != 0 {
+                    tail(mem, out, c);
+                    return 2;
+                }
+                let t: u8 = mem.read(entry.wrapping_add(1));
+                tail(mem, out, t);
+                return 1;
+            }
+            let (mut p, mut o) = (input, out);
+            if c < 0x30 {
+                mem.write(o, c);
+                o = o.wrapping_add(1);
+                p = p.wrapping_add(1);
+            }
+            let c: u8 = mem.read(p);
+            tail(mem, o, c);
+            return all(mask);
+        }
+        let lang = call(mem, 0x008a_c2f0, &[]);
+        if lang != 0xa && call(mem, 0x008a_c2f0, &[]) != 9 {
+            let c: u8 = mem.read(input);
+            if (0x50..=0x69).contains(&c) || (0x70..=0x89).contains(&c) {
+                let entry = mem.rebase(0x0187_62a8).wrapping_add(u32::from(c) * 4);
+                let bit = u32::from(mem.read::<u8>(entry.wrapping_add(2))) & 0x1f;
+                if mask & (1 << bit) != 0 {
+                    tail(mem, out, c);
+                    return 2;
+                }
+                let t: u8 = mem.read(entry.wrapping_add(1));
+                tail(mem, out, t);
+                return 1;
+            }
+            tail(mem, out, c);
+            return all(mask);
+        }
+        // two-byte kana
+        let mut p = input;
+        let mut base = 0i32;
+        let c: u8 = mem.read(p);
+        if c < 0x2c && c != 4 {
+            mem.write(out, c);
+            let next: u8 = mem.read(p.wrapping_add(1));
+            mem.write(out.wrapping_add(1), next);
+            mem.write(out.wrapping_add(2), 0u8);
+            return all(mask);
+        }
+        if c == 4 {
+            base = 0x410;
+            p = p.wrapping_add(1);
+        }
+        let c: u8 = mem.read(p);
+        let id = if (0x2c..0x30).contains(&c) {
+            let next: u8 = mem.read(p.wrapping_add(1));
+            i32::from(c) * 0xd0 - 0x2320 + i32::from(next) + base
+        } else {
+            i32::from(c) - 0x30 + base
+        };
+        let japanese = call(mem, 0x008a_c2f0, &[]) == 0xa;
+        let range = if japanese { 0x6b4 } else { 0x521 };
+        let mut o = out;
+        if (id - 0x5e).cast_unsigned() <= range {
+            let letter = (id - 0x5e) % 0x1a;
+            if mask & (1 << (letter & 0x1f)) != 0 {
+                if id >= 0x410 {
+                    mem.write(o, 4u8);
+                    o = o.wrapping_add(1);
+                }
+                let c: u8 = mem.read(p);
+                if c < 0x30 {
+                    mem.write(o, c);
+                    o = o.wrapping_add(1);
+                    p = p.wrapping_add(1);
+                }
+                let c: u8 = mem.read(p);
+                tail(mem, o, c);
+                return 2;
+            }
+            if japanese {
+                let id = if id > 0x3b8 { id - 0x340 } else { id + 0x359 };
+                albhed_kana(mem, o, id / 0xd0, id);
+            } else {
+                let id = if id > 0x2b4 { id - 0x1a0 } else { id + 0x255 };
+                let s = call(mem, 0x0090_66f0, &[id.cast_unsigned()]).cast_signed();
+                albhed_kana(mem, o, s / 0xd0, s);
+            }
+            return 1;
+        }
+        if id >= 0x410 {
+            mem.write(o, 4u8);
+            o = o.wrapping_add(1);
+        }
+        let c: u8 = mem.read(p);
+        if c < 0x30 {
+            mem.write(o, c);
+            o = o.wrapping_add(1);
+            p = p.wrapping_add(1);
+        }
+        let c: u8 = mem.read(p);
+        tail(mem, o, c);
+        all(mask)
+    }
 }

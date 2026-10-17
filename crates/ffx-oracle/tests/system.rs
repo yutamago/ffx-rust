@@ -11907,6 +11907,124 @@ fn round20_btl_matches_the_original_on_the_snapshot() {
     round20_btl(&mut a, &mut b, &mut Xorshift(0x4020_0032));
 }
 
+/// Round 20's Al Bhed translation over random tables, languages and
+/// collected letters.
+#[allow(clippy::cast_possible_truncation)]
+fn round20_albhed(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let cells = alloc(a, b, 8);
+    for (i, sym) in [0x008a_c2f0u32, 0x0078_51d0].into_iter().enumerate() {
+        let mut v = vec![0xa1];
+        v.extend_from_slice(&(cells + 4 * i as u32).to_le_bytes());
+        v.push(0xc3);
+        let s = stand_in8(a, b, 0x40 + 0x20 * i as u32, &v);
+        redirect(a, b, sym, s);
+    }
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    let input = alloc(a, b, 4);
+    let out = alloc(a, b, 8);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..3000u32 {
+        if k % 100 == 0 {
+            let tables: Vec<u8> = (0..0x300).map(|_| rng.next() as u8).collect();
+            let at = g(a, 0x0187_626c);
+            a.write(at, &tables).unwrap();
+            b.write(at, &tables).unwrap();
+        }
+        put(
+            a,
+            b,
+            cells,
+            [0u32, 0, 9, 10, 10, 3, 1][(rng.next() % 7) as usize],
+        );
+        put(a, b, cells + 4, rng.next() % 2);
+        let switch = [0xffff_ffffu32, 1, 0, 2][(rng.next() % 4) as usize];
+        put(a, b, g(a, 0x0187_63e0), switch);
+        let bits = if rng.next().is_multiple_of(5) {
+            0x03ff_ffff
+        } else {
+            rng.next() & 0x03ff_ffff
+        };
+        put(a, b, g(a, 0x0113_07a0), bits);
+        let lead = [
+            4u8,
+            0x2c,
+            0x2d,
+            0x2e,
+            0x2f,
+            rng.next() as u8,
+            rng.next() as u8,
+        ][(rng.next() % 7) as usize];
+        let second = if lead == 4 && rng.next().is_multiple_of(2) {
+            0x2c + (rng.next() % 4) as u8
+        } else {
+            rng.next() as u8
+        };
+        let mut bytes = [lead, second, rng.next() as u8, rng.next() as u8];
+        match rng.next() % 4 {
+            // the single-byte table boundaries
+            0 => {
+                let edges = [
+                    0x5fu8, 0xae, 0xaf, 0x5e, 0x4f, 0x50, 0x69, 0x6a, 0x6f, 0x70, 0x89, 0x8a,
+                ];
+                bytes[0] = edges[(rng.next() % 12) as usize];
+            }
+            // the kana-id boundaries, encoded with or without the 4 lead
+            1 => {
+                let ids = [
+                    0x5d, 0x5e, 0x5f, 0x2b4, 0x2b5, 0x3b8, 0x3b9, 0x40f, 0x410, 0x57f, 0x580,
+                    0x711, 0x712, 0x713,
+                ];
+                let id: i32 = ids[(rng.next() % 14) as usize];
+                let (lead, rest) = if id >= 0x410 {
+                    (true, id - 0x410)
+                } else {
+                    (false, id)
+                };
+                let mut code = Vec::new();
+                if lead {
+                    code.push(4u8);
+                }
+                let pair = (0x2cu8..0x30)
+                    .find(|&c| (0..0x100).contains(&(rest - (i32::from(c) * 0xd0 - 0x2320))));
+                match pair {
+                    Some(c) if !(0..0xd0).contains(&rest) || rng.next().is_multiple_of(2) => {
+                        code.push(c);
+                        code.push((rest - (i32::from(c) * 0xd0 - 0x2320)) as u8);
+                    }
+                    _ => code.push((rest + 0x30) as u8),
+                }
+                bytes[..code.len()].copy_from_slice(&code);
+            }
+            _ => {}
+        }
+        put(a, b, input, bytes);
+        put(a, b, out, [rng.next(), rng.next()]);
+        assert_eq!(
+            eax(a, 0x0090_6780, &[input, out]),
+            t::to_conv_albhed_word(b, input, out, call),
+            "al bhed {k}"
+        );
+        same_memory("al bhed", a, b);
+    }
+}
+
+#[test]
+fn round20_albhed_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round20_albhed(&mut a, &mut b, &mut Xorshift(0x4020_0041));
+}
+
+#[test]
+fn round20_albhed_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round20_albhed(&mut a, &mut b, &mut Xorshift(0x4020_0042));
+}
+
 #[test]
 fn round19_cursor_matches_the_original_synthetic() {
     let Some((mut a, mut b)) = synthetic() else {

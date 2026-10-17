@@ -10327,7 +10327,7 @@
 0x009066f0 function TOShiftListedId # cdecl(id): 0x40e..=0x46e and 0x40e or in the zero-terminated table 0x00b66e44: id + 100; else id; name ours
 0x00906730 function GetU32_018763e0 # () -> u32 at 0x018763e0; name ours
 0x00906740 function StepSwitch_018763e0 # (): *0x018763e0 steps -1 -> 0 -> 1 -> -1 (other values stay), returns it; caller 0x006b8ce0; name ours
-0x00906780 function TOConvAlbhedWord          # fh v3:exact 0x00906780
+0x00906780 function TOConvAlbhedWord          # fh v3:exact 0x00906780; (in, out) -> 1 translated / 2 letter known (or all known) / 0: known letters = 0x011307a0 bits (0x018763e0 -1 none, 1 all); lang 0 tables at 0x0187626c (0x5f..0xae), other Latin 0x018762a8 (0x50..0x69, 0x70..0x89), langs 9/10 kana ids letter (id-0x5e)%26
 0x00906b10 function GetGlobal011307a0_00906b10   # auto-port shape (return global u32, cdecl): t0 = u32[&0x011307a0]; return t0; callers: ; name ours
 0x00906b20 function TOGetFFXToAlbhedTblAdrs   # fh v3:bsim1.00 0x00906b20
 0x00906b30 function TOSetCollectBit           # cdecl(n): -1 clears 0x011307a0; 0..0x19 sets bit n + achievement 1, all 26 -> achievement 0x1c; 0xff sets all + achievement 0x1c; name ours
