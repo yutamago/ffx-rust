@@ -6095,3 +6095,198 @@ fn menu_wrappers_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_cursor_and_event_jump_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_e7e7) else {
+        return;
+    };
+    // graphicVFXDestroyAll (the renderer's effects): ret in both
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x0064_5310);
+        o.write(at, &[0xc3]).unwrap();
+    }
+    for round in 0..64u32 {
+        let summon = t.rng.below(3);
+        for (pos, step) in [(0x0184_1c54u32, 0x0184_0887u32), (0x0184_1c28, 0x0184_0886)] {
+            let v = t.rng.below(4);
+            t.put(t.sym(pos), v);
+            let s = u8::try_from(t.rng.below(0x100)).unwrap_or(0);
+            t.put(t.sym(step), s);
+        }
+        let counter = t.alloc_random(4);
+        let c = match round % 4 {
+            0 => 0,
+            1 => t.rng.below(0x400),
+            2 => 0u32.wrapping_sub(t.rng.below(0x400)),
+            _ => t.rng.next(),
+        };
+        t.put(counter, c);
+        let (a, b, last) = (t.alloc_random(4), t.alloc_random(4), t.alloc_random(4));
+        let l = t.rng.below(4);
+        t.put(last, l);
+        let args = [summon, counter, a, b, last];
+        t.twin("Menu_CursorEase", 0x008b_f750, &args, VOID, |o| {
+            tk::menu_cursor_ease(o, summon == 1, [counter, a, b, last], &mut callback);
+            0
+        });
+        // TkSetEventJump on the save's event block
+        let block = t.rng.bytes(0x100);
+        t.put_bytes(t.sym(0x0112_ca90), &block);
+        let pending = if round % 5 == 0 {
+            0x17
+        } else {
+            t.rng.below(0x200)
+        };
+        t.put(t.sym(0x00c3_3480), pending);
+        let map = match round % 4 {
+            0 => 0x17,
+            1 => 0u32.wrapping_sub(1 + t.rng.below(4)),
+            2 => t.rng.below(0x200),
+            _ => t.rng.next(),
+        };
+        let entrance = t.rng.next();
+        t.twin("TkSetEventJump", 0x0088_ea60, &[map, entrance], VOID, |o| {
+            tk::tk_set_event_jump(o, map.cast_signed(), entrance, &mut callback);
+            0
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+/// `f` replaced in both oracles by a recorder appending its first three
+/// arguments at `*log` and returning the first plus one.
+fn record3(t: &mut Twins, f: u32) {
+    let buf = t.alloc(&[0; 0x1000]);
+    let log = t.alloc(&buf.to_le_bytes());
+    let l = log.to_le_bytes();
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0x8b, 0x0d][..], &l,                      // mov ecx, [log]
+        &[0x8b, 0x44, 0x24, 0x04, 0x89, 0x01],      // [ecx] = arg 0
+        &[0x8b, 0x44, 0x24, 0x08, 0x89, 0x41, 0x04], // [ecx + 4] = arg 1
+        &[0x8b, 0x44, 0x24, 0x0c, 0x89, 0x41, 0x08], // [ecx + 8] = arg 2
+        &[0x83, 0x05], &l, &[0x0c],                 // add dword [log], 12
+        &[0x8b, 0x44, 0x24, 0x04, 0x40, 0xc3],      // eax = arg 0 + 1; ret
+    ]
+    .concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(f);
+        o.write(at, &code).unwrap();
+    }
+}
+
+/// `f` replaced in both oracles by `mov eax, v; ret`.
+fn return_const(t: &mut Twins, f: u32, v: u32) {
+    let code = [&[0xb8][..], &v.to_le_bytes(), &[0xc3]].concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(f);
+        o.write(at, &code).unwrap();
+    }
+}
+
+#[test]
+fn menu_selectors_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_5e1e) else {
+        return;
+    };
+    let w = u64::from;
+    // the characters' model calls, recorded
+    record3(&mut t, 0x0082_aea0);
+    record3(&mut t, 0x0083_2630);
+    for round in 0..64u32 {
+        // Math_AngleStep
+        let pick = |t: &mut Twins| -> f32 {
+            match t.rng.below(8) {
+                0 => 0.0,
+                1 => f32::NAN,
+                _ => f32::from(i16::try_from(t.rng.below(2000)).unwrap_or(0) - 1000) / 100.0,
+            }
+        };
+        let v: [f32; 3] = std::array::from_fn(|_| pick(&mut t));
+        t.drain_x87();
+        let r =
+            t.a.call(t.a.rebase(0x0088_b570), Conv::Cdecl, &v.map(f32::to_bits))
+                .unwrap();
+        same_float(
+            &format!("Math_AngleStep {v:?}"),
+            r.st0,
+            ffx_menu::math::angle_step(v[0], v[1], v[2]),
+        );
+        // the item tables, by language and target
+        let lang = if round % 2 == 0 {
+            0
+        } else {
+            1 + t.rng.below(10)
+        };
+        return_const(&mut t, 0x008a_c2f0, lang);
+        let target = if round % 3 == 0 {
+            0u32.wrapping_sub(1)
+        } else {
+            t.rng.below(0x12)
+        };
+        t.put(t.sym(tk::MENU_ITEM_SELECTED_LIST.sym), target);
+        t.twin("MenuItem_CursorTable", 0x008c_4ff0, &[], U32, |o| {
+            w(tk::menu_item_cursor_table(o, &mut callback))
+        });
+        t.twin("MenuItem_CellTable", 0x008c_4f80, &[], U32, |o| {
+            w(tk::menu_item_cell_table(o, &mut callback))
+        });
+        // MenuShop_Price over a stand-in record
+        let mut rec = t.rng.bytes(8);
+        if round % 4 == 0 {
+            rec[..4].copy_from_slice(&t.rng.below(5).to_le_bytes());
+        }
+        let rec = t.alloc(&rec);
+        return_const(&mut t, 0x008c_1af0, rec);
+        let ratio = if round % 2 == 0 {
+            t.rng.below(300)
+        } else {
+            t.rng.next()
+        };
+        t.put(t.sym(0x0132_6b6c), ratio);
+        let id = t.rng.next();
+        t.twin("MenuShop_Price", 0x008d_b3b0, &[id], U32, |o| {
+            w(tk::menu_shop_price(o, id, &mut callback).cast_unsigned())
+        });
+        // TkCh_BindToElem
+        let kind = if round % 2 == 0 { 7 } else { t.rng.below(10) };
+        let chr = if round % 5 == 0 { 0 } else { t.rng.next() };
+        let keep = t.rng.below(2);
+        let (a, b) = (t.rng.next(), t.rng.next());
+        let args = [kind, a, chr, b, keep];
+        t.twin("TkCh_BindToElem", 0x0087_22b0, &args, U32, |o| {
+            w(tk::tk_ch_bind_to_elem(o, args, &mut callback))
+        });
+        // TkMenuMainRemoveMenu with a window in the slot (or none)
+        let slot = t.rng.below(0x20).wrapping_sub(4);
+        let win = if round % 4 == 0 {
+            0
+        } else {
+            menu_window(&mut t)
+        };
+        if win != 0 {
+            let f = t.rng.pick(&[0, t.sym(0x008c_f950)]);
+            t.put(win + 0x14, f);
+        }
+        let at = t.sym(tk::MENU_SLOTS.sym) + 4 * slot.cast_signed().clamp(0, 0x18).cast_unsigned();
+        t.put(at, win);
+        let mask = t.rng.next();
+        t.put(t.sym(tk::MENU_MAIN_ACTIVE_MASK.sym), mask);
+        t.twin("TkMenuMainRemoveMenu", 0x008a_ab20, &[slot], U32, |o| {
+            w(tk::tk_menu_main_remove_menu(
+                o,
+                slot.cast_signed(),
+                &mut callback,
+            ))
+        });
+        if round % 8 == 0 {
+            t.twin("MenuNameEntry_RegistWindow", 0x008c_4450, &[], U32, |o| {
+                w(tk::menu_name_entry_regist_window(o, &mut callback))
+            });
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}

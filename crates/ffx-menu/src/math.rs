@@ -258,6 +258,32 @@ pub fn atan2_xz(
 const FRAC_PI_2_F32: f32 = f32::from_bits(0x3fc9_0fdb);
 const PI_F32: f32 = f32::from_bits(0x4049_0fdb);
 
+/// `Math_AngleStep(cur, target, step)` (`0x0088b570`, own name): `cur`
+/// turned toward `target` by at most `step` along the short way
+/// (`Math_WrapAngle(target - cur)`, limited by `Math_MinAbs`), the result
+/// wrapped; when the limit is not `step` (the gap is smaller, or a NaN)
+/// the target itself. Every step a float.
+#[must_use]
+pub fn angle_step(cur: f32, target: f32, step: f32) -> f32 {
+    let r = |v: f32| f64::from(ffx_bridge::x87::round_trip(v));
+    #[allow(clippy::cast_possible_truncation)] // fstp dword
+    let d = wrap_angle((r(target) - r(cur)) as f32);
+    let m = min_abs(d, step);
+    #[allow(clippy::float_cmp)] // fucompp
+    let next = if m != step {
+        target
+    } else if d < 0.0 {
+        #[allow(clippy::cast_possible_truncation)]
+        let v = (r(cur) - f64::from(m)) as f32;
+        v
+    } else {
+        #[allow(clippy::cast_possible_truncation)]
+        let v = (r(cur) + f64::from(m)) as f32;
+        v
+    };
+    wrap_angle(ffx_bridge::x87::round_trip(next))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

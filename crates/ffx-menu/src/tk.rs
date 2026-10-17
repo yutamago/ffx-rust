@@ -2811,7 +2811,11 @@ pub mod bridge {
     #[must_use]
     pub const fn btl_end_ap_step(ap: u32) -> u32 {
         let s = (ap / 0xbd) | 1;
-        if s.is_multiple_of(5) { s + 2 } else { s }
+        if s.is_multiple_of(5) {
+            s.wrapping_add(2)
+        } else {
+            s
+        }
     }
 
     /// `BtlEnd_InitApStep()` (`0x008bdf10`, own name): the AP total from
@@ -3085,13 +3089,13 @@ pub mod bridge {
         ffx_script::vm::bridge::atel_get_basic_work(mem, worker);
         let ctx = mem.read::<u32>(mem.rebase(0x0132_6b28));
         let s = ctx.wrapping_add(slot.clamp(0, 3).cast_unsigned() << 4);
-        let old = mem.read::<i32>(s + 0x64);
-        mem.write(s + 0x64, u32::MAX);
-        mem.write(s + 0x68, 0u32);
-        mem.write(s + 0x73, 0u8);
+        let old = mem.read::<i32>(s.wrapping_add(0x64));
+        mem.write(s.wrapping_add(0x64), u32::MAX);
+        mem.write(s.wrapping_add(0x68), 0u32);
+        mem.write(s.wrapping_add(0x73), 0u8);
         if old >= 0 {
-            let to = mem.read::<u32>(s + 0x6c);
-            let v = mem.read::<u8>(s + 0x72);
+            let to = mem.read::<u32>(s.wrapping_add(0x6c));
+            let v = mem.read::<u8>(s.wrapping_add(0x72));
             mem.write(to, v);
         }
     }
@@ -5214,6 +5218,241 @@ pub mod bridge {
                 mem.write(b, v);
             }
         }
+    }
+
+    /// `Menu_CursorEase(summon, counter, a, b, last)` (`0x008bf750`, own
+    /// name): `Menu_EaseCounter` for the party cursor (the summon one with
+    /// `summon` 1): the counter moves 0x199 toward 0 and, reaching it,
+    /// `*a` = `*b` = the current position; then a position other than
+    /// `*last` (read first) restarts it at the step (`TkMenuGetSummonStep`
+    /// / `TkMenuGetPlayerStep`) `<< 12`, with `*a` = the old position and
+    /// `*b` = `*last` = the new one.
+    #[allow(clippy::many_single_char_names, clippy::comparison_chain)]
+    pub fn menu_cursor_ease<M: Mem>(
+        mem: &mut M,
+        summon: bool,
+        [counter, a, b, last]: [u32; 4],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let f = mem.rebase(if summon { 0x008a_9890 } else { 0x008a_9870 });
+        let pos = call(mem, f, &[]);
+        let c: i32 = mem.read(counter);
+        let old: u32 = mem.read(last);
+        let done = if c > 0 {
+            let n = c.wrapping_sub(0x199);
+            mem.write(counter, n);
+            n <= 0
+        } else if c < 0 {
+            let n = c.wrapping_add(0x199);
+            mem.write(counter, n);
+            n >= 0
+        } else {
+            false
+        };
+        if done {
+            mem.write(counter, 0u32);
+            mem.write(a, pos);
+            mem.write(b, pos);
+        }
+        if old != pos {
+            let f = mem.rebase(if summon { 0x008a_9bb0 } else { 0x008a_9840 });
+            let step = call(mem, f, &[]);
+            mem.write(counter, step << 12);
+            mem.write(a, old);
+            mem.write(b, pos);
+            mem.write(last, pos);
+        }
+    }
+
+    /// `TkSetEventJump(map, entrance)` (`0x0088ea60`): with `map` the
+    /// pending value `0x00c33480`, only `0x01327108` = 1. Otherwise the
+    /// save's event block (`MsGetSaveEventAddress()`): map 0x17 first
+    /// destroys every effect (`graphicVFXDestroyAll`,
+    /// `fiosDeleteCompletedOps`); a negative map takes the saved map
+    /// (`+0xba`) and entrance (`+0xb8`, then cleared). The previous map
+    /// (`+0`) and entrance (`+0xc`) move to `+2`/`+0xd` (for a negative
+    /// map `+0xc2`/`+0xce` instead), the new ones in; then
+    /// `g_TkEventJumpRequest` = 1.
+    pub fn tk_set_event_jump<M: Mem>(
+        mem: &mut M,
+        map: i32,
+        entrance: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let pending = mem.rebase(0x00c3_3480);
+        if mem.read::<i32>(pending) == map {
+            let at = mem.rebase(0x0132_7108);
+            mem.write(at, 1u32);
+            return;
+        }
+        let f = mem.rebase(0x0078_5240);
+        let s = call(mem, f, &[]);
+        let (m, e) = if map < 0 {
+            let e: u16 = mem.read(s.wrapping_add(0xb8));
+            let m: u16 = mem.read(s.wrapping_add(0xba));
+            mem.write(s.wrapping_add(0xb8), 0u16);
+            (m, e.to_le_bytes()[0])
+        } else {
+            if map == 0x17 {
+                for f in [0x0064_5310, 0x0067_9560] {
+                    let f = mem.rebase(f);
+                    call(mem, f, &[]);
+                }
+            }
+            let [lo, hi, ..] = map.to_le_bytes();
+            (u16::from_le_bytes([lo, hi]), entrance.to_le_bytes()[0])
+        };
+        let (prev_map, prev_entrance) = if map < 0 {
+            (
+                mem.read::<u16>(s.wrapping_add(0xc2)),
+                mem.read::<u8>(s.wrapping_add(0xce)),
+            )
+        } else {
+            (mem.read::<u16>(s), mem.read::<u8>(s.wrapping_add(0xc)))
+        };
+        mem.write(s.wrapping_add(2), prev_map);
+        mem.write(s.wrapping_add(0xd), prev_entrance);
+        mem.write(s, m);
+        mem.write(s.wrapping_add(0xc), e);
+        let at = mem.rebase(0x0133_084c);
+        mem.write(at, 1u32);
+    }
+
+    /// `MenuItem_CursorTable()` (`0x008c4ff0`, own name): one of four
+    /// tables by language (`TOGetFFXLang` through `0x008ac2f0`: Japanese
+    /// or not) and whether the item menu has a target
+    /// (`0x0186a258` >= 0): `0x00c5a19c`/`0x00c5a1cc` (Japanese, with and
+    /// without), `0x00c5a188`/`0x00c5a1e4`.
+    pub fn menu_item_cursor_table<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x008a_c2f0);
+        let lang = call(mem, f, &[]);
+        let target = MENU_ITEM_SELECTED_LIST.get(mem).cast_signed() >= 0;
+        mem.rebase(match (lang == 0, target) {
+            (true, true) => 0x00c5_a19c,
+            (true, false) => 0x00c5_a1cc,
+            (false, true) => 0x00c5_a188,
+            (false, false) => 0x00c5_a1e4,
+        })
+    }
+
+    /// `MenuItem_CellTable()` (`0x008c4f80`, own name): with an item-menu
+    /// target `t` (`0x0186a258` >= 0) entry `t` of `0x00c5a0d8` (Japanese,
+    /// `MsGetSaveConfigEnglish` asked but unused) or `0x00c5a120`; without
+    /// one `0x00c5a0d4` (Japanese, not English) or `0x00c5a168`.
+    pub fn menu_item_cell_table<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let target = MENU_ITEM_SELECTED_LIST.get(mem);
+        let f = mem.rebase(0x008a_c2f0);
+        let lang = call(mem, f, &[]);
+        let english = if lang == 0 {
+            let f = mem.rebase(0x0078_51d0);
+            call(mem, f, &[]) != 0
+        } else {
+            true
+        };
+        if target.cast_signed() < 0 {
+            return mem.rebase(if english { 0x00c5_a168 } else { 0x00c5_a0d4 });
+        }
+        let table = mem.rebase(if lang == 0 { 0x00c5_a0d8 } else { 0x00c5_a120 });
+        table.wrapping_add(target.wrapping_mul(4))
+    }
+
+    /// `MenuShop_Price(id)` (`0x008db3b0`, own name): the first word of the
+    /// item's record (`TkMn2GetExcelData(id & 0xfff, [0x0186ac28])`) times
+    /// the shop ratio (`0x01326b6c`) / 100, truncated (32-bit product); at
+    /// least 1.
+    pub fn menu_shop_price<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> i32 {
+        let table = mem.read::<u32>(mem.rebase(0x0186_ac28));
+        let f = mem.rebase(0x008c_1af0);
+        let rec = call(mem, f, &[id & 0xfff, table]);
+        let v: i32 = mem.read(rec);
+        let f = mem.rebase(0x0086_c480);
+        let ratio = call(mem, f, &[]).cast_signed();
+        let p = ratio.wrapping_mul(v) / 100;
+        if p == 0 { 1 } else { p }
+    }
+
+    /// `TkMenuMainRemoveMenu(slot)` (`0x008aab20`): the slot (clamped to
+    /// `0..=24`) emptied, its window's close callback `+0x14` called, its
+    /// bit cleared from the active mask, then `TOMenuClearControlPadBuff()`,
+    /// `TOSetExeMessageWindowArea(0)` (its result returned) and
+    /// `0x025d16c0` = 0.
+    pub fn tk_menu_main_remove_menu<M: Mem>(
+        mem: &mut M,
+        slot: i32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let slot = slot.clamp(0, 0x18);
+        let at = slot_at(mem, slot);
+        let w: u32 = mem.read(at);
+        mem.write(at, 0u32);
+        if w != 0 {
+            let f = mem.read::<u32>(w.wrapping_add(0x14));
+            if f != 0 {
+                call(mem, f, &[w]);
+            }
+        }
+        let m = MENU_MAIN_ACTIVE_MASK.get(mem) & !(1u32 << slot);
+        MENU_MAIN_ACTIVE_MASK.set(mem, m);
+        let f = mem.rebase(0x008b_e3d0);
+        call(mem, f, &[]);
+        let f = mem.rebase(0x008a_f5c0);
+        let r = call(mem, f, &[0]);
+        let at = mem.rebase(0x025d_16c0);
+        mem.write(at, 0u32);
+        r
+    }
+
+    /// `TkCh_BindToElem(kind, a, chr, b, keep)` (`0x008722b0`): kind 7 with
+    /// a character and `keep` 0 first hides it (`Ch_ModelSetHide(chr, 1,
+    /// 1)`); then `Ch_BindToElem(a, chr, b)`, whose result is returned.
+    pub fn tk_ch_bind_to_elem<M: Mem>(
+        mem: &mut M,
+        [kind, a, chr, b, keep]: [u32; 5],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if kind == 7 && chr != 0 && keep == 0 {
+            let f = mem.rebase(0x0082_aea0);
+            call(mem, f, &[chr, 1, 1]);
+        }
+        let f = mem.rebase(0x0083_2630);
+        call(mem, f, &[a, chr, b])
+    }
+
+    /// `MenuNameEntry_RegistWindow()` (`0x008c4450`, own name): a window
+    /// from `TkMenuMainAllocWindow()` with the name-entry callbacks
+    /// (`+8` `0x008c3540`, `+0xc` `0x008c3cf0`, `+0x10` `0x008c4030`,
+    /// `+0x14` `0x008c44c0`, `+0x1c` `0x008c3550`) and `+0x3e` = 3,
+    /// registered (`TkMenuMainRegistWindow`); returns it.
+    pub fn menu_name_entry_regist_window<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x008a_a1a0);
+        let w = call(mem, f, &[]);
+        for (o, f) in [
+            (8u32, 0x008c_3540u32),
+            (0xc, 0x008c_3cf0),
+            (0x10, 0x008c_4030),
+            (0x14, 0x008c_44c0),
+            (0x1c, 0x008c_3550),
+        ] {
+            let f = mem.rebase(f);
+            mem.write(w.wrapping_add(o), f);
+        }
+        mem.write(w.wrapping_add(0x3e), 3u8);
+        let f = mem.rebase(0x008a_ab00);
+        call(mem, f, &[w]);
+        w
     }
 
     /// `TkSetRgba_*(i, r, g, b, a)` (`0x0088fca0`, `0x00890320`,

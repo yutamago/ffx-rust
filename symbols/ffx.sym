@@ -9017,6 +9017,7 @@
 0x0088b400 function Math_MinAbs               # (a, b) -> float: |a| when b is greater, else b
 0x0088b430 function Math_Atan2XZ                 # (x0, z0, x1, z1) -> angle with axis special cases
 0x0088b4d0 function Math_YawPitchTo              # (*yaw, *pitch, from xyz, to xyz)
+0x0088b570 function Math_AngleStep            # (cur, target, step) -> ST0: cur turned toward target by at most step the short way (Math_WrapAngle, Math_MinAbs), wrapped; the target itself when closer; name ours
 0x0088b6b0 function Math_AngleStepTo          # (a, target, step) a + step unless (a - t)(a + step - t) <= 0, then target; Math_WrapAngle; own name
 0x0088b730 function Math_InRadius                # (r, dx, dy, dz) -> dx^2+dy^2+dz^2 <= r^2
 0x0088b800 function Math_ClampPi              # (a) a clamped to [-pi, pi] (float pi); NaN passes; own name
@@ -9706,6 +9707,7 @@
 0x008bf150 function TkMn2ArmsMes              # (id) -> MsMenuGetText(5, id, MsGetSaveConfigHiragana()): table 5 is the Arms menu (TkMenuArmsMes, TOMenuGetArmsMes); the Switch's TkMn2ArmsMes is the 44-byte wrapper of MsGetSaveConfigHiragana + MsMenuGetText; caller TkMenuCtrlEquip; was TkMenuItemMes (fh switch:bsim1.00 0x71004c34c0)
 0x008bf170 function TkMn2BuySellWindow           # layout+callees: sorts between TkMn2ArmsMes and TkMn2DrawBrush, and its named callees match the Switch 0x71004c8560 TkMn2BuySellWindow's (similarity 0.70: TODrawCrossBoxXYWHC2, TODrawMenuPlateXYWHType, TOMkpShapeXYWHUV, ToGetBtlEasyDigitWidth2, ToMakeBtlEasyDigit2); symbols from Fahrenheit's server export
 0x008bf720 function MenuList_IsEmptySlot      # (entry) u16 at +0xc+2*byte(+0xb) is 0 or 0xff; own name
+0x008bf750 function Menu_CursorEase           # (summon, counter, a, b, last): Menu_EaseCounter toward the party (summon 1: summon) cursor position, restarted at its step << 12 when the position leaves *last; name ours
 0x008bf7e0 function Menu_EaseCounter          # (-, counter, a, b): a non-zero *counter moves 0x199 toward 0; reaching 0 it becomes 0 and *a = *b (read first); name ours
 0x008bf830 function TkMn2DrawBrush               # layout+callees: sorts between TkMn2ArmsMes and TkMn2DrawCharFace, and its named callees match the Switch 0x71004c5a10 TkMn2DrawBrush's (similarity 1.00: TOMkpShapeXYWHUV, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export
 0x008bf8f0 function TkMn2DrawCharFace         # fh switch:bsim1.00 0x71004c5760
@@ -9803,6 +9805,9 @@
 0x008c33f0 function NameInputChrChange           # callees: its named callees match the Switch 0x71004da190 NameInputChrChange's (similarity 0.75: MsGetSaveConfigEnglish, TOGetFFXLang, TOGetSaveChrName, TOMenuGetNameMes, TkMn2GetMenuMode); symbols from Fahrenheit's server export
 0x008c3550 function MenuItem_IsUsable2        # (window, list) lists 4 and 3-with-target use the key-item flag 0x0186a280; own name
 0x008c4250 function TkMenuOpenNameEntryWindow    # callees: its named callees match the Switch 0x71004d8350 TkMenuOpenNameEntryWindow's (similarity 0.73: MsGetSaveConfigEnglish, PasswordTextRead, TMn2SetStatusBGDiff, TOGetFFXLang, TOGetSaveChrName); symbols from Fahrenheit's server export
+0x008c4450 function MenuNameEntry_RegistWindow # (): TkMenuMainAllocWindow with the name-entry callbacks (+8 0x008c3540 .. +0x1c MenuItem_IsUsable2 0x008c3550), +0x3e = 3, TkMenuMainRegistWindow; returns it; callers NameInputChrChange, TkMenuOpenNameEntryWindow; name ours
+0x008c4f80 function MenuItem_CellTable        # (): with a target t (0x0186a258 >= 0) &0x00c5a0d8[t] (Japanese) or &0x00c5a120[t]; without, 0x00c5a0d4 (Japanese, not English) or 0x00c5a168; name ours
+0x008c4ff0 function MenuItem_CursorTable      # (): 0x00c5a19c/0x00c5a1cc (Japanese, with/without a target 0x0186a258 >= 0), else 0x00c5a188/0x00c5a1e4; name ours
 0x008c5260 function MenuItem_SetCell          # (x, y) 0x0186a268 = 15y + x; own name
 0x008c5280 function Menu_ParseItemKeys        # (s): splits a key string into the 32 4-byte entries at 0x0186a280 (g_TkMenuItemKeyUse): kind 4 takes a second byte, values 6..0x2f an argument byte; the rest cleared; name ours
 0x008c5440 function MenuItem_SetTarget        # (chr) 0x0186a258 = chr; own name
@@ -9976,6 +9981,7 @@
 0x008daaa0 function MenuTuto_RestartWindow    # TkMenuRestartSelFileWindow(0x0186ac34); own name
 0x008daac0 function MenuTuto_RestartWindow2   # TkMenuRestartWindow(0x0186ac38); own name
 0x008db080 function TkMn2GetIShopPos             # str-match switch: only user of 38 string(s) held once by both builds, e.g. 'r_ashmojiplt1'; Switch 0x71004c90d0 TkMn2GetIShopPos (symbols from Fahrenheit's server export)
+0x008db3b0 function MenuShop_Price            # (id): TkMn2GetExcelData(id & 0xfff, [0x0186ac28]) first word * shop ratio (0x01326b6c) / 100, at least 1; name ours
 0x008db440 function MenuWShop_CountSlots      # 0x0186ac24 = ids before the first 0/0xff among 16 of the shop record; own name
 0x008db4e0 function TkMenuCtrlTuto            # fh v3:exact 0x008db4c0
 0x008db790 function SetFieldConst1c_008db790     # auto-port shape (store constant to field, cdecl): u32[(a0 + 0x1c)] = 0x0; return a0; callers: no direct caller; name ours

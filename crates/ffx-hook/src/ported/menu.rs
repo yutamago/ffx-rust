@@ -3145,4 +3145,40 @@ ported! {
     Math_Atan2XZ @ 0x0088_b430 => extern "C" fn math_atan2_xz(x0: f32, z0: f32, x1: f32, z1: f32) -> f32 {
         ffx_menu::math::atan2_xz(x0, z0, x1, z1, |a, b| crt_x87(0x00b0_c3b0, a, Some(b)))
     }
+    /// `Menu_CursorEase(summon, counter, a, b, last)`.
+    Menu_CursorEase @ 0x008b_f750 => extern "C" fn menu_cursor_ease(summon: u32, counter: u32, a: u32, b: u32, last: u32) {
+        tk::menu_cursor_ease(&mut mem(), summon == 1, [counter, a, b, last], &mut |_, f, x| call_ptr(f, x));
+    }
+    /// `TkSetEventJump(map, entrance)`.
+    TkSetEventJump @ 0x0088_ea60 => extern "C" fn tk_set_event_jump(map: i32, entrance: u32) {
+        tk::tk_set_event_jump(&mut mem(), map, entrance, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `Math_AngleStep(cur, target, step)`: in `st0`.
+    Math_AngleStep @ 0x0088_b570 => extern "C" fn math_angle_step(cur: f32, target: f32, step: f32) -> f32 {
+        ffx_menu::math::angle_step(cur, target, step)
+    }
+    /// `MenuItem_CursorTable()`.
+    MenuItem_CursorTable @ 0x008c_4ff0 => extern "C" fn menu_item_cursor_table() -> u32 {
+        tk::menu_item_cursor_table(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_CellTable()`.
+    MenuItem_CellTable @ 0x008c_4f80 => extern "C" fn menu_item_cell_table() -> u32 {
+        tk::menu_item_cell_table(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuShop_Price(id)`.
+    MenuShop_Price @ 0x008d_b3b0 => extern "C" fn menu_shop_price(id: u32) -> i32 {
+        tk::menu_shop_price(&mut mem(), id, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuMainRemoveMenu(slot)`.
+    TkMenuMainRemoveMenu @ 0x008a_ab20 => extern "C" fn tk_menu_main_remove_menu(slot: i32) -> u32 {
+        tk::tk_menu_main_remove_menu(&mut mem(), slot, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkCh_BindToElem(kind, a, chr, b, keep)`.
+    TkCh_BindToElem @ 0x0087_22b0 => extern "C" fn tk_ch_bind_to_elem(kind: u32, a: u32, chr: u32, b: u32, keep: u32) -> u32 {
+        tk::tk_ch_bind_to_elem(&mut mem(), [kind, a, chr, b, keep], &mut |_, f, x| call_ptr(f, x))
+    }
+    /// `MenuNameEntry_RegistWindow()`: the window.
+    MenuNameEntry_RegistWindow @ 0x008c_4450 => extern "C" fn menu_name_entry_regist_window() -> u32 {
+        tk::menu_name_entry_regist_window(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
 }
