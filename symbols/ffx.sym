@@ -3729,17 +3729,17 @@
 0x007376a0 function pppEePpach                # (dst, rs, rt) R5900 PPACH: low halves of rt's four words, then rs's
 0x00737700 function pppEePsrlw                # (dst, src, sa) R5900 PSRLW the PC way: (i32 >> sa&31) & (0x7fffffff >> (sa-1 & 31)), so sa 0 gives 0
 0x00737750 function pppColorShiftStore        # (src, base) dword at base + g_pppColorConShift = *src; the shift cleared
-0x00737770 function pppDrawMdlDraw            # ppp program table record "pppDrawMdl" draw; not a function start in the Ghidra dump; ours: = draw::bridge::ppp_draw_mdl_draw: colour = work area +0xa0 halves x part +0x70 halves >> 19 (pextlh/pmulth/ppacb), then a render request on the stack (updateVFXRenderData or Init[Path3]VFXRenderData) (oracle parity)
-0x00737b20 function pppDrawMdlSemiDraw        # ppp program table record "pppDrawMdlSemi" draw; not a function start in the Ghidra dump
-0x00737f40 function pppDrawMdlTsDraw          # ppp program table record "pppDrawMdlTs" draw; not a function start in the Ghidra dump
+0x00737770 function pppDrawMdlDraw            # ppp program table record "pppDrawMdl" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_draw: colour = work area +0xa0 halves x part +0x70 halves >> 19 (pextlh/pmulth/ppacb), then a render request on the stack (updateVFXRenderData or Init[Path3]VFXRenderData); level 0xec1 skips (oracle parity)
+0x00737b20 function pppDrawMdlSemiDraw        # ppp program table record "pppDrawMdlSemi" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_semi_draw: pppDrawMdlDraw with the halfword interleave inlined, flags 0x80/0x90, the key's +8 blend, Z matrix of obj+0x50 always, never path 3 (oracle parity)
+0x00737f40 function pppDrawMdlTsDraw          # ppp program table record "pppDrawMdlTs" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_ts_draw: work area [[prog+0xc]+8]: two pos/speed/accel triples stepped (key +8..+0x1c on its frame); request +0x10/+0x14 = ftol(pos x 65536); level 0x169c draws at alpha 0 (oracle parity)
 0x007384f0 function pppDrawMdlTsCon           # ppp program table record "pppDrawMdlTs" (0x00c3a8a0) +0x1c set-up; "pppDrawMdlTs" (0x00c3a8a0) +0x20 second set-up; "pppDrawMdlTs" (0x00c3bf48) +0x1c set-up and 1 more
-0x00738530 function pppDrawMdl2Draw           # ppp program table record "pppDrawMdl2" draw; not a function start in the Ghidra dump
-0x00738a40 function pppDrawMdlSemi2Draw       # ppp program table record "pppDrawMdlSemi2" draw; not a function start in the Ghidra dump
-0x00738ec0 function pppDrawMdlTs2Draw         # ppp program table record "pppDrawMdlTs2" draw; not a function start in the Ghidra dump
+0x00738530 function pppDrawMdl2Draw           # ppp program table record "pppDrawMdl2" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_2_draw: graphicGetPtrLogCount n added to the colour bytes and (n != 0) the model's own texture (get_ptr32(rec+0x1c) + its +8); flags from key +8 (== 4 gives 8) (oracle parity)
+0x00738a40 function pppDrawMdlSemi2Draw       # ppp program table record "pppDrawMdlSemi2" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_semi2_draw: Semi with flags from key +0xa and the 0x2000 Z test; an alpha byte part+0x76 x area+0xa6 >> 19 written first, then overwritten by the colour (oracle parity)
+0x00738ec0 function pppDrawMdlTs2Draw         # ppp program table record "pppDrawMdlTs2" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_ts2_draw: Ts without the level check, flags from key +0x20, +0x44 = obj+0x50 (oracle parity)
 0x00739480 function pppDrawMdlTs2Con          # ppp program table record "pppDrawMdlTs2" (0x00c3b020) +0x1c set-up; "pppDrawMdlTs2" (0x00c3b020) +0x20 second set-up; "pppDrawMdlTs2" (0x00c3c6c8) +0x1c set-up and 1 more
-0x007394c0 function pppDrawMdl3Draw           # ppp program table record "pppDrawMdl3" draw; not a function start in the Ghidra dump
-0x00739d30 function pppDrawMdlSemi3Draw       # ppp program table record "pppDrawMdlSemi3" draw; not a function start in the Ghidra dump
-0x0073a370 function pppDrawMdlTs3Draw         # ppp program table record "pppDrawMdlTs3" draw; not a function start in the Ghidra dump
+0x007394c0 function pppDrawMdl3Draw           # ppp program table record "pppDrawMdl3" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_3_draw: request at frame-0x120: key +8 flags (blend byte 0x44 for additive), +9/+0xb/+0xa/+0xc: 0x200, 0x100, view matrix (0x2000), Z work area; magic-file fixes 0x296/0x241/0x29e/0x29f/0x2c9 (screen space, /1.8 in language 0xb), alpha fixes 0x17a/0x110/0x111/0x231 and maps 0x17c/0x3e/0xc6/0xc2/0xff (oracle parity)
+0x00739d30 function pppDrawMdlSemi3Draw       # ppp program table record "pppDrawMdlSemi3" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_semi3_draw: 3-style request from key +0xa..+0xe, the key's +8 blend, screen fix; update then graphicDynamicGeometryUpdateTexture; blend 0 gives alpha 2 (oracle parity)
+0x0073a370 function pppDrawMdlTs3Draw         # ppp program table record "pppDrawMdlTs3" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_ts3_draw: Ts step + 3-style request from key +0x20..+0x24 (Z work area at offset 3); magic 0x1f9 blend byte 0x48; field-effect fixes on maps 0xc6/0x102/0x103/0xf4/0x110/0x139/0x7a clear 0x10 and add alpha 0x800 (oracle parity)
 0x0073aac0 function pppDrawMdlTs3Con          # ppp program table record "pppDrawMdlTs3" (0x00c3b138) +0x1c set-up; "pppDrawMdlTs3" (0x00c3b138) +0x20 second set-up; "pppDrawMdlTs3" (0x00c3c7e0) +0x1c set-up and 1 more
 0x0073ab00 function pppDrawMdlSeaCon          # ppp program table record "pppDrawMdlSea" (0x00c3ad00) +0x1c set-up; "pppDrawMdlSea" (0x00c3c3a8) +0x1c set-up
 0x0073ab40 function pppDrawMdlSeaCon2         # ppp program table record "pppDrawMdlSea" (0x00c3ad00) +0x20 second set-up; "pppDrawMdlSea" (0x00c3c3a8) +0x20 second set-up
@@ -3766,17 +3766,17 @@
 0x0073e240 function pppDrawMdlLoopCon         # ppp program table record "pppDrawMdlLoop" (0x00c3b638) +0x1c set-up; "pppDrawMdlLoop" (0x00c3cce0) +0x1c set-up
 0x0073e270 function pppDrawMdlLoopCon2        # ppp program table record "pppDrawMdlLoop" (0x00c3b638) +0x20 second set-up; "pppDrawMdlLoop" (0x00c3cce0) +0x20 second set-up
 0x0073e2a0 function pppDrawMdlLoopDes         # ppp program table record "pppDrawMdlLoop" +0x24 destructor; not a function start in the Ghidra dump
-0x0073e2b0 function pppDrawMdlLoopDraw        # ppp program table record "pppDrawMdlLoop" draw; not a function start in the Ghidra dump
+0x0073e2b0 function pppDrawMdlLoopDraw        # ppp program table record "pppDrawMdlLoop" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_loop_draw: work area [[prog+0xc]+8]: ptr32 to the key at +0 (set up while null), two channels pos +4/+0x10 wrapped by _CIfmod(.., 32768); key +0x20 blend (0xff: the model's), +0x22..+0x25 flags, +0x1c 0 (oracle parity)
 0x0073e990 function pppShapeIterInit          # (shape, it) it = (set_ptr32(shape), shape+8, 0, 0, shape+0x14, 0, 0)
 0x0073e9d0 function pppDrawMdlLoopZCon        # ppp program table record "pppDrawMdlLoopZ" (0x00c3b7c8) +0x1c set-up; "pppDrawMdlLoopZ" (0x00c3ce70) +0x1c set-up
 0x0073ea00 function pppDrawMdlLoopZCon2       # ppp program table record "pppDrawMdlLoopZ" (0x00c3b7c8) +0x20 second set-up; "pppDrawMdlLoopZ" (0x00c3ce70) +0x20 second set-up
 0x0073ea30 function pppDrawMdlLoopZDes        # ppp program table record "pppDrawMdlLoopZ" +0x24 destructor; not a function start in the Ghidra dump
-0x0073ea40 function pppDrawMdlLoopZDraw       # ppp program table record "pppDrawMdlLoopZ" draw; not a function start in the Ghidra dump
+0x0073ea40 function pppDrawMdlLoopZDraw       # ppp program table record "pppDrawMdlLoopZ" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_loop_z_draw: Loop with a Z work area (key +0x26, offset 3), the Ts3 map fixes (0x10 cleared, no alpha bit), no path 3 (oracle parity)
 0x0073f180 function pppShapeIterInit_2        # the pppShapeIterInit body again
 0x0073f1c0 function pppDrawMdlLoopDisPosCon   # ppp program table record "pppDrawMdlLoopDisPos" (0x00c3b7f0) +0x1c set-up; "pppDrawMdlLoopDisPos" (0x00c3ce98) +0x1c set-up
 0x0073f1f0 function pppDrawMdlLoopDisPosCon2  # ppp program table record "pppDrawMdlLoopDisPos" (0x00c3b7f0) +0x20 second set-up; "pppDrawMdlLoopDisPos" (0x00c3ce98) +0x20 second set-up
 0x0073f220 function pppDrawMdlLoopDisPosDes   # ppp program table record "pppDrawMdlLoopDisPos" +0x24 destructor; not a function start in the Ghidra dump
-0x0073f230 function pppDrawMdlLoopDisPosDraw  # ppp program table record "pppDrawMdlLoopDisPos" draw; not a function start in the Ghidra dump
+0x0073f230 function pppDrawMdlLoopDisPosDraw  # ppp program table record "pppDrawMdlLoopDisPos" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_loop_dis_pos_draw: Loop with the object relative to the running part: T(-g_pppWorldMatrix pos) x obj+0x10 and g_pppViewMatrixCopy x that as the request matrices; Z work area; no path 3 (oracle parity)
 0x0073f9a0 function pppShapeIterInit_3        # the pppShapeIterInit body again
 0x0073f9e0 function pppDrawMdlCameraLoopCon   # ppp program table record "pppDrawMdlCameraLoop" (0x00c3b6b0) +0x1c set-up; "pppDrawMdlCameraLoop" (0x00c3cd58) +0x1c set-up
 0x0073fa10 function pppDrawMdlCameraLoopCon2  # ppp program table record "pppDrawMdlCameraLoop" (0x00c3b6b0) +0x20 second set-up; "pppDrawMdlCameraLoop" (0x00c3cd58) +0x20 second set-up
@@ -9439,6 +9439,7 @@
 0x008ac130 function TOFTCTransfer             # fh v3:exact 0x008ac0e0; (file): version u16 +4 >= 0xc8, slot u16 +8: 0x01841da0[slot] = image (+0x20/+0x24), size (+0x28/+0x2a); slots 0/4 copy the image to 0x0184b610/0x0185b610; slots 0..5 copy the CLUT (+0x30/+0x10); 0, or 1
 0x008ac2c0 function TOGetBtlMenuTexAdrs       # () -> [0x01841e04]; fh switch:bsim1.00 0x71004fa310
 0x008ac2d0 function TOGetWord_01841e08        # () -> [0x01841e08]; between TOGetBtlMenuTexAdrs and TOGetFFXLangStr; name ours
+0x008ac2f0 function TOGetFFXLangJmp           # jmp TOGetFFXLang (0x006410e0); pppDrawMdl3Draw/Semi3Draw divide a screen-space model's +0x30 by 1.8 when it returns 0xb; name ours
 0x008ac300 function TOGetFFXLangStr           # fh v3:exact 0x008ac2b0; TOGetFFXLang -> "us" 1, "fr" 2, "es" 3, "de" 4, "it" 5, "kr" 9, "ch" 10, "uk" 18, else "jp"
 0x008ac390 function TOGetFFXLangSwapFlag      # fh v3:bsim1.00 0x008ac340
 0x008ac3a0 function TOGetFFXVideoMode         # fh v3:bsim1.00 0x008ac350
@@ -14321,6 +14322,7 @@
 0x00c3a4cc label    g_pppEnvSlot              # pointer to where pppInitEnv stores the current ppp environment (rcefMainSetEnv)
 0x00c3a4d0 label    g_AlphaScale              # f32 set by useExtendedAlpha (512 extended, 256 normal)
 0x00c3a4d8 label    g_VfxShapeEnlargeBufferFactor # multiplies the shape draws' vertex counts; set/resetVfxShapeEnlargeBufferFactor
+0x00c3a500 label    g_pppFpCurrentId          # u32: the playing field effect's +0x44 halfword (pppFpLoop 0x00729c33); pppDrawMdl3Draw (map 0x3e: 0x2c..0x2f), pppDrawMdlTs3Draw/LoopZDraw (per-map ids) patch their requests by it; name ours
 0x00c3a504 label    g_VfxYiqMode              # -1 off; updateVFXRenderData enables YIQ on map 0x188 unless -1; updateVFXRenderDataShp pushes the depth back on level 0x76f at 3..5
 0x00c3a508 label    g_pppProgramTable            # 418 x 0x28-byte particle program records to 0x00c3e658: +0 name ("pppAccele", ...), +8 per-frame step, +0xc draw, +0x14 Sta, +0x1c set-up (Con), +0x20 second set-up (Con2), +0x24 destructor (Des); pppColor -> pppColor/pppColorCon
 0x00c3e6a0 label    g_pppClutCsmStep          # 32 signed bytes: the CLUT entry step (in u32 entries) after entry i & 0x1f in CSM1 order (1, 9, -15, ...); pppKeTkFadeDraw (0x0072ee50) copies it to its buffer +0x400; ours

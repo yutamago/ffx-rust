@@ -8,6 +8,7 @@
 //! - [`ppp`]: particle programs and rotation matrices;
 //! - [`prog`]: the program table's set-ups and steps;
 //! - [`mat`]: the matrix programs and their draws;
+//! - [`mdl`]: the model draws (`pppDrawMdl*`);
 //! - [`heap`]: the particle heaps;
 //! - [`part`]: parts, their data and objects;
 //! - [`fp`]: the field's particle effects;
@@ -24,6 +25,7 @@ pub mod fp;
 pub mod heap;
 pub mod mat;
 pub mod md;
+pub mod mdl;
 pub mod op;
 pub mod opd;
 pub mod opus;

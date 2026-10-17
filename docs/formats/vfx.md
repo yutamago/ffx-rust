@@ -70,3 +70,81 @@ in the original:
 
 If the flare shows in the original, the hook needs those values from
 somewhere other than zeroed locals before it can go in.
+
+## Model draws (`pppDrawMdl*`)
+
+Ported in `crates/ffx-vfx/src/mdl.rs`. Each draw builds the colour, then a
+render request on its stack frame and hands it to `updateVFXRenderData`
+(`0x00718610`) when the instance has render data
+(`graphicVFXGetRenderDataByInstance`, `0x006453d0`), or to
+`InitVFXRenderData` / `InitVFXPath3RenderData` with an alpha word from
+`calculateVFXSP_AlphaFunction` (`0x00712c30`) and `calculateVFXSP_ZMat`
+(`0x00712d00`). The instance is `(g_pppCurrentProgram, obj +
+sign(g_pppCurrentProgram))`.
+
+### Colour
+
+The work area's `+0xa0` halves (read through `g_pppColorConShift`) times
+the current part's `+0x70` halves on the emulated EE: `pextlh` with `r0`
+on both, `pmulth`, each product `>> 19 & 0x1fff`, packed back with `r0`'s
+low halves above, `ppacb`. `pppDrawMdlDraw` calls `pppEePextlh`; the other
+eleven inline it through a stack temporary, writing `0x00c8f588..0x00c8f5a7`
+as overlapping halfwords in three different orders. A symbolic run of the
+eleven sequences (`~/ffx-work/vfx/tools/eesim.py`) gives the same final
+registers as `pextlh` in every one, and nothing reads them between the
+stores, so the port writes the final words. The packed colour goes to the
+request's `+0x18`; its top byte is the alpha, and a zero alpha skips the
+draw.
+
+### Request
+
+| Offset | Contents |
+| --- | --- |
+| `+0` | flags: `4` path 3, `8` adds alpha bit `0x40`, `0x10`, `0x80`, `0x100`, `0x200`, `0x2000` view matrix (skips the Z matrix) |
+| `+4` | `[0x00c498dc]` |
+| `+8` | blend (`u16`); `+0xa` cleared; `+0xb` never written |
+| `+0xc..+0x14` | 0, or (`Ts`, `Loop`) two work-area floats in 16.16 (`ftol(v x 65536.0)`, double at `0x00b51558`) |
+| `+0x18` | colour |
+| `+0x1c` | the part's `+0x78` (0 in the `Loop` draws) |
+| `+0x20`, `+0x2c` | the object's matrices `+0x50` and `+0x10` |
+| `+0x24`, `+0x28` | `0x0230fd60`, `0x0230fda0` |
+| `+0x30` | a view-space matrix on the stack (`g_pppViewMatrix x obj + 0x10`) for flag `0x2000`; else never written (0 in the `Loop` draws) |
+| `+0x34` | `g_PppPacketPos` |
+| `+0x38`, `+0x3c` | `get_ptr32` of the object's `+0x90`, `+0x94` |
+| `+0x40` | 0 |
+| `+0x44` | the Z-matrix argument: 0, the object's `+0x50`, or a work area `obj + 0xa0 + [[prog + 0xc] + 4k]` |
+
+Flags come from the model's first byte (bit 0 opaque, bit 1 no `0x10`)
+and, in most variants, a key byte (bit 1 path 3, bit 0 `0x80`). The `Semi`
+draws take their blend from the key (`+8`), the others from the model
+(`+0x16`).
+
+### Work areas
+
+- `Ts`, `Ts2`, `Ts3`: `obj + 0xa0 + [[prog + 0xc] + 8]` holds two
+  `[pos, speed, accel]` triples, stepped like `pppKeTkFadeDraw` unless
+  `g_pppStop`; the key's `+8..+0x1c` are added on its frame.
+- `Loop`, `LoopZ`, `LoopDisPos`: the same offset holds a `ptr32` to the key
+  (set up, with the key's `+8` and `+0x14` as positions, while null) and
+  two channels at `+4` and `+0x10`; positions wrap with
+  `_CIfmod(pos + speed, 32768.0)` (double at `0x00b51588`).
+  `LoopDisPos` draws the object relative to the running part: its matrices
+  are `T(-g_pppWorldMatrix position) x obj + 0x10` and
+  `g_pppViewMatrixCopy x` that.
+
+### Per-effect fixes
+
+The `3` draws and `LoopZ` patch requests for particular content:
+
+- magic files (`MagicFile_GetHandle`/`GetMagicId`) with `g_VfxPass`
+  (`0x0113335c`): `0x296` clears path 3, `0x241` sets it for model fields
+  `0x36c0`/`0x3700`; `0x29e`, `0x29f` and `0x2c9` move the object's matrix
+  to screen space (`x g_pppScreenMatrix`, then `x` the inverse of
+  `g_ScreenMatrix`) and divide its `+0x30` by 1.8 when `TOGetFFXLang`
+  returns `0xb`; alpha bits for `0x17a`, `0x110`, `0x111`, `0x231`; blend
+  byte `0x48` for `0x1f9` (`Ts3`).
+- maps (`g_CurrentMapNo`) with `g_VfxYiqMode` or `g_pppFpCurrentId`
+  (`0x00c3a500`, the playing field effect's `+0x44` halfword, set by
+  `pppFpLoop`): `0x17c`, `0x3e`, `0xc6`, `0xc2`/`0xff` in `3`; `0xc6`,
+  `0x102`, `0x103`/`0xf4`, `0x110`, `0x139`, `0x7a` in `Ts3` (clears `0x10`,
+  alpha `0x800`) and `LoopZ` (clears `0x10` only).
