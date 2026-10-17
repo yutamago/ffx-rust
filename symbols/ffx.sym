@@ -2385,6 +2385,7 @@
 0x0067a930 function iSyncGetData                 # layout+callees: sorts between iSyncDataChange and iSyncInitialize, and its named callees match the Switch 0x7100225650 iSyncGetData's (similarity 1.00: SyncManager_syncGetData); symbols from Fahrenheit's server export
 0x0067a950 function iSyncInit                    # layout+callees: sorts between iSyncDataChange and iSyncInitialize, and its named callees match the Switch 0x7100225710 iSyncInit's (similarity 1.00: SyncManager_syncInit); symbols from Fahrenheit's server export
 0x0067a960 function iSyncInitialize           # fh v3:exact 0x0067ab10
+0x0067a9f0 function EternalCalm_FileSize_0067a9f0 # (path) -> sceFileSize of the opened file, "failed to open EternalCalm data file: %s"; callers getEternalCalmMgrpSize, getEternalCalmSceneSize; own name
 0x0067aa50 function Table_00c334d4_0067aa50 # cdecl(x): word x - *0x00c33468 of the 7 at 0x00c334d4, 0 outside; caller Cd_QueueRead; name ours
 0x0067aa70 function getEternalCalmMgrpSize    # fh v3:bsim1.00 0x0067ac20
 0x0067aac0 function getEternalCalmSceneName   # fh v3:bsim1.00 0x0067ac70
@@ -2570,6 +2571,7 @@
 0x0069bda0 function Identity_0069bda0 # cdecl(x) -> x (frame-pointer build); name ours
 0x0069bdb0 function ClusterManager_releasePCluster # fh v4:user_defined+call.cs thiscall ClusterManager::releasePCluster
 0x0069be90 function ClusterManager_releasePCluster_0069be90 # fh v3:exact 0x0069bfd0 ClusterManager::releasePCluster
+0x0069c010 function ChrResourceCache_DelayReleaseStep_0069c010 # thiscall(timer, dt): adds dt to the timer of states 0/1 and on the limit ChrResourceCacheManager_applyDelayedRelease, "Chr cache timingChrDelayRelease time out"; own name
 0x0069c4b0 function Add_0069c4b0 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
 0x0069c4c0 function AddU16_0069c4c0 # cdecl(a, b) -> a + (u16)b (no direct callers); name ours
 0x0069c4d0 function Add_0069c4d0 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
@@ -3458,6 +3460,7 @@
 0x00716ba0 function pppOtFunc_Lev             # fh v3:exact 0x00716c80
 0x00716be0 function pppOtFunc_Reg             # fh v3:exact 0x00716cc0
 0x00716c40 function pppRunPartStd             # fh v3:exact 0x00716d20
+0x00717010 function pppRunPartFpObjects_00717010 # (part): for each of the part's +0x18 programs (+0x3c records) creates or deletes the program objects (pppPObjectCon2, pppDeletePObject), "ERROR!!!! prog=NULL" for a missing program; caller pppRunPartFp; own name
 0x00717410 function pppSetMatrix              # fh v3:exact 0x007174f0
 0x007175f0 function magic_nop_007175f0        # g_MagicImports slot 259 (4 overlays): a lone ret; hidden from the dump
 0x00717600 function resetVfxShapeEnlargeBufferFactor # fh v3:bsim1.00 0x007176e0
@@ -3784,6 +3787,7 @@
 0x00748660 function pppDrawShapeCameraDisPosCon # ppp program table record "pppDrawShapeCameraDisPos" +0x1c set-up
 0x007486e0 function pppDrawShapeCameraDisPosDes # ppp program table record "pppDrawShapeCameraDisPos" +0x24 destructor
 0x00748790 function pppDrawShapeCameraDisPosDraw # ppp program table record "pppDrawShapeCameraDisPos" draw
+0x00748b00 function pppKeMdlBmpDraw_Body_00748b00 # (obj): the sprite part of pppKeMdlBmpDraw (op_spr_alloc/op_spr_free, the debug dump "PA= %d, %d, %d" ... "------"); those strings are the Switch pppKeMdlBmpDraw's, which inlines it; caller pppKeMdlBmpDraw; own name
 0x007490b0 function pppKeMdlBmpCon            # ppp program table record "pppKeMdlBmp" +0x1c set-up; not a function start in the Ghidra dump
 0x007490c0 function pppKeMdlBmpCon2           # ppp program table record "pppKeMdlBmp" +0x20 set-up; not a function start in the Ghidra dump
 0x007490d0 function pppKeMdlBmpDraw           # ppp program table record "pppKeMdlBmp" draw; not a function start in the Ghidra dump
@@ -4047,6 +4051,7 @@
 0x0075fcd0 function KeVu0SubVecXYZ               # layout: alphabetical run between KeVu0Sqrt and KeVu0VecLen (2 unnamed in the gap); Switch 0x71003074a0 KeVu0SubVecXYZ is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0075fda0 function KeVu0VecLen               # fh v3:exact 0x0075fe90
 0x0075fde0 function KeVu0VecLenXY             # fh v3:exact 0x0075fed0
+0x00760080 function pppPmcomDataInit_00760080    # (data): prints "pmcom_data_init", pppInitPmcomEnv, KePmcomAlloc blocks, copies the data (lmemcpy), identity/model matrices, pppExSendPacket; "PMCOM_DATA_TEXTURE ReadTextureInfo error" on a bad texture; own name from the message
 0x007605d0 function pppFreeAllEnvObjects      # (): for each of *0x00d4b4cc object blocks (0x80 from 0x00d4e390), *g_pppEnvSlot = the pmcom environment 0x010d4cfc and pppAllFreePObject(block); called by pppDataRcv, pppPartDraw; name ours
 0x00760610 function pppInitPmcomEnv           # (): 0x00d524a0 = 0x00d524a8, g_KePmcomNext = its base 0x00e524f0, pppInitEnv(0x010d4cfc, 0, 0x00fd24f0, 0x100000); name ours
 0x00760640 function KeResampleRgbaToRgb       # (src, sw, sh, dst, dw, dh): nearest-neighbour RGBA to bottom-up BGR bytes by Bresenham error terms; returns the row error; pppPartDraw; name ours
@@ -4060,6 +4065,7 @@
 0x00761e20 function pppPartDraw               # fh switch:cg4 0x71002d37e0
 0x00762240 function pppPartLoop               # fh v3:exact+call.cs 0x00762330 cdecl
 0x00762550 function pppSetPartMatrix          # fh switch:cg2 0x71008b5328
+0x007629e0 function pppSetPmcom2Texture_007629e0 # (prog): uploads the pmcom texture with sceGsSetDefLoadImage / sceGsExecLoadImage after FlushCache; its own messages say "setPmcom2Texture depth error!!!" (and "... 2 !!!"); caller pppDataRcv; own name from the message
 0x00762f50 function KePmcomAlloc                 # (bytes) -> block: bytes + 15 rounded down to 8 from the pmcom arena 0x00e524f0..0x00f524f0 (next 0x00d524a4); past the end restarts at the base (spins forever when it still does not fit); 0x00760080 ("pmcom_data_init")
 0x00762fa0 function KePmcomQueuePush             # (kind, p): (kind, set_ptr32(p)) into the 256-entry ring at 0x010d4d28, index 0x010d552c back to 0 past 255; 0x0075ff00
 0x00763030 function KeThBP_Init               # (args): object args[0], segment count byte args[1] at +0x37; self +0x10, links cleared, +0x4c 1.0, +0x20 3n+2, +0x28 0x40000b0, GIF tag at +0x40 + 0x30n; returns 6n. Switch KeThBP_Init calls set_ptr32 7 times as this does (cg_switch), sorts before KeThBP_MkGifPk 0x00763100; callers KeThBP_Update, KeThCp_AddBp
@@ -4126,6 +4132,7 @@
 0x0076b7e0 function eiWaitLoop                # fh switch:bsim1.00 0x71002f17e0
 0x0076b8d0 function eidprintfPrint            # fh v3:exact 0x0076b9e0
 0x0076b970 function Cd_QueueRead              # libmscd.c emulation: queue a read of a PS2 file by number; slot 0 of g_CdLib
+0x0076bf70 function cd_ModuleFileRead_0076bf70   # (file, sector, size, ...): a libmscd.c read request (cd_module_file_sector_rel / cd_size_from_table, CDfileName_PC), "q_cnt != READ_Q_CNT" assert, "HDD FILE" / "DVD FILE"; own name
 0x0076c250 function cd_module_file_sector_rel # cdecl(n): cd_file_sector(n + g_CdLib+0x20, the module's first file number), a tail jump; callers 0x0076b970, 0x0076bf70; name ours
 0x0076c270 function cd_module_file_sector     # (module, n): cd_file_sector(i16 [g_CdLib+0x2c][module] + n); name ours
 0x0076c320 function CDfileSize_CD             # cdecl(number): size of a PS2 file from the sector table (cdrom.mdg); wrapped so mod files report their size; was Cd_FileSize
@@ -4251,6 +4258,7 @@
 0x00774720 function Kernel_GetAbilityName # (id) -> char*: g_EmptyName for 0, else TkMn2GetAbilityMes(id) (a tail jump); about 110 callers 0x00770920..0x007734c0; named after Kernel_GetItemName; name ours
 0x00774740 function ResetRecords_00774740 # (): records (0x138 bytes) of entry *0x0112a088 of the table *0x0112a01c (offset + *0x0112a03c, i16 count at +4): +0x114/+0x116 = +0x120/+0x122, +0x118/+0x11c = 0.0; callers 0x0076f470, 0x00775ce0, 0x00775de0, 0x00776110; name ours
 0x00774ae0 function getSa_MenuTextureName     # fh v3:exact 0x00774bf0
+0x00774c00 function TOMenuAllocHelpMem_00774c00  # (reset, bytes) -> a block from the help work area (TOMenuGetHelpWorkAdrs + 0x0112a09c, which reset clears), "help get mem %x (0x%x / 0x%x)", "help memory over flow" against TOMenuGetHelpWorkSize; own name
 0x00774ff0 function GsPkt_TexturedSprite_00774ff0 # (pkt, tbp, ..., w, h): builds a GIF packet in pkt: TEX0 with TW/TH = log2 of the width/height (1..10), ALPHA, TEST, a sprite with UV and XYZ2 (0x0060ab4000 tag); callers 0x007766e0, 0x00776740; the system agent's finding (a DMA/GIF packet); own name
 0x00775810 function SetGlobal_0112a018 # cdecl(v): *0x0112a018 = v, returns v; name ours
 0x007767a0 function Kernel_GetItemName        # (id) -> char*: g_EmptyName for 0, else MsGetRomItem's strings + the record's first u16; name ours
@@ -4265,6 +4273,7 @@
 0x00777e80 function get_hdd_err               # () -> (i8) g_Hdd_Err, sign-extended; fh switch:bsim1.00 0x7100332e00
 0x00777e90 function get_hdd_status            # () -> 2 when g_Hdd_Err, else (i8) g_Hdd_Status; name ours, after get_hdd_err
 0x00777eb0 function get_hdd_name              # fh v3:exact 0x00777fb0
+0x00777f00 function hdd_ReadModuleFiles_00777f00 # (): hdd_mount, a table of 16-byte entries (count 0x0112a51c), each module file opened from the HDD or by name (get_hdd_name), read whole (sceLseek/sceRead), "read module file : %s", "size err", "sceRead() err", "cmp err"; own name
 0x007783f0 function hd_file_read                 # layout+callees: sorts between get_hdd_name and hdd_head_reset, and its named callees match the Switch 0x71003334d0 hd_file_read's (similarity 0.88: sceClose, sceIoctl, sceLseek, sceLseek64, sceOpen); symbols from Fahrenheit's server export
 0x00778550 function hd_file_read_ex_th_main      # layout+callees: sorts between hd_file_read and hd_file_read_no_wait, and its named callees match the Switch 0x7100333790 hd_file_read_ex_th_main's (similarity 1.00: TkSignalSemaBGThread, task_wait); symbols from Fahrenheit's server export
 0x007785e0 function hd_file_read_no_wait         # layout+callees: sorts between get_hdd_name and hdd_head_reset, and its named callees match the Switch 0x7100333910 hd_file_read_no_wait's (similarity 1.00: sceRead); symbols from Fahrenheit's server export
@@ -4275,6 +4284,7 @@
 0x007789d0 function hdd_head_init                # layout+callees: sorts between get_hdd_name and hdd_head_reset, and its named callees match the Switch 0x71003330d0 hdd_head_init's (similarity 1.00: TkGetFFXCofingAdrs); symbols from Fahrenheit's server export
 0x007789e0 function hdd_head_reset            # fh v3:exact 0x00778ad0
 0x00778d70 function hdd_ins_check                # str-match switch: only user of 7 string(s) held once by both builds, e.g. 'hdd_ins_check_in'; Switch 0x7100333a40 hdd_ins_check (symbols from Fahrenheit's server export)
+0x00779000 function hdd_OpenFfxPartition_00779000 # (): remounts the HDD (hdd_unmount/hdd_mount) and opens the FFX partition named from GetSaveProductCode (hdd0:%s,,%s, sceIoctl2), "open err ffx partition", "HIOCNSUB err"; own name
 0x007791a0 function hdd_install_check         # fh v3:exact 0x00779290
 0x007792c0 function hdd_install_end              # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'hdd_install_end()\\n'; Switch 0x7100334310 hdd_install_end (symbols from Fahrenheit's server export)
 0x007792e0 function hdd_install_init          # fh v3:exact 0x007793d0
@@ -9381,6 +9391,7 @@
 0x008c93c0 function TkMenuItemClearWindow2    # (): the same for 0x0186a39c
 0x008c9410 function MenuItem_CompareEntries   # (list, a, b) 32-byte entries as 8 unsigned words: 1/-1/0; own name
 0x008c9460 function MenuItem_SwapEntries      # (list, a, b) swap 32-byte entries; own name
+0x008c9c40 function MenuItem_SortGear_008c9c40   # (list, n, mode): sorts the equipment list (MsGetSaveWeapon, MenuItem_CompareEntries, MenuItem_SwapEntries, SwapSaveGear), debug prints "TK:ID:0x%x/POS:%d", "TK:ABL ID:0x%x"; own name
 0x008ca320 function TOMenuGetDummyAnalogControler # fh v3:exact 0x008ca2f0
 0x008ca370 function SetByte_0186a429_008ca370 # cdecl(i, v): byte 0x0186a42d, 0x0186a42f, 0x0186a429 or 0x0186a42b (i = 0..3, a jump table) = v; caller 0x0085f2e0; name ours
 0x008ca480 function TkMenuDraw                # fh v3:cg2 0x8ca450
@@ -11067,8 +11078,10 @@
 0x009da960 function MagicFile_Unload          # fh v3:exact 0x009da940
 0x009dac60 function MagicFile_Update          # fh v3:exact 0x009dac40
 0x009daca0 function MagicFile_clearAllPreloadedPrx # fh v3:exact 0x009dac80
+0x009dacc0 function MagicFile_ClearPreloadedPrx_009dacc0 # (id, index): PhyreFIOS_UnloadMagicfilePrx of the matching preload handle, "MagicFilePreload: clearPreloadedPrx id=%d, index=%d"; callers MagicFile_Unload, MagicFile_clearAllPreloadedPrx; own name
 0x009dad70 function MagicFile_FindPreloaded_009dad70 # cdecl(id, &out): with 0x0193fd40 set, the first of 12 entries (0x00c64c18, 12 bytes) with id (any for negative) and a positive count (0x0193fd44 + 4 i): *out = &count, 1; else 0; caller MagicFile_isPrxPreloaded; name ours
 0x009dae60 function MagicFile_isPrxPreloaded  # fh v3:exact 0x009dae40
+0x009dae90 function MagicFile_PreloadPrx_009dae90 # (id, index): with preloading on (0x0193fd40) PhyreFIOS_LoadMagicfilePrx into the handle table 0x00c64c10 (graphicSetMagicFileAsyncLoadEnable(2) around it), "MagicFilePreload: preload for id=%d, index=%d" / "skiped" / "non-null preload handle found"; caller MagicFile_Load; own name
 0x009dafd0 function SetGlobal_0193fdac # cdecl(v): *0x0193fdac = v, returns v; name ours
 0x009db110 function onMagicDLLLoaded          # fh v3:exact 0x009db0f0
 0x009db190 function magic_ret0_009db190       # g_MagicImports slot 301: xor eax, eax; ret; hidden from the dump
@@ -11371,6 +11384,7 @@
 0x00a42830 function CDfileName_PC             # cdecl(number) -> "host0:/ffx/master/..." path of a PS2 file of the current module; was Cd_FileName
 0x00a428a0 function CDfileSize_PC             # cdecl(number): size from sizetbl.bin, or the real file for some modules ("CDfileSize_PC: MISSING?"); was CdFileSize_PC
 0x00a429d0 function GetCDFileName_PC          # fh v3:exact 0x00a429d0
+0x00a42a00 function pc_ReadWholeFile_00a42a00    # (path, &size) -> malloc'd contents (sceOpen, sceLseek size, user_malloc, sceRead), "file open err !!! <%s>" (read_debug.c); callers pc_sizetbl_set, pc_sizetbl_set_Ex, pc_module_sizetbl_set, pc_fat_index_filename_set; own name
 0x00a42b70 function PcFileTblSet              # fh v3:exact 0x00a42b70
 0x00a42ba0 function PcReadFunc_set            # fh v3:exact 0x00a42ba0
 0x00a42f30 function clear_read_chgname        # fh v3:exact 0x00a42f30
@@ -11382,6 +11396,7 @@
 0x00a431f0 function setFullArenaLocalizationEnable # fh switch:bsim1.00 0x7100857650
 0x00a43210 function SetGlobal_01a85ba4 # cdecl(v): *0x01a85ba4 = v, returns v; caller BasicDebugTweakUtil_handleInput; name ours
 0x00a43220 function set_read_chgname          # fh v3:exact 0x00a43220
+0x00a432a0 function sa_HddExFileRead_00a432a0    # (): the HDD install's ex file (pfs0:/ex/%s, hdd_install_find) opened and read into the CD read buffer (sceOpen/sceIoctl/sceLseek/sceRead, task_wait, sa_read_callback), "HDD FILE OPEN ERR %s"; own name
 0x00a43ca0 function sa_meth01dec2_ex          # stand-in: only "... Asm function 'sa_meth01dec2_ex' not implementd" through dbgPrintf; returns 0
 0x00a43cb0 function sa_meth01dec_ex           # stand-in: only "... Asm function 'sa_meth01dec_ex' not implementd" through dbgPrintf; returns 0
 0x00a43de0 function sa_decode                 # fh switch:bsim1.00 0x7100857390
@@ -11420,6 +11435,7 @@
 0x00a458f0 function abmap_set_chr_pos         # fh v3:exact 0x00a458f0
 0x00a45910 function abmap_snd_chg_panel0      # fh v3:cg2 0xa45910
 0x00a45920 function abmap_snd_chg_panel1      # fh v3:cg2 0xa45920
+0x00a459e0 function Abmap_AddMenuPrims_00a459e0  # (menu, n): one primitive per MsMenuStatusNum entry (MsGetRomPlyCommand of each), "addMenuPrim error!!!  menu->mprimn >= MAXMENUPRIM" and debug_exit_trace on overflow; caller eiAbmStart; own name from the message
 0x00a45fd0 function AbmapFillUseItemMenu      # fh v3:exact 0x00a45fd0 +AbmapFillUseItemMenu
 0x00a473d0 function AbmapAllLinksLimitFlag    # fh v3:exact 0x00a473d0 +AbmapAllLinksLimitFlag
 0x00a47400 function AbmapMaskNodeFlags        # (mask): ANDs mask into +0x22 of every node (+0x808, 0x28 bytes, i16 count +2) whose kind +6 is not -1; name ours
