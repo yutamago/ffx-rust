@@ -84,8 +84,29 @@ pub fn lulu_limit_table(group: u32, mag: i32) -> Option<u32> {
 }
 
 /// The tables where the game keeps them, through [`ffx_bridge::Mem`].
+/// `"NKZ:Illigal PC Number %d\n"` (`.rdata`), the aeon gains' error.
+pub const ILLEGAL_PC: u32 = 0x00b7_b948;
+/// `dbgPrintf` (`0x0062f500`).
+pub const DBG_PRINTF: u32 = 0x0062_f500;
+/// 0.25 (`f64`, `.rdata`): the aeons' HP gain per root.
+pub const HP_SCALE: u32 = 0x00b3_4f90;
+/// 16.0 (`f64`): the aeons' base HP gain.
+pub const HP_BASE: u32 = 0x00b3_13a0;
+/// 3.0 (`f64`): the aeons' MP gain divisor.
+pub const MP_DIV: u32 = 0x00b2_c5c8;
+/// 10.0 (`f64`): the aeons' base MP gain.
+pub const MP_BASE: u32 = 0x00b9_22b0;
+/// The aeon stat table `TkMenuCtrlSummon` reads (`0x1c` bytes a stat:
+/// HP, MP, strength .. accuracy from row 1; the gain function first, the
+/// maximum last).
+pub const AEON_STATS: u32 = 0x00c5_a604;
+
+fn rdata(mem: &impl ffx_bridge::Mem, at: u32) -> f64 {
+    mem.read(mem.rebase(at))
+}
+
 pub mod bridge {
-    use ffx_bridge::Mem;
+    use ffx_bridge::{Mem, x87};
 
     use super::{
         AURON_BUTTONS_SIZE, AURON_LIMIT_BUTTONS, AURON_LIMIT_TIME, LULU_LIMIT_TIME, SQS_IOP_STATUS,
@@ -252,5 +273,52 @@ pub mod bridge {
             [0xb, 0xc, 0xd, 0xe]
         };
         t.get(i as usize).copied().unwrap_or(0)
+    }
+
+    // ---- field round 24: the aeons' stat gains ----
+
+    /// The eight half gains (`0x00a5c660` strength, `0x00a5c740` defence,
+    /// `0x00a5c910` magic, `0x00a5c980` magic defence, `0x00a5c9f0`
+    /// agility, `0x00a5c860` luck, `0x00a5c6d0` evasion, `0x00a5c7f0`
+    /// accuracy; identical bodies): for an aeon (PC 8..=17) `v / 2`
+    /// (toward zero), at least 1; another PC prints the original's error
+    /// (`dbgPrintf`) and gives 100.
+    pub fn nkz_aeon_gain_half<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        pc: u32,
+        v: i32,
+        call: &mut C,
+    ) -> u32 {
+        if pc.wrapping_sub(8) > 9 {
+            let fmt = mem.rebase(super::ILLEGAL_PC);
+            let f = mem.rebase(super::DBG_PRINTF);
+            call(mem, f, &[fmt, pc]);
+            return 100;
+        }
+        let h = v / 2;
+        if h == 0 { 1 } else { h.cast_unsigned() }
+    }
+
+    /// `0x00a5c7b0` (HP, name `NkzAeonGainHp` ours): `sqrt(v) * 0.25 +
+    /// 16.0` truncated (`_ftol2_sse`), at least 1. The PC is not checked.
+    pub fn nkz_aeon_gain_hp(mem: &impl Mem, v: i32) -> u32 {
+        let x = x87::add(
+            x87::mul(x87::sqrt(f64::from(v)), super::rdata(mem, super::HP_SCALE)),
+            super::rdata(mem, super::HP_BASE),
+        );
+        let r = x87::ftol(mem, x);
+        if r == 0 { 1 } else { r }
+    }
+
+    /// `0x00a5c8d0` (MP): `(sqrt(v) + sqrt(v)) / 3.0 + 10.0` truncated, at
+    /// least 1.
+    pub fn nkz_aeon_gain_mp(mem: &impl Mem, v: i32) -> u32 {
+        let r = x87::sqrt(f64::from(v));
+        let x = x87::add(
+            x87::div(x87::add(r, r), super::rdata(mem, super::MP_DIV)),
+            super::rdata(mem, super::MP_BASE),
+        );
+        let r = x87::ftol(mem, x);
+        if r == 0 { 1 } else { r }
     }
 }

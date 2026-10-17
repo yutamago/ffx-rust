@@ -10952,3 +10952,301 @@ fn round23_yn_layers_and_rcfx_match_the_original() {
         );
     }
 }
+
+/// Round 24: the aeons' stat gains and the effect's stream, vibration
+/// and object-start forwarders.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round24_aeon_gains_and_streams_match_the_original() {
+    use ffx_field::nkz;
+    use task::bridge as tb;
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0018_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let log = env.log;
+    let v: Vec<u32> = (0..4).map(|_| t.alloc(4)).collect();
+    let [cue, ev, rv2, rv3] = v[..] else {
+        unreachable!()
+    };
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (Some(nkz::DBG_PRINTF), log_stub(log, rv3, 280, 2)),
+        (Some(tb::SOUND_CUE_CHECK), log_stub(log, cue, 281, 1)),
+        (Some(tb::OP_OEF2_A_GET), log_stub(log, ev, 282, 3)),
+        (Some(tb::OP_OEF2_SE_ON), log_stub(log, rv2, 283, 3)),
+        (Some(tb::OP_OEF2_STREAM_CUE), log_stub(log, rv2, 284, 3)),
+        (Some(tb::TK_SET_VIBRATE_STREAM), log_stub(log, rv2, 285, 3)),
+        (Some(tb::RCEF_ANIME_START), log_stub(log, rv2, 286, 4)),
+        (Some(tb::RCEF_SETUP_DRAW), log_stub(log, rv2, 287, 4)),
+    ];
+    t.cave_from(env.cave_end, &list);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let halves = [
+        0x00a5_c660u32,
+        0x00a5_c740,
+        0x00a5_c910,
+        0x00a5_c980,
+        0x00a5_c9f0,
+        0x00a5_c860,
+        0x00a5_c6d0,
+        0x00a5_c7f0,
+    ];
+    let envp = t.alloc(0x10);
+    for k in 0..400u32 {
+        env.reset(&mut t, &mut rng);
+        for &w in &v {
+            t.put(w, if rng.below(3) == 0 { 0 } else { rng.next() });
+        }
+        let pc = if rng.below(4) == 0 {
+            rng.next()
+        } else {
+            rng.below(20)
+        };
+        let val = match k % 4 {
+            0 => rng.range(-3, 4),
+            1 => rng.range(0, 100_000),
+            2 => rng.next().cast_signed(),
+            _ => rng.range(0, 300),
+        };
+        let f = halves[(k % 8) as usize];
+        t.same(
+            "NkzAeonGain (half)",
+            |o| o.eax(f, &[pc, val.cast_unsigned()]),
+            |m| nkz::bridge::nkz_aeon_gain_half(m, pc, val, call),
+        );
+        t.same(
+            "NkzAeonGainHp",
+            |o| o.eax(0x00a5_c7b0, &[pc, val.cast_unsigned()]),
+            |m| nkz::bridge::nkz_aeon_gain_hp(m, val),
+        );
+        t.same(
+            "NkzAeonGainMp",
+            |o| o.eax(0x00a5_c8d0, &[pc, val.cast_unsigned()]),
+            |m| nkz::bridge::nkz_aeon_gain_mp(m, val),
+        );
+        // the effect forwarders
+        t.set(tb::RCEF_OEF2, rng.next());
+        let (id, arg, o) = (rng.next(), rng.next(), rng.next());
+        t.same(
+            "rcefSetVibrate",
+            |x| x.eax(0x0092_ec60, &[id, arg]),
+            |m| tb::rcef_set_vibrate(m, id, arg, call),
+        );
+        t.same(
+            "rcefStreamCue",
+            |x| x.eax(0x0092_ebf0, &[id, arg]),
+            |m| tb::rcef_stream_cue(m, id, arg, call),
+        );
+        t.same(
+            "rcefPlayStream",
+            |x| x.eax(0x0092_e6b0, &[id]),
+            |m| tb::rcef_play_stream(m, id, call),
+        );
+        t.put(envp + 8, rng.next());
+        t.same(
+            "rcefObjAnimeStart",
+            |x| x.eax(0x0092_5590, &[envp, o, id]),
+            |m| tb::rcef_obj_anime_start(m, [envp, o, id], call),
+        );
+        t.same(
+            "rcefObjSetupDraw",
+            |x| x.eax(0x0092_5690, &[envp, o, id]),
+            |m| tb::rcef_obj_setup_draw(m, [envp, o, id], call),
+        );
+    }
+}
+
+/// Round 25: the compiler's copies of `rcuiScaleVector` and
+/// `rcVec4fToFixed`, the display objects' morph value, the colour offset
+/// as ints, the effect's interpolation and colour work.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round25_copies_morph_lerp_and_colours_match_the_original() {
+    use task::bridge as tb;
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0019_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let (log, rv) = (env.log, env.rv);
+    let list: Vec<(Option<u32>, Vec<u8>)> =
+        vec![(Some(yi::SET_MORPH_VALUE), log_stub(log, rv, 290, 2))];
+    t.cave_from(env.cave_end, &list);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (dst, v, p) = (t.alloc(0x10), t.alloc(0x10), t.alloc(4));
+    let work_at = t.b.rebase(tb::COLOR_WORK);
+    for k in 0..300u32 {
+        env.reset(&mut t, &mut rng);
+        for i in 0..4 {
+            let x = if k % 13 == 7 {
+                rng.next() | 0x0040_0000
+            } else {
+                float_in(&mut rng, -3000, 3000)
+            };
+            t.put(v + 4 * i, x);
+        }
+        t.fill(dst, 0x10, &mut rng);
+        let (s, a, b, c) = (
+            float_in(&mut rng, -8, 8),
+            rng.next(),
+            rng.next(),
+            rng.next(),
+        );
+        t.same(
+            "rcuiScaleVector_copy_00756600",
+            |o| o.eax(0x0075_6600, &[dst, v, s, a, b, c]),
+            |m| vu0::bridge::rcui_scale_vector(m, dst, v, s, [a, b, c]),
+        );
+        t.same(
+            "rcVec4fToFixed_copy_007e6cc0",
+            |o| o.eax(0x007e_6cc0, &[dst, v]),
+            |m| model::bridge::rc_vec4f_to_fixed(m, dst, v),
+        );
+        // the morph value
+        t.set(yi::DOBJ_COUNT, rng.below(0x40));
+        let obj = rng.below(0x50);
+        t.put(p, float_in(&mut rng, -4, 4));
+        t.same(
+            "yiSetMIMeParamDObj",
+            |o| o.eax(0x0090_a4d0, &[obj, p]),
+            |m| yi::bridge::yi_set_mime_param_dobj(m, obj, p, call),
+        );
+        // the colour offset
+        for i in 0..4 {
+            let at = t.b.rebase(0x018d_f01c) + 4 * i;
+            t.put(at, float_in(&mut rng, -400, 400));
+        }
+        t.same(
+            "yiGetColorOffsetInt",
+            |o| o.eax(0x0090_8660, &[dst]),
+            |m| yi::bridge::yi_get_color_offset_int(m, dst),
+        );
+        // the interpolation
+        let mode = rng.below(4);
+        let (a0, b0) = (float_in(&mut rng, -500, 500), float_in(&mut rng, -500, 500));
+        let tt = if k % 5 == 0 {
+            float_in(&mut rng, -4, 4)
+        } else {
+            float_in(&mut rng, 0, 1)
+        };
+        t.same(
+            "rcefLerp",
+            |o| o.float(0x0092_e580, &[a0, b0, tt, mode]),
+            |m| bits(tb::rcef_lerp(m, [a0, b0, tt, mode])),
+        );
+        // the colour work
+        t.fill(work_at + 0x1c0, 0x40, &mut rng);
+        let cols: Vec<u32> = (0..9).map(|_| rng.next()).collect();
+        let work = t.stack_scratch(0);
+        t.same(
+            "rcefColorSet",
+            |o| o.void(0x0092_e9c0, &cols[..5]),
+            |m| {
+                let a = [cols[0], cols[1], cols[2], cols[3], cols[4]];
+                tb::rcef_color_set(m, a, work);
+            },
+        );
+        t.fill(work_at + 0x1c0, 0x40, &mut rng);
+        let mut a9 = [0u32; 9];
+        a9.copy_from_slice(&cols);
+        t.same(
+            "rcefColorFade",
+            |o| o.void(0x0092_ea40, &a9),
+            |m| tb::rcef_color_fade(m, a9, work),
+        );
+    }
+}
+
+/// Round 26: the effect's screen shake, the scene's wave and the sphere
+/// grid's part start.
+#[test]
+#[allow(clippy::too_many_lines)] // one function after another
+fn round26_shake_wave_and_part_start_match_the_original() {
+    use ffx_field::abmap;
+    use task::bridge as tb;
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x001a_0001);
+    let env = LoadEnv::install(&mut t, &mut rng);
+    let (log, rv) = (env.log, env.rv);
+    let (randv, tabv) = (t.alloc(4), t.alloc(4));
+    let list: Vec<(Option<u32>, Vec<u8>)> = vec![
+        (Some(tb::MS_SCREEN_OFFSET), log_stub(log, rv, 300, 2)),
+        (Some(model::SCENE_WAVE_C0_STOP), log_stub(log, rv, 301, 1)),
+        (Some(abmap::GET_PTR32_FUNC), log_stub(log, tabv, 302, 1)),
+        (Some(abmap::PPP_START_PART), log_stub(log, rv, 303, 5)),
+        (None, log_stub(log, randv, 304, 0)),
+    ];
+    let (stubs, _) = t.cave_from(env.cave_end, &list);
+    let rand = *stubs.last().unwrap();
+    t.put(t.b.rebase(model::RAND_IMPORT), rand);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (e, s) = (t.alloc(0x220), t.alloc(0xe0));
+    let (part, tab, data) = (t.alloc(0x80), t.alloc(0x40), t.alloc(0x20));
+    let slot = t.alloc(4);
+    t.put(t.b.rebase(abmap::PPP_ENV_SLOT), slot);
+    t.put(t.b.rebase(abmap::ABMAP_PPP_DATA), data);
+    t.put(tabv, tab);
+    for k in 0..400u32 {
+        env.reset(&mut t, &mut rng);
+        t.put(randv, rng.below(0x8000));
+        // the shake
+        t.fill(e + 0x1f0, 0x30, &mut rng);
+        t.put(e + 0x214, rng.below(3));
+        t.put(e + 0x1f8, rng.below(6));
+        t.put(e + 0x210, float_in(&mut rng, -10, 10));
+        t.put(e + 0x1fc, float_in(&mut rng, -1, 1));
+        t.put(e + 0x200, rng.range(-2, 20));
+        t.put(e + 0x204, rng.range(0, 22));
+        if k % 11 == 3 {
+            // frames beyond f32's integers
+            t.put(e + 0x200, rng.range(0x0100_0001, 0x7fff_ffff));
+        }
+        let range = if rng.below(2) == 0 {
+            rng.range(1, 60)
+        } else {
+            rng.range(-60, -1)
+        };
+        t.put(e + 0x20c, range);
+        t.put(e + 0x208, rng.range(-100, 100));
+        t.same(
+            "rcefScreenShake",
+            |o| o.void(0x0092_4df0, &[e]),
+            |m| tb::rcef_screen_shake(m, e, call),
+        );
+        // the wave
+        t.fill(s + 0xb0, 0x30, &mut rng);
+        t.put(s + 0xc0, rng.below(6));
+        t.put(s + 0xd4, float_in(&mut rng, -10, 10));
+        t.put(s + 0xc4, float_in(&mut rng, -1, 1));
+        t.put(s + 0xc8, rng.range(-2, 20));
+        t.put(s + 0xd8, rng.range(0, 22));
+        if k % 11 == 4 {
+            t.put(s + 0xc8, rng.range(0x0100_0001, 0x7fff_ffff));
+        }
+        t.put(s + 0xd0, rng.range(-3, 40));
+        t.put(s + 0xcc, rng.range(-100, 100));
+        if k % 9 == 0 {
+            t.put(s + 0xcc, rng.next());
+        }
+        t.same(
+            "rcbgSceneWaveC0Update",
+            |o| o.void(0x0092_10e0, &[s]),
+            |m| model::bridge::rcbg_scene_wave_c0_update(m, s, call),
+        );
+        // the part start
+        t.fill(part, 0x80, &mut rng);
+        t.fill(tab, 0x40, &mut rng);
+        t.fill(data, 0x20, &mut rng);
+        let mut a = [0u32; 11];
+        a[0] = part;
+        a[1] = rng.below(0x10);
+        for v in &mut a[2..] {
+            *v = float_in(&mut rng, -3000, 3000);
+        }
+        if k % 7 == 0 {
+            a[7] = rng.next() | 0x0040_0000;
+        }
+        t.same(
+            "AbmapStartPart",
+            |o| o.eax(0x00a5_bad0, &a),
+            |m| abmap::bridge::abmap_start_part(m, a, call),
+        );
+    }
+}

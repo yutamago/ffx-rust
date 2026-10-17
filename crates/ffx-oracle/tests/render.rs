@@ -4849,3 +4849,279 @@ fn round9_more_matches_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case per function
+fn round10_matches_the_original() {
+    use ffx_graphic::state::bridge as st;
+    use ffx_graphic::util::bridge as ut;
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x1010_0010);
+    for round in 0..3000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        match round % 5 {
+            0 => {
+                t.stub_sym(st::CURSOR_SET_NODE, Conv::Thiscall(0), 1, rng.next());
+                let cur = build_cursor(&mut t, &mut rng);
+                let sym = if rng.chance(2) {
+                    0x0044_1c60
+                } else {
+                    0x0044_1cc0
+                };
+                t.check(&what, sym, Conv::Fastcall, &[cur], |g| {
+                    Out::U32(st::cursor_step(g, cur, false))
+                });
+            }
+            1 => {
+                let less = cave_float_less(&mut t);
+                let n = rng.below(14);
+                let base = t.alloc(&float_bytes(&mut rng, n as usize + 1));
+                t.check(
+                    &what,
+                    0x006c_7410,
+                    Conv::Cdecl,
+                    &[base, base + 4 * n, less],
+                    |g| Out::U32(ut::float_make_heap(g, base, base + 4 * n, less)),
+                );
+            }
+            2 => {
+                let less = cave_float_less(&mut t);
+                let n = rng.below(10);
+                // no NaNs: the unguarded inner loop relies on an order
+                let v: Vec<u8> = (0..=n)
+                    .flat_map(|_| (rng.below(200) as f32 - 100.0).to_le_bytes())
+                    .collect();
+                let base = t.alloc(&v);
+                t.check(
+                    &what,
+                    0x006c_7320,
+                    Conv::Cdecl,
+                    &[base, base + 4 * n, less],
+                    |g| {
+                        ut::float_insertion_sort(g, base, base + 4 * n, less);
+                        Out::None
+                    },
+                );
+            }
+            3 => {
+                t.stub_sym(ut::ARRAY_GROW_3890, Conv::Thiscall(0), 1, rng.next());
+                t.stub_sym(ut::ARRAY_GROW_3898, Conv::Thiscall(0), 1, rng.next());
+                let scene = t.alloc(&rng.bytes(0x38b0));
+                let cap = 1 + rng.below(6);
+                let a1 = t.alloc(&rng.bytes(4 * cap as usize + 8));
+                let a2 = t.alloc(&rng.bytes(4 * cap as usize + 8));
+                t.w32(scene + 0x3890, cap | (rng.next() & 0x8000_0000));
+                t.w32(scene + 0x3894, a1);
+                t.w32(scene + 0x3898, rng.next());
+                t.w32(scene + 0x389c, a2);
+                t.w32(scene + 0x38a0, rng.below(cap));
+                let (a, b) = (rng.next(), rng.next());
+                t.check(&what, 0x0065_6b90, Conv::Thiscall(scene), &[a, b], |g| {
+                    Out::U32(ut::scene_push_pair(g, scene, a, b))
+                });
+            }
+            _ => {
+                // printf through its import slot: a recording stub there
+                let pf = t.stub(None, 0x5052, false, 1, 0, 0);
+                let slot = t.rebase(ut::PRINTF_SLOT);
+                t.w32(slot, pf);
+                let set = rng.below(4);
+                t.global(ut::GRAD_MESH_SET.sym, set);
+                let pool = t.alloc(&rng.bytes(0xe10));
+                for i in 0..16 {
+                    t.w8(pool + set * 16 + 0xdc4 + i, u8::from(!rng.chance(8)));
+                }
+                let out = t.zeros(4);
+                t.check(&what, 0x006c_c980, Conv::Thiscall(pool), &[out], |g| {
+                    Out::U32(ut::get_spare_grad_mesh(g, pool, out))
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn round10_settings_match_the_original() {
+    use ffx_graphic::state::bridge as st;
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x1010_0011);
+    for round in 0..1000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        let sm = t.alloc(&rng.bytes(0x4070));
+        t.global(managers::bridge::SHADOW.sym, sm);
+        t.stub_sym(st::SHADOW_RESIZE, Conv::Thiscall(0), 0, rng.next());
+        t.stub_sym(st::POST_PROCESS_REBIND, Conv::Thiscall(0), 1, rng.next());
+        let cfg = t.alloc(&rng.bytes(0x50));
+        t.w32(cfg + 0x30, rng.below(5));
+        t.w32(
+            cfg + 0x40,
+            if rng.chance(5) {
+                rng.next()
+            } else {
+                rng.below(7)
+            },
+        );
+        t.w32(cfg + 0x44, if rng.chance(2) { 0 } else { rng.next() });
+        t.global(st::SETTINGS.sym, cfg);
+        let pp = t.alloc(&rng.bytes(0x12400));
+        let scene = t.alloc(&rng.bytes(0x10de0));
+        t.w32(scene + 0x10cc, pp);
+        t.check(&what, 0x0066_f010, Conv::Thiscall(scene), &[], |g| {
+            Out::U32(st::scene_apply_settings(g, scene))
+        });
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one case per function
+fn round11_matches_the_original() {
+    use ffx_graphic::util::bridge as ut;
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x1111_0011);
+    let names = ["a", "water"];
+    for round in 0..3000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        match round % 8 {
+            0 => {
+                t.stub_sym(ut::MENU_CURRENT_PLAYER_POS, Conv::Cdecl, 0, rng.next());
+                t.stub_sym(ut::MENU_PLAYER_FROM_INDEX, Conv::Cdecl, 1, rng.next());
+                t.check(&what, 0x008e_1c50, Conv::Cdecl, &[], |g| {
+                    Out::U32(ut::get_current_frame(g))
+                });
+            }
+            1 => {
+                t.stub_sym(ut::TEX_ANIM_SET_FRAME, Conv::Thiscall(0), 3, rng.next());
+                let mgr = t.zeros(0x20);
+                t.global(managers::bridge::TEXTURE_ANIMATION.sym, mgr);
+                let (i, f) = (rng.next(), rng.next());
+                t.check(&what, 0x0064_3a20, Conv::Cdecl, &[i, f], |g| {
+                    Out::U32(ut::graphic_tex_anim_set_frame(g, i, f))
+                });
+            }
+            2 => {
+                use ffx_graphic::texanim::bridge as ta;
+                t.stub_sym(ut::TEX_ANIM_RESET_POS, Conv::Cdecl, 3, rng.next());
+                t.stub_sym(ut::TEX_ANIM_POS_SET_OLD, Conv::Cdecl, 3, rng.next());
+                let i = rng.below(4);
+                let e = t.rebase(ta::CHR_TEXANIM.sym) + 0x30 * i;
+                t.w8(e + 0xd, [0, 1, 2, 0xff][rng.below(4) as usize]);
+                let (a, b) = (rng.next(), rng.next());
+                t.check(&what, 0x0077_e9a0, Conv::Cdecl, &[i, a, b], |g| {
+                    Out::U32(ut::tex_anim_pos_set(g, i, a, b))
+                });
+            }
+            3 => {
+                let pf = t.stub(None, 0x5350, false, 3, 0, rng.next());
+                let slot = t.rebase(ut::SPRINTF_SLOT);
+                t.w32(slot, pf);
+                let scene = t.alloc(&rng.bytes(0xfd00));
+                t.w8(scene + 0xfc00, u8::from(!rng.chance(4)));
+                let n = rng.next();
+                t.check(&what, 0x0066_e5e0, Conv::Thiscall(scene), &[n], |g| {
+                    ut::scene_set_number_text(g, scene, n);
+                    Out::None
+                });
+            }
+            4 => {
+                let mgr = t.alloc(&rng.bytes(0x90));
+                t.w32(mgr + 8, rng.below(2));
+                t.w32(mgr + 0xc, rng.below(2));
+                let n = rng.below(5);
+                let mut mats = Vec::new();
+                for _ in 0..n {
+                    let m = if rng.chance(5) {
+                        0
+                    } else {
+                        let m = t.zeros(0x20);
+                        let s = cstr(&mut t, names[rng.below(2) as usize]);
+                        t.w32(m + 0x10, s | rng.below(2));
+                        m
+                    };
+                    mats.extend(m.to_le_bytes());
+                }
+                let mats = t.alloc(&mats);
+                t.w32(mgr + 0x74, n | (rng.next() & 0x8000_0000));
+                t.w32(mgr + 0x78, mats);
+                let k = rng.below(4);
+                let anims = t.alloc(&rng.bytes(0x20 * k as usize + 4));
+                for j in 0..k {
+                    let s = cstr(&mut t, names[rng.below(2) as usize]);
+                    t.w32(anims + 0x20 * j + 4, s);
+                }
+                t.w32(mgr + 0x7c, k);
+                t.w32(mgr + 0x80, anims);
+                let (i, p) = (rng.below(6), rng.next());
+                t.check(&what, 0x006b_3600, Conv::Thiscall(mgr), &[i, p], |g| {
+                    ut::tex_anim_set_paused(g, mgr, i, p);
+                    Out::None
+                });
+            }
+            5 => {
+                t.stub_sym(ut::BROKEN_SCREEN_GET_INSTANCE, Conv::Cdecl, 0, rng.next());
+                let n = if rng.chance(2) {
+                    rng.below(100)
+                } else {
+                    rng.next()
+                };
+                t.check(&what, 0x0063_93c0, Conv::Cdecl, &[n], |g| {
+                    Out::U32(ut::broken_screen_buffer_size(g, n))
+                });
+            }
+            6 => {
+                t.stub_sym(ut::SCENE_CHECK_6721B0, Conv::Thiscall(0), 0, rng.below(2));
+                let scene = t.alloc(&rng.bytes(0x10d30));
+                let near = |rng: &mut Rng| {
+                    if rng.chance(3) {
+                        0xc00 - rng.below(2)
+                    } else {
+                        rng.below(0xc00)
+                    }
+                };
+                let (n1, n2) = (near(&mut rng), near(&mut rng));
+                t.w32(scene + 0xf8cc, n1);
+                t.w32(scene + 0xf8d0, n2);
+                let e = t.alloc(&rng.bytes(0x10));
+                let kind = if rng.chance(2) { 0 } else { rng.next() };
+                t.check(&what, 0x0065_6c10, Conv::Thiscall(scene), &[e, kind], |g| {
+                    ut::scene_add_draw_entry(g, scene, e, kind);
+                    Out::None
+                });
+            }
+            _ => {
+                build_scene(&mut t, &mut rng);
+                t.stub_sym(
+                    ut::SCENE_UPDATE_SHADOW_CLUSTERS,
+                    Conv::Thiscall(0),
+                    0,
+                    rng.next(),
+                );
+                t.stub_sym(
+                    ut::SCENE_FORCE_SET_SHADOW_SOLUTION,
+                    Conv::Thiscall(0),
+                    1,
+                    rng.next(),
+                );
+                let at = t.rebase(0x00c3_4400);
+                let f = rng.float();
+                t.write(at, &f.to_le_bytes());
+                let sm = t.alloc(&rng.bytes(0x4070));
+                let keep = if rng.chance(2) { 0 } else { rng.next() };
+                t.check(&what, 0x006c_eb10, Conv::Thiscall(sm), &[keep], |g| {
+                    Out::U32(ut::shadow_reset_solution(g, sm, keep))
+                });
+            }
+        }
+    }
+}

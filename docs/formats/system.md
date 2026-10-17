@@ -268,3 +268,38 @@ The help pictures (`getSa_MenuTextureName`, `0x00774ae0`) are
 `help_de`, `help_it` (languages 0..5), `help_kr` and `help_ch` (9, 10).
 Languages 6..8 format an uninitialised buffer in the original; the port
 writes an empty name.
+
+## Overdrive (limit) windows
+
+The battle overdrive windows share a timer: `0x0133f77c` (1 opened, 2
+running), the frame count `0x0133f788` and three times at `0x0133f78c`
+(the limit), `0x0133f790` (time left) and `0x0133f794` (shown).
+
+- `TOBtlInit{Auron,Lulu,Tidus}LimitWindow` (`0x00897970`, `0x00897f70`,
+  `0x00898180`) read `dumm..` from scene 2, reset the pad data and the
+  timer, and clear their window record: Auron `0x0133d6f4`, Lulu
+  `0x0133d708`, Tidus `0x0133d734`. Their points and colours come from
+  the scene; Tidus' band edges are UI-remapped constants.
+- `TOBtlOpen*LimitWindow(cmd)` turn the command into a level (Auron 0x22,
+  0x32, 0x42, 0x52; Tidus 0x20..0x50; Lulu's group is `cmd - 0x3078`).
+  They take the time from `NkzGet*LimitTime` and start the timer. Auron
+  gets the button sequence (0xffff-terminated) and its length; Lulu her
+  limit table; Tidus his band from `NkzTidusLimitTableA/B`, centred on
+  the window.
+- `TOBtlCtrlLimitTimer` (`0x00891ac0`) counts frames while the timer
+  runs. The time left is the limit less frames/30 (25 in PAL mode). At 0
+  or below both times become 0. Otherwise the shown time gets a random
+  hundredths digit from the battle `rnd`, so the display flickers while
+  the value it is derived from does not.
+
+## Message-window position (`TOSetMessageWindowPosition`, `0x008af850`)
+
+The window's text size (`+0x40`, `+0x42` of its `+0x14` record) plus the
+frame padding gives its size. With the tutorial choice set
+(`0x025d16bc`), a text wider than 0x190 becomes 300 wide, with
+`width / 300 + 1` rows, and `0x025d0b20[i]` records it. Anchors 1..4 put
+the point at the bottom, right, bottom-right or centre. The window is
+kept in the 512x412 field (rows to 0x7b in message mode 1). Magic 0x281
+on maps 0x5e and 0x12e, and type-1 windows while `0x01327104` is set,
+may leave it horizontally. `0x008afa90` is the same with an explicit
+size.

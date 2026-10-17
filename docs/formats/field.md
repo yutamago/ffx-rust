@@ -1116,6 +1116,98 @@ From here on, functions are picked by `symbols/classes.tsv` (category
   import table). When the layer is past the limit, `eax` is the map
   number.
 
+## The aeons' stat gains and the effect's stream forwarders (round 24)
+
+- The aeon stat table (`0x00c5a604`, read by `TkMenuCtrlSummon`) has
+  `0x1c`-byte rows. Row 0 is empty, then HP, MP, strength, defence,
+  magic, magic defence, agility, luck, evasion and accuracy. Each row
+  starts with its gain function and ends with the maximum (99999, 9999,
+  then 255). The gain functions (names ours) take `(pc, v)`:
+  - HP (`0x00a5c7b0`): `trunc(sqrt(v) * 0.25 + 16.0)`, at least 1.
+  - MP (`0x00a5c8d0`): `trunc((sqrt(v) + sqrt(v)) / 3.0 + 10.0)`, at
+    least 1.
+  - The other eight (`0x00a5c660`, `0x00a5c740`, `0x00a5c910`,
+    `0x00a5c980`, `0x00a5c9f0`, `0x00a5c860`, `0x00a5c6d0`,
+    `0x00a5c7f0`) have identical bodies: for PCs 8..=17 (the aeons)
+    `v / 2` rounded toward zero, at least 1; any other PC prints
+    `"NKZ:Illigal PC Number %d"` and gives 100. HP and MP don't check the
+    PC.
+  - Both roots use `_CIsqrt` and `_ftol2_sse` at 53-bit precision.
+- Effect forwarders, each returning the last call's `eax`:
+  - `rcefSetVibrate` (`0x0092ec60`, name ours; Fahrenheit's Switch BSim
+    guess was `rcefStreamCue`) calls `TkSetVibrateStream(7, arg,
+    entry)` with entry `id` of kind 5 of the effect data.
+  - `rcefStreamCue` (`0x0092ebf0`) calls `op_oef2_stream_cue(entry, arg,
+    0x800)` with entry `id` of kind 6.
+  - `rcefPlayStream` (`0x0092e6b0`) returns `op_oef2_sound_cue_check
+    (0x800)` when it is non-zero, else plays the entry like
+    `rcefPlaySE`.
+  - `rcefObjAnimeStart`/`rcefObjSetupDraw` (`0x00925590`/`0x00925690`,
+    effect imports, names ours) start the object's animation (`+0x330`)
+    or set up its draw record (`+0x3c0`) from the kind 4 entry of the
+    environment's data (`env +8`), with outputs at `+0x1f0` and `+0x170`.
+- Left for the debug list: `rcefMemDebugInit`/`rcefMemDebugDisp`
+  (`0x009374f0`/`0x00937440`).
+
+## Copies, the morph value, interpolation and colour work (round 25)
+
+- `rcuiScaleVector_copy_00756600` and `rcVec4fToFixed_copy_007e6cc0` are
+  copies of `rcuiScaleVector` and `rcVec4fToFixed` that the compiler
+  kept; their shims use the same bridges.
+- `yiSetMIMeParamDObj` (`0x0090a4d0`): for a display object below
+  `g_YiDObjCount`, copies the float at `p` through the x87 stack into
+  the object's morph value (`0x018df624`, `0xb4` bytes apart) and passes
+  it to `graphicSetMeshVertexColorMorphValue`. Returns 0.
+- `yiGetColorOffsetInt` (`0x00908660`, an effect import, name ours): the
+  colour offsets plus 128.0, truncated into four ints.
+- `rcefLerp` (`0x0092e580`, an effect import, name ours) returns
+  `a + w (b - a)` in `ST0`:
+  - mode 2: `w` is the sine table's entry
+    `trunc(t * 16384) >> 4 & 0xfff`.
+  - mode 1: a cosine ease, `(sin(t * 32768 - 16384) + 1) / 2`, stored
+    as `f32`.
+  - any other mode: `w` is `t`.
+  - `b - a` and the result are stored as `f32`.
+- `rcefColorSet`/`rcefColorFade` (`0x0092e9c0`/`0x0092ea40`, effect
+  imports, names ours) convert colour bytes to floats and start the
+  effect's colour work at `0x025d5a20` with `rcefWorkSetFromVf00` (from
+  the current colour) or `rcefWorkSet` (from colour 0 to colour 1).
+- Not ported:
+  - `0x00a48e40` and `0x0090dd00` have no caller or pointer in the image.
+  - `0x0092e4f0` loops on `rand()` through the import table.
+  - `0x00a45930` sets the ppp matrices and runs a sphere grid ppp part (vfx).
+
+## Screen shake, scene wave and the sphere grid's part start (round 26)
+
+- The screen shake and the scene's wave share a swing: the sine table
+  entry `(0x4000 - trunc(phase * -65536.0 / 6.2831855)) >> 4 & 0xfff`.
+  Faded, it becomes `f32(frames - done) / f32(frames) * swing`, each int
+  stored as `f32` first, so frame counts beyond 2^24 round. The amplitude
+  is `rand() % range + base` through the import table. A zero range
+  faults in the original; the port then uses `base`.
+- `rcefScreenShake` (`0x00924df0`, name ours, from
+  `rcefMainProcRunAfter`): on `+0x214` with mode `+0x1f8`. The swing of
+  the phase `+0x210`, faded over `+0x200` frames for modes from 3, times
+  the amplitude (`+0x20c`, `+0x208`) gives the x offset (odd modes) or
+  the y offset. The phase advances by `+0x1fc` and `+0x204` counts the
+  frames. Within the frames it calls `MsScreenOffset(x, y)`; after them
+  `MsScreenOffset(0, 0)`, and the shake turns off.
+- `rcbgSceneWaveC0Update` (`0x009210e0`, name ours, from `0x00920aa0`):
+  the same with mode `+0xc0`, phase `+0xd4`, step `+0xc4`, frames
+  `+0xc8` (done `+0xd8`; faded for modes 3 and 4), amplitude `+0xcc`
+  (plus the random part only when `+0xd0` is positive). The result goes
+  to `+0xb8` (odd modes) or `+0xbc`. It calls `rcbgSceneWaveC0Stop` after
+  the frames, then `rcbgSceneSetMatrix`.
+- `AbmapStartPart` (`0x00a5bad0`, name ours): starts sphere grid ppp part
+  `n` in the grid's environment (`0x01a86034`) through
+  `pppStartPart(part, 0x1000, id, 1, 0)`; Ghidra shows
+  `get_ptr32_func`'s two leftover pushes as its arguments. It then fills
+  the part: `+0x40` x, y, z, 1.0, `+0x50` three truncated floats,
+  `+0x5c` 1, `+0x60` three floats, `+0x6c` 1.0. Returns the third
+  truncated value.
+- Not ported: `0x00a461b0` and `0x0092f290` write draw packets and VFX
+  render data (replaced by ffx-render).
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single
