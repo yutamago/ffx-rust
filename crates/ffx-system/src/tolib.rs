@@ -2207,4 +2207,142 @@ pub mod bridge {
         mem.write(size, w);
         name
     }
+
+
+    /// `g_TOMessageWindowSlots` (`0x01865b3c`): 8 message-window objects.
+    pub const MESSAGE_SLOTS: Global<[u32; 8]> = Global::new(0x0186_5b3c);
+    /// The message-window frame paddings (`0x00c59ed8`): per style, i16
+    /// left, top, right, bottom.
+    pub const FRAME_PADDING: u32 = 0x00c5_9ed8;
+    /// `g_CurrentMapNo` (`0x012fbc40`).
+    pub const CURRENT_MAP: Global<u32> = Global::new(0x012f_bc40);
+
+    /// Message window `i`'s frame padding (left, top, right, bottom), by
+    /// the style (`+4` of its object's `+0x10`).
+    fn frame_padding(mem: &impl Mem, i: i32) -> [i32; 4] {
+        let slot = MESSAGE_SLOTS.ptr(mem).addr.wrapping_add(i.cast_unsigned().wrapping_mul(4));
+        let obj: u32 = mem.read(slot);
+        let style: u32 = mem.read(obj.wrapping_add(0x10));
+        let s = i32::from(mem.read::<i16>(style.wrapping_add(4)));
+        let at = mem.rebase(FRAME_PADDING).wrapping_add(s.cast_unsigned().wrapping_mul(8));
+        let p: [i16; 4] = mem.read(at);
+        p.map(i32::from)
+    }
+
+    /// An `int` through `fild` and `fstp dword`, back on the x87.
+    #[allow(clippy::cast_precision_loss)] // the original rounds to f32
+    fn f32_of(v: i32) -> f64 {
+        f64::from(v as f32)
+    }
+
+    /// `0x008afbb0(i, x, y, w, h)`: message window `i` placed. Outside
+    /// message-window mode 1 the frame padding is taken off the rectangle
+    /// and put back after the x87 rounding (`ftol`). On map 0x17 a window at
+    /// (400, 0x110) moves by (-45, +5). With a screen (passed in) at least
+    /// 0x2d0 high it is kept inside the safe area: vertically within
+    /// 31.2..384.8 (by the padding's top, for window type 1); horizontally
+    /// for type 1 within 7.5%..92.5% of the screen width mapped back
+    /// through the 416-line scale and the 4:3 offset (±10), else within
+    /// 38.4..473.6. Then `TOSetWindowRect` (map 0x15b turns a 0x1d8 x 0xf6
+    /// window 0x1ba wide there only) and the message area, padded again.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn place_message_window<M: Mem>(
+        mem: &mut M,
+        i: i32,
+        rect: [i32; 4],
+        screen_wh: impl FnOnce(&mut M) -> (i32, i32),
+    ) {
+        use ffx_bridge::x87;
+        let [mut x, mut y, mut w, mut h] = rect;
+        let mode = crate::menu::bridge::message_window_mode(mem);
+        if mode != 1 {
+            let [l, t, r, b] = frame_padding(mem, i);
+            x = x.wrapping_add(l);
+            y = y.wrapping_add(t);
+            w = w.wrapping_sub(r.wrapping_add(l));
+            h = h.wrapping_sub(b.wrapping_add(t));
+        }
+        let mut fx = f32_of(x);
+        let mut fy = f32_of(y);
+        if CURRENT_MAP.get(mem) == 0x17 && x == 400 && y == 0x110 {
+            fx = f64::from(x87::sub(fx, 45.0) as f32);
+            fy = f64::from(x87::add(fy, 5.0) as f32);
+        }
+        let ftol = |mem: &M, v: f64| x87::ftol(mem, v).cast_signed();
+        if mode == 1 {
+            x = ftol(mem, fx);
+            y = ftol(mem, fy);
+        } else {
+            let [l, t, r, b] = frame_padding(mem, i);
+            x = ftol(mem, x87::sub(fx, f64::from(l)));
+            y = ftol(mem, x87::sub(fy, f64::from(t)));
+            w = w.wrapping_add(r.wrapping_add(l));
+            h = h.wrapping_add(b.wrapping_add(t));
+        }
+        let (sw, sh) = screen_wh(mem);
+        if sh >= 0x2d0 {
+            let bottom = y.wrapping_add(h);
+            let (l, t) = if crate::window::bridge::window_type(mem, i) == 1 {
+                let p = frame_padding(mem, i);
+                (p[0], p[1])
+            } else {
+                (0, 0)
+            };
+            let left = l.wrapping_add(x);
+            let right = x.wrapping_add(w).wrapping_sub(l);
+            let top = f32_of(y.wrapping_add(t));
+            let low: f64 = 31.199_995_040_893_555;
+            let high = f64::from(f32::from_bits(0x43c0_6667));
+            if !(low <= top || top.is_nan()) {
+                y = ftol(mem, x87::sub(low, f32_of(t)));
+            } else {
+                let b = f32_of(bottom.wrapping_sub(t));
+                if b > high {
+                    y = ftol(mem, x87::add(x87::sub(384.800_018_310_546_9, f32_of(h)), f32_of(t)));
+                }
+            }
+            let lf = f32_of(l);
+            if crate::window::bridge::window_type(mem, i) == 1 {
+                let shf = f32_of(sh);
+                let swf = f32_of(sw);
+                let scale = f64::from(x87::div(shf, 416.0) as f32);
+                let q = x87::div(1.230_769_276_618_957_5, x87::div(swf, shf));
+                let off = f64::from(x87::mul(x87::mul(swf, x87::sub(1.0, q)), 0.5) as f32);
+                let lim = x87::mul(x87::mul(swf, 0.149_999_976_158_142_1), 0.5);
+                let v = x87::sub(x87::add(x87::mul(scale, f32_of(left)), off), 1.0);
+                if v < lim {
+                    let u = x87::div(x87::sub(lim, off), scale);
+                    x = ftol(mem, x87::add(x87::sub(u, lf), 10.0));
+                } else {
+                    let lim2 = x87::mul(x87::mul(swf, 1.850_000_023_841_858), 0.5);
+                    let v = x87::add(1.0, x87::add(x87::mul(f32_of(right), scale), off));
+                    if v > lim2 {
+                        let u = x87::div(x87::sub(lim2, off), scale);
+                        x = ftol(mem, x87::sub(x87::add(x87::sub(u, f32_of(w)), lf), 10.0));
+                    }
+                }
+            } else if f32_of(left) < f64::from(f32::from_bits(0x4219_9998)) {
+                x = ftol(mem, x87::sub(38.399_993_896_484_375, lf));
+            } else if 473.600_006_103_515_6 < f32_of(right) {
+                x = ftol(mem, x87::add(x87::sub(473.600_006_103_515_6, f32_of(w)), lf));
+            }
+        }
+        let shown_w = if CURRENT_MAP.get(mem) == 0x15b && w == 0x1d8 && h == 0xf6 { 0x1ba } else { w };
+        set_window_rect(mem, i, [x, y, shown_w, h]);
+        if crate::menu::bridge::message_window_mode(mem) == 1 {
+            crate::window::bridge::set_message_area(mem, i, [x, y, w, h]);
+        } else {
+            let [l, t, r, b] = frame_padding(mem, i);
+            crate::window::bridge::set_message_area(
+                mem,
+                i,
+                [
+                    x.wrapping_add(l),
+                    y.wrapping_add(t),
+                    w.wrapping_sub(r).wrapping_sub(l),
+                    h.wrapping_sub(b).wrapping_sub(t),
+                ],
+            );
+        }
+    }
 }

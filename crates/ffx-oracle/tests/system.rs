@@ -7985,3 +7985,75 @@ fn round13_magic_file_matches_the_original_on_the_snapshot() {
     };
     round13_magic_file(&mut a, &mut b, &mut Xorshift(0x4013_0032));
 }
+
+/// Round 13's message-window placement over a stand-in screen size.
+fn round13_message_windows(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::{menu::bridge as mb, window::bridge as wb};
+    use tolib::bridge as t;
+    let cells = alloc(a, b, 8);
+    // mov eax, [esp+4]; mov ecx, [w]; mov [eax], ecx; mov eax, [esp+8]; mov ecx, [h]; mov [eax], ecx; ret
+    let mut code = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d];
+    code.extend_from_slice(&cells.to_le_bytes());
+    code.extend_from_slice(&[0x89, 0x08, 0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d]);
+    code.extend_from_slice(&(cells + 4).to_le_bytes());
+    code.extend_from_slice(&[0x89, 0x08, 0xc3]);
+    let wh = stand_in8(a, b, 0xc00, &code);
+    redirect(a, b, 0x0064_0db0, wh);
+    let windows = alloc(a, b, 8 * 0x80);
+    let messages = alloc(a, b, 8 * 0x80);
+    let objects = alloc(a, b, 8 * 0x20);
+    let styles = alloc(a, b, 8 * 0x10);
+    let mut slots = [0u32; 8];
+    for k in 0..8u32 {
+        put(a, b, wb::WINDOWS.ptr(a).addr + 4 * k, windows + 0x80 * k);
+        put(a, b, wb::MSG_WINDOWS.ptr(a).addr + 4 * k, messages + 0x80 * k);
+        put(a, b, objects + 0x20 * k + 0x10, styles + 0x10 * k);
+        slots[k as usize] = objects + 0x20 * k;
+    }
+    set(a, b, t::MESSAGE_SLOTS, slots);
+    let screens = [(640, 480), (1280, 720), (1920, 1080), (2560, 1080), (1024, 768), (3840, 2160), (720, 1280)];
+    let maps = [0x17u32, 0x15b, 0, 0x40];
+    for _ in 0..3000 {
+        let i = (rng.next() % 8) as i32;
+        let (sw, sh) = screens[(rng.next() % 7) as usize];
+        put(a, b, cells, [sw, sh]);
+        set(a, b, mb::MESSAGE_WINDOW_MODE, rng.next() % 3);
+        set(a, b, t::CURRENT_MAP, maps[(rng.next() % 4) as usize]);
+        put(a, b, styles + 0x10 * i.cast_unsigned() + 4, (rng.next() % 8) as u16);
+        put(a, b, windows + 0x80 * i.cast_unsigned() + 4, (rng.next() % 3) as u16);
+        let rect = match rng.next() % 8 {
+            0 => [400, 0x110, (rng.next() % 500) as i32, (rng.next() % 300) as i32],
+            1 => [(rng.next() % 600) as i32 - 50, (rng.next() % 450) as i32 - 50, 0x1d8, 0xf6],
+            2 => [rng.next().cast_signed(), rng.next().cast_signed(), rng.next().cast_signed(), rng.next().cast_signed()],
+            _ => [
+                (rng.next() % 600) as i32 - 50,
+                (rng.next() % 450) as i32 - 50,
+                (rng.next() % 520) as i32,
+                (rng.next() % 300) as i32,
+            ],
+        };
+        let args = [i.cast_unsigned(), rect[0].cast_unsigned(), rect[1].cast_unsigned(), rect[2].cast_unsigned(), rect[3].cast_unsigned()];
+        eax(a, 0x008a_fbb0, &args);
+        t::place_message_window(b, i, rect, |m| {
+            let v: [i32; 2] = Mem::read(m, cells);
+            (v[0], v[1])
+        });
+        same_memory("message windows", a, b);
+    }
+}
+
+#[test]
+fn round13_message_windows_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round13_message_windows(&mut a, &mut b, &mut Xorshift(0x4013_0041));
+}
+
+#[test]
+fn round13_message_windows_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round13_message_windows(&mut a, &mut b, &mut Xorshift(0x4013_0042));
+}

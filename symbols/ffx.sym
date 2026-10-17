@@ -8091,6 +8091,7 @@
 0x008af840 function TOSetMessageWindowMode    # (v): g_MessageWindowMode = v, returns v; name ours (TOGetMessageWindowMode's setter, in the file's order)
 0x008af850 function TOSetMessageWindowPosition   # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71004f9960 TOSetMessageWindowPosition, 2 votes, round 2
 0x008afb90 function TOSetMessageWindowValue   # (i, v): u16 +4 of window i's object = v; name ours
+0x008afbb0 function TOPlaceMessageWindow      # cdecl(i, x, y, w, h): padding 0x00c59ed8[style] off/on around ftol (mode != 1), map 0x17 (400,0x110) -45/+5, screen h >= 0x2d0 keeps it in y 31.2..384.8 and x 38.4..473.6 (type 1: 7.5%..92.5% of the width via h/416 and the 4:3 offset, +-10), TOSetWindowRect (map 0x15b 0x1d8x0xf6 -> 0x1ba wide), TOSetMessageArea_008b8b20 padded; callers 0x008af..; name ours
 0x008b0020 function TOMessageSlotMode1_008b0020 # cdecl(i, a, b, c): message slot i: +0x14 part +0x1c = 1, +0x18 part bytes 1/2/3/7/6 = 0, a, b, 0, c, handler +0xfc = 0x008b64e0; name ours
 0x008b00a0 function TOSortMessageWindowPriority # fh v3:exact 0x008b0050; (out): in-use message-window slots by priority (+4, i16) with the compiled exchange sort; out = 8 u16 slot ids, 0xffff after; returns the count
 0x008b0340 function TOSwapInternationalEnvExec # fh v3:exact 0x008b02f0
