@@ -3,7 +3,7 @@
 //! `crossAssertIsValidFloat`.
 
 use ffx_sg::quat::Crt;
-use ffx_sg::{camera, chpacket, control, envelope, gs, light, quat, seq, state, vec};
+use ffx_sg::{camera, chpacket, cloth, control, envelope, gs, light, quat, seq, state, vec};
 
 use super::{mem, ported};
 
@@ -1327,6 +1327,60 @@ ported! {
     Sg_IdSlideEdge @ 0x0083_e180 => extern "C" fn sg_id_slide_edge(from: u32, to: u32) {
         state::bridge::id_slide_edge(&mut mem(), from, to);
     }
+    /// `Sg_ChrPushApart(a, b, reach, dist)`.
+    Sg_ChrPushApart @ 0x0083_ecd0 => extern "C" fn sg_chr_push_apart(a: u32, b: u32, reach: f32, dist: f32) -> u32 {
+        state::bridge::chr_push_apart(&mut mem(), a, b, reach, dist)
+    }
+    /// `Sg_ClothPlaceAnchors(chr)`.
+    Sg_ClothPlaceAnchors @ 0x0082_dbc0 => extern "C" fn sg_cloth_place_anchors(chr: u32) {
+        vec::bridge::cloth_place_anchors(&mut mem(), chr);
+    }
+    /// `Sg_ClothStep(chr)`.
+    Sg_ClothStep @ 0x0082_2de0 => extern "C" fn sg_cloth_step(chr: u32) {
+        cloth::bridge::cloth_step(&mut mem(), chr, &mut crt);
+    }
+    /// `ExportValidateInterface(id)`.
+    ExportValidateInterface @ 0x0082_02e0 => extern "C" fn export_validate_interface(id: u32) -> u32 {
+        control::bridge::export_validate_interface(id)
+    }
+    /// `Sg_DrawFilter()`.
+    Sg_DrawFilter @ 0x0082_c0c0 => extern "C" fn sg_draw_filter() {
+        control::bridge::draw_filter(&mut mem());
+    }
+    /// `Sg_SetChrPacketState(v)`.
+    Sg_SetChrPacketState @ 0x0084_5c30 => extern "C" fn sg_set_chr_packet_state(v: u32) {
+        #[allow(clippy::cast_possible_truncation)] // the low half
+        envelope::bridge::set_chr_packet_state(&mut mem(), v as u16);
+    }
+    /// `Sg_SetChrPacketWord(v)`.
+    Sg_SetChrPacketWord @ 0x0084_5c40 => extern "C" fn sg_set_chr_packet_word(v: u32) {
+        #[allow(clippy::cast_possible_truncation)] // the low half
+        envelope::bridge::set_chr_packet_word(&mut mem(), v as u16);
+    }
+    /// `sg_Daddiu(dst, src, imm)`.
+    sg_Daddiu @ 0x0084_5cc0 => extern "C" fn sg_daddiu(dst: u32, src: u32, imm: u32) -> u32 {
+        envelope::bridge::daddiu(&mut mem(), dst, src, imm)
+    }
+    /// `sg_SetFloat(dst, x)`.
+    sg_SetFloat @ 0x0084_5cf0 => extern "C" fn sg_set_float(dst: u32, x: f32) -> u32 {
+        envelope::bridge::set_float(&mut mem(), dst, x)
+    }
+    /// `sg_Sll(dst, src, n)`.
+    sg_Sll @ 0x0084_5d70 => extern "C" fn sg_sll(dst: u32, src: u32, n: u32) -> u32 {
+        envelope::bridge::sll(&mut mem(), dst, src, n)
+    }
+    /// `sg_VmaddaScalar(-, v, -, s)`.
+    sg_VmaddaScalar @ 0x0084_5df0 => extern "C" fn sg_vmadda_scalar(_a: u32, v: u32, _c: u32, s: f32) -> u32 {
+        envelope::bridge::vmadda_scalar(&mut mem(), v, s)
+    }
+    /// `sg_VmaddScalar(dst, v, -, -, s)`.
+    sg_VmaddScalar @ 0x0084_5e40 => extern "C" fn sg_vmadd_scalar(dst: u32, v: u32, _c: u32, _d: u32, s: f32) -> u32 {
+        envelope::bridge::vmadd_scalar(&mut mem(), dst, v, s)
+    }
+    /// `sg_VmulScalar(dst, v, s)`.
+    sg_VmulScalar @ 0x0084_5e80 => extern "C" fn sg_vmul_scalar(dst: u32, v: u32, s: f32) -> u32 {
+        envelope::bridge::vmul_scalar(&mut mem(), dst, v, s)
+    }
     /// `Sg_ControlCamera()`.
     Sg_ControlCamera @ 0x0083_f4b0 => extern "C" fn sg_control_camera() -> u32 {
         state::bridge::control_camera(&mut mem())
@@ -1366,6 +1420,14 @@ ported! {
     /// `sg_calcenvelope_asm_opt(lists, out, m)`.
     sg_calcenvelope_asm_opt @ 0x006e_ee40 => extern "C" fn sg_calcenvelope_asm_opt(lists: u32, out: u32, m: u32) {
         envelope::bridge::calc_envelope_opt(&mut mem(), lists, out, m);
+    }
+    /// `sg_calcenvelopeW_asm(lists, out, mask, m)`.
+    sg_calcenvelopeW_asm @ 0x006e_d9e0 => extern "C" fn sg_calcenvelope_w_asm(lists: u32, out: u32, mask: u32, m: u32) -> u32 {
+        envelope::bridge::calc_envelope_w(&mut mem(), lists, out, mask, m)
+    }
+    /// `sg_calcenvelope_asm(lists, out, mask, m)`.
+    sg_calcenvelope_asm @ 0x006e_e570 => extern "C" fn sg_calcenvelope_asm(lists: u32, out: u32, mask: u32, m: u32) -> u32 {
+        envelope::bridge::calc_envelope(&mut mem(), lists, out, mask, m)
     }
 }
 

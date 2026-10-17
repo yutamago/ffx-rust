@@ -106,6 +106,14 @@ fn call_ptr(f: u32, args: &[u32]) -> u32 {
     super::call_cdecl(f, args)
 }
 
+/// `graphicUiRemapX2`/`graphicUiRemapY2(v)` (`0x006447e0`/`0x00644820`)
+/// through the game's entries: the result in `ST0`, read back as a double.
+fn ui_remap(y: bool, v: f32) -> f64 {
+    let f = crate::rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+    // SAFETY: a cdecl function of one float word returning in ST0.
+    unsafe { std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> f64>(f)(v.to_bits()) }
+}
+
 ported! {
     /// `Gu_PrintSetColor(r, g, b)`.
     Gu_PrintSetColor @ 0x0084_8740 => extern "C" fn gu_print_set_color(r: u32, g: u32, b: u32) {
@@ -1639,7 +1647,7 @@ ported! {
     }
     /// `MenuItem_SetTarget(chr)`: `chr` (left in `eax`).
     MenuItem_SetTarget @ 0x008c_5440 => extern "C" fn menu_item_set_target(chr: u32) -> u32 {
-        tk::MENU_ITEM_SELECTED_LIST.set(&mut mem(), chr);
+        tk::MENU_ITEM_TARGET.set(&mut mem(), chr);
         chr
     }
     /// `MenuItem_GetRows()`.
@@ -3188,5 +3196,54 @@ ported! {
     /// `MenuShop_WeaponSellPrice(e)`.
     MenuShop_WeaponSellPrice @ 0x008d_9410 => extern "C" fn menu_shop_weapon_sell_price(e: u32) -> u32 {
         tk::menu_shop_weapon_sell_price(&mut mem(), e, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuEquip_IsSelectable(id, any)`.
+    MenuEquip_IsSelectable @ 0x008d_5750 => extern "C" fn menu_equip_is_selectable(id: u32, any: u32) -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::menu_equip_is_selectable(&mut m, id, any, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuItemHealAmount(item, player, mp)`.
+    TkMenuItemHealAmount_008c69a0 @ 0x008c_69a0 => extern "C" fn tk_menu_item_heal_amount(item: u32, player: u32, mp: u32) -> i32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::tk_menu_item_heal_amount(&mut m, [item, player, mp], local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `DrawCrossMenuIconItemName(item, x, y, colour)`.
+    DrawCrossMenuIconItemName @ 0x008e_6700 => extern "C" fn draw_cross_menu_icon_item_name(item: u32, x: u32, y: u32, colour: u32) -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::draw_cross_menu_icon_item_name(&mut m, item, [f32::from_bits(x), f32::from_bits(y)], colour, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `DrawCrossMenuIconWeaponName(id, x, y, colour)`.
+    DrawCrossMenuIconWeaponName @ 0x008e_67f0 => extern "C" fn draw_cross_menu_icon_weapon_name(id: u32, x: u32, y: u32, colour: u32) {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return;
+        };
+        tk::draw_cross_menu_icon_weapon_name(&mut m, id, [x, y, colour], local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `DrawCrossMenuIconWeaponName2(e, x, y, colour)`.
+    DrawCrossMenuIconWeaponName2 @ 0x008e_6970 => extern "C" fn draw_cross_menu_icon_weapon_name2(e: u32, x: u32, y: u32, colour: u32) {
+        tk::draw_cross_menu_icon_weapon_name2(&mut mem(), e, [x, y, colour], &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMn2DrawGillPlate(x, y, w, h, gil)`.
+    TkMn2DrawGillPlate @ 0x008c_0a20 => extern "C" fn tk_mn2_draw_gill_plate(x: u32, y: u32, w: u32, h: u32, gil: u32) -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        let xywh = [x, y, w, h].map(f32::from_bits);
+        tk::tk_mn2_draw_gill_plate(&mut m, xywh, gil, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuListWindowCtrl(w)`.
+    TkMenuListWindowCtrl_008b44b0 @ 0x008b_44b0 => extern "C" fn tk_menu_list_window_ctrl(w: u32) {
+        tk::tk_menu_list_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a));
     }
 }

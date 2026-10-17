@@ -364,4 +364,184 @@ pub mod bridge {
         }
         0
     }
+
+    /// The anchors' default lift (`f32` 1.1 in `.rdata`).
+    pub const ANCHOR_LIFT: Global<f32> = Global::new(0x00b4_3d28);
+    /// The lift of character 1's group 0, mesh 2 (`f32` 3.0).
+    pub const ANCHOR_LIFT_HIGH: Global<f32> = Global::new(0x00b3_eb94);
+    /// Below this squared length a matrix row counts as collapsed (`f64`
+    /// 2.5e-7).
+    pub const ANCHOR_FLAT: Global<f64> = Global::new(0x00b5_9868);
+    /// `Cache_Exist_ClothVertexBuff(kind, id)`.
+    pub const CACHE_EXIST_CLOTH_VERTEX_BUFF: u32 = 0x0084_0850;
+    /// `graphicLevelGetNameHash()`.
+    pub const GRAPHIC_LEVEL_GET_NAME_HASH: u32 = 0x0064_1da0;
+    /// `Ch_UseAnchorVertex(chr, group, mesh)`.
+    pub const CH_USE_ANCHOR_VERTEX: u32 = 0x0083_16d0;
+    /// The level whose collapsed models zero their anchors.
+    pub const ANCHOR_FLAT_LEVEL: u32 = 0xc58;
+
+    /// `Sg_ClothPlaceAnchors(chr)` (`0x0082dbc0`): puts each cloth's anchor
+    /// vertices on the model's triangles. Runs when the character has a
+    /// cloth (`+0x834`), a cloth vertex buffer
+    /// (`Cache_Exist_ClothVertexBuff(1, chr[0])`) and `+0x194` bit 21;
+    /// first sets `cloth+8` to the sign-extended byte `+0x180`.
+    ///
+    /// For every list `i < cloth+0x14` (`cloth+0x30[i]`, paired with
+    /// `vb+4[i]`) and each entry pair `(e, v)` of them with `e+0x4c` (the
+    /// output, 16 bytes a vertex) set: the mesh is model group `e+0x40`,
+    /// sub-mesh `e+0x42 % 100` (`[chr+0x1bc] + 0x38 g`: `+0` header with
+    /// the sub-mesh count at `+0x18`, `+8` the vertices, `+0x2c` the
+    /// sub-meshes, each with its triangles at `+0x44`). A missing
+    /// sub-mesh only marks `e+0x48`. On level `0xc58` with a collapsed
+    /// matrix (any of the rows `+0x1d0`, `+0x1e0`, `+0x1f0` of squared
+    /// length below 2.5e-7) every output is zeroed. Otherwise each of the
+    /// `e+0x44` vertices (`v+8`: 8 bytes, flags, triangle `u16`, lift
+    /// `f32`; `v+0xc`: three weights) not on triangle `0xffff` becomes
+    /// the weighted sum of its triangle's corners; when the anchor is in
+    /// use (`Ch_UseAnchorVertex(chr, g, k)`) or the vertex's bit 0 is set
+    /// it is lifted along the triangle's normal by `lift / |n| *` 1.1 (3.0
+    /// for character 1's group 0, sub-mesh 2). `e+0x48` is then set to 1.
+    #[allow(clippy::too_many_lines)]
+    pub fn cloth_place_anchors(h: &mut impl ffx_bridge::Host, chr: u32) {
+        let cloth: u32 = h.read(chr.wrapping_add(0x834));
+        let id: u16 = h.read(chr);
+        let at = h.rebase(CACHE_EXIST_CLOTH_VERTEX_BUFF);
+        let vb = h.call(at, &[1, u32::from(id)]);
+        let flags: u32 = h.read(chr.wrapping_add(0x194));
+        if cloth == 0 || vb == 0 || flags & 0x20_0000 == 0 {
+            return;
+        }
+        let b: i8 = h.read(chr.wrapping_add(0x180));
+        #[allow(clippy::cast_sign_loss)]
+        h.write(cloth.wrapping_add(8), i32::from(b) as u32);
+        let at = h.rebase(GRAPHIC_LEVEL_GET_NAME_HASH);
+        let flat = h.call(at, &[]) == ANCHOR_FLAT_LEVEL && {
+            let thr = ANCHOR_FLAT.get(h);
+            [0x1d0u32, 0x1e0, 0x1f0].iter().any(|&r| {
+                let [x, y, z] = [0, 1, 2].map(|k| Reg::load(get(h, chr.wrapping_add(r), k)));
+                Reg::load(((x * x + y * y) + z * z).store()).value() < thr
+            })
+        };
+        let mut i = 0u32;
+        while i < h.read::<u32>(cloth.wrapping_add(0x14)) {
+            let l: u32 = h.read(cloth.wrapping_add(0x30 + 4 * i));
+            let v: u32 = h.read(vb.wrapping_add(4 + 4 * i));
+            if l != 0 && v != 0 && h.read::<u32>(l) != 0 {
+                let mut j = 0u32;
+                while j < h.read::<u32>(l) {
+                    let e: u32 = h.read(l.wrapping_add(4 + 4 * j));
+                    let ve: u32 = h.read(v.wrapping_add(4 + 4 * j));
+                    j += 1;
+                    let out: u32 = if e != 0 && ve != 0 {
+                        h.read(e.wrapping_add(0x4c))
+                    } else {
+                        0
+                    };
+                    if out == 0 {
+                        continue;
+                    }
+                    place(h, chr, e, ve, out, flat);
+                    h.write(e.wrapping_add(0x48), 1u32);
+                }
+            }
+            i += 1;
+        }
+    }
+
+    /// One entry of `cloth_place_anchors`.
+    fn place(h: &mut impl ffx_bridge::Host, chr: u32, e: u32, ve: u32, mut out: u32, flat: bool) {
+        let g: u16 = h.read(e.wrapping_add(0x40));
+        let k: u16 = h.read(e.wrapping_add(0x42));
+        let at = h.rebase(CH_USE_ANCHOR_VERTEX);
+        let anchor = h.call(at, &[chr, u32::from(g), u32::from(k)]);
+        let mut tri: u32 = h.read(ve.wrapping_add(8));
+        let mut w: u32 = h.read(ve.wrapping_add(0xc));
+        let rem = u32::from(k % 100);
+        let grp = h
+            .read::<u32>(chr.wrapping_add(0x1bc))
+            .wrapping_add(0x38 * u32::from(g));
+        let tbl: u32 = h.read(grp.wrapping_add(0x2c));
+        if tbl == 0 {
+            return;
+        }
+        let sub: u32 = h.read(tbl.wrapping_add(4 * rem));
+        if sub == 0 {
+            return;
+        }
+        let head: u32 = h.read(grp);
+        if u32::from(h.read::<u16>(head.wrapping_add(0x18))) <= rem {
+            return;
+        }
+        let verts: u32 = h.read(grp.wrapping_add(8));
+        let faces: u32 = h.read(sub.wrapping_add(0x44));
+        let count = |h: &mut _| Mem::read::<u32>(h, e.wrapping_add(0x44));
+        if flat {
+            let mut n = 0;
+            while n < count(h) {
+                h.write(out, [0.0f32; 3]);
+                out = out.wrapping_add(0x10);
+                n += 1;
+            }
+            return;
+        }
+        let lift = if id_is(h, chr, 1) && g == 0 && rem == 2 {
+            ANCHOR_LIFT_HIGH.get(h)
+        } else {
+            ANCHOR_LIFT.get(h)
+        };
+        let mut n = 0;
+        while n < count(h) {
+            let idx: u16 = h.read(tri.wrapping_add(2));
+            if idx != 0xffff {
+                let f = faces.wrapping_add(6 * u32::from(idx));
+                let corner = |h: &mut _, o: u32| {
+                    let c: i16 = Mem::read(h, f.wrapping_add(o));
+                    #[allow(clippy::cast_sign_loss)]
+                    let at = verts.wrapping_add((i32::from(c) * 0x10) as u32);
+                    Mem::read::<[f32; 3]>(h, at)
+                };
+                let (c0, c1, c2) = (corner(h, 0), corner(h, 2), corner(h, 4));
+                let wt: [f32; 3] = h.read(w);
+                let mut p = [0, 1, 2].map(|q| {
+                    ((Reg::load(wt[0]).mul_m32(c0[q]) + Reg::load(c1[q]).mul_m32(wt[1]))
+                        + Reg::load(c2[q]).mul_m32(wt[2]))
+                    .store()
+                });
+                let bits: u8 = h.read(tri);
+                if anchor != 0 || bits & 1 != 0 {
+                    let e1 = [0, 1, 2].map(|q| Reg::load(c1[q]).sub_m32(c0[q]).store());
+                    let e2 = [0, 1, 2].map(|q| Reg::load(c2[q]).sub_m32(c0[q]).store());
+                    let mut nv = [0.0f32; 3];
+                    for (q, (a, b)) in [(1, 2), (2, 0), (0, 1)].into_iter().enumerate() {
+                        let x = Reg::load(e1[a]).mul_m32(e2[b]);
+                        let y = Reg::load(e1[b]).mul_m32(e2[a]);
+                        nv[q] = (x - y).store();
+                    }
+                    let [dx, dy, dz] = [0, 1, 2].map(|q| Reg::load(nv[q]).mul_m32(nv[q]));
+                    let dot = ((dy + dx) + dz).store();
+                    let len = Reg::load(dot).sqrt().store();
+                    let inv = Reg::load(len).divr_m32(1.0).store();
+                    let l: f32 = h.read(tri.wrapping_add(4));
+                    let s = Reg::load(l).mul_m32(inv).mul_m32(lift).store();
+                    let sr = Reg::load(s);
+                    nv[0] = (Reg::load(nv[0]) * sr).store();
+                    nv[1] = (Reg::load(nv[1]) * sr).store();
+                    nv[2] = sr.mul_m32(nv[2]).store();
+                    for q in 0..3 {
+                        p[q] = Reg::load(p[q]).add_m32(nv[q]).store();
+                    }
+                }
+                h.write(out, p);
+            }
+            n += 1;
+            tri = tri.wrapping_add(8);
+            out = out.wrapping_add(0x10);
+            w = w.wrapping_add(0xc);
+        }
+    }
+
+    fn id_is(h: &impl Mem, chr: u32, id: u16) -> bool {
+        h.read::<u16>(chr) == id
+    }
 }

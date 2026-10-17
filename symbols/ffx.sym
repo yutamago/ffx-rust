@@ -3550,7 +3550,7 @@
 0x00729f90 function pppFpPointLightProc       # fh v3:cg17 0x72a080
 0x0072a120 function pppFpResetStick           # fh v3:exact 0x0072a210
 0x0072a180 function pppFpSaveStat             # fh v3:exact 0x0072a270
-0x0072a260 function pppFpSetDrawMatrix        # fh v3:exact 0x0072a350
+0x0072a260 function pppFpSetDrawMatrix        # fh v3:exact 0x0072a350; ours: = fp::bridge::ppp_fp_set_draw_matrix: g_pppViewMatrix by mode byte (1: world rotation, position = camera x world position; 2: world x g_pppFpWoodMatrix; else world x camera), copied to g_pppViewMatrixCopy (returned) (oracle parity)
 0x0072a2e0 function pppFpSetRotMatrix         # fh v3:exact 0x0072a3d0
 0x0072a530 function pppFpSetStickChr          # fh v3:exact 0x0072a620
 0x0072a590 function pppFpSetStickMap          # fh v3:bsim1.00 0x0072a680
@@ -3663,7 +3663,7 @@
 0x00734bd0 function pppDrawMatrixFront        # fh v3:exact 0x00734ca0
 0x00734c50 function pppDrawMatrixNoRot        # fh v3:exact 0x00734d20
 0x00734cf0 function pppDrawMatrixWood         # fh v3:exact 0x00734dc0
-0x00734d90 function pppDrawMatrixWoodSta      # fh v3:exact 0x00734e60
+0x00734d90 function pppDrawMatrixWoodSta      # fh v3:exact 0x00734e60; ours: = mat::bridge::ppp_draw_matrix_wood_sta: billboard rows from g_pppViewMatrix row 1 (normalised), (y, -x, 0, 0), their outer product, the view translation, built in g_pppWoodMatrixWork and copied to g_pppWoodMatrix (oracle parity)
 0x00734eb0 function pppKeDMatDraw             # fh v3:exact 0x00734f80
 0x00734ef0 function pppKeDMatFrDraw           # fh v3:exact 0x00734fc0
 0x00734f80 function pppKeDMatPhtDraw          # ppp program table record "pppKeDMatPht" draw: area 1 = cdc_Mul4x4(g_pppViewMatrix, area 0), then pppDrawMatrixFront's scaling without the mode byte
@@ -3729,17 +3729,17 @@
 0x007376a0 function pppEePpach                # (dst, rs, rt) R5900 PPACH: low halves of rt's four words, then rs's
 0x00737700 function pppEePsrlw                # (dst, src, sa) R5900 PSRLW the PC way: (i32 >> sa&31) & (0x7fffffff >> (sa-1 & 31)), so sa 0 gives 0
 0x00737750 function pppColorShiftStore        # (src, base) dword at base + g_pppColorConShift = *src; the shift cleared
-0x00737770 function pppDrawMdlDraw            # ppp program table record "pppDrawMdl" draw; not a function start in the Ghidra dump; ours: = draw::bridge::ppp_draw_mdl_draw: colour = work area +0xa0 halves x part +0x70 halves >> 19 (pextlh/pmulth/ppacb), then a render request on the stack (updateVFXRenderData or Init[Path3]VFXRenderData) (oracle parity)
-0x00737b20 function pppDrawMdlSemiDraw        # ppp program table record "pppDrawMdlSemi" draw; not a function start in the Ghidra dump
-0x00737f40 function pppDrawMdlTsDraw          # ppp program table record "pppDrawMdlTs" draw; not a function start in the Ghidra dump
+0x00737770 function pppDrawMdlDraw            # ppp program table record "pppDrawMdl" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_draw: colour = work area +0xa0 halves x part +0x70 halves >> 19 (pextlh/pmulth/ppacb), then a render request on the stack (updateVFXRenderData or Init[Path3]VFXRenderData); level 0xec1 skips (oracle parity)
+0x00737b20 function pppDrawMdlSemiDraw        # ppp program table record "pppDrawMdlSemi" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_semi_draw: pppDrawMdlDraw with the halfword interleave inlined, flags 0x80/0x90, the key's +8 blend, Z matrix of obj+0x50 always, never path 3 (oracle parity)
+0x00737f40 function pppDrawMdlTsDraw          # ppp program table record "pppDrawMdlTs" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_ts_draw: work area [[prog+0xc]+8]: two pos/speed/accel triples stepped (key +8..+0x1c on its frame); request +0x10/+0x14 = ftol(pos x 65536); level 0x169c draws at alpha 0 (oracle parity)
 0x007384f0 function pppDrawMdlTsCon           # ppp program table record "pppDrawMdlTs" (0x00c3a8a0) +0x1c set-up; "pppDrawMdlTs" (0x00c3a8a0) +0x20 second set-up; "pppDrawMdlTs" (0x00c3bf48) +0x1c set-up and 1 more
-0x00738530 function pppDrawMdl2Draw           # ppp program table record "pppDrawMdl2" draw; not a function start in the Ghidra dump
-0x00738a40 function pppDrawMdlSemi2Draw       # ppp program table record "pppDrawMdlSemi2" draw; not a function start in the Ghidra dump
-0x00738ec0 function pppDrawMdlTs2Draw         # ppp program table record "pppDrawMdlTs2" draw; not a function start in the Ghidra dump
+0x00738530 function pppDrawMdl2Draw           # ppp program table record "pppDrawMdl2" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_2_draw: graphicGetPtrLogCount n added to the colour bytes and (n != 0) the model's own texture (get_ptr32(rec+0x1c) + its +8); flags from key +8 (== 4 gives 8) (oracle parity)
+0x00738a40 function pppDrawMdlSemi2Draw       # ppp program table record "pppDrawMdlSemi2" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_semi2_draw: Semi with flags from key +0xa and the 0x2000 Z test; an alpha byte part+0x76 x area+0xa6 >> 19 written first, then overwritten by the colour (oracle parity)
+0x00738ec0 function pppDrawMdlTs2Draw         # ppp program table record "pppDrawMdlTs2" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_ts2_draw: Ts without the level check, flags from key +0x20, +0x44 = obj+0x50 (oracle parity)
 0x00739480 function pppDrawMdlTs2Con          # ppp program table record "pppDrawMdlTs2" (0x00c3b020) +0x1c set-up; "pppDrawMdlTs2" (0x00c3b020) +0x20 second set-up; "pppDrawMdlTs2" (0x00c3c6c8) +0x1c set-up and 1 more
-0x007394c0 function pppDrawMdl3Draw           # ppp program table record "pppDrawMdl3" draw; not a function start in the Ghidra dump
-0x00739d30 function pppDrawMdlSemi3Draw       # ppp program table record "pppDrawMdlSemi3" draw; not a function start in the Ghidra dump
-0x0073a370 function pppDrawMdlTs3Draw         # ppp program table record "pppDrawMdlTs3" draw; not a function start in the Ghidra dump
+0x007394c0 function pppDrawMdl3Draw           # ppp program table record "pppDrawMdl3" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_3_draw: request at frame-0x120: key +8 flags (blend byte 0x44 for additive), +9/+0xb/+0xa/+0xc: 0x200, 0x100, view matrix (0x2000), Z work area; magic-file fixes 0x296/0x241/0x29e/0x29f/0x2c9 (screen space, /1.8 in language 0xb), alpha fixes 0x17a/0x110/0x111/0x231 and maps 0x17c/0x3e/0xc6/0xc2/0xff (oracle parity)
+0x00739d30 function pppDrawMdlSemi3Draw       # ppp program table record "pppDrawMdlSemi3" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_semi3_draw: 3-style request from key +0xa..+0xe, the key's +8 blend, screen fix; update then graphicDynamicGeometryUpdateTexture; blend 0 gives alpha 2 (oracle parity)
+0x0073a370 function pppDrawMdlTs3Draw         # ppp program table record "pppDrawMdlTs3" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_ts3_draw: Ts step + 3-style request from key +0x20..+0x24 (Z work area at offset 3); magic 0x1f9 blend byte 0x48; field-effect fixes on maps 0xc6/0x102/0x103/0xf4/0x110/0x139/0x7a clear 0x10 and add alpha 0x800 (oracle parity)
 0x0073aac0 function pppDrawMdlTs3Con          # ppp program table record "pppDrawMdlTs3" (0x00c3b138) +0x1c set-up; "pppDrawMdlTs3" (0x00c3b138) +0x20 second set-up; "pppDrawMdlTs3" (0x00c3c7e0) +0x1c set-up and 1 more
 0x0073ab00 function pppDrawMdlSeaCon          # ppp program table record "pppDrawMdlSea" (0x00c3ad00) +0x1c set-up; "pppDrawMdlSea" (0x00c3c3a8) +0x1c set-up
 0x0073ab40 function pppDrawMdlSeaCon2         # ppp program table record "pppDrawMdlSea" (0x00c3ad00) +0x20 second set-up; "pppDrawMdlSea" (0x00c3c3a8) +0x20 second set-up
@@ -3766,17 +3766,17 @@
 0x0073e240 function pppDrawMdlLoopCon         # ppp program table record "pppDrawMdlLoop" (0x00c3b638) +0x1c set-up; "pppDrawMdlLoop" (0x00c3cce0) +0x1c set-up
 0x0073e270 function pppDrawMdlLoopCon2        # ppp program table record "pppDrawMdlLoop" (0x00c3b638) +0x20 second set-up; "pppDrawMdlLoop" (0x00c3cce0) +0x20 second set-up
 0x0073e2a0 function pppDrawMdlLoopDes         # ppp program table record "pppDrawMdlLoop" +0x24 destructor; not a function start in the Ghidra dump
-0x0073e2b0 function pppDrawMdlLoopDraw        # ppp program table record "pppDrawMdlLoop" draw; not a function start in the Ghidra dump
+0x0073e2b0 function pppDrawMdlLoopDraw        # ppp program table record "pppDrawMdlLoop" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_loop_draw: work area [[prog+0xc]+8]: ptr32 to the key at +0 (set up while null), two channels pos +4/+0x10 wrapped by _CIfmod(.., 32768); key +0x20 blend (0xff: the model's), +0x22..+0x25 flags, +0x1c 0 (oracle parity)
 0x0073e990 function pppShapeIterInit          # (shape, it) it = (set_ptr32(shape), shape+8, 0, 0, shape+0x14, 0, 0)
 0x0073e9d0 function pppDrawMdlLoopZCon        # ppp program table record "pppDrawMdlLoopZ" (0x00c3b7c8) +0x1c set-up; "pppDrawMdlLoopZ" (0x00c3ce70) +0x1c set-up
 0x0073ea00 function pppDrawMdlLoopZCon2       # ppp program table record "pppDrawMdlLoopZ" (0x00c3b7c8) +0x20 second set-up; "pppDrawMdlLoopZ" (0x00c3ce70) +0x20 second set-up
 0x0073ea30 function pppDrawMdlLoopZDes        # ppp program table record "pppDrawMdlLoopZ" +0x24 destructor; not a function start in the Ghidra dump
-0x0073ea40 function pppDrawMdlLoopZDraw       # ppp program table record "pppDrawMdlLoopZ" draw; not a function start in the Ghidra dump
+0x0073ea40 function pppDrawMdlLoopZDraw       # ppp program table record "pppDrawMdlLoopZ" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_loop_z_draw: Loop with a Z work area (key +0x26, offset 3), the Ts3 map fixes (0x10 cleared, no alpha bit), no path 3 (oracle parity)
 0x0073f180 function pppShapeIterInit_2        # the pppShapeIterInit body again
 0x0073f1c0 function pppDrawMdlLoopDisPosCon   # ppp program table record "pppDrawMdlLoopDisPos" (0x00c3b7f0) +0x1c set-up; "pppDrawMdlLoopDisPos" (0x00c3ce98) +0x1c set-up
 0x0073f1f0 function pppDrawMdlLoopDisPosCon2  # ppp program table record "pppDrawMdlLoopDisPos" (0x00c3b7f0) +0x20 second set-up; "pppDrawMdlLoopDisPos" (0x00c3ce98) +0x20 second set-up
 0x0073f220 function pppDrawMdlLoopDisPosDes   # ppp program table record "pppDrawMdlLoopDisPos" +0x24 destructor; not a function start in the Ghidra dump
-0x0073f230 function pppDrawMdlLoopDisPosDraw  # ppp program table record "pppDrawMdlLoopDisPos" draw; not a function start in the Ghidra dump
+0x0073f230 function pppDrawMdlLoopDisPosDraw  # ppp program table record "pppDrawMdlLoopDisPos" draw; not a function start in the Ghidra dump; ours: = mdl::bridge::ppp_draw_mdl_loop_dis_pos_draw: Loop with the object relative to the running part: T(-g_pppWorldMatrix pos) x obj+0x10 and g_pppViewMatrixCopy x that as the request matrices; Z work area; no path 3 (oracle parity)
 0x0073f9a0 function pppShapeIterInit_3        # the pppShapeIterInit body again
 0x0073f9e0 function pppDrawMdlCameraLoopCon   # ppp program table record "pppDrawMdlCameraLoop" (0x00c3b6b0) +0x1c set-up; "pppDrawMdlCameraLoop" (0x00c3cd58) +0x1c set-up
 0x0073fa10 function pppDrawMdlCameraLoopCon2  # ppp program table record "pppDrawMdlCameraLoop" (0x00c3b6b0) +0x20 second set-up; "pppDrawMdlCameraLoop" (0x00c3cd58) +0x20 second set-up
@@ -3817,17 +3817,17 @@
 0x007490c0 function pppKeMdlBmpCon2           # ppp program table record "pppKeMdlBmp" +0x20 set-up; not a function start in the Ghidra dump
 0x007490d0 function pppKeMdlBmpDraw           # ppp program table record "pppKeMdlBmp" draw; not a function start in the Ghidra dump
 0x007497e0 function pppKeMdlTfdCon            # ppp program table record "pppKeMdlTfd" (0x00c3ab98) +0x1c set-up; "pppKeMdlTfd" (0x00c3ab98) +0x20 second set-up; "pppKeMdlTfd" (0x00c3c240) +0x1c set-up and 1 more
-0x00749810 function pppKeMdlTfdDraw           # fh v3:exact 0x007498e0
+0x00749810 function pppKeMdlTfdDraw           # fh v3:exact 0x007498e0; ours: = mdl::bridge::ppp_ke_mdl_tfd_draw (One): one pos/speed/accel triple at area [[prog+0xc]+8] stepped (key +8..+0x10 on its frame); KeMdl_MkTkClut(key+0x14, key+0x18, pos, 0); KeMdl_Draw(obj, model, area0, key[0x1c] << 2, 0, 0, 1, 0, part+0x70, part[0x78]) (oracle parity)
 0x007498f0 function pppKeMdlTfdUvCon          # ppp program table record "pppKeMdlTfdUv" (0x00c3dd48) +0x1c set-up; "pppKeMdlTfdUv" (0x00c3dd48) +0x20 second set-up
-0x00749950 function pppKeMdlTfdUvDraw         # fh v3:exact 0x00749a20
+0x00749950 function pppKeMdlTfdUvDraw         # fh v3:exact 0x00749a20; ours: = mdl::bridge::ppp_ke_mdl_tfd_draw (One, uv): three triples (+0, +0x10, +0x1c; key +8, +0x20, +0x2c); KeMdl_Draw u, v = ftol of the second and third positions (oracle parity)
 0x00749b10 function pppKeMdlTfd2Con           # ppp program table record "pppKeMdlTfd2" (0x00c3dd70) +0x1c set-up; "pppKeMdlTfd2" (0x00c3dd70) +0x20 second set-up
-0x00749b40 function pppKeMdlTfd2Draw          # ppp program table record "pppKeMdlTfd2" draw
+0x00749b40 function pppKeMdlTfd2Draw          # ppp program table record "pppKeMdlTfd2" draw; ours: = mdl::bridge::ppp_ke_mdl_tfd_draw (Two): KeMdl_Draw mode = key +0x1d (oracle parity)
 0x00749c30 function pppKeMdlTfdUv2Con         # ppp program table record "pppKeMdlTfdUv2" (0x00c3dd98) +0x1c set-up; "pppKeMdlTfdUv2" (0x00c3dd98) +0x20 second set-up
-0x00749c90 function pppKeMdlTfdUv2Draw        # ppp program table record "pppKeMdlTfdUv2" draw
+0x00749c90 function pppKeMdlTfdUv2Draw        # ppp program table record "pppKeMdlTfdUv2" draw; ours: = mdl::bridge::ppp_ke_mdl_tfd_draw (Two, uv): mode = key +0x38 (oracle parity)
 0x00749e60 function pppKeMdlTfd3Con           # ppp program table record "pppKeMdlTfd3" (0x00c3ddc0) +0x1c set-up; "pppKeMdlTfd3" (0x00c3ddc0) +0x20 second set-up
-0x00749e90 function pppKeMdlTfd3Draw          # fh v3:exact 0x00749f60
+0x00749e90 function pppKeMdlTfd3Draw          # fh v3:exact 0x00749f60; ours: = mdl::bridge::ppp_ke_mdl_tfd_draw (Three): mode = key +0x1d..+0x21 OR-ed, zmat = obj+0xa0+[[prog+0xc]+0xc] (oracle parity)
 0x00749f90 function pppKeMdlTfdUv3Con         # ppp program table record "pppKeMdlTfdUv3" (0x00c3dde8) +0x1c set-up; "pppKeMdlTfdUv3" (0x00c3dde8) +0x20 second set-up
-0x00749ff0 function pppKeMdlTfdUv3Draw        # fh v3:exact 0x0074a0c0
+0x00749ff0 function pppKeMdlTfdUv3Draw        # fh v3:exact 0x0074a0c0; ours: = mdl::bridge::ppp_ke_mdl_tfd_draw (Three, uv): mode = key +0x38..+0x3c OR-ed, zmat as Tfd3 (oracle parity)
 0x0074a1e0 function pppNeiDrawMdlPointLightDraw # ppp program table record "pppNeiDrawMdlPointLight" draw; not a function start in the Ghidra dump
 0x0074a850 function pppNeiDrawMdlSemiPointLightDraw # ppp program table record "pppNeiDrawMdlSemiPointLight" draw; not a function start in the Ghidra dump
 0x0074ae70 function pppNeiDrawMdlTsPointLightDraw # ppp program table record "pppNeiDrawMdlTsPointLight" draw; not a function start in the Ghidra dump
@@ -3939,11 +3939,11 @@
 0x00759f30 function pppKeLnsLpSft             # fh v3:exact 0x0075a020
 0x00759fb0 function pppKeLnsLpSftCon          # ppp program table record "pppKeLnsLpSft" (0x00c3ac60) +0x1c set-up; "pppKeLnsLpSft" (0x00c3ac60) +0x20 second set-up; "pppKeLnsLpSft" (0x00c3c308) +0x1c set-up and 1 more
 0x00759fd0 function pppKeLnsArndCon           # ppp program table record "pppKeLnsArnd" (0x00c3aa30) +0x1c set-up; "pppKeLnsArnd" (0x00c3c0d8) +0x1c set-up
-0x00759ff0 function pppKeLnsArndDraw          # ppp program table record "pppKeLnsArnd" draw; not a function start in the Ghidra dump
+0x00759ff0 function pppKeLnsArndDraw          # ppp program table record "pppKeLnsArnd" draw; not a function start in the Ghidra dump; ours: = lns::bridge::ppp_ke_lns_draw (Arnd): pppKeLnsArndUpdate, then a 6-word descriptor at ebp-0x30 (set_ptr32 obj, area, key colour x part +0x70 >> 12, g_pppScreenMatrix, key +0xc size, part +0x60 position) for KeLnsArnd_Draw(desc, 0) (oracle parity)
 0x0075a0f0 function pppKeLnsArndTCon          # ppp program table record "pppKeLnsArndT" +0x1c set-up
 0x0075a140 function pppKeLnsArndTDes          # fh v3:cg2 0x75a230
-0x0075a190 function pppKeLnsArndTDraw         # fh v3:exact 0x0075a280
-0x0075a250 function pppKeLnsArndTOtDraw       # the g_pppOtList draw pppKeLnsArndTCon registers (node area+0x24): f(area, i, frame) from pppOtFunc_Control
+0x0075a190 function pppKeLnsArndTDraw         # fh v3:exact 0x0075a280; ours: = lns::bridge::ppp_ke_lns_t_draw (Arnd): update; on the key frame size into area +0x34; colour into +0x38; FFXVu0CopyVector(area +0x14, part +0x60) (oracle parity)
+0x0075a250 function pppKeLnsArndTOtDraw       # the g_pppOtList draw pppKeLnsArndTCon registers (node area+0x24): f(area, i, frame) from pppOtFunc_Control; ours: = lns::bridge::ppp_ke_lns_t_ot_draw (Arnd): descriptor from the area (+0x34 size, +0x38 colour, +0x14 position) for KeLnsArnd_Draw(desc, 4) (oracle parity)
 0x0075a2d0 function pppKeLnsArndUpdate        # fh v3:bsim1.00 0x0075a3c0
 0x0075a370 function pppKeLnsClmCon            # fh v3:exact 0x0075a460
 0x0075a3a0 function pppKeLnsClmDraw           # ppp program table record "pppKeLnsClm" draw; not a function start in the Ghidra dump
@@ -3953,22 +3953,22 @@
 0x0075a610 function pppKeLnsClmTOtDraw        # the g_pppOtList draw pppKeLnsClmTCon registers (node area+0x40)
 0x0075a6a0 function pppKeLnsClmUpdate         # fh v3:exact 0x0075a790
 0x0075a740 function pppKeLnsCrnCon            # fh v3:bsim1.00 0x0075a830
-0x0075a760 function pppKeLnsCrnDraw           # ppp program table record "pppKeLnsCrn" draw; not a function start in the Ghidra dump
+0x0075a760 function pppKeLnsCrnDraw           # ppp program table record "pppKeLnsCrn" draw; not a function start in the Ghidra dump; ours: = lns::bridge::ppp_ke_lns_draw (Crn): as pppKeLnsArndDraw with the key halves +0x10/+0x12 in the descriptor, KeLnsCrn_Draw (oracle parity)
 0x0075a870 function pppKeLnsCrnTCon           # fh v3:exact 0x0075a960
 0x0075a8b0 function pppKeLnsCrnTDes           # fh v3:cg2 0x75a9a0
-0x0075a900 function pppKeLnsCrnTDraw          # fh v3:exact 0x0075a9f0
-0x0075a9e0 function pppKeLnsCrnTOtDraw        # the g_pppOtList draw pppKeLnsCrnTCon registers (node area+0x1c)
+0x0075a900 function pppKeLnsCrnTDraw          # fh v3:exact 0x0075a9f0; ours: = lns::bridge::ppp_ke_lns_t_draw (Crn): size +0x2c, key halves as floats +0x34/+0x38, colour +0x30, position +0xc (oracle parity)
+0x0075a9e0 function pppKeLnsCrnTOtDraw        # the g_pppOtList draw pppKeLnsCrnTCon registers (node area+0x1c); ours: = lns::bridge::ppp_ke_lns_t_ot_draw (Crn): +0x34/+0x38 truncated to halves (fistp, chop) in the descriptor, KeLnsCrn_Draw(desc, 4) (oracle parity)
 0x0075aab0 function pppKeLnsCrnUpdate         # fh v3:exact 0x0075aba0
 0x0075ab30 function pppKeLnsFlsCon            # ppp program table record "pppKeLnsFls" +0x1c set-up: 0x0076a640(area 0 + 0xa0): set_ptr32(g_pppRandTarget), set_ptr32(0)
-0x0075ab50 function pppKeLnsFlsDraw           # ppp program table record "pppKeLnsFls" draw; not a function start in the Ghidra dump
+0x0075ab50 function pppKeLnsFlsDraw           # ppp program table record "pppKeLnsFls" draw; not a function start in the Ghidra dump; ours: = lns::bridge::ppp_ke_lns_draw (Fls): the Crn layout with pppKeLnsFlsUpdate and KeLnsFls_Draw (oracle parity)
 0x0075ac60 function pppKeLnsFlsTCon           # fh v3:cg2 0x75ad50
 0x0075acb0 function pppKeLnsFlsTDes           # fh v3:cg2 0x75ada0
-0x0075ad00 function pppKeLnsFlsTDraw          # fh v3:exact 0x0075adf0
-0x0075ade0 function pppKeLnsFlsTOtDraw        # the g_pppOtList draw pppKeLnsFlsTCon registers (node area+0x20)
+0x0075ad00 function pppKeLnsFlsTDraw          # fh v3:exact 0x0075adf0; ours: = lns::bridge::ppp_ke_lns_t_draw (Fls): size +0x30, key +0x10 as a float at +0x38, +0x12 at +0x3c, colour +0x34, position +0x10 (oracle parity)
+0x0075ade0 function pppKeLnsFlsTOtDraw        # the g_pppOtList draw pppKeLnsFlsTCon registers (node area+0x20); ours: = lns::bridge::ppp_ke_lns_t_ot_draw (Fls): +0x38 truncated, +0x3c, KeLnsFls_Draw(desc, 4) (oracle parity)
 0x0075ae90 function pppKeLnsFlsUpdate         # fh v3:bsim1.00 0x0075af80
 0x0075af30 function pppKeLnsLpCon             # fh v3:exact 0x0075b020
 0x0075af60 function pppKeLnsLpCon2            # ppp program table record "pppKeLnsLp" (0x00c3aa08) +0x20 second set-up; "pppKeLnsLp" (0x00c3c0b0) +0x20 second set-up
-0x0075af80 function pppKeLnsLpDraw            # fh v3:exact 0x0075b070
+0x0075af80 function pppKeLnsLpDraw            # fh v3:exact 0x0075b070; ours: = lns::bridge::ppp_ke_lns_lp_draw: key frame adds +8/+4 to area +0xa8/+0x9c, bytes +0xc/+0xd to +0x8e/+0x8f; with +0x8f, +0x90 = obj matrix x (0,0,1,1); +0x80 = obj +0x40; KeLnsLp_Update(set_ptr32 area, obj +0x40, g_pppViewMatrix, g_pppScreenMatrix) (oracle parity)
 0x0075b090 function pppKeLnsLpTCon            # ppp program table record "pppKeLnsLpT" +0x1c set-up
 0x0075b110 function pppKeLnsLpTCon2           # ppp program table record "pppKeLnsLpT" (0x00c3bae8) +0x20 second set-up; "pppKeLnsLpT" (0x00c3d190) +0x20 second set-up
 0x0075b130 function pppKeLnsLpTDes            # ppp program table record "pppKeLnsLpT" +0x24 destructor
@@ -4870,7 +4870,7 @@
 0x00787a60 function MsEffectEnvInit              # layout: alphabetical run between MsEffectEnvFree and MsEffectForceFree (2 unnamed in the gap); Switch 0x710034f540 MsEffectEnvInit is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00787a70 function MsEffectFileNumber           # layout: alphabetical run between MsEffectEnvFree and MsEffectForceFree (2 unnamed in the gap); Switch 0x710034f6a0 MsEffectFileNumber is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00787ab0 function MsEffectForceFree         # fh v3:exact 0x00787b70
-0x00787af0 function MsEffectFree              # fh v3:exact 0x00787bb0
+0x00787af0 function MsEffectFree              # fh v3:exact 0x00787bb0; ours: (i) a magic effect (+0xdfb 6) ends: scripts cancelled, camera, read buffer, +0xf8c's effect; ported (battle round 13)
 0x00787be0 function MsEffectGetLastMagicNum      # layout: alphabetical run between MsEffectFree and MsEffectGetLastMagicNum2 (1 unnamed in the gap); Switch 0x7100351930 MsEffectGetLastMagicNum is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00787bf0 function MsEffectGetLastMagicNum2  # fh v3:exact 0x00787cb0
 0x00787c10 function MsEffectGetTargetFlag     # fh switch:bsim1.00 0x7100351960
@@ -4979,7 +4979,7 @@
 0x0078d790 function MsSetChrImageDamageAttack # fh v3:exact 0x0078d850
 0x0078d7f0 function MsSetChrWeak              # fh v3:exact+call.cs 0x0078d8b0 cdecl; ours: (i, level) -> the pose +0x63d (0 with +0x450, level unless -1, else by MsCalcWeakLevel: 0/1 with poison-like counts, 2 weak (3 while MsCheckDeathMotion waits or KO'd), 1 underwater, aeons 1/0); +0x63e the level; ported (battle round 12)
 0x0078d8d0 function MsAutoRelifeProcess       # fh v3:exact+call.cs 0x0078d990 cdecl; ours: (i, actor, by, helper): helper free to act: +0x6dd = (+0x446 == 1), by's command helper+0x6c6 on i inserted after i's (prio 0), 1; helper +0x6dc cleared; ported (battle round 13)
-0x0078d980 function MsSetDamage               # fh v3:exact 0x0078da40
+0x0078d980 function MsSetDamage               # fh v3:exact 0x0078da40; ours: (i, sel, flags) -> how many targets still have hit entries: AfterDamageProcess on the actors MsGetChrBit(i, sel, 1, 1) picks, MsCheckHitPending on the rest; on the last hit of a command with an input entry (+0xde9, +0xde4) sound 0x3a on who warded a status, the self-destruct (+0x6ca), a 6-frame pause and MsDeleteInputCue; ported (battle round 13)
 0x0078dae0 function SetUpDamageInfo           # fh v3:exact 0x0078dba0 +SetUpDamageInfo
 0x0078db70 function MsSetDamageMotion         # fh v3:exact 0x0078dc30
 0x0078dc30 function MsSetDeath                # fh v3:exact 0x0078dcf0
@@ -4990,7 +4990,7 @@
 0x0078ded0 function MsSetFirstCTB             # fh v3:cg10 0x78df90
 0x0078e0a0 function MsSetPartyRelifeTime      # fh v3:exact 0x0078e160
 0x0078e0f0 function DmgCalc_Delay             # fh v3:exact 0x0078e1b0 +DmgCalc_Delay
-0x0078e150 function MsStoneProcess            # fh v3:exact+call.cs 0x0078e210 cdecl
+0x0078e150 function MsStoneProcess            # fh v3:exact+call.cs 0x0078e210 cdecl; ours: petrified: sound 0x59, weight -1, Provoke off, +0x616 bit 8 without HP, 1; else eternal revival, weight, automatic statuses, 0; ported (battle round 13)
 0x0078e1e0 function MsSubCTB                  # fh v3:exact+call.cs 0x0078e2a0 cdecl; ours: +0x65c += n (0..0xff), number kind 2 with flags bit 2; ported (battle round 13)
 0x0078e230 function MsSubHP                   # fh call.cs cdecl; ours: (i, actor, n, other, x, flags, style): HP -= n (MsCheckRange 0..max; DebugCanTakeDamage), number with flags bit 0; battles 0x159/0, 0x20/1, 0x209/0 special; ported (battle round 12)
 0x0078e3b0 function MsSubMP                   # fh v3:exact+call.cs 0x0078e400 cdecl; ours: MP -= n (0..+0x598, DebugCanTakeDamage), number kind 1 with flags bit 1; ported (battle round 13)
@@ -5002,7 +5002,7 @@
 0x0078eef0 function MsGetGuardChr             # (user, target) -> who takes target's hit: the side's guard/sentinel actor (status 2 0x1000/0x2000, MsAutoCommandStatusCheck) with most HP (x2 sentinel, + half Tidus' affection), else target; called by MsCalcCommand's target step 0x0078ba70; ported
 0x0078f000 function MsOrderKey                # ours: (i) turn-order key: a monster 0x10000 + i, a party member (0xff - +0x5ac) << 8 | i; MsOrderCalc sorts by it
 0x0078f040 function MsSetChrMovePos           # (i, actor): +0x425 = 1, tail jump MsGetChrPos(i, actor +0x3c0); MsDamageSetMotion kind 1; name ours
-0x0078f060 function AfterDamageProcess        # fh call.cs cdecl
+0x0078f060 function AfterDamageProcess        # fh call.cs cdecl; ours: (i, k, j, out, flags) -> bit 0 entries left, bit 1 one applied: steals, gauge and Lancet transfers, then the next hit entry of j's records +0x774/+0xa4c (numbers, HP/MP/CTB, statuses, revival, stone, blow, Threaten, Auto-Med, Auto-Potion), the reaction, the death check and the motion (docs/formats/battle.md); ported (battle round 13)
 0x0078f6a0 function MsThreatEndMotion         # ours: called by MsThreatProcess on both sides it releases; MsCheckSetMotion then MsSetMotion(i,0,1,0,1) with +0x41c set
 0x0078f700 function MsCheckLeftWindow         # fh v3:exact 0x0078f750
 0x0078f7c0 function MsGetMenuChrInfo          # fh v3:exact 0x0078f810
@@ -5066,7 +5066,7 @@
 0x00790fb0 function MsBattleProcess_Order_00790fb0 # (): with no pending input cue, MsOrderInit, MsOrderRegist of every ready character, MsOrderCalc and MsRegistInputCue, MsLimitTypeTurnCheck; caller MsBattleProcess; own name
 0x00791170 function MsCheckChrHold            # (i, actor, cue): actor +0x4b6 != 0; the turn driver 0x00792210 asks it for actor 5 only; name ours
 0x00791190 function MsBattleCanProgress       # ours: -1 when no pause (0x0112c9d0), hit motion, turn end, message, camera state, overdrive learnt, stone effect or command hold holds the battle (MsBattleProcess)
-0x007911e0 function MsBattleProcess_ChrDamage_007911e0 # (): when no cue level / SE transfer is pending, per character MsSetDamage, MsPoisonProcess, MsEffectFree; caller MsBattleProcess; own name
+0x007911e0 function MsBattleProcess_ChrDamage_007911e0 # (): when no cue level / SE transfer is pending, per character MsSetDamage, MsPoisonProcess, MsEffectFree; caller MsBattleProcess; own name; ported (battle round 13, damage_end)
 0x007915f0 function MsCheckChrBtlPosAll          # layout+callees: sorts between MsBattleProcess and MsCheckChrMotionAll, and its named callees match the Switch 0x7100366ad0 MsCheckChrBtlPosAll's (similarity 1.00: MsGetChr); symbols from Fahrenheit's server export
 0x00791630 function MsCheckChrMotionAll       # fh v3:exact 0x00791680
 0x00791690 function MsCheckCommandEnd         # ours: (actor) -> 1 (+0xdf0 = 1) when the command may end; waits (+0xdf0 = 5) on kind-1 numbers, +0xe13, 0x0112c8f8; titled commands wait for the title window (0x3103: above 0x2d); ported (battle round 12)
@@ -5094,7 +5094,7 @@
 0x00793260 function msSetEndDir               # fh v3:exact 0x00793270
 0x007932b0 function MesSetChrTargetPosToLimitSparePosy # fh v3:exact 0x007932c0
 0x00793330 function MsAttachWeapon            # fh v3:exact 0x00793340
-0x00793410 function MsBtlChrFree              # fh v3:exact 0x00793420
+0x00793410 function MsBtlChrFree              # fh v3:exact 0x00793420; ours: (i, flags) hidden, bind/status effects off, script i+5 cancelled, model and weapons disposed by flags; ported (battle round 13)
 0x00793480 function MsBtlChrFreeAll           # fh v3:exact 0x00793490
 0x00793500 function MsBtlChrFreeMem           # fh v3:exact 0x00793510
 0x00793530 function MsBtlChrGetMem            # fh v3:exact 0x00793540
@@ -5123,7 +5123,7 @@
 0x00794a70 function MsGetChrCamWidth          # fh v3:cg2 0x794a80
 0x00794ab0 function MsGetChrCameraPos         # fh v3:exact 0x00794ac0
 0x00794b70 function MsGetChrCenter            # ours: MsCalcChrDir's party/monster centres: mean MsGetChrBtlPos of +0xdc8 actors (MsAddPoint, MsDivVector)
-0x00794c20 function MsGetChrCenterPos         # fh v3:exact 0x00794c30
+0x00794c20 function MsGetChrCenterPos         # fh v3:exact 0x00794c30; ours: msGetChrPos, y - height/2 unless +0x505 or underwater; ported (battle round 13)
 0x00794ca0 function MsGetChrCursorFlag        # fh v3:cg5 0x794cb0
 0x00794d20 function MsGetChrDir               # fh v3:exact 0x00794d30
 0x00794e00 function MsGetChrDist              # fh v3:cg8 0x794e10
@@ -5158,7 +5158,7 @@
 0x007958c0 function MsGetChrTargetDir         # (i, dir) -> f32: MsNearRag(dir, actor +0x53c if +0x510 else +0x49c); MsGetChrInfoOne kind 7; ported. layout: alphabetical run between MsGetChrStatZombie and MsGetChrTargetPos (1 unnamed in the gap); Switch 0x7100349b00 MsGetChrTargetDir is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00795920 function MsGetChrTargetPos         # fh v3:cg3 0x795930
 0x00795970 function MsGetChrTop               # fh v3:bsim1.00 0x00795980
-0x00795980 function MsGetChrTopPos            # fh v3:exact 0x00795990
+0x00795980 function MsGetChrTopPos            # fh v3:exact 0x00795990; ours: msGetChrPos, y - height (half with +0x505 or underwater); ported (battle round 13)
 0x00795a20 function MsGetChrWidth             # fh v3:exact 0x00795a30
 0x00795aa0 function MsGetMon                  # fh v3:exact+call.cs 0x00795ab0 cdecl
 0x00795ac0 function MsGetTransChrPos             # (actor, vec): MsGetChrBtlPos when the actor rides on nothing (+0x43f == -1), else Ch_OptposGet of the carrier's model at point +0x441; Switch MsGetTransChrPos (0x7100349660) calls exactly Ch_OptposGet and MsGetChrBtlPos and sorts between MsGetMon and MsGetWeapon, as here; the battle porter's msGetChrPosNoChr
@@ -5194,7 +5194,7 @@
 0x00796b40 function getAllPCEquips               # layout+callees: sorts between MsSetTargetDir and getSparedLmtPos, and its named callees match the Switch 0x710034cef0 getAllPCEquips's (similarity 0.75: MsGetSaveChrArmorModel, MsGetSaveChrWeaponModel, ch_create_name); symbols from Fahrenheit's server export
 0x00796c30 function getSparedLmtPos           # fh v3:exact 0x00796c40
 0x00796d70 function msCheckSameTarget         # fh v3:exact 0x00796d80
-0x00796dc0 function MsDebugFullCommand_00796dc0 # fh switch:cg2 0x7100370fc0
+0x00796dc0 function MsDebugFullCommand_00796dc0 # fh switch:cg2 0x7100370fc0; ours: what it does is MsChrDispose (i, actor, flags): the model by flags 8/1, a loaded actor's weapon effect, motion group (4), data (2), +0x48, sound slots; ported (battle round 13)
 0x00796ea0 function msGetChrPos               # fh v3:exact 0x00796eb0
 0x00796f20 function msSetChrBodyHit           # fh v3:exact 0x00796f30
 0x00797020 function msSetChrShadowReq         # (p, k, v): shadow request k (< 3) of actor/weapon record p = v; first non-negative of +0x26..+0x28 (stopping at 0) into +0x25, mode +0x2a[that] into +0x29 and Ch_SetShadowMode; returns +0 the character; name ours
@@ -5215,7 +5215,7 @@
 0x00797ae0 function MsAtelRegistInit          # fh v3:exact 0x00797af0
 0x00797b70 function MsAtelRequestAdd          # fh v3:exact 0x00797b80
 0x00797bc0 function MsAtelRequestCamera       # ?(slot, actor, handler id, handler2, ...): queues handlers (0x00797b70, Mon_FindHandler) and starts them through 0x00797d50; used by 0x703f with a finish flag out-param; was Battle_RunEvent
-0x00797cd0 function MsAtelRequestCancel       # fh v3:exact 0x00797ce0
+0x00797cd0 function MsAtelRequestCancel       # fh v3:exact 0x00797ce0; ours: (kind, i, n) handler n stopped (AtelSkipReqLevel2, AtelExecReturn2, AtelDecodeSignal -1): 0, else -1; ported (battle round 13)
 0x00797d50 function MsAtelRequestExe          # fh v3:exact 0x00797d60
 0x00797ff0 function MsAtelRequestInit         # fh v3:bsim1.00 0x00798000
 0x00798000 function MsAtelRequestMagicCamera  # fh v3:exact 0x00798010
@@ -5362,7 +5362,7 @@
 0x0079ed00 function MsSetStealEffect          # fh v3:bsim1.00+call.cs 0x0079ed20 cdecl; ours: MsSetChrEffectNext(i, 0, 9 or 10); ported (battle round 13)
 0x0079ed20 function MsSetStealGillEffect      # fh call.cs cdecl; ours: MsSetChrEffectNext(i, 0, 0x4c or 0x4d); ported (battle round 13)
 0x0079ed40 function MsSetWeaponEffectAttribute # fh v3:exact 0x0079ed60
-0x0079ee20 function MsStatusDefenseEffect     # fh v3:exact+call.cs 0x0079ee40 cdecl
+0x0079ee20 function MsStatusDefenseEffect     # fh v3:exact+call.cs 0x0079ee40 cdecl; ours: (i, j, bits): one MsSetChrEffectNext per warded status bit; count; ported (battle round 13)
 0x0079ef40 function MsStatusEffect            # fh v3:exact 0x0079ef60
 0x0079eff0 function MsStatusEffectCheck       # fh call.cs cdecl
 0x0079f110 function MsStatusEffectClear       # fh v3:exact 0x0079f130
@@ -5386,9 +5386,9 @@
 0x007a0040 function MsMusicSync               # fh v3:exact 0x007a0060
 0x007a0090 function MsMusicVolume             # fh v3:exact 0x007a00b0
 0x007a00b0 function MsNowMusicStop            # fh v3:exact 0x007a00d0
-0x007a00d0 function MsRegSEfade               # fh v3:exact 0x007a00f0
-0x007a0100 function MsRegSEplay               # fh v3:exact+call.cs 0x007a0120 cdecl
-0x007a0140 function MsRegSEplay2              # fh v3:exact+call.cs 0x007a0160 cdecl
+0x007a00d0 function MsRegSEfade               # fh v3:exact 0x007a00f0; ours: (i, se, frames) MsSEP3DfadeOut(se | 0x80000000): -1, 0 without se; ported (battle round 13)
+0x007a0100 function MsRegSEplay               # fh v3:exact+call.cs 0x007a0120 cdecl; ours: (i, se): MsSEP3Dregist(3, i, se|bit31, 0) unless it is g_BtlLastSe (0x0112c8e4); ported (battle round 13)
+0x007a0140 function MsRegSEplay2              # fh v3:exact+call.cs 0x007a0160 cdecl; ours: (i, se): MsSEP3Dregist(3, i, se|bit31, once); ported (battle round 13)
 0x007a0170 function MsRegSEplay3                 # layout: alphabetical run between MsRegSEplay2 and MsRegistSEdata (1 unnamed in the gap); Switch 0x71003784b0 MsRegSEplay3 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007a01b0 function MsRegistSEdata            # fh v3:exact 0x007a01d0
 0x007a0370 function MsSEPbattleClear          # fh v3:exact 0x007a0390
@@ -5402,11 +5402,13 @@
 0x007a0720 function MsSetVoice                   # layout: alphabetical run between MsSEPtransProcess and MsSetVoiceCheck (2 unnamed in the gap); Switch 0x7100377ca0 MsSetVoice is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007a07b0 function MsSetVoiceCheck           # fh v3:exact 0x007a07d0
 0x007a0820 function MsSoundStreamPlay            # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%23 SHOUT %d:%d SEQ %d\\n'; Switch 0x7100377be0 MsSoundStreamPlay (symbols from Fahrenheit's server export)
-0x007a08a0 function MsSEP3DfadeOut            # fh v3:exact 0x007a08c0
+0x007a08a0 function MsSEP3DfadeOut            # fh v3:exact 0x007a08c0; ours: (se, frames) a node not fading (+4 0) gets +4 = +6 = frames: 1; ported (battle round 13)
 0x007a08e0 function MsSEP3DfadeOutAll         # fh v3:exact 0x007a0900
 0x007a0910 function MsSEP3Dinit               # fh v3:exact 0x007a0930
 0x007a0930 function MsSEP3Dprocess            # fh v3:exact 0x007a0950
-0x007a0a30 function MsSEP3Dregist             # fh v3:exact 0x007a0a50
+0x007a0a30 function MsSEP3Dregist             # fh v3:exact 0x007a0a50; ours: (kind, i, se, once, pos): node in g_Sep3dList (existing se, else first free of 16 at 0x011361b0), position by kind (0: pos via the EE register 0x00c8f588), op_3d_vol_pan_get, SndSepPlay; ported (battle round 13)
+0x007a0b90 function MsSEP3DFind               # (se) -> the first node of g_Sep3dList (0x011361a0) whose +8 is se, else 0; callers MsSEP3DfadeOut; name ours; ported (battle round 13)
+0x007a0bb0 function MsSEP3DPos                # ours: (kind, i, vec): kind & ~0x100: 1 MsGetChrPos, 2 MsGetChrTopPos, 3 MsGetChrCenterPos, 4 MsGetChrBottomPos; ported (battle round 13)
 0x007a0c20 function MsGearHasAbility_007a0c20    # (gear, ability) -> 1 when one of the gear's 4 auto-ability slots (u16 at +0xe) is ability; callers MsWeaponNameNum_Weapon/Armor; own name
 0x007a0c50 function MsWeaponName              # fh v3:exact+call.cs 0x007a0c70 cdecl
 0x007a0cb0 function TrophyManager_DestroyInstance # fh switch:bsim1.00 0x710023fd20 TrophyManager::DestroyInstance
@@ -5718,7 +5720,7 @@
 0x007ac600 function MsPopBtlPos               # fh v3:bsim1.00+call.cs 0x007ac620 cdecl
 0x007ac650 function MsPushBtlPos              # fh v3:bsim1.00 0x007ac670
 0x007ac680 function MsPushBtlPosAll           # fh v3:bsim1.00 0x007ac6a0
-0x007ac6a0 function MsSetChrPosAfterSummon    # fh v3:exact 0x007ac6c0
+0x007ac6a0 function MsSetChrPosAfterSummon    # fh v3:exact 0x007ac6c0; ours: (i) the party back at their battle positions, the aeon i placed (body part 3 off, +0x4fd 0xd, sound +0xf76 faded) and its entrance or stand; ported (battle round 13)
 0x007ac9c0 function Battle_QueueCommand          # (actor, command, target mask, ...): adds a command to the 4-entry queue at 0x01136a80 for the current actor; "TARGET ERROR CHR" when no target is valid; reads 5 words: its script callers (0x700b, 0x705a, 0x7117) push 3 and leave MsGetChrBit's last two arguments as the 4th and 5th (0, -1; 1, -1; 1, 0x40); a non-negative 5th goes to 0x01136a70, so the bridges pass them
 0x007acb00 function MsActionRequestSet        # (kind): if g_BtlAction != -1: 0x48-byte block 0x01136a78 cleared, its byte 0 = kind, 0x01136a6c/0x01136a70 = 0, returns 0; else -1; MsActionRequest; name ours
 0x007acc90 function MsActReCommand               # callees: its named callees match the Switch 0x710038bb80 MsActReCommand's (similarity 0.75: MsGetChr, MsGetChrCommand, MsGetCommand); symbols from Fahrenheit's server export
@@ -5734,7 +5736,7 @@
 0x007ad550 function MsBtlReadStatusComplete   # fh switch:bsim1.00 0x710036fad0
 0x007ad5e0 function MsChangeWeaponInvisible   # fh v3:exact+call.cs 0x007ad5f0 cdecl
 0x007ad640 function MsChangeWeaponWakka          # layout+callees: sorts between MsChangeWeaponInvisible and MsWeaponDispose, and its named callees match the Switch 0x710037e150 MsChangeWeaponWakka's (similarity 1.00: MsFieldItemGetMes); symbols from Fahrenheit's server export
-0x007ad750 function MsWeaponDispose           # fh v3:exact 0x007ad760
+0x007ad750 function MsWeaponDispose           # fh v3:exact 0x007ad760; ours: (i, k, flags, weapon) the weapon record's model/motion group/data by flags, handed to the special weapon actor; ported (battle round 13)
 0x007ad820 function MsWeaponRead              # fh v3:exact 0x007ad830
 0x007ad940 function MsWeaponReadSet           # fh v3:exact 0x007ad950
 0x007ad970 function MsSortCommandList         # (list, keys, n): bubble sort of n u16 command IDs by their records' +0x5c (0x100 for 0xff / non-0x3xxx); named here; ported
@@ -5742,16 +5744,16 @@
 0x007ada60 function MsEscapeAll               # fh v3:exact 0x007ada70
 0x007adae0 function MsExchangeChr             # fh v3:exact 0x007adaf0
 0x007ade10 function MsExchangeParty           # fh v3:exact 0x007ade20
-0x007adf10 function MsExchangePlayer          # fh v3:exact 0x007adf20
+0x007adf10 function MsExchangePlayer          # fh v3:exact 0x007adf20; ours: () each party member back to +0x500's battle position, MsExchangeChr(0xff, q, slot ? -1 : 0, 0); ported (battle round 13)
 0x007adf90 function MsExchangeSummon          # fh v3:exact 0x007adfa0
-0x007ae0a0 function MsFreePlayer                 # layout+callees: sorts between MsExchangeSummon and MsInsertChrCommand, and its named callees match the Switch 0x710038f940 MsFreePlayer's (similarity 1.00: MsBtlChrFree, MsCleanInputCue, MsGetChr); symbols from Fahrenheit's server export
+0x007ae0a0 function MsFreePlayer                 # layout+callees: sorts between MsExchangeSummon and MsInsertChrCommand, and its named callees match the Switch 0x710038f940 MsFreePlayer's (similarity 1.00: MsBtlChrFree, MsCleanInputCue, MsGetChr); symbols from Fahrenheit's server export; ours: (i) +0xdc8 off, input entries gone, not the turn's last actor, MsBtlChrFree(i, 7) with a model; ported (battle round 13)
 0x007ae0f0 function MsCheckCommand3029        # (u16 *ids): ids not null and ids[0] or ids[1] == 0x3029; MsParseCommand; name ours
 0x007ae120 function MsCommandKindMode         # (kind, command): kinds 1/5: 0 if command +0x1c bit 20, 2 if bit 21, else 1; MsParseCommand; name ours
 0x007ae1a0 function MsInsertChrCommand        # fh v3:exact 0x007ae1b0
 0x007ae2e0 function MsInsertScriptCommand     # (i, after, id): actor +0xdf2 = 0, MsInsertInputCue(i,0,0,0,after,1), MsInsertCommandCue of a one-entry cue (+2 0x100, +8 id, +0x10 g_BtlScriptTargets); MsParseCommand; name ours
 0x007ae370 function MsParseCommand            # fh v3:exact+call.cs 0x007ae380 cdecl
 0x007aeec0 function MsReturnParty             # fh v3:exact 0x007aeed0
-0x007aef20 function MsReturnSummon            # fh v3:exact 0x007aef30
+0x007aef20 function MsReturnSummon            # fh v3:exact 0x007aef30; ours: (revive) with an aeon out the party's gauges back, revived (revive), freed; MsReturnParty, MsExchangePlayer, MsChangeMonsterDir; summoner 0, slot 0xff; ported (battle round 13)
 0x007aefb0 function MsSortCommand             # fh v3:exact 0x007aefc0
 0x007af060 function MsGetAeonCommand          # (i, id, kind, &mode, &value) -> u16: aeon i's (actor 8 on) entry in 0x00c438a8 (16 bytes each): kind 0 +0 or +4 (once id used, g_SaveMenu bit 11 clear) mode 1, kind 1 +8 mode 3, kind 2 +0xc mode 2; value the pair's byte; MsInsertChrCommand; name ours
 0x007af0f0 function MsCheckTargetsNear        # (i, actor, targets): with +0x4ac bit 12, 1 when a target within 12.0 (2D, less widths) has its MsGetMoveTargetPos kind 0xc within 0.2 of its battle position; 0 with several targets; name ours
@@ -5797,12 +5799,12 @@
 0x007b0c20 function MsUseItem                 # fh v3:exact 0x007b0c30
 0x007b0ca0 function MsCountChrActing          # ours: actors whose command stage +0xdf0 is not 0 (MsLimitTypeProcess waits for none)
 0x007b0cd0 function MsLimitTidusLearn         # fh v3:exact+call.cs 0x007b0ce0 cdecl
-0x007b0d50 function MsLimitTypeDamageCheck    # fh v3:exact+call.cs 0x007b0d60 cdecl
+0x007b0d50 function MsLimitTypeDamageCheck    # fh v3:exact+call.cs 0x007b0d60 cdecl; ours: (i, by, j, actor, hp, raw, crit) the overdrive modes a hit feeds (0, 1, 2, 3, 0x13); ported (battle round 13)
 0x007b0f80 function MsLimitTypeDeathCheck     # fh call.cs cdecl; ours: Comrade (7) for the party when a monster kills one, Slayer (8)/Hero (9) for a party member's kill; ported (battle round 12)
 0x007b1090 function MsLimitTypeEscapeCheck    # fh v3:exact 0x007b10a0
 0x007b10c0 function MsLimitTypeExpGet            # layout: alphabetical run between MsLimitTypeEscapeCheck and MsLimitTypeProcess (1 unnamed in the gap); Switch 0x7100359860 MsLimitTypeExpGet is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007b1180 function MsLimitTypeProcess        # fh v3:exact 0x007b1190
-0x007b12c0 function MsLimitTypeStatusCheck    # fh v3:exact+call.cs 0x007b12d0 cdecl
+0x007b12c0 function MsLimitTypeStatusCheck    # fh v3:exact+call.cs 0x007b12d0 cdecl; ours: (i, by, j, actor, n, bits) the overdrive modes statuses feed (4, 5, 6, 10); ported (battle round 13)
 0x007b13c0 function MsLimitTypeTurnCheck      # fh v3:exact+call.cs 0x007b13d0 cdecl
 0x007b1540 function MsLimitTypeWinCheck       # fh v3:exact+call.cs 0x007b1550 cdecl
 0x007b1590 function MsLimitUp                 # fh v3:exact+call.cs 0x007b15a0 cdecl
@@ -5821,11 +5823,11 @@
 0x007b2300 function MsInsertInputCue          # fh v3:exact 0x007b2310
 0x007b2430 function MsRegistInputCue          # fh v3:exact 0x007b2440
 0x007b24a0 function MsAutoCommandStatusCheck  # ?(actor, ...) -> 1 unless +0xdce, status bits 0x300/0x400/0x800 at +0x606, +0x608 or +0x617 bit 1 block it; was Battle_ActorCanAct
-0x007b2510 function MsAutoCureProcess         # fh v3:exact+call.cs 0x007b2520 cdecl
+0x007b2510 function MsAutoCureProcess         # fh v3:exact+call.cs 0x007b2520 cdecl; ours: Auto-Med, (i, actor, by, poison, zombie, dark, silence the old ones) -> the item used on itself (Remedy for two or more, else Antidote/Holy Water/Eye Drops/Echo Screen); ported (battle round 13)
 0x007b26d0 function MsAutoInsertCommand_007b26d0 # structure: (chr, command, target, ...): clears a command struct (MsStructClear), fills it and queues it (MsInsertBtlCommand); callers MsAutoCureProcess, MsAutoPhenixProcess, MsAutoPotionProcess (the auto-item abilities); name ours; ported (battle round 12)
 0x007b2740 function MsAutoInsertAbility       # ours: (i, target, after, id, prio): a cleared 0x48-byte block with command id (second 0xff) on target alone inserted (MsInsertBtlCommand(block, prio, 1, after)); MsAutoRelifeProcess_007b2910's; ported (battle round 12)
 0x007b27b0 function MsAutoPhenixProcess       # fh v3:exact 0x007b27c0; ours: the first of i's side with +0x6bc bit 12 free to act throws a Phoenix Down (0x2006, the party's from the bag) via MsAutoInsertCommand_007b26d0; ported (battle round 12)
-0x007b2850 function MsAutoPotionProcess       # fh v3:exact+call.cs 0x007b2860 cdecl
+0x007b2850 function MsAutoPotionProcess       # fh v3:exact+call.cs 0x007b2860 cdecl; ours: Auto-Potion, (i, actor, by) -> Potion/Hi-Potion/X-Potion at half HP or less; ported (battle round 13)
 0x007b2910 function MsAutoRelifeProcess_007b2910 # fh v3:exact 0x007b2920; ours: status bit 9 (Auto-Life): command 0x311f on itself via MsAutoInsertAbility; else +0x5ca cleared, -1; ported (battle round 12)
 0x007b2950 function MsAddYoujinbouCom         # fh switch:bsim1.00 0x7100381b80
 0x007b2980 function MsCheckSummon             # fh v3:exact 0x007b2990
@@ -5996,6 +5998,7 @@
 0x007bc720 function MsScreenResetOffset       # fh v3:exact 0x007bc6a0
 0x007bc7f0 function MsSetScreen               # fh v3:exact 0x007bc770
 0x007bc980 function Cam_Apply                    # cdecl(camera): field of view from the camera's screen depth (448 / (2 d), atan) into the renderer, then Render_SetView(0x02311440); Cam_Update calls it only for channel cameras, not the override
+0x007bcf20 function MsCameraGetYaw            # () -> ST0: the yaw of the active camera (g_Camera): MsVectorRect2Polar(cam+0x50 look-at, cam+0x66c eye, &yaw, 0, 0); 3 callers; name ours
 0x007bd000 function MsCameraFree              # fh v3:cg3 0x7bcf80
 0x007bd110 function MsCameraGet               # (owner, camera, type): finds/allocates one of 4 channels of a camera (0xda0 bytes each, table 0x011381a8); was Cam_AllocChannel
 0x007bd2d0 function MsCameraGetAngle          # fh switch:bsim1.00 0x710039de80
@@ -6625,19 +6628,22 @@
 0x0081b2b0 function opus_set_chr_pos             # callees: its named callees match the Switch 0x71003ff220 opus_set_chr_pos's (similarity 1.00: Ch_SetPos3, MsBattleChrStart, MsSetChrPos); symbols from Fahrenheit's server export
 0x0081b560 function opu_spl                      # callees: its named callees match the Switch 0x7100401030 opu_spl's (similarity 0.88: op_free, op_malloc, op_mul_m, op_spline_xyz, op_spline_xyz_table); symbols from Fahrenheit's server export
 0x0081c140 function SqsCmdSetC2               # (ctx, cmd) -> cmd + 4: the command's u16 +2 to +0xc2 of ctx +0x220; entry of the IOP command table 0x00c48f30
+0x0081c260 function SqsCmdSetC4C6            # (ctx, cmd) -> cmd + 4: the command's u16 +2 to +0xc4 (bit 12 of u16 ctx +0x21a set) or +0xc6 of ctx +0x220; in the IOP command table next to SqsCmdSetC2, no direct callers; name ours; ported (field round 33)
 0x0081c4f0 function opu_md_etc                   # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x7100404b50 opu_md_etc, 3 votes, round 1
-0x0081cbd0 function Sqs_CallRpc                  # structure: (cmd): waits for the sound RPC client 0x012f4e20 to be idle (FFXSifCheckStatRpc), then FFXSifCallRpc(client, cmd, send 0x40, recv 0x400) until accepted; 21 callers, the Sqs* IOP command wrappers 0x0081d010..; name ours
+0x0081cbd0 function Sqs_CallRpc                  # structure: (cmd): waits for the sound RPC client 0x012f4e20 to be idle (FFXSifCheckStatRpc), then FFXSifCallRpc(client, cmd, send 0x40, recv 0x400) until accepted; 21 callers, the Sqs* IOP command wrappers 0x0081d010..; name ours; ported (field round 33): returns FFXSifCallRpc's eax
+0x0081cc20 function Sqs_CallRpc2             # (cmd, _, end, arg): Sqs_CallRpc on the second client 0x012f4e48 (send 0x00c4945c, recv 0x00c49464, 0x40 bytes each), end/arg passed on; returns FFXSifCallRpc's; name ours; ported (field round 33)
+0x0081cc70 function Sqs_DecodeAdpcm          # (src, dst) -> dst + 0x6400: PS-ADPCM, 25 x (256 left + 256 right i16 samples) from 9-byte blocks (header: filter << 4 | shift), filters 0x00c49470, history 0x012f4f90; from SqsStraightStreamingDataSend; name ours; ported (field round 33)
 0x0081ce70 function SqsAllVoiceTerminate      # fh v3:exact 0x0081cf80
 0x0081cef0 function SqsBattleStreamingDataSend # fh v3:exact 0x0081d000
-0x0081cf40 function SqsBattleStreamingStart   # fh v3:exact 0x0081d050
-0x0081cf90 function SqsBattleWaveDataSend     # fh v3:exact 0x0081d0a0
-0x0081cfd0 function SqsDataSendingCompleted   # fh v3:exact 0x0081d0e0
+0x0081cf40 function SqsBattleStreamingStart   # fh v3:exact 0x0081d050; (_, a, b): iSfxPlayBattleStreaming(g_SqsBattleStream, b, a), or an fprintf(stderr) error without magic file or stream id; ported (field round 33)
+0x0081cf90 function SqsBattleWaveDataSend     # fh v3:exact 0x0081d0a0; (wave): "WD" (u16 0x4457) -> iSfxLoadData(i16 +2, 0) as a tail call, else returns wave; ported (field round 33)
+0x0081cfd0 function SqsDataSendingCompleted   # fh v3:exact 0x0081d0e0; ported (field round 36): (wait) -> 1 when SqsSifDmaState(1, wait) >= 0, else 0
 0x0081d2c0 function SqsEeSoundCreateTime         # str-match switch: only user of 1 string(s) held once by both builds, e.g. '2001/10/19 (Fri)  14:01:57'; Switch 0x7100409e70 SqsEeSoundCreateTime (symbols from Fahrenheit's server export)
 0x0081d2e0 function SndGetGlobal012f4e78_0081d2e0 # auto-port shape (return global u32, cdecl): t0 = u32[&0x012f4e78]; return t0; callers: SndIopEioErrorStatus; name ours
-0x0081d3c0 function SqsInitMusicInfoHdd       # fh v3:cg3 0x81d4d0
+0x0081d3c0 function SqsInitMusicInfoHdd       # fh v3:cg3 0x81d4d0; ported (field round 36): (path) strcpy to g_SqsRpcSend, Sqs_CallRpc(7); returns its eax
 0x0081d3f0 function SqsInitWaveInfo              # layout: alphabetical run between SqsInitMusicInfoHdd and SqsInitWaveInfoHdd (1 unnamed in the gap); Switch 0x71004074e0 SqsInitWaveInfo is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x0081d470 function SqsInitWaveInfoHdd        # fh v3:cg4 0x81d580
-0x0081d5f0 function SqsIopCommandSend         # fh v3:exact 0x0081d700
+0x0081d470 function SqsInitWaveInfoHdd        # fh v3:cg4 0x81d580; ported (field round 36): (path) strcpy to g_SqsRpcSend, Sqs_CallRpc(6); returns its eax
+0x0081d5f0 function SqsIopCommandSend         # fh v3:exact 0x0081d700; ported (field round 33): sends the command queue 0x012f4a00, empties it, shifts g_SqsReplyHistory; returns 0x012f4150
 0x0081d700 function SqsIopSoundErrorStatus    # fh v3:bsim1.00 0x0081d810
 0x0081d710 function SqsIopSoundSystemStatus   # fh v3:bsim1.00 0x0081d820
 0x0081d720 function SqsMusicClear                # layout: alphabetical run between SqsIopSoundSystemStatus and SqsMusicDataRead (2 unnamed in the gap); Switch 0x71004077a0 SqsMusicClear is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -6652,32 +6658,33 @@
 0x0081dc40 function SqsMusicPitchTranslate       # layout: alphabetical run between SqsMusicDataSend and SqsMusicPlay (6 unnamed in the gap); Switch 0x7100408270 SqsMusicPitchTranslate is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0081dcd0 function SqsMusicPlay              # fh switch:bsim0.96 0x7100407bc0
 0x0081e250 function SqsReportIopSoundStatus   # fh v3:bsim1.00 0x0081e360
-0x0081e2d0 function SqsReportStandbyStatus    # (x); called by SndReportStandbyStatusDirect; alphabetical slot
+0x0081e260 function SqsReportStandby         # (): unanswered standby requests (0x012f414c != g_SqsIopResult) flush the command queue (SqsIopCommandSend when next > top); ++0x012f414c, (1, count) to g_SqsRpcSend2, Sqs_CallRpc2(0, _, 0x0081fcb0, 0); callers SqsMusicDataRead, SqsMusicDataSend, SqsSetReverbAttribute, SqsStraightStreamingDigitalModeSet; between SqsReportIopSoundStatus and SqsReportStandbyStatus alphabetically; name ours; ported (field round 36)
+0x0081e2d0 function SqsReportStandbyStatus    # (x); called by SndReportStandbyStatusDirect; alphabetical slot; ported (field round 36): (flush) -> 0x012f414c - g_SqsIopResult, the queue flushed first when flush and requests are unanswered
 0x0081e3b0 function SndStandbyShoutStream     # fh switch:cg2 0x71008ba6a8
-0x0081e3e0 function SqsSeBlockPlaying         # (id); SndIsSepPlay for block SEs (bit 31 set); alphabetical slot before SqsSeForcePlay
-0x0081e410 function SqsSeForcePlay            # (kind, id, pan, volume); called by SndForcePlayClick; alphabetical slot
-0x0081e460 function SqsSePanDirect            # (kind, id, pan) -> iSfxSetPan (cmd 0x3d); called by SndSepPanDirect; alphabetical slot before SqsSePanTranslate; fh: SqsSeVolumeDirect (BSim; that one is 0x0081e820)
-0x0081e480 function SqsSePanTranslate         # (kind, id, pan, frames) -> iSfxSetPanTranslate; called by SndSepPanTranslate
+0x0081e3e0 function SqsSeBlockPlaying         # (id); SndIsSepPlay for block SEs (bit 31 set); alphabetical slot before SqsSeForcePlay; ported (field round 33)
+0x0081e410 function SqsSeForcePlay            # (kind, id, pan, volume); called by SndForcePlayClick; alphabetical slot; ported (field round 33): iSfxForceStart(id, volume, pan), returns the new SE handle 0x012f4e7c
+0x0081e460 function SqsSePanDirect            # (kind, id, pan) -> iSfxSetPan (cmd 0x3d); called by SndSepPanDirect; alphabetical slot before SqsSePanTranslate; fh: SqsSeVolumeDirect (BSim; that one is 0x0081e820); ported (field round 33)
+0x0081e480 function SqsSePanTranslate         # (kind, id, pan, frames) -> iSfxSetPanTranslate; called by SndSepPanTranslate; ported (field round 33): iSfxSetPanTranslate(id, arg4 & 0x7f, arg3)
 0x0081e4a0 function SqsSePitchDirect          # (kind, id, pitch, x); called by SndSePitchDirect
 0x0081e4c0 function SqsSePitchTranslate       # (kind, id, a, pitch, b); called by SndSePitchTranslate
-0x0081e4e0 function SqsSePlay                 # fh v3:bsim1.00 0x0081e5f0
+0x0081e4e0 function SqsSePlay                 # fh v3:bsim1.00 0x0081e5f0; ported (field round 33): iSfxStart(id, volume, pan), returns the new SE handle 0x012f4e7c
 0x0081e530 function SqsSePlayState            # () -> 0: prints a message (stderr) on PC; SndGetSePlayState jumps here
 0x0081e550 function SqsSePlaySwitch              # layout+callees: sorts between SqsSePlayState and SqsSeSeparateClear, and its named callees match the Switch 0x7100407050 SqsSePlaySwitch's (similarity 1.00: SqsIopCommandSend); symbols from Fahrenheit's server export
-0x0081e5d0 function SqsSeSeparateClear        # fh v3:exact 0x0081e6e0
+0x0081e5d0 function SqsSeSeparateClear        # fh v3:exact 0x0081e6e0; ported (field round 33)
 0x0081e600 function SqsSeSeparateDataSend     # fh v3:exact 0x0081e710
-0x0081e750 function SqsSeSeparateMaskClear    # fh v3:exact 0x0081e860
-0x0081e7a0 function SqsSeSeparatePlaying # (id); SndIsSepPlay for separate SEs; alphabetical slot between SqsSeSeparateMaskClear and SqsSeStop; layout: alphabetical run between SqsSeSeparateMaskClear and SqsSeStop (1 unnamed in the gap); Switch 0x7100408670 SqsSeSeparatePlaying is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x0081e7c0 function SqsSeStop # fh v3:exact 0x0081e8d0; fh v3:exact 0x0081e8d0
+0x0081e750 function SqsSeSeparateMaskClear    # fh v3:exact 0x0081e860; ported (field round 33): 8 mask words + -1 into the RPC send buffer, iSfxStopAllNonBlockingSound(buf), iSfxUnloadAllData
+0x0081e7a0 function SqsSeSeparatePlaying # (id); SndIsSepPlay for separate SEs; alphabetical slot between SqsSeSeparateMaskClear and SqsSeStop; layout: alphabetical run between SqsSeSeparateMaskClear and SqsSeStop (1 unnamed in the gap); Switch 0x7100408670 SqsSeSeparatePlaying is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (field round 33)
+0x0081e7c0 function SqsSeStop # fh v3:exact 0x0081e8d0; fh v3:exact 0x0081e8d0; ported (field round 33)
 0x0081e7e0 function SqsSeTimePlay                # layout: alphabetical run between SqsSeStop and SqsSeVolumeFadeOut (2 unnamed in the gap); Switch 0x7100408740 SqsSeTimePlay is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x0081e820 function SqsSeVolumeDirect # (kind, id, volume) -> iSfxSetVolume (cmd 0x3b); called by SndSepVolumeDirect; layout: alphabetical run between SqsSeStop and SqsSeVolumeFadeOut (2 unnamed in the gap); Switch 0x7100408790 SqsSeVolumeDirect is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x0081e840 function SqsSeVolumeFadeOut        # fh v3:exact 0x0081e950
-0x0081e860 function SqsSeVolumeTranslate      # fh v3:bsim1.00 0x0081e970
+0x0081e820 function SqsSeVolumeDirect # (kind, id, volume) -> iSfxSetVolume (cmd 0x3b); called by SndSepVolumeDirect; layout: alphabetical run between SqsSeStop and SqsSeVolumeFadeOut (2 unnamed in the gap); Switch 0x7100408790 SqsSeVolumeDirect is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (field round 33)
+0x0081e840 function SqsSeVolumeFadeOut        # fh v3:exact 0x0081e950; ported (field round 33)
+0x0081e860 function SqsSeVolumeTranslate      # fh v3:bsim1.00 0x0081e970; ported (field round 33): iSfxSetVolumeTranslate(id, arg4 & 0x7f, arg3)
 0x0081e880 function SqsSetCdvdReadMode           # layout: alphabetical run between SqsSeVolumeTranslate and SqsSetCycleMode (1 unnamed in the gap); Switch 0x7100406e50 SqsSetCdvdReadMode is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0081e900 function SqsSetCycleMode           # fh switch:bsim0.96 0x710040a8e0
 0x0081e980 function SqsSetDigitalRecordingMode   # layout: alphabetical run between SqsSetCycleMode and SqsSetPlayMode (1 unnamed in the gap); Switch 0x7100406ed0 SqsSetDigitalRecordingMode is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0081ea00 function SqsSetPlayMode            # fh v3:exact 0x0081eb10
 0x0081ea90 function SqsSetPlayPause              # layout: alphabetical run between SqsSetPlayMode and SqsSetProjectBase (1 unnamed in the gap); Switch 0x71004071d0 SqsSetPlayPause is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x0081eab0 function SqsSetProjectBase         # fh v3:exact 0x0081ebc0
+0x0081eab0 function SqsSetProjectBase         # fh v3:exact 0x0081ebc0; ported (field round 36): (path) strcpy to g_SqsRpcSend, Sqs_CallRpc(2); returns *result, 0 for 0
 0x0081eaf0 function SqsSetReverbAttribute        # layout: alphabetical run between SqsSetProjectBase and SqsSetReverbPlaySwitch (2 unnamed in the gap); Switch 0x71004071e0 SqsSetReverbAttribute is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0081eb90 function SqsSetReverbDepth            # layout: alphabetical run between SqsSetProjectBase and SqsSetReverbPlaySwitch (2 unnamed in the gap); Switch 0x7100407360 SqsSetReverbDepth is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0081ec20 function SqsSetReverbPlaySwitch    # fh v3:bsim1.00 0x0081ed30
@@ -6685,7 +6692,7 @@
 0x0081edf0 function SqsShoutStreamingPlayState # fh v3:exact 0x0081ef00
 0x0081ee20 function SqsShoutStreamingStart    # (a, b, volume); called by SndStartShoutStream; alphabetical slot after SqsShoutStreamingPlayState
 0x0081eeb0 function SqsSifDmaStart            # fh switch:bsim1.00 0x7100406c30
-0x0081eef0 function SqsSifDmaState               # layout+callees: sorts between SqsSifDmaStart and SqsSortCommonWave, and its named callees match the Switch 0x7100406c80 SqsSifDmaState's (similarity 1.00: FlushCache, sceSifDmaStat); symbols from Fahrenheit's server export
+0x0081eef0 function SqsSifDmaState               # layout+callees: sorts between SqsSifDmaStart and SqsSortCommonWave, and its named callees match the Switch 0x7100406c80 SqsSifDmaState's (similarity 1.00: FlushCache, sceSifDmaStat); symbols from Fahrenheit's server export; (_, wait): sceSifDmaStat(g_SqsSifDmaId) again while wait and not negative, returns it; ported (field round 33)
 0x0081ef40 function SqsSortCommonWave         # (list): a ret on PC; SndSortCommonWave jumps here
 0x0081ef50 function SqsSetStraightStreamAreaSize # fh switch:bsim0.93 0x710040a960
 0x0081f210 function SqsStraightStreamingDataSend # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s %d, %4d, %4d : %8.8X\\n'; Switch 0x7100409620 SqsStraightStreamingDataSend (symbols from Fahrenheit's server export)
@@ -6763,6 +6770,7 @@
 0x00822b20 function Sg_ClothRodMin            # kind 4: as Sg_ClothRodMax when |b - a|^2 < lim; name ours; ported
 0x00822c10 function Sg_ClothRodFixPin         # kind 5: rods {i16 a, i16 b, f32 len}: b = a + d * len / |d|, or b = a (Sg_VecCopy4) when |d|^2 <= 1e-5; name ours; ported
 0x00822cf0 function Sg_ClothRodFix            # kind 6: both points to length len, or b = a when |d| <= 1e-5; name ours; ported
+0x00822de0 function Sg_ClothStep              # (chr): the cloth step: wind (Sg_CreateVectorFromHV + rand), follow of the model group, anchors from bones, rods 1-6, collision spheres/capsules/planes, the floor, velocity/previous buffers, written back to the model vertices; repeats +0x812 times when far; called from 0x0082e390
 0x008245f0 function Ch_ClothEnableGrav        # fh v3:bsim1.00 0x00824680
 0x00824610 function Ch_ClothGetParaEdit       # movsx g_ChrClothParaEdit; Switch name, this file's functions are in name order: between Ch_ClothEnableGrav and Ch_ClothMeshMappingOffset, pairs with Ch_ClothSetParaEdit
 0x00824620 function Ch_ClothMeshMappingOffset # fh v3:exact 0x008246b0
@@ -7031,6 +7039,7 @@
 0x0082dab0 function Sg_SetCameraFollow        # (on): bit 1 of g_CameraFollow 0x00c496d5 (bit 0 is 0x0082d030's); with both set Sg_ControlMain turns the camera after the player's heading; script native at 0x00a77950 and the map defaults (Light_Set run, 0x00839xxx) call it with 1; returns the old byte without bit 1 in al; name ours; ported (ffx_sg::state)
 0x0082dad0 function Sg_SetPlayer              # fh v3:exact 0x0082db50
 0x0082db50 function Angle_Wrap                   # float radians wrapped into [-pi, pi]
+0x0082dbc0 function Sg_ClothPlaceAnchors      # (chr): each cloth anchor vertex = weighted corners of its model triangle (+ lift along the normal when Ch_UseAnchorVertex or bit 0); zeroed on level 0xc58 with a collapsed matrix; called from 0x0082e390 after the cloth step
 0x0082e200 function Ch_IsShadowExceptionId    # (chr): 1 for characters 3 and 0x67 (u16 +0), else 0; Ch_DrawShadow's per-character test; name ours
 0x0082e220 function Ch_CullByDistance         # (chr): +0x178 = camera distance (MsCameraGetPosNow(1), _CIsqrt) to +0x694; with +0x194 bit 11: hide bit 3 of +0x180 when the instance is not visible, bit 5 beyond +0x174 (half on level 0x24f9 with Valefor's bit 2); returns 1 when hidden; called after Ch_UpdateClothMatrix; name ours
 0x0082e3e0 function Ch_DrawShadowQuad         # (chr, -, p3): the shadow quad: matrix by -facing +0x158 and position +0x7c, graphicUpdateShadowMap (size, uv) then Ch_DrawQuad; returns p3; called for shadow mode 2 with Ch_IsNotExceptionId; name ours
@@ -7369,6 +7378,7 @@
 0x0083bbc0 function Sg_MemDumpMCB             # fh v3:exact 0x0083bc40
 0x0083bcd0 function Sg_MemDumpMCBPtr             # str-match switch: only user of 2 string(s) held once by both builds, e.g. '%10s mcb=%x prev=%8x next=%8x size=%8x own=%d\\n'; Switch 0x7100430c20 Sg_MemDumpMCBPtr (symbols from Fahrenheit's server export)
 0x0083bd20 function Sg_MemErrMCB                 # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'SG:----------------------------------\\n'; Switch 0x7100430610 Sg_MemErrMCB (symbols from Fahrenheit's server export)
+0x0083bdb0 function Sg_MemSetFree            # (block) -> heap * 3: header +8 = 0, +0xc &= 0x18000000 (heap bits 27..28), g_SgMemHeaps[heap] byte 0 = 1 and +0x14 = min(+0x14, block); callers Sg_MemCreateFree, Sg_MemMoveWork, 0x0083b720; between Sg_MemErrMCB and Sg_MemGet; name ours; ported (field round 33)
 0x0083bff0 function Sg_MemGet                    # layout+callees: sorts between Sg_MemErrMCB and Sg_MemGetSize, and its named callees match the Switch 0x7100430cc0 Sg_MemGet's (similarity 1.00: Cache_OverFlow, Ch_MemMove_Over); symbols from Fahrenheit's server export
 0x0083c050 function Sg_MemGetSize             # fh v3:exact 0x0083c0d0
 0x0083c070 function Sg_MemGetStr              # (p) -> the block's debug name slot, "" without one or outside debug builds; Switch name
@@ -7447,6 +7457,7 @@
 0x0083e9d0 function Sg_IdSetEffectTableIndex  # fh v3:bsim1.00 0x0083e9d0
 0x0083e9e0 function Sg_IdSetMapTable          # (i, v): g_ChrIdMapTable[i] = v
 0x0083ea00 function Sg_IdSetPtr               # fh v3:exact 0x0083ea00
+0x0083ecd0 function Sg_ChrPushApart           # (a, b, reach, dist): pushes two chrs apart by reach - dist in x-z, shared by their +0x500 weights (both <0: by Sg_VectorGetLengthXZ from their anchors); +0x4c/+0x54 step, +0x194 bit 5; caller 0x0083d3b0
 0x0083f010 function SgRealloc                 # fh v3:bsim1.00 0x0083f010
 0x0083f030 function SgReallocD                # fh switch:bsim1.00 0x7100431a00
 0x0083f050 function SgStrdupD                    # layout: alphabetical run between SgReallocD and Sg_FreeA (1 unnamed in the gap); Switch 0x7100431a40 SgStrdupD is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -7457,6 +7468,7 @@
 0x0083f1c0 function Sg_CalcViewClipMatrix     # (m, wide): unit matrix, m[0][0] and m[1][1] = 1/(2 extent/depth) scaled, m[2][2], m[3][2] fixed; Switch name order after Sg_CalcScreenMatrix
 0x0083f260 function Sg_CameraGetPos           # fh switch:bsim1.00 0x710042a480
 0x0083f2a0 function Sg_CameraGetRef           # (&v) -> 0x00c4ded0 (the reference point, copied to v); Switch name beside Sg_CameraGetPos
+0x0083f2d0 function Sg_CameraGetYaw            # jmp MsCameraGetYaw (0x007bcf20): the camera yaw in ST0, for Sg_ControlPlayer (0x0082d180); a thunk outside functions.tsv; name ours
 0x0083f2e0 function Sg_CameraSetPlayer        # fh v3:exact 0x0083f2e0
 0x0083f4b0 function Sg_ControlCamera             # layout: alphabetical run between Sg_CameraSetPlayer and Sg_ControlMouseCamera (1 unnamed in the gap); Switch 0x710042a6d0 Sg_ControlCamera is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0083f6f0 function Sg_ControlMouseCamera     # fh v3:bsim1.00 0x0083f6f0
@@ -7592,6 +7604,7 @@
 0x00844f90 function Sg_MapSetDirSelect        # fh v3:bsim1.00 0x00844f90
 0x00844fa0 function Sg_MapSetEnableShade      # (v): byte 0x013034b9 = v; partner of Sg_MapGetEnableShade
 0x00844fb0 function Sg_MapSetName             # fh v3:exact 0x00844fb0
+0x00845000 function Sg_IdFixupAndSetThunk    # jmp 0x00844bc0 (Sg_IdFixupAndSet_00844bc0), the target the yi map code calls: yiSetIDPage, yiSetPreBgPage, yiReset, yiResetObj, yiObjReadCallback, yiMapReadMaster, yiMapSetup; was called TkClearAlarm in yi.rs (that is 0x0088c7d0); name ours
 0x00845010 function Sg_SwitchDrawId           # (): 0x013034b4 (Sg_IdDrawMain's mode) cycles 0..=3; Switch name (24 bytes there too)
 0x008450d0 function Sg_CreateVectorFromHV     # (out, h, v): (sin h cos v, sin v, cos h cos v, 1), degrees wrapped; Switch name
 0x00845170 function Sg_MatrixToQuaternion     # fh v3:exact 0x00845170
@@ -7606,14 +7619,22 @@
 0x00845800 function Ch_EffectPacketStoreMAT   # (v): u16 0x01303674 = v; Switch name, in name order between Ch_EffectPacketStoreEND and Ch_EffectPacketStorePRG
 0x00845810 function Ch_EffectPacketStorePRG   # (v): u16 0x0130367c = v; Switch name, in name order before Ch_EffectPacketStorePoly
 0x00845820 function Ch_EffectPacketStorePoly  # (a, b, c) u16 x, y, u, v vertices: new 32-byte block on a state change (g_ChrPacketState), 28 bytes per triangle, uv = v*4096/(size*16) chopped; measuring keeps size, count, max x/y. fh: v3:exact 0x00845820
+0x00845c30 function Sg_SetChrPacketState      # (v): g_ChrPacketState (u16 0x0130366c) = v; Ch_EffectPacketCreateMain; name ours
+0x00845c40 function Sg_SetChrPacketWord       # (v): u16 0x01303684 = v; Ch_EffectPacketCreateMain; name ours
 0x00845c50 function sg_getnorm                # () -> 0x01303694 (sg_setvtex_and_normal's second); Switch name
 0x00845c60 function sg_getvtex                # () -> 0x01303690 (sg_setvtex_and_normal's first); Switch name
 0x00845c70 function sg_packet_strip              # str-match switch: only user of 1 string(s) held once by both builds, e.g. "Virtuos Warning: Asm function 'sg_packet_strip' not implemen"; Switch 0x7100436e40 sg_packet_strip (symbols from Fahrenheit's server export)
 0x00845ca0 function sg_setvtex_and_normal     # fh v3:bsim1.00 0x00845ca0
+0x00845cc0 function sg_Daddiu                 # (dst, src, imm): u64 dst = u64 src + sign-extended imm (MIPS daddiu), eax the low word; sg_calcenvelope_normW; name ours
 0x00845ce0 function sg_CopyField0_00845ce0       # auto-port shape (store copy to field, cdecl): t0 = u32[a1]; u32[a0] = t0; return a0; callers: sg_calcenvelope_normW; name ours
+0x00845cf0 function sg_SetFloat               # (dst, f): f32 dst = f through fld/fstp, eax dst; sg_calcenvelope_normW; name ours
 0x00845d00 function sg_CopyFields_00845d00       # auto-port shape (several stores: copy into field, cdecl): t0 = u32[(a1 + 0x8)]; t1 = u32[(a1 + 0x4)]; t2 = u32[(a1 + 0xc)]; t3 = u32[a1]; t4 = u32[(a2 + 0x8)]; t5 = u32[(a2 + 0x4)]; t6 = u32[a2]; t7 = u32[(a2 + 0xc)]; u32[(a0 + 0x8)] = t3; u32[(a0 + 0x4)] = t5; u32[(a0 + 0xc)] = t1; u32[a0] = t6; return a0; callers: sg_calcenvelope_normW; name ours
 0x00845d60 function sg_CopyField0_00845d60       # auto-port shape (store copy to field, cdecl): t0 = u32[a0]; u32[a1] = t0; return a1; callers: sg_calcenvelope_normW; name ours
+0x00845d70 function sg_Sll                    # (dst, src, n): dst = src << (n & 31) (MIPS sll), eax dst; sg_calcenvelope_normW; name ours
 0x00845d90 function Sg_IntVecToFloat          # (out, v): three i32 to f32; returns v[3] in eax; caller sg_calcenvelope_normW; name ours; ported (ffx_sg::vec)
+0x00845df0 function sg_VmaddaScalar           # (-, v, -, s): VU0 ACC (0x00c8f790) += v.xyz * s, eax v; sg_calcenvelope_normW; name ours
+0x00845e40 function sg_VmaddScalar            # (dst, v, -, -, s): dst.xyz = ACC + v.xyz * s, eax dst; sg_calcenvelope_normW; name ours
+0x00845e80 function sg_VmulScalar             # (dst, v, s): dst.xyz = v.xyz * s, eax dst; sg_calcenvelope_normW; name ours
 0x00845eb0 function sg_calcenvelope_norm      # fh v3:bsim1.00 0x00845eb0
 0x00845ec0 function sg_calcenvelope_normW     # fh v3:exact 0x00845ec0
 0x00846710 function sg_normalize              # fh v3:exact 0x00846710
@@ -9417,6 +9438,10 @@
 0x0089ade0 function TOCloseBtlWindow          # (): 0x023cc08c and the nine words at 0x0133d74c zeroed; returns 0; fh v3:exact 0x0089ad50
 0x0089ae20 function TOControlBtlWindow        # fh v3:exact 0x0089ad90
 0x0089afc0 function TOControlMsSetMenuCommand # fh v3:exact 0x0089af30
+0x0089b140 function TODrawAMES              # cdecl(window, text, x, y, anchor) -> TOOpenWindowAndMessage's eax: slot init, kind 0 type 0, texts, position (map 0x185 at (0xfa,0x96) moves to y 0x8c for langs 2..5), value 4, active, open; Switch TODrawAMES (0x710049d870), the first of the five TODrawAMES* there, the only one with a position argument
+0x0089b1d0 function TODrawAMES_CENTERMES    # cdecl(window, text): as TODrawAMES at (4, 0x100, 0xe0), kind 1 type 0x2402; Switch TODrawAMES_CENTERMES by inference: the screen-centre y of the four, in the TODrawAMES* run that sorts between TOControlMsSetMenuCommand and TODrawBtlWindow; name ours
+0x0089b230 function TODrawAMES_EVJIMAKU    # cdecl(window, text): as TODrawAMES at (4, 0x100, 0x1c0), kind 1 type 0x2002 (subtitle line); Switch TODrawAMES_EVJIMAKU by inference (see TODrawAMES_CENTERMES); name ours
+0x0089b290 function TODrawAMES_EVJIMAKU_ALBHED # cdecl(window, text): TODrawAMES_EVJIMAKU with type 0x6002 (the 0x4000 Al Bhed bit TOGetMessageWH1612_008b6cb0 tests); Switch TODrawAMES_EVJIMAKU_ALBHED by inference; name ours
 0x0089b360 function TODrawBtlWindow           # fh v3:exact 0x0089b2d0
 0x0089b530 function TODrawCommandValue        # fh switch:cg2 0x71004a1820
 0x0089b590 function TOGetBtlWindowControlEnable # fh v3:bsim1.00 0x0089b500
@@ -9598,6 +9623,7 @@
 0x008ac130 function TOFTCTransfer             # fh v3:exact 0x008ac0e0; (file): version u16 +4 >= 0xc8, slot u16 +8: 0x01841da0[slot] = image (+0x20/+0x24), size (+0x28/+0x2a); slots 0/4 copy the image to 0x0184b610/0x0185b610; slots 0..5 copy the CLUT (+0x30/+0x10); 0, or 1
 0x008ac2c0 function TOGetBtlMenuTexAdrs       # () -> [0x01841e04]; fh switch:bsim1.00 0x71004fa310
 0x008ac2d0 function TOGetWord_01841e08        # () -> [0x01841e08]; between TOGetBtlMenuTexAdrs and TOGetFFXLangStr; name ours
+0x008ac2f0 function TOGetFFXLangJmp           # jmp TOGetFFXLang (0x006410e0); pppDrawMdl3Draw/Semi3Draw divide a screen-space model's +0x30 by 1.8 when it returns 0xb; name ours
 0x008ac300 function TOGetFFXLangStr           # fh v3:exact 0x008ac2b0; TOGetFFXLang -> "us" 1, "fr" 2, "es" 3, "de" 4, "it" 5, "kr" 9, "ch" 10, "uk" 18, else "jp"
 0x008ac390 function TOGetFFXLangSwapFlag      # fh v3:bsim1.00 0x008ac340
 0x008ac3a0 function TOGetFFXVideoMode         # fh v3:bsim1.00 0x008ac350
@@ -9726,9 +9752,12 @@
 0x008b6a30 function TOGetChangeMacroWidth     # fh v3:exact 0x008b69e0
 0x008b6b00 function TOGetChangeMacroWordCount # fh v3:exact 0x008b6ab0; (table, index): codes >= 0x26 or 4 count one, group-3 codes add their macro's count (recursive)
 0x008b6b70 function TOGetControlPadStatus     # fh v3:exact 0x008b6b20
+0x008b6bb0 function TOGetChangeMacroAdvance_008b6bb0 # cdecl(key, code, kind, scale, extra) -> float in ST0: width of the macro's replacement text, nested macros (group 3) recursive, 7 0xe1..0xef its byte - 0xe0, glyphs TOGetFontAdvance_008fa740, less TOGetFontSpaceInPiexl(kind); 0 without a macro; name ours
+0x008b6cb0 function TOGetMessageWH1612_008b6cb0 # cdecl(window, text, &w, &h, scale, extra, kind, flags) -> &h: widest line (glyph advances, macros, 7/0xb/0xe/0x10 codes) less TOGetFontSpaceInPiexl(kind), (tallest line + 2) * scale; flags low nibble ends at the first line, bit 8 keeps 0x10 from marking the window; callers TOMenuDrawYesNoWindow, 0x008bc100; name ours
 0x008b70a0 function MacroDic_Section             # (n, table) -> *(macrodic table + (n - 19) * 4)
 0x008b70c0 function TOGetTextWidth            # cdecl(text, arg) -> float: sum of TOGetFontWidthForLang(text, 0, &w, arg) widths as ftol(total + w), glyph count in 0x018663e8; name ours
 0x008b7130 function TOGetMessageSize_008b7130 # (text, &w, &h) -> 0: TOGetMessageWH(0, text, .., 0, 0), w through ftol, h the i16 height; name ours
+0x008b7170 function TOGetMessageSizePacked_008b7170 # cdecl(text) -> (i16 h << 16) | low half of the fistp-qword truncation of w, from TOGetMessageWH(0, text, &w, &h, 0, 0); name ours
 0x008b71c0 function TOGetEasyMesWHForCredits  # fh switch:bsim1.00 0x71004f15e0
 0x008b71f0 function TOGetExtMesWHFontL2          # layout+callees: sorts between TOGetEasyMesWHForCredits and TOGetFontInfo, and its named callees match the Switch 0x71004f1540 TOGetExtMesWHFontL2's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
 0x008b7240 function TOGetFontInfo             # fh v3:exact 0x008b71f0; (text, out) -> next: page +0, cell parity +4, box +8..+0x14, slant +0x18, width +0x1c (width-table byte / 4), +0x20 18.0; dictionary codes from 0x2c, two-byte tables 0x26..0x2b, icon 6, fixed 10.0 box otherwise
@@ -9749,6 +9778,7 @@
 0x008b8010 function TOMessageTableByte2_008b8010 # cdecl(i): i8 byte 2 of entry i of 0x01868a90 when message window i has +0x1e == 1 and the entry's kind (byte 1) >= 1, else -1; name ours
 0x008b8070 function TOGetWidthExtMes1612         # layout+callees: sorts between TOGetSaveDicAdrs and TOInitMacroCmd, and its named callees match the Switch 0x71004f12e0 TOGetWidthExtMes1612's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
 0x008b80b0 function TOCountMessageWords_008b80b0 # (window, text): words up to the first line code: glyphs 1, macros and 0x10 counters their TOGetChangeMacroWordCount, 0xb icons and 9 n>=0xc0 one; name ours
+0x008b8140 function TOCountMessageWordsAbove_008b8140 # cdecl(window, text, limit) -> words before the first byte <= limit (signed): as TOCountMessageWords_008b80b0 (glyphs 1, macros and 0x10 counters TOGetChangeMacroWordCount, 0xb and 9 n>=0xc0 one); name ours
 0x008b81d0 function TOInitMacroCmd            # fh v3:exact 0x008b8180
 0x008b8210 function TOInitMessage             # fh v3:exact 0x008b81c0
 0x008b8290 function TOIntToMes                # fh v3:exact 0x008b8240; (value, out, digits, mode) -> shown value: negatives 0; mode 0 value % 10^digits left-padded with ']'/':'/0xfe by language, mode 1 clamped to 10^digits-1 and zero-padded; copies `digits` bytes of its sprintf buffer, so stale stack bytes follow the terminator
@@ -10107,6 +10137,7 @@
 0x008d55e0 function MenuKaizou_InitList       # (w) +0x1c = 0; 0x0186aa38 = MsGetSaveWeaponList(-1, -1, 0, &n); 0x0186aa3c = n trimmed to the last entry whose slot byte +2 is set; TkMn2InitStatusBG; own name
 0x008d56d0 function MenuKaizou_WindowIdle     # (window) +0x28 = 0; own name
 0x008d5730 function MenuKaizou_ItemUsable     # (list, i) item list byte +3 != 0xff; own name
+0x008d5750 function MenuEquip_IsSelectable    # (id, any): MsGetSaveWeapon(id, &unused) slot: 0 when empty (+2) or flag 2 (+3); 1 with any; 0 for flags 4/8; else MenuList_IsEmptySlot; name ours
 0x008d57d0 function TkMenuKaizouCloseWindow2  # (): close request for 0x0186aa34 (customize menu: UpdateGearCustomizationMenuState reads it), forget it
 0x008d57f0 function TkMenuKaizouCloseWindow   # (): close request for 0x0186aa30 (TkMenuCtrlKaizou's), forget it
 0x008d5830 function UpdateGearCustomizationMenuState # fh call.cs cdecl
@@ -10364,6 +10395,7 @@
 0x008e8fb0 function TOAddPktBaseMesFontLAbmap # fh v3:exact 0x008e8fb0
 0x008e9270 function TOAddPktBaseMesFontLClutRGBA # layout+callees: sorts between TOAddPktBaseMesFontLAbmap and TOAddPktBaseMesFontLClutTypeRGBA, and its named callees match the Switch 0x710050f9e0 TOAddPktBaseMesFontLClutRGBA's (similarity 1.00: TOAddPktBaseMesFontLClutTypeRGBA); symbols from Fahrenheit's server export
 0x008e92a0 function TOAddPktBaseMesFontLClutTypeRGBA # fh v3:exact 0x008e92a0
+0x008e9b80 function TOAddPktChangeMacro       # cdecl(key, code, pen) -> packet cursor: TOAddPktChangeMacro_help in the 16x12 font (kind 1: TOMakePktFont1612Edge + Font_00906270, else Shadow/Font pass 0); Switch 0x710050fa10 TOAddPktChangeMacro (not matched by Fahrenheit; same shape as _help, which follows it here; callers TOAddPktBaseMesFontLAbmap, TOAddPktBaseMesFontLClutTypeRGBA)
 0x008e9ca0 function TOAddPktChangeMacro_help  # fh v3:exact 0x008e9ca0
 0x008eb120 function TOAddPktMenuHelpWindow    # fh switch:cg2 0x71008bc398
 0x008eb240 function TOAddPktMenuIcon          # fh v3:bsim1.00 0x008eb240
@@ -10710,7 +10742,7 @@
 0x00909e10 function yiRenderDisable           # fh v3:bsim1.00 0x00909e10
 0x00909e20 function yiRenderEnable            # fh v3:bsim1.00 0x00909e20
 0x00909e30 function yiTexSwapSetFrame            # (index, frame) -> 0: texture swap entry (g_YiRender + 0x9d9c8, 0x720 each) bit 0 and frame (+4) when index < count (+0x9d9c4) and frame < its frame count (+0x1c); script native 0x008574c0
-0x00909e60 function yiReset                   # fh v3:exact 0x00909e60
+0x00909e60 function yiReset                   # fh v3:exact 0x00909e60; ported (field round 37): yiResetObj, sceGsSyncPath(0, 0), yiRender_resettex(&g_YiRender), map ids 0x01934edc/ee0 = -1, returns Sg_IdFixupAndSet(0)
 0x00909ea0 function yiResetObj                # fh v3:exact 0x00909ea0
 0x00909ff0 function yiSetColorOffset             # (rgba ints): g_YiColorOffset = channel - 128 as floats (fild); in g_MagicImports
 0x0090a040 function yiSetBackColor            # fh v3:exact 0x0090a040
@@ -10726,13 +10758,13 @@
 0x0090a400 function yiSetColor3                  # (r, g, b) -> 0: the low bytes to 0x01934ea4..a6; script native 0x00859000 (three ints)
 0x0090a430 function yiSetFieldPair               # (on, a, b) -> 0: floats to 0x01934e7c, 0x01934e9c; flags 0x01934e78 |= on ? 3 : 1; script native 0x008591d0; ?meaning
 0x0090a470 function yiSetFieldVec3Int            # (a, b, c, n) -> 0: floats to 0x01934e90..98, n to 0x01934ea0; script native 0x00858c90; ?meaning
-0x0090a4a0 function yiSetIDPage               # fh v3:exact 0x0090a4a0
+0x0090a4a0 function yiSetIDPage               # fh v3:exact 0x0090a4a0; ported (field round 37): (page) -> 0: g_YiMapData's section page + 2 (an ID map) to Sg_IdFixupAndSet when present
 0x0090a4d0 function yiSetMIMeParamDObj           # layout and calls: the one unused Switch name between yiSetIDPage and yiSetMatrixDObj that fits (yiSetMIMeParamDObj, 76 bytes, calls graphicSetMeshVertexColorMorphValue; ours 56 bytes): (dobj, &value): stores the value in the DObj record (0x018df624 + dobj * 0xb4) when dobj < g_YiDObjCount and passes it to 0x00643700
 0x0090a520 function yiSetMatrixDObj              # (index, m) -> 0/-1: m into display object index's matrix (counterpart of yiGetMatrixDObj)
 0x0090a560 function yiSetMatrixGroup             # (group, m) -> 0/-1: m into the first object of the group (counterpart of yiGetMatrixGroup)
 0x0090a5c0 function yiSetColorDObj               # (index, a, b) -> 0/-1: the low bytes of a's and b's four words into the object's colours (+0x90..+0x97)
 0x0090a640 function yiSetViewMatrices         # (m, view): m to g_YiViewMatrix (+0x20/+0x24 to 0x018df168), view as yiSetBattleView
-0x0090a6f0 function yiSetPreBgPage            # fh v3:exact 0x0090a6f0
+0x0090a6f0 function yiSetPreBgPage            # fh v3:exact 0x0090a6f0; ported (field round 37): (page) -> 0: as yiSetIDPage, then Yn_PreBgChangeStage(page) when the section was present
 0x0090a730 function yiSetViewAdjust              # (m): g_YiViewAdjust = m
 0x0090a750 function yiSetRotTransDObj         # fh v3:exact 0x0090a750
 0x0090a830 function yiSetRotTransGroup           # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x710052bfc0 yiSetRotTransGroup, 2 votes, round 1
@@ -10783,6 +10815,8 @@
 0x00910340 function yiTriColorsFromGif        # (out, gif, first): three RGBAQ quadwords' bytes to out (alphas first set to 0x80), +0x12 cleared
 0x009103e0 function yiTriColorsUvFromGif      # (out, gif, first, uv): as yiTriColorsFromGif with alpha 0x7f, then three UV quadwords' u16s to +0x14
 0x00910580 function yiHighestBit                 # (bits) -> index of the highest of the low 16 bits set, -1 none
+0x009113a0 function yiPolyBufExecVif         # (buf, codes, words) -> words used: runs VIF codes on the poly buffer (STCYCL +0x4084, OFFSET +0x4078, BASE +0x4074, TOPS +0x4070, STMOD +0x407c, MARK +0x4080, STMASK +0x4068, STROW +0x4048, STCOL +0x4058, MPG/DIRECT skipped, UNPACK -> yiPolyBufUnpack) until words or an MSCAL/MSCALF/MSCNT (+0x406c = TOPS, double buffer flips); 8 callers in the yi renderer; name ours; ported (field round 35)
+0x00911620 function yiPolyBufUnpack          # (buf, src, code) -> source words read: a VIF UNPACK (code bits 24..25 size 32/16/8/V4-5, 26..27 count - 1, 0..9 row + TOPS +0x4070 when bit 15, byte +2 rows) into the poly buffer's VU memory; from 0x009113a0 (the poly buffer's VIF interpreter); name ours; ported (field round 34)
 0x00911970 function yiPolyBufClear            # (buf): zeroes 0x4000 bytes and the counters at +0x4000..+0x4084
 0x009130f0 function yiBoundsMinMax            # (obj, min, max): min/max from +-FLT_MAX (0x00b17504, 0x00b1f2d0) with w 1.0 over the i16 +0x12 vectors at obj + *(obj+8); returns the count or 0; name ours
 0x009131d0 function yiScreff_entry            # fh v3:exact 0x009131d0
@@ -12109,6 +12143,8 @@
 0x00a44820 function sceCdSync                 # fh v3:cg5 0xa44820
 0x00a44840 function MyProfilerAddMarker       # fh v3:cg6 0xa44840
 0x00a44b30 function JobScheduleWait_Ch_Cloth_PerCharacter # fh v3:bsim1.00 0x00a44b30
+0x00a44b80 function JobScheduleWait_Ch_CalcMiddle_Batch # JobSchedule_JobScheduler_waitForComplete(0) only; Ch_CalcMiddle (0x00833390) calls it before and after queueing the batches (0x00a44b90)
+0x00a44b90 function JobSchedule_Ch_CalcMiddle_Batch # (chars, pass, count): queues Ch_CalcMiddle_Batch as a job (0x0071e720, worker threads); Ch_CalcMiddle (0x00833390) calls it once per ~200 elements, so battles run several batches (Ch_Neck/Ch_CalcElement) at once
 0x00a44bd0 function str_replace               # fh v3:exact 0x00a44bd0
 0x00a45000 function abmCalcChrMoveCurMoveCheck # fh v3:exact 0x00a45000
 0x00a45440 function AbmapSetHelpMessage_copy_00a45440 # the same code as AbmapSetHelpMessage (0x00a454a0; call targets equal), a copy the compiler kept; own name
@@ -14531,6 +14567,7 @@
 0x00c3a4cc label    g_pppEnvSlot              # pointer to where pppInitEnv stores the current ppp environment (rcefMainSetEnv)
 0x00c3a4d0 label    g_AlphaScale              # f32 set by useExtendedAlpha (512 extended, 256 normal)
 0x00c3a4d8 label    g_VfxShapeEnlargeBufferFactor # multiplies the shape draws' vertex counts; set/resetVfxShapeEnlargeBufferFactor
+0x00c3a500 label    g_pppFpCurrentId          # u32: the playing field effect's +0x44 halfword (pppFpLoop 0x00729c33); pppDrawMdl3Draw (map 0x3e: 0x2c..0x2f), pppDrawMdlTs3Draw/LoopZDraw (per-map ids) patch their requests by it; name ours
 0x00c3a504 label    g_VfxYiqMode              # -1 off; updateVFXRenderData enables YIQ on map 0x188 unless -1; updateVFXRenderDataShp pushes the depth back on level 0x76f at 3..5
 0x00c3a508 label    g_pppProgramTable            # 418 x 0x28-byte particle program records to 0x00c3e658: +0 name ("pppAccele", ...), +8 per-frame step, +0xc draw, +0x14 Sta, +0x1c set-up (Con), +0x20 second set-up (Con2), +0x24 destructor (Des); pppColor -> pppColor/pppColorCon
 0x00c3e6a0 label    g_pppClutCsmStep          # 32 signed bytes: the CLUT entry step (in u32 entries) after entry i & 0x1f in CSM1 order (1, 9, -15, ...); pppKeTkFadeDraw (0x0072ee50) copies it to its buffer +0x400; ours
@@ -14559,6 +14596,13 @@
 0x00c44bf0 label    g_pppSinTable                # 4096 f32 sines over a turn: pppGetRotMatrix* read [(a>>4)&0xfff] and [((a+0x4000)>>4)&0xfff] (cosine)
 0x00c48bf0 label    g_OpUpVector                 # f32 x4: the up vector op_vector_m crosses the view direction with
 0x00c48c00 label    g_OpUpVectorAlt              # f32 x4: op_vector_m's up vector when the direction's x and z bits (and the emulated a0/a1 high words) are all zero
+0x00c49458 label    g_SqsRpcSend                 # pointer to the sound RPC send buffer (0x40 bytes; Sqs_CallRpc, SqsSeSeparateMaskClear writes the SE mask there)
+0x00c4945c label    g_SqsRpcSend2                # pointer to the second RPC client's send buffer (Sqs_CallRpc2)
+0x00c49460 label    g_SqsRpcRecv                 # pointer to the sound RPC receive buffer (0x400 bytes; Sqs_CallRpc)
+0x00c49464 label    g_SqsRpcRecv2                # pointer to the second RPC client's receive buffer (Sqs_CallRpc2)
+0x00c49468 label    g_SqsCmdTop                  # start of the IOP command queue (SqsIopCommandSend resets g_SqsCmdNext to it)
+0x00c4946c label    g_SqsCmdNext                 # next free 32-byte IOP command (the Sqs* command builders; SqsIopCommandSend sends next - top)
+0x00c49470 label    g_SqsAdpcmCoefs              # PS-ADPCM filters, two i32 each (Sqs_DecodeAdpcm)
 0x00c49498 label    g_SqsBattleStream            # the battle streaming sound's id (SqsBattleStreamingDataSend: a +8, else b +8, else -1)
 0x00c494c8 label    g_CamFinishCount           # counts Native_CamMoveFinish (0x007b9b40) calls with magic 0x92; at 2 sets g_BtlRandomLatch and becomes -1
 0x00c49660 label    g_ChrKindTableArg         # i16 x 8: the argument Chr_TableIndex 0x0082a640 passes to g_CdLib_10 for each kind
@@ -14618,6 +14662,7 @@
 0x00c8f588 label g_Ee_GprMove              # the EE register MsEffectCameraSet moves its vectors through
 0x00c8f728 label    g_Vu0_RSeeded                # nonzero once g_Vu0_R is seeded (0x0075fe50 sets it with R); op_random draws 1.0 while 0, then sets it
 0x00c8f788 label g_Vu0_Q                      # emulated VU0 Q (f32): MsDivVector leaves vf00.w / s there, MsVectorLen the length; the VF registers follow from 0x00c8f790, 16 bytes each (MsApplyMatrix: acc 0x00c8f790, matrix 0x00c8f7d0, vector 0x00c8f810, result 0x00c8f850)
+0x00c8f790 label    g_Vu0Acc                  # 3 x f32: the VU0 accumulator of sg_calcenvelope_normW's translated code (sg_VmaddaScalar adds into it)
 0x00c8f980 label    g_Vu0_VfMove              # emulated VU0 register pppVu0MoveVia copies through
 0x00c8fac4 label    g_Vu0_Status              # emulated VU0 status flags: setZSFlag sets 0x40 (sticky zero), setSSFlag 0x80 (sticky sign)
 0x00cc9698 label    g_BasePath
@@ -14832,6 +14877,7 @@
 0x0112c8d4 label g_BtlMotionBusy           # bit per actor: MsCheckChrMotionAll marks the first actor found running a motion
 0x0112c8d8 label g_BtlParsedCommand        # u32: the command MsParseCommand parses (also 0x0112c8dc)
 0x0112c8dc label g_BtlParsedCommand2       # u32: copy of g_BtlParsedCommand (MsParseCommand)
+0x0112c8e4 label g_BtlLastSe              # u32: the sound MsRegSEplay played last (bit 31 set)
 0x0112c8e8 label g_BtlLastMagic2              # u32; The last magic of kind 2 (MsEffectGetLastMagicNum2).
 0x0112c8ec label g_BtlLastMagic            # u32: the magic effect MsEffectRead reads (with 0x0112c8e8)
 0x0112c8f0 label g_BtlVoiceWait           # u32 (MsSetVoiceWait), cleared at each turn start
@@ -14876,6 +14922,7 @@
 0x0112c9fe label g_BtlCameraHides          # u8, set by MsSetChrVisibleCamera; MsReturnCameraVisible shows all again and clears it (the shows set it again)
 0x0112c9ff label g_BtlEscapeRule              # i8, set by battle script (0x007a77a0): 1 no escape, 2 always (MsCalcEscape)
 0x0112ca00 label g_BtlMenuSkipOn           # u8 set: actors' skip command (+0x6c8) counts (MsMenuGetChrSkipCommand)
+0x0112ca02 label g_BtlSep3dOff            # u8: set, MsSEP3Dregist plays nothing
 0x0112ca03 label g_BtlSummonLimit             # u8; Summons keep the overdrive gauge while this is set (MsSummonLimitSave). MsLimitCommandProcess sets it for command 0x3118 and clears it otherwise.
 0x0112ca04 label g_BtlCommandMusicDown     # u8: the parsed command's flag bit 30 (+0x1c): MsMusicVolume(0x65, 0x1e) (MsParseCommand)
 0x0112ca05 label g_BtlCommandFlag29        # u8: the parsed command's flag bit 29 (+0x1c) (MsParseCommand)
@@ -15048,11 +15095,22 @@
 0x012a85b0 label    g_EtChrDrawFlags2            # used instead of g_EtChrDrawFlags where nonzero
 0x012f4110 label    g_ChrHsvPending           # u32: a colour change (op_chara_hsv 0x00807870) waits on g_ChrHsvInstance's clut; Ch_ClutDispose 0x0083c810 undoes it on weapon (6, 0) and clears both
 0x012f4114 label    g_ChrHsvInstance          # renderer instance of the pending colour change (op_chara_hsv sets it)
+0x012f414c label    g_SqsStandbySent             # standby requests sent (SqsReportStandby); SqsReportStandbyStatus returns it less g_SqsIopResult (the answered count, stored by the request's end function 0x0081fcb0)
+0x012f4150 label    g_SqsIopResult               # what SqsIopCommandSend returns
+0x012f4a00 label    g_SqsCmdBuf                  # the IOP command buffer SqsIopCommandSend sends
 0x012f4e00 label    g_SqsSifDma               # two SIF DMA records of 16 bytes (source, destination, size, attribute): SqsSifDmaStart
+0x012f4e20 label    g_SqsRpcClient               # the sound driver's RPC client (Sqs_CallRpc, SqsIopCommandSend)
+0x012f4e48 label    g_SqsRpcClient2              # the second RPC client (Sqs_CallRpc2)
+0x012f4e74 label    g_SqsRpcFlags                # flags; bit 0 cleared by 0x0081fcb0 (SqsReportStandby's RPC end function)
+0x012f4e7c label    g_SqsSeHandle                # last SE handle SqsSePlay/SqsSeForcePlay gave (incremented, 0 skipped)
 0x012f4e80 label    g_SqsIopStatus               # sound driver status words: 0 system (SqsIopSoundSystemStatus), 1 error (SqsIopSoundErrorStatus), indexed by SqsReportIopSoundStatus
 0x012f4e94 label    g_SqsShoutSkipped         # set when a shout sound was skipped (SqsShoutStreamingPlayState)
 0x012f4ecc label    g_SqsShoutBuffer          # the shout sound buffer's IOP address (SqsShoutStreamingDataSend)
 0x012f4ed0 label    g_SqsSifDmaId             # the id of the last SIF DMA (SqsSifDmaStart)
+0x012f4f00 label    g_SqsReply                   # the 0x40-byte reply SqsIopCommandSend receives
+0x012f4f44 label    g_SqsReplyPending            # read by SqsReportStandby/SqsReportStandbyStatus without effect
+0x012f4f48 label    g_SqsReplyHistory            # 4 x 4 words: SqsIopCommandSend shifts each row down and puts reply +0x10, +0x18, +0x30, +0x34 last; bit 0 of 0x012f4f64 (row 1's newest) set by an SE start
+0x012f4f90 label    g_SqsAdpcmState              # PS-ADPCM history: left s1, s2, right s1, s2 (i32; Sqs_DecodeAdpcm)
 0x012fb7cc label g_BtlCheatPowerup         # u32: the player powerup cheat (MsCheatPlayerPowerup on each turn, MsBattleProcess_InputCue)
 0x012fb7d0 label    g_GraphicSkipFrame        # set to 1 while the sound request count 0x012fb808 is above 1 (a skipped frame); graphicVFXUpdate and updateVFXRenderData do nothing then
 0x012fb7d8 label    g_ChrDrawDetached         # u32: when set, Ch_SysDrawSetSituation and Ch_DrawClothClear leave the renderer alone
@@ -15081,6 +15139,9 @@
 0x012ffad4 label    g_ChrF117HideCount        # i32: pending hides of model "f117"'s segment 0 queued by Ch_ModelSetHide 0x0082aea0 (4 at most, then starts over)
 0x012ffad8 label g_ChrSkipSetPos3            # set by Ch_GetPosSg; Ch_SetPos3 clears it instead of moving the character
 0x012ffae4 label    g_AccCurrentRequest       # set by Sg_AccRequestCurrent (0x0082bdf0), cleared by sg_AccSetCurrent (0x0082ce90) after it captures the frame; read in the cross-fade update (0x0082c4xx)
+0x01300704 label    g_FadeActive              # u32: a bit per screen fade slot still running (Sg_DrawFilter clears a slot's bit when its frames reach 0)
+0x01300708 label    g_FadeSlots               # 5 x 0x10: mode, r, g, b, i16 frames, total/level, target, step (Sg_DrawFilter, 0x0082c0c0)
+0x01300768 label    g_FocusOn                 # u32: the focus (depth of field) requested; 0x0130076c drawn, 0x01300758/c the depths (Sg_DrawFilter)
 0x013007b4 label    g_PlayerSpeed             # f32[4]: Sg_PlayerSetSpeed kinds 1, 2, 0x12, 0x13 (0x013007b4..c0), read by Sg_ControlMain
 0x013007c5 label    g_PlayerDiving            # u8, Sg_PlayerSetDiving; Sg_ControlMain adds 0.2 gravity (Ch_AddGrav) to the player in motion type 2 with flag 0x40 while its gravity is below 2.0
 0x013007d8 label g_ChrSwitch7d8             # i8, Ch_SysSetSwitch7d8
@@ -15108,6 +15169,7 @@
 0x013011d8 label g_ChrSequenceHead          # first chain of g_ChrSequences (Ch_SeqLink)
 0x01301758 label    g_ChrCreateChrpath        # char buffer ch_create_chrpath 0x008380b0 prints the data path into
 0x013017f8 label g_ChrMotionHalf             # Ch_MotionSetHalf / Ch_MotionGetHalf
+0x01301968 label    g_SgMemHeaps                 # Sg_Mem heaps, 0x18 bytes each by bits 27..28 of a block's +0xc: +0 set when a block is freed, +0x14 the lowest freed block (Sg_MemSetFree)
 0x013019c0 label g_ChrClutDisposeHold       # non-zero holds clut disposal (Ch_ClutDisposeCheck)
 0x013019c4 label g_ChrRemapImages           # image textures Ch_TextureReMapping laid out
 0x013019c8 label g_ChrRemapCluts            # clut textures Ch_TextureReMapping laid out
@@ -15396,9 +15458,11 @@
 0x01871698 label    g_TkMenuWorldMapWindow    # MenuWorldMap_CloseWindow
 0x018716a8 label    g_TkMenuScissorScales     # 2 x f32 a, b: in XYUV mode BeginScissor_XYUV scales x1 from x0 by b / a, clips, scales back by a / b
 0x018716c0 label    g_TOPktBuff               # 3 words: TOSetPktBuffAdrs(base, a, b) stores base, base + a (+4), base + b (+8)
+0x018716cc label    g_TOPktCursor             # the packet write cursor: the TOAdp* cursor forms and 0x008ff020 write at it; TOCtrlPkt kicks once it reaches g_TOPktBuff[2]; name ours
 0x018716d0 label    g_TkMenuScissorOn         # 1: BeginScissor_XYUV clips; cleared by CloseScissor
 0x018716d4 label    g_TkMenuScissorXyuv       # u8, BeginScissor_XYUV's scaled mode; cleared by CloseScissor
 0x018716f0 label    g_InvokedFromSelectCursor # SetInvokedFromSelectCursor
+0x018716f4 label    g_TOPktDmaChannel         # TODrawKick passes it to sceDmaSend with g_TOPktBuff[0]; name ours
 0x018716f8 label    g_TkMenuScissorBox        # 4 x f32 left, top, right, bottom (BeginScissor_XYUV; an edge counts as outside)
 0x018763e8 label    g_FFXToAlbhedTbl          # the Al Bhed character table (TOGetFFXToAlbhedTblAdrs)
 0x01876da8 label    g_Windows                 # TO window pointers: +0 in use (i16), +4 type, +8 state, +0x60 handler per state, +0x74 current handler (TOGetWindowType/Status, TOCloseWindow, TOControlWindow)
@@ -15482,6 +15546,8 @@
 0x0230fde0 label    g_pppWoodMatrix           # the billboard rotation pppDrawMatrixWoodSta builds (FFXVu0CopyMatrix from 0x0230fee0); pppDrawMatrixWood turns the scaled rows by it
 0x0230fe20 label    g_pppViewMatrixCopy       # FFXVu0CopyMatrix of g_pppViewMatrix (0x00920000.c); pppDrawMatrix multiplies the object's matrix by it
 0x0230fe60 label    g_pppScreenMatrix         # MsCopyScreenMatrix(0x0230fe60) in pppOtFunc_Control (0x00716ac0) before the g_pppOtList draws
+0x0230fea0 label    g_pppFpWoodMatrix         # the camera billboard rotation pppFpSetWoodMatrix (0x0072a690) builds (camera row 1 normalised, (y, -x, 0, 0), their outer product, camera translation 0x0230ff90); pppFpSetDrawMatrix mode 2: g_pppViewMatrix = g_pppWorldMatrix x it; name ours
+0x0230fee0 label    g_pppWoodMatrixWork       # pppDrawMatrixWoodSta builds the billboard rows here, then FFXVu0CopyMatrix to g_pppWoodMatrix (0x0230fde0); name ours
 0x0230ff20 label    g_pppViewMatrix           # cdc_Mul4x4(g_pppViewMatrix, g_pppCameraMatrix, 0x0230ffa0) (0x00920000.c); translation at 0x0230ff50, which pppDrawMatrixNoRot adds; the pppDrawMatrix* and pppKeDMat* draws transform positions by it
 0x0230ff60 label    g_pppCameraMatrix         # MsCopyCameraMatrix(0x0230ff60) each frame; sceVu0InversMatrix4x4 of it into 0x0230fca0
 0x0230ffa0 label    g_pppWorldMatrix          # the running part's matrix: pppSetMatrix (XYZ rotation of part +0x50, rows scaled by +0x60, position +0x40); g_pppViewMatrix = it x g_pppCameraMatrix
