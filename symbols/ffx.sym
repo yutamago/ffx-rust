@@ -12544,7 +12544,7 @@
 0x011363e8 label    g_Native70a2Flag           # set by Native_70a2 start (0x007a7440)
 0x01136418 label g_BtlMoveSplines             # [u32; 3]; The three move splines (MsMoveSplineSet).
 0x01136424 label g_BtlMoveFrame            # i32, frames into the current move (MsGetChrMovePos; MsGetMoveTargetPos kind 12 sets it)
-0x01136428 label g_BtlMoveSplines          # 0x210-byte move splines: u32 count, points from +0x10 (MsGetChrMovePos kind 7, TkMtCalcSpline)
+0x01136428 label g_BtlMoveSplineData       # 0x210-byte move splines: u32 count, points from +0x10 (MsGetChrMovePos kind 7, TkMtCalcSpline)
 0x01136a58 label g_BtlMoveTarget              # u8; The move target position (MsMoveTargetPos).
 0x01136a68 label g_BtlAction                  # i32; Set to -1 by MsActionInit.
 0x01136a6c label g_BtlActionRequest        # u32, cleared by MsActionRequestSet with 0x01136a70 and the 0x48-byte block 0x01136a78
