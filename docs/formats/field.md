@@ -1483,6 +1483,16 @@ the call).
     (`[ebp-0x14]`), so its result depends on what an earlier call left on
     the stack.
 
+## A 2D line (round 41)
+
+`rcPrimLine(x0, y0, x1, y1, colour, ui)` (`0x00926c00`) builds two
+vertices `(x, y, 256.0, 0.0)` on its stack. The coordinates are copied
+through the x87 stack, so a signalling NaN turns quiet; 256.0 comes from
+`0x00b501c0`. It then calls `rcPrimDraw2D(0x41, verts, 2, colour)`
+(`0x00925f80`, the renderer), with `cgraphicSetNowUIType(2)` before it when
+`ui` is set and `cgraphicSetNowUIType(0)` after. It returns that last
+call's `eax`, which the stack-cookie check leaves alone.
+
 ## Separate SE wave data (round 40)
 
 `SqsSeSeparateDataSend(data, size)` (`0x0081e600`) loads the waves a

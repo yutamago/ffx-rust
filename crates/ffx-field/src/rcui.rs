@@ -795,4 +795,39 @@ pub mod bridge {
         }
         dst
     }
+
+    // ---- field round 41: 2D primitives ----
+
+    /// `rcPrimDraw2D(kind, verts, n, colour)` (`0x00925f80`, glue: the
+    /// renderer's 2D primitive).
+    pub const RC_PRIM_DRAW_2D: u32 = 0x0092_5f80;
+    /// `cgraphicSetNowUIType(type)` (`0x00638d90`).
+    pub const SET_NOW_UI_TYPE: u32 = 0x0063_8d90;
+    /// 256.0 (`f32`, `.rdata`): the depth of the 2D primitives' vertices.
+    pub const PRIM_DEPTH: u32 = 0x00b5_01c0;
+
+    /// `rcPrimLine(x0, y0, x1, y1, colour, ui)` (`0x00926c00`): the two
+    /// vertices `(x, y, 256.0, 0.0)` (`f32`, through the x87 stack) at
+    /// `work` (the original's locals, 0x20 bytes), then `rcPrimDraw2D(0x41,
+    /// work, 2, colour)`, with `cgraphicSetNowUIType(2)` before it when
+    /// `ui` is set and `cgraphicSetNowUIType(0)` after, whose `eax` it
+    /// returns (the stack-cookie check leaves it).
+    pub fn rc_prim_line<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 6],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [x0, y0, x1, y1, colour, ui] = args;
+        let depth = ffx_bridge::x87::round_trip(mem.read::<f32>(mem.rebase(PRIM_DEPTH)));
+        let f = |b: u32| ffx_bridge::x87::round_trip(f32::from_bits(b));
+        mem.write(work, [f(x0), f(y0), depth, 0.0, f(x1), f(y1), depth, 0.0]);
+        let ui_type = mem.rebase(SET_NOW_UI_TYPE);
+        if ui != 0 {
+            call(mem, ui_type, &[2]);
+        }
+        let draw = mem.rebase(RC_PRIM_DRAW_2D);
+        call(mem, draw, &[0x41, work, 2, colour]);
+        call(mem, ui_type, &[0])
+    }
 }

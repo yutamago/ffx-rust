@@ -11079,7 +11079,7 @@
 0x00925db0 function rcPrimCircle                 # layout: alphabetical run between rcPrimBox and rcPrimCircleLine (2 unnamed in the gap); Switch 0x7100551e10 rcPrimCircle is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00925ea0 function rcPrimCircleLine          # fh v3:exact 0x00925ea0
 0x00925f80 function rcPrimDraw2D              # fh v3:exact 0x00925f80
-0x00926c00 function rcPrimLine                # fh v3:exact 0x00926c00
+0x00926c00 function rcPrimLine                # fh v3:exact 0x00926c00; ported (field round 41): (x0, y0, x1, y1, colour, ui): vertices (x, y, 256.0, 0) on the stack, rcPrimDraw2D(0x41, verts, 2, colour) between cgraphicSetNowUIType(2) (when ui) and cgraphicSetNowUIType(0), whose eax it returns
 0x009270c0 function rcPrimTri                 # fh v3:exact 0x009270c0
 0x00927230 function rcPrimTriLine                # layout+callees: sorts between rcPrimTri and rcPrint, and its named callees match the Switch 0x7100551970 rcPrimTriLine's (similarity 0.67: cgraphicSetNowUIType, rcPrimDraw2D); symbols from Fahrenheit's server export
 0x009273b0 function rcCopyQword_009273b0      # (dst, src): as rcCopyQword_0091cb40

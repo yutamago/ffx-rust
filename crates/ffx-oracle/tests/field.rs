@@ -12741,3 +12741,79 @@ fn round40_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0028_0002);
     round40_cases(&mut t, &mut rng, 40);
 }
+
+// ---- round 41 ----
+
+/// A `rcPrimDraw2D` stand-in: the eight vertex words its second argument
+/// points at to `log`, its other arguments after them, a call count at
+/// `log + 0x2c`; returns 0x1234.
+fn prim_draw_stub(log: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x4c, 0x24, 0x08]; // mov ecx, [esp + 8]
+    for i in 0..8u8 {
+        c.extend_from_slice(&[0x8b, 0x41, 4 * i, 0xa3]); // mov eax, [ecx + 4i]; mov [log + 4i], eax
+        c.extend_from_slice(&(log + 4 * u32::from(i)).to_le_bytes());
+    }
+    for (arg, at) in [(4u8, 0x20u32), (0xc, 0x24), (0x10, 0x28)] {
+        c.extend_from_slice(&[0x8b, 0x44, 0x24, arg, 0xa3]); // mov eax, [esp + arg]; mov [log + at], eax
+        c.extend_from_slice(&(log + at).to_le_bytes());
+    }
+    c.extend_from_slice(&[0xff, 0x05]); // inc dword [log + 0x2c]
+    c.extend_from_slice(&(log + 0x2c).to_le_bytes());
+    c.push(0xb8); // mov eax, 0x1234; ret
+    c.extend_from_slice(&0x1234u32.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// Round 41 on `t`: `rcPrimLine` with the UI type on or off, its vertices
+/// and arguments logged by the `rcPrimDraw2D` stand-in, the UI type
+/// calls by another.
+fn round41_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, log2, rv) = (t.alloc(0x30), t.alloc(4 + 0x20 * 4), t.alloc(4));
+    // cgraphicSetNowUIType logged (the image has no UI state behind it)
+    t.cave(&[
+        (Some(rcui::bridge::RC_PRIM_DRAW_2D), prim_draw_stub(log)),
+        (
+            Some(rcui::bridge::SET_NOW_UI_TYPE),
+            log_stub(log2, rv, 1, 1),
+        ),
+    ]);
+    for _ in 0..rounds {
+        let a: [u32; 6] = [
+            rng.any_float(),
+            rng.any_float(),
+            rng.any_float(),
+            rng.any_float(),
+            rng.next(),
+            rng.below(2) * rng.next(),
+        ];
+        t.fill(log, 0x2c, rng);
+        t.put(log2, 0u32);
+        t.put(rv, rng.next());
+        let work = t.stack_scratch(0x100);
+        t.same(
+            "rcPrimLine",
+            |o| o.eax(0x0092_6c00, &a),
+            |m| rcui::bridge::rc_prim_line(m, a, work, call),
+        );
+    }
+}
+
+/// Round 41: `rcPrimLine`.
+#[test]
+fn round41_prim_line_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0029_0001);
+    round41_cases(&mut t, &mut rng, 300);
+}
+
+/// Round 41 on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn round41_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0029_0002);
+    round41_cases(&mut t, &mut rng, 60);
+}
