@@ -272,7 +272,7 @@
 0x0060df10	dead	unreachable from the entry point and every pointer table
 0x0060df30	dead	unreachable from the entry point and every pointer table
 0x0060dfc0	dead	unreachable from the entry point and every pointer table
-0x0060e040	logic	default (no rule: ported to be safe)
+0x0060e040	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x0060e0a0	dead	unreachable from the entry point and every pointer table
 0x0060e0e0	dead	unreachable from the entry point and every pointer table
 0x0060e130	dead	unreachable from the entry point and every pointer table
@@ -6355,7 +6355,7 @@
 0x00772790	logic	default (no rule: ported to be safe)
 0x007727a0	logic	default (no rule: ported to be safe)
 0x007727d0	logic	default (no rule: ported to be safe)
-0x007727f0	logic	default (no rule: ported to be safe)
+0x007727f0	platform	thin wrapper: only forwards to platform code (hdd_rmode_get)
 0x00772810	logic	default (no rule: ported to be safe)
 0x00772830	logic	default (no rule: ported to be safe)
 0x00772890	logic	default (no rule: ported to be safe)
@@ -6444,7 +6444,7 @@
 0x007734c0	logic	default (no rule: ported to be safe)
 0x007734f0	logic	default (no rule: ported to be safe)
 0x00773510	logic	default (no rule: ported to be safe)
-0x00773530	logic	default (no rule: ported to be safe)
+0x00773530	platform	thin wrapper: only forwards to platform code (hdd_head_sectors)
 0x00773540	logic	default (no rule: ported to be safe)
 0x00773560	logic	default (no rule: ported to be safe)
 0x00773580	logic	default (no rule: ported to be safe)
@@ -6490,7 +6490,7 @@
 0x00773b10	logic	default (no rule: ported to be safe)
 0x00773b20	logic	default (no rule: ported to be safe)
 0x00773b40	logic	default (no rule: ported to be safe)
-0x00773b60	logic	default (no rule: ported to be safe)
+0x00773b60	platform	thin wrapper: only forwards to platform code (get_hdd_status)
 0x00773ba0	logic	default (no rule: ported to be safe)
 0x00773bc0	logic	default (no rule: ported to be safe)
 0x00773be0	logic	default (no rule: ported to be safe)
@@ -6575,7 +6575,7 @@
 0x00774ae0	logic	default (no rule: ported to be safe)
 0x00774c00	logic	default (no rule: ported to be safe)
 0x00774cb0	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
-0x00774ff0	logic	default (no rule: ported to be safe)
+0x00774ff0	glue	GS packet API (GsPkt_TexturedSprite_00774ff0): appends to or kicks a packet; replaced by ffx-render
 0x00775330	logic	default (no rule: ported to be safe)
 0x00775530	logic	default (no rule: ported to be safe)
 0x00775720	glue	GS/DMA packet writer (sceGsExecLoadImage, sceGsSetDefLoadImage, sceGsSyncPath; writes no game state): replaced by ffx-render
@@ -6586,7 +6586,7 @@
 0x00775de0	logic	default (no rule: ported to be safe)
 0x00775ed0	glue	GS/DMA packet writer (sceGsExecLoadImage, sceGsSetDefLoadImage, sceGsSyncPath; writes no game state): replaced by ffx-render
 0x00776110	logic	default (no rule: ported to be safe)
-0x007766e0	logic	default (no rule: ported to be safe)
+0x007766e0	glue	GS/DMA packet writer (GsPkt_TexturedSprite_00774ff0, sceDmaGetChan, sceDmaSend; writes no game state): replaced by ffx-render
 0x00776740	platform	only called from platform code (hdd_kabe_disp)
 0x007767a0	logic	default (no rule: ported to be safe)
 0x007767d0	logic	default (no rule: ported to be safe)
@@ -6638,7 +6638,7 @@
 0x007792e0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): hdd_install_init
 0x007793b0	dead	unreachable from the entry point and every pointer table
 0x007793c0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): hdd_kabe_disp
-0x00779450	logic	default (no rule: ported to be safe)
+0x00779450	glue	GS/DMA packet writer (calls the packet writers 0x7766e0; writes no game state): replaced by ffx-render
 0x00779490	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): hdd_mount
 0x00779560	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): hdd_mount_flg_get
 0x00779570	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): hdd_rmode_get
@@ -6652,19 +6652,19 @@
 0x00779ca0	logic	default (no rule: ported to be safe)
 0x00779d20	platform	only called from platform code (hdd_thread_main)
 0x00779f70	logic	default (no rule: ported to be safe)
-0x00779f80	logic	default (no rule: ported to be safe)
-0x00779fa0	logic	default (no rule: ported to be safe)
-0x00779fc0	logic	default (no rule: ported to be safe)
-0x00779fe0	logic	default (no rule: ported to be safe)
-0x0077a000	logic	default (no rule: ported to be safe)
-0x0077a020	logic	default (no rule: ported to be safe)
-0x0077a040	logic	default (no rule: ported to be safe)
+0x00779f80	platform	thin wrapper: only forwards to platform code (task_create_in_group)
+0x00779fa0	platform	thin wrapper: only forwards to platform code (task_create_in_group)
+0x00779fc0	platform	thin wrapper: only forwards to platform code (task_create_in_group)
+0x00779fe0	platform	thin wrapper: only forwards to platform code (task_create_in_group)
+0x0077a000	platform	thin wrapper: only forwards to platform code (task_create_in_group)
+0x0077a020	platform	thin wrapper: only forwards to platform code (task_create_in_group)
+0x0077a040	platform	thin wrapper: only forwards to platform code (task_create_in_group)
 0x0077a060	logic	default (no rule: ported to be safe)
 0x0077a180	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sa_task_buff_size_get
 0x0077a1a0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sa_task_init
 0x0077a1d0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sa_task_init2
 0x0077a2c0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sa_task_start
-0x0077a320	logic	default (no rule: ported to be safe)
+0x0077a320	platform	thin wrapper: only forwards to platform code (task_create_asm)
 0x0077a330	dead	unreachable from the entry point and every pointer table
 0x0077a390	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): task_create_in_group
 0x0077a3f0	logic	default (no rule: ported to be safe)
@@ -6794,7 +6794,7 @@
 0x0077e830	dead	unreachable from the entry point and every pointer table
 0x0077e880	dead	unreachable from the entry point and every pointer table
 0x0077e8b0	dead	unreachable from the entry point and every pointer table
-0x0077e8e0	logic	default (no rule: ported to be safe)
+0x0077e8e0	platform	thin wrapper: only forwards to platform code (sceIoctl)
 0x0077e920	debug	only called from debug code (ChrViewProc)
 0x0077e940	logic	default (no rule: ported to be safe)
 0x0077e9a0	logic	default (no rule: ported to be safe)
@@ -9702,7 +9702,7 @@
 0x00826150	logic	default (no rule: ported to be safe)
 0x008261b0	logic	default (no rule: ported to be safe)
 0x008261f0	logic	default (no rule: ported to be safe)
-0x00826230	logic	default (no rule: ported to be safe)
+0x00826230	platform	thin wrapper: only forwards to platform code (SgRealloc, Sg_MemSetMoveHeapStartAddr, Sg_MemSetStr)
 0x00826260	logic	default (no rule: ported to be safe)
 0x00826340	logic	default (no rule: ported to be safe)
 0x008266f0	logic	default (no rule: ported to be safe)
@@ -10386,14 +10386,14 @@
 0x0083eb20	dead	unreachable from the entry point and every pointer table
 0x0083eb30	logic	default (no rule: ported to be safe)
 0x0083ecd0	logic	default (no rule: ported to be safe)
-0x0083f010	logic	default (no rule: ported to be safe)
+0x0083f010	platform	thin wrapper: only forwards to platform code (Sg_MemRealloc)
 0x0083f030	debug	only called from debug code (0x84bae0)
-0x0083f050	logic	default (no rule: ported to be safe)
+0x0083f050	platform	thin wrapper: only forwards to platform code (0x83f100)
 0x0083f090	logic	default (no rule: ported to be safe)
-0x0083f0a0	logic	default (no rule: ported to be safe)
+0x0083f0a0	platform	thin wrapper: only forwards to platform code (user_aligned_malloc)
 0x0083f0c0	dead	unreachable from the entry point and every pointer table
 0x0083f0f0	dead	unreachable from the entry point and every pointer table
-0x0083f100	logic	default (no rule: ported to be safe)
+0x0083f100	platform	thin wrapper: only forwards to platform code (user_malloc)
 0x0083f120	dead	unreachable from the entry point and every pointer table
 0x0083f130	logic	default (no rule: ported to be safe)
 0x0083f160	logic	default (no rule: ported to be safe)
@@ -12305,14 +12305,14 @@
 0x008799b0	debug	debug name: AtelLoadDebugData
 0x00879a70	logic	default (no rule: ported to be safe)
 0x00879b60	logic	default (no rule: ported to be safe)
-0x00879c30	logic	default (no rule: ported to be safe)
+0x00879c30	platform	thin wrapper: only forwards to platform code (FlushCache, sceClose)
 0x00879c60	logic	default (no rule: ported to be safe)
 0x00879cf0	logic	default (no rule: ported to be safe)
 0x00879d60	logic	default (no rule: ported to be safe)
-0x00879de0	logic	default (no rule: ported to be safe)
-0x00879e10	logic	default (no rule: ported to be safe)
-0x00879e50	logic	default (no rule: ported to be safe)
-0x00879e60	logic	default (no rule: ported to be safe)
+0x00879de0	platform	thin wrapper: only forwards to platform code (FlushCache, sceRead)
+0x00879e10	platform	thin wrapper: only forwards to platform code (sceLseek)
+0x00879e50	platform	thin wrapper: only forwards to platform code (sceWrite)
+0x00879e60	platform	thin wrapper: only forwards to platform code (sceLseek)
 0x00879e70	debug	debug name: AtelRemovePS2Debug
 0x00879ee0	dead	unreachable from the entry point and every pointer table
 0x00879f00	logic	default (no rule: ported to be safe)
@@ -12708,10 +12708,10 @@
 0x00888740	logic	default (no rule: ported to be safe)
 0x00888790	logic	default (no rule: ported to be safe)
 0x008887d0	dead	unreachable from the entry point and every pointer table
-0x00888820	logic	default (no rule: ported to be safe)
+0x00888820	platform	thin wrapper: only forwards to platform code (SignalSema)
 0x00888830	logic	default (no rule: ported to be safe)
 0x00888840	dead	unreachable from the entry point and every pointer table
-0x00888880	logic	default (no rule: ported to be safe)
+0x00888880	platform	thin wrapper: only forwards to platform code (WaitSema)
 0x00888890	logic	default (no rule: ported to be safe)
 0x008888c0	dead	unreachable from the entry point and every pointer table
 0x008888e0	logic	default (no rule: ported to be safe)
@@ -12721,7 +12721,7 @@
 0x00888990	logic	default (no rule: ported to be safe)
 0x008889e0	logic	default (no rule: ported to be safe)
 0x008889f0	logic	default (no rule: ported to be safe)
-0x00888a40	logic	default (no rule: ported to be safe)
+0x00888a40	platform	thin wrapper: only forwards to platform code (scePadInfoAct)
 0x00888a70	logic	default (no rule: ported to be safe)
 0x00888b60	logic	default (no rule: ported to be safe)
 0x00888b80	logic	default (no rule: ported to be safe)
@@ -12873,9 +12873,9 @@
 0x0088e440	logic	default (no rule: ported to be safe)
 0x0088e570	logic	default (no rule: ported to be safe)
 0x0088e610	dead	unreachable from the entry point and every pointer table
-0x0088e650	logic	default (no rule: ported to be safe)
-0x0088e680	logic	default (no rule: ported to be safe)
-0x0088e6b0	logic	default (no rule: ported to be safe)
+0x0088e650	platform	thin wrapper: only forwards to platform code (Sg_MemSetAlign, user_malloc)
+0x0088e680	platform	thin wrapper: only forwards to platform code (Sg_MemCheck)
+0x0088e6b0	platform	thin wrapper: only forwards to platform code (Sg_MemCheck)
 0x0088e730	logic	default (no rule: ported to be safe)
 0x0088e750	logic	default (no rule: ported to be safe)
 0x0088e790	logic	default (no rule: ported to be safe)
@@ -13091,7 +13091,7 @@
 0x0089bc80	glue	GS/DMA packet writer (TODrawBtlNetWindowXYWHType, TOMkpRotateShapeXYWHUVC2, TOMkpShapeXYWHUVC2; writes no game state): replaced by ffx-render
 0x0089bf70	logic	default (no rule: ported to be safe)
 0x0089c7d0	logic	default (no rule: ported to be safe)
-0x0089c870	logic	default (no rule: ported to be safe)
+0x0089c870	glue	GS/DMA packet writer (calls the packet writers TkMn2DrawCrossCursor; writes no game state): replaced by ffx-render
 0x0089c900	logic	default (no rule: ported to be safe)
 0x0089cde0	logic	default (no rule: ported to be safe)
 0x0089d390	logic	default (no rule: ported to be safe)
@@ -13399,7 +13399,7 @@
 0x008b3680	logic	default (no rule: ported to be safe)
 0x008b3730	logic	default (no rule: ported to be safe)
 0x008b3790	logic	default (no rule: ported to be safe)
-0x008b37d0	logic	default (no rule: ported to be safe)
+0x008b37d0	glue	GS/DMA packet writer (TOMakePktScissor; writes no game state): replaced by ffx-render
 0x008b3860	logic	default (no rule: ported to be safe)
 0x008b3a40	logic	default (no rule: ported to be safe)
 0x008b3c20	logic	default (no rule: ported to be safe)
@@ -13795,7 +13795,7 @@
 0x008c7630	logic	default (no rule: ported to be safe)
 0x008c7650	logic	default (no rule: ported to be safe)
 0x008c7750	logic	default (no rule: ported to be safe)
-0x008c7af0	logic	default (no rule: ported to be safe)
+0x008c7af0	glue	GS/DMA packet writer (calls the packet writers TkMn2DrawCrossCmdCursor; writes no game state): replaced by ffx-render
 0x008c7c30	logic	default (no rule: ported to be safe)
 0x008c80b0	logic	default (no rule: ported to be safe)
 0x008c87e0	logic	default (no rule: ported to be safe)
@@ -13821,7 +13821,7 @@
 0x008c9460	logic	default (no rule: ported to be safe)
 0x008c94e0	logic	default (no rule: ported to be safe)
 0x008c9570	logic	default (no rule: ported to be safe)
-0x008c9940	logic	default (no rule: ported to be safe)
+0x008c9940	glue	GS/DMA packet writer (calls the packet writers TkMn2DrawCrossCursor; writes no game state): replaced by ffx-render
 0x008c99f0	logic	default (no rule: ported to be safe)
 0x008c9a70	logic	default (no rule: ported to be safe)
 0x008c9b60	logic	default (no rule: ported to be safe)
@@ -13905,8 +13905,8 @@
 0x008cd6d0	logic	default (no rule: ported to be safe)
 0x008cd720	logic	default (no rule: ported to be safe)
 0x008cd890	dead	unreachable from the entry point and every pointer table
-0x008cd990	logic	default (no rule: ported to be safe)
-0x008cda20	logic	default (no rule: ported to be safe)
+0x008cd990	glue	GS/DMA packet writer (calls the packet writers 0x8cdab0; writes no game state): replaced by ffx-render
+0x008cda20	glue	GS/DMA packet writer (calls the packet writers TkMn2DrawCrossCmdCursor; writes no game state): replaced by ffx-render
 0x008cdab0	glue	GS/DMA packet writer (TODrawCrossMenuIconCommandName, TODrawMenuPlateXYWHType; writes no game state): replaced by ffx-render
 0x008cdba0	logic	default (no rule: ported to be safe)
 0x008ce130	logic	default (no rule: ported to be safe)
@@ -13927,14 +13927,14 @@
 0x008cf830	logic	default (no rule: ported to be safe)
 0x008cf950	logic	default (no rule: ported to be safe)
 0x008cf970	logic	default (no rule: ported to be safe)
-0x008cf990	logic	default (no rule: ported to be safe)
+0x008cf990	glue	GS/DMA packet writer (calls the packet writers TkMn2DrawCrossCmdCursor; writes no game state): replaced by ffx-render
 0x008cf9f0	logic	default (no rule: ported to be safe)
 0x008cfc30	logic	default (no rule: ported to be safe)
 0x008cfc90	logic	default (no rule: ported to be safe)
 0x008cfd20	logic	default (no rule: ported to be safe)
 0x008cfd40	logic	default (no rule: ported to be safe)
 0x008cfd70	logic	default (no rule: ported to be safe)
-0x008d0100	logic	default (no rule: ported to be safe)
+0x008d0100	glue	GS/DMA packet writer (calls the packet writers TkMn2DrawCrossCmdCursor; writes no game state): replaced by ffx-render
 0x008d0170	logic	default (no rule: ported to be safe)
 0x008d0250	logic	default (no rule: ported to be safe)
 0x008d02e0	glue	GS/DMA packet writer (TODrawCrossMenuIconAbilityName, TODrawMenuPlateXYWHType; writes no game state): replaced by ffx-render
@@ -14011,14 +14011,14 @@
 0x008d57f0	logic	default (no rule: ported to be safe)
 0x008d5810	logic	default (no rule: ported to be safe)
 0x008d5830	logic	default (no rule: ported to be safe)
-0x008d5d50	logic	default (no rule: ported to be safe)
-0x008d5df0	logic	default (no rule: ported to be safe)
+0x008d5d50	glue	GS/DMA packet writer (calls the packet writers 0x8d5e60; writes no game state): replaced by ffx-render
+0x008d5df0	glue	GS/DMA packet writer (calls the packet writers TkMn2DrawCrossCmdCursor; writes no game state): replaced by ffx-render
 0x008d5e60	glue	GS/DMA packet writer (TODrawCrossMenuIconAbilityName, TODrawMenuPlateXYWHType; writes no game state): replaced by ffx-render
 0x008d5f60	logic	default (no rule: ported to be safe)
 0x008d6340	glue	GS/DMA packet writer (TOMkpShapeXYWHUVC2; writes no game state): replaced by ffx-render
 0x008d63f0	glue	GS/DMA packet writer (TODrawCrossMenuIconAbilityName, TODrawMenuPlateXYWHType; writes no game state): replaced by ffx-render
 0x008d6560	logic	default (no rule: ported to be safe)
-0x008d65f0	logic	default (no rule: ported to be safe)
+0x008d65f0	glue	GS/DMA packet writer (calls the packet writers TkMn2DrawCrossCmdCursor; writes no game state): replaced by ffx-render
 0x008d6660	logic	default (no rule: ported to be safe)
 0x008d6760	logic	default (no rule: ported to be safe)
 0x008d6860	logic	default (no rule: ported to be safe)
@@ -14054,10 +14054,10 @@
 0x008d85d0	logic	default (no rule: ported to be safe)
 0x008d8620	logic	default (no rule: ported to be safe)
 0x008d8aa0	glue	GS/DMA packet writer (TODrawCrossMenuIconAbilityName, TODrawMenuPlateXYWHType; writes no game state): replaced by ffx-render
-0x008d8bb0	logic	default (no rule: ported to be safe)
+0x008d8bb0	glue	GS/DMA packet writer (calls the packet writers TkMn2DrawCrossCursor; writes no game state): replaced by ffx-render
 0x008d8c30	logic	default (no rule: ported to be safe)
 0x008d8cb0	logic	default (no rule: ported to be safe)
-0x008d8e60	logic	default (no rule: ported to be safe)
+0x008d8e60	glue	GS/DMA packet writer (calls the packet writers TkMn2DrawCrossCursor; writes no game state): replaced by ffx-render
 0x008d8ee0	logic	default (no rule: ported to be safe)
 0x008d8f60	logic	default (no rule: ported to be safe)
 0x008d9120	logic	default (no rule: ported to be safe)
@@ -14094,10 +14094,10 @@
 0x008daaa0	logic	default (no rule: ported to be safe)
 0x008daac0	logic	default (no rule: ported to be safe)
 0x008dab30	logic	default (no rule: ported to be safe)
-0x008dab70	logic	default (no rule: ported to be safe)
+0x008dab70	glue	GS/DMA packet writer (calls the packet writers TkMn2DrawCrossCursor; writes no game state): replaced by ffx-render
 0x008dabf0	logic	default (no rule: ported to be safe)
 0x008dac70	logic	default (no rule: ported to be safe)
-0x008dae00	logic	default (no rule: ported to be safe)
+0x008dae00	glue	GS/DMA packet writer (calls the packet writers TkMn2DrawCrossCursor; writes no game state): replaced by ffx-render
 0x008daea0	logic	default (no rule: ported to be safe)
 0x008daf50	logic	default (no rule: ported to be safe)
 0x008db080	logic	default (no rule: ported to be safe)
@@ -14363,7 +14363,7 @@
 0x008e5d20	dead	unreachable from the entry point and every pointer table
 0x008e5e90	dead	unreachable from the entry point and every pointer table
 0x008e5f60	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
-0x008e6030	logic	default (no rule: ported to be safe)
+0x008e6030	glue	GS/DMA packet writer (calls the packet writers DrawCrossButtonIconRGBA; writes no game state): replaced by ffx-render
 0x008e6070	glue	GS/DMA packet writer (TOMkpShapeXYWHUVC2; writes no game state): replaced by ffx-render
 0x008e6700	logic	default (no rule: ported to be safe)
 0x008e67f0	logic	default (no rule: ported to be safe)
@@ -14376,7 +14376,7 @@
 0x008e71d0	glue	GS/DMA packet writer (TOMkpShapeXYWHUV; writes no game state): replaced by ffx-render
 0x008e75c0	logic	default (no rule: ported to be safe)
 0x008e78a0	dead	unreachable from the entry point and every pointer table
-0x008e7a90	logic	default (no rule: ported to be safe)
+0x008e7a90	glue	GS/DMA packet writer (calls the packet writers DrawCrossButtonIconRGBA; writes no game state): replaced by ffx-render
 0x008e7d30	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
 0x008e7ed0	dead	unreachable from the entry point and every pointer table
 0x008e7ef0	dead	unreachable from the entry point and every pointer table
@@ -14418,10 +14418,10 @@
 0x008eadf0	dead	unreachable from the entry point and every pointer table
 0x008eb120	dead	unreachable from the entry point and every pointer table
 0x008eb150	dead	unreachable from the entry point and every pointer table
-0x008eb240	logic	default (no rule: ported to be safe)
+0x008eb240	glue	GS/DMA packet writer (calls the packet writers TOAddPktMenuIconRGBA; writes no game state): replaced by ffx-render
 0x008eb270	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
 0x008eb480	dead	unreachable from the entry point and every pointer table
-0x008eb4e0	logic	default (no rule: ported to be safe)
+0x008eb4e0	glue	GS/DMA packet writer (TOGsTEXFLUSH; writes no game state): replaced by ffx-render
 0x008eb590	dead	unreachable from the entry point and every pointer table
 0x008eb5f0	dead	unreachable from the entry point and every pointer table
 0x008eb740	dead	unreachable from the entry point and every pointer table
@@ -14507,17 +14507,17 @@
 0x008f07f0	dead	unreachable from the entry point and every pointer table
 0x008f0830	dead	unreachable from the entry point and every pointer table
 0x008f08e0	dead	unreachable from the entry point and every pointer table
-0x008f0990	logic	default (no rule: ported to be safe)
+0x008f0990	glue	GS/DMA packet writer (TOAdpEasyShapeXYWHC2; writes no game state): replaced by ffx-render
 0x008f09f0	dead	unreachable from the entry point and every pointer table
 0x008f0a70	logic	default (no rule: ported to be safe)
 0x008f11b0	dead	unreachable from the entry point and every pointer table
 0x008f1770	dead	unreachable from the entry point and every pointer table
 0x008f1880	glue	GS/DMA packet writer (TOAdpTEST, TOAdpTEX0, TOAdpWords4; writes no game state): replaced by ffx-render
-0x008f1990	logic	default (no rule: ported to be safe)
-0x008f1a10	logic	default (no rule: ported to be safe)
-0x008f1a90	logic	default (no rule: ported to be safe)
-0x008f1af0	logic	default (no rule: ported to be safe)
-0x008f1b50	logic	default (no rule: ported to be safe)
+0x008f1990	glue	GS/DMA packet writer (TOAdpEasyShapeXYWHC2; writes no game state): replaced by ffx-render
+0x008f1a10	glue	GS/DMA packet writer (TOAdpEasyShapeXYWHC2; writes no game state): replaced by ffx-render
+0x008f1a90	glue	GS/DMA packet writer (TOAdpEasyShapeXYWHC2; writes no game state): replaced by ffx-render
+0x008f1af0	glue	GS/DMA packet writer (TOAdpEasyShapeXYWHC2; writes no game state): replaced by ffx-render
+0x008f1b50	glue	GS/DMA packet writer (calls the packet writers 0x8f1990, 0x8f1a10, 0x8f1a90; writes no game state): replaced by ffx-render
 0x008f1d60	dead	unreachable from the entry point and every pointer table
 0x008f1e40	dead	unreachable from the entry point and every pointer table
 0x008f1f00	dead	unreachable from the entry point and every pointer table
@@ -14539,7 +14539,7 @@
 0x008f30b0	glue	GS packet API (TOAdpValueFontLClutRight): appends to or kicks a packet; replaced by ffx-render
 0x008f3170	dead	unreachable from the entry point and every pointer table
 0x008f3220	dead	unreachable from the entry point and every pointer table
-0x008f3280	logic	default (no rule: ported to be safe)
+0x008f3280	glue	GS/DMA packet writer (calls the packet writers 0x8edfc0; writes no game state): replaced by ffx-render
 0x008f3300	logic	default (no rule: ported to be safe)
 0x008f3390	logic	default (no rule: ported to be safe)
 0x008f3420	logic	default (no rule: ported to be safe)
@@ -14579,10 +14579,10 @@
 0x008f5dc0	dead	unreachable from the entry point and every pointer table
 0x008f5df0	dead	unreachable from the entry point and every pointer table
 0x008f5e20	dead	unreachable from the entry point and every pointer table
-0x008f5e90	logic	default (no rule: ported to be safe)
+0x008f5e90	glue	GS/DMA packet writer (TOAdpEasyShapeXYWHC2; writes no game state): replaced by ffx-render
 0x008f5f00	dead	unreachable from the entry point and every pointer table
 0x008f5f70	glue	GS packet API (TODrawMenuPlateXYWHType): appends to or kicks a packet; replaced by ffx-render
-0x008f8870	logic	default (no rule: ported to be safe)
+0x008f8870	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x008f88b0	dead	unreachable from the entry point and every pointer table
 0x008f88e0	dead	unreachable from the entry point and every pointer table
 0x008f8910	dead	unreachable from the entry point and every pointer table
@@ -14595,12 +14595,12 @@
 0x008f9230	glue	GS packet API (TODrawScissorXYWH): appends to or kicks a packet; replaced by ffx-render
 0x008f9280	glue	GS/DMA packet writer (TODrawCrossBoxXYWHC2, TOMkpShapeXYWHUVC2; writes no game state): replaced by ffx-render
 0x008f9970	dead	unreachable from the entry point and every pointer table
-0x008f9a40	logic	default (no rule: ported to be safe)
-0x008f9b60	logic	default (no rule: ported to be safe)
+0x008f9a40	glue	GS/DMA packet writer (TOCtrlPkt, TOMkpShapeXYWHC2; writes no game state): replaced by ffx-render
+0x008f9b60	glue	GS/DMA packet writer (TOCtrlPkt, TOMkpShapeXYWHC2; writes no game state): replaced by ffx-render
 0x008f9c20	glue	GS/DMA packet writer (TOMkpShapeXYWHUV; writes no game state): replaced by ffx-render
 0x008fa450	logic	default (no rule: ported to be safe)
 0x008fa470	dead	unreachable from the entry point and every pointer table
-0x008fa4f0	logic	default (no rule: ported to be safe)
+0x008fa4f0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x008fa570	logic	default (no rule: ported to be safe)
 0x008fa6b0	logic	default (no rule: ported to be safe)
 0x008fa740	logic	default (no rule: ported to be safe)
@@ -14657,7 +14657,7 @@
 0x008fc660	dead	unreachable from the entry point and every pointer table
 0x008fc6a0	dead	unreachable from the entry point and every pointer table
 0x008fc720	dead	unreachable from the entry point and every pointer table
-0x008fc770	logic	default (no rule: ported to be safe)
+0x008fc770	glue	GS/DMA packet writer (calls the packet writers 0x905ef0, 0x9060f0; writes no game state): replaced by ffx-render
 0x008fc7c0	glue	GS packet API (TOMakePktFont1612): appends to or kicks a packet; replaced by ffx-render
 0x008fc870	glue	GS packet API (TOMakePktFont1612Edge): appends to or kicks a packet; replaced by ffx-render
 0x008fcad0	glue	GS packet API (TOMakePktFont1612Font): appends to or kicks a packet; replaced by ffx-render
@@ -14705,7 +14705,7 @@
 0x00901090	dead	unreachable from the entry point and every pointer table
 0x00901100	logic	default (no rule: ported to be safe)
 0x00901130	logic	default (no rule: ported to be safe)
-0x00901160	logic	default (no rule: ported to be safe)
+0x00901160	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x00901190	glue	GS packet API (TOMkpActiveChrCursor): appends to or kicks a packet; replaced by ffx-render
 0x00901280	glue	GS packet API (TOMkpBtlLimitLuluMidareCounter): appends to or kicks a packet; replaced by ffx-render
 0x00901300	glue	GS packet API (TOMkpBtlLimitSpecialGauge): appends to or kicks a packet; replaced by ffx-render
@@ -14718,12 +14718,12 @@
 0x00901af0	dead	unreachable from the entry point and every pointer table
 0x00901bb0	dead	unreachable from the entry point and every pointer table
 0x00901be0	dead	unreachable from the entry point and every pointer table
-0x00901c10	logic	default (no rule: ported to be safe)
+0x00901c10	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x00901c20	dead	unreachable from the entry point and every pointer table
 0x00901c50	glue	GS packet API (TOMkpEasyMesFontLCenter): appends to or kicks a packet; replaced by ffx-render
 0x00901cb0	logic	default (no rule: ported to be safe)
 0x00901ce0	dead	unreachable from the entry point and every pointer table
-0x00901d10	logic	default (no rule: ported to be safe)
+0x00901d10	glue	GS/DMA packet writer (TOCtrlPkt; writes no game state): replaced by ffx-render
 0x00901d40	dead	unreachable from the entry point and every pointer table
 0x00901d80	dead	unreachable from the entry point and every pointer table
 0x00901de0	dead	unreachable from the entry point and every pointer table
@@ -14732,7 +14732,7 @@
 0x00901ec0	dead	unreachable from the entry point and every pointer table
 0x00901f00	dead	unreachable from the entry point and every pointer table
 0x00901f40	glue	GS packet API (TOMkpEasyStrFontM): appends to or kicks a packet; replaced by ffx-render
-0x00901f80	logic	default (no rule: ported to be safe)
+0x00901f80	glue	GS/DMA packet writer (TOCtrlPkt; writes no game state): replaced by ffx-render
 0x00901fc0	dead	unreachable from the entry point and every pointer table
 0x00902000	dead	unreachable from the entry point and every pointer table
 0x00902040	glue	GS packet API (TOMkpEasyStrFontS): appends to or kicks a packet; replaced by ffx-render
@@ -14766,7 +14766,7 @@
 0x00902620	dead	unreachable from the entry point and every pointer table
 0x00902650	dead	unreachable from the entry point and every pointer table
 0x00902700	glue	GS/DMA packet writer (TOCtrlPkt; writes no game state): replaced by ffx-render
-0x00902810	logic	default (no rule: ported to be safe)
+0x00902810	glue	GS/DMA packet writer (calls the packet writers 0x8f2bf0; writes no game state): replaced by ffx-render
 0x00902840	dead	unreachable from the entry point and every pointer table
 0x00902870	dead	unreachable from the entry point and every pointer table
 0x009029b0	glue	GS packet API (TOMkpPadButtonData): appends to or kicks a packet; replaced by ffx-render
@@ -14789,7 +14789,7 @@
 0x00904600	glue	GS packet API (TOOpenPktbuff): appends to or kicks a packet; replaced by ffx-render
 0x00904650	glue	GS/DMA packet writer (TOGsFRAME; writes no game state): replaced by ffx-render
 0x009046d0	logic	default (no rule: ported to be safe)
-0x009046e0	logic	default (no rule: ported to be safe)
+0x009046e0	glue	GS/DMA packet writer (TOCtrlPkt; writes no game state): replaced by ffx-render
 0x009047a0	dead	unreachable from the entry point and every pointer table
 0x009047c0	glue	GS packet API (TOSetPktBuffAdrs): appends to or kicks a packet; replaced by ffx-render
 0x009047f0	dead	unreachable from the entry point and every pointer table
@@ -14817,9 +14817,9 @@
 0x00905ab0	logic	default (no rule: ported to be safe)
 0x00905d30	dead	unreachable from the entry point and every pointer table
 0x00905e90	logic	default (no rule: ported to be safe)
-0x00905ef0	logic	default (no rule: ported to be safe)
-0x00906050	logic	default (no rule: ported to be safe)
-0x009060f0	logic	default (no rule: ported to be safe)
+0x00905ef0	glue	GS/DMA packet writer (TOCtrlPkt, TOGsWords4, TOGsXY2; writes no game state): replaced by ffx-render
+0x00906050	glue	GS/DMA packet writer (calls the packet writers 0x905ef0, 0x9060f0; writes no game state): replaced by ffx-render
+0x009060f0	glue	GS/DMA packet writer (TOCtrlPkt, TOGsWords4, TOGsXY2; writes no game state): replaced by ffx-render
 0x00906270	glue	GS packet API (TOMakePktFont1612Font_00906270): appends to or kicks a packet; replaced by ffx-render
 0x00906290	glue	GS packet API (TOMakePktFont1612Shadow_00906290): appends to or kicks a packet; replaced by ffx-render
 0x009062b0	logic	default (no rule: ported to be safe)
@@ -14860,31 +14860,31 @@
 0x009072e0	logic	default (no rule: ported to be safe)
 0x00907330	logic	default (no rule: ported to be safe)
 0x00907370	logic	default (no rule: ported to be safe)
-0x00907390	logic	default (no rule: ported to be safe)
+0x00907390	glue	GS/DMA packet writer (TODrawScissor, TODrawScissorXYWH; writes no game state): replaced by ffx-render
 0x00907450	logic	default (no rule: ported to be safe)
 0x009074b0	logic	default (no rule: ported to be safe)
 0x00907520	logic	default (no rule: ported to be safe)
 0x00907570	logic	default (no rule: ported to be safe)
 0x009075b0	logic	default (no rule: ported to be safe)
-0x009075d0	logic	default (no rule: ported to be safe)
+0x009075d0	glue	GS/DMA packet writer (TODrawScissor, TODrawScissorXYWH; writes no game state): replaced by ffx-render
 0x00907690	logic	default (no rule: ported to be safe)
 0x009076f0	logic	default (no rule: ported to be safe)
 0x00907750	logic	default (no rule: ported to be safe)
 0x009077a0	logic	default (no rule: ported to be safe)
 0x009077e0	logic	default (no rule: ported to be safe)
-0x00907800	logic	default (no rule: ported to be safe)
+0x00907800	glue	GS/DMA packet writer (TODrawScissor, TODrawScissorXYWH; writes no game state): replaced by ffx-render
 0x009078c0	logic	default (no rule: ported to be safe)
 0x00907920	logic	default (no rule: ported to be safe)
 0x00907990	logic	default (no rule: ported to be safe)
 0x009079e0	logic	default (no rule: ported to be safe)
 0x00907a20	logic	default (no rule: ported to be safe)
-0x00907a40	logic	default (no rule: ported to be safe)
+0x00907a40	glue	GS/DMA packet writer (TODrawScissor, TODrawScissorXYWH; writes no game state): replaced by ffx-render
 0x00907b00	logic	default (no rule: ported to be safe)
 0x00907b60	logic	default (no rule: ported to be safe)
 0x00907ba0	logic	default (no rule: ported to be safe)
 0x00907bd0	logic	default (no rule: ported to be safe)
 0x00907bf0	logic	default (no rule: ported to be safe)
-0x00907c10	logic	default (no rule: ported to be safe)
+0x00907c10	glue	GS/DMA packet writer (TODrawScissorXYWH, TOMakePktScissor, TOMkpShapeXY; writes no game state): replaced by ffx-render
 0x00907cc0	logic	default (no rule: ported to be safe)
 0x00907cf0	logic	default (no rule: ported to be safe)
 0x00907d80	logic	default (no rule: ported to be safe)
@@ -15002,10 +15002,10 @@
 0x0090b5f0	dead	unreachable from the entry point and every pointer table
 0x0090b9d0	dead	unreachable from the entry point and every pointer table
 0x0090bba0	dead	unreachable from the entry point and every pointer table
-0x0090bbd0	logic	default (no rule: ported to be safe)
-0x0090bbe0	logic	default (no rule: ported to be safe)
+0x0090bbd0	platform	thin wrapper: only forwards to platform code (user_malloc)
+0x0090bbe0	platform	thin wrapper: only forwards to platform code (Sg_MemSetAlign, user_malloc)
 0x0090bc00	dead	unreachable from the entry point and every pointer table
-0x0090bc10	logic	default (no rule: ported to be safe)
+0x0090bc10	platform	thin wrapper: only forwards to platform code (Sg_MemSetErrorIgnore, user_malloc)
 0x0090bc30	dead	unreachable from the entry point and every pointer table
 0x0090bc40	dead	unreachable from the entry point and every pointer table
 0x0090bc70	dead	unreachable from the entry point and every pointer table
@@ -15454,7 +15454,7 @@
 0x00921360	logic	default (no rule: ported to be safe)
 0x009213d0	logic	default (no rule: ported to be safe)
 0x00921410	logic	default (no rule: ported to be safe)
-0x009214e0	logic	default (no rule: ported to be safe)
+0x009214e0	platform	thin wrapper: only forwards to platform code (rcAlloc)
 0x00921530	logic	default (no rule: ported to be safe)
 0x00921640	logic	default (no rule: ported to be safe)
 0x009216b0	logic	default (no rule: ported to be safe)
@@ -15578,7 +15578,7 @@
 0x00925820	logic	default (no rule: ported to be safe)
 0x00925850	logic	default (no rule: ported to be safe)
 0x00925870	logic	default (no rule: ported to be safe)
-0x009258a0	logic	default (no rule: ported to be safe)
+0x009258a0	platform	thin wrapper: only forwards to platform code (user_malloc)
 0x009258b0	logic	default (no rule: ported to be safe)
 0x009258f0	logic	default (no rule: ported to be safe)
 0x00925950	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
@@ -16336,7 +16336,7 @@
 0x00946ef0	dead	unreachable from the entry point and every pointer table
 0x00946f50	platform	imports CreateEventA, InitializeCriticalSection
 0x009470b0	dead	unreachable from the entry point and every pointer table
-0x009470f0	logic	default (no rule: ported to be safe)
+0x009470f0	platform	thin wrapper: only forwards to platform code (VirtualFree_Decommit, VirtualFree_Release)
 0x00947140	dead	unreachable from the entry point and every pointer table
 0x009471d0	dead	unreachable from the entry point and every pointer table
 0x00947270	logic	default (no rule: ported to be safe)
@@ -16455,7 +16455,7 @@
 0x009dbd90	logic	default (no rule: ported to be safe)
 0x009dbe10	logic	default (no rule: ported to be safe)
 0x009dbe30	dead	unreachable from the entry point and every pointer table
-0x009dbe90	logic	default (no rule: ported to be safe)
+0x009dbe90	platform	thin wrapper: only forwards to platform code (user_aligned_malloc)
 0x009dbea0	logic	default (no rule: ported to be safe)
 0x009dbed0	dead	unreachable from the entry point and every pointer table
 0x009dbf00	dead	unreachable from the entry point and every pointer table
@@ -16490,8 +16490,8 @@
 0x009dc2c0	dead	unreachable from the entry point and every pointer table
 0x009dc2f0	dead	unreachable from the entry point and every pointer table
 0x009dc370	dead	unreachable from the entry point and every pointer table
-0x009dc580	logic	default (no rule: ported to be safe)
-0x009dc610	logic	default (no rule: ported to be safe)
+0x009dc580	platform	static initialiser (registers its destructor with atexit)
+0x009dc610	platform	static initialiser (registers its destructor with atexit)
 0x009dcb40	dead	unreachable from the entry point and every pointer table
 0x009dcb80	dead	unreachable from the entry point and every pointer table
 0x009dcbc0	dead	unreachable from the entry point and every pointer table
@@ -16553,8 +16553,8 @@
 0x009ddcd0	dead	unreachable from the entry point and every pointer table
 0x009ddce0	dead	unreachable from the entry point and every pointer table
 0x009ddcf0	dead	unreachable from the entry point and every pointer table
-0x009ddd00	logic	default (no rule: ported to be safe)
-0x009ddd90	logic	default (no rule: ported to be safe)
+0x009ddd00	platform	static initialiser (registers its destructor with atexit)
+0x009ddd90	platform	static initialiser (registers its destructor with atexit)
 0x009dde20	dead	unreachable from the entry point and every pointer table
 0x009dde50	dead	unreachable from the entry point and every pointer table
 0x009dde70	dead	unreachable from the entry point and every pointer table
@@ -16580,8 +16580,8 @@
 0x009de230	dead	unreachable from the entry point and every pointer table
 0x009de260	dead	unreachable from the entry point and every pointer table
 0x009de290	dead	unreachable from the entry point and every pointer table
-0x009de2c0	logic	default (no rule: ported to be safe)
-0x009de350	logic	default (no rule: ported to be safe)
+0x009de2c0	platform	static initialiser (registers its destructor with atexit)
+0x009de350	platform	static initialiser (registers its destructor with atexit)
 0x009de3e0	dead	unreachable from the entry point and every pointer table
 0x009de410	dead	unreachable from the entry point and every pointer table
 0x009de430	dead	unreachable from the entry point and every pointer table
@@ -16958,13 +16958,13 @@
 0x00a44960	logic	default (no rule: ported to be safe)
 0x00a44a30	logic	default (no rule: ported to be safe)
 0x00a44a50	platform	imports ReleaseSemaphore, WaitForSingleObject
-0x00a44b30	logic	default (no rule: ported to be safe)
-0x00a44b40	logic	default (no rule: ported to be safe)
+0x00a44b30	platform	thin wrapper: only forwards to platform code (JobSchedule_JobScheduler_waitForComplete)
+0x00a44b40	platform	thin wrapper: only forwards to platform code (0xa44a50)
 0x00a44b60	dead	unreachable from the entry point and every pointer table
-0x00a44b80	logic	default (no rule: ported to be safe)
-0x00a44b90	logic	default (no rule: ported to be safe)
+0x00a44b80	platform	thin wrapper: only forwards to platform code (JobSchedule_JobScheduler_waitForComplete)
+0x00a44b90	platform	thin wrapper: only forwards to platform code (0x71e720)
 0x00a44bb0	dead	unreachable from the entry point and every pointer table
-0x00a44bd0	logic	default (no rule: ported to be safe)
+0x00a44bd0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): str_replace
 0x00a44cd0	dead	unreachable from the entry point and every pointer table
 0x00a44d00	dead	unreachable from the entry point and every pointer table
 0x00a44d30	debug	only called from debug code (0xa44ea0)

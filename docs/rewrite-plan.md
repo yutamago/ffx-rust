@@ -153,14 +153,17 @@ stand-ins; then pure GS/DMA packet writers are glue (the packet API,
 writers `TOMkp*`/`TODraw*`/`TOMakePkt*` and the PC port's `graphicDrawUI*`
 that replaced their GIF primitives, and functions that only call it,
 read-only getters, the menu scissor clip and VU0 scratch, and write no
-global any logic reads); then propagation (a function only debug code calls
+global any logic reads apart from the packet API's own cursor; a writer
+found this way counts as packet API for the next round when it appends,
+never when it only kicks a DMA); then propagation (a function only debug code calls
 is debug, callers outside the game modules included, and an unnamed function
 between two debug methods of one class, such as the free camera's, is
 debug; glue and platform pass one hop to unnamed callees, and any number of
 hops inside the PC part when the callee calls no game logic: allocator
 internals, container copies, renderer set-up; what only exception unwinding
-reaches is platform). Last, a thin wrapper in the PC part (at most 64 bytes,
-no global write, every call to glue or platform code) is that boundary even
+reaches is platform). Static initialisers (atexit) are platform anywhere. Last, a thin wrapper
+(at most 64 bytes, no global write, every call to platform code, or in the
+PC part to glue or platform code) is that boundary even
 under a scene-state name: `graphicAddScreenFadeTask` only registers a
 renderer delegation, so ffx-render takes its arguments. Auto-port shape
 names (`SetFields_*`, `Compare_*`) count as unnamed. Anything left is
