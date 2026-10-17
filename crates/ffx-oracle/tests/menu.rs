@@ -7766,3 +7766,64 @@ fn menu_round19_batch5_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_round19_batch6_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0019_0006) else {
+        return;
+    };
+    let w = u64::from;
+    for round in 0..64u32 {
+        // TkRefreshHdd: stand-in config reads, the HDD state fixed, the
+        // sound driver recorded (TkRefreshHDDMode's callees)
+        let menu = t.alloc_random(4);
+        return_const(&mut t, 0x0078_5290, menu);
+        let config = t.alloc_random(0x20);
+        return_const(&mut t, 0x0088_d5e0, config);
+        let word = t.rng.pick(&[0u32, 3, 1, 0x103]);
+        return_const(&mut t, 0x0077_87b0, word);
+        let status = t.rng.pick(&[0u32, 1, 2, 0x101]);
+        return_const(&mut t, 0x0077_7e90, status);
+        let name = t.rng.next();
+        record_n(&mut t, 0x0077_7eb0, 1, name);
+        let wave = t.rng.next();
+        record_n(&mut t, 0x0081_d470, 1, wave);
+        let music = t.rng.next();
+        record_n(&mut t, 0x0081_d3c0, 1, music);
+        t.scramble(tk::HDD_MODE.sym, 1);
+        t.twin("TkRefreshHdd", 0x0087_24a0, &[], U32, |o| {
+            w(tk::tk_refresh_hdd(o, &mut callback))
+        });
+        // BtlEnd_StepGil over a recording MsPayGIL
+        let paid = t.rng.next();
+        record_n(&mut t, 0x0078_59a0, 1, paid);
+        let step = t.rng.pick_or_any(&[0, 1, 5, 0x8000_0000]);
+        let rest = if round % 3 == 0 {
+            step
+        } else {
+            t.rng.pick_or_any(&[0, 1, 7, 0xffff_ffff])
+        };
+        t.put(t.sym(tk::BTL_END_AP.sym), [step, rest]);
+        t.twin("BtlEnd_StepGil", 0x008b_a590, &[], U32, |o| {
+            w(tk::btl_end_step_gil(o, &mut callback))
+        });
+        // TkInitWork: alarms, controllers and sync recorded, the save original
+        if round % 4 == 0 {
+            for f in [0x0088_c810, 0x0088_8f00, 0x0088_7e30] {
+                let r = t.rng.next();
+                record_n(&mut t, f, 0, r);
+            }
+            for g in [0x0133_0870, 0x0133_0878, 0x0133_087c, 0x023c_bec4] {
+                t.scramble(g, 8);
+            }
+            let save = t.sym(0x0112_ca90);
+            let junk = t.rng.bytes(0x40);
+            t.put_bytes(save, &junk);
+            t.twin("TkInitWork", 0x0088_e570, &[], U32, |o| {
+                w(tk::tk_init_work(o, &mut callback))
+            });
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}

@@ -7786,6 +7786,92 @@ pub mod bridge {
         }
         last
     }
+
+    /// `TkRefreshHdd()` (`0x008724a0`): the HDD mode from the save's menu
+    /// config (bit 13 of `*MsGetSaveMenu()`), cleared unless the HDD is
+    /// ready (`get_hdd_word_518()` not 3 and `get_hdd_status()` = 1), kept
+    /// in the FFX config's `+0xe` (`TkGetFFXCofingAdrs()`) and
+    /// [`HDD_MODE`]; then [`tk_refresh_hdd_mode`] (a tail jump: its
+    /// result).
+    pub fn tk_refresh_hdd<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0078_5290);
+        let menu = call(mem, f, &[]);
+        let f = mem.rebase(0x0088_d5e0);
+        let config = call(mem, f, &[]);
+        let mut on = u8::from(mem.read::<u32>(menu) & 0x2000 != 0);
+        let f = mem.rebase(0x0077_87b0);
+        let ready = call(mem, f, &[]) != 3 && {
+            let f = mem.rebase(0x0077_7e90);
+            call(mem, f, &[]) == 1
+        };
+        if !ready {
+            on = 0;
+        }
+        mem.write(config.wrapping_add(0xe), on);
+        HDD_MODE.set(mem, on);
+        tk_refresh_hdd_mode(mem, call)
+    }
+
+    /// `BtlEnd_StepGil()` (`0x008ba590`, own name): one step of the battle
+    /// results' count-down ([`BTL_END_AP`]: the step, the rest): the step,
+    /// or the whole rest when not below it (unsigned), comes off the rest
+    /// and is paid out as gil ([`btl_end_add_gil`], so the counted value
+    /// is gil, not AP). Returns 1 while something remains, else 0.
+    pub fn btl_end_step_gil<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [step, rest] = BTL_END_AP.get(mem);
+        let (take, more) = if step < rest { (step, 1) } else { (rest, 0) };
+        let at = BTL_END_AP.ptr(mem).addr.wrapping_add(4);
+        mem.write(at, rest.wrapping_sub(take));
+        let f = mem.rebase(0x008b_a3a0);
+        call(mem, f, &[take]);
+        more
+    }
+
+    /// `TkInitWork()` (`0x0088e570`, own name; `TkInit` calls it first):
+    /// `0x01330878` and `0x0133087c` cleared, `TkInitAlarm()`,
+    /// `TkInitControlerWork()`, [`tk_init_sync_v`], then the debug menu
+    /// status 1, the encounter output, `g_SndStreamTable`, the HDD error
+    /// and debug draw flags 0, and the save's `+0x2b` 0 and `+0x13` bit 1
+    /// set, bit 2 cleared (`MsGetSaveEventAddress()`, whose result it
+    /// returns).
+    pub fn tk_init_work<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        for g in [0x0133_0878u32, 0x0133_087c] {
+            let at = mem.rebase(g);
+            mem.write(at, 0u32);
+        }
+        for f in [0x0088_c810u32, 0x0088_8f00] {
+            let f = mem.rebase(f);
+            call(mem, f, &[]);
+        }
+        let f = mem.rebase(0x0088_7e30);
+        call(mem, f, &[]);
+        let w = |mem: &mut M, g: u32, v: u8| {
+            let at = mem.rebase(g);
+            mem.write(at, v);
+        };
+        w(mem, 0x0133_0870, 1);
+        w(mem, 0x0133_0871, 0);
+        let at = mem.rebase(0x023c_bec4);
+        mem.write(at, 0u32);
+        w(mem, 0x0133_0873, 0);
+        let f = mem.rebase(0x0078_5240);
+        let save = call(mem, f, &[]);
+        mem.write(save.wrapping_add(0x2b), 0u8);
+        w(mem, 0x0133_0872, 0);
+        let save = call(mem, f, &[]);
+        let b: u8 = mem.read(save.wrapping_add(0x13));
+        mem.write(save.wrapping_add(0x13), (b & 0xfb) | 2);
+        save
+    }
 }
 
 #[cfg(test)]

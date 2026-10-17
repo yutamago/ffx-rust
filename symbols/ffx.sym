@@ -9122,6 +9122,7 @@
 0x0088dd60 function TkInitSceneFromSave       # () fade/0x01330854 cleared; no load pending (0x00c33480 -1): 0x01327108 = 1; else the save event block restores map/entrance (+0xba->+0, +0xc2->+2, +0xb8->+0xc then 0, +0xce->+0xd), 0x0133084c = 1; own name
 0x0088df40 function TkInitSaveWork            # fh v3:cg6 0x88deb0
 0x0088e070 function TkInitScene               # fh v3:exact 0x0088dfe0
+0x0088e570 function TkInitWork                # (): 0x01330878/7c = 0, TkInitAlarm, TkInitControlerWork, TkInitSyncV, debug menu status 1, flags 0, g_SndStreamTable 0, save +0x2b = 0, save +0x13 = (b & ~4) | 2; returns MsGetSaveEventAddress(); TkInit calls it first; name ours
 0x0088e610 function TkLoadVibrate             # fh switch:bsim1.00 0x7100490400
 0x0088e650 function TkMalloc                  # fh v3:exact 0x0088e5c0
 0x0088e680 function TkMemLock                 # fh v3:bsim1.00 0x0088e5f0
@@ -9685,6 +9686,7 @@
 0x008ba3a0 function BtlEnd_AddGil             # (gil): jmp MsPayGIL(-gil); caller 0x008ba590 (battle results gil); name ours
 0x008ba3c0 function BtlEnd_ApStep             # (chr) the same step for MsGetNextAP; own name
 0x008ba400 function BtlEnd_CompactList        # entries (14 bytes from 0x01869f20, count u8 0x01869f18) with +9 set swapped to the front, +2 stays; at most 3; own name
+0x008ba590 function BtlEnd_StepGil            # (): step [0x01869f10] (or the whole rest [0x01869f14] when not below it, unsigned) off the rest, paid with BtlEnd_AddGil (MsPayGIL(-x)): so g_TkBtlEndAp counts gil; returns 1 while some remains; name ours
 0x008ba5c0 function TkBtlEndCheckLegendWeapon # fh switch:cg2 0x71004b2420
 0x008ba660 function TkBtlEndCtrl              # fh v3:exact 0x008ba620
 0x008bc340 function TkBtlEndDraw                 # the after-battle results screen's draw: its callees (TOMenuOpenPktBuffTmp, TOMkpShapeXYWHUV, DrawWaterWaveShapeC2, TOGetSaveChrName, ToMakeBtlEasyEdgeFont*, ToMakeBtlEasyDigitRight, TOGetFFXLang, the cos/sin lookups) are the Switch TkBtlEndDraw's (9536 bytes there, split into helpers here), and it sorts after TkBtlEndCtrl; called from 0x008bb7d6 (a block of 0x008bb690, which TkBtlEndCtrl calls)

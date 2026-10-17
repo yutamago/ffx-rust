@@ -3506,4 +3506,16 @@ ported! {
     MenuMain_SaveFrameBuffer @ 0x008a_ac80 => extern "C" fn menu_main_save_frame_buffer() -> u32 {
         tk::menu_main_save_frame_buffer(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkRefreshHdd()`.
+    TkRefreshHdd @ 0x0087_24a0 => extern "C" fn tk_refresh_hdd() -> u32 {
+        tk::tk_refresh_hdd(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_StepGil()`: 1 while gil remains.
+    BtlEnd_StepGil @ 0x008b_a590 => extern "C" fn btl_end_step_gil() -> u32 {
+        tk::btl_end_step_gil(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkInitWork()`.
+    TkInitWork @ 0x0088_e570 => extern "C" fn tk_init_work() -> u32 {
+        tk::tk_init_work(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
 }
