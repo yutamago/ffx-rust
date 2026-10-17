@@ -8961,7 +8961,11 @@ fn round15_search_rev_near_target_matches_the_original_on_the_snapshot() {
 }
 
 /// Round 15's small forwarding functions over logging stand-ins.
-#[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
 fn round15_forwarders(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use ffx_system::menu::bridge as mb;
     use tolib::bridge as t;
@@ -9064,7 +9068,12 @@ fn round15_forwarders(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         );
         put(a, b, a.rebase(0x0186_a230), rng.next() % 5);
         put(a, b, a.rebase(0x0186_a22c), (rng.next() & 1) as u16);
-        put(a, b, a.rebase(0x0194_0abc), u32::from(rng.next() % 4 == 0));
+        put(
+            a,
+            b,
+            a.rebase(0x0194_0abc),
+            u32::from(rng.next().is_multiple_of(4)),
+        );
         let prev = [0xa5u32, 0x133, 0x152, 0x151, rng.next()][(rng.next() % 5) as usize];
         set(
             a,
