@@ -22,6 +22,7 @@ pub mod et;
 pub mod fp;
 pub mod heap;
 pub mod mat;
+pub mod md;
 pub mod op;
 pub mod opd;
 pub mod opus;

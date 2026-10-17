@@ -882,6 +882,459 @@ pub mod bridge {
             &[kind, key, 0],
         )
     }
+
+    /// `Ch_MotionCancel(chr)` (`0x00837180`): `Ch_SetSysMotion(chr, slot
+    /// i8 +0x185, 0)`, its result.
+    pub fn ch_motion_cancel<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let slot = i32::from(mem.read::<i8>(chr + 0x185)).cast_unsigned();
+        call(mem, mem.rebase(0x0083_7d00), &[chr, slot, 0])
+    }
+
+    /// `SG_StepChannels(obj, frames)` (`0x008394d0`, the main module's).
+    pub const STEP_CHANNELS: u32 = 0x0083_94d0;
+
+    /// `Ch_MotionSetupFcurve(chr, clip)` (`0x00839980`): sets up the
+    /// character's channels (0x2c bytes each from `+0x748`) for a clip:
+    /// frames `+0x7e0` = `i16` clip `+4`; events (`u16` `+6`, data at
+    /// clip + `+0x10`) into `+0x7f0`/`+0x7f4` (0 without). Nine channels
+    /// per bone, for the fewer of the clip's (`i16` `+2`) and the header's
+    /// (`u16` `+10` of `+0x1c0`) bones, each typed by the next 2 bits of
+    /// the 64-bit words at clip + `+8`: 0 the value 0, 1 the value 1, 2 a
+    /// constant (the next `i16` of the data at clip + `+0xc`, 12-bit
+    /// fixed), 3 a stream there (rotation for the first 3 of the 9; length
+    /// `i16`, so the data moves by `len / 2` halfwords), linked in front of
+    /// `+0x74c`. Then `SG_StepChannels(chr, 1)`, each streamed channel's
+    /// previous value `+0x18` = its value `+0x16`, and `+0x7dc` = 1.
+    /// Returns what the original leaves in EAX.
+    pub fn ch_motion_setup_fcurve<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        clip: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if clip == 0 {
+            return 0;
+        }
+        let mut data = clip.wrapping_add(mem.read::<u32>(clip + 0xc));
+        let mut words = clip.wrapping_add(mem.read::<u32>(clip + 8));
+        let bones = i32::from(mem.read::<i16>(clip + 2));
+        mem.write(chr + 0x7e0, i32::from(mem.read::<i16>(clip + 4)));
+        let mut ch: u32 = mem.read(chr + 0x748);
+        let events: u16 = mem.read(clip + 6);
+        if events == 0 {
+            mem.write(chr + 0x7f4, 0u32);
+        } else {
+            mem.write(chr + 0x7f0, events);
+            mem.write(chr + 0x7f4, clip.wrapping_add(mem.read::<u32>(clip + 0x10)));
+        }
+        let hdr: u32 = mem.read(chr + 0x1c0);
+        let have = i32::from(mem.read::<u16>(hdr + 0xa));
+        let n = bones.min(have).wrapping_mul(9);
+        let (mut bits, mut left, mut head) = (0u64, 0u32, 0u32);
+        let mut i = 0i32;
+        while i < n {
+            if left == 0 {
+                let lo: u32 = mem.read(words);
+                let hi: u32 = mem.read(words + 4);
+                bits = u64::from(lo) | (u64::from(hi) << 32);
+                words = words.wrapping_add(8);
+                left = 0x20;
+            }
+            #[allow(clippy::cast_possible_truncation)] // 2 bits
+            let kind = (bits & 3) as u8;
+            mem.write(ch + 4, kind);
+            match kind {
+                0 => mem.write(ch + 0x1c, 0f32),
+                1 => mem.write(ch + 0x1c, 1f32),
+                2 => {
+                    let v = crate::fixed::fixed12_to_float(u32::from(mem.read::<u16>(data)));
+                    data = data.wrapping_add(2);
+                    mem.write(ch + 0x1c, v);
+                }
+                _ => {
+                    mem.write(ch + 5, u8::from(i.cast_unsigned() % 9 < 3));
+                    mem.write(ch + 8, data.wrapping_add(2));
+                    mem.write(ch + 0xc, data.wrapping_add(2));
+                    mem.write(ch + 6, 0u16);
+                    mem.write(ch + 0x14, 0u32);
+                    mem.write(ch, head);
+                    let len = i32::from(mem.read::<i16>(data));
+                    head = ch;
+                    data = data.wrapping_add(((len / 2) * 2).cast_unsigned());
+                }
+            }
+            bits >>= 2;
+            mem.write(ch + 0x28, 1u8);
+            left -= 1;
+            ch = ch.wrapping_add(0x2c);
+            i += 1;
+        }
+        mem.write(chr + 0x74c, head);
+        let mut eax = call(mem, mem.rebase(STEP_CHANNELS), &[chr, 1]);
+        let mut c: u32 = mem.read(chr + 0x74c);
+        while c != 0 {
+            let v: u16 = mem.read(c + 0x16);
+            mem.write(c + 0x18, v);
+            eax = (eax & 0xffff_0000) | u32::from(v);
+            c = mem.read(c);
+        }
+        mem.write(chr + 0x7dc, 1u32);
+        eax
+    }
+
+    /// `Ch_MotionSetupFcurve(chr, clip)` ([`ch_motion_setup_fcurve`]).
+    pub const SETUP_FCURVE: u32 = 0x0083_9980;
+    /// `g_ChrStrC001` (`"c001"`) and `g_GraphicMapId`.
+    pub const STR_C001: u32 = 0x00b4_86bc;
+    pub const GRAPHIC_MAP_ID: ffx_bridge::Global<i32> = ffx_bridge::Global::new(0x0133_0844);
+
+    /// `Ch_SetMotionSeq(chr, clip, loops, start, end)` (`0x00839b80`):
+    /// plays `clip` from `start` to `end` (negative: the clip's length,
+    /// `i16` `+0` × 256; Tidus, `"c001"`, on map 0x7a playing 0x3000 to
+    /// -0x100 stops at 0x2800): `+0x7e0` = 0x1e00, the clip's channels set
+    /// up (`Ch_MotionSetupFcurve`), `+0x718` start, `+0x720` length,
+    /// `+0x71c` end − 1, `+0x724` the pending loop count `+0x726` (or
+    /// `loops` when none, -1), which is cleared; `+0x754` = 0x100, `+0x740`
+    /// = start, `+0x752` = `+0x73a` (at least 1), flag bit 16 of `+0x194`
+    /// cleared, `+0x728` = 1. Returns `+0x73a` (what EAX holds).
+    pub fn ch_set_motion_seq<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        clip: u32,
+        loops: u32,
+        start: i32,
+        end: i32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let name: u32 = mem.read(chr + 4);
+        let tidus = crate::handle::bridge::c_string(mem, name)
+            == crate::handle::bridge::c_string(mem, mem.rebase(STR_C001));
+        let mut end = end;
+        if tidus && GRAPHIC_MAP_ID.get(mem) == 0x7a && start == 0x3000 && end == -0x100 {
+            end = 0x2800;
+        }
+        mem.write(chr + 0x7e0, 0x1e00u32);
+        call(mem, mem.rebase(SETUP_FCURVE), &[chr, clip]);
+        mem.write(chr + 0x718, start);
+        if end < 0 {
+            end = i32::from(mem.read::<i16>(clip)) << 8;
+        }
+        mem.write(chr + 0x720, end.wrapping_sub(start));
+        mem.write(chr + 0x71c, end.wrapping_sub(1));
+        let pending: u16 = mem.read(chr + 0x726);
+        #[allow(clippy::cast_possible_truncation)] // the low half, as stored
+        let n = if pending == 0xffff {
+            loops as u16
+        } else {
+            pending
+        };
+        mem.write(chr + 0x724, n);
+        mem.write(chr + 0x726, 0xffffu16);
+        mem.write(chr + 0x754, 0x100u16);
+        let s: u32 = mem.read(chr + 0x718);
+        mem.write(chr + 0x740, s);
+        let k: u16 = mem.read(chr + 0x73a);
+        mem.write(chr + 0x752, if k == 0 { 1 } else { k });
+        let f: u32 = mem.read(chr + 0x194);
+        mem.write(chr + 0x194, f & 0xfffe_ffff);
+        mem.write(chr + 0x728, 1u16);
+        u32::from(k)
+    }
+
+    /// `Ch_SetSysMotion(chr, slot, motion)` (`0x00837d00`),
+    /// `Sg_AngleApproach(cur, target, step)` (`0x00835f80`, `ST0` out),
+    /// `Angle_Wrap_00836720` (`ST0` out) and the water height
+    /// (`f32`, `Sg_GetSuimen`).
+    pub const SET_SYS_MOTION: u32 = 0x0083_7d00;
+    pub const ANGLE_APPROACH: u32 = 0x0083_5f80;
+    pub const ANGLE_WRAP: u32 = 0x0083_6720;
+    pub const SUIMEN: u32 = 0x0130_09d8;
+
+    /// The automatic motion step (`0x00835d30`, called for characters the
+    /// script released, `Native_ChrReleaseMotion`): with flag bit 10 of
+    /// `+0x194` the facing `+0x158` turns toward `+0x168` (step by speed
+    /// `+0x154` against `+0x170`: faster, standing or walking); unless a
+    /// motion is pending (`+0x736`), standing (`+0x154` 0) plays `+0x79c`,
+    /// else `+0x7a8` above the water (y `+0x10` not above its height + 1)
+    /// or `+0x7a4` below, as a sequence (low half from 0x1000) or system
+    /// motion 2, and the run blend `+0x504` grows by 0.15 while below 1.
+    /// The original's EAX is not a result.
+    pub fn ch_auto_motion<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let fl = |mem: &M, a: u32| f64::from(mem.read::<f32>(a));
+        let bits = |mem: &M, a: u32| crate::x87::load(mem.read::<f32>(a)).to_bits();
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r32 = |x: f64| x as f32;
+        if mem.read::<u32>(chr + 0x194) & 0x400 != 0 {
+            let speed = fl(mem, chr + 0x154);
+            let step = if fl(mem, chr + 0x170) < speed {
+                0x00b5_99a8
+            } else if speed == 0.0 {
+                0x00b5_99a4
+            } else {
+                0x00b5_982c
+            };
+            let step = bits(mem, r(mem, step));
+            let to = r32((fcall)(mem, r(mem, ANGLE_WRAP), &[bits(mem, chr + 0x168)]));
+            let cur = r32((fcall)(mem, r(mem, ANGLE_WRAP), &[bits(mem, chr + 0x158)]));
+            let v = (fcall)(
+                mem,
+                r(mem, ANGLE_APPROACH),
+                &[cur.to_bits(), to.to_bits(), step],
+            );
+            mem.write(chr + 0x158, r32(v));
+        }
+        if mem.read::<u8>(chr + 0x736) != 0 {
+            return;
+        }
+        let play = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, m: u32| {
+            if m & 0xffff >= 0x1000 {
+                call(mem, r(mem, SET_SEQUENCE), &[chr, m]);
+            } else {
+                call(mem, r(mem, SET_SYS_MOTION), &[chr, 2, m]);
+            }
+            mem.write(chr + 0x736, 0u8);
+        };
+        if fl(mem, chr + 0x154) == 0.0 {
+            let m: u32 = mem.read(chr + 0x79c);
+            play(mem, call, m);
+            return;
+        }
+        let top = fl(mem, r(mem, SUIMEN)) + mem.read::<f64>(r(mem, 0x00b9_2248));
+        let m: u32 = mem.read(
+            chr + if top > fl(mem, chr + 0x10) {
+                0x7a4
+            } else {
+                0x7a8
+            },
+        );
+        play(mem, call, m);
+        if 1.0 > fl(mem, chr + 0x504) {
+            let v = r32(fl(mem, chr + 0x504) + mem.read::<f64>(r(mem, 0x00b5_99b0)));
+            mem.write(chr + 0x504, v);
+        }
+    }
+
+    /// `MsGetSaveEventAddress`'s thunk (`0x0088c830`), `Ch_ResetMotion`
+    /// (`0x0082b080`), `Ch_SeqGetFastMotion` (`0x00837860`),
+    /// `Ch_SetMotionSeq` (`0x00839b80`), `SG_DisposeMotionGroup` (`0x00836e20`),
+    /// `SG_FindMotionGroup` (`0x00836f10`), `MsBattleCheck` (`0x00780c90`).
+    pub const SAVE_EVENT_ADDRESS: u32 = 0x0088_c830;
+    pub const RESET_MOTION: u32 = 0x0082_b080;
+    pub const SEQ_GET_FAST_MOTION: u32 = 0x0083_7860;
+    pub const SET_MOTION_SEQ: u32 = 0x0083_9b80;
+    pub const DISPOSE_MOTION_GROUP: u32 = 0x0083_6e20;
+    pub const FIND_MOTION_GROUP: u32 = 0x0083_6f10;
+    pub const BATTLE_CHECK: u32 = 0x0078_0c90;
+    /// The sequence `Ch_MotionSetLow2` leaves at `+0x714` and the two
+    /// globals `0x008303a0` points at the save data's `+0xd2`.
+    pub const LOW_SEQUENCE: u32 = 0x00c4_9789;
+    pub const SAVE_D2_A: u32 = 0x022f_d6c0;
+    pub const SAVE_D2_B: u32 = 0x023c_4450;
+    /// The byte `SetByte_012fb8fd` sets.
+    pub const BYTE_012FB8FD: u32 = 0x012f_b8fd;
+
+    /// `Ch_MotionSetLow2(chr, motion, -, loops, start, end)` (`0x008373e0`):
+    /// after `MsGetSaveEventAddress()` and `Ch_ResetMotion`, plays the
+    /// sequence of `motion` (`Ch_SetSequence`; non-zero: -1) by its fast
+    /// motion (`Ch_SeqGetFastMotion`, none: -1) as raw frames
+    /// (`Ch_SetMotionSeq(chr, [+0xc], loops, start << 8, end << 8)`);
+    /// `+0x736` = 1, `+0x714` = the fixed sequence, `+0x738` = 1. Returns 0.
+    pub fn ch_motion_set_low2<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        chr_play_motion(mem, PlayFrames::Low2, args, call)
+    }
+
+    /// `ChN_DisposeSystemMGRP(a, b)` (`0x00836830`):
+    /// `SG_DisposeMotionGroup(0, b, a)`'s result.
+    pub fn chn_dispose_system_mgrp<M: Mem>(
+        mem: &mut M,
+        a: u32,
+        b: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, mem.rebase(DISPOSE_MOTION_GROUP), &[0, b, a])
+    }
+
+    /// `ChN_SystemMgrpLoaded()` (`0x00837710`): whether the system motion
+    /// group (`SG_FindMotionGroup(2, 0, 0)`) is loaded, 1 or 0.
+    pub fn chn_system_mgrp_loaded<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        u32::from(call(mem, mem.rebase(FIND_MOTION_GROUP), &[2, 0, 0]) != 0)
+    }
+
+    /// `Ch_ReadEventMgrp(x)` (`0x00837670`): `Ch_RomReadEventMGRPsync` of
+    /// `AtelEventGetMotionIndex(0x0086c1c0(x))` (a tail call); its result.
+    pub fn ch_read_event_mgrp<M: Mem>(
+        mem: &mut M,
+        x: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let v = call(mem, mem.rebase(0x0086_c1c0), &[x]);
+        let i = call(mem, mem.rebase(0x0086_5890), &[v]);
+        call(mem, mem.rebase(0x0082_a7f0), &[i])
+    }
+
+    /// `Ch_SaveMotionByte(chr)` (`0x008303a0`): points both globals at the
+    /// save data's `+0xd2`; in battle, a character whose byte `+0x186` is
+    /// neither 2 nor 3 gets that byte, else 0.
+    pub fn ch_save_motion_byte<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let p = call(mem, mem.rebase(SAVE_EVENT_ADDRESS), &[]).wrapping_add(0xd2);
+        mem.write(mem.rebase(SAVE_D2_A), p);
+        mem.write(mem.rebase(SAVE_D2_B), p);
+        if call(mem, mem.rebase(BATTLE_CHECK), &[]) == 0 {
+            return 0;
+        }
+        if matches!(mem.read::<u8>(chr + 0x186), 2 | 3) {
+            return 0;
+        }
+        u32::from(mem.read::<u8>(p))
+    }
+
+    /// `SetByte_012fb8fd(v)` (`0x00821b20`): the byte at [`BYTE_012FB8FD`].
+    pub fn set_byte_012fb8fd<M: Mem>(mem: &mut M, v: u8) {
+        mem.write(mem.rebase(BYTE_012FB8FD), v);
+    }
+
+    /// How a `Chr_PlayMotion*` variant takes its frames.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub enum PlayFrames {
+        /// `Ch_MotionSetLow2`: raw, after `MsGetSaveEventAddress()`.
+        Low2,
+        /// `Chr_PlayMotionInclEnd`: the end frame + 1 unless `loops` is 1
+        /// or the end is not positive.
+        InclEnd,
+        /// `Chr_PlayMotionMarks`: indices into the fast motion's `i16`
+        /// mark table (`+8`), the end as for `InclEnd`.
+        Marks,
+    }
+
+    /// `Chr_PlayMotionInclEnd` (`0x008374c0`) and `Chr_PlayMotionMarks`
+    /// (`0x00837350`), `(chr, motion, -, loops, start, end)`: as
+    /// [`ch_motion_set_low2`] with their frames ([`PlayFrames`]).
+    pub fn chr_play_motion<M: Mem>(
+        mem: &mut M,
+        how: PlayFrames,
+        args: [u32; 6],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [chr, motion, _, loops, start, end] = args;
+        if how == PlayFrames::Low2 {
+            call(mem, mem.rebase(SAVE_EVENT_ADDRESS), &[]);
+        }
+        call(mem, mem.rebase(RESET_MOTION), &[chr]);
+        if call(mem, mem.rebase(SET_SEQUENCE), &[chr, motion]) != 0 {
+            return u32::MAX;
+        }
+        let fast = call(mem, mem.rebase(SEQ_GET_FAST_MOTION), &[chr]);
+        if fast == 0 {
+            return u32::MAX;
+        }
+        let (mut s, mut e) = (start.cast_signed(), end.cast_signed());
+        if how == PlayFrames::Marks {
+            let marks: u32 = mem.read(fast.wrapping_add(8));
+            s = i32::from(mem.read::<i16>(marks.wrapping_add(start.wrapping_mul(2))));
+            e = i32::from(mem.read::<i16>(marks.wrapping_add(end.wrapping_mul(2))));
+        }
+        if how != PlayFrames::Low2 && loops != 1 && e > 0 {
+            e += 1;
+        }
+        let clip: u32 = mem.read(fast.wrapping_add(0xc));
+        let (s, e) = ((s << 8).cast_unsigned(), (e << 8).cast_unsigned());
+        call(mem, mem.rebase(SET_MOTION_SEQ), &[chr, clip, loops, s, e]);
+        mem.write(chr + 0x736, 1u8);
+        mem.write(chr + 0x714, mem.rebase(LOW_SEQUENCE));
+        mem.write(chr + 0x738, 1u8);
+        0
+    }
+
+    /// The loaded motion groups (`Ch_DisposeAllMGRP`): 50 entries of 12
+    /// bytes, used when `+0` is not 0; `i16` kind `+4` (2 the system's),
+    /// `i16` `+6`, key `+8`.
+    pub const MGRP_TABLE: u32 = 0x0130_11e0;
+
+    /// `Ch_DisposeMGRP(x)` (`0x00836ad0`): `SG_DisposeMotionGroup(1, x, 0)`.
+    pub fn ch_dispose_mgrp<M: Mem>(
+        mem: &mut M,
+        x: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, mem.rebase(DISPOSE_MOTION_GROUP), &[1, x, 0])
+    }
+
+    /// `Ch_DisposeAllMGRP()` (`0x00836a80`): disposes the first used group
+    /// that is not the system's (`SG_DisposeMotionGroup(kind, +6, key)`)
+    /// and starts over, until none is left. Returns what EAX holds (the
+    /// table's end).
+    pub fn ch_dispose_all_mgrp<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table = mem.rebase(MGRP_TABLE);
+        'again: loop {
+            for k in 0..50u32 {
+                let e = table + 12 * k;
+                if mem.read::<u32>(e) != 0 && mem.read::<i16>(e + 4) != 2 {
+                    let a = i32::from(mem.read::<i16>(e + 4)).cast_unsigned();
+                    let b = i32::from(mem.read::<i16>(e + 6)).cast_unsigned();
+                    let key: u32 = mem.read(e + 8);
+                    call(mem, mem.rebase(DISPOSE_MOTION_GROUP), &[a, b, key]);
+                    continue 'again;
+                }
+            }
+            return table + 50 * 12 + 4;
+        }
+    }
+
+    /// `Sg_MemMoveWork(&ptr, &moved)` (`0x0083c350`), `Ch_MgrpMove(new, old)`
+    /// (`0x008370c0`).
+    pub const MEM_MOVE_WORK: u32 = 0x0083_c350;
+    pub const MGRP_MOVE: u32 = 0x0083_70c0;
+
+    /// `Ch_MemMoveEventMgrp(scratch)` (`0x00837050`): the first used
+    /// event motion group ([`MGRP_TABLE`] kind 1) whose block
+    /// `Sg_MemMoveWork` moves (the pointer copied to `scratch`, the
+    /// original's stack) is relocated (`Ch_MgrpMove(new, old)`): 1; none,
+    /// 0.
+    pub fn ch_mem_move_event_mgrp<M: Mem>(
+        mem: &mut M,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table = mem.rebase(MGRP_TABLE);
+        for k in 0..50u32 {
+            let e = table + 12 * k;
+            let p: u32 = mem.read(e);
+            if p != 0 && mem.read::<i16>(e + 4) == 1 {
+                mem.write(scratch, p);
+                if call(mem, mem.rebase(MEM_MOVE_WORK), &[scratch, 0]) != 0 {
+                    let old: u32 = mem.read(e);
+                    let new: u32 = mem.read(scratch);
+                    call(mem, mem.rebase(MGRP_MOVE), &[new, old]);
+                    return 1;
+                }
+            }
+        }
+        0
+    }
 }
 
 #[cfg(test)]

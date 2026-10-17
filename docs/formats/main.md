@@ -303,3 +303,100 @@ behind them stays with those modules, which the bridges call.
     below `lim`; kinds 2 and 4 move both halfway.
   - Kinds 5 and 6 always apply. `b = a` when `|d|^2` (5) or `|d|` (6) is
     at most `1e-5`.
+
+## Cut-scene sync, id normals, dispatchers (round 5)
+
+- `Sg_SyncCutScene()` (`0x00821d60`) calls `iSyncGetData(&time, &rate,
+  &frame)` with the frame in a local, so a callee writes through a pointer
+  to the original's stack. The bridge gets that memory from
+  `ffx_bridge::Host::callee_scratch` (a static buffer in the game, the
+  emulated stack's bottom in the oracle). An answer of 999 clears the sync:
+  `0x012fb8a0..b0` 0, the frame table `0x012fb828` (30 words), its index
+  `0x012fb814`, `0x00c494d4` 1. Any other answer turns it on, stores `frame
+  << 7` at the index and makes time `0x012fb8ac` and rate `0x012fb8b0`
+  milliseconds (`x 1000`).
+- `Sg_IdGetNormal(out, i)` (`0x0083e130`): the normal of id triangle `i`
+  from the id data's `i16` vertex numbers and vertex block (`0x01301a8c`, 8
+  bytes per vertex).
+- `SG_ApplyBoneSel` (`0x00838240`): `SG_ApplyBoneDamped` when the bone's
+  `+0x144` is set, else `SG_ApplyBone`.
+- `drawDreamEffect` (`0x008223a0`): which maps have the dream effect and on
+  which layers: 0 on `0x86`, `0xa5`, `0xbf`, `0xf9`, `0xfc`; 3 and 4 on
+  `0x129`; 7 and 8 on `0x187`. Elsewhere a started effect is reset.
+
+## Effect strips, channel sampling, pose blending (round 6)
+
+- `Ch_EffectPacketStoreStrip(v)` (`0x00844370`): effect geometry comes as
+  triangle strips of 8-byte vertices (`u16` x, y, u, v). Each vertex goes
+  into a ring of three (`0x01303354`, slot `count % 3`; count `u16`
+  `0x01303370`, the newest slot's address `0x0130336c`). An x or y with
+  bit 15 set refers back to an earlier vertex: the value `(x & 0x7fff) * 4
+  / 3` words before (y: one word further). From the third vertex on, each
+  new vertex makes a triangle with the two before it for
+  `Ch_EffectPacketStorePoly`. Even counts give `(n-1, n-2, new)`, odd
+  `(n-2, n-1, new)`, so all faces keep one winding. A null vertex starts a
+  new strip.
+- `SG_SampleChannels(obj)` (`0x008393c0`): the motion time `+0x740` (8.8
+  frames) rounded up to a frame, clamped to the end (`+0x71c`) for a motion
+  that stops (`u16` `+0x724` 1), else wrapped by the loop (`+0x720`). The
+  channels rewind when the time goes back, then step to it (frame count
+  `+0x7dc`). Each channel's `+0x1c` becomes its key or, between frames, the
+  blend with the key before: `AngleTurn_Lerp` for angles, linear
+  otherwise.
+- `SG_BlendToTarget(obj, n)` (`0x008395b0`): one of `n` steps from the
+  current pose toward the target. A channel motion (`+0x196` bit 0) steps
+  each channel's `+0x20` toward `+0x1c`. Otherwise every bone steps its 3
+  rotations (`Chr_FracStep`) and 6 values (`cur += (target - cur) / n`,
+  skipped when already equal). `n` 1 sets `+0x194` bit 16.
+
+## Edge slide, free camera, raw clips (round 7)
+
+- `Sg_IdSlideEdge(from, to)` (`0x0083e180`): when a move from `from` to
+  `to` crosses an id edge (endpoints `0x01301aec`, `0x01301af0`, found by
+  `0x0083d960`), the move slides along it. The move is turned into the
+  edge's frame (a rotation about y; `FFXVu0ApplyMatrix`) and loses its
+  across component. While the result back in the world
+  (`FFXVu0InversMatrix`) is still past the edge (`w.z n.x - w.x n.z > 0`),
+  it steps one unit back along z. `to` = `from + w` in x and z.
+- `Sg_ControlCamera()` (`0x0083f4b0`): the free camera. The right stick
+  (bytes `0x023c44a6/a7`, dead zone `0x51..0xaf`) turns yaw `0x00c4def0`
+  and pitch `0x00c4def4` by `(stick - 0x80)` degrees / 12, each wrapped
+  once into `-pi..pi`. With the L/R button mode, the held buttons
+  (`0x023c44ac`) 2/8 move the height `0x00c4dee4` by 0.2 and 1/4 the
+  distance `0x01301bb8` by 0.4. Pressing `0x400` (`0x023c44a8`) cycles
+  six distances (50, 100, 180, 250, 1000, 30). A debug build captures on
+  `0x100`.
+- `SG_ApplyRawClip(obj, clip, t, t2)` (`0x00838750`): uncompressed clips.
+  The header gives the `i16` stride (frames per channel) and the bone
+  count; the data starts at `+0x10`, nine channels per bone, frames
+  contiguous. Frame `t >> 8` is blended toward `t2 >> 8` by `t & 0xff`
+  into each bone's raw `i16` pose (`+0x146..`), through the bone map
+  `+0x758` when present. `+0x7ec` then copies some bones' raw values to
+  their neighbours: 1 copies bone 24's to 25 and 26, 2 copies bone 42's
+  to 43, 3 copies bone 42's to 43 and 44. Last, every bone's floats are
+  set: rotations through `SG_RawToRad`, translations times the scale
+  `+0x38` of `+0x1c4`, scales / 4096.
+
+## Motion groups, id heights, bones per character, the motion script (round 8)
+
+- `SG_AddMotionGroup(group, a, b, key)` (`0x00836c90`): a loaded group takes
+  the first free motion-group entry (50; full asserts "nb mgrp err"), is
+  relocated (`SG_RelocateGroup`) and adds each of its sequences
+  (`SG_AddSequence`).
+- `Sg_IdGetHeight(p, i)` (`0x0083e040`, result in ST0): the ground height
+  under `p` on id triangle `i`. With the triangle's normal `n` and first
+  vertex `v`, it is `(n.v - (n.x p.x + n.z p.z)) / n.y`; 0 without id
+  data.
+- `SG_ApplyBones(chr)` (`0x00838f70`): every bone takes its channels at the
+  character's scale / 1000. A character with `+0x871` set blends (damped).
+  One with `+0x870` set and `+0x820` bit 2 clear blends when near the camera
+  (`Ch_AnimCopyNear`): damped when `Ch_AnimCopy2` says so, else by the
+  bone's own byte. Some maps apply directly anyway: `0x170`, `0x11d`;
+  `0x50` for kind 4, `0x137` for kind `0x5045`, `100` for kinds other
+  than 0, and `0x3c` while the scenario is below `0x9a`.
+- `SG_SeqStep(chr)` (`0x00837900`): one opcode of the motion script
+  (`+0x714`). 0 end (returns 2), 5 hold (3); 1 play a clip (`Ch_SetMotionSeq`
+  with the clip's start and end marks, the end one frame later unless a
+  loop operand is 1); 2 wait for `+0x728` 0; 3 wait a count (`+0x72a`); 4
+  jump; 6 wait until `+0x737` reaches the operand. A wait returns 1 with
+  the script unmoved, a step 0, an unknown code -1 (printed).

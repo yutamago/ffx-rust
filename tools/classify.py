@@ -55,6 +55,32 @@ WORK = progress.WORK
 BASE = 0x400000
 CATS = ("logic", "glue", "platform", "debug", "dead")
 
+# verdicts from porters who read the function and found no rule matched it
+# (address: (category, evidence)); applied last, over every rule
+REVIEWED = {
+    0x007eb760: ("glue", "op_gs1_init: fixed GS register-setup packets (effects round 13)"),
+    0x00775330: ("glue", "builds a GS packet (system round 19)"),
+    0x0082bb90: ("glue", "builds a GS sprite packet (main round 5)"),
+    0x008432e0: ("glue", "waits on the GS register flag, then sets a register (main round 5)"),
+    0x00a5e7b0: ("glue", "GS packet setup (effects round 14)"),
+    0x0082baf0: ("glue", "writes GS packets (chara round 11)"),
+    0x00a3b590: ("platform", "Direct3D device vtable calls only (effects round 16)"),
+    0x00a3c280: ("platform", "sets Direct3D device state through its vtable (effects round 16)"),
+    0x008217d0: ("glue", "builds the GS display and draw environments (main round 8)"),
+    0x0082ce90: ("glue", "sg_AccSetCurrent: GS packet capturing the frame (main round 8)"),
+    0x0082be20: ("glue", "Sg_AccSetFrameChr: GS packet writer (main round 8)"),
+    0x0082be80: ("glue", "Sg_AccDrawBG: GS packet writer (main round 8)"),
+    0x00843360: ("glue", "Sg_MFIFOSync: PS2 DMA (main round 8)"),
+    0x00829c00: ("glue", "forwards its arguments to the renderer at 0x6440e0, writes no globals (main round 8)"),
+    0x00943e30: ("platform", "CRT small-block free (main round 8)"),
+    0x0083f090: ("platform", "Sg_FreeA (main round 8)"),
+    0x0083b1d0: ("platform", "Sg_PcRead: file read (main round 8)"),
+    0x0083c200: ("platform", "Sg_Mem heap setup (main round 8)"),
+    0x007ff670: ("debug", "op_loop_end_ffx: jumps to the debug routine 0x00a5bd90 under g_OpDebugMode (effects round 17)"),
+    0x00851b20: ("debug", "debug code (main round 8)"),
+    0x00843560: ("debug", "debug code (main round 8)"),
+}
+
 # (category, name regex, evidence, highest address or None); first match
 # wins. Debug first: a debug window of the battle code is debug, not logic.
 # The PC port's own code (PhyreScene, Iggy menus, FMOD, the loaders) sits
@@ -676,6 +702,10 @@ def main():
                   ", ".join(f"{names.get(c, hex(c))}:{cls.get(c)}{'' if c in decided else '?'}" for c in cs[:8]) +
                   "; calls " + ", ".join(f"{names.get(c, hex(c))}:{cls.get(c)}"
                                          for c in sorted(direct.get(a, ())) if c != a)[:300], file=sys.stderr)
+
+    for a, (c, w) in REVIEWED.items():
+        if a in cls:
+            cls[a], why[a] = c, "reviewed: " + w
 
     stats = defaultdict(Counter)
     for a in game:

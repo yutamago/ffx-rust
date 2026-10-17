@@ -27,6 +27,63 @@ fn scratch() -> u32 {
     u32::try_from(SCRATCH.as_ptr() as usize).unwrap_or(0)
 }
 
+/// A C runtime intrinsic through the game's import thunk `f`: the operands
+/// loaded in order (`fld qword`, so the last is `ST0`), the result stored
+/// as the callers do (`fstp dword`). The result pointer rides in `edi`,
+/// which the intrinsic keeps (map.rs's `st0_call`/`st01_call`).
+fn ci_call(f: u32, args: &[f64]) -> f32 {
+    #[cfg(target_arch = "x86")]
+    {
+        let mut out = 0f32;
+        match *args {
+            // SAFETY: the thunk jumps to the CRT's intrinsic, which takes
+            // its operand in ST0 and leaves its result there (eax, ecx,
+            // edx, the x87 and SSE registers clobbered).
+            [x] => unsafe {
+                std::arch::asm!(
+                    "fld qword ptr [{x}]",
+                    "call {f}",
+                    "fstp dword ptr [edi]",
+                    x = in(reg) &raw const x,
+                    f = in(reg) f,
+                    in("edi") &raw mut out,
+                    clobber_abi("C"),
+                );
+            },
+            // SAFETY: as above, with operands in ST1 and ST0.
+            [a, b] => unsafe {
+                std::arch::asm!(
+                    "fld qword ptr [{a}]",
+                    "fld qword ptr [{b}]",
+                    "call {f}",
+                    "fstp dword ptr [edi]",
+                    a = in(reg) &raw const a,
+                    b = in(reg) &raw const b,
+                    f = in(reg) f,
+                    in("edi") &raw mut out,
+                    clobber_abi("C"),
+                );
+            },
+            _ => return f32::NAN,
+        }
+        out
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = (f, args);
+        f32::NAN
+    }
+}
+
+/// A cdecl function of one word that returns in `ST0` (read back as
+/// `f64`).
+fn st0_cdecl(f: u32, args: &[u32]) -> f64 {
+    let [a] = *args else { return f64::NAN };
+    // SAFETY: `f` is an original cdecl function of one word returning a
+    // float in ST0.
+    unsafe { std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> f64>(f as usize)(a) }
+}
+
 ported! {
     // ---- finding characters
 
@@ -1587,5 +1644,159 @@ ported! {
     /// `Ch_ClutDispose(chr)`.
     Ch_ClutDispose @ 0x0083_c810 => extern "C" fn ch_clut_dispose(chr: u32) -> u32 {
         tx::ch_clut_dispose(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+
+    // ---- round 10
+
+    /// `chr_texanim_del(id)`.
+    chr_texanim_del @ 0x0077_c770 => extern "C" fn chr_texanim_del(id: i32) -> u32 {
+        ta::chr_texanim_del(&mut mem(), id, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_ClothMeshDestroy(chr)`: 0.
+    Ch_ClothMeshDestroy @ 0x0082_6260 => extern "C" fn ch_cloth_mesh_destroy(chr: u32) -> u32 {
+        cl::ch_cloth_mesh_destroy(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_GetRestPoseMatrices(chr)`: 0.
+    Ch_GetRestPoseMatrices @ 0x0082_6ba0 => extern "C" fn ch_get_rest_pose_matrices(chr: u32) -> u32 {
+        cl::ch_get_rest_pose_matrices(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_MotionCancel(chr)`.
+    Ch_MotionCancel @ 0x0083_7180 => extern "C" fn ch_motion_cancel(chr: u32) -> u32 {
+        mo::bridge::ch_motion_cancel(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_ClutCreate(chr)`.
+    Ch_ClutCreate @ 0x0083_c710 => extern "C" fn ch_clut_create(chr: u32) -> u32 {
+        tx::ch_clut_create(&mut mem(), chr, scratch(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_ClothMeshMapping(chr)`: 1 with mesh data, else 0.
+    Ch_ClothMeshMapping @ 0x0082_6340 => extern "C" fn ch_cloth_mesh_mapping(chr: u32) -> u32 {
+        cl::ch_cloth_mesh_mapping(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_MotionSetupFcurve(chr, clip)`.
+    Ch_MotionSetupFcurve @ 0x0083_9980 => extern "C" fn ch_motion_setup_fcurve(chr: u32, clip: u32) -> u32 {
+        mo::bridge::ch_motion_setup_fcurve(&mut mem(), chr, clip, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_ModelCreatePacket(chr)`: vertex, normal and physics blocks.
+    Ch_ModelCreatePacket @ 0x0082_7280 => extern "C" fn ch_model_create_packet(chr: u32) -> u32 {
+        c::ch_model_create_packet(&mut mem(), chr, scratch(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `chr_texanim_set_new(id, handle, def)`.
+    chr_texanim_set_new @ 0x0077_f9c0 => extern "C" fn chr_texanim_set_new(id: u32, handle: u32, def: u32) -> u32 {
+        ta::chr_texanim_set_new(&mut mem(), id, handle, def, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `chr_texanim_set_old(id, handle, def)`.
+    chr_texanim_set_old @ 0x0078_03f0 => extern "C" fn chr_texanim_set_old(id: u32, handle: u32, def: u32) -> u32 {
+        ta::chr_texanim_set_old(&mut mem(), id, handle, def, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `chr_texanim_main_sub_old(id)`.
+    chr_texanim_main_sub_old @ 0x0077_ff00 => extern "C" fn chr_texanim_main_sub_old(id: u32) -> u32 {
+        ta::chr_texanim_main_sub_old(&mut mem(), id, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `chr_texanim_set(def, handle)`.
+    chr_texanim_set @ 0x0077_c950 => extern "C" fn chr_texanim_set(def: u32, handle: u32) -> u32 {
+        ta::chr_texanim_set(&mut mem(), def, handle, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_SetMotionSeq(chr, clip, loops, start, end)`.
+    Ch_SetMotionSeq @ 0x0083_9b80 => extern "C" fn ch_set_motion_seq(chr: u32, clip: u32, loops: u32, start: i32, end: i32) -> u32 {
+        mo::bridge::ch_set_motion_seq(&mut mem(), chr, clip, loops, start, end, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_Neck(chr)`.
+    Ch_Neck @ 0x0083_48d0 => extern "C" fn ch_neck(chr: u32) -> u32 {
+        let mut call = |_: &mut _, f, a: &[u32]| super::call_cdecl(f, a);
+        let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
+        let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
+        let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
+        p::ch_neck(&mut mem(), chr, scratch(), &mut c)
+    }
+    /// `Ch_NeckInit(chr)`.
+    Ch_NeckInit @ 0x0083_4e60 => extern "C" fn ch_neck_init(chr: u32) {
+        let mut call = |_: &mut _, f, a: &[u32]| super::call_cdecl(f, a);
+        let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
+        let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
+        let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
+        p::ch_neck_init(&mut mem(), chr, scratch(), &mut c);
+    }
+    /// `Ch_ElemCalcQuaternion(e)`.
+    Ch_ElemCalcQuaternion @ 0x0083_3960 => extern "C" fn ch_elem_calc_quaternion(e: u32) {
+        p::ch_elem_calc_quaternion(&mut mem(), e, scratch(), &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    /// `Ch_Mouth(chr)`.
+    Ch_Mouth @ 0x0083_44f0 => extern "C" fn ch_mouth(chr: u32) -> u32 {
+        let mut call = |_: &mut _, f, a: &[u32]| super::call_cdecl(f, a);
+        let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
+        let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
+        let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
+        p::ch_mouth(&mut mem(), chr, &mut c)
+    }
+    /// `Ch_AutoMotion(chr)`.
+    Ch_AutoMotion @ 0x0083_5d30 => extern "C" fn ch_auto_motion(chr: u32) {
+        mo::bridge::ch_auto_motion(
+            &mut mem(),
+            chr,
+            &mut |_, f, a| super::call_cdecl(f, a),
+            &mut |_, f, a| st0_cdecl(f, a),
+        );
+    }
+    /// `Ch_DrawQuad(m, p2, p3, p4, w, h, y, u0, v0, u1, v1)`.
+    Ch_DrawQuad @ 0x0083_1d10 => extern "C" fn ch_draw_quad(m: u32, p2: u32, _p3: u32, _p4: u32, w: u32, h: u32, y: u32, u0: u32, v0: u32, u1: u32, v1: u32) -> u32 {
+        p::ch_draw_quad(&mut mem(), m, p2, [w, h], y, [u0, v0, u1, v1], scratch(), &mut |_, f, a| {
+            super::call_cdecl(f, a)
+        })
+    }
+    /// `Ch_MotionSetLow2(chr, motion, -, loops, start, end)`.
+    Ch_MotionSetLow2 @ 0x0083_73e0 => extern "C" fn ch_motion_set_low2(chr: u32, motion: u32, x: u32, loops: u32, start: u32, end: u32) -> u32 {
+        mo::bridge::ch_motion_set_low2(&mut mem(), [chr, motion, x, loops, start, end], &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `ChN_DisposeSystemMGRP(a, b)`.
+    ChN_DisposeSystemMGRP @ 0x0083_6830 => extern "C" fn chn_dispose_system_mgrp(a: u32, b: u32) -> u32 {
+        mo::bridge::chn_dispose_system_mgrp(&mut mem(), a, b, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `ChN_SystemMgrpLoaded()`.
+    ChN_SystemMgrpLoaded @ 0x0083_7710 => extern "C" fn chn_system_mgrp_loaded() -> u32 {
+        mo::bridge::chn_system_mgrp_loaded(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_ReadEventMgrp(x)`.
+    Ch_ReadEventMgrp @ 0x0083_7670 => extern "C" fn ch_read_event_mgrp(x: u32) -> u32 {
+        mo::bridge::ch_read_event_mgrp(&mut mem(), x, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_SaveMotionByte(chr)`.
+    Ch_SaveMotionByte @ 0x0083_03a0 => extern "C" fn ch_save_motion_byte(chr: u32) -> u32 {
+        mo::bridge::ch_save_motion_byte(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `SetByte_012fb8fd(v)`.
+    SetByte_012fb8fd @ 0x0082_1b20 => extern "C" fn setbyte_012fb8fd(v: u8) {
+        mo::bridge::set_byte_012fb8fd(&mut mem(), v);
+    }
+    /// `Chr_PlayMotionInclEnd(chr, motion, -, loops, start, end)`.
+    Chr_PlayMotionInclEnd @ 0x0083_74c0 => extern "C" fn chr_play_motion_incl_end(chr: u32, motion: u32, x: u32, loops: u32, start: u32, end: u32) -> u32 {
+        mo::bridge::chr_play_motion(&mut mem(), mo::bridge::PlayFrames::InclEnd, [chr, motion, x, loops, start, end], &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Chr_PlayMotionMarks(chr, motion, -, loops, start, end)`.
+    Chr_PlayMotionMarks @ 0x0083_7350 => extern "C" fn chr_play_motion_marks(chr: u32, motion: u32, x: u32, loops: u32, start: u32, end: u32) -> u32 {
+        mo::bridge::chr_play_motion(&mut mem(), mo::bridge::PlayFrames::Marks, [chr, motion, x, loops, start, end], &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_DisposeMGRP(x)`.
+    Ch_DisposeMGRP @ 0x0083_6ad0 => extern "C" fn ch_dispose_mgrp(x: u32) -> u32 {
+        mo::bridge::ch_dispose_mgrp(&mut mem(), x, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_DisposeAllMGRP()`.
+    Ch_DisposeAllMGRP @ 0x0083_6a80 => extern "C" fn ch_dispose_all_mgrp() -> u32 {
+        mo::bridge::ch_dispose_all_mgrp(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_MemMoveEventMgrp()`.
+    Ch_MemMoveEventMgrp @ 0x0083_7050 => extern "C" fn ch_mem_move_event_mgrp() -> u32 {
+        mo::bridge::ch_mem_move_event_mgrp(&mut mem(), scratch(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_InitCircleTable()`.
+    Ch_InitCircleTable @ 0x0082_e5a0 => extern "C" fn ch_init_circle_table() {
+        p::ch_init_circle_table(&mut mem(), &mut |_, f, a| ci_call(f, a));
+    }
+    /// `Ch_DrawShadowQuad(chr, -, p3)`.
+    Ch_DrawShadowQuad @ 0x0082_e3e0 => extern "C" fn ch_draw_shadow_quad(chr: u32, _p2: u32, p3: u32) -> u32 {
+        let mut call = |_: &mut _, f, a: &[u32]| super::call_cdecl(f, a);
+        let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
+        let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
+        let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
+        p::ch_draw_shadow_quad(&mut mem(), chr, p3, scratch(), &mut c)
     }
 }
