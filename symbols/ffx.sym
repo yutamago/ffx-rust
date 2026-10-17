@@ -1747,6 +1747,7 @@
 0x00642410 function graphicMinimapCameraSetWorldMatrix # fh v3:exact 0x006425c0
 0x006425d0 function graphicMinimapFogSetEnable # fh v3:cg2 0x642780
 0x006425f0 function graphicMinimapSetEnable   # fh v3:bsim1.00 0x006427a0
+0x00642610 function graphicIsMapInList        # structure: 1 when the map id 0x01330844 is one of 16 listed (0x118, 0x52, 0x51, 0xde, 0x13c, 0x17d, 0x5d, 0x12, 0x15d, 0xf8, 0x99, 0xb3, 0x50, 0x137, 0x16b, 0x84), else 0; name ours
 0x00642690 function graphicNeedResetMapParam  # () -> movzx g_PhyreScene +0x10d2d; name Fahrenheit's (Switch BSim)
 0x006426a0 function graphicObjectSetRotation  # fh v3:bsim1.00 0x00642850
 0x006426c0 function graphicObjectSetTranslation # fh v3:bsim1.00 0x00642870
@@ -1940,7 +1941,9 @@
 0x0064b7a0 function Phyre_PCluster_create_PMaterialSet # stdcall (count): Phyre_PCluster_create(count, 0x00c998e8 PMaterialSet descriptor, 0); a template instance, PhyreEngine code, left original. fh: yiGetRootMatrix (switch bsim1.00 0x710052c6a0, a wrong match: no callers here, the body is not yi code)
 0x0064b7e0 function Phyre_PCluster_create_PTexture2D # stdcall (count): Phyre_PCluster_create(count, 0x00ca37d0 PTexture2D descriptor, 0); PhyreEngine code, left original. fh: yiSetRootMatrix (switch bsim1.00, a wrong match)
 0x0064b800 function Phyre_PCluster_create_PWorldMatrix # stdcall (count): Phyre_PCluster_create(count, 0x00c92090 PWorldMatrix descriptor, 0); PhyreEngine code, left original. fh: SqsEeSoundCreateTime (switch bsim1.00, a wrong match)
+0x0064b9f0 function ObjectTree_Find           # structure: thiscall(head, &key): search tree (root head +0xc; nodes +0/+4 children, +0xc u32 key), the node else 0; byte-identical to DynGeoTree_Find; PhyreScene_setObjectTranslation's tree at scene +0x1198; name ours
 0x0064dc00 function PhyreScene_PhyreScene     # fh v3:exact 0x0064ddb0 PhyreScene::PhyreScene
+0x0064f360 function MapIterator_Decrement     # structure: fastcall(it): --it of an MSVC std::map iterator (nodes +0 left, +4 parent, +8 right, +0xd head flag); returns it; name ours
 0x0064faa0 function PhyreScene_ChangeToHSVPass # fh v3:bsim1.00 0x0064fc50 PhyreScene::ChangeToHSVPass
 0x00650670 function PhyreScene_DrawMostVFX    # fh v3:exact 0x00650820 PhyreScene::DrawMostVFX
 0x00650cb0 function PhyreScene_DrawNormalUI      # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f4d30 PhyreScene::DrawNormalUI, 2 votes, round 1
@@ -1950,6 +1953,7 @@
 0x006517d0 function PhyreScene_GetSplitScreenStat # thiscall(this): u32 +0x10d8c; name Fahrenheit's (Switch BSim)
 0x00651be0 function PhyreScene_preRender         # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f2cf0 PhyreScene::preRender, 2 votes, round 2
 0x006523e0 function PhyreScene_isFading # thiscall(this) -> al: byte +0x10dcc set or g_MovieFading; name ours
+0x00652470 function ClipOutcode               # structure: cdecl(v): homogeneous-point outcode, bits 0-2 x/y/z > w, bits 3-5 x/y/z < -w; 8 calls for a box's corners in 0x00660000's frustum test; name ours
 0x006526a0 function PhyreScene_Project3DPointOntoScreen # fh v3:exact 0x00652850 PhyreScene::Project3DPointOntoScreen
 0x00652a10 function PhyreScene_RenderABmap       # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f51b0 PhyreScene::RenderABmap, 2 votes, round 1
 0x00653230 function PhyreScene_RenderMF152Related # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f7030 PhyreScene::RenderMF152Related, 2 votes, round 1
@@ -2475,6 +2479,7 @@
 0x006b4950 function DebugMenuManager_CreateInstance # fh v3:exact 0x006b4aa0 DebugMenuManager::CreateInstance
 0x006b4990 function DebugMenuManager_Destroy # (): virtual destructor (1) of g_DebugMenuManager, then clears it; name ours
 0x006b49b0 function DebugMenuManager_GetInstance # () -> g_DebugMenuManager; name Fahrenheit's (Switch BSim)
+0x006b4f80 function Vec3_UninitializedCopy    # structure: cdecl(first, last, dest): copies 12-byte elements, returns dest's end (std::uninitialized_copy); name ours
 0x006b55d0 function CharacterSwitchTweakUtil_CharacterSwitchTweakUtil # fh v3:exact 0x006b5720 CharacterSwitchTweakUtil::CharacterSwitchTweakUtil
 0x006b5eb0 function CharacterSwitchTweakUtil_CreateInstance # fh v3:cg2 0x6b6000 CharacterSwitchTweakUtil::CreateInstance
 0x006b6340 function CharacterTextureAnimationTweakUtil_GetInstance # fh v3:bsim1.00 0x006b6480 CharacterTextureAnimationTweakUtil::GetInstance
@@ -2500,6 +2505,8 @@
 0x006bc130 function CharacterAnimationTweakUtil_updateAnimation # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100294b20 CharacterAnimationTweakUtil::updateAnimation, 2 votes, round 1
 0x006bcc70 function graphicPauseGameDestroy # (): virtual destructor (1) of g_GraphicPauseGame, then clears it; name ours
 0x006bcc90 function graphicCheckPauseGame     # () -> g_GraphicPauseGame; name Fahrenheit's (Switch BSim)
+0x006be700 function UIntTree_Find             # structure: thiscall(head, &key), byte-identical to DynGeoTree_Find; VfxShaderManager's maps (0x006c0000); name ours
+0x006be750 function PStringTree_Find          # structure: thiscall(head, &key): search tree keyed by PString text (pointer with flag bit 0; strcmp, by pointer when either is null); VfxShaderManager's maps; name ours
 0x006bfe90 function VfxShaderManager_analysisSpecialShaderBlock # str-match switch: only user of 6 string(s) held once by both builds, e.g. 'texture_name'; Switch 0x710028f9f0 VfxShaderManager::analysisSpecialShaderBlock (symbols from Fahrenheit's server export)
 0x006c0560 function VfxShaderManager_combineTextureNameInCurrentLevel # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s%s/%s%s'; Switch 0x7100290ef0 VfxShaderManager::combineTextureNameInCurrentLevel (symbols from Fahrenheit's server export)
 0x006c0a70 function VfxShaderManager_loadShader  # str-match switch: only user of 29 string(s) held once by both builds, e.g. 'VSP_GROUND_SPECIAL'; Switch 0x710028f140 VfxShaderManager::loadShader (symbols from Fahrenheit's server export)
@@ -2532,6 +2539,7 @@
 0x006c59c0 function SpecularMapParamsManager_renderCorrespondSpecular # layout: alphabetical run between SpecularMapParamsManager_needDrawSpecularPass and SpecularMapParamsManager_renderSpecularPass (1 unnamed in the gap); Switch 0x7100286810 SpecularMapParamsManager::renderCorrespondSpecular is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x006c5b60 function SpecularMapParamsManager_renderSpecularPass # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a2478 SpecularMapParamsManager::renderSpecularPass, 2 votes, round 2
 0x006c6830 function SpecularMapParamsManager_setShadeSpecularMapParams # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'SpecularPower'; Switch 0x7100284370 SpecularMapParamsManager::setShadeSpecularMapParams (symbols from Fahrenheit's server export)
+0x006c7250 function FloatHeap_AdjustHeap      # structure: cdecl(base, hole, len, &value, less): std::_Adjust_heap on floats with a bool less(a, b) callback; name ours
 0x006c8040 function ShadowManager_AlreadyinShadowMap # fh v3:exact 0x006c8180 ShadowManager::AlreadyinShadowMap
 0x006ccd00 function ShadowManager_GetShadowSize # () -> g_ShadowSize; name Fahrenheit's (Switch BSim)
 0x006ce3e0 function ShadowManager_InsertIntoShadowMap_Double # fh v3:exact 0x006ce510 ShadowManager::InsertIntoShadowMap_Double
@@ -2542,6 +2550,7 @@
 0x006d18b0 function ShadowManager_createshadowbuffer # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'ShadowManager_TempShadowMaptarget'; Switch 0x7100278090 ShadowManager::createshadowbuffer (symbols from Fahrenheit's server export)
 0x006d22e0 function ShadowManager_getCascade # thiscall(this, i), ret 4: word i from +0x60; name ours
 0x006d2390 function ShadowManager_getInstance # fh v3:bsim1.00 0x006d24c0 ShadowManager::getInstance
+0x006d23a0 function ShadowManager_GetCascadeMatrix # structure: thiscall(this, out, i), ret 8: copies the 4x4 matrix at this +0x210 + 64 i to out; PhyreScene callers after ShadowManager_getInstance; name ours
 0x006d2520 function ShadowManager_getTextureSampler # thiscall(this) -> this + 0x3fc4; name Fahrenheit's (Switch BSim)
 0x006d3000 function ShadowManager_updateShadowMap # fh v3:exact 0x006d3130 ShadowManager::updateShadowMap
 0x006d4de0 function BrokenScreenEffect_GetInstance # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008a0b88 BrokenScreenEffect::GetInstance, 2 votes, round 1
@@ -12293,6 +12302,7 @@
 0x00ccca4c label    g_ClusterManager          # the instance ClusterManager_GetInstance returns
 0x00ccca6c label    g_VFXRenderDataTable      # the ClassVFXRenderDataTable (std::map head +0, cached key +0x20/+0x24 and geometry +0x28): graphicVFXGetRenderDataByInstance, graphicVFXUpdate
 0x00ccca84 label    g_CharacterLighting       # Phyre_CharacterLighting_GetInstance; the graphicCharacterLighting* wrappers call its methods
+0x00ccca88 label    g_CharacterLightingTweakUtil # Phyre_CharacterLightingTweakUtil_GetInstance; graphicCharacterLightingSetShadeCoeff's debug hook
 0x00cccaa8 label    g_TextureAnimationManager # TextureAnimationManager_GetInstance
 0x00cccab0 label    g_DebugMenuManager        # DebugMenuManager_GetInstance; DebugMenuManager_Destroy
 0x00cccb00 label    g_GraphicPauseGame        # graphicCheckPauseGame returns it; graphicPauseGameDestroy deletes it
@@ -12805,6 +12815,7 @@
 0x01330830 label    g_TkLang                  # i8, FFXSetLang / TkGetLang (sign-extended)
 0x01330832 label    g_TkTGS                   # u8 (TkGetTGS)
 0x01330833 label    g_FFXAsiaMode             # u8: FFXGetAsiaMode / FFXSetAsiaMode
+0x01330844 label    g_GraphicMapId            # the map id graphicIsMapInList tests
 0x01330850 label    g_TkFadeOut               # 2 words, both set by TkSetFadeOut
 0x0133085c label    g_TkStartMapEvent         # u32 id, index (TkSetStartMapIndex)
 0x01330864 label    g_TkLocalStartMapEvent    # u32 id, index (TkSetLocalStartMapIndex)

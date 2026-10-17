@@ -27,4 +27,5 @@ pub mod scene;
 pub mod state;
 pub mod texanim;
 pub mod ui;
+pub mod util;
 pub mod vfx;
