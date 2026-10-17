@@ -16,8 +16,10 @@ Screenshots whose name starts with a `--coarse` prefix are compared by the
 mean brightness of BLOCK x BLOCK blocks instead: where the whole picture
 moves between runs of the original (the field's camera sways with a timer
 that the replay does not pin down), a block may differ by COARSE levels, or
-twice what the two original runs differ by, whichever is more. A missing
-character model changes its blocks by about 50.
+twice what the two original runs differ by, whichever is more, leaving out
+the top SKY rows (the field's searchlight beams sweep on the wall clock;
+one run measured 38 there). A missing character model changes its blocks
+by about 50.
 """
 import pathlib
 import struct
@@ -26,6 +28,7 @@ import sys
 RADIUS = 12
 BLOCK = 40
 COARSE = 25
+SKY = 120  # coarse shots: rows above this are left out
 
 
 def block_means(w, h, px):
@@ -54,6 +57,10 @@ for a_path in sorted(a_dir.glob("*.bmp")):
     _, _, r = pixels(r_dir / a_path.name)
     if coarse and a_path.name.startswith(coarse):
         ma, mb, mr = block_means(w, h, a), block_means(w, h, b), block_means(w, h, r)
+        # the top band: the deck's searchlight beams sweep on the wall clock
+        for m in (ma, mb, mr):
+            for k in [k for k in m if k[1] * BLOCK < SKY]:
+                del m[k]
         limit = max(COARSE, 2 * max(abs(ma[k] - mb[k]) for k in ma))
         worst = max(ma, key=lambda k: abs(ma[k] - mr[k]))
         d = abs(ma[worst] - mr[worst])
