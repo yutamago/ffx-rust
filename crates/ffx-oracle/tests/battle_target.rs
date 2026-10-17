@@ -2141,6 +2141,24 @@ const INPUT_CALLEES: [(u32, u8); 6] = [
 ];
 const INPUT_STUBS: u32 = PROCESS_STUBS + 0x40 * 16;
 
+/// The disposal callees `ffx_battle::damage_end` goes through (chara's
+/// model and data, `Sg_FreeA`, the effect, its stream and file), logging
+/// stubs after the input ones.
+const FREE_CALLEES: [(u32, u8); 8] = {
+    use ffx_battle::damage_end::bridge as de;
+    [
+        (de::CH_MODEL_PURGE_PACKET, 2),
+        (de::CH_DISPOSE, 1),
+        (de::CHN_DISPOSE_SYSTEM_MGRP, 2),
+        (de::CHN_DATA_DISPOSE, 2),
+        (de::SG_FREE_A, 2),
+        (de::OP_OVL_EFFECT_FREE, 0),
+        (de::SND_STOP_BATTLE_STREAM, 0),
+        (de::MAGIC_FILE_STOP, 0),
+    ]
+};
+const FREE_STUBS: u32 = PROCESS_STUBS + 0x40 * 24;
+
 /// The battle number `MsBattleGetNum` gives: a field record of `id` and a
 /// group byte `g` at `rec`, in battle.
 fn battle_num(a: &mut Oracle, b: &mut Oracle, rec: u32, id: i16, g: u8) {
@@ -3646,6 +3664,376 @@ fn placed(a: &mut Oracle, b: &mut Oracle, w: &World, out: u32) -> bool {
     (0..ACTORS).all(|k| writes(a, b, 0x0079_48e0, k, out + 0x40))
 }
 
+/// The end of a command's damage step (`ffx_battle::damage_end`): sound
+/// fades, script cancels, effect frees, model disposal, the aeon placed,
+/// the party back from a summon and the whole per-frame step.
+fn damage_end(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32) {
+    use ffx_battle::atel::bridge::Script;
+    use ffx_battle::damage_end::bridge as de;
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    macro_rules! s {
+        ($s:ident) => {
+            let mut $s = Script {
+                call: &mut call,
+                signal: &mut signal,
+                off: &mut off,
+            };
+        };
+    }
+    let flag = |rng: &mut Xorshift, n: u32| u8::from(rng.below(n) == 0);
+    // sound fades on a short list (playing 0x80000000-3, at times fading)
+    {
+        let nodes = b.rebase(ffx_battle::after_damage::bridge::SEP_3D_NODES);
+        let mut area = vec![0u8; 0x200];
+        let n = rng.below(5);
+        for k in 0..n as usize {
+            let at = nodes + 0x20 * u32::try_from(k).unwrap();
+            area[0x20 * k + 4] = [0, 0, 1, 3][rng.below(4) as usize];
+            area[0x20 * k + 8..0x20 * k + 12]
+                .copy_from_slice(&(0x8000_0000 | rng.below(4)).to_le_bytes());
+            let next = if k + 1 < n as usize { at + 0x20 } else { 0 };
+            area[0x20 * k + 0xc..0x20 * k + 0x10].copy_from_slice(&next.to_le_bytes());
+        }
+        poke(a, b, nodes, &area);
+        let head = if n == 0 { 0 } else { nodes };
+        poke(
+            a,
+            b,
+            ffx_battle::minor::bridge::SEP_3D.ptr(b).addr,
+            &head.to_le_bytes(),
+        );
+        let se = [0, 1, 2, 3, rng.next()][rng.below(5) as usize];
+        let frames = rng.next();
+        let i = rng.below(ACTORS);
+        match rng.below(3) {
+            0 => twin(
+                "MsSEP3DFind",
+                a,
+                b,
+                0x007a_0b90,
+                &[se | 0x8000_0000],
+                ALL,
+                |m| de::ms_sep_3d_find(m, se | 0x8000_0000),
+            ),
+            1 => twin(
+                "MsSEP3DfadeOut",
+                a,
+                b,
+                0x007a_08a0,
+                &[se | 0x8000_0000, frames],
+                ALL,
+                |m| de::ms_sep_3d_fade_out(m, se | 0x8000_0000, frames),
+            ),
+            _ => twin(
+                "MsRegSEfade",
+                a,
+                b,
+                0x007a_00d0,
+                &[i, se, frames],
+                ALL,
+                |m| de::ms_reg_se_fade(m, i, se, frames).cast_unsigned(),
+            ),
+        }
+        same("sound fades", a, b);
+    }
+    // a script handler cancelled
+    let (kind, i, n) = (
+        [2, 2, 3, 4][rng.below(4) as usize],
+        rng.below(ACTORS),
+        rng.range(-1, 0x22),
+    );
+    twin(
+        "MsAtelRequestCancel",
+        a,
+        b,
+        0x0079_7cd0,
+        &[kind, i, n.cast_unsigned()],
+        ALL,
+        |m| {
+            dm(m, |m| {
+                s!(s);
+                de::ms_atel_request_cancel(m, &mut s, kind, i, n).cast_unsigned()
+            })
+        },
+    );
+    same("MsAtelRequestCancel", a, b);
+    // a magic effect ends (its function a logging stub)
+    let i = [rng.below(ACTORS), 0xff][rng.below(6).min(1) as usize];
+    if i != 0xff {
+        let p = w.actor(i);
+        poke(
+            a,
+            b,
+            p + 0xdfb,
+            &[[6, 6, 0, rng.byte()][rng.below(4) as usize]],
+        );
+        poke(
+            a,
+            b,
+            p + 0xdfe,
+            &[[2, 0, rng.byte()][rng.below(3) as usize]],
+        );
+        let eff = if rng.below(2) == 0 {
+            0
+        } else {
+            let f = b.rebase(FREE_STUBS + 0x40 * 8);
+            poke(a, b, out + 0xc0, &[0, f].map(u32::to_le_bytes).concat());
+            out + 0xc0
+        };
+        poke(a, b, p + 0xf8c, &eff.to_le_bytes());
+    }
+    set(
+        a,
+        b,
+        ffx_battle::parse::bridge::EFFECT_READ_STAT,
+        [0, rng.next()][rng.below(2) as usize],
+    );
+    twin("MsEffectFree", a, b, 0x0078_7af0, &[i], 0, |m| {
+        dm(m, |m| {
+            s!(s);
+            de::ms_effect_free(m, &mut s, i);
+        });
+        0
+    });
+    same("MsEffectFree", a, b);
+    // models and weapons disposed
+    let i = rng.below(ACTORS);
+    let p = w.actor(i);
+    for o in [0x11, 0x12, 0x3e] {
+        poke(a, b, p + o, &[flag(rng, 2)]);
+    }
+    for o in [4, 8, 0x48] {
+        poke(
+            a,
+            b,
+            p + o,
+            &[0, rng.next() | 1][rng.below(2) as usize].to_le_bytes(),
+        );
+    }
+    let flags = rng.below(0x10);
+    match rng.below(3) {
+        0 => twin(
+            "MsDebugFullCommand_00796dc0",
+            a,
+            b,
+            0x0079_6dc0,
+            &[i, p, flags],
+            ALL,
+            |m| {
+                dm(m, |m| {
+                    s!(s);
+                    de::ms_chr_dispose(m, &mut s, i, p, flags)
+                })
+            },
+        ),
+        1 => {
+            let k = rng.below(2);
+            let wp = ffx_battle::actor::bridge::ms_get_weapon(b, i, k.cast_signed());
+            if wp != 0 {
+                poke(a, b, wp + 0x3e, &[flag(rng, 2)]);
+                for o in [4, 8] {
+                    poke(
+                        a,
+                        b,
+                        wp + o,
+                        &[0, rng.next() | 1][rng.below(2) as usize].to_le_bytes(),
+                    );
+                }
+            }
+            twin(
+                "MsWeaponDispose",
+                a,
+                b,
+                0x007a_d750,
+                &[i, k, flags, wp],
+                0,
+                |m| {
+                    dm(m, |m| {
+                        s!(s);
+                        de::ms_weapon_dispose(m, &mut s, i, k, flags, wp);
+                    });
+                    0
+                },
+            );
+        }
+        _ => twin("MsBtlChrFree", a, b, 0x0079_3410, &[i, flags], 0, |m| {
+            dm(m, |m| {
+                s!(s);
+                de::ms_btl_chr_free(m, &mut s, i, flags);
+            });
+            0
+        }),
+    }
+    same("disposal", a, b);
+    // the rest needs every actor placed (positions, motions)
+    let all: Vec<u32> = (0..ACTORS).collect();
+    if !placed(a, b, w, out)
+        || !all
+            .iter()
+            .all(|&q| writes(a, b, 0x0079_56e0, q, out + 0x40))
+    {
+        return;
+    }
+    // no characters for these calls, back after: MsSetChrPosReset resets
+    // a character's cloth, which neither the fake ones nor a snapshot's
+    // (its cloth data outside the snapshot) have (battle_atel.rs tests it)
+    let chrs: Vec<[u8; 4]> = all
+        .iter()
+        .map(|&q| b.read(w.actor(q), 4).unwrap().try_into().unwrap())
+        .collect();
+    for &q in &all {
+        poke(a, b, w.actor(q), &[0; 4]);
+    }
+    damage_end_steps(a, b, rng, w, out, &all);
+    for (&q, c) in all.iter().zip(&chrs) {
+        poke(a, b, w.actor(q), c);
+    }
+}
+
+/// The placed part of [`damage_end`]: the aeon placed and the whole step.
+fn damage_end_steps(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    w: &World,
+    out: u32,
+    all: &[u32],
+) {
+    use ffx_battle::atel::bridge::Script;
+    use ffx_battle::damage_end::bridge as de;
+    let h = host();
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    macro_rules! s {
+        ($s:ident) => {
+            let mut $s = Script {
+                call: &mut call,
+                signal: &mut signal,
+                off: &mut off,
+            };
+        };
+    }
+    let flag = |rng: &mut Xorshift, n: u32| u8::from(rng.below(n) == 0);
+    // an aeon placed after its summon (by a party member: an aeon's
+    // battle position, kind 0xd, is its summoner's)
+    let i = 8 + rng.below(10);
+    set(
+        a,
+        b,
+        ffx_battle::target::bridge::SUMMONER,
+        i8::try_from(rng.below(7)).unwrap(),
+    );
+    let party: Vec<u8> = (0..7)
+        .map(|_| [0xff, u8::try_from(rng.below(0x12)).unwrap()][rng.below(2) as usize])
+        .collect();
+    poke(a, b, ffx_battle::ability::bridge::PARTY.ptr(b).addr, &party);
+    for q in party.iter().filter(|&&q| q != 0xff) {
+        // (not the Magus Sisters' 0x3009-0x300b: a sister whose position
+        // fails adds the original's stack garbage, MsGetSummonerPos)
+        let cmd = [0x3001u32, 0x3005, 0x3008, 0x300c, rng.next()][rng.below(5) as usize];
+        poke(a, b, w.actor(u32::from(*q)) + 4, &cmd.to_le_bytes());
+    }
+    let was = threats(b, w, all);
+    twin("MsSetChrPosAfterSummon", a, b, 0x007a_c6a0, &[i], 0, |m| {
+        dm(m, |m| {
+            s!(s);
+            de::ms_set_chr_pos_after_summon(m, &h, &mut s, i);
+        });
+        0
+    });
+    threatened(a, b, w, all, &was);
+    local_words(a, b);
+    unplaced_rows(a, b, out);
+    same("MsSetChrPosAfterSummon", a, b);
+    // the whole step: actors with commands in hand at random states
+    for q in 0..ACTORS {
+        let p = w.actor(q);
+        let st = [0u8, 0, 1, 4, 5, 2, 3][rng.below(7) as usize];
+        poke(a, b, p + 0xdf0, &[st]);
+        poke(a, b, p + 0xdf2, &[flag(rng, 3)]);
+        poke(a, b, p + 0xdfb, &[[0, 0, 6, 1][rng.below(4) as usize]]);
+        // kind 8 (MsMagicEffectEnd ends 0x10's and 0x11's first: never
+        // theirs, which would recurse for good)
+        let kind = u8::try_from(rng.below(if q == 0x10 || q == 0x11 { 8 } else { 9 })).unwrap();
+        poke(a, b, p + 0xdea, &[kind]);
+        // its own cue entry (the original reads one without checking)
+        poke(a, b, p + 0xde5, &[u8::try_from(q).unwrap()]);
+        let e = ffx_battle::state::bridge::COMMAND_CUE.ptr(b).addr
+            + ffx_battle::state::bridge::CUE_SIZE * q;
+        let hits = u8::try_from(rng.below(3)).unwrap();
+        poke(
+            a,
+            b,
+            e + 2,
+            &[hits, hits + u8::try_from(rng.below(3)).unwrap()],
+        );
+        poke(a, b, p + 0xf8c, &[0; 4]);
+    }
+    for (g, v) in [
+        (de::DYING_WAIT.ptr(b).addr, flag(rng, 3)),
+        (de::CAMERA_RESET.ptr(b).addr, flag(rng, 3)),
+        (de::KEEP_FOCUS.ptr(b).addr, flag(rng, 3)),
+        (
+            ffx_battle::parse::bridge::COMMAND_STARTED.ptr(b).addr,
+            flag(rng, 2),
+        ),
+        (
+            ffx_battle::parse::bridge::COMMAND_MUSIC_DOWN.ptr(b).addr,
+            flag(rng, 2),
+        ),
+    ] {
+        poke(a, b, g, &[v]);
+    }
+    set(a, b, ffx_battle::state::bridge::INPUT_CUE_COUNT, 0);
+    set(a, b, ffx_battle::state::bridge::COMMAND_CUE_COUNT, 0);
+    // the title window about its wait (shown past its top − 20) and no
+    // magic file or command wait at times
+    let top = rng.range(0x14, 0x60);
+    let title = [0, top - 0x14, top - 0x13, top - 0x15, rng.range(-5, 0x60)][rng.below(5) as usize];
+    poke(
+        a,
+        b,
+        ffx_battle::exec::bridge::TITLE_WINDOW.ptr(b).addr,
+        &[
+            i8::try_from(title).unwrap().cast_unsigned(),
+            u8::try_from(top).unwrap(),
+        ],
+    );
+    if rng.below(2) == 0 {
+        set(a, b, de::MAGIC_HANDLE, -1);
+        set(a, b, ffx_battle::parse::bridge::COMMAND_WAIT, -1);
+        for &q in all {
+            poke(a, b, w.actor(q) + 0x434, &[flag(rng, 2)]);
+        }
+    }
+    // the monsters (MsGetMon, for MsGetBattleEndStatus) are the actors from
+    // 0x14
+    set(a, b, ffx_battle::actor::bridge::MON_TOP, w.actor(0x14));
+    let was = threats(b, w, all);
+    twin(
+        "MsBattleProcess_ChrDamage",
+        a,
+        b,
+        0x0079_11e0,
+        &[],
+        0,
+        |m| {
+            dm(m, |m| {
+                s!(s);
+                de::ms_battle_process_chr_damage(m, &h, &mut s);
+            });
+            0
+        },
+    );
+    threatened(a, b, w, all, &was);
+    local_words(a, b);
+    unplaced_rows(a, b, out);
+    same("MsBattleProcess_ChrDamage", a, b);
+}
+
 /// Party members and aeons coming and going (`ffx_battle::exchange`).
 fn exchange(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32, rec: u32) {
     use ffx_battle::atel::bridge::Script;
@@ -3933,6 +4321,49 @@ fn exchange(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: 
     local_words(a, b);
     rect_words(a, b);
     same("MsExchangeSummon", a, b);
+    // the party back from a summon (ffx_battle::damage_end)
+    {
+        use ffx_battle::damage_end::bridge as de;
+        let summoner = [0, 0, rng.byte().cast_signed()][rng.below(3) as usize];
+        set(a, b, ffx_battle::target::bridge::SUMMONER, summoner);
+        let slot = [
+            0xff,
+            u8::try_from(summon).unwrap(),
+            u8::try_from(rng.below(0x12)).unwrap(),
+        ][rng.below(3) as usize];
+        set(
+            a,
+            b,
+            ffx_battle::ability::bridge::LIST_SLOT,
+            slot.cast_signed(),
+        );
+        set(
+            a,
+            b,
+            ffx_battle::action::bridge::TURN_END_ACTOR,
+            u8::try_from(rng.below(8)).unwrap(),
+        );
+        let (what, sym, arg) = [
+            ("MsFreePlayer", 0x007a_e0a0, rng.below(0x12)),
+            ("MsExchangePlayer", 0x007a_df10, 0),
+            ("MsReturnSummon", 0x007a_ef20, rng.below(2)),
+        ][rng.below(3) as usize];
+        let args: &[u32] = if sym == 0x007a_df10 { &[] } else { &[arg] };
+        twin(what, a, b, sym, args, 0, |m| {
+            dm(m, |m| {
+                s!(s);
+                match sym {
+                    0x007a_e0a0 => de::ms_free_player(m, &h, &mut s, arg),
+                    0x007a_df10 => de::ms_exchange_player(m, &h, &mut s),
+                    _ => de::ms_return_summon(m, &h, &mut s, arg),
+                }
+            });
+            0
+        });
+        local_words(a, b);
+        rect_words(a, b);
+        same(what, a, b);
+    }
 }
 
 fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
@@ -4066,6 +4497,14 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
             logging_stub(o, f, INPUT_STUBS + 0x40 * k, irec + EXCHANGE_REC * k, n, 0);
         }
     }
+    // the disposal stubs' records, then a function an effect points at
+    let frec = scratch(a, b, (EXCHANGE_REC * 9) as usize);
+    for o in [&mut *a, &mut *b] {
+        for (k, (f, n)) in (0u32..).zip(FREE_CALLEES) {
+            logging_stub(o, f, FREE_STUBS + 0x40 * k, frec + EXCHANGE_REC * k, n, 0);
+        }
+        logging_stub(o, 0, FREE_STUBS + 0x40 * 8, frec + EXCHANGE_REC * 8, 1, 0);
+    }
     for _ in 0..400 {
         file(a, b, rng, &f);
         dress(a, b, rng, &w, &f);
@@ -4085,6 +4524,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         process(a, b, rng, &w, prec, srec, out);
         deaths(a, b, rng, &w, out);
         input(a, b, &w, out, irec);
+        damage_end(a, b, rng, &w, out);
     }
 }
 

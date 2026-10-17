@@ -4869,7 +4869,7 @@
 0x00787a60 function MsEffectEnvInit              # layout: alphabetical run between MsEffectEnvFree and MsEffectForceFree (2 unnamed in the gap); Switch 0x710034f540 MsEffectEnvInit is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00787a70 function MsEffectFileNumber           # layout: alphabetical run between MsEffectEnvFree and MsEffectForceFree (2 unnamed in the gap); Switch 0x710034f6a0 MsEffectFileNumber is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00787ab0 function MsEffectForceFree         # fh v3:exact 0x00787b70
-0x00787af0 function MsEffectFree              # fh v3:exact 0x00787bb0
+0x00787af0 function MsEffectFree              # fh v3:exact 0x00787bb0; ours: (i) a magic effect (+0xdfb 6) ends: scripts cancelled, camera, read buffer, +0xf8c's effect; ported (battle round 13)
 0x00787be0 function MsEffectGetLastMagicNum      # layout: alphabetical run between MsEffectFree and MsEffectGetLastMagicNum2 (1 unnamed in the gap); Switch 0x7100351930 MsEffectGetLastMagicNum is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00787bf0 function MsEffectGetLastMagicNum2  # fh v3:exact 0x00787cb0
 0x00787c10 function MsEffectGetTargetFlag     # fh switch:bsim1.00 0x7100351960
@@ -5065,7 +5065,7 @@
 0x00790fb0 function MsBattleProcess_Order_00790fb0 # (): with no pending input cue, MsOrderInit, MsOrderRegist of every ready character, MsOrderCalc and MsRegistInputCue, MsLimitTypeTurnCheck; caller MsBattleProcess; own name
 0x00791170 function MsCheckChrHold            # (i, actor, cue): actor +0x4b6 != 0; the turn driver 0x00792210 asks it for actor 5 only; name ours
 0x00791190 function MsBattleCanProgress       # ours: -1 when no pause (0x0112c9d0), hit motion, turn end, message, camera state, overdrive learnt, stone effect or command hold holds the battle (MsBattleProcess)
-0x007911e0 function MsBattleProcess_ChrDamage_007911e0 # (): when no cue level / SE transfer is pending, per character MsSetDamage, MsPoisonProcess, MsEffectFree; caller MsBattleProcess; own name
+0x007911e0 function MsBattleProcess_ChrDamage_007911e0 # (): when no cue level / SE transfer is pending, per character MsSetDamage, MsPoisonProcess, MsEffectFree; caller MsBattleProcess; own name; ported (battle round 13, damage_end)
 0x007915f0 function MsCheckChrBtlPosAll          # layout+callees: sorts between MsBattleProcess and MsCheckChrMotionAll, and its named callees match the Switch 0x7100366ad0 MsCheckChrBtlPosAll's (similarity 1.00: MsGetChr); symbols from Fahrenheit's server export
 0x00791630 function MsCheckChrMotionAll       # fh v3:exact 0x00791680
 0x00791690 function MsCheckCommandEnd         # ours: (actor) -> 1 (+0xdf0 = 1) when the command may end; waits (+0xdf0 = 5) on kind-1 numbers, +0xe13, 0x0112c8f8; titled commands wait for the title window (0x3103: above 0x2d); ported (battle round 12)
@@ -5093,7 +5093,7 @@
 0x00793260 function msSetEndDir               # fh v3:exact 0x00793270
 0x007932b0 function MesSetChrTargetPosToLimitSparePosy # fh v3:exact 0x007932c0
 0x00793330 function MsAttachWeapon            # fh v3:exact 0x00793340
-0x00793410 function MsBtlChrFree              # fh v3:exact 0x00793420
+0x00793410 function MsBtlChrFree              # fh v3:exact 0x00793420; ours: (i, flags) hidden, bind/status effects off, script i+5 cancelled, model and weapons disposed by flags; ported (battle round 13)
 0x00793480 function MsBtlChrFreeAll           # fh v3:exact 0x00793490
 0x00793500 function MsBtlChrFreeMem           # fh v3:exact 0x00793510
 0x00793530 function MsBtlChrGetMem            # fh v3:exact 0x00793540
@@ -5193,7 +5193,7 @@
 0x00796b40 function getAllPCEquips               # layout+callees: sorts between MsSetTargetDir and getSparedLmtPos, and its named callees match the Switch 0x710034cef0 getAllPCEquips's (similarity 0.75: MsGetSaveChrArmorModel, MsGetSaveChrWeaponModel, ch_create_name); symbols from Fahrenheit's server export
 0x00796c30 function getSparedLmtPos           # fh v3:exact 0x00796c40
 0x00796d70 function msCheckSameTarget         # fh v3:exact 0x00796d80
-0x00796dc0 function MsDebugFullCommand_00796dc0 # fh switch:cg2 0x7100370fc0
+0x00796dc0 function MsDebugFullCommand_00796dc0 # fh switch:cg2 0x7100370fc0; ours: what it does is MsChrDispose (i, actor, flags): the model by flags 8/1, a loaded actor's weapon effect, motion group (4), data (2), +0x48, sound slots; ported (battle round 13)
 0x00796ea0 function msGetChrPos               # fh v3:exact 0x00796eb0
 0x00796f20 function msSetChrBodyHit           # fh v3:exact 0x00796f30
 0x00797020 function msSetChrShadowReq         # (p, k, v): shadow request k (< 3) of actor/weapon record p = v; first non-negative of +0x26..+0x28 (stopping at 0) into +0x25, mode +0x2a[that] into +0x29 and Ch_SetShadowMode; returns +0 the character; name ours
@@ -5214,7 +5214,7 @@
 0x00797ae0 function MsAtelRegistInit          # fh v3:exact 0x00797af0
 0x00797b70 function MsAtelRequestAdd          # fh v3:exact 0x00797b80
 0x00797bc0 function MsAtelRequestCamera       # ?(slot, actor, handler id, handler2, ...): queues handlers (0x00797b70, Mon_FindHandler) and starts them through 0x00797d50; used by 0x703f with a finish flag out-param; was Battle_RunEvent
-0x00797cd0 function MsAtelRequestCancel       # fh v3:exact 0x00797ce0
+0x00797cd0 function MsAtelRequestCancel       # fh v3:exact 0x00797ce0; ours: (kind, i, n) handler n stopped (AtelSkipReqLevel2, AtelExecReturn2, AtelDecodeSignal -1): 0, else -1; ported (battle round 13)
 0x00797d50 function MsAtelRequestExe          # fh v3:exact 0x00797d60
 0x00797ff0 function MsAtelRequestInit         # fh v3:bsim1.00 0x00798000
 0x00798000 function MsAtelRequestMagicCamera  # fh v3:exact 0x00798010
@@ -5385,7 +5385,7 @@
 0x007a0040 function MsMusicSync               # fh v3:exact 0x007a0060
 0x007a0090 function MsMusicVolume             # fh v3:exact 0x007a00b0
 0x007a00b0 function MsNowMusicStop            # fh v3:exact 0x007a00d0
-0x007a00d0 function MsRegSEfade               # fh v3:exact 0x007a00f0
+0x007a00d0 function MsRegSEfade               # fh v3:exact 0x007a00f0; ours: (i, se, frames) MsSEP3DfadeOut(se | 0x80000000): -1, 0 without se; ported (battle round 13)
 0x007a0100 function MsRegSEplay               # fh v3:exact+call.cs 0x007a0120 cdecl; ours: (i, se): MsSEP3Dregist(3, i, se|bit31, 0) unless it is g_BtlLastSe (0x0112c8e4); ported (battle round 13)
 0x007a0140 function MsRegSEplay2              # fh v3:exact+call.cs 0x007a0160 cdecl; ours: (i, se): MsSEP3Dregist(3, i, se|bit31, once); ported (battle round 13)
 0x007a0170 function MsRegSEplay3                 # layout: alphabetical run between MsRegSEplay2 and MsRegistSEdata (1 unnamed in the gap); Switch 0x71003784b0 MsRegSEplay3 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -5401,11 +5401,12 @@
 0x007a0720 function MsSetVoice                   # layout: alphabetical run between MsSEPtransProcess and MsSetVoiceCheck (2 unnamed in the gap); Switch 0x7100377ca0 MsSetVoice is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007a07b0 function MsSetVoiceCheck           # fh v3:exact 0x007a07d0
 0x007a0820 function MsSoundStreamPlay            # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%23 SHOUT %d:%d SEQ %d\\n'; Switch 0x7100377be0 MsSoundStreamPlay (symbols from Fahrenheit's server export)
-0x007a08a0 function MsSEP3DfadeOut            # fh v3:exact 0x007a08c0
+0x007a08a0 function MsSEP3DfadeOut            # fh v3:exact 0x007a08c0; ours: (se, frames) a node not fading (+4 0) gets +4 = +6 = frames: 1; ported (battle round 13)
 0x007a08e0 function MsSEP3DfadeOutAll         # fh v3:exact 0x007a0900
 0x007a0910 function MsSEP3Dinit               # fh v3:exact 0x007a0930
 0x007a0930 function MsSEP3Dprocess            # fh v3:exact 0x007a0950
 0x007a0a30 function MsSEP3Dregist             # fh v3:exact 0x007a0a50; ours: (kind, i, se, once, pos): node in g_Sep3dList (existing se, else first free of 16 at 0x011361b0), position by kind (0: pos via the EE register 0x00c8f588), op_3d_vol_pan_get, SndSepPlay; ported (battle round 13)
+0x007a0b90 function MsSEP3DFind               # (se) -> the first node of g_Sep3dList (0x011361a0) whose +8 is se, else 0; callers MsSEP3DfadeOut; name ours; ported (battle round 13)
 0x007a0bb0 function MsSEP3DPos                # ours: (kind, i, vec): kind & ~0x100: 1 MsGetChrPos, 2 MsGetChrTopPos, 3 MsGetChrCenterPos, 4 MsGetChrBottomPos; ported (battle round 13)
 0x007a0c20 function MsGearHasAbility_007a0c20    # (gear, ability) -> 1 when one of the gear's 4 auto-ability slots (u16 at +0xe) is ability; callers MsWeaponNameNum_Weapon/Armor; own name
 0x007a0c50 function MsWeaponName              # fh v3:exact+call.cs 0x007a0c70 cdecl
@@ -5640,7 +5641,7 @@
 0x007ac600 function MsPopBtlPos               # fh v3:bsim1.00+call.cs 0x007ac620 cdecl
 0x007ac650 function MsPushBtlPos              # fh v3:bsim1.00 0x007ac670
 0x007ac680 function MsPushBtlPosAll           # fh v3:bsim1.00 0x007ac6a0
-0x007ac6a0 function MsSetChrPosAfterSummon    # fh v3:exact 0x007ac6c0
+0x007ac6a0 function MsSetChrPosAfterSummon    # fh v3:exact 0x007ac6c0; ours: (i) the party back at their battle positions, the aeon i placed (body part 3 off, +0x4fd 0xd, sound +0xf76 faded) and its entrance or stand; ported (battle round 13)
 0x007ac9c0 function Battle_QueueCommand          # (actor, command, target mask, ...): adds a command to the 4-entry queue at 0x01136a80 for the current actor; "TARGET ERROR CHR" when no target is valid
 0x007acb00 function MsActionRequestSet        # (kind): if g_BtlAction != -1: 0x48-byte block 0x01136a78 cleared, its byte 0 = kind, 0x01136a6c/0x01136a70 = 0, returns 0; else -1; MsActionRequest; name ours
 0x007acc90 function MsActReCommand               # callees: its named callees match the Switch 0x710038bb80 MsActReCommand's (similarity 0.75: MsGetChr, MsGetChrCommand, MsGetCommand); symbols from Fahrenheit's server export
@@ -5656,7 +5657,7 @@
 0x007ad550 function MsBtlReadStatusComplete   # fh switch:bsim1.00 0x710036fad0
 0x007ad5e0 function MsChangeWeaponInvisible   # fh v3:exact+call.cs 0x007ad5f0 cdecl
 0x007ad640 function MsChangeWeaponWakka          # layout+callees: sorts between MsChangeWeaponInvisible and MsWeaponDispose, and its named callees match the Switch 0x710037e150 MsChangeWeaponWakka's (similarity 1.00: MsFieldItemGetMes); symbols from Fahrenheit's server export
-0x007ad750 function MsWeaponDispose           # fh v3:exact 0x007ad760
+0x007ad750 function MsWeaponDispose           # fh v3:exact 0x007ad760; ours: (i, k, flags, weapon) the weapon record's model/motion group/data by flags, handed to the special weapon actor; ported (battle round 13)
 0x007ad820 function MsWeaponRead              # fh v3:exact 0x007ad830
 0x007ad940 function MsWeaponReadSet           # fh v3:exact 0x007ad950
 0x007ad970 function MsSortCommandList         # (list, keys, n): bubble sort of n u16 command IDs by their records' +0x5c (0x100 for 0xff / non-0x3xxx); named here; ported
@@ -5664,16 +5665,16 @@
 0x007ada60 function MsEscapeAll               # fh v3:exact 0x007ada70
 0x007adae0 function MsExchangeChr             # fh v3:exact 0x007adaf0
 0x007ade10 function MsExchangeParty           # fh v3:exact 0x007ade20
-0x007adf10 function MsExchangePlayer          # fh v3:exact 0x007adf20
+0x007adf10 function MsExchangePlayer          # fh v3:exact 0x007adf20; ours: () each party member back to +0x500's battle position, MsExchangeChr(0xff, q, slot ? -1 : 0, 0); ported (battle round 13)
 0x007adf90 function MsExchangeSummon          # fh v3:exact 0x007adfa0
-0x007ae0a0 function MsFreePlayer                 # layout+callees: sorts between MsExchangeSummon and MsInsertChrCommand, and its named callees match the Switch 0x710038f940 MsFreePlayer's (similarity 1.00: MsBtlChrFree, MsCleanInputCue, MsGetChr); symbols from Fahrenheit's server export
+0x007ae0a0 function MsFreePlayer                 # layout+callees: sorts between MsExchangeSummon and MsInsertChrCommand, and its named callees match the Switch 0x710038f940 MsFreePlayer's (similarity 1.00: MsBtlChrFree, MsCleanInputCue, MsGetChr); symbols from Fahrenheit's server export; ours: (i) +0xdc8 off, input entries gone, not the turn's last actor, MsBtlChrFree(i, 7) with a model; ported (battle round 13)
 0x007ae0f0 function MsCheckCommand3029        # (u16 *ids): ids not null and ids[0] or ids[1] == 0x3029; MsParseCommand; name ours
 0x007ae120 function MsCommandKindMode         # (kind, command): kinds 1/5: 0 if command +0x1c bit 20, 2 if bit 21, else 1; MsParseCommand; name ours
 0x007ae1a0 function MsInsertChrCommand        # fh v3:exact 0x007ae1b0
 0x007ae2e0 function MsInsertScriptCommand     # (i, after, id): actor +0xdf2 = 0, MsInsertInputCue(i,0,0,0,after,1), MsInsertCommandCue of a one-entry cue (+2 0x100, +8 id, +0x10 g_BtlScriptTargets); MsParseCommand; name ours
 0x007ae370 function MsParseCommand            # fh v3:exact+call.cs 0x007ae380 cdecl
 0x007aeec0 function MsReturnParty             # fh v3:exact 0x007aeed0
-0x007aef20 function MsReturnSummon            # fh v3:exact 0x007aef30
+0x007aef20 function MsReturnSummon            # fh v3:exact 0x007aef30; ours: (revive) with an aeon out the party's gauges back, revived (revive), freed; MsReturnParty, MsExchangePlayer, MsChangeMonsterDir; summoner 0, slot 0xff; ported (battle round 13)
 0x007aefb0 function MsSortCommand             # fh v3:exact 0x007aefc0
 0x007af060 function MsGetAeonCommand          # (i, id, kind, &mode, &value) -> u16: aeon i's (actor 8 on) entry in 0x00c438a8 (16 bytes each): kind 0 +0 or +4 (once id used, g_SaveMenu bit 11 clear) mode 1, kind 1 +8 mode 3, kind 2 +0xc mode 2; value the pair's byte; MsInsertChrCommand; name ours
 0x007af0f0 function MsCheckTargetsNear        # (i, actor, targets): with +0x4ac bit 12, 1 when a target within 12.0 (2D, less widths) has its MsGetMoveTargetPos kind 0xc within 0.2 of its battle position; 0 with several targets; name ours
