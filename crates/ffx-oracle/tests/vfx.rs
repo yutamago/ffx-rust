@@ -9715,6 +9715,48 @@ fn ke_mdl_tfd_draws_match_the_original() {
     }
 }
 
+#[test]
+fn fp_set_draw_matrix_and_wood_sta_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0072_a260);
+        // view, camera, world, the field wood matrix, the view copy
+        let matrices = [
+            0x0230_ff20u32,
+            0x0230_ff60,
+            0x0230_ffa0,
+            0x0230_fea0,
+            0x0230_fe20,
+        ]
+        .map(|a| p.sym(a));
+        for _ in 0..1000 {
+            for m in matrices {
+                for o in (0..0x40).step_by(4) {
+                    let x = ranged(&mut rng, -2.0, 2.0);
+                    p.set(m + o, x);
+                }
+            }
+            let r = rng.next();
+            let mode = rng.pick(&[0u32, 1, 2, 3, 0x101, 0x102, r]);
+            check_conv(
+                &mut p,
+                "pppFpSetDrawMatrix",
+                0x0072_a260,
+                Conv::Cdecl,
+                &[mode],
+                |o| Some(fp::bridge::ppp_fp_set_draw_matrix(o, mode)),
+            );
+            // a plain frame: ebp is check_deep_n's frame
+            check_deep_n(
+                &mut p,
+                "pppDrawMatrixWoodSta",
+                0x0073_4d90,
+                &[],
+                |o, frame| Some(mat::bridge::ppp_draw_matrix_wood_sta(o, frame)),
+            );
+        }
+    }
+}
+
 /// A thunk, `fld qword [esp + 4]; jmp [slot]`, through `_CItan`'s import
 /// slot (`0x00b0c3a0`, MSVCR110's own `_CItan` in the oracle's runtime), for
 /// the bridges' `tan` callback; returns the thunk.

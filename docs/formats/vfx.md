@@ -207,3 +207,18 @@ draws unless `g_pppStop`. Unless the key's model is `0xffff`:
 | `Tfd` (`0x00749810`), `TfdUv` (`0x00749950`) | 0, or `ftol` of positions 2, 3 | 1 | 0 |
 | `Tfd2` (`0x00749b40`), `TfdUv2` (`0x00749c90`) | as above | key `+0x1d` / `+0x38` | 0 |
 | `Tfd3` (`0x00749e90`), `TfdUv3` (`0x00749ff0`) | as above | key `+0x1d..+0x21` / `+0x38..+0x3c` OR-ed | `obj + 0xa0 + [[prog + 0xc] + 0xc]` |
+
+## Draw matrices
+
+`pppFpSetDrawMatrix(mode)` (`0x0072a260`, `fp.rs`) sets `g_pppViewMatrix`
+for a field effect: mode 1 keeps `g_pppWorldMatrix`'s rotation and moves
+its position by `g_pppCameraMatrix`; mode 2 is `g_pppWorldMatrix x
+g_pppFpWoodMatrix` (`0x0230fea0`, the camera billboard `pppFpSetWoodMatrix`
+builds); anything else `g_pppWorldMatrix x g_pppCameraMatrix`. The result
+is copied to `g_pppViewMatrixCopy`.
+
+`pppDrawMatrixWoodSta()` (`0x00734d90`, `mat.rs`) builds the same kind of
+billboard from `g_pppViewMatrix` in `0x0230fee0` and copies it to
+`g_pppWoodMatrix`: row 1 the view's row 1 (`w` 0) normalised, row 0
+`(y, -x, 0, 0)` of it normalised, row 2 their outer product normalised,
+row 3 the view's translation.

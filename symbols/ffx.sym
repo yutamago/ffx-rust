@@ -3550,7 +3550,7 @@
 0x00729f90 function pppFpPointLightProc       # fh v3:cg17 0x72a080
 0x0072a120 function pppFpResetStick           # fh v3:exact 0x0072a210
 0x0072a180 function pppFpSaveStat             # fh v3:exact 0x0072a270
-0x0072a260 function pppFpSetDrawMatrix        # fh v3:exact 0x0072a350
+0x0072a260 function pppFpSetDrawMatrix        # fh v3:exact 0x0072a350; ours: = fp::bridge::ppp_fp_set_draw_matrix: g_pppViewMatrix by mode byte (1: world rotation, position = camera x world position; 2: world x g_pppFpWoodMatrix; else world x camera), copied to g_pppViewMatrixCopy (returned) (oracle parity)
 0x0072a2e0 function pppFpSetRotMatrix         # fh v3:exact 0x0072a3d0
 0x0072a530 function pppFpSetStickChr          # fh v3:exact 0x0072a620
 0x0072a590 function pppFpSetStickMap          # fh v3:bsim1.00 0x0072a680
@@ -3663,7 +3663,7 @@
 0x00734bd0 function pppDrawMatrixFront        # fh v3:exact 0x00734ca0
 0x00734c50 function pppDrawMatrixNoRot        # fh v3:exact 0x00734d20
 0x00734cf0 function pppDrawMatrixWood         # fh v3:exact 0x00734dc0
-0x00734d90 function pppDrawMatrixWoodSta      # fh v3:exact 0x00734e60
+0x00734d90 function pppDrawMatrixWoodSta      # fh v3:exact 0x00734e60; ours: = mat::bridge::ppp_draw_matrix_wood_sta: billboard rows from g_pppViewMatrix row 1 (normalised), (y, -x, 0, 0), their outer product, the view translation, built in g_pppWoodMatrixWork and copied to g_pppWoodMatrix (oracle parity)
 0x00734eb0 function pppKeDMatDraw             # fh v3:exact 0x00734f80
 0x00734ef0 function pppKeDMatFrDraw           # fh v3:exact 0x00734fc0
 0x00734f80 function pppKeDMatPhtDraw          # ppp program table record "pppKeDMatPht" draw: area 1 = cdc_Mul4x4(g_pppViewMatrix, area 0), then pppDrawMatrixFront's scaling without the mode byte
@@ -15274,6 +15274,8 @@
 0x0230fde0 label    g_pppWoodMatrix           # the billboard rotation pppDrawMatrixWoodSta builds (FFXVu0CopyMatrix from 0x0230fee0); pppDrawMatrixWood turns the scaled rows by it
 0x0230fe20 label    g_pppViewMatrixCopy       # FFXVu0CopyMatrix of g_pppViewMatrix (0x00920000.c); pppDrawMatrix multiplies the object's matrix by it
 0x0230fe60 label    g_pppScreenMatrix         # MsCopyScreenMatrix(0x0230fe60) in pppOtFunc_Control (0x00716ac0) before the g_pppOtList draws
+0x0230fea0 label    g_pppFpWoodMatrix         # the camera billboard rotation pppFpSetWoodMatrix (0x0072a690) builds (camera row 1 normalised, (y, -x, 0, 0), their outer product, camera translation 0x0230ff90); pppFpSetDrawMatrix mode 2: g_pppViewMatrix = g_pppWorldMatrix x it; name ours
+0x0230fee0 label    g_pppWoodMatrixWork       # pppDrawMatrixWoodSta builds the billboard rows here, then FFXVu0CopyMatrix to g_pppWoodMatrix (0x0230fde0); name ours
 0x0230ff20 label    g_pppViewMatrix           # cdc_Mul4x4(g_pppViewMatrix, g_pppCameraMatrix, 0x0230ffa0) (0x00920000.c); translation at 0x0230ff50, which pppDrawMatrixNoRot adds; the pppDrawMatrix* and pppKeDMat* draws transform positions by it
 0x0230ff60 label    g_pppCameraMatrix         # MsCopyCameraMatrix(0x0230ff60) each frame; sceVu0InversMatrix4x4 of it into 0x0230fca0
 0x0230ffa0 label    g_pppWorldMatrix          # the running part's matrix: pppSetMatrix (XYZ rotation of part +0x50, rows scaled by +0x60, position +0x40); g_pppViewMatrix = it x g_pppCameraMatrix

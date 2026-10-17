@@ -1902,6 +1902,20 @@ ported! {
     pppKeMdlTfdUv3Draw @ 0x0074_9ff0 => extern "C" fn ppp_ke_mdl_tfd_uv3_draw(obj: u32, key: u32, prog: u32) -> u32 {
         mdl::bridge::ppp_ke_mdl_tfd_draw(&mut mem(), mdl::bridge::Tfd::Three, true, obj, key, prog, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `pppFpSetDrawMatrix(mode)`.
+    pppFpSetDrawMatrix @ 0x0072_a260 => extern "C" fn ppp_fp_set_draw_matrix(mode: u32) -> u32 {
+        fp::bridge::ppp_fp_set_draw_matrix(&mut mem(), mode)
+    }
+    /// `pppDrawMatrixWoodSta()`: its three vectors in a buffer on this
+    /// shim's stack (the frame pointer at its end).
+    pppDrawMatrixWoodSta @ 0x0073_4d90 => extern "C" fn ppp_draw_matrix_wood_sta() -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x40]);
+        let mut locals = Locals([0; 0x40]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x40;
+        mat::bridge::ppp_draw_matrix_wood_sta(&mut mem(), frame)
+    }
     /// `pppKeTkFadeDraw(obj, key, prog)`: its stack locals in a buffer on
     /// this shim's stack (the frame pointer at its end).
     pppKeTkFadeDraw @ 0x0072_ee50 => extern "C" fn ppp_ke_tk_fade_draw(obj: u32, key: u32, prog: u32) -> u32 {
