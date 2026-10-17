@@ -162,13 +162,14 @@ tools/replay-compare.py /mnt/c/…/orig.trace /mnt/c/…/rust.trace
 ```
 
 The field replay's screenshots are compared coarsely (`shot-compare.py
---coarse field-walk`): the ship's sway runs on a timer the replay does not
-pin down, so four runs of the original differ by 110,000 to 200,000 pixels
-there, a sub-pixel shift of the whole picture. Blocks of 40x40 pixels then
-move by up to about 14 brightness levels (the light beams at the top),
-while a missing character model moves its blocks by about 50; the limit
-is 25. Battle and menu screenshots
-stay exact.
+--coarse field-walk`): the deck's sway and light run on timers the replay
+does not pin down, so runs of the original differ by 110,000 to 200,000
+pixels (a sub-pixel shift) and by a light level that steps over the whole
+picture. Blocks of 20x20 pixels are compared after removing the median
+difference over all blocks (the light step); the searchlight beams (top
+240 rows, and the beam's end at x 1000-1120, y 240) are left out. A
+character model painted over moves its blocks by about 50, noise by under
+3; the limit is 25. Battle and menu screenshots stay exact.
 
 `tools/replays/menu-browse.txt` opens the main menu and takes screenshots
 at fixed frames. Some of the screen animates by the wall clock (the
