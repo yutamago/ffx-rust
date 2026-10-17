@@ -4575,10 +4575,28 @@ fn round19_setup_matches_the_original() {
     assert!(compared > 0, "nothing ran");
 }
 
+/// [`fresh_run_pair`] with four point lights (`g_SgPLights` `0x013008cc`,
+/// count `0x013008d0`; the snapshots have none), so the light natives get
+/// past their table.
+fn r19_pair(pages: &std::sync::Arc<Pages>, exe: &std::path::Path, c: u32) -> (Oracle, Oracle) {
+    let (mut a, mut b) = fresh_run_pair(pages, exe, c);
+    let t = a.alloc(4 * 0x2c).unwrap();
+    assert_eq!(b.alloc(4 * 0x2c).unwrap(), t);
+    for k in 0..4 * 0x2c_u32 {
+        #[allow(clippy::cast_possible_truncation)] // a byte pattern
+        poke(&mut a, &mut b, t + k, (k * 7 + 3) as u8 & 0x3f);
+    }
+    let (at, n) = (a.rebase(0x0130_08cc), a.rebase(0x0130_08d0));
+    poke(&mut a, &mut b, at, t);
+    poke(&mut a, &mut b, n, 4u32);
+    (a, b)
+}
+
 /// Round 19's natives (`native_mods`) on every actor of every ctrl work in
 /// use, each with several random argument stacks: integers small and
 /// large, floats in and out of the angle range; results and memory.
 #[test]
+#[allow(clippy::too_many_lines)] // the random loop and the targeted cases
 fn round19_natives_match_the_original() {
     use ffx_script::vm::bridge::native::{self, Native};
     use ffx_script::vm::bridge::native_mods::PORTED;
@@ -4595,7 +4613,7 @@ fn round19_natives_match_the_original() {
     let mut rng = Xorshift(0x5eed_0019);
     let (mut compared, mut stops) = (0, 0);
     for c in ctrls {
-        let mut pair = Some(fresh_run_pair(&pages, &exe, c));
+        let mut pair = Some(r19_pair(&pages, &exe, c));
         let n = {
             let (a, b) = pair.as_mut().unwrap();
             actors(a, b).len().min(8)
@@ -4604,7 +4622,7 @@ fn round19_natives_match_the_original() {
         // the product's rounding to f32 shows in the x87 truncation's low
         // word (SSE2's gives 0x80000000 for all of them)
         {
-            let (a, b) = pair.get_or_insert_with(|| fresh_run_pair(&pages, &exe, c));
+            let (a, b) = pair.get_or_insert_with(|| r19_pair(&pages, &exe, c));
             let w = actors(a, b)[0];
             let sse = a.rebase(ffx_bridge::x87::SSE2_AVAILABLE.sym);
             let had = Mem::read::<u32>(b, sse);
@@ -4618,10 +4636,33 @@ fn round19_natives_match_the_original() {
             }
             poke(a, b, sse, had);
         }
+        // the natives that write through popped pointers, with real ones,
+        // and the light-direction ones on lights that exist
+        {
+            let (a, b) = pair.get_or_insert_with(|| r19_pair(&pages, &exe, c));
+            let w = actors(a, b)[0];
+            let out = a.alloc(0x20).unwrap();
+            assert_eq!(b.alloc(0x20).unwrap(), out);
+            let int = |v: u32| (stack::INT, v);
+            let f = |v: f32| (stack::FLOAT, v.to_bits());
+            let ptrs = [int(out), int(out + 4), int(out + 8)];
+            native_case(a, b, w, 0x00a7_7a70, &ptrs, "0x4037");
+            for i in 0..4 {
+                let mut push = vec![int(i)];
+                push.extend(ptrs);
+                native_case(a, b, w, 0x00a7_84c0, &push, &format!("0x4027 {i}"));
+                native_case(a, b, w, 0x00a7_8560, &push, &format!("0x4029 {i}"));
+                let dir = [int(i), f(0.25), f(-1.5), f(3.0)];
+                native_case(a, b, w, 0x00a7_7f70, &dir, &format!("0x4011 {i}"));
+                native_case(a, b, w, 0x00a7_7fd0, &dir, &format!("0x4012 {i}"));
+                compared += 4;
+            }
+            compared += 1;
+        }
         for i in 0..n {
             for &(sym, float) in &PORTED {
                 for round in 0..3 {
-                    let (a, b) = pair.get_or_insert_with(|| fresh_run_pair(&pages, &exe, c));
+                    let (a, b) = pair.get_or_insert_with(|| r19_pair(&pages, &exe, c));
                     let w = v::atel_get_basic_work(b, i32::try_from(i).unwrap());
                     orig(a, ATEL_GET_BASIC_WORK, &[u32::try_from(i).unwrap()]);
                     let s = w + worker::STACK;

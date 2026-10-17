@@ -7025,6 +7025,7 @@
 0x0082d820 function Sg_GetExecStep            # () -> i8 0x013007b3 (set when the debug pad steps the frame count below 0); called by Sg_GetCurExecFrames, Switch name order
 0x0082d830 function Sg_GetIgnoreID            # () -> 0x023c44b4; Fahrenheit Switch BSim 1.00 0x7100427730
 0x0082d840 function Sg_GetLRButtonMode        # fh v3:bsim1.00 0x0082d8c0
+0x0082d850 function Sg_GetCameraFollow_0082d850 # () -> bit 1 of g_CameraFollow 0x00c496d5 (movsx, & 2, >> 1): the getter of Sg_SetCameraFollow (0x0082dab0) bit; native 0x4031 jumps to it; name ours
 0x0082d860 function Sg_GetPlayer              # fh v3:bsim1.00 0x0082d8e0
 0x0082d870 function Sg_GetPlayerControlEnable    # layout: alphabetical run between Sg_GetPlayer and Sg_GetPlayerPos (1 unnamed in the gap); Switch 0x7100427b20 Sg_GetPlayerControlEnable is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0082d880 function Sg_GetPlayerPos           # fh v3:exact 0x0082d900
@@ -12358,20 +12359,36 @@
 0x00a76720 function opp_part_a76720             # ours (g_MagicImports slot used by every overlay): (obj, cmd) kind 0 clears u16 rec+0xc0, kind 0x1000 calls 0x00a76770(obj, rec); returns cmd+2
 0x00a76770 function opus_0283_draw               # callees: its named callees match the Switch 0x710086ed50 opus_0283_draw's (similarity 0.82: InitVFXRenderData, MagicFile_GetMagicId, graphicVFXGetRenderDataByInstance, graphicVFXUpdate, op_m_copy); symbols from Fahrenheit's server export
 0x00a76b60 function opp_chr_fade_center_a76b60  # ours (g_MagicImports slot used by every overlay): (obj, cmd) on g_EtChrHandles[rec+0x18]: kind 0x1000 bone set 0x0080e160/0x0080e900, part matrices 0x008062c0, per bone the unit's +0x90 point through the inverse into graphicCharacterInstanceSetBTUFadeCenter (0x0063b5d0) / 1000; kind 0x2000 moves a unit by bone record 0x00803200; ported in crates/ffx-vfx slots
+0x00a77880 function Native_402b # 0x402b: (i) -> Sg_PLightGetEnable(i); ported in native_mods (script round 19); name ours
+0x00a778a0 function Native_402c # 0x402c: (i, r f): Sg_PLightSetRadius; 0; ported in native_mods (script round 19); name ours
+0x00a778e0 function Native_402d # 0x402d: (i) -> Sg_PLightGetRadius(i); ported in native_mods (script round 19); name ours
+0x00a77900 function Native_402e # 0x402e: (i, light): Sg_PLightSetLight; 0; ported in native_mods (script round 19); name ours
+0x00a77930 function Native_402f # 0x402f: (i) -> Sg_PLightGetLight(i); ported in native_mods (script round 19); name ours
+0x00a77950 function Native_4030 # 0x4030: (on): Sg_SetCameraFollow; 0; ported in native_mods (script round 19); name ours
+0x00a77970 function Native_4031 # 0x4031: jmp 0x0082d850 (no function start in the dump: runs in Rust only through the dispatch); ported in native_mods (script round 19); name ours
+0x00a77980 function Native_4032 # 0x4032: (i, a f): Sg_PLightSetAttenuation; 0; ported in native_mods (script round 19); name ours
+0x00a779c0 function Native_4033 # 0x4033: (i) -> Sg_PLightGetAttenuation(i); ported in native_mods (script round 19); name ours
 0x00a779e0 function Native_4034                # 0x4034 (float): args (v) -> Sg_SetMapAlphaFast(v) (0x00821b00); 0.0; ported in native_chr (script round 12)
+0x00a77a00 function Native_4035 # 0x4035: Sg_GetMapAlphaFast() dropped; 0.0 (no function start in the dump: runs in Rust only through the dispatch); ported in native_mods (script round 19); name ours
 0x00a77a10 function Native_4036                # 0x4036: args (x f, y f, z f) -> Sg_GlobalSetWind(x, y, z) (0x00824e30); ported in native_chr (script round 12)
+0x00a77a70 function Native_4037 # 0x4037: (x, y, z): Sg_GlobalGetWind; 0; ported in native_mods (script round 19); name ours
+0x00a77ab0 function Native_4038 # 0x4038: Sg_MemDump() (0x0083bb50: prints the memory pools and Cache_Dump), with no argument (it takes the stack's leftover); 0; debug native, not ported (script round 19); name ours
 0x00a77ac0 function Native_4039                # 0x4039 (float): args (d, c, b, a) -> Sg_AccSetClear(d, c, b, a) (0x0082bdc0); 0.0; ported in native_chr (script round 12)
 0x00a77b10 function Native_403a                # 0x403a: args (v) -> Sg_AccSetDrawChr(v) (0x0082be00); ported in native_chr (script round 12)
 0x00a77b30 function Native_FootSetMaterial       # 0x403b (index, material) -> 0; footstep material table 0x01301af8[set 0x01301b00 * 4 + index] = material (read by 0x0083d7e0)
 0x00a77b60 function Native_403c                # 0x403c: args (v f) -> Sg_SetWaterLimit(v) (0x00836660); ported in native_chr (script round 12)
 0x00a77b90 function Native_4001                # 0x4001: args (v f) -> 0: Sg_SetSuimen(v) (0x00836640); ported in native_chr (script round 12)
+0x00a77bc0 function Native_403d # 0x403d: (v): Sg_MemSetFast; 0; ported in native_mods (script round 19); name ours
 0x00a77be0 function Native_403e                # 0x403e: args (i, v f) -> Sg_PlayerSetDirFix(i, v) (0x0082d990); ported in native_chr (script round 12)
 0x00a77c20 function Native_403f                # 0x403f: no args -> 0x0082d930(); ported in native_chr (script round 12)
 0x00a77c30 function Native_SetControlAngle       # 0x4040 float (degrees) -> 0; stick-direction offset 0x01300780 = wrap(deg) + current input angle 0x013007a0 (0x0082d950), used by the player movement code 0x0082d5xx; scripts push 19, -160
+0x00a77c60 function Native_Empty_00a77c60 # 0x4041: xor eax, eax; ret (runs in Rust only through the dispatch); ported in native_mods (script round 19); name ours
+0x00a77c70 function Native_Empty_00a77c70 # 0x4042: xor eax, eax; ret (runs in Rust only through the dispatch); ported in native_mods (script round 19); name ours
 0x00a77c80 function Native_4043                # 0x4043: args (b, a) -> Ch_DrawSetShadowDir(b, a) (0x00830120); ported in native_chr (script round 12)
 0x00a77cb0 function Native_4044                # 0x4044: no args -> three popped and dropped; 0; ported in native_chr (script round 12)
 0x00a77ce0 function Native_4045                # 0x4045: args (v) -> 0x0082d9d0(v); ported in native_chr (script round 12)
 0x00a77d00 function Native_4046                # 0x4046: args (v) -> Ch_DrawSetShadowSemi(v) (0x00821b20); ported in native_chr (script round 12)
+0x00a77d20 function Native_Empty_00a77d20 # 0x4000: xor eax, eax; ret (runs in Rust only through the dispatch); ported in native_mods (script round 19); name ours
 0x00a77d30 function Atel_Sg_Flash             # fh v3:bsim1.00 0x00a77d30 +Atel_Sg_Flash
 0x00a77d80 function Native_FadeIn                # 0x4004 (frames) -> 0; Screen_StartFade(frames, 1, 0): black overlay alpha n/total -> 0
 0x00a77da0 function Native_FadeOut               # 0x4005 (frames) -> 0; Screen_StartFade(frames, 0, 0): to black and held
@@ -12386,11 +12403,15 @@
 0x00a77ef0 function Native_FadeWait_Poll         # 0x400d poll: done when fade slot 4's counter 0x0130074c is 0 (only fade in ends; follows 0x4004 in 633 of 685 calls)
 0x00a77f00 function Native_400e                # 0x400e: args (v) -> Sg_EnableCalcMap(v) (0x00820440); ported in native_chr (script round 12)
 0x00a77f20 function Native_400f                # 0x400f: args (v) -> Sg_EnableDrawMap(v) (0x00820400); ported in native_chr (script round 12)
+0x00a77f40 function Native_4010 # 0x4010: (v, a f, b f) popped; 0; ported in native_mods (script round 19); name ours
+0x00a77f70 function Native_4011 # 0x4011: (i, x, y, z f): Sg_LightSetDirXYZ; 0; ported in native_mods (script round 19); name ours
+0x00a77fd0 function Native_4012 # 0x4012: (i, x, y, z f): 0x00836400; 0; ported in native_mods (script round 19); name ours
 0x00a78030 function Native_LightSet              # 0x4013 (light, r, g, b, pitch deg, yaw deg) -> 0; Light_Set 0x00836520
 0x00a780a0 function Native_4014                # 0x4014: args (v int) -> int: Sg_EnFocus(v) (0x0082cb60); ported in native_chr (script round 12)
 0x00a780c0 function Native_4015                # 0x4015: args (b int, a int) -> 0: Sg_SetFocus(b, a) (0x0082ce20); ported in native_chr (script round 12)
 0x00a780f0 function Native_4016                # 0x4016: args (i int, v f) -> 0: 0x0082d9e0(i, v); ported in native_chr (script round 12)
 0x00a78130 function Native_4017                # 0x4017: args (b int, a int) -> 0: Sg_IdSetMapTable(b, a) (0x0083e9e0); ported in native_chr (script round 12)
+0x00a78160 function Native_4018 # 0x4018: (i) -> Sg_IdGetMapTable(i); ported in native_mods (script round 19); name ours
 0x00a78180 function Native_4019                # 0x4019: args (v int) -> 0: 0x0082bdf0(v); ported in native_chr (script round 12)
 0x00a781a0 function Native_401a                # 0x401a: args (b int, a int) -> 0: Sg_AccSetAlpha(b, a) (0x0082bd10); ported in native_chr (script round 12)
 0x00a781d0 function Native_401b                # 0x401b: args (v) -> Sg_AccSetDrawMap(v) (0x0082bcb0); ported in native_chr (script round 12)
@@ -12398,12 +12419,18 @@
 0x00a78210 function CT_401D_init              # 0x401d start (menu id): "%d:sgMenu Init", Menu_Request 0x00821750, frame counter 0x022fb4d4 = 1; was Native_MenuOpen
 0x00a78270 function Native_MenuOpen_Poll         # 0x401d poll: "%d:sgMenu Exec", waits one frame (0x022fb4d4)
 0x00a782a0 function Native_MenuOpen_Result       # 0x401d int: "%d:sgMenu Result = %d" -> 0x012fbc3c
+0x00a782c0 function Native_401e # 0x401e: Sg_Test(v) (0x008467b0: map-test setup, a sync print, a 64 KiB scratch allocation and its release); its result; debug native, not ported (script round 19); name ours
 0x00a782e0 function Native_401f                # 0x401f: no args -> 0x00840e40(); ported in native_chr (script round 12)
 0x00a782f0 function Native_4020                # 0x4020: no args -> 0: 0x00840e50(); ported in native_chr (script round 12)
+0x00a78300 function Native_4021 # 0x4021: (v) -> Sg_CacheDisposeChr(v); ported in native_mods (script round 19); name ours
 0x00a78320 function Native_4022                # 0x4022: args (v) -> Sg_SetKeepFps(v) (0x00821ae0); ported in native_chr (script round 12)
 0x00a78340 function Native_4023                # 0x4023: args (v) -> Sg_PLightAllocate(v) (0x00831950); ported in native_chr (script round 12)
 0x00a78360 function Native_4024                # 0x4024: no args -> 0x00831a30(); ported in native_chr (script round 12)
 0x00a78370 function Native_4025                # 0x4025: args (n, a f, b f, c f, d f, e, f, g, i) -> Sg_PLightDefine(n, a, b, c, d, e, f, g, i) (0x008319b0; the original's dbgPrintf is left out); ported in native_chr (script round 12)
+0x00a78450 function Native_4026 # 0x4026: (i, mask, x, y, z f): Sg_PLightSetPos; 0; ported in native_mods (script round 19); name ours
+0x00a784c0 function Native_4027 # 0x4027: (i, x, y, z): Sg_PLightGetPos; 0; ported in native_mods (script round 19); name ours
+0x00a78510 function Native_4028 # 0x4028: (i, r, g, b): Sg_PLightSetColor; 0; ported in native_mods (script round 19); name ours
+0x00a78560 function Native_4029 # 0x4029: (i, r, g, b): Sg_PLightGetColor; 0; ported in native_mods (script round 19); name ours
 0x00a785b0 function Native_402a                # 0x402a: args (b, a) -> Sg_PLightSetEnable(b, a) (0x00831c60); ported in native_chr (script round 12)
 0x00a785f0 function Native_5049                # 0x5049 (start): args (worker) -> start: the args word = that worker's model, also EAX; poll: 0 while the model in the args word has +0x736 set (or there is none), else 5; ported in native_chr (script round 12)
 0x00a78620 function Native_5049_Poll           # 0x5049 (poll): args (worker) -> start: the args word = that worker's model, also EAX; poll: 0 while the model in the args word has +0x736 set (or there is none), else 5; ported in native_chr (script round 12)

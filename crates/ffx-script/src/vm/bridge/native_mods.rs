@@ -201,6 +201,189 @@ pub fn native_101d<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     0
 }
 
+// ---- group 4: the map and lights (Sg_*) ----
+
+/// `n` popped integers, the first popped first.
+fn pops<const N: usize>(h: &mut impl NativeHost, s: u32) -> [u32; N] {
+    core::array::from_fn(|_| pop(h, s))
+}
+
+/// `(v)` -> `f(v)`'s `EAX`.
+fn one<H: NativeHost>(h: &mut H, s: u32, f: u32) -> u32 {
+    let v = pop(h, s);
+    call(h, f, &[v])
+}
+
+/// `(v)`: `f(v)`; 0.
+fn one0<H: NativeHost>(h: &mut H, s: u32, f: u32) -> u32 {
+    one(h, s, f);
+    0
+}
+
+/// `(i, v f)`: `f(i, v)`; 0.
+fn int_float0<H: NativeHost>(h: &mut H, s: u32, f: u32) -> u32 {
+    let v = popf(h, s);
+    let i = pop(h, s);
+    call(h, f, &[i, v]);
+    0
+}
+
+/// `(d, c, b, a)`: `f(d, c, b, a)`; 0.
+fn four0<H: NativeHost>(h: &mut H, s: u32, f: u32) -> u32 {
+    let [p1, p2, p3, p4] = pops::<4>(h, s);
+    call(h, f, &[p4, p3, p2, p1]);
+    0
+}
+
+/// `0x402b` (`0x00a77880`): `(i)` -> `Sg_PLightGetEnable(i)` (`0x00831ad0`).
+pub fn native_402b<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    one(h, s, 0x0083_1ad0)
+}
+
+/// `0x402c` (`0x00a778a0`): `(i, r f)`: `Sg_PLightSetRadius(i, r)`
+/// (`0x00831ce0`); 0.
+pub fn native_402c<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    int_float0(h, s, 0x0083_1ce0)
+}
+
+/// `0x402d` (`0x00a778e0`, float): `(i)` -> `Sg_PLightGetRadius(i)`
+/// (`0x00831b80`).
+pub fn native_402d<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> f64 {
+    let i = pop(h, s);
+    callf(h, 0x0083_1b80, &[i])
+}
+
+/// `0x402e` (`0x00a77900`): `(i, light)`: `Sg_PLightSetLight(i, light)`
+/// (`0x00831c80`); 0.
+pub fn native_402e<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let [l, i] = pops::<2>(h, s);
+    call(h, 0x0083_1c80, &[i, l]);
+    0
+}
+
+/// `0x402f` (`0x00a77930`): `(i)` -> `Sg_PLightGetLight(i)` (`0x00831b00`).
+pub fn native_402f<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    one(h, s, 0x0083_1b00)
+}
+
+/// `0x4030` (`0x00a77950`): `(on)`: `Sg_SetCameraFollow(on)`
+/// (`0x0082dab0`); 0.
+pub fn native_4030<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    one0(h, s, 0x0082_dab0)
+}
+
+/// `0x4031` (`0x00a77970`): a jump to `Sg_GetCameraFollow_0082d850()`
+/// (bit 1 of `g_CameraFollow` `0x00c496d5`, `Sg_SetCameraFollow`'s; it
+/// takes no arguments).
+pub fn native_4031<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    call(h, 0x0082_d850, &[])
+}
+
+/// `0x4032` (`0x00a77980`): `(i, a f)`: `Sg_PLightSetAttenuation(i, a)`
+/// (`0x00831bf0`); 0.
+pub fn native_4032<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    int_float0(h, s, 0x0083_1bf0)
+}
+
+/// `0x4033` (`0x00a779c0`, float): `(i)` -> `Sg_PLightGetAttenuation(i)`
+/// (`0x00831a40`).
+pub fn native_4033<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> f64 {
+    let i = pop(h, s);
+    callf(h, 0x0083_1a40, &[i])
+}
+
+/// `0x4035` (`0x00a77a00`, float): `Sg_GetMapAlphaFast()` (`0x008205d0`),
+/// dropped; 0.0.
+pub fn native_4035<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> f64 {
+    call(h, 0x0082_05d0, &[]);
+    0.0
+}
+
+/// `0x4037` (`0x00a77a70`): `(x, y, z)`: `Sg_GlobalGetWind(x, y, z)`
+/// (`0x00824dd0`, the popped words as they are); 0.
+pub fn native_4037<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let [p1, p2, p3] = pops::<3>(h, s);
+    call(h, 0x0082_4dd0, &[p3, p2, p1]);
+    0
+}
+
+/// `0x403d` (`0x00a77bc0`): `(v)`: `Sg_MemSetFast(v)` (`0x0083c520`); 0.
+pub fn native_403d<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    one0(h, s, 0x0083_c520)
+}
+
+/// `0x4000`, `0x4041`, `0x4042` (`0x00a77d20`, `0x00a77c60`,
+/// `0x00a77c70`): empty handlers (`xor eax, eax; ret`); 0.
+pub fn native_empty<H: NativeHost>(_h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    0
+}
+
+/// `0x4010` (`0x00a77f40`): `(v, a f, b f)`: all three popped and
+/// dropped; 0.
+pub fn native_4010<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    pop_st0(h, s);
+    pop_st0(h, s);
+    pop(h, s);
+    0
+}
+
+/// `(i, x f, y f, z f)`: `f(i, x, y, z)`; 0.
+fn int_xyz0<H: NativeHost>(h: &mut H, s: u32, f: u32) -> u32 {
+    let [p1, p2, p3] = popfs::<3>(h, s);
+    let i = pop(h, s);
+    call(h, f, &[i, p3, p2, p1]);
+    0
+}
+
+/// `0x4011` (`0x00a77f70`): `(i, x f, y f, z f)`: `Sg_LightSetDirXYZ(i,
+/// x, y, z)` (`0x008364f0`); 0.
+pub fn native_4011<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    int_xyz0(h, s, 0x0083_64f0)
+}
+
+/// `0x4012` (`0x00a77fd0`): `(i, x f, y f, z f)`: `0x00836400(i, x, y,
+/// z)`; 0.
+pub fn native_4012<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    int_xyz0(h, s, 0x0083_6400)
+}
+
+/// `0x4018` (`0x00a78160`): `(i)` -> `Sg_IdGetMapTable(i)` (`0x0083e960`).
+pub fn native_4018<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    one(h, s, 0x0083_e960)
+}
+
+/// `0x4021` (`0x00a78300`): `(v)` -> `Sg_CacheDisposeChr(v)` (`0x00840e60`).
+pub fn native_4021<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    one(h, s, 0x0084_0e60)
+}
+
+/// `0x4026` (`0x00a78450`): `(i, mask, x f, y f, z f)`:
+/// `Sg_PLightSetPos(i, mask, x, y, z)` (`0x00831ca0`); 0.
+pub fn native_4026<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let [p1, p2, p3] = popfs::<3>(h, s);
+    let [m, i] = pops::<2>(h, s);
+    call(h, 0x0083_1ca0, &[i, m, p3, p2, p1]);
+    0
+}
+
+/// `0x4027` (`0x00a784c0`): `(i, x, y, z)`: `Sg_PLightGetPos(i, x, y, z)`
+/// (`0x00831b30`, the popped words as they are); 0.
+pub fn native_4027<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    four0(h, s, 0x0083_1b30)
+}
+
+/// `0x4028` (`0x00a78510`): `(i, r, g, b)`: `Sg_PLightSetColor(i, r, g,
+/// b)` (`0x00831c10`); 0.
+pub fn native_4028<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    four0(h, s, 0x0083_1c10)
+}
+
+/// `0x4029` (`0x00a78560`): `(i, r, g, b)`: `Sg_PLightGetColor(i, r, g,
+/// b)` (`0x00831a60`, the popped words as they are); 0.
+pub fn native_4029<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    four0(h, s, 0x0083_1a60)
+}
+
 /// The Rust version of a round-19 handler, if there is one.
 #[must_use]
 pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
@@ -224,12 +407,34 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x0087_7ef0 => Float(native_1017),
         0x0087_7f60 => Float(native_1018),
         0x0087_8110 => Int(native_101d),
+        0x00a7_7880 => Int(native_402b),
+        0x00a7_78a0 => Int(native_402c),
+        0x00a7_78e0 => Float(native_402d),
+        0x00a7_7900 => Int(native_402e),
+        0x00a7_7930 => Int(native_402f),
+        0x00a7_7950 => Int(native_4030),
+        0x00a7_7970 => Int(native_4031),
+        0x00a7_7980 => Int(native_4032),
+        0x00a7_79c0 => Float(native_4033),
+        0x00a7_7a00 => Float(native_4035),
+        0x00a7_7a70 => Int(native_4037),
+        0x00a7_7bc0 => Int(native_403d),
+        0x00a7_7d20 | 0x00a7_7c60 | 0x00a7_7c70 => Int(native_empty),
+        0x00a7_7f40 => Int(native_4010),
+        0x00a7_7f70 => Int(native_4011),
+        0x00a7_7fd0 => Int(native_4012),
+        0x00a7_8160 => Int(native_4018),
+        0x00a7_8300 => Int(native_4021),
+        0x00a7_8450 => Int(native_4026),
+        0x00a7_84c0 => Int(native_4027),
+        0x00a7_8510 => Int(native_4028),
+        0x00a7_8560 => Int(native_4029),
         _ => return None,
     })
 }
 
 /// Every handler [`find`] knows, and whether it returns a float.
-pub const PORTED: [(u32, bool); 18] = [
+pub const PORTED: [(u32, bool); 42] = [
     (0x0087_78d0, false),
     (0x0087_78f0, false),
     (0x0087_7920, false),
@@ -248,4 +453,28 @@ pub const PORTED: [(u32, bool); 18] = [
     (0x0087_7ef0, true),
     (0x0087_7f60, true),
     (0x0087_8110, false),
+    (0x00a7_7880, false),
+    (0x00a7_78a0, false),
+    (0x00a7_78e0, true),
+    (0x00a7_7900, false),
+    (0x00a7_7930, false),
+    (0x00a7_7950, false),
+    (0x00a7_7970, false),
+    (0x00a7_7980, false),
+    (0x00a7_79c0, true),
+    (0x00a7_7a00, true),
+    (0x00a7_7a70, false),
+    (0x00a7_7bc0, false),
+    (0x00a7_7d20, false),
+    (0x00a7_7c60, false),
+    (0x00a7_7c70, false),
+    (0x00a7_7f40, false),
+    (0x00a7_7f70, false),
+    (0x00a7_7fd0, false),
+    (0x00a7_8160, false),
+    (0x00a7_8300, false),
+    (0x00a7_8450, false),
+    (0x00a7_84c0, false),
+    (0x00a7_8510, false),
+    (0x00a7_8560, false),
 ];

@@ -659,6 +659,17 @@ and the vector natives `0x1011`-`0x1018` over `Math_Atan2XZ`,
 `Math_YawPitchTo`, `Math_AngleStep`, `Math_InRadius`, `TkMtCalcSpline` and
 `0x0088a3a0`, whose variable arguments go through `AtelGetRealVarAdrs`.
 
+Group 4's map and light natives (`0x4010`-`0x403d`) forward to the `Sg_`
+point lights (`Sg_PLight*`: enable, radius, light, attenuation, position
+with its component mask, colour), `Sg_LightSetDirXYZ`, the camera follow
+bit, the wind and the id tables; the getters that take popped words as
+out pointers (`0x4027`, `0x4029`, `0x4037`) hand them on unchanged, so a
+mod passes real addresses. `0x4000`, `0x4041` and `0x4042` are empty
+handlers (`xor eax, eax; ret`) and, with `0x4031` and `0x4035`, run in
+Rust only through the dispatch. `0x4038` (`Sg_MemDump`, a memory report)
+and `0x401e` (`Sg_Test`, map-test setup and a scratch allocation) are
+debug natives, listed in the table and not ported.
+
 Debug natives and debug-only code are not ported. In this build
 `dbgPrintf` (`0x0062f500`) is a bare `ret` and `TkIsDebug` (`0x00887d10`)
 returns 0, so leaving them out changes nothing: the round-11 ports drop
@@ -1172,6 +1183,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0x101b` | `Native_101b` | x1 f, y1 f, z1 f, x2 f, y2 f, z2 f | float: the 3D distance, as 0x101a | - | float `0x00878060` (native_chr) |
 | `0x101c` | `Native_101c` | - | 0x00878140(worker, args, stack)'s record +4 = 0; 0 | - | int `0x008780f0` (native_chr) |
 | `0x101d` | `Native_101d` | as 0x00878140 | 0: 0x00878140(worker, args, stack)'s record +4 = 1 (0x101c sets 0) | - | int `0x00878110` (native_mods) |
+| `0x4000` | `Native_Empty_00a77d20` | - | 0 (an empty handler) | - | int `0x00a77d20` (native_mods) |
 | `0x4001` | `Native_4001` | v f | 0: Sg_SetSuimen(v) (0x00836640) | - | int `0x00a77b90` (native_chr) |
 | `0x4003` | `Atel_Sg_Flash` | d int, c int, b int, a int | 0: Sg_Flash(d, c, b, a) (0x0082cca0) | - | int `0x00a77d30` (native_chr) |
 | `0x4004` | `Native_FadeIn` | frames int | 0 (fade in) | - | int `0x00a77d80` (native_move) |
@@ -1186,32 +1198,57 @@ API is generated from this table. `-`: none. A result starting with
 | `0x400d` | `Native_FadeWait` | - | - (start: a bare ret) | until 0x0082cc10() is 0 | start `0x00a77ee0`, poll `0x00a77ef0` (native_chr) |
 | `0x400e` | `Native_400e` | v | Sg_EnableCalcMap(v) (0x00820440) | - | int `0x00a77f00` (native_chr) |
 | `0x400f` | `Native_400f` | v | Sg_EnableDrawMap(v) (0x00820400) | - | int `0x00a77f20` (native_chr) |
+| `0x4010` | `Native_4010` | v int, a f, b f | 0 (the three popped and dropped) | - | int `0x00a77f40` (native_mods) |
+| `0x4011` | `Native_4011` | i int, x f, y f, z f | 0: Sg_LightSetDirXYZ(i, x, y, z) (0x008364f0) | - | int `0x00a77f70` (native_mods) |
+| `0x4012` | `Native_4012` | i int, x f, y f, z f | 0: 0x00836400(i, x, y, z) | - | int `0x00a77fd0` (native_mods) |
 | `0x4013` | `Native_LightSet` | light int (0-3), r int, g int, b int, pitch int (deg), yaw int (deg) | 0 | - | int `0x00a78030` (native_move) |
 | `0x4014` | `Native_4014` | v int | int: Sg_EnFocus(v) (0x0082cb60) | - | int `0x00a780a0` (native_chr) |
 | `0x4015` | `Native_4015` | b int, a int | 0: Sg_SetFocus(b, a) (0x0082ce20) | - | int `0x00a780c0` (native_chr) |
 | `0x4016` | `Native_4016` | i int, v f | 0: 0x0082d9e0(i, v) | - | int `0x00a780f0` (native_chr) |
 | `0x4017` | `Native_4017` | b int, a int | 0: Sg_IdSetMapTable(b, a) (0x0083e9e0) | - | int `0x00a78130` (native_chr) |
+| `0x4018` | `Native_4018` | i int | int: Sg_IdGetMapTable(i) (0x0083e960) | - | int `0x00a78160` (native_mods) |
 | `0x4019` | `Native_4019` | v int | 0: 0x0082bdf0(v) | - | int `0x00a78180` (native_chr) |
 | `0x401a` | `Native_401a` | b int, a int | 0: Sg_AccSetAlpha(b, a) (0x0082bd10) | - | int `0x00a781a0` (native_chr) |
 | `0x401b` | `Native_401b` | v | Sg_AccSetDrawMap(v) (0x0082bcb0) | - | int `0x00a781d0` (native_chr) |
 | `0x401c` | `Native_401c` | v | Sg_AccEnableBG(v) (0x0082be10) | - | int `0x00a781f0` (native_chr) |
 | `0x401d` | `Native_MenuOpen` | menu int | the start's result; poll 1 when done; int slot the menu result (0x00821740) | one frame (g_MenuWaitFrames) | start `0x00a78210`, poll `0x00a78270`, int `0x00a782a0` (native_move) |
+| `0x401e` | `Native_401e` | v int | debug (mod-tool candidate): Sg_Test(v) (0x008467b0: map-test setup, a sync print, a 64 KiB scratch allocation and its release); its result | - | int `0x00a782c0` (not ported) |
 | `0x401f` | `Native_401f` | - | 0x00840e40() | - | int `0x00a782e0` (native_chr) |
 | `0x4020` | `Native_4020` | - | 0: 0x00840e50() | - | int `0x00a782f0` (native_chr) |
+| `0x4021` | `Native_4021` | v int | int: Sg_CacheDisposeChr(v) (0x00840e60) | - | int `0x00a78300` (native_mods) |
 | `0x4022` | `Native_4022` | v | Sg_SetKeepFps(v) (0x00821ae0) | - | int `0x00a78320` (native_chr) |
 | `0x4023` | `Native_4023` | v | Sg_PLightAllocate(v) (0x00831950) | - | int `0x00a78340` (native_chr) |
 | `0x4024` | `Native_4024` | - | 0x00831a30() | - | int `0x00a78360` (native_chr) |
 | `0x4025` | `Native_4025` | n, a f, b f, c f, d f, e, f, g, i | Sg_PLightDefine(n, a, b, c, d, e, f, g, i) (0x008319b0; the original's dbgPrintf is left out) | - | int `0x00a78370` (native_chr) |
+| `0x4026` | `Native_4026` | i int, mask int, x f, y f, z f | 0: Sg_PLightSetPos(i, mask, x, y, z) (0x00831ca0) | - | int `0x00a78450` (native_mods) |
+| `0x4027` | `Native_4027` | i int, x int, y int, z int | 0: Sg_PLightGetPos(i, x, y, z) (0x00831b30) with the popped words as they are | - | int `0x00a784c0` (native_mods) |
+| `0x4028` | `Native_4028` | i int, r int, g int, b int | 0: Sg_PLightSetColor(i, r, g, b) (0x00831c10) | - | int `0x00a78510` (native_mods) |
+| `0x4029` | `Native_4029` | i int, r int, g int, b int | 0: Sg_PLightGetColor(i, r, g, b) (0x00831a60) with the popped words as they are | - | int `0x00a78560` (native_mods) |
 | `0x402a` | `Native_402a` | b, a | Sg_PLightSetEnable(b, a) (0x00831c60) | - | int `0x00a785b0` (native_chr) |
+| `0x402b` | `Native_402b` | i int | int: Sg_PLightGetEnable(i) (0x00831ad0) | - | int `0x00a77880` (native_mods) |
+| `0x402c` | `Native_402c` | i int, r f | 0: Sg_PLightSetRadius(i, r) (0x00831ce0) | - | int `0x00a778a0` (native_mods) |
+| `0x402d` | `Native_402d` | i int | float: Sg_PLightGetRadius(i) (0x00831b80) | - | float `0x00a778e0` (native_mods) |
+| `0x402e` | `Native_402e` | i int, light int | 0: Sg_PLightSetLight(i, light) (0x00831c80) | - | int `0x00a77900` (native_mods) |
+| `0x402f` | `Native_402f` | i int | int: Sg_PLightGetLight(i) (0x00831b00) | - | int `0x00a77930` (native_mods) |
+| `0x4030` | `Native_4030` | on int | 0: Sg_SetCameraFollow(on) (0x0082dab0) | - | int `0x00a77950` (native_mods) |
+| `0x4031` | `Native_4031` | - | int: Sg_GetCameraFollow_0082d850() (a jump; bit 1 of g_CameraFollow 0x00c496d5) | - | int `0x00a77970` (native_mods) |
+| `0x4032` | `Native_4032` | i int, a f | 0: Sg_PLightSetAttenuation(i, a) (0x00831bf0) | - | int `0x00a77980` (native_mods) |
+| `0x4033` | `Native_4033` | i int | float: Sg_PLightGetAttenuation(i) (0x00831a40) | - | float `0x00a779c0` (native_mods) |
 | `0x4034` | `Native_4034` | v | Sg_SetMapAlphaFast(v) (0x00821b00); 0.0 | - | float `0x00a779e0` (native_chr) |
+| `0x4035` | `Native_4035` | - | 0.0 (Sg_GetMapAlphaFast() (0x008205d0) called, its value dropped) | - | float `0x00a77a00` (native_mods) |
 | `0x4036` | `Native_4036` | x f, y f, z f | Sg_GlobalSetWind(x, y, z) (0x00824e30) | - | int `0x00a77a10` (native_chr) |
+| `0x4037` | `Native_4037` | x int, y int, z int | 0: Sg_GlobalGetWind(x, y, z) (0x00824dd0) with the popped words as they are | - | int `0x00a77a70` (native_mods) |
+| `0x4038` | `Native_4038` | - | debug (mod-tool candidate): Sg_MemDump() (0x0083bb50: prints the memory pools and Cache_Dump), with no argument (it takes the stack's leftover); 0 | - | int `0x00a77ab0` (not ported) |
 | `0x4039` | `Native_4039` | d, c, b, a | Sg_AccSetClear(d, c, b, a) (0x0082bdc0); 0.0 | - | float `0x00a77ac0` (native_chr) |
 | `0x403a` | `Native_403a` | v | Sg_AccSetDrawChr(v) (0x0082be00) | - | int `0x00a77b10` (native_chr) |
 | `0x403b` | `Native_FootSetMaterial` | index int, material int | 0: Sg_IdSetEffectTable(index, material) (0x0083e9b0) | - | int `0x00a77b30` (native_chr) |
 | `0x403c` | `Native_403c` | v f | Sg_SetWaterLimit(v) (0x00836660) | - | int `0x00a77b60` (native_chr) |
+| `0x403d` | `Native_403d` | v int | 0: Sg_MemSetFast(v) (0x0083c520) | - | int `0x00a77bc0` (native_mods) |
 | `0x403e` | `Native_403e` | i, v f | Sg_PlayerSetDirFix(i, v) (0x0082d990) | - | int `0x00a77be0` (native_chr) |
 | `0x403f` | `Native_403f` | - | 0x0082d930() | - | int `0x00a77c20` (native_chr) |
 | `0x4040` | `Native_SetControlAngle` | degrees f | 0: 0x0082d950(degrees) | - | int `0x00a77c30` (native_chr) |
+| `0x4041` | `Native_Empty_00a77c60` | - | 0 (an empty handler) | - | int `0x00a77c60` (native_mods) |
+| `0x4042` | `Native_Empty_00a77c70` | - | 0 (an empty handler) | - | int `0x00a77c70` (native_mods) |
 | `0x4043` | `Native_4043` | b, a | Ch_DrawSetShadowDir(b, a) (0x00830120) | - | int `0x00a77c80` (native_chr) |
 | `0x4044` | `Native_4044` | - | three popped and dropped; 0 | - | int `0x00a77cb0` (native_chr) |
 | `0x4045` | `Native_4045` | v | 0x0082d9d0(v) | - | int `0x00a77ce0` (native_chr) |
