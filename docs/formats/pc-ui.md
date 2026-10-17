@@ -169,6 +169,11 @@ Tests are strict (`<`) on all four edges; any NaN misses.
   inside and held, else 4; kind 3 (release) moves phase 1 to 2 when
   outside, sets 4, `+0x17`, the end position and the drag.
 
+`GuiTouch_initGroup(group)` (`0x0068a420`, fastcall) empties a button
+group: `+0` (`u16`), `+4`, `+0x1c4` (`u32`) zero; in each button the
+rectangle, `+0x10`, `+0x16`, `+0x18` and `+0x34` zero and the `u16` at
+`+0x14` 0xff (no pointer); the drag fields stay.
+
 ## Speed-up booster
 
 `SpdCtrl_ScaleElapsedTime` (`0x006f7340`, Fahrenheit's name) scales the
@@ -289,6 +294,43 @@ no input while its low byte is set), entries of 12 bytes at `+0x40`
 - Sounds are `SndSepPlaySimple(0x80000001)` unless stated. `i16`
   arithmetic wraps; the comparisons are signed, some in 32 bits as the
   original does them.
+
+## Sphere grid links
+
+The outlines of the links between nodes (Fahrenheit's names;
+`ffx_pcui::link`). Both normalise through the emulated VU0 as the PS2
+code did: `vf09` (`0x00c8f810`) = offset + `vf00` (`vf00.z + 0` third),
+`vf10` (`0x00c8f830`) gets the squares in place (`x²`, `y²`, `0·0`,
+`x² + y²` over `vf10.y`... as in the node searches), `sqrt|sum|`
+(`_CIsqrt`) + `vf00.x` over `vf10.x` is the length, `Q = vf00.w /
+length` (`g_Vu0_Q`), the unit `vf09 * Q` over `0x00c8f820`. The scratch
+keeps the last normalisation.
+
+- `AbmapCalcLinkPointsStraight(out, a, b, ra, rb, kind)` (`0x00a581f0`):
+  `*kind` = 2; `u` the unit of `b - a`; `a += ra u`, `b -= rb u` (both
+  written back); `out` gets `a, (uy, -ux), (-uy, ux)` then the same at
+  `b` (12 floats); returns `out + 0x30`.
+- `AbmapCalcLinkPointsCurved(out, a, b, c, ra, rb, kind)` (`0x00a57710`):
+  around the centre `c`: `ang = _CIatan2` of `a - c` and `b - c` (stored
+  as floats), `R1 = |a - c|`, `R2 = |b - c|` (VU0 lengths). `diff = ang2 -
+  ang1` (float) brought within ±pi when `ang1 <= ang2` and `diff > pi`
+  (less 2pi) or otherwise `diff < -pi` (plus 2pi), pi being `f32` pi as a
+  double (`0x00b92288`, `0x00b39378`, `0x00b5c008`). For `diff > 0`:
+  `start = ang1 + ra/R1`, `sweep = diff - ra/R1 - rb/R2`, else `start =
+  ang1 - ra/R1`, `sweep = ra/R1 + diff + rb/R2` (stored once each). `n =
+  clamp(i16(ftol(|(R2 + R1) sweep| / 20)), 2, 6)`, `step = 1/(n + 1)`,
+  `dang = sweep step`, `drad = (R2 - R1) step`. Points: `a`, then `n + 2`
+  points at radius `R1 + k drad` and angle `start + k dang` (each stored)
+  from `g_pppSinTable` (index `ftol(angle * 32768 / pi) & 0xffff`, sine
+  `>> 4`, cosine `+ 0x4000` first), then `b`. For each of the `n + 2`
+  inner points: the units from the previous point and to the next one
+  (normalised without storing `Q`), summed, normalised; the row is
+  `(point, (uy, -ux), (-uy, ux))`. `*kind = n + 2`; returns the end of the
+  rows (the caller `0x00a5a8e0` returns it).
+
+`AbmapPadActivateHandler` (`0x00a56160`, name ours) is the handler of the
+panel that asks whether to keep nodes just activated: see its `ffx.sym`
+line and `ffx_pcui::panel::bridge::activate_handler`.
 
 ## Left original
 

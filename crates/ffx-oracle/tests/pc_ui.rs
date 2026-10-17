@@ -19,6 +19,7 @@ use ffx_pcui::abmap::bridge as abmap;
 use ffx_pcui::cursor::bridge as cursor;
 use ffx_pcui::iggy::bridge as iggy;
 use ffx_pcui::item::bridge as item;
+use ffx_pcui::link::bridge as link;
 use ffx_pcui::panel::bridge as panel;
 use ffx_pcui::sea::bridge as sea;
 use ffx_pcui::spdctrl::bridge as spdctrl;
@@ -44,6 +45,10 @@ const SPD_CTRL_IS_MAGIC_EXCLUDED: u32 = 0x006f_6ff0;
 const ABMAP_READ_CURSOR_STICK: u32 = 0x00a5_6bd0;
 const ABMAP_FIND_NEAREST_NODE: u32 = 0x00a5_6a40;
 const ABMAP_FIND_NODE_IN_DIRECTION: u32 = 0x00a5_6860;
+const ABMAP_CALC_LINK_POINTS_STRAIGHT: u32 = 0x00a5_81f0;
+const ABMAP_CALC_LINK_POINTS_CURVED: u32 = 0x00a5_7710;
+const ABMAP_PAD_ACTIVATE_HANDLER: u32 = 0x00a5_6160;
+const GUI_TOUCH_INIT_GROUP: u32 = 0x0068_a420;
 const ABMAP_PAD_CTRL: u32 = 0x00a5_83e0;
 const MENU_ITEM_PARSE_TARGET_KEYS: u32 = 0x008c_5320;
 const MENU_ITEM_DRAW_ROW: u32 = 0x008c_9a70;
@@ -1628,6 +1633,246 @@ fn abmap_find_node_in_direction_matches_the_original() {
                 Conv::Cdecl,
                 &[pos, dir, f],
                 |o| Res::Int(cursor::find_node_in_direction(&mut Run(o), pos, dir, f)),
+            );
+        }
+    }
+}
+
+#[test]
+fn abmap_calc_link_points_straight_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_0108);
+        let out = t.alloc(0x40);
+        let ends = t.alloc(0x10);
+        let kind = t.alloc(4);
+        let vf00 = t.a.rebase(cursor::VU0_VF00.sym);
+        for n in 0..3000u32 {
+            t.put(out, &rng.bytes(0x40));
+            t.put(kind, &rng.bytes(4));
+            let mut p: Vec<f32> = (0..4).map(|_| grid_float(&mut rng)).collect();
+            match n % 10 {
+                // the same point: length 0
+                0 => (p[2], p[3]) = (p[0], p[1]),
+                1 => p[2] = p[0],
+                _ => {}
+            }
+            let v: Vec<u8> = p.iter().flat_map(|f| f.to_le_bytes()).collect();
+            t.put(ends, &v);
+            let (a, b) = (ends, ends + 8);
+            // vf00 is (0, 0, 0, 1) in the game; other values now and then
+            let regs = if rng.below(4) == 0 {
+                [
+                    tag_float(&mut rng),
+                    tag_float(&mut rng),
+                    tag_float(&mut rng),
+                    tag_float(&mut rng),
+                ]
+            } else {
+                [0.0, 0.0, 0.0, 1.0]
+            };
+            let r: Vec<u8> = regs.iter().flat_map(|f| f.to_le_bytes()).collect();
+            t.put(vf00, &r);
+            let (ra, rb) = (tag_float(&mut rng), tag_float(&mut rng));
+            let args = [out, a, b, ra.to_bits(), rb.to_bits(), kind];
+            t.check(
+                &format!("straight {n} {p:?} {ra} {rb} {regs:?}"),
+                ABMAP_CALC_LINK_POINTS_STRAIGHT,
+                Conv::Cdecl,
+                &args,
+                |o| Res::Int(link::calc_link_points_straight(o, out, a, b, ra, rb, kind)),
+            );
+        }
+    }
+}
+
+/// `fpatan; ret` behind `_CIatan2`'s import slot in both oracles (the
+/// oracle has no stand-in for it; the CRT computes it the same way at 53
+/// bits), and a thunk running it on two doubles in memory for the bridge:
+/// returns (thunk, data: y, x, then the f32 result).
+fn atan2_stand_in(t: &mut Twin) -> (u32, u32) {
+    let code = [0xd9, 0xf3, 0xc3];
+    let f = t.a.alloc_code(&code).unwrap();
+    assert_eq!(t.b.alloc_code(&code).unwrap(), f);
+    let slot = t.a.rebase(link::CI_ATAN2_SLOT);
+    t.put(slot, &f.to_le_bytes());
+    let data = t.alloc(0x14);
+    t.put(data, &[0; 0x14]);
+    let mut c = vec![0xdd, 0x05]; // fld qword [y]
+    c.extend(data.to_le_bytes());
+    c.extend([0xdd, 0x05]); // fld qword [x]
+    c.extend((data + 8).to_le_bytes());
+    c.extend([0xff, 0x15]); // call [slot]
+    c.extend(slot.to_le_bytes());
+    c.extend([0xd9, 0x1d]); // fstp dword [out]
+    c.extend((data + 0x10).to_le_bytes());
+    c.push(0xc3);
+    let thunk = t.a.alloc_code(&c).unwrap();
+    assert_eq!(t.b.alloc_code(&c).unwrap(), thunk);
+    (thunk, data)
+}
+
+/// The bridge's `atan2` in the second oracle: the stand-in through the
+/// thunk, its scratch cleared after.
+fn oracle_atan2(thunk: u32, data: u32) -> impl FnMut(&mut Oracle, f64, f64) -> f32 {
+    move |m, y, x| {
+        Mem::write(m, data, y);
+        Mem::write(m, data + 8, x);
+        m.call(thunk, Conv::Cdecl, &[]).unwrap();
+        let r: f32 = Mem::read(m, data + 0x10);
+        Mem::write(m, data, [0u32; 5]);
+        r
+    }
+}
+
+#[test]
+fn abmap_calc_link_points_curved_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_0109);
+        let (thunk, data) = atan2_stand_in(&mut t);
+        let out = t.alloc(0x100);
+        let ends = t.alloc(0x18);
+        let kind = t.alloc(4);
+        let vf00 = t.a.rebase(cursor::VU0_VF00.sym);
+        // the image never ran the start-up code that fills the sines
+        let sines = t.a.rebase(link::SIN_TABLE);
+        let quarter: f32 = t.b.read(sines + 4 * 0x400);
+        if quarter == 0.0 {
+            let v: Vec<u8> = (0..0x1000)
+                .flat_map(|_| tag_float(&mut rng).to_le_bytes())
+                .collect();
+            t.put(sines, &v);
+        }
+        for n in 0..2000u32 {
+            t.put(out, &rng.bytes(0x100));
+            t.put(kind, &rng.bytes(4));
+            let mut p: Vec<f32> = (0..6).map(|_| grid_float(&mut rng)).collect();
+            match n % 10 {
+                // an end on the centre, both ends alike
+                0 => (p[4], p[5]) = (p[0], p[1]),
+                1 => (p[2], p[3]) = (p[0], p[1]),
+                // the ends at angles 0 and pi (f32): a difference of
+                // exactly +-pi stays
+                2 => p = vec![10.0, 0.0, -10.0, 0.0, 0.0, 0.0],
+                3 => p = vec![-10.0, 0.0, 10.0, 0.0, 0.0, 0.0],
+                _ => {}
+            }
+            let v: Vec<u8> = p.iter().flat_map(|f| f.to_le_bytes()).collect();
+            t.put(ends, &v);
+            let pts = [ends, ends + 8, ends + 16];
+            let regs = if rng.below(4) == 0 {
+                [
+                    tag_float(&mut rng),
+                    tag_float(&mut rng),
+                    tag_float(&mut rng),
+                    tag_float(&mut rng),
+                ]
+            } else {
+                [0.0, 0.0, 0.0, 1.0]
+            };
+            let r: Vec<u8> = regs.iter().flat_map(|f| f.to_le_bytes()).collect();
+            t.put(vf00, &r);
+            let (ra, rb) = if rng.below(4) == 0 {
+                (tag_float(&mut rng), tag_float(&mut rng))
+            } else {
+                #[allow(clippy::cast_precision_loss)]
+                let r = |rng: &mut Xorshift| rng.below(400) as f32 / 10.0;
+                (r(&mut rng), r(&mut rng))
+            };
+            let args = [
+                out,
+                pts[0],
+                pts[1],
+                pts[2],
+                ra.to_bits(),
+                rb.to_bits(),
+                kind,
+            ];
+            t.check(
+                &format!("curved {n} {p:?} {ra} {rb} {regs:?}"),
+                ABMAP_CALC_LINK_POINTS_CURVED,
+                Conv::Cdecl,
+                &args,
+                |o| {
+                    Res::Int(link::calc_link_points_curved(
+                        o,
+                        out,
+                        pts,
+                        ra,
+                        rb,
+                        kind,
+                        oracle_atan2(thunk, data),
+                    ))
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn gui_touch_init_group_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_010a);
+        let group = t.alloc(0x1d0);
+        for n in 0..20 {
+            t.put(group, &rng.bytes(0x1d0));
+            t.check(
+                &format!("init group {n}"),
+                GUI_TOUCH_INIT_GROUP,
+                Conv::Fastcall,
+                &[group],
+                |o| {
+                    touch::init_group(o, group);
+                    Res::Void
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn abmap_pad_activate_handler_matches_the_original() {
+    for mut t in twins() {
+        let mut rng = Xorshift(0x00ab_010b);
+        let log = Log::new(&mut t);
+        let none = (0, 0, 0);
+        log.stub(&mut t, panel::ABMAP_RESET_HELP, 1, 0, none);
+        log.stub(&mut t, abmap::SND_SEP_PLAY_SIMPLE, 2, 1, none);
+        log.stub(&mut t, panel::SPEND_SLV, 3, 2, none);
+        log.stub(&mut t, panel::ABMAP_SET_CHR_MARKER, 4, 1, none);
+        log.stub(&mut t, panel::ABMAP_POSITION_PLY_TAG, 5, 1, none);
+        log.stub(&mut t, abmap::ABMAP_RESET_CURSOR_CAMERA, 6, 0, none);
+        log.stub(&mut t, abmap::ABMAP_INIT_HOMING, 7, 2, none);
+        let pads = t.alloc(0x2800);
+        let at = t.a.rebase(panel::PAD.sym);
+        t.put(at, &pads.to_le_bytes());
+        let g = made_up_abmap(&mut t, &mut rng, 0x11700);
+        for n in 0..600u32 {
+            log.rewind(&mut t);
+            t.put(pads + 0x1600, &rng.bytes(0x800));
+            t.put(g + 0xa800, &rng.bytes(0x14 * 82));
+            t.put(g + 0x1_1000, &rng.bytes(0x700));
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                let links = [0u16, 1, rng.below(80) as u16][n as usize % 3];
+                t.put(g + 4, &links.to_le_bytes());
+                t.put(g + 0x1_1638, &[rng.below(18) as u8]);
+                if rng.below(2) == 0 {
+                    t.put(g + 0x1_15bc, &[rng.below(8) as u8]);
+                }
+            }
+            match rng.below(3) {
+                0 => t.put(g + 0x1_15b0, &[0; 4]),
+                1 => t.put(g + 0x1_15b0, &0x100u32.to_le_bytes()),
+                _ => {}
+            }
+            let choice = [0u32, 1, 1, 2, 0xffff_ffff, 0x100, 0x101][n as usize % 7];
+            let (panel_at, entry) = (rng.next(), rng.next());
+            t.check(
+                &format!("activate handler {n} choice {choice:#x}"),
+                ABMAP_PAD_ACTIVATE_HANDLER,
+                Conv::Cdecl,
+                &[panel_at, entry, choice, 1],
+                |o| Res::Int(panel::activate_handler(&mut Run(o), choice)),
             );
         }
     }

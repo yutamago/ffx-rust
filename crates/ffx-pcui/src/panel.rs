@@ -133,7 +133,19 @@ pub mod bridge {
     use ffx_graphic::host::{Conv, Host};
 
     use super::{Choice, List};
-    use crate::abmap::bridge::{ABMAP, SND_SEP_PLAY_SIMPLE};
+    use crate::abmap::bridge::{
+        ABMAP, ABMAP_INIT_HOMING, ABMAP_RESET_CURSOR_CAMERA, ABMAP_STATE_HOME_ON_NODE,
+        SND_SEP_PLAY_SIMPLE,
+    };
+
+    /// `AbmapResetHelp()`.
+    pub const ABMAP_RESET_HELP: u32 = 0x00a5_b930;
+    /// `spendSlv(character, levels)`: spends sphere levels.
+    pub const SPEND_SLV: u32 = 0x0078_6ef0;
+    /// `AbmapSetChrMarker(character)`.
+    pub const ABMAP_SET_CHR_MARKER: u32 = 0x00a5_a990;
+    /// `AbmapPositionPlyTag(character)`.
+    pub const ABMAP_POSITION_PLY_TAG: u32 = 0x00a5_8080;
 
     /// `g_AbmapPad`: the panels (0x340 bytes each), `+0x2700` the open
     /// one (`i16`, negative for none), `+0x2704` its handler.
@@ -236,5 +248,105 @@ pub mod bridge {
                 mem.call(handler, Conv::Cdecl, &args);
             }
         }
+    }
+
+    /// `AbmapPadActivateHandler(panel, entry, choice, confirmed)`
+    /// (`0x00a56160`): the handler of the panel asking whether to keep
+    /// the nodes just activated. `AbmapResetHelp` first. Choice 0 keeps
+    /// them: a sound (`0x80000052`) and `spendSlv(character +0x115bc,
+    /// levels +0x1161c)`. Choice 1 undoes them: the cancel sound, the
+    /// character's bit cleared from every link (0x14 bytes from
+    /// `g_Abmap + 0xa814`, `i16` count at `+4`) pending (byte `+2` bit 3,
+    /// `+0x116ac` = 1 for each), the character back on its node (`u16`
+    /// `+0x11630` into `+0x110cc + 0x50 * c`, `c` = byte `+0x11638`): its
+    /// marker, its name tag, `+0x115c7` = 1, the cursor camera reset, the
+    /// cursor homing on that node at 0.5, `AbmapState_HomeOnNode` pushed
+    /// unless a state is stacked (`+0x115b0`). Then every link's pending
+    /// nibble (byte `+2`, low 4 bits) cleared, `g_AbmapPad + 0x1d63` = 0,
+    /// three words at `+0x16c0` and one at `+0x16d0` copied 8 and 4 bytes
+    /// on, the levels zeroed. Returns `g_Abmap` (`eax`). A negative link
+    /// count would loop through memory as the original does.
+    pub fn activate_handler(mem: &mut impl Host, choice: u32) -> u32 {
+        mem.call_sym(ABMAP_RESET_HELP, Conv::Cdecl, &[]);
+        if choice == 0 {
+            mem.call_sym(SND_SEP_PLAY_SIMPLE, Conv::Cdecl, &[0x8000_0052]);
+            let g = ABMAP.get(mem);
+            let chr: u8 = mem.read(g.wrapping_add(0x1_15bc));
+            let levels: u32 = mem.read(g.wrapping_add(0x1_161c));
+            mem.call_sym(SPEND_SLV, Conv::Cdecl, &[u32::from(chr), levels]);
+        } else if choice == 1 {
+            let g = ABMAP.get(mem);
+            let links = i32::from(mem.read::<i16>(g.wrapping_add(4))).cast_unsigned();
+            mem.call_sym(SND_SEP_PLAY_SIMPLE, Conv::Cdecl, &[super::SFX_CANCEL]);
+            let mut link = g.wrapping_add(0xa814);
+            let mut left = links;
+            while left != 0 {
+                left = left.wrapping_sub(1);
+                if mem.read::<u8>(link.wrapping_add(2)) & 8 != 0 {
+                    let chr: u8 = mem.read(ABMAP.get(mem).wrapping_add(0x1_15bc));
+                    // `shl dl, cl`: the count masked to 5 bits, 8-bit result
+                    let bit = if chr & 0x1f < 8 {
+                        1u8 << (chr & 0x1f)
+                    } else {
+                        0
+                    };
+                    let v: u8 = mem.read(link);
+                    mem.write(link, v & !bit);
+                    let g = ABMAP.get(mem);
+                    mem.write(g.wrapping_add(0x1_16ac), 1u32);
+                }
+                link = link.wrapping_add(0x14);
+            }
+            let g = ABMAP.get(mem);
+            let chr: u8 = mem.read(g.wrapping_add(0x1_1638));
+            let slot = g.wrapping_add(0x1_10cc).wrapping_add(u32::from(chr) * 0x50);
+            let node: u16 = mem.read(g.wrapping_add(0x1_1630));
+            mem.write(slot, node);
+            for f in [ABMAP_SET_CHR_MARKER, ABMAP_POSITION_PLY_TAG] {
+                let c: u8 = mem.read(ABMAP.get(mem).wrapping_add(0x1_1638));
+                mem.call_sym(f, Conv::Cdecl, &[u32::from(c)]);
+            }
+            let g2 = ABMAP.get(mem);
+            mem.write(g2.wrapping_add(0x1_15c7), 1u8);
+            mem.call_sym(ABMAP_RESET_CURSOR_CAMERA, Conv::Cdecl, &[]);
+            let node: u16 = mem.read(slot);
+            mem.call_sym(
+                ABMAP_INIT_HOMING,
+                Conv::Cdecl,
+                &[u32::from(node), 0.5f32.to_bits()],
+            );
+            let g = ABMAP.get(mem);
+            if mem.read::<u32>(g.wrapping_add(0x1_15b0)) == 0 {
+                let state: u32 = mem.read(g.wrapping_add(0x1_15a8));
+                mem.write(g.wrapping_add(0x1_15b0), state);
+                let home = mem.rebase(ABMAP_STATE_HOME_ON_NODE);
+                let g = ABMAP.get(mem);
+                mem.write(g.wrapping_add(0x1_15a8), home);
+            }
+        }
+        let g = ABMAP.get(mem);
+        let links = i32::from(mem.read::<i16>(g.wrapping_add(4))).cast_unsigned();
+        let mut at = g.wrapping_add(0xa816);
+        for _ in 0..links {
+            let v: u8 = mem.read(at);
+            mem.write(at, v & 0xf0);
+            at = at.wrapping_add(0x14);
+        }
+        let pad = PAD.get(mem);
+        mem.write(pad.wrapping_add(0x1d63), 0u8);
+        for (to, from) in [
+            (0x16c8, 0x16c0),
+            (0x16ca, 0x16c2),
+            (0x16cc, 0x16c4),
+            (0x16ce, 0x16c6),
+            (0x16d4, 0x16d0),
+            (0x16d6, 0x16d2),
+        ] {
+            let w: u16 = mem.read(pad.wrapping_add(from));
+            mem.write(pad.wrapping_add(to), w);
+        }
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x1_161c), 0u32);
+        g
     }
 }

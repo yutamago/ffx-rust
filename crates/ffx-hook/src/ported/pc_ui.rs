@@ -5,6 +5,7 @@ use ffx_pcui::abmap::bridge as abmap;
 use ffx_pcui::cursor::bridge as cursor;
 use ffx_pcui::iggy::bridge as iggy;
 use ffx_pcui::item::bridge as item;
+use ffx_pcui::link::bridge as link;
 use ffx_pcui::panel::bridge as panel;
 use ffx_pcui::sea::bridge as sea;
 use ffx_pcui::spdctrl::bridge as spdctrl;
@@ -12,7 +13,60 @@ use ffx_pcui::touch::bridge as touch;
 
 use super::{mem, ported};
 
+/// `_CIatan2(y, x)` through MSVCR110's import slot (`y` in `ST1`, `x` in
+/// `ST0`), the result stored as a float.
+fn ci_atan2(y: f64, x: f64) -> f32 {
+    #[cfg(target_arch = "x86")]
+    {
+        let mut out = 0f32;
+        let ops = [y, x];
+        // SAFETY: the slot holds the CRT's `_CIatan2`, which takes its
+        // operands in ST1/ST0 and leaves its result in ST0 (eax, ecx, edx,
+        // the x87 and SSE registers clobbered). The x87 stack is empty here.
+        // Only edi, which the callee keeps, is read after the call.
+        unsafe {
+            let f = (crate::rebase(link::CI_ATAN2_SLOT) as *const usize).read();
+            std::arch::asm!(
+                "fld qword ptr [{ops}]",
+                "fld qword ptr [{ops} + 8]",
+                "call {f}",
+                "fstp dword ptr [edi]",
+                ops = in(reg) ops.as_ptr(),
+                f = in(reg) f,
+                in("edi") &raw mut out,
+                clobber_abi("C"),
+            );
+        }
+        out
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        // the CRT's intrinsics only run in the 32-bit game
+        let _ = (y, x);
+        f32::NAN
+    }
+}
+
 ported! {
+    /// `GuiTouch_initGroup(group)`.
+    GuiTouch_initGroup @ 0x0068_a420 => extern "fastcall" fn gui_touch_init_group(group: u32) {
+        touch::init_group(&mut mem(), group);
+    }
+    /// `AbmapPadActivateHandler(panel, entry, choice, confirmed)`.
+    AbmapPadActivateHandler @ 0x00a5_6160 => extern "C" fn abmap_pad_activate_handler(panel: u32, entry: u32, choice: u32, confirmed: u32) -> u32 {
+        let _ = (panel, entry, confirmed);
+        panel::activate_handler(&mut mem(), choice)
+    }
+    /// `AbmapCalcLinkPointsStraight(out, a, b, ra, rb, kind)`, floats
+    /// taken as bits.
+    AbmapCalcLinkPointsStraight @ 0x00a5_81f0 => extern "C" fn abmap_calc_link_points_straight(out: u32, a: u32, b: u32, ra: u32, rb: u32, kind: u32) -> u32 {
+        link::calc_link_points_straight(&mut mem(), out, a, b, f32::from_bits(ra), f32::from_bits(rb), kind)
+    }
+    /// `AbmapCalcLinkPointsCurved(out, a, b, c, ra, rb, kind)`, floats
+    /// taken as bits.
+    AbmapCalcLinkPointsCurved @ 0x00a5_7710 => extern "C" fn abmap_calc_link_points_curved(out: u32, a: u32, b: u32, c: u32, ra: u32, rb: u32, kind: u32) -> u32 {
+        link::calc_link_points_curved(&mut mem(), out, [a, b, c], f32::from_bits(ra), f32::from_bits(rb), kind, |_, y, x| ci_atan2(y, x))
+    }
     /// `AbmapReadCursorStick(move)`.
     AbmapReadCursorStick @ 0x00a5_6bd0 => extern "C" fn abmap_read_cursor_stick(mv: u32) -> u32 {
         cursor::read_cursor_stick(&mut mem(), mv)

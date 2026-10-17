@@ -194,6 +194,27 @@ pub mod bridge {
         mem.write(at(0x24), [b.start[0], b.start[1], b.end[0], b.end[1]]);
     }
 
+    /// `GuiTouch_initGroup(group)` (`0x0068a420`, fastcall): a button
+    /// group (0x1c8 bytes) emptied: `+0` (`u16`), `+4` (byte), `+0x1c4`
+    /// (`u32`) zero; each of the 8 buttons gets a zero rectangle, state,
+    /// phase, press time and byte `+0x34`, and pointer `0xff` (the `u16`
+    /// at `+0x14`, its copy of the state 0); the rest is left.
+    pub fn init_group(mem: &mut impl Mem, group: u32) {
+        let at = |o: u32| group.wrapping_add(o);
+        mem.write(at(0x1c4), 0u32);
+        mem.write(at(0), 0u16);
+        mem.write(at(4), 0u8);
+        for j in 0..8u32 {
+            let b = |o: u32| at(8 + 0x38 * j + o);
+            mem.write(b(0), [0f32; 4]);
+            mem.write(b(0x10), 0u8);
+            mem.write(b(0x14), 0xffu16);
+            mem.write(b(0x16), 0u8);
+            mem.write(b(0x18), 0f32);
+            mem.write(b(0x34), 0u8);
+        }
+    }
+
     /// `GuiTouch_resetButtons(this)` (`0x0068ab30`, thiscall):
     /// [`Button::reset`] on every button of every active group.
     pub fn reset_buttons(mem: &mut impl Mem, this: u32) {
