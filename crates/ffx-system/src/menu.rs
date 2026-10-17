@@ -386,4 +386,80 @@ pub mod bridge {
     ) -> u32 {
         u32::from(call(mem, 0x009d_ad70, &[id, tmp]) != 0 && mem.read::<u32>(tmp) != 0)
     }
+
+    /// `MagicFile_Stop()` (`0x009da880`): `0x00ccb9d4` cleared; without a
+    /// magic file (handle or id -1) a message (`printf`) and 0. Else in
+    /// battle (`MsBattleCheck`) `graphicSetMaterialColourScale2(1, 1, 1, 1)`;
+    /// `0x01940abc` and `0x01940ac0` cleared and the id printed; magic
+    /// 0x114 destroys VFX 6 (`graphicVFXDestroy(6, 0)`), 0xa8 ends the fog
+    /// fade (`graphicSetChrFogFade(0)`), 0x158, 0x1b5 and 0x1b6 set
+    /// `0x01940ac4`; then `MagicFile_Cleanup()` and 1. Calls go through
+    /// `call`, the CRT's `printf` through `printf`.
+    pub fn magic_file_stop<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut printf: impl FnMut(&mut M, u32, Option<u32>),
+    ) -> u32 {
+        mem.write(mem.rebase(0x00cc_b9d4), 0u32);
+        let f = MAGIC_FILE.ptr(mem).addr;
+        if mem.read::<u32>(f.wrapping_add(0xc)) == u32::MAX || mem.read::<u32>(f) == u32::MAX {
+            let fmt = mem.rebase(0x00b7_066c);
+            printf(mem, fmt, None);
+            return 0;
+        }
+        if call(mem, 0x0078_0c90, &[]) != 0 {
+            let one = 1.0f32.to_bits();
+            call(mem, 0x0064_3670, &[one, one, one, one]);
+        }
+        let id: u32 = mem.read(f);
+        mem.write(mem.rebase(0x0194_0abc), 0u32);
+        mem.write(mem.rebase(0x0194_0ac0), 0u32);
+        let fmt = mem.rebase(0x00b7_069c);
+        printf(mem, fmt, Some(id));
+        if mem.read::<u32>(f) == 0x114 {
+            call(mem, 0x0064_5280, &[6, 0]);
+        }
+        if mem.read::<u32>(f) == 0xa8 {
+            call(mem, 0x0064_2f10, &[0]);
+        }
+        if matches!(mem.read::<u32>(f), 0x158 | 0x1b5 | 0x1b6) {
+            mem.write(mem.rebase(0x0194_0ac4), 1u32);
+        }
+        call(mem, 0x009d_a2d0, &[]);
+        1
+    }
+
+    /// `0x009dafe0()`: `graphicSetMagicFileAsyncLoadEnable(mode)` by the
+    /// magic id: 1 for 0x26e..=0x274, 0x15c, 0x277 and 0x27b, 3 for 0x15e,
+    /// else 2 (through `call`).
+    pub fn magic_file_async_load<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let id = MAGIC_FILE.get(mem)[0].cast_signed();
+        let mut mode = 2u32;
+        if (0x26e..=0x274).contains(&id) || matches!(id, 0x15c | 0x277 | 0x27b) {
+            mode = 1;
+        }
+        if id == 0x15e {
+            mode = 3;
+        }
+        call(mem, 0x0064_35e0, &[mode])
+    }
+
+    /// `0x009dadc0()`: the preloaded-magic tables cleared: 0xd00 bytes at
+    /// `0x0193fdb0`, twelve words each at `0x0193fd78` and `0x0193fd44`,
+    /// and `0x0193fd40`. Returns 0.
+    pub fn magic_file_reset_preloaded(mem: &mut impl Mem) -> u32 {
+        let at = mem.rebase(0x0193_fdb0);
+        mem.write_bytes(at, &[0u8; 0xd00]);
+        for base in [0x0193_fd78u32, 0x0193_fd44] {
+            let b = mem.rebase(base);
+            for k in 0..12u32 {
+                mem.write(b.wrapping_add(4 * k), 0u32);
+            }
+        }
+        mem.write(mem.rebase(0x0193_fd40), 0u32);
+        0
+    }
 }

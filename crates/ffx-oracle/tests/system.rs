@@ -10355,3 +10355,1120 @@ fn round17_kernel_flags_match_the_original_on_the_snapshot() {
     };
     round17_kernel_flags(&mut a, &mut b, &mut Xorshift(0x4017_0022));
 }
+
+/// Round 18's magic-file, language, message and record helpers over
+/// stand-ins (their answers change only through data cells).
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round18_helpers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::{menu::bridge as mb, window::bridge as wb};
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x400);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x40);
+    let mut off = 0u32;
+    let mut stub = |a: &mut Oracle, b: &mut Oracle, code: &[u8]| {
+        let s = stand_in8(a, b, off, code);
+        off += (code.len() as u32 + 15) & !15;
+        s
+    };
+    let getter = |cell: u32| {
+        let mut v = vec![0xa1];
+        v.extend_from_slice(&cell.to_le_bytes());
+        v.push(0xc3);
+        v
+    };
+    for (k, sym) in [
+        0x0064_3670u32,
+        0x0064_5280,
+        0x0064_2f10,
+        0x0064_35e0,
+        0x008b_8ca0,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let s = stub(a, b, &logger(cursor, 0x1800_0000 + ((k as u32) << 8)));
+        redirect(a, b, sym, s);
+    }
+    let printf = stub(a, b, &logger(cursor, 0x1800_1000));
+    let at = a.rebase(0x00b0_c380);
+    a.write(at, &printf.to_le_bytes()).unwrap();
+    b.write(at, &printf.to_le_bytes()).unwrap();
+    for (k, sym) in [
+        0x0078_0c90u32,
+        0x0064_27e0,
+        0x0088_7c30,
+        0x0088_7c20,
+        0x0064_10e0,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let s = stub(a, b, &getter(cells + 4 * k as u32));
+        redirect(a, b, sym, s);
+    }
+    // no-argument stand-ins counting their calls
+    for (k, sym) in [0x009d_a2d0u32, 0x008b_5680].into_iter().enumerate() {
+        let mut v = vec![0x83, 0x05];
+        v.extend_from_slice(&(cells + 0x20 + 4 * k as u32).to_le_bytes());
+        v.extend_from_slice(&[0x01, 0xc3]);
+        let s = stub(a, b, &v);
+        redirect(a, b, sym, s);
+    }
+    // TOSelectMacroDic: *0x01869eb8 = [cells + 0x28]
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&(cells + 0x28).to_le_bytes());
+    v.push(0xa3);
+    v.extend_from_slice(&a.rebase(0x0186_9eb8).to_le_bytes());
+    v.push(0xc3);
+    let s = stub(a, b, &v);
+    redirect(a, b, 0x008b_56d0, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let printf_b = |m: &mut Oracle, fmt: u32, arg: Option<u32>| {
+        let mut args = vec![fmt];
+        args.extend(arg);
+        m.call(printf, Conv::Cdecl, &args).unwrap();
+    };
+    let ctx = alloc(a, b, 8);
+    set(a, b, Global::<u32>::new(0x0132_6b28), ctx);
+    let msgs = alloc(a, b, 8 * 0x40);
+    let lines = alloc(a, b, 8 * 0x100);
+    for k in 0..8u32 {
+        put(a, b, wb::MSG_WINDOWS.ptr(a).addr + 4 * k, msgs + 0x40 * k);
+        put(a, b, a.rebase(0x0186_8a90) + 4 * k, lines + 0x100 * k);
+    }
+    let win = alloc(a, b, 0x60);
+    let rtable = alloc(a, b, 0x40 * 4);
+    set(a, b, Global::<u32>::new(0x0112_a0a4), rtable);
+    let rec = alloc(a, b, 0x30);
+    let macros = alloc(a, b, 4 * 0x32 * 4);
+    let ids = [
+        0x114u32, 0xa8, 0x158, 0x1b5, 0x1b6, 0x26e, 0x274, 0x275, 0x15c, 0x15e, 0x277, 0x27b, 7,
+    ];
+    for k in 0..300u32 {
+        put(a, b, cursor, log);
+        let id = ids[(rng.next() % 13) as usize];
+        let handle = if rng.next().is_multiple_of(5) {
+            u32::MAX
+        } else {
+            rng.next()
+        };
+        let idv = if rng.next().is_multiple_of(7) {
+            u32::MAX
+        } else {
+            id
+        };
+        set(a, b, mb::MAGIC_FILE, [idv, rng.next(), rng.next(), handle]);
+        put(
+            a,
+            b,
+            cells,
+            [
+                rng.next() & 1,
+                if rng.next() & 1 == 0 {
+                    0x1d58
+                } else {
+                    rng.next()
+                },
+                rng.next() % 20,
+                rng.next() % 4,
+                rng.next() % 14,
+            ],
+        );
+        assert_eq!(
+            eax(a, 0x009d_a880, &[]),
+            mb::magic_file_stop(b, call, printf_b)
+        );
+        set(a, b, mb::MAGIC_FILE, [id, 0, 0, 0]);
+        assert_eq!(eax(a, 0x009d_afe0, &[]), mb::magic_file_async_load(b, call));
+        if k % 50 == 0 {
+            assert_eq!(eax(a, 0x009d_adc0, &[]), mb::magic_file_reset_preloaded(b));
+        }
+        put(a, b, ctx, rng.next());
+        assert_eq!(eax(a, 0x0087_2a00, &[]), t::previous_level_check(b, call));
+        // message choices
+        let bytes: Vec<u8> = (0..8 * 0x100).map(|_| rng.next() as u8).collect();
+        a.write(lines, &bytes).unwrap();
+        b.write(lines, &bytes).unwrap();
+        let (i, n) = (rng.next() % 8, rng.next() % 12 + 1);
+        let (x, y, total) = (rng.next() % 600, rng.next() % 400, rng.next() % 500);
+        eax(a, 0x008b_8880, &[i, n, x, y, total]);
+        t::set_message_choice(b, i, n, x, y, total);
+        // window rectangle snap
+        for j in 0..4u32 {
+            let v = match rng.next() % 4 {
+                0 => (rng.next() % 2000) as f32 / 3.0 - 300.0,
+                1 => f32::from_bits(rng.next() & 0xbfff_ffff),
+                2 => 70_000.5,
+                _ => -1.5,
+            };
+            put(a, b, win + 0x28 + 4 * j, v);
+        }
+        eax(a, 0x0090_6e90, &[win]);
+        t::snap_window_rect(b, win);
+        // language
+        eax(a, 0x008a_d900, &[]);
+        t::init_language(b, call);
+        // timed macro messages
+        let bytes: Vec<u8> = (0..4 * 0x32 * 4).map(|_| (rng.next() % 6) as u8).collect();
+        a.write(macros, &bytes).unwrap();
+        b.write(macros, &bytes).unwrap();
+        put(
+            a,
+            b,
+            cells + 0x28,
+            if rng.next().is_multiple_of(3) {
+                0
+            } else {
+                macros
+            },
+        );
+        put(a, b, a.rebase(0x0133_0844), 0x189 + rng.next() % 4);
+        let base = a.rebase(0x0186_63d0);
+        put(
+            a,
+            b,
+            base,
+            [u8::from(rng.next() & 1 == 0), (rng.next() % 3) as u8, 0, 0],
+        );
+        put(
+            a,
+            b,
+            base + 4,
+            [rng.next() % 6, rng.next() % 4, rng.next() % 0x34],
+        );
+        put(a, b, a.rebase(0x0186_9eb8), macros);
+        let arg = rng.next();
+        eax(a, 0x008b_9220, &[arg]);
+        t::timed_macro_message(b, arg, call);
+        // the language-special record
+        put(
+            a,
+            b,
+            a.rebase(0x00c4_16c0),
+            if rng.next() & 1 == 0 { 8u32 } else { 7 },
+        );
+        let idx = (rng.next() % 16) as u16;
+        put(a, b, rec + 0x26, idx);
+        put(
+            a,
+            b,
+            rtable + 4 * u32::from(idx),
+            if rng.next() & 1 == 0 {
+                0xffff_fe70u32
+            } else {
+                0
+            },
+        );
+        let want = [0x25au16, 0x266, 0x276][(rng.next() % 3) as usize];
+        put(
+            a,
+            b,
+            rec + 4,
+            [
+                want,
+                if rng.next().trailing_zeros() >= 2 {
+                    0
+                } else {
+                    0xbb
+                },
+            ],
+        );
+        let r = if rng.next().is_multiple_of(9) { 0 } else { rec };
+        assert_eq!(
+            eax(a, 0x0077_4680, &[r]),
+            t::is_lang_special_record(b, r, |m| eax(m, 0x0064_10e0, &[]))
+        );
+        same_memory("round 18 helpers", a, b);
+    }
+}
+
+#[test]
+fn round18_helpers_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round18_helpers(&mut a, &mut b, &mut Xorshift(0x4018_0001));
+}
+
+#[test]
+fn round18_helpers_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round18_helpers(&mut a, &mut b, &mut Xorshift(0x4018_0002));
+}
+
+/// Round 18's resets and gil input over a stand-in gil.
+#[allow(clippy::cast_possible_truncation)]
+fn round18_resets(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let gil_cell = alloc(a, b, 4);
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&gil_cell.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x40, &v);
+    redirect(a, b, 0x0078_4e80, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..200u32 {
+        if k % 40 == 0 {
+            for (at, len) in [(0x012f_bbbcu32, 0x40u32), (0x025c_c5a0, 0x4000)] {
+                let bytes: Vec<u8> = (0..len).map(|_| rng.next() as u8).collect();
+                let at = a.rebase(at);
+                a.write(at, &bytes).unwrap();
+                b.write(at, &bytes).unwrap();
+            }
+            put(a, b, a.rebase(0x0230_56e8), rng.next());
+            put(a, b, a.rebase(0x0184_1d90), rng.next());
+            eax(a, 0x0082_1aa0, &[]);
+            t::init_font_1208(b);
+            eax(a, 0x008a_b550, &[]);
+            t::event_font_texture_array_reset(b);
+        }
+        let gil = [0u32, 9, 10, 999_999_999, rng.next() % 1_000_000, rng.next()]
+            [(rng.next() % 6) as usize];
+        put(a, b, gil_cell, gil);
+        let max = [u32::MAX, 0, 100, rng.next() % 2_000_000, rng.next()][(rng.next() % 5) as usize];
+        assert_eq!(eax(a, 0x008a_2030, &[max]), t::init_gil_input(b, max, call));
+        same_memory("round 18 resets", a, b);
+    }
+}
+
+#[test]
+fn round18_resets_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round18_resets(&mut a, &mut b, &mut Xorshift(0x4018_0011));
+}
+
+#[test]
+fn round18_resets_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round18_resets(&mut a, &mut b, &mut Xorshift(0x4018_0012));
+}
+
+/// Round 19's menu record helpers over logging stand-ins.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round19_records(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x400);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let s = stand_in8(a, b, 0x40, &logger(cursor, 0x1900_0100));
+    redirect(a, b, 0x0077_6910, s);
+    let mut v = vec![0x83, 0x05];
+    v.extend_from_slice(&counter.to_le_bytes());
+    v.extend_from_slice(&[0x01, 0xc3]);
+    let s = stand_in8(a, b, 0x80, &v);
+    redirect(a, b, 0x0077_4740, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let pages = alloc(a, b, 16 * 8);
+    let records = alloc(a, b, 16 * 13 * 0x138);
+    let pairs = alloc(a, b, 0x40 * 8);
+    let values = alloc(a, b, 0x40 * 4);
+    let sizes = alloc(a, b, 4);
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    for k in 0..150u32 {
+        put(a, b, cursor, log);
+        let bytes: Vec<u8> = (0..16 * 13 * 0x138).map(|_| rng.next() as u8).collect();
+        a.write(records, &bytes).unwrap();
+        b.write(records, &bytes).unwrap();
+        let base = records - 0x100;
+        let npages = rng.next() % 16 + u32::from(k % 9 != 0);
+        for p in 0..16u32 {
+            let n = (rng.next() % 13) as u16;
+            put(a, b, pages + 8 * p, 0x100 + p * 13 * 0x138);
+            put(a, b, pages + 8 * p + 4, if p == 0 { 12 } else { n });
+        }
+        // flagged records rarely, and small value-pair counts
+        for r in 0..16 * 13 {
+            let rec = records + 0x138 * r;
+            put(a, b, rec + 1, u8::from(rng.next().is_multiple_of(16)));
+            put(
+                a,
+                b,
+                rec + 0x1c,
+                [(rng.next() % 4) as u16, (rng.next() % 0x30) as u16],
+            );
+        }
+        for i in 0..0x40u32 {
+            put(a, b, pairs + 8 * i, [rng.next() % 0x40, rng.next()]);
+        }
+        set(
+            a,
+            b,
+            Global::<u32>::new(0x0112_a01c),
+            if k % 13 == 0 { 0 } else { pages },
+        );
+        set(a, b, Global::<u32>::new(0x0112_a03c), base);
+        set(a, b, Global::<u32>::new(0x0112_a080), npages);
+        set(a, b, Global::<u32>::new(0x0112_a028), pairs);
+        set(a, b, Global::<u32>::new(0x0112_a0a4), values);
+        // the target of the positional search: some record's start
+        let tp = rng.next() % 16;
+        let tr = rng.next() % 13;
+        let target = 0x100 + tp * 13 * 0x138 + tr * 0x138;
+        put(
+            a,
+            b,
+            g(a, 0x0112_a0a0),
+            if rng.next().is_multiple_of(4) {
+                rng.next()
+            } else {
+                target
+            },
+        );
+        eax(a, 0x0077_5ce0, &[]);
+        t::find_record_at(b, call);
+        same_memory("record at", a, b);
+        eax(a, 0x0077_5de0, &[]);
+        t::find_record_flagged(b, call);
+        same_memory("flagged record", a, b);
+        let screen = [5u32, 0xb, 8][(rng.next() % 3) as usize];
+        put(a, b, g(a, 0x00c4_16c0), screen);
+        eax(a, 0x0077_67d0, &[]);
+        t::patch_menu_records(b, call);
+        same_memory("patched records", a, b);
+    }
+    // every image and kind on both screens (and one other)
+    for screen in [5u32, 0xb, 8] {
+        put(a, b, g(a, 0x00c4_16c0), screen);
+        for image in 0..0x22u32 {
+            for kind in 0..0x12u32 {
+                put(a, b, sizes, 0xa5a5_a5a5u32);
+                eax(a, 0x0077_5820, &[0, image, kind, sizes, sizes + 2]);
+                t::menu_picture_size(b, image, kind, sizes, sizes + 2);
+                same_memory("picture sizes", a, b);
+            }
+        }
+    }
+}
+
+#[test]
+fn round19_records_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round19_records(&mut a, &mut b, &mut Xorshift(0x4019_0001));
+}
+
+#[test]
+fn round19_records_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round19_records(&mut a, &mut b, &mut Xorshift(0x4019_0002));
+}
+
+/// Round 19's language relayout of menu records.
+#[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
+fn round19_relayout(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let cell = alloc(a, b, 4);
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&cell.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x40, &v);
+    redirect(a, b, 0x0064_10e0, s);
+    let recs = alloc(a, b, 24 * 0x138 + 8);
+    let values = alloc(a, b, 16 * 4);
+    set(a, b, Global::<u32>::new(0x0112_a0a4), values);
+    let boxes: [[u16; 4]; 12] = [
+        [0x236, 0xb3, 1, 2],
+        [0x236, 0x8a, 1, 2],
+        [0x236, 0x10, 1, 2],
+        [0x20e, 0xb3, 0xff, 0x37],
+        [0x23e, 0xc5, 3, 4],
+        [0x20e, 0x71, 0xff, 9],
+        [0x23e, 0x7e, 5, 6],
+        [0x27a, 0xae, 5, 6],
+        [0x27a, 0xc6, 5, 6],
+        [0x28c, 0x107, 5, 6],
+        [0x28c, 0x119, 5, 6],
+        [0x111, 0x222, 5, 6],
+    ];
+    for _ in 0..200 {
+        put(a, b, cell, rng.next() % 12);
+        put(
+            a,
+            b,
+            a.rebase(0x00c4_16c0),
+            if rng.next().is_multiple_of(5) {
+                5u32
+            } else {
+                8
+            },
+        );
+        for k in 0..16u32 {
+            put(
+                a,
+                b,
+                values + 4 * k,
+                if rng.next() & 1 == 0 {
+                    0xffff_fe70u32
+                } else {
+                    rng.next()
+                },
+            );
+        }
+        for r in 0..24u32 {
+            let p = recs + 4 + 0x138 * r;
+            put(a, b, p, boxes[(rng.next() % 12) as usize]);
+            put(a, b, p + 0x22, (rng.next() % 16) as u16);
+        }
+        let last = if rng.next().is_multiple_of(9) {
+            u32::MAX
+        } else {
+            rng.next() % 24
+        };
+        eax(a, 0x0077_5a20, &[0, 0, recs, last]);
+        t::relayout_menu_records(b, recs, last, |m| eax(m, 0x0064_10e0, &[]));
+        same_memory("menu relayout", a, b);
+    }
+}
+
+#[test]
+fn round19_relayout_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round19_relayout(&mut a, &mut b, &mut Xorshift(0x4019_0011));
+}
+
+#[test]
+fn round19_relayout_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round19_relayout(&mut a, &mut b, &mut Xorshift(0x4019_0012));
+}
+
+/// Round 19's menu cursor block check over a stand-in condition table.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round19_cursor(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    // conditions: arg & 1, arg & 2
+    let c0 = stand_in8(
+        a,
+        b,
+        0x40,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x01, 0xc3],
+    );
+    let c1 = stand_in8(
+        a,
+        b,
+        0x50,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x02, 0xc3],
+    );
+    let table = alloc(a, b, 8);
+    put(a, b, table, [c0, c1]);
+    set(a, b, Global::<u32>::new(0x00c4_16d0), table);
+    let pages = alloc(a, b, 8 * 8);
+    let records = alloc(a, b, 8 * 8 * 0x138);
+    let base = records - 0x40;
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    for k in 0..400u32 {
+        let bytes: Vec<u8> = (0..8 * 8 * 0x138).map(|_| rng.next() as u8).collect();
+        a.write(records, &bytes).unwrap();
+        b.write(records, &bytes).unwrap();
+        let npages = rng.next() % 8 + 1;
+        let mut counts = [0u16; 8];
+        for p in 0..8u32 {
+            let n = (rng.next() % 8) as u16;
+            counts[p as usize] = n;
+            put(a, b, pages + 8 * p, 0x40 + p * 8 * 0x138);
+            put(a, b, pages + 8 * p + 4, n);
+        }
+        set(
+            a,
+            b,
+            Global::<u32>::new(0x0112_a01c),
+            if k % 17 == 0 { 0 } else { pages },
+        );
+        set(a, b, Global::<u32>::new(0x0112_a03c), base);
+        set(a, b, Global::<u32>::new(0x0112_a080), npages);
+        let cur = records + 0x138 * (rng.next() % 64);
+        set(
+            a,
+            b,
+            Global::<u32>::new(0x0112_a084),
+            if k % 19 == 0 { 0 } else { cur },
+        );
+        put(a, b, cur + 2, (rng.next() % 4) as u8);
+        for d in 0..8u32 {
+            let link = cur + 0x30 + 0xc * d;
+            // the condition index, its argument and the expected flag
+            let cond = if rng.next().is_multiple_of(5) {
+                0xffff
+            } else {
+                (rng.next() % 2) as u16
+            };
+            put(a, b, link, [cond, rng.next() as u16]);
+            put(a, b, link + 4, (rng.next() % 2) as u8);
+            // the target: a first-page record, a later page's record, or
+            // junk
+            let p = rng.next() % 8;
+            let r = rng.next() % 8;
+            let target = match rng.next() % 3 {
+                0 => 0x40 + r * 0x138,
+                1 => 0x40 + p * 8 * 0x138 + r * 0x138,
+                _ => rng.next(),
+            };
+            put(a, b, link + 8, target);
+        }
+        let bits = [
+            0x1000u16, 0x4000, 0x2000, 0x8000, 0x80, 0x10, 0x40, 0x20, 0, 0x30,
+        ];
+        for at in [0x0112_a08cu32, 0x0112_a090, 0x0112_a094] {
+            put(
+                a,
+                b,
+                g(a, at),
+                bits[(rng.next() % 10) as usize] | bits[(rng.next() % 10) as usize],
+            );
+        }
+        eax(a, 0x0077_5530, &[]);
+        t::menu_cursor_blocked(b, |m, f, arg| m.call(f, Conv::Cdecl, &[arg]).unwrap().eax);
+        same_memory("menu cursor", a, b);
+    }
+}
+
+/// A cdecl stand-in logging its first two arguments at `*cursor`.
+fn logger2(cursor: u32) -> Vec<u8> {
+    let mut v = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x54, 0x24, 0x08, 0x8b, 0x0d];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[0x89, 0x01, 0x89, 0x51, 0x04, 0x83, 0x05]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[0x08, 0xc3]);
+    v
+}
+
+/// A stand-in logging `value` at `*cursor` and returning it.
+fn marker(cursor: u32, value: u32) -> Vec<u8> {
+    let mut v = vec![0x8b, 0x0d];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[0xc7, 0x01]);
+    v.extend_from_slice(&value.to_le_bytes());
+    v.extend_from_slice(&[0x83, 0x05]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.push(0x04);
+    v.push(0xb8);
+    v.extend_from_slice(&value.to_le_bytes());
+    v.push(0xc3);
+    v
+}
+
+/// `0x00776110` over logging stand-ins for the sound, print, help and
+/// reset calls and two condition functions.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round19_step(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x800);
+    let cursor = alloc(a, b, 4);
+    let two = logger2(cursor);
+    let marker = |value: u32| marker(cursor, value);
+    let s = stand_in8(a, b, 0x40, &logger(cursor, 0x1900_1000));
+    redirect(a, b, 0x0088_6e80, s);
+    let s = stand_in8(a, b, 0x80, &logger(cursor, 0x1900_2000));
+    redirect(a, b, 0x0062_f500, s);
+    let s = stand_in8(a, b, 0xc0, &two);
+    redirect(a, b, 0x008b_ef10, s);
+    let s = stand_in8(a, b, 0x100, &marker(0x1900_3000));
+    redirect(a, b, 0x008b_f0b0, s);
+    let s = stand_in8(a, b, 0x140, &marker(0x1900_4000));
+    redirect(a, b, 0x0077_4740, s);
+    let c0 = stand_in8(
+        a,
+        b,
+        0x180,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x01, 0xc3],
+    );
+    let c1 = stand_in8(
+        a,
+        b,
+        0x1c0,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x02, 0xc3],
+    );
+    let table = alloc(a, b, 8);
+    put(a, b, table, [c0, c1]);
+    set(a, b, Global::<u32>::new(0x00c4_16d0), table);
+    let pages = alloc(a, b, 8 * 8);
+    let records = alloc(a, b, 8 * 8 * 0x138);
+    let pairs = alloc(a, b, 16 * 8);
+    let values = alloc(a, b, 0x40 * 4);
+    let out = alloc(a, b, 4);
+    let base = records - 0x40;
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..500u32 {
+        put(a, b, cursor, log);
+        put(a, b, out, rng.next());
+        let bytes: Vec<u8> = (0..8 * 8 * 0x138).map(|_| rng.next() as u8).collect();
+        a.write(records, &bytes).unwrap();
+        b.write(records, &bytes).unwrap();
+        for r in 0..64u32 {
+            let rec = records + 0x138 * r;
+            put(
+                a,
+                b,
+                rec + 0x1c,
+                [(rng.next() % 4) as u16, (rng.next() % 8) as u16],
+            );
+            for off in [0xf0u32, 0xf2, 0xf4, 0xf6, 0xf8] {
+                let v = if rng.next().is_multiple_of(2) {
+                    0
+                } else {
+                    rng.next() as u16
+                };
+                put(a, b, rec + off, v);
+            }
+            put(a, b, rec + 0xfb, (rng.next() % 4) as u8);
+            put(a, b, rec + 0xfc, (rng.next() % 2) as u8);
+            let vi = if rng.next().is_multiple_of(4) {
+                0xffff
+            } else {
+                (rng.next() % 0x40) as u16
+            };
+            let c = if rng.next().is_multiple_of(4) {
+                0xffff
+            } else {
+                (rng.next() % 2) as u16
+            };
+            put(a, b, rec + 0xfe, [vi, c, rng.next() as u16]);
+        }
+        for i in 0..16u32 {
+            put(a, b, pairs + 8 * i, [rng.next() % 0x40, rng.next()]);
+        }
+        set(a, b, Global::<u32>::new(0x0112_a028), pairs);
+        set(a, b, Global::<u32>::new(0x0112_a0a4), values);
+        let npages = rng.next() % 8 + u32::from(k % 11 != 0);
+        for p in 0..8u32 {
+            put(a, b, pages + 8 * p, 0x40 + p * 8 * 0x138);
+            put(a, b, pages + 8 * p + 4, (rng.next() % 9) as u16);
+        }
+        set(
+            a,
+            b,
+            Global::<u32>::new(0x0112_a01c),
+            if k % 17 == 0 { 0 } else { pages },
+        );
+        set(a, b, Global::<u32>::new(0x0112_a03c), base);
+        set(a, b, Global::<u32>::new(0x0112_a080), npages);
+        let state = if rng.next().is_multiple_of(5) {
+            (rng.next() % 3) as u8
+        } else {
+            0
+        };
+        put(a, b, g(a, 0x0112_a038), state);
+        set(a, b, Global::<u32>::new(0x0112_a058), rng.next() % 3);
+        set(a, b, Global::<u32>::new(0x0112_a054), rng.next());
+        set(a, b, Global::<u32>::new(0x0112_a05c), rng.next());
+        set(a, b, Global::<u32>::new(0x0112_a060), rng.next());
+        set(
+            a,
+            b,
+            Global::<u32>::new(0x0112_a088),
+            base + 0x40 + (rng.next() % 3) * 8 * 0x138,
+        );
+        set(
+            a,
+            b,
+            Global::<u32>::new(0x00c4_16c0),
+            [5u32, 0xb, 8][(rng.next() % 3) as usize],
+        );
+        let cur = records + 0x138 * (rng.next() % 64);
+        set(
+            a,
+            b,
+            Global::<u32>::new(0x0112_a084),
+            if k % 19 == 0 { 0 } else { cur },
+        );
+        put(a, b, cur + 2, (rng.next() % 4) as u8);
+        for d in 0..8u32 {
+            let link = cur + 0x30 + 0xc * d;
+            let cond = if rng.next().is_multiple_of(5) {
+                0xffff
+            } else {
+                (rng.next() % 2) as u16
+            };
+            put(a, b, link, [cond, rng.next() as u16]);
+            put(a, b, link + 4, (rng.next() % 2) as u8);
+            let p = rng.next() % 8;
+            let r = rng.next() % 8;
+            let target = match rng.next() % 4 {
+                0 => 0x40 + r * 0x138,
+                1 => 0x40 + p * 8 * 0x138 + r * 0x138,
+                2 => base.wrapping_neg(),
+                _ => rng.next(),
+            };
+            put(a, b, link + 8, target);
+        }
+        let bits = [
+            0x1000u16, 0x4000, 0x2000, 0x8000, 0x80, 0x10, 0x40, 0x20, 0, 0x60,
+        ];
+        for at in [0x0112_a08cu32, 0x0112_a090, 0x0112_a094] {
+            put(
+                a,
+                b,
+                g(a, at),
+                bits[(rng.next() % 10) as usize] | bits[(rng.next() % 10) as usize],
+            );
+        }
+        eax(a, 0x0077_6110, &[out]);
+        t::menu_cursor_step(b, out, call, |m, f, arg| {
+            m.call(f, Conv::Cdecl, &[arg]).unwrap().eax
+        });
+        same_memory("menu cursor step", a, b);
+    }
+}
+
+#[test]
+fn round19_step_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round19_step(&mut a, &mut b, &mut Xorshift(0x4019_0031));
+}
+
+#[test]
+fn round19_step_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round19_step(&mut a, &mut b, &mut Xorshift(0x4019_0032));
+}
+
+/// The record condition, text width and battle-window helpers of round 19
+/// over logging stand-ins.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round19_to(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x800);
+    let cursor = alloc(a, b, 4);
+    let playing = alloc(a, b, 4);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let cond = |m: &mut Oracle, f: u32, arg: u32| m.call(f, Conv::Cdecl, &[arg]).unwrap().eax;
+    let c0 = stand_in8(
+        a,
+        b,
+        0x40,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x01, 0xc3],
+    );
+    let c1 = stand_in8(
+        a,
+        b,
+        0x50,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x02, 0xc3],
+    );
+    let table = alloc(a, b, 8);
+    put(a, b, table, [c0, c1]);
+    set(a, b, Global::<u32>::new(0x00c4_16d0), table);
+    // TOSkipCode: one byte, two when bit 0 is set
+    let s = stand_in8(
+        a,
+        b,
+        0x60,
+        &[
+            0x8b, 0x44, 0x24, 0x04, 0x0f, 0xb6, 0x08, 0x83, 0xe1, 0x01, 0x8d, 0x44, 0x08, 0x01,
+            0xc3,
+        ],
+    );
+    redirect(a, b, 0x008d_fd80, s);
+    let mut v = vec![0xa1];
+    v.extend_from_slice(&playing.to_le_bytes());
+    v.push(0xc3);
+    let s = stand_in8(a, b, 0x80, &v);
+    redirect(a, b, 0x0088_6680, s);
+    for (i, sym) in [
+        0x0089_abd0u32,
+        0x008a_1090,
+        0x0088_6eb0,
+        0x008a_f5c0,
+        0x008a_da30,
+        0x008b_81d0,
+        0x0090_6e60,
+        0x008b_8bb0,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let off = 0xa0 + 0x40 * i as u32;
+        let code = if i == 0 || i >= 6 {
+            logger2(cursor)
+        } else {
+            logger(cursor, 0x1900_5000 + i as u32)
+        };
+        let s = stand_in8(a, b, off, &code);
+        redirect(a, b, sym, s);
+    }
+    for (i, sym) in [0x008a_dbd0u32, 0x008b_e800, 0x0089_77f0, 0x0089_dc40]
+        .into_iter()
+        .enumerate()
+    {
+        let off = 0x300 + 0x40 * i as u32;
+        let s = stand_in8(a, b, off, &marker(cursor, 0x1900_6000 + i as u32));
+        redirect(a, b, sym, s);
+    }
+    let record = alloc(a, b, 0x30);
+    let text = alloc(a, b, 0x40);
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    for k in 0..300u32 {
+        put(a, b, cursor, log);
+        // the record condition
+        let c = if rng.next().is_multiple_of(4) {
+            0x8000 | rng.next() as u16
+        } else {
+            (rng.next() % 2) as u16
+        };
+        put(a, b, record + 0x20, [c, rng.next() as u16]);
+        put(a, b, record + 0x2b, (rng.next() % 4) as u8);
+        assert_eq!(
+            eax(a, 0x0077_4a50, &[record]),
+            t::menu_record_condition(b, record, cond),
+            "record condition {k}"
+        );
+        // the text width
+        let n = rng.next() % 0x30;
+        let bytes: Vec<u8> = (0..0x40)
+            .map(|i| if i < n { (rng.next() as u8) | 0x10 } else { 0 })
+            .collect();
+        a.write(text, &bytes).unwrap();
+        b.write(text, &bytes).unwrap();
+        assert_eq!(
+            eax(a, 0x0089_dfa0, &[text]),
+            t::text_width_12(b, text, call),
+            "text width {k}"
+        );
+        // the battle window
+        let slot = rng.next() % 4;
+        let (x, y) = (rng.next(), rng.next());
+        put(a, b, g(a, 0x0133_d1fc), rng.next() as u16);
+        put(a, b, g(a, 0x0133_d178), rng.next());
+        put(
+            a,
+            b,
+            g(a, 0x0133_c950 + slot * 0xf0 + 0xa6),
+            rng.next() as u16,
+        );
+        assert_eq!(
+            eax(a, 0x0089_a860, &[slot, x, y]),
+            t::to_btl_set_target(b, slot, x, y, call),
+            "set target {k}"
+        );
+        put(a, b, playing, rng.next() % 2);
+        put(a, b, g(a, 0x0133_c948), rng.next());
+        put(a, b, g(a, 0x0133_f77c), rng.next());
+        assert_eq!(
+            eax(a, 0x0089_ad90, &[]),
+            t::to_clear_btl_window(b, call),
+            "clear {k}"
+        );
+        let (w, x, y) = (rng.next(), rng.next(), rng.next());
+        assert_eq!(
+            eax(a, 0x008b_0000, &[w, x, y]),
+            t::to_set_window_kind_and_type(b, w, x, y, call),
+            "window kind {k}"
+        );
+        if k % 10 == 0 {
+            put(a, b, g(a, 0x0184_1e0c), rng.next());
+            put(a, b, g(a, 0x0186_59bc), rng.next());
+            assert_eq!(eax(a, 0x008a_de50, &[]), t::to_reset1(b, call), "reset {k}");
+        }
+        same_memory("round 19 TO helpers", a, b);
+    }
+}
+
+#[test]
+fn round19_to_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round19_to(&mut a, &mut b, &mut Xorshift(0x4019_0041));
+}
+
+#[test]
+fn round19_to_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round19_to(&mut a, &mut b, &mut Xorshift(0x4019_0042));
+}
+
+/// Round 19's menu text code expansion and glyph text width.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round19_text(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let strings = alloc(a, b, 0x100);
+    // the string function: strings + (arg & 0xf) * 0x10
+    let mut v = vec![
+        0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x0f, 0xc1, 0xe0, 0x04, 0x05,
+    ];
+    v.extend_from_slice(&strings.to_le_bytes());
+    v.push(0xc3);
+    let c0 = stand_in8(a, b, 0x40, &v);
+    // the number function: arg * 0x1357, or arg alone for small values
+    let c1 = stand_in8(
+        a,
+        b,
+        0x60,
+        &[
+            0x8b, 0x44, 0x24, 0x04, 0x69, 0xc0, 0x57, 0x13, 0x00, 0x00, 0xc3,
+        ],
+    );
+    let c2 = stand_in8(
+        a,
+        b,
+        0x80,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x3f, 0xc3],
+    );
+    let table = alloc(a, b, 12);
+    put(a, b, table, [c0, c1, c2]);
+    set(a, b, Global::<u32>::new(0x00c4_16d0), table);
+    let s = stand_in8(
+        a,
+        b,
+        0xa0,
+        &[
+            0x8b, 0x44, 0x24, 0x04, 0x0f, 0xb6, 0x08, 0x83, 0xe1, 0x01, 0x8d, 0x44, 0x08, 0x01,
+            0xc3,
+        ],
+    );
+    redirect(a, b, 0x008d_fd80, s);
+    let values = alloc(a, b, 0x40 * 4);
+    set(a, b, Global::<u32>::new(0x0112_a0a4), values);
+    let codes = alloc(a, b, 8 * 8);
+    let out = alloc(a, b, 0x40);
+    let cells = alloc(a, b, 8);
+    let text = alloc(a, b, 0x40);
+    let g = |a: &Oracle, x: u32| a.rebase(x);
+    let cond = |m: &mut Oracle, f: u32, arg: u32| m.call(f, Conv::Cdecl, &[arg]).unwrap().eax;
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..400u32 {
+        let bytes: Vec<u8> = (0..0x100)
+            .map(|_| {
+                if rng.next().is_multiple_of(6) {
+                    0
+                } else {
+                    rng.next() as u8
+                }
+            })
+            .collect();
+        a.write(strings, &bytes).unwrap();
+        b.write(strings, &bytes).unwrap();
+        for i in 0..0x40u32 {
+            let v = match rng.next() % 4 {
+                0 => rng.next() % 10,
+                1 => rng.next() % 1_000_000,
+                2 => (rng.next() % 1000) * 1000,
+                _ => rng.next(),
+            };
+            put(a, b, values + 4 * i, v);
+        }
+        let at = codes + 8 * (rng.next() % 8);
+        // the string function only for kind 1
+        let kind = rng.next() % 3;
+        let func = if kind == 1 { 0 } else { 1 + rng.next() % 2 };
+        let w0 = func << 16 | kind << 8 | (rng.next() % 3);
+        let flag = if rng.next().is_multiple_of(3) {
+            rng.next() % 0x100
+        } else {
+            0
+        };
+        let w1 = flag << 16 | (rng.next() % 0x40) | (rng.next() & 0xff00_0000);
+        put(a, b, at, [w0, w1]);
+        put(a, b, cells, [out + rng.next() % 8, at]);
+        put(a, b, g(a, 0x0112_a06c), rng.next());
+        put(a, b, g(a, 0x0112_a070), rng.next());
+        let arg = rng.next() % 0x20;
+        eax(a, 0x0077_4860, &[cells, cells + 4, arg]);
+        t::menu_text_code(b, cells, cells + 4, arg, cond);
+        same_memory("menu text code", a, b);
+        // the glyph width over a random glyph table
+        if k % 50 == 0 {
+            let glyphs: Vec<u8> = (0..0x680)
+                .map(|i| {
+                    if i % 4 == 0 {
+                        u8::from(rng.next().is_multiple_of(3))
+                    } else {
+                        rng.next() as u8
+                    }
+                })
+                .collect();
+            let at = g(a, 0x00c5_8f02);
+            a.write(at, &glyphs).unwrap();
+            b.write(at, &glyphs).unwrap();
+        }
+        let n = rng.next() % 0x30;
+        let bytes: Vec<u8> = (0..0x40)
+            .map(|i| if i < n { (rng.next() as u8).max(1) } else { 0 })
+            .collect();
+        a.write(text, &bytes).unwrap();
+        b.write(text, &bytes).unwrap();
+        assert_eq!(
+            eax(a, 0x0089_e410, &[text]),
+            t::text_width_glyphs(b, text, call),
+            "glyph width {k}"
+        );
+        same_memory("glyph width", a, b);
+    }
+}
+
+#[test]
+fn round19_text_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round19_text(&mut a, &mut b, &mut Xorshift(0x4019_0051));
+}
+
+#[test]
+fn round19_text_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round19_text(&mut a, &mut b, &mut Xorshift(0x4019_0052));
+}
+
+#[test]
+fn round19_cursor_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round19_cursor(&mut a, &mut b, &mut Xorshift(0x4019_0021));
+}
+
+#[test]
+fn round19_cursor_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round19_cursor(&mut a, &mut b, &mut Xorshift(0x4019_0022));
+}
