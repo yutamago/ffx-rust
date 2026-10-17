@@ -183,6 +183,64 @@ pub mod bridge {
         }
     }
 
+    /// The four bind effects of character `h` (`find_chr`), each found by
+    /// its ID (`0x40000400`, `0x500`, `0x600`, `0x700` plus the record
+    /// index) and handed to `f`, which returns what the original leaves in
+    /// `eax` for a found one. Returns that `eax`: the end of `g_EtChr` for
+    /// an unknown handle, `f`'s for a found last effect, else the end of
+    /// `g_EtEff`; 0 for null (the original leaves its caller's `eax`).
+    fn bind_effects<M: Mem>(
+        mem: &mut M,
+        handle: u32,
+        mut found: impl FnMut(&mut M, u32) -> u32,
+    ) -> u32 {
+        if handle == 0 {
+            return 0;
+        }
+        let Some(index) = find_chr(mem, handle) else {
+            return CHR.ptr(mem).at(CHRS).addr;
+        };
+        let mut eax = 0;
+        for kind in [0x400, 0x500, 0x600, 0x700] {
+            eax = match find_eff(mem, (0x4000_0000 + kind) + index) {
+                Some(eff) => {
+                    let rec = EFF.ptr(mem).at(eff).addr;
+                    found(mem, rec)
+                }
+                None => EFF.ptr(mem).at(EFFS).addr,
+            };
+        }
+        eax
+    }
+
+    /// `op_et_bindeff_send_common_signal(h, bits)` (`0x007fbdf0`, the tail
+    /// of `MsEffectSendSignal`): `bits` OR-ed into the record flags (`+0xc`)
+    /// of character `h`'s four bind effects. Returns `eax` as left
+    /// ([`bind_effects`]; a found last effect leaves its record).
+    pub fn op_et_bindeff_send_common_signal(mem: &mut impl Mem, h: u32, bits: u32) -> u32 {
+        bind_effects(mem, h, |mem, r| {
+            let p = Ptr::<u32>::new(r + 0xc);
+            let v = p.get(mem) | bits;
+            p.set(mem, v);
+            r
+        })
+    }
+
+    /// `op_et_bindeff_send_signal(h, bits)` (`0x007fbef0`, from
+    /// `opu_et_etc`): the `u16` `bits` OR-ed into the signals (`+0xb0`) of
+    /// the objects of character `h`'s four bind effects. Returns `eax` as
+    /// left ([`bind_effects`]; a found last effect leaves its object).
+    pub fn op_et_bindeff_send_signal(mem: &mut impl Mem, h: u32, bits: u32) -> u32 {
+        bind_effects(mem, h, |mem, r| {
+            let obj = mem.read::<u32>(r + 4);
+            let p = Ptr::<u16>::new(obj.wrapping_add(0xb0));
+            #[allow(clippy::cast_possible_truncation)] // a u16 argument
+            let v = p.get(mem) | bits as u16;
+            p.set(mem, v);
+            obj
+        })
+    }
+
     /// `op_et_eff_off_signal(id)` (`0x007fc450`).
     pub fn op_et_eff_off_signal(mem: &mut impl Mem, id: u32) {
         signal(mem, id, 0x4000);

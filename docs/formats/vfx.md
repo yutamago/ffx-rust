@@ -293,3 +293,40 @@ to `dst + 0xc0`; `pppKeShpTail3VfLoad_00751740` (and its byte-identical copy
 | `0x00..0x1f` | `0x00c8f830..0x00c8f8af` |
 | `0x20..0x27` | `0x00c8f7f0..0x00c8f80f` |
 | `0x40..0x4b` | `0x00c8f930..0x00c8f95f` |
+
+## Bind-effect signals (`op_et_bindeff_send_*`)
+
+A character's bind effects are the `g_EtEff` records with IDs `0x40000400`,
+`0x40000500`, `0x40000600` and `0x40000700` plus the character's `g_EtChr`
+record index (`et.rs`). Two senders reach all four:
+
+| Function | Caller | Writes |
+| --- | --- | --- |
+| `op_et_bindeff_send_common_signal` (`0x007fbdf0`) | `MsEffectSendSignal` (tail call) | record flags `+0xc` \|= `bits` |
+| `op_et_bindeff_send_signal` (`0x007fbef0`) | `opu_et_etc` | object signals `u16 +0xb0` \|= `bits` |
+
+Each effect is the first record with its ID; a missing one is skipped. Both
+return `eax` as the last search leaves it (the record, or the object, of
+the `0x700` effect; the end of `g_EtEff` without it; the end of `g_EtChr`
+for an unknown handle). The names come from Fahrenheit's Switch call graph.
+
+## Sound cues (`op_oef2_sound_init_00800440`)
+
+The op layer's set-up (`0x007ff960`) clears the oef2 sound state: the
+32-cue ring `g_OpOef2SoundCueRing` and its arguments, the 64 words from
+`0x023c36a0` (two tables of 32 slots, the second `g_OpOef2Seps`), the ring
+head and count, both `g_OpOef2StreamCues` and the byte `0x023c3644`. It
+then sets the curve constants `op_3d_vol_pan_get` reads, copied from
+`f32` constants in the image:
+
+| Address | Value |
+| --- | --- |
+| `0x023c3660`, `0x023c367c` | 32 |
+| `0x023c3664` | 512 |
+| `0x023c3668` (`g_OpSoundCurves`) | 127 |
+| `0x023c366c`, `0x023c3678` | 96 |
+| `0x023c3670`, `0x023c3688` | 64 |
+| `0x023c3674` | 768 |
+| `0x023c3680` | 129.0667 |
+| `0x023c3684` | -0.0645833 |
+| `0x023c368c` | 1/24 |

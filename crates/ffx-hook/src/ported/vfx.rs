@@ -1608,6 +1608,10 @@ ported! {
     op_oef2_tex_clut_init_007e5680 @ 0x007e_5680 => extern "C" fn op_oef2_tex_clut_init() -> u32 {
         op::bridge::op_oef2_tex_clut_init(&mut mem())
     }
+    /// `op_oef2_sound_init_00800440()`.
+    op_oef2_sound_init_00800440 @ 0x0080_0440 => extern "C" fn op_oef2_sound_init() -> u32 {
+        op::bridge::op_oef2_sound_init(&mut mem())
+    }
     /// `pppVu0MaddW_copy_0074bde0(dst, v, _, _, _, s)`: `pppVu0MaddW`'s
     /// code again; returns `dst`.
     pppVu0MaddW_copy_0074bde0 @ 0x0074_bde0 => extern "C" fn ppp_vu0_madd_w_copy(dst: u32, v: u32, a: u32, b: u32, c: u32, s: f32) -> u32 {
@@ -2217,6 +2221,14 @@ ported! {
     /// `opusPlus0c`.
     opusPlus0c @ 0x0080_6b50 => extern "C" fn opus_plus0c(p: u32) -> u32 {
         p.wrapping_add(0xc)
+    }
+    /// `op_et_bindeff_send_common_signal(h, bits)`.
+    op_et_bindeff_send_common_signal @ 0x007f_bdf0 => extern "C" fn op_et_bindeff_send_common_signal(h: u32, bits: u32) -> u32 {
+        et::bridge::op_et_bindeff_send_common_signal(&mut mem(), h, bits)
+    }
+    /// `op_et_bindeff_send_signal(h, bits)`.
+    op_et_bindeff_send_signal @ 0x007f_bef0 => extern "C" fn op_et_bindeff_send_signal(h: u32, bits: u32) -> u32 {
+        et::bridge::op_et_bindeff_send_signal(&mut mem(), h, bits)
     }
     /// `op_et_eff_off_signal(id)`.
     op_et_eff_off_signal @ 0x007f_c450 => extern "C" fn op_et_eff_off_signal(id: u32) {

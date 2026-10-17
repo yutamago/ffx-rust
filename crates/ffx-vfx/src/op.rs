@@ -1041,6 +1041,53 @@ pub mod bridge {
     /// The second word of `g_OpOef2StreamCues` (`0x023c364c`).
     pub const STREAM_CUE2: Global<u32> = Global::new(0x023c_364c);
 
+    /// `op_oef2_sound_init_00800440()` (`0x00800440`, from the op layer's
+    /// set-up `0x007ff960`): the 32-entry cue ring and its arguments, the
+    /// 64 words from `0x023c36a0` (two 32-slot tables, the second
+    /// `g_OpOef2Seps`), the ring head and count, both stream cues and the
+    /// byte `0x023c3644` cleared; the volume and pan curve constants
+    /// (`0x023c3660..0x023c368f`) set from the image's floats, each copied
+    /// as it is (`fld`/`fstp` of a normal `f32` keeps its bits). Returns 0
+    /// (left in `eax`).
+    pub fn op_oef2_sound_init(mem: &mut impl Mem) -> u32 {
+        let cues = SOUND_CUES.ptr(mem).addr;
+        let args = SOUND_CUE_ARGS.ptr(mem).addr;
+        let slots = Global::<u32>::new(0x023c_36a0).ptr(mem).addr;
+        for i in 0..32u32 {
+            mem.write(cues + 4 * i, 0u32);
+            mem.write(args + 4 * i, 0u32);
+            for k in 0..2u32 {
+                mem.write(slots + 8 * i + 4 * k, 0u32);
+                mem.write(slots + 0x100 + 8 * i + 4 * k, 0u32);
+            }
+        }
+        for a in [0x023c_3640u32, 0x023c_364c, 0x023c_3648] {
+            let at = Global::<u32>::new(a).ptr(mem).addr;
+            mem.write(at, 0u32);
+        }
+        let at = Global::<u8>::new(0x023c_3644).ptr(mem).addr;
+        mem.write(at, 0u8);
+        // (destination, the image's f32 constant)
+        for (to, from) in [
+            (0x023c_3660u32, 0x00b4_1d84u32),
+            (0x023c_3664, 0x00b4_1d9c),
+            (0x023c_3668, 0x00b4_f5e4),
+            (0x023c_366c, 0x00b4_3db8),
+            (0x023c_3670, 0x00b5_83dc),
+            (0x023c_3674, 0x00b5_870c),
+            (0x023c_3678, 0x00b4_3db8),
+            (0x023c_367c, 0x00b4_1d84),
+            (0x023c_3688, 0x00b5_83dc),
+            (0x023c_3684, 0x00b5_8714),
+            (0x023c_3680, 0x00b5_8708),
+            (0x023c_368c, 0x00b5_8704),
+        ] {
+            let v = Global::<u32>::new(from).get(mem);
+            Global::<u32>::new(to).set(mem, v);
+        }
+        0
+    }
+
     /// The separate-sound ID of a kind-1 cue (`+8` points at its record,
     /// the ID at `+8`).
     fn sep_id(mem: &impl Mem, cue: u32) -> u32 {

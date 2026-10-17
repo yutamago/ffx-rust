@@ -6256,6 +6256,8 @@
 0x007fbb20 function op_et_bindeff_draw_set    # (h, hide) op_et_bindeff_draw_off (hide) or _draw_on: bit 4 when bind flags & 1; returns ~old & 4
 0x007fbb90 function op_et_bindeff_off         # fh v3:exact 0x007fbab0
 0x007fbcd0 function op_et_bindeff_off_signal  # fh v3:exact 0x007fbbf0
+0x007fbdf0 function op_et_bindeff_send_common_signal # cg-match switch: MsEffectSendSignal (Switch 0x7100353860, v3 0x0079e4f0) tail-calls it and calls op_et_bindeff_send_common_signal on the Switch; (h, bits) -> eax as left: g_EtEff record flags +0xc |= bits for character h's four bind effects (IDs 0x40000400/500/600/700 + record index)
+0x007fbef0 function op_et_bindeff_send_signal # cg-match switch: opu_et_etc (Switch 0x7100406380) calls op_et_bindeff_send_signal, v3 call site 0x008145eb (between opu_vibration and its neighbours); (h, u16 bits) -> eax as left: object +0xb0 |= bits for character h's four bind effects
 0x007fc000 function op_et_chr_draw_off        # (h) -> 1 if newly set: draw flags |= 1 for any character with a record (no bind flag test)
 0x007fc060 function op_et_chr_draw_on         # (h) -> ~old & 1: draw flags &= 0xfe
 0x007fc0c0 function op_et_chr_draw_set        # (h, hide) op_et_chr_draw_off (hide) or _draw_on
@@ -6364,6 +6366,7 @@
 0x00800330 function op_oef2_sound_wait        # g_MagicImports slot 550 (100 overlays), between op_oef2_sound_cue_check and op_oef2_stream_cue: loops op_oef2_sound_cue_loop until 0x023c3648/0x023c364c are clear (SndDataSendSync(0) for -1) and u16 0x023c3642 is 0; hidden from the dump
 0x00800390 function op_oef2_stream_cue        # fh v3:exact 0x008002b0
 0x00800410 function opus_part_kind            # (p) -> (i16) at *(p + 0xc) + 2
+0x00800440 function op_oef2_sound_init_00800440 # ours: () -> 0: g_OpOef2SoundCueRing/Args, 0x023c36a0..0x023c389f (64 words, g_OpOef2Seps the second half), head/count, both g_OpOef2StreamCues and byte 0x023c3644 cleared; g_OpSoundCurves and 0x023c3660/64 set from image f32 constants (32, 512, 127, 96, 64, 768, 96, 32, 64, -0.0646, 129.07, 1/24); caller 0x007ff960 next to op_oef2_tex_clut_init_007e5680
 0x00800580 function op_effect_init            # fh v3:exact 0x008004a0
 0x00800610 function op_effect_run_before      # fh v3:exact 0x00800530
 0x00800670 function op_effect_run_after       # fh v3:exact 0x00800590

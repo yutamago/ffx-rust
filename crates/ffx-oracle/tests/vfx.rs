@@ -1101,8 +1101,30 @@ fn et_calls(p: &mut Pair, rng: &mut Xorshift, handles: &[u32], ids: &[u32], out:
         ("op_et_eff_flags_or", 0x007f_c510, e::op_et_eff_flags_or),
         ("op_et_eff_signal_or", 0x007f_c550, e::op_et_eff_signal_or),
     ];
+    let sends: [(&str, u32, ByHandle2); 2] = [
+        (
+            "op_et_bindeff_send_common_signal",
+            0x007f_bdf0,
+            e::op_et_bindeff_send_common_signal,
+        ),
+        (
+            "op_et_bindeff_send_signal",
+            0x007f_bef0,
+            e::op_et_bindeff_send_signal,
+        ),
+    ];
     for _ in 0..8 {
         let h = rng.pick(handles);
+        let (name, sym, f) = rng.pick(&sends);
+        let any = rng.next();
+        let bits = rng.pick(&[0x4000u32, 0x8000, 1, any]);
+        // a null handle leaves the caller's eax
+        p.check(
+            &format!("{name}({h:#x}, {bits:#x}) {what}"),
+            sym,
+            &[h, bits],
+            |m| Some(f(m, h, bits)).filter(|_| h != 0),
+        );
         let (name, sym, f) = rng.pick(&switches);
         let on = rng.pick(&[0u32, 1, 0x100]);
         p.check(
@@ -10392,6 +10414,20 @@ fn texels_halve_matches_the_original() {
                     ))
                 },
             );
+        }
+    }
+}
+
+#[test]
+fn oef2_sound_init_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_0440);
+        let ring = p.sym(0x023c_3500);
+        for _ in 0..50 {
+            p.fill(ring, 0x400, &mut rng);
+            p.check("0x00800440", 0x0080_0440, &[], |m| {
+                Some(op::bridge::op_oef2_sound_init(m))
+            });
         }
     }
 }
