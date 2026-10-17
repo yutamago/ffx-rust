@@ -250,3 +250,25 @@ behind them stays with those modules, which the bridges call.
   `SgStrdupD(name)` in `0x00c494a8`; the old copy is not freed.
   `Sg_PLightAllocate(n)` (`0x00831950`) disposes the old lights, then
   allocates `n` 44-byte lights, each off with `+0xc` and `+0x1c` 1.0.
+
+## Start-up, event-jump initialisers and helpers (round 3)
+
+- `Sg_InitArgs(argc, argv)` (`0x00820310`, start-up): L/R button mode 0,
+  `0x012fb8fa` 0xff, `0x012fb8f9` and `0x012fb8f8` 0; a debug build takes
+  the user name from `argv[1]`.
+- `Sg_AccInitAll` (`0x0082bcd0`) and `Sg_PlayerInitDefault` (`0x0082d8d0`),
+  both from `Sg_EventjumpInit`: the accumulation requests off (alpha 0 at
+  once, map, background and characters off, clear colour 0, the current
+  frame requested); no player, diving on, speeds 16 (kind 1), 38 (kind 2)
+  and 20 (kind `0x12`).
+- `setFramSync` (`0x00822720`): `0x012fb7e4` = 1 in a battle
+  (`MsBattleCheck`) with a magic file (`MagicFile_GetMagicId() != -1`).
+- `Sg_LightSetDirXYZ(i, x, y, z)` (`0x008364f0`): `Sg_LightSetDir(i, &(x,
+  y, z, 0))`.
+- `Sg_MatrixFromDir(m, dir, rows)` (`0x008435a0`): basis `d = |dir|`, `s =
+  |(0,0,1) x d|`, `u = |s x d|` into the identity's rows named by the
+  nibbles of `rows` (`0x12`: s in row 0, u in row 1, d in row 2). Rows
+  past 3 are written past the matrix.
+- `Sg_CalcTriangleNormal(v0, v1, v2, out)` (`0x0083e420`): `i16` vertices;
+  `|(v2 - v0) x (v1 - v0)|`.
+- `Sg_IntVecToFloat(out, v)` (`0x00845d90`): three `i32` to `f32`.

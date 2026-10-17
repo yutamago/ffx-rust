@@ -274,7 +274,13 @@ pub mod bridge {
     pub fn matrix_from_dir(mem: &mut impl Mem, m: u32, dir: u32, rows: u32) -> u32 {
         use crate::scratch::{SCRATCH, Scratch};
         use ffx_ps2::vu0::bridge as vu0;
-        let (d, z, t, s_, u) = (SCRATCH, SCRATCH + 0x10, SCRATCH + 0x20, SCRATCH + 0x30, SCRATCH + 0x40);
+        let (d, z, t, s_, u) = (
+            SCRATCH,
+            SCRATCH + 0x10,
+            SCRATCH + 0x20,
+            SCRATCH + 0x30,
+            SCRATCH + 0x40,
+        );
         let mut sc = Scratch::new(mem);
         sc.write(z, [0f32, 0.0, 1.0]);
         vu0::normalize(&mut sc, d, dir);

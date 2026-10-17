@@ -1215,6 +1215,38 @@ ported! {
     Sg_PLightAllocate @ 0x0083_1950 => extern "C" fn sg_plight_allocate(n: u32) -> u32 {
         control::bridge::plight_allocate(&mut mem(), n)
     }
+    /// `Sg_InitArgs(argc, argv)`.
+    Sg_InitArgs @ 0x0082_0310 => extern "C" fn sg_init_args(count: u32, args: u32) {
+        control::bridge::init_args(&mut mem(), count, args);
+    }
+    /// `setFramSync()`.
+    setFramSync @ 0x0082_2720 => extern "C" fn set_fram_sync() -> u32 {
+        control::bridge::set_fram_sync(&mut mem())
+    }
+    /// `Sg_AccInitAll()`.
+    Sg_AccInitAll @ 0x0082_bcd0 => extern "C" fn sg_acc_init_all() {
+        control::bridge::acc_init_all(&mut mem());
+    }
+    /// `Sg_PlayerInitDefault()`.
+    Sg_PlayerInitDefault @ 0x0082_d8d0 => extern "C" fn sg_player_init_default() -> u32 {
+        state::bridge::player_init_default(&mut mem())
+    }
+    /// `Sg_LightSetDirXYZ(i, x, y, z)`.
+    Sg_LightSetDirXYZ @ 0x0083_64f0 => extern "C" fn sg_light_set_dir_xyz(i: u32, x: f32, y: f32, z: f32) -> u32 {
+        control::bridge::light_set_dir_xyz(&mut mem(), i, x, y, z)
+    }
+    /// `Sg_CalcTriangleNormal(v0, v1, v2, out)`.
+    Sg_CalcTriangleNormal_0083e420 @ 0x0083_e420 => extern "C" fn sg_calc_triangle_normal(v0: u32, v1: u32, v2: u32, out: u32) {
+        vec::bridge::calc_triangle_normal(&mut mem(), v0, v1, v2, out);
+    }
+    /// `Sg_MatrixFromDir(m, dir, rows)`.
+    Sg_MatrixFromDir @ 0x0084_35a0 => extern "C" fn sg_matrix_from_dir(m: u32, dir: u32, rows: u32) -> u32 {
+        vec::bridge::matrix_from_dir(&mut mem(), m, dir, rows)
+    }
+    /// `Sg_IntVecToFloat(out, v)`.
+    Sg_IntVecToFloat @ 0x0084_5d90 => extern "C" fn sg_int_vec_to_float(out: u32, v: u32) -> u32 {
+        vec::bridge::int_vec_to_float(&mut mem(), out, v)
+    }
 }
 
 /// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in

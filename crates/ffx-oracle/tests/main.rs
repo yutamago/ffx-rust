@@ -2261,6 +2261,8 @@ const REC_CODE: u32 = 0x0270_0000;
 /// The log: a count, then 32-byte entries (the callee, up to six
 /// arguments).
 const REC_LOG: u32 = 0x0270_f000;
+/// One answer per recorder.
+const REC_RETS: u32 = 0x0270_fc00;
 
 /// A cdecl recording stub over the original at `sym` (slot `k` of the
 /// code area): logs `sym` and `n` arguments, returns `ret`.
@@ -2282,8 +2284,12 @@ fn recorder(a: &mut Oracle, b: &mut Oracle, k: u32, sym: u32, n: u32, ret: u32) 
         }
         c.extend([0xff, 0x05]);
         c.extend(log.to_le_bytes()); // inc dword [log]
-        c.push(0xb8);
-        c.extend(ret.to_le_bytes()); // mov eax, ret
+        // the answer from data, not code: rewritten code would not be seen
+        // (the emulator keeps what it translated)
+        let slot = o.rebase(REC_RETS) + 4 * k;
+        o.write(slot, &ret.to_le_bytes()).unwrap();
+        c.push(0xa1);
+        c.extend(slot.to_le_bytes()); // mov eax, [slot]
         c.push(0xc3);
         assert!(c.len() <= 0x60);
         let code = o.rebase(REC_CODE) + 0x60 * k;
@@ -2432,6 +2438,7 @@ fn control_synthetic() {
     control_cases(&mut a, &mut b, &mut rng, 300, false);
     scene_cases(&mut a, &mut b, &mut rng, 300);
     init_cases(&mut a, &mut b, &mut rng, 200);
+    round3_main_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 #[test]
@@ -2443,6 +2450,7 @@ fn control_snapshot() {
     control_cases(&mut a, &mut b, &mut rng, 300, true);
     scene_cases(&mut a, &mut b, &mut rng, 300);
     init_cases(&mut a, &mut b, &mut rng, 200);
+    round3_main_cases(&mut a, &mut b, &mut rng, 300);
 }
 
 // Main round 2: map id data, motion groups, the player's settings.
@@ -2627,5 +2635,112 @@ fn init_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
         twin("Sg_PLightAllocate", a, b, 0x0083_1950, &[n], |m| {
             c::plight_allocate(&mut H(m), n)
         });
+    }
+}
+
+// Main round 3: start-up and event-jump initialisers, setFramSync, light
+// directions from floats, the vector helpers.
+
+fn round3_main_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::control::bridge as c;
+    use ffx_sg::state::bridge as st;
+    use ffx_sg::vec::bridge as v;
+    let log = a.rebase(REC_LOG);
+    recorder(a, b, 22, c::GET_SCENERIO_FLAG, 0, 0x3000);
+    let f = f32::from_bits;
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        twin("Sg_AccInitAll", a, b, 0x0082_bcd0, &[], |m| {
+            c::acc_init_all(&mut H(m));
+        });
+        twin("Sg_PlayerInitDefault", a, b, 0x0082_d8d0, &[], |m| {
+            st::player_init_default(m)
+        });
+
+        put(a, b, log, 0u32);
+        let (x, y, z) = (rng.float(), rng.float(), rng.float());
+        let i = rng.below(4);
+        twin("Sg_LightSetDirXYZ", a, b, 0x0083_64f0, &[i, x, y, z], |m| {
+            c::light_set_dir_xyz(&mut H(m), i, f(x), f(y), f(z))
+        });
+
+        put(a, b, log, 0u32);
+        recorder(a, b, 20, st::SG_STRDUP_D, 1, rng.next());
+        set(a, b, c::IS_DEBUG, u8::try_from(rng.below(3)).unwrap());
+        let count = [0, 1, 2, 5, u32::MAX][rng.below(5) as usize];
+        let args = block(a, b, rng, 12);
+        twin("Sg_InitArgs", a, b, 0x0082_0310, &[count, args], |m| {
+            c::init_args(&mut H(m), count, args);
+        });
+
+        put(a, b, log, 0u32);
+        let battle = if rng.below(3) == 0 { 0 } else { rng.next() };
+        let id = if rng.below(3) == 0 {
+            u32::MAX
+        } else {
+            rng.below(0x100)
+        };
+        recorder(a, b, 23, c::MS_BATTLE_CHECK, 0, battle);
+        recorder(a, b, 24, c::MAGIC_FILE_GET_MAGIC_ID, 0, id);
+        set(a, b, c::FRAM_SYNC, rng.next());
+        twin("setFramSync", a, b, 0x0082_2720, &[], |m| {
+            c::set_fram_sync(&mut H(m))
+        });
+
+        // vectors
+        let src = block(a, b, rng, 16);
+        let out = block(a, b, rng, 16);
+        twin("Sg_IntVecToFloat", a, b, 0x0084_5d90, &[out, src], |m| {
+            v::int_vec_to_float(m, out, src)
+        });
+        let small = rng.below(2) == 0;
+        let verts: Vec<u32> = (0..3)
+            .map(|_| {
+                let p = alloc(a, b, 8);
+                for k in 0..3 {
+                    let c16 = if small {
+                        rng.below(4)
+                    } else {
+                        rng.next() & 0xffff
+                    };
+                    put(a, b, p + 2 * k, u16::try_from(c16).unwrap());
+                }
+                p
+            })
+            .collect();
+        let n = block(a, b, rng, 16);
+        twin(
+            "Sg_CalcTriangleNormal",
+            a,
+            b,
+            0x0083_e420,
+            &[verts[0], verts[1], verts[2], n],
+            |m| v::calc_triangle_normal(m, verts[0], verts[1], verts[2], n),
+        );
+        let dir = floats(a, b, rng, 4);
+        if rng.below(3) == 0 {
+            for k in 0..3 {
+                put(
+                    a,
+                    b,
+                    dir + 4 * k,
+                    f32::from(i8::try_from(rng.below(3)).unwrap() - 1),
+                );
+            }
+        }
+        let mtx = block(a, b, rng, 256);
+        let rows = match rng.below(3) {
+            0 => 0x12,
+            1 => 0x012 + (rng.below(2) << 8),
+            _ => rng.next(),
+        };
+        twin(
+            "Sg_MatrixFromDir",
+            a,
+            b,
+            0x0084_35a0,
+            &[mtx, dir, rows],
+            |m| v::matrix_from_dir(m, mtx, dir, rows),
+        );
     }
 }
