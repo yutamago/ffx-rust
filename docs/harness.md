@@ -296,7 +296,14 @@ go in the game folder too: the pad word range (`0x00ccb170`) of
 `field-walk` or `menu-browse` missing one frame's transition value (a
 frame where only the previous pad word still holds the button), and a few
 dozen pixels on the menu's animated cursor. They come from neither the
-instance folders nor the pool.
+instance folders nor the pool; `run-all.sh` now leaves the pad word out
+(`replay-compare.py --ignore`) and `shot-compare.py` allows 24 levels per
+channel. With those, three more runs (two side by side, one
+serial) gave the same events everywhere; one side-by-side run still failed
+on screenshots that follow the wall clock: the field's searchlight block
+at y 120 (38 levels, as a serial run in the game folder once measured) and
+5 pixels of the menu cursor. Games side by side run slower in real time,
+so wall-clock animations drift a little further.
 
 ## Tests
 
