@@ -2123,15 +2123,21 @@ fn deaths(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u3
     same("MsSetDeathAll", a, b);
 }
 
-/// The game's functions an actor's turn start and a death call, stubbed:
-/// `TOSetBtlActiveChr` (menu), `MsGetItem` (not ported),
-/// `forceAutoBattleOff` and `TOBtlCloseSignWindow` (system); the first
-/// four arguments logged.
-const INPUT_CALLEES: [(u32, u8); 4] = [
+/// The game's functions an actor's turn start, a death and the damage
+/// step call, stubbed: `TOSetBtlActiveChr` (menu), `MsGetItem` (not
+/// ported), `forceAutoBattleOff` and `TOBtlCloseSignWindow` (system),
+/// `Sg_EnFocus` (graphics), `op_et_prayeff_send_read_through` (vfx); the
+/// first four arguments logged.
+const INPUT_CALLEES: [(u32, u8); 6] = [
     (ffx_battle::input::bridge::TO_SET_BTL_ACTIVE_CHR, 1),
     (ffx_battle::death::bridge::MS_GET_ITEM, 4),
     (ffx_battle::death::bridge::FORCE_AUTO_BATTLE_OFF, 0),
     (ffx_battle::death::bridge::TO_BTL_CLOSE_SIGN_WINDOW, 0),
+    (ffx_battle::chr_damage::bridge::SG_EN_FOCUS, 1),
+    (
+        ffx_battle::chr_damage::bridge::OP_ET_PRAYEFF_SEND_READ_THROUGH,
+        1,
+    ),
 ];
 const INPUT_STUBS: u32 = PROCESS_STUBS + 0x40 * 16;
 
@@ -2170,6 +2176,7 @@ fn input(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
         (st::FIELD_INDEX.ptr(b).addr, 2),
         (st::SCENE_GROUP.ptr(b).addr, 4),
         (ffx_battle::actor::bridge::MON_TOP.ptr(b).addr, 4),
+        (ffx_battle::menu::bridge::PARTY.ptr(b).addr, 7),
     ];
     let saved: Vec<Vec<u8>> = keep.iter().map(|&(at, n)| b.read(at, n).unwrap()).collect();
     turns(a, b, rng, w, out, rec);
@@ -2211,7 +2218,7 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
             rng.byte(),
         ),
     ][rng.below(5) as usize];
-    battle_num(a, b, rec + 0x3e0, id, g);
+    battle_num(a, b, rec + 0x5e0, id, g);
     // the monsters (MsGetMon) are the actors from 0x14
     set(a, b, ffx_battle::actor::bridge::MON_TOP, w.actor(0x14));
     set(a, b, st::INPUT_CUE_COUNT, 0);
@@ -2269,7 +2276,7 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
     });
     same("MsSetChrWeak", a, b);
     // the damage numbers: a pool of 0x80 records, some taken
-    let pool = rec + 0x400;
+    let pool = rec + 0x600;
     let mut recs = vec![0u8; 0x80 * 0x14];
     let full = rng.below(6) == 0;
     for r in recs.chunks_mut(0x14) {
@@ -2365,7 +2372,8 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
         poke(a, b, actor + 0x594, &max.to_le_bytes());
     }
     poke(a, b, actor + 4, &rng.range(-1, 10).to_le_bytes());
-    let dmg = [rng.range(-500, 30_000), rng.range(0, 100)][rng.below(2) as usize];
+    let hp = i32::from_le_bytes(b.read(actor + 0x5d0, 4).unwrap().try_into().unwrap());
+    let dmg = [rng.range(-500, 30_000), rng.range(0, 100), hp][rng.below(3) as usize];
     let args = [
         i,
         actor,
@@ -2525,6 +2533,157 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
         let x = a.read(m + 0x20, 16).unwrap();
         b.write(m + 0x20, &x).unwrap();
         same("MsDamageCheckDeath", a, b);
+    }
+    // the damage step's pieces (ffx_battle::chr_damage)
+    {
+        use ffx_battle::chr_damage::bridge as cd;
+        twin("MsScreenFocusResetAll", a, b, 0x007b_bda0, &[], 0, |m| {
+            dm(m, |m| {
+                cd::ms_screen_focus_reset_all(m, &mut call);
+            });
+            0
+        });
+        same("MsScreenFocusResetAll", a, b);
+        let party: Vec<u8> = (0..7)
+            .map(|_| [0xff, u8::try_from(rng.below(ACTORS)).unwrap()][rng.below(2) as usize])
+            .collect();
+        poke(a, b, ffx_battle::menu::bridge::PARTY.ptr(b).addr, &party);
+        for q in 0..ACTORS {
+            let p = w.actor(q);
+            for o in [0x436, 0x41c, 0xde7, 0x508, 0x432, 0x41d, 0xe13] {
+                poke(
+                    a,
+                    b,
+                    p + o,
+                    &[flag(rng, 3) ^ u8::from(o == 0x41c || o == 0x41d)],
+                );
+            }
+            let hits: Vec<u8> = (0..4)
+                .map(|_| u8::try_from(rng.below(3)).unwrap())
+                .collect();
+            poke(a, b, p + 0x774, &hits);
+            let hits: Vec<u8> = (0..4)
+                .map(|_| u8::try_from(rng.below(3)).unwrap())
+                .collect();
+            poke(a, b, p + 0xa4c, &hits);
+            // (kind 8 ends actors 0x10 and 0x11 first: on them it recurses
+            // for good, in the original too)
+            let kind = [0, 8, rng.byte()][rng.below(3) as usize];
+            let kind = if (0x10..0x12).contains(&q) && kind == 8 {
+                0
+            } else {
+                kind
+            };
+            poke(a, b, p + 0xdea, &[kind]);
+            let e = [0, rng.next()][rng.below(2) as usize];
+            poke(a, b, p + 0xea0, &e.to_le_bytes());
+        }
+        twin("MsCheckPartyDying", a, b, 0x0079_2ee0, &[], ALL, |m| {
+            cd::ms_check_party_dying(m).cast_unsigned()
+        });
+        let i = rng.below(ACTORS);
+        let end = [i, 0xff, rng.below(ACTORS)][rng.below(3) as usize];
+        set(
+            a,
+            b,
+            ffx_battle::action::bridge::TURN_END_ACTOR,
+            u8::try_from(end).unwrap(),
+        );
+        twin(
+            "MsCheckRestMotion",
+            a,
+            b,
+            0x0079_1780,
+            &[i, w.actor(i)],
+            ALL,
+            |m| cd::ms_check_rest_motion(m, i, w.actor(i)),
+        );
+        let (x, y) = (rng.below(3), rng.below(3));
+        twin(
+            "MsCheckHitPending",
+            a,
+            b,
+            0x0078_ee80,
+            &[x, y, i],
+            ALL,
+            |m| cd::ms_check_hit_pending(m, x, y, i),
+        );
+        let cams: Vec<u8> = (0..8)
+            .flat_map(|_| [0, rng.next()][rng.below(2) as usize].to_le_bytes())
+            .collect();
+        poke(a, b, mn::EFFECT_CAMERA_BUF.ptr(b).addr, &cams);
+        set(
+            a,
+            b,
+            ffx_battle::parse::bridge::COMMAND_STARTED,
+            flag(rng, 2),
+        );
+        let keep = rng.below(2);
+        twin("MsEffectCameraEnd", a, b, 0x0078_7760, &[keep], 0, |m| {
+            dm(m, |m| {
+                s!(s);
+                cd::ms_effect_camera_end(m, &mut s, keep);
+            });
+            0
+        });
+        local_words(a, b);
+        same("MsEffectCameraEnd", a, b);
+        set(a, b, mn::NUMBERS_KIND1, flag(rng, 4));
+        set(a, b, cd::COMMAND_HOLD2, u32::from(flag(rng, 4)));
+        let cmd = [0x3056, 0x3103, 0x4086, 0x3001, rng.below(0x8000)][rng.below(5) as usize];
+        set(a, b, ffx_battle::parse::bridge::PARSED_COMMAND, cmd);
+        let title = [0, 1, 0x2d, 0x2e, -1, rng.byte().cast_signed()][rng.below(6) as usize];
+        set(a, b, st::TITLE_WINDOW, [title, 0]);
+        twin(
+            "MsCheckCommandEnd",
+            a,
+            b,
+            0x0079_1690,
+            &[w.actor(i)],
+            ALL,
+            |m| cd::ms_check_command_end(m, w.actor(i)),
+        );
+        same("MsCheckCommandEnd", a, b);
+        let j = [0x10, 0x11, 0xff, rng.below(ACTORS)][rng.below(4) as usize];
+        twin("MsMagicEffectEnd", a, b, 0x0079_e830, &[j], ALL, |m| {
+            dm(m, |m| {
+                cd::ms_magic_effect_end(m, &mut call, j).cast_unsigned()
+            })
+        });
+        same("MsMagicEffectEnd", a, b);
+        // Poison at a turn's end (the hit motion reads the positions)
+        let i = rng.below(ACTORS);
+        let end = [i, 0xff, rng.below(ACTORS)][rng.below(3) as usize];
+        set(
+            a,
+            b,
+            ffx_battle::action::bridge::TURN_END_ACTOR,
+            u8::try_from(end).unwrap(),
+        );
+        poke(a, b, w.actor(i) + 0x5ba, &[rng.byte()]);
+        if writes(a, b, 0x0079_56e0, i, out + 0x40)
+            && writes(a, b, 0x0079_48e0, i, out + 0x40)
+            && placed(a, b, w, out)
+        {
+            twin(
+                "MsPoisonProcess",
+                a,
+                b,
+                0x007a_fab0,
+                &[i, w.actor(i)],
+                0,
+                |m| {
+                    dm(m, |m| {
+                        s!(s);
+                        cd::ms_poison_process(m, &h, &mut s, i, w.actor(i));
+                    });
+                    0
+                },
+            );
+            local_words(a, b);
+            register_rows(a, b);
+            same("MsPoisonProcess", a, b);
+        }
     }
     // Regen and the status counts before a turn
     let i = rng.below(ACTORS);
@@ -3015,7 +3174,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let prec = scratch(a, b, (EXCHANGE_REC * 13) as usize);
     process_stubs(a, b, prec, erec);
     // the input stubs' records, then a damage number pool
-    let irec = scratch(a, b, 0x400 + 0x80 * 0x14);
+    let irec = scratch(a, b, 0x600 + 0x80 * 0x14);
     for o in [&mut *a, &mut *b] {
         for (k, (f, n)) in (0u32..).zip(INPUT_CALLEES) {
             logging_stub(o, f, INPUT_STUBS + 0x40 * k, irec + EXCHANGE_REC * k, n, 0);

@@ -20,6 +20,7 @@ pub mod actor;
 pub mod atel;
 pub mod body;
 pub mod camera;
+pub mod chr_damage;
 pub mod command;
 pub mod cue;
 pub mod damage;

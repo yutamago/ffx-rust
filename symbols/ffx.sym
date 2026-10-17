@@ -4845,7 +4845,7 @@
 0x00787470 function setDefaultPlayerName      # fh v3:exact 0x00787530
 0x007876e0 function MsEffectCameraBufInit     # fh v3:bsim1.00 0x007877a0
 0x00787740 function MsEffectCameraCall        # fh v3:exact 0x00787800
-0x00787760 function MsEffectCameraEnd         # fh v3:exact 0x00787820
+0x00787760 function MsEffectCameraEnd         # fh v3:exact 0x00787820; ours: (keep): the 8 effect cameras freed; unless keep, in battle, a started command camera gives way to camera 0x1c; ported (battle round 12)
 0x007877d0 function MsEffectCameraGet         # fh v3:exact 0x00787890
 0x00787810 function MsEffectCheck             # fh v3:bsim1.00 0x007878d0
 0x00787840 function MsEffectCheckMotion       # fh v3:exact 0x00787900
@@ -4970,8 +4970,8 @@
 0x0078db70 function MsSetDamageMotion         # fh v3:exact 0x0078dc30
 0x0078dc30 function MsSetDeath                # fh v3:exact 0x0078dcf0
 0x0078ddc0 function MsSetDeathProcess            # layout: alphabetical run between MsSetDeath and MsSetEscapeFlag (1 unnamed in the gap); Switch 0x71003443d0 MsSetDeathProcess is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x0078de40 function MsSetEscapeFlag           # fh v3:exact 0x0078df00
-0x0078de80 function MsSetEscapeFlagAll        # fh v3:exact 0x0078df40
+0x0078de40 function MsSetEscapeFlag           # fh v3:exact 0x0078df00; ours: (i, actor, away): +0xdcd/+0xdc8; back: MsSetChrVisibleAppear(i, 1); ported (battle round 12)
+0x0078de80 function MsSetEscapeFlagAll        # fh v3:exact 0x0078df40; ported (battle round 12)
 0x0078deb0 function MsSetEternalRelife        # fh v3:exact 0x0078df70
 0x0078ded0 function MsSetFirstCTB             # fh v3:cg10 0x78df90
 0x0078e0a0 function MsSetPartyRelifeTime      # fh v3:exact 0x0078e160
@@ -4984,6 +4984,7 @@
 0x0078e460 function MsThreatProcess           # fh v3:exact+call.cs 0x0078e4b0 cdecl
 0x0078e5a0 function MsUseChrMpLimit           # fh v3:exact 0x0078e5f0
 0x0078e630 function DmgCalc                   # fh v3:exact 0x0078e680 +DmgCalc
+0x0078ee80 function MsCheckHitPending         # ours: (a, b, i) -> 1 when actor i's record +0x774 or +0xa4c (0x2d8 apart) is for (a, b) (+2, +3) with +0 below +1; MsSetDamage's; ported (battle round 12)
 0x0078eef0 function MsGetGuardChr             # (user, target) -> who takes target's hit: the side's guard/sentinel actor (status 2 0x1000/0x2000, MsAutoCommandStatusCheck) with most HP (x2 sentinel, + half Tidus' affection), else target; called by MsCalcCommand's target step 0x0078ba70; ported
 0x0078f000 function MsOrderKey                # ours: (i) turn-order key: a monster 0x10000 + i, a party member (0xff - +0x5ac) << 8 | i; MsOrderCalc sorts by it
 0x0078f040 function MsSetChrMovePos           # (i, actor): +0x425 = 1, tail jump MsGetChrPos(i, actor +0x3c0); MsDamageSetMotion kind 1; name ours
@@ -5054,7 +5055,9 @@
 0x007911e0 function MsBattleProcess_ChrDamage_007911e0 # (): when no cue level / SE transfer is pending, per character MsSetDamage, MsPoisonProcess, MsEffectFree; caller MsBattleProcess; own name
 0x007915f0 function MsCheckChrBtlPosAll          # layout+callees: sorts between MsBattleProcess and MsCheckChrMotionAll, and its named callees match the Switch 0x7100366ad0 MsCheckChrBtlPosAll's (similarity 1.00: MsGetChr); symbols from Fahrenheit's server export
 0x00791630 function MsCheckChrMotionAll       # fh v3:exact 0x00791680
+0x00791690 function MsCheckCommandEnd         # ours: (actor) -> 1 (+0xdf0 = 1) when the command may end; waits (+0xdf0 = 5) on kind-1 numbers, +0xe13, 0x0112c8f8; titled commands wait for the title window (0x3103: above 0x2d); ported (battle round 12)
 0x00791760 function MsSetDeathAll             # ours: MsSetDeath(i, 1) for every actor, each frame (MsBattleProcess)
+0x00791780 function MsCheckRestMotion         # ours: (i, actor) -> 1 when the actor goes back to its standing motion (+0x41c, +0x41d, no +0xde7/+0x508/+0x432, not the turn-end actor); ported (battle round 12)
 0x007917d0 function MsBattleProcess_Status_007917d0 # (): the g_BtlStatus state machine of MsBattleProcess (battle end via MsGetBattleEndStatus, the waits on g_BtlCommandCueCount / g_BtlNumbersShown, MsReturnSummon, MsSetPartyRelifeTime, MsDeathYoujinbou); a part of the Switch's 11224-byte MsBattleProcess; own name
 0x00791fa0 function MsSetTargetsMotion        # (chr, cue, k, &far): entry k's command (MsGetCommand) and targets +0x10: out of reach (+0x4ff > MsGetCommandFar) counted in far, KO'd skipped unless command +0x1a bit 6; the rest +0xded = chr, MsSetMotion(+0x422, 0x1c, 0, 0, 1), head target (MsSetHeadTarget / msResetHeadTarget by +0x1c bit 27); kept targets to +0x10 and g_BtlChrSet; -1/0; name ours
 0x00792120 function MsCheckAutoInput          # ours: (i, actor) -> +0xdf3 (sign-extended), or 1 for Yojimbo (0xe) when brnd(0x11) & 0xff < MsGetYoujinbouCom / 4: the actor picks its own command (MsBattleProcess_InputCue); ported (battle round 12)
@@ -5072,6 +5075,7 @@
 0x00792de0 function MsSetBtlTarget            # fh v3:exact 0x00792df0
 0x00792e50 function MsSetMenuCommand          # fh v3:exact 0x00792e60
 0x00792e80 function MsCheckSoftResetOk        # ours: -1 when a soft reset may end the battle (no read, sound transfer, voice, effect, waits; status 1) (MsBattleProcess)
+0x00792ee0 function MsCheckPartyDying         # ours: () -> -1 while a party member's death plays (+0x436), else 0; ported (battle round 12)
 0x00792f20 function MsBattleProcess_DebugStatus_00792f20 # (): the debug status line of MsBattleProcess (TODapsString of battle-end, sound, CD and cue-level states, "%2d:%2d:%1d W%1d S%1d E%1d"); own name
 0x00793260 function msSetEndDir               # fh v3:exact 0x00793270
 0x007932b0 function MesSetChrTargetPosToLimitSparePosy # fh v3:exact 0x007932c0
@@ -5163,8 +5167,8 @@
 0x00796360 function MsSetChrSpecular          # fh v3:exact 0x00796370
 0x00796480 function MsSetChrTransparent       # fh switch:cg2 0x71003489a0
 0x00796550 function MsSetChrTransparentVisible # fh v3:exact 0x00796560
-0x00796660 function MsSetChrVisible           # fh v3:bsim1.00 0x00796670
-0x007966a0 function MsSetChrVisibleAppear     # fh v3:bsim1.00 0x007966b0
+0x00796660 function MsSetChrVisible           # fh v3:bsim1.00 0x00796670; ours: msSetChrVisibleReq(i, 2, v); ported (battle round 12)
+0x007966a0 function MsSetChrVisibleAppear     # fh v3:bsim1.00 0x007966b0; ours: msSetChrVisibleReq(i, 1, v); ported (battle round 12)
 0x007967a0 function MsSetChrVisibleCamera     # fh switch:bsim1.00 0x71003480b0
 0x007967c0 function MsSetChrVisibleCameraAll  # fh v3:exact 0x007967d0
 0x007967f0 function MsSetChrVisibleEvent      # fh v3:exact 0x00796800
@@ -5334,7 +5338,7 @@
 0x0079e7a0 function MsEtEffectSet             # fh v3:exact 0x0079e7c0
 0x0079e7b0 function MsEtEffectStop            # fh v3:cg2 0x79e7d0
 0x0079e7c0 function MsGetStatusLook           # (i) -> bits: 1 +0x606 bit 1, 2 +0xdce, 4 +0x606 bit 9, 8 +0x613, 0x10 +0x614, 0x20 +0x616 bit 10; MsStatusEffectCheck (into +0x6f8, op_et_astatus_effect_change); name ours
-0x0079e830 function MsMagicEffectEnd          # fh v3:exact 0x0079e850
+0x0079e830 function MsMagicEffectEnd          # fh v3:exact 0x0079e850; ours: (i): the prayer effect +0xea0 ends (op_et_prayeff_send_read_through); kind 8 (+0xdea) ends 0x10's and 0x11's first; ported (battle round 12)
 0x0079e890 function MsMagicEffectSet          # fh v3:exact 0x0079e8b0
 0x0079e8c0 function MsMagicEffectStart           # layout+callees: sorts between MsMagicEffectSet and MsSetStealEffect, and its named callees match the Switch 0x7100353440 MsMagicEffectStart's (similarity 1.00: MsGetChr, MsGetEffID, MsRegSEplay, op_et_eff); symbols from Fahrenheit's server export
 0x0079ea40 function MsPauseChrEffect             # layout+callees: sorts between MsMagicEffectStart and MsResetWeaponEffectAttribute, and its named callees match the Switch 0x7100352f60 MsPauseChrEffect's (similarity 1.00: MsGetChr, op_et_bindeff_draw_off, op_et_bindeff_draw_on); symbols from Fahrenheit's server export
@@ -5674,7 +5678,7 @@
 0x007af920 function MsDefenseStartProcess     # fh v3:exact 0x007af930
 0x007afa60 function MsPaymentProcess          # fh v3:exact 0x007afa70
 0x007afa80 function MsPaymentProcessStart     # fh v3:exact 0x007afa90
-0x007afab0 function MsPoisonProcess           # fh v3:exact 0x007afac0
+0x007afab0 function MsPoisonProcess           # fh v3:exact 0x007afac0; ours: (i, actor): for g_BtlTurnEndActor, +0x5ba % of max HP lost, action 8, MsDamageCheckDeath, motion 8; turn-end actor cleared; ported (battle round 12)
 0x007afb60 function MsAddChrGain              # (i, actor): if +0x714: +0x5bc += i8 +0x728[+0x715&1] (MsCheckRange 0..+0x5bd), +0x6e1 += i8 +0x726[..] (0..100); MsDeleteInputCue; name ours
 0x007afbd0 function MsCheckRikkuLimit         # fh v3:exact 0x007afbe0
 0x007afc90 function MsEffectLimitCheck        # fh v3:exact 0x007afca0
@@ -5887,7 +5891,7 @@
 0x007bbd00 function MsGetScreenData           # fh v3:exact 0x007bbc80
 0x007bbd70 function MsGetScreenMatrix         # fh v3:bsim1.00 0x007bbcf0
 0x007bbd80 function MsScreenFocusReset        # fh v3:bsim1.00 0x007bbd00
-0x007bbda0 function MsScreenFocusResetAll     # fh v3:exact 0x007bbd20
+0x007bbda0 function MsScreenFocusResetAll     # fh v3:exact 0x007bbd20; ported (battle round 12)
 0x007bbdd0 function MsScreenLinkSet              # layout: alphabetical run between MsScreenFocusResetAll and MsScreenOffset (5 unnamed in the gap); Switch 0x71003a2130 MsScreenLinkSet is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007bbdf0 function MsScreenMove                 # layout: alphabetical run between MsScreenFocusResetAll and MsScreenOffset (5 unnamed in the gap); Switch 0x71003a1ed0 MsScreenMove is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007bbeb0 function MsScreenMoveAcc              # layout: alphabetical run between MsScreenFocusResetAll and MsScreenOffset (5 unnamed in the gap); Switch 0x71003a1f50 MsScreenMoveAcc is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -14514,6 +14518,7 @@
 0x0112c8e8 label g_BtlLastMagic2              # u32; The last magic of kind 2 (MsEffectGetLastMagicNum2).
 0x0112c8ec label g_BtlLastMagic            # u32: the magic effect MsEffectRead reads (with 0x0112c8e8)
 0x0112c8f0 label g_BtlVoiceWait           # u32 (MsSetVoiceWait), cleared at each turn start
+0x0112c8f8 label g_BtlCommandHold2          # u32: not 0, MsCheckCommandEnd waits
 0x0112c90c label g_BtlMessageCueInit2         # u32; with the one before it (same function, ffx_battle::misc)
 0x0112c914 label g_BtlMessageCue              # 4 battle messages of 12 bytes (+0 kind, +1, +2, +4 actor, +8 message ID), a ring (MsMessageCueRegist)
 0x0112c944 label g_BtlMessageCueCount         # u8, messages queued (at most 4)

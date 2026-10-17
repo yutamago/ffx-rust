@@ -3,6 +3,7 @@
 
 use ffx_battle::action::bridge as action;
 use ffx_battle::atel::bridge as atel;
+use ffx_battle::chr_damage::bridge as chrdmg;
 use ffx_battle::death::bridge as death;
 use ffx_battle::exchange::bridge as exchange;
 use ffx_battle::exec::bridge as exec;
@@ -2755,5 +2756,56 @@ ported! {
         let mut m = mem();
         script!(s);
         death::ms_damage_check_death(&mut target::Dm::new(&mut m), &host(), &mut s, i, j, no_reward, flags)
+    }
+    /// `MsSetChrVisible(i, v)`.
+    MsSetChrVisible @ 0x0079_6660 => extern "C" fn ms_set_chr_visible(i: u32, v: u32) -> u32 {
+        visible::ms_set_chr_visible(&mut mem(), &mut call_ptr, i, v)
+    }
+    /// `MsSetChrVisibleAppear(i, v)`.
+    MsSetChrVisibleAppear @ 0x0079_66a0 => extern "C" fn ms_set_chr_visible_appear(i: u32, v: u32) -> u32 {
+        visible::ms_set_chr_visible_appear(&mut mem(), &mut call_ptr, i, v)
+    }
+    /// `MsScreenFocusResetAll()`: `Sg_EnFocus` through the game.
+    MsScreenFocusResetAll @ 0x007b_bda0 => extern "C" fn ms_screen_focus_reset_all() {
+        chrdmg::ms_screen_focus_reset_all(&mut mem(), &mut call_ptr);
+    }
+    /// `0x00792ee0()` (`MsCheckPartyDying`).
+    MsCheckPartyDying @ 0x0079_2ee0 => extern "C" fn ms_check_party_dying() -> i32 {
+        chrdmg::ms_check_party_dying(&mem())
+    }
+    /// `0x00791780(i, actor)` (`MsCheckRestMotion`).
+    MsCheckRestMotion @ 0x0079_1780 => extern "C" fn ms_check_rest_motion(i: u32, actor: u32) -> u32 {
+        chrdmg::ms_check_rest_motion(&mem(), i, actor)
+    }
+    /// `MsEffectCameraEnd(keep)`.
+    MsEffectCameraEnd @ 0x0078_7760 => extern "C" fn ms_effect_camera_end(keep: u32) {
+        script!(s);
+        chrdmg::ms_effect_camera_end(&mut mem(), &mut s, keep);
+    }
+    /// `0x0078ee80(a, b, i)` (`MsCheckHitPending`).
+    MsCheckHitPending @ 0x0078_ee80 => extern "C" fn ms_check_hit_pending(a: u32, b: u32, i: u32) -> u32 {
+        chrdmg::ms_check_hit_pending(&mem(), a, b, i)
+    }
+    /// `MsPoisonProcess(i, actor)`.
+    MsPoisonProcess @ 0x007a_fab0 => extern "C" fn ms_poison_process(i: u32, actor: u32) {
+        let mut m = mem();
+        script!(s);
+        chrdmg::ms_poison_process(&mut target::Dm::new(&mut m), &host(), &mut s, i, actor);
+    }
+    /// `0x00791690(actor)` (`MsCheckCommandEnd`).
+    MsCheckCommandEnd @ 0x0079_1690 => extern "C" fn ms_check_command_end(actor: u32) -> u32 {
+        chrdmg::ms_check_command_end(&mut mem(), actor)
+    }
+    /// `MsSetEscapeFlag(i, actor, away)`.
+    MsSetEscapeFlag @ 0x0078_de40 => extern "C" fn ms_set_escape_flag(i: u32, actor: u32, away: u32) {
+        chrdmg::ms_set_escape_flag(&mut mem(), &mut call_ptr, i, actor, away);
+    }
+    /// `MsSetEscapeFlagAll(away)`.
+    MsSetEscapeFlagAll @ 0x0078_de80 => extern "C" fn ms_set_escape_flag_all(away: u32) {
+        chrdmg::ms_set_escape_flag_all(&mut mem(), &mut call_ptr, away);
+    }
+    /// `MsMagicEffectEnd(i)`: the prayer effect through the game.
+    MsMagicEffectEnd @ 0x0079_e830 => extern "C" fn ms_magic_effect_end(i: u32) -> i32 {
+        chrdmg::ms_magic_effect_end(&mut mem(), &mut call_ptr, i)
     }
 }

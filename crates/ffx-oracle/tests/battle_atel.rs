@@ -442,6 +442,43 @@ fn visible(
         |m| vi::ms_set_chr_visible_req(m, &mut call, i, k, v),
     );
     same("msSetChrVisibleReq", a, b);
+    // its two requests by name, and running away
+    let (j, v) = (rng.below(ACTORS), [0, 1, rng.next()][rng.below(3) as usize]);
+    let (what, sym) = [
+        ("MsSetChrVisible", 0x0079_6660),
+        ("MsSetChrVisibleAppear", 0x0079_66a0),
+    ][rng.below(2) as usize];
+    twin(what, a, b, sym, &[j, v], ALL, |m| {
+        if sym == 0x0079_6660 {
+            vi::ms_set_chr_visible(m, &mut call, j, v)
+        } else {
+            vi::ms_set_chr_visible_appear(m, &mut call, j, v)
+        }
+    });
+    same(what, a, b);
+    let away = [0, 1, rng.next()][rng.below(3) as usize];
+    if rng.below(4) == 0 {
+        twin("MsSetEscapeFlagAll", a, b, 0x0078_de80, &[away], 0, |m| {
+            ffx_battle::chr_damage::bridge::ms_set_escape_flag_all(m, &mut call, away);
+            0
+        });
+        same("MsSetEscapeFlagAll", a, b);
+    } else {
+        let p = w.actor(j);
+        twin(
+            "MsSetEscapeFlag",
+            a,
+            b,
+            0x0078_de40,
+            &[j, p, away],
+            0,
+            |m| {
+                ffx_battle::chr_damage::bridge::ms_set_escape_flag(m, &mut call, j, p, away);
+                0
+            },
+        );
+        same("MsSetEscapeFlag", a, b);
+    }
     let p = w.actor(rng.below(ACTORS));
     let k = rng.range(-2, 5);
     let v = rng.next();
