@@ -22,6 +22,10 @@ use super::{mem, ported};
 static SCRATCH: [core::sync::atomic::AtomicU32; 0x280] =
     [const { core::sync::atomic::AtomicU32::new(0) }; 0x280];
 
+/// `Ch_CalcElement`'s frame (0xc11c bytes, its 512 skeleton matrices).
+static CALC_SCRATCH: [core::sync::atomic::AtomicU32; 0x3047] =
+    [const { core::sync::atomic::AtomicU32::new(0) }; 0x3047];
+
 /// [`SCRATCH`]'s address.
 fn scratch() -> u32 {
     u32::try_from(SCRATCH.as_ptr() as usize).unwrap_or(0)
@@ -75,13 +79,23 @@ fn ci_call(f: u32, args: &[f64]) -> f32 {
     }
 }
 
-/// A cdecl function of one word that returns in `ST0` (read back as
-/// `f64`).
+/// A cdecl function of one to three words that returns in `ST0` (read
+/// back as `f64`).
 fn st0_cdecl(f: u32, args: &[u32]) -> f64 {
-    let [a] = *args else { return f64::NAN };
-    // SAFETY: `f` is an original cdecl function of one word returning a
-    // float in ST0.
-    unsafe { std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> f64>(f as usize)(a) }
+    // SAFETY: `f` is an original cdecl function of these words returning
+    // a float in ST0.
+    unsafe {
+        match *args {
+            [a] => std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> f64>(f as usize)(a),
+            [a, b] => std::mem::transmute::<usize, unsafe extern "C" fn(u32, u32) -> f64>(
+                f as usize,
+            )(a, b),
+            [a, b, c] => std::mem::transmute::<usize, unsafe extern "C" fn(u32, u32, u32) -> f64>(
+                f as usize,
+            )(a, b, c),
+            _ => f64::NAN,
+        }
+    }
 }
 
 ported! {
@@ -1798,5 +1812,14 @@ ported! {
         let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
         let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
         p::ch_draw_shadow_quad(&mut mem(), chr, p3, scratch(), &mut c)
+    }
+    /// `Ch_CalcElement(chr)`.
+    Ch_CalcElement @ 0x0083_2760 => extern "C" fn ch_calc_element(chr: u32) {
+        let at = u32::try_from(CALC_SCRATCH.as_ptr() as usize).unwrap_or(0);
+        let mut call = |_: &mut _, f, a: &[u32]| super::call_cdecl(f, a);
+        let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
+        let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
+        let mut c = p::NeckCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
+        p::ch_calc_element(&mut mem(), chr, at, &mut c);
     }
 }
