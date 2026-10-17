@@ -4414,6 +4414,7 @@
 0x0077f1f0 function asmClearBlock             # fh v3:bsim1.00 0x0077f2e0
 0x0077f200 function asmClearBlock0            # fh v3:cg2 0x77f2f0
 0x0077f210 function chr_texanim_draw_sub_new  # fh v3:exact 0x0077f300
+0x0077f360 function chr_texanim_main_sub_new     # the new-format texture-animation step of chr_texanim_main; the Switch chr_texanim_main_sub_new (1760 bytes) sorts between chr_texanim_draw_sub_new and chr_texanim_memory_move_new, as here
 0x0077f970 function chr_texanim_memory_move_new # Switch name (0x7100330d60): in the new-format file (between chr_texanim_draw_sub_new and _set_new); entry source, record words into work +0xd28
 0x0077f9c0 function chr_texanim_set_new       # fh v3:exact 0x0077fa90
 0x0077fc90 function TexAnim_StartNew          # structure: cdecl(i, which, pos): g_ChrTexAnim[i]'s work animation which (0x34 bytes) restarted: u16 +0x24 = pos, +0xc/+0x1c/+0x20 and floats +0x2c..+0x38 = 0; returns 0 (i when unloaded); new-format file (before tex_anim_no_set_new); name ours
@@ -4421,6 +4422,7 @@
 0x0077fda0 function TexAnim_ResetPos          # cdecl(i, which, v): g_ChrTexAnim[i]'s work animation which (0x34 bytes: +0xc = v, +0x1c, +0x20, floats +0x2c..0x38 = 0), or every active one (+0xd08 + n == 1) for which 1; name ours
 0x0077fe30 function tex_anim_timer            # fh v3:exact 0x0077ff00
 0x0077fe50 function chr_texanim_draw_sub_old  # fh v3:exact 0x0077ff20
+0x0077ff00 function chr_texanim_main_sub_old     # the old-format texture-animation step of chr_texanim_main (g_ChrTexAnim entries of kind 2); the Switch chr_texanim_main_sub_old sorts between chr_texanim_draw_sub_old and chr_texanim_memory_move_old, as here
 0x007803a0 function chr_texanim_memory_move_old # Switch name (0x71003328f0): in the old-format file (between chr_texanim_draw_sub_old and _set_old); work +0x5b8
 0x007803f0 function chr_texanim_set_old       # fh v3:exact 0x007804c0
 0x00780750 function TexAnim_StartOld          # structure: as TexAnim_StartNew at +0x400 of the work buffer; old-format file (before tex_anim_no_set_old); name ours
@@ -4779,20 +4781,26 @@
 0x00790b90 function AddMonsterCapture         # fh v3:exact 0x00790be0 +AddMonsterCapture
 0x00790be0 function MsSetMonsterCheck         # fh v3:bsim1.00 0x00790c30
 0x00790c10 function MsBattleProcess           # per frame; outside battle, a raised request flag 0x0112a8e2 starts Battle_Load; was Battle_Update
+0x00790fb0 function MsBattleProcess_Order_00790fb0 # (): with no pending input cue, MsOrderInit, MsOrderRegist of every ready character, MsOrderCalc and MsRegistInputCue, MsLimitTypeTurnCheck; caller MsBattleProcess; own name
 0x00791170 function MsCheckChrHold            # (i, actor, cue): actor +0x4b6 != 0; the turn driver 0x00792210 asks it for actor 5 only; name ours
+0x007911e0 function MsBattleProcess_ChrDamage_007911e0 # (): when no cue level / SE transfer is pending, per character MsSetDamage, MsPoisonProcess, MsEffectFree; caller MsBattleProcess; own name
 0x007915f0 function MsCheckChrBtlPosAll          # layout+callees: sorts between MsBattleProcess and MsCheckChrMotionAll, and its named callees match the Switch 0x7100366ad0 MsCheckChrBtlPosAll's (similarity 1.00: MsGetChr); symbols from Fahrenheit's server export
 0x00791630 function MsCheckChrMotionAll       # fh v3:exact 0x00791680
+0x007917d0 function MsBattleProcess_Status_007917d0 # (): the g_BtlStatus state machine of MsBattleProcess (battle end via MsGetBattleEndStatus, the waits on g_BtlCommandCueCount / g_BtlNumbersShown, MsReturnSummon, MsSetPartyRelifeTime, MsDeathYoujinbou); a part of the Switch's 11224-byte MsBattleProcess; own name
 0x00791fa0 function MsSetTargetsMotion        # (chr, cue, k, &far): entry k's command (MsGetCommand) and targets +0x10: out of reach (+0x4ff > MsGetCommandFar) counted in far, KO'd skipped unless command +0x1a bit 6; the rest +0xded = chr, MsSetMotion(+0x422, 0x1c, 0, 0, 1), head target (MsSetHeadTarget / msResetHeadTarget by +0x1c bit 27); kept targets to +0x10 and g_BtlChrSet; -1/0; name ours
 0x00792170 function MsCheckPlyBtlPosAll       # fh v3:exact 0x007921c0
 0x00792200 function MsDebugCameraSleepInit    # fh v3:bsim1.00 0x00792250
+0x00792210 function MsBattleProcess_CommandCue_00792210 # (): runs the next command cue entry (MsGetCommandCue, MsDeleteCommandCue, MsDeleteInputCue) unless messages, number displays, streams or system messages are pending; caller MsBattleProcess; own name
 0x00792840 function MsGetActiveCursorFlag        # layout+callees: sorts between MsDebugCameraSleepInit and MsInsertBtlCommand, and its named callees match the Switch 0x7100367960 MsGetActiveCursorFlag's (similarity 1.00: MsGetChr); symbols from Fahrenheit's server export
 0x00792880 function MsCountChrReady           # (bits): actors in bits with +0x40b and +0x40a set; the turn driver 0x00792210 (g_BtlChrSet, after MsPayGIL); name ours
 0x007928d0 function MsGetBattleEndStatus      # fh v3:exact+call.cs 0x007928f0 cdecl
 0x007929b0 function MsInsertBtlCommand        # fh v3:exact 0x007929d0
 0x00792a40 function MsResetBtlTarget          # fh v3:exact 0x00792a60
+0x00792a90 function MsBattleProcess_InputCue_00792a90 # (): takes the input cue's entries (MsGetInputCue) through MsCheckStatusBeforeAction(Damage), MsAtelRequestCamera and MsActionRequest ("send_menu"); caller MsBattleProcess; own name
 0x00792d60 function MsSetBtlCommand           # fh v3:exact 0x00792d70
 0x00792de0 function MsSetBtlTarget            # fh v3:exact 0x00792df0
 0x00792e50 function MsSetMenuCommand          # fh v3:exact 0x00792e60
+0x00792f20 function MsBattleProcess_DebugStatus_00792f20 # (): the debug status line of MsBattleProcess (TODapsString of battle-end, sound, CD and cue-level states, "%2d:%2d:%1d W%1d S%1d E%1d"); own name
 0x00793260 function msSetEndDir               # fh v3:exact 0x00793270
 0x007932b0 function MesSetChrTargetPosToLimitSparePosy # fh v3:exact 0x007932c0
 0x00793330 function MsAttachWeapon            # fh v3:exact 0x00793340
@@ -5107,10 +5115,13 @@
 0x007a0910 function MsSEP3Dinit               # fh v3:exact 0x007a0930
 0x007a0930 function MsSEP3Dprocess            # fh v3:exact 0x007a0950
 0x007a0a30 function MsSEP3Dregist             # fh v3:exact 0x007a0a50
+0x007a0c20 function MsGearHasAbility_007a0c20    # (gear, ability) -> 1 when one of the gear's 4 auto-ability slots (u16 at +0xe) is ability; callers MsWeaponNameNum_Weapon/Armor; own name
 0x007a0c50 function MsWeaponName              # fh v3:exact+call.cs 0x007a0c70 cdecl
 0x007a0cb0 function TrophyManager_DestroyInstance # fh switch:bsim1.00 0x710023fd20 TrophyManager::DestroyInstance
 0x007a0cd0 function MsBtlInitItemMem_007a0cd0 # fh switch:bsim1.00 0x7100367af0
 0x007a0cf0 function MsWeaponNameNum           # fh v3:exact+call.cs 0x007a0d10 cdecl
+0x007a0d10 function MsWeaponNameNum_Weapon_007a0d10 # (gear) -> the name id (0x50xx) of a weapon from its auto-abilities (elemental strikes 0x8021/0x8025/0x8029/0x802d, 0x8052/0x8053, ...); MsWeaponNameNum calls it for gear with +5 set (the Switch's 14332-byte MsWeaponNameNum inlines both halves); own name
+0x007a1c00 function MsWeaponNameNum_Armor_007a1c00 # (gear) -> the name id of armour from its auto-abilities (0x8062..0x8069, 0x8047, 0x8000, 0x801e, ...); MsWeaponNameNum calls it for gear with +5 clear; own name
 0x007a2600 function MsWeaponNameRead          # fh v3:exact 0x007a2620
 0x007a2670 function MsStoneEffectCheck        # fh v3:exact 0x007a2690
 0x007a2690 function MsStoneEffectProcess      # fh v3:exact 0x007a26b0
@@ -6386,6 +6397,7 @@
 0x00825650 function Ch_Allocate2              # fh v3:exact 0x008256d0
 0x00825670 function Ch_Allocate_InitAll          # str-match switch: only user of 1 string(s) held once by both builds, e.g. '[CHR WORK]'; Switch 0x710040ef70 Ch_Allocate_InitAll (symbols from Fahrenheit's server export)
 0x008256f0 function Ch_ArcMapping             # fh v3:exact 0x00825770
+0x00825760 function Ch_BlkAllocate_00825760      # (name, size) -> a free g_ChrBlk slot (0x4b words), user_malloc'd and registered (Sg_MemSetStr/Type, Ch_CbArcMapping), "SG:Ch_BlkAllocate %x", "SG:monster effect size %s=%d"; caller Ch_BlkGetHandle; own name from the message
 0x008258d0 function Ch_BlkDispose             # fh v3:exact 0x00825950
 0x008259c0 function Ch_BlkDisposeAll          # fh v3:exact 0x00825a40
 0x008259f0 function Ch_BlkDisposeHandle       # fh v3:exact 0x00825a70
@@ -6716,6 +6728,7 @@
 0x00832760 function Ch_CalcElement            # fh v3:exact 0x008327e0
 0x00832db0 function Ch_AllClearFlags24       # ours: chr +0x194 &= 0xf8ffffff for every active character (Sg_MainLoop)
 0x00832e10 function Ch_CalcMain               # fh v3:exact+call.cs 0x00832e90 cdecl
+0x00833390 function Ch_CalcMiddle                # (): the per-character middle calculation, waiting on the job scheduler (JobScheduleWait_*); the Switch Ch_CalcMiddle (calls JobSchedule_Ch_CalcMiddle_Batch and its wait) sorts between Ch_CalcMain and Ch_CalcMiddle_Batch, as here
 0x00833530 function Ch_CalcMiddle_Batch          # layout+callees: sorts between Ch_CalcMain and Ch_FunctionHistory, and its named callees match the Switch 0x7100417b60 Ch_CalcMiddle_Batch's (similarity 0.62: Ch_CalcElement, Ch_IdShadeCalc, Ch_Neck, Ch_OptposCalc, Sg_GetPause); symbols from Fahrenheit's server export
 0x00833760 function Ch_FunctionHistoryClear  # ours: g_ChrFunctionHistory9e8 = 0 (next to the chr.c function-history logger 0x00833770)
 0x00833770 function Ch_FunctionHistory        # ours: for each active character whose header has no models (+6 == 0) sprintfs "%s:%s:%d\n" (name chr+4, file, line) into the debug line 0x023c4000; cdecl (file, line); next to Ch_FunctionHistoryClear
@@ -6750,6 +6763,7 @@
 0x00834110 function Ch_IdShadeCalc               # layout+callees: sorts between Ch_IdEnableShade and Ch_MotEvent, and its named callees match the Switch 0x7100415b50 Ch_IdShadeCalc's (similarity 0.60: Ch_IdGetShade0, Ch_IdGetShade1, Ch_IdGetShade2, Ch_SetShadeID, FFXVu0Normalize); symbols from Fahrenheit's server export
 0x008342c0 function Ch_ElemInMotion          # ours: (chr, e) 1 if e is in the +0x758 list (u16 count +2, list +8; any element without one), bounded by the element count
 0x00834350 function Ch_MotEvent                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'SG:Motev:%d:%s:TYPE=%s(%d) i=%d frame=%d frame_lastev=%d id='; Switch 0x7100415e00 Ch_MotEvent (symbols from Fahrenheit's server export)
+0x008344f0 function Ch_Mouth                     # (chr): the mouth animation (rand-driven when talking, by the global mode 0x013008d9 or chr +0x4d4), Ch_OptposGetElement; the Switch Ch_Mouth (rand, called by Ch_CalcMiddle_Batch) sorts between Ch_MotEvent and Ch_MouthGetAutoTalk, as here
 0x00834740 function Ch_MouthGetAutoTalk       # movsx chr +0x4d4 (Ch_MouthSetAutoTalk's); Switch name, in name order before Ch_MouthInit; the dump's fh Ch_PLightGetEnable was a BSim miss
 0x00834750 function Ch_MouthInit              # fh v3:exact 0x008347d0
 0x00834770 function Ch_MouthSetAutoTalk       # fh switch:bsim1.00 0x7100416e40
@@ -7897,6 +7911,7 @@
 0x008673d0 function Script_OpReqEw            # (op, worker, level, stack) -> 0: opcodes 38, 4f-53 (REQEW, kind 2)
 0x00867570 function Script_OpReqSw            # (op, worker, level, stack) -> 0: opcodes 37, 4a-4e (REQSW, kind 1); the level waits (+0x1f = 1)
 0x00867740 function AtelExecCtrlEvent         # fh v3:exact 0x008676e0
+0x008677a0 function AtelExecCtrlEventInit_008677a0 # (ctrl): the event start of AtelExecCtrlEvent: debug strings "EVENT INIT cnt %5d", "INI id %3d/cnt %5d", "DECODE SIGNAL", "EVENT START"; Script_Run of the init, AtelDecodeSignal, op_event_effect_init, MsBattleExeClear, AtelClearPauseFlag; own name
 0x008690a0 function AtelStartSignal           # (worker, node): starts a queued request at its level and entry
 0x008691d0 function AtelExecReturn            # fh v3:bsim1.00 0x00869170
 0x00869350 function AtelExecReturn2           # fh v3:bsim1.00 0x008692f0
@@ -8337,7 +8352,18 @@
 0x0087a440 function TkMemDump                    # str-match switch: only user of 1 string(s) held once by both builds, e.g. '\\n%p:%08x '; Switch 0x7100487370 TkMemDump (symbols from Fahrenheit's server export)
 0x0087bdcd function AtelDebugCtrl                # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x710047bae0 AtelDebugCtrl, 2 votes, round 2
 0x0087ddd0 function AtelDebugDrawRect         # fh switch:bsim1.00 0x710047b940
+0x0087f4a0 function AtelDebugPage_Book_0087f4a0  # a page of AtelDebugDisplay: "Book%02d" with "On" / "Off"; own name
+0x0087f660 function AtelDebugPage_Effect_0087f660 # a page of AtelDebugDisplay: "Effect%02d" with "On" / "Off"; own name
+0x0087fb10 function AtelDebugPage_Switch_0087fb10 # a page of AtelDebugDisplay: "On" / "Off" switches; own name
+0x0087fca0 function AtelDebugPage_System_0087fca0 # a page of AtelDebugDisplay: "Normal" / "Movie", "FALSE", "LangMode"; own name
+0x008807b0 function AtelDebugPage_Map_008807b0   # a page of AtelDebugDisplay: "IMapX:", "IMapY:", "V.Vol:", "empty"; own name
+0x00881be0 function AtelDebugPage_DispOff_00881be0 # a page of AtelDebugDisplay: "disp off"; own name
+0x00881e10 function AtelDebugPage_Help_00881e10  # a page of AtelDebugDisplay: "Help %04d" with "On" / "Off"; own name
+0x008822c0 function AtelDebugPage_Sound_008822c0 # a page of AtelDebugDisplay: "sb%06d", "se%06d", "%02d/%s"; own name
+0x00883040 function AtelDebugDisplay_00883040    # (x, y): the script debugger's display: TkDebugFont frame (0x00890500), then one page drawer per mode (the AtelDebugPage_* functions); no static caller; own name
 0x00883340 function TkDebugHexDump_00883340      # structure: prints a memory dump on the debug font (TkSetDebugFontLocate, TkPutDebugFontString(PEuc), "%05X "); name ours
+0x00883e80 function AtelDebugPage_Signals_00883e80 # a page of AtelDebugDisplay: "[System]", "Tag: ", "From: ", "Status: " of the signal queue; own name
+0x008845a0 function AtelDebugPage_Variables_008845a0 # a page of AtelDebugDisplay: script variables as "Integer " / "Float " with "%d(%x)"; own name
 0x00885110 function AtelSetDebugDraw          # (v) byte 0x01328a78, the debug draw toggle (debug pad button 0x800 flips it); own name
 0x00885120 function TkCreateDECI2Header       # fh v3:exact 0x00885080
 0x00885150 function TkGetDebugControler1Hist  # (i) TkGetControlerHist(0, 0, i) zero-extended; Switch name, alphabetical slot TkCreateDECI2Header..TkGetDebugControlerAnalog (two slots, two names)
