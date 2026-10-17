@@ -280,6 +280,75 @@ pub mod bridge {
         call(mem, mem.rebase(INSERT_DRAW_SITUATION), &[v])
     }
 
+    /// `g_CdLib + 0x98`: called with (file, buffer) before a read.
+    pub const CD_LIB_98: Global<u32> = Global::new(0x0231_0c98);
+    /// `Cache_Entry` and `Cache_Entry_NotYet` (`0x00840560`, `0x008405f0`).
+    pub const CACHE_ENTRY: u32 = 0x0084_0560;
+    pub const CACHE_ENTRY_NOT_YET: u32 = 0x0084_05f0;
+    /// `Sg_MemSetType(p, type)` (`0x0083c590`).
+    pub const MEM_SET_TYPE: u32 = 0x0083_c590;
+    /// `Ch_RomReadChrCB(request)` (`0x0082a6c0`).
+    pub const ROM_READ_CHR_CB: u32 = 0x0082_a6c0;
+    /// Bytes of scratch `ch_mgrp_read` needs: the read request (0x1c) and
+    /// the block's name (from `+0x20`).
+    pub const MGRP_READ_SCRATCH: u32 = 0x60;
+
+    /// `Ch_MgrpRead(id, n)` (`0x0082a4c0`): queues the read of character
+    /// `id`'s resident motion group `n` unless the cache has it (state 0
+    /// or 1 for key `n << 16 | id`, kind 2): its file is the character's
+    /// table index + 1 + `n`; with a size (`g_CdLib_14(file)`, not 0 nor
+    /// 0x10) a buffer (`user_malloc((size + 0x8f & !0x7f) - 0x10)`)
+    /// named `"[<chrname>:resident<n>.mgrp]"` (`Sg_MemSetStr`, type 3),
+    /// `g_CdLib_98(file, buffer)`, the cache entry (`Cache_Entry(2, key,
+    /// buffer)`, not yet read), and the read (`g_CdLib(file, buffer,
+    /// Ch_RomReadChrCB, &request)`, the request's `+0xc`.. `+0x18` = key,
+    /// buffer, 2 and a word the original leaves uninitialised, 0 here).
+    /// The request and the name go in `scratch` ([`MGRP_READ_SCRATCH`]
+    /// bytes; the original uses its stack: the read copies the request).
+    /// Returns -1 for an unknown character or no size, else 0.
+    pub fn ch_mgrp_read<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        n: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let h = crate::handle::bridge::MEM_SET_STR;
+        let key = (n << 16) | id;
+        let state = call(mem, mem.rebase(crate::motion::bridge::CACHE_CHECK_YET), &[2, key]);
+        if state <= 1 {
+            return 0;
+        }
+        let index = call(mem, mem.rebase(0x0082_a640), &[id]);
+        if index.cast_signed() < 0 {
+            return u32::MAX;
+        }
+        let file = index.wrapping_add(1).wrapping_add(n);
+        let f = CD_LIB_14.get(mem);
+        let size = call(mem, f, &[file]);
+        if size == 0 || size == 0x10 {
+            return u32::MAX;
+        }
+        let len = (size.wrapping_add(0x8f) & 0xffff_ff80).wrapping_sub(0x10);
+        let buf = call(mem, mem.rebase(crate::handle::bridge::USER_MALLOC), &[len]);
+        let chrname = call(mem, mem.rebase(0x0083_8060), &[id, n]);
+        let mut name = b"[".to_vec();
+        name.extend(crate::handle::bridge::c_string(mem, chrname));
+        name.extend(format!(":resident{}.mgrp]", n.cast_signed()).bytes());
+        let name_at = scratch + 0x20;
+        crate::handle::bridge::put_c_string(mem, name_at, &name);
+        call(mem, mem.rebase(h), &[buf, name_at, u32::MAX]);
+        call(mem, mem.rebase(MEM_SET_TYPE), &[buf, 3]);
+        let f = CD_LIB_98.get(mem);
+        call(mem, f, &[file, buf]);
+        mem.write(scratch + 0xc, [key, buf, 2, 0]);
+        call(mem, mem.rebase(CACHE_ENTRY), &[2, key, buf]);
+        call(mem, mem.rebase(CACHE_ENTRY_NOT_YET), &[2, key, 1]);
+        let f = CD_LIB.get(mem);
+        call(mem, f, &[file, buf, mem.rebase(ROM_READ_CHR_CB), scratch]);
+        0
+    }
+
     /// `Ch_*Get*` of an `i8` setting, sign-extended.
     pub fn get_i8(mem: &impl Mem, g: Global<i8>) -> i32 {
         i32::from(g.get(mem))

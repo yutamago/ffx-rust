@@ -14394,6 +14394,7 @@
 0x012fbda8 label g_ChrFunctionHistory        # 127 entries of 16 bytes (to 0x012fc598); Ch_FunctionHistoryInit clears byte 0 of each
 0x012fc6a0 label g_ChrClothLoads             # 50 cloth file loads of 0x110 bytes (to 0x012ffbc0): +0 state (1 = loading), +4 key (Ch_IsLoadingClothFile)
 0x012ffab8 label    g_ChrKindTables           # 8 pointers, one per kind (id >> 12): i16 count, then i16 ids (Chr_TableIndex)
+0x012ffad4 label    g_ChrF117HideCount        # i32: pending hides of model "f117"'s segment 0 queued by Ch_ModelSetHide 0x0082aea0 (4 at most, then starts over)
 0x012ffad8 label g_ChrSkipSetPos3            # set by Ch_GetPosSg; Ch_SetPos3 clears it instead of moving the character
 0x013007d8 label g_ChrSwitch7d8             # i8, Ch_SysSetSwitch7d8
 0x013007d9 label g_ChrDrawParaEdit           # i8, Ch_DrawSetParaEdit / Ch_DrawGetParaEdit
@@ -14402,6 +14403,7 @@
 0x013007e4 label g_Chr7e4                   # u32, Ch_SysSet7e4
 0x013007e8 label g_ChrEnableTexture          # i8, Ch_EnableGetTexture
 0x013007e9 label g_ChrDrawIcon              # u8, Ch_SetDrawIcon; g_ChrDrawIcon2 at 0x013007ea (Ch_SetDrawIcon2)
+0x013007eb label    g_ChrTexAnimOn            # i8: Ch_TextureLoadAnim 0x00831110 sends texture animation packets only when set
 0x013008bd label g_ChrShadowMode             # u8, Ch_DrawSetShadowMode
 0x013008bf label g_ChrShadowColor            # u8 r, g, b, Ch_DrawSetShadowColor / Ch_DrawGetShadowColor
 0x013008c2 label    g_ChrDrawSituation        # u8, Ch_SysDrawSetSituation
@@ -14800,6 +14802,7 @@
 0x02310c58 label g_CdChannelKeepNames # when set, cd_channel_clear 0x0076d530 keeps the channel names; name ours
 0x02310c60 label    g_CdLib_FileBase          # g_CdLib + 0x20: the current module's first PS2 file number (CDfileSize_CD, CDfileSize_CD_EX add it to theirs)
 0x02310c68 label    g_CdLib_SectorTable       # g_CdLib + 0x28: cdrom.mdg (CdEnvInit), u32 per file: start sector in bits 0-21, bit 22 size from sizetbl.bin, bit 23 absent, top byte the unused bytes at the end / 8 (CDfileSize_CD, cd_file_sector)
+0x02310c98 label    g_CdLib_98                # g_CdLib + 0x98: Ch_MgrpRead 0x0082a4c0 calls it (file, buffer) before queueing the read
 0x02310cc0 label    g_CdLib_80                # g_CdLib + 0x80: Ch_RomReadEventMGRPsync 0x0082a7f0 calls it (12, p)
 0x02310cd8 label g_BtlItemMem2                # u32; with the one before it (same function, ffx_battle::misc)
 0x02310dde label g_BtlSpoilsEquipment      # 8 x 22-byte equipment slots of the 0xb000 IDs (MsGetSaveWeapon)
@@ -14833,11 +14836,13 @@
 0x023c3668 label    g_OpSoundCurves           # f32 volume max/min (+0/+4), pan max/min (+0x10/+0x14), volume base/slope (+0x18/+0x1c), pan slope (+0x24) for op_3d_vol_pan_get
 0x023c4000 label    g_DebugLine               # char buffer for debug text; Ch_FunctionHistory 0x00833770 and Ch_CheckRadian 0x00836790 sprintf into it
 0x023c44a0 label g_ChrTex0List              # texture list Ch_TextureSetTex0 last worked on
+0x023c44c0 label    g_ChrF117Hides            # 4 x (hide, renderer instance), Ch_ModelSetHide's queue (count g_ChrF117HideCount)
 0x023c44e0 label    g_ChrCount                   # number of field characters in g_ChrArray
 0x023c44e4 label    g_ChrArray                   # field characters, 0x880 bytes each (byte +2 = active)
 0x023c8d00 label g_ChrBlk                    # 40 character model blocks of 0x12c bytes (Ch_BlkGetHandleFast); chr +0x1c4 points at one: +0x1c thickness, +0x30 scale, +0x71 name, +0xb8 directory, +0x124/+0x128 resident data
 0x023cbbe0 label    g_GuScreenSize            # i32 height, width: Gu_SetXyzf2 centres in 4096 by them
 0x023cbbf0 label    g_SgFrame                    # main loop frame counter: Sg_MainLoop increments it and passes it to sceGsSwapDBuffDc; yiGetFCount returns it * 2
+0x023cbbf8 label    g_ChrTexAnimDmaChannel    # the DMA channel Ch_TextureLoadAnim 0x00831110 sends its packet on (sceDmaSend)
 0x023cbd60 label    g_EventEbpMessages        # the .ebp's own message table (section 1), set by AtelEventSetUp; the Msg_ lookups fall back to it for offset 0
 0x023cbebc label gNeedAutoSave                # fh v4:user_defined
 0x023cbec4 label    g_SndStreamTable          # voice stream position table: u16 groups, u16 offsets; group: u16 count, u16 offsets; entry list: u16 count, u16 sectors (0xffff gaps) (SndStreamDVDPos)
