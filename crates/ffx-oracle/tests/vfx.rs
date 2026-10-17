@@ -3288,6 +3288,15 @@ fn vu0_macros_and_tables_match_the_original() {
                     Some(dst)
                 },
             );
+            p.check(
+                "pppVu0MaddW_copy_0074bde0",
+                0x0074_bde0,
+                &[dst, v, junk, junk, junk, k],
+                |m| {
+                    b::ppp_vu0_madd(m, dst, v, f);
+                    Some(dst)
+                },
+            );
             let d = if rng.chance(20) { v + 4 } else { dst };
             p.check("pppVu0MulX", 0x0072_c6a0, &[d, v, k], |m| {
                 b::ppp_vu0_mul(m, d, v, f);
@@ -8512,6 +8521,63 @@ fn round17_helpers_match_the_original() {
             p.fill(clut, 0x400, &mut rng);
             p.check("0x007e5680", 0x007e_5680, &[], |o| {
                 Some(op::bridge::op_oef2_tex_clut_init(o))
+            });
+        }
+    }
+}
+
+#[test]
+fn round18_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0074_9050);
+        let (out, v) = (p.alloc(0x10), p.alloc(0x10));
+        let chr = p.sym(0x012a_22c0);
+        let (set, list) = (p.alloc(0x40), p.alloc(0x40));
+        for _ in 0..3000 {
+            // 0x00749050
+            p.fill(out, 0x10, &mut rng);
+            p.fill(v, 0x10, &mut rng);
+            p.check("0x00749050", 0x0074_9050, &[out, v], |o| {
+                Some(vec::bridge::ivec4_shr7_to_fvec4(o, out, v))
+            });
+            // 0x007fead0
+            for i in 0..240u32 {
+                p.set(chr + 0x20 * i, if rng.chance(30) { rng.next() } else { 0 });
+                let d = if rng.chance(40) {
+                    rng.below(0x100)
+                } else {
+                    0x1234
+                };
+                p.set(chr + 0x20 * i + 0xe, u16::try_from(d).unwrap());
+            }
+            let (r1, r2, r3) = (rng.below(0x100), rng.next(), rng.next() & 0x0fff_ffff);
+            let c = rng.pick(&[r1, r2, 0x1000_0005, r3]);
+            p.check("0x007fead0", 0x007f_ead0, &[c], |o| {
+                Some(et::bridge::op_et_chr_slot(&Capped::new(o), c))
+            });
+            // 0x00801780
+            p.fill(list, 0x40, &mut rng);
+            for i in 0..0x20u32 {
+                let x: i16 = if rng.chance(8) {
+                    -1
+                } else {
+                    i16::try_from(rng.below(0x100)).unwrap()
+                };
+                p.set(list + 2 * i, x);
+            }
+            p.fill(set, 0x40, &mut rng);
+            let k = rng.below(4);
+            p.set(set + 0x10 + 4 * k, list);
+            p.set(set + 0x34, rng.pick(&[0u16, 1, 2, 9, 0x20, 0x21]));
+            let id = rng.next();
+            p.check("0x00801780", 0x0080_1780, &[set, id, k], |o| {
+                #[allow(clippy::cast_possible_truncation)]
+                Some(opus::bridge::opus_list_add(
+                    &mut Capped::new(o),
+                    set,
+                    id as u16,
+                    k,
+                ))
             });
         }
     }

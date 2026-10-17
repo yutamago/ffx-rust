@@ -157,4 +157,16 @@ pub mod bridge {
         mem.write(out[1], y);
         out[1]
     }
+
+    /// `0x00749050(out, v)`: four `i16` at `v` shifted right by 7
+    /// (arithmetic), as `f32`. Returns the last (left in `eax`).
+    pub fn ivec4_shr7_to_fvec4(mem: &mut impl Mem, out: u32, v: u32) -> u32 {
+        let mut last = 0i32;
+        for i in 0..4u32 {
+            last = i32::from(mem.read::<i16>(v.wrapping_add(2 * i)) >> 7);
+            #[allow(clippy::cast_precision_loss)] // exact: |x| < 2^8
+            mem.write(out.wrapping_add(4 * i), last as f32);
+        }
+        last.cast_unsigned()
+    }
 }

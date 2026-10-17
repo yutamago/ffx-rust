@@ -1526,6 +1526,26 @@ ported! {
     op_oef2_tex_clut_init_007e5680 @ 0x007e_5680 => extern "C" fn op_oef2_tex_clut_init() -> u32 {
         op::bridge::op_oef2_tex_clut_init(&mut mem())
     }
+    /// `pppVu0MaddW_copy_0074bde0(dst, v, _, _, _, s)`: `pppVu0MaddW`'s
+    /// code again; returns `dst`.
+    pppVu0MaddW_copy_0074bde0 @ 0x0074_bde0 => extern "C" fn ppp_vu0_madd_w_copy(dst: u32, v: u32, a: u32, b: u32, c: u32, s: f32) -> u32 {
+        let _ = (a, b, c);
+        mat::bridge::ppp_vu0_madd(&mut mem(), dst, v, s);
+        dst
+    }
+    /// `op_ivec4_shr7_00749050(out, v)`.
+    op_ivec4_shr7_00749050 @ 0x0074_9050 => extern "C" fn ivec4_shr7_to_fvec4(out: u32, v: u32) -> u32 {
+        vec::bridge::ivec4_shr7_to_fvec4(&mut mem(), out, v)
+    }
+    /// `op_et_chr_slot_007fead0(chr)`.
+    op_et_chr_slot_007fead0 @ 0x007f_ead0 => extern "C" fn op_et_chr_slot(chr: u32) -> u32 {
+        et::bridge::op_et_chr_slot(&mem(), chr)
+    }
+    /// `opus_list_add_00801780(set, id, list)`.
+    opus_list_add_00801780 @ 0x0080_1780 => extern "C" fn opus_list_add(set: u32, id: u32, list: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the u16 argument
+        opus::bridge::opus_list_add(&mut mem(), set, id as u16, list)
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

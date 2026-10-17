@@ -489,4 +489,25 @@ pub mod bridge {
         }
         u32::from(last)
     }
+
+    /// `0x00801780(set, id, list)`: `id` into the first free (negative)
+    /// `i16` of `set`'s list `[set +0x10 + 4 list]`, among `u16 +0x34` - 1
+    /// entries (the index an `i16`), and `u16 +0x38` up by one: 0; -1 when
+    /// none is free.
+    pub fn opus_list_add(mem: &mut impl Mem, set: u32, id: u16, list: u32) -> u32 {
+        let n = u32::from(mem.read::<u16>(set.wrapping_add(0x34)).wrapping_sub(1));
+        let t: u32 = mem.read(set.wrapping_add(0x10).wrapping_add(list.wrapping_mul(4)));
+        let mut i = 0i16;
+        while i32::from(i) < n.cast_signed() {
+            let at = t.wrapping_add(i32::from(i).cast_unsigned().wrapping_mul(2));
+            if mem.read::<i16>(at) < 0 {
+                mem.write(at, id);
+                let c: u16 = mem.read(set.wrapping_add(0x38));
+                mem.write(set.wrapping_add(0x38), c.wrapping_add(1));
+                return 0;
+            }
+            i = i.wrapping_add(1);
+        }
+        u32::MAX
+    }
 }
