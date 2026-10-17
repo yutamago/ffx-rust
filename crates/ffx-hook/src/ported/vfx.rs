@@ -2240,6 +2240,16 @@ ported! {
     }
 
     // ---- opus ----
+    /// `opus_get_bone_matrix(out, chr, bone)`.
+    opus_get_bone_matrix @ 0x0080_5430 => extern "C" fn opus_get_bone_matrix(out: u32, chr: u32, bone: u32) -> u32 {
+        // the original's 16-byte local for Ch_OptposGetElement
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x10]);
+        let mut locals = Locals([0; 0x10]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32;
+        opus::bridge::opus_get_bone_matrix(&mut mem(), out, chr, bone, frame, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opus_get_weapon_index(obj)`.
     opus_get_weapon_index @ 0x0080_1000 => extern "C" fn opus_get_weapon_index(obj: u32) -> i32 {
         opus::bridge::opus_get_weapon_index(&mem(), obj)

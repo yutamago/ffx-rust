@@ -10491,6 +10491,77 @@ fn vfx_render_data_counts_match_the_original() {
 }
 
 #[test]
+fn opus_get_bone_matrix_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_5430);
+        let out = p.alloc(0x60);
+        let (gpr, vu) = (p.sym(0x00c8_f508), p.sym(0x00c8_f780));
+        // real characters on a snapshot: the g_EtChr handles
+        let chr_at = p.sym(et::bridge::CHR.sym);
+        let mut handles = Vec::new();
+        if p.snapshot() {
+            for i in 0..et::bridge::CHRS {
+                let h: u32 = p.get(chr_at + 0x20 * i);
+                if h != 0 && !handles.contains(&h) {
+                    handles.push(h);
+                }
+            }
+        }
+        let real = !handles.is_empty();
+        if !real {
+            // the character calls stand in: an element number, no matrix
+            // (the matrix call records its element: mov eax, [esp + 8];
+            // mov [seen], eax; xor eax, eax; ret)
+            let (optpos, base) = (p.sym(0x0083_5660), p.sym(0x0083_3b80));
+            let seen = p.alloc(4);
+            let mut code = vec![0x8b, 0x44, 0x24, 0x08, 0xa3];
+            code.extend(seen.to_le_bytes());
+            code.extend([0x31, 0xc0, 0xc3]);
+            for o in [&mut p.a, &mut p.b] {
+                o.stub_return(optpos, 7).unwrap();
+                o.write(base, &code).unwrap();
+            }
+            handles.push(p.alloc(0x40));
+        }
+        for _ in 0..300 {
+            for i in (0..0x60).step_by(4) {
+                let v = finite(&mut rng);
+                p.set(out + i, v);
+            }
+            p.fill(gpr, 0x10, &mut rng);
+            p.fill(vu, 0x1e0, &mut rng);
+            let chr = rng.pick(&handles);
+            // the option-position form passes the original's stack local to
+            // Ch_OptposGetElement: only real characters fill it
+            let bone = if real && rng.chance(50) {
+                0x8000 | rng.below(4) | rng.pick(&[0u32, 0x100])
+            } else if real {
+                rng.below(4)
+            } else {
+                rng.below(4) | rng.pick(&[0u32, 0x100, 0x1_0000])
+            };
+            // the original's local is at [ebp - 0x14]
+            check_deep3(
+                &mut p,
+                "0x00805430",
+                0x0080_5430,
+                [out, chr, bone],
+                |m, frame| {
+                    opus::bridge::opus_get_bone_matrix(
+                        m,
+                        out,
+                        chr,
+                        bone,
+                        frame - 0x14,
+                        &mut call_original,
+                    )
+                },
+            );
+        }
+    }
+}
+
+#[test]
 fn md_tex0_change_matches_the_original() {
     for mut p in Pair::all() {
         let mut rng = Xorshift(0x00a6_9ca0);

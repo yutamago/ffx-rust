@@ -62,6 +62,42 @@ pub mod bridge {
         u32::from(nz)
     }
 
+    /// `Ch_OptposGetElement(chr, i, out)`, called through `call`.
+    const CH_OPTPOS_GET_ELEMENT: u32 = 0x0083_5660;
+    /// `Ch_ElemGetBaseMatrix(chr, e, out)`, called through `call`.
+    const CH_ELEM_GET_BASE_MATRIX: u32 = 0x0083_3b80;
+
+    /// `opus_get_bone_matrix(out, chr, bone)` (`0x00805430`): the base
+    /// matrix of a character's element into `out` (`Ch_ElemGetBaseMatrix`).
+    /// With bit 0x8000 the bone is an option position (`bone & 0xff`):
+    /// `Ch_OptposGetElement` gives its element and an offset (16 bytes at
+    /// `frame`, the original's local), and `out + 0x30` becomes that offset
+    /// through the matrix (`op_apply_m_w1`). Otherwise the emulated EE
+    /// register `g_Ee_Gpr` (`0x00c8f508..`, 16 bytes) is copied to `out +
+    /// 0x40`. Returns `eax` as left: `0x00c8f93c` (`op_apply_m_w1`'s last
+    /// load), or `0x00c8f514`; no caller reads it.
+    pub fn opus_get_bone_matrix<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        chr: u32,
+        bone: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let base = Global::<u32>::new(CH_ELEM_GET_BASE_MATRIX).ptr(mem).addr;
+        if bone & 0x8000 != 0 {
+            let f = Global::<u32>::new(CH_OPTPOS_GET_ELEMENT).ptr(mem).addr;
+            let e = call(mem, f, &[chr, bone & 0xff, frame]);
+            call(mem, base, &[chr, e, out]);
+            crate::op::bridge::op_apply_m_w1(mem, out.wrapping_add(0x30), out, frame);
+            return Global::<u32>::new(0x00c8_f93c).get(mem);
+        }
+        call(mem, base, &[chr, bone, out]);
+        let gpr: [u32; 4] = mem.read(Global::<u32>::new(0x00c8_f508).ptr(mem).addr);
+        mem.write(out.wrapping_add(0x40), gpr);
+        gpr[3]
+    }
+
     /// `opus_get_weapon_index(obj)` (`0x00801000`): its slot, or -1.
     pub fn opus_get_weapon_index(mem: &impl Mem, obj: u32) -> i32 {
         (0..4)

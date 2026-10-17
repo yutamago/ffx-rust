@@ -376,3 +376,15 @@ whose first two words are that buffer's index and vertex counts.
 
 All three return 1, or 0 when the instance has no render data. They are
 bookkeeping for the PC renderer's buffers, ported in `draw.rs`.
+
+## Bone matrices (`opus_get_bone_matrix`)
+
+`opus_get_bone_matrix(out, chr, bone)` (`0x00805430`) puts a character
+element's base matrix in `out` (`Ch_ElemGetBaseMatrix`) for the opus
+effects that follow bones. A bone with bit 0x8000 is an option position:
+`Ch_OptposGetElement(chr, bone & 0xff, local)` returns the element it hangs
+from and a 16-byte offset in the caller's local, and `out + 0x30` becomes
+that offset through the matrix (`op_apply_m_w1`). Without the bit the
+function also copies the emulated EE register `g_Ee_Gpr` (`0x00c8f508`, 16
+bytes) to `out + 0x40`. The port keeps the local in a per-call stack buffer
+in the shim.
