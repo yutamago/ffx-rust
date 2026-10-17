@@ -1372,6 +1372,104 @@ pub mod bridge {
         }
     }
 
+    /// `g_ChrIdShadeOn` (`i8`).
+    pub const CHR_ID_SHADE_ON: Global<u8> = Global::new(0x0130_34b8);
+    /// `graphicCharacterLightingSetMapIdFlagChanged(old, new)`.
+    pub const LIGHTING_SET_MAP_ID_FLAG_CHANGED: u32 = 0x0063_cd20;
+
+    /// `Sg_IdFixupAndSet(map)` (`0x00844bc0`): for a map's id data, the
+    /// id shades go on for a version (`i16` at `+4`) above `0x1202` (the
+    /// renderer told of a change, old value sign-extended), the data's
+    /// offsets become pointers (word 0 holds the base they were taken from:
+    /// `+0x1c`, `+0x18`, and `+0xc` of each of the `i16` `+6` 16-byte
+    /// entries in `+0x1c`'s table, each moved by `map - base`), then
+    /// `Sg_IdSetPtr(map)`. A null map only goes to `Sg_IdSetPtr`.
+    /// (`get_ptr32_func`/`set_ptr32` are identities on the PC.)
+    pub fn id_fixup_and_set(h: &mut impl ffx_bridge::Host, map: u32) {
+        if map != 0 {
+            let old = i32::from(CHR_ID_SHADE_ON.get(h).cast_signed()).cast_unsigned();
+            let on = u32::from(h.read::<i16>(map.wrapping_add(4)) > 0x1202);
+            if on != old {
+                let at = h.rebase(LIGHTING_SET_MAP_ID_FLAG_CHANGED);
+                h.call(at, &[old, on]);
+            }
+            let on = u8::from(h.read::<i16>(map.wrapping_add(4)) > 0x1202);
+            CHR_ID_SHADE_ON.set(h, on);
+            let delta = map.wrapping_sub(h.read::<u32>(map));
+            if delta != 0 {
+                h.write(map, delta);
+                for off in [0x1c, 0x18] {
+                    let p: u32 = h.read(map.wrapping_add(off));
+                    h.write(map.wrapping_add(off), p.wrapping_add(delta));
+                }
+                let mut k = 0i32;
+                while k < i32::from(h.read::<i16>(map.wrapping_add(6))) {
+                    let table: u32 = h.read(map.wrapping_add(0x1c));
+                    let e = table.wrapping_add(0xc).wrapping_add(16 * k.cast_unsigned());
+                    let p: u32 = h.read(e);
+                    let table: u32 = h.read(map.wrapping_add(0x1c));
+                    let e = table.wrapping_add(0xc).wrapping_add(16 * k.cast_unsigned());
+                    h.write(e, p.wrapping_add(delta));
+                    k += 1;
+                }
+            }
+        }
+        id_set_ptr(h, map);
+    }
+
+    /// The diving byte (`0x013007c5`): while set, `Sg_ControlMain` adds
+    /// gravity to a swimming player.
+    pub const PLAYER_DIVING: Global<u8> = Global::new(0x0130_07c5);
+
+    /// `Sg_PlayerSetDiving(v)` (`0x0082d9d0`): [`PLAYER_DIVING`]. Returns
+    /// it (`al`).
+    pub fn player_set_diving(mem: &mut impl Mem, v: u32) -> u8 {
+        PLAYER_DIVING.set(mem, lo8(v));
+        lo8(v)
+    }
+
+    /// The player's speeds `Sg_PlayerSetSpeed` sets: kinds 1, 2, `0x12`,
+    /// `0x13` (`f32` each).
+    pub const PLAYER_SPEED: [Global<f32>; 4] = [
+        Global::new(0x0130_07b4),
+        Global::new(0x0130_07b8),
+        Global::new(0x0130_07bc),
+        Global::new(0x0130_07c0),
+    ];
+
+    /// `Sg_PlayerSetSpeed(kind, v)` (`0x0082d9e0`): the speed of kind 1, 2,
+    /// `0x12` or `0x13` (through `fld`/`fstp`); other kinds are ignored.
+    /// Returns the switch's `eax`: the jump-table byte for kinds 1 to
+    /// `0x13` (0, 1, 2, 3 for the four, 4 for the rest), else `kind - 1`.
+    pub fn player_set_speed(mem: &mut impl Mem, kind: u32, v: f32) -> u32 {
+        let i = kind.wrapping_sub(1);
+        if i > 0x12 {
+            return i;
+        }
+        let slot: u32 = match kind {
+            1 => 0,
+            2 => 1,
+            0x12 => 2,
+            0x13 => 3,
+            _ => return 4,
+        };
+        PLAYER_SPEED[slot as usize].set(mem, ffx_bridge::x87::round_trip(v));
+        slot
+    }
+
+    /// The camera-follow bits (`0x00c496d5`): bit 0 set by `0x0082d030`,
+    /// bit 1 by `Sg_SetCameraFollow`; with both, `Sg_ControlMain` turns
+    /// the camera after the player's heading.
+    pub const CAMERA_FOLLOW: Global<u8> = Global::new(0x00c4_96d5);
+
+    /// `Sg_SetCameraFollow(on)` (`0x0082dab0`): bit 1 of
+    /// [`CAMERA_FOLLOW`]. Returns the new byte (`al`).
+    pub fn set_camera_follow(mem: &mut impl Mem, on: u32) -> u8 {
+        let v = (CAMERA_FOLLOW.get(mem) & 0xfd) | if on != 0 { 2 } else { 0 };
+        CAMERA_FOLLOW.set(mem, v);
+        v
+    }
+
     /// `Sg_IdSetPtr`'s zoom divisor (`f64` 10 in `.rdata`).
     pub const ZOOM_DIVISOR: Global<f64> = Global::new(0x00b9_22b0);
     /// The map objects (`0x880` bytes each) and their count.
