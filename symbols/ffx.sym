@@ -9700,7 +9700,7 @@
 0x008e3b80 function TkMenuSetSubCmdWindowCursor # (i): g_TkMenuSubCmdWindow busy (+0x45 = 1), cursor +0x2c/+0x48 = i, state +0x28 = 6
 0x008e4560 function TkMenuGetYesNoWindowHeight   # layout+callees: sorts between TkMenuCloseSubCmdWindow and TkMenuRestartSubCmdWindow2, and its named callees match the Switch 0x71004e7760 TkMenuGetYesNoWindowHeight's (similarity 1.00: TOGetMessageWH); symbols from Fahrenheit's server export
 0x008e4790 function TkMenuOpenSubCmdWindowMain   # layout+callees: sorts between TkMenuGetYesNoWindowHeight and TkMenuRestartSubCmdWindow2, and its named callees match the Switch 0x71004e8190 TkMenuOpenSubCmdWindowMain's (similarity 1.00: TkMenuMainAllocWindow, TkMenuMainRegistWindow, TkMn2StringWidth); symbols from Fahrenheit's server export
-0x008e49b0 function MenuSubCmd_RefreshHelp    # TkMenuSetHelpMessage of the sub-command window cursor entry +0x5c+12i; own name
+0x008e49b0 function TkMenuRefreshSubCmdHelp   # TkMenuSetHelpMessage of the sub-command window cursor entry +0x5c+12i; the Switch TkMenuRefreshSubCmdHelp (48 bytes) calls only TkMenuSetHelpMessage and sorts right before TkMenuRestartSubCmdWindow2, as here; was MenuSubCmd_RefreshHelp
 0x008e49d0 function TkMenuRestartSubCmdWindow2 # fh switch:bsim1.00 0x71004e9120
 0x008e49f0 function TkMenuRestartSubCmdWindow1 # (): 0x023cc124 +0x45 = 0, +0x28 = 1 (TkMenuRestartSubCmdWindow2 does 0x023cc128)
 0x008e4a10 function MenuSubCmd_SetValue       # (v) u16 +0x38 of 0x023cc128; own name
@@ -11787,13 +11787,13 @@
 0x00a7b8f0 function TkMenuGetSceneRecord      # (i, handle) -> g_TkMenuSceneData[i] + handle, 0 for a 0 handle or no block
 0x00a7b910 function TkMenuGetSceneDataAdrs    # (i) -> g_TkMenuSceneData[i] (TkMenuSetSceneDataAdrs's getter)
 0x00a7b920 function TkMenuGetSceneHandle      # fh v3:exact 0x00a7b920
-0x00a7b9d0 function TkMenuGetSceneX           # (i, handle) -> i16 record +8, 0 without one
-0x00a7ba00 function TkMenuGetSceneY           # (i, handle) -> i16 record +0xa, 0 without one
+0x00a7b9d0 function TkMenuGetSceneOffsetX     # (i, handle) -> i16 record +8, 0 without one; the Switch TkMenuGetSceneOffsetX/Y (52 bytes) sort between TkMenuGetSceneHandle and TkMenuInitSeq, as this pair does; was TkMenuGetSceneX
+0x00a7ba00 function TkMenuGetSceneOffsetY     # (i, handle) -> i16 record +0xa, 0 without one; see TkMenuGetSceneOffsetX; was TkMenuGetSceneY
 0x00a7bb00 function TkMenuInitSeq             # fh v3:bsim1.00 0x00a7bb00
 0x00a7bb60 function TkMenuIsStartScene           # (i, handle) -> the record when its +4 flag bit 31 is set, else 0 (TkMenuStartScene sets bits 31 and 30, TkMenuIsTermScene tests bit 30); the Switch TkMenuIsStartScene (52 bytes, like TkMenuIsTermScene) sorts between TkMenuInitSeq and TkMenuIsTermScene, as here
 0x00a7bb90 function TkMenuIsTermScene         # fh v3:exact 0x00a7bb90
 0x00a7c7f0 function TkMenuSetSceneDataAdrs    # fh v3:bsim1.00 0x00a7c7f0
-0x00a7c810 function TkMenuSetScenePos         # (i, handle, x, y): the record's +8/+0xa
+0x00a7c810 function TkMenuSetSceneOffset      # (i, handle, x, y): the record's +8/+0xa; the Switch TkMenuSetSceneOffset (40 bytes, called by TOSeqSetSceneOffset) sorts after TkMenuSetSceneDataAdrs, as here; caller TOSeqSetScenePosByName; was TkMenuSetScenePos
 0x00a7c880 function TkMenuStartScene          # fh v3:exact 0x00a7c880
 0x00a7c8a0 function TkMenuStopScene           # fh v3:exact 0x00a7c8a0
 0x00a8d87a function crt_abs_thunk             # g_MagicImports slot 392: jmp [0x00b0c5b4] (MSVCR110 abs); hidden from the dump
