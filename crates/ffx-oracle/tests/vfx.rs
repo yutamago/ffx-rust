@@ -7846,3 +7846,86 @@ fn round12_helpers_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::many_single_char_names)]
+fn round12b_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_a120);
+        deref_recorder(&mut p, 0x00a7_0910, &[0, 0]);
+        let fns = p.sym(0x00a7_0910);
+        let (pts, xs, out, src) = (p.alloc(0x100), p.alloc(0x100), p.alloc(0x10), p.alloc(0x10));
+        let scratch = p.alloc(0x100);
+        let order = p.sym(op::bridge::FUNC_OT_ORDER.sym);
+        let slots = p.sym(op::bridge::FUNC_OT.sym);
+        for _ in 0..2000 {
+            // op_spline_xyz over op_spline_table's slopes, here random
+            let n = rng.pick(&[0u32, 1, 2, 3, 4, 5, 7, 9]);
+            let mut x = 0f32;
+            for i in 0..16 {
+                x += f32::from_bits(finite(&mut rng)).abs().min(50.0);
+                p.set(xs + 4 * i, x);
+            }
+            for i in 16..48 {
+                let d = finite(&mut rng);
+                p.set(xs + 4 * i, d);
+            }
+            for i in 0..0x40 {
+                let v = finite(&mut rng);
+                p.set(pts + 4 * i, v);
+            }
+            p.put(op::bridge::SPR_TOP, 0i8);
+            let spr = p.sym(op::bridge::SPR_STACK.sym);
+            p.set(spr, scratch);
+            let any = f32::from_bits(finite(&mut rng));
+            let t = rng.pick(&[0.0f32, x / 3.0, any]);
+            p.check(
+                "op_spline_xyz",
+                0x007e_a120,
+                &[out, t.to_bits(), pts, xs, n],
+                |o| {
+                    op::bridge::op_spline_xyz(o, out, t, pts, xs, n);
+                    None
+                },
+            );
+            // Vec4SubScalars
+            let k = [rng.float(), rng.float(), rng.float(), rng.float()];
+            for i in 0..4 {
+                let v = rng.float();
+                p.set(src + 4 * i, v);
+            }
+            p.check(
+                "Vec4SubScalars",
+                0x0074_be90,
+                &[out, src, k[0], k[1], k[2], k[3]],
+                |o| {
+                    vec::bridge::vec4_sub_scalars(o, out, src, k.map(f32::from_bits));
+                    None
+                },
+            );
+            // op_func_ot
+            let list = rng.pick(&[0u32, 0x20, 0x40]);
+            for i in 0..0x80u32 {
+                p.set(order + i, -1i8);
+            }
+            // distinct slots, as op_func_ot_set enters them (a freed slot's
+            // function is cleared)
+            let m = rng.below(8);
+            let first = rng.below(8);
+            for i in 0..m {
+                p.set(order + list + i, i8::try_from((first + 3 * i) % 8).unwrap());
+            }
+            for i in 0..0x48u32 {
+                let e = slots + 16 * i;
+                p.set(e, fns);
+                p.set(e + 4, rng.next());
+                p.set(e + 8, rng.next());
+                p.set(e + 0xc, u16::try_from(rng.below(3)).unwrap());
+            }
+            p.check("op_func_ot", 0x007e_b430, &[list], |o| {
+                op::bridge::op_func_ot(o, list, &mut call_original);
+                None
+            });
+        }
+    }
+}

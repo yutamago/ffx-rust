@@ -2735,4 +2735,59 @@ pub mod bridge {
         mem.write(hdr + 0x1a, 0x80u8);
         0x1a0
     }
+
+    /// `op_spline_xyz(out, t, pts, x, n)` (`0x007ea120`): the spline of
+    /// each coordinate of the 16-byte points `pts` at `t`: the coordinate
+    /// copied into a scratch block (the `op_spr` stack, `(n + 3) & 0xfc`
+    /// words), then `op_spline(t, scratch, x, x + 4 n k + 4 n, n)` (the
+    /// slopes of coordinate `k` follow the knots `x`) into `out[k]`.
+    pub fn op_spline_xyz(mem: &mut impl Mem, out: u32, t: f32, pts: u32, x: u32, n: u32) {
+        let buf = op_spr_alloc(mem, (n.wrapping_add(3) & 0xfc).wrapping_mul(4));
+        let t = x87::load_f32(t);
+        for k in 0..3u32 {
+            for i in 0..n.cast_signed().max(0).cast_unsigned() {
+                let v: u32 = mem.read(pts.wrapping_add(16 * i + 4 * k));
+                mem.write(buf.wrapping_add(4 * i), x87::load(v));
+            }
+            let d = x.wrapping_add(n.wrapping_mul(4).wrapping_mul(k + 1));
+            let r = op_spline(mem, t, buf, x, d, n);
+            mem.write(out.wrapping_add(4 * k), r);
+        }
+        op_spr_free(mem);
+    }
+
+    /// `op_func_ot(list)` (`0x007eb430`): runs the functions of OT list
+    /// `list` in order (`FUNC_OT_ORDER`, up to 32, until a free place):
+    /// each slot's function with its two words (through `call`); a slot
+    /// with a frame count (`u16 +0xc`) counts down and is freed at 0
+    /// (`op_func_ot_free`), the next one moving into its place.
+    pub fn op_func_ot<M: Mem>(
+        mem: &mut M,
+        list: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let mut i = 0i32;
+        while i < 32 {
+            let idx = FUNC_OT_ORDER
+                .ptr(mem)
+                .at(list.wrapping_add(i.cast_unsigned()))
+                .get(mem);
+            if idx < 0 {
+                break;
+            }
+            let slot = i32::from(idx).cast_unsigned();
+            let e = FUNC_OT.ptr(mem).at(slot.wrapping_add(list)).addr;
+            let [f, a, b, _] = mem.read::<[u32; 4]>(e);
+            call(mem, f, &[a, b]);
+            let c: u16 = mem.read(e + 0xc);
+            if c != 0 {
+                mem.write(e + 0xc, c - 1);
+                if c == 1 {
+                    op_func_ot_free(mem, slot, list);
+                    i -= 1;
+                }
+            }
+            i += 1;
+        }
+    }
 }

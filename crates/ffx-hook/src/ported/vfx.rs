@@ -1388,6 +1388,18 @@ ported! {
     opd_num_init @ 0x00a5_dda0 => extern "C" fn opd_num_init(x: u32) -> u32 {
         op::bridge::opd_num_init(&mut mem(), x, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `op_spline_xyz(out, t, pts, x, n)`.
+    op_spline_xyz @ 0x007e_a120 => extern "C" fn op_spline_xyz(out: u32, t: f32, pts: u32, x: u32, n: u32) {
+        op::bridge::op_spline_xyz(&mut mem(), out, t, pts, x, n);
+    }
+    /// `Vec4SubScalars_0074be90(dst, src, x, y, z, w)`.
+    Vec4SubScalars_0074be90 @ 0x0074_be90 => extern "C" fn vec4_sub_scalars(dst: u32, src: u32, x: u32, y: u32, z: u32, w: u32) {
+        vec::bridge::vec4_sub_scalars(&mut mem(), dst, src, [x, y, z, w].map(f32::from_bits));
+    }
+    /// `op_func_ot(list)`.
+    op_func_ot @ 0x007e_b430 => extern "C" fn op_func_ot(list: u32) {
+        op::bridge::op_func_ot(&mut mem(), list, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `opu2_part(obj, cmd)`.
     opu2_part @ 0x00a7_4a00 => extern "C" fn opu2_part(obj: u32, cmd: u32) -> u32 {
         slots::bridge::opu2_part(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

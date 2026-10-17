@@ -115,4 +115,14 @@ pub mod bridge {
         mem.write(sq, out);
         out
     }
+
+    /// `Vec4SubScalars_0074be90(dst, src, x, y, z, w)` (`0x0074be90`):
+    /// `dst` = `src` - (`x`, `y`, `z`, `w`), then `restoreVf00Register`.
+    pub fn vec4_sub_scalars(mem: &mut impl Mem, dst: u32, src: u32, k: [f32; 4]) {
+        for (i, c) in (0u32..).zip(k) {
+            let v = sub(mem.read(src + 4 * i), c);
+            mem.write(dst + 4 * i, v);
+        }
+        restore_vf00(mem);
+    }
 }
