@@ -7100,3 +7100,118 @@ fn menu_summon_draw_face_slide_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn math_segments_cross_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_9bb0) else {
+        return;
+    };
+    // points on a small grid (so collinear and touching cases come up),
+    // sometimes anywhere, NaN or infinite
+    let coord = |t: &mut Twins| -> f32 {
+        match t.rng.below(16) {
+            0 => f32::NAN,
+            1 => f32::INFINITY,
+            2 => f32::from(i16::try_from(t.rng.below(2000)).unwrap_or(0) - 1000) / 7.0,
+            _ => f32::from(i8::try_from(t.rng.below(7)).unwrap_or(0) - 3),
+        }
+    };
+    for round in 0..3000u32 {
+        let mut pts = [0u32; 4];
+        for p in &mut pts {
+            let v: Vec<u8> = [
+                coord(&mut t),
+                f32::from_bits(t.rng.next() & 0x7fbf_ffff), // y, never read
+                coord(&mut t),
+            ]
+            .iter()
+            .flat_map(|f| f.to_le_bytes())
+            .collect();
+            *p = t.alloc(&v);
+        }
+        if round % 5 == 0 {
+            // a shared end point
+            let k = t.rng.below(2) as usize;
+            pts[2 + k] = pts[t.rng.below(2) as usize];
+        }
+        t.twin("Math_SegmentsCross", 0x0088_9bb0, &pts, U32, |o| {
+            u64::from(tk::math_segments_cross(o, pts).cast_unsigned())
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_summon_build_command_list_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0015_2b40) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    // TkMenuGetCommandMax and TkMenuGetCommandOffset: a word per group
+    // (`mov eax, [esp + 0x10]; mov eax, [eax*4 + table]; ret`);
+    // MsGetSaveCommand: a byte per id's low 6 bits
+    let max = t.alloc(&[0; 32]);
+    let off = t.alloc(&[0; 32]);
+    let has = t.alloc(&[0; 64]);
+    for (f, table) in [(0x008d_2d80u32, max), (0x008d_2dc0, off)] {
+        let code = [
+            &[0x8b, 0x44, 0x24, 0x10, 0x8b, 0x04, 0x85][..],
+            &table.to_le_bytes(),
+            &[0xc3],
+        ]
+        .concat();
+        for o in [&mut t.a, &mut t.b] {
+            let at = o.rebase(f);
+            o.write(at, &code).unwrap();
+        }
+    }
+    #[rustfmt::skip]
+    let code = [
+        &[0x8b, 0x44, 0x24, 0x08, 0x83, 0xe0, 0x3f, 0x0f, 0xb6, 0x80][..], &has.to_le_bytes(), &[0xc3],
+    ]
+    .concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x0078_5020);
+        o.write(at, &code).unwrap();
+    }
+    for round in 0..300u32 {
+        let list = t.alloc_random(0x100);
+        return_const(&mut t, 0x0079_0200, list);
+        for g in 0..8u32 {
+            let n = match t.rng.below(6) {
+                0 => t.rng.pick(&[0u32, 0xffff_ffff]),
+                1 => 8 + t.rng.below(8),
+                _ => t.rng.below(5),
+            };
+            t.put(max + 4 * g, n);
+            let o = t.rng.below(0x30);
+            t.put(off + 4 * g, o);
+        }
+        let mut bits = t.rng.bytes(64);
+        if round % 3 == 0 {
+            for b in &mut bits {
+                *b &= 1;
+            }
+        }
+        t.put_bytes(has, &bits);
+        t.scramble(0x0186_aa04, 0x28);
+        let chr = t.rng.below(0x20);
+        t.twin(
+            "MenuSummon_BuildCommandList",
+            0x008d_2b40,
+            &[chr],
+            U32,
+            |o| {
+                u64::from(tk::menu_summon_build_command_list(
+                    o,
+                    chr,
+                    local,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}

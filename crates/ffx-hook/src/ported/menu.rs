@@ -3153,6 +3153,10 @@ ported! {
     Math_PolarToVector @ 0x0088_a3a0 => extern "C" fn math_polar_to_vector(out: u32, r: f32, yaw: f32, pitch: f32) {
         tk::math_polar_to_vector(&mut mem(), out, [r, yaw, pitch], &mut |_, cos, v| crt_x87(if cos { 0x00b0_c3b4 } else { 0x00b0_c3b8 }, v, None));
     }
+    /// `Math_SegmentsCross(a, b, c, d)`: 1, -1 or 0.
+    Math_SegmentsCross @ 0x0088_9bb0 => extern "C" fn math_segments_cross(a: u32, b: u32, c: u32, d: u32) -> i32 {
+        tk::math_segments_cross(&mem(), [a, b, c, d])
+    }
     /// `TkSndUpdate()`.
     TkSndUpdate @ 0x0088_7b60 => extern "C" fn tk_snd_update() -> u32 {
         tk::tk_snd_update(&mut mem(), &mut |_, f, a| call_ptr(f, a))
@@ -3264,6 +3268,14 @@ ported! {
     /// `MenuSummon_DrawFaceSlide(x, y, w, h, t, cur, next)`.
     MenuSummon_DrawFaceSlide @ 0x008d_34a0 => extern "C" fn menu_summon_draw_face_slide(x: u32, y: u32, w: u32, h: u32, t: i32, cur: u32, next: u32) -> u32 {
         tk::menu_summon_draw_face_slide(&mut mem(), [x, y, w, h], t, [cur, next], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_BuildCommandList(chr)`.
+    MenuSummon_BuildCommandList @ 0x008d_2b40 => extern "C" fn menu_summon_build_command_list(chr: u32) -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::menu_summon_build_command_list(&mut m, chr, local, &mut |_, f, a| call_ptr(f, a))
     }
     /// `MenuShop_WeaponPrice(e)`.
     MenuShop_WeaponPrice @ 0x008d_9370 => extern "C" fn menu_shop_weapon_price(e: u32) -> i32 {

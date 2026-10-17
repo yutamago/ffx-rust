@@ -5912,6 +5912,71 @@ pub mod bridge {
         call(mem, restore, &[])
     }
 
+    /// `MenuSummon_BuildCommandList(chr)` (`0x008d2b40`, own name): the aeon
+    /// status window's commands. From the command lists of
+    /// `MsMenuStatusNum(0, local)` (`TkMenuGetCommandMax` and
+    /// `TkMenuGetCommandOffset` of `(list, 1, chr, group)`), the ids
+    /// (`u16 +2` of each 4-byte entry) `chr` has (`MsGetSaveCommand`) are
+    /// appended to the `u16` array at `0x0186aa04`: groups 1, 3, 4 and 5
+    /// counted in `0x0186aa24`, then group 2 counted in `0x0186aa28` after
+    /// those (each counter a `u16`, written after its entry). Group 4 stops
+    /// at the first command `chr` has and appends the group's *first* id,
+    /// whichever matched. `TOGetSaveGilAddress()` is asked (unused).
+    /// Returns what the original leaves in `eax`: group 2's offset when it
+    /// is empty, else its last id when stored, or 0.
+    pub fn menu_summon_build_command_list<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let status_num = r(mem, 0x0079_0200);
+        let list = call(mem, status_num, &[0, local]);
+        let gil = r(mem, 0x008a_8e20);
+        call(mem, gil, &[]);
+        let (max, offset, has) = (
+            r(mem, 0x008d_2d80),
+            r(mem, 0x008d_2dc0),
+            r(mem, 0x0078_5020),
+        );
+        let ids = r(mem, 0x0186_aa04);
+        let (first, second) = (r(mem, 0x0186_aa24), r(mem, 0x0186_aa28));
+        let mut eax = 0;
+        for group in [1u32, 3, 4, 5, 2] {
+            let n = call(mem, max, &[list, 1, chr, group]).cast_signed();
+            let off = call(mem, offset, &[list, 1, chr, group]);
+            eax = off;
+            let count = if group == 2 { second } else { first };
+            if group == 1 || group == 2 {
+                mem.write(count, 0u16);
+            }
+            let entries = list.wrapping_add(off.wrapping_mul(4)).wrapping_add(2);
+            for k in 0..n.max(0).cast_unsigned() {
+                let id: u16 = mem.read(entries.wrapping_add(4 * k));
+                eax = call(mem, has, &[chr, u32::from(id)]);
+                if eax == 0 {
+                    continue;
+                }
+                let id = if group == 4 { mem.read(entries) } else { id };
+                let base = if group == 2 {
+                    mem.read::<u16>(first)
+                } else {
+                    0
+                };
+                let k: u16 = mem.read(count);
+                let slot = u32::from(k) + u32::from(base);
+                mem.write(ids.wrapping_add(2 * slot), id);
+                mem.write(count, k.wrapping_add(1));
+                eax = u32::from(id);
+                if group == 4 {
+                    break;
+                }
+            }
+        }
+        eax
+    }
+
     /// The base value of an equipment entry `e` (shared by
     /// `0x008d9370` and `0x008d9410`): the first words of its abilities'
     /// records (`u16` ids at `+0xe`, `byte +0xb` of them; 0 and 0xff empty)
@@ -6680,6 +6745,17 @@ pub mod bridge {
         for k in [1u32, 3, 0, 2] {
             mem.write(out.wrapping_add(4 * k), v[k as usize].to_bits());
         }
+    }
+
+    /// `Math_SegmentsCross(a, b, c, d)` (`0x00889bb0`, own name):
+    /// [`crate::math::segments_cross`] of the points' `x` (`+0`) and `z`
+    /// (`+8`), each loaded as a float.
+    pub fn math_segments_cross(mem: &impl Mem, points: [u32; 4]) -> i32 {
+        let xz = |p: u32| {
+            [0, 8].map(|o| ffx_bridge::x87::round_trip(f32::from_bits(mem.read(p.wrapping_add(o)))))
+        };
+        let [a, b, c, d] = points.map(xz);
+        crate::math::segments_cross(a, b, c, d)
     }
 
     /// `TkSndUpdate()` (`0x00887b60`): `SndExecMusicClearQue(1, 0)` (every

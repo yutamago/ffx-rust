@@ -160,6 +160,25 @@ pub fn det3_points(x1: f32, y1: f32, x2: f32, y2: f32, x3: f32, y3: f32) -> f32 
     }
 }
 
+/// `Math_SegmentsCross(a, b, c, d)` (`0x00889bb0`, own name), on the XZ
+/// plane: whether segments `ab` and `cd` cross or touch — `c` and `d` not
+/// strictly on one side of `ab` ([`det3_points`] products at most 0, the
+/// product at 53 bits) and `a` and `b` not strictly on one side of `cd`.
+/// Then 1 when `d` is on the positive side of `ab`, else -1; 0 when they
+/// do not cross (or a NaN takes part).
+#[must_use]
+pub fn segments_cross(a: [f32; 2], b: [f32; 2], c: [f32; 2], d: [f32; 2]) -> i32 {
+    let det =
+        |p: [f32; 2], q: [f32; 2], r: [f32; 2]| det3_points(p[0], p[1], q[0], q[1], r[0], r[1]);
+    let apart = |u: f32, v: f32| f64::from(u) * f64::from(v) > 0.0 || (u * v).is_nan();
+    let side_c = det(a, b, c);
+    let side_d = det(a, b, d);
+    if apart(side_c, side_d) || apart(det(c, d, a), det(c, d, b)) {
+        return 0;
+    }
+    if side_d > 0.0 { 1 } else { -1 }
+}
+
 /// `TkScreenToMenuX(x)` (`0x008e2690`) and `TkScreenToMenuY(y)`
 /// (`0x008e26b0`): a 1920×1080 coordinate in the menu's 512×416 space;
 /// the integer goes through a float first.
