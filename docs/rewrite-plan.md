@@ -102,7 +102,7 @@ not replaced yet).
 | category | what | what happens to it |
 |---|---|---|
 | logic | decides game state or the original look: battle, field, events, the script VM and natives, characters, menu logic, effect simulation, the PS2 Snd layer | ported exactly, with oracle parity |
-| glue | only drives a replaced library: PhyreEngine/D3D11 (render), Iggy (pc-ui), FMOD (FfxFmod, FmodMusic/Sfx/Voice, iMusic/iSfx), the movie player | replaced in M4 at the library boundary, not ported |
+| glue | only passes data to a replaced library (state setters on its objects, render targets, shaders, buffers, packet writers): PhyreEngine/D3D11 (render), Iggy (pc-ui), FMOD (FfxFmod, FmodMusic/Sfx/Voice, iMusic/iSfx), the movie player | replaced in M4 at the library boundary, not ported |
 | platform | file layer (fios, CD/DVD emulation, VBF), allocators (Sg_Mem, user heap), threads and locks, settings, saves on disk, Steam, window/input setup, std:: copies | replaced by the host and Rust `std` |
 | debug | debug consoles, debug drawing, host0: readers, Deci2, tweak overlays | not ported now; kept as mod-tool candidates (below) |
 | dead | nothing reaches it (no call, jump or pointer anywhere in the image), or PS2-only (memory card, IOP) | not ported |
@@ -111,24 +111,24 @@ Numbers (2026-10-17, with runtime coverage; functions and size):
 
 | module | logic | glue | platform | debug | dead |
 |---|---|---|---|---|---|
-| vfx | 1536 (498K) | 181 (58K) | 3 (1K) | 19 (4K) | 673 (74K) |
-| system | 1425 (281K) | 101 (73K) | 366 (51K) | 24 (3K) | 1246 (115K) |
-| render | 379 (55K) | 778 (225K) | 29 (3K) | 12 (2K) | 782 (49K) |
-| map | 1005 (204K) | 2 (0K) | 1 (0K) | 213 (60K) | 452 (60K) |
-| battle | 1184 (224K) | 0 | 0 | 110 (87K) | 143 (14K) |
-| menu | 782 (184K) | 0 | 1 (0K) | 171 (22K) | 238 (20K) |
-| script | 2051 (183K) | 0 | 3 (0K) | 24 (9K) | 241 (18K) |
-| pc-ui | 474 (85K) | 205 (58K) | 52 (6K) | 60 (26K) | 417 (31K) |
-| main | 563 (103K) | 5 (2K) | 83 (6K) | 126 (25K) | 96 (13K) |
-| chara | 456 (67K) | 9 (3K) | 0 | 39 (3K) | 106 (10K) |
-| sound | 144 (10K) | 305 (29K) | 37 (1K) | 1 (0K) | 118 (8K) |
-| movie | 56 (6K) | 68 (9K) | 28 (5K) | 25 (7K) | 216 (18K) |
-| ps2-emu | 55 (8K) | 0 | 2 (2K) | 0 | 65 (4K) |
-| **GAME** | **10110 (1908K)** | **1654 (457K)** | **605 (74K)** | **824 (246K)** | **4793 (434K)** |
+| vfx | 1490 (491K) | 189 (62K) | 41 (4K) | 19 (4K) | 673 (74K) |
+| system | 1302 (266K) | 145 (82K) | 445 (56K) | 25 (3K) | 1247 (116K) |
+| render | 469 (63K) | 662 (212K) | 53 (7K) | 14 (2K) | 782 (49K) |
+| map | 972 (194K) | 30 (10K) | 2 (0K) | 219 (60K) | 451 (60K) |
+| battle | 1151 (214K) | 1 (1K) | 0 | 141 (96K) | 143 (14K) |
+| menu | 777 (183K) | 3 (0K) | 1 (0K) | 172 (22K) | 237 (20K) |
+| script | 2042 (182K) | 0 | 13 (1K) | 24 (9K) | 241 (18K) |
+| pc-ui | 461 (83K) | 205 (58K) | 63 (8K) | 62 (26K) | 417 (31K) |
+| main | 560 (103K) | 6 (2K) | 84 (6K) | 127 (25K) | 96 (13K) |
+| chara | 443 (66K) | 20 (4K) | 2 (0K) | 39 (3K) | 106 (10K) |
+| sound | 134 (10K) | 305 (29K) | 47 (2K) | 1 (0K) | 118 (8K) |
+| movie | 49 (6K) | 68 (9K) | 35 (5K) | 25 (7K) | 215 (18K) |
+| ps2-emu | 54 (8K) | 0 | 3 (2K) | 0 | 65 (4K) |
+| **GAME** | **9904 (1870K)** | **1634 (469K)** | **789 (90K)** | **868 (257K)** | **4791 (433K)** |
 
-So about 61% of the game code by size is logic and needs an exact port.
-Of the 5,103 functions ported so far, 3,560 are logic; 642 are dead, 379
-glue, 319 debug and 202 platform.
+So about 60% of the game code by size is logic and needs an exact port.
+Of the 5,199 functions ported so far, 3,614 are logic; 657 are dead, 381
+glue, 327 debug and 220 platform.
 
 How the evidence works, in order (first rule that fires): reachability
 from the PE entry point and from every function address found in the
@@ -138,8 +138,22 @@ call/jmp/jcc edges (Ghidra leaves out tail jumps), with the 676 blocks
 those reach that Ghidra made no function for (thunks, tail-call targets)
 as nodes of their own; then name rules (the
 PC-only rules stop at 0x00760000, where the PS2 game code starts and
-porters reuse words like Menu*, Save*); then Iggy/PhyreEngine calls and
-Win32 imports; then propagation (a function only debug code calls is
+porters reuse words like Menu*, Save*; scene state the new renderer
+needs as input is logic even under a glue prefix: camera view and
+projection, fog/ambient/background colours, screen fades, mesh and
+skeleton matrices, character lighting, 2D-layer and mesh visibility, the
+minimap and area-map camera); then Iggy/PhyreEngine calls and
+Win32 imports; then, in the PC port's part of the image (below
+0x00760000), copies of std:: and PhyreEngine container code are platform:
+functions whose every call goes to allocators, trees, free lists, vectors,
+std:: copies or platform code, static initialisers (atexit), destructors
+only exception unwinding reaches, and the unnamed stubs between the PS2 SDK
+stand-ins; then pure GS/DMA packet writers are glue (the packet API,
+`TOAdp*`, `rcPacketData*`, the `sceDma*`/`sceGs*` kicks, and functions that
+only call it, read-only getters and VU0 scratch, and write no global any
+logic reads); then propagation (a function only debug code calls is
+debug, callers outside the game modules included, and an unnamed function
+between two debug methods of one class, such as the free camera's, is
 debug; glue and platform pass one hop to unnamed callees). Anything left is
 logic: skipping something necessary breaks parity, porting something
 unnecessary only costs time. A debug-sounding name that logic calls (an

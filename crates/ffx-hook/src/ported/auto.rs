@@ -8,9 +8,113 @@ use ffx_auto::table as t;
 use super::{mem, ported};
 
 ported! {
+    /// several stores: set field (constants, arguments, addresses): `u32[a1] = a2; u32[(a1 + 0x4)] = a0; return a1`.
+    SetFields_00401310 @ 0x0040_1310 => extern "thiscall" fn auto_00401310(a0: u32, a1: u32, a2: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00401310, &[a0, a1, a2])
+    }
+    /// return constant: `return 0x2`.
+    ReturnConst2_0042d3c0 @ 0x0042_d3c0 => extern "C" fn auto_0042d3c0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0042D3C0, &[])
+    }
+    /// return field u32 (pointer chain): `t0 = u32[(a0 + 0x10)]; t1 = u32[(a0 + 0x14)]; return t0`.
+    ReturnFieldU32PointerChain_0042e060 @ 0x0042_e060 => extern "thiscall" fn auto_0042e060(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0042E060, &[a0])
+    }
+    /// several stores: set global (constants, arguments, addresses): `u32[&0x00c8b248] = a0; u32[&0x00c8b24c] = a1; u32[&0x00c8b244] = a2; u32[&0x00c8b240] = a3; return a3`.
+    SetGlobals_0042e1d0 @ 0x0042_e1d0 => extern "C" fn auto_0042e1d0(a0: u32, a1: u32, a2: u32, a3: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0042E1D0, &[a0, a1, a2, a3])
+    }
+    /// several stores: copy into global: `t0 = u32[&0x00b0c578]; u32[&0x00c8b248] = &0x00949d80; u32[&0x00c8b24c] = &0x00949d3e; u32[&0x00c8b244] = t0; u32[&0x00c8b240] = &0x009495f2; return t0`.
+    SeveralStoresCopyIntoGlobal_0042e200 @ 0x0042_e200 => extern "C" fn auto_0042e200() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0042E200, &[])
+    }
+    /// return field u32: `t0 = u32[(a0 + 0x20)]; return t0`.
+    GetField20_0059e560 @ 0x0059_e560 => extern "stdcall" fn auto_0059e560(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0059E560, &[a0])
+    }
+    /// return field u32: `t0 = u32[(a0 + 0x1c)]; return t0`.
+    GetField1c_0059e570 @ 0x0059_e570 => extern "stdcall" fn auto_0059e570(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0059E570, &[a0])
+    }
+    /// several stores: set field (constants, arguments, addresses): `u32[a1] = 0x0; u32[a2] = 0x0; return a2`.
+    SetFields_0059e580 @ 0x0059_e580 => extern "stdcall" fn auto_0059e580(a0: u32, a1: u32, a2: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0059E580, &[a0, a1, a2])
+    }
+    /// several stores: set field (constants, arguments, addresses): `u32[a1] = 0x0; u32[a2] = 0x0; return a2`.
+    SetFields_0059e5a0 @ 0x0059_e5a0 => extern "stdcall" fn auto_0059e5a0(a0: u32, a1: u32, a2: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0059E5A0, &[a0, a1, a2])
+    }
     /// store argument to deref: `t0 = u32[&0x00ccc81c]; u32[(t0 + 0x2be0)] = a0; return t0`.
     cgraphicSetNowUIType @ 0x0063_8d90 => extern "C" fn auto_00638d90(a0: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_00638D90, &[a0])
+    }
+    /// return argument + offset: `return (a0 + 0xa4)`.
+    FieldAddra4_0063fc30 @ 0x0063_fc30 => extern "C" fn auto_0063fc30(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0063FC30, &[a0])
+    }
+    /// return argument + offset: `return (a0 + 0x98)`.
+    FieldAddr98_0063fc40 @ 0x0063_fc40 => extern "C" fn auto_0063fc40(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0063FC40, &[a0])
+    }
+    /// return address of a field's target: `t0 = u32[(a0 + 0x94)]; return ((a1 * 0x6c) + t0)`.
+    GetFieldPtr94_0063fc50 @ 0x0063_fc50 => extern "C" fn auto_0063fc50(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0063FC50, &[a0, a1])
+    }
+    /// return field u32: `t0 = u32[(a0 + 0x90)]; return t0`.
+    GetField90_0063fc70 @ 0x0063_fc70 => extern "C" fn auto_0063fc70(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0063FC70, &[a0])
+    }
+    /// pass-through: `return a0`.
+    Identity_0063fc80 @ 0x0063_fc80 => extern "C" fn auto_0063fc80(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0063FC80, &[a0])
+    }
+    /// return field u32: `t0 = u32[(a0 + 0x14)]; return t0`.
+    GetField14_0063fc90 @ 0x0063_fc90 => extern "C" fn auto_0063fc90(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0063FC90, &[a0])
+    }
+    /// return field u32: `t0 = u32[(a0 + 0x1c)]; return t0`.
+    GetField1c_0063fca0 @ 0x0063_fca0 => extern "C" fn auto_0063fca0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0063FCA0, &[a0])
+    }
+    /// return field u32: `t0 = u32[(a0 + 0x8)]; return t0`.
+    GetField8_0063fcb0 @ 0x0063_fcb0 => extern "C" fn auto_0063fcb0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0063FCB0, &[a0])
+    }
+    /// return field u32: `t0 = u32[(a0 + 0x10)]; return t0`.
+    GetField10_0063fcc0 @ 0x0063_fcc0 => extern "C" fn auto_0063fcc0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0063FCC0, &[a0])
+    }
+    /// return field u32: `t0 = u32[(a0 + 0x18)]; return t0`.
+    GetField18_0063fcd0 @ 0x0063_fcd0 => extern "C" fn auto_0063fcd0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0063FCD0, &[a0])
+    }
+    /// return field u32: `t0 = u32[(a0 + 0xc)]; return t0`.
+    GetFieldc_0063fce0 @ 0x0063_fce0 => extern "C" fn auto_0063fce0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0063FCE0, &[a0])
+    }
+    /// return field u32: `t0 = u32[(a0 + 0x4)]; return t0`.
+    GetField4_0063fcf0 @ 0x0063_fcf0 => extern "C" fn auto_0063fcf0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0063FCF0, &[a0])
+    }
+    /// store argument to field: `u32[(a0 + 0x8)] = a1; return a0`.
+    SetField8_0063fd00 @ 0x0063_fd00 => extern "C" fn auto_0063fd00(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0063FD00, &[a0, a1])
+    }
+    /// store argument to field: `u32[(a0 + 0x4)] = a1; return a0`.
+    SetField4_0063fd10 @ 0x0063_fd10 => extern "C" fn auto_0063fd10(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0063FD10, &[a0, a1])
+    }
+    /// store argument to field: `u32[(a0 + 0x24)] = a1; return a0`.
+    SetField24_0063fd20 @ 0x0063_fd20 => extern "C" fn auto_0063fd20(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0063FD20, &[a0, a1])
+    }
+    /// store argument to field: `u32[(a0 + 0x90)] = a1; return a0`.
+    SetField90_0063fd30 @ 0x0063_fd30 => extern "C" fn auto_0063fd30(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0063FD30, &[a0, a1])
+    }
+    /// store argument to field: `u32[(a0 + 0x80)] = a1; return a0`.
+    SetField80_0063fd50 @ 0x0063_fd50 => extern "C" fn auto_0063fd50(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0063FD50, &[a0, a1])
     }
     /// compare: `t0 = u32[&0x00cdedf0]; t1 = u32[t0]; return (t1 != 0x0)`.
     graphicDynGeoFillBufferIsValid @ 0x0063_fd70 => extern "C" fn auto_0063fd70() -> u32 {
@@ -80,6 +184,14 @@ ported! {
     graphicSetNowUIType @ 0x0064_37c0 => extern "C" fn auto_006437c0(a0: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_006437C0, &[a0])
     }
+    /// store argument to global: `u32[&0x00cec1a0] = a0; return a0`.
+    SetGlobal00cec1a0_006437e0 @ 0x0064_37e0 => extern "C" fn auto_006437e0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006437E0, &[a0])
+    }
+    /// store computed to deref: `t0 = u32[&0x00ccb9d8]; u8[(t0 + 0xfc88)] = (a0 != 0x0); return t0`.
+    StoreComputedToDeref_00643b10 @ 0x0064_3b10 => extern "C" fn auto_00643b10(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00643B10, &[a0])
+    }
     /// several stores: computed, into deref/field: `t0 = u32[(a0 + 0xf954)]; t1 = u32[(a0 + 0xf8cc)]; u32[((a0 + (t0 * 0x4)) + 0xf8d4)] = t1; t2 = u32[(a0 + 0xf954)]; t3 = u32[(a0 + 0xf8d0)]; u32[((a0 + (t2 * 0x4)) + 0xf914)] = t3; t4 = u32[(a0 + 0xf954)]; u32[(a0 + 0xf954)] = (t4 + 0x1); return t3`.
     PhyreScene_VFXSyncPath @ 0x0065_4cc0 => extern "thiscall" fn auto_00654cc0(a0: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_00654CC0, &[a0])
@@ -112,13 +224,41 @@ ported! {
     PhyreScene_setCurrentLevelNameHash @ 0x0066_cf90 => extern "thiscall" fn auto_0066cf90(a0: u32, a1: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_0066CF90, &[a0, a1])
     }
+    /// store constant to field: `u8[a0] = 0x1; return 0x0`.
+    SetFieldConst0_0067ac70 @ 0x0067_ac70 => extern "thiscall" fn auto_0067ac70(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0067AC70, &[a0])
+    }
+    /// several stores: copy into table: `u32[((a1 * 0x4) + &0x00ccc7d4)] = a2; t0 = u32[(a0 + 0x5b90)]; u32[((a1 * 0x4) + &0x00ccc804)] = t0; u32[((a1 * 0x4) + &0x00ccc7ec)] = 0x1; return t0`.
+    MenuManager_SeveralStoresCopyIntoTable_0067e4a0 @ 0x0067_e4a0 => extern "thiscall" fn auto_0067e4a0(a0: u32, a1: u32, a2: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0067E4A0, &[a0, a1, a2])
+    }
+    /// store argument to field: `u32[(a0 + 0x5b8c)] = a1; return a1`.
+    graphicSetField5b8c_0067e4d0 @ 0x0067_e4d0 => extern "thiscall" fn auto_0067e4d0(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0067E4D0, &[a0, a1])
+    }
     /// store argument to field: `u32[(a0 + 0x5b90)] = a1; return a1`.
     MenuManager_SetMenuDrawFontShadow @ 0x0067_e4e0 => extern "thiscall" fn auto_0067e4e0(a0: u32, a1: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_0067E4E0, &[a0, a1])
     }
+    /// several stores: copy into field: `t0 = u32[(a0 + 0xc)]; t1 = u32[a0]; u32[(a1 + 0x4)] = 0x0; u32[a1] = t1; u32[(a1 + 0x8)] = t0; return a1`.
+    CopyFields_0068d5b0 @ 0x0068_d5b0 => extern "thiscall" fn auto_0068d5b0(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0068D5B0, &[a0, a1])
+    }
+    /// several stores: copy into field: `t0 = u32[(a0 + 0xc)]; t1 = u32[a0]; u32[(a1 + 0x4)] = 0x0; u32[a1] = t1; u32[(a1 + 0x8)] = t0; return a1`.
+    CopyFields_0068d5d0 @ 0x0068_d5d0 => extern "thiscall" fn auto_0068d5d0(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0068D5D0, &[a0, a1])
+    }
     /// return global u32: `t0 = u32[&0x00ccc860]; return t0`.
     AsyncControllerTaskManager_sGetInstance @ 0x0068_dc10 => extern "C" fn auto_0068dc10() -> u32 {
         ffx_auto::call(&mut mem(), &t::R_0068DC10, &[])
+    }
+    /// store constant to field: `u8[(a0 + 0x4)] = 0x0`.
+    SetFieldConst4_0068e330 @ 0x0068_e330 => extern "thiscall" fn auto_0068e330(a0: u32) {
+        ffx_auto::run(&mut mem(), &t::R_0068E330, &[a0]);
+    }
+    /// store constant to field: `u8[(a0 + 0x4)] = 0x1`.
+    SetFieldConst4_0068e340 @ 0x0068_e340 => extern "thiscall" fn auto_0068e340(a0: u32) {
+        ffx_auto::run(&mut mem(), &t::R_0068E340, &[a0]);
     }
     /// several stores: set field (constants, arguments, addresses): `u32[(a0 + 0x10c)] = a1; u32[(a0 + 0x110)] = a2; return a2`.
     FFEscMenu_setPopUpCallBack @ 0x0068_ff10 => extern "thiscall" fn auto_0068ff10(a0: u32, a1: u32, a2: u32) -> u32 {
@@ -140,6 +280,10 @@ ported! {
     ClassCharacter_ClassCharacter @ 0x0069_e030 => extern "thiscall" fn auto_0069e030(a0: u32, a1: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_0069E030, &[a0, a1])
     }
+    /// several stores: set field (constants, arguments, addresses): `u32[a0] = &0x00b47e14; u32[(a0 + 0x4)] = 0x0; u32[(a0 + 0x8)] = 0x0; u32[(a0 + 0xc)] = 0x0; u32[(a0 + 0x10)] = 0x0; u32[(a0 + 0x14)] = 0x0; u32[(a0 + 0x18)] = 0x0; u32[(a0 + 0x1c)] = 0x0; u32[(a0 + 0x20)] = 0x0; u32[(a0 + 0x24)] = 0x0; u32[(a0 + 0x28)] = 0x0; u32[(a0 + 0x2c)] = 0x0; u8[(a0 + 0x30)] = 0x0; return a0`.
+    SetFields_0069e0c0 @ 0x0069_e0c0 => extern "thiscall" fn auto_0069e0c0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0069E0C0, &[a0])
+    }
     /// several stores: set field (constants, arguments, addresses): `u32[(a0 + 0x4)] = 0x0; u32[(a0 + 0x8)] = 0x0; u32[(a0 + 0xc)] = 0x0; u32[(a0 + 0x10)] = 0x0; u32[(a0 + 0x14)] = 0x0; u32[(a0 + 0x18)] = 0x0; u32[(a0 + 0x1c)] = 0x0; u32[(a0 + 0x20)] = 0x0; u32[(a0 + 0x24)] = 0x0; u32[(a0 + 0x28)] = 0x0; u32[(a0 + 0x2c)] = 0x0; u8[(a0 + 0x30)] = 0x0; u32[a0] = &0x00b47e70; u32[(a0 + 0x3c)] = 0xffffffff; return a0`.
     GuildMapDynamicGeometry_GuildMapDynamicGeometry @ 0x0069_e2b0 => extern "thiscall" fn auto_0069e2b0(a0: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_0069E2B0, &[a0])
@@ -156,25 +300,113 @@ ported! {
     ClassChrShaderRender_GetVertexInfo @ 0x0069_f880 => extern "thiscall" fn auto_0069f880(a0: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_0069F880, &[a0])
     }
+    /// return argument + offset: `return (a0 + 0xc)`.
+    FieldAddrc_006a0440 @ 0x006a_0440 => extern "C" fn auto_006a0440(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006A0440, &[a0])
+    }
+    /// return argument + offset: `return (a0 + 0xc)`.
+    FieldAddrc_006a0450 @ 0x006a_0450 => extern "C" fn auto_006a0450(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006A0450, &[a0])
+    }
+    /// return argument + offset: `return (a0 + 0x10)`.
+    FieldAddr10_006a06c0 @ 0x006a_06c0 => extern "stdcall" fn auto_006a06c0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006A06C0, &[a0])
+    }
+    /// load and compute: `t0 = u32[(a0 + 0xc)]; t1 = u32[(a0 + 0x8)]; return ((t0 - t1) >>s 0x2)`.
+    PhyreScene_LoadCompute_006a29a0 @ 0x006a_29a0 => extern "thiscall" fn auto_006a29a0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006A29A0, &[a0])
+    }
+    /// store argument to deref: `t0 = u32[(a0 + 0x10)]; u32[(t0 + 0xc)] = a0; return 0x0`.
+    SetDeref_006a3b40 @ 0x006a_3b40 => extern "thiscall" fn auto_006a3b40(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006A3B40, &[a0])
+    }
     /// return global u32: `t0 = u32[&0x00cccaa8]; return t0`.
     TextureAnimationManager_GetInstance @ 0x006b_02e0 => extern "C" fn auto_006b02e0() -> u32 {
         ffx_auto::call(&mut mem(), &t::R_006B02E0, &[])
+    }
+    /// pass-through: `return a0`.
+    Identity_006b5000 @ 0x006b_5000 => extern "C" fn auto_006b5000(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006B5000, &[a0])
+    }
+    /// return global sx8: `t0 = u8[&0x00cccab8]; return sx8(t0)`.
+    ReturnGlobalSx8_006bc960 @ 0x006b_c960 => extern "C" fn auto_006bc960() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006BC960, &[])
+    }
+    /// return constant: `return 0x0`.
+    PhyreScene_ReturnConst0_006bd290 @ 0x006b_d290 => extern "stdcall" fn auto_006bd290(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006BD290, &[a0, a1])
     }
     /// return global u32: `t0 = u32[&0x00cdeb80]; return t0`.
     VfxShaderManager_sGetInstance @ 0x006c_14c0 => extern "C" fn auto_006c14c0() -> u32 {
         ffx_auto::call(&mut mem(), &t::R_006C14C0, &[])
     }
+    /// return constant: `return 0x180`.
+    ReturnConst180_006c26d0 @ 0x006c_26d0 => extern "C" fn auto_006c26d0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006C26D0, &[])
+    }
+    /// return constant: `return 0x51`.
+    ReturnConst51_006c2700 @ 0x006c_2700 => extern "C" fn auto_006c2700() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006C2700, &[])
+    }
+    /// arithmetic on arguments: `return (a0 + a1)`.
+    Compute_006c4000 @ 0x006c_4000 => extern "C" fn auto_006c4000(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006C4000, &[a0, a1])
+    }
+    /// several stores: set field (constants, arguments, addresses): `u8[(a0 + 0x58)] = 0x0; u32[a0] = 0x0; u32[(a0 + 0x4)] = 0x0; u32[(a0 + 0x8)] = 0x0; u32[(a0 + 0xc)] = 0x0; u32[(a0 + 0x14)] = 0x0; u32[(a0 + 0x20)] = 0x0; u32[(a0 + 0x18)] = 0x0; u32[(a0 + 0x10)] = 0x0; u32[(a0 + 0x1c)] = 0x0; u32[(a0 + 0x48)] = 0x0; u32[(a0 + 0x4c)] = 0x0; u32[(a0 + 0x50)] = 0x0; u32[(a0 + 0x54)] = 0x0; return 0x0`.
+    SetFields_006c47a0 @ 0x006c_47a0 => extern "thiscall" fn auto_006c47a0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006C47A0, &[a0])
+    }
     /// return global u32: `t0 = u32[&0x00cdec1c]; return t0`.
     SpecularMapParamsManager_GetInstance @ 0x006c_57e0 => extern "C" fn auto_006c57e0() -> u32 {
         ffx_auto::call(&mut mem(), &t::R_006C57E0, &[])
+    }
+    /// arithmetic on arguments: `return (a0 == 0x1)`.
+    Compute_006cc8b0 @ 0x006c_c8b0 => extern "C" fn auto_006cc8b0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006CC8B0, &[a0])
+    }
+    /// arithmetic on arguments: `return (a0 != 0x2083)`.
+    Compute_006cc8c0 @ 0x006c_c8c0 => extern "C" fn auto_006cc8c0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006CC8C0, &[a0])
     }
     /// return global u32: `t0 = u32[&0x00cdec28]; return t0`.
     ShadowManager_getInstance @ 0x006d_2390 => extern "C" fn auto_006d2390() -> u32 {
         ffx_auto::call(&mut mem(), &t::R_006D2390, &[])
     }
+    /// store constant to field: `u8[(a0 + 0x4)] = 0x1`.
+    SetFieldConst4_006d4e00 @ 0x006d_4e00 => extern "thiscall" fn auto_006d4e00(a0: u32) {
+        ffx_auto::run(&mut mem(), &t::R_006D4E00, &[a0]);
+    }
+    /// store constant to field: `u8[(a0 + 0x5)] = 0x1`.
+    SetFieldConst5_006d4e10 @ 0x006d_4e10 => extern "thiscall" fn auto_006d4e10(a0: u32) {
+        ffx_auto::run(&mut mem(), &t::R_006D4E10, &[a0]);
+    }
+    /// store constant to field: `u8[(a0 + 0x6)] = 0x1`.
+    SetFieldConst6_006d5180 @ 0x006d_5180 => extern "thiscall" fn auto_006d5180(a0: u32) {
+        ffx_auto::run(&mut mem(), &t::R_006D5180, &[a0]);
+    }
+    /// store constant to field: `u8[(a0 + 0x6)] = 0x0`.
+    graphicSetFieldConst6_006d59f0 @ 0x006d_59f0 => extern "thiscall" fn auto_006d59f0(a0: u32) {
+        ffx_auto::run(&mut mem(), &t::R_006D59F0, &[a0]);
+    }
+    /// pass-through: `return a0`.
+    Identity_006d7b20 @ 0x006d_7b20 => extern "stdcall" fn auto_006d7b20(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006D7B20, &[a0])
+    }
     /// return field u32: `t0 = u32[(a0 + 0x6d8)]; return t0`.
     PhyFMVPlayerManager_getCurrentFrame @ 0x006d_91b0 => extern "thiscall" fn auto_006d91b0(a0: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_006D91B0, &[a0])
+    }
+    /// several stores: copy into field: `u32[a0] = a0; u32[(a0 + 0x4)] = a0; u32[(a0 + 0x8)] = a0; t0 = u32[a1]; u32[(a0 + 0xc)] = t0; return a0`.
+    CopyFields_006df000 @ 0x006d_f000 => extern "thiscall" fn auto_006df000(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006DF000, &[a0, a1])
+    }
+    /// return global u32: `t0 = u32[&0x00ce5194]; return t0`.
+    GetGlobal00ce5194_006e55d0 @ 0x006e_55d0 => extern "C" fn auto_006e55d0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006E55D0, &[])
+    }
+    /// return address of global: `return &0x00c35030`.
+    AddrOfGlobal00c35030_006e6650 @ 0x006e_6650 => extern "C" fn auto_006e6650() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006E6650, &[])
     }
     /// return address of global: `return &0x00c35070`.
     RemapButtonIcon_getPadIconPath @ 0x006e_6660 => extern "C" fn auto_006e6660() -> u32 {
@@ -184,17 +416,381 @@ ported! {
     RemapButtonIcon_sGetInstance @ 0x006e_7710 => extern "C" fn auto_006e7710() -> u32 {
         ffx_auto::call(&mut mem(), &t::R_006E7710, &[])
     }
+    /// store argument to field: `t0 = u32[a0]; u32[a0] = a1; return t0`.
+    SetField0_006f2f70 @ 0x006f_2f70 => extern "C" fn auto_006f2f70(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006F2F70, &[a0, a1])
+    }
     /// compare: `t0 = u32[&0x00ce82b4]; return (t0 != 0x0)`.
     SpdCtrl_IsSpeedingUp @ 0x006f_7330 => extern "C" fn auto_006f7330() -> u32 {
         ffx_auto::call(&mut mem(), &t::R_006F7330, &[])
+    }
+    /// several stores: set field (constants, arguments, addresses): `u32[a0] = 0x0; u32[(a0 + 0x4)] = 0x0; u32[(a0 + 0x8)] = 0x0; u32[(a0 + 0xc)] = 0x0; u32[(a0 + 0x10)] = 0x0; u32[(a0 + 0x14)] = 0x0; u32[(a0 + 0x18)] = 0x0; u32[(a0 + 0x3c)] = &0x00b4bff8; u32[(a0 + 0x40)] = &0x00b4c028; u32[(a0 + 0x1c)] = &0x00b4bf98; u32[(a0 + 0x20)] = &0x00b4bfc8; u32[(a0 + 0x24)] = &0x00b4c058; u32[(a0 + 0x28)] = &0x00b4c088; u32[(a0 + 0x2c)] = &0x00b4c0b8; u32[(a0 + 0x30)] = &0x00b4c0e8; u32[(a0 + 0x34)] = &0x00b4c118; u32[(a0 + 0x38)] = 0x2010000; u32[(a0 + 0x3c)] = 0x1030302; u16[(a0 + 0x40)] = 0x504; return a0`.
+    SetFields_006f7700 @ 0x006f_7700 => extern "thiscall" fn auto_006f7700(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006F7700, &[a0])
     }
     /// return global u32: `t0 = u32[&0x00ce82e4]; return t0`.
     IconPanel_get @ 0x006f_78b0 => extern "C" fn auto_006f78b0() -> u32 {
         ffx_auto::call(&mut mem(), &t::R_006F78B0, &[])
     }
+    /// load and compute: `t0 = u32[(a0 + 0x34)]; t1 = u32[(a0 + 0x30)]; return ((t0 + t1) << 0x2)`.
+    LoadCompute_006f7bd0 @ 0x006f_7bd0 => extern "thiscall" fn auto_006f7bd0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006F7BD0, &[a0])
+    }
+    /// load and compute: `t0 = u32[(a0 + 0x34)]; t1 = u32[(a0 + 0x30)]; return ((t0 + t1) << 0x2)`.
+    LoadCompute_006f7c00 @ 0x006f_7c00 => extern "thiscall" fn auto_006f7c00(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006F7C00, &[a0])
+    }
+    /// return constant: `return 0x0`.
+    ReturnConst0_006f9940 @ 0x006f_9940 => extern "stdcall" fn auto_006f9940(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006F9940, &[a0])
+    }
+    /// return constant: `return 0xffffffff`.
+    ReturnConstffffffff_006f9980 @ 0x006f_9980 => extern "stdcall" fn auto_006f9980(a0: u32, a1: u32, a2: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006F9980, &[a0, a1, a2])
+    }
+    /// return constant: `return 0x1c`.
+    ReturnConst1c_006f99c0 @ 0x006f_99c0 => extern "stdcall" fn auto_006f99c0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006F99C0, &[a0])
+    }
     /// several stores: computed, into field: `t0 = u32[(a0 + 0x4)]; u32[(a1 + 0x10)] = (t0 + 0x1c); u32[(a1 + 0x14)] = (t0 + 0x7c); u32[(a1 + 0x18)] = (t0 + 0x17c); u32[(a1 + 0x1c)] = (t0 + 0xfc); u32[(a1 + 0x20)] = (t0 + 0x1bc); u32[(a1 + 0x24)] = 0x8; u32[(a1 + 0x28)] = 0xc; return 0x0`.
     ShadowDynamicMeshInstance_populatePreprocessData @ 0x006f_9a30 => extern "thiscall" fn auto_006f9a30(a0: u32, a1: u32, a2: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_006F9A30, &[a0, a1, a2])
+    }
+    /// compare: `t0 = u32[&0x00ce83c4]; return (t0 == 0x3)`.
+    Compare_006f9b70 @ 0x006f_9b70 => extern "C" fn auto_006f9b70() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006F9B70, &[])
+    }
+    /// return deref u32 (pointer chain): `t0 = u32[(a0 + 0x8)]; t1 = u32[(t0 + 0x8)]; return t1`.
+    GetDerefU32_006fa200 @ 0x006f_a200 => extern "thiscall" fn auto_006fa200(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_006FA200, &[a0])
+    }
+    /// return constant: `return 0x0`.
+    FfxFmod_musicMuteSet @ 0x0070_6a60 => extern "stdcall" fn auto_00706a60(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00706A60, &[a0, a1])
+    }
+    /// return constant: `return 0x0`.
+    FfxFmod_musicPitchDirect @ 0x0070_6aa0 => extern "stdcall" fn auto_00706aa0(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00706AA0, &[a0, a1])
+    }
+    /// return constant: `return 0x0`.
+    FfxFmod_musicPitchTranslate @ 0x0070_6ab0 => extern "stdcall" fn auto_00706ab0(a0: u32, a1: u32, a2: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00706AB0, &[a0, a1, a2])
+    }
+    /// return constant: `return 0x0`.
+    FfxFmod_musicPlayFast @ 0x0070_6ac0 => extern "stdcall" fn auto_00706ac0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00706AC0, &[a0])
+    }
+    /// return constant: `return 0x0`.
+    FfxFmod_musicTempoDirect @ 0x0070_6c00 => extern "stdcall" fn auto_00706c00(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00706C00, &[a0])
+    }
+    /// return constant: `return 0x0`.
+    FfxFmod_musicTempoTranslate @ 0x0070_6c10 => extern "stdcall" fn auto_00706c10(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00706C10, &[a0, a1])
+    }
+    /// return constant: `return 0x0`.
+    FfxFmod_voicePanDirect @ 0x0070_74c0 => extern "stdcall" fn auto_007074c0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_007074C0, &[a0])
+    }
+    /// return constant: `return 0x0`.
+    FfxFmod_voicePanTranslate @ 0x0070_74d0 => extern "stdcall" fn auto_007074d0(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_007074D0, &[a0, a1])
+    }
+    /// store constant to global: `u32[&0x00c3a480] = 0x0`.
+    FfxFmod_SetGlobal00c3a480_00708610 @ 0x0070_8610 => extern "C" fn auto_00708610() {
+        ffx_auto::run(&mut mem(), &t::R_00708610, &[]);
+    }
+    /// several stores: set field (constants, arguments, addresses): `u32[a0] = 0x0; u32[(a0 + 0x4)] = 0x0; u32[(a0 + 0x8)] = 0x0; u32[(a0 + 0xc)] = 0x0; return a0`.
+    SetFields_0070e290 @ 0x0070_e290 => extern "thiscall" fn auto_0070e290(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0070E290, &[a0])
+    }
+    /// several stores: set field (constants, arguments, addresses): `u32[a0] = 0x0; u32[(a0 + 0x4)] = 0x0; u32[(a0 + 0x8)] = 0x0; u32[(a0 + 0xc)] = 0x0`.
+    SetFields_0070e2b0 @ 0x0070_e2b0 => extern "thiscall" fn auto_0070e2b0(a0: u32) {
+        ffx_auto::run(&mut mem(), &t::R_0070E2B0, &[a0]);
+    }
+    /// store constant to field: `u32[a1] = 0x0; return a1`.
+    SetFieldConst0_0076e9b0 @ 0x0076_e9b0 => extern "C" fn auto_0076e9b0(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0076E9B0, &[a0, a1])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0xa8)]; return t1`.
+    GetDerefU8_0076f350 @ 0x0076_f350 => extern "C" fn auto_0076f350(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0076F350, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0xa9)]; return t1`.
+    GetDerefU8_0076f390 @ 0x0076_f390 => extern "C" fn auto_0076f390(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0076F390, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0xad)]; return t1`.
+    GetDerefU8_00770990 @ 0x0077_0990 => extern "C" fn auto_00770990(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00770990, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0xb1)]; return t1`.
+    GetDerefU8_007709d0 @ 0x0077_09d0 => extern "C" fn auto_007709d0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_007709D0, &[a0])
+    }
+    /// return deref u32 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u32[(((a0 * 0x1d8) + t0) + 0x14)]; return t1`.
+    GetDerefU32_00773820 @ 0x0077_3820 => extern "C" fn auto_00773820(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773820, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x20)]; return t1`.
+    GetDerefU8_00773860 @ 0x0077_3860 => extern "C" fn auto_00773860(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773860, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x22)]; return t1`.
+    GetDerefU8_007738e0 @ 0x0077_38e0 => extern "C" fn auto_007738e0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_007738E0, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x2b)]; return t1`.
+    GetDerefU8_00773920 @ 0x0077_3920 => extern "C" fn auto_00773920(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773920, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x2c)]; return t1`.
+    GetDerefU8_00773970 @ 0x0077_3970 => extern "C" fn auto_00773970(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773970, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x2d)]; return t1`.
+    GetDerefU8_007739f0 @ 0x0077_39f0 => extern "C" fn auto_007739f0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_007739F0, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x2e)]; return t1`.
+    GetDerefU8_00773a60 @ 0x0077_3a60 => extern "C" fn auto_00773a60(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773A60, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x2f)]; return t1`.
+    GetDerefU8_00773ad0 @ 0x0077_3ad0 => extern "C" fn auto_00773ad0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773AD0, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x30)]; return t1`.
+    GetDerefU8_00773b20 @ 0x0077_3b20 => extern "C" fn auto_00773b20(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773B20, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x31)]; return t1`.
+    GetDerefU8_00773b60 @ 0x0077_3b60 => extern "C" fn auto_00773b60(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773B60, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x32)]; return t1`.
+    GetDerefU8_00773bc0 @ 0x0077_3bc0 => extern "C" fn auto_00773bc0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773BC0, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x33)]; return t1`.
+    GetDerefU8_00773c00 @ 0x0077_3c00 => extern "C" fn auto_00773c00(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773C00, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x34)]; return t1`.
+    GetDerefU8_00773c40 @ 0x0077_3c40 => extern "C" fn auto_00773c40(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773C40, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x35)]; return t1`.
+    GetDerefU8_00773cb0 @ 0x0077_3cb0 => extern "C" fn auto_00773cb0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773CB0, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x36)]; return t1`.
+    GetDerefU8_00773cf0 @ 0x0077_3cf0 => extern "C" fn auto_00773cf0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773CF0, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x37)]; return t1`.
+    GetDerefU8_00773d30 @ 0x0077_3d30 => extern "C" fn auto_00773d30(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773D30, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x38)]; return t1`.
+    GetDerefU8_00773d70 @ 0x0077_3d70 => extern "C" fn auto_00773d70(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773D70, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x39)]; return t1`.
+    GetDerefU8_00773db0 @ 0x0077_3db0 => extern "C" fn auto_00773db0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773DB0, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x3a)]; return t1`.
+    GetDerefU8_00773df0 @ 0x0077_3df0 => extern "C" fn auto_00773df0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773DF0, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x3b)]; return t1`.
+    GetDerefU8_00773e30 @ 0x0077_3e30 => extern "C" fn auto_00773e30(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773E30, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x3c)]; return t1`.
+    GetDerefU8_00773e70 @ 0x0077_3e70 => extern "C" fn auto_00773e70(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773E70, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x3d)]; return t1`.
+    GetDerefU8_00773eb0 @ 0x0077_3eb0 => extern "C" fn auto_00773eb0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773EB0, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x3e)]; return t1`.
+    GetDerefU8_00773ef0 @ 0x0077_3ef0 => extern "C" fn auto_00773ef0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773EF0, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x3f)]; return t1`.
+    GetDerefU8_00773f30 @ 0x0077_3f30 => extern "C" fn auto_00773f30(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773F30, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x40)]; return t1`.
+    GetDerefU8_00773f70 @ 0x0077_3f70 => extern "C" fn auto_00773f70(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773F70, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x41)]; return t1`.
+    GetDerefU8_00773fb0 @ 0x0077_3fb0 => extern "C" fn auto_00773fb0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773FB0, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x42)]; return t1`.
+    GetDerefU8_00773ff0 @ 0x0077_3ff0 => extern "C" fn auto_00773ff0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00773FF0, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x43)]; return t1`.
+    GetDerefU8_00774030 @ 0x0077_4030 => extern "C" fn auto_00774030(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00774030, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x44)]; return t1`.
+    GetDerefU8_00774070 @ 0x0077_4070 => extern "C" fn auto_00774070(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00774070, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x45)]; return t1`.
+    GetDerefU8_007740b0 @ 0x0077_40b0 => extern "C" fn auto_007740b0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_007740B0, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x46)]; return t1`.
+    GetDerefU8_007740f0 @ 0x0077_40f0 => extern "C" fn auto_007740f0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_007740F0, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x47)]; return t1`.
+    GetDerefU8_00774130 @ 0x0077_4130 => extern "C" fn auto_00774130(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00774130, &[a0])
+    }
+    /// return deref u16 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u16[(((a0 * 0x1d8) + t0) + 0x4e)]; return t1`.
+    GetDerefU16_00774170 @ 0x0077_4170 => extern "C" fn auto_00774170(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00774170, &[a0])
+    }
+    /// return deref u16 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u16[(((a0 * 0x1d8) + t0) + 0x80)]; return t1`.
+    GetDerefU16_007741b0 @ 0x0077_41b0 => extern "C" fn auto_007741b0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_007741B0, &[a0])
+    }
+    /// return deref u16 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u16[(((a0 * 0x1d8) + t0) + 0x82)]; return t1`.
+    GetDerefU16_007741f0 @ 0x0077_41f0 => extern "C" fn auto_007741f0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_007741F0, &[a0])
+    }
+    /// return deref u16 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u16[(((a0 * 0x1d8) + t0) + 0x84)]; return t1`.
+    GetDerefU16_00774230 @ 0x0077_4230 => extern "C" fn auto_00774230(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00774230, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x88)]; return t1`.
+    GetDerefU8_00774270 @ 0x0077_4270 => extern "C" fn auto_00774270(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00774270, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x89)]; return t1`.
+    GetDerefU8_007742b0 @ 0x0077_42b0 => extern "C" fn auto_007742b0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_007742B0, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x8a)]; return t1`.
+    GetDerefU8_007742f0 @ 0x0077_42f0 => extern "C" fn auto_007742f0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_007742F0, &[a0])
+    }
+    /// return deref u8 (pointer chain): `t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x8b)]; return t1`.
+    GetDerefU8_00774330 @ 0x0077_4330 => extern "C" fn auto_00774330(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00774330, &[a0])
+    }
+    /// store argument to table: `u8[(((a0 + (a0 * 0x2)) * 0x4) + &0x0112a530)] = (a1 & 0xff); return ((a0 & 0xffffff00) | (a1 & 0xff))`.
+    SetTableEntry_00779590 @ 0x0077_9590 => extern "C" fn auto_00779590(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00779590, &[a0, a1])
+    }
+    /// return constant: `return 0x2`.
+    dvd_ReturnConst2_0077a4f0 @ 0x0077_a4f0 => extern "C" fn auto_0077a4f0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A4F0, &[])
+    }
+    /// return constant: `return 0x118`.
+    dvd_ReturnConst118_0077a500 @ 0x0077_a500 => extern "C" fn auto_0077a500() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A500, &[])
+    }
+    /// return constant: `return 0x20000`.
+    dvd_ReturnConst20000_0077a510 @ 0x0077_a510 => extern "C" fn auto_0077a510() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A510, &[])
+    }
+    /// return constant: `return 0x158`.
+    dvd_ReturnConst158_0077a520 @ 0x0077_a520 => extern "C" fn auto_0077a520() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A520, &[])
+    }
+    /// return constant: `return 0x82`.
+    dvd_ReturnConst82_0077a530 @ 0x0077_a530 => extern "C" fn auto_0077a530() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A530, &[])
+    }
+    /// return constant: `return 0x117`.
+    dvd_ReturnConst117_0077a540 @ 0x0077_a540 => extern "C" fn auto_0077a540() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A540, &[])
+    }
+    /// return constant: `return 0x30`.
+    dvd_ReturnConst30_0077a550 @ 0x0077_a550 => extern "C" fn auto_0077a550() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A550, &[])
+    }
+    /// return constant: `return 0xf`.
+    dvd_ReturnConstf_0077a560 @ 0x0077_a560 => extern "C" fn auto_0077a560() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A560, &[])
+    }
+    /// return constant: `return 0x10`.
+    dvd_ReturnConst10_0077a570 @ 0x0077_a570 => extern "C" fn auto_0077a570() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A570, &[])
+    }
+    /// return constant: `return 0x2`.
+    dvd_ReturnConst2_0077a580 @ 0x0077_a580 => extern "C" fn auto_0077a580() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A580, &[])
+    }
+    /// return constant: `return 0x118`.
+    dvd_ReturnConst118_0077a590 @ 0x0077_a590 => extern "C" fn auto_0077a590() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A590, &[])
+    }
+    /// return constant: `return 0x20000`.
+    dvd_ReturnConst20000_0077a5a0 @ 0x0077_a5a0 => extern "C" fn auto_0077a5a0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A5A0, &[])
+    }
+    /// return constant: `return 0x158`.
+    dvd_ReturnConst158_0077a5b0 @ 0x0077_a5b0 => extern "C" fn auto_0077a5b0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A5B0, &[])
+    }
+    /// return constant: `return 0x82`.
+    dvd_ReturnConst82_0077a5c0 @ 0x0077_a5c0 => extern "C" fn auto_0077a5c0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A5C0, &[])
+    }
+    /// return constant: `return 0x117`.
+    dvd_ReturnConst117_0077a5d0 @ 0x0077_a5d0 => extern "C" fn auto_0077a5d0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A5D0, &[])
+    }
+    /// return constant: `return 0x30`.
+    dvd_ReturnConst30_0077a5e0 @ 0x0077_a5e0 => extern "C" fn auto_0077a5e0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A5E0, &[])
+    }
+    /// return constant: `return 0xf`.
+    dvd_ReturnConstf_0077a5f0 @ 0x0077_a5f0 => extern "C" fn auto_0077a5f0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A5F0, &[])
+    }
+    /// return constant: `return 0x118`.
+    dvd_ReturnConst118_0077a860 @ 0x0077_a860 => extern "C" fn auto_0077a860() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A860, &[])
+    }
+    /// return constant: `return 0x20000`.
+    dvd_ReturnConst20000_0077a870 @ 0x0077_a870 => extern "C" fn auto_0077a870() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A870, &[])
+    }
+    /// return constant: `return 0x158`.
+    dvd_ReturnConst158_0077a880 @ 0x0077_a880 => extern "C" fn auto_0077a880() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A880, &[])
+    }
+    /// return constant: `return 0x82`.
+    dvd_ReturnConst82_0077a890 @ 0x0077_a890 => extern "C" fn auto_0077a890() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A890, &[])
+    }
+    /// return constant: `return 0x117`.
+    dvd_ReturnConst117_0077a8a0 @ 0x0077_a8a0 => extern "C" fn auto_0077a8a0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A8A0, &[])
+    }
+    /// return constant: `return 0x30`.
+    dvd_ReturnConst30_0077a8b0 @ 0x0077_a8b0 => extern "C" fn auto_0077a8b0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A8B0, &[])
+    }
+    /// return constant: `return 0xf`.
+    dvd_ReturnConstf_0077a8c0 @ 0x0077_a8c0 => extern "C" fn auto_0077a8c0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A8C0, &[])
+    }
+    /// return constant: `return 0x10`.
+    dvd_ReturnConst10_0077a8d0 @ 0x0077_a8d0 => extern "C" fn auto_0077a8d0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0077A8D0, &[])
     }
     /// store argument to table: `u8[(((a0 + (a0 * 0x2)) << 0x4) + &0x0231000e)] = (a1 & 0xff); return ((a0 & 0xffffff00) | (a1 & 0xff))`.
     tex_anim_timer @ 0x0077_fe30 => extern "C" fn auto_0077fe30(a0: u32, a1: u32) -> u32 {
@@ -211,6 +807,14 @@ ported! {
     /// return constant: `return 0x14`.
     MsGetSaveChrNameSize @ 0x0078_4fe0 => extern "C" fn auto_00784fe0() -> u32 {
         ffx_auto::call(&mut mem(), &t::R_00784FE0, &[])
+    }
+    /// bit test of global: `t0 = u32[&0x0113079c]; return ((t0 >>s 0x5) & 0x1)`.
+    BitTestOfGlobal_007851b0 @ 0x0078_51b0 => extern "C" fn auto_007851b0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_007851B0, &[])
+    }
+    /// bit test of global: `t0 = u32[&0x0113079c]; return ((t0 >>s 0x4) & 0x1)`.
+    BitTestOfGlobal_00785230 @ 0x0078_5230 => extern "C" fn auto_00785230() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00785230, &[])
     }
     /// return address of global: `return &0x011307b8`.
     MsGetSaveMenuPanel @ 0x0078_52a0 => extern "C" fn auto_007852a0() -> u32 {
@@ -280,13 +884,129 @@ ported! {
     MsGetAnimaChainOff @ 0x0078_8dd0 => extern "C" fn auto_00788dd0() -> u32 {
         ffx_auto::call(&mut mem(), &t::R_00788DD0, &[])
     }
+    /// several stores: set global (constants, arguments, addresses): `u32[&0x011334bc] = 0x0; u32[&0x011334c0] = 0x0`.
+    MsSetGlobals_00790840 @ 0x0079_0840 => extern "C" fn auto_00790840() {
+        ffx_auto::run(&mut mem(), &t::R_00790840, &[]);
+    }
     /// several stores: set global (constants, arguments, addresses): `u32[&0x011334d4] = 0x0; u32[&0x01134468] = 0x0; u32[&0x0113446c] = 0x0`.
     MsBtlChrInitMem @ 0x0079_3630 => extern "C" fn auto_00793630() {
         ffx_auto::run(&mut mem(), &t::R_00793630, &[]);
     }
+    /// several stores: set field (constants, arguments, addresses): `u8[(a0 + 0x776)] = 0xff; u8[(a0 + 0xa4e)] = 0xff; return a0`.
+    MsSetFields_0079a170 @ 0x0079_a170 => extern "C" fn auto_0079a170(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0079A170, &[a0])
+    }
+    /// several stores: copy into table: `u8[((a0 * 0x4) + &0x0112aa00)] = (a1 & 0xff); t0 = u16[(a2 + (a1 * 0x4))]; u16[((a0 * 0x4) + &0x0112aa02)] = t0; return ((a2 & 0xffff0000) | t0)`.
+    MsSeveralStoresCopyIntoTable_0079b170 @ 0x0079_b170 => extern "C" fn auto_0079b170(a0: u32, a1: u32, a2: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0079B170, &[a0, a1, a2])
+    }
+    /// several stores: set global (constants, arguments, addresses): `u32[&0x0112c910] = 0x0; u32[&0x0112c944] = 0x0`.
+    MsSetGlobals_0079cdd0 @ 0x0079_cdd0 => extern "C" fn auto_0079cdd0() {
+        ffx_auto::run(&mut mem(), &t::R_0079CDD0, &[]);
+    }
+    /// return address of a field's target: `t0 = u32[a0]; return (((t0 == 0x0) * 0x4) + 0x1)`.
+    GetFieldPtr0_007a8700 @ 0x007a_8700 => extern "C" fn auto_007a8700(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_007A8700, &[a0])
+    }
+    /// return global u32: `t0 = u32[&0x0112c8d8]; return t0`.
+    MsGetGlobal0112c8d8_007a8970 @ 0x007a_8970 => extern "C" fn auto_007a8970() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_007A8970, &[])
+    }
+    /// return global u32: `t0 = u32[&0x01139e48]; return t0`.
+    GetGlobal01139e48_007c6da0 @ 0x007c_6da0 => extern "C" fn auto_007c6da0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_007C6DA0, &[])
+    }
+    /// store argument to table: `u32[((a0 * 0x4) + &0x01139f14)] = a1; return a0`.
+    Ms_SetTableEntry_007c8930 @ 0x007c_8930 => extern "C" fn auto_007c8930(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_007C8930, &[a0, a1])
+    }
+    /// return address of global: `return &0x0113ed28`.
+    Ms_AddrOfGlobal0113ed28_007d2410 @ 0x007d_2410 => extern "C" fn auto_007d2410() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_007D2410, &[])
+    }
+    /// return address of global: `return &0x0113ed18`.
+    Ms_AddrOfGlobal0113ed18_007d2420 @ 0x007d_2420 => extern "C" fn auto_007d2420() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_007D2420, &[])
+    }
+    /// store argument to global: `u32[&0x0113f864] = a0; return a0`.
+    SetGlobal0113f864_007d9af0 @ 0x007d_9af0 => extern "C" fn auto_007d9af0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_007D9AF0, &[a0])
+    }
+    /// several stores: copy into field: `t0 = u32[&0x00c8f508]; u32[a0] = t0; t1 = u32[&0x00c8f50c]; u32[(a0 + 0x4)] = t1; t2 = u32[&0x00c8f510]; u32[(a0 + 0x8)] = t2; t3 = u32[&0x00c8f514]; u32[(a0 + 0xc)] = t3; u16[a0] = (a1 & 0xffff); u16[(a0 + 0x2)] = (a2 & 0xffff); u16[(a0 + 0x4)] = (a3 & 0xffff); u16[(a0 + 0x6)] = 0xffff; return 0xffff`.
+    CopyFields_007e5f30 @ 0x007e_5f30 => extern "C" fn auto_007e5f30(a0: u32, a1: u32, a2: u32, a3: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_007E5F30, &[a0, a1, a2, a3])
+    }
     /// load and compute: `t0 = u8[&0x02332ea1]; t1 = u32[((sx8(t0) * 0x4) + &0x0119fe14)]; return (((&0x0119ff90 - (a0 << 0x2)) >=s t1) + 0xffffffff)`.
     op_spr_check @ 0x007e_6a30 => extern "C" fn auto_007e6a30(a0: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_007E6A30, &[a0])
+    }
+    /// several stores: copy into field: `t0 = u32[(a1 + 0x8)]; t1 = u32[(a1 + 0x4)]; t2 = u32[(a1 + 0xc)]; t3 = u32[a1]; t4 = u32[(a2 + 0x8)]; t5 = u32[(a2 + 0x4)]; t6 = u32[a2]; t7 = u32[(a2 + 0xc)]; u32[(a0 + 0x4)] = t3; u32[(a0 + 0x8)] = t5; u32[(a0 + 0xc)] = t1; u32[a0] = t6; return a0`.
+    CopyFields_007ecb20 @ 0x007e_cb20 => extern "C" fn auto_007ecb20(a0: u32, a1: u32, a2: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_007ECB20, &[a0, a1, a2])
+    }
+    /// return argument + offset: `return (a0 + 0x10)`.
+    FieldAddr10_00806e10 @ 0x0080_6e10 => extern "C" fn auto_00806e10(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00806E10, &[a0])
+    }
+    /// return argument + offset: `return (a0 + 0x4)`.
+    FieldAddr4_00806e30 @ 0x0080_6e30 => extern "C" fn auto_00806e30(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00806E30, &[a0])
+    }
+    /// return argument + offset: `return (a0 + 0x4)`.
+    FieldAddr4_00806e40 @ 0x0080_6e40 => extern "C" fn auto_00806e40(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00806E40, &[a0])
+    }
+    /// store constant to field: `u8[(a0 + 0x210)] = 0xff; return 0x0`.
+    SetFieldConst210_008106a0 @ 0x0081_06a0 => extern "C" fn auto_008106a0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008106A0, &[a0])
+    }
+    /// store copy to field: `t0 = u8[(a0 + 0x21b)]; u8[(a0 + 0x210)] = t0; return (a2 + 0x2)`.
+    CopyField21b_008106c0 @ 0x0081_06c0 => extern "C" fn auto_008106c0(a0: u32, a1: u32, a2: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008106C0, &[a0, a1, a2])
+    }
+    /// return address of a field's target: `t0 = u16[(a2 + 0x2)]; return (sx16(t0) + a2)`.
+    GetFieldPtr_00810710 @ 0x0081_0710 => extern "C" fn auto_00810710(a0: u32, a1: u32, a2: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00810710, &[a0, a1, a2])
+    }
+    /// store copy to field: `t0 = u16[(a0 + 0x21a)]; t1 = u16[(a2 + 0x2)]; t2 = u16[((((sx16(t0) >>s 0xc) & 0x7) * 0x2) + &0x00c4930c)]; u16[(sx16(t2) + a3)] = t1; return (a2 + 0x4)`.
+    CopyField21a_00810b70 @ 0x0081_0b70 => extern "C" fn auto_00810b70(a0: u32, a1: u32, a2: u32, a3: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00810B70, &[a0, a1, a2, a3])
+    }
+    /// store copy to field: `t0 = u8[(a2 + 0x2)]; u8[(a3 + 0x4f)] = t0; return (a2 + 0x4)`.
+    CopyField_00810cd0 @ 0x0081_0cd0 => extern "C" fn auto_00810cd0(a0: u32, a1: u32, a2: u32, a3: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00810CD0, &[a0, a1, a2, a3])
+    }
+    /// return address of a field's target: `t0 = u16[(a1 + 0x2)]; return (sx16(t0) + a1)`.
+    GetFieldPtr2_008168b0 @ 0x0081_68b0 => extern "C" fn auto_008168b0(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008168B0, &[a0, a1])
+    }
+    /// store copy to deref: `t0 = u32[(a0 + 0x220)]; t1 = u16[(a1 + 0x2)]; u16[(t0 + 0x1a)] = t1; return (a1 + 0x4)`.
+    StoreCopyToDeref_00817250 @ 0x0081_7250 => extern "C" fn auto_00817250(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00817250, &[a0, a1])
+    }
+    /// return argument + offset: `return (a1 + 0x2)`.
+    FieldAddr2_00817270 @ 0x0081_7270 => extern "C" fn auto_00817270(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00817270, &[a0, a1])
+    }
+    /// return global u32: `t0 = u32[&0x012f4e78]; return t0`.
+    SndGetGlobal012f4e78_0081d2e0 @ 0x0081_d2e0 => extern "C" fn auto_0081d2e0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0081D2E0, &[])
+    }
+    /// return constant: `return 0x1`.
+    Sg_ReturnConst1_008202d0 @ 0x0082_02d0 => extern "C" fn auto_008202d0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008202D0, &[])
+    }
+    /// return table u32: `t0 = u32[((a0 * 0x4) + &0x012fbbf4)]; return t0`.
+    ReturnTableU32_00820580 @ 0x0082_0580 => extern "C" fn auto_00820580(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00820580, &[a0])
+    }
+    /// return global u32: `t0 = u32[&0x012fbc2c]; return t0`.
+    GetGlobal012fbc2c_00820590 @ 0x0082_0590 => extern "C" fn auto_00820590() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00820590, &[])
+    }
+    /// return constant: `return 0x2`.
+    HandleReturnConst2_00822480 @ 0x0082_2480 => extern "C" fn auto_00822480() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00822480, &[])
     }
     /// store constant to global: `u8[&0x012ffad8] = 0x1`.
     Ch_GetPosSg @ 0x0082_acc0 => extern "C" fn auto_0082acc0() {
@@ -308,13 +1028,97 @@ ported! {
     Sg_PcReadSetErrIgnore @ 0x0083_afd0 => extern "C" fn auto_0083afd0(a0: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_0083AFD0, &[a0])
     }
+    /// store argument to global: `u32[&0x01301bc4] = a0; return a0`.
+    SetGlobal01301bc4_0083f700 @ 0x0083_f700 => extern "C" fn auto_0083f700(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0083F700, &[a0])
+    }
+    /// several stores: set global (constants, arguments, addresses): `u32[&0x01303348] = a0; u32[&0x01303344] = 0x0; u32[&0x0130334c] = 0x0; u32[&0x01303350] = 0x0; return &0x023016e0`.
+    SetGlobals_008431d0 @ 0x0084_31d0 => extern "C" fn auto_008431d0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008431D0, &[a0])
+    }
+    /// store computed to global: `t0 = u32[&0x00c4df4c]; u32[&0x00c4df4c] = ((t0 + 0xffffffff) & 0x1); return ((t0 + 0xffffffff) & 0x1)`.
+    StoreComputedToGlobal_00843590 @ 0x0084_3590 => extern "C" fn auto_00843590() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00843590, &[])
+    }
+    /// store copy to field: `t0 = u32[a1]; u32[a0] = t0; return a0`.
+    sg_CopyField0_00845ce0 @ 0x0084_5ce0 => extern "C" fn auto_00845ce0(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00845CE0, &[a0, a1])
+    }
+    /// several stores: copy into field: `t0 = u32[(a1 + 0x8)]; t1 = u32[(a1 + 0x4)]; t2 = u32[(a1 + 0xc)]; t3 = u32[a1]; t4 = u32[(a2 + 0x8)]; t5 = u32[(a2 + 0x4)]; t6 = u32[a2]; t7 = u32[(a2 + 0xc)]; u32[(a0 + 0x8)] = t3; u32[(a0 + 0x4)] = t5; u32[(a0 + 0xc)] = t1; u32[a0] = t6; return a0`.
+    sg_CopyFields_00845d00 @ 0x0084_5d00 => extern "C" fn auto_00845d00(a0: u32, a1: u32, a2: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00845D00, &[a0, a1, a2])
+    }
+    /// store copy to field: `t0 = u32[a0]; u32[a1] = t0; return a1`.
+    sg_CopyField0_00845d60 @ 0x0084_5d60 => extern "C" fn auto_00845d60(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00845D60, &[a0, a1])
+    }
+    /// return global u32: `t0 = u32[&0x01303730]; return t0`.
+    GetGlobal01303730_00848f10 @ 0x0084_8f10 => extern "C" fn auto_00848f10() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00848F10, &[])
+    }
+    /// several stores: set table (constants, arguments, addresses): `u32[((((a0 * 0x8) - a0) * 0x4) + &0x01303c20)] = a1; u32[((((a0 * 0x8) - a0) * 0x4) + &0x01303c24)] = a2; u32[((((a0 * 0x8) - a0) * 0x4) + &0x01303c28)] = a3; u32[((((a0 * 0x8) - a0) * 0x4) + &0x01303c30)] = a4; u32[((((a0 * 0x8) - a0) * 0x4) + &0x01303c34)] = a5; return a5`.
+    Light_SeveralStoresSetTableConstantsArgumentsAddresses_0084eb10 @ 0x0084_eb10 => extern "C" fn auto_0084eb10(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0084EB10, &[a0, a1, a2, a3, a4, a5])
+    }
     /// store argument to global: `u32[&0x0132412c] = a0; return a0`.
     sg_SetY @ 0x0085_0840 => extern "C" fn auto_00850840(a0: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_00850840, &[a0])
     }
+    /// return field u8: `t0 = u8[(a0 + 0x32)]; return t0`.
+    GetFieldU832_00856980 @ 0x0085_6980 => extern "C" fn auto_00856980(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00856980, &[a0])
+    }
+    /// return field u32: `t0 = u32[(a0 + 0x40)]; return t0`.
+    GetField40_008571c0 @ 0x0085_71c0 => extern "C" fn auto_008571c0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008571C0, &[a0])
+    }
+    /// store bit set to field: `t0 = u16[(a0 + 0x38)]; u16[(a0 + 0x38)] = (t0 | 0x1000); return 0x1`.
+    SetFieldBits38_008580a0 @ 0x0085_80a0 => extern "C" fn auto_008580a0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008580A0, &[a0])
+    }
+    /// store constant to field: `u32[(a0 + 0x44)] = 0x0; return 0x1`.
+    SetFieldConst44_008594a0 @ 0x0085_94a0 => extern "C" fn auto_008594a0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008594A0, &[a0])
+    }
+    /// return field u32: `t0 = u32[a1]; return t0`.
+    GetField0_008595f0 @ 0x0085_95f0 => extern "C" fn auto_008595f0(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008595F0, &[a0, a1])
+    }
+    /// return field u32: `t0 = u32[(a0 + 0xaf0)]; return t0`.
+    GetFieldaf0_0085c4b0 @ 0x0085_c4b0 => extern "C" fn auto_0085c4b0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0085C4B0, &[a0])
+    }
+    /// store bit set to field: `t0 = u16[(a0 + 0x38)]; u16[(a0 + 0x38)] = (t0 | 0x200); return 0x1`.
+    SetFieldBits38_0085ece0 @ 0x0085_ece0 => extern "C" fn auto_0085ece0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0085ECE0, &[a0])
+    }
+    /// store bit set to field: `t0 = u16[(a0 + 0x38)]; u16[(a0 + 0x38)] = (t0 | 0x400); return 0x1`.
+    SetFieldBits38_0085ed40 @ 0x0085_ed40 => extern "C" fn auto_0085ed40(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0085ED40, &[a0])
+    }
+    /// several stores: set field (constants, arguments, addresses): `u32[a1] = 0x0; u32[(a1 + 0x4)] = 0xa; return a1`.
+    SetFields_0085eea0 @ 0x0085_eea0 => extern "C" fn auto_0085eea0(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0085EEA0, &[a0, a1])
+    }
+    /// return field u8: `t0 = u8[(a0 + 0xaa)]; return t0`.
+    GetFieldU8aa_0085f2d0 @ 0x0085_f2d0 => extern "C" fn auto_0085f2d0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0085F2D0, &[a0])
+    }
+    /// return field u16: `t0 = u16[(a0 + 0xa8)]; return t0`.
+    GetFieldU16a8_0085f360 @ 0x0085_f360 => extern "C" fn auto_0085f360(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0085F360, &[a0])
+    }
+    /// store bit set to field: `t0 = u16[(a0 + 0x38)]; u16[(a0 + 0x38)] = (t0 | 0x800); return 0x1`.
+    SetFieldBits38_0085fb10 @ 0x0085_fb10 => extern "C" fn auto_0085fb10(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0085FB10, &[a0])
+    }
     /// store constant to table: `u32[((a0 * 0x238) + &0x01325da4)] = 0x0; return (a0 * 0x238)`.
     AtelFreeSepBuffer @ 0x0086_a1c0 => extern "C" fn auto_0086a1c0(a0: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_0086A1C0, &[a0])
+    }
+    /// return field u16: `t0 = u16[(a0 + 0x16)]; return t0`.
+    AtelGetFieldU1616_0086a9e0 @ 0x0086_a9e0 => extern "C" fn auto_0086a9e0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0086A9E0, &[a0])
     }
     /// return global u32: `t0 = u32[&0x01326b94]; return t0`.
     AtelGetBindMaskStatus @ 0x0086_ade0 => extern "C" fn auto_0086ade0() -> u32 {
@@ -324,9 +1128,81 @@ ported! {
     AtelGetBindPC @ 0x0086_adf0 => extern "C" fn auto_0086adf0(a0: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_0086ADF0, &[a0])
     }
+    /// return field u16: `t0 = u16[(a0 + 0x1c)]; return t0`.
+    AtelGetFieldU161c_0086b020 @ 0x0086_b020 => extern "C" fn auto_0086b020(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0086B020, &[a0])
+    }
+    /// return global u32: `t0 = u32[&0x00c5273c]; return t0`.
+    Get_g_AtelForceBattleMapId_0086b6c0 @ 0x0086_b6c0 => extern "C" fn auto_0086b6c0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0086B6C0, &[])
+    }
+    /// return field u16: `t0 = u16[(a0 + 0x14)]; return t0`.
+    AtelGetFieldU1614_0086bcb0 @ 0x0086_bcb0 => extern "C" fn auto_0086bcb0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0086BCB0, &[a0])
+    }
+    /// return global u32: `t0 = u32[&0x01326b90]; return t0`.
+    Get_g_AtelLoveParamDisable_0086bd40 @ 0x0086_bd40 => extern "C" fn auto_0086bd40() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0086BD40, &[])
+    }
+    /// return address of a field's target: `t0 = u8[(a0 + 0x32)]; return (((t0 * 0x4c) + 0x5b8) + a0)`.
+    Native_GetFieldPtr32_0086c0a0 @ 0x0086_c0a0 => extern "C" fn auto_0086c0a0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0086C0A0, &[a0])
+    }
+    /// return global u32: `t0 = u32[&0x01326b6c]; return t0`.
+    Get_g_AtelShopRatio_0086c480 @ 0x0086_c480 => extern "C" fn auto_0086c480() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0086C480, &[])
+    }
     /// return address of global: `return &0x00b5b9fc`.
     AtelGetVersion @ 0x0086_c890 => extern "C" fn auto_0086c890() -> u32 {
         ffx_auto::call(&mut mem(), &t::R_0086C890, &[])
+    }
+    /// arithmetic on arguments: `return (((a0 & 0xff) | 0x40) >> 0x6)`.
+    Compute_0086ca10 @ 0x0086_ca10 => extern "C" fn auto_0086ca10(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0086CA10, &[a0])
+    }
+    /// several stores: copy into global/table: `t0 = u32[&0x01326b28]; u32[&0x01326b28] = t0; u32[(((a0 * 0x238) + &0x01325ba0) + 0x64)] = 0xffffffff; u32[(((a0 * 0x238) + &0x01325ba0) + 0x74)] = 0xffffffff; u32[(((a0 * 0x238) + &0x01325ba0) + 0x84)] = 0xffffffff; u32[(((a0 * 0x238) + &0x01325ba0) + 0x94)] = 0xffffffff; return ((a0 * 0x238) + &0x01325ba0)`.
+    SeveralStoresCopyIntoGlobalTable_0086d000 @ 0x0086_d000 => extern "C" fn auto_0086d000(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0086D000, &[a0])
+    }
+    /// several stores: set global (constants, arguments, addresses): `u32[&0x01327070] = a0; u32[&0x01327074] = a1; return a1`.
+    SetGlobals_0086e970 @ 0x0086_e970 => extern "C" fn auto_0086e970(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0086E970, &[a0, a1])
+    }
+    /// several stores: set field (constants, arguments, addresses): `u16[(a0 + 0x5bc)] = (a1 & 0xffff); u16[(a0 + 0x608)] = (a1 & 0xffff); u16[(a0 + 0x654)] = (a1 & 0xffff); u16[(a0 + 0x6a0)] = (a1 & 0xffff); u16[(a0 + 0x6ec)] = (a1 & 0xffff); u16[(a0 + 0x738)] = (a1 & 0xffff); u16[(a0 + 0x784)] = (a1 & 0xffff); u16[(a0 + 0x7d0)] = (a1 & 0xffff); u16[(a0 + 0x81c)] = (a1 & 0xffff); return a0`.
+    Native_SetFields_0086f080 @ 0x0086_f080 => extern "C" fn auto_0086f080(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0086F080, &[a0, a1])
+    }
+    /// several stores: set field (constants, arguments, addresses): `u16[(a0 + 0x868)] = (a1 & 0xffff); u16[(a0 + 0x8ac)] = (a1 & 0xffff); u16[(a0 + 0x8f0)] = (a1 & 0xffff); u16[(a0 + 0x934)] = (a1 & 0xffff); u16[(a0 + 0x978)] = (a1 & 0xffff); u16[(a0 + 0x9bc)] = (a1 & 0xffff); u16[(a0 + 0xa00)] = (a1 & 0xffff); u16[(a0 + 0xa44)] = (a1 & 0xffff); u16[(a0 + 0xa88)] = (a1 & 0xffff); return a0`.
+    SetFields_0086f120 @ 0x0086_f120 => extern "C" fn auto_0086f120(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0086F120, &[a0, a1])
+    }
+    /// store argument to field: `u16[(((a1 * 0x4c) + a0) + 0x5bc)] = (a2 & 0xffff); return a0`.
+    SetField_00870520 @ 0x0087_0520 => extern "C" fn auto_00870520(a0: u32, a1: u32, a2: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00870520, &[a0, a1, a2])
+    }
+    /// store argument to deref: `t0 = u8[(a0 + 0x32)]; u32[(((t0 * 0x4c) + a0) + 0x5cc)] = a1; return a1`.
+    SetDeref_00870fc0 @ 0x0087_0fc0 => extern "C" fn auto_00870fc0(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00870FC0, &[a0, a1])
+    }
+    /// store argument to field: `u16[((a0 + (((a1 << 0x4) + a1) * 0x4)) + 0x868)] = (a2 & 0xffff); return a0`.
+    SetField_00871170 @ 0x0087_1170 => extern "C" fn auto_00871170(a0: u32, a1: u32, a2: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00871170, &[a0, a1, a2])
+    }
+    /// return address of a field's target: `t0 = u32[(a0 + 0x4)]; t1 = u32[(t0 + 0x30)]; return ((t1 + t0) + a1)`.
+    GetFieldPtr4_00872630 @ 0x0087_2630 => extern "C" fn auto_00872630(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00872630, &[a0, a1])
+    }
+    /// store argument to global: `u32[&0x01327f4c] = a0; return a0`.
+    SetGlobal01327f4c_008749e0 @ 0x0087_49e0 => extern "C" fn auto_008749e0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008749E0, &[a0])
+    }
+    /// return address of a field's target: `t0 = u32[(a0 + 0xb8)]; return (t0 + a1)`.
+    GetFieldPtrb8_008756b0 @ 0x0087_56b0 => extern "C" fn auto_008756b0(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008756B0, &[a0, a1])
+    }
+    /// return table u32: `t0 = u32[((a0 * 0x4) + &0x01328598)]; return t0`.
+    AtelReturnTableU32_00879750 @ 0x0087_9750 => extern "C" fn auto_00879750(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00879750, &[a0])
     }
     /// return table u32: `t0 = u32[(((a1 + (a0 * 0x8)) * 0x4) + &0x01328698)]; return t0`.
     AtelGetSourceDataAdrs @ 0x0087_9820 => extern "C" fn auto_00879820(a0: u32, a1: u32) -> u32 {
@@ -396,28 +1272,232 @@ ported! {
     SndPushFootStatus @ 0x0088_6c40 => extern "C" fn auto_00886c40() -> u32 {
         ffx_auto::call(&mut mem(), &t::R_00886C40, &[])
     }
+    /// store argument to global: `t0 = u32[&0x013301f0]; u32[&0x013301f0] = a0; t1 = u32[&0x013301f0]; return t1`.
+    SetGlobal013301f0_00887e80 @ 0x0088_7e80 => extern "C" fn auto_00887e80(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00887E80, &[a0])
+    }
+    /// store constant to global: `u32[&0x013301e4] = 0x1`.
+    TkSet_g_TkSoundSyncVFlag_00887ea0 @ 0x0088_7ea0 => extern "C" fn auto_00887ea0() {
+        ffx_auto::run(&mut mem(), &t::R_00887EA0, &[]);
+    }
+    /// store constant to global: `u32[&0x013301e8] = 0x1`.
+    TkSetGlobal013301e8_00887eb0 @ 0x0088_7eb0 => extern "C" fn auto_00887eb0() {
+        ffx_auto::run(&mut mem(), &t::R_00887EB0, &[]);
+    }
+    /// store constant to global: `u32[&0x013301ec] = 0x1`.
+    TkSet_g_TkSoundSyncVFlag3_00887ec0 @ 0x0088_7ec0 => extern "C" fn auto_00887ec0() {
+        ffx_auto::run(&mut mem(), &t::R_00887EC0, &[]);
+    }
     /// store argument to global: `u32[&0x01330230] = a0; return a0`.
     TkMcSetExecPort @ 0x0088_8430 => extern "C" fn auto_00888430(a0: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_00888430, &[a0])
+    }
+    /// arithmetic on arguments: `return (a1 & 0xff)`.
+    Compute_008889e0 @ 0x0088_89e0 => extern "C" fn auto_008889e0(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008889E0, &[a0, a1])
     }
     /// several stores: set table (constants, arguments, addresses): `u32[((a0 << 0x4) + &0x0133f510)] = 0x0; u32[((a0 << 0x4) + &0x0133f514)] = 0x7; u32[((a0 << 0x4) + &0x0133f518)] = 0x0; u32[((a0 << 0x4) + &0x0133f51c)] = 0x0; return (a0 << 0x4)`.
     TOBtlInitSimpleHelpMes @ 0x0089_db60 => extern "C" fn auto_0089db60(a0: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_0089DB60, &[a0])
     }
+    /// return global u32: `t0 = u32[&0x01841c0c]; return t0`.
+    GetGlobal01841c0c_008a98e0 @ 0x008a_98e0 => extern "C" fn auto_008a98e0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008A98E0, &[])
+    }
+    /// return address of global: `return &0x0159e468`.
+    AddrOfGlobal0159e468_008b3630 @ 0x008b_3630 => extern "C" fn auto_008b3630() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008B3630, &[])
+    }
+    /// store constant to field: `u32[(a0 + 0x28)] = 0x0; return a0`.
+    SetFieldConst28_008b3d10 @ 0x008b_3d10 => extern "C" fn auto_008b3d10(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008B3D10, &[a0])
+    }
     /// store computed to global: `t0 = u32[&0x0186a214]; u32[&0x0186a214] = ((t0 ^ a0) & 0xffff0000); return ((t0 ^ a0) & 0xffff0000)`.
     TOMenuClearMenuType @ 0x008b_e3f0 => extern "C" fn auto_008be3f0(a0: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_008BE3F0, &[a0])
+    }
+    /// return constant: `return 0x200000`.
+    ReturnConst200000_008bec80 @ 0x008b_ec80 => extern "C" fn auto_008bec80() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008BEC80, &[])
+    }
+    /// several stores: set field/global (constants, arguments, addresses): `u32[&0x0186a234] = (a1 & 0xffff); u32[&0x0186a230] = (a1 & 0xfff); u32[(a0 + 0x1c)] = 0x0; return a0`.
+    SeveralStoresSetFieldGlobalConstantsArgumentsAddresses_008bf070 @ 0x008b_f070 => extern "C" fn auto_008bf070(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008BF070, &[a0, a1])
+    }
+    /// return deref u32 (pointer chain): `t0 = u32[&0x0186a44c]; t1 = u32[(t0 + (a0 * 0x4))]; return t1`.
+    GetDerefU32_008cbaa0 @ 0x008c_baa0 => extern "C" fn auto_008cbaa0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008CBAA0, &[a0])
+    }
+    /// several stores: set global (constants, arguments, addresses): `u32[&0x0186ab1c] = a1; u32[&0x0186aba0] = 0xffffffff; return a1`.
+    SetGlobals_008d7590 @ 0x008d_7590 => extern "C" fn auto_008d7590(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008D7590, &[a0, a1])
+    }
+    /// store argument to global: `u32[&0x0186ac20] = a1; return a1`.
+    Set_g_TkMenuWShopList_008d9ad0 @ 0x008d_9ad0 => extern "C" fn auto_008d9ad0(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008D9AD0, &[a0, a1])
+    }
+    /// store constant to field: `u32[(a0 + 0x1c)] = 0x0; return a0`.
+    SetFieldConst1c_008db790 @ 0x008d_b790 => extern "C" fn auto_008db790(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008DB790, &[a0])
+    }
+    /// several stores: set field (constants, arguments, addresses): `u16[(a0 + 0x2c)] = 0x4; u32[(a0 + 0x124)] = &0x008dea00; return 0x0`.
+    SetFields_008dea00 @ 0x008d_ea00 => extern "C" fn auto_008dea00(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008DEA00, &[a0])
+    }
+    /// several stores: computed, into field: `t0 = u8[(a0 + 0x5b)]; u8[(a0 + 0x5b)] = ((t0 + 0xf0) & 0xff); u16[(a0 + 0x2c)] = 0x4; u32[(a0 + 0x124)] = &0x008dea00; return 0x0`.
+    StoreComputed_008df4c0 @ 0x008d_f4c0 => extern "C" fn auto_008df4c0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008DF4C0, &[a0])
+    }
+    /// return global u32: `t0 = u32[&0x01871558]; return t0`.
+    GetGlobal01871558_008e2250 @ 0x008e_2250 => extern "C" fn auto_008e2250() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008E2250, &[])
+    }
+    /// store constant to field: `u32[(a0 + 0x1c)] = 0x0; return a0`.
+    SetFieldConst1c_008e2ad0 @ 0x008e_2ad0 => extern "C" fn auto_008e2ad0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_008E2AD0, &[a0])
     }
     /// several stores: set field (constants, arguments, addresses): `u16[(a0 + 0x4)] = (a1 & 0xffff); u16[a0] = (a1 & 0xffff); u16[(a0 + 0x6)] = (a3 & 0xffff); u16[(a0 + 0x2)] = (a3 & 0xffff); u16[(a0 + 0xa)] = (a2 & 0xffff); u16[(a0 + 0x8)] = (a2 & 0xffff); u16[(a0 + 0xe)] = (a4 & 0xffff); u16[(a0 + 0xc)] = (a4 & 0xffff); return a4`.
     TOSetPolyG4A_XY4 @ 0x0090_4860 => extern "C" fn auto_00904860(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_00904860, &[a0, a1, a2, a3, a4])
     }
+    /// several stores: set table (constants, arguments, addresses): `u32[((a4 << 0x5) + &0x025d1710)] = a0; u32[((a4 << 0x5) + &0x025d1714)] = a1; u32[((a4 << 0x5) + &0x025d1718)] = a2; u32[((a4 << 0x5) + &0x025d171c)] = a3; return a3`.
+    SeveralStoresSetTableConstantsArgumentsAddresses_00906680 @ 0x0090_6680 => extern "C" fn auto_00906680(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00906680, &[a0, a1, a2, a3, a4])
+    }
+    /// return global u32: `t0 = u32[&0x011307a0]; return t0`.
+    GetGlobal011307a0_00906b10 @ 0x0090_6b10 => extern "C" fn auto_00906b10() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00906B10, &[])
+    }
+    /// return global u32: `t0 = u32[&0x018ded30]; return t0`.
+    GetGlobal018ded30_00908f40 @ 0x0090_8f40 => extern "C" fn auto_00908f40() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00908F40, &[])
+    }
+    /// several stores: computed, into field: `t0 = u16[(a0 + 0x10)]; u32[a1] = sx16(t0); t1 = u16[(a0 + 0x12)]; u32[a2] = sx16(t1); return a2`.
+    pppStoreComputed_0091af10 @ 0x0091_af10 => extern "C" fn auto_0091af10(a0: u32, a1: u32, a2: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0091AF10, &[a0, a1, a2])
+    }
     /// return constant: `return 0x1`.
     Native_8006_Poll @ 0x0091_b040 => extern "C" fn auto_0091b040() -> u32 {
         ffx_auto::call(&mut mem(), &t::R_0091B040, &[])
     }
+    /// compare: `t0 = u32[&0x012fbc40]; return (t0 == 0x140)`.
+    Native_Compare_0091c8a0 @ 0x0091_c8a0 => extern "C" fn auto_0091c8a0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0091C8A0, &[])
+    }
+    /// several stores: set global (constants, arguments, addresses): `u32[&0x025d5c38] = a0; u32[&0x025d5c3c] = a1; u32[&0x025d5c40] = a2; u32[&0x025d5c44] = 0x0; u32[&0x025d5c48] = 0x1; return a2`.
+    SetGlobals_0092d880 @ 0x0092_d880 => extern "C" fn auto_0092d880(a0: u32, a1: u32, a2: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_0092D880, &[a0, a1, a2])
+    }
     /// store constant to field: `u32[(a0 + 0xbc)] = 0x1; return a0`.
     rcefObjCreate @ 0x0092_fe90 => extern "C" fn auto_0092fe90(a0: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_0092FE90, &[a0])
+    }
+    /// return address of global: `return &0x025d5fa0`.
+    Gui_AddrOfGlobal025d5fa0_00941820 @ 0x0094_1820 => extern "C" fn auto_00941820() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00941820, &[])
+    }
+    /// return global u32: `t0 = u32[&0x0193cd48]; return t0`.
+    Get_g_CommittedBytes_009437f0 @ 0x0094_37f0 => extern "C" fn auto_009437f0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_009437F0, &[])
+    }
+    /// return global u32: `t0 = u32[&0x0193cd44]; return t0`.
+    Get_g_ReservedBytes_00943800 @ 0x0094_3800 => extern "C" fn auto_00943800() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00943800, &[])
+    }
+    /// several stores: computed, into field: `u32[(a0 + 0x4)] = ((a1 + 0xfff) & 0xfffff000); u32[a0] = 0x0; return a0`.
+    StoreComputed_009439d0 @ 0x0094_39d0 => extern "thiscall" fn auto_009439d0(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_009439D0, &[a0, a1])
+    }
+    /// several stores: set field (constants, arguments, addresses): `u32[a0] = 0x1000; u32[(a0 + 0x4)] = 0x2000000; u32[(a0 + 0x8)] = 0x40; u32[(a0 + 0xc)] = 0x8000; u32[(a0 + 0x10)] = 0x2000000; u32[(a0 + 0x14)] = 0x200; u32[(a0 + 0x18)] = 0x2000000; u32[(a0 + 0x1c)] = 0x200; u32[(a0 + 0x20)] = 0x2800; u32[(a0 + 0x24)] = 0x8000000; u32[(a0 + 0x28)] = 0x2800; u32[(a0 + 0x2c)] = 0x100000; return a0`.
+    SetFields_00945750 @ 0x0094_5750 => extern "thiscall" fn auto_00945750(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00945750, &[a0])
+    }
+    /// several stores: copy into field: `t0 = u32[&0x00c8f508]; u32[a0] = t0; t1 = u32[&0x00c8f50c]; u32[(a0 + 0x4)] = t1; t2 = u32[&0x00c8f510]; u32[(a0 + 0x8)] = t2; t3 = u32[&0x00c8f514]; u32[(a0 + 0xc)] = t3; t4 = u32[&0x00c8f508]; u32[(a0 + 0x10)] = t4; t5 = u32[&0x00c8f50c]; u32[(a0 + 0x14)] = t5; t6 = u32[&0x00c8f510]; u32[(a0 + 0x18)] = t6; t7 = u32[&0x00c8f514]; u32[(a0 + 0x1c)] = t7; t8 = u32[&0x00c8f508]; u32[(a0 + 0x20)] = t8; t9 = u32[&0x00c8f50c]; u32[(a0 + 0x24)] = t9; t10 = u32[&0x00c8f510]; u32[(a0 + 0x28)] = t10; t11 = u32[&0x00c8f514]; u32[(a0 + 0x2c)] = t11; t12 = u32[&0x00c8f508]; u32[(a0 + 0x30)] = t12; t13 = u32[&0x00c8f50c]; u32[(a0 + 0x34)] = t13; t14 = u32[&0x00c8f510]; u32[(a0 + 0x38)] = t14; t15 = u32[&0x00c8f514]; u32[(a0 + 0x3c)] = t15; return t15`.
+    CopyFields_009db490 @ 0x009d_b490 => extern "C" fn auto_009db490(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_009DB490, &[a0])
+    }
+    /// return global u32: `t0 = u32[&0x01984c68]; return t0`.
+    GetGlobal01984c68_00a25a30 @ 0x00a2_5a30 => extern "C" fn auto_00a25a30() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00A25A30, &[])
+    }
+    /// several stores: set field (constants, arguments, addresses): `u32[(a0 + 0x4)] = 0x0; u32[(a0 + 0x8)] = 0x0; u32[(a0 + 0xc)] = 0x0; u32[(a0 + 0x10)] = 0x0; u32[(a0 + 0x14)] = 0x0; u32[(a0 + 0x18)] = 0x0; u32[(a0 + 0x1c)] = 0x0; u32[(a0 + 0x20)] = 0x0; u32[(a0 + 0x24)] = 0x0; u32[(a0 + 0x28)] = 0x0; u32[(a0 + 0x2c)] = 0x0; u8[(a0 + 0x30)] = 0x1; return a0`.
+    IggyMenuManager_SetFields_00a25db0 @ 0x00a2_5db0 => extern "thiscall" fn auto_00a25db0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00A25DB0, &[a0])
+    }
+    /// return deref u32 (pointer chain): `t0 = u32[(a0 + 0x6c)]; t1 = u32[t0]; return t1`.
+    GetDerefU32_00a28d10 @ 0x00a2_8d10 => extern "thiscall" fn auto_00a28d10(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00A28D10, &[a0])
+    }
+    /// store argument to field: `u32[(a0 + 0x68)] = a1; return a1`.
+    SetField68_00a28f30 @ 0x00a2_8f30 => extern "thiscall" fn auto_00a28f30(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00A28F30, &[a0, a1])
+    }
+    /// several stores: computed, into field: `t0 = u32[(a0 + 0xc)]; u32[a1] = t0; t1 = u32[(a0 + 0x10)]; u32[(a1 + 0x4)] = t1; t2 = u32[(a0 + 0x30)]; u32[(a1 + 0x8)] = (t2 & 0xfffffff); return (t2 & 0xfffffff)`.
+    StoreComputed_00a38480 @ 0x00a3_8480 => extern "stdcall" fn auto_00a38480(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00A38480, &[a0, a1])
+    }
+    /// store computed to field: `t0 = u32[(a0 + 0x30)]; u32[a1] = (t0 & 0xfffffff); return a1`.
+    SetFieldComputed30_00a384b0 @ 0x00a3_84b0 => extern "stdcall" fn auto_00a384b0(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00A384B0, &[a0, a1])
+    }
+    /// several stores: set field (constants, arguments, addresses): `u32[a0] = 0x8; u32[(a0 + 0x4)] = 0x1ffe; u32[(a0 + 0xc)] = 0x0; u32[(a0 + 0x10)] = 0x1; u32[(a0 + 0x14)] = 0x1; u32[(a0 + 0x8)] = 0x2000; u32[(a0 + 0x18)] = 0x0; return a0`.
+    SetFields_00a39900 @ 0x00a3_9900 => extern "stdcall" fn auto_00a39900(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00A39900, &[a0])
+    }
+    /// several stores: computed, into deref/field: `t0 = u32[(a0 + 0x20)]; t1 = u32[(a0 + 0x1c)]; t2 = u32[(a0 + 0x18)]; u32[(t0 + 0x1c)] = t1; t3 = u32[(a0 + 0x1c)]; t4 = u32[(a0 + 0x20)]; u32[(t3 + 0x20)] = t4; u32[(a0 + 0x1c)] = (t2 + 0x10); t5 = u32[(t2 + 0x30)]; u32[(a0 + 0x20)] = t5; u32[(t5 + 0x1c)] = a0; t6 = u32[(a0 + 0x1c)]; u32[(t6 + 0x20)] = a0; t7 = u32[(a0 + 0x30)]; u32[(a0 + 0x30)] = (t7 & 0xfffffff); return t6`.
+    StoreComputed_00a39b00 @ 0x00a3_9b00 => extern "C" fn auto_00a39b00(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00A39B00, &[a0])
+    }
+    /// several stores: computed, into deref/field: `t0 = u32[(a0 + 0x18)]; t1 = u32[(a0 + 0x20)]; t2 = u32[(a0 + 0x1c)]; u32[(t1 + 0x1c)] = t2; t3 = u32[(a0 + 0x1c)]; t4 = u32[(a0 + 0x20)]; u32[(t3 + 0x20)] = t4; u32[(a0 + 0x1c)] = ((t0 + 0x10) + (((a1 * 0x8) - a1) * 0x8)); t5 = u32[(((t0 + 0x10) + (((a1 * 0x8) - a1) * 0x8)) + 0x20)]; u32[(a0 + 0x20)] = t5; u32[(t5 + 0x1c)] = a0; t6 = u32[(a0 + 0x1c)]; u32[(t6 + 0x20)] = a0; t7 = u32[(a0 + 0x30)]; u32[(a0 + 0x30)] = ((t7 & 0xfffffff) | (a1 << 0x1c)); return ((t7 & 0xfffffff) | (a1 << 0x1c))`.
+    StoreComputed_00a3a010 @ 0x00a3_a010 => extern "C" fn auto_00a3a010(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00A3A010, &[a0, a1])
+    }
+    /// store argument to global: `u32[&0x01a85f38] = a0; return a0`.
+    SetGlobal01a85f38_00a44660 @ 0x00a4_4660 => extern "C" fn auto_00a44660(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00A44660, &[a0])
+    }
+    /// arithmetic on arguments: `return (a0 + a1)`.
+    Compute_00a446b0 @ 0x00a4_46b0 => extern "C" fn auto_00a446b0(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00A446B0, &[a0, a1])
+    }
+    /// return constant: `return 0x2`.
+    ReturnConst2_00a54750 @ 0x00a5_4750 => extern "C" fn auto_00a54750() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00A54750, &[])
+    }
+    /// return global u32: `t0 = u32[&0x01a85f70]; return t0`.
+    GetGlobal01a85f70_00a547e0 @ 0x00a5_47e0 => extern "C" fn auto_00a547e0() -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00A547E0, &[])
+    }
+    /// several stores: copy into deref: `t0 = u32[&0x01a86108]; t1 = u16[((a0 * 0x340) + t0)]; u16[(((a0 * 0x340) + t0) + 0x8)] = t1; t2 = u16[(((a0 * 0x340) + t0) + 0x2)]; u16[(((a0 * 0x340) + t0) + 0xa)] = t2; t3 = u16[(((a0 * 0x340) + t0) + 0x4)]; u16[(((a0 * 0x340) + t0) + 0xc)] = t3; t4 = u16[(((a0 * 0x340) + t0) + 0x6)]; u16[(((a0 * 0x340) + t0) + 0xe)] = t4; t5 = u16[(((a0 * 0x340) + t0) + 0x10)]; u16[(((a0 * 0x340) + t0) + 0x14)] = t5; t6 = u16[(((a0 * 0x340) + t0) + 0x12)]; u16[(((a0 * 0x340) + t0) + 0x16)] = t6; return t6`.
+    CopyDeref_00a59680 @ 0x00a5_9680 => extern "C" fn auto_00a59680(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00A59680, &[a0])
+    }
+    /// several stores: copy into deref: `t0 = u32[&0x01a86108]; t1 = u16[(((a0 * 0x340) + t0) + 0x8)]; u16[(((a0 * 0x340) + t0) + 0x2a)] = t1; t2 = u16[(((a0 * 0x340) + t0) + 0xa)]; u16[(((a0 * 0x340) + t0) + 0x2c)] = t2; t3 = u16[(((a0 * 0x340) + t0) + 0xc)]; u16[(((a0 * 0x340) + t0) + 0x2e)] = t3; t4 = u16[(((a0 * 0x340) + t0) + 0xe)]; u16[(((a0 * 0x340) + t0) + 0x30)] = t4; u8[(((a0 * 0x340) + t0) + 0x32)] = 0x0; u32[(((a0 * 0x340) + t0) + 0x34)] = &0x00a5a170; return t4`.
+    CopyDeref_00a596d0 @ 0x00a5_96d0 => extern "C" fn auto_00a596d0(a0: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00A596D0, &[a0])
+    }
+    /// several stores: set deref (constants, arguments, addresses): `t0 = u32[&0x01a86108]; u16[(((a0 * 0x340) + t0) + 0x23)] = 0x301; u8[(((a0 * 0x340) + t0) + 0x25)] = 0x1; u16[(t0 + 0x2700)] = (a0 & 0xffff); u32[(t0 + 0x2704)] = a1; return ((a0 * 0x340) + t0)`.
+    SeveralStoresSetDerefConstantsArgumentsAddresses_00a59860 @ 0x00a5_9860 => extern "C" fn auto_00a59860(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00A59860, &[a0, a1])
+    }
+    /// return field u32: `t0 = u32[(a1 + 0xc)]; return t0`.
+    GetFieldc_00a79120 @ 0x00a7_9120 => extern "C" fn auto_00a79120(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00A79120, &[a0, a1])
+    }
+    /// return field u32: `t0 = u32[(a1 + 0xc)]; return t0`.
+    GetFieldc_00a79210 @ 0x00a7_9210 => extern "C" fn auto_00a79210(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00A79210, &[a0, a1])
+    }
+    /// return field u32: `t0 = u32[(a1 + 0xc)]; return t0`.
+    GetFieldc_00a79300 @ 0x00a7_9300 => extern "C" fn auto_00a79300(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00A79300, &[a0, a1])
+    }
+    /// return field u32: `t0 = u32[(a1 + 0xc)]; return t0`.
+    GetFieldc_00a79410 @ 0x00a7_9410 => extern "C" fn auto_00a79410(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00A79410, &[a0, a1])
+    }
+    /// return field u32: `t0 = u32[(a1 + 0xc)]; return t0`.
+    GetFieldc_00a79540 @ 0x00a7_9540 => extern "C" fn auto_00a79540(a0: u32, a1: u32) -> u32 {
+        ffx_auto::call(&mut mem(), &t::R_00A79540, &[a0, a1])
     }
 }
