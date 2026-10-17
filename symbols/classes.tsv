@@ -851,7 +851,7 @@
 0x00638f60	logic	scene state the renderer needs (original look first): graphic2DShowLayer
 0x00638f90	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication, Phyre_PRendering_PRenderThread_GetInstance, Phyre_PRendering_PRenderThread_sync
 0x00638fb0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicAbmapDestory
-0x00638fd0	logic	default (no rule: ported to be safe)
+0x00638fd0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicAbmapGetVertexInfo
 0x00638ff0	dead	unreachable from the entry point and every pointer table
 0x00639060	dead	unreachable from the entry point and every pointer table
 0x006390c0	logic	default (no rule: ported to be safe)
@@ -1101,7 +1101,7 @@
 0x00642410	logic	scene state the renderer needs (original look first): graphicMinimapCameraSetWorldMatrix
 0x006425d0	logic	scene state the renderer needs (original look first): graphicMinimapFogSetEnable
 0x006425f0	logic	scene state the renderer needs (original look first): graphicMinimapSetEnable
-0x00642610	logic	default (no rule: ported to be safe)
+0x00642610	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicIsMapInList
 0x00642690	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicNeedResetMapParam
 0x006426a0	logic	scene state the renderer needs (original look first): graphicObjectSetRotation
 0x006426c0	logic	scene state the renderer needs (original look first): graphicObjectSetTranslation
@@ -1178,7 +1178,7 @@
 0x00643670	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetMaterialColourScale2
 0x006436a0	logic	default (no rule: ported to be safe)
 0x006436e0	logic	default (no rule: ported to be safe)
-0x00643700	logic	default (no rule: ported to be safe)
+0x00643700	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetMeshVertexColorMorphValue
 0x00643720	logic	scene state the renderer needs (original look first): graphicSetMiniMapType
 0x00643730	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetMotionBlurEnable
 0x00643750	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetMotionBlurWeight
@@ -1422,8 +1422,8 @@
 0x0064ea30	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
 0x0064ea60	dead	unreachable from the entry point and every pointer table
 0x0064ea90	dead	unreachable from the entry point and every pointer table
-0x0064ead0	glue	only called from glue code (0x65fca0)
-0x0064eb20	glue	only called from glue code (PhyreScene_fieldMapInitialize)
+0x0064ead0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Array_Reserve_00667f00)
+0x0064eb20	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Array_Reserve_00668080)
 0x0064eb70	dead	unreachable from the entry point and every pointer table
 0x0064eb90	dead	unreachable from the entry point and every pointer table
 0x0064ebb0	dead	unreachable from the entry point and every pointer table
@@ -1490,7 +1490,7 @@
 0x0064f580	dead	unreachable from the entry point and every pointer table
 0x0064f5a0	dead	unreachable from the entry point and every pointer table
 0x0064f5c0	dead	unreachable from the entry point and every pointer table
-0x0064f5e0	glue	only called from glue code (PhyreScene_unloadVFXTexture)
+0x0064f5e0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (std_string_append_ptr)
 0x0064f620	dead	unreachable from the entry point and every pointer table
 0x0064f650	dead	unreachable from the entry point and every pointer table
 0x0064f680	dead	unreachable from the entry point and every pointer table
@@ -3719,7 +3719,7 @@
 0x006d2310	dead	unreachable from the entry point and every pointer table
 0x006d2380	logic	default (no rule: ported to be safe)
 0x006d2390	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ShadowManager_getInstance
-0x006d23a0	logic	default (no rule: ported to be safe)
+0x006d23a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ShadowManager_GetCascadeMatrix
 0x006d23d0	glue	only called from glue code (ShadowManager_updateShadowMap)
 0x006d2510	logic	default (no rule: ported to be safe)
 0x006d2520	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ShadowManager_getTextureSampler
@@ -6825,7 +6825,7 @@
 0x0077a2c0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): sa_task_start
 0x0077a320	logic	default (no rule: ported to be safe)
 0x0077a330	dead	unreachable from the entry point and every pointer table
-0x0077a390	logic	default (no rule: ported to be safe)
+0x0077a390	platform	platform name (files, CD/DVD emulation, allocators, threads, std::): task_create_in_group
 0x0077a3f0	logic	default (no rule: ported to be safe)
 0x0077a420	logic	default (no rule: ported to be safe)
 0x0077a480	dead	unreachable from the entry point and every pointer table
@@ -12680,7 +12680,7 @@
 0x00882d50	logic	default (no rule: ported to be safe)
 0x00882f40	logic	default (no rule: ported to be safe)
 0x00883040	dead	unreachable from the entry point and every pointer table
-0x00883340	logic	default (no rule: ported to be safe)
+0x00883340	debug	debug name: TkDebugHexDump_00883340
 0x00883620	dead	unreachable from the entry point and every pointer table
 0x008838d0	logic	default (no rule: ported to be safe)
 0x00883960	logic	default (no rule: ported to be safe)
@@ -13131,11 +13131,11 @@
 0x0088ee70	debug	only called from debug code (TkPutDebugFontStringPR)
 0x0088eed0	dead	unreachable from the entry point and every pointer table
 0x0088eff0	dead	unreachable from the entry point and every pointer table
-0x0088f140	logic	debug-sounding name, but used by logic: 0x87a850, 0x87a8b0, 0x87a910
-0x0088f160	logic	default (no rule: ported to be safe)
-0x0088f240	logic	default (no rule: ported to be safe)
-0x0088f4c0	logic	debug-sounding name, but used by logic: 0x87a4a0, 0x87a4f0, 0x87a550
-0x0088f4e0	logic	debug-sounding name, but used by logic: 0x87f810, 0x87f900, 0x87fca0
+0x0088f140	debug	debug name: TkPutDebugFontString
+0x0088f160	debug	debug name: TkPutDebugFontStringEuc
+0x0088f240	debug	debug name: TkPutDebugFontStringCore_0088f240
+0x0088f4c0	debug	debug name: TkPutDebugFontStringP
+0x0088f4e0	debug	debug name: TkPutDebugFontStringPEuc
 0x0088f5c0	debug	debug name: TkPutDebugFontStringPR
 0x0088f5f0	debug	debug name: TkPutDebugFontStringPREuc
 0x0088f690	debug	unreachable from the entry point and every pointer table; debug name or strings

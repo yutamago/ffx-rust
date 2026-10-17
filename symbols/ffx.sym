@@ -8595,12 +8595,12 @@
 0x008dde50 function TkMenuGetCommandName      # (id) MsGetRomPlyCommand strings + u16 [record + 4*hiragana]; no direct caller; own name
 0x008ddea0 function TOMenuGetGetImportantHelp # fh v3:cg3 0x8dde80
 0x008ddee0 function TOMenuGetGetImportantName # fh v3:cg2 0x8ddec0
-0x008ddf20 function TkMenuSaveMes             # fh switch:bsim1.00 0x71004c3430
+0x008ddf20 function TOMenuGetItemHelp         # (id) -> MsMenuGetHelp(8, id, MsGetSaveConfigHiragana()): an item help text; caller TkMenuCtrlItem; the Switch's TOMenuGet*Help functions are exactly this shape and TOMenuGetItemHelp sorts right after TOMenuGetGetImportantName, as here; was TkMenuSaveMes (fh switch:bsim1.00 0x71004c3430), which calls MsMenuGetText, not MsMenuGetHelp: that is 0x008de080
 0x008ddf60 function TkMenuMainHelp            # fh switch:bsim1.00 0x71004c35b0
 0x008ddf80 function TkMenuMainMes             # fh switch:bsim1.00 0x71004c33a0
 0x008ddfa0 function TkMenuMenu1Help           # fh switch:bsim1.00 0x71004c35e0
 0x008ddfc0 function TkMenuMenu1Mes            # fh switch:bsim1.00 0x71004c33d0
-0x008de080 function TkMenuSaveMesText_008de080   # structure: (id) -> MsMenuGetText(3, id, MsGetSaveConfigHiragana()): a save/load menu message; callers TkMenuCtrlSaveLoad, TkMenuJumpToLoadedScene and the save screens; cg-match lead TkMenuSaveMes (3 votes) conflicts with the fh bsim name TkMenuSaveMes at 0x008ddf20, so name ours
+0x008de080 function TkMenuSaveMes             # (id) -> MsMenuGetText(3, id, MsGetSaveConfigHiragana()): a save/load menu message; the Switch's TkMenuSaveMes (0x71004c3430, 44 bytes) calls MsGetSaveConfigHiragana and MsMenuGetText and is called by TkMenuJumpToLoadedScene, as here; cg-match lead (3 votes); callers TkMenuCtrlSaveLoad, TkMenuJumpToLoadedScene and the save screens; was TkMenuSaveMesText_008de080
 0x008de0a0 function MenuDraw_GifTag           # (packet, a, b, c) 64-byte GIF header, returns packet + 0x40; own name
 0x008de140 function TkMenuStatusMes           # fh switch:bsim1.00 0x71004c3520
 0x008de1a0 function MenuStatus_Plus10         # (p) p + 0x10; no caller; own name
