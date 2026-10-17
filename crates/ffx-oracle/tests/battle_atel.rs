@@ -868,6 +868,8 @@ fn comebacks(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, bloc
     }
     // mostly with an effect motion to drop (+0x3f3)
     poke(a, b, p + 0x3f3, &[u8::from(rng.below(4) != 0)]);
+    // a move flag (+0x412) set, to see it cleared
+    poke(a, b, p + 0x412, &[u8::from(rng.below(2) == 0)]);
     let kind = [0, 1, 3, 4, 5, 6, rng.next()][rng.below(7) as usize];
     queue(a, b, rng);
     twin("MsEffectEndMotion", a, b, 0x0078_7950, &[i, kind], 0, |m| {
