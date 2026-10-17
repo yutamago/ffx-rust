@@ -4094,6 +4094,7 @@
 0x00760640 function KeResampleRgbaToRgb       # (src, sw, sh, dst, dw, dh): nearest-neighbour RGBA to bottom-up BGR bytes by Bresenham error terms; returns the row error; pppPartDraw; name ours
 0x007610a0 function dumpFvector               # fh switch:bsim1.00 0x71002d1e50
 0x007610e0 function dumpMatrix                   # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s=\\n{ %f %f %f %f }\\n{ %f %f %f %f }\\n{ %f %f %f %f }\\n{ %f'; Switch 0x71002d1db0 dumpMatrix (symbols from Fahrenheit's server export)
+0x00761250 function pppDataLastPair_00761250 # ours: (data, a, b) -> b: the records from data + [data+4] (16-byte headers, kind i8 +1 until 0xff, i16 +2 entries of 20/28/32/40/24/32/40/48 bytes by kind 0..7): the +8/+0xc words of the last kind 2, 3, 6 or 7 record into a and b (0 for none); caller pppDataRcv
 0x007614a0 function pppDataRcv                # fh v3:exact 0x00761590
 0x00761c00 function pppDbgAlloc                  # layout: alphabetical run between pppDataRcv and pppGetPartMatrix (1 unnamed in the gap); Switch 0x71002d1eb0 pppDbgAlloc is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00761c40 function pppGetPartMatrix          # fh switch:bsim1.00 0x71002d4cc0

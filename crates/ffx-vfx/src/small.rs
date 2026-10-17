@@ -491,6 +491,45 @@ pub mod bridge {
         vf[15]
     }
 
+    /// `pppDataLastPair_00761250(data, a, b)` (`0x00761250`, for
+    /// `pppDataRcv`): walks the records from `data + [data + 4]` (a 16-byte
+    /// header, its kind the `i8` at `+1`, until kind `0xff`, then `i16 +2`
+    /// entries of a size per kind: 20, 28, 32, 40, 24, 32, 40, 48 bytes;
+    /// other kinds have none) and stores the `+8` and `+0xc` words of the
+    /// last record of kind 2, 3, 6 or 7 at `a` and `b` (0 for none).
+    /// Returns `b`, as left in `eax`.
+    pub fn ppp_data_last_pair(mem: &mut impl Mem, data: u32, a: u32, b: u32) -> u32 {
+        let mut rec = data.wrapping_add(mem.read::<u32>(data.wrapping_add(4)));
+        let (mut first, mut second) = (0u32, 0u32);
+        loop {
+            let kind: i8 = mem.read(rec.wrapping_add(1));
+            if kind == -1 {
+                break;
+            }
+            let n = i32::from(mem.read::<i16>(rec.wrapping_add(2)));
+            let (size, pair) = match kind {
+                0 => (20, false),
+                1 => (28, false),
+                2 => (32, true),
+                3 | 6 => (40, true),
+                4 => (24, false),
+                5 => (32, false),
+                7 => (48, true),
+                _ => (0, false),
+            };
+            if pair {
+                first = mem.read(rec.wrapping_add(8));
+                second = mem.read(rec.wrapping_add(0xc));
+            }
+            rec = rec
+                .wrapping_add(n.wrapping_mul(size).cast_unsigned())
+                .wrapping_add(0x10);
+        }
+        mem.write(a, first);
+        mem.write(b, second);
+        b
+    }
+
     /// `0x00807e90(out, src, n)`: `n` colours (`r g b a` bytes at `src`)
     /// to hue, saturation, value and alpha (`u16` each at `out`): a zero
     /// dword gives `h` = `s` = 0 (the first two only); else with `max`,

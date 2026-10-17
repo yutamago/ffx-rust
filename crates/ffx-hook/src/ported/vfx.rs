@@ -3272,6 +3272,10 @@ ported! {
     pppKeShpTail3VfCopy_00751680 @ 0x0075_1680 => extern "C" fn ppp_ke_shp_tail3_vf_copy(dst: u32) -> u32 {
         small::bridge::ppp_ke_shp_tail3_vf_copy(&mut mem(), dst)
     }
+    /// `pppDataLastPair_00761250(data, a, b)`.
+    pppDataLastPair_00761250 @ 0x0076_1250 => extern "C" fn ppp_data_last_pair(data: u32, a: u32, b: u32) -> u32 {
+        small::bridge::ppp_data_last_pair(&mut mem(), data, a, b)
+    }
     // ---- VU0 macro helpers ----
     /// `pppVu0MaddaY(_, v, _, s)`: returns `v`.
     pppVu0MaddaY @ 0x0072_c590 => extern "C" fn ppp_vu0_madda_y(a: u32, v: u32, b: u32, s: f32) -> u32 {

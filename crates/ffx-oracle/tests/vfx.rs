@@ -10485,3 +10485,35 @@ fn shp_tail3_vf_copy_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn data_last_pair_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0076_1250);
+        let (data, out) = (p.alloc(0x4000), p.alloc(8));
+        for _ in 0..2000 {
+            p.fill(data, 0x100, &mut rng);
+            p.fill(out, 8, &mut rng);
+            let start = 0x10 + 4 * rng.below(8);
+            p.set(data + 4, start);
+            // records of every kind with few entries, then the end
+            let mut at = data + start;
+            for _ in 0..rng.below(8) {
+                let kind = rng.pick(&[0i8, 1, 2, 3, 4, 5, 6, 7, 8, -2, 0x7f]);
+                let n = i16::try_from(rng.below(5)).unwrap();
+                p.fill(at, 0x10, &mut rng);
+                p.set(at + 1, kind);
+                p.set(at + 2, n);
+                let size = [20u32, 28, 32, 40, 24, 32, 40, 48]
+                    .get(usize::try_from(kind).unwrap_or(99))
+                    .copied()
+                    .unwrap_or(0);
+                at += 0x10 + size * u32::try_from(n).unwrap();
+            }
+            p.set(at + 1, -1i8);
+            p.check("0x00761250", 0x0076_1250, &[data, out, out + 4], |m| {
+                Some(small::bridge::ppp_data_last_pair(m, data, out, out + 4))
+            });
+        }
+    }
+}
