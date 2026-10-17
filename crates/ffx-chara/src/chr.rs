@@ -845,7 +845,13 @@ pub mod bridge {
     /// a speed (not 0; NaN counts) the step `+0x164` = speed * 3.141592 /
     /// 180 (in double, stored as `f32`), else the current x angle `+0x15c`
     /// too and step 0. Returns `chr` (left in EAX).
-    pub fn ch_set_rot_x(mem: &mut impl Mem, chr: u32, a: f32, speed: f32, wrap: impl FnOnce(f32) -> f32) -> u32 {
+    pub fn ch_set_rot_x(
+        mem: &mut impl Mem,
+        chr: u32,
+        a: f32,
+        speed: f32,
+        wrap: impl FnOnce(f32) -> f32,
+    ) -> u32 {
         let w = wrap(x87::load(a));
         mem.write(chr + 0x160, w);
         let s = x87::load(speed);
