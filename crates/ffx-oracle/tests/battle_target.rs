@@ -1791,8 +1791,11 @@ fn process(
         same("MsMotionPosCheckAll", a, b);
     }
     // overdrive modes to announce
+    // (half the time nobody acting: the announcements run)
+    let quiet = rng.below(2) == 0;
     for j in 0..ACTORS {
-        poke(a, b, w.actor(j) + 0xdf0, &[flag(rng, 12)]);
+        let v = if quiet { 0 } else { flag(rng, 12) };
+        poke(a, b, w.actor(j) + 0xdf0, &[v]);
     }
     twin("MsCountChrActing", a, b, 0x007b_0ca0, &[], ALL, |m| {
         p::ms_count_chr_acting(m)
