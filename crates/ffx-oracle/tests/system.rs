@@ -14078,7 +14078,11 @@ fn round25_font_1612_dispatch_matches_the_original_on_the_snapshot() {
 /// Round 25's cross-menu icon name rows over an entry lookup that hands
 /// out cells, logging stand-ins for the icon and text drawers, and the
 /// original remaps.
-#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::many_single_char_names
+)]
 fn round25_icon_names(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     use tolib::bridge::{self as t, CrossMenuIconName};
     let log = alloc(a, b, 0x400);
