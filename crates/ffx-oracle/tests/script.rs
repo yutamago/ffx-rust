@@ -3698,6 +3698,39 @@ fn round16_vm_helpers_match_the_original() {
                 );
             }
         }
+        // Native_PlayMotionCommon on each model, as model 0x66 too (its
+        // 0x013008e0 flag), in every mode, from the worker's stack
+        for w in actors(&mut a, &mut b) {
+            let m = v::atel_get_char_handle(&b, w);
+            if m == 0 {
+                continue;
+            }
+            let id = Mem::read::<u16>(&b, m);
+            let s = w + worker::STACK;
+            for (mode, model) in [(0, id), (1, 0x66), (2, id), (3, 0x66)] {
+                poke(&mut a, &mut b, m, model);
+                poke(&mut a, &mut b, s, 0i32);
+                for x in [0x0002_1092, 0, 1, 0, u32::MAX] {
+                    push_both(&mut a, &mut b, s, stack::INT, x);
+                }
+                clear_stacks(&mut a, &mut b);
+                let ra = orig(&mut a, 0x00a7_aae0, &[w, s, mode, 0]);
+                let rb = ffx_script::vm::bridge::native_chr::native_play_motion_common(
+                    &mut Run(&mut b),
+                    w,
+                    s,
+                    mode,
+                    0,
+                );
+                assert_eq!(ra, rb, "Native_PlayMotionCommon {w:#x} {mode}");
+                no_diff(
+                    &mut a,
+                    &mut b,
+                    &format!("Native_PlayMotionCommon {w:#x} {mode}"),
+                );
+            }
+            poke(&mut a, &mut b, m, id);
+        }
         let blk = Mem::read::<u32>(&b, c + 0x48);
         if blk != 0 {
             assert_eq!(

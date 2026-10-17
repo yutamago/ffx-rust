@@ -872,8 +872,7 @@ pub fn script_line_actor_side(m: &impl Mem, w: u32, key: u32) -> u32 {
     let id = m.read::<u16>(a + 8);
     let hit = (0..8).find(|&i| {
         let e = t + i * 8;
-        m.read::<u16>(e + 2) == id
-            && (key.cast_signed() < 0 || u32::from(m.read::<u16>(e)) == key)
+        m.read::<u16>(e + 2) == id && (key.cast_signed() < 0 || u32::from(m.read::<u16>(e)) == key)
     });
     match hit.map(|i| u32::from(m.read::<u8>(t + i * 8 + 4))) {
         Some(v) if v != 3 => v,
@@ -896,7 +895,9 @@ pub fn atel_parse_hex(m: &impl Mem, s: u32) -> u32 {
         match c {
             b'0'..=b'9' => v = (v << 4).wrapping_add(u32::from(c - b'0')),
             b'A'..=b'F' | b'a'..=b'f' => {
-                v = (v << 4).wrapping_sub(0x37).wrapping_add(u32::from(c & 0xdf));
+                v = (v << 4)
+                    .wrapping_sub(0x37)
+                    .wrapping_add(u32::from(c & 0xdf));
             }
             _ => return v,
         }
@@ -915,7 +916,9 @@ pub fn atel_set_bind_mask(m: &mut impl Mem, n: u32) -> u32 {
     }
     let idx = k / 32;
     let bit = 1_u32.wrapping_shl((k % 32).cast_unsigned());
-    let at = m.rebase(BIND_MASKS).wrapping_add(idx.cast_unsigned().wrapping_mul(4));
+    let at = m
+        .rebase(BIND_MASKS)
+        .wrapping_add(idx.cast_unsigned().wrapping_mul(4));
     let v = m.read::<u32>(at);
     m.write(at, v | bit);
     let base = m.rebase(BIND_MASKS);
@@ -933,7 +936,9 @@ pub fn atel_get_bin_hdr_float(m: &impl Mem, b: u32, i: u32) -> f64 {
     let Some(e) = expansion(m, b) else { return 0.0 };
     let r = m.read::<u32>(e + 0x3c);
     let at = if r != 0 && r.wrapping_add(b) != 0 {
-        r.wrapping_add(b).wrapping_add(0x44).wrapping_add(i.wrapping_mul(4))
+        r.wrapping_add(b)
+            .wrapping_add(0x44)
+            .wrapping_add(i.wrapping_mul(4))
     } else {
         e + 0x14
     };
@@ -972,7 +977,11 @@ pub fn atel_regist_callback_que2(m: &mut impl Mem, q: u32, f: u32, name: u32) ->
     m.write(e + 4, 0_u32);
     let mut end = false;
     for i in 0..7 {
-        let c = if end { 0 } else { m.read::<u8>(name.wrapping_add(i)) };
+        let c = if end {
+            0
+        } else {
+            m.read::<u8>(name.wrapping_add(i))
+        };
         end |= c == 0;
         m.write(e + 8 + i, c);
     }

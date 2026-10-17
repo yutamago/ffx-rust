@@ -12257,7 +12257,7 @@
 0x00a7a8d0 function Native_5090                # 0x5090: args (v) -> the model's +0x871 byte, popped only for a model; ported in native_chr (script round 12)
 0x00a7a900 function Native_5047                # 0x5047: args (worker int, v int) -> 0: Ch_SetSequence(that worker's model, v) (0x00837ac0); ported in native_chr (script round 12)
 0x00a7a940 function Native_5048                # 0x5048: no args -> as 0x5047; ported in native_chr (script round 12)
-0x00a7aae0 function Native_PlayMotionCommon      # (ctx, args, mode, other worker): pops end, start, loops, unused, motion (+ worker); mode 0/1/2 -> Chr_PlayMotionMarks/Chr_PlayMotion/Chr_PlayMotionInclEnd; per-map hacks set chr +0x870
+0x00a7aae0 function Native_PlayMotionCommon      # (ctx, args, mode, other worker): pops end, start, loops, unused, motion (+ worker); mode 0/1/2 -> Chr_PlayMotionMarks/Chr_PlayMotion/Chr_PlayMotionInclEnd; per-map hacks set chr +0x870; ported in native_chr (script round 16)
 0x00a7ae90 function GetU32_023cbeb0 # () -> u32 at 0x023cbeb0; name ours
 0x00a7b1a0 function CopyCuttingLines_00a7b1a0 # cdecl(dst, src): src copied with line feeds turned into terminators, returns length + 1 (null src: empty dst, 0); caller 0x00a7aee0; name ours
 0x00a7b220 function TOMenuExecLayerHandle     # fh v3:exact 0x00a7b220

@@ -16,6 +16,10 @@ use ffx_script::vm::bridge::signal as sig;
 use super::{mem, ported};
 
 ported! {
+    /// `Native_PlayMotionCommon(worker, stack, mode, other)`.
+    Native_PlayMotionCommon @ 0x00a7_aae0 => extern "C" fn h_a7aae0(w: u32, s: u32, m: u32, o: u32) -> u32 {
+        native_chr::native_play_motion_common(&mut mem(), w, s, m, o)
+    }
     /// `Script_LineActorSide`.
     Script_LineActorSide @ 0x0086_32b0 => extern "C" fn h_8632b0(w: u32, k: u32) -> u32 {
         hp::script_line_actor_side(&mem(), w, k)
