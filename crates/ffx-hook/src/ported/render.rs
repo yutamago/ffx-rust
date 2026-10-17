@@ -6,6 +6,7 @@ use super::{mem, ported};
 use ffx_bridge::Global;
 use ffx_graphic::{cache, managers, scene, ui, vfx};
 
+use ffx_graphic::state::bridge as st;
 use ffx_graphic::texanim::bridge as ta;
 use managers::bridge as mg;
 use scene::bridge as sc;
@@ -720,6 +721,218 @@ ported! {
     /// `Cache_Entry_NotYet(kind, id, yet)`.
     Cache_Entry_NotYet @ 0x0084_05f0 => extern "C" fn cache_entry_not_yet(kind: i32, id: u32, yet: u32) {
         cache::bridge::entry_not_yet(&mut mem(), kind, id, yet);
+    }
+
+    // ---- scene state (round 5): fog, ambient, background, screen fade ----
+    /// `graphicGetFogColor(r*, g*, b*)`.
+    graphicGetFogColor @ 0x0064_1160 => extern "C" fn graphic_get_fog_color(r: u32, g: u32, b: u32) {
+        st::get_app_color(&mut mem(), st::FOG_COLOR, [r, g, b]);
+    }
+    /// `graphicGetGlobalAmbientColor(r*, g*, b*)`.
+    graphicGetGlobalAmbientColor @ 0x0064_1230 => extern "C" fn graphic_get_global_ambient_color(r: u32, g: u32, b: u32) {
+        st::get_app_color(&mut mem(), st::AMBIENT, [r, g, b]);
+    }
+    /// `graphicGetFogNear()`.
+    graphicGetFogNear @ 0x0064_11d0 => extern "C" fn graphic_get_fog_near() -> f32 {
+        st::app_float(&mem(), st::FOG_NEAR)
+    }
+    /// `graphicGetFogFar()`.
+    graphicGetFogFar @ 0x0064_11b0 => extern "C" fn graphic_get_fog_far() -> f32 {
+        st::app_float(&mem(), st::FOG_FAR)
+    }
+    /// `graphicGetFogLimit()`.
+    graphicGetFogLimit @ 0x0064_11c0 => extern "C" fn graphic_get_fog_limit() -> f32 {
+        st::app_float(&mem(), st::FOG_LIMIT)
+    }
+    /// `graphicSetGlobalAmbientColor(r, g, b)`.
+    graphicSetGlobalAmbientColor @ 0x0064_3270 => extern "C" fn graphic_set_global_ambient_color(r: f32, g: f32, b: f32) -> u32 {
+        st::set_app_color(&mut mem(), st::AMBIENT, [r, g, b])
+    }
+    /// `graphicSetBackgroundColour(r, g, b)`.
+    graphicSetBackgroundColour @ 0x0064_2e90 => extern "C" fn graphic_set_background_colour(r: f32, g: f32, b: f32) -> u32 {
+        st::set_app_color(&mut mem(), st::BACKGROUND, [r, g, b])
+    }
+    /// `graphicFFXApplicationEnableKeyframeAnim(on)`.
+    graphicFFXApplicationEnableKeyframeAnim @ 0x0064_01e0 => extern "C" fn graphic_enable_keyframe_anim(on: u32) -> u32 {
+        st::enable_keyframe_anim(&mut mem(), on)
+    }
+    /// `graphicGetScreenFadeColor(r*, g*, b*, a*)`.
+    graphicGetScreenFadeColor @ 0x0064_1390 => extern "C" fn graphic_get_screen_fade_color(r: u32, g: u32, b: u32, a: u32) -> u32 {
+        st::get_screen_fade_color(&mut mem(), [r, g, b, a])
+    }
+    /// `graphicGetScreenFadeLastReason()`.
+    graphicGetScreenFadeLastReason @ 0x0064_13e0 => extern "C" fn graphic_get_screen_fade_last_reason() -> u32 {
+        st::screen_fade_last_reason(&mem())
+    }
+    /// `graphicIsScreenFadeColorLocked()`.
+    graphicIsScreenFadeColorLocked @ 0x0064_1cb0 => extern "C" fn graphic_is_screen_fade_color_locked() -> u32 {
+        st::is_screen_fade_color_locked(&mem())
+    }
+    /// `graphicLockScreenFadeColor()`.
+    graphicLockScreenFadeColor @ 0x0064_1e20 => extern "C" fn graphic_lock_screen_fade_color() -> u32 {
+        st::set_post_process_byte(&mut mem(), st::FADE_LOCKED, 1)
+    }
+    /// `graphicUnlockScreenFadeColor()`.
+    graphicUnlockScreenFadeColor @ 0x0064_48d0 => extern "C" fn graphic_unlock_screen_fade_color() -> u32 {
+        st::unlock_screen_fade_color(&mut mem())
+    }
+    /// `graphicSetScreenFadeAlphaMode(mode)`.
+    graphicSetScreenFadeAlphaMode @ 0x0064_38e0 => extern "C" fn graphic_set_screen_fade_alpha_mode(mode: u32) -> u32 {
+        st::set_screen_fade_alpha_mode(&mut mem(), mode)
+    }
+    /// `graphicSetScreenFadeColor(r, g, b, a)`.
+    graphicSetScreenFadeColor @ 0x0064_3900 => extern "C" fn graphic_set_screen_fade_color(r: f32, g: f32, b: f32, a: f32) -> u32 {
+        st::set_screen_fade_color(&mut mem(), [r, g, b, a])
+    }
+    /// `graphicSetScreenFadeLastReason(reason)`.
+    graphicSetScreenFadeLastReason @ 0x0064_3940 => extern "C" fn graphic_set_screen_fade_last_reason(reason: u32) -> u32 {
+        st::set_screen_fade_last_reason(&mut mem(), reason)
+    }
+    /// `graphicHasRunDrawFilterInThisFrame()`.
+    graphicHasRunDrawFilterInThisFrame @ 0x0064_1660 => extern "C" fn graphic_has_run_draw_filter() -> u32 {
+        st::set_post_process_byte(&mut mem(), st::RAN_DRAW_FILTER, 1)
+    }
+    /// `graphicHasRunDrawFocusInThisFrame()`.
+    graphicHasRunDrawFocusInThisFrame @ 0x0064_1670 => extern "C" fn graphic_has_run_draw_focus() -> u32 {
+        st::set_post_process_byte(&mut mem(), st::RAN_DRAW_FOCUS, 1)
+    }
+    /// `graphicResetHasRunDrawFocusInThisFrame()`.
+    graphicResetHasRunDrawFocusInThisFrame @ 0x0064_2c70 => extern "C" fn graphic_reset_has_run_draw_focus() -> u32 {
+        st::set_post_process_byte(&mut mem(), st::RAN_DRAW_FOCUS, 0)
+    }
+    /// `graphicSetFocusZ(which, z)`.
+    graphicSetFocusZ @ 0x0064_30f0 => extern "C" fn graphic_set_focus_z(which: u32, z: u32) -> u32 {
+        st::set_focus_z(&mut mem(), which, z)
+    }
+
+    // ---- scene state: wrappers ----
+    /// `graphicPreviousLevelGetNameHash()`.
+    graphicPreviousLevelGetNameHash @ 0x0064_27e0 => extern "C" fn graphic_previous_level_get_name_hash() -> u32 {
+        st::scene_call(&mut mem(), st::SCENE_PREVIOUS_LEVEL_NAME_HASH, &[])
+    }
+    /// `graphicIs3DScene()`.
+    graphicIs3DScene @ 0x0064_1b90 => extern "C" fn graphic_is_3d_scene() -> u32 {
+        st::scene_call(&mut mem(), st::SCENE_IS_3D, &[])
+    }
+    /// `graphicIsInCut2DScene()`.
+    graphicIsInCut2DScene @ 0x0064_1c00 => extern "C" fn graphic_is_in_cut_2d_scene() -> u32 {
+        st::scene_call(&mut mem(), st::SCENE_IS_DRAWING_NON_UI_2D, &[])
+    }
+    /// `graphicMagicGetPath()`.
+    graphicMagicGetPath @ 0x0064_2030 => extern "C" fn graphic_magic_get_path() -> u32 {
+        st::scene_call(&mut mem(), st::SCENE_CURRENT_MAGIC_PATH, &[])
+    }
+    /// `graphicMagicGetToBeDeletePath()`.
+    graphicMagicGetToBeDeletePath @ 0x0064_2040 => extern "C" fn graphic_magic_get_to_be_delete_path() -> u32 {
+        st::scene_call(&mut mem(), st::SCENE_TO_BE_DELETE_MAGIC_PATH, &[])
+    }
+    /// `graphicDttPageFlag(v)`.
+    graphicDttPageFlag @ 0x0063_fc10 => extern "C" fn graphic_dtt_page_flag(v: u32) -> u32 {
+        st::scene_call(&mut mem(), st::SCENE_SET_BYTE_01, &[v])
+    }
+    /// `graphicIsAllSceneAssetsLoaded()`.
+    graphicIsAllSceneAssetsLoaded @ 0x0064_1ba0 => extern "C" fn graphic_is_all_scene_assets_loaded() -> u32 {
+        st::is_all_scene_assets_loaded(&mut mem())
+    }
+    /// `graphicSetChrFogFade(on)`.
+    graphicSetChrFogFade @ 0x0064_2f10 => extern "C" fn graphic_set_chr_fog_fade(on: u32) -> u32 {
+        st::set_chr_fog_fade(&mut mem(), on)
+    }
+    /// `graphicSet2DStartLayer(layer)`.
+    graphicSet2DStartLayer @ 0x0064_2d90 => extern "C" fn graphic_set_2d_start_layer(layer: u32) -> u32 {
+        st::set_2d_start_layer(&mut mem(), layer)
+    }
+    /// `graphicFontSetUiShadowType(kind)`.
+    graphicFontSetUiShadowType @ 0x0064_0dd0 => extern "C" fn graphic_font_set_ui_shadow_type(kind: u32) {
+        st::font_set_ui_shadow_type(&mut mem(), kind);
+    }
+    /// `graphicPushTipByLocId(id)`.
+    graphicPushTipByLocId @ 0x0064_2930 => extern "C" fn graphic_push_tip_by_loc_id(id: u32) -> u32 {
+        st::push_tip(&mut mem(), st::TIP_PUSH_BY_LOC_ID, id)
+    }
+    /// `graphicGuidemapSetup(lo, hi)`.
+    graphicGuidemapSetup @ 0x0064_1490 => extern "C" fn graphic_guidemap_setup(lo: u32, hi: u32) -> u32 {
+        st::guidemap_setup(&mut mem(), lo, hi)
+    }
+    /// `graphicGuidemapUpdate(lo, hi)`: `graphicVFXUpdateWithType(lo, hi, 3)`.
+    graphicGuidemapUpdate @ 0x0064_14f0 => extern "C" fn graphic_guidemap_update(lo: u32, hi: u32) {
+        vfx::bridge::update_with_type(&mut mem(), lo, hi, 3);
+    }
+
+    // ---- scene state: character lighting and instances ----
+    /// `graphicCharacterLightingSetLightDir(light, x, y, z)`.
+    graphicCharacterLightingSetLightDir @ 0x0063_cb50 => extern "C" fn graphic_lighting_set_light_dir(light: u32, x: f32, y: f32, z: f32) -> u32 {
+        st::lighting_set_light_dir(&mut mem(), light, [x, y, z])
+    }
+    /// `graphicCharacterLightingSetMapIdFlagChanged(a, b)`.
+    graphicCharacterLightingSetMapIdFlagChanged @ 0x0063_cd20 => extern "C" fn graphic_lighting_set_map_id_flag_changed(a: u32, b: u32) -> u32 {
+        st::lighting_set_map_id_flag_changed(&mut mem(), a, b)
+    }
+    /// `graphicCharacterLightingSetShadeColor(list, r, g, b)`.
+    graphicCharacterLightingSetShadeColor @ 0x0063_d050 => extern "C" fn graphic_lighting_set_shade_color(list: u32, r: f32, g: f32, b: f32) {
+        st::lighting_set_shade_color(&mut mem(), list, [r, g, b]);
+    }
+    /// `graphicCharacterInstanceSetVisible(list, visible)`.
+    graphicCharacterInstanceSetVisible @ 0x0063_c390 => extern "C" fn graphic_character_set_visible(list: u32, visible: u32) {
+        st::character_set_visible(&mut mem(), list, visible);
+    }
+    /// `graphicCharacterInstanceSetSkeletonMatrices(chr, list, bones)`.
+    graphicCharacterInstanceSetSkeletonMatrices @ 0x0063_be60 => extern "C" fn graphic_character_set_skeleton_matrices(chr: u32, list: u32, bones: u32) {
+        st::character_set_skeleton_matrices(&mut mem(), chr, list, bones);
+    }
+    /// `graphicCharacterInstanceSetSkeletonMatricesRestoreDefault(list, bone)`.
+    graphicCharacterInstanceSetSkeletonMatricesRestoreDefault @ 0x0063_bfc0 => extern "C" fn graphic_character_restore_skeleton_matrix(list: u32, bone: u32) {
+        st::character_restore_skeleton_matrix(&mut mem(), list, bone);
+    }
+
+    // ---- scene state: cameras and 2D layers ----
+    /// `graphicCameraSetWorldMatrix(view)`.
+    graphicCameraSetWorldMatrix @ 0x0063_9860 => extern "C" fn graphic_camera_set_world_matrix(view: u32) {
+        st::camera_set_world_matrix(&mut mem(), view);
+    }
+    /// `PhyreScene_setCameraWorldMatrix(this, m, alt)`.
+    PhyreScene_setCameraWorldMatrix @ 0x0066_ce70 => extern "thiscall" fn scene_set_camera_world_matrix(this: u32, m: u32, alt: u32) -> u32 {
+        st::scene_set_camera_world_matrix(&mut mem(), this, m, alt)
+    }
+    /// `PhyreScene_setMinimapCameraWorldMatrix(this, m)`.
+    PhyreScene_setMinimapCameraWorldMatrix @ 0x0066_d940 => extern "thiscall" fn scene_set_minimap_camera_world_matrix(this: u32, m: u32) {
+        st::scene_set_minimap_camera_world_matrix(&mut mem(), this, m);
+    }
+    /// `PhyreScene_setCameraFOVy(this, fovy)`.
+    PhyreScene_setCameraFOVy @ 0x0066_cda0 => extern "thiscall" fn scene_set_camera_fovy(this: u32, fovy: u32) -> u32 {
+        st::scene_set_camera_fovy(&mut mem(), this, fovy)
+    }
+    /// `PhyreScene_setCameraAspectRatio(this, aspect)`.
+    PhyreScene_setCameraAspectRatio @ 0x0066_cbe0 => extern "thiscall" fn scene_set_camera_aspect_ratio(this: u32, aspect: u32) -> u32 {
+        st::scene_set_camera_aspect_ratio(&mut mem(), this, aspect)
+    }
+    /// `PhyreScene_setAbmapCamera(this, x, y, z, height, scale)`.
+    PhyreScene_setAbmapCamera @ 0x0066_ca60 => extern "thiscall" fn scene_set_abmap_camera(this: u32, x: u32, y: u32, z: u32, height: u32, scale: u32) -> u32 {
+        st::scene_set_abmap_camera(&mut mem(), this, [x, y, z, height, scale])
+    }
+    /// `PhyreScene_show2DLayer(this, id)`.
+    PhyreScene_show2DLayer @ 0x0066_f2f0 => extern "thiscall" fn scene_show_2d_layer(this: u32, id: u32) {
+        st::scene_set_2d_layer_shown(&mut mem(), this, id, true);
+    }
+    /// `PhyreScene_hide2DLayer(this, id)`.
+    PhyreScene_hide2DLayer @ 0x0065_f050 => extern "thiscall" fn scene_hide_2d_layer(this: u32, id: u32) {
+        st::scene_set_2d_layer_shown(&mut mem(), this, id, false);
+    }
+    /// `PhyreScene_setCurrentLevelName(this, name)`.
+    PhyreScene_setCurrentLevelName @ 0x0066_cf80 => extern "thiscall" fn scene_set_current_level_name(this: u32, name: u32) -> u32 {
+        st::scene_set_current_level_name(&mut mem(), this, name)
+    }
+    /// `PhyreScene_setMeshInstanceWorldMatrix(mesh, m)`.
+    PhyreScene_setMeshInstanceWorldMatrix @ 0x0066_d810 => extern "stdcall" fn scene_set_mesh_instance_world_matrix(mesh: u32, m: u32) -> u32 {
+        st::scene_set_mesh_instance_world_matrix(&mut mem(), mesh, m)
+    }
+    /// `graphicSetTextureVideoInfo(a, b)`.
+    graphicSetTextureVideoInfo @ 0x0064_3aa0 => extern "C" fn graphic_set_texture_video_info(a: u32, b: u32) -> u32 {
+        st::set_texture_video_info(&mut mem(), a, b)
+    }
+    /// `graphicUpdateCrossFade(weight, time)`.
+    graphicUpdateCrossFade @ 0x0064_4910 => extern "C" fn graphic_update_cross_fade(weight: u32, time: u32) -> u32 {
+        st::update_cross_fade(&mut mem(), weight, time)
     }
 }
 
