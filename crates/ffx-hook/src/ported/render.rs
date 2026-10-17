@@ -1270,6 +1270,26 @@ ported! {
     ScreenFadeDelegations_processRenderDelegation @ 0x006a_e5b0 => extern "C" fn screen_fade_process(d: u32) {
         ut::screen_fade_process(&mut mem(), d);
     }
+
+    // ---- round 13 ----
+    /// `ShadowManager_AverageCasterValue(this)` (fastcall, `ST0`).
+    ShadowManager_AverageCasterValue @ 0x006c_cad0 => extern "fastcall" fn shadow_average_caster_value(this: u32) -> f32 {
+        ut::shadow_average_caster_value(&mut mem(), this)
+    }
+    /// `graphicAddMeshMatrix(list, matrix, id)`.
+    graphicAddMeshMatrix @ 0x0063_9170 => extern "C" fn graphic_add_mesh_matrix(list: u32, matrix: u32, id: u32) {
+        ut::add_mesh_matrix(&mut mem(), list, matrix, id);
+    }
+    /// `graphicSetTextureAnimationFrameByName(frame, name)`.
+    graphicSetTextureAnimationFrameByName @ 0x0064_3a40 => extern "C" fn graphic_set_tex_anim_frame_by_name(frame: u32, name: u32) -> u32 {
+        ut::tex_anim_set_frame_by_name(&mut mem(), frame, name)
+    }
+    /// `graphicSetColourPair_00643b30(r, g, b, r2, g2, b2, second)` (the
+    /// floats by their bits).
+    graphicSetColourPair_00643b30 @ 0x0064_3b30 => extern "C" fn graphic_set_colour_pair(r: u32, g: u32, b: u32, r2: u32, g2: u32, b2: u32, second: u32) -> u32 {
+        let c = [r, g, b, r2, g2, b2].map(f32::from_bits);
+        ut::graphic_set_colour_pair(&mut mem(), c, second)
+    }
 }
 
 /// A singleton's pointer.

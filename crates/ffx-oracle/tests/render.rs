@@ -5439,3 +5439,198 @@ fn snapshot_round12_matches_the_original() {
         round12_case(&mut t, &mut rng, round % 12, true, &what);
     }
 }
+
+// ---- round 13 ----
+
+/// A shadow manager for `ShadowManager_AverageCasterValue`: 64 slots of
+/// meshes (each `+4 ->[0] +4 -> +0x24` a float), flags, kinds, callback
+/// words; the callback is the game's `Compute_006cc8b0` (`a0 == 1`).
+#[allow(clippy::many_single_char_names)] // the chain's links
+fn build_shadow_slots(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let sm = t.alloc(&rng.bytes(0x4060));
+    let pick = |rng: &mut Rng| match rng.below(5) {
+        0 => rng.next(),
+        1 => 0,
+        _ => 1,
+    };
+    let dense = rng.below(4);
+    for i in 0..64 {
+        let mesh = if rng.below(4) <= dense {
+            let c = t.alloc(&float_bytes(rng, 10));
+            if rng.chance(4) {
+                // quiet NaNs with payloads: the x87 keeps the larger one
+                let nan = 0x7fc0_0000 | (rng.next() & 0x803f_ffff);
+                t.w32(c + 0x24, nan);
+            }
+            let b = t.zeros(8);
+            t.w32(b + 4, c);
+            let a = t.alloc(&b.to_le_bytes());
+            let m = t.zeros(8);
+            let n = if rng.chance(6) { 0 } else { 1 + rng.below(3) };
+            t.w32(m, n | (rng.next() & 0x8000_0000));
+            t.w32(m + 4, a);
+            m
+        } else {
+            0
+        };
+        t.w32(sm + 0xde8 + 4 * i, mesh);
+        let fa = pick(rng);
+        let fb = pick(rng);
+        t.w32(sm + 0xfe8 + 4 * i, fa);
+        t.w32(sm + 0x10e8 + 4 * i, fb);
+        t.w8(
+            sm + 0x2ba8 + 0xc * i,
+            [b'c', b'n', b'n', b'x', rng.next() as u8][rng.below(5) as usize],
+        );
+        t.w32(sm + 0x2ea8 + 4 * i, pick(rng));
+    }
+    let row = if rng.chance(6) {
+        rng.next() | 0x8000_0000
+    } else {
+        rng.below(8)
+    };
+    let col = if rng.chance(6) {
+        rng.next() | 0x8000_0000
+    } else {
+        rng.below(8)
+    };
+    t.w32(sm + 0x4010, row);
+    t.w32(sm + 0x4014, col);
+    t.w8(sm + 0x4030, u8::from(rng.chance(2)));
+    let cb = t.rebase(0x006c_c8b0);
+    t.w32(sm + 0x4048, cb);
+    sm
+}
+
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one arm per function
+fn round13_case(t: &mut Twins, rng: &mut Rng, case: u32, what: &str) {
+    use ffx_graphic::util::bridge as ut;
+    match case {
+        0 => {
+            let sm = build_shadow_slots(t, rng);
+            t.check(what, 0x006c_cad0, Conv::Fastcall, &[sm, 0], |g| {
+                Out::F32(ut::shadow_average_caster_value(g, sm))
+            });
+        }
+        1 => {
+            if t.r32(t.rebase(scene::bridge::SCENE.sym)) == 0 {
+                let scene = t.zeros(0x10);
+                t.global(scene::bridge::SCENE.sym, scene);
+            }
+            t.stub_sym(ut::SCENE_PUSH_MESH_MATRIX, Conv::Thiscall(0), 2, rng.next());
+            let n = rng.below(4);
+            let mut arr = Vec::new();
+            let mut ids = Vec::new();
+            for _ in 0..n {
+                let k = rng.below(4);
+                let segs = t.alloc(&rng.bytes(0x6c * k as usize + 4));
+                for j in 0..k {
+                    let id = rng.below(5);
+                    ids.push(id);
+                    t.w32(segs + 0x6c * j + 0x18, id);
+                }
+                let mesh = t.zeros(8);
+                t.w32(mesh, k | (rng.next() & 0x8000_0000));
+                t.w32(mesh + 4, segs);
+                let inst = t.alloc(&mesh.to_le_bytes());
+                arr.extend(inst.to_le_bytes());
+            }
+            arr.extend([0; 4]);
+            let arr = t.alloc(&arr);
+            let list = t.zeros(8);
+            t.w32(list, n | (rng.next() & 0x8000_0000));
+            t.w32(list + 4, arr);
+            let list = if rng.chance(10) { 0 } else { list };
+            let id = match rng.below(3) {
+                0 => u32::MAX,
+                1 if !ids.is_empty() => ids[rng.below(ids.len() as u32) as usize],
+                _ => rng.below(6),
+            };
+            let matrix = rng.next();
+            t.check(what, 0x0063_9170, Conv::Cdecl, &[list, matrix, id], |g| {
+                ut::add_mesh_matrix(g, list, matrix, id);
+                Out::None
+            });
+        }
+        2 => {
+            use ffx_graphic::managers::bridge::{FPRINTF_SLOT, IOB_FUNC_SLOT};
+            let mgr = rng.next();
+            t.stub_sym(ut::TEX_ANIM_GET_INSTANCE, Conv::Cdecl, 0, mgr);
+            let i = [u32::MAX, 0x8000_0000, 0, rng.below(9), rng.next()][rng.below(5) as usize];
+            t.stub_sym(ut::TEX_ANIM_FIND_MATERIAL_INDEX, Conv::Thiscall(0), 1, i);
+            let set = [0, 1, 0x100, rng.next()][rng.below(4) as usize];
+            t.stub_sym(ut::TEX_ANIM_SET_FRAME, Conv::Thiscall(0), 3, set);
+            t.stub_sym(
+                ut::SCENE_GET_CURRENT_LEVEL_NAME,
+                Conv::Thiscall(0),
+                0,
+                rng.next(),
+            );
+            let iob = t.stub(None, 0x10b, false, 0, 0, rng.next());
+            let fprintf = t.stub(None, 0xf9, false, 4, 0, rng.next());
+            t.global(IOB_FUNC_SLOT, iob);
+            t.global(FPRINTF_SLOT, fprintf);
+            if t.r32(t.rebase(scene::bridge::SCENE.sym)) == 0 {
+                let scene = t.zeros(0x10);
+                t.global(scene::bridge::SCENE.sym, scene);
+            }
+            let (frame, name) = (rng.next(), rng.next());
+            t.check(what, 0x0064_3a40, Conv::Cdecl, &[frame, name], |g| {
+                Out::U32(ut::tex_anim_set_frame_by_name(g, frame, name))
+            });
+        }
+        _ => {
+            let scene = t.alloc(&rng.bytes(0xfd00));
+            t.global(scene::bridge::SCENE.sym, scene);
+            let c: [f32; 6] = std::array::from_fn(|_| rng.float());
+            let second = [0, 1, 0x100, rng.next()][rng.below(4) as usize];
+            let mut args: Vec<u32> = c.iter().map(|f| f.to_bits()).collect();
+            args.push(second);
+            t.check(what, 0x0064_3b30, Conv::Cdecl, &args, |g| {
+                Out::U32(ut::graphic_set_colour_pair(g, c, second))
+            });
+        }
+    }
+}
+
+#[test]
+fn round13_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x1313_0013);
+    for round in 0..4000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        round13_case(&mut t, &mut rng, round % 4, &what);
+    }
+}
+
+#[test]
+fn snapshot_round13_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5013_0013);
+    // the game's own shadow manager first
+    let sm = t.r32(t.rebase(managers::bridge::SHADOW.sym));
+    if sm != 0 {
+        t.check(
+            "snapshot shadow",
+            0x006c_cad0,
+            Conv::Fastcall,
+            &[sm, 0],
+            |g| {
+                Out::F32(ffx_graphic::util::bridge::shadow_average_caster_value(
+                    g, sm,
+                ))
+            },
+        );
+    }
+    for round in 0..400 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        round13_case(&mut t, &mut rng, round % 4, &what);
+    }
+}

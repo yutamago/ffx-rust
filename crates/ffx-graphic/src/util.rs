@@ -1280,4 +1280,161 @@ pub mod bridge {
             &[a, b, c, byte],
         );
     }
+
+    // ---- round 13 ----
+
+    /// `ShadowManager_AverageCasterValue(this)` (`0x006ccad0`, fastcall):
+    /// a float of the shadow casters (`mesh->+4->[0]->+4` then `+0x24`)
+    /// in the 64 slots (`+0xde8` meshes, `+0xfe8` and `+0x10e8` flags
+    /// that must be 1, `+0x2ba8` kinds, 12 bytes each). The slot
+    /// `+0x4010 * 8 + +0x4014`, when both are non-negative, gives its own
+    /// value if its mesh is set and both its flags are 1 (0 for an empty
+    /// mesh); else the mean of the `'c'` slots, or failing those of the
+    /// `'n'` slots (with `+0x4030` set, only those the callback `+0x4048`
+    /// accepts for the word `+0x2ea8`), each sum and the mean stored as
+    /// floats. 0 when nothing counts.
+    pub fn shadow_average_caster_value<H: Host>(h: &mut H, this: u32) -> f32 {
+        let row: u32 = h.read(this + 0x4010);
+        let col: u32 = h.read(this + 0x4014);
+        #[allow(clippy::cast_possible_wrap)] // `js`
+        if (row as i32) < 0 || (col as i32) < 0 {
+            return 0.0;
+        }
+        let value = |h: &H, mesh: u32| -> f32 {
+            let a: u32 = h.read(mesh + 4);
+            let b: u32 = h.read(a);
+            let c: u32 = h.read(b + 4);
+            h.read(c + 0x24)
+        };
+        let count_of = |h: &H, mesh: u32| h.read::<u32>(mesh) & 0x7fff_ffff;
+        let slot = col.wrapping_add(row.wrapping_mul(8)).wrapping_mul(4);
+        let mesh: u32 = h.read(this.wrapping_add(slot) + 0xde8);
+        if mesh != 0
+            && h.read::<u32>(this.wrapping_add(slot) + 0xfe8) == 1
+            && h.read::<u32>(this.wrapping_add(slot) + 0x10e8) == 1
+        {
+            if count_of(h, mesh) == 0 {
+                return 0.0;
+            }
+            return x87::round_trip(value(h, mesh));
+        }
+        for kind in *b"cn" {
+            let mut sum = 0f32;
+            let mut n = 0u32;
+            for i in 0..64u32 {
+                let mesh: u32 = h.read(this + 0xde8 + 4 * i);
+                if mesh == 0
+                    || h.read::<u32>(this + 0xfe8 + 4 * i) != 1
+                    || h.read::<u32>(this + 0x10e8 + 4 * i) != 1
+                    || h.read::<u8>(this + 0x2ba8 + 0xc * i) != kind
+                {
+                    continue;
+                }
+                if kind == b'n' && h.read::<u8>(this + 0x4030) != 0 {
+                    let cb: u32 = h.read(this + 0x4048);
+                    let arg: u32 = h.read(this + 0x2ea8 + 4 * i);
+                    #[allow(clippy::cast_possible_truncation)] // `test al, al`
+                    let accepted = h.call(cb, Conv::Cdecl, &[arg]) as u8;
+                    if accepted == 0 {
+                        continue;
+                    }
+                }
+                if count_of(h, mesh) == 0 {
+                    continue;
+                }
+                sum = x87::Reg::load(value(h, mesh)).add_m32(sum).store();
+                n += 1;
+            }
+            if n != 0 {
+                #[allow(clippy::cast_precision_loss)] // at most 64
+                let d = n as f32;
+                return x87::Reg::load(sum).div_m32(d).store();
+            }
+        }
+        0.0
+    }
+
+    /// `PhyreScene_PushMeshMatrix`: `thiscall(scene, mesh, matrix)`.
+    pub const SCENE_PUSH_MESH_MATRIX: u32 = 0x0065_6780;
+
+    /// `graphicAddMeshMatrix(list, matrix, id)` (`0x00639170`): for each
+    /// mesh instance of `list` (`+0` count, bit 31 a flag; `+4` the
+    /// array), each segment of its mesh (`*inst`: count, `+4` segments of
+    /// `0x6c` bytes, `+0x18` the id): with `id == -1` the instance's
+    /// matrix is pushed once per segment; else at the first segment whose
+    /// id matches it is pushed once and the walk ends.
+    pub fn add_mesh_matrix(h: &mut impl Host, list: u32, matrix: u32, id: u32) {
+        use crate::scene::bridge::SCENE;
+        if list == 0 {
+            return;
+        }
+        let mut i = 0u32;
+        while i < h.read::<u32>(list) & 0x7fff_ffff {
+            let arr: u32 = h.read(list + 4);
+            let inst: u32 = h.read(arr.wrapping_add(4 * i));
+            let mesh: u32 = h.read(inst);
+            let n = h.read::<u32>(mesh) & 0x7fff_ffff;
+            for k in 0..n {
+                let segs: u32 = h.read(mesh + 4);
+                let sid: u32 = h.read(segs.wrapping_add(0x6c * k) + 0x18);
+                if id == u32::MAX || id == sid {
+                    let arr: u32 = h.read(list + 4);
+                    let inst: u32 = h.read(arr.wrapping_add(4 * i));
+                    let scene = SCENE.get(h);
+                    h.call_sym(
+                        SCENE_PUSH_MESH_MATRIX,
+                        Conv::Thiscall(scene),
+                        &[inst, matrix],
+                    );
+                    if id != u32::MAX {
+                        return;
+                    }
+                }
+            }
+            i += 1;
+        }
+    }
+
+    /// `TextureAnimationManager_FindMaterialIndex`,
+    /// `PhyreScene_getCurrentLevelName`, and the message
+    /// `graphicSetTextureAnimationFrameByName` prints.
+    pub const TEX_ANIM_FIND_MATERIAL_INDEX: u32 = 0x006b_20a0;
+    pub const SCENE_GET_CURRENT_LEVEL_NAME: u32 = 0x0065_de70;
+    pub const MSG_TEX_ANIM_NAME: u32 = 0x00b4_1700;
+
+    /// `graphicSetTextureAnimationFrameByName(frame, name)` (`0x00643a40`):
+    /// the material named `name` gets `frame` (`SetFrame(i, frame, 1)`);
+    /// 1 when set. When it is found but not set, prints the level and the
+    /// name to `stdout`; 0.
+    pub fn tex_anim_set_frame_by_name(h: &mut impl Host, frame: u32, name: u32) -> u32 {
+        use crate::managers::bridge::{FPRINTF_SLOT, IOB_FUNC_SLOT, call_import};
+        use crate::scene::bridge::SCENE;
+        let mgr = h.call_sym(TEX_ANIM_GET_INSTANCE, Conv::Cdecl, &[]);
+        let i = h.call_sym(TEX_ANIM_FIND_MATERIAL_INDEX, Conv::Thiscall(mgr), &[name]);
+        #[allow(clippy::cast_possible_wrap)] // `js`
+        if (i as i32) < 0 {
+            return 0;
+        }
+        let mgr = h.call_sym(TEX_ANIM_GET_INSTANCE, Conv::Cdecl, &[]);
+        if h.call_sym(TEX_ANIM_SET_FRAME, Conv::Thiscall(mgr), &[i, frame, 1]) & 0xff != 0 {
+            return 1;
+        }
+        let scene = SCENE.get(h);
+        let level = h.call_sym(SCENE_GET_CURRENT_LEVEL_NAME, Conv::Thiscall(scene), &[]);
+        let msg = h.rebase(MSG_TEX_ANIM_NAME);
+        let iob = call_import(h, IOB_FUNC_SLOT, &[]);
+        call_import(h, FPRINTF_SLOT, &[iob.wrapping_add(0x20), msg, level, name]);
+        0
+    }
+
+    /// `graphicSetColourPair_00643b30(r, g, b, r2, g2, b2, second)`:
+    /// `PhyreScene_SetColourPair` on the scene with `second != 0`. Returns
+    /// that flag (`eax`, which the callee leaves).
+    pub fn graphic_set_colour_pair(h: &mut impl Host, c: [f32; 6], second: u32) -> u32 {
+        use crate::scene::bridge::SCENE;
+        let flag = u32::from(second != 0);
+        let scene = SCENE.get(h);
+        crate::state::bridge::scene_set_colour_pair(h, scene, c, flag);
+        flag
+    }
 }

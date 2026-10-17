@@ -711,3 +711,36 @@ Round 12:
   to `+0x1239c` and the four floats `d +0xc..+0x18` to
   `+0x1238c..+0x12398`; then `renderScreenFade(d[0], d[1], d[2],
   g_ScreenFadeByte)`).
+
+Round 13:
+
+- `ShadowManager_AverageCasterValue(this)` (`0x006ccad0`, fastcall, result
+  in `ST0`; `PhyreScene_fieldMapInitialize` and `0x00653600` store it): the
+  shadow manager's 64 caster slots (index `8 * row + col`) are a mesh
+  pointer (`+0xde8`), two flags (`+0xfe8`, `+0x10e8`; a slot counts when
+  both are 1), a kind byte (`+0x2ba8`, 12-byte stride: `'c'` or `'n'`) and a
+  callback word (`+0x2ea8`). A caster's value is the float
+  `mesh +4 ->[0] +4 -> +0x24`, and a mesh with count 0 (`*mesh & 0x7fffffff`)
+  has none. The selected slot (`+0x4010` row, `+0x4014` col, both
+  non-negative or the result is 0) gives its own value when it counts;
+  else the mean of the `'c'` slots, and failing those of the `'n'` slots,
+  where with `+0x4030` set only those the callback `+0x4048` (cdecl, `al`)
+  accepts for their word count. The running sum is stored as a float after
+  each add (`fadd m32; fstp m32`) and the mean as one; 0 when no slot
+  counts.
+- `graphicAddMeshMatrix(list, matrix, id)` (`0x00639170`): over a list of
+  mesh instances (count, array) and each segment of an instance's mesh
+  (`0x6c` bytes, `+0x18` the id), `PhyreScene_PushMeshMatrix(inst,
+  matrix)` (`0x00656780`: the pair appended to the scene's `+0x10d84`
+  array of `0x44`-byte entries): for `id == -1` once per segment, else once
+  at the first matching segment, which ends the walk.
+- `graphicSetTextureAnimationFrameByName(frame, name)` (`0x00643a40`):
+  `TextureAnimationManager_FindMaterialIndex(name)`, then
+  `SetFrame(i, frame, 1)`; when that fails it prints "SceneName.%s,
+  TextureAnimName.%s." to `stdout` (`__iob_func() + 0x20`) with the level
+  name and `name` (the latter is the argument pushed for
+  `PhyreScene_getCurrentLevelName`, which takes none and leaves it on the
+  stack for `fprintf`).
+- `graphicSetColourPair_00643b30(r, g, b, r2, g2, b2, second)`:
+  `PhyreScene_SetColourPair` on the scene with `second != 0`; `eax` is
+  that flag, which the callee leaves.

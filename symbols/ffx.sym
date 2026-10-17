@@ -1657,6 +1657,7 @@
 0x00639110 function graphicActivateBlurEffectEx  # layout: alphabetical run between graphicAbmapUpdate and graphicActivateLoadingScreen (1 unnamed in the gap); Switch 0x71001d7cc0 graphicActivateBlurEffectEx is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00639130 function graphicActivateLoadingScreen # fh v3:bsim1.00 0x006392e0
 0x00639140 function graphicActivateRadialBlur    # layout+callees: sorts between graphicActivateLoadingScreen and graphicAddScreenFadeTask, and its named callees match the Switch 0x71001d7c50 graphicActivateRadialBlur's (similarity 1.00: BlurEffect_GetInstance, BlurEffect_activate); symbols from Fahrenheit's server export
+0x00639170 function graphicAddMeshMatrix      # cdecl(list, matrix, id): for each instance of list and each segment of its mesh (0x6c bytes, id +0x18) PhyreScene_PushMeshMatrix(inst, matrix): every segment for id -1, else once at the first match; alphabetical run between graphicActivateRadialBlur and graphicAddScreenFadeTask; name ours
 0x00639240 function graphicAddScreenFadeTask  # fh v3:bsim1.00 0x006393f0
 0x00639280 function graphicAddScreenFadeTaskAfterRender # fh switch:bsim1.00 0x71001d7be0
 0x006392c0 function graphicAddScreenFadeTaskBeforeVFX # fh switch:bsim1.00 0x71001d7bd0
@@ -1923,9 +1924,11 @@
 0x00643940 function graphicSetScreenFadeLastReason # fh v3:bsim1.00 0x00643af0
 0x00643980 function graphicSetSpecularMapParams  # layout+callees: sorts between graphicSetScreenFadeLastReason and graphicSetTextureVideoInfo, and its named callees match the Switch 0x71001d7ec0 graphicSetSpecularMapParams's (similarity 1.00: SpecularMapParamsManager_GetInstance, SpecularMapParamsManager_setShadeSpecularMapParams); symbols from Fahrenheit's server export
 0x00643a20 function graphicTextureAnimationSetFrame # structure: cdecl(i, frame): TextureAnimationManager_SetFrame(i, frame, 0) on TextureAnimationManager_GetInstance; name ours
+0x00643a40 function graphicSetTextureAnimationFrameByName # cdecl(frame, name): TextureAnimationManager_FindMaterialIndex(name), then TextureAnimationManager_SetFrame(i, frame, 1); prints "SceneName.%s, TextureAnimName.%s." to stdout when it fails; alphabetical run between graphicSetSpecularMapParams and graphicSetTextureVideoInfo; name ours
 0x00643aa0 function graphicSetTextureVideoInfo # fh v3:exact 0x00643c50
 0x00643af0 function graphicSetUiDrawType      # fh v3:cg13 0x643ca0
 0x00643b10 function StoreComputedToDeref_00643b10 # auto-port shape (store computed to deref, cdecl): t0 = u32[&0x00ccb9d8]; u8[(t0 + 0xfc88)] = (a0 != 0x0); return t0; callers: no direct caller; name ours
+0x00643b30 function graphicSetColourPair_00643b30 # cdecl(r, g, b, r2, g2, b2, second): PhyreScene_SetColourPair on g_PhyreScene with second != 0 (eax that flag); name ours
 0x00643cc0 function graphicSgSetSpecular         # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'SgSpec_LightVec'; Switch 0x71001d8220 graphicSgSetSpecular (symbols from Fahrenheit's server export)
 0x00643db0 function graphicShaderGetVertexInfo # fh v3:bsim1.00 0x00643f60
 0x00643de0 function graphicShowAutoSavePrompt    # layout+callees: sorts between graphicShaderGetVertexInfo and graphicSwitchGPUMode, and its named callees match the Switch 0x71001dd940 graphicShowAutoSavePrompt's (similarity 1.00: PhyreScene_showAutoSavingPrompt); symbols from Fahrenheit's server export
@@ -2111,6 +2114,7 @@
 0x00655afc function Catch_All_00655cac        # fh v3:cg2 0x655cac Catch_All@00655cac
 0x006564a0 function PhyreScene_addChrDrawSituation # fh v3:exact 0x00656650 PhyreScene::addChrDrawSituation
 0x006566c0 function PhyreScene_detachChrClusterFrom3DWorld # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71001f7370 PhyreScene::detachChrClusterFrom3DWorld, 2 votes, round 2
+0x00656780 function PhyreScene_PushMeshMatrix # thiscall(scene, mesh, matrix), ret 8: appends (mesh, the 16 words at matrix) to the array +0x10d84 (0x44-byte entries); graphicAddMeshMatrix's call; name ours
 0x00656940 function PhyreScene_addVFXDrawEvent # fh v3:exact 0x00656af0 PhyreScene::addVFXDrawEvent
 0x00656b90 function PhyreScene_PushPair3890   # structure: thiscall(scene, a, b), ret 8: appends a and b at the count +0x38a0 to the arrays +0x3894 and +0x389c; both grow by 0x400 (0x0066c700, 0x0066c690) when the first (+0x3890 capacity) is full; name ours
 0x00656c10 function PhyreScene_AddDrawEntry   # structure: thiscall(scene, e, kind), ret 8: up to 0xc00 each: kind set -> e +0xc to +0x38cc (count +0xf8cc); else e to +0x68cc (count +0xf8d0) and 0x006721b0's result sets +0x10d2c; name ours
@@ -2797,6 +2801,7 @@
 0x006cc8b0 function Compute_006cc8b0             # auto-port shape (arithmetic on arguments, cdecl): return (a0 == 0x1); callers: no direct caller; name ours
 0x006cc8c0 function Compute_006cc8c0             # auto-port shape (arithmetic on arguments, cdecl): return (a0 != 0x2083); callers: no direct caller; name ours
 0x006cc980 function GetASpareGradMeshInstance # str-match: the only user of "GetASpareGradMeshInstance() , Shouldn't get here, contact cg please"; thiscall(pool, &extra), ret 4: takes the first free of the current set's (0x00cdec24) 16 slots (+0xdc4), extra = +0xd44 word, returns its +0xcc4 word
+0x006ccad0 function ShadowManager_AverageCasterValue # fastcall(this) -> ST0: the selected slot's (+0x4010 * 8 + +0x4014) caster float (mesh +4 ->[0] +4 -> +0x24), else the mean over the 'c' slots, else the 'n' slots (callback +0x4048 on the word +0x2ea8 + 4i, with +0x4030); callers PhyreScene_fieldMapInitialize, 0x00653600 on ShadowManager; name ours
 0x006ccd00 function ShadowManager_GetShadowSize # () -> g_ShadowSize; name Fahrenheit's (Switch BSim)
 0x006ce100 function ShadowManager_Initialize     # layout+callees: sorts between ShadowManager_GetShadowSize and ShadowManager_InsertIntoShadowMap_Double, and its named callees match the Switch 0x7100278060 ShadowManager_Initialize's (similarity 0.67: ShadowManager_createshadowbuffer, ShadowManager_loadShadowShaderBinFiles); symbols from Fahrenheit's server export
 0x006ce3e0 function ShadowManager_InsertIntoShadowMap_Double # fh v3:exact 0x006ce510 ShadowManager::InsertIntoShadowMap_Double
