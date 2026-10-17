@@ -4812,7 +4812,7 @@
 0x00791fa0 function MsSetTargetsMotion        # (chr, cue, k, &far): entry k's command (MsGetCommand) and targets +0x10: out of reach (+0x4ff > MsGetCommandFar) counted in far, KO'd skipped unless command +0x1a bit 6; the rest +0xded = chr, MsSetMotion(+0x422, 0x1c, 0, 0, 1), head target (MsSetHeadTarget / msResetHeadTarget by +0x1c bit 27); kept targets to +0x10 and g_BtlChrSet; -1/0; name ours
 0x00792170 function MsCheckPlyBtlPosAll       # fh v3:exact 0x007921c0
 0x00792200 function MsDebugCameraSleepInit    # fh v3:bsim1.00 0x00792250
-0x00792210 function MsBattleProcess_CommandCue_00792210 # (): runs the next command cue entry (MsGetCommandCue, MsDeleteCommandCue, MsDeleteInputCue) unless messages, number displays, streams or system messages are pending; caller MsBattleProcess; own name
+0x00792210 function MsCommandCueProcess       # MsBattleProcess's per-frame command-cue driver (battle round 10, ported); (): runs the next command cue entry (MsGetCommandCue, MsDeleteCommandCue, MsDeleteInputCue) unless messages, number displays, streams or system messages are pending; caller MsBattleProcess; own name
 0x00792840 function MsGetActiveCursorFlag        # layout+callees: sorts between MsDebugCameraSleepInit and MsInsertBtlCommand, and its named callees match the Switch 0x7100367960 MsGetActiveCursorFlag's (similarity 1.00: MsGetChr); symbols from Fahrenheit's server export
 0x00792880 function MsCountChrReady           # (bits): actors in bits with +0x40b and +0x40a set; the turn driver 0x00792210 (g_BtlChrSet, after MsPayGIL); name ours
 0x007928d0 function MsGetBattleEndStatus      # fh v3:exact+call.cs 0x007928f0 cdecl
